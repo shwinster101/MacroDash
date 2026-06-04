@@ -11,16 +11,21 @@
 // KEY SAFETY: env.FRED_KEY, env.STOOQ_KEY live here. Never in src/ (frontend).
 // Set in Cloudflare: Workers & Pages → MacroDash → Settings → Variables & Secrets
 
-const CACHE_TTL = 6 * 60 * 60; // 6 hours — cron refresh overrides at open/close
-const CACHE_KEY = "pulse:snapshot:v2"; // bumped from v1 → forces fresh fetch (was caching mock SPY)
+const CACHE_TTL = 48 * 60 * 60; // 48h cleanup; the per-day cache KEY drives freshness
 
 export async function onRequest(context) {
   const { request, env } = context;
   const isPublic = new URL(request.url).searchParams.get("view") === "public";
 
+  // Per-ET-day cache key: first load each morning fetches fresh (FRED has the
+  // prior close settled overnight), every load the rest of the day is instant.
+  // No cron needed — your morning visit is the refresh trigger.
+  const etDate = new Date().toLocaleDateString("en-CA", { timeZone: "America/New_York" }); // YYYY-MM-DD
+  const cacheKey = `pulse:snapshot:v3:${etDate}`;
+
   // ── 1. KV Cache check ─────────────────────────────────────────────────
   try {
-    const cached = await env.PULSE_CACHE?.get(CACHE_KEY, "json");
+    const cached = await env.PULSE_CACHE?.get(cacheKey, "json");
     if (cached) {
       const payload = isPublic ? stripPrivate(cached) : cached;
       return json({ ...payload, cached: true });
@@ -52,9 +57,19 @@ export async function onRequest(context) {
 
   const snapshot = { live, asOf: now, cached: false };
 
+  const diag = {
+    hasFredKey: !!env.FRED_KEY,
+    hasKV: !!env.PULSE_CACHE,
+    fred: fred.status === "fulfilled" ? `ok:${Object.keys(fred.value).length}` : String(fred.reason),
+    spy: spy.status === "fulfilled" ? "ok" : String(spy.reason),
+    fearGreed: fearGreed.status === "fulfilled" ? "ok" : String(fearGreed.reason),
+    putCall: putCall.status === "fulfilled" ? "ok" : String(putCall.reason),
+  };
+  snapshot._diag = diag;
+
   // ── 4. Write-through cache ─────────────────────────────────────────────
   try {
-    await env.PULSE_CACHE?.put(CACHE_KEY, JSON.stringify(snapshot), {
+    await env.PULSE_CACHE?.put(cacheKey, JSON.stringify(snapshot), {
       expirationTtl: CACHE_TTL,
     });
   } catch {
