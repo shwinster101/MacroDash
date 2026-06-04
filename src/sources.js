@@ -5,16 +5,16 @@
 // (b) the FRED series behind it, (c) its display class for the public/private
 // view filter.
 //
-// INTEGRATION CHECK FOR T2: confirm each `path` matches the actual key in the
-// `const DATA = {...}` object in dashboard.jsx (~line 87). Paths below reflect
-// the audit's documented shape; verify before flipping live.
+// PATHS VERIFIED against the actual `const MOCK_DATA = {...}` object in
+// dashboard.jsx (2026-06-04). Each path is the dotted route to the leaf the
+// dashboard actually reads — confirmed against marketPulse/crossAsset/macro nesting.
 
 export const SOURCES = {
   tenYear:      { path: "crossAsset.treasury10y.current", series: "DGS10",        displayClass: "public",   source: "FRED DGS10" },
   fedFunds:     { path: "macro.fedFunds.rate",            series: "FEDFUNDS",     displayClass: "public",   source: "FRED FEDFUNDS" },
   cpiHeadline:  { path: "macro.cpi.headline",             series: "CPIAUCSL",     displayClass: "citation", source: "FRED CPIAUCSL" },
   cpiCore:      { path: "macro.cpi.core",                 series: "CPILFESL",     displayClass: "citation", source: "FRED CPILFESL" },
-  unemployment: { path: "macro.unemployment.national",   series: "UNRATE",       displayClass: "public",   source: "FRED UNRATE" },
+  unemployment: { path: "macro.unemployment.national",    series: "UNRATE",       displayClass: "public",   source: "FRED UNRATE" },
   lfpr:         { path: "macro.unemployment.lfpr",        series: "CIVPART",      displayClass: "public",   source: "FRED CIVPART" },
   mortgage30:   { path: "macro.mortgage.national",        series: "MORTGAGE30US", displayClass: "public",   source: "FRED MORTGAGE30US" },
   vix:          { path: "marketPulse.vix.current",        series: "VIXCLS",       displayClass: "citation", source: "FRED VIXCLS" },

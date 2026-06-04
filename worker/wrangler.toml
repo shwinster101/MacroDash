@@ -6,7 +6,7 @@ compatibility_date = "2026-03-01"
 # Replace id with the real namespace id from:  npx wrangler kv namespace list
 [[kv_namespaces]]
 binding = "PULSE_CACHE"
-id = "REPLACE_WITH_PULSE_CACHE_NAMESPACE_ID"
+id = "78ad3346a8fe4757a906283c4bc81a5e"
 
 # ---------------------------------------------------------------------------
 # Cron Triggers run on UTC. Values below are anchored to PACIFIC DAYLIGHT
