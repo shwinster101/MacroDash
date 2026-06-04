@@ -44,7 +44,9 @@ export function getLatestValid(observations) {
 }
 
 // YoY % from a monthly index: (latest / value 12 months earlier - 1) * 100.
-// observations sorted DESC; index 0 = latest, index 12 = one year prior.
+// Filter to valid observations FIRST (FRED returns a "." row for the current,
+// not-yet-released month), then compare valid[0] to valid[12]. Because monthly
+// CPI has no internal gaps, valid[12] is exactly 12 months before valid[0].
 export function computeYoY(observations) {
   const valid = observations.filter(
     (o) => o && o.value !== "." && Number.isFinite(Number(o.value))
@@ -56,9 +58,14 @@ export function computeYoY(observations) {
   return { value: Math.round((latest / prior - 1) * 1000) / 10, asOf: valid[0].date };
 }
 
-// Build the FRED URL for a series. limit=13 for yoy (need 12-mo lookback), else 5.
+// Build the FRED URL for a series.
+// FIX (2026-06-04): yoy now fetches 18 rows (was 13). FRED returns a trailing
+// "." placeholder for the current not-yet-released month, which dropped CPI to
+// 12 valid observations → computeYoY returned null → "no_valid_observation".
+// 18 rows leaves ≥13 valid even with 1–2 trailing placeholders; valid[12] is
+// still exactly the year-ago month because the valid array is gap-free monthly.
 export function fredUrl(seriesId, apiKey, kind) {
-  const limit = kind === "yoy" ? 13 : 5;
+  const limit = kind === "yoy" ? 18 : 5;
   const p = new URLSearchParams({
     series_id: seriesId,
     api_key: apiKey,
