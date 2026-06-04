@@ -218,9 +218,21 @@ function computeRegime(d) {
 
   const bull = bullVotes >= 3;
   const bear = bearVotes >= 3;
-  if(bull && !bear) return { label:"RISK·ON", sub:"Disinflation + low vol", tint:DT["regime-on-bg"], color:T.green };
-  if(bear && !bull) return { label:"RISK·OFF", sub:"Rate pressure + stress", tint:DT["regime-off-bg"], color:T.red };
-  return { label:"MIXED", sub:"Cross-signals — watch VIX", tint:DT["regime-mix-bg"], color:T.yellow };
+  // FEAT-v17-07: hyphen separators (was middot) for RISK-ON / RISK-OFF legibility
+  if(bull && !bear) return { label:"RISK-ON", sub:"Disinflation + low vol", tint:DT["regime-on-bg"], color:T.green, bullVotes, bearVotes };
+  if(bear && !bull) return { label:"RISK-OFF", sub:"Rate pressure + stress", tint:DT["regime-off-bg"], color:T.red, bullVotes, bearVotes };
+  return { label:"MIXED", sub:"Cross-signals — watch VIX", tint:DT["regime-mix-bg"], color:T.yellow, bullVotes, bearVotes };
+}
+
+// Shared 5-factor breakdown (used by RegimeBand · FEAT-169)
+function regimeFactors(d) {
+  return [
+    {label:"10Y Direction",  val:d.crossAsset.treasury10y.m1<-0.10?"Falling ↓ (bullish)":"Flat/rising",  bull:d.crossAsset.treasury10y.m1<-0.10},
+    {label:"VIX Level",      val:`${d.marketPulse.vix.current} — ${d.marketPulse.vix.current<18?"Low (bullish)":d.marketPulse.vix.current<25?"Elevated":"Spiking (bearish)"}`, bull:d.marketPulse.vix.current<18},
+    {label:"Fear & Greed",   val:`${d.marketPulse.fearGreed.score} — ${d.marketPulse.fearGreed.label}`,   bull:d.marketPulse.fearGreed.score>55},
+    {label:"CPI Trend",      val:d.macro.cpi.trend.slice(-1)[0]<d.macro.cpi.trend.slice(-2)[0]?"Cooling (bullish)":"Re-accelerating", bull:d.macro.cpi.trend.slice(-1)[0]<d.macro.cpi.trend.slice(-2)[0]},
+    {label:"Put/Call Ratio", val:`${d.marketPulse.putCall.current} — ${d.marketPulse.putCall.current<0.75?"Bullish skew":"Neutral/bearish"}`, bull:d.marketPulse.putCall.current<0.75},
+  ];
 }
 
 // ─── HELPERS ─────────────────────────────────────────────────────────────
@@ -306,38 +318,56 @@ const DirTile=({label,value,d1,w1,m1,band,invert=false,spark,source,sourceEp})=>
   );
 };
 
-// Regime Verdict tile (FEAT-163)
-const RegimeTile=({d})=>{
+// ─── FEAT-169 · REGIME VERDICT BAND (full-width, relocated under macro strip) ──
+// The friend-readable headline ("is it safe to be in the market?") — first signal
+// seen on mobile (above the command grid) and prominent on desktop. Soft regime tint
+// per AS2-01. Reuses computeRegime + regimeFactors.
+const RegimeBand=({d})=>{
   const [open,setOpen]=useState(false);
   const regime=computeRegime(d);
-  const factors=[
-    {label:"10Y Direction",  val:d.crossAsset.treasury10y.m1<-0.10?"Falling ↓ (bullish)":"Flat/rising",  bull:d.crossAsset.treasury10y.m1<-0.10},
-    {label:"VIX Level",      val:`${d.marketPulse.vix.current} — ${d.marketPulse.vix.current<18?"Low (bullish)":d.marketPulse.vix.current<25?"Elevated":"Spiking (bearish)"}`, bull:d.marketPulse.vix.current<18},
-    {label:"Fear & Greed",   val:`${d.marketPulse.fearGreed.score} — ${d.marketPulse.fearGreed.label}`,   bull:d.marketPulse.fearGreed.score>55},
-    {label:"CPI Trend",      val:d.macro.cpi.trend.slice(-1)[0]<d.macro.cpi.trend.slice(-2)[0]?"Cooling (bullish)":"Re-accelerating", bull:d.macro.cpi.trend.slice(-1)[0]<d.macro.cpi.trend.slice(-2)[0]},
-    {label:"Put/Call Ratio", val:`${d.marketPulse.putCall.current} — ${d.marketPulse.putCall.current<0.75?"Bullish skew":"Neutral/bearish"}`, bull:d.marketPulse.putCall.current<0.75},
-  ];
+  const factors=regimeFactors(d);
+  const bulls=factors.filter(f=>f.bull).length;
   return(
-    <div style={{background:regime.tint,border:`1px solid ${regime.color}33`,borderRadius:6,padding:"14px 16px",position:"relative"}}>
-      <Label color={regime.color}>Macro Regime</Label>
-      <div style={{fontFamily:T.fontMono,fontSize:20,fontWeight:700,color:regime.color,letterSpacing:"-0.01em"}}>{regime.label}</div>
-      <div style={{fontFamily:T.fontMono,fontSize:10,color:T.textSecondary,marginTop:3}}>{regime.sub}</div>
-      <button onClick={()=>setOpen(o=>!o)} aria-label="Show regime factors" aria-expanded={open}
-        style={{position:"absolute",top:12,right:12,background:"none",border:`1px solid ${regime.color}44`,borderRadius:3,color:regime.color,cursor:"pointer",padding:"4px 8px",minWidth:44,minHeight:44,fontFamily:T.fontMono,fontSize:11}}>
-        {open?"▲":"ℹ"}
-      </button>
+    <div style={{background:regime.tint,borderBottom:`1px solid ${regime.color}33`,borderTop:`1px solid ${regime.color}22`,padding:"10px 20px",position:"relative"}}>
+      <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",gap:12,flexWrap:"wrap"}}>
+        {/* Left: label + sub */}
+        <div style={{display:"flex",alignItems:"baseline",gap:12,flexWrap:"wrap",minWidth:0}}>
+          <div>
+            <div style={{fontFamily:T.fontMono,fontSize:8,color:regime.color,letterSpacing:"0.14em",textTransform:"uppercase"}}>Macro Regime · is it safe to be in the market?</div>
+            <div style={{display:"flex",alignItems:"baseline",gap:10,flexWrap:"wrap"}}>
+              <span style={{fontFamily:T.fontMono,fontSize:22,fontWeight:700,color:regime.color,letterSpacing:"-0.01em"}}>{regime.label}</span>
+              <span style={{fontFamily:T.fontMono,fontSize:10,color:T.textSecondary}}>{regime.sub}</span>
+              <span style={{fontFamily:T.fontMono,fontSize:9,color:T.textMuted}}>{bulls}/5 bullish · {regime.bullVotes} vote{regime.bullVotes===1?"":"s"} bull / {regime.bearVotes} bear</span>
+            </div>
+          </div>
+        </div>
+        {/* Right: factor chips (desktop) + info toggle */}
+        <div style={{display:"flex",alignItems:"center",gap:8}}>
+          <div style={{display:"flex",gap:5,flexWrap:"wrap",justifyContent:"flex-end"}} className="hide-mobile">
+            {factors.map(f=>(
+              <span key={f.label} style={{fontFamily:T.fontMono,fontSize:8,color:f.bull?T.green:T.red,border:`1px solid ${f.bull?T.green:T.red}44`,borderRadius:3,padding:"1px 5px",letterSpacing:"0.03em",background:"#00000022",whiteSpace:"nowrap"}}>
+                {f.bull?"▲":"▼"} {f.label}
+              </span>
+            ))}
+          </div>
+          <button onClick={()=>setOpen(o=>!o)} aria-label="Show regime factors" aria-expanded={open}
+            style={{background:"none",border:`1px solid ${regime.color}44`,borderRadius:3,color:regime.color,cursor:"pointer",padding:"4px 8px",minWidth:44,minHeight:44,fontFamily:T.fontMono,fontSize:11,flexShrink:0}}>
+            {open?"▲":"ℹ"}
+          </button>
+        </div>
+      </div>
+      {/* Expandable plain-language breakdown */}
       {open&&(
-        <div style={{marginTop:10,borderTop:`1px solid ${T.border}`,paddingTop:8}}>
+        <div style={{marginTop:10,borderTop:`1px solid ${T.border}`,paddingTop:8,display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(220px,1fr))",gap:"4px 18px"}}>
           {factors.map(f=>(
-            <div key={f.label} style={{display:"flex",gap:8,padding:"3px 0",alignItems:"baseline"}}>
+            <div key={f.label} style={{display:"flex",gap:8,alignItems:"baseline"}}>
               <div style={{fontFamily:T.fontMono,fontSize:9,color:T.textMuted,minWidth:100,flexShrink:0}}>{f.label}</div>
               <div style={{fontFamily:T.fontMono,fontSize:9,color:f.bull?T.green:T.red}}>{f.val}</div>
             </div>
           ))}
-          <div style={{fontFamily:T.fontMono,fontSize:8,color:T.textMuted,marginTop:4}}>Rule-based 5-factor vote. v2.0 → LLM-powered.</div>
+          <div style={{fontFamily:T.fontMono,fontSize:8,color:T.textMuted,gridColumn:"1/-1"}}>Rule-based 5-factor vote · Manual · v2.0 → Anthropic API</div>
         </div>
       )}
-      <SourceBox api="Manual" endpoint="5-factor rule engine · v2.0: Anthropic API" mode="MOCK"/>
     </div>
   );
 };
@@ -430,7 +460,11 @@ const DEFAULT_ALERTS=[
 ];
 
 // ─── MAIN DASHBOARD (FEAT-161: Command Center spatial layout) ─────────────
-export default function Dashboard() {
+// publicView prop (from App.jsx ?view=public / VITE_PUBLIC_VIEW) is now consumed.
+// NOTE: this build has NO Zone E (401k / compound sim) — that lived only in the
+// artifact fork. There is currently no private-only section to gate; the guard
+// pattern below is wired and ready for when private content is added.
+export default function Dashboard({ publicView = false } = {}) {
   const [alerts,setAlerts]=useState(DEFAULT_ALERTS);
   const [expandedHW,setExpandedHW]=useState(null);
   const [mag10open,setMag10open]=useState(true);
@@ -486,7 +520,10 @@ export default function Dashboard() {
         ::-webkit-scrollbar-thumb{background:${T.borderAccent};border-radius:2px;}
         @media(max-width:1024px){.command-grid{display:block!important;}.zone-b{margin-top:16px!important;}}
         @media(max-width:640px){
-          .macro-strip-inner>div{min-width:68px!important;}
+          /* FEAT-170: macro strip reflows to 2 rows of 4 — all 8 signals visible, NO horizontal scroll */
+          .macro-strip{overflow-x:visible!important;}
+          .macro-strip-inner{display:grid!important;grid-template-columns:repeat(4,1fr)!important;gap:10px 6px!important;min-width:0!important;}
+          .macro-strip-inner>div{min-width:0!important;}
           .delta-bar-inner{flex-wrap:nowrap!important;overflow-x:auto!important;}
           .mag10-scroll{overflow-x:auto!important;}
           .dir-tiles{flex-wrap:wrap!important;}
@@ -520,7 +557,7 @@ export default function Dashboard() {
         </div>
       </div>
 
-      {/* ── MACRO STRIP (persistent ticker — always visible) ── */}
+      {/* ── MACRO STRIP (persistent ticker — always visible; FEAT-170 reflows on mobile) ── */}
       <div style={{background:T.surfaceHigh,borderBottom:`1px solid ${T.border}`,padding:"6px 20px",overflowX:"auto"}} className="macro-strip">
         <div style={{display:"flex",gap:20,minWidth:"max-content"}} className="macro-strip-inner">
           {[
@@ -542,7 +579,10 @@ export default function Dashboard() {
         </div>
       </div>
 
-      {/* FEAT-162: Session Delta Bar — Alerts Δ first */}
+      {/* FEAT-169: Regime Verdict band — full-width, directly under the macro strip */}
+      <RegimeBand d={d}/>
+
+      {/* FEAT-162: Session Delta Bar — Alerts Δ first (conditional: hidden when nothing actionable) */}
       {showDeltaBar&&(
         <div style={{background:"#0a0c10",borderBottom:`1px solid ${T.border}`,padding:"5px 20px",position:"relative"}}>
           <div style={{display:"flex",gap:20,overflowX:"auto",alignItems:"center"}} className="delta-bar-inner">
@@ -559,7 +599,12 @@ export default function Dashboard() {
         </div>
       )}
 
-      {/* ── COMMAND CENTER GRID (FEAT-161: 60/40, above-fold contract) ── */}
+      {/* ── COMMAND CENTER GRID (FEAT-161: 60/40) ──
+          FEAT-171 · ABOVE-FOLD CONTRACT (v1.7, DECISION-3 = YES):
+            ABOVE FOLD @1280×800 → header + macro strip (all 8) + Regime Verdict band + SPY chart + YTD KPI tiles.
+            BELOW FOLD (one scroll) → cross-asset tiles + full macro grid + headwinds + 5 Whys + Mag 10 + alerts.
+            Maxim: "fit the content, don't squeeze the content." Zero-scroll abandoned as dishonest for a
+            chart/gauge dashboard. Canonical contract owned by SRS §9/§12 (T1). */}
       <div style={{padding:"16px 20px"}}>
         <div className="command-grid" style={{display:"grid",gridTemplateColumns:"60fr 40fr",gap:16,alignItems:"start"}}>
 
@@ -651,8 +696,7 @@ export default function Dashboard() {
           {/* ── ZONE B (right 40%) ── */}
           <div className="zone-b" style={{display:"flex",flexDirection:"column",gap:12}}>
 
-            {/* FEAT-163: Regime Verdict tile — top of Zone B */}
-            <RegimeTile d={d}/>
+            {/* FEAT-169: RegimeTile relocated to full-width RegimeBand under macro strip (was here). */}
 
             {/* Macro Regime grid */}
             <div style={{background:T.surface,border:`1px solid ${T.border}`,borderRadius:6,padding:"14px 16px"}}>
@@ -818,7 +862,7 @@ export default function Dashboard() {
 
         {/* ── FOOTER ── */}
         <div style={{marginTop:12,display:"flex",justifyContent:"space-between",alignItems:"center",flexWrap:"wrap",gap:4}}>
-          <div style={{fontFamily:T.fontMono,fontSize:8,color:T.textMuted}}>PULSE v1.6.0 · Data refreshed twice daily at market open and close</div>
+          <div style={{fontFamily:T.fontMono,fontSize:8,color:T.textMuted}}>PULSE v1.7.0 · Data refreshed twice daily at market open and close</div>
           <div style={{fontFamily:T.fontMono,fontSize:8,color:T.textMuted}}>Not financial advice · Personal use</div>
           <div style={{fontFamily:T.fontMono,fontSize:8,color:T.textMuted}}>FMP · FRED · CNN · CBOE · Anthropic · SpaceX S-1</div>
         </div>
