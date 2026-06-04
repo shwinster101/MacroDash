@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback } from "react";
 import { LineChart, Line, BarChart, Bar, Cell, AreaChart, Area, XAxis, YAxis, Tooltip, ResponsiveContainer, ReferenceLine } from "recharts";
+import { useMarketData } from "./useMarketData.js"; // FEAT-204 wiring
 
 // ─── DESIGN TOKENS v1.6 (FEAT-152 + FEAT-167) ─────────────────────────────
 // design-tokens.json canonical. Inline mirror — keep in sync.
@@ -84,12 +85,13 @@ const SourceBox = ({ api, endpoint, asOf, mode }) => (
 );
 
 // ─── DATA ─────────────────────────────────────────────────────────────────
-const DATA = {
+const MOCK_DATA = {
   lastRefresh:"2026-05-23 16:15 ET", session:"CLOSE",
   nextRefresh:"2026-05-26 09:35 ET",
   marketPulse:{
     spy:{ price:745.83, changePct:0.29, ytd:8.74, pe:22.4, ma100:718.2, ma200:692.4,
           series:[686,688,692,695,700,698,704,708,712,710,715,718,720,722,719,724,728,732,740,746] },
+    spx:{ index:7473, prevClose:7415 }, // FEAT-202: S&P 500 index (FRED SP500) — live merge target
     qqq:{ price:717.66, changePct:0.44, ytd:15.50 },
     mags:{ price:43.21, changePct:2.05, ytd:8.4 },
     vix:{ current:18.4, weekChg:-13.2, series:[24,22,21,20,22,21,19,18] },
@@ -470,6 +472,8 @@ export default function Dashboard({ publicView = false } = {}) {
   const [mag10open,setMag10open]=useState(true);
   const [copied,setCopied]=useState(false);
   const { toast, show:showToast, dismiss } = useUndoToast();
+  // FEAT-204 wiring — single-point hook swap; mock stays default, operator flips live post-deploy
+  const { data: DATA, mode, asOf } = useMarketData(MOCK_DATA, { publicView });
   const d=DATA;
   const regime=computeRegime(d);
   const activeAlerts=alerts.filter(a=>a.active&&a.triggered).length;
@@ -547,7 +551,7 @@ export default function Dashboard({ publicView = false } = {}) {
           </div>
         </div>
         <div style={{display:"flex",alignItems:"center",gap:8}}>
-          <DataModeBadge mode="MOCK"/>
+          <DataModeBadge mode={mode}/>
           {activeAlerts>0&&<Badge label={`⚡ ${activeAlerts} FIRED`} color={T.red}/>}
           {/* FEAT-165: share button */}
           <button onClick={handleShare} aria-label="Copy dashboard link"
@@ -862,7 +866,7 @@ export default function Dashboard({ publicView = false } = {}) {
 
         {/* ── FOOTER ── */}
         <div style={{marginTop:12,display:"flex",justifyContent:"space-between",alignItems:"center",flexWrap:"wrap",gap:4}}>
-          <div style={{fontFamily:T.fontMono,fontSize:8,color:T.textMuted}}>PULSE v1.7.0 · Data refreshed twice daily at market open and close</div>
+          <div style={{fontFamily:T.fontMono,fontSize:8,color:T.textMuted}}>PULSE v2.0.0-rc1 · Data refreshed twice daily at market open and close</div>
           <div style={{fontFamily:T.fontMono,fontSize:8,color:T.textMuted}}>Not financial advice · Personal use</div>
           <div style={{fontFamily:T.fontMono,fontSize:8,color:T.textMuted}}>FMP · FRED · CNN · CBOE · Anthropic · SpaceX S-1</div>
         </div>

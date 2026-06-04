@@ -10,16 +10,16 @@
 // the audit's documented shape; verify before flipping live.
 
 export const SOURCES = {
-  tenYear:      { path: "treasury10y.current", series: "DGS10",        displayClass: "public",   source: "FRED DGS10" },
-  fedFunds:     { path: "fedFunds.rate",        series: "FEDFUNDS",     displayClass: "public",   source: "FRED FEDFUNDS" },
-  cpiHeadline:  { path: "cpi.headline",         series: "CPIAUCSL",     displayClass: "citation", source: "FRED CPIAUCSL" },
-  cpiCore:      { path: "cpi.core",             series: "CPILFESL",     displayClass: "citation", source: "FRED CPILFESL" },
-  unemployment: { path: "unemployment.rate",    series: "UNRATE",       displayClass: "public",   source: "FRED UNRATE" },
-  lfpr:         { path: "unemployment.lfpr",    series: "CIVPART",      displayClass: "public",   source: "FRED CIVPART" },
-  mortgage30:   { path: "mortgage.national",    series: "MORTGAGE30US", displayClass: "public",   source: "FRED MORTGAGE30US" },
-  vix:          { path: "vix.current",          series: "VIXCLS",       displayClass: "citation", source: "FRED VIXCLS" },
-  wti:          { path: "wti.price",            series: "DCOILWTICO",   displayClass: "public",   source: "FRED DCOILWTICO" },
-  sp500:        { path: "spx.index",            series: "SP500",        displayClass: "licensed", source: "FRED SP500" },
+  tenYear:      { path: "crossAsset.treasury10y.current", series: "DGS10",        displayClass: "public",   source: "FRED DGS10" },
+  fedFunds:     { path: "macro.fedFunds.rate",            series: "FEDFUNDS",     displayClass: "public",   source: "FRED FEDFUNDS" },
+  cpiHeadline:  { path: "macro.cpi.headline",             series: "CPIAUCSL",     displayClass: "citation", source: "FRED CPIAUCSL" },
+  cpiCore:      { path: "macro.cpi.core",                 series: "CPILFESL",     displayClass: "citation", source: "FRED CPILFESL" },
+  unemployment: { path: "macro.unemployment.national",   series: "UNRATE",       displayClass: "public",   source: "FRED UNRATE" },
+  lfpr:         { path: "macro.unemployment.lfpr",        series: "CIVPART",      displayClass: "public",   source: "FRED CIVPART" },
+  mortgage30:   { path: "macro.mortgage.national",        series: "MORTGAGE30US", displayClass: "public",   source: "FRED MORTGAGE30US" },
+  vix:          { path: "marketPulse.vix.current",        series: "VIXCLS",       displayClass: "citation", source: "FRED VIXCLS" },
+  wti:          { path: "crossAsset.wti.current",         series: "DCOILWTICO",   displayClass: "public",   source: "FRED DCOILWTICO" },
+  sp500:        { path: "marketPulse.spx.index",          series: "SP500",        displayClass: "licensed", source: "FRED SP500" },
 };
 
 // Display classes that must NOT render on the public friend view.

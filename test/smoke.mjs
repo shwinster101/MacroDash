@@ -171,27 +171,27 @@ ok("cold cache returns valid empty shape", coldRes.status === 200 && coldBody.er
 // ---- 6. merge into mock DATA -------------------------------------------
 console.log("\n[6] mergeLiveOverMock");
 const MOCK_DATA = {
-  treasury10y: { current: 0 },
-  fedFunds: { rate: 0 },
-  cpi: { headline: 0, core: 0 },
-  unemployment: { rate: 0, lfpr: 0 },
-  mortgage: { national: 0 },
-  vix: { current: 0 },
-  wti: { price: 0 },
-  spx: { index: 0 },
+  marketPulse: { vix: { current: 0 }, spx: { index: 0 } },
+  crossAsset:  { treasury10y: { current: 0 }, wti: { current: 0 } },
+  macro: {
+    fedFunds: { rate: 0 },
+    cpi: { headline: 0, core: 0 },
+    unemployment: { national: 0, lfpr: 0 },
+    mortgage: { national: 0 },
+  },
 };
 const mergedPriv = mergeLiveOverMock(MOCK_DATA, payload, /*publicView=*/ false);
-ok("private merge overlays tenYear at path", mergedPriv.data.treasury10y.current === 4.32);
-ok("private merge overlays sp500 (licensed) on private view", mergedPriv.data.spx.index === 7473.0);
+ok("private merge overlays tenYear at path", mergedPriv.data.crossAsset.treasury10y.current === 4.32);
+ok("private merge overlays sp500 (licensed) on private view", mergedPriv.data.marketPulse.spx.index === 7473.0);
 ok("badge LIVE when fresh values present", mergedPriv.badge === "LIVE");
-ok("merge does not mutate original mock", MOCK_DATA.treasury10y.current === 0);
+ok("merge does not mutate original mock", MOCK_DATA.crossAsset.treasury10y.current === 0);
 
 const mergedPub = mergeLiveOverMock(MOCK_DATA, payload, /*publicView=*/ true);
-ok("PUBLIC view hides licensed sp500 (stays mock 0)", mergedPub.data.spx.index === 0);
-ok("PUBLIC view still shows public tenYear", mergedPub.data.treasury10y.current === 4.32);
+ok("PUBLIC view hides licensed sp500 (stays mock 0)", mergedPub.data.marketPulse.spx.index === 0);
+ok("PUBLIC view still shows public tenYear", mergedPub.data.crossAsset.treasury10y.current === 4.32);
 
 const mergedEmpty = mergeLiveOverMock(MOCK_DATA, { metrics: {} }, false);
-ok("empty payload => MOCK badge, untouched data", mergedEmpty.badge === "MOCK" && mergedEmpty.data.treasury10y.current === 0);
+ok("empty payload => MOCK badge, untouched data", mergedEmpty.badge === "MOCK" && mergedEmpty.data.crossAsset.treasury10y.current === 0);
 
 // ---- 7. coverage check --------------------------------------------------
 console.log("\n[7] coverage — SERIES vs SOURCES alignment");
