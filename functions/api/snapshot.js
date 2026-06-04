@@ -21,7 +21,7 @@ export async function onRequest(context) {
   // prior close settled overnight), every load the rest of the day is instant.
   // No cron needed — your morning visit is the refresh trigger.
   const etDate = new Date().toLocaleDateString("en-CA", { timeZone: "America/New_York" }); // YYYY-MM-DD
-  const cacheKey = `pulse:snapshot:v3:${etDate}`;
+  const cacheKey = `pulse:snapshot:v4:${etDate}`;
 
   // ── 1. KV Cache check ─────────────────────────────────────────────────
   try {
@@ -187,35 +187,64 @@ async function fetchSpy(key) {
 }
 
 // ─── CNN Fear & Greed scraper ─────────────────────────────────────────────
+// FIX (2026-06-04): 418 was bot-detection from a too-thin request. CNN's edge
+// rejects requests missing a full browser UA + Accept + Origin/Referer triad.
+// Working pattern (confirmed against TrendSpider + Part-Time Larry, current):
+//   - full desktop Chrome User-Agent (not bare "Mozilla/5.0")
+//   - Accept: application/json
+//   - Origin + Referer = edition.cnn.com
+//   - date-suffixed path /graphdata/YYYY-MM-DD (the bare path 418s more often)
 async function fetchFearGreed() {
-  const url = "https://production.dataviz.cnn.io/index/fearandgreed/graphdata";
+  const day = new Date().toLocaleDateString("en-CA", { timeZone: "America/New_York" }); // YYYY-MM-DD
+  const url = `https://production.dataviz.cnn.io/index/fearandgreed/graphdata/${day}`;
   const r = await fetch(url, {
-    headers: { "User-Agent": "Mozilla/5.0", "Referer": "https://edition.cnn.com/" },
-    signal: AbortSignal.timeout(5000),
+    headers: {
+      "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
+      "Accept": "application/json, text/plain, */*",
+      "Accept-Language": "en-US,en;q=0.9",
+      "Origin": "https://edition.cnn.com",
+      "Referer": "https://edition.cnn.com/markets/fear-and-greed",
+    },
+    signal: AbortSignal.timeout(6000),
   });
   if (!r.ok) throw new Error(`F&G ${r.status}`);
   const d = await r.json();
-  const score = Math.round(d?.fear_and_greed?.score ?? d?.score ?? 50);
-  const label = fgLabel(score);
-  return { fearGreed: score, fearGreedLabel: label };
+  // Current value lives in fear_and_greed.score; historical points in
+  // fear_and_greed_historical.data[].y — prefer the live score, fall back to
+  // the newest historical point.
+  const hist = d?.fear_and_greed_historical?.data;
+  const histLatest = Array.isArray(hist) && hist.length ? hist[hist.length - 1]?.y : undefined;
+  const raw = d?.fear_and_greed?.score ?? d?.score ?? histLatest;
+  if (raw == null || isNaN(Number(raw))) throw new Error("F&G parse failed");
+  const score = Math.round(Number(raw));
+  return { fearGreed: score, fearGreedLabel: fgLabel(score) };
 }
 
 // ─── CBOE Put/Call scraper ────────────────────────────────────────────────
+// FIX (2026-06-04): old volatility-get-data JSON endpoint 404s — CBOE rotated
+// it. The stable source is the static daily CSV on cdn.cboe.com, which CBOE
+// has published at the same path for years and does not rate-limit edge IPs.
+// Format: header rows, then DATE,CALL,PUT,TOTAL,P/C Ratio — newest row last.
 async function fetchPutCall() {
-  // CBOE publishes daily equity put/call ratio at:
-  const url = "https://www.cboe.com/data/volatility/volatility-get-data/?dt=d&sid=0";
+  const url = "https://cdn.cboe.com/resources/options/volume_and_call_put_ratios/equitypc.csv";
   const r = await fetch(url, {
-    headers: { "User-Agent": "Mozilla/5.0" },
-    signal: AbortSignal.timeout(5000),
+    headers: { "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36" },
+    signal: AbortSignal.timeout(6000),
   });
   if (!r.ok) throw new Error(`CBOE P/C ${r.status}`);
-  const d = await r.json();
-  // CBOE API shape may vary — parse defensively
-  const ratio = parseFloat(
-    d?.data?.[0]?.["PC Equity"] ?? d?.data?.[0]?.ratio ?? d?.ratio ?? NaN
-  );
-  if (isNaN(ratio)) throw new Error("P/C parse failed");
-  return { putCall: ratio };
+  const text = await r.text();
+  // Parse: take the last non-empty line with a numeric P/C ratio in column 5.
+  const lines = text.trim().split(/\r?\n/);
+  for (let i = lines.length - 1; i >= 0; i--) {
+    const cols = lines[i].split(",");
+    if (cols.length < 5) continue;
+    const ratio = parseFloat(cols[4]);
+    // Validate: a real equity P/C ratio sits roughly in 0.3–2.0.
+    if (!isNaN(ratio) && ratio > 0.1 && ratio < 5) {
+      return { putCall: ratio };
+    }
+  }
+  throw new Error("P/C parse failed");
 }
 
 // ─── Helpers ──────────────────────────────────────────────────────────────
