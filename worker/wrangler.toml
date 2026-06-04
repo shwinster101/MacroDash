@@ -1,0 +1,31 @@
+name = "macrodash-cron"
+main = "cron.js"
+compatibility_date = "2026-03-01"
+
+# Shared KV namespace. SAME namespace the Pages project binds for reads.
+# Replace id with the real namespace id from:  npx wrangler kv namespace list
+[[kv_namespaces]]
+binding = "PULSE_CACHE"
+id = "REPLACE_WITH_PULSE_CACHE_NAMESPACE_ID"
+
+# ---------------------------------------------------------------------------
+# Cron Triggers run on UTC. Values below are anchored to PACIFIC DAYLIGHT
+# TIME (PDT, UTC-7), correct from ~Mar to ~Nov.
+#   5:30 AM PDT = 12:30 UTC  -> "30 12 * * 1-5"
+#   2:00 PM PDT = 21:00 UTC  -> "0 21 * * 1-5"
+# WHEN PACIFIC SWITCHES TO STANDARD TIME (PST, UTC-8, ~Nov to ~Mar), shift
+# both by +1h to keep 5:30 AM / 2:00 PM local:
+#   "30 13 * * 1-5"  and  "0 22 * * 1-5"
+# Cloudflare cron has no timezone support, so this is a twice-a-year manual
+# edit. The 26h KV TTL means a one-hour drift across the DST boundary never
+# blanks the dashboard. Weekdays only (1-5): FRED macro doesn't move weekends.
+# ---------------------------------------------------------------------------
+[triggers]
+crons = [
+  "30 12 * * 1-5",
+  "0 21 * * 1-5"
+]
+
+# Secrets (NEVER in this file — set via CLI):
+#   npx wrangler secret put FRED_KEY        # required
+#   npx wrangler secret put REFRESH_SECRET  # optional, for manual /refresh warm
