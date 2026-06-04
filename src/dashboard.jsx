@@ -547,7 +547,7 @@ export default function Dashboard({ publicView = false } = {}) {
           <div style={{fontFamily:T.fontSans,fontSize:11,color:T.textMuted}} className="hide-mobile">Macro intelligence for investors</div>
           <div style={{display:"flex",alignItems:"center",gap:5}}>
             <div style={{width:6,height:6,borderRadius:"50%",background:T.amber,boxShadow:`0 0 5px ${T.amber}`}} className="pulse-anim"/>
-            <span style={{fontFamily:T.fontMono,fontSize:9,color:T.textSecondary}}>{d.session} · {d.lastRefresh}</span>
+            <span style={{fontFamily:T.fontMono,fontSize:9,color:T.textSecondary}}>{d.session} · {asOf || d.lastRefresh}</span>
           </div>
         </div>
         <div style={{display:"flex",alignItems:"center",gap:8}}>
