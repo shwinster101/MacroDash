@@ -1,5 +1,5 @@
 // MacroDash v2.0 — Cron Worker (Cloudflare Workers, scheduled handler)
-// Pulls FRED macro series twice daily and writes ONE combined KV key.
+// Pulls FRED macro twice daily (legacy KV key) + warms /api/snapshot at 10am ET.
 // The browser never sees this Worker; it only reads the KV key via the
 // Pages Function (functions/api/fred.js). FRED_KEY is a Worker secret.
 //
@@ -10,6 +10,13 @@
 const FRED_BASE = "https://api.stlouisfed.org/fred/series/observations";
 const KV_KEY = "pulse:macro:latest";
 const FETCH_TIMEOUT_MS = 8000;
+
+// v2.5.2 — 10am ET weekday snapshot warmer. The dashboard reads /api/snapshot
+// (per-ET-day cache; first load each morning fetches fresh). This cron triggers that
+// fetch at 10am ET so the day's first real visitor gets an instant CACHED response even
+// if nobody opened the dashboard earlier. Warm-if-cold; a no-op if already warm.
+const SNAPSHOT_WARM_CRON = "0 14 * * 1-5"; // 10am America/New_York (EDT); EST -> "0 15 * * 1-5"
+const SNAPSHOT_URL = "https://macrodash.pages.dev/api/snapshot";
 
 // Metric map. `kind`: 'latest' = newest non-missing observation;
 // 'yoy' = year-over-year % computed from a monthly index series.
@@ -156,9 +163,25 @@ function authorized(request, env) {
   return env.REFRESH_SECRET && got && got === env.REFRESH_SECRET;
 }
 
+// Warm the /api/snapshot per-day cache by triggering the Pages Function, which fetches
+// fresh FRED on a cold key and write-throughs to the shared PULSE_CACHE KV.
+async function warmSnapshot() {
+  try {
+    await fetch(SNAPSHOT_URL, { headers: { "user-agent": "macrodash-snapshot-warmer" } });
+  } catch {
+    /* non-fatal: the next visitor warms it on first load */
+  }
+}
+
 export default {
   // Cron Triggers invoke scheduled(). UTC. controller.cron tells which fired.
   async scheduled(controller, env, ctx) {
+    // 10am ET weekday: warm the /api/snapshot per-day cache (see SNAPSHOT_WARM_CRON note).
+    if (controller.cron === SNAPSHOT_WARM_CRON) {
+      ctx.waitUntil(warmSnapshot());
+      return;
+    }
+    // Legacy stage-1 path: FRED macro -> KV pulse:macro:latest (dashboard now reads /api/snapshot).
     ctx.waitUntil(
       (async () => {
         const payload = await buildMacroPayload(env, { cron: controller.cron });

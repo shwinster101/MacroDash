@@ -22,8 +22,9 @@ id = "78ad3346a8fe4757a906283c4bc81a5e"
 # ---------------------------------------------------------------------------
 [triggers]
 crons = [
-  "30 12 * * 1-5",
-  "0 21 * * 1-5"
+  "30 12 * * 1-5",   # 5:30 AM PDT — legacy FRED macro pull (pulse:macro:latest)
+  "0 21 * * 1-5",    # 2:00 PM PDT — legacy FRED macro pull
+  "0 14 * * 1-5"     # 10:00 AM ET (EDT) — warm /api/snapshot cache; EST -> "0 15 * * 1-5"
 ]
 
 # Secrets (NEVER in this file — set via CLI):
