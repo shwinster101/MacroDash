@@ -21,7 +21,7 @@ export async function onRequest(context) {
   // prior close settled overnight), every load the rest of the day is instant.
   // No cron needed — your morning visit is the refresh trigger.
   const etDate = new Date().toLocaleDateString("en-CA", { timeZone: "America/New_York" }); // YYYY-MM-DD
-  const cacheKey = `pulse:snapshot:v4:${etDate}`;
+  const cacheKey = `pulse:snapshot:v5:${etDate}`; // v5: abandon poisoned v4 day-key
 
   // ── 1. KV Cache check ─────────────────────────────────────────────────
   try {
@@ -34,9 +34,14 @@ export async function onRequest(context) {
     // KV unavailable — skip cache, fetch fresh
   }
 
-  // ── 2. Fetch all sources in parallel ──────────────────────────────────
-  const [fred, spy, fearGreed, putCall] = await Promise.allSettled([
-    fetchFred(env.FRED_KEY),
+  // ── 2. Fetch sources in PHASES (stay under Cloudflare's ~6-connection cap) ──
+  // 13 simultaneous fetches saturate the cap; queued calls burn their
+  // AbortSignal.timeout budget while waiting, and the heavy SP500 (limit=220)
+  // holds a slot — starving the FRED burst (=> fred:ok:4, spy:TimeoutError).
+  // Phase 1: FRED macro alone (batched to <=5 inside fetchFred), no competition.
+  const [fred] = await Promise.allSettled([fetchFred(env.FRED_KEY)]);
+  // Phase 2: heavy SPY (220-pt) + two light scrapers = 3 connections, under cap.
+  const [spy, fearGreed, putCall] = await Promise.allSettled([
     fetchSpy(env.FRED_KEY),   // SPY via FRED SP500 — Stooq blocks Cloudflare edge IPs
     fetchFearGreed(),
     fetchPutCall(),
@@ -67,17 +72,35 @@ export async function onRequest(context) {
   };
   snapshot._diag = diag;
 
-  // ── 4. Write-through cache ─────────────────────────────────────────────
-  try {
-    await env.PULSE_CACHE?.put(cacheKey, JSON.stringify(snapshot), {
-      expirationTtl: CACHE_TTL,
-    });
-  } catch {
-    // Cache write failed — return uncached, non-fatal
+  // ── 4. Write-through cache (ONLY if healthy — never lock in a degraded pull) ──
+  const fredCount = fred.status === "fulfilled" ? Object.keys(fred.value).length : 0;
+  const healthy = spy.status === "fulfilled" && fredCount >= 6;
+  snapshot._diag.healthy = healthy;
+  if (healthy) {
+    try {
+      await env.PULSE_CACHE?.put(cacheKey, JSON.stringify(snapshot), {
+        expirationTtl: CACHE_TTL,
+      });
+    } catch {
+      // Cache write failed — return uncached, non-fatal
+    }
   }
 
   // ── 5. Return (strip FMP/licensed fields if public view) ─────────────
   return json(isPublic ? { ...stripPrivate(snapshot), cached: false } : snapshot);
+}
+
+// ─── resilient fetch: 1 retry + generous timeout (mirrors the cron worker) ──
+async function fetchRetry(url, opts = {}, attempts = 2, timeoutMs = 9000) {
+  let lastErr;
+  for (let i = 0; i < attempts; i++) {
+    try {
+      const r = await fetch(url, { ...opts, signal: AbortSignal.timeout(timeoutMs) });
+      if (!r.ok) throw new Error(`HTTP ${r.status}`);
+      return r;
+    } catch (e) { lastErr = e; }
+  }
+  throw lastErr;
 }
 
 // ─── FRED fetcher ─────────────────────────────────────────────────────────
@@ -97,22 +120,28 @@ async function fetchFred(key) {
     btc:          "CBBTCUSD",
   };
 
-  // Fetch all FRED series in parallel
-  const results = await Promise.allSettled(
-    Object.entries(series).map(async ([field, id]) => {
-      const url = `https://api.stlouisfed.org/fred/series/observations`
-        + `?series_id=${id}&api_key=${key}&limit=10&sort_order=desc&file_type=json`;
-      const r = await fetch(url, { signal: AbortSignal.timeout(5000) });
-      if (!r.ok) throw new Error(`FRED ${id} ${r.status}`);
-      const d = await r.json();
-      const obs = d.observations?.filter(o => o.value !== ".") ?? [];
-      const latest = parseFloat(obs[0]?.value);
-      const prev   = parseFloat(obs[1]?.value);
-      // Return series of last 10 for sparkline (newest last)
-      const spark  = obs.slice(0, 10).reverse().map(o => parseFloat(o.value)).filter(v => !isNaN(v));
-      return [field, latest, prev, spark];
-    })
-  );
+  // Fetch FRED series in batches of 5 — even alone, 10 parallel exceeds the
+  // ~6-connection cap, so a queued call's timeout fires before it gets a socket.
+  // Two sequential batches of 5 complete reliably (~0.5s each for small payloads).
+  const entries = Object.entries(series);
+  const results = [];
+  for (let i = 0; i < entries.length; i += 5) {
+    const settled = await Promise.allSettled(
+      entries.slice(i, i + 5).map(async ([field, id]) => {
+        const url = `https://api.stlouisfed.org/fred/series/observations`
+          + `?series_id=${id}&api_key=${key}&limit=10&sort_order=desc&file_type=json`;
+        const r = await fetchRetry(url, {}, 2, 9000);
+        const d = await r.json();
+        const obs = d.observations?.filter(o => o.value !== ".") ?? [];
+        const latest = parseFloat(obs[0]?.value);
+        const prev   = parseFloat(obs[1]?.value);
+        // Series of last 10 for sparkline (newest last)
+        const spark  = obs.slice(0, 10).reverse().map(o => parseFloat(o.value)).filter(v => !isNaN(v));
+        return [field, latest, prev, spark];
+      })
+    );
+    results.push(...settled);
+  }
 
   const out = {};
   for (const r of results) {
@@ -151,8 +180,7 @@ async function fetchSpy(key) {
   if (!key) throw new Error("FRED_KEY not set");
   const url = `https://api.stlouisfed.org/fred/series/observations`
     + `?series_id=SP500&api_key=${key}&limit=220&sort_order=desc&file_type=json`;
-  const r = await fetch(url, { signal: AbortSignal.timeout(5000) });
-  if (!r.ok) throw new Error(`FRED SP500 ${r.status}`);
+  const r = await fetchRetry(url, {}, 2, 9000);
   const d = await r.json();
 
   // FRED returns "." for non-trading days — filter them. Newest first (desc).
@@ -205,7 +233,7 @@ async function fetchFearGreed() {
       "Origin": "https://edition.cnn.com",
       "Referer": "https://edition.cnn.com/markets/fear-and-greed",
     },
-    signal: AbortSignal.timeout(6000),
+    signal: AbortSignal.timeout(9000),
   });
   if (!r.ok) throw new Error(`F&G ${r.status}`);
   const d = await r.json();
@@ -229,7 +257,7 @@ async function fetchPutCall() {
   const url = "https://cdn.cboe.com/resources/options/volume_and_call_put_ratios/equitypc.csv";
   const r = await fetch(url, {
     headers: { "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36" },
-    signal: AbortSignal.timeout(6000),
+    signal: AbortSignal.timeout(9000),
   });
   if (!r.ok) throw new Error(`CBOE P/C ${r.status}`);
   const text = await r.text();
