@@ -209,6 +209,8 @@ async function fetchSpy(key) {
     spyChangePct: parseFloat((((latest - prev) / prev) * 100).toFixed(2)),
     spyYtd:       parseFloat((((latest - ytdBase) / ytdBase) * 100).toFixed(2)),
     spySeries:    series,
+    spxIndex:     Math.round(latest),   // FEAT-202: raw S&P 500 index, now live (same SP500 pull — $0, zero extra fetch)
+    spxPrevClose: Math.round(prev),
     ...(ma100 !== null ? { spyMa100: ma100 } : {}),
     ...(ma200 !== null ? { spyMa200: ma200 } : {}),
   };

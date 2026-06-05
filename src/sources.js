@@ -19,6 +19,8 @@ export const SOURCES = {
   spyMa100:       { path: "marketPulse.spy.ma100",          kind: "num",    displayClass: "public" },
   spyMa200:       { path: "marketPulse.spy.ma200",          kind: "num",    displayClass: "public" },
   spySeries:      { path: "marketPulse.spy.series",         kind: "series", displayClass: "public" },
+  spxIndex:       { path: "marketPulse.spx.index",          kind: "num",    displayClass: "public" },
+  spxPrevClose:   { path: "marketPulse.spx.prevClose",      kind: "num",    displayClass: "public" },
   // RATES / MACRO (fetchFred)
   tenYear:        { path: "crossAsset.treasury10y.current", kind: "num",    displayClass: "public" },
   tenYearD1:      { path: "crossAsset.treasury10y.d1",      kind: "num",    displayClass: "public" },

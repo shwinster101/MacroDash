@@ -25,6 +25,7 @@ const snapPayload = {
     lastRefresh: "06/04/2026 14:00 ET", session: "OPEN",
     spyPrice: 741.2, spyChangePct: 0.41, spyYtd: 7.9, spyMa100: 718.0, spyMa200: 690.5,
     spySeries: [730, 735, 738, 741],
+    spxIndex: 7500, spxPrevClose: 7450,
     tenYear: 4.46, tenYearD1: 0.03, tenYearSeries: [4.4, 4.43, 4.46],
     fedFunds: 3.63, unemployment: 4.3, lfpr: 61.8, mortgage30: 6.48,
     wti: 71.2, wtiD1: -0.8, vix: 16.06, vixWeekChg: -2.1, vixSeries: [18, 17, 16.06],
@@ -37,6 +38,8 @@ const mPriv = mergeLiveOverMock(MOCK_DATA, snapPayload, false);
 ok("SPY price overlaid (num)", mPriv.data.marketPulse.spy.price === 741.2);
 ok("SPY series overlaid (array)", Array.isArray(mPriv.data.marketPulse.spy.series) && mPriv.data.marketPulse.spy.series.length === 4);
 ok("SPY ma100/ma200 overlaid", mPriv.data.marketPulse.spy.ma100 === 718.0 && mPriv.data.marketPulse.spy.ma200 === 690.5);
+ok("SPX index overlaid (live, $0 extra)", mPriv.data.marketPulse.spx.index === 7500 && mPriv.data.marketPulse.spx.prevClose === 7450);
+ok("provenance spxIndex LIVE", mPriv.provenance.spxIndex === "LIVE");
 ok("10Y overlaid + d1 + series", mPriv.data.crossAsset.treasury10y.current === 4.46 && mPriv.data.crossAsset.treasury10y.d1 === 0.03 && mPriv.data.crossAsset.treasury10y.series.length === 3);
 ok("Fed funds overlaid", mPriv.data.macro.fedFunds.rate === 3.63);
 ok("unemployment + lfpr overlaid", mPriv.data.macro.unemployment.national === 4.3 && mPriv.data.macro.unemployment.lfpr === 61.8);

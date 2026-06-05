@@ -841,6 +841,8 @@ export default function Dashboard({ publicView = false } = {}) {
                 <div style={{textAlign:"right"}}>
                   <div style={{fontFamily:T.fontMono,fontSize:22,color:T.textPrimary,fontWeight:700}}>${d.marketPulse.spy.price}</div>
                   <div style={{fontFamily:T.fontMono,fontSize:11,color:pctColor(d.marketPulse.spy.changePct)}}>{fmt.pct(d.marketPulse.spy.changePct)} today</div>
+                  {/* FEAT-202: live S&P 500 index (FRED SP500) */}
+                  <div style={{fontFamily:T.fontMono,fontSize:9,color:T.textMuted}}>S&amp;P 500 index {d.marketPulse.spx.index.toLocaleString()}</div>
                 </div>
               </div>
               <div style={{height:140}}>
