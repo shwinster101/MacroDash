@@ -1,4 +1,4 @@
-// functions/api/snapshot.js — PULSE v2.0 live data assembler
+// functions/api/snapshot.js — MacroDash v2.0 live data assembler
 // Called by useMarketData() in LIVE mode: GET /api/snapshot[?view=public]
 //
 // ARCHITECTURE:

@@ -542,7 +542,7 @@ export default function Dashboard({ publicView = false } = {}) {
       {/* ── HEADER (FEAT-161, FEAT-165) ── */}
       <div style={{background:T.surface,borderBottom:`1px solid ${T.border}`,padding:"8px 20px",display:"flex",justifyContent:"space-between",alignItems:"center",gap:8,flexWrap:"wrap",position:"sticky",top:0,zIndex:50}}>
         <div style={{display:"flex",alignItems:"center",gap:14}}>
-          <div style={{fontFamily:T.fontDisplay,fontSize:20,fontWeight:800,color:T.amber,letterSpacing:"-0.02em"}}>PULSE</div>
+          <div style={{fontFamily:T.fontDisplay,fontSize:20,fontWeight:800,color:T.amber,letterSpacing:"-0.02em"}}>MacroDash</div>
           {/* FEAT-165: friendly sub-headline */}
           <div style={{fontFamily:T.fontSans,fontSize:11,color:T.textMuted}} className="hide-mobile">Macro intelligence for investors</div>
           <div style={{display:"flex",alignItems:"center",gap:5}}>
@@ -866,7 +866,7 @@ export default function Dashboard({ publicView = false } = {}) {
 
         {/* ── FOOTER ── */}
         <div style={{marginTop:12,display:"flex",justifyContent:"space-between",alignItems:"center",flexWrap:"wrap",gap:4}}>
-          <div style={{fontFamily:T.fontMono,fontSize:8,color:T.textMuted}}>PULSE v2.0.2 · Data refreshed twice daily at market open and close</div>
+          <div style={{fontFamily:T.fontMono,fontSize:8,color:T.textMuted}}>MacroDash v2.0.2 · Data refreshed twice daily at market open and close</div>
           <div style={{fontFamily:T.fontMono,fontSize:8,color:T.textMuted}}>Not financial advice · Personal use</div>
           <div style={{fontFamily:T.fontMono,fontSize:8,color:T.textMuted}}>FMP · FRED · CNN · CBOE · Anthropic · SpaceX S-1</div>
         </div>

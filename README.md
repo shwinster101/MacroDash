@@ -1,4 +1,4 @@
-# PULSE Dashboard — v1.6.1 deploy scaffold
+# MacroDash — v1.6.1 deploy scaffold
 
 Wraps the existing `dashboard.jsx` (v1.6.0) into a Vite + React app that
 Cloudflare Pages can build and serve. Produces one responsive URL that works
