@@ -6,6 +6,7 @@
 
 import { readFileSync } from "node:fs";
 import { mergeLiveOverMock, SOURCES } from "../src/sources.js";
+import { computeFiveWhys } from "../src/fiveWhys.js";
 
 let pass = 0, fail = 0;
 const ok = (name, cond) => { if (cond) { pass++; console.log("  PASS  " + name); } else { fail++; console.log("  FAIL  " + name); } };
@@ -65,6 +66,14 @@ ok("invalid num rejected (keeps mock)", mInvalid.data.marketPulse.spy.price === 
 ok("invalid series rejected (keeps mock)", mInvalid.data.marketPulse.spy.series[0] === 686);
 ok("invalid string rejected (keeps mock label)", typeof mInvalid.data.marketPulse.fearGreed.label === "string" && mInvalid.data.marketPulse.fearGreed.label !== 5);
 
+// ---- 1b. provenance map (per-tile LIVE/CACHED/MOCK) ---------------------
+console.log("\n[1b] mergeLiveOverMock provenance map");
+ok("provenance spyPrice LIVE (cached:false)", mPriv.provenance.spyPrice === "LIVE");
+ok("provenance fearGreed LIVE", mPriv.provenance.fearGreed === "LIVE");
+ok("provenance CACHED when cached:true", mCached.provenance.spyPrice === "CACHED");
+ok("provenance invalid value => MOCK", mInvalid.provenance.spyPrice === "MOCK");
+ok("provenance empty live => all MOCK", Object.values(mEmpty.provenance).every((v) => v === "MOCK"));
+
 // ---- 2. FEAT-204 path-resolution gate -----------------------------------
 console.log("\n[2] FEAT-204 — every SOURCES path resolves in real MOCK_DATA");
 const resolvePath = (o, p) => p.split(".").reduce((a, k) => (a == null ? undefined : a[k]), o);
@@ -73,6 +82,19 @@ ok("all SOURCES paths resolve in dashboard MOCK_DATA", unresolved.length === 0);
 if (unresolved.length) console.log("   unresolved:", unresolved.join(", "));
 ok("CPI fields not mapped (deferred — raw index)", !("cpiHeadline" in SOURCES) && !("cpiCore" in SOURCES) && !("cpiTrend" in SOURCES));
 ok("every SOURCES entry has path + valid kind", Object.values(SOURCES).every((s) => typeof s.path === "string" && ["num", "series", "str"].includes(s.kind)));
+
+// ---- 3. computeFiveWhys — rule-based 5 Whys ----------------------------
+console.log("\n[3] computeFiveWhys (rule-based 5 Whys)");
+const fwRegime = { label: "RISK-ON", sub: "Disinflation + low vol", bullVotes: 4, bearVotes: 1 };
+const fw = computeFiveWhys(MOCK_DATA, fwRegime);
+ok("returns exactly 5 whys", Array.isArray(fw.whys) && fw.whys.length === 5);
+ok("every why is a non-empty string", fw.whys.every((w) => typeof w === "string" && w.length > 0));
+ok("headline carries the regime label", typeof fw.headline === "string" && fw.headline.includes("RISK-ON"));
+ok("regime descriptor non-empty", typeof fw.regime === "string" && fw.regime.length > 0);
+ok("session prefix flips PRE vs CLOSE",
+  computeFiveWhys({ ...MOCK_DATA, session: "PRE" }, fwRegime).headline.startsWith("Pre-open") &&
+  computeFiveWhys({ ...MOCK_DATA, session: "CLOSE" }, fwRegime).headline.startsWith("Post-close"));
+ok("does not throw on MOCK_DATA with default regime", (() => { try { computeFiveWhys(MOCK_DATA); return true; } catch { return false; } })());
 
 console.log(`\n=== SMOKE TEST: ${pass} passed, ${fail} failed ===`);
 process.exit(fail === 0 ? 0 : 1);

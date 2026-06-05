@@ -66,12 +66,18 @@ function validValue(v, kind) {
 //   mockData   : shaped DATA object (mock fallback)
 //   payload    : { live: { fieldName: value, ... }, cached: bool, asOf }
 //   publicView : when true, licensed-class fields are skipped (not overlaid)
-// Returns { data, badge, asOf } where badge in MOCK | LIVE | CACHED.
+// Returns { data, badge, asOf, provenance }: badge in MOCK | LIVE | CACHED, and
+// provenance maps every SOURCES key -> its own LIVE | CACHED | MOCK (drives per-tile badges).
 export function mergeLiveOverMock(mockData, payload, publicView = false) {
+  // Per-field provenance: default every mapped field to MOCK, upgrade on a valid overlay.
+  const provenance = {};
+  for (const key of Object.keys(SOURCES)) provenance[key] = "MOCK";
+
   const live = payload && payload.live;
   if (!live || Object.keys(live).length === 0) {
-    return { data: mockData, badge: "MOCK", asOf: null };
+    return { data: mockData, badge: "MOCK", asOf: null, provenance };
   }
+  const liveBadge = payload.cached ? "CACHED" : "LIVE";
   let data = mockData;
   let anyLive = false;
   for (const key of Object.keys(SOURCES)) {
@@ -80,8 +86,13 @@ export function mergeLiveOverMock(mockData, payload, publicView = false) {
     const v = live[key];
     if (!validValue(v, src.kind || "num")) continue;
     data = setPath(data, src.path, v);
+    provenance[key] = liveBadge;
     if (key !== "lastRefresh" && key !== "session") anyLive = true; // meta alone isn't "live"
   }
-  if (!anyLive) return { data: mockData, badge: "MOCK", asOf: payload.asOf || null };
-  return { data, badge: payload.cached ? "CACHED" : "LIVE", asOf: payload.asOf || null };
+  if (!anyLive) {
+    // Only meta (or nothing) overlaid -> we return mock; keep provenance honest (all MOCK).
+    for (const key of Object.keys(provenance)) provenance[key] = "MOCK";
+    return { data: mockData, badge: "MOCK", asOf: payload.asOf || null, provenance };
+  }
+  return { data, badge: liveBadge, asOf: payload.asOf || null, provenance };
 }

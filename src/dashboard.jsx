@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from "react";
 import { LineChart, Line, BarChart, Bar, Cell, AreaChart, Area, XAxis, YAxis, Tooltip, ResponsiveContainer, ReferenceLine } from "recharts";
 import { useMarketData } from "./useMarketData.js"; // FEAT-204 wiring
+import { computeFiveWhys } from "./fiveWhys.js"; // v2.5: rule-based 5 Whys ($0, derived from live data)
 
 // ─── DESIGN TOKENS v1.6 (FEAT-152 + FEAT-167) ─────────────────────────────
 // design-tokens.json canonical. Inline mirror — keep in sync.
@@ -60,7 +61,7 @@ const T = {
 // FEAT-167: CACHED badge uses dashed border + zinc-400 (#a1a1aa)
 const apiColors = {
   FMP:DT["src-fmp"], FRED:DT["src-fred"], Anthropic:DT["src-anthropic"],
-  CNN:DT["src-cnn"], CBOE:DT["src-cboe"], Zillow:DT["src-zillow"], Manual:DT["src-manual"],
+  CNN:DT["src-cnn"], CBOE:DT["src-cboe"], Zillow:DT["src-zillow"], Manual:DT["src-manual"], "Rule-based":DT["src-manual"],
   CACHED:DT["cached"],
 };
 const DataModeBadge = ({ mode }) => {
@@ -187,18 +188,7 @@ const MOCK_DATA = {
     { id:4, name:"CRE / CMBS Stress",   severity:"Med",  trend:"stable",    claim:"CMBS delinquency 5.8%; office vacancy >20% in major metros.", triggers:["CMBS >8%","Bank NPL >4%"] },
     { id:5, name:"Labor Deceleration",  severity:"Low",  trend:"improving", claim:"Entry-level unemployment 6.1%; LFPR flat. Cooling without crashing.", triggers:["U-3 >5%","NFP <50K ×2"] },
   ],
-  fiveWhys:{
-    generatedAt:"2026-05-23T16:15:00-04:00",
-    regime:"Risk-ON · Disinflation · AI demand signal",
-    headline:"SPY +0.29%: NVDA AI demand data + VIX retreat to 18.4 = risk-on continues.",
-    whys:[
-      "NVDA +3.4% on enterprise AI demand beat, pulling QQQ and tech sector higher.",
-      "Hyperscaler AI capex ($705B FY26) is translating into real chip orders — briefly validating the ROI narrative.",
-      "VIX fell from 21.2→18.4 WoW; F&G moved 44→58. Sentiment inflecting from fear to greed.",
-      "Core CPI 2.8% gives the Fed room to hold. 10Y -15bps MoM compressing discount rate.",
-      "Structural driver: AI-led productivity (+3.1% BLS Q1) allowing margin expansion without wage inflation.",
-    ],
-  },
+  // fiveWhys: now computed at render time by computeFiveWhys() (src/fiveWhys.js) from live data.
   sessionDelta:{ alertsDelta:0, regimeDelta:"none", vixPct:-2.1, tenYBps:-4, spyPct:+0.29, magsPct:+2.05 },
 };
 
@@ -299,7 +289,7 @@ const UndoToast=({toast, dismiss})=>{
 };
 
 // Direction tile (v1.3 stoplight)
-const DirTile=({label,value,d1,w1,m1,band,invert=false,spark,source,sourceEp})=>{
+const DirTile=({label,value,d1,w1,m1,band,invert=false,spark,source,sourceEp,mode="MOCK"})=>{
   const tc=t=>t==="yellow"?T.yellow:t===T.green?T.green:T.red;
   const t1=stoplightColor(d1,band,invert), t2=stoplightColor(w1,band,invert), t3=stoplightColor(m1,band,invert);
   const verdict=verdictFromTones([t1,t2,t3]);
@@ -315,7 +305,7 @@ const DirTile=({label,value,d1,w1,m1,band,invert=false,spark,source,sourceEp})=>
       </div>
       <Badge label={verdict.label} color={verdict.color} small/>
       {spark&&<div style={{height:20,marginTop:5}}><ResponsiveContainer width="100%" height="100%"><LineChart data={spark.map((v,i)=>({v,i}))}><Line type="monotone" dataKey="v" stroke={T.amber} dot={false} strokeWidth={1}/></LineChart></ResponsiveContainer></div>}
-      {source&&<SourceBox api={source} endpoint={sourceEp||""} mode="MOCK"/>}
+      {source&&<SourceBox api={source} endpoint={sourceEp||""} mode={mode}/>}
     </div>
   );
 };
@@ -367,7 +357,7 @@ const RegimeBand=({d})=>{
               <div style={{fontFamily:T.fontMono,fontSize:9,color:f.bull?T.green:T.red}}>{f.val}</div>
             </div>
           ))}
-          <div style={{fontFamily:T.fontMono,fontSize:8,color:T.textMuted,gridColumn:"1/-1"}}>Rule-based 5-factor vote · Manual · v2.0 → Anthropic API</div>
+          <div style={{fontFamily:T.fontMono,fontSize:8,color:T.textMuted,gridColumn:"1/-1"}}>Rule-based 5-factor vote · derived from live data</div>
         </div>
       )}
     </div>
@@ -375,7 +365,7 @@ const RegimeBand=({d})=>{
 };
 
 // Fear & Greed gauge
-const FGGauge=({score,label})=>{
+const FGGauge=({score,label,mode="MOCK"})=>{
   const pct=score/100;
   const color=score<25?T.red:score<45?T.yellow:score<55?T.textSecondary:score<75?T.green:"#27ae60";
   const angle=-135+pct*270;
@@ -392,7 +382,7 @@ const FGGauge=({score,label})=>{
       </div>
       <div style={{fontFamily:T.fontMono,fontSize:20,color,fontWeight:700}}>{score}</div>
       <div style={{fontFamily:T.fontMono,fontSize:9,color:T.textSecondary}}>{label}</div>
-      <SourceBox api="CNN" endpoint="fear-and-greed-index" mode="MOCK"/>
+      <SourceBox api="CNN" endpoint="fear-and-greed-index" mode={mode}/>
     </div>
   );
 };
@@ -473,9 +463,11 @@ export default function Dashboard({ publicView = false } = {}) {
   const [copied,setCopied]=useState(false);
   const { toast, show:showToast, dismiss } = useUndoToast();
   // FEAT-204 wiring — single-point hook swap; mock stays default, operator flips live post-deploy
-  const { data: DATA, mode, asOf } = useMarketData(MOCK_DATA, { publicView });
+  const { data: DATA, mode, asOf, provenance } = useMarketData(MOCK_DATA, { publicView });
   const d=DATA;
   const regime=computeRegime(d);
+  const modeOf=(k)=>provenance?.[k]||"MOCK"; // per-tile provenance: LIVE | CACHED | MOCK
+  const fw=computeFiveWhys(d, regime);        // v2.5: rule-based 5 Whys from live data
   const activeAlerts=alerts.filter(a=>a.active&&a.triggered).length;
 
   // FEAT-165: Share button
@@ -644,7 +636,7 @@ export default function Dashboard({ publicView = false } = {}) {
                   </LineChart>
                 </ResponsiveContainer>
               </div>
-              <SourceBox api="FMP" endpoint="/historical-price-eod/SPY" mode="MOCK"/>
+              <SourceBox api="FRED" endpoint="SP500 ÷10 proxy" mode={modeOf('spyPrice')}/>
             </div>
 
             {/* A2-A5: KPI row */}
@@ -671,17 +663,17 @@ export default function Dashboard({ publicView = false } = {}) {
                 <div style={{fontFamily:T.fontMono,fontSize:20,color:d.marketPulse.vix.current>25?T.red:d.marketPulse.vix.current>18?T.yellow:T.green,fontWeight:700}}>{d.marketPulse.vix.current}</div>
                 <div style={{fontFamily:T.fontMono,fontSize:9,color:pctColor(d.marketPulse.vix.weekChg,true)}}>{fmt.pct(d.marketPulse.vix.weekChg)} WoW</div>
                 <div style={{height:28,marginTop:6}}><ResponsiveContainer width="100%" height="100%"><LineChart data={d.marketPulse.vix.series.map((v,i)=>({v,i}))}><Line type="monotone" dataKey="v" stroke={T.amber} dot={false} strokeWidth={1.5}/></LineChart></ResponsiveContainer></div>
-                <SourceBox api="CBOE" endpoint="vix-index" mode="MOCK"/>
+                <SourceBox api="FRED" endpoint="VIXCLS" mode={modeOf('vix')}/>
               </div>
               {/* F&G */}
-              <FGGauge score={d.marketPulse.fearGreed.score} label={d.marketPulse.fearGreed.label}/>
+              <FGGauge score={d.marketPulse.fearGreed.score} label={d.marketPulse.fearGreed.label} mode={modeOf('fearGreed')}/>
               {/* Put/Call */}
               <div style={{background:T.surface,border:`1px solid ${T.border}`,borderRadius:5,padding:"10px 12px"}}>
                 <Label>Put / Call</Label>
                 <div style={{fontFamily:T.fontMono,fontSize:20,color:d.marketPulse.putCall.current>1?T.red:T.textPrimary,fontWeight:700}}>{d.marketPulse.putCall.current}</div>
                 <div style={{fontFamily:T.fontMono,fontSize:9,color:T.textMuted}}>Bearish {">"} 1.0</div>
                 <div style={{height:28,marginTop:6}}><ResponsiveContainer width="100%" height="100%"><LineChart data={d.marketPulse.putCall.series30d.slice(-10).map((v,i)=>({v,i}))}><Line type="monotone" dataKey="v" stroke={T.amber} dot={false} strokeWidth={1.5}/><ReferenceLine y={1.0} stroke={T.red} strokeDasharray="2 2" strokeWidth={1}/></LineChart></ResponsiveContainer></div>
-                <SourceBox api="CBOE" endpoint="equity-put-call" mode="MOCK"/>
+                <SourceBox api="CBOE" endpoint="equity-put-call" mode={modeOf('putCall')}/>
               </div>
             </div>
 
@@ -689,10 +681,10 @@ export default function Dashboard({ publicView = false } = {}) {
             <div>
               <SectionHeader>Cross-Asset Direction</SectionHeader>
               <div style={{display:"flex",gap:8,flexWrap:"wrap"}} className="dir-tiles">
-                <DirTile label="10Y Treasury" value={`${d.crossAsset.treasury10y.current}%`} d1={d.crossAsset.treasury10y.d1} w1={d.crossAsset.treasury10y.w1} m1={d.crossAsset.treasury10y.m1} band={0.10} invert={true} spark={d.crossAsset.treasury10y.series} source="FRED" sourceEp="DGS10"/>
-                <DirTile label="WTI Crude"   value={`$${d.crossAsset.wti.current}`}         d1={d.crossAsset.wti.d1pct}  w1={d.crossAsset.wti.w1pct}  m1={d.crossAsset.wti.m1pct}  band={1.0} spark={d.crossAsset.wti.series}  source="FMP"  sourceEp="/historical/USOIL"/>
-                <DirTile label="Gold"        value={`$${d.crossAsset.gold.current.toLocaleString()}`} d1={d.crossAsset.gold.d1pct} w1={d.crossAsset.gold.w1pct} m1={d.crossAsset.gold.m1pct} band={1.0} spark={d.crossAsset.gold.series} source="FMP" sourceEp="/historical/XAUUSD"/>
-                <DirTile label="Bitcoin"     value={`$${(d.crossAsset.btc.current/1000).toFixed(1)}K`} d1={d.crossAsset.btc.d1pct} w1={d.crossAsset.btc.w1pct} m1={d.crossAsset.btc.m1pct} band={2.0} spark={d.crossAsset.btc.series} source="FMP" sourceEp="/historical/BTCUSD"/>
+                <DirTile label="10Y Treasury" value={`${d.crossAsset.treasury10y.current}%`} d1={d.crossAsset.treasury10y.d1} w1={d.crossAsset.treasury10y.w1} m1={d.crossAsset.treasury10y.m1} band={0.10} invert={true} spark={d.crossAsset.treasury10y.series} source="FRED" sourceEp="DGS10" mode={modeOf('tenYear')}/>
+                <DirTile label="WTI Crude"   value={`$${d.crossAsset.wti.current}`}         d1={d.crossAsset.wti.d1pct}  w1={d.crossAsset.wti.w1pct}  m1={d.crossAsset.wti.m1pct}  band={1.0} spark={d.crossAsset.wti.series}  source="FRED" sourceEp="DCOILWTICO" mode={modeOf('wti')}/>
+                <DirTile label="Gold"        value={`$${d.crossAsset.gold.current.toLocaleString()}`} d1={d.crossAsset.gold.d1pct} w1={d.crossAsset.gold.w1pct} m1={d.crossAsset.gold.m1pct} band={1.0} spark={d.crossAsset.gold.series} source="Manual" sourceEp="curated series" mode={modeOf('gold')}/>
+                <DirTile label="Bitcoin"     value={`$${(d.crossAsset.btc.current/1000).toFixed(1)}K`} d1={d.crossAsset.btc.d1pct} w1={d.crossAsset.btc.w1pct} m1={d.crossAsset.btc.m1pct} band={2.0} spark={d.crossAsset.btc.series} source="FRED" sourceEp="CBBTCUSD" mode={modeOf('btc')}/>
               </div>
             </div>
           </div>
@@ -713,7 +705,7 @@ export default function Dashboard({ publicView = false } = {}) {
                     <div style={{fontFamily:T.fontMono,fontSize:22,color:T.amber,fontWeight:700}}>{d.macro.fedFunds.rate}%</div>
                     <div style={{fontFamily:T.fontMono,fontSize:9,color:T.textMuted}}>Next FOMC in {d.macro.fedFunds.daysUntil} days</div>
                   </div>
-                  <SourceBox api="FRED" endpoint="FEDFUNDS" mode="MOCK"/>
+                  <SourceBox api="FRED" endpoint="FEDFUNDS" mode={modeOf('fedFunds')}/>
                 </div>
                 {/* CPI */}
                 <div style={{paddingBottom:8,borderBottom:`1px solid ${T.border}`}}>
@@ -722,7 +714,7 @@ export default function Dashboard({ publicView = false } = {}) {
                     <div><Label>CPI Core</Label><div style={{fontFamily:T.fontMono,fontSize:18,color:T.yellow,fontWeight:700}}>{d.macro.cpi.core}%</div></div>
                   </div>
                   <div style={{height:36}}><ResponsiveContainer width="100%" height="100%"><LineChart data={d.macro.cpi.trend.map((v,i)=>({v,i}))}><Line type="monotone" dataKey="v" stroke={T.red} dot={false} strokeWidth={1.5}/><ReferenceLine y={2.0} stroke={T.green} strokeDasharray="3 2" strokeWidth={1}/></LineChart></ResponsiveContainer></div>
-                  <SourceBox api="FRED" endpoint="CPIAUCSL + CPILFESL" mode="MOCK"/>
+                  <SourceBox api="FRED" endpoint="CPIAUCSL + CPILFESL" mode={modeOf('cpiHeadline')}/>
                 </div>
                 {/* Labor */}
                 <div style={{display:"flex",gap:12,paddingBottom:8,borderBottom:`1px solid ${T.border}`}}>
@@ -746,7 +738,7 @@ export default function Dashboard({ publicView = false } = {}) {
                     <div style={{fontFamily:T.fontMono,fontSize:8,color:T.textMuted}}>Mean {d.macro.shillerPe.mean} · Median {d.macro.shillerPe.median}</div>
                     <div style={{fontFamily:T.fontMono,fontSize:8,color:T.red}}>{d.macro.shillerPe.pctOfAth}% of ATH</div>
                   </div>
-                  <SourceBox api="Manual" endpoint="Robert Shiller · Yale data" mode="MOCK"/>
+                  <SourceBox api="Manual" endpoint="Robert Shiller · Yale data" mode={modeOf('shillerPe')}/>
                 </div>
               </div>
             </div>
@@ -775,16 +767,16 @@ export default function Dashboard({ publicView = false } = {}) {
             {/* 5 Whys headline */}
             <div style={{background:T.surface,border:`1px solid ${T.border}`,borderRadius:6,padding:"14px 16px"}}>
               <SectionHeader>5 Whys · Today</SectionHeader>
-              <div style={{fontFamily:T.fontMono,fontSize:9,color:T.amber,marginBottom:6}}>{d.fiveWhys.regime}</div>
-              <div style={{fontFamily:T.fontSans,fontSize:12,color:T.textSecondary,lineHeight:1.6,fontStyle:"italic"}}>"{d.fiveWhys.headline}"</div>
-              {d.fiveWhys.whys.slice(0,2).map((w,i)=>(
+              <div style={{fontFamily:T.fontMono,fontSize:9,color:T.amber,marginBottom:6}}>{fw.regime}</div>
+              <div style={{fontFamily:T.fontSans,fontSize:12,color:T.textSecondary,lineHeight:1.6,fontStyle:"italic"}}>"{fw.headline}"</div>
+              {fw.whys.map((w,i)=>(
                 <div key={i} style={{borderLeft:`2px solid ${T.amber}44`,paddingLeft:8,marginTop:8}}>
                   <div style={{fontFamily:T.fontMono,fontSize:8,color:T.amber}}>WHY #{i+1}</div>
                   <div style={{fontFamily:T.fontSans,fontSize:11,color:T.textSecondary,lineHeight:1.5}}>{w}</div>
                 </div>
               ))}
-              <div style={{fontFamily:T.fontMono,fontSize:8,color:T.textMuted,marginTop:8}}>+ {d.fiveWhys.whys.length-2} more · v2.0: Anthropic API live</div>
-              <SourceBox api="Anthropic" endpoint="claude-sonnet-4 · /v1/messages · post-close" mode="MOCK"/>
+              <div style={{fontFamily:T.fontMono,fontSize:8,color:T.textMuted,marginTop:8}}>Rule-based · derived from live data (no LLM)</div>
+              <SourceBox api="Rule-based" endpoint="5-factor regime + live deltas" mode={modeOf('vix')}/>
             </div>
           </div>
         </div>
@@ -848,7 +840,7 @@ export default function Dashboard({ publicView = false } = {}) {
                   {pub.map(s=><span key={s.ticker} style={{fontFamily:T.fontMono,fontSize:7,color:T.textMuted}}><span style={{color:s.color}}>■</span> {s.ticker} ${s.mktCapT.toFixed(2)}T</span>)}
                 </div>
               </div>
-              <SourceBox api="FMP" endpoint="/profile + /ratios-ttm + /income-statement · SpaceX: S-1 (SEC May 2026)" mode="MOCK"/>
+              <SourceBox api="Manual" endpoint="curated · Q1 2026 actuals · SpaceX S-1 (SEC)" mode={modeOf('mag10')}/>
             </div>
           )}
         </div>
@@ -857,7 +849,7 @@ export default function Dashboard({ publicView = false } = {}) {
         <div style={{marginTop:16,background:T.surface,border:`1px solid ${T.border}`,borderRadius:6,padding:"12px 16px"}}>
           <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:10}}>
             <SectionHeader>Macro Alerts</SectionHeader>
-            <div style={{fontFamily:T.fontMono,fontSize:8,color:T.textMuted}}>Triggers fire on live data — v2.0</div>
+            <div style={{fontFamily:T.fontMono,fontSize:8,color:T.textMuted}}>Triggers evaluate live data · notifications not wired</div>
           </div>
           <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(260px,1fr))",gap:6}}>
             {alerts.map(a=><AlertRow key={a.id} alert={a} onToggle={id=>setAlerts(prev=>prev.map(x=>x.id===id?{...x,active:!x.active}:x))} onDelete={handleDeleteAlert}/>)}
@@ -868,7 +860,7 @@ export default function Dashboard({ publicView = false } = {}) {
         <div style={{marginTop:12,display:"flex",justifyContent:"space-between",alignItems:"center",flexWrap:"wrap",gap:4}}>
           <div style={{fontFamily:T.fontMono,fontSize:8,color:T.textMuted}}>{`MacroDash v${__APP_VERSION__} · Data refreshed twice daily at market open and close`}</div>
           <div style={{fontFamily:T.fontMono,fontSize:8,color:T.textMuted}}>Not financial advice · Personal use</div>
-          <div style={{fontFamily:T.fontMono,fontSize:8,color:T.textMuted}}>FMP · FRED · CNN · CBOE · Anthropic · SpaceX S-1</div>
+          <div style={{fontFamily:T.fontMono,fontSize:8,color:T.textMuted}}>Live: FRED · CNN · CBOE · Curated: Shiller · Mag 10 · SEC S-1</div>
         </div>
       </div>
     </div>
