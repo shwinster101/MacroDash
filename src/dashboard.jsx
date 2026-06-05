@@ -503,8 +503,12 @@ const IpoCountdownStrip = () => (
     borderBottom: `1px solid ${T.border}`,
     padding: "10px 20px",
   }}>
-    <div style={{ fontFamily:T.fontMono, fontSize:8, color:T.textMuted, letterSpacing:"0.12em", textTransform:"uppercase", marginBottom:8 }}>
-      COUNTDOWN TO LAUNCH — IPO TRACKER
+    <div style={{ display:"flex", alignItems:"center", gap:8, marginBottom:8, flexWrap:"wrap" }}>
+      <div style={{ fontFamily:T.fontMono, fontSize:8, color:T.textMuted, letterSpacing:"0.12em", textTransform:"uppercase" }}>
+        COUNTDOWN TO LAUNCH — IPO TRACKER
+      </div>
+      {/* Honest provenance: these IPO dates are curated estimates, not live data */}
+      <span style={{ fontFamily:T.fontMono, fontSize:8, color:T.textMuted, border:`1px dashed ${T.border}`, borderRadius:3, padding:"0 5px", whiteSpace:"nowrap" }}>MOCK · curated · dates speculative</span>
     </div>
     <div style={{ display:"flex", gap:12, overflowX:"auto" }} className="ipo-strip-inner">
       {IPO_TARGETS.map(ipo => <IpoCard key={ipo.ticker} ipo={ipo}/>)}
@@ -537,10 +541,11 @@ const RegimeBand=({d})=>{
         </div>
         {/* Right: factor chips (desktop) + info toggle */}
         <div style={{display:"flex",alignItems:"center",gap:8}}>
-          <div style={{display:"flex",gap:5,flexWrap:"wrap",justifyContent:"flex-end"}} className="hide-mobile">
-            {factors.map(f=>(
+          {/* FINDING-2: compact factor "why" — now always visible (mobile too), short labels; full detail via ℹ */}
+          <div style={{display:"flex",gap:5,flexWrap:"wrap",justifyContent:"flex-end"}}>
+            {factors.map((f,i)=>(
               <span key={f.label} style={{fontFamily:T.fontMono,fontSize:8,color:f.bull?T.green:T.red,border:`1px solid ${f.bull?T.green:T.red}44`,borderRadius:3,padding:"1px 5px",letterSpacing:"0.03em",background:"#00000022",whiteSpace:"nowrap"}}>
-                {f.bull?"▲":"▼"} {f.label}
+                {["10Y","VIX","F&G","CPI","P/C"][i]} {f.bull?"▲":"▼"}
               </span>
             ))}
           </div>
@@ -726,7 +731,7 @@ export default function Dashboard({ publicView = false } = {}) {
           .mag10-scroll{overflow-x:auto!important;}
           .dir-tiles{flex-wrap:wrap!important;}
           .hide-mobile{display:none!important;}
-          .ipo-strip-inner{flex-direction:column!important;}
+          /* IPO strip stays a horizontal swipeable row on mobile (not 3 stacked cards) */
           .wen-moon-mobile{display:none!important;}
         }
         .mag10-fade{-webkit-mask-image:linear-gradient(to right,black 85%,transparent 100%);mask-image:linear-gradient(to right,black 85%,transparent 100%);}
@@ -740,10 +745,13 @@ export default function Dashboard({ publicView = false } = {}) {
         <div style={{display:"flex",alignItems:"center",gap:14}}>
           <div style={{fontFamily:T.fontDisplay,fontSize:20,fontWeight:800,color:T.amber,letterSpacing:"-0.02em"}}>MacroDash</div>
           {/* FEAT-165: friendly sub-headline */}
-          <div style={{fontFamily:T.fontSans,fontSize:11,color:T.textMuted}} className="hide-mobile">Macro intelligence for investors</div>
-          <div style={{display:"flex",alignItems:"center",gap:5}}>
+          {/* FINDING-1: orientation line now visible on mobile (was hide-mobile) */}
+          <div style={{fontFamily:T.fontSans,fontSize:10,color:T.textMuted}}>Macro intelligence for investors</div>
+          <div style={{display:"flex",alignItems:"center",gap:5,flexWrap:"wrap"}}>
             <div style={{width:6,height:6,borderRadius:"50%",background:T.amber,boxShadow:`0 0 5px ${T.amber}`}} className="pulse-anim"/>
             <span style={{fontFamily:T.fontMono,fontSize:9,color:T.textSecondary}}>{d.session} · {d.lastRefresh}</span>
+            {/* FINDING-4: set novice expectations — these are end-of-day, not real-time */}
+            <span style={{fontFamily:T.fontMono,fontSize:8,color:T.textMuted}}>· end-of-day, not real-time</span>
           </div>
         </div>
         <div style={{display:"flex",alignItems:"center",gap:8}}>
@@ -761,24 +769,24 @@ export default function Dashboard({ publicView = false } = {}) {
       <div style={{background:T.surfaceHigh,borderBottom:`1px solid ${T.border}`,padding:"6px 20px",overflowX:"auto",display:"flex",alignItems:"center",justifyContent:"space-between",gap:12}} className="macro-strip">
         <div style={{display:"flex",gap:20,minWidth:"max-content",flex:1}} className="macro-strip-inner">
           {[
-            {l:"SPY",  v:`$${d.marketPulse.spy.price}`,      s:fmt.pct(d.marketPulse.spy.changePct), sc:pctColor(d.marketPulse.spy.changePct)},
-            {l:"QQQ",  v:`$${d.marketPulse.qqq.price}`,      s:fmt.pct(d.marketPulse.qqq.changePct), sc:pctColor(d.marketPulse.qqq.changePct)},
-            {l:"VIX",  v:`${d.marketPulse.vix.current}`,     s:fmt.pct(d.marketPulse.vix.weekChg)+" WoW", sc:pctColor(d.marketPulse.vix.weekChg,true)},
-            {l:"F&G",  v:`${d.marketPulse.fearGreed.score}`, s:d.marketPulse.fearGreed.label, sc:d.marketPulse.fearGreed.score>55?T.green:T.red},
-            {l:"10Y",  v:`${d.crossAsset.treasury10y.current}%`, s:fmt.bps(d.crossAsset.treasury10y.d1)+" 1D", sc:pctColor(-d.crossAsset.treasury10y.d1)},
-            {l:"FED",  v:`${d.macro.fedFunds.rate}%`,        s:`FOMC ${d.macro.fedFunds.daysUntil}d`, sc:T.textMuted},
-            {l:"CPI",  v:`${d.macro.cpi.headline}%`,         s:`Core ${d.macro.cpi.core}%`, sc:d.macro.cpi.headline>3?T.red:T.green},
-            {l:"P/C",  v:`${d.marketPulse.putCall.current}`, s:d.marketPulse.putCall.current>1?"BEAR SKEW":"NEUTRAL", sc:d.marketPulse.putCall.current>1?T.red:T.textSecondary},
-          ].map(({l,v,s,sc})=>(
-            <div key={l} style={{flexShrink:0,minWidth:68}}>
+            {l:"SPY",  v:`$${d.marketPulse.spy.price}`,      s:fmt.pct(d.marketPulse.spy.changePct), sc:pctColor(d.marketPulse.spy.changePct), t:"S&P 500 ETF — the broad US stock market"},
+            {l:"QQQ",  v:`$${d.marketPulse.qqq.price}`,      s:fmt.pct(d.marketPulse.qqq.changePct), sc:pctColor(d.marketPulse.qqq.changePct), t:"Nasdaq-100 ETF — big tech"},
+            {l:"VIX",  v:`${d.marketPulse.vix.current}`,     s:fmt.pct(d.marketPulse.vix.weekChg)+" WoW", sc:pctColor(d.marketPulse.vix.weekChg,true), t:"Volatility index — the market's fear gauge (lower = calmer)"},
+            {l:"F&G",  v:`${d.marketPulse.fearGreed.score}`, s:d.marketPulse.fearGreed.label, sc:d.marketPulse.fearGreed.score>55?T.green:T.red, t:"Fear & Greed — market sentiment, 0 = fear, 100 = greed"},
+            {l:"10Y",  v:`${d.crossAsset.treasury10y.current}%`, s:fmt.bps(d.crossAsset.treasury10y.d1)+" 1D", sc:pctColor(-d.crossAsset.treasury10y.d1), t:"10-year Treasury yield — the benchmark interest rate"},
+            {l:"FED",  v:`${d.macro.fedFunds.rate}%`,        s:`FOMC ${d.macro.fedFunds.daysUntil}d`, sc:T.textMuted, t:"Fed funds rate — the central bank's policy rate"},
+            {l:"CPI",  v:`${d.macro.cpi.headline}%`,         s:`Core ${d.macro.cpi.core}%`, sc:d.macro.cpi.headline>3?T.red:T.green, t:"Consumer Price Index — inflation, year-over-year"},
+            {l:"P/C",  v:`${d.marketPulse.putCall.current}`, s:d.marketPulse.putCall.current>1?"BEAR SKEW":"NEUTRAL", sc:d.marketPulse.putCall.current>1?T.red:T.textSecondary, t:"Put/Call ratio — options positioning (above 1 = defensive)"},
+          ].map(({l,v,s,sc,t})=>(
+            <div key={l} title={t} style={{flexShrink:0,minWidth:68,cursor:"help"}}>
               <div style={{fontFamily:T.fontMono,fontSize:8,color:T.textMuted}}>{l}</div>
               <div style={{fontFamily:T.fontMono,fontSize:13,color:T.textPrimary,fontWeight:700,lineHeight:1.1}}>{v}</div>
               <div style={{fontFamily:T.fontMono,fontSize:9,color:sc}}>{s}</div>
             </div>
           ))}
         </div>
-        {/* WEN MOON METER — mood badge based on SPY daily change */}
-        <WenMoonBadge spyChangePct={d.marketPulse.spy.changePct}/>
+        {/* WEN MOON METER — mood badge based on SPY daily change (hidden on mobile to declutter the 2x4 strip, per the unused .wen-moon-mobile rule) */}
+        <div className="wen-moon-mobile"><WenMoonBadge spyChangePct={d.marketPulse.spy.changePct}/></div>
       </div>
 
       {/* FEAT-169: Regime Verdict band — full-width, directly under the macro strip */}
