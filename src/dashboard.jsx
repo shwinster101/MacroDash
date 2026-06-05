@@ -547,7 +547,7 @@ export default function Dashboard({ publicView = false } = {}) {
           <div style={{fontFamily:T.fontSans,fontSize:11,color:T.textMuted}} className="hide-mobile">Macro intelligence for investors</div>
           <div style={{display:"flex",alignItems:"center",gap:5}}>
             <div style={{width:6,height:6,borderRadius:"50%",background:T.amber,boxShadow:`0 0 5px ${T.amber}`}} className="pulse-anim"/>
-            <span style={{fontFamily:T.fontMono,fontSize:9,color:T.textSecondary}}>{d.session} · {asOf || d.lastRefresh}</span>
+            <span style={{fontFamily:T.fontMono,fontSize:9,color:T.textSecondary}}>{d.session} · {d.lastRefresh}</span>
           </div>
         </div>
         <div style={{display:"flex",alignItems:"center",gap:8}}>
@@ -866,7 +866,7 @@ export default function Dashboard({ publicView = false } = {}) {
 
         {/* ── FOOTER ── */}
         <div style={{marginTop:12,display:"flex",justifyContent:"space-between",alignItems:"center",flexWrap:"wrap",gap:4}}>
-          <div style={{fontFamily:T.fontMono,fontSize:8,color:T.textMuted}}>PULSE v2.0.0-rc1 · Data refreshed twice daily at market open and close</div>
+          <div style={{fontFamily:T.fontMono,fontSize:8,color:T.textMuted}}>PULSE v2.0.2 · Data refreshed twice daily at market open and close</div>
           <div style={{fontFamily:T.fontMono,fontSize:8,color:T.textMuted}}>Not financial advice · Personal use</div>
           <div style={{fontFamily:T.fontMono,fontSize:8,color:T.textMuted}}>FMP · FRED · CNN · CBOE · Anthropic · SpaceX S-1</div>
         </div>

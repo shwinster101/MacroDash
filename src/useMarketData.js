@@ -6,7 +6,7 @@
 import { useEffect, useState } from "react";
 import { mergeLiveOverMock } from "./sources.js";
 
-// The flip. 'mock' (default) = no network, all mock. 'live' = fetch /api/fred.
+// The flip. 'mock' (default) = no network, all mock. 'live' = fetch /api/snapshot.
 const MODE = (import.meta.env && import.meta.env.VITE_DATA_MODE) || "mock";
 
 export function useMarketData(mockData, opts = {}) {
@@ -23,7 +23,7 @@ export function useMarketData(mockData, opts = {}) {
     let cancelled = false;
     const ctl = new AbortController();
 
-    fetch("/api/fred", { signal: ctl.signal })
+    fetch(`/api/snapshot${publicView ? "?view=public" : ""}`, { signal: ctl.signal })
       .then((r) => {
         if (!r.ok) throw new Error(`HTTP ${r.status}`);
         return r.json();

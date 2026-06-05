@@ -1,205 +1,78 @@
-// MacroDash v2.0 — end-to-end smoke test (Node, no network).
-// Mocks FRED responses and exercises: cron transform, fake-KV round trip,
-// Pages function read, merge-over-mock, public-view filter, and security
-// assertions (FRED_KEY never appears in any output).
-//
-// Run:  node test/smoke.mjs
+// MacroDash v2.0.1 — snapshot-contract smoke test (Node, no network).
+// SCOPE: the live-data layer this version owns — mergeLiveOverMock over the flat
+// {live} shape /api/snapshot returns, plus FEAT-204 path resolution against the
+// real dashboard MOCK_DATA. The cron worker + /api/fred are no longer consumed by
+// the dashboard, so their internals belong to the worker's own suite, not this gate.
 
-import assert from "node:assert";
-import {
-  SERIES,
-  getLatestValid,
-  computeYoY,
-  fredUrl,
-  buildMacroPayload,
-} from "../worker/cron.js";
-import { onRequestGet } from "../functions/api/fred.js";
+import { readFileSync } from "node:fs";
 import { mergeLiveOverMock, SOURCES } from "../src/sources.js";
 
-let pass = 0;
-let fail = 0;
-const ok = (name, cond) => {
-  if (cond) { pass++; console.log(`  PASS  ${name}`); }
-  else { fail++; console.log(`  FAIL  ${name}`); }
-};
+let pass = 0, fail = 0;
+const ok = (name, cond) => { if (cond) { pass++; console.log("  PASS  " + name); } else { fail++; console.log("  FAIL  " + name); } };
 
-const FAKE_KEY = "FAKE_FRED_KEY_should_never_leak_1234567890";
+// Load real MOCK_DATA from dashboard.jsx (catches sources.js <-> dashboard drift).
+const dashSrc = readFileSync(new URL("../src/dashboard.jsx", import.meta.url), "utf8");
+const _s = dashSrc.indexOf("const MOCK_DATA = {");
+let _i = dashSrc.indexOf("{", _s), _d = 0, _e = -1;
+for (; _i < dashSrc.length; _i++) { if (dashSrc[_i] === "{") _d++; else if (dashSrc[_i] === "}") { _d--; if (_d === 0) { _e = _i; break; } } }
+const MOCK_DATA = eval("(" + dashSrc.slice(dashSrc.indexOf("{", _s), _e + 1) + ")");
 
-// ---- mock FRED responses ------------------------------------------------
-// Build a desc-sorted observations array for a "latest" series, with a "." gap
-// at the newest position to prove gap-skipping.
-function obsLatest(values, startDate = "2026-06-02") {
-  // values[0] is newest. Insert a "." as the very newest to test skipping.
-  const d = new Date(startDate);
-  const out = [{ date: startDate, value: "." }];
-  for (let i = 0; i < values.length; i++) {
-    const dt = new Date(d);
-    dt.setDate(dt.getDate() - (i + 1));
-    out.push({ date: dt.toISOString().slice(0, 10), value: String(values[i]) });
-  }
-  return { observations: out };
-}
-// 13 monthly index points (newest first) for a YoY series.
-function obsYoY(latestIndex, yearAgoIndex) {
-  const obs = [];
-  for (let i = 0; i < 13; i++) {
-    const dt = new Date("2026-04-01");
-    dt.setMonth(dt.getMonth() - i);
-    // interpolate between yearAgo (i=12) and latest (i=0) just for realism
-    const v = i === 0 ? latestIndex : i === 12 ? yearAgoIndex : (latestIndex - (i / 12) * (latestIndex - yearAgoIndex));
-    obs.push({ date: dt.toISOString().slice(0, 10), value: v.toFixed(3) });
-  }
-  return { observations: obs };
-}
-
-// series_id -> mock response. One series (VIXCLS) is rigged to FAIL.
-const MOCK = {
-  DGS10:        obsLatest([4.32, 4.30, 4.28]),
-  FEDFUNDS:     obsLatest([3.58, 3.58, 3.58]),
-  CPIAUCSL:     obsYoY(322.0, 310.2), // ~3.8% YoY
-  CPILFESL:     obsYoY(328.0, 319.1), // ~2.8% YoY
-  UNRATE:       obsLatest([4.3, 4.3, 4.2]),
-  CIVPART:      obsLatest([62.4, 62.4, 62.5]),
-  MORTGAGE30US: obsLatest([6.51, 6.23, 6.26]),
-  VIXCLS:       "__FAIL__", // simulate upstream outage
-  DCOILWTICO:   obsLatest([96.43, 98.1, 100.2]),
-  SP500:        obsLatest([7473.0, 7415.0, 7400.0]),
-};
-
-// mock fetch that returns canned FRED JSON or throws for the rigged failure.
-function makeMockFetch({ capturedUrls }) {
-  return async (url) => {
-    capturedUrls.push(url);
-    const u = new URL(url);
-    const sid = u.searchParams.get("series_id");
-    const resp = MOCK[sid];
-    if (resp === "__FAIL__") return { ok: false, status: 503, json: async () => ({}) };
-    if (!resp) throw new Error(`no mock for ${sid}`);
-    return { ok: true, status: 200, json: async () => resp };
-  };
-}
-
-// fake KV namespace (Map-backed).
-function fakeKV(initial = {}) {
-  const store = new Map(Object.entries(initial));
-  return {
-    store,
-    async get(k) { return store.has(k) ? store.get(k) : null; },
-    async put(k, v) { store.set(k, v); },
-  };
-}
-
-// ---- 1. pure helpers ----------------------------------------------------
-console.log("\n[1] pure helpers");
-ok("getLatestValid skips '.' and returns newest numeric",
-  getLatestValid(obsLatest([4.32, 4.30]).observations)?.value === 4.32);
-ok("getLatestValid returns null on all-missing",
-  getLatestValid([{ date: "2026-06-02", value: "." }]) === null);
-{
-  const yoy = computeYoY(obsYoY(322.0, 310.2).observations);
-  ok("computeYoY ~3.8% from index", yoy && Math.abs(yoy.value - 3.8) < 0.2);
-}
-ok("computeYoY null when <13 points",
-  computeYoY(obsLatest([1, 2, 3]).observations) === null);
-{
-  const url = fredUrl("DGS10", FAKE_KEY, "latest");
-  ok("fredUrl includes series_id + limit=5", url.includes("series_id=DGS10") && url.includes("limit=5"));
-  ok("fredUrl uses limit=13 for yoy", fredUrl("CPIAUCSL", FAKE_KEY, "yoy").includes("limit=13"));
-}
-
-// ---- 2. cron transform (the real pipeline) ------------------------------
-console.log("\n[2] cron buildMacroPayload");
-const capturedUrls = [];
-const env = { FRED_KEY: FAKE_KEY, PULSE_CACHE: fakeKV() };
-const payload = await buildMacroPayload(env, {
-  fetchImpl: makeMockFetch({ capturedUrls }),
-  now: "2026-06-03T21:00:00.000Z",
-  cron: "0 21 * * 1-5",
-});
-
-ok("payload has generatedAt", payload.generatedAt === "2026-06-03T21:00:00.000Z");
-ok("tenYear parsed = 4.32", payload.metrics.tenYear?.value === 4.32);
-ok("cpiHeadline YoY ~3.8", Math.abs(payload.metrics.cpiHeadline?.value - 3.8) < 0.2);
-ok("cpiCore YoY ~2.8", Math.abs(payload.metrics.cpiCore?.value - 2.8) < 0.2);
-ok("sp500 parsed = 7473", payload.metrics.sp500?.value === 7473.0);
-ok("failed VIXCLS recorded in errors", !!payload.errors && !!payload.errors.vix);
-ok("failed VIXCLS not present (cold start, no last-good)", !payload.metrics.vix);
-ok("displayClass carried on metric", payload.metrics.sp500?.displayClass === "licensed");
-
-// ---- 3. SECURITY: key never leaks --------------------------------------
-console.log("\n[3] security — FRED_KEY isolation");
-const payloadStr = JSON.stringify(payload);
-ok("FRED_KEY absent from KV payload", !payloadStr.includes(FAKE_KEY));
-// The key DOES appear in the outbound FRED URL (server-side only) — confirm it
-// is present there (so the call works) but that URL never enters the payload.
-ok("FRED_KEY used server-side in FRED URL", capturedUrls.some((u) => u.includes(FAKE_KEY)));
-ok("no FRED URL (with key) stored in payload", !payloadStr.includes("api_key"));
-
-// ---- 4. merge-over-last-good on failure --------------------------------
-console.log("\n[4] robustness — merge over last-good");
-// Seed KV with a previous good VIX, then re-run with VIX still failing.
-const envWithPrev = {
-  FRED_KEY: FAKE_KEY,
-  PULSE_CACHE: fakeKV({
-    "pulse:macro:latest": JSON.stringify({
-      metrics: { vix: { value: 16.81, asOf: "2026-05-22", source: "FRED VIXCLS", displayClass: "citation" } },
-    }),
-  }),
-};
-const payload2 = await buildMacroPayload(envWithPrev, {
-  fetchImpl: makeMockFetch({ capturedUrls: [] }),
-  now: "2026-06-03T21:00:00.000Z",
-});
-ok("VIX carried forward from last-good", payload2.metrics.vix?.value === 16.81);
-ok("carried VIX flagged stale", payload2.metrics.vix?.stale === true);
-ok("fresh metrics not flagged stale", payload2.metrics.tenYear?.stale === false);
-
-// ---- 5. Pages function read round-trip ---------------------------------
-console.log("\n[5] Pages function GET /api/fred");
-const pagesEnv = { PULSE_CACHE: fakeKV({ "pulse:macro:latest": JSON.stringify(payload) }) };
-const res = await onRequestGet({ env: pagesEnv });
-ok("function returns 200", res.status === 200);
-const served = await res.json();
-ok("served payload matches stored tenYear", served.metrics.tenYear.value === 4.32);
-ok("served body has no api key", !JSON.stringify(served).includes(FAKE_KEY));
-ok("cache-control header set", (res.headers.get("cache-control") || "").includes("max-age"));
-// cold cache fallback
-const coldRes = await onRequestGet({ env: { PULSE_CACHE: fakeKV() } });
-const coldBody = await coldRes.json();
-ok("cold cache returns valid empty shape", coldRes.status === 200 && coldBody.error === "no_data");
-
-// ---- 6. merge into mock DATA -------------------------------------------
-console.log("\n[6] mergeLiveOverMock");
-const MOCK_DATA = {
-  marketPulse: { vix: { current: 0 }, spx: { index: 0 } },
-  crossAsset:  { treasury10y: { current: 0 }, wti: { current: 0 } },
-  macro: {
-    fedFunds: { rate: 0 },
-    cpi: { headline: 0, core: 0 },
-    unemployment: { national: 0, lfpr: 0 },
-    mortgage: { national: 0 },
+// ---- 1. mergeLiveOverMock — snapshot {live} flat shape ------------------
+console.log("\n[1] mergeLiveOverMock (snapshot live shape)");
+const snapPayload = {
+  live: {
+    lastRefresh: "06/04/2026 14:00 ET", session: "OPEN",
+    spyPrice: 741.2, spyChangePct: 0.41, spyYtd: 7.9, spyMa100: 718.0, spyMa200: 690.5,
+    spySeries: [730, 735, 738, 741],
+    tenYear: 4.46, tenYearD1: 0.03, tenYearSeries: [4.4, 4.43, 4.46],
+    fedFunds: 3.63, unemployment: 4.3, lfpr: 61.8, mortgage30: 6.48,
+    wti: 71.2, wtiD1: -0.8, vix: 16.06, vixWeekChg: -2.1, vixSeries: [18, 17, 16.06],
+    btc: 109200, btcD1: 1.2,
+    fearGreed: 62, fearGreedLabel: "Greed", putCall: 0.79,
   },
+  asOf: "2026-06-04T18:00:00Z", cached: false,
 };
-const mergedPriv = mergeLiveOverMock(MOCK_DATA, payload, /*publicView=*/ false);
-ok("private merge overlays tenYear at path", mergedPriv.data.crossAsset.treasury10y.current === 4.32);
-ok("private merge overlays sp500 (licensed) on private view", mergedPriv.data.marketPulse.spx.index === 7473.0);
-ok("badge LIVE when fresh values present", mergedPriv.badge === "LIVE");
-ok("merge does not mutate original mock", MOCK_DATA.crossAsset.treasury10y.current === 0);
+const mPriv = mergeLiveOverMock(MOCK_DATA, snapPayload, false);
+ok("SPY price overlaid (num)", mPriv.data.marketPulse.spy.price === 741.2);
+ok("SPY series overlaid (array)", Array.isArray(mPriv.data.marketPulse.spy.series) && mPriv.data.marketPulse.spy.series.length === 4);
+ok("SPY ma100/ma200 overlaid", mPriv.data.marketPulse.spy.ma100 === 718.0 && mPriv.data.marketPulse.spy.ma200 === 690.5);
+ok("10Y overlaid + d1 + series", mPriv.data.crossAsset.treasury10y.current === 4.46 && mPriv.data.crossAsset.treasury10y.d1 === 0.03 && mPriv.data.crossAsset.treasury10y.series.length === 3);
+ok("Fed funds overlaid", mPriv.data.macro.fedFunds.rate === 3.63);
+ok("unemployment + lfpr overlaid", mPriv.data.macro.unemployment.national === 4.3 && mPriv.data.macro.unemployment.lfpr === 61.8);
+ok("mortgage30 overlaid", mPriv.data.macro.mortgage.national === 6.48);
+ok("WTI + d1 overlaid", mPriv.data.crossAsset.wti.current === 71.2 && mPriv.data.crossAsset.wti.d1pct === -0.8);
+ok("VIX + weekChg + series overlaid", mPriv.data.marketPulse.vix.current === 16.06 && mPriv.data.marketPulse.vix.weekChg === -2.1 && mPriv.data.marketPulse.vix.series.length === 3);
+ok("BTC + d1 overlaid", mPriv.data.crossAsset.btc.current === 109200 && mPriv.data.crossAsset.btc.d1pct === 1.2);
+ok("F&G score overlaid (num)", mPriv.data.marketPulse.fearGreed.score === 62);
+ok("F&G label overlaid (string)", mPriv.data.marketPulse.fearGreed.label === "Greed");
+ok("Put/Call overlaid", mPriv.data.marketPulse.putCall.current === 0.79);
+ok("meta lastRefresh + session overlaid", mPriv.data.lastRefresh === "06/04/2026 14:00 ET" && mPriv.data.session === "OPEN");
+ok("CPI left as mock (snapshot emits raw index — DEFERRED v2.1)", mPriv.data.macro.cpi.headline === 3.8 && mPriv.data.macro.cpi.core === 2.8);
+ok("badge LIVE when cached:false", mPriv.badge === "LIVE");
+ok("merge does not mutate original mock", MOCK_DATA.marketPulse.spy.price === 745.83);
 
-const mergedPub = mergeLiveOverMock(MOCK_DATA, payload, /*publicView=*/ true);
-ok("PUBLIC view hides licensed sp500 (stays mock 0)", mergedPub.data.marketPulse.spx.index === 0);
-ok("PUBLIC view still shows public tenYear", mergedPub.data.crossAsset.treasury10y.current === 4.32);
+const mCached = mergeLiveOverMock(MOCK_DATA, { ...snapPayload, cached: true }, false);
+ok("badge CACHED when cached:true", mCached.badge === "CACHED");
+const mPub = mergeLiveOverMock(MOCK_DATA, snapPayload, true);
+ok("PUBLIC view overlays public SPY", mPub.data.marketPulse.spy.price === 741.2);
+ok("PUBLIC view overlays citation VIX (no licensed fields to strip)", mPub.data.marketPulse.vix.current === 16.06);
+const mEmpty = mergeLiveOverMock(MOCK_DATA, { live: {} }, false);
+ok("empty live => MOCK badge, untouched", mEmpty.badge === "MOCK" && mEmpty.data.marketPulse.spy.price === 745.83);
+const mBadShape = mergeLiveOverMock(MOCK_DATA, { metrics: {} }, false);
+ok("old {metrics} shape => MOCK (no crash)", mBadShape.badge === "MOCK");
+const mInvalid = mergeLiveOverMock(MOCK_DATA, { live: { spyPrice: "x", spySeries: "notarray", fearGreedLabel: 5 }, cached: false }, false);
+ok("invalid num rejected (keeps mock)", mInvalid.data.marketPulse.spy.price === 745.83);
+ok("invalid series rejected (keeps mock)", mInvalid.data.marketPulse.spy.series[0] === 686);
+ok("invalid string rejected (keeps mock label)", typeof mInvalid.data.marketPulse.fearGreed.label === "string" && mInvalid.data.marketPulse.fearGreed.label !== 5);
 
-const mergedEmpty = mergeLiveOverMock(MOCK_DATA, { metrics: {} }, false);
-ok("empty payload => MOCK badge, untouched data", mergedEmpty.badge === "MOCK" && mergedEmpty.data.crossAsset.treasury10y.current === 0);
+// ---- 2. FEAT-204 path-resolution gate -----------------------------------
+console.log("\n[2] FEAT-204 — every SOURCES path resolves in real MOCK_DATA");
+const resolvePath = (o, p) => p.split(".").reduce((a, k) => (a == null ? undefined : a[k]), o);
+const unresolved = Object.entries(SOURCES).filter(([, s]) => resolvePath(MOCK_DATA, s.path) === undefined).map(([k, s]) => `${k}->${s.path}`);
+ok("all SOURCES paths resolve in dashboard MOCK_DATA", unresolved.length === 0);
+if (unresolved.length) console.log("   unresolved:", unresolved.join(", "));
+ok("CPI fields not mapped (deferred — raw index)", !("cpiHeadline" in SOURCES) && !("cpiCore" in SOURCES) && !("cpiTrend" in SOURCES));
+ok("every SOURCES entry has path + valid kind", Object.values(SOURCES).every((s) => typeof s.path === "string" && ["num", "series", "str"].includes(s.kind)));
 
-// ---- 7. coverage check --------------------------------------------------
-console.log("\n[7] coverage — SERIES vs SOURCES alignment");
-const seriesKeys = Object.keys(SERIES).sort();
-const sourceKeys = Object.keys(SOURCES).sort();
-ok("worker SERIES keys === front-end SOURCES keys", JSON.stringify(seriesKeys) === JSON.stringify(sourceKeys));
-ok("every SOURCES entry has a path", sourceKeys.every((k) => typeof SOURCES[k].path === "string"));
-
-// ---- summary ------------------------------------------------------------
 console.log(`\n=== SMOKE TEST: ${pass} passed, ${fail} failed ===`);
 process.exit(fail === 0 ? 0 : 1);
