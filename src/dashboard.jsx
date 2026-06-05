@@ -517,7 +517,7 @@ const IpoCountdownStrip = () => (
 );
 
 // ─── FEAT-169 · REGIME VERDICT BAND (full-width, relocated under macro strip) ──
-// The friend-readable headline ("is it safe to be in the market?") — first signal
+// The friend-readable headline ("wen moon?") — first signal
 // seen on mobile (above the command grid) and prominent on desktop. Soft regime tint
 // per AS2-01. Reuses computeRegime + regimeFactors.
 const RegimeBand=({d})=>{
@@ -525,16 +525,18 @@ const RegimeBand=({d})=>{
   const regime=computeRegime(d);
   const factors=regimeFactors(d);
   const bulls=factors.filter(f=>f.bull).length;
+  // "wen moon?" — map the regime verdict to our moon ratings: RISK-ON→MOONING, MIXED→HODL, RISK-OFF→DIAMOND HANDS
+  const moon=WEN_MOON_STATES[{ "RISK-ON":0, "MIXED":1, "RISK-OFF":2 }[regime.label] ?? 1];
   return(
     <div style={{background:regime.tint,borderBottom:`1px solid ${regime.color}33`,borderTop:`1px solid ${regime.color}22`,padding:"10px 20px",position:"relative"}}>
       <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",gap:12,flexWrap:"wrap"}}>
         {/* Left: label + sub */}
         <div style={{display:"flex",alignItems:"baseline",gap:12,flexWrap:"wrap",minWidth:0}}>
           <div>
-            <div style={{fontFamily:T.fontMono,fontSize:8,color:regime.color,letterSpacing:"0.14em",textTransform:"uppercase"}}>Macro Regime · is it safe to be in the market?</div>
+            <div style={{fontFamily:T.fontMono,fontSize:8,color:regime.color,letterSpacing:"0.14em",textTransform:"uppercase"}}>Macro Regime · wen moon?</div>
             <div style={{display:"flex",alignItems:"baseline",gap:10,flexWrap:"wrap"}}>
-              <span style={{fontFamily:T.fontMono,fontSize:22,fontWeight:700,color:regime.color,letterSpacing:"-0.01em"}}>{regime.label}</span>
-              <span style={{fontFamily:T.fontMono,fontSize:10,color:T.textSecondary}}>{regime.sub}</span>
+              <span style={{fontFamily:T.fontMono,fontSize:22,fontWeight:700,color:regime.color,letterSpacing:"-0.01em"}}>{moon.label}</span>
+              <span style={{fontFamily:T.fontMono,fontSize:10,color:T.textSecondary}}>{regime.label} · {regime.sub}</span>
               <span style={{fontFamily:T.fontMono,fontSize:9,color:T.textMuted}}>{bulls}/5 bullish · {regime.bullVotes} vote{regime.bullVotes===1?"":"s"} bull / {regime.bearVotes} bear</span>
             </div>
           </div>
