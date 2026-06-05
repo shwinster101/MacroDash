@@ -57,6 +57,43 @@ const T = {
   fontMono:DT["font-mono"], fontSans:DT["font-sans"], fontDisplay:DT["font-display"],
 };
 
+// ─── WEN MOON METER THRESHOLDS (configurable) ─────────────────────────────
+// SPY daily change % thresholds for the mood badge on the Macro Strip
+const WEN_MOON_UP = 0.5;    // above this → MOONING
+const WEN_MOON_DOWN = -0.5; // below this → DIAMOND HANDS
+
+// ─── IPO COUNTDOWN TARGETS ────────────────────────────────────────────────
+// Dates and valuations for the Countdown to Launch strip
+const IPO_SPACEX = {
+  name: "SpaceX", ticker: "SPACEX", color: "#3b82f6",
+  ipoDate: new Date("2026-06-12T09:30:00-04:00"), // June 12 2026 market open ET
+  isExact: true,
+  stage: "PRICING → TRADING", stageNote: "Roadshow active, pricing June 11",
+  pricePerShare: "$135", valuation: "$1.77T",
+  progressPct: 90,
+  stageIndex: 2, // 0=Filed, 1=Roadshow, 2=Pricing, 3=Trading
+};
+const IPO_ANTHROPIC = {
+  name: "Anthropic", ticker: "ANTH", color: "#f97316",
+  ipoDate: new Date("2026-10-15T09:30:00-04:00"), // ~October 2026 (approximate)
+  isExact: false,
+  stage: "S-1 FILED → ROADSHOW",
+  pricePerShare: null, valuation: "$965B",
+  progressPct: 40,
+  stageIndex: 1,
+};
+const IPO_OPENAI = {
+  name: "OpenAI", ticker: "OAII", color: "#10b981",
+  ipoDate: new Date("2026-12-01T09:30:00-05:00"), // ~Q4 2026 (approximate)
+  isExact: false,
+  stage: "S-1 FILED → REVIEW",
+  pricePerShare: null, valuation: "$852B–$1T",
+  progressPct: 30,
+  stageIndex: 0,
+};
+const IPO_TARGETS = [IPO_SPACEX, IPO_ANTHROPIC, IPO_OPENAI];
+const IPO_STAGES = ["Filed", "Roadshow", "Pricing", "Trading"];
+
 // ─── SOURCE BOX ────────────────────────────────────────────────────────────
 // FEAT-167: CACHED badge uses dashed border + zinc-400 (#a1a1aa)
 const apiColors = {
@@ -310,6 +347,171 @@ const DirTile=({label,value,d1,w1,m1,band,invert=false,spark,source,sourceEp,mod
   );
 };
 
+// ─── WEN MOON METER (mood badge for Macro Strip) ─────────────────────────
+const WEN_MOON_STATES = [
+  { label: "MOONING 🚀",       color: T.green, glow: T.green },
+  { label: "HODL 💎",          color: T.amber, glow: T.amber },
+  { label: "DIAMOND HANDS 🙌", color: T.red,   glow: T.red },
+];
+function wenMoonState(spyChangePct) {
+  const pct = typeof spyChangePct === "number" && isFinite(spyChangePct) ? spyChangePct : 0;
+  if (pct > WEN_MOON_UP)   return WEN_MOON_STATES[0]; // MOONING
+  if (pct < WEN_MOON_DOWN) return WEN_MOON_STATES[2]; // DIAMOND HANDS
+  return WEN_MOON_STATES[1]; // HODL
+}
+const IS_DEV = !(typeof import.meta !== "undefined" && import.meta.env && import.meta.env.VITE_DATA_MODE === "live");
+const WenMoonBadge = ({ spyChangePct }) => {
+  const [demoIdx, setDemoIdx] = useState(null); // null = use real data
+  const s = demoIdx !== null ? WEN_MOON_STATES[demoIdx] : wenMoonState(spyChangePct);
+  const handleClick = IS_DEV ? () => {
+    setDemoIdx(prev => prev === null ? 0 : (prev + 1) % WEN_MOON_STATES.length);
+  } : undefined;
+  return (
+    <div
+      onClick={handleClick}
+      title={IS_DEV ? "Click to cycle mood (dev only)" : undefined}
+      style={{
+        display:"flex", alignItems:"center", gap:6, flexShrink:0,
+        background: s.color + "18",
+        border: `1px solid ${s.color}55`,
+        borderRadius: 20,
+        padding: "4px 12px",
+        boxShadow: `0 0 8px ${s.glow}33`,
+        cursor: IS_DEV ? "pointer" : "default",
+        userSelect: "none",
+        transition: "all 0.2s",
+      }}>
+      <div style={{ fontFamily:T.fontMono, fontSize:10, fontWeight:700, color:s.color, whiteSpace:"nowrap", letterSpacing:"0.04em" }}>
+        {s.label}
+      </div>
+      {IS_DEV && demoIdx !== null && (
+        <div style={{ fontFamily:T.fontMono, fontSize:7, color:T.textMuted, whiteSpace:"nowrap" }}>DEMO</div>
+      )}
+    </div>
+  );
+};
+
+// ─── IPO COUNTDOWN TO LAUNCH STRIP ───────────────────────────────────────
+function useCountdown(targetDate, isExact) {
+  const [now, setNow] = useState(Date.now());
+  useEffect(() => {
+    if (!isExact) return;
+    const id = setInterval(() => setNow(Date.now()), 1000);
+    return () => clearInterval(id);
+  }, [isExact]);
+  const diff = targetDate.getTime() - now;
+  if (diff <= 0) return { expired: true, text: "LAUNCHED", d:0, h:0, m:0, s:0 };
+  const d = Math.floor(diff / 86400000);
+  const h = Math.floor((diff % 86400000) / 3600000);
+  const m = Math.floor((diff % 3600000) / 60000);
+  const s = Math.floor((diff % 60000) / 1000);
+  return { expired: false, d, h, m, s, text: `${d}d ${String(h).padStart(2,"0")}:${String(m).padStart(2,"0")}:${String(s).padStart(2,"0")}` };
+}
+function approxCountdown(targetDate) {
+  const diff = targetDate.getTime() - Date.now();
+  if (diff <= 0) return "LAUNCHED";
+  const months = Math.round(diff / (30.44 * 86400000));
+  if (months <= 1) return "~1 month";
+  return `~${months} months`;
+}
+const IpoCard = ({ ipo }) => {
+  const countdown = useCountdown(ipo.ipoDate, ipo.isExact);
+  const approx = ipo.isExact ? null : approxCountdown(ipo.ipoDate);
+  // Post-IPO: exact-date companies flip to TRADING state once countdown expires
+  const isTrading = ipo.isExact && countdown.expired;
+  const effectiveStageIndex = isTrading ? IPO_STAGES.length - 1 : ipo.stageIndex;
+  const effectiveProgress = isTrading ? 100 : ipo.progressPct;
+  const effectiveStage = isTrading ? "TRADING" : ipo.stage;
+  return (
+    <div style={{
+      flex:"1 1 200px", minWidth:200,
+      background: isTrading ? T.greenDim : T.surface,
+      border: `1px solid ${isTrading ? T.green : ipo.color}44`,
+      borderRadius: 6,
+      padding: "12px 14px",
+      display:"flex", flexDirection:"column", gap:8,
+    }}>
+      {/* Company header */}
+      <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center" }}>
+        <div style={{ display:"flex", alignItems:"center", gap:6 }}>
+          <div style={{ width:8, height:8, borderRadius:"50%", background:ipo.color, boxShadow:`0 0 6px ${ipo.color}88` }}/>
+          <span style={{ fontFamily:T.fontDisplay, fontSize:14, fontWeight:700, color:T.textPrimary }}>{ipo.name}</span>
+        </div>
+        <span style={{ fontFamily:T.fontMono, fontSize:9, color:ipo.color, letterSpacing:"0.06em" }}>{ipo.ticker}</span>
+      </div>
+
+      {/* Countdown or TRADING state */}
+      <div style={{ fontFamily:T.fontMono, fontWeight:700, letterSpacing:"0.04em", textAlign:"center" }}>
+        {isTrading ? (
+          <div>
+            <div style={{ fontSize:18, color:T.green }}>TRADING 🎉</div>
+            <div style={{ fontSize:9, color:T.textSecondary, fontWeight:400, marginTop:2 }}>Day-1 performance: awaiting data</div>
+          </div>
+        ) : ipo.isExact ? (
+          <span style={{ fontSize:18, color:T.textPrimary }}>{countdown.text}</span>
+        ) : (
+          <span style={{ fontSize:16, color:T.textSecondary }}>{approx}</span>
+        )}
+      </div>
+
+      {/* Stage pipeline dots */}
+      <div style={{ display:"flex", alignItems:"center", gap:0, justifyContent:"center" }}>
+        {IPO_STAGES.map((st, i) => {
+          const active = i <= effectiveStageIndex;
+          const isCurrent = i === effectiveStageIndex;
+          return (
+            <div key={st} style={{ display:"flex", alignItems:"center" }}>
+              <div style={{
+                width: isCurrent ? 10 : 7, height: isCurrent ? 10 : 7,
+                borderRadius: "50%",
+                background: active ? (isTrading ? T.green : ipo.color) : T.border,
+                boxShadow: isCurrent ? `0 0 6px ${isTrading ? T.green : ipo.color}` : "none",
+                transition: "all 0.3s",
+              }}/>
+              {i < IPO_STAGES.length - 1 && (
+                <div style={{ width:20, height:2, background: i < effectiveStageIndex ? (isTrading ? T.green+"88" : ipo.color+"88") : T.border }}/>
+              )}
+            </div>
+          );
+        })}
+      </div>
+      <div style={{ display:"flex", justifyContent:"space-between", fontFamily:T.fontMono, fontSize:7, color:T.textMuted }}>
+        {IPO_STAGES.map(st => <span key={st}>{st}</span>)}
+      </div>
+
+      {/* Stage label */}
+      <div style={{ fontFamily:T.fontMono, fontSize:9, color:isTrading ? T.green : ipo.color, textAlign:"center", letterSpacing:"0.06em" }}>
+        {effectiveStage}
+      </div>
+
+      {/* Progress bar */}
+      <div style={{ height:4, background:T.border, borderRadius:2, overflow:"hidden" }}>
+        <div style={{ width:`${effectiveProgress}%`, height:"100%", background:isTrading ? T.green : ipo.color, borderRadius:2, transition:"width 0.5s" }}/>
+      </div>
+
+      {/* Valuation & price */}
+      <div style={{ display:"flex", justifyContent:"space-between", alignItems:"baseline" }}>
+        <span style={{ fontFamily:T.fontMono, fontSize:11, color:T.textPrimary, fontWeight:700 }}>{ipo.valuation}</span>
+        {ipo.pricePerShare && <span style={{ fontFamily:T.fontMono, fontSize:9, color:T.textSecondary }}>{ipo.pricePerShare}/share</span>}
+      </div>
+    </div>
+  );
+};
+const IpoCountdownStrip = () => (
+  <div style={{
+    background: T.bg,
+    borderBottom: `1px solid ${T.border}`,
+    padding: "10px 20px",
+  }}>
+    <div style={{ fontFamily:T.fontMono, fontSize:8, color:T.textMuted, letterSpacing:"0.12em", textTransform:"uppercase", marginBottom:8 }}>
+      COUNTDOWN TO LAUNCH — IPO TRACKER
+    </div>
+    <div style={{ display:"flex", gap:12, overflowX:"auto" }} className="ipo-strip-inner">
+      {IPO_TARGETS.map(ipo => <IpoCard key={ipo.ticker} ipo={ipo}/>)}
+    </div>
+  </div>
+);
+
 // ─── FEAT-169 · REGIME VERDICT BAND (full-width, relocated under macro strip) ──
 // The friend-readable headline ("is it safe to be in the market?") — first signal
 // seen on mobile (above the command grid) and prominent on desktop. Soft regime tint
@@ -524,6 +726,8 @@ export default function Dashboard({ publicView = false } = {}) {
           .mag10-scroll{overflow-x:auto!important;}
           .dir-tiles{flex-wrap:wrap!important;}
           .hide-mobile{display:none!important;}
+          .ipo-strip-inner{flex-direction:column!important;}
+          .wen-moon-mobile{display:none!important;}
         }
         .mag10-fade{-webkit-mask-image:linear-gradient(to right,black 85%,transparent 100%);mask-image:linear-gradient(to right,black 85%,transparent 100%);}
         @media(prefers-reduced-motion:reduce){.pulse-anim{animation:none!important;}}
@@ -554,8 +758,8 @@ export default function Dashboard({ publicView = false } = {}) {
       </div>
 
       {/* ── MACRO STRIP (persistent ticker — always visible; FEAT-170 reflows on mobile) ── */}
-      <div style={{background:T.surfaceHigh,borderBottom:`1px solid ${T.border}`,padding:"6px 20px",overflowX:"auto"}} className="macro-strip">
-        <div style={{display:"flex",gap:20,minWidth:"max-content"}} className="macro-strip-inner">
+      <div style={{background:T.surfaceHigh,borderBottom:`1px solid ${T.border}`,padding:"6px 20px",overflowX:"auto",display:"flex",alignItems:"center",justifyContent:"space-between",gap:12}} className="macro-strip">
+        <div style={{display:"flex",gap:20,minWidth:"max-content",flex:1}} className="macro-strip-inner">
           {[
             {l:"SPY",  v:`$${d.marketPulse.spy.price}`,      s:fmt.pct(d.marketPulse.spy.changePct), sc:pctColor(d.marketPulse.spy.changePct)},
             {l:"QQQ",  v:`$${d.marketPulse.qqq.price}`,      s:fmt.pct(d.marketPulse.qqq.changePct), sc:pctColor(d.marketPulse.qqq.changePct)},
@@ -573,10 +777,15 @@ export default function Dashboard({ publicView = false } = {}) {
             </div>
           ))}
         </div>
+        {/* WEN MOON METER — mood badge based on SPY daily change */}
+        <WenMoonBadge spyChangePct={d.marketPulse.spy.changePct}/>
       </div>
 
       {/* FEAT-169: Regime Verdict band — full-width, directly under the macro strip */}
       <RegimeBand d={d}/>
+
+      {/* IPO COUNTDOWN TO LAUNCH — below regime band, above command center */}
+      <IpoCountdownStrip/>
 
       {/* FEAT-162: Session Delta Bar — Alerts Δ first (conditional: hidden when nothing actionable) */}
       {showDeltaBar&&(
