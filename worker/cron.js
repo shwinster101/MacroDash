@@ -1,5 +1,5 @@
 // MacroDash v2.0 — Cron Worker (Cloudflare Workers, scheduled handler)
-// Pulls FRED macro twice daily (legacy KV key) + warms /api/snapshot at 10am ET.
+// Pulls FRED macro twice daily (legacy KV key) + force-refreshes /api/snapshot at 10am ET.
 // The browser never sees this Worker; it only reads the KV key via the
 // Pages Function (functions/api/fred.js). FRED_KEY is a Worker secret.
 //
@@ -11,10 +11,10 @@ const FRED_BASE = "https://api.stlouisfed.org/fred/series/observations";
 const KV_KEY = "pulse:macro:latest";
 const FETCH_TIMEOUT_MS = 8000;
 
-// v2.5.2 — 10am ET weekday snapshot warmer. The dashboard reads /api/snapshot
-// (per-ET-day cache; first load each morning fetches fresh). This cron triggers that
-// fetch at 10am ET so the day's first real visitor gets an instant CACHED response even
-// if nobody opened the dashboard earlier. Warm-if-cold; a no-op if already warm.
+// v2.5.4 — 10am ET weekday snapshot FORCE-REFRESH. The dashboard reads /api/snapshot
+// (per-ET-day cache; first load wins for the day). FRED publishes the prior close with a
+// lag, so an early first-load can lock in stale data all day. This cron busts the day's
+// cache key then re-fetches, pulling FRED's freshest each weekday at 10am ET.
 const SNAPSHOT_WARM_CRON = "0 14 * * 1-5"; // 10am America/New_York (EDT); EST -> "0 15 * * 1-5"
 const SNAPSHOT_URL = "https://macrodash.pages.dev/api/snapshot";
 
@@ -163,22 +163,27 @@ function authorized(request, env) {
   return env.REFRESH_SECRET && got && got === env.REFRESH_SECRET;
 }
 
-// Warm the /api/snapshot per-day cache by triggering the Pages Function, which fetches
-// fresh FRED on a cold key and write-throughs to the shared PULSE_CACHE KV.
-async function warmSnapshot() {
+// Force-refresh the /api/snapshot per-day cache: delete the day's key, then trigger the
+// Pages Function (now a cache MISS) so it pulls fresh FRED and write-throughs to KV.
+// The short delay lets the KV delete propagate before the re-fetch — KV is eventually
+// consistent, so without it the Function may still read the pre-delete value.
+async function refreshSnapshot(env) {
   try {
-    await fetch(SNAPSHOT_URL, { headers: { "user-agent": "macrodash-snapshot-warmer" } });
+    const etDate = new Date().toLocaleDateString("en-CA", { timeZone: "America/New_York" }); // YYYY-MM-DD
+    await env.PULSE_CACHE.delete(`pulse:snapshot:v5:${etDate}`);
+    await new Promise((r) => setTimeout(r, 3000)); // let the delete propagate before re-fetch
+    await fetch(SNAPSHOT_URL, { headers: { "user-agent": "macrodash-snapshot-refresher" } });
   } catch {
-    /* non-fatal: the next visitor warms it on first load */
+    /* non-fatal: a degraded fetch won't re-cache (snapshot.js healthy-gate); next visitor refetches */
   }
 }
 
 export default {
   // Cron Triggers invoke scheduled(). UTC. controller.cron tells which fired.
   async scheduled(controller, env, ctx) {
-    // 10am ET weekday: warm the /api/snapshot per-day cache (see SNAPSHOT_WARM_CRON note).
+    // 10am ET weekday: force-refresh the /api/snapshot per-day cache (see SNAPSHOT_WARM_CRON note).
     if (controller.cron === SNAPSHOT_WARM_CRON) {
-      ctx.waitUntil(warmSnapshot());
+      ctx.waitUntil(refreshSnapshot(env));
       return;
     }
     // Legacy stage-1 path: FRED macro -> KV pulse:macro:latest (dashboard now reads /api/snapshot).
