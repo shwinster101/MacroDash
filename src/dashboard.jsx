@@ -245,6 +245,9 @@ function computeRegime(d) {
   else if(cpiTrend[cpiTrend.length-1] - cpiTrend[0] > 0.5) bearVotes++;
   // Put/Call
   if(d.marketPulse.putCall.current < 0.75) bullVotes++; else if(d.marketPulse.putCall.current > 1.0) bearVotes++;
+  // Valuation (Shiller CAPE) — contrarian: a stretched market is bearish for forward returns (FEAT-R1)
+  const cape=d.macro.shillerPe;
+  if(cape.current < cape.mean*1.5) bullVotes++; else if(cape.current > 30 || cape.pctOfAth > 90) bearVotes++;
 
   const bull = bullVotes >= 3;
   const bear = bearVotes >= 3;
@@ -262,6 +265,7 @@ function regimeFactors(d) {
     {label:"Fear & Greed",   val:`${d.marketPulse.fearGreed.score} — ${d.marketPulse.fearGreed.label}`,   bull:d.marketPulse.fearGreed.score>55},
     {label:"CPI Trend",      val:d.macro.cpi.trend.slice(-1)[0]<d.macro.cpi.trend.slice(-2)[0]?"Cooling (bullish)":"Re-accelerating", bull:d.macro.cpi.trend.slice(-1)[0]<d.macro.cpi.trend.slice(-2)[0]},
     {label:"Put/Call Ratio", val:`${d.marketPulse.putCall.current} — ${d.marketPulse.putCall.current<0.75?"Bullish skew":"Neutral/bearish"}`, bull:d.marketPulse.putCall.current<0.75},
+    {label:"Valuation",      val:`${d.macro.shillerPe.current} CAPE · ${d.macro.shillerPe.pctOfAth}% of ATH`, bull:d.macro.shillerPe.current<d.macro.shillerPe.mean*1.5},
   ];
 }
 
@@ -547,7 +551,7 @@ const RegimeBand=({d})=>{
             <div style={{display:"flex",alignItems:"baseline",gap:10,flexWrap:"wrap"}}>
               <span style={{fontFamily:T.fontMono,fontSize:22,fontWeight:700,color:regime.color,letterSpacing:"-0.01em"}}>{moon.label}</span>
               <span style={{fontFamily:T.fontMono,fontSize:10,color:T.textSecondary}}>{regime.label} · {regime.sub}</span>
-              <span style={{fontFamily:T.fontMono,fontSize:9,color:T.textMuted}}>{bulls}/5 bullish · {regime.bullVotes} vote{regime.bullVotes===1?"":"s"} bull / {regime.bearVotes} bear</span>
+              <span style={{fontFamily:T.fontMono,fontSize:9,color:T.textMuted}}>{bulls}/6 bullish · {regime.bullVotes} vote{regime.bullVotes===1?"":"s"} bull / {regime.bearVotes} bear</span>
             </div>
           </div>
         </div>
@@ -557,7 +561,7 @@ const RegimeBand=({d})=>{
           <div style={{display:"flex",gap:5,flexWrap:"wrap",justifyContent:"flex-end"}}>
             {factors.map((f,i)=>(
               <span key={f.label} style={{fontFamily:T.fontMono,fontSize:8,color:f.bull?T.green:T.red,border:`1px solid ${f.bull?T.green:T.red}44`,borderRadius:3,padding:"1px 5px",letterSpacing:"0.03em",background:"#00000022",whiteSpace:"nowrap"}}>
-                {["10Y","VIX","F&G","CPI","P/C"][i]} {f.bull?"▲":"▼"}
+                {["10Y","VIX","F&G","CPI","P/C","VAL"][i]} {f.bull?"▲":"▼"}
               </span>
             ))}
           </div>

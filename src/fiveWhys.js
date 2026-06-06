@@ -39,7 +39,7 @@ export function computeFiveWhys(data, regime = {}) {
 
   const headline =
     `${sessionPrefix(data.session)} SPY ${pct(spy.changePct)}: ` +
-    `${label} regime on ${bull}/5 bullish factors` +
+    `${label} regime on ${bull}/6 bullish factors` +
     (mover ? `, ${mover.ticker} ${pct(mover.chgPct)} leading.` : ".");
 
   const whys = [
