@@ -58,6 +58,19 @@ export function setPath(obj, path, value) {
   return root;
 }
 
+// Like setPath but mutates `obj` IN PLACE (caller owns a copy). The merge clones once,
+// then calls this per field — so N overlays cost ONE clone instead of N.
+function setPathMut(obj, path, value) {
+  const keys = path.split(".");
+  let node = obj;
+  for (let i = 0; i < keys.length - 1; i++) {
+    if (node[keys[i]] == null || typeof node[keys[i]] !== "object") node[keys[i]] = {};
+    node = node[keys[i]];
+  }
+  node[keys[keys.length - 1]] = value;
+  return obj;
+}
+
 function validValue(v, kind) {
   if (kind === "series") return Array.isArray(v) && v.length > 0 && v.every((n) => Number.isFinite(n));
   if (kind === "str")    return typeof v === "string" && v.length > 0;
@@ -80,6 +93,8 @@ export function mergeLiveOverMock(mockData, payload, publicView = false) {
     return { data: mockData, badge: "MOCK", asOf: null, provenance };
   }
   const liveBadge = payload.cached ? "CACHED" : "LIVE";
+  // Clone the mock ONCE (lazily, on the first valid overlay), then mutate that single copy
+  // for every field — not once per field. The original mockData is never mutated.
   let data = mockData;
   let anyLive = false;
   for (const key of Object.keys(SOURCES)) {
@@ -87,7 +102,8 @@ export function mergeLiveOverMock(mockData, payload, publicView = false) {
     if (publicView && PUBLIC_HIDDEN_CLASSES.includes(src.displayClass)) continue;
     const v = live[key];
     if (!validValue(v, src.kind || "num")) continue;
-    data = setPath(data, src.path, v);
+    if (data === mockData) data = structuredClone(mockData); // one clone for the whole merge
+    setPathMut(data, src.path, v);
     provenance[key] = liveBadge;
     if (key !== "lastRefresh" && key !== "session") anyLive = true; // meta alone isn't "live"
   }

@@ -302,25 +302,30 @@ const SectionHeader=({children})=>(
   <div style={{fontFamily:T.fontMono,fontSize:9,color:DT["text-muted"],letterSpacing:"0.14em",textTransform:"uppercase",paddingBottom:6,marginBottom:10,borderBottom:`1px solid ${T.border}`}}>{children}</div>
 );
 
-// UndoToast (FEAT-166: 5s mobile / 4s desktop, bottom 80px, reduced-motion prefixes)
-const UndoToastCtx = {queue:[], listeners:[]};
+// UndoToast (FEAT-166: 5s mobile / 4s desktop). Stacks multiple toasts so a rapid second
+// delete never overwrites the first one's undo — each toast has its own id, timer, and dismiss.
 function useUndoToast() {
-  const [toast, setToast] = useState(null);
+  const [toasts, setToasts] = useState([]);
+  const dismiss = useCallback((id) => setToasts(prev => prev.filter(t => t.id !== id)), []);
   const show = useCallback((msg, onUndo) => {
-    setToast({msg, onUndo, id:Date.now()});
-    const isMobile = window.innerWidth < 768;
-    const delay = isMobile ? 5000 : 4000; // FEAT-166
-    setTimeout(() => setToast(null), delay);
+    const id = `${Date.now()}-${Math.random()}`;
+    setToasts(prev => [...prev, { id, msg, onUndo }]);
+    const delay = (typeof window !== "undefined" && window.innerWidth < 768) ? 5000 : 4000; // FEAT-166
+    setTimeout(() => setToasts(prev => prev.filter(t => t.id !== id)), delay);
   }, []);
-  return { toast, show, dismiss: () => setToast(null) };
+  return { toasts, show, dismiss };
 }
-const UndoToast=({toast, dismiss})=>{
-  if(!toast) return null;
+const UndoToast=({toasts, dismiss})=>{
+  if(!toasts || !toasts.length) return null;
   return(
-    <div style={{position:"fixed",bottom:80,left:"50%",transform:"translateX(-50%)",background:T.surfaceHigh,border:`1px solid ${T.amber}66`,borderRadius:6,padding:"10px 16px",display:"flex",gap:12,alignItems:"center",zIndex:999,boxShadow:"0 4px 20px #00000088"}}>
-      <span style={{fontFamily:T.fontMono,fontSize:11,color:T.textPrimary}}>{toast.msg}</span>
-      <button onClick={()=>{toast.onUndo();dismiss();}} style={{fontFamily:T.fontMono,fontSize:11,background:T.amber,border:"none",color:"#000",padding:"3px 10px",borderRadius:3,cursor:"pointer",fontWeight:700}}>UNDO</button>
-      <button onClick={dismiss} style={{fontFamily:T.fontMono,fontSize:11,background:"none",border:"none",color:T.textMuted,cursor:"pointer"}}>✕</button>
+    <div style={{position:"fixed",bottom:80,left:"50%",transform:"translateX(-50%)",display:"flex",flexDirection:"column",gap:8,zIndex:999}}>
+      {toasts.map(t=>(
+        <div key={t.id} style={{background:T.surfaceHigh,border:`1px solid ${T.amber}66`,borderRadius:6,padding:"10px 16px",display:"flex",gap:12,alignItems:"center",boxShadow:"0 4px 20px #00000088"}}>
+          <span style={{fontFamily:T.fontMono,fontSize:11,color:T.textPrimary}}>{t.msg}</span>
+          <button onClick={()=>{t.onUndo();dismiss(t.id);}} style={{fontFamily:T.fontMono,fontSize:11,background:T.amber,border:"none",color:"#000",padding:"3px 10px",borderRadius:3,cursor:"pointer",fontWeight:700}}>UNDO</button>
+          <button onClick={()=>dismiss(t.id)} style={{fontFamily:T.fontMono,fontSize:11,background:"none",border:"none",color:T.textMuted,cursor:"pointer"}}>✕</button>
+        </div>
+      ))}
     </div>
   );
 };
@@ -396,9 +401,13 @@ function useCountdown(targetDate, isExact) {
   const [now, setNow] = useState(Date.now());
   useEffect(() => {
     if (!isExact) return;
-    const id = setInterval(() => setNow(Date.now()), 1000);
+    if (targetDate.getTime() - Date.now() <= 0) return; // already launched: never start ticking
+    const id = setInterval(() => {
+      setNow(Date.now());
+      if (targetDate.getTime() - Date.now() <= 0) clearInterval(id); // stop once it reaches zero
+    }, 1000);
     return () => clearInterval(id);
-  }, [isExact]);
+  }, [isExact, targetDate]);
   const diff = targetDate.getTime() - now;
   if (diff <= 0) return { expired: true, text: "LAUNCHED", d:0, h:0, m:0, s:0 };
   const d = Math.floor(diff / 86400000);
@@ -670,7 +679,7 @@ export default function Dashboard({ publicView = false } = {}) {
   const [expandedHW,setExpandedHW]=useState(null);
   const [mag10open,setMag10open]=useState(true);
   const [copied,setCopied]=useState(false);
-  const { toast, show:showToast, dismiss } = useUndoToast();
+  const { toasts, show:showToast, dismiss } = useUndoToast();
   // FEAT-204 wiring — single-point hook swap; mock stays default, operator flips live post-deploy
   const { data: DATA, mode, asOf, provenance } = useMarketData(MOCK_DATA, { publicView });
   const d=DATA;
@@ -740,7 +749,7 @@ export default function Dashboard({ publicView = false } = {}) {
         @media(prefers-reduced-motion:reduce){.pulse-anim{animation:none!important;}}
       `}</style>
 
-      <UndoToast toast={toast} dismiss={dismiss}/>
+      <UndoToast toasts={toasts} dismiss={dismiss}/>
 
       {/* ── HEADER (FEAT-161, FEAT-165) ── */}
       <div style={{background:T.surface,borderBottom:`1px solid ${T.border}`,padding:"8px 20px",display:"flex",justifyContent:"space-between",alignItems:"center",gap:8,flexWrap:"wrap",position:"sticky",top:0,zIndex:50}}>
@@ -1020,7 +1029,7 @@ export default function Dashboard({ publicView = false } = {}) {
               {/* Mag 8 (non-Musk public) */}
               <div style={{fontFamily:T.fontMono,fontSize:8,color:T.textMuted,letterSpacing:"0.1em",marginBottom:8}}>PUBLIC · SORTED BY MKT CAP</div>
               <div style={{display:"flex",gap:8,overflowX:"auto",paddingBottom:4}} className="mag10-scroll mag10-fade">
-                {d.mag10.filter(s=>!s.isMusk).map(s=><Mag10Card key={s.ticker} s={s}/>)}
+                {d.mag10.filter(s=>!s.isMusk).sort((a,b)=>(b.mktCapT||0)-(a.mktCapT||0)).map(s=><Mag10Card key={s.ticker} s={s}/>)}
               </div>
               {/* Musk divider */}
               <div style={{display:"flex",alignItems:"center",gap:10,margin:"14px 0 10px"}}>
