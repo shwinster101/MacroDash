@@ -137,7 +137,7 @@ async function fetchFred(key) {
         const prev   = parseFloat(obs[1]?.value);
         // Series of last 10 for sparkline (newest last)
         const spark  = obs.slice(0, 10).reverse().map(o => parseFloat(o.value)).filter(v => !isNaN(v));
-        return [field, latest, prev, spark];
+        return [field, latest, prev, spark, obs[0]?.date];
       })
     );
     results.push(...settled);
@@ -146,9 +146,10 @@ async function fetchFred(key) {
   const out = {};
   for (const r of results) {
     if (r.status !== "fulfilled") continue;
-    const [field, latest, prev, spark] = r.value;
+    const [field, latest, prev, spark, asOf] = r.value;
     if (isNaN(latest)) continue;
     out[field] = latest;
+    out[field + "AsOf"] = asOf; // FEAT-R2: observation date, for per-tile freshness
     // Derived deltas for specific fields
     if (field === "tenYear" && !isNaN(prev)) {
       out.tenYearD1 = parseFloat((latest - prev).toFixed(4));
@@ -184,10 +185,8 @@ async function fetchSpy(key) {
   const d = await r.json();
 
   // FRED returns "." for non-trading days — filter them. Newest first (desc).
-  const idx = (d.observations ?? [])
-    .filter(o => o.value !== ".")
-    .map(o => parseFloat(o.value))
-    .filter(v => !isNaN(v));
+  const validObs = (d.observations ?? []).filter(o => o.value !== "." && !isNaN(parseFloat(o.value)));
+  const idx = validObs.map(o => parseFloat(o.value));
 
   if (idx.length < 2) throw new Error("SP500 no data");
 
@@ -211,6 +210,7 @@ async function fetchSpy(key) {
     spySeries:    series,
     spxIndex:     Math.round(latest),   // FEAT-202: raw S&P 500 index, now live (same SP500 pull — $0, zero extra fetch)
     spxPrevClose: Math.round(prev),
+    spyPriceAsOf: validObs[0]?.date, spxIndexAsOf: validObs[0]?.date, // FEAT-R2: SP500 observation date
     ...(ma100 !== null ? { spyMa100: ma100 } : {}),
     ...(ma200 !== null ? { spyMa200: ma200 } : {}),
   };
@@ -247,7 +247,7 @@ async function fetchFearGreed() {
   const raw = d?.fear_and_greed?.score ?? d?.score ?? histLatest;
   if (raw == null || isNaN(Number(raw))) throw new Error("F&G parse failed");
   const score = Math.round(Number(raw));
-  return { fearGreed: score, fearGreedLabel: fgLabel(score) };
+  return { fearGreed: score, fearGreedLabel: fgLabel(score), fearGreedAsOf: day };
 }
 
 // ─── CBOE Put/Call scraper ────────────────────────────────────────────────
@@ -271,7 +271,7 @@ async function fetchPutCall() {
     const ratio = parseFloat(cols[4]);
     // Validate: a real equity P/C ratio sits roughly in 0.3–2.0.
     if (!isNaN(ratio) && ratio > 0.1 && ratio < 5) {
-      return { putCall: ratio };
+      return { putCall: ratio, putCallAsOf: cols[0] };
     }
   }
   throw new Error("P/C parse failed");

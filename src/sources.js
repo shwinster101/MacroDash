@@ -84,13 +84,14 @@ function validValue(v, kind) {
 // Returns { data, badge, asOf, provenance }: badge in MOCK | LIVE | CACHED, and
 // provenance maps every SOURCES key -> its own LIVE | CACHED | MOCK (drives per-tile badges).
 export function mergeLiveOverMock(mockData, payload, publicView = false) {
-  // Per-field provenance: default every mapped field to MOCK, upgrade on a valid overlay.
+  // Per-field provenance + freshness date, defaulting every mapped field to MOCK.
   const provenance = {};
+  const dataAsOf = {}; // FEAT-R2: per-field observation date, read from live[`${key}AsOf`]
   for (const key of Object.keys(SOURCES)) provenance[key] = "MOCK";
 
   const live = payload && payload.live;
   if (!live || Object.keys(live).length === 0) {
-    return { data: mockData, badge: "MOCK", asOf: null, provenance };
+    return { data: mockData, badge: "MOCK", asOf: null, provenance, dataAsOf };
   }
   const liveBadge = payload.cached ? "CACHED" : "LIVE";
   // Clone the mock ONCE (lazily, on the first valid overlay), then mutate that single copy
@@ -105,12 +106,29 @@ export function mergeLiveOverMock(mockData, payload, publicView = false) {
     if (data === mockData) data = structuredClone(mockData); // one clone for the whole merge
     setPathMut(data, src.path, v);
     provenance[key] = liveBadge;
+    if (live[`${key}AsOf`]) dataAsOf[key] = live[`${key}AsOf`]; // observation date, if the source emits one
     if (key !== "lastRefresh" && key !== "session") anyLive = true; // meta alone isn't "live"
   }
   if (!anyLive) {
-    // Only meta (or nothing) overlaid -> we return mock; keep provenance honest (all MOCK).
     for (const key of Object.keys(provenance)) provenance[key] = "MOCK";
-    return { data: mockData, badge: "MOCK", asOf: payload.asOf || null, provenance };
+    return { data: mockData, badge: "MOCK", asOf: payload.asOf || null, provenance, dataAsOf: {} };
   }
-  return { data, badge: liveBadge, asOf: payload.asOf || null, provenance };
+  return { data, badge: liveBadge, asOf: payload.asOf || null, provenance, dataAsOf };
+}
+
+// FEAT-R3: a live field is STALE when its observation date trails the current trading day by
+// more than the normal ~1-session FRED lag (weekday-aware; holidays are out of scope).
+export function isStale(dateStr, now = new Date()) {
+  if (!dateStr) return false;
+  const dt = new Date(`${dateStr}T00:00:00`);
+  if (isNaN(dt.getTime())) return false;
+  const today = new Date(now); today.setHours(0, 0, 0, 0);
+  let weekdays = 0;
+  const cur = new Date(dt);
+  while (cur < today) {
+    cur.setDate(cur.getDate() + 1);
+    const dow = cur.getDay();
+    if (dow !== 0 && dow !== 6) weekdays++;
+  }
+  return weekdays > 1; // 1 trading day behind = normal FRED EOD lag; >1 = stale
 }

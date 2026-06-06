@@ -16,6 +16,7 @@ export function useMarketData(mockData, opts = {}) {
     mode: MODE === "live" ? "LOADING" : "MOCK",
     asOf: null,
     provenance: {},
+    dataAsOf: {},
     loading: MODE === "live",
   });
 
@@ -32,12 +33,12 @@ export function useMarketData(mockData, opts = {}) {
       .then((payload) => {
         if (cancelled) return;
         const merged = mergeLiveOverMock(mockData, payload, publicView);
-        setState({ data: merged.data, mode: merged.badge, asOf: merged.asOf, provenance: merged.provenance, loading: false });
+        setState({ data: merged.data, mode: merged.badge, asOf: merged.asOf, provenance: merged.provenance, dataAsOf: merged.dataAsOf, loading: false });
       })
       .catch(() => {
         // Network/parse failure: silently fall back to mock. The dashboard
         // never breaks on a bad fetch; it just shows MOCK.
-        if (!cancelled) setState({ data: mockData, mode: "MOCK", asOf: null, provenance: {}, loading: false });
+        if (!cancelled) setState({ data: mockData, mode: "MOCK", asOf: null, provenance: {}, dataAsOf: {}, loading: false });
       });
 
     return () => {

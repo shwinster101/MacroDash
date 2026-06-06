@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback } from "react";
 import { LineChart, Line, BarChart, Bar, Cell, AreaChart, Area, XAxis, YAxis, Tooltip, ResponsiveContainer, ReferenceLine } from "recharts";
 import { useMarketData } from "./useMarketData.js"; // FEAT-204 wiring
 import { computeFiveWhys } from "./fiveWhys.js"; // v2.5: rule-based 5 Whys ($0, derived from live data)
+import { isStale } from "./sources.js"; // FEAT-R3: per-tile staleness
 
 // ─── DESIGN TOKENS v1.6 (FEAT-152 + FEAT-167) ─────────────────────────────
 // design-tokens.json canonical. Inline mirror — keep in sync.
@@ -331,7 +332,7 @@ const UndoToast=({toasts, dismiss})=>{
 };
 
 // Direction tile (v1.3 stoplight)
-const DirTile=({label,value,d1,w1,m1,band,invert=false,spark,source,sourceEp,mode="MOCK"})=>{
+const DirTile=({label,value,d1,w1,m1,band,invert=false,spark,source,sourceEp,mode="MOCK",asOf})=>{
   const tc=t=>t==="yellow"?T.yellow:t===T.green?T.green:T.red;
   const t1=stoplightColor(d1,band,invert), t2=stoplightColor(w1,band,invert), t3=stoplightColor(m1,band,invert);
   const verdict=verdictFromTones([t1,t2,t3]);
@@ -347,7 +348,7 @@ const DirTile=({label,value,d1,w1,m1,band,invert=false,spark,source,sourceEp,mod
       </div>
       <Badge label={verdict.label} color={verdict.color} small/>
       {spark&&<div style={{height:20,marginTop:5}}><ResponsiveContainer width="100%" height="100%"><LineChart data={spark.map((v,i)=>({v,i}))}><Line type="monotone" dataKey="v" stroke={T.amber} dot={false} strokeWidth={1}/></LineChart></ResponsiveContainer></div>}
-      {source&&<SourceBox api={source} endpoint={sourceEp||""} mode={mode}/>}
+      {source&&<SourceBox api={source} endpoint={sourceEp||""} mode={mode} asOf={asOf}/>}
     </div>
   );
 };
@@ -583,7 +584,7 @@ const RegimeBand=({d})=>{
 };
 
 // Fear & Greed gauge
-const FGGauge=({score,label,mode="MOCK"})=>{
+const FGGauge=({score,label,mode="MOCK",asOf})=>{
   const pct=score/100;
   const color=score<25?T.red:score<45?T.yellow:score<55?T.textSecondary:score<75?T.green:"#27ae60";
   const angle=-135+pct*270;
@@ -600,7 +601,7 @@ const FGGauge=({score,label,mode="MOCK"})=>{
       </div>
       <div style={{fontFamily:T.fontMono,fontSize:20,color,fontWeight:700}}>{score}</div>
       <div style={{fontFamily:T.fontMono,fontSize:9,color:T.textSecondary}}>{label}</div>
-      <SourceBox api="CNN" endpoint="fear-and-greed-index" mode={mode}/>
+      <SourceBox api="CNN" endpoint="fear-and-greed-index" mode={mode} asOf={asOf}/>
     </div>
   );
 };
@@ -681,10 +682,11 @@ export default function Dashboard({ publicView = false } = {}) {
   const [copied,setCopied]=useState(false);
   const { toasts, show:showToast, dismiss } = useUndoToast();
   // FEAT-204 wiring — single-point hook swap; mock stays default, operator flips live post-deploy
-  const { data: DATA, mode, asOf, provenance } = useMarketData(MOCK_DATA, { publicView });
+  const { data: DATA, mode, asOf, provenance, dataAsOf } = useMarketData(MOCK_DATA, { publicView });
   const d=DATA;
   const regime=computeRegime(d);
-  const modeOf=(k)=>provenance?.[k]||"MOCK"; // per-tile provenance: LIVE | CACHED | MOCK
+  const modeOf=(k)=>{const m=provenance?.[k]||"MOCK"; return (m==="LIVE"||m==="CACHED")&&isStale(dataAsOf?.[k])?"STALE":m;}; // FEAT-R3: LIVE | CACHED | STALE | MOCK
+  const asOfOf=(k)=>{const s=dataAsOf?.[k]; if(!s)return undefined; const dt=new Date(s+"T00:00:00"); return isNaN(dt.getTime())?s:`as of ${dt.toLocaleDateString("en-US",{month:"short",day:"numeric"})}`;}; // FEAT-R2: "as of Jun 4"
   const fw=computeFiveWhys(d, regime);        // v2.5: rule-based 5 Whys from live data
   const activeAlerts=alerts.filter(a=>a.active&&a.triggered).length;
 
@@ -866,7 +868,7 @@ export default function Dashboard({ publicView = false } = {}) {
                   </LineChart>
                 </ResponsiveContainer>
               </div>
-              <SourceBox api="FRED" endpoint="SP500 ÷10 proxy" mode={modeOf('spyPrice')}/>
+              <SourceBox api="FRED" endpoint="SP500 ÷10 proxy" mode={modeOf('spyPrice')} asOf={asOfOf('spyPrice')}/>
             </div>
 
             {/* A2-A5: KPI row */}
@@ -893,17 +895,17 @@ export default function Dashboard({ publicView = false } = {}) {
                 <div style={{fontFamily:T.fontMono,fontSize:20,color:d.marketPulse.vix.current>25?T.red:d.marketPulse.vix.current>18?T.yellow:T.green,fontWeight:700}}>{d.marketPulse.vix.current}</div>
                 <div style={{fontFamily:T.fontMono,fontSize:9,color:pctColor(d.marketPulse.vix.weekChg,true)}}>{fmt.pct(d.marketPulse.vix.weekChg)} WoW</div>
                 <div style={{height:28,marginTop:6}}><ResponsiveContainer width="100%" height="100%"><LineChart data={d.marketPulse.vix.series.map((v,i)=>({v,i}))}><Line type="monotone" dataKey="v" stroke={T.amber} dot={false} strokeWidth={1.5}/></LineChart></ResponsiveContainer></div>
-                <SourceBox api="FRED" endpoint="VIXCLS" mode={modeOf('vix')}/>
+                <SourceBox api="FRED" endpoint="VIXCLS" mode={modeOf('vix')} asOf={asOfOf('vix')}/>
               </div>
               {/* F&G */}
-              <FGGauge score={d.marketPulse.fearGreed.score} label={d.marketPulse.fearGreed.label} mode={modeOf('fearGreed')}/>
+              <FGGauge score={d.marketPulse.fearGreed.score} label={d.marketPulse.fearGreed.label} mode={modeOf('fearGreed')} asOf={asOfOf('fearGreed')}/>
               {/* Put/Call */}
               <div style={{background:T.surface,border:`1px solid ${T.border}`,borderRadius:5,padding:"10px 12px"}}>
                 <Label>Put / Call</Label>
                 <div style={{fontFamily:T.fontMono,fontSize:20,color:d.marketPulse.putCall.current>1?T.red:T.textPrimary,fontWeight:700}}>{d.marketPulse.putCall.current}</div>
                 <div style={{fontFamily:T.fontMono,fontSize:9,color:T.textMuted}}>Bearish {">"} 1.0</div>
                 <div style={{height:28,marginTop:6}}><ResponsiveContainer width="100%" height="100%"><LineChart data={d.marketPulse.putCall.series30d.slice(-10).map((v,i)=>({v,i}))}><Line type="monotone" dataKey="v" stroke={T.amber} dot={false} strokeWidth={1.5}/><ReferenceLine y={1.0} stroke={T.red} strokeDasharray="2 2" strokeWidth={1}/></LineChart></ResponsiveContainer></div>
-                <SourceBox api="CBOE" endpoint="equity-put-call" mode={modeOf('putCall')}/>
+                <SourceBox api="CBOE" endpoint="equity-put-call" mode={modeOf('putCall')} asOf={asOfOf('putCall')}/>
               </div>
             </div>
 
@@ -911,10 +913,10 @@ export default function Dashboard({ publicView = false } = {}) {
             <div>
               <SectionHeader>Cross-Asset Direction</SectionHeader>
               <div style={{display:"flex",gap:8,flexWrap:"wrap"}} className="dir-tiles">
-                <DirTile label="10Y Treasury" value={`${d.crossAsset.treasury10y.current}%`} d1={d.crossAsset.treasury10y.d1} w1={d.crossAsset.treasury10y.w1} m1={d.crossAsset.treasury10y.m1} band={0.10} invert={true} spark={d.crossAsset.treasury10y.series} source="FRED" sourceEp="DGS10" mode={modeOf('tenYear')}/>
-                <DirTile label="WTI Crude"   value={`$${d.crossAsset.wti.current}`}         d1={d.crossAsset.wti.d1pct}  w1={d.crossAsset.wti.w1pct}  m1={d.crossAsset.wti.m1pct}  band={1.0} spark={d.crossAsset.wti.series}  source="FRED" sourceEp="DCOILWTICO" mode={modeOf('wti')}/>
+                <DirTile label="10Y Treasury" value={`${d.crossAsset.treasury10y.current}%`} d1={d.crossAsset.treasury10y.d1} w1={d.crossAsset.treasury10y.w1} m1={d.crossAsset.treasury10y.m1} band={0.10} invert={true} spark={d.crossAsset.treasury10y.series} source="FRED" sourceEp="DGS10" mode={modeOf('tenYear')} asOf={asOfOf('tenYear')}/>
+                <DirTile label="WTI Crude"   value={`$${d.crossAsset.wti.current}`}         d1={d.crossAsset.wti.d1pct}  w1={d.crossAsset.wti.w1pct}  m1={d.crossAsset.wti.m1pct}  band={1.0} spark={d.crossAsset.wti.series}  source="FRED" sourceEp="DCOILWTICO" mode={modeOf('wti')} asOf={asOfOf('wti')}/>
                 <DirTile label="Gold"        value={`$${d.crossAsset.gold.current.toLocaleString()}`} d1={d.crossAsset.gold.d1pct} w1={d.crossAsset.gold.w1pct} m1={d.crossAsset.gold.m1pct} band={1.0} spark={d.crossAsset.gold.series} source="Manual" sourceEp="curated series" mode={modeOf('gold')}/>
-                <DirTile label="Bitcoin"     value={`$${(d.crossAsset.btc.current/1000).toFixed(1)}K`} d1={d.crossAsset.btc.d1pct} w1={d.crossAsset.btc.w1pct} m1={d.crossAsset.btc.m1pct} band={2.0} spark={d.crossAsset.btc.series} source="FRED" sourceEp="CBBTCUSD" mode={modeOf('btc')}/>
+                <DirTile label="Bitcoin"     value={`$${(d.crossAsset.btc.current/1000).toFixed(1)}K`} d1={d.crossAsset.btc.d1pct} w1={d.crossAsset.btc.w1pct} m1={d.crossAsset.btc.m1pct} band={2.0} spark={d.crossAsset.btc.series} source="FRED" sourceEp="CBBTCUSD" mode={modeOf('btc')} asOf={asOfOf('btc')}/>
               </div>
             </div>
           </div>
@@ -935,7 +937,7 @@ export default function Dashboard({ publicView = false } = {}) {
                     <div style={{fontFamily:T.fontMono,fontSize:22,color:T.amber,fontWeight:700}}>{d.macro.fedFunds.rate}%</div>
                     <div style={{fontFamily:T.fontMono,fontSize:9,color:T.textMuted}}>Next FOMC in {d.macro.fedFunds.daysUntil} days</div>
                   </div>
-                  <SourceBox api="FRED" endpoint="FEDFUNDS" mode={modeOf('fedFunds')}/>
+                  <SourceBox api="FRED" endpoint="FEDFUNDS" mode={modeOf('fedFunds')} asOf={asOfOf('fedFunds')}/>
                 </div>
                 {/* CPI */}
                 <div style={{paddingBottom:8,borderBottom:`1px solid ${T.border}`}}>
@@ -1006,7 +1008,7 @@ export default function Dashboard({ publicView = false } = {}) {
                 </div>
               ))}
               <div style={{fontFamily:T.fontMono,fontSize:8,color:T.textMuted,marginTop:8}}>Rule-based · derived from live data (no LLM)</div>
-              <SourceBox api="Rule-based" endpoint="5-factor regime + live deltas" mode={modeOf('vix')}/>
+              <SourceBox api="Rule-based" endpoint="5-factor regime + live deltas" mode={modeOf('vix')} asOf={asOfOf('vix')}/>
             </div>
           </div>
         </div>
