@@ -341,7 +341,7 @@ const DirTile=({label,value,d1,w1,m1,band,invert=false,spark,source,sourceEp,mod
   const t1=stoplightColor(d1,band,invert), t2=stoplightColor(w1,band,invert), t3=stoplightColor(m1,band,invert);
   const verdict=verdictFromTones([t1,t2,t3]);
   return(
-    <div style={{background:verdict.label==="BULLISH"?T.greenDim:verdict.label==="BEARISH"?T.redDim:T.surface,border:`1px solid ${T.border}`,borderRadius:5,padding:"10px 12px",flex:"1 1 110px",minWidth:110}}>
+    <div style={{background:verdict.label==="BULLISH"?DT["regime-on-bg"]:verdict.label==="BEARISH"?DT["regime-off-bg"]:T.surface,border:`1px solid ${verdict.label==="BULLISH"?T.green+"44":verdict.label==="BEARISH"?T.red+"44":T.border}`,borderRadius:5,padding:"10px 12px",flex:"1 1 110px",minWidth:110}}>
       <Label>{label}</Label>
       <div style={{fontFamily:T.fontMono,fontSize:16,color:T.textPrimary,fontWeight:700,marginBottom:4}}>{value}</div>
       <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:3,marginBottom:5}}>
