@@ -44,6 +44,8 @@ ok("dataAsOf populated from live[fieldAsOf]", mPriv.dataAsOf.spyPrice === "2026-
 ok("isStale: false when no date", isStale(undefined) === false);
 ok("isStale: false same-day", isStale("2099-01-01", new Date("2099-01-01")) === false);
 ok("isStale: true when a month behind", isStale("2026-06-01", new Date("2026-07-01")) === true);
+ok("isStale: true — Thu data viewed Sun (missed Fri)", isStale("2026-06-04", new Date("2026-06-07")) === true);
+ok("isStale: false — Mon data viewed Tue (normal EOD lag)", isStale("2026-06-08", new Date("2026-06-09")) === false);
 ok("10Y overlaid + d1 + series", mPriv.data.crossAsset.treasury10y.current === 4.46 && mPriv.data.crossAsset.treasury10y.d1 === 0.03 && mPriv.data.crossAsset.treasury10y.series.length === 3);
 ok("Fed funds overlaid", mPriv.data.macro.fedFunds.rate === 3.63);
 ok("unemployment + lfpr overlaid", mPriv.data.macro.unemployment.national === 4.3 && mPriv.data.macro.unemployment.lfpr === 61.8);

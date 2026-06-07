@@ -123,12 +123,16 @@ export function isStale(dateStr, now = new Date()) {
   const dt = new Date(`${dateStr}T00:00:00`);
   if (isNaN(dt.getTime())) return false;
   const today = new Date(now); today.setHours(0, 0, 0, 0);
-  let weekdays = 0;
+  // Count completed weekday sessions strictly between the data date and today. Today is
+  // excluded (its close may not be published yet — the normal EOD lag), so any missing
+  // PRIOR weekday means the feed is behind = stale (e.g. Thursday data viewed on a Sunday).
+  let missed = 0;
   const cur = new Date(dt);
+  cur.setDate(cur.getDate() + 1);
   while (cur < today) {
-    cur.setDate(cur.getDate() + 1);
     const dow = cur.getDay();
-    if (dow !== 0 && dow !== 6) weekdays++;
+    if (dow !== 0 && dow !== 6) missed++;
+    cur.setDate(cur.getDate() + 1);
   }
-  return weekdays > 1; // 1 trading day behind = normal FRED EOD lag; >1 = stale
+  return missed >= 1;
 }
