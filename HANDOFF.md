@@ -1,99 +1,105 @@
-# MacroDash — Session Handoff · 2026-06-06
+# MacroDash — Session Handoff · 2026-06-07
 
-**Live:** https://macrodash.pages.dev · footer **v2.5.4** · smoke **41/41** · cron worker **deployed**.
+**Live:** https://macrodash.pages.dev · footer **v2.6.4** · smoke **51/51** · cron worker **deployed**.
 Brain: `CLAUDE.md`. Plans: `ROADMAP_v2.5_v3.0.md`, `REQUIREMENTS_v2.6.md`. Worker deploy: `worker/SETUP.md`.
+Version source of truth: **`package.json`** (Vite injects `__APP_VERSION__` → footer). Bump it every release.
 
 ---
 
-## What materially changed this session
+## State at session start (v2.5.4)
 
-Took the build from **v2.0.2** (renamed-but-rough) through a chain of shipped increments — all on `main`.
-
-### Data honesty (the centerpiece)
-- **Per-tile provenance.** `sources.js` `mergeLiveOverMock` emits a `{field → LIVE|CACHED|MOCK}` map,
-  threaded via `useMarketData` to **13 tile badges** that now show *real* status (was hardcoded `MOCK`
-  under a LIVE header). Source labels corrected (SPY/VIX/WTI/BTC: `FMP`/`CBOE` → **FRED**; Gold/Mag10 →
-  `Manual`). Killed the false **"Anthropic API live"** and **"Triggers fire on live data"** claims.
-- **Rule-based 5 Whys.** New `src/fiveWhys.js` (pure, **$0**, no LLM/cron/secret) —
-  `computeFiveWhys(data, regime)` builds a session-aware 5-point narrative from the live snapshot.
-  Replaced the static mock; all 5 render.
-- **Live SPX.** `fetchSpy` now emits the raw S&P 500 index (`spxIndex`) from the SP500 data it already
-  pulls (**zero extra fetch**); shown under SPY. SPX was the last free zero-cost field.
-
-### UI / personality
-- **Mobile-novice pass** (per the T4-SMOKE audit): un-hid the tagline + regime "why" chips on mobile,
-  added "end-of-day, not real-time", jargon tooltips. 375px re-smoke **PASS**.
-- **"Wen moon?"** — regime band reframed from "is it safe?" → "wen moon?"; verdict shows
-  **MOONING / HODL / DIAMOND HANDS** mapped from RISK-ON / MIXED / RISK-OFF (RISK-ON kept as subtitle).
-- **Moon Meter + IPO Countdown** — committed the operator's WIP as a baseline, then cleaned up: IPO strip
-  horizontal-scrolls on mobile (was 3 stacked cards) + honest `MOCK · curated · speculative` tag; moon
-  badge hidden on mobile.
-
-### Correctness (dev-agent review — all fixed in v2.5.4)
-- Merge clones the mock **once** per merge (was once *per field*).
-- Undo toasts **stack** (was single-overwrite → a rapid second delete lost the first's undo).
-- IPO countdown interval **stops at expiry** (was ticking forever post-launch).
-- Mag-10 public list **actually sorts by market cap** (the "SORTED BY MKT CAP" label was unenforced).
-
-### Infra & hygiene
-- Version single-source (footer reads `package.json`); Node pinned (`.nvmrc` 22 + `engines`).
-- **Security:** untracked `worker/.wrangler/cache/wrangler-account.json` — it exposed the Cloudflare
-  account id + email on the public repo.
-- **10am-ET force-refresh cron** (`worker/cron.js`): each weekday it busts the per-ET-day snapshot cache
-  key, waits ~3s for KV to propagate, then re-fetches — pulling FRED's freshest. **Deployed**
-  (`macrodash-cron`, 3 crons live).
-
-### Key finding
-**FRED's `SP500` series lags the tape by ~1 trading day.** With the per-day "first-load-wins" cache, an
-early-morning first load can lock in a pre-FRED-update value for the whole day — which is exactly why
-June 5's down close wasn't showing on June 6 morning. The force-refresh cron is the structural fix.
-
-Smoke grew **28 → 41** assertions.
+Per the previous handoff (2026-06-06): renamed PULSE→MacroDash, per-tile provenance landed, rule-based
+5 Whys, live SPX, mobile-novice pass, the 10am cron flipped to force-refresh. **Open pain:** live tiles
+showed *no data date*, so FRED's normal ~1-session SP500 lag (June 5's down close not appearing until
+Monday) **looked like a bug**; the regime verdict had **no valuation term** (could scream "MOONING" at a
+near-record CAPE); CPI/PCE were mock; rate-odds didn't exist; scrapers reverted silently to mock on failure.
 
 ---
 
-## Architecture (full detail in CLAUDE.md)
-- **One wiring point:** `useMarketData` + `sources.js`. Add a live field by mapping it in `SOURCES` and
-  emitting it from `functions/api/snapshot.js`.
-- **Live path:** `dashboard.jsx` → `useMarketData` (`VITE_DATA_MODE=live`) → `/api/snapshot`
-  (FRED + FRED-SP500 + CNN F&G + CBOE P/C) → `mergeLiveOverMock` overlays mock. Per-ET-day KV cache.
-- **Mock-first:** any fetch/parse failure → silent fallback to `MOCK_DATA`. Never breaks.
-- **$0 / FRED-only** stance; rule-based (no LLM) where possible.
+## What materially changed this session  (v2.6.0 → v2.6.4, all on `main`)
+
+### Data honesty & freshness (the throughline)
+- **Per-tile freshness + STALE badge** (R2/R3, `00335ac`). `snapshot.js` emits a `<field>AsOf` observation
+  date per live field; `sources.js` threads a `dataAsOf` map + an `isStale(dateStr)` helper; each tile shows
+  "as of <date>" and flips to **STALE** when the feed trails the last completed trading session.
+- **`isStale` bug fixed** (`f640f93`, user-caught). Original threshold (`>1 weekday`) never fired for the exact
+  case that started this — *Thursday data viewed on Sunday*. Rewritten to count completed weekday sessions
+  **strictly between** the data date and today (today excluded). Thu→Sun = STALE ✓, Mon→Tue = fresh ✓.
+
+### Valuation-aware regime (R1, `b4410b1`)
+- Added a **6th factor** to the hero vote: Shiller CAPE. Bearish when extreme (`>30` or `>90% of ATH`),
+  bullish when reasonable. `RegimeBand` now reads "/6 bullish" with a `VAL` chip. The verdict can no longer
+  flash risk-on blind to a ~97%-of-dot-com-peak valuation.
+
+### Three live data sources added (this conversation's main arc)
+- **R8 — scraper resilience** (`ff5aabd`, v2.6.2). `withLastGood(env, key, fn)` wraps the scrapers: a success
+  writes `pulse:lastgood:<key>` to KV (7-day TTL); a failure serves that **last-good value with its real date**
+  (so `isStale` trips STALE) instead of reverting to mock. Mock is the fallback only with no history yet.
+- **R9 — live Kalshi FOMC odds** (`45baaa6`, v2.6.3). `fetchRateOdds` hits Kalshi's **public** market-data API
+  (no auth/key), takes the nearest open `KXFEDDECISION` event, aggregates its mutually-exclusive buckets
+  (H0=hold · C25/C26=cut · H25/H26=hike) by last traded price → normalized **Hold/Cut/Hike %** + live FOMC
+  days-out. Verified live: Jun-17 meeting = Hold 99 / Cut 3 / Hike 2. Runs on the R8 rails. The Fed-tile tag
+  now reflects real provenance (`Kalshi · live/cached/stale/mock`).
+- **R10 — live CPI + PCE YoY** (`aa484b3`, v2.6.4). Ended the CPI-deferred carve-out. `fetchFred` adds
+  `PCEPI`/`PCEPILFE`, pulls 20 monthly points for the four inflation series, derives YoY =
+  `(latest / 12-months-prior − 1) × 100` + a 6-point YoY trend. Makes the inflation group **and** the regime's
+  CPI-trend factor live.
+
+### UI / mobile (the latest audit)
+- **Hero-first mobile layout** (`8d7e2e0`, v2.6.1). `RegimeBand` moved **above** the macro strip — the
+  "wen moon? → MOONING" verdict now lands first under the header, zero scroll. Screenshot-verified at 375px.
+- **Inflation group** — CPI + PCE shown together, **leading with Core PCE** (the Fed's actual target).
+- **Legibility fix** (`c166de5`). Cross-asset DirTiles (WTI/Gold/BTC) moved off saturated green/red to soft
+  regime tints + subtle border, so prices read clearly.
 
 ---
 
-## Pending / known state
-- **v2.5 cleanup tail** (not done): remove dead `/api/fred` + legacy worker FRED crons (#2), gate `_diag`
-  behind `?debug=1` (#3), fold roadmap §A into CLAUDE.md (#8), pre-push smoke hook (#9).
-- **Moon/IPO maintenance (R11):** move inline `IPO_TARGETS` / `WEN_MOON_*` constants to config; **SpaceX
-  countdown hits June 12** — validate the `isTrading` flip; respect `prefers-reduced-motion`.
-- Legacy `/api/fred` + the worker's FRED→`pulse:macro:latest` path still deployed but **dead** (the
-  dashboard reads `/api/snapshot`). The new 10am force-refresh shares the same worker.
+## Where the project is headed
+
+### Immediate (remaining v2.6 P0s)
+1. **R7 — exact Jan-1 YTD anchor** in `fetchSpy`. Today YTD uses the oldest-in-window point, so it drifts.
+   The last data-honesty gap.
+2. **Gate `_diag`** behind `?debug=1`. The lone security-hygiene finding from the audit — `/api/snapshot`
+   currently exposes the diagnostics block to the public response.
+
+### v2.5 tail (carry-over hygiene)
+- Remove dead `/api/fred` + the legacy cron path (the dashboard is fully on `/api/snapshot`).
+- Fold ROADMAP §A locked decisions into CLAUDE.md.
+- Pre-push smoke hook (so `node test/smoke.mjs` can't be skipped before a push).
+- R11: moon/IPO maintenance — inline constants → config; the SpaceX countdown target (Jun 12) is near.
+
+### v3.0 (the larger overhaul — see ROADMAP)
+- UI overhaul; extract the inline `computeRegime`/`regimeFactors` out of `dashboard.jsx` into `src/regime.js`
+  so the regime engine becomes **unit-testable** (today it's untested because it lives inline).
+- The "$0 / FRED-only" stance holds; Kalshi (also free, no key) is the one sanctioned non-FRED live source.
 
 ---
 
-## Highest-leverage enhancements (recommended next, ranked)
-1. **Per-tile freshness + STALE badge** (v2.6 R2/R3) — thread the snapshot/series `asOf` into each
-   `SourceBox` ("as of Jun 4") and light up the unused **STALE** badge when data trails the trading day.
-   Directly fixes the "is this current?" gap FRED's lag creates. *Lowest effort, highest immediate value.*
-2. **Valuation-aware regime** (v2.6 R1) — the "wen moon? → MOONING" hero has **no valuation factor**; it
-   can flash MOONING at ~97% of the dot-com CAPE peak (Shiller 42.8, already in `macro.shillerPe`). Add a
-   6th Shiller-PE-percentile factor. *Highest product-honesty value.*
-3. **CPI YoY live** — the last free field (`CPIAUCSL`/`CPILFESL` already fetched), but deliberately
-   deferred to v3.0; enabling it overrides that locked decision + needs YoY derivation.
-4. **Real alert delivery** — alerts are decorative today; wire Cloudflare email / web-push on live
-   thresholds (VIX spike, 10Y > 5%, F&G extreme).
-5. **v3.0 (bigger):** mobile-first redesign + split `dashboard.jsx` (~1100 lines) into components;
-   extract `design-tokens.json`. Start with a claude.ai design thread per the roadmap.
+## Verify on next session  (can't be tested from a dev machine)
+
+- **Kalshi from Cloudflare edge IPs.** Kalshi works from a laptop, but Stooq taught us CF edge IPs can be
+  blocked. After a Pages redeploy, confirm the Fed tile reads `Kalshi · live` and inflation shows live YoY.
+  If Kalshi blocks the edge, it degrades gracefully to `Kalshi · mock` (no breakage) — but the odds won't be live.
+- **FRED-YoY on prod.** No local FRED key, so CPI/PCE YoY was verified by logic + smoke only; eyeball the
+  inflation group on prod for sane numbers (CPI head ~3–4%, Core PCE ~2.5–3%).
 
 ---
 
-## Deploy / verify
-- **Site:** push to `main` → Cloudflare Pages auto-deploys. Build `npm run build` (Node ≥18);
-  smoke `source ~/.nvm/nvm.sh && nvm use 22 && node test/smoke.mjs`.
-- **Worker:** deploys **separately** — `cd worker && npx wrangler deploy` (see `worker/SETUP.md`).
-  Crons live: `30 12` / `0 21` (legacy FRED, PDT) + `0 14` (10am ET force-refresh).
-  **DST:** in November flip `0 14`→`0 15` (and the legacy crons +1h) for standard time.
-- **Manual data refresh** (force fresh now):
-  `npx wrangler kv key delete --remote --namespace-id 78ad3346a8fe4757a906283c4bc81a5e "pulse:snapshot:v5:<ET-date>"`
-  then load the dash (or curl `/api/snapshot`).
+## Lessons learned
+
+- **"Looks like a bug" is usually a missing-honesty signal, not a data bug.** The June-5 SP500 lag was
+  correct FRED behavior; the real defect was the dashboard not *stating* the data's age. The fix was a badge
+  (STALE), not a data change. Surface freshness before debugging "stale" numbers.
+- **Build resilience as shared rails, then mount features on them.** Doing R8 *before* R9 meant the new Kalshi
+  source inherited last-good→STALE degradation for free, instead of bolting it on. Sequence the foundation first.
+- **Re-derive `isStale`-type logic from the calendar, not from a threshold guess.** The off-by-one ("> 1
+  weekday") survived until a user hit the Thursday-viewed-Sunday case. Enumerate the boundary days explicitly.
+- **A long FRED `limit` is free; over-fetch when a derivation needs history.** YoY needs 13+ monthly points;
+  bumping the inflation pull to 20 is a trivial payload and removes the fragility of just-enough fetches.
+- **Honest tags beat hiding mock data.** Shipping Kalshi/PCE as visible `· mock` first, then flipping the tag
+  to `· live` when the source landed, kept the UI truthful at every step and made the wiring incremental.
+- **Verify against the live API from the dev box before shipping a scraper** (Kalshi event/bucket shape,
+  aggregation sum) — but remember the edge environment can still differ (IP blocks); the graceful-degradation
+  invariant is what makes that residual risk safe.
+</content>
+</invoke>
