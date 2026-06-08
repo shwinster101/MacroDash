@@ -31,6 +31,7 @@ const snapPayload = {
     wti: 71.2, wtiD1: -0.8, vix: 16.06, vixWeekChg: -2.1, vixSeries: [18, 17, 16.06],
     btc: 109200, btcD1: 1.2,
     fearGreed: 62, fearGreedLabel: "Greed", putCall: 0.79,
+    rateOddsHold: 98, rateOddsCut: 1, rateOddsHike: 1, fomcDays: 10, nextFomcDate: "2026-06-17", rateOddsHoldAsOf: "2026-06-07",
   },
   asOf: "2026-06-04T18:00:00Z", cached: false,
 };
@@ -56,6 +57,9 @@ ok("BTC + d1 overlaid", mPriv.data.crossAsset.btc.current === 109200 && mPriv.da
 ok("F&G score overlaid (num)", mPriv.data.marketPulse.fearGreed.score === 62);
 ok("F&G label overlaid (string)", mPriv.data.marketPulse.fearGreed.label === "Greed");
 ok("Put/Call overlaid", mPriv.data.marketPulse.putCall.current === 0.79);
+ok("Kalshi rate-odds overlaid (hold/cut/hike)", mPriv.data.macro.fedFunds.odds.hold === 98 && mPriv.data.macro.fedFunds.odds.cut === 1 && mPriv.data.macro.fedFunds.odds.hike === 1);
+ok("FOMC days + next date overlaid", mPriv.data.macro.fedFunds.daysUntil === 10 && mPriv.data.macro.fedFunds.nextFOMC === "2026-06-17");
+ok("provenance rateOddsHold LIVE", mPriv.provenance.rateOddsHold === "LIVE");
 ok("meta lastRefresh + session overlaid", mPriv.data.lastRefresh === "06/04/2026 14:00 ET" && mPriv.data.session === "OPEN");
 ok("CPI left as mock (snapshot emits raw index — DEFERRED v2.1)", mPriv.data.macro.cpi.headline === 3.8 && mPriv.data.macro.cpi.core === 2.8);
 ok("badge LIVE when cached:false", mPriv.badge === "LIVE");

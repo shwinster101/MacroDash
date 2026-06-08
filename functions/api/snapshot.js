@@ -44,10 +44,11 @@ export async function onRequest(context) {
   // FEAT-R8: the two scrapers are wrapped in withLastGood — a failed fetch serves the
   // last good scrape from KV (with its real date) instead of reverting to mock. The
   // stale date then trips the existing STALE badge, so an outage degrades honestly.
-  const [spy, fearGreed, putCall] = await Promise.allSettled([
+  const [spy, fearGreed, putCall, rateOdds] = await Promise.allSettled([
     fetchSpy(env.FRED_KEY),   // SPY via FRED SP500 — Stooq blocks Cloudflare edge IPs
     withLastGood(env, "feargreed", fetchFearGreed),
     withLastGood(env, "putcall", fetchPutCall),
+    withLastGood(env, "rateodds", fetchRateOdds),
   ]);
 
   // ── 3. Assemble live overlay ───────────────────────────────────────────
@@ -61,6 +62,7 @@ export async function onRequest(context) {
     ...(spy.status === "fulfilled" ? spy.value : {}),
     ...(fearGreed.status === "fulfilled" ? fearGreed.value : {}),
     ...(putCall.status === "fulfilled" ? putCall.value : {}),
+    ...(rateOdds.status === "fulfilled" ? rateOdds.value : {}),
   };
 
   const snapshot = { live, asOf: now, cached: false };
@@ -72,6 +74,7 @@ export async function onRequest(context) {
     spy: spy.status === "fulfilled" ? "ok" : String(spy.reason),
     fearGreed: fearGreed.status === "fulfilled" ? "ok" : String(fearGreed.reason),
     putCall: putCall.status === "fulfilled" ? "ok" : String(putCall.reason),
+    rateOdds: rateOdds.status === "fulfilled" ? "ok" : String(rateOdds.reason),
   };
   snapshot._diag = diag;
 
@@ -301,6 +304,64 @@ async function fetchPutCall() {
     }
   }
   throw new Error("P/C parse failed");
+}
+
+// ─── Kalshi FOMC rate-decision odds (FEAT-R9) ────────────────────────────────
+// Public market-data REST API (no auth, no key). The KXFEDDECISION series carries
+// one mutually-exclusive event per FOMC meeting (e.g. KXFEDDECISION-26JUN) with
+// buckets: H0 = hold · C25/C26 = cut 25 / >25 · H25/H26 = hike 25 / >25. We take
+// the nearest open event and aggregate each bucket's last traded price
+// (last_price_dollars, 0–1 = implied probability) into hold / cut / hike percents.
+// Wrapped in withLastGood at the call site, so a Kalshi outage (or an edge-IP block,
+// the way Stooq blocks us) serves the last good odds + STALE instead of mock.
+async function fetchRateOdds() {
+  const base = "https://api.elections.kalshi.com/trade-api/v2";
+  const hdrs = { headers: { Accept: "application/json" } };
+  // 1. nearest OPEN Fed-decision event (soonest future strike_date)
+  const er = await fetchRetry(`${base}/events?series_ticker=KXFEDDECISION&status=open&limit=200`, hdrs);
+  if (!er.ok) throw new Error(`Kalshi events ${er.status}`);
+  const events = (await er.json()).events || [];
+  const now = Date.now();
+  const ev = events
+    .filter((e) => e.strike_date && new Date(e.strike_date).getTime() > now)
+    .sort((a, b) => new Date(a.strike_date) - new Date(b.strike_date))[0];
+  if (!ev) throw new Error("Kalshi: no upcoming FOMC event");
+  // 2. its buckets
+  const mr = await fetchRetry(`${base}/markets?event_ticker=${ev.event_ticker}&limit=50`, hdrs);
+  if (!mr.ok) throw new Error(`Kalshi markets ${mr.status}`);
+  const markets = (await mr.json()).markets || [];
+  let hold = 0, cut = 0, hike = 0, seen = 0;
+  for (const m of markets) {
+    // Prefer last trade; fall back to bid/ask mid for thin buckets.
+    let p = parseFloat(m.last_price_dollars);
+    if (!(p > 0)) {
+      const bid = parseFloat(m.yes_bid_dollars), ask = parseFloat(m.yes_ask_dollars);
+      if (bid >= 0 && ask > 0) p = (bid + ask) / 2;
+    }
+    if (!isFinite(p)) continue;
+    seen++;
+    const suf = String(m.ticker).split("-").pop(); // H0 | C25 | C26 | H25 | H26
+    if (suf === "H0") hold += p;
+    else if (suf[0] === "C") cut += p;
+    else if (suf[0] === "H") hike += p;
+  }
+  if (!seen) throw new Error("Kalshi: no priced buckets");
+  // Buckets are independent YES markets, so their prices don't sum to exactly 1
+  // (spreads + last-trade skew). Normalize to a clean 100% while preserving the
+  // relative odds, so the three displayed numbers add up.
+  const total = hold + cut + hike;
+  if (total > 0) { hold /= total; cut /= total; hike /= total; }
+  const pct = (x) => Math.round(x * 100);
+  const days = Math.max(0, Math.round((new Date(ev.strike_date).getTime() - now) / 86400000));
+  const asOf = new Date().toLocaleDateString("en-CA", { timeZone: "America/New_York" });
+  return {
+    rateOddsHold: pct(hold),
+    rateOddsCut:  pct(cut),
+    rateOddsHike: pct(hike),
+    rateOddsHoldAsOf: asOf,
+    fomcDays:     days,
+    nextFomcDate: ev.strike_date.slice(0, 10),
+  };
 }
 
 // ─── Helpers ──────────────────────────────────────────────────────────────
