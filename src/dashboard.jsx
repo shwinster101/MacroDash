@@ -144,8 +144,9 @@ const MOCK_DATA = {
     btc:{         current:109200,d1pct:+1.2, w1pct:+4.8, m1pct:+12.1,yellowBand:2.0, series:[88000,90000,92000,95000,98000,100000,104000,106000,108000,109200] },
   },
   macro:{
-    fedFunds:{ rate:3.625, nextFOMC:"2026-06-17", daysUntil:14 },
+    fedFunds:{ rate:3.625, nextFOMC:"2026-06-17", daysUntil:14, odds:{ hold:84, cut:13, hike:3 } }, // odds: Kalshi FOMC market (mock; live Kalshi wiring TODO)
     cpi:{ headline:3.8, core:2.8, nextRelease:"2026-06-11", trend:[3.2,3.4,3.5,3.6,3.7,3.8] },
+    pce:{ headline:3.1, core:2.9, nextRelease:"2026-06-26", trend:[2.6,2.7,2.8,2.9,3.0,3.1] }, // Fed's preferred inflation gauge (FRED PCEPI/PCEPILFE — mock until YoY wired)
     unemployment:{ national:4.3, entryLevel:6.1, lfpr:62.4, trend:[3.8,3.9,4.0,4.1,4.2,4.3] },
     mortgage:{ national:6.51, peoria:6.31 },
     housing:{ peoria:218400 },
@@ -782,6 +783,9 @@ export default function Dashboard({ publicView = false } = {}) {
         </div>
       </div>
 
+      {/* FEAT-169 + R4c: Regime Verdict band — HERO, now FIRST under the header (mobile-first) */}
+      <RegimeBand d={d}/>
+
       {/* ── MACRO STRIP (persistent ticker — always visible; FEAT-170 reflows on mobile) ── */}
       <div style={{background:T.surfaceHigh,borderBottom:`1px solid ${T.border}`,padding:"6px 20px",overflowX:"auto",display:"flex",alignItems:"center",justifyContent:"space-between",gap:12}} className="macro-strip">
         <div style={{display:"flex",gap:20,minWidth:"max-content",flex:1}} className="macro-strip-inner">
@@ -805,9 +809,6 @@ export default function Dashboard({ publicView = false } = {}) {
         {/* WEN MOON METER — mood badge based on SPY daily change (hidden on mobile to declutter the 2x4 strip, per the unused .wen-moon-mobile rule) */}
         <div className="wen-moon-mobile"><WenMoonBadge spyChangePct={d.marketPulse.spy.changePct}/></div>
       </div>
-
-      {/* FEAT-169: Regime Verdict band — full-width, directly under the macro strip */}
-      <RegimeBand d={d}/>
 
       {/* IPO COUNTDOWN TO LAUNCH — below regime band, above command center */}
       <IpoCountdownStrip/>
@@ -940,14 +941,25 @@ export default function Dashboard({ publicView = false } = {}) {
                     <Label>Fed Funds Rate</Label>
                     <div style={{fontFamily:T.fontMono,fontSize:22,color:T.amber,fontWeight:700}}>{d.macro.fedFunds.rate}%</div>
                     <div style={{fontFamily:T.fontMono,fontSize:9,color:T.textMuted}}>Next FOMC in {d.macro.fedFunds.daysUntil} days</div>
+                    {/* Next-FOMC decision odds (Kalshi prediction market) */}
+                    <div style={{display:"flex",gap:6,marginTop:4,flexWrap:"wrap",alignItems:"baseline"}}>
+                      <span style={{fontFamily:T.fontMono,fontSize:7,color:T.textMuted,letterSpacing:"0.08em"}}>NEXT-MTG</span>
+                      <span style={{fontFamily:T.fontMono,fontSize:9,color:T.textMuted}}>Hold {d.macro.fedFunds.odds.hold}%</span>
+                      <span style={{fontFamily:T.fontMono,fontSize:9,color:T.green}}>Cut {d.macro.fedFunds.odds.cut}%</span>
+                      <span style={{fontFamily:T.fontMono,fontSize:9,color:T.red}}>Hike {d.macro.fedFunds.odds.hike}%</span>
+                      <span style={{fontFamily:T.fontMono,fontSize:7,color:T.textMuted,border:`1px dashed ${T.border}`,borderRadius:2,padding:"0 3px"}}>Kalshi · mock</span>
+                    </div>
                   </div>
-                  <SourceBox api="FRED" endpoint="FEDFUNDS" mode={modeOf('fedFunds')} asOf={asOfOf('fedFunds')}/>
+                  <SourceBox api="FRED" endpoint="FEDFUNDS · odds: Kalshi" mode={modeOf('fedFunds')} asOf={asOfOf('fedFunds')}/>
                 </div>
                 {/* CPI */}
                 <div style={{paddingBottom:8,borderBottom:`1px solid ${T.border}`}}>
-                  <div style={{display:"flex",gap:16,marginBottom:5}}>
-                    <div><Label>CPI Headline</Label><div style={{fontFamily:T.fontMono,fontSize:18,color:T.red,fontWeight:700}}>{d.macro.cpi.headline}%</div></div>
-                    <div><Label>CPI Core</Label><div style={{fontFamily:T.fontMono,fontSize:18,color:T.yellow,fontWeight:700}}>{d.macro.cpi.core}%</div></div>
+                  <div style={{fontFamily:T.fontMono,fontSize:8,color:T.textMuted,marginBottom:4,letterSpacing:"0.1em"}}>INFLATION · FED TARGETS CORE PCE</div>
+                  <div style={{display:"flex",gap:14,marginBottom:5,flexWrap:"wrap"}}>
+                    <div><Label>PCE Core</Label><div style={{fontFamily:T.fontMono,fontSize:18,color:d.macro.pce.core>2.5?T.yellow:T.green,fontWeight:700}}>{d.macro.pce.core}%</div></div>
+                    <div><Label>PCE Head</Label><div style={{fontFamily:T.fontMono,fontSize:16,color:T.textSecondary,fontWeight:700}}>{d.macro.pce.headline}%</div></div>
+                    <div><Label>CPI Head</Label><div style={{fontFamily:T.fontMono,fontSize:16,color:T.textSecondary,fontWeight:700}}>{d.macro.cpi.headline}%</div></div>
+                    <div><Label>CPI Core</Label><div style={{fontFamily:T.fontMono,fontSize:16,color:T.textSecondary,fontWeight:700}}>{d.macro.cpi.core}%</div></div>
                   </div>
                   <div style={{height:36}}><ResponsiveContainer width="100%" height="100%"><LineChart data={d.macro.cpi.trend.map((v,i)=>({v,i}))}><Line type="monotone" dataKey="v" stroke={T.red} dot={false} strokeWidth={1.5}/><ReferenceLine y={2.0} stroke={T.green} strokeDasharray="3 2" strokeWidth={1}/></LineChart></ResponsiveContainer></div>
                   <SourceBox api="FRED" endpoint="CPIAUCSL + CPILFESL" mode={modeOf('cpiHeadline')}/>
