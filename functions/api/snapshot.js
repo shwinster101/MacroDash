@@ -41,10 +41,13 @@ export async function onRequest(context) {
   // Phase 1: FRED macro alone (batched to <=5 inside fetchFred), no competition.
   const [fred] = await Promise.allSettled([fetchFred(env.FRED_KEY)]);
   // Phase 2: heavy SPY (220-pt) + two light scrapers = 3 connections, under cap.
+  // FEAT-R8: the two scrapers are wrapped in withLastGood — a failed fetch serves the
+  // last good scrape from KV (with its real date) instead of reverting to mock. The
+  // stale date then trips the existing STALE badge, so an outage degrades honestly.
   const [spy, fearGreed, putCall] = await Promise.allSettled([
     fetchSpy(env.FRED_KEY),   // SPY via FRED SP500 — Stooq blocks Cloudflare edge IPs
-    fetchFearGreed(),
-    fetchPutCall(),
+    withLastGood(env, "feargreed", fetchFearGreed),
+    withLastGood(env, "putcall", fetchPutCall),
   ]);
 
   // ── 3. Assemble live overlay ───────────────────────────────────────────
@@ -224,6 +227,29 @@ async function fetchSpy(key) {
 //   - Accept: application/json
 //   - Origin + Referer = edition.cnn.com
 //   - date-suffixed path /graphdata/YYYY-MM-DD (the bare path 418s more often)
+// ─── FEAT-R8: scraper resilience (last-good fallback) ─────────────────────
+// Wrap a flaky scraper so a failed fetch doesn't silently revert the tile to mock.
+// On success we persist the result as the per-source "last good" (7-day TTL); on
+// failure we serve that last good instead — it keeps its original observation date,
+// so the dashboard's isStale() check flags it STALE automatically. If there is no
+// last good either, we re-throw and the field falls back to mock (invariant holds).
+async function withLastGood(env, key, fetcher) {
+  const lgKey = `pulse:lastgood:${key}`;
+  try {
+    const fresh = await fetcher();
+    if (fresh && Object.keys(fresh).length) {
+      try { await env.PULSE_CACHE?.put(lgKey, JSON.stringify(fresh), { expirationTtl: 7 * 24 * 3600 }); } catch {}
+    }
+    return fresh;
+  } catch (err) {
+    try {
+      const lg = await env.PULSE_CACHE?.get(lgKey, "json");
+      if (lg && Object.keys(lg).length) return lg; // stale but real — beats mock
+    } catch {}
+    throw err;
+  }
+}
+
 async function fetchFearGreed() {
   const day = new Date().toLocaleDateString("en-CA", { timeZone: "America/New_York" }); // YYYY-MM-DD
   const url = `https://production.dataviz.cnn.io/index/fearandgreed/graphdata/${day}`;
