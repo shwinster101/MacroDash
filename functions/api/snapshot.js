@@ -116,8 +116,10 @@ async function fetchFred(key) {
   const series = {
     tenYear:      "DGS10",
     fedFunds:     "FEDFUNDS",
-    cpiHeadline:  "CPIAUCSL",
-    cpiCore:      "CPILFESL",
+    cpiHeadline:  "CPIAUCSL",   // CPI index  → YoY % below
+    cpiCore:      "CPILFESL",   // core CPI index → YoY %
+    pceHeadline:  "PCEPI",      // PCE index  → YoY %  (Fed's preferred gauge)
+    pceCore:      "PCEPILFE",   // core PCE index → YoY %
     unemployment: "UNRATE",
     lfpr:         "CIVPART",
     mortgage30:   "MORTGAGE30US",
@@ -125,6 +127,10 @@ async function fetchFred(key) {
     vix:          "VIXCLS",
     btc:          "CBBTCUSD",
   };
+  // FEAT-R10: these arrive as a price INDEX; the dashboard wants year-over-year %.
+  // We pull enough monthly history to derive YoY (latest vs 12 months prior) plus a
+  // 6-point YoY trend (obs[m] vs obs[m+12]).
+  const INFLATION = new Set(["cpiHeadline", "cpiCore", "pceHeadline", "pceCore"]);
 
   // Fetch FRED series in batches of 5 — even alone, 10 parallel exceeds the
   // ~6-connection cap, so a queued call's timeout fires before it gets a socket.
@@ -134,11 +140,26 @@ async function fetchFred(key) {
   for (let i = 0; i < entries.length; i += 5) {
     const settled = await Promise.allSettled(
       entries.slice(i, i + 5).map(async ([field, id]) => {
+        // Inflation series need ~18 monthly points to derive a 6-point YoY trend;
+        // everyone else only needs ~10 for a sparkline. Over-fetching daily series
+        // to 20 is a trivially small payload.
+        const limit = INFLATION.has(field) ? 20 : 10;
         const url = `https://api.stlouisfed.org/fred/series/observations`
-          + `?series_id=${id}&api_key=${key}&limit=10&sort_order=desc&file_type=json`;
+          + `?series_id=${id}&api_key=${key}&limit=${limit}&sort_order=desc&file_type=json`;
         const r = await fetchRetry(url, {}, 2, 9000);
         const d = await r.json();
         const obs = d.observations?.filter(o => o.value !== ".") ?? [];
+        if (INFLATION.has(field)) {
+          // Convert index → YoY %: (this month / 12 months ago − 1) × 100.
+          const yoyAt = (m) => {
+            const a = parseFloat(obs[m]?.value), b = parseFloat(obs[m + 12]?.value);
+            return (isFinite(a) && isFinite(b) && b > 0) ? parseFloat(((a / b - 1) * 100).toFixed(1)) : NaN;
+          };
+          const yoy = yoyAt(0);
+          const trend = [];
+          for (let m = 5; m >= 0; m--) { const v = yoyAt(m); if (isFinite(v)) trend.push(v); } // oldest→newest
+          return [field, yoy, NaN, trend, obs[0]?.date];
+        }
         const latest = parseFloat(obs[0]?.value);
         const prev   = parseFloat(obs[1]?.value);
         // Series of last 10 for sparkline (newest last)
@@ -171,10 +192,9 @@ async function fetchFred(key) {
     }
     if (field === "tenYear") out.tenYearSeries = spark;
     if (field === "vix")     out.vixSeries     = spark;
-    if (field === "cpiHeadline") {
-      // CPI trend: 6 most recent monthly readings (oldest→newest)
-      out.cpiTrend = spark.slice(-6);
-    }
+    // Inflation: `spark` here is the 6-point YoY trend computed in the fetcher.
+    if (field === "cpiHeadline") out.cpiTrend = spark;
+    if (field === "pceHeadline") out.pceTrend = spark;
   }
   return out;
 }

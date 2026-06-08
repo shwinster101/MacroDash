@@ -32,6 +32,8 @@ const snapPayload = {
     btc: 109200, btcD1: 1.2,
     fearGreed: 62, fearGreedLabel: "Greed", putCall: 0.79,
     rateOddsHold: 98, rateOddsCut: 1, rateOddsHike: 1, fomcDays: 10, nextFomcDate: "2026-06-17", rateOddsHoldAsOf: "2026-06-07",
+    cpiHeadline: 3.9, cpiCore: 2.9, cpiTrend: [3.5, 3.6, 3.7, 3.8, 3.85, 3.9],
+    pceHeadline: 3.0, pceCore: 2.8, pceTrend: [2.5, 2.6, 2.7, 2.75, 2.8, 2.8],
   },
   asOf: "2026-06-04T18:00:00Z", cached: false,
 };
@@ -61,7 +63,8 @@ ok("Kalshi rate-odds overlaid (hold/cut/hike)", mPriv.data.macro.fedFunds.odds.h
 ok("FOMC days + next date overlaid", mPriv.data.macro.fedFunds.daysUntil === 10 && mPriv.data.macro.fedFunds.nextFOMC === "2026-06-17");
 ok("provenance rateOddsHold LIVE", mPriv.provenance.rateOddsHold === "LIVE");
 ok("meta lastRefresh + session overlaid", mPriv.data.lastRefresh === "06/04/2026 14:00 ET" && mPriv.data.session === "OPEN");
-ok("CPI left as mock (snapshot emits raw index — DEFERRED v2.1)", mPriv.data.macro.cpi.headline === 3.8 && mPriv.data.macro.cpi.core === 2.8);
+ok("CPI YoY overlaid (FRED index→YoY, R10)", mPriv.data.macro.cpi.headline === 3.9 && mPriv.data.macro.cpi.core === 2.9 && mPriv.data.macro.cpi.trend.length === 6);
+ok("PCE YoY overlaid (Fed's preferred gauge)", mPriv.data.macro.pce.headline === 3.0 && mPriv.data.macro.pce.core === 2.8 && mPriv.data.macro.pce.trend.length === 6);
 ok("badge LIVE when cached:false", mPriv.badge === "LIVE");
 ok("merge does not mutate original mock", MOCK_DATA.marketPulse.spy.price === 745.83);
 
@@ -93,7 +96,7 @@ const resolvePath = (o, p) => p.split(".").reduce((a, k) => (a == null ? undefin
 const unresolved = Object.entries(SOURCES).filter(([, s]) => resolvePath(MOCK_DATA, s.path) === undefined).map(([k, s]) => `${k}->${s.path}`);
 ok("all SOURCES paths resolve in dashboard MOCK_DATA", unresolved.length === 0);
 if (unresolved.length) console.log("   unresolved:", unresolved.join(", "));
-ok("CPI fields not mapped (deferred — raw index)", !("cpiHeadline" in SOURCES) && !("cpiCore" in SOURCES) && !("cpiTrend" in SOURCES));
+ok("CPI + PCE YoY fields now mapped (R10)", ["cpiHeadline","cpiCore","cpiTrend","pceHeadline","pceCore","pceTrend"].every((k) => k in SOURCES));
 ok("every SOURCES entry has path + valid kind", Object.values(SOURCES).every((s) => typeof s.path === "string" && ["num", "series", "str"].includes(s.kind)));
 
 // ---- 3. computeFiveWhys — rule-based 5 Whys ----------------------------

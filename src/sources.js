@@ -29,6 +29,13 @@ export const SOURCES = {
   unemployment:   { path: "macro.unemployment.national",    kind: "num",    displayClass: "public" },
   lfpr:           { path: "macro.unemployment.lfpr",        kind: "num",    displayClass: "public" },
   mortgage30:     { path: "macro.mortgage.national",        kind: "num",    displayClass: "public" },
+  // INFLATION (FEAT-R10 — FRED index → YoY %; CPIAUCSL/CPILFESL + PCEPI/PCEPILFE)
+  cpiHeadline:    { path: "macro.cpi.headline",             kind: "num",    displayClass: "public" },
+  cpiCore:        { path: "macro.cpi.core",                 kind: "num",    displayClass: "public" },
+  cpiTrend:       { path: "macro.cpi.trend",                kind: "series", displayClass: "public" },
+  pceHeadline:    { path: "macro.pce.headline",             kind: "num",    displayClass: "public" },
+  pceCore:        { path: "macro.pce.core",                 kind: "num",    displayClass: "public" },
+  pceTrend:       { path: "macro.pce.trend",                kind: "series", displayClass: "public" },
   wti:            { path: "crossAsset.wti.current",         kind: "num",    displayClass: "public" },
   wtiD1:          { path: "crossAsset.wti.d1pct",           kind: "num",    displayClass: "public" },
   vix:            { path: "marketPulse.vix.current",        kind: "num",    displayClass: "citation" },

@@ -5,11 +5,13 @@ answers *"is it safe to be in the market?"* from live macro + market + sentiment
 data. Single-page React app on Cloudflare Pages, with live data assembled at the
 edge by Pages Functions and cached in KV.
 
-**Status: v2.0.2 — live FRED data is flowing.** The dashboard fetches
-`/api/snapshot` and overlays 25 live fields (equity + sentiment + macro) on top of
-the mock baseline. The shipped version lives in the **footer string** in
-`src/dashboard.jsx` (`MacroDash v2.0.2`), *not* in `package.json` (which still reads
-`1.6.1` — known drift; don't trust it for the product version).
+**Status: v2.6.4 — live FRED + sentiment + Kalshi data is flowing.** The dashboard
+fetches `/api/snapshot` and overlays the mapped `SOURCES` fields (equity + rates +
+inflation YoY + sentiment + FOMC odds) on top of the mock baseline. Each live tile
+carries per-field provenance (LIVE/CACHED/STALE/MOCK) and an observation date.
+**`package.json` `version` is now the single source of truth** — Vite injects it as
+`__APP_VERSION__` and the footer renders it (the old "footer string is canonical /
+package.json is stale" drift is resolved; bump `package.json` on every release).
 
 ## Tech stack
 
@@ -92,8 +94,12 @@ St. Louis Fed API (`api.stlouisfed.org`), keyed by `env.FRED_KEY`. Pulls these s
 takes the latest non-`"."` observation, and derives 1-day deltas + sparklines:
 
 `DGS10` (10Y) · `FEDFUNDS` · `CPIAUCSL` (CPI headline) · `CPILFESL` (CPI core) ·
-`UNRATE` · `CIVPART` (LFPR) · `MORTGAGE30US` · `DCOILWTICO` (WTI) · `VIXCLS` (VIX) ·
-`CBBTCUSD` (BTC).
+`PCEPI` (PCE headline) · `PCEPILFE` (PCE core) · `UNRATE` · `CIVPART` (LFPR) ·
+`MORTGAGE30US` · `DCOILWTICO` (WTI) · `VIXCLS` (VIX) · `CBBTCUSD` (BTC).
+
+The four **inflation** series (CPI/PCE × headline/core) are price *indexes*; the dashboard
+wants **YoY %**, so for those `fetchFred` pulls 20 monthly points and derives
+`(latest / 12-months-prior − 1) × 100` plus a 6-point YoY trend (FEAT-R10, v2.6.4).
 
 ### FRED-SP500 proxy (`fetchSpy` in `functions/api/snapshot.js`)
 Equity prices come from **FRED's `SP500` index, not a stock API** — Stooq blocks
@@ -107,11 +113,16 @@ TODO), `spyMa100`, `spyMa200`, and a 20-pt sparkline.
   Needs a full desktop Chrome UA + Accept + Origin/Referer = `edition.cnn.com`, else 418.
 - **CBOE Put/Call** (`fetchPutCall`): static daily CSV at `cdn.cboe.com/.../equitypc.csv`
   (the old JSON endpoint 404s). Takes the last row with a P/C ratio in 0.1–5.
+- **Kalshi FOMC rate odds** (`fetchRateOdds`, FEAT-R9, v2.6.3): public market-data REST
+  API (`api.elections.kalshi.com`, no auth/key). Takes the nearest open `KXFEDDECISION`
+  event and aggregates its mutually-exclusive buckets (H0=hold · C25/C26=cut ·
+  H25/H26=hike) by last traded price → normalized hold/cut/hike % + FOMC days-out.
 
-> CPI headline/core are **not yet overlaid** — snapshot emits a raw index and the
-> dashboard wants a YoY %. CPI is intentionally left as mock (deferred to v2.1). The
-> cron Worker (`worker/cron.js`) *does* compute CPI YoY, but the dashboard no longer
-> reads that path.
+> **Scraper resilience (FEAT-R8, v2.6.2):** the three scrapers (F&G, P/C, Kalshi) run
+> through `withLastGood(env, key, fn)` — a success writes `pulse:lastgood:<key>` to KV
+> (7-day TTL); a failure serves that last-good value (with its real date, so `isStale`
+> flags it STALE) instead of reverting to mock. Mock is the fallback only when there is
+> no last-good yet.
 
 ## Cloudflare deployment
 
