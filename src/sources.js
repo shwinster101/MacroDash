@@ -43,6 +43,13 @@ export const SOURCES = {
   vixSeries:      { path: "marketPulse.vix.series",         kind: "series", displayClass: "citation" },
   btc:            { path: "crossAsset.btc.current",         kind: "num",    displayClass: "public" },
   btcD1:          { path: "crossAsset.btc.d1pct",           kind: "num",    displayClass: "public" },
+  // CREDIT SPREADS (ICE BofA OAS via FRED — BAMLH0A0HYM2 + BAMLC0A0CM)
+  // HY-IG spread: widening = bearish leading indicator (inverse correlation to S&P 500)
+  hySpread:           { path: "macro.credit.hy",          kind: "num",    displayClass: "public" },
+  igSpread:           { path: "macro.credit.ig",          kind: "num",    displayClass: "public" },
+  creditSpread:       { path: "macro.credit.spread",      kind: "num",    displayClass: "public" },
+  creditSpreadD1:     { path: "macro.credit.spreadD1",    kind: "num",    displayClass: "public" },
+  creditSpreadSeries: { path: "macro.credit.series",      kind: "series", displayClass: "public" },
   // SENTIMENT (scrapers — CNN F&G, CBOE Put/Call)
   fearGreed:      { path: "marketPulse.fearGreed.score",    kind: "num",    displayClass: "citation" },
   fearGreedLabel: { path: "marketPulse.fearGreed.label",    kind: "str",    displayClass: "citation" },

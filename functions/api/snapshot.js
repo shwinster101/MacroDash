@@ -22,7 +22,7 @@ export async function onRequest(context) {
   // prior close settled overnight), every load the rest of the day is instant.
   // No cron needed — your morning visit is the refresh trigger.
   const etDate = new Date().toLocaleDateString("en-CA", { timeZone: "America/New_York" }); // YYYY-MM-DD
-  const cacheKey = `pulse:snapshot:v7:${etDate}`; // v7: flush v6 pre-fix cache (YTD Dec31 anchor)
+  const cacheKey = `pulse:snapshot:v8:${etDate}`; // v8: credit spread fields (BAMLH0A0HYM2 + BAMLC0A0CM)
 
   // ── 1. KV Cache check ─────────────────────────────────────────────────
   try {
@@ -138,6 +138,8 @@ async function fetchFred(key) {
     wti:          "DCOILWTICO",
     vix:          "VIXCLS",
     btc:          "CBBTCUSD",
+    hySpread:     "BAMLH0A0HYM2",  // ICE BofA US HY OAS — daily credit risk gauge
+    igSpread:     "BAMLC0A0CM",    // ICE BofA US IG OAS — investment-grade counterpart
   };
   // FEAT-R10: these arrive as a price INDEX; the dashboard wants year-over-year %.
   // We pull enough monthly history to derive YoY (latest vs 12 months prior) plus a
@@ -207,7 +209,35 @@ async function fetchFred(key) {
     // Inflation: `spark` here is the 6-point YoY trend computed in the fetcher.
     if (field === "cpiHeadline") out.cpiTrend = spark;
     if (field === "pceHeadline") out.pceTrend = spark;
+    // Credit spreads: capture D1 and intermediate series for cross-field derivation below.
+    if (field === "hySpread") {
+      if (!isNaN(prev)) out.hySpreadD1 = parseFloat((latest - prev).toFixed(4));
+      out._hySparkline = spark; // temp: used to derive creditSpreadSeries
+    }
+    if (field === "igSpread") {
+      if (!isNaN(prev)) out.igSpreadD1 = parseFloat((latest - prev).toFixed(4));
+      out._igSparkline = spark; // temp
+    }
   }
+
+  // Derive HY-IG credit spread — the single highest-value cross-field metric.
+  // Widening = bearish leading indicator (inverse correlation to S&P 500).
+  if (out.hySpread !== undefined && out.igSpread !== undefined) {
+    out.creditSpread    = parseFloat((out.hySpread - out.igSpread).toFixed(2));
+    out.creditSpreadAsOf = out.hySpreadAsOf;
+    if (out.hySpreadD1 !== undefined && out.igSpreadD1 !== undefined) {
+      out.creditSpreadD1 = parseFloat((out.hySpreadD1 - out.igSpreadD1).toFixed(4));
+    }
+    if (Array.isArray(out._hySparkline) && Array.isArray(out._igSparkline)) {
+      const n = Math.min(out._hySparkline.length, out._igSparkline.length);
+      out.creditSpreadSeries = Array.from({length: n}, (_, i) =>
+        parseFloat((out._hySparkline[i] - out._igSparkline[i]).toFixed(2))
+      );
+    }
+    delete out._hySparkline;
+    delete out._igSparkline;
+  }
+
   return out;
 }
 
