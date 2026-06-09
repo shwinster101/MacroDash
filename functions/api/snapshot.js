@@ -217,8 +217,10 @@ async function fetchFred(key) {
 // This reuses the proven-working FRED path (same key as VIX/10Y which already work).
 async function fetchSpy(key) {
   if (!key) throw new Error("FRED_KEY not set");
+  // 265 obs (~1yr + buffer) so the prior Dec 31 is always in the window for
+  // any month of the year (220 misses Nov–Dec; 265 is safe year-round).
   const url = `https://api.stlouisfed.org/fred/series/observations`
-    + `?series_id=SP500&api_key=${key}&limit=220&sort_order=desc&file_type=json`;
+    + `?series_id=SP500&api_key=${key}&limit=265&sort_order=desc&file_type=json`;
   const r = await fetchRetry(url, {}, 2, 9000);
   const d = await r.json();
 
@@ -235,8 +237,17 @@ async function fetchSpy(key) {
   const ma100 = idx.length >= 100 ? toSpy(avg(idx.slice(0, 100))) : null;
   const ma200 = idx.length >= 200 ? toSpy(avg(idx.slice(0, 200))) : null;
 
-  // YTD anchor = oldest value in the ~1yr window (approximate; exact Jan-1 = v2.1)
-  const ytdBase = idx[idx.length - 1];
+  // True YTD anchor = most recent Dec 31 (last trading day of prior year).
+  // validObs is newest-first, so the first entry with year < currentYear is
+  // the most recent prior-year close. Fall back to oldest-in-window if not found.
+  const currentYear = new Date().getFullYear().toString();
+  let ytdBase = idx[idx.length - 1]; // fallback
+  for (let j = 0; j < validObs.length; j++) {
+    if ((validObs[j].date ?? "").slice(0, 4) < currentYear) {
+      ytdBase = parseFloat(validObs[j].value);
+      break;
+    }
+  }
 
   // 20-day sparkline, oldest→newest, in SPY scale
   const series = idx.slice(0, 20).reverse().map(toSpy);
