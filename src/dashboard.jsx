@@ -132,7 +132,6 @@ const MOCK_DATA = {
           series:[686,688,692,695,700,698,704,708,712,710,715,718,720,722,719,724,728,732,740,746] },
     spx:{ index:7473, prevClose:7415 }, // FEAT-202: S&P 500 index (FRED SP500) — live merge target
     qqq:{ price:717.66, changePct:0.44, ytd:15.50 },
-    mags:{ price:43.21, changePct:2.05, ytd:8.4 },
     vix:{ current:18.4, weekChg:-13.2, series:[24,22,21,20,22,21,19,18] },
     fearGreed:{ score:58, label:"Greed", prevWeek:44 },
     putCall:{ current:0.74, series30d:[0.82,0.79,0.76,0.81,0.78,0.74,0.72,0.71,0.69,0.72,0.75,0.78,0.74,0.71,0.69,0.68,0.70,0.73,0.75,0.72,0.70,0.68,0.70,0.73,0.76,0.74,0.72,0.73,0.75,0.74] },
@@ -154,6 +153,17 @@ const MOCK_DATA = {
     housing:{ peoria:218400 },
     shillerPe:{ current:42.78, mean:17.4, median:16.1, ath:44.19, pctOfAth:96.8 },
   },
+  // PERSONAL CONVICTION WATCHLIST — names + tiers only (no live prices: FRED can't
+  // source individual equities, and the stack is FRED-only $0). Pure manual list.
+  // ⚠️ EXAMPLE DATA — replace `ticker`/`name`/`thesis` with your real S/A-tier holdings.
+  watchlist:[
+    { ticker:"NVDA", name:"NVIDIA",        tier:"S", thesis:"AI compute monopoly; data-center rev compounding" },
+    { ticker:"MSFT", name:"Microsoft",     tier:"S", thesis:"Azure + Copilot moat; durable FCF" },
+    { ticker:"ASML", name:"ASML Holding",  tier:"S", thesis:"EUV lithography sole-supplier chokepoint" },
+    { ticker:"GOOGL",name:"Alphabet",      tier:"A", thesis:"Search cash engine funding AI optionality" },
+    { ticker:"AMZN", name:"Amazon",        tier:"A", thesis:"AWS margins + retail operating leverage" },
+    { ticker:"TSM",  name:"TSMC",          tier:"A", thesis:"Foundry leader; pricing power on leading nodes" },
+  ],
   // FEAT-164: 9-row Mag 10 with FCF + merged CapEx; EV/EBITDA computed
   mag10:[
     { ticker:"NVDA",  color:"#f0a500", isPrivate:false, isMusk:false,
@@ -230,7 +240,7 @@ const MOCK_DATA = {
     { id:5, name:"Labor Deceleration",  severity:"Low",  trend:"improving", claim:"Entry-level unemployment 6.1%; LFPR flat. Cooling without crashing.", triggers:["U-3 >5%","NFP <50K ×2"] },
   ],
   // fiveWhys: now computed at render time by computeFiveWhys() (src/fiveWhys.js) from live data.
-  sessionDelta:{ alertsDelta:0, regimeDelta:"none", vixPct:-2.1, tenYBps:-4, spyPct:+0.29, magsPct:+2.05 },
+  sessionDelta:{ alertsDelta:0, regimeDelta:"none", vixPct:-2.1, tenYBps:-4, spyPct:+0.29 },
 };
 
 // ─── REGIME VERDICT ENGINE (FEAT-163, rule-based for v1.6 mock) ────────────
@@ -701,6 +711,7 @@ export default function Dashboard({ publicView = false } = {}) {
   const [alerts,setAlerts]=useState(DEFAULT_ALERTS);
   const [expandedHW,setExpandedHW]=useState(null);
   const [mag10open,setMag10open]=useState(true);
+  const [watchlistOpen,setWatchlistOpen]=useState(true);
   const [copied,setCopied]=useState(false);
   const { toasts, show:showToast, dismiss } = useUndoToast();
   // FEAT-204 wiring — single-point hook swap; mock stays default, operator flips live post-deploy
@@ -744,7 +755,6 @@ export default function Dashboard({ publicView = false } = {}) {
     {label:"VIX",    val:fmt.pct(delta.vixPct), color:pctColor(delta.vixPct,true)},
     {label:"10Y",    val:fmt.bps(delta.tenYBps), color:pctColor(-delta.tenYBps)},
     {label:"SPY",    val:fmt.pct(delta.spyPct), color:pctColor(delta.spyPct)},
-    {label:"MAGS",   val:fmt.pct(delta.magsPct), color:pctColor(delta.magsPct)},
   ];
 
   const pub=d.mag10.filter(s=>!s.isPrivate);
@@ -900,7 +910,6 @@ export default function Dashboard({ publicView = false } = {}) {
               {[
                 {l:"SPY YTD",  v:fmt.pct(d.marketPulse.spy.ytd),  c:pctColor(d.marketPulse.spy.ytd)},
                 {l:"QQQ YTD",  v:fmt.pct(d.marketPulse.qqq.ytd),  c:pctColor(d.marketPulse.qqq.ytd)},
-                {l:"MAGS YTD", v:fmt.pct(d.marketPulse.mags.ytd), c:pctColor(d.marketPulse.mags.ytd)},
                 {l:"SPY P/E",  v:`${d.marketPulse.spy.pe}x`, c:d.marketPulse.spy.pe>22?T.yellow:T.green, sub:d.marketPulse.spy.pe>22?"above avg":"below avg"},
               ].map(({l,v,c,sub})=>(
                 <div key={l} style={{background:T.surface,border:`1px solid ${T.border}`,borderRadius:5,padding:"8px 12px",flex:"1 1 90px"}}>
@@ -1070,7 +1079,6 @@ export default function Dashboard({ publicView = false } = {}) {
               <span style={{fontFamily:T.fontMono,fontSize:9,color:T.textMuted}}>Ranked by market cap · Q1 2026 actuals · SEC verified</span>
             </div>
             <div style={{display:"flex",gap:8,alignItems:"center"}}>
-              <Badge label={`MAGS ${fmt.pct(d.marketPulse.mags.ytd)} YTD`} color={T.amber} small/>
               <span style={{fontFamily:T.fontMono,fontSize:10,color:T.textMuted}}>{mag10open?"▲":"▼"}</span>
             </div>
           </button>
@@ -1121,6 +1129,50 @@ export default function Dashboard({ publicView = false } = {}) {
                 </div>
               </div>
               <SourceBox api="Manual" endpoint="curated · Q1 2026 actuals · SpaceX S-1 (SEC)" mode={modeOf('mag10')}/>
+            </div>
+          )}
+        </div>
+
+        {/* ── MY CONVICTION · S/A TIER (full-width, collapsible) ── */}
+        <div style={{marginTop:16,background:T.surface,border:`1px solid ${T.border}`,borderRadius:6,overflow:"hidden"}}>
+          <button onClick={()=>setWatchlistOpen(o=>!o)} aria-expanded={watchlistOpen}
+            style={{width:"100%",display:"flex",justifyContent:"space-between",alignItems:"center",padding:"10px 16px",background:"none",border:"none",cursor:"pointer",borderBottom:watchlistOpen?`1px solid ${T.border}`:"none"}}>
+            <div style={{display:"flex",gap:10,alignItems:"center"}}>
+              <span style={{fontFamily:T.fontMono,fontSize:10,color:T.amber,letterSpacing:"0.1em"}}>MY CONVICTION</span>
+              <span style={{fontFamily:T.fontMono,fontSize:9,color:T.textMuted}}>Personal watchlist · tiered by conviction · no prices</span>
+            </div>
+            <span style={{fontFamily:T.fontMono,fontSize:10,color:T.textMuted}}>{watchlistOpen?"▲":"▼"}</span>
+          </button>
+          {watchlistOpen&&(
+            <div style={{padding:"12px 16px 16px"}}>
+              {[
+                {tier:"S", accent:T.amber, blurb:"Highest conviction · core holdings"},
+                {tier:"A", accent:T.blue,  blurb:"High conviction · sized below S"},
+              ].map(({tier,accent,blurb})=>{
+                const picks=d.watchlist.filter(w=>w.tier===tier);
+                if(!picks.length) return null;
+                return(
+                  <div key={tier} style={{marginBottom:14}}>
+                    <div style={{display:"flex",gap:8,alignItems:"center",marginBottom:8}}>
+                      <span style={{fontFamily:T.fontMono,fontSize:13,fontWeight:700,color:accent,border:`1px solid ${accent}66`,borderRadius:3,padding:"1px 8px",background:accent+"18"}}>{tier}</span>
+                      <span style={{fontFamily:T.fontMono,fontSize:8,color:T.textMuted,letterSpacing:"0.08em"}}>{blurb.toUpperCase()}</span>
+                      <div style={{height:1,flex:1,background:T.border}}/>
+                    </div>
+                    <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(200px,1fr))",gap:8}}>
+                      {picks.map(w=>(
+                        <div key={w.ticker} style={{background:T.surfaceHigh,border:`1px solid ${accent}33`,borderLeft:`3px solid ${accent}`,borderRadius:5,padding:"9px 11px"}}>
+                          <div style={{display:"flex",justifyContent:"space-between",alignItems:"baseline",gap:6}}>
+                            <span style={{fontFamily:T.fontMono,fontSize:13,fontWeight:700,color:T.textPrimary}}>{w.ticker}</span>
+                            <span style={{fontFamily:T.fontMono,fontSize:8,color:T.textMuted,textAlign:"right"}}>{w.name}</span>
+                          </div>
+                          {w.thesis&&<div style={{fontFamily:T.fontSans,fontSize:10,color:T.textSecondary,lineHeight:1.4,marginTop:5}}>{w.thesis}</div>}
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                );
+              })}
+              <SourceBox api="Manual" endpoint="personal watchlist · names + tiers only" mode="MOCK"/>
             </div>
           )}
         </div>
