@@ -11,7 +11,8 @@
 // KEY SAFETY: env.FRED_KEY, env.STOOQ_KEY live here. Never in src/ (frontend).
 // Set in Cloudflare: Workers & Pages → MacroDash → Settings → Variables & Secrets
 
-const CACHE_TTL = 48 * 60 * 60; // 48h cleanup; the per-day cache KEY drives freshness
+const CACHE_TTL = 48 * 60 * 60;   // 48h cleanup; the per-day cache KEY drives freshness
+const SETTLING_TTL = 60 * 60;     // short lock-in while the latest close looks not-yet-posted
 
 export async function onRequest(context) {
   const { request, env } = context;
@@ -81,11 +82,22 @@ export async function onRequest(context) {
   // ── 4. Write-through cache (ONLY if healthy — never lock in a degraded pull) ──
   const fredCount = fred.status === "fulfilled" ? Object.keys(fred.value).length : 0;
   const healthy = spy.status === "fulfilled" && fredCount >= 6;
+  // BUGFIX (2026-06-08): FRED doesn't always have the prior session's close posted
+  // by the time of the day's FIRST visit — a 10:01 ET fetch this morning locked in
+  // Thursday's SPY close (Friday's hadn't posted yet) into the full-day cache, so the
+  // dashboard served 2-session-stale prices straight through to market close. If the
+  // freshest SPY date trails today by more than the normal ~1-session lag (mirrors
+  // isStale() in sources.js), write through with a short SETTLING_TTL instead — a
+  // later visit re-fetches and, once FRED catches up, locks in the settled close for
+  // the rest of the day as before.
+  const spyAsOf = spy.status === "fulfilled" ? spy.value.spyPriceAsOf : null;
+  const settled = healthy && !looksBehind(spyAsOf, etDate);
   snapshot._diag.healthy = healthy;
+  snapshot._diag.settled = settled;
   if (healthy) {
     try {
       await env.PULSE_CACHE?.put(cacheKey, JSON.stringify(snapshot), {
-        expirationTtl: CACHE_TTL,
+        expirationTtl: settled ? CACHE_TTL : SETTLING_TTL,
       });
     } catch {
       // Cache write failed — return uncached, non-fatal
@@ -385,6 +397,27 @@ async function fetchRateOdds() {
 }
 
 // ─── Helpers ──────────────────────────────────────────────────────────────
+// Mirrors isStale() in src/sources.js: true when `dateStr` (an observation date,
+// YYYY-MM-DD) trails `todayStr` (also YYYY-MM-DD, ET) by more than the normal
+// ~1-session FRED lag. Today is excluded — its close may not be posted yet, that's
+// the normal EOD lag, not "behind." Both inputs are plain calendar dates, so we
+// anchor at UTC midnight purely to do day-of-week arithmetic — no real TZ at play.
+function looksBehind(dateStr, todayStr) {
+  if (!dateStr) return true;
+  const dt = new Date(`${dateStr}T00:00:00Z`);
+  const today = new Date(`${todayStr}T00:00:00Z`);
+  if (isNaN(dt.getTime()) || isNaN(today.getTime())) return true;
+  let missed = 0;
+  const cur = new Date(dt);
+  cur.setUTCDate(cur.getUTCDate() + 1);
+  while (cur < today) {
+    const dow = cur.getUTCDay();
+    if (dow !== 0 && dow !== 6) missed++;
+    cur.setUTCDate(cur.getUTCDate() + 1);
+  }
+  return missed >= 1;
+}
+
 function fgLabel(score) {
   if (score <= 25) return "Extreme Fear";
   if (score <= 45) return "Fear";
