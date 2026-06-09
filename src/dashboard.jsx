@@ -282,6 +282,21 @@ const peColor=(pe)=>pe>80?T.red:pe>40?T.yellow:pe>25?T.textPrimary:T.green;
 const marginColor=(m)=>m===null?T.textMuted:m>30?T.green:m>15?T.textPrimary:m>5?T.yellow:T.red;
 const yoyColor=(g)=>g>50?T.green:g>15?T.green:g>0?T.textPrimary:g>=0?T.yellow:T.red;
 
+// Returns `count` trading-day label strings (oldest→newest) anchored at anchorDateStr.
+// Used to give the SPY sparkline tooltip real dates instead of index numbers.
+function spyDatesFrom(anchorDateStr, count) {
+  const anchor = anchorDateStr ? new Date(`${anchorDateStr}T00:00:00`) : new Date();
+  if (isNaN(anchor.getTime())) return null;
+  const dates = [];
+  const cur = new Date(anchor);
+  while (dates.length < count) {
+    const dow = cur.getDay();
+    if (dow !== 0 && dow !== 6) dates.unshift(cur.toLocaleDateString("en-US", { month:"short", day:"numeric" }));
+    cur.setDate(cur.getDate() - 1);
+  }
+  return dates;
+}
+
 // Stoplight color for direction tiles
 function stoplightColor(val, band, invert=false) {
   if(Math.abs(val) <= band) return "yellow";
@@ -709,8 +724,10 @@ export default function Dashboard({ publicView = false } = {}) {
   };
 
   // SPY chart data
+  const spyDateLabels = spyDatesFrom(dataAsOf?.spyPrice, d.marketPulse.spy.series.length);
   const spyData=d.marketPulse.spy.series.map((v,i)=>({
-    i, price:v,
+    date: spyDateLabels ? spyDateLabels[i] : i,
+    price:v,
     ma200:d.marketPulse.spy.ma200-(d.marketPulse.spy.series.length-1-i)*0.4,
     ma100:d.marketPulse.spy.ma100-(d.marketPulse.spy.series.length-1-i)*0.2,
   }));
@@ -864,9 +881,9 @@ export default function Dashboard({ publicView = false } = {}) {
               <div style={{height:140}}>
                 <ResponsiveContainer width="100%" height="100%">
                   <LineChart data={spyData}>
-                    <XAxis dataKey="i" hide/>
+                    <XAxis dataKey="date" hide/>
                     <YAxis domain={["auto","auto"]} tick={{fontSize:8,fill:T.textMuted}} width={38}/>
-                    <Tooltip contentStyle={{background:T.surfaceHigh,border:`1px solid ${T.border}`,fontSize:10,fontFamily:T.fontMono}}/>
+                    <Tooltip contentStyle={{background:T.surfaceHigh,border:`1px solid ${T.border}`,fontSize:10,fontFamily:T.fontMono}} formatter={(val)=>[`$${val.toFixed(2)}`,"Price"]}/>
                     <ReferenceLine y={d.marketPulse.spy.ma200} stroke={T.purple} strokeDasharray="4 2" strokeWidth={1}/>
                     <ReferenceLine y={d.marketPulse.spy.ma100} stroke={T.blue} strokeDasharray="4 2" strokeWidth={1}/>
                     <Line type="monotone" dataKey="price" stroke={T.amber} dot={false} strokeWidth={2}/>
