@@ -22,7 +22,7 @@ export async function onRequest(context) {
   // prior close settled overnight), every load the rest of the day is instant.
   // No cron needed — your morning visit is the refresh trigger.
   const etDate = new Date().toLocaleDateString("en-CA", { timeZone: "America/New_York" }); // YYYY-MM-DD
-  const cacheKey = `pulse:snapshot:v6:${etDate}`; // v6: abandon poisoned v5 2026-06-08 day-key
+  const cacheKey = `pulse:snapshot:v7:${etDate}`; // v7: flush v6 pre-fix cache (YTD Dec31 anchor)
 
   // ── 1. KV Cache check ─────────────────────────────────────────────────
   try {
