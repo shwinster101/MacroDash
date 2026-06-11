@@ -22,7 +22,7 @@ export async function onRequest(context) {
   // prior close settled overnight), every load the rest of the day is instant.
   // No cron needed — your morning visit is the refresh trigger.
   const etDate = new Date().toLocaleDateString("en-CA", { timeZone: "America/New_York" }); // YYYY-MM-DD
-  const cacheKey = `pulse:snapshot:v8:${etDate}`; // v8: credit spread fields (BAMLH0A0HYM2 + BAMLC0A0CM)
+  const cacheKey = `pulse:snapshot:v9:${etDate}`; // v9: w1/m1 deltas + unemployment trend (derived, no new fetch)
 
   // ── 1. KV Cache check ─────────────────────────────────────────────────
   try {
@@ -154,10 +154,11 @@ async function fetchFred(key) {
   for (let i = 0; i < entries.length; i += 5) {
     const settled = await Promise.allSettled(
       entries.slice(i, i + 5).map(async ([field, id]) => {
-        // Inflation series need ~18 monthly points to derive a 6-point YoY trend;
-        // everyone else only needs ~10 for a sparkline. Over-fetching daily series
-        // to 20 is a trivially small payload.
-        const limit = INFLATION.has(field) ? 20 : 10;
+        // Inflation series need ~18 monthly points to derive a 6-point YoY trend.
+        // Other series: 26 points so DAILY fields can derive a 1-week (idx[5]) and
+        // 1-month (idx[21]) change off the same pull — zero extra fetches. Payload
+        // is trivially small either way.
+        const limit = INFLATION.has(field) ? 20 : 26;
         const url = `https://api.stlouisfed.org/fred/series/observations`
           + `?series_id=${id}&api_key=${key}&limit=${limit}&sort_order=desc&file_type=json`;
         const r = await fetchRetry(url, {}, 2, 9000);
@@ -172,38 +173,57 @@ async function fetchFred(key) {
           const yoy = yoyAt(0);
           const trend = [];
           for (let m = 5; m >= 0; m--) { const v = yoyAt(m); if (isFinite(v)) trend.push(v); } // oldest→newest
-          return [field, yoy, NaN, trend, obs[0]?.date];
+          return [field, yoy, NaN, trend, obs[0]?.date, NaN, NaN];
         }
-        const latest = parseFloat(obs[0]?.value);
-        const prev   = parseFloat(obs[1]?.value);
+        const vals  = obs.map(o => parseFloat(o.value)).filter(v => !isNaN(v));
+        const latest = vals[0];
+        const prev   = vals[1];
+        const wAgo   = vals[5];   // ~1 trading week back (DAILY fields only)
+        const mAgo   = vals[21];  // ~1 trading month back (DAILY fields only)
         // Series of last 10 for sparkline (newest last)
-        const spark  = obs.slice(0, 10).reverse().map(o => parseFloat(o.value)).filter(v => !isNaN(v));
-        return [field, latest, prev, spark, obs[0]?.date];
+        const spark  = vals.slice(0, 10).reverse();
+        return [field, latest, prev, spark, obs[0]?.date, wAgo, mAgo];
       })
     );
     results.push(...settled);
   }
 
+  // DAILY-frequency fields only: idx[5]/idx[21] are ~1wk/~1mo back. Applying these
+  // offsets to a MONTHLY series (FEDFUNDS, UNRATE…) would mean 5/21 *months* — garbage.
+  // So w1/m1 derivation is gated to true daily series.
+  const DAILY = new Set(["tenYear", "wti", "btc", "vix"]);
+  // Percent-change helper (for price-like fields); rates use absolute yield deltas.
+  const pct = (a, b) => parseFloat((((a - b) / b) * 100).toFixed(2));
+
   const out = {};
   for (const r of results) {
     if (r.status !== "fulfilled") continue;
-    const [field, latest, prev, spark, asOf] = r.value;
+    const [field, latest, prev, spark, asOf, wAgo, mAgo] = r.value;
     if (isNaN(latest)) continue;
     out[field] = latest;
     out[field + "AsOf"] = asOf; // FEAT-R2: observation date, for per-tile freshness
-    // Derived deltas for specific fields
-    if (field === "tenYear" && !isNaN(prev)) {
-      out.tenYearD1 = parseFloat((latest - prev).toFixed(4));
+    const daily = DAILY.has(field);
+    // Derived deltas for specific fields. 10Y = absolute yield Δ (pp); WTI/BTC = % Δ.
+    if (field === "tenYear") {
+      if (!isNaN(prev)) out.tenYearD1 = parseFloat((latest - prev).toFixed(4));
+      if (daily && !isNaN(wAgo)) out.tenYearW1 = parseFloat((latest - wAgo).toFixed(4));
+      if (daily && !isNaN(mAgo)) out.tenYearM1 = parseFloat((latest - mAgo).toFixed(4));
     }
     if (field === "vix" && !isNaN(prev)) {
       out.vixWeekChg = parseFloat((((latest - prev) / prev) * 100).toFixed(2));
     }
-    if (field === "wti" && !isNaN(prev)) {
-      out.wtiD1 = parseFloat((((latest - prev) / prev) * 100).toFixed(2));
+    if (field === "wti") {
+      if (!isNaN(prev)) out.wtiD1 = pct(latest, prev);
+      if (daily && !isNaN(wAgo)) out.wtiW1 = pct(latest, wAgo);
+      if (daily && !isNaN(mAgo)) out.wtiM1 = pct(latest, mAgo);
     }
-    if (field === "btc" && !isNaN(prev)) {
-      out.btcD1 = parseFloat((((latest - prev) / prev) * 100).toFixed(2));
+    if (field === "btc") {
+      if (!isNaN(prev)) out.btcD1 = pct(latest, prev);
+      if (daily && !isNaN(wAgo)) out.btcW1 = pct(latest, wAgo);
+      if (daily && !isNaN(mAgo)) out.btcM1 = pct(latest, mAgo);
     }
+    // Unemployment: emit a 6-pt trend (oldest→newest) from the monthly UNRATE series.
+    if (field === "unemployment") out.unemploymentTrend = spark.slice(-6);
     if (field === "tenYear") out.tenYearSeries = spark;
     if (field === "vix")     out.vixSeries     = spark;
     // Inflation: `spark` here is the 6-point YoY trend computed in the fetcher.

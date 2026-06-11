@@ -24,9 +24,12 @@ export const SOURCES = {
   // RATES / MACRO (fetchFred)
   tenYear:        { path: "crossAsset.treasury10y.current", kind: "num",    displayClass: "public" },
   tenYearD1:      { path: "crossAsset.treasury10y.d1",      kind: "num",    displayClass: "public" },
+  tenYearW1:      { path: "crossAsset.treasury10y.w1",      kind: "num",    displayClass: "public" },
+  tenYearM1:      { path: "crossAsset.treasury10y.m1",      kind: "num",    displayClass: "public" },
   tenYearSeries:  { path: "crossAsset.treasury10y.series",  kind: "series", displayClass: "public" },
   fedFunds:       { path: "macro.fedFunds.rate",            kind: "num",    displayClass: "public" },
   unemployment:   { path: "macro.unemployment.national",    kind: "num",    displayClass: "public" },
+  unemploymentTrend: { path: "macro.unemployment.trend",    kind: "series", displayClass: "public" },
   lfpr:           { path: "macro.unemployment.lfpr",        kind: "num",    displayClass: "public" },
   mortgage30:     { path: "macro.mortgage.national",        kind: "num",    displayClass: "public" },
   // INFLATION (FEAT-R10 — FRED index → YoY %; CPIAUCSL/CPILFESL + PCEPI/PCEPILFE)
@@ -38,11 +41,15 @@ export const SOURCES = {
   pceTrend:       { path: "macro.pce.trend",                kind: "series", displayClass: "public" },
   wti:            { path: "crossAsset.wti.current",         kind: "num",    displayClass: "public" },
   wtiD1:          { path: "crossAsset.wti.d1pct",           kind: "num",    displayClass: "public" },
+  wtiW1:          { path: "crossAsset.wti.w1pct",           kind: "num",    displayClass: "public" },
+  wtiM1:          { path: "crossAsset.wti.m1pct",           kind: "num",    displayClass: "public" },
   vix:            { path: "marketPulse.vix.current",        kind: "num",    displayClass: "citation" },
   vixWeekChg:     { path: "marketPulse.vix.weekChg",        kind: "num",    displayClass: "citation" },
   vixSeries:      { path: "marketPulse.vix.series",         kind: "series", displayClass: "citation" },
   btc:            { path: "crossAsset.btc.current",         kind: "num",    displayClass: "public" },
   btcD1:          { path: "crossAsset.btc.d1pct",           kind: "num",    displayClass: "public" },
+  btcW1:          { path: "crossAsset.btc.w1pct",           kind: "num",    displayClass: "public" },
+  btcM1:          { path: "crossAsset.btc.m1pct",           kind: "num",    displayClass: "public" },
   // CREDIT SPREADS (ICE BofA OAS via FRED — BAMLH0A0HYM2 + BAMLC0A0CM)
   // HY-IG spread: widening = bearish leading indicator (inverse correlation to S&P 500)
   hySpread:           { path: "macro.credit.hy",          kind: "num",    displayClass: "public" },

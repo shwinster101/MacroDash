@@ -95,6 +95,19 @@ const IPO_OPENAI = {
 const IPO_TARGETS = [IPO_SPACEX, IPO_ANTHROPIC, IPO_OPENAI];
 const IPO_STAGES = ["Filed", "Roadshow", "Pricing", "Trading"];
 
+// COST TO ORBIT — $ to put 1 kg into Low Earth Orbit, by era. Curated/Manual: there
+// is no free live feed for launch cost, and it changes on the order of years, not days.
+// The secular collapse (Shuttle → Falcon 9 reusable → Starship target) is the signal.
+// ⚠️ Update `costPerKg` + `series` as new vehicles/prices are confirmed.
+const LAUNCH_COST = {
+  vehicle: "Falcon 9 reusable",
+  costPerKg: 2720,
+  prevEra:  { name: "Space Shuttle", costPerKg: 54500 },
+  target:   { name: "Starship",      costPerKg: 200 },
+  // Era progression, oldest→newest (Shuttle → EELV → Falcon 9 expendable → F9 reusable → trend)
+  series: [54500, 18500, 9100, 4700, 2720, 2200],
+};
+
 // ─── SOURCE BOX ────────────────────────────────────────────────────────────
 // FEAT-167: CACHED badge uses dashed border + zinc-400 (#a1a1aa)
 const apiColors = {
@@ -554,9 +567,46 @@ const IpoCountdownStrip = () => (
     </div>
     <div style={{ display:"flex", gap:12, overflowX:"auto" }} className="ipo-strip-inner">
       {IPO_TARGETS.map(ipo => <IpoCard key={ipo.ticker} ipo={ipo}/>)}
+      <LaunchCostCard />
     </div>
   </div>
 );
+
+// COST TO ORBIT tracker — sits in the launch strip; secular cost-collapse signal.
+const LaunchCostCard = () => {
+  const lc = LAUNCH_COST;
+  const dropPct = Math.round((1 - lc.costPerKg / lc.prevEra.costPerKg) * 100);
+  return (
+    <div style={{
+      flex:"1 1 200px", minWidth:200, background:T.surface,
+      border:`1px solid ${T.green}44`, borderRadius:6, padding:"12px 14px",
+    }}>
+      <div style={{ display:"flex", alignItems:"center", gap:6, marginBottom:6 }}>
+        <span style={{ fontSize:13 }}>🚀</span>
+        <span style={{ fontFamily:T.fontMono, fontSize:9, color:T.green, letterSpacing:"0.06em" }}>COST TO ORBIT</span>
+        <span style={{ fontFamily:T.fontMono, fontSize:8, color:T.textMuted }}>$/KG → LEO</span>
+      </div>
+      <div style={{ fontFamily:T.fontMono, fontSize:22, fontWeight:700, color:T.textPrimary }}>
+        ${lc.costPerKg.toLocaleString()}
+      </div>
+      <div style={{ fontFamily:T.fontMono, fontSize:9, color:T.textMuted }}>{lc.vehicle}</div>
+      <div style={{ fontFamily:T.fontMono, fontSize:9, color:T.green, marginTop:2 }}>
+        ▼ {dropPct}% from {lc.prevEra.name} (${(lc.prevEra.costPerKg/1000).toFixed(1)}K)
+      </div>
+      <div style={{ height:26, marginTop:6 }}>
+        <ResponsiveContainer width="100%" height="100%">
+          <LineChart data={lc.series.map((v,i)=>({v,i}))}>
+            <Line type="monotone" dataKey="v" stroke={T.green} dot={false} strokeWidth={1.5}/>
+          </LineChart>
+        </ResponsiveContainer>
+      </div>
+      <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginTop:6 }}>
+        <span style={{ fontFamily:T.fontMono, fontSize:8, color:T.textMuted }}>{lc.target.name} target ~${lc.target.costPerKg}</span>
+        <span style={{ fontFamily:T.fontMono, fontSize:8, color:T.textMuted, border:`1px dashed ${T.border}`, borderRadius:3, padding:"0 5px" }}>MOCK · curated</span>
+      </div>
+    </div>
+  );
+};
 
 // ─── FEAT-169 · REGIME VERDICT BAND (full-width, relocated under macro strip) ──
 // The friend-readable headline ("wen moon?") — first signal
