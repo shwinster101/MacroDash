@@ -108,6 +108,24 @@ const LAUNCH_COST = {
   series: [54500, 18500, 9100, 4700, 2720, 2200],
 };
 
+// GPU ON-DEMAND LIST PRICING — leading indicator for the AI margin-compression hinge.
+// Curated/Manual, updated QUARTERLY: there is no free live feed for neocloud/hyperscaler
+// on-demand $/GPU-hr, and published rates reprice on a quarterly cadence, not daily. This
+// is the cleanest EXTERNAL read on AI-infra pricing power — visible before it shows up in
+// hyperscaler earnings. Falling $/hr ⇒ eroding pricing power ⇒ margin compression (ties to
+// the "AI CapEx ROI Gap" headwind). ⚠️ Update `onDemand`/`prevQ`/`trend` each quarter.
+const GPU_PRICING = {
+  quarter: "Q2 2026",
+  chips: [
+    { name: "H200",  onDemand: 3.10, prevQ: 3.40 }, // Hopper refresh — most liquid market
+    { name: "B200",  onDemand: 5.40, prevQ: 5.70 }, // Blackwell — repricing as supply lands
+    { name: "GB300", onDemand: 7.20, prevQ: 7.20 }, // Grace-Blackwell Ultra — newest, still scarce
+  ],
+  // Blended on-demand index, oldest→newest (quarterly) — the decline IS the signal.
+  trend: [6.80, 6.10, 5.50, 5.20, 5.00, 4.90],
+  note: "Falling on-demand $/hr = eroding AI-infra pricing power → the margin-compression hinge, visible before earnings.",
+};
+
 // ─── SOURCE BOX ────────────────────────────────────────────────────────────
 // FEAT-167: CACHED badge uses dashed border + zinc-400 (#a1a1aa)
 const apiColors = {
@@ -604,6 +622,47 @@ const LaunchCostCard = () => {
         <span style={{ fontFamily:T.fontMono, fontSize:8, color:T.textMuted }}>{lc.target.name} target ~${lc.target.costPerKg}</span>
         <span style={{ fontFamily:T.fontMono, fontSize:8, color:T.textMuted, border:`1px dashed ${T.border}`, borderRadius:3, padding:"0 5px" }}>MOCK · curated</span>
       </div>
+    </div>
+  );
+};
+
+// AI INFRA — GPU on-demand list pricing tracker. Leading indicator for AI margin
+// compression; curated quarterly (see GPU_PRICING). Falling $/hr is the bearish read,
+// so a QoQ decline is colored amber (warning), not green.
+const GpuPricingCard = () => {
+  const g = GPU_PRICING;
+  const qoq = (c) => parseFloat((((c.onDemand - c.prevQ) / c.prevQ) * 100).toFixed(1));
+  return (
+    <div style={{ marginTop:16, background:T.surface, border:`1px solid ${T.border}`, borderRadius:6, padding:"12px 16px" }}>
+      <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", flexWrap:"wrap", gap:6 }}>
+        <SectionHeader>AI Infra · GPU On-Demand $/hr</SectionHeader>
+        <span style={{ fontFamily:T.fontMono, fontSize:8, color:T.textMuted }}>{g.quarter} · leading margin-compression signal</span>
+      </div>
+      <div style={{ fontFamily:T.fontSans, fontSize:10, color:T.textSecondary, lineHeight:1.4, margin:"6px 0 10px" }}>{g.note}</div>
+      <div style={{ display:"grid", gridTemplateColumns:"repeat(auto-fill,minmax(150px,1fr))", gap:8 }}>
+        {g.chips.map(c => {
+          const dq = qoq(c);
+          const col = dq < -2 ? T.amber : dq > 2 ? T.green : T.textMuted;
+          return (
+            <div key={c.name} style={{ background:T.surfaceHigh, border:`1px solid ${T.border}`, borderRadius:5, padding:"9px 11px" }}>
+              <div style={{ display:"flex", justifyContent:"space-between", alignItems:"baseline" }}>
+                <span style={{ fontFamily:T.fontMono, fontSize:12, fontWeight:700, color:T.textPrimary }}>{c.name}</span>
+                <span style={{ fontFamily:T.fontMono, fontSize:8, color:T.textMuted }}>NVIDIA</span>
+              </div>
+              <div style={{ fontFamily:T.fontMono, fontSize:18, fontWeight:700, color:T.textPrimary, marginTop:2 }}>${c.onDemand.toFixed(2)}</div>
+              <div style={{ fontFamily:T.fontMono, fontSize:9, color:col }}>{dq>0?"▲":dq<0?"▼":"▬"} {Math.abs(dq).toFixed(1)}% QoQ</div>
+            </div>
+          );
+        })}
+      </div>
+      <div style={{ height:30, marginTop:10 }}>
+        <ResponsiveContainer width="100%" height="100%">
+          <LineChart data={g.trend.map((v,i)=>({v,i}))}>
+            <Line type="monotone" dataKey="v" stroke={T.amber} dot={false} strokeWidth={1.5}/>
+          </LineChart>
+        </ResponsiveContainer>
+      </div>
+      <SourceBox api="Manual" endpoint="GPU list/on-demand · curated quarterly" mode="MOCK"/>
     </div>
   );
 };
@@ -1119,6 +1178,9 @@ export default function Dashboard({ publicView = false } = {}) {
             </div>
           </div>
         </div>
+
+        {/* ── AI INFRA · GPU ON-DEMAND PRICING (leading margin-compression signal) ── */}
+        <GpuPricingCard />
 
         {/* ── MAG 10 (full-width, collapsible) ── */}
         <div style={{marginTop:16,background:T.surface,border:`1px solid ${T.border}`,borderRadius:6,overflow:"hidden"}}>
