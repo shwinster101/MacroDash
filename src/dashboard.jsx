@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback } from "react";
 import { LineChart, Line, BarChart, Bar, Cell, AreaChart, Area, XAxis, YAxis, Tooltip, ResponsiveContainer, ReferenceLine } from "recharts";
 import { useMarketData } from "./useMarketData.js"; // FEAT-204 wiring
 import { computeFiveWhys } from "./fiveWhys.js"; // v2.5: rule-based 5 Whys ($0, derived from live data)
-import { isStale } from "./sources.js"; // FEAT-R3: per-tile staleness
+import { isStale, cadenceOf } from "./sources.js"; // FEAT-R3: per-tile, cadence-aware staleness
 
 // ─── DESIGN TOKENS v1.6 (FEAT-152 + FEAT-167) ─────────────────────────────
 // design-tokens.json canonical. Inline mirror — keep in sync.
@@ -275,21 +275,28 @@ const MOCK_DATA = {
 };
 
 // ─── REGIME VERDICT ENGINE (FEAT-163, rule-based for v1.6 mock) ────────────
-function computeRegime(d) {
+// FEAT-DQ: `stale` is a Set of factor keys whose live data has gone STALE (cadence-aware).
+// A stale factor is EXCLUDED from the vote — better to drop a signal than let a dead feed
+// (e.g. the 2019-frozen CBOE Put/Call) cast a phantom bull/bear vote on today's tape.
+function computeRegime(d, stale=new Set()) {
   let bullVotes=0, bearVotes=0;
+  const use=(k)=>!stale.has(k);
   // 10Y direction: falling = bullish for equities
-  if(d.crossAsset.treasury10y.m1 < -0.10) bullVotes++; else if(d.crossAsset.treasury10y.m1 > 0.15) bearVotes++;
+  if(use("tenYear")){ if(d.crossAsset.treasury10y.m1 < -0.10) bullVotes++; else if(d.crossAsset.treasury10y.m1 > 0.15) bearVotes++; }
   // VIX level
-  if(d.marketPulse.vix.current < 18) bullVotes++; else if(d.marketPulse.vix.current > 25) bearVotes++;
+  if(use("vix")){ if(d.marketPulse.vix.current < 18) bullVotes++; else if(d.marketPulse.vix.current > 25) bearVotes++; }
   // F&G
-  if(d.marketPulse.fearGreed.score > 55) bullVotes++; else if(d.marketPulse.fearGreed.score < 30) bearVotes++;
+  if(use("fearGreed")){ if(d.marketPulse.fearGreed.score > 55) bullVotes++; else if(d.marketPulse.fearGreed.score < 30) bearVotes++; }
   // CPI trend (last 2 readings)
-  const cpiTrend=d.macro.cpi.trend;
-  if(cpiTrend[cpiTrend.length-1] < cpiTrend[cpiTrend.length-2]) bullVotes++;
-  else if(cpiTrend[cpiTrend.length-1] - cpiTrend[0] > 0.5) bearVotes++;
+  if(use("cpiHeadline")){
+    const cpiTrend=d.macro.cpi.trend;
+    if(cpiTrend[cpiTrend.length-1] < cpiTrend[cpiTrend.length-2]) bullVotes++;
+    else if(cpiTrend[cpiTrend.length-1] - cpiTrend[0] > 0.5) bearVotes++;
+  }
   // Put/Call
-  if(d.marketPulse.putCall.current < 0.75) bullVotes++; else if(d.marketPulse.putCall.current > 1.0) bearVotes++;
-  // Valuation (Shiller CAPE) — contrarian: a stretched market is bearish for forward returns (FEAT-R1)
+  if(use("putCall")){ if(d.marketPulse.putCall.current < 0.75) bullVotes++; else if(d.marketPulse.putCall.current > 1.0) bearVotes++; }
+  // Valuation (Shiller CAPE) — contrarian: a stretched market is bearish for forward returns (FEAT-R1).
+  // Mock/manual (no live feed) so it never goes stale — always votes.
   const cape=d.macro.shillerPe;
   if(cape.current < cape.mean*1.5) bullVotes++; else if(cape.current > 30 || cape.pctOfAth > 90) bearVotes++;
 
@@ -301,16 +308,20 @@ function computeRegime(d) {
   return { label:"MIXED", sub:"Cross-signals — watch VIX", tint:DT["regime-mix-bg"], color:T.yellow, bullVotes, bearVotes };
 }
 
-// Shared 5-factor breakdown (used by RegimeBand · FEAT-169)
-function regimeFactors(d) {
-  return [
-    {label:"10Y Direction",  val:d.crossAsset.treasury10y.m1<-0.10?"Falling ↓ (bullish)":"Flat/rising",  bull:d.crossAsset.treasury10y.m1<-0.10},
-    {label:"VIX Level",      val:`${d.marketPulse.vix.current} — ${d.marketPulse.vix.current<18?"Low (bullish)":d.marketPulse.vix.current<25?"Elevated":"Spiking (bearish)"}`, bull:d.marketPulse.vix.current<18},
-    {label:"Fear & Greed",   val:`${d.marketPulse.fearGreed.score} — ${d.marketPulse.fearGreed.label}`,   bull:d.marketPulse.fearGreed.score>55},
-    {label:"CPI Trend",      val:d.macro.cpi.trend.slice(-1)[0]<d.macro.cpi.trend.slice(-2)[0]?"Cooling (bullish)":"Re-accelerating", bull:d.macro.cpi.trend.slice(-1)[0]<d.macro.cpi.trend.slice(-2)[0]},
-    {label:"Put/Call Ratio", val:`${d.marketPulse.putCall.current} — ${d.marketPulse.putCall.current<0.75?"Bullish skew":"Neutral/bearish"}`, bull:d.marketPulse.putCall.current<0.75},
-    {label:"Valuation",      val:`${d.macro.shillerPe.current} CAPE · ${d.macro.shillerPe.pctOfAth}% of ATH`, bull:d.macro.shillerPe.current<d.macro.shillerPe.mean*1.5},
+// Shared 6-factor breakdown (used by RegimeBand · FEAT-169). `stale` (Set of factor keys)
+// marks factors backed by dead/stale live data — they are flagged and excluded from the
+// bull tally so the displayed "X/Y bullish" matches the vote computeRegime actually cast.
+function regimeFactors(d, stale=new Set()) {
+  const factors=[
+    {key:"tenYear",     label:"10Y Direction",  val:d.crossAsset.treasury10y.m1<-0.10?"Falling ↓ (bullish)":"Flat/rising",  bull:d.crossAsset.treasury10y.m1<-0.10},
+    {key:"vix",         label:"VIX Level",      val:`${d.marketPulse.vix.current} — ${d.marketPulse.vix.current<18?"Low (bullish)":d.marketPulse.vix.current<25?"Elevated":"Spiking (bearish)"}`, bull:d.marketPulse.vix.current<18},
+    {key:"fearGreed",   label:"Fear & Greed",   val:`${d.marketPulse.fearGreed.score} — ${d.marketPulse.fearGreed.label}`,   bull:d.marketPulse.fearGreed.score>55},
+    {key:"cpiHeadline", label:"CPI Trend",      val:d.macro.cpi.trend.slice(-1)[0]<d.macro.cpi.trend.slice(-2)[0]?"Cooling (bullish)":"Re-accelerating", bull:d.macro.cpi.trend.slice(-1)[0]<d.macro.cpi.trend.slice(-2)[0]},
+    {key:"putCall",     label:"Put/Call Ratio", val:`${d.marketPulse.putCall.current} — ${d.marketPulse.putCall.current<0.75?"Bullish skew":"Neutral/bearish"}`, bull:d.marketPulse.putCall.current<0.75},
+    {key:"valuation",   label:"Valuation",      val:`${d.macro.shillerPe.current} CAPE · ${d.macro.shillerPe.pctOfAth}% of ATH`, bull:d.macro.shillerPe.current<d.macro.shillerPe.mean*1.5},
   ];
+  // Stale factors: neutralize the bull flag and annotate so the UI shows them as excluded.
+  return factors.map(f => stale.has(f.key) ? { ...f, stale:true, bull:false, val:`${f.val} · STALE — excluded` } : f);
 }
 
 // ─── HELPERS ─────────────────────────────────────────────────────────────
@@ -671,10 +682,11 @@ const GpuPricingCard = () => {
 // The friend-readable headline ("wen moon?") — first signal
 // seen on mobile (above the command grid) and prominent on desktop. Soft regime tint
 // per AS2-01. Reuses computeRegime + regimeFactors.
-const RegimeBand=({d})=>{
+const RegimeBand=({d,stale=new Set()})=>{
   const [open,setOpen]=useState(false);
-  const regime=computeRegime(d);
-  const factors=regimeFactors(d);
+  const regime=computeRegime(d,stale);
+  const factors=regimeFactors(d,stale);
+  const active=factors.filter(f=>!f.stale).length; // stale factors are excluded from the vote
   const bulls=factors.filter(f=>f.bull).length;
   // "wen moon?" — map the regime verdict to our moon ratings: RISK-ON→MOONING, MIXED→HODL, RISK-OFF→DIAMOND HANDS
   const moon=WEN_MOON_STATES[{ "RISK-ON":0, "MIXED":1, "RISK-OFF":2 }[regime.label] ?? 1];
@@ -688,7 +700,7 @@ const RegimeBand=({d})=>{
             <div style={{display:"flex",alignItems:"baseline",gap:10,flexWrap:"wrap"}}>
               <span style={{fontFamily:T.fontMono,fontSize:22,fontWeight:700,color:regime.color,letterSpacing:"-0.01em"}}>{moon.label}</span>
               <span style={{fontFamily:T.fontMono,fontSize:10,color:T.textSecondary}}>{regime.label} · {regime.sub}</span>
-              <span style={{fontFamily:T.fontMono,fontSize:9,color:T.textMuted}}>{bulls}/6 bullish · {regime.bullVotes} vote{regime.bullVotes===1?"":"s"} bull / {regime.bearVotes} bear</span>
+              <span style={{fontFamily:T.fontMono,fontSize:9,color:T.textMuted}}>{bulls}/{active} bullish · {regime.bullVotes} vote{regime.bullVotes===1?"":"s"} bull / {regime.bearVotes} bear</span>
             </div>
           </div>
         </div>
@@ -696,11 +708,13 @@ const RegimeBand=({d})=>{
         <div style={{display:"flex",alignItems:"center",gap:8}}>
           {/* FINDING-2: compact factor "why" — now always visible (mobile too), short labels; full detail via ℹ */}
           <div style={{display:"flex",gap:5,flexWrap:"wrap",justifyContent:"flex-end"}}>
-            {factors.map((f,i)=>(
-              <span key={f.label} style={{fontFamily:T.fontMono,fontSize:8,color:f.bull?T.green:T.red,border:`1px solid ${f.bull?T.green:T.red}44`,borderRadius:3,padding:"1px 5px",letterSpacing:"0.03em",background:"#00000022",whiteSpace:"nowrap"}}>
-                {["10Y","VIX","F&G","CPI","P/C","VAL"][i]} {f.bull?"▲":"▼"}
+            {factors.map((f,i)=>{
+              const c=f.stale?T.amber:f.bull?T.green:T.red;
+              return(
+              <span key={f.label} style={{fontFamily:T.fontMono,fontSize:8,color:c,border:`1px solid ${c}44`,borderRadius:3,padding:"1px 5px",letterSpacing:"0.03em",background:"#00000022",whiteSpace:"nowrap",opacity:f.stale?0.7:1}}>
+                {["10Y","VIX","F&G","CPI","P/C","VAL"][i]} {f.stale?"⏱":f.bull?"▲":"▼"}
               </span>
-            ))}
+            );})}
           </div>
           <button onClick={()=>setOpen(o=>!o)} aria-label="Show regime factors" aria-expanded={open}
             style={{background:"none",border:`1px solid ${regime.color}44`,borderRadius:3,color:regime.color,cursor:"pointer",padding:"4px 8px",minWidth:44,minHeight:44,fontFamily:T.fontMono,fontSize:11,flexShrink:0}}>
@@ -714,10 +728,10 @@ const RegimeBand=({d})=>{
           {factors.map(f=>(
             <div key={f.label} style={{display:"flex",gap:8,alignItems:"baseline"}}>
               <div style={{fontFamily:T.fontMono,fontSize:9,color:T.textMuted,minWidth:100,flexShrink:0}}>{f.label}</div>
-              <div style={{fontFamily:T.fontMono,fontSize:9,color:f.bull?T.green:T.red}}>{f.val}</div>
+              <div style={{fontFamily:T.fontMono,fontSize:9,color:f.stale?T.amber:f.bull?T.green:T.red}}>{f.val}</div>
             </div>
           ))}
-          <div style={{fontFamily:T.fontMono,fontSize:8,color:T.textMuted,gridColumn:"1/-1"}}>Rule-based 5-factor vote · derived from live data</div>
+          <div style={{fontFamily:T.fontMono,fontSize:8,color:T.textMuted,gridColumn:"1/-1"}}>Rule-based 6-factor vote · stale/dead inputs auto-excluded · derived from live data</div>
         </div>
       )}
     </div>
@@ -826,8 +840,12 @@ export default function Dashboard({ publicView = false } = {}) {
   // FEAT-204 wiring — single-point hook swap; mock stays default, operator flips live post-deploy
   const { data: DATA, mode, asOf, provenance, dataAsOf } = useMarketData(MOCK_DATA, { publicView });
   const d=DATA;
-  const regime=computeRegime(d);
-  const modeOf=(k)=>{const m=provenance?.[k]||"MOCK"; return (m==="LIVE"||m==="CACHED")&&isStale(dataAsOf?.[k])?"STALE":m;}; // FEAT-R3: LIVE | CACHED | STALE | MOCK
+  const modeOf=(k)=>{const m=provenance?.[k]||"MOCK"; return (m==="LIVE"||m==="CACHED")&&isStale(dataAsOf?.[k], new Date(), cadenceOf(k))?"STALE":m;}; // FEAT-R3: cadence-aware LIVE | CACHED | STALE | MOCK
+  // FEAT-DQ: a regime factor backed by LIVE/CACHED data that has gone STALE (e.g. the
+  // retired CBOE Put/Call CSV, frozen at 2019) must not cast a vote on today's tape.
+  const REGIME_FACTOR_FIELDS=["tenYear","vix","fearGreed","cpiHeadline","putCall"];
+  const staleFactors=new Set(REGIME_FACTOR_FIELDS.filter(k=>modeOf(k)==="STALE"));
+  const regime=computeRegime(d, staleFactors);
   const asOfOf=(k)=>{const s=dataAsOf?.[k]; if(!s)return undefined; const dt=new Date(s+"T00:00:00"); return isNaN(dt.getTime())?s:`as of ${dt.toLocaleDateString("en-US",{month:"short",day:"numeric"})}`;}; // FEAT-R2: "as of Jun 4"
   const fw=computeFiveWhys(d, regime);        // v2.5: rule-based 5 Whys from live data
   const activeAlerts=alerts.filter(a=>a.active&&a.triggered).length;
@@ -922,7 +940,7 @@ export default function Dashboard({ publicView = false } = {}) {
       </div>
 
       {/* FEAT-169 + R4c: Regime Verdict band — HERO, now FIRST under the header (mobile-first) */}
-      <RegimeBand d={d}/>
+      <RegimeBand d={d} stale={staleFactors}/>
 
       {/* ── MACRO STRIP (persistent ticker — always visible; FEAT-170 reflows on mobile) ── */}
       <div style={{background:T.surfaceHigh,borderBottom:`1px solid ${T.border}`,padding:"6px 20px",overflowX:"auto",display:"flex",alignItems:"center",justifyContent:"space-between",gap:12}} className="macro-strip">

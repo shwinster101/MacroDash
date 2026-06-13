@@ -72,6 +72,20 @@ export const SOURCES = {
 // Display classes that must NOT render on the public friend view.
 export const PUBLIC_HIDDEN_CLASSES = ["licensed"];
 
+// SOURCE CADENCE — how often each field's upstream actually updates. Drives
+// cadence-aware staleness: a monthly print (CPI/PCE/FEDFUNDS) dated 6 weeks ago is
+// the FRESHEST available, not stale — so it must not trip a daily-cadence STALE flag.
+// Default is "daily"; only the non-daily fields are listed here.
+const CADENCE = {
+  // monthly FRED releases (period-dated at month start + a publication lag)
+  fedFunds: "monthly", unemployment: "monthly", unemploymentTrend: "monthly", lfpr: "monthly",
+  cpiHeadline: "monthly", cpiCore: "monthly", cpiTrend: "monthly",
+  pceHeadline: "monthly", pceCore: "monthly", pceTrend: "monthly",
+  // weekly (Freddie Mac primary mortgage survey, Thursday)
+  mortgage30: "weekly",
+};
+export function cadenceOf(key) { return CADENCE[key] || "daily"; }
+
 // Set a dotted path on a CLONE of obj (no mutation of the original).
 export function setPath(obj, path, value) {
   const keys = path.split(".");
@@ -143,16 +157,28 @@ export function mergeLiveOverMock(mockData, payload, publicView = false) {
   return { data, badge: liveBadge, asOf: payload.asOf || null, provenance, dataAsOf };
 }
 
-// FEAT-R3: a live field is STALE when its observation date trails the current trading day by
-// more than the normal ~1-session FRED lag (weekday-aware; holidays are out of scope).
-export function isStale(dateStr, now = new Date()) {
+// FEAT-R3: a live field is STALE when its observation date trails the latest expected
+// release by more than its source's normal cadence. `cadence` (daily|weekly|monthly):
+//   - daily   → weekday-aware: any completed PRIOR trading session missing = stale.
+//   - weekly  → stale only past ~12 days (covers a normal weekly release + a slip).
+//   - monthly → stale only past ~70 days. FRED prints are PERIOD-dated (month start) with
+//               a ~6-week publication lag, so a value dated ~2 months ago can still be the
+//               freshest available; flagging earlier would cry wolf on CPI/PCE/FEDFUNDS.
+// Default cadence is "daily" so existing 2-arg callers (and the daily tiles) are unchanged.
+export function isStale(dateStr, now = new Date(), cadence = "daily") {
   if (!dateStr) return false;
   const dt = new Date(`${dateStr}T00:00:00`);
   if (isNaN(dt.getTime())) return false;
   const today = new Date(now); today.setHours(0, 0, 0, 0);
-  // Count completed weekday sessions strictly between the data date and today. Today is
-  // excluded (its close may not be published yet — the normal EOD lag), so any missing
-  // PRIOR weekday means the feed is behind = stale (e.g. Thursday data viewed on a Sunday).
+
+  if (cadence === "monthly" || cadence === "weekly") {
+    const ageDays = (today - dt) / 86400000;
+    return ageDays > (cadence === "monthly" ? 70 : 12);
+  }
+
+  // daily (default): count completed weekday sessions strictly between the data date and
+  // today. Today is excluded (its close may not be published yet — normal EOD lag), so any
+  // missing PRIOR weekday means the feed is behind = stale (e.g. Thursday data on a Sunday).
   let missed = 0;
   const cur = new Date(dt);
   cur.setDate(cur.getDate() + 1);

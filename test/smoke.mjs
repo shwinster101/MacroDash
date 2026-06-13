@@ -5,7 +5,7 @@
 // the dashboard, so their internals belong to the worker's own suite, not this gate.
 
 import { readFileSync } from "node:fs";
-import { mergeLiveOverMock, SOURCES, isStale } from "../src/sources.js";
+import { mergeLiveOverMock, SOURCES, isStale, cadenceOf } from "../src/sources.js";
 import { computeFiveWhys } from "../src/fiveWhys.js";
 
 let pass = 0, fail = 0;
@@ -49,6 +49,12 @@ ok("isStale: false same-day", isStale("2099-01-01", new Date("2099-01-01")) === 
 ok("isStale: true when a month behind", isStale("2026-06-01", new Date("2026-07-01")) === true);
 ok("isStale: true — Thu data viewed Sun (missed Fri)", isStale("2026-06-04", new Date("2026-06-07")) === true);
 ok("isStale: false — Mon data viewed Tue (normal EOD lag)", isStale("2026-06-08", new Date("2026-06-09")) === false);
+// FEAT-DQ: cadence-aware staleness — monthly/weekly prints aren't stale at a daily threshold
+ok("isStale monthly: false — 5wk-old print is current", isStale("2026-05-01", new Date("2026-06-08"), "monthly") === false);
+ok("isStale monthly: true — >70d behind is genuinely stale", isStale("2026-03-01", new Date("2026-06-08"), "monthly") === true);
+ok("isStale weekly: false — 6-day-old weekly print is current", isStale("2026-06-04", new Date("2026-06-10"), "weekly") === false);
+ok("isStale daily: dead 2019 source is stale (Put/Call)", isStale("2019-10-04", new Date("2026-06-08")) === true);
+ok("cadenceOf: monthly for CPI, daily default for Put/Call", cadenceOf("cpiHeadline") === "monthly" && cadenceOf("putCall") === "daily");
 ok("10Y overlaid + d1 + series", mPriv.data.crossAsset.treasury10y.current === 4.46 && mPriv.data.crossAsset.treasury10y.d1 === 0.03 && mPriv.data.crossAsset.treasury10y.series.length === 3);
 ok("Fed funds overlaid", mPriv.data.macro.fedFunds.rate === 3.63);
 ok("unemployment + lfpr overlaid", mPriv.data.macro.unemployment.national === 4.3 && mPriv.data.macro.unemployment.lfpr === 61.8);
