@@ -126,6 +126,21 @@ const GPU_PRICING = {
   note: "Falling on-demand $/hr = eroding AI-infra pricing power → the margin-compression hinge, visible before earnings.",
 };
 
+// ELECTRIC SKIES — eVTOL FAA Type Certification tracker (Joby). The "next destination":
+// a subset of the IPO launch-stage pattern, but the gate is regulatory, not financial.
+// FAA TC is a 5-stage process; the final Type Certificate is the last gate before
+// commercial passenger ops. Curated/Manual projection — no live feed, milestones move on
+// a multi-quarter cadence. ⚠️ Update `stageIndex`/`progressPct`/`targetTC` as the FAA advances.
+const EVTOL_CERT = {
+  company: "Joby Aviation", ticker: "JOBY",
+  stages: ["Cert Basis", "Cert Plan", "Testing", "For-Credit (TIA)", "Type Cert"], // FAA 5-stage TC
+  stageIndex: 3,            // 0-based → Stage 4 of 5 (for-credit / TIA flight testing)
+  stageLabel: "For-Credit Testing (TIA)",
+  progressPct: 78,          // approx through the area-specific certification plans
+  targetTC: "H2 2026",      // projected FAA Type Certificate (curated estimate)
+  note: "FAA Type Certification — final regulatory gate before commercial eVTOL passenger ops.",
+};
+
 // ─── SOURCE BOX ────────────────────────────────────────────────────────────
 // FEAT-167: CACHED badge uses dashed border + zinc-400 (#a1a1aa)
 const apiColors = {
@@ -597,6 +612,7 @@ const IpoCountdownStrip = () => (
     <div style={{ display:"flex", gap:12, overflowX:"auto" }} className="ipo-strip-inner">
       {IPO_TARGETS.map(ipo => <IpoCard key={ipo.ticker} ipo={ipo}/>)}
       <LaunchCostCard />
+      <EvtolCertCard />
     </div>
   </div>
 );
@@ -632,6 +648,39 @@ const LaunchCostCard = () => {
       <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginTop:6 }}>
         <span style={{ fontFamily:T.fontMono, fontSize:8, color:T.textMuted }}>{lc.target.name} target ~${lc.target.costPerKg}</span>
         <span style={{ fontFamily:T.fontMono, fontSize:8, color:T.textMuted, border:`1px dashed ${T.border}`, borderRadius:3, padding:"0 5px" }}>MOCK · curated</span>
+      </div>
+    </div>
+  );
+};
+
+// ELECTRIC SKIES — eVTOL FAA Type-Cert tracker (Joby). Subset of the IPO stage pattern;
+// the "destination" is the Type Certificate. Curated projection (see EVTOL_CERT).
+const EvtolCertCard = () => {
+  const e = EVTOL_CERT;
+  const blue = "#3498db";
+  return (
+    <div style={{ flex:"1 1 220px", minWidth:220, background:T.surface, border:`1px solid ${blue}44`, borderRadius:6, padding:"12px 14px" }}>
+      <div style={{ display:"flex", alignItems:"center", gap:6, marginBottom:6 }}>
+        <span style={{ fontSize:13 }}>🛩️</span>
+        <span style={{ fontFamily:T.fontMono, fontSize:9, color:blue, letterSpacing:"0.06em" }}>ELECTRIC SKIES · eVTOL FAA CERT</span>
+      </div>
+      <div style={{ display:"flex", alignItems:"baseline", justifyContent:"space-between" }}>
+        <span style={{ fontFamily:T.fontDisplay, fontSize:15, fontWeight:700, color:T.textPrimary }}>{e.company}</span>
+        <span style={{ fontFamily:T.fontMono, fontSize:9, color:blue }}>{e.ticker}</span>
+      </div>
+      <div style={{ fontFamily:T.fontMono, fontSize:18, fontWeight:700, color:T.textPrimary, marginTop:4 }}>
+        Stage {e.stageIndex+1} <span style={{ fontSize:11, color:T.textMuted }}>/ {e.stages.length}</span>
+      </div>
+      <div style={{ fontFamily:T.fontMono, fontSize:9, color:T.textMuted }}>{e.stageLabel}</div>
+      {/* FAA 5-stage progress dots (subset of the IPO stage tracker) */}
+      <div style={{ display:"flex", alignItems:"center", gap:4, marginTop:8 }}>
+        {e.stages.map((s,i)=>(
+          <div key={s} style={{ flex:1, height:4, borderRadius:2, background: i<=e.stageIndex ? blue : T.border }}/>
+        ))}
+      </div>
+      <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginTop:8 }}>
+        <span style={{ fontFamily:T.fontMono, fontSize:9, color:blue }}>Type Cert target ~{e.targetTC}</span>
+        <span style={{ fontFamily:T.fontMono, fontSize:8, color:T.textMuted, border:`1px dashed ${T.border}`, borderRadius:3, padding:"0 5px" }}>MOCK · projection</span>
       </div>
     </div>
   );
