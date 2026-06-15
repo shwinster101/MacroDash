@@ -150,9 +150,11 @@ TODO), `spyMa100`, `spyMa200`, and a 20-pt sparkline.
 - **`mock` (default)** — no network at all; the dashboard renders pure `MOCK_DATA`.
 - **`live`** — fetch `/api/snapshot` on mount and overlay.
 
-Flip it by setting **`VITE_DATA_MODE=live`** in the Pages **build** environment
-variables, then redeploy (it's baked at build time, not read at runtime). This is the
-single switch that turns the whole app from demo to live — no code change.
+**`.env.production` now commits `VITE_DATA_MODE=live` as the build default** (v2.8.1), so
+production builds (incl. Cloudflare Pages) fetch live without any dashboard setting. An
+explicit `VITE_DATA_MODE` var in the Pages build env still **overrides** the file (Vite
+precedence), so set it to `mock` there to force demo. Either way it's baked at build time,
+not read at runtime. Mock remains the always-present runtime fallback (graceful degradation).
 (`VITE_PUBLIC_VIEW=true` is the analogous build flag for forcing the public view.)
 
 ### Per-day cache pattern (`snapshot.js`)

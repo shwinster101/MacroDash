@@ -323,6 +323,17 @@ function computeRegime(d, stale=new Set()) {
   return { label:"MIXED", sub:"Cross-signals — watch VIX", tint:DT["regime-mix-bg"], color:T.yellow, bullVotes, bearVotes };
 }
 
+// Live ET market session for the 5-Whys narrative frame (mirrors marketSession() in
+// snapshot.js). Computed client-side from the CURRENT clock so a reload at 2pm reads
+// "Midday —" and after 4pm "Post-close —", instead of the value frozen into the daily
+// snapshot at fetch time. Pure/$0 — no LLM, no network.
+function etSession(now = new Date()) {
+  const hour = parseInt(now.toLocaleString("en-US", { hour: "numeric", hour12: false, timeZone: "America/New_York" }), 10);
+  if (hour >= 9 && hour < 16) return "OPEN";
+  if (hour >= 16) return "CLOSE";
+  return "PRE";
+}
+
 // Shared 6-factor breakdown (used by RegimeBand · FEAT-169). `stale` (Set of factor keys)
 // marks factors backed by dead/stale live data — they are flagged and excluded from the
 // bull tally so the displayed "X/Y bullish" matches the vote computeRegime actually cast.
@@ -885,6 +896,10 @@ export default function Dashboard({ publicView = false } = {}) {
   const [mag10open,setMag10open]=useState(true);
   const [watchlistOpen,setWatchlistOpen]=useState(true);
   const [copied,setCopied]=useState(false);
+  // Re-render every 10 min so the live 5-Whys session frame advances (pre-open→midday→
+  // post-close) in an already-open tab without a manual reload. Pure clock tick, $0.
+  const [,setSessionTick]=useState(0);
+  useEffect(()=>{const id=setInterval(()=>setSessionTick(t=>t+1),10*60*1000);return ()=>clearInterval(id);},[]);
   const { toasts, show:showToast, dismiss } = useUndoToast();
   // FEAT-204 wiring — single-point hook swap; mock stays default, operator flips live post-deploy
   const { data: DATA, mode, asOf, provenance, dataAsOf } = useMarketData(MOCK_DATA, { publicView });
@@ -896,7 +911,10 @@ export default function Dashboard({ publicView = false } = {}) {
   const staleFactors=new Set(REGIME_FACTOR_FIELDS.filter(k=>modeOf(k)==="STALE"));
   const regime=computeRegime(d, staleFactors);
   const asOfOf=(k)=>{const s=dataAsOf?.[k]; if(!s)return undefined; const dt=new Date(s+"T00:00:00"); return isNaN(dt.getTime())?s:`as of ${dt.toLocaleDateString("en-US",{month:"short",day:"numeric"})}`;}; // FEAT-R2: "as of Jun 4"
-  const fw=computeFiveWhys(d, regime);        // v2.5: rule-based 5 Whys from live data
+  // 5 Whys: recomputed every render ($0, no LLM). Override the session frame with the LIVE
+  // ET session (not the value frozen in the daily snapshot) so the narrative advances
+  // pre-open → midday → post-close through the day. sessionTick re-renders it on a timer.
+  const fw=computeFiveWhys({...d, session:etSession()}, regime);
   const activeAlerts=alerts.filter(a=>a.active&&a.triggered).length;
 
   // FEAT-165: Share button
