@@ -22,7 +22,7 @@ export async function onRequest(context) {
   // prior close settled overnight), every load the rest of the day is instant.
   // No cron needed — your morning visit is the refresh trigger.
   const etDate = new Date().toLocaleDateString("en-CA", { timeZone: "America/New_York" }); // YYYY-MM-DD
-  const cacheKey = `pulse:snapshot:v9:${etDate}`; // v9: w1/m1 deltas + unemployment trend (derived, no new fetch)
+  const cacheKey = `pulse:snapshot:v10:${etDate}`; // v10: normalize Put/Call date to ISO (was M/D/YYYY, dodged STALE check)
 
   // ── 1. KV Cache check ─────────────────────────────────────────────────
   try {
@@ -393,7 +393,12 @@ async function fetchPutCall() {
     const ratio = parseFloat(cols[4]);
     // Validate: a real equity P/C ratio sits roughly in 0.3–2.0.
     if (!isNaN(ratio) && ratio > 0.1 && ratio < 5) {
-      return { putCall: ratio, putCallAsOf: cols[0] };
+      // Normalize the CBOE M/D/YYYY date → ISO YYYY-MM-DD so it matches every other
+      // asOf field and the dashboard's isStale()/asOfOf() (which expect ISO). Without
+      // this, a retired feed's date silently fails the STALE check.
+      const md = String(cols[0]).trim().match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
+      const asOf = md ? `${md[3]}-${md[1].padStart(2,"0")}-${md[2].padStart(2,"0")}` : cols[0].trim();
+      return { putCall: ratio, putCallAsOf: asOf };
     }
   }
   throw new Error("P/C parse failed");

@@ -157,6 +157,20 @@ export function mergeLiveOverMock(mockData, payload, publicView = false) {
   return { data, badge: liveBadge, asOf: payload.asOf || null, provenance, dataAsOf };
 }
 
+// Parse an observation date from either ISO (YYYY-MM-DD, all FRED/scraper fields) or the
+// CBOE Put/Call CSV's M/D/YYYY (e.g. "10/04/2019"). The raw-Date path silently failed on
+// M/D/YYYY → isStale returned false → the retired 2019 Put/Call dodged the STALE check and
+// kept casting a phantom bull vote. Returns a Date or null.
+export function parseObsDate(dateStr) {
+  if (!dateStr) return null;
+  const s = String(dateStr).trim();
+  let m = s.match(/^(\d{4})-(\d{2})-(\d{2})/);          // ISO YYYY-MM-DD
+  if (m) return new Date(`${m[1]}-${m[2]}-${m[3]}T00:00:00`);
+  m = s.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);        // M/D/YYYY (CBOE)
+  if (m) return new Date(`${m[3]}-${m[1].padStart(2, "0")}-${m[2].padStart(2, "0")}T00:00:00`);
+  return null;
+}
+
 // FEAT-R3: a live field is STALE when its observation date trails the latest expected
 // release by more than its source's normal cadence. `cadence` (daily|weekly|monthly):
 //   - daily   → weekday-aware: any completed PRIOR trading session missing = stale.
@@ -167,8 +181,8 @@ export function mergeLiveOverMock(mockData, payload, publicView = false) {
 // Default cadence is "daily" so existing 2-arg callers (and the daily tiles) are unchanged.
 export function isStale(dateStr, now = new Date(), cadence = "daily") {
   if (!dateStr) return false;
-  const dt = new Date(`${dateStr}T00:00:00`);
-  if (isNaN(dt.getTime())) return false;
+  const dt = parseObsDate(dateStr);
+  if (!dt || isNaN(dt.getTime())) return false;
   const today = new Date(now); today.setHours(0, 0, 0, 0);
 
   if (cadence === "monthly" || cadence === "weekly") {

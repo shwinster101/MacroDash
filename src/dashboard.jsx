@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback } from "react";
 import { LineChart, Line, BarChart, Bar, Cell, AreaChart, Area, XAxis, YAxis, Tooltip, ResponsiveContainer, ReferenceLine } from "recharts";
 import { useMarketData } from "./useMarketData.js"; // FEAT-204 wiring
 import { computeFiveWhys } from "./fiveWhys.js"; // v2.5: rule-based 5 Whys ($0, derived from live data)
-import { isStale, cadenceOf } from "./sources.js"; // FEAT-R3: per-tile, cadence-aware staleness
+import { isStale, cadenceOf, parseObsDate } from "./sources.js"; // FEAT-R3: per-tile, cadence-aware staleness
 
 // ─── DESIGN TOKENS v1.6 (FEAT-152 + FEAT-167) ─────────────────────────────
 // design-tokens.json canonical. Inline mirror — keep in sync.
@@ -910,7 +910,7 @@ export default function Dashboard({ publicView = false } = {}) {
   const REGIME_FACTOR_FIELDS=["tenYear","vix","fearGreed","cpiHeadline","putCall"];
   const staleFactors=new Set(REGIME_FACTOR_FIELDS.filter(k=>modeOf(k)==="STALE"));
   const regime=computeRegime(d, staleFactors);
-  const asOfOf=(k)=>{const s=dataAsOf?.[k]; if(!s)return undefined; const dt=new Date(s+"T00:00:00"); return isNaN(dt.getTime())?s:`as of ${dt.toLocaleDateString("en-US",{month:"short",day:"numeric"})}`;}; // FEAT-R2: "as of Jun 4"
+  const asOfOf=(k)=>{const s=dataAsOf?.[k]; if(!s)return undefined; const dt=parseObsDate(s); return !dt||isNaN(dt.getTime())?s:`as of ${dt.toLocaleDateString("en-US",{month:"short",day:"numeric"})}`;}; // FEAT-R2: "as of Jun 4" (parses ISO + CBOE M/D/YYYY)
   // 5 Whys: recomputed every render ($0, no LLM). Override the session frame with the LIVE
   // ET session (not the value frozen in the daily snapshot) so the narrative advances
   // pre-open → midday → post-close through the day. sessionTick re-renders it on a timer.

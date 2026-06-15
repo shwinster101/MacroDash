@@ -5,7 +5,7 @@
 // the dashboard, so their internals belong to the worker's own suite, not this gate.
 
 import { readFileSync } from "node:fs";
-import { mergeLiveOverMock, SOURCES, isStale, cadenceOf } from "../src/sources.js";
+import { mergeLiveOverMock, SOURCES, isStale, cadenceOf, parseObsDate } from "../src/sources.js";
 import { computeFiveWhys } from "../src/fiveWhys.js";
 
 let pass = 0, fail = 0;
@@ -54,6 +54,11 @@ ok("isStale monthly: false — 5wk-old print is current", isStale("2026-05-01", 
 ok("isStale monthly: true — >70d behind is genuinely stale", isStale("2026-03-01", new Date("2026-06-08"), "monthly") === true);
 ok("isStale weekly: false — 6-day-old weekly print is current", isStale("2026-06-04", new Date("2026-06-10"), "weekly") === false);
 ok("isStale daily: dead 2019 source is stale (Put/Call)", isStale("2019-10-04", new Date("2026-06-08")) === true);
+// BUGFIX: the CBOE M/D/YYYY date must ALSO be recognized as stale (it silently parsed to
+// Invalid Date before, so the dead 2019 Put/Call dodged the STALE check and kept voting).
+ok("isStale: CBOE M/D/YYYY 2019 date is stale", isStale("10/04/2019", new Date("2026-06-08")) === true);
+ok("parseObsDate: handles both ISO and M/D/YYYY",
+  parseObsDate("2026-06-04").getFullYear() === 2026 && parseObsDate("10/04/2019").getFullYear() === 2019);
 ok("cadenceOf: monthly for CPI, daily default for Put/Call", cadenceOf("cpiHeadline") === "monthly" && cadenceOf("putCall") === "daily");
 ok("10Y overlaid + d1 + series", mPriv.data.crossAsset.treasury10y.current === 4.46 && mPriv.data.crossAsset.treasury10y.d1 === 0.03 && mPriv.data.crossAsset.treasury10y.series.length === 3);
 ok("Fed funds overlaid", mPriv.data.macro.fedFunds.rate === 3.63);
