@@ -61,6 +61,9 @@ export const SOURCES = {
   fearGreed:      { path: "marketPulse.fearGreed.score",    kind: "num",    displayClass: "citation" },
   fearGreedLabel: { path: "marketPulse.fearGreed.label",    kind: "str",    displayClass: "citation" },
   putCall:        { path: "marketPulse.putCall.current",    kind: "num",    displayClass: "public" },
+  // TOP MARKET HEADLINE (FEAT-NEWS — non-FRED RSS; date-verified, staleness via asOf)
+  marketHeadline:       { path: "marketPulse.headline.text",   kind: "str", displayClass: "public" },
+  marketHeadlineSource: { path: "marketPulse.headline.source", kind: "str", displayClass: "public" },
   // RATE-DECISION ODDS (FEAT-R9 — Kalshi KXFEDDECISION prediction market)
   rateOddsHold:   { path: "macro.fedFunds.odds.hold",       kind: "num",    displayClass: "public" },
   rateOddsCut:    { path: "macro.fedFunds.odds.cut",        kind: "num",    displayClass: "public" },

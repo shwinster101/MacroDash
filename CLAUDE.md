@@ -117,6 +117,11 @@ TODO), `spyMa100`, `spyMa200`, and a 20-pt sparkline.
   API (`api.elections.kalshi.com`, no auth/key). Takes the nearest open `KXFEDDECISION`
   event and aggregates its mutually-exclusive buckets (H0=hold · C25/C26=cut ·
   H25/H26=hike) by last traded price → normalized hold/cut/hike % + FOMC days-out.
+- **Top market headline** (`fetchHeadline`, FEAT-NEWS, v2.9.0): the one non-FRED, non-market
+  *news* source. Top item from a market RSS feed (Dow Jones/MarketWatch `mw_topstories`;
+  CNBC fallback). DATE-VERIFIED: parses the item `pubDate` and only accepts a headline ≤~3
+  days old, emitting its real ET date so `isStale` guards it. Feeds **WHY #3** of the 5 Whys.
+  Source + date are attributed (no automated claim-fact-checking; reputable wire + date gate).
 
 > **Scraper resilience (FEAT-R8, v2.6.2):** the three scrapers (F&G, P/C, Kalshi) run
 > through `withLastGood(env, key, fn)` — a success writes `pulse:lastgood:<key>` to KV

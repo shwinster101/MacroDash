@@ -181,6 +181,8 @@ const MOCK_DATA = {
     vix:{ current:18.4, weekChg:-13.2, series:[24,22,21,20,22,21,19,18] },
     fearGreed:{ score:58, label:"Greed", prevWeek:44 },
     putCall:{ current:0.74, series30d:[0.82,0.79,0.76,0.81,0.78,0.74,0.72,0.71,0.69,0.72,0.75,0.78,0.74,0.71,0.69,0.68,0.70,0.73,0.75,0.72,0.70,0.68,0.70,0.73,0.76,0.74,0.72,0.73,0.75,0.74] },
+    // FEAT-NEWS: top market headline — live overlay from RSS (marketHeadline/Source); mock is the fallback.
+    headline:{ text:"No live headline feed", source:"—" },
   },
   crossAsset:{
     treasury10y:{ current:4.32, d1:+0.08, w1:+0.12, m1:-0.15, yellowBand:0.10, series:[4.52,4.48,4.41,4.35,4.29,4.22,4.18,4.24,4.28,4.32] },
@@ -914,7 +916,12 @@ export default function Dashboard({ publicView = false } = {}) {
   // 5 Whys: recomputed every render ($0, no LLM). Override the session frame with the LIVE
   // ET session (not the value frozen in the daily snapshot) so the narrative advances
   // pre-open → midday → post-close through the day. sessionTick re-renders it on a timer.
-  const fw=computeFiveWhys({...d, session:etSession()}, regime, staleFactors);
+  // WHY #2 must only assert LIVE+fresh data: build the `fresh` set from modeOf (LIVE/CACHED,
+  // not STALE/MOCK). In mock/demo mode pass null so the demo still shows every signal.
+  const FW_FIELDS=["vix","fearGreed","tenYear","wti","btc","creditSpread","putCall","marketHeadline"];
+  const anyLive=mode==="LIVE"||mode==="CACHED";
+  const freshSet=anyLive ? new Set(FW_FIELDS.filter(k=>{const m=modeOf(k);return m==="LIVE"||m==="CACHED";})) : null;
+  const fw=computeFiveWhys({...d, session:etSession()}, regime, { stale:staleFactors, fresh:freshSet });
   const activeAlerts=alerts.filter(a=>a.active&&a.triggered).length;
 
   // FEAT-165: Share button

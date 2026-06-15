@@ -22,7 +22,7 @@ export async function onRequest(context) {
   // prior close settled overnight), every load the rest of the day is instant.
   // No cron needed — your morning visit is the refresh trigger.
   const etDate = new Date().toLocaleDateString("en-CA", { timeZone: "America/New_York" }); // YYYY-MM-DD
-  const cacheKey = `pulse:snapshot:v10:${etDate}`; // v10: normalize Put/Call date to ISO (was M/D/YYYY, dodged STALE check)
+  const cacheKey = `pulse:snapshot:v11:${etDate}`; // v11: + top market headline (FEAT-NEWS)
 
   // ── 1. KV Cache check ─────────────────────────────────────────────────
   try {
@@ -45,11 +45,12 @@ export async function onRequest(context) {
   // FEAT-R8: the two scrapers are wrapped in withLastGood — a failed fetch serves the
   // last good scrape from KV (with its real date) instead of reverting to mock. The
   // stale date then trips the existing STALE badge, so an outage degrades honestly.
-  const [spy, fearGreed, putCall, rateOdds] = await Promise.allSettled([
+  const [spy, fearGreed, putCall, rateOdds, headline] = await Promise.allSettled([
     fetchSpy(env.FRED_KEY),   // SPY via FRED SP500 — Stooq blocks Cloudflare edge IPs
     withLastGood(env, "feargreed", fetchFearGreed),
     withLastGood(env, "putcall", fetchPutCall),
     withLastGood(env, "rateodds", fetchRateOdds),
+    withLastGood(env, "headline", fetchHeadline), // FEAT-NEWS: top market headline (non-FRED)
   ]);
 
   // ── 3. Assemble live overlay ───────────────────────────────────────────
@@ -64,6 +65,7 @@ export async function onRequest(context) {
     ...(fearGreed.status === "fulfilled" ? fearGreed.value : {}),
     ...(putCall.status === "fulfilled" ? putCall.value : {}),
     ...(rateOdds.status === "fulfilled" ? rateOdds.value : {}),
+    ...(headline.status === "fulfilled" ? headline.value : {}),
   };
 
   const snapshot = { live, asOf: now, cached: false };
@@ -76,6 +78,7 @@ export async function onRequest(context) {
     fearGreed: fearGreed.status === "fulfilled" ? "ok" : String(fearGreed.reason),
     putCall: putCall.status === "fulfilled" ? "ok" : String(putCall.reason),
     rateOdds: rateOdds.status === "fulfilled" ? "ok" : String(rateOdds.reason),
+    headline: headline.status === "fulfilled" ? "ok" : String(headline.reason),
   };
   snapshot._diag = diag;
 
@@ -402,6 +405,57 @@ async function fetchPutCall() {
     }
   }
   throw new Error("P/C parse failed");
+}
+
+// ─── Top market headline (FEAT-NEWS) ──────────────────────────────────────────
+// Breaks the FRED-only stance to answer "did a headline move direction today?". Pulls the
+// TOP item from a market-focused RSS feed (Dow Jones / MarketWatch top-stories; CNBC top
+// news as fallback). DATE-VERIFIED: we parse the item's pubDate and only accept a headline
+// published within the last ~3 days, emitting its real ET date so isStale() flags anything
+// older — we never present a stale headline as today's. Wrapped in withLastGood at the call
+// site. We do not (cannot) verify the CLAIM's truth; we attribute the source + date so it's
+// auditable, and rely on a reputable wire (Dow Jones/CNBC) for credibility.
+async function fetchHeadline() {
+  const feeds = [
+    { url: "https://feeds.content.dowjones.io/public/rss/mw_topstories", source: "MarketWatch" },
+    { url: "https://www.cnbc.com/id/100003114/device/rss/rss.html",      source: "CNBC" },
+  ];
+  const decode = (s) => s
+    .replace(/<!\[CDATA\[|\]\]>/g, "")
+    .replace(/<[^>]+>/g, "")
+    .replace(/&amp;/g, "&").replace(/&#39;|&apos;/g, "'").replace(/&quot;/g, '"')
+    .replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&#8217;|&rsquo;/g, "’")
+    .replace(/&#8216;|&lsquo;/g, "‘").replace(/&#8211;|&ndash;/g, "–")
+    .trim();
+
+  for (const { url, source } of feeds) {
+    try {
+      const r = await fetch(url, {
+        headers: {
+          "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
+          "Accept": "application/rss+xml, application/xml, text/xml, */*",
+        },
+        signal: AbortSignal.timeout(9000),
+      });
+      if (!r.ok) continue;
+      const xml = await r.text();
+      const item = xml.match(/<item>([\s\S]*?)<\/item>/i);
+      if (!item) continue;
+      const titleM = item[1].match(/<title>([\s\S]*?)<\/title>/i);
+      const pubM   = item[1].match(/<pubDate>([\s\S]*?)<\/pubDate>/i);
+      if (!titleM || !pubM) continue;
+      const title = decode(titleM[1]);
+      const pub = new Date(pubM[1].trim());
+      if (!title || isNaN(pub.getTime())) continue;
+      // Date-accuracy gate: accept only a recently-published headline (last ~3 days; allow a
+      // little clock skew into the future). Anything older is stale → skip to the next feed.
+      const ageDays = (Date.now() - pub.getTime()) / 86400000;
+      if (ageDays > 3 || ageDays < -1) continue;
+      const asOf = pub.toLocaleDateString("en-CA", { timeZone: "America/New_York" }); // YYYY-MM-DD ET
+      return { marketHeadline: title, marketHeadlineSource: source, marketHeadlineAsOf: asOf };
+    } catch { /* try next feed */ }
+  }
+  throw new Error("no fresh headline");
 }
 
 // ─── Kalshi FOMC rate-decision odds (FEAT-R9) ────────────────────────────────

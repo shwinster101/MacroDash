@@ -1,42 +1,42 @@
-// src/fiveWhys.js — MacroDash v2.5
-// Rule-based "5 Whys" generator. PURE (no React, no network, no LLM, $0): a
-// deterministic macro narrative derived from the live snapshot + the regime that
-// computeRegime() already produced — so it stays as fresh as the data with no
-// cron/agent/secret. Smoke-tested like sources.js.
+// src/fiveWhys.js — MacroDash v2.9
+// Rule-based "5 Whys" generator. PURE (no React, no network, no LLM, $0): a deterministic
+// macro narrative derived from the live snapshot + the regime computeRegime() produced.
+//
+// STRUCTURE (per maintainer spec):
+//   #1  Core anchor — SPY vs 200DMA, CPI, Fed rate
+//   #2  Other LIVE data only — VIX/F&G/10Y/WTI/BTC/credit, INCLUDED ONLY IF live + fresh
+//       (mock or stale fields are skipped, never asserted as today's tape)
+//   #3  Market headline — the top dated market headline (RSS), or "none" if not fresh
+//   #4  Headwinds/tailwinds — what's worsening / improving in the tracked risks
+//   #5  Synthesis — how #1–4 combine into the verdict, with a confidence caveat
+//
+// opts = { stale:Set<factorKey>, fresh:Set<fieldKey>|null }
+//   stale → regime factors excluded from the vote (cadence-aware, from the dashboard).
+//   fresh → fields whose provenance is LIVE/CACHED and not stale. null = mock/demo mode
+//           (no live filtering — show everything, since mock IS the baseline).
 
 const pct = (v, d = 1) => `${v >= 0 ? "+" : ""}${Number(v).toFixed(d)}%`;
 
-// Session framing — honors the "pre-open setup / post-close recap" cadence
-// without a scheduler (the dashboard recomputes this every load).
 function sessionPrefix(session) {
   if (session === "PRE") return "Pre-open setup —";
   if (session === "CLOSE") return "Post-close —";
   return "Midday —";
 }
 
-// Biggest public Mag-10 mover (curated input — used for flavor, not as a live claim).
-function topMover(mag10) {
-  const pub = (mag10 || []).filter((s) => s && !s.isPrivate && Number.isFinite(s.chgPct));
-  if (!pub.length) return null;
-  return pub.reduce((a, b) => (Math.abs(b.chgPct) > Math.abs(a.chgPct) ? b : a));
-}
+// Display labels for WHY #2 fields (and the "excluded" note).
+const FIELD_LABEL = {
+  vix: "VIX", fearGreed: "F&G", tenYear: "10Y", wti: "WTI",
+  btc: "BTC", creditSpread: "HY-IG", putCall: "Put/Call", marketHeadline: "headline",
+};
 
-// computeFiveWhys(data, regime) -> { regime, headline, whys:[5], generatedAt }.
-// `regime` is the object from computeRegime(d): { label, sub, bullVotes, bearVotes }.
-// `stale` (Set of regime factor keys) marks inputs whose live feed has gone STALE/dead
-// (cadence-aware, from the dashboard). The narrative must stay consistent with the vote:
-// a stale factor is excluded from the bullish-factor denominator and is described as
-// "STALE — excluded" instead of being cited as a live bull/bear signal (e.g. the retired
-// 2019 CBOE Put/Call, which would otherwise read as a phantom "bullish skew").
-export function computeFiveWhys(data, regime = {}, stale = new Set()) {
+export function computeFiveWhys(data, regime = {}, opts = {}) {
+  const stale = opts.stale instanceof Set ? opts.stale : new Set();
+  const fresh = opts.fresh instanceof Set ? opts.fresh : null; // null = treat all as usable (mock/demo)
+  const isLive = (k) => (fresh ? fresh.has(k) : true);
+
   const mp = data.marketPulse, ca = data.crossAsset, mac = data.macro;
-  const spy = mp.spy, vix = mp.vix, fg = mp.fearGreed, pc = mp.putCall;
+  const spy = mp.spy, vix = mp.vix, fg = mp.fearGreed;
   const ten = ca.treasury10y, fed = mac.fedFunds, cpi = mac.cpi;
-  const mover = topMover(data.mag10);
-  const cpiCooling =
-    Array.isArray(cpi.trend) && cpi.trend.length >= 2
-      ? cpi.trend[cpi.trend.length - 1] < cpi.trend[cpi.trend.length - 2]
-      : false;
 
   const label = regime.label || "MIXED";
   const sub = regime.sub || "cross-signals";
@@ -44,31 +44,60 @@ export function computeFiveWhys(data, regime = {}, stale = new Set()) {
   // Active = the 6 regime factors minus any excluded for staleness (matches RegimeBand).
   const active = ["tenYear", "vix", "fearGreed", "cpiHeadline", "putCall", "valuation"]
     .filter((k) => !stale.has(k)).length;
-  const pcStale = stale.has("putCall");
 
   const headline =
-    `${sessionPrefix(data.session)} SPY ${pct(spy.changePct)}: ` +
-    `${label} regime on ${bull}/${active} bullish factors` +
-    (mover ? `, ${mover.ticker} ${pct(mover.chgPct)} leading.` : ".");
+    `${sessionPrefix(data.session)} ${label} regime, ${bull}/${active} bullish factors — SPY ${pct(spy.changePct)}.`;
 
-  const whys = [
-    // 1 — equities / leadership
-    `Equities: SPY ${pct(spy.changePct)}, QQQ ${pct(mp.qqq.changePct)}` +
-      (mover ? `; ${mover.ticker} ${pct(mover.chgPct)} set the tone.` : "."),
-    // 2 — volatility / sentiment
-    `Risk appetite: VIX ${vix.current} (${pct(vix.weekChg)} WoW), Fear & Greed ${fg.score} (${fg.label}) — ` +
-      `${vix.current < 18 ? "calm tape" : vix.current > 25 ? "stress building" : "elevated but contained"}.`,
-    // 3 — rates / policy
-    `Rates: 10Y ${ten.current}% (${ten.d1 >= 0 ? "+" : ""}${ten.d1} 1D), Fed ${fed.rate}%, FOMC in ${fed.daysUntil}d — ` +
-      `${ten.m1 < -0.1 ? "falling yields ease the discount rate" : ten.m1 > 0.15 ? "rising yields pressure multiples" : "yields roughly flat"}.`,
-    // 4 — inflation
-    `Inflation: CPI ${cpi.headline}% headline / ${cpi.core}% core — ${cpiCooling ? "cooling on the last two prints" : "not yet cooling"}.`,
-    // 5 — positioning / structural. Put/Call is excluded (not cited as a signal) when stale.
-    pcStale
-      ? `Positioning: Put/Call feed STALE (source retired) — excluded from the vote; verdict ${label} — ${sub}.`
-      : `Positioning: Put/Call ${pc.current} (${pc.current < 0.75 ? "bullish skew" : pc.current > 1 ? "defensive" : "neutral"}); ` +
-        `verdict ${label} — ${sub}.`,
-  ];
+  const whys = [];
+
+  // WHY #1 — core anchor: SPY vs 200DMA, CPI, Fed rate
+  const ma200 = spy.ma200;
+  const above = ma200 != null && spy.price >= ma200;
+  whys.push(
+    `Core tape: SPY $${spy.price} (${pct(spy.changePct)}) ${ma200 != null ? (above ? `above its 200-DMA ($${ma200})` : `below its 200-DMA ($${ma200})`) : ""}; ` +
+    `CPI ${cpi.headline}% headline, Fed funds ${fed.rate}%. ` +
+    `${above ? "Primary trend intact; policy/inflation set the backdrop." : "Below the long trend — primary risk flag."}`
+  );
+
+  // WHY #2 — other LIVE data only (mock/stale fields are skipped)
+  const sig = [];
+  if (isLive("vix")) sig.push(`VIX ${vix.current}`);
+  if (isLive("fearGreed")) sig.push(`F&G ${fg.score} (${fg.label})`);
+  if (isLive("tenYear")) sig.push(`10Y ${ten.current}%`);
+  if (isLive("wti") && ca.wti) sig.push(`WTI $${ca.wti.current}`);
+  if (isLive("btc") && ca.btc) sig.push(`BTC $${(ca.btc.current / 1000).toFixed(0)}K`);
+  if (isLive("creditSpread") && mac.credit) sig.push(`HY-IG ${mac.credit.spread}pp`);
+  const excluded = fresh
+    ? ["vix", "fearGreed", "tenYear", "wti", "btc", "creditSpread"].filter((k) => !fresh.has(k))
+    : [];
+  whys.push(
+    `Live cross-signals: ${sig.length ? sig.join(", ") : "none fresh right now"}.` +
+    (excluded.length ? ` Excluded (mock/stale): ${excluded.map((k) => FIELD_LABEL[k]).join(", ")}.` : "")
+  );
+
+  // WHY #3 — top market headline (dated, fact-attributed)
+  const hd = mp.headline;
+  if (hd && hd.text && hd.source && hd.source !== "—" && isLive("marketHeadline")) {
+    whys.push(`Headline driver (${hd.source}): “${hd.text}”`);
+  } else {
+    whys.push(`Headline driver: no fresh market headline today — direction is data-driven, not news-driven.`);
+  }
+
+  // WHY #4 — what materially shifted in the tracked headwinds / tailwinds
+  const hw = Array.isArray(data.headwinds) ? data.headwinds : [];
+  const worsening = hw.filter((h) => h.trend === "worsening").map((h) => h.name);
+  const improving = hw.filter((h) => h.trend === "improving").map((h) => h.name);
+  whys.push(
+    `Risk backdrop: ${worsening.length ? `${worsening.join(", ")} worsening` : "no headwind worsening"}` +
+    `${improving.length ? `; ${improving.join(", ")} improving` : ""}. ` +
+    `${worsening.length >= 2 ? "Structural risks still building." : "No fresh escalation today."}`
+  );
+
+  // WHY #5 — synthesis + honest confidence caveat
+  whys.push(
+    `Net: ${label} — ${sub}. ${bull}/${active} live factors bullish` +
+    (active < 6 ? `; ${6 - active} excluded as stale/dead, so this is a reduced-signal read.` : "; full-signal read.")
+  );
 
   return {
     regime: sub ? `${label} · ${sub}` : label,

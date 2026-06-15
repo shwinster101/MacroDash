@@ -122,13 +122,25 @@ ok("session prefix flips PRE vs CLOSE",
   computeFiveWhys({ ...MOCK_DATA, session: "PRE" }, fwRegime).headline.startsWith("Pre-open") &&
   computeFiveWhys({ ...MOCK_DATA, session: "CLOSE" }, fwRegime).headline.startsWith("Post-close"));
 ok("does not throw on MOCK_DATA with default regime", (() => { try { computeFiveWhys(MOCK_DATA); return true; } catch { return false; } })());
-// FEAT-DQ: stale Put/Call must be excluded from the narrative, consistent with the vote
-const fwStale = computeFiveWhys(MOCK_DATA, fwRegime, new Set(["putCall"]));
-ok("5 Whys: stale Put/Call cited as excluded, not 'bullish skew'",
-  fwStale.whys[4].includes("excluded") && !fwStale.whys[4].includes("bullish skew"));
-ok("5 Whys: bullish-factor denominator drops to /5 when one factor is stale",
+// WHY #1 anchors on SPY/200DMA/CPI/Fed; WHY #5 is the synthesis
+ok("WHY #1 is the SPY/200DMA/CPI/Fed core anchor",
+  /SPY/.test(fw.whys[0]) && /200-DMA/.test(fw.whys[0]) && /CPI/.test(fw.whys[0]) && /Fed/.test(fw.whys[0]));
+ok("WHY #5 is the synthesis (verdict + factor tally)", /Net:/.test(fw.whys[4]) && fw.whys[4].includes("RISK-ON"));
+// FEAT-DQ: stale factor excluded from the vote tally (headline denominator + WHY #5 caveat)
+const fwStale = computeFiveWhys(MOCK_DATA, fwRegime, { stale: new Set(["putCall"]) });
+ok("5 Whys: denominator drops to /5 when one factor is stale",
   fwStale.headline.includes("/5") && !fwStale.headline.includes("/6"));
+ok("5 Whys: WHY #5 flags reduced-signal read when factors excluded", fwStale.whys[4].includes("excluded"));
 ok("5 Whys: default (no stale) keeps all 6 factors", fw.headline.includes("/6"));
+// FEAT-NEWS WHY #2: only LIVE+fresh fields appear; stale/mock are named as excluded
+const fwFresh = computeFiveWhys(MOCK_DATA, fwRegime, { fresh: new Set(["fearGreed"]) });
+ok("WHY #2 includes a fresh field (F&G) and excludes a non-fresh one (VIX)",
+  fwFresh.whys[1].includes("F&G") && !fwFresh.whys[1].includes("VIX ") && /Excluded/.test(fwFresh.whys[1]));
+// FEAT-NEWS WHY #3: shows a live headline when fresh, falls back to "no fresh headline" otherwise
+const withHL = { ...MOCK_DATA, marketPulse: { ...MOCK_DATA.marketPulse, headline: { text: "Peace deal lifts futures", source: "MarketWatch" } } };
+ok("WHY #3 renders a fresh market headline when present",
+  computeFiveWhys(withHL, fwRegime, { fresh: new Set(["marketHeadline"]) }).whys[2].includes("Peace deal lifts futures"));
+ok("WHY #3 falls back when no fresh headline", computeFiveWhys(MOCK_DATA, fwRegime, { fresh: new Set() }).whys[2].includes("no fresh market headline"));
 
 console.log(`\n=== SMOKE TEST: ${pass} passed, ${fail} failed ===`);
 process.exit(fail === 0 ? 0 : 1);
