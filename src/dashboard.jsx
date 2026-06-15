@@ -914,7 +914,7 @@ export default function Dashboard({ publicView = false } = {}) {
   // 5 Whys: recomputed every render ($0, no LLM). Override the session frame with the LIVE
   // ET session (not the value frozen in the daily snapshot) so the narrative advances
   // pre-open → midday → post-close through the day. sessionTick re-renders it on a timer.
-  const fw=computeFiveWhys({...d, session:etSession()}, regime);
+  const fw=computeFiveWhys({...d, session:etSession()}, regime, staleFactors);
   const activeAlerts=alerts.filter(a=>a.active&&a.triggered).length;
 
   // FEAT-165: Share button

@@ -117,6 +117,13 @@ ok("session prefix flips PRE vs CLOSE",
   computeFiveWhys({ ...MOCK_DATA, session: "PRE" }, fwRegime).headline.startsWith("Pre-open") &&
   computeFiveWhys({ ...MOCK_DATA, session: "CLOSE" }, fwRegime).headline.startsWith("Post-close"));
 ok("does not throw on MOCK_DATA with default regime", (() => { try { computeFiveWhys(MOCK_DATA); return true; } catch { return false; } })());
+// FEAT-DQ: stale Put/Call must be excluded from the narrative, consistent with the vote
+const fwStale = computeFiveWhys(MOCK_DATA, fwRegime, new Set(["putCall"]));
+ok("5 Whys: stale Put/Call cited as excluded, not 'bullish skew'",
+  fwStale.whys[4].includes("excluded") && !fwStale.whys[4].includes("bullish skew"));
+ok("5 Whys: bullish-factor denominator drops to /5 when one factor is stale",
+  fwStale.headline.includes("/5") && !fwStale.headline.includes("/6"));
+ok("5 Whys: default (no stale) keeps all 6 factors", fw.headline.includes("/6"));
 
 console.log(`\n=== SMOKE TEST: ${pass} passed, ${fail} failed ===`);
 process.exit(fail === 0 ? 0 : 1);
