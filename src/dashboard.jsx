@@ -912,6 +912,11 @@ export default function Dashboard({ publicView = false } = {}) {
   const REGIME_FACTOR_FIELDS=["tenYear","vix","fearGreed","cpiHeadline","putCall"];
   const staleFactors=new Set(REGIME_FACTOR_FIELDS.filter(k=>modeOf(k)==="STALE"));
   const regime=computeRegime(d, staleFactors);
+  // Signal Quality rollup — at-a-glance trust: how many tracked signals are live+fresh vs
+  // stale vs mock. Only meaningful in live mode (in mock everything is MOCK by design).
+  const SIGNAL_FIELDS=["spyPrice","vix","fearGreed","tenYear","cpiHeadline","fedFunds","creditSpread","wti","btc","rateOddsHold","marketHeadline","putCall"];
+  const sq=SIGNAL_FIELDS.reduce((a,k)=>{const m=modeOf(k);if(m==="LIVE"||m==="CACHED")a.fresh++;else if(m==="STALE")a.stale++;else a.mock++;return a;},{fresh:0,stale:0,mock:0});
+  sq.total=SIGNAL_FIELDS.length;
   const asOfOf=(k)=>{const s=dataAsOf?.[k]; if(!s)return undefined; const dt=parseObsDate(s); return !dt||isNaN(dt.getTime())?s:`as of ${dt.toLocaleDateString("en-US",{month:"short",day:"numeric"})}`;}; // FEAT-R2: "as of Jun 4" (parses ISO + CBOE M/D/YYYY)
   // 5 Whys: recomputed every render ($0, no LLM). Override the session frame with the LIVE
   // ET session (not the value frozen in the daily snapshot) so the narrative advances
@@ -1016,6 +1021,15 @@ export default function Dashboard({ publicView = false } = {}) {
       {/* FEAT-169 + R4c: Regime Verdict band — HERO, now FIRST under the header (mobile-first) */}
       <RegimeBand d={d} stale={staleFactors}/>
 
+      {/* ── SIGNAL QUALITY rollup — at-a-glance data trust (live vs stale vs mock) ── */}
+      <div style={{display:"flex",alignItems:"center",gap:10,flexWrap:"wrap",padding:"5px 20px",background:T.bg,borderBottom:`1px solid ${T.border}`}}>
+        <span style={{fontFamily:T.fontMono,fontSize:8,color:T.textMuted,letterSpacing:"0.12em",textTransform:"uppercase"}}>Signal Quality</span>
+        <span style={{fontFamily:T.fontMono,fontSize:9,color:T.green}}>● {sq.fresh} live</span>
+        {sq.stale>0&&<span style={{fontFamily:T.fontMono,fontSize:9,color:T.amber}}>⏱ {sq.stale} stale</span>}
+        {sq.mock>0&&<span style={{fontFamily:T.fontMono,fontSize:9,color:T.textMuted}}>○ {sq.mock} mock</span>}
+        <span style={{fontFamily:T.fontMono,fontSize:8,color:T.textMuted}}>of {sq.total} tracked</span>
+      </div>
+
       {/* ── MACRO STRIP (persistent ticker — always visible; FEAT-170 reflows on mobile) ── */}
       <div style={{background:T.surfaceHigh,borderBottom:`1px solid ${T.border}`,padding:"6px 20px",overflowX:"auto",display:"flex",alignItems:"center",justifyContent:"space-between",gap:12}} className="macro-strip">
         <div style={{display:"flex",gap:20,minWidth:"max-content",flex:1}} className="macro-strip-inner">
@@ -1027,7 +1041,9 @@ export default function Dashboard({ publicView = false } = {}) {
             {l:"10Y",  v:`${d.crossAsset.treasury10y.current}%`, s:fmt.bps(d.crossAsset.treasury10y.d1)+" 1D", sc:pctColor(-d.crossAsset.treasury10y.d1), t:"10-year Treasury yield — the benchmark interest rate"},
             {l:"FED",  v:`${d.macro.fedFunds.rate}%`,        s:`FOMC ${d.macro.fedFunds.daysUntil}d`, sc:T.textMuted, t:"Fed funds rate — the central bank's policy rate"},
             {l:"CPI",  v:`${d.macro.cpi.headline}%`,         s:`Core ${d.macro.cpi.core}%`, sc:d.macro.cpi.headline>3?T.red:T.green, t:"Consumer Price Index — inflation, year-over-year"},
-            {l:"P/C",  v:`${d.marketPulse.putCall.current}`, s:d.marketPulse.putCall.current>1?"BEAR SKEW":"NEUTRAL", sc:d.marketPulse.putCall.current>1?T.red:T.textSecondary, t:"Put/Call ratio — options positioning (above 1 = defensive)"},
+            modeOf('putCall')==='STALE'
+              ? {l:"P/C",  v:"n/a", s:"retired", sc:T.textMuted, t:"Put/Call ratio — CBOE retired the free daily feed in 2019; no current free source"}
+              : {l:"P/C",  v:`${d.marketPulse.putCall.current}`, s:d.marketPulse.putCall.current>1?"BEAR SKEW":"NEUTRAL", sc:d.marketPulse.putCall.current>1?T.red:T.textSecondary, t:"Put/Call ratio — options positioning (above 1 = defensive)"},
           ].map(({l,v,s,sc,t})=>(
             <div key={l} title={t} style={{flexShrink:0,minWidth:68,cursor:"help"}}>
               <div style={{fontFamily:T.fontMono,fontSize:8,color:T.textMuted}}>{l}</div>
@@ -1133,13 +1149,26 @@ export default function Dashboard({ publicView = false } = {}) {
               </div>
               {/* F&G */}
               <FGGauge score={d.marketPulse.fearGreed.score} label={d.marketPulse.fearGreed.label} mode={modeOf('fearGreed')} asOf={asOfOf('fearGreed')}/>
-              {/* Put/Call */}
+              {/* Put/Call — CBOE retired the free daily CSV in 2019. When the live value is
+                  STALE (i.e. the dead feed), don't show the 2019 number: render n/a so the tile
+                  is honest about having no current source, rather than a STALE-badged relic. */}
               <div style={{background:T.surface,border:`1px solid ${T.border}`,borderRadius:5,padding:"10px 12px"}}>
                 <Label>Put / Call</Label>
-                <div style={{fontFamily:T.fontMono,fontSize:20,color:d.marketPulse.putCall.current>1?T.red:T.textPrimary,fontWeight:700}}>{d.marketPulse.putCall.current}</div>
-                <div style={{fontFamily:T.fontMono,fontSize:9,color:T.textMuted}}>Bearish {">"} 1.0</div>
-                <div style={{height:28,marginTop:6}}><ResponsiveContainer width="100%" height="100%"><LineChart data={d.marketPulse.putCall.series30d.slice(-10).map((v,i)=>({v,i}))}><Line type="monotone" dataKey="v" stroke={T.amber} dot={false} strokeWidth={1.5}/><ReferenceLine y={1.0} stroke={T.red} strokeDasharray="2 2" strokeWidth={1}/></LineChart></ResponsiveContainer></div>
-                <SourceBox api="CBOE" endpoint="equity-put-call" mode={modeOf('putCall')} asOf={asOfOf('putCall')}/>
+                {modeOf('putCall')==='STALE' ? (
+                  <>
+                    <div style={{fontFamily:T.fontMono,fontSize:20,color:T.textMuted,fontWeight:700}}>n/a</div>
+                    <div style={{fontFamily:T.fontMono,fontSize:9,color:T.textMuted}}>CBOE feed retired ’19</div>
+                    <div style={{height:28,marginTop:6,display:"flex",alignItems:"center",fontFamily:T.fontMono,fontSize:8,color:T.textMuted,opacity:0.6}}>no current free source</div>
+                    <SourceBox api="CBOE" endpoint="equity-put-call (retired)" mode="STALE"/>
+                  </>
+                ) : (
+                  <>
+                    <div style={{fontFamily:T.fontMono,fontSize:20,color:d.marketPulse.putCall.current>1?T.red:T.textPrimary,fontWeight:700}}>{d.marketPulse.putCall.current}</div>
+                    <div style={{fontFamily:T.fontMono,fontSize:9,color:T.textMuted}}>Bearish {">"} 1.0</div>
+                    <div style={{height:28,marginTop:6}}><ResponsiveContainer width="100%" height="100%"><LineChart data={d.marketPulse.putCall.series30d.slice(-10).map((v,i)=>({v,i}))}><Line type="monotone" dataKey="v" stroke={T.amber} dot={false} strokeWidth={1.5}/><ReferenceLine y={1.0} stroke={T.red} strokeDasharray="2 2" strokeWidth={1}/></LineChart></ResponsiveContainer></div>
+                    <SourceBox api="CBOE" endpoint="equity-put-call" mode={modeOf('putCall')} asOf={asOfOf('putCall')}/>
+                  </>
+                )}
               </div>
               {/* HY-IG Credit Spread — widening is a bearish leading indicator for equities */}
               <div style={{background:T.surface,border:`1px solid ${T.border}`,borderRadius:5,padding:"10px 12px"}}>

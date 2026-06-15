@@ -16,7 +16,11 @@ const SETTLING_TTL = 60 * 60;     // short lock-in while the latest close looks 
 
 export async function onRequest(context) {
   const { request, env } = context;
-  const isPublic = new URL(request.url).searchParams.get("view") === "public";
+  const params = new URL(request.url).searchParams;
+  const isPublic = params.get("view") === "public";
+  // _diag (source health, hasFredKey, etc.) is internal — only expose it on explicit ?debug=1.
+  const debug = params.get("debug") === "1";
+  const publicize = (obj) => { if (debug) return obj; const { _diag, ...rest } = obj; return rest; };
 
   // Per-ET-day cache key: first load each morning fetches fresh (FRED has the
   // prior close settled overnight), every load the rest of the day is instant.
@@ -29,7 +33,7 @@ export async function onRequest(context) {
     const cached = await env.PULSE_CACHE?.get(cacheKey, "json");
     if (cached) {
       const payload = isPublic ? stripPrivate(cached) : cached;
-      return json({ ...payload, cached: true });
+      return json(publicize({ ...payload, cached: true }));
     }
   } catch {
     // KV unavailable — skip cache, fetch fresh
@@ -107,8 +111,8 @@ export async function onRequest(context) {
     }
   }
 
-  // ── 5. Return (strip FMP/licensed fields if public view) ─────────────
-  return json(isPublic ? { ...stripPrivate(snapshot), cached: false } : snapshot);
+  // ── 5. Return (strip FMP/licensed fields if public view; _diag only on ?debug=1) ──
+  return json(publicize(isPublic ? { ...stripPrivate(snapshot), cached: false } : snapshot));
 }
 
 // ─── resilient fetch: 1 retry + generous timeout (mirrors the cron worker) ──

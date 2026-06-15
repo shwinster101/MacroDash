@@ -5,10 +5,13 @@ answers *"is it safe to be in the market?"* from live macro + market + sentiment
 data. Single-page React app on Cloudflare Pages, with live data assembled at the
 edge by Pages Functions and cached in KV.
 
-**Status: v2.6.4 — live FRED + sentiment + Kalshi data is flowing.** The dashboard
-fetches `/api/snapshot` and overlays the mapped `SOURCES` fields (equity + rates +
-inflation YoY + sentiment + FOMC odds) on top of the mock baseline. Each live tile
-carries per-field provenance (LIVE/CACHED/STALE/MOCK) and an observation date.
+**Status: v2.9.1 — live FRED + sentiment + Kalshi + RSS-headline data is flowing.** The
+dashboard fetches `/api/snapshot` and overlays the mapped `SOURCES` fields (equity + rates +
+inflation YoY + sentiment + FOMC odds + top market headline) on top of the mock baseline.
+Each live tile carries per-field provenance (LIVE/CACHED/STALE/MOCK) and an observation date,
+with **cadence-aware staleness** (daily/weekly/monthly) and a top-level **Signal Quality**
+rollup. The regime vote + 5 Whys **exclude stale/dead inputs** (e.g. the retired 2019 CBOE
+Put/Call, whose tile now renders `n/a` rather than the relic). `_diag` is gated behind `?debug=1`.
 **`package.json` `version` is now the single source of truth** — Vite injects it as
 `__APP_VERSION__` and the footer renders it (the old "footer string is canonical /
 package.json is stale" drift is resolved; bump `package.json` on every release).
