@@ -1259,7 +1259,10 @@ export default function Dashboard({ publicView = false } = {}) {
                 </div>
               ))}
               <div style={{fontFamily:T.fontMono,fontSize:8,color:T.textMuted,marginTop:8}}>Rule-based · derived from live data (no LLM)</div>
-              <SourceBox api="Rule-based" endpoint="5-factor regime + live deltas" mode={modeOf('vix')} asOf={asOfOf('vix')}/>
+              {/* Freshness anchors to the equity close (SPY) — a market synthesis is "as of the
+                  last close". Don't let a secondary input FRED publishes a day late (VIX/10Y)
+                  drag the whole 5-Whys badge to STALE; per-tile VIX/10Y badges stay honest. */}
+              <SourceBox api="Rule-based" endpoint="6-factor regime · stale inputs excluded" mode={modeOf('spyPrice')} asOf={asOfOf('spyPrice')}/>
             </div>
           </div>
         </div>
