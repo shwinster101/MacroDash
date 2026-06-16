@@ -139,6 +139,7 @@ ok("does not throw on MOCK_DATA with default regime", (() => { try { computeFive
 ok("WHY #1 is the SPY/200DMA/CPI/Fed core anchor",
   /SPY/.test(fw.whys[0]) && /200-DMA/.test(fw.whys[0]) && /CPI/.test(fw.whys[0]) && /Fed/.test(fw.whys[0]));
 ok("WHY #5 is the synthesis (verdict + factor tally)", /Net:/.test(fw.whys[4]) && fw.whys[4].includes("RISK-ON"));
+ok("WHY #4 attributes headwinds as a curated register (not live tape)", /Risk register/.test(fw.whys[3]) && /curated/.test(fw.whys[3]));
 // FEAT-DQ: stale factor excluded from the vote tally (headline denominator + WHY #5 caveat)
 const fwStale = computeFiveWhys(MOCK_DATA, fwRegime, { stale: new Set(["putCall"]) });
 ok("5 Whys: denominator drops to /5 when one factor is stale",

@@ -289,6 +289,9 @@ const MOCK_DATA = {
     { id:4, name:"CRE / CMBS Stress",   severity:"Med",  trend:"stable",    claim:"CMBS delinquency 5.8%; office vacancy >20% in major metros.", triggers:["CMBS >8%","Bank NPL >4%"] },
     { id:5, name:"Labor Deceleration",  severity:"Low",  trend:"improving", claim:"Entry-level unemployment 6.1%; LFPR flat. Cooling without crashing.", triggers:["U-3 >5%","NFP <50K ×2"] },
   ],
+  // Headwinds are a CURATED thesis register (no live feed) — this is the last-reviewed date,
+  // surfaced in the UI + the 5 Whys so quarter-old claims aren't presented as today's tape.
+  headwindsAsOf:"2026-Q1",
   // AI TOKEN ECONOMICS (the moat) — live overlay from OpenRouter (tokenBlendedMtok/Trend/ModelsJson);
   // mock is the fallback baseline. $/Mtok = blended frontier-basket price (3:1 in:out). Falling = the
   // demand-side mirror of GPU $/hr — together they frame the AI margin-compression hinge with live data.
@@ -1341,9 +1344,12 @@ export default function Dashboard({ publicView = false } = {}) {
               </div>
             </div>
 
-            {/* Top headwinds (compact) */}
+            {/* Top headwinds (compact) — curated thesis register, honestly dated */}
             <div style={{background:T.surface,border:`1px solid ${T.border}`,borderRadius:6,padding:"14px 16px"}}>
-              <SectionHeader>Top Headwinds</SectionHeader>
+              <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",flexWrap:"wrap",gap:6}}>
+                <SectionHeader>Top Headwinds</SectionHeader>
+                <span style={{fontFamily:T.fontMono,fontSize:8,color:T.textMuted,border:`1px dashed ${T.border}`,borderRadius:3,padding:"0 5px",whiteSpace:"nowrap"}}>MOCK · curated · reviewed {d.headwindsAsOf}</span>
+              </div>
               {d.headwinds.slice(0,3).map(hw=>{
                 const sevColor=hw.severity==="High"?T.red:hw.severity==="Med"?T.yellow:T.green;
                 const isExp=expandedHW===hw.id;
@@ -1383,6 +1389,11 @@ export default function Dashboard({ publicView = false } = {}) {
         </div>
 
         {/* ── AI UNIT ECONOMICS · cost side (GPU $/hr) + price side (token $/Mtok) ── */}
+        <div style={{marginTop:16,display:"flex",alignItems:"center",gap:10}}>
+          <span style={{fontFamily:T.fontMono,fontSize:10,color:"#a78bfa",letterSpacing:"0.14em",whiteSpace:"nowrap"}}>◆ AI UNIT ECONOMICS</span>
+          <span style={{fontFamily:T.fontMono,fontSize:8,color:T.textMuted,whiteSpace:"nowrap"}}>cost ↔ price · the margin-compression hinge</span>
+          <div style={{height:1,flex:1,background:T.border}}/>
+        </div>
         <GpuPricingCard />
         <TokenomicsCard tok={d.tokenomics} mode={modeOf('tokenBlendedMtok')} asOf={asOfOf('tokenBlendedMtok')}/>
 
