@@ -146,6 +146,7 @@ const EVTOL_CERT = {
 const apiColors = {
   FMP:DT["src-fmp"], FRED:DT["src-fred"], Anthropic:DT["src-anthropic"],
   CNN:DT["src-cnn"], CBOE:DT["src-cboe"], Zillow:DT["src-zillow"], Manual:DT["src-manual"], "Rule-based":DT["src-manual"],
+  Kalshi:DT["src-manual"], OpenRouter:"#a78bfa",
   CACHED:DT["cached"],
 };
 const DataModeBadge = ({ mode }) => {
@@ -288,6 +289,14 @@ const MOCK_DATA = {
     { id:4, name:"CRE / CMBS Stress",   severity:"Med",  trend:"stable",    claim:"CMBS delinquency 5.8%; office vacancy >20% in major metros.", triggers:["CMBS >8%","Bank NPL >4%"] },
     { id:5, name:"Labor Deceleration",  severity:"Low",  trend:"improving", claim:"Entry-level unemployment 6.1%; LFPR flat. Cooling without crashing.", triggers:["U-3 >5%","NFP <50K ×2"] },
   ],
+  // AI TOKEN ECONOMICS (the moat) — live overlay from OpenRouter (tokenBlendedMtok/Trend/ModelsJson);
+  // mock is the fallback baseline. $/Mtok = blended frontier-basket price (3:1 in:out). Falling = the
+  // demand-side mirror of GPU $/hr — together they frame the AI margin-compression hinge with live data.
+  tokenomics:{
+    blendedMtok:6.20,
+    trend:[9.5,8.8,8.0,7.2,6.7,6.20], // oldest→newest; the decline IS the signal
+    modelsJson:'[{"name":"Claude Sonnet","mtok":9.0},{"name":"GPT frontier","mtok":7.5},{"name":"Gemini Pro","mtok":6.2},{"name":"Llama large","mtok":2.4},{"name":"DeepSeek","mtok":1.1}]',
+  },
   // fiveWhys: now computed at render time by computeFiveWhys() (src/fiveWhys.js) from live data.
   sessionDelta:{ alertsDelta:0, regimeDelta:"none", vixPct:-2.1, tenYBps:-4, spyPct:+0.29 },
 };
@@ -741,6 +750,61 @@ const GpuPricingCard = () => {
   );
 };
 
+// AI UNIT ECONOMICS · LLM token pricing (the moat — price side, pairs with GPU $/hr cost side).
+// Live from OpenRouter (props.tok = d.tokenomics; mode/asOf from provenance). Falling $/Mtok is the
+// bearish read (intelligence commoditizing → pricing-power erosion), colored amber like the GPU card.
+const TokenomicsCard = ({ tok, mode = "MOCK", asOf }) => {
+  let models = [];
+  try { models = JSON.parse(tok?.modelsJson || "[]"); } catch { models = []; }
+  const trend = Array.isArray(tok?.trend) ? tok.trend : [];
+  const blended = tok?.blendedMtok;
+  // QoQ-style read off the trend: first vs last (the decline is the signal).
+  const drop = trend.length >= 2 ? Math.round((1 - trend[trend.length - 1] / trend[0]) * 100) : null;
+  const cheapest = models.length ? models.reduce((a, b) => (b.mtok < a.mtok ? b : a)) : null;
+  return (
+    <div style={{ marginTop:16, background:T.surface, border:`1px solid ${T.border}`, borderRadius:6, padding:"12px 16px" }}>
+      <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", flexWrap:"wrap", gap:6 }}>
+        <SectionHeader>AI Infra · LLM Token Price $/Mtok</SectionHeader>
+        <span style={{ fontFamily:T.fontMono, fontSize:8, color:T.textMuted }}>price side of AI unit economics · pairs with GPU $/hr</span>
+      </div>
+      <div style={{ fontFamily:T.fontSans, fontSize:10, color:T.textSecondary, lineHeight:1.4, margin:"6px 0 10px" }}>
+        Falling $/Mtok = intelligence commoditizing → AI pricing-power erosion. The demand-side mirror of the GPU $/hr supply squeeze — together, the AI margin-compression hinge.
+      </div>
+      <div style={{ display:"flex", gap:18, alignItems:"baseline", flexWrap:"wrap" }}>
+        <div>
+          <div style={{ fontFamily:T.fontMono, fontSize:8, color:T.textMuted }}>BLENDED FRONTIER · 3:1 in:out</div>
+          <div style={{ fontFamily:T.fontMono, fontSize:24, fontWeight:700, color:T.textPrimary }}>${blended?.toFixed(2)}<span style={{ fontSize:11, color:T.textMuted }}>/Mtok</span></div>
+        </div>
+        {drop !== null && <div style={{ fontFamily:T.fontMono, fontSize:11, color:T.amber }}>▼ {drop}% over window</div>}
+        {cheapest && <div style={{ fontFamily:T.fontMono, fontSize:9, color:T.textMuted }}>floor: {cheapest.name} ${cheapest.mtok}/Mtok</div>}
+      </div>
+      {models.length > 0 && (
+        <div style={{ display:"grid", gridTemplateColumns:"repeat(auto-fill,minmax(130px,1fr))", gap:8, marginTop:10 }}>
+          {models.map((m) => (
+            <div key={m.name} style={{ background:T.surfaceHigh, border:`1px solid ${T.border}`, borderRadius:5, padding:"8px 10px" }}>
+              <div style={{ fontFamily:T.fontMono, fontSize:10, fontWeight:700, color:T.textPrimary }}>{m.name}</div>
+              <div style={{ fontFamily:T.fontMono, fontSize:15, fontWeight:700, color:T.textPrimary, marginTop:2 }}>${Number(m.mtok).toFixed(2)}</div>
+              <div style={{ fontFamily:T.fontMono, fontSize:8, color:T.textMuted }}>$/Mtok</div>
+            </div>
+          ))}
+        </div>
+      )}
+      {trend.length >= 3 ? (
+        <div style={{ height:30, marginTop:10 }}>
+          <ResponsiveContainer width="100%" height="100%">
+            <LineChart data={trend.map((v, i) => ({ v, i }))}>
+              <Line type="monotone" dataKey="v" stroke={T.amber} dot={false} strokeWidth={1.5}/>
+            </LineChart>
+          </ResponsiveContainer>
+        </div>
+      ) : (
+        mode !== "MOCK" && <div style={{ fontFamily:T.fontMono, fontSize:8, color:T.textMuted, marginTop:8 }}>trend accruing ({trend.length} pt{trend.length === 1 ? "" : "s"}) — builds daily</div>
+      )}
+      <SourceBox api="OpenRouter" endpoint="api/v1/models · frontier basket · blended $/Mtok" mode={mode} asOf={asOf}/>
+    </div>
+  );
+};
+
 // ─── FEAT-169 · REGIME VERDICT BAND (full-width, relocated under macro strip) ──
 // The friend-readable headline ("wen moon?") — first signal
 // seen on mobile (above the command grid) and prominent on desktop. Soft regime tint
@@ -915,7 +979,7 @@ export default function Dashboard({ publicView = false } = {}) {
   const regime=computeRegime(d, staleFactors);
   // Signal Quality rollup — at-a-glance trust: how many tracked signals are live+fresh vs
   // stale vs mock. Only meaningful in live mode (in mock everything is MOCK by design).
-  const SIGNAL_FIELDS=["spyPrice","vix","fearGreed","tenYear","cpiHeadline","fedFunds","creditSpread","wti","btc","rateOddsHold","marketHeadline","putCall"];
+  const SIGNAL_FIELDS=["spyPrice","vix","fearGreed","tenYear","cpiHeadline","fedFunds","creditSpread","wti","btc","rateOddsHold","marketHeadline","putCall","savings","tokenBlendedMtok"];
   const sq=SIGNAL_FIELDS.reduce((a,k)=>{const m=modeOf(k);if(m==="LIVE"||m==="CACHED")a.fresh++;else if(m==="STALE")a.stale++;else a.mock++;return a;},{fresh:0,stale:0,mock:0});
   sq.total=SIGNAL_FIELDS.length;
   const asOfOf=(k)=>{const s=dataAsOf?.[k]; if(!s)return undefined; const dt=parseObsDate(s); return !dt||isNaN(dt.getTime())?s:`as of ${dt.toLocaleDateString("en-US",{month:"short",day:"numeric"})}`;}; // FEAT-R2: "as of Jun 4" (parses ISO + CBOE M/D/YYYY)
@@ -1309,8 +1373,9 @@ export default function Dashboard({ publicView = false } = {}) {
           </div>
         </div>
 
-        {/* ── AI INFRA · GPU ON-DEMAND PRICING (leading margin-compression signal) ── */}
+        {/* ── AI UNIT ECONOMICS · cost side (GPU $/hr) + price side (token $/Mtok) ── */}
         <GpuPricingCard />
+        <TokenomicsCard tok={d.tokenomics} mode={modeOf('tokenBlendedMtok')} asOf={asOfOf('tokenBlendedMtok')}/>
 
         {/* ── MAG 10 (full-width, collapsible) ── */}
         <div style={{marginTop:16,background:T.surface,border:`1px solid ${T.border}`,borderRadius:6,overflow:"hidden"}}>

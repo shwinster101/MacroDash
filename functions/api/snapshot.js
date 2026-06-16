@@ -26,7 +26,7 @@ export async function onRequest(context) {
   // prior close settled overnight), every load the rest of the day is instant.
   // No cron needed — your morning visit is the refresh trigger.
   const etDate = new Date().toLocaleDateString("en-CA", { timeZone: "America/New_York" }); // YYYY-MM-DD
-  const cacheKey = `pulse:snapshot:v11:${etDate}`; // v11: + top market headline (FEAT-NEWS)
+  const cacheKey = `pulse:snapshot:v12:${etDate}`; // v12: + savings rate (PSAVERT) + tokenomics (OpenRouter)
 
   // ── 1. KV Cache check ─────────────────────────────────────────────────
   try {
@@ -56,6 +56,12 @@ export async function onRequest(context) {
     withLastGood(env, "rateodds", fetchRateOdds),
     withLastGood(env, "headline", fetchHeadline), // FEAT-NEWS: top market headline (non-FRED)
   ]);
+  // Phase 3: tokenomics moat (OpenRouter, keyless) — its own phase so it never competes
+  // with Phase 2 for the ~6-connection cap, and a slow/blocked OpenRouter can't starve the
+  // core feeds. Not part of the write-through health gate (the moat is an add-on, not core).
+  const [tokenomics] = await Promise.allSettled([
+    withLastGood(env, "tokenomics", () => fetchTokenomics(env)),
+  ]);
 
   // ── 3. Assemble live overlay ───────────────────────────────────────────
   // Only include fields where we got a valid value.
@@ -70,6 +76,7 @@ export async function onRequest(context) {
     ...(putCall.status === "fulfilled" ? putCall.value : {}),
     ...(rateOdds.status === "fulfilled" ? rateOdds.value : {}),
     ...(headline.status === "fulfilled" ? headline.value : {}),
+    ...(tokenomics.status === "fulfilled" ? tokenomics.value : {}),
   };
 
   const snapshot = { live, asOf: now, cached: false };
@@ -83,6 +90,7 @@ export async function onRequest(context) {
     putCall: putCall.status === "fulfilled" ? "ok" : String(putCall.reason),
     rateOdds: rateOdds.status === "fulfilled" ? "ok" : String(rateOdds.reason),
     headline: headline.status === "fulfilled" ? "ok" : String(headline.reason),
+    tokenomics: tokenomics.status === "fulfilled" ? "ok" : String(tokenomics.reason),
   };
   snapshot._diag = diag;
 
@@ -520,6 +528,68 @@ async function fetchRateOdds() {
     rateOddsHoldAsOf: asOf,
     fomcDays:     days,
     nextFomcDate: ev.strike_date.slice(0, 10),
+  };
+}
+
+// ─── AI token economics (the moat: price side of AI unit economics) ──────────
+// OpenRouter's public models API (no auth, no key — like Kalshi, a sanctioned free
+// source) lists every model's per-token pricing. We blend a fixed basket of frontier
+// models into a single $/Mtok headline and a cheapest-frontier floor. Falling $/Mtok =
+// intelligence commoditizing → pricing-power erosion, the demand-side mirror of the
+// GPU $/hr supply-side squeeze (the two halves of AI unit economics). Wrapped in
+// withLastGood at the call site, so an outage serves the last good prices + STALE.
+//   - $/Mtok blend assumes a 3:1 input:output token mix (typical real-world usage).
+//   - A rolling trend is accrued in KV (one point per ET-day, deduped, capped 12) so
+//     the price-decline path is visible over time; model prices are sticky between
+//     launches, so the trend reads flat with step-downs — exactly the signal we want.
+async function fetchTokenomics(env) {
+  const r = await fetchRetry("https://openrouter.ai/api/v1/models",
+    { headers: { Accept: "application/json" } }, 2, 9000);
+  const d = await r.json();
+  const models = Array.isArray(d.data) ? d.data : [];
+  // Blended $/Mtok (3 input : 1 output). pricing.prompt/completion are $/token strings.
+  const mtokOf = (m) => {
+    const p = parseFloat(m?.pricing?.prompt), c = parseFloat(m?.pricing?.completion);
+    if (!isFinite(p) || !isFinite(c) || p < 0 || c < 0) return NaN;
+    return parseFloat((((3 * p + c) / 4) * 1e6).toFixed(2));
+  };
+  // Frontier basket — matched by id prefix so a model-id bump doesn't silently drop one.
+  const BASKET = [
+    { label: "Claude Sonnet", match: ["anthropic/claude-sonnet", "anthropic/claude-3.7-sonnet", "anthropic/claude-3.5-sonnet"] },
+    { label: "GPT frontier",  match: ["openai/gpt-5", "openai/gpt-4o", "openai/o4", "openai/o3"] },
+    { label: "Gemini Pro",    match: ["google/gemini-2.5-pro", "google/gemini-2.0-pro", "google/gemini-pro-1.5"] },
+    { label: "Llama large",   match: ["meta-llama/llama-3.3-70b", "meta-llama/llama-3.1-405b"] },
+    { label: "DeepSeek",      match: ["deepseek/deepseek-chat", "deepseek/deepseek-v3"] },
+  ];
+  const picked = [];
+  for (const b of BASKET) {
+    const m = models.find((mm) => b.match.some((pre) => String(mm.id || "").startsWith(pre)) && isFinite(mtokOf(mm)));
+    if (m) picked.push({ name: b.label, mtok: mtokOf(m) });
+  }
+  if (picked.length < 2) throw new Error("tokenomics: basket too thin");
+  // Median is robust to a single outlier (e.g. a reasoning model priced 10x).
+  const sorted = picked.map((p) => p.mtok).sort((a, b) => a - b);
+  const median = sorted.length % 2
+    ? sorted[(sorted.length - 1) / 2]
+    : parseFloat(((sorted[sorted.length / 2 - 1] + sorted[sorted.length / 2]) / 2).toFixed(2));
+  const asOf = new Date().toLocaleDateString("en-CA", { timeZone: "America/New_York" });
+
+  // Rolling trend in KV: append one point per ET-day, dedupe by date, cap at 12.
+  let trend = [];
+  try { const prev = await env.PULSE_CACHE?.get("pulse:tokentrend", "json"); if (Array.isArray(prev)) trend = prev; } catch {}
+  if (!trend.length || trend[trend.length - 1].date !== asOf) {
+    trend.push({ date: asOf, v: median });
+    if (trend.length > 12) trend = trend.slice(-12);
+  } else {
+    trend[trend.length - 1].v = median; // refresh today's point on a same-day re-fetch
+  }
+  try { await env.PULSE_CACHE?.put("pulse:tokentrend", JSON.stringify(trend), { expirationTtl: 120 * 24 * 3600 }); } catch {}
+
+  return {
+    tokenBlendedMtok: median,
+    tokenTrend: trend.map((t) => t.v),
+    tokenModelsJson: JSON.stringify(picked),
+    tokenBlendedMtokAsOf: asOf,
   };
 }
 

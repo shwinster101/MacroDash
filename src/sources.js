@@ -66,6 +66,10 @@ export const SOURCES = {
   // TOP MARKET HEADLINE (FEAT-NEWS — non-FRED RSS; date-verified, staleness via asOf)
   marketHeadline:       { path: "marketPulse.headline.text",   kind: "str", displayClass: "public" },
   marketHeadlineSource: { path: "marketPulse.headline.source", kind: "str", displayClass: "public" },
+  // AI TOKEN ECONOMICS (the moat — OpenRouter public models API; price side of AI unit economics)
+  tokenBlendedMtok: { path: "tokenomics.blendedMtok",      kind: "num",    displayClass: "public" },
+  tokenTrend:       { path: "tokenomics.trend",            kind: "series", displayClass: "public" },
+  tokenModelsJson:  { path: "tokenomics.modelsJson",       kind: "str",    displayClass: "public" },
   // RATE-DECISION ODDS (FEAT-R9 — Kalshi KXFEDDECISION prediction market)
   rateOddsHold:   { path: "macro.fedFunds.odds.hold",       kind: "num",    displayClass: "public" },
   rateOddsCut:    { path: "macro.fedFunds.odds.cut",        kind: "num",    displayClass: "public" },
@@ -89,6 +93,8 @@ const CADENCE = {
   pceHeadline: "monthly", pceCore: "monthly", pceTrend: "monthly",
   // weekly (Freddie Mac primary mortgage survey, Thursday)
   mortgage30: "weekly",
+  // weekly (LLM token prices reprice on model launches, not daily)
+  tokenBlendedMtok: "weekly", tokenTrend: "weekly", tokenModelsJson: "weekly",
 };
 export function cadenceOf(key) { return CADENCE[key] || "daily"; }
 
