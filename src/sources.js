@@ -21,6 +21,11 @@ export const SOURCES = {
   spySeries:      { path: "marketPulse.spy.series",         kind: "series", displayClass: "public" },
   spxIndex:       { path: "marketPulse.spx.index",          kind: "num",    displayClass: "public" },
   spxPrevClose:   { path: "marketPulse.spx.prevClose",      kind: "num",    displayClass: "public" },
+  // QQQ (Finnhub equity quote — Nasdaq-100 ETF; FRED can't source individual equities)
+  qqqPrice:       { path: "marketPulse.qqq.price",          kind: "num",    displayClass: "public" },
+  qqqChangePct:   { path: "marketPulse.qqq.changePct",      kind: "num",    displayClass: "public" },
+  // MAG 10 live prices (Finnhub) — JSON passthrough [{ticker,price,chgPct}]; fundamentals stay curated
+  mag10PricesJson:{ path: "mag10PricesJson",                kind: "str",    displayClass: "public" },
   // RATES / MACRO (fetchFred)
   tenYear:        { path: "crossAsset.treasury10y.current", kind: "num",    displayClass: "public" },
   tenYearD1:      { path: "crossAsset.treasury10y.d1",      kind: "num",    displayClass: "public" },

@@ -56,11 +56,13 @@ export async function onRequest(context) {
     withLastGood(env, "rateodds", fetchRateOdds),
     withLastGood(env, "headline", fetchHeadline), // FEAT-NEWS: top market headline (non-FRED)
   ]);
-  // Phase 3: tokenomics moat (OpenRouter, keyless) — its own phase so it never competes
-  // with Phase 2 for the ~6-connection cap, and a slow/blocked OpenRouter can't starve the
-  // core feeds. Not part of the write-through health gate (the moat is an add-on, not core).
-  const [tokenomics] = await Promise.allSettled([
+  // Phase 3: tokenomics moat (OpenRouter, keyless) + equities (Finnhub, key-gated) — their
+  // own phase so they never compete with Phase 2 for the ~6-connection cap, and a slow/blocked
+  // add-on can't starve the core feeds. Neither gates the write-through health check (both are
+  // add-ons, not core). fetchEquities batches its symbol-calls ≤5 internally.
+  const [tokenomics, equities] = await Promise.allSettled([
     withLastGood(env, "tokenomics", () => fetchTokenomics(env)),
+    withLastGood(env, "equities", () => fetchEquities(env)),
   ]);
 
   // ── 3. Assemble live overlay ───────────────────────────────────────────
@@ -77,6 +79,7 @@ export async function onRequest(context) {
     ...(rateOdds.status === "fulfilled" ? rateOdds.value : {}),
     ...(headline.status === "fulfilled" ? headline.value : {}),
     ...(tokenomics.status === "fulfilled" ? tokenomics.value : {}),
+    ...(equities.status === "fulfilled" ? equities.value : {}),
   };
 
   const snapshot = { live, asOf: now, cached: false };
@@ -91,6 +94,7 @@ export async function onRequest(context) {
     rateOdds: rateOdds.status === "fulfilled" ? "ok" : String(rateOdds.reason),
     headline: headline.status === "fulfilled" ? "ok" : String(headline.reason),
     tokenomics: tokenomics.status === "fulfilled" ? "ok" : String(tokenomics.reason),
+    equities: equities.status === "fulfilled" ? `ok:${Object.keys(equities.value).length}` : String(equities.reason),
   };
   snapshot._diag = diag;
 
@@ -529,6 +533,45 @@ async function fetchRateOdds() {
     fomcDays:     days,
     nextFomcDate: ev.strike_date.slice(0, 10),
   };
+}
+
+// ─── Equity quotes (QQQ + Mag 10 prices) ─────────────────────────────────────
+// FRED can't source individual equities/ETFs, so the only silent-mock left in the live
+// strip (QQQ) and the biggest curated-stale block (Mag 10 prices) need a real equity feed.
+// Finnhub's free tier (60 req/min, real-time US quotes) covers ~10 symbols/day at $0.
+// KEY-GATED: with no FINNHUB_KEY this throws → withLastGood → field absent → mock (the
+// invariant holds, nothing breaks). Prices go live; Mag 10 FUNDAMENTALS stay curated.
+// NOTE (deploy): set env.FINNHUB_KEY in Pages Settings, and verify it isn't edge-IP
+// blocked the way Stooq was (key-authed REST APIs usually pass; swap to Twelve Data if not).
+async function fetchEquities(env) {
+  const key = env.FINNHUB_KEY;
+  if (!key) throw new Error("FINNHUB_KEY not set");
+  const MAG10 = ["NVDA", "GOOGL", "AAPL", "MSFT", "AVGO", "AMZN", "META", "PLTR", "TSLA"];
+  const symbols = ["QQQ", ...MAG10];
+  const quotes = {};
+  // Batch ≤5 to stay under the ~6-connection cap (mirrors fetchFred).
+  for (let i = 0; i < symbols.length; i += 5) {
+    const res = await Promise.allSettled(symbols.slice(i, i + 5).map(async (sym) => {
+      const r = await fetchRetry(`https://finnhub.io/api/v1/quote?symbol=${sym}&token=${key}`,
+        { headers: { Accept: "application/json" } }, 2, 9000);
+      const q = await r.json();
+      const price = parseFloat(q.c), chg = parseFloat(q.dp);
+      if (!isFinite(price) || price <= 0) throw new Error(`${sym} no quote`);
+      return [sym, { price: parseFloat(price.toFixed(2)), chgPct: isFinite(chg) ? parseFloat(chg.toFixed(2)) : null }];
+    }));
+    for (const r of res) if (r.status === "fulfilled") quotes[r.value[0]] = r.value[1];
+  }
+  if (!Object.keys(quotes).length) throw new Error("equities: no quotes");
+  const asOf = new Date().toLocaleDateString("en-CA", { timeZone: "America/New_York" });
+  const out = {};
+  if (quotes.QQQ) {
+    out.qqqPrice = quotes.QQQ.price;
+    if (quotes.QQQ.chgPct != null) out.qqqChangePct = quotes.QQQ.chgPct;
+    out.qqqPriceAsOf = asOf;
+  }
+  const mag = MAG10.filter((s) => quotes[s]).map((s) => ({ ticker: s, price: quotes[s].price, chgPct: quotes[s].chgPct }));
+  if (mag.length) { out.mag10PricesJson = JSON.stringify(mag); out.mag10PricesJsonAsOf = asOf; }
+  return out;
 }
 
 // ─── AI token economics (the moat: price side of AI unit economics) ──────────

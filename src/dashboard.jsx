@@ -297,6 +297,9 @@ const MOCK_DATA = {
     trend:[9.5,8.8,8.0,7.2,6.7,6.20], // oldest→newest; the decline IS the signal
     modelsJson:'[{"name":"Claude Sonnet","mtok":9.0},{"name":"GPT frontier","mtok":7.5},{"name":"Gemini Pro","mtok":6.2},{"name":"Llama large","mtok":2.4},{"name":"DeepSeek","mtok":1.1}]',
   },
+  // MAG 10 live prices (Finnhub) — JSON passthrough merged onto the mag10 array by ticker at
+  // render time. '[]' = no live prices yet (mock baseline); fundamentals always stay curated.
+  mag10PricesJson:"[]",
   // fiveWhys: now computed at render time by computeFiveWhys() (src/fiveWhys.js) from live data.
   sessionDelta:{ alertsDelta:0, regimeDelta:"none", vixPct:-2.1, tenYBps:-4, spyPct:+0.29 },
 };
@@ -1028,8 +1031,14 @@ export default function Dashboard({ publicView = false } = {}) {
     {label:"SPY",    val:fmt.pct(delta.spyPct), color:pctColor(delta.spyPct)},
   ];
 
-  const pub=d.mag10.filter(s=>!s.isPrivate);
-  const muskNames=d.mag10.filter(s=>s.isMusk);
+  // Overlay live Mag 10 prices (Finnhub, via mag10PricesJson passthrough) onto the curated
+  // array by ticker — price + chgPct go live; all fundamentals stay curated. '[]' = mock.
+  const mag10Live=(()=>{try{return JSON.parse(d.mag10PricesJson||"[]");}catch{return[];}})();
+  const mag10ByTicker=Object.fromEntries(mag10Live.map(p=>[p.ticker,p]));
+  const mag10=d.mag10.map(s=>{const lv=mag10ByTicker[s.ticker];return lv?{...s,price:lv.price,chgPct:lv.chgPct??s.chgPct}:s;});
+  const mag10PriceMode=modeOf('mag10PricesJson');
+  const pub=mag10.filter(s=>!s.isPrivate);
+  const muskNames=mag10.filter(s=>s.isMusk);
   const totalMktCap=pub.reduce((a,s)=>a+s.mktCapT,0);
 
   return(
@@ -1383,7 +1392,7 @@ export default function Dashboard({ publicView = false } = {}) {
             style={{width:"100%",display:"flex",justifyContent:"space-between",alignItems:"center",padding:"10px 16px",background:"none",border:"none",cursor:"pointer",borderBottom:mag10open?`1px solid ${T.border}`:"none"}}>
             <div style={{display:"flex",gap:10,alignItems:"center"}}>
               <span style={{fontFamily:T.fontMono,fontSize:10,color:T.amber,letterSpacing:"0.1em"}}>MAG 10</span>
-              <span style={{fontFamily:T.fontMono,fontSize:9,color:T.textMuted}}>Ranked by market cap · Q1 2026 actuals · SEC verified</span>
+              <span style={{fontFamily:T.fontMono,fontSize:9,color:T.textMuted}}>Ranked by market cap · prices {mag10PriceMode==="LIVE"||mag10PriceMode==="CACHED"?"live":"curated"} · fundamentals curated (reviewed Q1 2026)</span>
             </div>
             <div style={{display:"flex",gap:8,alignItems:"center"}}>
               <span style={{fontFamily:T.fontMono,fontSize:10,color:T.textMuted}}>{mag10open?"▲":"▼"}</span>
@@ -1394,7 +1403,7 @@ export default function Dashboard({ publicView = false } = {}) {
               {/* Mag 8 (non-Musk public) */}
               <div style={{fontFamily:T.fontMono,fontSize:8,color:T.textMuted,letterSpacing:"0.1em",marginBottom:8}}>PUBLIC · SORTED BY MKT CAP</div>
               <div style={{display:"flex",gap:8,overflowX:"auto",paddingBottom:4}} className="mag10-scroll mag10-fade">
-                {d.mag10.filter(s=>!s.isMusk).sort((a,b)=>(b.mktCapT||0)-(a.mktCapT||0)).map(s=><Mag10Card key={s.ticker} s={s}/>)}
+                {mag10.filter(s=>!s.isMusk).sort((a,b)=>(b.mktCapT||0)-(a.mktCapT||0)).map(s=><Mag10Card key={s.ticker} s={s}/>)}
               </div>
               {/* Musk divider */}
               <div style={{display:"flex",alignItems:"center",gap:10,margin:"14px 0 10px"}}>
@@ -1403,7 +1412,7 @@ export default function Dashboard({ publicView = false } = {}) {
                 <div style={{height:1,flex:1,background:T.border}}/>
               </div>
               <div style={{display:"flex",gap:8,overflowX:"auto",paddingBottom:4}} className="mag10-scroll">
-                {d.mag10.filter(s=>s.isMusk).map(s=><Mag10Card key={s.ticker} s={s}/>)}
+                {mag10.filter(s=>s.isMusk).map(s=><Mag10Card key={s.ticker} s={s}/>)}
                 {/* SpaceX context panel */}
                 <div style={{background:"#0a0d12",border:"1px solid #1e3a5f",borderRadius:5,padding:"10px 12px",minWidth:170,flex:"1 1 170px"}}>
                   <div style={{fontFamily:T.fontMono,fontSize:9,color:"#60a5fa",marginBottom:6}}>SPACEX S-1 CONTEXT</div>
@@ -1435,7 +1444,7 @@ export default function Dashboard({ publicView = false } = {}) {
                   {pub.map(s=><span key={s.ticker} style={{fontFamily:T.fontMono,fontSize:7,color:T.textMuted}}><span style={{color:s.color}}>■</span> {s.ticker} ${s.mktCapT.toFixed(2)}T</span>)}
                 </div>
               </div>
-              <SourceBox api="Manual" endpoint="curated · Q1 2026 actuals · SpaceX S-1 (SEC)" mode={modeOf('mag10')}/>
+              <SourceBox api={mag10PriceMode==="LIVE"||mag10PriceMode==="CACHED"?"FMP":"Manual"} endpoint={`prices: ${mag10PriceMode==="LIVE"||mag10PriceMode==="CACHED"?"Finnhub live":"curated"} · fundamentals: curated (reviewed Q1 2026) · SpaceX S-1 (SEC)`} mode={mag10PriceMode} asOf={asOfOf('mag10PricesJson')}/>
             </div>
           )}
         </div>
