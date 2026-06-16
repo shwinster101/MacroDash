@@ -5,9 +5,13 @@ answers *"is it safe to be in the market?"* from live macro + market + sentiment
 data. Single-page React app on Cloudflare Pages, with live data assembled at the
 edge by Pages Functions and cached in KV.
 
-**Status: v2.9.1 — live FRED + sentiment + Kalshi + RSS-headline data is flowing.** The
-dashboard fetches `/api/snapshot` and overlays the mapped `SOURCES` fields (equity + rates +
-inflation YoY + sentiment + FOMC odds + top market headline) on top of the mock baseline.
+**Status: v3.0.0 "Trust + Tokenomics Moat" — live FRED + sentiment + Kalshi + RSS-headline +
+AI token economics + equity quotes are flowing.** The dashboard fetches `/api/snapshot` and
+overlays the mapped `SOURCES` fields (equity + rates + inflation YoY + sentiment + FOMC odds +
+top market headline + **personal saving rate** + **LLM token $/Mtok** + **QQQ/Mag-10 prices**)
+on top of the mock baseline. **v3.0 differentiator = "AI Unit Economics":** the curated GPU $/hr
+cost side is now paired with the live LLM token-price demand side (OpenRouter) — the two halves
+of the AI margin-compression hinge.
 Each live tile carries per-field provenance (LIVE/CACHED/STALE/MOCK) and an observation date,
 with **cadence-aware staleness** (daily/weekly/monthly) and a top-level **Signal Quality**
 rollup. The regime vote + 5 Whys **exclude stale/dead inputs** (e.g. the retired 2019 CBOE
@@ -98,7 +102,8 @@ takes the latest non-`"."` observation, and derives 1-day deltas + sparklines:
 
 `DGS10` (10Y) · `FEDFUNDS` · `CPIAUCSL` (CPI headline) · `CPILFESL` (CPI core) ·
 `PCEPI` (PCE headline) · `PCEPILFE` (PCE core) · `UNRATE` · `CIVPART` (LFPR) ·
-`MORTGAGE30US` · `DCOILWTICO` (WTI) · `VIXCLS` (VIX) · `CBBTCUSD` (BTC).
+`PSAVERT` (personal saving rate, v3.0) · `MORTGAGE30US` · `DCOILWTICO` (WTI) · `VIXCLS` (VIX) ·
+`CBBTCUSD` (BTC).
 
 The four **inflation** series (CPI/PCE × headline/core) are price *indexes*; the dashboard
 wants **YoY %**, so for those `fetchFred` pulls 20 monthly points and derives
@@ -125,8 +130,21 @@ TODO), `spyMa100`, `spyMa200`, and a 20-pt sparkline.
   CNBC fallback). DATE-VERIFIED: parses the item `pubDate` and only accepts a headline ≤~3
   days old, emitting its real ET date so `isStale` guards it. Feeds **WHY #3** of the 5 Whys.
   Source + date are attributed (no automated claim-fact-checking; reputable wire + date gate).
+- **AI token economics — the moat** (`fetchTokenomics`, v3.0): OpenRouter's **public** models
+  API (`openrouter.ai/api/v1/models`, no key — like Kalshi). Blends a frontier-model basket
+  into a median **$/Mtok** (3:1 in:out), tracks the cheapest-frontier floor, and accrues a
+  rolling 12-pt trend in KV (`pulse:tokentrend`). Falling $/Mtok = intelligence commoditizing
+  → the demand-side mirror of the curated GPU $/hr supply squeeze. Rendered as the
+  **"AI Unit Economics"** section (TokenomicsCard beside GpuPricingCard). Emits via SOURCES
+  `tokenBlendedMtok`/`tokenTrend`/`tokenModelsJson` (weekly cadence). On the `withLastGood` rails.
+- **Equity quotes** (`fetchEquities`, v3.0): **Finnhub** free-tier (`finnhub.io/api/v1/quote`,
+  `env.FINNHUB_KEY`) for **QQQ** + the 9 public **Mag-10** tickers — the equities FRED can't
+  source. Quotes (price + change%) go live; Mag-10 **fundamentals stay curated** (reviewed
+  date). KEY-GATED: no key → throws → mock (invariant holds). `mag10PricesJson` is a JSON
+  passthrough merged onto the `mag10` array by ticker at render. On the `withLastGood` rails.
 
-> **Scraper resilience (FEAT-R8, v2.6.2):** the three scrapers (F&G, P/C, Kalshi) run
+> **Scraper resilience (FEAT-R8, v2.6.2):** the scrapers (F&G, P/C, Kalshi, headline,
+> tokenomics, equities) run
 > through `withLastGood(env, key, fn)` — a success writes `pulse:lastgood:<key>` to KV
 > (7-day TTL); a failure serves that last-good value (with its real date, so `isStale`
 > flags it STALE) instead of reverting to mock. Mock is the fallback only when there is
@@ -142,6 +160,12 @@ TODO), `spyMa100`, `spyMa200`, and a 20-pt sparkline.
 - **`FRED_KEY` secret** set in **Pages → Settings → Variables & Secrets**. Read by
   `snapshot.js` as `env.FRED_KEY`. **Secrets live only in Functions/Worker env — never
   in `src/`** (the browser only ever talks to `/api/*`, which holds no key in `fred.js`).
+- **`FINNHUB_KEY` secret** (v3.0, optional but needed for live QQQ/Mag-10 prices) set the
+  same way. Read by `fetchEquities` as `env.FINNHUB_KEY`; **without it those tiles stay mock**
+  (graceful degradation, nothing breaks). Free tier is enough (~10 symbols once/ET-day).
+  **Post-deploy: verify Finnhub isn't edge-IP blocked** the way Stooq was — `?debug=1` →
+  `_diag.equities` should read `ok:N`; if blocked, swap to Twelve Data (same shape). The
+  tokenomics moat (OpenRouter) needs **no key**.
 - `_middleware.js` adds hardening headers (`nosniff`, `x-frame-options: DENY`,
   `permissions-policy`, etc.) and keeps `/api` same-origin (no `Access-Control-Allow-Origin`).
 
