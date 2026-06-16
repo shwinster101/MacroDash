@@ -141,6 +141,7 @@ async function fetchFred(key) {
     pceCore:      "PCEPILFE",   // core PCE index → YoY %
     unemployment: "UNRATE",
     lfpr:         "CIVPART",
+    savings:      "PSAVERT",    // Personal Saving Rate (% of disposable income) — household cushion
     mortgage30:   "MORTGAGE30US",
     wti:          "DCOILWTICO",
     vix:          "VIXCLS",
@@ -231,6 +232,8 @@ async function fetchFred(key) {
     }
     // Unemployment: emit a 6-pt trend (oldest→newest) from the monthly UNRATE series.
     if (field === "unemployment") out.unemploymentTrend = spark.slice(-6);
+    // Personal saving rate: 6-pt monthly trend (oldest→newest).
+    if (field === "savings") out.savingsTrend = spark.slice(-6);
     if (field === "tenYear") out.tenYearSeries = spark;
     if (field === "vix")     out.vixSeries     = spark;
     // Inflation: `spark` here is the 6-point YoY trend computed in the fetcher.

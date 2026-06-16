@@ -28,6 +28,7 @@ const snapPayload = {
     spxIndex: 7500, spxPrevClose: 7450, spyPriceAsOf: "2026-06-05",
     tenYear: 4.46, tenYearD1: 0.03, tenYearSeries: [4.4, 4.43, 4.46],
     fedFunds: 3.63, unemployment: 4.3, lfpr: 61.8, mortgage30: 6.48,
+    savings: 3.8, savingsTrend: [4.5, 4.4, 4.3, 4.1, 4.0, 3.8], savingsAsOf: "2026-05-01",
     wti: 71.2, wtiD1: -0.8, vix: 16.06, vixWeekChg: -2.1, vixSeries: [18, 17, 16.06],
     btc: 109200, btcD1: 1.2,
     fearGreed: 62, fearGreedLabel: "Greed", putCall: 0.79,
@@ -64,6 +65,8 @@ ok("10Y overlaid + d1 + series", mPriv.data.crossAsset.treasury10y.current === 4
 ok("Fed funds overlaid", mPriv.data.macro.fedFunds.rate === 3.63);
 ok("unemployment + lfpr overlaid", mPriv.data.macro.unemployment.national === 4.3 && mPriv.data.macro.unemployment.lfpr === 61.8);
 ok("mortgage30 overlaid", mPriv.data.macro.mortgage.national === 6.48);
+ok("savings rate + trend overlaid (PSAVERT)", mPriv.data.macro.savings.rate === 3.8 && mPriv.data.macro.savings.trend.length === 6);
+ok("savings is monthly cadence", cadenceOf("savings") === "monthly");
 ok("WTI + d1 overlaid", mPriv.data.crossAsset.wti.current === 71.2 && mPriv.data.crossAsset.wti.d1pct === -0.8);
 ok("VIX + weekChg + series overlaid", mPriv.data.marketPulse.vix.current === 16.06 && mPriv.data.marketPulse.vix.weekChg === -2.1 && mPriv.data.marketPulse.vix.series.length === 3);
 ok("BTC + d1 overlaid", mPriv.data.crossAsset.btc.current === 109200 && mPriv.data.crossAsset.btc.d1pct === 1.2);

@@ -31,6 +31,8 @@ export const SOURCES = {
   unemployment:   { path: "macro.unemployment.national",    kind: "num",    displayClass: "public" },
   unemploymentTrend: { path: "macro.unemployment.trend",    kind: "series", displayClass: "public" },
   lfpr:           { path: "macro.unemployment.lfpr",        kind: "num",    displayClass: "public" },
+  savings:        { path: "macro.savings.rate",             kind: "num",    displayClass: "public" },
+  savingsTrend:   { path: "macro.savings.trend",            kind: "series", displayClass: "public" },
   mortgage30:     { path: "macro.mortgage.national",        kind: "num",    displayClass: "public" },
   // INFLATION (FEAT-R10 — FRED index → YoY %; CPIAUCSL/CPILFESL + PCEPI/PCEPILFE)
   cpiHeadline:    { path: "macro.cpi.headline",             kind: "num",    displayClass: "public" },
@@ -82,6 +84,7 @@ export const PUBLIC_HIDDEN_CLASSES = ["licensed"];
 const CADENCE = {
   // monthly FRED releases (period-dated at month start + a publication lag)
   fedFunds: "monthly", unemployment: "monthly", unemploymentTrend: "monthly", lfpr: "monthly",
+  savings: "monthly", savingsTrend: "monthly",
   cpiHeadline: "monthly", cpiCore: "monthly", cpiTrend: "monthly",
   pceHeadline: "monthly", pceCore: "monthly", pceTrend: "monthly",
   // weekly (Freddie Mac primary mortgage survey, Thursday)
