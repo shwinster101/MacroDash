@@ -990,6 +990,7 @@ export default function Dashboard({ publicView = false } = {}) {
   const [expandedHW,setExpandedHW]=useState(null);
   const [showAllHW,setShowAllHW]=useState(false); // "+ N more" toggle for the headwinds list
   const [mag10open,setMag10open]=useState(true);
+  const [ipoOpen,setIpoOpen]=useState(false); // v3.1 cut-to-edge: IPO strip (all illustrative) collapsed by default
   const [watchlistOpen,setWatchlistOpen]=useState(true);
   const [copied,setCopied]=useState(false);
   // Re-render every 10 min so the live 5-Whys session frame advances (pre-open→midday→
@@ -1131,6 +1132,8 @@ export default function Dashboard({ publicView = false } = {}) {
         {sq.stale>0&&<span style={{fontFamily:T.fontMono,fontSize:9,color:T.amber}}>⏱ {sq.stale} stale</span>}
         {sq.mock>0&&<span style={{fontFamily:T.fontMono,fontSize:9,color:T.textMuted}}>○ {sq.mock} mock</span>}
         <span style={{fontFamily:T.fontMono,fontSize:8,color:T.textMuted}}>of {sq.total} tracked</span>
+        {/* v3.1: one-line legend so a friend decodes the chips — ◫ ILLUSTRATIVE tiles are curated, not live */}
+        <span style={{fontFamily:T.fontMono,fontSize:8,color:T.textMuted,marginLeft:"auto"}}>● live · ⏱ stale · <span style={{color:T.amber}}>◫ illustrative = curated, not live</span></span>
       </div>
 
       {/* ── MACRO STRIP (persistent ticker — always visible; FEAT-170 reflows on mobile) ── */}
@@ -1166,8 +1169,16 @@ export default function Dashboard({ publicView = false } = {}) {
         <div className="wen-moon-mobile"><WenMoonBadge spyChangePct={d.marketPulse.spy.changePct}/></div>
       </div>
 
-      {/* IPO COUNTDOWN TO LAUNCH — below regime band, above command center */}
-      <IpoCountdownStrip/>
+      {/* IPO COUNTDOWN TO LAUNCH — v3.1: collapsed by default so live signals own the first scroll;
+          it's all illustrative thesis content, demoted (not deleted) behind a thin toggle. */}
+      <div style={{borderBottom:`1px solid ${T.border}`,background:T.bg}}>
+        <button onClick={()=>setIpoOpen(o=>!o)} aria-expanded={ipoOpen}
+          style={{width:"100%",display:"flex",alignItems:"center",gap:8,padding:"7px 20px",background:"none",border:"none",cursor:"pointer"}}>
+          <span style={{fontFamily:T.fontMono,fontSize:8,color:T.textMuted,letterSpacing:"0.12em",textTransform:"uppercase"}}>{ipoOpen?"▾":"▸"} Countdown to Launch — IPO tracker</span>
+          <IllustrativeChip label="ILLUSTRATIVE"/>
+        </button>
+      </div>
+      {ipoOpen&&<IpoCountdownStrip/>}
 
       {/* FEAT-162: Session Delta Bar — Alerts Δ first (conditional: hidden when nothing actionable) */}
       {showDeltaBar&&(
@@ -1565,7 +1576,7 @@ export default function Dashboard({ publicView = false } = {}) {
         <div style={{marginTop:12,display:"flex",justifyContent:"space-between",alignItems:"center",flexWrap:"wrap",gap:4}}>
           <div style={{fontFamily:T.fontMono,fontSize:8,color:T.textMuted}}>{`MacroDash v${__APP_VERSION__} · Data refreshed daily · end-of-day sources`}</div>
           <div style={{fontFamily:T.fontMono,fontSize:8,color:T.textMuted}}>Not financial advice · Personal use</div>
-          <div style={{fontFamily:T.fontMono,fontSize:8,color:T.textMuted}}>Live: FRED · CNN · Kalshi · OpenRouter · Finnhub · Curated: Shiller · Mag 10 fundamentals · GPU $/hr · SEC S-1</div>
+          <div style={{fontFamily:T.fontMono,fontSize:8,color:T.textMuted}}>Live: FRED · CNN · Kalshi · OpenRouter · Finnhub · multpl · Curated: Mag 10 fundamentals · GPU $/hr · SEC S-1</div>
         </div>
       </div>
     </div>

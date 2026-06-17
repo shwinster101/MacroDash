@@ -5,13 +5,17 @@ answers *"is it safe to be in the market?"* from live macro + market + sentiment
 data. Single-page React app on Cloudflare Pages, with live data assembled at the
 edge by Pages Functions and cached in KV.
 
-**Status: v3.0.0 "Trust + Tokenomics Moat" — live FRED + sentiment + Kalshi + RSS-headline +
-AI token economics + equity quotes are flowing.** The dashboard fetches `/api/snapshot` and
-overlays the mapped `SOURCES` fields (equity + rates + inflation YoY + sentiment + FOMC odds +
-top market headline + **personal saving rate** + **LLM token $/Mtok** + **QQQ/Mag-10 prices**)
-on top of the mock baseline. **v3.0 differentiator = "AI Unit Economics":** the curated GPU $/hr
-cost side is now paired with the live LLM token-price demand side (OpenRouter) — the two halves
-of the AI margin-compression hinge.
+**Status: v3.1.0 "Friends-Cockpit Trust Hardening" — live FRED + sentiment + Kalshi +
+RSS-headline + AI token economics + equity quotes + Shiller CAPE are flowing.** The dashboard
+fetches `/api/snapshot` and overlays the mapped `SOURCES` fields (equity + rates + inflation YoY +
+sentiment + FOMC odds + top market headline + **personal saving rate** + **LLM token $/Mtok** +
+**QQQ/Mag-10 prices** + **Shiller CAPE**) on top of the mock baseline. **v3.0 differentiator =
+"AI Unit Economics":** the curated GPU $/hr cost side is paired with the live LLM token-price
+demand side (OpenRouter) — the two halves of the AI margin-compression hinge.
+**v3.1 safety invariant: no number a friend could act on may read as live unless it is.**
+Mock/no-feed tiles get a diagonal-hatch **ILLUSTRATIVE** treatment, and any directional VERDICT
+(BULLISH/BEARISH/BUBBLE) is **suppressed on mock/stale data** (`isIllustrative()`/`IllustrativeChip`/
+`ILLUS_HATCH` in `dashboard.jsx`) — a fabricated directional call is worse than a fabricated number.
 Each live tile carries per-field provenance (LIVE/CACHED/STALE/MOCK) and an observation date,
 with **cadence-aware staleness** (daily/weekly/monthly) and a top-level **Signal Quality**
 rollup. The regime vote + 5 Whys **exclude stale/dead inputs** (e.g. the retired 2019 CBOE
@@ -143,8 +147,13 @@ TODO), `spyMa100`, `spyMa200`, and a 20-pt sparkline.
   date). KEY-GATED: no key → throws → mock (invariant holds). `mag10PricesJson` is a JSON
   passthrough merged onto the `mag10` array by ticker at render. On the `withLastGood` rails.
 
+- **Shiller CAPE** (`fetchShiller`, v3.1): scrapes multpl.com for the current Shiller PE — the
+  regime's 6th (valuation) vote, which used to be mock-and-always-voting. Now live (monthly
+  cadence) on the `withLastGood` rails; gated by `use("valuation")` in `computeRegime` so it
+  drops from the vote when STALE. On mock/stale it shows the ILLUSTRATIVE treatment (no BUBBLE).
+
 > **Scraper resilience (FEAT-R8, v2.6.2):** the scrapers (F&G, P/C, Kalshi, headline,
-> tokenomics, equities) run
+> tokenomics, equities, shiller) run
 > through `withLastGood(env, key, fn)` — a success writes `pulse:lastgood:<key>` to KV
 > (7-day TTL); a failure serves that last-good value (with its real date, so `isStale`
 > flags it STALE) instead of reverting to mock. Mock is the fallback only when there is
