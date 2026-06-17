@@ -21,6 +21,11 @@ export const SOURCES = {
   spySeries:      { path: "marketPulse.spy.series",         kind: "series", displayClass: "public" },
   spxIndex:       { path: "marketPulse.spx.index",          kind: "num",    displayClass: "public" },
   spxPrevClose:   { path: "marketPulse.spx.prevClose",      kind: "num",    displayClass: "public" },
+  // QQQ (Finnhub equity quote — Nasdaq-100 ETF; FRED can't source individual equities)
+  qqqPrice:       { path: "marketPulse.qqq.price",          kind: "num",    displayClass: "public" },
+  qqqChangePct:   { path: "marketPulse.qqq.changePct",      kind: "num",    displayClass: "public" },
+  // MAG 10 live prices (Finnhub) — JSON passthrough [{ticker,price,chgPct}]; fundamentals stay curated
+  mag10PricesJson:{ path: "mag10PricesJson",                kind: "str",    displayClass: "public" },
   // RATES / MACRO (fetchFred)
   tenYear:        { path: "crossAsset.treasury10y.current", kind: "num",    displayClass: "public" },
   tenYearD1:      { path: "crossAsset.treasury10y.d1",      kind: "num",    displayClass: "public" },
@@ -31,6 +36,8 @@ export const SOURCES = {
   unemployment:   { path: "macro.unemployment.national",    kind: "num",    displayClass: "public" },
   unemploymentTrend: { path: "macro.unemployment.trend",    kind: "series", displayClass: "public" },
   lfpr:           { path: "macro.unemployment.lfpr",        kind: "num",    displayClass: "public" },
+  savings:        { path: "macro.savings.rate",             kind: "num",    displayClass: "public" },
+  savingsTrend:   { path: "macro.savings.trend",            kind: "series", displayClass: "public" },
   mortgage30:     { path: "macro.mortgage.national",        kind: "num",    displayClass: "public" },
   // INFLATION (FEAT-R10 — FRED index → YoY %; CPIAUCSL/CPILFESL + PCEPI/PCEPILFE)
   cpiHeadline:    { path: "macro.cpi.headline",             kind: "num",    displayClass: "public" },
@@ -64,6 +71,12 @@ export const SOURCES = {
   // TOP MARKET HEADLINE (FEAT-NEWS — non-FRED RSS; date-verified, staleness via asOf)
   marketHeadline:       { path: "marketPulse.headline.text",   kind: "str", displayClass: "public" },
   marketHeadlineSource: { path: "marketPulse.headline.source", kind: "str", displayClass: "public" },
+  // VALUATION (Shiller CAPE — multpl.com scrape; the regime's 6th vote, monthly cadence)
+  shillerPe:      { path: "macro.shillerPe.current",       kind: "num",    displayClass: "public" },
+  // AI TOKEN ECONOMICS (the moat — OpenRouter public models API; price side of AI unit economics)
+  tokenBlendedMtok: { path: "tokenomics.blendedMtok",      kind: "num",    displayClass: "public" },
+  tokenTrend:       { path: "tokenomics.trend",            kind: "series", displayClass: "public" },
+  tokenModelsJson:  { path: "tokenomics.modelsJson",       kind: "str",    displayClass: "public" },
   // RATE-DECISION ODDS (FEAT-R9 — Kalshi KXFEDDECISION prediction market)
   rateOddsHold:   { path: "macro.fedFunds.odds.hold",       kind: "num",    displayClass: "public" },
   rateOddsCut:    { path: "macro.fedFunds.odds.cut",        kind: "num",    displayClass: "public" },
@@ -82,10 +95,14 @@ export const PUBLIC_HIDDEN_CLASSES = ["licensed"];
 const CADENCE = {
   // monthly FRED releases (period-dated at month start + a publication lag)
   fedFunds: "monthly", unemployment: "monthly", unemploymentTrend: "monthly", lfpr: "monthly",
+  savings: "monthly", savingsTrend: "monthly",
+  shillerPe: "monthly", // CAPE is a monthly-cadence metric
   cpiHeadline: "monthly", cpiCore: "monthly", cpiTrend: "monthly",
   pceHeadline: "monthly", pceCore: "monthly", pceTrend: "monthly",
   // weekly (Freddie Mac primary mortgage survey, Thursday)
   mortgage30: "weekly",
+  // weekly (LLM token prices reprice on model launches, not daily)
+  tokenBlendedMtok: "weekly", tokenTrend: "weekly", tokenModelsJson: "weekly",
 };
 export function cadenceOf(key) { return CADENCE[key] || "daily"; }
 

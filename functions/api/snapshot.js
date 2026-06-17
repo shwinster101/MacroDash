@@ -26,7 +26,7 @@ export async function onRequest(context) {
   // prior close settled overnight), every load the rest of the day is instant.
   // No cron needed — your morning visit is the refresh trigger.
   const etDate = new Date().toLocaleDateString("en-CA", { timeZone: "America/New_York" }); // YYYY-MM-DD
-  const cacheKey = `pulse:snapshot:v11:${etDate}`; // v11: + top market headline (FEAT-NEWS)
+  const cacheKey = `pulse:snapshot:v13:${etDate}`; // v13: + Shiller CAPE (multpl) for the regime valuation vote
 
   // ── 1. KV Cache check ─────────────────────────────────────────────────
   try {
@@ -56,6 +56,15 @@ export async function onRequest(context) {
     withLastGood(env, "rateodds", fetchRateOdds),
     withLastGood(env, "headline", fetchHeadline), // FEAT-NEWS: top market headline (non-FRED)
   ]);
+  // Phase 3: tokenomics moat (OpenRouter, keyless) + equities (Finnhub, key-gated) — their
+  // own phase so they never compete with Phase 2 for the ~6-connection cap, and a slow/blocked
+  // add-on can't starve the core feeds. Neither gates the write-through health check (both are
+  // add-ons, not core). fetchEquities batches its symbol-calls ≤5 internally.
+  const [tokenomics, equities, shiller] = await Promise.allSettled([
+    withLastGood(env, "tokenomics", () => fetchTokenomics(env)),
+    withLastGood(env, "equities", () => fetchEquities(env)),
+    withLastGood(env, "shiller", fetchShiller), // CAPE for the regime's valuation vote
+  ]);
 
   // ── 3. Assemble live overlay ───────────────────────────────────────────
   // Only include fields where we got a valid value.
@@ -70,6 +79,9 @@ export async function onRequest(context) {
     ...(putCall.status === "fulfilled" ? putCall.value : {}),
     ...(rateOdds.status === "fulfilled" ? rateOdds.value : {}),
     ...(headline.status === "fulfilled" ? headline.value : {}),
+    ...(tokenomics.status === "fulfilled" ? tokenomics.value : {}),
+    ...(equities.status === "fulfilled" ? equities.value : {}),
+    ...(shiller.status === "fulfilled" ? shiller.value : {}),
   };
 
   const snapshot = { live, asOf: now, cached: false };
@@ -83,6 +95,9 @@ export async function onRequest(context) {
     putCall: putCall.status === "fulfilled" ? "ok" : String(putCall.reason),
     rateOdds: rateOdds.status === "fulfilled" ? "ok" : String(rateOdds.reason),
     headline: headline.status === "fulfilled" ? "ok" : String(headline.reason),
+    tokenomics: tokenomics.status === "fulfilled" ? "ok" : String(tokenomics.reason),
+    equities: equities.status === "fulfilled" ? `ok:${Object.keys(equities.value).length}` : String(equities.reason),
+    shiller: shiller.status === "fulfilled" ? "ok" : String(shiller.reason),
   };
   snapshot._diag = diag;
 
@@ -141,6 +156,7 @@ async function fetchFred(key) {
     pceCore:      "PCEPILFE",   // core PCE index → YoY %
     unemployment: "UNRATE",
     lfpr:         "CIVPART",
+    savings:      "PSAVERT",    // Personal Saving Rate (% of disposable income) — household cushion
     mortgage30:   "MORTGAGE30US",
     wti:          "DCOILWTICO",
     vix:          "VIXCLS",
@@ -231,6 +247,8 @@ async function fetchFred(key) {
     }
     // Unemployment: emit a 6-pt trend (oldest→newest) from the monthly UNRATE series.
     if (field === "unemployment") out.unemploymentTrend = spark.slice(-6);
+    // Personal saving rate: 6-pt monthly trend (oldest→newest).
+    if (field === "savings") out.savingsTrend = spark.slice(-6);
     if (field === "tenYear") out.tenYearSeries = spark;
     if (field === "vix")     out.vixSeries     = spark;
     // Inflation: `spark` here is the 6-point YoY trend computed in the fetcher.
@@ -517,6 +535,132 @@ async function fetchRateOdds() {
     rateOddsHoldAsOf: asOf,
     fomcDays:     days,
     nextFomcDate: ev.strike_date.slice(0, 10),
+  };
+}
+
+// ─── Equity quotes (QQQ + Mag 10 prices) ─────────────────────────────────────
+// FRED can't source individual equities/ETFs, so the only silent-mock left in the live
+// strip (QQQ) and the biggest curated-stale block (Mag 10 prices) need a real equity feed.
+// Finnhub's free tier (60 req/min, real-time US quotes) covers ~10 symbols/day at $0.
+// KEY-GATED: with no FINNHUB_KEY this throws → withLastGood → field absent → mock (the
+// invariant holds, nothing breaks). Prices go live; Mag 10 FUNDAMENTALS stay curated.
+// NOTE (deploy): set env.FINNHUB_KEY in Pages Settings, and verify it isn't edge-IP
+// blocked the way Stooq was (key-authed REST APIs usually pass; swap to Twelve Data if not).
+async function fetchEquities(env) {
+  const key = env.FINNHUB_KEY;
+  if (!key) throw new Error("FINNHUB_KEY not set");
+  const MAG10 = ["NVDA", "GOOGL", "AAPL", "MSFT", "AVGO", "AMZN", "META", "PLTR", "TSLA"];
+  const symbols = ["QQQ", ...MAG10];
+  const quotes = {};
+  // Batch ≤5 to stay under the ~6-connection cap (mirrors fetchFred).
+  for (let i = 0; i < symbols.length; i += 5) {
+    const res = await Promise.allSettled(symbols.slice(i, i + 5).map(async (sym) => {
+      const r = await fetchRetry(`https://finnhub.io/api/v1/quote?symbol=${sym}&token=${key}`,
+        { headers: { Accept: "application/json" } }, 2, 9000);
+      const q = await r.json();
+      const price = parseFloat(q.c), chg = parseFloat(q.dp);
+      if (!isFinite(price) || price <= 0) throw new Error(`${sym} no quote`);
+      return [sym, { price: parseFloat(price.toFixed(2)), chgPct: isFinite(chg) ? parseFloat(chg.toFixed(2)) : null }];
+    }));
+    for (const r of res) if (r.status === "fulfilled") quotes[r.value[0]] = r.value[1];
+  }
+  if (!Object.keys(quotes).length) throw new Error("equities: no quotes");
+  const asOf = new Date().toLocaleDateString("en-CA", { timeZone: "America/New_York" });
+  const out = {};
+  if (quotes.QQQ) {
+    out.qqqPrice = quotes.QQQ.price;
+    if (quotes.QQQ.chgPct != null) out.qqqChangePct = quotes.QQQ.chgPct;
+    out.qqqPriceAsOf = asOf;
+  }
+  const mag = MAG10.filter((s) => quotes[s]).map((s) => ({ ticker: s, price: quotes[s].price, chgPct: quotes[s].chgPct }));
+  if (mag.length) { out.mag10PricesJson = JSON.stringify(mag); out.mag10PricesJsonAsOf = asOf; }
+  return out;
+}
+
+// ─── Shiller CAPE (valuation — the regime's 6th vote) ─────────────────────────
+// The regime verdict a friend acts on counts a valuation factor; it must be real, not mock.
+// No free API publishes CAPE, so we scrape multpl.com (the canonical public source). Monthly
+// cadence on the staleness rails, on withLastGood — a failed scrape serves last-good (with its
+// date, so isStale flags it) and ultimately falls back to mock → the tile's illustrative
+// treatment kicks in (no fabricated BUBBLE verdict). Fragile-but-free, honestly degrading.
+async function fetchShiller() {
+  const r = await fetch("https://www.multpl.com/shiller-pe", {
+    headers: {
+      "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
+      "Accept": "text/html,application/xhtml+xml",
+    },
+    signal: AbortSignal.timeout(9000),
+  });
+  if (!r.ok) throw new Error(`multpl ${r.status}`);
+  const html = await r.text();
+  // The page renders "Current Shiller PE Ratio: NN.NN" (also in #current). Match a CAPE-plausible number.
+  const m = html.match(/Current\s+Shiller\s+PE\s+Ratio[\s\S]{0,60}?(\d{2}\.\d{1,2})/i)
+         || html.match(/id=["']current["'][\s\S]{0,120}?(\d{2}\.\d{1,2})/i);
+  const v = m ? parseFloat(m[1]) : NaN;
+  if (!isFinite(v) || v < 5 || v > 80) throw new Error("multpl CAPE parse failed");
+  const asOf = new Date().toLocaleDateString("en-CA", { timeZone: "America/New_York" });
+  return { shillerPe: parseFloat(v.toFixed(2)), shillerPeAsOf: asOf };
+}
+
+// ─── AI token economics (the moat: price side of AI unit economics) ──────────
+// OpenRouter's public models API (no auth, no key — like Kalshi, a sanctioned free
+// source) lists every model's per-token pricing. We blend a fixed basket of frontier
+// models into a single $/Mtok headline and a cheapest-frontier floor. Falling $/Mtok =
+// intelligence commoditizing → pricing-power erosion, the demand-side mirror of the
+// GPU $/hr supply-side squeeze (the two halves of AI unit economics). Wrapped in
+// withLastGood at the call site, so an outage serves the last good prices + STALE.
+//   - $/Mtok blend assumes a 3:1 input:output token mix (typical real-world usage).
+//   - A rolling trend is accrued in KV (one point per ET-day, deduped, capped 12) so
+//     the price-decline path is visible over time; model prices are sticky between
+//     launches, so the trend reads flat with step-downs — exactly the signal we want.
+async function fetchTokenomics(env) {
+  const r = await fetchRetry("https://openrouter.ai/api/v1/models",
+    { headers: { Accept: "application/json" } }, 2, 9000);
+  const d = await r.json();
+  const models = Array.isArray(d.data) ? d.data : [];
+  // Blended $/Mtok (3 input : 1 output). pricing.prompt/completion are $/token strings.
+  const mtokOf = (m) => {
+    const p = parseFloat(m?.pricing?.prompt), c = parseFloat(m?.pricing?.completion);
+    if (!isFinite(p) || !isFinite(c) || p < 0 || c < 0) return NaN;
+    return parseFloat((((3 * p + c) / 4) * 1e6).toFixed(2));
+  };
+  // Frontier basket — matched by id prefix so a model-id bump doesn't silently drop one.
+  const BASKET = [
+    { label: "Claude Sonnet", match: ["anthropic/claude-sonnet", "anthropic/claude-3.7-sonnet", "anthropic/claude-3.5-sonnet"] },
+    { label: "GPT frontier",  match: ["openai/gpt-5", "openai/gpt-4o", "openai/o4", "openai/o3"] },
+    { label: "Gemini Pro",    match: ["google/gemini-2.5-pro", "google/gemini-2.0-pro", "google/gemini-pro-1.5"] },
+    { label: "Llama large",   match: ["meta-llama/llama-3.3-70b", "meta-llama/llama-3.1-405b"] },
+    { label: "DeepSeek",      match: ["deepseek/deepseek-chat", "deepseek/deepseek-v3"] },
+  ];
+  const picked = [];
+  for (const b of BASKET) {
+    const m = models.find((mm) => b.match.some((pre) => String(mm.id || "").startsWith(pre)) && isFinite(mtokOf(mm)));
+    if (m) picked.push({ name: b.label, mtok: mtokOf(m) });
+  }
+  if (picked.length < 2) throw new Error("tokenomics: basket too thin");
+  // Median is robust to a single outlier (e.g. a reasoning model priced 10x).
+  const sorted = picked.map((p) => p.mtok).sort((a, b) => a - b);
+  const median = sorted.length % 2
+    ? sorted[(sorted.length - 1) / 2]
+    : parseFloat(((sorted[sorted.length / 2 - 1] + sorted[sorted.length / 2]) / 2).toFixed(2));
+  const asOf = new Date().toLocaleDateString("en-CA", { timeZone: "America/New_York" });
+
+  // Rolling trend in KV: append one point per ET-day, dedupe by date, cap at 12.
+  let trend = [];
+  try { const prev = await env.PULSE_CACHE?.get("pulse:tokentrend", "json"); if (Array.isArray(prev)) trend = prev; } catch {}
+  if (!trend.length || trend[trend.length - 1].date !== asOf) {
+    trend.push({ date: asOf, v: median });
+    if (trend.length > 12) trend = trend.slice(-12);
+  } else {
+    trend[trend.length - 1].v = median; // refresh today's point on a same-day re-fetch
+  }
+  try { await env.PULSE_CACHE?.put("pulse:tokentrend", JSON.stringify(trend), { expirationTtl: 120 * 24 * 3600 }); } catch {}
+
+  return {
+    tokenBlendedMtok: median,
+    tokenTrend: trend.map((t) => t.v),
+    tokenModelsJson: JSON.stringify(picked),
+    tokenBlendedMtokAsOf: asOf,
   };
 }
 

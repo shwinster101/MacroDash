@@ -28,12 +28,17 @@ const snapPayload = {
     spxIndex: 7500, spxPrevClose: 7450, spyPriceAsOf: "2026-06-05",
     tenYear: 4.46, tenYearD1: 0.03, tenYearSeries: [4.4, 4.43, 4.46],
     fedFunds: 3.63, unemployment: 4.3, lfpr: 61.8, mortgage30: 6.48,
+    savings: 3.8, savingsTrend: [4.5, 4.4, 4.3, 4.1, 4.0, 3.8], savingsAsOf: "2026-05-01",
     wti: 71.2, wtiD1: -0.8, vix: 16.06, vixWeekChg: -2.1, vixSeries: [18, 17, 16.06],
     btc: 109200, btcD1: 1.2,
     fearGreed: 62, fearGreedLabel: "Greed", putCall: 0.79,
     rateOddsHold: 98, rateOddsCut: 1, rateOddsHike: 1, fomcDays: 10, nextFomcDate: "2026-06-17", rateOddsHoldAsOf: "2026-06-07",
     cpiHeadline: 3.9, cpiCore: 2.9, cpiTrend: [3.5, 3.6, 3.7, 3.8, 3.85, 3.9],
     pceHeadline: 3.0, pceCore: 2.8, pceTrend: [2.5, 2.6, 2.7, 2.75, 2.8, 2.8],
+    tokenBlendedMtok: 5.4, tokenTrend: [8.0, 7.1, 6.3, 5.4], tokenModelsJson: '[{"name":"Claude Sonnet","mtok":9.0},{"name":"DeepSeek","mtok":1.0}]', tokenBlendedMtokAsOf: "2026-06-12",
+    qqqPrice: 720.1, qqqChangePct: 0.6, qqqPriceAsOf: "2026-06-12",
+    shillerPe: 38.4, shillerPeAsOf: "2026-06-12",
+    mag10PricesJson: '[{"ticker":"NVDA","price":140.5,"chgPct":2.1},{"ticker":"AAPL","price":215.0,"chgPct":-0.3}]', mag10PricesJsonAsOf: "2026-06-12",
   },
   asOf: "2026-06-04T18:00:00Z", cached: false,
 };
@@ -64,6 +69,8 @@ ok("10Y overlaid + d1 + series", mPriv.data.crossAsset.treasury10y.current === 4
 ok("Fed funds overlaid", mPriv.data.macro.fedFunds.rate === 3.63);
 ok("unemployment + lfpr overlaid", mPriv.data.macro.unemployment.national === 4.3 && mPriv.data.macro.unemployment.lfpr === 61.8);
 ok("mortgage30 overlaid", mPriv.data.macro.mortgage.national === 6.48);
+ok("savings rate + trend overlaid (PSAVERT)", mPriv.data.macro.savings.rate === 3.8 && mPriv.data.macro.savings.trend.length === 6);
+ok("savings is monthly cadence", cadenceOf("savings") === "monthly");
 ok("WTI + d1 overlaid", mPriv.data.crossAsset.wti.current === 71.2 && mPriv.data.crossAsset.wti.d1pct === -0.8);
 ok("VIX + weekChg + series overlaid", mPriv.data.marketPulse.vix.current === 16.06 && mPriv.data.marketPulse.vix.weekChg === -2.1 && mPriv.data.marketPulse.vix.series.length === 3);
 ok("BTC + d1 overlaid", mPriv.data.crossAsset.btc.current === 109200 && mPriv.data.crossAsset.btc.d1pct === 1.2);
@@ -76,6 +83,15 @@ ok("provenance rateOddsHold LIVE", mPriv.provenance.rateOddsHold === "LIVE");
 ok("meta lastRefresh + session overlaid", mPriv.data.lastRefresh === "06/04/2026 14:00 ET" && mPriv.data.session === "OPEN");
 ok("CPI YoY overlaid (FRED index→YoY, R10)", mPriv.data.macro.cpi.headline === 3.9 && mPriv.data.macro.cpi.core === 2.9 && mPriv.data.macro.cpi.trend.length === 6);
 ok("PCE YoY overlaid (Fed's preferred gauge)", mPriv.data.macro.pce.headline === 3.0 && mPriv.data.macro.pce.core === 2.8 && mPriv.data.macro.pce.trend.length === 6);
+ok("tokenomics: blended $/Mtok + trend + models JSON overlaid (moat)",
+  mPriv.data.tokenomics.blendedMtok === 5.4 && mPriv.data.tokenomics.trend.length === 4 && JSON.parse(mPriv.data.tokenomics.modelsJson).length === 2);
+ok("tokenomics is weekly cadence", cadenceOf("tokenBlendedMtok") === "weekly");
+ok("provenance tokenBlendedMtok LIVE", mPriv.provenance.tokenBlendedMtok === "LIVE");
+ok("QQQ price + change overlaid (Finnhub equity feed)", mPriv.data.marketPulse.qqq.price === 720.1 && mPriv.data.marketPulse.qqq.changePct === 0.6);
+ok("Shiller CAPE overlaid live (multpl), monthly cadence", mPriv.data.macro.shillerPe.current === 38.4 && cadenceOf("shillerPe") === "monthly");
+ok("provenance shillerPe LIVE", mPriv.provenance.shillerPe === "LIVE");
+ok("Mag 10 live prices passthrough overlaid + parseable", (() => { const a = JSON.parse(mPriv.data.mag10PricesJson); return Array.isArray(a) && a.length === 2 && a[0].ticker === "NVDA"; })());
+ok("mag10PricesJson defaults to '[]' in mock baseline (path resolves)", MOCK_DATA.mag10PricesJson === "[]");
 ok("badge LIVE when cached:false", mPriv.badge === "LIVE");
 ok("merge does not mutate original mock", MOCK_DATA.marketPulse.spy.price === 745.83);
 
@@ -126,6 +142,7 @@ ok("does not throw on MOCK_DATA with default regime", (() => { try { computeFive
 ok("WHY #1 is the SPY/200DMA/CPI/Fed core anchor",
   /SPY/.test(fw.whys[0]) && /200-DMA/.test(fw.whys[0]) && /CPI/.test(fw.whys[0]) && /Fed/.test(fw.whys[0]));
 ok("WHY #5 is the synthesis (verdict + factor tally)", /Net:/.test(fw.whys[4]) && fw.whys[4].includes("RISK-ON"));
+ok("WHY #4 attributes headwinds as a curated register (not live tape)", /Risk register/.test(fw.whys[3]) && /curated/.test(fw.whys[3]));
 // FEAT-DQ: stale factor excluded from the vote tally (headline denominator + WHY #5 caveat)
 const fwStale = computeFiveWhys(MOCK_DATA, fwRegime, { stale: new Set(["putCall"]) });
 ok("5 Whys: denominator drops to /5 when one factor is stale",

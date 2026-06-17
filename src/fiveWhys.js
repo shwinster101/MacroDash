@@ -83,12 +83,14 @@ export function computeFiveWhys(data, regime = {}, opts = {}) {
     whys.push(`Headline driver: no fresh market headline today — direction is data-driven, not news-driven.`);
   }
 
-  // WHY #4 — what materially shifted in the tracked headwinds / tailwinds
+  // WHY #4 — the tracked headwinds / tailwinds. These are a CURATED thesis register (no live
+  // feed), so we attribute the review date rather than implying it's today's tape.
   const hw = Array.isArray(data.headwinds) ? data.headwinds : [];
   const worsening = hw.filter((h) => h.trend === "worsening").map((h) => h.name);
   const improving = hw.filter((h) => h.trend === "improving").map((h) => h.name);
+  const reviewed = data.headwindsAsOf ? ` (curated, reviewed ${data.headwindsAsOf})` : " (curated)";
   whys.push(
-    `Risk backdrop: ${worsening.length ? `${worsening.join(", ")} worsening` : "no headwind worsening"}` +
+    `Risk register${reviewed}: ${worsening.length ? `${worsening.join(", ")} worsening` : "no headwind worsening"}` +
     `${improving.length ? `; ${improving.join(", ")} improving` : ""}. ` +
     `${worsening.length >= 2 ? "Structural risks still building." : "No fresh escalation today."}`
   );
