@@ -26,7 +26,7 @@ export async function onRequest(context) {
   // prior close settled overnight), every load the rest of the day is instant.
   // No cron needed — your morning visit is the refresh trigger.
   const etDate = new Date().toLocaleDateString("en-CA", { timeZone: "America/New_York" }); // YYYY-MM-DD
-  const cacheKey = `pulse:snapshot:v13:${etDate}`; // v13: + Shiller CAPE (multpl) for the regime valuation vote
+  const cacheKey = `pulse:snapshot:v14:${etDate}`; // v14: drop free/$0 models from tokenomics basket (broken $0 floor)
 
   // ── 1. KV Cache check ─────────────────────────────────────────────────
   try {
@@ -622,7 +622,11 @@ async function fetchTokenomics(env) {
   const mtokOf = (m) => {
     const p = parseFloat(m?.pricing?.prompt), c = parseFloat(m?.pricing?.completion);
     if (!isFinite(p) || !isFinite(c) || p < 0 || c < 0) return NaN;
-    return parseFloat((((3 * p + c) / 4) * 1e6).toFixed(2));
+    const v = parseFloat((((3 * p + c) / 4) * 1e6).toFixed(2));
+    // Exclude free/$0-listed models: a $0 "frontier price" is a promotional/free-tier
+    // listing, not a representative price. Left in, it polluted the basket and rendered as
+    // the cheapest-frontier "floor: <model> $0/Mtok" — visibly wrong in the moat card.
+    return v > 0 ? v : NaN;
   };
   // Frontier basket — matched by id prefix so a model-id bump doesn't silently drop one.
   const BASKET = [
