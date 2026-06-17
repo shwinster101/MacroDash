@@ -170,6 +170,18 @@ const SourceBox = ({ api, endpoint, asOf, mode }) => (
   </div>
 );
 
+// ─── ILLUSTRATIVE TREATMENT (v3.1 friends-cockpit safety) ─────────────────────
+// A friend skimming must never mistake a no-feed/mock tile for live data. Curated tiles
+// get a diagonal-hatch wash + an unmistakable "ILLUSTRATIVE · not live" chip, and any
+// directional VERDICT (BULLISH/BEARISH/BUBBLE) is SUPPRESSED on mock/stale data — a
+// fabricated directional call is worse than a fabricated number.
+const ILLUS_HATCH = "repeating-linear-gradient(45deg, transparent, transparent 5px, rgba(255,255,255,0.025) 5px, rgba(255,255,255,0.025) 10px)";
+const IllustrativeChip = ({ label = "ILLUSTRATIVE · not live" }) => (
+  <span style={{ fontFamily:T.fontMono, fontSize:8, letterSpacing:"0.06em", color:T.amber, background:T.amber+"18", border:`1px solid ${T.amber}55`, borderRadius:3, padding:"1px 6px", whiteSpace:"nowrap", flexShrink:0 }}>◫ {label}</span>
+);
+// True when a tile's data carries no live signal and must not render a verdict.
+const isIllustrative = (mode) => mode === "MOCK" || mode === "STALE";
+
 // ─── DATA ─────────────────────────────────────────────────────────────────
 const MOCK_DATA = {
   lastRefresh:"2026-05-23 16:15 ET", session:"CLOSE",
@@ -451,21 +463,23 @@ const UndoToast=({toasts, dismiss})=>{
 
 // Direction tile (v1.3 stoplight)
 const DirTile=({label,value,d1,w1,m1,band,invert=false,spark,source,sourceEp,mode="MOCK",asOf})=>{
-  const tc=t=>t==="yellow"?T.yellow:t===T.green?T.green:T.red;
+  const illus=isIllustrative(mode); // v3.1: suppress the verdict + delta colors on mock/stale data
+  const tc=t=>illus?T.textMuted:t==="yellow"?T.yellow:t===T.green?T.green:T.red;
   const t1=stoplightColor(d1,band,invert), t2=stoplightColor(w1,band,invert), t3=stoplightColor(m1,band,invert);
   const verdict=verdictFromTones([t1,t2,t3]);
   return(
-    <div style={{background:verdict.label==="BULLISH"?DT["regime-on-bg"]:verdict.label==="BEARISH"?DT["regime-off-bg"]:T.surface,border:`1px solid ${verdict.label==="BULLISH"?T.green+"44":verdict.label==="BEARISH"?T.red+"44":T.border}`,borderRadius:5,padding:"10px 12px",flex:"1 1 110px",minWidth:110}}>
+    <div style={{background:illus?T.surface:verdict.label==="BULLISH"?DT["regime-on-bg"]:verdict.label==="BEARISH"?DT["regime-off-bg"]:T.surface,backgroundImage:illus?ILLUS_HATCH:undefined,border:`1px solid ${illus?T.border:verdict.label==="BULLISH"?T.green+"44":verdict.label==="BEARISH"?T.red+"44":T.border}`,borderRadius:5,padding:"10px 12px",flex:"1 1 110px",minWidth:110,opacity:illus?0.92:1}}>
       <Label>{label}</Label>
-      <div style={{fontFamily:T.fontMono,fontSize:16,color:T.textPrimary,fontWeight:700,marginBottom:4}}>{value}</div>
+      <div style={{fontFamily:T.fontMono,fontSize:16,color:illus?T.textSecondary:T.textPrimary,fontWeight:700,marginBottom:4}}>{value}</div>
       <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:3,marginBottom:5}}>
         {[["1D",d1,t1],["1W",w1,t2],["1M",m1,t3]].map(([p,v,t])=>(
           <div key={p}><div style={{fontFamily:T.fontMono,fontSize:8,color:T.textMuted}}>{p}</div>
           <div style={{fontFamily:T.fontMono,fontSize:10,color:tc(t)}}>{arrow(v)} {Math.abs(v).toFixed(Math.abs(v)<1?1:2)}</div></div>
         ))}
       </div>
-      <Badge label={verdict.label} color={verdict.color} small/>
-      {spark&&<div style={{height:20,marginTop:5}}><ResponsiveContainer width="100%" height="100%"><LineChart data={spark.map((v,i)=>({v,i}))}><Line type="monotone" dataKey="v" stroke={T.amber} dot={false} strokeWidth={1}/></LineChart></ResponsiveContainer></div>}
+      {/* Verdict only on live data; mock/stale shows an honest chip instead of a fabricated call */}
+      {illus?(mode==="STALE"?<DataModeBadge mode="STALE"/>:<IllustrativeChip/>):<Badge label={verdict.label} color={verdict.color} small/>}
+      {spark&&<div style={{height:20,marginTop:5}}><ResponsiveContainer width="100%" height="100%"><LineChart data={spark.map((v,i)=>({v,i}))}><Line type="monotone" dataKey="v" stroke={illus?T.textMuted:T.amber} dot={false} strokeWidth={1}/></LineChart></ResponsiveContainer></div>}
       {source&&<SourceBox api={source} endpoint={sourceEp||""} mode={mode} asOf={asOf}/>}
     </div>
   );
@@ -554,6 +568,7 @@ const IpoCard = ({ ipo }) => {
     <div style={{
       flex:"1 1 200px", minWidth:200,
       background: isTrading ? T.greenDim : T.surface,
+      backgroundImage: ILLUS_HATCH,
       border: `1px solid ${isTrading ? T.green : ipo.color}44`,
       borderRadius: 6,
       padding: "12px 14px",
@@ -636,7 +651,7 @@ const IpoCountdownStrip = () => (
         COUNTDOWN TO LAUNCH — IPO TRACKER
       </div>
       {/* Honest provenance: these IPO dates are curated estimates, not live data */}
-      <span style={{ fontFamily:T.fontMono, fontSize:8, color:T.textMuted, border:`1px dashed ${T.border}`, borderRadius:3, padding:"0 5px", whiteSpace:"nowrap" }}>MOCK · curated · dates speculative</span>
+      <IllustrativeChip label="ILLUSTRATIVE · dates speculative"/>
     </div>
     <div style={{ display:"flex", gap:12, overflowX:"auto" }} className="ipo-strip-inner">
       {IPO_TARGETS.map(ipo => <IpoCard key={ipo.ticker} ipo={ipo}/>)}
@@ -652,7 +667,7 @@ const LaunchCostCard = () => {
   const dropPct = Math.round((1 - lc.costPerKg / lc.prevEra.costPerKg) * 100);
   return (
     <div style={{
-      flex:"1 1 200px", minWidth:200, background:T.surface,
+      flex:"1 1 200px", minWidth:200, background:T.surface, backgroundImage:ILLUS_HATCH,
       border:`1px solid ${T.green}44`, borderRadius:6, padding:"12px 14px",
     }}>
       <div style={{ display:"flex", alignItems:"center", gap:6, marginBottom:6 }}>
@@ -676,7 +691,7 @@ const LaunchCostCard = () => {
       </div>
       <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginTop:6 }}>
         <span style={{ fontFamily:T.fontMono, fontSize:8, color:T.textMuted }}>{lc.target.name} target ~${lc.target.costPerKg}</span>
-        <span style={{ fontFamily:T.fontMono, fontSize:8, color:T.textMuted, border:`1px dashed ${T.border}`, borderRadius:3, padding:"0 5px" }}>MOCK · curated</span>
+        <IllustrativeChip/>
       </div>
     </div>
   );
@@ -688,7 +703,7 @@ const EvtolCertCard = () => {
   const e = EVTOL_CERT;
   const blue = "#3498db";
   return (
-    <div style={{ flex:"1 1 220px", minWidth:220, background:T.surface, border:`1px solid ${blue}44`, borderRadius:6, padding:"12px 14px" }}>
+    <div style={{ flex:"1 1 220px", minWidth:220, background:T.surface, backgroundImage:ILLUS_HATCH, border:`1px solid ${blue}44`, borderRadius:6, padding:"12px 14px" }}>
       <div style={{ display:"flex", alignItems:"center", gap:6, marginBottom:6 }}>
         <span style={{ fontSize:13 }}>🛩️</span>
         <span style={{ fontFamily:T.fontMono, fontSize:9, color:blue, letterSpacing:"0.06em" }}>ELECTRIC SKIES · eVTOL FAA CERT</span>
@@ -709,7 +724,7 @@ const EvtolCertCard = () => {
       </div>
       <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginTop:8 }}>
         <span style={{ fontFamily:T.fontMono, fontSize:9, color:blue }}>Type Cert target ~{e.targetTC}</span>
-        <span style={{ fontFamily:T.fontMono, fontSize:8, color:T.textMuted, border:`1px dashed ${T.border}`, borderRadius:3, padding:"0 5px" }}>MOCK · projection</span>
+        <IllustrativeChip label="ILLUSTRATIVE · projection"/>
       </div>
     </div>
   );
@@ -722,10 +737,13 @@ const GpuPricingCard = () => {
   const g = GPU_PRICING;
   const qoq = (c) => parseFloat((((c.onDemand - c.prevQ) / c.prevQ) * 100).toFixed(1));
   return (
-    <div style={{ marginTop:16, background:T.surface, border:`1px solid ${T.border}`, borderRadius:6, padding:"12px 16px" }}>
+    <div style={{ marginTop:16, background:T.surface, backgroundImage:ILLUS_HATCH, border:`1px solid ${T.border}`, borderRadius:6, padding:"12px 16px" }}>
       <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", flexWrap:"wrap", gap:6 }}>
         <SectionHeader>AI Infra · GPU On-Demand $/hr</SectionHeader>
-        <span style={{ fontFamily:T.fontMono, fontSize:8, color:T.textMuted }}>{g.quarter} · leading margin-compression signal</span>
+        <div style={{ display:"flex", alignItems:"center", gap:6, flexWrap:"wrap" }}>
+          <span style={{ fontFamily:T.fontMono, fontSize:8, color:T.textMuted }}>{g.quarter} · curated quarterly</span>
+          <IllustrativeChip/>
+        </div>
       </div>
       <div style={{ fontFamily:T.fontSans, fontSize:10, color:T.textSecondary, lineHeight:1.4, margin:"6px 0 10px" }}>{g.note}</div>
       <div style={{ display:"grid", gridTemplateColumns:"repeat(auto-fill,minmax(150px,1fr))", gap:8 }}>
@@ -1112,23 +1130,30 @@ export default function Dashboard({ publicView = false } = {}) {
       <div style={{background:T.surfaceHigh,borderBottom:`1px solid ${T.border}`,padding:"6px 20px",overflowX:"auto",display:"flex",alignItems:"center",justifyContent:"space-between",gap:12}} className="macro-strip">
         <div style={{display:"flex",gap:20,minWidth:"max-content",flex:1}} className="macro-strip-inner">
           {[
-            {l:"SPY",  v:`$${d.marketPulse.spy.price}`,      s:fmt.pct(d.marketPulse.spy.changePct), sc:pctColor(d.marketPulse.spy.changePct), t:"S&P 500 ETF — the broad US stock market"},
-            {l:"QQQ",  v:`$${d.marketPulse.qqq.price}`,      s:fmt.pct(d.marketPulse.qqq.changePct), sc:pctColor(d.marketPulse.qqq.changePct), t:"Nasdaq-100 ETF — big tech"},
-            {l:"VIX",  v:`${d.marketPulse.vix.current}`,     s:fmt.pct(d.marketPulse.vix.weekChg)+" WoW", sc:pctColor(d.marketPulse.vix.weekChg,true), t:"Volatility index — the market's fear gauge (lower = calmer)"},
-            {l:"F&G",  v:`${d.marketPulse.fearGreed.score}`, s:d.marketPulse.fearGreed.label, sc:d.marketPulse.fearGreed.score>55?T.green:T.red, t:"Fear & Greed — market sentiment, 0 = fear, 100 = greed"},
-            {l:"10Y",  v:`${d.crossAsset.treasury10y.current}%`, s:fmt.bps(d.crossAsset.treasury10y.d1)+" 1D", sc:pctColor(-d.crossAsset.treasury10y.d1), t:"10-year Treasury yield — the benchmark interest rate"},
-            {l:"FED",  v:`${d.macro.fedFunds.rate}%`,        s:`FOMC ${d.macro.fedFunds.daysUntil}d`, sc:T.textMuted, t:"Fed funds rate — the central bank's policy rate"},
-            {l:"CPI",  v:`${d.macro.cpi.headline}%`,         s:`Core ${d.macro.cpi.core}%`, sc:d.macro.cpi.headline>3?T.red:T.green, t:"Consumer Price Index — inflation, year-over-year"},
+            {l:"SPY",  f:"spyPrice", v:`$${d.marketPulse.spy.price}`,      s:fmt.pct(d.marketPulse.spy.changePct), sc:pctColor(d.marketPulse.spy.changePct), t:"S&P 500 ETF — the broad US stock market"},
+            {l:"QQQ",  f:"qqqPrice", v:`$${d.marketPulse.qqq.price}`,      s:fmt.pct(d.marketPulse.qqq.changePct), sc:pctColor(d.marketPulse.qqq.changePct), t:"Nasdaq-100 ETF — big tech"},
+            {l:"VIX",  f:"vix", v:`${d.marketPulse.vix.current}`,     s:fmt.pct(d.marketPulse.vix.weekChg)+" WoW", sc:pctColor(d.marketPulse.vix.weekChg,true), t:"Volatility index — the market's fear gauge (lower = calmer)"},
+            {l:"F&G",  f:"fearGreed", v:`${d.marketPulse.fearGreed.score}`, s:d.marketPulse.fearGreed.label, sc:d.marketPulse.fearGreed.score>55?T.green:T.red, t:"Fear & Greed — market sentiment, 0 = fear, 100 = greed"},
+            {l:"10Y",  f:"tenYear", v:`${d.crossAsset.treasury10y.current}%`, s:fmt.bps(d.crossAsset.treasury10y.d1)+" 1D", sc:pctColor(-d.crossAsset.treasury10y.d1), t:"10-year Treasury yield — the benchmark interest rate"},
+            {l:"FED",  f:"fedFunds", v:`${d.macro.fedFunds.rate}%`,        s:`FOMC ${d.macro.fedFunds.daysUntil}d`, sc:T.textMuted, t:"Fed funds rate — the central bank's policy rate"},
+            {l:"CPI",  f:"cpiHeadline", v:`${d.macro.cpi.headline}%`,         s:`Core ${d.macro.cpi.core}%`, sc:d.macro.cpi.headline>3?T.red:T.green, t:"Consumer Price Index — inflation, year-over-year"},
             modeOf('putCall')==='STALE'
-              ? {l:"P/C",  v:"n/a", s:"retired", sc:T.textMuted, t:"Put/Call ratio — CBOE retired the free daily feed in 2019; no current free source"}
-              : {l:"P/C",  v:`${d.marketPulse.putCall.current}`, s:d.marketPulse.putCall.current>1?"BEAR SKEW":"NEUTRAL", sc:d.marketPulse.putCall.current>1?T.red:T.textSecondary, t:"Put/Call ratio — options positioning (above 1 = defensive)"},
-          ].map(({l,v,s,sc,t})=>(
-            <div key={l} title={t} style={{flexShrink:0,minWidth:68,cursor:"help"}}>
-              <div style={{fontFamily:T.fontMono,fontSize:8,color:T.textMuted}}>{l}</div>
+              ? {l:"P/C",  f:"putCall", v:"n/a", s:"retired", sc:T.textMuted, t:"Put/Call ratio — CBOE retired the free daily feed in 2019; no current free source"}
+              : {l:"P/C",  f:"putCall", v:`${d.marketPulse.putCall.current}`, s:d.marketPulse.putCall.current>1?"BEAR SKEW":"NEUTRAL", sc:d.marketPulse.putCall.current>1?T.red:T.textSecondary, t:"Put/Call ratio — options positioning (above 1 = defensive)"},
+          ].map(({l,f,v,s,sc,t})=>{
+            const m=modeOf(f); const live=m==="LIVE"||m==="CACHED";
+            const dot=live?T.green:m==="STALE"?T.amber:T.textMuted; // provenance dot: live/stale/mock
+            return(
+            <div key={l} title={`${t}\n(${m.toLowerCase()})`} style={{flexShrink:0,minWidth:68,cursor:"help"}}>
+              <div style={{display:"flex",alignItems:"center",gap:3}}>
+                <span style={{width:5,height:5,borderRadius:"50%",background:live?dot:"transparent",border:`1px solid ${dot}`,flexShrink:0}}/>
+                <span style={{fontFamily:T.fontMono,fontSize:8,color:T.textMuted}}>{l}</span>
+              </div>
               <div style={{fontFamily:T.fontMono,fontSize:13,color:T.textPrimary,fontWeight:700,lineHeight:1.1}}>{v}</div>
               <div style={{fontFamily:T.fontMono,fontSize:9,color:sc}}>{s}</div>
             </div>
-          ))}
+            );
+          })}
         </div>
         {/* WEN MOON METER — mood badge based on SPY daily change (hidden on mobile to declutter the 2x4 strip, per the unused .wen-moon-mobile rule) */}
         <div className="wen-moon-mobile"><WenMoonBadge spyChangePct={d.marketPulse.spy.changePct}/></div>
@@ -1200,19 +1225,21 @@ export default function Dashboard({ publicView = false } = {}) {
               <SourceBox api="FRED" endpoint="SP500 ÷10 proxy" mode={modeOf('spyPrice')} asOf={asOfOf('spyPrice')}/>
             </div>
 
-            {/* A2-A5: KPI row */}
+            {/* A2-A5: KPI row — v3.1: SPY P/E (mock, Yahoo-dupe) cut; each tile carries provenance */}
             <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
               {[
-                {l:"SPY YTD",  v:fmt.pct(d.marketPulse.spy.ytd),  c:pctColor(d.marketPulse.spy.ytd)},
-                {l:"QQQ YTD",  v:fmt.pct(d.marketPulse.qqq.ytd),  c:pctColor(d.marketPulse.qqq.ytd)},
-                {l:"SPY P/E",  v:`${d.marketPulse.spy.pe}x`, c:d.marketPulse.spy.pe>22?T.yellow:T.green, sub:d.marketPulse.spy.pe>22?"above avg":"below avg"},
-              ].map(({l,v,c,sub})=>(
-                <div key={l} style={{background:T.surface,border:`1px solid ${T.border}`,borderRadius:5,padding:"8px 12px",flex:"1 1 90px"}}>
+                {l:"SPY YTD",  f:"spyYtd", v:fmt.pct(d.marketPulse.spy.ytd),  c:pctColor(d.marketPulse.spy.ytd)},
+                {l:"QQQ YTD",  f:"qqqYtd", v:fmt.pct(d.marketPulse.qqq.ytd),  c:pctColor(d.marketPulse.qqq.ytd)},
+              ].map(({l,v,c})=>{
+                const m=modeOf(l==="SPY YTD"?"spyYtd":"qqqYtd"); const illus=isIllustrative(m);
+                return(
+                <div key={l} style={{background:T.surface,backgroundImage:illus?ILLUS_HATCH:undefined,border:`1px solid ${T.border}`,borderRadius:5,padding:"8px 12px",flex:"1 1 90px",opacity:illus?0.92:1}}>
                   <Label>{l}</Label>
-                  <div style={{fontFamily:T.fontMono,fontSize:18,color:c,fontWeight:700}}>{v}</div>
-                  {sub&&<div style={{fontFamily:T.fontMono,fontSize:8,color:T.textMuted}}>{sub}</div>}
+                  <div style={{fontFamily:T.fontMono,fontSize:18,color:illus?T.textSecondary:c,fontWeight:700}}>{v}</div>
+                  <div style={{marginTop:2}}>{illus?(m==="STALE"?<DataModeBadge mode="STALE"/>:<IllustrativeChip/>):<DataModeBadge mode={m}/>}</div>
                 </div>
-              ))}
+                );
+              })}
             </div>
 
             {/* A6-A9: Signal tiles — 2×2: equity fear (VIX | F&G) + multi-asset risk (P/C | Credit) */}
@@ -1329,27 +1356,29 @@ export default function Dashboard({ publicView = false } = {}) {
                   <div><Label>30Y Mortgage</Label><div style={{fontFamily:T.fontMono,fontSize:16,color:T.red,fontWeight:700}}>{d.macro.mortgage.national}%</div></div>
                   <div><Label>Peoria IL</Label><div style={{fontFamily:T.fontMono,fontSize:14,color:T.yellow,fontWeight:700}}>{d.macro.mortgage.peoria}%</div><div style={{fontFamily:T.fontMono,fontSize:9,color:T.textMuted}}>${d.macro.housing.peoria.toLocaleString()}</div></div>
                 </div>
-                {/* Shiller PE */}
-                <div>
-                  <div style={{display:"flex",justifyContent:"space-between",alignItems:"baseline"}}>
+                {/* Shiller PE — v3.1: suppress the BUBBLE/ELEVATED verdict + red on mock/stale */}
+                {(()=>{const shMode=modeOf('shillerPe'); const shIllus=isIllustrative(shMode); return (
+                <div style={{backgroundImage:shIllus?ILLUS_HATCH:undefined,borderRadius:5,padding:shIllus?"6px 8px":0,opacity:shIllus?0.92:1}}>
+                  <div style={{display:"flex",justifyContent:"space-between",alignItems:"baseline",gap:6,flexWrap:"wrap"}}>
                     <Label>Shiller P/E (CAPE)</Label>
-                    <Badge label={d.macro.shillerPe.current>40?"BUBBLE":"ELEVATED"} color={d.macro.shillerPe.current>40?"#7f1d1d":T.red} small/>
+                    {shIllus?(shMode==="STALE"?<DataModeBadge mode="STALE"/>:<IllustrativeChip/>):<Badge label={d.macro.shillerPe.current>40?"BUBBLE":"ELEVATED"} color={d.macro.shillerPe.current>40?"#7f1d1d":T.red} small/>}
                   </div>
-                  <div style={{fontFamily:T.fontMono,fontSize:22,color:"#ef4444",fontWeight:700}}>{d.macro.shillerPe.current}</div>
+                  <div style={{fontFamily:T.fontMono,fontSize:22,color:shIllus?T.textSecondary:"#ef4444",fontWeight:700}}>{d.macro.shillerPe.current}</div>
                   <div style={{display:"flex",gap:12,marginTop:2}}>
                     <div style={{fontFamily:T.fontMono,fontSize:8,color:T.textMuted}}>Mean {d.macro.shillerPe.mean} · Median {d.macro.shillerPe.median}</div>
-                    <div style={{fontFamily:T.fontMono,fontSize:8,color:T.red}}>{d.macro.shillerPe.pctOfAth}% of ATH</div>
+                    <div style={{fontFamily:T.fontMono,fontSize:8,color:shIllus?T.textMuted:T.red}}>{d.macro.shillerPe.pctOfAth}% of ATH</div>
                   </div>
-                  <SourceBox api="Manual" endpoint="Robert Shiller · Yale data" mode={modeOf('shillerPe')}/>
+                  <SourceBox api="Manual" endpoint="Robert Shiller · multpl/Yale" mode={shMode} asOf={asOfOf('shillerPe')}/>
                 </div>
+                );})()}
               </div>
             </div>
 
             {/* Top headwinds (compact) — curated thesis register, honestly dated */}
-            <div style={{background:T.surface,border:`1px solid ${T.border}`,borderRadius:6,padding:"14px 16px"}}>
+            <div style={{background:T.surface,backgroundImage:ILLUS_HATCH,border:`1px solid ${T.border}`,borderRadius:6,padding:"14px 16px"}}>
               <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",flexWrap:"wrap",gap:6}}>
                 <SectionHeader>Top Headwinds</SectionHeader>
-                <span style={{fontFamily:T.fontMono,fontSize:8,color:T.textMuted,border:`1px dashed ${T.border}`,borderRadius:3,padding:"0 5px",whiteSpace:"nowrap"}}>MOCK · curated · reviewed {d.headwindsAsOf}</span>
+                <IllustrativeChip label={`ILLUSTRATIVE · reviewed ${d.headwindsAsOf}`}/>
               </div>
               {(showAllHW?d.headwinds:d.headwinds.slice(0,3)).map(hw=>{
                 const sevColor=hw.severity==="High"?T.red:hw.severity==="Med"?T.yellow:T.green;
@@ -1430,9 +1459,12 @@ export default function Dashboard({ publicView = false } = {}) {
               </div>
               <div style={{display:"flex",gap:8,overflowX:"auto",paddingBottom:4}} className="mag10-scroll">
                 {mag10.filter(s=>s.isMusk).map(s=><Mag10Card key={s.ticker} s={s}/>)}
-                {/* SpaceX context panel */}
-                <div style={{background:"#0a0d12",border:"1px solid #1e3a5f",borderRadius:5,padding:"10px 12px",minWidth:170,flex:"1 1 170px"}}>
-                  <div style={{fontFamily:T.fontMono,fontSize:9,color:"#60a5fa",marginBottom:6}}>SPACEX S-1 CONTEXT</div>
+                {/* SpaceX context panel — curated private-co figures (S-1), not live */}
+                <div style={{background:"#0a0d12",backgroundImage:ILLUS_HATCH,border:"1px solid #1e3a5f",borderRadius:5,padding:"10px 12px",minWidth:170,flex:"1 1 170px"}}>
+                  <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:4,marginBottom:6,flexWrap:"wrap"}}>
+                    <span style={{fontFamily:T.fontMono,fontSize:9,color:"#60a5fa"}}>SPACEX S-1 CONTEXT</span>
+                    <IllustrativeChip/>
+                  </div>
                   {[
                     ["Starlink rev","$11.4B (FY25) · 10.3M subs"],
                     ["AI capex","$12.7B in 2025 (xAI acq.)"],
