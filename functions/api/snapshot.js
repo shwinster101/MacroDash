@@ -26,7 +26,7 @@ export async function onRequest(context) {
   // prior close settled overnight), every load the rest of the day is instant.
   // No cron needed — your morning visit is the refresh trigger.
   const etDate = new Date().toLocaleDateString("en-CA", { timeZone: "America/New_York" }); // YYYY-MM-DD
-  const cacheKey = `pulse:snapshot:v14:${etDate}`; // v14: drop free/$0 models from tokenomics basket (broken $0 floor)
+  const cacheKey = `pulse:snapshot:v15:${etDate}`; // v15: real 5-session VIX WoW (was mislabeled 1-day)
 
   // ── 1. KV Cache check ─────────────────────────────────────────────────
   try {
@@ -232,8 +232,11 @@ async function fetchFred(key) {
       if (daily && !isNaN(wAgo)) out.tenYearW1 = parseFloat((latest - wAgo).toFixed(4));
       if (daily && !isNaN(mAgo)) out.tenYearM1 = parseFloat((latest - mAgo).toFixed(4));
     }
-    if (field === "vix" && !isNaN(prev)) {
-      out.vixWeekChg = parseFloat((((latest - prev) / prev) * 100).toFixed(2));
+    if (field === "vix") {
+      // Real week-over-week: latest vs ~5 trading sessions ago (the tile labels it "WoW").
+      // Falls back to the 1-day prior only if the 5-session point isn't available.
+      const base = (daily && isFinite(wAgo) && wAgo > 0) ? wAgo : prev;
+      if (isFinite(base) && base > 0) out.vixWeekChg = parseFloat((((latest - base) / base) * 100).toFixed(2));
     }
     if (field === "wti") {
       if (!isNaN(prev)) out.wtiD1 = pct(latest, prev);

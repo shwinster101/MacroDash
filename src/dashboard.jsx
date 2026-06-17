@@ -1001,6 +1001,11 @@ export default function Dashboard({ publicView = false } = {}) {
   // FEAT-204 wiring — single-point hook swap; mock stays default, operator flips live post-deploy
   const { data: DATA, mode, asOf, provenance, dataAsOf } = useMarketData(MOCK_DATA, { publicView });
   const d=DATA;
+  // FOMC countdown computed CLIENT-SIDE from nextFOMC (the snapshot's daysUntil is frozen at
+  // fetch time and rounds up — it read "1d" on decision day). 0 = today. Falls back to the
+  // snapshot value if nextFOMC is missing/unparseable.
+  const fomcDays=(()=>{const nx=d.macro.fedFunds.nextFOMC;const dt=nx?parseObsDate(nx):null;if(!dt||isNaN(dt.getTime()))return d.macro.fedFunds.daysUntil;const t=new Date();t.setHours(0,0,0,0);return Math.max(0,Math.round((dt-t)/86400000));})();
+  const fomcLabel=fomcDays===0?"today":`${fomcDays}d`;
   const modeOf=(k)=>{const m=provenance?.[k]||"MOCK"; return (m==="LIVE"||m==="CACHED")&&isStale(dataAsOf?.[k], new Date(), cadenceOf(k))?"STALE":m;}; // FEAT-R3: cadence-aware LIVE | CACHED | STALE | MOCK
   // FEAT-DQ: a regime factor backed by LIVE/CACHED data that has gone STALE (e.g. the
   // retired CBOE Put/Call CSV, frozen at 2019) must not cast a vote on today's tape.
@@ -1145,7 +1150,7 @@ export default function Dashboard({ publicView = false } = {}) {
             {l:"VIX",  f:"vix", v:`${d.marketPulse.vix.current}`,     s:fmt.pct(d.marketPulse.vix.weekChg)+" WoW", sc:pctColor(d.marketPulse.vix.weekChg,true), t:"Volatility index — the market's fear gauge (lower = calmer)"},
             {l:"F&G",  f:"fearGreed", v:`${d.marketPulse.fearGreed.score}`, s:d.marketPulse.fearGreed.label, sc:d.marketPulse.fearGreed.score>55?T.green:T.red, t:"Fear & Greed — market sentiment, 0 = fear, 100 = greed"},
             {l:"10Y",  f:"tenYear", v:`${d.crossAsset.treasury10y.current}%`, s:fmt.bps(d.crossAsset.treasury10y.d1)+" 1D", sc:pctColor(-d.crossAsset.treasury10y.d1), t:"10-year Treasury yield — the benchmark interest rate"},
-            {l:"FED",  f:"fedFunds", v:`${d.macro.fedFunds.rate}%`,        s:`FOMC ${d.macro.fedFunds.daysUntil}d`, sc:T.textMuted, t:"Fed funds rate — the central bank's policy rate"},
+            {l:"FED",  f:"fedFunds", v:`${d.macro.fedFunds.rate}%`,        s:`FOMC ${fomcLabel}`, sc:fomcDays===0?T.amber:T.textMuted, t:"Fed funds rate — the central bank's policy rate"},
             {l:"CPI",  f:"cpiHeadline", v:`${d.macro.cpi.headline}%`,         s:`Core ${d.macro.cpi.core}%`, sc:d.macro.cpi.headline>3?T.red:T.green, t:"Consumer Price Index — inflation, year-over-year"},
             modeOf('putCall')==='STALE'
               ? {l:"P/C",  f:"putCall", v:"n/a", s:"retired", sc:T.textMuted, t:"Put/Call ratio — CBOE retired the free daily feed in 2019; no current free source"}
@@ -1334,7 +1339,7 @@ export default function Dashboard({ publicView = false } = {}) {
                   <div>
                     <Label>Fed Funds Rate</Label>
                     <div style={{fontFamily:T.fontMono,fontSize:22,color:T.amber,fontWeight:700}}>{d.macro.fedFunds.rate}%</div>
-                    <div style={{fontFamily:T.fontMono,fontSize:9,color:T.textMuted}}>Next FOMC in {d.macro.fedFunds.daysUntil} days</div>
+                    <div style={{fontFamily:T.fontMono,fontSize:9,color:fomcDays===0?T.amber:T.textMuted}}>{fomcDays===0?"FOMC decision today":`Next FOMC in ${fomcDays} day${fomcDays===1?"":"s"}`}</div>
                     {/* Next-FOMC decision odds (Kalshi prediction market) */}
                     <div style={{display:"flex",gap:6,marginTop:4,flexWrap:"wrap",alignItems:"baseline"}}>
                       <span style={{fontFamily:T.fontMono,fontSize:7,color:T.textMuted,letterSpacing:"0.08em"}}>NEXT-MTG</span>
