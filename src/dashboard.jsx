@@ -341,9 +341,13 @@ function computeRegime(d, stale=new Set()) {
   // Put/Call
   if(use("putCall")){ if(d.marketPulse.putCall.current < 0.75) bullVotes++; else if(d.marketPulse.putCall.current > 1.0) bearVotes++; }
   // Valuation (Shiller CAPE) — contrarian: a stretched market is bearish for forward returns (FEAT-R1).
-  // Mock/manual (no live feed) so it never goes stale — always votes.
-  const cape=d.macro.shillerPe;
-  if(cape.current < cape.mean*1.5) bullVotes++; else if(cape.current > 30 || cape.pctOfAth > 90) bearVotes++;
+  // v3.1: now LIVE (multpl scrape, monthly). Like every other factor it drops out when stale, so
+  // the hero verdict never counts a fabricated valuation. pctOfAth derived from current ÷ ATH.
+  if(use("valuation")){
+    const cape=d.macro.shillerPe;
+    const pctOfAth = cape.ath ? (cape.current / cape.ath) * 100 : cape.pctOfAth;
+    if(cape.current < cape.mean*1.5) bullVotes++; else if(cape.current > 30 || pctOfAth > 90) bearVotes++;
+  }
 
   const bull = bullVotes >= 3;
   const bear = bearVotes >= 3;
@@ -374,7 +378,7 @@ function regimeFactors(d, stale=new Set()) {
     {key:"fearGreed",   label:"Fear & Greed",   val:`${d.marketPulse.fearGreed.score} — ${d.marketPulse.fearGreed.label}`,   bull:d.marketPulse.fearGreed.score>55},
     {key:"cpiHeadline", label:"CPI Trend",      val:d.macro.cpi.trend.slice(-1)[0]<d.macro.cpi.trend.slice(-2)[0]?"Cooling (bullish)":"Re-accelerating", bull:d.macro.cpi.trend.slice(-1)[0]<d.macro.cpi.trend.slice(-2)[0]},
     {key:"putCall",     label:"Put/Call Ratio", val:`${d.marketPulse.putCall.current} — ${d.marketPulse.putCall.current<0.75?"Bullish skew":"Neutral/bearish"}`, bull:d.marketPulse.putCall.current<0.75},
-    {key:"valuation",   label:"Valuation",      val:`${d.macro.shillerPe.current} CAPE · ${d.macro.shillerPe.pctOfAth}% of ATH`, bull:d.macro.shillerPe.current<d.macro.shillerPe.mean*1.5},
+    {key:"valuation",   label:"Valuation",      val:`${d.macro.shillerPe.current} CAPE · ${(d.macro.shillerPe.ath?(d.macro.shillerPe.current/d.macro.shillerPe.ath)*100:d.macro.shillerPe.pctOfAth).toFixed(1)}% of ATH`, bull:d.macro.shillerPe.current<d.macro.shillerPe.mean*1.5},
   ];
   // Stale factors: neutralize the bull flag and annotate so the UI shows them as excluded.
   return factors.map(f => stale.has(f.key) ? { ...f, stale:true, bull:false, val:`${f.val} · STALE — excluded` } : f);
@@ -1001,10 +1005,13 @@ export default function Dashboard({ publicView = false } = {}) {
   // retired CBOE Put/Call CSV, frozen at 2019) must not cast a vote on today's tape.
   const REGIME_FACTOR_FIELDS=["tenYear","vix","fearGreed","cpiHeadline","putCall"];
   const staleFactors=new Set(REGIME_FACTOR_FIELDS.filter(k=>modeOf(k)==="STALE"));
+  // v3.1: the valuation factor is now live (Shiller/multpl). The factor key is "valuation" but the
+  // field key is "shillerPe" — drop it from the vote when stale, like every other factor.
+  if(modeOf("shillerPe")==="STALE") staleFactors.add("valuation");
   const regime=computeRegime(d, staleFactors);
   // Signal Quality rollup — at-a-glance trust: how many tracked signals are live+fresh vs
   // stale vs mock. Only meaningful in live mode (in mock everything is MOCK by design).
-  const SIGNAL_FIELDS=["spyPrice","vix","fearGreed","tenYear","cpiHeadline","fedFunds","creditSpread","wti","btc","rateOddsHold","marketHeadline","putCall","savings","tokenBlendedMtok"];
+  const SIGNAL_FIELDS=["spyPrice","vix","fearGreed","tenYear","cpiHeadline","fedFunds","creditSpread","wti","btc","rateOddsHold","marketHeadline","putCall","savings","tokenBlendedMtok","shillerPe"];
   const sq=SIGNAL_FIELDS.reduce((a,k)=>{const m=modeOf(k);if(m==="LIVE"||m==="CACHED")a.fresh++;else if(m==="STALE")a.stale++;else a.mock++;return a;},{fresh:0,stale:0,mock:0});
   sq.total=SIGNAL_FIELDS.length;
   const asOfOf=(k)=>{const s=dataAsOf?.[k]; if(!s)return undefined; const dt=parseObsDate(s); return !dt||isNaN(dt.getTime())?s:`as of ${dt.toLocaleDateString("en-US",{month:"short",day:"numeric"})}`;}; // FEAT-R2: "as of Jun 4" (parses ISO + CBOE M/D/YYYY)
@@ -1356,8 +1363,9 @@ export default function Dashboard({ publicView = false } = {}) {
                   <div><Label>30Y Mortgage</Label><div style={{fontFamily:T.fontMono,fontSize:16,color:T.red,fontWeight:700}}>{d.macro.mortgage.national}%</div></div>
                   <div><Label>Peoria IL</Label><div style={{fontFamily:T.fontMono,fontSize:14,color:T.yellow,fontWeight:700}}>{d.macro.mortgage.peoria}%</div><div style={{fontFamily:T.fontMono,fontSize:9,color:T.textMuted}}>${d.macro.housing.peoria.toLocaleString()}</div></div>
                 </div>
-                {/* Shiller PE — v3.1: suppress the BUBBLE/ELEVATED verdict + red on mock/stale */}
-                {(()=>{const shMode=modeOf('shillerPe'); const shIllus=isIllustrative(shMode); return (
+                {/* Shiller PE — v3.1: live (multpl); suppress BUBBLE/ELEVATED verdict + red on mock/stale */}
+                {(()=>{const shMode=modeOf('shillerPe'); const shIllus=isIllustrative(shMode);
+                  const shPctAth=(d.macro.shillerPe.ath?(d.macro.shillerPe.current/d.macro.shillerPe.ath)*100:d.macro.shillerPe.pctOfAth).toFixed(1); return (
                 <div style={{backgroundImage:shIllus?ILLUS_HATCH:undefined,borderRadius:5,padding:shIllus?"6px 8px":0,opacity:shIllus?0.92:1}}>
                   <div style={{display:"flex",justifyContent:"space-between",alignItems:"baseline",gap:6,flexWrap:"wrap"}}>
                     <Label>Shiller P/E (CAPE)</Label>
@@ -1366,7 +1374,7 @@ export default function Dashboard({ publicView = false } = {}) {
                   <div style={{fontFamily:T.fontMono,fontSize:22,color:shIllus?T.textSecondary:"#ef4444",fontWeight:700}}>{d.macro.shillerPe.current}</div>
                   <div style={{display:"flex",gap:12,marginTop:2}}>
                     <div style={{fontFamily:T.fontMono,fontSize:8,color:T.textMuted}}>Mean {d.macro.shillerPe.mean} · Median {d.macro.shillerPe.median}</div>
-                    <div style={{fontFamily:T.fontMono,fontSize:8,color:shIllus?T.textMuted:T.red}}>{d.macro.shillerPe.pctOfAth}% of ATH</div>
+                    <div style={{fontFamily:T.fontMono,fontSize:8,color:shIllus?T.textMuted:T.red}}>{shPctAth}% of ATH</div>
                   </div>
                   <SourceBox api="Manual" endpoint="Robert Shiller · multpl/Yale" mode={shMode} asOf={asOfOf('shillerPe')}/>
                 </div>

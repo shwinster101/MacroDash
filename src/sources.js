@@ -71,6 +71,8 @@ export const SOURCES = {
   // TOP MARKET HEADLINE (FEAT-NEWS — non-FRED RSS; date-verified, staleness via asOf)
   marketHeadline:       { path: "marketPulse.headline.text",   kind: "str", displayClass: "public" },
   marketHeadlineSource: { path: "marketPulse.headline.source", kind: "str", displayClass: "public" },
+  // VALUATION (Shiller CAPE — multpl.com scrape; the regime's 6th vote, monthly cadence)
+  shillerPe:      { path: "macro.shillerPe.current",       kind: "num",    displayClass: "public" },
   // AI TOKEN ECONOMICS (the moat — OpenRouter public models API; price side of AI unit economics)
   tokenBlendedMtok: { path: "tokenomics.blendedMtok",      kind: "num",    displayClass: "public" },
   tokenTrend:       { path: "tokenomics.trend",            kind: "series", displayClass: "public" },
@@ -94,6 +96,7 @@ const CADENCE = {
   // monthly FRED releases (period-dated at month start + a publication lag)
   fedFunds: "monthly", unemployment: "monthly", unemploymentTrend: "monthly", lfpr: "monthly",
   savings: "monthly", savingsTrend: "monthly",
+  shillerPe: "monthly", // CAPE is a monthly-cadence metric
   cpiHeadline: "monthly", cpiCore: "monthly", cpiTrend: "monthly",
   pceHeadline: "monthly", pceCore: "monthly", pceTrend: "monthly",
   // weekly (Freddie Mac primary mortgage survey, Thursday)

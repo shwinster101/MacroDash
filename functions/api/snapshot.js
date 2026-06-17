@@ -26,7 +26,7 @@ export async function onRequest(context) {
   // prior close settled overnight), every load the rest of the day is instant.
   // No cron needed — your morning visit is the refresh trigger.
   const etDate = new Date().toLocaleDateString("en-CA", { timeZone: "America/New_York" }); // YYYY-MM-DD
-  const cacheKey = `pulse:snapshot:v12:${etDate}`; // v12: + savings rate (PSAVERT) + tokenomics (OpenRouter)
+  const cacheKey = `pulse:snapshot:v13:${etDate}`; // v13: + Shiller CAPE (multpl) for the regime valuation vote
 
   // ── 1. KV Cache check ─────────────────────────────────────────────────
   try {
@@ -60,9 +60,10 @@ export async function onRequest(context) {
   // own phase so they never compete with Phase 2 for the ~6-connection cap, and a slow/blocked
   // add-on can't starve the core feeds. Neither gates the write-through health check (both are
   // add-ons, not core). fetchEquities batches its symbol-calls ≤5 internally.
-  const [tokenomics, equities] = await Promise.allSettled([
+  const [tokenomics, equities, shiller] = await Promise.allSettled([
     withLastGood(env, "tokenomics", () => fetchTokenomics(env)),
     withLastGood(env, "equities", () => fetchEquities(env)),
+    withLastGood(env, "shiller", fetchShiller), // CAPE for the regime's valuation vote
   ]);
 
   // ── 3. Assemble live overlay ───────────────────────────────────────────
@@ -80,6 +81,7 @@ export async function onRequest(context) {
     ...(headline.status === "fulfilled" ? headline.value : {}),
     ...(tokenomics.status === "fulfilled" ? tokenomics.value : {}),
     ...(equities.status === "fulfilled" ? equities.value : {}),
+    ...(shiller.status === "fulfilled" ? shiller.value : {}),
   };
 
   const snapshot = { live, asOf: now, cached: false };
@@ -95,6 +97,7 @@ export async function onRequest(context) {
     headline: headline.status === "fulfilled" ? "ok" : String(headline.reason),
     tokenomics: tokenomics.status === "fulfilled" ? "ok" : String(tokenomics.reason),
     equities: equities.status === "fulfilled" ? `ok:${Object.keys(equities.value).length}` : String(equities.reason),
+    shiller: shiller.status === "fulfilled" ? "ok" : String(shiller.reason),
   };
   snapshot._diag = diag;
 
@@ -572,6 +575,31 @@ async function fetchEquities(env) {
   const mag = MAG10.filter((s) => quotes[s]).map((s) => ({ ticker: s, price: quotes[s].price, chgPct: quotes[s].chgPct }));
   if (mag.length) { out.mag10PricesJson = JSON.stringify(mag); out.mag10PricesJsonAsOf = asOf; }
   return out;
+}
+
+// ─── Shiller CAPE (valuation — the regime's 6th vote) ─────────────────────────
+// The regime verdict a friend acts on counts a valuation factor; it must be real, not mock.
+// No free API publishes CAPE, so we scrape multpl.com (the canonical public source). Monthly
+// cadence on the staleness rails, on withLastGood — a failed scrape serves last-good (with its
+// date, so isStale flags it) and ultimately falls back to mock → the tile's illustrative
+// treatment kicks in (no fabricated BUBBLE verdict). Fragile-but-free, honestly degrading.
+async function fetchShiller() {
+  const r = await fetch("https://www.multpl.com/shiller-pe", {
+    headers: {
+      "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
+      "Accept": "text/html,application/xhtml+xml",
+    },
+    signal: AbortSignal.timeout(9000),
+  });
+  if (!r.ok) throw new Error(`multpl ${r.status}`);
+  const html = await r.text();
+  // The page renders "Current Shiller PE Ratio: NN.NN" (also in #current). Match a CAPE-plausible number.
+  const m = html.match(/Current\s+Shiller\s+PE\s+Ratio[\s\S]{0,60}?(\d{2}\.\d{1,2})/i)
+         || html.match(/id=["']current["'][\s\S]{0,120}?(\d{2}\.\d{1,2})/i);
+  const v = m ? parseFloat(m[1]) : NaN;
+  if (!isFinite(v) || v < 5 || v > 80) throw new Error("multpl CAPE parse failed");
+  const asOf = new Date().toLocaleDateString("en-CA", { timeZone: "America/New_York" });
+  return { shillerPe: parseFloat(v.toFixed(2)), shillerPeAsOf: asOf };
 }
 
 // ─── AI token economics (the moat: price side of AI unit economics) ──────────
