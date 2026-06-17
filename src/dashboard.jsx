@@ -1077,7 +1077,7 @@ export default function Dashboard({ publicView = false } = {}) {
           <div style={{fontFamily:T.fontDisplay,fontSize:20,fontWeight:800,color:T.amber,letterSpacing:"-0.02em"}}>MacroDash</div>
           {/* FEAT-165: friendly sub-headline */}
           {/* FINDING-1: orientation line now visible on mobile (was hide-mobile) */}
-          <div style={{fontFamily:T.fontSans,fontSize:10,color:T.textMuted}}>Macro intelligence for investors</div>
+          <div style={{fontFamily:T.fontSans,fontSize:10,color:T.textMuted}}>macrodash</div>
           <div style={{display:"flex",alignItems:"center",gap:5,flexWrap:"wrap"}}>
             <div style={{width:6,height:6,borderRadius:"50%",background:T.amber,boxShadow:`0 0 5px ${T.amber}`}} className="pulse-anim"/>
             <span style={{fontFamily:T.fontMono,fontSize:9,color:T.textSecondary}}>{d.session} · {d.lastRefresh}</span>
