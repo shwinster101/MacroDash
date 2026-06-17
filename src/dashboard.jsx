@@ -966,6 +966,7 @@ const DEFAULT_ALERTS=[
 export default function Dashboard({ publicView = false } = {}) {
   const [alerts,setAlerts]=useState(DEFAULT_ALERTS);
   const [expandedHW,setExpandedHW]=useState(null);
+  const [showAllHW,setShowAllHW]=useState(false); // "+ N more" toggle for the headwinds list
   const [mag10open,setMag10open]=useState(true);
   const [watchlistOpen,setWatchlistOpen]=useState(true);
   const [copied,setCopied]=useState(false);
@@ -1350,7 +1351,7 @@ export default function Dashboard({ publicView = false } = {}) {
                 <SectionHeader>Top Headwinds</SectionHeader>
                 <span style={{fontFamily:T.fontMono,fontSize:8,color:T.textMuted,border:`1px dashed ${T.border}`,borderRadius:3,padding:"0 5px",whiteSpace:"nowrap"}}>MOCK · curated · reviewed {d.headwindsAsOf}</span>
               </div>
-              {d.headwinds.slice(0,3).map(hw=>{
+              {(showAllHW?d.headwinds:d.headwinds.slice(0,3)).map(hw=>{
                 const sevColor=hw.severity==="High"?T.red:hw.severity==="Med"?T.yellow:T.green;
                 const isExp=expandedHW===hw.id;
                 return(
@@ -1365,7 +1366,12 @@ export default function Dashboard({ publicView = false } = {}) {
                   </div>
                 );
               })}
-              <div style={{fontFamily:T.fontMono,fontSize:9,color:T.textMuted}}>+ {d.headwinds.length-3} more headwinds tracked</div>
+              {d.headwinds.length>3&&(
+                <button onClick={()=>setShowAllHW(s=>!s)}
+                  style={{background:"none",border:"none",padding:0,cursor:"pointer",fontFamily:T.fontMono,fontSize:9,color:T.textMuted,textAlign:"left"}}>
+                  {showAllHW?"▲ show fewer":`▼ + ${d.headwinds.length-3} more headwinds tracked`}
+                </button>
+              )}
             </div>
 
             {/* 5 Whys headline */}
