@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from "react";
+import { Fragment, useState, useEffect, useCallback } from "react";
 import { LineChart, Line, BarChart, Bar, Cell, AreaChart, Area, XAxis, YAxis, Tooltip, ResponsiveContainer, ReferenceLine } from "recharts";
 import { useMarketData } from "./useMarketData.js"; // FEAT-204 wiring
 import { computeFiveWhys } from "./fiveWhys.js"; // v2.5: rule-based 5 Whys ($0, derived from live data)
@@ -181,6 +181,27 @@ const IllustrativeChip = ({ label = "ILLUSTRATIVE · not live" }) => (
 );
 // True when a tile's data carries no live signal and must not render a verdict.
 const isIllustrative = (mode) => mode === "MOCK" || mode === "STALE";
+// FEAT-321 (v3.2 "cut to the live signal"): the ONE idiom for demoting stale/curated
+// content out of the default view. Visual style copied from the v3.1 IPO cut-to-edge
+// toggle; self-contained open state (nothing external reads it — unlike ipoOpen).
+// Collapsing is a RENDER concern only: the data stays complete in MOCK_DATA.
+const CollapsedGroup = ({ count, label, chip = true, defaultOpen = false, children }) => {
+  const [open, setOpen] = useState(defaultOpen);
+  return (
+    <div>
+      <button onClick={() => setOpen(o => !o)} aria-expanded={open}
+        style={{ width:"100%", display:"flex", alignItems:"center", gap:8, padding:"6px 0",
+                 background:"none", border:"none", cursor:"pointer", textAlign:"left" }}>
+        <span style={{ fontFamily:T.fontMono, fontSize:8, color:T.textMuted,
+                       letterSpacing:"0.12em", textTransform:"uppercase" }}>
+          {open ? "▾ hide" : `▸ +${count}`} {label}
+        </span>
+        {chip && <IllustrativeChip label="ILLUSTRATIVE" />}
+      </button>
+      {open && children}
+    </div>
+  );
+};
 
 // ─── DATA ─────────────────────────────────────────────────────────────────
 const MOCK_DATA = {
@@ -1027,6 +1048,10 @@ export default function Dashboard({ publicView = false } = {}) {
   // not STALE/MOCK). In mock/demo mode pass null so the demo still shows every signal.
   const FW_FIELDS=["vix","fearGreed","tenYear","wti","btc","creditSpread","marketHeadline"];
   const anyLive=mode==="LIVE"||mode==="CACHED";
+  // FEAT-322: live-first view only applies when the app is actually live. In mock/demo mode
+  // EVERYTHING is MOCK by design (mock IS the baseline — same convention as fresh:null in
+  // fiveWhys), so nothing provenance-dependent collapses there.
+  const demoted=(f)=>anyLive&&isIllustrative(modeOf(f));
   const freshSet=anyLive ? new Set(FW_FIELDS.filter(k=>{const m=modeOf(k);return m==="LIVE"||m==="CACHED";})) : null;
   const fw=computeFiveWhys({...d, session:etSession()}, regime, { stale:staleFactors, fresh:freshSet });
   const activeAlerts=alerts.filter(a=>a.active&&a.triggered).length;
@@ -1261,32 +1286,56 @@ export default function Dashboard({ publicView = false } = {}) {
               })}
             </div>
 
-            {/* A6-A8: Signal tiles — equity fear (VIX | F&G) + credit risk (DEC-31 retired P/C) */}
-            <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8}}>
-              {/* VIX */}
-              <div style={{background:T.surface,border:`1px solid ${T.border}`,borderRadius:5,padding:"10px 12px"}}>
-                <Label>VIX</Label>
-                <div style={{fontFamily:T.fontMono,fontSize:20,color:d.marketPulse.vix.current>25?T.red:d.marketPulse.vix.current>18?T.yellow:T.green,fontWeight:700}}>{d.marketPulse.vix.current}</div>
-                <div style={{fontFamily:T.fontMono,fontSize:9,color:pctColor(d.marketPulse.vix.weekChg,true)}}>{fmt.pct(d.marketPulse.vix.weekChg)} WoW</div>
-                <div style={{height:28,marginTop:6}}><ResponsiveContainer width="100%" height="100%"><LineChart data={d.marketPulse.vix.series.map((v,i)=>({v,i}))}><Line type="monotone" dataKey="v" stroke={T.amber} dot={false} strokeWidth={1.5}/></LineChart></ResponsiveContainer></div>
-                <SourceBox api="FRED" endpoint="VIXCLS" mode={modeOf('vix')} asOf={asOfOf('vix')}/>
-              </div>
-              {/* F&G */}
-              <FGGauge score={d.marketPulse.fearGreed.score} label={d.marketPulse.fearGreed.label} mode={modeOf('fearGreed')} asOf={asOfOf('fearGreed')}/>
-              {/* HY-IG Credit Spread — widening is a bearish leading indicator for equities */}
-              <div style={{background:T.surface,border:`1px solid ${T.border}`,borderRadius:5,padding:"10px 12px"}}>
-                <Label>HY–IG SPREAD</Label>
-                <div style={{fontFamily:T.fontMono,fontSize:20,color:d.macro.credit.spread>5?T.red:d.macro.credit.spread>3.5?T.yellow:T.textPrimary,fontWeight:700}}>
-                  {d.macro.credit.spread.toFixed(2)}<span style={{fontSize:11}}>pp</span>
-                </div>
-                <div style={{fontFamily:T.fontMono,fontSize:9,color:d.macro.credit.spreadD1>0?T.red:d.macro.credit.spreadD1<0?T.green:T.textMuted}}>
-                  {d.macro.credit.spreadD1>0?"▲":d.macro.credit.spreadD1<0?"▼":"→"} {Math.abs(d.macro.credit.spreadD1).toFixed(2)}pp {d.macro.credit.spreadD1>0?"widening":d.macro.credit.spreadD1<0?"tightening":"unchanged"}
-                </div>
-                <div style={{height:28,marginTop:6}}><ResponsiveContainer width="100%" height="100%"><LineChart data={d.macro.credit.series.map((v,i)=>({v,i}))}><Line type="monotone" dataKey="v" stroke={d.macro.credit.spreadD1>0?T.red:T.green} dot={false} strokeWidth={1.5}/></LineChart></ResponsiveContainer></div>
-                <div style={{fontFamily:T.fontMono,fontSize:8,color:T.textMuted,marginTop:3}}>HY {d.macro.credit.hy.toFixed(2)}% · IG {d.macro.credit.ig.toFixed(2)}%</div>
-                <SourceBox api="FRED" endpoint="ICE BofA OAS" mode={modeOf('creditSpread')} asOf={asOfOf('creditSpread')}/>
-              </div>
-            </div>
+            {/* A6-A8: Signal tiles, live-first (FEAT-322) — equity fear (VIX | F&G) + credit
+                risk. Descriptor array so stale tiles demote into a CollapsedGroup instead of
+                renting default-view space at full size (DEC-31 already retired P/C). */}
+            {(()=>{
+              const signalTiles=[
+                { f:"vix", render:()=>(
+                  <div style={{background:T.surface,border:`1px solid ${T.border}`,borderRadius:5,padding:"10px 12px"}}>
+                    <Label>VIX</Label>
+                    <div style={{fontFamily:T.fontMono,fontSize:20,color:d.marketPulse.vix.current>25?T.red:d.marketPulse.vix.current>18?T.yellow:T.green,fontWeight:700}}>{d.marketPulse.vix.current}</div>
+                    <div style={{fontFamily:T.fontMono,fontSize:9,color:pctColor(d.marketPulse.vix.weekChg,true)}}>{fmt.pct(d.marketPulse.vix.weekChg)} WoW</div>
+                    <div style={{height:28,marginTop:6}}><ResponsiveContainer width="100%" height="100%"><LineChart data={d.marketPulse.vix.series.map((v,i)=>({v,i}))}><Line type="monotone" dataKey="v" stroke={T.amber} dot={false} strokeWidth={1.5}/></LineChart></ResponsiveContainer></div>
+                    <SourceBox api="FRED" endpoint="VIXCLS" mode={modeOf('vix')} asOf={asOfOf('vix')}/>
+                  </div>
+                )},
+                { f:"fearGreed", render:()=>(
+                  <FGGauge score={d.marketPulse.fearGreed.score} label={d.marketPulse.fearGreed.label} mode={modeOf('fearGreed')} asOf={asOfOf('fearGreed')}/>
+                )},
+                // HY-IG Credit Spread — widening is a bearish leading indicator for equities
+                { f:"creditSpread", render:()=>(
+                  <div style={{background:T.surface,border:`1px solid ${T.border}`,borderRadius:5,padding:"10px 12px"}}>
+                    <Label>HY–IG SPREAD</Label>
+                    <div style={{fontFamily:T.fontMono,fontSize:20,color:d.macro.credit.spread>5?T.red:d.macro.credit.spread>3.5?T.yellow:T.textPrimary,fontWeight:700}}>
+                      {d.macro.credit.spread.toFixed(2)}<span style={{fontSize:11}}>pp</span>
+                    </div>
+                    <div style={{fontFamily:T.fontMono,fontSize:9,color:d.macro.credit.spreadD1>0?T.red:d.macro.credit.spreadD1<0?T.green:T.textMuted}}>
+                      {d.macro.credit.spreadD1>0?"▲":d.macro.credit.spreadD1<0?"▼":"→"} {Math.abs(d.macro.credit.spreadD1).toFixed(2)}pp {d.macro.credit.spreadD1>0?"widening":d.macro.credit.spreadD1<0?"tightening":"unchanged"}
+                    </div>
+                    <div style={{height:28,marginTop:6}}><ResponsiveContainer width="100%" height="100%"><LineChart data={d.macro.credit.series.map((v,i)=>({v,i}))}><Line type="monotone" dataKey="v" stroke={d.macro.credit.spreadD1>0?T.red:T.green} dot={false} strokeWidth={1.5}/></LineChart></ResponsiveContainer></div>
+                    <div style={{fontFamily:T.fontMono,fontSize:8,color:T.textMuted,marginTop:3}}>HY {d.macro.credit.hy.toFixed(2)}% · IG {d.macro.credit.ig.toFixed(2)}%</div>
+                    <SourceBox api="FRED" endpoint="ICE BofA OAS" mode={modeOf('creditSpread')} asOf={asOfOf('creditSpread')}/>
+                  </div>
+                )},
+              ];
+              const liveSig=signalTiles.filter(t=>!demoted(t.f));
+              const degSig=signalTiles.filter(t=>demoted(t.f));
+              return (
+                <>
+                  <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8}}>
+                    {liveSig.map(t=><Fragment key={t.f}>{t.render()}</Fragment>)}
+                  </div>
+                  {degSig.length>0&&(
+                    <CollapsedGroup count={degSig.length} label={`stale signal tile${degSig.length===1?"":"s"}`}>
+                      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8,marginTop:4}}>
+                        {degSig.map(t=><Fragment key={t.f}>{t.render()}</Fragment>)}
+                      </div>
+                    </CollapsedGroup>
+                  )}
+                </>
+              );
+            })()}
 
             {/* Cross-asset direction tiles */}
             <div>
