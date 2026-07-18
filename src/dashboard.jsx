@@ -3,6 +3,7 @@ import { LineChart, Line, BarChart, Bar, Cell, AreaChart, Area, XAxis, YAxis, To
 import { useMarketData } from "./useMarketData.js"; // FEAT-204 wiring
 import { computeFiveWhys } from "./fiveWhys.js"; // v2.5: rule-based 5 Whys ($0, derived from live data)
 import { isStale, cadenceOf, parseObsDate } from "./sources.js"; // FEAT-R3: per-tile, cadence-aware staleness
+import { computeMacroFlip, buildTtReadout, formatTtPaste } from "./ttReadout.js"; // FEAT-331/332: Macro Flip + TT paste
 
 // ─── DESIGN TOKENS v1.6 (FEAT-152 + FEAT-167) ─────────────────────────────
 // design-tokens.json canonical. Inline mirror — keep in sync.
@@ -856,6 +857,30 @@ const TokenomicsCard = ({ tok, mode = "MOCK", asOf }) => {
   );
 };
 
+// ─── FEAT-331 · MACRO FLIP BANNER (the TT circuit, surfaced on the page) ──────
+// The maintainer's most consequential circuit lived only in the TT docs. Now it renders
+// from live data: TRIPPED (SPY < 200d AND VIX > 25) = de-risk; ARMED (VIX > 22) = pre-stage.
+// Rendered ONLY when flip is non-null (live+fresh inputs) AND armed/tripped — never rents
+// space at rest, and never fabricates a circuit state on mock/stale data.
+const MacroFlipBanner=({flip})=>{
+  const tripped=flip.tripped===true;
+  const {vix,spy_price,spy_ma200}=flip.inputs;
+  const bg=tripped?DT["regime-off-bg"]:DT["regime-mix-bg"];
+  const fg=tripped?T.red:T.amber;
+  return(
+    <div style={{background:bg,borderBottom:`1px solid ${fg}55`,padding:"7px 20px",display:"flex",alignItems:"center",gap:10,flexWrap:"wrap"}}>
+      <span style={{fontFamily:T.fontMono,fontSize:11,fontWeight:700,color:fg,letterSpacing:"0.04em"}}>
+        {tripped?"⛔ MACRO FLIP TRIPPED":"⚠ MACRO FLIP ARMED"}
+      </span>
+      <span style={{fontFamily:T.fontMono,fontSize:9,color:T.textSecondary}}>
+        {tripped
+          ? `SPY $${spy_price} below 200-DMA $${spy_ma200} · VIX ${vix} > 25 — de-risk protocol`
+          : `VIX ${vix} > 22 · trips if SPY < 200-DMA${spy_ma200!=null?` ($${spy_ma200})`:""} with VIX > 25 — pre-stage GTC buy-to-close`}
+      </span>
+    </div>
+  );
+};
+
 // ─── FEAT-169 · REGIME VERDICT BAND (full-width, relocated under macro strip) ──
 // The friend-readable headline ("wen moon?") — first signal
 // seen on mobile (above the command grid) and prominent on desktop. Soft regime tint
@@ -1015,6 +1040,7 @@ export default function Dashboard({ publicView = false } = {}) {
   const [ipoOpen,setIpoOpen]=useState(false); // v3.1 cut-to-edge: IPO strip (all illustrative) collapsed by default
   const [watchlistOpen,setWatchlistOpen]=useState(false); // FEAT-322: default closed — curated content doesn't own the default view
   const [copied,setCopied]=useState(false);
+  const [ttCopied,setTtCopied]=useState(false); // FEAT-332: "Copy TT readout" button state
   // Re-render every 10 min so the live 5-Whys session frame advances (pre-open→midday→
   // post-close) in an already-open tab without a manual reload. Pure clock tick, $0.
   const [,setSessionTick]=useState(0);
@@ -1058,10 +1084,36 @@ export default function Dashboard({ publicView = false } = {}) {
   const fw=computeFiveWhys({...d, session:etSession()}, regime, { stale:staleFactors, fresh:freshSet });
   const activeAlerts=alerts.filter(a=>a.active&&a.triggered).length;
 
+  // FEAT-331: Macro Flip circuit. Render ONLY from live+fresh inputs (v3.1 honesty invariant —
+  // a fabricated circuit state is worse than none). Mock/demo/stale => flip stays null => no banner.
+  const flipLive=["spyPrice","spyMa200","vix"].every(k=>{const m=modeOf(k);return m==="LIVE"||m==="CACHED";});
+  const flip=flipLive?computeMacroFlip({vix:d.marketPulse.vix.current,spyPrice:d.marketPulse.spy.price,spyMa200:d.marketPulse.spy.ma200}):null;
+
   // FEAT-165: Share button
   const handleShare=()=>{
     navigator.clipboard?.writeText(window.location.href).catch(()=>{});
     setCopied(true); setTimeout(()=>setCopied(false),2000);
+  };
+
+  // FEAT-332: Copy TT readout — format the §1.2 paste block from LIVE/CACHED fields only, so a
+  // stale/mock field prints n/a rather than a fabricated number in an order-gating block.
+  const handleTtCopy=()=>{
+    const flat={};
+    // Project the live tiles back to flat snapshot field names + their AsOf dates.
+    const put=(k,v,asOf)=>{const m=modeOf(k);if(m==="LIVE"||m==="CACHED"){flat[k]=v;if(dataAsOf?.[k])flat[k+"AsOf"]=dataAsOf[k];if(asOf!==undefined)flat[k]=asOf;}};
+    put("spyPrice",d.marketPulse.spy.price); put("spyMa200",d.marketPulse.spy.ma200); put("spyChangePct",d.marketPulse.spy.changePct);
+    put("vix",d.marketPulse.vix.current); put("vixWeekChg",d.marketPulse.vix.weekChg);
+    put("fearGreed",d.marketPulse.fearGreed.score); put("fearGreedLabel",d.marketPulse.fearGreed.label);
+    put("qqqChangePct",d.marketPulse.qqq.changePct);
+    put("tenYear",d.crossAsset.treasury10y.current); put("tenYearM1",d.crossAsset.treasury10y.m1);
+    put("rateOddsHold",d.macro.fedFunds.odds.hold); put("rateOddsCut",d.macro.fedFunds.odds.cut); put("rateOddsHike",d.macro.fedFunds.odds.hike);
+    put("nextFomcDate",d.macro.fedFunds.nextFOMC); put("fomcDays",d.macro.fedFunds.daysUntil);
+    // qqqChangePct/tenYearM1/etc. share AsOf with their tile's primary field where applicable.
+    if(flat.qqqChangePct!==undefined&&dataAsOf?.qqqPrice)flat.qqqPriceAsOf=dataAsOf.qqqPrice;
+    if(flat.rateOddsHold!==undefined&&dataAsOf?.rateOddsHold)flat.rateOddsHoldAsOf=dataAsOf.rateOddsHold;
+    const block=formatTtPaste(buildTtReadout(flat,{}),{generatedEt:d.lastRefresh});
+    navigator.clipboard?.writeText(block).catch(()=>{});
+    setTtCopied(true); setTimeout(()=>setTtCopied(false),2000);
   };
 
   // Alert delete with undo (FEAT-166)
@@ -1150,8 +1202,18 @@ export default function Dashboard({ publicView = false } = {}) {
             style={{fontFamily:T.fontMono,fontSize:9,background:copied?"#1a3020":T.surfaceHigh,border:`1px solid ${copied?T.green:T.borderAccent}`,color:copied?T.green:T.textSecondary,padding:"5px 12px",borderRadius:4,cursor:"pointer",transition:"all 0.2s"}}>
             {copied?"✓ COPIED":"⤴ SHARE"}
           </button>
+          {/* FEAT-332: Copy TT readout — disabled unless live (an order-gating paste block must
+              not ship mock numbers; a disabled button can't be trimmed the way a warning header can). */}
+          <button onClick={handleTtCopy} disabled={!anyLive} aria-label="Copy TT regime readout"
+            title={anyLive?"Copy the TT regime readout paste block":"live data required"}
+            style={{fontFamily:T.fontMono,fontSize:9,background:ttCopied?"#1a3020":T.surfaceHigh,border:`1px solid ${ttCopied?T.green:T.borderAccent}`,color:ttCopied?T.green:T.textSecondary,padding:"5px 12px",borderRadius:4,cursor:anyLive?"pointer":"not-allowed",opacity:anyLive?1:0.4,transition:"all 0.2s"}}>
+            {ttCopied?"✓ TT COPIED":"⎘ TT"}
+          </button>
         </div>
       </div>
+
+      {/* FEAT-331: Macro Flip circuit — above the hero when armed/tripped (live data only) */}
+      {flip&&(flip.tripped||flip.armed)&&<MacroFlipBanner flip={flip}/>}
 
       {/* FEAT-169 + R4c: Regime Verdict band — HERO, now FIRST under the header (mobile-first) */}
       <RegimeBand d={d} stale={staleFactors}/>

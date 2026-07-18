@@ -194,17 +194,19 @@ export function formatTtPaste(readout, { generatedEt } = {}) {
   const r = readout || {};
   const na = (v, suffix = "") => (v == null ? "n/a" : `${v}${suffix}`);
   const pct = (v) => (v == null ? "n/a" : `${v > 0 ? "+" : ""}${v}%`);
+  // Value cell: pad to a column, but always leave ≥1 space so a long label can't touch the paren.
+  const cell = (s) => { s = String(s); return s.length >= 11 ? s + " " : s.padEnd(11); };
   const spy = r.spy || {}, vix = r.vix || {}, fg = r.fear_greed || {}, rs = r.qqq_spy_rs, ten = r.us10y || {}, fed = r.fed_odds, reg = r.regime || {}, flip = r.macro_flip || {};
   const lines = [];
   lines.push(`TT READOUT${generatedEt ? ` · ${generatedEt}` : ""} · macrodash.pages.dev`);
-  lines.push(`SPY vs 200d  ${pct(spy.pct_vs_200d).padEnd(11)}(${na(spy.price)} / ${na(spy.sma200)}${spy.as_of ? ` · as of ${spy.as_of}` : ""})`);
-  lines.push(`VIX          ${na(vix.value).padEnd(11)}(${vix.week_chg == null ? "wk n/a" : `wk ${vix.week_chg > 0 ? "+" : ""}${vix.week_chg}%`}${vix.as_of ? ` · as of ${vix.as_of}` : ""})`);
-  lines.push(`F&G          ${`${na(fg.value)}${fg.label ? ` ${fg.label}` : ""}`.padEnd(11)}(${fg.as_of ? `as of ${fg.as_of}` : "n/a"})`);
-  lines.push(`QQQ RS 1d    ${na(rs && rs.state).padEnd(11)}(${rs ? `QQQ ${rs.qqq_1d > 0 ? "+" : ""}${rs.qqq_1d}% vs SPY ${rs.spy_1d > 0 ? "+" : ""}${rs.spy_1d}%` : "n/a"})`);
-  lines.push(`10Y TREND    ${na(ten.trend).padEnd(11)}(${na(ten.yield, "%")}${ten.m1_delta == null ? "" : ` · m1 ${ten.m1_delta > 0 ? "+" : ""}${ten.m1_delta}`})`);
+  lines.push(`SPY vs 200d  ${cell(pct(spy.pct_vs_200d))}(${na(spy.price)} / ${na(spy.sma200)}${spy.as_of ? ` · as of ${spy.as_of}` : ""})`);
+  lines.push(`VIX          ${cell(na(vix.value))}(${vix.week_chg == null ? "wk n/a" : `wk ${vix.week_chg > 0 ? "+" : ""}${vix.week_chg}%`}${vix.as_of ? ` · as of ${vix.as_of}` : ""})`);
+  lines.push(`F&G          ${cell(`${na(fg.value)}${fg.label ? ` ${fg.label}` : ""}`)}(${fg.as_of ? `as of ${fg.as_of}` : "n/a"})`);
+  lines.push(`QQQ RS 1d    ${cell(na(rs && rs.state))}(${rs ? `QQQ ${rs.qqq_1d > 0 ? "+" : ""}${rs.qqq_1d}% vs SPY ${rs.spy_1d > 0 ? "+" : ""}${rs.spy_1d}%` : "n/a"})`);
+  lines.push(`10Y TREND    ${cell(na(ten.trend))}(${na(ten.yield, "%")}${ten.m1_delta == null ? "" : ` · m1 ${ten.m1_delta > 0 ? "+" : ""}${ten.m1_delta}`})`);
   lines.push(`FED NEXT     ${fed ? `hold ${fed.hold} / cut ${fed.cut} / hike ${fed.hike}` : "n/a"}${fed && fed.next_meeting ? `  (${fed.next_meeting}${fed.days_out != null ? ` · ${fed.days_out}d` : ""})` : ""}`);
   lines.push("-".repeat(56));
-  lines.push(`REGIME       ${na(reg.verdict).padEnd(11)}(${reg.bullish ?? 0} bull / ${reg.bearish ?? 0} bear · ${reg.available ?? 0} checks)`);
+  lines.push(`REGIME       ${cell(na(reg.verdict))}(${reg.bullish ?? 0} bull / ${reg.bearish ?? 0} bear · ${reg.available ?? 0} checks)`);
   const flipTxt = flip.tripped ? "TRIPPED — de-risk" : flip.armed ? "ARMED" : flip.armed === false ? "not armed" : "n/a";
   lines.push(`MACRO FLIP   ${flipTxt}`);
   lines.push("RS basis=1d only · Fed odds = next meeting (not by-Dec) · end-of-day data · not advice");
