@@ -170,7 +170,11 @@ function authorized(request, env) {
 async function refreshSnapshot(env) {
   try {
     const etDate = new Date().toLocaleDateString("en-CA", { timeZone: "America/New_York" }); // YYYY-MM-DD
-    await env.PULSE_CACHE.delete(`pulse:snapshot:v5:${etDate}`);
+    // SYNC HAZARD: this key version MUST match the cacheKey in functions/api/snapshot.js (and
+    // functions/readout.json.js). Separate deploys, no shared module — this literal drifted once
+    // (deleted v5 while snapshot wrote v15 → the 10am force-refresh was inert). Fixed v3.3.0.
+    // Grep "pulse:snapshot:v" across worker/ + functions/ on every bump.
+    await env.PULSE_CACHE.delete(`pulse:snapshot:v15:${etDate}`);
     await new Promise((r) => setTimeout(r, 3000)); // let the delete propagate before re-fetch
     await fetch(SNAPSHOT_URL, { headers: { "user-agent": "macrodash-snapshot-refresher" } });
   } catch {

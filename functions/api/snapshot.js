@@ -26,6 +26,8 @@ export async function onRequest(context) {
   // prior close settled overnight), every load the rest of the day is instant.
   // No cron needed — your morning visit is the refresh trigger.
   const etDate = new Date().toLocaleDateString("en-CA", { timeZone: "America/New_York" }); // YYYY-MM-DD
+  // SYNC HAZARD: this key version is duplicated in worker/cron.js (refreshSnapshot) and
+  // functions/readout.json.js — no shared module spans them. Grep "pulse:snapshot:v" on every bump.
   const cacheKey = `pulse:snapshot:v15:${etDate}`; // v15: real 5-session VIX WoW (was mislabeled 1-day)
 
   // ── 1. KV Cache check ─────────────────────────────────────────────────
