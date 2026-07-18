@@ -249,7 +249,11 @@ let BOOK=[];
 let META={version:null,asOf:null};
 
 /* ═══════════ SERVER SYNC (FEAT-TT) ═══════════ */
-function authExpired(){document.getElementById("authBanner").style.display="block";}
+function authExpired(msg){
+  const el=document.getElementById("authBanner");
+  el.style.display="block";
+  if(msg)el.innerHTML=msg+' — <a href="javascript:location.reload()">reload</a>';
+}
 async function api(method,body){
   const res=await fetch("/api/tt",{
     method,
@@ -257,10 +261,21 @@ async function api(method,body){
     body:body?JSON.stringify(body):undefined,
   });
   const ct=res.headers.get("content-type")||"";
-  if(res.status===401||res.status===403||!ct.includes("application/json")){
-    authExpired();throw new Error("session expired");
+  if(!ct.includes("application/json")){
+    // Access bounced the fetch to its login page (HTML) — the browser can't follow that
+    // redirect from a background request, so surface it rather than hanging.
+    authExpired("Access redirected this request (HTTP "+res.status+") — reload to re-authenticate.");
+    throw new Error("not authenticated");
   }
-  const data=await res.json();
+  const data=await res.json().catch(()=>({}));
+  if(res.status===403){
+    authExpired("403 from /api/tt — the JWT check failed. ACCESS_AUD probably doesn't match this Access app's Audience tag (re-copy it from the surviving app's Overview).");
+    throw new Error(data.error||"unauthorized");
+  }
+  if(res.status===503){
+    authExpired("503 — server config missing: "+(data.error||"ACCESS_AUD / ACCESS_TEAM_DOMAIN or the KV binding is not set on the Pages project."));
+    throw new Error(data.error||"not configured");
+  }
   if(!res.ok)throw new Error(data.error||("HTTP "+res.status));
   return data;
 }
@@ -283,7 +298,10 @@ async function loadBook(){
     applyServer(data);
     if(data.empty){openImport();render();}
     else render();
-  }catch(e){toast("Load failed: "+e.message);render();}
+  }catch(e){
+    document.getElementById("bookStamp").textContent="UNAVAILABLE — see banner";
+    toast("Load failed: "+e.message);render();
+  }
 }
 async function persist(){
   try{
