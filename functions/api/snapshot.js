@@ -49,10 +49,9 @@ export async function onRequest(context) {
   // FEAT-R8: the two scrapers are wrapped in withLastGood — a failed fetch serves the
   // last good scrape from KV (with its real date) instead of reverting to mock. The
   // stale date then trips the existing STALE badge, so an outage degrades honestly.
-  const [spy, fearGreed, putCall, rateOdds, headline] = await Promise.allSettled([
+  const [spy, fearGreed, rateOdds, headline] = await Promise.allSettled([
     fetchSpy(env.FRED_KEY),   // SPY via FRED SP500 — Stooq blocks Cloudflare edge IPs
     withLastGood(env, "feargreed", fetchFearGreed),
-    withLastGood(env, "putcall", fetchPutCall),
     withLastGood(env, "rateodds", fetchRateOdds),
     withLastGood(env, "headline", fetchHeadline), // FEAT-NEWS: top market headline (non-FRED)
   ]);
@@ -76,7 +75,6 @@ export async function onRequest(context) {
     ...(fred.status === "fulfilled" ? fred.value : {}),
     ...(spy.status === "fulfilled" ? spy.value : {}),
     ...(fearGreed.status === "fulfilled" ? fearGreed.value : {}),
-    ...(putCall.status === "fulfilled" ? putCall.value : {}),
     ...(rateOdds.status === "fulfilled" ? rateOdds.value : {}),
     ...(headline.status === "fulfilled" ? headline.value : {}),
     ...(tokenomics.status === "fulfilled" ? tokenomics.value : {}),
@@ -92,7 +90,6 @@ export async function onRequest(context) {
     fred: fred.status === "fulfilled" ? `ok:${Object.keys(fred.value).length}` : String(fred.reason),
     spy: spy.status === "fulfilled" ? "ok" : String(spy.reason),
     fearGreed: fearGreed.status === "fulfilled" ? "ok" : String(fearGreed.reason),
-    putCall: putCall.status === "fulfilled" ? "ok" : String(putCall.reason),
     rateOdds: rateOdds.status === "fulfilled" ? "ok" : String(rateOdds.reason),
     headline: headline.status === "fulfilled" ? "ok" : String(headline.reason),
     tokenomics: tokenomics.status === "fulfilled" ? "ok" : String(tokenomics.reason),
@@ -400,37 +397,8 @@ async function fetchFearGreed() {
   return { fearGreed: score, fearGreedLabel: fgLabel(score), fearGreedAsOf: day };
 }
 
-// ─── CBOE Put/Call scraper ────────────────────────────────────────────────
-// FIX (2026-06-04): old volatility-get-data JSON endpoint 404s — CBOE rotated
-// it. The stable source is the static daily CSV on cdn.cboe.com, which CBOE
-// has published at the same path for years and does not rate-limit edge IPs.
-// Format: header rows, then DATE,CALL,PUT,TOTAL,P/C Ratio — newest row last.
-async function fetchPutCall() {
-  const url = "https://cdn.cboe.com/resources/options/volume_and_call_put_ratios/equitypc.csv";
-  const r = await fetch(url, {
-    headers: { "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36" },
-    signal: AbortSignal.timeout(9000),
-  });
-  if (!r.ok) throw new Error(`CBOE P/C ${r.status}`);
-  const text = await r.text();
-  // Parse: take the last non-empty line with a numeric P/C ratio in column 5.
-  const lines = text.trim().split(/\r?\n/);
-  for (let i = lines.length - 1; i >= 0; i--) {
-    const cols = lines[i].split(",");
-    if (cols.length < 5) continue;
-    const ratio = parseFloat(cols[4]);
-    // Validate: a real equity P/C ratio sits roughly in 0.3–2.0.
-    if (!isNaN(ratio) && ratio > 0.1 && ratio < 5) {
-      // Normalize the CBOE M/D/YYYY date → ISO YYYY-MM-DD so it matches every other
-      // asOf field and the dashboard's isStale()/asOfOf() (which expect ISO). Without
-      // this, a retired feed's date silently fails the STALE check.
-      const md = String(cols[0]).trim().match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
-      const asOf = md ? `${md[3]}-${md[1].padStart(2,"0")}-${md[2].padStart(2,"0")}` : cols[0].trim();
-      return { putCall: ratio, putCallAsOf: asOf };
-    }
-  }
-  throw new Error("P/C parse failed");
-}
+// DEC-31 (v3.2): the CBOE P/C scraper was deleted — the CSV froze at Oct 2019 (feed
+// retired), so it could only ever serve a relic the dashboard immediately STALE-excluded.
 
 // ─── Top market headline (FEAT-NEWS) ──────────────────────────────────────────
 // Breaks the FRED-only stance to answer "did a headline move direction today?". Pulls the

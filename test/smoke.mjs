@@ -153,6 +153,8 @@ ok("5 Whys: default (no stale) keeps all 5 factors (DEC-31: P/C retired)", fw.he
 ok("DEC-31: putCall absent from SOURCES", !("putCall" in SOURCES));
 ok("DEC-31: MOCK_DATA no longer carries marketPulse.putCall", MOCK_DATA.marketPulse.putCall === undefined);
 ok("DEC-31: dashboard.jsx has zero putCall references", !dashSrc.includes("putCall"));
+const snapSrc = readFileSync(new URL("../functions/api/snapshot.js", import.meta.url), "utf8");
+ok("DEC-31: fetchPutCall scraper deleted from snapshot.js", !snapSrc.includes("putCall") && !snapSrc.includes("fetchPutCall"));
 ok("5 Whys: WHY #5 reads full-signal at 5/5", computeFiveWhys(MOCK_DATA, fwRegime).whys[4].includes("full-signal"));
 // FEAT-NEWS WHY #2: only LIVE+fresh fields appear; stale/mock are named as excluded
 const fwFresh = computeFiveWhys(MOCK_DATA, fwRegime, { fresh: new Set(["fearGreed"]) });
