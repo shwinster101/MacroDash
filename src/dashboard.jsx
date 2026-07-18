@@ -1008,10 +1008,9 @@ const DEFAULT_ALERTS=[
 export default function Dashboard({ publicView = false } = {}) {
   const [alerts,setAlerts]=useState(DEFAULT_ALERTS);
   const [expandedHW,setExpandedHW]=useState(null);
-  const [showAllHW,setShowAllHW]=useState(false); // "+ N more" toggle for the headwinds list
-  const [mag10open,setMag10open]=useState(true);
+  const [mag10open,setMag10open]=useState(false); // FEAT-322: default closed — curated content doesn't own the default view
   const [ipoOpen,setIpoOpen]=useState(false); // v3.1 cut-to-edge: IPO strip (all illustrative) collapsed by default
-  const [watchlistOpen,setWatchlistOpen]=useState(true);
+  const [watchlistOpen,setWatchlistOpen]=useState(false); // FEAT-322: default closed — curated content doesn't own the default view
   const [copied,setCopied]=useState(false);
   // Re-render every 10 min so the live 5-Whys session frame advances (pre-open→midday→
   // post-close) in an already-open tab without a manual reload. Pure clock tick, $0.
@@ -1442,33 +1441,33 @@ export default function Dashboard({ publicView = false } = {}) {
               </div>
             </div>
 
-            {/* Top headwinds (compact) — curated thesis register, honestly dated */}
+            {/* Top headwinds — curated thesis register, honestly dated. FEAT-322: the list
+                collapses to 0 visible (the largest curated block must not own the default
+                scroll); WHY #4 still reads d.headwinds regardless of render state, so the
+                5-Whys narrative loses nothing. One disclosure idiom only — the old "+N more"
+                sub-toggle is gone; open shows all. */}
             <div style={{background:T.surface,backgroundImage:ILLUS_HATCH,border:`1px solid ${T.border}`,borderRadius:6,padding:"14px 16px"}}>
               <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",flexWrap:"wrap",gap:6}}>
                 <SectionHeader>Top Headwinds</SectionHeader>
                 <IllustrativeChip label={`ILLUSTRATIVE · reviewed ${d.headwindsAsOf}`}/>
               </div>
-              {(showAllHW?d.headwinds:d.headwinds.slice(0,3)).map(hw=>{
-                const sevColor=hw.severity==="High"?T.red:hw.severity==="Med"?T.yellow:T.green;
-                const isExp=expandedHW===hw.id;
-                return(
-                  <div key={hw.id} style={{borderBottom:`1px solid ${T.border}`,paddingBottom:8,marginBottom:8,cursor:"pointer"}} onClick={()=>setExpandedHW(isExp?null:hw.id)}>
-                    <div style={{display:"flex",gap:6,alignItems:"center",marginBottom:2}}>
-                      <Badge label={hw.severity} color={sevColor} small/>
-                      <Badge label={hw.trend} color={hw.trend==="worsening"?T.red:hw.trend==="improving"?T.green:T.yellow} small/>
-                      <div style={{fontFamily:T.fontSans,fontSize:11,color:T.textPrimary,flex:1}}>{hw.name}</div>
-                      <span style={{color:T.textMuted,fontSize:10}}>{isExp?"▲":"▼"}</span>
+              <CollapsedGroup count={d.headwinds.length} label="curated headwinds" chip={false}>
+                {d.headwinds.map(hw=>{
+                  const sevColor=hw.severity==="High"?T.red:hw.severity==="Med"?T.yellow:T.green;
+                  const isExp=expandedHW===hw.id;
+                  return(
+                    <div key={hw.id} style={{borderBottom:`1px solid ${T.border}`,paddingBottom:8,marginBottom:8,cursor:"pointer"}} onClick={()=>setExpandedHW(isExp?null:hw.id)}>
+                      <div style={{display:"flex",gap:6,alignItems:"center",marginBottom:2}}>
+                        <Badge label={hw.severity} color={sevColor} small/>
+                        <Badge label={hw.trend} color={hw.trend==="worsening"?T.red:hw.trend==="improving"?T.green:T.yellow} small/>
+                        <div style={{fontFamily:T.fontSans,fontSize:11,color:T.textPrimary,flex:1}}>{hw.name}</div>
+                        <span style={{color:T.textMuted,fontSize:10}}>{isExp?"▲":"▼"}</span>
+                      </div>
+                      {isExp&&<div style={{fontFamily:T.fontMono,fontSize:9,color:T.textSecondary,marginTop:4,lineHeight:1.6}}>{hw.claim}</div>}
                     </div>
-                    {isExp&&<div style={{fontFamily:T.fontMono,fontSize:9,color:T.textSecondary,marginTop:4,lineHeight:1.6}}>{hw.claim}</div>}
-                  </div>
-                );
-              })}
-              {d.headwinds.length>3&&(
-                <button onClick={()=>setShowAllHW(s=>!s)}
-                  style={{background:"none",border:"none",padding:0,cursor:"pointer",fontFamily:T.fontMono,fontSize:9,color:T.textMuted,textAlign:"left"}}>
-                  {showAllHW?"▲ show fewer":`▼ + ${d.headwinds.length-3} more headwinds tracked`}
-                </button>
-              )}
+                  );
+                })}
+              </CollapsedGroup>
             </div>
 
             {/* 5 Whys headline */}
@@ -1497,8 +1496,12 @@ export default function Dashboard({ publicView = false } = {}) {
           <span style={{fontFamily:T.fontMono,fontSize:8,color:T.textMuted,whiteSpace:"nowrap"}}>cost ↔ price · the margin-compression hinge</span>
           <div style={{height:1,flex:1,background:T.border}}/>
         </div>
-        <GpuPricingCard />
+        {/* FEAT-322: the live price side (OpenRouter) leads; the curated GPU cost side is
+            one tap away — always-curated content doesn't own the default view. */}
         <TokenomicsCard tok={d.tokenomics} mode={modeOf('tokenBlendedMtok')} asOf={asOfOf('tokenBlendedMtok')}/>
+        <CollapsedGroup count={1} label="curated: GPU $/hr cost side">
+          <GpuPricingCard />
+        </CollapsedGroup>
 
         {/* ── MAG 10 (full-width, collapsible) ── */}
         <div style={{marginTop:16,background:T.surface,border:`1px solid ${T.border}`,borderRadius:6,overflow:"hidden"}}>
