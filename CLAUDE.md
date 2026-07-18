@@ -5,22 +5,30 @@ answers *"is it safe to be in the market?"* from live macro + market + sentiment
 data. Single-page React app on Cloudflare Pages, with live data assembled at the
 edge by Pages Functions and cached in KV.
 
-**Status: v3.1.0 "Friends-Cockpit Trust Hardening" — live FRED + sentiment + Kalshi +
-RSS-headline + AI token economics + equity quotes + Shiller CAPE are flowing.** The dashboard
-fetches `/api/snapshot` and overlays the mapped `SOURCES` fields (equity + rates + inflation YoY +
-sentiment + FOMC odds + top market headline + **personal saving rate** + **LLM token $/Mtok** +
-**QQQ/Mag-10 prices** + **Shiller CAPE**) on top of the mock baseline. **v3.0 differentiator =
-"AI Unit Economics":** the curated GPU $/hr cost side is paired with the live LLM token-price
-demand side (OpenRouter) — the two halves of the AI margin-compression hinge.
+**Status: v3.2.0 "Cut to the Live Signal" — live FRED (incl. HY-IG credit spreads) + sentiment +
+Kalshi + RSS-headline + AI token economics + equity quotes + Shiller CAPE are flowing.** The
+dashboard fetches `/api/snapshot` and overlays the mapped `SOURCES` fields (equity + rates +
+inflation YoY + sentiment + FOMC odds + top market headline + **personal saving rate** +
+**HY-IG credit spread** + **LLM token $/Mtok** + **QQQ/Mag-10 prices** + **Shiller CAPE**) on top
+of the mock baseline. **v3.0 differentiator = "AI Unit Economics":** the curated GPU $/hr cost
+side is paired with the live LLM token-price demand side (OpenRouter) — the two halves of the AI
+margin-compression hinge.
 **v3.1 safety invariant: no number a friend could act on may read as live unless it is.**
 Mock/no-feed tiles get a diagonal-hatch **ILLUSTRATIVE** treatment, and any directional VERDICT
 (BULLISH/BEARISH/BUBBLE) is **suppressed on mock/stale data** (`isIllustrative()`/`IllustrativeChip`/
 `ILLUS_HATCH` in `dashboard.jsx`) — a fabricated directional call is worse than a fabricated number.
 Each live tile carries per-field provenance (LIVE/CACHED/STALE/MOCK) and an observation date,
 with **cadence-aware staleness** (daily/weekly/monthly) and a top-level **Signal Quality**
-rollup. The regime vote + 5 Whys **exclude stale/dead inputs** (e.g. the retired 2019 CBOE
-Put/Call, whose tile now renders `n/a` rather than the relic). `_diag` is gated behind `?debug=1`.
-**`package.json` `version` is now the single source of truth** — Vite injects it as
+rollup. The regime vote + 5 Whys **exclude stale/dead inputs**. `_diag` is gated behind `?debug=1`.
+**v3.2 default view = live-first (honesty-by-omission):** stale and curated/illustrative content
+is **demoted behind per-section `CollapsedGroup` "+N stale/curated" expanders** (`FEAT-321/322` in
+`dashboard.jsx`) instead of renting default-view space at full size — Gold (no `SOURCES` key,
+permanently curated), the GPU $/hr card, headwinds, IPO strip, Mag-10, and watchlist all default
+closed; Signal Quality stays always-visible as the tell. The `demoted()` helper gates on `anyLive`
+so pure mock/demo mode (where everything is MOCK by design) never collapses. **CBOE Put/Call is
+fully retired** (`DEC-31`: tile, 5-factor regime vote, `SOURCES`, scraper all removed — the free
+feed died in 2019; the footer keeps the history note).
+**`package.json` `version` is the single source of truth** — Vite injects it as
 `__APP_VERSION__` and the footer renders it (the old "footer string is canonical /
 package.json is stale" drift is resolved; bump `package.json` on every release).
 
@@ -45,23 +53,26 @@ package.json is stale" drift is resolved; bump `package.json` on every release).
 index.html              Vite entry; mounts /src/main.jsx; PWA meta + manifest
 vite.config.js          Vite + react plugin (minimal)
 manifest.webmanifest    Add-to-Home-Screen
-package.json            deps + dev/build/preview scripts (version field is STALE)
+package.json            deps + dev/build/preview scripts + version (SOURCE OF TRUTH)
 
 src/
   main.jsx              React root (StrictMode) → <App/>
   App.jsx               Thin wrapper. Computes publicView from ?view=public or
                         VITE_PUBLIC_VIEW, passes it to <Dashboard/>. Does NOT touch
                         dashboard.jsx (T2 scope rule).
-  dashboard.jsx         THE UI (~880 lines). MOCK_DATA, design tokens, every
+  dashboard.jsx         THE UI (~1.6K lines). MOCK_DATA, design tokens, every
                         component, the rule-based regime engine, footer version.
   useMarketData.js      The ONE data-wiring point (hook). Reads VITE_DATA_MODE.
-  sources.js            Pure merge module: SOURCES field map + mergeLiveOverMock().
-                        No React → unit-testable in Node.
+  sources.js            Pure merge module: SOURCES field map + mergeLiveOverMock()
+                        + isStale/cadenceOf/parseObsDate. No React → Node-testable.
+  fiveWhys.js           Pure rule-based 5-Whys generator (no React, no LLM, $0);
+                        smoke-tested.
 
 functions/              Cloudflare Pages Functions (run at the edge, same origin)
   _middleware.js        Security headers; keeps /api same-origin (no CORS).
-  api/snapshot.js       ACTIVE live source (v2.0.2). Assembles FRED + FRED-SP500 +
-                        CNN F&G + CBOE P/C. Holds env.FRED_KEY. Per-ET-day KV cache.
+  api/snapshot.js       ACTIVE live source. Assembles FRED + FRED-SP500 + CNN F&G +
+                        Kalshi + RSS + OpenRouter + Finnhub + multpl. Holds
+                        env.FRED_KEY. Per-ET-day KV cache.
   api/fred.js           Legacy/fallback. Reads ONLY the cron-written KV key
                         (pulse:macro:latest); has NO key, makes NO upstream calls.
 
@@ -71,8 +82,9 @@ worker/                 SEPARATE Cloudflare Worker (not part of Pages)
   wrangler.toml         Worker config: PULSE_CACHE binding + cron triggers (UTC).
 
 test/
-  smoke.mjs             No-network smoke test: 28 assertions over mergeLiveOverMock
-                        + SOURCES-path resolution against the real MOCK_DATA.
+  smoke.mjs             No-network smoke test: 81 assertions over mergeLiveOverMock
+                        + SOURCES-path resolution against the real MOCK_DATA + the
+                        5-Whys engine + DEC-31 source-absence guards.
 ```
 
 ## Data flow (how mock becomes live)
@@ -107,7 +119,11 @@ takes the latest non-`"."` observation, and derives 1-day deltas + sparklines:
 `DGS10` (10Y) · `FEDFUNDS` · `CPIAUCSL` (CPI headline) · `CPILFESL` (CPI core) ·
 `PCEPI` (PCE headline) · `PCEPILFE` (PCE core) · `UNRATE` · `CIVPART` (LFPR) ·
 `PSAVERT` (personal saving rate, v3.0) · `MORTGAGE30US` · `DCOILWTICO` (WTI) · `VIXCLS` (VIX) ·
-`CBBTCUSD` (BTC).
+`CBBTCUSD` (BTC) · `BAMLH0A0HYM2` (HY OAS) + `BAMLC0A0CM` (IG OAS) → the derived **HY-IG credit
+spread** (widening = bearish leading indicator).
+
+(Gold has **no live source** — it's a curated `Manual` series with no `SOURCES` key, so its tile
+is permanently ILLUSTRATIVE and demoted behind the Cross-Asset expander.)
 
 The four **inflation** series (CPI/PCE × headline/core) are price *indexes*; the dashboard
 wants **YoY %**, so for those `fetchFred` pulls 20 monthly points and derives
@@ -117,14 +133,14 @@ wants **YoY %**, so for those `fetchFred` pulls 20 monthly points and derives
 Equity prices come from **FRED's `SP500` index, not a stock API** — Stooq blocks
 Cloudflare edge IPs, so SPY is sourced from the same proven FRED path. **`SPY ≈ SP500
 / 10`** (the ETF was designed at ~1/10 of the index). From a 220-point pull it computes
-`spyPrice`, `spyChangePct`, `spyYtd` (oldest-in-window anchor — exact Jan-1 is a v2.1
-TODO), `spyMa100`, `spyMa200`, and a 20-pt sparkline.
+`spyPrice`, `spyChangePct`, `spyYtd` (anchored to the most recent prior-year close — the exact
+Jan-anchor shipped; see `snapshot.js` ~318–328), `spyMa100`, `spyMa200`, and a 20-pt sparkline.
 
 ### Scrapers (sentiment, also in snapshot.js)
 - **CNN Fear & Greed** (`fetchFearGreed`): `production.dataviz.cnn.io/.../graphdata/<YYYY-MM-DD>`.
   Needs a full desktop Chrome UA + Accept + Origin/Referer = `edition.cnn.com`, else 418.
-- **CBOE Put/Call** (`fetchPutCall`): static daily CSV at `cdn.cboe.com/.../equitypc.csv`
-  (the old JSON endpoint 404s). Takes the last row with a P/C ratio in 0.1–5.
+- **CBOE Put/Call: RETIRED (DEC-31, v3.2).** The free feed died in 2019; the scraper, tile,
+  SOURCES entry, and regime vote (now 5-factor) are all removed. The footer keeps the note.
 - **Kalshi FOMC rate odds** (`fetchRateOdds`, FEAT-R9, v2.6.3): public market-data REST
   API (`api.elections.kalshi.com`, no auth/key). Takes the nearest open `KXFEDDECISION`
   event and aggregates its mutually-exclusive buckets (H0=hold · C25/C26=cut ·
@@ -148,11 +164,11 @@ TODO), `spyMa100`, `spyMa200`, and a 20-pt sparkline.
   passthrough merged onto the `mag10` array by ticker at render. On the `withLastGood` rails.
 
 - **Shiller CAPE** (`fetchShiller`, v3.1): scrapes multpl.com for the current Shiller PE — the
-  regime's 6th (valuation) vote, which used to be mock-and-always-voting. Now live (monthly
+  regime's valuation vote, which used to be mock-and-always-voting. Now live (monthly
   cadence) on the `withLastGood` rails; gated by `use("valuation")` in `computeRegime` so it
   drops from the vote when STALE. On mock/stale it shows the ILLUSTRATIVE treatment (no BUBBLE).
 
-> **Scraper resilience (FEAT-R8, v2.6.2):** the scrapers (F&G, P/C, Kalshi, headline,
+> **Scraper resilience (FEAT-R8, v2.6.2):** the scrapers (F&G, Kalshi, headline,
 > tokenomics, equities, shiller) run
 > through `withLastGood(env, key, fn)` — a success writes `pulse:lastgood:<key>` to KV
 > (7-day TTL); a failure serves that last-good value (with its real date, so `isStale`
@@ -220,7 +236,7 @@ npm run dev        # Vite dev server (mock unless VITE_DATA_MODE=live in .env)
 npm run build      # → dist/  (what Pages runs)
 npm run preview    # serve the built dist/
 
-node test/smoke.mjs   # 28-assertion no-network smoke test (needs Node ≥17)
+node test/smoke.mjs   # 81-assertion no-network smoke test (needs Node ≥17)
 
 # Cron Worker (separate deploy):
 cd worker && npx wrangler deploy

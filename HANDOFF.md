@@ -1,4 +1,53 @@
-# MacroDash — Session Handoff · 2026-06-07
+# MacroDash — Session Handoff · 2026-07-18 (v3.2.0)
+
+**Live:** https://macrodash.pages.dev · footer **v3.2.0** on next deploy · smoke **81/81**.
+Brain: `CLAUDE.md` (reconciled this session — it had drifted at v3.1.0 wording; `AGENTS.md` is
+now a thin pointer to it, no longer a dual-maintained copy).
+
+## What shipped this session (v3.2.0 "Cut to the Live Signal")
+
+Repo audit first (prod ↔ repo confirmed in sync at v3.1.2; docs were not — see below), then the
+declutter sprint the maintainer asked for ("too much on the one page, especially the stale data"):
+
+- **DEC-31 — CBOE Put/Call fully retired.** The free feed died in 2019; since v3.1 the field was
+  stale-excluded daily while still renting a full card ("n/a — retired '19"), a strip slot, and
+  every denominator. Removed end-to-end: tile, strip entry, regime vote (**6→5 factors, ≥3 = strict
+  majority; live verdicts unchanged in practice**), Signal Quality (14 tracked), 5-Whys lists,
+  `SOURCES`, `fetchPutCall`. Footer keeps the history note. No KV cache bump needed (merge iterates
+  `Object.keys(SOURCES)`; `pulse:lastgood:putcall` ages out on TTL).
+- **FEAT-321/322 — live-first default view (honesty-by-annotation → honesty-by-omission).**
+  New `CollapsedGroup` expander (the ONE demotion idiom, styled after the v3.1 IPO toggle) +
+  `demoted()` = `anyLive && isIllustrative(modeOf(f))`. Live signals own the default scroll;
+  stale tiles and curated content (Gold — which has **no SOURCES key**, permanently Manual —
+  GPU $/hr, headwinds, Mag-10, watchlist) collapse behind "+N stale/curated" toggles.
+  **The `anyLive` guard is load-bearing:** pure mock/demo mode collapses nothing (mock IS the
+  baseline). v3.1 safety invariant untouched — collapsing is a render concern only.
+- **fix — illustrative chip no longer forces 390px horizontal scroll** (pre-existing v3.1 nit:
+  nowrap chip in a ~110px DirTile pushed the page 28px wide; verified 0px in Chromium).
+
+**Verified:** smoke 81/81 after every commit · `npm run build` clean · Chromium render at 390px +
+1280px — no page errors, no x-scroll, expanders open/close, mock mode collapses nothing
+provenance-dependent, footer reads v3.2.0 + retirement note.
+
+## Doc reconciliation (the audit's top finding)
+
+`README.md` was v1.6.1-era, `AGENTS.md` frozen at v2.6.4 (missing tokenomics/Finnhub/Shiller/
+HY-IG/fiveWhys.js), and this file listed **R7 (exact Jan-1 YTD)** and **`_diag` gating** as open
+P0s — both had already shipped (`snapshot.js` ~318–328 anchors YTD to the prior-year close;
+`_diag` is `?debug=1`-gated). All reconciled; `REQUIREMENTS_v2.6.md` carries a SUPERSEDED banner.
+
+## Verify on next session / deploy
+
+- Prod (after Pages redeploys `main` with these changes): footer v3.2.0; strip = 7 entries;
+  RegimeBand chips `10Y VIX F&G CPI VAL`, "N/5 bullish"; Signal Quality "of 14 tracked";
+  STALE tiles migrate into the signal-tile expander; `?debug=1` `_diag` no longer lists putCall.
+- Still open (deferred deliberately): remove dead `/api/fred` + legacy cron path (own PR);
+  pre-push smoke hook; `CollapsedGroup` touch targets are thin (`padding:"6px 0"`, same as the
+  v3.1 IPO toggle precedent) — revisit if 44px targets become a hard requirement.
+
+---
+
+# Previous handoff · 2026-06-07 (v2.6.4)
 
 **Live:** https://macrodash.pages.dev · footer **v2.6.4** · smoke **51/51** · cron worker **deployed**.
 Brain: `CLAUDE.md`. Plans: `ROADMAP_v2.5_v3.0.md`, `REQUIREMENTS_v2.6.md`. Worker deploy: `worker/SETUP.md`.
@@ -101,5 +150,3 @@ near-record CAPE); CPI/PCE were mock; rate-odds didn't exist; scrapers reverted 
 - **Verify against the live API from the dev box before shipping a scraper** (Kalshi event/bucket shape,
   aggregation sum) — but remember the edge environment can still differ (IP blocks); the graceful-degradation
   invariant is what makes that residual risk safe.
-</content>
-</invoke>

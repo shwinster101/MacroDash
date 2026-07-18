@@ -1,3 +1,6 @@
+> **STATUS: SHIPPED & SUPERSEDED** — everything here landed by v2.6.4 (2026-06).
+> Historical record; do not implement from this document. Current brief: `CLAUDE.md`.
+
 # MacroDash — v2.6 Requirements · "Polish & Trust"
 
 Next release after v2.5. Sits **between v2.5 (cleanup)** and **v3.0 (mobile-first UI rebuild)**.

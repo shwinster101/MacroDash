@@ -1,50 +1,32 @@
-# MacroDash — v1.6.1 deploy scaffold
+# MacroDash
 
-Wraps the existing `dashboard.jsx` (v1.6.0) into a Vite + React app that
-Cloudflare Pages can build and serve. Produces one responsive URL that works
-on mobile (primary) and desktop.
+Macro-intelligence dashboard: one responsive URL (mobile-primary) that answers
+*"is it safe to be in the market?"* from live macro + market + sentiment data —
+FRED, CNN Fear & Greed, Kalshi FOMC odds, a market RSS headline, OpenRouter LLM
+token prices, Finnhub equity quotes, and the Shiller CAPE. React + Vite SPA on
+Cloudflare Pages, with live data assembled at the edge by Pages Functions and
+cached in KV. **Current version: 3.2.0 "Cut to the Live Signal"** (the footer
+renders `package.json`'s version — the single source of truth).
 
-## One-time setup (do this once, in your existing GitHub repo)
+**Live:** https://macrodash.pages.dev · friend view: `/?view=public`
 
-1. Drop these files into the repo root.
-2. Move your existing `dashboard.jsx` to **`src/dashboard.jsx`**.
-3. Confirm the export style in `src/App.jsx` matches your dashboard
-   (default vs named — see the note at the top of App.jsx).
-4. Commit + push:
-   ```
-   git add .
-   git commit -m "v1.6.1: Vite scaffold for Cloudflare Pages"
-   git push
-   ```
+## Quickstart
 
-## Cloudflare Pages (one-time connect)
-
-dash.cloudflare.com → Workers & Pages → Create → Pages → Connect to Git →
-pick this repo → set:
-
-- Framework preset:    **Vite**
-- Build command:       **npm run build**
-- Build output dir:    **dist**
-
-Click Save and Deploy. You get `https://<project>.pages.dev` in ~1–2 min.
-Every future `git push` to main auto-redeploys that same URL.
-
-## Views
-
-- Full view (you):           `https://<project>.pages.dev`
-- Friend / public view:      `https://<project>.pages.dev/?view=public`
-  (hides Zone E **only after** the one-line guard is added in dashboard.jsx)
-
-## Local check before pushing (optional)
-
-```
+```bash
 npm install
-npm run build      # must succeed and create dist/
-npm run preview    # open the printed localhost URL to eyeball it
+npm run dev           # mock data by default (no network)
+npm run build         # → dist/  (what Cloudflare Pages runs)
+npm run preview       # serve the built dist/
+
+node test/smoke.mjs   # 81-assertion no-network smoke test (Node ≥17)
 ```
 
-## Mobile
+There is no `test` script — run the smoke test directly, and keep it green before
+every commit.
 
-The viewport + manifest are wired for "Add to Home Screen." Adding a
-192px and 512px icon (and an apple-touch-icon) later gives a real app icon;
-without them, add-to-home-screen still works with a default glyph.
+## Where everything is documented
+
+- **`CLAUDE.md`** — the project brain: architecture, data sources, Cloudflare
+  deployment (Pages + KV + secrets + cron Worker), conventions, locked decisions.
+- **`HANDOFF.md`** — latest session state and what to verify next.
+- **`worker/SETUP.md`** — deploying the separate cron Worker.
