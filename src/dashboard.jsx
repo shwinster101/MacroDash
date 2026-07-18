@@ -1209,6 +1209,12 @@ export default function Dashboard({ publicView = false } = {}) {
             style={{fontFamily:T.fontMono,fontSize:9,background:ttCopied?"#1a3020":T.surfaceHigh,border:`1px solid ${ttCopied?T.green:T.borderAccent}`,color:ttCopied?T.green:T.textSecondary,padding:"5px 12px",borderRadius:4,cursor:anyLive?"pointer":"not-allowed",opacity:anyLive?1:0.4,transition:"all 0.2s"}}>
             {ttCopied?"✓ TT COPIED":"⎘ TT"}
           </button>
+          {/* FEAT-TT: link to the Access-gated Ticker Terminal admin portal (hidden on public view) */}
+          {!publicView&&<a href="/admin.html" aria-label="Open Ticker Terminal admin"
+            title="TT Ticker Terminal (admin — email-gated)"
+            style={{fontFamily:T.fontMono,fontSize:9,background:T.surfaceHigh,border:`1px solid ${T.borderAccent}`,color:T.textSecondary,padding:"5px 12px",borderRadius:4,textDecoration:"none",transition:"all 0.2s"}}>
+            ⌁ TERMINAL
+          </a>}
         </div>
       </div>
 
