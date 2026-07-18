@@ -1,0 +1,442 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>TT TICKER TERMINAL v1.0</title>
+<style>
+  :root{
+    --bg:#05070a; --panel:#0a0f16; --panel2:#0d141d; --line:#16202c;
+    --fg:#c8d6cf; --dim:#5f7469; --green:#39ff9e; --greenDim:#1f7a55;
+    --amber:#ffb454; --cyan:#4fd8ff; --magenta:#ff6fd8; --red:#ff5f6f;
+    --slate:#8aa0b4;
+    --AI:#4fd8ff; --PH:#ff6fd8; --QC:#39ff9e; --VEH:#ffb454; --SP:#ff5f6f;
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0;height:100%}
+  body{
+    background:
+      radial-gradient(120% 100% at 50% -10%, #0b141d 0%, var(--bg) 60%) fixed,
+      repeating-linear-gradient(0deg, rgba(0,0,0,0) 0 2px, rgba(0,0,0,.16) 2px 3px) fixed;
+    color:var(--fg);
+    font-family:"SFMono-Regular",ui-monospace,"Cascadia Mono","JetBrains Mono",Menlo,Consolas,monospace;
+    font-size:13px; line-height:1.5;
+    -webkit-font-smoothing:antialiased;
+  }
+  a{color:var(--cyan);text-decoration:none}
+  .wrap{max-width:1360px;margin:0 auto;padding:14px 16px 60px}
+  /* ── header ── */
+  header{border:1px solid var(--line);background:linear-gradient(180deg,#0b131c,#080c12);
+    border-radius:8px;padding:12px 16px;margin-bottom:12px;position:relative;overflow:hidden}
+  header::before{content:"";position:absolute;inset:0;
+    background:linear-gradient(90deg,transparent,rgba(57,255,158,.06),transparent);
+    animation:sweep 6s linear infinite}
+  @keyframes sweep{0%{transform:translateX(-100%)}100%{transform:translateX(100%)}}
+  .brand{color:var(--green);letter-spacing:2px;font-weight:700;text-shadow:0 0 14px rgba(57,255,158,.45)}
+  .brand small{color:var(--dim);letter-spacing:1px;font-weight:400}
+  .statusline{display:flex;flex-wrap:wrap;gap:8px 18px;margin-top:8px;font-size:12px;color:var(--slate)}
+  .statusline b{color:var(--fg)}
+  .pill{display:inline-block;padding:1px 8px;border-radius:10px;border:1px solid var(--line);font-size:11px}
+  .pill.warn{color:var(--amber);border-color:#4a361a;background:#191206}
+  .pill.head{color:var(--red);border-color:#4a1a20;background:#190a0c}
+  .pill.neutral{color:var(--amber)}
+  /* ── command bar ── */
+  .cmd{display:flex;gap:8px;align-items:center;margin:12px 0;
+    border:1px solid var(--greenDim);border-radius:8px;background:#060b0e;
+    padding:8px 12px;box-shadow:0 0 22px rgba(31,122,85,.18) inset}
+  .cmd .prompt{color:var(--green);font-weight:700}
+  .cmd input{flex:1;background:transparent;border:none;outline:none;color:var(--fg);
+    font-family:inherit;font-size:14px;caret-color:var(--green)}
+  .cmd input::placeholder{color:var(--dim)}
+  .cmd .hintk{color:var(--dim);font-size:11px}
+  .layout{display:grid;grid-template-columns:1fr 320px;gap:12px}
+  @media(max-width:900px){.layout{grid-template-columns:1fr}}
+  .panel{border:1px solid var(--line);border-radius:8px;background:var(--panel);padding:12px 14px}
+  .panel h2{margin:0 0 10px;font-size:12px;letter-spacing:2px;color:var(--dim);
+    text-transform:uppercase;border-bottom:1px dashed var(--line);padding-bottom:6px}
+  /* ── tier board ── */
+  .tier{margin-bottom:14px}
+  .tier .thead{display:flex;align-items:center;gap:10px;margin-bottom:6px}
+  .tier .tag{font-weight:700;letter-spacing:1px}
+  .tier .rule{flex:1;height:1px;background:linear-gradient(90deg,var(--line),transparent)}
+  .tier .count{color:var(--dim);font-size:11px}
+  .S .tag{color:var(--green);text-shadow:0 0 10px rgba(57,255,158,.4)}
+  .A .tag{color:var(--cyan)}
+  .B .tag{color:var(--amber)}
+  .DEF .tag{color:var(--slate)}
+  .WATCH .tag{color:var(--magenta)}
+  .CUT .tag{color:var(--red)}
+  .chips{display:flex;flex-wrap:wrap;gap:6px}
+  .chip{display:inline-flex;align-items:center;gap:6px;cursor:pointer;
+    border:1px solid var(--line);border-radius:6px;padding:3px 9px;background:#0b131b;
+    transition:.12s;user-select:none}
+  .chip:hover{border-color:var(--green);background:#0e1a16;transform:translateY(-1px)}
+  .chip .sym{font-weight:700;letter-spacing:.5px}
+  .chip .lens{font-size:9px;padding:0 5px;border-radius:8px;border:1px solid currentColor;opacity:.9}
+  .chip.fp::after{content:"◦FP";font-size:9px;color:var(--amber);margin-left:2px}
+  .lens-AI{color:var(--AI)} .lens-PH{color:var(--PH)} .lens-QC{color:var(--QC)}
+  .lens-VEH{color:var(--VEH)} .lens-SP{color:var(--SP)}
+  .cutrow .chip{opacity:.55;text-decoration:line-through;cursor:default}
+  .cutrow .chip:hover{transform:none;border-color:var(--line);background:#0b131b}
+  /* ── legend / side ── */
+  .legend div{margin:3px 0;font-size:11.5px}
+  .swatch{display:inline-block;width:10px;height:10px;border-radius:2px;margin-right:6px;vertical-align:middle}
+  ul.tight{margin:6px 0;padding-left:16px}
+  ul.tight li{margin:4px 0;font-size:11.5px;color:var(--slate)}
+  ul.tight li b{color:var(--fg)}
+  .blk{color:var(--red)} .arm{color:var(--amber)} .ok{color:var(--green)}
+  /* ── detail / card modal ── */
+  .overlay{position:fixed;inset:0;background:rgba(2,4,6,.72);backdrop-filter:blur(3px);
+    display:none;align-items:flex-start;justify-content:center;padding:32px 16px;z-index:50;overflow:auto}
+  .overlay.on{display:flex}
+  .card{width:min(760px,100%);border:1px solid var(--greenDim);border-radius:10px;
+    background:linear-gradient(180deg,#0a1017,#070b10);box-shadow:0 0 40px rgba(31,122,85,.25);
+    padding:0;overflow:hidden}
+  .card .top{display:flex;justify-content:space-between;align-items:center;
+    padding:12px 16px;border-bottom:1px solid var(--line);background:#0b131c}
+  .card .top .t{color:var(--green);font-weight:700;letter-spacing:1px;font-size:16px}
+  .card .x{cursor:pointer;color:var(--dim);border:1px solid var(--line);border-radius:6px;
+    padding:2px 9px}
+  .card .x:hover{color:var(--red);border-color:var(--red)}
+  .card .body{padding:14px 16px}
+  .row{display:grid;grid-template-columns:130px 1fr;gap:10px;padding:5px 0;
+    border-bottom:1px dashed #101922;align-items:start}
+  .row .k{color:var(--dim);font-size:11px;letter-spacing:.5px;padding-top:5px}
+  .row .v{color:var(--fg)}
+  .row input,.row select,.row textarea{width:100%;background:#060b0f;border:1px solid var(--line);
+    color:var(--fg);border-radius:5px;padding:5px 8px;font-family:inherit;font-size:12.5px;outline:none}
+  .row input:focus,.row select:focus,.row textarea:focus{border-color:var(--green)}
+  .row textarea{resize:vertical;min-height:38px}
+  .schema{margin-top:12px;border-top:1px dashed var(--line);padding-top:10px}
+  .schema .lbl{color:var(--dim);font-size:10.5px;letter-spacing:1px;margin:8px 0 4px;text-transform:uppercase}
+  .derived{color:var(--dim);font-style:italic}
+  .btns{display:flex;gap:8px;flex-wrap:wrap;padding:12px 16px;border-top:1px solid var(--line);background:#0a0f16}
+  button.act{background:#0c1a13;border:1px solid var(--greenDim);color:var(--green);
+    border-radius:6px;padding:6px 12px;font-family:inherit;font-size:12px;cursor:pointer}
+  button.act:hover{background:#10261a;box-shadow:0 0 12px rgba(31,122,85,.3)}
+  button.act.warn{color:var(--amber);border-color:#4a361a;background:#150f04}
+  button.act.warn:hover{background:#1d1607}
+  button.act.danger{color:var(--red);border-color:#4a1a20;background:#150708}
+  /* toast */
+  .toast{position:fixed;bottom:18px;left:50%;transform:translateX(-50%) translateY(20px);
+    background:#0c1a13;border:1px solid var(--greenDim);color:var(--green);padding:8px 16px;
+    border-radius:8px;opacity:0;transition:.25s;z-index:80;font-size:12px;box-shadow:0 0 20px rgba(31,122,85,.3)}
+  .toast.on{opacity:1;transform:translateX(-50%) translateY(0)}
+  .foot{margin-top:14px;color:var(--dim);font-size:11px;text-align:center;line-height:1.6}
+  .toolbar{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:10px}
+  .cursor{animation:blink 1s steps(1) infinite}
+  @keyframes blink{50%{opacity:0}}
+  .empty{color:var(--dim);padding:10px 0}
+  mark{background:rgba(255,180,84,.25);color:var(--amber)}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <div class="brand">FINANCE&nbsp;BRO.AI // TT&nbsp;TICKER&nbsp;TERMINAL <small>v1.0 · single-pass deep-dive orchestrator</small></div>
+    <div class="statusline">
+      <span>BOOK: <b>TEMPLATE — none loaded</b></span>
+      <span>MODE: <b>framework template</b></span>
+      <span>REGIME: <span class="pill neutral">load from MacroDash</span></span>
+    </div>
+  </header>
+
+  <div class="cmd">
+    <span class="prompt">TT:&gt;</span>
+    <input id="search" autocomplete="off" spellcheck="false"
+      placeholder="search a ticker (e.g. NVDA, TSLA, AAPL) — or type HELP / TIER / ADD"/>
+    <span class="hintk">↵ open card · ESC close</span>
+  </div>
+
+  <div class="toolbar">
+    <button class="act" onclick="openAdd()">+ ADD TICKER</button>
+    <button class="act" onclick="exportBook()">⭳ EXPORT CANONICAL_BOOK.md</button>
+    <button class="act" onclick="exportJSON()">⭳ EXPORT JSON</button>
+    <button class="act warn" onclick="resetBook()">⟲ RESET TO v1.0</button>
+  </div>
+
+  <div class="layout">
+    <div class="panel">
+      <h2>Tier Board &nbsp;·&nbsp; click any ticker to open its TT Card</h2>
+      <div id="board"></div>
+    </div>
+
+    <aside>
+      <div class="panel" style="margin-bottom:12px">
+        <h2>Router / Lens Legend</h2>
+        <div class="legend">
+          <div><span class="swatch" style="background:var(--AI)"></span><b class="lens-AI">[AI]</b> AI Infrastructure Harness v2</div>
+          <div><span class="swatch" style="background:var(--PH)"></span><b class="lens-PH">[PH]</b> Physical AI Harness</div>
+          <div><span class="swatch" style="background:var(--QC)"></span><b class="lens-QC">[QC]</b> Quality Compounder Harness</div>
+          <div><span class="swatch" style="background:var(--VEH)"></span><b class="lens-VEH">[VEH]</b> Vehicle eval — no harness tiering</div>
+          <div><span class="swatch" style="background:var(--SP)"></span><b class="lens-SP">[SP]</b> Speculative / optionality</div>
+          <div style="margin-top:6px;color:var(--amber)">◦FP = first-principles routing call (veto if wrong)</div>
+        </div>
+      </div>
+
+      <div class="panel" style="margin-bottom:12px">
+        <h2>Standing Constraints</h2>
+        <ul class="tight">
+          <li><b>18%</b> hard single-position cap — no conviction exceptions</li>
+          <li><b>K-1 avoidance</b> — 1099-only vehicles over direct MLPs</li>
+          <li><b>Roth anchors:</b> your zero-div, longest-duration, highest-CAGR names</li>
+          <li><b>R/R floors:</b> 2.0 core / 2.5 tactical / 3.0 spec · +0.5x headwind</li>
+          <li><b>Targets:</b> 12–15% CAGR, beat SPX, compound w/o blowing up</li>
+          <li>Composite ≥8.5=S · 7.0–8.4=A · 5.5–6.9=B · &lt;5.5=C. Gates cap, never boost.</li>
+        </ul>
+      </div>
+
+      <div class="panel">
+        <h2>Open Items / Blockers</h2>
+        <ul class="tight"><li>Load your book to populate tiers, then track blockers here. Composite / technical / R-R lines are filled by a live <b>TT run</b> in chat, not stored in the file.</li></ul>
+      </div>
+    </aside>
+  </div>
+
+  <div class="foot">
+    Educational / analytical framework only — not investment, tax, or legal advice. Live marks presumed stale until verified against tape.<br>
+    Edits here are in-session only; use <b>EXPORT CANONICAL_BOOK.md</b> to re-version the single source of truth. TT Card composite/technical fields are populated by a live TT run, not stored here.
+  </div>
+</div>
+
+<!-- DETAIL / CARD -->
+<div class="overlay" id="overlay">
+  <div class="card">
+    <div class="top">
+      <div class="t" id="cTitle">TICKER</div>
+      <div class="x" onclick="closeCard()">ESC ✕</div>
+    </div>
+    <div class="body" id="cBody"></div>
+    <div class="btns" id="cBtns"></div>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+/* ═══════════ SEED DATA — empty template (load your own book) ═══════════ */
+const LENS_NAME={AI:"AI Infrastructure v2",PH:"Physical AI",QC:"Quality Compounder",VEH:"Vehicle eval",SP:"Speculative"};
+const TIER_ORDER=["S","A","B","DEF","WATCH"];
+const TIER_LABEL={S:"S-TIER",A:"A-TIER",B:"B-TIER",DEF:"DEFENSIVE",WATCH:"WATCHLIST / NEXT-DOLLAR QUEUE"};
+
+const SEED=[];
+const CUT=[];
+
+/* TT CARD schema — the fixed DEEP-mode output lines (populated by a live TT run) */
+const CARD_FIELDS=[
+  ["route","ROUTE","Lens + router veto (none / re-routed to X because Y)"],
+  ["gates","GATES","G1 · G2 · G3 (· G4) — PASS/FAIL, ≤5 words each"],
+  ["composite","COMPOSITE","X.XX (V | G | P | M | R) · raw→capped tier · cap source"],
+  ["bridge","2028 BRIDGE","achievable / demanding / near-perfection / implausible — what must be true"],
+  ["tech","TECHNICALS","Supp $ (q/10) | Res $ (q/10) | Trend | Vol | RS"],
+  ["rr","R/R","Entry | Stop | T1 | T2 → X.X:1 vs floor → MEETS/FAILS"],
+  ["constraints","CONSTRAINTS","18% cap | bucket conc. | Roth fit | K-1"],
+  ["nextdollar","NEXT DOLLAR","YAY / YAY-on-trigger / NAY — vs best alt | trigger"],
+  ["expression","EXPRESSION","Shares / CSP @ $floor / DITM LEAP · sizing band"],
+  ["insight","INSIGHT","the single highest-leverage line"],
+  ["action","ACTION","Add now / starter / on pullback / breakout / Hold / Trim / Watch / Avoid"],
+];
+
+/* ═══════════ STATE ═══════════ */
+let BOOK=load();
+function load(){return JSON.parse(JSON.stringify(SEED));}
+function byTier(t){return BOOK.filter(x=>x.tier===t);}
+function find(sym){return BOOK.find(x=>x.sym===sym.toUpperCase());}
+
+/* ═══════════ RENDER BOARD ═══════════ */
+function render(){
+  const b=document.getElementById("board");b.innerHTML="";
+  TIER_ORDER.forEach(t=>{
+    const items=byTier(t);
+    const sec=document.createElement("div");
+    sec.className="tier "+t;
+    sec.innerHTML=`<div class="thead"><span class="tag">${TIER_LABEL[t]}</span>
+      <span class="rule"></span><span class="count">${items.length}</span></div>`;
+    const chips=document.createElement("div");chips.className="chips";
+    if(!items.length)chips.innerHTML='<span class="empty">— empty —</span>';
+    items.forEach(x=>{
+      const c=document.createElement("div");
+      c.className="chip"+(x.fp?" fp":"");
+      c.onclick=()=>openCard(x.sym);
+      c.innerHTML=`<span class="sym">${x.sym}</span>
+        <span class="lens lens-${x.lens}">${x.lens}</span>`;
+      if(x.rank&&x.rank!=="—")c.title=x.rank+" · "+(x.note||"");
+      else c.title=x.note||"";
+      chips.appendChild(c);
+    });
+    sec.appendChild(chips);
+    b.appendChild(sec);
+  });
+  // cut row
+  const cut=document.createElement("div");cut.className="tier CUT cutrow";
+  cut.innerHTML=`<div class="thead"><span class="tag">CUT FROM BOOK</span>
+    <span class="rule"></span><span class="count">${CUT.length}</span></div>`;
+  const cc=document.createElement("div");cc.className="chips";
+  CUT.forEach(s=>{const c=document.createElement("div");c.className="chip";c.innerHTML=`<span class="sym">${s}</span>`;cc.appendChild(c);});
+  cut.appendChild(cc);b.appendChild(cut);
+}
+
+/* ═══════════ CARD (view / modify) ═══════════ */
+let CURRENT=null;
+function openCard(sym){
+  const x=find(sym);if(!x)return;
+  CURRENT=x.sym;
+  document.getElementById("cTitle").textContent=x.sym+"  ·  "+LENS_NAME[x.lens];
+  const body=document.getElementById("cBody");
+  const tierOpts=TIER_ORDER.map(t=>`<option value="${t}" ${t===x.tier?"selected":""}>${TIER_LABEL[t]}</option>`).join("");
+  const lensOpts=Object.keys(LENS_NAME).map(l=>`<option value="${l}" ${l===x.lens?"selected":""}>[${l}] ${LENS_NAME[l]}</option>`).join("");
+  let html=`
+    <div class="row"><div class="k">TIER</div><div class="v"><select id="fTier">${tierOpts}</select></div></div>
+    <div class="row"><div class="k">LENS / ROUTE</div><div class="v"><select id="fLens">${lensOpts}</select></div></div>
+    <div class="row"><div class="k">FP ROUTING</div><div class="v"><select id="fFp">
+        <option value="false" ${!x.fp?"selected":""}>no — routing verified</option>
+        <option value="true" ${x.fp?"selected":""}>yes — first-principles call (veto if wrong)</option></select></div></div>`;
+  if(x.tier==="WATCH")
+    html+=`<div class="row"><div class="k">QUEUE RANK</div><div class="v"><input id="fRank" value="${x.rank||"—"}"/></div></div>`;
+  html+=`<div class="row"><div class="k">BOOK NOTE</div><div class="v"><textarea id="fNote">${x.note||""}</textarea></div></div>`;
+
+  // TT card schema (read-only placeholders — filled by a live TT run)
+  html+=`<div class="schema"><div class="lbl">TT CARD — DEEP mode (run <b>TT: ${x.sym}</b> in chat to populate live)</div>`;
+  CARD_FIELDS.forEach(f=>{
+    html+=`<div class="row"><div class="k">${f[1]}</div><div class="v derived">${f[2]}</div></div>`;
+  });
+  html+=`</div>`;
+  body.innerHTML=html;
+
+  document.getElementById("cBtns").innerHTML=`
+    <button class="act" onclick="saveCard()">✔ SAVE CHANGES</button>
+    <button class="act" onclick="copyTTRun()">⧉ COPY 'TT: ${x.sym}' PROMPT</button>
+    <button class="act danger" onclick="removeCard()">🗑 REMOVE FROM BOOK</button>`;
+  document.getElementById("overlay").classList.add("on");
+}
+function saveCard(){
+  const x=find(CURRENT);if(!x)return;
+  x.tier=document.getElementById("fTier").value;
+  x.lens=document.getElementById("fLens").value;
+  x.fp=document.getElementById("fFp").value==="true";
+  x.note=document.getElementById("fNote").value.trim();
+  const r=document.getElementById("fRank");if(r)x.rank=r.value.trim();
+  if(x.tier!=="WATCH")delete x.rank;
+  render();closeCard();toast(x.sym+" updated — remember to EXPORT to re-version the book");
+}
+function removeCard(){
+  const i=BOOK.findIndex(x=>x.sym===CURRENT);if(i<0)return;
+  const s=BOOK[i].sym;BOOK.splice(i,1);render();closeCard();toast(s+" removed from book");
+}
+function copyTTRun(){copy("TT: "+CURRENT);toast("Copied → paste 'TT: "+CURRENT+"' into chat for a live deep-dive card");}
+function closeCard(){document.getElementById("overlay").classList.remove("on");CURRENT=null;}
+
+/* ═══════════ ADD ═══════════ */
+function openAdd(){
+  CURRENT="__NEW__";
+  document.getElementById("cTitle").textContent="ADD TICKER";
+  const tierOpts=TIER_ORDER.map(t=>`<option value="${t}">${TIER_LABEL[t]}</option>`).join("");
+  const lensOpts=Object.keys(LENS_NAME).map(l=>`<option value="${l}">[${l}] ${LENS_NAME[l]}</option>`).join("");
+  document.getElementById("cBody").innerHTML=`
+    <div class="row"><div class="k">TICKER</div><div class="v"><input id="fSym" placeholder="e.g. NVDA" style="text-transform:uppercase"/></div></div>
+    <div class="row"><div class="k">TIER</div><div class="v"><select id="fTier">${tierOpts}</select></div></div>
+    <div class="row"><div class="k">LENS / ROUTE</div><div class="v"><select id="fLens">${lensOpts}</select></div></div>
+    <div class="row"><div class="k">FP ROUTING</div><div class="v"><select id="fFp">
+      <option value="false">no — routing verified</option>
+      <option value="true">yes — first-principles call</option></select></div></div>
+    <div class="row"><div class="k">QUEUE RANK</div><div class="v"><input id="fRank" placeholder="—"/></div></div>
+    <div class="row"><div class="k">BOOK NOTE</div><div class="v"><textarea id="fNote" placeholder="one-line thesis / routing rationale"></textarea></div></div>
+    <div class="derived" style="margin-top:8px">Router first: a wrapper/CEF → [VEH]; pre-revenue story → [SP]. Never force a non-fit through a lens.</div>`;
+  document.getElementById("cBtns").innerHTML=`<button class="act" onclick="addSave()">✔ ADD TO BOOK</button>`;
+  document.getElementById("overlay").classList.add("on");
+}
+function addSave(){
+  const sym=(document.getElementById("fSym").value||"").trim().toUpperCase();
+  if(!sym)return toast("Enter a ticker symbol");
+  if(find(sym))return toast(sym+" already in book");
+  const o={sym,tier:document.getElementById("fTier").value,lens:document.getElementById("fLens").value,
+    fp:document.getElementById("fFp").value==="true",note:document.getElementById("fNote").value.trim()};
+  const r=document.getElementById("fRank").value.trim();if(o.tier==="WATCH"&&r)o.rank=r;
+  BOOK.push(o);render();closeCard();toast(sym+" added to "+TIER_LABEL[o.tier]);
+}
+
+/* ═══════════ SEARCH ═══════════ */
+const search=document.getElementById("search");
+search.addEventListener("keydown",e=>{
+  if(e.key==="Enter"){
+    const q=search.value.trim();if(!q)return;
+    const up=q.toUpperCase();
+    if(up==="HELP"){showHelp();search.value="";return;}
+    if(up==="TIER"){document.getElementById("board").scrollIntoView({behavior:"smooth"});search.value="";return;}
+    if(up==="ADD"){openAdd();search.value="";return;}
+    const x=find(up.replace(/^TT:\s*/,""));
+    if(x){openCard(x.sym);search.value="";}
+    else toast("'"+q+"' not in book — click +ADD TICKER to route & tier it");
+  }
+  if(e.key==="Escape")closeCard();
+});
+document.addEventListener("keydown",e=>{if(e.key==="Escape")closeCard();});
+function showHelp(){
+  CURRENT=null;
+  document.getElementById("cTitle").textContent="TT TERMINAL — HELP";
+  document.getElementById("cBody").innerHTML=`
+    <ul class="tight" style="font-size:12.5px">
+      <li>Type a <b>ticker</b> + ↵ to open its card · click any chip on the board.</li>
+      <li>Inside a card you can change <b>tier</b>, <b>lens/route</b>, <b>FP flag</b>, <b>note</b>, then SAVE.</li>
+      <li><b>+ADD TICKER</b> routes & tiers a new name into the book.</li>
+      <li>Composite / technical / R-R lines are <b>filled by a live TT run</b> — click "COPY 'TT: X' PROMPT" and paste into chat.</li>
+      <li><b>EXPORT CANONICAL_BOOK.md</b> re-versions the single source of truth after edits.</li>
+      <li>Commands: <mark>HELP</mark> · <mark>TIER</mark> · <mark>ADD</mark></li>
+    </ul>`;
+  document.getElementById("cBtns").innerHTML=`<button class="act" onclick="closeCard()">CLOSE</button>`;
+  document.getElementById("overlay").classList.add("on");
+}
+
+/* ═══════════ EXPORT ═══════════ */
+function pad(s,n){s=String(s);return s+" ".repeat(Math.max(0,n-s.length));}
+function tierTable(t){
+  const items=byTier(t);if(!items.length)return "_none_\n";
+  let out;
+  if(t==="WATCH"){
+    out="|Rank|Name|Lens|Note|\n|----|----|----|----|\n";
+    items.forEach(x=>out+=`|${x.rank||"—"}|${x.sym}|[${x.lens}]${x.fp?" \`[FP]\`":""}|${x.note||""}|\n`);
+  }else{
+    out="|Name|Lens|Notes|\n|----|----|----|\n";
+    items.forEach(x=>out+=`|${x.sym}|[${x.lens}]${x.fp?" \`[FP]\`":""}|${x.note||""}|\n`);
+  }
+  return out;
+}
+function exportBook(){
+  const d=new Date().toISOString().slice(0,10);
+  let m=`# CANONICAL_BOOK v1.1 — Portfolio State of Record\n\n`;
+  m+=`**As of: ${d} · Re-versioned from TT Terminal GUI. Chat memory never overrides this file.**\n\n---\n\n`;
+  m+=`## TIERS & LENS ASSIGNMENTS\n\n`;
+  m+=`Lens tags: \`[AI]\` AI Infrastructure v2 · \`[PH]\` Physical AI · \`[QC]\` Quality Compounder · \`[VEH]\` Vehicle eval · \`[SP]\` Speculative. \`[FP]\` = first-principles routing call.\n\n`;
+  TIER_ORDER.forEach(t=>{
+    m+=`### ${TIER_LABEL[t]} (${byTier(t).length})\n\n${tierTable(t)}\n`;
+  });
+  m+=`### CUT FROM BOOK (equity)\n\n${CUT.join(" · ")}\n\n---\n\n`;
+  m+=`## STANDING CONSTRAINTS\n\n1. 18% hard single-position cap.\n2. K-1 avoidance (1099-only).\n3. Roth anchors: your longest-duration names.\n4. R/R floors 2.0/2.5/3.0 · +0.5x headwind.\n5. Targets: 12–15% CAGR, beat SPX.\n\n`;
+  m+=`### CHANGELOG\n\n- v1.1 (${d}): Re-versioned via TT Terminal GUI edits.\n- v1.0: Initial state of record.\n`;
+  download(`CANONICAL_BOOK_${d}.md`,m,"text/markdown");
+  toast("Exported CANONICAL_BOOK — save it back to your project as the new source of truth");
+}
+function exportJSON(){
+  const d=new Date().toISOString().slice(0,10);
+  download(`tt_book_${d}.json`,JSON.stringify({version:"1.1",asOf:d,book:BOOK,cut:CUT},null,2),"application/json");
+  toast("Exported book JSON");
+}
+function resetBook(){BOOK=load();render();toast("Reset to empty template");}
+
+/* ═══════════ UTIL ═══════════ */
+function download(name,text,mime){
+  const a=document.createElement("a");
+  a.href=URL.createObjectURL(new Blob([text],{type:mime}));
+  a.download=name;a.click();URL.revokeObjectURL(a.href);
+}
+function copy(t){navigator.clipboard&&navigator.clipboard.writeText(t);}
+let toastT;
+function toast(msg){const el=document.getElementById("toast");el.textContent=msg;el.classList.add("on");
+  clearTimeout(toastT);toastT=setTimeout(()=>el.classList.remove("on"),3200);}
+
+/* template build: no book stamp */
+
+render();
+</script>
+</body>
+</html>
