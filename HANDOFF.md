@@ -1,3 +1,46 @@
+# MacroDash — Session Handoff · 2026-07-18 (v3.3.0)
+
+**Live:** https://macrodash.pages.dev · footer **v3.3.0** on next deploy · smoke **116/116**.
+
+## What shipped this session (v3.3.0 "TT readout")
+
+The maintainer runs a trading-terminal framework whose Engine 0 consumes a MacroDash regime
+read before every order — previously a manual paste. This turns MacroDash into an API:
+
+- **`/readout.json`** (`functions/readout.json.js`, `FEAT-330`) — CORS-open `tt-v1` JSON:
+  six band checks → `TAILWIND|NEUTRAL|HEADWIND|PANIC|INSUFFICIENT`, per-check audit trail,
+  Macro Flip circuit. Derived from the same per-ET-day snapshot (KV read; subrequest
+  `/api/snapshot` on miss, which also warms KV) — **no new cron/infra**. At `/readout.json`
+  (not `/api/*`) so `Access-Control-Allow-Origin: *` survives `_middleware`. Whitelist
+  projection means `_diag` can't leak; empty/failed live → schema-stable INSUFFICIENT body.
+- **`src/ttReadout.js`** (`FEAT-330`/`DEC-33`) — the pure mapping table. **It gates real
+  orders**, so all 35 band boundaries are smoke-tested (81→116). **First `functions/`→`src/`
+  import** in the repo — verified `wrangler pages functions build` inlines it.
+- **Macro Flip banner + "Copy TT readout" button** (`FEAT-331`/`FEAT-332`, `dashboard.jsx`) —
+  both live-only; render nothing / disable on mock/stale (honesty invariant).
+- **Bugfix**: `worker/cron.js` 10 AM force-refresh deleted `v5` while snapshot writes `v15` —
+  it had been inert. Fixed + SYNC-hazard comments in all three files that share the key literal.
+
+**Verified:** smoke 116/116 after every commit; `npm run build` clean; `wrangler pages dev` →
+`/readout.json` returns 200/JSON/ACAO:*/max-age=300, verdict INSUFFICIENT with no key, no
+`_diag` leak, `?debug=1` exposes kv_key; Chromium — banner absent + TT button disabled in mock,
+an intercepted TRIPPED payload renders the red banner and copies a correct PANIC/TRIPPED block.
+
+## Verify on next session / deploy
+
+- **The cron Worker is a SEPARATE deploy** — `cd worker && npx wrangler deploy` is required
+  or the v5→v15 fix is dead code. Confirm next trading morning that the 10 AM warm actually
+  busts `v15` (`?debug=1` on `/api/snapshot` after 10:01 ET).
+- `curl -sI https://macrodash.pages.dev/readout.json` → `access-control-allow-origin: *` +
+  `cache-control: public, max-age=300`; `curl -s .../readout.json | jq .regime.verdict` sane;
+  foreign-origin `curl -H "Origin: https://example.com"` still returns the body.
+- **TT framework doc note for the maintainer:** the readout is `next-meeting` Fed odds (not
+  "by Dec") and QQQ/SPY RS is `basis:"1d"` only — both flagged in the JSON + paste block.
+  The doc's §1.2 schema should adopt these field names; §1 "cannot be fetched programmatically"
+  is now false.
+
+---
+
 # MacroDash — Session Handoff · 2026-07-18 (v3.2.0)
 
 **Live:** https://macrodash.pages.dev · footer **v3.2.0** on next deploy · smoke **81/81**.

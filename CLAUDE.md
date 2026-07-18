@@ -5,6 +5,15 @@ answers *"is it safe to be in the market?"* from live macro + market + sentiment
 data. Single-page React app on Cloudflare Pages, with live data assembled at the
 edge by Pages Functions and cached in KV.
 
+**v3.3 "TT readout" adds a machine-readable regime API.** `/readout.json` (Pages Function
+`functions/readout.json.js`, CORS-open, `tt-v1` schema) derives an external trading-terminal
+readout from the same per-ET-day snapshot: six band checks → `TAILWIND|NEUTRAL|HEADWIND|PANIC|
+INSUFFICIENT` + a **Macro Flip** circuit (armed VIX>22 · tripped SPY<200d AND VIX>25). The pure
+mapping lives in **`src/ttReadout.js`** (`DEC-33` band table — it gates real orders, so every
+boundary is smoke-tested; **first `functions/`→`src/` import** in the repo, esbuild-inlined).
+A **Macro Flip banner** (`FEAT-331`) and **"Copy TT readout" button** (`FEAT-332`) surface the
+same on the dashboard — both live-only, rendering nothing on mock/stale (honesty invariant holds).
+
 **Status: v3.2.0 "Cut to the Live Signal" — live FRED (incl. HY-IG credit spreads) + sentiment +
 Kalshi + RSS-headline + AI token economics + equity quotes + Shiller CAPE are flowing.** The
 dashboard fetches `/api/snapshot` and overlays the mapped `SOURCES` fields (equity + rates +
@@ -67,6 +76,9 @@ src/
                         + isStale/cadenceOf/parseObsDate. No React → Node-testable.
   fiveWhys.js           Pure rule-based 5-Whys generator (no React, no LLM, $0);
                         smoke-tested.
+  ttReadout.js          Pure TT regime/Macro-Flip mapping (DEC-33 band table).
+                        Imported by dashboard.jsx, functions/readout.json.js
+                        (first functions→src import), and smoke. React-free.
 
 functions/              Cloudflare Pages Functions (run at the edge, same origin)
   _middleware.js        Security headers; keeps /api same-origin (no CORS).
@@ -75,6 +87,9 @@ functions/              Cloudflare Pages Functions (run at the edge, same origin
                         env.FRED_KEY. Per-ET-day KV cache.
   api/fred.js           Legacy/fallback. Reads ONLY the cron-written KV key
                         (pulse:macro:latest); has NO key, makes NO upstream calls.
+  readout.json.js       /readout.json — public tt-v1 regime readout (CORS-open).
+                        Reads the day's snapshot KV (subrequest /api/snapshot on
+                        miss); maps via src/ttReadout.js. No new infra/cron.
 
 worker/                 SEPARATE Cloudflare Worker (not part of Pages)
   cron.js               Scheduled handler: pulls FRED twice daily → writes KV
@@ -82,9 +97,9 @@ worker/                 SEPARATE Cloudflare Worker (not part of Pages)
   wrangler.toml         Worker config: PULSE_CACHE binding + cron triggers (UTC).
 
 test/
-  smoke.mjs             No-network smoke test: 81 assertions over mergeLiveOverMock
+  smoke.mjs             No-network smoke test: 116 assertions over mergeLiveOverMock
                         + SOURCES-path resolution against the real MOCK_DATA + the
-                        5-Whys engine + DEC-31 source-absence guards.
+                        5-Whys engine + DEC-31 guards + the TT band table (DEC-33).
 ```
 
 ## Data flow (how mock becomes live)
@@ -236,7 +251,7 @@ npm run dev        # Vite dev server (mock unless VITE_DATA_MODE=live in .env)
 npm run build      # → dist/  (what Pages runs)
 npm run preview    # serve the built dist/
 
-node test/smoke.mjs   # 81-assertion no-network smoke test (needs Node ≥17)
+node test/smoke.mjs   # 116-assertion no-network smoke test (needs Node ≥17)
 
 # Cron Worker (separate deploy):
 cd worker && npx wrangler deploy
