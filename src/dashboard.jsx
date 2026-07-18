@@ -1337,15 +1337,35 @@ export default function Dashboard({ publicView = false } = {}) {
               );
             })()}
 
-            {/* Cross-asset direction tiles */}
+            {/* Cross-asset direction tiles — live-first (FEAT-322): live tiles own the row;
+                curated (Gold has no SOURCES key — permanently Manual) + stale ones demote
+                behind a "+N stale/curated" expander. */}
             <div>
               <SectionHeader>Cross-Asset Direction</SectionHeader>
-              <div style={{display:"flex",gap:8,flexWrap:"wrap"}} className="dir-tiles">
-                <DirTile label="10Y Treasury" value={`${d.crossAsset.treasury10y.current}%`} d1={d.crossAsset.treasury10y.d1} w1={d.crossAsset.treasury10y.w1} m1={d.crossAsset.treasury10y.m1} band={0.10} invert={true} spark={d.crossAsset.treasury10y.series} source="FRED" sourceEp="DGS10" mode={modeOf('tenYear')} asOf={asOfOf('tenYear')}/>
-                <DirTile label="WTI Crude"   value={`$${d.crossAsset.wti.current}`}         d1={d.crossAsset.wti.d1pct}  w1={d.crossAsset.wti.w1pct}  m1={d.crossAsset.wti.m1pct}  band={1.0} spark={d.crossAsset.wti.series}  source="FRED" sourceEp="DCOILWTICO" mode={modeOf('wti')} asOf={asOfOf('wti')}/>
-                <DirTile label="Gold"        value={`$${d.crossAsset.gold.current.toLocaleString()}`} d1={d.crossAsset.gold.d1pct} w1={d.crossAsset.gold.w1pct} m1={d.crossAsset.gold.m1pct} band={1.0} spark={d.crossAsset.gold.series} source="Manual" sourceEp="curated series" mode={modeOf('gold')}/>
-                <DirTile label="Bitcoin"     value={`$${(d.crossAsset.btc.current/1000).toFixed(1)}K`} d1={d.crossAsset.btc.d1pct} w1={d.crossAsset.btc.w1pct} m1={d.crossAsset.btc.m1pct} band={2.0} spark={d.crossAsset.btc.series} source="FRED" sourceEp="CBBTCUSD" mode={modeOf('btc')} asOf={asOfOf('btc')}/>
-              </div>
+              {(()=>{
+                const dirTiles=[
+                  { f:"tenYear", render:()=><DirTile label="10Y Treasury" value={`${d.crossAsset.treasury10y.current}%`} d1={d.crossAsset.treasury10y.d1} w1={d.crossAsset.treasury10y.w1} m1={d.crossAsset.treasury10y.m1} band={0.10} invert={true} spark={d.crossAsset.treasury10y.series} source="FRED" sourceEp="DGS10" mode={modeOf('tenYear')} asOf={asOfOf('tenYear')}/> },
+                  { f:"wti", render:()=><DirTile label="WTI Crude"   value={`$${d.crossAsset.wti.current}`}         d1={d.crossAsset.wti.d1pct}  w1={d.crossAsset.wti.w1pct}  m1={d.crossAsset.wti.m1pct}  band={1.0} spark={d.crossAsset.wti.series}  source="FRED" sourceEp="DCOILWTICO" mode={modeOf('wti')} asOf={asOfOf('wti')}/> },
+                  { f:"gold", curated:true, render:()=><DirTile label="Gold" value={`$${d.crossAsset.gold.current.toLocaleString()}`} d1={d.crossAsset.gold.d1pct} w1={d.crossAsset.gold.w1pct} m1={d.crossAsset.gold.m1pct} band={1.0} spark={d.crossAsset.gold.series} source="Manual" sourceEp="curated series" mode={modeOf('gold')}/> },
+                  { f:"btc", render:()=><DirTile label="Bitcoin"     value={`$${(d.crossAsset.btc.current/1000).toFixed(1)}K`} d1={d.crossAsset.btc.d1pct} w1={d.crossAsset.btc.w1pct} m1={d.crossAsset.btc.m1pct} band={2.0} spark={d.crossAsset.btc.series} source="FRED" sourceEp="CBBTCUSD" mode={modeOf('btc')} asOf={asOfOf('btc')}/> },
+                ];
+                const liveDir=dirTiles.filter(t=>!(t.curated||demoted(t.f)));
+                const degDir=dirTiles.filter(t=>t.curated||demoted(t.f));
+                return (
+                  <>
+                    <div style={{display:"flex",gap:8,flexWrap:"wrap"}} className="dir-tiles">
+                      {liveDir.map(t=><Fragment key={t.f}>{t.render()}</Fragment>)}
+                    </div>
+                    {degDir.length>0&&(
+                      <CollapsedGroup count={degDir.length} label="stale/curated cross-asset">
+                        <div style={{display:"flex",gap:8,flexWrap:"wrap"}} className="dir-tiles">
+                          {degDir.map(t=><Fragment key={t.f}>{t.render()}</Fragment>)}
+                        </div>
+                      </CollapsedGroup>
+                    )}
+                  </>
+                );
+              })()}
             </div>
           </div>
 
