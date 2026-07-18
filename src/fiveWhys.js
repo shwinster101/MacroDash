@@ -26,7 +26,7 @@ function sessionPrefix(session) {
 // Display labels for WHY #2 fields (and the "excluded" note).
 const FIELD_LABEL = {
   vix: "VIX", fearGreed: "F&G", tenYear: "10Y", wti: "WTI",
-  btc: "BTC", creditSpread: "HY-IG", putCall: "Put/Call", marketHeadline: "headline",
+  btc: "BTC", creditSpread: "HY-IG", marketHeadline: "headline",
 };
 
 export function computeFiveWhys(data, regime = {}, opts = {}) {
@@ -41,8 +41,9 @@ export function computeFiveWhys(data, regime = {}, opts = {}) {
   const label = regime.label || "MIXED";
   const sub = regime.sub || "cross-signals";
   const bull = regime.bullVotes ?? 0;
-  // Active = the 6 regime factors minus any excluded for staleness (matches RegimeBand).
-  const active = ["tenYear", "vix", "fearGreed", "cpiHeadline", "putCall", "valuation"]
+  // Active = the 5 regime factors minus any excluded for staleness (matches RegimeBand).
+  // DEC-31 (v3.2): Put/Call retired from the factor set.
+  const active = ["tenYear", "vix", "fearGreed", "cpiHeadline", "valuation"]
     .filter((k) => !stale.has(k)).length;
 
   const headline =
@@ -98,7 +99,7 @@ export function computeFiveWhys(data, regime = {}, opts = {}) {
   // WHY #5 — synthesis + honest confidence caveat
   whys.push(
     `Net: ${label} — ${sub}. ${bull}/${active} live factors bullish` +
-    (active < 6 ? `; ${6 - active} excluded as stale/dead, so this is a reduced-signal read.` : "; full-signal read.")
+    (active < 5 ? `; ${5 - active} excluded as stale/dead, so this is a reduced-signal read.` : "; full-signal read.")
   );
 
   return {

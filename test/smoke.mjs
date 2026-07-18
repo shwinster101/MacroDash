@@ -31,7 +31,7 @@ const snapPayload = {
     savings: 3.8, savingsTrend: [4.5, 4.4, 4.3, 4.1, 4.0, 3.8], savingsAsOf: "2026-05-01",
     wti: 71.2, wtiD1: -0.8, vix: 16.06, vixWeekChg: -2.1, vixSeries: [18, 17, 16.06],
     btc: 109200, btcD1: 1.2,
-    fearGreed: 62, fearGreedLabel: "Greed", putCall: 0.79,
+    fearGreed: 62, fearGreedLabel: "Greed",
     rateOddsHold: 98, rateOddsCut: 1, rateOddsHike: 1, fomcDays: 10, nextFomcDate: "2026-06-17", rateOddsHoldAsOf: "2026-06-07",
     cpiHeadline: 3.9, cpiCore: 2.9, cpiTrend: [3.5, 3.6, 3.7, 3.8, 3.85, 3.9],
     pceHeadline: 3.0, pceCore: 2.8, pceTrend: [2.5, 2.6, 2.7, 2.75, 2.8, 2.8],
@@ -58,13 +58,14 @@ ok("isStale: false — Mon data viewed Tue (normal EOD lag)", isStale("2026-06-0
 ok("isStale monthly: false — 5wk-old print is current", isStale("2026-05-01", new Date("2026-06-08"), "monthly") === false);
 ok("isStale monthly: true — >70d behind is genuinely stale", isStale("2026-03-01", new Date("2026-06-08"), "monthly") === true);
 ok("isStale weekly: false — 6-day-old weekly print is current", isStale("2026-06-04", new Date("2026-06-10"), "weekly") === false);
-ok("isStale daily: dead 2019 source is stale (Put/Call)", isStale("2019-10-04", new Date("2026-06-08")) === true);
-// BUGFIX: the CBOE M/D/YYYY date must ALSO be recognized as stale (it silently parsed to
-// Invalid Date before, so the dead 2019 Put/Call dodged the STALE check and kept voting).
-ok("isStale: CBOE M/D/YYYY 2019 date is stale", isStale("10/04/2019", new Date("2026-06-08")) === true);
+ok("isStale daily: dead 2019-dated source is stale", isStale("2019-10-04", new Date("2026-06-08")) === true);
+// BUGFIX: a legacy M/D/YYYY date must ALSO be recognized as stale (it silently parsed to
+// Invalid Date before, so a dead 2019-dated feed could dodge the STALE check and keep voting).
+// (The format the retired CBOE feed used — kept as generic legacy-date support.)
+ok("isStale: legacy M/D/YYYY 2019 date is stale", isStale("10/04/2019", new Date("2026-06-08")) === true);
 ok("parseObsDate: handles both ISO and M/D/YYYY",
   parseObsDate("2026-06-04").getFullYear() === 2026 && parseObsDate("10/04/2019").getFullYear() === 2019);
-ok("cadenceOf: monthly for CPI, daily default for Put/Call", cadenceOf("cpiHeadline") === "monthly" && cadenceOf("putCall") === "daily");
+ok("cadenceOf: monthly for CPI, daily default for VIX", cadenceOf("cpiHeadline") === "monthly" && cadenceOf("vix") === "daily");
 ok("10Y overlaid + d1 + series", mPriv.data.crossAsset.treasury10y.current === 4.46 && mPriv.data.crossAsset.treasury10y.d1 === 0.03 && mPriv.data.crossAsset.treasury10y.series.length === 3);
 ok("Fed funds overlaid", mPriv.data.macro.fedFunds.rate === 3.63);
 ok("unemployment + lfpr overlaid", mPriv.data.macro.unemployment.national === 4.3 && mPriv.data.macro.unemployment.lfpr === 61.8);
@@ -76,7 +77,6 @@ ok("VIX + weekChg + series overlaid", mPriv.data.marketPulse.vix.current === 16.
 ok("BTC + d1 overlaid", mPriv.data.crossAsset.btc.current === 109200 && mPriv.data.crossAsset.btc.d1pct === 1.2);
 ok("F&G score overlaid (num)", mPriv.data.marketPulse.fearGreed.score === 62);
 ok("F&G label overlaid (string)", mPriv.data.marketPulse.fearGreed.label === "Greed");
-ok("Put/Call overlaid", mPriv.data.marketPulse.putCall.current === 0.79);
 ok("Kalshi rate-odds overlaid (hold/cut/hike)", mPriv.data.macro.fedFunds.odds.hold === 98 && mPriv.data.macro.fedFunds.odds.cut === 1 && mPriv.data.macro.fedFunds.odds.hike === 1);
 ok("FOMC days + next date overlaid", mPriv.data.macro.fedFunds.daysUntil === 10 && mPriv.data.macro.fedFunds.nextFOMC === "2026-06-17");
 ok("provenance rateOddsHold LIVE", mPriv.provenance.rateOddsHold === "LIVE");
@@ -144,11 +144,16 @@ ok("WHY #1 is the SPY/200DMA/CPI/Fed core anchor",
 ok("WHY #5 is the synthesis (verdict + factor tally)", /Net:/.test(fw.whys[4]) && fw.whys[4].includes("RISK-ON"));
 ok("WHY #4 attributes headwinds as a curated register (not live tape)", /Risk register/.test(fw.whys[3]) && /curated/.test(fw.whys[3]));
 // FEAT-DQ: stale factor excluded from the vote tally (headline denominator + WHY #5 caveat)
-const fwStale = computeFiveWhys(MOCK_DATA, fwRegime, { stale: new Set(["putCall"]) });
-ok("5 Whys: denominator drops to /5 when one factor is stale",
-  fwStale.headline.includes("/5") && !fwStale.headline.includes("/6"));
+const fwStale = computeFiveWhys(MOCK_DATA, fwRegime, { stale: new Set(["vix"]) });
+ok("5 Whys: denominator drops to /4 when one factor is stale",
+  fwStale.headline.includes("/4") && !fwStale.headline.includes("/5"));
 ok("5 Whys: WHY #5 flags reduced-signal read when factors excluded", fwStale.whys[4].includes("excluded"));
-ok("5 Whys: default (no stale) keeps all 6 factors", fw.headline.includes("/6"));
+ok("5 Whys: default (no stale) keeps all 5 factors (DEC-31: P/C retired)", fw.headline.includes("/5"));
+// ---- DEC-31 (v3.2): Put/Call fully retired ------------------------------
+ok("DEC-31: putCall absent from SOURCES", !("putCall" in SOURCES));
+ok("DEC-31: MOCK_DATA no longer carries marketPulse.putCall", MOCK_DATA.marketPulse.putCall === undefined);
+ok("DEC-31: dashboard.jsx has zero putCall references", !dashSrc.includes("putCall"));
+ok("5 Whys: WHY #5 reads full-signal at 5/5", computeFiveWhys(MOCK_DATA, fwRegime).whys[4].includes("full-signal"));
 // FEAT-NEWS WHY #2: only LIVE+fresh fields appear; stale/mock are named as excluded
 const fwFresh = computeFiveWhys(MOCK_DATA, fwRegime, { fresh: new Set(["fearGreed"]) });
 ok("WHY #2 includes a fresh field (F&G) and excludes a non-fresh one (VIX)",

@@ -64,14 +64,13 @@ export const SOURCES = {
   creditSpread:       { path: "macro.credit.spread",      kind: "num",    displayClass: "public" },
   creditSpreadD1:     { path: "macro.credit.spreadD1",    kind: "num",    displayClass: "public" },
   creditSpreadSeries: { path: "macro.credit.series",      kind: "series", displayClass: "public" },
-  // SENTIMENT (scrapers — CNN F&G, CBOE Put/Call)
+  // SENTIMENT (scrapers — CNN F&G). DEC-31 (v3.2): CBOE Put/Call retired (feed dead since 2019).
   fearGreed:      { path: "marketPulse.fearGreed.score",    kind: "num",    displayClass: "citation" },
   fearGreedLabel: { path: "marketPulse.fearGreed.label",    kind: "str",    displayClass: "citation" },
-  putCall:        { path: "marketPulse.putCall.current",    kind: "num",    displayClass: "public" },
   // TOP MARKET HEADLINE (FEAT-NEWS — non-FRED RSS; date-verified, staleness via asOf)
   marketHeadline:       { path: "marketPulse.headline.text",   kind: "str", displayClass: "public" },
   marketHeadlineSource: { path: "marketPulse.headline.source", kind: "str", displayClass: "public" },
-  // VALUATION (Shiller CAPE — multpl.com scrape; the regime's 6th vote, monthly cadence)
+  // VALUATION (Shiller CAPE — multpl.com scrape; the regime's valuation vote, monthly cadence)
   shillerPe:      { path: "macro.shillerPe.current",       kind: "num",    displayClass: "public" },
   // AI TOKEN ECONOMICS (the moat — OpenRouter public models API; price side of AI unit economics)
   tokenBlendedMtok: { path: "tokenomics.blendedMtok",      kind: "num",    displayClass: "public" },
@@ -177,10 +176,10 @@ export function mergeLiveOverMock(mockData, payload, publicView = false) {
   return { data, badge: liveBadge, asOf: payload.asOf || null, provenance, dataAsOf };
 }
 
-// Parse an observation date from either ISO (YYYY-MM-DD, all FRED/scraper fields) or the
-// CBOE Put/Call CSV's M/D/YYYY (e.g. "10/04/2019"). The raw-Date path silently failed on
-// M/D/YYYY → isStale returned false → the retired 2019 Put/Call dodged the STALE check and
-// kept casting a phantom bull vote. Returns a Date or null.
+// Parse an observation date from either ISO (YYYY-MM-DD, all FRED/scraper fields) or a
+// legacy M/D/YYYY (e.g. "10/04/2019" — the format the retired CBOE feed used; kept as
+// generic date support). The raw-Date path silently failed on M/D/YYYY → isStale returned
+// false → a dead 2019-dated feed could dodge the STALE check. Returns a Date or null.
 export function parseObsDate(dateStr) {
   if (!dateStr) return null;
   const s = String(dateStr).trim();

@@ -193,7 +193,7 @@ const MOCK_DATA = {
     qqq:{ price:717.66, changePct:0.44, ytd:15.50 },
     vix:{ current:18.4, weekChg:-13.2, series:[24,22,21,20,22,21,19,18] },
     fearGreed:{ score:58, label:"Greed", prevWeek:44 },
-    putCall:{ current:0.74, series30d:[0.82,0.79,0.76,0.81,0.78,0.74,0.72,0.71,0.69,0.72,0.75,0.78,0.74,0.71,0.69,0.68,0.70,0.73,0.75,0.72,0.70,0.68,0.70,0.73,0.76,0.74,0.72,0.73,0.75,0.74] },
+    // DEC-31 (v3.2): Put/Call field removed — CBOE killed the free feed in 2019; retirement noted in footer.
     // FEAT-NEWS: top market headline — live overlay from RSS (marketHeadline/Source); mock is the fallback.
     headline:{ text:"No live headline feed", source:"—" },
   },
@@ -322,7 +322,7 @@ const MOCK_DATA = {
 // ─── REGIME VERDICT ENGINE (FEAT-163, rule-based for v1.6 mock) ────────────
 // FEAT-DQ: `stale` is a Set of factor keys whose live data has gone STALE (cadence-aware).
 // A stale factor is EXCLUDED from the vote — better to drop a signal than let a dead feed
-// (e.g. the 2019-frozen CBOE Put/Call) cast a phantom bull/bear vote on today's tape.
+// (e.g. a dead scraper) cast a phantom bull/bear vote on today's tape.
 function computeRegime(d, stale=new Set()) {
   let bullVotes=0, bearVotes=0;
   const use=(k)=>!stale.has(k);
@@ -338,8 +338,6 @@ function computeRegime(d, stale=new Set()) {
     if(cpiTrend[cpiTrend.length-1] < cpiTrend[cpiTrend.length-2]) bullVotes++;
     else if(cpiTrend[cpiTrend.length-1] - cpiTrend[0] > 0.5) bearVotes++;
   }
-  // Put/Call
-  if(use("putCall")){ if(d.marketPulse.putCall.current < 0.75) bullVotes++; else if(d.marketPulse.putCall.current > 1.0) bearVotes++; }
   // Valuation (Shiller CAPE) — contrarian: a stretched market is bearish for forward returns (FEAT-R1).
   // v3.1: now LIVE (multpl scrape, monthly). Like every other factor it drops out when stale, so
   // the hero verdict never counts a fabricated valuation. pctOfAth derived from current ÷ ATH.
@@ -349,6 +347,8 @@ function computeRegime(d, stale=new Set()) {
     if(cape.current < cape.mean*1.5) bullVotes++; else if(cape.current > 30 || pctOfAth > 90) bearVotes++;
   }
 
+  // DEC-31: ≥3 of 5 = strict majority (was ≥3 of 6 = 50%). P/C was already stale-excluded
+  // since v3.1 (never actually voting), so live-mode verdicts are unchanged in practice.
   const bull = bullVotes >= 3;
   const bear = bearVotes >= 3;
   // FEAT-v17-07: hyphen separators (was middot) for RISK-ON / RISK-OFF legibility
@@ -368,7 +368,7 @@ function etSession(now = new Date()) {
   return "PRE";
 }
 
-// Shared 6-factor breakdown (used by RegimeBand · FEAT-169). `stale` (Set of factor keys)
+// Shared 5-factor breakdown (used by RegimeBand · FEAT-169; DEC-31 retired Put/Call). `stale` (Set of factor keys)
 // marks factors backed by dead/stale live data — they are flagged and excluded from the
 // bull tally so the displayed "X/Y bullish" matches the vote computeRegime actually cast.
 function regimeFactors(d, stale=new Set()) {
@@ -377,7 +377,6 @@ function regimeFactors(d, stale=new Set()) {
     {key:"vix",         label:"VIX Level",      val:`${d.marketPulse.vix.current} — ${d.marketPulse.vix.current<18?"Low (bullish)":d.marketPulse.vix.current<25?"Elevated":"Spiking (bearish)"}`, bull:d.marketPulse.vix.current<18},
     {key:"fearGreed",   label:"Fear & Greed",   val:`${d.marketPulse.fearGreed.score} — ${d.marketPulse.fearGreed.label}`,   bull:d.marketPulse.fearGreed.score>55},
     {key:"cpiHeadline", label:"CPI Trend",      val:d.macro.cpi.trend.slice(-1)[0]<d.macro.cpi.trend.slice(-2)[0]?"Cooling (bullish)":"Re-accelerating", bull:d.macro.cpi.trend.slice(-1)[0]<d.macro.cpi.trend.slice(-2)[0]},
-    {key:"putCall",     label:"Put/Call Ratio", val:`${d.marketPulse.putCall.current} — ${d.marketPulse.putCall.current<0.75?"Bullish skew":"Neutral/bearish"}`, bull:d.marketPulse.putCall.current<0.75},
     {key:"valuation",   label:"Valuation",      val:`${d.macro.shillerPe.current} CAPE · ${(d.macro.shillerPe.ath?(d.macro.shillerPe.current/d.macro.shillerPe.ath)*100:d.macro.shillerPe.pctOfAth).toFixed(1)}% of ATH`, bull:d.macro.shillerPe.current<d.macro.shillerPe.mean*1.5},
   ];
   // Stale factors: neutralize the bull flag and annotate so the UI shows them as excluded.
@@ -867,7 +866,7 @@ const RegimeBand=({d,stale=new Set()})=>{
               const c=f.stale?T.amber:f.bull?T.green:T.red;
               return(
               <span key={f.label} style={{fontFamily:T.fontMono,fontSize:8,color:c,border:`1px solid ${c}44`,borderRadius:3,padding:"1px 5px",letterSpacing:"0.03em",background:"#00000022",whiteSpace:"nowrap",opacity:f.stale?0.7:1}}>
-                {["10Y","VIX","F&G","CPI","P/C","VAL"][i]} {f.stale?"⏱":f.bull?"▲":"▼"}
+                {["10Y","VIX","F&G","CPI","VAL"][i]} {f.stale?"⏱":f.bull?"▲":"▼"}
               </span>
             );})}
           </div>
@@ -886,7 +885,7 @@ const RegimeBand=({d,stale=new Set()})=>{
               <div style={{fontFamily:T.fontMono,fontSize:9,color:f.stale?T.amber:f.bull?T.green:T.red}}>{f.val}</div>
             </div>
           ))}
-          <div style={{fontFamily:T.fontMono,fontSize:8,color:T.textMuted,gridColumn:"1/-1"}}>Rule-based 6-factor vote · stale/dead inputs auto-excluded · derived from live data</div>
+          <div style={{fontFamily:T.fontMono,fontSize:8,color:T.textMuted,gridColumn:"1/-1"}}>Rule-based 5-factor vote · stale/dead inputs auto-excluded · derived from live data</div>
         </div>
       )}
     </div>
@@ -1007,9 +1006,9 @@ export default function Dashboard({ publicView = false } = {}) {
   const fomcDays=(()=>{const nx=d.macro.fedFunds.nextFOMC;const dt=nx?parseObsDate(nx):null;if(!dt||isNaN(dt.getTime()))return d.macro.fedFunds.daysUntil;const t=new Date();t.setHours(0,0,0,0);return Math.max(0,Math.round((dt-t)/86400000));})();
   const fomcLabel=fomcDays===0?"today":`${fomcDays}d`;
   const modeOf=(k)=>{const m=provenance?.[k]||"MOCK"; return (m==="LIVE"||m==="CACHED")&&isStale(dataAsOf?.[k], new Date(), cadenceOf(k))?"STALE":m;}; // FEAT-R3: cadence-aware LIVE | CACHED | STALE | MOCK
-  // FEAT-DQ: a regime factor backed by LIVE/CACHED data that has gone STALE (e.g. the
-  // retired CBOE Put/Call CSV, frozen at 2019) must not cast a vote on today's tape.
-  const REGIME_FACTOR_FIELDS=["tenYear","vix","fearGreed","cpiHeadline","putCall"];
+  // FEAT-DQ: a regime factor backed by LIVE/CACHED data that has gone STALE (a dead feed)
+  // must not cast a vote on today's tape.
+  const REGIME_FACTOR_FIELDS=["tenYear","vix","fearGreed","cpiHeadline"];
   const staleFactors=new Set(REGIME_FACTOR_FIELDS.filter(k=>modeOf(k)==="STALE"));
   // v3.1: the valuation factor is now live (Shiller/multpl). The factor key is "valuation" but the
   // field key is "shillerPe" — drop it from the vote when stale, like every other factor.
@@ -1017,16 +1016,16 @@ export default function Dashboard({ publicView = false } = {}) {
   const regime=computeRegime(d, staleFactors);
   // Signal Quality rollup — at-a-glance trust: how many tracked signals are live+fresh vs
   // stale vs mock. Only meaningful in live mode (in mock everything is MOCK by design).
-  const SIGNAL_FIELDS=["spyPrice","vix","fearGreed","tenYear","cpiHeadline","fedFunds","creditSpread","wti","btc","rateOddsHold","marketHeadline","putCall","savings","tokenBlendedMtok","shillerPe"];
+  const SIGNAL_FIELDS=["spyPrice","vix","fearGreed","tenYear","cpiHeadline","fedFunds","creditSpread","wti","btc","rateOddsHold","marketHeadline","savings","tokenBlendedMtok","shillerPe"];
   const sq=SIGNAL_FIELDS.reduce((a,k)=>{const m=modeOf(k);if(m==="LIVE"||m==="CACHED")a.fresh++;else if(m==="STALE")a.stale++;else a.mock++;return a;},{fresh:0,stale:0,mock:0});
   sq.total=SIGNAL_FIELDS.length;
-  const asOfOf=(k)=>{const s=dataAsOf?.[k]; if(!s)return undefined; const dt=parseObsDate(s); return !dt||isNaN(dt.getTime())?s:`as of ${dt.toLocaleDateString("en-US",{month:"short",day:"numeric"})}`;}; // FEAT-R2: "as of Jun 4" (parses ISO + CBOE M/D/YYYY)
+  const asOfOf=(k)=>{const s=dataAsOf?.[k]; if(!s)return undefined; const dt=parseObsDate(s); return !dt||isNaN(dt.getTime())?s:`as of ${dt.toLocaleDateString("en-US",{month:"short",day:"numeric"})}`;}; // FEAT-R2: "as of Jun 4" (parses ISO + legacy M/D/YYYY)
   // 5 Whys: recomputed every render ($0, no LLM). Override the session frame with the LIVE
   // ET session (not the value frozen in the daily snapshot) so the narrative advances
   // pre-open → midday → post-close through the day. sessionTick re-renders it on a timer.
   // WHY #2 must only assert LIVE+fresh data: build the `fresh` set from modeOf (LIVE/CACHED,
   // not STALE/MOCK). In mock/demo mode pass null so the demo still shows every signal.
-  const FW_FIELDS=["vix","fearGreed","tenYear","wti","btc","creditSpread","putCall","marketHeadline"];
+  const FW_FIELDS=["vix","fearGreed","tenYear","wti","btc","creditSpread","marketHeadline"];
   const anyLive=mode==="LIVE"||mode==="CACHED";
   const freshSet=anyLive ? new Set(FW_FIELDS.filter(k=>{const m=modeOf(k);return m==="LIVE"||m==="CACHED";})) : null;
   const fw=computeFiveWhys({...d, session:etSession()}, regime, { stale:staleFactors, fresh:freshSet });
@@ -1085,7 +1084,7 @@ export default function Dashboard({ publicView = false } = {}) {
         ::-webkit-scrollbar-thumb{background:${T.borderAccent};border-radius:2px;}
         @media(max-width:1024px){.command-grid{display:block!important;}.zone-b{margin-top:16px!important;}}
         @media(max-width:640px){
-          /* FEAT-170: macro strip reflows to 2 rows of 4 — all 8 signals visible, NO horizontal scroll */
+          /* FEAT-170: macro strip reflows to a 4-col grid (4+3 after DEC-31) — all signals visible, NO horizontal scroll */
           .macro-strip{overflow-x:visible!important;}
           .macro-strip-inner{display:grid!important;grid-template-columns:repeat(4,1fr)!important;gap:10px 6px!important;min-width:0!important;}
           .macro-strip-inner>div{min-width:0!important;}
@@ -1152,9 +1151,6 @@ export default function Dashboard({ publicView = false } = {}) {
             {l:"10Y",  f:"tenYear", v:`${d.crossAsset.treasury10y.current}%`, s:fmt.bps(d.crossAsset.treasury10y.d1)+" 1D", sc:pctColor(-d.crossAsset.treasury10y.d1), t:"10-year Treasury yield — the benchmark interest rate"},
             {l:"FED",  f:"fedFunds", v:`${d.macro.fedFunds.rate}%`,        s:`FOMC ${fomcLabel}`, sc:fomcDays===0?T.amber:T.textMuted, t:"Fed funds rate — the central bank's policy rate"},
             {l:"CPI",  f:"cpiHeadline", v:`${d.macro.cpi.headline}%`,         s:`Core ${d.macro.cpi.core}%`, sc:d.macro.cpi.headline>3?T.red:T.green, t:"Consumer Price Index — inflation, year-over-year"},
-            modeOf('putCall')==='STALE'
-              ? {l:"P/C",  f:"putCall", v:"n/a", s:"retired", sc:T.textMuted, t:"Put/Call ratio — CBOE retired the free daily feed in 2019; no current free source"}
-              : {l:"P/C",  f:"putCall", v:`${d.marketPulse.putCall.current}`, s:d.marketPulse.putCall.current>1?"BEAR SKEW":"NEUTRAL", sc:d.marketPulse.putCall.current>1?T.red:T.textSecondary, t:"Put/Call ratio — options positioning (above 1 = defensive)"},
           ].map(({l,f,v,s,sc,t})=>{
             const m=modeOf(f); const live=m==="LIVE"||m==="CACHED";
             const dot=live?T.green:m==="STALE"?T.amber:T.textMuted; // provenance dot: live/stale/mock
@@ -1265,7 +1261,7 @@ export default function Dashboard({ publicView = false } = {}) {
               })}
             </div>
 
-            {/* A6-A9: Signal tiles — 2×2: equity fear (VIX | F&G) + multi-asset risk (P/C | Credit) */}
+            {/* A6-A8: Signal tiles — equity fear (VIX | F&G) + credit risk (DEC-31 retired P/C) */}
             <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8}}>
               {/* VIX */}
               <div style={{background:T.surface,border:`1px solid ${T.border}`,borderRadius:5,padding:"10px 12px"}}>
@@ -1277,27 +1273,6 @@ export default function Dashboard({ publicView = false } = {}) {
               </div>
               {/* F&G */}
               <FGGauge score={d.marketPulse.fearGreed.score} label={d.marketPulse.fearGreed.label} mode={modeOf('fearGreed')} asOf={asOfOf('fearGreed')}/>
-              {/* Put/Call — CBOE retired the free daily CSV in 2019. When the live value is
-                  STALE (i.e. the dead feed), don't show the 2019 number: render n/a so the tile
-                  is honest about having no current source, rather than a STALE-badged relic. */}
-              <div style={{background:T.surface,border:`1px solid ${T.border}`,borderRadius:5,padding:"10px 12px"}}>
-                <Label>Put / Call</Label>
-                {modeOf('putCall')==='STALE' ? (
-                  <>
-                    <div style={{fontFamily:T.fontMono,fontSize:20,color:T.textMuted,fontWeight:700}}>n/a</div>
-                    <div style={{fontFamily:T.fontMono,fontSize:9,color:T.textMuted}}>CBOE feed retired ’19</div>
-                    <div style={{height:28,marginTop:6,display:"flex",alignItems:"center",fontFamily:T.fontMono,fontSize:8,color:T.textMuted,opacity:0.6}}>no current free source</div>
-                    <SourceBox api="CBOE" endpoint="equity-put-call (retired)" mode="STALE"/>
-                  </>
-                ) : (
-                  <>
-                    <div style={{fontFamily:T.fontMono,fontSize:20,color:d.marketPulse.putCall.current>1?T.red:T.textPrimary,fontWeight:700}}>{d.marketPulse.putCall.current}</div>
-                    <div style={{fontFamily:T.fontMono,fontSize:9,color:T.textMuted}}>Bearish {">"} 1.0</div>
-                    <div style={{height:28,marginTop:6}}><ResponsiveContainer width="100%" height="100%"><LineChart data={d.marketPulse.putCall.series30d.slice(-10).map((v,i)=>({v,i}))}><Line type="monotone" dataKey="v" stroke={T.amber} dot={false} strokeWidth={1.5}/><ReferenceLine y={1.0} stroke={T.red} strokeDasharray="2 2" strokeWidth={1}/></LineChart></ResponsiveContainer></div>
-                    <SourceBox api="CBOE" endpoint="equity-put-call" mode={modeOf('putCall')} asOf={asOfOf('putCall')}/>
-                  </>
-                )}
-              </div>
               {/* HY-IG Credit Spread — widening is a bearish leading indicator for equities */}
               <div style={{background:T.surface,border:`1px solid ${T.border}`,borderRadius:5,padding:"10px 12px"}}>
                 <Label>HY–IG SPREAD</Label>
@@ -1442,7 +1417,7 @@ export default function Dashboard({ publicView = false } = {}) {
               {/* Freshness anchors to the equity close (SPY) — a market synthesis is "as of the
                   last close". Don't let a secondary input FRED publishes a day late (VIX/10Y)
                   drag the whole 5-Whys badge to STALE; per-tile VIX/10Y badges stay honest. */}
-              <SourceBox api="Rule-based" endpoint="6-factor regime · stale inputs excluded" mode={modeOf('spyPrice')} asOf={asOfOf('spyPrice')}/>
+              <SourceBox api="Rule-based" endpoint="5-factor regime · stale inputs excluded" mode={modeOf('spyPrice')} asOf={asOfOf('spyPrice')}/>
             </div>
           </div>
         </div>
@@ -1581,7 +1556,7 @@ export default function Dashboard({ publicView = false } = {}) {
         <div style={{marginTop:12,display:"flex",justifyContent:"space-between",alignItems:"center",flexWrap:"wrap",gap:4}}>
           <div style={{fontFamily:T.fontMono,fontSize:8,color:T.textMuted}}>{`MacroDash v${__APP_VERSION__} · Data refreshed daily · end-of-day sources`}</div>
           <div style={{fontFamily:T.fontMono,fontSize:8,color:T.textMuted}}>Not financial advice · Personal use</div>
-          <div style={{fontFamily:T.fontMono,fontSize:8,color:T.textMuted}}>Live: FRED · CNN · Kalshi · OpenRouter · Finnhub · multpl · Curated: Mag 10 fundamentals · GPU $/hr · SEC S-1</div>
+          <div style={{fontFamily:T.fontMono,fontSize:8,color:T.textMuted}}>Live: FRED · CNN · Kalshi · OpenRouter · Finnhub · multpl · Curated: Mag 10 fundamentals · GPU $/hr · SEC S-1 · Retired: CBOE Put/Call (free feed dead since 2019 · removed v3.2)</div>
         </div>
       </div>
     </div>
