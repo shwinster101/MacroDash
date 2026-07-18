@@ -9,6 +9,9 @@ cached in KV. **Current version: 3.2.0 "Cut to the Live Signal"** (the footer
 renders `package.json`'s version — the single source of truth).
 
 **Live:** https://macrodash.pages.dev · friend view: `/?view=public`
+**Machine endpoint:** [`/readout.json`](https://macrodash.pages.dev/readout.json) — the TT
+regime readout (`tt-v1` schema, CORS-open, 5-min cache): six band checks →
+TAILWIND/NEUTRAL/HEADWIND/PANIC + the Macro Flip circuit, derived from the same daily snapshot.
 
 ## Quickstart
 
