@@ -190,6 +190,19 @@ Jan-anchor shipped; see `snapshot.js` ~318–328), `spyMa100`, `spyMa200`, and a
 > flags it STALE) instead of reverting to mock. Mock is the fallback only when there is
 > no last-good yet.
 
+## TT Ticker Terminal admin portal (FEAT-TT, v3.4.0)
+
+- **`public/admin.html`** — Vite `public/` passthrough serves the TT tier-board GUI verbatim at
+  `/admin.html`. It is the empty template wired to **`/api/tt`** (`functions/api/tt.js`): GET loads
+  the book, every mutation (add / card save / remove→CUT / import) optimistically updates then PUTs.
+  KV key **`tt:book:v1`** (no TTL) in `PULSE_CACHE` holds `{version, asOf, book, cut}`.
+- **Auth = Cloudflare Access** (Zero Trust self-hosted apps on `/admin*` AND `/api/tt*`, allow the
+  owner's email). `tt.js` additionally verifies the `Cf-Access-Jwt-Assertion` JWT against
+  `env.ACCESS_TEAM_DOMAIN` certs + `env.ACCESS_AUD` (Pages env vars; missing → 503, fail closed).
+  `env.ACCESS_DEV_BYPASS="1"` skips verification for local `wrangler pages dev` only.
+- **Invariant: the real CANONICAL_BOOK never enters the repo or bundle.** `SEED=[]` stays empty;
+  seeding/restore is paste-import in the UI (EXPORT JSON from the Artifacts copy → IMPORT JSON).
+
 ## Cloudflare deployment
 
 ### Pages (the site + `/api/*`)
