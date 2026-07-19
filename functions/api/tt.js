@@ -78,7 +78,10 @@ async function verifyAccessJwt(request, env) {
 }
 
 // ── Book validation ─────────────────────────────────────────────────────────
-function validateBook(body) {
+// Checks sym/tier/lens/note only and DELIBERATELY PASSES THROUGH unknown per-entry
+// keys — the admin client owns their shape (`fp`, `rank`, and FEAT-TT-RUN's `lastRun`
+// all ride this). Load-bearing behavior, not an oversight. Exported for the smoke test.
+export function validateBook(body) {
   if (!body || typeof body !== "object") return "body must be an object";
   const { book, cut } = body;
   if (!Array.isArray(book)) return "book must be an array";

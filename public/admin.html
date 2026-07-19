@@ -74,6 +74,22 @@
   .chip .sym{font-weight:700;letter-spacing:.5px}
   .chip .lens{font-size:9px;padding:0 5px;border-radius:8px;border:1px solid currentColor;opacity:.9}
   .chip.fp::after{content:"◦FP";font-size:9px;color:var(--amber);margin-left:2px}
+  /* FEAT-TT-RUN: run-state markers. ::after is taken by .fp, so state uses ::before.
+     Fresh gets NO glyph — 29 affirmative dots is noise; the rollup carries that count. */
+  .chip.run-stale::before{content:"⏱";font-size:9px;color:var(--amber)}
+  .chip.run-head::before {content:"⏱";font-size:9px;color:var(--red)}
+  .chip.run-never::before{content:"○";font-size:9px;color:var(--red)}
+  /* book-coverage rollup — mirrors MacroDash's Signal Quality strip */
+  .cov{display:flex;align-items:center;gap:10px;flex-wrap:wrap;font-size:10px;color:var(--dim);
+    letter-spacing:.06em;padding:2px 0 8px;border-bottom:1px dashed var(--line);margin-bottom:10px}
+  .cov .f{color:var(--green)} .cov .s{color:var(--amber)} .cov .n{color:var(--red)}
+  /* collapsible schema blocks (native <details>) */
+  details.schema>summary{cursor:pointer;list-style:none;color:var(--dim);font-size:10.5px;
+    letter-spacing:1px;text-transform:uppercase;margin:8px 0 4px;padding:6px 0}
+  details.schema>summary::-webkit-details-marker{display:none}
+  details.schema>summary::before{content:"▸ ";color:var(--green)}
+  details.schema[open]>summary::before{content:"▾ "}
+  @media(max-width:480px){button.act{padding:9px 13px}}
   .lens-AI{color:var(--AI)} .lens-PH{color:var(--PH)} .lens-QC{color:var(--QC)}
   .lens-VEH{color:var(--VEH)} .lens-SP{color:var(--SP)}
   .cutrow .chip{opacity:.55;text-decoration:line-through;cursor:default}
@@ -143,6 +159,8 @@
     <div id="authBanner" style="display:none;margin-top:8px;color:var(--red);font-size:12px">
       SESSION EXPIRED — <a href="javascript:location.reload()">reload to re-authenticate</a>
     </div>
+    <!-- FEAT-TT-RUN: separate slot so an auth failure and an unsaved edit can coexist -->
+    <div id="saveBanner" style="display:none;margin-top:8px;color:var(--red);font-size:12px"></div>
   </header>
 
   <div class="cmd">
@@ -163,6 +181,7 @@
   <div class="layout">
     <div class="panel">
       <h2>Tier Board &nbsp;·&nbsp; click any ticker to open its TT Card</h2>
+      <div class="cov" id="coverage"></div>
       <div id="board"></div>
     </div>
 
@@ -284,10 +303,28 @@ function applyServer(data){
   META={version:data.version,asOf:data.asOf};
   stampHeader();
 }
+/* FEAT-TT-RUN: days since an ISO date, or null if absent/unparseable. Null is the
+   FAIL-CLOSED signal — unlike src/sources.js isStale (which returns false = "not stale"
+   on a missing date), a missing date here must read as NEVER RUN, never as fresh. */
+function ageDays(iso){
+  if(!iso||!/^\d{4}-\d{2}-\d{2}$/.test(iso))return null;
+  const t=Date.parse(iso+"T12:00:00Z"); // noon UTC dodges timezone edge cases
+  if(!Number.isFinite(t))return null;
+  return Math.floor((Date.now()-t)/86400000);
+}
+/* TT-run state. A future-dated lastRun (typo) also reads as never — not fresh. */
+function runState(iso){
+  const d=ageDays(iso);
+  if(d===null||d<0)return{k:"never",days:null};
+  if(d>90)return{k:"head",days:d};
+  if(d>30)return{k:"stale",days:d};
+  return{k:"fresh",days:d};
+}
 function stampHeader(){
   const el=document.getElementById("bookStamp");
   if(!META.asOf){el.textContent="EMPTY — import your book JSON";return;}
-  const days=Math.floor((Date.now()-new Date(META.asOf+"T12:00:00Z"))/86400000);
+  const days=ageDays(META.asOf);
+  if(days===null){el.textContent=`CANONICAL_BOOK v${META.version} · STAMPED ${META.asOf}`;return;}
   const stale=days>30?" pill head":days>7?" pill warn":"";
   el.innerHTML=`CANONICAL_BOOK v${META.version} · STAMPED ${META.asOf}`+
     (stale?` <span class="pill${stale}">${days}d old</span>`:"");
@@ -303,16 +340,43 @@ async function loadBook(){
     toast("Load failed: "+e.message);render();
   }
 }
+/* FEAT-TT-RUN: DIRTY tracks an edit that exists ONLY on screen. The old catch here
+   re-GET the server copy and overwrote BOOK — silently destroying the user's work.
+   Never re-GET on a save failure: the local edit is the only copy of it. */
+let DIRTY=false;
+const MAX_BODY=64*1024; // mirror of the server cap in functions/api/tt.js
 async function persist(){
+  const raw=JSON.stringify({book:BOOK,cut:CUT});
+  if(raw.length>MAX_BODY){ // pre-flight, so overflow reads as a specific local message
+    DIRTY=true;showUnsaved(`payload ${Math.round(raw.length/1024)}KB exceeds the ${MAX_BODY/1024}KB server cap`);
+    return;
+  }
   try{
     const data=await api("PUT",{book:BOOK,cut:CUT});
+    DIRTY=false;document.getElementById("saveBanner").style.display="none";
     applyServer(data);render();
   }catch(e){
-    toast("SAVE FAILED — "+e.message+" (reloading server copy)");
-    try{applyServer(await api("GET"));render();}catch(_e){}
+    DIRTY=true;render();showUnsaved(e.message);
   }
 }
-async function reloadBook(){await loadBook();toast("Reloaded from server");}
+function showUnsaved(msg){
+  const el=document.getElementById("saveBanner");
+  el.style.display="block";
+  el.innerHTML=`UNSAVED CHANGES — save failed: ${String(msg).replace(/[<>&]/g,"")}. `+
+    `Your edit is still on screen and NOT on the server. `+
+    `<a href="javascript:persist()">RETRY</a> · `+
+    `<a href="javascript:exportJSON()">EXPORT JSON (backup)</a> · `+
+    `<a href="javascript:discardLocal()">discard &amp; reload server copy</a>`;
+}
+async function discardLocal(){
+  DIRTY=false;document.getElementById("saveBanner").style.display="none";await loadBook();
+}
+window.addEventListener("beforeunload",e=>{if(DIRTY){e.preventDefault();e.returnValue="";}});
+async function reloadBook(){
+  if(DIRTY&&!window.confirm("You have unsaved changes. Reloading discards them. Continue?"))return;
+  DIRTY=false;document.getElementById("saveBanner").style.display="none";
+  await loadBook();toast("Reloaded from server");
+}
 
 /* ═══════════ IMPORT ═══════════ */
 function openImport(){
@@ -353,13 +417,14 @@ function render(){
     const chips=document.createElement("div");chips.className="chips";
     if(!items.length)chips.innerHTML='<span class="empty">— empty —</span>';
     items.forEach(x=>{
+      const rs=runState(x.lastRun);
       const c=document.createElement("div");
-      c.className="chip"+(x.fp?" fp":"");
+      c.className="chip"+(x.fp?" fp":"")+" run-"+rs.k;
       c.onclick=()=>openCard(x.sym);
       c.innerHTML=`<span class="sym">${x.sym}</span>
         <span class="lens lens-${x.lens}">${x.lens}</span>`;
-      if(x.rank&&x.rank!=="—")c.title=x.rank+" · "+(x.note||"");
-      else c.title=x.note||"";
+      const runTxt=rs.k==="never"?"TT run: NEVER RUN":`TT run ${x.lastRun} · ${rs.days}d ago`;
+      c.title=[runTxt,(x.rank&&x.rank!=="—")?x.rank:null,x.note||null].filter(Boolean).join(" · ");
       chips.appendChild(c);
     });
     sec.appendChild(chips);
@@ -372,6 +437,20 @@ function render(){
   const cc=document.createElement("div");cc.className="chips";
   CUT.forEach(s=>{const c=document.createElement("div");c.className="chip";c.innerHTML=`<span class="sym">${s}</span>`;cc.appendChild(c);});
   cut.appendChild(cc);b.appendChild(cut);
+  renderCoverage();
+}
+/* FEAT-TT-RUN: book-coverage rollup — the honest tell, mirroring Signal Quality.
+   `head` folds into the stale COUNT (3 buckets) while keeping its own red chip marker. */
+function renderCoverage(){
+  const c={fresh:0,stale:0,never:0};
+  BOOK.forEach(x=>{const k=runState(x.lastRun).k;c[k==="head"?"stale":k]++;});
+  document.getElementById("coverage").innerHTML=
+    `<span>BOOK COVERAGE</span>`+
+    `<span class="f">● ${c.fresh} fresh</span>`+
+    (c.stale?`<span class="s">⏱ ${c.stale} stale</span>`:"")+
+    (c.never?`<span class="n">○ ${c.never} never run</span>`:"")+
+    `<span>of ${BOOK.length}</span>`+
+    `<span style="margin-left:auto">● ≤30d · ⏱ aged · ○ no TT run on record</span>`;
 }
 
 /* ═══════════ CARD (view / modify) ═══════════ */
@@ -389,23 +468,38 @@ function openCard(sym){
     <div class="row"><div class="k">FP ROUTING</div><div class="v"><select id="fFp">
         <option value="false" ${!x.fp?"selected":""}>no — routing verified</option>
         <option value="true" ${x.fp?"selected":""}>yes — first-principles call (veto if wrong)</option></select></div></div>`;
+  // FEAT-TT-RUN: when the harness last actually ran on this name. type=date gives a
+  // native mobile picker AND structurally guarantees ISO, so no garbage reaches ageDays.
+  const rs=runState(x.lastRun);
+  const rsPill=rs.k==="never"?'<span class="pill head">NEVER RUN</span>'
+    :rs.k==="head"?`<span class="pill head">${rs.days}d — re-run</span>`
+    :rs.k==="stale"?`<span class="pill warn">${rs.days}d old</span>`
+    :`<span class="pill">${rs.days}d — fresh</span>`;
+  html+=`<div class="row"><div class="k">LAST TT RUN</div><div class="v"
+    style="display:flex;gap:6px;align-items:center;flex-wrap:wrap">
+    <input id="fLastRun" type="date" value="${x.lastRun||""}" style="width:auto"/>
+    <button class="act" onclick="stampRunToday()">today</button>${rsPill}</div></div>`;
   if(x.tier==="WATCH")
     html+=`<div class="row"><div class="k">QUEUE RANK</div><div class="v"><input id="fRank" value="${x.rank||"—"}"/></div></div>`;
   html+=`<div class="row"><div class="k">BOOK NOTE</div><div class="v"><textarea id="fNote">${x.note||""}</textarea></div></div>`;
 
-  // TT card schema (read-only placeholders — filled by a live TT run)
-  html+=`<div class="schema"><div class="lbl">TT CARD — DEEP mode (run <b>TT: ${x.sym}</b> in chat to populate live)</div>`;
+  // TT card schema — collapsed by default (11 placeholder rows were 61% of card height)
+  html+=`<details class="schema"><summary>TT CARD — DEEP mode · ${CARD_FIELDS.length} fields (run <b>TT: ${x.sym}</b> in chat to populate live)</summary>`;
   CARD_FIELDS.forEach(f=>{
     html+=`<div class="row"><div class="k">${f[1]}</div><div class="v derived">${f[2]}</div></div>`;
   });
-  html+=`</div>`;
+  html+=`</details>`;
   body.innerHTML=html;
 
-  document.getElementById("cBtns").innerHTML=`
-    <button class="act" onclick="saveCard()">✔ SAVE CHANGES</button>
-    <button class="act" onclick="copyTTRun()">⧉ COPY 'TT: ${x.sym}' PROMPT</button>
-    <button class="act danger" onclick="removeCard()">🗑 REMOVE FROM BOOK</button>`;
+  document.getElementById("cBtns").innerHTML=cardBtns(x.sym);
   document.getElementById("overlay").classList.add("on");
+}
+function cardBtns(sym){return `
+  <button class="act" onclick="saveCard()">✔ SAVE CHANGES</button>
+  <button class="act" onclick="copyTTRun()">⧉ COPY 'TT: ${sym}' PROMPT</button>
+  <button class="act danger" onclick="removeCard()">🗑 REMOVE FROM BOOK</button>`;}
+function stampRunToday(){
+  document.getElementById("fLastRun").value=new Date().toISOString().slice(0,10);
 }
 function saveCard(){
   const x=find(CURRENT);if(!x)return;
@@ -415,9 +509,20 @@ function saveCard(){
   x.note=document.getElementById("fNote").value.trim();
   const r=document.getElementById("fRank");if(r)x.rank=r.value.trim();
   if(x.tier!=="WATCH")delete x.rank;
+  const lr=document.getElementById("fLastRun").value;
+  if(lr)x.lastRun=lr; else delete x.lastRun;
   render();closeCard();toast(x.sym+" updated — saving to server…");persist();
 }
+/* FEAT-TT-RUN: two-tap confirm. NOT window.confirm() — some webviews suppress it, and
+   it breaks the terminal aesthetic. CANCEL restores ONLY the button row via cardBtns();
+   rebuilding cBody via openCard() would silently discard unsaved note/tier edits. */
 function removeCard(){
+  document.getElementById("cBtns").innerHTML=`
+    <span style="color:var(--red);font-size:12px;align-self:center">Remove ${CURRENT} from the book → CUT row?</span>
+    <button class="act danger" onclick="removeConfirmed()">✔ YES, REMOVE</button>
+    <button class="act" onclick="document.getElementById('cBtns').innerHTML=cardBtns(CURRENT)">CANCEL</button>`;
+}
+function removeConfirmed(){
   const i=BOOK.findIndex(x=>x.sym===CURRENT);if(i<0)return;
   const s=BOOK[i].sym;BOOK.splice(i,1);
   if(!CUT.includes(s))CUT.push(s);
@@ -441,15 +546,20 @@ function openAdd(prefill){
     <div class="row"><div class="k">FP ROUTING</div><div class="v"><select id="fFp">
       <option value="false">no — routing verified</option>
       <option value="true">yes — first-principles call</option></select></div></div>
+    <div class="row"><div class="k">LAST TT RUN</div><div class="v"
+      style="display:flex;gap:6px;align-items:center;flex-wrap:wrap">
+      <input id="fLastRun" type="date" value="" style="width:auto"/>
+      <button class="act" onclick="stampRunToday()">today</button>
+      <span class="derived" style="font-size:11px">leave blank until the harness has actually run</span></div></div>
     <div class="row"><div class="k">QUEUE RANK</div><div class="v"><input id="fRank" placeholder="—"/></div></div>
     <div class="row"><div class="k">BOOK NOTE</div><div class="v"><textarea id="fNote" placeholder="one-line thesis / routing rationale"></textarea></div></div>
-    <div class="schema"><div class="lbl">STEP 1 · ROUTER GATE — assign exactly ONE lens</div>
+    <details class="schema"><summary>STEP 1 · ROUTER GATE — assign exactly ONE lens</summary>
       <div class="row"><div class="k lens-AI">[AI]</div><div class="v derived">datacenter · compute · energy-for-AI · AI software-infra</div></div>
       <div class="row"><div class="k lens-PH">[PH]</div><div class="v derived">eVTOL · AV · robotics · space · drones</div></div>
       <div class="row"><div class="k lens-QC">[QC]</div><div class="v derived">operating business — unit economics carry the score</div></div>
       <div class="row"><div class="k lens-VEH">[VEH]</div><div class="v derived">ETF / CEF / wrapper / pre-IPO — no harness tiering, capped 1–2%</div></div>
       <div class="row"><div class="k lens-SP">[SP]</div><div class="v derived">pre-revenue story — optionality sizing only</div></div>
-      <div class="derived" style="margin-top:8px">Router first — never force a non-fit through a lens. Composite ≥8.5=S · 7.0–8.4=A · 5.5–6.9=B · &lt;5.5=C. Gates cap, never boost. Run the TT prompt below to get the routed lens + tier, then record it here.</div></div>`;
+      <div class="derived" style="margin-top:8px">Router first — never force a non-fit through a lens. Composite ≥8.5=S · 7.0–8.4=A · 5.5–6.9=B · &lt;5.5=C. Gates cap, never boost. Run the TT prompt below to get the routed lens + tier, then record it here.</div></details>`;
   document.getElementById("cBtns").innerHTML=`
     <button class="act" onclick="addSave()">✔ ADD TO BOOK</button>
     <button class="act" onclick="copyTTNew()">⧉ COPY 'TT: X' PROMPT</button>`;
@@ -469,6 +579,7 @@ function addSave(){
   const o={sym,tier:document.getElementById("fTier").value,lens:document.getElementById("fLens").value,
     fp:document.getElementById("fFp").value==="true",note:document.getElementById("fNote").value.trim()};
   const r=document.getElementById("fRank").value.trim();if(o.tier==="WATCH"&&r)o.rank=r;
+  const lr=document.getElementById("fLastRun").value;if(lr)o.lastRun=lr;
   BOOK.push(o);render();closeCard();toast(sym+" added to "+TIER_LABEL[o.tier]+" — saving…");persist();
 }
 

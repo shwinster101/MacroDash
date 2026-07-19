@@ -97,7 +97,7 @@ worker/                 SEPARATE Cloudflare Worker (not part of Pages)
   wrangler.toml         Worker config: PULSE_CACHE binding + cron triggers (UTC).
 
 test/
-  smoke.mjs             No-network smoke test: 116 assertions over mergeLiveOverMock
+  smoke.mjs             No-network smoke test: 131 assertions over mergeLiveOverMock
                         + SOURCES-path resolution against the real MOCK_DATA + the
                         5-Whys engine + DEC-31 guards + the TT band table (DEC-33).
 ```
@@ -202,6 +202,23 @@ Jan-anchor shipped; see `snapshot.js` ~318–328), `spyMa100`, `spyMa200`, and a
   `env.ACCESS_DEV_BYPASS="1"` skips verification for local `wrangler pages dev` only.
 - **Invariant: the real CANONICAL_BOOK never enters the repo or bundle.** `SEED=[]` stays empty;
   seeding/restore is paste-import in the UI (EXPORT JSON from the Artifacts copy → IMPORT JSON).
+- **FEAT-TT-RUN (v3.5.0) applies the dashboard's honesty rule to the book.** Per-entry `lastRun`
+  (ISO date of the last harness pass) drives `runState()` — fresh ≤30d · stale >30d · head >90d ·
+  **never** (missing *or future-dated*). `ageDays()` **fails closed**: unlike `src/sources.js
+  isStale` (which returns `false` on a missing date), an absent `lastRun` reads as NEVER RUN, so an
+  unreviewed name can never look reviewed. Chips carry `::before` markers (`::after` is `.fp`'s),
+  and a **BOOK COVERAGE** strip mirrors Signal Quality. `lastRun` is *self-attested* — that's the
+  known weakness; failing closed is the mitigation.
+- **`validateBook()` deliberately passes through unknown per-entry keys** (`fp`, `rank`, `lastRun`)
+  — load-bearing, not an oversight, and now covered by smoke section [6] (first behavioral test of
+  `functions/` in the repo; `validateBook` is exported solely for it).
+- **`persist()` never re-GETs on save failure** — the old catch overwrote `BOOK` from the server and
+  silently destroyed the user's edit. It now sets `DIRTY`, shows `#saveBanner` (RETRY / EXPORT /
+  explicit discard) and guards `beforeunload`. Client-side 64KB pre-flight mirrors the server cap.
+- **Deferred:** stored fundamentals + Robinhood sync. Cloudflare Access blocks chat-side access to
+  `/api/tt` (no JWT), so any sync is a clipboard chore unless an Access **service token** is added.
+  When revisited, store the *triage* shape (`{at, px}` → "% moved since your last TT run"), not a
+  reference block a live harness pass re-fetches anyway.
 
 ## Cloudflare deployment
 
@@ -264,7 +281,7 @@ npm run dev        # Vite dev server (mock unless VITE_DATA_MODE=live in .env)
 npm run build      # → dist/  (what Pages runs)
 npm run preview    # serve the built dist/
 
-node test/smoke.mjs   # 116-assertion no-network smoke test (needs Node ≥17)
+node test/smoke.mjs   # 131-assertion no-network smoke test (needs Node ≥17)
 
 # Cron Worker (separate deploy):
 cd worker && npx wrangler deploy

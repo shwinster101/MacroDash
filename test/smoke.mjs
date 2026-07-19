@@ -11,6 +11,7 @@ import {
   bandSpyVs200d, bandVix, bandFearGreed, bandRs, bandTenYear, bandFedOdds,
   aggregateVerdict, computeMacroFlip, buildTtReadout, formatTtPaste,
 } from "../src/ttReadout.js";
+import { validateBook } from "../functions/api/tt.js";
 
 let pass = 0, fail = 0;
 const ok = (name, cond) => { if (cond) { pass++; console.log("  PASS  " + name); } else { fail++; console.log("  FAIL  " + name); } };
@@ -230,6 +231,30 @@ ok("paste: carries REGIME + verdict + MACRO FLIP lines", paste.includes("REGIME"
 ok("paste: honesty footer present (RS basis + not advice)", paste.includes("basis=1d") && paste.includes("not advice"));
 ok("paste: null-input body still returns a string with n/a", (() => { const p = formatTtPaste(buildTtReadout({}, { now: TT_NOW })); return typeof p === "string" && p.includes("n/a"); })());
 ok("one-wiring-point intact: dashboard.jsx does not fetch readout.json", !dashSrc.includes("readout.json"));
+
+// ---- 6. /api/tt validateBook — the TT book contract ---------------------
+// FEAT-TT-RUN: first behavioral coverage of functions/ in this suite. validateBook is
+// pure (tt.js's top level is consts + function declarations only), so it imports in Node.
+console.log("\n[6] /api/tt validateBook (book contract)");
+const okBook = (extra = {}) => ({ book: [{ sym: "NVDA", tier: "S", lens: "AI", note: "n", ...extra }], cut: [] });
+const bad = (b) => typeof validateBook(b) === "string";
+ok("tt: valid minimal book passes", validateBook(okBook()) === null);
+ok("tt: null / non-object body rejected", bad(null) && bad("x"));
+ok("tt: missing book array rejected", bad({ cut: [] }));
+ok("tt: missing cut array rejected", bad({ book: [] }));
+ok("tt: non-object book entry rejected", bad({ book: [null], cut: [] }));
+ok("tt: lowercase sym rejected", bad({ book: [{ sym: "nvda", tier: "S", lens: "AI" }], cut: [] }));
+ok("tt: sym >8 chars rejected", bad({ book: [{ sym: "ABCDEFGHI", tier: "S", lens: "AI" }], cut: [] }));
+ok("tt: unknown tier rejected", bad({ book: [{ sym: "NVDA", tier: "Z", lens: "AI" }], cut: [] }));
+ok("tt: all 5 tiers accepted", ["S", "A", "B", "DEF", "WATCH"].every(t =>
+  validateBook({ book: [{ sym: "X", tier: t, lens: "AI" }], cut: [] }) === null));
+ok("tt: lens >4 chars rejected", bad({ book: [{ sym: "NVDA", tier: "S", lens: "TOOLONG" }], cut: [] }));
+ok("tt: note >500 chars rejected", bad(okBook({ note: "x".repeat(501) })));
+ok("tt: absent note allowed", validateBook({ book: [{ sym: "NVDA", tier: "S", lens: "AI" }], cut: [] }) === null);
+ok("tt: cut entry >12 chars rejected", bad({ book: [], cut: ["ABCDEFGHIJKLM"] }));
+// The zero-server-change premise: unknown per-entry keys pass through by design.
+ok("tt: lastRun round-trips (unknown key passthrough)", validateBook(okBook({ lastRun: "2026-07-18" })) === null);
+ok("tt: fp + rank still pass through", validateBook(okBook({ fp: true, rank: "#1" })) === null);
 
 console.log(`\n=== SMOKE TEST: ${pass} passed, ${fail} failed ===`);
 process.exit(fail === 0 ? 0 : 1);
