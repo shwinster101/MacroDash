@@ -1052,8 +1052,11 @@ export default function Dashboard({ publicView = false } = {}) {
   // FOMC countdown computed CLIENT-SIDE from nextFOMC (the snapshot's daysUntil is frozen at
   // fetch time and rounds up — it read "1d" on decision day). 0 = today. Falls back to the
   // snapshot value if nextFOMC is missing/unparseable.
-  const fomcDays=(()=>{const nx=d.macro.fedFunds.nextFOMC;const dt=nx?parseObsDate(nx):null;if(!dt||isNaN(dt.getTime()))return d.macro.fedFunds.daysUntil;const t=new Date();t.setHours(0,0,0,0);return Math.max(0,Math.round((dt-t)/86400000));})();
-  const fomcLabel=fomcDays===0?"today":`${fomcDays}d`;
+  // FEAT-SNAP-UX: a PAST nextFOMC date (stale mock/snapshot) must read as unknown (null),
+  // not clamp to 0 — the old Math.max(0,…) rendered "FOMC decision today" forever once the
+  // baked-in meeting date went by.
+  const fomcDays=(()=>{const nx=d.macro.fedFunds.nextFOMC;const dt=nx?parseObsDate(nx):null;if(!dt||isNaN(dt.getTime()))return d.macro.fedFunds.daysUntil;const t=new Date();t.setHours(0,0,0,0);const days=Math.round((dt-t)/86400000);return days<0?null:days;})();
+  const fomcLabel=fomcDays==null?"—":fomcDays===0?"today":`${fomcDays}d`;
   const modeOf=(k)=>{const m=provenance?.[k]||"MOCK"; return (m==="LIVE"||m==="CACHED")&&isStale(dataAsOf?.[k], new Date(), cadenceOf(k))?"STALE":m;}; // FEAT-R3: cadence-aware LIVE | CACHED | STALE | MOCK
   // FEAT-DQ: a regime factor backed by LIVE/CACHED data that has gone STALE (a dead feed)
   // must not cast a vote on today's tape.
@@ -1187,11 +1190,17 @@ export default function Dashboard({ publicView = false } = {}) {
           {/* FEAT-165: friendly sub-headline */}
           {/* FINDING-1: orientation line now visible on mobile (was hide-mobile) */}
           <div style={{fontFamily:T.fontSans,fontSize:10,color:T.textMuted}}>macrodash</div>
+          {/* FEAT-SNAP-UX: the session · timestamp line renders ONLY from live data. The mock
+              baseline's hardcoded lastRefresh next to a pulsing dot read as "the site last
+              refreshed <months-old date>" — a timestamp is exactly the kind of number the
+              v3.1 honesty invariant says must never look live when it isn't. */}
           <div style={{display:"flex",alignItems:"center",gap:5,flexWrap:"wrap"}}>
-            <div style={{width:6,height:6,borderRadius:"50%",background:T.amber,boxShadow:`0 0 5px ${T.amber}`}} className="pulse-anim"/>
-            <span style={{fontFamily:T.fontMono,fontSize:9,color:T.textSecondary}}>{d.session} · {d.lastRefresh}</span>
+            <div style={{width:6,height:6,borderRadius:"50%",background:anyLive?T.amber:T.textMuted,boxShadow:anyLive?`0 0 5px ${T.amber}`:"none"}} className="pulse-anim"/>
+            <span style={{fontFamily:T.fontMono,fontSize:9,color:T.textSecondary}}>
+              {anyLive?`${d.session} · ${d.lastRefresh}`:mode==="LOADING"?"fetching live data…":"demo baseline — not live"}
+            </span>
             {/* FINDING-4: set novice expectations — these are end-of-day, not real-time */}
-            <span style={{fontFamily:T.fontMono,fontSize:8,color:T.textMuted}}>· end-of-day, not real-time</span>
+            {anyLive&&<span style={{fontFamily:T.fontMono,fontSize:8,color:T.textMuted}}>· end-of-day, not real-time</span>}
           </div>
         </div>
         <div style={{display:"flex",alignItems:"center",gap:8}}>
@@ -1453,7 +1462,7 @@ export default function Dashboard({ publicView = false } = {}) {
                   <div>
                     <Label>Fed Funds Rate</Label>
                     <div style={{fontFamily:T.fontMono,fontSize:22,color:T.amber,fontWeight:700}}>{d.macro.fedFunds.rate}%</div>
-                    <div style={{fontFamily:T.fontMono,fontSize:9,color:fomcDays===0?T.amber:T.textMuted}}>{fomcDays===0?"FOMC decision today":`Next FOMC in ${fomcDays} day${fomcDays===1?"":"s"}`}</div>
+                    <div style={{fontFamily:T.fontMono,fontSize:9,color:fomcDays===0?T.amber:T.textMuted}}>{fomcDays==null?"Next FOMC — awaiting schedule":fomcDays===0?"FOMC decision today":`Next FOMC in ${fomcDays} day${fomcDays===1?"":"s"}`}</div>
                     {/* Next-FOMC decision odds (Kalshi prediction market) */}
                     <div style={{display:"flex",gap:6,marginTop:4,flexWrap:"wrap",alignItems:"baseline"}}>
                       <span style={{fontFamily:T.fontMono,fontSize:7,color:T.textMuted,letterSpacing:"0.08em"}}>NEXT-MTG</span>
