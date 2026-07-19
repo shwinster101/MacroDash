@@ -79,6 +79,18 @@
   .chip.run-stale::before{content:"⏱";font-size:9px;color:var(--amber)}
   .chip.run-head::before {content:"⏱";font-size:9px;color:var(--red)}
   .chip.run-never::before{content:"○";font-size:9px;color:var(--red)}
+  /* FEAT-TT-ND: next-dollar line — the question the whole framework exists to answer */
+  .nd{border:1px solid var(--greenDim);border-radius:6px;background:#070f0c;
+    padding:8px 11px;margin-bottom:10px;box-shadow:0 0 18px rgba(31,122,85,.12) inset}
+  .nd .lbl{font-size:9px;letter-spacing:.16em;color:var(--dim);text-transform:uppercase}
+  .nd .picks{display:flex;flex-wrap:wrap;gap:8px;margin-top:5px;align-items:center}
+  .nd .pick{display:inline-flex;align-items:center;gap:6px;cursor:pointer;border:1px solid var(--greenDim);
+    border-radius:6px;padding:4px 10px;background:#0b1a14;transition:.12s}
+  .nd .pick:hover{border-color:var(--green);transform:translateY(-1px)}
+  .nd .pick .sym{font-weight:700;color:var(--green);letter-spacing:.5px}
+  .nd .scope{font-size:9px;color:var(--dim)}
+  .nd .warn2{font-size:9px;color:var(--amber)} .nd .bad2{font-size:9px;color:var(--red)}
+  .nd .none{color:var(--dim);font-size:11.5px;margin-top:4px}
   /* book-coverage rollup — mirrors MacroDash's Signal Quality strip */
   .cov{display:flex;align-items:center;gap:10px;flex-wrap:wrap;font-size:10px;color:var(--dim);
     letter-spacing:.06em;padding:2px 0 8px;border-bottom:1px dashed var(--line);margin-bottom:10px}
@@ -182,6 +194,7 @@
   <div class="layout">
     <div class="panel">
       <h2>Tier Board &nbsp;·&nbsp; click any ticker to open its TT Card</h2>
+      <div class="nd" id="nextDollar"></div>
       <div class="cov" id="coverage"></div>
       <div id="board"></div>
     </div>
@@ -524,7 +537,46 @@ function render(){
   const cc=document.createElement("div");cc.className="chips";
   CUT.forEach(s=>{const c=document.createElement("div");c.className="chip";c.innerHTML=`<span class="sym">${s}</span>`;cc.appendChild(c);});
   cut.appendChild(cc);b.appendChild(cut);
-  renderCoverage();
+  renderNextDollar();renderCoverage();
+}
+/* FEAT-TT-ND: the next-dollar line. Ranks are free text ("#1 infra", "#1 cross-bucket",
+   "#3", "—"), and the real book carries TWO #1s scoped to different buckets — so the queue
+   is NOT a total order. Showing one would invent a precedence the maintainer never set;
+   every entry tied at the lowest rank is shown as a co-lead, with its scope text intact. */
+function rankNum(rank){
+  const m=String(rank||"").match(/#\s*(\d+)/);
+  return m?parseInt(m[1],10):null;
+}
+function rankScope(rank){
+  return String(rank||"").replace(/#\s*\d+\s*/,"").trim(); // "infra", "cross-bucket", ""
+}
+function renderNextDollar(){
+  const el=document.getElementById("nextDollar");
+  const ranked=BOOK.filter(x=>x.tier==="WATCH"&&rankNum(x.rank)!==null);
+  if(!ranked.length){
+    const watch=BOOK.filter(x=>x.tier==="WATCH").length;
+    el.innerHTML=`<div class="lbl">Next dollar</div><div class="none">`+
+      (watch?`${watch} name${watch===1?"":"s"} on the watchlist, none ranked — set a QUEUE RANK (e.g. "#1 infra") to surface the next dollar.`
+            :`Watchlist is empty — nothing queued for the next dollar.`)+`</div>`;
+    return;
+  }
+  const top=Math.min(...ranked.map(x=>rankNum(x.rank)));
+  const leads=ranked.filter(x=>rankNum(x.rank)===top);
+  const picks=leads.map(x=>{
+    const rs=runState(x.lastRun);
+    // Honesty: this line is decision-adjacent, so a stale or never-run rating must say so
+    // rather than presenting an old conclusion as a current recommendation.
+    const flag=rs.k==="never"?`<span class="bad2">○ no TT run on record</span>`
+      :rs.k==="head"?`<span class="bad2">⏱ ${rs.days}d — re-run first</span>`
+      :rs.k==="stale"?`<span class="warn2">⏱ ${rs.days}d old</span>`:"";
+    const scope=rankScope(x.rank);
+    return `<span class="pick" onclick="openCard('${x.sym}')" title="${(x.note||"").replace(/"/g,"&quot;")}">
+      <span class="sym">${x.sym}</span><span class="lens lens-${x.lens}">${x.lens}</span>
+      ${scope?`<span class="scope">${scope}</span>`:""}${flag}</span>`;
+  }).join("");
+  el.innerHTML=`<div class="lbl">Next dollar · queue #${top}`+
+    (leads.length>1?` · ${leads.length} co-leads (different buckets — not a single ranking)`:"")+
+    `</div><div class="picks">${picks}</div>`;
 }
 /* FEAT-TT-RUN: book-coverage rollup — the honest tell, mirroring Signal Quality.
    `head` folds into the stale COUNT (3 buckets) while keeping its own red chip marker. */

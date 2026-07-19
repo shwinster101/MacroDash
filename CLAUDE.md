@@ -230,6 +230,14 @@ Jan-anchor shipped; see `snapshot.js` ~318–328), `spyMa100`, `spyMa200`, and a
   malformed `lastRun`; `importSave` validates **before** overwriting `BOOK`; `exportJSON` reports
   the real version (it hardcoded `"1.1"`, mislabeling every backup); `getKeys` refetches once on a
   `kid` miss (Access key rotation inside the 6h cache window otherwise 403s everything).
+- **FEAT-TT-ND (v3.7.0) surfaces the next dollar** at the top of the board — the question the
+  whole TT framework exists to answer, previously buried in the last tier. Ranks are free text
+  (`"#1 infra"`, `"#1 cross-bucket"`, `"#3"`, `"—"`), and the real book carries **two `#1`s scoped
+  to different buckets**, so the queue is **not a total order**: `renderNextDollar()` shows *every*
+  entry tied at the lowest rank as a **co-lead** with its scope text, rather than inventing a
+  precedence the maintainer never set. Decision-adjacent, so it inherits the honesty rule —
+  a lead whose `lastRun` is stale/never shows `⏱ Nd — re-run first` / `○ no TT run on record`.
+  Unranked watchlist and empty watchlist each get their own explicit copy (never a blank).
 - **Deferred:** stored fundamentals + Robinhood sync. Cloudflare Access blocks chat-side access to
   `/api/tt` (no JWT), so any sync is a clipboard chore unless an Access **service token** is added.
   When revisited, store the *triage* shape (`{at, px}` → "% moved since your last TT run"), not a
