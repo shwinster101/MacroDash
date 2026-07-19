@@ -97,7 +97,7 @@ worker/                 SEPARATE Cloudflare Worker (not part of Pages)
   wrangler.toml         Worker config: PULSE_CACHE binding + cron triggers (UTC).
 
 test/
-  smoke.mjs             No-network smoke test: 131 assertions over mergeLiveOverMock
+  smoke.mjs             No-network smoke test: 143 assertions over mergeLiveOverMock
                         + SOURCES-path resolution against the real MOCK_DATA + the
                         5-Whys engine + DEC-31 guards + the TT band table (DEC-33).
 ```
@@ -215,6 +215,21 @@ Jan-anchor shipped; see `snapshot.js` ~318–328), `spyMa100`, `spyMa200`, and a
 - **`persist()` never re-GETs on save failure** — the old catch overwrote `BOOK` from the server and
   silently destroyed the user's edit. It now sets `DIRTY`, shows `#saveBanner` (RETRY / EXPORT /
   explicit discard) and guards `beforeunload`. Client-side 64KB pre-flight mirrors the server cap.
+- **FEAT-TT-SAFE (v3.6.0) closes the lost-update hole.** The book is a **whole-book replace**,
+  so two devices editing concurrently silently clobbered each other. `PUT` now requires
+  **`If-Match: <version>`**; a mismatch returns **409 with the server's copy**, and the client
+  shows both sides (KEEP MINE / TAKE SERVER'S / EXPORT MINE FIRST). `"*"` or an absent header is
+  the documented override (curl recovery). `conflictCheck()` is pure + smoke-tested.
+- **Restore points:** the **first** write of each ET day copies the outgoing book to
+  `tt:book:snap:<ET-date>` (30d TTL) — first-write-wins so a later mistake can't overwrite the
+  good copy it needs. Readable via `GET /api/tt?snapshots=1` (list) and `?snapshot=<date>`, with
+  a **⏱ RESTORE POINTS** UI that previews into memory *without* writing (SAVE is a second step).
+- Also fixed in v3.6.0: the KV `.put()` is wrapped (an unguarded throw returned an HTML error
+  page, which the client misreported as an **auth** failure); `validateBook` rejects **duplicate
+  syms** (dupes rendered twice but `find()` resolved only the first → unreachable ghosts) and
+  malformed `lastRun`; `importSave` validates **before** overwriting `BOOK`; `exportJSON` reports
+  the real version (it hardcoded `"1.1"`, mislabeling every backup); `getKeys` refetches once on a
+  `kid` miss (Access key rotation inside the 6h cache window otherwise 403s everything).
 - **Deferred:** stored fundamentals + Robinhood sync. Cloudflare Access blocks chat-side access to
   `/api/tt` (no JWT), so any sync is a clipboard chore unless an Access **service token** is added.
   When revisited, store the *triage* shape (`{at, px}` → "% moved since your last TT run"), not a
@@ -281,7 +296,7 @@ npm run dev        # Vite dev server (mock unless VITE_DATA_MODE=live in .env)
 npm run build      # → dist/  (what Pages runs)
 npm run preview    # serve the built dist/
 
-node test/smoke.mjs   # 131-assertion no-network smoke test (needs Node ≥17)
+node test/smoke.mjs   # 143-assertion no-network smoke test (needs Node ≥17)
 
 # Cron Worker (separate deploy):
 cd worker && npx wrangler deploy

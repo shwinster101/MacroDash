@@ -6,6 +6,8 @@
 // Storage: KV PULSE_CACHE key tt:book:v1, no TTL. Book data never ships in the bundle.
 
 const BOOK_KEY = "tt:book:v1";
+const SNAP_PREFIX = "tt:book:snap:";       // FEAT-TT-SAFE: dated rollback copies
+const SNAP_TTL = 30 * 24 * 3600;           // 30 days of daily restore points
 const TIERS = ["S", "A", "B", "DEF", "WATCH"];
 const SYM_RE = /^[A-Z.\-]{1,8}$/;
 const MAX_BODY = 64 * 1024;
@@ -28,9 +30,9 @@ function b64uToBytes(s) {
   return out;
 }
 
-async function getKeys(teamDomain) {
+async function getKeys(teamDomain, force = false) {
   const now = Date.now();
-  if (certCache && now - certCache.fetchedAt < 6 * 3600 * 1000) return certCache.keys;
+  if (!force && certCache && now - certCache.fetchedAt < 6 * 3600 * 1000) return certCache.keys;
   const res = await fetch(`https://${teamDomain}/cdn-cgi/access/certs`);
   if (!res.ok) throw new Error("certs fetch failed: " + res.status);
   const { keys: jwks } = await res.json();
@@ -59,8 +61,14 @@ async function verifyAccessJwt(request, env) {
     if (!h || !p || !sig) throw new Error("malformed");
     const header = JSON.parse(new TextDecoder().decode(b64uToBytes(h)));
     const payload = JSON.parse(new TextDecoder().decode(b64uToBytes(p)));
-    const keys = await getKeys(env.ACCESS_TEAM_DOMAIN);
-    const key = keys.get(header.kid);
+    let keys = await getKeys(env.ACCESS_TEAM_DOMAIN);
+    let key = keys.get(header.kid);
+    // FEAT-TT-SAFE: a kid miss means Access rotated its signing keys inside our 6h cache
+    // window. Refetch once before rejecting, or every request 403s until the isolate recycles.
+    if (!key) {
+      keys = await getKeys(env.ACCESS_TEAM_DOMAIN, true);
+      key = keys.get(header.kid);
+    }
     if (!key) throw new Error("unknown kid");
     const valid = await crypto.subtle.verify(
       "RSASSA-PKCS1-v1_5", key, b64uToBytes(sig),
@@ -86,15 +94,32 @@ export function validateBook(body) {
   const { book, cut } = body;
   if (!Array.isArray(book)) return "book must be an array";
   if (!Array.isArray(cut)) return "cut must be an array";
+  const seen = new Set();
   for (const e of book) {
     if (!e || typeof e !== "object") return "book entries must be objects";
     if (typeof e.sym !== "string" || !SYM_RE.test(e.sym)) return "bad sym: " + JSON.stringify(e.sym);
+    // FEAT-TT-SAFE: dupes render twice but find() resolves only the first, so edits and
+    // removals hit one copy and the other persists as an unreachable ghost. Reject at the door.
+    if (seen.has(e.sym)) return "duplicate sym: " + e.sym;
+    seen.add(e.sym);
     if (!TIERS.includes(e.tier)) return "bad tier for " + e.sym;
     if (typeof e.lens !== "string" || e.lens.length > 4) return "bad lens for " + e.sym;
     if (typeof (e.note ?? "") !== "string" || (e.note || "").length > 500) return "bad note for " + e.sym;
+    if (e.lastRun !== undefined && !(typeof e.lastRun === "string" && /^\d{4}-\d{2}-\d{2}$/.test(e.lastRun)))
+      return "bad lastRun for " + e.sym;
   }
   for (const s of cut) if (typeof s !== "string" || s.length > 12) return "bad cut entry";
   return null;
+}
+
+// FEAT-TT-SAFE: optimistic concurrency. The client echoes the version it last read as
+// If-Match; a mismatch means another device wrote in between, and a whole-book PUT would
+// silently clobber it. Pure + exported so the smoke test can pin the truth table.
+// An absent header is the documented escape hatch (curl recovery), NOT the client path.
+export function conflictCheck(ifMatch, prevVersion) {
+  if (!prevVersion) return null;            // nothing stored yet — first write always wins
+  if (!ifMatch || ifMatch === "*") return null;  // explicit override
+  return ifMatch === String(prevVersion) ? null : "version conflict";
 }
 
 const etDate = () =>
@@ -105,6 +130,25 @@ export async function onRequestGet({ request, env }) {
   const auth = await verifyAccessJwt(request, env);
   if (!auth.ok) return json({ error: auth.error }, auth.status);
   if (!env.PULSE_CACHE) return json({ error: "KV unavailable" }, 503);
+
+  // ?snapshots=1 lists restore points; ?snapshot=YYYY-MM-DD reads one. Without a read
+  // path the snapshots would be write-only, i.e. not actually a recovery mechanism.
+  const url = new URL(request.url);
+  if (url.searchParams.get("snapshots") === "1") {
+    try {
+      const list = await env.PULSE_CACHE.list({ prefix: SNAP_PREFIX });
+      return json({ snapshots: list.keys.map(k => k.name.slice(SNAP_PREFIX.length)).sort().reverse() });
+    } catch (e) { return json({ error: "list failed: " + (e?.message || "unknown") }, 503); }
+  }
+  const snapDate = url.searchParams.get("snapshot");
+  if (snapDate) {
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(snapDate)) return json({ error: "bad snapshot date" }, 400);
+    let snap = null;
+    try { snap = await env.PULSE_CACHE.get(SNAP_PREFIX + snapDate, "json"); } catch (_e) {}
+    if (!snap) return json({ error: "no snapshot for " + snapDate }, 404);
+    return json({ ...snap, snapshotOf: snapDate, empty: false });
+  }
+
   let stored = null;
   try { stored = await env.PULSE_CACHE.get(BOOK_KEY, "json"); } catch (_e) {}
   if (!stored) return json({ version: null, asOf: null, book: [], cut: [], empty: true });
@@ -125,10 +169,34 @@ export async function onRequestPut({ request, env }) {
 
   let prev = null;
   try { prev = await env.PULSE_CACHE.get(BOOK_KEY, "json"); } catch (_e) {}
+
+  // Conflict gate: return the server's copy so the client can show both sides rather
+  // than silently losing whichever device saved first.
+  const conflict = conflictCheck(request.headers.get("If-Match"), prev?.version);
+  if (conflict) return json({ error: conflict, current: { ...prev, empty: false } }, 409);
+
   const prevV = parseFloat(prev?.version);
   const version = Number.isFinite(prevV) ? (prevV + 0.1).toFixed(1) : (body.version || "1.0");
   const stored = { version, asOf: etDate(), book: body.book, cut: body.cut };
-  await env.PULSE_CACHE.put(BOOK_KEY, JSON.stringify(stored)); // no TTL — persistent
+
+  // Snapshot before overwriting — KV holds one value per key, so without this an overwrite
+  // is unrecoverable. FIRST write of each ET day wins: the snapshot must preserve the
+  // start-of-day state, so a later mistake can't overwrite the good copy it needs to restore.
+  if (prev) {
+    const snapKey = SNAP_PREFIX + etDate();
+    try {
+      const existing = await env.PULSE_CACHE.get(snapKey);
+      if (!existing) await env.PULSE_CACHE.put(snapKey, JSON.stringify(prev), { expirationTtl: SNAP_TTL });
+    } catch (_e) { /* a missing rollback point must not block the write */ }
+  }
+
+  try {
+    await env.PULSE_CACHE.put(BOOK_KEY, JSON.stringify(stored)); // no TTL — persistent
+  } catch (e) {
+    // Unguarded, this threw an HTML error page; the client saw non-JSON and told the user
+    // to re-authenticate — a storage fault impersonating an auth fault.
+    return json({ error: "storage write failed: " + (e?.message || "unknown") }, 503);
+  }
   return json({ ...stored, empty: false });
 }
 

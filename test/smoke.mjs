@@ -11,7 +11,7 @@ import {
   bandSpyVs200d, bandVix, bandFearGreed, bandRs, bandTenYear, bandFedOdds,
   aggregateVerdict, computeMacroFlip, buildTtReadout, formatTtPaste,
 } from "../src/ttReadout.js";
-import { validateBook } from "../functions/api/tt.js";
+import { validateBook, conflictCheck } from "../functions/api/tt.js";
 
 let pass = 0, fail = 0;
 const ok = (name, cond) => { if (cond) { pass++; console.log("  PASS  " + name); } else { fail++; console.log("  FAIL  " + name); } };
@@ -255,6 +255,26 @@ ok("tt: cut entry >12 chars rejected", bad({ book: [], cut: ["ABCDEFGHIJKLM"] })
 // The zero-server-change premise: unknown per-entry keys pass through by design.
 ok("tt: lastRun round-trips (unknown key passthrough)", validateBook(okBook({ lastRun: "2026-07-18" })) === null);
 ok("tt: fp + rank still pass through", validateBook(okBook({ fp: true, rank: "#1" })) === null);
+// FEAT-TT-SAFE: dupes rendered twice but find() resolved only the first — ghost entries.
+ok("tt: duplicate sym rejected", bad({ book: [
+  { sym: "NVDA", tier: "S", lens: "AI" }, { sym: "NVDA", tier: "A", lens: "AI" }], cut: [] }));
+ok("tt: distinct syms still pass", validateBook({ book: [
+  { sym: "NVDA", tier: "S", lens: "AI" }, { sym: "PLTR", tier: "A", lens: "AI" }], cut: [] }) === null);
+ok("tt: malformed lastRun rejected", bad(okBook({ lastRun: "07/13/2026" })));
+ok("tt: non-string lastRun rejected", bad(okBook({ lastRun: 20260713 })));
+ok("tt: ISO lastRun accepted", validateBook(okBook({ lastRun: "2026-07-13" })) === null);
+
+// ---- 7. conflictCheck — optimistic concurrency truth table ----------------
+// The failure this exists to stop: two devices each PUT a whole book; the later write
+// silently erases the earlier one, with no error on either side and no history in KV.
+console.log("\n[7] /api/tt conflictCheck (lost-update guard)");
+ok("cc: no stored version -> first write always wins", conflictCheck(undefined, undefined) === null);
+ok("cc: matching version -> allowed", conflictCheck("1.4", "1.4") === null);
+ok("cc: stale version -> conflict", conflictCheck("1.3", "1.4") === "version conflict");
+ok("cc: newer-than-server version -> conflict", conflictCheck("1.9", "1.4") === "version conflict");
+ok("cc: '*' is an explicit override", conflictCheck("*", "1.4") === null);
+ok("cc: absent header is the documented escape hatch", conflictCheck(null, "1.4") === null);
+ok("cc: numeric prevVersion compares as string", conflictCheck("1.4", 1.4) === null);
 
 console.log(`\n=== SMOKE TEST: ${pass} passed, ${fail} failed ===`);
 process.exit(fail === 0 ? 0 : 1);

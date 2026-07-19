@@ -176,6 +176,7 @@
     <button class="act" onclick="exportJSON()">⭳ EXPORT JSON</button>
     <button class="act" onclick="openImport()">⇪ IMPORT JSON</button>
     <button class="act warn" onclick="reloadBook()">⟲ RELOAD FROM SERVER</button>
+    <button class="act warn" onclick="openRestore()">⏱ RESTORE POINTS</button>
   </div>
 
   <div class="layout">
@@ -273,10 +274,15 @@ function authExpired(msg){
   el.style.display="block";
   if(msg)el.innerHTML=msg+' — <a href="javascript:location.reload()">reload</a>';
 }
-async function api(method,body){
+async function api(method,body,ifMatch){
+  const headers={};
+  if(body)headers["content-type"]="application/json";
+  // FEAT-TT-SAFE: echo the version we last read so the server can reject a write that
+  // would clobber another device's edit. "*" only when nothing is stored yet.
+  if(ifMatch)headers["If-Match"]=ifMatch;
   const res=await fetch("/api/tt",{
     method,
-    headers:body?{"content-type":"application/json"}:undefined,
+    headers:Object.keys(headers).length?headers:undefined,
     body:body?JSON.stringify(body):undefined,
   });
   const ct=res.headers.get("content-type")||"";
@@ -294,6 +300,11 @@ async function api(method,body){
   if(res.status===503){
     authExpired("503 — server config missing: "+(data.error||"ACCESS_AUD / ACCESS_TEAM_DOMAIN or the KV binding is not set on the Pages project."));
     throw new Error(data.error||"not configured");
+  }
+  if(res.status===409){
+    const err=new Error("version conflict");
+    err.conflict=data.current||null; // the server's copy, for the merge prompt
+    throw err;
   }
   if(!res.ok)throw new Error(data.error||("HTTP "+res.status));
   return data;
@@ -352,19 +363,46 @@ async function persist(){
     return;
   }
   try{
-    const data=await api("PUT",{book:BOOK,cut:CUT});
+    const data=await api("PUT",{book:BOOK,cut:CUT},META.version||"*");
     DIRTY=false;document.getElementById("saveBanner").style.display="none";
     applyServer(data);render();
   }catch(e){
-    DIRTY=true;render();showUnsaved(e.message);
+    DIRTY=true;render();
+    if(e.conflict)showConflict(e.conflict); else showUnsaved(e.message);
   }
 }
-function showUnsaved(msg){
+/* FEAT-TT-SAFE: another device wrote since this tab loaded. Show BOTH sides and make the
+   user choose — the old behavior silently overwrote whichever save landed first. */
+function showConflict(server){
+  const el=document.getElementById("saveBanner");
+  const mine=BOOK.length,theirs=(server.book||[]).length;
+  el.style.display="block";
+  el.innerHTML=`CONFLICT — this book was changed on another device `+
+    `(server v${server.version}, stamped ${server.asOf}, ${theirs} names · yours has ${mine}). `+
+    `Nothing was overwritten. `+
+    `<a href="javascript:overwriteServer()">KEEP MINE (overwrite server)</a> · `+
+    `<a href="javascript:takeServer()">TAKE SERVER'S (discard mine)</a> · `+
+    `<a href="javascript:exportJSON()">EXPORT MINE FIRST</a>`;
+}
+async function overwriteServer(){
+  try{
+    const data=await api("PUT",{book:BOOK,cut:CUT},"*"); // explicit override
+    DIRTY=false;document.getElementById("saveBanner").style.display="none";
+    applyServer(data);render();toast("Server overwritten with this device's book");
+  }catch(e){showUnsaved(e.message);}
+}
+async function takeServer(){
+  DIRTY=false;document.getElementById("saveBanner").style.display="none";
+  await loadBook();toast("Loaded the server's copy — your local changes were discarded");
+}
+function showUnsaved(msg,kind){
   const el=document.getElementById("saveBanner");
   el.style.display="block";
-  el.innerHTML=`UNSAVED CHANGES — save failed: ${String(msg).replace(/[<>&]/g,"")}. `+
-    `Your edit is still on screen and NOT on the server. `+
-    `<a href="javascript:persist()">RETRY</a> · `+
+  const head=kind==="preview"
+    ? `UNSAVED — ${String(msg).replace(/[<>&]/g,"")}. `
+    : `UNSAVED CHANGES — save failed: ${String(msg).replace(/[<>&]/g,"")}. Your edit is still on screen and NOT on the server. `;
+  el.innerHTML=head+
+    `<a href="javascript:persist()">${kind==="preview"?"SAVE THIS COPY":"RETRY"}</a> · `+
     `<a href="javascript:exportJSON()">EXPORT JSON (backup)</a> · `+
     `<a href="javascript:discardLocal()">discard &amp; reload server copy</a>`;
 }
@@ -393,12 +431,61 @@ function openImport(){
     <button class="act" onclick="closeCard()">CANCEL</button>`;
   document.getElementById("overlay").classList.add("on");
 }
+/* ═══════════ RESTORE POINTS (FEAT-TT-SAFE) ═══════════ */
+/* Daily start-of-day copies, 30d TTL. Previewing loads into memory WITHOUT saving —
+   you still have to hit SAVE, so a misclick can't overwrite the live book. */
+async function openRestore(){
+  CURRENT=null;
+  document.getElementById("cTitle").textContent="RESTORE POINTS";
+  document.getElementById("cBody").innerHTML=`<div class="derived">loading…</div>`;
+  document.getElementById("cBtns").innerHTML=`<button class="act" onclick="closeCard()">CLOSE</button>`;
+  document.getElementById("overlay").classList.add("on");
+  let dates=[];
+  try{
+    const res=await fetch("/api/tt?snapshots=1");
+    const d=await res.json();dates=d.snapshots||[];
+  }catch(e){
+    document.getElementById("cBody").innerHTML=`<div class="derived">could not list restore points: ${e.message}</div>`;return;
+  }
+  if(!dates.length){
+    document.getElementById("cBody").innerHTML=`<div class="derived">No restore points yet — one is written the first time the book changes on any given day, and kept 30 days.</div>`;return;
+  }
+  document.getElementById("cBody").innerHTML=
+    `<div class="derived" style="margin-bottom:8px">Start-of-day copies of the book, newest first.
+     Previewing loads it on screen only — nothing is written until you SAVE.</div>`+
+    dates.map(d=>`<div class="row"><div class="k">${d}</div><div class="v">
+      <button class="act" onclick="previewSnapshot('${d}')">preview this copy</button></div></div>`).join("");
+}
+async function previewSnapshot(date){
+  try{
+    const res=await fetch("/api/tt?snapshot="+encodeURIComponent(date));
+    const d=await res.json();
+    if(!res.ok)throw new Error(d.error||("HTTP "+res.status));
+    BOOK=d.book||[];CUT=d.cut||[];DIRTY=true;
+    closeCard();render();
+    showUnsaved(`previewing the ${date} restore point (v${d.version}). Review it, then save it to make it live, or discard to return to the current book`,"preview");
+    toast(`Loaded ${date} restore point — review, then save or discard`);
+  }catch(e){toast("Restore failed: "+e.message);}
+}
 async function importSave(){
   let parsed;
   try{parsed=JSON.parse(document.getElementById("fImport").value);}
   catch(_e){return toast("Invalid JSON — paste the exact EXPORT JSON contents");}
   const book=parsed.book,cut=parsed.cut||[];
   if(!Array.isArray(book))return toast("JSON must contain a 'book' array");
+  if(!Array.isArray(cut))return toast("'cut' must be an array");
+  // FEAT-TT-SAFE: validate BEFORE overwriting BOOK. The old order replaced the in-memory
+  // book with the paste, so a server rejection left the garbage on screen while the
+  // banner claimed "your edit is still here" — the real book existed only on the server.
+  const syms=new Set();
+  for(const e of book){
+    if(!e||typeof e!=="object")return toast("Import rejected: entries must be objects");
+    if(typeof e.sym!=="string"||!/^[A-Z.\-]{1,8}$/.test(e.sym))return toast("Import rejected: bad ticker "+JSON.stringify(e&&e.sym));
+    if(syms.has(e.sym))return toast("Import rejected: duplicate ticker "+e.sym);
+    syms.add(e.sym);
+    if(!TIER_ORDER.includes(e.tier))return toast("Import rejected: bad tier for "+e.sym);
+    if(e.lastRun!==undefined&&!/^\d{4}-\d{2}-\d{2}$/.test(String(e.lastRun)))return toast("Import rejected: bad lastRun for "+e.sym);
+  }
   BOOK=book;CUT=cut;
   closeCard();await persist();toast("Book imported & saved to server");
 }
@@ -653,7 +740,9 @@ function exportBook(){
 }
 function exportJSON(){
   const d=new Date().toISOString().slice(0,10);
-  download(`tt_book_${d}.json`,JSON.stringify({version:"1.1",asOf:d,book:BOOK,cut:CUT},null,2),"application/json");
+  // Report the REAL version — the old hardcoded "1.1" mislabeled every backup, and an
+  // export→import round-trip silently reset it.
+  download(`tt_book_${d}.json`,JSON.stringify({version:META.version||"1.0",asOf:META.asOf||d,book:BOOK,cut:CUT},null,2),"application/json");
   toast("Exported book JSON");
 }
 
