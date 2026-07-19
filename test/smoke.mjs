@@ -12,6 +12,7 @@ import {
   aggregateVerdict, computeMacroFlip, buildTtReadout, formatTtPaste,
 } from "../src/ttReadout.js";
 import { validateBook, conflictCheck } from "../functions/api/tt.js";
+import { plausible, applyBands, quorum, QUORUM_FIELDS, QUORUM_MIN } from "../functions/api/snapshot.js";
 
 let pass = 0, fail = 0;
 const ok = (name, cond) => { if (cond) { pass++; console.log("  PASS  " + name); } else { fail++; console.log("  FAIL  " + name); } };
@@ -275,6 +276,46 @@ ok("cc: newer-than-server version -> conflict", conflictCheck("1.9", "1.4") === 
 ok("cc: '*' is an explicit override", conflictCheck("*", "1.4") === null);
 ok("cc: absent header is the documented escape hatch", conflictCheck(null, "1.4") === null);
 ok("cc: numeric prevVersion compares as string", conflictCheck("1.4", 1.4) === null);
+
+// ---- 8. snapshot.js plausibility bands + quorum gate ---------------------
+// FEAT-SNAP-SAFE: first behavioral coverage of snapshot.js. The v3.1 honesty invariant
+// checked liveness and provenance but never whether a number could be TRUE; and the old
+// health gate counted output keys, so one FRED series could lock in a gutted day.
+console.log("\n[8] snapshot.js bands + quorum");
+ok("band: normal VIX passes", plausible("vix", 16.7));
+ok("band: decimal-shifted VIX rejected", !plausible("vix", 1850));
+ok("band: VIX 89.5 (2008 record) still passes", plausible("vix", 89.5));
+ok("band: negative VIX rejected", !plausible("vix", -3));
+ok("band: NEGATIVE WTI accepted — it really happened 2020-04-20", plausible("wti", -37.63));
+ok("band: absurd WTI rejected", !plausible("wti", 1e9));
+ok("band: 10Y 15.8 (1981 peak) passes", plausible("tenYear", 15.8));
+ok("band: 10Y 250 rejected", !plausible("tenYear", 250));
+ok("band: F&G 0 and 100 both valid", plausible("fearGreed", 0) && plausible("fearGreed", 100));
+ok("band: F&G 101 rejected", !plausible("fearGreed", 101));
+ok("band: CPI deflation -8 passes", plausible("cpiHeadline", -8));
+ok("band: CPI 400 rejected", !plausible("cpiHeadline", 400));
+ok("band: non-finite rejected", !plausible("vix", Infinity) && !plausible("vix", NaN));
+ok("band: absent value passes (nothing to judge)", plausible("vix", undefined) && plausible("vix", null));
+ok("band: unbanded key always passes", plausible("someFutureField", 1e12));
+ok("applyBands: strips bad, keeps good, reports what it dropped", (() => {
+  const live = { vix: 1850, tenYear: 4.5, fearGreed: 37, session: "OPEN" };
+  const dropped = applyBands(live);
+  return live.vix === undefined && live.tenYear === 4.5 && live.fearGreed === 37
+      && live.session === "OPEN" && dropped.length === 1 && dropped[0].startsWith("vix=");
+})());
+ok("quorum: full set is ok", quorum({ spyPrice: 700, vix: 16, tenYear: 4.5, fearGreed: 37, cpiHeadline: 3.7, shillerPe: 41 }).ok);
+ok("quorum: exactly QUORUM_MIN is ok", quorum({ spyPrice: 700, vix: 16, tenYear: 4.5, fearGreed: 37 }).ok);
+ok("quorum: one short is NOT ok", !quorum({ spyPrice: 700, vix: 16, tenYear: 4.5 }).ok);
+// The regression that motivated this: tenYear alone emits 6 output keys and passed the
+// old `fredCount >= 6` gate. It must now fail.
+ok("quorum: lone tenYear (old gate's blind spot) is NOT ok", !quorum({
+  tenYear: 4.5, tenYearAsOf: "2026-07-17", tenYearD1: 0.02, tenYearW1: 0.1, tenYearM1: 0.2, tenYearSeries: [1, 2] }).ok);
+ok("quorum: non-finite values don't count toward quorum", !quorum({ spyPrice: NaN, vix: null, tenYear: "4.5", fearGreed: 37 }).ok);
+ok("quorum: reports which fields are missing", (() => {
+  const q = quorum({ spyPrice: 700, vix: 16 });
+  return q.count === 2 && q.missing.includes("cpiHeadline") && q.missing.includes("shillerPe");
+})());
+ok("quorum: config sane (min <= field count, all voters named)", QUORUM_MIN <= QUORUM_FIELDS.length && QUORUM_FIELDS.length === 6);
 
 console.log(`\n=== SMOKE TEST: ${pass} passed, ${fail} failed ===`);
 process.exit(fail === 0 ? 0 : 1);

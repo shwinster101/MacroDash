@@ -41,6 +41,25 @@ feed died in 2019; the footer keeps the history note).
 `__APP_VERSION__` and the footer renders it (the old "footer string is canonical /
 package.json is stale" drift is resolved; bump `package.json` on every release).
 
+**v3.8 "FEAT-SNAP-SAFE" adds the missing half of the honesty invariant: PLAUSIBILITY.**
+v3.1 enforced *liveness* and *provenance* but never asked whether a number could be **true** —
+a decimal-shifted upstream value passed every check, rendered with a green LIVE badge and cast
+a regime vote. `BANDS`/`applyBands()` in `snapshot.js` now drop out-of-band values *before*
+render or cache (wide bands: reject the impossible, not the unusual — **negative WTI is
+explicitly allowed**, it really happened 2020-04-20). Dropped keys are named in `_diag.bandDropped`.
+**The write-through gate is now a named-field quorum**, not a key count: `QUORUM_FIELDS`
+(the regime's voters) with `QUORUM_MIN=4`. The old `fredCount >= 6` counted *output keys*, and
+`tenYear` alone emits exactly six — so **1 of 15 FRED series could lock a gutted snapshot in for
+the whole ET day**. Below quorum the payload is still served (mock-first holds) but cached only
+for `SETTLING_TTL`, so the next visit retries instead of inheriting the bad day.
+**`session` is recomputed on cached reads** — it describes the *current* session, so it was the
+one field that must never be frozen; a 01:49 ET cold fetch had the header reading `PRE` through
+the close while the 5-Whys used a client-side `etSession()` and disagreed on the same page.
+Also: `pct()` returns NaN on a zero/negative base (sign inversion), a blank CNN F&G score no
+longer parses to `0` → "Extreme Fear" → a phantom bear vote, and the cron worker gained an
+**8am ET pre-open warm** (`SNAPSHOT_PREWARM_CRON`, no-op if already cached) so no human pays the
+cold fetch and concurrent first-visitors can't stampede FRED/Finnhub rate limits.
+
 ## Tech stack
 
 - **React 18.3.1** + **Vite 5.3.1** (`@vitejs/plugin-react`). Plain **JSX/JS, ESM**
@@ -97,7 +116,7 @@ worker/                 SEPARATE Cloudflare Worker (not part of Pages)
   wrangler.toml         Worker config: PULSE_CACHE binding + cron triggers (UTC).
 
 test/
-  smoke.mjs             No-network smoke test: 143 assertions over mergeLiveOverMock
+  smoke.mjs             No-network smoke test: 166 assertions over mergeLiveOverMock
                         + SOURCES-path resolution against the real MOCK_DATA + the
                         5-Whys engine + DEC-31 guards + the TT band table (DEC-33).
 ```
@@ -283,8 +302,8 @@ not read at runtime. Mock remains the always-present runtime fallback (graceful 
 (`VITE_PUBLIC_VIEW=true` is the analogous build flag for forcing the public view.)
 
 ### Per-day cache pattern (`snapshot.js`)
-- Cache key is **`pulse:snapshot:v5:<ET-date>`** (`<ET-date>` = today in America/New_York,
-  `YYYY-MM-DD`). Bump the `v5` prefix to invalidate a poisoned day.
+- Cache key is **`pulse:snapshot:v15:<ET-date>`** (`<ET-date>` = today in America/New_York,
+  `YYYY-MM-DD`). Bump the `v15` prefix to invalidate a poisoned day.
 - **First load each ET morning** misses → fetches fresh (FRED's prior close has settled
   overnight) → write-through. **Every load the rest of the day** hits KV → instant,
   badge = `CACHED`. *Your morning visit is the refresh trigger* — the snapshot path needs
@@ -304,7 +323,7 @@ npm run dev        # Vite dev server (mock unless VITE_DATA_MODE=live in .env)
 npm run build      # → dist/  (what Pages runs)
 npm run preview    # serve the built dist/
 
-node test/smoke.mjs   # 143-assertion no-network smoke test (needs Node ≥17)
+node test/smoke.mjs   # 166-assertion no-network smoke test (needs Node ≥17)
 
 # Cron Worker (separate deploy):
 cd worker && npx wrangler deploy

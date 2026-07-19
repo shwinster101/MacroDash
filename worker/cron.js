@@ -16,6 +16,12 @@ const FETCH_TIMEOUT_MS = 8000;
 // lag, so an early first-load can lock in stale data all day. This cron busts the day's
 // cache key then re-fetches, pulling FRED's freshest each weekday at 10am ET.
 const SNAPSHOT_WARM_CRON = "0 14 * * 1-5"; // 10am America/New_York (EDT); EST -> "0 15 * * 1-5"
+// FEAT-SNAP-SAFE: pre-open warm. Without it the day's cache is built by whoever visits
+// first — paying the full cold-fetch latency, and if several people land together there
+// is no single-flight, so N visitors issue N x ~32 upstream calls straight into FRED's and
+// Finnhub's rate limits. A degraded pull then risks being locked in for the day. Warming
+// while upstreams are quiet means humans essentially always hit a warm cache.
+const SNAPSHOT_PREWARM_CRON = "0 12 * * 1-5"; // 8am America/New_York (EDT); EST -> "0 13 * * 1-5"
 const SNAPSHOT_URL = "https://macrodash.pages.dev/api/snapshot";
 
 // Metric map. `kind`: 'latest' = newest non-missing observation;
@@ -182,9 +188,29 @@ async function refreshSnapshot(env) {
   }
 }
 
+// Pre-open warm: populate the day's snapshot key if it isn't already there. Unlike
+// refreshSnapshot() this does NOT delete first — if a night owl already warmed the cache,
+// re-fetching would just burn upstream calls for the same data.
+async function warmSnapshot(env) {
+  try {
+    const etDate = new Date().toLocaleDateString("en-CA", { timeZone: "America/New_York" });
+    // SYNC HAZARD: keep this key version in step with functions/api/snapshot.js.
+    const existing = await env.PULSE_CACHE.get(`pulse:snapshot:v15:${etDate}`);
+    if (existing) return; // already warm — nothing to do
+    await fetch(SNAPSHOT_URL, { headers: { "user-agent": "macrodash-snapshot-prewarm" } });
+  } catch {
+    /* non-fatal: the first human visitor still warms it the old way */
+  }
+}
+
 export default {
   // Cron Triggers invoke scheduled(). UTC. controller.cron tells which fired.
   async scheduled(controller, env, ctx) {
+    // 8am ET weekday: pre-open warm so no human pays the cold fetch (see SNAPSHOT_PREWARM_CRON).
+    if (controller.cron === SNAPSHOT_PREWARM_CRON) {
+      ctx.waitUntil(warmSnapshot(env));
+      return;
+    }
     // 10am ET weekday: force-refresh the /api/snapshot per-day cache (see SNAPSHOT_WARM_CRON note).
     if (controller.cron === SNAPSHOT_WARM_CRON) {
       ctx.waitUntil(refreshSnapshot(env));

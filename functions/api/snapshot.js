@@ -2,17 +2,86 @@
 // Called by useMarketData() in LIVE mode: GET /api/snapshot[?view=public]
 //
 // ARCHITECTURE:
-//   1. Check PULSE_CACHE KV — if warm, return immediately (badge = CACHED)
-//   2. Fetch all sources in parallel (FRED + Stooq + scrapers)
-//   3. Assemble into { live: {...} } matching mergeSnapshot() field names
-//   4. Write-through cache (TTL 6hr default; open/close runs refresh cron)
+//   1. Check PULSE_CACHE KV — if warm, return immediately (badge = CACHED).
+//      `session` is recomputed on that path: it describes the CURRENT session, so it is
+//      the one field that must never be served frozen from a per-day cache.
+//   2. Fetch sources in PHASES (FRED batched, then SPY + 3 scrapers, then 3 more) to stay
+//      under the ~6-connection cap. Every fetch carries AbortSignal.timeout(9000).
+//   3. Assemble into { live: {...} } matching the SOURCES field names in src/sources.js,
+//      then applyBands() drops implausible values before anything renders or caches.
+//   4. Write-through cache. QUORUM over named regime-voting fields decides the TTL:
+//      at quorum + settled → CACHE_TTL (locks the day); below → SETTLING_TTL (retry soon).
 //   5. Return { live, asOf, cached: false }
 //
-// KEY SAFETY: env.FRED_KEY, env.STOOQ_KEY live here. Never in src/ (frontend).
+// KEY SAFETY: env.FRED_KEY and env.FINNHUB_KEY live here. Never in src/ (frontend).
+// (Equity prices come from FRED's SP500 series + Finnhub — Stooq was dropped; it blocks
+// Cloudflare edge IPs. There is no STOOQ_KEY.)
 // Set in Cloudflare: Workers & Pages → MacroDash → Settings → Variables & Secrets
 
 const CACHE_TTL = 48 * 60 * 60;   // 48h cleanup; the per-day cache KEY drives freshness
 const SETTLING_TTL = 60 * 60;     // short lock-in while the latest close looks not-yet-posted
+
+// ── FEAT-SNAP-SAFE: plausibility bands ──────────────────────────────────────
+// The v3.1 honesty invariant enforced LIVENESS and PROVENANCE but never PLAUSIBILITY:
+// a decimal-shifted upstream value passed every check, rendered with a green LIVE badge
+// and cast a regime vote. Bands cover the fields a wrong number is ACTIONABLE on. An
+// out-of-band value is dropped (→ mock/last-good), never rendered — being silent beats
+// being confidently wrong. Deliberately wide: reject the impossible, not the unusual.
+export const BANDS = {
+  vix:          [1, 150],      // VIX high is 89.5 (2008); 150 is well past any real print
+  tenYear:      [0, 20],       // 10Y: 1981 peak ~15.8%
+  fedFunds:     [0, 25],
+  mortgage30:   [0, 25],
+  fearGreed:    [0, 100],      // index is defined 0-100
+  spyPrice:     [1, 100000],
+  spxIndex:     [1, 1000000],
+  qqqPrice:     [1, 100000],
+  wti:          [-100, 1000],  // NEGATIVE IS REAL: WTI settled -$37.63 on 2020-04-20
+  btc:          [0, 100000000],
+  cpiHeadline:  [-15, 30],     // YoY %; US deflation trough ~-10 (1932)
+  cpiCore:      [-15, 30],
+  pceHeadline:  [-15, 30],
+  pceCore:      [-15, 30],
+  unemployment: [0, 40],
+  lfpr:         [20, 90],
+  savings:      [0, 60],
+  shillerPe:    [3, 100],      // was an inline guard in fetchShiller; centralized here
+  creditSpread: [0, 30],
+  tokenBlendedMtok: [0, 10000],
+};
+// True when v is absent (nothing to judge) or inside its band. Unbanded fields pass.
+export function plausible(key, v) {
+  const band = BANDS[key];
+  if (!band) return true;
+  if (v === undefined || v === null) return true;
+  if (!Number.isFinite(v)) return false;
+  return v >= band[0] && v <= band[1];
+}
+// Strip out-of-band values from an assembled live object. Returns the dropped keys so
+// _diag can say WHY a field vanished instead of it silently reverting to mock.
+export function applyBands(live) {
+  const dropped = [];
+  for (const k of Object.keys(live)) {
+    if (!plausible(k, live[k])) { dropped.push(`${k}=${live[k]}`); delete live[k]; }
+  }
+  return dropped;
+}
+
+// ── FEAT-SNAP-SAFE: minimum viable snapshot ─────────────────────────────────
+// The old gate was `fredCount >= 6`, which counts OUTPUT KEYS, not series — and one
+// series (tenYear) emits exactly 6 (value, AsOf, D1, W1, M1, Series). So 1 of 15 FRED
+// series succeeding locked a gutted snapshot in for the whole ET day. Worse, `spy` and
+// `fred` hit the same host with the same key, so the two "independent" votes were one.
+// Gate instead on the fields the product's central claim actually rests on: the regime
+// engine's voters. Below quorum we still SERVE the degraded payload (mock-first still
+// holds) but cache it only briefly, so the next visit retries instead of locking the day.
+export const QUORUM_FIELDS = ["spyPrice", "vix", "tenYear", "fearGreed", "cpiHeadline", "shillerPe"];
+export const QUORUM_MIN = 4;
+export function quorum(live) {
+  const present = QUORUM_FIELDS.filter((k) => Number.isFinite(live?.[k]));
+  return { present, count: present.length, ok: present.length >= QUORUM_MIN,
+           missing: QUORUM_FIELDS.filter((k) => !present.includes(k)) };
+}
 
 export async function onRequest(context) {
   const { request, env } = context;
@@ -35,7 +104,14 @@ export async function onRequest(context) {
     const cached = await env.PULSE_CACHE?.get(cacheKey, "json");
     if (cached) {
       const payload = isPublic ? stripPrivate(cached) : cached;
-      return json(publicize({ ...payload, cached: true }));
+      // FEAT-SNAP-SAFE: `session` describes the CURRENT market session — a pure function of
+      // wall-clock time — so it must never be served from a per-day cache. Frozen, a 01:49 ET
+      // cold fetch made the header read "PRE" straight through the close, while the 5-Whys
+      // computed etSession() client-side and disagreed on the same page.
+      // `lastRefresh` is deliberately NOT recomputed: it reports when the DATA was pulled,
+      // so the cached value is the honest one. Everything else in `live` is data, kept as-is.
+      const fresh = { ...payload, live: { ...payload.live, session: marketSession() } };
+      return json(publicize({ ...fresh, cached: true }));
     }
   } catch {
     // KV unavailable — skip cache, fetch fresh
@@ -84,11 +160,15 @@ export async function onRequest(context) {
     ...(shiller.status === "fulfilled" ? shiller.value : {}),
   };
 
+  // FEAT-SNAP-SAFE: drop implausible values BEFORE anything renders or caches them.
+  const droppedByBand = applyBands(live);
+
   const snapshot = { live, asOf: now, cached: false };
 
   const diag = {
     hasFredKey: !!env.FRED_KEY,
     hasKV: !!env.PULSE_CACHE,
+    bandDropped: droppedByBand.length ? droppedByBand : "none",
     fred: fred.status === "fulfilled" ? `ok:${Object.keys(fred.value).length}` : String(fred.reason),
     spy: spy.status === "fulfilled" ? "ok" : String(spy.reason),
     fearGreed: fearGreed.status === "fulfilled" ? "ok" : String(fearGreed.reason),
@@ -101,8 +181,11 @@ export async function onRequest(context) {
   snapshot._diag = diag;
 
   // ── 4. Write-through cache (ONLY if healthy — never lock in a degraded pull) ──
-  const fredCount = fred.status === "fulfilled" ? Object.keys(fred.value).length : 0;
-  const healthy = spy.status === "fulfilled" && fredCount >= 6;
+  // FEAT-SNAP-SAFE: quorum over NAMED regime-voting fields, not a key count. See the
+  // QUORUM_FIELDS comment at the top of this file for why the old `fredCount >= 6` gate
+  // was satisfiable by a single FRED series.
+  const q = quorum(live);
+  const healthy = q.ok;
   // BUGFIX (2026-06-08): FRED doesn't always have the prior session's close posted
   // by the time of the day's FIRST visit — a 10:01 ET fetch this morning locked in
   // Thursday's SPY close (Friday's hadn't posted yet) into the full-day cache, so the
@@ -115,14 +198,16 @@ export async function onRequest(context) {
   const settled = healthy && !looksBehind(spyAsOf, etDate);
   snapshot._diag.healthy = healthy;
   snapshot._diag.settled = settled;
-  if (healthy) {
-    try {
-      await env.PULSE_CACHE?.put(cacheKey, JSON.stringify(snapshot), {
-        expirationTtl: settled ? CACHE_TTL : SETTLING_TTL,
-      });
-    } catch {
-      // Cache write failed — return uncached, non-fatal
-    }
+  snapshot._diag.quorum = `${q.count}/${QUORUM_FIELDS.length}` + (q.missing.length ? ` missing:${q.missing.join(",")}` : "");
+  // Below quorum we STILL serve (mock-first covers the gaps) but cache only briefly, so
+  // the next visitor retries rather than inheriting a gutted day. The old gate skipped the
+  // write entirely on failure, which meant every request re-ran the full cold fetch.
+  try {
+    await env.PULSE_CACHE?.put(cacheKey, JSON.stringify(snapshot), {
+      expirationTtl: (healthy && settled) ? CACHE_TTL : SETTLING_TTL,
+    });
+  } catch {
+    // Cache write failed — return uncached, non-fatal
   }
 
   // ── 5. Return (strip FMP/licensed fields if public view; _diag only on ?debug=1) ──
@@ -215,7 +300,11 @@ async function fetchFred(key) {
   // So w1/m1 derivation is gated to true daily series.
   const DAILY = new Set(["tenYear", "wti", "btc", "vix"]);
   // Percent-change helper (for price-like fields); rates use absolute yield deltas.
-  const pct = (a, b) => parseFloat((((a - b) / b) * 100).toFixed(2));
+  // A zero base divides to Infinity; a NEGATIVE base inverts the sign, so a recovery
+  // renders as a decline — and WTI really did settle at -$37.63 on 2020-04-20.
+  // Return NaN instead: callers already drop non-finite values.
+  const pct = (a, b) => (Number.isFinite(a) && Number.isFinite(b) && b > 0)
+    ? parseFloat((((a - b) / b) * 100).toFixed(2)) : NaN;
 
   const out = {};
   for (const r of results) {
@@ -394,7 +483,10 @@ async function fetchFearGreed() {
   const hist = d?.fear_and_greed_historical?.data;
   const histLatest = Array.isArray(hist) && hist.length ? hist[hist.length - 1]?.y : undefined;
   const raw = d?.fear_and_greed?.score ?? d?.score ?? histLatest;
-  if (raw == null || isNaN(Number(raw))) throw new Error("F&G parse failed");
+  // `Number("") === 0` and `isNaN(0) === false`, so a BLANK score used to sail through as
+  // fearGreed: 0 → "Extreme Fear" → a bear vote in the regime engine. Require real digits.
+  if (raw == null || String(raw).trim() === "" || !Number.isFinite(Number(raw)))
+    throw new Error("F&G parse failed");
   const score = Math.round(Number(raw));
   return { fearGreed: score, fearGreedLabel: fgLabel(score), fearGreedAsOf: day };
 }
