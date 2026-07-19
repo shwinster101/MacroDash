@@ -427,13 +427,15 @@ function copyTTRun(){copy("TT: "+CURRENT);toast("Copied → paste 'TT: "+CURRENT
 function closeCard(){document.getElementById("overlay").classList.remove("on");CURRENT=null;}
 
 /* ═══════════ ADD ═══════════ */
-function openAdd(){
+/* FEAT-TT: `prefill` lets an unmatched search route straight into ADD with the symbol
+   already typed, so search is one flow: known → update card · unknown → route & tier it. */
+function openAdd(prefill){
   CURRENT="__NEW__";
-  document.getElementById("cTitle").textContent="ADD TICKER";
+  document.getElementById("cTitle").textContent=prefill?("ADD TICKER — "+prefill):"ADD TICKER";
   const tierOpts=TIER_ORDER.map(t=>`<option value="${t}">${TIER_LABEL[t]}</option>`).join("");
   const lensOpts=Object.keys(LENS_NAME).map(l=>`<option value="${l}">[${l}] ${LENS_NAME[l]}</option>`).join("");
   document.getElementById("cBody").innerHTML=`
-    <div class="row"><div class="k">TICKER</div><div class="v"><input id="fSym" placeholder="e.g. NVDA" style="text-transform:uppercase"/></div></div>
+    <div class="row"><div class="k">TICKER</div><div class="v"><input id="fSym" value="${prefill||""}" placeholder="e.g. NVDA" style="text-transform:uppercase"/></div></div>
     <div class="row"><div class="k">TIER</div><div class="v"><select id="fTier">${tierOpts}</select></div></div>
     <div class="row"><div class="k">LENS / ROUTE</div><div class="v"><select id="fLens">${lensOpts}</select></div></div>
     <div class="row"><div class="k">FP ROUTING</div><div class="v"><select id="fFp">
@@ -441,9 +443,24 @@ function openAdd(){
       <option value="true">yes — first-principles call</option></select></div></div>
     <div class="row"><div class="k">QUEUE RANK</div><div class="v"><input id="fRank" placeholder="—"/></div></div>
     <div class="row"><div class="k">BOOK NOTE</div><div class="v"><textarea id="fNote" placeholder="one-line thesis / routing rationale"></textarea></div></div>
-    <div class="derived" style="margin-top:8px">Router first: a wrapper/CEF → [VEH]; pre-revenue story → [SP]. Never force a non-fit through a lens.</div>`;
-  document.getElementById("cBtns").innerHTML=`<button class="act" onclick="addSave()">✔ ADD TO BOOK</button>`;
+    <div class="schema"><div class="lbl">STEP 1 · ROUTER GATE — assign exactly ONE lens</div>
+      <div class="row"><div class="k lens-AI">[AI]</div><div class="v derived">datacenter · compute · energy-for-AI · AI software-infra</div></div>
+      <div class="row"><div class="k lens-PH">[PH]</div><div class="v derived">eVTOL · AV · robotics · space · drones</div></div>
+      <div class="row"><div class="k lens-QC">[QC]</div><div class="v derived">operating business — unit economics carry the score</div></div>
+      <div class="row"><div class="k lens-VEH">[VEH]</div><div class="v derived">ETF / CEF / wrapper / pre-IPO — no harness tiering, capped 1–2%</div></div>
+      <div class="row"><div class="k lens-SP">[SP]</div><div class="v derived">pre-revenue story — optionality sizing only</div></div>
+      <div class="derived" style="margin-top:8px">Router first — never force a non-fit through a lens. Composite ≥8.5=S · 7.0–8.4=A · 5.5–6.9=B · &lt;5.5=C. Gates cap, never boost. Run the TT prompt below to get the routed lens + tier, then record it here.</div></div>`;
+  document.getElementById("cBtns").innerHTML=`
+    <button class="act" onclick="addSave()">✔ ADD TO BOOK</button>
+    <button class="act" onclick="copyTTNew()">⧉ COPY 'TT: X' PROMPT</button>`;
   document.getElementById("overlay").classList.add("on");
+}
+/* Copy the harness prompt for a not-yet-booked name — the run assigns lens + tier. */
+function copyTTNew(){
+  const sym=(document.getElementById("fSym").value||"").trim().toUpperCase();
+  if(!sym)return toast("Enter a ticker symbol first");
+  copy("TT: "+sym);
+  toast("Copied 'TT: "+sym+"' — run it in chat, then record the routed lens + tier here");
 }
 function addSave(){
   const sym=(document.getElementById("fSym").value||"").trim().toUpperCase();
@@ -464,9 +481,16 @@ search.addEventListener("keydown",e=>{
     if(up==="HELP"){showHelp();search.value="";return;}
     if(up==="TIER"){document.getElementById("board").scrollIntoView({behavior:"smooth"});search.value="";return;}
     if(up==="ADD"){openAdd();search.value="";return;}
-    const x=find(up.replace(/^TT:\s*/,""));
+    // FEAT-TT: one flow — in the book → open its card to update; not in the book →
+    // straight into ADD prefilled, with the router gate + TT prompt in front of you.
+    const sym=up.replace(/^TT:\s*/,"").trim();
+    const x=find(sym);
     if(x){openCard(x.sym);search.value="";}
-    else toast("'"+q+"' not in book — click +ADD TICKER to route & tier it");
+    else if(/^[A-Z.\-]{1,8}$/.test(sym)){
+      openAdd(sym);search.value="";
+      toast(sym+" not in book — route & tier it (or copy the TT prompt to run the harness)");
+    }
+    else toast("'"+q+"' isn't a valid ticker — try HELP");
   }
   if(e.key==="Escape")closeCard();
 });
@@ -476,11 +500,11 @@ function showHelp(){
   document.getElementById("cTitle").textContent="TT TERMINAL — HELP";
   document.getElementById("cBody").innerHTML=`
     <ul class="tight" style="font-size:12.5px">
-      <li>Type a <b>ticker</b> + ↵ to open its card · click any chip on the board.</li>
-      <li>Inside a card you can change <b>tier</b>, <b>lens/route</b>, <b>FP flag</b>, <b>note</b>, then SAVE.</li>
-      <li><b>+ADD TICKER</b> routes & tiers a new name into the book.</li>
-      <li>Composite / technical / R-R lines are <b>filled by a live TT run</b> — click "COPY 'TT: X' PROMPT" and paste into chat.</li>
-      <li><b>EXPORT CANONICAL_BOOK.md</b> re-versions the single source of truth after edits.</li>
+      <li>Type a <b>ticker</b> + ↵ — <b>in the book</b> → opens its card to update · <b>not in the book</b> → opens ADD prefilled with the router gate.</li>
+      <li>Inside a card you can change <b>tier</b>, <b>lens/route</b>, <b>FP flag</b>, <b>note</b>, then SAVE (saves to the server immediately).</li>
+      <li>Composite / technical / R-R lines are <b>filled by a live TT run</b> — click "COPY 'TT: X' PROMPT" and paste into chat, then record the routed lens + tier here.</li>
+      <li>Removing a name moves it to the <b>CUT</b> row. Edits persist in KV — no export needed.</li>
+      <li><b>EXPORT CANONICAL_BOOK.md</b> / <b>EXPORT JSON</b> are backups; <b>IMPORT JSON</b> restores or seeds.</li>
       <li>Commands: <mark>HELP</mark> · <mark>TIER</mark> · <mark>ADD</mark></li>
     </ul>`;
   document.getElementById("cBtns").innerHTML=`<button class="act" onclick="closeCard()">CLOSE</button>`;
