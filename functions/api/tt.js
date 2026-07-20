@@ -1,8 +1,13 @@
 // FEAT-TT (v3.4.0): /api/tt — Ticker Terminal CANONICAL_BOOK store.
-// Auth: Cloudflare Access. The path is edge-protected by a Zero Trust Access app;
-// as defense-in-depth this function ALSO verifies the Cf-Access-Jwt-Assertion JWT
-// (RS256, certs from the team domain, aud = env.ACCESS_AUD). Fail closed: missing
-// env config → 503. Local dev only: env.ACCESS_DEV_BYPASS === "1" skips the check.
+// Auth is CONFIG-GATED (FEAT-TT-PIN, v3.9.0):
+//   env.TT_PIN set (exactly 6 digits) → PIN mode: POST {pin} mints a 30-day KV device
+//     session (HttpOnly cookie); an x-tt-pin header serves automation. The PIN is NOT
+//     the wall — the escalating KV lockout + fail-closed config are.
+//   env.TT_PIN unset → legacy Cloudflare Access mode, unchanged: the Zero Trust app
+//     edge-protects the path and this function verifies the Cf-Access-Jwt-Assertion JWT
+//     (RS256, certs from the team domain, aud = env.ACCESS_AUD).
+// Both modes fail closed: missing/malformed config → 503. Local dev only:
+// env.ACCESS_DEV_BYPASS === "1" skips auth entirely.
 // Storage: KV PULSE_CACHE key tt:book:v1, no TTL. Book data never ships in the bundle.
 
 const BOOK_KEY = "tt:book:v1";
@@ -18,7 +23,111 @@ const json = (obj, status = 200) =>
     headers: { "content-type": "application/json", "cache-control": "no-store" },
   });
 
-// ── Access JWT verification ─────────────────────────────────────────────────
+// ── FEAT-TT-PIN: PIN auth (config-gated) ────────────────────────────────────
+const PIN_RE = /^\d{6}$/;
+const SESSION_PREFIX = "tt:session:";
+const LOCK_KEY = "tt:auth:lock";
+const SESSION_TTL = 30 * 24 * 3600;   // 30-day device session
+const LOCK_RECORD_TTL = 48 * 3600;    // failure history ages out of KV on its own
+// Escalating lockout tiers [minFails, lockSeconds], checked top-down. At these rates a
+// sustained 6-digit brute force needs years, and every failure is counted and surfaced.
+export const LOCK_TIERS = [
+  [10, 24 * 3600],                    // 10+ wrong PINs → 24h lock
+  [5, 15 * 60],                       // 5+  → 15 min
+];
+
+// Which auth regime is this deploy running? Pure + exported for smoke. "misconfigured"
+// (TT_PIN set but not exactly 6 digits) must fail CLOSED, never fall back to Access —
+// a typo'd secret silently reopening the email gate would be an invisible downgrade.
+export function authMode(env) {
+  if (!env.TT_PIN) return "access";
+  return PIN_RE.test(String(env.TT_PIN)) ? "pin" : "misconfigured";
+}
+
+// Pure lockout math (exported for smoke). rec = {fails, lockedUntil: ms-epoch|null}.
+export function lockoutState(rec, nowMs) {
+  const fails = (rec && rec.fails) || 0;
+  const until = (rec && rec.lockedUntil) || 0;
+  if (until > nowMs) return { locked: true, retryAfterSec: Math.ceil((until - nowMs) / 1000), fails };
+  return { locked: false, retryAfterSec: 0, fails };
+}
+export function recordFailure(rec, nowMs) {
+  const fails = ((rec && rec.fails) || 0) + 1;
+  const tier = LOCK_TIERS.find(([min]) => fails >= min);
+  return { fails, lockedUntil: tier ? nowMs + tier[1] * 1000 : null };
+}
+
+// Cookie header → named value (exported for smoke; exact-name match, no suffix tricks).
+export function parseCookie(header, name) {
+  for (const part of String(header || "").split(/;\s*/)) {
+    const eq = part.indexOf("=");
+    if (eq > 0 && part.slice(0, eq).trim() === name) return part.slice(eq + 1).trim();
+  }
+  return null;
+}
+
+// Compare via SHA-256 digests so compare time is independent of where the guess diverges.
+async function pinMatches(guess, actual) {
+  const dig = async (s) =>
+    new Uint8Array(await crypto.subtle.digest("SHA-256", new TextEncoder().encode(String(s))));
+  const [a, b] = await Promise.all([dig(guess), dig(actual)]);
+  let diff = 0;
+  for (let i = 0; i < a.length; i++) diff |= a[i] ^ b[i];
+  return diff === 0;
+}
+
+// Evaluate ONE PIN attempt against the shared KV lockout. Used by both the login POST
+// and the x-tt-pin header path, so an attacker can't shop for a cheaper door.
+async function checkPin(pin, env) {
+  const nowMs = Date.now();
+  let rec = null;
+  try { rec = await env.PULSE_CACHE.get(LOCK_KEY, "json"); } catch (_e) {}
+  const lock = lockoutState(rec, nowMs);
+  if (lock.locked)
+    return { ok: false, status: 429, error: `locked — retry in ${lock.retryAfterSec}s`, retryAfterSec: lock.retryAfterSec };
+  if (PIN_RE.test(String(pin)) && (await pinMatches(pin, env.TT_PIN))) {
+    try { await env.PULSE_CACHE.delete(LOCK_KEY); } catch (_e) {}
+    return { ok: true, priorFails: lock.fails };
+  }
+  const next = recordFailure(rec, nowMs);
+  try { await env.PULSE_CACHE.put(LOCK_KEY, JSON.stringify(next), { expirationTtl: LOCK_RECORD_TTL }); } catch (_e) {}
+  return { ok: false, status: 401, error: "wrong PIN" };
+}
+
+// CSRF guard for state-changing methods: browsers always send Origin on POST/PUT; a
+// value from another host is a cross-site request. Absent Origin (curl, native) passes —
+// the cookie is SameSite=Strict, so a browser can't be tricked into sending it cross-site.
+function crossOrigin(request) {
+  const origin = request.headers.get("Origin");
+  if (!origin) return false;
+  try { return new URL(origin).host !== new URL(request.url).host; } catch (_e) { return true; }
+}
+
+// Unified gate for GET/PUT: dev bypass → mode dispatch → (PIN) session cookie, then
+// x-tt-pin header, else 401 so the client can raise its PIN prompt (never a redirect).
+async function authorize(request, env) {
+  if (env.ACCESS_DEV_BYPASS === "1") return { ok: true };
+  const mode = authMode(env);
+  if (mode === "misconfigured") return { ok: false, status: 503, error: "TT_PIN must be exactly 6 digits" };
+  if (mode === "access") return verifyAccessJwt(request, env);
+  if (!env.PULSE_CACHE) return { ok: false, status: 503, error: "KV unavailable" };
+  const token = parseCookie(request.headers.get("Cookie"), "tt_session");
+  if (token && /^[a-f0-9]{32}$/.test(token)) {
+    try { if (await env.PULSE_CACHE.get(SESSION_PREFIX + token)) return { ok: true }; } catch (_e) {}
+  }
+  const hdrPin = request.headers.get("x-tt-pin");
+  if (hdrPin != null) return checkPin(hdrPin, env);
+  return { ok: false, status: 401, error: "pin required" };
+}
+
+// Auth-failure JSON with Retry-After carried through on lockout responses.
+function authFail(auth) {
+  const res = json({ error: auth.error }, auth.status);
+  if (auth.retryAfterSec) res.headers.set("Retry-After", String(auth.retryAfterSec));
+  return res;
+}
+
+// ── Access JWT verification (legacy mode — active only while TT_PIN is unset) ──
 let certCache = null; // { fetchedAt, keys: Map<kid, CryptoKey> }
 
 function b64uToBytes(s) {
@@ -126,9 +235,37 @@ const etDate = () =>
   new Intl.DateTimeFormat("en-CA", { timeZone: "America/New_York" }).format(new Date());
 
 // ── Handlers ────────────────────────────────────────────────────────────────
+// FEAT-TT-PIN: POST /api/tt = PIN login (PIN mode only). Success mints a device session
+// and reports how many failed attempts accrued since the last successful login — the
+// owner-visible tell that someone has been guessing.
+export async function onRequestPost({ request, env }) {
+  const mode = authMode(env);
+  if (mode === "access") return json({ error: "PIN auth not configured — terminal uses Cloudflare Access" }, 404);
+  if (mode === "misconfigured") return json({ error: "TT_PIN must be exactly 6 digits" }, 503);
+  if (!env.PULSE_CACHE) return json({ error: "KV unavailable" }, 503);
+  if (crossOrigin(request)) return json({ error: "cross-origin" }, 403);
+  let body;
+  try { body = JSON.parse(await request.text()); } catch (_e) { return json({ error: "invalid JSON" }, 400); }
+  const r = await checkPin(body && body.pin, env);
+  if (!r.ok) return authFail(r);
+  const bytes = new Uint8Array(16);
+  crypto.getRandomValues(bytes);
+  const token = [...bytes].map((b) => b.toString(16).padStart(2, "0")).join("");
+  try {
+    await env.PULSE_CACHE.put(SESSION_PREFIX + token, JSON.stringify({ at: new Date().toISOString() }),
+      { expirationTtl: SESSION_TTL });
+  } catch (e) {
+    return json({ error: "session store failed: " + (e?.message || "unknown") }, 503);
+  }
+  const res = json({ ok: true, session_days: SESSION_TTL / 86400, failed_attempts_since_last_login: r.priorFails || 0 });
+  res.headers.set("Set-Cookie",
+    `tt_session=${token}; Max-Age=${SESSION_TTL}; Path=/; HttpOnly; Secure; SameSite=Strict`);
+  return res;
+}
+
 export async function onRequestGet({ request, env }) {
-  const auth = await verifyAccessJwt(request, env);
-  if (!auth.ok) return json({ error: auth.error }, auth.status);
+  const auth = await authorize(request, env);
+  if (!auth.ok) return authFail(auth);
   if (!env.PULSE_CACHE) return json({ error: "KV unavailable" }, 503);
 
   // ?snapshots=1 lists restore points; ?snapshot=YYYY-MM-DD reads one. Without a read
@@ -156,9 +293,10 @@ export async function onRequestGet({ request, env }) {
 }
 
 export async function onRequestPut({ request, env }) {
-  const auth = await verifyAccessJwt(request, env);
-  if (!auth.ok) return json({ error: auth.error }, auth.status);
+  const auth = await authorize(request, env);
+  if (!auth.ok) return authFail(auth);
   if (!env.PULSE_CACHE) return json({ error: "KV unavailable" }, 503);
+  if (crossOrigin(request)) return json({ error: "cross-origin" }, 403);
 
   const raw = await request.text();
   if (raw.length > MAX_BODY) return json({ error: "payload too large" }, 400);
@@ -203,5 +341,6 @@ export async function onRequestPut({ request, env }) {
 export async function onRequest({ request, ...rest }) {
   if (request.method === "GET") return onRequestGet({ request, ...rest });
   if (request.method === "PUT") return onRequestPut({ request, ...rest });
+  if (request.method === "POST") return onRequestPost({ request, ...rest });
   return json({ error: "method not allowed" }, 405);
 }

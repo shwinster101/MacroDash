@@ -121,7 +121,7 @@ worker/                 SEPARATE Cloudflare Worker (not part of Pages)
   wrangler.toml         Worker config: PULSE_CACHE binding + cron triggers (UTC).
 
 test/
-  smoke.mjs             No-network smoke test: 181 assertions over mergeLiveOverMock
+  smoke.mjs             No-network smoke test: 195 assertions over mergeLiveOverMock
                         + SOURCES-path resolution against the real MOCK_DATA + the
                         5-Whys engine + DEC-31 guards + the TT band table (DEC-33)
                         + the market-holiday calendar (sessions + staleness).
@@ -221,10 +221,19 @@ Jan-anchor shipped; see `snapshot.js` ~318–328), `spyMa100`, `spyMa200`, and a
   `/admin.html`. It is the empty template wired to **`/api/tt`** (`functions/api/tt.js`): GET loads
   the book, every mutation (add / card save / remove→CUT / import) optimistically updates then PUTs.
   KV key **`tt:book:v1`** (no TTL) in `PULSE_CACHE` holds `{version, asOf, book, cut}`.
-- **Auth = Cloudflare Access** (Zero Trust self-hosted apps on `/admin*` AND `/api/tt*`, allow the
-  owner's email). `tt.js` additionally verifies the `Cf-Access-Jwt-Assertion` JWT against
-  `env.ACCESS_TEAM_DOMAIN` certs + `env.ACCESS_AUD` (Pages env vars; missing → 503, fail closed).
-  `env.ACCESS_DEV_BYPASS="1"` skips verification for local `wrangler pages dev` only.
+- **Auth = config-gated (FEAT-TT-PIN, v3.9.0).** With **`env.TT_PIN` set (exactly 6 digits;
+  `npx wrangler pages secret put TT_PIN`)** the terminal runs **PIN mode**: `POST /api/tt {pin}`
+  mints a 30-day KV device session (`tt:session:<token>`, HttpOnly/Secure/SameSite=Strict cookie),
+  and an **`x-tt-pin` header** authenticates GET/PUT directly (the automation path that unlocks
+  future chat-side sync). The PIN is NOT the wall — the wall is the **escalating KV lockout**
+  (`tt:auth:lock`: 5 fails → 15 min, 10 → 24 h; pure `lockoutState`/`recordFailure`, smoke-tested)
+  plus fail-closed config (malformed TT_PIN → 503, never a silent fallback) and an Origin check on
+  POST/PUT (CSRF). Login reports `failed_attempts_since_last_login` — the owner-visible guessing
+  tell. **`TT_PIN` unset = legacy Cloudflare Access mode, unchanged** (Zero Trust apps on
+  `/admin*` + `/api/tt*`; `tt.js` verifies the `Cf-Access-Jwt-Assertion` JWT against
+  `env.ACCESS_TEAM_DOMAIN` certs + `env.ACCESS_AUD`; missing → 503, fail closed) — so the deploy
+  is inert until the operator flips the secret, then deletes the Access app at leisure.
+  `env.ACCESS_DEV_BYPASS="1"` skips both modes for local `wrangler pages dev` only.
 - **Invariant: the real CANONICAL_BOOK never enters the repo or bundle.** `SEED=[]` stays empty;
   seeding/restore is paste-import in the UI (EXPORT JSON from the Artifacts copy → IMPORT JSON).
 - **FEAT-TT-RUN (v3.5.0) applies the dashboard's honesty rule to the book.** Per-entry `lastRun`
@@ -329,7 +338,7 @@ npm run dev        # Vite dev server (mock unless VITE_DATA_MODE=live in .env)
 npm run build      # → dist/  (what Pages runs)
 npm run preview    # serve the built dist/
 
-node test/smoke.mjs   # 181-assertion no-network smoke test (needs Node ≥17)
+node test/smoke.mjs   # 195-assertion no-network smoke test (needs Node ≥17)
 
 # Cron Worker (separate deploy):
 cd worker && npx wrangler deploy

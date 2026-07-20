@@ -11,7 +11,7 @@ import {
   bandSpyVs200d, bandVix, bandFearGreed, bandRs, bandTenYear, bandFedOdds,
   aggregateVerdict, computeMacroFlip, buildTtReadout, formatTtPaste,
 } from "../src/ttReadout.js";
-import { validateBook, conflictCheck } from "../functions/api/tt.js";
+import { validateBook, conflictCheck, authMode, lockoutState, recordFailure, parseCookie, LOCK_TIERS } from "../functions/api/tt.js";
 import { plausible, applyBands, quorum, QUORUM_FIELDS, QUORUM_MIN, marketSession } from "../functions/api/snapshot.js";
 
 let pass = 0, fail = 0;
@@ -316,6 +316,31 @@ ok("quorum: reports which fields are missing", (() => {
   return q.count === 2 && q.missing.includes("cpiHeadline") && q.missing.includes("shillerPe");
 })());
 ok("quorum: config sane (min <= field count, all voters named)", QUORUM_MIN <= QUORUM_FIELDS.length && QUORUM_FIELDS.length === 6);
+
+// ---- 8b. /api/tt PIN auth (FEAT-TT-PIN) -----------------------------------
+// The PIN is not the wall — the lockout is. Pure + boundary-pinned like DEC-33:
+// a wrong tier table here converts "quick PIN" into "open door".
+console.log("\n[8b] /api/tt PIN auth (config gate + lockout truth table)");
+ok("pin: TT_PIN unset → legacy access mode", authMode({}) === "access");
+ok("pin: 6-digit TT_PIN → pin mode", authMode({ TT_PIN: "123456" }) === "pin");
+ok("pin: 4-digit TT_PIN → misconfigured (fails CLOSED, never falls back to Access)", authMode({ TT_PIN: "1234" }) === "misconfigured");
+ok("pin: non-numeric TT_PIN → misconfigured", authMode({ TT_PIN: "12345a" }) === "misconfigured");
+const T0 = 1_800_000_000_000;
+ok("lockout: clean slate not locked", lockoutState(null, T0).locked === false && lockoutState(null, T0).fails === 0);
+let lockRec = null;
+for (let i = 0; i < 4; i++) lockRec = recordFailure(lockRec, T0);
+ok("lockout: 4 failures → still open", lockRec.fails === 4 && lockRec.lockedUntil === null && !lockoutState(lockRec, T0).locked);
+lockRec = recordFailure(lockRec, T0);
+ok("lockout: 5th failure → 15-min lock", lockRec.lockedUntil === T0 + 900_000 && lockoutState(lockRec, T0 + 1).locked === true);
+ok("lockout: retry-after counts down", lockoutState(lockRec, T0 + 1000).retryAfterSec === 899);
+ok("lockout: lock expires but fails are retained", lockoutState(lockRec, T0 + 901_000).locked === false && lockoutState(lockRec, T0 + 901_000).fails === 5);
+for (let i = 0; i < 5; i++) lockRec = recordFailure(lockRec, T0);
+ok("lockout: 10th failure → 24h lock", lockRec.fails === 10 && lockRec.lockedUntil === T0 + 86_400_000);
+ok("lockout: tier table sane (descending thresholds, escalating locks)",
+  LOCK_TIERS[0][0] > LOCK_TIERS[1][0] && LOCK_TIERS[0][1] > LOCK_TIERS[1][1]);
+ok("cookie: finds tt_session among other cookies", parseCookie("a=1; tt_session=deadbeef; b=2", "tt_session") === "deadbeef");
+ok("cookie: missing / null header → null", parseCookie("a=1; b=2", "tt_session") === null && parseCookie(null, "tt_session") === null);
+ok("cookie: exact-name match only (no suffix tricks)", parseCookie("xtt_session=evil", "tt_session") === null);
 
 // ---- 9. market calendar — holidays across the honesty stack ---------------
 // The time-judges (isStale, marketSession/etSession, looksBehind) share ONE

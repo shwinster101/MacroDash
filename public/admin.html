@@ -249,6 +249,20 @@
   </div>
 </div>
 
+<!-- FEAT-TT-PIN: PIN gate — its own element (NOT #overlay) so ESC/closeCard can never dismiss it -->
+<div class="overlay" id="pinGate" style="z-index:70">
+  <div class="card" style="width:min(340px,100%);margin-top:10vh">
+    <div class="top"><div class="t">TT TERMINAL — LOCKED</div></div>
+    <div class="body">
+      <div class="derived" style="margin-bottom:10px">Enter the 6-digit terminal PIN · unlocks this device for 30 days</div>
+      <input id="pinInput" inputmode="numeric" pattern="\d*" maxlength="6" autocomplete="one-time-code"
+        style="width:100%;background:#060b0f;border:1px solid var(--greenDim);color:var(--green);border-radius:6px;padding:10px;font-family:inherit;font-size:22px;letter-spacing:.5em;text-align:center;outline:none" placeholder="······"/>
+      <div id="pinErr" style="color:var(--red);font-size:11.5px;margin-top:8px;min-height:16px"></div>
+    </div>
+    <div class="btns"><button class="act" id="pinBtn" onclick="pinSubmit()">⏎ UNLOCK</button></div>
+  </div>
+</div>
+
 <div class="toast" id="toast"></div>
 
 <script>
@@ -306,6 +320,10 @@ async function api(method,body,ifMatch){
     throw new Error("not authenticated");
   }
   const data=await res.json().catch(()=>({}));
+  // FEAT-TT-PIN: 401 = PIN mode wants a login (raise the gate, never a redirect);
+  // 429 = lockout engaged — surface the retry window instead of a generic failure.
+  if(res.status===401){const err=new Error(data.error||"PIN required");err.pinRequired=true;throw err;}
+  if(res.status===429){const err=new Error(data.error||"locked — too many attempts");err.locked=true;throw err;}
   if(res.status===403){
     authExpired("403 from /api/tt — the JWT check failed. ACCESS_AUD probably doesn't match this Access app's Audience tag (re-copy it from the surviving app's Overview).");
     throw new Error(data.error||"unauthorized");
@@ -360,6 +378,7 @@ async function loadBook(){
     if(data.empty){openImport();render();}
     else render();
   }catch(e){
+    if(e.pinRequired){document.getElementById("bookStamp").textContent="LOCKED — enter PIN";showPinGate(loadBook);return;}
     document.getElementById("bookStamp").textContent="UNAVAILABLE — see banner";
     toast("Load failed: "+e.message);render();
   }
@@ -381,6 +400,9 @@ async function persist(){
     applyServer(data);render();
   }catch(e){
     DIRTY=true;render();
+    // Session expired mid-edit: the edit exists ONLY on screen — raise the PIN gate and
+    // retry the save on unlock, so re-authenticating can never cost the user their work.
+    if(e.pinRequired){showUnsaved("session expired — unlock with your PIN to save");showPinGate(persist);return;}
     if(e.conflict)showConflict(e.conflict); else showUnsaved(e.message);
   }
 }
@@ -808,6 +830,40 @@ function copy(t){navigator.clipboard&&navigator.clipboard.writeText(t);}
 let toastT;
 function toast(msg){const el=document.getElementById("toast");el.textContent=msg;el.classList.add("on");
   clearTimeout(toastT);toastT=setTimeout(()=>el.classList.remove("on"),3200);}
+
+/* ═══════════ PIN GATE (FEAT-TT-PIN) ═══════════ */
+/* PIN_CB carries the interrupted action (loadBook, or persist mid-edit) across the
+   login so unlocking resumes exactly where the 401 struck — never losing an edit. */
+let PIN_CB=null;
+function showPinGate(cb){
+  PIN_CB=cb||loadBook;
+  document.getElementById("pinErr").textContent="";
+  document.getElementById("pinGate").classList.add("on");
+  const inp=document.getElementById("pinInput");inp.value="";setTimeout(()=>inp.focus(),50);
+}
+async function pinSubmit(){
+  const inp=document.getElementById("pinInput"),err=document.getElementById("pinErr"),btn=document.getElementById("pinBtn");
+  const pin=(inp.value||"").trim();
+  if(!/^\d{6}$/.test(pin)){err.textContent="PIN is 6 digits";return;}
+  btn.disabled=true;
+  try{
+    const res=await fetch("/api/tt",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({pin})});
+    const data=await res.json().catch(()=>({}));
+    if(res.status===401){err.textContent="Wrong PIN";inp.value="";inp.focus();return;}
+    if(res.status===429){err.textContent=data.error||"Locked — too many attempts, try later";return;}
+    if(!res.ok){err.textContent=data.error||("HTTP "+res.status);return;}
+    document.getElementById("pinGate").classList.remove("on");
+    // Owner-visible tell: someone has been guessing since the last successful login.
+    if(data.failed_attempts_since_last_login>0)
+      toast("⚠ "+data.failed_attempts_since_last_login+" failed PIN attempt"+(data.failed_attempts_since_last_login===1?"":"s")+" since your last login");
+    const cb=PIN_CB;PIN_CB=null;if(cb)await cb();
+  }catch(e){err.textContent="Login failed: "+e.message;}
+  finally{btn.disabled=false;}
+}
+document.getElementById("pinInput").addEventListener("keydown",e=>{
+  if(e.key==="Enter")pinSubmit();
+  e.stopPropagation(); // global ESC (closeCard) must not fire while the gate is up
+});
 
 /* FEAT-TT: boot from server (KV via /api/tt) */
 loadBook();
