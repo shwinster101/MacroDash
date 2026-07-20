@@ -190,6 +190,40 @@ export function parseObsDate(dateStr) {
   return null;
 }
 
+// ─── US equity market calendar (full-closure holidays) ────────────────────────
+// The honesty stack judges time by "completed trading sessions", so every time-judge
+// must know which WEEKDAYS had no session: session labels (marketSession in
+// snapshot.js, etSession in dashboard.jsx) and the staleness counters (isStale below,
+// looksBehind in snapshot.js) all consume this ONE table. FULL closures only — NYSE
+// early-close half days (day after Thanksgiving, some Christmas Eves) are NOT modeled.
+// ⚠️ CURATED, update annually (same convention as GPU_PRICING): an unlisted year
+// simply falls back to weekday-only logic — degraded toward the old behavior, never wrong-crashing.
+export const MARKET_HOLIDAYS = new Set([
+  // 2026
+  "2026-01-01", // New Year's Day
+  "2026-01-19", // MLK Day
+  "2026-02-16", // Washington's Birthday
+  "2026-04-03", // Good Friday
+  "2026-05-25", // Memorial Day
+  "2026-06-19", // Juneteenth
+  "2026-07-03", // Independence Day observed (Jul 4 = Saturday)
+  "2026-09-07", // Labor Day
+  "2026-11-26", // Thanksgiving
+  "2026-12-25", // Christmas
+  // 2027
+  "2027-01-01", // New Year's Day
+  "2027-01-18", // MLK Day
+  "2027-02-15", // Washington's Birthday
+  "2027-03-26", // Good Friday
+  "2027-05-31", // Memorial Day
+  "2027-06-18", // Juneteenth observed (Jun 19 = Saturday)
+  "2027-07-05", // Independence Day observed (Jul 4 = Sunday)
+  "2027-09-06", // Labor Day
+  "2027-11-25", // Thanksgiving
+  "2027-12-24", // Christmas observed (Dec 25 = Saturday)
+]);
+export function isMarketHoliday(dateStr) { return MARKET_HOLIDAYS.has(String(dateStr)); }
+
 // FEAT-R3: a live field is STALE when its observation date trails the latest expected
 // release by more than its source's normal cadence. `cadence` (daily|weekly|monthly):
 //   - daily   → weekday-aware: any completed PRIOR trading session missing = stale.
@@ -209,15 +243,18 @@ export function isStale(dateStr, now = new Date(), cadence = "daily") {
     return ageDays > (cadence === "monthly" ? 70 : 12);
   }
 
-  // daily (default): count completed weekday sessions strictly between the data date and
+  // daily (default): count completed TRADING sessions strictly between the data date and
   // today. Today is excluded (its close may not be published yet — normal EOD lag), so any
-  // missing PRIOR weekday means the feed is behind = stale (e.g. Thursday data on a Sunday).
+  // missing PRIOR session means the feed is behind = stale (e.g. Thursday data on a Sunday).
+  // Weekends AND market holidays are skipped — Thursday data viewed the Monday after Good
+  // Friday is the freshest possible, not stale (holiday false-positives cried wolf).
+  const ymd = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
   let missed = 0;
   const cur = new Date(dt);
   cur.setDate(cur.getDate() + 1);
   while (cur < today) {
     const dow = cur.getDay();
-    if (dow !== 0 && dow !== 6) missed++;
+    if (dow !== 0 && dow !== 6 && !isMarketHoliday(ymd(cur))) missed++;
     cur.setDate(cur.getDate() + 1);
   }
   return missed >= 1;

@@ -92,7 +92,10 @@ src/
                         component, the rule-based regime engine, footer version.
   useMarketData.js      The ONE data-wiring point (hook). Reads VITE_DATA_MODE.
   sources.js            Pure merge module: SOURCES field map + mergeLiveOverMock()
-                        + isStale/cadenceOf/parseObsDate. No React → Node-testable.
+                        + isStale/cadenceOf/parseObsDate + MARKET_HOLIDAYS/
+                        isMarketHoliday (the ONE US-market calendar — ⚠️ update
+                        annually; feeds isStale, marketSession, etSession,
+                        looksBehind). No React → Node-testable.
   fiveWhys.js           Pure rule-based 5-Whys generator (no React, no LLM, $0);
                         smoke-tested.
   ttReadout.js          Pure TT regime/Macro-Flip mapping (DEC-33 band table).
@@ -103,7 +106,9 @@ functions/              Cloudflare Pages Functions (run at the edge, same origin
   _middleware.js        Security headers; keeps /api same-origin (no CORS).
   api/snapshot.js       ACTIVE live source. Assembles FRED + FRED-SP500 + CNN F&G +
                         Kalshi + RSS + OpenRouter + Finnhub + multpl. Holds
-                        env.FRED_KEY. Per-ET-day KV cache.
+                        env.FRED_KEY. Per-ET-day KV cache. Imports src/sources.js
+                        (market calendar) — second functions/→src/ import, same
+                        esbuild-inline path readout.json.js proved.
   api/fred.js           Legacy/fallback. Reads ONLY the cron-written KV key
                         (pulse:macro:latest); has NO key, makes NO upstream calls.
   readout.json.js       /readout.json — public tt-v1 regime readout (CORS-open).
@@ -116,9 +121,10 @@ worker/                 SEPARATE Cloudflare Worker (not part of Pages)
   wrangler.toml         Worker config: PULSE_CACHE binding + cron triggers (UTC).
 
 test/
-  smoke.mjs             No-network smoke test: 166 assertions over mergeLiveOverMock
+  smoke.mjs             No-network smoke test: 181 assertions over mergeLiveOverMock
                         + SOURCES-path resolution against the real MOCK_DATA + the
-                        5-Whys engine + DEC-31 guards + the TT band table (DEC-33).
+                        5-Whys engine + DEC-31 guards + the TT band table (DEC-33)
+                        + the market-holiday calendar (sessions + staleness).
 ```
 
 ## Data flow (how mock becomes live)
@@ -323,7 +329,7 @@ npm run dev        # Vite dev server (mock unless VITE_DATA_MODE=live in .env)
 npm run build      # → dist/  (what Pages runs)
 npm run preview    # serve the built dist/
 
-node test/smoke.mjs   # 166-assertion no-network smoke test (needs Node ≥17)
+node test/smoke.mjs   # 181-assertion no-network smoke test (needs Node ≥17)
 
 # Cron Worker (separate deploy):
 cd worker && npx wrangler deploy

@@ -169,12 +169,33 @@ function authorized(request, env) {
   return env.REFRESH_SECRET && got && got === env.REFRESH_SECRET;
 }
 
+// Record each warm/refresh outcome in KV so /api/snapshot?debug=1 can surface cron health
+// from a browser (_diag.cronLastWarm) — a silently edge-blocked warm previously looked
+// identical to no cron at all, and only `wrangler tail` at the right moment could tell.
+async function recordWarm(env, job, ok, status) {
+  try {
+    await env.PULSE_CACHE.put("pulse:cron:lastwarm",
+      JSON.stringify({ at: new Date().toISOString(), job, ok, status }),
+      { expirationTtl: 7 * 24 * 3600 });
+  } catch { /* diagnostic only — never blocks the warm itself */ }
+}
+
 // Force-refresh the /api/snapshot per-day cache: delete the day's key, then trigger the
 // Pages Function (now a cache MISS) so it pulls fresh FRED and write-throughs to KV.
 // The short delay lets the KV delete propagate before the re-fetch — KV is eventually
 // consistent, so without it the Function may still read the pre-delete value.
 async function refreshSnapshot(env) {
   try {
+    // Reachability pre-check BEFORE deleting: if the edge is blocking this Worker (e.g. a
+    // Cloudflare Access app scoped beyond /admin* + /api/tt*, or a WAF/bot rule), a
+    // delete-then-fail would leave the day COLD for the first human visitor. Never destroy
+    // a cache you haven't proven you can rebuild. The pre-check GET is cheap — it hits KV.
+    const pre = await fetch(SNAPSHOT_URL, { headers: { "user-agent": "macrodash-snapshot-refresher" } });
+    if (!pre.ok) {
+      console.error(`snapshot refresh: pre-check got HTTP ${pre.status} from ${SNAPSHOT_URL} — the cron is blocked at the edge (check Cloudflare Access app scope / WAF rules); NOT deleting the day's cache`);
+      await recordWarm(env, "refresh-10amET", false, pre.status);
+      return;
+    }
     const etDate = new Date().toLocaleDateString("en-CA", { timeZone: "America/New_York" }); // YYYY-MM-DD
     // SYNC HAZARD: this key version MUST match the cacheKey in functions/api/snapshot.js (and
     // functions/readout.json.js). Separate deploys, no shared module — this literal drifted once
@@ -182,9 +203,13 @@ async function refreshSnapshot(env) {
     // Grep "pulse:snapshot:v" across worker/ + functions/ on every bump.
     await env.PULSE_CACHE.delete(`pulse:snapshot:v15:${etDate}`);
     await new Promise((r) => setTimeout(r, 3000)); // let the delete propagate before re-fetch
-    await fetch(SNAPSHOT_URL, { headers: { "user-agent": "macrodash-snapshot-refresher" } });
-  } catch {
-    /* non-fatal: a degraded fetch won't re-cache (snapshot.js healthy-gate); next visitor refetches */
+    const res = await fetch(SNAPSHOT_URL, { headers: { "user-agent": "macrodash-snapshot-refresher" } });
+    if (!res.ok) console.error(`snapshot refresh: rebuild fetch got HTTP ${res.status} — next visitor pays the cold fetch`);
+    await recordWarm(env, "refresh-10amET", res.ok, res.status);
+  } catch (e) {
+    /* a degraded fetch won't re-cache (snapshot.js healthy-gate); next visitor refetches */
+    console.error("snapshot refresh failed:", (e && e.message) || e);
+    await recordWarm(env, "refresh-10amET", false, 0);
   }
 }
 
@@ -197,9 +222,13 @@ async function warmSnapshot(env) {
     // SYNC HAZARD: keep this key version in step with functions/api/snapshot.js.
     const existing = await env.PULSE_CACHE.get(`pulse:snapshot:v15:${etDate}`);
     if (existing) return; // already warm — nothing to do
-    await fetch(SNAPSHOT_URL, { headers: { "user-agent": "macrodash-snapshot-prewarm" } });
-  } catch {
-    /* non-fatal: the first human visitor still warms it the old way */
+    const res = await fetch(SNAPSHOT_URL, { headers: { "user-agent": "macrodash-snapshot-prewarm" } });
+    if (!res.ok) console.error(`snapshot pre-warm got HTTP ${res.status} from ${SNAPSHOT_URL} — the cron is blocked at the edge (check Cloudflare Access app scope / WAF rules); first visitor pays the cold fetch`);
+    await recordWarm(env, "prewarm-8amET", res.ok, res.status);
+  } catch (e) {
+    /* the first human visitor still warms it the old way */
+    console.error("snapshot pre-warm failed:", (e && e.message) || e);
+    await recordWarm(env, "prewarm-8amET", false, 0);
   }
 }
 

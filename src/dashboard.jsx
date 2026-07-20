@@ -2,7 +2,7 @@ import { Fragment, useState, useEffect, useCallback } from "react";
 import { LineChart, Line, BarChart, Bar, Cell, AreaChart, Area, XAxis, YAxis, Tooltip, ResponsiveContainer, ReferenceLine } from "recharts";
 import { useMarketData } from "./useMarketData.js"; // FEAT-204 wiring
 import { computeFiveWhys } from "./fiveWhys.js"; // v2.5: rule-based 5 Whys ($0, derived from live data)
-import { isStale, cadenceOf, parseObsDate } from "./sources.js"; // FEAT-R3: per-tile, cadence-aware staleness
+import { isStale, cadenceOf, parseObsDate, isMarketHoliday } from "./sources.js"; // FEAT-R3: per-tile, cadence-aware staleness + shared market calendar
 import { computeMacroFlip, buildTtReadout, formatTtPaste } from "./ttReadout.js"; // FEAT-331/332: Macro Flip + TT paste
 
 // ─── DESIGN TOKENS v1.6 (FEAT-152 + FEAT-167) ─────────────────────────────
@@ -386,9 +386,11 @@ function computeRegime(d, stale=new Set()) {
 // "Midday —" and after 4pm "Post-close —", instead of the value frozen into the daily
 // snapshot at fetch time. Pure/$0 — no LLM, no network.
 function etSession(now = new Date()) {
-  // Weekend guard (mirrors marketSession in snapshot.js): no weekend session; holidays not modeled.
+  // No-session days (mirrors marketSession in snapshot.js — SAME shared table, so the
+  // header and the 5-Whys can never disagree with the edge): weekends + market holidays.
   const dow = now.toLocaleDateString("en-US", { weekday: "short", timeZone: "America/New_York" });
-  if (dow === "Sat" || dow === "Sun") return "CLOSE";
+  const etDate = now.toLocaleDateString("en-CA", { timeZone: "America/New_York" });
+  if (dow === "Sat" || dow === "Sun" || isMarketHoliday(etDate)) return "CLOSE";
   const hour = parseInt(now.toLocaleString("en-US", { hour: "numeric", hour12: false, timeZone: "America/New_York" }), 10);
   if (hour >= 9 && hour < 16) return "OPEN";
   if (hour >= 16) return "CLOSE";

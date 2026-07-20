@@ -18,6 +18,12 @@
 // Cloudflare edge IPs. There is no STOOQ_KEY.)
 // Set in Cloudflare: Workers & Pages → MacroDash → Settings → Variables & Secrets
 
+// SECOND functions/→src/ import (readout.json.js → ttReadout was the first; esbuild
+// inlines it). sources.js is pure ESM, no React — the ONE market-holiday table feeds
+// marketSession/looksBehind here and isStale/etSession client-side, so the two sides
+// can never disagree about which weekdays had a session.
+import { isMarketHoliday } from "../../src/sources.js";
+
 const CACHE_TTL = 48 * 60 * 60;   // 48h cleanup; the per-day cache KEY drives freshness
 const SETTLING_TTL = 60 * 60;     // short lock-in while the latest close looks not-yet-posted
 
@@ -111,6 +117,15 @@ export async function onRequest(context) {
       // `lastRefresh` is deliberately NOT recomputed: it reports when the DATA was pulled,
       // so the cached value is the honest one. Everything else in `live` is data, kept as-is.
       const fresh = { ...payload, live: { ...payload.live, session: marketSession() } };
+      // ?debug=1: attach the cron Worker's last warm/refresh outcome (pulse:cron:lastwarm)
+      // so a silently-blocked 8am/10am warm is visible from a browser, not only wrangler tail.
+      // Read fresh here — the copy frozen in the day's cached _diag would mask a later failure.
+      if (debug) {
+        try {
+          const w = await env.PULSE_CACHE?.get("pulse:cron:lastwarm", "json");
+          if (w) fresh._diag = { ...(fresh._diag || {}), cronLastWarm: w };
+        } catch { /* diagnostic only */ }
+      }
       return json(publicize({ ...fresh, cached: true }));
     }
   } catch {
@@ -208,6 +223,15 @@ export async function onRequest(context) {
     });
   } catch {
     // Cache write failed — return uncached, non-fatal
+  }
+
+  // ?debug=1: attach cron warm health AFTER the cache write, so the marker is always read
+  // fresh at serve time and never frozen into the day's cached _diag.
+  if (debug) {
+    try {
+      const w = await env.PULSE_CACHE?.get("pulse:cron:lastwarm", "json");
+      if (w) snapshot._diag.cronLastWarm = w;
+    } catch { /* diagnostic only */ }
   }
 
   // ── 5. Return (strip FMP/licensed fields if public view; _diag only on ?debug=1) ──
@@ -749,7 +773,8 @@ function looksBehind(dateStr, todayStr) {
   cur.setUTCDate(cur.getUTCDate() + 1);
   while (cur < today) {
     const dow = cur.getUTCDay();
-    if (dow !== 0 && dow !== 6) missed++;
+    // Weekends and market holidays are not sessions FRED could have posted a close for.
+    if (dow !== 0 && dow !== 6 && !isMarketHoliday(cur.toISOString().slice(0, 10))) missed++;
     cur.setUTCDate(cur.getUTCDate() + 1);
   }
   return missed >= 1;
@@ -763,12 +788,14 @@ function fgLabel(score) {
   return "Extreme Greed";
 }
 
-function marketSession() {
-  const now = new Date();
-  // Weekend guard: hour-only logic made Saturday noon read "OPEN" — there is no weekend
-  // session. (US market HOLIDAYS are still not modeled; a holiday weekday reads OPEN/PRE.)
+// `now` param + export exist solely so the smoke test can pin session boundaries
+// (same convention as validateBook in tt.js). Call sites pass no argument.
+export function marketSession(now = new Date()) {
+  // No-session days: weekends and full-closure market holidays (shared table in
+  // src/sources.js). Hour-only logic made Saturday noon — and Good Friday — read "OPEN".
   const dow = now.toLocaleDateString("en-US", { weekday: "short", timeZone: "America/New_York" });
-  if (dow === "Sat" || dow === "Sun") return "CLOSE";
+  const etDate = now.toLocaleDateString("en-CA", { timeZone: "America/New_York" });
+  if (dow === "Sat" || dow === "Sun" || isMarketHoliday(etDate)) return "CLOSE";
   const h = now.toLocaleString("en-US", { hour: "numeric", hour12: false, timeZone: "America/New_York" });
   const hour = parseInt(h);
   if (hour >= 9 && hour < 16) return "OPEN";

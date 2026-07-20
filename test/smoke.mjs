@@ -5,14 +5,14 @@
 // the dashboard, so their internals belong to the worker's own suite, not this gate.
 
 import { readFileSync } from "node:fs";
-import { mergeLiveOverMock, SOURCES, isStale, cadenceOf, parseObsDate } from "../src/sources.js";
+import { mergeLiveOverMock, SOURCES, isStale, cadenceOf, parseObsDate, isMarketHoliday, MARKET_HOLIDAYS } from "../src/sources.js";
 import { computeFiveWhys } from "../src/fiveWhys.js";
 import {
   bandSpyVs200d, bandVix, bandFearGreed, bandRs, bandTenYear, bandFedOdds,
   aggregateVerdict, computeMacroFlip, buildTtReadout, formatTtPaste,
 } from "../src/ttReadout.js";
 import { validateBook, conflictCheck } from "../functions/api/tt.js";
-import { plausible, applyBands, quorum, QUORUM_FIELDS, QUORUM_MIN } from "../functions/api/snapshot.js";
+import { plausible, applyBands, quorum, QUORUM_FIELDS, QUORUM_MIN, marketSession } from "../functions/api/snapshot.js";
 
 let pass = 0, fail = 0;
 const ok = (name, cond) => { if (cond) { pass++; console.log("  PASS  " + name); } else { fail++; console.log("  FAIL  " + name); } };
@@ -316,6 +316,32 @@ ok("quorum: reports which fields are missing", (() => {
   return q.count === 2 && q.missing.includes("cpiHeadline") && q.missing.includes("shillerPe");
 })());
 ok("quorum: config sane (min <= field count, all voters named)", QUORUM_MIN <= QUORUM_FIELDS.length && QUORUM_FIELDS.length === 6);
+
+// ---- 9. market calendar — holidays across the honesty stack ---------------
+// The time-judges (isStale, marketSession/etSession, looksBehind) share ONE
+// MARKET_HOLIDAYS table in sources.js. Boundary-pinned like DEC-33: a wrong
+// calendar mislabels sessions and cries STALE on the freshest possible data.
+console.log("\n[9] market calendar (sessions + staleness share one holiday table)");
+ok("calendar: every entry is a weekday ISO date (a weekend 'holiday' would be dead weight)",
+  [...MARKET_HOLIDAYS].every((d) => { const day = new Date(`${d}T12:00:00Z`).getUTCDay(); return /^\d{4}-\d{2}-\d{2}$/.test(d) && day !== 0 && day !== 6; }));
+ok("holiday: Jul 4 2026 observed Fri Jul 3", isMarketHoliday("2026-07-03"));
+ok("holiday: Thanksgiving 2026", isMarketHoliday("2026-11-26"));
+ok("holiday: Christmas 2027 observed Fri Dec 24", isMarketHoliday("2027-12-24"));
+ok("holiday: a regular Monday is not one", !isMarketHoliday("2026-07-06"));
+ok("holiday: unknown year fails open (weekday-only fallback, never a crash)", !isMarketHoliday("2028-01-17"));
+ok("isStale: Thu data viewed Mon across Good Friday = FRESH (holiday is not a missed session)",
+  isStale("2026-04-02", new Date("2026-04-06")) === false);
+ok("isStale: same Thu data viewed Tue = STALE (Monday was a real session)",
+  isStale("2026-04-02", new Date("2026-04-07")) === true);
+ok("isStale: Wed data viewed Fri across Thanksgiving = FRESH",
+  isStale("2026-11-25", new Date("2026-11-27")) === false);
+ok("isStale: Thu Dec 24 data viewed Mon Dec 28 = FRESH (Xmas Friday + weekend)",
+  isStale("2026-12-24", new Date("2026-12-28")) === false);
+ok("session: Good Friday noon ET reads CLOSE", marketSession(new Date("2026-04-03T16:00:00Z")) === "CLOSE");
+ok("session: Saturday noon ET reads CLOSE", marketSession(new Date("2026-07-18T16:00:00Z")) === "CLOSE");
+ok("session: regular Monday noon ET reads OPEN", marketSession(new Date("2026-07-20T16:00:00Z")) === "OPEN");
+ok("session: regular Monday 7am ET reads PRE", marketSession(new Date("2026-07-20T11:00:00Z")) === "PRE");
+ok("session: regular Monday 5pm ET reads CLOSE", marketSession(new Date("2026-07-20T21:00:00Z")) === "CLOSE");
 
 console.log(`\n=== SMOKE TEST: ${pass} passed, ${fail} failed ===`);
 process.exit(fail === 0 ? 0 : 1);
