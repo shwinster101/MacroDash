@@ -386,6 +386,9 @@ function computeRegime(d, stale=new Set()) {
 // "Midday —" and after 4pm "Post-close —", instead of the value frozen into the daily
 // snapshot at fetch time. Pure/$0 — no LLM, no network.
 function etSession(now = new Date()) {
+  // Weekend guard (mirrors marketSession in snapshot.js): no weekend session; holidays not modeled.
+  const dow = now.toLocaleDateString("en-US", { weekday: "short", timeZone: "America/New_York" });
+  if (dow === "Sat" || dow === "Sun") return "CLOSE";
   const hour = parseInt(now.toLocaleString("en-US", { hour: "numeric", hour12: false, timeZone: "America/New_York" }), 10);
   if (hour >= 9 && hour < 16) return "OPEN";
   if (hour >= 16) return "CLOSE";

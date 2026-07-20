@@ -764,7 +764,12 @@ function fgLabel(score) {
 }
 
 function marketSession() {
-  const h = new Date().toLocaleString("en-US", { hour: "numeric", hour12: false, timeZone: "America/New_York" });
+  const now = new Date();
+  // Weekend guard: hour-only logic made Saturday noon read "OPEN" — there is no weekend
+  // session. (US market HOLIDAYS are still not modeled; a holiday weekday reads OPEN/PRE.)
+  const dow = now.toLocaleDateString("en-US", { weekday: "short", timeZone: "America/New_York" });
+  if (dow === "Sat" || dow === "Sun") return "CLOSE";
+  const h = now.toLocaleString("en-US", { hour: "numeric", hour12: false, timeZone: "America/New_York" });
   const hour = parseInt(h);
   if (hour >= 9 && hour < 16) return "OPEN";
   if (hour >= 16) return "CLOSE";

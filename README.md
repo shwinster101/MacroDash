@@ -5,7 +5,7 @@ Macro-intelligence dashboard: one responsive URL (mobile-primary) that answers
 FRED, CNN Fear & Greed, Kalshi FOMC odds, a market RSS headline, OpenRouter LLM
 token prices, Finnhub equity quotes, and the Shiller CAPE. React + Vite SPA on
 Cloudflare Pages, with live data assembled at the edge by Pages Functions and
-cached in KV. **Current version: 3.2.0 "Cut to the Live Signal"** (the footer
+cached in KV. **Current version: 3.8.0 "FEAT-SNAP-SAFE"** (the footer
 renders `package.json`'s version — the single source of truth).
 
 **Live:** https://macrodash.pages.dev · friend view: `/?view=public`
