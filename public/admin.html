@@ -40,6 +40,7 @@
   .pill.warn{color:var(--amber);border-color:#4a361a;background:#191206}
   .pill.head{color:var(--red);border-color:#4a1a20;background:#190a0c}
   .pill.neutral{color:var(--amber)}
+  .pill.ok{color:var(--green);border-color:#1f4a33;background:#07130d}
   /* ── command bar ── */
   .cmd{display:flex;gap:8px;align-items:center;margin:12px 0;
     border:1px solid var(--greenDim);border-radius:8px;background:#060b0e;
@@ -101,7 +102,7 @@
   details.schema>summary::-webkit-details-marker{display:none}
   details.schema>summary::before{content:"▸ ";color:var(--green)}
   details.schema[open]>summary::before{content:"▾ "}
-  @media(max-width:480px){button.act{padding:9px 13px}}
+  @media(max-width:480px){button.act{padding:9px 13px}.cmd .hintk{display:none}}
   .lens-AI{color:var(--AI)} .lens-PH{color:var(--PH)} .lens-QC{color:var(--QC)}
   .lens-VEH{color:var(--VEH)} .lens-SP{color:var(--SP)}
   .cutrow .chip{opacity:.55;text-decoration:line-through;cursor:default}
@@ -161,11 +162,11 @@
 <body>
 <div class="wrap">
   <header>
-    <div class="brand">FINANCE&nbsp;BRO.AI // TT&nbsp;TICKER&nbsp;TERMINAL <small>v1.0 · single-pass deep-dive orchestrator</small></div>
+    <div class="brand">FINANCE&nbsp;BRO.AI // TT&nbsp;TICKER&nbsp;TERMINAL <small>v1.1 · single-pass deep-dive orchestrator</small></div>
     <div class="statusline">
       <span>BOOK: <b id="bookStamp">loading…</b></span>
-      <span>MODE: <b>KV-persisted admin portal</b></span>
-      <span>REGIME: <span class="pill neutral">load from MacroDash</span></span>
+      <span>AUTH: <b id="sessState">…</b></span>
+      <span>REGIME: <span class="pill neutral" id="regimePill">loading…</span></span>
       <span style="margin-left:auto"><a href="/">← DASH</a></span>
     </div>
     <div id="authBanner" style="display:none;margin-top:8px;color:var(--red);font-size:12px">
@@ -182,14 +183,20 @@
     <span class="hintk">↵ open card · ESC close</span>
   </div>
 
+  <!-- FEAT-TT-MOBILE (v3.11): daily actions own the toolbar; backup/recovery paths demote
+       behind ⛭ BACKUP (same idiom as the dashboard's CollapsedGroup). EXPORT JSON stays
+       globally reachable — the unsaved/conflict banners link to it by function name. -->
   <div class="toolbar">
     <button class="act" onclick="openAdd()">+ ADD TICKER</button>
+    <button class="act warn" onclick="reloadBook()">⟲ RELOAD</button>
+    <button class="act" onclick="openPinSetup()">🔐 PIN</button>
+    <button class="act" onclick="toggleBackup()" id="backupToggle">⛭ BACKUP ▸</button>
+  </div>
+  <div class="toolbar" id="backupRow" style="display:none">
     <button class="act" onclick="exportBook()">⭳ EXPORT CANONICAL_BOOK.md</button>
     <button class="act" onclick="exportJSON()">⭳ EXPORT JSON</button>
     <button class="act" onclick="openImport()">⇪ IMPORT JSON</button>
-    <button class="act warn" onclick="reloadBook()">⟲ RELOAD FROM SERVER</button>
     <button class="act warn" onclick="openRestore()">⏱ RESTORE POINTS</button>
-    <button class="act" onclick="openPinSetup()">🔐 PIN</button>
   </div>
 
   <div class="layout">
@@ -346,7 +353,21 @@ function applyServer(data){
   BOOK=data.book||[];CUT=data.cut||[];
   META={version:data.version,asOf:data.asOf};
   if(data.auth)AUTH=data.auth;
-  stampHeader();
+  stampHeader();stampAuthState();
+}
+/* v3.11: honest auth line — mode + server-reported session days (never a client guess). */
+function stampAuthState(){
+  const el=document.getElementById("sessState");if(!el)return;
+  if(AUTH.mode==="pin"){
+    el.textContent="PIN"+(AUTH.session_days_left!=null?` · ${AUTH.session_days_left}d`:"");
+    el.style.color="var(--green)";
+  }else if(AUTH.mode==="access"){el.textContent="Cloudflare Access";el.style.color="var(--slate)";}
+  else el.textContent="—";
+}
+function toggleBackup(){
+  const r=document.getElementById("backupRow");const open=r.style.display!=="none";
+  r.style.display=open?"none":"flex";
+  document.getElementById("backupToggle").textContent=open?"⛭ BACKUP ▸":"⛭ BACKUP ▾";
 }
 /* FEAT-TT-RUN: days since an ISO date, or null if absent/unparseable. Null is the
    FAIL-CLOSED signal — unlike src/sources.js isStale (which returns false = "not stale"
@@ -575,6 +596,15 @@ function rankNum(rank){
 function rankScope(rank){
   return String(rank||"").replace(/#\s*\d+\s*/,"").trim(); // "infra", "cross-bucket", ""
 }
+/* FEAT-TT-REGIME: the standing Engine-0 modifier (TT doc STEP 0) rendered where the next
+   dollar gets decided. Only HEADWIND/PANIC produce one — a NEUTRAL banner would be noise,
+   and an unknown/INSUFFICIENT regime must not fabricate a modifier either way. */
+function regimeModifier(){
+  const v=REGIME&&REGIME.regime&&REGIME.regime.verdict;
+  if(v==="HEADWIND")return `<div class="none" style="color:var(--amber)">⚠ HEADWIND regime — entry standards +1 notch · R/R floors +0.5×</div>`;
+  if(v==="PANIC")return `<div class="none" style="color:var(--red)">⛔ PANIC regime — only S-tier at 8+ support quality eligible</div>`;
+  return "";
+}
 function renderNextDollar(){
   const el=document.getElementById("nextDollar");
   const ranked=BOOK.filter(x=>x.tier==="WATCH"&&rankNum(x.rank)!==null);
@@ -582,7 +612,7 @@ function renderNextDollar(){
     const watch=BOOK.filter(x=>x.tier==="WATCH").length;
     el.innerHTML=`<div class="lbl">Next dollar</div><div class="none">`+
       (watch?`${watch} name${watch===1?"":"s"} on the watchlist, none ranked — set a QUEUE RANK (e.g. "#1 infra") to surface the next dollar.`
-            :`Watchlist is empty — nothing queued for the next dollar.`)+`</div>`;
+            :`Watchlist is empty — nothing queued for the next dollar.`)+`</div>`+regimeModifier();
     return;
   }
   const top=Math.min(...ranked.map(x=>rankNum(x.rank)));
@@ -601,7 +631,7 @@ function renderNextDollar(){
   }).join("");
   el.innerHTML=`<div class="lbl">Next dollar · queue #${top}`+
     (leads.length>1?` · ${leads.length} co-leads (different buckets — not a single ranking)`:"")+
-    `</div><div class="picks">${picks}</div>`;
+    `</div><div class="picks">${picks}</div>`+regimeModifier();
 }
 /* FEAT-TT-RUN: book-coverage rollup — the honest tell, mirroring Signal Quality.
    `head` folds into the stale COUNT (3 buckets) while keeping its own red chip marker. */
@@ -660,11 +690,18 @@ function openCard(sym){
 }
 function cardBtns(sym){return `
   <button class="act" onclick="saveCard()">✔ SAVE CHANGES</button>
+  <button class="act" onclick="stampAndSave()">✓ RAN IT — stamp today</button>
   <button class="act" onclick="copyTTRun()">⧉ COPY 'TT: ${sym}' PROMPT</button>
   <button class="act danger" onclick="removeCard()">🗑 REMOVE FROM BOOK</button>`;}
 function stampRunToday(){
-  document.getElementById("fLastRun").value=new Date().toISOString().slice(0,10);
+  // ET date, NOT toISOString (UTC): an evening stamp rolled to tomorrow's UTC date,
+  // which runState() reads as future-dated = NEVER RUN — un-attesting the run just made.
+  document.getElementById("fLastRun").value=new Date().toLocaleDateString("en-CA",{timeZone:"America/New_York"});
 }
+/* FEAT-TT-STAMP: the two-tap loop (chip → RAN IT). Deliberately card-only — a board-level
+   stamp would let a mis-tap silently self-attest a run that never happened. Routes through
+   saveCard/persist so PIN-expiry mid-stamp resumes without losing the edit. */
+function stampAndSave(){stampRunToday();saveCard();}
 function saveCard(){
   const x=find(CURRENT);if(!x)return;
   x.tier=document.getElementById("fTier").value;
@@ -914,8 +951,45 @@ document.getElementById("pinInput").addEventListener("keydown",e=>{
   e.stopPropagation(); // global ESC (closeCard) must not fire while the gate is up
 });
 
-/* FEAT-TT: boot from server (KV via /api/tt) */
+/* ═══════════ REGIME PILL (FEAT-TT-REGIME v3.11 — Engine 0 goes live) ═══════════ */
+/* The pill renders /readout.json's verdict — same origin, CORS-open, zero new infra.
+   Honesty inherited end-to-end: INSUFFICIENT and fetch-failure render amber and say so;
+   only a real verdict colors. Non-blocking: the book never waits on the regime. */
+let REGIME=null;
+const REGIME_STYLE={
+  TAILWIND:["ok","TAILWIND"],
+  NEUTRAL:["neutral","NEUTRAL"],
+  HEADWIND:["head","HEADWIND"],
+  PANIC:["head","⛔ PANIC"],
+  INSUFFICIENT:["warn","INSUFFICIENT — don't gate on this"],
+};
+async function loadRegime(){
+  const el=document.getElementById("regimePill");
+  try{
+    const ctl=new AbortController();const t=setTimeout(()=>ctl.abort(),10000);
+    const res=await fetch("/readout.json",{signal:ctl.signal});
+    clearTimeout(t);
+    if(!res.ok)throw new Error("HTTP "+res.status);
+    const r=await res.json();
+    REGIME=r;
+    const v=r&&r.regime&&r.regime.verdict;
+    const [cls,label]=REGIME_STYLE[v]||["warn",v||"unknown"];
+    const asOf=(r&&r.as_of?String(r.as_of):"").slice(0,10);
+    const flip=r&&r.macro_flip&&r.macro_flip.tripped?" · FLIP TRIPPED":r&&r.macro_flip&&r.macro_flip.armed?" · flip armed":"";
+    el.className="pill "+cls;
+    el.textContent=label+flip+(asOf?" · "+asOf:"");
+    renderNextDollar(); // the HEADWIND/PANIC modifier may now apply
+  }catch(_e){
+    el.className="pill warn";
+    el.textContent="unavailable — tap DASH";
+  }
+}
+
+if(window.innerWidth<480)search.placeholder="ticker · HELP · TIER · ADD";
+
+/* FEAT-TT: boot from server (KV via /api/tt); regime loads in parallel, never blocking */
 loadBook();
+loadRegime();
 </script>
 </body>
 </html>

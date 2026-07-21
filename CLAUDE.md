@@ -121,7 +121,7 @@ worker/                 SEPARATE Cloudflare Worker (not part of Pages)
   wrangler.toml         Worker config: PULSE_CACHE binding + cron triggers (UTC).
 
 test/
-  smoke.mjs             No-network smoke test: 198 assertions over mergeLiveOverMock
+  smoke.mjs             No-network smoke test: 204 assertions over mergeLiveOverMock
                         + SOURCES-path resolution against the real MOCK_DATA + the
                         5-Whys engine + DEC-31 guards + the TT band table (DEC-33)
                         + the market-holiday calendar (sessions + staleness).
@@ -244,6 +244,16 @@ Jan-anchor shipped; see `snapshot.js` ~318–328), `spyMa100`, `spyMa200`, and a
   Access app still exists, a valid Access JWT is accepted in PIN mode too (transitional — no
   double login; inert once the app is deleted). Recovery if the PIN is lost after Access is
   gone: `wrangler kv key delete tt:auth:pin` (laptop) restores Access mode.
+- **v3.11 "Close the Loop":** the header REGIME pill is **live** — the terminal fetches
+  `/readout.json` (non-blocking, 10s timeout) and renders the verdict; INSUFFICIENT and
+  fetch-failure render amber "don't gate on this" / "unavailable" (never a defaulted color),
+  and a **HEADWIND/PANIC standing modifier** (entry +1 notch · R/R +0.5× / S-tier-only) appears
+  on the NEXT DOLLAR line. **"✓ RAN IT — stamp today"** on the card makes run-attestation a
+  two-tap loop (deliberately card-only: a board-level stamp could mis-tap-attest a run that
+  never happened) — and run stamps now use the **ET date** (the old `toISOString()` UTC stamp
+  rolled evening runs to tomorrow → runState read them as future = NEVER RUN). Toolbar demotes
+  the four backup/recovery buttons behind **⛭ BACKUP**; the header shows the honest auth line
+  ("PIN · Nd" from the session record's server-side `exp`, or "Cloudflare Access").
 - **Invariant: the real CANONICAL_BOOK never enters the repo or bundle.** `SEED=[]` stays empty;
   seeding/restore is paste-import in the UI (EXPORT JSON from the Artifacts copy → IMPORT JSON).
 - **FEAT-TT-RUN (v3.5.0) applies the dashboard's honesty rule to the book.** Per-entry `lastRun`
@@ -348,7 +358,7 @@ npm run dev        # Vite dev server (mock unless VITE_DATA_MODE=live in .env)
 npm run build      # → dist/  (what Pages runs)
 npm run preview    # serve the built dist/
 
-node test/smoke.mjs   # 198-assertion no-network smoke test (needs Node ≥17)
+node test/smoke.mjs   # 204-assertion no-network smoke test (needs Node ≥17)
 
 # Cron Worker (separate deploy):
 cd worker && npx wrangler deploy

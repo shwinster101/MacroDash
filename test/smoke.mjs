@@ -350,6 +350,24 @@ ok("kv-pin: hash deterministic + 64-hex shaped", hp1 === hp2 && /^[a-f0-9]{64}$/
 ok("kv-pin: guess-sensitive (one digit changes the hash)", hp1 !== hp3);
 ok("kv-pin: salt-bound (same pin, different salt, different hash)", hp1 !== hp4);
 
+// ---- 8c. terminal source guards (v3.11 — admin.html is buildless, so guard at source) --
+// Same technique as the DEC-31 guards on dashboard.jsx: admin.html has no bundler or
+// test harness of its own, so the load-bearing strings are pinned here.
+console.log("\n[8c] admin.html source guards (regime pill + ET stamping + stamp flow)");
+const adminSrc = readFileSync(new URL("../public/admin.html", import.meta.url), "utf8");
+ok("terminal: regime pill fetches /readout.json (Engine 0 wired)", adminSrc.includes('fetch("/readout.json"'));
+ok("terminal: all five verdict states mapped explicitly",
+  ["TAILWIND", "NEUTRAL", "HEADWIND", "PANIC", "INSUFFICIENT"].every((v) => adminSrc.includes(v)));
+ok("terminal: INSUFFICIENT and fetch-failure both render as don't-trust states",
+  adminSrc.includes("don't gate on this") && adminSrc.includes("unavailable — tap DASH"));
+ok("terminal: lastRun stamps the ET date — no UTC toISOString on the run stamp",
+  adminSrc.includes('new Date().toLocaleDateString("en-CA",{timeZone:"America/New_York"})') &&
+  !/fLastRun"\)\.value=new Date\(\)\.toISOString/.test(adminSrc));
+ok("terminal: HEADWIND/PANIC modifiers wired to the next-dollar line",
+  adminSrc.includes("R/R floors +0.5") && adminSrc.includes("8+ support quality"));
+ok("terminal: stamp flow routes through saveCard (persist rails, not a side channel)",
+  adminSrc.includes("function stampAndSave(){stampRunToday();saveCard();}"));
+
 // ---- 9. market calendar — holidays across the honesty stack ---------------
 // The time-judges (isStale, marketSession/etSession, looksBehind) share ONE
 // MARKET_HOLIDAYS table in sources.js. Boundary-pinned like DEC-33: a wrong

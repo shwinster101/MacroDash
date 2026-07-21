@@ -143,7 +143,12 @@ async function authorize(request, env) {
   if (!env.PULSE_CACHE) return { ok: false, status: 503, error: "KV unavailable" };
   const token = parseCookie(request.headers.get("Cookie"), "tt_session");
   if (token && /^[a-f0-9]{32}$/.test(token)) {
-    try { if (await env.PULSE_CACHE.get(SESSION_PREFIX + token)) return { ok: true }; } catch (_e) {}
+    try {
+      const sess = await env.PULSE_CACHE.get(SESSION_PREFIX + token, "json");
+      // v3.11: exp (ms epoch, stored at mint) feeds the header's honest "PIN · Nd" line.
+      // v3.10 sessions lack it → null → the client omits the day count, never guesses.
+      if (sess) return { ok: true, sessionDaysLeft: sess.exp ? Math.max(0, Math.round((sess.exp - Date.now()) / 86400000)) : null };
+    } catch (_e) {}
   }
   const hdrPin = request.headers.get("x-tt-pin");
   if (hdrPin != null) return checkPin(hdrPin, env, cfg);
@@ -278,7 +283,8 @@ async function mintSession(env, bodyObj) {
   crypto.getRandomValues(bytes);
   const token = [...bytes].map((b) => b.toString(16).padStart(2, "0")).join("");
   try {
-    await env.PULSE_CACHE.put(SESSION_PREFIX + token, JSON.stringify({ at: new Date().toISOString() }),
+    await env.PULSE_CACHE.put(SESSION_PREFIX + token,
+      JSON.stringify({ at: new Date().toISOString(), exp: Date.now() + SESSION_TTL * 1000 }),
       { expirationTtl: SESSION_TTL });
   } catch (e) {
     return json({ error: "session store failed: " + (e?.message || "unknown") }, 503);
@@ -361,8 +367,9 @@ export async function onRequestGet({ request, env }) {
 
   // `auth` tells the client which PIN UI to offer: access → SET PIN (phone-only claim);
   // pin/kv → CHANGE PIN; pin/env → managed by wrangler, read-only here.
+  // session_days_left comes from the session record itself (server truth, not a client guess).
   const cfg = await resolveAuth(env);
-  const authInfo = { mode: cfg.mode, src: cfg.src || null };
+  const authInfo = { mode: cfg.mode, src: cfg.src || null, session_days_left: auth.sessionDaysLeft ?? null };
   let stored = null;
   try { stored = await env.PULSE_CACHE.get(BOOK_KEY, "json"); } catch (_e) {}
   if (!stored) return json({ version: null, asOf: null, book: [], cut: [], empty: true, auth: authInfo });
