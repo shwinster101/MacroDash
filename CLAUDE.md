@@ -121,7 +121,7 @@ worker/                 SEPARATE Cloudflare Worker (not part of Pages)
   wrangler.toml         Worker config: PULSE_CACHE binding + cron triggers (UTC).
 
 test/
-  smoke.mjs             No-network smoke test: 195 assertions over mergeLiveOverMock
+  smoke.mjs             No-network smoke test: 198 assertions over mergeLiveOverMock
                         + SOURCES-path resolution against the real MOCK_DATA + the
                         5-Whys engine + DEC-31 guards + the TT band table (DEC-33)
                         + the market-holiday calendar (sessions + staleness).
@@ -234,6 +234,16 @@ Jan-anchor shipped; see `snapshot.js` ~318–328), `spyMa100`, `spyMa200`, and a
   `env.ACCESS_TEAM_DOMAIN` certs + `env.ACCESS_AUD`; missing → 503, fail closed) — so the deploy
   is inert until the operator flips the secret, then deletes the Access app at leisure.
   `env.ACCESS_DEV_BYPASS="1"` skips both modes for local `wrangler pages dev` only.
+  **v3.10 adds the phone-only setup path:** with no `TT_PIN` secret, the 🔐 PIN button in the
+  terminal SETS the PIN through `POST /api/tt {new_pin}` — the claim is authorized by the
+  operator's *current Cloudflare Access session* (fail closed: no valid JWT → no claim), stored
+  as a salted SHA-256 record in KV (`tt:auth:pin`, `hashPin()` smoke-tested; hygiene not a wall —
+  the lockout is the wall), read at request time so **no wrangler, no dashboard, no redeploy**.
+  Rotation requires the *current PIN* (a stolen device session can't change the lock); env
+  `TT_PIN` always wins over the KV record and disables terminal-side changes (409). While the
+  Access app still exists, a valid Access JWT is accepted in PIN mode too (transitional — no
+  double login; inert once the app is deleted). Recovery if the PIN is lost after Access is
+  gone: `wrangler kv key delete tt:auth:pin` (laptop) restores Access mode.
 - **Invariant: the real CANONICAL_BOOK never enters the repo or bundle.** `SEED=[]` stays empty;
   seeding/restore is paste-import in the UI (EXPORT JSON from the Artifacts copy → IMPORT JSON).
 - **FEAT-TT-RUN (v3.5.0) applies the dashboard's honesty rule to the book.** Per-entry `lastRun`
@@ -338,7 +348,7 @@ npm run dev        # Vite dev server (mock unless VITE_DATA_MODE=live in .env)
 npm run build      # → dist/  (what Pages runs)
 npm run preview    # serve the built dist/
 
-node test/smoke.mjs   # 195-assertion no-network smoke test (needs Node ≥17)
+node test/smoke.mjs   # 198-assertion no-network smoke test (needs Node ≥17)
 
 # Cron Worker (separate deploy):
 cd worker && npx wrangler deploy

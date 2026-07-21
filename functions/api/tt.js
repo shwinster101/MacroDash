@@ -27,6 +27,7 @@ const json = (obj, status = 200) =>
 const PIN_RE = /^\d{6}$/;
 const SESSION_PREFIX = "tt:session:";
 const LOCK_KEY = "tt:auth:lock";
+const PIN_KEY = "tt:auth:pin";        // v3.10: KV pin record {salt, hash, setAt} — phone-only setup
 const SESSION_TTL = 30 * 24 * 3600;   // 30-day device session
 const LOCK_RECORD_TTL = 48 * 3600;    // failure history ages out of KV on its own
 // Escalating lockout tiers [minFails, lockSeconds], checked top-down. At these rates a
@@ -76,16 +77,45 @@ async function pinMatches(guess, actual) {
   return diff === 0;
 }
 
-// Evaluate ONE PIN attempt against the shared KV lockout. Used by both the login POST
-// and the x-tt-pin header path, so an attacker can't shop for a cheaper door.
-async function checkPin(pin, env) {
+// Hex SHA-256 of salt:pin for the KV record (exported for smoke). NOTE: a 6-digit space
+// is trivially brute-forceable OFFLINE under any KDF, and an attacker who can read KV
+// already holds the book itself — the hash is hygiene (no plaintext at rest), not a
+// wall. The wall remains the online lockout above.
+export async function hashPin(saltHex, pin) {
+  const data = new TextEncoder().encode(String(saltHex) + ":" + String(pin));
+  const dig = new Uint8Array(await crypto.subtle.digest("SHA-256", data));
+  return [...dig].map((b) => b.toString(16).padStart(2, "0")).join("");
+}
+
+// Resolve the ACTIVE auth config. Precedence: env TT_PIN (wrangler/laptop path) → KV pin
+// record (phone-only setup path) → legacy Access. env wins by design: a KV write must
+// never be able to override an operator-set secret.
+async function resolveAuth(env) {
+  const m = authMode(env);
+  if (m !== "access") return { mode: m, src: "env" };
+  let rec = null;
+  try { rec = await env.PULSE_CACHE?.get(PIN_KEY, "json"); } catch (_e) {}
+  if (rec && rec.salt && rec.hash) return { mode: "pin", src: "kv", rec };
+  return { mode: "access" };
+}
+
+// Evaluate ONE PIN attempt against the shared KV lockout. Used by the login POST, the
+// x-tt-pin header path, AND rotation's current-PIN check, so an attacker can't shop
+// for a cheaper door. `cfg` is the resolveAuth() result (env pin vs KV record).
+async function checkPin(pin, env, cfg) {
   const nowMs = Date.now();
   let rec = null;
   try { rec = await env.PULSE_CACHE.get(LOCK_KEY, "json"); } catch (_e) {}
   const lock = lockoutState(rec, nowMs);
   if (lock.locked)
     return { ok: false, status: 429, error: `locked — retry in ${lock.retryAfterSec}s`, retryAfterSec: lock.retryAfterSec };
-  if (PIN_RE.test(String(pin)) && (await pinMatches(pin, env.TT_PIN))) {
+  let match = false;
+  if (PIN_RE.test(String(pin))) {
+    match = cfg.src === "env"
+      ? await pinMatches(pin, env.TT_PIN)
+      : (await hashPin(cfg.rec.salt, pin)) === cfg.rec.hash;
+  }
+  if (match) {
     try { await env.PULSE_CACHE.delete(LOCK_KEY); } catch (_e) {}
     return { ok: true, priorFails: lock.fails };
   }
@@ -107,16 +137,23 @@ function crossOrigin(request) {
 // x-tt-pin header, else 401 so the client can raise its PIN prompt (never a redirect).
 async function authorize(request, env) {
   if (env.ACCESS_DEV_BYPASS === "1") return { ok: true };
-  const mode = authMode(env);
-  if (mode === "misconfigured") return { ok: false, status: 503, error: "TT_PIN must be exactly 6 digits" };
-  if (mode === "access") return verifyAccessJwt(request, env);
+  const cfg = await resolveAuth(env);
+  if (cfg.mode === "misconfigured") return { ok: false, status: 503, error: "TT_PIN must be exactly 6 digits" };
+  if (cfg.mode === "access") return verifyAccessJwt(request, env);
   if (!env.PULSE_CACHE) return { ok: false, status: 503, error: "KV unavailable" };
   const token = parseCookie(request.headers.get("Cookie"), "tt_session");
   if (token && /^[a-f0-9]{32}$/.test(token)) {
     try { if (await env.PULSE_CACHE.get(SESSION_PREFIX + token)) return { ok: true }; } catch (_e) {}
   }
   const hdrPin = request.headers.get("x-tt-pin");
-  if (hdrPin != null) return checkPin(hdrPin, env);
+  if (hdrPin != null) return checkPin(hdrPin, env, cfg);
+  // Transitional courtesy: while the Access app still fronts the path (not yet deleted),
+  // a valid Access JWT is accepted so the operator isn't double-gated mid-migration.
+  // After the app is deleted no JWT arrives and this branch is inert.
+  if (env.ACCESS_AUD && env.ACCESS_TEAM_DOMAIN && request.headers.get("Cf-Access-Jwt-Assertion")) {
+    const a = await verifyAccessJwt(request, env);
+    if (a.ok) return a;
+  }
   return { ok: false, status: 401, error: "pin required" };
 }
 
@@ -235,19 +272,8 @@ const etDate = () =>
   new Intl.DateTimeFormat("en-CA", { timeZone: "America/New_York" }).format(new Date());
 
 // ── Handlers ────────────────────────────────────────────────────────────────
-// FEAT-TT-PIN: POST /api/tt = PIN login (PIN mode only). Success mints a device session
-// and reports how many failed attempts accrued since the last successful login — the
-// owner-visible tell that someone has been guessing.
-export async function onRequestPost({ request, env }) {
-  const mode = authMode(env);
-  if (mode === "access") return json({ error: "PIN auth not configured — terminal uses Cloudflare Access" }, 404);
-  if (mode === "misconfigured") return json({ error: "TT_PIN must be exactly 6 digits" }, 503);
-  if (!env.PULSE_CACHE) return json({ error: "KV unavailable" }, 503);
-  if (crossOrigin(request)) return json({ error: "cross-origin" }, 403);
-  let body;
-  try { body = JSON.parse(await request.text()); } catch (_e) { return json({ error: "invalid JSON" }, 400); }
-  const r = await checkPin(body && body.pin, env);
-  if (!r.ok) return authFail(r);
+// Mint a device session + cookie around a success payload (login and set-PIN both end here).
+async function mintSession(env, bodyObj) {
   const bytes = new Uint8Array(16);
   crypto.getRandomValues(bytes);
   const token = [...bytes].map((b) => b.toString(16).padStart(2, "0")).join("");
@@ -257,10 +283,57 @@ export async function onRequestPost({ request, env }) {
   } catch (e) {
     return json({ error: "session store failed: " + (e?.message || "unknown") }, 503);
   }
-  const res = json({ ok: true, session_days: SESSION_TTL / 86400, failed_attempts_since_last_login: r.priorFails || 0 });
+  const res = json(bodyObj);
   res.headers.set("Set-Cookie",
     `tt_session=${token}; Max-Age=${SESSION_TTL}; Path=/; HttpOnly; Secure; SameSite=Strict`);
   return res;
+}
+
+// FEAT-TT-PIN: POST /api/tt = PIN login ({pin}) or set/rotate ({new_pin}, v3.10 phone-only
+// setup). Login success reports failed_attempts_since_last_login — the guessing tell.
+export async function onRequestPost({ request, env }) {
+  if (!env.PULSE_CACHE) return json({ error: "KV unavailable" }, 503);
+  if (crossOrigin(request)) return json({ error: "cross-origin" }, 403);
+  let body;
+  try { body = JSON.parse(await request.text()); } catch (_e) { return json({ error: "invalid JSON" }, 400); }
+  const cfg = await resolveAuth(env);
+  if (cfg.mode === "misconfigured") return json({ error: "TT_PIN must be exactly 6 digits" }, 503);
+
+  // ── SET / ROTATE ({new_pin}) — the phone-only path: no wrangler, no dashboard ──
+  if (body && body.new_pin !== undefined) {
+    if (!PIN_RE.test(String(body.new_pin))) return json({ error: "new_pin must be exactly 6 digits" }, 400);
+    if (cfg.src === "env")
+      return json({ error: "PIN is managed by the TT_PIN secret — change it with wrangler, not here" }, 409);
+    if (cfg.mode === "access") {
+      // Initial claim: changing the auth scheme requires passing the CURRENT auth —
+      // the operator's (last-ever) Cloudflare Access login authorizes it. Fail closed:
+      // no JWT / broken Access config can never leave the claim open to the internet.
+      const a = await verifyAccessJwt(request, env);
+      if (!a.ok) return authFail(a);
+    } else {
+      // Rotation: the current PIN itself is required (shared lockout applies) — a
+      // stolen 30-day device session alone must never be able to change the lock.
+      const r = await checkPin(body.current_pin, env, cfg);
+      if (!r.ok) return authFail(r);
+    }
+    const saltBytes = new Uint8Array(16);
+    crypto.getRandomValues(saltBytes);
+    const salt = [...saltBytes].map((b) => b.toString(16).padStart(2, "0")).join("");
+    const recNew = { salt, hash: await hashPin(salt, body.new_pin), setAt: new Date().toISOString() };
+    try {
+      await env.PULSE_CACHE.put(PIN_KEY, JSON.stringify(recNew)); // no TTL — persistent
+    } catch (e) {
+      return json({ error: "pin store failed: " + (e?.message || "unknown") }, 503);
+    }
+    return mintSession(env, { ok: true, mode: "pin", rotated: cfg.mode === "pin" });
+  }
+
+  // ── LOGIN ({pin}) ──
+  if (cfg.mode === "access")
+    return json({ error: "PIN auth not configured — terminal uses Cloudflare Access" }, 404);
+  const r = await checkPin(body && body.pin, env, cfg);
+  if (!r.ok) return authFail(r);
+  return mintSession(env, { ok: true, session_days: SESSION_TTL / 86400, failed_attempts_since_last_login: r.priorFails || 0 });
 }
 
 export async function onRequestGet({ request, env }) {
@@ -286,10 +359,14 @@ export async function onRequestGet({ request, env }) {
     return json({ ...snap, snapshotOf: snapDate, empty: false });
   }
 
+  // `auth` tells the client which PIN UI to offer: access → SET PIN (phone-only claim);
+  // pin/kv → CHANGE PIN; pin/env → managed by wrangler, read-only here.
+  const cfg = await resolveAuth(env);
+  const authInfo = { mode: cfg.mode, src: cfg.src || null };
   let stored = null;
   try { stored = await env.PULSE_CACHE.get(BOOK_KEY, "json"); } catch (_e) {}
-  if (!stored) return json({ version: null, asOf: null, book: [], cut: [], empty: true });
-  return json({ ...stored, empty: false });
+  if (!stored) return json({ version: null, asOf: null, book: [], cut: [], empty: true, auth: authInfo });
+  return json({ ...stored, empty: false, auth: authInfo });
 }
 
 export async function onRequestPut({ request, env }) {

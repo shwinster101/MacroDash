@@ -189,6 +189,7 @@
     <button class="act" onclick="openImport()">⇪ IMPORT JSON</button>
     <button class="act warn" onclick="reloadBook()">⟲ RELOAD FROM SERVER</button>
     <button class="act warn" onclick="openRestore()">⏱ RESTORE POINTS</button>
+    <button class="act" onclick="openPinSetup()">🔐 PIN</button>
   </div>
 
   <div class="layout">
@@ -294,6 +295,7 @@ const CARD_FIELDS=[
 /* ═══════════ STATE ═══════════ */
 let BOOK=[];
 let META={version:null,asOf:null};
+let AUTH={mode:null,src:null}; // FEAT-TT-PIN v3.10: which PIN UI to offer (from GET .auth)
 
 /* ═══════════ SERVER SYNC (FEAT-TT) ═══════════ */
 function authExpired(msg){
@@ -343,6 +345,7 @@ async function api(method,body,ifMatch){
 function applyServer(data){
   BOOK=data.book||[];CUT=data.cut||[];
   META={version:data.version,asOf:data.asOf};
+  if(data.auth)AUTH=data.auth;
   stampHeader();
 }
 /* FEAT-TT-RUN: days since an ISO date, or null if absent/unparseable. Null is the
@@ -830,6 +833,52 @@ function copy(t){navigator.clipboard&&navigator.clipboard.writeText(t);}
 let toastT;
 function toast(msg){const el=document.getElementById("toast");el.textContent=msg;el.classList.add("on");
   clearTimeout(toastT);toastT=setTimeout(()=>el.classList.remove("on"),3200);}
+
+/* ═══════════ PIN SETUP / ROTATE (FEAT-TT-PIN v3.10 — phone-only path) ═══════════ */
+/* access mode → SET (the current Access session authorizes the claim server-side);
+   pin/kv → CHANGE (requires the current PIN — a stolen session can't change the lock);
+   pin/env → managed by the TT_PIN wrangler secret, read-only here. */
+function openPinSetup(){
+  CURRENT=null;
+  const isKv=AUTH.mode==="pin"&&AUTH.src==="kv";
+  const isEnv=AUTH.mode==="pin"&&AUTH.src==="env";
+  document.getElementById("cTitle").textContent=isKv?"CHANGE TERMINAL PIN":"SET TERMINAL PIN";
+  if(isEnv){
+    document.getElementById("cBody").innerHTML=`<div class="derived">This deployment's PIN is managed by the
+      <b>TT_PIN</b> secret (wrangler) — it can't be changed from the terminal. Unset the secret to manage it here.</div>`;
+    document.getElementById("cBtns").innerHTML=`<button class="act" onclick="closeCard()">CLOSE</button>`;
+    document.getElementById("overlay").classList.add("on");return;
+  }
+  const pinRow=(id,label)=>`<div class="row"><div class="k">${label}</div><div class="v">
+    <input id="${id}" inputmode="numeric" pattern="\\d*" maxlength="6" autocomplete="off"
+      style="letter-spacing:.4em;font-size:16px;text-align:center" placeholder="······"/></div></div>`;
+  document.getElementById("cBody").innerHTML=
+    `<div class="derived" style="margin-bottom:8px">${isKv
+      ?"Rotating the PIN requires the current one. New PIN takes effect immediately on all doors (login, x-tt-pin)."
+      :"Sets a 6-digit PIN for this terminal — replaces the Cloudflare Access login once the Access app is deleted. Your current Access session authorizes this."}</div>`+
+    (isKv?pinRow("fCurPin","CURRENT PIN"):"")+
+    pinRow("fNewPin","NEW PIN")+
+    pinRow("fConfirmPin","CONFIRM PIN");
+  document.getElementById("cBtns").innerHTML=`
+    <button class="act" onclick="pinSetupSave()">✔ ${isKv?"ROTATE":"SET"} PIN</button>
+    <button class="act" onclick="closeCard()">CANCEL</button>`;
+  document.getElementById("overlay").classList.add("on");
+}
+async function pinSetupSave(){
+  const v=(id)=>{const el=document.getElementById(id);return el?(el.value||"").trim():undefined;};
+  const np=v("fNewPin"),cf=v("fConfirmPin"),cur=v("fCurPin");
+  if(!/^\d{6}$/.test(np||""))return toast("New PIN must be exactly 6 digits");
+  if(np!==cf)return toast("PINs don't match");
+  try{
+    const res=await fetch("/api/tt",{method:"POST",headers:{"content-type":"application/json"},
+      body:JSON.stringify(cur!==undefined?{new_pin:np,current_pin:cur}:{new_pin:np})});
+    const data=await res.json().catch(()=>({}));
+    if(!res.ok)return toast("PIN not saved: "+(data.error||("HTTP "+res.status)));
+    AUTH={mode:"pin",src:"kv"};
+    closeCard();
+    toast(data.rotated?"PIN rotated — all doors now use the new PIN":"PIN set — this device is unlocked for 30 days");
+  }catch(e){toast("PIN not saved: "+e.message);}
+}
 
 /* ═══════════ PIN GATE (FEAT-TT-PIN) ═══════════ */
 /* PIN_CB carries the interrupted action (loadBook, or persist mid-edit) across the

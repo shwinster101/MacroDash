@@ -11,7 +11,7 @@ import {
   bandSpyVs200d, bandVix, bandFearGreed, bandRs, bandTenYear, bandFedOdds,
   aggregateVerdict, computeMacroFlip, buildTtReadout, formatTtPaste,
 } from "../src/ttReadout.js";
-import { validateBook, conflictCheck, authMode, lockoutState, recordFailure, parseCookie, LOCK_TIERS } from "../functions/api/tt.js";
+import { validateBook, conflictCheck, authMode, lockoutState, recordFailure, parseCookie, hashPin, LOCK_TIERS } from "../functions/api/tt.js";
 import { plausible, applyBands, quorum, QUORUM_FIELDS, QUORUM_MIN, marketSession } from "../functions/api/snapshot.js";
 
 let pass = 0, fail = 0;
@@ -341,6 +341,14 @@ ok("lockout: tier table sane (descending thresholds, escalating locks)",
 ok("cookie: finds tt_session among other cookies", parseCookie("a=1; tt_session=deadbeef; b=2", "tt_session") === "deadbeef");
 ok("cookie: missing / null header → null", parseCookie("a=1; b=2", "tt_session") === null && parseCookie(null, "tt_session") === null);
 ok("cookie: exact-name match only (no suffix tricks)", parseCookie("xtt_session=evil", "tt_session") === null);
+// v3.10 phone-only setup: the KV pin record stores hashPin(salt, pin) — deterministic,
+// salt-bound, guess-sensitive, hex-shaped. (The 6-digit space makes any hash offline-weak
+// by construction; the record exists so no plaintext sits at rest, not as a wall.)
+const hp1 = await hashPin("aabb", "123456"), hp2 = await hashPin("aabb", "123456");
+const hp3 = await hashPin("aabb", "123457"), hp4 = await hashPin("aabc", "123456");
+ok("kv-pin: hash deterministic + 64-hex shaped", hp1 === hp2 && /^[a-f0-9]{64}$/.test(hp1));
+ok("kv-pin: guess-sensitive (one digit changes the hash)", hp1 !== hp3);
+ok("kv-pin: salt-bound (same pin, different salt, different hash)", hp1 !== hp4);
 
 // ---- 9. market calendar — holidays across the honesty stack ---------------
 // The time-judges (isStale, marketSession/etSession, looksBehind) share ONE
