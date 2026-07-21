@@ -121,7 +121,7 @@ worker/                 SEPARATE Cloudflare Worker (not part of Pages)
   wrangler.toml         Worker config: PULSE_CACHE binding + cron triggers (UTC).
 
 test/
-  smoke.mjs             No-network smoke test: 212 assertions over mergeLiveOverMock
+  smoke.mjs             No-network smoke test: 218 assertions over mergeLiveOverMock
                         + SOURCES-path resolution against the real MOCK_DATA + the
                         5-Whys engine + DEC-31 guards + the TT band table (DEC-33)
                         + the market-holiday calendar (sessions + staleness).
@@ -303,6 +303,15 @@ Jan-anchor shipped; see `snapshot.js` ~318–328), `spyMa100`, `spyMa200`, and a
   Entry path is the 📊 DEEP DIVE editor on the card (paste JSON) — **thesis/position payloads live
   only in KV, never the repo** (same invariant as the book itself); EXPORT CANONICAL_BOOK.md
   appends `### DEEP_DIVE: <SYM>` sections so re-seeding never loses thesis state.
+  **v3.13 makes the renderer corpus-native:** the deep-dive JSON files parse AS-IS (`as_of`
+  aliases `updated`; key_dates accept `event`; hinges accept `{id, role}`; pt_ladder values may
+  be labeled objects), and rich sections render purpose-built — **four-gate board** (status +
+  de-risked bar + evidence), **dilution sequencing grid computed from the pre-committed rule**
+  (pts ≈ 100 × $B ÷ price; zones ≤15 green / ≤30 amber / >30 red), kill-combination monitor,
+  leading indicators, cert probabilities, utilization underwriting, fleet-vs-burn engine
+  (locked inputs + anchors, static — thesis STATE, not a calculator), tape (stamped "NOT
+  live"), watchlist unlocks/hedges/open items. **Unknown payload keys fall back to a generic
+  k/v render — what's stored is never invisible.**
 - **Deferred:** stored fundamentals + Robinhood sync — now unblocked by the `x-tt-pin` header
   (v3.9): a chat-side daily review can PUT `status_flags`/`ref_px` into the deepDive payloads and
   stamp `lastRun`. When built, store the *triage* shape (`{at, px}` → "% moved since your last TT
@@ -369,7 +378,7 @@ npm run dev        # Vite dev server (mock unless VITE_DATA_MODE=live in .env)
 npm run build      # → dist/  (what Pages runs)
 npm run preview    # serve the built dist/
 
-node test/smoke.mjs   # 212-assertion no-network smoke test (needs Node ≥17)
+node test/smoke.mjs   # 218-assertion no-network smoke test (needs Node ≥17)
 
 # Cron Worker (separate deploy):
 cd worker && npx wrangler deploy

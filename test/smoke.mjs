@@ -383,6 +383,15 @@ ok("dd: rendered payload strings are HTML-escaped (esc used in the deep renderer
 ok("dd: export carries DEEP_DIVE sections (persistence rule survives the port)",
   adminSrc.includes("### DEEP_DIVE: ${x.sym}"));
 ok("dd: import validates deepDive before overwriting the book", adminSrc.includes("deep dive: "));
+// v3.13 corpus-native: the uploaded deep-dive JSONs must parse AS-IS.
+ok("dd: as_of aliases updated (corpus files carry as_of)", adminSrc.includes("dd.updated||dd.as_of"));
+ok("dd: key_dates accept event alias; hinges accept id/role alias",
+  adminSrc.includes("k.label||k.event") && adminSrc.includes("g.label||g.key||g.id") && adminSrc.includes("g.note||g.role"));
+ok("dd: dilution grid computed from the pre-committed rule (100 × $B ÷ price)", adminSrc.includes("100*b/px"));
+ok("dd: gates board renders de-risked fraction as a bar", adminSrc.includes("% de-risked"));
+ok("dd: tape section stamped NOT live", adminSrc.includes("· NOT live"));
+ok("dd: unknown payload keys fall back to generic render (stored is never invisible)",
+  adminSrc.includes("!DD_HANDLED.has"));
 
 // ---- 9. market calendar — holidays across the honesty stack ---------------
 // The time-judges (isStale, marketSession/etSession, looksBehind) share ONE

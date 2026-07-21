@@ -616,23 +616,30 @@ let TAB=(location.hash||"").replace("#","").toUpperCase()||"BOARD";
 const DD_STATES=["green","amber","red","unknown"];
 const DD_MAX=8*1024; // per-payload cap; keeps the whole book far under the 64KB PUT limit
 function esc(s){return String(s).replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));}
+/* v3.13: contract accepts the deep-dive corpus files AS-IS — `as_of` aliases `updated`,
+   key_dates accept `event`, hinges accept `{id, role}`, pt_ladder values may be objects. */
+function ddDate(dd){return (dd&&(dd.updated||dd.as_of))||"";}
 function validateDeepDive(dd){
   if(!dd||typeof dd!=="object"||Array.isArray(dd))return "payload must be an object";
   if(typeof dd.thesis_version!=="string"||!dd.thesis_version)return "thesis_version (string) is required";
-  if(typeof dd.updated!=="string"||!/^\d{4}-\d{2}-\d{2}$/.test(dd.updated))return "updated (YYYY-MM-DD) is required — the honesty chip depends on it";
+  if(!/^\d{4}-\d{2}-\d{2}$/.test(ddDate(dd)))return "updated or as_of (YYYY-MM-DD) is required — the honesty chip depends on it";
   if(JSON.stringify(dd).length>DD_MAX)return "payload exceeds "+(DD_MAX/1024)+"KB";
-  if(dd.pt_ladder!==undefined&&(typeof dd.pt_ladder!=="object"||Array.isArray(dd.pt_ladder)))return "pt_ladder must be an object of year → [bear, base, bull]";
+  if(dd.pt_ladder!==undefined&&(typeof dd.pt_ladder!=="object"||Array.isArray(dd.pt_ladder)))return "pt_ladder must be an object keyed by year";
   if(dd.hinges!==undefined){
     if(!Array.isArray(dd.hinges))return "hinges must be an array";
     for(const h of dd.hinges){
-      if(!h||typeof h!=="object"||typeof(h.label||h.key)!=="string")return "each hinge needs a label or key";
+      if(!h||typeof h!=="object"||typeof(h.label||h.key||h.id)!=="string")return "each hinge needs a label, key, or id";
       if(h.state!==undefined&&!DD_STATES.includes(h.state))return "hinge state must be green|amber|red|unknown";
     }
+  }
+  if(dd.gates!==undefined){
+    if(!Array.isArray(dd.gates))return "gates must be an array";
+    for(const g of dd.gates)if(!g||typeof g.name!=="string")return "each gate needs a name";
   }
   if(dd.key_dates!==undefined){
     if(!Array.isArray(dd.key_dates))return "key_dates must be an array";
     for(const k of dd.key_dates)
-      if(!k||!/^\d{4}-\d{2}-\d{2}$/.test(String(k.date))||typeof k.label!=="string")return "each key_date needs {date: YYYY-MM-DD, label}";
+      if(!k||!/^\d{4}-\d{2}-\d{2}$/.test(String(k.date))||typeof(k.label||k.event)!=="string")return "each key_date needs {date: YYYY-MM-DD, label|event}";
   }
   if(dd.rules!==undefined&&!(Array.isArray(dd.rules)&&dd.rules.every(r=>typeof r==="string")))return "rules must be an array of strings";
   if(dd.ref_px!==undefined&&!(dd.ref_px&&typeof dd.ref_px.px==="number"&&isFinite(dd.ref_px.px)))return "ref_px needs a numeric px";
@@ -666,6 +673,70 @@ function ddAgeChip(updated){
   if(d>30)return `<span class="pill warn">self-attested · updated ${d}d ago — re-review</span>`;
   return `<span class="pill">self-attested · updated ${d}d ago</span>`;
 }
+/* Generic value renderer — nested objects/arrays flatten to labeled inline pairs, every
+   leaf HTML-escaped. Guarantees no payload shape ever renders "[object Object]". */
+function ddVal(v){
+  if(v==null)return "—";
+  if(Array.isArray(v))return v.map(x=>typeof x==="object"&&x!==null?ddVal(x):esc(x)).join(" · ");
+  if(typeof v==="object")return Object.entries(v).map(([k,x])=>`<span style="color:var(--dim)">${esc(k)}:</span> ${typeof x==="object"&&x!==null?ddVal(x):esc(x)}`).join(" · ");
+  return esc(v);
+}
+function ddKvSec(title,obj){
+  if(!obj||typeof obj!=="object"||Array.isArray(obj)||!Object.keys(obj).length)return "";
+  return `<div class="dd-sec"><div class="lbl">${esc(title)}</div>`+
+    Object.entries(obj).map(([k,v])=>`<div class="dd-kv"><div class="k">${esc(k)}</div><div>${ddVal(v)}</div></div>`).join("")+`</div>`;
+}
+function ddListSec(title,arr){
+  if(!Array.isArray(arr)||!arr.length)return "";
+  return `<div class="dd-sec"><div class="lbl">${esc(title)}</div><ul class="tight">`+
+    arr.map(r=>`<li>${typeof r==="object"&&r!==null?ddVal(r):esc(r)}</li>`).join("")+`</ul></div>`;
+}
+// Four-gate board: status + de-risked bar + controlling evidence. Color from the
+// de-risked fraction (>=0.6 green, >=0.25 amber, else red); no fraction -> neutral.
+function ddGatesSec(gates){
+  if(!Array.isArray(gates)||!gates.length)return "";
+  return `<div class="dd-sec"><div class="lbl">Four-gate framework — only gate evidence moves the model</div>`+
+    gates.map(g=>{const f=typeof g.derisked==="number"?Math.max(0,Math.min(1,g.derisked)):null;
+      const col=f===null?"var(--dim)":f>=0.6?"var(--green)":f>=0.25?"var(--amber)":"var(--red)";
+      return `<div style="padding:5px 0">
+        <div style="display:flex;gap:8px;align-items:baseline;flex-wrap:wrap;font-size:11.5px">
+          <b>${g.gate!=null?esc(g.gate)+". ":""}${esc(g.name)}</b>
+          <span class="pill" style="color:${col};border-color:currentColor">${esc(g.status||"—")}</span>
+          ${f!==null?`<span style="color:${col};font-size:10px">${Math.round(f*100)}% de-risked</span>`:""}
+        </div>
+        ${f!==null?`<div style="height:4px;background:#101922;border-radius:2px;margin:4px 0"><div style="height:100%;width:${Math.round(f*100)}%;background:${col};border-radius:2px"></div></div>`:""}
+        ${g.evidence?`<div style="color:var(--slate);font-size:10.5px">${esc(g.evidence)}</div>`:""}
+      </div>`;}).join("")+`</div>`;
+}
+// Dilution grid COMPUTED from the pre-committed rule (pts ≈ 100 × $B ÷ price) so a raise
+// headline scores in seconds; zones <=15 green / <=30 amber / >30 red per the locked model.
+function ddGridSec(gr){
+  if(!gr||typeof gr!=="object")return "";
+  if(!Array.isArray(gr.rows_capital_B)||!Array.isArray(gr.cols_raise_price))return ddKvSec("Dilution grid",gr);
+  const zone=(p)=>p<=15?"var(--green)":p<=30?"var(--amber)":"var(--red)";
+  let t=`<table class="dd-pt"><tr><th>need \\ raise px</th>${gr.cols_raise_price.map(c=>`<th>$${esc(c)}</th>`).join("")}</tr>`;
+  gr.rows_capital_B.forEach(b=>{
+    t+=`<tr><th>$${esc(b)}B</th>`+gr.cols_raise_price.map(px=>{
+      const pts=Math.round(100*b/px);
+      return `<td style="color:${zone(pts)}">${pts}%</td>`;}).join("")+`</tr>`;});
+  t+=`</table>`;
+  return `<div class="dd-sec"><div class="lbl">Dilution sequencing grid — pre-committed (pts ≈ 100 × $B ÷ price)</div>${t}`+
+    (gr.zones?`<div style="color:var(--slate);font-size:10px;margin-top:5px">${ddVal(gr.zones)}</div>`:"")+
+    (gr.central_case?`<div style="color:var(--amber);font-size:10.5px;margin-top:3px">central: ${esc(gr.central_case)}</div>`:"")+`</div>`;
+}
+function ddKillSec(k){
+  if(!k||typeof k!=="object")return "";
+  return `<div class="dd-sec"><div class="lbl">Kill-combination monitor</div>
+    <div style="border:1px solid #4a1a20;background:#190a0c;border-radius:6px;padding:8px 11px;font-size:11.5px;color:var(--red)">
+    ${Array.isArray(k.conditions)?k.conditions.map(c=>esc(c)).join(" × "):ddVal(k.conditions)}
+    ${k.joint_probability?` → joint ~${esc(k.joint_probability)}`:""}${k.locked?` <span style="color:var(--dim)">· locked ${esc(k.locked)}</span>`:""}</div></div>`;
+}
+// Section registry order; anything a payload carries beyond this renders generically at
+// the end — what's stored must never be invisible.
+const DD_HANDLED=new Set(["ticker","name","thesis_version","updated","as_of","tier","ref_px","position_note",
+  "pt_ladder","gates","hinges","leading_indicators","cert_probabilities","utilization_underwriting","capital",
+  "dilution_grid","engine","pt_2040","kill_combination","key_dates","position","model_anchors","conditional_rules",
+  "linked_exposure","status_flags","tape","watchlist_unlocks","hedges","rules","open_items","telemetry"]);
 function renderDeepDive(sym){
   const x=find(sym);const dv=document.getElementById("deepView");
   if(!x||!x.deepDive){dv.innerHTML='<div class="empty">no payload</div>';return;}
@@ -673,46 +744,64 @@ function renderDeepDive(sym){
   const todayET=new Date().toLocaleDateString("en-CA",{timeZone:"America/New_York"});
   let h=`<div style="display:flex;justify-content:space-between;align-items:baseline;gap:8px;flex-wrap:wrap">
     <div><span style="color:var(--green);font-weight:700;font-size:16px;letter-spacing:1px">${esc(x.sym)}</span>
+      ${dd.name?`<span style="color:var(--fg);font-size:12px"> ${esc(dd.name)}</span>`:""}
       <span class="lens lens-${esc(x.lens)}" style="font-size:10px;padding:0 6px;border:1px solid currentColor;border-radius:8px">${esc(x.lens)}</span>
-      <span style="color:var(--dim);font-size:11px"> · ${esc(TIER_LABEL[x.tier]||x.tier)} · thesis ${esc(dd.thesis_version)}</span></div>
-    <div>${ddAgeChip(dd.updated)}</div></div>`;
+      <span style="color:var(--dim);font-size:11px"> · ${esc(dd.tier||TIER_LABEL[x.tier]||x.tier)} · thesis ${esc(dd.thesis_version)}</span></div>
+    <div>${ddAgeChip(ddDate(dd))}</div></div>`;
   if(dd.ref_px)h+=`<div style="color:var(--slate);font-size:11px;margin-top:4px">ref $${esc(dd.ref_px.px)}${dd.ref_px.at?` · as of ${esc(dd.ref_px.at)}`:""} — manual mark, not a live quote</div>`;
-  if(dd.pt_ladder){
-    const yrs=Object.keys(dd.pt_ladder);
-    h+=`<div class="dd-sec"><div class="lbl">PT ladder</div><table class="dd-pt"><tr><th></th><th>bear</th><th>base</th><th>bull</th></tr>`+
-      yrs.map(y=>{const a=[].concat(dd.pt_ladder[y]);const c=a.length===3?a:a.length===2?["—",a[0]+"–"+a[1],"—"]:["—",a[0],"—"];
-        return `<tr><th>${esc(y)}</th><td>${esc(c[0])}</td><td>${esc(c[1])}</td><td>${esc(c[2])}</td></tr>`;}).join("")+`</table></div>`;
-  }
+  if(dd.position_note)h+=`<div style="color:var(--slate);font-size:11px;margin-top:4px">${esc(dd.position_note)}</div>`;
+  h+=ddPtSec(dd.pt_ladder);
+  h+=ddGatesSec(dd.gates);
   if(Array.isArray(dd.hinges)&&dd.hinges.length){
     const dot={green:'<span class="st" style="color:var(--green)">●</span>',amber:'<span class="st" style="color:var(--amber)">●</span>',
       red:'<span class="st" style="color:var(--red)">●</span>',unknown:'<span class="st" style="color:var(--dim)">○</span>'};
     h+=`<div class="dd-sec"><div class="lbl">Hinges — the tracked fields the thesis turns on</div>`+
-      dd.hinges.map(g=>`<div class="dd-hinge">${dot[g.state||"unknown"]}<b>${esc(g.label||g.key)}</b>`+
-        `${g.note?`<span style="color:var(--slate)">— ${esc(g.note)}</span>`:""}${g.asOf?`<span style="color:var(--dim);font-size:9px">as of ${esc(g.asOf)}</span>`:""}</div>`).join("")+`</div>`;
+      dd.hinges.map(g=>`<div class="dd-hinge">${dot[g.state||"unknown"]}<b>${esc(g.label||g.key||g.id)}</b>`+
+        `${(g.note||g.role)?`<span style="color:var(--slate)">— ${esc(g.note||g.role)}</span>`:""}${g.asOf?`<span style="color:var(--dim);font-size:9px">as of ${esc(g.asOf)}</span>`:""}</div>`).join("")+`</div>`;
   }
+  h+=ddKvSec("Leading indicators",dd.leading_indicators);
+  h+=ddKvSec("Certification probabilities",dd.cert_probabilities);
+  h+=ddKvSec("Utilization underwriting",dd.utilization_underwriting);
+  h+=ddKvSec("Capital",dd.capital);
+  h+=ddGridSec(dd.dilution_grid);
+  h+=ddKvSec("Fleet-vs-burn engine — locked inputs + anchors",dd.engine);
+  h+=ddKvSec("2040 PT",dd.pt_2040);
+  h+=ddKillSec(dd.kill_combination);
   if(Array.isArray(dd.key_dates)&&dd.key_dates.length){
     h+=`<div class="dd-sec"><div class="lbl">Key dates</div>`+
       dd.key_dates.map(k=>{const past=String(k.date)<todayET;
         const dl=Math.round((Date.parse(k.date+"T12:00:00Z")-Date.parse(todayET+"T12:00:00Z"))/86400000);
-        return `<div class="dd-kv"><div class="k">${esc(k.date)}</div><div>${esc(k.label)} `+
+        return `<div class="dd-kv"><div class="k">${esc(k.date)}</div><div>${esc(k.label||k.event)} `+
           (past?`<span class="bad2" style="color:var(--red);font-size:10px">passed — re-confirm</span>`
                :`<span style="color:var(--dim);font-size:10px">in ${dl}d</span>`)+`</div></div>`;}).join("")+`</div>`;
   }
-  if(dd.position&&typeof dd.position==="object")
-    h+=`<div class="dd-sec"><div class="lbl">Position & overlay</div>`+
-      Object.entries(dd.position).map(([k,v])=>`<div class="dd-kv"><div class="k">${esc(k)}</div><div>${esc(v)}</div></div>`).join("")+`</div>`;
+  h+=ddKvSec("Position & overlay",dd.position);
+  h+=ddKvSec("Model anchors",dd.model_anchors);
+  h+=ddKvSec("Conditional rules",dd.conditional_rules);
   if(dd.linked_exposure)
-    h+=`<div class="dd-sec"><div class="lbl">Linked exposure</div><div style="color:var(--amber);font-size:11.5px">⛓ ${esc(dd.linked_exposure)}</div></div>`;
-  if(dd.status_flags&&typeof dd.status_flags==="object")
-    h+=`<div class="dd-sec"><div class="lbl">Status flags</div>`+
-      Object.entries(dd.status_flags).map(([k,v])=>`<div class="dd-kv"><div class="k">${esc(k)}</div><div>${esc(v)}</div></div>`).join("")+`</div>`;
-  if(Array.isArray(dd.rules)&&dd.rules.length)
-    h+=`<div class="dd-sec"><div class="lbl">Standing rules (must survive every port)</div><ul class="tight">`+
-      dd.rules.map(r=>`<li>${esc(r)}</li>`).join("")+`</ul></div>`;
+    h+=`<div class="dd-sec"><div class="lbl">Linked exposure</div><div style="color:var(--amber);font-size:11.5px">⛓ ${ddVal(dd.linked_exposure)}</div></div>`;
+  h+=ddKvSec("Status flags",dd.status_flags);
+  if(dd.tape)h+=ddKvSec(`Tape — as of ${ddDate(dd)} · NOT live`,dd.tape);
+  h+=ddListSec("Capital disclosure watchlist (unlocks)",dd.watchlist_unlocks);
+  h+=ddListSec("Hedges",dd.hedges);
+  h+=ddListSec("Standing rules (must survive every port)",dd.rules);
+  h+=ddListSec("Open items",dd.open_items);
+  h+=ddKvSec("Telemetry",dd.telemetry);
+  Object.keys(dd).filter(k=>!DD_HANDLED.has(k)).forEach(k=>{
+    const v=dd[k];
+    h+=(v&&typeof v==="object"&&!Array.isArray(v))?ddKvSec(k,v)
+      :Array.isArray(v)?ddListSec(k,v)
+      :`<div class="dd-sec"><div class="lbl">${esc(k)}</div><div style="font-size:11.5px">${esc(v)}</div></div>`;
+  });
   h+=`<div class="dd-sec" style="display:flex;gap:8px;flex-wrap:wrap">
     <button class="act" onclick="openCard('${esc(x.sym)}')">OPEN TT CARD</button>
     <button class="act" onclick="openDeepDive('${esc(x.sym)}')">✎ EDIT PAYLOAD</button></div>`;
   dv.innerHTML=h;
+}
+function ddPtSec(pt){
+  if(!pt||typeof pt!=="object")return "";
+  return `<div class="dd-sec"><div class="lbl">PT ladder</div>`+
+    Object.entries(pt).map(([y,v])=>`<div class="dd-kv"><div class="k">${esc(y)}</div><div>${ddVal(v)}</div></div>`).join("")+`</div>`;
 }
 
 /* Payload editor — the invariant-preserving entry path: thesis/position data is PASTED
