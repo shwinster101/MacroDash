@@ -367,6 +367,22 @@ ok("terminal: HEADWIND/PANIC modifiers wired to the next-dollar line",
   adminSrc.includes("R/R floors +0.5") && adminSrc.includes("8+ support quality"));
 ok("terminal: stamp flow routes through saveCard (persist rails, not a side channel)",
   adminSrc.includes("function stampAndSave(){stampRunToday();saveCard();}"));
+// FEAT-TT-DD (v3.12): deep-dive tabs. The payload rides validateBook's deliberate
+// unknown-key passthrough — pin the passthrough behaviorally, and the client-side
+// contract at source (admin.html is buildless).
+ok("dd: deepDive payload passes server validateBook (passthrough is load-bearing)",
+  validateBook({ book: [{ sym: "NBIS", tier: "S", lens: "AI",
+    deepDive: { thesis_version: "v3.0", updated: "2026-07-21", pt_ladder: { 2028: [113, 255, 437] } } }], cut: [] }) === null);
+ok("dd: contract requires thesis_version + updated (fail-closed honesty chip)",
+  adminSrc.includes('"thesis_version (string) is required"') && adminSrc.includes("the honesty chip depends on it"));
+ok("dd: hinge states pinned to green|amber|red|unknown", adminSrc.includes("green|amber|red|unknown"));
+ok("dd: per-payload size cap present (8KB, under the 64KB book PUT limit)", adminSrc.includes("DD_MAX=8*1024"));
+ok("dd: past key-dates flag 'passed — re-confirm' (the FOMC lesson)", adminSrc.includes("passed — re-confirm"));
+ok("dd: rendered payload strings are HTML-escaped (esc used in the deep renderer)",
+  adminSrc.includes("function esc(") && adminSrc.includes("${esc(dd.thesis_version)}"));
+ok("dd: export carries DEEP_DIVE sections (persistence rule survives the port)",
+  adminSrc.includes("### DEEP_DIVE: ${x.sym}"));
+ok("dd: import validates deepDive before overwriting the book", adminSrc.includes("deep dive: "));
 
 // ---- 9. market calendar — holidays across the honesty stack ---------------
 // The time-judges (isStale, marketSession/etSession, looksBehind) share ONE

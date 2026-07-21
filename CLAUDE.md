@@ -121,7 +121,7 @@ worker/                 SEPARATE Cloudflare Worker (not part of Pages)
   wrangler.toml         Worker config: PULSE_CACHE binding + cron triggers (UTC).
 
 test/
-  smoke.mjs             No-network smoke test: 204 assertions over mergeLiveOverMock
+  smoke.mjs             No-network smoke test: 212 assertions over mergeLiveOverMock
                         + SOURCES-path resolution against the real MOCK_DATA + the
                         5-Whys engine + DEC-31 guards + the TT band table (DEC-33)
                         + the market-holiday calendar (sessions + staleness).
@@ -292,10 +292,21 @@ Jan-anchor shipped; see `snapshot.js` ~318–328), `spyMa100`, `spyMa200`, and a
   precedence the maintainer never set. Decision-adjacent, so it inherits the honesty rule —
   a lead whose `lastRun` is stale/never shows `⏱ Nd — re-run first` / `○ no TT run on record`.
   Unranked watchlist and empty watchlist each get their own explicit copy (never a blank).
-- **Deferred:** stored fundamentals + Robinhood sync. Cloudflare Access blocks chat-side access to
-  `/api/tt` (no JWT), so any sync is a clipboard chore unless an Access **service token** is added.
-  When revisited, store the *triage* shape (`{at, px}` → "% moved since your last TT run"), not a
-  reference block a live harness pass re-fetches anyway.
+- **FEAT-TT-DD (v3.12) — deep-dive tabs.** A book entry carrying a `deepDive` payload gets a tab
+  beside BOARD (hash-routed, e.g. `#nbis`): thesis header + updated-age chip (self-attested; >30d
+  → re-review amber; missing date fails closed), PT ladder, **hinges** as tracked fields
+  (green/amber/red/unknown + note + asOf), key dates (**past dates render "passed — re-confirm"**),
+  position/overlay, linked-exposure line (e.g. the NVDA-9.3%-stake shared-sleeve cap), status
+  flags, standing rules. The payload rides `validateBook`'s unknown-key passthrough (server never
+  learns the schema; smoke pins the passthrough) with a client-side contract validator
+  (`thesis_version` + `updated` required, 8KB/payload cap, all rendered strings HTML-escaped).
+  Entry path is the 📊 DEEP DIVE editor on the card (paste JSON) — **thesis/position payloads live
+  only in KV, never the repo** (same invariant as the book itself); EXPORT CANONICAL_BOOK.md
+  appends `### DEEP_DIVE: <SYM>` sections so re-seeding never loses thesis state.
+- **Deferred:** stored fundamentals + Robinhood sync — now unblocked by the `x-tt-pin` header
+  (v3.9): a chat-side daily review can PUT `status_flags`/`ref_px` into the deepDive payloads and
+  stamp `lastRun`. When built, store the *triage* shape (`{at, px}` → "% moved since your last TT
+  run"), not a reference block a live harness pass re-fetches anyway.
 
 ## Cloudflare deployment
 
@@ -358,7 +369,7 @@ npm run dev        # Vite dev server (mock unless VITE_DATA_MODE=live in .env)
 npm run build      # → dist/  (what Pages runs)
 npm run preview    # serve the built dist/
 
-node test/smoke.mjs   # 204-assertion no-network smoke test (needs Node ≥17)
+node test/smoke.mjs   # 212-assertion no-network smoke test (needs Node ≥17)
 
 # Cron Worker (separate deploy):
 cd worker && npx wrangler deploy

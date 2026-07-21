@@ -96,6 +96,20 @@
   .cov{display:flex;align-items:center;gap:10px;flex-wrap:wrap;font-size:10px;color:var(--dim);
     letter-spacing:.06em;padding:2px 0 8px;border-bottom:1px dashed var(--line);margin-bottom:10px}
   .cov .f{color:var(--green)} .cov .s{color:var(--amber)} .cov .n{color:var(--red)}
+  /* FEAT-TT-DD (v3.12): deep-dive tabs — BOARD + one per entry carrying a payload */
+  .tabs{display:flex;gap:6px;margin-bottom:10px;flex-wrap:wrap;border-bottom:1px solid var(--line);padding-bottom:8px}
+  .tabs .tab{border:1px solid var(--line);border-radius:6px;padding:5px 14px;cursor:pointer;
+    color:var(--dim);font-size:12px;letter-spacing:1px;background:#0a0f16;user-select:none}
+  .tabs .tab.on{color:var(--green);border-color:var(--greenDim);background:#0c1a13}
+  .dd-sec{margin:12px 0;border-top:1px dashed var(--line);padding-top:8px}
+  .dd-sec .lbl{font-size:9px;letter-spacing:.16em;color:var(--dim);text-transform:uppercase;margin-bottom:6px}
+  .dd-hinge{display:flex;gap:8px;align-items:baseline;padding:3px 0;font-size:11.5px}
+  .dd-hinge .st{flex-shrink:0;width:14px;text-align:center}
+  .dd-kv{display:grid;grid-template-columns:150px 1fr;gap:8px;padding:3px 0;font-size:11.5px;border-bottom:1px dashed #101922}
+  .dd-kv .k{color:var(--dim)}
+  table.dd-pt{border-collapse:collapse;font-size:11.5px}
+  table.dd-pt td,table.dd-pt th{border:1px solid var(--line);padding:4px 10px;text-align:right}
+  table.dd-pt th{color:var(--dim);font-weight:400;letter-spacing:.06em}
   /* collapsible schema blocks (native <details>) */
   details.schema>summary{cursor:pointer;list-style:none;color:var(--dim);font-size:10.5px;
     letter-spacing:1px;text-transform:uppercase;margin:8px 0 4px;padding:6px 0}
@@ -201,10 +215,14 @@
 
   <div class="layout">
     <div class="panel">
-      <h2>Tier Board &nbsp;·&nbsp; click any ticker to open its TT Card</h2>
-      <div class="nd" id="nextDollar"></div>
-      <div class="cov" id="coverage"></div>
-      <div id="board"></div>
+      <div class="tabs" id="tabBar" style="display:none"></div>
+      <div id="boardView">
+        <h2>Tier Board &nbsp;·&nbsp; click any ticker to open its TT Card</h2>
+        <div class="nd" id="nextDollar"></div>
+        <div class="cov" id="coverage"></div>
+        <div id="board"></div>
+      </div>
+      <div id="deepView" style="display:none"></div>
     </div>
 
     <aside>
@@ -544,6 +562,7 @@ async function importSave(){
     syms.add(e.sym);
     if(!TIER_ORDER.includes(e.tier))return toast("Import rejected: bad tier for "+e.sym);
     if(e.lastRun!==undefined&&!/^\d{4}-\d{2}-\d{2}$/.test(String(e.lastRun)))return toast("Import rejected: bad lastRun for "+e.sym);
+    if(e.deepDive!==undefined){const der=validateDeepDive(e.deepDive);if(der)return toast("Import rejected: "+e.sym+" deep dive: "+der);}
   }
   BOOK=book;CUT=cut;
   closeCard();await persist();toast("Book imported & saved to server");
@@ -583,7 +602,161 @@ function render(){
   const cc=document.createElement("div");cc.className="chips";
   CUT.forEach(s=>{const c=document.createElement("div");c.className="chip";c.innerHTML=`<span class="sym">${s}</span>`;cc.appendChild(c);});
   cut.appendChild(cc);b.appendChild(cut);
-  renderNextDollar();renderCoverage();
+  renderNextDollar();renderCoverage();renderTabs();
+}
+
+/* ═══════════ DEEP-DIVE TABS (FEAT-TT-DD v3.12) ═══════════ */
+/* A book entry with a `deepDive` payload gets a tab beside BOARD. The payload rides
+   validateBook's deliberate unknown-key passthrough, so storage/export/import/restore
+   points/conflict control are all inherited — the server never learns the schema.
+   Payloads are SELF-ATTESTED standing-model state (thesis, not live data): every render
+   carries the updated-age chip, past key-dates flag "passed — re-confirm", and all
+   strings are HTML-escaped (paste-imported JSON must never inject markup). */
+let TAB=(location.hash||"").replace("#","").toUpperCase()||"BOARD";
+const DD_STATES=["green","amber","red","unknown"];
+const DD_MAX=8*1024; // per-payload cap; keeps the whole book far under the 64KB PUT limit
+function esc(s){return String(s).replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));}
+function validateDeepDive(dd){
+  if(!dd||typeof dd!=="object"||Array.isArray(dd))return "payload must be an object";
+  if(typeof dd.thesis_version!=="string"||!dd.thesis_version)return "thesis_version (string) is required";
+  if(typeof dd.updated!=="string"||!/^\d{4}-\d{2}-\d{2}$/.test(dd.updated))return "updated (YYYY-MM-DD) is required — the honesty chip depends on it";
+  if(JSON.stringify(dd).length>DD_MAX)return "payload exceeds "+(DD_MAX/1024)+"KB";
+  if(dd.pt_ladder!==undefined&&(typeof dd.pt_ladder!=="object"||Array.isArray(dd.pt_ladder)))return "pt_ladder must be an object of year → [bear, base, bull]";
+  if(dd.hinges!==undefined){
+    if(!Array.isArray(dd.hinges))return "hinges must be an array";
+    for(const h of dd.hinges){
+      if(!h||typeof h!=="object"||typeof(h.label||h.key)!=="string")return "each hinge needs a label or key";
+      if(h.state!==undefined&&!DD_STATES.includes(h.state))return "hinge state must be green|amber|red|unknown";
+    }
+  }
+  if(dd.key_dates!==undefined){
+    if(!Array.isArray(dd.key_dates))return "key_dates must be an array";
+    for(const k of dd.key_dates)
+      if(!k||!/^\d{4}-\d{2}-\d{2}$/.test(String(k.date))||typeof k.label!=="string")return "each key_date needs {date: YYYY-MM-DD, label}";
+  }
+  if(dd.rules!==undefined&&!(Array.isArray(dd.rules)&&dd.rules.every(r=>typeof r==="string")))return "rules must be an array of strings";
+  if(dd.ref_px!==undefined&&!(dd.ref_px&&typeof dd.ref_px.px==="number"&&isFinite(dd.ref_px.px)))return "ref_px needs a numeric px";
+  return null;
+}
+function ddEntries(){return BOOK.filter(x=>x.deepDive);}
+function renderTabs(){
+  const bar=document.getElementById("tabBar");
+  const dds=ddEntries();
+  if(!dds.length){bar.style.display="none";if(TAB!=="BOARD"){TAB="BOARD";}showTab();return;}
+  if(TAB!=="BOARD"&&!dds.some(x=>x.sym===TAB))TAB="BOARD"; // payload removed → fall back
+  bar.style.display="flex";
+  bar.innerHTML=`<span class="tab${TAB==="BOARD"?" on":""}" onclick="switchTab('BOARD')">BOARD</span>`+
+    dds.map(x=>`<span class="tab${TAB===x.sym?" on":""}" onclick="switchTab('${x.sym}')">${esc(x.sym)}</span>`).join("");
+  showTab();
+}
+function switchTab(t){
+  TAB=t;
+  try{history.replaceState(null,"",t==="BOARD"?"#":"#"+t.toLowerCase());}catch(_e){}
+  renderTabs();
+}
+function showTab(){
+  document.getElementById("boardView").style.display=TAB==="BOARD"?"":"none";
+  const dv=document.getElementById("deepView");
+  dv.style.display=TAB==="BOARD"?"none":"";
+  if(TAB!=="BOARD")renderDeepDive(TAB);
+}
+function ddAgeChip(updated){
+  const d=ageDays(updated);
+  if(d===null||d<0)return `<span class="pill head">no valid update date</span>`;
+  if(d>30)return `<span class="pill warn">self-attested · updated ${d}d ago — re-review</span>`;
+  return `<span class="pill">self-attested · updated ${d}d ago</span>`;
+}
+function renderDeepDive(sym){
+  const x=find(sym);const dv=document.getElementById("deepView");
+  if(!x||!x.deepDive){dv.innerHTML='<div class="empty">no payload</div>';return;}
+  const dd=x.deepDive;
+  const todayET=new Date().toLocaleDateString("en-CA",{timeZone:"America/New_York"});
+  let h=`<div style="display:flex;justify-content:space-between;align-items:baseline;gap:8px;flex-wrap:wrap">
+    <div><span style="color:var(--green);font-weight:700;font-size:16px;letter-spacing:1px">${esc(x.sym)}</span>
+      <span class="lens lens-${esc(x.lens)}" style="font-size:10px;padding:0 6px;border:1px solid currentColor;border-radius:8px">${esc(x.lens)}</span>
+      <span style="color:var(--dim);font-size:11px"> · ${esc(TIER_LABEL[x.tier]||x.tier)} · thesis ${esc(dd.thesis_version)}</span></div>
+    <div>${ddAgeChip(dd.updated)}</div></div>`;
+  if(dd.ref_px)h+=`<div style="color:var(--slate);font-size:11px;margin-top:4px">ref $${esc(dd.ref_px.px)}${dd.ref_px.at?` · as of ${esc(dd.ref_px.at)}`:""} — manual mark, not a live quote</div>`;
+  if(dd.pt_ladder){
+    const yrs=Object.keys(dd.pt_ladder);
+    h+=`<div class="dd-sec"><div class="lbl">PT ladder</div><table class="dd-pt"><tr><th></th><th>bear</th><th>base</th><th>bull</th></tr>`+
+      yrs.map(y=>{const a=[].concat(dd.pt_ladder[y]);const c=a.length===3?a:a.length===2?["—",a[0]+"–"+a[1],"—"]:["—",a[0],"—"];
+        return `<tr><th>${esc(y)}</th><td>${esc(c[0])}</td><td>${esc(c[1])}</td><td>${esc(c[2])}</td></tr>`;}).join("")+`</table></div>`;
+  }
+  if(Array.isArray(dd.hinges)&&dd.hinges.length){
+    const dot={green:'<span class="st" style="color:var(--green)">●</span>',amber:'<span class="st" style="color:var(--amber)">●</span>',
+      red:'<span class="st" style="color:var(--red)">●</span>',unknown:'<span class="st" style="color:var(--dim)">○</span>'};
+    h+=`<div class="dd-sec"><div class="lbl">Hinges — the tracked fields the thesis turns on</div>`+
+      dd.hinges.map(g=>`<div class="dd-hinge">${dot[g.state||"unknown"]}<b>${esc(g.label||g.key)}</b>`+
+        `${g.note?`<span style="color:var(--slate)">— ${esc(g.note)}</span>`:""}${g.asOf?`<span style="color:var(--dim);font-size:9px">as of ${esc(g.asOf)}</span>`:""}</div>`).join("")+`</div>`;
+  }
+  if(Array.isArray(dd.key_dates)&&dd.key_dates.length){
+    h+=`<div class="dd-sec"><div class="lbl">Key dates</div>`+
+      dd.key_dates.map(k=>{const past=String(k.date)<todayET;
+        const dl=Math.round((Date.parse(k.date+"T12:00:00Z")-Date.parse(todayET+"T12:00:00Z"))/86400000);
+        return `<div class="dd-kv"><div class="k">${esc(k.date)}</div><div>${esc(k.label)} `+
+          (past?`<span class="bad2" style="color:var(--red);font-size:10px">passed — re-confirm</span>`
+               :`<span style="color:var(--dim);font-size:10px">in ${dl}d</span>`)+`</div></div>`;}).join("")+`</div>`;
+  }
+  if(dd.position&&typeof dd.position==="object")
+    h+=`<div class="dd-sec"><div class="lbl">Position & overlay</div>`+
+      Object.entries(dd.position).map(([k,v])=>`<div class="dd-kv"><div class="k">${esc(k)}</div><div>${esc(v)}</div></div>`).join("")+`</div>`;
+  if(dd.linked_exposure)
+    h+=`<div class="dd-sec"><div class="lbl">Linked exposure</div><div style="color:var(--amber);font-size:11.5px">⛓ ${esc(dd.linked_exposure)}</div></div>`;
+  if(dd.status_flags&&typeof dd.status_flags==="object")
+    h+=`<div class="dd-sec"><div class="lbl">Status flags</div>`+
+      Object.entries(dd.status_flags).map(([k,v])=>`<div class="dd-kv"><div class="k">${esc(k)}</div><div>${esc(v)}</div></div>`).join("")+`</div>`;
+  if(Array.isArray(dd.rules)&&dd.rules.length)
+    h+=`<div class="dd-sec"><div class="lbl">Standing rules (must survive every port)</div><ul class="tight">`+
+      dd.rules.map(r=>`<li>${esc(r)}</li>`).join("")+`</ul></div>`;
+  h+=`<div class="dd-sec" style="display:flex;gap:8px;flex-wrap:wrap">
+    <button class="act" onclick="openCard('${esc(x.sym)}')">OPEN TT CARD</button>
+    <button class="act" onclick="openDeepDive('${esc(x.sym)}')">✎ EDIT PAYLOAD</button></div>`;
+  dv.innerHTML=h;
+}
+
+/* Payload editor — the invariant-preserving entry path: thesis/position data is PASTED
+   here and lives only in KV (never the repo). Saves ride the normal persist rails. */
+const DD_TEMPLATE={thesis_version:"v1.0 (YYYY-MM-DD)",updated:"",pt_ladder:{"2028":[0,0,0]},
+  hinges:[{key:"example",label:"Example hinge",state:"unknown",note:""}],
+  key_dates:[{date:"2026-12-31",label:"example"}],position:{},linked_exposure:"",status_flags:{},rules:[]};
+function openDeepDive(sym){
+  const x=find(sym);if(!x)return;
+  CURRENT=null;
+  document.getElementById("cTitle").textContent="DEEP DIVE — "+x.sym;
+  const seed=x.deepDive||{...DD_TEMPLATE,updated:new Date().toLocaleDateString("en-CA",{timeZone:"America/New_York"})};
+  document.getElementById("cBody").innerHTML=`
+    <div class="derived" style="margin-bottom:8px">Standing-model payload (self-attested). Contract:
+    thesis_version + updated required; pt_ladder / hinges / key_dates / position / linked_exposure /
+    status_flags / rules / ref_px optional. Saved to KV via the book — never the repo.</div>
+    <textarea id="fDeepDive" style="width:100%;min-height:260px;background:#060b0f;border:1px solid var(--line);
+      color:var(--fg);border-radius:5px;padding:8px;font-family:inherit;font-size:11.5px;outline:none">${esc(JSON.stringify(seed,null,2))}</textarea>`;
+  document.getElementById("cBtns").innerHTML=`
+    <button class="act" onclick="ddSave('${esc(x.sym)}')">✔ SAVE PAYLOAD</button>`+
+    (x.deepDive?`<button class="act danger" onclick="ddRemove('${esc(x.sym)}')">🗑 REMOVE PAYLOAD</button>`:"")+
+    `<button class="act" onclick="closeCard()">CANCEL</button>`;
+  document.getElementById("overlay").classList.add("on");
+}
+function ddSave(sym){
+  const x=find(sym);if(!x)return;
+  let dd;
+  try{dd=JSON.parse(document.getElementById("fDeepDive").value);}
+  catch(_e){return toast("Invalid JSON");}
+  const err=validateDeepDive(dd);
+  if(err)return toast("Payload rejected: "+err);
+  x.deepDive=dd;
+  closeCard();render();switchTab(sym);toast(sym+" deep dive saved — saving to server…");persist();
+}
+function ddRemove(sym){
+  document.getElementById("cBtns").innerHTML=`
+    <span style="color:var(--red);font-size:12px;align-self:center">Remove ${esc(sym)}'s deep-dive payload?</span>
+    <button class="act danger" onclick="ddRemoveConfirmed('${esc(sym)}')">✔ YES, REMOVE</button>
+    <button class="act" onclick="openDeepDive('${esc(sym)}')">CANCEL</button>`;
+}
+function ddRemoveConfirmed(sym){
+  const x=find(sym);if(!x)return;
+  delete x.deepDive;
+  closeCard();TAB="BOARD";render();toast(sym+" payload removed — saving…");persist();
 }
 /* FEAT-TT-ND: the next-dollar line. Ranks are free text ("#1 infra", "#1 cross-bucket",
    "#3", "—"), and the real book carries TWO #1s scoped to different buckets — so the queue
@@ -692,6 +865,7 @@ function cardBtns(sym){return `
   <button class="act" onclick="saveCard()">✔ SAVE CHANGES</button>
   <button class="act" onclick="stampAndSave()">✓ RAN IT — stamp today</button>
   <button class="act" onclick="copyTTRun()">⧉ COPY 'TT: ${sym}' PROMPT</button>
+  <button class="act" onclick="openDeepDive('${sym}')">📊 DEEP DIVE</button>
   <button class="act danger" onclick="removeCard()">🗑 REMOVE FROM BOOK</button>`;}
 function stampRunToday(){
   // ET date, NOT toISOString (UTC): an evening stamp rolled to tomorrow's UTC date,
@@ -847,6 +1021,14 @@ function exportBook(){
     m+=`### ${TIER_LABEL[t]} (${byTier(t).length})\n\n${tierTable(t)}\n`;
   });
   m+=`### CUT FROM BOOK (equity)\n\n${CUT.join(" · ")}\n\n---\n\n`;
+  // FEAT-TT-DD: deep-dive payloads travel with the book (the handoff's persistence rule —
+  // re-seeding from an export must never lose thesis state).
+  const dds=BOOK.filter(x=>x.deepDive);
+  if(dds.length){
+    m+=`## DEEP_DIVE PAYLOADS\n\n`;
+    dds.forEach(x=>{m+=`### DEEP_DIVE: ${x.sym}\n\n\`\`\`json\n${JSON.stringify(x.deepDive,null,2)}\n\`\`\`\n\n`;});
+    m+=`---\n\n`;
+  }
   m+=`## STANDING CONSTRAINTS\n\n1. 18% hard single-position cap.\n2. K-1 avoidance (1099-only).\n3. Roth anchors: your longest-duration names.\n4. R/R floors 2.0/2.5/3.0 · +0.5x headwind.\n5. Targets: 12–15% CAGR, beat SPX.\n\n`;
   m+=`### CHANGELOG\n\n- v1.1 (${d}): Re-versioned via TT Terminal GUI edits.\n- v1.0: Initial state of record.\n`;
   download(`CANONICAL_BOOK_${d}.md`,m,"text/markdown");
