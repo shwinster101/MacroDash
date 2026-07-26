@@ -893,10 +893,19 @@ function openDeepDive(sym){
     <textarea id="fDeepDive" style="width:100%;min-height:260px;background:#060b0f;border:1px solid var(--line);
       color:var(--fg);border-radius:5px;padding:8px;font-family:inherit;font-size:11.5px;outline:none">${esc(JSON.stringify(seed,null,2))}</textarea>`;
   document.getElementById("cBtns").innerHTML=`
-    <button class="act" onclick="ddSave('${esc(x.sym)}')">✔ SAVE PAYLOAD</button>`+
+    <button class="act" onclick="ddSave('${esc(x.sym)}')">✔ SAVE PAYLOAD</button>
+    <button class="act warn" onclick="ddClear()">⌫ CLEAR</button>`+
     (x.deepDive?`<button class="act danger" onclick="ddRemove('${esc(x.sym)}')">🗑 REMOVE PAYLOAD</button>`:"")+
     `<button class="act" onclick="closeCard()">CANCEL</button>`;
   document.getElementById("overlay").classList.add("on");
+}
+/* Empty the editor so a phone paste replaces the payload without a select-all.
+   Nothing is saved until SAVE PAYLOAD — CANCEL still discards, so this is undoable. */
+function ddClear(){
+  const el=document.getElementById("fDeepDive");
+  if(!el)return;
+  el.value="";el.focus();
+  toast("Editor cleared — paste the new payload, then SAVE (CANCEL discards)");
 }
 function ddSave(sym){
   const x=find(sym);if(!x)return;

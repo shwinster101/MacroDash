@@ -411,6 +411,8 @@ ok("consensus: table renders rev + EPS + analyst count", adminSrc.includes("func
 ok("consensus: thin coverage (<=2 analysts) dims the row", adminSrc.includes("n<=2") && adminSrc.includes("thin coverage, not a forecast"));
 ok("consensus: negative EPS renders red, positive green", adminSrc.includes('e<0?"var(--red)":"var(--green)"'));
 ok("consensus: registered as a handled section (not generic fallback)", adminSrc.includes('"pt_ladder","consensus"'));
+ok("dd: CLEAR empties the editor without saving (paste-over on mobile)",
+  adminSrc.includes("function ddClear()") && adminSrc.includes("⌫ CLEAR"));
 
 // ---- 9. market calendar — holidays across the honesty stack ---------------
 // The time-judges (isStale, marketSession/etSession, looksBehind) share ONE
