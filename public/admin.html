@@ -766,6 +766,29 @@ function ddGridSec(gr){
     (gr.zones?`<div style="color:var(--slate);font-size:10px;margin-top:5px">${ddVal(gr.zones)}</div>`:"")+
     (gr.central_case?`<div style="color:var(--amber);font-size:10.5px;margin-top:3px">central: ${esc(gr.central_case)}</div>`:"")+`</div>`;
 }
+// Consensus estimate table (v3.15) — the analyst series the projection is built on.
+// Rows backed by <=2 analysts render DIMMED: the 2031 revenue line (+2.9% on 2 analysts,
+// vs +93% EPS the same year) proved thin coverage produces numbers that look like
+// forecasts but are sampling noise. Evidence strength is part of the datum.
+function ddConsensusSec(c){
+  if(!c||typeof c!=="object")return "";
+  const rev=c.revenue_B||{},eps=c.eps||{},an=c.analysts||{},hi=c.revenue_high_B||{};
+  const years=[...new Set([...Object.keys(rev),...Object.keys(eps)])].sort();
+  if(!years.length)return ddKvSec("Consensus",c);
+  const hasHi=Object.keys(hi).length>0;
+  let t=`<table class="dd-pt"><tr><th>FY</th><th>rev $B</th>${hasHi?"<th>high</th>":""}<th>EPS</th><th>n</th></tr>`;
+  years.forEach(y=>{
+    const n=an[y],thin=typeof n==="number"&&n<=2;
+    const col=thin?"var(--dim)":"var(--fg)";
+    const e=eps[y];
+    const eCol=typeof e==="number"?(e<0?"var(--red)":"var(--green)"):col;
+    t+=`<tr style="color:${col}"><th>${esc(y)}</th><td>${rev[y]!=null?esc(rev[y]):"—"}</td>`+
+      (hasHi?`<td>${hi[y]!=null?esc(hi[y]):"—"}</td>`:"")+
+      `<td style="color:${eCol}">${e!=null?esc(e):"—"}</td><td>${n!=null?esc(n):"—"}</td></tr>`;
+  });
+  return `<div class="dd-sec"><div class="lbl">Consensus estimates${c.source?` · ${esc(c.source)}`:""}</div>${t}</table>`+
+    `<div style="color:var(--dim);font-size:10px;margin-top:4px">dimmed = ≤2 analysts · thin coverage, not a forecast</div></div>`;
+}
 function ddKillSec(k){
   if(!k||typeof k!=="object")return "";
   return `<div class="dd-sec"><div class="lbl">Kill-combination monitor</div>
@@ -776,7 +799,7 @@ function ddKillSec(k){
 // Section registry order; anything a payload carries beyond this renders generically at
 // the end — what's stored must never be invisible.
 const DD_HANDLED=new Set(["ticker","name","thesis_version","updated","as_of","tier","ref_px","position_note",
-  "pt_ladder","gates","hinges","leading_indicators","cert_probabilities","utilization_underwriting","capital",
+  "pt_ladder","consensus","gates","hinges","leading_indicators","cert_probabilities","utilization_underwriting","capital",
   "dilution_grid","engine","pt_2040","kill_combination","key_dates","position","model_anchors","conditional_rules",
   "linked_exposure","status_flags","tape","watchlist_unlocks","hedges","rules","open_items","telemetry"]);
 function renderDeepDive(sym){
@@ -799,6 +822,7 @@ function renderDeepDive(sym){
       <div class="dd-kv"><div class="k">3 · multiple</div><div>${esc(pj.multiple.value)}× ${esc(pj.multiple.basis||"")}</div></div>
       <div style="margin-top:6px;font-size:11.5px">${projLine(pj)}</div></div>`;}
   h+=ddPtSec(dd.pt_ladder);
+  h+=ddConsensusSec(dd.consensus);
   h+=ddGatesSec(dd.gates);
   if(Array.isArray(dd.hinges)&&dd.hinges.length){
     const dot={green:'<span class="st" style="color:var(--green)">●</span>',amber:'<span class="st" style="color:var(--amber)">●</span>',

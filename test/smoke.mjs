@@ -406,6 +406,11 @@ ok("3q: flywheel needs double-digit rev CAGR and lights only on three true engin
 ok("3q: coverage strip counts projected names", adminSrc.includes("projected"));
 ok("3q: export carries the PROJECTIONS table", adminSrc.includes("PROJECTIONS — the 3 questions"));
 ok("3q: import validates projections before overwriting the book", adminSrc.includes(" projection: "));
+// v3.15: consensus estimate table — evidence strength rendered alongside the numbers.
+ok("consensus: table renders rev + EPS + analyst count", adminSrc.includes("function ddConsensusSec") && adminSrc.includes("<th>EPS</th>"));
+ok("consensus: thin coverage (<=2 analysts) dims the row", adminSrc.includes("n<=2") && adminSrc.includes("thin coverage, not a forecast"));
+ok("consensus: negative EPS renders red, positive green", adminSrc.includes('e<0?"var(--red)":"var(--green)"'));
+ok("consensus: registered as a handled section (not generic fallback)", adminSrc.includes('"pt_ladder","consensus"'));
 
 // ---- 9. market calendar — holidays across the honesty stack ---------------
 // The time-judges (isStale, marketSession/etSession, looksBehind) share ONE
