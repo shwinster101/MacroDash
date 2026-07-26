@@ -563,6 +563,7 @@ async function importSave(){
     if(!TIER_ORDER.includes(e.tier))return toast("Import rejected: bad tier for "+e.sym);
     if(e.lastRun!==undefined&&!/^\d{4}-\d{2}-\d{2}$/.test(String(e.lastRun)))return toast("Import rejected: bad lastRun for "+e.sym);
     if(e.deepDive!==undefined){const der=validateDeepDive(e.deepDive);if(der)return toast("Import rejected: "+e.sym+" deep dive: "+der);}
+    if(e.projection!==undefined){const per=validateProjection(e.projection);if(per)return toast("Import rejected: "+e.sym+" projection: "+per);}
   }
   BOOK=book;CUT=cut;
   closeCard();await persist();toast("Book imported & saved to server");
@@ -646,6 +647,47 @@ function validateDeepDive(dd){
   return null;
 }
 function ddEntries(){return BOOK.filter(x=>x.deepDive);}
+
+/* ═══════════ THE 3 QUESTIONS — PROJECTIONS (FEAT-TT-3Q v3.14) ═══════════ */
+/* Every name should carry written answers to: (1) revenue in 3 years — a SPECIFIC number;
+   (2) where margins go and WHY; (3) what multiple fits then. Future price = per-share ×
+   multiple — computed, never typed. The FLYWHEEL badge lights only when all three engines
+   are demonstrably on (double-digit rev CAGR · expanding margins · multiple expansion);
+   a missing input renders ? and withholds the badge — no credit for unknowns. */
+function validateProjection(p){
+  if(!p||typeof p!=="object"||Array.isArray(p))return "projection must be an object";
+  if(!p.rev_3yr||!isFinite(p.rev_3yr.value_B)||p.rev_3yr.value_B<=0)return "Q1 needs a SPECIFIC revenue number ($B)";
+  if(p.rev_3yr.year!==undefined&&!(Number.isInteger(p.rev_3yr.year)&&p.rev_3yr.year>2024&&p.rev_3yr.year<2050))return "rev year looks wrong";
+  if(!p.margins||!["expanding","holding","compressing"].includes(p.margins.path))return "Q2 needs margins: expanding, holding, or compressing";
+  if(typeof(p.margins.why||"")!=="string"||!(p.margins.why||"").trim())return "Q2 needs the WHY behind the margin call";
+  if(!p.multiple||!isFinite(p.multiple.value)||p.multiple.value<=0)return "Q3 needs the multiple that fits that company then";
+  for(const k of["eps_3yr","rev_now_B","multiple_now"])
+    if(p[k]!==undefined&&!(isFinite(p[k])&&p[k]>0))return k+" must be a positive number";
+  if(JSON.stringify(p).length>2048)return "projection exceeds 2KB";
+  return null;
+}
+function flywheelState(p){
+  const cagr=(isFinite(p.rev_now_B)&&p.rev_now_B>0&&p.rev_3yr&&p.rev_3yr.value_B>0)
+    ?Math.pow(p.rev_3yr.value_B/p.rev_now_B,1/3)-1:null;
+  const rev=cagr===null?null:cagr>=0.10;
+  const marg=p.margins?p.margins.path==="expanding":null;
+  const mult=(p.multiple&&isFinite(p.multiple_now)&&p.multiple_now>0)?p.multiple.value>p.multiple_now:null;
+  return{rev,marg,mult,cagr,fly:rev===true&&marg===true&&mult===true};
+}
+function futurePx(p){
+  return(isFinite(p.eps_3yr)&&p.eps_3yr>0&&p.multiple&&isFinite(p.multiple.value)&&p.multiple.value>0)
+    ?Math.round(p.eps_3yr*p.multiple.value*100)/100:null;
+}
+function projLine(p){
+  const fw=flywheelState(p);
+  const px=futurePx(p);
+  const sym=(v)=>v===true?'<span style="color:var(--green)">✓</span>':v===false?'<span style="color:var(--red)">✗</span>':'<span style="color:var(--dim)">?</span>';
+  return(px!==null
+    ?`<b>Future price = ${esc(p.eps_3yr)} × ${esc(p.multiple.value)} = $${esc(px)}</b> <span class="derived">(${esc(p.multiple.basis||"")})</span>`
+    :`<span class="derived">add a 3-yr per-share number to complete the math</span>`)+
+    `<div style="margin-top:4px;font-size:11px">engines: rev ${sym(fw.rev)}${fw.cagr!==null?` <span style="color:var(--dim)">(${Math.round(fw.cagr*100)}%/yr)</span>`:""} · margins ${sym(fw.marg)} · multiple ${sym(fw.mult)}`+
+    (fw.fly?` · <b style="color:var(--amber)">🔥 FLYWHEEL — three engines on</b>`:"")+`</div>`;
+}
 function renderTabs(){
   const bar=document.getElementById("tabBar");
   const dds=ddEntries();
@@ -750,6 +792,12 @@ function renderDeepDive(sym){
     <div>${ddAgeChip(ddDate(dd))}</div></div>`;
   if(dd.ref_px)h+=`<div style="color:var(--slate);font-size:11px;margin-top:4px">ref $${esc(dd.ref_px.px)}${dd.ref_px.at?` · as of ${esc(dd.ref_px.at)}`:""} — manual mark, not a live quote</div>`;
   if(dd.position_note)h+=`<div style="color:var(--slate);font-size:11px;margin-top:4px">${esc(dd.position_note)}</div>`;
+  if(x.projection){const pj=x.projection;
+    h+=`<div class="dd-sec"><div class="lbl">The 3 questions — projection (answered ${esc(pj.as_of||"")})</div>
+      <div class="dd-kv"><div class="k">1 · rev in 3 yrs</div><div>$${esc(pj.rev_3yr.value_B)}B (${esc(pj.rev_3yr.year||"")})${pj.rev_3yr.why?` — ${esc(pj.rev_3yr.why)}`:""}</div></div>
+      <div class="dd-kv"><div class="k">2 · margins</div><div>${esc(pj.margins.path)} — ${esc(pj.margins.why)}</div></div>
+      <div class="dd-kv"><div class="k">3 · multiple</div><div>${esc(pj.multiple.value)}× ${esc(pj.multiple.basis||"")}</div></div>
+      <div style="margin-top:6px;font-size:11.5px">${projLine(pj)}</div></div>`;}
   h+=ddPtSec(dd.pt_ladder);
   h+=ddGatesSec(dd.gates);
   if(Array.isArray(dd.hinges)&&dd.hinges.length){
@@ -900,13 +948,16 @@ function renderNextDollar(){
 function renderCoverage(){
   const c={fresh:0,stale:0,never:0};
   BOOK.forEach(x=>{const k=runState(x.lastRun).k;c[k==="head"?"stale":k]++;});
+  // FEAT-TT-3Q: projection coverage — every name should have the three answers written.
+  const projN=BOOK.filter(x=>x.projection).length;
   document.getElementById("coverage").innerHTML=
     `<span>BOOK COVERAGE</span>`+
     `<span class="f">● ${c.fresh} fresh</span>`+
     (c.stale?`<span class="s">⏱ ${c.stale} stale</span>`:"")+
     (c.never?`<span class="n">○ ${c.never} never run</span>`:"")+
     `<span>of ${BOOK.length}</span>`+
-    `<span style="margin-left:auto">● ≤30d · ⏱ aged · ○ no TT run on record</span>`;
+    (BOOK.length?`<span style="color:${projN===BOOK.length?"var(--green)":"var(--amber)"}">📐 ${projN}/${BOOK.length} projected</span>`:"")+
+    `<span style="margin-left:auto">● ≤30d · ⏱ aged · ○ no TT run · 📐 3 questions answered</span>`;
 }
 
 /* ═══════════ CARD (view / modify) ═══════════ */
@@ -939,6 +990,27 @@ function openCard(sym){
     html+=`<div class="row"><div class="k">QUEUE RANK</div><div class="v"><input id="fRank" value="${x.rank||"—"}"/></div></div>`;
   html+=`<div class="row"><div class="k">BOOK NOTE</div><div class="v"><textarea id="fNote">${x.note||""}</textarea></div></div>`;
 
+  // FEAT-TT-3Q: the three questions every name should have written answers to.
+  const p=x.projection||{},pr=p.rev_3yr||{},pm=p.margins||{},pmu=p.multiple||{};
+  html+=`<details class="schema" ${x.projection?"open":""}><summary>📐 PROJECTION — the 3 questions ${x.projection?`· answered ${p.as_of||""}`:"· ○ UNANSWERED"}</summary>
+    <div class="row"><div class="k">READOUT</div><div class="v">${x.projection?projLine(p):`<span class="derived">Future price = future EPS × future multiple — answer all three to run the math</span>`}</div></div>
+    <div class="row"><div class="k">1 · REV IN 3 YRS</div><div class="v" style="display:flex;gap:6px;flex-wrap:wrap;align-items:center">
+      <input id="fPRevB" type="number" step="0.01" inputmode="decimal" placeholder="$B — specific" value="${pr.value_B??""}" style="width:110px"/>
+      <input id="fPYear" type="number" inputmode="numeric" placeholder="${new Date().getFullYear()+3}" value="${pr.year??""}" style="width:80px"/></div></div>
+    <div class="row"><div class="k">WHY (REV)</div><div class="v"><input id="fPRevWhy" value="${esc(pr.why||"")}" placeholder="the driver, one line"/></div></div>
+    <div class="row"><div class="k">2 · MARGINS</div><div class="v"><select id="fPMarg">
+      <option value="" ${!pm.path?"selected":""}>—</option>
+      ${["expanding","holding","compressing"].map(m=>`<option value="${m}" ${pm.path===m?"selected":""}>${m}</option>`).join("")}</select></div></div>
+    <div class="row"><div class="k">WHY (MARGINS)</div><div class="v"><input id="fPMargWhy" value="${esc(pm.why||"")}" placeholder="required — why that direction"/></div></div>
+    <div class="row"><div class="k">3 · MULTIPLE</div><div class="v" style="display:flex;gap:6px;flex-wrap:wrap;align-items:center">
+      <input id="fPMult" type="number" step="0.1" inputmode="decimal" placeholder="×" value="${pmu.value??""}" style="width:80px"/>
+      <input id="fPMultBasis" value="${esc(pmu.basis||"")}" placeholder="fwd P/E · P/S · EV/EBITDA" style="width:180px"/></div></div>
+    <div class="row"><div class="k">PER-SHARE @3YR</div><div class="v"><input id="fPEps" type="number" step="0.01" inputmode="decimal" placeholder="EPS (or rev/sh for P/S) — enables the math" value="${p.eps_3yr??""}"/></div></div>
+    <div class="row"><div class="k">ENGINES (OPT)</div><div class="v" style="display:flex;gap:6px;flex-wrap:wrap">
+      <input id="fPRevNow" type="number" step="0.01" inputmode="decimal" placeholder="rev now $B" value="${p.rev_now_B??""}" style="width:120px"/>
+      <input id="fPMultNow" type="number" step="0.1" inputmode="decimal" placeholder="multiple now" value="${p.multiple_now??""}" style="width:120px"/></div></div>
+  </details>`;
+
   // TT card schema — collapsed by default (11 placeholder rows were 61% of card height)
   html+=`<details class="schema"><summary>TT CARD — DEEP mode · ${CARD_FIELDS.length} fields (run <b>TT: ${x.sym}</b> in chat to populate live)</summary>`;
   CARD_FIELDS.forEach(f=>{
@@ -967,6 +1039,25 @@ function stampRunToday(){
 function stampAndSave(){stampRunToday();saveCard();}
 function saveCard(){
   const x=find(CURRENT);if(!x)return;
+  // FEAT-TT-3Q: validate the projection BEFORE mutating anything — a rejected answer set
+  // must not half-save the rest of the card underneath it.
+  const pnum=(id)=>{const el=document.getElementById(id);if(!el)return undefined;const v=parseFloat(el.value);return isFinite(v)?v:undefined;};
+  const pstr=(id)=>{const el=document.getElementById(id);return el?(el.value||"").trim():"";};
+  const revB=pnum("fPRevB"),margPath=pstr("fPMarg"),multV=pnum("fPMult");
+  let proj=null,projClear=false;
+  if(revB===undefined&&!margPath&&multV===undefined)projClear=true; // all empty = no projection
+  else{
+    proj={as_of:new Date().toLocaleDateString("en-CA",{timeZone:"America/New_York"}),
+      rev_3yr:{value_B:revB,year:pnum("fPYear")??(new Date().getFullYear()+3)},
+      margins:{path:margPath,why:pstr("fPMargWhy")},
+      multiple:{value:multV,basis:pstr("fPMultBasis")||"fwd P/E"}};
+    const rw=pstr("fPRevWhy");if(rw)proj.rev_3yr.why=rw;
+    const e1=pnum("fPEps");if(e1!==undefined)proj.eps_3yr=e1;
+    const rn=pnum("fPRevNow");if(rn!==undefined)proj.rev_now_B=rn;
+    const mn=pnum("fPMultNow");if(mn!==undefined)proj.multiple_now=mn;
+    const perr=validateProjection(proj);
+    if(perr)return toast("Projection not saved: "+perr);
+  }
   x.tier=document.getElementById("fTier").value;
   x.lens=document.getElementById("fLens").value;
   x.fp=document.getElementById("fFp").value==="true";
@@ -975,6 +1066,7 @@ function saveCard(){
   if(x.tier!=="WATCH")delete x.rank;
   const lr=document.getElementById("fLastRun").value;
   if(lr)x.lastRun=lr; else delete x.lastRun;
+  if(projClear)delete x.projection; else if(proj)x.projection=proj;
   render();closeCard();toast(x.sym+" updated — saving to server…");persist();
 }
 /* FEAT-TT-RUN: two-tap confirm. NOT window.confirm() — some webviews suppress it, and
@@ -1117,6 +1209,14 @@ function exportBook(){
     m+=`## DEEP_DIVE PAYLOADS\n\n`;
     dds.forEach(x=>{m+=`### DEEP_DIVE: ${x.sym}\n\n\`\`\`json\n${JSON.stringify(x.deepDive,null,2)}\n\`\`\`\n\n`;});
     m+=`---\n\n`;
+  }
+  // FEAT-TT-3Q: the three answers travel with the book.
+  const projs=BOOK.filter(x=>x.projection);
+  if(projs.length){
+    m+=`## PROJECTIONS — the 3 questions\n\n|Sym|Rev 3yr|Margins|Multiple|Future px|\n|---|---|---|---|---|\n`;
+    projs.forEach(x=>{const pj=x.projection;const px=futurePx(pj);
+      m+=`|${x.sym}|$${pj.rev_3yr.value_B}B (${pj.rev_3yr.year||""})|${pj.margins.path}|${pj.multiple.value}x ${pj.multiple.basis||""}|${px!==null?"$"+px:"—"}|\n`;});
+    m+=`\nFuture price = future EPS × future multiple. Flywheel = double-digit rev growth · expanding margins · multiple expansion.\n\n---\n\n`;
   }
   m+=`## STANDING CONSTRAINTS\n\n1. 18% hard single-position cap.\n2. K-1 avoidance (1099-only).\n3. Roth anchors: your longest-duration names.\n4. R/R floors 2.0/2.5/3.0 · +0.5x headwind.\n5. Targets: 12–15% CAGR, beat SPX.\n\n`;
   m+=`### CHANGELOG\n\n- v1.1 (${d}): Re-versioned via TT Terminal GUI edits.\n- v1.0: Initial state of record.\n`;

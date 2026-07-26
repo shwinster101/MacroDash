@@ -121,7 +121,7 @@ worker/                 SEPARATE Cloudflare Worker (not part of Pages)
   wrangler.toml         Worker config: PULSE_CACHE binding + cron triggers (UTC).
 
 test/
-  smoke.mjs             No-network smoke test: 218 assertions over mergeLiveOverMock
+  smoke.mjs             No-network smoke test: 226 assertions over mergeLiveOverMock
                         + SOURCES-path resolution against the real MOCK_DATA + the
                         5-Whys engine + DEC-31 guards + the TT band table (DEC-33)
                         + the market-holiday calendar (sessions + staleness).
@@ -312,6 +312,16 @@ Jan-anchor shipped; see `snapshot.js` ~318–328), `spyMa100`, `spyMa200`, and a
   (locked inputs + anchors, static — thesis STATE, not a calculator), tape (stamped "NOT
   live"), watchlist unlocks/hedges/open items. **Unknown payload keys fall back to a generic
   k/v render — what's stored is never invisible.**
+- **FEAT-TT-3Q (v3.14) — the 3 questions.** Every book entry can carry a `projection` (same
+  passthrough rails): **(1)** revenue in 3 years — the validator DEMANDS a specific `$B` number;
+  **(2)** margins `expanding|holding|compressing` + a required *why*; **(3)** the multiple that
+  fits then (+ optional 3-yr per-share number). **Future price = per-share × multiple is
+  computed, never typed**, and the 🔥 FLYWHEEL badge lights only when all three engines are
+  demonstrably on (rev CAGR ≥10% from `rev_now_B` · margins expanding · `multiple.value` >
+  `multiple_now`) — missing inputs render `?` and withhold the badge. Entry path: the
+  📐 PROJECTION block on the card (validate-before-mutate, all-three-or-nothing). Coverage
+  strip shows `📐 N/M projected`; deep-dive tabs render the answers + math line; EXPORT
+  appends a `## PROJECTIONS` table. Import validates projections before overwriting.
 - **Deferred:** stored fundamentals + Robinhood sync — now unblocked by the `x-tt-pin` header
   (v3.9): a chat-side daily review can PUT `status_flags`/`ref_px` into the deepDive payloads and
   stamp `lastRun`. When built, store the *triage* shape (`{at, px}` → "% moved since your last TT
@@ -378,7 +388,7 @@ npm run dev        # Vite dev server (mock unless VITE_DATA_MODE=live in .env)
 npm run build      # → dist/  (what Pages runs)
 npm run preview    # serve the built dist/
 
-node test/smoke.mjs   # 218-assertion no-network smoke test (needs Node ≥17)
+node test/smoke.mjs   # 226-assertion no-network smoke test (needs Node ≥17)
 
 # Cron Worker (separate deploy):
 cd worker && npx wrangler deploy

@@ -392,6 +392,20 @@ ok("dd: gates board renders de-risked fraction as a bar", adminSrc.includes("% d
 ok("dd: tape section stamped NOT live", adminSrc.includes("· NOT live"));
 ok("dd: unknown payload keys fall back to generic render (stored is never invisible)",
   adminSrc.includes("!DD_HANDLED.has"));
+// FEAT-TT-3Q (v3.14): the three questions, with the framework's discipline encoded.
+ok("3q: projection rides validateBook passthrough",
+  validateBook({ book: [{ sym: "TEST", tier: "S", lens: "AI",
+    projection: { as_of: "2026-07-22", rev_3yr: { value_B: 12, year: 2029 },
+      margins: { path: "expanding", why: "scale" }, multiple: { value: 30, basis: "fwd P/E" } } }], cut: [] }) === null);
+ok("3q: Q1 demands a SPECIFIC number", adminSrc.includes("SPECIFIC revenue number"));
+ok("3q: Q2 pinned to expanding|holding|compressing AND requires the why",
+  adminSrc.includes('["expanding","holding","compressing"]') && adminSrc.includes("WHY behind the margin call"));
+ok("3q: the one line of math is computed, never typed", adminSrc.includes("Future price = ") && adminSrc.includes("p.eps_3yr*p.multiple.value"));
+ok("3q: flywheel needs double-digit rev CAGR and lights only on three true engines",
+  adminSrc.includes(">=0.10") && adminSrc.includes("rev===true&&marg===true&&mult===true") && adminSrc.includes("FLYWHEEL — three engines on"));
+ok("3q: coverage strip counts projected names", adminSrc.includes("projected"));
+ok("3q: export carries the PROJECTIONS table", adminSrc.includes("PROJECTIONS — the 3 questions"));
+ok("3q: import validates projections before overwriting the book", adminSrc.includes(" projection: "));
 
 // ---- 9. market calendar — holidays across the honesty stack ---------------
 // The time-judges (isStale, marketSession/etSession, looksBehind) share ONE
