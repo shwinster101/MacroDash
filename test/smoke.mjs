@@ -460,6 +460,17 @@ ok("upside: stale/never TT runs keep their honesty flag on the ranked pick",
   adminSrc.includes('r.rs.k==="never"?`<span class="bad2">○ no TT run on record</span>'));
 ok("upside: DOM anchor separate from the human NEXT DOLLAR widget", adminSrc.includes('id="upsideRank"'));
 ok("upside: wired into the render pipeline", adminSrc.includes("renderNextDollar();renderUpsideRank();renderCoverage()"));
+// v3.18.1 audit patches — the widget ranks a SUBSET, off a price mark that can go stale,
+// across horizons that can differ. Each of those must be visible, not inferred.
+ok("upside: states the denominator — no silent truncation of the ranked set",
+  adminSrc.includes("ranking ${rows.length} of ${BOOK.length} names") &&
+  adminSrc.includes("NOT judged unattractive"));
+ok("upside: flags a stale/undated price mark (a stale ref_px silently poisons the %)",
+  adminSrc.includes("r.pxAge===null||r.pxAge>4") && adminSrc.includes("⚠ px "));
+ok("upside: shows each pick's target year — horizons are not assumed equal",
+  adminSrc.includes("to ${esc(r.y)}") && adminSrc.includes("horizons differ"));
+ok("upside: surfaces the payload's own pt_model caveat (stored is never invisible)",
+  adminSrc.includes("caveat:(dd.pt_model&&dd.pt_model.note)") && adminSrc.includes("shown.filter(r=>r.caveat)"));
 
 // ---- 9. market calendar — holidays across the honesty stack ---------------
 // The time-judges (isStale, marketSession/etSession, looksBehind) share ONE

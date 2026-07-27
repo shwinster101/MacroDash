@@ -1126,7 +1126,14 @@ function renderUpsideRank(){
     const target=ptModelRows(dd).find(r=>typeof r.prem==="number");
     if(!target)return;
     rows.push({sym:x.sym,lens:x.lens,tier:x.tier,rs:runState(x.lastRun),
-      upside:Math.round((target.prem/ref.px-1)*1000)/10,px:ref.px,at:ref.at,tgt:target.prem,y:target.y});
+      upside:Math.round((target.prem/ref.px-1)*1000)/10,px:ref.px,at:ref.at,tgt:target.prem,y:target.y,
+      // AUDIT: the % is only as fresh as the price mark under it. The daily triage stamps
+      // ref_px; when that chain breaks (it has), a weeks-old price still divides into a
+      // current target and renders a confident number. >4d spans any weekend/holiday gap.
+      pxAge:ageDays(ref.at),
+      // AUDIT: the payload's own caveat (e.g. JOBY's premium is gate-contingent) was stored
+      // but invisible here — a contingent target ranked identically to a modeled one.
+      caveat:(dd.pt_model&&dd.pt_model.note)||""});
   });
   if(!rows.length){
     el.innerHTML=`<div class="lbl">Computed upside</div><div class="none">`+
@@ -1134,19 +1141,32 @@ function renderUpsideRank(){
     return;
   }
   rows.sort((a,b)=>b.upside-a.upside);
-  const picks=rows.slice(0,3).map(r=>{
+  const shown=rows.slice(0,3);
+  const MEDAL=["🥇","🥈","🥉"];
+  const picks=shown.map((r,i)=>{
     const flag=r.rs.k==="never"?`<span class="bad2">○ no TT run on record</span>`
       :r.rs.k==="head"?`<span class="bad2">⏱ ${r.rs.days}d — re-run first</span>`
       :r.rs.k==="stale"?`<span class="warn2">⏱ ${r.rs.days}d old</span>`:"";
+    // AUDIT: a stale price mark silently poisons the %. Say so on the pick itself.
+    const pxFlag=(r.pxAge===null||r.pxAge>4)
+      ?`<span class="bad2">⚠ px ${r.pxAge===null?"undated":r.pxAge+"d old"}</span>`:"";
     const col=r.upside>=0?"var(--green)":"var(--red)";
     return `<span class="pick" onclick="openCard('${esc(r.sym)}')"
       title="ref $${esc(r.px)}${r.at?` (${esc(r.at)})`:""} → $${esc(r.tgt)} ${esc(r.y)} pt_model target">
-      <span class="sym">${esc(r.sym)}</span><span class="lens lens-${esc(r.lens)}">${esc(r.lens)}</span>
+      <span>${MEDAL[i]}</span><span class="sym">${esc(r.sym)}</span><span class="lens lens-${esc(r.lens)}">${esc(r.lens)}</span>
       <span class="scope">${esc(TIER_LABEL[r.tier]||r.tier)}</span>
-      <span style="color:${col};font-weight:700">${r.upside>=0?"+":""}${r.upside}%</span>${flag}</span>`;
+      <span style="color:${col};font-weight:700">${r.upside>=0?"+":""}${r.upside}%</span>
+      <span class="scope">to ${esc(r.y)}</span>${pxFlag}${flag}</span>`;
   }).join("");
+  // AUDIT: silent truncation reads as "covered everything". State the denominator.
+  const excluded=BOOK.length-rows.length;
+  const caveats=shown.filter(r=>r.caveat)
+    .map(r=>`<div style="color:var(--amber);font-size:10px;margin-top:2px">⚠ ${esc(r.sym)}: ${esc(r.caveat)}</div>`).join("");
   el.innerHTML=`<div class="lbl">Computed upside — ref px → nearest pt_model target · math only, not a recommendation (no sizing/caps/thesis weighed)</div>`+
-    `<div class="picks">${picks}</div>`;
+    `<div class="picks">${picks}</div>`+
+    `<div class="none">ranking ${rows.length} of ${BOOK.length} names`+
+    (excluded?` — ${excluded} excluded (no pt_model target or no stamped ref_px), NOT judged unattractive`:"")+
+    ` · horizons differ, each % is to its own year</div>`+caveats;
 }
 /* FEAT-TT-RUN: book-coverage rollup — the honest tell, mirroring Signal Quality.
    `head` folds into the stale COUNT (3 buckets) while keeping its own red chip marker. */
