@@ -1131,10 +1131,16 @@ function renderUpsideRank(){
   BOOK.forEach(x=>{
     const dd=x.deepDive;if(!dd)return;
     const ref=dd.ref_px;if(!ref||!isFinite(ref.px)||ref.px<=0)return;
-    const target=ptModelRows(dd).find(r=>typeof r.prem==="number");
+    // Premium if the owner asserted one; otherwise the FLOOR (18x FY+1 EPS, the S&P-average
+    // benchmark). A floor-ranked name makes no forecast about the multiple at all — it asks
+    // only "what is this worth at a market multiple on forward earnings", which is the one
+    // basis that needs no assumption and stays comparable across names.
+    const target=ptModelRows(dd).find(r=>typeof r.prem==="number"||typeof r.fl==="number");
     if(!target)return;
-    rows.push({sym:x.sym,lens:x.lens,tier:x.tier,rs:runState(x.lastRun),
-      upside:Math.round((target.prem/ref.px-1)*1000)/10,px:ref.px,at:ref.at,tgt:target.prem,y:target.y,
+    const onFloor=typeof target.prem!=="number";
+    const tgt=onFloor?target.fl:target.prem;
+    rows.push({sym:x.sym,lens:x.lens,tier:x.tier,rs:runState(x.lastRun),basis:onFloor?"floor":"premium",
+      upside:Math.round((tgt/ref.px-1)*1000)/10,px:ref.px,at:ref.at,tgt,y:target.y,
       // AUDIT: the % is only as fresh as the price mark under it. The daily triage stamps
       // ref_px; when that chain breaks (it has), a weeks-old price still divides into a
       // current target and renders a confident number. >4d spans any weekend/holiday gap.
@@ -1164,7 +1170,7 @@ function renderUpsideRank(){
       <span>${MEDAL[i]}</span><span class="sym">${esc(r.sym)}</span><span class="lens lens-${esc(r.lens)}">${esc(r.lens)}</span>
       <span class="scope">${esc(TIER_LABEL[r.tier]||r.tier)}</span>
       <span style="color:${col};font-weight:700">${r.upside>=0?"+":""}${r.upside}%</span>
-      <span class="scope">to ${esc(r.y)}</span>${pxFlag}${flag}</span>`;
+      <span class="scope">to ${esc(r.y)} · ${esc(r.basis)}</span>${pxFlag}${flag}</span>`;
   }).join("");
   // AUDIT: silent truncation reads as "covered everything". State the denominator.
   const excluded=BOOK.length-rows.length;
@@ -1174,7 +1180,7 @@ function renderUpsideRank(){
     `<div class="picks">${picks}</div>`+
     `<div class="none">ranking ${rows.length} of ${BOOK.length} names`+
     (excluded?` — ${excluded} excluded (no pt_model target or no stamped ref_px), NOT judged unattractive`:"")+
-    ` · horizons differ, each % is to its own year</div>`+caveats;
+    ` · horizons differ, each % is to its own year · "floor" = 18× FY+1 EPS (S&P-average benchmark, no re-rating assumed); "premium" = the owner's asserted multiple</div>`+caveats;
 }
 /* FEAT-TT-RUN: book-coverage rollup — the honest tell, mirroring Signal Quality.
    `head` folds into the stale COUNT (3 buckets) while keeping its own red chip marker. */
