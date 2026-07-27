@@ -1295,7 +1295,9 @@ function renderUpsideRank(){
     const redH=Array.isArray(dd.hinges)?dd.hinges.filter(g=>g.state==="red").length:0;
     let kdSoon=null;
     (Array.isArray(dd.key_dates)?dd.key_dates:[]).forEach(k=>{
-      if(!k||!/^\d{4}-\d{2}-\d{2}$/.test(k.date)||k.date<todayET)return;
+      // v3.27.1: binary:false marks a NON-binary calendar entry (re-score date, tax date)
+      // — it renders on the calendar but must never trip the no-new-adds gate.
+      if(!k||k.binary===false||!/^\d{4}-\d{2}-\d{2}$/.test(k.date)||k.date<todayET)return;
       const dgap=Math.round((Date.parse(k.date+"T12:00:00Z")-Date.parse(todayET+"T12:00:00Z"))/86400000);
       if(kdSoon===null||dgap<kdSoon)kdSoon=dgap;
     });
@@ -1403,7 +1405,8 @@ function renderBinaryCal(){
     kd.forEach(k=>{
       if(!k||!/^\d{4}-\d{2}-\d{2}$/.test(k.date)||k.date<today)return;   // past dates belong to the tab, not the queue
       const d=Math.round((Date.parse(k.date+"T12:00:00Z")-Date.parse(today+"T12:00:00Z"))/86400000);
-      ev.push({sym:x.sym,lens:x.lens,date:k.date,d,label:k.label||k.event||"",inWindow:d<=BINARY_WINDOW_D});
+      ev.push({sym:x.sym,lens:x.lens,date:k.date,d,label:k.label||k.event||"",
+        nb:k.binary===false,inWindow:k.binary!==false&&d<=BINARY_WINDOW_D});
     });
   });
   if(!ev.length){
@@ -1418,7 +1421,7 @@ function renderBinaryCal(){
       <span class="sym">${esc(e.sym)}</span>
       <span style="color:${col};font-weight:700">${e.d===0?"TODAY":e.d+"d"}</span>
       <span class="scope">${esc(e.date)}</span>
-      ${e.inWindow?`<span class="bad2">⛔ no-new-adds</span>`:""}</span>`;
+      ${e.inWindow?`<span class="bad2">⛔ no-new-adds</span>`:""}${e.nb?`<span class="scope">non-binary</span>`:""}</span>`;
   }).join("");
   el.innerHTML=`<div class="lbl">Binary calendar${inW?` · <span style="color:var(--red)">${inW} inside the ${BINARY_WINDOW_D}d no-new-adds window</span>`:` · none inside ${BINARY_WINDOW_D}d`}</div>`+
     `<div class="picks">${rows}</div>`+

@@ -497,6 +497,11 @@ ok("agree: NEXT DOLLAR lights only on gap AND quality AND R/R AND binary window"
   adminSrc.includes("both stories agree") && adminSrc.includes('"no gap"') &&
   adminSrc.includes("quality fails") && adminSrc.includes("R/R fails its floor") &&
   adminSrc.includes("no-new-adds"));
+// v3.27.1: binary:false = calendar entry (re-score, tax date) — visible, never gating.
+ok("kd: non-binary key dates never trip the no-new-adds gate",
+  adminSrc.includes("k.binary===false||!/") || adminSrc.includes("k.binary===false||!"));
+ok("kd: non-binary dates still render on the calendar, labeled, without the blocker flag",
+  adminSrc.includes("nb:k.binary===false") && adminSrc.includes("non-binary"));
 ok("agree: disagreement renders as WAIT with blockers named, not a blended score",
   adminSrc.includes("NEXT DOLLAR: WAIT") && adminSrc.includes("disagreement is information, not a discount"));
 // v3.26 FEAT-TT-FRAMEWORK: the methodology doc is PRIVATE — KV behind the PIN, never the
