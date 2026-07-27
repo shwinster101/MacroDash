@@ -532,9 +532,11 @@ ok("livepx: quotes endpoint reuses the /api/tt auth gate (guards the Finnhub quo
   quotesSrc.includes('import { authorize } from "./tt.js"') && quotesSrc.includes("if (!auth.ok)"));
 ok("livepx: FINNHUB_KEY never leaves the Function", quotesSrc.includes("env.FINNHUB_KEY") && !adminSrc.includes("finnhub"));
 ok("livepx: Finnhub c:0 (unknown symbol) is rejected, not passed through as a free stock",
-  quotesSrc.includes("!Number.isFinite(px) || px <= 0) return null"));
+  quotesSrc.includes("!isFinite(px) || px <= 0) return null"));
 ok("livepx: missing symbols are NAMED so fallbacks are never implied to be live",
   quotesSrc.includes("missing: syms.filter"));
+ok("livepx: matches snapshot.js on the wire (Accept header + timeout were load-bearing)",
+  quotesSrc.includes('headers: { Accept: "application/json" }') && quotesSrc.includes("ctl.abort()"));
 ok("livepx: KV-cached and batched to respect the rate limit / subrequest cap",
   quotesSrc.includes("CACHE_TTL = 120") && quotesSrc.includes("misses.slice(i, i + 5)"));
 ok("livepx: board prefers a live quote and falls back to the stamped ref_px",

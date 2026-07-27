@@ -26,25 +26,33 @@ const json = (body, status = 200) =>
 
 // One Finnhub quote. Returns null on any failure — a missing symbol must degrade to the
 // stamped ref_px, never to a fabricated or zero price.
+// Mirrors fetchEquities() in snapshot.js EXACTLY on the wire: the Accept header and an
+// explicit timeout are load-bearing. A first cut here used a bare fetch with a cf cacheTtl
+// option and every symbol came back empty from production while snapshot.js read ok:5 on
+// the same key — proof the difference is the request, not the feed. Do not "simplify" this.
 async function fetchQuote(sym, key) {
+  const ctl = new AbortController();
+  const timer = setTimeout(() => ctl.abort(), 9000);
   try {
     const r = await fetch(
       `https://finnhub.io/api/v1/quote?symbol=${encodeURIComponent(sym)}&token=${encodeURIComponent(key)}`,
-      { cf: { cacheTtl: 60 } }
+      { headers: { Accept: "application/json" }, signal: ctl.signal }
     );
     if (!r.ok) return null;
     const q = await r.json();
     // `c` is the current price. Finnhub returns c:0 for unknown symbols — that is a
     // MISS, not a free stock, so it must be rejected rather than passed through.
-    const px = Number(q && q.c);
-    if (!Number.isFinite(px) || px <= 0) return null;
-    const pc = Number(q.pc);
+    const px = parseFloat(q && q.c);
+    if (!isFinite(px) || px <= 0) return null;
+    const dp = parseFloat(q.dp);   // Finnhub's own day-change %, same field snapshot.js uses
     return {
-      px: Math.round(px * 100) / 100,
-      chg: Number.isFinite(pc) && pc > 0 ? Math.round((px / pc - 1) * 1000) / 10 : null,
+      px: parseFloat(px.toFixed(2)),
+      chg: isFinite(dp) ? parseFloat(dp.toFixed(2)) : null,
     };
   } catch (_e) {
     return null;
+  } finally {
+    clearTimeout(timer);
   }
 }
 
