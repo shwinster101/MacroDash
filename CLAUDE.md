@@ -121,7 +121,7 @@ worker/                 SEPARATE Cloudflare Worker (not part of Pages)
   wrangler.toml         Worker config: PULSE_CACHE binding + cron triggers (UTC).
 
 test/
-  smoke.mjs             No-network smoke test: 234 assertions over mergeLiveOverMock
+  smoke.mjs             No-network smoke test: 247 assertions over mergeLiveOverMock
                         + SOURCES-path resolution against the real MOCK_DATA + the
                         5-Whys engine + DEC-31 guards + the TT band table (DEC-33)
                         + the market-holiday calendar (sessions + staleness).
@@ -312,6 +312,27 @@ Jan-anchor shipped; see `snapshot.js` ~318–328), `spyMa100`, `spyMa200`, and a
   (locked inputs + anchors, static — thesis STATE, not a calculator), tape (stamped "NOT
   live"), watchlist unlocks/hedges/open items. **Unknown payload keys fall back to a generic
   k/v render — what's stored is never invisible.**
+- **FEAT-TT-PTM (v3.17) — the PT ladder is computed, never typed.** `pt_consensus` static rows
+  are superseded by **`pt_model`**: the payload carries the MODEL (per-year EV/S multiple
+  schedule · share-count schedule · optional `net_cash_B` · `pe_floor_multiple`), and
+  revenue/EPS **default to the sibling `consensus` block** — one source of estimate truth.
+  `ddPtModelSec` computes `premium = (mult × FY+1 rev + net cash) ÷ shares` and
+  `floor = pe × FY+1 EPS` (rendered `n/m` where EPS ≤ 0 — no P/E before profit); schedules
+  accept a number or a sparse per-year map (`schedAt`, nearest key ≤ y); past year-end rows
+  auto-drop. A consensus revision is now a **one-field edit that moves every row in lockstep**,
+  and the formula line shows what each PT assumes. Reproduces the approved v3.16 ladders:
+  floors exactly, premiums within ≤0.7% hand-rounding.
+- **FEAT-TT-DOT (v3.17) — the dots inventory.** Capture and synthesis are different jobs.
+  A **⊕ DOT** box on each deep-dive tab captures a POINTER (≤280-char line + optional URL,
+  never article bodies — the 64KB book cap is the wall), ET-date-stamped, state `new`. Dots
+  live on the **book entry** (`e.dots`, validateBook passthrough) so replacing a deepDive
+  payload can never wipe the inventory; keep-last-30 prune ages out reviewed/promoted first
+  and **never silently drops a `new` dot**. States change only at **triage** (the chat sweep):
+  a dot is *material iff it changes (a) a hinge/gate state, (b) a consensus input, or (c) a
+  kill-combination condition* — material → `promoted` (with `into` naming the field; with
+  FEAT-TT-PTM a consensus change auto-flows to every PT row), else `reviewed` and kept:
+  clustering immaterial dots around one hinge is itself signal. Coverage strip shows
+  `⊕ N new dots`; capture never touches the thesis — that's the self-attestation rule.
 - **FEAT-TT-3Q (v3.14) — the 3 questions.** Every book entry can carry a `projection` (same
   passthrough rails): **(1)** revenue in 3 years — the validator DEMANDS a specific `$B` number;
   **(2)** margins `expanding|holding|compressing` + a required *why*; **(3)** the multiple that
@@ -388,7 +409,7 @@ npm run dev        # Vite dev server (mock unless VITE_DATA_MODE=live in .env)
 npm run build      # → dist/  (what Pages runs)
 npm run preview    # serve the built dist/
 
-node test/smoke.mjs   # 234-assertion no-network smoke test (needs Node ≥17)
+node test/smoke.mjs   # 247-assertion no-network smoke test (needs Node ≥17)
 
 # Cron Worker (separate deploy):
 cd worker && npx wrangler deploy

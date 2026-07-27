@@ -810,6 +810,104 @@ function ddPtConsensusSec(pc){
   return `<div class="dd-sec"><div class="lbl">Consensus-derived PT ladder${pc.source?` · ${esc(pc.source)}`:""}</div>${t}</table>`+
     (pc.basis?`<div style="color:var(--dim);font-size:10px;margin-top:4px">${esc(pc.basis)}</div>`:"")+`</div>`;
 }
+/* v3.17 FEAT-TT-PTM: PT ladder COMPUTED from inputs — the dilution-grid pattern applied
+   to price targets. Static rows were hand-derived outputs, so one consensus revision
+   meant retyping nine numbers (and trusting the transcription). The payload now carries
+   the MODEL — multiple schedule, share count, net cash, P/E floor — while revenue/EPS
+   default to the sibling consensus block, ONE source of estimate truth. A promoted dot
+   that moves one estimate moves every row in lockstep, and the formula line shows what
+   each PT assumes. premium = (mult × FY+1 rev + net cash) ÷ shares · floor = pe ×
+   FY+1 EPS, rendered n/m where EPS ≤ 0 (P/E is meaningless pre-profit). Schedules
+   accept a number or a per-year map (nearest key ≤ y, so sparse schedules work). */
+function schedAt(s,y){
+  if(typeof s==="number")return s;
+  if(!s||typeof s!=="object")return null;
+  if(s[y]!=null)return +s[y];
+  let best=null;Object.keys(s).sort().forEach(k=>{if(k<=y)best=+s[k];});
+  return best;
+}
+function ddPtModelSec(m,dd){
+  if(!m||typeof m!=="object")return "";
+  const c=(dd&&dd.consensus)||{};
+  const rev=m.revenue_B||c.revenue_B||{},eps=m.eps||c.eps||{};
+  const pe=+m.pe_floor_multiple||null;
+  const y0=new Date().toLocaleDateString("en-CA",{timeZone:"America/New_York"}).slice(0,4);
+  const fmt=v=>v>=100?Math.round(v):Math.round(v*100)/100;
+  const years=[...new Set([...Object.keys(rev),...Object.keys(eps)].map(y=>String(+y-1)))]
+    .filter(y=>y>=y0).sort();
+  const rows=years.map(y=>{
+    const fwd=String(+y+1);
+    const mult=schedAt(m.ev_s_multiple,y),sh=schedAt(m.share_count_M,y),nc=schedAt(m.net_cash_B,y)||0;
+    const prem=(mult>0&&sh>0&&rev[fwd]!=null)?fmt((mult*rev[fwd]+nc)*1000/sh):null;
+    const e=eps[fwd];
+    const fl=(pe>0&&typeof e==="number")?(e>0?fmt(pe*e):"n/m"):null;
+    return {y,prem,fl,mult};
+  }).filter(r=>r.prem!==null||r.fl!==null);
+  if(!rows.length)return "";
+  const shD=(s=>typeof s==="number"?s+"M"
+    :s&&typeof s==="object"?(ks=>ks.length?s[ks[0]]+"M→"+s[ks[ks.length-1]]+"M":"—")(Object.keys(s).sort())
+    :"—")(m.share_count_M);
+  let t=`<table class="dd-pt"><tr><th>year-end</th><th>premium</th><th>mult</th><th>floor${pe?" "+esc(pe)+"×":""}</th></tr>`;
+  rows.forEach(r=>{
+    t+=`<tr><th>${esc(r.y)}</th><td>${r.prem!=null?"$"+esc(r.prem):"—"}</td>`+
+      `<td style="color:var(--dim)">${r.mult>0?esc(r.mult)+"×":"—"}</td>`+
+      `<td style="color:var(--dim)">${r.fl==="n/m"?"n/m":r.fl!=null?"$"+esc(r.fl):"—"}</td></tr>`;
+  });
+  t+=`</table>`;
+  return `<div class="dd-sec"><div class="lbl">PT ladder — computed from inputs${m.source?` · ${esc(m.source)}`:""}</div>${t}
+    <div style="color:var(--dim);font-size:10px;margin-top:4px">premium = (mult × FY+1 rev + net cash) ÷ shares · shares ${esc(shD)} · floor = ${pe?esc(pe):"—"}× FY+1 EPS · n/m = EPS ≤ 0 · computed — edit inputs, not rows</div>`+
+    (m.basis?`<div style="color:var(--dim);font-size:10px;margin-top:2px">${esc(m.basis)}</div>`:"")+
+    (m.note?`<div style="color:var(--amber);font-size:10.5px;margin-top:3px">${esc(m.note)}</div>`:"")+`</div>`;
+}
+/* v3.17 FEAT-TT-DOT: the dots inventory — capture and synthesis are different jobs.
+   A dot is a POINTER (one line + optional URL, never article bodies — the 64KB book
+   cap is the wall) captured judgment-free from the phone. States: ● new (untriaged)
+   → ○ reviewed (immaterial, kept as inventory — clustering dots ARE signal) or
+   ★ promoted (it changed a hinge/gate state, a consensus input, or a kill-combination
+   condition; `into` names the field). Capture never touches the thesis — triage does,
+   at review, which is why the box has no state controls beyond ADD. Dots live on the
+   book ENTRY (validateBook passthrough), not inside deepDive, so a payload replacement
+   can never wipe the inventory. */
+const DOT_NOTE_MAX=280,DOT_URL_MAX=500,DOT_KEEP=30;
+function dotChip(st){return st==="promoted"?'<span style="color:var(--green)">★</span>'
+  :st==="reviewed"?'<span style="color:var(--dim)">○</span>'
+  :'<span style="color:var(--amber)">●</span>';}
+function ddDotsSec(x){
+  const dots=Array.isArray(x.dots)?x.dots:[];
+  const newN=dots.filter(d=>(d.state||"new")==="new").length;
+  let h=`<div class="dd-sec"><div class="lbl">Dots — inventory (${dots.length}${newN?` · <span style="color:var(--amber)">${newN} new</span>`:""}) · capture only — triage at review promotes or marks reviewed</div>`;
+  h+=`<div style="display:flex;gap:6px;flex-wrap:wrap;margin:4px 0 8px">
+    <input id="dotIn" placeholder="paste a line and/or URL — a pointer, not the article" style="flex:1;min-width:200px"/>
+    <button class="act" onclick="addDot('${esc(x.sym)}')">⊕ DOT</button></div>`;
+  h+=dots.map(d=>{
+    const url=typeof d.url==="string"&&/^https?:\/\//i.test(d.url)?d.url:null;
+    return `<div class="dd-kv"><div class="k">${dotChip(d.state||"new")} ${esc(d.t||"")}</div>
+      <div>${esc(d.note||"")}${url?` <a href="${esc(url)}" target="_blank" rel="noopener noreferrer" style="color:var(--slate)">link↗</a>`:""}`+
+      `${d.state==="promoted"&&d.into?` <span style="color:var(--dim);font-size:10px">→ ${esc(d.into)}</span>`:""}</div></div>`;
+  }).join("")||`<div style="color:var(--dim);font-size:11px">no dots yet — throw anything here the moment you see it; most dots never change the thesis, and that inventory is itself signal</div>`;
+  return h+`</div>`;
+}
+function addDot(sym){
+  const x=find(sym);if(!x)return;
+  const el=document.getElementById("dotIn");
+  const raw=((el&&el.value)||"").trim();
+  if(!raw)return toast("Empty dot — paste a line or URL first");
+  const um=raw.match(/https?:\/\/\S+/i);
+  const url=um?um[0].slice(0,DOT_URL_MAX):undefined;
+  const note=raw.replace(um?um[0]:"","").trim().slice(0,DOT_NOTE_MAX);
+  if(!note&&!url)return toast("Nothing usable in that dot");
+  const dot={t:new Date().toLocaleDateString("en-CA",{timeZone:"America/New_York"}),state:"new"};
+  if(note)dot.note=note;if(url)dot.url=url;
+  x.dots=Array.isArray(x.dots)?x.dots:[];
+  x.dots.unshift(dot);
+  // keep-last-N prune: reviewed/promoted age out first; `new` is never silently dropped
+  if(x.dots.length>DOT_KEEP){
+    for(let i=x.dots.length-1;i>=0&&x.dots.length>DOT_KEEP;i--)
+      if((x.dots[i].state||"new")!=="new")x.dots.splice(i,1);
+    if(x.dots.length>DOT_KEEP){x.dots.length=DOT_KEEP;toast("Dot inventory full — oldest dropped; triage the new ones");}
+  }
+  persist();
+}
 function ddKillSec(k){
   if(!k||typeof k!=="object")return "";
   return `<div class="dd-sec"><div class="lbl">Kill-combination monitor</div>
@@ -820,7 +918,7 @@ function ddKillSec(k){
 // Section registry order; anything a payload carries beyond this renders generically at
 // the end — what's stored must never be invisible.
 const DD_HANDLED=new Set(["ticker","name","thesis_version","updated","as_of","tier","ref_px","position_note",
-  "pt_ladder","pt_consensus","consensus","gates","hinges","leading_indicators","cert_probabilities","utilization_underwriting","capital",
+  "pt_ladder","pt_model","pt_consensus","consensus","gates","hinges","leading_indicators","cert_probabilities","utilization_underwriting","capital",
   "dilution_grid","engine","pt_2040","kill_combination","key_dates","position","model_anchors","conditional_rules",
   "linked_exposure","status_flags","tape","watchlist_unlocks","hedges","rules","open_items","telemetry"]);
 function renderDeepDive(sym){
@@ -843,6 +941,7 @@ function renderDeepDive(sym){
       <div class="dd-kv"><div class="k">3 · multiple</div><div>${esc(pj.multiple.value)}× ${esc(pj.multiple.basis||"")}</div></div>
       <div style="margin-top:6px;font-size:11.5px">${projLine(pj)}</div></div>`;}
   h+=ddPtSec(dd.pt_ladder);
+  h+=ddPtModelSec(dd.pt_model,dd);
   h+=ddPtConsensusSec(dd.pt_consensus);
   h+=ddConsensusSec(dd.consensus);
   h+=ddGatesSec(dd.gates);
@@ -881,6 +980,7 @@ function renderDeepDive(sym){
   h+=ddListSec("Standing rules (must survive every port)",dd.rules);
   h+=ddListSec("Open items",dd.open_items);
   h+=ddKvSec("Telemetry",dd.telemetry);
+  h+=ddDotsSec(x);
   Object.keys(dd).filter(k=>!DD_HANDLED.has(k)).forEach(k=>{
     const v=dd[k];
     h+=(v&&typeof v==="object"&&!Array.isArray(v))?ddKvSec(k,v)
@@ -1005,6 +1105,8 @@ function renderCoverage(){
   BOOK.forEach(x=>{const k=runState(x.lastRun).k;c[k==="head"?"stale":k]++;});
   // FEAT-TT-3Q: projection coverage — every name should have the three answers written.
   const projN=BOOK.filter(x=>x.projection).length;
+  // FEAT-TT-DOT: untriaged dots surface here so capture can't silently pile up.
+  const dotN=BOOK.reduce((a,x)=>a+(Array.isArray(x.dots)?x.dots.filter(d=>(d.state||"new")==="new").length:0),0);
   document.getElementById("coverage").innerHTML=
     `<span>BOOK COVERAGE</span>`+
     `<span class="f">● ${c.fresh} fresh</span>`+
@@ -1012,6 +1114,7 @@ function renderCoverage(){
     (c.never?`<span class="n">○ ${c.never} never run</span>`:"")+
     `<span>of ${BOOK.length}</span>`+
     (BOOK.length?`<span style="color:${projN===BOOK.length?"var(--green)":"var(--amber)"}">📐 ${projN}/${BOOK.length} projected</span>`:"")+
+    (dotN?`<span style="color:var(--amber)">⊕ ${dotN} new dots</span>`:"")+
     `<span style="margin-left:auto">● ≤30d · ⏱ aged · ○ no TT run · 📐 3 questions answered</span>`;
 }
 

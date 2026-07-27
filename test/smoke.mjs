@@ -421,6 +421,29 @@ ok("ptc: scenario columns derived from the rows (no code change for a 3rd case)"
 ok("ptc: floor/bear/severe columns render dimmed", adminSrc.includes("/floor|bear|severe/i.test(c)"));
 ok("dd: CLEAR empties the editor without saving (paste-over on mobile)",
   adminSrc.includes("function ddClear()") && adminSrc.includes("⌫ CLEAR"));
+// v3.17 FEAT-TT-PTM: the PT ladder is COMPUTED from inputs — the dilution-grid rule
+// applied to price targets, so one consensus revision moves every row in lockstep.
+ok("ptm: registered as a handled section", /"pt_model"/.test(DD_HANDLED_SRC));
+ok("ptm: rows computed from the model, never typed",
+  adminSrc.includes("(mult*rev[fwd]+nc)*1000/sh") && adminSrc.includes("computed — edit inputs, not rows"));
+ok("ptm: revenue/EPS default to the sibling consensus block (one source of estimate truth)",
+  adminSrc.includes("m.revenue_B||c.revenue_B") && adminSrc.includes("m.eps||c.eps"));
+ok("ptm: floor renders n/m where EPS <= 0 (no P/E before profit)", adminSrc.includes('e>0?fmt(pe*e):"n/m"'));
+ok("ptm: schedules accept per-year maps with nearest-key fallback", adminSrc.includes("function schedAt"));
+ok("ptm: past year-end rows auto-drop (>= current ET year)", adminSrc.includes(".filter(y=>y>=y0)"));
+// v3.17 FEAT-TT-DOT: dots inventory — capture is judgment-free; states change at triage.
+ok("dot: dots ride validateBook passthrough at ENTRY level (survive payload replacement)",
+  validateBook({ book: [{ sym: "NBIS", tier: "S", lens: "AI",
+    dots: [{ t: "2026-07-27", note: "x", state: "new" }] }], cut: [] }) === null);
+ok("dot: capture stamps the ET date (no UTC roll — the lastRun lesson)",
+  adminSrc.includes('const dot={t:new Date().toLocaleDateString("en-CA",{timeZone:"America/New_York"}),state:"new"}'));
+ok("dot: pointer caps enforced (line + URL, never article bodies)",
+  adminSrc.includes("DOT_NOTE_MAX=280") && adminSrc.includes("DOT_URL_MAX=500"));
+ok("dot: keep-last-N prune never silently drops a NEW dot",
+  adminSrc.includes("DOT_KEEP=30") && adminSrc.includes('!=="new")x.dots.splice'));
+ok("dot: promoted dots name the field they changed", adminSrc.includes('d.state==="promoted"&&d.into'));
+ok("dot: only http(s) URLs render as links", adminSrc.includes('/^https?:\\/\\//i.test(d.url)'));
+ok("dot: coverage strip counts untriaged dots", adminSrc.includes("new dots"));
 
 // ---- 9. market calendar — holidays across the honesty stack ---------------
 // The time-judges (isStale, marketSession/etSession, looksBehind) share ONE
