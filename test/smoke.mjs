@@ -444,6 +444,22 @@ ok("dot: keep-last-N prune never silently drops a NEW dot",
 ok("dot: promoted dots name the field they changed", adminSrc.includes('d.state==="promoted"&&d.into'));
 ok("dot: only http(s) URLs render as links", adminSrc.includes('/^https?:\\/\\//i.test(d.url)'));
 ok("dot: coverage strip counts untriaged dots", adminSrc.includes("new dots"));
+// v3.18 FEAT-TT-UPSIDE: computed cross-book upside — separate from the human-ranked
+// NEXT DOLLAR queue, and sharing ptModelRows() so the ranked number can never drift
+// from the deep-dive table it came from.
+ok("upside: shares ptModelRows with the deep-dive table (one computation, not two)",
+  adminSrc.includes("function ptModelRows(dd)") && adminSrc.includes("const rows=ptModelRows(dd);"));
+ok("upside: ranks ALL tiers, not just the watchlist queue (S/A/B/DEF included)",
+  /BOOK\.forEach\(x=>\{\s*const dd=x\.deepDive/.test(adminSrc));
+ok("upside: requires a stamped ref_px AND a pt_model target — never guesses either",
+  adminSrc.includes("if(!ref||!isFinite(ref.px)||ref.px<=0)return;") &&
+  adminSrc.includes("const target=ptModelRows(dd).find(r=>typeof r.prem"));
+ok("upside: explicitly labeled math-only, not a recommendation",
+  adminSrc.includes("math only, not a recommendation"));
+ok("upside: stale/never TT runs keep their honesty flag on the ranked pick",
+  adminSrc.includes('r.rs.k==="never"?`<span class="bad2">○ no TT run on record</span>'));
+ok("upside: DOM anchor separate from the human NEXT DOLLAR widget", adminSrc.includes('id="upsideRank"'));
+ok("upside: wired into the render pipeline", adminSrc.includes("renderNextDollar();renderUpsideRank();renderCoverage()"));
 
 // ---- 9. market calendar — holidays across the honesty stack ---------------
 // The time-judges (isStale, marketSession/etSession, looksBehind) share ONE

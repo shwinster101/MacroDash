@@ -219,6 +219,7 @@
       <div id="boardView">
         <h2>Tier Board &nbsp;·&nbsp; click any ticker to open its TT Card</h2>
         <div class="nd" id="nextDollar"></div>
+        <div class="nd" id="upsideRank" style="margin-top:8px"></div>
         <div class="cov" id="coverage"></div>
         <div id="board"></div>
       </div>
@@ -603,7 +604,7 @@ function render(){
   const cc=document.createElement("div");cc.className="chips";
   CUT.forEach(s=>{const c=document.createElement("div");c.className="chip";c.innerHTML=`<span class="sym">${s}</span>`;cc.appendChild(c);});
   cut.appendChild(cc);b.appendChild(cut);
-  renderNextDollar();renderCoverage();renderTabs();
+  renderNextDollar();renderUpsideRank();renderCoverage();renderTabs();
 }
 
 /* ═══════════ DEEP-DIVE TABS (FEAT-TT-DD v3.12) ═══════════ */
@@ -826,16 +827,20 @@ function schedAt(s,y){
   let best=null;Object.keys(s).sort().forEach(k=>{if(k<=y)best=+s[k];});
   return best;
 }
-function ddPtModelSec(m,dd){
-  if(!m||typeof m!=="object")return "";
-  const c=(dd&&dd.consensus)||{};
+/* Shared by the deep-dive render (ddPtModelSec) and the cross-book upside widget
+   (renderUpsideRank) — ONE computation, so the ranked "next dollar" number can never
+   drift from the table the maintainer is looking at on the tab itself. */
+function ptModelRows(dd){
+  const m=dd&&dd.pt_model;
+  if(!m||typeof m!=="object")return [];
+  const c=dd.consensus||{};
   const rev=m.revenue_B||c.revenue_B||{},eps=m.eps||c.eps||{};
   const pe=+m.pe_floor_multiple||null;
   const y0=new Date().toLocaleDateString("en-CA",{timeZone:"America/New_York"}).slice(0,4);
   const fmt=v=>v>=100?Math.round(v):Math.round(v*100)/100;
   const years=[...new Set([...Object.keys(rev),...Object.keys(eps)].map(y=>String(+y-1)))]
     .filter(y=>y>=y0).sort();
-  const rows=years.map(y=>{
+  return years.map(y=>{
     const fwd=String(+y+1);
     const mult=schedAt(m.ev_s_multiple,y),sh=schedAt(m.share_count_M,y),nc=schedAt(m.net_cash_B,y)||0;
     const prem=(mult>0&&sh>0&&rev[fwd]!=null)?fmt((mult*rev[fwd]+nc)*1000/sh):null;
@@ -843,7 +848,12 @@ function ddPtModelSec(m,dd){
     const fl=(pe>0&&typeof e==="number")?(e>0?fmt(pe*e):"n/m"):null;
     return {y,prem,fl,mult};
   }).filter(r=>r.prem!==null||r.fl!==null);
+}
+function ddPtModelSec(m,dd){
+  if(!m||typeof m!=="object")return "";
+  const rows=ptModelRows(dd);
   if(!rows.length)return "";
+  const pe=+m.pe_floor_multiple||null;
   const shD=(s=>typeof s==="number"?s+"M"
     :s&&typeof s==="object"?(ks=>ks.length?s[ks[0]]+"M→"+s[ks[ks.length-1]]+"M":"—")(Object.keys(s).sort())
     :"—")(m.share_count_M);
@@ -1097,6 +1107,46 @@ function renderNextDollar(){
   el.innerHTML=`<div class="lbl">Next dollar · queue #${top}`+
     (leads.length>1?` · ${leads.length} co-leads (different buckets — not a single ranking)`:"")+
     `</div><div class="picks">${picks}</div>`+regimeModifier();
+}
+/* v3.18 FEAT-TT-UPSIDE: NEXT DOLLAR answers "what did I decide to queue" (a human rank on
+   the watchlist). This answers a different question — "of every name I'm tracking, S-tier
+   holdings included, what does the math say" — pure arithmetic, no judgment layer, and
+   deliberately a SEPARATE widget so a scary computed number can never silently override
+   a conviction call made on purpose. upside% = nearest future pt_model premium ÷ today's
+   stamped ref_px − 1, using the SAME ptModelRows() the deep-dive tab renders — the ranked
+   number can never drift from the table it came from. Requires a fresh ref_px (the daily
+   triage stamp) AND a pt_model target; missing either silently excludes the name rather
+   than guessing, and a stale/never TT run still surfaces with its honesty flag intact. */
+function renderUpsideRank(){
+  const el=document.getElementById("upsideRank");if(!el)return;
+  const rows=[];
+  BOOK.forEach(x=>{
+    const dd=x.deepDive;if(!dd)return;
+    const ref=dd.ref_px;if(!ref||!isFinite(ref.px)||ref.px<=0)return;
+    const target=ptModelRows(dd).find(r=>typeof r.prem==="number");
+    if(!target)return;
+    rows.push({sym:x.sym,lens:x.lens,tier:x.tier,rs:runState(x.lastRun),
+      upside:Math.round((target.prem/ref.px-1)*1000)/10,px:ref.px,at:ref.at,tgt:target.prem,y:target.y});
+  });
+  if(!rows.length){
+    el.innerHTML=`<div class="lbl">Computed upside</div><div class="none">`+
+      `no name yet has both a stamped ref_px (from the daily triage) and a pt_model target — nothing to rank.</div>`;
+    return;
+  }
+  rows.sort((a,b)=>b.upside-a.upside);
+  const picks=rows.slice(0,3).map(r=>{
+    const flag=r.rs.k==="never"?`<span class="bad2">○ no TT run on record</span>`
+      :r.rs.k==="head"?`<span class="bad2">⏱ ${r.rs.days}d — re-run first</span>`
+      :r.rs.k==="stale"?`<span class="warn2">⏱ ${r.rs.days}d old</span>`:"";
+    const col=r.upside>=0?"var(--green)":"var(--red)";
+    return `<span class="pick" onclick="openCard('${esc(r.sym)}')"
+      title="ref $${esc(r.px)}${r.at?` (${esc(r.at)})`:""} → $${esc(r.tgt)} ${esc(r.y)} pt_model target">
+      <span class="sym">${esc(r.sym)}</span><span class="lens lens-${esc(r.lens)}">${esc(r.lens)}</span>
+      <span class="scope">${esc(TIER_LABEL[r.tier]||r.tier)}</span>
+      <span style="color:${col};font-weight:700">${r.upside>=0?"+":""}${r.upside}%</span>${flag}</span>`;
+  }).join("");
+  el.innerHTML=`<div class="lbl">Computed upside — ref px → nearest pt_model target · math only, not a recommendation (no sizing/caps/thesis weighed)</div>`+
+    `<div class="picks">${picks}</div>`;
 }
 /* FEAT-TT-RUN: book-coverage rollup — the honest tell, mirroring Signal Quality.
    `head` folds into the stale COUNT (3 buckets) while keeping its own red chip marker. */
