@@ -121,7 +121,7 @@ worker/                 SEPARATE Cloudflare Worker (not part of Pages)
   wrangler.toml         Worker config: PULSE_CACHE binding + cron triggers (UTC).
 
 test/
-  smoke.mjs             No-network smoke test: 247 assertions over mergeLiveOverMock
+  smoke.mjs             No-network smoke test: 304 assertions over mergeLiveOverMock
                         + SOURCES-path resolution against the real MOCK_DATA + the
                         5-Whys engine + DEC-31 guards + the TT band table (DEC-33)
                         + the market-holiday calendar (sessions + staleness).
@@ -343,6 +343,23 @@ Jan-anchor shipped; see `snapshot.js` ~318–328), `spyMa100`, `spyMa200`, and a
   📐 PROJECTION block on the card (validate-before-mutate, all-three-or-nothing). Coverage
   strip shows `📐 N/M projected`; deep-dive tabs render the answers + math line; EXPORT
   appends a `## PROJECTIONS` table. Import validates projections before overwriting.
+- **FEAT-TT-FRAMEWORK (v3.26) — the TT methodology lives in KV, NOT here.** The owner's full
+  framework (routing → kill-gates → 5-pillar composite → tier map → technical gate →
+  constraints → next dollar → options expression, plus standing rulings R1–R5) is stored at
+  KV key **`tt:framework:v1`** via `functions/api/framework.js`, PIN-gated on **both** read
+  and write, with a `:prev` rollback copy kept for 30 days. **This repository is PUBLIC** —
+  committing that document would publish every gate, threshold, R/R floor, position cap and
+  tax route permanently. Same invariant as CANONICAL_BOOK; smoke asserts the file is absent
+  from the repo. Key doctrine worth knowing while working here: *fundamentals decide WHAT
+  deserves capital, support/resistance decide WHEN, the regime decides HOW STRICT both must
+  be; the composite is a permission slip, never a buy button; engine disagreement = WAIT.*
+  **`/readout.json` IS Engine 0** — the framework doc still says MacroDash "cannot be fetched
+  programmatically, the user pastes it", which v3.3 superseded.
+- **FEAT-TT-BINCAL (v3.26) — the binary calendar.** Scheduled binaries (earnings) lived inside
+  individual `key_dates` arrays, surfacing only when that tab was opened; a no-new-adds rule is
+  worthless if the binary is discovered after sizing. A board strip aggregates every *future*
+  key date across the book, sorted by days-out, flagging anything inside `BINARY_WINDOW_D=10`.
+  Deliberately **reports, never enforces** — the board does not block orders.
 - **Deferred:** stored fundamentals + Robinhood sync — now unblocked by the `x-tt-pin` header
   (v3.9): a chat-side daily review can PUT `status_flags`/`ref_px` into the deepDive payloads and
   stamp `lastRun`. When built, store the *triage* shape (`{at, px}` → "% moved since your last TT
@@ -409,7 +426,7 @@ npm run dev        # Vite dev server (mock unless VITE_DATA_MODE=live in .env)
 npm run build      # → dist/  (what Pages runs)
 npm run preview    # serve the built dist/
 
-node test/smoke.mjs   # 247-assertion no-network smoke test (needs Node ≥17)
+node test/smoke.mjs   # 304-assertion no-network smoke test (needs Node ≥17)
 
 # Cron Worker (separate deploy):
 cd worker && npx wrangler deploy
