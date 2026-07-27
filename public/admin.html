@@ -789,6 +789,27 @@ function ddConsensusSec(c){
   return `<div class="dd-sec"><div class="lbl">Consensus estimates${c.source?` · ${esc(c.source)}`:""}</div>${t}</table>`+
     `<div style="color:var(--dim);font-size:10px;margin-top:4px">dimmed = ≤2 analysts · thin coverage, not a forecast</div></div>`;
 }
+// Consensus-derived PT ladder (v3.16) — deliberately SEPARATE from pt_ladder, which is
+// the maintainer's own model. Two ladders side by side beats one overwritten: when the
+// street and the model disagree, that disagreement is the signal. Columns are built from
+// whatever scenario keys the rows carry (no code change to add a third case), and
+// floor/bear/severe columns render dimmed so a conservative case never reads as headline.
+function ddPtConsensusSec(pc){
+  if(!pc||typeof pc!=="object"||!pc.rows||typeof pc.rows!=="object")return "";
+  const years=Object.keys(pc.rows).sort();
+  if(!years.length)return "";
+  const cols=[...new Set(years.flatMap(y=>Object.keys(pc.rows[y]||{})))];
+  if(!cols.length)return "";
+  let t=`<table class="dd-pt"><tr><th>year-end</th>${cols.map(c=>`<th>${esc(c)}</th>`).join("")}</tr>`;
+  years.forEach(y=>{
+    t+=`<tr><th>${esc(y)}</th>`+cols.map(c=>{
+      const v=pc.rows[y][c],dim=/floor|bear|severe/i.test(c);
+      return `<td style="color:${dim?"var(--dim)":"var(--fg)"}">${v!=null?"$"+esc(v):"—"}</td>`;
+    }).join("")+`</tr>`;
+  });
+  return `<div class="dd-sec"><div class="lbl">Consensus-derived PT ladder${pc.source?` · ${esc(pc.source)}`:""}</div>${t}</table>`+
+    (pc.basis?`<div style="color:var(--dim);font-size:10px;margin-top:4px">${esc(pc.basis)}</div>`:"")+`</div>`;
+}
 function ddKillSec(k){
   if(!k||typeof k!=="object")return "";
   return `<div class="dd-sec"><div class="lbl">Kill-combination monitor</div>
@@ -799,7 +820,7 @@ function ddKillSec(k){
 // Section registry order; anything a payload carries beyond this renders generically at
 // the end — what's stored must never be invisible.
 const DD_HANDLED=new Set(["ticker","name","thesis_version","updated","as_of","tier","ref_px","position_note",
-  "pt_ladder","consensus","gates","hinges","leading_indicators","cert_probabilities","utilization_underwriting","capital",
+  "pt_ladder","pt_consensus","consensus","gates","hinges","leading_indicators","cert_probabilities","utilization_underwriting","capital",
   "dilution_grid","engine","pt_2040","kill_combination","key_dates","position","model_anchors","conditional_rules",
   "linked_exposure","status_flags","tape","watchlist_unlocks","hedges","rules","open_items","telemetry"]);
 function renderDeepDive(sym){
@@ -822,6 +843,7 @@ function renderDeepDive(sym){
       <div class="dd-kv"><div class="k">3 · multiple</div><div>${esc(pj.multiple.value)}× ${esc(pj.multiple.basis||"")}</div></div>
       <div style="margin-top:6px;font-size:11.5px">${projLine(pj)}</div></div>`;}
   h+=ddPtSec(dd.pt_ladder);
+  h+=ddPtConsensusSec(dd.pt_consensus);
   h+=ddConsensusSec(dd.consensus);
   h+=ddGatesSec(dd.gates);
   if(Array.isArray(dd.hinges)&&dd.hinges.length){

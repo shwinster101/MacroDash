@@ -410,7 +410,15 @@ ok("3q: import validates projections before overwriting the book", adminSrc.incl
 ok("consensus: table renders rev + EPS + analyst count", adminSrc.includes("function ddConsensusSec") && adminSrc.includes("<th>EPS</th>"));
 ok("consensus: thin coverage (<=2 analysts) dims the row", adminSrc.includes("n<=2") && adminSrc.includes("thin coverage, not a forecast"));
 ok("consensus: negative EPS renders red, positive green", adminSrc.includes('e<0?"var(--red)":"var(--green)"'));
-ok("consensus: registered as a handled section (not generic fallback)", adminSrc.includes('"pt_ladder","consensus"'));
+// Membership, not adjacency: the earlier version pinned the literal '"pt_ladder","consensus"'
+// and broke the moment a key was inserted between them. Parse the set and check contents.
+const DD_HANDLED_SRC = (adminSrc.match(/DD_HANDLED=new Set\(\[([\s\S]*?)\]\)/) || [])[1] || "";
+ok("consensus: registered as a handled section (not generic fallback)", /"consensus"/.test(DD_HANDLED_SRC));
+ok("ptc: consensus PT ladder renders separately from the model's own pt_ladder",
+  adminSrc.includes("function ddPtConsensusSec") && adminSrc.includes("Consensus-derived PT ladder") && /"pt_consensus"/.test(DD_HANDLED_SRC));
+ok("ptc: scenario columns derived from the rows (no code change for a 3rd case)",
+  adminSrc.includes("years.flatMap(y=>Object.keys(pc.rows[y]||{}))"));
+ok("ptc: floor/bear/severe columns render dimmed", adminSrc.includes("/floor|bear|severe/i.test(c)"));
 ok("dd: CLEAR empties the editor without saving (paste-over on mobile)",
   adminSrc.includes("function ddClear()") && adminSrc.includes("⌫ CLEAR"));
 
