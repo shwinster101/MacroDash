@@ -451,9 +451,11 @@ ok("upside: shares ptModelRows with the deep-dive table (one computation, not tw
   adminSrc.includes("function ptModelRows(dd)") && adminSrc.includes("const rows=ptModelRows(dd);"));
 ok("upside: ranks ALL tiers, not just the watchlist queue (S/A/B/DEF included)",
   /BOOK\.forEach\(x=>\{\s*const dd=x\.deepDive/.test(adminSrc));
-ok("upside: requires a stamped ref_px AND a pt_model target — never guesses either",
+// Pin the two INVARIANTS (a usable ref_px, and at least one usable rung), not the exact
+// expression — the horizon refactor moved this code and a literal match broke on it.
+ok("upside: requires a stamped ref_px AND a pt_model rung — never guesses either",
   adminSrc.includes("if(!ref||!isFinite(ref.px)||ref.px<=0)return;") &&
-  adminSrc.includes("const target=ptModelRows(dd).find(r=>typeof r.prem"));
+  /ptModelRows\(dd\)\.(find|filter)\(r=>typeof r\.prem==="number"\|\|typeof r\.fl==="number"\)/.test(adminSrc));
 ok("upside: explicitly labeled math-only, not a recommendation",
   adminSrc.includes("math only, not a recommendation"));
 ok("upside: stale/never TT runs keep their honesty flag on the ranked pick",
@@ -471,6 +473,20 @@ ok("upside: shows each pick's target year — horizons are not assumed equal",
   adminSrc.includes("to ${esc(r.y)}") && adminSrc.includes("horizons differ"));
 ok("upside: surfaces the payload's own pt_model caveat (stored is never invisible)",
   adminSrc.includes("caveat:(dd.pt_model&&dd.pt_model.note)") && adminSrc.includes("shown.filter(r=>r.caveat)"));
+// v3.21 FEAT-TT-HZ: horizon selector. Nearest-rung ranking favours names already near fair
+// value; the year must be the owner's choice, and a pinned year must be honoured exactly.
+ok("hz: horizon state + setter wired to a re-render",
+  adminSrc.includes("let HORIZON=null;") && adminSrc.includes("function setHorizon(y){HORIZON=y||null;renderUpsideRank();}"));
+ok("hz: a pinned horizon selects that exact rung, never a substitute year",
+  adminSrc.includes("const target=HORIZON?rr.find(r=>r.y===HORIZON):rr[0];"));
+ok("hz: names lacking the chosen year are dropped AND counted (no silent substitution)",
+  adminSrc.includes("const noRung=HORIZON?cands.length-rows.length:0;") && adminSrc.includes("no ${esc(HORIZON)} rung"));
+ok("hz: the mixed-horizon warning flips off once every % shares one year",
+  adminSrc.includes("all % share the ${esc(HORIZON)} horizon"));
+ok("hz: selector offers nearest plus the union of available rung years",
+  adminSrc.includes('hzBtn("","nearest")') && adminSrc.includes("years.map(y=>hzBtn(y,y))"));
+ok("hz: empty-at-this-horizon renders its own message, not the no-data one",
+  adminSrc.includes("pick another horizon"));
 
 // ---- 9. market calendar — holidays across the honesty stack ---------------
 // The time-judges (isStale, marketSession/etSession, looksBehind) share ONE
