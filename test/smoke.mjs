@@ -487,6 +487,18 @@ ok("hz: selector offers nearest plus the union of available rung years",
   adminSrc.includes('hzBtn("","nearest")') && adminSrc.includes("years.map(y=>hzBtn(y,y))"));
 ok("hz: empty-at-this-horizon renders its own message, not the no-data one",
   adminSrc.includes("pick another horizon"));
+// v3.22 FEAT-TT-CAGR: a raw gap is not a return. Ranking must annualise or the longest
+// horizon always wins on arithmetic alone.
+ok("cagr: annualises the gap over time-to-year-end", adminSrc.includes("function yrsToYearEnd(y)") &&
+  adminSrc.includes("Math.pow(1+pct/100,1/t)-1"));
+ok("cagr: withholds annualisation under ~3 months (amplifies noise) and at total loss",
+  adminSrc.includes("if(!(t>=0.25)||pct<=-100)return null;"));
+ok("cagr: the board SORTS on the annualised figure, not the raw gap",
+  adminSrc.includes("const key=r=>r.ann!==null?r.ann:r.upside;") && adminSrc.includes("rows.sort((a,b)=>key(b)-key(a));"));
+ok("cagr: pick shows %/yr with the raw gap and its year kept visible",
+  adminSrc.includes("%/yr") && adminSrc.includes("% by ${esc(r.y)}"));
+ok("cagr: header states the ranking is annualised so horizons compare",
+  adminSrc.includes("ranked by %/yr so horizons compare"));
 
 // ---- 9. market calendar — holidays across the honesty stack ---------------
 // The time-judges (isStale, marketSession/etSession, looksBehind) share ONE

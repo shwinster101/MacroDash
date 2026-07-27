@@ -1134,6 +1134,23 @@ function renderNextDollar(){
    is that every % on screen shares one horizon. */
 let HORIZON=null;
 function setHorizon(y){HORIZON=y||null;renderUpsideRank();}
+/* v3.22 FEAT-TT-CAGR: the raw gap is NOT a return. A +21% target 5 months out and a +73%
+   target 2.4 years out are not comparable — as a RATE the near one is far better. Ranking
+   on the raw gap therefore always flatters the longest horizon, which made "pin 2028" look
+   like free money. Annualising is what makes any two rungs comparable, so it is what the
+   board sorts on. Within a single pinned horizon the order is unchanged (same t for every
+   name, monotonic transform); it only bites in `nearest` mode and across horizons, which
+   is exactly where the raw number was lying. */
+function yrsToYearEnd(y){
+  const end=Date.parse(y+"-12-31T21:00:00Z"); // ~4pm ET on the last session of that year
+  return (end-Date.now())/(365.25*86400000);
+}
+function annualise(pct,y){
+  const t=yrsToYearEnd(y);
+  // Under ~3 months, annualising amplifies noise into absurdity — withhold it instead.
+  if(!(t>=0.25)||pct<=-100)return null;
+  return Math.round((Math.pow(1+pct/100,1/t)-1)*1000)/10;
+}
 function renderUpsideRank(){
   const el=document.getElementById("upsideRank");if(!el)return;
   const cands=[];
@@ -1154,8 +1171,9 @@ function renderUpsideRank(){
     if(!target)return;
     const onFloor=typeof target.prem!=="number";
     const tgt=onFloor?target.fl:target.prem;
+    const up=Math.round((tgt/ref.px-1)*1000)/10;
     rows.push({sym:x.sym,lens:x.lens,tier:x.tier,rs:runState(x.lastRun),basis:onFloor?"floor":"premium",
-      upside:Math.round((tgt/ref.px-1)*1000)/10,px:ref.px,at:ref.at,tgt,y:target.y,
+      upside:up,ann:annualise(up,target.y),px:ref.px,at:ref.at,tgt,y:target.y,
       // AUDIT: the % is only as fresh as the price mark under it. The daily triage stamps
       // ref_px; when that chain breaks (it has), a weeks-old price still divides into a
       // current target and renders a confident number. >4d spans any weekend/holiday gap.
@@ -1175,7 +1193,9 @@ function renderUpsideRank(){
         :`no name yet has both a stamped ref_px (from the daily triage) and a pt_model target — nothing to rank.`)+`</div>`;
     return;
   }
-  rows.sort((a,b)=>b.upside-a.upside);
+  // Sort on the ANNUALISED figure — the only one comparable across differing horizons.
+  const key=r=>r.ann!==null?r.ann:r.upside;
+  rows.sort((a,b)=>key(b)-key(a));
   const shown=rows.slice(0,3);
   const MEDAL=["🥇","🥈","🥉"];
   const picks=shown.map((r,i)=>{
@@ -1190,8 +1210,8 @@ function renderUpsideRank(){
       title="ref $${esc(r.px)}${r.at?` (${esc(r.at)})`:""} → $${esc(r.tgt)} ${esc(r.y)} pt_model target">
       <span>${MEDAL[i]}</span><span class="sym">${esc(r.sym)}</span><span class="lens lens-${esc(r.lens)}">${esc(r.lens)}</span>
       <span class="scope">${esc(TIER_LABEL[r.tier]||r.tier)}</span>
-      <span style="color:${col};font-weight:700">${r.upside>=0?"+":""}${r.upside}%</span>
-      <span class="scope">to ${esc(r.y)} · ${esc(r.basis)}</span>${pxFlag}${flag}</span>`;
+      <span style="color:${col};font-weight:700">${r.ann!==null?`${r.ann>=0?"+":""}${r.ann}%/yr`:`${r.upside>=0?"+":""}${r.upside}%`}</span>
+      <span class="scope">${r.ann!==null?`(${r.upside>=0?"+":""}${r.upside}% by ${esc(r.y)})`:`to ${esc(r.y)}`} · ${esc(r.basis)}</span>${pxFlag}${flag}</span>`;
   }).join("");
   // AUDIT: silent truncation reads as "covered everything". State the denominator.
   const excluded=BOOK.length-rows.length;
@@ -1200,7 +1220,7 @@ function renderUpsideRank(){
   // With a horizon pinned every % shares one year, so the mixed-horizon warning must NOT
   // keep claiming otherwise — but names dropped for lacking that year have to be named.
   const noRung=HORIZON?cands.length-rows.length:0;
-  el.innerHTML=`<div class="lbl">Computed upside — ref px → ${HORIZON?"year-end "+esc(HORIZON):"nearest"} pt_model target · math only, not a recommendation (no sizing/caps/thesis weighed)</div>`+
+  el.innerHTML=`<div class="lbl">Computed upside — ANNUALISED to ${HORIZON?"year-end "+esc(HORIZON):"the nearest rung"} · ranked by %/yr so horizons compare · math only, not a recommendation (no sizing/caps/thesis weighed)</div>`+
     hz+`<div class="picks">${picks}</div>`+
     `<div class="none">ranking ${rows.length} of ${BOOK.length} names`+
     (excluded?` — ${excluded} excluded (no pt_model target or no stamped ref_px), NOT judged unattractive`:"")+
