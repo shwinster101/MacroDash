@@ -475,8 +475,10 @@ ok("upside: surfaces the payload's own pt_model caveat (stored is never invisibl
   adminSrc.includes("caveat:(dd.pt_model&&dd.pt_model.note)") && adminSrc.includes("shown.filter(r=>r.caveat)"));
 // v3.21 FEAT-TT-HZ: horizon selector. Nearest-rung ranking favours names already near fair
 // value; the year must be the owner's choice, and a pinned year must be honoured exactly.
-ok("hz: horizon state + setter wired to a re-render",
-  adminSrc.includes("let HORIZON=null;") && adminSrc.includes("function setHorizon(y){HORIZON=y||null;renderUpsideRank();}"));
+// Invariant, not literal: a HORIZON state exists, the setter normalises falsy -> null
+// (so "nearest" is one value, not several), and it triggers a re-render.
+ok("hz: horizon state + setter normalises to null and re-renders",
+  /let HORIZON=/.test(adminSrc) && /function setHorizon\(y\)\{[\s\S]{0,220}HORIZON=y\|\|null;[\s\S]{0,220}renderUpsideRank\(\);/.test(adminSrc));
 ok("hz: a pinned horizon selects that exact rung, never a substitute year",
   adminSrc.includes("const target=HORIZON?rr.find(r=>r.y===HORIZON):rr[0];"));
 ok("hz: names lacking the chosen year are dropped AND counted (no silent substitution)",
@@ -506,6 +508,24 @@ ok("ptm: a rungless pt_model still renders its reasoning (never stored-but-invis
   adminSrc.includes("if(!m.basis&&!m.note)return \"\";"));
 ok("ptm: rungless case says deliberately unranked, not overlooked",
   adminSrc.includes("deliberately UNRANKED, not overlooked"));
+// v3.23: default horizon + owner-editable floor multiple.
+ok("hz: defaults to 2028, not nearest (shared clock, past the trough year)",
+  adminSrc.includes('HZ_DEFAULT="2028"'));
+ok("hz: the horizon choice persists across visits",
+  adminSrc.includes('localStorage.setItem(HZ_KEY') && adminSrc.includes("localStorage.getItem(HZ_KEY)"));
+ok("hz: persistence distinguishes 'never set' from 'set to nearest'",
+  adminSrc.includes('v===null?HZ_DEFAULT:(v||null)'));
+ok("mult: floor multiple is owner-editable and re-computes every rung",
+  adminSrc.includes("async function saveFloorMultiple(sym)") && adminSrc.includes("m.pe_floor_multiple=v;"));
+ok("mult: an edited multiple is stamped so it cannot pass as the 18x default",
+  adminSrc.includes("m.multiple_edited=new Date().toLocaleDateString") &&
+  adminSrc.includes("not the 18× default"));
+ok("mult: validates range and rejects junk rather than writing it",
+  adminSrc.includes("isFinite(v)&&v>0&&v<=200"));
+ok("mult: clearing the field REMOVES the floor instead of silently keeping the old one",
+  adminSrc.includes("delete m.pe_floor_multiple;delete m.multiple_edited;"));
+ok("mult: editor offered on unranked names too (owner can opt one in)",
+  (adminSrc.match(/multEditor\(sym,m\)/g) || []).length >= 2);
 
 // ---- 9. market calendar — holidays across the honesty stack ---------------
 // The time-judges (isStale, marketSession/etSession, looksBehind) share ONE

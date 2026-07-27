@@ -856,7 +856,41 @@ function ptModelRows(dd){
     return {y,prem,fl,mult:earnLens?pePrem:mult,lens:earnLens?"P/E":"EV/S"};
   }).filter(r=>r.prem!==null||r.fl!==null);
 }
-function ddPtModelSec(m,dd){
+/* v3.23 FEAT-TT-MULT: the floor multiple is an ASSUMPTION, so it belongs to the owner.
+   18x (S&P average) is a sane default, not a law — a durable compounder may deserve 25x
+   and a cyclical 12x, and that judgement is exactly what the assistant must not make. The
+   edit writes to the payload, re-computes every rung in lockstep, and stamps who/when so
+   an edited multiple can never masquerade as the shipped convention. */
+function multEditor(sym,m){
+  const cur=m&&m.pe_floor_multiple;
+  return `<div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap;margin-top:6px">
+    <span style="color:var(--dim);font-size:10px;letter-spacing:.1em">FLOOR MULTIPLE</span>
+    <input id="fFloorMult" type="number" step="0.5" min="1" max="200" inputmode="decimal"
+      value="${cur!=null?esc(cur):""}" placeholder="18" style="width:78px"/>
+    <span style="color:var(--dim);font-size:10px">× FY+1 EPS</span>
+    <button class="act" onclick="saveFloorMultiple('${esc(sym)}')">SAVE</button>
+    ${m&&m.multiple_edited?`<span class="pill warn">edited ${esc(m.multiple_edited)} — not the 18× default</span>`:""}
+  </div>`;
+}
+async function saveFloorMultiple(sym){
+  const x=find(sym);if(!x||!x.deepDive)return;
+  const el=document.getElementById("fFloorMult");
+  const raw=(el&&el.value||"").trim();
+  x.deepDive.pt_model=x.deepDive.pt_model||{};
+  const m=x.deepDive.pt_model;
+  if(raw===""){ // clearing removes the floor entirely rather than silently keeping the old one
+    delete m.pe_floor_multiple;delete m.multiple_edited;
+  }else{
+    const v=parseFloat(raw);
+    if(!(isFinite(v)&&v>0&&v<=200))return toast("Floor multiple must be a number between 0 and 200");
+    if(v===m.pe_floor_multiple)return toast("Unchanged");
+    m.pe_floor_multiple=v;
+    m.multiple_edited=new Date().toLocaleDateString("en-CA",{timeZone:"America/New_York"});
+  }
+  await persist();
+  renderDeepDive(sym);
+}
+function ddPtModelSec(m,dd,sym){
   if(!m||typeof m!=="object")return "";
   const rows=ptModelRows(dd);
   // A pt_model that yields NO rungs is the deliberately-unranked case (pre-profit names
@@ -868,7 +902,9 @@ function ddPtModelSec(m,dd){
     return `<div class="dd-sec"><div class="lbl">PT ladder — none computed${m.source?` · ${esc(m.source)}`:""}</div>`+
       `<div style="color:var(--amber);font-size:11.5px">⊘ no rung is computable from these inputs — this name is deliberately UNRANKED, not overlooked</div>`+
       (m.basis?`<div style="color:var(--dim);font-size:10px;margin-top:4px">${esc(m.basis)}</div>`:"")+
-      (m.note?`<div style="color:var(--amber);font-size:10.5px;margin-top:3px">${esc(m.note)}</div>`:"")+`</div>`;
+      (m.note?`<div style="color:var(--amber);font-size:10.5px;margin-top:3px">${esc(m.note)}</div>`:"")+
+      // Setting a multiple here is how the owner OPTS an unranked name in — their call, not the assistant's.
+      multEditor(sym,m)+`</div>`;
   }
   const pe=+m.pe_floor_multiple||null;
   const shD=(s=>typeof s==="number"?s+"M"
@@ -884,6 +920,7 @@ function ddPtModelSec(m,dd){
   t+=`</table>`;
   return `<div class="dd-sec"><div class="lbl">PT ladder — computed from inputs${m.source?` · ${esc(m.source)}`:""}</div>${t}
     <div style="color:var(--dim);font-size:10px;margin-top:4px">premium = ${earn?"mult × FY+1 EPS (earnings lens — already profitable)":`(mult × FY+1 rev + net cash) ÷ shares · shares ${esc(shD)}`} · floor = ${pe?esc(pe):"—"}× FY+1 EPS · n/m = EPS ≤ 0 · computed — edit inputs, not rows</div>`+
+    multEditor(sym,m)+
     (m.basis?`<div style="color:var(--dim);font-size:10px;margin-top:2px">${esc(m.basis)}</div>`:"")+
     (m.note?`<div style="color:var(--amber);font-size:10.5px;margin-top:3px">${esc(m.note)}</div>`:"")+`</div>`;
 }
@@ -969,7 +1006,7 @@ function renderDeepDive(sym){
       <div class="dd-kv"><div class="k">3 · multiple</div><div>${esc(pj.multiple.value)}× ${esc(pj.multiple.basis||"")}</div></div>
       <div style="margin-top:6px;font-size:11.5px">${projLine(pj)}</div></div>`;}
   h+=ddPtSec(dd.pt_ladder);
-  h+=ddPtModelSec(dd.pt_model,dd);
+  h+=ddPtModelSec(dd.pt_model,dd,x.sym);
   h+=ddPtConsensusSec(dd.pt_consensus);
   h+=ddConsensusSec(dd.consensus);
   h+=ddGatesSec(dd.gates);
@@ -1142,8 +1179,19 @@ function renderNextDollar(){
    HORIZON=null keeps the nearest-rung behaviour. A name with no rung at the chosen year is
    EXCLUDED and counted, never silently substituted with a different year — the whole point
    is that every % on screen shares one horizon. */
-let HORIZON=null;
-function setHorizon(y){HORIZON=y||null;renderUpsideRank();}
+/* v3.23: DEFAULT HORIZON = 2028, not nearest. "Nearest" is ~5 months out, still mixes
+   horizons (a name whose near rung is n/m falls through to a later year), and anchors on
+   trough years — UBER's FY2026 EPS is -35.7% YoY, so its 2026 rung measures the hole as
+   much as the opportunity. Annualising a 5-month gap also assumes it closes exactly at
+   year-end, which is a strong claim. 2028 gives every ranked name one shared clock over a
+   realistic hold. The choice persists, so overriding it sticks. */
+const HZ_KEY="tt:hz",HZ_DEFAULT="2028";
+let HORIZON=(()=>{try{const v=localStorage.getItem(HZ_KEY);return v===null?HZ_DEFAULT:(v||null);}catch(_e){return HZ_DEFAULT;}})();
+function setHorizon(y){
+  HORIZON=y||null;
+  try{localStorage.setItem(HZ_KEY,HORIZON||"");}catch(_e){}
+  renderUpsideRank();
+}
 /* v3.22 FEAT-TT-CAGR: the raw gap is NOT a return. A +21% target 5 months out and a +73%
    target 2.4 years out are not comparable — as a RATE the near one is far better. Ranking
    on the raw gap therefore always flatters the longest horizon, which made "pin 2028" look
