@@ -376,6 +376,18 @@ ok("dd: deepDive payload passes server validateBook (passthrough is load-bearing
 ok("dd: contract requires thesis_version + updated (fail-closed honesty chip)",
   adminSrc.includes('"thesis_version (string) is required"') && adminSrc.includes("the honesty chip depends on it"));
 ok("dd: hinge states pinned to green|amber|red|unknown", adminSrc.includes("green|amber|red|unknown"));
+// v3.25: hinges collapse by default (11 names now carry them), but collapsing is only
+// safe because the summary carries the signal — a hidden red would be stored-but-invisible.
+ok("hinge: collapsed behind a details, not rendered open on every tab",
+  adminSrc.includes('<details class="schema dd-sec"'));
+ok("hinge: summary tallies every state so the signal survives the collapse",
+  adminSrc.includes("HINGES (${dd.hinges.length})") && adminSrc.includes("red</span>") && adminSrc.includes("unknown</span>"));
+ok("hinge: summary is coloured by the WORST state present",
+  adminSrc.includes('const worst=n.red?"var(--red)":n.amber?"var(--amber)"'));
+ok("hinge: a red hinge force-opens the section rather than hiding behind a chevron",
+  adminSrc.includes('${n.red?" open":""}'));
+ok("hinge: unrecognised states fall into unknown, never silently into green",
+  (adminSrc.match(/\["green","amber","red"\]\.includes\(g\.state\)/g) || []).length >= 2);
 ok("dd: per-payload size cap present (8KB, under the 64KB book PUT limit)", adminSrc.includes("DD_MAX=8*1024"));
 ok("dd: past key-dates flag 'passed — re-confirm' (the FOMC lesson)", adminSrc.includes("passed — re-confirm"));
 ok("dd: rendered payload strings are HTML-escaped (esc used in the deep renderer)",

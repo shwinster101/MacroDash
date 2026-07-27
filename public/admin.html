@@ -1010,12 +1010,26 @@ function renderDeepDive(sym){
   h+=ddPtConsensusSec(dd.pt_consensus);
   h+=ddConsensusSec(dd.consensus);
   h+=ddGatesSec(dd.gates);
+  /* v3.25: hinges COLLAPSED by default. Every ranked name now carries them, and rendering
+     11 open lists would bury the ladder each tab exists to show. The collapse is only safe
+     because the summary carries the SIGNAL: a per-state tally, coloured by the WORST state
+     present, so a red hinge is visible without expanding. Hiding a red behind a neutral
+     "▸ Hinges" would be exactly the stored-but-invisible failure this renderer forbids. */
   if(Array.isArray(dd.hinges)&&dd.hinges.length){
     const dot={green:'<span class="st" style="color:var(--green)">●</span>',amber:'<span class="st" style="color:var(--amber)">●</span>',
       red:'<span class="st" style="color:var(--red)">●</span>',unknown:'<span class="st" style="color:var(--dim)">○</span>'};
-    h+=`<div class="dd-sec"><div class="lbl">Hinges — the tracked fields the thesis turns on</div>`+
-      dd.hinges.map(g=>`<div class="dd-hinge">${dot[g.state||"unknown"]}<b>${esc(g.label||g.key||g.id)}</b>`+
-        `${(g.note||g.role)?`<span style="color:var(--slate)">— ${esc(g.note||g.role)}</span>`:""}${g.asOf?`<span style="color:var(--dim);font-size:9px">as of ${esc(g.asOf)}</span>`:""}</div>`).join("")+`</div>`;
+    const n={green:0,amber:0,red:0,unknown:0};
+    dd.hinges.forEach(g=>{n[["green","amber","red"].includes(g.state)?g.state:"unknown"]++;});
+    const worst=n.red?"var(--red)":n.amber?"var(--amber)":n.green?"var(--green)":"var(--dim)";
+    const tally=[n.red&&`<span style="color:var(--red)">● ${n.red} red</span>`,
+      n.amber&&`<span style="color:var(--amber)">● ${n.amber} amber</span>`,
+      n.green&&`<span style="color:var(--green)">● ${n.green} green</span>`,
+      n.unknown&&`<span style="color:var(--dim)">○ ${n.unknown} unknown</span>`].filter(Boolean).join(" · ");
+    h+=`<details class="schema dd-sec"${n.red?" open":""}>
+      <summary style="color:${worst}">HINGES (${dd.hinges.length}) · ${tally}${n.red?" — expanded: a red hinge is open":""}</summary>
+      <div style="color:var(--dim);font-size:10px;margin:4px 0 6px">the tracked fields the thesis turns on — what would change your mind, not what it is worth</div>`+
+      dd.hinges.map(g=>`<div class="dd-hinge">${dot[["green","amber","red"].includes(g.state)?g.state:"unknown"]}<b>${esc(g.label||g.key||g.id)}</b>`+
+        `${(g.note||g.role)?`<span style="color:var(--slate)">— ${esc(g.note||g.role)}</span>`:""}${g.asOf?`<span style="color:var(--dim);font-size:9px">as of ${esc(g.asOf)}</span>`:""}</div>`).join("")+`</details>`;
   }
   h+=ddKvSec("Leading indicators",dd.leading_indicators);
   h+=ddKvSec("Certification probabilities",dd.cert_probabilities);
