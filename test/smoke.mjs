@@ -4,6 +4,7 @@
 // real dashboard MOCK_DATA. The cron worker + /api/fred are no longer consumed by
 // the dashboard, so their internals belong to the worker's own suite, not this gate.
 
+import { existsSync } from "node:fs";
 import { readFileSync } from "node:fs";
 import { mergeLiveOverMock, SOURCES, isStale, cadenceOf, parseObsDate, isMarketHoliday, MARKET_HOLIDAYS } from "../src/sources.js";
 import { computeFiveWhys } from "../src/fiveWhys.js";
@@ -473,7 +474,28 @@ ok("upside: explicitly labeled math-only, not a recommendation",
 ok("upside: stale/never TT runs keep their honesty flag on the ranked pick",
   adminSrc.includes('r.rs.k==="never"?`<span class="bad2">○ no TT run on record</span>'));
 ok("upside: DOM anchor separate from the human NEXT DOLLAR widget", adminSrc.includes('id="upsideRank"'));
-ok("upside: wired into the render pipeline", adminSrc.includes("renderNextDollar();renderUpsideRank();renderCoverage()"));
+// Invariant: both board strips render in the same pipeline pass (order, not exact string).
+ok("upside: wired into the render pipeline",
+  /renderNextDollar\(\);\s*renderUpsideRank\(\);[\s\S]{0,40}renderCoverage\(\)/.test(adminSrc));
+// v3.26 FEAT-TT-BINCAL: scheduled binaries surface board-level, not one tab at a time.
+ok("bincal: aggregates future key_dates across the whole book",
+  adminSrc.includes("function renderBinaryCal()") && adminSrc.includes("x.deepDive&&x.deepDive.key_dates"));
+ok("bincal: past dates are excluded from the queue", adminSrc.includes("k.date<today)return;"));
+ok("bincal: flags the no-new-adds window without enforcing it",
+  adminSrc.includes("const BINARY_WINDOW_D=10;") && adminSrc.includes("reported, not enforced"));
+ok("bincal: wired into the render pipeline", adminSrc.includes("renderBinaryCal();"));
+// v3.26 FEAT-TT-FRAMEWORK: the methodology doc is PRIVATE — KV behind the PIN, never the
+// repo, because shwinster101/MacroDash is public and this is the owner's whole system.
+const fwSrc = readFileSync(new URL("../functions/api/framework.js", import.meta.url), "utf8");
+ok("fw: read AND write both require auth (unlike prices, this content is secret)",
+  (fwSrc.match(/const auth = await authorize\(request, env\);/g) || []).length === 2);
+ok("fw: separate KV key, not crammed into the 64KB book", fwSrc.includes('const KEY = "tt:framework:v1"'));
+ok("fw: keeps a rollback copy before overwriting a doctrine revision",
+  fwSrc.includes('KEY + ":prev"'));
+ok("fw: absent record is a normal empty state, not an error", fwSrc.includes("rec || { empty: true }"));
+ok("fw: the framework document is NOT committed to the public repo",
+  !existsSync(new URL("../TT_FRAMEWORK_MACRODASH_INTEGRATION.md", import.meta.url)) &&
+  !existsSync(new URL("../docs/TT_FRAMEWORK_MACRODASH_INTEGRATION.md", import.meta.url)));
 // v3.18.1 audit patches — the widget ranks a SUBSET, off a price mark that can go stale,
 // across horizons that can differ. Each of those must be visible, not inferred.
 ok("upside: states the denominator — no silent truncation of the ranked set",

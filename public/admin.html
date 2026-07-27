@@ -220,6 +220,7 @@
         <h2>Tier Board &nbsp;·&nbsp; click any ticker to open its TT Card</h2>
         <div class="nd" id="nextDollar"></div>
         <div class="nd" id="upsideRank" style="margin-top:8px"></div>
+        <div class="nd" id="binaryCal" style="margin-top:8px"></div>
         <div class="cov" id="coverage"></div>
         <div id="board"></div>
       </div>
@@ -604,7 +605,7 @@ function render(){
   const cc=document.createElement("div");cc.className="chips";
   CUT.forEach(s=>{const c=document.createElement("div");c.className="chip";c.innerHTML=`<span class="sym">${s}</span>`;cc.appendChild(c);});
   cut.appendChild(cc);b.appendChild(cut);
-  renderNextDollar();renderUpsideRank();renderCoverage();renderTabs();
+  renderNextDollar();renderUpsideRank();renderBinaryCal();renderCoverage();renderTabs();
 }
 
 /* ═══════════ DEEP-DIVE TABS (FEAT-TT-DD v3.12) ═══════════ */
@@ -1323,6 +1324,45 @@ function renderUpsideRank(){
     (()=>{const l=rows.filter(r=>r.live).length;
       return l===rows.length?` · all prices LIVE`:l?` · ${l} live / ${rows.length-l} on stamped marks`:` · all prices are stamped marks, not live`;})()+
     ` · "floor" = 18× FY+1 EPS (S&P-average benchmark, no re-rating assumed); "premium" = the owner's asserted multiple</div>`+caveats;
+}
+/* v3.26 FEAT-TT-BINCAL: the binary calendar. Earnings dates lived inside individual
+   deep-dive payloads, so a print surfaced only when you happened to open that tab — and
+   the no-new-adds rule is worthless if you learn about the binary after sizing. This
+   aggregates every future key_date across the book into one dated queue.
+   NO-NEW-ADDS WINDOW = 10 days: inside it a name is flagged, because the rule the owner
+   has applied all month (MU, VRT, AUR, SOFI, UBER) is "no new shares into a binary ~9
+   days out". The window is shown, never enforced — this board reports, it does not trade. */
+const BINARY_WINDOW_D=10;
+function renderBinaryCal(){
+  const el=document.getElementById("binaryCal");if(!el)return;
+  const today=new Date().toLocaleDateString("en-CA",{timeZone:"America/New_York"});
+  const ev=[];
+  BOOK.forEach(x=>{
+    const kd=x.deepDive&&x.deepDive.key_dates;
+    if(!Array.isArray(kd))return;
+    kd.forEach(k=>{
+      if(!k||!/^\d{4}-\d{2}-\d{2}$/.test(k.date)||k.date<today)return;   // past dates belong to the tab, not the queue
+      const d=Math.round((Date.parse(k.date+"T12:00:00Z")-Date.parse(today+"T12:00:00Z"))/86400000);
+      ev.push({sym:x.sym,lens:x.lens,date:k.date,d,label:k.label||k.event||"",inWindow:d<=BINARY_WINDOW_D});
+    });
+  });
+  if(!ev.length){
+    el.innerHTML=`<div class="lbl">Binary calendar</div><div class="none">no future key dates on any payload — add them as prints get scheduled.</div>`;
+    return;
+  }
+  ev.sort((a,b)=>a.d-b.d);
+  const inW=ev.filter(e=>e.inWindow).length;
+  const rows=ev.slice(0,6).map(e=>{
+    const col=e.inWindow?"var(--red)":e.d<=30?"var(--amber)":"var(--dim)";
+    return `<span class="pick" onclick="switchTab('${esc(e.sym)}')" title="${esc(e.label)}">
+      <span class="sym">${esc(e.sym)}</span>
+      <span style="color:${col};font-weight:700">${e.d===0?"TODAY":e.d+"d"}</span>
+      <span class="scope">${esc(e.date)}</span>
+      ${e.inWindow?`<span class="bad2">⛔ no-new-adds</span>`:""}</span>`;
+  }).join("");
+  el.innerHTML=`<div class="lbl">Binary calendar${inW?` · <span style="color:var(--red)">${inW} inside the ${BINARY_WINDOW_D}d no-new-adds window</span>`:` · none inside ${BINARY_WINDOW_D}d`}</div>`+
+    `<div class="picks">${rows}</div>`+
+    `<div class="none">${ev.length} future key date${ev.length===1?"":"s"} across the book${ev.length>6?` · showing the nearest 6`:""} · reported, not enforced — the board never blocks an order</div>`;
 }
 /* FEAT-TT-RUN: book-coverage rollup — the honest tell, mirroring Signal Quality.
    `head` folds into the stale COUNT (3 buckets) while keeping its own red chip marker. */
