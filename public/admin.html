@@ -859,7 +859,17 @@ function ptModelRows(dd){
 function ddPtModelSec(m,dd){
   if(!m||typeof m!=="object")return "";
   const rows=ptModelRows(dd);
-  if(!rows.length)return "";
+  // A pt_model that yields NO rungs is the deliberately-unranked case (pre-profit names
+  // where 18x a first-profit token year would be a precise-looking non-answer). The early
+  // return hid the payload's own explanation of WHY — stored but invisible, which is the
+  // one thing this renderer must never do. Render the reasoning instead.
+  if(!rows.length){
+    if(!m.basis&&!m.note)return "";
+    return `<div class="dd-sec"><div class="lbl">PT ladder — none computed${m.source?` · ${esc(m.source)}`:""}</div>`+
+      `<div style="color:var(--amber);font-size:11.5px">⊘ no rung is computable from these inputs — this name is deliberately UNRANKED, not overlooked</div>`+
+      (m.basis?`<div style="color:var(--dim);font-size:10px;margin-top:4px">${esc(m.basis)}</div>`:"")+
+      (m.note?`<div style="color:var(--amber);font-size:10.5px;margin-top:3px">${esc(m.note)}</div>`:"")+`</div>`;
+  }
   const pe=+m.pe_floor_multiple||null;
   const shD=(s=>typeof s==="number"?s+"M"
     :s&&typeof s==="object"?(ks=>ks.length?s[ks[0]]+"M→"+s[ks[ks.length-1]]+"M":"—")(Object.keys(s).sort())

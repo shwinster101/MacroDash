@@ -499,6 +499,13 @@ ok("cagr: pick shows %/yr with the raw gap and its year kept visible",
   adminSrc.includes("%/yr") && adminSrc.includes("% by ${esc(r.y)}"));
 ok("cagr: header states the ranking is annualised so horizons compare",
   adminSrc.includes("ranked by %/yr so horizons compare"));
+// v3.22.1: a pt_model with no computable rung is the deliberately-UNRANKED case. The early
+// return hid the payload's own explanation — stored but invisible, the cardinal sin here.
+ok("ptm: a rungless pt_model still renders its reasoning (never stored-but-invisible)",
+  adminSrc.includes("no rung is computable from these inputs") &&
+  adminSrc.includes("if(!m.basis&&!m.note)return \"\";"));
+ok("ptm: rungless case says deliberately unranked, not overlooked",
+  adminSrc.includes("deliberately UNRANKED, not overlooked"));
 
 // ---- 9. market calendar — holidays across the honesty stack ---------------
 // The time-judges (isStale, marketSession/etSession, looksBehind) share ONE
