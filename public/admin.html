@@ -843,10 +843,17 @@ function ptModelRows(dd){
   return years.map(y=>{
     const fwd=String(+y+1);
     const mult=schedAt(m.ev_s_multiple,y),sh=schedAt(m.share_count_M,y),nc=schedAt(m.net_cash_B,y)||0;
-    const prem=(mult>0&&sh>0&&rev[fwd]!=null)?fmt((mult*rev[fwd]+nc)*1000/sh):null;
     const e=eps[fwd];
+    // Two lenses, chosen per name. The EV/S premium was built for pre-profit compounders
+    // (NBIS/JOBY); forcing it onto an already-profitable name (UBER at ~18x trailing)
+    // prices the wrong thing. pe_premium_multiple opts a name into the earnings lens —
+    // absent, behavior is exactly as before, so existing payloads are untouched.
+    const pePrem=schedAt(m.pe_premium_multiple,y);
+    const earnLens=pePrem>0&&typeof e==="number"&&e>0;
+    const prem=earnLens?fmt(pePrem*e)
+      :(mult>0&&sh>0&&rev[fwd]!=null)?fmt((mult*rev[fwd]+nc)*1000/sh):null;
     const fl=(pe>0&&typeof e==="number")?(e>0?fmt(pe*e):"n/m"):null;
-    return {y,prem,fl,mult};
+    return {y,prem,fl,mult:earnLens?pePrem:mult,lens:earnLens?"P/E":"EV/S"};
   }).filter(r=>r.prem!==null||r.fl!==null);
 }
 function ddPtModelSec(m,dd){
@@ -857,15 +864,16 @@ function ddPtModelSec(m,dd){
   const shD=(s=>typeof s==="number"?s+"M"
     :s&&typeof s==="object"?(ks=>ks.length?s[ks[0]]+"M→"+s[ks[ks.length-1]]+"M":"—")(Object.keys(s).sort())
     :"—")(m.share_count_M);
+  const earn=rows.some(r=>r.lens==="P/E");
   let t=`<table class="dd-pt"><tr><th>year-end</th><th>premium</th><th>mult</th><th>floor${pe?" "+esc(pe)+"×":""}</th></tr>`;
   rows.forEach(r=>{
     t+=`<tr><th>${esc(r.y)}</th><td>${r.prem!=null?"$"+esc(r.prem):"—"}</td>`+
-      `<td style="color:var(--dim)">${r.mult>0?esc(r.mult)+"×":"—"}</td>`+
+      `<td style="color:var(--dim)">${r.mult>0?esc(r.mult)+"×"+(earn?" "+esc(r.lens):""):"—"}</td>`+
       `<td style="color:var(--dim)">${r.fl==="n/m"?"n/m":r.fl!=null?"$"+esc(r.fl):"—"}</td></tr>`;
   });
   t+=`</table>`;
   return `<div class="dd-sec"><div class="lbl">PT ladder — computed from inputs${m.source?` · ${esc(m.source)}`:""}</div>${t}
-    <div style="color:var(--dim);font-size:10px;margin-top:4px">premium = (mult × FY+1 rev + net cash) ÷ shares · shares ${esc(shD)} · floor = ${pe?esc(pe):"—"}× FY+1 EPS · n/m = EPS ≤ 0 · computed — edit inputs, not rows</div>`+
+    <div style="color:var(--dim);font-size:10px;margin-top:4px">premium = ${earn?"mult × FY+1 EPS (earnings lens — already profitable)":`(mult × FY+1 rev + net cash) ÷ shares · shares ${esc(shD)}`} · floor = ${pe?esc(pe):"—"}× FY+1 EPS · n/m = EPS ≤ 0 · computed — edit inputs, not rows</div>`+
     (m.basis?`<div style="color:var(--dim);font-size:10px;margin-top:2px">${esc(m.basis)}</div>`:"")+
     (m.note?`<div style="color:var(--amber);font-size:10.5px;margin-top:3px">${esc(m.note)}</div>`:"")+`</div>`;
 }
