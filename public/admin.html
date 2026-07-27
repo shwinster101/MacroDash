@@ -1243,8 +1243,31 @@ async function loadQuotes(){
     renderUpsideRank();
   }catch(_e){/* stamped ref_px remains in force — never break the board on a quote feed */}
 }
+/* v3.27 FEAT-TT-AGREE: the two stories, married but never merged. The upside math answers
+   "how big is the gap if estimates land"; a TT framework run answers "is the path across it
+   real". Blending them into one number would average away the disagreement that IS the
+   information (doctrine: engine disagreement = WAIT — CELH ranked 🥇 on gap the same day it
+   scored C on quality). So each chip carries its TT verdict, and a NEXT DOLLAR line lights
+   ONLY when both stories agree: positive gap AND composite >= B AND R/R not failing AND no
+   binary inside the no-new-adds window. Anything else renders as WAIT with the blockers
+   named. Reads payload fields harness runs already write; reports, never enforces. */
+function ttInfo(dd){
+  const c=dd&&dd.composite;
+  let score=null,tier=null;
+  if(c&&typeof c==="object"){
+    const m=String(c.score||"").match(/(\d+(?:\.\d+)?)/);if(m)score=parseFloat(m[1]);
+    const t=String(c.capped_tier||c.raw_tier||"").match(/^([SABC])\b/);if(t)tier=t[1];
+  }else if(dd&&dd.status_flags&&typeof dd.status_flags.composite==="string"){
+    const m=dd.status_flags.composite.match(/(\d+(?:\.\d+)?)/);if(m)score=parseFloat(m[1]);
+  }
+  if(score===null&&!tier)return null;
+  // Tier from score via the framework map when no explicit tier was recorded.
+  if(!tier&&score!==null)tier=score>=8.5?"S":score>=7?"A":score>=5.5?"B":"C";
+  return {score,tier};
+}
 function renderUpsideRank(){
   const el=document.getElementById("upsideRank");if(!el)return;
+  const todayET=new Date().toLocaleDateString("en-CA",{timeZone:"America/New_York"});
   const cands=[];
   BOOK.forEach(x=>{
     const dd=x.deepDive;if(!dd)return;
@@ -1266,8 +1289,19 @@ function renderUpsideRank(){
     const onFloor=typeof target.prem!=="number";
     const tgt=onFloor?target.fl:target.prem;
     const up=Math.round((tgt/ref.px-1)*1000)/10;
+    // FEAT-TT-AGREE inputs: verdict, R/R text, red hinges, nearest future binary.
+    const tt=ttInfo(dd);
+    const rrFail=/FAILS/i.test((dd.technicals&&dd.technicals.rr)||"");
+    const redH=Array.isArray(dd.hinges)?dd.hinges.filter(g=>g.state==="red").length:0;
+    let kdSoon=null;
+    (Array.isArray(dd.key_dates)?dd.key_dates:[]).forEach(k=>{
+      if(!k||!/^\d{4}-\d{2}-\d{2}$/.test(k.date)||k.date<todayET)return;
+      const dgap=Math.round((Date.parse(k.date+"T12:00:00Z")-Date.parse(todayET+"T12:00:00Z"))/86400000);
+      if(kdSoon===null||dgap<kdSoon)kdSoon=dgap;
+    });
     rows.push({sym:x.sym,lens:x.lens,tier:x.tier,rs:runState(x.lastRun),basis:onFloor?"floor":"premium",
       upside:up,ann:annualise(up,target.y),px:ref.px,at:ref.at,tgt,y:target.y,
+      tt,rrFail,redH,kdSoon,
       live:!!ref.live,chg:ref.chg,
       // AUDIT: the % is only as fresh as the price mark under it. The daily triage stamps
       // ref_px; when that chain breaks (it has), a weeks-old price still divides into a
@@ -1306,7 +1340,13 @@ function renderUpsideRank(){
       <span>${MEDAL[i]}</span><span class="sym">${esc(r.sym)}</span><span class="lens lens-${esc(r.lens)}">${esc(r.lens)}</span>
       <span class="scope">${esc(TIER_LABEL[r.tier]||r.tier)}</span>
       <span style="color:${col};font-weight:700">${r.ann!==null?`${r.ann>=0?"+":""}${r.ann}%/yr`:`${r.upside>=0?"+":""}${r.upside}%`}</span>
-      <span class="scope">${r.ann!==null?`(${r.upside>=0?"+":""}${r.upside}% by ${esc(r.y)})`:`to ${esc(r.y)}`} · ${esc(r.basis)}</span>${pxFlag}${flag}${r.live?`<span class="scope" style="color:var(--green)">live $${esc(r.px)}${r.chg!=null?` ${r.chg>=0?"+":""}${r.chg}%`:""}</span>`:`<span class="scope">stamped $${esc(r.px)}</span>`}</span>`;
+      <span class="scope">${r.ann!==null?`(${r.upside>=0?"+":""}${r.upside}% by ${esc(r.y)})`:`to ${esc(r.y)}`} · ${esc(r.basis)}</span>
+      ${(()=>{ // TT verdict tag — the quality story beside the gap story, never blended into it
+        if(!r.tt)return `<span class="scope">TT —</span>`;
+        const lab=r.tt.score!==null?r.tt.score.toFixed(1):r.tt.tier;
+        const col=r.tt.tier==="C"?"var(--red)":(r.tt.score!==null&&r.tt.score>=7)||r.tt.tier==="S"||r.tt.tier==="A"?"var(--green)":"var(--amber)";
+        return `<span style="color:${col};font-size:9.5px;font-weight:700">TT ${esc(lab)}</span>${r.redH?`<span class="bad2">● ${r.redH} red</span>`:""}`;
+      })()}${pxFlag}${flag}${r.live?`<span class="scope" style="color:var(--green)">live $${esc(r.px)}${r.chg!=null?` ${r.chg>=0?"+":""}${r.chg}%`:""}</span>`:`<span class="scope">stamped $${esc(r.px)}</span>`}</span>`;
   }).join("");
   // AUDIT: silent truncation reads as "covered everything". State the denominator.
   const excluded=BOOK.length-rows.length;
@@ -1323,7 +1363,27 @@ function renderUpsideRank(){
     (HORIZON?` · all % share the ${esc(HORIZON)} horizon`:` · horizons differ, each % is to its own year`)+
     (()=>{const l=rows.filter(r=>r.live).length;
       return l===rows.length?` · all prices LIVE`:l?` · ${l} live / ${rows.length-l} on stamped marks`:` · all prices are stamped marks, not live`;})()+
-    ` · "floor" = 18× FY+1 EPS (S&P-average benchmark, no re-rating assumed); "premium" = the owner's asserted multiple</div>`+caveats;
+    ` · "floor" = 18× FY+1 EPS (S&P-average benchmark, no re-rating assumed); "premium" = the owner's asserted multiple</div>`+caveats+
+    (()=>{ // FEAT-TT-AGREE: light only when BOTH stories say yes; otherwise WAIT, blockers named.
+      const why=r=>{
+        if(!(r.upside>0))return "no gap";
+        if(!r.tt)return "unscored — no TT run";
+        if(r.tt.tier==="C"||(r.tt.score!==null&&r.tt.score<5.5))return `TT ${r.tt.score!==null?r.tt.score.toFixed(1):"C"} — quality fails`;
+        if(r.rrFail)return "R/R fails its floor";
+        if(r.kdSoon!==null&&r.kdSoon<=BINARY_WINDOW_D)return `binary ${r.kdSoon}d — no-new-adds`;
+        return null;};
+      const q=rows.filter(r=>why(r)===null);
+      if(q.length){const b=q[0];
+        return `<div style="margin-top:6px;padding:5px 8px;border:1px solid var(--green);border-radius:6px;font-size:11px">`+
+          `<span style="color:var(--green);font-weight:700">🎯 NEXT DOLLAR — both stories agree:</span> `+
+          `<span class="sym" style="color:var(--green);cursor:pointer" onclick="openCard('${esc(b.sym)}')">${esc(b.sym)}</span> `+
+          `${b.ann!==null?`${b.ann>=0?"+":""}${b.ann}%/yr`:""} · TT ${esc(b.tt.score!==null?b.tt.score.toFixed(1):b.tt.tier)}`+
+          `${q.length>1?` <span class="scope">(then ${q.slice(1,3).map(r=>esc(r.sym)).join(", ")})</span>`:""}</div>`;}
+      const near=rows.slice(0,4).map(r=>`${esc(r.sym)}: ${esc(why(r))}`).join(" · ");
+      return `<div style="margin-top:6px;padding:5px 8px;border:1px solid var(--amber);border-radius:6px;font-size:11px">`+
+        `<span style="color:var(--amber);font-weight:700">⏸ NEXT DOLLAR: WAIT</span> — no name passes gap + quality + R/R + binary window. `+
+        `<span class="scope">${near}</span> · disagreement is information, not a discount</div>`;
+    })();
 }
 /* v3.26 FEAT-TT-BINCAL: the binary calendar. Earnings dates lived inside individual
    deep-dive payloads, so a print surfaced only when you happened to open that tab — and

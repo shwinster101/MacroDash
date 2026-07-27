@@ -484,6 +484,21 @@ ok("bincal: past dates are excluded from the queue", adminSrc.includes("k.date<t
 ok("bincal: flags the no-new-adds window without enforcing it",
   adminSrc.includes("const BINARY_WINDOW_D=10;") && adminSrc.includes("reported, not enforced"));
 ok("bincal: wired into the render pipeline", adminSrc.includes("renderBinaryCal();"));
+// v3.27 FEAT-TT-AGREE: gap story and quality story married, never merged.
+ok("agree: ttInfo extracts a verdict from harness-written fields (object or prose)",
+  adminSrc.includes("function ttInfo(dd)") && adminSrc.includes("dd.status_flags.composite"));
+ok("agree: tier derived from score via the framework map when only a score exists",
+  adminSrc.includes('score>=8.5?"S":score>=7?"A":score>=5.5?"B":"C"'));
+ok("agree: every chip carries its TT verdict, unscored shown as TT — (never blank)",
+  adminSrc.includes('`<span class="scope">TT —</span>`') && adminSrc.includes("TT ${esc(lab)}"));
+ok("agree: red hinge count rides the chip beside the verdict",
+  adminSrc.includes("● ${r.redH} red"));
+ok("agree: NEXT DOLLAR lights only on gap AND quality AND R/R AND binary window",
+  adminSrc.includes("both stories agree") && adminSrc.includes('"no gap"') &&
+  adminSrc.includes("quality fails") && adminSrc.includes("R/R fails its floor") &&
+  adminSrc.includes("no-new-adds"));
+ok("agree: disagreement renders as WAIT with blockers named, not a blended score",
+  adminSrc.includes("NEXT DOLLAR: WAIT") && adminSrc.includes("disagreement is information, not a discount"));
 // v3.26 FEAT-TT-FRAMEWORK: the methodology doc is PRIVATE — KV behind the PIN, never the
 // repo, because shwinster101/MacroDash is public and this is the owner's whole system.
 const fwSrc = readFileSync(new URL("../functions/api/framework.js", import.meta.url), "utf8");
