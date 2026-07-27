@@ -453,8 +453,8 @@ ok("upside: ranks ALL tiers, not just the watchlist queue (S/A/B/DEF included)",
   /BOOK\.forEach\(x=>\{\s*const dd=x\.deepDive/.test(adminSrc));
 // Pin the two INVARIANTS (a usable ref_px, and at least one usable rung), not the exact
 // expression — the horizon refactor moved this code and a literal match broke on it.
-ok("upside: requires a stamped ref_px AND a pt_model rung — never guesses either",
-  adminSrc.includes("if(!ref||!isFinite(ref.px)||ref.px<=0)return;") &&
+ok("upside: requires a usable price AND a pt_model rung — never guesses either",
+  /if\(!\w+\|\|!isFinite\(\w+\.px\)\|\|\w+\.px<=0\)return;/.test(adminSrc) &&
   /ptModelRows\(dd\)\.(find|filter)\(r=>typeof r\.prem==="number"\|\|typeof r\.fl==="number"\)/.test(adminSrc));
 ok("upside: explicitly labeled math-only, not a recommendation",
   adminSrc.includes("math only, not a recommendation"));
@@ -526,6 +526,28 @@ ok("mult: clearing the field REMOVES the floor instead of silently keeping the o
   adminSrc.includes("delete m.pe_floor_multiple;delete m.multiple_edited;"));
 ok("mult: editor offered on unranked names too (owner can opt one in)",
   (adminSrc.match(/multEditor\(sym,m\)/g) || []).length >= 2);
+// v3.24 FEAT-TT-LIVEPX: rank off the current price, fall back to the stamped mark.
+const quotesSrc = readFileSync(new URL("../functions/api/quotes.js", import.meta.url), "utf8");
+ok("livepx: quotes endpoint reuses the /api/tt auth gate (guards the Finnhub quota)",
+  quotesSrc.includes('import { authorize } from "./tt.js"') && quotesSrc.includes("if (!auth.ok)"));
+ok("livepx: FINNHUB_KEY never leaves the Function", quotesSrc.includes("env.FINNHUB_KEY") && !adminSrc.includes("finnhub"));
+ok("livepx: Finnhub c:0 (unknown symbol) is rejected, not passed through as a free stock",
+  quotesSrc.includes("!Number.isFinite(px) || px <= 0) return null"));
+ok("livepx: missing symbols are NAMED so fallbacks are never implied to be live",
+  quotesSrc.includes("missing: syms.filter"));
+ok("livepx: KV-cached and batched to respect the rate limit / subrequest cap",
+  quotesSrc.includes("CACHE_TTL = 120") && quotesSrc.includes("misses.slice(i, i + 5)"));
+ok("livepx: board prefers a live quote and falls back to the stamped ref_px",
+  adminSrc.includes("const live=LIVE_PX[x.sym];") &&
+  adminSrc.includes("(live&&isFinite(live.px)&&live.px>0)?{px:live.px,at:live.at,live:true,chg:live.chg}:stamp"));
+ok("livepx: a live price is never flagged stale (staleness judges stamps only)",
+  adminSrc.includes("pxAge:ref.live?0:ageDays(ref.at)"));
+ok("livepx: each pick shows whether it used a live or stamped price",
+  adminSrc.includes(">live $") && adminSrc.includes(">stamped $"));
+ok("livepx: footer counts live vs stamped rather than implying all are current",
+  adminSrc.includes("live / ") && adminSrc.includes("all prices are stamped marks, not live"));
+ok("livepx: quote fetch is non-blocking and failure leaves the board unchanged",
+  adminSrc.includes("loadBook().then(loadQuotes)") && adminSrc.includes("never break the board on a quote feed"));
 
 // ---- 9. market calendar — holidays across the honesty stack ---------------
 // The time-judges (isStale, marketSession/etSession, looksBehind) share ONE

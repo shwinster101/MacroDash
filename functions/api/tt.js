@@ -135,7 +135,7 @@ function crossOrigin(request) {
 
 // Unified gate for GET/PUT: dev bypass → mode dispatch → (PIN) session cookie, then
 // x-tt-pin header, else 401 so the client can raise its PIN prompt (never a redirect).
-async function authorize(request, env) {
+export async function authorize(request, env) {
   if (env.ACCESS_DEV_BYPASS === "1") return { ok: true };
   const cfg = await resolveAuth(env);
   if (cfg.mode === "misconfigured") return { ok: false, status: 503, error: "TT_PIN must be exactly 6 digits" };

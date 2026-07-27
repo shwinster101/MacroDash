@@ -1209,12 +1209,33 @@ function annualise(pct,y){
   if(!(t>=0.25)||pct<=-100)return null;
   return Math.round((Math.pow(1+pct/100,1/t)-1)*1000)/10;
 }
+/* v3.24 FEAT-TT-LIVEPX: rank off the CURRENT price, not the stamped mark. ref_px is a
+   manual triage stamp; between runs a name can move 8% and still rank off yesterday. Since
+   the question is "what is cheap right now", the board prefers a live quote and falls back
+   to the stamp whenever one is unavailable — and says which it used, per pick. Fetch failure
+   is silent by design: the board degrades to exactly its previous behaviour. */
+let LIVE_PX={},LIVE_AT=null;
+async function loadQuotes(){
+  const syms=BOOK.filter(x=>x.deepDive&&x.deepDive.ref_px&&x.deepDive.pt_model).map(x=>x.sym);
+  if(!syms.length)return;
+  try{
+    const ctl=new AbortController();const t=setTimeout(()=>ctl.abort(),8000);
+    const r=await fetch("/api/quotes?syms="+encodeURIComponent(syms.join(",")),{signal:ctl.signal});
+    clearTimeout(t);
+    if(!r.ok)return;
+    const d=await r.json();
+    LIVE_PX=d.quotes||{};LIVE_AT=d.asOf||null;
+    renderUpsideRank();
+  }catch(_e){/* stamped ref_px remains in force — never break the board on a quote feed */}
+}
 function renderUpsideRank(){
   const el=document.getElementById("upsideRank");if(!el)return;
   const cands=[];
   BOOK.forEach(x=>{
     const dd=x.deepDive;if(!dd)return;
-    const ref=dd.ref_px;if(!ref||!isFinite(ref.px)||ref.px<=0)return;
+    const stamp=dd.ref_px;if(!stamp||!isFinite(stamp.px)||stamp.px<=0)return;
+    const live=LIVE_PX[x.sym];
+    const ref=(live&&isFinite(live.px)&&live.px>0)?{px:live.px,at:live.at,live:true,chg:live.chg}:stamp;
     const rr=ptModelRows(dd).filter(r=>typeof r.prem==="number"||typeof r.fl==="number");
     if(rr.length)cands.push({x,dd,ref,rr});
   });
@@ -1232,10 +1253,11 @@ function renderUpsideRank(){
     const up=Math.round((tgt/ref.px-1)*1000)/10;
     rows.push({sym:x.sym,lens:x.lens,tier:x.tier,rs:runState(x.lastRun),basis:onFloor?"floor":"premium",
       upside:up,ann:annualise(up,target.y),px:ref.px,at:ref.at,tgt,y:target.y,
+      live:!!ref.live,chg:ref.chg,
       // AUDIT: the % is only as fresh as the price mark under it. The daily triage stamps
       // ref_px; when that chain breaks (it has), a weeks-old price still divides into a
       // current target and renders a confident number. >4d spans any weekend/holiday gap.
-      pxAge:ageDays(ref.at),
+      pxAge:ref.live?0:ageDays(ref.at),
       // AUDIT: the payload's own caveat (e.g. JOBY's premium is gate-contingent) was stored
       // but invisible here — a contingent target ranked identically to a modeled one.
       caveat:(dd.pt_model&&dd.pt_model.note)||""});
@@ -1269,7 +1291,7 @@ function renderUpsideRank(){
       <span>${MEDAL[i]}</span><span class="sym">${esc(r.sym)}</span><span class="lens lens-${esc(r.lens)}">${esc(r.lens)}</span>
       <span class="scope">${esc(TIER_LABEL[r.tier]||r.tier)}</span>
       <span style="color:${col};font-weight:700">${r.ann!==null?`${r.ann>=0?"+":""}${r.ann}%/yr`:`${r.upside>=0?"+":""}${r.upside}%`}</span>
-      <span class="scope">${r.ann!==null?`(${r.upside>=0?"+":""}${r.upside}% by ${esc(r.y)})`:`to ${esc(r.y)}`} · ${esc(r.basis)}</span>${pxFlag}${flag}</span>`;
+      <span class="scope">${r.ann!==null?`(${r.upside>=0?"+":""}${r.upside}% by ${esc(r.y)})`:`to ${esc(r.y)}`} · ${esc(r.basis)}</span>${pxFlag}${flag}${r.live?`<span class="scope" style="color:var(--green)">live $${esc(r.px)}${r.chg!=null?` ${r.chg>=0?"+":""}${r.chg}%`:""}</span>`:`<span class="scope">stamped $${esc(r.px)}</span>`}</span>`;
   }).join("");
   // AUDIT: silent truncation reads as "covered everything". State the denominator.
   const excluded=BOOK.length-rows.length;
@@ -1284,6 +1306,8 @@ function renderUpsideRank(){
     (excluded?` — ${excluded} excluded (no pt_model target or no stamped ref_px), NOT judged unattractive`:"")+
     (noRung?` · ${noRung} of them dropped for having no ${esc(HORIZON)} rung (estimate series end at different years)`:"")+
     (HORIZON?` · all % share the ${esc(HORIZON)} horizon`:` · horizons differ, each % is to its own year`)+
+    (()=>{const l=rows.filter(r=>r.live).length;
+      return l===rows.length?` · all prices LIVE`:l?` · ${l} live / ${rows.length-l} on stamped marks`:` · all prices are stamped marks, not live`;})()+
     ` · "floor" = 18× FY+1 EPS (S&P-average benchmark, no re-rating assumed); "premium" = the owner's asserted multiple</div>`+caveats;
 }
 /* FEAT-TT-RUN: book-coverage rollup — the honest tell, mirroring Signal Quality.
@@ -1704,8 +1728,11 @@ async function loadRegime(){
 
 if(window.innerWidth<480)search.placeholder="ticker · HELP · TIER · ADD";
 
-/* FEAT-TT: boot from server (KV via /api/tt); regime loads in parallel, never blocking */
-loadBook();
+/* FEAT-TT: boot from server (KV via /api/tt); regime loads in parallel, never blocking.
+   v3.24: quotes chase the book (they need BOOK populated to know which symbols to ask
+   for) and are equally non-blocking — the board renders on stamped marks first, then
+   upgrades to live prices if and when they arrive. */
+loadBook().then(loadQuotes);
 loadRegime();
 </script>
 </body>
