@@ -12,7 +12,7 @@ import {
   bandSpyVs200d, bandVix, bandFearGreed, bandRs, bandTenYear, bandFedOdds,
   aggregateVerdict, computeMacroFlip, buildTtReadout, formatTtPaste,
 } from "../src/ttReadout.js";
-import { validateBook, conflictCheck, authMode, lockoutState, recordFailure, parseCookie, hashPin, LOCK_TIERS } from "../functions/api/tt.js";
+import { validateBook, validateBoard, validatePos, conflictCheck, authMode, lockoutState, recordFailure, parseCookie, hashPin, LOCK_TIERS } from "../functions/api/tt.js";
 import { plausible, applyBands, quorum, QUORUM_FIELDS, QUORUM_MIN, marketSession } from "../functions/api/snapshot.js";
 
 let pass = 0, fail = 0;
@@ -476,7 +476,7 @@ ok("upside: stale/never TT runs keep their honesty flag on the ranked pick",
 ok("upside: DOM anchor separate from the human NEXT DOLLAR widget", adminSrc.includes('id="upsideRank"'));
 // Invariant: both board strips render in the same pipeline pass (order, not exact string).
 ok("upside: wired into the render pipeline",
-  /renderNextDollar\(\);\s*renderUpsideRank\(\);[\s\S]{0,40}renderCoverage\(\)/.test(adminSrc));
+  /renderNextDollar\(\);[\s\S]{0,80}renderUpsideRank\(\);[\s\S]{0,200}renderCoverage\(\)/.test(adminSrc));
 // v3.26 FEAT-TT-BINCAL: scheduled binaries surface board-level, not one tab at a time.
 ok("bincal: aggregates future key_dates across the whole book",
   adminSrc.includes("function renderBinaryCal()") && adminSrc.includes("x.deepDive&&x.deepDive.key_dates"));
@@ -522,7 +522,7 @@ ok("upside: states the denominator — no silent truncation of the ranked set",
   adminSrc.includes("ranking ${rows.length} of ${BOOK.length} names") &&
   adminSrc.includes("NOT judged unattractive"));
 ok("upside: flags a stale/undated price mark (a stale ref_px silently poisons the %)",
-  adminSrc.includes("r.pxAge===null||r.pxAge>4") && adminSrc.includes("⚠ px "));
+  adminSrc.includes("r.pxAge===null||r.pxAge>PX_STALE_D") && adminSrc.includes("⚠ px "));
 ok("upside: shows each pick's target year — horizons are not assumed equal",
   adminSrc.includes("to ${esc(r.y)}") && adminSrc.includes("horizons differ"));
 ok("upside: surfaces the payload's own pt_model caveat (stored is never invisible)",
@@ -630,6 +630,349 @@ ok("session: Saturday noon ET reads CLOSE", marketSession(new Date("2026-07-18T1
 ok("session: regular Monday noon ET reads OPEN", marketSession(new Date("2026-07-20T16:00:00Z")) === "OPEN");
 ok("session: regular Monday 7am ET reads PRE", marketSession(new Date("2026-07-20T11:00:00Z")) === "PRE");
 ok("session: regular Monday 5pm ET reads CLOSE", marketSession(new Date("2026-07-20T21:00:00Z")) === "CLOSE");
+
+// ---- 10. FEAT-TT-SESSION (v3.28) — board-level session state --------------
+// The store is testable (validateBoard is pure); the renderers live in the buildless
+// admin.html, so they are pinned at source like every other terminal invariant.
+console.log("\n[10] FEAT-TT-SESSION — the session layer (clusters · circuit · funding · decisions)");
+const okBoard = (extra = {}) => ({ as_of: "2026-07-28", ...extra });
+const badB = (b) => typeof validateBoard(b) === "string";
+ok("sess: minimal board (as_of only) passes", validateBoard(okBoard()) === null);
+ok("sess: an UNDATED board is rejected — self-attested state that cannot age would read current forever",
+  badB({ source: "TT session" }) && /as_of/.test(validateBoard({ source: "x" })));
+ok("sess: non-object / array board rejected", badB(null) && badB([]) && badB("x"));
+ok("sess: circuit requires a known state", badB(okBoard({ circuit: { state: "on", as_of: "2026-07-28" } })));
+ok("sess: all three circuit states accepted", ["clear", "armed", "tripped"].every((s) =>
+  validateBoard(okBoard({ circuit: { state: s, as_of: "2026-07-28" } })) === null));
+ok("sess: an undated circuit is rejected (the strip ages the measurement, not the paste)",
+  badB(okBoard({ circuit: { state: "tripped" } })));
+ok("sess: cluster needs a label and a non-empty member list",
+  badB(okBoard({ clusters: [{ members: ["MU"] }] })) && badB(okBoard({ clusters: [{ label: "x", members: [] }] })));
+ok("sess: cluster members are validated as tickers (same SYM_RE as the book)",
+  badB(okBoard({ clusters: [{ label: "x", members: ["mu"] }] })) &&
+  validateBoard(okBoard({ clusters: [{ label: "AI infra", members: ["MU", "CRDO"] }] })) === null);
+ok("sess: funding rows need a sym; do_not_trim entries are tickers",
+  badB(okBoard({ funding: { order: [{ est: "$30k" }] } })) &&
+  badB(okBoard({ funding: { do_not_trim: ["not a ticker"] } })) &&
+  validateBoard(okBoard({ funding: { order: [{ sym: "NVDL", est: "~$30k" }], do_not_trim: ["NBIS"] } })) === null);
+ok("sess: a decision needs the question, and a dated one needs a real date",
+  badB(okBoard({ decisions: [{ note: "x" }] })) && badB(okBoard({ decisions: [{ q: "x", asked: "7/14" }] })));
+ok("sess: an UNDATED decision is allowed but renders as the worst age (fail-closed at render, not at the door)",
+  validateBoard(okBoard({ decisions: [{ q: "TSM — never screened" }] })) === null &&
+  adminSrc.includes('d.age===null?"undated"'));
+ok("sess: board binaries need {date, label|event} (the non-ticker print)",
+  badB(okBoard({ binaries: [{ label: "SK Hynix Q2" }] })) &&
+  validateBoard(okBoard({ binaries: [{ date: "2026-07-28", label: "SK Hynix Q2", scope: "MEMORY" }] })) === null);
+ok("sess: an asserted regime must actually say what it asserts",
+  badB(okBoard({ regime: { verified: false } })) &&
+  validateBoard(okBoard({ regime: { asserted: "PANIC", verified: false } })) === null);
+ok("sess: board size is capped well under the 64KB book PUT limit",
+  badB(okBoard({ note: "x".repeat(17 * 1024) })));
+ok("sess: board rides the same PUT as the book and is validated there",
+  validateBoard(okBoard()) === null &&
+  validateBook({ book: [], cut: [], board: okBoard({ circuit: { state: "tripped", as_of: "2026-07-28" } }) }) === null &&
+  typeof validateBook({ book: [], cut: [], board: { circuit: {} } }) === "string");
+ok("sess: a book PUT carrying NO board still passes (older clients / curl are not broken)",
+  validateBook({ book: [], cut: [] }) === null);
+const ttSrc = readFileSync(new URL("../functions/api/tt.js", import.meta.url), "utf8");
+ok("sess: an absent board is CARRIED FORWARD, not deleted — whole-book replace must not eat session state",
+  ttSrc.includes("body.board === undefined ? prev?.board : body.board"));
+// Renderers — pinned at source (admin.html is buildless).
+ok("sess: absent sections render nothing at all (no session must look like before, not like empty promises)",
+  adminSrc.includes('n.style.display=html?"block":"none"') &&
+  ["circuitLine", "fundingLine", "clusterLine", "decisionsLine"].every((id) => adminSrc.includes(`id="${id}" style="display:none`)));
+// v3.29: the circuit strip moved into a drawer, but it did not lose its precedence — it is
+// now the FIRST thing stance() consults, and stance() is the top line of the whole board.
+ok("sess: the circuit outranks the regime in the stance that gates every add",
+  /function stance\(\)\{[\s\S]{0,240}st==="tripped"\)return\{k:"stop"/.test(adminSrc) &&
+  adminSrc.indexOf('id="todayCard"') < adminSrc.indexOf('id="nextDollar"'));
+ok("sess: a tripped circuit vetoes the both-stories-agree line entirely (no per-name score clears it)",
+  adminSrc.includes("NEXT DOLLAR: NONE — leverage circuit tripped"));
+ok("sess: stated circuit state vs its last measurement is reconciled, never smoothed over",
+  adminSrc.includes('(v>=tl)!==(st==="tripped")') && adminSrc.includes("asserted ahead of the number"));
+ok("sess: an unreconciled circuit says so (self-attested, like lastRun)",
+  adminSrc.includes("self-attested — not reconciled against a live account pull"));
+ok("sess: undated session state is the WORST age chip, never treated as current",
+  adminSrc.includes('if(d===null)return `<span class="bad2">⚠ ${label||"undated"}'));
+ok("sess: cluster overlap with the ranked queues is called out as one position, not two",
+  adminSrc.includes("that is one position, not two") && adminSrc.includes("LAST_RANK=shown.map"));
+ok("sess: clusters render after the upside rank so the overlap check reads current ranks",
+  adminSrc.indexOf("renderUpsideRank();renderClusters();") > 0);
+ok("sess: next-dollar leads come from ONE helper, so the queue and the cluster check cannot disagree",
+  adminSrc.includes("function ndLeads()") && (adminSrc.match(/ndLeads\(\)/g) || []).length >= 3);
+ok("sess: funding contradiction (same name trim + do-not-trim) is named, not silently ranked",
+  adminSrc.includes("appears in BOTH the trim order and do-not-trim"));
+ok("sess: funding reports, never enforces (same rule as the binary calendar)",
+  adminSrc.includes("reported, not enforced — the board never places or blocks an order"));
+ok("sess: open decisions sort oldest-first and age in public",
+  adminSrc.includes("an unanswered decision ages in public"));
+ok("sess: decisions and circuit state fold into the coverage rollup",
+  adminSrc.includes("open decision") && adminSrc.includes("⛔ circuit tripped"));
+// The two regime engines: measured (/readout.json) vs asserted (the session).
+ok("regime: the STRICTER of measured and asserted governs the standing modifier",
+  adminSrc.includes("const REG_RANK={TAILWIND:0,NEUTRAL:1,HEADWIND:2,PANIC:3};") &&
+  adminSrc.includes("(aR>mR?asserted:measured)"));
+ok("regime: disagreement is printed with both readings, never averaged",
+  adminSrc.includes("engines disagree — MacroDash measures") &&
+  adminSrc.includes("disagreement is information, not an average"));
+ok("regime: an asserted regime always carries its provenance and verified flag",
+  adminSrc.includes('ar.verified===true?"reconciled":"UNVERIFIED"'));
+ok("regime: MacroDash INSUFFICIENT/unavailable never silently confirms the asserted read",
+  adminSrc.includes("MacroDash unavailable, so nothing measured confirms it") &&
+  adminSrc.includes("unconfirmed, don't gate on the measured side"));
+ok("regime: the HEADWIND/PANIC modifier text survives the two-engine rewrite",
+  adminSrc.includes("R/R floors +0.5") && adminSrc.includes("8+ support quality"));
+// Non-ticker binaries — a supplier's print that sets the tone for names you do hold.
+ok("bincal: board-level binaries merge into the same dated queue",
+  adminSrc.includes("BOARD.binaries") && adminSrc.includes("board-level, not a book ticker"));
+ok("bincal: a binary only opens a tab that actually exists (no dead click)",
+  adminSrc.includes("const tabbable=!e.board||!!(find(e.sym)&&find(e.sym).deepDive);"));
+ok("sess: the circuit's asserted state and its measurement are dated separately",
+  adminSrc.includes("measurement undated — the number's own age is unknown") &&
+  adminSrc.includes("c.measured_at?"));
+// The handoff patch: MERGE, never replace — a session covers the names it touched, so
+// importing one as a book would delete every name it did not mention.
+ok("handoff: applying a session patch merges and never removes",
+  adminSrc.includes("function applyHandoff()") && adminSrc.includes("nothing is ever removed"));
+ok("handoff: the whole patch validates BEFORE any of it is applied",
+  adminSrc.includes("A half-applied patch is worse than a rejected one"));
+ok("handoff: a name new to the book must carry tier + lens (no half-formed entries)",
+  adminSrc.includes("an added name must carry a valid tier and lens"));
+ok("handoff: the merge names exactly what changed and what it left alone",
+  adminSrc.includes("book name${untouched===1?\"\":\"s\"} untouched"));
+ok("handoff: nothing reaches the server until an explicit SAVE (preview rails, like restore points)",
+  adminSrc.includes('showUnsaved(`handoff merged on screen') && adminSrc.includes('"preview");'));
+ok("sess: session state travels with BOTH backup paths (JSON + CANONICAL_BOOK.md)",
+  adminSrc.includes("## SESSION STATE") && adminSrc.includes("...(BOARD&&Object.keys(BOARD).length?{board:BOARD}:{})"));
+ok("sess: an import carrying no board leaves existing session state alone",
+  adminSrc.includes("if(parsed.board!==undefined&&parsed.board!==null)BOARD=parsed.board;"));
+ok("sess: clearing session state requires an explicit confirmation, never a side effect",
+  adminSrc.includes("Clear all session state"));
+// Same invariant as SEED=[] and the framework doc: the terminal ships the RAILS, never the
+// content. A session handoff names live positions, sizes and trim amounts — in a public repo
+// that is the portfolio itself. BOARD starts empty and is filled from KV at runtime.
+ok("sess: session state starts EMPTY in the bundle — content lives in KV, never the repo",
+  /let BOARD=\{\};/.test(adminSrc) &&
+  !/BOARD\s*=\s*\{\s*as_of/.test(adminSrc) &&
+  !existsSync(new URL("../TT_SESSION_HANDOFF.md", import.meta.url)) &&
+  !existsSync(new URL("../ticker-terminal/TT_SESSION_HANDOFF.md", import.meta.url)));
+
+// ---- 11. FEAT-TT-TODAY (v3.29) — the daily loop owns the default view ------
+// The board had grown to nine strips of standing state, all full-size, every load. This
+// pass keeps ONE screen (stance · today · what changed) and puts the rest one tap away.
+console.log("\n[11] FEAT-TT-TODAY — stance · actions · what changed");
+ok("today: the default view leads with the TODAY card, above every strip",
+  adminSrc.indexOf('id="todayCard"') < adminSrc.indexOf('id="dNext"') &&
+  adminSrc.indexOf('id="todayCard"') < adminSrc.indexOf('id="board"'));
+ok("today: every demoted strip keeps its element — nothing was deleted, only collapsed",
+  ["nextDollar", "upsideRank", "clusterLine", "fundingLine", "binaryCal", "decisionsLine", "circuitLine"]
+    .every((id) => adminSrc.includes(`id="${id}"`)));
+ok("today: each drawer is ONE tap (native details, no hidden second step)",
+  (adminSrc.match(/<details class="drawer" id="d/g) || []).length === 6 &&      // board strips
+  (adminSrc.match(/<details class="drawer"><summary>/g) || []).length === 3);   // reference sidebar
+ok("today: the reference sidebar collapses too — it is reference, not monitoring",
+  !/<div class="panel"[^>]*>\s*<h2>Router/.test(adminSrc) &&
+  adminSrc.includes("<summary>STANDING CONSTRAINTS</summary>"));
+ok("today: the header pill is labelled MACRO — it is the measured read, not the stance",
+  adminSrc.includes("<span>MACRO: <span class=\"pill neutral\" id=\"regimePill\"") &&
+  adminSrc.includes("made the header look like it contradicted the stance"));
+ok("today: a closed drawer still carries its signal in the summary (the v3.25 hinge rule)",
+  adminSrc.includes("function renderDrawers()") &&
+  adminSrc.includes("inside ${BINARY_WINDOW_D}d</span>") && adminSrc.includes("${ds.length} open"));
+ok("today: a drawer with nothing in it is hidden, not rendered empty",
+  adminSrc.includes('d.style.display=show?"block":"none"'));
+// stance: the one line that says whether capital may move.
+ok("today: stance ranks the circuit above the regime (a portfolio fact, not a market read)",
+  adminSrc.includes("The circuit outranks the") || adminSrc.includes("no macro verdict un-trips it"));
+ok("today: with both engines known the STRICTER sets the stance, and both are shown",
+  adminSrc.includes("stricter governs)") && adminSrc.includes("(aR>mR?asserted:measured)"));
+ok("today: no regime at all reads UNKNOWN — never a defaulted green",
+  adminSrc.includes('k:"unknown",txt:"STANCE UNKNOWN'));
+ok("today: an ARMED circuit still downgrades an otherwise-clear stance",
+  adminSrc.includes('the leverage circuit is ARMED'));
+// actions: most time-bound first, and a green line never sits beside a red one.
+ok("today: actions are ordered by irreversibility — tonight's print outranks an add",
+  adminSrc.includes("Irreversibility beats opportunity"));
+ok("today: an add candidate is withheld whenever anything above it vetoes",
+  adminSrc.includes('if(!out.some(a=>a.sev==="stop")&&AGREE_PICK)'));
+ok("today: the add candidate is the SAME object the upside widget computed (one truth)",
+  adminSrc.includes("AGREE_PICK=q.length?q[0]:null;") &&
+  adminSrc.includes('AGREE_PICK=null;   // recomputed below'));
+ok("today: a queued name on an aged rating becomes its own action",
+  adminSrc.includes("before acting — queued on an aged rating"));
+ok("today: an empty day says so explicitly, with the next dated event",
+  adminSrc.includes('txt:"Nothing to do today."') &&
+  adminSrc.includes("which is not the same as clear"));
+ok("today: a deleverage action names the blocker instead of the trim when one exists",
+  adminSrc.includes("is first to trim${size} — but ${first.blocker}"));
+ok("today: deleverage-only with no funding order says THAT, rather than nothing",
+  adminSrc.includes("no trim order is set, so nothing says what funds it"));
+// what changed: the diff, against a baseline the user owns.
+ok("changed: the baseline moves only on an explicit mark-seen, never silently on reload",
+  adminSrc.includes("function markSeen()") && adminSrc.includes("the baseline moves only when you say so"));
+ok("changed: a first visit sets the baseline and says so — never 'nothing changed'",
+  adminSrc.includes("First visit on this device") &&
+  adminSrc.includes('A missing baseline is never reported as "nothing changed"'));
+ok("changed: a baseline older than the window is reset rather than shown as one visit",
+  adminSrc.includes("const SEEN_MAX_D=7;") && adminSrc.includes("stops being a diff"));
+ok("changed: price deltas compare LIVE to LIVE — never a stamped mark against a live quote",
+  adminSrc.includes("would make the first quote of") && adminSrc.includes("px:live&&isFinite(live.px)?live.px:null"));
+ok("changed: diffs cover the things that actually demand action",
+  ["Leverage circuit:", "tier ${a.tier}", "red hinge", "no-new-adds window", "Open decisions:"]
+    .every((s) => adminSrc.includes(s)));
+ok("changed: attention-grade changes sort to the top",
+  adminSrc.includes("const rank={stop:0,warn:1,go:2};"));
+ok("changed: the panel opens itself once when there is something in it",
+  adminSrc.includes("if(d.length&&!CHANGED_OPENED)"));
+// the book as a monitoring surface, not a directory.
+ok("today: the whole book is quoted, not just the modelled names",
+  adminSrc.includes("const all=BOOK.map(x=>x.sym);") && adminSrc.includes("const syms=all.slice(0,QUOTE_CAP);"));
+ok("today: a chip with no quote shows no number at all (never a 0 that reads as flat)",
+  adminSrc.includes("chg!==null?`<span class=\"chg\"") && adminSrc.includes("never a 0 or a dash"));
+ok("today: quotes arriving re-render the whole board, not just the upside widget",
+  adminSrc.includes("render();   // chips, the upside rank and the TODAY delta all read LIVE_PX"));
+
+// ---- 12. FEAT-TT-POS (v3.30) — measured facts ------------------------------
+// Everything else in the book is ASSERTED and aged by lastRun. `pos` is the first MEASURED
+// class: it comes from the broker, carries its own timestamp and source, and is never typed.
+console.log("\n[12] FEAT-TT-POS — measured positions, caps and reconciliation");
+const okPos = (extra = {}) => ({ at: "2026-07-28T14:32:00Z", src: "robinhood", ...extra });
+const badP = (p) => typeof validatePos(p) === "string";
+ok("pos: a full measured position passes", validatePos(okPos({ sh: 412, mv: 30104, pct: 4.2, cb: 24880 })) === null);
+ok("pos: an undated position is rejected — a measured fact must be ageable",
+  badP({ sh: 1, src: "robinhood" }) && /cannot be aged/.test(validatePos({ sh: 1, src: "x" })));
+ok("pos: a sourceless position is rejected — provenance is not optional",
+  badP({ at: "2026-07-28", src: "" }) && /where it came from/.test(validatePos({ at: "2026-07-28" })));
+ok("pos: a date-only stamp is accepted (the sync may only know the day)",
+  validatePos({ at: "2026-07-28", src: "robinhood" }) === null);
+// Bands, in the spirit of snapshot.js BANDS: reject the impossible, not the unusual.
+ok("pos: a decimal-shifted weight is rejected before it can clear or trip a cap",
+  badP(okPos({ pct: 420 })) && badP(okPos({ pct: -1 })));
+ok("pos: a SHORT equity position is explicitly allowed (sh < 0 is real)",
+  validatePos(okPos({ sh: -100, mv: -8000 })) === null);
+ok("pos: a non-numeric size is rejected", badP(okPos({ sh: "many" })));
+ok("pos: option legs are validated (side, kind, positive contract count)",
+  badP(okPos({ opt: [{ k: "call", side: "short", n: 0 }] })) &&
+  badP(okPos({ opt: [{ k: "swap", side: "short", n: 1 }] })) &&
+  validatePos(okPos({ opt: [{ k: "call", side: "short", n: 3, exp: "2028-01-21" }] })) === null);
+ok("pos: rides validateBook per entry, and a bad one fails the whole PUT",
+  validateBook({ book: [{ sym: "AAA", tier: "S", lens: "AI", pos: okPos({ sh: 10 }) }], cut: [] }) === null &&
+  typeof validateBook({ book: [{ sym: "AAA", tier: "S", lens: "AI", pos: okPos({ pct: 900 }) }], cut: [] }) === "string");
+ok("pos: a book with no positions at all still passes (nothing synced yet is normal)",
+  validateBook({ book: [{ sym: "AAA", tier: "S", lens: "AI" }], cut: [] }) === null);
+ok("account: the leverage figure must say how it was computed",
+  typeof validateBoard({ as_of: "2026-07-28", account: { at: "2026-07-28", src: "rh", nav: 1e5 } }) === "string" &&
+  validateBoard({ as_of: "2026-07-28", account: { at: "2026-07-28", src: "rh", nav: 1e5, debt: 1.2e5, debt_pct_nav: 120, formula: "margin_balance / net_liquidation" } }) === null);
+ok("account: undated or sourceless is rejected like any measured block",
+  typeof validateBoard({ as_of: "2026-07-28", account: { src: "rh", formula: "x" } }) === "string" &&
+  typeof validateBoard({ as_of: "2026-07-28", account: { at: "2026-07-28", formula: "x" } }) === "string");
+// Client-side renderers (admin.html is buildless — pinned at source).
+ok("pos: lives at ENTRY level, not inside deepDive (a thesis paste must not wipe facts)",
+  adminSrc.includes("function posOf(x){const p=x&&x.pos;") &&
+  ttSrc.includes("the payload editor replaces deepDive wholesale") &&
+  !/deepDive\.pos|dd\.pos\b/.test(adminSrc));
+ok("pos: an absent position renders NOTHING — not a 0 or a dash that reads as not-held",
+  adminSrc.includes("absent number; a dash or a 0 here would read"));
+ok("pos: measured marks age like everything else, undated being the worst",
+  adminSrc.includes("function posChip(p)") && adminSrc.includes('if(d===null)return `<span class="bad2">⚠ undated'));
+ok("caps: the single-name cap is a named constant, not prose",
+  adminSrc.includes("const CAP_PCT=18;"));
+ok("caps: the CLUSTER total is summed — 'cluster = one position' is finally checkable",
+  adminSrc.includes('out.push({kind:"cluster"') && adminSrc.includes("one cluster sizes as one position"));
+ok("caps: an unmeasured cluster member is NAMED and the total called a floor",
+  adminSrc.includes("the total is a FLOOR") && adminSrc.includes("a cluster total that"));
+ok("caps: a breach becomes a TODAY stop — you are over the limit now, not considering it",
+  adminSrc.includes("pts over the ${CAP_PCT}% cap") && adminSrc.includes("outranks anything discretionary"));
+ok("caps: a breach computed off a stale or undated mark says so",
+  adminSrc.includes("(position mark undated)") && adminSrc.includes("marks ${c.age}d old"));
+ok("caps: a closed EXPOSURE drawer still shows a breach in its summary",
+  adminSrc.includes("over the ${CAP_PCT}% cap</span> · "));
+ok("recon: book-vs-broker runs only once something is measured (else all names read unheld)",
+  adminSrc.includes("const anyPos=BOOK.some(x=>posOf(x));") && adminSrc.includes("if(!anyPos)return null;"));
+ok("recon: held-but-untracked is called exposure no thesis covers",
+  adminSrc.includes("exposure no thesis covers"));
+ok("recon: with nothing synced the strip says what a sync would buy",
+  adminSrc.includes("no measured positions yet — run the broker sync"));
+ok("today: the deleverage action carries real size and verifies its own blocker",
+  adminSrc.includes("short call(s) cover") && adminSrc.includes("stops being an abstraction"));
+ok("circuit: shows the arithmetic behind the number that vetoes every add",
+  adminSrc.includes("computed as ${esc(acct.formula)}") && adminSrc.includes("checkable by the person it stops"));
+ok("coverage: measured coverage sits in the same rollup as run coverage",
+  adminSrc.includes("measured</span>") && adminSrc.includes("0 positions measured"));
+ok("quotes: the 40-symbol cap is stated and the dropped tail named",
+  adminSrc.includes("const QUOTE_CAP=40;") && adminSrc.includes("unquoted (past the ${QUOTE_CAP}-symbol cap)"));
+ok("regime: ONE derivation shared by the stance and the modifier",
+  adminSrc.includes("function governingRegime()") &&
+  (adminSrc.match(/governingRegime\(\)/g) || []).length >= 3 &&
+  (adminSrc.match(/aR>mR\?asserted:measured/g) || []).length === 1);
+
+// ---- 13. FEAT-TT-DDFOCUS + the render harness (v3.31) ----------------------
+console.log("\n[13] FEAT-TT-DDFOCUS — the deep-dive tab answers four questions first");
+ok("dd: the four answers render before the corpus",
+  adminSrc.includes("function ddAnswerBlock(") &&
+  ["What it's worth", "What changes my mind", "When", "What I own"].every((q) => adminSrc.includes(q)) &&
+  adminSrc.indexOf("ddAnswerBlock(x,dd,todayET)") < adminSrc.indexOf('ddDrawer("val"'));
+ok("dd: worth reuses ptModelRows — the cell can never disagree with the ladder below it",
+  adminSrc.includes("function ddWorth(dd,sym)") && adminSrc.includes("const rr=ptModelRows(dd)"));
+ok("dd: a name with no model says so instead of showing a target",
+  adminSrc.includes('return{txt:"no model"'));
+ok("dd: an unmeasured position is not reported as unheld",
+  adminSrc.includes("not synced, which is not the same as not held"));
+ok("dd: the corpus is grouped into drawers, not deleted",
+  ["val", "thesis", "dates", "cap", "track", "dots"].every((k) => adminSrc.includes(`ddDrawer("${k}"`)));
+ok("dd: an empty drawer is never rendered",
+  adminSrc.includes("never an empty drawer") && adminSrc.includes('if(!content||!String(content).trim())return "";'));
+ok("dd: drawer summaries carry their signal (failing gates, red hinges, next date)",
+  adminSrc.includes("gates failing") && adminSrc.includes("kill combo defined") &&
+  adminSrc.includes("KEY DATES${(()=>{const n=ddNextDate"));
+ok("dd: unknown payload keys are NAMED in the summary — stored is never invisible",
+  adminSrc.includes("OTHER STORED FIELDS · ${unknown.map(esc).join(") &&
+  adminSrc.includes("what is stored is never invisible"));
+ok("dd: drawer open state survives a re-render (quotes landing must not collapse it)",
+  adminSrc.includes("const DD_OPEN=new Set();") && adminSrc.includes("ontoggle=\"ddToggle("));
+ok("dd: every hinge state still funnels through the green|amber|red|unknown tally",
+  adminSrc.includes("function hingeTally(dd)"));
+// The harness itself: buildless HTML needs a real browser, and it must not become a
+// dependency that breaks `npm test` on a machine without one.
+const renderSrc = readFileSync(new URL("./render.mjs", import.meta.url), "utf8");
+ok("render: committed as a separate suite, not wired into npm test",
+  existsSync(new URL("./render.mjs", import.meta.url)) &&
+  JSON.parse(readFileSync(new URL("../package.json", import.meta.url), "utf8")).scripts["test:ui"] === "node test/render.mjs");
+ok("render: skips cleanly (exit 0) when no browser or no playwright-core is present",
+  renderSrc.includes("process.exit(0)") && renderSrc.includes("RENDER TEST: SKIPPED"));
+ok("render: an explicit browser path is validated, not trusted blindly",
+  renderSrc.includes("existsSync(direct) ? direct : null"));
+ok("render: the fixture is SYNTHETIC — no real book content enters this repo",
+  renderSrc.includes("INVARIANT: the fixture is SYNTHETIC") &&
+  ["AAA", "BBB", "CCC", "FFF"].every((s) => renderSrc.includes(`sym: "${s}"`)));
+ok("render: asserts at a phone width as well as desktop",
+  renderSrc.includes("await open(390)") && renderSrc.includes("no horizontal overflow at 390px"));
+
+// ---- 14. audit patches (v3.31.1) -------------------------------------------
+console.log("\n[14] audit — composite parsing, mark staleness, version drift");
+const PKG = JSON.parse(readFileSync(new URL("../package.json", import.meta.url), "utf8"));
+// The terminal had THREE versions for one artifact: <title> v1.0, brand v1.1, package.json
+// v3.31. This repo already resolved exactly this drift once ("footer string is canonical /
+// package.json is stale"). admin.html is a Vite public/ passthrough and cannot receive
+// __APP_VERSION__, so a guard is the only thing that can hold the invariant.
+ok("version: the terminal's title and brand both match package.json (no third version)",
+  adminSrc.includes(`<title>TT TICKER TERMINAL v${PKG.version}</title>`) &&
+  adminSrc.includes(`<small>v${PKG.version} · single-pass deep-dive orchestrator</small>`));
+// ttInfo's score decides whether the NEXT DOLLAR line lights. It is parsed from prose.
+ok("composite: a decimal score is preferred over an earlier bare integer",
+  adminSrc.includes("function parseComposite(v)") && adminSrc.includes("const dec=s.match(/\\d+\\.\\d+/);"));
+ok("composite: a numeric field is used as-is, so a legitimate 0 is not dropped as falsy",
+  adminSrc.includes('if(typeof v==="number")return isFinite(v)?v:null;'));
+ok("composite: a numeric status_flags.composite is accepted, not only a string",
+  adminSrc.includes('typeof dd.status_flags.composite==="number"'));
+ok("mark staleness: ONE threshold shared by the board and the deep-dive cell",
+  adminSrc.includes("const PX_STALE_D=4;") &&
+  (adminSrc.match(/PX_STALE_D\)/g) || []).length >= 2 &&
+  !/r\.pxAge>4/.test(adminSrc));
+ok("dd: a pinned horizon with no rung is NAMED, not silently swapped for another year",
+  adminSrc.includes("rung — showing ${esc(t.y)}"));
+ok("dd: the worth cell ages its own price mark, like the board does",
+  adminSrc.includes("⚠ mark ${pxAge===null?\"undated\":pxAge+\"d old\"}"));
 
 console.log(`\n=== SMOKE TEST: ${pass} passed, ${fail} failed ===`);
 process.exit(fail === 0 ? 0 : 1);

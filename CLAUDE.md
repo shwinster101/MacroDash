@@ -121,10 +121,16 @@ worker/                 SEPARATE Cloudflare Worker (not part of Pages)
   wrangler.toml         Worker config: PULSE_CACHE binding + cron triggers (UTC).
 
 test/
-  smoke.mjs             No-network smoke test: 304 assertions over mergeLiveOverMock
+  smoke.mjs             No-network smoke test: 438 assertions over mergeLiveOverMock
                         + SOURCES-path resolution against the real MOCK_DATA + the
                         5-Whys engine + DEC-31 guards + the TT band table (DEC-33)
                         + the market-holiday calendar (sessions + staleness).
+  render.mjs            Browser render test for public/admin.html (`npm run test:ui`).
+                        admin.html is buildless, so smoke can only pin STRINGS; this
+                        serves the real file with a stubbed API and drives it in
+                        Chromium at 390px + 1200px. SYNTHETIC fixture only (same
+                        invariant as SEED/BOARD). SKIPS cleanly (exit 0) with no
+                        browser, so `npm test` on a bare machine is unaffected.
 ```
 
 ## Data flow (how mock becomes live)
@@ -220,7 +226,8 @@ Jan-anchor shipped; see `snapshot.js` ~318–328), `spyMa100`, `spyMa200`, and a
 - **`public/admin.html`** — Vite `public/` passthrough serves the TT tier-board GUI verbatim at
   `/admin.html`. It is the empty template wired to **`/api/tt`** (`functions/api/tt.js`): GET loads
   the book, every mutation (add / card save / remove→CUT / import) optimistically updates then PUTs.
-  KV key **`tt:book:v1`** (no TTL) in `PULSE_CACHE` holds `{version, asOf, book, cut}`.
+  KV key **`tt:book:v1`** (no TTL) in `PULSE_CACHE` holds `{version, asOf, book, cut}` — plus an
+  optional **`board`** (FEAT-TT-SESSION, v3.28) for state no single ticker owns.
 - **Auth = config-gated (FEAT-TT-PIN, v3.9.0).** With **`env.TT_PIN` set (exactly 6 digits;
   `npx wrangler pages secret put TT_PIN`)** the terminal runs **PIN mode**: `POST /api/tt {pin}`
   mints a 30-day KV device session (`tt:session:<token>`, HttpOnly/Secure/SameSite=Strict cookie),
@@ -360,6 +367,96 @@ Jan-anchor shipped; see `snapshot.js` ~318–328), `spyMa100`, `spyMa200`, and a
   worthless if the binary is discovered after sizing. A board strip aggregates every *future*
   key date across the book, sorted by days-out, flagging anything inside `BINARY_WINDOW_D=10`.
   Deliberately **reports, never enforces** — the board does not block orders.
+- **FEAT-TT-SESSION (v3.28) — the session layer.** A TT session produces conclusions no single
+  ticker owns, and the book had nowhere to put them: the board could show a green NEXT DOLLAR
+  while the portfolio was in deleverage-only mode and the top two picks were the same bet twice.
+  An optional **`board` object in the same KV document** (`functions/api/tt.js` `validateBoard`,
+  16KB cap, `as_of` REQUIRED) now carries six sections, each rendered as its own strip that
+  **renders nothing when absent** — no session loaded looks exactly like v3.27, never like empty
+  placeholders. **`circuit`** (leverage; renders *above* the next dollar because it gates every
+  add, and a `tripped` circuit **vetoes the FEAT-TT-AGREE green line outright** — no per-name
+  score clears it) · **`clusters`** ("cluster = one position": flags when two co-leads or two
+  computed-upside top ranks sit in the same cluster) · **`funding`** (the deleverage-first trim
+  order + `do_not_trim`, with per-row blockers; the question NEXT DOLLAR never answered — where
+  the dollar comes *from*) · **`decisions`** (aging in public: >7d amber, >14d red, **undated is
+  the worst chip, never the freshest**) · **`binaries`** (non-ticker prints — a supplier's
+  earnings that sets the tone for names you hold — merged into the same dated queue, and only
+  clickable when a tab actually exists) · **`regime`** (the session's *asserted* read).
+  **Two regime engines, married never merged** (`REG_RANK`): MacroDash **measures** one from live
+  data, the session **asserts** one; the **stricter governs** the standing modifier and any
+  disagreement prints both readings with provenance — averaging them would delete the information.
+  Everything here is self-attested, so every strip carries `sessChip()` (the circuit dates its
+  asserted state and its `measured_at` measurement **separately** — a fresh assertion must not
+  launder a stale number). Entry path is the **◧ SESSION** modal: the top box edits the board,
+  the bottom box applies a **handoff patch as a MERGE, never a replace** (`applyHandoff` — a
+  session covers only the names it touched, so importing one as a book would delete every name it
+  didn't mention; validates whole-patch-before-apply, requires tier+lens to add a name, never
+  removes anything, and previews on the unsaved rails until an explicit SAVE). An **absent**
+  `board` on PUT is **carried forward, not deleted** (curl/older clients must not eat session
+  state). Same invariant as the book: `BOARD` ships empty, content lives only in KV.
+- **FEAT-TT-TODAY (v3.29) — the daily loop owns the default view.** v3.28 left the board at
+  **nine strips of standing state, full size, every load** — six phone screens before the book.
+  But a book in daily monitoring changes maybe one day in five: the signal is the DELTA and the
+  DEMAND, not the state. The default view is now **one screen** answering the daily loop in
+  order: **STANCE** (may capital move at all — `stance()`: the circuit first because it is a
+  portfolio fact no macro verdict un-trips, then the stricter of measured/asserted regime;
+  no regime at all reads UNKNOWN, never a defaulted green) · **TODAY** (`todayActions()`,
+  ordered by **irreversibility** — tonight's print outranks any add; a deleverage action names
+  the *blocker* rather than the trim when one exists; the add candidate is withheld entirely
+  whenever anything above it vetoes, and it is the same `AGREE_PICK` the upside widget computed,
+  never a second opinion) · **WHAT CHANGED** (`diffSince()` — price moves ≥`MOVE_PCT`, tier/rank
+  changes, new red hinges, run stamps, decisions, names entering the no-new-adds window).
+  Everything else moved into **one-tap `details.drawer`s whose summaries still carry their
+  signal** (the v3.25 hinge rule: a collapse is only honest if a red thing stays visible while
+  closed) — nothing was deleted, and the reference sidebar collapsed the same way.
+  **The delta baseline is the user's**: it moves only on an explicit *mark seen* (or resets past
+  `SEEN_MAX_D=7`), a first visit says "baseline set" rather than "nothing changed", and price
+  deltas compare **live to live** — diffing a stamped `ref_px` against the day's first quote
+  would report an 11% "move" when nothing moved. `/api/quotes` is now asked for the **whole
+  book** (≤40, 2-min KV cache) so every chip carries its day move; a name with no quote shows
+  **no number at all**, never a 0 that reads as flat. Header pill relabelled **MACRO** — it is
+  MacroDash's *measured* read and looked like it contradicted the stance.
+- **FEAT-TT-POS (v3.30) — measured facts, the first non-asserted class in the book.** Every other
+  field is *asserted* (a human typed it, `lastRun`/`as_of` ages it). v3.29 made that visible and
+  therefore intolerable: `stance()` suspends **all** adds off a hand-typed `circuit.state`, and
+  with no position sizes anywhere the **18% cap was prose** and *"cluster = one position"* was a
+  rule the software could not evaluate. An entry-level **`pos`** block
+  (`{sh, mv, pct, cb, upl_pct, opt[], at, src}`) is written by a broker sync and never by hand.
+  It sits beside `dots`, **not inside `deepDive`** — the payload editor replaces that wholesale,
+  so facts stored there would die to a thesis paste. `validatePos()` (exported, smoke-tested) is
+  **plausibility-banded** in the `BANDS`/`applyBands` spirit: a decimal-shifted weight is rejected
+  before it can clear *or* trip a cap, while a **short position (`sh < 0`) is explicitly allowed**.
+  What the facts buy: weight on every chip (absent = **no number**, never a 0 that reads as
+  not-held) · `capChecks()` for single names **and summed clusters** — an unmeasured member is
+  named and the total called a **FLOOR** · `reconcile()` for held-but-untracked ("exposure no
+  thesis covers") and tracked-but-not-held · TODAY stops for breaches (a held breach outranks
+  anything discretionary) · a deleverage action carrying real share count/value with its blocker
+  **verified against actual option legs** · and `board.account` where **`formula` is REQUIRED**,
+  so the leverage figure that vetoes every add is checkable by the person it stops. Everything
+  inherits `pos.at`: `posChip()` marks stale/undated, and cap checks computed off an old mark
+  say so. Also v3.30: `governingRegime()` is now the **single** derivation of "stricter of
+  measured vs asserted" (`stance()` and `regimeModifier()` had a copy each), and `loadQuotes()`
+  **states its 40-symbol cap** and names the unquoted tail instead of truncating silently.
+- **FEAT-TT-DDFOCUS (v3.31) — the deep-dive tab answers four questions first.** The tab was
+  emitting ~20 sections at full size: the pre-v3.29 board, one level down. A reader arrives at a
+  name with the same four questions every time, so `ddAnswerBlock()` answers them above the
+  corpus — **what it's worth** (`ddWorth()` reuses `ptModelRows()`, so the cell can never quote a
+  target the ladder below it disagrees with; no model says *"no model"* rather than showing a
+  number) · **what changes my mind** (hinge tally, reds named) · **when** (next future key date) ·
+  **what I own** (the v3.30 `pos`; unmeasured reads *"not synced, which is not the same as not
+  held"*). The corpus groups into `ddDrawer()`s — VALUATION · THESIS & GATES · KEY DATES ·
+  CAPITAL & EXPOSURE · TRACKING & MODEL · DOTS · OTHER — each summary carrying its own signal
+  (failing gate count, kill-combo presence, next date, new-dot count). **An empty drawer never
+  renders**, unknown payload keys are **named in the summary** (stored is never invisible), and
+  `DD_OPEN` preserves open state so a quote landing can't collapse what you just opened.
+- **FEAT-TT-RENDER (v3.31) — `test/render.mjs` (`npm run test:ui`).** `admin.html` is buildless,
+  so smoke can only pin load-bearing STRINGS; that catches deletions but not a strip that renders
+  empty, a drawer that hides a red thing, a dead click, or a template literal that throws. This
+  serves the real file with a stubbed `/api/tt` + `/readout.json` + `/api/quotes` and drives it in
+  Chromium at **390px and 1200px** (42 assertions). It has already caught bugs the source guards
+  could not. **The fixture is SYNTHETIC** — no real ticker, position or session content enters
+  this repo, same invariant as `SEED`/`BOARD`. It **skips cleanly (exit 0)** when playwright-core
+  or a browser is missing, so it is additive and never breaks `npm test` on a bare machine.
 - **Deferred:** stored fundamentals + Robinhood sync — now unblocked by the `x-tt-pin` header
   (v3.9): a chat-side daily review can PUT `status_flags`/`ref_px` into the deepDive payloads and
   stamp `lastRun`. When built, store the *triage* shape (`{at, px}` → "% moved since your last TT
@@ -426,7 +523,8 @@ npm run dev        # Vite dev server (mock unless VITE_DATA_MODE=live in .env)
 npm run build      # → dist/  (what Pages runs)
 npm run preview    # serve the built dist/
 
-node test/smoke.mjs   # 304-assertion no-network smoke test (needs Node ≥17)
+node test/smoke.mjs   # 438-assertion no-network smoke test (needs Node ≥17)
+npm run test:ui       # browser render test for admin.html (skips if no Chromium)
 
 # Cron Worker (separate deploy):
 cd worker && npx wrangler deploy

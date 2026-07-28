@@ -240,6 +240,122 @@ async function verifyAccessJwt(request, env) {
 // Checks sym/tier/lens/note only and DELIBERATELY PASSES THROUGH unknown per-entry
 // keys — the admin client owns their shape (`fp`, `rank`, and FEAT-TT-RUN's `lastRun`
 // all ride this). Load-bearing behavior, not an oversight. Exported for the smoke test.
+// FEAT-TT-SESSION (v3.28): board-level state — the things a TT session produces that no
+// single ticker owns (correlation clusters, the leverage circuit, the funding queue, open
+// decisions, non-ticker binaries, the session's asserted regime). Same doctrine as
+// deepDive: validate only the shape the terminal RENDERS, pass unknown keys through, so
+// the server never learns the private content. `as_of` is REQUIRED because every field
+// here is self-attested and the strips age it — undated session state must not be storable.
+const BOARD_MAX = 16 * 1024;
+const CIRCUIT_STATES = ["clear", "armed", "tripped"];
+const ISO_RE = /^\d{4}-\d{2}-\d{2}$/;
+export function validateBoard(b) {
+  if (!b || typeof b !== "object" || Array.isArray(b)) return "board must be an object";
+  if (!ISO_RE.test(String(b.as_of || ""))) return "board.as_of (YYYY-MM-DD) is required — session state ages";
+  if (JSON.stringify(b).length > BOARD_MAX) return "board exceeds " + BOARD_MAX / 1024 + "KB";
+  const c = b.circuit;
+  if (c !== undefined) {
+    if (!c || typeof c !== "object" || Array.isArray(c)) return "circuit must be an object";
+    if (!CIRCUIT_STATES.includes(String(c.state))) return "circuit.state must be clear|armed|tripped";
+    if (!ISO_RE.test(String(c.as_of || ""))) return "circuit.as_of (YYYY-MM-DD) is required";
+    // as_of dates the asserted STATE; measured_at dates the NUMBER behind it. Optional,
+    // because a state can legitimately be asserted with no fresh measurement — but if it
+    // is given it must be a real date, since the strip ages it as evidence.
+    if (c.measured_at !== undefined && !ISO_RE.test(String(c.measured_at))) return "circuit.measured_at must be YYYY-MM-DD";
+  }
+  if (b.clusters !== undefined) {
+    if (!Array.isArray(b.clusters)) return "clusters must be an array";
+    for (const cl of b.clusters) {
+      if (!cl || typeof cl !== "object") return "each cluster must be an object";
+      if (typeof (cl.label || cl.id) !== "string") return "each cluster needs a label or id";
+      if (!Array.isArray(cl.members) || !cl.members.length) return "each cluster needs a non-empty members array";
+      for (const m of cl.members) if (typeof m !== "string" || !SYM_RE.test(m)) return "bad cluster member: " + JSON.stringify(m);
+    }
+  }
+  const f = b.funding;
+  if (f !== undefined) {
+    if (!f || typeof f !== "object" || Array.isArray(f)) return "funding must be an object";
+    if (f.order !== undefined) {
+      if (!Array.isArray(f.order)) return "funding.order must be an array";
+      for (const o of f.order) if (!o || typeof o !== "object" || !SYM_RE.test(String(o.sym))) return "each funding.order row needs a sym";
+    }
+    if (f.do_not_trim !== undefined) {
+      if (!Array.isArray(f.do_not_trim)) return "funding.do_not_trim must be an array";
+      for (const s of f.do_not_trim) if (typeof s !== "string" || !SYM_RE.test(s)) return "bad do_not_trim sym: " + JSON.stringify(s);
+    }
+  }
+  if (b.decisions !== undefined) {
+    if (!Array.isArray(b.decisions)) return "decisions must be an array";
+    for (const d of b.decisions) {
+      if (!d || typeof d !== "object" || typeof d.q !== "string" || !d.q) return "each decision needs a q (the question)";
+      if (d.asked !== undefined && !ISO_RE.test(String(d.asked))) return "decision.asked must be YYYY-MM-DD";
+    }
+  }
+  if (b.binaries !== undefined) {
+    if (!Array.isArray(b.binaries)) return "binaries must be an array";
+    for (const k of b.binaries)
+      if (!k || !ISO_RE.test(String(k.date)) || typeof (k.label || k.event) !== "string")
+        return "each binary needs {date: YYYY-MM-DD, label|event}";
+  }
+  if (b.regime !== undefined) {
+    if (!b.regime || typeof b.regime !== "object" || Array.isArray(b.regime)) return "regime must be an object";
+    if (typeof b.regime.asserted !== "string" || !b.regime.asserted) return "regime.asserted (the session's read) is required";
+  }
+  // FEAT-TT-POS: the account-level measured block. `formula` is REQUIRED because mapping
+  // broker fields to a leverage ratio is a judgment call, not a lookup — recording which
+  // numbers were divided makes the figure that vetoes every add inspectable and correctable
+  // instead of magic arriving from a script nobody can audit.
+  if (b.account !== undefined) {
+    const a = b.account;
+    if (!a || typeof a !== "object" || Array.isArray(a)) return "account must be an object";
+    if (!ISO_DT_RE.test(String(a.at || ""))) return "account.at (ISO date/time) is required";
+    if (typeof a.src !== "string" || !a.src) return "account.src is required";
+    if (typeof a.formula !== "string" || !a.formula) return "account.formula is required — the leverage number must say how it was computed";
+    for (const k of ["nav", "debt", "debt_pct_nav"])
+      if (a[k] !== undefined && !isFinite(Number(a[k]))) return "account." + k + " must be a number";
+  }
+  return null;
+}
+
+// FEAT-TT-POS (v3.30): a MEASURED position, written by the broker sync — never typed.
+// This is a different epistemic class from everything else in an entry: tier/lens/note/
+// deepDive are ASSERTED by a human and aged by lastRun, while `pos` is a fact with its own
+// timestamp and source. It sits at entry level (beside `dots`) and NOT inside deepDive on
+// purpose — the payload editor replaces deepDive wholesale, so a thesis paste would destroy
+// measured facts stored there.
+// Values are plausibility-banded in the spirit of BANDS/applyBands in snapshot.js: reject
+// the impossible, not the unusual. A decimal-shifted weight would otherwise sail through
+// and trip a cap breach (or, worse, silently clear one).
+const ISO_DT_RE = /^\d{4}-\d{2}-\d{2}([T ]\d{2}:\d{2}(:\d{2})?(\.\d+)?Z?)?$/;
+export function validatePos(p) {
+  if (!p || typeof p !== "object" || Array.isArray(p)) return "pos must be an object";
+  if (!ISO_DT_RE.test(String(p.at || ""))) return "pos.at (ISO date/time) is required — a measured fact without a time cannot be aged";
+  if (typeof p.src !== "string" || !p.src) return "pos.src is required — a measured fact must name where it came from";
+  const num = (k, lo, hi) => {
+    if (p[k] === undefined || p[k] === null) return null;
+    const v = Number(p[k]);
+    if (!isFinite(v)) return `pos.${k} must be a number`;
+    if (v < lo || v > hi) return `pos.${k} out of band (${lo}..${hi}): ${p[k]}`;
+    return null;
+  };
+  // Wide bands. A short equity position is real (sh < 0), a position worth more than the
+  // account is not, and a weight outside 0..100 is arithmetic that already went wrong.
+  for (const e of [num("sh", -1e9, 1e9), num("mv", -1e12, 1e12), num("pct", 0, 100),
+                   num("cb", -1e12, 1e12), num("upl_pct", -100, 1e5)])
+    if (e) return e;
+  if (p.opt !== undefined) {
+    if (!Array.isArray(p.opt)) return "pos.opt must be an array";
+    for (const o of p.opt) {
+      if (!o || typeof o !== "object") return "each pos.opt leg must be an object";
+      if (!["call", "put"].includes(String(o.k))) return "option leg k must be call|put";
+      if (!["long", "short"].includes(String(o.side))) return "option leg side must be long|short";
+      if (!isFinite(Number(o.n)) || Number(o.n) <= 0) return "option leg n must be a positive contract count";
+      if (o.exp !== undefined && !ISO_RE.test(String(o.exp))) return "option leg exp must be YYYY-MM-DD";
+    }
+  }
+  return null;
+}
+
 export function validateBook(body) {
   if (!body || typeof body !== "object") return "body must be an object";
   const { book, cut } = body;
@@ -258,8 +374,16 @@ export function validateBook(body) {
     if (typeof (e.note ?? "") !== "string" || (e.note || "").length > 500) return "bad note for " + e.sym;
     if (e.lastRun !== undefined && !(typeof e.lastRun === "string" && /^\d{4}-\d{2}-\d{2}$/.test(e.lastRun)))
       return "bad lastRun for " + e.sym;
+    if (e.pos !== undefined && e.pos !== null) {
+      const pe = validatePos(e.pos);
+      if (pe) return e.sym + " pos: " + pe;
+    }
   }
   for (const s of cut) if (typeof s !== "string" || s.length > 12) return "bad cut entry";
+  if (body.board !== undefined && body.board !== null) {
+    const be = validateBoard(body.board);
+    if (be) return "board: " + be;
+  }
   return null;
 }
 
@@ -400,6 +524,12 @@ export async function onRequestPut({ request, env }) {
   const prevV = parseFloat(prev?.version);
   const version = Number.isFinite(prevV) ? (prevV + 0.1).toFixed(1) : (body.version || "1.0");
   const stored = { version, asOf: etDate(), book: body.book, cut: body.cut };
+  // FEAT-TT-SESSION: the book is a whole-document replace, but `board` must not inherit
+  // that. An ABSENT board means "this client doesn't know about board" (curl recovery, an
+  // older cached bundle) — deleting the session state on their behalf would be a silent
+  // data loss the operator never asked for. Absent → carry forward; explicit null → clear.
+  const carried = body.board === undefined ? prev?.board : body.board;
+  if (carried) stored.board = carried;
 
   // Snapshot before overwriting — KV holds one value per key, so without this an overwrite
   // is unrecoverable. FIRST write of each ET day wins: the snapshot must preserve the

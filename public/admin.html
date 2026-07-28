@@ -3,7 +3,9 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>TT TICKER TERMINAL v1.0</title>
+<!-- AUDIT: kept in sync with package.json by test/smoke.mjs. admin.html is a Vite
+     public/ passthrough, so it cannot receive __APP_VERSION__ — the guard is the fix. -->
+<title>TT TICKER TERMINAL v3.31.1</title>
 <style>
   :root{
     --bg:#05070a; --panel:#0a0f16; --panel2:#0d141d; --line:#16202c;
@@ -92,6 +94,33 @@
   .nd .scope{font-size:9px;color:var(--dim)}
   .nd .warn2{font-size:9px;color:var(--amber)} .nd .bad2{font-size:9px;color:var(--red)}
   .nd .none{color:var(--dim);font-size:11.5px;margin-top:4px}
+  /* ── FEAT-TT-TODAY (v3.29): the one-screen daily answer + one-tap drawers ── */
+  .tdy-stance{border:1px solid;border-radius:8px;padding:10px 13px;margin-bottom:10px;
+    background:#070c11;font-size:13px;letter-spacing:.02em}
+  .tdy-why{color:var(--dim);font-size:10.5px;margin-top:3px;letter-spacing:.02em}
+  .tdy-lbl{font-size:9px;letter-spacing:.16em;color:var(--dim);text-transform:uppercase;margin:10px 0 5px}
+  .tdy-act{border-left:3px solid var(--line);padding:5px 0 5px 9px;margin-bottom:5px;font-size:12px}
+  .tdy-act:hover{background:#0a1119}
+  details.drawer{border:1px solid var(--line);border-radius:7px;background:#080d13;margin-top:7px}
+  details.drawer>summary{cursor:pointer;list-style:none;padding:8px 12px;font-size:10.5px;
+    letter-spacing:.12em;color:var(--dim);text-transform:uppercase;user-select:none}
+  details.drawer>summary::-webkit-details-marker{display:none}
+  details.drawer>summary::before{content:"▸ ";color:var(--greenDim)}
+  details.drawer[open]>summary::before{content:"▾ "}
+  details.drawer[open]>summary{border-bottom:1px dashed var(--line)}
+  details.drawer>div{padding:4px 12px 10px}
+  details.drawer .nd{border:none;box-shadow:none;background:transparent;padding:4px 0;margin-bottom:0}
+  .chip .chg{font-size:9.5px;font-weight:700;letter-spacing:0}
+  /* FEAT-TT-POS: measured weight. Deliberately dimmer than the day move — the move is what
+     changed, the weight is what is. */
+  .chip .wt{font-size:9px;color:var(--slate);letter-spacing:0}
+  /* FEAT-TT-DDFOCUS (v3.31): the four answers a name's tab exists to give */
+  .dd-answer{display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin:12px 0 6px}
+  @media(max-width:700px){.dd-answer{grid-template-columns:repeat(2,1fr)}}
+  .dd-a{border:1px solid var(--line);border-radius:7px;background:#080d13;padding:8px 10px;min-width:0}
+  .dd-ak{font-size:8.5px;letter-spacing:.14em;color:var(--dim);text-transform:uppercase}
+  .dd-av{font-size:14px;font-weight:700;margin-top:3px;overflow-wrap:anywhere}
+  .dd-as{font-size:10px;color:var(--slate);margin-top:2px;overflow-wrap:anywhere}
   /* book-coverage rollup — mirrors MacroDash's Signal Quality strip */
   .cov{display:flex;align-items:center;gap:10px;flex-wrap:wrap;font-size:10px;color:var(--dim);
     letter-spacing:.06em;padding:2px 0 8px;border-bottom:1px dashed var(--line);margin-bottom:10px}
@@ -176,11 +205,14 @@
 <body>
 <div class="wrap">
   <header>
-    <div class="brand">FINANCE&nbsp;BRO.AI // TT&nbsp;TICKER&nbsp;TERMINAL <small>v1.1 · single-pass deep-dive orchestrator</small></div>
+    <div class="brand">FINANCE&nbsp;BRO.AI // TT&nbsp;TICKER&nbsp;TERMINAL <small>v3.31.1 · single-pass deep-dive orchestrator</small></div>
     <div class="statusline">
       <span>BOOK: <b id="bookStamp">loading…</b></span>
       <span>AUTH: <b id="sessState">…</b></span>
-      <span>REGIME: <span class="pill neutral" id="regimePill">loading…</span></span>
+      <!-- v3.29: labelled MACRO, not REGIME. This pill is MacroDash's MEASURED read; the
+           session can assert a different one, and the TODAY stance shows which governs.
+           An unqualified "REGIME:" made the header look like it contradicted the stance. -->
+      <span>MACRO: <span class="pill neutral" id="regimePill">loading…</span></span>
       <span style="margin-left:auto"><a href="/">← DASH</a></span>
     </div>
     <div id="authBanner" style="display:none;margin-top:8px;color:var(--red);font-size:12px">
@@ -202,11 +234,14 @@
        globally reachable — the unsaved/conflict banners link to it by function name. -->
   <div class="toolbar">
     <button class="act" onclick="openAdd()">+ ADD TICKER</button>
+    <button class="act" onclick="openSession()">◧ SESSION</button>
     <button class="act warn" onclick="reloadBook()">⟲ RELOAD</button>
-    <button class="act" onclick="openPinSetup()">🔐 PIN</button>
-    <button class="act" onclick="toggleBackup()" id="backupToggle">⛭ BACKUP ▸</button>
+    <!-- v3.29: PIN joins the manage row. It is a once-per-30-days action and it was the
+         button that pushed this toolbar onto a second line on a phone. -->
+    <button class="act" onclick="toggleBackup()" id="backupToggle">⛭ MANAGE ▸</button>
   </div>
   <div class="toolbar" id="backupRow" style="display:none">
+    <button class="act" onclick="openPinSetup()">🔐 PIN</button>
     <button class="act" onclick="exportBook()">⭳ EXPORT CANONICAL_BOOK.md</button>
     <button class="act" onclick="exportJSON()">⭳ EXPORT JSON</button>
     <button class="act" onclick="openImport()">⇪ IMPORT JSON</button>
@@ -217,10 +252,28 @@
     <div class="panel">
       <div class="tabs" id="tabBar" style="display:none"></div>
       <div id="boardView">
-        <h2>Tier Board &nbsp;·&nbsp; click any ticker to open its TT Card</h2>
-        <div class="nd" id="nextDollar"></div>
-        <div class="nd" id="upsideRank" style="margin-top:8px"></div>
-        <div class="nd" id="binaryCal" style="margin-top:8px"></div>
+        <!-- FEAT-TT-TODAY (v3.29): the default view answers the daily loop — can I add,
+             what must I do, what changed — and nothing else. Every other strip keeps its
+             element but now lives inside a one-tap drawer whose SUMMARY carries its signal,
+             so a closed drawer can never hide a red thing (the v3.25 hinge rule). -->
+        <div id="todayCard"></div>
+        <details class="drawer" id="dChanged"><summary id="sChanged">WHAT CHANGED</summary>
+          <div id="changedPanel"></div></details>
+
+        <details class="drawer" id="dNext"><summary id="sNext">NEXT DOLLAR &amp; UPSIDE</summary>
+          <div class="nd" id="nextDollar"></div>
+          <div class="nd" id="upsideRank" style="margin-top:8px"></div></details>
+        <details class="drawer" id="dExp" style="display:none"><summary id="sExp">EXPOSURE</summary>
+          <div class="nd" id="clusterLine" style="display:none"></div>
+          <div class="nd" id="fundingLine" style="display:none;margin-top:8px"></div></details>
+        <details class="drawer" id="dCal"><summary id="sCal">CALENDAR</summary>
+          <div class="nd" id="binaryCal"></div></details>
+        <details class="drawer" id="dDec" style="display:none"><summary id="sDec">DECISIONS</summary>
+          <div class="nd" id="decisionsLine" style="display:none"></div></details>
+        <details class="drawer" id="dCirc" style="display:none"><summary id="sCirc">CIRCUIT &amp; REGIME</summary>
+          <div class="nd" id="circuitLine" style="display:none"></div></details>
+
+        <h2 style="margin-top:14px">The Book &nbsp;·&nbsp; click any ticker to open its TT Card</h2>
         <div class="cov" id="coverage"></div>
         <div id="board"></div>
       </div>
@@ -228,8 +281,10 @@
     </div>
 
     <aside>
-      <div class="panel" style="margin-bottom:12px">
-        <h2>Router / Lens Legend</h2>
+      <!-- v3.29: reference, not monitoring. Three always-open panels of standing text were
+           a third of the desktop viewport and (below 900px) three screens of scroll under
+           the book. Same treatment as the strips: one tap, nothing deleted. -->
+      <details class="drawer"><summary>ROUTER / LENS LEGEND</summary>
         <div class="legend">
           <div><span class="swatch" style="background:var(--AI)"></span><b class="lens-AI">[AI]</b> AI Infrastructure Harness v2</div>
           <div><span class="swatch" style="background:var(--PH)"></span><b class="lens-PH">[PH]</b> Physical AI Harness</div>
@@ -238,10 +293,9 @@
           <div><span class="swatch" style="background:var(--SP)"></span><b class="lens-SP">[SP]</b> Speculative / optionality</div>
           <div style="margin-top:6px;color:var(--amber)">◦FP = first-principles routing call (veto if wrong)</div>
         </div>
-      </div>
+      </details>
 
-      <div class="panel" style="margin-bottom:12px">
-        <h2>Standing Constraints</h2>
+      <details class="drawer"><summary>STANDING CONSTRAINTS</summary>
         <ul class="tight">
           <li><b>18%</b> hard single-position cap — no conviction exceptions</li>
           <li><b>K-1 avoidance</b> — 1099-only vehicles over direct MLPs</li>
@@ -250,12 +304,16 @@
           <li><b>Targets:</b> 12–15% CAGR, beat SPX, compound w/o blowing up</li>
           <li>Composite ≥8.5=S · 7.0–8.4=A · 5.5–6.9=B · &lt;5.5=C. Gates cap, never boost.</li>
         </ul>
-      </div>
+      </details>
 
-      <div class="panel">
-        <h2>Open Items / Blockers</h2>
-        <ul class="tight"><li>Load your book to populate tiers, then track blockers here. Composite / technical / R-R lines are filled by a live <b>TT run</b> in chat, not stored in the file.</li></ul>
-      </div>
+      <details class="drawer"><summary>HOW THIS BOARD WORKS</summary>
+        <ul class="tight">
+          <li><b>TODAY</b> is derived, never typed: stance = circuit then the stricter regime; actions are ordered by irreversibility (tonight's print outranks any add).</li>
+          <li><b>WHAT CHANGED</b> diffs against the moment you last hit <i>mark seen</i> — not against an arbitrary session window.</li>
+          <li>Open decisions live in the <b>DECISIONS</b> drawer and age in public; an undated one reads as the worst, never the freshest.</li>
+          <li>Composite / technical / R-R lines are filled by a live <b>TT run</b> in chat, not stored here.</li>
+        </ul>
+      </details>
     </aside>
   </div>
 
@@ -303,6 +361,11 @@ const TIER_LABEL={S:"S-TIER",A:"A-TIER",B:"B-TIER",DEF:"DEFENSIVE",WATCH:"WATCHL
    never seeded in this file. SEED stays empty by invariant. */
 const SEED=[];
 let CUT=[];
+/* FEAT-TT-SESSION (v3.28): board-level session state (clusters / leverage circuit /
+   funding queue / open decisions / non-ticker binaries / the session's asserted regime).
+   Lives in the same KV document as the book — never the repo — and renders NOTHING when
+   absent, so a terminal with no session loaded looks exactly as it did before. */
+let BOARD={};
 
 /* TT CARD schema — the fixed DEEP-mode output lines (populated by a live TT run) */
 const CARD_FIELDS=[
@@ -370,7 +433,7 @@ async function api(method,body,ifMatch){
   return data;
 }
 function applyServer(data){
-  BOOK=data.book||[];CUT=data.cut||[];
+  BOOK=data.book||[];CUT=data.cut||[];BOARD=data.board||{};
   META={version:data.version,asOf:data.asOf};
   if(data.auth)AUTH=data.auth;
   stampHeader();stampAuthState();
@@ -387,7 +450,7 @@ function stampAuthState(){
 function toggleBackup(){
   const r=document.getElementById("backupRow");const open=r.style.display!=="none";
   r.style.display=open?"none":"flex";
-  document.getElementById("backupToggle").textContent=open?"⛭ BACKUP ▸":"⛭ BACKUP ▾";
+  document.getElementById("backupToggle").textContent=open?"⛭ MANAGE ▸":"⛭ MANAGE ▾";
 }
 /* FEAT-TT-RUN: days since an ISO date, or null if absent/unparseable. Null is the
    FAIL-CLOSED signal — unlike src/sources.js isStale (which returns false = "not stale"
@@ -432,14 +495,15 @@ async function loadBook(){
    Never re-GET on a save failure: the local edit is the only copy of it. */
 let DIRTY=false;
 const MAX_BODY=64*1024; // mirror of the server cap in functions/api/tt.js
+function bookDoc(){return{book:BOOK,cut:CUT,board:BOARD&&Object.keys(BOARD).length?BOARD:null};}
 async function persist(){
-  const raw=JSON.stringify({book:BOOK,cut:CUT});
+  const raw=JSON.stringify(bookDoc());
   if(raw.length>MAX_BODY){ // pre-flight, so overflow reads as a specific local message
     DIRTY=true;showUnsaved(`payload ${Math.round(raw.length/1024)}KB exceeds the ${MAX_BODY/1024}KB server cap`);
     return;
   }
   try{
-    const data=await api("PUT",{book:BOOK,cut:CUT},META.version||"*");
+    const data=await api("PUT",bookDoc(),META.version||"*");
     DIRTY=false;document.getElementById("saveBanner").style.display="none";
     applyServer(data);render();
   }catch(e){
@@ -465,7 +529,7 @@ function showConflict(server){
 }
 async function overwriteServer(){
   try{
-    const data=await api("PUT",{book:BOOK,cut:CUT},"*"); // explicit override
+    const data=await api("PUT",bookDoc(),"*"); // explicit override
     DIRTY=false;document.getElementById("saveBanner").style.display="none";
     applyServer(data);render();toast("Server overwritten with this device's book");
   }catch(e){showUnsaved(e.message);}
@@ -540,7 +604,7 @@ async function previewSnapshot(date){
     const res=await fetch("/api/tt?snapshot="+encodeURIComponent(date));
     const d=await res.json();
     if(!res.ok)throw new Error(d.error||("HTTP "+res.status));
-    BOOK=d.book||[];CUT=d.cut||[];DIRTY=true;
+    BOOK=d.book||[];CUT=d.cut||[];BOARD=d.board||{};DIRTY=true;
     closeCard();render();
     showUnsaved(`previewing the ${date} restore point (v${d.version}). Review it, then save it to make it live, or discard to return to the current book`,"preview");
     toast(`Loaded ${date} restore point — review, then save or discard`);
@@ -567,11 +631,646 @@ async function importSave(){
     if(e.deepDive!==undefined){const der=validateDeepDive(e.deepDive);if(der)return toast("Import rejected: "+e.sym+" deep dive: "+der);}
     if(e.projection!==undefined){const per=validateProjection(e.projection);if(per)return toast("Import rejected: "+e.sym+" projection: "+per);}
   }
+  // FEAT-TT-SESSION: an import that carries board state validates it too, BEFORE anything
+  // is replaced. An import that carries none leaves the existing session state alone —
+  // the server does the same, and a book restore must not silently clear the circuit.
+  if(parsed.board!==undefined&&parsed.board!==null){
+    const ber=validateSession(parsed.board);
+    if(ber)return toast("Import rejected: board: "+ber);
+  }
   BOOK=book;CUT=cut;
-  closeCard();await persist();toast("Book imported & saved to server");
+  if(parsed.board!==undefined&&parsed.board!==null)BOARD=parsed.board;
+  closeCard();await persist();toast("Book imported & saved to server"+(parsed.board?" (incl. session state)":""));
+}
+
+/* ═══════════ SESSION STATE EDITOR + HANDOFF PATCH (FEAT-TT-SESSION v3.28) ═══════════ */
+/* Two paste boxes, one modal. The top one edits the board document directly. The bottom
+   one applies a SESSION HANDOFF as a MERGE — the critical difference from IMPORT JSON,
+   which replaces the whole book. A handoff covers the names that session touched, so
+   importing one as a book would silently delete every name it didn't mention. This path
+   only adds and updates, names exactly what it changed, and writes nothing until SAVE. */
+function openSession(){
+  CURRENT=null;
+  document.getElementById("cTitle").textContent="SESSION STATE";
+  const cur=BOARD&&Object.keys(BOARD).length?JSON.stringify(BOARD,null,2):"";
+  const ta=`width:100%;min-height:150px;background:#060b0f;border:1px solid var(--line);color:var(--fg);border-radius:5px;padding:8px;font-family:inherit;font-size:12px;outline:none`;
+  document.getElementById("cBody").innerHTML=`
+    <div class="derived" style="margin-bottom:8px">Board-level state a TT session produces that no single ticker owns:
+    <b>circuit</b> (leverage), <b>clusters</b> (what is really one position), <b>funding</b> (what gets trimmed),
+    <b>decisions</b> (still open), <b>binaries</b> (non-ticker dates), <b>regime</b> (the session's asserted read).
+    All of it is self-attested, so <code>as_of</code> is required and every strip shows its age.</div>
+    <textarea id="fSession" style="${ta}" placeholder='{"as_of":"YYYY-MM-DD","source":"TT session","circuit":{...}}'>${esc(cur)}</textarea>
+    <div class="derived" style="margin:12px 0 8px;border-top:1px dashed var(--line);padding-top:10px">
+    <b>HANDOFF PATCH — merge, never replace.</b> Paste <code>{board, updates:[{sym,…}], cut_add:[]}</code>.
+    Existing names are updated field-by-field, new names are added (they must carry tier + lens),
+    and <b>nothing is ever removed</b>. Review the summary, then SAVE — the merge is only on screen until you do.</div>
+    <textarea id="fHandoff" style="${ta};min-height:120px" placeholder='{"updates":[{"sym":"MU","tier":"WATCH","lens":"AI","note":"…","lastRun":"YYYY-MM-DD"}]}'></textarea>`;
+  document.getElementById("cBtns").innerHTML=`
+    <button class="act" onclick="sessionSave()">✔ SAVE SESSION STATE</button>
+    <button class="act" onclick="applyHandoff()">⇪ APPLY HANDOFF PATCH (merge)</button>
+    <button class="act" onclick="closeCard()">CANCEL</button>`;
+  document.getElementById("overlay").classList.add("on");
+}
+async function sessionSave(){
+  const raw=(document.getElementById("fSession").value||"").trim();
+  if(!raw){ // explicit clear — the only way to remove session state, never a side effect
+    if(!window.confirm("Clear all session state (circuit, clusters, funding, decisions)?"))return;
+    BOARD={};closeCard();await persist();return toast("Session state cleared");
+  }
+  let b;try{b=JSON.parse(raw);}catch(_e){return toast("Invalid JSON in session state");}
+  const err=validateSession(b);
+  if(err)return toast("Rejected: "+err);
+  BOARD=b;closeCard();await persist();toast("Session state saved");
+}
+function applyHandoff(){
+  const raw=(document.getElementById("fHandoff").value||"").trim();
+  if(!raw)return toast("Paste a handoff patch first");
+  let p;try{p=JSON.parse(raw);}catch(_e){return toast("Invalid JSON in the handoff patch");}
+  const ups=p.updates===undefined?[]:p.updates;
+  if(!Array.isArray(ups))return toast("Rejected: 'updates' must be an array");
+  if(p.board!==undefined&&p.board!==null){const e=validateSession(p.board);if(e)return toast("Rejected: board: "+e);}
+  const cutAdd=p.cut_add===undefined?[]:p.cut_add;
+  if(!Array.isArray(cutAdd))return toast("Rejected: 'cut_add' must be an array");
+  if(!ups.length&&p.board===undefined&&!cutAdd.length)return toast("Nothing to apply — patch carries no board, updates or cut_add");
+  // VALIDATE EVERYTHING FIRST. A half-applied patch is worse than a rejected one: the
+  // board would render a mixture the operator never reviewed and cannot easily undo.
+  const seen=new Set();
+  for(const u of ups){
+    if(!u||typeof u!=="object")return toast("Rejected: each update must be an object");
+    if(typeof u.sym!=="string"||!/^[A-Z.\-]{1,8}$/.test(u.sym))return toast("Rejected: bad ticker "+JSON.stringify(u&&u.sym));
+    if(seen.has(u.sym))return toast("Rejected: "+u.sym+" appears twice in the patch");
+    seen.add(u.sym);
+    const cur=find(u.sym);
+    if(!cur&&(!TIER_ORDER.includes(u.tier)||!Object.keys(LENS_NAME).includes(u.lens)))
+      return toast("Rejected: "+u.sym+" is new to the book — an added name must carry a valid tier and lens");
+    if(u.tier!==undefined&&!TIER_ORDER.includes(u.tier))return toast("Rejected: bad tier for "+u.sym);
+    if(u.lens!==undefined&&!Object.keys(LENS_NAME).includes(u.lens))return toast("Rejected: bad lens for "+u.sym);
+    if(u.lastRun!==undefined&&!/^\d{4}-\d{2}-\d{2}$/.test(String(u.lastRun)))return toast("Rejected: bad lastRun for "+u.sym);
+    if(u.note!==undefined&&(typeof u.note!=="string"||u.note.length>500))return toast("Rejected: note too long for "+u.sym);
+    if(u.deepDive!==undefined){const e=validateDeepDive(u.deepDive);if(e)return toast("Rejected: "+u.sym+" deep dive: "+e);}
+    if(u.projection!==undefined){const e=validateProjection(u.projection);if(e)return toast("Rejected: "+u.sym+" projection: "+e);}
+  }
+  for(const s of cutAdd)if(typeof s!=="string"||s.length>12)return toast("Rejected: bad cut_add entry");
+  // Merge.
+  const added=[],changed=[];
+  ups.forEach(u=>{
+    const cur=find(u.sym);
+    if(!cur){BOOK.push({...u});added.push(u.sym);return;}
+    const diff=Object.keys(u).filter(k=>k!=="sym"&&JSON.stringify(cur[k])!==JSON.stringify(u[k]));
+    if(diff.length){Object.assign(cur,u);changed.push(`${u.sym} (${diff.join(", ")})`);}
+  });
+  const newCut=cutAdd.filter(s=>!CUT.includes(s));
+  CUT=CUT.concat(newCut);
+  const boardChanged=p.board!==undefined&&p.board!==null;
+  if(boardChanged)BOARD=p.board;
+  DIRTY=true;closeCard();render();
+  const parts=[
+    added.length?`${added.length} added (${added.join(", ")})`:null,
+    changed.length?`${changed.length} updated: ${changed.join("; ")}`:null,
+    newCut.length?`${newCut.length} cut (${newCut.join(", ")})`:null,
+    boardChanged?"session state replaced":null,
+  ].filter(Boolean);
+  const untouched=BOOK.length-added.length-changed.length;
+  showUnsaved(`handoff merged on screen — ${parts.length?parts.join(" · "):"no field actually differed"} · ${untouched} book name${untouched===1?"":"s"} untouched`,"preview");
+  toast("Merged — review the board, then SAVE (nothing is on the server yet)");
 }
 function byTier(t){return BOOK.filter(x=>x.tier===t);}
 function find(sym){return BOOK.find(x=>x.sym===sym.toUpperCase());}
+
+/* ═══════════ SESSION STATE (FEAT-TT-SESSION v3.28) ═══════════ */
+/* A TT session produces conclusions that no single ticker owns: which names are really ONE
+   position (correlation cluster), whether the leverage circuit is tripped, what gets trimmed
+   to fund anything, and which decisions are still unanswered. Those lived only in the
+   session write-up, so the board could show a green NEXT DOLLAR while the portfolio was in
+   deleverage-only mode and the top two picks were the same bet twice.
+   Everything here is SELF-ATTESTED (like lastRun), so every strip carries its own age and
+   says so. Absent sections render nothing at all — no session loaded must look identical to
+   the terminal before this feature, never like a set of empty promises. */
+const SESS_MAX=16*1024;                                  // mirror of BOARD_MAX in functions/api/tt.js
+const CIRCUIT_STATES=["clear","armed","tripped"];
+const SESS_WARN_D=3, SESS_BAD_D=10;                      // a session read goes cold fast
+function validateSession(b){
+  if(!b||typeof b!=="object"||Array.isArray(b))return "board must be an object";
+  if(!/^\d{4}-\d{2}-\d{2}$/.test(String(b.as_of||"")))return "as_of (YYYY-MM-DD) is required — session state ages";
+  if(JSON.stringify(b).length>SESS_MAX)return "board exceeds "+(SESS_MAX/1024)+"KB";
+  if(b.circuit!==undefined){
+    const c=b.circuit;
+    if(!c||typeof c!=="object"||Array.isArray(c))return "circuit must be an object";
+    if(!CIRCUIT_STATES.includes(String(c.state)))return "circuit.state must be clear|armed|tripped";
+    if(!/^\d{4}-\d{2}-\d{2}$/.test(String(c.as_of||"")))return "circuit.as_of (YYYY-MM-DD) is required — an undated circuit reads as current forever";
+    if(c.measured_at!==undefined&&!/^\d{4}-\d{2}-\d{2}$/.test(String(c.measured_at)))return "circuit.measured_at must be YYYY-MM-DD";
+  }
+  if(b.clusters!==undefined){
+    if(!Array.isArray(b.clusters))return "clusters must be an array";
+    for(const cl of b.clusters){
+      if(!cl||typeof cl!=="object")return "each cluster must be an object";
+      if(typeof(cl.label||cl.id)!=="string")return "each cluster needs a label or id";
+      if(!Array.isArray(cl.members)||!cl.members.length)return "each cluster needs a non-empty members array";
+      for(const m of cl.members)if(typeof m!=="string"||!/^[A-Z.\-]{1,8}$/.test(m))return "bad cluster member: "+JSON.stringify(m);
+    }
+  }
+  if(b.funding!==undefined){
+    const f=b.funding;
+    if(!f||typeof f!=="object"||Array.isArray(f))return "funding must be an object";
+    if(f.order!==undefined){
+      if(!Array.isArray(f.order))return "funding.order must be an array";
+      for(const o of f.order)if(!o||typeof o!=="object"||!/^[A-Z.\-]{1,8}$/.test(String(o.sym)))return "each funding.order row needs a sym";
+    }
+    if(f.do_not_trim!==undefined){
+      if(!Array.isArray(f.do_not_trim))return "funding.do_not_trim must be an array";
+      for(const s of f.do_not_trim)if(typeof s!=="string"||!/^[A-Z.\-]{1,8}$/.test(s))return "bad do_not_trim sym: "+JSON.stringify(s);
+    }
+  }
+  if(b.decisions!==undefined){
+    if(!Array.isArray(b.decisions))return "decisions must be an array";
+    for(const d of b.decisions){
+      if(!d||typeof d!=="object"||typeof d.q!=="string"||!d.q)return "each decision needs a q (the question)";
+      if(d.asked!==undefined&&!/^\d{4}-\d{2}-\d{2}$/.test(String(d.asked)))return "decision.asked must be YYYY-MM-DD";
+    }
+  }
+  if(b.binaries!==undefined){
+    if(!Array.isArray(b.binaries))return "binaries must be an array";
+    for(const k of b.binaries)
+      if(!k||!/^\d{4}-\d{2}-\d{2}$/.test(String(k.date))||typeof(k.label||k.event)!=="string")
+        return "each binary needs {date: YYYY-MM-DD, label|event}";
+  }
+  if(b.regime!==undefined){
+    if(!b.regime||typeof b.regime!=="object"||Array.isArray(b.regime))return "regime must be an object";
+    if(typeof b.regime.asserted!=="string"||!b.regime.asserted)return "regime.asserted (the session's read) is required";
+  }
+  return null;
+}
+/* The age tell every session strip carries. Undated is the WORST state, never the absent
+   one — same fail-closed rule as ageDays(): unknown must never read as current. */
+function sessChip(iso,label){
+  const d=ageDays(iso);
+  if(d===null)return `<span class="bad2">⚠ ${label||"undated"} — cannot be aged</span>`;
+  if(d<0)return `<span class="bad2">⚠ dated in the future (${esc(iso)})</span>`;
+  const cls=d>SESS_BAD_D?"bad2":d>SESS_WARN_D?"warn2":"scope";
+  return `<span class="${cls}">${d===0?"today":d+"d old"}</span>`;
+}
+function sessSec(el,html){
+  const n=document.getElementById(el);if(!n)return;
+  n.style.display=html?"block":"none";n.innerHTML=html||"";
+}
+/* ── the leverage circuit ── gates every add, so it renders ABOVE the next dollar ── */
+function renderCircuit(){
+  const c=BOARD.circuit;
+  if(!c||typeof c!=="object")return sessSec("circuitLine","");
+  const st=String(c.state||"").toLowerCase();
+  const col=st==="tripped"?"var(--red)":st==="armed"?"var(--amber)":"var(--green)";
+  const glyph=st==="tripped"?"⛔":st==="armed"?"⚠":"●";
+  let h=`<div class="lbl">Leverage circuit${c.id?` · ${esc(c.id)}`:""}</div>`+
+    `<div style="color:${col};font-weight:700;font-size:12px;margin-top:3px">${glyph} ${esc(c.label||"circuit")} — ${esc(st.toUpperCase())}</div>`;
+  const v=Number(c.value),tl=Number(c.trip_line);
+  if(isFinite(v)&&isFinite(tl)){
+    // as_of dates the ASSERTED STATE; measured_at dates the NUMBER. They are different
+    // claims and a session routinely asserts a state ahead of its next measurement, so
+    // collapsing them would let a fresh assertion launder a stale reading as current.
+    h+=`<div class="none" style="margin-top:3px">${esc(c.metric||"metric")}: <b>${esc(c.value)}</b> vs trip-line <b>${esc(c.trip_line)}</b> · `+
+      (c.measured_at?`measured ${sessChip(c.measured_at)}`:`<span class="bad2">⚠ measurement undated — the number's own age is unknown</span>`)+
+      ` · state ${sessChip(c.as_of,"undated state")}</div>`;
+    // FEAT-TT-POS: when the sync computed this, show the arithmetic. A leverage figure that
+    // vetoes every add must be checkable by the person it stops, not taken on faith.
+    const acct=BOARD.account;
+    if(acct&&acct.formula)
+      h+=`<div class="none"><span class="scope">computed as ${esc(acct.formula)}`+
+        `${acct.nav!=null?` · NAV ${money(acct.nav)}`:""}${acct.debt!=null?` · debt ${money(acct.debt)}`:""}`+
+        ` · from ${esc(acct.src||"?")} ${String(acct.at||"").slice(0,10)}</span></div>`;
+    // The stated state and the last measurement can legitimately disagree (a state asserted
+    // ahead of the next audit) — but that gap must be visible, never smoothed over.
+    if((v>=tl)!==(st==="tripped"))
+      h+=`<div class="none" style="color:var(--amber)">⚖ stated ${esc(st.toUpperCase())} but the last measurement says ${v>=tl?"tripped":"not tripped"} — the state is asserted ahead of the number; a live pull is what settles it</div>`;
+  }else{
+    h+=`<div class="none" style="margin-top:3px">${esc(c.metric||"")} · state ${sessChip(c.as_of,"undated state")}</div>`;
+  }
+  if(c.verified!==true)
+    h+=`<div class="none" style="color:var(--amber)">⚠ self-attested — not reconciled against a live account pull</div>`;
+  if(c.rule)h+=`<div class="none" style="color:${col}">${esc(c.rule)}</div>`;
+  if(st==="tripped")h+=`<div class="none" style="color:var(--red)">deleverage-only: a trim funds debt BEFORE any purchase — see FUNDING below</div>`;
+  if(c.note)h+=`<div class="none">${esc(c.note)}</div>`;
+  sessSec("circuitLine",h);
+}
+/* ── the funding queue: where the next dollar COMES FROM ── */
+function renderFunding(){
+  const f=BOARD.funding;
+  if(!f||typeof f!=="object")return sessSec("fundingLine","");
+  const order=Array.isArray(f.order)?f.order:[];
+  const dnt=Array.isArray(f.do_not_trim)?f.do_not_trim:[];
+  const tripped=String(BOARD.circuit&&BOARD.circuit.state).toLowerCase()==="tripped";
+  let h=`<div class="lbl">Funding — source of the next dollar${tripped?` · <span style="color:var(--red)">deleverage-first</span>`:""} · ${sessChip(f.as_of||BOARD.as_of)}</div>`;
+  if(f.rule)h+=`<div class="none">${esc(f.rule)}</div>`;
+  if(order.length){
+    h+=`<div class="picks">`+order.map((o,i)=>{
+      const blocked=!!o.blocker;
+      return `<span class="pick" style="border-color:${blocked?"#4a1a20":"var(--greenDim)"}"${find(o.sym)?` onclick="openCard('${esc(o.sym)}')"`:""} title="${esc(o.note||"")}">`+
+        `<span class="scope">${i+1}</span><span class="sym"${blocked?' style="color:var(--red)"':""}>${esc(o.sym)}</span>`+
+        (o.est?`<span class="scope">${esc(o.est)}</span>`:"")+
+        (blocked?`<span class="bad2">⛔ ${esc(o.blocker)}</span>`:"")+
+        (find(o.sym)?"":`<span class="scope">off-book</span>`)+`</span>`;
+    }).join("")+`</div>`;
+  }else h+=`<div class="none">no trim order set — nothing says where funding comes from.</div>`;
+  if(dnt.length)h+=`<div class="none">do NOT trim: <b>${dnt.map(esc).join(" · ")}</b>${f.do_not_trim_why?` — ${esc(f.do_not_trim_why)}`:""}</div>`;
+  // A name on both lists is a contradiction the operator has to resolve, not a preference
+  // the board gets to rank. Name it rather than picking a winner.
+  const both=order.map(o=>o.sym).filter(s=>dnt.includes(s));
+  if(both.length)h+=`<div class="none" style="color:var(--red)">⚠ ${both.map(esc).join(", ")} appears in BOTH the trim order and do-not-trim — resolve before trimming</div>`;
+  h+=`<div class="none">reported, not enforced — the board never places or blocks an order</div>`;
+  sessSec("fundingLine",h);
+}
+/* ── correlation clusters: "cluster = one position" ── */
+let LAST_RANK=[];   // top computed-upside syms, set by renderUpsideRank
+/* FEAT-TT-POS: book-vs-broker reconciliation. Renders only once something has synced —
+   before that every name would read as "not held" purely because nothing has been measured. */
+function reconcileLine(){
+  const r=reconcile();
+  if(!r)return `<div class="none"><span class="scope">no measured positions yet — run the broker sync to check the ${CAP_PCT}% cap, cluster totals and untracked exposure</span></div>`;
+  let h=`<div class="none">Book vs broker: <b>${r.held}</b> name${r.held===1?"":"s"} held with a measured size`;
+  if(r.untracked.length)
+    h+=` · <span style="color:var(--red)">${r.untracked.length} held but NOT in the book</span> `+
+       `<span class="scope">(${r.untracked.map(u=>esc(typeof u==="string"?u:u.sym)).join(", ")}) — exposure no thesis covers</span>`;
+  if(r.paper.length)
+    h+=` · <span class="scope">${r.paper.length} tracked but not held: ${r.paper.map(esc).join(", ")}</span>`;
+  return h+`</div>`;
+}
+function renderClusters(){
+  const cls=Array.isArray(BOARD.clusters)?BOARD.clusters:[];
+  if(!cls.length)return sessSec("clusterLine",reconcileLine()!==""&&BOOK.some(x=>posOf(x))?
+    `<div class="lbl">Exposure</div>`+reconcileLine():"");
+  const leads=ndLeads().map(x=>x.sym);
+  let h=`<div class="lbl">Correlation clusters · ${sessChip(BOARD.as_of)} · one cluster sizes as ONE position</div>`;
+  const caps=capChecks();
+  h+=cls.map(cl=>{
+    const inBook=cl.members.filter(m=>find(m));
+    const off=cl.members.filter(m=>!find(m));
+    // FEAT-TT-POS: the summed weight. Before this, the strip could say these names ARE one
+    // position but not how big that position was — the rule was unfalsifiable.
+    const cap=caps.find(c=>c.kind==="cluster"&&c.label===(cl.label||cl.id));
+    // The whole reason this strip exists: two ranked names in one cluster is one bet
+    // presented as diversification. Overlap with either queue has to shout.
+    const hitND=cl.members.filter(m=>leads.includes(m));
+    const hitUP=cl.members.filter(m=>LAST_RANK.includes(m));
+    return `<div style="margin-top:5px">`+
+      `<span style="color:var(--amber);font-weight:700">⛓ ${esc(cl.label||cl.id)}</span> `+
+      `<span class="scope">${inBook.length} in book${off.length?` · ${off.length} off-book`:""}</span>`+
+      (cap?` <span style="color:${cap.over?"var(--red)":"var(--green)"};font-weight:700">${cap.pct}% of NAV`+
+        `${cap.over?` — ${cap.over}pts OVER the ${CAP_PCT}% cap`:` / ${CAP_PCT}%`}</span> `+
+        `<span class="scope">${cap.n} measured${cap.missing.length?` · ${cap.missing.length} unmeasured (${cap.missing.map(esc).join(", ")}) — the total is a FLOOR`:""}`+
+        `${cap.age===null?" · ⚠ undated":cap.age>POS_STALE_D?` · ⚠ ${cap.age}d old`:""}</span>`:"")+`<br>`+
+      `<span style="font-size:11px">${cl.members.map(m=>find(m)?`<span style="color:var(--fg);cursor:pointer" onclick="openCard('${esc(m)}')">${esc(m)}</span>`:`<span style="color:var(--dim)">${esc(m)}</span>`).join(" · ")}</span>`+
+      (cl.rule?`<div class="none">${esc(cl.rule)}</div>`:"")+
+      (hitND.length>1?`<div class="none" style="color:var(--red)">⚠ ${hitND.map(esc).join(" + ")} are both next-dollar leads AND in this cluster — that is one position, not two</div>`:"")+
+      (hitUP.length>1?`<div class="none" style="color:var(--amber)">⚠ ${hitUP.map(esc).join(" + ")} are both in the computed-upside top ranks and in this cluster — the gap is one bet repeated</div>`:"")+
+      (cl.note?`<div class="none">${esc(cl.note)}</div>`:"")+`</div>`;
+  }).join("");
+  h+=reconcileLine();
+  sessSec("clusterLine",h);
+}
+/* ── open decisions: the queue that ages ── */
+function renderDecisions(){
+  const ds=Array.isArray(BOARD.decisions)?BOARD.decisions:[];
+  if(!ds.length)return sessSec("decisionsLine","");
+  const rows=ds.map(d=>({...d,age:ageDays(d.asked)}))
+    .sort((a,b)=>(b.age===null?1e9:b.age)-(a.age===null?1e9:a.age));   // undated + oldest first
+  const blocking=rows.filter(d=>d.blocking).length;
+  const oldest=rows[0]&&rows[0].age;
+  let h=`<div class="lbl">Open decisions (${rows.length})`+
+    (blocking?` · <span style="color:var(--amber)">${blocking} blocking the book</span>`:"")+
+    (oldest!=null?` · oldest ${oldest}d`:"")+`</div>`;
+  h+=rows.map(d=>{
+    const col=d.age===null?"var(--red)":d.age>14?"var(--red)":d.age>7?"var(--amber)":"var(--dim)";
+    return `<div class="none" style="color:var(--fg)">`+
+      `<span style="color:${col};font-weight:700">${d.age===null?"undated":d.age+"d"}</span> `+
+      `${d.blocking?`<span class="warn2">⛔ blocking</span> `:""}${esc(d.q)}`+
+      (d.note?` <span class="scope">— ${esc(d.note)}</span>`:"")+`</div>`;
+  }).join("");
+  h+=`<div class="none">an unanswered decision ages in public — that is the whole point of the strip</div>`;
+  sessSec("decisionsLine",h);
+}
+
+/* ═══════════ MEASURED FACTS (FEAT-TT-POS v3.30) ═══════════ */
+/* Everything else in this book is ASSERTED — a human typed it and lastRun ages it. `pos` is
+   the first thing here that is MEASURED: it comes from the broker, carries its own timestamp
+   and source, and is never editable by hand. Keeping the two classes visibly apart is the
+   same discipline the dashboard applies with LIVE/CACHED/STALE/MOCK.
+   Until a sync runs, every one of these renders NOTHING — an absent position is not zero. */
+const CAP_PCT=18;          // hard single-position cap; the framework doc in KV owns the real
+                           // number, this mirrors the constraint already printed in the sidebar
+const POS_STALE_D=2;       // a size older than this spans a session and can mislead like a stale ref_px
+// AUDIT: the stale-price-mark threshold was an inline 4 in renderUpsideRank while the
+// deep-dive cell had no check at all. One constant, used by both, so the board and the tab
+// can never disagree about whether the mark under a % is trustworthy. >4d spans a weekend.
+const PX_STALE_D=4;
+function validateSyncPos(p){
+  if(!p||typeof p!=="object"||Array.isArray(p))return "pos must be an object";
+  if(!/^\d{4}-\d{2}-\d{2}([T ]\d{2}:\d{2}(:\d{2})?(\.\d+)?Z?)?$/.test(String(p.at||"")))return "pos.at (ISO date/time) is required";
+  if(typeof p.src!=="string"||!p.src)return "pos.src is required — a measured fact must name where it came from";
+  const band=(k,lo,hi)=>{if(p[k]===undefined||p[k]===null)return null;const v=Number(p[k]);
+    return !isFinite(v)?`pos.${k} must be a number`:(v<lo||v>hi)?`pos.${k} out of band (${lo}..${hi}): ${p[k]}`:null;};
+  for(const e of [band("sh",-1e9,1e9),band("mv",-1e12,1e12),band("pct",0,100),band("cb",-1e12,1e12),band("upl_pct",-100,1e5)])
+    if(e)return e;
+  return null;
+}
+function posOf(x){const p=x&&x.pos;return p&&typeof p==="object"?p:null;}
+function posAge(p){return ageDays(String(p&&p.at||"").slice(0,10));}
+/* The provenance chip a measured number carries. Same fail-closed rule as everywhere else:
+   undated is the worst state, never the freshest. */
+function posChip(p){
+  const d=posAge(p);
+  if(d===null)return `<span class="bad2">⚠ undated</span>`;
+  if(d<0)return `<span class="bad2">⚠ dated ahead</span>`;
+  const cls=d>POS_STALE_D?"bad2":"scope";
+  return `<span class="${cls}">${d===0?"today":d+"d old"}${d>POS_STALE_D?" — re-sync":""}</span>`;
+}
+const money=v=>{const n=Number(v);if(!isFinite(n))return "";
+  const a=Math.abs(n);return (n<0?"-$":"$")+(a>=1e6?(a/1e6).toFixed(2)+"M":a>=1e3?Math.round(a/1e3)+"k":a.toFixed(0));};
+function heldSyms(){return BOOK.filter(x=>{const p=posOf(x);return p&&Number(p.sh)!==0;}).map(x=>x.sym);}
+/* CAP CHECKS — the reason measured weights exist at all. A single-name cap is arithmetic the
+   board could never do before, and the CLUSTER cap is the handoff's headline principle
+   ("cluster = one position") finally made checkable rather than recited. Reports, never
+   enforces — and a check computed off a stale mark says so instead of pretending. */
+function capChecks(){
+  const out=[];
+  BOOK.forEach(x=>{
+    const p=posOf(x);if(!p||!isFinite(Number(p.pct)))return;
+    const pct=Number(p.pct);
+    if(pct>CAP_PCT)out.push({kind:"name",sym:x.sym,pct,over:Math.round((pct-CAP_PCT)*10)/10,age:posAge(p)});
+  });
+  (Array.isArray(BOARD.clusters)?BOARD.clusters:[]).forEach(cl=>{
+    let sum=0,n=0,undated=false,maxAge=0,missing=[];
+    cl.members.forEach(m=>{
+      const e=find(m),p=e&&posOf(e);
+      // A member with no measured position is NAMED, not skipped — a cluster total that
+      // silently omits a leg reads as under the cap when it may not be.
+      if(!p||!isFinite(Number(p.pct))){if(e)missing.push(m);return;}
+      sum+=Number(p.pct);n++;
+      const a=posAge(p);
+      if(a===null)undated=true;else maxAge=Math.max(maxAge,a);
+    });
+    if(!n)return;
+    sum=Math.round(sum*10)/10;
+    out.push({kind:"cluster",label:cl.label||cl.id,pct:sum,n,missing,
+      over:sum>CAP_PCT?Math.round((sum-CAP_PCT)*10)/10:0,age:undated?null:maxAge});
+  });
+  return out;
+}
+/* RECONCILIATION — the book is a claim about what you track; the broker says what you hold.
+   Where they disagree is exactly where a surprise lives, and neither direction was visible
+   before. Only runs when at least one position is measured; otherwise it would report every
+   name as "not held" purely because nothing has synced yet. */
+function reconcile(){
+  const anyPos=BOOK.some(x=>posOf(x));
+  if(!anyPos)return null;
+  const untracked=Array.isArray(BOARD.account&&BOARD.account.untracked)?BOARD.account.untracked:[];
+  // A non-WATCH book name with a measured zero/absent position is tracked but not held.
+  const paper=BOOK.filter(x=>x.tier!=="WATCH"&&(!posOf(x)||Number(posOf(x).sh)===0)).map(x=>x.sym);
+  return{untracked,paper,held:heldSyms().length};
+}
+
+/* ═══════════ TODAY (FEAT-TT-TODAY v3.29) ═══════════ */
+/* FIRST PRINCIPLES: this terminal had grown into nine strips of STANDING STATE, all
+   rendered at full size on every load. But a book in daily monitoring changes on maybe one
+   day in five — the signal is the DELTA and the DEMAND, not the state. A daily user opens
+   this to answer three questions, in this order:
+     1. can I add anything at all today?   (stance — regime + circuit, one line)
+     2. what must I actually DO today?     (the binary, the trim, the aging decision)
+     3. what changed since I last looked?  (the diff, not the dump)
+   Everything else is research, not monitoring, and now sits one tap away in a drawer whose
+   SUMMARY still carries its signal — the same rule that made collapsing hinges safe in
+   v3.25: a collapse is only honest if a red thing is still visible while closed. */
+const MOVE_PCT=5;                       // a day move worth waking someone for
+const SEEN_KEY="tt:seen:v1";
+const SEEN_MAX_D=7;                     // a baseline older than this is noise, not a diff
+/* Stance: the ONE line that says whether capital may move today. The circuit outranks the
+   regime because it is a portfolio fact, not a market read — no macro verdict un-trips it. */
+function stance(){
+  const st=String(BOARD.circuit&&BOARD.circuit.state).toLowerCase();
+  if(st==="tripped")return{k:"stop",txt:"NO NEW POSITIONS — leverage circuit tripped",
+    why:(BOARD.circuit&&BOARD.circuit.rule)||"deleverage-only until a live pull disproves it"};
+  const{measured,asserted,gov,ranked,disagree}=governingRegime();
+  if(!ranked)
+    return{k:"unknown",txt:"STANCE UNKNOWN — no measured or asserted regime",
+      why:"MacroDash returned "+(measured||"nothing")+" and no session regime is loaded — don't gate on this either way"};
+  const both=disagree?` (measured ${measured} · asserted ${asserted} — stricter governs)`:"";
+  if(gov==="PANIC")return{k:"stop",txt:"ADDS SUSPENDED — PANIC regime"+both,why:"only S-tier at 8+ support quality is eligible"};
+  if(gov==="HEADWIND")return{k:"caution",txt:"ADDS GATED — HEADWIND regime"+both,why:"entry standards +1 notch · R/R floors +0.5×"};
+  if(st==="armed")return{k:"caution",txt:"ADDS OK — but the leverage circuit is ARMED",why:"one more leg down trips it; size accordingly"};
+  return{k:"go",txt:"ADDS OK — "+gov+" regime"+both,why:"standard entry standards apply"};
+}
+/* The day's demands, most time-bound first. Irreversibility beats opportunity: a print
+   tonight cannot be undone tomorrow, an add can always be made later. */
+function todayActions(){
+  const out=[];
+  const ev=binaryEvents();
+  ev.filter(e=>e.inWindow&&e.d<=1).slice(0,2).forEach(e=>{
+    out.push({sev:"stop",txt:`${e.sym} prints ${e.d===0?"today":"tomorrow"} — no new positions into it`,
+      sub:e.label,go:()=>openDrawer("dCal")});
+  });
+  // FEAT-TT-POS: a cap breach is a measured fact about a position you already hold, so it
+  // outranks anything discretionary — you are over the limit right now, not considering it.
+  capChecks().filter(c=>c.over>0).forEach(c=>{
+    const stale=c.age===null?" (position mark undated)":c.age>POS_STALE_D?` (marks ${c.age}d old)`:"";
+    out.push(c.kind==="name"
+      ?{sev:"stop",txt:`${c.sym} is ${c.pct}% of NAV — ${c.over}pts over the ${CAP_PCT}% cap`,
+        sub:"no conviction exceptions"+stale,go:()=>openCard(c.sym)}
+      :{sev:"stop",txt:`Cluster "${c.label}" is ${c.pct}% of NAV — ${c.over}pts over the ${CAP_PCT}% cap`,
+        sub:`one cluster sizes as one position${c.missing.length?` · ${c.missing.length} member(s) unmeasured, so the real total is higher`:""}${stale}`,
+        go:()=>openDrawer("dExp")});
+  });
+  const st=String(BOARD.circuit&&BOARD.circuit.state).toLowerCase();
+  if(st==="tripped"){
+    const order=(BOARD.funding&&Array.isArray(BOARD.funding.order))?BOARD.funding.order:[];
+    const first=order[0];
+    // With a measured position the trim stops being an abstraction: shares, value, and
+    // whether the blocker is real (short calls actually on the book) rather than remembered.
+    const fe=first&&find(first.sym),fp=fe&&posOf(fe);
+    const size=fp?` — ${fp.sh??"?"} sh${fp.mv!=null?`, ${money(fp.mv)}`:""}${isFinite(Number(fp.pct))?` (${fp.pct}% of NAV)`:""}`:"";
+    const shorts=fp&&Array.isArray(fp.opt)?fp.opt.filter(o=>o.side==="short"&&o.k==="call"):[];
+    const cover=shorts.length?` · ${shorts.reduce((a,o)=>a+Number(o.n),0)} short call(s) cover ${shorts.reduce((a,o)=>a+Number(o.n),0)*100} of ${fp.sh??"?"} sh`:"";
+    out.push({sev:"stop",
+      txt:first?(first.blocker?`Deleverage: ${first.sym} is first to trim${size} — but ${first.blocker}`
+                              :`Deleverage: trim ${first.sym}${size||(first.est?` (${first.est})`:"")} first`)
+              :"Deleverage-only — but no trim order is set, so nothing says what funds it",
+      sub:first?((BOARD.funding.rule||"")+cover):"add a funding order in ◧ SESSION",go:()=>openDrawer("dExp")});
+  }
+  const ds=Array.isArray(BOARD.decisions)?BOARD.decisions:[];
+  ds.map(d=>({...d,age:ageDays(d.asked)})).filter(d=>d.blocking&&(d.age===null||d.age>14))
+    .sort((a,b)=>(b.age===null?1e9:b.age)-(a.age===null?1e9:a.age)).slice(0,2)
+    .forEach(d=>out.push({sev:"warn",txt:`Answer (${d.age===null?"undated":d.age+"d"}): ${d.q}`,go:()=>openDrawer("dDec")}));
+  // An eligible add only ever appears when nothing above vetoes it — the green line must
+  // not sit beside a red one and let the reader pick.
+  if(!out.some(a=>a.sev==="stop")&&AGREE_PICK)
+    out.push({sev:"go",txt:`Add candidate: ${AGREE_PICK.sym} — gap and quality agree`,
+      sub:"still your call: sizing, caps and the thesis are not weighed here",go:()=>openCard(AGREE_PICK.sym)});
+  // Anything decision-adjacent running on an old rating is its own action.
+  const stale=[...ndLeads(),...LAST_RANK.map(s=>find(s)).filter(Boolean)]
+    .filter((x,i,a)=>a.indexOf(x)===i).filter(x=>runState(x.lastRun).k!=="fresh");
+  if(stale.length)out.push({sev:"warn",
+    txt:`Re-run TT on ${stale.slice(0,3).map(x=>x.sym).join(", ")} before acting — queued on an aged rating`,
+    go:()=>openCard(stale[0].sym)});
+  if(!out.length){
+    const next=ev[0];
+    out.push({sev:"none",txt:"Nothing to do today.",
+      sub:next?`Next dated event: ${next.sym} in ${next.d===0?"today":next.d+"d"} (${next.date})`:"No dated events ahead — the calendar is empty, which is not the same as clear."});
+  }
+  return out;
+}
+let AGREE_PICK=null;   // set by renderUpsideRank when both stories agree and nothing vetoes
+function renderToday(){
+  const el=document.getElementById("todayCard");if(!el)return;
+  const s=stance();
+  const col={stop:"var(--red)",caution:"var(--amber)",go:"var(--green)",unknown:"var(--slate)"}[s.k];
+  const glyph={stop:"⛔",caution:"⚠",go:"●",unknown:"?"}[s.k];
+  let h=`<div class="tdy-stance" style="color:${col};border-color:${col}">`+
+    `<span style="font-size:15px">${glyph}</span> <b>${esc(s.txt)}</b>`+
+    `<div class="tdy-why">${esc(s.why)}</div></div>`;
+  const acts=todayActions();
+  h+=`<div class="tdy-lbl">Today${acts.length>1?` · ${acts.length} items`:""}</div>`;
+  h+=acts.map((a,i)=>{
+    const c={stop:"var(--red)",warn:"var(--amber)",go:"var(--green)",none:"var(--dim)"}[a.sev];
+    return `<div class="tdy-act" data-i="${i}" style="border-left-color:${c}">`+
+      `<div style="color:${a.sev==="none"?"var(--fg)":c}">${esc(a.txt)}</div>`+
+      (a.sub?`<div class="tdy-why">${esc(a.sub)}</div>`:"")+`</div>`;
+  }).join("");
+  el.innerHTML=h;
+  [...el.querySelectorAll(".tdy-act")].forEach(n=>{
+    const a=acts[+n.dataset.i];if(a&&a.go){n.style.cursor="pointer";n.onclick=a.go;}
+  });
+}
+/* ── WHAT CHANGED: the diff, against a baseline the user controls ────────────────────
+   "Since you last looked" is only honest if the user decides when that was — an automatic
+   roll-forward would silently eat the morning's list on a reload. So the baseline moves
+   ONLY on an explicit MARK SEEN (or when it ages past SEEN_MAX_D and stops being a diff at
+   all). A first visit sets the baseline and says so: no baseline must never render as
+   "nothing changed", which is the same fail-closed rule as a missing lastRun. */
+function stateDigest(){
+  const b={};
+  BOOK.forEach(x=>{
+    const live=LIVE_PX[x.sym];
+    // LIVE prices only. Falling back to the stamped ref_px would make the first quote of
+    // the day read as an 11% "move since you last looked" when nothing moved at all — the
+    // gap being measured would be stamp-vs-live, not then-vs-now.
+    b[x.sym]={px:live&&isFinite(live.px)?live.px:null,
+      tier:x.tier,rank:x.rank||null,lastRun:x.lastRun||null,
+      red:Array.isArray(x.deepDive&&x.deepDive.hinges)?x.deepDive.hinges.filter(g=>g.state==="red").length:0,
+      dots:Array.isArray(x.dots)?x.dots.filter(d=>(d.state||"new")==="new").length:0};
+  });
+  return{at:new Date().toISOString(),book:b,
+    circuit:String(BOARD.circuit&&BOARD.circuit.state||""),
+    measured:(REGIME&&REGIME.regime&&REGIME.regime.verdict)||"",
+    asserted:(BOARD.regime&&BOARD.regime.asserted)||"",
+    decisions:(Array.isArray(BOARD.decisions)?BOARD.decisions:[]).length,
+    inWindow:binaryEvents().filter(e=>e.inWindow).map(e=>e.sym+"@"+e.date).join(","),
+    version:META.version||null};
+}
+function loadSeen(){try{return JSON.parse(localStorage.getItem(SEEN_KEY)||"null");}catch(_e){return null;}}
+function saveSeen(){try{localStorage.setItem(SEEN_KEY,JSON.stringify(stateDigest()));}catch(_e){}}
+function markSeen(){saveSeen();SEEN_NOTE="ok";render();toast("Marked seen — changes now count from this moment");}
+function diffSince(prev){
+  const now=stateDigest(),out=[];
+  if(prev.circuit!==now.circuit)out.push({sev:"stop",t:`Leverage circuit: ${prev.circuit||"none"} → ${now.circuit||"none"}`});
+  if(prev.measured!==now.measured)out.push({sev:"warn",t:`MacroDash regime: ${prev.measured||"—"} → ${now.measured||"—"}`});
+  if(prev.asserted!==now.asserted)out.push({sev:"warn",t:`Session regime: ${prev.asserted||"—"} → ${now.asserted||"—"}`});
+  Object.keys(now.book).forEach(sym=>{
+    const a=prev.book&&prev.book[sym],b=now.book[sym];
+    if(!a){out.push({sev:"warn",t:`${sym} added to the book`,sym});return;}
+    if(a.px&&b.px){const mv=Math.round((b.px/a.px-1)*1000)/10;
+      if(Math.abs(mv)>=MOVE_PCT)out.push({sev:mv<0?"warn":"go",t:`${sym} ${mv>0?"+":""}${mv}% since seen ($${a.px} → $${b.px})`,sym});}
+    if(a.tier!==b.tier)out.push({sev:"warn",t:`${sym} tier ${a.tier} → ${b.tier}`,sym});
+    if((a.rank||"")!==(b.rank||""))out.push({sev:"warn",t:`${sym} queue rank ${a.rank||"—"} → ${b.rank||"—"}`,sym});
+    if(b.red>a.red)out.push({sev:"stop",t:`${sym} has ${b.red} red hinge${b.red===1?"":"s"} (was ${a.red})`,sym});
+    if((a.lastRun||"")!==(b.lastRun||""))out.push({sev:"go",t:`${sym} TT run stamped ${b.lastRun||"cleared"}`,sym});
+    if(b.dots>a.dots)out.push({sev:"warn",t:`${sym} +${b.dots-a.dots} new dot${b.dots-a.dots===1?"":"s"} to triage`,sym});
+  });
+  Object.keys(prev.book||{}).forEach(sym=>{if(!now.book[sym])out.push({sev:"warn",t:`${sym} left the book`});});
+  if(prev.decisions!==now.decisions)out.push({sev:"warn",t:`Open decisions: ${prev.decisions} → ${now.decisions}`});
+  if(prev.inWindow!==now.inWindow){
+    const was=new Set(String(prev.inWindow||"").split(",").filter(Boolean));
+    now.inWindow.split(",").filter(Boolean).filter(k=>!was.has(k))
+      .forEach(k=>out.push({sev:"stop",t:`${k.split("@")[0]} entered the ${BINARY_WINDOW_D}d no-new-adds window (${k.split("@")[1]})`}));
+  }
+  const rank={stop:0,warn:1,go:2};
+  return out.sort((a,b)=>rank[a.sev]-rank[b.sev]);
+}
+let CHANGED_OPENED=false,SEEN_NOTE=null,SEEN_AGE=null;
+function renderChanged(){
+  const panel=document.getElementById("changedPanel"),sum=document.getElementById("sChanged");
+  if(!panel||!sum)return;
+  const prev=loadSeen();
+  // Decide ONCE per page load. render() runs again when quotes land, and a baseline written
+  // on the first pass would otherwise turn "first visit" into "nothing changed since 2
+  // seconds ago" — technically true, and exactly the kind of confident emptiness this
+  // codebase treats as a lie.
+  if(SEEN_NOTE===null){
+    if(!prev){SEEN_NOTE="new";saveSeen();}
+    else{
+      SEEN_AGE=ageDays(String(prev.at).slice(0,10));
+      SEEN_NOTE=(SEEN_AGE!==null&&SEEN_AGE>SEEN_MAX_D)?"reset":"ok";
+      if(SEEN_NOTE==="reset")saveSeen();
+    }
+  }
+  if(SEEN_NOTE==="new"){
+    sum.innerHTML=`<span style="color:var(--dim)">WHAT CHANGED · baseline set</span>`;
+    panel.innerHTML=`<div class="none">First visit on this device — there is nothing to compare against yet. Changes will appear from your next visit. (A missing baseline is never reported as "nothing changed".)</div>`;
+    return;
+  }
+  if(SEEN_NOTE==="reset"){
+    sum.innerHTML=`<span style="color:var(--amber)">WHAT CHANGED · baseline was ${SEEN_AGE}d old — reset</span>`;
+    panel.innerHTML=`<div class="none">The last-seen baseline was ${SEEN_AGE} days old. A diff that long stops being a diff, so it has been reset to now rather than shown as one visit's worth of change.</div>`;
+    return;
+  }
+  const when=String(prev.at).replace("T"," ").slice(0,16)+" UTC";
+  const d=diffSince(prev);
+  const stops=d.filter(x=>x.sev==="stop").length;
+  sum.innerHTML=d.length
+    ?`<span style="color:${stops?"var(--red)":"var(--amber)"}">WHAT CHANGED · ${d.length}${stops?` · ${stops} need attention`:""}</span>`
+    :`<span style="color:var(--dim)">WHAT CHANGED · nothing since ${when}</span>`;
+  panel.innerHTML=(d.length
+    ?d.map(x=>{const c={stop:"var(--red)",warn:"var(--amber)",go:"var(--green)"}[x.sev];
+        return `<div class="none" style="color:var(--fg)"><span style="color:${c}">●</span> ${esc(x.t)}`+
+          (x.sym&&find(x.sym)?` <span class="scope" style="cursor:pointer" onclick="openCard('${esc(x.sym)}')">open</span>`:"")+`</div>`;}).join("")
+    :`<div class="none">Nothing has changed since ${esc(when)}.</div>`)+
+    `<div class="none" style="margin-top:6px">since <b>${esc(when)}</b> · the baseline moves only when you say so — `+
+    `<a href="javascript:markSeen()">✓ mark seen</a></div>`;
+  if(d.length&&!CHANGED_OPENED){document.getElementById("dChanged").open=true;CHANGED_OPENED=true;}
+}
+/* Drawer summaries carry the signal so a closed drawer never hides a red thing. */
+function openDrawer(id){const d=document.getElementById(id);if(d){d.open=true;d.scrollIntoView({block:"nearest"});}}
+function setDrawer(id,sumId,html,show){
+  const d=document.getElementById(id);if(!d)return;
+  d.style.display=show?"block":"none";
+  const s=document.getElementById(sumId);if(s)s.innerHTML=html;
+}
+function renderDrawers(){
+  const leads=ndLeads();
+  setDrawer("dNext","sNext",`NEXT DOLLAR &amp; UPSIDE · `+
+    (AGREE_PICK?`<span style="color:var(--green)">${esc(AGREE_PICK.sym)} eligible</span>`
+      :leads.length?`<span style="color:var(--dim)">queued: ${leads.map(x=>esc(x.sym)).join(", ")} · none eligible</span>`
+      :`<span style="color:var(--dim)">nothing queued</span>`),true);
+  const cls=Array.isArray(BOARD.clusters)?BOARD.clusters:[];
+  const fund=BOARD.funding&&Array.isArray(BOARD.funding.order)?BOARD.funding.order:[];
+  // FEAT-TT-POS: a cap breach is the loudest thing this drawer can carry, so it owns the
+  // summary whenever one exists — a closed drawer must never hide an over-cap position.
+  const breach=capChecks().filter(c=>c.over>0);
+  setDrawer("dExp","sExp",`EXPOSURE · `+
+    (breach.length?`<span style="color:var(--red)">${breach.length} over the ${CAP_PCT}% cap</span> · `:``)+
+    (cls.length?`${cls.length} cluster${cls.length===1?"":"s"}`:`no clusters set`)+
+    (fund.length?` · trim first: ${esc(fund[0].sym)}`:``),
+    cls.length>0||fund.length>0||BOOK.some(x=>posOf(x)));
+  const ev=binaryEvents(),inW=ev.filter(e=>e.inWindow).length;
+  setDrawer("dCal","sCal",`CALENDAR · `+
+    (ev.length?(inW?`<span style="color:var(--red)">${inW} inside ${BINARY_WINDOW_D}d</span> · next ${esc(ev[0].sym)} ${ev[0].d===0?"today":ev[0].d+"d"}`
+                   :`next ${esc(ev[0].sym)} in ${ev[0].d}d`)
+             :`<span style="color:var(--dim)">no dated events</span>`),true);
+  const ds=Array.isArray(BOARD.decisions)?BOARD.decisions:[];
+  const ages=ds.map(d=>ageDays(d.asked));
+  const worst=ages.some(a=>a===null||a>14)?"var(--red)":ages.some(a=>a>7)?"var(--amber)":"var(--dim)";
+  setDrawer("dDec","sDec",`DECISIONS · <span style="color:${worst}">${ds.length} open`+
+    (ds.filter(d=>d.blocking).length?` · ${ds.filter(d=>d.blocking).length} blocking`:``)+`</span>`,ds.length>0);
+  const st=String(BOARD.circuit&&BOARD.circuit.state).toLowerCase();
+  const rc=st==="tripped"?"var(--red)":st==="armed"?"var(--amber)":"var(--green)";
+  setDrawer("dCirc","sCirc",`CIRCUIT &amp; REGIME · <span style="color:${rc}">${esc(st.toUpperCase())}</span>`,!!BOARD.circuit);
+}
 
 /* ═══════════ RENDER BOARD ═══════════ */
 function render(){
@@ -589,10 +1288,23 @@ function render(){
       const c=document.createElement("div");
       c.className="chip"+(x.fp?" fp":"")+" run-"+rs.k;
       c.onclick=()=>openCard(x.sym);
+      // v3.29: the day move on the chip. A monitoring surface that shows only the ticker
+      // makes you open every card to learn nothing happened. Absent quote = no number at
+      // all (never a 0 or a dash that could read as flat).
+      const q=LIVE_PX[x.sym];
+      const chg=q&&isFinite(q.chg)?q.chg:null;
+      // FEAT-TT-POS: the weight you actually hold, beside the day move. Absent position =
+      // absent number; a dash or a 0 here would read as "not held" when it means "not synced".
+      const p=posOf(x),wt=p&&isFinite(Number(p.pct))?Number(p.pct):null;
+      const over=wt!==null&&wt>CAP_PCT;
       c.innerHTML=`<span class="sym">${x.sym}</span>
-        <span class="lens lens-${x.lens}">${x.lens}</span>`;
+        <span class="lens lens-${x.lens}">${x.lens}</span>`+
+        (chg!==null?`<span class="chg" style="color:${chg>=0?"var(--green)":"var(--red)"}">${chg>=0?"+":""}${chg}%</span>`:"")+
+        (wt!==null?`<span class="wt"${over?' style="color:var(--red);font-weight:700"':""}>${wt}%${over?"!":""}</span>`:"");
       const runTxt=rs.k==="never"?"TT run: NEVER RUN":`TT run ${x.lastRun} · ${rs.days}d ago`;
-      c.title=[runTxt,(x.rank&&x.rank!=="—")?x.rank:null,x.note||null].filter(Boolean).join(" · ");
+      c.title=[q?`$${q.px}${chg!==null?` (${chg>=0?"+":""}${chg}% today)`:""}`:null,
+        p?`held ${p.sh??"?"} sh${p.mv!=null?` · ${money(p.mv)}`:""}${wt!==null?` · ${wt}% of NAV`:""} (measured ${String(p.at).slice(0,10)})`:null,
+        runTxt,(x.rank&&x.rank!=="—")?x.rank:null,x.note||null].filter(Boolean).join(" · ");
       chips.appendChild(c);
     });
     sec.appendChild(chips);
@@ -605,7 +1317,13 @@ function render(){
   const cc=document.createElement("div");cc.className="chips";
   CUT.forEach(s=>{const c=document.createElement("div");c.className="chip";c.innerHTML=`<span class="sym">${s}</span>`;cc.appendChild(c);});
   cut.appendChild(cc);b.appendChild(cut);
-  renderNextDollar();renderUpsideRank();renderBinaryCal();renderCoverage();renderTabs();
+  // FEAT-TT-SESSION: circuit first (it gates every add), then the queues, then clusters —
+  // which must run AFTER renderUpsideRank so its overlap check reads the current top ranks.
+  renderCircuit();renderNextDollar();renderFunding();renderUpsideRank();renderClusters();
+  renderBinaryCal();renderDecisions();renderCoverage();
+  // v3.29: TODAY reads what the strips above computed (AGREE_PICK, LAST_RANK), so it can
+  // never contradict them — one computation, rendered twice at different altitudes.
+  renderToday();renderChanged();renderDrawers();renderTabs();
 }
 
 /* ═══════════ DEEP-DIVE TABS (FEAT-TT-DD v3.12) ═══════════ */
@@ -987,6 +1705,106 @@ const DD_HANDLED=new Set(["ticker","name","thesis_version","updated","as_of","ti
   "pt_ladder","pt_model","pt_consensus","consensus","gates","hinges","leading_indicators","cert_probabilities","utilization_underwriting","capital",
   "dilution_grid","engine","pt_2040","kill_combination","key_dates","position","model_anchors","conditional_rules",
   "linked_exposure","status_flags","tape","watchlist_unlocks","hedges","rules","open_items","telemetry"]);
+/* ═══════════ DEEP-DIVE FOCUS (FEAT-TT-DDFOCUS v3.31) ═══════════ */
+/* The tab opened ~20 sections at full size — exactly the pre-v3.29 board, one level down.
+   A reader arrives at a name's tab with four questions and no others: what is it worth,
+   what would change my mind, when does something happen, and what do I own. Those are
+   answered above the fold; the corpus goes into drawers whose summaries carry their signal.
+   Open state survives a re-render (quotes landing must not collapse what you just opened). */
+const DD_OPEN=new Set();
+function ddToggle(id,open){open?DD_OPEN.add(id):DD_OPEN.delete(id);}
+function ddDrawer(id,summary,content,openDefault){
+  if(!content||!String(content).trim())return "";   // never an empty drawer
+  const open=DD_OPEN.has(id)||(openDefault&&!DD_OPEN.size);
+  return `<details class="drawer" ${open?"open":""} ontoggle="ddToggle('${id}',this.open)">`+
+    `<summary>${summary}</summary><div>${content}</div></details>`;
+}
+function ddProjSec(x){
+  if(!x.projection)return "";
+  const pj=x.projection;
+  return `<div class="dd-sec"><div class="lbl">The 3 questions — projection (answered ${esc(pj.as_of||"")})</div>
+    <div class="dd-kv"><div class="k">1 · rev in 3 yrs</div><div>$${esc(pj.rev_3yr.value_B)}B (${esc(pj.rev_3yr.year||"")})${pj.rev_3yr.why?` — ${esc(pj.rev_3yr.why)}`:""}</div></div>
+    <div class="dd-kv"><div class="k">2 · margins</div><div>${esc(pj.margins.path)} — ${esc(pj.margins.why)}</div></div>
+    <div class="dd-kv"><div class="k">3 · multiple</div><div>${esc(pj.multiple.value)}× ${esc(pj.multiple.basis||"")}</div></div>
+    <div style="margin-top:6px;font-size:11.5px">${projLine(pj)}</div></div>`;
+}
+/* WORTH — the same ptModelRows() the ladder renders and the board ranks on. One computation:
+   this cell can never quote a target the table below it disagrees with. */
+function ddWorth(dd,sym){
+  const rr=ptModelRows(dd).filter(r=>typeof r.prem==="number"||typeof r.fl==="number");
+  if(!rr.length)return{txt:"no model",sub:(dd.pt_model&&dd.pt_model.note)||"nothing here computes a target"};
+  const t=(HORIZON?rr.find(r=>r.y===HORIZON):null)||rr[0];
+  const onFloor=typeof t.prem!=="number";
+  const tgt=onFloor?t.fl:t.prem;
+  if(!isFinite(Number(tgt)))return{txt:`${esc(String(tgt))} ${t.y}`,sub:"no P/E before profit"};
+  const live=LIVE_PX[sym],stamp=dd.ref_px;
+  const px=(live&&isFinite(live.px))?live.px:(stamp&&isFinite(stamp.px)?stamp.px:null);
+  if(px===null)return{txt:`$${tgt} ${t.y}`,sub:`${onFloor?"floor":"premium"} — no price to compare against`};
+  const up=Math.round((tgt/px-1)*1000)/10,ann=annualise(up,t.y);
+  // AUDIT: two honesty gaps the board already closed but this cell did not.
+  // (1) a pinned horizon with no rung here was silently substituted with a different year,
+  //     while renderUpsideRank EXCLUDES the name and counts it — the two surfaces disagreed
+  //     about the same name and only one said why.
+  // (2) the % is only as good as the mark under it; the board flags a stale/undated stamp
+  //     (PX_STALE_D) and this cell presented the same number with no age at all.
+  const substituted=HORIZON&&!rr.some(r=>r.y===HORIZON)?` · no ${esc(HORIZON)} rung — showing ${esc(t.y)}`:"";
+  const pxAge=live?0:ageDays(stamp&&stamp.at);
+  const pxFlag=(pxAge===null||pxAge>PX_STALE_D)?` · ⚠ mark ${pxAge===null?"undated":pxAge+"d old"}`:"";
+  return{txt:`$${tgt} ${t.y} · <span style="color:${up>=0?"var(--green)":"var(--red)"}">${up>=0?"+":""}${up}%</span>`,
+    sub:`${onFloor?"floor (18× FY+1 EPS)":"premium"} vs ${live?"live":"stamped"} $${px}${ann!==null?` · ${ann>=0?"+":""}${ann}%/yr`:""}${pxFlag}${substituted}`};
+}
+function ddNextDate(dd,todayET){
+  const ks=(Array.isArray(dd.key_dates)?dd.key_dates:[])
+    .filter(k=>k&&/^\d{4}-\d{2}-\d{2}$/.test(String(k.date))&&String(k.date)>=todayET)
+    .sort((a,b)=>String(a.date).localeCompare(String(b.date)));
+  if(!ks.length)return null;
+  const k=ks[0];
+  return{label:k.label||k.event||"event",date:k.date,
+    d:Math.round((Date.parse(k.date+"T12:00:00Z")-Date.parse(todayET+"T12:00:00Z"))/86400000)};
+}
+function hingeTally(dd){
+  const n={green:0,amber:0,red:0,unknown:0};
+  (Array.isArray(dd.hinges)?dd.hinges:[]).forEach(g=>{n[["green","amber","red"].includes(g.state)?g.state:"unknown"]++;});
+  return n;
+}
+/* Drawer summaries. Each must be readable as a standalone claim — if a drawer stays shut
+   all day, what its summary says is the only thing about it the owner will ever see. */
+function ddValSummary(dd,x){
+  const w=ddWorth(dd,x.sym);
+  const bits=[dd.pt_model&&"model",dd.pt_ladder&&"ladder",dd.pt_consensus&&"street",dd.consensus&&"estimates",x.projection&&"3Q"].filter(Boolean);
+  return `VALUATION · ${w.txt}${bits.length?` <span style="color:var(--dim)">· ${bits.join(" · ")}</span>`:""}`;
+}
+function ddThesisSummary(dd){
+  const gs=Array.isArray(dd.gates)?dd.gates:[];
+  const failed=gs.filter(g=>/fail/i.test(String(g.status||g.state||g.verdict||""))).length;
+  const parts=[];
+  if(gs.length)parts.push(failed?`<span style="color:var(--red)">${failed}/${gs.length} gates failing</span>`:`${gs.length} gates`);
+  if(dd.kill_combination)parts.push(`<span style="color:var(--red)">kill combo defined</span>`);
+  if(Array.isArray(dd.open_items)&&dd.open_items.length)parts.push(`<span style="color:var(--amber)">${dd.open_items.length} open item${dd.open_items.length===1?"":"s"}</span>`);
+  if(Array.isArray(dd.rules)&&dd.rules.length)parts.push(`${dd.rules.length} standing rules`);
+  return `THESIS &amp; GATES${parts.length?` · ${parts.join(" · ")}`:""}`;
+}
+function ddAnswerBlock(x,dd,todayET){
+  const w=ddWorth(dd,x.sym);
+  const n=hingeTally(dd),total=n.green+n.amber+n.red+n.unknown;
+  const reds=(Array.isArray(dd.hinges)?dd.hinges:[]).filter(g=>g.state==="red").map(g=>g.label||g.key||g.id);
+  const mind=total
+    ?{txt:n.red?`<span style="color:var(--red)">${n.red} red</span>`+(n.amber?` · <span style="color:var(--amber)">${n.amber} amber</span>`:"")
+        :n.amber?`<span style="color:var(--amber)">${n.amber} amber</span>`
+        :n.unknown===total?`<span style="color:var(--dim)">${total} unknown</span>`:`<span style="color:var(--green)">all clear</span>`,
+      sub:reds.length?reds.map(esc).join(" · "):`${total} tracked hinge${total===1?"":"s"}`}
+    :{txt:`<span style="color:var(--dim)">none tracked</span>`,sub:"no hinges — nothing here says what would change your mind"};
+  const nd=ddNextDate(dd,todayET);
+  const when=nd?{txt:`${nd.d===0?"TODAY":nd.d+"d"}`,sub:`${esc(nd.label)} · ${esc(nd.date)}`}
+    :{txt:`<span style="color:var(--dim)">—</span>`,sub:"no future dated event on this payload"};
+  const p=posOf(x);
+  const own=p?{txt:`${isFinite(Number(p.pct))?`${Number(p.pct)>CAP_PCT?`<span style="color:var(--red)">${p.pct}%</span>`:`${p.pct}%`} of NAV`:money(p.mv)}`,
+      sub:`${p.sh??"?"} sh${p.mv!=null?` · ${money(p.mv)}`:""} · ${posChip(p)}`}
+    :{txt:`<span style="color:var(--dim)">—</span>`,sub:"no measured position — not synced, which is not the same as not held"};
+  const cell=(k,v)=>`<div class="dd-a"><div class="dd-ak">${k}</div><div class="dd-av">${v.txt}</div><div class="dd-as">${v.sub}</div></div>`;
+  return `<div class="dd-answer">${cell("What it's worth",w)}${cell("What changes my mind",mind)}`+
+    `${cell("When",when)}${cell("What I own",own)}</div>`;
+}
 function renderDeepDive(sym){
   const x=find(sym);const dv=document.getElementById("deepView");
   if(!x||!x.deepDive){dv.innerHTML='<div class="empty">no payload</div>';return;}
@@ -1006,11 +1824,10 @@ function renderDeepDive(sym){
       <div class="dd-kv"><div class="k">2 · margins</div><div>${esc(pj.margins.path)} — ${esc(pj.margins.why)}</div></div>
       <div class="dd-kv"><div class="k">3 · multiple</div><div>${esc(pj.multiple.value)}× ${esc(pj.multiple.basis||"")}</div></div>
       <div style="margin-top:6px;font-size:11.5px">${projLine(pj)}</div></div>`;}
-  h+=ddPtSec(dd.pt_ladder);
-  h+=ddPtModelSec(dd.pt_model,dd,x.sym);
-  h+=ddPtConsensusSec(dd.pt_consensus);
-  h+=ddConsensusSec(dd.consensus);
-  h+=ddGatesSec(dd.gates);
+  // FEAT-TT-DDFOCUS (v3.31): the four answers, above everything. This tab used to open ~20
+  // sections at full size — the pre-v3.29 board one level down. The reader arrives with the
+  // same four questions every time, so they are answered first and the corpus goes below.
+  h+=ddAnswerBlock(x,dd,todayET);
   /* v3.25: hinges COLLAPSED by default. Every ranked name now carries them, and rendering
      11 open lists would bury the ladder each tab exists to show. The collapse is only safe
      because the summary carries the SIGNAL: a per-state tally, coloured by the WORST state
@@ -1032,41 +1849,50 @@ function renderDeepDive(sym){
       dd.hinges.map(g=>`<div class="dd-hinge">${dot[["green","amber","red"].includes(g.state)?g.state:"unknown"]}<b>${esc(g.label||g.key||g.id)}</b>`+
         `${(g.note||g.role)?`<span style="color:var(--slate)">— ${esc(g.note||g.role)}</span>`:""}${g.asOf?`<span style="color:var(--dim);font-size:9px">as of ${esc(g.asOf)}</span>`:""}</div>`).join("")+`</details>`;
   }
-  h+=ddKvSec("Leading indicators",dd.leading_indicators);
-  h+=ddKvSec("Certification probabilities",dd.cert_probabilities);
-  h+=ddKvSec("Utilization underwriting",dd.utilization_underwriting);
-  h+=ddKvSec("Capital",dd.capital);
-  h+=ddGridSec(dd.dilution_grid);
-  h+=ddKvSec("Fleet-vs-burn engine — locked inputs + anchors",dd.engine);
-  h+=ddKvSec("2040 PT",dd.pt_2040);
-  h+=ddKillSec(dd.kill_combination);
-  if(Array.isArray(dd.key_dates)&&dd.key_dates.length){
-    h+=`<div class="dd-sec"><div class="lbl">Key dates</div>`+
-      dd.key_dates.map(k=>{const past=String(k.date)<todayET;
+  // ── the corpus, grouped and collapsed. Same rule as the board drawers: a summary must
+  //    carry enough signal that closing the drawer never hides something that matters.
+  const kdHtml=Array.isArray(dd.key_dates)&&dd.key_dates.length
+    ? dd.key_dates.map(k=>{const past=String(k.date)<todayET;
         const dl=Math.round((Date.parse(k.date+"T12:00:00Z")-Date.parse(todayET+"T12:00:00Z"))/86400000);
         return `<div class="dd-kv"><div class="k">${esc(k.date)}</div><div>${esc(k.label||k.event)} `+
           (past?`<span class="bad2" style="color:var(--red);font-size:10px">passed — re-confirm</span>`
-               :`<span style="color:var(--dim);font-size:10px">in ${dl}d</span>`)+`</div></div>`;}).join("")+`</div>`;
-  }
-  h+=ddKvSec("Position & overlay",dd.position);
-  h+=ddKvSec("Model anchors",dd.model_anchors);
-  h+=ddKvSec("Conditional rules",dd.conditional_rules);
-  if(dd.linked_exposure)
-    h+=`<div class="dd-sec"><div class="lbl">Linked exposure</div><div style="color:var(--amber);font-size:11.5px">⛓ ${ddVal(dd.linked_exposure)}</div></div>`;
-  h+=ddKvSec("Status flags",dd.status_flags);
-  if(dd.tape)h+=ddKvSec(`Tape — as of ${ddDate(dd)} · NOT live`,dd.tape);
-  h+=ddListSec("Capital disclosure watchlist (unlocks)",dd.watchlist_unlocks);
-  h+=ddListSec("Hedges",dd.hedges);
-  h+=ddListSec("Standing rules (must survive every port)",dd.rules);
-  h+=ddListSec("Open items",dd.open_items);
-  h+=ddKvSec("Telemetry",dd.telemetry);
-  h+=ddDotsSec(x);
-  Object.keys(dd).filter(k=>!DD_HANDLED.has(k)).forEach(k=>{
-    const v=dd[k];
-    h+=(v&&typeof v==="object"&&!Array.isArray(v))?ddKvSec(k,v)
-      :Array.isArray(v)?ddListSec(k,v)
-      :`<div class="dd-sec"><div class="lbl">${esc(k)}</div><div style="font-size:11.5px">${esc(v)}</div></div>`;
-  });
+               :`<span style="color:var(--dim);font-size:10px">in ${dl}d</span>`)+`</div></div>`;}).join("")
+    : "";
+  h+=ddDrawer("val",ddValSummary(dd,x),
+    ddPtModelSec(dd.pt_model,dd,x.sym)+ddPtSec(dd.pt_ladder)+ddPtConsensusSec(dd.pt_consensus)+
+    ddConsensusSec(dd.consensus)+ddProjSec(x));
+  h+=ddDrawer("thesis",ddThesisSummary(dd),
+    ddGatesSec(dd.gates)+ddKillSec(dd.kill_combination)+
+    ddListSec("Standing rules (must survive every port)",dd.rules)+
+    ddKvSec("Conditional rules",dd.conditional_rules)+ddKvSec("Status flags",dd.status_flags)+
+    ddListSec("Open items",dd.open_items));
+  h+=ddDrawer("dates",`KEY DATES${(()=>{const n=ddNextDate(dd,todayET);
+    return n?` · next ${esc(n.label)} in ${n.d}d`:` · <span style="color:var(--dim)">none dated</span>`;})()}`,kdHtml);
+  h+=ddDrawer("cap",`CAPITAL &amp; EXPOSURE`+(dd.linked_exposure?` · <span style="color:var(--amber)">linked exposure</span>`:""),
+    ddKvSec("Capital",dd.capital)+ddGridSec(dd.dilution_grid)+
+    ddListSec("Capital disclosure watchlist (unlocks)",dd.watchlist_unlocks)+
+    ddListSec("Hedges",dd.hedges)+ddKvSec("Position &amp; overlay",dd.position)+
+    (dd.linked_exposure?`<div class="dd-sec"><div class="lbl">Linked exposure</div><div style="color:var(--amber);font-size:11.5px">⛓ ${ddVal(dd.linked_exposure)}</div></div>`:""));
+  h+=ddDrawer("track",`TRACKING &amp; MODEL`,
+    ddKvSec("Leading indicators",dd.leading_indicators)+
+    ddKvSec("Certification probabilities",dd.cert_probabilities)+
+    ddKvSec("Utilization underwriting",dd.utilization_underwriting)+
+    ddKvSec("Fleet-vs-burn engine — locked inputs + anchors",dd.engine)+
+    ddKvSec("2040 PT",dd.pt_2040)+ddKvSec("Model anchors",dd.model_anchors)+
+    ddKvSec("Telemetry",dd.telemetry)+
+    (dd.tape?ddKvSec(`Tape — as of ${ddDate(dd)} · NOT live`,dd.tape):""));
+  // Dots stay reachable in one tap but keep their own drawer: capture is a daily act.
+  const dotsN=Array.isArray(x.dots)?x.dots.filter(d=>(d.state||"new")==="new").length:0;
+  h+=ddDrawer("dots",`DOTS${dotsN?` · <span style="color:var(--amber)">${dotsN} new</span>`:` · ${(x.dots||[]).length} captured`}`,ddDotsSec(x),dotsN>0);
+  // Unknown keys still render — what is stored is never invisible. They are NAMED in the
+  // summary so an unrecognised payload section can't hide behind a generic label.
+  const unknown=Object.keys(dd).filter(k=>!DD_HANDLED.has(k));
+  if(unknown.length)
+    h+=ddDrawer("raw",`OTHER STORED FIELDS · ${unknown.map(esc).join(", ")}`,
+      unknown.map(k=>{const v=dd[k];
+        return (v&&typeof v==="object"&&!Array.isArray(v))?ddKvSec(k,v)
+          :Array.isArray(v)?ddListSec(k,v)
+          :`<div class="dd-sec"><div class="lbl">${esc(k)}</div><div style="font-size:11.5px">${esc(v)}</div></div>`;}).join(""));
   h+=`<div class="dd-sec" style="display:flex;gap:8px;flex-wrap:wrap">
     <button class="act" onclick="openCard('${esc(x.sym)}')">OPEN TT CARD</button>
     <button class="act" onclick="openDeepDive('${esc(x.sym)}')">✎ EDIT PAYLOAD</button></div>`;
@@ -1144,11 +1970,57 @@ function rankScope(rank){
 /* FEAT-TT-REGIME: the standing Engine-0 modifier (TT doc STEP 0) rendered where the next
    dollar gets decided. Only HEADWIND/PANIC produce one — a NEUTRAL banner would be noise,
    and an unknown/INSUFFICIENT regime must not fabricate a modifier either way. */
+/* v3.28 FEAT-TT-SESSION: two regime engines now exist — MacroDash MEASURES one from live
+   data (/readout.json, Engine 0) and a TT session ASSERTS one from the tape it read. They
+   are married, never merged: the modifier applies the STRICTER of the two (an add gated
+   too hard costs an entry; one gated too loosely costs capital), and any disagreement is
+   printed with both readings and their provenance. Averaging them would delete exactly the
+   information the disagreement carries. */
+const REG_RANK={TAILWIND:0,NEUTRAL:1,HEADWIND:2,PANIC:3};
+const REG_MOD={
+  HEADWIND:["var(--amber)","⚠ HEADWIND regime — entry standards +1 notch · R/R floors +0.5×"],
+  PANIC:["var(--red)","⛔ PANIC regime — only S-tier at 8+ support quality eligible"],
+};
+/* v3.30: ONE derivation of the governing regime. stance() and regimeModifier() each used to
+   re-derive "the stricter of measured and asserted" from REG_RANK, and two copies of a rule
+   that gates orders is a drift waiting to happen — the same reason ndLeads() and
+   binaryEvents() were extracted. `gov` is null only when neither engine has a ranked read. */
+function governingRegime(){
+  const measured=(REGIME&&REGIME.regime&&REGIME.regime.verdict)||null;
+  const ar=BOARD.regime;
+  const asserted=ar&&typeof ar.asserted==="string"?ar.asserted.toUpperCase():null;
+  const mR=REG_RANK[measured],aR=REG_RANK[asserted];
+  const gov=mR===undefined&&aR===undefined?null
+    :mR===undefined?asserted:aR===undefined?measured:(aR>mR?asserted:measured);
+  return{measured,asserted,gov,ar,
+    ranked:!(mR===undefined&&aR===undefined),
+    disagree:!!(measured&&asserted&&measured!==asserted)};
+}
 function regimeModifier(){
-  const v=REGIME&&REGIME.regime&&REGIME.regime.verdict;
-  if(v==="HEADWIND")return `<div class="none" style="color:var(--amber)">⚠ HEADWIND regime — entry standards +1 notch · R/R floors +0.5×</div>`;
-  if(v==="PANIC")return `<div class="none" style="color:var(--red)">⛔ PANIC regime — only S-tier at 8+ support quality eligible</div>`;
-  return "";
+  const{measured,asserted,gov,ar}=governingRegime();
+  let h="";
+  const mod=gov&&REG_MOD[gov];
+  if(mod)h+=`<div class="none" style="color:${mod[0]}">${mod[1]}</div>`;
+  if(asserted){
+    const prov=`<span class="scope">asserted${ar.source?` by ${esc(ar.source)}`:""}, ${ar.verified===true?"reconciled":"UNVERIFIED"}</span> ${sessChip(ar.as_of||BOARD.as_of)}`;
+    if(!measured)
+      h+=`<div class="none" style="color:var(--amber)">⚖ session reads <b>${esc(asserted)}</b> — MacroDash unavailable, so nothing measured confirms it · ${prov}</div>`;
+    else if(REG_RANK[measured]===undefined)
+      h+=`<div class="none" style="color:var(--amber)">⚖ session reads <b>${esc(asserted)}</b> · MacroDash returned ${esc(measured)} — unconfirmed, don't gate on the measured side · ${prov}</div>`;
+    else if(asserted!==measured)
+      h+=`<div class="none" style="color:var(--amber)">⚖ engines disagree — MacroDash measures <b>${esc(measured)}</b>, session asserts <b>${esc(asserted)}</b> · the stricter reading (<b>${esc(gov)}</b>) governs; disagreement is information, not an average · ${prov}</div>`;
+    else
+      h+=`<div class="none">⚖ both engines read <b>${esc(measured)}</b> — measured and asserted agree · ${prov}</div>`;
+  }
+  return h;
+}
+/* The ranked watchlist leads — shared by the next-dollar line and the cluster overlap
+   check, so the two can never disagree about who is actually queued. */
+function ndLeads(){
+  const ranked=BOOK.filter(x=>x.tier==="WATCH"&&rankNum(x.rank)!==null);
+  if(!ranked.length)return [];
+  const top=Math.min(...ranked.map(x=>rankNum(x.rank)));
+  return ranked.filter(x=>rankNum(x.rank)===top);
 }
 function renderNextDollar(){
   const el=document.getElementById("nextDollar");
@@ -1161,7 +2033,7 @@ function renderNextDollar(){
     return;
   }
   const top=Math.min(...ranked.map(x=>rankNum(x.rank)));
-  const leads=ranked.filter(x=>rankNum(x.rank)===top);
+  const leads=ndLeads();
   const picks=leads.map(x=>{
     const rs=runState(x.lastRun);
     // Honesty: this line is decision-adjacent, so a stale or never-run rating must say so
@@ -1230,8 +2102,18 @@ function annualise(pct,y){
    to the stamp whenever one is unavailable — and says which it used, per pick. Fetch failure
    is silent by design: the board degrades to exactly its previous behaviour. */
 let LIVE_PX={},LIVE_AT=null;
+const QUOTE_CAP=40;          // mirror of MAX_SYMS in functions/api/quotes.js
+let QUOTE_DROPPED=[];        // names past the cap — named, never silently priceless
 async function loadQuotes(){
-  const syms=BOOK.filter(x=>x.deepDive&&x.deepDive.ref_px&&x.deepDive.pt_model).map(x=>x.sym);
+  // v3.29: quote the WHOLE book, not just the modelled names. The day move belongs on every
+  // chip — a monitoring board that shows prices for 2 of 30 names is a research tool. The
+  // endpoint caps at 40 syms with a 2-min KV cache, so this stays one cheap call per load.
+  const all=BOOK.map(x=>x.sym);
+  const syms=all.slice(0,QUOTE_CAP);
+  // v3.30: state the cap. A silent slice made a 41-name book look like 40 quoted names and
+  // one that simply had no price — the same silent-truncation failure the upside widget was
+  // fixed for ("states the denominator"). The tail is named on the coverage strip.
+  QUOTE_DROPPED=all.slice(QUOTE_CAP);
   if(!syms.length)return;
   try{
     const ctl=new AbortController();const t=setTimeout(()=>ctl.abort(),8000);
@@ -1240,7 +2122,7 @@ async function loadQuotes(){
     if(!r.ok)return;
     const d=await r.json();
     LIVE_PX=d.quotes||{};LIVE_AT=d.asOf||null;
-    renderUpsideRank();
+    render();   // chips, the upside rank and the TODAY delta all read LIVE_PX
   }catch(_e){/* stamped ref_px remains in force — never break the board on a quote feed */}
 }
 /* v3.27 FEAT-TT-AGREE: the two stories, married but never merged. The upside math answers
@@ -1251,14 +2133,28 @@ async function loadQuotes(){
    ONLY when both stories agree: positive gap AND composite >= B AND R/R not failing AND no
    binary inside the no-new-adds window. Anything else renders as WAIT with the blockers
    named. Reads payload fields harness runs already write; reports, never enforces. */
+/* AUDIT (v3.31.1): the composite is recovered from FREE TEXT, and first-number-wins
+   silently mis-rated the owner's own notation — "R3-A: 9.0" parsed as 3 → tier C → the
+   AGREE gate reads "quality fails" and withholds the NEXT DOLLAR line from a 9.0 name.
+   Every composite is written with a decimal, so prefer one and fall back to an integer
+   only when no decimal exists. A numeric field is taken as-is, which also stops a
+   legitimate score of 0 being dropped by `||""` (0 is falsy — it is also a real score). */
+function parseComposite(v){
+  if(typeof v==="number")return isFinite(v)?v:null;
+  const s=String(v==null?"":v);
+  const dec=s.match(/\d+\.\d+/);
+  if(dec)return parseFloat(dec[0]);
+  const int=s.match(/\d+/);
+  return int?parseFloat(int[0]):null;
+}
 function ttInfo(dd){
   const c=dd&&dd.composite;
   let score=null,tier=null;
   if(c&&typeof c==="object"){
-    const m=String(c.score||"").match(/(\d+(?:\.\d+)?)/);if(m)score=parseFloat(m[1]);
+    score=parseComposite(c.score);
     const t=String(c.capped_tier||c.raw_tier||"").match(/^([SABC])\b/);if(t)tier=t[1];
-  }else if(dd&&dd.status_flags&&typeof dd.status_flags.composite==="string"){
-    const m=dd.status_flags.composite.match(/(\d+(?:\.\d+)?)/);if(m)score=parseFloat(m[1]);
+  }else if(dd&&dd.status_flags&&(typeof dd.status_flags.composite==="string"||typeof dd.status_flags.composite==="number")){
+    score=parseComposite(dd.status_flags.composite);
   }
   if(score===null&&!tier)return null;
   // Tier from score via the framework map when no explicit tier was recorded.
@@ -1267,6 +2163,7 @@ function ttInfo(dd){
 }
 function renderUpsideRank(){
   const el=document.getElementById("upsideRank");if(!el)return;
+  AGREE_PICK=null;   // recomputed below; an early return must never leave a stale candidate
   const todayET=new Date().toLocaleDateString("en-CA",{timeZone:"America/New_York"});
   const cands=[];
   BOOK.forEach(x=>{
@@ -1328,13 +2225,14 @@ function renderUpsideRank(){
   const key=r=>r.ann!==null?r.ann:r.upside;
   rows.sort((a,b)=>key(b)-key(a));
   const shown=rows.slice(0,3);
+  LAST_RANK=shown.map(r=>r.sym);   // FEAT-TT-SESSION: the cluster strip checks overlap with these
   const MEDAL=["🥇","🥈","🥉"];
   const picks=shown.map((r,i)=>{
     const flag=r.rs.k==="never"?`<span class="bad2">○ no TT run on record</span>`
       :r.rs.k==="head"?`<span class="bad2">⏱ ${r.rs.days}d — re-run first</span>`
       :r.rs.k==="stale"?`<span class="warn2">⏱ ${r.rs.days}d old</span>`:"";
     // AUDIT: a stale price mark silently poisons the %. Say so on the pick itself.
-    const pxFlag=(r.pxAge===null||r.pxAge>4)
+    const pxFlag=(r.pxAge===null||r.pxAge>PX_STALE_D)
       ?`<span class="bad2">⚠ px ${r.pxAge===null?"undated":r.pxAge+"d old"}</span>`:"";
     const col=r.upside>=0?"var(--green)":"var(--red)";
     return `<span class="pick" onclick="openCard('${esc(r.sym)}')"
@@ -1367,6 +2265,15 @@ function renderUpsideRank(){
       return l===rows.length?` · all prices LIVE`:l?` · ${l} live / ${rows.length-l} on stamped marks`:` · all prices are stamped marks, not live`;})()+
     ` · "floor" = 18× FY+1 EPS (S&P-average benchmark, no re-rating assumed); "premium" = the owner's asserted multiple</div>`+caveats+
     (()=>{ // FEAT-TT-AGREE: light only when BOTH stories say yes; otherwise WAIT, blockers named.
+      // v3.28: a tripped leverage circuit is a THIRD veto that no per-name score can clear —
+      // in deleverage-only mode the next dollar funds debt, so the green line must not light
+      // at all. Stated once at the top rather than repeated as a per-row blocker.
+      const trip=String(BOARD.circuit&&BOARD.circuit.state).toLowerCase()==="tripped";
+      if(trip)
+        return `<div style="margin-top:6px;padding:5px 8px;border:1px solid var(--red);border-radius:6px;font-size:11px">`+
+          `<span style="color:var(--red);font-weight:700">⛔ NEXT DOLLAR: NONE — leverage circuit tripped</span> `+
+          `<span class="scope">${esc((BOARD.circuit&&BOARD.circuit.rule)||"deleverage-only until a live pull disproves it")}</span> `+
+          `<span class="scope">· the gap ranking above still stands as math, but no name is eligible while the circuit holds</span></div>`;
       const why=r=>{
         if(!(r.upside>0))return "no gap";
         if(!r.tt)return "unscored — no TT run";
@@ -1375,6 +2282,7 @@ function renderUpsideRank(){
         if(r.kdSoon!==null&&r.kdSoon<=BINARY_WINDOW_D)return `binary ${r.kdSoon}d — no-new-adds`;
         return null;};
       const q=rows.filter(r=>why(r)===null);
+      AGREE_PICK=q.length?q[0]:null;   // the TODAY card shows this only when nothing vetoes
       if(q.length){const b=q[0];
         return `<div style="margin-top:6px;padding:5px 8px;border:1px solid var(--green);border-radius:6px;font-size:11px">`+
           `<span style="color:var(--green);font-weight:700">🎯 NEXT DOLLAR — both stories agree:</span> `+
@@ -1395,8 +2303,9 @@ function renderUpsideRank(){
    has applied all month (MU, VRT, AUR, SOFI, UBER) is "no new shares into a binary ~9
    days out". The window is shown, never enforced — this board reports, it does not trade. */
 const BINARY_WINDOW_D=10;
-function renderBinaryCal(){
-  const el=document.getElementById("binaryCal");if(!el)return;
+/* v3.29: extracted so the TODAY card and the calendar read ONE computation — the day's
+   headline action and the calendar strip can never disagree about what prints tonight. */
+function binaryEvents(){
   const today=new Date().toLocaleDateString("en-CA",{timeZone:"America/New_York"});
   const ev=[];
   BOOK.forEach(x=>{
@@ -1409,23 +2318,43 @@ function renderBinaryCal(){
         nb:k.binary===false,inWindow:k.binary!==false&&d<=BINARY_WINDOW_D});
     });
   });
+  // FEAT-TT-SESSION: board-level binaries — the ones that set the tone for names you hold
+  // without being a book ticker themselves (a supplier's print, a macro release). They were
+  // unrepresentable before, so they were simply absent from the queue they most belonged in.
+  (Array.isArray(BOARD.binaries)?BOARD.binaries:[]).forEach(k=>{
+    if(!k||!/^\d{4}-\d{2}-\d{2}$/.test(String(k.date))||k.date<today)return;
+    const d=Math.round((Date.parse(k.date+"T12:00:00Z")-Date.parse(today+"T12:00:00Z"))/86400000);
+    ev.push({sym:k.scope||"MACRO",board:true,date:k.date,d,label:k.label||k.event||"",
+      nb:k.binary===false,inWindow:k.binary!==false&&d<=BINARY_WINDOW_D});
+  });
+  ev.sort((a,b)=>a.d-b.d);
+  return ev;
+}
+function renderBinaryCal(){
+  const el=document.getElementById("binaryCal");if(!el)return;
+  const ev=binaryEvents();
   if(!ev.length){
     el.innerHTML=`<div class="lbl">Binary calendar</div><div class="none">no future key dates on any payload — add them as prints get scheduled.</div>`;
     return;
   }
-  ev.sort((a,b)=>a.d-b.d);
   const inW=ev.filter(e=>e.inWindow).length;
   const rows=ev.slice(0,6).map(e=>{
     const col=e.inWindow?"var(--red)":e.d<=30?"var(--amber)":"var(--dim)";
-    return `<span class="pick" onclick="switchTab('${esc(e.sym)}')" title="${esc(e.label)}">
-      <span class="sym">${esc(e.sym)}</span>
+    // Only open a tab that exists. A board-level binary scoped to a name you hold links to
+    // that tab; one scoped to a supplier or a macro print has none, and must not render a
+    // dead click that silently does nothing.
+    const tabbable=!e.board||!!(find(e.sym)&&find(e.sym).deepDive);
+    return `<span class="pick"${tabbable?` onclick="switchTab('${esc(e.sym)}')"`:""} title="${esc(e.label)}">
+      <span class="sym"${e.board?' style="color:var(--slate)"':""}>${esc(e.sym)}</span>
       <span style="color:${col};font-weight:700">${e.d===0?"TODAY":e.d+"d"}</span>
       <span class="scope">${esc(e.date)}</span>
       ${e.inWindow?`<span class="bad2">⛔ no-new-adds</span>`:""}${e.nb?`<span class="scope">non-binary</span>`:""}</span>`;
   }).join("");
   el.innerHTML=`<div class="lbl">Binary calendar${inW?` · <span style="color:var(--red)">${inW} inside the ${BINARY_WINDOW_D}d no-new-adds window</span>`:` · none inside ${BINARY_WINDOW_D}d`}</div>`+
     `<div class="picks">${rows}</div>`+
-    `<div class="none">${ev.length} future key date${ev.length===1?"":"s"} across the book${ev.length>6?` · showing the nearest 6`:""} · reported, not enforced — the board never blocks an order</div>`;
+    `<div class="none">${ev.length} future key date${ev.length===1?"":"s"} across the book`+
+    (()=>{const b=ev.filter(e=>e.board).length;return b?` (incl. ${b} board-level, not a book ticker)`:"";})()+
+    `${ev.length>6?` · showing the nearest 6`:""} · reported, not enforced — the board never blocks an order</div>`;
 }
 /* FEAT-TT-RUN: book-coverage rollup — the honest tell, mirroring Signal Quality.
    `head` folds into the stale COUNT (3 buckets) while keeping its own red chip marker. */
@@ -1444,6 +2373,25 @@ function renderCoverage(){
     `<span>of ${BOOK.length}</span>`+
     (BOOK.length?`<span style="color:${projN===BOOK.length?"var(--green)":"var(--amber)"}">📐 ${projN}/${BOOK.length} projected</span>`:"")+
     (dotN?`<span style="color:var(--amber)">⊕ ${dotN} new dots</span>`:"")+
+    // FEAT-TT-SESSION: the session's own unfinished business belongs in the same rollup —
+    // an open decision is exactly as much a coverage hole as an unrun name.
+    (()=>{const ds=Array.isArray(BOARD.decisions)?BOARD.decisions:[];
+      if(!ds.length)return "";
+      const ages=ds.map(d=>ageDays(d.asked));
+      const worst=ages.some(a=>a===null||a>14)?"var(--red)":ages.some(a=>a>7)?"var(--amber)":"var(--dim)";
+      return `<span style="color:${worst}">⚠ ${ds.length} open decision${ds.length===1?"":"s"}</span>`;})()+
+    (()=>{const c=BOARD.circuit,st=String(c&&c.state).toLowerCase();
+      return st==="tripped"?`<span style="color:var(--red)">⛔ circuit tripped</span>`
+        :st==="armed"?`<span style="color:var(--amber)">⚠ circuit armed</span>`:"";})()+
+    // FEAT-TT-POS: measured coverage sits in the same rollup as run coverage — an unmeasured
+    // position is exactly as much of a hole as an unrun name, and both hide the same way.
+    (()=>{const m=BOOK.filter(x=>posOf(x)).length;
+      if(!BOOK.length)return "";
+      const stale=BOOK.filter(x=>{const p=posOf(x);const a=p&&posAge(p);return p&&(a===null||a>POS_STALE_D);}).length;
+      return !m?`<span style="color:var(--dim)">⌗ 0 positions measured</span>`
+        :`<span style="color:${m===BOOK.length?"var(--green)":"var(--amber)"}">⌗ ${m}/${BOOK.length} measured</span>`+
+         (stale?`<span style="color:var(--amber)">⚠ ${stale} stale</span>`:"");})()+
+    (QUOTE_DROPPED.length?`<span style="color:var(--amber)">⚠ ${QUOTE_DROPPED.length} unquoted (past the ${QUOTE_CAP}-symbol cap): ${QUOTE_DROPPED.join(", ")}</span>`:"")+
     `<span style="margin-left:auto">● ≤30d · ⏱ aged · ○ no TT run · 📐 3 questions answered</span>`;
 }
 
@@ -1705,6 +2653,12 @@ function exportBook(){
       m+=`|${x.sym}|$${pj.rev_3yr.value_B}B (${pj.rev_3yr.year||""})|${pj.margins.path}|${pj.multiple.value}x ${pj.multiple.basis||""}|${px!==null?"$"+px:"—"}|\n`;});
     m+=`\nFuture price = future EPS × future multiple. Flywheel = double-digit rev growth · expanding margins · multiple expansion.\n\n---\n\n`;
   }
+  // FEAT-TT-SESSION: board-level state travels too — same rule as deep dives. A backup
+  // that dropped the tripped circuit would restore a book that reads safe to add into.
+  if(BOARD&&Object.keys(BOARD).length){
+    m+=`## SESSION STATE\n\nSelf-attested, as of ${BOARD.as_of||"UNDATED"}${BOARD.source?` · source: ${BOARD.source}`:""}.\n\n`;
+    m+=`\`\`\`json\n${JSON.stringify(BOARD,null,2)}\n\`\`\`\n\n---\n\n`;
+  }
   m+=`## STANDING CONSTRAINTS\n\n1. 18% hard single-position cap.\n2. K-1 avoidance (1099-only).\n3. Roth anchors: your longest-duration names.\n4. R/R floors 2.0/2.5/3.0 · +0.5x headwind.\n5. Targets: 12–15% CAGR, beat SPX.\n\n`;
   m+=`### CHANGELOG\n\n- v1.1 (${d}): Re-versioned via TT Terminal GUI edits.\n- v1.0: Initial state of record.\n`;
   download(`CANONICAL_BOOK_${d}.md`,m,"text/markdown");
@@ -1714,7 +2668,10 @@ function exportJSON(){
   const d=new Date().toISOString().slice(0,10);
   // Report the REAL version — the old hardcoded "1.1" mislabeled every backup, and an
   // export→import round-trip silently reset it.
-  download(`tt_book_${d}.json`,JSON.stringify({version:META.version||"1.0",asOf:META.asOf||d,book:BOOK,cut:CUT},null,2),"application/json");
+  // FEAT-TT-SESSION: board-level state rides the same backup — a restore that lost the
+  // circuit, the clusters and the open decisions would restore only half the book.
+  download(`tt_book_${d}.json`,JSON.stringify({version:META.version||"1.0",asOf:META.asOf||d,book:BOOK,cut:CUT,
+    ...(BOARD&&Object.keys(BOARD).length?{board:BOARD}:{})},null,2),"application/json");
   toast("Exported book JSON");
 }
 
