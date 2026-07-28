@@ -681,9 +681,11 @@ ok("sess: an absent board is CARRIED FORWARD, not deleted — whole-book replace
 ok("sess: absent sections render nothing at all (no session must look like before, not like empty promises)",
   adminSrc.includes('n.style.display=html?"block":"none"') &&
   ["circuitLine", "fundingLine", "clusterLine", "decisionsLine"].every((id) => adminSrc.includes(`id="${id}" style="display:none`)));
-ok("sess: the circuit renders ABOVE the next dollar — it gates every add",
-  adminSrc.indexOf('id="circuitLine"') < adminSrc.indexOf('id="nextDollar"') &&
-  /renderCircuit\(\);renderNextDollar\(\)/.test(adminSrc));
+// v3.29: the circuit strip moved into a drawer, but it did not lose its precedence — it is
+// now the FIRST thing stance() consults, and stance() is the top line of the whole board.
+ok("sess: the circuit outranks the regime in the stance that gates every add",
+  /function stance\(\)\{[\s\S]{0,240}st==="tripped"\)return\{k:"stop"/.test(adminSrc) &&
+  adminSrc.indexOf('id="todayCard"') < adminSrc.indexOf('id="nextDollar"'));
 ok("sess: a tripped circuit vetoes the both-stories-agree line entirely (no per-name score clears it)",
   adminSrc.includes("NEXT DOLLAR: NONE — leverage circuit tripped"));
 ok("sess: stated circuit state vs its last measurement is reconciled, never smoothed over",
@@ -754,6 +756,80 @@ ok("sess: session state starts EMPTY in the bundle — content lives in KV, neve
   !/BOARD\s*=\s*\{\s*as_of/.test(adminSrc) &&
   !existsSync(new URL("../TT_SESSION_HANDOFF.md", import.meta.url)) &&
   !existsSync(new URL("../ticker-terminal/TT_SESSION_HANDOFF.md", import.meta.url)));
+
+// ---- 11. FEAT-TT-TODAY (v3.29) — the daily loop owns the default view ------
+// The board had grown to nine strips of standing state, all full-size, every load. This
+// pass keeps ONE screen (stance · today · what changed) and puts the rest one tap away.
+console.log("\n[11] FEAT-TT-TODAY — stance · actions · what changed");
+ok("today: the default view leads with the TODAY card, above every strip",
+  adminSrc.indexOf('id="todayCard"') < adminSrc.indexOf('id="dNext"') &&
+  adminSrc.indexOf('id="todayCard"') < adminSrc.indexOf('id="board"'));
+ok("today: every demoted strip keeps its element — nothing was deleted, only collapsed",
+  ["nextDollar", "upsideRank", "clusterLine", "fundingLine", "binaryCal", "decisionsLine", "circuitLine"]
+    .every((id) => adminSrc.includes(`id="${id}"`)));
+ok("today: each drawer is ONE tap (native details, no hidden second step)",
+  (adminSrc.match(/<details class="drawer"/g) || []).length === 9);
+ok("today: the reference sidebar collapses too — it is reference, not monitoring",
+  !/<div class="panel"[^>]*>\s*<h2>Router/.test(adminSrc) &&
+  adminSrc.includes("<summary>STANDING CONSTRAINTS</summary>"));
+ok("today: the header pill is labelled MACRO — it is the measured read, not the stance",
+  adminSrc.includes("<span>MACRO: <span class=\"pill neutral\" id=\"regimePill\"") &&
+  adminSrc.includes("made the header look like it contradicted the stance"));
+ok("today: a closed drawer still carries its signal in the summary (the v3.25 hinge rule)",
+  adminSrc.includes("function renderDrawers()") &&
+  adminSrc.includes("inside ${BINARY_WINDOW_D}d</span>") && adminSrc.includes("${ds.length} open"));
+ok("today: a drawer with nothing in it is hidden, not rendered empty",
+  adminSrc.includes('d.style.display=show?"block":"none"'));
+// stance: the one line that says whether capital may move.
+ok("today: stance ranks the circuit above the regime (a portfolio fact, not a market read)",
+  adminSrc.includes("The circuit outranks the") || adminSrc.includes("no macro verdict un-trips it"));
+ok("today: with both engines known the STRICTER sets the stance, and both are shown",
+  adminSrc.includes("stricter governs)") && adminSrc.includes("(aR>mR?asserted:measured)"));
+ok("today: no regime at all reads UNKNOWN — never a defaulted green",
+  adminSrc.includes('k:"unknown",txt:"STANCE UNKNOWN'));
+ok("today: an ARMED circuit still downgrades an otherwise-clear stance",
+  adminSrc.includes('the leverage circuit is ARMED'));
+// actions: most time-bound first, and a green line never sits beside a red one.
+ok("today: actions are ordered by irreversibility — tonight's print outranks an add",
+  adminSrc.includes("Irreversibility beats opportunity"));
+ok("today: an add candidate is withheld whenever anything above it vetoes",
+  adminSrc.includes('if(!out.some(a=>a.sev==="stop")&&AGREE_PICK)'));
+ok("today: the add candidate is the SAME object the upside widget computed (one truth)",
+  adminSrc.includes("AGREE_PICK=q.length?q[0]:null;") &&
+  adminSrc.includes('AGREE_PICK=null;   // recomputed below'));
+ok("today: a queued name on an aged rating becomes its own action",
+  adminSrc.includes("before acting — queued on an aged rating"));
+ok("today: an empty day says so explicitly, with the next dated event",
+  adminSrc.includes('txt:"Nothing to do today."') &&
+  adminSrc.includes("which is not the same as clear"));
+ok("today: a deleverage action names the blocker instead of the trim when one exists",
+  adminSrc.includes("is first to trim — but ${first.blocker}"));
+ok("today: deleverage-only with no funding order says THAT, rather than nothing",
+  adminSrc.includes("no trim order is set, so nothing says what funds it"));
+// what changed: the diff, against a baseline the user owns.
+ok("changed: the baseline moves only on an explicit mark-seen, never silently on reload",
+  adminSrc.includes("function markSeen()") && adminSrc.includes("the baseline moves only when you say so"));
+ok("changed: a first visit sets the baseline and says so — never 'nothing changed'",
+  adminSrc.includes("First visit on this device") &&
+  adminSrc.includes('A missing baseline is never reported as "nothing changed"'));
+ok("changed: a baseline older than the window is reset rather than shown as one visit",
+  adminSrc.includes("const SEEN_MAX_D=7;") && adminSrc.includes("stops being a diff"));
+ok("changed: price deltas compare LIVE to LIVE — never a stamped mark against a live quote",
+  adminSrc.includes("would make the first quote of") && adminSrc.includes("px:live&&isFinite(live.px)?live.px:null"));
+ok("changed: diffs cover the things that actually demand action",
+  ["Leverage circuit:", "tier ${a.tier}", "red hinge", "no-new-adds window", "Open decisions:"]
+    .every((s) => adminSrc.includes(s)));
+ok("changed: attention-grade changes sort to the top",
+  adminSrc.includes("const rank={stop:0,warn:1,go:2};"));
+ok("changed: the panel opens itself once when there is something in it",
+  adminSrc.includes("if(d.length&&!CHANGED_OPENED)"));
+// the book as a monitoring surface, not a directory.
+ok("today: the whole book is quoted, not just the modelled names",
+  adminSrc.includes("const syms=BOOK.map(x=>x.sym).slice(0,40);"));
+ok("today: a chip with no quote shows no number at all (never a 0 that reads as flat)",
+  adminSrc.includes("chg!==null?`<span class=\"chg\"") && adminSrc.includes("never a 0 or a dash"));
+ok("today: quotes arriving re-render the whole board, not just the upside widget",
+  adminSrc.includes("render();   // chips, the upside rank and the TODAY delta all read LIVE_PX"));
 
 console.log(`\n=== SMOKE TEST: ${pass} passed, ${fail} failed ===`);
 process.exit(fail === 0 ? 0 : 1);

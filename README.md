@@ -21,7 +21,7 @@ npm run dev           # mock data by default (no network)
 npm run build         # → dist/  (what Cloudflare Pages runs)
 npm run preview       # serve the built dist/
 
-node test/smoke.mjs   # 359-assertion no-network smoke test (Node ≥17)
+node test/smoke.mjs   # 387-assertion no-network smoke test (Node ≥17)
 ```
 
 There is no `test` script — run the smoke test directly, and keep it green before

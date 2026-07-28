@@ -92,6 +92,23 @@
   .nd .scope{font-size:9px;color:var(--dim)}
   .nd .warn2{font-size:9px;color:var(--amber)} .nd .bad2{font-size:9px;color:var(--red)}
   .nd .none{color:var(--dim);font-size:11.5px;margin-top:4px}
+  /* ── FEAT-TT-TODAY (v3.29): the one-screen daily answer + one-tap drawers ── */
+  .tdy-stance{border:1px solid;border-radius:8px;padding:10px 13px;margin-bottom:10px;
+    background:#070c11;font-size:13px;letter-spacing:.02em}
+  .tdy-why{color:var(--dim);font-size:10.5px;margin-top:3px;letter-spacing:.02em}
+  .tdy-lbl{font-size:9px;letter-spacing:.16em;color:var(--dim);text-transform:uppercase;margin:10px 0 5px}
+  .tdy-act{border-left:3px solid var(--line);padding:5px 0 5px 9px;margin-bottom:5px;font-size:12px}
+  .tdy-act:hover{background:#0a1119}
+  details.drawer{border:1px solid var(--line);border-radius:7px;background:#080d13;margin-top:7px}
+  details.drawer>summary{cursor:pointer;list-style:none;padding:8px 12px;font-size:10.5px;
+    letter-spacing:.12em;color:var(--dim);text-transform:uppercase;user-select:none}
+  details.drawer>summary::-webkit-details-marker{display:none}
+  details.drawer>summary::before{content:"▸ ";color:var(--greenDim)}
+  details.drawer[open]>summary::before{content:"▾ "}
+  details.drawer[open]>summary{border-bottom:1px dashed var(--line)}
+  details.drawer>div{padding:4px 12px 10px}
+  details.drawer .nd{border:none;box-shadow:none;background:transparent;padding:4px 0;margin-bottom:0}
+  .chip .chg{font-size:9.5px;font-weight:700;letter-spacing:0}
   /* book-coverage rollup — mirrors MacroDash's Signal Quality strip */
   .cov{display:flex;align-items:center;gap:10px;flex-wrap:wrap;font-size:10px;color:var(--dim);
     letter-spacing:.06em;padding:2px 0 8px;border-bottom:1px dashed var(--line);margin-bottom:10px}
@@ -180,7 +197,10 @@
     <div class="statusline">
       <span>BOOK: <b id="bookStamp">loading…</b></span>
       <span>AUTH: <b id="sessState">…</b></span>
-      <span>REGIME: <span class="pill neutral" id="regimePill">loading…</span></span>
+      <!-- v3.29: labelled MACRO, not REGIME. This pill is MacroDash's MEASURED read; the
+           session can assert a different one, and the TODAY stance shows which governs.
+           An unqualified "REGIME:" made the header look like it contradicted the stance. -->
+      <span>MACRO: <span class="pill neutral" id="regimePill">loading…</span></span>
       <span style="margin-left:auto"><a href="/">← DASH</a></span>
     </div>
     <div id="authBanner" style="display:none;margin-top:8px;color:var(--red);font-size:12px">
@@ -204,10 +224,12 @@
     <button class="act" onclick="openAdd()">+ ADD TICKER</button>
     <button class="act" onclick="openSession()">◧ SESSION</button>
     <button class="act warn" onclick="reloadBook()">⟲ RELOAD</button>
-    <button class="act" onclick="openPinSetup()">🔐 PIN</button>
-    <button class="act" onclick="toggleBackup()" id="backupToggle">⛭ BACKUP ▸</button>
+    <!-- v3.29: PIN joins the manage row. It is a once-per-30-days action and it was the
+         button that pushed this toolbar onto a second line on a phone. -->
+    <button class="act" onclick="toggleBackup()" id="backupToggle">⛭ MANAGE ▸</button>
   </div>
   <div class="toolbar" id="backupRow" style="display:none">
+    <button class="act" onclick="openPinSetup()">🔐 PIN</button>
     <button class="act" onclick="exportBook()">⭳ EXPORT CANONICAL_BOOK.md</button>
     <button class="act" onclick="exportJSON()">⭳ EXPORT JSON</button>
     <button class="act" onclick="openImport()">⇪ IMPORT JSON</button>
@@ -218,17 +240,28 @@
     <div class="panel">
       <div class="tabs" id="tabBar" style="display:none"></div>
       <div id="boardView">
-        <h2>Tier Board &nbsp;·&nbsp; click any ticker to open its TT Card</h2>
-        <!-- FEAT-TT-SESSION (v3.28): session strips. Each is display:none until the board
-             document actually carries that section — no session state must look exactly
-             like the terminal did before, never like a row of empty placeholders. -->
-        <div class="nd" id="circuitLine" style="display:none"></div>
-        <div class="nd" id="nextDollar" style="margin-top:8px"></div>
-        <div class="nd" id="fundingLine" style="display:none;margin-top:8px"></div>
-        <div class="nd" id="upsideRank" style="margin-top:8px"></div>
-        <div class="nd" id="clusterLine" style="display:none;margin-top:8px"></div>
-        <div class="nd" id="binaryCal" style="margin-top:8px"></div>
-        <div class="nd" id="decisionsLine" style="display:none;margin-top:8px"></div>
+        <!-- FEAT-TT-TODAY (v3.29): the default view answers the daily loop — can I add,
+             what must I do, what changed — and nothing else. Every other strip keeps its
+             element but now lives inside a one-tap drawer whose SUMMARY carries its signal,
+             so a closed drawer can never hide a red thing (the v3.25 hinge rule). -->
+        <div id="todayCard"></div>
+        <details class="drawer" id="dChanged"><summary id="sChanged">WHAT CHANGED</summary>
+          <div id="changedPanel"></div></details>
+
+        <details class="drawer" id="dNext"><summary id="sNext">NEXT DOLLAR &amp; UPSIDE</summary>
+          <div class="nd" id="nextDollar"></div>
+          <div class="nd" id="upsideRank" style="margin-top:8px"></div></details>
+        <details class="drawer" id="dExp" style="display:none"><summary id="sExp">EXPOSURE</summary>
+          <div class="nd" id="clusterLine" style="display:none"></div>
+          <div class="nd" id="fundingLine" style="display:none;margin-top:8px"></div></details>
+        <details class="drawer" id="dCal"><summary id="sCal">CALENDAR</summary>
+          <div class="nd" id="binaryCal"></div></details>
+        <details class="drawer" id="dDec" style="display:none"><summary id="sDec">DECISIONS</summary>
+          <div class="nd" id="decisionsLine" style="display:none"></div></details>
+        <details class="drawer" id="dCirc" style="display:none"><summary id="sCirc">CIRCUIT &amp; REGIME</summary>
+          <div class="nd" id="circuitLine" style="display:none"></div></details>
+
+        <h2 style="margin-top:14px">The Book &nbsp;·&nbsp; click any ticker to open its TT Card</h2>
         <div class="cov" id="coverage"></div>
         <div id="board"></div>
       </div>
@@ -236,8 +269,10 @@
     </div>
 
     <aside>
-      <div class="panel" style="margin-bottom:12px">
-        <h2>Router / Lens Legend</h2>
+      <!-- v3.29: reference, not monitoring. Three always-open panels of standing text were
+           a third of the desktop viewport and (below 900px) three screens of scroll under
+           the book. Same treatment as the strips: one tap, nothing deleted. -->
+      <details class="drawer"><summary>ROUTER / LENS LEGEND</summary>
         <div class="legend">
           <div><span class="swatch" style="background:var(--AI)"></span><b class="lens-AI">[AI]</b> AI Infrastructure Harness v2</div>
           <div><span class="swatch" style="background:var(--PH)"></span><b class="lens-PH">[PH]</b> Physical AI Harness</div>
@@ -246,10 +281,9 @@
           <div><span class="swatch" style="background:var(--SP)"></span><b class="lens-SP">[SP]</b> Speculative / optionality</div>
           <div style="margin-top:6px;color:var(--amber)">◦FP = first-principles routing call (veto if wrong)</div>
         </div>
-      </div>
+      </details>
 
-      <div class="panel" style="margin-bottom:12px">
-        <h2>Standing Constraints</h2>
+      <details class="drawer"><summary>STANDING CONSTRAINTS</summary>
         <ul class="tight">
           <li><b>18%</b> hard single-position cap — no conviction exceptions</li>
           <li><b>K-1 avoidance</b> — 1099-only vehicles over direct MLPs</li>
@@ -258,12 +292,16 @@
           <li><b>Targets:</b> 12–15% CAGR, beat SPX, compound w/o blowing up</li>
           <li>Composite ≥8.5=S · 7.0–8.4=A · 5.5–6.9=B · &lt;5.5=C. Gates cap, never boost.</li>
         </ul>
-      </div>
+      </details>
 
-      <div class="panel">
-        <h2>Open Items / Blockers</h2>
-        <ul class="tight"><li>Load your book to populate tiers, then track blockers here. Composite / technical / R-R lines are filled by a live <b>TT run</b> in chat, not stored in the file.</li></ul>
-      </div>
+      <details class="drawer"><summary>HOW THIS BOARD WORKS</summary>
+        <ul class="tight">
+          <li><b>TODAY</b> is derived, never typed: stance = circuit then the stricter regime; actions are ordered by irreversibility (tonight's print outranks any add).</li>
+          <li><b>WHAT CHANGED</b> diffs against the moment you last hit <i>mark seen</i> — not against an arbitrary session window.</li>
+          <li>Open decisions live in the <b>DECISIONS</b> drawer and age in public; an undated one reads as the worst, never the freshest.</li>
+          <li>Composite / technical / R-R lines are filled by a live <b>TT run</b> in chat, not stored here.</li>
+        </ul>
+      </details>
     </aside>
   </div>
 
@@ -400,7 +438,7 @@ function stampAuthState(){
 function toggleBackup(){
   const r=document.getElementById("backupRow");const open=r.style.display!=="none";
   r.style.display=open?"none":"flex";
-  document.getElementById("backupToggle").textContent=open?"⛭ BACKUP ▸":"⛭ BACKUP ▾";
+  document.getElementById("backupToggle").textContent=open?"⛭ MANAGE ▸":"⛭ MANAGE ▾";
 }
 /* FEAT-TT-RUN: days since an ISO date, or null if absent/unparseable. Null is the
    FAIL-CLOSED signal — unlike src/sources.js isStale (which returns false = "not stale"
@@ -868,6 +906,232 @@ function renderDecisions(){
   sessSec("decisionsLine",h);
 }
 
+/* ═══════════ TODAY (FEAT-TT-TODAY v3.29) ═══════════ */
+/* FIRST PRINCIPLES: this terminal had grown into nine strips of STANDING STATE, all
+   rendered at full size on every load. But a book in daily monitoring changes on maybe one
+   day in five — the signal is the DELTA and the DEMAND, not the state. A daily user opens
+   this to answer three questions, in this order:
+     1. can I add anything at all today?   (stance — regime + circuit, one line)
+     2. what must I actually DO today?     (the binary, the trim, the aging decision)
+     3. what changed since I last looked?  (the diff, not the dump)
+   Everything else is research, not monitoring, and now sits one tap away in a drawer whose
+   SUMMARY still carries its signal — the same rule that made collapsing hinges safe in
+   v3.25: a collapse is only honest if a red thing is still visible while closed. */
+const MOVE_PCT=5;                       // a day move worth waking someone for
+const SEEN_KEY="tt:seen:v1";
+const SEEN_MAX_D=7;                     // a baseline older than this is noise, not a diff
+/* Stance: the ONE line that says whether capital may move today. The circuit outranks the
+   regime because it is a portfolio fact, not a market read — no macro verdict un-trips it. */
+function stance(){
+  const st=String(BOARD.circuit&&BOARD.circuit.state).toLowerCase();
+  if(st==="tripped")return{k:"stop",txt:"NO NEW POSITIONS — leverage circuit tripped",
+    why:(BOARD.circuit&&BOARD.circuit.rule)||"deleverage-only until a live pull disproves it"};
+  const measured=(REGIME&&REGIME.regime&&REGIME.regime.verdict)||null;
+  const asserted=BOARD.regime&&typeof BOARD.regime.asserted==="string"?BOARD.regime.asserted.toUpperCase():null;
+  const mR=REG_RANK[measured],aR=REG_RANK[asserted];
+  if(mR===undefined&&aR===undefined)
+    return{k:"unknown",txt:"STANCE UNKNOWN — no measured or asserted regime",
+      why:"MacroDash returned "+(measured||"nothing")+" and no session regime is loaded — don't gate on this either way"};
+  const gov=mR===undefined?asserted:aR===undefined?measured:(aR>mR?asserted:measured);
+  const both=measured&&asserted&&measured!==asserted?` (measured ${measured} · asserted ${asserted} — stricter governs)`:"";
+  if(gov==="PANIC")return{k:"stop",txt:"ADDS SUSPENDED — PANIC regime"+both,why:"only S-tier at 8+ support quality is eligible"};
+  if(gov==="HEADWIND")return{k:"caution",txt:"ADDS GATED — HEADWIND regime"+both,why:"entry standards +1 notch · R/R floors +0.5×"};
+  if(st==="armed")return{k:"caution",txt:"ADDS OK — but the leverage circuit is ARMED",why:"one more leg down trips it; size accordingly"};
+  return{k:"go",txt:"ADDS OK — "+gov+" regime"+both,why:"standard entry standards apply"};
+}
+/* The day's demands, most time-bound first. Irreversibility beats opportunity: a print
+   tonight cannot be undone tomorrow, an add can always be made later. */
+function todayActions(){
+  const out=[];
+  const ev=binaryEvents();
+  ev.filter(e=>e.inWindow&&e.d<=1).slice(0,2).forEach(e=>{
+    out.push({sev:"stop",txt:`${e.sym} prints ${e.d===0?"today":"tomorrow"} — no new positions into it`,
+      sub:e.label,go:()=>openDrawer("dCal")});
+  });
+  const st=String(BOARD.circuit&&BOARD.circuit.state).toLowerCase();
+  if(st==="tripped"){
+    const order=(BOARD.funding&&Array.isArray(BOARD.funding.order))?BOARD.funding.order:[];
+    const first=order[0];
+    out.push({sev:"stop",
+      txt:first?(first.blocker?`Deleverage: ${first.sym} is first to trim — but ${first.blocker}`
+                              :`Deleverage: trim ${first.sym}${first.est?` (${first.est})`:""} first`)
+              :"Deleverage-only — but no trim order is set, so nothing says what funds it",
+      sub:first?(BOARD.funding.rule||""):"add a funding order in ◧ SESSION",go:()=>openDrawer("dExp")});
+  }
+  const ds=Array.isArray(BOARD.decisions)?BOARD.decisions:[];
+  ds.map(d=>({...d,age:ageDays(d.asked)})).filter(d=>d.blocking&&(d.age===null||d.age>14))
+    .sort((a,b)=>(b.age===null?1e9:b.age)-(a.age===null?1e9:a.age)).slice(0,2)
+    .forEach(d=>out.push({sev:"warn",txt:`Answer (${d.age===null?"undated":d.age+"d"}): ${d.q}`,go:()=>openDrawer("dDec")}));
+  // An eligible add only ever appears when nothing above vetoes it — the green line must
+  // not sit beside a red one and let the reader pick.
+  if(!out.some(a=>a.sev==="stop")&&AGREE_PICK)
+    out.push({sev:"go",txt:`Add candidate: ${AGREE_PICK.sym} — gap and quality agree`,
+      sub:"still your call: sizing, caps and the thesis are not weighed here",go:()=>openCard(AGREE_PICK.sym)});
+  // Anything decision-adjacent running on an old rating is its own action.
+  const stale=[...ndLeads(),...LAST_RANK.map(s=>find(s)).filter(Boolean)]
+    .filter((x,i,a)=>a.indexOf(x)===i).filter(x=>runState(x.lastRun).k!=="fresh");
+  if(stale.length)out.push({sev:"warn",
+    txt:`Re-run TT on ${stale.slice(0,3).map(x=>x.sym).join(", ")} before acting — queued on an aged rating`,
+    go:()=>openCard(stale[0].sym)});
+  if(!out.length){
+    const next=ev[0];
+    out.push({sev:"none",txt:"Nothing to do today.",
+      sub:next?`Next dated event: ${next.sym} in ${next.d===0?"today":next.d+"d"} (${next.date})`:"No dated events ahead — the calendar is empty, which is not the same as clear."});
+  }
+  return out;
+}
+let AGREE_PICK=null;   // set by renderUpsideRank when both stories agree and nothing vetoes
+function renderToday(){
+  const el=document.getElementById("todayCard");if(!el)return;
+  const s=stance();
+  const col={stop:"var(--red)",caution:"var(--amber)",go:"var(--green)",unknown:"var(--slate)"}[s.k];
+  const glyph={stop:"⛔",caution:"⚠",go:"●",unknown:"?"}[s.k];
+  let h=`<div class="tdy-stance" style="color:${col};border-color:${col}">`+
+    `<span style="font-size:15px">${glyph}</span> <b>${esc(s.txt)}</b>`+
+    `<div class="tdy-why">${esc(s.why)}</div></div>`;
+  const acts=todayActions();
+  h+=`<div class="tdy-lbl">Today${acts.length>1?` · ${acts.length} items`:""}</div>`;
+  h+=acts.map((a,i)=>{
+    const c={stop:"var(--red)",warn:"var(--amber)",go:"var(--green)",none:"var(--dim)"}[a.sev];
+    return `<div class="tdy-act" data-i="${i}" style="border-left-color:${c}">`+
+      `<div style="color:${a.sev==="none"?"var(--fg)":c}">${esc(a.txt)}</div>`+
+      (a.sub?`<div class="tdy-why">${esc(a.sub)}</div>`:"")+`</div>`;
+  }).join("");
+  el.innerHTML=h;
+  [...el.querySelectorAll(".tdy-act")].forEach(n=>{
+    const a=acts[+n.dataset.i];if(a&&a.go){n.style.cursor="pointer";n.onclick=a.go;}
+  });
+}
+/* ── WHAT CHANGED: the diff, against a baseline the user controls ────────────────────
+   "Since you last looked" is only honest if the user decides when that was — an automatic
+   roll-forward would silently eat the morning's list on a reload. So the baseline moves
+   ONLY on an explicit MARK SEEN (or when it ages past SEEN_MAX_D and stops being a diff at
+   all). A first visit sets the baseline and says so: no baseline must never render as
+   "nothing changed", which is the same fail-closed rule as a missing lastRun. */
+function stateDigest(){
+  const b={};
+  BOOK.forEach(x=>{
+    const live=LIVE_PX[x.sym];
+    // LIVE prices only. Falling back to the stamped ref_px would make the first quote of
+    // the day read as an 11% "move since you last looked" when nothing moved at all — the
+    // gap being measured would be stamp-vs-live, not then-vs-now.
+    b[x.sym]={px:live&&isFinite(live.px)?live.px:null,
+      tier:x.tier,rank:x.rank||null,lastRun:x.lastRun||null,
+      red:Array.isArray(x.deepDive&&x.deepDive.hinges)?x.deepDive.hinges.filter(g=>g.state==="red").length:0,
+      dots:Array.isArray(x.dots)?x.dots.filter(d=>(d.state||"new")==="new").length:0};
+  });
+  return{at:new Date().toISOString(),book:b,
+    circuit:String(BOARD.circuit&&BOARD.circuit.state||""),
+    measured:(REGIME&&REGIME.regime&&REGIME.regime.verdict)||"",
+    asserted:(BOARD.regime&&BOARD.regime.asserted)||"",
+    decisions:(Array.isArray(BOARD.decisions)?BOARD.decisions:[]).length,
+    inWindow:binaryEvents().filter(e=>e.inWindow).map(e=>e.sym+"@"+e.date).join(","),
+    version:META.version||null};
+}
+function loadSeen(){try{return JSON.parse(localStorage.getItem(SEEN_KEY)||"null");}catch(_e){return null;}}
+function saveSeen(){try{localStorage.setItem(SEEN_KEY,JSON.stringify(stateDigest()));}catch(_e){}}
+function markSeen(){saveSeen();SEEN_NOTE="ok";render();toast("Marked seen — changes now count from this moment");}
+function diffSince(prev){
+  const now=stateDigest(),out=[];
+  if(prev.circuit!==now.circuit)out.push({sev:"stop",t:`Leverage circuit: ${prev.circuit||"none"} → ${now.circuit||"none"}`});
+  if(prev.measured!==now.measured)out.push({sev:"warn",t:`MacroDash regime: ${prev.measured||"—"} → ${now.measured||"—"}`});
+  if(prev.asserted!==now.asserted)out.push({sev:"warn",t:`Session regime: ${prev.asserted||"—"} → ${now.asserted||"—"}`});
+  Object.keys(now.book).forEach(sym=>{
+    const a=prev.book&&prev.book[sym],b=now.book[sym];
+    if(!a){out.push({sev:"warn",t:`${sym} added to the book`,sym});return;}
+    if(a.px&&b.px){const mv=Math.round((b.px/a.px-1)*1000)/10;
+      if(Math.abs(mv)>=MOVE_PCT)out.push({sev:mv<0?"warn":"go",t:`${sym} ${mv>0?"+":""}${mv}% since seen ($${a.px} → $${b.px})`,sym});}
+    if(a.tier!==b.tier)out.push({sev:"warn",t:`${sym} tier ${a.tier} → ${b.tier}`,sym});
+    if((a.rank||"")!==(b.rank||""))out.push({sev:"warn",t:`${sym} queue rank ${a.rank||"—"} → ${b.rank||"—"}`,sym});
+    if(b.red>a.red)out.push({sev:"stop",t:`${sym} has ${b.red} red hinge${b.red===1?"":"s"} (was ${a.red})`,sym});
+    if((a.lastRun||"")!==(b.lastRun||""))out.push({sev:"go",t:`${sym} TT run stamped ${b.lastRun||"cleared"}`,sym});
+    if(b.dots>a.dots)out.push({sev:"warn",t:`${sym} +${b.dots-a.dots} new dot${b.dots-a.dots===1?"":"s"} to triage`,sym});
+  });
+  Object.keys(prev.book||{}).forEach(sym=>{if(!now.book[sym])out.push({sev:"warn",t:`${sym} left the book`});});
+  if(prev.decisions!==now.decisions)out.push({sev:"warn",t:`Open decisions: ${prev.decisions} → ${now.decisions}`});
+  if(prev.inWindow!==now.inWindow){
+    const was=new Set(String(prev.inWindow||"").split(",").filter(Boolean));
+    now.inWindow.split(",").filter(Boolean).filter(k=>!was.has(k))
+      .forEach(k=>out.push({sev:"stop",t:`${k.split("@")[0]} entered the ${BINARY_WINDOW_D}d no-new-adds window (${k.split("@")[1]})`}));
+  }
+  const rank={stop:0,warn:1,go:2};
+  return out.sort((a,b)=>rank[a.sev]-rank[b.sev]);
+}
+let CHANGED_OPENED=false,SEEN_NOTE=null,SEEN_AGE=null;
+function renderChanged(){
+  const panel=document.getElementById("changedPanel"),sum=document.getElementById("sChanged");
+  if(!panel||!sum)return;
+  const prev=loadSeen();
+  // Decide ONCE per page load. render() runs again when quotes land, and a baseline written
+  // on the first pass would otherwise turn "first visit" into "nothing changed since 2
+  // seconds ago" — technically true, and exactly the kind of confident emptiness this
+  // codebase treats as a lie.
+  if(SEEN_NOTE===null){
+    if(!prev){SEEN_NOTE="new";saveSeen();}
+    else{
+      SEEN_AGE=ageDays(String(prev.at).slice(0,10));
+      SEEN_NOTE=(SEEN_AGE!==null&&SEEN_AGE>SEEN_MAX_D)?"reset":"ok";
+      if(SEEN_NOTE==="reset")saveSeen();
+    }
+  }
+  if(SEEN_NOTE==="new"){
+    sum.innerHTML=`<span style="color:var(--dim)">WHAT CHANGED · baseline set</span>`;
+    panel.innerHTML=`<div class="none">First visit on this device — there is nothing to compare against yet. Changes will appear from your next visit. (A missing baseline is never reported as "nothing changed".)</div>`;
+    return;
+  }
+  if(SEEN_NOTE==="reset"){
+    sum.innerHTML=`<span style="color:var(--amber)">WHAT CHANGED · baseline was ${SEEN_AGE}d old — reset</span>`;
+    panel.innerHTML=`<div class="none">The last-seen baseline was ${SEEN_AGE} days old. A diff that long stops being a diff, so it has been reset to now rather than shown as one visit's worth of change.</div>`;
+    return;
+  }
+  const when=String(prev.at).replace("T"," ").slice(0,16)+" UTC";
+  const d=diffSince(prev);
+  const stops=d.filter(x=>x.sev==="stop").length;
+  sum.innerHTML=d.length
+    ?`<span style="color:${stops?"var(--red)":"var(--amber)"}">WHAT CHANGED · ${d.length}${stops?` · ${stops} need attention`:""}</span>`
+    :`<span style="color:var(--dim)">WHAT CHANGED · nothing since ${when}</span>`;
+  panel.innerHTML=(d.length
+    ?d.map(x=>{const c={stop:"var(--red)",warn:"var(--amber)",go:"var(--green)"}[x.sev];
+        return `<div class="none" style="color:var(--fg)"><span style="color:${c}">●</span> ${esc(x.t)}`+
+          (x.sym&&find(x.sym)?` <span class="scope" style="cursor:pointer" onclick="openCard('${esc(x.sym)}')">open</span>`:"")+`</div>`;}).join("")
+    :`<div class="none">Nothing has changed since ${esc(when)}.</div>`)+
+    `<div class="none" style="margin-top:6px">since <b>${esc(when)}</b> · the baseline moves only when you say so — `+
+    `<a href="javascript:markSeen()">✓ mark seen</a></div>`;
+  if(d.length&&!CHANGED_OPENED){document.getElementById("dChanged").open=true;CHANGED_OPENED=true;}
+}
+/* Drawer summaries carry the signal so a closed drawer never hides a red thing. */
+function openDrawer(id){const d=document.getElementById(id);if(d){d.open=true;d.scrollIntoView({block:"nearest"});}}
+function setDrawer(id,sumId,html,show){
+  const d=document.getElementById(id);if(!d)return;
+  d.style.display=show?"block":"none";
+  const s=document.getElementById(sumId);if(s)s.innerHTML=html;
+}
+function renderDrawers(){
+  const leads=ndLeads();
+  setDrawer("dNext","sNext",`NEXT DOLLAR &amp; UPSIDE · `+
+    (AGREE_PICK?`<span style="color:var(--green)">${esc(AGREE_PICK.sym)} eligible</span>`
+      :leads.length?`<span style="color:var(--dim)">queued: ${leads.map(x=>esc(x.sym)).join(", ")} · none eligible</span>`
+      :`<span style="color:var(--dim)">nothing queued</span>`),true);
+  const cls=Array.isArray(BOARD.clusters)?BOARD.clusters:[];
+  const fund=BOARD.funding&&Array.isArray(BOARD.funding.order)?BOARD.funding.order:[];
+  setDrawer("dExp","sExp",`EXPOSURE · `+
+    (cls.length?`${cls.length} cluster${cls.length===1?"":"s"}`:`no clusters set`)+
+    (fund.length?` · trim first: ${esc(fund[0].sym)}`:``),cls.length>0||fund.length>0);
+  const ev=binaryEvents(),inW=ev.filter(e=>e.inWindow).length;
+  setDrawer("dCal","sCal",`CALENDAR · `+
+    (ev.length?(inW?`<span style="color:var(--red)">${inW} inside ${BINARY_WINDOW_D}d</span> · next ${esc(ev[0].sym)} ${ev[0].d===0?"today":ev[0].d+"d"}`
+                   :`next ${esc(ev[0].sym)} in ${ev[0].d}d`)
+             :`<span style="color:var(--dim)">no dated events</span>`),true);
+  const ds=Array.isArray(BOARD.decisions)?BOARD.decisions:[];
+  const ages=ds.map(d=>ageDays(d.asked));
+  const worst=ages.some(a=>a===null||a>14)?"var(--red)":ages.some(a=>a>7)?"var(--amber)":"var(--dim)";
+  setDrawer("dDec","sDec",`DECISIONS · <span style="color:${worst}">${ds.length} open`+
+    (ds.filter(d=>d.blocking).length?` · ${ds.filter(d=>d.blocking).length} blocking`:``)+`</span>`,ds.length>0);
+  const st=String(BOARD.circuit&&BOARD.circuit.state).toLowerCase();
+  const rc=st==="tripped"?"var(--red)":st==="armed"?"var(--amber)":"var(--green)";
+  setDrawer("dCirc","sCirc",`CIRCUIT &amp; REGIME · <span style="color:${rc}">${esc(st.toUpperCase())}</span>`,!!BOARD.circuit);
+}
+
 /* ═══════════ RENDER BOARD ═══════════ */
 function render(){
   const b=document.getElementById("board");b.innerHTML="";
@@ -884,10 +1148,17 @@ function render(){
       const c=document.createElement("div");
       c.className="chip"+(x.fp?" fp":"")+" run-"+rs.k;
       c.onclick=()=>openCard(x.sym);
+      // v3.29: the day move on the chip. A monitoring surface that shows only the ticker
+      // makes you open every card to learn nothing happened. Absent quote = no number at
+      // all (never a 0 or a dash that could read as flat).
+      const q=LIVE_PX[x.sym];
+      const chg=q&&isFinite(q.chg)?q.chg:null;
       c.innerHTML=`<span class="sym">${x.sym}</span>
-        <span class="lens lens-${x.lens}">${x.lens}</span>`;
+        <span class="lens lens-${x.lens}">${x.lens}</span>`+
+        (chg!==null?`<span class="chg" style="color:${chg>=0?"var(--green)":"var(--red)"}">${chg>=0?"+":""}${chg}%</span>`:"");
       const runTxt=rs.k==="never"?"TT run: NEVER RUN":`TT run ${x.lastRun} · ${rs.days}d ago`;
-      c.title=[runTxt,(x.rank&&x.rank!=="—")?x.rank:null,x.note||null].filter(Boolean).join(" · ");
+      c.title=[q?`$${q.px}${chg!==null?` (${chg>=0?"+":""}${chg}% today)`:""}`:null,
+        runTxt,(x.rank&&x.rank!=="—")?x.rank:null,x.note||null].filter(Boolean).join(" · ");
       chips.appendChild(c);
     });
     sec.appendChild(chips);
@@ -903,7 +1174,10 @@ function render(){
   // FEAT-TT-SESSION: circuit first (it gates every add), then the queues, then clusters —
   // which must run AFTER renderUpsideRank so its overlap check reads the current top ranks.
   renderCircuit();renderNextDollar();renderFunding();renderUpsideRank();renderClusters();
-  renderBinaryCal();renderDecisions();renderCoverage();renderTabs();
+  renderBinaryCal();renderDecisions();renderCoverage();
+  // v3.29: TODAY reads what the strips above computed (AGREE_PICK, LAST_RANK), so it can
+  // never contradict them — one computation, rendered twice at different altitudes.
+  renderToday();renderChanged();renderDrawers();renderTabs();
 }
 
 /* ═══════════ DEEP-DIVE TABS (FEAT-TT-DD v3.12) ═══════════ */
@@ -1565,7 +1839,10 @@ function annualise(pct,y){
    is silent by design: the board degrades to exactly its previous behaviour. */
 let LIVE_PX={},LIVE_AT=null;
 async function loadQuotes(){
-  const syms=BOOK.filter(x=>x.deepDive&&x.deepDive.ref_px&&x.deepDive.pt_model).map(x=>x.sym);
+  // v3.29: quote the WHOLE book, not just the modelled names. The day move belongs on every
+  // chip — a monitoring board that shows prices for 2 of 30 names is a research tool. The
+  // endpoint caps at 40 syms with a 2-min KV cache, so this stays one cheap call per load.
+  const syms=BOOK.map(x=>x.sym).slice(0,40);
   if(!syms.length)return;
   try{
     const ctl=new AbortController();const t=setTimeout(()=>ctl.abort(),8000);
@@ -1574,7 +1851,7 @@ async function loadQuotes(){
     if(!r.ok)return;
     const d=await r.json();
     LIVE_PX=d.quotes||{};LIVE_AT=d.asOf||null;
-    renderUpsideRank();
+    render();   // chips, the upside rank and the TODAY delta all read LIVE_PX
   }catch(_e){/* stamped ref_px remains in force — never break the board on a quote feed */}
 }
 /* v3.27 FEAT-TT-AGREE: the two stories, married but never merged. The upside math answers
@@ -1601,6 +1878,7 @@ function ttInfo(dd){
 }
 function renderUpsideRank(){
   const el=document.getElementById("upsideRank");if(!el)return;
+  AGREE_PICK=null;   // recomputed below; an early return must never leave a stale candidate
   const todayET=new Date().toLocaleDateString("en-CA",{timeZone:"America/New_York"});
   const cands=[];
   BOOK.forEach(x=>{
@@ -1719,6 +1997,7 @@ function renderUpsideRank(){
         if(r.kdSoon!==null&&r.kdSoon<=BINARY_WINDOW_D)return `binary ${r.kdSoon}d — no-new-adds`;
         return null;};
       const q=rows.filter(r=>why(r)===null);
+      AGREE_PICK=q.length?q[0]:null;   // the TODAY card shows this only when nothing vetoes
       if(q.length){const b=q[0];
         return `<div style="margin-top:6px;padding:5px 8px;border:1px solid var(--green);border-radius:6px;font-size:11px">`+
           `<span style="color:var(--green);font-weight:700">🎯 NEXT DOLLAR — both stories agree:</span> `+
@@ -1739,8 +2018,9 @@ function renderUpsideRank(){
    has applied all month (MU, VRT, AUR, SOFI, UBER) is "no new shares into a binary ~9
    days out". The window is shown, never enforced — this board reports, it does not trade. */
 const BINARY_WINDOW_D=10;
-function renderBinaryCal(){
-  const el=document.getElementById("binaryCal");if(!el)return;
+/* v3.29: extracted so the TODAY card and the calendar read ONE computation — the day's
+   headline action and the calendar strip can never disagree about what prints tonight. */
+function binaryEvents(){
   const today=new Date().toLocaleDateString("en-CA",{timeZone:"America/New_York"});
   const ev=[];
   BOOK.forEach(x=>{
@@ -1762,11 +2042,16 @@ function renderBinaryCal(){
     ev.push({sym:k.scope||"MACRO",board:true,date:k.date,d,label:k.label||k.event||"",
       nb:k.binary===false,inWindow:k.binary!==false&&d<=BINARY_WINDOW_D});
   });
+  ev.sort((a,b)=>a.d-b.d);
+  return ev;
+}
+function renderBinaryCal(){
+  const el=document.getElementById("binaryCal");if(!el)return;
+  const ev=binaryEvents();
   if(!ev.length){
     el.innerHTML=`<div class="lbl">Binary calendar</div><div class="none">no future key dates on any payload — add them as prints get scheduled.</div>`;
     return;
   }
-  ev.sort((a,b)=>a.d-b.d);
   const inW=ev.filter(e=>e.inWindow).length;
   const rows=ev.slice(0,6).map(e=>{
     const col=e.inWindow?"var(--red)":e.d<=30?"var(--amber)":"var(--dim)";

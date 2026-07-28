@@ -121,7 +121,7 @@ worker/                 SEPARATE Cloudflare Worker (not part of Pages)
   wrangler.toml         Worker config: PULSE_CACHE binding + cron triggers (UTC).
 
 test/
-  smoke.mjs             No-network smoke test: 359 assertions over mergeLiveOverMock
+  smoke.mjs             No-network smoke test: 387 assertions over mergeLiveOverMock
                         + SOURCES-path resolution against the real MOCK_DATA + the
                         5-Whys engine + DEC-31 guards + the TT band table (DEC-33)
                         + the market-holiday calendar (sessions + staleness).
@@ -388,6 +388,28 @@ Jan-anchor shipped; see `snapshot.js` ~318–328), `spyMa100`, `spyMa200`, and a
   removes anything, and previews on the unsaved rails until an explicit SAVE). An **absent**
   `board` on PUT is **carried forward, not deleted** (curl/older clients must not eat session
   state). Same invariant as the book: `BOARD` ships empty, content lives only in KV.
+- **FEAT-TT-TODAY (v3.29) — the daily loop owns the default view.** v3.28 left the board at
+  **nine strips of standing state, full size, every load** — six phone screens before the book.
+  But a book in daily monitoring changes maybe one day in five: the signal is the DELTA and the
+  DEMAND, not the state. The default view is now **one screen** answering the daily loop in
+  order: **STANCE** (may capital move at all — `stance()`: the circuit first because it is a
+  portfolio fact no macro verdict un-trips, then the stricter of measured/asserted regime;
+  no regime at all reads UNKNOWN, never a defaulted green) · **TODAY** (`todayActions()`,
+  ordered by **irreversibility** — tonight's print outranks any add; a deleverage action names
+  the *blocker* rather than the trim when one exists; the add candidate is withheld entirely
+  whenever anything above it vetoes, and it is the same `AGREE_PICK` the upside widget computed,
+  never a second opinion) · **WHAT CHANGED** (`diffSince()` — price moves ≥`MOVE_PCT`, tier/rank
+  changes, new red hinges, run stamps, decisions, names entering the no-new-adds window).
+  Everything else moved into **one-tap `details.drawer`s whose summaries still carry their
+  signal** (the v3.25 hinge rule: a collapse is only honest if a red thing stays visible while
+  closed) — nothing was deleted, and the reference sidebar collapsed the same way.
+  **The delta baseline is the user's**: it moves only on an explicit *mark seen* (or resets past
+  `SEEN_MAX_D=7`), a first visit says "baseline set" rather than "nothing changed", and price
+  deltas compare **live to live** — diffing a stamped `ref_px` against the day's first quote
+  would report an 11% "move" when nothing moved. `/api/quotes` is now asked for the **whole
+  book** (≤40, 2-min KV cache) so every chip carries its day move; a name with no quote shows
+  **no number at all**, never a 0 that reads as flat. Header pill relabelled **MACRO** — it is
+  MacroDash's *measured* read and looked like it contradicted the stance.
 - **Deferred:** stored fundamentals + Robinhood sync — now unblocked by the `x-tt-pin` header
   (v3.9): a chat-side daily review can PUT `status_flags`/`ref_px` into the deepDive payloads and
   stamp `lastRun`. When built, store the *triage* shape (`{at, px}` → "% moved since your last TT
@@ -454,7 +476,7 @@ npm run dev        # Vite dev server (mock unless VITE_DATA_MODE=live in .env)
 npm run build      # → dist/  (what Pages runs)
 npm run preview    # serve the built dist/
 
-node test/smoke.mjs   # 359-assertion no-network smoke test (needs Node ≥17)
+node test/smoke.mjs   # 387-assertion no-network smoke test (needs Node ≥17)
 
 # Cron Worker (separate deploy):
 cd worker && npx wrangler deploy
