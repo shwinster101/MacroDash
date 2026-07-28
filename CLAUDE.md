@@ -121,7 +121,7 @@ worker/                 SEPARATE Cloudflare Worker (not part of Pages)
   wrangler.toml         Worker config: PULSE_CACHE binding + cron triggers (UTC).
 
 test/
-  smoke.mjs             No-network smoke test: 304 assertions over mergeLiveOverMock
+  smoke.mjs             No-network smoke test: 359 assertions over mergeLiveOverMock
                         + SOURCES-path resolution against the real MOCK_DATA + the
                         5-Whys engine + DEC-31 guards + the TT band table (DEC-33)
                         + the market-holiday calendar (sessions + staleness).
@@ -220,7 +220,8 @@ Jan-anchor shipped; see `snapshot.js` ~318–328), `spyMa100`, `spyMa200`, and a
 - **`public/admin.html`** — Vite `public/` passthrough serves the TT tier-board GUI verbatim at
   `/admin.html`. It is the empty template wired to **`/api/tt`** (`functions/api/tt.js`): GET loads
   the book, every mutation (add / card save / remove→CUT / import) optimistically updates then PUTs.
-  KV key **`tt:book:v1`** (no TTL) in `PULSE_CACHE` holds `{version, asOf, book, cut}`.
+  KV key **`tt:book:v1`** (no TTL) in `PULSE_CACHE` holds `{version, asOf, book, cut}` — plus an
+  optional **`board`** (FEAT-TT-SESSION, v3.28) for state no single ticker owns.
 - **Auth = config-gated (FEAT-TT-PIN, v3.9.0).** With **`env.TT_PIN` set (exactly 6 digits;
   `npx wrangler pages secret put TT_PIN`)** the terminal runs **PIN mode**: `POST /api/tt {pin}`
   mints a 30-day KV device session (`tt:session:<token>`, HttpOnly/Secure/SameSite=Strict cookie),
@@ -360,6 +361,33 @@ Jan-anchor shipped; see `snapshot.js` ~318–328), `spyMa100`, `spyMa200`, and a
   worthless if the binary is discovered after sizing. A board strip aggregates every *future*
   key date across the book, sorted by days-out, flagging anything inside `BINARY_WINDOW_D=10`.
   Deliberately **reports, never enforces** — the board does not block orders.
+- **FEAT-TT-SESSION (v3.28) — the session layer.** A TT session produces conclusions no single
+  ticker owns, and the book had nowhere to put them: the board could show a green NEXT DOLLAR
+  while the portfolio was in deleverage-only mode and the top two picks were the same bet twice.
+  An optional **`board` object in the same KV document** (`functions/api/tt.js` `validateBoard`,
+  16KB cap, `as_of` REQUIRED) now carries six sections, each rendered as its own strip that
+  **renders nothing when absent** — no session loaded looks exactly like v3.27, never like empty
+  placeholders. **`circuit`** (leverage; renders *above* the next dollar because it gates every
+  add, and a `tripped` circuit **vetoes the FEAT-TT-AGREE green line outright** — no per-name
+  score clears it) · **`clusters`** ("cluster = one position": flags when two co-leads or two
+  computed-upside top ranks sit in the same cluster) · **`funding`** (the deleverage-first trim
+  order + `do_not_trim`, with per-row blockers; the question NEXT DOLLAR never answered — where
+  the dollar comes *from*) · **`decisions`** (aging in public: >7d amber, >14d red, **undated is
+  the worst chip, never the freshest**) · **`binaries`** (non-ticker prints — a supplier's
+  earnings that sets the tone for names you hold — merged into the same dated queue, and only
+  clickable when a tab actually exists) · **`regime`** (the session's *asserted* read).
+  **Two regime engines, married never merged** (`REG_RANK`): MacroDash **measures** one from live
+  data, the session **asserts** one; the **stricter governs** the standing modifier and any
+  disagreement prints both readings with provenance — averaging them would delete the information.
+  Everything here is self-attested, so every strip carries `sessChip()` (the circuit dates its
+  asserted state and its `measured_at` measurement **separately** — a fresh assertion must not
+  launder a stale number). Entry path is the **◧ SESSION** modal: the top box edits the board,
+  the bottom box applies a **handoff patch as a MERGE, never a replace** (`applyHandoff` — a
+  session covers only the names it touched, so importing one as a book would delete every name it
+  didn't mention; validates whole-patch-before-apply, requires tier+lens to add a name, never
+  removes anything, and previews on the unsaved rails until an explicit SAVE). An **absent**
+  `board` on PUT is **carried forward, not deleted** (curl/older clients must not eat session
+  state). Same invariant as the book: `BOARD` ships empty, content lives only in KV.
 - **Deferred:** stored fundamentals + Robinhood sync — now unblocked by the `x-tt-pin` header
   (v3.9): a chat-side daily review can PUT `status_flags`/`ref_px` into the deepDive payloads and
   stamp `lastRun`. When built, store the *triage* shape (`{at, px}` → "% moved since your last TT
@@ -426,7 +454,7 @@ npm run dev        # Vite dev server (mock unless VITE_DATA_MODE=live in .env)
 npm run build      # → dist/  (what Pages runs)
 npm run preview    # serve the built dist/
 
-node test/smoke.mjs   # 304-assertion no-network smoke test (needs Node ≥17)
+node test/smoke.mjs   # 359-assertion no-network smoke test (needs Node ≥17)
 
 # Cron Worker (separate deploy):
 cd worker && npx wrangler deploy

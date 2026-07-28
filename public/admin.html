@@ -202,6 +202,7 @@
        globally reachable — the unsaved/conflict banners link to it by function name. -->
   <div class="toolbar">
     <button class="act" onclick="openAdd()">+ ADD TICKER</button>
+    <button class="act" onclick="openSession()">◧ SESSION</button>
     <button class="act warn" onclick="reloadBook()">⟲ RELOAD</button>
     <button class="act" onclick="openPinSetup()">🔐 PIN</button>
     <button class="act" onclick="toggleBackup()" id="backupToggle">⛭ BACKUP ▸</button>
@@ -218,9 +219,16 @@
       <div class="tabs" id="tabBar" style="display:none"></div>
       <div id="boardView">
         <h2>Tier Board &nbsp;·&nbsp; click any ticker to open its TT Card</h2>
-        <div class="nd" id="nextDollar"></div>
+        <!-- FEAT-TT-SESSION (v3.28): session strips. Each is display:none until the board
+             document actually carries that section — no session state must look exactly
+             like the terminal did before, never like a row of empty placeholders. -->
+        <div class="nd" id="circuitLine" style="display:none"></div>
+        <div class="nd" id="nextDollar" style="margin-top:8px"></div>
+        <div class="nd" id="fundingLine" style="display:none;margin-top:8px"></div>
         <div class="nd" id="upsideRank" style="margin-top:8px"></div>
+        <div class="nd" id="clusterLine" style="display:none;margin-top:8px"></div>
         <div class="nd" id="binaryCal" style="margin-top:8px"></div>
+        <div class="nd" id="decisionsLine" style="display:none;margin-top:8px"></div>
         <div class="cov" id="coverage"></div>
         <div id="board"></div>
       </div>
@@ -303,6 +311,11 @@ const TIER_LABEL={S:"S-TIER",A:"A-TIER",B:"B-TIER",DEF:"DEFENSIVE",WATCH:"WATCHL
    never seeded in this file. SEED stays empty by invariant. */
 const SEED=[];
 let CUT=[];
+/* FEAT-TT-SESSION (v3.28): board-level session state (clusters / leverage circuit /
+   funding queue / open decisions / non-ticker binaries / the session's asserted regime).
+   Lives in the same KV document as the book — never the repo — and renders NOTHING when
+   absent, so a terminal with no session loaded looks exactly as it did before. */
+let BOARD={};
 
 /* TT CARD schema — the fixed DEEP-mode output lines (populated by a live TT run) */
 const CARD_FIELDS=[
@@ -370,7 +383,7 @@ async function api(method,body,ifMatch){
   return data;
 }
 function applyServer(data){
-  BOOK=data.book||[];CUT=data.cut||[];
+  BOOK=data.book||[];CUT=data.cut||[];BOARD=data.board||{};
   META={version:data.version,asOf:data.asOf};
   if(data.auth)AUTH=data.auth;
   stampHeader();stampAuthState();
@@ -432,14 +445,15 @@ async function loadBook(){
    Never re-GET on a save failure: the local edit is the only copy of it. */
 let DIRTY=false;
 const MAX_BODY=64*1024; // mirror of the server cap in functions/api/tt.js
+function bookDoc(){return{book:BOOK,cut:CUT,board:BOARD&&Object.keys(BOARD).length?BOARD:null};}
 async function persist(){
-  const raw=JSON.stringify({book:BOOK,cut:CUT});
+  const raw=JSON.stringify(bookDoc());
   if(raw.length>MAX_BODY){ // pre-flight, so overflow reads as a specific local message
     DIRTY=true;showUnsaved(`payload ${Math.round(raw.length/1024)}KB exceeds the ${MAX_BODY/1024}KB server cap`);
     return;
   }
   try{
-    const data=await api("PUT",{book:BOOK,cut:CUT},META.version||"*");
+    const data=await api("PUT",bookDoc(),META.version||"*");
     DIRTY=false;document.getElementById("saveBanner").style.display="none";
     applyServer(data);render();
   }catch(e){
@@ -465,7 +479,7 @@ function showConflict(server){
 }
 async function overwriteServer(){
   try{
-    const data=await api("PUT",{book:BOOK,cut:CUT},"*"); // explicit override
+    const data=await api("PUT",bookDoc(),"*"); // explicit override
     DIRTY=false;document.getElementById("saveBanner").style.display="none";
     applyServer(data);render();toast("Server overwritten with this device's book");
   }catch(e){showUnsaved(e.message);}
@@ -540,7 +554,7 @@ async function previewSnapshot(date){
     const res=await fetch("/api/tt?snapshot="+encodeURIComponent(date));
     const d=await res.json();
     if(!res.ok)throw new Error(d.error||("HTTP "+res.status));
-    BOOK=d.book||[];CUT=d.cut||[];DIRTY=true;
+    BOOK=d.book||[];CUT=d.cut||[];BOARD=d.board||{};DIRTY=true;
     closeCard();render();
     showUnsaved(`previewing the ${date} restore point (v${d.version}). Review it, then save it to make it live, or discard to return to the current book`,"preview");
     toast(`Loaded ${date} restore point — review, then save or discard`);
@@ -567,11 +581,292 @@ async function importSave(){
     if(e.deepDive!==undefined){const der=validateDeepDive(e.deepDive);if(der)return toast("Import rejected: "+e.sym+" deep dive: "+der);}
     if(e.projection!==undefined){const per=validateProjection(e.projection);if(per)return toast("Import rejected: "+e.sym+" projection: "+per);}
   }
+  // FEAT-TT-SESSION: an import that carries board state validates it too, BEFORE anything
+  // is replaced. An import that carries none leaves the existing session state alone —
+  // the server does the same, and a book restore must not silently clear the circuit.
+  if(parsed.board!==undefined&&parsed.board!==null){
+    const ber=validateSession(parsed.board);
+    if(ber)return toast("Import rejected: board: "+ber);
+  }
   BOOK=book;CUT=cut;
-  closeCard();await persist();toast("Book imported & saved to server");
+  if(parsed.board!==undefined&&parsed.board!==null)BOARD=parsed.board;
+  closeCard();await persist();toast("Book imported & saved to server"+(parsed.board?" (incl. session state)":""));
+}
+
+/* ═══════════ SESSION STATE EDITOR + HANDOFF PATCH (FEAT-TT-SESSION v3.28) ═══════════ */
+/* Two paste boxes, one modal. The top one edits the board document directly. The bottom
+   one applies a SESSION HANDOFF as a MERGE — the critical difference from IMPORT JSON,
+   which replaces the whole book. A handoff covers the names that session touched, so
+   importing one as a book would silently delete every name it didn't mention. This path
+   only adds and updates, names exactly what it changed, and writes nothing until SAVE. */
+function openSession(){
+  CURRENT=null;
+  document.getElementById("cTitle").textContent="SESSION STATE";
+  const cur=BOARD&&Object.keys(BOARD).length?JSON.stringify(BOARD,null,2):"";
+  const ta=`width:100%;min-height:150px;background:#060b0f;border:1px solid var(--line);color:var(--fg);border-radius:5px;padding:8px;font-family:inherit;font-size:12px;outline:none`;
+  document.getElementById("cBody").innerHTML=`
+    <div class="derived" style="margin-bottom:8px">Board-level state a TT session produces that no single ticker owns:
+    <b>circuit</b> (leverage), <b>clusters</b> (what is really one position), <b>funding</b> (what gets trimmed),
+    <b>decisions</b> (still open), <b>binaries</b> (non-ticker dates), <b>regime</b> (the session's asserted read).
+    All of it is self-attested, so <code>as_of</code> is required and every strip shows its age.</div>
+    <textarea id="fSession" style="${ta}" placeholder='{"as_of":"YYYY-MM-DD","source":"TT session","circuit":{...}}'>${esc(cur)}</textarea>
+    <div class="derived" style="margin:12px 0 8px;border-top:1px dashed var(--line);padding-top:10px">
+    <b>HANDOFF PATCH — merge, never replace.</b> Paste <code>{board, updates:[{sym,…}], cut_add:[]}</code>.
+    Existing names are updated field-by-field, new names are added (they must carry tier + lens),
+    and <b>nothing is ever removed</b>. Review the summary, then SAVE — the merge is only on screen until you do.</div>
+    <textarea id="fHandoff" style="${ta};min-height:120px" placeholder='{"updates":[{"sym":"MU","tier":"WATCH","lens":"AI","note":"…","lastRun":"YYYY-MM-DD"}]}'></textarea>`;
+  document.getElementById("cBtns").innerHTML=`
+    <button class="act" onclick="sessionSave()">✔ SAVE SESSION STATE</button>
+    <button class="act" onclick="applyHandoff()">⇪ APPLY HANDOFF PATCH (merge)</button>
+    <button class="act" onclick="closeCard()">CANCEL</button>`;
+  document.getElementById("overlay").classList.add("on");
+}
+async function sessionSave(){
+  const raw=(document.getElementById("fSession").value||"").trim();
+  if(!raw){ // explicit clear — the only way to remove session state, never a side effect
+    if(!window.confirm("Clear all session state (circuit, clusters, funding, decisions)?"))return;
+    BOARD={};closeCard();await persist();return toast("Session state cleared");
+  }
+  let b;try{b=JSON.parse(raw);}catch(_e){return toast("Invalid JSON in session state");}
+  const err=validateSession(b);
+  if(err)return toast("Rejected: "+err);
+  BOARD=b;closeCard();await persist();toast("Session state saved");
+}
+function applyHandoff(){
+  const raw=(document.getElementById("fHandoff").value||"").trim();
+  if(!raw)return toast("Paste a handoff patch first");
+  let p;try{p=JSON.parse(raw);}catch(_e){return toast("Invalid JSON in the handoff patch");}
+  const ups=p.updates===undefined?[]:p.updates;
+  if(!Array.isArray(ups))return toast("Rejected: 'updates' must be an array");
+  if(p.board!==undefined&&p.board!==null){const e=validateSession(p.board);if(e)return toast("Rejected: board: "+e);}
+  const cutAdd=p.cut_add===undefined?[]:p.cut_add;
+  if(!Array.isArray(cutAdd))return toast("Rejected: 'cut_add' must be an array");
+  if(!ups.length&&p.board===undefined&&!cutAdd.length)return toast("Nothing to apply — patch carries no board, updates or cut_add");
+  // VALIDATE EVERYTHING FIRST. A half-applied patch is worse than a rejected one: the
+  // board would render a mixture the operator never reviewed and cannot easily undo.
+  const seen=new Set();
+  for(const u of ups){
+    if(!u||typeof u!=="object")return toast("Rejected: each update must be an object");
+    if(typeof u.sym!=="string"||!/^[A-Z.\-]{1,8}$/.test(u.sym))return toast("Rejected: bad ticker "+JSON.stringify(u&&u.sym));
+    if(seen.has(u.sym))return toast("Rejected: "+u.sym+" appears twice in the patch");
+    seen.add(u.sym);
+    const cur=find(u.sym);
+    if(!cur&&(!TIER_ORDER.includes(u.tier)||!Object.keys(LENS_NAME).includes(u.lens)))
+      return toast("Rejected: "+u.sym+" is new to the book — an added name must carry a valid tier and lens");
+    if(u.tier!==undefined&&!TIER_ORDER.includes(u.tier))return toast("Rejected: bad tier for "+u.sym);
+    if(u.lens!==undefined&&!Object.keys(LENS_NAME).includes(u.lens))return toast("Rejected: bad lens for "+u.sym);
+    if(u.lastRun!==undefined&&!/^\d{4}-\d{2}-\d{2}$/.test(String(u.lastRun)))return toast("Rejected: bad lastRun for "+u.sym);
+    if(u.note!==undefined&&(typeof u.note!=="string"||u.note.length>500))return toast("Rejected: note too long for "+u.sym);
+    if(u.deepDive!==undefined){const e=validateDeepDive(u.deepDive);if(e)return toast("Rejected: "+u.sym+" deep dive: "+e);}
+    if(u.projection!==undefined){const e=validateProjection(u.projection);if(e)return toast("Rejected: "+u.sym+" projection: "+e);}
+  }
+  for(const s of cutAdd)if(typeof s!=="string"||s.length>12)return toast("Rejected: bad cut_add entry");
+  // Merge.
+  const added=[],changed=[];
+  ups.forEach(u=>{
+    const cur=find(u.sym);
+    if(!cur){BOOK.push({...u});added.push(u.sym);return;}
+    const diff=Object.keys(u).filter(k=>k!=="sym"&&JSON.stringify(cur[k])!==JSON.stringify(u[k]));
+    if(diff.length){Object.assign(cur,u);changed.push(`${u.sym} (${diff.join(", ")})`);}
+  });
+  const newCut=cutAdd.filter(s=>!CUT.includes(s));
+  CUT=CUT.concat(newCut);
+  const boardChanged=p.board!==undefined&&p.board!==null;
+  if(boardChanged)BOARD=p.board;
+  DIRTY=true;closeCard();render();
+  const parts=[
+    added.length?`${added.length} added (${added.join(", ")})`:null,
+    changed.length?`${changed.length} updated: ${changed.join("; ")}`:null,
+    newCut.length?`${newCut.length} cut (${newCut.join(", ")})`:null,
+    boardChanged?"session state replaced":null,
+  ].filter(Boolean);
+  const untouched=BOOK.length-added.length-changed.length;
+  showUnsaved(`handoff merged on screen — ${parts.length?parts.join(" · "):"no field actually differed"} · ${untouched} book name${untouched===1?"":"s"} untouched`,"preview");
+  toast("Merged — review the board, then SAVE (nothing is on the server yet)");
 }
 function byTier(t){return BOOK.filter(x=>x.tier===t);}
 function find(sym){return BOOK.find(x=>x.sym===sym.toUpperCase());}
+
+/* ═══════════ SESSION STATE (FEAT-TT-SESSION v3.28) ═══════════ */
+/* A TT session produces conclusions that no single ticker owns: which names are really ONE
+   position (correlation cluster), whether the leverage circuit is tripped, what gets trimmed
+   to fund anything, and which decisions are still unanswered. Those lived only in the
+   session write-up, so the board could show a green NEXT DOLLAR while the portfolio was in
+   deleverage-only mode and the top two picks were the same bet twice.
+   Everything here is SELF-ATTESTED (like lastRun), so every strip carries its own age and
+   says so. Absent sections render nothing at all — no session loaded must look identical to
+   the terminal before this feature, never like a set of empty promises. */
+const SESS_MAX=16*1024;                                  // mirror of BOARD_MAX in functions/api/tt.js
+const CIRCUIT_STATES=["clear","armed","tripped"];
+const SESS_WARN_D=3, SESS_BAD_D=10;                      // a session read goes cold fast
+function validateSession(b){
+  if(!b||typeof b!=="object"||Array.isArray(b))return "board must be an object";
+  if(!/^\d{4}-\d{2}-\d{2}$/.test(String(b.as_of||"")))return "as_of (YYYY-MM-DD) is required — session state ages";
+  if(JSON.stringify(b).length>SESS_MAX)return "board exceeds "+(SESS_MAX/1024)+"KB";
+  if(b.circuit!==undefined){
+    const c=b.circuit;
+    if(!c||typeof c!=="object"||Array.isArray(c))return "circuit must be an object";
+    if(!CIRCUIT_STATES.includes(String(c.state)))return "circuit.state must be clear|armed|tripped";
+    if(!/^\d{4}-\d{2}-\d{2}$/.test(String(c.as_of||"")))return "circuit.as_of (YYYY-MM-DD) is required — an undated circuit reads as current forever";
+    if(c.measured_at!==undefined&&!/^\d{4}-\d{2}-\d{2}$/.test(String(c.measured_at)))return "circuit.measured_at must be YYYY-MM-DD";
+  }
+  if(b.clusters!==undefined){
+    if(!Array.isArray(b.clusters))return "clusters must be an array";
+    for(const cl of b.clusters){
+      if(!cl||typeof cl!=="object")return "each cluster must be an object";
+      if(typeof(cl.label||cl.id)!=="string")return "each cluster needs a label or id";
+      if(!Array.isArray(cl.members)||!cl.members.length)return "each cluster needs a non-empty members array";
+      for(const m of cl.members)if(typeof m!=="string"||!/^[A-Z.\-]{1,8}$/.test(m))return "bad cluster member: "+JSON.stringify(m);
+    }
+  }
+  if(b.funding!==undefined){
+    const f=b.funding;
+    if(!f||typeof f!=="object"||Array.isArray(f))return "funding must be an object";
+    if(f.order!==undefined){
+      if(!Array.isArray(f.order))return "funding.order must be an array";
+      for(const o of f.order)if(!o||typeof o!=="object"||!/^[A-Z.\-]{1,8}$/.test(String(o.sym)))return "each funding.order row needs a sym";
+    }
+    if(f.do_not_trim!==undefined){
+      if(!Array.isArray(f.do_not_trim))return "funding.do_not_trim must be an array";
+      for(const s of f.do_not_trim)if(typeof s!=="string"||!/^[A-Z.\-]{1,8}$/.test(s))return "bad do_not_trim sym: "+JSON.stringify(s);
+    }
+  }
+  if(b.decisions!==undefined){
+    if(!Array.isArray(b.decisions))return "decisions must be an array";
+    for(const d of b.decisions){
+      if(!d||typeof d!=="object"||typeof d.q!=="string"||!d.q)return "each decision needs a q (the question)";
+      if(d.asked!==undefined&&!/^\d{4}-\d{2}-\d{2}$/.test(String(d.asked)))return "decision.asked must be YYYY-MM-DD";
+    }
+  }
+  if(b.binaries!==undefined){
+    if(!Array.isArray(b.binaries))return "binaries must be an array";
+    for(const k of b.binaries)
+      if(!k||!/^\d{4}-\d{2}-\d{2}$/.test(String(k.date))||typeof(k.label||k.event)!=="string")
+        return "each binary needs {date: YYYY-MM-DD, label|event}";
+  }
+  if(b.regime!==undefined){
+    if(!b.regime||typeof b.regime!=="object"||Array.isArray(b.regime))return "regime must be an object";
+    if(typeof b.regime.asserted!=="string"||!b.regime.asserted)return "regime.asserted (the session's read) is required";
+  }
+  return null;
+}
+/* The age tell every session strip carries. Undated is the WORST state, never the absent
+   one — same fail-closed rule as ageDays(): unknown must never read as current. */
+function sessChip(iso,label){
+  const d=ageDays(iso);
+  if(d===null)return `<span class="bad2">⚠ ${label||"undated"} — cannot be aged</span>`;
+  if(d<0)return `<span class="bad2">⚠ dated in the future (${esc(iso)})</span>`;
+  const cls=d>SESS_BAD_D?"bad2":d>SESS_WARN_D?"warn2":"scope";
+  return `<span class="${cls}">${d===0?"today":d+"d old"}</span>`;
+}
+function sessSec(el,html){
+  const n=document.getElementById(el);if(!n)return;
+  n.style.display=html?"block":"none";n.innerHTML=html||"";
+}
+/* ── the leverage circuit ── gates every add, so it renders ABOVE the next dollar ── */
+function renderCircuit(){
+  const c=BOARD.circuit;
+  if(!c||typeof c!=="object")return sessSec("circuitLine","");
+  const st=String(c.state||"").toLowerCase();
+  const col=st==="tripped"?"var(--red)":st==="armed"?"var(--amber)":"var(--green)";
+  const glyph=st==="tripped"?"⛔":st==="armed"?"⚠":"●";
+  let h=`<div class="lbl">Leverage circuit${c.id?` · ${esc(c.id)}`:""}</div>`+
+    `<div style="color:${col};font-weight:700;font-size:12px;margin-top:3px">${glyph} ${esc(c.label||"circuit")} — ${esc(st.toUpperCase())}</div>`;
+  const v=Number(c.value),tl=Number(c.trip_line);
+  if(isFinite(v)&&isFinite(tl)){
+    // as_of dates the ASSERTED STATE; measured_at dates the NUMBER. They are different
+    // claims and a session routinely asserts a state ahead of its next measurement, so
+    // collapsing them would let a fresh assertion launder a stale reading as current.
+    h+=`<div class="none" style="margin-top:3px">${esc(c.metric||"metric")}: <b>${esc(c.value)}</b> vs trip-line <b>${esc(c.trip_line)}</b> · `+
+      (c.measured_at?`measured ${sessChip(c.measured_at)}`:`<span class="bad2">⚠ measurement undated — the number's own age is unknown</span>`)+
+      ` · state ${sessChip(c.as_of,"undated state")}</div>`;
+    // The stated state and the last measurement can legitimately disagree (a state asserted
+    // ahead of the next audit) — but that gap must be visible, never smoothed over.
+    if((v>=tl)!==(st==="tripped"))
+      h+=`<div class="none" style="color:var(--amber)">⚖ stated ${esc(st.toUpperCase())} but the last measurement says ${v>=tl?"tripped":"not tripped"} — the state is asserted ahead of the number; a live pull is what settles it</div>`;
+  }else{
+    h+=`<div class="none" style="margin-top:3px">${esc(c.metric||"")} · state ${sessChip(c.as_of,"undated state")}</div>`;
+  }
+  if(c.verified!==true)
+    h+=`<div class="none" style="color:var(--amber)">⚠ self-attested — not reconciled against a live account pull</div>`;
+  if(c.rule)h+=`<div class="none" style="color:${col}">${esc(c.rule)}</div>`;
+  if(st==="tripped")h+=`<div class="none" style="color:var(--red)">deleverage-only: a trim funds debt BEFORE any purchase — see FUNDING below</div>`;
+  if(c.note)h+=`<div class="none">${esc(c.note)}</div>`;
+  sessSec("circuitLine",h);
+}
+/* ── the funding queue: where the next dollar COMES FROM ── */
+function renderFunding(){
+  const f=BOARD.funding;
+  if(!f||typeof f!=="object")return sessSec("fundingLine","");
+  const order=Array.isArray(f.order)?f.order:[];
+  const dnt=Array.isArray(f.do_not_trim)?f.do_not_trim:[];
+  const tripped=String(BOARD.circuit&&BOARD.circuit.state).toLowerCase()==="tripped";
+  let h=`<div class="lbl">Funding — source of the next dollar${tripped?` · <span style="color:var(--red)">deleverage-first</span>`:""} · ${sessChip(f.as_of||BOARD.as_of)}</div>`;
+  if(f.rule)h+=`<div class="none">${esc(f.rule)}</div>`;
+  if(order.length){
+    h+=`<div class="picks">`+order.map((o,i)=>{
+      const blocked=!!o.blocker;
+      return `<span class="pick" style="border-color:${blocked?"#4a1a20":"var(--greenDim)"}"${find(o.sym)?` onclick="openCard('${esc(o.sym)}')"`:""} title="${esc(o.note||"")}">`+
+        `<span class="scope">${i+1}</span><span class="sym"${blocked?' style="color:var(--red)"':""}>${esc(o.sym)}</span>`+
+        (o.est?`<span class="scope">${esc(o.est)}</span>`:"")+
+        (blocked?`<span class="bad2">⛔ ${esc(o.blocker)}</span>`:"")+
+        (find(o.sym)?"":`<span class="scope">off-book</span>`)+`</span>`;
+    }).join("")+`</div>`;
+  }else h+=`<div class="none">no trim order set — nothing says where funding comes from.</div>`;
+  if(dnt.length)h+=`<div class="none">do NOT trim: <b>${dnt.map(esc).join(" · ")}</b>${f.do_not_trim_why?` — ${esc(f.do_not_trim_why)}`:""}</div>`;
+  // A name on both lists is a contradiction the operator has to resolve, not a preference
+  // the board gets to rank. Name it rather than picking a winner.
+  const both=order.map(o=>o.sym).filter(s=>dnt.includes(s));
+  if(both.length)h+=`<div class="none" style="color:var(--red)">⚠ ${both.map(esc).join(", ")} appears in BOTH the trim order and do-not-trim — resolve before trimming</div>`;
+  h+=`<div class="none">reported, not enforced — the board never places or blocks an order</div>`;
+  sessSec("fundingLine",h);
+}
+/* ── correlation clusters: "cluster = one position" ── */
+let LAST_RANK=[];   // top computed-upside syms, set by renderUpsideRank
+function renderClusters(){
+  const cls=Array.isArray(BOARD.clusters)?BOARD.clusters:[];
+  if(!cls.length)return sessSec("clusterLine","");
+  const leads=ndLeads().map(x=>x.sym);
+  let h=`<div class="lbl">Correlation clusters · ${sessChip(BOARD.as_of)} · one cluster sizes as ONE position</div>`;
+  h+=cls.map(cl=>{
+    const inBook=cl.members.filter(m=>find(m));
+    const off=cl.members.filter(m=>!find(m));
+    // The whole reason this strip exists: two ranked names in one cluster is one bet
+    // presented as diversification. Overlap with either queue has to shout.
+    const hitND=cl.members.filter(m=>leads.includes(m));
+    const hitUP=cl.members.filter(m=>LAST_RANK.includes(m));
+    return `<div style="margin-top:5px">`+
+      `<span style="color:var(--amber);font-weight:700">⛓ ${esc(cl.label||cl.id)}</span> `+
+      `<span class="scope">${inBook.length} in book${off.length?` · ${off.length} off-book`:""}</span><br>`+
+      `<span style="font-size:11px">${cl.members.map(m=>find(m)?`<span style="color:var(--fg);cursor:pointer" onclick="openCard('${esc(m)}')">${esc(m)}</span>`:`<span style="color:var(--dim)">${esc(m)}</span>`).join(" · ")}</span>`+
+      (cl.rule?`<div class="none">${esc(cl.rule)}</div>`:"")+
+      (hitND.length>1?`<div class="none" style="color:var(--red)">⚠ ${hitND.map(esc).join(" + ")} are both next-dollar leads AND in this cluster — that is one position, not two</div>`:"")+
+      (hitUP.length>1?`<div class="none" style="color:var(--amber)">⚠ ${hitUP.map(esc).join(" + ")} are both in the computed-upside top ranks and in this cluster — the gap is one bet repeated</div>`:"")+
+      (cl.note?`<div class="none">${esc(cl.note)}</div>`:"")+`</div>`;
+  }).join("");
+  sessSec("clusterLine",h);
+}
+/* ── open decisions: the queue that ages ── */
+function renderDecisions(){
+  const ds=Array.isArray(BOARD.decisions)?BOARD.decisions:[];
+  if(!ds.length)return sessSec("decisionsLine","");
+  const rows=ds.map(d=>({...d,age:ageDays(d.asked)}))
+    .sort((a,b)=>(b.age===null?1e9:b.age)-(a.age===null?1e9:a.age));   // undated + oldest first
+  const blocking=rows.filter(d=>d.blocking).length;
+  const oldest=rows[0]&&rows[0].age;
+  let h=`<div class="lbl">Open decisions (${rows.length})`+
+    (blocking?` · <span style="color:var(--amber)">${blocking} blocking the book</span>`:"")+
+    (oldest!=null?` · oldest ${oldest}d`:"")+`</div>`;
+  h+=rows.map(d=>{
+    const col=d.age===null?"var(--red)":d.age>14?"var(--red)":d.age>7?"var(--amber)":"var(--dim)";
+    return `<div class="none" style="color:var(--fg)">`+
+      `<span style="color:${col};font-weight:700">${d.age===null?"undated":d.age+"d"}</span> `+
+      `${d.blocking?`<span class="warn2">⛔ blocking</span> `:""}${esc(d.q)}`+
+      (d.note?` <span class="scope">— ${esc(d.note)}</span>`:"")+`</div>`;
+  }).join("");
+  h+=`<div class="none">an unanswered decision ages in public — that is the whole point of the strip</div>`;
+  sessSec("decisionsLine",h);
+}
 
 /* ═══════════ RENDER BOARD ═══════════ */
 function render(){
@@ -605,7 +900,10 @@ function render(){
   const cc=document.createElement("div");cc.className="chips";
   CUT.forEach(s=>{const c=document.createElement("div");c.className="chip";c.innerHTML=`<span class="sym">${s}</span>`;cc.appendChild(c);});
   cut.appendChild(cc);b.appendChild(cut);
-  renderNextDollar();renderUpsideRank();renderBinaryCal();renderCoverage();renderTabs();
+  // FEAT-TT-SESSION: circuit first (it gates every add), then the queues, then clusters —
+  // which must run AFTER renderUpsideRank so its overlap check reads the current top ranks.
+  renderCircuit();renderNextDollar();renderFunding();renderUpsideRank();renderClusters();
+  renderBinaryCal();renderDecisions();renderCoverage();renderTabs();
 }
 
 /* ═══════════ DEEP-DIVE TABS (FEAT-TT-DD v3.12) ═══════════ */
@@ -1144,11 +1442,47 @@ function rankScope(rank){
 /* FEAT-TT-REGIME: the standing Engine-0 modifier (TT doc STEP 0) rendered where the next
    dollar gets decided. Only HEADWIND/PANIC produce one — a NEUTRAL banner would be noise,
    and an unknown/INSUFFICIENT regime must not fabricate a modifier either way. */
+/* v3.28 FEAT-TT-SESSION: two regime engines now exist — MacroDash MEASURES one from live
+   data (/readout.json, Engine 0) and a TT session ASSERTS one from the tape it read. They
+   are married, never merged: the modifier applies the STRICTER of the two (an add gated
+   too hard costs an entry; one gated too loosely costs capital), and any disagreement is
+   printed with both readings and their provenance. Averaging them would delete exactly the
+   information the disagreement carries. */
+const REG_RANK={TAILWIND:0,NEUTRAL:1,HEADWIND:2,PANIC:3};
+const REG_MOD={
+  HEADWIND:["var(--amber)","⚠ HEADWIND regime — entry standards +1 notch · R/R floors +0.5×"],
+  PANIC:["var(--red)","⛔ PANIC regime — only S-tier at 8+ support quality eligible"],
+};
 function regimeModifier(){
-  const v=REGIME&&REGIME.regime&&REGIME.regime.verdict;
-  if(v==="HEADWIND")return `<div class="none" style="color:var(--amber)">⚠ HEADWIND regime — entry standards +1 notch · R/R floors +0.5×</div>`;
-  if(v==="PANIC")return `<div class="none" style="color:var(--red)">⛔ PANIC regime — only S-tier at 8+ support quality eligible</div>`;
-  return "";
+  const measured=(REGIME&&REGIME.regime&&REGIME.regime.verdict)||null;
+  const ar=BOARD.regime;
+  const asserted=ar&&typeof ar.asserted==="string"?ar.asserted.toUpperCase():null;
+  const mR=REG_RANK[measured],aR=REG_RANK[asserted];
+  const gov=mR===undefined&&aR===undefined?null
+    :mR===undefined?asserted:aR===undefined?measured:(aR>mR?asserted:measured);
+  let h="";
+  const mod=gov&&REG_MOD[gov];
+  if(mod)h+=`<div class="none" style="color:${mod[0]}">${mod[1]}</div>`;
+  if(asserted){
+    const prov=`<span class="scope">asserted${ar.source?` by ${esc(ar.source)}`:""}, ${ar.verified===true?"reconciled":"UNVERIFIED"}</span> ${sessChip(ar.as_of||BOARD.as_of)}`;
+    if(!measured)
+      h+=`<div class="none" style="color:var(--amber)">⚖ session reads <b>${esc(asserted)}</b> — MacroDash unavailable, so nothing measured confirms it · ${prov}</div>`;
+    else if(REG_RANK[measured]===undefined)
+      h+=`<div class="none" style="color:var(--amber)">⚖ session reads <b>${esc(asserted)}</b> · MacroDash returned ${esc(measured)} — unconfirmed, don't gate on the measured side · ${prov}</div>`;
+    else if(asserted!==measured)
+      h+=`<div class="none" style="color:var(--amber)">⚖ engines disagree — MacroDash measures <b>${esc(measured)}</b>, session asserts <b>${esc(asserted)}</b> · the stricter reading (<b>${esc(gov)}</b>) governs; disagreement is information, not an average · ${prov}</div>`;
+    else
+      h+=`<div class="none">⚖ both engines read <b>${esc(measured)}</b> — measured and asserted agree · ${prov}</div>`;
+  }
+  return h;
+}
+/* The ranked watchlist leads — shared by the next-dollar line and the cluster overlap
+   check, so the two can never disagree about who is actually queued. */
+function ndLeads(){
+  const ranked=BOOK.filter(x=>x.tier==="WATCH"&&rankNum(x.rank)!==null);
+  if(!ranked.length)return [];
+  const top=Math.min(...ranked.map(x=>rankNum(x.rank)));
+  return ranked.filter(x=>rankNum(x.rank)===top);
 }
 function renderNextDollar(){
   const el=document.getElementById("nextDollar");
@@ -1161,7 +1495,7 @@ function renderNextDollar(){
     return;
   }
   const top=Math.min(...ranked.map(x=>rankNum(x.rank)));
-  const leads=ranked.filter(x=>rankNum(x.rank)===top);
+  const leads=ndLeads();
   const picks=leads.map(x=>{
     const rs=runState(x.lastRun);
     // Honesty: this line is decision-adjacent, so a stale or never-run rating must say so
@@ -1328,6 +1662,7 @@ function renderUpsideRank(){
   const key=r=>r.ann!==null?r.ann:r.upside;
   rows.sort((a,b)=>key(b)-key(a));
   const shown=rows.slice(0,3);
+  LAST_RANK=shown.map(r=>r.sym);   // FEAT-TT-SESSION: the cluster strip checks overlap with these
   const MEDAL=["🥇","🥈","🥉"];
   const picks=shown.map((r,i)=>{
     const flag=r.rs.k==="never"?`<span class="bad2">○ no TT run on record</span>`
@@ -1367,6 +1702,15 @@ function renderUpsideRank(){
       return l===rows.length?` · all prices LIVE`:l?` · ${l} live / ${rows.length-l} on stamped marks`:` · all prices are stamped marks, not live`;})()+
     ` · "floor" = 18× FY+1 EPS (S&P-average benchmark, no re-rating assumed); "premium" = the owner's asserted multiple</div>`+caveats+
     (()=>{ // FEAT-TT-AGREE: light only when BOTH stories say yes; otherwise WAIT, blockers named.
+      // v3.28: a tripped leverage circuit is a THIRD veto that no per-name score can clear —
+      // in deleverage-only mode the next dollar funds debt, so the green line must not light
+      // at all. Stated once at the top rather than repeated as a per-row blocker.
+      const trip=String(BOARD.circuit&&BOARD.circuit.state).toLowerCase()==="tripped";
+      if(trip)
+        return `<div style="margin-top:6px;padding:5px 8px;border:1px solid var(--red);border-radius:6px;font-size:11px">`+
+          `<span style="color:var(--red);font-weight:700">⛔ NEXT DOLLAR: NONE — leverage circuit tripped</span> `+
+          `<span class="scope">${esc((BOARD.circuit&&BOARD.circuit.rule)||"deleverage-only until a live pull disproves it")}</span> `+
+          `<span class="scope">· the gap ranking above still stands as math, but no name is eligible while the circuit holds</span></div>`;
       const why=r=>{
         if(!(r.upside>0))return "no gap";
         if(!r.tt)return "unscored — no TT run";
@@ -1409,6 +1753,15 @@ function renderBinaryCal(){
         nb:k.binary===false,inWindow:k.binary!==false&&d<=BINARY_WINDOW_D});
     });
   });
+  // FEAT-TT-SESSION: board-level binaries — the ones that set the tone for names you hold
+  // without being a book ticker themselves (a supplier's print, a macro release). They were
+  // unrepresentable before, so they were simply absent from the queue they most belonged in.
+  (Array.isArray(BOARD.binaries)?BOARD.binaries:[]).forEach(k=>{
+    if(!k||!/^\d{4}-\d{2}-\d{2}$/.test(String(k.date))||k.date<today)return;
+    const d=Math.round((Date.parse(k.date+"T12:00:00Z")-Date.parse(today+"T12:00:00Z"))/86400000);
+    ev.push({sym:k.scope||"MACRO",board:true,date:k.date,d,label:k.label||k.event||"",
+      nb:k.binary===false,inWindow:k.binary!==false&&d<=BINARY_WINDOW_D});
+  });
   if(!ev.length){
     el.innerHTML=`<div class="lbl">Binary calendar</div><div class="none">no future key dates on any payload — add them as prints get scheduled.</div>`;
     return;
@@ -1417,15 +1770,21 @@ function renderBinaryCal(){
   const inW=ev.filter(e=>e.inWindow).length;
   const rows=ev.slice(0,6).map(e=>{
     const col=e.inWindow?"var(--red)":e.d<=30?"var(--amber)":"var(--dim)";
-    return `<span class="pick" onclick="switchTab('${esc(e.sym)}')" title="${esc(e.label)}">
-      <span class="sym">${esc(e.sym)}</span>
+    // Only open a tab that exists. A board-level binary scoped to a name you hold links to
+    // that tab; one scoped to a supplier or a macro print has none, and must not render a
+    // dead click that silently does nothing.
+    const tabbable=!e.board||!!(find(e.sym)&&find(e.sym).deepDive);
+    return `<span class="pick"${tabbable?` onclick="switchTab('${esc(e.sym)}')"`:""} title="${esc(e.label)}">
+      <span class="sym"${e.board?' style="color:var(--slate)"':""}>${esc(e.sym)}</span>
       <span style="color:${col};font-weight:700">${e.d===0?"TODAY":e.d+"d"}</span>
       <span class="scope">${esc(e.date)}</span>
       ${e.inWindow?`<span class="bad2">⛔ no-new-adds</span>`:""}${e.nb?`<span class="scope">non-binary</span>`:""}</span>`;
   }).join("");
   el.innerHTML=`<div class="lbl">Binary calendar${inW?` · <span style="color:var(--red)">${inW} inside the ${BINARY_WINDOW_D}d no-new-adds window</span>`:` · none inside ${BINARY_WINDOW_D}d`}</div>`+
     `<div class="picks">${rows}</div>`+
-    `<div class="none">${ev.length} future key date${ev.length===1?"":"s"} across the book${ev.length>6?` · showing the nearest 6`:""} · reported, not enforced — the board never blocks an order</div>`;
+    `<div class="none">${ev.length} future key date${ev.length===1?"":"s"} across the book`+
+    (()=>{const b=ev.filter(e=>e.board).length;return b?` (incl. ${b} board-level, not a book ticker)`:"";})()+
+    `${ev.length>6?` · showing the nearest 6`:""} · reported, not enforced — the board never blocks an order</div>`;
 }
 /* FEAT-TT-RUN: book-coverage rollup — the honest tell, mirroring Signal Quality.
    `head` folds into the stale COUNT (3 buckets) while keeping its own red chip marker. */
@@ -1444,6 +1803,16 @@ function renderCoverage(){
     `<span>of ${BOOK.length}</span>`+
     (BOOK.length?`<span style="color:${projN===BOOK.length?"var(--green)":"var(--amber)"}">📐 ${projN}/${BOOK.length} projected</span>`:"")+
     (dotN?`<span style="color:var(--amber)">⊕ ${dotN} new dots</span>`:"")+
+    // FEAT-TT-SESSION: the session's own unfinished business belongs in the same rollup —
+    // an open decision is exactly as much a coverage hole as an unrun name.
+    (()=>{const ds=Array.isArray(BOARD.decisions)?BOARD.decisions:[];
+      if(!ds.length)return "";
+      const ages=ds.map(d=>ageDays(d.asked));
+      const worst=ages.some(a=>a===null||a>14)?"var(--red)":ages.some(a=>a>7)?"var(--amber)":"var(--dim)";
+      return `<span style="color:${worst}">⚠ ${ds.length} open decision${ds.length===1?"":"s"}</span>`;})()+
+    (()=>{const c=BOARD.circuit,st=String(c&&c.state).toLowerCase();
+      return st==="tripped"?`<span style="color:var(--red)">⛔ circuit tripped</span>`
+        :st==="armed"?`<span style="color:var(--amber)">⚠ circuit armed</span>`:"";})()+
     `<span style="margin-left:auto">● ≤30d · ⏱ aged · ○ no TT run · 📐 3 questions answered</span>`;
 }
 
@@ -1705,6 +2074,12 @@ function exportBook(){
       m+=`|${x.sym}|$${pj.rev_3yr.value_B}B (${pj.rev_3yr.year||""})|${pj.margins.path}|${pj.multiple.value}x ${pj.multiple.basis||""}|${px!==null?"$"+px:"—"}|\n`;});
     m+=`\nFuture price = future EPS × future multiple. Flywheel = double-digit rev growth · expanding margins · multiple expansion.\n\n---\n\n`;
   }
+  // FEAT-TT-SESSION: board-level state travels too — same rule as deep dives. A backup
+  // that dropped the tripped circuit would restore a book that reads safe to add into.
+  if(BOARD&&Object.keys(BOARD).length){
+    m+=`## SESSION STATE\n\nSelf-attested, as of ${BOARD.as_of||"UNDATED"}${BOARD.source?` · source: ${BOARD.source}`:""}.\n\n`;
+    m+=`\`\`\`json\n${JSON.stringify(BOARD,null,2)}\n\`\`\`\n\n---\n\n`;
+  }
   m+=`## STANDING CONSTRAINTS\n\n1. 18% hard single-position cap.\n2. K-1 avoidance (1099-only).\n3. Roth anchors: your longest-duration names.\n4. R/R floors 2.0/2.5/3.0 · +0.5x headwind.\n5. Targets: 12–15% CAGR, beat SPX.\n\n`;
   m+=`### CHANGELOG\n\n- v1.1 (${d}): Re-versioned via TT Terminal GUI edits.\n- v1.0: Initial state of record.\n`;
   download(`CANONICAL_BOOK_${d}.md`,m,"text/markdown");
@@ -1714,7 +2089,10 @@ function exportJSON(){
   const d=new Date().toISOString().slice(0,10);
   // Report the REAL version — the old hardcoded "1.1" mislabeled every backup, and an
   // export→import round-trip silently reset it.
-  download(`tt_book_${d}.json`,JSON.stringify({version:META.version||"1.0",asOf:META.asOf||d,book:BOOK,cut:CUT},null,2),"application/json");
+  // FEAT-TT-SESSION: board-level state rides the same backup — a restore that lost the
+  // circuit, the clusters and the open decisions would restore only half the book.
+  download(`tt_book_${d}.json`,JSON.stringify({version:META.version||"1.0",asOf:META.asOf||d,book:BOOK,cut:CUT,
+    ...(BOARD&&Object.keys(BOARD).length?{board:BOARD}:{})},null,2),"application/json");
   toast("Exported book JSON");
 }
 

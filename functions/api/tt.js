@@ -240,6 +240,70 @@ async function verifyAccessJwt(request, env) {
 // Checks sym/tier/lens/note only and DELIBERATELY PASSES THROUGH unknown per-entry
 // keys — the admin client owns their shape (`fp`, `rank`, and FEAT-TT-RUN's `lastRun`
 // all ride this). Load-bearing behavior, not an oversight. Exported for the smoke test.
+// FEAT-TT-SESSION (v3.28): board-level state — the things a TT session produces that no
+// single ticker owns (correlation clusters, the leverage circuit, the funding queue, open
+// decisions, non-ticker binaries, the session's asserted regime). Same doctrine as
+// deepDive: validate only the shape the terminal RENDERS, pass unknown keys through, so
+// the server never learns the private content. `as_of` is REQUIRED because every field
+// here is self-attested and the strips age it — undated session state must not be storable.
+const BOARD_MAX = 16 * 1024;
+const CIRCUIT_STATES = ["clear", "armed", "tripped"];
+const ISO_RE = /^\d{4}-\d{2}-\d{2}$/;
+export function validateBoard(b) {
+  if (!b || typeof b !== "object" || Array.isArray(b)) return "board must be an object";
+  if (!ISO_RE.test(String(b.as_of || ""))) return "board.as_of (YYYY-MM-DD) is required — session state ages";
+  if (JSON.stringify(b).length > BOARD_MAX) return "board exceeds " + BOARD_MAX / 1024 + "KB";
+  const c = b.circuit;
+  if (c !== undefined) {
+    if (!c || typeof c !== "object" || Array.isArray(c)) return "circuit must be an object";
+    if (!CIRCUIT_STATES.includes(String(c.state))) return "circuit.state must be clear|armed|tripped";
+    if (!ISO_RE.test(String(c.as_of || ""))) return "circuit.as_of (YYYY-MM-DD) is required";
+    // as_of dates the asserted STATE; measured_at dates the NUMBER behind it. Optional,
+    // because a state can legitimately be asserted with no fresh measurement — but if it
+    // is given it must be a real date, since the strip ages it as evidence.
+    if (c.measured_at !== undefined && !ISO_RE.test(String(c.measured_at))) return "circuit.measured_at must be YYYY-MM-DD";
+  }
+  if (b.clusters !== undefined) {
+    if (!Array.isArray(b.clusters)) return "clusters must be an array";
+    for (const cl of b.clusters) {
+      if (!cl || typeof cl !== "object") return "each cluster must be an object";
+      if (typeof (cl.label || cl.id) !== "string") return "each cluster needs a label or id";
+      if (!Array.isArray(cl.members) || !cl.members.length) return "each cluster needs a non-empty members array";
+      for (const m of cl.members) if (typeof m !== "string" || !SYM_RE.test(m)) return "bad cluster member: " + JSON.stringify(m);
+    }
+  }
+  const f = b.funding;
+  if (f !== undefined) {
+    if (!f || typeof f !== "object" || Array.isArray(f)) return "funding must be an object";
+    if (f.order !== undefined) {
+      if (!Array.isArray(f.order)) return "funding.order must be an array";
+      for (const o of f.order) if (!o || typeof o !== "object" || !SYM_RE.test(String(o.sym))) return "each funding.order row needs a sym";
+    }
+    if (f.do_not_trim !== undefined) {
+      if (!Array.isArray(f.do_not_trim)) return "funding.do_not_trim must be an array";
+      for (const s of f.do_not_trim) if (typeof s !== "string" || !SYM_RE.test(s)) return "bad do_not_trim sym: " + JSON.stringify(s);
+    }
+  }
+  if (b.decisions !== undefined) {
+    if (!Array.isArray(b.decisions)) return "decisions must be an array";
+    for (const d of b.decisions) {
+      if (!d || typeof d !== "object" || typeof d.q !== "string" || !d.q) return "each decision needs a q (the question)";
+      if (d.asked !== undefined && !ISO_RE.test(String(d.asked))) return "decision.asked must be YYYY-MM-DD";
+    }
+  }
+  if (b.binaries !== undefined) {
+    if (!Array.isArray(b.binaries)) return "binaries must be an array";
+    for (const k of b.binaries)
+      if (!k || !ISO_RE.test(String(k.date)) || typeof (k.label || k.event) !== "string")
+        return "each binary needs {date: YYYY-MM-DD, label|event}";
+  }
+  if (b.regime !== undefined) {
+    if (!b.regime || typeof b.regime !== "object" || Array.isArray(b.regime)) return "regime must be an object";
+    if (typeof b.regime.asserted !== "string" || !b.regime.asserted) return "regime.asserted (the session's read) is required";
+  }
+  return null;
+}
+
 export function validateBook(body) {
   if (!body || typeof body !== "object") return "body must be an object";
   const { book, cut } = body;
@@ -260,6 +324,10 @@ export function validateBook(body) {
       return "bad lastRun for " + e.sym;
   }
   for (const s of cut) if (typeof s !== "string" || s.length > 12) return "bad cut entry";
+  if (body.board !== undefined && body.board !== null) {
+    const be = validateBoard(body.board);
+    if (be) return "board: " + be;
+  }
   return null;
 }
 
@@ -400,6 +468,12 @@ export async function onRequestPut({ request, env }) {
   const prevV = parseFloat(prev?.version);
   const version = Number.isFinite(prevV) ? (prevV + 0.1).toFixed(1) : (body.version || "1.0");
   const stored = { version, asOf: etDate(), book: body.book, cut: body.cut };
+  // FEAT-TT-SESSION: the book is a whole-document replace, but `board` must not inherit
+  // that. An ABSENT board means "this client doesn't know about board" (curl recovery, an
+  // older cached bundle) — deleting the session state on their behalf would be a silent
+  // data loss the operator never asked for. Absent → carry forward; explicit null → clear.
+  const carried = body.board === undefined ? prev?.board : body.board;
+  if (carried) stored.board = carried;
 
   // Snapshot before overwriting — KV holds one value per key, so without this an overwrite
   // is unrecoverable. FIRST write of each ET day wins: the snapshot must preserve the

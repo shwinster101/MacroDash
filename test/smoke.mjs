@@ -12,7 +12,7 @@ import {
   bandSpyVs200d, bandVix, bandFearGreed, bandRs, bandTenYear, bandFedOdds,
   aggregateVerdict, computeMacroFlip, buildTtReadout, formatTtPaste,
 } from "../src/ttReadout.js";
-import { validateBook, conflictCheck, authMode, lockoutState, recordFailure, parseCookie, hashPin, LOCK_TIERS } from "../functions/api/tt.js";
+import { validateBook, validateBoard, conflictCheck, authMode, lockoutState, recordFailure, parseCookie, hashPin, LOCK_TIERS } from "../functions/api/tt.js";
 import { plausible, applyBands, quorum, QUORUM_FIELDS, QUORUM_MIN, marketSession } from "../functions/api/snapshot.js";
 
 let pass = 0, fail = 0;
@@ -476,7 +476,7 @@ ok("upside: stale/never TT runs keep their honesty flag on the ranked pick",
 ok("upside: DOM anchor separate from the human NEXT DOLLAR widget", adminSrc.includes('id="upsideRank"'));
 // Invariant: both board strips render in the same pipeline pass (order, not exact string).
 ok("upside: wired into the render pipeline",
-  /renderNextDollar\(\);\s*renderUpsideRank\(\);[\s\S]{0,40}renderCoverage\(\)/.test(adminSrc));
+  /renderNextDollar\(\);[\s\S]{0,80}renderUpsideRank\(\);[\s\S]{0,200}renderCoverage\(\)/.test(adminSrc));
 // v3.26 FEAT-TT-BINCAL: scheduled binaries surface board-level, not one tab at a time.
 ok("bincal: aggregates future key_dates across the whole book",
   adminSrc.includes("function renderBinaryCal()") && adminSrc.includes("x.deepDive&&x.deepDive.key_dates"));
@@ -630,6 +630,130 @@ ok("session: Saturday noon ET reads CLOSE", marketSession(new Date("2026-07-18T1
 ok("session: regular Monday noon ET reads OPEN", marketSession(new Date("2026-07-20T16:00:00Z")) === "OPEN");
 ok("session: regular Monday 7am ET reads PRE", marketSession(new Date("2026-07-20T11:00:00Z")) === "PRE");
 ok("session: regular Monday 5pm ET reads CLOSE", marketSession(new Date("2026-07-20T21:00:00Z")) === "CLOSE");
+
+// ---- 10. FEAT-TT-SESSION (v3.28) — board-level session state --------------
+// The store is testable (validateBoard is pure); the renderers live in the buildless
+// admin.html, so they are pinned at source like every other terminal invariant.
+console.log("\n[10] FEAT-TT-SESSION — the session layer (clusters · circuit · funding · decisions)");
+const okBoard = (extra = {}) => ({ as_of: "2026-07-28", ...extra });
+const badB = (b) => typeof validateBoard(b) === "string";
+ok("sess: minimal board (as_of only) passes", validateBoard(okBoard()) === null);
+ok("sess: an UNDATED board is rejected — self-attested state that cannot age would read current forever",
+  badB({ source: "TT session" }) && /as_of/.test(validateBoard({ source: "x" })));
+ok("sess: non-object / array board rejected", badB(null) && badB([]) && badB("x"));
+ok("sess: circuit requires a known state", badB(okBoard({ circuit: { state: "on", as_of: "2026-07-28" } })));
+ok("sess: all three circuit states accepted", ["clear", "armed", "tripped"].every((s) =>
+  validateBoard(okBoard({ circuit: { state: s, as_of: "2026-07-28" } })) === null));
+ok("sess: an undated circuit is rejected (the strip ages the measurement, not the paste)",
+  badB(okBoard({ circuit: { state: "tripped" } })));
+ok("sess: cluster needs a label and a non-empty member list",
+  badB(okBoard({ clusters: [{ members: ["MU"] }] })) && badB(okBoard({ clusters: [{ label: "x", members: [] }] })));
+ok("sess: cluster members are validated as tickers (same SYM_RE as the book)",
+  badB(okBoard({ clusters: [{ label: "x", members: ["mu"] }] })) &&
+  validateBoard(okBoard({ clusters: [{ label: "AI infra", members: ["MU", "CRDO"] }] })) === null);
+ok("sess: funding rows need a sym; do_not_trim entries are tickers",
+  badB(okBoard({ funding: { order: [{ est: "$30k" }] } })) &&
+  badB(okBoard({ funding: { do_not_trim: ["not a ticker"] } })) &&
+  validateBoard(okBoard({ funding: { order: [{ sym: "NVDL", est: "~$30k" }], do_not_trim: ["NBIS"] } })) === null);
+ok("sess: a decision needs the question, and a dated one needs a real date",
+  badB(okBoard({ decisions: [{ note: "x" }] })) && badB(okBoard({ decisions: [{ q: "x", asked: "7/14" }] })));
+ok("sess: an UNDATED decision is allowed but renders as the worst age (fail-closed at render, not at the door)",
+  validateBoard(okBoard({ decisions: [{ q: "TSM — never screened" }] })) === null &&
+  adminSrc.includes('d.age===null?"undated"'));
+ok("sess: board binaries need {date, label|event} (the non-ticker print)",
+  badB(okBoard({ binaries: [{ label: "SK Hynix Q2" }] })) &&
+  validateBoard(okBoard({ binaries: [{ date: "2026-07-28", label: "SK Hynix Q2", scope: "MEMORY" }] })) === null);
+ok("sess: an asserted regime must actually say what it asserts",
+  badB(okBoard({ regime: { verified: false } })) &&
+  validateBoard(okBoard({ regime: { asserted: "PANIC", verified: false } })) === null);
+ok("sess: board size is capped well under the 64KB book PUT limit",
+  badB(okBoard({ note: "x".repeat(17 * 1024) })));
+ok("sess: board rides the same PUT as the book and is validated there",
+  validateBoard(okBoard()) === null &&
+  validateBook({ book: [], cut: [], board: okBoard({ circuit: { state: "tripped", as_of: "2026-07-28" } }) }) === null &&
+  typeof validateBook({ book: [], cut: [], board: { circuit: {} } }) === "string");
+ok("sess: a book PUT carrying NO board still passes (older clients / curl are not broken)",
+  validateBook({ book: [], cut: [] }) === null);
+const ttSrc = readFileSync(new URL("../functions/api/tt.js", import.meta.url), "utf8");
+ok("sess: an absent board is CARRIED FORWARD, not deleted — whole-book replace must not eat session state",
+  ttSrc.includes("body.board === undefined ? prev?.board : body.board"));
+// Renderers — pinned at source (admin.html is buildless).
+ok("sess: absent sections render nothing at all (no session must look like before, not like empty promises)",
+  adminSrc.includes('n.style.display=html?"block":"none"') &&
+  ["circuitLine", "fundingLine", "clusterLine", "decisionsLine"].every((id) => adminSrc.includes(`id="${id}" style="display:none`)));
+ok("sess: the circuit renders ABOVE the next dollar — it gates every add",
+  adminSrc.indexOf('id="circuitLine"') < adminSrc.indexOf('id="nextDollar"') &&
+  /renderCircuit\(\);renderNextDollar\(\)/.test(adminSrc));
+ok("sess: a tripped circuit vetoes the both-stories-agree line entirely (no per-name score clears it)",
+  adminSrc.includes("NEXT DOLLAR: NONE — leverage circuit tripped"));
+ok("sess: stated circuit state vs its last measurement is reconciled, never smoothed over",
+  adminSrc.includes('(v>=tl)!==(st==="tripped")') && adminSrc.includes("asserted ahead of the number"));
+ok("sess: an unreconciled circuit says so (self-attested, like lastRun)",
+  adminSrc.includes("self-attested — not reconciled against a live account pull"));
+ok("sess: undated session state is the WORST age chip, never treated as current",
+  adminSrc.includes('if(d===null)return `<span class="bad2">⚠ ${label||"undated"}'));
+ok("sess: cluster overlap with the ranked queues is called out as one position, not two",
+  adminSrc.includes("that is one position, not two") && adminSrc.includes("LAST_RANK=shown.map"));
+ok("sess: clusters render after the upside rank so the overlap check reads current ranks",
+  adminSrc.indexOf("renderUpsideRank();renderClusters();") > 0);
+ok("sess: next-dollar leads come from ONE helper, so the queue and the cluster check cannot disagree",
+  adminSrc.includes("function ndLeads()") && (adminSrc.match(/ndLeads\(\)/g) || []).length >= 3);
+ok("sess: funding contradiction (same name trim + do-not-trim) is named, not silently ranked",
+  adminSrc.includes("appears in BOTH the trim order and do-not-trim"));
+ok("sess: funding reports, never enforces (same rule as the binary calendar)",
+  adminSrc.includes("reported, not enforced — the board never places or blocks an order"));
+ok("sess: open decisions sort oldest-first and age in public",
+  adminSrc.includes("an unanswered decision ages in public"));
+ok("sess: decisions and circuit state fold into the coverage rollup",
+  adminSrc.includes("open decision") && adminSrc.includes("⛔ circuit tripped"));
+// The two regime engines: measured (/readout.json) vs asserted (the session).
+ok("regime: the STRICTER of measured and asserted governs the standing modifier",
+  adminSrc.includes("const REG_RANK={TAILWIND:0,NEUTRAL:1,HEADWIND:2,PANIC:3};") &&
+  adminSrc.includes("(aR>mR?asserted:measured)"));
+ok("regime: disagreement is printed with both readings, never averaged",
+  adminSrc.includes("engines disagree — MacroDash measures") &&
+  adminSrc.includes("disagreement is information, not an average"));
+ok("regime: an asserted regime always carries its provenance and verified flag",
+  adminSrc.includes('ar.verified===true?"reconciled":"UNVERIFIED"'));
+ok("regime: MacroDash INSUFFICIENT/unavailable never silently confirms the asserted read",
+  adminSrc.includes("MacroDash unavailable, so nothing measured confirms it") &&
+  adminSrc.includes("unconfirmed, don't gate on the measured side"));
+ok("regime: the HEADWIND/PANIC modifier text survives the two-engine rewrite",
+  adminSrc.includes("R/R floors +0.5") && adminSrc.includes("8+ support quality"));
+// Non-ticker binaries — a supplier's print that sets the tone for names you do hold.
+ok("bincal: board-level binaries merge into the same dated queue",
+  adminSrc.includes("BOARD.binaries") && adminSrc.includes("board-level, not a book ticker"));
+ok("bincal: a binary only opens a tab that actually exists (no dead click)",
+  adminSrc.includes("const tabbable=!e.board||!!(find(e.sym)&&find(e.sym).deepDive);"));
+ok("sess: the circuit's asserted state and its measurement are dated separately",
+  adminSrc.includes("measurement undated — the number's own age is unknown") &&
+  adminSrc.includes("c.measured_at?"));
+// The handoff patch: MERGE, never replace — a session covers the names it touched, so
+// importing one as a book would delete every name it did not mention.
+ok("handoff: applying a session patch merges and never removes",
+  adminSrc.includes("function applyHandoff()") && adminSrc.includes("nothing is ever removed"));
+ok("handoff: the whole patch validates BEFORE any of it is applied",
+  adminSrc.includes("A half-applied patch is worse than a rejected one"));
+ok("handoff: a name new to the book must carry tier + lens (no half-formed entries)",
+  adminSrc.includes("an added name must carry a valid tier and lens"));
+ok("handoff: the merge names exactly what changed and what it left alone",
+  adminSrc.includes("book name${untouched===1?\"\":\"s\"} untouched"));
+ok("handoff: nothing reaches the server until an explicit SAVE (preview rails, like restore points)",
+  adminSrc.includes('showUnsaved(`handoff merged on screen') && adminSrc.includes('"preview");'));
+ok("sess: session state travels with BOTH backup paths (JSON + CANONICAL_BOOK.md)",
+  adminSrc.includes("## SESSION STATE") && adminSrc.includes("...(BOARD&&Object.keys(BOARD).length?{board:BOARD}:{})"));
+ok("sess: an import carrying no board leaves existing session state alone",
+  adminSrc.includes("if(parsed.board!==undefined&&parsed.board!==null)BOARD=parsed.board;"));
+ok("sess: clearing session state requires an explicit confirmation, never a side effect",
+  adminSrc.includes("Clear all session state"));
+// Same invariant as SEED=[] and the framework doc: the terminal ships the RAILS, never the
+// content. A session handoff names live positions, sizes and trim amounts — in a public repo
+// that is the portfolio itself. BOARD starts empty and is filled from KV at runtime.
+ok("sess: session state starts EMPTY in the bundle — content lives in KV, never the repo",
+  /let BOARD=\{\};/.test(adminSrc) &&
+  !/BOARD\s*=\s*\{\s*as_of/.test(adminSrc) &&
+  !existsSync(new URL("../TT_SESSION_HANDOFF.md", import.meta.url)) &&
+  !existsSync(new URL("../ticker-terminal/TT_SESSION_HANDOFF.md", import.meta.url)));
 
 console.log(`\n=== SMOKE TEST: ${pass} passed, ${fail} failed ===`);
 process.exit(fail === 0 ? 0 : 1);
