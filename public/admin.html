@@ -109,6 +109,9 @@
   details.drawer>div{padding:4px 12px 10px}
   details.drawer .nd{border:none;box-shadow:none;background:transparent;padding:4px 0;margin-bottom:0}
   .chip .chg{font-size:9.5px;font-weight:700;letter-spacing:0}
+  /* FEAT-TT-POS: measured weight. Deliberately dimmer than the day move — the move is what
+     changed, the weight is what is. */
+  .chip .wt{font-size:9px;color:var(--slate);letter-spacing:0}
   /* book-coverage rollup — mirrors MacroDash's Signal Quality strip */
   .cov{display:flex;align-items:center;gap:10px;flex-wrap:wrap;font-size:10px;color:var(--dim);
     letter-spacing:.06em;padding:2px 0 8px;border-bottom:1px dashed var(--line);margin-bottom:10px}
@@ -818,6 +821,13 @@ function renderCircuit(){
     h+=`<div class="none" style="margin-top:3px">${esc(c.metric||"metric")}: <b>${esc(c.value)}</b> vs trip-line <b>${esc(c.trip_line)}</b> · `+
       (c.measured_at?`measured ${sessChip(c.measured_at)}`:`<span class="bad2">⚠ measurement undated — the number's own age is unknown</span>`)+
       ` · state ${sessChip(c.as_of,"undated state")}</div>`;
+    // FEAT-TT-POS: when the sync computed this, show the arithmetic. A leverage figure that
+    // vetoes every add must be checkable by the person it stops, not taken on faith.
+    const acct=BOARD.account;
+    if(acct&&acct.formula)
+      h+=`<div class="none"><span class="scope">computed as ${esc(acct.formula)}`+
+        `${acct.nav!=null?` · NAV ${money(acct.nav)}`:""}${acct.debt!=null?` · debt ${money(acct.debt)}`:""}`+
+        ` · from ${esc(acct.src||"?")} ${String(acct.at||"").slice(0,10)}</span></div>`;
     // The stated state and the last measurement can legitimately disagree (a state asserted
     // ahead of the next audit) — but that gap must be visible, never smoothed over.
     if((v>=tl)!==(st==="tripped"))
@@ -861,27 +871,50 @@ function renderFunding(){
 }
 /* ── correlation clusters: "cluster = one position" ── */
 let LAST_RANK=[];   // top computed-upside syms, set by renderUpsideRank
+/* FEAT-TT-POS: book-vs-broker reconciliation. Renders only once something has synced —
+   before that every name would read as "not held" purely because nothing has been measured. */
+function reconcileLine(){
+  const r=reconcile();
+  if(!r)return `<div class="none"><span class="scope">no measured positions yet — run the broker sync to check the ${CAP_PCT}% cap, cluster totals and untracked exposure</span></div>`;
+  let h=`<div class="none">Book vs broker: <b>${r.held}</b> name${r.held===1?"":"s"} held with a measured size`;
+  if(r.untracked.length)
+    h+=` · <span style="color:var(--red)">${r.untracked.length} held but NOT in the book</span> `+
+       `<span class="scope">(${r.untracked.map(u=>esc(typeof u==="string"?u:u.sym)).join(", ")}) — exposure no thesis covers</span>`;
+  if(r.paper.length)
+    h+=` · <span class="scope">${r.paper.length} tracked but not held: ${r.paper.map(esc).join(", ")}</span>`;
+  return h+`</div>`;
+}
 function renderClusters(){
   const cls=Array.isArray(BOARD.clusters)?BOARD.clusters:[];
-  if(!cls.length)return sessSec("clusterLine","");
+  if(!cls.length)return sessSec("clusterLine",reconcileLine()!==""&&BOOK.some(x=>posOf(x))?
+    `<div class="lbl">Exposure</div>`+reconcileLine():"");
   const leads=ndLeads().map(x=>x.sym);
   let h=`<div class="lbl">Correlation clusters · ${sessChip(BOARD.as_of)} · one cluster sizes as ONE position</div>`;
+  const caps=capChecks();
   h+=cls.map(cl=>{
     const inBook=cl.members.filter(m=>find(m));
     const off=cl.members.filter(m=>!find(m));
+    // FEAT-TT-POS: the summed weight. Before this, the strip could say these names ARE one
+    // position but not how big that position was — the rule was unfalsifiable.
+    const cap=caps.find(c=>c.kind==="cluster"&&c.label===(cl.label||cl.id));
     // The whole reason this strip exists: two ranked names in one cluster is one bet
     // presented as diversification. Overlap with either queue has to shout.
     const hitND=cl.members.filter(m=>leads.includes(m));
     const hitUP=cl.members.filter(m=>LAST_RANK.includes(m));
     return `<div style="margin-top:5px">`+
       `<span style="color:var(--amber);font-weight:700">⛓ ${esc(cl.label||cl.id)}</span> `+
-      `<span class="scope">${inBook.length} in book${off.length?` · ${off.length} off-book`:""}</span><br>`+
+      `<span class="scope">${inBook.length} in book${off.length?` · ${off.length} off-book`:""}</span>`+
+      (cap?` <span style="color:${cap.over?"var(--red)":"var(--green)"};font-weight:700">${cap.pct}% of NAV`+
+        `${cap.over?` — ${cap.over}pts OVER the ${CAP_PCT}% cap`:` / ${CAP_PCT}%`}</span> `+
+        `<span class="scope">${cap.n} measured${cap.missing.length?` · ${cap.missing.length} unmeasured (${cap.missing.map(esc).join(", ")}) — the total is a FLOOR`:""}`+
+        `${cap.age===null?" · ⚠ undated":cap.age>POS_STALE_D?` · ⚠ ${cap.age}d old`:""}</span>`:"")+`<br>`+
       `<span style="font-size:11px">${cl.members.map(m=>find(m)?`<span style="color:var(--fg);cursor:pointer" onclick="openCard('${esc(m)}')">${esc(m)}</span>`:`<span style="color:var(--dim)">${esc(m)}</span>`).join(" · ")}</span>`+
       (cl.rule?`<div class="none">${esc(cl.rule)}</div>`:"")+
       (hitND.length>1?`<div class="none" style="color:var(--red)">⚠ ${hitND.map(esc).join(" + ")} are both next-dollar leads AND in this cluster — that is one position, not two</div>`:"")+
       (hitUP.length>1?`<div class="none" style="color:var(--amber)">⚠ ${hitUP.map(esc).join(" + ")} are both in the computed-upside top ranks and in this cluster — the gap is one bet repeated</div>`:"")+
       (cl.note?`<div class="none">${esc(cl.note)}</div>`:"")+`</div>`;
   }).join("");
+  h+=reconcileLine();
   sessSec("clusterLine",h);
 }
 /* ── open decisions: the queue that ages ── */
@@ -906,6 +939,81 @@ function renderDecisions(){
   sessSec("decisionsLine",h);
 }
 
+/* ═══════════ MEASURED FACTS (FEAT-TT-POS v3.30) ═══════════ */
+/* Everything else in this book is ASSERTED — a human typed it and lastRun ages it. `pos` is
+   the first thing here that is MEASURED: it comes from the broker, carries its own timestamp
+   and source, and is never editable by hand. Keeping the two classes visibly apart is the
+   same discipline the dashboard applies with LIVE/CACHED/STALE/MOCK.
+   Until a sync runs, every one of these renders NOTHING — an absent position is not zero. */
+const CAP_PCT=18;          // hard single-position cap; the framework doc in KV owns the real
+                           // number, this mirrors the constraint already printed in the sidebar
+const POS_STALE_D=2;       // a size older than this spans a session and can mislead like a stale ref_px
+function validateSyncPos(p){
+  if(!p||typeof p!=="object"||Array.isArray(p))return "pos must be an object";
+  if(!/^\d{4}-\d{2}-\d{2}([T ]\d{2}:\d{2}(:\d{2})?(\.\d+)?Z?)?$/.test(String(p.at||"")))return "pos.at (ISO date/time) is required";
+  if(typeof p.src!=="string"||!p.src)return "pos.src is required — a measured fact must name where it came from";
+  const band=(k,lo,hi)=>{if(p[k]===undefined||p[k]===null)return null;const v=Number(p[k]);
+    return !isFinite(v)?`pos.${k} must be a number`:(v<lo||v>hi)?`pos.${k} out of band (${lo}..${hi}): ${p[k]}`:null;};
+  for(const e of [band("sh",-1e9,1e9),band("mv",-1e12,1e12),band("pct",0,100),band("cb",-1e12,1e12),band("upl_pct",-100,1e5)])
+    if(e)return e;
+  return null;
+}
+function posOf(x){const p=x&&x.pos;return p&&typeof p==="object"?p:null;}
+function posAge(p){return ageDays(String(p&&p.at||"").slice(0,10));}
+/* The provenance chip a measured number carries. Same fail-closed rule as everywhere else:
+   undated is the worst state, never the freshest. */
+function posChip(p){
+  const d=posAge(p);
+  if(d===null)return `<span class="bad2">⚠ undated</span>`;
+  if(d<0)return `<span class="bad2">⚠ dated ahead</span>`;
+  const cls=d>POS_STALE_D?"bad2":"scope";
+  return `<span class="${cls}">${d===0?"today":d+"d old"}${d>POS_STALE_D?" — re-sync":""}</span>`;
+}
+const money=v=>{const n=Number(v);if(!isFinite(n))return "";
+  const a=Math.abs(n);return (n<0?"-$":"$")+(a>=1e6?(a/1e6).toFixed(2)+"M":a>=1e3?Math.round(a/1e3)+"k":a.toFixed(0));};
+function heldSyms(){return BOOK.filter(x=>{const p=posOf(x);return p&&Number(p.sh)!==0;}).map(x=>x.sym);}
+/* CAP CHECKS — the reason measured weights exist at all. A single-name cap is arithmetic the
+   board could never do before, and the CLUSTER cap is the handoff's headline principle
+   ("cluster = one position") finally made checkable rather than recited. Reports, never
+   enforces — and a check computed off a stale mark says so instead of pretending. */
+function capChecks(){
+  const out=[];
+  BOOK.forEach(x=>{
+    const p=posOf(x);if(!p||!isFinite(Number(p.pct)))return;
+    const pct=Number(p.pct);
+    if(pct>CAP_PCT)out.push({kind:"name",sym:x.sym,pct,over:Math.round((pct-CAP_PCT)*10)/10,age:posAge(p)});
+  });
+  (Array.isArray(BOARD.clusters)?BOARD.clusters:[]).forEach(cl=>{
+    let sum=0,n=0,undated=false,maxAge=0,missing=[];
+    cl.members.forEach(m=>{
+      const e=find(m),p=e&&posOf(e);
+      // A member with no measured position is NAMED, not skipped — a cluster total that
+      // silently omits a leg reads as under the cap when it may not be.
+      if(!p||!isFinite(Number(p.pct))){if(e)missing.push(m);return;}
+      sum+=Number(p.pct);n++;
+      const a=posAge(p);
+      if(a===null)undated=true;else maxAge=Math.max(maxAge,a);
+    });
+    if(!n)return;
+    sum=Math.round(sum*10)/10;
+    out.push({kind:"cluster",label:cl.label||cl.id,pct:sum,n,missing,
+      over:sum>CAP_PCT?Math.round((sum-CAP_PCT)*10)/10:0,age:undated?null:maxAge});
+  });
+  return out;
+}
+/* RECONCILIATION — the book is a claim about what you track; the broker says what you hold.
+   Where they disagree is exactly where a surprise lives, and neither direction was visible
+   before. Only runs when at least one position is measured; otherwise it would report every
+   name as "not held" purely because nothing has synced yet. */
+function reconcile(){
+  const anyPos=BOOK.some(x=>posOf(x));
+  if(!anyPos)return null;
+  const untracked=Array.isArray(BOARD.account&&BOARD.account.untracked)?BOARD.account.untracked:[];
+  // A non-WATCH book name with a measured zero/absent position is tracked but not held.
+  const paper=BOOK.filter(x=>x.tier!=="WATCH"&&(!posOf(x)||Number(posOf(x).sh)===0)).map(x=>x.sym);
+  return{untracked,paper,held:heldSyms().length};
+}
+
 /* ═══════════ TODAY (FEAT-TT-TODAY v3.29) ═══════════ */
 /* FIRST PRINCIPLES: this terminal had grown into nine strips of STANDING STATE, all
    rendered at full size on every load. But a book in daily monitoring changes on maybe one
@@ -926,14 +1034,11 @@ function stance(){
   const st=String(BOARD.circuit&&BOARD.circuit.state).toLowerCase();
   if(st==="tripped")return{k:"stop",txt:"NO NEW POSITIONS — leverage circuit tripped",
     why:(BOARD.circuit&&BOARD.circuit.rule)||"deleverage-only until a live pull disproves it"};
-  const measured=(REGIME&&REGIME.regime&&REGIME.regime.verdict)||null;
-  const asserted=BOARD.regime&&typeof BOARD.regime.asserted==="string"?BOARD.regime.asserted.toUpperCase():null;
-  const mR=REG_RANK[measured],aR=REG_RANK[asserted];
-  if(mR===undefined&&aR===undefined)
+  const{measured,asserted,gov,ranked,disagree}=governingRegime();
+  if(!ranked)
     return{k:"unknown",txt:"STANCE UNKNOWN — no measured or asserted regime",
       why:"MacroDash returned "+(measured||"nothing")+" and no session regime is loaded — don't gate on this either way"};
-  const gov=mR===undefined?asserted:aR===undefined?measured:(aR>mR?asserted:measured);
-  const both=measured&&asserted&&measured!==asserted?` (measured ${measured} · asserted ${asserted} — stricter governs)`:"";
+  const both=disagree?` (measured ${measured} · asserted ${asserted} — stricter governs)`:"";
   if(gov==="PANIC")return{k:"stop",txt:"ADDS SUSPENDED — PANIC regime"+both,why:"only S-tier at 8+ support quality is eligible"};
   if(gov==="HEADWIND")return{k:"caution",txt:"ADDS GATED — HEADWIND regime"+both,why:"entry standards +1 notch · R/R floors +0.5×"};
   if(st==="armed")return{k:"caution",txt:"ADDS OK — but the leverage circuit is ARMED",why:"one more leg down trips it; size accordingly"};
@@ -948,15 +1053,32 @@ function todayActions(){
     out.push({sev:"stop",txt:`${e.sym} prints ${e.d===0?"today":"tomorrow"} — no new positions into it`,
       sub:e.label,go:()=>openDrawer("dCal")});
   });
+  // FEAT-TT-POS: a cap breach is a measured fact about a position you already hold, so it
+  // outranks anything discretionary — you are over the limit right now, not considering it.
+  capChecks().filter(c=>c.over>0).forEach(c=>{
+    const stale=c.age===null?" (position mark undated)":c.age>POS_STALE_D?` (marks ${c.age}d old)`:"";
+    out.push(c.kind==="name"
+      ?{sev:"stop",txt:`${c.sym} is ${c.pct}% of NAV — ${c.over}pts over the ${CAP_PCT}% cap`,
+        sub:"no conviction exceptions"+stale,go:()=>openCard(c.sym)}
+      :{sev:"stop",txt:`Cluster "${c.label}" is ${c.pct}% of NAV — ${c.over}pts over the ${CAP_PCT}% cap`,
+        sub:`one cluster sizes as one position${c.missing.length?` · ${c.missing.length} member(s) unmeasured, so the real total is higher`:""}${stale}`,
+        go:()=>openDrawer("dExp")});
+  });
   const st=String(BOARD.circuit&&BOARD.circuit.state).toLowerCase();
   if(st==="tripped"){
     const order=(BOARD.funding&&Array.isArray(BOARD.funding.order))?BOARD.funding.order:[];
     const first=order[0];
+    // With a measured position the trim stops being an abstraction: shares, value, and
+    // whether the blocker is real (short calls actually on the book) rather than remembered.
+    const fe=first&&find(first.sym),fp=fe&&posOf(fe);
+    const size=fp?` — ${fp.sh??"?"} sh${fp.mv!=null?`, ${money(fp.mv)}`:""}${isFinite(Number(fp.pct))?` (${fp.pct}% of NAV)`:""}`:"";
+    const shorts=fp&&Array.isArray(fp.opt)?fp.opt.filter(o=>o.side==="short"&&o.k==="call"):[];
+    const cover=shorts.length?` · ${shorts.reduce((a,o)=>a+Number(o.n),0)} short call(s) cover ${shorts.reduce((a,o)=>a+Number(o.n),0)*100} of ${fp.sh??"?"} sh`:"";
     out.push({sev:"stop",
-      txt:first?(first.blocker?`Deleverage: ${first.sym} is first to trim — but ${first.blocker}`
-                              :`Deleverage: trim ${first.sym}${first.est?` (${first.est})`:""} first`)
+      txt:first?(first.blocker?`Deleverage: ${first.sym} is first to trim${size} — but ${first.blocker}`
+                              :`Deleverage: trim ${first.sym}${size||(first.est?` (${first.est})`:"")} first`)
               :"Deleverage-only — but no trim order is set, so nothing says what funds it",
-      sub:first?(BOARD.funding.rule||""):"add a funding order in ◧ SESSION",go:()=>openDrawer("dExp")});
+      sub:first?((BOARD.funding.rule||"")+cover):"add a funding order in ◧ SESSION",go:()=>openDrawer("dExp")});
   }
   const ds=Array.isArray(BOARD.decisions)?BOARD.decisions:[];
   ds.map(d=>({...d,age:ageDays(d.asked)})).filter(d=>d.blocking&&(d.age===null||d.age>14))
@@ -1114,9 +1236,14 @@ function renderDrawers(){
       :`<span style="color:var(--dim)">nothing queued</span>`),true);
   const cls=Array.isArray(BOARD.clusters)?BOARD.clusters:[];
   const fund=BOARD.funding&&Array.isArray(BOARD.funding.order)?BOARD.funding.order:[];
+  // FEAT-TT-POS: a cap breach is the loudest thing this drawer can carry, so it owns the
+  // summary whenever one exists — a closed drawer must never hide an over-cap position.
+  const breach=capChecks().filter(c=>c.over>0);
   setDrawer("dExp","sExp",`EXPOSURE · `+
+    (breach.length?`<span style="color:var(--red)">${breach.length} over the ${CAP_PCT}% cap</span> · `:``)+
     (cls.length?`${cls.length} cluster${cls.length===1?"":"s"}`:`no clusters set`)+
-    (fund.length?` · trim first: ${esc(fund[0].sym)}`:``),cls.length>0||fund.length>0);
+    (fund.length?` · trim first: ${esc(fund[0].sym)}`:``),
+    cls.length>0||fund.length>0||BOOK.some(x=>posOf(x)));
   const ev=binaryEvents(),inW=ev.filter(e=>e.inWindow).length;
   setDrawer("dCal","sCal",`CALENDAR · `+
     (ev.length?(inW?`<span style="color:var(--red)">${inW} inside ${BINARY_WINDOW_D}d</span> · next ${esc(ev[0].sym)} ${ev[0].d===0?"today":ev[0].d+"d"}`
@@ -1153,11 +1280,17 @@ function render(){
       // all (never a 0 or a dash that could read as flat).
       const q=LIVE_PX[x.sym];
       const chg=q&&isFinite(q.chg)?q.chg:null;
+      // FEAT-TT-POS: the weight you actually hold, beside the day move. Absent position =
+      // absent number; a dash or a 0 here would read as "not held" when it means "not synced".
+      const p=posOf(x),wt=p&&isFinite(Number(p.pct))?Number(p.pct):null;
+      const over=wt!==null&&wt>CAP_PCT;
       c.innerHTML=`<span class="sym">${x.sym}</span>
         <span class="lens lens-${x.lens}">${x.lens}</span>`+
-        (chg!==null?`<span class="chg" style="color:${chg>=0?"var(--green)":"var(--red)"}">${chg>=0?"+":""}${chg}%</span>`:"");
+        (chg!==null?`<span class="chg" style="color:${chg>=0?"var(--green)":"var(--red)"}">${chg>=0?"+":""}${chg}%</span>`:"")+
+        (wt!==null?`<span class="wt"${over?' style="color:var(--red);font-weight:700"':""}>${wt}%${over?"!":""}</span>`:"");
       const runTxt=rs.k==="never"?"TT run: NEVER RUN":`TT run ${x.lastRun} · ${rs.days}d ago`;
       c.title=[q?`$${q.px}${chg!==null?` (${chg>=0?"+":""}${chg}% today)`:""}`:null,
+        p?`held ${p.sh??"?"} sh${p.mv!=null?` · ${money(p.mv)}`:""}${wt!==null?` · ${wt}% of NAV`:""} (measured ${String(p.at).slice(0,10)})`:null,
         runTxt,(x.rank&&x.rank!=="—")?x.rank:null,x.note||null].filter(Boolean).join(" · ");
       chips.appendChild(c);
     });
@@ -1727,13 +1860,23 @@ const REG_MOD={
   HEADWIND:["var(--amber)","⚠ HEADWIND regime — entry standards +1 notch · R/R floors +0.5×"],
   PANIC:["var(--red)","⛔ PANIC regime — only S-tier at 8+ support quality eligible"],
 };
-function regimeModifier(){
+/* v3.30: ONE derivation of the governing regime. stance() and regimeModifier() each used to
+   re-derive "the stricter of measured and asserted" from REG_RANK, and two copies of a rule
+   that gates orders is a drift waiting to happen — the same reason ndLeads() and
+   binaryEvents() were extracted. `gov` is null only when neither engine has a ranked read. */
+function governingRegime(){
   const measured=(REGIME&&REGIME.regime&&REGIME.regime.verdict)||null;
   const ar=BOARD.regime;
   const asserted=ar&&typeof ar.asserted==="string"?ar.asserted.toUpperCase():null;
   const mR=REG_RANK[measured],aR=REG_RANK[asserted];
   const gov=mR===undefined&&aR===undefined?null
     :mR===undefined?asserted:aR===undefined?measured:(aR>mR?asserted:measured);
+  return{measured,asserted,gov,ar,
+    ranked:!(mR===undefined&&aR===undefined),
+    disagree:!!(measured&&asserted&&measured!==asserted)};
+}
+function regimeModifier(){
+  const{measured,asserted,gov,ar}=governingRegime();
   let h="";
   const mod=gov&&REG_MOD[gov];
   if(mod)h+=`<div class="none" style="color:${mod[0]}">${mod[1]}</div>`;
@@ -1838,11 +1981,18 @@ function annualise(pct,y){
    to the stamp whenever one is unavailable — and says which it used, per pick. Fetch failure
    is silent by design: the board degrades to exactly its previous behaviour. */
 let LIVE_PX={},LIVE_AT=null;
+const QUOTE_CAP=40;          // mirror of MAX_SYMS in functions/api/quotes.js
+let QUOTE_DROPPED=[];        // names past the cap — named, never silently priceless
 async function loadQuotes(){
   // v3.29: quote the WHOLE book, not just the modelled names. The day move belongs on every
   // chip — a monitoring board that shows prices for 2 of 30 names is a research tool. The
   // endpoint caps at 40 syms with a 2-min KV cache, so this stays one cheap call per load.
-  const syms=BOOK.map(x=>x.sym).slice(0,40);
+  const all=BOOK.map(x=>x.sym);
+  const syms=all.slice(0,QUOTE_CAP);
+  // v3.30: state the cap. A silent slice made a 41-name book look like 40 quoted names and
+  // one that simply had no price — the same silent-truncation failure the upside widget was
+  // fixed for ("states the denominator"). The tail is named on the coverage strip.
+  QUOTE_DROPPED=all.slice(QUOTE_CAP);
   if(!syms.length)return;
   try{
     const ctl=new AbortController();const t=setTimeout(()=>ctl.abort(),8000);
@@ -2098,6 +2248,15 @@ function renderCoverage(){
     (()=>{const c=BOARD.circuit,st=String(c&&c.state).toLowerCase();
       return st==="tripped"?`<span style="color:var(--red)">⛔ circuit tripped</span>`
         :st==="armed"?`<span style="color:var(--amber)">⚠ circuit armed</span>`:"";})()+
+    // FEAT-TT-POS: measured coverage sits in the same rollup as run coverage — an unmeasured
+    // position is exactly as much of a hole as an unrun name, and both hide the same way.
+    (()=>{const m=BOOK.filter(x=>posOf(x)).length;
+      if(!BOOK.length)return "";
+      const stale=BOOK.filter(x=>{const p=posOf(x);const a=p&&posAge(p);return p&&(a===null||a>POS_STALE_D);}).length;
+      return !m?`<span style="color:var(--dim)">⌗ 0 positions measured</span>`
+        :`<span style="color:${m===BOOK.length?"var(--green)":"var(--amber)"}">⌗ ${m}/${BOOK.length} measured</span>`+
+         (stale?`<span style="color:var(--amber)">⚠ ${stale} stale</span>`:"");})()+
+    (QUOTE_DROPPED.length?`<span style="color:var(--amber)">⚠ ${QUOTE_DROPPED.length} unquoted (past the ${QUOTE_CAP}-symbol cap): ${QUOTE_DROPPED.join(", ")}</span>`:"")+
     `<span style="margin-left:auto">● ≤30d · ⏱ aged · ○ no TT run · 📐 3 questions answered</span>`;
 }
 

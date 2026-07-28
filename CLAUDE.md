@@ -121,7 +121,7 @@ worker/                 SEPARATE Cloudflare Worker (not part of Pages)
   wrangler.toml         Worker config: PULSE_CACHE binding + cron triggers (UTC).
 
 test/
-  smoke.mjs             No-network smoke test: 387 assertions over mergeLiveOverMock
+  smoke.mjs             No-network smoke test: 416 assertions over mergeLiveOverMock
                         + SOURCES-path resolution against the real MOCK_DATA + the
                         5-Whys engine + DEC-31 guards + the TT band table (DEC-33)
                         + the market-holiday calendar (sessions + staleness).
@@ -410,6 +410,27 @@ Jan-anchor shipped; see `snapshot.js` ~318–328), `spyMa100`, `spyMa200`, and a
   book** (≤40, 2-min KV cache) so every chip carries its day move; a name with no quote shows
   **no number at all**, never a 0 that reads as flat. Header pill relabelled **MACRO** — it is
   MacroDash's *measured* read and looked like it contradicted the stance.
+- **FEAT-TT-POS (v3.30) — measured facts, the first non-asserted class in the book.** Every other
+  field is *asserted* (a human typed it, `lastRun`/`as_of` ages it). v3.29 made that visible and
+  therefore intolerable: `stance()` suspends **all** adds off a hand-typed `circuit.state`, and
+  with no position sizes anywhere the **18% cap was prose** and *"cluster = one position"* was a
+  rule the software could not evaluate. An entry-level **`pos`** block
+  (`{sh, mv, pct, cb, upl_pct, opt[], at, src}`) is written by a broker sync and never by hand.
+  It sits beside `dots`, **not inside `deepDive`** — the payload editor replaces that wholesale,
+  so facts stored there would die to a thesis paste. `validatePos()` (exported, smoke-tested) is
+  **plausibility-banded** in the `BANDS`/`applyBands` spirit: a decimal-shifted weight is rejected
+  before it can clear *or* trip a cap, while a **short position (`sh < 0`) is explicitly allowed**.
+  What the facts buy: weight on every chip (absent = **no number**, never a 0 that reads as
+  not-held) · `capChecks()` for single names **and summed clusters** — an unmeasured member is
+  named and the total called a **FLOOR** · `reconcile()` for held-but-untracked ("exposure no
+  thesis covers") and tracked-but-not-held · TODAY stops for breaches (a held breach outranks
+  anything discretionary) · a deleverage action carrying real share count/value with its blocker
+  **verified against actual option legs** · and `board.account` where **`formula` is REQUIRED**,
+  so the leverage figure that vetoes every add is checkable by the person it stops. Everything
+  inherits `pos.at`: `posChip()` marks stale/undated, and cap checks computed off an old mark
+  say so. Also v3.30: `governingRegime()` is now the **single** derivation of "stricter of
+  measured vs asserted" (`stance()` and `regimeModifier()` had a copy each), and `loadQuotes()`
+  **states its 40-symbol cap** and names the unquoted tail instead of truncating silently.
 - **Deferred:** stored fundamentals + Robinhood sync — now unblocked by the `x-tt-pin` header
   (v3.9): a chat-side daily review can PUT `status_flags`/`ref_px` into the deepDive payloads and
   stamp `lastRun`. When built, store the *triage* shape (`{at, px}` → "% moved since your last TT
@@ -476,7 +497,7 @@ npm run dev        # Vite dev server (mock unless VITE_DATA_MODE=live in .env)
 npm run build      # → dist/  (what Pages runs)
 npm run preview    # serve the built dist/
 
-node test/smoke.mjs   # 387-assertion no-network smoke test (needs Node ≥17)
+node test/smoke.mjs   # 416-assertion no-network smoke test (needs Node ≥17)
 
 # Cron Worker (separate deploy):
 cd worker && npx wrangler deploy

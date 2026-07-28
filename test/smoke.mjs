@@ -12,7 +12,7 @@ import {
   bandSpyVs200d, bandVix, bandFearGreed, bandRs, bandTenYear, bandFedOdds,
   aggregateVerdict, computeMacroFlip, buildTtReadout, formatTtPaste,
 } from "../src/ttReadout.js";
-import { validateBook, validateBoard, conflictCheck, authMode, lockoutState, recordFailure, parseCookie, hashPin, LOCK_TIERS } from "../functions/api/tt.js";
+import { validateBook, validateBoard, validatePos, conflictCheck, authMode, lockoutState, recordFailure, parseCookie, hashPin, LOCK_TIERS } from "../functions/api/tt.js";
 import { plausible, applyBands, quorum, QUORUM_FIELDS, QUORUM_MIN, marketSession } from "../functions/api/snapshot.js";
 
 let pass = 0, fail = 0;
@@ -803,7 +803,7 @@ ok("today: an empty day says so explicitly, with the next dated event",
   adminSrc.includes('txt:"Nothing to do today."') &&
   adminSrc.includes("which is not the same as clear"));
 ok("today: a deleverage action names the blocker instead of the trim when one exists",
-  adminSrc.includes("is first to trim — but ${first.blocker}"));
+  adminSrc.includes("is first to trim${size} — but ${first.blocker}"));
 ok("today: deleverage-only with no funding order says THAT, rather than nothing",
   adminSrc.includes("no trim order is set, so nothing says what funds it"));
 // what changed: the diff, against a baseline the user owns.
@@ -825,11 +825,85 @@ ok("changed: the panel opens itself once when there is something in it",
   adminSrc.includes("if(d.length&&!CHANGED_OPENED)"));
 // the book as a monitoring surface, not a directory.
 ok("today: the whole book is quoted, not just the modelled names",
-  adminSrc.includes("const syms=BOOK.map(x=>x.sym).slice(0,40);"));
+  adminSrc.includes("const all=BOOK.map(x=>x.sym);") && adminSrc.includes("const syms=all.slice(0,QUOTE_CAP);"));
 ok("today: a chip with no quote shows no number at all (never a 0 that reads as flat)",
   adminSrc.includes("chg!==null?`<span class=\"chg\"") && adminSrc.includes("never a 0 or a dash"));
 ok("today: quotes arriving re-render the whole board, not just the upside widget",
   adminSrc.includes("render();   // chips, the upside rank and the TODAY delta all read LIVE_PX"));
+
+// ---- 12. FEAT-TT-POS (v3.30) — measured facts ------------------------------
+// Everything else in the book is ASSERTED and aged by lastRun. `pos` is the first MEASURED
+// class: it comes from the broker, carries its own timestamp and source, and is never typed.
+console.log("\n[12] FEAT-TT-POS — measured positions, caps and reconciliation");
+const okPos = (extra = {}) => ({ at: "2026-07-28T14:32:00Z", src: "robinhood", ...extra });
+const badP = (p) => typeof validatePos(p) === "string";
+ok("pos: a full measured position passes", validatePos(okPos({ sh: 412, mv: 30104, pct: 4.2, cb: 24880 })) === null);
+ok("pos: an undated position is rejected — a measured fact must be ageable",
+  badP({ sh: 1, src: "robinhood" }) && /cannot be aged/.test(validatePos({ sh: 1, src: "x" })));
+ok("pos: a sourceless position is rejected — provenance is not optional",
+  badP({ at: "2026-07-28", src: "" }) && /where it came from/.test(validatePos({ at: "2026-07-28" })));
+ok("pos: a date-only stamp is accepted (the sync may only know the day)",
+  validatePos({ at: "2026-07-28", src: "robinhood" }) === null);
+// Bands, in the spirit of snapshot.js BANDS: reject the impossible, not the unusual.
+ok("pos: a decimal-shifted weight is rejected before it can clear or trip a cap",
+  badP(okPos({ pct: 420 })) && badP(okPos({ pct: -1 })));
+ok("pos: a SHORT equity position is explicitly allowed (sh < 0 is real)",
+  validatePos(okPos({ sh: -100, mv: -8000 })) === null);
+ok("pos: a non-numeric size is rejected", badP(okPos({ sh: "many" })));
+ok("pos: option legs are validated (side, kind, positive contract count)",
+  badP(okPos({ opt: [{ k: "call", side: "short", n: 0 }] })) &&
+  badP(okPos({ opt: [{ k: "swap", side: "short", n: 1 }] })) &&
+  validatePos(okPos({ opt: [{ k: "call", side: "short", n: 3, exp: "2028-01-21" }] })) === null);
+ok("pos: rides validateBook per entry, and a bad one fails the whole PUT",
+  validateBook({ book: [{ sym: "AAA", tier: "S", lens: "AI", pos: okPos({ sh: 10 }) }], cut: [] }) === null &&
+  typeof validateBook({ book: [{ sym: "AAA", tier: "S", lens: "AI", pos: okPos({ pct: 900 }) }], cut: [] }) === "string");
+ok("pos: a book with no positions at all still passes (nothing synced yet is normal)",
+  validateBook({ book: [{ sym: "AAA", tier: "S", lens: "AI" }], cut: [] }) === null);
+ok("account: the leverage figure must say how it was computed",
+  typeof validateBoard({ as_of: "2026-07-28", account: { at: "2026-07-28", src: "rh", nav: 1e5 } }) === "string" &&
+  validateBoard({ as_of: "2026-07-28", account: { at: "2026-07-28", src: "rh", nav: 1e5, debt: 1.2e5, debt_pct_nav: 120, formula: "margin_balance / net_liquidation" } }) === null);
+ok("account: undated or sourceless is rejected like any measured block",
+  typeof validateBoard({ as_of: "2026-07-28", account: { src: "rh", formula: "x" } }) === "string" &&
+  typeof validateBoard({ as_of: "2026-07-28", account: { at: "2026-07-28", formula: "x" } }) === "string");
+// Client-side renderers (admin.html is buildless — pinned at source).
+ok("pos: lives at ENTRY level, not inside deepDive (a thesis paste must not wipe facts)",
+  adminSrc.includes("function posOf(x){const p=x&&x.pos;") &&
+  ttSrc.includes("the payload editor replaces deepDive wholesale") &&
+  !/deepDive\.pos|dd\.pos\b/.test(adminSrc));
+ok("pos: an absent position renders NOTHING — not a 0 or a dash that reads as not-held",
+  adminSrc.includes("absent number; a dash or a 0 here would read"));
+ok("pos: measured marks age like everything else, undated being the worst",
+  adminSrc.includes("function posChip(p)") && adminSrc.includes('if(d===null)return `<span class="bad2">⚠ undated'));
+ok("caps: the single-name cap is a named constant, not prose",
+  adminSrc.includes("const CAP_PCT=18;"));
+ok("caps: the CLUSTER total is summed — 'cluster = one position' is finally checkable",
+  adminSrc.includes('out.push({kind:"cluster"') && adminSrc.includes("one cluster sizes as one position"));
+ok("caps: an unmeasured cluster member is NAMED and the total called a floor",
+  adminSrc.includes("the total is a FLOOR") && adminSrc.includes("a cluster total that"));
+ok("caps: a breach becomes a TODAY stop — you are over the limit now, not considering it",
+  adminSrc.includes("pts over the ${CAP_PCT}% cap") && adminSrc.includes("outranks anything discretionary"));
+ok("caps: a breach computed off a stale or undated mark says so",
+  adminSrc.includes("(position mark undated)") && adminSrc.includes("marks ${c.age}d old"));
+ok("caps: a closed EXPOSURE drawer still shows a breach in its summary",
+  adminSrc.includes("over the ${CAP_PCT}% cap</span> · "));
+ok("recon: book-vs-broker runs only once something is measured (else all names read unheld)",
+  adminSrc.includes("const anyPos=BOOK.some(x=>posOf(x));") && adminSrc.includes("if(!anyPos)return null;"));
+ok("recon: held-but-untracked is called exposure no thesis covers",
+  adminSrc.includes("exposure no thesis covers"));
+ok("recon: with nothing synced the strip says what a sync would buy",
+  adminSrc.includes("no measured positions yet — run the broker sync"));
+ok("today: the deleverage action carries real size and verifies its own blocker",
+  adminSrc.includes("short call(s) cover") && adminSrc.includes("stops being an abstraction"));
+ok("circuit: shows the arithmetic behind the number that vetoes every add",
+  adminSrc.includes("computed as ${esc(acct.formula)}") && adminSrc.includes("checkable by the person it stops"));
+ok("coverage: measured coverage sits in the same rollup as run coverage",
+  adminSrc.includes("measured</span>") && adminSrc.includes("0 positions measured"));
+ok("quotes: the 40-symbol cap is stated and the dropped tail named",
+  adminSrc.includes("const QUOTE_CAP=40;") && adminSrc.includes("unquoted (past the ${QUOTE_CAP}-symbol cap)"));
+ok("regime: ONE derivation shared by the stance and the modifier",
+  adminSrc.includes("function governingRegime()") &&
+  (adminSrc.match(/governingRegime\(\)/g) || []).length >= 3 &&
+  (adminSrc.match(/aR>mR\?asserted:measured/g) || []).length === 1);
 
 console.log(`\n=== SMOKE TEST: ${pass} passed, ${fail} failed ===`);
 process.exit(fail === 0 ? 0 : 1);

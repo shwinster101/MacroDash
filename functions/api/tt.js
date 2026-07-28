@@ -301,6 +301,58 @@ export function validateBoard(b) {
     if (!b.regime || typeof b.regime !== "object" || Array.isArray(b.regime)) return "regime must be an object";
     if (typeof b.regime.asserted !== "string" || !b.regime.asserted) return "regime.asserted (the session's read) is required";
   }
+  // FEAT-TT-POS: the account-level measured block. `formula` is REQUIRED because mapping
+  // broker fields to a leverage ratio is a judgment call, not a lookup — recording which
+  // numbers were divided makes the figure that vetoes every add inspectable and correctable
+  // instead of magic arriving from a script nobody can audit.
+  if (b.account !== undefined) {
+    const a = b.account;
+    if (!a || typeof a !== "object" || Array.isArray(a)) return "account must be an object";
+    if (!ISO_DT_RE.test(String(a.at || ""))) return "account.at (ISO date/time) is required";
+    if (typeof a.src !== "string" || !a.src) return "account.src is required";
+    if (typeof a.formula !== "string" || !a.formula) return "account.formula is required — the leverage number must say how it was computed";
+    for (const k of ["nav", "debt", "debt_pct_nav"])
+      if (a[k] !== undefined && !isFinite(Number(a[k]))) return "account." + k + " must be a number";
+  }
+  return null;
+}
+
+// FEAT-TT-POS (v3.30): a MEASURED position, written by the broker sync — never typed.
+// This is a different epistemic class from everything else in an entry: tier/lens/note/
+// deepDive are ASSERTED by a human and aged by lastRun, while `pos` is a fact with its own
+// timestamp and source. It sits at entry level (beside `dots`) and NOT inside deepDive on
+// purpose — the payload editor replaces deepDive wholesale, so a thesis paste would destroy
+// measured facts stored there.
+// Values are plausibility-banded in the spirit of BANDS/applyBands in snapshot.js: reject
+// the impossible, not the unusual. A decimal-shifted weight would otherwise sail through
+// and trip a cap breach (or, worse, silently clear one).
+const ISO_DT_RE = /^\d{4}-\d{2}-\d{2}([T ]\d{2}:\d{2}(:\d{2})?(\.\d+)?Z?)?$/;
+export function validatePos(p) {
+  if (!p || typeof p !== "object" || Array.isArray(p)) return "pos must be an object";
+  if (!ISO_DT_RE.test(String(p.at || ""))) return "pos.at (ISO date/time) is required — a measured fact without a time cannot be aged";
+  if (typeof p.src !== "string" || !p.src) return "pos.src is required — a measured fact must name where it came from";
+  const num = (k, lo, hi) => {
+    if (p[k] === undefined || p[k] === null) return null;
+    const v = Number(p[k]);
+    if (!isFinite(v)) return `pos.${k} must be a number`;
+    if (v < lo || v > hi) return `pos.${k} out of band (${lo}..${hi}): ${p[k]}`;
+    return null;
+  };
+  // Wide bands. A short equity position is real (sh < 0), a position worth more than the
+  // account is not, and a weight outside 0..100 is arithmetic that already went wrong.
+  for (const e of [num("sh", -1e9, 1e9), num("mv", -1e12, 1e12), num("pct", 0, 100),
+                   num("cb", -1e12, 1e12), num("upl_pct", -100, 1e5)])
+    if (e) return e;
+  if (p.opt !== undefined) {
+    if (!Array.isArray(p.opt)) return "pos.opt must be an array";
+    for (const o of p.opt) {
+      if (!o || typeof o !== "object") return "each pos.opt leg must be an object";
+      if (!["call", "put"].includes(String(o.k))) return "option leg k must be call|put";
+      if (!["long", "short"].includes(String(o.side))) return "option leg side must be long|short";
+      if (!isFinite(Number(o.n)) || Number(o.n) <= 0) return "option leg n must be a positive contract count";
+      if (o.exp !== undefined && !ISO_RE.test(String(o.exp))) return "option leg exp must be YYYY-MM-DD";
+    }
+  }
   return null;
 }
 
@@ -322,6 +374,10 @@ export function validateBook(body) {
     if (typeof (e.note ?? "") !== "string" || (e.note || "").length > 500) return "bad note for " + e.sym;
     if (e.lastRun !== undefined && !(typeof e.lastRun === "string" && /^\d{4}-\d{2}-\d{2}$/.test(e.lastRun)))
       return "bad lastRun for " + e.sym;
+    if (e.pos !== undefined && e.pos !== null) {
+      const pe = validatePos(e.pos);
+      if (pe) return e.sym + " pos: " + pe;
+    }
   }
   for (const s of cut) if (typeof s !== "string" || s.length > 12) return "bad cut entry";
   if (body.board !== undefined && body.board !== null) {
