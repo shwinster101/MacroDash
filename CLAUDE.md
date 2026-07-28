@@ -121,10 +121,16 @@ worker/                 SEPARATE Cloudflare Worker (not part of Pages)
   wrangler.toml         Worker config: PULSE_CACHE binding + cron triggers (UTC).
 
 test/
-  smoke.mjs             No-network smoke test: 416 assertions over mergeLiveOverMock
+  smoke.mjs             No-network smoke test: 431 assertions over mergeLiveOverMock
                         + SOURCES-path resolution against the real MOCK_DATA + the
                         5-Whys engine + DEC-31 guards + the TT band table (DEC-33)
                         + the market-holiday calendar (sessions + staleness).
+  render.mjs            Browser render test for public/admin.html (`npm run test:ui`).
+                        admin.html is buildless, so smoke can only pin STRINGS; this
+                        serves the real file with a stubbed API and drives it in
+                        Chromium at 390px + 1200px. SYNTHETIC fixture only (same
+                        invariant as SEED/BOARD). SKIPS cleanly (exit 0) with no
+                        browser, so `npm test` on a bare machine is unaffected.
 ```
 
 ## Data flow (how mock becomes live)
@@ -431,6 +437,26 @@ Jan-anchor shipped; see `snapshot.js` ~318–328), `spyMa100`, `spyMa200`, and a
   say so. Also v3.30: `governingRegime()` is now the **single** derivation of "stricter of
   measured vs asserted" (`stance()` and `regimeModifier()` had a copy each), and `loadQuotes()`
   **states its 40-symbol cap** and names the unquoted tail instead of truncating silently.
+- **FEAT-TT-DDFOCUS (v3.31) — the deep-dive tab answers four questions first.** The tab was
+  emitting ~20 sections at full size: the pre-v3.29 board, one level down. A reader arrives at a
+  name with the same four questions every time, so `ddAnswerBlock()` answers them above the
+  corpus — **what it's worth** (`ddWorth()` reuses `ptModelRows()`, so the cell can never quote a
+  target the ladder below it disagrees with; no model says *"no model"* rather than showing a
+  number) · **what changes my mind** (hinge tally, reds named) · **when** (next future key date) ·
+  **what I own** (the v3.30 `pos`; unmeasured reads *"not synced, which is not the same as not
+  held"*). The corpus groups into `ddDrawer()`s — VALUATION · THESIS & GATES · KEY DATES ·
+  CAPITAL & EXPOSURE · TRACKING & MODEL · DOTS · OTHER — each summary carrying its own signal
+  (failing gate count, kill-combo presence, next date, new-dot count). **An empty drawer never
+  renders**, unknown payload keys are **named in the summary** (stored is never invisible), and
+  `DD_OPEN` preserves open state so a quote landing can't collapse what you just opened.
+- **FEAT-TT-RENDER (v3.31) — `test/render.mjs` (`npm run test:ui`).** `admin.html` is buildless,
+  so smoke can only pin load-bearing STRINGS; that catches deletions but not a strip that renders
+  empty, a drawer that hides a red thing, a dead click, or a template literal that throws. This
+  serves the real file with a stubbed `/api/tt` + `/readout.json` + `/api/quotes` and drives it in
+  Chromium at **390px and 1200px** (42 assertions). It has already caught bugs the source guards
+  could not. **The fixture is SYNTHETIC** — no real ticker, position or session content enters
+  this repo, same invariant as `SEED`/`BOARD`. It **skips cleanly (exit 0)** when playwright-core
+  or a browser is missing, so it is additive and never breaks `npm test` on a bare machine.
 - **Deferred:** stored fundamentals + Robinhood sync — now unblocked by the `x-tt-pin` header
   (v3.9): a chat-side daily review can PUT `status_flags`/`ref_px` into the deepDive payloads and
   stamp `lastRun`. When built, store the *triage* shape (`{at, px}` → "% moved since your last TT
@@ -497,7 +523,8 @@ npm run dev        # Vite dev server (mock unless VITE_DATA_MODE=live in .env)
 npm run build      # → dist/  (what Pages runs)
 npm run preview    # serve the built dist/
 
-node test/smoke.mjs   # 416-assertion no-network smoke test (needs Node ≥17)
+node test/smoke.mjs   # 431-assertion no-network smoke test (needs Node ≥17)
+npm run test:ui       # browser render test for admin.html (skips if no Chromium)
 
 # Cron Worker (separate deploy):
 cd worker && npx wrangler deploy

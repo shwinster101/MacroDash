@@ -768,7 +768,8 @@ ok("today: every demoted strip keeps its element — nothing was deleted, only c
   ["nextDollar", "upsideRank", "clusterLine", "fundingLine", "binaryCal", "decisionsLine", "circuitLine"]
     .every((id) => adminSrc.includes(`id="${id}"`)));
 ok("today: each drawer is ONE tap (native details, no hidden second step)",
-  (adminSrc.match(/<details class="drawer"/g) || []).length === 9);
+  (adminSrc.match(/<details class="drawer" id="d/g) || []).length === 6 &&      // board strips
+  (adminSrc.match(/<details class="drawer"><summary>/g) || []).length === 3);   // reference sidebar
 ok("today: the reference sidebar collapses too — it is reference, not monitoring",
   !/<div class="panel"[^>]*>\s*<h2>Router/.test(adminSrc) &&
   adminSrc.includes("<summary>STANDING CONSTRAINTS</summary>"));
@@ -904,6 +905,48 @@ ok("regime: ONE derivation shared by the stance and the modifier",
   adminSrc.includes("function governingRegime()") &&
   (adminSrc.match(/governingRegime\(\)/g) || []).length >= 3 &&
   (adminSrc.match(/aR>mR\?asserted:measured/g) || []).length === 1);
+
+// ---- 13. FEAT-TT-DDFOCUS + the render harness (v3.31) ----------------------
+console.log("\n[13] FEAT-TT-DDFOCUS — the deep-dive tab answers four questions first");
+ok("dd: the four answers render before the corpus",
+  adminSrc.includes("function ddAnswerBlock(") &&
+  ["What it's worth", "What changes my mind", "When", "What I own"].every((q) => adminSrc.includes(q)) &&
+  adminSrc.indexOf("ddAnswerBlock(x,dd,todayET)") < adminSrc.indexOf('ddDrawer("val"'));
+ok("dd: worth reuses ptModelRows — the cell can never disagree with the ladder below it",
+  adminSrc.includes("function ddWorth(dd,sym)") && adminSrc.includes("const rr=ptModelRows(dd)"));
+ok("dd: a name with no model says so instead of showing a target",
+  adminSrc.includes('return{txt:"no model"'));
+ok("dd: an unmeasured position is not reported as unheld",
+  adminSrc.includes("not synced, which is not the same as not held"));
+ok("dd: the corpus is grouped into drawers, not deleted",
+  ["val", "thesis", "dates", "cap", "track", "dots"].every((k) => adminSrc.includes(`ddDrawer("${k}"`)));
+ok("dd: an empty drawer is never rendered",
+  adminSrc.includes("never an empty drawer") && adminSrc.includes('if(!content||!String(content).trim())return "";'));
+ok("dd: drawer summaries carry their signal (failing gates, red hinges, next date)",
+  adminSrc.includes("gates failing") && adminSrc.includes("kill combo defined") &&
+  adminSrc.includes("KEY DATES${(()=>{const n=ddNextDate"));
+ok("dd: unknown payload keys are NAMED in the summary — stored is never invisible",
+  adminSrc.includes("OTHER STORED FIELDS · ${unknown.map(esc).join(") &&
+  adminSrc.includes("what is stored is never invisible"));
+ok("dd: drawer open state survives a re-render (quotes landing must not collapse it)",
+  adminSrc.includes("const DD_OPEN=new Set();") && adminSrc.includes("ontoggle=\"ddToggle("));
+ok("dd: every hinge state still funnels through the green|amber|red|unknown tally",
+  adminSrc.includes("function hingeTally(dd)"));
+// The harness itself: buildless HTML needs a real browser, and it must not become a
+// dependency that breaks `npm test` on a machine without one.
+const renderSrc = readFileSync(new URL("./render.mjs", import.meta.url), "utf8");
+ok("render: committed as a separate suite, not wired into npm test",
+  existsSync(new URL("./render.mjs", import.meta.url)) &&
+  JSON.parse(readFileSync(new URL("../package.json", import.meta.url), "utf8")).scripts["test:ui"] === "node test/render.mjs");
+ok("render: skips cleanly (exit 0) when no browser or no playwright-core is present",
+  renderSrc.includes("process.exit(0)") && renderSrc.includes("RENDER TEST: SKIPPED"));
+ok("render: an explicit browser path is validated, not trusted blindly",
+  renderSrc.includes("existsSync(direct) ? direct : null"));
+ok("render: the fixture is SYNTHETIC — no real book content enters this repo",
+  renderSrc.includes("INVARIANT: the fixture is SYNTHETIC") &&
+  ["AAA", "BBB", "CCC", "FFF"].every((s) => renderSrc.includes(`sym: "${s}"`)));
+ok("render: asserts at a phone width as well as desktop",
+  renderSrc.includes("await open(390)") && renderSrc.includes("no horizontal overflow at 390px"));
 
 console.log(`\n=== SMOKE TEST: ${pass} passed, ${fail} failed ===`);
 process.exit(fail === 0 ? 0 : 1);

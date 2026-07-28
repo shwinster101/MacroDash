@@ -112,6 +112,13 @@
   /* FEAT-TT-POS: measured weight. Deliberately dimmer than the day move — the move is what
      changed, the weight is what is. */
   .chip .wt{font-size:9px;color:var(--slate);letter-spacing:0}
+  /* FEAT-TT-DDFOCUS (v3.31): the four answers a name's tab exists to give */
+  .dd-answer{display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin:12px 0 6px}
+  @media(max-width:700px){.dd-answer{grid-template-columns:repeat(2,1fr)}}
+  .dd-a{border:1px solid var(--line);border-radius:7px;background:#080d13;padding:8px 10px;min-width:0}
+  .dd-ak{font-size:8.5px;letter-spacing:.14em;color:var(--dim);text-transform:uppercase}
+  .dd-av{font-size:14px;font-weight:700;margin-top:3px;overflow-wrap:anywhere}
+  .dd-as{font-size:10px;color:var(--slate);margin-top:2px;overflow-wrap:anywhere}
   /* book-coverage rollup — mirrors MacroDash's Signal Quality strip */
   .cov{display:flex;align-items:center;gap:10px;flex-wrap:wrap;font-size:10px;color:var(--dim);
     letter-spacing:.06em;padding:2px 0 8px;border-bottom:1px dashed var(--line);margin-bottom:10px}
@@ -1692,6 +1699,97 @@ const DD_HANDLED=new Set(["ticker","name","thesis_version","updated","as_of","ti
   "pt_ladder","pt_model","pt_consensus","consensus","gates","hinges","leading_indicators","cert_probabilities","utilization_underwriting","capital",
   "dilution_grid","engine","pt_2040","kill_combination","key_dates","position","model_anchors","conditional_rules",
   "linked_exposure","status_flags","tape","watchlist_unlocks","hedges","rules","open_items","telemetry"]);
+/* ═══════════ DEEP-DIVE FOCUS (FEAT-TT-DDFOCUS v3.31) ═══════════ */
+/* The tab opened ~20 sections at full size — exactly the pre-v3.29 board, one level down.
+   A reader arrives at a name's tab with four questions and no others: what is it worth,
+   what would change my mind, when does something happen, and what do I own. Those are
+   answered above the fold; the corpus goes into drawers whose summaries carry their signal.
+   Open state survives a re-render (quotes landing must not collapse what you just opened). */
+const DD_OPEN=new Set();
+function ddToggle(id,open){open?DD_OPEN.add(id):DD_OPEN.delete(id);}
+function ddDrawer(id,summary,content,openDefault){
+  if(!content||!String(content).trim())return "";   // never an empty drawer
+  const open=DD_OPEN.has(id)||(openDefault&&!DD_OPEN.size);
+  return `<details class="drawer" ${open?"open":""} ontoggle="ddToggle('${id}',this.open)">`+
+    `<summary>${summary}</summary><div>${content}</div></details>`;
+}
+function ddProjSec(x){
+  if(!x.projection)return "";
+  const pj=x.projection;
+  return `<div class="dd-sec"><div class="lbl">The 3 questions — projection (answered ${esc(pj.as_of||"")})</div>
+    <div class="dd-kv"><div class="k">1 · rev in 3 yrs</div><div>$${esc(pj.rev_3yr.value_B)}B (${esc(pj.rev_3yr.year||"")})${pj.rev_3yr.why?` — ${esc(pj.rev_3yr.why)}`:""}</div></div>
+    <div class="dd-kv"><div class="k">2 · margins</div><div>${esc(pj.margins.path)} — ${esc(pj.margins.why)}</div></div>
+    <div class="dd-kv"><div class="k">3 · multiple</div><div>${esc(pj.multiple.value)}× ${esc(pj.multiple.basis||"")}</div></div>
+    <div style="margin-top:6px;font-size:11.5px">${projLine(pj)}</div></div>`;
+}
+/* WORTH — the same ptModelRows() the ladder renders and the board ranks on. One computation:
+   this cell can never quote a target the table below it disagrees with. */
+function ddWorth(dd,sym){
+  const rr=ptModelRows(dd).filter(r=>typeof r.prem==="number"||typeof r.fl==="number");
+  if(!rr.length)return{txt:"no model",sub:(dd.pt_model&&dd.pt_model.note)||"nothing here computes a target"};
+  const t=(HORIZON?rr.find(r=>r.y===HORIZON):null)||rr[0];
+  const onFloor=typeof t.prem!=="number";
+  const tgt=onFloor?t.fl:t.prem;
+  if(!isFinite(Number(tgt)))return{txt:`${esc(String(tgt))} ${t.y}`,sub:"no P/E before profit"};
+  const live=LIVE_PX[sym],stamp=dd.ref_px;
+  const px=(live&&isFinite(live.px))?live.px:(stamp&&isFinite(stamp.px)?stamp.px:null);
+  if(px===null)return{txt:`$${tgt} ${t.y}`,sub:`${onFloor?"floor":"premium"} — no price to compare against`};
+  const up=Math.round((tgt/px-1)*1000)/10,ann=annualise(up,t.y);
+  return{txt:`$${tgt} ${t.y} · <span style="color:${up>=0?"var(--green)":"var(--red)"}">${up>=0?"+":""}${up}%</span>`,
+    sub:`${onFloor?"floor (18× FY+1 EPS)":"premium"} vs ${live?"live":"stamped"} $${px}${ann!==null?` · ${ann>=0?"+":""}${ann}%/yr`:""}`};
+}
+function ddNextDate(dd,todayET){
+  const ks=(Array.isArray(dd.key_dates)?dd.key_dates:[])
+    .filter(k=>k&&/^\d{4}-\d{2}-\d{2}$/.test(String(k.date))&&String(k.date)>=todayET)
+    .sort((a,b)=>String(a.date).localeCompare(String(b.date)));
+  if(!ks.length)return null;
+  const k=ks[0];
+  return{label:k.label||k.event||"event",date:k.date,
+    d:Math.round((Date.parse(k.date+"T12:00:00Z")-Date.parse(todayET+"T12:00:00Z"))/86400000)};
+}
+function hingeTally(dd){
+  const n={green:0,amber:0,red:0,unknown:0};
+  (Array.isArray(dd.hinges)?dd.hinges:[]).forEach(g=>{n[["green","amber","red"].includes(g.state)?g.state:"unknown"]++;});
+  return n;
+}
+/* Drawer summaries. Each must be readable as a standalone claim — if a drawer stays shut
+   all day, what its summary says is the only thing about it the owner will ever see. */
+function ddValSummary(dd,x){
+  const w=ddWorth(dd,x.sym);
+  const bits=[dd.pt_model&&"model",dd.pt_ladder&&"ladder",dd.pt_consensus&&"street",dd.consensus&&"estimates",x.projection&&"3Q"].filter(Boolean);
+  return `VALUATION · ${w.txt}${bits.length?` <span style="color:var(--dim)">· ${bits.join(" · ")}</span>`:""}`;
+}
+function ddThesisSummary(dd){
+  const gs=Array.isArray(dd.gates)?dd.gates:[];
+  const failed=gs.filter(g=>/fail/i.test(String(g.status||g.state||g.verdict||""))).length;
+  const parts=[];
+  if(gs.length)parts.push(failed?`<span style="color:var(--red)">${failed}/${gs.length} gates failing</span>`:`${gs.length} gates`);
+  if(dd.kill_combination)parts.push(`<span style="color:var(--red)">kill combo defined</span>`);
+  if(Array.isArray(dd.open_items)&&dd.open_items.length)parts.push(`<span style="color:var(--amber)">${dd.open_items.length} open item${dd.open_items.length===1?"":"s"}</span>`);
+  if(Array.isArray(dd.rules)&&dd.rules.length)parts.push(`${dd.rules.length} standing rules`);
+  return `THESIS &amp; GATES${parts.length?` · ${parts.join(" · ")}`:""}`;
+}
+function ddAnswerBlock(x,dd,todayET){
+  const w=ddWorth(dd,x.sym);
+  const n=hingeTally(dd),total=n.green+n.amber+n.red+n.unknown;
+  const reds=(Array.isArray(dd.hinges)?dd.hinges:[]).filter(g=>g.state==="red").map(g=>g.label||g.key||g.id);
+  const mind=total
+    ?{txt:n.red?`<span style="color:var(--red)">${n.red} red</span>`+(n.amber?` · <span style="color:var(--amber)">${n.amber} amber</span>`:"")
+        :n.amber?`<span style="color:var(--amber)">${n.amber} amber</span>`
+        :n.unknown===total?`<span style="color:var(--dim)">${total} unknown</span>`:`<span style="color:var(--green)">all clear</span>`,
+      sub:reds.length?reds.map(esc).join(" · "):`${total} tracked hinge${total===1?"":"s"}`}
+    :{txt:`<span style="color:var(--dim)">none tracked</span>`,sub:"no hinges — nothing here says what would change your mind"};
+  const nd=ddNextDate(dd,todayET);
+  const when=nd?{txt:`${nd.d===0?"TODAY":nd.d+"d"}`,sub:`${esc(nd.label)} · ${esc(nd.date)}`}
+    :{txt:`<span style="color:var(--dim)">—</span>`,sub:"no future dated event on this payload"};
+  const p=posOf(x);
+  const own=p?{txt:`${isFinite(Number(p.pct))?`${Number(p.pct)>CAP_PCT?`<span style="color:var(--red)">${p.pct}%</span>`:`${p.pct}%`} of NAV`:money(p.mv)}`,
+      sub:`${p.sh??"?"} sh${p.mv!=null?` · ${money(p.mv)}`:""} · ${posChip(p)}`}
+    :{txt:`<span style="color:var(--dim)">—</span>`,sub:"no measured position — not synced, which is not the same as not held"};
+  const cell=(k,v)=>`<div class="dd-a"><div class="dd-ak">${k}</div><div class="dd-av">${v.txt}</div><div class="dd-as">${v.sub}</div></div>`;
+  return `<div class="dd-answer">${cell("What it's worth",w)}${cell("What changes my mind",mind)}`+
+    `${cell("When",when)}${cell("What I own",own)}</div>`;
+}
 function renderDeepDive(sym){
   const x=find(sym);const dv=document.getElementById("deepView");
   if(!x||!x.deepDive){dv.innerHTML='<div class="empty">no payload</div>';return;}
@@ -1711,11 +1809,10 @@ function renderDeepDive(sym){
       <div class="dd-kv"><div class="k">2 · margins</div><div>${esc(pj.margins.path)} — ${esc(pj.margins.why)}</div></div>
       <div class="dd-kv"><div class="k">3 · multiple</div><div>${esc(pj.multiple.value)}× ${esc(pj.multiple.basis||"")}</div></div>
       <div style="margin-top:6px;font-size:11.5px">${projLine(pj)}</div></div>`;}
-  h+=ddPtSec(dd.pt_ladder);
-  h+=ddPtModelSec(dd.pt_model,dd,x.sym);
-  h+=ddPtConsensusSec(dd.pt_consensus);
-  h+=ddConsensusSec(dd.consensus);
-  h+=ddGatesSec(dd.gates);
+  // FEAT-TT-DDFOCUS (v3.31): the four answers, above everything. This tab used to open ~20
+  // sections at full size — the pre-v3.29 board one level down. The reader arrives with the
+  // same four questions every time, so they are answered first and the corpus goes below.
+  h+=ddAnswerBlock(x,dd,todayET);
   /* v3.25: hinges COLLAPSED by default. Every ranked name now carries them, and rendering
      11 open lists would bury the ladder each tab exists to show. The collapse is only safe
      because the summary carries the SIGNAL: a per-state tally, coloured by the WORST state
@@ -1737,41 +1834,50 @@ function renderDeepDive(sym){
       dd.hinges.map(g=>`<div class="dd-hinge">${dot[["green","amber","red"].includes(g.state)?g.state:"unknown"]}<b>${esc(g.label||g.key||g.id)}</b>`+
         `${(g.note||g.role)?`<span style="color:var(--slate)">— ${esc(g.note||g.role)}</span>`:""}${g.asOf?`<span style="color:var(--dim);font-size:9px">as of ${esc(g.asOf)}</span>`:""}</div>`).join("")+`</details>`;
   }
-  h+=ddKvSec("Leading indicators",dd.leading_indicators);
-  h+=ddKvSec("Certification probabilities",dd.cert_probabilities);
-  h+=ddKvSec("Utilization underwriting",dd.utilization_underwriting);
-  h+=ddKvSec("Capital",dd.capital);
-  h+=ddGridSec(dd.dilution_grid);
-  h+=ddKvSec("Fleet-vs-burn engine — locked inputs + anchors",dd.engine);
-  h+=ddKvSec("2040 PT",dd.pt_2040);
-  h+=ddKillSec(dd.kill_combination);
-  if(Array.isArray(dd.key_dates)&&dd.key_dates.length){
-    h+=`<div class="dd-sec"><div class="lbl">Key dates</div>`+
-      dd.key_dates.map(k=>{const past=String(k.date)<todayET;
+  // ── the corpus, grouped and collapsed. Same rule as the board drawers: a summary must
+  //    carry enough signal that closing the drawer never hides something that matters.
+  const kdHtml=Array.isArray(dd.key_dates)&&dd.key_dates.length
+    ? dd.key_dates.map(k=>{const past=String(k.date)<todayET;
         const dl=Math.round((Date.parse(k.date+"T12:00:00Z")-Date.parse(todayET+"T12:00:00Z"))/86400000);
         return `<div class="dd-kv"><div class="k">${esc(k.date)}</div><div>${esc(k.label||k.event)} `+
           (past?`<span class="bad2" style="color:var(--red);font-size:10px">passed — re-confirm</span>`
-               :`<span style="color:var(--dim);font-size:10px">in ${dl}d</span>`)+`</div></div>`;}).join("")+`</div>`;
-  }
-  h+=ddKvSec("Position & overlay",dd.position);
-  h+=ddKvSec("Model anchors",dd.model_anchors);
-  h+=ddKvSec("Conditional rules",dd.conditional_rules);
-  if(dd.linked_exposure)
-    h+=`<div class="dd-sec"><div class="lbl">Linked exposure</div><div style="color:var(--amber);font-size:11.5px">⛓ ${ddVal(dd.linked_exposure)}</div></div>`;
-  h+=ddKvSec("Status flags",dd.status_flags);
-  if(dd.tape)h+=ddKvSec(`Tape — as of ${ddDate(dd)} · NOT live`,dd.tape);
-  h+=ddListSec("Capital disclosure watchlist (unlocks)",dd.watchlist_unlocks);
-  h+=ddListSec("Hedges",dd.hedges);
-  h+=ddListSec("Standing rules (must survive every port)",dd.rules);
-  h+=ddListSec("Open items",dd.open_items);
-  h+=ddKvSec("Telemetry",dd.telemetry);
-  h+=ddDotsSec(x);
-  Object.keys(dd).filter(k=>!DD_HANDLED.has(k)).forEach(k=>{
-    const v=dd[k];
-    h+=(v&&typeof v==="object"&&!Array.isArray(v))?ddKvSec(k,v)
-      :Array.isArray(v)?ddListSec(k,v)
-      :`<div class="dd-sec"><div class="lbl">${esc(k)}</div><div style="font-size:11.5px">${esc(v)}</div></div>`;
-  });
+               :`<span style="color:var(--dim);font-size:10px">in ${dl}d</span>`)+`</div></div>`;}).join("")
+    : "";
+  h+=ddDrawer("val",ddValSummary(dd,x),
+    ddPtModelSec(dd.pt_model,dd,x.sym)+ddPtSec(dd.pt_ladder)+ddPtConsensusSec(dd.pt_consensus)+
+    ddConsensusSec(dd.consensus)+ddProjSec(x));
+  h+=ddDrawer("thesis",ddThesisSummary(dd),
+    ddGatesSec(dd.gates)+ddKillSec(dd.kill_combination)+
+    ddListSec("Standing rules (must survive every port)",dd.rules)+
+    ddKvSec("Conditional rules",dd.conditional_rules)+ddKvSec("Status flags",dd.status_flags)+
+    ddListSec("Open items",dd.open_items));
+  h+=ddDrawer("dates",`KEY DATES${(()=>{const n=ddNextDate(dd,todayET);
+    return n?` · next ${esc(n.label)} in ${n.d}d`:` · <span style="color:var(--dim)">none dated</span>`;})()}`,kdHtml);
+  h+=ddDrawer("cap",`CAPITAL &amp; EXPOSURE`+(dd.linked_exposure?` · <span style="color:var(--amber)">linked exposure</span>`:""),
+    ddKvSec("Capital",dd.capital)+ddGridSec(dd.dilution_grid)+
+    ddListSec("Capital disclosure watchlist (unlocks)",dd.watchlist_unlocks)+
+    ddListSec("Hedges",dd.hedges)+ddKvSec("Position &amp; overlay",dd.position)+
+    (dd.linked_exposure?`<div class="dd-sec"><div class="lbl">Linked exposure</div><div style="color:var(--amber);font-size:11.5px">⛓ ${ddVal(dd.linked_exposure)}</div></div>`:""));
+  h+=ddDrawer("track",`TRACKING &amp; MODEL`,
+    ddKvSec("Leading indicators",dd.leading_indicators)+
+    ddKvSec("Certification probabilities",dd.cert_probabilities)+
+    ddKvSec("Utilization underwriting",dd.utilization_underwriting)+
+    ddKvSec("Fleet-vs-burn engine — locked inputs + anchors",dd.engine)+
+    ddKvSec("2040 PT",dd.pt_2040)+ddKvSec("Model anchors",dd.model_anchors)+
+    ddKvSec("Telemetry",dd.telemetry)+
+    (dd.tape?ddKvSec(`Tape — as of ${ddDate(dd)} · NOT live`,dd.tape):""));
+  // Dots stay reachable in one tap but keep their own drawer: capture is a daily act.
+  const dotsN=Array.isArray(x.dots)?x.dots.filter(d=>(d.state||"new")==="new").length:0;
+  h+=ddDrawer("dots",`DOTS${dotsN?` · <span style="color:var(--amber)">${dotsN} new</span>`:` · ${(x.dots||[]).length} captured`}`,ddDotsSec(x),dotsN>0);
+  // Unknown keys still render — what is stored is never invisible. They are NAMED in the
+  // summary so an unrecognised payload section can't hide behind a generic label.
+  const unknown=Object.keys(dd).filter(k=>!DD_HANDLED.has(k));
+  if(unknown.length)
+    h+=ddDrawer("raw",`OTHER STORED FIELDS · ${unknown.map(esc).join(", ")}`,
+      unknown.map(k=>{const v=dd[k];
+        return (v&&typeof v==="object"&&!Array.isArray(v))?ddKvSec(k,v)
+          :Array.isArray(v)?ddListSec(k,v)
+          :`<div class="dd-sec"><div class="lbl">${esc(k)}</div><div style="font-size:11.5px">${esc(v)}</div></div>`;}).join(""));
   h+=`<div class="dd-sec" style="display:flex;gap:8px;flex-wrap:wrap">
     <button class="act" onclick="openCard('${esc(x.sym)}')">OPEN TT CARD</button>
     <button class="act" onclick="openDeepDive('${esc(x.sym)}')">✎ EDIT PAYLOAD</button></div>`;
