@@ -378,10 +378,6 @@ export function validateBook(body) {
     if (typeof (e.note ?? "") !== "string" || (e.note || "").length > 500) return "bad note for " + e.sym;
     if (e.lastRun !== undefined && !(typeof e.lastRun === "string" && /^\d{4}-\d{2}-\d{2}$/.test(e.lastRun)))
       return "bad lastRun for " + e.sym;
-    if (e.pos !== undefined && e.pos !== null) {
-      const pe = validatePos(e.pos);
-      if (pe) return e.sym + " pos: " + pe;
-    }
   }
   for (const s of cut) if (typeof s !== "string" || s.length > 12) return "bad cut entry";
   if (body.board !== undefined && body.board !== null) {

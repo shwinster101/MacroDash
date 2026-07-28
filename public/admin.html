@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <!-- AUDIT: kept in sync with package.json by test/smoke.mjs. admin.html is a Vite
      public/ passthrough, so it cannot receive __APP_VERSION__ — the guard is the fix. -->
-<title>TT TICKER TERMINAL v3.33.0</title>
+<title>TT TICKER TERMINAL v3.34.0</title>
 <style>
   :root{
     --bg:#05070a; --panel:#0a0f16; --panel2:#0d141d; --line:#16202c;
@@ -207,7 +207,7 @@
 <body>
 <div class="wrap">
   <header>
-    <div class="brand">FINANCE&nbsp;BRO.AI // TT&nbsp;TICKER&nbsp;TERMINAL <small>v3.33.0 · single-pass deep-dive orchestrator</small></div>
+    <div class="brand">FINANCE&nbsp;BRO.AI // TT&nbsp;TICKER&nbsp;TERMINAL <small>v3.34.0 · single-pass deep-dive orchestrator</small></div>
     <div class="statusline">
       <span>BOOK: <b id="bookStamp">loading…</b></span>
       <span>AUTH: <b id="sessState">…</b></span>
@@ -373,6 +373,10 @@ let CUT=[];
    Lives in the same KV document as the book — never the repo — and renders NOTHING when
    absent, so a terminal with no session loaded looks exactly as it did before. */
 let BOARD={};
+/* FEAT-TT-POSSTORE (v3.34): measured pos facts live in their OWN KV document now
+   (functions/api/positions.js, tt:pos:v1), keyed by sym — never in the book, and never
+   seeded here (same invariant as SEED/BOARD: real position data has no home in the repo). */
+let POSITIONS={};
 
 /* TT CARD schema — the fixed DEEP-mode output lines (populated by a live TT run) */
 const CARD_FIELDS=[
@@ -968,17 +972,12 @@ const POS_STALE_D=2;       // a size older than this spans a session and can mis
 // deep-dive cell had no check at all. One constant, used by both, so the board and the tab
 // can never disagree about whether the mark under a % is trustworthy. >4d spans a weekend.
 const PX_STALE_D=4;
-function validateSyncPos(p){
-  if(!p||typeof p!=="object"||Array.isArray(p))return "pos must be an object";
-  if(!/^\d{4}-\d{2}-\d{2}([T ]\d{2}:\d{2}(:\d{2})?(\.\d+)?Z?)?$/.test(String(p.at||"")))return "pos.at (ISO date/time) is required";
-  if(typeof p.src!=="string"||!p.src)return "pos.src is required — a measured fact must name where it came from";
-  const band=(k,lo,hi)=>{if(p[k]===undefined||p[k]===null)return null;const v=Number(p[k]);
-    return !isFinite(v)?`pos.${k} must be a number`:(v<lo||v>hi)?`pos.${k} out of band (${lo}..${hi}): ${p[k]}`:null;};
-  for(const e of [band("sh",-1e9,1e9),band("mv",-1e12,1e12),band("pct",0,100),band("cb",-1e12,1e12),band("upl_pct",-100,1e5)])
-    if(e)return e;
-  return null;
-}
-function posOf(x){const p=x&&x.pos;return p&&typeof p==="object"?p:null;}
+/* FEAT-TT-POSSTORE (v3.34): pos moved OUT of the book document into its own store
+   (functions/api/positions.js, tt:pos:v1) — three sync passes hit the same 64KB book
+   ceiling trying to fit position data alongside everything else. posOf() is the single
+   choke point every consumer already went through, so the store move is invisible to
+   every caller here except this one line. */
+function posOf(x){const p=POSITIONS[x&&x.sym];return p&&typeof p==="object"?p:null;}
 function posAge(p){return ageDays(String(p&&p.at||"").slice(0,10));}
 /* The provenance chip a measured number carries. Same fail-closed rule as everywhere else:
    undated is the worst state, never the freshest. */
@@ -2186,6 +2185,21 @@ async function loadQuotes(){
   }catch(_e){/* stamped ref_px remains in force — never break the board on a quote feed */}
 }
 
+/* FEAT-TT-POSSTORE (v3.34): the whole positions map, one GET at boot — everything that
+   reads posOf() (caps, clusters, reconcile, TODAY, the circuit) needs the WHOLE book's
+   positions at once, so this fetches the map, not one sym at a time. Fetch failure is
+   silent by design, same as loadQuotes: the board degrades to "no positions known" (every
+   posOf() reads null, chips show no weight) rather than breaking anything. */
+async function loadPositions(){
+  try{
+    const r=await fetch("/api/positions");
+    if(!r.ok)return;
+    const d=await r.json();
+    POSITIONS=(d&&typeof d.positions==="object"&&!Array.isArray(d.positions))?d.positions:{};
+    render();
+  }catch(_e){/* POSITIONS stays {} — posOf() reads null for everyone, never stale data */}
+}
+
 /* ═══════════ THE BELIEF LEDGER (FEAT-TT-LEDGER v3.32) ═══════════ */
 /* Every other field in this book overwrites in place — tier, projection, hinge state, all
    replaced silently on the next save. This is the one place the terminal remembers what
@@ -3021,7 +3035,7 @@ if(window.innerWidth<480)search.placeholder="ticker · HELP · TIER · ADD";
    v3.24: quotes chase the book (they need BOOK populated to know which symbols to ask
    for) and are equally non-blocking — the board renders on stamped marks first, then
    upgrades to live prices if and when they arrive. */
-loadBook().then(loadQuotes);
+loadBook().then(()=>{loadQuotes();loadPositions();});
 loadRegime();
 </script>
 </body>

@@ -121,7 +121,7 @@ worker/                 SEPARATE Cloudflare Worker (not part of Pages)
   wrangler.toml         Worker config: PULSE_CACHE binding + cron triggers (UTC).
 
 test/
-  smoke.mjs             No-network smoke test: 470 assertions over mergeLiveOverMock
+  smoke.mjs             No-network smoke test: 481 assertions over mergeLiveOverMock
                         + SOURCES-path resolution against the real MOCK_DATA + the
                         5-Whys engine + DEC-31 guards + the TT band table (DEC-33)
                         + the market-holiday calendar (sessions + staleness).
@@ -501,6 +501,28 @@ Jan-anchor shipped; see `snapshot.js` ~318–328), `spyMa100`, `spyMa200`, and a
   book chip and the upside-rank pick — same-direction moves are explicitly *not* the signal
   (that's just the market agreeing); only the split is. This is the CRDO read from the 7/28
   handoff, machine-detected across the whole book instead of caught by hand on one name.
+- **FEAT-TT-POSSTORE (v3.34) — `pos` gets its own KV document.** Three separate broker-sync
+  passes hit the SAME wall: `pos` (FEAT-TT-POS, v3.30) rode inside the 64KB book document
+  alongside tiers, theses, PT models, hinges, projections and dots for 30+ names, so writing
+  position data for the names still missing it meant trimming unrelated fields just to fit —
+  the same squeeze, repeatedly, on a document that keeps growing for reasons that have nothing
+  to do with positions. **`functions/api/positions.js`** (KV key `tt:pos:v1`, `{asOf, positions:
+  {sym: pos}}`) gives it the same treatment the belief ledger already proved for this exact
+  shape of problem. PIN-gated like `/api/tt`. **PUT is merge-only** (`{updates: {sym: pos|null}}`)
+  — a sync that only touched 6 names must never be able to blank the other 25; `{sym: null}` is
+  the explicit removal path for a fully-exited name. Each update is still validated by the same
+  `validatePos` (exported from `tt.js`, unchanged) — the bands didn't move, only the storage did.
+  A one-time idempotent **`GET /api/positions?migrate=1`** pulls any `pos` still embedded in the
+  book (pre-v3.34 syncs) into the new store, snapshots the book first (same first-write-of-the-
+  day restore point `tt.js`'s own PUT keeps), then strips `pos` from those entries and re-saves
+  the book to reclaim the bytes that motivated the split; a no-op once nothing embedded remains.
+  `validateBook` no longer inspects `pos` at all — a stray `pos` key on an old cached client now
+  rides the ordinary unknown-key passthrough instead of being validated in place. Client-side,
+  `posOf(x)` — the single choke point every consumer (caps, clusters, reconcile, TODAY, the
+  circuit) already went through — now reads a `POSITIONS` map fetched once at boot instead of
+  `x.pos`, so the store move is invisible to every renderer except that one line. Same invariant
+  as the book and the ledger: real position data has no home in this repo, and `POSITIONS`
+  ships empty.
 - **Deferred:** stored fundamentals + Robinhood sync — now unblocked by the `x-tt-pin` header
   (v3.9): a chat-side daily review can PUT `status_flags`/`ref_px` into the deepDive payloads and
   stamp `lastRun`. When built, store the *triage* shape (`{at, px}` → "% moved since your last TT
@@ -567,7 +589,7 @@ npm run dev        # Vite dev server (mock unless VITE_DATA_MODE=live in .env)
 npm run build      # → dist/  (what Pages runs)
 npm run preview    # serve the built dist/
 
-node test/smoke.mjs   # 470-assertion no-network smoke test (needs Node ≥17)
+node test/smoke.mjs   # 481-assertion no-network smoke test (needs Node ≥17)
 npm run test:ui       # browser render test for admin.html (skips if no Chromium)
 
 # Cron Worker (separate deploy):

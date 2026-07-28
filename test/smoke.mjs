@@ -603,7 +603,7 @@ ok("livepx: each pick shows whether it used a live or stamped price",
 ok("livepx: footer counts live vs stamped rather than implying all are current",
   adminSrc.includes("live / ") && adminSrc.includes("all prices are stamped marks, not live"));
 ok("livepx: quote fetch is non-blocking and failure leaves the board unchanged",
-  adminSrc.includes("loadBook().then(loadQuotes)") && adminSrc.includes("never break the board on a quote feed"));
+  adminSrc.includes("loadBook().then(()=>{loadQuotes();loadPositions();});") && adminSrc.includes("never break the board on a quote feed"));
 
 // ---- 9. market calendar — holidays across the honesty stack ---------------
 // The time-judges (isStale, marketSession/etSession, looksBehind) share ONE
@@ -835,6 +835,9 @@ ok("today: quotes arriving re-render the whole board, not just the upside widget
 // ---- 12. FEAT-TT-POS (v3.30) — measured facts ------------------------------
 // Everything else in the book is ASSERTED and aged by lastRun. `pos` is the first MEASURED
 // class: it comes from the broker, carries its own timestamp and source, and is never typed.
+// FEAT-TT-POSSTORE (v3.34): `pos` itself now lives in its own KV document
+// (functions/api/positions.js) rather than riding the book — validatePos is unchanged and
+// still the shared validator, just called from a different write path now (see section [16]).
 console.log("\n[12] FEAT-TT-POS — measured positions, caps and reconciliation");
 const okPos = (extra = {}) => ({ at: "2026-07-28T14:32:00Z", src: "robinhood", ...extra });
 const badP = (p) => typeof validatePos(p) === "string";
@@ -855,9 +858,9 @@ ok("pos: option legs are validated (side, kind, positive contract count)",
   badP(okPos({ opt: [{ k: "call", side: "short", n: 0 }] })) &&
   badP(okPos({ opt: [{ k: "swap", side: "short", n: 1 }] })) &&
   validatePos(okPos({ opt: [{ k: "call", side: "short", n: 3, exp: "2028-01-21" }] })) === null);
-ok("pos: rides validateBook per entry, and a bad one fails the whole PUT",
+ok("pos: FEAT-TT-POSSTORE moved it OUT of the book — validateBook no longer inspects it at all, even a bad one rides the ordinary unknown-key passthrough",
   validateBook({ book: [{ sym: "AAA", tier: "S", lens: "AI", pos: okPos({ sh: 10 }) }], cut: [] }) === null &&
-  typeof validateBook({ book: [{ sym: "AAA", tier: "S", lens: "AI", pos: okPos({ pct: 900 }) }], cut: [] }) === "string");
+  validateBook({ book: [{ sym: "AAA", tier: "S", lens: "AI", pos: okPos({ pct: 900 }) }], cut: [] }) === null);
 ok("pos: a book with no positions at all still passes (nothing synced yet is normal)",
   validateBook({ book: [{ sym: "AAA", tier: "S", lens: "AI" }], cut: [] }) === null);
 ok("account: the leverage figure must say how it was computed",
@@ -867,12 +870,17 @@ ok("account: undated or sourceless is rejected like any measured block",
   typeof validateBoard({ as_of: "2026-07-28", account: { src: "rh", formula: "x" } }) === "string" &&
   typeof validateBoard({ as_of: "2026-07-28", account: { at: "2026-07-28", formula: "x" } }) === "string");
 // Client-side renderers (admin.html is buildless — pinned at source).
-ok("pos: lives at ENTRY level, not inside deepDive (a thesis paste must not wipe facts)",
-  adminSrc.includes("function posOf(x){const p=x&&x.pos;") &&
+ok("pos: lives in its own store, not inside deepDive (a thesis paste must not wipe facts)",
+  adminSrc.includes("function posOf(x){const p=POSITIONS[x&&x.sym];") &&
   ttSrc.includes("the payload editor replaces deepDive wholesale") &&
   !/deepDive\.pos|dd\.pos\b/.test(adminSrc));
 ok("pos: an absent position renders NOTHING — not a 0 or a dash that reads as not-held",
   adminSrc.includes("absent number; a dash or a 0 here would read"));
+ok("pos: fetched from its own endpoint at boot, alongside the book and quotes",
+  adminSrc.includes('const r=await fetch("/api/positions");') &&
+  adminSrc.includes("loadBook().then(()=>{loadQuotes();loadPositions();});"));
+ok("pos: a fetch failure leaves POSITIONS={} — every posOf() reads null, never stale data",
+  adminSrc.includes("POSITIONS stays {} — posOf() reads null for everyone, never stale data"));
 ok("pos: measured marks age like everything else, undated being the worst",
   adminSrc.includes("function posChip(p)") && adminSrc.includes('if(d===null)return `<span class="bad2">⚠ undated'));
 ok("caps: the single-name cap is a named constant, not prose",
@@ -1094,6 +1102,35 @@ ok("ledger.js: the recent-across-book mode is ONE list + N reads, not an N+1 cli
   ledgerSrc.includes('recent") === "1"'));
 ok("ledger.js: backfilled px uses ref_px only when dated near the entry, else stays null (never fabricated)",
   ledgerSrc.includes("Math.abs(d1 - d2) <= 2 * 86400000 ? rp.px : null"));
+
+// ---- 16. FEAT-TT-POSSTORE (v3.34) — positions split out of the book -------
+// Three sync passes hit the same 64KB book ceiling trying to add pos data for the names
+// still missing it. functions/api/positions.js gives pos its own KV document, same fix
+// shape as the ledger. Structural guards only — like ledger.js, no mock-KV handler tests.
+console.log("\n[16] functions/api/positions.js — pos split out of the book");
+const posSrc = readFileSync(new URL("../functions/api/positions.js", import.meta.url), "utf8");
+ok("positions.js: PIN-gated like /api/tt — position data is at least as sensitive as the book",
+  (posSrc.match(/const auth = await authorize\(request, env\);/g) || []).length === 2);
+ok("positions.js: reuses the shared validatePos from tt.js rather than redefining the bands",
+  posSrc.includes('import { authorize, validatePos } from "./tt.js";') && !/function validatePos/.test(posSrc));
+ok("positions.js: PUT is MERGE-ONLY — a partial sync must never blank the names it didn't touch",
+  posSrc.includes("const positions = { ...posMapFrom(stored) };") &&
+  posSrc.includes('body.updates must be an object'));
+ok("positions.js: {sym: null} is the explicit removal path for a fully-exited name",
+  posSrc.includes('if (updates[s] === null) delete positions[s];'));
+ok("positions.js: a bad pos in the update batch rejects the whole PUT before any KV write",
+  (() => {
+    const put = posSrc.slice(posSrc.indexOf("export async function onRequestPut"));
+    return put.indexOf("const err = validatePos(p);") < put.indexOf("await env.PULSE_CACHE.get(POS_KEY");
+  })());
+ok("positions.js: the one-time migration is idempotent — a second call is a documented no-op",
+  posSrc.includes('reason: "no embedded pos fields on the book — already migrated or nothing synced yet"'));
+ok("positions.js: migration snapshots the book before stripping it, same restore-point rule as tt.js",
+  posSrc.includes("SNAP_PREFIX + etDate()") && posSrc.includes("if (!existing) await env.PULSE_CACHE.put(snapKey, JSON.stringify(book)"));
+ok("positions.js: no method beyond GET/PUT is handled",
+  !/onRequestPost|onRequestDelete/.test(posSrc));
+ok("tt.js: validateBook no longer validates or even looks at e.pos — it moved out entirely",
+  !ttSrc.includes('e.sym + " pos: "'));
 
 // Client (admin.html) — pinned at source, same rule as every other buildless invariant here.
 ok("dd: the HISTORY drawer is lazy-loaded per sym and redraws only if still on that tab",

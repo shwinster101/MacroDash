@@ -72,7 +72,7 @@ const dd = (px, rev, eps, extra = {}) => ({
 const POS = (sh, mv, pct, extra = {}) => ({ sh, mv, pct, at: "2026-07-28T14:32:00Z", src: "test", ...extra });
 const BOOK = [
   { sym: "AAA", tier: "WATCH", lens: "AI", rank: "#1", lastRun: "2026-07-28", note: "queued",
-    pos: POS(30, 24000, 21.4), deepDive: dd(800, { 2027: 55, 2028: 62, 2029: 70 }, { 2027: 40, 2028: 46, 2029: 52 }, {
+    deepDive: dd(800, { 2027: 55, 2028: 62, 2029: 70 }, { 2027: 40, 2028: 46, 2029: 52 }, {
       // FEAT-TT-SPREAD (v3.33): pt_consensus on the SAME horizon (2028, fwd=2029) as the
       // pt_model row — lets the test confirm the "street $X vs mine $Y" confrontation.
       // "severe" is deliberately excluded from the street average (same dim rule as
@@ -80,13 +80,20 @@ const BOOK = [
       pt_consensus: { rows: { "2028": { severe: 300, base: 450, bull: 520 } } },
     }) },
   { sym: "BBB", tier: "WATCH", lens: "AI", rank: "#1 optics", lastRun: "2026-07-28", note: "queued too",
-    pos: POS(10, 6090, 5.1), deepDive: dd(609, { 2027: 9, 2028: 11 }, { 2027: 18, 2028: 22 }) },
-  { sym: "CCC", tier: "A", lens: "AI", lastRun: "2026-07-28", note: "held", pos: POS(700, 114100, 9.9) },
+    deepDive: dd(609, { 2027: 9, 2028: 11 }, { 2027: 18, 2028: 22 }) },
+  { sym: "CCC", tier: "A", lens: "AI", lastRun: "2026-07-28", note: "held" },
   { sym: "DDD", tier: "S", lens: "AI", lastRun: "2026-07-28", note: "no position measured" },
   { sym: "EEE", tier: "S", lens: "QC", lastRun: "2026-07-28", note: "diversifier" },
-  { sym: "FFF", tier: "B", lens: "SP", lastRun: "2026-05-01", note: "leveraged",
-    pos: POS(412, 30104, 4.2, { opt: [{ k: "call", side: "short", n: 3, strike: 50, exp: "2028-01-21" }] }) },
+  { sym: "FFF", tier: "B", lens: "SP", lastRun: "2026-05-01", note: "leveraged" },
 ];
+// FEAT-TT-POSSTORE (v3.34): pos now lives at /api/positions, not embedded in the book —
+// same fixture data, moved to its own map, keyed by sym.
+const POSITIONS = {
+  AAA: POS(30, 24000, 21.4),
+  BBB: POS(10, 6090, 5.1),
+  CCC: POS(700, 114100, 9.9),
+  FFF: POS(412, 30104, 4.2, { opt: [{ k: "call", side: "short", n: 3, strike: 50, exp: "2028-01-21" }] }),
+};
 const BOARD = {
   as_of: "2026-07-28", source: "synthetic fixture", verified: false,
   regime: { asserted: "PANIC", as_of: "2026-07-28", source: "fixture", verified: false },
@@ -131,6 +138,8 @@ const server = http.createServer((req, res) => {
       empty: false, auth: { mode: "pin", src: "kv", session_days_left: 29 } });
   if (url.pathname === "/readout.json")
     return json({ as_of: "2026-07-28T14:30:00Z", regime: { verdict: "HEADWIND" }, macro_flip: { armed: true } });
+  if (url.pathname === "/api/positions")
+    return json({ asOf: "2026-07-28", positions: POSITIONS });
   if (url.pathname === "/api/quotes")
     return json({ asOf: "2026-07-28", quotes: { AAA: { px: 800, chg: -11, at: "2026-07-28" },
       BBB: { px: 609, chg: -14.5, at: "2026-07-28" } } });
