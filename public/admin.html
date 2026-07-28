@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <!-- AUDIT: kept in sync with package.json by test/smoke.mjs. admin.html is a Vite
      public/ passthrough, so it cannot receive __APP_VERSION__ — the guard is the fix. -->
-<title>TT TICKER TERMINAL v3.31.1</title>
+<title>TT TICKER TERMINAL v3.33.0</title>
 <style>
   :root{
     --bg:#05070a; --panel:#0a0f16; --panel2:#0d141d; --line:#16202c;
@@ -114,6 +114,8 @@
   /* FEAT-TT-POS: measured weight. Deliberately dimmer than the day move — the move is what
      changed, the weight is what is. */
   .chip .wt{font-size:9px;color:var(--slate);letter-spacing:0}
+  /* FEAT-TT-SPREAD (v3.33): estimates-vs-price divergence — the automated CRDO pattern */
+  .chip .div,.pick .div{font-size:9px;font-weight:700;color:var(--amber);letter-spacing:0}
   /* FEAT-TT-DDFOCUS (v3.31): the four answers a name's tab exists to give */
   .dd-answer{display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin:12px 0 6px}
   @media(max-width:700px){.dd-answer{grid-template-columns:repeat(2,1fr)}}
@@ -205,7 +207,7 @@
 <body>
 <div class="wrap">
   <header>
-    <div class="brand">FINANCE&nbsp;BRO.AI // TT&nbsp;TICKER&nbsp;TERMINAL <small>v3.31.1 · single-pass deep-dive orchestrator</small></div>
+    <div class="brand">FINANCE&nbsp;BRO.AI // TT&nbsp;TICKER&nbsp;TERMINAL <small>v3.33.0 · single-pass deep-dive orchestrator</small></div>
     <div class="statusline">
       <span>BOOK: <b id="bookStamp">loading…</b></span>
       <span>AUTH: <b id="sessState">…</b></span>
@@ -272,6 +274,11 @@
           <div class="nd" id="decisionsLine" style="display:none"></div></details>
         <details class="drawer" id="dCirc" style="display:none"><summary id="sCirc">CIRCUIT &amp; REGIME</summary>
           <div class="nd" id="circuitLine" style="display:none"></div></details>
+        <!-- FEAT-TT-LEDGER (v3.32): tier/rank/composite changes across the whole book,
+             ranked by since-move — "was I right?" as a standing board strip, not something
+             you have to remember to go check per name. -->
+        <details class="drawer" id="dScore"><summary id="sScore">SCORECARD</summary>
+          <div class="nd" id="scorecardLine"></div></details>
 
         <h2 style="margin-top:14px">The Book &nbsp;·&nbsp; click any ticker to open its TT Card</h2>
         <div class="cov" id="coverage"></div>
@@ -1275,6 +1282,7 @@ function renderDrawers(){
 /* ═══════════ RENDER BOARD ═══════════ */
 function render(){
   const b=document.getElementById("board");b.innerHTML="";
+  const DIVERGENCE=computeDivergence();   // FEAT-TT-SPREAD: computed once, read by chips + upside rank
   TIER_ORDER.forEach(t=>{
     const items=byTier(t);
     const sec=document.createElement("div");
@@ -1300,7 +1308,8 @@ function render(){
       c.innerHTML=`<span class="sym">${x.sym}</span>
         <span class="lens lens-${x.lens}">${x.lens}</span>`+
         (chg!==null?`<span class="chg" style="color:${chg>=0?"var(--green)":"var(--red)"}">${chg>=0?"+":""}${chg}%</span>`:"")+
-        (wt!==null?`<span class="wt"${over?' style="color:var(--red);font-weight:700"':""}>${wt}%${over?"!":""}</span>`:"");
+        (wt!==null?`<span class="wt"${over?' style="color:var(--red);font-weight:700"':""}>${wt}%${over?"!":""}</span>`:"")+
+        divergenceChip(x.sym,DIVERGENCE[x.sym]);
       const runTxt=rs.k==="never"?"TT run: NEVER RUN":`TT run ${x.lastRun} · ${rs.days}d ago`;
       c.title=[q?`$${q.px}${chg!==null?` (${chg>=0?"+":""}${chg}% today)`:""}`:null,
         p?`held ${p.sh??"?"} sh${p.mv!=null?` · ${money(p.mv)}`:""}${wt!==null?` · ${wt}% of NAV`:""} (measured ${String(p.at).slice(0,10)})`:null,
@@ -1323,7 +1332,7 @@ function render(){
   renderBinaryCal();renderDecisions();renderCoverage();
   // v3.29: TODAY reads what the strips above computed (AGREE_PICK, LAST_RANK), so it can
   // never contradict them — one computation, rendered twice at different altitudes.
-  renderToday();renderChanged();renderDrawers();renderTabs();
+  renderToday();renderChanged();renderDrawers();renderScorecard();renderTabs();
 }
 
 /* ═══════════ DEEP-DIVE TABS (FEAT-TT-DD v3.12) ═══════════ */
@@ -1572,8 +1581,28 @@ function ptModelRows(dd){
     const prem=earnLens?fmt(pePrem*e)
       :(mult>0&&sh>0&&rev[fwd]!=null)?fmt((mult*rev[fwd]+nc)*1000/sh):null;
     const fl=(pe>0&&typeof e==="number")?(e>0?fmt(pe*e):"n/m"):null;
-    return {y,prem,fl,mult:earnLens?pePrem:mult,lens:earnLens?"P/E":"EV/S"};
+    // v3.33 FEAT-TT-SPREAD: carry the raw inputs a row was built from (sh/nc/revFwd/epsFwd)
+    // alongside the computed prem/fl. Nothing downstream of ptModelRows breaks — these are
+    // additive fields — but impliedMultiple() can now invert the SAME numbers the ladder
+    // used, so a spread can never quote a multiple the row above it would disagree with.
+    return {y,prem,fl,mult:earnLens?pePrem:mult,lens:earnLens?"P/E":"EV/S",
+      sh,nc,revFwd:rev[fwd],epsFwd:e};
   }).filter(r=>r.prem!==null||r.fl!==null);
+}
+/* FEAT-TT-SPREAD (v3.33): what multiple is the CURRENT price actually paying for, on the
+   same lens and the same row ptModelRows just computed. Inverts the row's own formula:
+     EV/S premium = (mult × revFwd + nc) × 1000 / sh   →  implied = (px×sh/1000 − nc) / revFwd
+     P/E  premium = mult × epsFwd                       →  implied = px / epsFwd
+   Returns null rather than guessing when a row's inputs don't support inversion (e.g. a
+   floor-only row with no premium multiple at all — there is nothing here to invert). */
+function impliedMultiple(t,px){
+  if(!isFinite(px)||px<=0)return null;
+  if(t.lens==="P/E"){
+    if(!(isFinite(t.epsFwd)&&t.epsFwd>0))return null;
+    return Math.round(px/t.epsFwd*10)/10;
+  }
+  if(!(isFinite(t.sh)&&t.sh>0&&isFinite(t.revFwd)&&t.revFwd!==0))return null;
+  return Math.round(((px*t.sh/1000)-(t.nc||0))/t.revFwd*100)/100;
 }
 /* v3.23 FEAT-TT-MULT: the floor multiple is an ASSUMPTION, so it belongs to the owner.
    18x (S&P average) is a sane default, not a law — a durable compounder may deserve 25x
@@ -1750,8 +1779,34 @@ function ddWorth(dd,sym){
   const substituted=HORIZON&&!rr.some(r=>r.y===HORIZON)?` · no ${esc(HORIZON)} rung — showing ${esc(t.y)}`:"";
   const pxAge=live?0:ageDays(stamp&&stamp.at);
   const pxFlag=(pxAge===null||pxAge>PX_STALE_D)?` · ⚠ mark ${pxAge===null?"undated":pxAge+"d old"}`:"";
+  // FEAT-TT-SPREAD (v3.33): the spread IS the thesis. What multiple is the market actually
+  // paying at this price, on the SAME row (never a second computation) — versus what you
+  // underwrite, and what % of your case the market already credits. A floor row has no
+  // premium multiple to invert against (the 18x floor isn't a market-implied number, it's
+  // your own conservative benchmark), so the spread only renders on premium rows.
+  let spread="";
+  if(!onFloor){
+    const imp=impliedMultiple(t,px);
+    if(imp!==null){
+      const credited=Math.round(px/tgt*1000)/10;
+      spread=` · market pays ${imp}${t.lens==="P/E"?"×":"× FY+1"} vs you ${t.mult}× · credits ${credited}% of your ${t.y} case`;
+    }
+  }
+  // Street vs mine: confront the SAME horizon year against pt_consensus (the consensus-
+  // derived ladder), averaging its non-bear/floor/severe columns — the same distinction
+  // ddPtConsensusSec already dims. Renders only when that year's row actually exists;
+  // never invents a street number the payload doesn't carry.
+  let street="";
+  const pcRow=dd.pt_consensus&&dd.pt_consensus.rows&&dd.pt_consensus.rows[t.y];
+  if(pcRow&&typeof pcRow==="object"){
+    const vals=Object.entries(pcRow).filter(([k,v])=>typeof v==="number"&&isFinite(v)&&!/floor|bear|severe/i.test(k)).map(([,v])=>v);
+    if(vals.length){
+      const avg=Math.round(vals.reduce((a,b)=>a+b,0)/vals.length);
+      street=` · street ~$${avg} vs mine $${tgt}`;
+    }
+  }
   return{txt:`$${tgt} ${t.y} · <span style="color:${up>=0?"var(--green)":"var(--red)"}">${up>=0?"+":""}${up}%</span>`,
-    sub:`${onFloor?"floor (18× FY+1 EPS)":"premium"} vs ${live?"live":"stamped"} $${px}${ann!==null?` · ${ann>=0?"+":""}${ann}%/yr`:""}${pxFlag}${substituted}`};
+    sub:`${onFloor?"floor (18× FY+1 EPS)":"premium"} vs ${live?"live":"stamped"} $${px}${ann!==null?` · ${ann>=0?"+":""}${ann}%/yr`:""}${pxFlag}${substituted}${spread}${street}`};
 }
 function ddNextDate(dd,todayET){
   const ks=(Array.isArray(dd.key_dates)?dd.key_dates:[])
@@ -1884,6 +1939,11 @@ function renderDeepDive(sym){
   // Dots stay reachable in one tap but keep their own drawer: capture is a daily act.
   const dotsN=Array.isArray(x.dots)?x.dots.filter(d=>(d.state||"new")==="new").length:0;
   h+=ddDrawer("dots",`DOTS${dotsN?` · <span style="color:var(--amber)">${dotsN} new</span>`:` · ${(x.dots||[]).length} captured`}`,ddDotsSec(x),dotsN>0);
+  // FEAT-TT-LEDGER (v3.32): the belief history for THIS name. Fetched lazily by
+  // ddHistorySec (which kicks off loadLedgerSym on a cache miss and redraws this tab when
+  // it lands) — never blocks the initial render, same rail as quotes/regime.
+  const hist=ddHistorySec(x.sym);
+  h+=ddDrawer("hist",hist.summary,hist.html);
   // Unknown keys still render — what is stored is never invisible. They are NAMED in the
   // summary so an unrecognised payload section can't hide behind a generic label.
   const unknown=Object.keys(dd).filter(k=>!DD_HANDLED.has(k));
@@ -2125,6 +2185,160 @@ async function loadQuotes(){
     render();   // chips, the upside rank and the TODAY delta all read LIVE_PX
   }catch(_e){/* stamped ref_px remains in force — never break the board on a quote feed */}
 }
+
+/* ═══════════ THE BELIEF LEDGER (FEAT-TT-LEDGER v3.32) ═══════════ */
+/* Every other field in this book overwrites in place — tier, projection, hinge state, all
+   replaced silently on the next save. This is the one place the terminal remembers what
+   you believed BEFORE: the server (functions/api/tt.js diffForLedger) notarizes every
+   belief change on each PUT, stamped with the price at that moment. Client-side this is a
+   pure READ — nothing here ever writes a ledger entry; that only happens as a side effect
+   of a normal book save. Fetched lazily (per-sym on tab open, recent-across-book once for
+   the scorecard) and cached for the session — never re-fetched on every render. */
+const LEDGER_CACHE={};      // sym -> entries[] once loaded; absent key = not yet fetched
+const LEDGER_INFLIGHT=new Set();
+let LEDGER_RECENT=null;     // recent cross-book tier/rank/comp entries, for the scorecard
+let LEDGER_RECENT_INFLIGHT=false;
+const LEDGER_KIND_LABEL={add:"ADDED",remove:"REMOVED",tier:"TIER",rank:"RANK",run:"TT RUN",
+  thesis:"THESIS",hinge:"HINGE",pt:"PT MODEL",proj:"PROJECTION",comp:"COMPOSITE",est:"ESTIMATE",cut:"CUT"};
+function ledgerChangeTxt(e){
+  switch(e.kind){
+    case "add":return `added to the book (${esc(e.to)})`;
+    case "remove":return `removed from the book (was ${esc(e.from)})`;
+    case "tier":case "rank":return `${esc(e.from??"—")} → ${esc(e.to??"—")}`;
+    case "run":return `stamped ${esc(e.to)}`;
+    case "thesis":return `${esc(e.from??"—")} → ${esc(e.to)}`;
+    case "hinge":return `${esc(e.field)}: ${esc(e.from)} → ${esc(e.to)}`;
+    case "pt":return e.field==="floor"?`floor multiple ${esc(e.from)}× → ${esc(e.to)}×`:"model revised";
+    case "proj":return e.field==="rev_3yr_B"?`3yr rev $${esc(e.from)}B → $${esc(e.to)}B`
+      :e.field==="multiple"?`target multiple ${esc(e.from)}× → ${esc(e.to)}×`
+      :`margins ${esc(e.from??"—")} → ${esc(e.to??"—")}`;
+    case "comp":return `${e.from??"—"} → ${e.to??"—"}`;
+    case "est":return `${esc(e.field)} ${esc(e.from)} → ${esc(e.to)}`;
+    case "cut":return `moved to CUT`;
+    default:return esc(String(e.to??""));
+  }
+}
+// The since-move: what happened to price between the entry's stamp and now. Absent
+// entry.px (historical backfill with no nearby ref_px) or absent live quote both render
+// nothing — a since-move number is only ever shown when both ends are real.
+function ledgerSince(e){
+  const live=LIVE_PX[e.sym];
+  if(e.px==null||!isFinite(e.px)||!live||!isFinite(live.px))return "";
+  const mv=Math.round((live.px/e.px-1)*1000)/10;
+  return ` <span class="scope" style="color:${mv>=0?"var(--green)":"var(--red)"}">now $${live.px} (${mv>=0?"+":""}${mv}%)</span>`;
+}
+function ledgerDateShort(t){
+  const d=String(t||"").slice(0,10);
+  const m=d.match(/^\d{4}-(\d{2})-(\d{2})$/);
+  return m?`${+m[1]}/${+m[2]}`:d;
+}
+async function loadLedgerSym(sym){
+  if(LEDGER_CACHE[sym]!==undefined||LEDGER_INFLIGHT.has(sym))return;
+  LEDGER_INFLIGHT.add(sym);
+  try{
+    const ctl=new AbortController();const t=setTimeout(()=>ctl.abort(),8000);
+    const r=await fetch("/api/ledger?sym="+encodeURIComponent(sym),{signal:ctl.signal});
+    clearTimeout(t);
+    if(!r.ok)return;
+    const d=await r.json();
+    LEDGER_CACHE[sym]=Array.isArray(d.entries)?d.entries:[];
+  }catch(_e){/* history stays "loading" this pass — never breaks the tab */}
+  finally{
+    LEDGER_INFLIGHT.delete(sym);
+    if(TAB===sym)renderDeepDive(sym);   // only redraw if still parked on this tab
+  }
+}
+async function loadLedgerRecent(){
+  if(LEDGER_RECENT!==null||LEDGER_RECENT_INFLIGHT)return;
+  LEDGER_RECENT_INFLIGHT=true;
+  try{
+    const ctl=new AbortController();const t=setTimeout(()=>ctl.abort(),8000);
+    const r=await fetch("/api/ledger?recent=1&days=90",{signal:ctl.signal});
+    clearTimeout(t);
+    if(!r.ok)return;
+    const d=await r.json();
+    LEDGER_RECENT=Array.isArray(d.entries)?d.entries:[];
+    render();   // chips' divergence flag, the upside rank, AND the scorecard all read this
+  }catch(_e){/* scorecard/divergence stay unavailable this pass, never break the board */}
+  finally{LEDGER_RECENT_INFLIGHT=false;}
+}
+/* FEAT-TT-SPREAD (v3.33): the divergence flag — "estimates up, price down" (or the reverse)
+   automated instead of relying on a human to notice, the way the 7/28 CRDO read had to be
+   spotted by hand. Reads the latest `est` ledger entry per sym: if the estimate moved one
+   way and price has since moved the OPPOSITE way by at least MOVE_PCT, that is the signal —
+   same-direction moves are just the market agreeing with the revision, not a divergence.
+   Needs both a ledger entry's own px AND a live quote; either missing renders nothing. */
+function computeDivergence(){
+  const out={};
+  if(!Array.isArray(LEDGER_RECENT))return out;
+  const bySym={};
+  LEDGER_RECENT.forEach(e=>{if(e.kind==="est")(bySym[e.sym]=bySym[e.sym]||[]).push(e);});
+  Object.keys(bySym).forEach(sym=>{
+    const latest=bySym[sym].sort((a,b)=>Date.parse(b.t)-Date.parse(a.t))[0];
+    if(!isFinite(latest.from)||!isFinite(latest.to)||latest.from===latest.to)return;
+    if(latest.px==null||!isFinite(latest.px))return;
+    const live=LIVE_PX[sym];if(!live||!isFinite(live.px))return;
+    const pxMove=Math.round((live.px/latest.px-1)*1000)/10;
+    if(Math.abs(pxMove)<MOVE_PCT)return;
+    const estDir=latest.to>latest.from?"up":"down",pxDir=pxMove>0?"up":"down";
+    if(estDir===pxDir)return;   // agreement is not the signal — only the split is
+    out[sym]={estDir,pxDir,field:latest.field,estFrom:latest.from,estTo:latest.to,
+      px:latest.px,pxMove,t:latest.t};
+  });
+  return out;
+}
+function divergenceChip(sym,d){
+  if(!d)return "";
+  const live=LIVE_PX[sym];
+  return `<span class="div" title="${esc(d.field)} ${esc(d.estFrom)}→${esc(d.estTo)} on ${esc(ledgerDateShort(d.t))} @ $${esc(d.px)}`+
+    `${live?` · now $${esc(live.px)} (${d.pxMove>=0?"+":""}${esc(d.pxMove)}%)`:""}">`+
+    `⚠ est${d.estDir==="up"?"↑":"↓"} px${d.pxDir==="up"?"↑":"↓"}</span>`;
+}
+/* Per-name HISTORY drawer on the deep-dive tab. */
+function ddHistorySec(sym){
+  const entries=LEDGER_CACHE[sym];
+  if(entries===undefined){loadLedgerSym(sym);return{summary:"HISTORY · loading…",html:`<div class="none">loading…</div>`};}
+  if(!entries.length)return{summary:"HISTORY · no belief changes recorded yet",
+    html:`<div class="none">no belief changes recorded for ${esc(sym)} yet — the ledger starts counting from the moment it shipped (plus a one-time backfill from the last 30 days of daily snapshots, where available).</div>`};
+  const sorted=[...entries].sort((a,b)=>Date.parse(b.t)-Date.parse(a.t));
+  const last=sorted[0];
+  const html=sorted.map(e=>`<div class="dd-kv"><div class="k">${esc(ledgerDateShort(e.t))}</div>`+
+    `<div><b>${esc(LEDGER_KIND_LABEL[e.kind]||e.kind.toUpperCase())}</b> ${ledgerChangeTxt(e)}`+
+    `${e.px!=null?` <span class="scope">@ $${esc(e.px)}</span>`:""}${ledgerSince(e)}</div></div>`).join("");
+  return{summary:`HISTORY · ${entries.length} change${entries.length===1?"":"s"} · last: ${esc(LEDGER_KIND_LABEL[last.kind]||last.kind)} ${ledgerChangeTxt(last)} (${esc(ledgerDateShort(last.t))})`,
+    html};
+}
+/* Board-level SCORECARD: tier/rank/comp changes across the WHOLE book, ranked by the size
+   of the since-move — the belief that moved the most since you changed your mind about it.
+   The server's ?recent=1 returns every kind in the window; SCORECARD is the one that reads
+   as a conviction record, so it filters to the three "I changed my mind" kinds — a run
+   stamp or a hinge flip isn't a scorecard-worthy call the way a tier/rank/score move is. */
+const SCORECARD_KINDS=new Set(["tier","rank","comp"]);
+function renderScorecard(){
+  const el=document.getElementById("scorecardLine");if(!el)return;
+  if(LEDGER_RECENT===null){loadLedgerRecent();
+    setDrawer("dScore","sScore","SCORECARD · loading…",true);
+    el.innerHTML=`<div class="none">loading…</div>`;return;}
+  const scored=LEDGER_RECENT.filter(e=>SCORECARD_KINDS.has(e.kind));
+  if(!scored.length){
+    setDrawer("dScore","sScore","SCORECARD · no belief changes recorded yet",true);
+    el.innerHTML=`<div class="none">no tier/rank/composite changes recorded in the last 90 days — the ledger starts counting from deploy (plus a one-time backfill where snapshots exist).</div>`;
+    return;
+  }
+  const withMove=scored.map(e=>{
+    const live=LIVE_PX[e.sym];
+    const mv=(e.px!=null&&isFinite(e.px)&&live&&isFinite(live.px))?Math.round((live.px/e.px-1)*1000)/10:null;
+    return{...e,mv};
+  }).sort((a,b)=>Math.abs(b.mv??0)-Math.abs(a.mv??0));
+  const biggest=withMove.find(e=>e.mv!==null);
+  setDrawer("dScore","sScore",`SCORECARD · ${scored.length} belief change${scored.length===1?"":"s"} 90d`+
+    (biggest?` · biggest since-move ${esc(biggest.sym)} ${biggest.mv>=0?"+":""}${biggest.mv}%`:""),true);
+  el.innerHTML=withMove.slice(0,20).map(e=>`<div class="none" style="color:var(--fg)">`+
+    `<span class="scope">${esc(ledgerDateShort(e.t))}</span> `+
+    `<span class="sym" style="cursor:pointer" onclick="openCard('${esc(e.sym)}')">${esc(e.sym)}</span> `+
+    `<b>${esc(LEDGER_KIND_LABEL[e.kind]||e.kind)}</b> ${ledgerChangeTxt(e)}`+
+    `${e.px!=null?` <span class="scope">@ $${esc(e.px)}</span>`:""}${ledgerSince(e)}</div>`).join("");
+}
 /* v3.27 FEAT-TT-AGREE: the two stories, married but never merged. The upside math answers
    "how big is the gap if estimates land"; a TT framework run answers "is the path across it
    real". Blending them into one number would average away the disagreement that IS the
@@ -2227,6 +2441,7 @@ function renderUpsideRank(){
   const shown=rows.slice(0,3);
   LAST_RANK=shown.map(r=>r.sym);   // FEAT-TT-SESSION: the cluster strip checks overlap with these
   const MEDAL=["🥇","🥈","🥉"];
+  const DIVERGENCE=computeDivergence();   // FEAT-TT-SPREAD
   const picks=shown.map((r,i)=>{
     const flag=r.rs.k==="never"?`<span class="bad2">○ no TT run on record</span>`
       :r.rs.k==="head"?`<span class="bad2">⏱ ${r.rs.days}d — re-run first</span>`
@@ -2246,7 +2461,7 @@ function renderUpsideRank(){
         const lab=r.tt.score!==null?r.tt.score.toFixed(1):r.tt.tier;
         const col=r.tt.tier==="C"?"var(--red)":(r.tt.score!==null&&r.tt.score>=7)||r.tt.tier==="S"||r.tt.tier==="A"?"var(--green)":"var(--amber)";
         return `<span style="color:${col};font-size:9.5px;font-weight:700">TT ${esc(lab)}</span>${r.redH?`<span class="bad2">● ${r.redH} red</span>`:""}`;
-      })()}${pxFlag}${flag}${r.live?`<span class="scope" style="color:var(--green)">live $${esc(r.px)}${r.chg!=null?` ${r.chg>=0?"+":""}${r.chg}%`:""}</span>`:`<span class="scope">stamped $${esc(r.px)}</span>`}</span>`;
+      })()}${divergenceChip(r.sym,DIVERGENCE[r.sym])}${pxFlag}${flag}${r.live?`<span class="scope" style="color:var(--green)">live $${esc(r.px)}${r.chg!=null?` ${r.chg>=0?"+":""}${r.chg}%`:""}</span>`:`<span class="scope">stamped $${esc(r.px)}</span>`}</span>`;
   }).join("");
   // AUDIT: silent truncation reads as "covered everything". State the denominator.
   const excluded=BOOK.length-rows.length;

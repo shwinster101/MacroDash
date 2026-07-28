@@ -12,7 +12,7 @@ import {
   bandSpyVs200d, bandVix, bandFearGreed, bandRs, bandTenYear, bandFedOdds,
   aggregateVerdict, computeMacroFlip, buildTtReadout, formatTtPaste,
 } from "../src/ttReadout.js";
-import { validateBook, validateBoard, validatePos, conflictCheck, authMode, lockoutState, recordFailure, parseCookie, hashPin, LOCK_TIERS } from "../functions/api/tt.js";
+import { validateBook, validateBoard, validatePos, conflictCheck, authMode, lockoutState, recordFailure, parseCookie, hashPin, LOCK_TIERS, diffForLedger } from "../functions/api/tt.js";
 import { plausible, applyBands, quorum, QUORUM_FIELDS, QUORUM_MIN, marketSession } from "../functions/api/snapshot.js";
 
 let pass = 0, fail = 0;
@@ -768,7 +768,7 @@ ok("today: every demoted strip keeps its element — nothing was deleted, only c
   ["nextDollar", "upsideRank", "clusterLine", "fundingLine", "binaryCal", "decisionsLine", "circuitLine"]
     .every((id) => adminSrc.includes(`id="${id}"`)));
 ok("today: each drawer is ONE tap (native details, no hidden second step)",
-  (adminSrc.match(/<details class="drawer" id="d/g) || []).length === 6 &&      // board strips
+  (adminSrc.match(/<details class="drawer" id="d/g) || []).length === 7 &&      // board strips
   (adminSrc.match(/<details class="drawer"><summary>/g) || []).length === 3);   // reference sidebar
 ok("today: the reference sidebar collapses too — it is reference, not monitoring",
   !/<div class="panel"[^>]*>\s*<h2>Router/.test(adminSrc) &&
@@ -973,6 +973,150 @@ ok("dd: a pinned horizon with no rung is NAMED, not silently swapped for another
   adminSrc.includes("rung — showing ${esc(t.y)}"));
 ok("dd: the worth cell ages its own price mark, like the board does",
   adminSrc.includes("⚠ mark ${pxAge===null?\"undated\":pxAge+\"d old\"}"));
+
+// ---- 15. FEAT-TT-LEDGER (v3.32) — the belief ledger ------------------------
+// Every other field in the book overwrites in place. diffForLedger is the notary: pure,
+// no KV/network access (the caller stamps px afterward), so it's smoke-testable exactly
+// like validateBook/conflictCheck. It logs BELIEFS ONLY — the user's explicit call.
+console.log("\n[15] FEAT-TT-LEDGER — diffForLedger truth table + ledger.js read path");
+const led = (prev, next, prevCut = [], nextCut = []) => diffForLedger(prev, next, prevCut, nextCut, "2026-07-28T18:00:00Z", "1.1");
+const kindsOf = (entries) => entries.map((e) => e.kind).sort();
+
+ok("ledger: a brand-new name logs 'add' with its tier", (() => {
+  const out = led([], [{ sym: "NEW", tier: "WATCH", lens: "AI" }]);
+  return out.length === 1 && out[0].kind === "add" && out[0].sym === "NEW" && out[0].to === "WATCH";
+})());
+ok("ledger: a removed name logs 'remove' with its prior tier", (() => {
+  const out = led([{ sym: "OLD", tier: "S", lens: "AI" }], []);
+  return out.length === 1 && out[0].kind === "remove" && out[0].from === "S";
+})());
+ok("ledger: tier and rank changes both fire, independently", (() => {
+  const p = [{ sym: "X", tier: "S", lens: "AI", rank: "#1" }];
+  const n = [{ sym: "X", tier: "A", lens: "AI", rank: "#2" }];
+  return kindsOf(led(p, n)).join(",") === "rank,tier";
+})());
+ok("ledger: a new lastRun stamp logs 'run' with from/to dates", (() => {
+  const p = [{ sym: "X", tier: "S", lens: "AI", lastRun: "2026-07-01" }];
+  const n = [{ sym: "X", tier: "S", lens: "AI", lastRun: "2026-07-28" }];
+  const out = led(p, n);
+  return out.length === 1 && out[0].kind === "run" && out[0].from === "2026-07-01" && out[0].to === "2026-07-28";
+})());
+ok("ledger: thesis_version change logs 'thesis'", (() => {
+  const p = [{ sym: "X", tier: "S", lens: "AI", deepDive: { thesis_version: "v1.0", updated: "2026-07-01" } }];
+  const n = [{ sym: "X", tier: "S", lens: "AI", deepDive: { thesis_version: "v1.1", updated: "2026-07-28" } }];
+  const out = led(p, n);
+  return out.length === 1 && out[0].kind === "thesis" && out[0].from === "v1.0" && out[0].to === "v1.1";
+})());
+ok("ledger: hinges matched by identity (label||key||id), not array position", (() => {
+  const p = [{ sym: "X", tier: "S", lens: "AI", deepDive: { thesis_version: "v1", updated: "d",
+    hinges: [{ id: "h1", state: "green" }, { id: "h2", state: "amber" }] } }];
+  // reordered AND h1's state changed — a positional diff would misattribute the change to h2
+  const n = [{ sym: "X", tier: "S", lens: "AI", deepDive: { thesis_version: "v1", updated: "d",
+    hinges: [{ id: "h2", state: "amber" }, { id: "h1", state: "red" }] } }];
+  const out = led(p, n);
+  return out.length === 1 && out[0].kind === "hinge" && out[0].field === "h1" && out[0].from === "green" && out[0].to === "red";
+})());
+ok("ledger: the floor multiple edit logs a clean before/after number", (() => {
+  const p = [{ sym: "X", tier: "S", lens: "AI", deepDive: { thesis_version: "v1", updated: "d", pt_model: { pe_floor_multiple: 18 } } }];
+  const n = [{ sym: "X", tier: "S", lens: "AI", deepDive: { thesis_version: "v1", updated: "d", pt_model: { pe_floor_multiple: 20 } } }];
+  const out = led(p, n);
+  return out.length === 1 && out[0].kind === "pt" && out[0].field === "floor" && out[0].from === 18 && out[0].to === 20;
+})());
+ok("ledger: a non-floor pt_model edit still logs, generically (never silently dropped)", (() => {
+  const p = [{ sym: "X", tier: "S", lens: "AI", deepDive: { thesis_version: "v1", updated: "d", pt_model: { pe_floor_multiple: 18, ev_s_multiple: 5 } } }];
+  const n = [{ sym: "X", tier: "S", lens: "AI", deepDive: { thesis_version: "v1", updated: "d", pt_model: { pe_floor_multiple: 18, ev_s_multiple: 8 } } }];
+  const out = led(p, n);
+  return out.length === 1 && out[0].kind === "pt" && out[0].field === "model" && out[0].to === "revised";
+})());
+ok("ledger: the composite score is parsed from free text, decimal preferred over a bare integer", (() => {
+  const p = [{ sym: "X", tier: "S", lens: "AI", deepDive: { thesis_version: "v1", updated: "d", composite: { score: "R3-A: 7.2" } } }];
+  const n = [{ sym: "X", tier: "S", lens: "AI", deepDive: { thesis_version: "v1", updated: "d", composite: { score: "R3-A: 6.9" } } }];
+  const out = led(p, n);
+  return out.length === 1 && out[0].kind === "comp" && out[0].from === 7.2 && out[0].to === 6.9;
+})());
+ok("ledger: consensus estimate revisions log per (field,year), capped at 3 per sym per write", (() => {
+  const p = [{ sym: "X", tier: "S", lens: "AI", deepDive: { thesis_version: "v1", updated: "d",
+    consensus: { revenue_B: { 2027: 10, 2028: 20, 2029: 30, 2030: 40 }, eps: { 2028: 1 } } } }];
+  const n = [{ sym: "X", tier: "S", lens: "AI", deepDive: { thesis_version: "v1", updated: "d",
+    consensus: { revenue_B: { 2027: 11, 2028: 21, 2029: 31, 2030: 41 }, eps: { 2028: 2 } } } }];
+  const out = led(p, n);
+  return out.length === 3 && out.every((e) => e.kind === "est") && out[0].field === "rev:2027";
+})());
+ok("ledger: the projection answers log by the field that actually changed", (() => {
+  const p = [{ sym: "X", tier: "S", lens: "AI", projection: { rev_3yr: { value_B: 30 }, margins: { path: "expanding", why: "x" }, multiple: { value: 5 } } }];
+  const n = [{ sym: "X", tier: "S", lens: "AI", projection: { rev_3yr: { value_B: 35 }, margins: { path: "expanding", why: "x" }, multiple: { value: 5 } } }];
+  const out = led(p, n);
+  return out.length === 1 && out[0].kind === "proj" && out[0].field === "rev_3yr_B" && out[0].from === 30 && out[0].to === 35;
+})());
+ok("ledger: a cut addition logs, a cut removal does not", (() => {
+  const out1 = led([{ sym: "X", tier: "S", lens: "AI" }], [{ sym: "X", tier: "S", lens: "AI" }], [], ["ZZZ"]);
+  const out2 = led([{ sym: "X", tier: "S", lens: "AI" }], [{ sym: "X", tier: "S", lens: "AI" }], ["ZZZ"], []);
+  return out1.length === 1 && out1[0].kind === "cut" && out1[0].sym === "ZZZ" && out2.length === 0;
+})());
+// BELIEFS ONLY — the user's explicit call. pos/ref_px/dots/note are facts or scratch,
+// never conviction, and must never appear in the ledger.
+ok("ledger: pos, ref_px, dots and note changes log NOTHING", (() => {
+  const p = [{ sym: "X", tier: "S", lens: "AI", note: "old",
+    pos: { sh: 100, mv: 1000, at: "2026-07-28T00:00:00Z", src: "r" },
+    dots: [],
+    deepDive: { thesis_version: "v1", updated: "d", ref_px: { px: 100, at: "2026-07-27" } } }];
+  const n = [{ sym: "X", tier: "S", lens: "AI", note: "brand new text",
+    pos: { sh: 150, mv: 1500, at: "2026-07-28T12:00:00Z", src: "r" },
+    dots: [{ t: "2026-07-28", note: "x", state: "new" }],
+    deepDive: { thesis_version: "v1", updated: "d", ref_px: { px: 105, at: "2026-07-28" } } }];
+  return led(p, n).length === 0;
+})());
+ok("ledger: an unrelated PUT (nothing actually different) logs nothing at all",
+  led([{ sym: "X", tier: "S", lens: "AI" }], [{ sym: "X", tier: "S", lens: "AI" }]).length === 0);
+ok("ledger: every entry is stamped with the write's own timestamp and version (never self-attested)",
+  led([], [{ sym: "X", tier: "S", lens: "AI" }]).every((e) => e.t === "2026-07-28T18:00:00Z" && e.v === "1.1"));
+
+// The append-on-PUT wiring and the fire-and-forget guarantee (a ledger fault must never
+// fail the book write the user is waiting on).
+ok("tt.js: the ledger is appended AFTER the book write succeeds, inside a try/catch",
+  ttSrc.indexOf("await env.PULSE_CACHE.put(BOOK_KEY, JSON.stringify(stored));") <
+    ttSrc.indexOf("const entries = diffForLedger(") &&
+  ttSrc.includes("the book write already succeeded; the ledger is best-effort"));
+ok("tt.js: per-sym ledgers are capped, oldest pruned first",
+  ttSrc.includes("const LEDGER_CAP = 500;") && ttSrc.includes("cur = cur.slice(cur.length - LEDGER_CAP);"));
+
+// functions/api/ledger.js: the read path. No write handler exists here on purpose — belief
+// history is a byproduct of book edits, never a thing edited directly.
+const ledgerSrc = readFileSync(new URL("../functions/api/ledger.js", import.meta.url), "utf8");
+ok("ledger.js: PIN-gated like /api/tt — belief history is as private as the book",
+  (ledgerSrc.match(/const auth = await authorize\(request, env\);/g) || []).length === 1);
+ok("ledger.js: read-only by design — no PUT/POST handler exists",
+  !/onRequestPut|onRequestPost/.test(ledgerSrc));
+ok("ledger.js: the seed backfill is idempotent — a second call is a documented no-op",
+  ledgerSrc.includes('reason: "already seeded') );
+ok("ledger.js: the recent-across-book mode is ONE list + N reads, not an N+1 client round trip",
+  ledgerSrc.includes('list = await env.PULSE_CACHE.list({ prefix: LEDGER_PREFIX })') &&
+  ledgerSrc.includes('recent") === "1"'));
+ok("ledger.js: backfilled px uses ref_px only when dated near the entry, else stays null (never fabricated)",
+  ledgerSrc.includes("Math.abs(d1 - d2) <= 2 * 86400000 ? rp.px : null"));
+
+// Client (admin.html) — pinned at source, same rule as every other buildless invariant here.
+ok("dd: the HISTORY drawer is lazy-loaded per sym and redraws only if still on that tab",
+  adminSrc.includes("function loadLedgerSym(sym)") && adminSrc.includes('if(TAB===sym)renderDeepDive(sym);'));
+ok("dd: an absent since-move (no entry.px or no live quote) renders nothing, never a guess",
+  adminSrc.includes("function ledgerSince(e)") && adminSrc.includes("if(e.px==null||!isFinite(e.px)||!live||!isFinite(live.px))return \"\";"));
+ok("board: SCORECARD filters to tier/rank/comp — a run stamp or hinge flip isn't a conviction record",
+  adminSrc.includes('const SCORECARD_KINDS=new Set(["tier","rank","comp"]);'));
+ok("board: SCORECARD sorts by the SIZE of the since-move, not recency",
+  adminSrc.includes("Math.abs(b.mv??0)-Math.abs(a.mv??0)"));
+ok("divergence: same-direction moves are NOT the signal — only the split is",
+  adminSrc.includes("if(estDir===pxDir)return;") && adminSrc.includes("agreement is not the signal"));
+ok("divergence: needs MOVE_PCT worth of price move, reusing the existing threshold constant",
+  adminSrc.includes("if(Math.abs(pxMove)<MOVE_PCT)return;"));
+ok("spread: impliedMultiple inverts the SAME row ptModelRows computed (no second calculation)",
+  adminSrc.includes("function impliedMultiple(t,px)") &&
+  adminSrc.includes("sh,nc,revFwd:rev[fwd],epsFwd:e};"));
+ok("spread: a floor-only row (no premium multiple) renders no spread — nothing to invert",
+  adminSrc.includes("if(!onFloor){") && adminSrc.includes("const imp=impliedMultiple(t,px);"));
+ok("spread: street PT excludes bear/floor/severe columns, the same dim rule ddPtConsensusSec uses",
+  (adminSrc.match(/floor\|bear\|severe/g) || []).length >= 2);
+ok("spread: street PT renders only when that year's pt_consensus row actually exists",
+  adminSrc.includes("const pcRow=dd.pt_consensus&&dd.pt_consensus.rows&&dd.pt_consensus.rows[t.y];"));
 
 console.log(`\n=== SMOKE TEST: ${pass} passed, ${fail} failed ===`);
 process.exit(fail === 0 ? 0 : 1);

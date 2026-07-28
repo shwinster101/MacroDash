@@ -72,7 +72,13 @@ const dd = (px, rev, eps, extra = {}) => ({
 const POS = (sh, mv, pct, extra = {}) => ({ sh, mv, pct, at: "2026-07-28T14:32:00Z", src: "test", ...extra });
 const BOOK = [
   { sym: "AAA", tier: "WATCH", lens: "AI", rank: "#1", lastRun: "2026-07-28", note: "queued",
-    pos: POS(30, 24000, 21.4), deepDive: dd(800, { 2027: 55, 2028: 62 }, { 2027: 40, 2028: 46 }) },
+    pos: POS(30, 24000, 21.4), deepDive: dd(800, { 2027: 55, 2028: 62, 2029: 70 }, { 2027: 40, 2028: 46, 2029: 52 }, {
+      // FEAT-TT-SPREAD (v3.33): pt_consensus on the SAME horizon (2028, fwd=2029) as the
+      // pt_model row — lets the test confirm the "street $X vs mine $Y" confrontation.
+      // "severe" is deliberately excluded from the street average (same dim rule as
+      // ddPtConsensusSec: /floor|bear|severe/i), leaving base+bull -> avg 485.
+      pt_consensus: { rows: { "2028": { severe: 300, base: 450, bull: 520 } } },
+    }) },
   { sym: "BBB", tier: "WATCH", lens: "AI", rank: "#1 optics", lastRun: "2026-07-28", note: "queued too",
     pos: POS(10, 6090, 5.1), deepDive: dd(609, { 2027: 9, 2028: 11 }, { 2027: 18, 2028: 22 }) },
   { sym: "CCC", tier: "A", lens: "AI", lastRun: "2026-07-28", note: "held", pos: POS(700, 114100, 9.9) },
@@ -101,6 +107,22 @@ const BOARD = {
   binaries: [{ date: "2026-07-28", scope: "MACROEVT", label: "a print that is not a book ticker" }],
 };
 
+// FEAT-TT-LEDGER (v3.32) fixture: AAA carries per-name history (a tier flip + a hinge
+// flip); the cross-book "recent" feed carries the SCORECARD's tier entry (AAA, since-move
+// against its $800 live quote) and the divergence flag's est entry (BBB: estimate revised
+// UP while price has since fallen — the automated CRDO pattern: estimates up, price down).
+const LEDGER_AAA = [
+  { t: "2026-07-20T12:00:00Z", v: "1.0", kind: "run", sym: "AAA", field: null, from: null, to: "2026-07-20", px: 750 },
+  { t: "2026-07-25T12:00:00Z", v: "1.05", kind: "hinge", sym: "AAA", field: "demand", from: "green", to: "red", px: 780 },
+  { t: "2026-07-28T12:00:00Z", v: "1.1", kind: "tier", sym: "AAA", field: null, from: "A", to: "WATCH", px: 700 },
+];
+const LEDGER_RECENT_FIXTURE = [
+  ...LEDGER_AAA,
+  // BBB: FY2028 revenue estimate revised UP (9 -> 11) while price fell from $700 to the
+  // live $609 (~13% down) -- estimates up, price down, unresolved by the market yet.
+  { t: "2026-07-26T12:00:00Z", v: "1.08", kind: "est", sym: "BBB", field: "rev:2028", from: 9, to: 11, px: 700 },
+];
+
 const server = http.createServer((req, res) => {
   const url = new URL(req.url, "http://x");
   const json = (o) => { res.writeHead(200, { "content-type": "application/json" }); res.end(JSON.stringify(o)); };
@@ -112,6 +134,13 @@ const server = http.createServer((req, res) => {
   if (url.pathname === "/api/quotes")
     return json({ asOf: "2026-07-28", quotes: { AAA: { px: 800, chg: -11, at: "2026-07-28" },
       BBB: { px: 609, chg: -14.5, at: "2026-07-28" } } });
+  if (url.pathname === "/api/ledger") {
+    const p = url.searchParams;
+    if (p.get("recent") === "1") return json({ days: 90, entries: LEDGER_RECENT_FIXTURE });
+    if (p.get("sym") === "AAA") return json({ sym: "AAA", entries: LEDGER_AAA });
+    if (p.get("sym")) return json({ sym: p.get("sym"), entries: [] });
+    return json({ index: { AAA: { count: 3, last: "2026-07-28" }, BBB: { count: 1, last: "2026-07-26" } } });
+  }
   res.writeHead(200, { "content-type": "text/html" });
   res.end(readFileSync(ADMIN, "utf8"));
 });
@@ -158,6 +187,9 @@ ok("what-changed reports a first visit, never 'nothing changed'",
   /First visit on this device/.test(await page.locator("#changedPanel").textContent()));
 
 console.log("\n[render] the book as a monitoring surface");
+// The ledger's cross-book "recent" fetch lands asynchronously (loadLedgerRecent -> render());
+// give it a moment before reading chips/scorecard so the divergence flag has data to show.
+await page.waitForTimeout(500);
 const board = await page.locator("#board").innerText();
 ok("chips carry the live day move", /-11%/.test(board) && /-14\.5%/.test(board));
 ok("chips carry the measured weight", /21\.4%/.test(board) && /4\.2%/.test(board));
@@ -165,6 +197,30 @@ ok("an over-cap chip is flagged on the chip", /21\.4%!/.test(board));
 ok("a name with no measured position shows no weight", !/DDD[^\n]*%/.test(board));
 const cov = await txt(page, "coverage");
 ok("coverage counts measured positions alongside runs", /4\/6 measured/.test(cov));
+
+console.log("\n[render] FEAT-TT-SPREAD — the divergence flag (the automated CRDO pattern)");
+// Scope each check to that SYM's own chip element, not a text-offset window — chips sit
+// right beside each other in the DOM, so a loose "next 40 chars" window can read into a
+// neighbour's flag and false-positive.
+const chipText = async (sym) => (await page.locator(`.chip:has(.sym:text-is("${sym}"))`).innerText().catch(() => ""));
+ok("BBB's chip flags estimates-up/price-down (est revised up, price since fallen ~13%)",
+  /est↑ px↓/.test(await chipText("BBB")));
+ok("AAA's chip carries NO divergence flag (nothing in its ledger disagrees with price)",
+  !/est↑|est↓/.test(await chipText("AAA")));
+
+console.log("\n[render] FEAT-TT-LEDGER — the board SCORECARD");
+await page.evaluate(() => document.querySelectorAll("details.drawer").forEach((d) => (d.open = true)));
+await page.waitForTimeout(200);
+const score = await txt(page, "scorecardLine");
+// textContent, not innerText: drawer summaries render CSS text-transform:uppercase, so
+// innerText would report "1 BELIEF CHANGE" — assert against the raw (pre-transform) text.
+const sScoreTxt = await page.locator("#sScore").textContent();
+ok("scorecard summary carries the biggest since-move while the drawer could be closed",
+  /SCORECARD/i.test(sScoreTxt) && /1 belief change/i.test(sScoreTxt) && /AAA \+14\.3%/.test(sScoreTxt));
+ok("scorecard body shows the tier change with price-then and since-move",
+  /AAA/.test(score) && /TIER/.test(score) && /A → WATCH/.test(score) && /@ \$700/.test(score) && /\+14\.3%/.test(score));
+ok("scorecard excludes non-scorecard kinds (the hinge/run entries do not appear here)",
+  !/HINGE/.test(score) && !/TT RUN/.test(score));
 
 console.log("\n[render] exposure — clusters and reconciliation");
 await page.evaluate(() => document.querySelectorAll("details.drawer").forEach((d) => (d.open = true)));
@@ -193,6 +249,28 @@ ok("the four answers render above the corpus",
 ok("what-changes-my-mind names the red hinge", /1 red/.test(dv) && /demand/.test(dv));
 ok("what-I-own reads the measured position", /21\.4% of NAV/.test(dv) && /30 sh/.test(dv));
 ok("when carries the next dated event", /own print/.test(dv));
+
+console.log("\n[render] FEAT-TT-SPREAD — the worth cell confronts market vs mine");
+// AAA's 2028 row (fwd 2029, rev $70B, 8x, 1100M sh) prices $509; at the live $800 quote
+// that implies the market is paying ~12.57x FY+1 revenue against the 8x underwritten.
+ok("the spread inverts the SAME row the ladder computed (never a second number)",
+  /market pays 12\.57× FY\+1 vs you 8×/.test(dv));
+ok("the spread states what % of the case the market already credits",
+  /credits 157\.2% of your 2028 case/.test(dv));
+ok("street PT (pt_consensus, non-bear columns averaged) is confronted against mine",
+  /street ~\$485 vs mine \$509/.test(dv));
+
+console.log("\n[render] FEAT-TT-LEDGER — the per-name HISTORY drawer");
+// AAA's ledger carries 3 entries fetched lazily on tab open; wait for that fetch to land.
+await page.waitForTimeout(400);
+// textContent, not innerText: the summary is still CLOSED here (drawers don't force-open
+// on data arrival) AND its CSS text-transform:uppercase would rewrite "3 changes" to
+// "3 CHANGES" — the same closed-drawer / case-transform traps this file already documents.
+const histSummary = page.locator("#deepView details.drawer > summary", { hasText: "HISTORY" });
+const histSumTxt = await histSummary.textContent();
+ok("history summary carries the count and the latest change while it could be closed",
+  /HISTORY/i.test(histSumTxt) && /3 changes/i.test(histSumTxt) && /TIER A → WATCH/.test(histSumTxt));
+
 const ddSums = (await page.locator("#deepView details.drawer > summary").allInnerTexts()).join(" | ");
 ok("valuation summary carries the computed target", /VALUATION/i.test(ddSums));
 ok("thesis summary carries the failing gate count", /1\/2 GATES FAILING/i.test(ddSums));
@@ -202,6 +280,10 @@ await page.waitForTimeout(100);
 const dvOpen = (await page.locator("#deepView").innerText()).replace(/\s+/g, " ");
 ok("every stored section is reachable when expanded",
   /alpha/.test(dvOpen) && /runway_q/.test(dvOpen) && /kill/i.test(dvOpen) && /bookings/.test(dvOpen));
+ok("history timeline shows the tier flip with its price stamp and since-move (now expanded)",
+  /TIER A → WATCH[\s\S]{0,20}@ \$700[\s\S]{0,30}\+14\.3%/.test(dvOpen));
+ok("history timeline also carries the hinge flip and the run stamp (every kind, not just tier)",
+  /HINGE demand: green → red/.test(dvOpen) && /TT RUN stamped 2026-07-20/.test(dvOpen));
 await page.evaluate(() => switchTab("BOARD"));
 
 console.log("\n[render] handoff patch — merge, never replace");
