@@ -522,7 +522,7 @@ ok("upside: states the denominator — no silent truncation of the ranked set",
   adminSrc.includes("ranking ${rows.length} of ${BOOK.length} names") &&
   adminSrc.includes("NOT judged unattractive"));
 ok("upside: flags a stale/undated price mark (a stale ref_px silently poisons the %)",
-  adminSrc.includes("r.pxAge===null||r.pxAge>4") && adminSrc.includes("⚠ px "));
+  adminSrc.includes("r.pxAge===null||r.pxAge>PX_STALE_D") && adminSrc.includes("⚠ px "));
 ok("upside: shows each pick's target year — horizons are not assumed equal",
   adminSrc.includes("to ${esc(r.y)}") && adminSrc.includes("horizons differ"));
 ok("upside: surfaces the payload's own pt_model caveat (stored is never invisible)",
@@ -947,6 +947,32 @@ ok("render: the fixture is SYNTHETIC — no real book content enters this repo",
   ["AAA", "BBB", "CCC", "FFF"].every((s) => renderSrc.includes(`sym: "${s}"`)));
 ok("render: asserts at a phone width as well as desktop",
   renderSrc.includes("await open(390)") && renderSrc.includes("no horizontal overflow at 390px"));
+
+// ---- 14. audit patches (v3.31.1) -------------------------------------------
+console.log("\n[14] audit — composite parsing, mark staleness, version drift");
+const PKG = JSON.parse(readFileSync(new URL("../package.json", import.meta.url), "utf8"));
+// The terminal had THREE versions for one artifact: <title> v1.0, brand v1.1, package.json
+// v3.31. This repo already resolved exactly this drift once ("footer string is canonical /
+// package.json is stale"). admin.html is a Vite public/ passthrough and cannot receive
+// __APP_VERSION__, so a guard is the only thing that can hold the invariant.
+ok("version: the terminal's title and brand both match package.json (no third version)",
+  adminSrc.includes(`<title>TT TICKER TERMINAL v${PKG.version}</title>`) &&
+  adminSrc.includes(`<small>v${PKG.version} · single-pass deep-dive orchestrator</small>`));
+// ttInfo's score decides whether the NEXT DOLLAR line lights. It is parsed from prose.
+ok("composite: a decimal score is preferred over an earlier bare integer",
+  adminSrc.includes("function parseComposite(v)") && adminSrc.includes("const dec=s.match(/\\d+\\.\\d+/);"));
+ok("composite: a numeric field is used as-is, so a legitimate 0 is not dropped as falsy",
+  adminSrc.includes('if(typeof v==="number")return isFinite(v)?v:null;'));
+ok("composite: a numeric status_flags.composite is accepted, not only a string",
+  adminSrc.includes('typeof dd.status_flags.composite==="number"'));
+ok("mark staleness: ONE threshold shared by the board and the deep-dive cell",
+  adminSrc.includes("const PX_STALE_D=4;") &&
+  (adminSrc.match(/PX_STALE_D\)/g) || []).length >= 2 &&
+  !/r\.pxAge>4/.test(adminSrc));
+ok("dd: a pinned horizon with no rung is NAMED, not silently swapped for another year",
+  adminSrc.includes("rung — showing ${esc(t.y)}"));
+ok("dd: the worth cell ages its own price mark, like the board does",
+  adminSrc.includes("⚠ mark ${pxAge===null?\"undated\":pxAge+\"d old\"}"));
 
 console.log(`\n=== SMOKE TEST: ${pass} passed, ${fail} failed ===`);
 process.exit(fail === 0 ? 0 : 1);

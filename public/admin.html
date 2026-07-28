@@ -3,7 +3,9 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>TT TICKER TERMINAL v1.0</title>
+<!-- AUDIT: kept in sync with package.json by test/smoke.mjs. admin.html is a Vite
+     public/ passthrough, so it cannot receive __APP_VERSION__ — the guard is the fix. -->
+<title>TT TICKER TERMINAL v3.31.1</title>
 <style>
   :root{
     --bg:#05070a; --panel:#0a0f16; --panel2:#0d141d; --line:#16202c;
@@ -203,7 +205,7 @@
 <body>
 <div class="wrap">
   <header>
-    <div class="brand">FINANCE&nbsp;BRO.AI // TT&nbsp;TICKER&nbsp;TERMINAL <small>v1.1 · single-pass deep-dive orchestrator</small></div>
+    <div class="brand">FINANCE&nbsp;BRO.AI // TT&nbsp;TICKER&nbsp;TERMINAL <small>v3.31.1 · single-pass deep-dive orchestrator</small></div>
     <div class="statusline">
       <span>BOOK: <b id="bookStamp">loading…</b></span>
       <span>AUTH: <b id="sessState">…</b></span>
@@ -955,6 +957,10 @@ function renderDecisions(){
 const CAP_PCT=18;          // hard single-position cap; the framework doc in KV owns the real
                            // number, this mirrors the constraint already printed in the sidebar
 const POS_STALE_D=2;       // a size older than this spans a session and can mislead like a stale ref_px
+// AUDIT: the stale-price-mark threshold was an inline 4 in renderUpsideRank while the
+// deep-dive cell had no check at all. One constant, used by both, so the board and the tab
+// can never disagree about whether the mark under a % is trustworthy. >4d spans a weekend.
+const PX_STALE_D=4;
 function validateSyncPos(p){
   if(!p||typeof p!=="object"||Array.isArray(p))return "pos must be an object";
   if(!/^\d{4}-\d{2}-\d{2}([T ]\d{2}:\d{2}(:\d{2})?(\.\d+)?Z?)?$/.test(String(p.at||"")))return "pos.at (ISO date/time) is required";
@@ -1735,8 +1741,17 @@ function ddWorth(dd,sym){
   const px=(live&&isFinite(live.px))?live.px:(stamp&&isFinite(stamp.px)?stamp.px:null);
   if(px===null)return{txt:`$${tgt} ${t.y}`,sub:`${onFloor?"floor":"premium"} — no price to compare against`};
   const up=Math.round((tgt/px-1)*1000)/10,ann=annualise(up,t.y);
+  // AUDIT: two honesty gaps the board already closed but this cell did not.
+  // (1) a pinned horizon with no rung here was silently substituted with a different year,
+  //     while renderUpsideRank EXCLUDES the name and counts it — the two surfaces disagreed
+  //     about the same name and only one said why.
+  // (2) the % is only as good as the mark under it; the board flags a stale/undated stamp
+  //     (PX_STALE_D) and this cell presented the same number with no age at all.
+  const substituted=HORIZON&&!rr.some(r=>r.y===HORIZON)?` · no ${esc(HORIZON)} rung — showing ${esc(t.y)}`:"";
+  const pxAge=live?0:ageDays(stamp&&stamp.at);
+  const pxFlag=(pxAge===null||pxAge>PX_STALE_D)?` · ⚠ mark ${pxAge===null?"undated":pxAge+"d old"}`:"";
   return{txt:`$${tgt} ${t.y} · <span style="color:${up>=0?"var(--green)":"var(--red)"}">${up>=0?"+":""}${up}%</span>`,
-    sub:`${onFloor?"floor (18× FY+1 EPS)":"premium"} vs ${live?"live":"stamped"} $${px}${ann!==null?` · ${ann>=0?"+":""}${ann}%/yr`:""}`};
+    sub:`${onFloor?"floor (18× FY+1 EPS)":"premium"} vs ${live?"live":"stamped"} $${px}${ann!==null?` · ${ann>=0?"+":""}${ann}%/yr`:""}${pxFlag}${substituted}`};
 }
 function ddNextDate(dd,todayET){
   const ks=(Array.isArray(dd.key_dates)?dd.key_dates:[])
@@ -2118,14 +2133,28 @@ async function loadQuotes(){
    ONLY when both stories agree: positive gap AND composite >= B AND R/R not failing AND no
    binary inside the no-new-adds window. Anything else renders as WAIT with the blockers
    named. Reads payload fields harness runs already write; reports, never enforces. */
+/* AUDIT (v3.31.1): the composite is recovered from FREE TEXT, and first-number-wins
+   silently mis-rated the owner's own notation — "R3-A: 9.0" parsed as 3 → tier C → the
+   AGREE gate reads "quality fails" and withholds the NEXT DOLLAR line from a 9.0 name.
+   Every composite is written with a decimal, so prefer one and fall back to an integer
+   only when no decimal exists. A numeric field is taken as-is, which also stops a
+   legitimate score of 0 being dropped by `||""` (0 is falsy — it is also a real score). */
+function parseComposite(v){
+  if(typeof v==="number")return isFinite(v)?v:null;
+  const s=String(v==null?"":v);
+  const dec=s.match(/\d+\.\d+/);
+  if(dec)return parseFloat(dec[0]);
+  const int=s.match(/\d+/);
+  return int?parseFloat(int[0]):null;
+}
 function ttInfo(dd){
   const c=dd&&dd.composite;
   let score=null,tier=null;
   if(c&&typeof c==="object"){
-    const m=String(c.score||"").match(/(\d+(?:\.\d+)?)/);if(m)score=parseFloat(m[1]);
+    score=parseComposite(c.score);
     const t=String(c.capped_tier||c.raw_tier||"").match(/^([SABC])\b/);if(t)tier=t[1];
-  }else if(dd&&dd.status_flags&&typeof dd.status_flags.composite==="string"){
-    const m=dd.status_flags.composite.match(/(\d+(?:\.\d+)?)/);if(m)score=parseFloat(m[1]);
+  }else if(dd&&dd.status_flags&&(typeof dd.status_flags.composite==="string"||typeof dd.status_flags.composite==="number")){
+    score=parseComposite(dd.status_flags.composite);
   }
   if(score===null&&!tier)return null;
   // Tier from score via the framework map when no explicit tier was recorded.
@@ -2203,7 +2232,7 @@ function renderUpsideRank(){
       :r.rs.k==="head"?`<span class="bad2">⏱ ${r.rs.days}d — re-run first</span>`
       :r.rs.k==="stale"?`<span class="warn2">⏱ ${r.rs.days}d old</span>`:"";
     // AUDIT: a stale price mark silently poisons the %. Say so on the pick itself.
-    const pxFlag=(r.pxAge===null||r.pxAge>4)
+    const pxFlag=(r.pxAge===null||r.pxAge>PX_STALE_D)
       ?`<span class="bad2">⚠ px ${r.pxAge===null?"undated":r.pxAge+"d old"}</span>`:"";
     const col=r.upside>=0?"var(--green)":"var(--red)";
     return `<span class="pick" onclick="openCard('${esc(r.sym)}')"
