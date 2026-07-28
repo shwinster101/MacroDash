@@ -13,6 +13,10 @@
 const BOOK_KEY = "tt:book:v1";
 const SNAP_PREFIX = "tt:book:snap:";       // FEAT-TT-SAFE: dated rollback copies
 const SNAP_TTL = 30 * 24 * 3600;           // 30 days of daily restore points
+const LEDGER_PREFIX = "tt:ledger:";        // FEAT-TT-LEDGER: per-sym belief history
+const LEDGER_INDEX_KEY = "tt:ledger:index";
+const LEDGER_CAP = 500;                    // entries per sym; oldest pruned first
+const QUOTE_PREFIX = "tt:quote:";          // mirrors CACHE_PREFIX in functions/api/quotes.js
 const TIERS = ["S", "A", "B", "DEF", "WATCH"];
 const SYM_RE = /^[A-Z.\-]{1,8}$/;
 const MAX_BODY = 64 * 1024;
@@ -387,6 +391,115 @@ export function validateBook(body) {
   return null;
 }
 
+// FEAT-TT-LEDGER (v3.32): the belief ledger. Every OTHER field in this book is a snapshot
+// that overwrites in place — tier, projection, hinge state, all replaced silently on the
+// next PUT. The terminal has no memory: it cannot say "you were S at $170 and now it's
+// $190", cannot show what you believed the day before a name re-rated, cannot flag the
+// exact "estimates up, price down" pattern the 7/28 handoff had to catch BY HAND for CRDO.
+//
+// diffForLedger is the notary. It is pure and takes no KV/network access — the caller
+// (onRequestPut) supplies book snapshots and stamps px afterward, so this stays smoke-
+// testable like validateBook/conflictCheck. It logs BELIEFS ONLY (the user's explicit
+// call): tier, rank, run stamps, thesis version, hinge transitions, PT-model edits,
+// projection answers, the composite score, and consensus-estimate revisions. It does NOT
+// log `pos`, `ref_px`, `dots`, or note text — those are facts or scratch, not conviction.
+//
+// Entry shape: {t, v, kind, sym, field, from, to} — px is added by the caller. `field` is
+// an optional sub-identifier (a hinge's label, an "rev:2028"/"eps:2028" tag) used only by
+// kinds where "sym" alone doesn't name what changed.
+const parseCompositeScore = (v) => {
+  if (typeof v === "number") return isFinite(v) ? v : null;
+  const s = String(v == null ? "" : v);
+  const dec = s.match(/\d+\.\d+/);
+  if (dec) return parseFloat(dec[0]);
+  const int = s.match(/\d+/);
+  return int ? parseFloat(int[0]) : null;
+};
+const hingeKey = (h) => (h && (h.label || h.key || h.id)) || null;
+const compositeScoreOf = (dd) => {
+  const c = dd && dd.composite;
+  if (c && typeof c === "object") return parseCompositeScore(c.score);
+  if (dd && dd.status_flags && (typeof dd.status_flags.composite === "string" || typeof dd.status_flags.composite === "number"))
+    return parseCompositeScore(dd.status_flags.composite);
+  return null;
+};
+export function diffForLedger(prevBook, nextBook, prevCut, nextCut, t, v) {
+  const out = [];
+  const push = (kind, sym, from, to, field) => out.push({ t, v, kind, sym, field: field ?? null, from: from ?? null, to: to ?? null });
+  const prevMap = new Map((Array.isArray(prevBook) ? prevBook : []).map((e) => [e.sym, e]));
+  const nextMap = new Map((Array.isArray(nextBook) ? nextBook : []).map((e) => [e.sym, e]));
+
+  for (const [sym, e] of nextMap) if (!prevMap.has(sym)) push("add", sym, null, e.tier);
+  for (const [sym, e] of prevMap) if (!nextMap.has(sym)) push("remove", sym, e.tier, null);
+
+  for (const [sym, next] of nextMap) {
+    const prev = prevMap.get(sym);
+    if (!prev) continue;
+    if (prev.tier !== next.tier) push("tier", sym, prev.tier, next.tier);
+    if ((prev.rank || null) !== (next.rank || null)) push("rank", sym, prev.rank || null, next.rank || null);
+    if ((prev.lastRun || null) !== (next.lastRun || null)) push("run", sym, prev.lastRun || null, next.lastRun || null);
+
+    const pdd = prev.deepDive, ndd = next.deepDive;
+    if (pdd || ndd) {
+      const pThesis = pdd && (pdd.thesis_version || pdd.updated || pdd.as_of);
+      const nThesis = ndd && (ndd.thesis_version || ndd.updated || ndd.as_of);
+      if ((pThesis || null) !== (nThesis || null)) push("thesis", sym, pThesis || null, nThesis || null);
+
+      // Hinges: matched by identity (same rule as the client's validateDeepDive), so a
+      // reordered array never reads as N state changes.
+      const pHinges = new Map((Array.isArray(pdd && pdd.hinges) ? pdd.hinges : []).map((h) => [hingeKey(h), h]).filter(([k]) => k));
+      const nHinges = new Map((Array.isArray(ndd && ndd.hinges) ? ndd.hinges : []).map((h) => [hingeKey(h), h]).filter(([k]) => k));
+      for (const [key, nh] of nHinges) {
+        const ph = pHinges.get(key);
+        if (ph && (ph.state || "unknown") !== (nh.state || "unknown"))
+          push("hinge", sym, ph.state || "unknown", nh.state || "unknown", key);
+      }
+
+      // pt_model: the floor multiple is the one owner-editable field with a clean before/
+      // after number (multEditor); any other change to the model still counts, generically.
+      const pPt = (pdd && pdd.pt_model) || null, nPt = (ndd && ndd.pt_model) || null;
+      if (JSON.stringify(pPt) !== JSON.stringify(nPt)) {
+        const pFloor = pPt && pPt.pe_floor_multiple, nFloor = nPt && nPt.pe_floor_multiple;
+        if (pFloor !== nFloor) push("pt", sym, pFloor ?? null, nFloor ?? null, "floor");
+        else push("pt", sym, null, "revised", "model");
+      }
+
+      const comp = compositeScoreOf(pdd) !== null || compositeScoreOf(ndd) !== null ? [compositeScoreOf(pdd), compositeScoreOf(ndd)] : null;
+      if (comp && comp[0] !== comp[1]) push("comp", sym, comp[0], comp[1]);
+
+      // Estimate revisions feed FEAT-TT-SPREAD's divergence flag (est up + price down =
+      // the CRDO pattern). Capped at 3 changed (year,field) pairs per sym per write so a
+      // bulk consensus refresh can't flood the ledger.
+      const pCons = (pdd && pdd.consensus) || {}, nCons = (ndd && ndd.consensus) || {};
+      const estChanges = [];
+      for (const field of ["revenue_B", "eps"]) {
+        const pf = pCons[field] || {}, nf = nCons[field] || {};
+        const years = [...new Set([...Object.keys(pf), ...Object.keys(nf)])].sort();
+        for (const y of years) {
+          if (pf[y] !== undefined && nf[y] !== undefined && pf[y] !== nf[y])
+            estChanges.push([`${field === "eps" ? "eps" : "rev"}:${y}`, pf[y], nf[y]]);
+        }
+      }
+      estChanges.slice(0, 3).forEach(([field, from, to]) => push("est", sym, from, to, field));
+    }
+
+    const pProj = prev.projection, nProj = next.projection;
+    if (JSON.stringify(pProj || null) !== JSON.stringify(nProj || null)) {
+      const pRev = pProj && pProj.rev_3yr && pProj.rev_3yr.value_B, nRev = nProj && nProj.rev_3yr && nProj.rev_3yr.value_B;
+      const pMult = pProj && pProj.multiple && pProj.multiple.value, nMult = nProj && nProj.multiple && nProj.multiple.value;
+      const pPath = pProj && pProj.margins && pProj.margins.path, nPath = nProj && nProj.margins && nProj.margins.path;
+      if (pRev !== nRev) push("proj", sym, pRev ?? null, nRev ?? null, "rev_3yr_B");
+      else if (pMult !== nMult) push("proj", sym, pMult ?? null, nMult ?? null, "multiple");
+      else if (pPath !== nPath) push("proj", sym, pPath || null, nPath || null, "margins");
+    }
+  }
+
+  const pCutSet = new Set(Array.isArray(prevCut) ? prevCut : []);
+  for (const s of Array.isArray(nextCut) ? nextCut : []) if (!pCutSet.has(s)) push("cut", s, null, "cut");
+
+  return out;
+}
+
 // FEAT-TT-SAFE: optimistic concurrency. The client echoes the version it last read as
 // If-Match; a mismatch means another device wrote in between, and a whole-book PUT would
 // silently clobber it. Pure + exported so the smoke test can pin the truth table.
@@ -549,7 +662,43 @@ export async function onRequestPut({ request, env }) {
     // to re-authenticate — a storage fault impersonating an auth fault.
     return json({ error: "storage write failed: " + (e?.message || "unknown") }, 503);
   }
+
+  // FEAT-TT-LEDGER: notarize what changed. Fire-and-forget — a ledger fault must never
+  // fail the book write the user is waiting on; the belief just goes unrecorded this once.
+  try {
+    const entries = diffForLedger(prev?.book, stored.book, prev?.cut, stored.cut, new Date().toISOString(), stored.version);
+    if (entries.length) await appendLedger(env, entries);
+  } catch (_e) { /* the book write already succeeded; the ledger is best-effort */ }
+
   return json({ ...stored, empty: false });
+}
+
+// Stamp px per entry (from the quotes cache, else a same-day ref_px, else honestly null —
+// never fabricated) and append to each affected sym's ledger, capping at LEDGER_CAP.
+async function appendLedger(env, entries) {
+  const today = etDate();
+  const bySym = new Map();
+  for (const e of entries) { if (!bySym.has(e.sym)) bySym.set(e.sym, []); bySym.get(e.sym).push(e); }
+  await Promise.all([...bySym.entries()].map(async ([sym, syms]) => {
+    let px = null;
+    try {
+      const q = await env.PULSE_CACHE.get(QUOTE_PREFIX + sym, "json");
+      if (q && isFinite(q.px)) px = q.px;
+    } catch (_e) {}
+    const stamped = syms.map((e) => ({ ...e, px }));
+    let cur = [];
+    try { cur = (await env.PULSE_CACHE.get(LEDGER_PREFIX + sym, "json")) || []; } catch (_e) {}
+    if (!Array.isArray(cur)) cur = [];
+    cur.push(...stamped);
+    if (cur.length > LEDGER_CAP) cur = cur.slice(cur.length - LEDGER_CAP);
+    await env.PULSE_CACHE.put(LEDGER_PREFIX + sym, JSON.stringify(cur));
+  }));
+  try {
+    let idx = (await env.PULSE_CACHE.get(LEDGER_INDEX_KEY, "json")) || {};
+    if (typeof idx !== "object" || Array.isArray(idx)) idx = {};
+    for (const [sym, syms] of bySym) idx[sym] = { count: (idx[sym]?.count || 0) + syms.length, last: today };
+    await env.PULSE_CACHE.put(LEDGER_INDEX_KEY, JSON.stringify(idx));
+  } catch (_e) { /* the per-sym ledgers already wrote; the index is a convenience list */ }
 }
 
 export async function onRequest({ request, ...rest }) {

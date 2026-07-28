@@ -121,7 +121,7 @@ worker/                 SEPARATE Cloudflare Worker (not part of Pages)
   wrangler.toml         Worker config: PULSE_CACHE binding + cron triggers (UTC).
 
 test/
-  smoke.mjs             No-network smoke test: 438 assertions over mergeLiveOverMock
+  smoke.mjs             No-network smoke test: 470 assertions over mergeLiveOverMock
                         + SOURCES-path resolution against the real MOCK_DATA + the
                         5-Whys engine + DEC-31 guards + the TT band table (DEC-33)
                         + the market-holiday calendar (sessions + staleness).
@@ -453,10 +453,54 @@ Jan-anchor shipped; see `snapshot.js` ~318–328), `spyMa100`, `spyMa200`, and a
   so smoke can only pin load-bearing STRINGS; that catches deletions but not a strip that renders
   empty, a drawer that hides a red thing, a dead click, or a template literal that throws. This
   serves the real file with a stubbed `/api/tt` + `/readout.json` + `/api/quotes` and drives it in
-  Chromium at **390px and 1200px** (42 assertions). It has already caught bugs the source guards
+  Chromium at **390px and 1200px** (53 assertions). It has already caught bugs the source guards
   could not. **The fixture is SYNTHETIC** — no real ticker, position or session content enters
   this repo, same invariant as `SEED`/`BOARD`. It **skips cleanly (exit 0)** when playwright-core
   or a browser is missing, so it is additive and never breaks `npm test` on a bare machine.
+- **FEAT-TT-LEDGER (v3.32) — the belief ledger: the one thing the terminal never had, memory.**
+  Robinhood/Seeking Alpha/Yahoo all show what the MARKET thinks; this terminal's moat is what
+  YOU think — tiers, projections, PT models, hinges — but every one of those fields overwrote in
+  place. It could never answer *"was I right?"*, never show what you believed when NBIS was $51,
+  never catch the CRDO pattern (estimates up, price down = sentiment derate, not thesis break)
+  except by a human noticing it by hand. **`diffForLedger()`** (`functions/api/tt.js`, pure,
+  exported for smoke) diffs every PUT's book against the one stored and logs **beliefs only** —
+  the user's explicit call, no trade/position logging: `add`/`remove`/`tier`/`rank`/`run`/
+  `thesis`/`hinge`/`pt`/`proj`/`comp`/`est`/`cut`. It does **not** log `pos`, `ref_px`, `dots`, or
+  note text — facts and scratch, not conviction. Hinges are matched by **identity**
+  (`label||key||id`, the same rule `validateDeepDive` already uses), never array position, so a
+  reordered payload can't misattribute a state flip. The composite score is recovered from free
+  text via the **same** `parseCompositeScore` logic the v3.31.1 audit fixed client-side (decimal
+  preferred over a bare integer — "R3-A: 9.0" reads 9.0, never 3). Each entry is stamped
+  `{t, v, kind, sym, field, from, to}` **server-side** — never self-attested — and appended
+  **fire-and-forget** after the book write succeeds (`appendLedger`, KV keys `tt:ledger:<sym>`
+  capped at 500 entries + `tt:ledger:index`); a ledger fault must never fail the write the user is
+  waiting on. `px` is stamped from the `tt:quote:<sym>` cache `functions/api/quotes.js` already
+  warms — no new upstream calls. **`functions/api/ledger.js`** is the READ-ONLY path (PIN-gated,
+  same as `/api/tt` — belief history is as private as the book): the index, one sym's entries
+  (`?sym=`), the whole book's recent entries in one list+N (`?recent=1&days=`, so the client never
+  does an N+1 round trip), and a one-time idempotent backfill (`?seed=1`) that walks the existing
+  30-day `tt:book:snap:*` recovery snapshots and diffs them chronologically — historical `px` is
+  honest best-effort (a nearby-dated `ref_px` or `null`, never fabricated). Client-side: a
+  per-name **HISTORY** drawer on the deep-dive tab (lazy-fetched on tab open, timeline with
+  since-move `%` against the live quote) and a board-level **SCORECARD** drawer (tier/rank/comp
+  changes ranked by |since-move|, `"NBIS S→A on 7/28 @ $170 → now +12%"`) — both empty states say
+  the ledger started counting from deploy rather than reading as "nothing ever changed."
+- **FEAT-TT-SPREAD (v3.33) — belief vs street, the CRDO pattern automated.** Two builds on the
+  ledger and the existing PT math, entirely client-side (no new data). **The spread cell**: the
+  WORTH cell's sub-line now inverts `ptModelRows()`'s own formula at the live/stamped price —
+  `impliedMultiple()` solves the EV/S or P/E row backwards for the multiple the market is
+  *actually* paying, so it can never disagree with the ladder above it (one row, one computation,
+  both directions). Renders as `market pays 12.57× FY+1 vs you 8× · credits 157% of your 2028
+  case` — a floor-only row has no premium multiple to invert against, so the spread renders
+  nothing there rather than guessing. **Street vs mine**: where `pt_consensus.rows[year]` exists
+  for the *same* horizon year the WORTH cell targets, its non-bear/floor/severe columns (the same
+  dim rule `ddPtConsensusSec` already applies) are averaged into `street ~$485 vs mine $509` —
+  renders only when that year's row actually exists in the payload. **The divergence flag**: from
+  the ledger's `est` entries, if a name's latest consensus revision moved a value **up** while
+  price has since moved **down** ≥`MOVE_PCT` (or the reverse), a `⚠ est↑ px↓` chip lights on the
+  book chip and the upside-rank pick — same-direction moves are explicitly *not* the signal
+  (that's just the market agreeing); only the split is. This is the CRDO read from the 7/28
+  handoff, machine-detected across the whole book instead of caught by hand on one name.
 - **Deferred:** stored fundamentals + Robinhood sync — now unblocked by the `x-tt-pin` header
   (v3.9): a chat-side daily review can PUT `status_flags`/`ref_px` into the deepDive payloads and
   stamp `lastRun`. When built, store the *triage* shape (`{at, px}` → "% moved since your last TT
@@ -523,7 +567,7 @@ npm run dev        # Vite dev server (mock unless VITE_DATA_MODE=live in .env)
 npm run build      # → dist/  (what Pages runs)
 npm run preview    # serve the built dist/
 
-node test/smoke.mjs   # 438-assertion no-network smoke test (needs Node ≥17)
+node test/smoke.mjs   # 470-assertion no-network smoke test (needs Node ≥17)
 npm run test:ui       # browser render test for admin.html (skips if no Chromium)
 
 # Cron Worker (separate deploy):
