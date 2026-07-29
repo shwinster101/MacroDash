@@ -121,7 +121,7 @@ worker/                 SEPARATE Cloudflare Worker (not part of Pages)
   wrangler.toml         Worker config: PULSE_CACHE binding + cron triggers (UTC).
 
 test/
-  smoke.mjs             No-network smoke test: 481 assertions over mergeLiveOverMock
+  smoke.mjs             No-network smoke test: 508 assertions over mergeLiveOverMock
                         + SOURCES-path resolution against the real MOCK_DATA + the
                         5-Whys engine + DEC-31 guards + the TT band table (DEC-33)
                         + the market-holiday calendar (sessions + staleness).
@@ -454,7 +454,7 @@ Jan-anchor shipped; see `snapshot.js` ~318–328), `spyMa100`, `spyMa200`, and a
   so smoke can only pin load-bearing STRINGS; that catches deletions but not a strip that renders
   empty, a drawer that hides a red thing, a dead click, or a template literal that throws. This
   serves the real file with a stubbed `/api/tt` + `/readout.json` + `/api/quotes` and drives it in
-  Chromium at **390px and 1200px** (53 assertions). It has already caught bugs the source guards
+  Chromium at **390px and 1200px** (78 assertions). It has already caught bugs the source guards
   could not. **The fixture is SYNTHETIC** — no real ticker, position or session content enters
   this repo, same invariant as `SEED`/`BOARD`. It **skips cleanly (exit 0)** when playwright-core
   or a browser is missing, so it is additive and never breaks `npm test` on a bare machine.
@@ -524,6 +524,43 @@ Jan-anchor shipped; see `snapshot.js` ~318–328), `spyMa100`, `spyMa200`, and a
   `x.pos`, so the store move is invisible to every renderer except that one line. Same invariant
   as the book and the ledger: real position data has no home in this repo, and `POSITIONS`
   ships empty.
+- **v3.35 "The Analyst Desk" — the UI renders what the terminal already knew.** A UI-revamp
+  sprint against one finding: the terminal stored everything SA/Yahoo can't have (measured
+  positions with option legs, per-year underwriting multiples, belief history) and rendered a
+  fraction of it. Four features, all inside `admin.html`:
+  **FEAT-TT-ESTRUN** (centerpiece) — the v3.15 consensus table and v3.17 computed PT ladder
+  were two renderings of the same year axis; they merge into ONE per-year table
+  (`estRunTable`/`ddEstRunSec`: FY · rev · Δrev% · EPS · ΔEPS% · n · PT rev-lens · PT floor ·
+  upside-vs-live), targets **joined from `ptModelRows` by forward year, never recomputed**
+  (the FEAT-TT-SPREAD rule), EPS YoY reading `n/m` on a sign-flip, thin-coverage dimming and
+  negative-EPS red surviving the merge. It renders **above the fold** on the deep dive with
+  the TIER in its label (the math under the tier claim), and gets a board expression inside
+  NEXT DOLLAR & UPSIDE: one `details.est-mini` row per modelled name (nearest target ·
+  annualised upside · tier), sorted by upside, expanding to the same table — open-state in
+  `EST_OPEN` because three async paths re-fire `render()` and an unpersisted `<details>`
+  snaps shut mid-read. `est-mini` is deliberately NOT `drawer` (the phone harness counts open
+  drawers).
+  **FEAT-TT-ROLLUP** — `bookRollup()`/`renderRollup()`: the tracked book summed (total MV,
+  unrealized P/L **only where both mv and cb are measured**, stale/undated counts, top
+  weights, per-tier MV split) in a strip under the TODAY card, labeled *"tracked book only —
+  NOT NAV; a floor, not the account"* (get_portfolio is still unmeasured and reconcile()
+  names real untracked holdings). Nothing measured → renders nothing, never $0.
+  **FEAT-TT-OWNDEBT** — of the pos schema the UI rendered only `at/sh/mv/pct`; now the own
+  cell carries cost basis, colored `±% unrl`, src and leg count; an options-only position
+  (LITE/GRAB/CELH/TEM/NU) reads `"N legs · options only — no shares"` instead of unheld;
+  `ddOptSec` renders the legs as a real table (side · C/P · n · strike-when-captured · exp ·
+  DTE, `OPT_NEAR_D=60` amber); chips carry measured `±upl%` and an `◇opt` marker; and a
+  book-wide expiry ladder lives in the EXPOSURE drawer whose summary counts near legs while
+  closed. Expiries deliberately never feed `binaryEvents()` — your own clock is not a market
+  binary.
+  **Fixpack** — the 3-questions block rendered twice per tab (inline copy removed); `LIVE_AT`
+  (the quote batch's own timestamp) finally renders in the coverage strip; every `dd-pt`
+  table sits in a `.tblx` overflow container **plus `.layout>*{min-width:0}`** (the grid item
+  otherwise inherits a wide table's min-content width and blows the page out before the
+  container can scroll — found by the harness at 390px); the chip tooltip's measured facts
+  became a read-only MEASURED row on the card (tap-reachable); `test/render.mjs` fixture
+  dates are now **computed relative to today** (a fixture stamped "today" at write time
+  silently rotted at the first midnight — two asserts died exactly that way).
 - **v3.34 follow-up: `MAX_BODY` raised 64KB → 200KB.** The pos-store split reclaimed real
   headroom (~950 bytes across 6 names) but the live book was already large enough that it
   only bought back ~400 bytes net — the very next addition (a real NVDA book entry, its own
@@ -600,7 +637,7 @@ npm run dev        # Vite dev server (mock unless VITE_DATA_MODE=live in .env)
 npm run build      # → dist/  (what Pages runs)
 npm run preview    # serve the built dist/
 
-node test/smoke.mjs   # 481-assertion no-network smoke test (needs Node ≥17)
+node test/smoke.mjs   # 508-assertion no-network smoke test (needs Node ≥17)
 npm run test:ui       # browser render test for admin.html (skips if no Chromium)
 
 # Cron Worker (separate deploy):

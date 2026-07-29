@@ -54,13 +54,19 @@ if (!exe) skip("no Chromium found — set PLAYWRIGHT_CHROMIUM_PATH or PLAYWRIGHT
 // ── synthetic fixture ───────────────────────────────────────────────────────
 // AAA is deliberately over the single-name cap; AAA+BBB+CCC exceed the cluster cap; FFF
 // carries short calls so the deleverage blocker has something real to verify against.
+// DATES ARE COMPUTED, not hardcoded — a fixture stamped "today" at write time silently
+// rots as the calendar rolls (the MACROEVT "prints today" assert died the first midnight
+// after it was written). Anything meaning "now"/"recent"/"stale" derives from TODAY_ET.
+const ET_FMT = new Intl.DateTimeFormat("en-CA", { timeZone: "America/New_York" });
+const TODAY_ET = ET_FMT.format(new Date());
+const etDaysAgo = (n) => ET_FMT.format(new Date(Date.now() - n * 86400000)); // negative = future
 const dd = (px, rev, eps, extra = {}) => ({
-  thesis_version: "v1.0 (2026-07-20)", updated: "2026-07-26",
-  ref_px: { px, at: "2026-07-28" },
+  thesis_version: "v1.0 (2026-07-20)", updated: etDaysAgo(3),
+  ref_px: { px, at: TODAY_ET },
   consensus: { revenue_B: rev, eps },
   pt_model: { ev_s_multiple: 8, share_count_M: 1100, pe_floor_multiple: 18 },
   hinges: [{ label: "demand", state: "red", note: "supplier layer" }],
-  key_dates: [{ date: "2026-08-20", label: "own print" }],
+  key_dates: [{ date: etDaysAgo(-22), label: "own print" }],
   gates: [{ name: "G1 scale", status: "PASS" }, { name: "G2 funding", status: "FAIL" }],
   kill_combination: { conditions: ["demand stalls", "funding shuts"], joint_probability: "8%" },
   rules: ["never average down into a broken base"],
@@ -69,9 +75,9 @@ const dd = (px, rev, eps, extra = {}) => ({
   some_unknown_block: { alpha: 1, beta: 2 },
   ...extra,
 });
-const POS = (sh, mv, pct, extra = {}) => ({ sh, mv, pct, at: "2026-07-28T14:32:00Z", src: "test", ...extra });
+const POS = (sh, mv, pct, extra = {}) => ({ sh, mv, pct, at: `${TODAY_ET}T14:32:00Z`, src: "test", ...extra });
 const BOOK = [
-  { sym: "AAA", tier: "WATCH", lens: "AI", rank: "#1", lastRun: "2026-07-28", note: "queued",
+  { sym: "AAA", tier: "WATCH", lens: "AI", rank: "#1", lastRun: etDaysAgo(1), note: "queued",
     deepDive: dd(800, { 2027: 55, 2028: 62, 2029: 70 }, { 2027: 40, 2028: 46, 2029: 52 }, {
       // FEAT-TT-SPREAD (v3.33): pt_consensus on the SAME horizon (2028, fwd=2029) as the
       // pt_model row — lets the test confirm the "street $X vs mine $Y" confrontation.
@@ -79,39 +85,47 @@ const BOOK = [
       // ddPtConsensusSec: /floor|bear|severe/i), leaving base+bull -> avg 485.
       pt_consensus: { rows: { "2028": { severe: 300, base: 450, bull: 520 } } },
     }) },
-  { sym: "BBB", tier: "WATCH", lens: "AI", rank: "#1 optics", lastRun: "2026-07-28", note: "queued too",
+  { sym: "BBB", tier: "WATCH", lens: "AI", rank: "#1 optics", lastRun: etDaysAgo(1), note: "queued too",
     deepDive: dd(609, { 2027: 9, 2028: 11 }, { 2027: 18, 2028: 22 }) },
-  { sym: "CCC", tier: "A", lens: "AI", lastRun: "2026-07-28", note: "held" },
-  { sym: "DDD", tier: "S", lens: "AI", lastRun: "2026-07-28", note: "no position measured" },
-  { sym: "EEE", tier: "S", lens: "QC", lastRun: "2026-07-28", note: "diversifier" },
-  { sym: "FFF", tier: "B", lens: "SP", lastRun: "2026-05-01", note: "leveraged" },
+  { sym: "CCC", tier: "A", lens: "AI", lastRun: etDaysAgo(1), note: "held" },
+  { sym: "DDD", tier: "S", lens: "AI", lastRun: etDaysAgo(1), note: "no position measured" },
+  { sym: "EEE", tier: "S", lens: "QC", lastRun: etDaysAgo(1), note: "diversifier" },
+  { sym: "FFF", tier: "B", lens: "SP", lastRun: etDaysAgo(45), note: "leveraged" },
 ];
 // FEAT-TT-POSSTORE (v3.34): pos now lives at /api/positions, not embedded in the book —
 // same fixture data, moved to its own map, keyed by sym.
+// FEAT-TT-OWNDEBT (v3.35): AAA carries cost basis + P/L + a strikeless put (the
+// strike-only-when-captured path); EEE is OPTIONS-ONLY (no shares — the LITE case, which
+// used to render as unheld), its leg expiring inside OPT_NEAR_D so the amber flag fires.
 const POSITIONS = {
-  AAA: POS(30, 24000, 21.4),
+  AAA: POS(30, 24000, 21.4, { cb: 18000, upl_pct: 33.3,
+    opt: [{ k: "put", side: "long", n: 1, exp: etDaysAgo(-140) }] }),
   BBB: POS(10, 6090, 5.1),
   CCC: POS(700, 114100, 9.9),
+  EEE: { at: `${TODAY_ET}T14:32:00Z`, src: "test", mv: 4200,
+    opt: [{ k: "call", side: "long", n: 2, strike: 100, exp: etDaysAgo(-52) }] },
   FFF: POS(412, 30104, 4.2, { opt: [{ k: "call", side: "short", n: 3, strike: 50, exp: "2028-01-21" }] }),
 };
 const BOARD = {
-  as_of: "2026-07-28", source: "synthetic fixture", verified: false,
-  regime: { asserted: "PANIC", as_of: "2026-07-28", source: "fixture", verified: false },
+  as_of: TODAY_ET, source: "synthetic fixture", verified: false,
+  regime: { asserted: "PANIC", as_of: TODAY_ET, source: "fixture", verified: false },
   circuit: { id: "C1", label: "Leverage circuit", state: "tripped", metric: "debt % of NAV",
-    value: 128, trip_line: 130, as_of: "2026-07-28", verified: false,
+    value: 128, trip_line: 130, as_of: TODAY_ET, verified: false,
     rule: "deleverage-only until a live pull disproves it" },
   account: { nav: 1150000, debt: 1472000, debt_pct_nav: 128, formula: "margin_balance / net_liquidation",
-    at: "2026-07-28T14:32:00Z", src: "test", untracked: ["ZZZ"] },
+    at: `${TODAY_ET}T14:32:00Z`, src: "test", untracked: ["ZZZ"] },
   clusters: [{ id: "c1", label: "Synthetic cluster", members: ["AAA", "BBB", "CCC", "DDD"],
     rule: "size as ONE position" }],
-  funding: { as_of: "2026-07-28", rule: "trims fund debt first",
+  funding: { as_of: TODAY_ET, rule: "trims fund debt first",
     order: [{ sym: "FFF", est: "~$30k", blocker: "close the short calls FIRST" }, { sym: "GGG", est: "~$8k" }],
     do_not_trim: ["CCC"] },
   decisions: [
     { q: "undated standing question", blocking: true },
-    { q: "aged question", asked: "2026-07-14", blocking: true },
+    { q: "aged question", asked: etDaysAgo(10), blocking: true },
   ],
-  binaries: [{ date: "2026-07-28", scope: "MACROEVT", label: "a print that is not a book ticker" }],
+  // "prints today" only means today if the fixture says today — the original hardcoded
+  // date killed two asserts the first midnight after it was written.
+  binaries: [{ date: TODAY_ET, scope: "MACROEVT", label: "a print that is not a book ticker" }],
 };
 
 // FEAT-TT-LEDGER (v3.32) fixture: AAA carries per-name history (a tier flip + a hinge
@@ -134,15 +148,15 @@ const server = http.createServer((req, res) => {
   const url = new URL(req.url, "http://x");
   const json = (o) => { res.writeHead(200, { "content-type": "application/json" }); res.end(JSON.stringify(o)); };
   if (url.pathname === "/api/tt")
-    return json({ version: "1.1", asOf: "2026-07-28", book: BOOK, cut: ["XXX"], board: BOARD,
+    return json({ version: "1.1", asOf: TODAY_ET, book: BOOK, cut: ["XXX"], board: BOARD,
       empty: false, auth: { mode: "pin", src: "kv", session_days_left: 29 } });
   if (url.pathname === "/readout.json")
-    return json({ as_of: "2026-07-28T14:30:00Z", regime: { verdict: "HEADWIND" }, macro_flip: { armed: true } });
+    return json({ as_of: `${TODAY_ET}T14:30:00Z`, regime: { verdict: "HEADWIND" }, macro_flip: { armed: true } });
   if (url.pathname === "/api/positions")
-    return json({ asOf: "2026-07-28", positions: POSITIONS });
+    return json({ asOf: TODAY_ET, positions: POSITIONS });
   if (url.pathname === "/api/quotes")
-    return json({ asOf: "2026-07-28", quotes: { AAA: { px: 800, chg: -11, at: "2026-07-28" },
-      BBB: { px: 609, chg: -14.5, at: "2026-07-28" } } });
+    return json({ asOf: TODAY_ET, quotes: { AAA: { px: 800, chg: -11, at: TODAY_ET },
+      BBB: { px: 609, chg: -14.5, at: TODAY_ET } } });
   if (url.pathname === "/api/ledger") {
     const p = url.searchParams;
     if (p.get("recent") === "1") return json({ days: 90, entries: LEDGER_RECENT_FIXTURE });
@@ -205,13 +219,38 @@ ok("chips carry the measured weight", /21\.4%/.test(board) && /4\.2%/.test(board
 ok("an over-cap chip is flagged on the chip", /21\.4%!/.test(board));
 ok("a name with no measured position shows no weight", !/DDD[^\n]*%/.test(board));
 const cov = await txt(page, "coverage");
-ok("coverage counts measured positions alongside runs", /4\/6 measured/.test(cov));
+ok("coverage counts measured positions alongside runs", /5\/6 measured/.test(cov));
+// v3.35 fixpack: the quote batch finally states when it was taken.
+ok("coverage states when the quote batch was taken", /quotes as of/.test(cov));
+
+console.log("\n[render] FEAT-TT-ROLLUP — the tracked book, summed and labeled a floor");
+const roll = await txt(page, "bookRollup");
+ok("rollup totals the tracked book (Σmv = $178,494 → $178k)", /TRACKED BOOK/.test(roll) && /\$178k/.test(roll));
+ok("rollup P/L uses only both-ends-measured names (AAA alone: +$6k, +33.3%)",
+  /\+\$6k \(\+33\.3%\)/.test(roll) && /1 of 5 carry cost basis/.test(roll));
+ok("rollup states its denominator and its honesty label",
+  /5\/6 measured/.test(roll) && /NOT NAV/.test(roll));
+ok("rollup splits by tier so the tier list reads as capital, not just names",
+  /A \$114k/.test(roll) && /B \$30k/.test(roll));
+
+console.log("\n[render] FEAT-TT-OWNDEBT — the invisible position fields render");
+// Scope each check to that SYM's own chip element, not a text-offset window — chips sit
+// right beside each other in the DOM, so a loose window can read a neighbour's flag.
+const chipText = async (sym) => (await page.locator(`.chip:has(.sym:text-is("${sym}"))`).innerText().catch(() => ""));
+ok("AAA's chip carries its unrealized P/L, colored", /\+33\.3%/.test(await chipText("AAA")));
+ok("EEE (options-only) chip carries the ◇opt marker instead of reading as unheld",
+  /◇opt/.test(await chipText("EEE")));
+
+console.log("\n[render] v3.35 fixpack — the card is the tap surface for measured facts");
+await page.evaluate((s) => openCard(s), "AAA");
+await page.waitForTimeout(120);
+const cardBody = await page.locator("#cBody").textContent();
+ok("card MEASURED row carries live price, size and weight (the old tooltip, tappable)",
+  /MEASURED/.test(cardBody) && /\$800/.test(cardBody) && /30 sh/.test(cardBody) && /21\.4% NAV/.test(cardBody));
+await page.evaluate(() => closeCard());
+await page.waitForTimeout(80);
 
 console.log("\n[render] FEAT-TT-SPREAD — the divergence flag (the automated CRDO pattern)");
-// Scope each check to that SYM's own chip element, not a text-offset window — chips sit
-// right beside each other in the DOM, so a loose "next 40 chars" window can read into a
-// neighbour's flag and false-positive.
-const chipText = async (sym) => (await page.locator(`.chip:has(.sym:text-is("${sym}"))`).innerText().catch(() => ""));
 ok("BBB's chip flags estimates-up/price-down (est revised up, price since fallen ~13%)",
   /est↑ px↓/.test(await chipText("BBB")));
 ok("AAA's chip carries NO divergence flag (nothing in its ledger disagrees with price)",
@@ -245,9 +284,38 @@ ok("circuit still flags itself as unreconciled", /not reconciled against a live 
 ok("stated state vs last measurement is reconciled, not smoothed over", /asserted ahead of the number/.test(circuit));
 const fund = await txt(page, "fundingLine");
 ok("funding marks an off-book trim candidate", /off-book/.test(fund));
+// FEAT-TT-OWNDEBT (v3.35): the expiry ladder — every measured leg, one list, worst first.
+const ladder = await txt(page, "optLadder");
+// case-insensitive: the .lbl class renders through text-transform:uppercase.
+ok("expiry ladder lists every measured leg book-wide, sorted by expiry",
+  /Option expiries — 3 legs across 3 names/i.test(ladder) &&
+  /EEE/.test(ladder) && /FFF/.test(ladder) && /2028-01-21/.test(ladder));
+ok("a leg inside the 60d window is flagged amber on the ladder", /⚠/.test(ladder));
+// textContent: the summary is CSS-uppercased and the drawer may be closed on a real visit.
+ok("the EXPOSURE summary carries the near-expiry count while closed",
+  /1 leg ≤60d/i.test(await page.locator("#sExp").textContent()));
 const nd = await txt(page, "nextDollar");
 ok("the stricter regime governs and both readings print",
   /PANIC regime/.test(nd) && /engines disagree/.test(nd) && /HEADWIND/.test(nd));
+
+console.log("\n[render] FEAT-TT-ESTRUN — the board expression inside NEXT DOLLAR");
+const estBoard = await txt(page, "estRunBoard");
+ok("every modelled name gets a row, denominator stated",
+  /2 modelled of 6/i.test(estBoard) && /AAA/.test(estBoard) && /BBB/.test(estBoard));
+ok("each row carries the nearest target and its annualised upside",
+  /\$400 by 2026/.test(estBoard) && /%\/yr|%/.test(estBoard));
+await page.evaluate(() => { document.querySelector("#estRunBoard details").open = true; });
+await page.waitForTimeout(120);
+ok("a row expands to the SAME per-year table the deep dive renders",
+  /2029/.test(await txt(page, "estRunBoard")) && /70/.test(await txt(page, "estRunBoard")));
+ok("expanded state is tracked so an async re-render can't snap it shut",
+  await page.evaluate(() => EST_OPEN.size === 1));
+await page.evaluate(() => { window.location.hash = ""; document.querySelector('#estRunBoard details summary span[onclick*="switchTab"]').click(); });
+await page.waitForTimeout(250);
+ok("the tab link lands on that name's deep dive",
+  await page.evaluate(() => document.getElementById("deepView").style.display !== "none"));
+await page.evaluate(() => switchTab("BOARD"));
+await page.waitForTimeout(150);
 
 console.log("\n[render] deep-dive tab — four answers, corpus in drawers");
 await page.evaluate(() => switchTab("AAA"));
@@ -258,6 +326,26 @@ ok("the four answers render above the corpus",
 ok("what-changes-my-mind names the red hinge", /1 red/.test(dv) && /demand/.test(dv));
 ok("what-I-own reads the measured position", /21\.4% of NAV/.test(dv) && /30 sh/.test(dv));
 ok("when carries the next dated event", /own print/.test(dv));
+// FEAT-TT-OWNDEBT (v3.35): the own cell renders what the sync measured — all of it.
+ok("own cell carries cost basis, colored unrealized P/L and the source",
+  /cost \$18k/.test(dv) && /\+33\.3% unrl/.test(dv) && /src test/.test(dv));
+ok("the option legs table renders beside the thesis they express (strikeless put shown without a strike)",
+  /Option legs \(1\)/i.test(dv) && /strike shown only where captured/.test(dv));
+
+console.log("\n[render] FEAT-TT-ESTRUN — the estimate run + dual PTs, above the fold");
+ok("the section label carries the tier — the math renders under the tier claim",
+  /ESTIMATE RUN — WATCHLIST/i.test(dv));
+ok("per-year YoY growth renders beside the estimates (rev 62→70 = +12.9%)",
+  /\+12\.9%/.test(dv) && /\+13%/.test(dv));
+ok("the PT columns join the SAME rows ptModelRows computed ($509 by 2028 · 8× EV/S)",
+  /\$509/.test(dv) && /8× EV\/S/.test(dv));
+ok("upside prices the best target against the live quote (509/800 → -36.4%)",
+  /-36\.4%/.test(dv));
+ok("the old split sections are gone — one table, one year axis",
+  !/Consensus estimates/i.test(dv) && !/PT ladder — computed from inputs/i.test(dv));
+
+// SHOTS=/path/prefix → drop full-page screenshots for a human eyeball pass (never in CI).
+if (process.env.SHOTS) await page.screenshot({ path: process.env.SHOTS + "-desktop-dd.png", fullPage: true });
 
 console.log("\n[render] FEAT-TT-SPREAD — the worth cell confronts market vs mine");
 // AAA's 2028 row (fwd 2029, rev $70B, 8x, 1100M sh) prices $509; at the live $800 quote
@@ -327,6 +415,25 @@ ok("every drawer starts closed except what-changed",
   (await phone.locator("#boardView details.drawer[open]").count()) <= 1);
 ok("no horizontal overflow at 390px",
   await phone.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth + 1));
+// v3.35 fixpack: the deep-dive tables were the actual overflow risk — the board assert
+// above never exercised them. Switch to a tab with every table type, open everything.
+await phone.evaluate(() => switchTab("AAA"));
+await phone.waitForTimeout(300);
+await phone.evaluate(() => document.querySelectorAll("#deepView details").forEach((d) => (d.open = true)));
+await phone.waitForTimeout(150);
+ok("no horizontal overflow at 390px on a deep-dive tab with all sections open",
+  await phone.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth + 1));
+// FEAT-TT-ESTRUN: the board expression must also scroll inside its container on a phone.
+await phone.evaluate(() => switchTab("BOARD"));
+await phone.waitForTimeout(200);
+await phone.evaluate(() => {
+  document.getElementById("dNext").open = true;
+  const d = document.querySelector("#estRunBoard details"); if (d) d.open = true;
+});
+await phone.waitForTimeout(150);
+ok("no horizontal overflow at 390px with a board estimate-run row expanded",
+  await phone.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth + 1));
+if (process.env.SHOTS) await phone.screenshot({ path: process.env.SHOTS + "-phone-board.png", fullPage: true });
 await phone.close();
 
 ok("no page errors at either width", errors.length === 0 || (console.log(errors), false));

@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <!-- AUDIT: kept in sync with package.json by test/smoke.mjs. admin.html is a Vite
      public/ passthrough, so it cannot receive __APP_VERSION__ — the guard is the fix. -->
-<title>TT TICKER TERMINAL v3.34.1</title>
+<title>TT TICKER TERMINAL v3.35.0</title>
 <style>
   :root{
     --bg:#05070a; --panel:#0a0f16; --panel2:#0d141d; --line:#16202c;
@@ -116,6 +116,17 @@
   .chip .wt{font-size:9px;color:var(--slate);letter-spacing:0}
   /* FEAT-TT-SPREAD (v3.33): estimates-vs-price divergence — the automated CRDO pattern */
   .chip .div,.pick .div{font-size:9px;font-weight:700;color:var(--amber);letter-spacing:0}
+  .chip .pl{font-size:9px;font-weight:700;letter-spacing:0} /* FEAT-TT-OWNDEBT: unrealized P/L */
+  /* FEAT-TT-ESTRUN (v3.35): YoY growth chips inside the estimate-run table */
+  .yoy{font-size:9.5px;letter-spacing:0}
+  .yoy.up{color:var(--green)} .yoy.dn{color:var(--red)}
+  details.est-mini{border:1px solid var(--line);border-radius:6px;background:#0b131b;margin-top:6px}
+  details.est-mini>summary{cursor:pointer;list-style:none;display:flex;gap:8px;flex-wrap:wrap;
+    align-items:baseline;padding:5px 10px;font-size:11px}
+  details.est-mini>summary::-webkit-details-marker{display:none}
+  details.est-mini>summary::before{content:"▸";color:var(--greenDim);font-size:10px}
+  details.est-mini[open]>summary::before{content:"▾"}
+  details.est-mini>div{padding:2px 10px 8px}
   /* FEAT-TT-DDFOCUS (v3.31): the four answers a name's tab exists to give */
   .dd-answer{display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin:12px 0 6px}
   @media(max-width:700px){.dd-answer{grid-template-columns:repeat(2,1fr)}}
@@ -127,6 +138,10 @@
   .cov{display:flex;align-items:center;gap:10px;flex-wrap:wrap;font-size:10px;color:var(--dim);
     letter-spacing:.06em;padding:2px 0 8px;border-bottom:1px dashed var(--line);margin-bottom:10px}
   .cov .f{color:var(--green)} .cov .s{color:var(--amber)} .cov .n{color:var(--red)}
+  /* FEAT-TT-ROLLUP (v3.35): the tracked-book strip under the TODAY card */
+  .rollup{display:flex;align-items:center;gap:10px;flex-wrap:wrap;font-size:10.5px;color:var(--dim);
+    letter-spacing:.04em;border:1px solid var(--line);border-radius:7px;background:#080d13;
+    padding:7px 11px;margin-bottom:8px}
   /* FEAT-TT-DD (v3.12): deep-dive tabs — BOARD + one per entry carrying a payload */
   .tabs{display:flex;gap:6px;margin-bottom:10px;flex-wrap:wrap;border-bottom:1px solid var(--line);padding-bottom:8px}
   .tabs .tab{border:1px solid var(--line);border-radius:6px;padding:5px 14px;cursor:pointer;
@@ -141,6 +156,12 @@
   table.dd-pt{border-collapse:collapse;font-size:11.5px}
   table.dd-pt td,table.dd-pt th{border:1px solid var(--line);padding:4px 10px;text-align:right}
   table.dd-pt th{color:var(--dim);font-weight:400;letter-spacing:.06em}
+  /* v3.35 fixpack: every dd-pt table scrolls inside its own container — the page must
+     never scroll horizontally at 390px (render.mjs pins that). The .layout children need
+     min-width:0 or the grid item inherits the table's min-content width and the whole
+     column blows out past the viewport before .tblx ever gets the chance to scroll. */
+  .tblx{overflow-x:auto;-webkit-overflow-scrolling:touch;max-width:100%}
+  .layout>*{min-width:0}
   /* collapsible schema blocks (native <details>) */
   details.schema>summary{cursor:pointer;list-style:none;color:var(--dim);font-size:10.5px;
     letter-spacing:1px;text-transform:uppercase;margin:8px 0 4px;padding:6px 0}
@@ -207,7 +228,7 @@
 <body>
 <div class="wrap">
   <header>
-    <div class="brand">FINANCE&nbsp;BRO.AI // TT&nbsp;TICKER&nbsp;TERMINAL <small>v3.34.1 · single-pass deep-dive orchestrator</small></div>
+    <div class="brand">FINANCE&nbsp;BRO.AI // TT&nbsp;TICKER&nbsp;TERMINAL <small>v3.35.0 · single-pass deep-dive orchestrator</small></div>
     <div class="statusline">
       <span>BOOK: <b id="bookStamp">loading…</b></span>
       <span>AUTH: <b id="sessState">…</b></span>
@@ -259,15 +280,21 @@
              element but now lives inside a one-tap drawer whose SUMMARY carries its signal,
              so a closed drawer can never hide a red thing (the v3.25 hinge rule). -->
         <div id="todayCard"></div>
+        <!-- FEAT-TT-ROLLUP (v3.35): the tracked book summed — hidden until something is
+             measured; a $0 total would read as a fact about the account. -->
+        <div class="rollup" id="bookRollup" style="display:none"></div>
         <details class="drawer" id="dChanged"><summary id="sChanged">WHAT CHANGED</summary>
           <div id="changedPanel"></div></details>
 
         <details class="drawer" id="dNext"><summary id="sNext">NEXT DOLLAR &amp; UPSIDE</summary>
           <div class="nd" id="nextDollar"></div>
-          <div class="nd" id="upsideRank" style="margin-top:8px"></div></details>
+          <div class="nd" id="upsideRank" style="margin-top:8px"></div>
+          <!-- FEAT-TT-ESTRUN (v3.35): every modelled name's estimate run, one tap deep -->
+          <div class="nd" id="estRunBoard" style="display:none;margin-top:8px"></div></details>
         <details class="drawer" id="dExp" style="display:none"><summary id="sExp">EXPOSURE</summary>
           <div class="nd" id="clusterLine" style="display:none"></div>
-          <div class="nd" id="fundingLine" style="display:none;margin-top:8px"></div></details>
+          <div class="nd" id="fundingLine" style="display:none;margin-top:8px"></div>
+          <div class="nd" id="optLadder" style="display:none;margin-top:8px"></div></details>
         <details class="drawer" id="dCal"><summary id="sCal">CALENDAR</summary>
           <div class="nd" id="binaryCal"></div></details>
         <details class="drawer" id="dDec" style="display:none"><summary id="sDec">DECISIONS</summary>
@@ -889,6 +916,30 @@ function renderFunding(){
   h+=`<div class="none">reported, not enforced — the board never places or blocks an order</div>`;
   sessSec("fundingLine",h);
 }
+/* FEAT-TT-OWNDEBT (v3.35): every measured option leg in the book, one ladder, sorted by
+   expiry. Deliberately NOT fed into binaryEvents() — an expiry is your own clock, not a
+   market binary, and it must not trip the no-new-adds window. */
+function allOptLegs(){
+  const out=[];
+  BOOK.forEach(x=>{const p=posOf(x);
+    if(p&&Array.isArray(p.opt))p.opt.forEach(o=>out.push({sym:x.sym,o,d:optDte(o.exp)}));});
+  out.sort((a,b)=>(a.d??1e9)-(b.d??1e9));
+  return out;
+}
+function renderOptLadder(){
+  const legs=allOptLegs();
+  if(!legs.length)return sessSec("optLadder","");
+  const syms=new Set(legs.map(l=>l.sym));
+  let h=`<div class="lbl">Option expiries — ${legs.length} leg${legs.length===1?"":"s"} across ${syms.size} name${syms.size===1?"":"s"} · ⚠ = ≤${OPT_NEAR_D}d</div>`;
+  legs.forEach(({sym,o,d})=>{
+    const dCol=d===null?"var(--dim)":d<0?"var(--red)":d<=OPT_NEAR_D?"var(--amber)":"var(--dim)";
+    h+=`<div class="none"><span class="sym" style="cursor:pointer" onclick="openCard('${esc(sym)}')">${esc(sym)}</span> · `+
+      `${esc(o.side||"")} ${o.k==="call"?"C":o.k==="put"?"P":esc(o.k||"")}×${o.n!=null?esc(o.n):"?"}`+
+      `${isFinite(Number(o.strike))?` $${esc(o.strike)}`:""} · ${o.exp?esc(o.exp):"undated"} `+
+      `<span style="color:${dCol}">${d===null?"":d<0?"expired?":"in "+d+"d"+(d<=OPT_NEAR_D?" ⚠":"")}</span></div>`;
+  });
+  sessSec("optLadder",h);
+}
 /* ── correlation clusters: "cluster = one position" ── */
 let LAST_RANK=[];   // top computed-upside syms, set by renderUpsideRank
 /* FEAT-TT-POS: book-vs-broker reconciliation. Renders only once something has synced —
@@ -968,6 +1019,7 @@ function renderDecisions(){
 const CAP_PCT=18;          // hard single-position cap; the framework doc in KV owns the real
                            // number, this mirrors the constraint already printed in the sidebar
 const POS_STALE_D=2;       // a size older than this spans a session and can mislead like a stale ref_px
+const OPT_NEAR_D=60;       // an option leg inside this window is a decision, not a holding
 // AUDIT: the stale-price-mark threshold was an inline 4 in renderUpsideRank while the
 // deep-dive cell had no check at all. One constant, used by both, so the board and the tab
 // can never disagree about whether the mark under a % is trustworthy. >4d spans a weekend.
@@ -1031,6 +1083,41 @@ function reconcile(){
   // A non-WATCH book name with a measured zero/absent position is tracked but not held.
   const paper=BOOK.filter(x=>x.tier!=="WATCH"&&(!posOf(x)||Number(posOf(x).sh)===0)).map(x=>x.sym);
   return{untracked,paper,held:heldSyms().length};
+}
+/* FEAT-TT-ROLLUP (v3.35): the tracked book, summed — the one number every broker app
+   leads with and this board never computed. NOT NAV: get_portfolio is unmeasured and
+   reconcile() names real held-but-untracked positions, so the total is a FLOOR over what
+   synced, and says so. P/L sums ONLY names where BOTH ends are measured (mv AND cb) —
+   mixing a measured mv with an absent cost would fabricate a P/L denominator. */
+function bookRollup(){
+  let mv=0,mvN=0,cb=0,pl=0,plN=0,stale=0,undated=0;const tiers={},tops=[];
+  BOOK.forEach(x=>{const p=posOf(x);if(!p)return;
+    const m=Number(p.mv);
+    if(isFinite(m)){mv+=m;mvN++;tiers[x.tier]=(tiers[x.tier]||0)+m;}
+    const c=Number(p.cb);
+    if(isFinite(m)&&isFinite(c)){cb+=c;pl+=m-c;plN++;}
+    const a=posAge(p);if(a===null)undated++;else if(a>POS_STALE_D)stale++;
+    if(isFinite(Number(p.pct)))tops.push({sym:x.sym,pct:Number(p.pct)});});
+  tops.sort((a,b)=>b.pct-a.pct);
+  return{mv,mvN,cb,pl,plN,plPct:cb>0?Math.round(pl/cb*1000)/10:null,stale,undated,tiers,tops};
+}
+function renderRollup(){
+  const el=document.getElementById("bookRollup");if(!el)return;
+  const r=bookRollup();
+  if(!r.mvN){el.style.display="none";el.innerHTML="";return;}  // nothing measured → NOTHING, never $0
+  el.style.display="";
+  const plCol=r.pl>=0?"var(--green)":"var(--red)";
+  el.innerHTML=`<span>TRACKED BOOK</span>`+
+    `<span style="color:var(--fg);font-weight:700">${money(r.mv)}</span>`+
+    (r.plN?`<span style="color:${plCol};font-weight:700">${r.pl>=0?"+":""}${money(r.pl)}${r.plPct!==null?` (${r.plPct>=0?"+":""}${r.plPct}%)`:""}</span>`+
+      `<span class="scope">unrealized · ${r.plN} of ${r.mvN} carry cost basis</span>`:
+      `<span class="scope">no cost basis synced — no P/L claimed</span>`)+
+    `<span class="scope">${r.mvN}/${BOOK.length} measured</span>`+
+    (r.stale?`<span style="color:var(--amber)">⚠ ${r.stale} stale marks</span>`:"")+
+    (r.undated?`<span style="color:var(--red)">⚠ ${r.undated} undated</span>`:"")+
+    (r.tops.length?`<span class="scope">top: ${r.tops.slice(0,3).map(t=>`${esc(t.sym)} ${t.pct}%`).join(" · ")}</span>`:"")+
+    `<span class="scope">${TIER_ORDER.filter(t=>r.tiers[t]).map(t=>`${t} ${money(r.tiers[t])}`).join(" · ")}</span>`+
+    `<span style="margin-left:auto;color:var(--dim)">tracked book only — NOT NAV; a floor, not the account</span>`;
 }
 
 /* ═══════════ TODAY (FEAT-TT-TODAY v3.29) ═══════════ */
@@ -1258,11 +1345,15 @@ function renderDrawers(){
   // FEAT-TT-POS: a cap breach is the loudest thing this drawer can carry, so it owns the
   // summary whenever one exists — a closed drawer must never hide an over-cap position.
   const breach=capChecks().filter(c=>c.over>0);
+  // FEAT-TT-OWNDEBT: a leg inside the expiry window is a decision pending — it must be
+  // visible while this drawer is closed, same rule as a cap breach.
+  const legs=allOptLegs(),legsNear=legs.filter(l=>l.d!==null&&l.d>=0&&l.d<=OPT_NEAR_D).length;
   setDrawer("dExp","sExp",`EXPOSURE · `+
     (breach.length?`<span style="color:var(--red)">${breach.length} over the ${CAP_PCT}% cap</span> · `:``)+
     (cls.length?`${cls.length} cluster${cls.length===1?"":"s"}`:`no clusters set`)+
-    (fund.length?` · trim first: ${esc(fund[0].sym)}`:``),
-    cls.length>0||fund.length>0||BOOK.some(x=>posOf(x)));
+    (fund.length?` · trim first: ${esc(fund[0].sym)}`:``)+
+    (legsNear?` · <span style="color:var(--amber)">${legsNear} leg${legsNear===1?"":"s"} ≤${OPT_NEAR_D}d</span>`:``),
+    cls.length>0||fund.length>0||legs.length>0||BOOK.some(x=>posOf(x)));
   const ev=binaryEvents(),inW=ev.filter(e=>e.inWindow).length;
   setDrawer("dCal","sCal",`CALENDAR · `+
     (ev.length?(inW?`<span style="color:var(--red)">${inW} inside ${BINARY_WINDOW_D}d</span> · next ${esc(ev[0].sym)} ${ev[0].d===0?"today":ev[0].d+"d"}`
@@ -1308,6 +1399,10 @@ function render(){
         <span class="lens lens-${x.lens}">${x.lens}</span>`+
         (chg!==null?`<span class="chg" style="color:${chg>=0?"var(--green)":"var(--red)"}">${chg>=0?"+":""}${chg}%</span>`:"")+
         (wt!==null?`<span class="wt"${over?' style="color:var(--red);font-weight:700"':""}>${wt}%${over?"!":""}</span>`:"")+
+        // FEAT-TT-OWNDEBT (v3.35): unrealized P/L where measured, and an ◇opt marker for a
+        // position that is ONLY option legs — which used to render exactly like not-held.
+        (p&&isFinite(Number(p.upl_pct))?`<span class="pl" style="color:${p.upl_pct>=0?"var(--green)":"var(--red)"}">${p.upl_pct>=0?"+":""}${p.upl_pct}%</span>`:"")+
+        (p&&!(Number(p.sh)>0)&&Array.isArray(p.opt)&&p.opt.length?`<span class="wt">◇opt</span>`:"")+
         divergenceChip(x.sym,DIVERGENCE[x.sym]);
       const runTxt=rs.k==="never"?"TT run: NEVER RUN":`TT run ${x.lastRun} · ${rs.days}d ago`;
       c.title=[q?`$${q.px}${chg!==null?` (${chg>=0?"+":""}${chg}% today)`:""}`:null,
@@ -1327,8 +1422,8 @@ function render(){
   cut.appendChild(cc);b.appendChild(cut);
   // FEAT-TT-SESSION: circuit first (it gates every add), then the queues, then clusters —
   // which must run AFTER renderUpsideRank so its overlap check reads the current top ranks.
-  renderCircuit();renderNextDollar();renderFunding();renderUpsideRank();renderClusters();
-  renderBinaryCal();renderDecisions();renderCoverage();
+  renderCircuit();renderNextDollar();renderFunding();renderOptLadder();renderUpsideRank();renderEstRunBoard();renderClusters();
+  renderBinaryCal();renderDecisions();renderCoverage();renderRollup();
   // v3.29: TODAY reads what the strips above computed (AGREE_PICK, LAST_RANK), so it can
   // never contradict them — one computation, rendered twice at different altitudes.
   renderToday();renderChanged();renderDrawers();renderScorecard();renderTabs();
@@ -1484,39 +1579,22 @@ function ddGridSec(gr){
   if(!gr||typeof gr!=="object")return "";
   if(!Array.isArray(gr.rows_capital_B)||!Array.isArray(gr.cols_raise_price))return ddKvSec("Dilution grid",gr);
   const zone=(p)=>p<=15?"var(--green)":p<=30?"var(--amber)":"var(--red)";
-  let t=`<table class="dd-pt"><tr><th>need \\ raise px</th>${gr.cols_raise_price.map(c=>`<th>$${esc(c)}</th>`).join("")}</tr>`;
+  let t=`<div class="tblx"><table class="dd-pt"><tr><th>need \\ raise px</th>${gr.cols_raise_price.map(c=>`<th>$${esc(c)}</th>`).join("")}</tr>`;
   gr.rows_capital_B.forEach(b=>{
     t+=`<tr><th>$${esc(b)}B</th>`+gr.cols_raise_price.map(px=>{
       const pts=Math.round(100*b/px);
       return `<td style="color:${zone(pts)}">${pts}%</td>`;}).join("")+`</tr>`;});
-  t+=`</table>`;
+  t+=`</table></div>`;
   return `<div class="dd-sec"><div class="lbl">Dilution sequencing grid — pre-committed (pts ≈ 100 × $B ÷ price)</div>${t}`+
     (gr.zones?`<div style="color:var(--slate);font-size:10px;margin-top:5px">${ddVal(gr.zones)}</div>`:"")+
     (gr.central_case?`<div style="color:var(--amber);font-size:10.5px;margin-top:3px">central: ${esc(gr.central_case)}</div>`:"")+`</div>`;
 }
-// Consensus estimate table (v3.15) — the analyst series the projection is built on.
-// Rows backed by <=2 analysts render DIMMED: the 2031 revenue line (+2.9% on 2 analysts,
-// vs +93% EPS the same year) proved thin coverage produces numbers that look like
-// forecasts but are sampling noise. Evidence strength is part of the datum.
-function ddConsensusSec(c){
-  if(!c||typeof c!=="object")return "";
-  const rev=c.revenue_B||{},eps=c.eps||{},an=c.analysts||{},hi=c.revenue_high_B||{};
-  const years=[...new Set([...Object.keys(rev),...Object.keys(eps)])].sort();
-  if(!years.length)return ddKvSec("Consensus",c);
-  const hasHi=Object.keys(hi).length>0;
-  let t=`<table class="dd-pt"><tr><th>FY</th><th>rev $B</th>${hasHi?"<th>high</th>":""}<th>EPS</th><th>n</th></tr>`;
-  years.forEach(y=>{
-    const n=an[y],thin=typeof n==="number"&&n<=2;
-    const col=thin?"var(--dim)":"var(--fg)";
-    const e=eps[y];
-    const eCol=typeof e==="number"?(e<0?"var(--red)":"var(--green)"):col;
-    t+=`<tr style="color:${col}"><th>${esc(y)}</th><td>${rev[y]!=null?esc(rev[y]):"—"}</td>`+
-      (hasHi?`<td>${hi[y]!=null?esc(hi[y]):"—"}</td>`:"")+
-      `<td style="color:${eCol}">${e!=null?esc(e):"—"}</td><td>${n!=null?esc(n):"—"}</td></tr>`;
-  });
-  return `<div class="dd-sec"><div class="lbl">Consensus estimates${c.source?` · ${esc(c.source)}`:""}</div>${t}</table>`+
-    `<div style="color:var(--dim);font-size:10px;margin-top:4px">dimmed = ≤2 analysts · thin coverage, not a forecast</div></div>`;
-}
+// FEAT-TT-ESTRUN (v3.35): the standalone consensus table (v3.15 ddConsensusSec) and the
+// standalone computed PT ladder (v3.17 ddPtModelSec) are MERGED into one per-year table —
+// ddEstRunSec, below ptModelRows — because they were two renderings of the same year axis:
+// the estimate run and the targets priced off it. Their doctrines survive in the merge:
+// thin coverage (≤2 analysts) dims the row, negative EPS renders red, and evidence
+// strength stays part of the datum.
 // Consensus-derived PT ladder (v3.16) — deliberately SEPARATE from pt_ladder, which is
 // the maintainer's own model. Two ladders side by side beats one overwritten: when the
 // street and the model disagree, that disagreement is the signal. Columns are built from
@@ -1528,14 +1606,14 @@ function ddPtConsensusSec(pc){
   if(!years.length)return "";
   const cols=[...new Set(years.flatMap(y=>Object.keys(pc.rows[y]||{})))];
   if(!cols.length)return "";
-  let t=`<table class="dd-pt"><tr><th>year-end</th>${cols.map(c=>`<th>${esc(c)}</th>`).join("")}</tr>`;
+  let t=`<div class="tblx"><table class="dd-pt"><tr><th>year-end</th>${cols.map(c=>`<th>${esc(c)}</th>`).join("")}</tr>`;
   years.forEach(y=>{
     t+=`<tr><th>${esc(y)}</th>`+cols.map(c=>{
       const v=pc.rows[y][c],dim=/floor|bear|severe/i.test(c);
       return `<td style="color:${dim?"var(--dim)":"var(--fg)"}">${v!=null?"$"+esc(v):"—"}</td>`;
     }).join("")+`</tr>`;
   });
-  return `<div class="dd-sec"><div class="lbl">Consensus-derived PT ladder${pc.source?` · ${esc(pc.source)}`:""}</div>${t}</table>`+
+  return `<div class="dd-sec"><div class="lbl">Consensus-derived PT ladder${pc.source?` · ${esc(pc.source)}`:""}</div>${t}</table></div>`+
     (pc.basis?`<div style="color:var(--dim);font-size:10px;margin-top:4px">${esc(pc.basis)}</div>`:"")+`</div>`;
 }
 /* v3.17 FEAT-TT-PTM: PT ladder COMPUTED from inputs — the dilution-grid pattern applied
@@ -1554,7 +1632,7 @@ function schedAt(s,y){
   let best=null;Object.keys(s).sort().forEach(k=>{if(k<=y)best=+s[k];});
   return best;
 }
-/* Shared by the deep-dive render (ddPtModelSec) and the cross-book upside widget
+/* Shared by the deep-dive render (ddEstRunSec) and the cross-book upside widget
    (renderUpsideRank) — ONE computation, so the ranked "next dollar" number can never
    drift from the table the maintainer is looking at on the tab itself. */
 function ptModelRows(dd){
@@ -1637,39 +1715,89 @@ async function saveFloorMultiple(sym){
   await persist();
   renderDeepDive(sym);
 }
-function ddPtModelSec(m,dd,sym){
-  if(!m||typeof m!=="object")return "";
+/* FEAT-TT-ESTRUN (v3.35): the estimate run and the targets it prices, ONE table — the
+   sprint's centerpiece. Per fiscal year: consensus revenue + EPS with YoY growth, analyst
+   count, and BOTH computed price targets (the revenue-lens premium and the P/E floor)
+   joined from ptModelRows by forward year — NEVER recomputed here (the FEAT-TT-SPREAD
+   rule: one row, one computation). Upside compares the best target against the live
+   quote, falling back to the stamped mark with the same PX_STALE_D flag ddWorth uses. */
+function estRunTable(x,dd){
+  const m=dd.pt_model||{},c=dd.consensus||{};
+  const rev=m.revenue_B||c.revenue_B||{},eps=m.eps||c.eps||{},an=c.analysts||{};
   const rows=ptModelRows(dd);
+  const rowsByFwd={};rows.forEach(r=>{rowsByFwd[String(+r.y+1)]=r;});
+  const years=[...new Set([...Object.keys(rev),...Object.keys(eps)])].sort();
+  if(!years.length)return "";
+  const hasPT=rows.length>0;
+  const live=LIVE_PX[x.sym];
+  const px=live&&isFinite(live.px)?live.px:(dd.ref_px&&isFinite(dd.ref_px.px)?dd.ref_px.px:null);
+  const pxAge=live?0:ageDays(dd.ref_px&&dd.ref_px.at);
+  // YoY is a derived GROWTH number, not a target. A prior-year EPS ≤ 0 makes growth
+  // meaningless (sign-flip), so it reads n/m — the same doctrine as the floor's n/m.
+  const yoy=(map,y)=>{const pv=Number(map[String(+y-1)]);
+    if(map[y]==null||map[String(+y-1)]==null||!isFinite(Number(map[y]))||!isFinite(pv))return null;
+    if(pv<=0)return "n/m";
+    return Math.round((Number(map[y])/pv-1)*1000)/10;};
+  const yoyCell=g=>g===null?"<td></td>":g==="n/m"?`<td style="color:var(--dim)">n/m</td>`
+    :`<td><span class="yoy ${g>=0?"up":"dn"}">${g>=0?"+":""}${g}%</span></td>`;
+  let t=`<div class="tblx"><table class="dd-pt"><tr><th>FY</th><th>rev $B</th><th>Δrev</th><th>EPS</th><th>ΔEPS</th><th>n</th>${hasPT?`<th>PT rev-lens</th><th>PT floor</th><th>upside</th>`:""}</tr>`;
+  years.forEach(y=>{
+    const n=an[y],thin=typeof n==="number"&&n<=2;
+    const col=thin?"var(--dim)":"var(--fg)";
+    const e=eps[y];
+    const eCol=typeof e==="number"?(e<0?"var(--red)":"var(--green)"):col;
+    let pt="";
+    if(hasPT){
+      const r=rowsByFwd[y];
+      const tgt=r?(typeof r.prem==="number"?r.prem:(typeof r.fl==="number"?r.fl:null)):null;
+      const up=r&&px!==null&&tgt!==null?Math.round((tgt/px-1)*1000)/10:null;
+      pt=`<td>${r&&r.prem!=null?`$${esc(r.prem)} <span class="scope">by ${esc(r.y)} · ${esc(r.mult)}× ${esc(r.lens)}</span>`:""}</td>`+
+        `<td style="color:var(--dim)">${r?(r.fl==="n/m"?"n/m":r.fl!=null?"$"+esc(r.fl):""):""}</td>`+
+        `<td>${up!==null?`<span style="color:${up>=0?"var(--green)":"var(--red)"};font-weight:700">${up>=0?"+":""}${up}%</span>`:""}</td>`;
+    }
+    t+=`<tr style="color:${col}"><th>${esc(y)}</th><td>${rev[y]!=null?esc(rev[y]):""}</td>${yoyCell(yoy(rev,y))}`+
+      `<td style="color:${eCol}">${e!=null?esc(e):""}</td>${yoyCell(yoy(eps,y))}<td>${n!=null?esc(n):""}</td>${pt}`+`</tr>`;
+  });
+  t+=`</table></div>`;
+  if(hasPT&&px!==null&&(pxAge===null||pxAge>PX_STALE_D))
+    t+=`<div class="bad2" style="font-size:10px;margin-top:3px">⚠ upside computed off a stamped mark ${pxAge===null?"with no date":pxAge+"d old"} — not a live quote</div>`;
+  return t;
+}
+function ddEstRunSec(x,dd){
+  const m=dd.pt_model,c=dd.consensus;
+  if(!m&&!c)return "";
+  const sym=x.sym;
+  const rows=ptModelRows(dd);
+  const table=estRunTable(x,dd);
+  // The section label carries the TIER — the estimate run is the math under the tier
+  // claim, and putting them on one line is what makes a mispriced tier visible.
+  let h=`<div class="dd-sec"><div class="lbl">ESTIMATE RUN — ${esc(TIER_LABEL[x.tier]||x.tier)}${x.rank?` · ${esc(x.rank)}`:""}${c&&c.source?` · ${esc(c.source)}`:m&&m.source?` · ${esc(m.source)}`:""}</div>`;
+  if(table){
+    h+=table;
+    const pe=+((m||{}).pe_floor_multiple)||null;
+    const earn=rows.some(r=>r.lens==="P/E");
+    const shD=(s=>typeof s==="number"?s+"M"
+      :s&&typeof s==="object"?(ks=>ks.length?s[ks[0]]+"M→"+s[ks[ks.length-1]]+"M":"—")(Object.keys(s).sort())
+      :"—")((m||{}).share_count_M);
+    h+=`<div style="color:var(--dim);font-size:10px;margin-top:4px">`+
+      (rows.length?`PT rev-lens = ${earn?"mult × FY+1 EPS (earnings lens — already profitable)":`(mult × FY+1 rev + net cash) ÷ shares · shares ${esc(shD)}`} · floor = ${pe?esc(pe):"—"}× FY+1 EPS · n/m = EPS ≤ 0 · computed — edit inputs, not rows · `:"")+
+      `dimmed = ≤2 analysts · thin coverage, not a forecast</div>`;
+  }
   // A pt_model that yields NO rungs is the deliberately-unranked case (pre-profit names
-  // where 18x a first-profit token year would be a precise-looking non-answer). The early
-  // return hid the payload's own explanation of WHY — stored but invisible, which is the
-  // one thing this renderer must never do. Render the reasoning instead.
-  if(!rows.length){
-    if(!m.basis&&!m.note)return "";
-    return `<div class="dd-sec"><div class="lbl">PT ladder — none computed${m.source?` · ${esc(m.source)}`:""}</div>`+
-      `<div style="color:var(--amber);font-size:11.5px">⊘ no rung is computable from these inputs — this name is deliberately UNRANKED, not overlooked</div>`+
+  // where 18x a first-profit token year would be a precise-looking non-answer). Render
+  // the payload's own reasoning — stored but invisible is the one forbidden state.
+  if(m&&!rows.length&&(m.basis||m.note)){
+    h+=`<div style="color:var(--amber);font-size:11.5px;margin-top:6px">⊘ no rung is computable from these inputs — this name is deliberately UNRANKED, not overlooked</div>`+
       (m.basis?`<div style="color:var(--dim);font-size:10px;margin-top:4px">${esc(m.basis)}</div>`:"")+
       (m.note?`<div style="color:var(--amber);font-size:10.5px;margin-top:3px">${esc(m.note)}</div>`:"")+
       // Setting a multiple here is how the owner OPTS an unranked name in — their call, not the assistant's.
-      multEditor(sym,m)+`</div>`;
+      multEditor(sym,m);
+  }else if(m){
+    h+=multEditor(sym,m)+
+      (m.basis?`<div style="color:var(--dim);font-size:10px;margin-top:2px">${esc(m.basis)}</div>`:"")+
+      (m.note?`<div style="color:var(--amber);font-size:10.5px;margin-top:3px">${esc(m.note)}</div>`:"");
   }
-  const pe=+m.pe_floor_multiple||null;
-  const shD=(s=>typeof s==="number"?s+"M"
-    :s&&typeof s==="object"?(ks=>ks.length?s[ks[0]]+"M→"+s[ks[ks.length-1]]+"M":"—")(Object.keys(s).sort())
-    :"—")(m.share_count_M);
-  const earn=rows.some(r=>r.lens==="P/E");
-  let t=`<table class="dd-pt"><tr><th>year-end</th><th>premium</th><th>mult</th><th>floor${pe?" "+esc(pe)+"×":""}</th></tr>`;
-  rows.forEach(r=>{
-    t+=`<tr><th>${esc(r.y)}</th><td>${r.prem!=null?"$"+esc(r.prem):"—"}</td>`+
-      `<td style="color:var(--dim)">${r.mult>0?esc(r.mult)+"×"+(earn?" "+esc(r.lens):""):"—"}</td>`+
-      `<td style="color:var(--dim)">${r.fl==="n/m"?"n/m":r.fl!=null?"$"+esc(r.fl):"—"}</td></tr>`;
-  });
-  t+=`</table>`;
-  return `<div class="dd-sec"><div class="lbl">PT ladder — computed from inputs${m.source?` · ${esc(m.source)}`:""}</div>${t}
-    <div style="color:var(--dim);font-size:10px;margin-top:4px">premium = ${earn?"mult × FY+1 EPS (earnings lens — already profitable)":`(mult × FY+1 rev + net cash) ÷ shares · shares ${esc(shD)}`} · floor = ${pe?esc(pe):"—"}× FY+1 EPS · n/m = EPS ≤ 0 · computed — edit inputs, not rows</div>`+
-    multEditor(sym,m)+
-    (m.basis?`<div style="color:var(--dim);font-size:10px;margin-top:2px">${esc(m.basis)}</div>`:"")+
-    (m.note?`<div style="color:var(--amber);font-size:10.5px;margin-top:3px">${esc(m.note)}</div>`:"")+`</div>`;
+  return h+`</div>`;
 }
 /* v3.17 FEAT-TT-DOT: the dots inventory — capture and synthesis are different jobs.
    A dot is a POINTER (one line + optional URL, never article bodies — the 64KB book
@@ -1825,7 +1953,9 @@ function hingeTally(dd){
    all day, what its summary says is the only thing about it the owner will ever see. */
 function ddValSummary(dd,x){
   const w=ddWorth(dd,x.sym);
-  const bits=[dd.pt_model&&"model",dd.pt_ladder&&"ladder",dd.pt_consensus&&"street",dd.consensus&&"estimates",x.projection&&"3Q"].filter(Boolean);
+  // v3.35: "model"/"estimates" left this drawer for the above-fold ESTIMATE RUN — the
+  // summary must describe what the drawer actually still contains.
+  const bits=[dd.pt_ladder&&"ladder",dd.pt_consensus&&"street",x.projection&&"3Q"].filter(Boolean);
   return `VALUATION · ${w.txt}${bits.length?` <span style="color:var(--dim)">· ${bits.join(" · ")}</span>`:""}`;
 }
 function ddThesisSummary(dd){
@@ -1852,12 +1982,52 @@ function ddAnswerBlock(x,dd,todayET){
   const when=nd?{txt:`${nd.d===0?"TODAY":nd.d+"d"}`,sub:`${esc(nd.label)} · ${esc(nd.date)}`}
     :{txt:`<span style="color:var(--dim)">—</span>`,sub:"no future dated event on this payload"};
   const p=posOf(x);
-  const own=p?{txt:`${isFinite(Number(p.pct))?`${Number(p.pct)>CAP_PCT?`<span style="color:var(--red)">${p.pct}%</span>`:`${p.pct}%`} of NAV`:money(p.mv)}`,
-      sub:`${p.sh??"?"} sh${p.mv!=null?` · ${money(p.mv)}`:""} · ${posChip(p)}`}
+  /* FEAT-TT-OWNDEBT (v3.35): the own cell now renders EVERYTHING the sync measured — cb,
+     upl_pct, src, leg count. The old cell dropped four of eight stored fields, and a pos
+     carrying only option legs (no shares) fell through to money(undefined) and read as
+     unheld — an options-only book rendered exactly like an empty one. */
+  const legs=p&&Array.isArray(p.opt)?p.opt:[];
+  const shN=p?Number(p.sh):0;
+  const own=p?{
+    txt:isFinite(Number(p.pct))?`${Number(p.pct)>CAP_PCT?`<span style="color:var(--red)">${p.pct}%</span>`:`${p.pct}%`} of NAV`
+       :p.mv!=null?money(p.mv)
+       :legs.length?`${legs.length} leg${legs.length===1?"":"s"}`
+       :`<span style="color:var(--dim)">synced</span>`,
+    sub:[shN>0?`${p.sh} sh`:legs.length?`options only — no shares`:null,
+         p.mv!=null?money(p.mv):null,
+         p.cb!=null?`cost ${money(p.cb)}`:null,
+         isFinite(Number(p.upl_pct))?`<span style="color:${p.upl_pct>=0?"var(--green)":"var(--red)"}">${p.upl_pct>=0?"+":""}${p.upl_pct}% unrl</span>`:null,
+         legs.length?`${legs.length} option leg${legs.length===1?"":"s"}`:null,
+         p.src?`src ${esc(p.src)}`:null].filter(Boolean).join(" · ")+" · "+posChip(p)}
     :{txt:`<span style="color:var(--dim)">—</span>`,sub:"no measured position — not synced, which is not the same as not held"};
   const cell=(k,v)=>`<div class="dd-a"><div class="dd-ak">${k}</div><div class="dd-av">${v.txt}</div><div class="dd-as">${v.sub}</div></div>`;
   return `<div class="dd-answer">${cell("What it's worth",w)}${cell("What changes my mind",mind)}`+
     `${cell("When",when)}${cell("What I own",own)}</div>`;
+}
+/* FEAT-TT-OWNDEBT (v3.35): the option legs the broker sync measured, as a real table.
+   These were validated, stored, and rendered exactly once — a one-sentence short-call
+   cover count that only appeared with a TRIPPED circuit. A LEAP book was invisible.
+   Strike renders only where the sync captured it (never fabricated); DTE colors by the
+   OPT_NEAR_D window; a past expiry reads "expired?" — the sync should have removed it. */
+function optDte(exp){
+  if(!/^\d{4}-\d{2}-\d{2}$/.test(String(exp)))return null;
+  const todayET=new Date().toLocaleDateString("en-CA",{timeZone:"America/New_York"});
+  return Math.round((Date.parse(exp+"T12:00:00Z")-Date.parse(todayET+"T12:00:00Z"))/86400000);
+}
+function ddOptSec(p){
+  if(!p||!Array.isArray(p.opt)||!p.opt.length)return "";
+  let t=`<div class="tblx"><table class="dd-pt"><tr><th>side</th><th>C/P</th><th>n</th><th>strike</th><th>exp</th><th>DTE</th></tr>`;
+  p.opt.forEach(o=>{
+    const d=optDte(o.exp);
+    const dCol=d===null?"var(--dim)":d<0?"var(--red)":d<=OPT_NEAR_D?"var(--amber)":"var(--dim)";
+    t+=`<tr><td>${esc(o.side||"")}</td><td>${o.k==="call"?"C":o.k==="put"?"P":esc(o.k||"")}</td>`+
+      `<td>${o.n!=null?esc(o.n):""}</td>`+
+      `<td>${isFinite(Number(o.strike))?"$"+esc(o.strike):""}</td>`+
+      `<td>${o.exp?esc(o.exp):""}</td>`+
+      `<td style="color:${dCol}">${d===null?"":d<0?"expired?":d+"d"+(d<=OPT_NEAR_D?" ⚠":"")}</td></tr>`;});
+  t+=`</table></div>`;
+  return `<div class="dd-sec"><div class="lbl">Option legs (${p.opt.length}) · ${posChip(p)}</div>${t}
+    <div style="color:var(--dim);font-size:10px;margin-top:4px">from broker sync · strike shown only where captured · ⚠ = ≤${OPT_NEAR_D}d to expiry</div></div>`;
 }
 function renderDeepDive(sym){
   const x=find(sym);const dv=document.getElementById("deepView");
@@ -1872,16 +2042,16 @@ function renderDeepDive(sym){
     <div>${ddAgeChip(ddDate(dd))}</div></div>`;
   if(dd.ref_px)h+=`<div style="color:var(--slate);font-size:11px;margin-top:4px">ref $${esc(dd.ref_px.px)}${dd.ref_px.at?` · as of ${esc(dd.ref_px.at)}`:""} — manual mark, not a live quote</div>`;
   if(dd.position_note)h+=`<div style="color:var(--slate);font-size:11px;margin-top:4px">${esc(dd.position_note)}</div>`;
-  if(x.projection){const pj=x.projection;
-    h+=`<div class="dd-sec"><div class="lbl">The 3 questions — projection (answered ${esc(pj.as_of||"")})</div>
-      <div class="dd-kv"><div class="k">1 · rev in 3 yrs</div><div>$${esc(pj.rev_3yr.value_B)}B (${esc(pj.rev_3yr.year||"")})${pj.rev_3yr.why?` — ${esc(pj.rev_3yr.why)}`:""}</div></div>
-      <div class="dd-kv"><div class="k">2 · margins</div><div>${esc(pj.margins.path)} — ${esc(pj.margins.why)}</div></div>
-      <div class="dd-kv"><div class="k">3 · multiple</div><div>${esc(pj.multiple.value)}× ${esc(pj.multiple.basis||"")}</div></div>
-      <div style="margin-top:6px;font-size:11.5px">${projLine(pj)}</div></div>`;}
+  // v3.35 fixpack: the 3-questions block used to ALSO render inline here — a verbatim
+  // duplicate of ddProjSec, which renders inside the val drawer. One copy, one place.
   // FEAT-TT-DDFOCUS (v3.31): the four answers, above everything. This tab used to open ~20
   // sections at full size — the pre-v3.29 board one level down. The reader arrives with the
   // same four questions every time, so they are answered first and the corpus goes below.
   h+=ddAnswerBlock(x,dd,todayET);
+  h+=ddOptSec(posOf(x));   // FEAT-TT-OWNDEBT: the legs expressing this thesis, beside it
+  // FEAT-TT-ESTRUN (v3.35): the estimate run + dual PTs, ABOVE the fold — the analyst
+  // projection layer is the math under the tier claim, not a drawer to hunt for.
+  h+=ddEstRunSec(x,dd);
   /* v3.25: hinges COLLAPSED by default. Every ranked name now carries them, and rendering
      11 open lists would bury the ladder each tab exists to show. The collapse is only safe
      because the summary carries the SIGNAL: a per-state tally, coloured by the WORST state
@@ -1912,9 +2082,10 @@ function renderDeepDive(sym){
           (past?`<span class="bad2" style="color:var(--red);font-size:10px">passed — re-confirm</span>`
                :`<span style="color:var(--dim);font-size:10px">in ${dl}d</span>`)+`</div></div>`;}).join("")
     : "";
+  // v3.35: the val drawer slims to what ESTRUN didn't absorb — the hand-set ladder, the
+  // street's ladder, and the 3 questions. Model + estimates render above the fold now.
   h+=ddDrawer("val",ddValSummary(dd,x),
-    ddPtModelSec(dd.pt_model,dd,x.sym)+ddPtSec(dd.pt_ladder)+ddPtConsensusSec(dd.pt_consensus)+
-    ddConsensusSec(dd.consensus)+ddProjSec(x));
+    ddPtSec(dd.pt_ladder)+ddPtConsensusSec(dd.pt_consensus)+ddProjSec(x));
   h+=ddDrawer("thesis",ddThesisSummary(dd),
     ddGatesSec(dd.gates)+ddKillSec(dd.kill_combination)+
     ddListSec("Standing rules (must survive every port)",dd.rules)+
@@ -2524,6 +2695,42 @@ function renderUpsideRank(){
         `<span class="scope">${near}</span> · disagreement is information, not a discount</div>`;
     })();
 }
+/* FEAT-TT-ESTRUN (v3.35): the board expression — every modelled name, one compact row
+   (nearest target · annualised upside · tier), expanding to the SAME estRunTable the
+   deep dive renders. Open-state persists in EST_OPEN because quotes, positions and the
+   ledger each re-fire render(): an unpersisted <details> snaps shut mid-read — this is
+   correctness, not polish. The rows use class est-mini, NEVER drawer: the phone harness
+   asserts at most one open details.drawer, and these are not drawers. */
+const EST_OPEN=new Set();
+function estToggle(sym,open){open?EST_OPEN.add(sym):EST_OPEN.delete(sym);}
+function renderEstRunBoard(){
+  const el=document.getElementById("estRunBoard");if(!el)return;
+  const cands=BOOK.map(x=>({x,rows:x.deepDive?ptModelRows(x.deepDive):[]})).filter(c=>c.rows.length);
+  if(!cands.length){el.style.display="none";el.innerHTML="";return;}
+  el.style.display="";
+  const items=cands.map(({x,rows})=>{
+    const r=rows[0];                    // nearest future year-end (past years already dropped)
+    const live=LIVE_PX[x.sym],stamp=x.deepDive.ref_px;
+    const px=live&&isFinite(live.px)?live.px:(stamp&&isFinite(stamp.px)?stamp.px:null);
+    const tgt=typeof r.prem==="number"?r.prem:(typeof r.fl==="number"?r.fl:null);
+    const up=px!==null&&tgt!==null?Math.round((tgt/px-1)*1000)/10:null;
+    const ann=up!==null?annualise(up,r.y):null;
+    const pxAge=live?0:ageDays(stamp&&stamp.at);
+    return{x,r,px,live:!!live,tgt,up,ann,pxAge};
+  }).sort((a,b)=>((b.ann??b.up??-1e9)-(a.ann??a.up??-1e9)));
+  el.innerHTML=`<div class="lbl">Estimate runs — ${items.length} modelled of ${BOOK.length} · tap a name for the full year table · same rows the upside rank reads</div>`+
+    items.map(it=>{
+      const upTxt=it.up===null?`<span class="scope">no px</span>`
+        :`<span style="color:${it.up>=0?"var(--green)":"var(--red)"};font-weight:700">${it.ann!==null?`${it.ann>=0?"+":""}${it.ann}%/yr`:`${it.up>=0?"+":""}${it.up}%`}</span>`;
+      const pxFlag=it.px!==null&&(it.pxAge===null||it.pxAge>PX_STALE_D)?`<span class="bad2">⚠ px ${it.pxAge===null?"undated":it.pxAge+"d"}</span>`:"";
+      return `<details class="est-mini"${EST_OPEN.has(it.x.sym)?" open":""} ontoggle="estToggle('${esc(it.x.sym)}',this.open)">
+        <summary><span class="sym">${esc(it.x.sym)}</span><span class="lens lens-${esc(it.x.lens)}">${esc(it.x.lens)}</span>
+          <span class="scope">${esc(it.x.tier)}${it.x.rank?` ${esc(it.x.rank)}`:""}</span>
+          ${it.tgt!==null?`<span>$${esc(it.tgt)} by ${esc(it.r.y)} <span class="scope">${esc(it.r.lens)}</span></span>`:""}
+          ${upTxt}${pxFlag}
+          <span class="scope" style="margin-left:auto;cursor:pointer" onclick="event.stopPropagation();switchTab('${esc(it.x.sym)}')">tab ↗</span></summary>
+        <div>${estRunTable(it.x,it.x.deepDive)}</div></details>`;}).join("");
+}
 /* v3.26 FEAT-TT-BINCAL: the binary calendar. Earnings dates lived inside individual
    deep-dive payloads, so a print surfaced only when you happened to open that tab — and
    the no-new-adds rule is worthless if you learn about the binary after sizing. This
@@ -2621,6 +2828,9 @@ function renderCoverage(){
         :`<span style="color:${m===BOOK.length?"var(--green)":"var(--amber)"}">⌗ ${m}/${BOOK.length} measured</span>`+
          (stale?`<span style="color:var(--amber)">⚠ ${stale} stale</span>`:"");})()+
     (QUOTE_DROPPED.length?`<span style="color:var(--amber)">⚠ ${QUOTE_DROPPED.length} unquoted (past the ${QUOTE_CAP}-symbol cap): ${QUOTE_DROPPED.join(", ")}</span>`:"")+
+    // v3.35 fixpack: the quote batch has always known its own timestamp (LIVE_AT) and never
+    // said it. Absent → renders nothing, never a fabricated freshness claim.
+    (LIVE_AT?`<span>quotes as of ${esc(String(LIVE_AT).replace("T"," ").slice(0,16))}</span>`:"")+
     `<span style="margin-left:auto">● ≤30d · ⏱ aged · ○ no TT run · 📐 3 questions answered</span>`;
 }
 
@@ -2633,7 +2843,20 @@ function openCard(sym){
   const body=document.getElementById("cBody");
   const tierOpts=TIER_ORDER.map(t=>`<option value="${t}" ${t===x.tier?"selected":""}>${TIER_LABEL[t]}</option>`).join("");
   const lensOpts=Object.keys(LENS_NAME).map(l=>`<option value="${l}" ${l===x.lens?"selected":""}>[${l}] ${LENS_NAME[l]}</option>`).join("");
-  let html=`
+  // v3.35 fixpack: the chip's title= tooltip carried live px, size, cost and P/L — data a
+  // phone can never reach. The card is the tap surface, so the measured facts render here,
+  // read-only, above the editable rows. Absent facts render nothing (never a 0 or a dash).
+  const q=LIVE_PX[x.sym],pp=posOf(x);
+  const measured=(q||pp)?`<div class="row"><div class="k">MEASURED</div><div class="v" style="font-size:11.5px">`+
+    [q&&isFinite(q.px)?`$${q.px}${isFinite(q.chg)?` (${q.chg>=0?"+":""}${q.chg}% today)`:""}`:null,
+     pp?[pp.sh!=null?`${pp.sh} sh`:null,
+         pp.mv!=null?money(pp.mv):null,
+         isFinite(Number(pp.pct))?`${pp.pct}% NAV`:null,
+         pp.cb!=null?`cost ${money(pp.cb)}`:null,
+         isFinite(Number(pp.upl_pct))?`<span style="color:${pp.upl_pct>=0?"var(--green)":"var(--red)"}">${pp.upl_pct>=0?"+":""}${pp.upl_pct}% unrl</span>`:null,
+         pp.src?`src ${esc(pp.src)}`:null].filter(Boolean).join(" · ")+" · "+posChip(pp):null
+    ].filter(Boolean).join("<br>")+`</div></div>`:"";
+  let html=measured+`
     <div class="row"><div class="k">TIER</div><div class="v"><select id="fTier">${tierOpts}</select></div></div>
     <div class="row"><div class="k">LENS / ROUTE</div><div class="v"><select id="fLens">${lensOpts}</select></div></div>
     <div class="row"><div class="k">FP ROUTING</div><div class="v"><select id="fFp">

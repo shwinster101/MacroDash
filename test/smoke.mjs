@@ -419,8 +419,9 @@ ok("3q: flywheel needs double-digit rev CAGR and lights only on three true engin
 ok("3q: coverage strip counts projected names", adminSrc.includes("projected"));
 ok("3q: export carries the PROJECTIONS table", adminSrc.includes("PROJECTIONS — the 3 questions"));
 ok("3q: import validates projections before overwriting the book", adminSrc.includes(" projection: "));
-// v3.15: consensus estimate table — evidence strength rendered alongside the numbers.
-ok("consensus: table renders rev + EPS + analyst count", adminSrc.includes("function ddConsensusSec") && adminSrc.includes("<th>EPS</th>"));
+// v3.15 consensus table + v3.17 PT ladder merged into ESTRUN (v3.35) — one year axis,
+// one table. The doctrines survive the merge and stay pinned here.
+ok("consensus: the estimate-run table renders rev + EPS + analyst count", adminSrc.includes("function ddEstRunSec") && adminSrc.includes("<th>EPS</th>"));
 ok("consensus: thin coverage (<=2 analysts) dims the row", adminSrc.includes("n<=2") && adminSrc.includes("thin coverage, not a forecast"));
 ok("consensus: negative EPS renders red, positive green", adminSrc.includes('e<0?"var(--red)":"var(--green)"'));
 // Membership, not adjacency: the earlier version pinned the literal '"pt_ladder","consensus"'
@@ -559,7 +560,7 @@ ok("cagr: header states the ranking is annualised so horizons compare",
 // return hid the payload's own explanation — stored but invisible, the cardinal sin here.
 ok("ptm: a rungless pt_model still renders its reasoning (never stored-but-invisible)",
   adminSrc.includes("no rung is computable from these inputs") &&
-  adminSrc.includes("if(!m.basis&&!m.note)return \"\";"));
+  adminSrc.includes("if(m&&!rows.length&&(m.basis||m.note)){"));
 ok("ptm: rungless case says deliberately unranked, not overlooked",
   adminSrc.includes("deliberately UNRANKED, not overlooked"));
 // v3.23: default horizon + owner-editable floor multiple.
@@ -697,7 +698,10 @@ ok("sess: undated session state is the WORST age chip, never treated as current"
 ok("sess: cluster overlap with the ranked queues is called out as one position, not two",
   adminSrc.includes("that is one position, not two") && adminSrc.includes("LAST_RANK=shown.map"));
 ok("sess: clusters render after the upside rank so the overlap check reads current ranks",
-  adminSrc.indexOf("renderUpsideRank();renderClusters();") > 0);
+  // ordering, not adjacency — v3.35 slots renderEstRunBoard between them, which is fine;
+  // the invariant is that clusters read ranks the upside pass already computed.
+  (()=>{const chain=adminSrc.slice(adminSrc.indexOf("renderCircuit();renderNextDollar()"));
+    return chain.indexOf("renderUpsideRank();")>0&&chain.indexOf("renderUpsideRank();")<chain.indexOf("renderClusters();");})());
 ok("sess: next-dollar leads come from ONE helper, so the queue and the cluster check cannot disagree",
   adminSrc.includes("function ndLeads()") && (adminSrc.match(/ndLeads\(\)/g) || []).length >= 3);
 ok("sess: funding contradiction (same name trim + do-not-trim) is named, not silently ranked",
@@ -1154,6 +1158,81 @@ ok("spread: street PT excludes bear/floor/severe columns, the same dim rule ddPt
   (adminSrc.match(/floor\|bear\|severe/g) || []).length >= 2);
 ok("spread: street PT renders only when that year's pt_consensus row actually exists",
   adminSrc.includes("const pcRow=dd.pt_consensus&&dd.pt_consensus.rows&&dd.pt_consensus.rows[t.y];"));
+
+// ---- 17. v3.35 "The Analyst Desk" — UI revamp ------------------------------
+console.log("\n[17] v3.35 fixpack + rollup + owndebt + estrun");
+// fixpack: the 3-questions block rendered TWICE per tab (inline + val drawer). One copy.
+ok("fixpack: the 3-questions block renders exactly once (the val-drawer copy)",
+  (adminSrc.match(/The 3 questions — projection/g) || []).length === 1);
+ok("fixpack: the quote batch's own timestamp is finally rendered (absent → nothing)",
+  adminSrc.includes("quotes as of") && adminSrc.includes("LIVE_AT?`<span>quotes as of"));
+ok("fixpack: every dd-pt table scrolls inside its own .tblx container (390px must not scroll)",
+  adminSrc.includes(".tblx{overflow-x:auto") &&
+  (adminSrc.match(/<div class="tblx"><table class="dd-pt"/g) || []).length ===
+  (adminSrc.match(/<table class="dd-pt"/g) || []).length);
+ok("fixpack: the chip tooltip's measured facts are tap-reachable on the card (MEASURED row)",
+  adminSrc.includes('<div class="k">MEASURED</div>') &&
+  adminSrc.includes("cost ${money(pp.cb)}") && adminSrc.includes("% unrl</span>"));
+// FEAT-TT-ROLLUP: the tracked book summed — the number every broker leads with and this
+// board never computed. It is a FLOOR over what synced, never presented as the account.
+ok("rollup: bookRollup sums the tracked book and renderRollup is in the render chain",
+  adminSrc.includes("function bookRollup()") && adminSrc.includes("renderCoverage();renderRollup();"));
+ok("rollup: P/L sums ONLY names where both mv and cb are measured — no fabricated denominators",
+  adminSrc.includes("if(isFinite(m)&&isFinite(c)){cb+=c;pl+=m-c;plN++;}"));
+ok("rollup: the strip is honestly labeled a floor, never the account",
+  adminSrc.includes("tracked book only — NOT NAV; a floor, not the account"));
+ok("rollup: nothing measured renders NOTHING — a $0 total would read as a fact",
+  adminSrc.includes('if(!r.mvN){el.style.display="none";el.innerHTML="";return;}'));
+ok("rollup: no cost basis anywhere → says so rather than claiming a P/L of 0",
+  adminSrc.includes("no cost basis synced — no P/L claimed"));
+ok("rollup: sits between the TODAY card and WHAT CHANGED",
+  adminSrc.indexOf('id="bookRollup"') > adminSrc.indexOf('id="todayCard"') &&
+  adminSrc.indexOf('id="bookRollup"') < adminSrc.indexOf('id="dChanged"'));
+// FEAT-TT-OWNDEBT: cb/upl_pct/src/opt[] were validated, stored, and rendered nowhere.
+ok("owndebt: the option-legs table exists and strike renders only where captured",
+  adminSrc.includes("function ddOptSec(p)") &&
+  adminSrc.includes('isFinite(Number(o.strike))?"$"+esc(o.strike):""') &&
+  adminSrc.includes("strike shown only where captured"));
+ok("owndebt: the expiry window is a named constant shared by tab, ladder and summary",
+  adminSrc.includes("const OPT_NEAR_D=60;") && (adminSrc.match(/OPT_NEAR_D/g) || []).length >= 6);
+ok("owndebt: an options-only position no longer reads as unheld",
+  adminSrc.includes("options only — no shares") && adminSrc.includes("◇opt"));
+ok("owndebt: the chip carries measured unrealized P/L where present",
+  adminSrc.includes('class="pl"') && adminSrc.includes(".chip .pl{font-size:9px"));
+ok("owndebt: the book-wide expiry ladder lives in the EXPOSURE drawer, and its summary counts near legs",
+  adminSrc.includes('id="optLadder"') && adminSrc.includes("function renderOptLadder()") &&
+  adminSrc.includes("leg${legsNear===1?\"\":\"s\"} ≤${OPT_NEAR_D}d"));
+ok("owndebt: option expiries never feed binaryEvents (an expiry is your clock, not a market binary)",
+  (()=>{const b=adminSrc.slice(adminSrc.indexOf("function binaryEvents"),adminSrc.indexOf("function renderBinaryCal"));
+    return !/\bopt\b|allOptLegs/.test(b);})());
+// FEAT-TT-ESTRUN: the estimate run and the targets it prices, one table.
+ok("estrun: targets are JOINED from ptModelRows by forward year — never recomputed",
+  adminSrc.includes("function estRunTable(x,dd)") &&
+  adminSrc.includes("rowsByFwd[String(+r.y+1)]=r;"));
+ok("estrun: EPS YoY on a sign-flip renders n/m — growth off a negative base is meaningless",
+  adminSrc.includes('if(pv<=0)return "n/m";'));
+ok("estrun: the merged renderers are DEAD — no second render path for estimates or the model",
+  !adminSrc.includes("function ddPtModelSec") && !adminSrc.includes("function ddConsensusSec"));
+ok("estrun: the section label carries the tier — the math renders under the tier claim",
+  adminSrc.includes("ESTIMATE RUN — ${esc(TIER_LABEL[x.tier]"));
+ok("estrun: renders above the fold in the deep dive, not inside the val drawer",
+  adminSrc.indexOf("h+=ddEstRunSec(x,dd);") < adminSrc.indexOf('h+=ddDrawer("val"') &&
+  adminSrc.indexOf("h+=ddEstRunSec(x,dd);") > 0);
+ok("estrun: a stamped-mark upside says so — the same PX_STALE_D flag ddWorth uses",
+  adminSrc.includes("upside computed off a stamped mark"));
+// The board expression: every modelled name inside NEXT DOLLAR & UPSIDE.
+ok("estrun: the board rows live inside the NEXT DOLLAR drawer, after the upside rank",
+  adminSrc.indexOf('id="estRunBoard"') > adminSrc.indexOf('id="upsideRank"') &&
+  adminSrc.indexOf('id="estRunBoard"') < adminSrc.indexOf('id="dExp"'));
+ok("estrun: board open-state survives the async re-renders (quotes/pos/ledger each re-fire render)",
+  adminSrc.includes("const EST_OPEN=new Set();") && adminSrc.includes('ontoggle="estToggle('));
+ok("estrun: board rows are est-mini, never drawer — the phone harness counts open drawers",
+  adminSrc.includes("details.est-mini{") && !adminSrc.includes('class="drawer est-mini"') &&
+  !adminSrc.includes('class="est-mini drawer"'));
+ok("estrun: the board table IS the deep-dive table — one renderer, two surfaces",
+  adminSrc.includes("estRunTable(it.x,it.x.deepDive)"));
+ok("estrun: the board states its denominator (N modelled of M)",
+  adminSrc.includes("modelled of ${BOOK.length}"));
 
 console.log(`\n=== SMOKE TEST: ${pass} passed, ${fail} failed ===`);
 process.exit(fail === 0 ? 0 : 1);
