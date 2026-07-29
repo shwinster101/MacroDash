@@ -1257,6 +1257,9 @@ ok("rankfair: every pick renders its held weight beside the upside",
   adminSrc.includes("r.wt") && adminSrc.includes("weights are % of TRACKED BOOK (a floor"));
 ok("rankfair: queue names with NO model are NAMED, not silently missing from the ranking",
   adminSrc.includes("cannot be ranked here — no pt_model"));
+ok("rankfair: the ranking spans held AND unheld, and says which — a blank would be ambiguous",
+  adminSrc.includes("new — not held") && adminSrc.includes("held · size unmeasured") &&
+  adminSrc.includes('if(!p)return{w:null,mark:"",room:"open",optOnly:false,held:false};'));
 
 console.log(`\n=== SMOKE TEST: ${pass} passed, ${fail} failed ===`);
 process.exit(fail === 0 ? 0 : 1);

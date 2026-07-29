@@ -121,7 +121,7 @@ worker/                 SEPARATE Cloudflare Worker (not part of Pages)
   wrangler.toml         Worker config: PULSE_CACHE binding + cron triggers (UTC).
 
 test/
-  smoke.mjs             No-network smoke test: 515 assertions over mergeLiveOverMock
+  smoke.mjs             No-network smoke test: 516 assertions over mergeLiveOverMock
                         + SOURCES-path resolution against the real MOCK_DATA + the
                         5-Whys engine + DEC-31 guards + the TT band table (DEC-33)
                         + the market-holiday calendar (sessions + staleness).
@@ -454,7 +454,7 @@ Jan-anchor shipped; see `snapshot.js` ~318–328), `spyMa100`, `spyMa200`, and a
   so smoke can only pin load-bearing STRINGS; that catches deletions but not a strip that renders
   empty, a drawer that hides a red thing, a dead click, or a template literal that throws. This
   serves the real file with a stubbed `/api/tt` + `/readout.json` + `/api/quotes` and drives it in
-  Chromium at **390px and 1200px** (83 assertions). It has already caught bugs the source guards
+  Chromium at **390px and 1200px** (84 assertions). It has already caught bugs the source guards
   could not. **The fixture is SYNTHETIC** — no real ticker, position or session content enters
   this repo, same invariant as `SEED`/`BOARD`. It **skips cleanly (exit 0)** when playwright-core
   or a browser is missing, so it is additive and never breaks `npm test` on a bare machine.
@@ -580,6 +580,27 @@ Jan-anchor shipped; see `snapshot.js` ~318–328), `spyMa100`, `spyMa200`, and a
   under the ranking. Still open by design: the sort key remains a single variable (upside), with
   quality/hinges/trigger state rendered as tags — reconciling the two rankings into one score is
   its own piece of scope.
+- **v3.37 — TSM modelled, NBIS's debt gap closed, and the ranking says HELD vs NOT.**
+  The v3.36 audit exposed that the queue's top names carried **no `pt_model` at all**, so the
+  computed ranking could say nothing about the very names under consideration. **TSM is now
+  modelled** on the EARNINGS lens (`pe_premium_multiple`, the same rule that put UBER there):
+  a sales multiple prices the wrong thing for a 49.9%-net-margin compounder. Inputs are
+  measured where measurable — **5,186.48M ADS** (Robinhood) and **~$63B NET CASH** (NT$2.02T
+  net-debt-negative, Q1-26 @ 32.08) — while the multiple schedule (24x→19x, decaying from TSM's
+  own 29.6x trailing) is flagged in the payload as **the one asserted input, assistant-set,
+  owner to confirm**. Independent sanity check, not a fit: the 2027 rung computes **$625.02**
+  against Barclays' published **$625** PT. The consensus block records the FactSet cross-check
+  (NT$129.97/163.26 per common share ≈ $20.26/$25.44 per ADS — **6-10% BELOW** the owner EPS
+  used), so the model is explicitly on the optimistic side of the street. **NBIS's `pt_model`
+  basis literally read *"net debt NOT deducted — unavailable"*** — now closed: **+$0.87B net
+  cash** ($9,298.2M cash less $8,432.0M non-current debt, 2026-03-31), with a `capital` block
+  noting the balance sheet is a funding RUNWAY not a fortress, and that converts + prefunded
+  warrants are why `share_count_M` ramps 310M→340M against 251.65M outstanding today.
+  **Ranking honesty:** an unheld name used to render a BLANK weight, indistinguishable from
+  "held but unmeasured" — `rankWeight()` now carries `held`, and the pick renders **"new — not
+  held"** vs **"held · size unmeasured"**. BE was deliberately left floor-only (the owner's
+  7/27 decision) — that is why an ~8.6-scored name ranks -48%, and it is surfaced as a decision
+  rather than silently overridden.
 - **v3.34 follow-up: `MAX_BODY` raised 64KB → 200KB.** The pos-store split reclaimed real
   headroom (~950 bytes across 6 names) but the live book was already large enough that it
   only bought back ~400 bytes net — the very next addition (a real NVDA book entry, its own
@@ -656,7 +677,7 @@ npm run dev        # Vite dev server (mock unless VITE_DATA_MODE=live in .env)
 npm run build      # → dist/  (what Pages runs)
 npm run preview    # serve the built dist/
 
-node test/smoke.mjs   # 515-assertion no-network smoke test (needs Node ≥17)
+node test/smoke.mjs   # 516-assertion no-network smoke test (needs Node ≥17)
 npm run test:ui       # browser render test for admin.html (skips if no Chromium)
 
 # Cron Worker (separate deploy):

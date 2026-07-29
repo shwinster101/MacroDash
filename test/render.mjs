@@ -93,6 +93,10 @@ const BOOK = [
   { sym: "DDD", tier: "S", lens: "AI", lastRun: etDaysAgo(1), note: "no position measured" },
   { sym: "EEE", tier: "S", lens: "QC", lastRun: etDaysAgo(1), note: "diversifier" },
   { sym: "FFF", tier: "B", lens: "SP", lastRun: etDaysAgo(45), note: "leveraged" },
+  // JJJ is MODELLED BUT NOT HELD (no entry in POSITIONS) — the v3.37 case: the ranking
+  // deliberately spans both universes, so an unheld name must be labelled, not left blank.
+  { sym: "JJJ", tier: "WATCH", lens: "AI", lastRun: etDaysAgo(2), note: "candidate, no position",
+    deepDive: dd(100, { 2027: 5, 2028: 6, 2029: 7 }, { 2027: 3, 2028: 4, 2029: 5 }) },
 ];
 // FEAT-TT-POSSTORE (v3.34): pos now lives at /api/positions, not embedded in the book —
 // same fixture data, moved to its own map, keyed by sym.
@@ -221,7 +225,7 @@ ok("chips carry the measured weight", /21\.4%/.test(board) && /4\.2%/.test(board
 ok("an over-cap chip is flagged on the chip", /21\.4%!/.test(board));
 ok("a name with no measured position shows no weight", !/DDD[^\n]*%/.test(board));
 const cov = await txt(page, "coverage");
-ok("coverage counts measured positions alongside runs", /5\/6 measured/.test(cov));
+ok("coverage counts measured positions alongside runs", /5\/7 measured/.test(cov));
 // v3.35 fixpack: the quote batch finally states when it was taken.
 ok("coverage states when the quote batch was taken", /quotes as of/.test(cov));
 
@@ -231,7 +235,7 @@ ok("rollup totals the tracked book (Σmv = $178,494 → $178k)", /TRACKED BOOK/.
 ok("rollup P/L uses only both-ends-measured names (AAA alone: +$6k, +33.3%)",
   /\+\$6k \(\+33\.3%\)/.test(roll) && /1 of 5 carry cost basis/.test(roll));
 ok("rollup states its denominator and its honesty label",
-  /5\/6 measured/.test(roll) && /NOT NAV/.test(roll));
+  /5\/7 measured/.test(roll) && /NOT NAV/.test(roll));
 ok("rollup splits by tier so the tier list reads as capital, not just names",
   /A \$114k/.test(roll) && /B \$30k/.test(roll));
 
@@ -308,6 +312,8 @@ ok("the denominator is stated as tracked-book, never NAV",
   /% of TRACKED BOOK \(a floor/.test(upRank));
 ok("queue names with no pt_model are NAMED rather than silently absent",
   /cannot be ranked here — no pt_model/.test(upRank));
+// BBB is modelled but carries NO position — the ranking spans both universes and must say so.
+ok("an unheld name is labelled, never left blank against a held one", /new — not held/.test(upRank));
 // The load-bearing fix. The fixture circuit is TRIPPED, which short-circuits the whole
 // agree block — so clear it first, or the veto path never executes and the test passes
 // for the wrong reason. Restore both mutations before returning.
@@ -332,7 +338,7 @@ await page.waitForTimeout(120);
 console.log("\n[render] FEAT-TT-ESTRUN — the board expression inside NEXT DOLLAR");
 const estBoard = await txt(page, "estRunBoard");
 ok("every modelled name gets a row, denominator stated",
-  /2 modelled of 6/i.test(estBoard) && /AAA/.test(estBoard) && /BBB/.test(estBoard));
+  /3 modelled of 7/i.test(estBoard) && /AAA/.test(estBoard) && /BBB/.test(estBoard));
 ok("each row carries the nearest target and its annualised upside",
   /\$400 by 2026/.test(estBoard) && /%\/yr|%/.test(estBoard));
 await page.evaluate(() => { document.querySelector("#estRunBoard details").open = true; });

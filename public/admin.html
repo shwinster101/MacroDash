@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <!-- AUDIT: kept in sync with package.json by test/smoke.mjs. admin.html is a Vite
      public/ passthrough, so it cannot receive __APP_VERSION__ — the guard is the fix. -->
-<title>TT TICKER TERMINAL v3.36.0</title>
+<title>TT TICKER TERMINAL v3.37.0</title>
 <style>
   :root{
     --bg:#05070a; --panel:#0a0f16; --panel2:#0d141d; --line:#16202c;
@@ -228,7 +228,7 @@
 <body>
 <div class="wrap">
   <header>
-    <div class="brand">FINANCE&nbsp;BRO.AI // TT&nbsp;TICKER&nbsp;TERMINAL <small>v3.36.0 · single-pass deep-dive orchestrator</small></div>
+    <div class="brand">FINANCE&nbsp;BRO.AI // TT&nbsp;TICKER&nbsp;TERMINAL <small>v3.37.0 · single-pass deep-dive orchestrator</small></div>
     <div class="statusline">
       <span>BOOK: <b id="bookStamp">loading…</b></span>
       <span>AUTH: <b id="sessState">…</b></span>
@@ -2569,13 +2569,13 @@ function ttInfo(dd){
    position reads no weight at all: it gets its own marker rather than a misleading 0%. */
 function rankWeight(sym){
   const e=find(sym),p=e&&posOf(e);
-  if(!p)return{w:null,mark:"",room:"open",optOnly:false};
+  if(!p)return{w:null,mark:"",room:"open",optOnly:false,held:false};
   const optOnly=Array.isArray(p.opt)&&p.opt.length>0&&!(Number(p.sh)>0);
   const tot=bookRollup().mv;
   const mv=Number(p.mv);
-  if(!isFinite(mv)||!(tot>0))return{w:null,mark:optOnly?"◇":"",room:optOnly?"opt-only":"unmeasured",optOnly};
+  if(!isFinite(mv)||!(tot>0))return{w:null,mark:optOnly?"◇":"",room:optOnly?"opt-only":"unmeasured",optOnly,held:true};
   const w=Math.round(mv/tot*1000)/10;
-  return{w,optOnly,
+  return{w,optOnly,held:true,
     mark:w>=CAP_PCT?"**":w>=10?"*":optOnly?"◇":"",
     room:w>=CAP_PCT?"no room":w>=10?"thin":"open"};
 }
@@ -2668,7 +2668,10 @@ function renderUpsideRank(){
       ${(()=>{ // FEAT-TT-RANKFAIR: already-held weight, so a ranking can't propose a full name
         const w=r.wt;
         if(w.optOnly&&w.w===null)return `<span class="scope" style="color:var(--amber)">◇ opt-only — weight not measurable</span>`;
-        if(w.w===null)return "";
+        // v3.37: an UNHELD name rendered nothing here, which is ambiguous against "held but
+        // unmeasured". The ranking deliberately spans both universes, so it has to say which.
+        if(w.w===null)return w.held?`<span class="scope">held · size unmeasured</span>`
+                                   :`<span class="scope" style="color:var(--green)">new — not held</span>`;
         const c=w.w>=CAP_PCT?"var(--red)":w.w>=10?"var(--amber)":"var(--slate)";
         return `<span style="color:${c};font-size:9.5px;font-weight:700">${w.w}%${esc(w.mark)}</span>`;
       })()}
