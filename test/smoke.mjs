@@ -467,9 +467,14 @@ ok("upside: ranks ALL tiers, not just the watchlist queue (S/A/B/DEF included)",
   /BOOK\.forEach\(x=>\{\s*const dd=x\.deepDive/.test(adminSrc));
 // Pin the two INVARIANTS (a usable ref_px, and at least one usable rung), not the exact
 // expression — the horizon refactor moved this code and a literal match broke on it.
+// v3.36: the gate is a USABLE price (live preferred, stamp as fallback) — it used to demand
+// a hand-STAMPED ref_px, which silently excluded any modelled name nobody had stamped.
 ok("upside: requires a usable price AND a pt_model rung — never guesses either",
-  /if\(!\w+\|\|!isFinite\(\w+\.px\)\|\|\w+\.px<=0\)return;/.test(adminSrc) &&
+  adminSrc.includes("if(!ref)return;") &&
+  adminSrc.includes("const ref=(live&&isFinite(live.px)&&live.px>0)?{px:live.px,at:live.at,live:true,chg:live.chg}:stamp;") &&
   /ptModelRows\(dd\)\.(find|filter)\(r=>typeof r\.prem==="number"\|\|typeof r\.fl==="number"\)/.test(adminSrc));
+ok("upside: a live quote alone qualifies — an unstamped name is no longer silently excluded",
+  adminSrc.includes("a name with a full") && adminSrc.includes("model and a LIVE quote was excluded outright"));
 ok("upside: explicitly labeled math-only, not a recommendation",
   adminSrc.includes("math only, not a recommendation"));
 ok("upside: stale/never TT runs keep their honesty flag on the ranked pick",
@@ -1233,6 +1238,25 @@ ok("estrun: the board table IS the deep-dive table — one renderer, two surface
   adminSrc.includes("estRunTable(it.x,it.x.deepDive)"));
 ok("estrun: the board states its denominator (N modelled of M)",
   adminSrc.includes("modelled of ${BOOK.length}"));
+
+// ---- 18. FEAT-TT-RANKFAIR (v3.36) — the ranking audit ----------------------
+// The ranking answered "what is cheapest" while being asked "where does the next dollar
+// go". Weight is now a ranking input, not a footnote.
+console.log("\n[18] FEAT-TT-RANKFAIR — weight-aware ranking");
+ok("rankfair: weight is computed per name against the tracked book, never NAV",
+  adminSrc.includes("function rankWeight(sym)") && adminSrc.includes("const tot=bookRollup().mv;"));
+ok("rankfair: markers are the cap constants, not magic numbers (** at cap, * at 10%)",
+  adminSrc.includes('mark:w>=CAP_PCT?"**":w>=10?"*"'));
+ok("rankfair: an options-only position gets its OWN marker, never a misleading 0%",
+  adminSrc.includes("opt-only — weight not measurable") &&
+  adminSrc.includes('const optOnly=Array.isArray(p.opt)&&p.opt.length>0&&!(Number(p.sh)>0);'));
+ok("rankfair: a name at/over the cap can NEVER be the next dollar, however wide its gap",
+  adminSrc.includes("at the ${CAP_PCT}% cap, no room") &&
+  adminSrc.indexOf("if(r.wt.w!==null&&r.wt.w>=CAP_PCT)") < adminSrc.indexOf('if(!r.tt)return "unscored'));
+ok("rankfair: every pick renders its held weight beside the upside",
+  adminSrc.includes("r.wt") && adminSrc.includes("weights are % of TRACKED BOOK (a floor"));
+ok("rankfair: queue names with NO model are NAMED, not silently missing from the ranking",
+  adminSrc.includes("cannot be ranked here — no pt_model"));
 
 console.log(`\n=== SMOKE TEST: ${pass} passed, ${fail} failed ===`);
 process.exit(fail === 0 ? 0 : 1);

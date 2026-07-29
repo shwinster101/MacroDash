@@ -121,7 +121,7 @@ worker/                 SEPARATE Cloudflare Worker (not part of Pages)
   wrangler.toml         Worker config: PULSE_CACHE binding + cron triggers (UTC).
 
 test/
-  smoke.mjs             No-network smoke test: 508 assertions over mergeLiveOverMock
+  smoke.mjs             No-network smoke test: 515 assertions over mergeLiveOverMock
                         + SOURCES-path resolution against the real MOCK_DATA + the
                         5-Whys engine + DEC-31 guards + the TT band table (DEC-33)
                         + the market-holiday calendar (sessions + staleness).
@@ -454,7 +454,7 @@ Jan-anchor shipped; see `snapshot.js` ~318–328), `spyMa100`, `spyMa200`, and a
   so smoke can only pin load-bearing STRINGS; that catches deletions but not a strip that renders
   empty, a drawer that hides a red thing, a dead click, or a template literal that throws. This
   serves the real file with a stubbed `/api/tt` + `/readout.json` + `/api/quotes` and drives it in
-  Chromium at **390px and 1200px** (78 assertions). It has already caught bugs the source guards
+  Chromium at **390px and 1200px** (83 assertions). It has already caught bugs the source guards
   could not. **The fixture is SYNTHETIC** — no real ticker, position or session content enters
   this repo, same invariant as `SEED`/`BOARD`. It **skips cleanly (exit 0)** when playwright-core
   or a browser is missing, so it is additive and never breaks `npm test` on a bare machine.
@@ -561,6 +561,25 @@ Jan-anchor shipped; see `snapshot.js` ~318–328), `spyMa100`, `spyMa200`, and a
   became a read-only MEASURED row on the card (tap-reachable); `test/render.mjs` fixture
   dates are now **computed relative to today** (a fixture stamped "today" at write time
   silently rotted at the first midnight — two asserts died exactly that way).
+- **FEAT-TT-RANKFAIR (v3.36) — the ranking audit: weight becomes a ranking input.** An audit of
+  the next-dollar logic found the board carrying **two rankings that contradicted each other**:
+  the manual `rank` queue (human-asserted trigger state) said one thing, while `renderUpsideRank`
+  sorted purely on annualised upside and said another — with nothing reconciling them. Three
+  structural flaws, all fixed here. **(1) Weight was absent entirely.** The ranking answered
+  *"what is cheapest"* while being asked *"where does the next dollar go"* — a name at 31% of the
+  book could top the list and be unable to take another dollar. `rankWeight()` now marks every
+  pick (`**` at/over `CAP_PCT`, `*` ≥10%, `◇` options-only) and **a name at/over the cap is vetoed
+  from `AGREE_PICK` outright**, with the reason named — the board can no longer propose an add
+  into a full position. Denominator is tracked-book MV, **never NAV** (unmeasured), so every
+  weight is a floor; `mv` is equity-only, so an options-only position gets its own marker rather
+  than a misleading 0%. **(2) A stamped `ref_px` was the entry ticket** — a name with a full model
+  and a *live* quote was excluded outright because nobody had hand-stamped it. The gate is now a
+  usable price, live preferred. **(3) The coverage gap was silent**: queue names carrying a manual
+  rank but no `pt_model` can never appear in the computed list, so the names under active
+  consideration were exactly the ones the math had nothing to say about — they are now NAMED
+  under the ranking. Still open by design: the sort key remains a single variable (upside), with
+  quality/hinges/trigger state rendered as tags — reconciling the two rankings into one score is
+  its own piece of scope.
 - **v3.34 follow-up: `MAX_BODY` raised 64KB → 200KB.** The pos-store split reclaimed real
   headroom (~950 bytes across 6 names) but the live book was already large enough that it
   only bought back ~400 bytes net — the very next addition (a real NVDA book entry, its own
@@ -637,7 +656,7 @@ npm run dev        # Vite dev server (mock unless VITE_DATA_MODE=live in .env)
 npm run build      # → dist/  (what Pages runs)
 npm run preview    # serve the built dist/
 
-node test/smoke.mjs   # 508-assertion no-network smoke test (needs Node ≥17)
+node test/smoke.mjs   # 515-assertion no-network smoke test (needs Node ≥17)
 npm run test:ui       # browser render test for admin.html (skips if no Chromium)
 
 # Cron Worker (separate deploy):

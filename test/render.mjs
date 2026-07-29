@@ -87,7 +87,9 @@ const BOOK = [
     }) },
   { sym: "BBB", tier: "WATCH", lens: "AI", rank: "#1 optics", lastRun: etDaysAgo(1), note: "queued too",
     deepDive: dd(609, { 2027: 9, 2028: 11 }, { 2027: 18, 2028: 22 }) },
-  { sym: "CCC", tier: "A", lens: "AI", lastRun: etDaysAgo(1), note: "held" },
+  // CCC carries a manual queue rank but NO deepDive/pt_model — the v3.36 coverage gap:
+  // a name under active consideration that the computed ranking can say nothing about.
+  { sym: "CCC", tier: "A", lens: "AI", rank: "#3", lastRun: etDaysAgo(1), note: "held" },
   { sym: "DDD", tier: "S", lens: "AI", lastRun: etDaysAgo(1), note: "no position measured" },
   { sym: "EEE", tier: "S", lens: "QC", lastRun: etDaysAgo(1), note: "diversifier" },
   { sym: "FFF", tier: "B", lens: "SP", lastRun: etDaysAgo(45), note: "leveraged" },
@@ -297,6 +299,35 @@ ok("the EXPOSURE summary carries the near-expiry count while closed",
 const nd = await txt(page, "nextDollar");
 ok("the stricter regime governs and both readings print",
   /PANIC regime/.test(nd) && /engines disagree/.test(nd) && /HEADWIND/.test(nd));
+
+console.log("\n[render] FEAT-TT-RANKFAIR — held weight is a ranking input, not a footnote");
+// AAA is 24000/178494 = 13.4% of the tracked book -> "*" (thin). EEE is options-only -> "◇".
+const upRank = await txt(page, "upsideRank");
+ok("a ranked pick carries the weight already held", /13\.4%\*/.test(upRank));
+ok("the denominator is stated as tracked-book, never NAV",
+  /% of TRACKED BOOK \(a floor/.test(upRank));
+ok("queue names with no pt_model are NAMED rather than silently absent",
+  /cannot be ranked here — no pt_model/.test(upRank));
+// The load-bearing fix. The fixture circuit is TRIPPED, which short-circuits the whole
+// agree block — so clear it first, or the veto path never executes and the test passes
+// for the wrong reason. Restore both mutations before returning.
+const capped = await page.evaluate(() => {
+  const prevState = BOARD.circuit.state, prevMv = POSITIONS.AAA.mv, prevPx = LIVE_PX.AAA;
+  BOARD.circuit.state = "clear";
+  // AAA must have a POSITIVE gap to reach the cap branch at all — why() returns "no gap"
+  // first, and the fixture prices AAA ($800) above its nearest target ($400).
+  LIVE_PX.AAA = { px: 300, chg: 0, at: prevPx.at };
+  POSITIONS.AAA = { ...POSITIONS.AAA, mv: 999999 };   // ~85% of the tracked book
+  render();
+  const t = document.getElementById("upsideRank").innerText;
+  const res = { over: /at the 18% cap, no room/.test(t), pick: AGREE_PICK ? AGREE_PICK.sym : null };
+  BOARD.circuit.state = prevState; POSITIONS.AAA = { ...POSITIONS.AAA, mv: prevMv }; LIVE_PX.AAA = prevPx;
+  render();
+  return res;
+});
+ok("a name over the cap is vetoed from the next dollar with its reason named", capped.over);
+ok("...and is never left standing as AGREE_PICK", capped.pick !== "AAA");
+await page.waitForTimeout(120);
 
 console.log("\n[render] FEAT-TT-ESTRUN — the board expression inside NEXT DOLLAR");
 const estBoard = await txt(page, "estRunBoard");

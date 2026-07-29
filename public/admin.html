@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <!-- AUDIT: kept in sync with package.json by test/smoke.mjs. admin.html is a Vite
      public/ passthrough, so it cannot receive __APP_VERSION__ — the guard is the fix. -->
-<title>TT TICKER TERMINAL v3.35.0</title>
+<title>TT TICKER TERMINAL v3.36.0</title>
 <style>
   :root{
     --bg:#05070a; --panel:#0a0f16; --panel2:#0d141d; --line:#16202c;
@@ -228,7 +228,7 @@
 <body>
 <div class="wrap">
   <header>
-    <div class="brand">FINANCE&nbsp;BRO.AI // TT&nbsp;TICKER&nbsp;TERMINAL <small>v3.35.0 · single-pass deep-dive orchestrator</small></div>
+    <div class="brand">FINANCE&nbsp;BRO.AI // TT&nbsp;TICKER&nbsp;TERMINAL <small>v3.36.0 · single-pass deep-dive orchestrator</small></div>
     <div class="statusline">
       <span>BOOK: <b id="bookStamp">loading…</b></span>
       <span>AUTH: <b id="sessState">…</b></span>
@@ -2560,6 +2560,25 @@ function ttInfo(dd){
   if(!tier&&score!==null)tier=score>=8.5?"S":score>=7?"A":score>=5.5?"B":"C";
   return {score,tier};
 }
+/* FEAT-TT-RANKFAIR (v3.36): how big is this position ALREADY?
+   The ranking answered "what is cheapest" and was asked "where does the next dollar go" —
+   two different questions. A name at or over the 18% cap can top the upside list and still
+   be unable to take another dollar. Weight is now a first-class ranking input.
+   HONESTY: the denominator is TRACKED-BOOK MV, not NAV (get_portfolio is unmeasured), so
+   every weight is a FLOOR — the true % is lower. And mv is EQUITY-ONLY, so an options-only
+   position reads no weight at all: it gets its own marker rather than a misleading 0%. */
+function rankWeight(sym){
+  const e=find(sym),p=e&&posOf(e);
+  if(!p)return{w:null,mark:"",room:"open",optOnly:false};
+  const optOnly=Array.isArray(p.opt)&&p.opt.length>0&&!(Number(p.sh)>0);
+  const tot=bookRollup().mv;
+  const mv=Number(p.mv);
+  if(!isFinite(mv)||!(tot>0))return{w:null,mark:optOnly?"◇":"",room:optOnly?"opt-only":"unmeasured",optOnly};
+  const w=Math.round(mv/tot*1000)/10;
+  return{w,optOnly,
+    mark:w>=CAP_PCT?"**":w>=10?"*":optOnly?"◇":"",
+    room:w>=CAP_PCT?"no room":w>=10?"thin":"open"};
+}
 function renderUpsideRank(){
   const el=document.getElementById("upsideRank");if(!el)return;
   AGREE_PICK=null;   // recomputed below; an early return must never leave a stale candidate
@@ -2567,9 +2586,13 @@ function renderUpsideRank(){
   const cands=[];
   BOOK.forEach(x=>{
     const dd=x.deepDive;if(!dd)return;
-    const stamp=dd.ref_px;if(!stamp||!isFinite(stamp.px)||stamp.px<=0)return;
+    // v3.36 AUDIT FIX: a STAMPED ref_px used to be the entry ticket — a name with a full
+    // model and a LIVE quote was excluded outright because nobody had hand-stamped it.
+    // The requirement is a usable price, and a live one is strictly better than a stamp.
+    const stamp=(dd.ref_px&&isFinite(dd.ref_px.px)&&dd.ref_px.px>0)?dd.ref_px:null;
     const live=LIVE_PX[x.sym];
     const ref=(live&&isFinite(live.px)&&live.px>0)?{px:live.px,at:live.at,live:true,chg:live.chg}:stamp;
+    if(!ref)return;
     const rr=ptModelRows(dd).filter(r=>typeof r.prem==="number"||typeof r.fl==="number");
     if(rr.length)cands.push({x,dd,ref,rr});
   });
@@ -2605,6 +2628,9 @@ function renderUpsideRank(){
       // ref_px; when that chain breaks (it has), a weeks-old price still divides into a
       // current target and renders a confident number. >4d spans any weekend/holiday gap.
       pxAge:ref.live?0:ageDays(ref.at),
+      // FEAT-TT-RANKFAIR: how much room is left under the cap — the difference between
+      // "cheap" and "where the next dollar can actually go".
+      wt:rankWeight(x.sym),
       // AUDIT: the payload's own caveat (e.g. JOBY's premium is gate-contingent) was stored
       // but invisible here — a contingent target ranked identically to a modeled one.
       caveat:(dd.pt_model&&dd.pt_model.note)||""});
@@ -2639,6 +2665,13 @@ function renderUpsideRank(){
       title="ref $${esc(r.px)}${r.at?` (${esc(r.at)})`:""} → $${esc(r.tgt)} ${esc(r.y)} pt_model target">
       <span>${MEDAL[i]}</span><span class="sym">${esc(r.sym)}</span><span class="lens lens-${esc(r.lens)}">${esc(r.lens)}</span>
       <span class="scope">${esc(TIER_LABEL[r.tier]||r.tier)}</span>
+      ${(()=>{ // FEAT-TT-RANKFAIR: already-held weight, so a ranking can't propose a full name
+        const w=r.wt;
+        if(w.optOnly&&w.w===null)return `<span class="scope" style="color:var(--amber)">◇ opt-only — weight not measurable</span>`;
+        if(w.w===null)return "";
+        const c=w.w>=CAP_PCT?"var(--red)":w.w>=10?"var(--amber)":"var(--slate)";
+        return `<span style="color:${c};font-size:9.5px;font-weight:700">${w.w}%${esc(w.mark)}</span>`;
+      })()}
       <span style="color:${col};font-weight:700">${r.ann!==null?`${r.ann>=0?"+":""}${r.ann}%/yr`:`${r.upside>=0?"+":""}${r.upside}%`}</span>
       <span class="scope">${r.ann!==null?`(${r.upside>=0?"+":""}${r.upside}% by ${esc(r.y)})`:`to ${esc(r.y)}`} · ${esc(r.basis)}</span>
       ${(()=>{ // TT verdict tag — the quality story beside the gap story, never blended into it
@@ -2663,7 +2696,14 @@ function renderUpsideRank(){
     (HORIZON?` · all % share the ${esc(HORIZON)} horizon`:` · horizons differ, each % is to its own year`)+
     (()=>{const l=rows.filter(r=>r.live).length;
       return l===rows.length?` · all prices LIVE`:l?` · ${l} live / ${rows.length-l} on stamped marks`:` · all prices are stamped marks, not live`;})()+
-    ` · "floor" = 18× FY+1 EPS (S&P-average benchmark, no re-rating assumed); "premium" = the owner's asserted multiple</div>`+caveats+
+    ` · "floor" = 18× FY+1 EPS (S&P-average benchmark, no re-rating assumed); "premium" = the owner's asserted multiple`+
+    ` · weights are % of TRACKED BOOK (a floor — NAV unmeasured), equity-only, so ◇ opt-only names show none</div>`+
+    // FEAT-TT-RANKFAIR: the coverage gap the two rankings hid. Queue names carrying a manual
+    // rank but NO pt_model can never appear above — the names under active consideration were
+    // exactly the ones the math had nothing to say about, and nothing said so.
+    (()=>{const gap=BOOK.filter(x=>String(x.rank||"").startsWith("#")&&!(x.deepDive&&ptModelRows(x.deepDive).length)).map(x=>x.sym);
+      return gap.length?`<div style="color:var(--amber);font-size:10px;margin-top:3px">⚠ ${gap.length} name${gap.length===1?"":"s"} in the manual queue cannot be ranked here — no pt_model: <b>${gap.map(esc).join(", ")}</b>. The queue and this list are answering different questions until they are modelled.</div>`:"";})()+
+    caveats+
     (()=>{ // FEAT-TT-AGREE: light only when BOTH stories say yes; otherwise WAIT, blockers named.
       // v3.28: a tripped leverage circuit is a THIRD veto that no per-name score can clear —
       // in deleverage-only mode the next dollar funds debt, so the green line must not light
@@ -2676,6 +2716,9 @@ function renderUpsideRank(){
           `<span class="scope">· the gap ranking above still stands as math, but no name is eligible while the circuit holds</span></div>`;
       const why=r=>{
         if(!(r.upside>0))return "no gap";
+        // FEAT-TT-RANKFAIR: a name already at or over the single-name cap cannot receive the
+        // NEXT dollar no matter how wide its gap — the board was proposing full positions.
+        if(r.wt.w!==null&&r.wt.w>=CAP_PCT)return `already ${r.wt.w}% — at the ${CAP_PCT}% cap, no room`;
         if(!r.tt)return "unscored — no TT run";
         if(r.tt.tier==="C"||(r.tt.score!==null&&r.tt.score<5.5))return `TT ${r.tt.score!==null?r.tt.score.toFixed(1):"C"} — quality fails`;
         if(r.rrFail)return "R/R fails its floor";
