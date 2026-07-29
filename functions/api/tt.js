@@ -19,7 +19,13 @@ const LEDGER_CAP = 500;                    // entries per sym; oldest pruned fir
 const QUOTE_PREFIX = "tt:quote:";          // mirrors CACHE_PREFIX in functions/api/quotes.js
 const TIERS = ["S", "A", "B", "DEF", "WATCH"];
 const SYM_RE = /^[A-Z.\-]{1,8}$/;
-const MAX_BODY = 64 * 1024;
+// FEAT-TT-POSSTORE (v3.34) follow-up: raised 64KB -> 200KB. This was always an arbitrary
+// app-level safety cap, not a KV or Cloudflare platform limit (KV values go up to 25MB) —
+// the pos-store split bought back headroom but only ~400 bytes of it, and the very next
+// deep-dive addition (a real NVDA entry with its own consensus + pt_model) blew through it
+// again immediately. Raising the ceiling is the fast unblock; splitting deepDive out of the
+// book the way pos/ledger already were is the permanent fix, deliberately deferred.
+const MAX_BODY = 200 * 1024;
 
 const json = (obj, status = 200) =>
   new Response(JSON.stringify(obj), {

@@ -275,7 +275,8 @@ Jan-anchor shipped; see `snapshot.js` ~318–328), `spyMa100`, `spyMa200`, and a
   `functions/` in the repo; `validateBook` is exported solely for it).
 - **`persist()` never re-GETs on save failure** — the old catch overwrote `BOOK` from the server and
   silently destroyed the user's edit. It now sets `DIRTY`, shows `#saveBanner` (RETRY / EXPORT /
-  explicit discard) and guards `beforeunload`. Client-side 64KB pre-flight mirrors the server cap.
+  explicit discard) and guards `beforeunload`. Client-side pre-flight mirrors the server cap
+  (`MAX_BODY`, raised 64KB→200KB in the v3.34 follow-up — see FEAT-TT-POSSTORE below).
 - **FEAT-TT-SAFE (v3.6.0) closes the lost-update hole.** The book is a **whole-book replace**,
   so two devices editing concurrently silently clobbered each other. `PUT` now requires
   **`If-Match: <version>`**; a mismatch returns **409 with the server's copy**, and the client
@@ -331,7 +332,7 @@ Jan-anchor shipped; see `snapshot.js` ~318–328), `spyMa100`, `spyMa200`, and a
   floors exactly, premiums within ≤0.7% hand-rounding.
 - **FEAT-TT-DOT (v3.17) — the dots inventory.** Capture and synthesis are different jobs.
   A **⊕ DOT** box on each deep-dive tab captures a POINTER (≤280-char line + optional URL,
-  never article bodies — the 64KB book cap is the wall), ET-date-stamped, state `new`. Dots
+  never article bodies — the book's PUT cap is the wall), ET-date-stamped, state `new`. Dots
   live on the **book entry** (`e.dots`, validateBook passthrough) so replacing a deepDive
   payload can never wipe the inventory; keep-last-30 prune ages out reviewed/promoted first
   and **never silently drops a `new` dot**. States change only at **triage** (the chat sweep):
@@ -523,6 +524,16 @@ Jan-anchor shipped; see `snapshot.js` ~318–328), `spyMa100`, `spyMa200`, and a
   `x.pos`, so the store move is invisible to every renderer except that one line. Same invariant
   as the book and the ledger: real position data has no home in this repo, and `POSITIONS`
   ships empty.
+- **v3.34 follow-up: `MAX_BODY` raised 64KB → 200KB.** The pos-store split reclaimed real
+  headroom (~950 bytes across 6 names) but the live book was already large enough that it
+  only bought back ~400 bytes net — the very next addition (a real NVDA book entry, its own
+  `consensus` + `pt_model`) blew through the cap again within the same session. The 64KB
+  figure was always an arbitrary app-level safety cap in `tt.js`/`positions.js`, never a KV or
+  Cloudflare platform limit (KV values go up to 25MB), so raising it is a one-line unblock —
+  `MAX_BODY` in `functions/api/tt.js` and its mirror in `admin.html`'s client pre-flight, kept
+  in sync as always. **This is a stopgap, not the fix**: splitting `deepDive` payloads out of
+  the book into their own KV document (same pattern `pos` and the ledger already proved) is
+  the permanent answer and remains deliberately deferred — a bigger, separate piece of scope.
 - **Deferred:** stored fundamentals + Robinhood sync — now unblocked by the `x-tt-pin` header
   (v3.9): a chat-side daily review can PUT `status_flags`/`ref_px` into the deepDive payloads and
   stamp `lastRun`. When built, store the *triage* shape (`{at, px}` → "% moved since your last TT

@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <!-- AUDIT: kept in sync with package.json by test/smoke.mjs. admin.html is a Vite
      public/ passthrough, so it cannot receive __APP_VERSION__ — the guard is the fix. -->
-<title>TT TICKER TERMINAL v3.34.0</title>
+<title>TT TICKER TERMINAL v3.34.1</title>
 <style>
   :root{
     --bg:#05070a; --panel:#0a0f16; --panel2:#0d141d; --line:#16202c;
@@ -207,7 +207,7 @@
 <body>
 <div class="wrap">
   <header>
-    <div class="brand">FINANCE&nbsp;BRO.AI // TT&nbsp;TICKER&nbsp;TERMINAL <small>v3.34.0 · single-pass deep-dive orchestrator</small></div>
+    <div class="brand">FINANCE&nbsp;BRO.AI // TT&nbsp;TICKER&nbsp;TERMINAL <small>v3.34.1 · single-pass deep-dive orchestrator</small></div>
     <div class="statusline">
       <span>BOOK: <b id="bookStamp">loading…</b></span>
       <span>AUTH: <b id="sessState">…</b></span>
@@ -505,7 +505,7 @@ async function loadBook(){
    re-GET the server copy and overwrote BOOK — silently destroying the user's work.
    Never re-GET on a save failure: the local edit is the only copy of it. */
 let DIRTY=false;
-const MAX_BODY=64*1024; // mirror of the server cap in functions/api/tt.js
+const MAX_BODY=200*1024; // mirror of the server cap in functions/api/tt.js (raised from 64KB, v3.34 follow-up)
 function bookDoc(){return{book:BOOK,cut:CUT,board:BOARD&&Object.keys(BOARD).length?BOARD:null};}
 async function persist(){
   const raw=JSON.stringify(bookDoc());

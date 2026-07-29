@@ -389,7 +389,7 @@ ok("hinge: a red hinge force-opens the section rather than hiding behind a chevr
   adminSrc.includes('${n.red?" open":""}'));
 ok("hinge: unrecognised states fall into unknown, never silently into green",
   (adminSrc.match(/\["green","amber","red"\]\.includes\(g\.state\)/g) || []).length >= 2);
-ok("dd: per-payload size cap present (8KB, under the 64KB book PUT limit)", adminSrc.includes("DD_MAX=8*1024"));
+ok("dd: per-payload size cap present (8KB, under the 200KB book PUT limit)", adminSrc.includes("DD_MAX=8*1024"));
 ok("dd: past key-dates flag 'passed — re-confirm' (the FOMC lesson)", adminSrc.includes("passed — re-confirm"));
 ok("dd: rendered payload strings are HTML-escaped (esc used in the deep renderer)",
   adminSrc.includes("function esc(") && adminSrc.includes("${esc(dd.thesis_version)}"));
@@ -509,7 +509,7 @@ ok("agree: disagreement renders as WAIT with blockers named, not a blended score
 const fwSrc = readFileSync(new URL("../functions/api/framework.js", import.meta.url), "utf8");
 ok("fw: read AND write both require auth (unlike prices, this content is secret)",
   (fwSrc.match(/const auth = await authorize\(request, env\);/g) || []).length === 2);
-ok("fw: separate KV key, not crammed into the 64KB book", fwSrc.includes('const KEY = "tt:framework:v1"'));
+ok("fw: separate KV key, not crammed into the book", fwSrc.includes('const KEY = "tt:framework:v1"'));
 ok("fw: keeps a rollback copy before overwriting a doctrine revision",
   fwSrc.includes('KEY + ":prev"'));
 ok("fw: absent record is a normal empty state, not an error", fwSrc.includes("rec || { empty: true }"));
@@ -666,7 +666,7 @@ ok("sess: board binaries need {date, label|event} (the non-ticker print)",
 ok("sess: an asserted regime must actually say what it asserts",
   badB(okBoard({ regime: { verified: false } })) &&
   validateBoard(okBoard({ regime: { asserted: "PANIC", verified: false } })) === null);
-ok("sess: board size is capped well under the 64KB book PUT limit",
+ok("sess: board size is capped well under the 200KB book PUT limit",
   badB(okBoard({ note: "x".repeat(17 * 1024) })));
 ok("sess: board rides the same PUT as the book and is validated there",
   validateBoard(okBoard()) === null &&
