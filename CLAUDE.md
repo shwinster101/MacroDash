@@ -121,7 +121,7 @@ worker/                 SEPARATE Cloudflare Worker (not part of Pages)
   wrangler.toml         Worker config: PULSE_CACHE binding + cron triggers (UTC).
 
 test/
-  smoke.mjs             No-network smoke test: 516 assertions over mergeLiveOverMock
+  smoke.mjs             No-network smoke test: 528 assertions over mergeLiveOverMock
                         + SOURCES-path resolution against the real MOCK_DATA + the
                         5-Whys engine + DEC-31 guards + the TT band table (DEC-33)
                         + the market-holiday calendar (sessions + staleness).
@@ -454,7 +454,7 @@ Jan-anchor shipped; see `snapshot.js` ~318–328), `spyMa100`, `spyMa200`, and a
   so smoke can only pin load-bearing STRINGS; that catches deletions but not a strip that renders
   empty, a drawer that hides a red thing, a dead click, or a template literal that throws. This
   serves the real file with a stubbed `/api/tt` + `/readout.json` + `/api/quotes` and drives it in
-  Chromium at **390px and 1200px** (84 assertions). It has already caught bugs the source guards
+  Chromium at **390px and 1200px** (95 assertions). It has already caught bugs the source guards
   could not. **The fixture is SYNTHETIC** — no real ticker, position or session content enters
   this repo, same invariant as `SEED`/`BOARD`. It **skips cleanly (exit 0)** when playwright-core
   or a browser is missing, so it is additive and never breaks `npm test` on a bare machine.
@@ -601,6 +601,30 @@ Jan-anchor shipped; see `snapshot.js` ~318–328), `spyMa100`, `spyMa200`, and a
   held"** vs **"held · size unmeasured"**. BE was deliberately left floor-only (the owner's
   7/27 decision) — that is why an ~8.6-scored name ranks -48%, and it is surfaced as a decision
   rather than silently overridden.
+- **v3.38 "Four Drivers" — FOCUS2 + SELLRANK + REFRESH.** Owner's brief, from a live
+  screenshot: the board had re-accreted to six phone screens of prose; the primary view
+  shall be the KEY DRIVERS only, everything else a click away. **FEAT-TT-FOCUS2**: the
+  primary view is now a thin **stance strip** (stance pill + aggregated red badges — over-cap
+  count, binaries-in-window, what-changed count — each opening the right drawer; the v3.25
+  closed-never-hides-red rule applied board-wide) followed by exactly four blocks: **NEXT
+  DOLLAR — BUY** (compact top-5 from the SAME `UPSIDE_ROWS` renderUpsideRank sorted — one
+  computation, two altitudes), **NEXT DOLLAR — SELL**, **BINARY CALENDAR** (top 6 from the
+  same `binaryEvents()`), and the tier list. Every pre-v3.38 strip lives on, unchanged,
+  inside ONE collapsed **DESK** drawer (`openDesk(inner)` deep-links into it).
+  **FEAT-TT-SELLRANK — the NEW list: where the next dollar comes FROM.** `sellRank()`
+  computes it from measured positions: **forced tier first** (any name at/over `CAP_PCT`,
+  with the computed `≈ $ to cap` — a breach is a rule already broken, not a choice; cap
+  decision prefers broker-measured `p.pct`, falling back to the tracked-book floor), then
+  **discretionary by LOWEST annualised model upside** (the dollar comes from the position
+  with the least expected return). `do_not_trim` is flagged never hidden (a cap/do-not-trim
+  collision is named as a contradiction to resolve); unmodelled held names and options-only
+  positions are listed separately (RANKFAIR honesty: legs are not shares); the session's
+  asserted `funding.order` first-trim is confronted with the computed first — married,
+  never merged. Tax honesty: ±unrl% is measured, tax lots are not. A tripped circuit
+  reframes SELL as the active list and the BUY block carries the veto.
+  **FEAT-TT-REFRESH**: the ⟳ RANKS button re-fetches quotes + positions + regime and
+  re-renders both ranks on demand, disabled while in flight, with the quote stamp beside it
+  and the server's 2-minute quote-cache window stated rather than implied away.
 - **v3.34 follow-up: `MAX_BODY` raised 64KB → 200KB.** The pos-store split reclaimed real
   headroom (~950 bytes across 6 names) but the live book was already large enough that it
   only bought back ~400 bytes net — the very next addition (a real NVDA book entry, its own
@@ -677,7 +701,7 @@ npm run dev        # Vite dev server (mock unless VITE_DATA_MODE=live in .env)
 npm run build      # → dist/  (what Pages runs)
 npm run preview    # serve the built dist/
 
-node test/smoke.mjs   # 516-assertion no-network smoke test (needs Node ≥17)
+node test/smoke.mjs   # 528-assertion no-network smoke test (needs Node ≥17)
 npm run test:ui       # browser render test for admin.html (skips if no Chromium)
 
 # Cron Worker (separate deploy):

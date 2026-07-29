@@ -770,14 +770,19 @@ ok("sess: session state starts EMPTY in the bundle — content lives in KV, neve
 // The board had grown to nine strips of standing state, all full-size, every load. This
 // pass keeps ONE screen (stance · today · what changed) and puts the rest one tap away.
 console.log("\n[11] FEAT-TT-TODAY — stance · actions · what changed");
-ok("today: the default view leads with the TODAY card, above every strip",
-  adminSrc.indexOf('id="todayCard"') < adminSrc.indexOf('id="dNext"') &&
-  adminSrc.indexOf('id="todayCard"') < adminSrc.indexOf('id="board"'));
+// v3.38 FOCUS2: the STANCE STRIP leads the primary view; the TODAY card detail lives
+// inside DESK. The strip must render before the buy block, and the buy block before the book.
+ok("focus2: the stance strip leads, then buy, sell, calendar, then the book",
+  adminSrc.indexOf('id="stanceStrip"') < adminSrc.indexOf('id="buyBlock"') &&
+  adminSrc.indexOf('id="buyBlock"') < adminSrc.indexOf('id="sellBlock"') &&
+  adminSrc.indexOf('id="sellBlock"') < adminSrc.indexOf('id="calBlock"') &&
+  adminSrc.indexOf('id="calBlock"') < adminSrc.indexOf('id="board"') &&
+  adminSrc.indexOf('id="board"') < adminSrc.indexOf('id="dDesk"'));
 ok("today: every demoted strip keeps its element — nothing was deleted, only collapsed",
   ["nextDollar", "upsideRank", "clusterLine", "fundingLine", "binaryCal", "decisionsLine", "circuitLine"]
     .every((id) => adminSrc.includes(`id="${id}"`)));
 ok("today: each drawer is ONE tap (native details, no hidden second step)",
-  (adminSrc.match(/<details class="drawer" id="d/g) || []).length === 7 &&      // board strips
+  (adminSrc.match(/<details class="drawer" id="d/g) || []).length === 8 &&      // 7 strips + DESK
   (adminSrc.match(/<details class="drawer"><summary>/g) || []).length === 3);   // reference sidebar
 ok("today: the reference sidebar collapses too — it is reference, not monitoring",
   !/<div class="panel"[^>]*>\s*<h2>Router/.test(adminSrc) &&
@@ -1260,6 +1265,41 @@ ok("rankfair: queue names with NO model are NAMED, not silently missing from the
 ok("rankfair: the ranking spans held AND unheld, and says which — a blank would be ambiguous",
   adminSrc.includes("new — not held") && adminSrc.includes("held · size unmeasured") &&
   adminSrc.includes('if(!p)return{w:null,mark:"",room:"open",optOnly:false,held:false};'));
+
+// ---- 19. v3.38 "Four Drivers" — FOCUS2 + SELLRANK + REFRESH ----------------
+console.log("\n[19] v3.38 — four-driver view, computed sell list, refresh button");
+ok("sellrank: forced trims (over cap) rank before every discretionary trim",
+  adminSrc.includes("function sellRank()") &&
+  adminSrc.indexOf("forced.sort((a,b)=>b.trimPts-a.trimPts);") < adminSrc.indexOf("disc.sort((a,b)=>a.ann-b.ann);"));
+ok("sellrank: discretionary order is LOWEST expected return first — that dollar funds the next one",
+  adminSrc.includes("disc.sort((a,b)=>a.ann-b.ann);") &&
+  adminSrc.includes("lowest expected return funds first"));
+ok("sellrank: a forced trim carries the computed dollar amount to get back to cap",
+  adminSrc.includes("row.trim$=Math.round(mv*(w-CAP_PCT)/w);") && adminSrc.includes("to cap"));
+ok("sellrank: do_not_trim is flagged, never hidden — and a cap contradiction is named",
+  adminSrc.includes("session says do-not-trim — shown, not hidden") &&
+  adminSrc.includes("cap and do-not-trim CONTRADICT"));
+ok("sellrank: unmodelled and options-only positions are NAMED, never silently missing",
+  adminSrc.includes("cannot rank — no model:") &&
+  adminSrc.includes("selling legs is not selling shares"));
+ok("sellrank: the asserted funding order is reconciled, married never merged",
+  adminSrc.includes("session funding order asserts") &&
+  adminSrc.includes("disagreement is information, not an average"));
+ok("sellrank: the cap decision prefers measured % of NAV, falling back to the tracked floor",
+  adminSrc.includes("const wNav=isFinite(Number(p.pct))?Number(p.pct):null;"));
+ok("focus2: the buy block renders the SAME rows the upside rank sorted — never a second sort",
+  adminSrc.includes("UPSIDE_ROWS=rows;") && adminSrc.includes("const rows=UPSIDE_ROWS.slice(0,5);"));
+ok("focus2: the stance strip carries the red counts a closed DESK would otherwise hide",
+  adminSrc.includes("over cap</span>") && adminSrc.includes('onclick="openDesk(') &&
+  adminSrc.includes("function renderStance()"));
+ok("focus2: primary blocks render LAST in the chain, reading what the strips computed",
+  adminSrc.includes("renderStance();renderBuyBlock();renderSellBlock();renderCalBlock();renderTabs();"));
+ok("refresh: the button refetches quotes+positions+regime and reports the quote-cache window honestly",
+  adminSrc.includes("async function refreshRanks()") &&
+  adminSrc.includes("Promise.all([loadQuotes(),loadPositions(),loadRegime()])") &&
+  adminSrc.includes("server caches 2 min"));
+ok("refresh: the button disables while in flight and always re-enables",
+  adminSrc.includes("b.disabled=true") && adminSrc.includes("finally{if(b){b.disabled=false"));
 
 console.log(`\n=== SMOKE TEST: ${pass} passed, ${fail} failed ===`);
 process.exit(fail === 0 ? 0 : 1);

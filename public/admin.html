@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <!-- AUDIT: kept in sync with package.json by test/smoke.mjs. admin.html is a Vite
      public/ passthrough, so it cannot receive __APP_VERSION__ — the guard is the fix. -->
-<title>TT TICKER TERMINAL v3.37.0</title>
+<title>TT TICKER TERMINAL v3.38.0</title>
 <style>
   :root{
     --bg:#05070a; --panel:#0a0f16; --panel2:#0d141d; --line:#16202c;
@@ -142,6 +142,18 @@
   .rollup{display:flex;align-items:center;gap:10px;flex-wrap:wrap;font-size:10.5px;color:var(--dim);
     letter-spacing:.04em;border:1px solid var(--line);border-radius:7px;background:#080d13;
     padding:7px 11px;margin-bottom:8px}
+  /* FEAT-TT-FOCUS2 (v3.38): the four-driver primary view */
+  .stance-strip{display:flex;align-items:center;gap:9px;flex-wrap:wrap;font-size:11px;
+    border:1px solid var(--line);border-radius:7px;background:#080d13;padding:6px 10px;margin-bottom:8px}
+  .stance-strip .badge{font-size:9.5px;font-weight:700;letter-spacing:.04em;cursor:pointer}
+  .fdr{margin-bottom:8px}
+  .fdr .fdr-row{display:flex;align-items:baseline;gap:8px;flex-wrap:wrap;padding:3px 0;
+    border-bottom:1px dashed #101a24;font-size:11.5px;cursor:pointer}
+  .fdr .fdr-row:last-of-type{border-bottom:none}
+  .fdr .lbl{margin-bottom:4px}
+  button.rfr{background:#0c1a13;border:1px solid var(--greenDim);color:var(--green);border-radius:6px;
+    padding:2px 10px;font-family:inherit;font-size:10px;letter-spacing:.08em;cursor:pointer}
+  button.rfr:disabled{opacity:.5;cursor:wait}
   /* FEAT-TT-DD (v3.12): deep-dive tabs — BOARD + one per entry carrying a payload */
   .tabs{display:flex;gap:6px;margin-bottom:10px;flex-wrap:wrap;border-bottom:1px solid var(--line);padding-bottom:8px}
   .tabs .tab{border:1px solid var(--line);border-radius:6px;padding:5px 14px;cursor:pointer;
@@ -228,7 +240,7 @@
 <body>
 <div class="wrap">
   <header>
-    <div class="brand">FINANCE&nbsp;BRO.AI // TT&nbsp;TICKER&nbsp;TERMINAL <small>v3.37.0 · single-pass deep-dive orchestrator</small></div>
+    <div class="brand">FINANCE&nbsp;BRO.AI // TT&nbsp;TICKER&nbsp;TERMINAL <small>v3.38.0 · single-pass deep-dive orchestrator</small></div>
     <div class="statusline">
       <span>BOOK: <b id="bookStamp">loading…</b></span>
       <span>AUTH: <b id="sessState">…</b></span>
@@ -275,10 +287,21 @@
     <div class="panel">
       <div class="tabs" id="tabBar" style="display:none"></div>
       <div id="boardView">
-        <!-- FEAT-TT-TODAY (v3.29): the default view answers the daily loop — can I add,
-             what must I do, what changed — and nothing else. Every other strip keeps its
-             element but now lives inside a one-tap drawer whose SUMMARY carries its signal,
-             so a closed drawer can never hide a red thing (the v3.25 hinge rule). -->
+        <!-- FEAT-TT-FOCUS2 (v3.38): the primary view is FOUR DRIVERS and one thin stance
+             line — next dollar in, next dollar out, the binary calendar, the tier list.
+             Everything else lives one click away inside the DESK drawer below. The v3.25
+             rule survives via the strip: it carries every red count while DESK is closed. -->
+        <div class="stance-strip" id="stanceStrip" style="display:none"></div>
+        <div class="nd fdr" id="buyBlock" style="display:none"></div>
+        <div class="nd fdr" id="sellBlock" style="display:none"></div>
+        <div class="nd fdr" id="calBlock" style="display:none"></div>
+
+        <h2 style="margin-top:14px">The Book &nbsp;·&nbsp; click any ticker to open its TT Card</h2>
+        <div id="board"></div>
+
+        <!-- DESK: the full detail — every pre-v3.38 strip, unchanged, one click deep.
+             Their renderers and ids are untouched; only their home moved. -->
+        <details class="drawer" id="dDesk"><summary id="sDesk">DESK</summary>
         <div id="todayCard"></div>
         <!-- FEAT-TT-ROLLUP (v3.35): the tracked book summed — hidden until something is
              measured; a $0 total would read as a fact about the account. -->
@@ -306,10 +329,8 @@
              you have to remember to go check per name. -->
         <details class="drawer" id="dScore"><summary id="sScore">SCORECARD</summary>
           <div class="nd" id="scorecardLine"></div></details>
-
-        <h2 style="margin-top:14px">The Book &nbsp;·&nbsp; click any ticker to open its TT Card</h2>
-        <div class="cov" id="coverage"></div>
-        <div id="board"></div>
+        <div class="cov" id="coverage" style="margin-top:10px"></div>
+        </details>
       </div>
       <div id="deepView" style="display:none"></div>
     </div>
@@ -942,6 +963,8 @@ function renderOptLadder(){
 }
 /* ── correlation clusters: "cluster = one position" ── */
 let LAST_RANK=[];   // top computed-upside syms, set by renderUpsideRank
+let UPSIDE_ROWS=[];  // FEAT-TT-FOCUS2: full sorted rows from renderUpsideRank (one computation)
+let CHANGED_N={n:0,stops:0}; // FEAT-TT-FOCUS2: what-changed counts for the stance strip
 /* FEAT-TT-POS: book-vs-broker reconciliation. Renders only once something has synced —
    before that every name would read as "not held" purely because nothing has been measured. */
 function reconcileLine(){
@@ -1315,6 +1338,7 @@ function renderChanged(){
   const when=String(prev.at).replace("T"," ").slice(0,16)+" UTC";
   const d=diffSince(prev);
   const stops=d.filter(x=>x.sev==="stop").length;
+  CHANGED_N={n:d.length,stops};   // FEAT-TT-FOCUS2: the stance strip reads this
   sum.innerHTML=d.length
     ?`<span style="color:${stops?"var(--red)":"var(--amber)"}">WHAT CHANGED · ${d.length}${stops?` · ${stops} need attention`:""}</span>`
     :`<span style="color:var(--dim)">WHAT CHANGED · nothing since ${when}</span>`;
@@ -1426,7 +1450,10 @@ function render(){
   renderBinaryCal();renderDecisions();renderCoverage();renderRollup();
   // v3.29: TODAY reads what the strips above computed (AGREE_PICK, LAST_RANK), so it can
   // never contradict them — one computation, rendered twice at different altitudes.
-  renderToday();renderChanged();renderDrawers();renderScorecard();renderTabs();
+  renderToday();renderChanged();renderDrawers();renderScorecard();
+  // FEAT-TT-FOCUS2 (v3.38): the four-driver primary blocks render LAST — they read what
+  // the strips above computed (UPSIDE_ROWS, AGREE_PICK, CHANGED_N), never recompute it.
+  renderStance();renderBuyBlock();renderSellBlock();renderCalBlock();renderTabs();
 }
 
 /* ═══════════ DEEP-DIVE TABS (FEAT-TT-DD v3.12) ═══════════ */
@@ -2649,6 +2676,7 @@ function renderUpsideRank(){
   // Sort on the ANNUALISED figure — the only one comparable across differing horizons.
   const key=r=>r.ann!==null?r.ann:r.upside;
   rows.sort((a,b)=>key(b)-key(a));
+  UPSIDE_ROWS=rows;   // FEAT-TT-FOCUS2: the compact BUY block reads the SAME rows
   const shown=rows.slice(0,3);
   LAST_RANK=shown.map(r=>r.sym);   // FEAT-TT-SESSION: the cluster strip checks overlap with these
   const MEDAL=["🥇","🥈","🥉"];
@@ -2777,6 +2805,177 @@ function renderEstRunBoard(){
           <span class="scope" style="margin-left:auto;cursor:pointer" onclick="event.stopPropagation();switchTab('${esc(it.x.sym)}')">tab ↗</span></summary>
         <div>${estRunTable(it.x,it.x.deepDive)}</div></details>`;}).join("");
 }
+/* ═══════════ FEAT-TT-FOCUS2 + FEAT-TT-SELLRANK (v3.38) ═══════════ */
+/* The primary view is FOUR DRIVERS: next dollar in, next dollar out, the binary calendar,
+   the tier list — plus one thin stance line that carries every red count so the closed
+   DESK drawer never hides a red thing (the v3.25 rule, applied to the whole board). */
+
+/* FEAT-TT-SELLRANK: where does the next dollar come FROM? The funding queue only ASSERTS
+   an answer; this computes one from measured positions. Two tiers, deliberately distinct:
+   FORCED — any name at/over the cap; trimming to cap is a rule already broken, not a
+   choice, so it ranks first with the computed dollar amount. DISCRETIONARY — held modelled
+   names by LOWEST annualised upside first: the dollar should come from the position with
+   the least expected return. Unmodelled and options-only names are NAMED, never silently
+   missing (the RANKFAIR rule), and do_not_trim is flagged, never hidden — the session's
+   asserted funding order is reconciled against this, married never merged. */
+function sellRank(){
+  const tot=bookRollup().mv;
+  if(!(tot>0))return null;
+  const dnt=(BOARD.funding&&Array.isArray(BOARD.funding.do_not_trim))?BOARD.funding.do_not_trim:[];
+  const forced=[],disc=[],unmod=[],optOnly=[];
+  BOOK.forEach(x=>{
+    const p=posOf(x);if(!p)return;
+    const oo=Array.isArray(p.opt)&&p.opt.length>0&&!(Number(p.sh)>0);
+    if(oo){optOnly.push(x.sym);return;}
+    const mv=Number(p.mv);if(!isFinite(mv)||mv<=0)return;
+    // Cap decision prefers the broker-measured % of NAV (same rule as capChecks); the
+    // tracked-book share is the fallback FLOOR when the sync didn't carry pct.
+    const wNav=isFinite(Number(p.pct))?Number(p.pct):null;
+    const w=wNav!==null?wNav:Math.round(mv/tot*1000)/10;
+    const live=LIVE_PX[x.sym],stamp=x.deepDive&&x.deepDive.ref_px;
+    const px=live&&isFinite(live.px)?live.px:(stamp&&isFinite(stamp.px)?stamp.px:null);
+    const rr=x.deepDive?ptModelRows(x.deepDive).filter(r=>typeof r.prem==="number"||typeof r.fl==="number"):[];
+    let ann=null;
+    if(rr.length&&px!==null){
+      const t=rr[0],tgt=typeof t.prem==="number"?t.prem:t.fl;
+      if(typeof tgt==="number"){const up=Math.round((tgt/px-1)*1000)/10;ann=annualise(up,t.y);if(ann===null)ann=up;}
+    }
+    const row={sym:x.sym,tier:x.tier,lens:x.lens,w,mv,ann,
+      upl:isFinite(Number(p.upl_pct))?Number(p.upl_pct):null,
+      dnt:dnt.includes(x.sym),
+      redH:Array.isArray(x.deepDive&&x.deepDive.hinges)?x.deepDive.hinges.filter(h=>h.state==="red").length:0,
+      rs:runState(x.lastRun)};
+    if(w>=CAP_PCT){
+      row.trimPts=Math.round((w-CAP_PCT)*10)/10;
+      row.trim$=Math.round(mv*(w-CAP_PCT)/w);
+      forced.push(row);
+    }else if(ann!==null)disc.push(row);
+    else unmod.push(row);
+  });
+  forced.sort((a,b)=>b.trimPts-a.trimPts);
+  disc.sort((a,b)=>a.ann-b.ann);
+  return{forced,disc,unmod,optOnly,tot};
+}
+function renderSellBlock(){
+  const el=document.getElementById("sellBlock");if(!el)return;
+  const s=sellRank();
+  if(!s||(!s.forced.length&&!s.disc.length&&!s.unmod.length&&!s.optOnly.length)){
+    el.style.display="none";el.innerHTML="";return;   // nothing measured → nothing, never a fake queue
+  }
+  el.style.display="";
+  const tripped=String(BOARD.circuit&&BOARD.circuit.state).toLowerCase()==="tripped";
+  const flags=r=>[
+    r.dnt?`<span class="warn2">⚑ session says do-not-trim — shown, not hidden</span>`:"",
+    r.redH?`<span class="bad2">● ${r.redH} red</span>`:"",
+    r.rs.k==="never"?`<span class="bad2">○ never run</span>`:"",
+    r.upl!==null?`<span style="color:${r.upl>=0?"var(--green)":"var(--red)"};font-size:9.5px">${r.upl>=0?"+":""}${r.upl}% unrl</span>`:""
+  ].filter(Boolean).join(" ");
+  let h=`<div class="lbl">NEXT DOLLAR — SELL${tripped?` · <span style="color:var(--red)">circuit tripped — this IS the active list (deleverage-only)</span>`:` · where the next dollar comes from`}</div>`;
+  s.forced.forEach(r=>{
+    h+=`<div class="fdr-row" onclick="openCard('${esc(r.sym)}')"><span style="color:var(--red);font-weight:700">⛔ TRIM</span>`+
+      `<span class="sym">${esc(r.sym)}</span><span class="lens lens-${esc(r.lens)}">${esc(r.lens)}</span>`+
+      `<span style="color:var(--red);font-weight:700">${r.w}% — ${r.trimPts}pts over the ${CAP_PCT}% cap</span>`+
+      `<span style="color:var(--red)">≈ ${money(r.trim$)} to cap</span>${flags(r)}`+
+      (r.dnt?`<span class="bad2">⚠ cap and do-not-trim CONTRADICT — resolve, the board won't pick</span>`:"")+`</div>`;
+  });
+  s.disc.forEach((r,i)=>{
+    h+=`<div class="fdr-row" onclick="openCard('${esc(r.sym)}')"><span class="scope">${i+1}</span>`+
+      `<span class="sym">${esc(r.sym)}</span><span class="lens lens-${esc(r.lens)}">${esc(r.lens)}</span>`+
+      `<span class="scope">${r.w}%</span>`+
+      `<span style="color:${r.ann>=0?"var(--green)":"var(--red)"};font-weight:700">${r.ann>=0?"+":""}${r.ann}%/yr model</span>`+
+      `<span class="scope">lowest expected return funds first</span>${flags(r)}</div>`;
+  });
+  if(s.unmod.length)h+=`<div class="none">cannot rank — no model: <b>${s.unmod.map(r=>esc(r.sym)).join(", ")}</b> (held, but the math has nothing to say)</div>`;
+  if(s.optOnly.length)h+=`<div class="none">options-only, ranked separately: <b>${s.optOnly.map(esc).join(", ")}</b> — selling legs is not selling shares</div>`;
+  // Reconciliation: the session's ASSERTED first trim vs this COMPUTED first source.
+  const assertedFirst=BOARD.funding&&Array.isArray(BOARD.funding.order)&&BOARD.funding.order[0]&&BOARD.funding.order[0].sym;
+  const computedFirst=(s.forced[0]&&s.forced[0].sym)||(s.disc[0]&&s.disc[0].sym)||null;
+  if(assertedFirst&&computedFirst&&assertedFirst!==computedFirst)
+    h+=`<div class="none" style="color:var(--amber)">⚖ session funding order asserts <b>${esc(assertedFirst)}</b> first · computed says <b>${esc(computedFirst)}</b> — disagreement is information, not an average</div>`;
+  h+=`<div class="none">±unrl% is measured; tax lots are NOT — weights are % of tracked book (a floor) · <span style="cursor:pointer;color:var(--cyan)" onclick="openDesk('dExp')">full exposure detail ↗</span></div>`;
+  el.innerHTML=h;
+}
+/* Compact BUY block — renders the SAME rows renderUpsideRank sorted (UPSIDE_ROWS), so the
+   two views can never disagree; all prose lives one click away in DESK → NEXT DOLLAR. */
+function renderBuyBlock(){
+  const el=document.getElementById("buyBlock");if(!el)return;
+  const rows=UPSIDE_ROWS.slice(0,5);
+  el.style.display="";
+  const tripped=String(BOARD.circuit&&BOARD.circuit.state).toLowerCase()==="tripped";
+  let h=`<div class="lbl">NEXT DOLLAR — BUY · ranked by %/yr, weight-aware</div>`;
+  if(tripped)h+=`<div class="none" style="color:var(--red);font-weight:700">⛔ NO NEW POSITIONS — leverage circuit tripped; the SELL list below is the active queue</div>`;
+  else if(AGREE_PICK)h+=`<div class="none" style="color:var(--green);font-weight:700">🎯 both stories agree: ${esc(AGREE_PICK.sym)}</div>`;
+  else if(rows.length)h+=`<div class="none" style="color:var(--amber)">⏸ WAIT — no name passes every gate (reasons in DESK)</div>`;
+  if(!rows.length)h+=`<div class="none">nothing modelled+priced yet — nothing to rank</div>`;
+  const MEDAL=["🥇","🥈","🥉","4","5"];
+  rows.forEach((r,i)=>{
+    const w=r.wt;
+    const wTxt=w.optOnly&&w.w===null?`<span class="scope" style="color:var(--amber)">◇ opt-only</span>`
+      :w.w===null?(w.held?`<span class="scope">held · unmeasured</span>`:`<span class="scope" style="color:var(--green)">new — not held</span>`)
+      :`<span style="color:${w.w>=CAP_PCT?"var(--red)":w.w>=10?"var(--amber)":"var(--slate)"};font-size:10px;font-weight:700">${w.w}%${esc(w.mark)}</span>`;
+    h+=`<div class="fdr-row" onclick="openCard('${esc(r.sym)}')"><span>${MEDAL[i]}</span>`+
+      `<span class="sym">${esc(r.sym)}</span><span class="lens lens-${esc(r.lens)}">${esc(r.lens)}</span>`+
+      `<span class="scope">${esc(r.tier)}</span>${wTxt}`+
+      `<span style="color:${r.upside>=0?"var(--green)":"var(--red)"};font-weight:700">${r.ann!==null?`${r.ann>=0?"+":""}${r.ann}%/yr`:`${r.upside>=0?"+":""}${r.upside}%`}</span>`+
+      `<span class="scope">$${esc(r.tgt)} by ${esc(r.y)} · ${esc(r.basis)}</span>`+
+      ((r.pxAge===null||r.pxAge>PX_STALE_D)?`<span class="bad2">⚠ px ${r.pxAge===null?"undated":r.pxAge+"d"}</span>`:"")+
+      (r.wt.w!==null&&r.wt.w>=CAP_PCT?`<span class="bad2">no room</span>`:"")+`</div>`;
+  });
+  h+=`<div class="none"><span style="cursor:pointer;color:var(--cyan)" onclick="openDesk('dNext')">full math, horizons &amp; caveats ↗</span> · ${UPSIDE_ROWS.length} ranked of ${BOOK.length}</div>`;
+  el.innerHTML=h;
+}
+/* Compact calendar block — same binaryEvents() computation the DESK calendar renders. */
+function renderCalBlock(){
+  const el=document.getElementById("calBlock");if(!el)return;
+  const ev=binaryEvents();
+  if(!ev.length){el.style.display="none";el.innerHTML="";return;}
+  el.style.display="";
+  let h=`<div class="lbl">BINARY CALENDAR · ${ev.filter(e=>e.inWindow).length} inside ${BINARY_WINDOW_D}d</div>`;
+  ev.slice(0,6).forEach(e=>{
+    h+=`<div class="fdr-row"${find(e.sym)?` onclick="openCard('${esc(e.sym)}')"`:""}>`+
+      `<span style="color:${e.inWindow?"var(--red)":"var(--dim)"};font-weight:700">${e.d===0?"TODAY":"in "+e.d+"d"}</span>`+
+      `<span class="sym">${esc(e.sym)}</span><span class="scope">${esc(String(e.label).slice(0,72))}${String(e.label).length>72?"…":""}</span></div>`;
+  });
+  if(ev.length>6)h+=`<div class="none"><span style="cursor:pointer;color:var(--cyan)" onclick="openDesk('dCal')">+${ev.length-6} more ↗</span></div>`;
+  el.innerHTML=h;
+}
+/* The thin stance line: every red count the closed DESK would otherwise hide. */
+function renderStance(){
+  const el=document.getElementById("stanceStrip");if(!el)return;
+  el.style.display="";
+  const st=stance();
+  const col={stop:"var(--red)",warn:"var(--amber)",go:"var(--green)",unknown:"var(--slate)"}[st.k]||"var(--slate)";
+  const breach=capChecks().filter(c=>c.over>0).length;
+  const binToday=binaryEvents().filter(e=>e.inWindow).length;
+  el.innerHTML=`<span style="color:${col};font-weight:700">${esc(st.txt)}</span>`+
+    (breach?`<span class="badge" style="color:var(--red)" onclick="openDesk('dExp')">⚠ ${breach} over cap</span>`:"")+
+    (binToday?`<span class="badge" style="color:var(--red)" onclick="openDesk('dCal')">◆ ${binToday} binaries ≤${BINARY_WINDOW_D}d</span>`:"")+
+    (CHANGED_N.n?`<span class="badge" style="color:${CHANGED_N.stops?"var(--red)":"var(--amber)"}" onclick="openDesk('dChanged')">Δ ${CHANGED_N.n} changed${CHANGED_N.stops?` · ${CHANGED_N.stops}!`:""}</span>`:"")+
+    `<span style="margin-left:auto;display:flex;align-items:center;gap:7px">`+
+    (LIVE_AT?`<span class="scope">quotes ${esc(String(LIVE_AT).slice(11,16))}Z</span>`:"")+
+    `<button class="rfr" id="refreshRanks" onclick="refreshRanks()">⟳ RANKS</button>`+
+    `<span class="badge" style="color:var(--dim)" onclick="openDesk()">DESK ▾</span></span>`;
+}
+/* Open the DESK drawer (and optionally one drawer inside it), then scroll to it. */
+function openDesk(inner){
+  const d=document.getElementById("dDesk");if(!d)return;
+  d.open=true;
+  if(inner)openDrawer(inner);
+  d.scrollIntoView({behavior:"smooth",block:"start"});
+}
+/* FEAT-TT-REFRESH: recompute both ranks from fresh quotes + positions, on demand.
+   HONESTY: /api/quotes serves a 2-minute KV cache — a second tap inside that window
+   returns the same marks, and the stamp beside the button says when they were taken. */
+async function refreshRanks(){
+  const b=document.getElementById("refreshRanks");
+  if(b){b.disabled=true;b.textContent="⟳ …";}
+  try{
+    await Promise.all([loadQuotes(),loadPositions(),loadRegime()]);
+    toast("Ranks refreshed — quotes as of "+(LIVE_AT?String(LIVE_AT).slice(11,16)+"Z":"unknown")+" (server caches 2 min)");
+  }catch(_e){toast("Refresh failed — showing the last good data");}
+  finally{if(b){b.disabled=false;b.textContent="⟳ RANKS";}render();}
+}
+
 /* v3.26 FEAT-TT-BINCAL: the binary calendar. Earnings dates lived inside individual
    deep-dive payloads, so a print surfaced only when you happened to open that tab — and
    the no-new-adds rule is worthless if you learn about the binary after sizing. This

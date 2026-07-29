@@ -161,7 +161,7 @@ const server = http.createServer((req, res) => {
   if (url.pathname === "/api/positions")
     return json({ asOf: TODAY_ET, positions: POSITIONS });
   if (url.pathname === "/api/quotes")
-    return json({ asOf: TODAY_ET, quotes: { AAA: { px: 800, chg: -11, at: TODAY_ET },
+    return json({ asOf: `${TODAY_ET}T14:35:00Z`, quotes: { AAA: { px: 800, chg: -11, at: TODAY_ET },
       BBB: { px: 609, chg: -14.5, at: TODAY_ET } } });
   if (url.pathname === "/api/ledger") {
     const p = url.searchParams;
@@ -193,6 +193,11 @@ const txt = async (page, id) => (await page.locator("#" + id).innerText().catch(
 
 // ── desktop pass ────────────────────────────────────────────────────────────
 const page = await open(1200);
+// v3.38 FOCUS2: everything but the four drivers lives inside the closed DESK drawer.
+// Open it once up front so the pre-existing section reads keep working; the closed-state
+// guarantees are asserted separately (phone pass + the focus2 section below).
+await page.evaluate(() => { document.getElementById("dDesk").open = true; });
+await page.waitForTimeout(80);
 
 console.log("\n[render] TODAY — the default view answers the daily loop");
 const today = await txt(page, "todayCard");
@@ -303,6 +308,39 @@ ok("the EXPOSURE summary carries the near-expiry count while closed",
 const nd = await txt(page, "nextDollar");
 ok("the stricter regime governs and both readings print",
   /PANIC regime/.test(nd) && /engines disagree/.test(nd) && /HEADWIND/.test(nd));
+
+console.log("\n[render] v3.38 FOUR DRIVERS — stance strip, buy, sell, calendar");
+// AAA: pct 21.4 → forced trim, 3.4pts over, 24000×3.4/21.4 ≈ $3,813 → "$4k to cap".
+// BBB: modelled+held, deep negative model upside → first (only) discretionary source.
+// CCC (no model) + FFF (no model) → "cannot rank"; EEE → options-only; CCC also do_not_trim.
+// Asserted funding first = FFF vs computed first = AAA → reconciliation line prints both.
+const sellB = await txt(page, "sellBlock");
+ok("sell: a cap breach is a FORCED trim with the computed dollar amount",
+  /TRIM/.test(sellB) && /AAA/.test(sellB) && /3\.4pts over the 18% cap/.test(sellB) && /\$4k to cap/.test(sellB));
+ok("sell: discretionary source is the LOWEST expected return (BBB), stated as such",
+  /BBB/.test(sellB) && /%\/yr model/.test(sellB) && /lowest expected return funds first/i.test(sellB));
+ok("sell: unmodelled held names are named, not silently missing",
+  /cannot rank — no model:/i.test(sellB) && /CCC/.test(sellB) && /FFF/.test(sellB));
+ok("sell: options-only positions rank separately — legs are not shares",
+  /EEE/.test(sellB) && /selling legs is not selling shares/.test(sellB));
+ok("sell: the asserted funding order is confronted with the computed one",
+  /asserts FFF first/i.test(sellB) && /computed says AAA/i.test(sellB));
+ok("sell: a tripped circuit makes SELL the active list",
+  /this IS the active list/i.test(sellB));
+const buyB = await txt(page, "buyBlock");
+ok("buy: compact block carries the veto banner and the same ranked rows",
+  /NO NEW POSITIONS/.test(buyB) && /AAA/.test(buyB) && /13\.4%\*/.test(buyB));
+const calB = await txt(page, "calBlock");
+ok("calendar block leads with today's binary", /TODAY/.test(calB) && /MACROEVT/.test(calB));
+const strip = await txt(page, "stanceStrip");
+ok("stance strip carries the red counts while DESK is closed",
+  /over cap/.test(strip) && /binaries/.test(strip));
+ok("stance strip carries the refresh button and the quote stamp",
+  (await page.locator("#refreshRanks").count()) === 1 && /quotes \d{2}:\d{2}Z/.test(strip));
+await page.evaluate(() => refreshRanks());
+await page.waitForTimeout(600);
+ok("refresh button refetches and reports, cache window named",
+  /Ranks refreshed/.test(await page.locator("#toast").innerText()));
 
 console.log("\n[render] FEAT-TT-RANKFAIR — held weight is a ranking input, not a footnote");
 // AAA is 24000/178494 = 13.4% of the tracked book -> "*" (thin). EEE is options-only -> "◇".
@@ -444,10 +482,10 @@ await page.close();
 // ── phone pass ──────────────────────────────────────────────────────────────
 console.log("\n[render] phone (390px) — the daily answer above the book");
 const phone = await open(390);
-const tY = (await phone.locator("#todayCard").boundingBox()).y;
+const tY = (await phone.locator("#stanceStrip").boundingBox()).y;
 const bY = (await phone.locator("#board").boundingBox()).y;
-ok("the TODAY card renders above the book", tY < bY);
-ok("the whole daily answer fits well inside two phone screens", bY - tY < 1400);
+ok("the stance strip leads the primary view, above the book", tY < bY);
+ok("the whole daily answer (stance → buy → sell → calendar) fits inside two phone screens", bY - tY < 1400);
 ok("every drawer starts closed except what-changed",
   (await phone.locator("#boardView details.drawer[open]").count()) <= 1);
 ok("no horizontal overflow at 390px",
