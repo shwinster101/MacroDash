@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <!-- AUDIT: kept in sync with package.json by test/smoke.mjs. admin.html is a Vite
      public/ passthrough, so it cannot receive __APP_VERSION__ — the guard is the fix. -->
-<title>TT TICKER TERMINAL v3.40.0</title>
+<title>TT TICKER TERMINAL v3.41.0</title>
 <style>
   :root{
     --bg:#05070a; --panel:#0a0f16; --panel2:#0d141d; --line:#16202c;
@@ -240,7 +240,7 @@
 <body>
 <div class="wrap">
   <header>
-    <div class="brand">FINANCE&nbsp;BRO.AI // TT&nbsp;TICKER&nbsp;TERMINAL <small>v3.40.0 · single-pass deep-dive orchestrator</small></div>
+    <div class="brand">FINANCE&nbsp;BRO.AI // TT&nbsp;TICKER&nbsp;TERMINAL <small>v3.41.0 · single-pass deep-dive orchestrator</small></div>
     <div class="statusline">
       <span>BOOK: <b id="bookStamp">loading…</b></span>
       <span>AUTH: <b id="sessState">…</b></span>
@@ -3722,9 +3722,16 @@ async function loadRegime(){
     const r=await res.json();
     REGIME=r;
     const v=r&&r.regime&&r.regime.verdict;
-    const [cls,label]=REGIME_STYLE[v]||["warn",v||"unknown"];
+    let [cls,label]=REGIME_STYLE[v]||["warn",v||"unknown"];
+    // FEAT-DERIV-OWN (v3.41): a withheld TAILWIND must not read as a plain NEUTRAL — the pill
+    // is the ONE place the maintainer looks before adding, so the withhold has to land here.
+    const downgraded=r&&r.regime&&r.regime.downgraded;
+    if(downgraded){cls="warn";label="NEUTRAL — TAILWIND withheld";}
     const asOf=(r&&r.as_of?String(r.as_of):"").slice(0,10);
-    const flip=r&&r.macro_flip&&r.macro_flip.tripped?" · FLIP TRIPPED":r&&r.macro_flip&&r.macro_flip.armed?" · flip armed":"";
+    const mf=r&&r.macro_flip;
+    // A blind circuit (evaluable:false) used to collapse into the same "" suffix as a genuine
+    // "not armed" — the crash detector could be unable to see and the pill said nothing.
+    const flip=mf&&mf.evaluable===false?" · flip BLIND":mf&&mf.tripped?" · FLIP TRIPPED":mf&&mf.armed?" · flip armed":"";
     el.className="pill "+cls;
     el.textContent=label+flip+(asOf?" · "+asOf:"");
     renderNextDollar(); // the HEADWIND/PANIC modifier may now apply

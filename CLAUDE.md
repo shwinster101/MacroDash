@@ -734,6 +734,50 @@ Jan-anchor shipped; see `snapshot.js` ~318–328), `spyMa100`, `spyMa200`, and a
   market from TSM's deliberately-conservative schedule, invisible while the lenses differed. At the auto horizon
   (YE2027) the model assumes 21.5× vs 21.9× paid, i.e. essentially no re-rating: **NVDA's rank is carried by EPS
   growth (+43% FY27→28), not multiple expansion.** The live book is now **lint-clean — zero warnings**.
+- **FEAT-DERIV-OWN (v3.41) — v3.40's fix reached one of the three surfaces it needed to.** An
+  audit of that commit found `DERIVED_OF` living *inside* `buildTtReadout`, so only `/readout.json`
+  gained the parent-inheritance fix. **The "Copy TT readout" paste block still voted off stale
+  derivatives**: `handleTtCopy` (`dashboard.jsx`) projects tiles through `modeOf()`, which reads
+  `dataAsOf[k]` — and `mergeLiveOverMock` only ever populated that from the field's OWN `AsOf`,
+  never a derived field's parent. Worse, when the parent WAS stale, the projection skipped it
+  *and its date together*, so a derivative reaching `buildTtReadout` from that surface carried no
+  date at all and voted anyway — on the exact human-facing block whose own comment says it exists
+  so a stale field "prints n/a rather than a fabricated number in an order-gating block."
+  **`DERIVED_OF` now lives in `src/sources.js`** (the module that already owns `isStale`/
+  `cadenceOf`/`parseObsDate`, and that every consumer already imports from), with a new
+  **`govAsOf(live, key)`** helper `mergeLiveOverMock` calls when stamping `dataAsOf` — one table,
+  shared by the merge, the dashboard's `modeOf`, and `buildTtReadout` (which now imports and
+  re-exports it, so `test/smoke.mjs`'s existing import keeps working unchanged). The table also
+  **grew from 6 entries to all ~30 undated derivatives** `SOURCES` declares, reconciled against
+  `SOURCES` itself in smoke rather than pinned as a hardcoded list — the v3.40 assertion ("maps
+  every undated derivative") was true only by coincidence, since it checked six hardcoded keys
+  against nothing. **Audit found one live instance the v3.40 map missed while widening it**:
+  `rateOddsCut`/`rateOddsHike`/`fomcDays`/`nextFomcDate` rode with NO date at all — only
+  `rateOddsHold` gets a Kalshi `AsOf` — so `fed_next_meeting` (keyed on `cut`/`hike`) could vote
+  off a stale Kalshi pull undetected. Fixed the same way, for free, in the same table.
+  **The v3.40 honesty states were machine-visible only.** `evaluable`/`reason` on `macro_flip`
+  and `downgraded` on `regime` existed in the `tt-v1` JSON, but the pill (`admin.html`) rendered
+  a BLIND circuit identically to a healthy "not armed" (no suffix at all), and `formatTtPaste`
+  never printed `reason` or the withhold — the two human-facing surfaces said nothing where the
+  machine surface said everything. Both now render it: the pill appends `· flip BLIND` (forced
+  amber, `warn` class, never the green `ok` a plain verdict gets) and `· TAILWIND withheld`;
+  `formatTtPaste` prints a `⚠` line under REGIME and a `BLIND — missing: <input>` MACRO FLIP line
+  instead of bare `n/a`. **The TAILWIND withhold also widened from VIX-only to BOTH panic
+  inputs** — PANIC needs `vix` AND `fear_greed` live, so a dead CNN F&G scraper blinds the exact
+  same override VIX blinds, and the v3.40 rule only caught half of it; `downgraded` now names
+  whichever gauge (or both) is missing. The one-way asymmetry is unchanged: HEADWIND/PANIC still
+  pass through untouched.
+  **End-to-end check**: reconstructed today's (2026-07-30) actual market shape through the real
+  `mergeLiveOverMock → buildTtReadout → formatTtPaste` pipeline — a broad bounce (SPY +1.35%, QQQ
+  +2.1% leading, the NBIS-style growth-name pattern) landing on a VIX print still dated two
+  sessions behind. Confirmed: the stale VIX and its `vixWeekChg` derivative are both withheld,
+  the fresh 10Y still votes (no over-correction), the raw count says TAILWIND, and the actual
+  verdict is NEUTRAL with the withhold and the blind circuit both stated in the paste block — not
+  a synthetic fixture, the literal shape the audit traced live.
+  Tests: **579 smoke** (+13: merge-level inheritance for tiles/paste, the SOURCES reconciliation,
+  the widened safety asymmetry, paste-block rendering) + **107 render** (+4: the pill's blind and
+  withheld states, run live in Chromium — the v3.40 asserts for these existed only on paper since
+  no browser was available when that commit shipped).
 - **Deferred:** stored fundamentals + Robinhood sync — now unblocked by the `x-tt-pin` header
   (v3.9): a chat-side daily review can PUT `status_flags`/`ref_px` into the deepDive payloads and
   stamp `lastRun`. When built, store the *triage* shape (`{at, px}` → "% moved since your last TT
@@ -800,7 +844,7 @@ npm run dev        # Vite dev server (mock unless VITE_DATA_MODE=live in .env)
 npm run build      # → dist/  (what Pages runs)
 npm run preview    # serve the built dist/
 
-node test/smoke.mjs   # 566-assertion no-network smoke test (needs Node ≥17)
+node test/smoke.mjs   # 579-assertion no-network smoke test (needs Node ≥17)
 npm run test:ui       # browser render test for admin.html (skips if no Chromium)
 
 # Cron Worker (separate deploy):

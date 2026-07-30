@@ -6,7 +6,7 @@
 
 import { existsSync } from "node:fs";
 import { readFileSync } from "node:fs";
-import { mergeLiveOverMock, SOURCES, isStale, cadenceOf, parseObsDate, isMarketHoliday, MARKET_HOLIDAYS } from "../src/sources.js";
+import { mergeLiveOverMock, SOURCES, isStale, cadenceOf, parseObsDate, isMarketHoliday, MARKET_HOLIDAYS, DERIVED_OF as DERIVED_OF_SRC, DERIVED_EXEMPT, govAsOf } from "../src/sources.js";
 import { computeFiveWhys } from "../src/fiveWhys.js";
 import {
   bandSpyVs200d, bandVix, bandFearGreed, bandRs, bandTenYear, bandFedOdds,
@@ -231,9 +231,72 @@ ok("deriv: a fresh parent still lets its derivatives through (no over-correction
   rBull.vix.week_chg === -2.1 && rBull.us10y.m1_delta === 0.03);
 ok("deriv: qqq_spy_rs reports the date it actually GATED on, not a decorative borrow",
   rBull.qqq_spy_rs.as_of === D);
-ok("deriv: DERIVED_OF maps every undated derivative snapshot.js emits",
-  ["vixWeekChg", "tenYearM1", "spyChangePct", "spyMa200", "spyYtd", "qqqChangePct"]
-    .every((k) => typeof DERIVED_OF[k] === "string"));
+// FEAT-DERIV-OWN (v3.41): DERIVED_OF now lives in sources.js (the module that owns the
+// staleness vocabulary) and ttReadout.js re-exports the SAME object — proven by identity,
+// not just equal shape, so the paste projection, mergeLiveOverMock, and the readout can never
+// silently drift onto two different tables.
+ok("deriv: ttReadout.js re-exports the IDENTICAL DERIVED_OF object sources.js owns (no fork)",
+  DERIVED_OF === DERIVED_OF_SRC);
+
+// The v3.40 assertion pinned a hardcoded 6-key list — "maps every undated derivative" was true
+// only by coincidence, and a new derivative wired into a check could ship untested under a
+// green "every". This reconciles DERIVED_OF against the REAL SOURCES map instead: every one of
+// the 60 SOURCES keys must be exactly one of (a) a primary pull that snapshot.js stamps its own
+// AsOf on, (b) a derivative mapped to its parent, or (c) a dateless meta field with no parent to
+// inherit from. Miss a classification and this fails — the whole point.
+const PRIMARY_ASOF_FIELDS = [
+  "spyPrice", "spxIndex", "qqqPrice", "mag10PricesJson",
+  "tenYear", "fedFunds", "unemployment", "lfpr", "savings", "mortgage30",
+  "cpiHeadline", "cpiCore", "pceHeadline", "pceCore", "wti", "vix", "btc",
+  "hySpread", "igSpread", "creditSpread",
+  "fearGreed", "marketHeadline", "shillerPe", "tokenBlendedMtok", "rateOddsHold",
+];
+ok("deriv: PRIMARY_ASOF_FIELDS + DERIVED_OF + DERIVED_EXEMPT partition ALL 60 SOURCES keys (reconciled, not hardcoded)", (() => {
+  const keys = Object.keys(SOURCES);
+  const derivedKeys = Object.keys(DERIVED_OF);
+  const inPrimary = (k) => PRIMARY_ASOF_FIELDS.includes(k);
+  const inDerived = (k) => Object.prototype.hasOwnProperty.call(DERIVED_OF, k);
+  const inExempt = (k) => DERIVED_EXEMPT.includes(k);
+  const unclassified = keys.filter((k) => !inPrimary(k) && !inDerived(k) && !inExempt(k));
+  const doubleClassified = keys.filter((k) => [inPrimary(k), inDerived(k), inExempt(k)].filter(Boolean).length > 1);
+  const total = PRIMARY_ASOF_FIELDS.length + derivedKeys.length + DERIVED_EXEMPT.length;
+  return unclassified.length === 0 && doubleClassified.length === 0 && keys.length === total;
+})());
+ok("deriv: every DERIVED_OF parent is itself a real SOURCES key (no dangling parent)",
+  Object.values(DERIVED_OF).every((p) => p in SOURCES));
+ok("deriv: govAsOf falls back to the parent's AsOf, and returns undefined with no parent + no own date",
+  govAsOf({ tenYear: 4.5, tenYearAsOf: "2026-07-01" }, "tenYearM1") === "2026-07-01"
+  && govAsOf({}, "tenYearM1") === undefined);
+
+// ---- F1 (v3.41 audit finding): the merge itself must inherit AsOf, not just buildTtReadout ----
+// The v3.40 fix lived ONLY inside buildTtReadout. But `handleTtCopy` (dashboard.jsx) and every
+// tile's `modeOf()` read staleness through `mergeLiveOverMock`'s `dataAsOf`, which never
+// consulted DERIVED_OF — so a stale parent's derivative could still read fresh on the ONE
+// human-facing paste surface the honesty invariant was written for. Traced live: a stale
+// `tenYear` used to skip `put("tenYear")` (and its date) in the paste projection entirely,
+// so `tenYearM1` reached buildTtReadout with no date at all and voted anyway.
+ok("merge: a derivative with no AsOf of its own inherits the parent's AsOf", (() => {
+  const payload = { live: { tenYear: 4.5, tenYearAsOf: "2026-07-01", tenYearM1: 0.23 }, cached: false };
+  const { dataAsOf } = mergeLiveOverMock(MOCK_DATA, payload);
+  return dataAsOf.tenYearM1 === "2026-07-01" && dataAsOf.tenYearM1 === dataAsOf.tenYear;
+})());
+ok("merge: modeOf-equivalent staleness now reaches a derivative (isStale sees the inherited date)", (() => {
+  const payload = { live: { vix: 14.2, vixAsOf: "2026-07-01", vixWeekChg: 6.8 }, cached: false };
+  const { dataAsOf } = mergeLiveOverMock(MOCK_DATA, payload);
+  return isStale(dataAsOf.vixWeekChg, new Date("2026-07-30"), cadenceOf("vixWeekChg")) === true;
+})());
+ok("merge: a fresh parent still lets a derivative read fresh (no over-correction)", (() => {
+  const payload = { live: { vix: 14.2, vixAsOf: "2026-07-29", vixWeekChg: 6.8 }, cached: false };
+  const { dataAsOf } = mergeLiveOverMock(MOCK_DATA, payload);
+  return isStale(dataAsOf.vixWeekChg, new Date("2026-07-30"), cadenceOf("vixWeekChg")) === false;
+})());
+// The new find: Kalshi's cut/hike/fomcDays/nextFomcDate rode with NO date at all before v3.41 —
+// bandFedOdds keys on cut/hike, so a stale Kalshi pull could vote undetected.
+ok("merge: Kalshi rateOddsCut/Hike inherit rateOddsHold's AsOf (the field bandFedOdds actually gates)", (() => {
+  const payload = { live: { rateOddsHold: 98, rateOddsCut: 1, rateOddsHike: 1, rateOddsHoldAsOf: "2026-07-01" }, cached: false };
+  const { dataAsOf } = mergeLiveOverMock(MOCK_DATA, payload);
+  return dataAsOf.rateOddsCut === "2026-07-01" && dataAsOf.rateOddsHike === "2026-07-01";
+})());
 
 // The circuit must say when it CANNOT SEE. A null armed/tripped read identically to a genuine
 // "not armed" — the crash detector could be blind next to a confident verdict, silently.
@@ -260,6 +323,16 @@ ok("safety: the downgrade is ONE-WAY — a bearish read with no VIX still prints
 })());
 ok("safety: with VIX healthy a TAILWIND still prints (the gate is the gauge, not the count)",
   rBull.regime.verdict === "TAILWIND" && rBull.regime.downgraded === null);
+// v3.41: the v3.40 rule only caught VIX going blind. PANIC needs BOTH vix AND fear_greed live,
+// so a dead CNN F&G scraper blinds the exact same override VIX blinds — widened to match.
+ok("safety: TAILWIND is ALSO withheld when Fear & Greed (not VIX) is the blind gauge, and names it", (() => {
+  const r = buildTtReadout(mkLive({ fearGreed: undefined, fearGreedAsOf: undefined, fearGreedLabel: undefined, rateOddsHold: undefined, rateOddsCut: undefined, rateOddsHike: undefined }), { now: TT_NOW });
+  return r.regime.raw_verdict === "TAILWIND" && r.regime.verdict === "NEUTRAL" && /Fear & Greed/.test(r.regime.downgraded) && !/VIX/.test(r.regime.downgraded);
+})());
+ok("safety: with BOTH gauges blind, the downgrade names both", (() => {
+  const r = buildTtReadout(mkLive({ vix: undefined, fearGreed: undefined, fearGreedAsOf: undefined, fearGreedLabel: undefined }), { now: TT_NOW });
+  return r.regime.downgraded && /VIX/.test(r.regime.downgraded) && /Fear & Greed/.test(r.regime.downgraded);
+})());
 ok("readout: INSUFFICIENT with <3 available checks", (() => { const r = buildTtReadout({ vix: 16.1, vixAsOf: D, fearGreed: 62, fearGreedAsOf: D }, { now: TT_NOW }); return r.regime.available === 2 && r.regime.verdict === "INSUFFICIENT"; })());
 ok("readout: stale input gated out (fresh value but 10-day-old AsOf -> unavailable)", (() => { const r = buildTtReadout(mkLive({ vixAsOf: "2026-07-01" }), { now: TT_NOW }); return r.vix.value === null && r.regime.checks[1].state === "unavailable"; })());
 ok("readout: empty live -> all checks unavailable, verdict INSUFFICIENT", (() => { const r = buildTtReadout({}, { now: TT_NOW }); return r.regime.verdict === "INSUFFICIENT" && r.regime.checks.every((c) => c.state === "unavailable"); })());
@@ -282,6 +355,27 @@ const paste = formatTtPaste(rBull, { generatedEt: "2026-07-15 14:00 ET" });
 ok("paste: carries REGIME + verdict + MACRO FLIP lines", paste.includes("REGIME") && paste.includes("TAILWIND") && paste.includes("MACRO FLIP"));
 ok("paste: honesty footer present (RS basis + not advice)", paste.includes("basis=1d") && paste.includes("not advice"));
 ok("paste: null-input body still returns a string with n/a", (() => { const p = formatTtPaste(buildTtReadout({}, { now: TT_NOW })); return typeof p === "string" && p.includes("n/a"); })());
+
+// ---- F3 (v3.41 audit finding): the honesty states must reach the ONE human-facing surface ----
+// v3.40 added `evaluable`/`reason` on macro_flip and `downgraded` on regime, but nothing printed
+// them: a blind circuit rendered as bare "n/a" (identical to a circuit that simply never ran),
+// and a withheld TAILWIND printed as a plain NEUTRAL with no tell at all.
+ok("paste: a blind circuit prints BLIND + the missing input, never bare n/a", (() => {
+  const r = buildTtReadout(mkLive({ spyMa200: undefined }), { now: TT_NOW }); // vix present, ma200 missing -> flip blind
+  const p = formatTtPaste(r, {});
+  const flipLine = p.split("\n").find((l) => l.startsWith("MACRO FLIP"));
+  return /BLIND/.test(flipLine) && /spy_ma200/.test(flipLine) && !flipLine.trim().endsWith("n/a");
+})());
+ok("paste: a fully-fed, unarmed circuit still prints 'not armed' (blind and unarmed are NOT the same word)", (() => {
+  const p = formatTtPaste(rBull, {});
+  return p.split("\n").find((l) => l.startsWith("MACRO FLIP")).includes("not armed");
+})());
+ok("paste: a withheld TAILWIND prints an explicit warning line naming the blind gauge", (() => {
+  const r = buildTtReadout(mkLive({ vix: undefined, rateOddsHold: undefined, rateOddsCut: undefined, rateOddsHike: undefined }), { now: TT_NOW });
+  const p = formatTtPaste(r, {});
+  return /⚠.*TAILWIND withheld/.test(p) && /VIX/.test(p);
+})());
+ok("paste: a non-withheld verdict carries no warning line", !/⚠/.test(paste));
 ok("one-wiring-point intact: dashboard.jsx does not fetch readout.json", !dashSrc.includes("readout.json"));
 
 // ---- 6. /api/tt validateBook — the TT book contract ---------------------
