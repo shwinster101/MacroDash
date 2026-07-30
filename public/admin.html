@@ -191,11 +191,36 @@
   @media(max-width:480px){
     .stance-strip button.badge,.tabs .tab{min-height:40px;display:inline-flex;align-items:center}
     .stance-strip details.why>summary{min-height:32px;display:flex;align-items:center}
+    .fdr .fdr-row{min-height:44px}  /* v3.42 slice 2: thumb-sized driver rows */
   }
   .fdr{margin-bottom:8px}
-  .fdr .fdr-row{display:flex;align-items:baseline;gap:8px;flex-wrap:wrap;padding:3px 0;
-    border-bottom:1px dashed #101a24;font-size:11.5px;cursor:pointer}
+  /* v3.42 READABLE DESK slice 2: driver rows are a two-line GRID inside a real <button> —
+     line 1 = identity (left) + the primary datum right-aligned at --fs-l; line 2 = detail +
+     warning chips. The old single flex-wrap line interleaved 6–9 datums at 10px with the
+     primary number lost mid-row. A <button> is focusable and Enter-activatable for free;
+     the reset below keeps it looking like the row it replaces. Rows that are NOT actionable
+     (calendar events with no tab) stay <div>s — a button that does nothing is a lie. */
+  .fdr .fdr-row{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:1px 10px;
+    align-items:baseline;width:100%;text-align:left;background:none;border:none;
+    border-bottom:1px dashed #101a24;padding:5px 0;margin:0;
+    font-family:inherit;font-size:11.5px;color:var(--fg);line-height:1.5;cursor:pointer}
   .fdr .fdr-row:last-of-type{border-bottom:none}
+  .fdr .fdr-row:hover{background:#0a1119}
+  .fdr .fdr-l{display:flex;gap:8px;align-items:baseline;flex-wrap:wrap;min-width:0}
+  .fdr .fdr-p{font-size:var(--fs-l);font-weight:700;white-space:nowrap;justify-self:end}
+  .fdr .fdr-d{grid-column:1/-1;display:flex;gap:4px 8px;flex-wrap:wrap;align-items:baseline;
+    font-size:10.5px;color:var(--dim)}
+  div.fdr-row{cursor:default}
+  /* skeleton rows — stable geometry while quotes/positions are still in flight, so the
+     board doesn't pop-in and shift when the async loads land. Shimmer only when the OS
+     allows motion; a static placeholder is the reduced-motion rendering, not an omission. */
+  .skel-row{height:38px;border-bottom:1px dashed #101a24;position:relative;overflow:hidden}
+  .skel-row::after{content:"";position:absolute;inset:9px 45% 9px 0;background:#0d141d;border-radius:4px}
+  .skel-row:nth-child(odd)::after{right:60%}
+  @media(prefers-reduced-motion:no-preference){
+    .skel-row::after{animation:skelp 1.1s ease-in-out infinite alternate}
+  }
+  @keyframes skelp{from{opacity:.45}to{opacity:1}}
   .fdr .lbl{margin-bottom:4px}
   button.rfr{background:#0c1a13;border:1px solid var(--greenDim);color:var(--green);border-radius:6px;
     padding:2px 10px;font-family:inherit;font-size:10px;letter-spacing:.08em;cursor:pointer}
@@ -2605,6 +2630,11 @@ function pickRow(rr,hz){
    to the stamp whenever one is unavailable — and says which it used, per pick. Fetch failure
    is silent by design: the board degrades to exactly its previous behaviour. */
 let LIVE_PX={},LIVE_AT=null;
+/* v3.42 slice 2: true only until the FIRST quotes/positions load settles (success OR
+   failure) — while true, an empty rank/queue renders skeleton rows instead of an empty
+   state, because "not loaded yet" and "nothing there" are different facts. Never set back
+   to true: skeletons are a first-paint device, not a refresh spinner (⟳ RANKS has its own). */
+let QUOTES_PENDING=true,POS_PENDING=true;
 const QUOTE_CAP=40;          // mirror of MAX_SYMS in functions/api/quotes.js
 let QUOTE_DROPPED=[];        // names past the cap — named, never silently priceless
 async function loadQuotes(){
@@ -2617,16 +2647,19 @@ async function loadQuotes(){
   // one that simply had no price — the same silent-truncation failure the upside widget was
   // fixed for ("states the denominator"). The tail is named on the coverage strip.
   QUOTE_DROPPED=all.slice(QUOTE_CAP);
-  if(!syms.length)return;
+  if(!syms.length){QUOTES_PENDING=false;render();return;}
   try{
     const ctl=new AbortController();const t=setTimeout(()=>ctl.abort(),8000);
     const r=await fetch("/api/quotes?syms="+encodeURIComponent(syms.join(",")),{signal:ctl.signal});
     clearTimeout(t);
-    if(!r.ok)return;
-    const d=await r.json();
-    LIVE_PX=d.quotes||{};LIVE_AT=d.asOf||null;
-    render();   // chips, the upside rank and the TODAY delta all read LIVE_PX
+    if(r.ok){
+      const d=await r.json();
+      LIVE_PX=d.quotes||{};LIVE_AT=d.asOf||null;
+    }
   }catch(_e){/* stamped ref_px remains in force — never break the board on a quote feed */}
+  // v3.42 slice 2: settle the pending flag on success AND failure — a dead quote feed must
+  // resolve the skeletons into the honest empty state, never leave placeholders shimmering.
+  finally{QUOTES_PENDING=false;render();/* chips, the upside rank and the TODAY delta all read LIVE_PX */}
 }
 
 /* FEAT-TT-POSSTORE (v3.34): the whole positions map, one GET at boot — everything that
@@ -2637,11 +2670,14 @@ async function loadQuotes(){
 async function loadPositions(){
   try{
     const r=await fetch("/api/positions");
-    if(!r.ok)return;
-    const d=await r.json();
-    POSITIONS=(d&&typeof d.positions==="object"&&!Array.isArray(d.positions))?d.positions:{};
-    render();
+    if(r.ok){
+      const d=await r.json();
+      POSITIONS=(d&&typeof d.positions==="object"&&!Array.isArray(d.positions))?d.positions:{};
+    }
   }catch(_e){/* POSITIONS stays {} — posOf() reads null for everyone, never stale data */}
+  // v3.42 slice 2: same settle-on-either-outcome rule as loadQuotes — the SELL skeletons
+  // must resolve (to the queue or to honest hiding), never shimmer forever on a dead feed.
+  finally{POS_PENDING=false;render();}
 }
 
 /* ═══════════ THE BELIEF LEDGER (FEAT-TT-LEDGER v3.32) ═══════════ */
@@ -3158,6 +3194,15 @@ function renderSellBlock(){
   const el=document.getElementById("sellBlock");if(!el)return;
   const s=sellRank();
   if(!s||(!s.forced.length&&!s.disc.length&&!s.unmod.length&&!s.optOnly.length)){
+    // v3.42 slice 2: while the positions map is still in flight "nothing measured" is
+    // UNKNOWN — hold the geometry with skeletons instead of hiding, so the block doesn't
+    // pop in and shift the board when the load lands. Genuinely-nothing still hides.
+    if(POS_PENDING){
+      el.style.display="";
+      el.innerHTML=`<div class="lbl">NEXT DOLLAR — SELL · where the next dollar comes from</div>`+
+        `<div class="skel-row"></div><div class="skel-row"></div><div class="skel-row"></div>`;
+      return;
+    }
     el.style.display="none";el.innerHTML="";return;   // nothing measured → nothing, never a fake queue
   }
   el.style.display="";
@@ -3169,19 +3214,25 @@ function renderSellBlock(){
     r.upl!==null?`<span style="color:${r.upl>=0?"var(--green)":"var(--red)"};font-size:9.5px">${r.upl>=0?"+":""}${r.upl}% unrl</span>`:""
   ].filter(Boolean).join(" ");
   let h=`<div class="lbl">NEXT DOLLAR — SELL${tripped?` · <span style="color:var(--red)">circuit tripped — this IS the active list (deleverage-only)</span>`:` · where the next dollar comes from`}</div>`;
+  /* v3.42 slice 2: grid rows. A forced trim's PRIMARY is its weight (the rule already
+     broken); a discretionary source's PRIMARY is its %/yr (the reason it funds first).
+     Every phrase is verbatim from v3.41 — only the layout moved. */
   s.forced.forEach(r=>{
-    h+=`<div class="fdr-row" onclick="openCard('${esc(r.sym)}')"><span style="color:var(--red);font-weight:700">⛔ TRIM</span>`+
-      `<span class="sym">${esc(r.sym)}</span><span class="lens lens-${esc(r.lens)}">${esc(r.lens)}</span>`+
-      `<span style="color:var(--red);font-weight:700">${r.w}% — ${r.trimPts}pts over the ${CAP_PCT}% cap</span>`+
+    h+=`<button class="fdr-row" onclick="openCard('${esc(r.sym)}')">`+
+      `<span class="fdr-l"><span style="color:var(--red);font-weight:700">⛔ TRIM</span>`+
+      `<span class="sym">${esc(r.sym)}</span><span class="lens lens-${esc(r.lens)}">${esc(r.lens)}</span></span>`+
+      `<span class="fdr-p" style="color:var(--red)">${r.w}%</span>`+
+      `<span class="fdr-d"><span style="color:var(--red);font-weight:700">${r.trimPts}pts over the ${CAP_PCT}% cap</span>`+
       `<span style="color:var(--red)">≈ ${money(r.trim$)} to cap</span>${flags(r)}`+
-      (r.dnt?`<span class="bad2">⚠ cap and do-not-trim CONTRADICT — resolve, the board won't pick</span>`:"")+`</div>`;
+      (r.dnt?`<span class="bad2">⚠ cap and do-not-trim CONTRADICT — resolve, the board won't pick</span>`:"")+`</span></button>`;
   });
   s.disc.forEach((r,i)=>{
-    h+=`<div class="fdr-row" onclick="openCard('${esc(r.sym)}')"><span class="scope">${i+1}</span>`+
+    h+=`<button class="fdr-row" onclick="openCard('${esc(r.sym)}')">`+
+      `<span class="fdr-l"><span class="scope">${i+1}</span>`+
       `<span class="sym">${esc(r.sym)}</span><span class="lens lens-${esc(r.lens)}">${esc(r.lens)}</span>`+
-      `<span class="scope">${r.w}%</span>`+
-      `<span style="color:${r.ann>=0?"var(--green)":"var(--red)"};font-weight:700">${r.ann>=0?"+":""}${r.ann}%/yr model</span>`+
-      `<span class="scope">lowest expected return funds first</span>${flags(r)}</div>`;
+      `<span class="scope">${r.w}%</span></span>`+
+      `<span class="fdr-p" style="color:${r.ann>=0?"var(--green)":"var(--red)"}">${r.ann>=0?"+":""}${r.ann}%/yr <span style="font-size:10px;font-weight:400">model</span></span>`+
+      `<span class="fdr-d"><span class="scope">lowest expected return funds first</span>${flags(r)}</span></button>`;
   });
   const noModel=s.unmod.filter(r=>!r.modelled),noRate=s.unmod.filter(r=>r.modelled);
   if(noModel.length)h+=`<div class="none">cannot rank — no model: <b>${noModel.map(r=>esc(r.sym)).join(", ")}</b> (held, but the math has nothing to say)</div>`;
@@ -3192,7 +3243,7 @@ function renderSellBlock(){
   const computedFirst=(s.forced[0]&&s.forced[0].sym)||(s.disc[0]&&s.disc[0].sym)||null;
   if(assertedFirst&&computedFirst&&assertedFirst!==computedFirst)
     h+=`<div class="none" style="color:var(--amber)">⚖ session funding order asserts <b>${esc(assertedFirst)}</b> first · computed says <b>${esc(computedFirst)}</b> — disagreement is information, not an average</div>`;
-  h+=`<div class="none">±unrl% is measured; tax lots are NOT — weights are % of tracked book (a floor) · <span style="cursor:pointer;color:var(--cyan)" onclick="openDesk('dExp')">full exposure detail ↗</span></div>`;
+  h+=`<div class="none">±unrl% is measured; tax lots are NOT — weights are % of tracked book (a floor) · <button class="linklike" onclick="openDesk('dExp')">full exposure detail ↗</button></div>`;
   el.innerHTML=h;
 }
 /* Compact BUY block — renders the SAME rows renderUpsideRank sorted (UPSIDE_ROWS), so the
@@ -3209,24 +3260,31 @@ function renderBuyBlock(){
     // hinge on the agreed pick cannot live only in the DESK drawer.
     (AGREE_PICK.redH?`<span style="color:var(--red)"> · ⚠ ${AGREE_PICK.redH} red: ${esc(AGREE_PICK.redLabels.slice(0,2).join(" · "))}</span>`:"")+`</div>`;
   else if(rows.length)h+=`<div class="none" style="color:var(--amber)">⏸ WAIT — no name passes every gate (reasons in DESK)</div>`;
-  if(!rows.length)h+=`<div class="none">nothing modelled+priced yet — nothing to rank</div>`;
+  // v3.42 slice 2: while the first quote load is still in flight an empty rank is UNKNOWN,
+  // not empty — skeleton rows hold the geometry so the board doesn't shift when data lands.
+  if(!rows.length)h+=QUOTES_PENDING
+    ?`<div class="skel-row"></div><div class="skel-row"></div><div class="skel-row"></div>`
+    :`<div class="none">nothing modelled+priced yet — nothing to rank</div>`;
   const MEDAL=["🥇","🥈","🥉","4","5"];
   rows.forEach((r,i)=>{
     const w=r.wt;
     const wTxt=w.optOnly&&w.w===null?`<span class="scope" style="color:var(--amber)">◇ opt-only</span>`
       :w.w===null?(w.held?`<span class="scope">held · unmeasured</span>`:`<span class="scope" style="color:var(--green)">new — not held</span>`)
       :`<span style="color:${w.w>=CAP_PCT?"var(--red)":w.w>=10?"var(--amber)":"var(--slate)"};font-size:10px;font-weight:700">${w.w}%${esc(w.mark)}</span>`;
-    h+=`<div class="fdr-row" onclick="openCard('${esc(r.sym)}')"><span>${MEDAL[i]}</span>`+
+    /* v3.42 slice 2: grid row — identity left, the %/yr PRIMARY right at --fs-l, target +
+       warning chips on the detail line. Same datums, same phrases; only the layout moved. */
+    h+=`<button class="fdr-row" onclick="openCard('${esc(r.sym)}')">`+
+      `<span class="fdr-l"><span>${MEDAL[i]}</span>`+
       `<span class="sym">${esc(r.sym)}</span><span class="lens lens-${esc(r.lens)}">${esc(r.lens)}</span>`+
-      `<span class="scope">${esc(r.tier)}</span>${wTxt}`+
-      `<span style="color:${r.upside>=0?"var(--green)":"var(--red)"};font-weight:700">${r.ann!==null?`${r.ann>=0?"+":""}${r.ann}%/yr`:`${r.upside>=0?"+":""}${r.upside}%`}</span>`+
-      `<span class="scope">$${esc(r.tgt)} by ${esc(r.y)} · ${esc(r.basis)}</span>`+
+      `<span class="scope">${esc(r.tier)}</span>${wTxt}</span>`+
+      `<span class="fdr-p" style="color:${r.upside>=0?"var(--green)":"var(--red)"}">${r.ann!==null?`${r.ann>=0?"+":""}${r.ann}%/yr`:`${r.upside>=0?"+":""}${r.upside}%`}</span>`+
+      `<span class="fdr-d"><span class="scope">$${esc(r.tgt)} by ${esc(r.y)} · ${esc(r.basis)}</span>`+
       ((r.pxAge===null||r.pxAge>PX_STALE_D)?`<span class="bad2">⚠ px ${r.pxAge===null?"undated":r.pxAge+"d"}</span>`:"")+
       (r.wt.w!==null&&r.wt.w>=CAP_PCT?`<span class="bad2">no room</span>`:"")+
       (r.redH?`<span class="bad2">● ${r.redH} red</span>`:"")+
-      (r.rolled?`<span class="warn2">↷ ${esc(r.rolled)}→${esc(r.y)}</span>`:"")+`</div>`;
+      (r.rolled?`<span class="warn2">↷ ${esc(r.rolled)}→${esc(r.y)}</span>`:"")+`</span></button>`;
   });
-  h+=`<div class="none"><span style="cursor:pointer;color:var(--cyan)" onclick="openDesk('dNext')">full math, horizons &amp; caveats ↗</span> · ${UPSIDE_ROWS.length} ranked of ${BOOK.length}</div>`;
+  h+=`<div class="none"><button class="linklike" onclick="openDesk('dNext')">full math, horizons &amp; caveats ↗</button> · ${UPSIDE_ROWS.length} ranked of ${BOOK.length}</div>`;
   el.innerHTML=h;
 }
 /* Compact calendar block — same binaryEvents() computation the DESK calendar renders. */
@@ -3236,12 +3294,18 @@ function renderCalBlock(){
   if(!ev.length){el.style.display="none";el.innerHTML="";return;}
   el.style.display="";
   let h=`<div class="lbl">BINARY CALENDAR · ${ev.filter(e=>e.inWindow).length} inside ${BINARY_WINDOW_D}d</div>`;
+  // v3.42 slice 2: an event with a book entry is an actionable BUTTON (opens the card);
+  // one without stays a <div> — a button that does nothing is a lie. Same grid either way:
+  // the countdown is the PRIMARY (it's the decision input), the label is the detail line.
   ev.slice(0,6).forEach(e=>{
-    h+=`<div class="fdr-row"${find(e.sym)?` onclick="openCard('${esc(e.sym)}')"`:""}>`+
-      `<span style="color:${e.inWindow?"var(--red)":"var(--dim)"};font-weight:700">${e.d===0?"TODAY":"in "+e.d+"d"}</span>`+
-      `<span class="sym">${esc(e.sym)}</span><span class="scope">${esc(String(e.label).slice(0,72))}${String(e.label).length>72?"…":""}</span></div>`;
+    const act=!!find(e.sym);
+    const tag=act?"button":"div";
+    h+=`<${tag} class="fdr-row"${act?` onclick="openCard('${esc(e.sym)}')"`:""}>`+
+      `<span class="fdr-l"><span class="sym">${esc(e.sym)}</span></span>`+
+      `<span class="fdr-p" style="color:${e.inWindow?"var(--red)":"var(--dim)"}">${e.d===0?"TODAY":"in "+e.d+"d"}</span>`+
+      `<span class="fdr-d"><span class="scope">${esc(String(e.label).slice(0,72))}${String(e.label).length>72?"…":""}</span></span></${tag}>`;
   });
-  if(ev.length>6)h+=`<div class="none"><span style="cursor:pointer;color:var(--cyan)" onclick="openDesk('dCal')">+${ev.length-6} more ↗</span></div>`;
+  if(ev.length>6)h+=`<div class="none"><button class="linklike" onclick="openDesk('dCal')">+${ev.length-6} more ↗</button></div>`;
   el.innerHTML=h;
 }
 /* The thin stance line: every red count the closed DESK would otherwise hide. */
