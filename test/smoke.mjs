@@ -1452,8 +1452,9 @@ ok("sellrank: the cap decision prefers measured % of NAV, falling back to the tr
   adminSrc.includes("const wNav=isFinite(Number(p.pct))?Number(p.pct):null;"));
 ok("focus2: the buy block renders the SAME rows the upside rank sorted — never a second sort",
   adminSrc.includes("UPSIDE_ROWS=rows;") && adminSrc.includes("const rows=UPSIDE_ROWS.slice(0,5);"));
+// v3.42: the badges became real <button>s (focusable, Enter-activatable) — same red counts.
 ok("focus2: the stance strip carries the red counts a closed DESK would otherwise hide",
-  adminSrc.includes("over cap</span>") && adminSrc.includes('onclick="openDesk(') &&
+  adminSrc.includes("over cap</button>") && adminSrc.includes('onclick="openDesk(') &&
   adminSrc.includes("function renderStance()"));
 ok("focus2: primary blocks render LAST in the chain, reading what the strips computed",
   adminSrc.includes("renderStance();renderBuyBlock();renderSellBlock();renderCalBlock();renderTabs();"));
@@ -1463,6 +1464,44 @@ ok("refresh: the button refetches quotes+positions+regime and reports the quote-
   adminSrc.includes("server caches 2 min"));
 ok("refresh: the button disables while in flight and always re-enables",
   adminSrc.includes("b.disabled=true") && adminSrc.includes("finally{if(b){b.disabled=false"));
+
+// ═══════════ v3.42 READABLE DESK (slice 1) — the first phone screen ═══════════
+// The owner's screenshot circled the stance strip: five wrapped lines of uppercase prose with
+// the ONE answer the terminal exists to give (may capital move?) buried mid-sentence in the
+// same weight and size as its qualifiers. Slice 1 restructures the first phone screen only:
+// verdict token + qualifier chips + tap-deep prose, one scrollable tab row, design tokens.
+console.log("\n[21] v3.42 READABLE DESK — stance bar, tab strip, tokens");
+ok("stance: every stance() branch carries a structured verdict token beside the pinned prose",
+  ['verdict:"NO NEW POSITIONS"', 'verdict:"UNKNOWN"', 'verdict:"ADDS SUSPENDED"',
+   'verdict:"ADDS GATED"', 'verdict:"ADDS OK"'].every((s) => adminSrc.includes(s)));
+ok("stance: the long free-text asserted regime is TRUNCATED on the chip, verbatim in the drawer",
+  adminSrc.includes("s.length>26?s.slice(0,25)") && adminSrc.includes("stricter governs)"));
+ok("stance: the full prose lives one tap deep in details.why — NOT class=drawer (the phone " +
+   "harness counts open drawers; strip chrome must not register as one)",
+  (() => {
+    const s = adminSrc.indexOf("function renderStance()");
+    const body = adminSrc.slice(s, adminSrc.indexOf("\n}", s));
+    return body.includes('<details class="why"><summary>why</summary>') && !body.includes('<details class="drawer"');
+  })());
+ok("stance: the caution→amber map bug is fixed (k:'caution' used to fall through to slate)",
+  adminSrc.includes('caution:"var(--amber)"'));
+ok("stance: the verdict token renders at --fs-l via .vbadge (readable at arm's length)",
+  adminSrc.includes(".vbadge{font-size:var(--fs-l)") && adminSrc.includes('class="vbadge"'));
+ok("tabs: ONE scrollable row, never a five-row wrap (flex-wrap:nowrap + overflow-x:auto + " +
+   "flex-shrink:0 per tab)",
+  /\.tabs\{[^}]*flex-wrap:nowrap[^}]*overflow-x:auto/.test(adminSrc) &&
+  /\.tabs \.tab\{[^}]*flex-shrink:0/.test(adminSrc));
+ok("tabs: the active tab is scrolled into view with block:nearest (a render can never yank " +
+   "the page vertically)", adminSrc.includes('scrollIntoView({block:"nearest"'));
+ok("tokens: type + spacing scales and --focus exist in :root",
+  ["--fs-xs:", "--fs-l:", "--sp-1:", "--sp-4:", "--focus:var(--green)"].every((s) => adminSrc.includes(s)));
+ok("a11y: --dim lifted to #71877b (old #5f7469 measured ≈3.9:1 on --bg, below AA)",
+  adminSrc.includes("--dim:#71877b") && !adminSrc.includes("--dim:#5f7469"));
+ok("a11y: :focus-visible ring exists and decorative motion respects prefers-reduced-motion",
+  adminSrc.includes(":focus-visible{outline:") &&
+  adminSrc.includes("@media(prefers-reduced-motion:reduce){header::before,.cursor{animation:none}}"));
+ok("a11y: thumb-sized tap targets at phone widths (badges + tabs ≥40px min-height ≤480px)",
+  /max-width:480px[^}]*\{[\s\S]{0,200}min-height:40px/.test(adminSrc));
 
 // ═══════════ [20] FEAT-TT-PTLINT (v3.39) — the PT chain's guards ═══════════
 // The price-target chain is the terminal's moat: ptModelRows() feeds the est-run table, the WORTH

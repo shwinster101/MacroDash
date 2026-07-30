@@ -366,6 +366,19 @@ ok("stance strip carries the red counts while DESK is closed",
   /over cap/.test(strip) && /binaries/.test(strip));
 ok("stance strip carries the refresh button and the quote stamp",
   (await page.locator("#refreshRanks").count()) === 1 && /quotes \d{2}:\d{2}Z/.test(strip));
+// v3.42 READABLE DESK: the verdict is a TOKEN, not a buried clause — the tripped fixture
+// makes it deterministic. The prose moved one tap deep; a closed why-drawer must still show
+// every red fact via the token/chips/badges (v3.25 rule at strip altitude).
+ok("stance bar: the verdict renders as a single large token (tripped fixture → NO NEW POSITIONS)",
+  (await page.locator("#stanceStrip .vbadge").count()) === 1 &&
+  /NO NEW POSITIONS/.test(await page.locator("#stanceStrip .vbadge").innerText()));
+ok("stance bar: the why drawer starts closed and holds the full prose verbatim",
+  (await page.locator("#stanceStrip details.why[open]").count()) === 0 &&
+  /leverage circuit tripped/i.test(await page.locator("#stanceStrip details.why div").textContent()));
+ok("stance bar: with the drawer closed the verdict + red counts are all still visible",
+  /NO NEW POSITIONS/.test(strip) && /over cap/.test(strip) && /binaries/.test(strip));
+ok("stance bar: badges and controls are real buttons — keyboard-reachable",
+  (await page.locator("#stanceStrip button").count()) >= 4);
 await page.evaluate(() => refreshRanks());
 await page.waitForTimeout(600);
 ok("refresh button refetches and reports, cache window named",
@@ -595,6 +608,13 @@ const tY = (await phone.locator("#stanceStrip").boundingBox()).y;
 const bY = (await phone.locator("#board").boundingBox()).y;
 ok("the stance strip leads the primary view, above the book", tY < bY);
 ok("the whole daily answer (stance → buy → sell → calendar) fits inside two phone screens", bY - tY < 1400);
+// v3.42 READABLE DESK: the old stance strip wrapped ~5 lines of prose at 390px; the bar's
+// top row (token + chips + badges) must stay compact with the why drawer closed.
+const stanceTopH = (await phone.locator("#stanceStrip .stance-top").boundingBox()).height;
+ok(`stance bar top row is compact at 390px — token and chips, never five lines of prose (${stanceTopH}px)`,
+  stanceTopH < 140);
+ok("the tab strip is ONE row at 390px — it scrolls horizontally, it never wraps",
+  (await phone.locator("#tabBar").boundingBox()).height < 60);
 ok("every drawer starts closed except what-changed",
   (await phone.locator("#boardView details.drawer[open]").count()) <= 1);
 ok("no horizontal overflow at 390px",

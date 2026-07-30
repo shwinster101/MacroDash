@@ -778,6 +778,37 @@ Jan-anchor shipped; see `snapshot.js` ~318–328), `spyMa100`, `spyMa200`, and a
   the widened safety asymmetry, paste-block rendering) + **107 render** (+4: the pill's blind and
   withheld states, run live in Chromium — the v3.40 asserts for these existed only on paper since
   no browser was available when that commit shipped).
+- **FEAT-TT-READABLE (v3.42) — "READABLE DESK" slice 1: the first phone screen becomes the answer.**
+  A requirements-first UI audit (owner's screenshot, the stance strip circled) found the terminal's
+  *logic* hardened across v3.29–v3.41 while its *presentation* accreted: the ONE answer the board
+  exists to give ("may capital move?") rendered as **five wrapped lines of uppercase prose** — the
+  long free-text `asserted` regime inlined mid-sentence at the same weight/size/color as the verdict
+  — followed by a **five-row tab grid** (19 payload tabs, flex-wrapped) that pushed the four drivers
+  below the fold. Slice 1 restructures exactly that screen. **The stance bar**: `stance()` keeps its
+  decision logic and pinned prose byte-identical but now also returns `{verdict, quals[]}` —
+  `renderStance()` renders the verdict as a **large token** (`.vbadge`, `--fs-l`) + small qualifier
+  **chips** (`.qual`; the long asserted text TRUNCATES on the chip and stays verbatim in the drawer)
+  + the red badges, with the full prose one tap deep in `details.why` (NOT `class="drawer"` — the
+  phone harness counts open drawers; the est-mini precedent). The v3.25 rule holds: every red fact
+  is a token/chip/badge visible while closed. Chip copy is chip-length by design (`circuit TRIPPED`)
+  — measured at 390px, the bar packs to **3 rows / 119px** vs ~171px of wrap soup; the render suite
+  now pins `<140px`. **Found while wiring: the caution-color bug** — `renderStance`'s map keyed
+  `warn`, a `k` that `stance()` never returns, so every caution stance (HEADWIND, armed circuit)
+  had been rendering **slate, the color of "unknown"**, on the line that gates adds. **The tab
+  strip** is one horizontally scrollable row (`nowrap` + `overflow-x:auto` + `flex-shrink:0`,
+  active tab `scrollIntoView({block:"nearest"})` so a render can never yank the page). **Design
+  tokens** (additive): `--fs-*` type scale + `--sp-*` spacing scale + `--focus`; `--dim` lifted
+  `#5f7469→#71877b` (old value measured ≈3.9:1 on `--bg` — below WCAG AA — while carrying
+  load-bearing 9–10.5px text; new ≈5.2:1); `:focus-visible` ring; `prefers-reduced-motion` kills
+  the header sweep + blinking cursor; stance badges became real `<button>`s (focusable,
+  Enter-activatable, same look); ≥40px tap targets on badges/tabs at ≤480px; `.u-*` color
+  utilities + `button.linklike` for later slices. Slices 2–4 (driver-row grid + skeletons,
+  book/deep-dive keyboard model, modal focus traps + confirm-steps) are specced in the same
+  audit and deliberately deferred.
+  Tests: **590 smoke** (+11: structured verdicts, chip truncation, why-not-drawer, the caution
+  fix, single-row tabs, tokens, contrast lift, reduced-motion, tap targets) + **113 render** (+6:
+  verdict token, closed-drawer prose, red-facts-while-closed, buttons keyboard-reachable, the
+  390px height budget `<140px`, single-row tab strip).
 - **Deferred:** stored fundamentals + Robinhood sync — now unblocked by the `x-tt-pin` header
   (v3.9): a chat-side daily review can PUT `status_flags`/`ref_px` into the deepDive payloads and
   stamp `lastRun`. When built, store the *triage* shape (`{at, px}` → "% moved since your last TT
@@ -844,7 +875,7 @@ npm run dev        # Vite dev server (mock unless VITE_DATA_MODE=live in .env)
 npm run build      # → dist/  (what Pages runs)
 npm run preview    # serve the built dist/
 
-node test/smoke.mjs   # 579-assertion no-network smoke test (needs Node ≥17)
+node test/smoke.mjs   # 590-assertion no-network smoke test (needs Node ≥17)
 npm run test:ui       # browser render test for admin.html (skips if no Chromium)
 
 # Cron Worker (separate deploy):
