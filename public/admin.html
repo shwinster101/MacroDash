@@ -83,9 +83,12 @@
   .WATCH .tag{color:var(--magenta)}
   .CUT .tag{color:var(--red)}
   .chips{display:flex;flex-wrap:wrap;gap:6px}
+  /* v3.42 slice 3: chips are real <button>s now (keyboard-reachable). Reset button chrome —
+     font, text-align and color don't inherit into buttons by default in every engine. */
   .chip{display:inline-flex;align-items:center;gap:6px;cursor:pointer;
     border:1px solid var(--line);border-radius:6px;padding:3px 9px;background:#0b131b;
-    transition:.12s;user-select:none}
+    transition:.12s;user-select:none;font-family:inherit;font-size:inherit;color:inherit;
+    text-align:left}
   .chip:hover{border-color:var(--green);background:#0e1a16;transform:translateY(-1px)}
   .chip .sym{font-weight:700;letter-spacing:.5px}
   .chip .lens{font-size:9px;padding:0 5px;border-radius:8px;border:1px solid currentColor;opacity:.9}
@@ -115,7 +118,7 @@
   .tdy-act{border-left:3px solid var(--line);padding:5px 0 5px 9px;margin-bottom:5px;font-size:12px}
   .tdy-act:hover{background:#0a1119}
   details.drawer{border:1px solid var(--line);border-radius:7px;background:#080d13;margin-top:7px}
-  details.drawer>summary{cursor:pointer;list-style:none;padding:8px 12px;font-size:10.5px;
+  details.drawer>summary{cursor:pointer;list-style:none;padding:8px 12px;font-size:var(--fs-s);
     letter-spacing:.12em;color:var(--dim);text-transform:uppercase;user-select:none}
   details.drawer>summary::-webkit-details-marker{display:none}
   details.drawer>summary::before{content:"▸ ";color:var(--greenDim)}
@@ -192,6 +195,7 @@
     .stance-strip button.badge,.tabs .tab{min-height:40px;display:inline-flex;align-items:center}
     .stance-strip details.why>summary{min-height:32px;display:flex;align-items:center}
     .fdr .fdr-row{min-height:44px}  /* v3.42 slice 2: thumb-sized driver rows */
+    .chip{min-height:40px}          /* v3.42 slice 3: thumb-sized book chips */
   }
   .fdr{margin-bottom:8px}
   /* v3.42 READABLE DESK slice 2: driver rows are a two-line GRID inside a real <button> —
@@ -251,9 +255,14 @@
      min-width:0 or the grid item inherits the table's min-content width and the whole
      column blows out past the viewport before .tblx ever gets the chance to scroll. */
   .tblx{overflow-x:auto;-webkit-overflow-scrolling:touch;max-width:100%}
+  /* v3.42 slice 3: on phones a wide dd-pt table's column headers scroll away with the body,
+     so a row read mid-scroll has lost its labels. Sticky only ≤700px (matches the dd-answer
+     breakpoint) — desktop tables are short enough that this is unnecessary there. A solid
+     background is required or body rows visibly scroll THROUGH a transparent header. */
+  @media(max-width:700px){table.dd-pt th{position:sticky;top:0;background:var(--panel2)}}
   .layout>*{min-width:0}
   /* collapsible schema blocks (native <details>) */
-  details.schema>summary{cursor:pointer;list-style:none;color:var(--dim);font-size:10.5px;
+  details.schema>summary{cursor:pointer;list-style:none;color:var(--dim);font-size:var(--fs-s);
     letter-spacing:1px;text-transform:uppercase;margin:8px 0 4px;padding:6px 0}
   details.schema>summary::-webkit-details-marker{display:none}
   details.schema>summary::before{content:"▸ ";color:var(--green)}
@@ -1509,7 +1518,9 @@ function render(){
     if(!items.length)chips.innerHTML='<span class="empty">— empty —</span>';
     items.forEach(x=>{
       const rs=runState(x.lastRun);
-      const c=document.createElement("div");
+      // v3.42 slice 3: a real <button> — keyboard-reachable (Enter/Space) for free.
+      const c=document.createElement("button");
+      c.type="button";
       c.className="chip"+(x.fp?" fp":"")+" run-"+rs.k;
       c.onclick=()=>openCard(x.sym);
       // v3.29: the day move on the chip. A monitoring surface that shows only the ticker
@@ -1656,20 +1667,43 @@ function projLine(p){
     `<div style="margin-top:4px;font-size:11px">engines: rev ${sym(fw.rev)}${fw.cagr!==null?` <span style="color:var(--dim)">(${Math.round(fw.cagr*100)}%/yr)</span>`:""} · margins ${sym(fw.marg)} · multiple ${sym(fw.mult)}`+
     (fw.fly?` · <b style="color:var(--amber)">🔥 FLYWHEEL — three engines on</b>`:"")+`</div>`;
 }
+/* v3.42 slice 3: a real ARIA tablist — role="tab" + aria-selected + roving tabindex (only
+   the active tab is in the natural Tab order; arrow keys move BOTH focus and selection,
+   matching native tablist behavior for a list this short — WAI-ARIA APG tabs pattern). */
 function renderTabs(){
   const bar=document.getElementById("tabBar");
   const dds=ddEntries();
   if(!dds.length){bar.style.display="none";if(TAB!=="BOARD"){TAB="BOARD";}showTab();return;}
   if(TAB!=="BOARD"&&!dds.some(x=>x.sym===TAB))TAB="BOARD"; // payload removed → fall back
   bar.style.display="flex";
-  bar.innerHTML=`<span class="tab${TAB==="BOARD"?" on":""}" onclick="switchTab('BOARD')">BOARD</span>`+
-    dds.map(x=>`<span class="tab${TAB===x.sym?" on":""}" onclick="switchTab('${x.sym}')">${esc(x.sym)}</span>`).join("");
+  bar.setAttribute("role","tablist");
+  const tabEl=(id,label)=>{
+    const on=TAB===id;
+    return `<span class="tab${on?" on":""}" role="tab" aria-selected="${on}" `+
+      `tabindex="${on?"0":"-1"}" data-tid="${esc(id)}" onclick="switchTab('${id}')">${esc(label)}</span>`;
+  };
+  bar.innerHTML=tabEl("BOARD","BOARD")+dds.map(x=>tabEl(x.sym,x.sym)).join("");
   // v3.42: the strip is one scrollable row now — keep the active tab in view without
   // touching vertical scroll (block:"nearest" so a render can never yank the page).
   const on=bar.querySelector(".tab.on");
   if(on&&on.scrollIntoView)try{on.scrollIntoView({block:"nearest",inline:"nearest"});}catch(_e){}
   showTab();
 }
+document.getElementById("tabBar").addEventListener("keydown",e=>{
+  if(!["ArrowRight","ArrowLeft","Home","End"].includes(e.key))return;
+  const tabs=[...document.querySelectorAll("#tabBar .tab")];
+  if(!tabs.length)return;
+  const i=tabs.findIndex(t=>t.dataset.tid===TAB);
+  let next;
+  if(e.key==="Home")next=0;
+  else if(e.key==="End")next=tabs.length-1;
+  else if(e.key==="ArrowRight")next=(i+1)%tabs.length;
+  else next=(i-1+tabs.length)%tabs.length;
+  e.preventDefault();
+  switchTab(tabs[next].dataset.tid);
+  // switchTab→renderTabs rebuilds the DOM, so re-query before focusing the new active tab.
+  document.querySelector(`#tabBar .tab[data-tid="${CSS.escape(tabs[next].dataset.tid)}"]`)?.focus();
+});
 function switchTab(t){
   TAB=t;
   try{history.replaceState(null,"",t==="BOARD"?"#":"#"+t.toLowerCase());}catch(_e){}

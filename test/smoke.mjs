@@ -1523,6 +1523,27 @@ ok("slice2: span-onclick pseudo-links in the driver blocks became linklike butto
   (adminSrc.match(/<button class="linklike"/g)||[]).length>=3 &&
   !/renderBuyBlock[\s\S]{0,2000}<span style="cursor:pointer;color:var\(--cyan\)"/.test(adminSrc));
 
+// ---- slice 3: book chips + tab strip are keyboard-reachable ------------------------------
+ok("slice3: tier chips are real <button type=button> — keyboard-reachable via Enter/Space",
+  adminSrc.includes('const c=document.createElement("button");') &&
+  adminSrc.includes('c.type="button";'));
+ok("slice3: the CUT row (non-interactive) is deliberately left as a <div> — nothing to click",
+  adminSrc.includes('CUT.forEach(s=>{const c=document.createElement("div");'));
+ok("slice3: the tab strip is a real ARIA tablist — role, aria-selected, roving tabindex",
+  adminSrc.includes('bar.setAttribute("role","tablist")') &&
+  adminSrc.includes('role="tab" aria-selected="${on}"') &&
+  adminSrc.includes('tabindex="${on?"0":"-1"}"'));
+ok("slice3: arrow/Home/End keys move AND select (native tablist behavior), wrapping at the ends",
+  adminSrc.includes('next=(i+1)%tabs.length') && adminSrc.includes('next=(i-1+tabs.length)%tabs.length') &&
+  adminSrc.includes('e.key==="Home"') && adminSrc.includes('e.key==="End"'));
+ok("slice3: drawer/schema summaries migrated onto the shared type scale, not a stray literal",
+  adminSrc.includes("details.drawer>summary{cursor:pointer;list-style:none;padding:8px 12px;font-size:var(--fs-s);") &&
+  adminSrc.includes("details.schema>summary{cursor:pointer;list-style:none;color:var(--dim);font-size:var(--fs-s);"));
+ok("slice3: dd-pt table headers stick on scroll, phone-only (desktop tables are short enough not to need it)",
+  /max-width:700px\)\{table\.dd-pt th\{position:sticky/.test(adminSrc));
+ok("slice3: chips get the 40px thumb target at phone widths, same rule as slice 2's rows",
+  /max-width:480px[^}]*\{[\s\S]{0,260}\.chip\{min-height:40px\}/.test(adminSrc));
+
 // ═══════════ [20] FEAT-TT-PTLINT (v3.39) — the PT chain's guards ═══════════
 // The price-target chain is the terminal's moat: ptModelRows() feeds the est-run table, the WORTH
 // cell, the BUY rank, AGREE, the SELL rank and the spread. An audit confirmed the one-computation
