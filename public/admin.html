@@ -41,8 +41,22 @@
   a{color:var(--cyan);text-decoration:none}
   .wrap{max-width:1360px;margin:0 auto;padding:14px 16px 60px}
   /* ── header ── */
+  /* v3.42 slice 5: the header measured 209px at 390×844 — larger than the stance bar and tab
+     strip COMBINED, and the single biggest consumer of the 587px that sat above the first
+     answer. It is now ONE row (identity · MACRO pill · ⋯ MENU); everything that is STATUS
+     rather than an answer — version, BOOK/AUTH stamps, the DASH link, and the whole action
+     toolbar — lives inside the #headInfo disclosure, one tap away. */
   header{border:1px solid var(--line);background:linear-gradient(180deg,#0b131c,#080c12);
-    border-radius:8px;padding:12px 16px;margin-bottom:12px;position:relative;overflow:hidden}
+    border-radius:8px;padding:8px 12px;margin-bottom:10px;position:relative;overflow:hidden}
+  .hbar{display:flex;align-items:center;gap:8px;min-width:0}
+  .hb-id{color:var(--green);letter-spacing:1.5px;font-weight:700;font-size:var(--fs-s);
+    text-shadow:0 0 14px rgba(57,255,158,.45);white-space:nowrap}
+  .hb-more{margin-left:auto;background:none;border:1px solid var(--line);color:var(--dim);
+    border-radius:6px;padding:2px 9px;font-family:inherit;font-size:var(--fs-xs);
+    letter-spacing:.08em;cursor:pointer;white-space:nowrap}
+  .hb-more:hover{color:var(--fg);border-color:var(--greenDim)}
+  #headInfo{margin-top:8px;padding-top:8px;border-top:1px dashed var(--line)}
+  #headInfo .toolbar{margin-bottom:0;margin-top:8px}
   header::before{content:"";position:absolute;inset:0;
     background:linear-gradient(90deg,transparent,rgba(57,255,158,.06),transparent);
     animation:sweep 6s linear infinite}
@@ -327,16 +341,52 @@
 <body>
 <div class="wrap">
   <header>
-    <div class="brand">FINANCE&nbsp;BRO.AI // TT&nbsp;TICKER&nbsp;TERMINAL <small>v3.42.0 · single-pass deep-dive orchestrator</small></div>
-    <div class="statusline">
-      <span>BOOK: <b id="bookStamp">loading…</b></span>
-      <span>AUTH: <b id="sessState">…</b></span>
-      <!-- v3.29: labelled MACRO, not REGIME. This pill is MacroDash's MEASURED read; the
-           session can assert a different one, and the TODAY stance shows which governs.
-           An unqualified "REGIME:" made the header look like it contradicted the stance. -->
+    <!-- v3.42 slice 5: ONE row. Only the two things that change a decision stay visible —
+         identity and the MACRO pill (Engine 0's measured read). Everything else is status,
+         not an answer, so it sits behind ⋯ MENU.
+         v3.29: labelled MACRO, not REGIME. This pill is MacroDash's MEASURED read; the
+         session can assert a different one, and the TODAY stance shows which governs.
+         An unqualified "REGIME:" made the header look like it contradicted the stance. -->
+    <div class="hbar">
+      <span class="hb-id">TT</span>
+      <!-- The "MACRO:" label is load-bearing, not decoration: v3.29 added it because an
+           unqualified pill made the header look like it contradicted the TODAY stance.
+           It survives the slice-5 compaction for that reason. -->
       <span>MACRO: <span class="pill neutral" id="regimePill">loading…</span></span>
-      <span style="margin-left:auto"><a href="/">← DASH</a></span>
+      <button class="hb-more" id="headToggle" aria-expanded="false" aria-controls="headInfo"
+        onclick="toggleHeadInfo()">⋯ MENU</button>
     </div>
+    <div id="headInfo" style="display:none">
+      <div class="brand">FINANCE&nbsp;BRO.AI // TT&nbsp;TICKER&nbsp;TERMINAL <small>v3.42.0 · single-pass deep-dive orchestrator</small></div>
+      <div class="statusline">
+        <span>BOOK: <b id="bookStamp">loading…</b></span>
+        <span>AUTH: <b id="sessState">…</b></span>
+        <span style="margin-left:auto"><a href="/">← DASH</a></span>
+      </div>
+      <!-- FEAT-TT-MOBILE (v3.11): daily actions own the toolbar; backup/recovery paths demote
+           behind ⛭ BACKUP (same idiom as the dashboard's CollapsedGroup). EXPORT JSON stays
+           globally reachable — the unsaved/conflict banners link to it by function name.
+           v3.42 slice 5: the whole toolbar moved in here. Every one of these is an occasional
+           action, and the command bar below already covers the frequent path (type a ticker
+           and press ↵ to open its card, or to add it if it isn't in the book). -->
+      <div class="toolbar">
+        <button class="act" onclick="openAdd()">+ ADD TICKER</button>
+        <button class="act" onclick="openSession()">◧ SESSION</button>
+        <button class="act warn" onclick="reloadBook()">⟲ RELOAD</button>
+        <!-- v3.29: PIN joins the manage row. It is a once-per-30-days action and it was the
+             button that pushed this toolbar onto a second line on a phone. -->
+        <button class="act" onclick="toggleBackup()" id="backupToggle">⛭ MANAGE ▸</button>
+      </div>
+      <div class="toolbar" id="backupRow" style="display:none">
+        <button class="act" onclick="openPinSetup()">🔐 PIN</button>
+        <button class="act" onclick="exportBook()">⭳ EXPORT CANONICAL_BOOK.md</button>
+        <button class="act" onclick="exportJSON()">⭳ EXPORT JSON</button>
+        <button class="act" onclick="openImport()">⇪ IMPORT JSON</button>
+        <button class="act warn" onclick="openRestore()">⏱ RESTORE POINTS</button>
+      </div>
+    </div>
+    <!-- Banners stay OUTSIDE the disclosure: an expired session or an unsaved edit is never
+         something the user should have to open a menu to discover. -->
     <div id="authBanner" style="display:none;margin-top:8px;color:var(--red);font-size:12px">
       SESSION EXPIRED — <a href="javascript:location.reload()">reload to re-authenticate</a>
     </div>
@@ -349,25 +399,6 @@
     <input id="search" autocomplete="off" spellcheck="false"
       placeholder="search a ticker (e.g. NVDA, TSLA, AAPL) — or type HELP / TIER / ADD"/>
     <span class="hintk">↵ open card · ESC close</span>
-  </div>
-
-  <!-- FEAT-TT-MOBILE (v3.11): daily actions own the toolbar; backup/recovery paths demote
-       behind ⛭ BACKUP (same idiom as the dashboard's CollapsedGroup). EXPORT JSON stays
-       globally reachable — the unsaved/conflict banners link to it by function name. -->
-  <div class="toolbar">
-    <button class="act" onclick="openAdd()">+ ADD TICKER</button>
-    <button class="act" onclick="openSession()">◧ SESSION</button>
-    <button class="act warn" onclick="reloadBook()">⟲ RELOAD</button>
-    <!-- v3.29: PIN joins the manage row. It is a once-per-30-days action and it was the
-         button that pushed this toolbar onto a second line on a phone. -->
-    <button class="act" onclick="toggleBackup()" id="backupToggle">⛭ MANAGE ▸</button>
-  </div>
-  <div class="toolbar" id="backupRow" style="display:none">
-    <button class="act" onclick="openPinSetup()">🔐 PIN</button>
-    <button class="act" onclick="exportBook()">⭳ EXPORT CANONICAL_BOOK.md</button>
-    <button class="act" onclick="exportJSON()">⭳ EXPORT JSON</button>
-    <button class="act" onclick="openImport()">⇪ IMPORT JSON</button>
-    <button class="act warn" onclick="openRestore()">⏱ RESTORE POINTS</button>
   </div>
 
   <div class="layout">
@@ -599,6 +630,15 @@ function toggleBackup(){
   const r=document.getElementById("backupRow");const open=r.style.display!=="none";
   r.style.display=open?"none":"flex";
   document.getElementById("backupToggle").textContent=open?"⛭ MANAGE ▸":"⛭ MANAGE ▾";
+}
+/* v3.42 slice 5: the header's status + action disclosure. Everything in here is status or an
+   occasional action — never an answer — so it costs nothing on the first screen. */
+function toggleHeadInfo(){
+  const d=document.getElementById("headInfo"),b=document.getElementById("headToggle");
+  const open=d.style.display==="none";
+  d.style.display=open?"":"none";
+  b.setAttribute("aria-expanded",String(open));
+  b.textContent=open?"⋯ CLOSE":"⋯ MENU";
 }
 /* FEAT-TT-RUN: days since an ISO date, or null if absent/unparseable. Null is the
    FAIL-CLOSED signal — unlike src/sources.js isStale (which returns false = "not stale"
@@ -3388,16 +3428,34 @@ function renderStance(){
      Badges are real <button>s — focusable and Enter-activatable, same look. details.why is
      deliberately NOT class="drawer": the phone harness counts open drawers, and this is
      strip chrome, not a content drawer (the est-mini precedent). */
+  const badges=
+    (breach?`<button class="badge" style="color:var(--red)" onclick="openDesk('dExp')">⚠ ${breach} over cap</button>`:"")+
+    (binToday?`<button class="badge" style="color:var(--red)" onclick="openDesk('dCal')">◆ ${binToday} binaries ≤${BINARY_WINDOW_D}d</button>`:"")+
+    (CHANGED_N.n?`<button class="badge" style="color:${CHANGED_N.stops?"var(--red)":"var(--amber)"}" onclick="openDesk('dChanged')">Δ ${CHANGED_N.n} changed${CHANGED_N.stops?` · ${CHANGED_N.stops}!`:""}</button>`:"");
+  const controls=`<span class="stance-right">`+
+    (LIVE_AT?`<span class="scope">quotes ${esc(String(LIVE_AT).slice(11,16))}Z</span>`:"")+
+    `<button class="rfr" id="refreshRanks" onclick="refreshRanks()">⟳ RANKS</button>`+
+    `<button class="badge u-dim" onclick="openDesk()">DESK ▾</button></span>`;
+  /* v3.42 slice 5 — the stance is ASYMMETRIC, because its two states are not equally worth
+     your attention. "ADDS OK" is the PERMISSIVE DEFAULT: it says nothing is stopping you,
+     which is the normal condition and the lowest-leverage sentence on the board. It gets a
+     small pill and nothing else. A RESTRICTIVE stance (circuit tripped / PANIC / HEADWIND /
+     UNKNOWN) is the one that must be unmissable, and keeps the full treatment — big verdict
+     token, qualifier chips, and the why drawer.
+     Nothing is lost in the permissive case: renderToday() renders `txt` AND `why` in full
+     inside the DESK drawer, which is exactly the "one click away" the owner asked for.
+     The RED BADGES render in BOTH states — the v3.25 rule is that a red fact is never hidden
+     by a collapse, and those badges are the actual high-leverage content of this strip. */
+  if(st.k==="go"){
+    el.innerHTML=`<div class="stance-top">`+
+      `<span class="qual" style="color:${col};font-weight:700">${esc(st.verdict||st.txt)}</span>`+
+      badges+controls+`</div>`;
+    return;
+  }
   el.innerHTML=`<div class="stance-top">`+
     `<span class="vbadge" style="color:${col}">${esc(st.verdict||st.txt)}</span>`+
     (st.quals||[]).map(q=>`<span class="qual" style="color:${QC[q.c]||"var(--dim)"}">${esc(q.t)}</span>`).join("")+
-    (breach?`<button class="badge" style="color:var(--red)" onclick="openDesk('dExp')">⚠ ${breach} over cap</button>`:"")+
-    (binToday?`<button class="badge" style="color:var(--red)" onclick="openDesk('dCal')">◆ ${binToday} binaries ≤${BINARY_WINDOW_D}d</button>`:"")+
-    (CHANGED_N.n?`<button class="badge" style="color:${CHANGED_N.stops?"var(--red)":"var(--amber)"}" onclick="openDesk('dChanged')">Δ ${CHANGED_N.n} changed${CHANGED_N.stops?` · ${CHANGED_N.stops}!`:""}</button>`:"")+
-    `<span class="stance-right">`+
-    (LIVE_AT?`<span class="scope">quotes ${esc(String(LIVE_AT).slice(11,16))}Z</span>`:"")+
-    `<button class="rfr" id="refreshRanks" onclick="refreshRanks()">⟳ RANKS</button>`+
-    `<button class="badge u-dim" onclick="openDesk()">DESK ▾</button></span></div>`+
+    badges+controls+`</div>`+
     `<details class="why"><summary>why</summary><div>${esc(st.txt)}${st.why?` — ${esc(st.why)}`:""}</div></details>`;
 }
 /* Open the DESK drawer (and optionally one drawer inside it), then scroll to it. */
@@ -3971,7 +4029,13 @@ async function loadRegime(){
     // is the ONE place the maintainer looks before adding, so the withhold has to land here.
     const downgraded=r&&r.regime&&r.regime.downgraded;
     if(downgraded){cls="warn";label="NEUTRAL — TAILWIND withheld";}
-    const asOf=(r&&r.as_of?String(r.as_of):"").slice(0,10);
+    /* v3.42 slice 5: the pill now sits in a one-row header, so a full ISO date wrapped it to
+       two lines. Show MM-DD — but ONLY when the year is the current one; a readout from a
+       different year must still print in full, or a year-stale macro read would render as
+       today's. Freshness is the whole reason the date is on the pill. */
+    const asOfRaw=(r&&r.as_of?String(r.as_of):"").slice(0,10);
+    const nowY=new Date().toLocaleDateString("en-CA",{timeZone:"America/New_York"}).slice(0,4);
+    const asOf=asOfRaw&&asOfRaw.slice(0,4)===nowY?asOfRaw.slice(5):asOfRaw;
     const mf=r&&r.macro_flip;
     // A blind circuit (evaluable:false) used to collapse into the same "" suffix as a genuine
     // "not armed" — the crash detector could be unable to see and the pill said nothing.

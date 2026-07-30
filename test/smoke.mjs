@@ -1572,6 +1572,44 @@ ok("slice4: an armed confirm reverts on its own after the window — never stays
 ok("slice4: the toast is a live region — screen readers hear it without needing focus",
   adminSrc.includes('id="toast" role="status" aria-live="polite" aria-atomic="true"'));
 
+// ---- slice 5: only the highest-leverage things survive the first glance -------------------
+// Measured at 390x844 BEFORE this slice: 587px of the screen (70%) sat above the BUY block,
+// and the header alone was 209px of it — larger than the stance bar and tab strip combined.
+ok("slice5: the header is ONE row — identity, the MACRO pill, and a ⋯ MENU disclosure",
+  adminSrc.includes('<div class="hbar">') && adminSrc.includes('class="hb-id">TT<') &&
+  adminSrc.includes('id="headToggle" aria-expanded="false" aria-controls="headInfo"'));
+ok("slice5: version, BOOK/AUTH stamps, DASH and the whole action toolbar moved behind that " +
+   "disclosure — status and occasional actions, never answers",
+  /id="headInfo"[\s\S]{0,1800}single-pass deep-dive orchestrator[\s\S]{0,900}id="bookStamp"[\s\S]{0,900}id="sessState"[\s\S]{0,1200}\+ ADD TICKER[\s\S]{0,900}id="backupRow"/.test(adminSrc));
+ok("slice5: the banners stay OUTSIDE the disclosure — an expired session or an unsaved edit " +
+   "must never require opening a menu to discover",
+  /id="headInfo"[\s\S]*?<\/div>\s*<!--[\s\S]*?-->\s*<div id="authBanner"/.test(adminSrc) &&
+  adminSrc.indexOf('id="authBanner"')>adminSrc.indexOf('id="backupRow"'));
+ok("slice5: the MACRO: label survives the compaction — v3.29 added it so the pill can't be " +
+   "misread as the stance, which is an honesty invariant, not decoration",
+  adminSrc.includes('<span>MACRO: <span class="pill neutral" id="regimePill"'));
+ok("slice5: toggleHeadInfo keeps aria-expanded honest",
+  adminSrc.includes("function toggleHeadInfo()") &&
+  adminSrc.includes('b.setAttribute("aria-expanded",String(open))'));
+// The asymmetry is the point: "ADDS OK" is the permissive default and the lowest-leverage
+// sentence on the board; a restrictive stance is the one that must be unmissable.
+ok("slice5: a PERMISSIVE stance renders a small pill — no big token, no qualifier chips, no " +
+   "why drawer (renderToday() still shows txt AND why in full, one tap away inside DESK)",
+  (() => {
+    const i = adminSrc.indexOf('if(st.k==="go"){');
+    if (i < 0) return false;
+    const branch = adminSrc.slice(i, adminSrc.indexOf("return;", i));  // the permissive branch ONLY
+    return branch.includes('class="qual"') && branch.includes("badges+controls") &&
+      !branch.includes("vbadge") && !branch.includes('details class="why"') &&
+      !branch.includes("st.quals");
+  })());
+ok("slice5: a RESTRICTIVE stance keeps the full treatment — token, quals and the why drawer",
+  /el\.innerHTML=`<div class="stance-top">`\+\s*`<span class="vbadge"/.test(adminSrc) &&
+  adminSrc.includes('<details class="why"><summary>why</summary>'));
+ok("slice5: the red badges are hoisted so they render in BOTH states — the v3.25 rule is that " +
+   "a red fact is never hidden by a collapse",
+  adminSrc.includes("const badges=") && (adminSrc.match(/badges\+controls/g)||[]).length===2);
+
 // ═══════════ [20] FEAT-TT-PTLINT (v3.39) — the PT chain's guards ═══════════
 // The price-target chain is the terminal's moat: ptModelRows() feeds the est-run table, the WORTH
 // cell, the BUY rank, AGREE, the SELL rank and the spread. An audit confirmed the one-computation
