@@ -1648,10 +1648,44 @@ ok("nfci: TIGHT/LOOSE is a DIRECTIONAL call, so it is suppressed on mock/stale e
   /nIllus\?\(nMode==="STALE"\?<DataModeBadge mode="STALE"\/>:<IllustrativeChip\/>\)\s*:<Badge label=\{band\}/.test(dashSrc));
 ok("nfci: the tile states its own reference point — a bare z-score is unreadable without it",
   dashSrc.includes("0 = avg"));
-ok("nfci: it does NOT yet vote in the regime — neither the dashboard engine nor the tt-v1 " +
-   "checks changed, so no verdict moved on an uncalibrated band",
-  !dashSrc.includes('use("nfci")') && !/REGIME_FACTOR_FIELDS=\[[^\]]*nfci/.test(dashSrc) &&
+ok("nfci: it votes in the DASHBOARD regime (6th factor), on the same ±0.10 band the tile renders",
+  dashSrc.includes('if(use("nfci")){') && dashSrc.includes("if(n < -0.10) bullVotes++; else if(n > 0.10) bearVotes++;"));
+ok("nfci: a STALE nfci drops out of the vote like every other factor",
+  /REGIME_FACTOR_FIELDS=\[[^\]]*"nfci"\]/.test(dashSrc));
+ok("nfci: it appears in the displayed factor breakdown, so 'X/Y bullish' matches the cast vote",
+  /\{key:"nfci",\s+label:"Fin Conditions"/.test(dashSrc));
+// The threshold had to generalize: DEC-31 chose ">=3 of 5" precisely because 3 of 6 is 50%,
+// not a majority — so a 6th factor against a hardcoded 3 would have re-created that bug.
+ok("nfci: the majority threshold is COMPUTED from the live voters, not a hardcoded 3",
+  dashSrc.includes("bullVotes > counted / 2") && dashSrc.includes("bearVotes > counted / 2") &&
+  !dashSrc.includes("const bull = bullVotes >= 3"));
+ok("nfci: with 5 live voters the computed rule is IDENTICAL to the old constant (needs 3)",
+  (() => { const need = (n) => { for (let v = 0; v <= n; v++) if (v > n / 2) return v; return null; };
+           return need(5) === 3 && need(6) === 4 && need(3) === 2; })());
+ok("nfci: /readout.json is UNTOUCHED — the TT terminal's order-gating math did not move",
   !readFileSync(new URL("../src/ttReadout.js", import.meta.url), "utf8").includes("nfci"));
+
+// ---- v3.43 curated cuts (owner-approved): gold · IPO · SpaceX · Mag-10 fundamentals -------
+// The rule applied is the one already in this file's history: "SPY P/E (mock, Yahoo-dupe) cut".
+// Kept deliberately: GPU $/hr (half the AI unit-economics pair), the headwinds register and the
+// watchlist (the owner's own judgment — the moat), and Peoria (owner said keep).
+ok("cut: the gold tile and its curated series are gone — no live source ever existed for it",
+  !dashSrc.includes("crossAsset.gold") && !/\bgold:\s*\{/.test(dashSrc));
+ok("cut: the IPO countdown tracker is fully removed (component, data and state)",
+  ["IpoCountdownStrip", "IpoCard", "IPO_TARGETS", "IPO_STAGES", "ipoOpen"].every((t) => !dashSrc.includes(t)));
+ok("cut: the SpaceX S-1 panel and the private Mag-10 entry are gone",
+  !/SPACEX/.test(dashSrc.replace(/\/\/.*|\/\*[\s\S]*?\*\//g, "")) && !dashSrc.includes("isPrivate"));
+ok("cut: Mag-10 curated fundamentals are gone (mkt cap, P/E, revenue, margins, FCF, capex)",
+  ["mktCapT", "ttmPe", "fwdPe", "q1RevB", "fwdRevB", "yoyRevGrowth", "netMarginPct", "fcfTtmB", "capex26B"]
+    .every((k) => !dashSrc.includes(k)));
+ok("cut: ...but the LIVE half survives — price + chgPct still overlay from mag10PricesJson",
+  dashSrc.includes("mag10PricesJson") && /\{ ticker:"NVDA", color:"[^"]+", isMusk:false, price:/.test(dashSrc));
+ok("cut: no surviving label claims curated fundamentals or a market-cap sort (a cut must " +
+   "take its own attribution with it, or the page lies about what it is showing)",
+  !/fundamentals curated/i.test(dashSrc) && !/Ranked by market cap/i.test(dashSrc) &&
+  !/SORTED BY MKT CAP/i.test(dashSrc));
+ok("keep: GPU $/hr, headwinds and the watchlist are untouched — curated, but differentiated",
+  dashSrc.includes("GPU_PRICING") && dashSrc.includes("headwinds") && dashSrc.includes("watchlist"));
 
 // ═══════════ [20] FEAT-TT-PTLINT (v3.39) — the PT chain's guards ═══════════
 // The price-target chain is the terminal's moat: ptModelRows() feeds the est-run table, the WORTH

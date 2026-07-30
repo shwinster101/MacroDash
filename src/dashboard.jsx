@@ -64,37 +64,6 @@ const T = {
 const WEN_MOON_UP = 0.5;    // above this → MOONING
 const WEN_MOON_DOWN = -0.5; // below this → DIAMOND HANDS
 
-// ─── IPO COUNTDOWN TARGETS ────────────────────────────────────────────────
-// Dates and valuations for the Countdown to Launch strip
-const IPO_SPACEX = {
-  name: "SpaceX", ticker: "SPACEX", color: "#3b82f6",
-  ipoDate: new Date("2026-06-12T09:30:00-04:00"), // June 12 2026 market open ET
-  isExact: true,
-  stage: "PRICING → TRADING", stageNote: "Roadshow active, pricing June 11",
-  pricePerShare: "$135", valuation: "$1.77T",
-  progressPct: 90,
-  stageIndex: 2, // 0=Filed, 1=Roadshow, 2=Pricing, 3=Trading
-};
-const IPO_ANTHROPIC = {
-  name: "Anthropic", ticker: "ANTH", color: "#f97316",
-  ipoDate: new Date("2026-10-15T09:30:00-04:00"), // ~October 2026 (approximate)
-  isExact: false,
-  stage: "S-1 FILED → ROADSHOW",
-  pricePerShare: null, valuation: "$965B",
-  progressPct: 40,
-  stageIndex: 1,
-};
-const IPO_OPENAI = {
-  name: "OpenAI", ticker: "OAII", color: "#10b981",
-  ipoDate: new Date("2026-12-01T09:30:00-05:00"), // ~Q4 2026 (approximate)
-  isExact: false,
-  stage: "S-1 FILED → REVIEW",
-  pricePerShare: null, valuation: "$852B–$1T",
-  progressPct: 30,
-  stageIndex: 0,
-};
-const IPO_TARGETS = [IPO_SPACEX, IPO_ANTHROPIC, IPO_OPENAI];
-const IPO_STAGES = ["Filed", "Roadshow", "Pricing", "Trading"];
 
 // COST TO ORBIT — $ to put 1 kg into Low Earth Orbit, by era. Curated/Manual: there
 // is no free live feed for launch cost, and it changes on the order of years, not days.
@@ -186,7 +155,7 @@ const IllustrativeChip = ({ label = "ILLUSTRATIVE · not live" }) => (
 const isIllustrative = (mode) => mode === "MOCK" || mode === "STALE";
 // FEAT-321 (v3.2 "cut to the live signal"): the ONE idiom for demoting stale/curated
 // content out of the default view. Visual style copied from the v3.1 IPO cut-to-edge
-// toggle; self-contained open state (nothing external reads it — unlike ipoOpen).
+// toggle; self-contained open state (nothing external reads it).
 // Collapsing is a RENDER concern only: the data stays complete in MOCK_DATA.
 const CollapsedGroup = ({ count, label, chip = true, defaultOpen = false, children }) => {
   const [open, setOpen] = useState(defaultOpen);
@@ -224,7 +193,6 @@ const MOCK_DATA = {
   crossAsset:{
     treasury10y:{ current:4.32, d1:+0.08, w1:+0.12, m1:-0.15, yellowBand:0.10, series:[4.52,4.48,4.41,4.35,4.29,4.22,4.18,4.24,4.28,4.32] },
     wti:{         current:68.42, d1pct:-0.8, w1pct:-2.1, m1pct:+3.2, yellowBand:1.0, series:[64,65,66,67,69,70,69,68,69,68] },
-    gold:{        current:3318,  d1pct:+0.3, w1pct:+1.8, m1pct:+5.2, yellowBand:1.0, series:[3050,3100,3150,3200,3220,3280,3300,3310,3315,3318] },
     btc:{         current:109200,d1pct:+1.2, w1pct:+4.8, m1pct:+12.1,yellowBand:2.0, series:[88000,90000,92000,95000,98000,100000,104000,106000,108000,109200] },
   },
   macro:{
@@ -256,72 +224,20 @@ const MOCK_DATA = {
     { ticker:"TSM",  name:"TSMC",          tier:"A", thesis:"Foundry leader; pricing power on leading nodes" },
   ],
   // FEAT-164: 9-row Mag 10 with FCF + merged CapEx; EV/EBITDA computed
+  // MAG-10 — v3.43: curated FUNDAMENTALS cut (mkt cap, P/E, revenue, margins, FCF, capex
+  // and the SpaceX S-1 block). Those were hand-maintained and are exactly what Yahoo/SA
+  // render better and fresher. What remains is the half this stack actually sources live:
+  // price + day change, overlaid from Finnhub via mag10PricesJson.
   mag10:[
-    { ticker:"NVDA",  color:"#f0a500", isPrivate:false, isMusk:false,
-      price:134.72, chgPct:+3.4, mktCapT:5.32,
-      ttmPe:52.1, fwdPe:29.4,
-      q1RevB:44.1, q1Label:"Q1 FY27", fwdRevB:195, yoyRevGrowth:+69.2,
-      netMarginPct:55.9, fcfTtmB:48.0, fcfMarginPct:32.4,
-      capex26B:3.0, capex27B:5.0,
-      aiRevNote:"Data center rev: $39.1B Q1 FY27 (+427% vs Q1 FY25)" },
-    { ticker:"GOOGL", color:"#3498db", isPrivate:false, isMusk:false,
-      price:178.34, chgPct:+0.6, mktCapT:4.68,
-      ttmPe:24.8, fwdPe:21.2,
-      q1RevB:90.2, q1Label:"Q1 2026", fwdRevB:430, yoyRevGrowth:+12.0,
-      netMarginPct:28.6, fcfTtmB:62.0, fcfMarginPct:16.2,
-      capex26B:75.0, capex27B:90.0 },
-    { ticker:"AAPL",  color:"#9b59b6", isPrivate:false, isMusk:false,
-      price:211.42, chgPct:+0.8, mktCapT:4.56,
-      ttmPe:32.1, fwdPe:29.8,
-      q1RevB:95.4, q1Label:"Q2 FY26", fwdRevB:412, yoyRevGrowth:+4.0,
-      netMarginPct:26.4, fcfTtmB:94.0, fcfMarginPct:24.1,
-      capex26B:14.0, capex27B:16.0 },
-    { ticker:"MSFT",  color:"#2ecc71", isPrivate:false, isMusk:false,
-      price:462.18, chgPct:+1.2, mktCapT:3.20,
-      ttmPe:38.2, fwdPe:33.1,
-      q1RevB:70.1, q1Label:"Q3 FY26", fwdRevB:298, yoyRevGrowth:+13.3,
-      netMarginPct:35.8, fcfTtmB:72.0, fcfMarginPct:27.2,
-      capex26B:80.0, capex27B:105.0 },
-    { ticker:"AVGO",  color:"#06b6d4", isPrivate:false, isMusk:false,
-      price:242.18, chgPct:+3.7, mktCapT:3.18,
-      ttmPe:58.4, fwdPe:31.2,
-      q1RevB:22.19, q1Label:"Q2 FY26", fwdRevB:87, yoyRevGrowth:+48.0,
-      netMarginPct:41.9, fcfTtmB:10.26, fcfMarginPct:46.2,
-      capex26B:1.0, capex27B:1.2,
-      aiRevNote:"AI chip rev $10.8B Q2 (+143% YoY). CEO: >$100B AI in 2027" },
-    { ticker:"AMZN",  color:"#f39c12", isPrivate:false, isMusk:false,
-      price:224.61, chgPct:+1.8, mktCapT:2.38,
-      ttmPe:42.1, fwdPe:32.8,
-      q1RevB:187.8, q1Label:"Q1 2026", fwdRevB:710, yoyRevGrowth:+9.0,
-      netMarginPct:9.7, fcfTtmB:38.0, fcfMarginPct:6.0,
-      capex26B:100.0, capex27B:120.0 },
-    { ticker:"META",  color:"#e74c3c", isPrivate:false, isMusk:false,
-      price:618.42, chgPct:+2.1, mktCapT:1.57,
-      ttmPe:28.4, fwdPe:23.1,
-      q1RevB:42.3, q1Label:"Q1 2026", fwdRevB:220, yoyRevGrowth:+16.1,
-      netMarginPct:37.8, fcfTtmB:45.0, fcfMarginPct:24.3,
-      capex26B:64.0, capex27B:78.0 },
-    { ticker:"PLTR",  color:"#8b5cf6", isPrivate:false, isMusk:false,
-      price:158.23, chgPct:+1.4, mktCapT:0.36,
-      ttmPe:null, ttmPeDisplay:"~340x", fwdPe:null, fwdPeDisplay:"~180x",
-      q1RevB:1.633, q1Label:"Q1 2026", fwdRevB:7.66, yoyRevGrowth:+85.0,
-      netMarginPct:53.3, fcfTtmB:3.2, fcfMarginPct:57.0,
-      capex26B:0.07, capex27B:0.10,
-      aiRevNote:"Rule of 40: 145%. US rev +104% YoY." },
-    { ticker:"TSLA",  color:"#dc2626", isPrivate:false, isMusk:true,
-      price:348.21, chgPct:-0.4, mktCapT:1.40,
-      ttmPe:148.2, fwdPe:92.4,
-      q1RevB:19.3, q1Label:"Q1 2026", fwdRevB:110, yoyRevGrowth:-9.2,
-      netMarginPct:2.1, fcfTtmB:1.0, fcfMarginPct:5.2,
-      capex26B:8.0, capex27B:10.0 },
-    { ticker:"SPACEX", color:"#475569", isPrivate:true, isMusk:true,
-      ipoValuationT:1.5,
-      ttmPe:null, ttmPeDisplay:"N/A", fwdPe:null, fwdPeDisplay:"N/A",
-      q1RevB:4.7, q1Label:"Q1 2026", fwdRevB:23, yoyRevGrowth:+33.0,
-      netMarginPct:null, netMarginDisplay:"−26% GAAP",
-      fcfTtmB:null, fcfDisplay:"−$9.1B FCF", ebitdaMarginPct:35.2,
-      capex26B:40, capex27B:null, capex27Display:"N/A",
-      sources:"S-1 filed May 20, 2026 (SEC)" },
+    { ticker:"NVDA", color:"#f0a500", isMusk:false, price:134.72, chgPct:+3.4 },
+    { ticker:"GOOGL", color:"#3498db", isMusk:false, price:178.34, chgPct:+0.6 },
+    { ticker:"AAPL", color:"#9b59b6", isMusk:false, price:211.42, chgPct:+0.8 },
+    { ticker:"MSFT", color:"#2ecc71", isMusk:false, price:462.18, chgPct:+1.2 },
+    { ticker:"AVGO", color:"#06b6d4", isMusk:false, price:242.18, chgPct:+3.7 },
+    { ticker:"AMZN", color:"#f39c12", isMusk:false, price:224.61, chgPct:+1.8 },
+    { ticker:"META", color:"#e74c3c", isMusk:false, price:618.42, chgPct:+2.1 },
+    { ticker:"PLTR", color:"#8b5cf6", isMusk:false, price:158.23, chgPct:+1.4 },
+    { ticker:"TSLA", color:"#dc2626", isMusk:true, price:348.21, chgPct:-0.4 },
   ],
   headwinds:[
     { id:1, name:"AI CapEx ROI Gap",    severity:"High", trend:"worsening", claim:"$705B FY26 capex vs $215B AI revenue. No hyperscaler can trace $X spent → $Y gained.", triggers:["AI rev <25% of CapEx","Hyperscaler guide-down"] },
@@ -353,8 +269,11 @@ const MOCK_DATA = {
 // A stale factor is EXCLUDED from the vote — better to drop a signal than let a dead feed
 // (e.g. a dead scraper) cast a phantom bull/bear vote on today's tape.
 function computeRegime(d, stale=new Set()) {
-  let bullVotes=0, bearVotes=0;
-  const use=(k)=>!stale.has(k);
+  let bullVotes=0, bearVotes=0, counted=0;
+  // `counted` = factors that actually voted (available, whatever way they leaned). It drives
+  // a STRICT MAJORITY of the live voters rather than a hardcoded number — see the threshold
+  // note below for why a fixed `>=3` stopped being correct once a 6th factor existed.
+  const use=(k)=>{ const live=!stale.has(k); if(live) counted++; return live; };
   // 10Y direction: falling = bullish for equities
   if(use("tenYear")){ if(d.crossAsset.treasury10y.m1 < -0.10) bullVotes++; else if(d.crossAsset.treasury10y.m1 > 0.15) bearVotes++; }
   // VIX level
@@ -375,11 +294,26 @@ function computeRegime(d, stale=new Set()) {
     const pctOfAth = cape.ath ? (cape.current / cape.ath) * 100 : cape.pctOfAth;
     if(cape.current < cape.mean*1.5) bullVotes++; else if(cape.current > 30 || pctOfAth > 90) bearVotes++;
   }
+  // Financial conditions (Chicago Fed NFCI, FEAT-NFCI v3.43). Zero is the historical average
+  // BY CONSTRUCTION, so the sign is the signal: looser than average = bullish for equities,
+  // tighter = bearish. Same ±0.10 deadband the tile renders (asserted, not fitted — see the
+  // tile comment). Drops out of the vote when STALE like every other factor.
+  if(use("nfci")){
+    const n=d.macro.nfci.current;
+    if(n < -0.10) bullVotes++; else if(n > 0.10) bearVotes++;
+  }
 
-  // DEC-31: ≥3 of 5 = strict majority (was ≥3 of 6 = 50%). P/C was already stale-excluded
-  // since v3.1 (never actually voting), so live-mode verdicts are unchanged in practice.
-  const bull = bullVotes >= 3;
-  const bear = bearVotes >= 3;
+  /* THRESHOLD (FEAT-NFCI, v3.43). DEC-31 set "≥3 of 5 = strict majority", explicitly moving
+     AWAY from ≥3 of 6 because that is 50%, not a majority. Adding NFCI as a 6th factor would
+     have silently reintroduced exactly that bug against a hardcoded 3. So the rule is now
+     computed from the factors that actually voted: a STRICT majority of `counted`.
+       6 live → needs 4   (majority preserved, DEC-31's intent held)
+       5 live → needs 3   (IDENTICAL to the old constant — today's common case is unchanged)
+       3 live → needs 2   (the old constant demanded unanimity here, which was never intended)
+     Note the honest consequence: with all six live, a verdict is harder to trigger than it
+     was with five, so MIXED becomes more common. That is what adding a voter costs. */
+  const bull = counted > 0 && bullVotes > counted / 2;
+  const bear = counted > 0 && bearVotes > counted / 2;
   // FEAT-v17-07: hyphen separators (was middot) for RISK-ON / RISK-OFF legibility
   if(bull && !bear) return { label:"RISK-ON", sub:"Disinflation + low vol", tint:DT["regime-on-bg"], color:T.green, bullVotes, bearVotes };
   if(bear && !bull) return { label:"RISK-OFF", sub:"Rate pressure + stress", tint:DT["regime-off-bg"], color:T.red, bullVotes, bearVotes };
@@ -412,6 +346,7 @@ function regimeFactors(d, stale=new Set()) {
     {key:"fearGreed",   label:"Fear & Greed",   val:`${d.marketPulse.fearGreed.score} — ${d.marketPulse.fearGreed.label}`,   bull:d.marketPulse.fearGreed.score>55},
     {key:"cpiHeadline", label:"CPI Trend",      val:d.macro.cpi.trend.slice(-1)[0]<d.macro.cpi.trend.slice(-2)[0]?"Cooling (bullish)":"Re-accelerating", bull:d.macro.cpi.trend.slice(-1)[0]<d.macro.cpi.trend.slice(-2)[0]},
     {key:"valuation",   label:"Valuation",      val:`${d.macro.shillerPe.current} CAPE · ${(d.macro.shillerPe.ath?(d.macro.shillerPe.current/d.macro.shillerPe.ath)*100:d.macro.shillerPe.pctOfAth).toFixed(1)}% of ATH`, bull:d.macro.shillerPe.current<d.macro.shillerPe.mean*1.5},
+    {key:"nfci",        label:"Fin Conditions", val:`${d.macro.nfci.current>0?"+":""}${d.macro.nfci.current.toFixed(2)} — ${d.macro.nfci.current>0.10?"Tighter than avg (bearish)":d.macro.nfci.current<-0.10?"Looser than avg (bullish)":"At average"}`, bull:d.macro.nfci.current<-0.10},
   ];
   // Stale factors: neutralize the bull flag and annotate so the UI shows them as excluded.
   return factors.map(f => stale.has(f.key) ? { ...f, stale:true, bull:false, val:`${f.val} · STALE — excluded` } : f);
@@ -594,110 +529,6 @@ function approxCountdown(targetDate) {
   if (months <= 1) return "~1 month";
   return `~${months} months`;
 }
-const IpoCard = ({ ipo }) => {
-  const countdown = useCountdown(ipo.ipoDate, ipo.isExact);
-  const approx = ipo.isExact ? null : approxCountdown(ipo.ipoDate);
-  // Post-IPO: exact-date companies flip to TRADING state once countdown expires
-  const isTrading = ipo.isExact && countdown.expired;
-  const effectiveStageIndex = isTrading ? IPO_STAGES.length - 1 : ipo.stageIndex;
-  const effectiveProgress = isTrading ? 100 : ipo.progressPct;
-  const effectiveStage = isTrading ? "TRADING" : ipo.stage;
-  return (
-    <div style={{
-      flex:"1 1 200px", minWidth:200,
-      background: isTrading ? T.greenDim : T.surface,
-      backgroundImage: ILLUS_HATCH,
-      border: `1px solid ${isTrading ? T.green : ipo.color}44`,
-      borderRadius: 6,
-      padding: "12px 14px",
-      display:"flex", flexDirection:"column", gap:8,
-    }}>
-      {/* Company header */}
-      <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center" }}>
-        <div style={{ display:"flex", alignItems:"center", gap:6 }}>
-          <div style={{ width:8, height:8, borderRadius:"50%", background:ipo.color, boxShadow:`0 0 6px ${ipo.color}88` }}/>
-          <span style={{ fontFamily:T.fontDisplay, fontSize:14, fontWeight:700, color:T.textPrimary }}>{ipo.name}</span>
-        </div>
-        <span style={{ fontFamily:T.fontMono, fontSize:9, color:ipo.color, letterSpacing:"0.06em" }}>{ipo.ticker}</span>
-      </div>
-
-      {/* Countdown or TRADING state */}
-      <div style={{ fontFamily:T.fontMono, fontWeight:700, letterSpacing:"0.04em", textAlign:"center" }}>
-        {isTrading ? (
-          <div>
-            <div style={{ fontSize:18, color:T.green }}>TRADING 🎉</div>
-            <div style={{ fontSize:9, color:T.textSecondary, fontWeight:400, marginTop:2 }}>Day-1 performance: awaiting data</div>
-          </div>
-        ) : ipo.isExact ? (
-          <span style={{ fontSize:18, color:T.textPrimary }}>{countdown.text}</span>
-        ) : (
-          <span style={{ fontSize:16, color:T.textSecondary }}>{approx}</span>
-        )}
-      </div>
-
-      {/* Stage pipeline dots */}
-      <div style={{ display:"flex", alignItems:"center", gap:0, justifyContent:"center" }}>
-        {IPO_STAGES.map((st, i) => {
-          const active = i <= effectiveStageIndex;
-          const isCurrent = i === effectiveStageIndex;
-          return (
-            <div key={st} style={{ display:"flex", alignItems:"center" }}>
-              <div style={{
-                width: isCurrent ? 10 : 7, height: isCurrent ? 10 : 7,
-                borderRadius: "50%",
-                background: active ? (isTrading ? T.green : ipo.color) : T.border,
-                boxShadow: isCurrent ? `0 0 6px ${isTrading ? T.green : ipo.color}` : "none",
-                transition: "all 0.3s",
-              }}/>
-              {i < IPO_STAGES.length - 1 && (
-                <div style={{ width:20, height:2, background: i < effectiveStageIndex ? (isTrading ? T.green+"88" : ipo.color+"88") : T.border }}/>
-              )}
-            </div>
-          );
-        })}
-      </div>
-      <div style={{ display:"flex", justifyContent:"space-between", fontFamily:T.fontMono, fontSize:7, color:T.textMuted }}>
-        {IPO_STAGES.map(st => <span key={st}>{st}</span>)}
-      </div>
-
-      {/* Stage label */}
-      <div style={{ fontFamily:T.fontMono, fontSize:9, color:isTrading ? T.green : ipo.color, textAlign:"center", letterSpacing:"0.06em" }}>
-        {effectiveStage}
-      </div>
-
-      {/* Progress bar */}
-      <div style={{ height:4, background:T.border, borderRadius:2, overflow:"hidden" }}>
-        <div style={{ width:`${effectiveProgress}%`, height:"100%", background:isTrading ? T.green : ipo.color, borderRadius:2, transition:"width 0.5s" }}/>
-      </div>
-
-      {/* Valuation & price */}
-      <div style={{ display:"flex", justifyContent:"space-between", alignItems:"baseline" }}>
-        <span style={{ fontFamily:T.fontMono, fontSize:11, color:T.textPrimary, fontWeight:700 }}>{ipo.valuation}</span>
-        {ipo.pricePerShare && <span style={{ fontFamily:T.fontMono, fontSize:9, color:T.textSecondary }}>{ipo.pricePerShare}/share</span>}
-      </div>
-    </div>
-  );
-};
-const IpoCountdownStrip = () => (
-  <div style={{
-    background: T.bg,
-    borderBottom: `1px solid ${T.border}`,
-    padding: "10px 20px",
-  }}>
-    <div style={{ display:"flex", alignItems:"center", gap:8, marginBottom:8, flexWrap:"wrap" }}>
-      <div style={{ fontFamily:T.fontMono, fontSize:8, color:T.textMuted, letterSpacing:"0.12em", textTransform:"uppercase" }}>
-        COUNTDOWN TO LAUNCH — IPO TRACKER
-      </div>
-      {/* Honest provenance: these IPO dates are curated estimates, not live data */}
-      <IllustrativeChip label="ILLUSTRATIVE · dates speculative"/>
-    </div>
-    <div style={{ display:"flex", gap:12, overflowX:"auto" }} className="ipo-strip-inner">
-      {IPO_TARGETS.map(ipo => <IpoCard key={ipo.ticker} ipo={ipo}/>)}
-      <LaunchCostCard />
-      <EvtolCertCard />
-    </div>
-  </div>
-);
 
 // COST TO ORBIT tracker — sits in the launch strip; secular cost-collapse signal.
 const LaunchCostCard = () => {
@@ -975,40 +806,19 @@ const FGGauge=({score,label,mode="MOCK",asOf})=>{
 };
 
 // Mag 10 Card (FEAT-164: 9 rows, FCF + merged CapEx)
-const Mag10Card=({s})=>{
-  const ip=s.isPrivate;
-  const rows=[
-    {lbl:"MKT CAP", val:ip?`~$${s.ipoValuationT}T IPO`:`$${s.mktCapT?.toFixed(2)}T`, color:T.textPrimary},
-    {lbl:"TTM P/E",  val:s.ttmPe===null?(s.ttmPeDisplay||"—"):`${s.ttmPe}x`, color:s.ttmPe===null?T.yellow:peColor(s.ttmPe)},
-    {lbl:"FWD P/E",  val:s.fwdPe===null?(s.fwdPeDisplay||"—"):`${s.fwdPe}x`, color:s.fwdPe===null?T.textMuted:peColor(s.fwdPe)},
-    {lbl:s.q1Label,  val:`$${s.q1RevB?.toFixed(2)}B`, color:T.textPrimary},
-    {lbl:"FWD REV",  val:`$${s.fwdRevB}B`, color:T.textSecondary},
-    {lbl:"YoY REV",  val:`${s.yoyRevGrowth>=0?"+":""}${s.yoyRevGrowth?.toFixed(1)}%`, color:yoyColor(s.yoyRevGrowth)},
-    {lbl:"NET MGN",  val:s.netMarginPct===null?(s.netMarginDisplay||"—"):`${s.netMarginPct?.toFixed(1)}%`, color:marginColor(s.netMarginPct)},
-    {lbl:"FCF+MGN",  val:s.fcfTtmB===null?(s.fcfDisplay||"—"):`$${s.fcfTtmB?.toFixed(1)}B / ${s.fcfMarginPct?.toFixed(0)}%`, color:marginColor(s.fcfMarginPct)},
-    {lbl:"CAPEX",    val:s.capex26B===null?"—":`${s.capex26B}B/${s.capex27B===null?(s.capex27Display||"N/A"):s.capex27B+"B"}`, color:T.textMuted},
-  ];
-  return(
-    <div style={{background:ip?"#0a0d12":T.surface,border:`1px solid ${ip?"#1e3a5f":T.border}`,borderRadius:5,padding:"10px 10px",minWidth:112,flex:"1 1 112px",position:"relative"}}>
-      {ip&&<span style={{position:"absolute",top:4,right:4,background:"#0d1f3c",color:"#60a5fa",border:"1px solid #1d4ed8",borderRadius:2,padding:"0 4px",fontSize:7,fontFamily:T.fontMono}}>S-1</span>}
-      <div style={{marginBottom:7,paddingBottom:7,borderBottom:`1px solid ${T.border}`}}>
-        <div style={{fontFamily:T.fontMono,fontSize:13,fontWeight:700,color:s.color}}>{s.ticker}</div>
-        {!ip&&<div style={{display:"flex",justifyContent:"space-between"}}>
-          <span style={{fontFamily:T.fontMono,fontSize:9,color:T.textMuted}}>${s.price}</span>
-          <span style={{fontFamily:T.fontMono,fontSize:9,color:s.chgPct>=0?T.green:T.red}}>{s.chgPct>=0?"+":""}{s.chgPct}%</span>
-        </div>}
-        {ip&&<div style={{fontFamily:T.fontMono,fontSize:8,color:"#3b82f6"}}>IPO target ~${s.ipoValuationT}T</div>}
-      </div>
-      {rows.map(({lbl,val,color})=>(
-        <div key={lbl} style={{display:"flex",justifyContent:"space-between",alignItems:"baseline",padding:"2px 0",borderBottom:`1px solid ${T.border}18`}}>
-          <span style={{fontFamily:T.fontMono,fontSize:7,color:T.textMuted,letterSpacing:"0.03em"}}>{lbl}</span>
-          <span style={{fontFamily:T.fontMono,fontSize:10,fontWeight:700,color}}>{val}</span>
-        </div>
-      ))}
-      {s.aiRevNote&&<div style={{fontFamily:T.fontMono,fontSize:7,color:"#06b6d4",marginTop:4,lineHeight:1.4}}>{s.aiRevNote}</div>}
+const Mag10Card=({s})=>(
+  /* v3.43: a PRICE card. The curated fundamental rows (mkt cap, P/E, revenue, margins, FCF,
+     capex) were hand-maintained and are precisely what Yahoo/SA do better and fresher — the
+     Yahoo-dupe test that already cut SPY P/E. price + chgPct are the half this stack really
+     sources (Finnhub, overlaid via mag10PricesJson), so that is what survives. */
+  <div style={{background:T.surface,border:`1px solid ${T.border}`,borderRadius:5,padding:"10px 10px",minWidth:112,flex:"1 1 112px"}}>
+    <div style={{fontFamily:T.fontMono,fontSize:13,fontWeight:700,color:s.color}}>{s.ticker}</div>
+    <div style={{display:"flex",justifyContent:"space-between",marginTop:4}}>
+      <span style={{fontFamily:T.fontMono,fontSize:11,color:T.textPrimary,fontWeight:700}}>${s.price}</span>
+      <span style={{fontFamily:T.fontMono,fontSize:10,color:s.chgPct>=0?T.green:T.red,fontWeight:700}}>{s.chgPct>=0?"+":""}{s.chgPct}%</span>
     </div>
-  );
-};
+  </div>
+);
 
 // Alert row
 const AlertRow=({alert,onToggle,onDelete})=>{
@@ -1047,7 +857,6 @@ export default function Dashboard({ publicView = false } = {}) {
   const [alerts,setAlerts]=useState(DEFAULT_ALERTS);
   const [expandedHW,setExpandedHW]=useState(null);
   const [mag10open,setMag10open]=useState(false); // FEAT-322: default closed — curated content doesn't own the default view
-  const [ipoOpen,setIpoOpen]=useState(false); // v3.1 cut-to-edge: IPO strip (all illustrative) collapsed by default
   const [watchlistOpen,setWatchlistOpen]=useState(false); // FEAT-322: default closed — curated content doesn't own the default view
   const [copied,setCopied]=useState(false);
   const [ttCopied,setTtCopied]=useState(false); // FEAT-332: "Copy TT readout" button state
@@ -1070,7 +879,7 @@ export default function Dashboard({ publicView = false } = {}) {
   const modeOf=(k)=>{const m=provenance?.[k]||"MOCK"; return (m==="LIVE"||m==="CACHED")&&isStale(dataAsOf?.[k], new Date(), cadenceOf(k))?"STALE":m;}; // FEAT-R3: cadence-aware LIVE | CACHED | STALE | MOCK
   // FEAT-DQ: a regime factor backed by LIVE/CACHED data that has gone STALE (a dead feed)
   // must not cast a vote on today's tape.
-  const REGIME_FACTOR_FIELDS=["tenYear","vix","fearGreed","cpiHeadline"];
+  const REGIME_FACTOR_FIELDS=["tenYear","vix","fearGreed","cpiHeadline","nfci"];
   const staleFactors=new Set(REGIME_FACTOR_FIELDS.filter(k=>modeOf(k)==="STALE"));
   // v3.1: the valuation factor is now live (Shiller/multpl). The factor key is "valuation" but the
   // field key is "shillerPe" — drop it from the vote when stale, like every other factor.
@@ -1163,9 +972,6 @@ export default function Dashboard({ publicView = false } = {}) {
   const mag10ByTicker=Object.fromEntries(mag10Live.map(p=>[p.ticker,p]));
   const mag10=d.mag10.map(s=>{const lv=mag10ByTicker[s.ticker];return lv?{...s,price:lv.price,chgPct:lv.chgPct??s.chgPct}:s;});
   const mag10PriceMode=modeOf('mag10PricesJson');
-  const pub=mag10.filter(s=>!s.isPrivate);
-  const muskNames=mag10.filter(s=>s.isMusk);
-  const totalMktCap=pub.reduce((a,s)=>a+s.mktCapT,0);
 
   return(
     <div style={{background:T.bg,minHeight:"100vh",fontFamily:T.fontSans,color:T.textPrimary}}>
@@ -1284,16 +1090,6 @@ export default function Dashboard({ publicView = false } = {}) {
         <div className="wen-moon-mobile"><WenMoonBadge spyChangePct={d.marketPulse.spy.changePct}/></div>
       </div>
 
-      {/* IPO COUNTDOWN TO LAUNCH — v3.1: collapsed by default so live signals own the first scroll;
-          it's all illustrative thesis content, demoted (not deleted) behind a thin toggle. */}
-      <div style={{borderBottom:`1px solid ${T.border}`,background:T.bg}}>
-        <button onClick={()=>setIpoOpen(o=>!o)} aria-expanded={ipoOpen}
-          style={{width:"100%",display:"flex",alignItems:"center",gap:8,padding:"7px 20px",background:"none",border:"none",cursor:"pointer"}}>
-          <span style={{fontFamily:T.fontMono,fontSize:8,color:T.textMuted,letterSpacing:"0.12em",textTransform:"uppercase"}}>{ipoOpen?"▾":"▸"} Countdown to Launch — IPO tracker</span>
-          <IllustrativeChip label="ILLUSTRATIVE"/>
-        </button>
-      </div>
-      {ipoOpen&&<IpoCountdownStrip/>}
 
       {/* FEAT-162: Session Delta Bar — Alerts Δ first (conditional: hidden when nothing actionable) */}
       {showDeltaBar&&(
@@ -1469,7 +1265,6 @@ export default function Dashboard({ publicView = false } = {}) {
                 const dirTiles=[
                   { f:"tenYear", render:()=><DirTile label="10Y Treasury" value={`${d.crossAsset.treasury10y.current}%`} d1={d.crossAsset.treasury10y.d1} w1={d.crossAsset.treasury10y.w1} m1={d.crossAsset.treasury10y.m1} band={0.10} invert={true} spark={d.crossAsset.treasury10y.series} source="FRED" sourceEp="DGS10" mode={modeOf('tenYear')} asOf={asOfOf('tenYear')}/> },
                   { f:"wti", render:()=><DirTile label="WTI Crude"   value={`$${d.crossAsset.wti.current}`}         d1={d.crossAsset.wti.d1pct}  w1={d.crossAsset.wti.w1pct}  m1={d.crossAsset.wti.m1pct}  band={1.0} spark={d.crossAsset.wti.series}  source="FRED" sourceEp="DCOILWTICO" mode={modeOf('wti')} asOf={asOfOf('wti')}/> },
-                  { f:"gold", curated:true, render:()=><DirTile label="Gold" value={`$${d.crossAsset.gold.current.toLocaleString()}`} d1={d.crossAsset.gold.d1pct} w1={d.crossAsset.gold.w1pct} m1={d.crossAsset.gold.m1pct} band={1.0} spark={d.crossAsset.gold.series} source="Manual" sourceEp="curated series" mode={modeOf('gold')}/> },
                   { f:"btc", render:()=><DirTile label="Bitcoin"     value={`$${(d.crossAsset.btc.current/1000).toFixed(1)}K`} d1={d.crossAsset.btc.d1pct} w1={d.crossAsset.btc.w1pct} m1={d.crossAsset.btc.m1pct} band={2.0} spark={d.crossAsset.btc.series} source="FRED" sourceEp="CBBTCUSD" mode={modeOf('btc')} asOf={asOfOf('btc')}/> },
                 ];
                 const liveDir=dirTiles.filter(t=>!(t.curated||demoted(t.f)));
@@ -1633,7 +1428,7 @@ export default function Dashboard({ publicView = false } = {}) {
             style={{width:"100%",display:"flex",justifyContent:"space-between",alignItems:"center",padding:"10px 16px",background:"none",border:"none",cursor:"pointer",borderBottom:mag10open?`1px solid ${T.border}`:"none"}}>
             <div style={{display:"flex",gap:10,alignItems:"center"}}>
               <span style={{fontFamily:T.fontMono,fontSize:10,color:T.amber,letterSpacing:"0.1em"}}>MAG 10</span>
-              <span style={{fontFamily:T.fontMono,fontSize:9,color:T.textMuted}}>Ranked by market cap · prices {mag10PriceMode==="LIVE"||mag10PriceMode==="CACHED"?"live":"curated"} · fundamentals curated (reviewed Q1 2026)</span>
+              <span style={{fontFamily:T.fontMono,fontSize:9,color:T.textMuted}}>prices {mag10PriceMode==="LIVE"||mag10PriceMode==="CACHED"?"live":"curated fallback"} · day move only (curated fundamentals cut v3.43)</span>
             </div>
             <div style={{display:"flex",gap:8,alignItems:"center"}}>
               <span style={{fontFamily:T.fontMono,fontSize:10,color:T.textMuted}}>{mag10open?"▲":"▼"}</span>
@@ -1641,10 +1436,10 @@ export default function Dashboard({ publicView = false } = {}) {
           </button>
           {mag10open&&(
             <div style={{padding:"12px 16px 16px"}}>
-              {/* Mag 8 (non-Musk public) */}
-              <div style={{fontFamily:T.fontMono,fontSize:8,color:T.textMuted,letterSpacing:"0.1em",marginBottom:8}}>PUBLIC · SORTED BY MKT CAP</div>
+              {/* Mag 8 (non-Musk public) — live prices only since v3.43 */}
+              <div style={{fontFamily:T.fontMono,fontSize:8,color:T.textMuted,letterSpacing:"0.1em",marginBottom:8}}>PUBLIC · LIVE PRICE + DAY MOVE</div>
               <div style={{display:"flex",gap:8,overflowX:"auto",paddingBottom:4}} className="mag10-scroll mag10-fade">
-                {mag10.filter(s=>!s.isMusk).sort((a,b)=>(b.mktCapT||0)-(a.mktCapT||0)).map(s=><Mag10Card key={s.ticker} s={s}/>)}
+                {mag10.filter(s=>!s.isMusk).map(s=><Mag10Card key={s.ticker} s={s}/>)}
               </div>
               {/* Musk divider */}
               <div style={{display:"flex",alignItems:"center",gap:10,margin:"14px 0 10px"}}>
@@ -1654,41 +1449,8 @@ export default function Dashboard({ publicView = false } = {}) {
               </div>
               <div style={{display:"flex",gap:8,overflowX:"auto",paddingBottom:4}} className="mag10-scroll">
                 {mag10.filter(s=>s.isMusk).map(s=><Mag10Card key={s.ticker} s={s}/>)}
-                {/* SpaceX context panel — curated private-co figures (S-1), not live */}
-                <div style={{background:"#0a0d12",backgroundImage:ILLUS_HATCH,border:"1px solid #1e3a5f",borderRadius:5,padding:"10px 12px",minWidth:170,flex:"1 1 170px"}}>
-                  <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:4,marginBottom:6,flexWrap:"wrap"}}>
-                    <span style={{fontFamily:T.fontMono,fontSize:9,color:"#60a5fa"}}>SPACEX S-1 CONTEXT</span>
-                    <IllustrativeChip/>
-                  </div>
-                  {[
-                    ["Starlink rev","$11.4B (FY25) · 10.3M subs"],
-                    ["AI capex","$12.7B in 2025 (xAI acq.)"],
-                    ["FCF","−$9.1B Q1 2026"],
-                    ["IPO","S-1 May 2026 · mid-2026 target"],
-                    ["API","Manual only (pre-IPO)"],
-                  ].map(([l,v])=>(
-                    <div key={l} style={{display:"flex",gap:6,padding:"2px 0",borderBottom:`1px solid ${T.border}22`}}>
-                      <div style={{fontFamily:T.fontMono,fontSize:7,color:"#334155",minWidth:56,flexShrink:0}}>{l}</div>
-                      <div style={{fontFamily:T.fontMono,fontSize:8,color:"#475569"}}>{v}</div>
-                    </div>
-                  ))}
-                </div>
               </div>
-              {/* Mkt cap treemap */}
-              <div style={{marginTop:12}}>
-                <div style={{fontFamily:T.fontMono,fontSize:8,color:T.textMuted,marginBottom:4}}>RELATIVE MARKET CAP (public Mag 10, excl. SpaceX)</div>
-                <div style={{display:"flex",height:20,borderRadius:3,overflow:"hidden",gap:1}}>
-                  {pub.map(s=>(
-                    <div key={s.ticker} style={{width:`${(s.mktCapT/totalMktCap*100).toFixed(1)}%`,background:s.color,display:"flex",alignItems:"center",justifyContent:"center",minWidth:2}}>
-                      {s.mktCapT/totalMktCap>0.08&&<span style={{fontFamily:T.fontMono,fontSize:7,color:"#000",fontWeight:700}}>{s.ticker}</span>}
-                    </div>
-                  ))}
-                </div>
-                <div style={{display:"flex",gap:8,marginTop:5,flexWrap:"wrap"}}>
-                  {pub.map(s=><span key={s.ticker} style={{fontFamily:T.fontMono,fontSize:7,color:T.textMuted}}><span style={{color:s.color}}>■</span> {s.ticker} ${s.mktCapT.toFixed(2)}T</span>)}
-                </div>
-              </div>
-              <SourceBox api={mag10PriceMode==="LIVE"||mag10PriceMode==="CACHED"?"FMP":"Manual"} endpoint={`prices: ${mag10PriceMode==="LIVE"||mag10PriceMode==="CACHED"?"Finnhub live":"curated"} · fundamentals: curated (reviewed Q1 2026) · SpaceX S-1 (SEC)`} mode={mag10PriceMode} asOf={asOfOf('mag10PricesJson')}/>
+              <SourceBox api={mag10PriceMode==="LIVE"||mag10PriceMode==="CACHED"?"FMP":"Manual"} endpoint={`prices: ${mag10PriceMode==="LIVE"||mag10PriceMode==="CACHED"?"Finnhub live":"curated fallback"} · day move only`} mode={mag10PriceMode} asOf={asOfOf('mag10PricesJson')}/>
             </div>
           )}
         </div>
