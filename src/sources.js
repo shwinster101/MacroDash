@@ -87,6 +87,50 @@ export const SOURCES = {
 // Display classes that must NOT render on the public friend view.
 export const PUBLIC_HIDDEN_CLASSES = ["licensed"];
 
+// FEAT-DERIV-OWN (v3.41): a DERIVED field has no observation date of its own — snapshot.js
+// computes it FROM a primary field's pull and never stamps a `<key>AsOf` sibling for it — so
+// it must inherit the date (and cadence) of the field it was derived from. Lives here, not in
+// ttReadout.js, because this module already owns the staleness vocabulary (isStale/cadenceOf/
+// parseObsDate) and every consumer (mergeLiveOverMock, ttReadout.js, the dashboard's modeOf)
+// already imports from here. v3.40 caught this for 6 fields locally inside buildTtReadout;
+// this is the same fix, generalized to every derivative SOURCES declares, owned in one place.
+// ⚠ Add an entry whenever functions/api/snapshot.js emits a value with no `<field>AsOf`
+// sibling of its own — the smoke reconciliation (test/smoke.mjs) asserts this table covers
+// every such SOURCES key and fails the build if a new one is missed.
+export const DERIVED_OF = {
+  // equity (fetchSpy — FRED SP500/10 proxy; spyPrice/spxIndex are the primary pulls)
+  spyChangePct: "spyPrice", spyYtd: "spyPrice", spyMa100: "spyPrice", spyMa200: "spyPrice",
+  spySeries: "spyPrice", spxPrevClose: "spxIndex",
+  // QQQ (Finnhub quote — qqqPrice is the primary pull)
+  qqqChangePct: "qqqPrice",
+  // rates (fetchFred — tenYear is the primary pull)
+  tenYearD1: "tenYear", tenYearW1: "tenYear", tenYearM1: "tenYear", tenYearSeries: "tenYear",
+  // VIX (fetchFred — vix is the primary pull)
+  vixWeekChg: "vix", vixSeries: "vix",
+  // WTI / BTC (fetchFred)
+  wtiD1: "wti", wtiW1: "wti", wtiM1: "wti",
+  btcD1: "btc", btcW1: "btc", btcM1: "btc",
+  // credit spread (creditSpread itself IS stamped its own AsOf — copied from hySpreadAsOf in
+  // snapshot.js — so its own derivatives inherit from IT, not from hySpread directly)
+  creditSpreadD1: "creditSpread", creditSpreadSeries: "creditSpread",
+  // monthly/weekly FRED trends (primary field already carries its own AsOf)
+  unemploymentTrend: "unemployment", savingsTrend: "savings",
+  cpiTrend: "cpiHeadline", pceTrend: "pceHeadline",
+  // sentiment (CNN F&G — fearGreed is the primary pull)
+  fearGreedLabel: "fearGreed",
+  // headline (RSS — marketHeadline is the primary pull)
+  marketHeadlineSource: "marketHeadline",
+  // AI token economics (OpenRouter — tokenBlendedMtok is the primary pull)
+  tokenTrend: "tokenBlendedMtok", tokenModelsJson: "tokenBlendedMtok",
+  // Kalshi FOMC odds (rateOddsHold is the only field snapshot.js stamps an AsOf on —
+  // FOUND during the v3.41 audit: cut/hike/fomcDays/nextFomcDate rode with NO date at all,
+  // so bandFedOdds (keyed on cut/hike) could vote off a stale Kalshi pull undetected)
+  rateOddsCut: "rateOddsHold", rateOddsHike: "rateOddsHold",
+  fomcDays: "rateOddsHold", nextFomcDate: "rateOddsHold",
+};
+// Meta fields with no parent and no date to inherit — the reconciliation exemption list.
+export const DERIVED_EXEMPT = ["lastRefresh", "session"];
+
 // SOURCE CADENCE — how often each field's upstream actually updates. Drives
 // cadence-aware staleness: a monthly print (CPI/PCE/FEDFUNDS) dated 6 weeks ago is
 // the FRESHEST available, not stale — so it must not trip a daily-cadence STALE flag.
@@ -103,7 +147,16 @@ const CADENCE = {
   // weekly (LLM token prices reprice on model launches, not daily)
   tokenBlendedMtok: "weekly", tokenTrend: "weekly", tokenModelsJson: "weekly",
 };
-export function cadenceOf(key) { return CADENCE[key] || "daily"; }
+// Own cadence first; else the DERIVED_OF parent's cadence (so a future derivative under a
+// non-daily parent is correct by default even if nobody remembers to list it explicitly
+// above — the trend fields above already ARE listed explicitly, this is the safety net for
+// the next one); else daily.
+export function cadenceOf(key) {
+  if (CADENCE[key]) return CADENCE[key];
+  const parent = DERIVED_OF[key];
+  if (parent && CADENCE[parent]) return CADENCE[parent];
+  return "daily";
+}
 
 // Set a dotted path on a CLONE of obj (no mutation of the original).
 export function setPath(obj, path, value) {
@@ -137,6 +190,14 @@ function validValue(v, kind) {
   return Number.isFinite(v);
 }
 
+// The date that GOVERNS a field: its own AsOf if the source stamped one, else the AsOf of the
+// parent it was derived from (DERIVED_OF), else undefined (nothing to judge — isStale fails
+// open on that, correctly, for a field with no date at all). Single source of truth so a
+// derivative can never sail past the staleness gate its parent was just caught by.
+export function govAsOf(live, key) {
+  return (live && live[`${key}AsOf`]) ?? (DERIVED_OF[key] ? live?.[`${DERIVED_OF[key]}AsOf`] : undefined);
+}
+
 // Merge a /api/snapshot payload over mock DATA. Pure.
 //   mockData   : shaped DATA object (mock fallback)
 //   payload    : { live: { fieldName: value, ... }, cached: bool, asOf }
@@ -166,7 +227,10 @@ export function mergeLiveOverMock(mockData, payload, publicView = false) {
     if (data === mockData) data = structuredClone(mockData); // one clone for the whole merge
     setPathMut(data, src.path, v);
     provenance[key] = liveBadge;
-    if (live[`${key}AsOf`]) dataAsOf[key] = live[`${key}AsOf`]; // observation date, if the source emits one
+    // FEAT-DERIV-OWN (v3.41): own AsOf if the source stamped one, else the parent's — a
+    // derivative with no date of its own must not read fresher than the field it came from.
+    const gov = govAsOf(live, key);
+    if (gov) dataAsOf[key] = gov;
     if (key !== "lastRefresh" && key !== "session") anyLive = true; // meta alone isn't "live"
   }
   if (!anyLive) {

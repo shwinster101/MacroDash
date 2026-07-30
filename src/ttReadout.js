@@ -11,7 +11,12 @@
 // circuit). Every band boundary is smoke-tested (DEC-33). Change a band ONLY with a matching
 // test change — a silent drift here mis-classifies live capital.
 
-import { isStale } from "./sources.js";
+import { isStale, DERIVED_OF, govAsOf } from "./sources.js";
+// Re-exported for existing importers (test/smoke.mjs imports DERIVED_OF from here) — the
+// table itself now lives in sources.js (FEAT-DERIV-OWN, v3.41): that module already owns the
+// staleness vocabulary and every consumer (mergeLiveOverMock, this file, dashboard's modeOf)
+// already imports from it, so one table now governs all three surfaces instead of one.
+export { DERIVED_OF };
 
 const round2 = (n) => Math.round(n * 100) / 100;
 const bandLabel = (s) => (s == null ? "unavailable" : s); // null band -> "unavailable" check state
@@ -120,30 +125,22 @@ export function computeMacroFlip({ vix, spyPrice, spyMa200 } = {}) {
 // `live` = flat snapshot fields (the `live` object /api/snapshot returns, or the projection the
 // dashboard builds from LIVE/CACHED tiles). A field is USED only if present, finite, and not
 // stale for its cadence (isStale reused from sources.js — the same gate the dashboard vote uses).
-/* FEAT-DASH-DERIV (v3.40): a DERIVED field must inherit the staleness of what it is derived FROM.
-   isStale() fails OPEN on a missing date (sources.js:236) — correct for a dated field, since there
-   is nothing to judge, but a hole for a derivative: snapshot.js emits `vixWeekChg`, `tenYearM1`,
-   `spyChangePct`, `spyMa100/200`, `spyYtd` and `qqqChangePct` with NO AsOf sibling of their own,
-   so they sailed past the gate that had just suppressed their own parent.
-   MEASURED, live on 2026-07-30: `vix` (dated 07-28) was correctly withheld as stale — while
-   `vixWeekChg` published 6.8, `tenYearM1` published +0.23 and CAST A BEARISH VOTE in the very
-   regime the dashboard promises "excludes stale/dead inputs", and `qqq_spy_rs` cast another off
-   two undated fields while DISPLAYING a borrowed as_of it never gated on. Two of four "available"
-   votes were derived from data whose level the same function had just refused to print. */
-export const DERIVED_OF = {
-  vixWeekChg: "vix",
-  tenYearM1: "tenYear", tenYearD1: "tenYear", tenYearW1: "tenYear",
-  spyChangePct: "spyPrice", spyMa100: "spyPrice", spyMa200: "spyPrice", spyYtd: "spyPrice",
-  spxPrevClose: "spxIndex",
-  qqqChangePct: "qqqPrice",
-  creditSpread: "hySpread",
-};
+// FEAT-DASH-DERIV (v3.40) / FEAT-DERIV-OWN (v3.41): a DERIVED field must inherit the staleness
+// of what it is derived FROM. isStale() fails OPEN on a missing date (sources.js:236) — correct
+// for a dated field, since there is nothing to judge, but a hole for a derivative: snapshot.js
+// emits fields like `vixWeekChg`/`tenYearM1`/`spyChangePct` with NO AsOf sibling of their own,
+// so they sail past the gate that had just suppressed their own parent.
+// MEASURED, live on 2026-07-30: `vix` (dated 07-28) was correctly withheld as stale — while
+// `vixWeekChg` published 6.8, `tenYearM1` published +0.23 and CAST A BEARISH VOTE in the very
+// regime the dashboard promises "excludes stale/dead inputs". v3.41 moved the mapping (DERIVED_OF,
+// now imported from sources.js above) out of this file so mergeLiveOverMock/modeOf/the paste
+// projection share the SAME table instead of only /readout.json being fixed.
 export function buildTtReadout(live, { now = new Date() } = {}) {
   const L = live || {};
-  // The date that GOVERNS a field: its own AsOf, else its parent's. Named separately from asOf()
-  // so a block can report the date it actually gated on rather than a borrowed one.
-  const govDate = (key) => L[key + "AsOf"] ?? (DERIVED_OF[key] ? L[DERIVED_OF[key] + "AsOf"] : undefined) ?? null;
-  const asOf = (key) => govDate(key);
+  // govAsOf (sources.js): own AsOf if stamped, else the DERIVED_OF parent's. `asOf` is the
+  // public alias a block uses to report the date it actually gated on.
+  const govDate = (key) => govAsOf(L, key) ?? null;
+  const asOf = govDate;
   const fresh = (key, cadence = "daily") => {
     const v = L[key];
     if (v === undefined || v === null) return null;
@@ -203,15 +200,19 @@ export function buildTtReadout(live, { now = new Date() } = {}) {
   // PANIC — mechanized capitulation. Both inputs must be live; overrides any base verdict
   // (including INSUFFICIENT) because it is the most safety-critical state (25/20 are non-panic).
   const panic = vix.value != null && fear_greed.value != null && vix.value > 25 && fear_greed.value < 20;
-  /* FEAT-DASH-DERIV (v3.40): a TAILWIND must not be printable while the RISK GAUGE is blind.
-     `available >= 3` is a count, and counts are not safety: with VIX unavailable the PANIC
-     override above cannot fire and the Macro Flip circuit reports BLIND, so a "risk-on" verdict
-     is being asserted by exactly the inputs that cannot see a crash. Measured 2026-07-30: once
-     the stale-derivative votes were removed, the body went NEUTRAL -> TAILWIND on 3 checks with
-     VIX missing — MORE risk-on for knowing LESS. The rule is deliberately ASYMMETRIC: a bearish
-     read off the remaining inputs is still safe to act on, so HEADWIND/PANIC pass through
-     untouched; only the risk-ON direction is withheld, and the downgrade states itself. */
-  const gaugeBlind = vix.value == null;
+  /* FEAT-DASH-DERIV (v3.40) / FEAT-DERIV-OWN (v3.41): a TAILWIND must not be printable while
+     the RISK GAUGE is blind. `available >= 3` is a count, and counts are not safety: PANIC
+     needs BOTH vix and fear_greed live, so either one missing means the override above cannot
+     fire, and a "risk-on" verdict would be asserted by exactly the inputs that cannot see a
+     crash. Measured 2026-07-30: once the stale-derivative votes were removed, the body went
+     NEUTRAL -> TAILWIND on 3 checks with VIX missing — MORE risk-on for knowing LESS. v3.41
+     widened this from VIX-only to BOTH panic inputs — a dead CNN F&G scraper blinds the same
+     override VIX blinds, and the v3.40 rule only caught half of it. The rule is deliberately
+     ASYMMETRIC: a bearish read off the remaining inputs is still safe to act on, so HEADWIND/
+     PANIC pass through untouched; only the risk-ON direction is withheld, and the downgrade
+     names which gauge is missing rather than staying silent. */
+  const blindGauges = [vix.value == null && "VIX", fear_greed.value == null && "Fear & Greed"].filter(Boolean);
+  const gaugeBlind = blindGauges.length > 0;
   const downgraded = !panic && gaugeBlind && agg.verdict === "TAILWIND";
   const verdict = panic ? "PANIC" : downgraded ? "NEUTRAL" : agg.verdict;
 
@@ -226,7 +227,7 @@ export function buildTtReadout(live, { now = new Date() } = {}) {
       // What the counts alone would have said, and why that was not printed. Never silent.
       raw_verdict: agg.verdict,
       downgraded: downgraded
-        ? "TAILWIND withheld — VIX unavailable, so the PANIC override cannot fire and the Macro Flip circuit is blind; a risk-on call needs the risk gauge"
+        ? `TAILWIND withheld — ${blindGauges.join(" and ")} unavailable, so the PANIC override cannot fire; a risk-on call needs the risk gauge`
         : null,
     },
     macro_flip,
@@ -254,7 +255,16 @@ export function formatTtPaste(readout, { generatedEt } = {}) {
   lines.push(`FED NEXT     ${fed ? `hold ${fed.hold} / cut ${fed.cut} / hike ${fed.hike}` : "n/a"}${fed && fed.next_meeting ? `  (${fed.next_meeting}${fed.days_out != null ? ` · ${fed.days_out}d` : ""})` : ""}`);
   lines.push("-".repeat(56));
   lines.push(`REGIME       ${cell(na(reg.verdict))}(${reg.bullish ?? 0} bull / ${reg.bearish ?? 0} bear · ${reg.available ?? 0} checks)`);
-  const flipTxt = flip.tripped ? "TRIPPED — de-risk" : flip.armed ? "ARMED" : flip.armed === false ? "not armed" : "n/a";
+  // FEAT-DERIV-OWN (v3.41): a withheld TAILWIND must say so on the ONE surface a human reads —
+  // silent here would mean the maintainer never learns the safer verdict cost them nothing.
+  if (reg.downgraded) lines.push(`  ⚠ ${reg.downgraded}`);
+  // A blind circuit (evaluable:false) must read as "cannot see", never as the healthy "not
+  // armed" it used to collapse into. `hasFlip` distinguishes a genuinely absent macro_flip
+  // (readout too old / field missing) from one that ran and came back blind.
+  const hasFlip = flip && typeof flip.evaluable !== "undefined";
+  const flipTxt = !hasFlip ? "n/a"
+    : flip.evaluable === false ? `BLIND — missing: ${(flip.reason || "").replace(/^circuit BLIND — missing or stale: /, "")}`
+    : flip.tripped ? "TRIPPED — de-risk" : flip.armed ? "ARMED" : "not armed";
   lines.push(`MACRO FLIP   ${flipTxt}`);
   lines.push("RS basis=1d only · Fed odds = next meeting (not by-Dec) · end-of-day data · not advice");
   return lines.join("\n");

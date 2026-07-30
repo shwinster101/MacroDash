@@ -166,6 +166,11 @@ const LEDGER_RECENT_FIXTURE = [
   { t: "2026-07-26T12:00:00Z", v: "1.08", kind: "est", sym: "BBB", field: "rev:2028", from: 9, to: 11, px: 700 },
 ];
 
+// FEAT-DERIV-OWN (v3.41): mutable so a later test can swap in a blind-circuit / withheld-verdict
+// body and re-open the page — loadRegime() re-fetches on every navigation, so this is enough to
+// drive the pill through every state without a second server.
+let READOUT_FIXTURE = { as_of: `${TODAY_ET}T14:30:00Z`, regime: { verdict: "HEADWIND" }, macro_flip: { armed: true } };
+
 const server = http.createServer((req, res) => {
   const url = new URL(req.url, "http://x");
   const json = (o) => { res.writeHead(200, { "content-type": "application/json" }); res.end(JSON.stringify(o)); };
@@ -173,7 +178,7 @@ const server = http.createServer((req, res) => {
     return json({ version: "1.1", asOf: TODAY_ET, book: BOOK, cut: ["XXX"], board: BOARD,
       empty: false, auth: { mode: "pin", src: "kv", session_days_left: 29 } });
   if (url.pathname === "/readout.json")
-    return json({ as_of: `${TODAY_ET}T14:30:00Z`, regime: { verdict: "HEADWIND" }, macro_flip: { armed: true } });
+    return json(READOUT_FIXTURE);
   if (url.pathname === "/api/positions")
     return json({ asOf: TODAY_ET, positions: POSITIONS });
   if (url.pathname === "/api/quotes")
@@ -616,6 +621,37 @@ if (process.env.SHOTS) await phone.screenshot({ path: process.env.SHOTS + "-phon
 await phone.close();
 
 ok("no page errors at either width", errors.length === 0 || (console.log(errors), false));
+
+// ── FEAT-DERIV-OWN (v3.41): the MACRO pill must distinguish "cannot see" from "healthy" ────
+// v3.40 added `evaluable`/`reason` on macro_flip and `downgraded` on regime.verdict, but nothing
+// rendered them — a blind circuit and a plain "not armed" produced the SAME pill suffix (none),
+// and a withheld TAILWIND read as an unremarkable NEUTRAL. This is the one surface where that
+// silence would actually matter: the maintainer reads the pill, not the JSON.
+console.log("\n[render] MACRO pill — blind circuit and withheld verdict are never silent");
+READOUT_FIXTURE = {
+  as_of: `${TODAY_ET}T14:30:00Z`,
+  regime: { verdict: "NEUTRAL", raw_verdict: "TAILWIND",
+    downgraded: "TAILWIND withheld — VIX unavailable, so the PANIC override cannot fire; a risk-on call needs the risk gauge" },
+  macro_flip: { armed: null, tripped: null, evaluable: false, reason: "circuit BLIND — missing or stale: vix" },
+};
+const blindPage = await open(1200);
+const blindPill = await txt(blindPage, "regimePill");
+const blindCls = await blindPage.locator("#regimePill").getAttribute("class");
+ok("a blind circuit renders 'flip BLIND', never the same blank suffix a healthy circuit gets",
+  /flip BLIND/.test(blindPill));
+ok("a withheld TAILWIND does not read as a plain, unremarkable NEUTRAL",
+  /TAILWIND withheld/.test(blindPill));
+ok("the withheld state takes the amber warn class, not the green ok class",
+  /\bwarn\b/.test(blindCls) && !/\bok\b/.test(blindCls));
+await blindPage.close();
+
+READOUT_FIXTURE = { as_of: `${TODAY_ET}T14:30:00Z`, regime: { verdict: "TAILWIND" },
+  macro_flip: { armed: false, tripped: false, evaluable: true, reason: null } };
+const healthyPage = await open(1200);
+const healthyPill = await txt(healthyPage, "regimePill");
+ok("a fully-fed, unarmed circuit still reads as a plain TAILWIND (no false BLIND tell)",
+  /TAILWIND/.test(healthyPill) && !/BLIND/.test(healthyPill) && !/withheld/.test(healthyPill));
+await healthyPage.close();
 
 await browser.close();
 server.close();
