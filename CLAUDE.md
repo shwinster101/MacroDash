@@ -121,7 +121,7 @@ worker/                 SEPARATE Cloudflare Worker (not part of Pages)
   wrangler.toml         Worker config: PULSE_CACHE binding + cron triggers (UTC).
 
 test/
-  smoke.mjs             No-network smoke test: 556 assertions over mergeLiveOverMock
+  smoke.mjs             No-network smoke test: 566 assertions over mergeLiveOverMock
                         + SOURCES-path resolution against the real MOCK_DATA + the
                         5-Whys engine + DEC-31 guards + the TT band table (DEC-33)
                         + the market-holiday calendar (sessions + staleness).
@@ -696,6 +696,44 @@ Jan-anchor shipped; see `snapshot.js` ~318–328), `spyMa100`, `spyMa200`, and a
   Tests: **556 smoke** (the section includes the **first behavioral tests of `admin.html`'s pure
   logic** — the PT functions are lifted out by name and executed, with the Q4 cliff proved against
   a **stubbed clock** since no July date can put a year-end inside 3 months) + **103 render**.
+- **FEAT-DASH-DERIV (v3.40) — the macro dashboard audit: a guard that only covered half its fields.**
+  The TT terminal was audited first; turning the same lens on the **macro dashboard** found the identical
+  shape of defect one layer down, and this one is live in **Engine 0** — the `/readout.json` an external
+  terminal and the board's MACRO pill gate real decisions on. `isStale()` **fails OPEN on a missing date**
+  (`sources.js:236` — correct for a dated field, there is nothing to judge), but `snapshot.js` emits
+  **`vixWeekChg`, `tenYearM1/D1/W1`, `spyChangePct`, `spyMa100/200`, `spyYtd`, `qqqChangePct`, `spxPrevClose`
+  with NO `AsOf` sibling of their own** — so every one of them sailed straight past the gate that had just
+  suppressed *its own parent*. **Measured on the live 2026-07-30 body:** `vix` (dated 07-28) was correctly
+  withheld as stale — while `vixWeekChg` published 6.8 and **`tenYearM1` cast a BEARISH vote** in the very
+  regime the project promises "excludes stale/dead inputs", and `qqq_spy_rs` cast another while *displaying a
+  borrowed `as_of` it never gated on*. Two of the four "available" votes were derived from data whose level the
+  same function had refused to print. **`DERIVED_OF`** now maps each derivative to the parent whose date
+  governs it, `fresh()` gates on that date, and a block reports the date it actually gated on.
+  **The Macro Flip circuit was silently BLIND.** `armed: null` / `tripped: null` read identically to a genuine
+  "not armed" — the crash detector could be unable to see while a confident verdict sat beside it. It now
+  carries **`evaluable` + a `reason` naming the missing input**.
+  **And fixing the first two exposed the real danger:** with the stale votes correctly removed, the verdict went
+  **NEUTRAL → TAILWIND** — *more risk-on for knowing less*, because `available >= 3` is a COUNT and counts are
+  not safety. With VIX gone the PANIC override cannot fire and the flip circuit is blind, so a risk-ON call was
+  being asserted by exactly the inputs that cannot see a crash. A TAILWIND is now **withheld while the risk
+  gauge is blind**, recorded in `regime.raw_verdict` + `regime.downgraded` (never silent). The rule is
+  deliberately **ASYMMETRIC** — HEADWIND and PANIC pass through untouched, since a bearish read off the
+  remaining inputs is still safe to act on; only the risk-on direction needs the gauge.
+  Tests: **566 smoke** (+10: parent-staleness inheritance, no over-correction, blind-circuit declaration, and
+  the one-way downgrade) + **103 render**.
+- **NVDA lens resolved from first principles (v3.40).** A multiple is a compressed DCF, so the right metric is
+  the **lowest income-statement line already structurally representative** — everything below it must be
+  *assumed*, and an assumption buried in a multiple is unfalsifiable. Consensus implied NET MARGIN is
+  **55.5 / 55.8 / 56.4 / 53.2%** across FY27-30: flat, not ramping, so earnings ARE the cash-flow proxy (NVDA is
+  *more* profitable than TSM at 49.9%, the name this same rule already put on the earnings lens). Converted
+  14/12/10/9 EV/S → **25.2/21.5/17.7/16.9 P/E, preserving economics exactly** (every rung within 0.1%), so the
+  ranking did not move — what moved is that the assumption is now legible and falsifiable against a quarterly
+  print. Two things the conversion revealed: `net_cash_B` was **absent (treated as 0)** and understated every
+  EV/S rung — the earnings lens is equity-level, so that missing input leaves the model entirely; and at $197.01
+  the market pays 21.9× FY2027 while the **near rung assumes 25.2×, a re-rating UP** — the opposite side of the
+  market from TSM's deliberately-conservative schedule, invisible while the lenses differed. At the auto horizon
+  (YE2027) the model assumes 21.5× vs 21.9× paid, i.e. essentially no re-rating: **NVDA's rank is carried by EPS
+  growth (+43% FY27→28), not multiple expansion.** The live book is now **lint-clean — zero warnings**.
 - **Deferred:** stored fundamentals + Robinhood sync — now unblocked by the `x-tt-pin` header
   (v3.9): a chat-side daily review can PUT `status_flags`/`ref_px` into the deepDive payloads and
   stamp `lastRun`. When built, store the *triage* shape (`{at, px}` → "% moved since your last TT
@@ -762,7 +800,7 @@ npm run dev        # Vite dev server (mock unless VITE_DATA_MODE=live in .env)
 npm run build      # → dist/  (what Pages runs)
 npm run preview    # serve the built dist/
 
-node test/smoke.mjs   # 556-assertion no-network smoke test (needs Node ≥17)
+node test/smoke.mjs   # 566-assertion no-network smoke test (needs Node ≥17)
 npm run test:ui       # browser render test for admin.html (skips if no Chromium)
 
 # Cron Worker (separate deploy):

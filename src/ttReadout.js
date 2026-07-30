@@ -103,20 +103,51 @@ export function computeMacroFlip({ vix, spyPrice, spyMa200 } = {}) {
   const armed = v == null ? null : v > 22;
   const tripped = v == null || p == null || m == null ? null : p < m && v > 25;
   const pct_vs_200d = p != null && m != null && m !== 0 ? round2(((p - m) / m) * 100) : null;
-  return { armed, tripped, inputs: { vix: v, spy_price: p, spy_ma200: m, pct_vs_200d } };
+  // FEAT-DASH-DERIV (v3.40): a null `armed`/`tripped` used to be indistinguishable from a
+  // genuine "not armed" / "not tripped" — the crash detector could be BLIND and the body said
+  // nothing, next to a confident verdict. It now declares inevaluability and names the missing
+  // input, so a consumer gating capital can tell "the circuit says no" from "the circuit cannot see".
+  const missing = [v == null && "vix", p == null && "spy_price", m == null && "spy_ma200"].filter(Boolean);
+  return {
+    armed, tripped,
+    evaluable: missing.length === 0,
+    reason: missing.length ? `circuit BLIND — missing or stale: ${missing.join(", ")}` : null,
+    inputs: { vix: v, spy_price: p, spy_ma200: m, pct_vs_200d },
+  };
 }
 
 // ─── The full readout body ───────────────────────────────────────────────────────────────
 // `live` = flat snapshot fields (the `live` object /api/snapshot returns, or the projection the
 // dashboard builds from LIVE/CACHED tiles). A field is USED only if present, finite, and not
 // stale for its cadence (isStale reused from sources.js — the same gate the dashboard vote uses).
+/* FEAT-DASH-DERIV (v3.40): a DERIVED field must inherit the staleness of what it is derived FROM.
+   isStale() fails OPEN on a missing date (sources.js:236) — correct for a dated field, since there
+   is nothing to judge, but a hole for a derivative: snapshot.js emits `vixWeekChg`, `tenYearM1`,
+   `spyChangePct`, `spyMa100/200`, `spyYtd` and `qqqChangePct` with NO AsOf sibling of their own,
+   so they sailed past the gate that had just suppressed their own parent.
+   MEASURED, live on 2026-07-30: `vix` (dated 07-28) was correctly withheld as stale — while
+   `vixWeekChg` published 6.8, `tenYearM1` published +0.23 and CAST A BEARISH VOTE in the very
+   regime the dashboard promises "excludes stale/dead inputs", and `qqq_spy_rs` cast another off
+   two undated fields while DISPLAYING a borrowed as_of it never gated on. Two of four "available"
+   votes were derived from data whose level the same function had just refused to print. */
+export const DERIVED_OF = {
+  vixWeekChg: "vix",
+  tenYearM1: "tenYear", tenYearD1: "tenYear", tenYearW1: "tenYear",
+  spyChangePct: "spyPrice", spyMa100: "spyPrice", spyMa200: "spyPrice", spyYtd: "spyPrice",
+  spxPrevClose: "spxIndex",
+  qqqChangePct: "qqqPrice",
+  creditSpread: "hySpread",
+};
 export function buildTtReadout(live, { now = new Date() } = {}) {
   const L = live || {};
-  const asOf = (key) => L[key + "AsOf"] ?? null;
+  // The date that GOVERNS a field: its own AsOf, else its parent's. Named separately from asOf()
+  // so a block can report the date it actually gated on rather than a borrowed one.
+  const govDate = (key) => L[key + "AsOf"] ?? (DERIVED_OF[key] ? L[DERIVED_OF[key] + "AsOf"] : undefined) ?? null;
+  const asOf = (key) => govDate(key);
   const fresh = (key, cadence = "daily") => {
     const v = L[key];
     if (v === undefined || v === null) return null;
-    if (isStale(L[key + "AsOf"], now, cadence)) return null;
+    if (isStale(govDate(key), now, cadence)) return null;
     return v;
   };
   const num = (key, cadence = "daily") => {
@@ -138,7 +169,8 @@ export function buildTtReadout(live, { now = new Date() } = {}) {
   let qqq_spy_rs = null, rsDelta = null;
   if (qqq1d != null && spy1d != null) {
     rsDelta = round2(qqq1d - spy1d);
-    qqq_spy_rs = { state: bandRs(rsDelta), basis: "1d", qqq_1d: qqq1d, spy_1d: spy1d, as_of: asOf("qqqPrice") };
+    // as_of is the date this check actually GATED on (via DERIVED_OF), not a decorative borrow.
+    qqq_spy_rs = { state: bandRs(rsDelta), basis: "1d", qqq_1d: qqq1d, spy_1d: spy1d, as_of: govDate("qqqChangePct") };
   }
 
   const m1 = num("tenYearM1");
@@ -171,7 +203,17 @@ export function buildTtReadout(live, { now = new Date() } = {}) {
   // PANIC — mechanized capitulation. Both inputs must be live; overrides any base verdict
   // (including INSUFFICIENT) because it is the most safety-critical state (25/20 are non-panic).
   const panic = vix.value != null && fear_greed.value != null && vix.value > 25 && fear_greed.value < 20;
-  const verdict = panic ? "PANIC" : agg.verdict;
+  /* FEAT-DASH-DERIV (v3.40): a TAILWIND must not be printable while the RISK GAUGE is blind.
+     `available >= 3` is a count, and counts are not safety: with VIX unavailable the PANIC
+     override above cannot fire and the Macro Flip circuit reports BLIND, so a "risk-on" verdict
+     is being asserted by exactly the inputs that cannot see a crash. Measured 2026-07-30: once
+     the stale-derivative votes were removed, the body went NEUTRAL -> TAILWIND on 3 checks with
+     VIX missing — MORE risk-on for knowing LESS. The rule is deliberately ASYMMETRIC: a bearish
+     read off the remaining inputs is still safe to act on, so HEADWIND/PANIC pass through
+     untouched; only the risk-ON direction is withheld, and the downgrade states itself. */
+  const gaugeBlind = vix.value == null;
+  const downgraded = !panic && gaugeBlind && agg.verdict === "TAILWIND";
+  const verdict = panic ? "PANIC" : downgraded ? "NEUTRAL" : agg.verdict;
 
   const macro_flip = computeMacroFlip({ vix: vix.value, spyPrice, spyMa200 });
 
@@ -181,6 +223,11 @@ export function buildTtReadout(live, { now = new Date() } = {}) {
       verdict, checks,
       available: agg.available, bullish: agg.bullish, bearish: agg.bearish,
       panic_inputs: { vix: vix.value, fear_greed: fear_greed.value, panic },
+      // What the counts alone would have said, and why that was not printed. Never silent.
+      raw_verdict: agg.verdict,
+      downgraded: downgraded
+        ? "TAILWIND withheld — VIX unavailable, so the PANIC override cannot fire and the Macro Flip circuit is blind; a risk-on call needs the risk gauge"
+        : null,
     },
     macro_flip,
     attribution: ["FRED (SP500/10 proxy · VIXCLS · DGS10)", "CNN Fear & Greed", "Kalshi KXFEDDECISION"],

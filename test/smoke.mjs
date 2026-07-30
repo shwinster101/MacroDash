@@ -10,7 +10,7 @@ import { mergeLiveOverMock, SOURCES, isStale, cadenceOf, parseObsDate, isMarketH
 import { computeFiveWhys } from "../src/fiveWhys.js";
 import {
   bandSpyVs200d, bandVix, bandFearGreed, bandRs, bandTenYear, bandFedOdds,
-  aggregateVerdict, computeMacroFlip, buildTtReadout, formatTtPaste,
+  aggregateVerdict, computeMacroFlip, buildTtReadout, formatTtPaste, DERIVED_OF,
 } from "../src/ttReadout.js";
 import { validateBook, validateBoard, validatePos, conflictCheck, authMode, lockoutState, recordFailure, parseCookie, hashPin, LOCK_TIERS, diffForLedger } from "../functions/api/tt.js";
 import { plausible, applyBands, quorum, QUORUM_FIELDS, QUORUM_MIN, marketSession } from "../functions/api/snapshot.js";
@@ -210,6 +210,56 @@ ok("readout: NEUTRAL on a 1-1 tie among available checks", (() => { const r = bu
 ok("readout: PANIC (vix 25.1 + F&G 19) overrides a bullish tape", (() => { const r = buildTtReadout(mkLive({ vix: 25.1, fearGreed: 19 }), { now: TT_NOW }); return r.regime.verdict === "PANIC" && r.regime.panic_inputs.panic === true; })());
 ok("readout: boundary vix 25 + F&G 19 is NOT panic", buildTtReadout(mkLive({ vix: 25, fearGreed: 19 }), { now: TT_NOW }).regime.panic_inputs.panic === false);
 ok("readout: boundary vix 26 + F&G 20 is NOT panic", buildTtReadout(mkLive({ vix: 26, fearGreed: 20 }), { now: TT_NOW }).regime.panic_inputs.panic === false);
+
+// ---- FEAT-DASH-DERIV (v3.40): a derived field inherits its parent's staleness -------------
+// isStale() fails OPEN on a missing date (correct for a dated field — nothing to judge), but
+// snapshot.js emits vixWeekChg / tenYearM1 / spyChangePct / qqqChangePct with NO AsOf of their
+// own, so they sailed past the gate that had just suppressed their own parent. MEASURED on the
+// live 2026-07-30 body: `vix` was correctly withheld as stale while tenYearM1 CAST A BEARISH
+// VOTE in the regime the dashboard promises "excludes stale/dead inputs".
+const STALE_D = "2026-07-01";   // ~2 weeks before TT_NOW => stale on a daily cadence
+ok("deriv: a stale parent takes its derivatives down with it (vixWeekChg follows vix)", (() => {
+  const r = buildTtReadout(mkLive({ vixAsOf: STALE_D }), { now: TT_NOW });
+  return r.vix.value === null && r.vix.week_chg === null;
+})());
+ok("deriv: a stale 10Y kills the m1 delta, so us10y_trend stops voting", (() => {
+  const r = buildTtReadout(mkLive({ tenYearAsOf: STALE_D }), { now: TT_NOW });
+  const c = r.regime.checks.find((x) => x.name === "us10y_trend");
+  return r.us10y.m1_delta === null && c.state === "unavailable";
+})());
+ok("deriv: a fresh parent still lets its derivatives through (no over-correction)",
+  rBull.vix.week_chg === -2.1 && rBull.us10y.m1_delta === 0.03);
+ok("deriv: qqq_spy_rs reports the date it actually GATED on, not a decorative borrow",
+  rBull.qqq_spy_rs.as_of === D);
+ok("deriv: DERIVED_OF maps every undated derivative snapshot.js emits",
+  ["vixWeekChg", "tenYearM1", "spyChangePct", "spyMa200", "spyYtd", "qqqChangePct"]
+    .every((k) => typeof DERIVED_OF[k] === "string"));
+
+// The circuit must say when it CANNOT SEE. A null armed/tripped read identically to a genuine
+// "not armed" — the crash detector could be blind next to a confident verdict, silently.
+ok("flip: a blind circuit declares itself and names the missing input", (() => {
+  const f = computeMacroFlip({ spyPrice: 700, spyMa200: 690 });
+  return f.evaluable === false && /BLIND/.test(f.reason) && /vix/.test(f.reason);
+})());
+ok("flip: a fully-fed circuit is evaluable with no reason attached", (() => {
+  const f = computeMacroFlip({ vix: 30, spyPrice: 600, spyMa200: 700 });
+  return f.evaluable === true && f.reason === null && f.armed === true && f.tripped === true;
+})());
+
+// SAFETY ASYMMETRY: `available >= 3` is a COUNT, and counts are not safety. With VIX gone the
+// PANIC override cannot fire and the flip circuit is blind, so a risk-ON verdict is asserted by
+// exactly the inputs that cannot see a crash. Measured 2026-07-30: removing the stale votes took
+// the body NEUTRAL -> TAILWIND — more risk-on for knowing less.
+ok("safety: TAILWIND is withheld while the risk gauge is blind, and says so", (() => {
+  const r = buildTtReadout(mkLive({ vix: undefined, rateOddsHold: undefined, rateOddsCut: undefined, rateOddsHike: undefined }), { now: TT_NOW });
+  return r.regime.raw_verdict === "TAILWIND" && r.regime.verdict === "NEUTRAL" && /risk gauge/.test(r.regime.downgraded);
+})());
+ok("safety: the downgrade is ONE-WAY — a bearish read with no VIX still prints HEADWIND", (() => {
+  const r = buildTtReadout(mkLive({ vix: undefined, spyPrice: 650, tenYearM1: 0.2 }), { now: TT_NOW });
+  return r.regime.verdict === "HEADWIND" && r.regime.downgraded === null;
+})());
+ok("safety: with VIX healthy a TAILWIND still prints (the gate is the gauge, not the count)",
+  rBull.regime.verdict === "TAILWIND" && rBull.regime.downgraded === null);
 ok("readout: INSUFFICIENT with <3 available checks", (() => { const r = buildTtReadout({ vix: 16.1, vixAsOf: D, fearGreed: 62, fearGreedAsOf: D }, { now: TT_NOW }); return r.regime.available === 2 && r.regime.verdict === "INSUFFICIENT"; })());
 ok("readout: stale input gated out (fresh value but 10-day-old AsOf -> unavailable)", (() => { const r = buildTtReadout(mkLive({ vixAsOf: "2026-07-01" }), { now: TT_NOW }); return r.vix.value === null && r.regime.checks[1].state === "unavailable"; })());
 ok("readout: empty live -> all checks unavailable, verdict INSUFFICIENT", (() => { const r = buildTtReadout({}, { now: TT_NOW }); return r.regime.verdict === "INSUFFICIENT" && r.regime.checks.every((c) => c.state === "unavailable"); })());
