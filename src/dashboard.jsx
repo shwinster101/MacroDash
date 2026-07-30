@@ -236,6 +236,11 @@ const MOCK_DATA = {
     mortgage:{ national:6.51, peoria:6.31 },
     credit:{ hy:3.85, ig:0.92, spread:2.93, spreadD1:+0.04,
              series:[2.80,2.78,2.82,2.85,2.88,2.84,2.87,2.90,2.91,2.93] },
+    // FEAT-NFCI (v3.43): Chicago Fed National Financial Conditions Index (weekly).
+    // Standardized so ZERO is the historical average: positive = tighter than average,
+    // negative = looser. The post-GFC era has generally run negative (loose).
+    nfci:{ current:-0.42, w1:+0.03,
+           series:[-0.55,-0.53,-0.50,-0.49,-0.47,-0.46,-0.45,-0.44,-0.45,-0.42] },
     housing:{ peoria:218400 },
     shillerPe:{ current:42.78, mean:17.4, median:16.1, ath:44.19, pctOfAth:96.8 },
   },
@@ -1073,7 +1078,7 @@ export default function Dashboard({ publicView = false } = {}) {
   const regime=computeRegime(d, staleFactors);
   // Signal Quality rollup — at-a-glance trust: how many tracked signals are live+fresh vs
   // stale vs mock. Only meaningful in live mode (in mock everything is MOCK by design).
-  const SIGNAL_FIELDS=["spyPrice","vix","fearGreed","tenYear","cpiHeadline","fedFunds","creditSpread","wti","btc","rateOddsHold","marketHeadline","savings","tokenBlendedMtok","shillerPe"];
+  const SIGNAL_FIELDS=["spyPrice","vix","fearGreed","tenYear","cpiHeadline","fedFunds","creditSpread","nfci","wti","btc","rateOddsHold","marketHeadline","savings","tokenBlendedMtok","shillerPe"];
   const sq=SIGNAL_FIELDS.reduce((a,k)=>{const m=modeOf(k);if(m==="LIVE"||m==="CACHED")a.fresh++;else if(m==="STALE")a.stale++;else a.mock++;return a;},{fresh:0,stale:0,mock:0});
   sq.total=SIGNAL_FIELDS.length;
   const asOfOf=(k)=>{const s=dataAsOf?.[k]; if(!s)return undefined; const dt=parseObsDate(s); return !dt||isNaN(dt.getTime())?s:`as of ${dt.toLocaleDateString("en-US",{month:"short",day:"numeric"})}`;}; // FEAT-R2: "as of Jun 4" (parses ISO + legacy M/D/YYYY)
@@ -1402,6 +1407,40 @@ export default function Dashboard({ publicView = false } = {}) {
                     <SourceBox api="FRED" endpoint="ICE BofA OAS" mode={modeOf('creditSpread')} asOf={asOfOf('creditSpread')}/>
                   </div>
                 )},
+                /* FEAT-NFCI (v3.43): financial conditions — the closest thing to a direct
+                   answer to this dashboard's own thesis question, and the one macro series
+                   here that a retail site (Yahoo/SA/TipRanks) effectively never surfaces.
+                   Sits beside HY-IG because both are risk-TRANSMISSION gauges: credit prices
+                   the risk, NFCI measures how tight the plumbing carrying it has become. */
+                { f:"nfci", render:()=>{
+                  const nMode=modeOf('nfci'), nIllus=isIllustrative(nMode);
+                  const v=d.macro.nfci.current, w=d.macro.nfci.w1;
+                  // Zero is the historical mean BY CONSTRUCTION, so the sign is the signal.
+                  // The ±0.10 deadband is ASSERTED, not fitted — it exists only so a weekly
+                  // series doesn't flap its label on a 0.01 wiggle across the mean. Every
+                  // boundary is smoke-tested, so changing it is one edit plus one test.
+                  const band=v>0.10?"TIGHT":v<-0.10?"LOOSE":"NEUTRAL";
+                  const bandCol=band==="TIGHT"?T.red:band==="LOOSE"?T.green:T.yellow;
+                  return (
+                  <div style={{background:T.surface,border:`1px solid ${T.border}`,borderRadius:5,padding:"10px 12px",
+                    backgroundImage:nIllus?ILLUS_HATCH:undefined,opacity:nIllus?0.92:1}}>
+                    <div style={{display:"flex",justifyContent:"space-between",alignItems:"baseline",gap:6,flexWrap:"wrap"}}>
+                      <Label>FIN CONDITIONS</Label>
+                      {/* v3.1 honesty invariant: TIGHT/LOOSE is a directional call, so it is
+                          suppressed on mock/stale exactly like the CAPE BUBBLE verdict. */}
+                      {nIllus?(nMode==="STALE"?<DataModeBadge mode="STALE"/>:<IllustrativeChip/>)
+                             :<Badge label={band} color={bandCol} small/>}
+                    </div>
+                    <div style={{fontFamily:T.fontMono,fontSize:20,color:nIllus?T.textSecondary:bandCol,fontWeight:700}}>
+                      {v>0?"+":""}{v.toFixed(2)}
+                    </div>
+                    <div style={{fontFamily:T.fontMono,fontSize:9,color:T.textMuted}}>
+                      {w==null?"—":`${w>0?"▲ +":w<0?"▼ ":"→ "}${Math.abs(w).toFixed(2)} WoW`} · 0 = avg
+                    </div>
+                    <div style={{height:28,marginTop:6}}><ResponsiveContainer width="100%" height="100%"><LineChart data={d.macro.nfci.series.map((val,i)=>({v:val,i}))}><Line type="monotone" dataKey="v" stroke={nIllus?T.textMuted:bandCol} dot={false} strokeWidth={1.5}/></LineChart></ResponsiveContainer></div>
+                    <SourceBox api="FRED" endpoint="NFCI · Chicago Fed" mode={nMode} asOf={asOfOf('nfci')}/>
+                  </div>
+                );}},
               ];
               const liveSig=signalTiles.filter(t=>!demoted(t.f));
               const degSig=signalTiles.filter(t=>demoted(t.f));

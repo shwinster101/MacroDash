@@ -61,6 +61,12 @@ export const SOURCES = {
   // HY-IG spread: widening = bearish leading indicator (inverse correlation to S&P 500)
   hySpread:           { path: "macro.credit.hy",          kind: "num",    displayClass: "public" },
   igSpread:           { path: "macro.credit.ig",          kind: "num",    displayClass: "public" },
+  // FINANCIAL CONDITIONS (FEAT-NFCI, v3.43 — Chicago Fed NFCI, weekly)
+  // Zero is the historical average BY CONSTRUCTION (the index is standardized), so the sign
+  // is the signal: positive = tighter than average, negative = looser.
+  nfci:               { path: "macro.nfci.current",       kind: "num",    displayClass: "public" },
+  nfciW1:             { path: "macro.nfci.w1",            kind: "num",    displayClass: "public" },
+  nfciSeries:         { path: "macro.nfci.series",        kind: "series", displayClass: "public" },
   creditSpread:       { path: "macro.credit.spread",      kind: "num",    displayClass: "public" },
   creditSpreadD1:     { path: "macro.credit.spreadD1",    kind: "num",    displayClass: "public" },
   creditSpreadSeries: { path: "macro.credit.series",      kind: "series", displayClass: "public" },
@@ -113,6 +119,7 @@ export const DERIVED_OF = {
   // credit spread (creditSpread itself IS stamped its own AsOf — copied from hySpreadAsOf in
   // snapshot.js — so its own derivatives inherit from IT, not from hySpread directly)
   creditSpreadD1: "creditSpread", creditSpreadSeries: "creditSpread",
+  nfciW1: "nfci", nfciSeries: "nfci",
   // monthly/weekly FRED trends (primary field already carries its own AsOf)
   unemploymentTrend: "unemployment", savingsTrend: "savings",
   cpiTrend: "cpiHeadline", pceTrend: "pceHeadline",
@@ -144,6 +151,9 @@ const CADENCE = {
   pceHeadline: "monthly", pceCore: "monthly", pceTrend: "monthly",
   // weekly (Freddie Mac primary mortgage survey, Thursday)
   mortgage30: "weekly",
+  // weekly (Chicago Fed NFCI — released Wednesday for the week ending the prior Friday;
+  // nfciW1/nfciSeries inherit this through the DERIVED_OF parent fallback in cadenceOf)
+  nfci: "weekly",
   // weekly (LLM token prices reprice on model launches, not daily)
   tokenBlendedMtok: "weekly", tokenTrend: "weekly", tokenModelsJson: "weekly",
 };

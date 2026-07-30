@@ -13,7 +13,7 @@ import {
   aggregateVerdict, computeMacroFlip, buildTtReadout, formatTtPaste, DERIVED_OF,
 } from "../src/ttReadout.js";
 import { validateBook, validateBoard, validatePos, conflictCheck, authMode, lockoutState, recordFailure, parseCookie, hashPin, LOCK_TIERS, diffForLedger } from "../functions/api/tt.js";
-import { plausible, applyBands, quorum, QUORUM_FIELDS, QUORUM_MIN, marketSession } from "../functions/api/snapshot.js";
+import { plausible, applyBands, quorum, QUORUM_FIELDS, QUORUM_MIN, marketSession, BANDS } from "../functions/api/snapshot.js";
 
 let pass = 0, fail = 0;
 const ok = (name, cond) => { if (cond) { pass++; console.log("  PASS  " + name); } else { fail++; console.log("  FAIL  " + name); } };
@@ -248,10 +248,10 @@ const PRIMARY_ASOF_FIELDS = [
   "spyPrice", "spxIndex", "qqqPrice", "mag10PricesJson",
   "tenYear", "fedFunds", "unemployment", "lfpr", "savings", "mortgage30",
   "cpiHeadline", "cpiCore", "pceHeadline", "pceCore", "wti", "vix", "btc",
-  "hySpread", "igSpread", "creditSpread",
+  "hySpread", "igSpread", "creditSpread", "nfci",
   "fearGreed", "marketHeadline", "shillerPe", "tokenBlendedMtok", "rateOddsHold",
 ];
-ok("deriv: PRIMARY_ASOF_FIELDS + DERIVED_OF + DERIVED_EXEMPT partition ALL 60 SOURCES keys (reconciled, not hardcoded)", (() => {
+ok("deriv: PRIMARY_ASOF_FIELDS + DERIVED_OF + DERIVED_EXEMPT partition ALL 63 SOURCES keys (reconciled, not hardcoded)", (() => {
   const keys = Object.keys(SOURCES);
   const derivedKeys = Object.keys(DERIVED_OF);
   const inPrimary = (k) => PRIMARY_ASOF_FIELDS.includes(k);
@@ -1609,6 +1609,49 @@ ok("slice5: a RESTRICTIVE stance keeps the full treatment — token, quals and t
 ok("slice5: the red badges are hoisted so they render in BOTH states — the v3.25 rule is that " +
    "a red fact is never hidden by a collapse",
   adminSrc.includes("const badges=") && (adminSrc.match(/badges\+controls/g)||[]).length===2);
+
+// ═══════════ FEAT-NFCI (v3.43) — financial conditions ═══════════
+// Chosen over TLT (a levered inverse of the 10Y this page already carries) and over the
+// curve/real-yield complex as the single highest-leverage add: one free weekly series that
+// restates the dashboard's own thesis question as a number, absent from retail finance sites.
+console.log("\n[22] FEAT-NFCI — financial conditions");
+ok("nfci: the FRED series is wired into the existing batched fetch (no new fetch path)",
+  /nfci:\s+"NFCI"/.test(snapSrc));
+ok("nfci: it is NOT in the DAILY set — the idx[5]/idx[21] week/month offsets would be " +
+   "5 and 21 WEEKS on a weekly series, which is exactly the bug that gating exists to stop",
+  /const DAILY = new Set\(\["tenYear", "wti", "btc", "vix"\]\)/.test(snapSrc));
+ok("nfci: W1 is derived from the prior observation, which on a weekly series really is a week",
+  snapSrc.includes("out.nfciW1 = parseFloat((latest - prev).toFixed(3))"));
+ok("nfci: a plausibility band exists and is WIDE — ±5 against a record high of ~+3.3 (2008), " +
+   "rejecting the impossible without rejecting the unusual",
+  (() => { const b = BANDS.nfci; return Array.isArray(b) && b[0] === -5 && b[1] === 5 &&
+    plausible("nfci", 3.3) && plausible("nfci", -0.9) && !plausible("nfci", 42); })());
+ok("nfci: cadence is WEEKLY, and its derivatives inherit that through the v3.41 parent " +
+   "fallback rather than each needing their own entry",
+  cadenceOf("nfci") === "weekly" && cadenceOf("nfciW1") === "weekly" && cadenceOf("nfciSeries") === "weekly");
+ok("nfci: a stale weekly print is judged on the WEEKLY clock (12d), not the daily one",
+  isStale("2026-07-20", new Date("2026-07-30"), cadenceOf("nfci")) === false &&
+  isStale("2026-07-10", new Date("2026-07-30"), cadenceOf("nfci")) === true);
+ok("nfci: the undated derivatives inherit the parent's date through the shared merge table",
+  (() => { const { dataAsOf } = mergeLiveOverMock(MOCK_DATA,
+    { live: { nfci: -0.42, nfciAsOf: "2026-07-24", nfciW1: 0.03 }, cached: false });
+    return dataAsOf.nfciW1 === "2026-07-24"; })());
+ok("nfci: it counts toward Signal Quality — a tracked live signal, not decoration",
+  dashSrc.includes('"creditSpread","nfci"'));
+// Zero is the historical mean by construction, so the SIGN is the signal. The deadband is
+// asserted (this environment blocks FRED, so it could not be fitted to data) — pinned here
+// so changing it is one edit plus one test, per the DEC-33 discipline.
+ok("nfci: the band table reads TIGHT above +0.10, LOOSE below -0.10, NEUTRAL across zero",
+  dashSrc.includes('const band=v>0.10?"TIGHT":v<-0.10?"LOOSE":"NEUTRAL"'));
+ok("nfci: TIGHT/LOOSE is a DIRECTIONAL call, so it is suppressed on mock/stale exactly like " +
+   "the CAPE BUBBLE verdict (v3.1 honesty invariant)",
+  /nIllus\?\(nMode==="STALE"\?<DataModeBadge mode="STALE"\/>:<IllustrativeChip\/>\)\s*:<Badge label=\{band\}/.test(dashSrc));
+ok("nfci: the tile states its own reference point — a bare z-score is unreadable without it",
+  dashSrc.includes("0 = avg"));
+ok("nfci: it does NOT yet vote in the regime — neither the dashboard engine nor the tt-v1 " +
+   "checks changed, so no verdict moved on an uncalibrated band",
+  !dashSrc.includes('use("nfci")') && !/REGIME_FACTOR_FIELDS=\[[^\]]*nfci/.test(dashSrc) &&
+  !readFileSync(new URL("../src/ttReadout.js", import.meta.url), "utf8").includes("nfci"));
 
 // ═══════════ [20] FEAT-TT-PTLINT (v3.39) — the PT chain's guards ═══════════
 // The price-target chain is the terminal's moat: ptModelRows() feeds the est-run table, the WORTH
