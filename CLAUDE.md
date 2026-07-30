@@ -952,8 +952,26 @@ Jan-anchor shipped; see `snapshot.js` ~318–328), `spyMa100`, `spyMa200`, and a
   cap · fundamentals curated (reviewed Q1 2026)" after the data was gone — caught in a browser
   check, and now smoke-pinned, because a surviving label that describes deleted data is the page
   lying about what it is showing. Result: `dashboard.jsx` 1761→1522 lines, bundle 614.9→601.4 kB.
-  Tests: **643 smoke** (+7) + 138 render, plus browser checks that every collapsible group can be
+  Tests: 643 smoke (+7) + 138 render, plus browser checks that every collapsible group can be
   expanded without revealing cut content.
+  **NFCI bands re-derived from first principles (v3.43.1).** The shipped ±0.10 deadband was the
+  one number in v3.43 that was *asserted*, and re-deriving it surfaced a defect bigger than the
+  threshold. NFCI is a **z-score by construction** (mean 0, SD 1 over 1971–), so its native unit
+  is **standard deviations** — a decimal deadband has no meaning in that unit. Worse, post-GFC
+  the index sits persistently *below* zero, so a symmetric band around the mean would have voted
+  **bullish nearly every week**: a factor that always votes the same way does not inform a
+  majority tally, it silently **biases** it. The bands are now **asymmetric**, each threshold
+  carrying a reason — **`NFCI_TIGHT = 0`** (the *definitional* mean; crossing it is the event)
+  and **`NFCI_LOOSE = -0.5`** (half a standard deviation below the mean, stated in the index's
+  own unit). Asymmetry is the same doctrine as the v3.40 TAILWIND withhold: tight conditions
+  *cause* drawdowns, while merely-looser-than-average is the ordinary backdrop, not a buy signal.
+  Both constants live in **one shared table** driving the tile, the regime vote and the factor
+  breakdown, so a label can never disagree with the vote it cast. The mock baseline (-0.42) now
+  lands in the NEUTRAL zone on purpose — the demo shows a factor that **abstains** in ordinary
+  conditions. Remaining judgment call, stated rather than hidden: the ½-SD loose threshold is a
+  defensible round number in the right unit, not a fitted one — FRED is still unreachable from
+  this build environment. Tests: **647 smoke** (+4, incl. exact boundary behavior at -0.5 and 0)
+  + 138 render, plus a live browser check of all three band states.
 - **Deferred:** stored fundamentals + Robinhood sync — now unblocked by the `x-tt-pin` header
   (v3.9): a chat-side daily review can PUT `status_flags`/`ref_px` into the deepDive payloads and
   stamp `lastRun`. When built, store the *triage* shape (`{at, px}` → "% moved since your last TT
@@ -1020,7 +1038,7 @@ npm run dev        # Vite dev server (mock unless VITE_DATA_MODE=live in .env)
 npm run build      # → dist/  (what Pages runs)
 npm run preview    # serve the built dist/
 
-node test/smoke.mjs   # 643-assertion no-network smoke test (needs Node ≥17)
+node test/smoke.mjs   # 647-assertion no-network smoke test (needs Node ≥17)
 npm run test:ui       # browser render test for admin.html (skips if no Chromium)
 
 # Cron Worker (separate deploy):

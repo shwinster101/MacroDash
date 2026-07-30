@@ -1641,19 +1641,46 @@ ok("nfci: it counts toward Signal Quality — a tracked live signal, not decorat
 // Zero is the historical mean by construction, so the SIGN is the signal. The deadband is
 // asserted (this environment blocks FRED, so it could not be fitted to data) — pinned here
 // so changing it is one edit plus one test, per the DEC-33 discipline.
-ok("nfci: the band table reads TIGHT above +0.10, LOOSE below -0.10, NEUTRAL across zero",
-  dashSrc.includes('const band=v>0.10?"TIGHT":v<-0.10?"LOOSE":"NEUTRAL"'));
+// v3.43.1 — the bands are DERIVED, not asserted. NFCI is standardized to mean 0 / SD 1 over
+// 1971–, so its native unit is standard deviations: 0 is the definitional mean, -0.5 is half
+// an SD below it. The old ±0.10 was a decimal with no meaning in that unit.
+ok("nfci: thresholds live in ONE shared table driving tile, vote and factor breakdown alike",
+  dashSrc.includes("const NFCI_TIGHT = 0;") && dashSrc.includes("const NFCI_LOOSE = -0.5;") &&
+  dashSrc.includes('const band=v>NFCI_TIGHT?"TIGHT":v<=NFCI_LOOSE?"LOOSE":"NEUTRAL"') &&
+  dashSrc.includes("if(n <= NFCI_LOOSE) bullVotes++; else if(n > NFCI_TIGHT) bearVotes++;"));
+ok("nfci: the tight threshold is the DEFINITIONAL mean (0), not a hand-picked decimal",
+  /const NFCI_TIGHT = 0;/.test(dashSrc) && !dashSrc.includes("0.10?\"TIGHT\""));
+ok("nfci: the bands are ASYMMETRIC — a symmetric band around zero would have voted bullish " +
+   "nearly every week post-GFC, biasing the tally instead of informing it",
+  (() => { const T = 0, L = -0.5;
+    const vote = (v) => (v <= L ? "bull" : v > T ? "bear" : "neutral");
+    return Math.abs(T) !== Math.abs(L) &&
+      vote(-0.42) === "neutral" &&   // the ordinary post-GFC backdrop abstains
+      vote(-0.60) === "bull"    &&   // genuinely accommodative
+      vote(+0.05) === "bear"    &&   // above the 1971– mean is the event itself
+      vote(0)     === "neutral";     // exactly at the mean is not "tighter than" it
+  })());
+ok("nfci: boundaries are exact — -0.5 votes bull (inclusive), 0 does not vote bear (exclusive)",
+  (() => { const T = 0, L = -0.5;
+    const vote = (v) => (v <= L ? "bull" : v > T ? "bear" : "neutral");
+    return vote(-0.5) === "bull" && vote(-0.49) === "neutral" &&
+           vote(0) === "neutral" && vote(0.01) === "bear";
+  })());
 ok("nfci: TIGHT/LOOSE is a DIRECTIONAL call, so it is suppressed on mock/stale exactly like " +
    "the CAPE BUBBLE verdict (v3.1 honesty invariant)",
   /nIllus\?\(nMode==="STALE"\?<DataModeBadge mode="STALE"\/>:<IllustrativeChip\/>\)\s*:<Badge label=\{band\}/.test(dashSrc));
 ok("nfci: the tile states its own reference point — a bare z-score is unreadable without it",
   dashSrc.includes("0 = avg"));
-ok("nfci: it votes in the DASHBOARD regime (6th factor), on the same ±0.10 band the tile renders",
-  dashSrc.includes('if(use("nfci")){') && dashSrc.includes("if(n < -0.10) bullVotes++; else if(n > 0.10) bearVotes++;"));
+ok("nfci: it votes in the DASHBOARD regime (6th factor), off the SAME shared band table the " +
+   "tile renders — one computation, two surfaces, so label and vote cannot disagree",
+  dashSrc.includes('if(use("nfci")){') && dashSrc.includes("if(n <= NFCI_LOOSE) bullVotes++; else if(n > NFCI_TIGHT) bearVotes++;"));
 ok("nfci: a STALE nfci drops out of the vote like every other factor",
   /REGIME_FACTOR_FIELDS=\[[^\]]*"nfci"\]/.test(dashSrc));
 ok("nfci: it appears in the displayed factor breakdown, so 'X/Y bullish' matches the cast vote",
-  /\{key:"nfci",\s+label:"Fin Conditions"/.test(dashSrc));
+  /\{key:"nfci",\s+label:"Fin Conditions"/.test(dashSrc) && dashSrc.includes("SD — "));
+ok("nfci: the mock baseline (-0.42) sits in the NEUTRAL zone — the demo shows a factor that " +
+   "ABSTAINS in ordinary conditions, not one wired to vote bullish by default",
+  MOCK_DATA.macro.nfci.current > -0.5 && MOCK_DATA.macro.nfci.current < 0);
 // The threshold had to generalize: DEC-31 chose ">=3 of 5" precisely because 3 of 6 is 50%,
 // not a majority — so a 6th factor against a hardcoded 3 would have re-created that bug.
 ok("nfci: the majority threshold is COMPUTED from the live voters, not a hardcoded 3",
