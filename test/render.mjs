@@ -618,6 +618,32 @@ ok("a leg with NO provenance reads as unrecorded — never assumed to be broker 
 await page.evaluate(() => switchTab("BOARD"));
 await page.waitForTimeout(150);
 
+console.log("\n[render] slice 3 — book chips and the tab strip are keyboard-reachable");
+ok("tab strip: role=tablist with one roving tabindex (only the active tab is Tab-reachable)",
+  await page.evaluate(() => {
+    const bar = document.getElementById("tabBar");
+    const tabs = [...bar.querySelectorAll('[role="tab"]')];
+    return bar.getAttribute("role") === "tablist" &&
+      tabs.filter((t) => t.tabIndex === 0).length === 1 &&
+      tabs.find((t) => t.dataset.tid === "BOARD").getAttribute("aria-selected") === "true";
+  }));
+await page.locator('#tabBar .tab[data-tid="BOARD"]').focus();
+await page.keyboard.press("ArrowRight");
+ok("tab strip: ArrowRight moves AND selects the next tab, focus follows",
+  await page.evaluate(() => TAB === "AAA" &&
+    document.activeElement === document.querySelector('#tabBar .tab[data-tid="AAA"]')));
+await page.keyboard.press("End");
+ok("tab strip: End jumps to the last tab",
+  await page.evaluate(() => document.activeElement.dataset.tid === document.querySelector("#tabBar .tab:last-child").dataset.tid));
+await page.evaluate(() => switchTab("BOARD"));
+await page.waitForTimeout(120);
+
+ok("book chips are real buttons — Enter opens the card, same as a click",
+  await page.evaluate(() => document.querySelector("#board .tier.S .chip") instanceof HTMLButtonElement));
+await page.locator("#board .tier.S .chip").first().focus();
+await page.keyboard.press("Enter");
+ok("a chip activates from the keyboard", await page.evaluate(() => document.getElementById("overlay").classList.contains("on")));
+await page.evaluate(() => closeCard());
 
 await page.close();
 
@@ -647,6 +673,11 @@ await phone.evaluate(() => document.querySelectorAll("#deepView details").forEac
 await phone.waitForTimeout(150);
 ok("no horizontal overflow at 390px on a deep-dive tab with all sections open",
   await phone.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth + 1));
+ok("slice3: dd-pt table headers are sticky at 390px so a scrolled row keeps its column labels",
+  await phone.evaluate(() => {
+    const th = document.querySelector("table.dd-pt th");
+    return !!th && getComputedStyle(th).position === "sticky";
+  }));
 // FEAT-TT-ESTRUN: the board expression must also scroll inside its container on a phone.
 await phone.evaluate(() => switchTab("BOARD"));
 await phone.waitForTimeout(200);
