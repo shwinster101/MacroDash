@@ -5,15 +5,28 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <!-- AUDIT: kept in sync with package.json by test/smoke.mjs. admin.html is a Vite
      public/ passthrough, so it cannot receive __APP_VERSION__ — the guard is the fix. -->
-<title>TT TICKER TERMINAL v3.41.0</title>
+<title>TT TICKER TERMINAL v3.42.0</title>
 <style>
   :root{
     --bg:#05070a; --panel:#0a0f16; --panel2:#0d141d; --line:#16202c;
-    --fg:#c8d6cf; --dim:#5f7469; --green:#39ff9e; --greenDim:#1f7a55;
+    /* v3.42 READABLE DESK: --dim lifted #5f7469 → #71877b. The old value measured ≈3.9:1
+       against --bg — below WCAG AA (4.5:1) — and it carries load-bearing text (labels,
+       dates, provenance) at 9–10.5px. New value ≈5.2:1 on --bg, ≈4.9:1 on --panel. */
+    --fg:#c8d6cf; --dim:#71877b; --green:#39ff9e; --greenDim:#1f7a55;
     --amber:#ffb454; --cyan:#4fd8ff; --magenta:#ff6fd8; --red:#ff5f6f;
     --slate:#8aa0b4;
     --AI:#4fd8ff; --PH:#ff6fd8; --QC:#39ff9e; --VEH:#ffb454; --SP:#ff5f6f;
+    /* v3.42 design tokens — type scale (collapses 12 scattered px literals as code
+       migrates to them) + spacing scale + focus color. Additive: existing literal
+       sizes keep working; new/edited components use the tokens. */
+    --fs-xs:10px; --fs-s:11px; --fs-m:12.5px; --fs-l:14px; --fs-xl:16px;
+    --sp-1:4px; --sp-2:8px; --sp-3:12px; --sp-4:16px;
+    --focus:var(--green);
   }
+  /* v3.42: a keyboard user must be able to SEE where they are — no ring, no keyboard UI. */
+  :focus-visible{outline:1.5px solid var(--focus);outline-offset:2px;border-radius:3px}
+  /* v3.42: decorative motion (header sweep, blinking cursor) yields to the OS setting. */
+  @media(prefers-reduced-motion:reduce){header::before,.cursor{animation:none}}
   *{box-sizing:border-box}
   html,body{margin:0;height:100%}
   body{
@@ -142,10 +155,43 @@
   .rollup{display:flex;align-items:center;gap:10px;flex-wrap:wrap;font-size:10.5px;color:var(--dim);
     letter-spacing:.04em;border:1px solid var(--line);border-radius:7px;background:#080d13;
     padding:7px 11px;margin-bottom:8px}
-  /* FEAT-TT-FOCUS2 (v3.38): the four-driver primary view */
-  .stance-strip{display:flex;align-items:center;gap:9px;flex-wrap:wrap;font-size:11px;
+  /* FEAT-TT-FOCUS2 (v3.38): the four-driver primary view.
+     v3.42 READABLE DESK: the stance strip is now a STANCE BAR — the verdict is a large
+     token (.vbadge), qualifiers are small chips (.qual), and the full prose that used to
+     wrap five phone lines lives one tap deep in details.why. v3.25 rule holds: every red
+     fact is a chip or badge that stays visible while the drawer is closed. */
+  .stance-strip{display:block;font-size:var(--fs-s);
     border:1px solid var(--line);border-radius:7px;background:#080d13;padding:6px 10px;margin-bottom:8px}
-  .stance-strip .badge{font-size:9.5px;font-weight:700;letter-spacing:.04em;cursor:pointer}
+  .stance-strip .stance-top{display:flex;align-items:center;gap:6px 8px;flex-wrap:wrap}
+  .stance-strip .stance-right{margin-left:auto;display:flex;align-items:center;gap:7px}
+  /* Paddings and tracking kept tight so the verdict token and its first qualifier chip can
+     SHARE a row at 390px — the packing is the point; loose chrome re-creates the wrap soup. */
+  .vbadge{font-size:var(--fs-l);font-weight:700;letter-spacing:.02em;padding:2px 8px;
+    border-radius:6px;border:1px solid currentColor;white-space:nowrap}
+  .qual{font-size:var(--fs-xs);border:1px solid var(--line);border-radius:8px;padding:0 6px;
+    white-space:nowrap}
+  /* badges are real BUTTONS now (focusable, Enter-activatable) — reset to look like the
+     spans they replace. */
+  .stance-strip button.badge{background:none;border:none;padding:2px;font-family:inherit;
+    font-size:9.5px;font-weight:700;letter-spacing:.04em;cursor:pointer}
+  .stance-strip details.why{margin-top:5px;border-top:1px dashed var(--line)}
+  .stance-strip details.why>summary{cursor:pointer;list-style:none;font-size:var(--fs-xs);
+    color:var(--dim);letter-spacing:.12em;text-transform:uppercase;padding:4px 0;user-select:none}
+  .stance-strip details.why>summary::-webkit-details-marker{display:none}
+  .stance-strip details.why>summary::before{content:"▸ ";color:var(--greenDim)}
+  .stance-strip details.why[open]>summary::before{content:"▾ "}
+  .stance-strip details.why>div{font-size:var(--fs-s);color:var(--slate);padding:2px 0 6px;line-height:1.55}
+  /* v3.42: semantic color utilities — retire repeated inline style="color:var(--…)". */
+  .u-dim{color:var(--dim)} .u-warn{color:var(--amber)} .u-bad{color:var(--red)} .u-ok{color:var(--green)}
+  /* v3.42: link-styled real button — replaces <span onclick> / <a href="javascript:"> for
+     actions (an anchor that navigates nowhere is not a link; a span is not focusable). */
+  button.linklike{background:none;border:none;color:var(--cyan);cursor:pointer;
+    font-family:inherit;font-size:inherit;padding:0;letter-spacing:inherit}
+  /* v3.42: thumb-sized interactive rows on phones */
+  @media(max-width:480px){
+    .stance-strip button.badge,.tabs .tab{min-height:40px;display:inline-flex;align-items:center}
+    .stance-strip details.why>summary{min-height:32px;display:flex;align-items:center}
+  }
   .fdr{margin-bottom:8px}
   .fdr .fdr-row{display:flex;align-items:baseline;gap:8px;flex-wrap:wrap;padding:3px 0;
     border-bottom:1px dashed #101a24;font-size:11.5px;cursor:pointer}
@@ -154,10 +200,17 @@
   button.rfr{background:#0c1a13;border:1px solid var(--greenDim);color:var(--green);border-radius:6px;
     padding:2px 10px;font-family:inherit;font-size:10px;letter-spacing:.08em;cursor:pointer}
   button.rfr:disabled{opacity:.5;cursor:wait}
-  /* FEAT-TT-DD (v3.12): deep-dive tabs — BOARD + one per entry carrying a payload */
-  .tabs{display:flex;gap:6px;margin-bottom:10px;flex-wrap:wrap;border-bottom:1px solid var(--line);padding-bottom:8px}
+  /* FEAT-TT-DD (v3.12): deep-dive tabs — BOARD + one per entry carrying a payload.
+     v3.42 READABLE DESK: ONE horizontally scrollable row, never a wrap. With 19 payloads
+     the old flex-wrap grid ate FIVE rows on a phone — the primary view's first screen was
+     navigation, not answers. flex-shrink:0 keeps each tab whole; the active tab is
+     scrolled into view by renderTabs(). */
+  .tabs{display:flex;gap:6px;margin-bottom:10px;flex-wrap:nowrap;overflow-x:auto;
+    -webkit-overflow-scrolling:touch;scrollbar-width:thin;
+    border-bottom:1px solid var(--line);padding-bottom:8px}
   .tabs .tab{border:1px solid var(--line);border-radius:6px;padding:5px 14px;cursor:pointer;
-    color:var(--dim);font-size:12px;letter-spacing:1px;background:#0a0f16;user-select:none}
+    color:var(--dim);font-size:12px;letter-spacing:1px;background:#0a0f16;user-select:none;
+    flex-shrink:0;white-space:nowrap}
   .tabs .tab.on{color:var(--green);border-color:var(--greenDim);background:#0c1a13}
   .dd-sec{margin:12px 0;border-top:1px dashed var(--line);padding-top:8px}
   .dd-sec .lbl{font-size:9px;letter-spacing:.16em;color:var(--dim);text-transform:uppercase;margin-bottom:6px}
@@ -240,7 +293,7 @@
 <body>
 <div class="wrap">
   <header>
-    <div class="brand">FINANCE&nbsp;BRO.AI // TT&nbsp;TICKER&nbsp;TERMINAL <small>v3.41.0 · single-pass deep-dive orchestrator</small></div>
+    <div class="brand">FINANCE&nbsp;BRO.AI // TT&nbsp;TICKER&nbsp;TERMINAL <small>v3.42.0 · single-pass deep-dive orchestrator</small></div>
     <div class="statusline">
       <span>BOOK: <b id="bookStamp">loading…</b></span>
       <span>AUTH: <b id="sessState">…</b></span>
@@ -1162,16 +1215,27 @@ const SEEN_MAX_D=7;                     // a baseline older than this is noise, 
 function stance(){
   const st=String(BOARD.circuit&&BOARD.circuit.state).toLowerCase();
   if(st==="tripped")return{k:"stop",txt:"NO NEW POSITIONS — leverage circuit tripped",
-    why:(BOARD.circuit&&BOARD.circuit.rule)||"deleverage-only until a live pull disproves it"};
+    why:(BOARD.circuit&&BOARD.circuit.rule)||"deleverage-only until a live pull disproves it",
+    verdict:"NO NEW POSITIONS",quals:[{t:"circuit TRIPPED",c:"bad"}]};
   const{measured,asserted,gov,ranked,disagree}=governingRegime();
   if(!ranked)
     return{k:"unknown",txt:"STANCE UNKNOWN — no measured or asserted regime",
-      why:"MacroDash returned "+(measured||"nothing")+" and no session regime is loaded — don't gate on this either way"};
+      why:"MacroDash returned "+(measured||"nothing")+" and no session regime is loaded — don't gate on this either way",
+      verdict:"UNKNOWN",quals:[{t:"no measured or asserted regime",c:"warn"}]};
   const both=disagree?` (measured ${measured} · asserted ${asserted} — stricter governs)`:"";
-  if(gov==="PANIC")return{k:"stop",txt:"ADDS SUSPENDED — PANIC regime"+both,why:"only S-tier at 8+ support quality is eligible"};
-  if(gov==="HEADWIND")return{k:"caution",txt:"ADDS GATED — HEADWIND regime"+both,why:"entry standards +1 notch · R/R floors +0.5×"};
-  if(st==="armed")return{k:"caution",txt:"ADDS OK — but the leverage circuit is ARMED",why:"one more leg down trips it; size accordingly"};
-  return{k:"go",txt:"ADDS OK — "+gov+" regime"+both,why:"standard entry standards apply"};
+  /* v3.42 READABLE DESK: `asserted` is free text and can run long (the 7/29 session's read
+     was 60+ chars) — inlined into prose it wrapped the stance to five phone lines. The chip
+     TRUNCATES it; the full pairing stays verbatim in `txt`, one tap deep in the why drawer. */
+  const tr=(s)=>{s=String(s);return s.length>26?s.slice(0,25)+"…":s;};
+  const dq=disagree?[{t:`⚖ measured ${measured} · asserted ${tr(asserted)} — stricter governs`,c:"warn"}]:[];
+  if(gov==="PANIC")return{k:"stop",txt:"ADDS SUSPENDED — PANIC regime"+both,why:"only S-tier at 8+ support quality is eligible",
+    verdict:"ADDS SUSPENDED",quals:[{t:"PANIC regime",c:"bad"},...dq]};
+  if(gov==="HEADWIND")return{k:"caution",txt:"ADDS GATED — HEADWIND regime"+both,why:"entry standards +1 notch · R/R floors +0.5×",
+    verdict:"ADDS GATED",quals:[{t:"HEADWIND regime",c:"warn"},{t:"entry +1 notch · R/R +0.5×",c:"warn"},...dq]};
+  if(st==="armed")return{k:"caution",txt:"ADDS OK — but the leverage circuit is ARMED",why:"one more leg down trips it; size accordingly",
+    verdict:"ADDS OK",quals:[{t:"circuit ARMED",c:"warn"}]};
+  return{k:"go",txt:"ADDS OK — "+gov+" regime"+both,why:"standard entry standards apply",
+    verdict:"ADDS OK",quals:[{t:gov+" regime",c:"ok"},...dq]};
 }
 /* The day's demands, most time-bound first. Irreversibility beats opportunity: a print
    tonight cannot be undone tomorrow, an add can always be made later. */
@@ -1575,6 +1639,10 @@ function renderTabs(){
   bar.style.display="flex";
   bar.innerHTML=`<span class="tab${TAB==="BOARD"?" on":""}" onclick="switchTab('BOARD')">BOARD</span>`+
     dds.map(x=>`<span class="tab${TAB===x.sym?" on":""}" onclick="switchTab('${x.sym}')">${esc(x.sym)}</span>`).join("");
+  // v3.42: the strip is one scrollable row now — keep the active tab in view without
+  // touching vertical scroll (block:"nearest" so a render can never yank the page).
+  const on=bar.querySelector(".tab.on");
+  if(on&&on.scrollIntoView)try{on.scrollIntoView({block:"nearest",inline:"nearest"});}catch(_e){}
   showTab();
 }
 function switchTab(t){
@@ -3181,17 +3249,28 @@ function renderStance(){
   const el=document.getElementById("stanceStrip");if(!el)return;
   el.style.display="";
   const st=stance();
-  const col={stop:"var(--red)",warn:"var(--amber)",go:"var(--green)",unknown:"var(--slate)"}[st.k]||"var(--slate)";
+  /* v3.42: "caution" now maps to amber. The old map keyed "warn", a k stance() never
+     returns, so every caution stance (HEADWIND, armed circuit) silently rendered SLATE —
+     the color of "unknown" on the one line that gates adds. */
+  const col={stop:"var(--red)",caution:"var(--amber)",go:"var(--green)",unknown:"var(--slate)"}[st.k]||"var(--slate)";
+  const QC={bad:"var(--red)",warn:"var(--amber)",ok:"var(--green)",dim:"var(--dim)"};
   const breach=capChecks().filter(c=>c.over>0).length;
   const binToday=binaryEvents().filter(e=>e.inWindow).length;
-  el.innerHTML=`<span style="color:${col};font-weight:700">${esc(st.txt)}</span>`+
-    (breach?`<span class="badge" style="color:var(--red)" onclick="openDesk('dExp')">⚠ ${breach} over cap</span>`:"")+
-    (binToday?`<span class="badge" style="color:var(--red)" onclick="openDesk('dCal')">◆ ${binToday} binaries ≤${BINARY_WINDOW_D}d</span>`:"")+
-    (CHANGED_N.n?`<span class="badge" style="color:${CHANGED_N.stops?"var(--red)":"var(--amber)"}" onclick="openDesk('dChanged')">Δ ${CHANGED_N.n} changed${CHANGED_N.stops?` · ${CHANGED_N.stops}!`:""}</span>`:"")+
-    `<span style="margin-left:auto;display:flex;align-items:center;gap:7px">`+
+  /* v3.42 READABLE DESK: verdict as a TOKEN, qualifiers as chips, full prose one tap deep.
+     Badges are real <button>s — focusable and Enter-activatable, same look. details.why is
+     deliberately NOT class="drawer": the phone harness counts open drawers, and this is
+     strip chrome, not a content drawer (the est-mini precedent). */
+  el.innerHTML=`<div class="stance-top">`+
+    `<span class="vbadge" style="color:${col}">${esc(st.verdict||st.txt)}</span>`+
+    (st.quals||[]).map(q=>`<span class="qual" style="color:${QC[q.c]||"var(--dim)"}">${esc(q.t)}</span>`).join("")+
+    (breach?`<button class="badge" style="color:var(--red)" onclick="openDesk('dExp')">⚠ ${breach} over cap</button>`:"")+
+    (binToday?`<button class="badge" style="color:var(--red)" onclick="openDesk('dCal')">◆ ${binToday} binaries ≤${BINARY_WINDOW_D}d</button>`:"")+
+    (CHANGED_N.n?`<button class="badge" style="color:${CHANGED_N.stops?"var(--red)":"var(--amber)"}" onclick="openDesk('dChanged')">Δ ${CHANGED_N.n} changed${CHANGED_N.stops?` · ${CHANGED_N.stops}!`:""}</button>`:"")+
+    `<span class="stance-right">`+
     (LIVE_AT?`<span class="scope">quotes ${esc(String(LIVE_AT).slice(11,16))}Z</span>`:"")+
     `<button class="rfr" id="refreshRanks" onclick="refreshRanks()">⟳ RANKS</button>`+
-    `<span class="badge" style="color:var(--dim)" onclick="openDesk()">DESK ▾</span></span>`;
+    `<button class="badge u-dim" onclick="openDesk()">DESK ▾</button></span></div>`+
+    `<details class="why"><summary>why</summary><div>${esc(st.txt)}${st.why?` — ${esc(st.why)}`:""}</div></details>`;
 }
 /* Open the DESK drawer (and optionally one drawer inside it), then scroll to it. */
 function openDesk(inner){
