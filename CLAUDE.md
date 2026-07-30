@@ -924,7 +924,36 @@ Jan-anchor shipped; see `snapshot.js` ~318–328), `spyMa100`, `spyMa200`, and a
   `tt-v1` checks changed. Adding a 7th voter alters the aggregate math for an external consumer
   that gates real orders, and doing that off an uncalibrated band would be precisely the failure
   DEC-33 exists to prevent. Deliberate follow-up, once real values have been observed.
-  Tests: **631 smoke** (+12) + 138 render, plus a browser check across live / stale / mock.
+  Tests: 631 smoke (+12) + 138 render, plus a browser check across live / stale / mock.
+  **NFCI now VOTES in the dashboard regime (owner call, same release).** It joins `computeRegime`
+  as a 6th factor on the same ±0.10 band the tile renders, appears in `regimeFactors` so the
+  displayed "X/Y bullish" matches the vote cast, and drops out when STALE like every other
+  factor (`REGIME_FACTOR_FIELDS`). **`/readout.json` is deliberately untouched** — the TT
+  terminal's order-gating math did not move. This forced a threshold fix: DEC-31 set "≥3 of 5 =
+  strict majority" *explicitly because 3 of 6 is 50%, not a majority*, so a 6th factor against a
+  hardcoded `3` would have silently re-created the exact bug DEC-31 removed. The rule is now
+  computed from the factors that actually voted — `bullVotes > counted/2` — which is **identical
+  to the old constant at 5 live voters** (needs 3), correct at 6 (needs 4), and finally correct
+  at 3 (needs 2, where the constant had demanded unanimity). Honest consequence: with all six
+  live a verdict is harder to trigger, so MIXED becomes more common. That is what a voter costs.
+  **Curated cuts (owner-approved).** The audit measured 24 live-backed blocks vs 12 fully-curated
+  ones, and found most curated content was *already* collapsed by FEAT-322 — so the gain here is
+  honesty and maintenance, not screen space. Cut, applying the rule already in this file's
+  history (*"SPY P/E (mock, Yahoo-dupe) cut"*): **gold** (6 curated leaves, no live source ever,
+  permanently ILLUSTRATIVE, better on Yahoo — FRED's LBMA series is discontinued so a live
+  wire-up was not a cheap alternative) · the **IPO countdown** (component, data and state) · the
+  **SpaceX S-1 panel** and the private Mag-10 entry · and **Mag-10's curated fundamentals**
+  (mkt cap, P/E, revenue, margins, FCF, capex) — the live Finnhub price + day move survive,
+  which is the half this stack actually sources. **Kept deliberately: GPU $/hr** (half the AI
+  unit-economics pair; the live token $/Mtok is the other half, and the pair exists on no retail
+  site), the **headwinds register** and the **watchlist** — those are *what the owner thinks*,
+  which is precisely what Yahoo/SA/TipRanks structurally cannot host. Peoria kept on owner call.
+  A cut has to take its **attribution** with it: the Mag-10 header still read "Ranked by market
+  cap · fundamentals curated (reviewed Q1 2026)" after the data was gone — caught in a browser
+  check, and now smoke-pinned, because a surviving label that describes deleted data is the page
+  lying about what it is showing. Result: `dashboard.jsx` 1761→1522 lines, bundle 614.9→601.4 kB.
+  Tests: **643 smoke** (+7) + 138 render, plus browser checks that every collapsible group can be
+  expanded without revealing cut content.
 - **Deferred:** stored fundamentals + Robinhood sync — now unblocked by the `x-tt-pin` header
   (v3.9): a chat-side daily review can PUT `status_flags`/`ref_px` into the deepDive payloads and
   stamp `lastRun`. When built, store the *triage* shape (`{at, px}` → "% moved since your last TT
@@ -991,7 +1020,7 @@ npm run dev        # Vite dev server (mock unless VITE_DATA_MODE=live in .env)
 npm run build      # → dist/  (what Pages runs)
 npm run preview    # serve the built dist/
 
-node test/smoke.mjs   # 631-assertion no-network smoke test (needs Node ≥17)
+node test/smoke.mjs   # 643-assertion no-network smoke test (needs Node ≥17)
 npm run test:ui       # browser render test for admin.html (skips if no Chromium)
 
 # Cron Worker (separate deploy):
