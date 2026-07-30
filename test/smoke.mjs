@@ -1006,8 +1006,10 @@ ok("today: the whole book is quoted, not just the modelled names",
   adminSrc.includes("const all=BOOK.map(x=>x.sym);") && adminSrc.includes("const syms=all.slice(0,QUOTE_CAP);"));
 ok("today: a chip with no quote shows no number at all (never a 0 that reads as flat)",
   adminSrc.includes("chg!==null?`<span class=\"chg\"") && adminSrc.includes("never a 0 or a dash"));
-ok("today: quotes arriving re-render the whole board, not just the upside widget",
-  adminSrc.includes("render();   // chips, the upside rank and the TODAY delta all read LIVE_PX"));
+// v3.42 slice 2: the render() moved into a finally — the board now re-renders on quote
+// SUCCESS AND FAILURE alike (a dead feed must resolve the skeletons, not strand them).
+ok("today: quotes settling re-renders the whole board, success or failure",
+  adminSrc.includes("finally{QUOTES_PENDING=false;render();/* chips, the upside rank and the TODAY delta all read LIVE_PX */}"));
 
 // ---- 12. FEAT-TT-POS (v3.30) — measured facts ------------------------------
 // Everything else in the book is ASSERTED and aged by lastRun. `pos` is the first MEASURED
@@ -1502,6 +1504,24 @@ ok("a11y: :focus-visible ring exists and decorative motion respects prefers-redu
   adminSrc.includes("@media(prefers-reduced-motion:reduce){header::before,.cursor{animation:none}}"));
 ok("a11y: thumb-sized tap targets at phone widths (badges + tabs ≥40px min-height ≤480px)",
   /max-width:480px[^}]*\{[\s\S]{0,200}min-height:40px/.test(adminSrc));
+
+// ---- slice 2: driver rows are grid BUTTONS; skeletons hold first-paint geometry ----------
+ok("slice2: BUY/SELL rows are real <button class=fdr-row> — focusable, Enter opens the card",
+  /<button class="fdr-row" onclick="openCard\('\$\{esc\(r\.sym\)\}'\)">/.test(adminSrc) &&
+  /\.fdr \.fdr-row\{display:grid/.test(adminSrc));
+ok("slice2: the primary datum is promoted to --fs-l on its own grid column (.fdr-p)",
+  adminSrc.includes(".fdr .fdr-p{font-size:var(--fs-l)") && adminSrc.includes('class="fdr-p"'));
+ok("slice2: a calendar event WITHOUT a book entry stays a <div> — a button that does nothing is a lie",
+  adminSrc.includes('const act=!!find(e.sym);') && adminSrc.includes('const tag=act?"button":"div";'));
+ok("slice2: skeletons render only while the FIRST load is pending, and settle on success AND failure",
+  adminSrc.includes("let QUOTES_PENDING=true,POS_PENDING=true;") &&
+  adminSrc.includes("finally{POS_PENDING=false;render();}") &&
+  adminSrc.includes('?`<div class="skel-row"></div>'));
+ok("slice2: the skeleton shimmer is gated behind prefers-reduced-motion (static placeholder otherwise)",
+  /prefers-reduced-motion:no-preference[^}]*\{\s*\.skel-row::after\{animation/.test(adminSrc));
+ok("slice2: span-onclick pseudo-links in the driver blocks became linklike buttons",
+  (adminSrc.match(/<button class="linklike"/g)||[]).length>=3 &&
+  !/renderBuyBlock[\s\S]{0,2000}<span style="cursor:pointer;color:var\(--cyan\)"/.test(adminSrc));
 
 // ═══════════ [20] FEAT-TT-PTLINT (v3.39) — the PT chain's guards ═══════════
 // The price-target chain is the terminal's moat: ptModelRows() feeds the est-run table, the WORTH

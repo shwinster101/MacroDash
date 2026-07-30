@@ -379,6 +379,26 @@ ok("stance bar: with the drawer closed the verdict + red counts are all still vi
   /NO NEW POSITIONS/.test(strip) && /over cap/.test(strip) && /binaries/.test(strip));
 ok("stance bar: badges and controls are real buttons — keyboard-reachable",
   (await page.locator("#stanceStrip button").count()) >= 4);
+// v3.42 slice 2: driver rows are grid buttons — the primary datum sits right-aligned at
+// --fs-l, and Enter activates the row like a click would.
+ok("slice2: BUY and SELL rows render as focusable buttons with a promoted primary datum",
+  (await page.locator("#buyBlock button.fdr-row").count()) >= 3 &&
+  (await page.locator("#sellBlock button.fdr-row").count()) >= 1 &&
+  (await page.locator("#buyBlock .fdr-p").count()) >= 3);
+await page.locator("#buyBlock button.fdr-row").first().focus();
+await page.keyboard.press("Enter");
+ok("slice2: a BUY row activates from the keyboard — Enter opens the TT card",
+  await page.evaluate(() => document.getElementById("overlay").classList.contains("on")));
+await page.evaluate(() => closeCard());
+ok("slice2: skeletons hold the SELL geometry while positions are pending, and never linger after",
+  await page.evaluate(() => {
+    const P = POSITIONS, f = POS_PENDING;
+    POSITIONS = {}; POS_PENDING = true; render();
+    const during = document.querySelectorAll("#sellBlock .skel-row").length > 0;
+    POSITIONS = P; POS_PENDING = f; render();
+    const after = document.querySelectorAll("#boardView .skel-row").length === 0;
+    return during && after;
+  }));
 await page.evaluate(() => refreshRanks());
 await page.waitForTimeout(600);
 ok("refresh button refetches and reports, cache window named",

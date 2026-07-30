@@ -805,10 +805,31 @@ Jan-anchor shipped; see `snapshot.js` ~318–328), `spyMa100`, `spyMa200`, and a
   utilities + `button.linklike` for later slices. Slices 2–4 (driver-row grid + skeletons,
   book/deep-dive keyboard model, modal focus traps + confirm-steps) are specced in the same
   audit and deliberately deferred.
-  Tests: **590 smoke** (+11: structured verdicts, chip truncation, why-not-drawer, the caution
-  fix, single-row tabs, tokens, contrast lift, reduced-motion, tap targets) + **113 render** (+6:
+  Tests: 590 smoke (+11: structured verdicts, chip truncation, why-not-drawer, the caution
+  fix, single-row tabs, tokens, contrast lift, reduced-motion, tap targets) + 113 render (+6:
   verdict token, closed-drawer prose, red-facts-while-closed, buttons keyboard-reachable, the
   390px height budget `<140px`, single-row tab strip).
+  **Slice 2 (same release) — the four-driver rows.** Each BUY/SELL/CALENDAR row is now a
+  two-line GRID inside a real `<button>` (focusable; Enter opens the card — render-tested with
+  an actual keypress): line 1 = identity left + the PRIMARY datum right-aligned at `--fs-l`
+  (BUY → %/yr; a forced trim → its weight, the rule already broken; a calendar event → its
+  countdown), line 2 = detail + warning chips at `--fs-xs`/dim. The old row interleaved 6–9
+  datums in one 10-11.5px flex-wrap line with the decision number lost mid-row. Every phrase is
+  verbatim from v3.41 (the render regexes pin them); a calendar event with no book entry stays
+  a `<div>` — a button that does nothing is a lie. **Skeleton rows (first-paint only):**
+  `QUOTES_PENDING`/`POS_PENDING` are true until the FIRST quotes/positions load settles —
+  while pending, an empty BUY rank or unmeasured SELL queue renders `.skel-row` placeholders
+  instead of an empty state ("not loaded yet" and "nothing there" are different facts), and
+  both loaders settle in a `finally` so a dead feed resolves the skeletons into the honest
+  empty state rather than stranding them (the board also now re-renders on quote FAILURE, not
+  just success). Shimmer is gated behind `prefers-reduced-motion`. The flags never reset to
+  true — skeletons are a first-paint device, not a refresh spinner (⟳ RANKS has its own).
+  Span-onclick pseudo-links in the driver blocks became `button.linklike`. Driver rows get the
+  44px min-height at ≤480px.
+  Tests: **596 smoke** (+6 slice-2: grid buttons, promoted primary, div-when-not-actionable,
+  pending-flag lifecycle, reduced-motion shimmer gate, linklike conversions; 1 pin updated for
+  the loadQuotes `finally`) + **116 render** (+3: focusable rows with promoted primary, a real
+  keyboard Enter opening the card, skeletons present while pending and gone after).
 - **Deferred:** stored fundamentals + Robinhood sync — now unblocked by the `x-tt-pin` header
   (v3.9): a chat-side daily review can PUT `status_flags`/`ref_px` into the deepDive payloads and
   stamp `lastRun`. When built, store the *triage* shape (`{at, px}` → "% moved since your last TT
@@ -875,7 +896,7 @@ npm run dev        # Vite dev server (mock unless VITE_DATA_MODE=live in .env)
 npm run build      # → dist/  (what Pages runs)
 npm run preview    # serve the built dist/
 
-node test/smoke.mjs   # 590-assertion no-network smoke test (needs Node ≥17)
+node test/smoke.mjs   # 596-assertion no-network smoke test (needs Node ≥17)
 npm run test:ui       # browser render test for admin.html (skips if no Chromium)
 
 # Cron Worker (separate deploy):
