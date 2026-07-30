@@ -54,6 +54,10 @@ export const BANDS = {
   shillerPe:    [3, 100],      // was an inline guard in fetchShiller; centralized here
   creditSpread: [0, 30],
   tokenBlendedMtok: [0, 10000],
+  // NFCI is standardized to mean 0 / SD 1 over its full 1971– history. Its record high is
+  // ~+3.3 (2008-10) and its record low ~-1.0, so ±5 rejects the impossible (a decimal shift,
+  // a parse fault) without rejecting the unusual — the same rule that keeps negative WTI.
+  nfci:         [-5, 5],
 };
 // True when v is absent (nothing to judge) or inside its band. Unbanded fields pass.
 export function plausible(key, v) {
@@ -271,6 +275,14 @@ async function fetchFred(key) {
     btc:          "CBBTCUSD",
     hySpread:     "BAMLH0A0HYM2",  // ICE BofA US HY OAS — daily credit risk gauge
     igSpread:     "BAMLC0A0CM",    // ICE BofA US IG OAS — investment-grade counterpart
+    // FEAT-NFCI (v3.43): Chicago Fed National Financial Conditions Index. WEEKLY (released
+    // Wednesday for the week ending the prior Friday). 105 underlying measures across money
+    // markets, debt/equity markets and the banking system — standardized so that ZERO is the
+    // historical average by construction, POSITIVE = tighter than average, NEGATIVE = looser.
+    // Chosen over TLT/2s10s as the single highest-leverage addition: it is the one free series
+    // that restates this dashboard's own thesis question ("is it safe to be in the market?")
+    // as a number, and it is effectively absent from retail finance sites.
+    nfci:         "NFCI",
   };
   // FEAT-R10: these arrive as a price INDEX; the dashboard wants year-over-year %.
   // We pull enough monthly history to derive YoY (latest vs 12 months prior) plus a
@@ -369,6 +381,13 @@ async function fetchFred(key) {
     // Inflation: `spark` here is the 6-point YoY trend computed in the fetcher.
     if (field === "cpiHeadline") out.cpiTrend = spark;
     if (field === "pceHeadline") out.pceTrend = spark;
+    // FEAT-NFCI (v3.43): a WEEKLY series, so `prev` (vals[1]) is genuinely one week back —
+    // the W1 suffix is accurate here, unlike the D1 the daily fields use. NOT in the DAILY
+    // set, so the idx[5]/idx[21] offsets are correctly never applied to it.
+    if (field === "nfci") {
+      if (!isNaN(prev)) out.nfciW1 = parseFloat((latest - prev).toFixed(3));
+      out.nfciSeries = spark;   // ~10 weeks
+    }
     // Credit spreads: capture D1 and intermediate series for cross-field derivation below.
     if (field === "hySpread") {
       if (!isNaN(prev)) out.hySpreadD1 = parseFloat((latest - prev).toFixed(4));

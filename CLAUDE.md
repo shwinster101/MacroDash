@@ -885,6 +885,46 @@ Jan-anchor shipped; see `snapshot.js` ~318–328), `spyMa100`, `spyMa200`, and a
   **Measured after: header 209→59, toolbar 64→0, stance 148→54, BUY 587→269 — 70%→32%.**
   Tests: **619 smoke** (+8) + **138 render** (+8, incl. both stance states driven live and a
   pinned above-the-fold budget for each, so chrome creeping back fails the build).
+- **FEAT-NFCI (v3.43) — financial conditions, and the "what is high-leverage vs Yahoo" question.**
+  Asked whether to add **TLT**; the answer is no, and the reasoning is the reusable part. TLT is
+  not new information — it is a ~17-duration wrapper on long-end Treasury yields, i.e. a
+  monotonic inverse transform of the `tenYear` this page already carries with d1/w1/m1 deltas, a
+  sparkline and a banded trend that votes. It would add an ETF's expense drag and distribution
+  adjustments on top of a rate already displayed cleanly. The page had already made this exact
+  call once — `dashboard.jsx` still carries the comment *"SPY P/E (mock, Yahoo-dupe) cut"*.
+  **The sorting rule:** Yahoo/SA/TipRanks win on *data* (quotes, charts, estimates, analyst PTs,
+  per-ticker depth) and will always win there. What they structurally do NOT do is (1) render a
+  single **verdict**, (2) **abstain** — none of them has ever said "this number is three days
+  stale, I am not counting it", which is this project's whole provenance/STALE/ILLUSTRATIVE/
+  INSUFFICIENT layer, (3) expose a **machine feed** (`/readout.json` → the TT terminal), (4)
+  carry **non-consensus inputs** (Kalshi FOMC odds; the GPU $/hr × token $/Mtok AI unit-economics
+  pair, which exists on no retail site), or (5) state **why** (the 5 Whys). *The moat is the
+  judgment layer, not the data layer* — so an addition earns its place only by feeding it.
+  **NFCI is the one that does.** The Chicago Fed's National Financial Conditions Index is 105
+  measures of money-market, debt/equity and banking activity standardized so that **ZERO is the
+  historical average by construction** — positive = tighter than average, negative = looser. It
+  is a weekly single number that restates this dashboard's own thesis question ("is it safe to be
+  in the market?"), and it is effectively absent from retail finance sites. Wired through the
+  existing `fetchFred` path (16 series now = **one additional batch of 5**, which is why the
+  phase batching must not be collapsed), with `nfciW1` derived from the prior observation —
+  genuinely a week on a weekly series — plus `nfciSeries`. **Deliberately NOT in the `DAILY`
+  set**: the `idx[5]`/`idx[21]` offsets would mean 5 and 21 *weeks*, exactly the bug that gating
+  exists to prevent. Band `[-5, 5]` (record high ≈ +3.3 in 2008) rejects the impossible without
+  rejecting the unusual. Cadence `weekly`; the derivatives inherit it through the v3.41
+  `DERIVED_OF` parent fallback in `cadenceOf` rather than needing their own entries. The tile
+  sits beside HY–IG because both are risk-**transmission** gauges: credit prices the risk, NFCI
+  measures how tight the plumbing carrying it has become. It states `0 = avg` on its face — a
+  bare z-score is unreadable without its reference point — and **TIGHT/LOOSE is suppressed on
+  mock/stale** exactly like the CAPE BUBBLE verdict, since it is a directional call.
+  **Two honest limits.** (a) The ±0.10 deadband around zero is **asserted, not fitted** — this
+  build environment's network policy blocks `fred.stlouisfed.org` (403 on CONNECT), so it could
+  not be calibrated against real history; it exists only so a weekly series doesn't flap its
+  label on a 0.01 wiggle across the mean, and every boundary is smoke-tested so changing it is
+  one edit plus one test. (b) **It does not vote yet** — neither `computeRegime` nor the six
+  `tt-v1` checks changed. Adding a 7th voter alters the aggregate math for an external consumer
+  that gates real orders, and doing that off an uncalibrated band would be precisely the failure
+  DEC-33 exists to prevent. Deliberate follow-up, once real values have been observed.
+  Tests: **631 smoke** (+12) + 138 render, plus a browser check across live / stale / mock.
 - **Deferred:** stored fundamentals + Robinhood sync — now unblocked by the `x-tt-pin` header
   (v3.9): a chat-side daily review can PUT `status_flags`/`ref_px` into the deepDive payloads and
   stamp `lastRun`. When built, store the *triage* shape (`{at, px}` → "% moved since your last TT
@@ -951,7 +991,7 @@ npm run dev        # Vite dev server (mock unless VITE_DATA_MODE=live in .env)
 npm run build      # → dist/  (what Pages runs)
 npm run preview    # serve the built dist/
 
-node test/smoke.mjs   # 619-assertion no-network smoke test (needs Node ≥17)
+node test/smoke.mjs   # 631-assertion no-network smoke test (needs Node ≥17)
 npm run test:ui       # browser render test for admin.html (skips if no Chromium)
 
 # Cron Worker (separate deploy):
