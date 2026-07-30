@@ -860,9 +860,31 @@ Jan-anchor shipped; see `snapshot.js` ~318–328), `spyMa100`, `spyMa200`, and a
   duplicated. The toast gains `role="status" aria-live="polite" aria-atomic="true"`, so a
   save/refresh confirmation is announced without requiring focus; no change to `toast()`
   itself, `textContent` updates inside a live region announce automatically.
-  Tests: **611 smoke** (+8) + **130 render** (+8: real Tab/Shift+Tab trap, Escape-returns-focus
+  Tests: 611 smoke (+8) + 130 render (+8: real Tab/Shift+Tab trap, Escape-returns-focus
   to the invoking chip, an actual two-click confirm sequence and its 4s expiry, and the live
   region's ARIA attributes — all driven in Chromium against the synthetic fixture).
+  **Slice 5 (same release) — "only the highest-leverage things survive the first glance."**
+  Owner feedback on a live screenshot, and the measurement settled it: at 390×844 the BUY block
+  — the first actual ANSWER — began at **y=587 of 844, so 70% of the first screen was chrome**,
+  and **the header alone was 209px of it, larger than the stance bar and tab strip combined**.
+  Slices 1–2 had optimized the two bands that were circled while the biggest consumer went
+  untouched (it was item 3 of the approved spec's IA section and was simply never built).
+  **The header is now ONE row** — `TT` · the MACRO pill · `⋯ MENU`; version, BOOK/AUTH stamps,
+  the DASH link and the *entire* action toolbar moved inside the `#headInfo` disclosure, since
+  every one of them is status or an occasional action and the command bar already covers the
+  frequent path. **Banners stay OUTSIDE it** — an expired session or an unsaved edit must never
+  require opening a menu to discover. The `MACRO:` label survives the compaction because v3.29
+  added it so the pill can't be misread as the stance (honesty invariant, not decoration), and
+  the pill drops the **year** only when it IS the current year — a year-stale macro read still
+  prints in full. **The stance became ASYMMETRIC**, which is the heart of the feedback: `ADDS OK`
+  is the permissive default, the lowest-leverage sentence on the board, and now renders as a
+  small pill and nothing else — no token, no qualifier chips, no why drawer. A RESTRICTIVE
+  stance (tripped · PANIC · HEADWIND · UNKNOWN) keeps the full treatment. Nothing is lost:
+  `renderToday()` already renders `txt` AND `why` verbatim inside DESK, one tap away. The **red
+  badges render in BOTH states** — the v3.25 rule that a collapse never hides a red fact.
+  **Measured after: header 209→59, toolbar 64→0, stance 148→54, BUY 587→269 — 70%→32%.**
+  Tests: **619 smoke** (+8) + **138 render** (+8, incl. both stance states driven live and a
+  pinned above-the-fold budget for each, so chrome creeping back fails the build).
 - **Deferred:** stored fundamentals + Robinhood sync — now unblocked by the `x-tt-pin` header
   (v3.9): a chat-side daily review can PUT `status_flags`/`ref_px` into the deepDive payloads and
   stamp `lastRun`. When built, store the *triage* shape (`{at, px}` → "% moved since your last TT
@@ -929,7 +951,7 @@ npm run dev        # Vite dev server (mock unless VITE_DATA_MODE=live in .env)
 npm run build      # → dist/  (what Pages runs)
 npm run preview    # serve the built dist/
 
-node test/smoke.mjs   # 611-assertion no-network smoke test (needs Node ≥17)
+node test/smoke.mjs   # 619-assertion no-network smoke test (needs Node ≥17)
 npm run test:ui       # browser render test for admin.html (skips if no Chromium)
 
 # Cron Worker (separate deploy):

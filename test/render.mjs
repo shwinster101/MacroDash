@@ -702,6 +702,45 @@ ok("the toast element is a live region (role=status, aria-live=polite) — annou
     return t.getAttribute("role") === "status" && t.getAttribute("aria-live") === "polite";
   }));
 
+console.log("\n[render] slice 5 — only the highest-leverage things survive the first glance");
+ok("slice5: the MACRO pill drops the year when it IS the current year, so it fits one header row",
+  /·\s\d{2}-\d{2}$/.test((await txt(page, "regimePill")).trim()));
+ok("slice5: the header's status + toolbar start hidden behind ⋯ MENU, and the pill stays out",
+  await page.evaluate(() => document.getElementById("headInfo").style.display === "none" &&
+    document.getElementById("regimePill").offsetParent !== null &&
+    document.getElementById("headToggle").getAttribute("aria-expanded") === "false"));
+await page.evaluate(() => toggleHeadInfo());
+ok("slice5: ⋯ MENU reveals BOOK/AUTH and the action toolbar, and reports aria-expanded",
+  await page.evaluate(() => document.getElementById("headInfo").style.display !== "none" &&
+    document.getElementById("bookStamp").offsetParent !== null &&
+    document.getElementById("backupToggle").offsetParent !== null &&
+    document.getElementById("headToggle").getAttribute("aria-expanded") === "true"));
+await page.evaluate(() => toggleHeadInfo());
+// The asymmetry, driven live: flip the fixture from its tripped/PANIC state to a fully
+// permissive one and confirm the strip collapses to a pill while the red badges survive.
+const perm = await page.evaluate(() => {
+  const keepC = BOARD.circuit.state, keepA = BOARD.regime.asserted, keepM = REGIME.regime.verdict;
+  BOARD.circuit.state = "clear"; BOARD.regime.asserted = "TAILWIND"; REGIME.regime.verdict = "TAILWIND";
+  render();
+  const el = document.getElementById("stanceStrip");
+  const res = {
+    txt: el.innerText, vbadge: el.querySelectorAll(".vbadge").length,
+    why: el.querySelectorAll("details.why").length,
+    pill: (el.querySelector(".qual") || {}).textContent || "",
+    h: Math.round(el.querySelector(".stance-top").getBoundingClientRect().height),
+  };
+  BOARD.circuit.state = keepC; BOARD.regime.asserted = keepA; REGIME.regime.verdict = keepM;
+  render();
+  return res;
+});
+ok(`slice5: a permissive stance collapses to a small pill — no token, no why drawer (${perm.h}px)`,
+  perm.vbadge === 0 && perm.why === 0 && /ADDS OK/.test(perm.pill) && perm.h < 90);
+ok("slice5: ...but its red badges still render — a collapse never hides a red fact",
+  /over cap/.test(perm.txt) && /binaries/.test(perm.txt));
+ok("slice5: a restrictive stance still gets the full token + why drawer treatment",
+  (await page.locator("#stanceStrip .vbadge").count()) === 1 &&
+  (await page.locator("#stanceStrip details.why").count()) === 1);
+
 await page.close();
 
 // ── phone pass ──────────────────────────────────────────────────────────────
@@ -718,6 +757,30 @@ ok(`stance bar top row is compact at 390px — token and chips, never five lines
   stanceTopH < 140);
 ok("the tab strip is ONE row at 390px — it scrolls horizontally, it never wraps",
   (await phone.locator("#tabBar").boundingBox()).height < 60);
+// v3.42 slice 5 — the headline metric. Measured at 390x844 before this slice: the BUY block
+// began at y=587 of an 844px viewport, so 70% of the first screen was spent on chrome before
+// the first answer (the header alone was 209px of it). These budgets are the whole point of
+// the slice; if chrome creeps back, this fails rather than quietly eating the fold again.
+// BOTH states are pinned, because they are deliberately different sizes: this fixture runs
+// RESTRICTIVE (tripped circuit), which keeps the full-size stance bar on purpose, while the
+// everyday PERMISSIVE board collapses it to a pill.
+const buyTopRestrictive = Math.round((await phone.locator("#buyBlock").boundingBox()).y);
+const buyTopPermissive = await phone.evaluate(() => {
+  const keepC = BOARD.circuit.state, keepA = BOARD.regime.asserted, keepM = REGIME.regime.verdict;
+  BOARD.circuit.state = "clear"; BOARD.regime.asserted = "TAILWIND"; REGIME.regime.verdict = "TAILWIND";
+  render();
+  const y = Math.round(document.getElementById("buyBlock").getBoundingClientRect().y + window.scrollY);
+  BOARD.circuit.state = keepC; BOARD.regime.asserted = keepA; REGIME.regime.verdict = keepM;
+  render();
+  return y;
+});
+// This fixture carries three red badges (a cap breach, binaries in window, and a changed
+// count), which wrap the stance strip to ~2 rows — that is legitimate high-leverage content,
+// not chrome, so the permissive budget accounts for it rather than pretending it away.
+ok(`slice5: on an everyday PERMISSIVE board the first ANSWER is high on screen — BUY at y=${buyTopPermissive} of 844, was 587`,
+  buyTopPermissive < 360);
+ok(`slice5: even RESTRICTIVE (full stance bar, by design) the BUY block still clears the fold — y=${buyTopRestrictive}`,
+  buyTopRestrictive < 460);
 ok("every drawer starts closed except what-changed",
   (await phone.locator("#boardView details.drawer[open]").count()) <= 1);
 ok("no horizontal overflow at 390px",
