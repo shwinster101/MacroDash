@@ -644,6 +644,63 @@ await page.locator("#board .tier.S .chip").first().focus();
 await page.keyboard.press("Enter");
 ok("a chip activates from the keyboard", await page.evaluate(() => document.getElementById("overlay").classList.contains("on")));
 await page.evaluate(() => closeCard());
+await page.waitForTimeout(80);
+
+console.log("\n[render] slice 4 — modal focus management, destructive confirm, live toast");
+await page.locator("#board .tier.S .chip").first().click();
+await page.waitForTimeout(120);
+ok("opening a card moves focus INSIDE it — never left stranded on the page behind it",
+  await page.evaluate(() => document.querySelector("#overlay .card").contains(document.activeElement)));
+const trapped = await page.evaluate(() => {
+  const card = document.querySelector("#overlay .card");
+  const foc = [...card.querySelectorAll('button,[href],input,select,textarea,[tabindex]:not([tabindex="-1"])')]
+    .filter((el) => el.offsetParent !== null);
+  return { count: foc.length, firstId: foc[0]?.id || foc[0]?.tagName, lastId: foc[foc.length - 1]?.id || foc[foc.length - 1]?.tagName };
+});
+ok("the card has a real focusable boundary to trap (more than zero controls)", trapped.count > 0);
+await page.evaluate(() => document.querySelector("#overlay .card button,#overlay .card [href],#overlay .card input,#overlay .card select,#overlay .card textarea")?.focus());
+await page.keyboard.press("Shift+Tab");
+ok("Shift+Tab from the FIRST control wraps to the LAST — focus can't escape the modal backward",
+  await page.evaluate(() => {
+    const card = document.querySelector("#overlay .card");
+    const foc = [...card.querySelectorAll('button,[href],input,select,textarea,[tabindex]:not([tabindex="-1"])')].filter((el) => el.offsetParent !== null);
+    return document.activeElement === foc[foc.length - 1];
+  }));
+await page.keyboard.press("Escape");
+await page.waitForTimeout(80);
+ok("Escape closes the card AND returns focus to the chip that opened it",
+  !(await page.evaluate(() => document.getElementById("overlay").classList.contains("on"))) &&
+  (await page.evaluate(() => document.activeElement && document.activeElement.className.includes("chip"))));
+
+// v3.42 slice 4c: the destructive save-banner actions need a SECOND click within the confirm
+// window. Drive showUnsaved() directly (no network dependency) and click the discard link twice.
+await page.evaluate(() => showUnsaved("simulated failure", undefined));
+const firstClickLabel = await page.evaluate(() => {
+  document.getElementById("cfDiscard").click();
+  return document.getElementById("cfDiscard").textContent;
+});
+ok("first click on a destructive banner link ARMS it — it does not fire the action yet",
+  /confirm — really/i.test(firstClickLabel) &&
+  (await page.locator("#saveBanner").innerText()).includes("simulated failure"));
+await page.evaluate(() => document.getElementById("cfDiscard").click());
+await page.waitForTimeout(150);
+ok("the second click within the window runs the real action (discardLocal reloads the book)",
+  await page.evaluate(() => document.getElementById("saveBanner").style.display === "none"));
+
+// The confirm must also EXPIRE — an armed link left alone must not stay armed forever.
+await page.evaluate(() => showUnsaved("expiry check"));
+const armedLabel = await page.evaluate(() => { document.getElementById("cfDiscard").click(); return document.getElementById("cfDiscard").textContent; });
+await page.waitForTimeout(4300);
+const revertedLabel = await page.evaluate(() => document.getElementById("cfDiscard")?.textContent);
+ok("an armed confirm reverts its label on its own after the window elapses",
+  /confirm — really/i.test(armedLabel) && revertedLabel === "discard & reload server copy");
+await page.evaluate(() => { document.getElementById("saveBanner").style.display = "none"; });
+
+ok("the toast element is a live region (role=status, aria-live=polite) — announced without focus",
+  await page.evaluate(() => {
+    const t = document.getElementById("toast");
+    return t.getAttribute("role") === "status" && t.getAttribute("aria-live") === "polite";
+  }));
 
 await page.close();
 

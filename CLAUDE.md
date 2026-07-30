@@ -826,10 +826,43 @@ Jan-anchor shipped; see `snapshot.js` ~318–328), `spyMa100`, `spyMa200`, and a
   true — skeletons are a first-paint device, not a refresh spinner (⟳ RANKS has its own).
   Span-onclick pseudo-links in the driver blocks became `button.linklike`. Driver rows get the
   44px min-height at ≤480px.
-  Tests: **596 smoke** (+6 slice-2: grid buttons, promoted primary, div-when-not-actionable,
+  Tests: 596 smoke (+6 slice-2: grid buttons, promoted primary, div-when-not-actionable,
   pending-flag lifecycle, reduced-motion shimmer gate, linklike conversions; 1 pin updated for
-  the loadQuotes `finally`) + **116 render** (+3: focusable rows with promoted primary, a real
+  the loadQuotes `finally`) + 116 render (+3: focusable rows with promoted primary, a real
   keyboard Enter opening the card, skeletons present while pending and gone after).
+  **Slice 3 (same release) — book chips and the tab strip.** Tier chips become real
+  `<button type=button>`s (Enter/Space activation for free; the CUT row deliberately stays
+  `<div>` — those chips have no click handler, and a button doing nothing is a lie). The tab
+  strip becomes a real ARIA tablist: `role="tablist"` + `role="tab"` + `aria-selected` +
+  **roving tabindex** (only the active tab sits in the natural Tab order — the WAI-ARIA APG
+  pattern), with Arrow/Home/End moving AND selecting, matching native tablist behavior;
+  `switchTab()`'s own logic is untouched. Drawer/schema summary type migrated onto `--fs-s`
+  (no visible change — the token equals the literal). `table.dd-pt th` gets `position:sticky`
+  at ≤700px so a phone-scrolled row keeps its column labels (desktop unaffected). Chips get
+  the 40px thumb target at ≤480px.
+  Tests: 603 smoke (+7) + 122 render (+6, incl. a real keyboard arrow-key tab switch
+  and Enter-to-open-card on a chip, both driven in Chromium).
+  **Slice 4 (same release) — modals and recovery.** `#overlay` is ONE element reused by all 9
+  open sites (card, add, session, import, restore, pin-setup); each `classList.add("on")` call
+  became `openModal()`, and `closeCard()` is now a thin wrapper (`CURRENT=null;closeModal();`)
+  — one choke point instead of nine, and every existing `onclick="closeCard()"` keeps working
+  unchanged. `openModal()` remembers `document.activeElement` and moves focus into the card on
+  open; `closeModal()` restores it — a card opened from a chip returns focus to that chip, not
+  the page underneath. A `Tab`/`Shift+Tab` listener scoped to `#overlay` traps focus at the
+  card's boundary (WAI-ARIA APG dialog pattern), wired once, not duplicated per modal.
+  **`#pinGate` is deliberately NOT part of this pair** — same invariant as always ("so ESC/
+  closeCard can never dismiss it"); its own show/hide is untouched. The save banner's two
+  destructive links (`KEEP MINE` → `overwriteServer`, `discard & reload server copy` →
+  `discardLocal`) now require a **second click** within a 4s window — first click arms the
+  link ("confirm — really …?"), a second executes, letting it expire reverts the label
+  silently; `RETRY`/`EXPORT` stay single-click since they're non-destructive. One
+  `confirmLink()`/`confirmClick()` implementation, reused by both banner builders — not
+  duplicated. The toast gains `role="status" aria-live="polite" aria-atomic="true"`, so a
+  save/refresh confirmation is announced without requiring focus; no change to `toast()`
+  itself, `textContent` updates inside a live region announce automatically.
+  Tests: **611 smoke** (+8) + **130 render** (+8: real Tab/Shift+Tab trap, Escape-returns-focus
+  to the invoking chip, an actual two-click confirm sequence and its 4s expiry, and the live
+  region's ARIA attributes — all driven in Chromium against the synthetic fixture).
 - **Deferred:** stored fundamentals + Robinhood sync — now unblocked by the `x-tt-pin` header
   (v3.9): a chat-side daily review can PUT `status_flags`/`ref_px` into the deepDive payloads and
   stamp `lastRun`. When built, store the *triage* shape (`{at, px}` → "% moved since your last TT
@@ -896,7 +929,7 @@ npm run dev        # Vite dev server (mock unless VITE_DATA_MODE=live in .env)
 npm run build      # → dist/  (what Pages runs)
 npm run preview    # serve the built dist/
 
-node test/smoke.mjs   # 596-assertion no-network smoke test (needs Node ≥17)
+node test/smoke.mjs   # 611-assertion no-network smoke test (needs Node ≥17)
 npm run test:ui       # browser render test for admin.html (skips if no Chromium)
 
 # Cron Worker (separate deploy):
