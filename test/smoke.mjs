@@ -1161,7 +1161,7 @@ ok("divergence: needs MOVE_PCT worth of price move, reusing the existing thresho
   adminSrc.includes("if(Math.abs(pxMove)<MOVE_PCT)return;"));
 ok("spread: impliedMultiple inverts the SAME row ptModelRows computed (no second calculation)",
   adminSrc.includes("function impliedMultiple(t,px)") &&
-  adminSrc.includes("sh,nc,revFwd:rev[fwd],epsFwd:e};"));
+  adminSrc.includes("sh,nc,revFwd:rev[fwd],epsFwd:e,pe};"));
 ok("spread: a floor-only row (no premium multiple) renders no spread — nothing to invert",
   adminSrc.includes("if(!onFloor){") && adminSrc.includes("const imp=impliedMultiple(t,px);"));
 ok("spread: street PT excludes bear/floor/severe columns, the same dim rule ddPtConsensusSec uses",

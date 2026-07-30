@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <!-- AUDIT: kept in sync with package.json by test/smoke.mjs. admin.html is a Vite
      public/ passthrough, so it cannot receive __APP_VERSION__ — the guard is the fix. -->
-<title>TT TICKER TERMINAL v3.38.0</title>
+<title>TT TICKER TERMINAL v3.38.1</title>
 <style>
   :root{
     --bg:#05070a; --panel:#0a0f16; --panel2:#0d141d; --line:#16202c;
@@ -240,7 +240,7 @@
 <body>
 <div class="wrap">
   <header>
-    <div class="brand">FINANCE&nbsp;BRO.AI // TT&nbsp;TICKER&nbsp;TERMINAL <small>v3.38.0 · single-pass deep-dive orchestrator</small></div>
+    <div class="brand">FINANCE&nbsp;BRO.AI // TT&nbsp;TICKER&nbsp;TERMINAL <small>v3.38.1 · single-pass deep-dive orchestrator</small></div>
     <div class="statusline">
       <span>BOOK: <b id="bookStamp">loading…</b></span>
       <span>AUTH: <b id="sessState">…</b></span>
@@ -1690,7 +1690,7 @@ function ptModelRows(dd){
     // additive fields — but impliedMultiple() can now invert the SAME numbers the ladder
     // used, so a spread can never quote a multiple the row above it would disagree with.
     return {y,prem,fl,mult:earnLens?pePrem:mult,lens:earnLens?"P/E":"EV/S",
-      sh,nc,revFwd:rev[fwd],epsFwd:e};
+      sh,nc,revFwd:rev[fwd],epsFwd:e,pe};
   }).filter(r=>r.prem!==null||r.fl!==null);
 }
 /* FEAT-TT-SPREAD (v3.33): what multiple is the CURRENT price actually paying for, on the
@@ -1960,7 +1960,7 @@ function ddWorth(dd,sym){
     }
   }
   return{txt:`$${tgt} ${t.y} · <span style="color:${up>=0?"var(--green)":"var(--red)"}">${up>=0?"+":""}${up}%</span>`,
-    sub:`${onFloor?"floor (18× FY+1 EPS)":"premium"} vs ${live?"live":"stamped"} $${px}${ann!==null?` · ${ann>=0?"+":""}${ann}%/yr`:""}${pxFlag}${substituted}${spread}${street}`};
+    sub:`${onFloor?`floor (${esc(t.pe)}× FY+1 EPS)`:"premium"} vs ${live?"live":"stamped"} $${px}${ann!==null?` · ${ann>=0?"+":""}${ann}%/yr`:""}${pxFlag}${substituted}${spread}${street}`};
 }
 function ddNextDate(dd,todayET){
   const ks=(Array.isArray(dd.key_dates)?dd.key_dates:[])
@@ -2626,8 +2626,8 @@ function renderUpsideRank(){
   const years=[...new Set(cands.flatMap(c=>c.rr.map(r=>r.y)))].sort();
   const rows=[];
   cands.forEach(({x,dd,ref,rr})=>{
-    // Premium if the owner asserted one; otherwise the FLOOR (18x FY+1 EPS, the S&P-average
-    // benchmark). A floor-ranked name makes no forecast about the multiple at all — it asks
+    // Premium if the owner asserted one; otherwise the FLOOR (the name's own pe_floor_multiple
+    // × FY+1 EPS). A floor-ranked name makes no forecast about the multiple at all — it asks
     // only "what is this worth at a market multiple on forward earnings", which is the one
     // basis that needs no assumption and stays comparable across names.
     const target=HORIZON?rr.find(r=>r.y===HORIZON):rr[0];
@@ -2713,7 +2713,9 @@ function renderUpsideRank(){
       })()}${divergenceChip(r.sym,DIVERGENCE[r.sym])}${pxFlag}${flag}${r.live?`<span class="scope" style="color:var(--green)">live $${esc(r.px)}${r.chg!=null?` ${r.chg>=0?"+":""}${r.chg}%`:""}</span>`:`<span class="scope">stamped $${esc(r.px)}</span>`}</span>`;
   }).join("");
   // AUDIT: silent truncation reads as "covered everything". State the denominator.
-  const excluded=BOOK.length-rows.length;
+  // (cands, not rows: with a horizon pinned, no-rung names are counted separately below —
+  // counting them here too would tag them with the wrong reason.)
+  const excluded=BOOK.length-cands.length;
   const caveats=shown.filter(r=>r.caveat)
     .map(r=>`<div style="color:var(--amber);font-size:10px;margin-top:2px">⚠ ${esc(r.sym)}: ${esc(r.caveat)}</div>`).join("");
   // With a horizon pinned every % shares one year, so the mixed-horizon warning must NOT
@@ -2727,7 +2729,7 @@ function renderUpsideRank(){
     (HORIZON?` · all % share the ${esc(HORIZON)} horizon`:` · horizons differ, each % is to its own year`)+
     (()=>{const l=rows.filter(r=>r.live).length;
       return l===rows.length?` · all prices LIVE`:l?` · ${l} live / ${rows.length-l} on stamped marks`:` · all prices are stamped marks, not live`;})()+
-    ` · "floor" = 18× FY+1 EPS (S&P-average benchmark, no re-rating assumed); "premium" = the owner's asserted multiple`+
+    ` · "floor" = the name's own pe_floor_multiple × FY+1 EPS (12–18× across the book — no re-rating assumed); "premium" = the owner's asserted multiple`+
     ` · weights are % of TRACKED BOOK (a floor — NAV unmeasured), equity-only, so ◇ opt-only names show none</div>`+
     // FEAT-TT-RANKFAIR: the coverage gap the two rankings hid. Queue names carrying a manual
     // rank but NO pt_model can never appear above — the names under active consideration were
