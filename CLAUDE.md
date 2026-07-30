@@ -121,7 +121,7 @@ worker/                 SEPARATE Cloudflare Worker (not part of Pages)
   wrangler.toml         Worker config: PULSE_CACHE binding + cron triggers (UTC).
 
 test/
-  smoke.mjs             No-network smoke test: 528 assertions over mergeLiveOverMock
+  smoke.mjs             No-network smoke test: 556 assertions over mergeLiveOverMock
                         + SOURCES-path resolution against the real MOCK_DATA + the
                         5-Whys engine + DEC-31 guards + the TT band table (DEC-33)
                         + the market-holiday calendar (sessions + staleness).
@@ -454,7 +454,7 @@ Jan-anchor shipped; see `snapshot.js` ~318–328), `spyMa100`, `spyMa200`, and a
   so smoke can only pin load-bearing STRINGS; that catches deletions but not a strip that renders
   empty, a drawer that hides a red thing, a dead click, or a template literal that throws. This
   serves the real file with a stubbed `/api/tt` + `/readout.json` + `/api/quotes` and drives it in
-  Chromium at **390px and 1200px** (95 assertions). It has already caught bugs the source guards
+  Chromium at **390px and 1200px** (103 assertions). It has already caught bugs the source guards
   could not. **The fixture is SYNTHETIC** — no real ticker, position or session content enters
   this repo, same invariant as `SEED`/`BOARD`. It **skips cleanly (exit 0)** when playwright-core
   or a browser is missing, so it is additive and never breaks `npm test` on a bare machine.
@@ -635,6 +635,67 @@ Jan-anchor shipped; see `snapshot.js` ~318–328), `spyMa100`, `spyMa200`, and a
   in sync as always. **This is a stopgap, not the fix**: splitting `deepDive` payloads out of
   the book into their own KV document (same pattern `pos` and the ledger already proved) is
   the permanent answer and remains deliberately deferred — a bigger, separate piece of scope.
+- **FEAT-TT-PTLINT (v3.39) — guards for the chain the whole terminal hangs on.** An audit of the
+  price-target chain confirmed what it was supposed to: `ptModelRows()` really is the single
+  computation every decision surface reads (est-run table · `ddWorth` · `renderUpsideRank`→
+  `UPSIDE_ROWS`→`AGREE_PICK` · `renderBuyBlock` · `sellRank` · `renderEstRunBoard` ·
+  `impliedMultiple`), and both lenses tie out dimensionally. The moat is real and is where we
+  thought. What the audit also found is that **`validateDeepDive` had never once inspected
+  `pt_model` or `consensus`** — the highest-leverage input in the system was the only one with no
+  validator, which is how NVDA's schedule came to be keyed at the ESTIMATE years instead of the
+  YEAR-END PRICED: `schedAt()` looks backward only, found no key ≤ the first row, returned `null`,
+  and the rung **silently fell through to the floor** — $135 (−29%) rendered with full confidence
+  where the model meant $227 (+16%), every rung a year late. Two days of hand-audits became five
+  guards. **`lintPtModel(dd)`** emits `MISKEY` (error) · `LENS` (a profitable name on the sales
+  lens — the TSM/UBER rule, *warned* never auto-switched, since the lens is owner judgement) ·
+  `LENSOFF` (the mirror trap: a P/E premium that cannot engage for want of positive EPS) ·
+  `ORPHAN` (a key `schedAt` would never select — computed against the *selected* set, because a
+  key below the row range may legitimately be the backward match every row resolves to; keys
+  *beyond* the estimate series are deliberately not flagged, that being the reason the auto
+  horizon stops where it does) · `NOFLOOR` (suppressed when the payload carries `basis`/`note`,
+  which is the deliberately-UNRANKED case, not a defect). **`MISKEY` is the one HARD gate**, wired
+  into the save path — measured across the live book at **zero instances**, so no existing payload
+  can be rejected on re-save, and a genuinely-late premium declares itself with `floor_only_before`
+  instead of being indistinguishable from a typo. Lints render at **both altitudes** (the name's
+  tab and the whole-book ranking), because a defect nobody opens is invisible.
+  **The horizon is now COMPUTED, not asserted (D1).** `HZ_DEFAULT="2028"` became wrong the moment
+  three models were built whose estimates end FY2028 (last rung YE2027): pinning 2028 dropped TSM,
+  LITE and GOOGL out of the ranking entirely, disclosed only as a footnote count. Measured: 2028
+  ranked 12/15, `nearest` ranked 15/15 but off a ~5-month rung that annualises small gaps into
+  nonsense (−73%/yr, −83%/yr, −99%/yr rows; JOBY flipping +48%/yr→−8%/yr), **2027 ranked 15/15
+  coherently**. `autoHorizon()` picks the deepest year-end EVERY modelled name reaches — 2027
+  today, self-advancing when those three carry FY2029, so the staleness cannot recur — and the
+  chip **states the pick and its rule** (an auto horizon that looked deliberate is how 2028
+  survived). `HZ_AUTO` is a distinct sentinel: `""` already means the owner chose `nearest`.
+  **One `pickRow()` for all three surfaces (D2).** They each chose differently — the rank honoured
+  the horizon, `sellRank` always took the nearest and then silently swapped a RAW % in for a rate
+  (`if(ann===null)ann=up`), `renderEstRunBoard` took `rows[0]` — so BUY and SELL could rank the
+  same name off different years with the sort key quietly changing units. `pickRow` also settles
+  the **Q4 cliff**: under `ANN_MIN_Y` it ROLLS to the next rung and says so, rather than letting a
+  raw gap into an annualised order (from ~Oct 1 a +8%-in-2-months rung ≈ +58%/yr would have sorted
+  *below* a +40%/yr name). Both residual cases are disclosed, never absorbed, and a modelled name
+  lacking only a *rate* is no longer mislabelled "no model".
+  **Red hinges surface, never veto (D3)** — the board reports, it does not enforce (the
+  FEAT-TT-BINCAL doctrine): `why()` is untouched, but the AGREE line and the compact BUY row now
+  **name** the red hinges, so a pick can no longer light green with its entry trigger broken and
+  say nothing where the decision is read. **Derived estimates are marked (`consensus.derived`,
+  optional, `{year:["rev","eps"]})`** reusing the existing `.derived` class — and because a rung
+  computed off a derived estimate is itself derived, **the marker propagates to the target**,
+  otherwise the honest flag would stop exactly where the money decision starts (TSM's FY27-29
+  revenue is company guidance, LITE's FY28 EPS an extrapolation, GOOGL's FY27/28 both — all
+  previously admitted in prose only, rendering identically to a 25-analyst row).
+  **Option legs get per-leg provenance and a real bug fix (D4).** `ddOptSec` claimed "from broker
+  sync" for every leg while several were hand-entered from screenshots — two of them originally
+  typed with the wrong call/put side, a *risk-direction* error (a short put ADDS exposure where a
+  short call covers it), which is exactly the class of mistake a false provenance claim hides. `src`
+  is optional and enum-checked in `validatePos`, absent reads **"provenance unrecorded"**, never
+  as sync. And the trim-blocker cover filter (`admin.html:1204`) **ignored `o.exp` entirely** — an
+  already-expired short call still counted as cover in the one place the board says a trim is
+  blocked, while `renderOptLadder` flagged the same leg "expired?" two drawers away; expired and
+  undated legs are now excluded and counted separately, with strikes named.
+  Tests: **556 smoke** (the section includes the **first behavioral tests of `admin.html`'s pure
+  logic** — the PT functions are lifted out by name and executed, with the Q4 cliff proved against
+  a **stubbed clock** since no July date can put a year-end inside 3 months) + **103 render**.
 - **Deferred:** stored fundamentals + Robinhood sync — now unblocked by the `x-tt-pin` header
   (v3.9): a chat-side daily review can PUT `status_flags`/`ref_px` into the deepDive payloads and
   stamp `lastRun`. When built, store the *triage* shape (`{at, px}` → "% moved since your last TT
@@ -701,7 +762,7 @@ npm run dev        # Vite dev server (mock unless VITE_DATA_MODE=live in .env)
 npm run build      # → dist/  (what Pages runs)
 npm run preview    # serve the built dist/
 
-node test/smoke.mjs   # 528-assertion no-network smoke test (needs Node ≥17)
+node test/smoke.mjs   # 556-assertion no-network smoke test (needs Node ≥17)
 npm run test:ui       # browser render test for admin.html (skips if no Chromium)
 
 # Cron Worker (separate deploy):

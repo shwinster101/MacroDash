@@ -361,6 +361,14 @@ export function validatePos(p) {
       if (!["long", "short"].includes(String(o.side))) return "option leg side must be long|short";
       if (!isFinite(Number(o.n)) || Number(o.n) <= 0) return "option leg n must be a positive contract count";
       if (o.exp !== undefined && !ISO_RE.test(String(o.exp))) return "option leg exp must be YYYY-MM-DD";
+      // FEAT-TT-PTLINT (v3.39): per-leg provenance. The UI claimed "from broker sync" for EVERY
+      // leg, but several were hand-entered from broker SCREENSHOTS — and two of those were typed
+      // with the wrong call/put side, which is a RISK-DIRECTION error (a short put adds exposure
+      // where a short call covers it). Optional so no existing leg is rejected; absent reads as
+      // "provenance unrecorded" in the UI, never as sync — the same fail-closed rule as an
+      // undated pos.at. An unknown value is rejected rather than passed through as if meaningful.
+      if (o.src !== undefined && !["sync", "screenshot", "manual"].includes(String(o.src)))
+        return "option leg src must be sync|screenshot|manual";
     }
   }
   return null;

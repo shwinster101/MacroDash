@@ -79,6 +79,12 @@ const POS = (sh, mv, pct, extra = {}) => ({ sh, mv, pct, at: `${TODAY_ET}T14:32:
 const BOOK = [
   { sym: "AAA", tier: "WATCH", lens: "AI", rank: "#1", lastRun: etDaysAgo(1), note: "queued",
     deepDive: dd(800, { 2027: 55, 2028: 62, 2029: 70 }, { 2027: 40, 2028: 46, 2029: 52 }, {
+      // FEAT-TT-PTLINT (v3.39): FY2027 is marked DERIVED, which must dim/italicise that row's
+      // rev+eps cells AND propagate to the target computed off them (the FY2027 estimates price
+      // the year-end-2026 rung). Chosen deliberately so the 2028-row assertions below — $509,
+      // 8x EV/S, -36.4% — keep testing the ladder rather than the marker.
+      consensus: { revenue_B: { 2027: 55, 2028: 62, 2029: 70 }, eps: { 2027: 40, 2028: 46, 2029: 52 },
+        derived: { 2027: ["rev", "eps"] } },
       // FEAT-TT-SPREAD (v3.33): pt_consensus on the SAME horizon (2028, fwd=2029) as the
       // pt_model row — lets the test confirm the "street $X vs mine $Y" confrontation.
       // "severe" is deliberately excluded from the street average (same dim rule as
@@ -103,14 +109,24 @@ const BOOK = [
 // FEAT-TT-OWNDEBT (v3.35): AAA carries cost basis + P/L + a strikeless put (the
 // strike-only-when-captured path); EEE is OPTIONS-ONLY (no shares — the LITE case, which
 // used to render as unheld), its leg expiring inside OPT_NEAR_D so the amber flag fires.
+// FEAT-TT-PTLINT (v3.39): leg provenance is per-leg and optional. AAA's leg is broker-synced,
+// EEE's came off a screenshot (the class that was mistyped call-for-put in the live book), and
+// FFF's carry NONE — which must read as unrecorded, never as sync.
 const POSITIONS = {
   AAA: POS(30, 24000, 21.4, { cb: 18000, upl_pct: 33.3,
-    opt: [{ k: "put", side: "long", n: 1, exp: etDaysAgo(-140) }] }),
+    opt: [{ k: "put", side: "long", n: 1, exp: etDaysAgo(-140), src: "sync" }] }),
   BBB: POS(10, 6090, 5.1),
   CCC: POS(700, 114100, 9.9),
   EEE: { at: `${TODAY_ET}T14:32:00Z`, src: "test", mv: 4200,
-    opt: [{ k: "call", side: "long", n: 2, strike: 100, exp: etDaysAgo(-52) }] },
-  FFF: POS(412, 30104, 4.2, { opt: [{ k: "call", side: "short", n: 3, strike: 50, exp: "2028-01-21" }] }),
+    opt: [{ k: "call", side: "long", n: 2, strike: 100, exp: etDaysAgo(-52), src: "screenshot" }] },
+  // FFF funds the deleverage line, so its short calls are what the trim blocker is verified
+  // against. The SECOND leg is deliberately EXPIRED: before v3.39 the cover filter ignored exp
+  // entirely, so an expired short call still "covered" shares in the one place the board says a
+  // trim is blocked — while the expiry ladder flagged the same leg "expired?" two drawers away.
+  FFF: POS(412, 30104, 4.2, { opt: [
+    { k: "call", side: "short", n: 3, strike: 50, exp: "2028-01-21" },
+    { k: "call", side: "short", n: 5, strike: 40, exp: etDaysAgo(30) },
+  ] }),
 };
 const BOARD = {
   as_of: TODAY_ET, source: "synthetic fixture", verified: false,
@@ -206,7 +222,13 @@ ok("today names tonight's print before anything discretionary", /MACROEVT prints
 ok("a single-name cap breach is a TODAY stop", /AAA is 21\.4% of NAV — 3\.4pts over the 18% cap/.test(today));
 ok("a cluster cap breach is a TODAY stop", /Cluster .*is 36\.4% of NAV — 18\.4pts over the 18% cap/.test(today));
 ok("the deleverage line carries real size", /FFF is first to trim — 412 sh, \$30k \(4\.2% of NAV\)/.test(today));
-ok("the blocker is verified against real option legs", /3 short call\(s\) cover 300 of 412 sh/.test(today));
+// FEAT-TT-PTLINT (v3.39): only LIVE legs cover, and the strike is named rather than every short
+// call counting alike. FFF holds 3 live contracts (exp 2028) + 5 EXPIRED ones: the cover claim
+// must count 300 shares, not 800, and must say the expired leg was dropped.
+ok("the blocker is verified against real option legs — expired ones cover nothing",
+  /3 live short call\(s\) cover 300 of 412 sh @ \$50/.test(today) &&
+  /1 more expired or undated, NOT counted/.test(today) &&
+  !/cover 800/.test(today));
 ok("no add candidate is offered while a stop is live", !/Add candidate/.test(today));
 
 console.log("\n[render] drawers — a closed drawer never hides a red thing");
@@ -299,7 +321,9 @@ ok("funding marks an off-book trim candidate", /off-book/.test(fund));
 const ladder = await txt(page, "optLadder");
 // case-insensitive: the .lbl class renders through text-transform:uppercase.
 ok("expiry ladder lists every measured leg book-wide, sorted by expiry",
-  /Option expiries — 3 legs across 3 names/i.test(ladder) &&
+  // 4 legs: AAA long put, EEE long call, FFF's live short call + FFF's expired one (v3.39 —
+  // an expired leg is still LISTED here; what changed is that it no longer counts as cover).
+  /Option expiries — 4 legs across 3 names/i.test(ladder) &&
   /EEE/.test(ladder) && /FFF/.test(ladder) && /2028-01-21/.test(ladder));
 ok("a leg inside the 60d window is flagged amber on the ladder", /⚠/.test(ladder));
 // textContent: the summary is CSS-uppercased and the drawer may be closed on a real visit.
@@ -377,8 +401,14 @@ console.log("\n[render] FEAT-TT-ESTRUN — the board expression inside NEXT DOLL
 const estBoard = await txt(page, "estRunBoard");
 ok("every modelled name gets a row, denominator stated",
   /3 modelled of 7/i.test(estBoard) && /AAA/.test(estBoard) && /BBB/.test(estBoard));
-ok("each row carries the nearest target and its annualised upside",
-  /\$400 by 2026/.test(estBoard) && /%\/yr|%/.test(estBoard));
+// FEAT-TT-PTLINT (v3.39, D1+D2): this list used rows[0] (always nearest) while the ranking
+// honoured the horizon — two altitudes of the same board naming different years. All three
+// surfaces now share pickRow(), so every row here targets the horizon in force. The fixture's
+// auto horizon is 2027: AAA and JJJ reach 2028 but BBB's estimates stop at 2027, and the auto
+// rule picks the deepest year EVERY modelled name reaches.
+ok("every row targets the horizon in force, not its own nearest rung (auto = 2027 here)",
+  /\$451 by 2027/.test(estBoard) && /%\/yr/.test(estBoard) &&
+  (estBoard.match(/by 2027/g) || []).length === 3 && !/by 2026/.test(estBoard));
 await page.evaluate(() => { document.querySelector("#estRunBoard details").open = true; });
 await page.waitForTimeout(120);
 ok("a row expands to the SAME per-year table the deep dive renders",
@@ -395,6 +425,12 @@ await page.waitForTimeout(150);
 console.log("\n[render] deep-dive tab — four answers, corpus in drawers");
 await page.evaluate(() => switchTab("AAA"));
 await page.waitForTimeout(300);
+// FEAT-TT-PTLINT (v3.39, D1): the default horizon is now COMPUTED (deepest year-end every
+// modelled name reaches), so the assertions below — which pin a specific 2028 rung's arithmetic
+// to test the SPREAD, not the horizon — pin the horizon explicitly first. This is the same
+// action the owner takes by tapping the 2028 chip; auto-mode is asserted separately above.
+await page.evaluate(() => setHorizon("2028"));
+await page.waitForTimeout(120);
 const dv = (await page.locator("#deepView").innerText()).replace(/\s+/g, " ");
 ok("the four answers render above the corpus",
   /WHAT IT'S WORTH/i.test(dv) && /WHAT CHANGES MY MIND/i.test(dv) && /WHEN/i.test(dv) && /WHAT I OWN/i.test(dv));
@@ -477,6 +513,74 @@ await page.evaluate(() => applyHandoff());
 await page.waitForTimeout(200);
 ok("a new name without tier+lens is rejected whole, with a precise message",
   (await page.locator("#toast").innerText()).includes("III is new to the book"));
+// ── FEAT-TT-PTLINT (v3.39) — the PT chain's guards, rendered ────────────────
+console.log("\n[render] FEAT-TT-PTLINT — model lints, auto horizon, derived marks, leg provenance");
+await page.evaluate(() => { setHorizon("auto"); switchTab("BOARD"); });
+await page.waitForTimeout(200);
+const rankTxt = await txt(page, "upsideRank");
+// D1: the auto pick must SAY it is auto and say WHY — an auto horizon that looked deliberate is
+// how "2028" survived long enough to silently drop three modelled names from the ranking.
+ok("the auto horizon states itself and its rule, never passing as a deliberate choice",
+  /auto · year-end 2027/i.test(rankTxt) && /deepest year EVERY modelled name reaches/i.test(rankTxt));
+// Every modelled+priced name must appear — the D1 bug was that a pinned year silently dropped
+// names whose estimates ended earlier. Asserted as a PROPERTY (all three modelled names ranked,
+// no drop notice) rather than a tally: an earlier handoff-merge test adds a name to BOOK, so a
+// hardcoded denominator here would be test-order dependent.
+ok("every modelled+priced name is ranked at the auto horizon (nothing silently dropped)",
+  /AAA/.test(rankTxt) && /BBB/.test(rankTxt) && /JJJ/.test(rankTxt) &&
+  !/dropped for having no/.test(rankTxt) && /all % share the 2027 horizon/i.test(rankTxt));
+
+// The whole-book lint: a mis-keyed schedule must be named at the altitude the ranking is read,
+// not only on a tab nobody opened. Mutated in-page then restored, so no fixture count shifts.
+const lintSeen = await page.evaluate(() => {
+  const keep = JSON.parse(JSON.stringify(BOOK[0].deepDive.pt_model));
+  // Key the schedule at the ESTIMATE years instead of the year-end priced — the NVDA bug.
+  BOOK[0].deepDive.pt_model.ev_s_multiple = { 2028: 8, 2029: 7 };
+  render();
+  const board = document.getElementById("upsideRank").innerText;
+  switchTab("AAA");
+  const tab = document.getElementById("deepView").innerText;
+  BOOK[0].deepDive.pt_model = keep;
+  switchTab("BOARD"); render();
+  return { board, tab };
+});
+ok("a mis-keyed multiple schedule is named on the BOARD, not just buried on its tab",
+  /MIS-KEYED/i.test(lintSeen.board) && /AAA/.test(lintSeen.board) &&
+  /the rung shown is a floor fallback/i.test(lintSeen.board));
+ok("...and the name's own tab explains it, naming the year-end-priced convention",
+  /MISKEY/.test(lintSeen.tab) && /YEAR-END PRICED/i.test(lintSeen.tab));
+await page.waitForTimeout(150);
+
+// D4 + derived marks live on the deep-dive tab.
+await page.evaluate(() => switchTab("AAA"));
+await page.waitForTimeout(250);
+const der = await page.evaluate(() => {
+  const dv = document.getElementById("deepView");
+  return { cells: dv.querySelectorAll("td.derived").length, txt: dv.innerText,
+           legs: dv.innerText };
+});
+ok("derived estimate cells are marked, and the marker PROPAGATES to targets computed off them",
+  // FY2027 rev + eps + that row's floor + the 2026 rung's premium and upside cells.
+  der.cells >= 4 && /°/.test(der.txt));
+ok("the derived legend says what italic means — an extrapolation, not a pulled analyst row",
+  /DERIVED/.test(der.txt) && /not a pulled analyst row/i.test(der.txt));
+ok("per-leg provenance renders, and the footer no longer claims broker sync for every leg",
+  /\bsync\b/.test(der.legs) && /verify side/i.test(der.legs) &&
+  !/from broker sync ·/.test(der.legs));
+const unrec = await page.evaluate(() => {
+  const keep = JSON.parse(JSON.stringify(POSITIONS.AAA));
+  POSITIONS.AAA.opt = [{ k: "call", side: "short", n: 1, exp: "2029-01-19" }];   // no src
+  renderDeepDive("AAA");
+  const t = document.getElementById("deepView").innerText;
+  POSITIONS.AAA = keep; renderDeepDive("AAA");
+  return t;
+});
+ok("a leg with NO provenance reads as unrecorded — never assumed to be broker data",
+  /no provenance recorded on 1 leg/i.test(unrec) && /not verifiable as broker data/i.test(unrec));
+await page.evaluate(() => switchTab("BOARD"));
+await page.waitForTimeout(150);
+
+
 await page.close();
 
 // ── phone pass ──────────────────────────────────────────────────────────────

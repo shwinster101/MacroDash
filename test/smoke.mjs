@@ -537,14 +537,18 @@ ok("upside: surfaces the payload's own pt_model caveat (stored is never invisibl
 // value; the year must be the owner's choice, and a pinned year must be honoured exactly.
 // Invariant, not literal: a HORIZON state exists, the setter normalises falsy -> null
 // (so "nearest" is one value, not several), and it triggers a re-render.
-ok("hz: horizon state + setter normalises to null and re-renders",
-  /let HORIZON=/.test(adminSrc) && /function setHorizon\(y\)\{[\s\S]{0,220}HORIZON=y\|\|null;[\s\S]{0,220}renderUpsideRank\(\);/.test(adminSrc));
+ok("hz: horizon state + setter normalises and re-renders every surface that reads it",
+  /let HORIZON=/.test(adminSrc) &&
+  /function setHorizon\(y\)\{[\s\S]{0,400}renderUpsideRank\(\);/.test(adminSrc) &&
+  // v3.39: ddWorth/estRunTable read effHorizon() too, so a change while parked on a tab must
+  // redraw it — otherwise the WORTH cell quotes the previous year.
+  /function setHorizon\(y\)\{[\s\S]{0,700}if\(TAB!=="BOARD"\)renderDeepDive\(TAB\);/.test(adminSrc));
 ok("hz: a pinned horizon selects that exact rung, never a substitute year",
-  adminSrc.includes("const target=HORIZON?rr.find(r=>r.y===HORIZON):rr[0];"));
+  adminSrc.includes("if(hz&&!at)return null;"));
 ok("hz: names lacking the chosen year are dropped AND counted (no silent substitution)",
-  adminSrc.includes("const noRung=HORIZON?cands.length-rows.length:0;") && adminSrc.includes("no ${esc(HORIZON)} rung"));
+  adminSrc.includes("const noRung=hz?cands.length-rows.length:0;") && adminSrc.includes("no ${esc(hz)} rung"));
 ok("hz: the mixed-horizon warning flips off once every % shares one year",
-  adminSrc.includes("all % share the ${esc(HORIZON)} horizon"));
+  adminSrc.includes("all % share the ${esc(hz)} horizon"));
 ok("hz: selector offers nearest plus the union of available rung years",
   adminSrc.includes('hzBtn("","nearest")') && adminSrc.includes("years.map(y=>hzBtn(y,y))"));
 ok("hz: empty-at-this-horizon renders its own message, not the no-data one",
@@ -554,9 +558,13 @@ ok("hz: empty-at-this-horizon renders its own message, not the no-data one",
 ok("cagr: annualises the gap over time-to-year-end", adminSrc.includes("function yrsToYearEnd(y)") &&
   adminSrc.includes("Math.pow(1+pct/100,1/t)-1"));
 ok("cagr: withholds annualisation under ~3 months (amplifies noise) and at total loss",
-  adminSrc.includes("if(!(t>=0.25)||pct<=-100)return null;"));
-ok("cagr: the board SORTS on the annualised figure, not the raw gap",
-  adminSrc.includes("const key=r=>r.ann!==null?r.ann:r.upside;") && adminSrc.includes("rows.sort((a,b)=>key(b)-key(a));"));
+  adminSrc.includes("const ANN_MIN_Y=0.25;") && adminSrc.includes("if(!(t>=ANN_MIN_Y)||pct<=-100)return null;"));
+// v3.39 FEAT-TT-PTLINT (D2): the old fallback `r.ann!==null?r.ann:r.upside` put a RAW gap and a
+// RATE in the same sort — from ~Oct 1 a near rung would rank on the wrong scale. Names with no
+// annualisable rung now sort last and are named, never interleaved at the wrong unit.
+ok("cagr: the board SORTS on the annualised figure only — a raw gap never enters the same order",
+  adminSrc.includes("rows.sort((a,b)=>(b.ann===null?-Infinity:b.ann)-(a.ann===null?-Infinity:a.ann));") &&
+  !adminSrc.includes("const key=r=>r.ann!==null?r.ann:r.upside;"));
 ok("cagr: pick shows %/yr with the raw gap and its year kept visible",
   adminSrc.includes("%/yr") && adminSrc.includes("% by ${esc(r.y)}"));
 ok("cagr: header states the ranking is annualised so horizons compare",
@@ -569,12 +577,23 @@ ok("ptm: a rungless pt_model still renders its reasoning (never stored-but-invis
 ok("ptm: rungless case says deliberately unranked, not overlooked",
   adminSrc.includes("deliberately UNRANKED, not overlooked"));
 // v3.23: default horizon + owner-editable floor multiple.
-ok("hz: defaults to 2028, not nearest (shared clock, past the trough year)",
-  adminSrc.includes('HZ_DEFAULT="2028"'));
+// v3.39 FEAT-TT-PTLINT (D1): the hardcoded "2028" default became WRONG the moment three models
+// were built whose estimate series end at FY2028 (last computable rung YE2027) — pinning 2028
+// dropped them out of the ranking entirely, disclosed only as a footnote count. The default is
+// now COMPUTED: the deepest year-end EVERY modelled name reaches, so the staleness cannot recur.
+ok("hz: the default is COMPUTED (deepest fully-covered year), never a hardcoded year",
+  !adminSrc.includes('HZ_DEFAULT="2028"') && adminSrc.includes('HZ_AUTO="auto"') &&
+  adminSrc.includes("function autoHorizon()") &&
+  adminSrc.includes("const shared=sets.reduce((a,b)=>a.filter(y=>b.includes(y)));"));
+ok("hz: auto resolves per render, because BOOK is empty at parse time and grows as models land",
+  adminSrc.includes("function effHorizon(){return HORIZON===HZ_AUTO?autoHorizon():HORIZON;}") &&
+  adminSrc.includes("const hz=effHorizon(),isAuto=HORIZON===HZ_AUTO;"));
+ok("hz: an auto pick STATES itself — it must not look like a deliberate choice",
+  adminSrc.includes("the deepest year EVERY modelled name reaches"));
 ok("hz: the horizon choice persists across visits",
   adminSrc.includes('localStorage.setItem(HZ_KEY') && adminSrc.includes("localStorage.getItem(HZ_KEY)"));
-ok("hz: persistence distinguishes 'never set' from 'set to nearest'",
-  adminSrc.includes('v===null?HZ_DEFAULT:(v||null)'));
+ok("hz: persistence distinguishes 'never set' (auto) from 'set to nearest' (explicit)",
+  adminSrc.includes("v===null?HZ_AUTO:(v||null)"));
 ok("mult: floor multiple is owner-editable and re-computes every rung",
   adminSrc.includes("async function saveFloorMultiple(sym)") && adminSrc.includes("m.pe_floor_multiple=v;"));
 ok("mult: an edited multiple is stamped so it cannot pass as the 18x default",
@@ -1300,6 +1319,142 @@ ok("refresh: the button refetches quotes+positions+regime and reports the quote-
   adminSrc.includes("server caches 2 min"));
 ok("refresh: the button disables while in flight and always re-enables",
   adminSrc.includes("b.disabled=true") && adminSrc.includes("finally{if(b){b.disabled=false"));
+
+// ═══════════ [20] FEAT-TT-PTLINT (v3.39) — the PT chain's guards ═══════════
+// The price-target chain is the terminal's moat: ptModelRows() feeds the est-run table, the WORTH
+// cell, the BUY rank, AGREE, the SELL rank and the spread. An audit confirmed the one-computation
+// property held — but found that validateDeepDive had NEVER inspected pt_model or consensus, which
+// is how NVDA's schedule came to be keyed at ESTIMATE years instead of the YEAR-END PRICED: schedAt
+// looks backward only, found no key <= the first row, and the rung SILENTLY fell to the floor
+// ($134.85 / -29% shown where the model meant $226.77 / +16%).
+console.log("\n[20] FEAT-TT-PTLINT — model lints, the horizon, and the Q4 roll");
+
+// These are the FIRST BEHAVIORAL tests of admin.html's pure logic. admin.html is buildless, so
+// this file could only ever pin strings; the PT math is load-bearing enough to deserve real
+// execution. We lift the pure functions out by name and run them — no DOM, no browser.
+function liftFns(src, names) {
+  const out = names.map((n) => {
+    const i = src.indexOf(`function ${n}(`);
+    if (i < 0) throw new Error(`smoke: cannot lift ${n}() from admin.html`);
+    let depth = 0;
+    for (let k = src.indexOf("{", i); k < src.length; k++) {
+      if (src[k] === "{") depth++;
+      else if (src[k] === "}") { depth--; if (!depth) return src.slice(i, k + 1); }
+    }
+    throw new Error(`smoke: unbalanced braces lifting ${n}()`);
+  }).join("\n");
+  return out;
+}
+const PT = new Function(
+  liftFns(adminSrc, ["schedAt", "ptModelRows", "ptRowYears", "lintPtModel"]) +
+  "\nreturn {schedAt,ptModelRows,ptRowYears,lintPtModel};")();
+
+// THE NVDA FAILURE, reconstructed: 4 multiples keyed at the estimate years.
+const Y = new Date().getFullYear();
+const miskeyed = {
+  consensus: { revenue_B: { [Y + 1]: 393.6, [Y + 2]: 560.75 }, eps: { [Y + 1]: 8.99, [Y + 2]: 12.87 } },
+  pt_model: { ev_s_multiple: { [Y + 1]: 14, [Y + 2]: 12 }, pe_floor_multiple: 15, share_count_M: 24300 },
+};
+const mkLints = PT.lintPtModel(miskeyed);
+ok("ptlint: a schedule keyed at the ESTIMATE year (the NVDA bug) is an ERROR, not a shrug",
+  mkLints.some((l) => l.sev === "error" && l.code === "MISKEY"));
+ok("ptlint: the MISKEY message names the convention AND the row that silently floors",
+  /YEAR-END PRICED/.test(mkLints.find((l) => l.code === "MISKEY").msg) &&
+  /falls through to the floor/.test(mkLints.find((l) => l.code === "MISKEY").msg));
+ok("ptlint: and the bug it describes is real — that row's premium IS null, so the floor is used",
+  // fmt() rounds >=100 to whole dollars, so 15 x 8.99 = 134.85 renders 135 (the NVDA figure).
+  PT.ptModelRows(miskeyed)[0].prem === null && PT.ptModelRows(miskeyed)[0].fl === Math.round(15 * 8.99));
+// Re-keying to the priced year is the fix, and it must clear the error.
+const fixed = JSON.parse(JSON.stringify(miskeyed));
+fixed.pt_model.ev_s_multiple = { [Y]: 14, [Y + 1]: 12 };
+ok("ptlint: re-keying to the year-end priced clears MISKEY and computes the real premium",
+  !PT.lintPtModel(fixed).some((l) => l.code === "MISKEY") &&
+  typeof PT.ptModelRows(fixed)[0].prem === "number" && PT.ptModelRows(fixed)[0].prem > 0);
+// A deliberately-late premium must be expressible, or the hard error would block a legitimate
+// payload — the escape hatch is a DECLARATION, not a silent ambiguity.
+const declared = JSON.parse(JSON.stringify(miskeyed));
+declared.pt_model.floor_only_before = String(Y + 1);
+ok("ptlint: floor_only_before lets a deliberately-late premium declare itself instead of erroring",
+  !PT.lintPtModel(declared).some((l) => l.code === "MISKEY"));
+// Lens doctrine (the TSM/UBER rule) — a WARN, never an auto-switch: the lens is owner judgement.
+ok("ptlint: a profitable name on the sales lens warns (earnings-lens candidate), never auto-switches",
+  PT.lintPtModel(fixed).some((l) => l.sev === "warn" && l.code === "LENS"));
+ok("ptlint: the mirror trap — a P/E premium that cannot engage for want of positive EPS",
+  PT.lintPtModel({ consensus: { eps: { [Y + 1]: -2 }, revenue_B: { [Y + 1]: 5 } },
+    pt_model: { pe_premium_multiple: 30, pe_floor_multiple: 18 } })
+    .some((l) => l.code === "LENSOFF"));
+// A pt_model that explains its own unranked state is a DECISION, not a defect.
+ok("ptlint: an unranked model carrying basis/note is left alone — it already says why",
+  !PT.lintPtModel({ pt_model: { share_count_M: 100, basis: "pre-profit", note: "deliberate" },
+    consensus: { revenue_B: { [Y + 1]: 1 } } }).some((l) => l.code === "NOFLOOR"));
+ok("ptlint: a schedule reaching PAST the estimate series is not flagged — that is not a defect",
+  !PT.lintPtModel({ consensus: { eps: { [Y + 1]: 5, [Y + 2]: 6 } },
+    pt_model: { pe_premium_multiple: { [Y]: 20, [Y + 1]: 18, [Y + 9]: 10 }, pe_floor_multiple: 18 } })
+    .some((l) => l.code === "ORPHAN"));
+ok("ptlint: MISKEY is the ONE hard gate wired into the save path; the rest only warn",
+  adminSrc.includes('const hard=lintPtModel(dd).filter(l=>l.sev==="error");') &&
+  adminSrc.includes("if(hard.length)return hard[0].msg;"));
+ok("ptlint: lints render at BOTH altitudes — the name's tab and the whole-book ranking",
+  adminSrc.includes("h+=lintLines(dd);") && adminSrc.includes("MIS-KEYED — the rung shown is a floor fallback"));
+
+// D2: the Q4 cliff. pickRow must ROLL rather than let a raw gap enter an annualised sort. Today's
+// date cannot exercise this (in July no future year-end is inside 3 months), so the clock is
+// STUBBED — the rule is tested, not the calendar.
+const ROLL = new Function(
+  "const ANN_MIN_Y=0.25;\nlet NOW_Y=0;\nfunction yrsToYearEnd(y){return NOW_Y[y];}\n" +
+  liftFns(adminSrc, ["pickRow"]) +
+  "\nreturn {pickRow,setClock:(m)=>{NOW_Y=m;}};")();
+const near = [{ y: "2030", prem: 110 }, { y: "2031", prem: 150 }];
+ROLL.setClock({ 2030: 0.10, 2031: 1.10 });   // the near rung is ~5 weeks out
+const rolled = ROLL.pickRow(near, null);
+ok("cliff: a rung inside ~3 months ROLLS to the next one and reports what it rolled from",
+  rolled.row.y === "2031" && rolled.rolled === "2030");
+ROLL.setClock({ 2030: 0.60, 2031: 1.60 });
+ok("cliff: a rung outside the window is used as-is, with no roll claimed",
+  ROLL.pickRow(near, null).row.y === "2030" && ROLL.pickRow(near, null).rolled === null);
+ROLL.setClock({ 2030: 0.10 });
+ok("cliff: when NOTHING is far enough out, the near rung is kept (never dropped silently)",
+  ROLL.pickRow([{ y: "2030", prem: 110 }], null).row.y === "2030");
+ROLL.setClock({ 2030: 0.60, 2031: 1.60 });
+ok("cliff: a pinned year the name lacks is EXCLUDED, never substituted with another year",
+  ROLL.pickRow(near, "2099") === null && ROLL.pickRow(near, "2031").row.y === "2031");
+ok("cliff: both residual cases are DISCLOSED, not absorbed (rolled list + raw-gap list)",
+  adminSrc.includes("rolled to a later rung") && adminSrc.includes("shown as a RAW gap"));
+ok("cliff: SELL stops mislabelling a modelled name as unmodelled when only the RATE is missing",
+  adminSrc.includes("modelled:rr.length>0,") &&
+  adminSrc.includes("modelled but no annualisable rung"));
+
+// D3: red hinges surface, never veto — the board reports (the FEAT-TT-BINCAL doctrine).
+ok("hinge: why() still has NO hinge veto — enforcement stays the owner's",
+  !/function why[\s\S]{0,600}state==="red"/.test(adminSrc));
+ok("hinge: but the AGREE line and the compact BUY row both NAME the red hinges",
+  adminSrc.includes("red hinge${b.redH===1?\"\":\"s\"} on this name") &&
+  adminSrc.includes("not a veto (yours to weigh)") &&
+  adminSrc.includes("AGREE_PICK.redLabels.slice(0,2)"));
+
+// D4 + the derived-estimate marker.
+ok("derived: consensus.derived is validated only when present, and only rev|eps are legal",
+  adminSrc.includes("consensus.derived must be an object keyed by year") &&
+  adminSrc.includes('must list only "rev" or "eps"'));
+ok("derived: the marker PROPAGATES to the target computed off a derived estimate",
+  adminSrc.includes("const derTgt=r&&((r.lens===\"P/E\"&&isDer(y,\"eps\"))||(r.lens===\"EV/S\"&&isDer(y,\"rev\")))"));
+ok("derived: reuses the existing .derived class rather than inventing a second dim vocabulary",
+  adminSrc.includes(".derived{color:var(--dim);font-style:italic}"));
+ok("legs: per-leg provenance is optional, enum-checked, and an unknown value is rejected",
+  validatePos({ at: "2026-07-30T14:00:00Z", src: "x", sh: 1,
+    opt: [{ k: "call", side: "short", n: 1, src: "screenshot" }] }) === null &&
+  /src must be sync\|screenshot\|manual/.test(String(validatePos({ at: "2026-07-30T14:00:00Z", src: "x", sh: 1,
+    opt: [{ k: "call", side: "short", n: 1, src: "guessed" }] }))));
+ok("legs: an EXISTING leg with no src still validates — no live payload may be rejected",
+  validatePos({ at: "2026-07-30T14:00:00Z", src: "x", sh: 1,
+    opt: [{ k: "call", side: "short", n: 1 }] }) === null);
+ok("legs: the cover claim excludes expired AND undated legs, and names the strikes",
+  adminSrc.includes("const d=optDte(o.exp);return d!==null&&d>=0;") &&
+  adminSrc.includes("expired or undated, NOT counted") &&
+  adminSrc.includes("live short call(s) cover"));
+ok("legs: ddOptSec no longer claims broker sync for legs it cannot vouch for",
+  !adminSrc.includes("from broker sync ·") &&
+  adminSrc.includes("no provenance recorded on ${unk} leg"));
 
 console.log(`\n=== SMOKE TEST: ${pass} passed, ${fail} failed ===`);
 process.exit(fail === 0 ? 0 : 1);

@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <!-- AUDIT: kept in sync with package.json by test/smoke.mjs. admin.html is a Vite
      public/ passthrough, so it cannot receive __APP_VERSION__ — the guard is the fix. -->
-<title>TT TICKER TERMINAL v3.38.1</title>
+<title>TT TICKER TERMINAL v3.39.0</title>
 <style>
   :root{
     --bg:#05070a; --panel:#0a0f16; --panel2:#0d141d; --line:#16202c;
@@ -240,7 +240,7 @@
 <body>
 <div class="wrap">
   <header>
-    <div class="brand">FINANCE&nbsp;BRO.AI // TT&nbsp;TICKER&nbsp;TERMINAL <small>v3.38.1 · single-pass deep-dive orchestrator</small></div>
+    <div class="brand">FINANCE&nbsp;BRO.AI // TT&nbsp;TICKER&nbsp;TERMINAL <small>v3.39.0 · single-pass deep-dive orchestrator</small></div>
     <div class="statusline">
       <span>BOOK: <b id="bookStamp">loading…</b></span>
       <span>AUTH: <b id="sessState">…</b></span>
@@ -1201,8 +1201,21 @@ function todayActions(){
     // whether the blocker is real (short calls actually on the book) rather than remembered.
     const fe=first&&find(first.sym),fp=fe&&posOf(fe);
     const size=fp?` — ${fp.sh??"?"} sh${fp.mv!=null?`, ${money(fp.mv)}`:""}${isFinite(Number(fp.pct))?` (${fp.pct}% of NAV)`:""}`:"";
-    const shorts=fp&&Array.isArray(fp.opt)?fp.opt.filter(o=>o.side==="short"&&o.k==="call"):[];
-    const cover=shorts.length?` · ${shorts.reduce((a,o)=>a+Number(o.n),0)} short call(s) cover ${shorts.reduce((a,o)=>a+Number(o.n),0)*100} of ${fp.sh??"?"} sh`:"";
+    // FEAT-TT-PTLINT (v3.39) BUG FIX: this filter ignored o.exp, so an ALREADY-EXPIRED short call
+    // still counted as cover in the one place the board tells you a trim is blocked — while
+    // renderOptLadder flagged the very same leg "expired?" two drawers away. An expired leg covers
+    // nothing. A leg with NO exp date cannot be shown to be live either, so it is excluded from
+    // the cover claim and counted separately: fail closed, the same rule as an undated pos.at.
+    const allShorts=fp&&Array.isArray(fp.opt)?fp.opt.filter(o=>o.side==="short"&&o.k==="call"):[];
+    const shorts=allShorts.filter(o=>{const d=optDte(o.exp);return d!==null&&d>=0;});
+    const dropped=allShorts.length-shorts.length;
+    const nC=shorts.reduce((a,o)=>a+Number(o.n),0);
+    const strikes=[...new Set(shorts.map(o=>o.strike).filter(v=>isFinite(Number(v))))].sort((a,b)=>a-b);
+    const cover=shorts.length
+      ?` · ${nC} live short call(s) cover ${nC*100} of ${fp.sh??"?"} sh`+
+        (strikes.length?` @ $${strikes.join("/$")}`:` (strikes not captured)`)+
+        (dropped?` — ${dropped} more expired or undated, NOT counted`:"")
+      :(dropped?` · ${dropped} short call(s) on record are expired or undated — they cover nothing`:"");
     out.push({sev:"stop",
       txt:first?(first.blocker?`Deleverage: ${first.sym} is first to trim${size} — but ${first.blocker}`
                               :`Deleverage: trim ${first.sym}${size||(first.est?` (${first.est})`:"")} first`)
@@ -1494,6 +1507,22 @@ function validateDeepDive(dd){
   }
   if(dd.rules!==undefined&&!(Array.isArray(dd.rules)&&dd.rules.every(r=>typeof r==="string")))return "rules must be an array of strings";
   if(dd.ref_px!==undefined&&!(dd.ref_px&&typeof dd.ref_px.px==="number"&&isFinite(dd.ref_px.px)))return "ref_px needs a numeric px";
+  if(dd.consensus!==undefined&&dd.consensus&&dd.consensus.derived!==undefined){
+    // FEAT-TT-PTLINT: shape-only, and only when present — {year: ["rev","eps"]}.
+    const dv=dd.consensus.derived;
+    if(typeof dv!=="object"||Array.isArray(dv))return "consensus.derived must be an object keyed by year";
+    for(const k of Object.keys(dv)){
+      if(!/^\d{4}$/.test(k))return "consensus.derived keys must be 4-digit years";
+      const v=Array.isArray(dv[k])?dv[k]:[dv[k]];
+      if(!v.every(f=>f==="rev"||f==="eps"))return `consensus.derived["${k}"] must list only "rev" or "eps"`;
+    }
+  }
+  // FEAT-TT-PTLINT: the ONE hard pt_model gate. Only MISKEY aborts a save — the rung it produces
+  // is not the model's (a silent floor fallback wearing the model's confidence), and the live book
+  // has zero instances, so no existing payload can be rejected on re-save. Everything else warns
+  // at render time and never blocks.
+  const hard=lintPtModel(dd).filter(l=>l.sev==="error");
+  if(hard.length)return hard[0].msg;
   return null;
 }
 function ddEntries(){return BOOK.filter(x=>x.deepDive);}
@@ -1693,6 +1722,75 @@ function ptModelRows(dd){
       sh,nc,revFwd:rev[fwd],epsFwd:e,pe};
   }).filter(r=>r.prem!==null||r.fl!==null);
 }
+/* ═══════════ FEAT-TT-PTLINT (v3.39) ═══════════ */
+/* The guard the highest-leverage input never had. ptModelRows prices year-end y off FY y+1
+   estimates, so a multiple schedule's KEYS ARE THE YEAR-END BEING PRICED. NVDA's schedule was
+   keyed at the ESTIMATE years instead ({2027:14,…} for rows starting 2026): schedAt() looks
+   backward only, found no key ≤ 2026, returned null — and the rung SILENTLY FELL THROUGH TO THE
+   FLOOR. $134.85 (−29%) rendered with full confidence where the model meant $226.77 (+16%), and
+   every rung ran a year late. Nothing caught it because validateDeepDive had never once inspected
+   pt_model or consensus: the single highest-leverage field in the system was the only one with no
+   validator. These lints WARN at render; only MISKEY aborts a save (the one unambiguous class),
+   and a deliberately-late premium declares itself with floor_only_before rather than being
+   indistinguishable from a typo. */
+function ptRowYears(dd){
+  const m=(dd&&dd.pt_model)||{},c=(dd&&dd.consensus)||{};
+  const rev=m.revenue_B||c.revenue_B||{},eps=m.eps||c.eps||{};
+  const y0=new Date().toLocaleDateString("en-CA",{timeZone:"America/New_York"}).slice(0,4);
+  return [...new Set([...Object.keys(rev),...Object.keys(eps)].map(y=>String(+y-1)))]
+    .filter(y=>y>=y0).sort();
+}
+function lintPtModel(dd){
+  const out=[],m=dd&&dd.pt_model;
+  if(!m||typeof m!=="object")return out;
+  const c=(dd&&dd.consensus)||{};
+  const eps=m.eps||c.eps||{};
+  const years=ptRowYears(dd);
+  if(!years.length)return out;   // no future rows at all — ddEstRunSec already says UNRANKED
+  const first=years[0],fwd=String(+first+1),e=eps[fwd];
+  const fob=String(m.floor_only_before||"");
+  [["pe_premium_multiple",m.pe_premium_multiple],["ev_s_multiple",m.ev_s_multiple]].forEach(([name,s])=>{
+    if(!s||typeof s!=="object")return;   // a bare number covers every row — no key to mis-place
+    const keys=Object.keys(s).sort();
+    if(!keys.length)return;
+    if(schedAt(s,first)===null&&!(fob&&first<fob))
+      out.push({sev:"error",code:"MISKEY",
+        msg:`${name} keys start at ${keys[0]} but the first row prices year-end ${first} — schedule keys are the YEAR-END PRICED, not the estimate year (row ${first} uses FY${fwd} estimates). As written row ${first} silently falls through to the floor. Re-key to ${first}, or set floor_only_before:"${keys[0]}" if the early rungs are meant to be floor-only.`});
+    // ORPHAN = a key schedAt would NEVER select for any row. Note a key BELOW the row range is
+    // not automatically dead — it may be the backward match every row resolves to (a deliberate
+    // flat schedule). So compute the selected set and diff. Keys ABOVE the last row are excluded
+    // on purpose: a schedule reaching past the estimate series is not a defect, it is the reason
+    // the auto-horizon stops where it does.
+    const last=years[years.length-1];
+    const used=new Set(years.map(y=>{let b=null;keys.forEach(k=>{if(k<=y)b=k;});return b;}));
+    keys.filter(k=>k<=last&&!used.has(k)).forEach(k=>out.push({sev:"warn",code:"ORPHAN",
+      msg:`${name} key ${k} is never used — every row (${years.join(", ")}) resolves to a later key, so this one is a leftover`}));
+  });
+  // Lens doctrine (the TSM/UBER rule): a sales multiple prices the wrong thing for a name that
+  // already earns. WARN only — which lens fits is the owner's judgement, never the lint's.
+  if(m.ev_s_multiple!=null&&m.pe_premium_multiple==null&&typeof e==="number"&&e>0)
+    out.push({sev:"warn",code:"LENS",
+      msg:`modelled on ev_s_multiple while FY${fwd} EPS is ${e} (>0) — earnings-lens candidate (pe_premium_multiple), the rule that put TSM and UBER there`});
+  // The mirror trap: a P/E premium that cannot engage because there is no positive EPS to
+  // multiply, so the row quietly uses the sales lens or the floor instead of what was written.
+  if(m.pe_premium_multiple!=null&&!(typeof e==="number"&&e>0))
+    out.push({sev:"warn",code:"LENSOFF",
+      msg:`pe_premium_multiple is set but FY${fwd} EPS is ${e==null?"absent":e} — the earnings lens cannot engage, so row ${first} uses the sales lens or the floor, not this multiple`});
+  // NOFLOOR only when the payload does NOT already explain itself. A pt_model carrying basis/note
+  // with no computable rung is the DELIBERATELY-UNRANKED case ddEstRunSec renders as "⊘ … not
+  // overlooked" — calling that a defect would contradict a decision the owner already made.
+  if(!ptModelRows(dd).length&&!(m.basis||m.note))
+    out.push({sev:"warn",code:"NOFLOOR",
+      msg:"no rung is computable and nothing here says why — a premium needs (ev_s_multiple + share_count_M + revenue) or (pe_premium_multiple + positive EPS); a floor needs pe_floor_multiple. Add basis/note if being unranked is deliberate."});
+  return out;
+}
+/* One renderer for both altitudes: the deep-dive tab (per name) and the board (whole book).
+   Errors read red, warnings amber — the existing `⊘ no rung is computable` grammar. */
+function lintLines(dd){
+  return lintPtModel(dd).map(l=>
+    `<div style="color:var(--${l.sev==="error"?"red":"amber"});font-size:10.5px;margin-top:3px">`+
+    `${l.sev==="error"?"⛔":"⚠"} ${esc(l.code)} — ${esc(l.msg)}</div>`).join("");
+}
 /* FEAT-TT-SPREAD (v3.33): what multiple is the CURRENT price actually paying for, on the
    same lens and the same row ptModelRows just computed. Inverts the row's own formula:
      EV/S premium = (mult × revFwd + nc) × 1000 / sh   →  implied = (px×sh/1000 − nc) / revFwd
@@ -1767,6 +1865,18 @@ function estRunTable(x,dd){
     return Math.round((Number(map[y])/pv-1)*1000)/10;};
   const yoyCell=g=>g===null?"<td></td>":g==="n/m"?`<td style="color:var(--dim)">n/m</td>`
     :`<td><span class="yoy ${g>=0?"up":"dn"}">${g>=0?"+":""}${g}%</span></td>`;
+  /* FEAT-TT-PTLINT (v3.39): DERIVED estimates were indistinguishable from pulled ones. TSM's
+     FY27-29 revenue is the company's own CAGR target; LITE's FY28 EPS is FY27 × a published
+     growth rate; GOOGL's FY27/28 are extrapolations — all admitted in consensus.source PROSE
+     only, so a one-analyst extrapolation rendered exactly like a 25-analyst consensus row and
+     priced a rung with the same authority. `consensus.derived` = {year: ["rev","eps"]} marks
+     them, reusing the .derived class (dim + italic) that already exists. And because a rung
+     computed off a derived estimate IS derived, the marker PROPAGATES to the PT/upside cells —
+     otherwise the honest flag would stop exactly where the money decision starts. */
+  const derv=(c.derived&&typeof c.derived==="object")?c.derived:{};
+  const isDer=(y,f)=>{const v=derv[y];if(!v)return false;return (Array.isArray(v)?v:[v]).includes(f);};
+  const dcls=(y,f)=>isDer(y,f)?' class="derived"':"";
+  const anyDer=Object.keys(derv).length>0;
   let t=`<div class="tblx"><table class="dd-pt"><tr><th>FY</th><th>rev $B</th><th>Δrev</th><th>EPS</th><th>ΔEPS</th><th>n</th>${hasPT?`<th>PT rev-lens</th><th>PT floor</th><th>upside</th>`:""}</tr>`;
   years.forEach(y=>{
     const n=an[y],thin=typeof n==="number"&&n<=2;
@@ -1778,14 +1888,20 @@ function estRunTable(x,dd){
       const r=rowsByFwd[y];
       const tgt=r?(typeof r.prem==="number"?r.prem:(typeof r.fl==="number"?r.fl:null)):null;
       const up=r&&px!==null&&tgt!==null?Math.round((tgt/px-1)*1000)/10:null;
-      pt=`<td>${r&&r.prem!=null?`$${esc(r.prem)} <span class="scope">by ${esc(r.y)} · ${esc(r.mult)}× ${esc(r.lens)}</span>`:""}</td>`+
-        `<td style="color:var(--dim)">${r?(r.fl==="n/m"?"n/m":r.fl!=null?"$"+esc(r.fl):""):""}</td>`+
-        `<td>${up!==null?`<span style="color:${up>=0?"var(--green)":"var(--red)"};font-weight:700">${up>=0?"+":""}${up}%</span>`:""}</td>`;
+      // A rung is only as sourced as the estimate it multiplies: this row prices year-end r.y off
+      // THIS row's FY (y), so a derived rev/eps here makes the target derived too. Marked with a
+      // ° and the italic class, never silently inheriting the confidence of a real consensus row.
+      const derTgt=r&&((r.lens==="P/E"&&isDer(y,"eps"))||(r.lens==="EV/S"&&isDer(y,"rev")));
+      const derMark=derTgt?`<span class="derived" title="computed off a derived estimate — not a pulled analyst row">°</span>`:"";
+      pt=`<td${derTgt?' class="derived"':""}>${r&&r.prem!=null?`$${esc(r.prem)}${derMark} <span class="scope">by ${esc(r.y)} · ${esc(r.mult)}× ${esc(r.lens)}</span>`:""}</td>`+
+        `<td${isDer(y,"eps")?' class="derived"':""} style="color:var(--dim)">${r?(r.fl==="n/m"?"n/m":r.fl!=null?"$"+esc(r.fl):""):""}</td>`+
+        `<td${derTgt?' class="derived"':""}>${up!==null?`<span style="color:${up>=0?"var(--green)":"var(--red)"};font-weight:700">${up>=0?"+":""}${up}%</span>`:""}</td>`;
     }
-    t+=`<tr style="color:${col}"><th>${esc(y)}</th><td>${rev[y]!=null?esc(rev[y]):""}</td>${yoyCell(yoy(rev,y))}`+
-      `<td style="color:${eCol}">${e!=null?esc(e):""}</td>${yoyCell(yoy(eps,y))}<td>${n!=null?esc(n):""}</td>${pt}`+`</tr>`;
+    t+=`<tr style="color:${col}"><th>${esc(y)}</th><td${dcls(y,"rev")}>${rev[y]!=null?esc(rev[y]):""}</td>${yoyCell(yoy(rev,y))}`+
+      `<td${dcls(y,"eps")} style="color:${eCol}">${e!=null?esc(e):""}</td>${yoyCell(yoy(eps,y))}<td>${n!=null?esc(n):""}</td>${pt}`+`</tr>`;
   });
   t+=`</table></div>`;
+  if(anyDer)t+=`<div style="color:var(--dim);font-size:10px;margin-top:3px"><span class="derived">italic°</span> = DERIVED — an extrapolation, a company target, or a single-source estimate, not a pulled analyst row; the targets computed off them are marked too</div>`;
   if(hasPT&&px!==null&&(pxAge===null||pxAge>PX_STALE_D))
     t+=`<div class="bad2" style="font-size:10px;margin-top:3px">⚠ upside computed off a stamped mark ${pxAge===null?"with no date":pxAge+"d old"} — not a live quote</div>`;
   return t;
@@ -1824,6 +1940,7 @@ function ddEstRunSec(x,dd){
       (m.basis?`<div style="color:var(--dim);font-size:10px;margin-top:2px">${esc(m.basis)}</div>`:"")+
       (m.note?`<div style="color:var(--amber);font-size:10.5px;margin-top:3px">${esc(m.note)}</div>`:"");
   }
+  h+=lintLines(dd);   // FEAT-TT-PTLINT: model defects beside the model, not in a console
   return h+`</div>`;
 }
 /* v3.17 FEAT-TT-DOT: the dots inventory — capture and synthesis are different jobs.
@@ -1916,7 +2033,11 @@ function ddProjSec(x){
 function ddWorth(dd,sym){
   const rr=ptModelRows(dd).filter(r=>typeof r.prem==="number"||typeof r.fl==="number");
   if(!rr.length)return{txt:"no model",sub:(dd.pt_model&&dd.pt_model.note)||"nothing here computes a target"};
-  const t=(HORIZON?rr.find(r=>r.y===HORIZON):null)||rr[0];
+  // FEAT-TT-PTLINT: the SAME picker the board ranks with (horizon + roll), so the WORTH cell and
+  // the ranking can never target different years for the same name. A pinned year this name lacks
+  // still falls back here (and says so via `substituted` below) rather than blanking the cell.
+  const hz=effHorizon();
+  const t=(pickRow(rr,hz)||pickRow(rr,null)||{row:rr[0]}).row;
   const onFloor=typeof t.prem!=="number";
   const tgt=onFloor?t.fl:t.prem;
   if(!isFinite(Number(tgt)))return{txt:`${esc(String(tgt))} ${t.y}`,sub:"no P/E before profit"};
@@ -1930,7 +2051,7 @@ function ddWorth(dd,sym){
   //     about the same name and only one said why.
   // (2) the % is only as good as the mark under it; the board flags a stale/undated stamp
   //     (PX_STALE_D) and this cell presented the same number with no age at all.
-  const substituted=HORIZON&&!rr.some(r=>r.y===HORIZON)?` · no ${esc(HORIZON)} rung — showing ${esc(t.y)}`:"";
+  const substituted=hz&&!rr.some(r=>r.y===hz)?` · no ${esc(hz)} rung — showing ${esc(t.y)}`:"";
   const pxAge=live?0:ageDays(stamp&&stamp.at);
   const pxFlag=(pxAge===null||pxAge>PX_STALE_D)?` · ⚠ mark ${pxAge===null?"undated":pxAge+"d old"}`:"";
   // FEAT-TT-SPREAD (v3.33): the spread IS the thesis. What multiple is the market actually
@@ -2043,18 +2164,30 @@ function optDte(exp){
 }
 function ddOptSec(p){
   if(!p||!Array.isArray(p.opt)||!p.opt.length)return "";
-  let t=`<div class="tblx"><table class="dd-pt"><tr><th>side</th><th>C/P</th><th>n</th><th>strike</th><th>exp</th><th>DTE</th></tr>`;
+  /* FEAT-TT-PTLINT (v3.39): this footer claimed "from broker sync" for EVERY leg. Several were
+     hand-entered from broker screenshots, and two of those were typed with the wrong call/put
+     side — a RISK-DIRECTION error (a short put ADDS exposure where a short call covers it), which
+     is exactly the class of mistake a false provenance claim hides. Provenance is now per leg and
+     ABSENT reads as unrecorded, never as synced. */
+  const SRC={sync:{t:"sync",c:"var(--green)",h:"broker sync"},
+             screenshot:{t:"shot",c:"var(--amber)",h:"hand-entered from a broker screenshot — verify side/strike"},
+             manual:{t:"manual",c:"var(--amber)",h:"hand-entered"}};
+  let t=`<div class="tblx"><table class="dd-pt"><tr><th>side</th><th>C/P</th><th>n</th><th>strike</th><th>exp</th><th>DTE</th><th>src</th></tr>`;
   p.opt.forEach(o=>{
     const d=optDte(o.exp);
     const dCol=d===null?"var(--dim)":d<0?"var(--red)":d<=OPT_NEAR_D?"var(--amber)":"var(--dim)";
+    const s=SRC[String(o.src)];
     t+=`<tr><td>${esc(o.side||"")}</td><td>${o.k==="call"?"C":o.k==="put"?"P":esc(o.k||"")}</td>`+
       `<td>${o.n!=null?esc(o.n):""}</td>`+
       `<td>${isFinite(Number(o.strike))?"$"+esc(o.strike):""}</td>`+
       `<td>${o.exp?esc(o.exp):""}</td>`+
-      `<td style="color:${dCol}">${d===null?"":d<0?"expired?":d+"d"+(d<=OPT_NEAR_D?" ⚠":"")}</td></tr>`;});
+      `<td style="color:${dCol}">${d===null?"undated":d<0?"expired?":d+"d"+(d<=OPT_NEAR_D?" ⚠":"")}</td>`+
+      `<td style="color:${s?s.c:"var(--red)"}" title="${s?esc(s.h):"no provenance recorded — this leg cannot be shown to have come from the broker"}">${s?s.t:"?"}</td></tr>`;});
   t+=`</table></div>`;
+  const unk=p.opt.filter(o=>!SRC[String(o.src)]).length;
   return `<div class="dd-sec"><div class="lbl">Option legs (${p.opt.length}) · ${posChip(p)}</div>${t}
-    <div style="color:var(--dim);font-size:10px;margin-top:4px">from broker sync · strike shown only where captured · ⚠ = ≤${OPT_NEAR_D}d to expiry</div></div>`;
+    <div style="color:var(--dim);font-size:10px;margin-top:4px">strike shown only where captured · ⚠ = ≤${OPT_NEAR_D}d to expiry · src: sync = broker, shot/manual = hand-entered (verify side — a short put is not a short call)`+
+    (unk?` · <span style="color:var(--red)">no provenance recorded on ${unk} leg${unk===1?"":"s"} — not verifiable as broker data</span>`:"")+`</div></div>`;
 }
 function renderDeepDive(sym){
   const x=find(sym);const dv=document.getElementById("deepView");
@@ -2329,12 +2462,39 @@ function renderNextDollar(){
    much as the opportunity. Annualising a 5-month gap also assumes it closes exactly at
    year-end, which is a strong claim. 2028 gives every ranked name one shared clock over a
    realistic hold. The choice persists, so overriding it sticks. */
-const HZ_KEY="tt:hz",HZ_DEFAULT="2028";
-let HORIZON=(()=>{try{const v=localStorage.getItem(HZ_KEY);return v===null?HZ_DEFAULT:(v||null);}catch(_e){return HZ_DEFAULT;}})();
+/* v3.39 FEAT-TT-PTLINT (D1): the hardcoded 2028 default became WRONG the moment three models
+   were built whose estimate series end at FY2028 — their last computable rung is YE2027, so
+   pinning 2028 dropped TSM, LITE and GOOGL out of the ranking entirely, disclosed only as a
+   footnote count. Measured against the live book: 2028 ranked 12/15 names, `nearest` ranked
+   15/15 but off a ~5-month rung that annualises small gaps into nonsense (−73%/yr, −83%/yr,
+   −99%/yr rows; JOBY flipping +48%/yr to −8%/yr), and 2027 ranked 15/15 coherently. So the
+   default is COMPUTED, not asserted: the deepest year-end EVERY modelled name reaches. It is
+   2027 today and advances itself to 2028 when those three carry FY2029 — the staleness bug
+   cannot recur. HZ_AUTO is a distinct sentinel because "" already means the owner deliberately
+   chose `nearest`; overloading it would make an auto-pick indistinguishable from a choice. */
+const HZ_KEY="tt:hz",HZ_AUTO="auto";
+let HORIZON=(()=>{try{const v=localStorage.getItem(HZ_KEY);return v===null?HZ_AUTO:(v||null);}catch(_e){return HZ_AUTO;}})();
+function autoHorizon(){
+  const sets=BOOK.map(x=>x.deepDive?ptModelRows(x.deepDive).filter(r=>typeof r.prem==="number"||typeof r.fl==="number").map(r=>r.y):[])
+    .filter(a=>a.length);
+  if(!sets.length)return null;
+  const shared=sets.reduce((a,b)=>a.filter(y=>b.includes(y)));
+  return shared.length?shared[shared.length-1]:null;   // deepest year EVERY modelled name reaches
+}
+/* The horizon actually in force. Resolved per render because BOOK is empty at parse time and
+   the answer moves as models are added — never cached into HORIZON, which must keep recording
+   what the OWNER chose (or that they never chose). */
+function effHorizon(){return HORIZON===HZ_AUTO?autoHorizon():HORIZON;}
 function setHorizon(y){
-  HORIZON=y||null;
-  try{localStorage.setItem(HZ_KEY,HORIZON||"");}catch(_e){}
+  HORIZON=y===HZ_AUTO?HZ_AUTO:(y||null);
+  try{localStorage.setItem(HZ_KEY,HORIZON===HZ_AUTO?"":(HORIZON||""));}catch(_e){}
+  if(HORIZON===HZ_AUTO){try{localStorage.removeItem(HZ_KEY);}catch(_e){}}
   renderUpsideRank();
+  // v3.39: ddWorth and the est-run table read effHorizon() too, so a horizon change made while
+  // parked on a name's tab left its WORTH cell quoting the OLD year — the exact
+  // two-surfaces-disagree bug the one-computation rule exists to prevent.
+  renderBuyBlock();renderSellBlock();renderEstRunBoard();
+  if(TAB!=="BOARD")renderDeepDive(TAB);
 }
 /* v3.22 FEAT-TT-CAGR: the raw gap is NOT a return. A +21% target 5 months out and a +73%
    target 2.4 years out are not comparable — as a RATE the near one is far better. Ranking
@@ -2347,11 +2507,29 @@ function yrsToYearEnd(y){
   const end=Date.parse(y+"-12-31T21:00:00Z"); // ~4pm ET on the last session of that year
   return (end-Date.now())/(365.25*86400000);
 }
+const ANN_MIN_Y=0.25;      // under ~3 months, annualising amplifies noise into absurdity
 function annualise(pct,y){
   const t=yrsToYearEnd(y);
-  // Under ~3 months, annualising amplifies noise into absurdity — withhold it instead.
-  if(!(t>=0.25)||pct<=-100)return null;
+  if(!(t>=ANN_MIN_Y)||pct<=-100)return null;
   return Math.round((Math.pow(1+pct/100,1/t)-1)*1000)/10;
+}
+/* v3.39 FEAT-TT-PTLINT (D2): ONE row-picker for every surface. Three of them chose the target
+   row differently — renderUpsideRank honoured the horizon, sellRank always took the nearest and
+   then silently substituted a RAW % whenever annualise() withheld one (`if(ann===null)ann=up`),
+   and renderEstRunBoard took rr[0] — so the BUY list and the SELL list could rank the same name
+   off different years and the sort key could quietly change units.
+   THE Q4 CLIFF: annualise() returns null under ANN_MIN_Y, so from ~Oct 1 a rung two months out
+   sorts as a raw gap against other names' %/yr — a +8%-in-2-months rung (≈+58%/yr) would rank
+   BELOW a +40%/yr name. The rule is now explicit: when the chosen rung is too near to annualise
+   honestly, ROLL to the next one and say so, rather than mixing units in a single sort. */
+function pickRow(rr,hz){
+  if(!rr||!rr.length)return null;
+  const at=hz?rr.find(r=>r.y===hz):null;
+  if(hz&&!at)return null;               // pinned year absent → excluded and counted, never substituted
+  const want=at||rr[0];
+  if(yrsToYearEnd(want.y)>=ANN_MIN_Y)return{row:want,rolled:null};
+  const next=rr.find(r=>yrsToYearEnd(r.y)>=ANN_MIN_Y);
+  return next?{row:next,rolled:want.y}:{row:want,rolled:null};
 }
 /* v3.24 FEAT-TT-LIVEPX: rank off the CURRENT price, not the stamped mark. ref_px is a
    manual triage stamp; between runs a name can move 8% and still rank off yesterday. Since
@@ -2608,6 +2786,9 @@ function rankWeight(sym){
 }
 function renderUpsideRank(){
   const el=document.getElementById("upsideRank");if(!el)return;
+  // FEAT-TT-PTLINT (D1): resolve the horizon ONCE per render — auto-mode depends on BOOK, which
+  // is empty at parse time and grows as models are added.
+  const hz=effHorizon(),isAuto=HORIZON===HZ_AUTO;
   AGREE_PICK=null;   // recomputed below; an early return must never leave a stale candidate
   const todayET=new Date().toLocaleDateString("en-CA",{timeZone:"America/New_York"});
   const cands=[];
@@ -2630,8 +2811,9 @@ function renderUpsideRank(){
     // × FY+1 EPS). A floor-ranked name makes no forecast about the multiple at all — it asks
     // only "what is this worth at a market multiple on forward earnings", which is the one
     // basis that needs no assumption and stays comparable across names.
-    const target=HORIZON?rr.find(r=>r.y===HORIZON):rr[0];
-    if(!target)return;
+    const pk=pickRow(rr,hz);
+    if(!pk)return;
+    const target=pk.row;
     const onFloor=typeof target.prem!=="number";
     const tgt=onFloor?target.fl:target.prem;
     const up=Math.round((tgt/ref.px-1)*1000)/10;
@@ -2649,7 +2831,11 @@ function renderUpsideRank(){
     });
     rows.push({sym:x.sym,lens:x.lens,tier:x.tier,rs:runState(x.lastRun),basis:onFloor?"floor":"premium",
       upside:up,ann:annualise(up,target.y),px:ref.px,at:ref.at,tgt,y:target.y,
+      rolled:pk.rolled,
       tt,rrFail,redH,kdSoon,
+      // FEAT-TT-PTLINT: the red hinges by NAME, not just a count — D3 says surface, never veto,
+      // and a count with no labels is not a surfaced signal.
+      redLabels:(Array.isArray(dd.hinges)?dd.hinges:[]).filter(g=>g.state==="red").map(g=>g.label||g.key||g.id||"unnamed"),
       live:!!ref.live,chg:ref.chg,
       // AUDIT: the % is only as fresh as the price mark under it. The daily triage stamps
       // ref_px; when that chain breaks (it has), a weeks-old price still divides into a
@@ -2664,18 +2850,24 @@ function renderUpsideRank(){
   });
   const hzBtn=(v,lab)=>`<span onclick="setHorizon('${v}')" style="cursor:pointer;padding:1px 6px;border-radius:8px;font-size:9.5px;`+
     `border:1px solid ${(HORIZON||"")===v?"var(--green)":"#24333f"};color:${(HORIZON||"")===v?"var(--green)":"var(--dim)"}">${lab}</span>`;
-  const hz=`<div style="display:flex;gap:5px;flex-wrap:wrap;margin-top:5px;align-items:center">`+
+  // FEAT-TT-PTLINT (D1): the auto pick must STATE itself. An auto-selected horizon that looked
+  // like a deliberate one is how "2028" survived long enough to silently drop three names.
+  const hzUI=`<div style="display:flex;gap:5px;flex-wrap:wrap;margin-top:5px;align-items:center">`+
     `<span style="color:var(--dim);font-size:9px;letter-spacing:.1em">HORIZON</span>`+
-    hzBtn("","nearest")+years.map(y=>hzBtn(y,y)).join("")+`</div>`;
+    hzBtn(HZ_AUTO,"auto")+hzBtn("","nearest")+years.map(y=>hzBtn(y,y)).join("")+
+    (isAuto?`<span class="scope">auto · ${hz?"year-end "+esc(hz)+" — the deepest year EVERY modelled name reaches":"nearest — no year is shared by every model yet"}</span>`:"")+`</div>`;
   if(!rows.length){
-    el.innerHTML=`<div class="lbl">Computed upside</div>`+hz+`<div class="none">`+
-      (cands.length?`no ranked name has a rung at ${esc(HORIZON)} — pick another horizon (estimate series end at different years).`
-        :`no name yet has both a stamped ref_px (from the daily triage) and a pt_model target — nothing to rank.`)+`</div>`;
+    el.innerHTML=`<div class="lbl">Computed upside</div>`+hzUI+`<div class="none">`+
+      (cands.length?`no ranked name has a rung at ${esc(hz)} — pick another horizon (estimate series end at different years).`
+        :`no name yet has a usable price (live quote or stamped ref_px) and a pt_model target — nothing to rank.`)+`</div>`;
     return;
   }
   // Sort on the ANNUALISED figure — the only one comparable across differing horizons.
-  const key=r=>r.ann!==null?r.ann:r.upside;
-  rows.sort((a,b)=>key(b)-key(a));
+  // FEAT-TT-PTLINT (D2): the old fallback `r.ann!==null?r.ann:r.upside` mixed UNITS inside one
+  // sort — a raw gap competing with rates. pickRow() now rolls a too-near rung forward, so this
+  // is only reachable when EVERY rung of a name sits inside ANN_MIN_Y; those sort last and are
+  // named below rather than being silently interleaved at the wrong scale.
+  rows.sort((a,b)=>(b.ann===null?-Infinity:b.ann)-(a.ann===null?-Infinity:a.ann));
   UPSIDE_ROWS=rows;   // FEAT-TT-FOCUS2: the compact BUY block reads the SAME rows
   const shown=rows.slice(0,3);
   LAST_RANK=shown.map(r=>r.sym);   // FEAT-TT-SESSION: the cluster strip checks overlap with these
@@ -2703,13 +2895,17 @@ function renderUpsideRank(){
         const c=w.w>=CAP_PCT?"var(--red)":w.w>=10?"var(--amber)":"var(--slate)";
         return `<span style="color:${c};font-size:9.5px;font-weight:700">${w.w}%${esc(w.mark)}</span>`;
       })()}
-      <span style="color:${col};font-weight:700">${r.ann!==null?`${r.ann>=0?"+":""}${r.ann}%/yr`:`${r.upside>=0?"+":""}${r.upside}%`}</span>
-      <span class="scope">${r.ann!==null?`(${r.upside>=0?"+":""}${r.upside}% by ${esc(r.y)})`:`to ${esc(r.y)}`} · ${esc(r.basis)}</span>
+      <span style="color:${col};font-weight:700">${r.ann!==null?`${r.ann>=0?"+":""}${r.ann}%/yr`:`${r.upside>=0?"+":""}${r.upside}% raw`}</span>
+      <span class="scope">${r.ann!==null?`(${r.upside>=0?"+":""}${r.upside}% by ${esc(r.y)})`:`to ${esc(r.y)} — too near to annualise`} · ${esc(r.basis)}</span>
+      ${r.rolled?`<span class="warn2">↷ rolled from ${esc(r.rolled)} (inside 3mo)</span>`:""}
       ${(()=>{ // TT verdict tag — the quality story beside the gap story, never blended into it
         if(!r.tt)return `<span class="scope">TT —</span>`;
         const lab=r.tt.score!==null?r.tt.score.toFixed(1):r.tt.tier;
         const col=r.tt.tier==="C"?"var(--red)":(r.tt.score!==null&&r.tt.score>=7)||r.tt.tier==="S"||r.tt.tier==="A"?"var(--green)":"var(--amber)";
-        return `<span style="color:${col};font-size:9.5px;font-weight:700">TT ${esc(lab)}</span>${r.redH?`<span class="bad2">● ${r.redH} red</span>`:""}`;
+        // FEAT-TT-PTLINT (D3): name the red hinges, don't just count them. A count is a number;
+        // the LABEL is the thing that would change your mind.
+        return `<span style="color:${col};font-size:9.5px;font-weight:700">TT ${esc(lab)}</span>`+
+          (r.redH?`<span class="bad2" title="${esc(r.redLabels.join(" · "))}">● ${r.redH} red: ${esc(r.redLabels.slice(0,2).join(" · "))}${r.redH>2?` +${r.redH-2}`:""}</span>`:"");
       })()}${divergenceChip(r.sym,DIVERGENCE[r.sym])}${pxFlag}${flag}${r.live?`<span class="scope" style="color:var(--green)">live $${esc(r.px)}${r.chg!=null?` ${r.chg>=0?"+":""}${r.chg}%`:""}</span>`:`<span class="scope">stamped $${esc(r.px)}</span>`}</span>`;
   }).join("");
   // AUDIT: silent truncation reads as "covered everything". State the denominator.
@@ -2720,22 +2916,37 @@ function renderUpsideRank(){
     .map(r=>`<div style="color:var(--amber);font-size:10px;margin-top:2px">⚠ ${esc(r.sym)}: ${esc(r.caveat)}</div>`).join("");
   // With a horizon pinned every % shares one year, so the mixed-horizon warning must NOT
   // keep claiming otherwise — but names dropped for lacking that year have to be named.
-  const noRung=HORIZON?cands.length-rows.length:0;
-  el.innerHTML=`<div class="lbl">Computed upside — ANNUALISED to ${HORIZON?"year-end "+esc(HORIZON):"the nearest rung"} · ranked by %/yr so horizons compare · math only, not a recommendation (no sizing/caps/thesis weighed)</div>`+
-    hz+`<div class="picks">${picks}</div>`+
+  const noRung=hz?cands.length-rows.length:0;
+  const notAnn=rows.filter(r=>r.ann===null).map(r=>r.sym);
+  const rolled=rows.filter(r=>r.rolled);
+  el.innerHTML=`<div class="lbl">Computed upside — ANNUALISED to ${hz?"year-end "+esc(hz)+(isAuto?" (auto)":""):"the nearest rung"} · ranked by %/yr so horizons compare · math only, not a recommendation (no sizing/caps/thesis weighed)</div>`+
+    hzUI+`<div class="picks">${picks}</div>`+
     `<div class="none">ranking ${rows.length} of ${BOOK.length} names`+
-    (excluded?` — ${excluded} excluded (no pt_model target or no stamped ref_px), NOT judged unattractive`:"")+
-    (noRung?` · ${noRung} of them dropped for having no ${esc(HORIZON)} rung (estimate series end at different years)`:"")+
-    (HORIZON?` · all % share the ${esc(HORIZON)} horizon`:` · horizons differ, each % is to its own year`)+
+    (excluded?` — ${excluded} excluded (no pt_model target, or no usable price), NOT judged unattractive`:"")+
+    (noRung?` · ${noRung} of them dropped for having no ${esc(hz)} rung (estimate series end at different years)`:"")+
+    (hz?` · all % share the ${esc(hz)} horizon`:` · horizons differ, each % is to its own year`)+
     (()=>{const l=rows.filter(r=>r.live).length;
       return l===rows.length?` · all prices LIVE`:l?` · ${l} live / ${rows.length-l} on stamped marks`:` · all prices are stamped marks, not live`;})()+
     ` · "floor" = the name's own pe_floor_multiple × FY+1 EPS (12–18× across the book — no re-rating assumed); "premium" = the owner's asserted multiple`+
     ` · weights are % of TRACKED BOOK (a floor — NAV unmeasured), equity-only, so ◇ opt-only names show none</div>`+
+    // FEAT-TT-PTLINT (D2): both residual cases of the Q4 cliff are stated, never absorbed.
+    (rolled.length?`<div class="none" style="color:var(--amber)">↷ ${rolled.length} name${rolled.length===1?"":"s"} rolled to a later rung (the nearer one is inside 3 months, where annualising amplifies noise): ${rolled.map(r=>`<b>${esc(r.sym)}</b> ${esc(r.rolled)}→${esc(r.y)}`).join(" · ")}</div>`:"")+
+    (notAnn.length?`<div class="none" style="color:var(--amber)">⚠ ${notAnn.map(esc).join(", ")} shown as a RAW gap — every rung sits inside 3 months, so no honest annual rate exists; sorted last rather than mixed into the %/yr order</div>`:"")+
     // FEAT-TT-RANKFAIR: the coverage gap the two rankings hid. Queue names carrying a manual
     // rank but NO pt_model can never appear above — the names under active consideration were
     // exactly the ones the math had nothing to say about, and nothing said so.
     (()=>{const gap=BOOK.filter(x=>String(x.rank||"").startsWith("#")&&!(x.deepDive&&ptModelRows(x.deepDive).length)).map(x=>x.sym);
       return gap.length?`<div style="color:var(--amber);font-size:10px;margin-top:3px">⚠ ${gap.length} name${gap.length===1?"":"s"} in the manual queue cannot be ranked here — no pt_model: <b>${gap.map(esc).join(", ")}</b>. The queue and this list are answering different questions until they are modelled.</div>`:"";})()+
+    // FEAT-TT-PTLINT: every target above is only as good as the model under it. Name the offenders
+    // at the altitude the ranking is read, not just on each tab — a defect nobody opens is invisible.
+    (()=>{const hits=BOOK.map(x=>({sym:x.sym,ls:x.deepDive?lintPtModel(x.deepDive):[]})).filter(h=>h.ls.length);
+      if(!hits.length)return "";
+      const errs=hits.filter(h=>h.ls.some(l=>l.sev==="error"));
+      const warns=hits.filter(h=>!h.ls.some(l=>l.sev==="error"));
+      return `<div style="color:var(--${errs.length?"red":"amber"});font-size:10px;margin-top:3px">`+
+        (errs.length?`⛔ ${errs.length} model${errs.length===1?"":"s"} MIS-KEYED — the rung shown is a floor fallback, not the model: <b>${errs.map(h=>esc(h.sym)).join(", ")}</b>. `:"")+
+        (warns.length?`⚠ ${warns.length} model lint${warns.length===1?"":"s"}: ${warns.map(h=>`<b>${esc(h.sym)}</b> ${h.ls.map(l=>esc(l.code)).join("/")}`).join(" · ")}`:"")+
+        `<span class="scope"> — open the name's tab for the detail</span></div>`;})()+
     caveats+
     (()=>{ // FEAT-TT-AGREE: light only when BOTH stories say yes; otherwise WAIT, blockers named.
       // v3.28: a tripped leverage circuit is a THIRD veto that no per-name score can clear —
@@ -2764,7 +2975,14 @@ function renderUpsideRank(){
           `<span style="color:var(--green);font-weight:700">🎯 NEXT DOLLAR — both stories agree:</span> `+
           `<span class="sym" style="color:var(--green);cursor:pointer" onclick="openCard('${esc(b.sym)}')">${esc(b.sym)}</span> `+
           `${b.ann!==null?`${b.ann>=0?"+":""}${b.ann}%/yr`:""} · TT ${esc(b.tt.score!==null?b.tt.score.toFixed(1):b.tt.tier)}`+
-          `${q.length>1?` <span class="scope">(then ${q.slice(1,3).map(r=>esc(r.sym)).join(", ")})</span>`:""}</div>`;}
+          `${q.length>1?` <span class="scope">(then ${q.slice(1,3).map(r=>esc(r.sym)).join(", ")})</span>`:""}`+
+          // FEAT-TT-PTLINT (D3): red hinges do NOT veto — the board reports, it does not enforce
+          // (the FEAT-TT-BINCAL doctrine). But the pick could previously light green with its
+          // entry trigger broken and say nothing HERE, which is where the decision is read.
+          // Surfaced, named, and on the same line: enforcement is the owner's, awareness is not.
+          (b.redH?`<div style="color:var(--red);margin-top:3px">⚠ ${b.redH} red hinge${b.redH===1?"":"s"} on this name — <b>${esc(b.redLabels.join(" · "))}</b><span class="scope"> · not a veto (yours to weigh), but it is what would change your mind</span></div>`:"")+
+          (b.rolled?`<div class="scope" style="margin-top:2px">↷ priced off the ${esc(b.y)} rung — the ${esc(b.rolled)} one is inside 3 months</div>`:"")+
+          `</div>`;}
       const near=rows.slice(0,4).map(r=>`${esc(r.sym)}: ${esc(why(r))}`).join(" · ");
       return `<div style="margin-top:6px;padding:5px 8px;border:1px solid var(--amber);border-radius:6px;font-size:11px">`+
         `<span style="color:var(--amber);font-weight:700">⏸ NEXT DOLLAR: WAIT</span> — no name passes gap + quality + R/R + binary window. `+
@@ -2784,15 +3002,18 @@ function renderEstRunBoard(){
   const cands=BOOK.map(x=>({x,rows:x.deepDive?ptModelRows(x.deepDive):[]})).filter(c=>c.rows.length);
   if(!cands.length){el.style.display="none";el.innerHTML="";return;}
   el.style.display="";
+  // FEAT-TT-PTLINT: the third picker, now the SAME one — this list used rows[0] unconditionally
+  // while the ranking honoured the horizon, so the board's two altitudes could name different years.
   const items=cands.map(({x,rows})=>{
-    const r=rows[0];                    // nearest future year-end (past years already dropped)
+    const pk=pickRow(rows,effHorizon())||pickRow(rows,null);
+    const r=pk.row;
     const live=LIVE_PX[x.sym],stamp=x.deepDive.ref_px;
     const px=live&&isFinite(live.px)?live.px:(stamp&&isFinite(stamp.px)?stamp.px:null);
     const tgt=typeof r.prem==="number"?r.prem:(typeof r.fl==="number"?r.fl:null);
     const up=px!==null&&tgt!==null?Math.round((tgt/px-1)*1000)/10:null;
     const ann=up!==null?annualise(up,r.y):null;
     const pxAge=live?0:ageDays(stamp&&stamp.at);
-    return{x,r,px,live:!!live,tgt,up,ann,pxAge};
+    return{x,r,px,live:!!live,tgt,up,ann,pxAge,rolled:pk.rolled};
   }).sort((a,b)=>((b.ann??b.up??-1e9)-(a.ann??a.up??-1e9)));
   el.innerHTML=`<div class="lbl">Estimate runs — ${items.length} modelled of ${BOOK.length} · tap a name for the full year table · same rows the upside rank reads</div>`+
     items.map(it=>{
@@ -2803,7 +3024,7 @@ function renderEstRunBoard(){
         <summary><span class="sym">${esc(it.x.sym)}</span><span class="lens lens-${esc(it.x.lens)}">${esc(it.x.lens)}</span>
           <span class="scope">${esc(it.x.tier)}${it.x.rank?` ${esc(it.x.rank)}`:""}</span>
           ${it.tgt!==null?`<span>$${esc(it.tgt)} by ${esc(it.r.y)} <span class="scope">${esc(it.r.lens)}</span></span>`:""}
-          ${upTxt}${pxFlag}
+          ${upTxt}${pxFlag}${it.rolled?`<span class="warn2">↷ from ${esc(it.rolled)}</span>`:""}
           <span class="scope" style="margin-left:auto;cursor:pointer" onclick="event.stopPropagation();switchTab('${esc(it.x.sym)}')">tab ↗</span></summary>
         <div>${estRunTable(it.x,it.x.deepDive)}</div></details>`;}).join("");
 }
@@ -2837,12 +3058,19 @@ function sellRank(){
     const live=LIVE_PX[x.sym],stamp=x.deepDive&&x.deepDive.ref_px;
     const px=live&&isFinite(live.px)?live.px:(stamp&&isFinite(stamp.px)?stamp.px:null);
     const rr=x.deepDive?ptModelRows(x.deepDive).filter(r=>typeof r.prem==="number"||typeof r.fl==="number"):[];
-    let ann=null;
+    // FEAT-TT-PTLINT (D2/D3): the SELL side used rr[0] regardless of the board's horizon and then
+    // silently substituted a RAW % for a rate (`if(ann===null)ann=up`) — so a trim could be ranked
+    // against a number in different units from the BUY list it was funding. One picker, one unit.
+    let ann=null,annRolled=null;
     if(rr.length&&px!==null){
-      const t=rr[0],tgt=typeof t.prem==="number"?t.prem:t.fl;
-      if(typeof tgt==="number"){const up=Math.round((tgt/px-1)*1000)/10;ann=annualise(up,t.y);if(ann===null)ann=up;}
+      const pk=pickRow(rr,effHorizon())||pickRow(rr,null);
+      const t=pk&&pk.row,tgt=t&&(typeof t.prem==="number"?t.prem:t.fl);
+      if(typeof tgt==="number"){ann=annualise(Math.round((tgt/px-1)*1000)/10,t.y);annRolled=pk.rolled;}
     }
-    const row={sym:x.sym,tier:x.tier,lens:x.lens,w,mv,ann,
+    const row={sym:x.sym,tier:x.tier,lens:x.lens,w,mv,ann,annRolled,
+      // A modelled name whose every rung is inside 3 months has a model — it just has no honest
+      // ANNUAL rate. Lumping it under "no model" would be a new lie in place of the old one.
+      modelled:rr.length>0,
       upl:isFinite(Number(p.upl_pct))?Number(p.upl_pct):null,
       dnt:dnt.includes(x.sym),
       redH:Array.isArray(x.deepDive&&x.deepDive.hinges)?x.deepDive.hinges.filter(h=>h.state==="red").length:0,
@@ -2887,7 +3115,9 @@ function renderSellBlock(){
       `<span style="color:${r.ann>=0?"var(--green)":"var(--red)"};font-weight:700">${r.ann>=0?"+":""}${r.ann}%/yr model</span>`+
       `<span class="scope">lowest expected return funds first</span>${flags(r)}</div>`;
   });
-  if(s.unmod.length)h+=`<div class="none">cannot rank — no model: <b>${s.unmod.map(r=>esc(r.sym)).join(", ")}</b> (held, but the math has nothing to say)</div>`;
+  const noModel=s.unmod.filter(r=>!r.modelled),noRate=s.unmod.filter(r=>r.modelled);
+  if(noModel.length)h+=`<div class="none">cannot rank — no model: <b>${noModel.map(r=>esc(r.sym)).join(", ")}</b> (held, but the math has nothing to say)</div>`;
+  if(noRate.length)h+=`<div class="none" style="color:var(--amber)">cannot rank — modelled but no annualisable rung (every one inside 3 months): <b>${noRate.map(r=>esc(r.sym)).join(", ")}</b></div>`;
   if(s.optOnly.length)h+=`<div class="none">options-only, ranked separately: <b>${s.optOnly.map(esc).join(", ")}</b> — selling legs is not selling shares</div>`;
   // Reconciliation: the session's ASSERTED first trim vs this COMPUTED first source.
   const assertedFirst=BOARD.funding&&Array.isArray(BOARD.funding.order)&&BOARD.funding.order[0]&&BOARD.funding.order[0].sym;
@@ -2906,7 +3136,10 @@ function renderBuyBlock(){
   const tripped=String(BOARD.circuit&&BOARD.circuit.state).toLowerCase()==="tripped";
   let h=`<div class="lbl">NEXT DOLLAR — BUY · ranked by %/yr, weight-aware</div>`;
   if(tripped)h+=`<div class="none" style="color:var(--red);font-weight:700">⛔ NO NEW POSITIONS — leverage circuit tripped; the SELL list below is the active queue</div>`;
-  else if(AGREE_PICK)h+=`<div class="none" style="color:var(--green);font-weight:700">🎯 both stories agree: ${esc(AGREE_PICK.sym)}</div>`;
+  else if(AGREE_PICK)h+=`<div class="none" style="color:var(--green);font-weight:700">🎯 both stories agree: ${esc(AGREE_PICK.sym)}`+
+    // FEAT-TT-PTLINT (D3): the primary view is the ONE surface guaranteed to be seen, so a red
+    // hinge on the agreed pick cannot live only in the DESK drawer.
+    (AGREE_PICK.redH?`<span style="color:var(--red)"> · ⚠ ${AGREE_PICK.redH} red: ${esc(AGREE_PICK.redLabels.slice(0,2).join(" · "))}</span>`:"")+`</div>`;
   else if(rows.length)h+=`<div class="none" style="color:var(--amber)">⏸ WAIT — no name passes every gate (reasons in DESK)</div>`;
   if(!rows.length)h+=`<div class="none">nothing modelled+priced yet — nothing to rank</div>`;
   const MEDAL=["🥇","🥈","🥉","4","5"];
@@ -2921,7 +3154,9 @@ function renderBuyBlock(){
       `<span style="color:${r.upside>=0?"var(--green)":"var(--red)"};font-weight:700">${r.ann!==null?`${r.ann>=0?"+":""}${r.ann}%/yr`:`${r.upside>=0?"+":""}${r.upside}%`}</span>`+
       `<span class="scope">$${esc(r.tgt)} by ${esc(r.y)} · ${esc(r.basis)}</span>`+
       ((r.pxAge===null||r.pxAge>PX_STALE_D)?`<span class="bad2">⚠ px ${r.pxAge===null?"undated":r.pxAge+"d"}</span>`:"")+
-      (r.wt.w!==null&&r.wt.w>=CAP_PCT?`<span class="bad2">no room</span>`:"")+`</div>`;
+      (r.wt.w!==null&&r.wt.w>=CAP_PCT?`<span class="bad2">no room</span>`:"")+
+      (r.redH?`<span class="bad2">● ${r.redH} red</span>`:"")+
+      (r.rolled?`<span class="warn2">↷ ${esc(r.rolled)}→${esc(r.y)}</span>`:"")+`</div>`;
   });
   h+=`<div class="none"><span style="cursor:pointer;color:var(--cyan)" onclick="openDesk('dNext')">full math, horizons &amp; caveats ↗</span> · ${UPSIDE_ROWS.length} ranked of ${BOOK.length}</div>`;
   el.innerHTML=h;
