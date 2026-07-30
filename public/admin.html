@@ -491,7 +491,9 @@
   </div>
 </div>
 
-<div class="toast" id="toast"></div>
+<!-- v3.42 slice 4d: role=status + aria-live announces textContent updates automatically —
+     no JS change needed in toast() beyond this markup. -->
+<div class="toast" id="toast" role="status" aria-live="polite" aria-atomic="true"></div>
 
 <script>
 /* ═══════════ SEED DATA — empty template (load your own book) ═══════════ */
@@ -660,6 +662,34 @@ async function persist(){
     if(e.conflict)showConflict(e.conflict); else showUnsaved(e.message);
   }
 }
+/* v3.42 slice 4c: a destructive banner action (overwrites the server, or discards the local
+   edit) must not fire off one accidental click 12px from RETRY in the same banner. First
+   click swaps the link's label to a "confirm — …?" state for CONFIRM_WINDOW_MS; a second
+   click within that window runs the real action; letting it expire reverts the label
+   silently. One implementation, reused by both banner builders — RETRY/EXPORT stay
+   single-click (non-destructive, so no confirm gate). */
+const CONFIRM_WINDOW_MS=4000;
+let CONFIRM_PENDING=null;
+function confirmLink(id,label,fnName){
+  return `<a href="javascript:void(0)" id="${id}" onclick="confirmClick('${id}','${fnName}')">${esc(label)}</a>`;
+}
+function confirmClick(id,fnName){
+  const el=document.getElementById(id);if(!el)return;
+  if(CONFIRM_PENDING&&CONFIRM_PENDING.id===id){
+    clearTimeout(CONFIRM_PENDING.timer);CONFIRM_PENDING=null;
+    window[fnName]();
+    return;
+  }
+  if(CONFIRM_PENDING){ // only one link armed at a time — arming a second reverts the first
+    clearTimeout(CONFIRM_PENDING.timer);
+    const prev=document.getElementById(CONFIRM_PENDING.id);
+    if(prev)prev.textContent=CONFIRM_PENDING.orig;
+  }
+  const orig=el.textContent;
+  el.textContent="confirm — really "+orig.toLowerCase()+"?";
+  const timer=setTimeout(()=>{const e2=document.getElementById(id);if(e2)e2.textContent=orig;CONFIRM_PENDING=null;},CONFIRM_WINDOW_MS);
+  CONFIRM_PENDING={id,timer,orig};
+}
 /* FEAT-TT-SAFE: another device wrote since this tab loaded. Show BOTH sides and make the
    user choose — the old behavior silently overwrote whichever save landed first. */
 function showConflict(server){
@@ -669,7 +699,7 @@ function showConflict(server){
   el.innerHTML=`CONFLICT — this book was changed on another device `+
     `(server v${server.version}, stamped ${server.asOf}, ${theirs} names · yours has ${mine}). `+
     `Nothing was overwritten. `+
-    `<a href="javascript:overwriteServer()">KEEP MINE (overwrite server)</a> · `+
+    confirmLink("cfOverwrite","KEEP MINE (overwrite server)","overwriteServer")+` · `+
     `<a href="javascript:takeServer()">TAKE SERVER'S (discard mine)</a> · `+
     `<a href="javascript:exportJSON()">EXPORT MINE FIRST</a>`;
 }
@@ -693,7 +723,7 @@ function showUnsaved(msg,kind){
   el.innerHTML=head+
     `<a href="javascript:persist()">${kind==="preview"?"SAVE THIS COPY":"RETRY"}</a> · `+
     `<a href="javascript:exportJSON()">EXPORT JSON (backup)</a> · `+
-    `<a href="javascript:discardLocal()">discard &amp; reload server copy</a>`;
+    confirmLink("cfDiscard","discard & reload server copy","discardLocal");
 }
 async function discardLocal(){
   DIRTY=false;document.getElementById("saveBanner").style.display="none";await loadBook();
@@ -718,7 +748,7 @@ function openImport(){
   document.getElementById("cBtns").innerHTML=`
     <button class="act" onclick="importSave()">✔ IMPORT &amp; SAVE TO SERVER</button>
     <button class="act" onclick="closeCard()">CANCEL</button>`;
-  document.getElementById("overlay").classList.add("on");
+  openModal();
 }
 /* ═══════════ RESTORE POINTS (FEAT-TT-SAFE) ═══════════ */
 /* Daily start-of-day copies, 30d TTL. Previewing loads into memory WITHOUT saving —
@@ -728,7 +758,7 @@ async function openRestore(){
   document.getElementById("cTitle").textContent="RESTORE POINTS";
   document.getElementById("cBody").innerHTML=`<div class="derived">loading…</div>`;
   document.getElementById("cBtns").innerHTML=`<button class="act" onclick="closeCard()">CLOSE</button>`;
-  document.getElementById("overlay").classList.add("on");
+  openModal();
   let dates=[];
   try{
     const res=await fetch("/api/tt?snapshots=1");
@@ -815,7 +845,7 @@ function openSession(){
     <button class="act" onclick="sessionSave()">✔ SAVE SESSION STATE</button>
     <button class="act" onclick="applyHandoff()">⇪ APPLY HANDOFF PATCH (merge)</button>
     <button class="act" onclick="closeCard()">CANCEL</button>`;
-  document.getElementById("overlay").classList.add("on");
+  openModal();
 }
 async function sessionSave(){
   const raw=(document.getElementById("fSession").value||"").trim();
@@ -2442,7 +2472,7 @@ function openDeepDive(sym){
     <button class="act warn" onclick="ddClear()">⌫ CLEAR</button>`+
     (x.deepDive?`<button class="act danger" onclick="ddRemove('${esc(x.sym)}')">🗑 REMOVE PAYLOAD</button>`:"")+
     `<button class="act" onclick="closeCard()">CANCEL</button>`;
-  document.getElementById("overlay").classList.add("on");
+  openModal();
 }
 /* Empty the editor so a phone paste replaces the payload without a select-all.
    Nothing is saved until SAVE PAYLOAD — CANCEL still discards, so this is undoable. */
@@ -3495,6 +3525,43 @@ function renderCoverage(){
 
 /* ═══════════ CARD (view / modify) ═══════════ */
 let CURRENT=null;
+/* v3.42 slice 4: #overlay is ONE element reused by 9 call sites (card, add, session, import,
+   restore, pin-setup) — openModal()/closeModal() are the single choke point where focus
+   management lives, instead of duplicating it at each site. MODAL_RETURN remembers what was
+   focused before the modal opened, so closing it (Escape, CANCEL, CLOSE, or a save action)
+   restores focus to the control the user actually invoked it from — never left it stranded
+   on a chip/button that's about to re-render underneath it.
+   #pinGate is a SEPARATE overlay by design ("so ESC/closeCard can never dismiss it") and is
+   deliberately NOT part of this pair — its own showPinGate()/pinSubmit() are untouched. */
+let MODAL_RETURN=null;
+function openModal(){
+  MODAL_RETURN=document.activeElement&&document.activeElement!==document.body?document.activeElement:null;
+  document.getElementById("overlay").classList.add("on");
+  // Focus the first focusable control inside the card on next paint (innerHTML for this open
+  // was set just before openModal() was called, so the DOM is ready but not yet painted).
+  requestAnimationFrame(()=>{
+    const card=document.querySelector("#overlay .card");
+    const first=card&&card.querySelector('button,[href],input,select,textarea,[tabindex]:not([tabindex="-1"])');
+    if(first&&first.focus)try{first.focus();}catch(_e){}
+  });
+}
+function closeModal(){
+  document.getElementById("overlay").classList.remove("on");
+  if(MODAL_RETURN&&MODAL_RETURN.focus&&document.contains(MODAL_RETURN))try{MODAL_RETURN.focus();}catch(_e){}
+  MODAL_RETURN=null;
+}
+/* Tab/Shift+Tab trap — scoped to #overlay, added once. Wraps focus at the card's boundary so
+   keyboard navigation can never leave the modal while it's open (WAI-ARIA APG dialog pattern). */
+document.getElementById("overlay").addEventListener("keydown",e=>{
+  if(e.key!=="Tab")return;
+  const card=document.querySelector("#overlay .card");if(!card)return;
+  const foc=[...card.querySelectorAll('button,[href],input,select,textarea,[tabindex]:not([tabindex="-1"])')]
+    .filter(el=>el.offsetParent!==null);
+  if(!foc.length)return;
+  const first=foc[0],last=foc[foc.length-1];
+  if(e.shiftKey&&document.activeElement===first){e.preventDefault();last.focus();}
+  else if(!e.shiftKey&&document.activeElement===last){e.preventDefault();first.focus();}
+});
 function openCard(sym){
   const x=find(sym);if(!x)return;
   CURRENT=x.sym;
@@ -3566,7 +3633,7 @@ function openCard(sym){
   body.innerHTML=html;
 
   document.getElementById("cBtns").innerHTML=cardBtns(x.sym);
-  document.getElementById("overlay").classList.add("on");
+  openModal();
 }
 function cardBtns(sym){return `
   <button class="act" onclick="saveCard()">✔ SAVE CHANGES</button>
@@ -3631,7 +3698,7 @@ function removeConfirmed(){
   render();closeCard();toast(s+" removed from book → CUT row — saving…");persist();
 }
 function copyTTRun(){copy("TT: "+CURRENT);toast("Copied → paste 'TT: "+CURRENT+"' into chat for a live deep-dive card");}
-function closeCard(){document.getElementById("overlay").classList.remove("on");CURRENT=null;}
+function closeCard(){CURRENT=null;closeModal();}
 
 /* ═══════════ ADD ═══════════ */
 /* FEAT-TT: `prefill` lets an unmatched search route straight into ADD with the symbol
@@ -3665,7 +3732,7 @@ function openAdd(prefill){
   document.getElementById("cBtns").innerHTML=`
     <button class="act" onclick="addSave()">✔ ADD TO BOOK</button>
     <button class="act" onclick="copyTTNew()">⧉ COPY 'TT: X' PROMPT</button>`;
-  document.getElementById("overlay").classList.add("on");
+  openModal();
 }
 /* Copy the harness prompt for a not-yet-booked name — the run assigns lens + tier. */
 function copyTTNew(){
@@ -3721,7 +3788,7 @@ function showHelp(){
       <li>Commands: <mark>HELP</mark> · <mark>TIER</mark> · <mark>ADD</mark></li>
     </ul>`;
   document.getElementById("cBtns").innerHTML=`<button class="act" onclick="closeCard()">CLOSE</button>`;
-  document.getElementById("overlay").classList.add("on");
+  openModal();
 }
 
 /* ═══════════ EXPORT ═══════════ */
@@ -3810,7 +3877,7 @@ function openPinSetup(){
     document.getElementById("cBody").innerHTML=`<div class="derived">This deployment's PIN is managed by the
       <b>TT_PIN</b> secret (wrangler) — it can't be changed from the terminal. Unset the secret to manage it here.</div>`;
     document.getElementById("cBtns").innerHTML=`<button class="act" onclick="closeCard()">CLOSE</button>`;
-    document.getElementById("overlay").classList.add("on");return;
+    openModal();return;
   }
   const pinRow=(id,label)=>`<div class="row"><div class="k">${label}</div><div class="v">
     <input id="${id}" inputmode="numeric" pattern="\\d*" maxlength="6" autocomplete="off"
@@ -3825,7 +3892,7 @@ function openPinSetup(){
   document.getElementById("cBtns").innerHTML=`
     <button class="act" onclick="pinSetupSave()">✔ ${isKv?"ROTATE":"SET"} PIN</button>
     <button class="act" onclick="closeCard()">CANCEL</button>`;
-  document.getElementById("overlay").classList.add("on");
+  openModal();
 }
 async function pinSetupSave(){
   const v=(id)=>{const el=document.getElementById(id);return el?(el.value||"").trim():undefined;};

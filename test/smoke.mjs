@@ -1544,6 +1544,34 @@ ok("slice3: dd-pt table headers stick on scroll, phone-only (desktop tables are 
 ok("slice3: chips get the 40px thumb target at phone widths, same rule as slice 2's rows",
   /max-width:480px[^}]*\{[\s\S]{0,260}\.chip\{min-height:40px\}/.test(adminSrc));
 
+// ---- slice 4: modal focus management + destructive-action confirm + live toast ----------
+ok("slice4: all 9 overlay-open call sites funnel through ONE openModal() — " +
+   'document.getElementById("overlay").classList.add("on") appears exactly once now, ' +
+   "inside openModal() itself, not duplicated at each site (toast/pinGate keep their own)",
+  (adminSrc.match(/document\.getElementById\("overlay"\)\.classList\.add\("on"\)/g)||[]).length===1 &&
+  (adminSrc.match(/openModal\(\);/g)||[]).length===9);
+ok("slice4: closeCard is now a thin wrapper over closeModal (same public name every onclick calls)",
+  adminSrc.includes("function closeCard(){CURRENT=null;closeModal();}"));
+ok("slice4: openModal remembers what was focused before opening, so closing restores it",
+  adminSrc.includes("MODAL_RETURN=document.activeElement") &&
+  adminSrc.includes("if(MODAL_RETURN&&MODAL_RETURN.focus"));
+ok("slice4: a Tab/Shift+Tab trap is scoped to #overlay and wraps at the card's boundary",
+  adminSrc.includes('document.getElementById("overlay").addEventListener("keydown"') &&
+  adminSrc.includes('if(e.shiftKey&&document.activeElement===first)') &&
+  adminSrc.includes('else if(!e.shiftKey&&document.activeElement===last)'));
+ok("slice4: #pinGate is explicitly NOT part of the openModal/closeModal pair (by design)",
+  !adminSrc.includes('pinGate").addEventListener("keydown"') &&
+  adminSrc.includes("deliberately NOT part of this pair"));
+ok("slice4: overwriteServer and discardLocal require a SECOND click via confirmLink — RETRY/EXPORT stay one-click",
+  adminSrc.includes('confirmLink("cfOverwrite","KEEP MINE (overwrite server)","overwriteServer")') &&
+  adminSrc.includes('confirmLink("cfDiscard","discard & reload server copy","discardLocal")') &&
+  adminSrc.includes('<a href="javascript:persist()">${kind==="preview"?"SAVE THIS COPY":"RETRY"}</a>') &&
+  adminSrc.includes('<a href="javascript:exportJSON()">EXPORT JSON (backup)</a>'));
+ok("slice4: an armed confirm reverts on its own after the window — never stays armed forever",
+  adminSrc.includes("CONFIRM_WINDOW_MS=4000") && adminSrc.includes("setTimeout(()=>{const e2=document.getElementById(id)"));
+ok("slice4: the toast is a live region — screen readers hear it without needing focus",
+  adminSrc.includes('id="toast" role="status" aria-live="polite" aria-atomic="true"'));
+
 // ═══════════ [20] FEAT-TT-PTLINT (v3.39) — the PT chain's guards ═══════════
 // The price-target chain is the terminal's moat: ptModelRows() feeds the est-run table, the WORTH
 // cell, the BUY rank, AGREE, the SELL rank and the spread. An audit confirmed the one-computation
