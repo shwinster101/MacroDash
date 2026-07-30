@@ -264,6 +264,13 @@ const MOCK_DATA = {
   sessionDelta:{ alertsDelta:0, regimeDelta:"none", vixPct:-2.1, tenYBps:-4, spyPct:+0.29 },
 };
 
+// NFCI band thresholds (v3.43.1) — shared by the tile, the regime vote and the factor
+// breakdown so a single table drives all three. Expressed in the index's own unit: NFCI is
+// standardized to mean 0 / SD 1 over 1971–, so 0 is the definitional mean and -0.5 is half a
+// standard deviation below it. ASYMMETRIC on purpose — full reasoning at the tile.
+const NFCI_TIGHT = 0;      // above the historical mean → tighter than average → bearish
+const NFCI_LOOSE = -0.5;   // ≥ half an SD below the mean → genuinely accommodative → bullish
+
 // ─── REGIME VERDICT ENGINE (FEAT-163, rule-based for v1.6 mock) ────────────
 // FEAT-DQ: `stale` is a Set of factor keys whose live data has gone STALE (cadence-aware).
 // A stale factor is EXCLUDED from the vote — better to drop a signal than let a dead feed
@@ -294,13 +301,12 @@ function computeRegime(d, stale=new Set()) {
     const pctOfAth = cape.ath ? (cape.current / cape.ath) * 100 : cape.pctOfAth;
     if(cape.current < cape.mean*1.5) bullVotes++; else if(cape.current > 30 || pctOfAth > 90) bearVotes++;
   }
-  // Financial conditions (Chicago Fed NFCI, FEAT-NFCI v3.43). Zero is the historical average
-  // BY CONSTRUCTION, so the sign is the signal: looser than average = bullish for equities,
-  // tighter = bearish. Same ±0.10 deadband the tile renders (asserted, not fitted — see the
-  // tile comment). Drops out of the vote when STALE like every other factor.
+  // Financial conditions (Chicago Fed NFCI). Same NFCI_TIGHT/NFCI_LOOSE thresholds the tile
+  // renders — one band table, two surfaces, so the vote can never disagree with the label.
+  // Asymmetric by design: see the NFCI_BANDS note at the tile. Drops out when STALE.
   if(use("nfci")){
     const n=d.macro.nfci.current;
-    if(n < -0.10) bullVotes++; else if(n > 0.10) bearVotes++;
+    if(n <= NFCI_LOOSE) bullVotes++; else if(n > NFCI_TIGHT) bearVotes++;
   }
 
   /* THRESHOLD (FEAT-NFCI, v3.43). DEC-31 set "≥3 of 5 = strict majority", explicitly moving
@@ -346,7 +352,7 @@ function regimeFactors(d, stale=new Set()) {
     {key:"fearGreed",   label:"Fear & Greed",   val:`${d.marketPulse.fearGreed.score} — ${d.marketPulse.fearGreed.label}`,   bull:d.marketPulse.fearGreed.score>55},
     {key:"cpiHeadline", label:"CPI Trend",      val:d.macro.cpi.trend.slice(-1)[0]<d.macro.cpi.trend.slice(-2)[0]?"Cooling (bullish)":"Re-accelerating", bull:d.macro.cpi.trend.slice(-1)[0]<d.macro.cpi.trend.slice(-2)[0]},
     {key:"valuation",   label:"Valuation",      val:`${d.macro.shillerPe.current} CAPE · ${(d.macro.shillerPe.ath?(d.macro.shillerPe.current/d.macro.shillerPe.ath)*100:d.macro.shillerPe.pctOfAth).toFixed(1)}% of ATH`, bull:d.macro.shillerPe.current<d.macro.shillerPe.mean*1.5},
-    {key:"nfci",        label:"Fin Conditions", val:`${d.macro.nfci.current>0?"+":""}${d.macro.nfci.current.toFixed(2)} — ${d.macro.nfci.current>0.10?"Tighter than avg (bearish)":d.macro.nfci.current<-0.10?"Looser than avg (bullish)":"At average"}`, bull:d.macro.nfci.current<-0.10},
+    {key:"nfci",        label:"Fin Conditions", val:`${d.macro.nfci.current>0?"+":""}${d.macro.nfci.current.toFixed(2)} SD — ${d.macro.nfci.current>NFCI_TIGHT?"Tighter than the 1971– mean (bearish)":d.macro.nfci.current<=NFCI_LOOSE?"≥½ SD below mean (bullish)":"Looser than mean, but within ½ SD"}`, bull:d.macro.nfci.current<=NFCI_LOOSE},
   ];
   // Stale factors: neutralize the bull flag and annotate so the UI shows them as excluded.
   return factors.map(f => stale.has(f.key) ? { ...f, stale:true, bull:false, val:`${f.val} · STALE — excluded` } : f);
@@ -1211,11 +1217,19 @@ export default function Dashboard({ publicView = false } = {}) {
                 { f:"nfci", render:()=>{
                   const nMode=modeOf('nfci'), nIllus=isIllustrative(nMode);
                   const v=d.macro.nfci.current, w=d.macro.nfci.w1;
-                  // Zero is the historical mean BY CONSTRUCTION, so the sign is the signal.
-                  // The ±0.10 deadband is ASSERTED, not fitted — it exists only so a weekly
-                  // series doesn't flap its label on a 0.01 wiggle across the mean. Every
-                  // boundary is smoke-tested, so changing it is one edit plus one test.
-                  const band=v>0.10?"TIGHT":v<-0.10?"LOOSE":"NEUTRAL";
+                  /* NFCI_BANDS (v3.43.1) — derived, not asserted. The index is a Z-SCORE by
+                     construction (mean 0, SD 1 over 1971–), so its native unit is standard
+                     deviations and a decimal deadband like the old ±0.10 meant nothing in it.
+                     Two thresholds, each with a reason:
+                       > 0     TIGHT — zero is the DEFINITIONAL mean, so crossing it is the event
+                       ≤ -0.5  LOOSE — a half standard deviation below the mean, stated in the
+                               index's own unit rather than a made-up decimal
+                     Deliberately ASYMMETRIC (the same doctrine as the v3.40 TAILWIND withhold):
+                     tight conditions CAUSE drawdowns, while merely-looser-than-average is the
+                     ordinary post-GFC backdrop, not a buy signal. A symmetric band around zero
+                     would have voted bullish nearly every week — a factor that always votes the
+                     same way does not inform a majority tally, it silently biases it. */
+                  const band=v>NFCI_TIGHT?"TIGHT":v<=NFCI_LOOSE?"LOOSE":"NEUTRAL";
                   const bandCol=band==="TIGHT"?T.red:band==="LOOSE"?T.green:T.yellow;
                   return (
                   <div style={{background:T.surface,border:`1px solid ${T.border}`,borderRadius:5,padding:"10px 12px",
