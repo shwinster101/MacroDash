@@ -1435,18 +1435,51 @@ ok("rankfair: the ranking spans held AND unheld, and says which — a blank woul
 console.log("\n[19] v3.38 — four-driver view, computed sell list, refresh button");
 ok("sellrank: forced trims (over cap) rank before every discretionary trim",
   adminSrc.includes("function sellRank()") &&
-  adminSrc.indexOf("forced.sort((a,b)=>b.trimPts-a.trimPts);") < adminSrc.indexOf("disc.sort((a,b)=>a.ann-b.ann);"));
+  adminSrc.indexOf("forced.sort((a,b)=>b.trimPts-a.trimPts);") < adminSrc.indexOf("disc.sort((a,b)=>{"));
+// v3.44: the sort gained an options branch, but the RETURN-based rule is unchanged —
+// asserted behaviourally now rather than by matching the old one-line literal.
 ok("sellrank: discretionary order is LOWEST expected return first — that dollar funds the next one",
-  adminSrc.includes("disc.sort((a,b)=>a.ann-b.ann);") &&
-  adminSrc.includes("lowest expected return funds first"));
+  adminSrc.includes("return a.basis===\"return\"?a.ann-b.ann:b.mv-a.mv;") &&
+  adminSrc.includes("lowest expected return funds first") &&
+  (() => { const rows=[{basis:"return",ann:9},{basis:"return",ann:-3},{basis:"return",ann:2}];
+    rows.sort((a,b)=>{ if(a.basis!==b.basis)return a.basis==="return"?-1:1;
+      return a.basis==="return"?a.ann-b.ann:b.mv-a.mv; });
+    return rows.map(r=>r.ann).join()==="-3,2,9"; })());
 ok("sellrank: a forced trim carries the computed dollar amount to get back to cap",
   adminSrc.includes("row.trim$=Math.round(mv*(w-CAP_PCT)/w);") && adminSrc.includes("to cap"));
 ok("sellrank: do_not_trim is flagged, never hidden — and a cap contradiction is named",
   adminSrc.includes("session says do-not-trim — shown, not hidden") &&
   adminSrc.includes("cap and do-not-trim CONTRADICT"));
-ok("sellrank: unmodelled and options-only positions are NAMED, never silently missing",
+// v3.44 FEAT-TT-OPTMV: options-only positions now rank IN the list on realisable dollars.
+// Only genuinely-unrankable sleeves are named below it, each with its own reason.
+ok("sellrank: unmodelled names are NAMED, and an unrankable options sleeve says WHY",
   adminSrc.includes("cannot rank — no model:") &&
-  adminSrc.includes("selling legs is not selling shares"));
+  adminSrc.includes("leg(s) have no synced value") &&
+  adminSrc.includes("a USE of cash"));
+ok("optmv: a sleeve is measured only when EVERY leg carries mv — a partial sum would " +
+   "understate the position, so it fails closed like pos.at and lastRun",
+  adminSrc.includes("function optSleeve(p)") &&
+  adminSrc.includes("if(missing.length)return{measured:false"));
+ok("optmv: the sleeve sum is SIGNED — a short leg is a liability, so a net-short sleeve is " +
+   "reported as an obligation and never as available funding",
+  adminSrc.includes("legs.reduce((a,o)=>a+Number(o.mv),0)") &&
+  adminSrc.includes("net short — closing costs"));
+ok("optmv: an options row states it was ranked on DOLLARS, not on a rate it does not own",
+  adminSrc.includes("ranked on realisable dollars — a leg's return is not the underlying's"));
+ok("optmv: an options row qualifies on dollars ALONE — requiring a model would have " +
+   "re-created the very exclusion this removes",
+  adminSrc.includes("if(oo){disc.push(row);}"));
+ok("optmv: an options row bypasses the CAP tier — CAP_PCT is measured against equity mv / " +
+   "broker pct, a denominator a sleeve's value is not comparable to",
+  /if\(oo\)\{disc\.push\(row\);\}\s*\n\s*else if\(w>=CAP_PCT\)/.test(adminSrc));
+ok("optmv: the server rejects a sign-contradicting leg (long with mv<0, short with mv>0)",
+  (() => {
+    const base = { at: "2026-07-30T14:00:00Z", src: "sync" };
+    const leg = (side, mv) => ({ ...base, opt: [{ k: "call", side, n: 1, mv }] });
+    return validatePos(leg("long", 500)) === null && validatePos(leg("short", -500)) === null &&
+      /LONG/.test(validatePos(leg("long", -500)) || "") &&
+      /SHORT/.test(validatePos(leg("short", 500)) || "");
+  })());
 ok("sellrank: the asserted funding order is reconciled, married never merged",
   adminSrc.includes("session funding order asserts") &&
   adminSrc.includes("disagreement is information, not an average"));

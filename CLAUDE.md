@@ -972,6 +972,38 @@ Jan-anchor shipped; see `snapshot.js` ~318–328), `spyMa100`, `spyMa200`, and a
   defensible round number in the right unit, not a fitted one — FRED is still unreachable from
   this build environment. Tests: **647 smoke** (+4, incl. exact boundary behavior at -0.5 and 0)
   + 138 render, plus a live browser check of all three band states.
+- **FEAT-TT-OPTMV (v3.44) — options positions join the one sell ranking.** Owner's call: *"doesn't
+  matter if they're options or shares — all holdings and tier-list tickers I really have
+  considered in the rankings."* Correct on the substance, and the audit found the exclusion was
+  **not doctrine but a missing measurement**: option legs carried `{k, side, n, strike?, exp?,
+  src?}` and **no market value anywhere in the schema**, while position-level `mv` is equity-only
+  — so the SELL list, whose whole job is "where does the next dollar come from", literally had
+  nothing to rank a sleeve on and exiled it to a footnote. (The BUY side never excluded them:
+  `renderUpsideRank` doesn't inspect position at all, so an options-only name with a model and a
+  price already ranked; only a cap breach vetoes a pick.)
+  **`pos.opt[].mv` is the fix** — a per-leg **SIGNED** market value from the broker sync, sitting
+  beside the per-leg `src` provenance v3.39 added. **The sign is load-bearing**: a long leg is an
+  asset you can sell (`mv > 0`), a **short leg is a liability you must buy back** (`mv < 0`), so
+  it is a USE of cash, not a source — summing unsigned would report a short sleeve as available
+  funding, exactly backwards. `validatePos` rejects a sign contradiction outright (long with
+  negative mv, short with positive). **`mv` stays equity-only** so every existing cap check and
+  the tracked-book rollup keep their current meaning.
+  **`optSleeve()` fails closed**: a sleeve is measured only when EVERY leg carries `mv`, because
+  a partial sum understates the position and would read as a smaller holding than it is — the
+  same rule `pos.at` and `lastRun` already follow. Unsynced reads *"N of M leg(s) have no synced
+  value"*, never as zero.
+  **One list, two honest bases.** Share rows keep the original rule (lowest expected return funds
+  first); options rows rank on **realisable dollars** and say so, because a levered, decaying leg
+  does not inherit the underlying's %/yr — borrowing that rate would be the exact units error
+  D2 removed when `sellRank` silently substituted a raw % for a rate. An options row **qualifies
+  on dollars alone** (requiring a model would have re-created the very exclusion this removes)
+  and **bypasses the CAP tier**, since `CAP_PCT` is measured against equity `mv`/broker `pct`, a
+  denominator a sleeve's value is not comparable to. What remains named below the list is only
+  what genuinely cannot be ranked — an unsynced sleeve, or a net-short one reported as an
+  obligation with the cost to close.
+  Tests: **653 smoke** (+6) + 138 render (1 fixture leg gains `mv` so the options row ranks
+  in-list). Until a broker sync populates `opt[].mv`, those names read "value not synced" — the
+  honest state, not a guess: an option's mark cannot be approximated from strike and expiry.
 - **Deferred:** stored fundamentals + Robinhood sync — now unblocked by the `x-tt-pin` header
   (v3.9): a chat-side daily review can PUT `status_flags`/`ref_px` into the deepDive payloads and
   stamp `lastRun`. When built, store the *triage* shape (`{at, px}` → "% moved since your last TT
@@ -1038,7 +1070,7 @@ npm run dev        # Vite dev server (mock unless VITE_DATA_MODE=live in .env)
 npm run build      # → dist/  (what Pages runs)
 npm run preview    # serve the built dist/
 
-node test/smoke.mjs   # 647-assertion no-network smoke test (needs Node ≥17)
+node test/smoke.mjs   # 653-assertion no-network smoke test (needs Node ≥17)
 npm run test:ui       # browser render test for admin.html (skips if no Chromium)
 
 # Cron Worker (separate deploy):

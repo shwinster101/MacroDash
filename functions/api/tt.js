@@ -369,6 +369,21 @@ export function validatePos(p) {
       // undated pos.at. An unknown value is rejected rather than passed through as if meaningful.
       if (o.src !== undefined && !["sync", "screenshot", "manual"].includes(String(o.src)))
         return "option leg src must be sync|screenshot|manual";
+      // FEAT-TT-OPTMV (v3.44): SIGNED market value of the leg, from the broker sync. This is
+      // what lets an options position answer "where does the next dollar come from" — before
+      // it, legs carried contract counts and strikes but no dollars anywhere in the schema,
+      // so the SELL rank had literally nothing to rank them on and listed them separately.
+      // SIGN IS LOAD-BEARING: a long leg is an asset you can sell (mv > 0); a SHORT leg is a
+      // liability you must BUY BACK (mv < 0), so it is a USE of cash, not a source. Summing
+      // unsigned would report a short sleeve as available funding — exactly backwards.
+      // Optional: absent reads as "value not synced", never as zero.
+      if (o.mv !== undefined) {
+        const m = Number(o.mv);
+        if (!isFinite(m)) return "option leg mv must be a number";
+        if (m < -1e12 || m > 1e12) return `option leg mv out of band (-1e12..1e12): ${o.mv}`;
+        if (String(o.side) === "long" && m < 0) return "a LONG option leg cannot have negative mv (long = asset)";
+        if (String(o.side) === "short" && m > 0) return "a SHORT option leg cannot have positive mv (short = liability you buy back)";
+      }
     }
   }
   return null;
