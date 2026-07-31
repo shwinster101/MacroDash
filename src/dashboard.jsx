@@ -101,6 +101,75 @@ const GPU_PRICING = {
 // both. Curated at each print (guidance has no $0 live source); `dir` is the revision
 // direction vs the prior guide — the number the market actually trades. ⚠ CURATED — figures
 // are placeholders to review at each print; the reviewed date is the honesty stamp.
+// FEAT-TOKW (v3.46) — TOKENS/WATT: the CONVERSION leg of AI unit economics.
+//
+// FIRST PRINCIPLES. Power is the binding CONSTRAINT, not the dominant cost: a ~1kW accelerator
+// costing ~$40k burns roughly $1.5k of electricity over three years at industrial rates, so
+// depreciation dominates energy ~25:1. Tokens/watt matters because MW ALLOCATIONS are the input
+// that cannot be bought on demand — grid interconnect, not capital, gates a neocloud's capacity.
+// It is therefore a CAPACITY-PRODUCTIVITY metric: how much sellable output a fixed, hard-to-
+// expand power envelope yields.
+//
+// THE IDENTITY:  revenue per MW  ∝  (tokens per watt) × ($ per token)
+// In growth terms the two rates COMPOSE: (1+efficiency%) × (1+price%) − 1. That product is the
+// only part of this that is honestly sourceable — the absolute levels are not. Published
+// tokens/watt swings 10-50x on model size, batch depth, quantization and GPU-only-vs-PUE, and
+// $/Mtok is RETAIL api pricing carrying the model provider's margin, not a neocloud's wholesale
+// realization. Both scale factors CANCEL in the ratio, so the index is defensible where a
+// dollar figure would be confidently wrong. Hence: stored as a RELATIVE INDEX, and this card is
+// forbidden by construction from ever printing a $/MW figure (smoke-pinned).
+//
+// WHY IT EARNS SCREEN SPACE: utilization underwriting answers "will the capacity sell?" It
+// cannot answer "is a sold MW worth less than last year?" A fully-utilized neocloud can still
+// see revenue per MW compress — the margin-compression hinge arriving through the physical
+// layer rather than the P&L. ⚠ CURATED, relative: review at each chip-generation step.
+const TOKEN_EFFICIENCY = {
+  basis: "system-level tokens/W, relative index (H100 generation = 1.00)",
+  reviewed: "2026-07-30",
+  // oldest→newest; `at` dates the generation's volume availability, not its announcement.
+  gens: [
+    { gen: "H100",  at: "2023-06-30", idx: 1.00 },
+    { gen: "H200",  at: "2024-06-30", idx: 1.40 },
+    { gen: "B200",  at: "2025-06-30", idx: 3.00 },
+    { gen: "GB300", at: "2026-06-30", idx: 4.50 },
+  ],
+  // THE WINDOW IS NEVER ANNUALISED. The rolling $/Mtok series is ~12 weekly points at most, and
+  // raising a 12-week move to the 52/11 power turns a −35% drift into −98.8%/yr — a number that
+  // is arithmetically correct and economically absurd, the same units error DEC-D2 removed from
+  // sellRank. So the EFFICIENCY CAGR (multi-year, robust) is instead projected DOWN onto the
+  // price window's own span, and the scissors is reported over that observed span, stated.
+  minWeeks: 8,      // below this the window is noise; the band is withheld, not guessed.
+  deadbandPct: 5,   // % move over the OBSERVED window — measurement noise, not an economic line.
+  note: "Efficiency vs price: if $/Mtok falls faster than tokens/W improves, revenue per MW compresses EVEN AT FULL UTILIZATION — the neocloud risk utilization alone cannot see.",
+};
+
+// Compose the two rates into the scissors. Pure, and deliberately returns NO dollar figure.
+// `trend` is the live rolling $/Mtok series (weekly cadence, values only — the emitted field
+// drops its dates), so its span is inferred from the point count and STATED on the card.
+//
+// Returns: effCagr (%/yr, the durable multi-year rate) · effWin/pxWin (both over the SAME
+// observed window) · idx (the composite over that window) · weeks · band. Comparing a rate to
+// a window move would be the units error; both legs are always in window terms.
+function tokenScissors(trend) {
+  const g = TOKEN_EFFICIENCY.gens;
+  const yrs = (a, b) => (Date.parse(b) - Date.parse(a)) / (365.25 * 86400000);
+  const effYrsSpan = yrs(g[0].at, g[g.length - 1].at);
+  const effCagr = (effYrsSpan > 0 && g[0].idx > 0 && g[g.length - 1].idx > 0)
+    ? Math.pow(g[g.length - 1].idx / g[0].idx, 1 / effYrsSpan) - 1 : null;
+  const t = Array.isArray(trend) ? trend.filter(v => Number.isFinite(v) && v > 0) : [];
+  // Weekly cadence (CADENCE.tokenTrend), so n points span (n-1) weeks.
+  const weeks = t.length >= 2 ? t.length - 1 : null;
+  const none = { effCagr, effWin: null, pxWin: null, idx: null, weeks, band: null };
+  if (effCagr === null || weeks === null) return none;
+  const pxWin = t[t.length - 1] / t[0] - 1;                       // observed, never annualised
+  const effWin = Math.pow(1 + effCagr, weeks / 52) - 1;           // CAGR projected onto that span
+  const idx = (1 + effWin) * (1 + pxWin) - 1;
+  if (weeks < TOKEN_EFFICIENCY.minWeeks) return { ...none, effWin, pxWin, idx, short: true };
+  const dbd = TOKEN_EFFICIENCY.deadbandPct / 100;
+  return { effCagr, effWin, pxWin, idx, weeks, short: false,
+    band: idx > dbd ? "EXPANDING" : idx < -dbd ? "COMPRESSING" : "FLAT" };
+}
+
 const HYPERSCALER_CAPEX = {
   fy: "FY26", reviewed: "2026-07-30",
   rows: [
@@ -757,6 +826,70 @@ const TokenomicsCard = ({ tok, mode = "MOCK", asOf }) => {
         mode !== "MOCK" && <div style={{ fontFamily:T.fontMono, fontSize:8, color:T.textMuted, marginTop:8 }}>trend accruing ({trend.length} pt{trend.length === 1 ? "" : "s"}) — builds daily</div>
       )}
       <SourceBox api="OpenRouter" endpoint="api/v1/models · frontier basket · blended $/Mtok" mode={mode} asOf={asOf}/>
+    </div>
+  );
+};
+
+// FEAT-TOKW (v3.46): the CONVERSION leg — tokens/watt × $/token = revenue per MW (in RATES only;
+// see the TOKEN_EFFICIENCY comment for why no level is printable). Half live (the $/Mtok window
+// from OpenRouter), half curated (the efficiency index), so the card is ILLUSTRATIVE always and
+// NEVER votes. The band is withheld on mock/stale price data AND on a window shorter than
+// minWeeks — "too short to read" and "flat" are different facts.
+const TokenEfficiencyCard = ({ tok, mode = "MOCK" }) => {
+  const e = TOKEN_EFFICIENCY;
+  const s = tokenScissors(Array.isArray(tok?.trend) ? tok.trend : []);
+  const pct = (v) => v === null || v === undefined ? "—" : `${v >= 0 ? "+" : ""}${(v * 100).toFixed(1)}%`;
+  // A directional read off mock/stale price data is exactly what the v3.1 invariant forbids.
+  const band = isIllustrative(mode) ? null : s.band;
+  const bcol = band === "COMPRESSING" ? T.red : band === "EXPANDING" ? T.green : T.textMuted;
+  const win = s.weeks ? `${s.weeks}-week window` : "no price window";
+  return (
+    <div style={{ marginTop:16, background:T.surface, backgroundImage:ILLUS_HATCH, border:`1px solid ${T.border}`, borderRadius:6, padding:"12px 16px" }}>
+      <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", flexWrap:"wrap", gap:6 }}>
+        <SectionHeader>AI Infra · Tokens/Watt × $/Token (revenue per MW)</SectionHeader>
+        <div style={{ display:"flex", alignItems:"center", gap:6, flexWrap:"wrap" }}>
+          <span style={{ fontFamily:T.fontMono, fontSize:8, color:T.textMuted }}>efficiency index reviewed {e.reviewed}</span>
+          <IllustrativeChip/>
+        </div>
+      </div>
+      <div style={{ fontFamily:T.fontSans, fontSize:10, color:T.textSecondary, lineHeight:1.4, margin:"6px 0 10px" }}>{e.note}</div>
+      <div style={{ display:"flex", gap:18, alignItems:"baseline", flexWrap:"wrap" }}>
+        <div>
+          <div style={{ fontFamily:T.fontMono, fontSize:8, color:T.textMuted }}>SCISSORS · {win}</div>
+          <div style={{ fontFamily:T.fontMono, fontSize:24, fontWeight:700, color: band ? bcol : T.textPrimary }}>
+            {s.idx === null ? "—" : pct(s.idx)}
+          </div>
+        </div>
+        {band
+          ? <span style={{ fontFamily:T.fontMono, fontSize:11, color:bcol }}>{band === "COMPRESSING" ? "▼" : band === "EXPANDING" ? "▲" : "▬"} {band}</span>
+          : <span style={{ fontFamily:T.fontMono, fontSize:9, color:T.textMuted }}>
+              {s.short ? `window too short to read (<${e.minWeeks}w) — no verdict` : "verdict suppressed — price leg not live"}
+            </span>}
+      </div>
+      <div style={{ display:"grid", gridTemplateColumns:"repeat(auto-fill,minmax(150px,1fr))", gap:8, marginTop:10 }}>
+        <div style={{ background:T.surfaceHigh, border:`1px solid ${T.border}`, borderRadius:5, padding:"8px 11px" }}>
+          <div style={{ fontFamily:T.fontMono, fontSize:8, color:T.textMuted }}>EFFICIENCY (curated)</div>
+          <div style={{ fontFamily:T.fontMono, fontSize:15, fontWeight:700, color:T.green }}>{pct(s.effWin)}</div>
+          <div style={{ fontFamily:T.fontMono, fontSize:8, color:T.textMuted }}>{pct(s.effCagr)}/yr projected onto the window</div>
+        </div>
+        <div style={{ background:T.surfaceHigh, border:`1px solid ${T.border}`, borderRadius:5, padding:"8px 11px" }}>
+          <div style={{ fontFamily:T.fontMono, fontSize:8, color:T.textMuted }}>TOKEN PRICE ({mode === "MOCK" ? "mock" : "observed"})</div>
+          <div style={{ fontFamily:T.fontMono, fontSize:15, fontWeight:700, color:T.amber }}>{pct(s.pxWin)}</div>
+          <div style={{ fontFamily:T.fontMono, fontSize:8, color:T.textMuted }}>never annualised — the window as measured</div>
+        </div>
+      </div>
+      <div style={{ display:"grid", gridTemplateColumns:"repeat(auto-fill,minmax(100px,1fr))", gap:8, marginTop:8 }}>
+        {e.gens.map(g => (
+          <div key={g.gen} style={{ background:T.surfaceHigh, border:`1px solid ${T.border}`, borderRadius:5, padding:"7px 10px" }}>
+            <div style={{ fontFamily:T.fontMono, fontSize:10, fontWeight:700, color:T.textPrimary }}>{g.gen}</div>
+            <div style={{ fontFamily:T.fontMono, fontSize:13, fontWeight:700, color:T.textSecondary }}>{g.idx.toFixed(2)}×</div>
+          </div>
+        ))}
+      </div>
+      <div style={{ fontFamily:T.fontMono, fontSize:8, color:T.textMuted, marginTop:8, lineHeight:1.5 }}>
+        {e.basis} · relative only — no $/MW figure is derivable from public data and none is shown.
+      </div>
+      <SourceBox api="Manual" endpoint="chip-generation tokens/W index × live OpenRouter $/Mtok" mode="MOCK"/>
     </div>
   );
 };
@@ -1483,7 +1616,7 @@ export default function Dashboard({ publicView = false } = {}) {
         {/* ── AI UNIT ECONOMICS · cost side (GPU $/hr) + price side (token $/Mtok) ── */}
         <div style={{marginTop:16,display:"flex",alignItems:"center",gap:10}}>
           <span style={{fontFamily:T.fontMono,fontSize:10,color:"#a78bfa",letterSpacing:"0.14em",whiteSpace:"nowrap"}}>◆ AI UNIT ECONOMICS</span>
-          <span style={{fontFamily:T.fontMono,fontSize:8,color:T.textMuted,whiteSpace:"nowrap"}}>cost ↔ price ↔ funding · the margin-compression hinge</span>
+          <span style={{fontFamily:T.fontMono,fontSize:8,color:T.textMuted,whiteSpace:"nowrap"}}>cost ↔ price ↔ conversion ↔ funding · the margin-compression hinge</span>
           <div style={{height:1,flex:1,background:T.border}}/>
         </div>
         {/* FEAT-322: the live price side (OpenRouter) leads; the curated GPU cost side is
@@ -1491,6 +1624,10 @@ export default function Dashboard({ publicView = false } = {}) {
         <TokenomicsCard tok={d.tokenomics} mode={modeOf('tokenBlendedMtok')} asOf={asOfOf('tokenBlendedMtok')}/>
         <CollapsedGroup count={1} label="curated: GPU $/hr cost side">
           <GpuPricingCard />
+        </CollapsedGroup>
+        {/* FEAT-TOKW (v3.46): the conversion leg — what a fixed MW of power converts into. */}
+        <CollapsedGroup count={1} label="curated: tokens/watt × $/token conversion">
+          <TokenEfficiencyCard tok={d.tokenomics} mode={modeOf('tokenBlendedMtok')} />
         </CollapsedGroup>
         {/* FEAT-CAPEX (v3.45): the third leg — the capex pool that funds both sides above. */}
         <CollapsedGroup count={1} label="curated: hyperscaler capex funding flow">

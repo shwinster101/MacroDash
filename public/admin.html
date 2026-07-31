@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <!-- AUDIT: kept in sync with package.json by test/smoke.mjs. admin.html is a Vite
      public/ passthrough, so it cannot receive __APP_VERSION__ — the guard is the fix. -->
-<title>TT TICKER TERMINAL v3.45.0</title>
+<title>TT TICKER TERMINAL v3.46.0</title>
 <style>
   :root{
     --bg:#05070a; --panel:#0a0f16; --panel2:#0d141d; --line:#16202c;
@@ -357,7 +357,7 @@
         onclick="toggleHeadInfo()">⋯ MENU</button>
     </div>
     <div id="headInfo" style="display:none">
-      <div class="brand">FINANCE&nbsp;BRO.AI // TT&nbsp;TICKER&nbsp;TERMINAL <small>v3.45.0 · single-pass deep-dive orchestrator</small></div>
+      <div class="brand">FINANCE&nbsp;BRO.AI // TT&nbsp;TICKER&nbsp;TERMINAL <small>v3.46.0 · single-pass deep-dive orchestrator</small></div>
       <div class="statusline">
         <span>BOOK: <b id="bookStamp">loading…</b></span>
         <span>AUTH: <b id="sessState">…</b></span>
@@ -1819,6 +1819,46 @@ function ddCapexExpSec(dd){
     ${isFinite(Number(e.own_capex_B))?`<div style="font-size:11.5px;margin-top:3px">own capex <b>$${esc(e.own_capex_B)}B</b> — a spender profile; its OWN capex/rev ratio is the tracked metric</div>`:""}
     ${e.note?`<div class="tdy-why" style="margin-top:3px">${esc(String(e.note).slice(0,240))}</div>`:""}</div>`;
 }
+/* FEAT-TOKW (v3.46): tokens/watt — the productivity of a fixed power envelope.
+   WHY IT IS ITS OWN SECTION, beside utilization_underwriting rather than inside it:
+   for a name whose capacity is gated by MW allocations (a neocloud, NBIS the live case),
+     revenue ≈ MW × utilization × tokens-per-watt × $-per-token
+   and utilization underwriting only ever addressed the SECOND factor. Two operators at
+   identical utilization earn different revenue per MW if their fleets are different chip
+   generations — the productivity term, invisible in a utilization model.
+   The gen index is carried BY THE PAYLOAD (each row states its own `idx`), deliberately NOT
+   duplicated from the dashboard's TOKEN_EFFICIENCY: admin.html is buildless and cannot import
+   src/, and a hand-copied constant drifting out of sync would be worse than owner-entered
+   numbers that are visibly self-attested. Frontier = the max idx present, so the ratio is
+   always internal to what is stored.
+   FAILS CLOSED like every measured field here: a mix that does not sum to ~100% is NAMED and
+   the fleet index called a FLOOR; a missing mix yields no index at all rather than a 1.00.
+   Prints NO $/MW and no revenue figure — same rule as the dashboard card: the levels are not
+   sourceable from public data, only the ratios are. */
+function ddTokWSec(dd){
+  const t=dd&&dd.tokens_per_watt;
+  if(!t||typeof t!=="object"||Array.isArray(t))return "";
+  const mix=Array.isArray(t.gen_mix)?t.gen_mix.filter(g=>g&&isFinite(Number(g.idx))&&isFinite(Number(g.pct))):[];
+  const pctSum=mix.reduce((a,g)=>a+Number(g.pct),0);
+  const wIdx=mix.length&&pctSum>0?mix.reduce((a,g)=>a+Number(g.pct)*Number(g.idx),0)/pctSum:null;
+  const front=mix.length?Math.max(...mix.map(g=>Number(g.idx))):null;
+  const partial=mix.length&&Math.abs(pctSum-100)>1;
+  const mwN=Number(t.mw_now),mwP=Number(t.mw_planned);
+  const capX=(isFinite(mwN)&&mwN>0&&isFinite(mwP)&&mwP>0)?mwP/mwN:null;
+  const ratio=(wIdx!==null&&front>0)?wIdx/front:null;
+  return `<div class="dd-sec"><div class="lbl">Tokens/watt — productivity of a fixed power envelope${
+      t.at?` · <span style="color:var(--dim)">as of ${esc(t.at)}</span>`:` · <span style="color:var(--amber)">undated</span>`}</div>
+    ${wIdx===null?`<div style="font-size:11.5px;color:var(--amber)">no fleet mix stored — productivity per watt unmeasured, which is not the same as average</div>`
+      :`<div style="font-size:11.5px">fleet <b>${wIdx.toFixed(2)}×</b> vs frontier <b>${front.toFixed(2)}×</b> · <b>${Math.round(ratio*100)}%</b> of frontier tokens/W${
+        partial?` <span style="color:var(--amber)">— mix sums to ${Math.round(pctSum)}%, so this is a FLOOR</span>`:""}</div>`}
+    ${mix.length?`<div style="font-size:10.5px;color:var(--slate);margin-top:3px">${
+      mix.map(g=>`${esc(g.gen||"?")} ${Math.round(Number(g.pct))}% @ ${Number(g.idx).toFixed(2)}×`).join(" · ")}</div>`:""}
+    ${capX!==null?`<div style="font-size:11.5px;margin-top:4px">capacity <b>${mwN}MW → ${mwP}MW</b> (${capX.toFixed(2)}×)${
+      ratio!==null?` · productive capacity ≈ <b>${(capX*ratio).toFixed(2)}×</b> frontier-equivalent`:""}</div>`
+      :`<div style="font-size:11.5px;margin-top:4px;color:var(--dim)">MW now/planned not stored — capacity leg unmeasured</div>`}
+    <div class="tdy-why" style="margin-top:3px">Before utilization and before $/token — both are separate factors, neither is included here. Falling $/Mtok faster than tokens/W improves compresses revenue per MW at FULL utilization.</div>
+    ${t.note?`<div class="tdy-why" style="margin-top:3px">${esc(String(t.note).slice(0,240))}</div>`:""}</div>`;
+}
 function ddKvSec(title,obj){
   if(!obj||typeof obj!=="object"||Array.isArray(obj)||!Object.keys(obj).length)return "";
   return `<div class="dd-sec"><div class="lbl">${esc(title)}</div>`+
@@ -2221,7 +2261,7 @@ function ddKillSec(k){
 const DD_HANDLED=new Set(["ticker","name","thesis_version","updated","as_of","tier","ref_px","position_note",
   "pt_ladder","pt_model","pt_consensus","consensus","gates","hinges","leading_indicators","cert_probabilities","utilization_underwriting","capital",
   "dilution_grid","engine","pt_2040","kill_combination","key_dates","position","model_anchors","conditional_rules",
-  "linked_exposure","status_flags","tape","watchlist_unlocks","hedges","rules","open_items","telemetry","capex_exposure"]);
+  "linked_exposure","status_flags","tape","watchlist_unlocks","hedges","rules","open_items","telemetry","capex_exposure","tokens_per_watt"]);
 /* ═══════════ DEEP-DIVE FOCUS (FEAT-TT-DDFOCUS v3.31) ═══════════ */
 /* The tab opened ~20 sections at full size — exactly the pre-v3.29 board, one level down.
    A reader arrives at a name's tab with four questions and no others: what is it worth,
@@ -2479,6 +2519,7 @@ function renderDeepDive(sym){
     ddKvSec("Leading indicators",dd.leading_indicators)+
     ddKvSec("Certification probabilities",dd.cert_probabilities)+
     ddKvSec("Utilization underwriting",dd.utilization_underwriting)+
+    ddTokWSec(dd)+
     ddKvSec("Fleet-vs-burn engine — locked inputs + anchors",dd.engine)+
     ddKvSec("2040 PT",dd.pt_2040)+ddKvSec("Model anchors",dd.model_anchors)+
     ddKvSec("Telemetry",dd.telemetry)+

@@ -94,7 +94,12 @@ const BOOK = [
     }) },
   { sym: "BBB", tier: "WATCH", lens: "AI", rank: "#1 optics", lastRun: etDaysAgo(1), note: "queued too",
     deepDive: dd(609, { 2027: 9, 2028: 11 }, { 2027: 18, 2028: 22 },
-      { capex_exposure: { type: "neocloud", own_capex_B: 9 } }) },
+      { capex_exposure: { type: "neocloud", own_capex_B: 9 },
+        // FEAT-TOKW (v3.46): the neocloud case — mix sums to 100, so the fleet index is
+        // exact: (40×1.00 + 60×4.50)/100 = 3.10 vs frontier 4.50 = 69% of frontier tokens/W.
+        tokens_per_watt: { at: "2026-07-30", mw_now: 100, mw_planned: 300,
+          gen_mix: [{ gen: "G1", pct: 40, idx: 1.00 }, { gen: "G2", pct: 60, idx: 4.50 }],
+          note: "synthetic fixture" } }) },
   // CCC carries a manual queue rank but NO deepDive/pt_model — the v3.36 coverage gap:
   // a name under active consideration that the computed ranking can say nothing about.
   { sym: "CCC", tier: "A", lens: "AI", rank: "#3", lastRun: etDaysAgo(1), note: "held" },
@@ -105,7 +110,9 @@ const BOOK = [
   // deliberately spans both universes, so an unheld name must be labelled, not left blank.
   { sym: "JJJ", tier: "WATCH", lens: "AI", lastRun: etDaysAgo(2), note: "candidate, no position",
     deepDive: dd(100, { 2027: 5, 2028: 6, 2029: 7 }, { 2027: 3, 2028: 4, 2029: 5 },
-      { capex_exposure: { type: "fab" } }) },
+      // A PARTIAL mix (sums to 80) and no date — the fail-closed path: FLOOR, not an average.
+      { capex_exposure: { type: "fab" },
+        tokens_per_watt: { gen_mix: [{ gen: "G1", pct: 80, idx: 1.00 }] } }) },
 ];
 // FEAT-TT-POSSTORE (v3.34): pos now lives at /api/positions, not embedded in the book —
 // same fixture data, moved to its own map, keyed by sym.
@@ -680,6 +687,23 @@ await page.waitForTimeout(120);
 const cxDd = await page.evaluate(() => document.getElementById("deepView").innerText);
 ok("capex: AAA's deep dive renders the typed exposure (direct, 40%, via the tracked spenders)",
   /Hyperscaler-capex exposure/i.test(cxDd) && /DIRECT/.test(cxDd) && /40%/.test(cxDd) && /HYPA/.test(cxDd));
+ok("tokw: BBB's neocloud tab decomposes the power envelope — fleet 3.10× vs frontier 4.50× " +
+  "= 69%, capacity 3.00×, productive ≈ 2.07× — beside utilization, never inside it",
+  await (async () => { await page.evaluate(() => switchTab("BBB")); await page.waitForTimeout(250);
+    await page.evaluate(() => document.querySelectorAll("#deepView details").forEach((d) => (d.open = true)));
+    await page.waitForTimeout(120);
+    const t = await page.evaluate(() => document.getElementById("deepView").innerText);
+    return /Tokens\/watt/i.test(t) && /3\.10×/.test(t) && /4\.50×/.test(t) && /69%/.test(t) &&
+           /100MW → 300MW/.test(t) && /3\.00×/.test(t) && /2\.07×/.test(t) &&
+           /Before utilization and before \$\/token/.test(t) && !/\$\d+\s*\/\s*MW/.test(t); })());
+ok("tokw: a partial mix reads as a FLOOR and an undated block says so — the fail-closed " +
+  "path renders the shortfall rather than an implied average",
+  await (async () => { await page.evaluate(() => switchTab("JJJ")); await page.waitForTimeout(250);
+    await page.evaluate(() => document.querySelectorAll("#deepView details").forEach((d) => (d.open = true)));
+    await page.waitForTimeout(120);
+    const t = await page.evaluate(() => document.getElementById("deepView").innerText);
+    return /mix sums to 80%/.test(t) && /FLOOR/.test(t) && /undated/i.test(t) &&
+           /capacity leg unmeasured/i.test(t); })());
 await page.evaluate(() => switchTab("BOARD"));
 await page.waitForTimeout(150);
 

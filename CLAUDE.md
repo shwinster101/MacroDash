@@ -1041,6 +1041,49 @@ Jan-anchor shipped; see `snapshot.js` ~318–328), `spyMa100`, `spyMa200`, and a
   validateBoard malformation sweep) + **144 render** (+6: turning banner, breach math ($22B vs
   $18B = 122%), typed exclusions with reasons, closed-summary signal, stance badge, deep-dive
   exposure — all against a synthetic HYPA/HYPB/HYPC tape).
+- **FEAT-TOKW (v3.46) — tokens/watt: the CONVERSION leg, and the window that must never be
+  annualised.** Owner's call: *"token per watt is a key indicator too, especially for NBIS."*
+  Correct, and the first-principles reason is not the one usually given — power is not the
+  dominant COST (a ~1kW accelerator costing ~$40k burns ~$1.5k of electricity over three years;
+  depreciation dominates energy ~25:1). It is the binding **CONSTRAINT**: MW allocations are the
+  input that cannot be bought on demand, so tokens/watt is a **capacity-productivity** metric —
+  how much sellable output a fixed, hard-to-expand power envelope yields.
+  **The identity: `revenue per MW ∝ (tokens per watt) × ($ per token)`**, and in growth terms the
+  two rates COMPOSE. Only the RATIO is honestly sourceable: published tokens/W swings 10-50× on
+  model size, batch depth, quantization and GPU-only-vs-PUE, and $/Mtok is *retail* API pricing
+  carrying the model provider's margin, not a neocloud's wholesale realization. Both scale factors
+  cancel in the ratio — so `TOKEN_EFFICIENCY` stores a **relative index** (H100 = 1.00) and the
+  card is forbidden by construction from ever printing a $/MW figure (smoke-pinned in both
+  directions: no interpolated and no literal `$…/MW`).
+  **The defect this build turned up in its own first draft: annualising the price window.** The
+  rolling `tokenTrend` is ~12 weekly points at most, and raising a 12-week move to the 52/11 power
+  turned a −25% drift into **−98.8%/yr** — arithmetically correct, economically absurd, and
+  precisely the units error DEC-D2 removed from `sellRank`. So the window is **never annualised**:
+  the durable multi-year efficiency CAGR is projected DOWN onto the price window's own span
+  (`effWin = (1+effCagr)^(weeks/52) − 1`), both legs are reported over that same observed span, and
+  the span is stated on the card. Below `minWeeks = 8` the band is **withheld entirely** — *"window
+  too short to read"* and *"flat"* are different facts. The deadband (`deadbandPct = 5`, a window
+  figure not a rate) is measurement noise, not an economic line.
+  **The card** sits between the price and funding legs (`cost ↔ price ↔ conversion ↔ funding`),
+  ILLUSTRATIVE + hatched + behind its own `CollapsedGroup` (half its input is curated), its verdict
+  suppressed on mock/stale via `isIllustrative` like the CAPE BUBBLE and NFCI TIGHT/LOOSE reads,
+  and it **never votes** — a directional call off a curated index is the exact v3.1 target.
+  **The TT side** is `deepDive.tokens_per_watt`, registered in `DD_HANDLED` and rendered by
+  `ddTokWSec` **beside** `utilization_underwriting`, never inside it: utilization underwriting only
+  ever addressed the *second* factor of `MW × utilization × tokens/W × $/token`, so two operators
+  at identical utilization earn different revenue per MW on different chip generations — the
+  productivity term a utilization model structurally cannot see. The gen index is carried **by the
+  payload** (each row states its own `idx`, frontier = the max present), deliberately NOT copied
+  from `src/`: `admin.html` is buildless and cannot import, and a hand-copied constant drifting out
+  of sync would be worse than owner-entered numbers that are visibly self-attested. Fails closed
+  like every measured field here — a mix not summing to ~100% is NAMED and the fleet index called a
+  **FLOOR**, a missing mix reads *"unmeasured, which is not the same as average"* rather than an
+  implied 1.00, an undated block is flagged, and an absent MW pair says the capacity leg is
+  unmeasured instead of assuming no growth.
+  Tests: **679 smoke** (+13, the scissors math lifted and RUN — a string pin cannot prove a number,
+  and the whole feature is a claim about one) + **146 render** (+2: the neocloud decomposition
+  computed live — fleet 3.10× vs frontier 4.50× = 69%, capacity 3.00×, productive ≈ 2.07× — and the
+  partial-mix FLOOR/undated fail-closed path, both against a synthetic fixture).
 - **Deferred:** stored fundamentals + Robinhood sync — now unblocked by the `x-tt-pin` header
   (v3.9): a chat-side daily review can PUT `status_flags`/`ref_px` into the deepDive payloads and
   stamp `lastRun`. When built, store the *triage* shape (`{at, px}` → "% moved since your last TT
@@ -1107,7 +1150,7 @@ npm run dev        # Vite dev server (mock unless VITE_DATA_MODE=live in .env)
 npm run build      # → dist/  (what Pages runs)
 npm run preview    # serve the built dist/
 
-node test/smoke.mjs   # 666-assertion no-network smoke test (needs Node ≥17)
+node test/smoke.mjs   # 679-assertion no-network smoke test (needs Node ≥17)
 npm run test:ui       # browser render test for admin.html (skips if no Chromium)
 
 # Cron Worker (separate deploy):
