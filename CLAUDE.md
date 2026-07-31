@@ -1084,6 +1084,21 @@ Jan-anchor shipped; see `snapshot.js` ~318–328), `spyMa100`, `spyMa200`, and a
   and the whole feature is a claim about one) + **146 render** (+2: the neocloud decomposition
   computed live — fleet 3.10× vs frontier 4.50× = 69%, capacity 3.00×, productive ≈ 2.07× — and the
   partial-mix FLOOR/undated fail-closed path, both against a synthetic fixture).
+- **v3.47 — the LENS lint learns magnitude (found while modelling RKLB).** Building RKLB's
+  `pt_model` fired `LENS` ("modelled on ev_s_multiple while FY2027 EPS is 0.05 (>0) —
+  earnings-lens candidate"), and the warning was **substantively wrong**: at $63.85 that EPS is a
+  **1,277× forward P/E**, i.e. a company *crossing* zero, not an earnings line the
+  lowest-structurally-representative-line rule (the v3.40 NVDA derivation) would ever select.
+  The lint tested `e > 0`, which is not the same claim as "the name earns". It is now
+  magnitude-aware: above **`LENS_MAX_PE = 100`** on `dd.ref_px.px` the earnings line is treated as
+  a crossing artifact and the sales lens is correct. Deliberately permissive — NVDA ~22×, TSM ~24×
+  and UBER ~18× all sit far under it, so a genuinely-expensive profitable name still warns — and
+  with **no price there is nothing to judge against, so behavior is unchanged (still warns)**,
+  failing TOWARD the warning rather than swallowing it. Doctrine is untouched: `LENS` is still
+  warn-only and the lens is still owner judgement, never the lint's.
+  Tests: **682 smoke** (+3, incl. a profitable-name control that must still warn and the
+  no-price fallback; `LENS_MAX_PE` is now lifted BY VALUE into the smoke harness — it was a free
+  variable that the existing fixtures happened to short-circuit past).
 - **Deferred:** stored fundamentals + Robinhood sync — now unblocked by the `x-tt-pin` header
   (v3.9): a chat-side daily review can PUT `status_flags`/`ref_px` into the deepDive payloads and
   stamp `lastRun`. When built, store the *triage* shape (`{at, px}` → "% moved since your last TT
@@ -1150,7 +1165,7 @@ npm run dev        # Vite dev server (mock unless VITE_DATA_MODE=live in .env)
 npm run build      # → dist/  (what Pages runs)
 npm run preview    # serve the built dist/
 
-node test/smoke.mjs   # 679-assertion no-network smoke test (needs Node ≥17)
+node test/smoke.mjs   # 682-assertion no-network smoke test (needs Node ≥17)
 npm run test:ui       # browser render test for admin.html (skips if no Chromium)
 
 # Cron Worker (separate deploy):

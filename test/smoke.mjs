@@ -1855,7 +1855,12 @@ function liftFns(src, names) {
   }).join("\n");
   return out;
 }
+// LENS_MAX_PE is a module-level const in admin.html, not a function — lift it by value so the
+// lens lint is exercised with the real threshold rather than a free variable that happens to be
+// short-circuited past.
+const LENS_MAX_PE_SRC = /const LENS_MAX_PE=(\d+);/.exec(adminSrc);
 const PT = new Function(
+  `const LENS_MAX_PE=${LENS_MAX_PE_SRC[1]};` +
   liftFns(adminSrc, ["schedAt", "ptModelRows", "ptRowYears", "lintPtModel"]) +
   "\nreturn {schedAt,ptModelRows,ptRowYears,lintPtModel};")();
 
@@ -1889,6 +1894,24 @@ ok("ptlint: floor_only_before lets a deliberately-late premium declare itself in
 // Lens doctrine (the TSM/UBER rule) — a WARN, never an auto-switch: the lens is owner judgement.
 ok("ptlint: a profitable name on the sales lens warns (earnings-lens candidate), never auto-switches",
   PT.lintPtModel(fixed).some((l) => l.sev === "warn" && l.code === "LENS"));
+// v3.47: "EPS > 0" is not "the name earns". A name crossing zero (RKLB: FY+1 consensus 0.05 at
+// $63.85 = a 1,277x forward P/E) has no representative earnings line, so the sales lens is
+// CORRECT there and a warning would be substantively wrong.
+const crossing = { ref_px: { px: 63.85 },
+  consensus: { revenue_B: { [Y + 1]: 1.27, [Y + 2]: 1.65 }, eps: { [Y + 1]: 0.05, [Y + 2]: 0.60 } },
+  pt_model: { ev_s_multiple: { [Y]: 22, [Y + 1]: 18 }, share_count_M: 500 } };
+ok("ptlint: LENS does NOT fire on a zero-crossing EPS — a 1,277x forward P/E is an artifact of " +
+   "a company reaching profitability, not an earnings line the lowest-line rule would select",
+  !PT.lintPtModel(crossing).some((l) => l.code === "LENS"));
+ok("ptlint: the magnitude test is deliberately permissive — a genuinely profitable name on the " +
+   "sales lens still warns (NVDA ~22x, TSM ~24x, UBER ~18x all sit far under the threshold)",
+  (() => { const real = JSON.parse(JSON.stringify(crossing));
+    real.consensus.eps = { [Y + 1]: 3.5, [Y + 2]: 4.2 };   // 63.85 / 3.5 = 18x forward
+    return PT.lintPtModel(real).some((l) => l.code === "LENS"); })());
+ok("ptlint: with NO price there is nothing to judge magnitude against, so behavior is unchanged " +
+   "— it still warns, failing TOWARD the warning rather than silently swallowing it",
+  (() => { const noPx = JSON.parse(JSON.stringify(crossing)); delete noPx.ref_px;
+    return PT.lintPtModel(noPx).some((l) => l.code === "LENS"); })());
 ok("ptlint: the mirror trap — a P/E premium that cannot engage for want of positive EPS",
   PT.lintPtModel({ consensus: { eps: { [Y + 1]: -2 }, revenue_B: { [Y + 1]: 5 } },
     pt_model: { pe_premium_multiple: 30, pe_floor_multiple: 18 } })
