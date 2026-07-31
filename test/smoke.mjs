@@ -596,7 +596,9 @@ ok("dot: dots ride validateBook passthrough at ENTRY level (survive payload repl
 ok("dot: capture stamps the ET date (no UTC roll — the lastRun lesson)",
   adminSrc.includes('const dot={t:new Date().toLocaleDateString("en-CA",{timeZone:"America/New_York"}),state:"new"}'));
 ok("dot: pointer caps enforced (line + URL, never article bodies)",
-  adminSrc.includes("DOT_NOTE_MAX=280") && adminSrc.includes("DOT_URL_MAX=500"));
+  adminSrc.includes("DOT_NOTE_MAX=800") && adminSrc.includes("DOT_URL_MAX=500"));
+ok("dot: the capture box is a multi-line textarea (v3.48 — a single-line input clipped pastes)",
+  /<textarea id="dotIn"/.test(adminSrc));
 ok("dot: keep-last-N prune never silently drops a NEW dot",
   adminSrc.includes("DOT_KEEP=30") && adminSrc.includes('!=="new")x.dots.splice'));
 ok("dot: promoted dots name the field they changed", adminSrc.includes('d.state==="promoted"&&d.into'));
