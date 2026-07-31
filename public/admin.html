@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <!-- AUDIT: kept in sync with package.json by test/smoke.mjs. admin.html is a Vite
      public/ passthrough, so it cannot receive __APP_VERSION__ — the guard is the fix. -->
-<title>TT TICKER TERMINAL v3.46.0</title>
+<title>TT TICKER TERMINAL v3.47.0</title>
 <style>
   :root{
     --bg:#05070a; --panel:#0a0f16; --panel2:#0d141d; --line:#16202c;
@@ -357,7 +357,7 @@
         onclick="toggleHeadInfo()">⋯ MENU</button>
     </div>
     <div id="headInfo" style="display:none">
-      <div class="brand">FINANCE&nbsp;BRO.AI // TT&nbsp;TICKER&nbsp;TERMINAL <small>v3.46.0 · single-pass deep-dive orchestrator</small></div>
+      <div class="brand">FINANCE&nbsp;BRO.AI // TT&nbsp;TICKER&nbsp;TERMINAL <small>v3.47.0 · single-pass deep-dive orchestrator</small></div>
       <div class="statusline">
         <span>BOOK: <b id="bookStamp">loading…</b></span>
         <span>AUTH: <b id="sessState">…</b></span>
@@ -1990,6 +1990,10 @@ function ptModelRows(dd){
    validator. These lints WARN at render; only MISKEY aborts a save (the one unambiguous class),
    and a deliberately-late premium declares itself with floor_only_before rather than being
    indistinguishable from a typo. */
+/* Above this forward P/E the earnings line is a zero-crossing artifact, not a representative
+   line — deliberately permissive (NVDA sits at ~22x, TSM ~24x, UBER ~18x), so it silences only
+   the nominal case and never a genuinely-expensive profitable name. */
+const LENS_MAX_PE=100;
 function ptRowYears(dd){
   const m=(dd&&dd.pt_model)||{},c=(dd&&dd.consensus)||{};
   const rev=m.revenue_B||c.revenue_B||{},eps=m.eps||c.eps||{};
@@ -2025,7 +2029,15 @@ function lintPtModel(dd){
   });
   // Lens doctrine (the TSM/UBER rule): a sales multiple prices the wrong thing for a name that
   // already earns. WARN only — which lens fits is the owner's judgement, never the lint's.
-  if(m.ev_s_multiple!=null&&m.pe_premium_multiple==null&&typeof e==="number"&&e>0)
+  // v3.47: "EPS > 0" is not the same as "the name earns". RKLB's FY2027 consensus EPS is 0.05,
+  // which at $63.85 is a 1,277x forward P/E — a company CROSSING zero, not an earnings line the
+  // lowest-representative-line rule would ever select. Firing LENS there is substantively wrong,
+  // so the test is now magnitude-aware: above LENS_MAX_PE the earnings line is a crossing
+  // artifact and the sales lens is correct. Needs a price, and ref_px is the only one a pure
+  // function has; with none, behavior is unchanged (warn) — failing toward the warning.
+  const lensPx=dd&&dd.ref_px&&typeof dd.ref_px.px==="number"?dd.ref_px.px:null;
+  const nominalEps=lensPx!==null&&typeof e==="number"&&e>0&&(lensPx/e)>LENS_MAX_PE;
+  if(m.ev_s_multiple!=null&&m.pe_premium_multiple==null&&typeof e==="number"&&e>0&&!nominalEps)
     out.push({sev:"warn",code:"LENS",
       msg:`modelled on ev_s_multiple while FY${fwd} EPS is ${e} (>0) — earnings-lens candidate (pe_premium_multiple), the rule that put TSM and UBER there`});
   // The mirror trap: a P/E premium that cannot engage because there is no positive EPS to
