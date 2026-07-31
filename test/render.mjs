@@ -90,9 +90,11 @@ const BOOK = [
       // "severe" is deliberately excluded from the street average (same dim rule as
       // ddPtConsensusSec: /floor|bear|severe/i), leaving base+bull -> avg 485.
       pt_consensus: { rows: { "2028": { severe: 300, base: 450, bull: 520 } } },
+      capex_exposure: { type: "direct", pct_of_rev: 40, via: ["HYPA", "HYPB"] },
     }) },
   { sym: "BBB", tier: "WATCH", lens: "AI", rank: "#1 optics", lastRun: etDaysAgo(1), note: "queued too",
-    deepDive: dd(609, { 2027: 9, 2028: 11 }, { 2027: 18, 2028: 22 }) },
+    deepDive: dd(609, { 2027: 9, 2028: 11 }, { 2027: 18, 2028: 22 },
+      { capex_exposure: { type: "neocloud", own_capex_B: 9 } }) },
   // CCC carries a manual queue rank but NO deepDive/pt_model — the v3.36 coverage gap:
   // a name under active consideration that the computed ranking can say nothing about.
   { sym: "CCC", tier: "A", lens: "AI", rank: "#3", lastRun: etDaysAgo(1), note: "held" },
@@ -102,7 +104,8 @@ const BOOK = [
   // JJJ is MODELLED BUT NOT HELD (no entry in POSITIONS) — the v3.37 case: the ranking
   // deliberately spans both universes, so an unheld name must be labelled, not left blank.
   { sym: "JJJ", tier: "WATCH", lens: "AI", lastRun: etDaysAgo(2), note: "candidate, no position",
-    deepDive: dd(100, { 2027: 5, 2028: 6, 2029: 7 }, { 2027: 3, 2028: 4, 2029: 5 }) },
+    deepDive: dd(100, { 2027: 5, 2028: 6, 2029: 7 }, { 2027: 3, 2028: 4, 2029: 5 },
+      { capex_exposure: { type: "fab" } }) },
 ];
 // FEAT-TT-POSSTORE (v3.34): pos now lives at /api/positions, not embedded in the book —
 // same fixture data, moved to its own map, keyed by sym.
@@ -138,6 +141,13 @@ const BOARD = {
     at: `${TODAY_ET}T14:32:00Z`, src: "test", untracked: ["ZZZ"] },
   clusters: [{ id: "c1", label: "Synthetic cluster", members: ["AAA", "BBB", "CCC", "DDD"],
     rule: "size as ONE position" }],
+  // FEAT-TT-CAPEX (v3.45): synthetic tape — 2 of 3 guiding down (tripwire) and a pool small
+  // enough that AAA's direct exposure (55 × 40% = 22) BREACHES it (agg 18) — both red paths lit.
+  capex: { rows: [
+    { co: "HYPA", fy_guide_B: 8, dir: "down", at: etDaysAgo(2) },
+    { co: "HYPB", fy_guide_B: 6, dir: "down", at: etDaysAgo(1) },
+    { co: "HYPC", fy_guide_B: 4, dir: "hold", at: etDaysAgo(4) },
+  ] },
   funding: { as_of: TODAY_ET, rule: "trims fund debt first",
     order: [{ sym: "FFF", est: "~$30k", blocker: "close the short calls FIRST" }, { sym: "GGG", est: "~$8k" }],
     do_not_trim: ["CCC"] },
@@ -648,6 +658,31 @@ ok("a chip activates from the keyboard", await page.evaluate(() => document.getE
 await page.evaluate(() => closeCard());
 await page.waitForTimeout(80);
 
+console.log("\n[render] FEAT-TT-CAPEX — tape, tripwire, conservation, typed exposure");
+await page.evaluate(() => { document.getElementById("dDesk").open = true; document.getElementById("dCapex").open = true; });
+await page.waitForTimeout(100);
+const cxPanel = await txt(page, "capexPanel");
+ok("capex: the tripwire banner fires at 2 of 3 down, naming the typed transmission order",
+  /CAPEX REGIME TURNING/.test(cxPanel) && /2 of 3/.test(cxPanel) && /Direct names take it first/.test(cxPanel));
+ok("capex: the conservation lint computes AAA's implied draw (55 × 40% = $22B) against the $18B pool and BREACHES",
+  /\$22B/.test(cxPanel) && /122%/.test(cxPanel) && /more capex than the spenders have guided/.test(cxPanel) && /AAA/.test(cxPanel));
+ok("capex: fab and neocloud are excluded WITH their reasons, and the neocloud shows its own 1× capex/rev",
+  /JJJ/.test(cxPanel) && /double-counts/.test(cxPanel) &&
+  /BBB/.test(cxPanel) && /two-sided/.test(cxPanel) && /1×/.test(cxPanel));
+ok("capex: the closed drawer summary carries the red count (v3.25 — a collapse never hides it)",
+  /2 of 3 down/i.test(await txt(page, "sCapex")));   // drawer summaries are CSS-uppercased
+ok("capex: the stance strip carries the ⚡ badge while everything is closed",
+  /⚡ capex 2↓ of 3/.test(await txt(page, "stanceStrip")));
+await page.evaluate(() => switchTab("AAA"));
+await page.waitForTimeout(250);
+await page.evaluate(() => document.querySelectorAll("#deepView details").forEach((d) => (d.open = true)));
+await page.waitForTimeout(120);
+const cxDd = await page.evaluate(() => document.getElementById("deepView").innerText);
+ok("capex: AAA's deep dive renders the typed exposure (direct, 40%, via the tracked spenders)",
+  /Hyperscaler-capex exposure/i.test(cxDd) && /DIRECT/.test(cxDd) && /40%/.test(cxDd) && /HYPA/.test(cxDd));
+await page.evaluate(() => switchTab("BOARD"));
+await page.waitForTimeout(150);
+
 console.log("\n[render] slice 4 — modal focus management, destructive confirm, live toast");
 await page.locator("#board .tier.S .chip").first().click();
 await page.waitForTimeout(120);
@@ -779,8 +814,10 @@ const buyTopPermissive = await phone.evaluate(() => {
 // This fixture carries three red badges (a cap breach, binaries in window, and a changed
 // count), which wrap the stance strip to ~2 rows — that is legitimate high-leverage content,
 // not chrome, so the permissive budget accounts for it rather than pretending it away.
+// v3.45: the fixture's turning capex tape adds a FOURTH red badge to the strip — legitimate
+// red content, not chrome, so the budget moves with it (was <360 at three badges).
 ok(`slice5: on an everyday PERMISSIVE board the first ANSWER is high on screen — BUY at y=${buyTopPermissive} of 844, was 587`,
-  buyTopPermissive < 360);
+  buyTopPermissive < 390);
 ok(`slice5: even RESTRICTIVE (full stance bar, by design) the BUY block still clears the fold — y=${buyTopRestrictive}`,
   buyTopRestrictive < 460);
 ok("every drawer starts closed except what-changed",

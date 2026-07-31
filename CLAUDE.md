@@ -1004,6 +1004,43 @@ Jan-anchor shipped; see `snapshot.js` ~318–328), `spyMa100`, `spyMa200`, and a
   Tests: **653 smoke** (+6) + 138 render (1 fixture leg gains `mv` so the options row ranks
   in-list). Until a broker sync populates `opt[].mv`, those names read "value not synced" — the
   honest state, not a guess: an option's mark cannot be approximated from strike and expiry.
+- **FEAT-TT-CAPEX (v3.45) — the hyperscaler capex tape, and the conservation lint.** Owner's
+  thesis: hyperscaler capex is the most-scrutinized number the book didn't track — "once they
+  announce a reduction, Mag-7 rises and AI infrastructure collapses." The audit found the book
+  prices the *consequences* of capex everywhere (NVDA revenue rows, TSM wafer starts, BE's DC
+  power) while **the pool itself lived nowhere in the system** — the v3.40 defect class again:
+  an assumption buried in a number is unfalsifiable. Four pieces:
+  **(1) `board.capex`** — the tape. Per-spender rows `{co, fy_guide_B, dir: up|hold|down, at}`,
+  validated in `validateBoard` (band 0–2000 $B, dated or rejected), curated at each print — the
+  binary calendar already tracks those dates as non-ticker prints; no $0 live source for
+  guidance exists. **The tripwire is the thesis instrumented**: ≥2 guiding `down` → red banner +
+  a chip-length **⚡ stance-strip badge** (v3.25: visible while everything is closed) — and it
+  fires in BOTH directions (≥2 `up` = re-acceleration), because the tape reports, never bets.
+  **(2) Typed per-name `capex_exposure`** (deepDive passthrough, registered in `DD_HANDLED`,
+  purpose-built section in the CAPITAL drawer): `direct` (NVDA — draws the pool) · `fab` (TSM —
+  inside a direct name's COGS) · `power` (BE/GEV — rides the buildout broadly) · `neocloud`
+  (NBIS — two-sided). The typing is the sharpened version of the thesis: the tape's turn won't
+  say "AI infra: sell", it says who takes it first and who might be HELPED.
+  **(3) The conservation lint** — the genuinely novel piece: Σ over `direct` names of
+  (FY+1 revenue estimate × `pct_of_rev`) = the capex-funded revenue the book collectively
+  implies, vs the tape's aggregate. **Implied > guided pool = the book's own estimates are
+  internally inconsistent**, and the lint names the names. `fab` is EXCLUDED from the sum
+  (counting TSM and NVDA double-counts the same dollar). **`neocloud` exclusion is an owner
+  ruling (v3.45)**: NBIS is grouped in AI infra for the tripwire, but its revenue draws AI
+  rental demand, not the tracked spenders' pool — and a pool cut can push overflow demand TO
+  it — so its **own `capex/rev` ratio** is the tracked metric instead (`own_capex_B`; the
+  fixture's 1× is the spender profile: revenue is capacity-built, not pool-drawn). Unmeasured
+  direct names are named and the sum called a FLOOR; untyped exposure is flagged, never guessed.
+  **(4) The dashboard's third leg**: `HYPERSCALER_CAPEX` + `HyperscalerCapexCard` complete AI
+  Unit Economics — **cost (GPU $/hr) ↔ price (token $/Mtok) ↔ funding (capex $B)** — curated +
+  reviewed-dated, ILLUS_HATCH + IllustrativeChip, behind its own CollapsedGroup, and it NEVER
+  votes (curated directional reads are the v3.1 invariant's exact target). Figures are
+  placeholders to review at each print; headwind #1's $705B counts ALL AI capex, the tape
+  tracks the four the market prices.
+  Tests: **666 smoke** (+13, incl. the lifted tripwire/conservation math run behaviorally and a
+  validateBoard malformation sweep) + **144 render** (+6: turning banner, breach math ($22B vs
+  $18B = 122%), typed exclusions with reasons, closed-summary signal, stance badge, deep-dive
+  exposure — all against a synthetic HYPA/HYPB/HYPC tape).
 - **Deferred:** stored fundamentals + Robinhood sync — now unblocked by the `x-tt-pin` header
   (v3.9): a chat-side daily review can PUT `status_flags`/`ref_px` into the deepDive payloads and
   stamp `lastRun`. When built, store the *triage* shape (`{at, px}` → "% moved since your last TT
@@ -1070,7 +1107,7 @@ npm run dev        # Vite dev server (mock unless VITE_DATA_MODE=live in .env)
 npm run build      # → dist/  (what Pages runs)
 npm run preview    # serve the built dist/
 
-node test/smoke.mjs   # 653-assertion no-network smoke test (needs Node ≥17)
+node test/smoke.mjs   # 666-assertion no-network smoke test (needs Node ≥17)
 npm run test:ui       # browser render test for admin.html (skips if no Chromium)
 
 # Cron Worker (separate deploy):
