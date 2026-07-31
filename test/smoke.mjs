@@ -1710,7 +1710,7 @@ ok("capex: the tape renders as its own DESK drawer whose closed summary carries 
   adminSrc.includes('id="dCapex"') && adminSrc.includes('setDrawer("dCapex","sCapex"') &&
   adminSrc.includes("function renderCapex()"));
 ok("capex: capex_exposure is a HANDLED deep-dive key (purpose-built section, no double render)",
-  adminSrc.includes('"capex_exposure"])') && adminSrc.includes("function ddCapexExpSec(dd)") &&
+  adminSrc.includes('"capex_exposure"') && adminSrc.includes("function ddCapexExpSec(dd)") &&
   ["DIRECT","FAB","POWER","NEOCLOUD"].every((t) => adminSrc.includes(t)));
 ok("capex: the tape REPORTS, never enforces — no veto path reads capexState",
   !/AGREE_PICK[\s\S]{0,200}capexState|capexState\(\)[\s\S]{0,120}veto/.test(adminSrc));
@@ -1720,8 +1720,8 @@ ok("capex-dash: HYPERSCALER_CAPEX is curated WITH a reviewed date, rendered hatc
   dashSrc.includes("const HYPERSCALER_CAPEX") && /reviewed: "\d{4}-\d{2}-\d{2}"/.test(dashSrc) &&
   /HyperscalerCapexCard[\s\S]{0,900}ILLUS_HATCH/.test(dashSrc) &&
   dashSrc.includes('label="curated: hyperscaler capex funding flow"'));
-ok("capex-dash: the section header names all three legs (cost ↔ price ↔ funding)",
-  dashSrc.includes("cost ↔ price ↔ funding"));
+ok("capex-dash: the section header names every leg (cost ↔ price ↔ conversion ↔ funding)",
+  dashSrc.includes("cost ↔ price ↔ conversion ↔ funding"));
 ok("capex-dash: it NEVER votes — computeRegime and the factor list are untouched by capex",
   !/computeRegime[\s\S]{0,2400}capex/i.test(dashSrc) &&
   !/REGIME_FACTOR_FIELDS=\[[^\]]*capex/i.test(dashSrc));
@@ -1965,6 +1965,70 @@ ok("legs: the cover claim excludes expired AND undated legs, and names the strik
 ok("legs: ddOptSec no longer claims broker sync for legs it cannot vouch for",
   !adminSrc.includes("from broker sync ·") &&
   adminSrc.includes("no provenance recorded on ${unk} leg"));
+
+// ═══════════ [25] FEAT-TOKW (v3.46) — tokens/watt, the conversion leg ═══════════
+// The math is lifted and RUN, not string-pinned: the whole point of this feature is that a
+// short price window must never be annualised, and a string pin cannot prove a number.
+console.log("\n[25] FEAT-TOKW — tokens/watt × $/token");
+const TW = (() => {
+  const a = dashSrc.indexOf("const TOKEN_EFFICIENCY");
+  const b = dashSrc.indexOf("const HYPERSCALER_CAPEX");
+  return new Function(dashSrc.slice(a, b) + "\nreturn {TOKEN_EFFICIENCY,tokenScissors};")();
+})();
+const TW_LIVE = [6.8, 6.5, 6.3, 6.1, 5.9, 5.8, 5.6, 5.5, 5.4, 5.3, 5.2, 5.1]; // 12 pts = 11 weeks
+ok("tokw: the price window is NEVER annualised — the v3.39-D2 units error, one layer up. " +
+   "A 12-week −25% move reports −25% over 11 weeks, not the −98%/yr an extrapolation gives",
+  (() => { const s = TW.tokenScissors(TW_LIVE);
+    return Math.abs(s.pxWin + 0.25) < 1e-9 && s.weeks === 11 && s.pxWin > -0.9; })());
+ok("tokw: both legs are expressed over the SAME observed window — the durable efficiency " +
+   "CAGR is projected DOWN onto the price span, never the reverse",
+  (() => { const s = TW.tokenScissors(TW_LIVE);
+    const expect = Math.pow(1 + s.effCagr, 11 / 52) - 1;
+    return Math.abs(s.effWin - expect) < 1e-12 && s.effWin < s.effCagr; })());
+ok("tokw: the composite is the product of the two rates, not their sum",
+  (() => { const s = TW.tokenScissors(TW_LIVE);
+    return Math.abs(s.idx - ((1 + s.effWin) * (1 + s.pxWin) - 1)) < 1e-12; })());
+ok("tokw: a window shorter than minWeeks WITHHOLDS the band — 'too short to read' and " +
+   "'flat' are different facts, and the mock trend (5 intervals) is exactly that case",
+  (() => { const s = TW.tokenScissors([6.8, 6.1, 5.5, 5.2, 5.0, 4.9]);
+    return s.weeks === 5 && s.short === true && s.band === null && s.idx !== null; })());
+ok("tokw: no price series at all yields no band and no composite — never a 0 reading as flat",
+  (() => { const a = TW.tokenScissors(null), b = TW.tokenScissors([5.1]);
+    return a.idx === null && a.band === null && b.idx === null && b.band === null; })());
+ok("tokw: the deadband is stated over the WINDOW, not per year (annualising it would " +
+   "re-import the extrapolation the window rule exists to remove)",
+  TW.TOKEN_EFFICIENCY.deadbandPct !== undefined && TW.TOKEN_EFFICIENCY.deadbandPctYr === undefined);
+ok("tokw: COMPRESSING/FLAT/EXPANDING land on the right side of the deadband",
+  (() => { const d = TW.TOKEN_EFFICIENCY.deadbandPct / 100;
+    const band = (idx) => idx > d ? "EXPANDING" : idx < -d ? "COMPRESSING" : "FLAT";
+    return band(-0.166) === "COMPRESSING" && band(0.0) === "FLAT" && band(d) === "FLAT" &&
+           band(-d) === "FLAT" && band(0.2) === "EXPANDING"; })());
+ok("tokw-dash: the card is ILLUSTRATIVE + chipped, behind a CollapsedGroup like every other " +
+   "curated block, and prints NO $/MW level — only ratios are sourceable",
+  /TokenEfficiencyCard[\s\S]{0,1200}ILLUS_HATCH/.test(dashSrc) &&
+  dashSrc.includes('label="curated: tokens/watt × $/token conversion"') &&
+  (() => { const card = dashSrc.slice(dashSrc.indexOf("const TokenEfficiencyCard"),
+                                     dashSrc.indexOf("MACRO FLIP BANNER"));
+    return !/\$\{[^}]*\}\s*\/\s*MW/.test(card) && !/\$\d[\d.,]*\s*\/\s*MW/.test(card) &&
+           card.includes("no $/MW figure is derivable"); })());
+ok("tokw-dash: the verdict is SUPPRESSED on mock/stale price data (v3.1 invariant) — the " +
+   "band is gated through isIllustrative, not rendered raw",
+  /const band = isIllustrative\(mode\) \? null : s\.band;/.test(dashSrc));
+ok("tokw-dash: it NEVER votes — computeRegime and the factor list know nothing about it",
+  !/computeRegime[\s\S]{0,2400}(tokenScissors|TOKEN_EFFICIENCY)/.test(dashSrc) &&
+  !/REGIME_FACTOR_FIELDS=\[[^\]]*token/i.test(dashSrc));
+ok("tokw-tt: tokens_per_watt is a HANDLED deep-dive key rendered beside utilization " +
+   "underwriting — the factor a utilization model structurally cannot see",
+  adminSrc.includes('"tokens_per_watt"]') && adminSrc.includes("function ddTokWSec(dd)") &&
+  /ddKvSec\("Utilization underwriting",dd\.utilization_underwriting\)\+\s*\n?\s*ddTokWSec\(dd\)/.test(adminSrc));
+ok("tokw-tt: the gen index is carried by the PAYLOAD, not copied from src/ — a buildless " +
+   "file cannot import, and a drifting hand-copied constant is worse than a self-attested one",
+  !adminSrc.includes("const TOKEN_EFFICIENCY") && adminSrc.includes("Math.max(...mix.map(g=>Number(g.idx)))"));
+ok("tokw-tt: it fails closed — a partial mix is called a FLOOR, a missing mix is 'unmeasured' " +
+   "rather than an implied 1.00, and an undated block is flagged",
+  adminSrc.includes("so this is a FLOOR") &&
+  adminSrc.includes("productivity per watt unmeasured, which is not the same as average") &&
+  /t\.at\?[\s\S]{0,120}undated<\/span>/.test(adminSrc));
 
 console.log(`\n=== SMOKE TEST: ${pass} passed, ${fail} failed ===`);
 process.exit(fail === 0 ? 0 : 1);
