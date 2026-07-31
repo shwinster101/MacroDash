@@ -945,7 +945,7 @@ ok("today: every demoted strip keeps its element — nothing was deleted, only c
   ["nextDollar", "upsideRank", "clusterLine", "fundingLine", "binaryCal", "decisionsLine", "circuitLine"]
     .every((id) => adminSrc.includes(`id="${id}"`)));
 ok("today: each drawer is ONE tap (native details, no hidden second step)",
-  (adminSrc.match(/<details class="drawer" id="d/g) || []).length === 8 &&      // 7 strips + DESK
+  (adminSrc.match(/<details class="drawer" id="d/g) || []).length === 9 &&      // 8 strips + DESK (v3.45 adds dCapex)
   (adminSrc.match(/<details class="drawer"><summary>/g) || []).length === 3);   // reference sidebar
 ok("today: the reference sidebar collapses too — it is reference, not monitoring",
   !/<div class="panel"[^>]*>\s*<h2>Router/.test(adminSrc) &&
@@ -1642,6 +1642,89 @@ ok("slice5: a RESTRICTIVE stance keeps the full treatment — token, quals and t
 ok("slice5: the red badges are hoisted so they render in BOTH states — the v3.25 rule is that " +
    "a red fact is never hidden by a collapse",
   adminSrc.includes("const badges=") && (adminSrc.match(/badges\+controls/g)||[]).length===2);
+
+// ═══════════ [24] FEAT-TT-CAPEX (v3.45) — the hyperscaler capex tape ═══════════
+// Every AI-infra beneficiary's revenue estimate is implicitly a bet on the hyperscaler capex
+// pool; the tape makes the pool a dated, revision-tracked fact and the conservation lint makes
+// the book's collective bet checkable. Owner call on NBIS-class names: grouped in AI infra for
+// the tripwire, EXCLUDED from the pool sum (revenue draws AI rental demand, not the pool) with
+// its OWN capex/rev ratio tracked instead.
+console.log("\n[24] FEAT-TT-CAPEX — capex tape, tripwire, conservation");
+ok("capex: validateBoard accepts a well-formed tape and rejects each malformation at the door",
+  (() => {
+    const good = { as_of: "2026-07-30", capex: { rows: [
+      { co: "HYPA", fy_guide_B: 120, dir: "up", at: "2026-07-30" },
+      { co: "HYPB", fy_guide_B: 70, dir: "down", at: "2026-07-29" }] } };
+    const bad = (mut) => { const b = JSON.parse(JSON.stringify(good)); mut(b.capex); return validateBoard(b) !== null; };
+    return validateBoard(good) === null &&
+      bad((c) => { c.rows[0].dir = "cratering"; }) &&
+      bad((c) => { delete c.rows[0].at; }) &&
+      bad((c) => { c.rows[0].fy_guide_B = 5000; }) &&
+      bad((c) => { c.rows = []; });
+  })());
+// Lift the pure client logic and run it — the smoke [20] pattern.
+const cxLift = (() => {
+  const g = (n) => { const i = adminSrc.indexOf(`function ${n}(`); return adminSrc.slice(i, adminSrc.indexOf("\n}", i) + 2); };
+  const ctx = {};
+  new Function("ctx", "let BOARD={},BOOK=[];" + g("capexState") + "\n" + g("capexExposure") + "\n" + g("lintCapexConservation") +
+    "\nctx.run=(board,book)=>{BOARD=board;BOOK=book;return{st:capexState(),lint:lintCapexConservation()};};")(ctx);
+  return ctx.run;
+})();
+const CX_ROWS = (dirs) => dirs.map((d, i) => ({ co: "HYP" + "ABCD"[i], fy_guide_B: [120, 118, 92, 70][i], dir: d, at: "2026-07-30" }));
+ok("capex: the tripwire fires at ≥2 guiding DOWN, not at 1 — and re-acceleration at ≥2 UP",
+  (() => {
+    const one = cxLift({ capex: { rows: CX_ROWS(["down", "hold", "hold", "up"]) } }, []).st;
+    const two = cxLift({ capex: { rows: CX_ROWS(["down", "down", "hold", "up"]) } }, []).st;
+    const re  = cxLift({ capex: { rows: CX_ROWS(["up", "up", "hold", "down"]) } }, []).st;
+    return one.turning === false && two.turning === true && two.downs === 2 &&
+      re.reacc === true && two.aggB === 400;
+  })());
+const FY1 = String(+new Date().toLocaleDateString("en-CA", { timeZone: "America/New_York" }).slice(0, 4) + 1);
+const CX_BOOK = [
+  { sym: "AAA", deepDive: { capex_exposure: { type: "direct", pct_of_rev: 40 }, consensus: { revenue_B: { [FY1]: 55 } } } },
+  { sym: "BBB", deepDive: { capex_exposure: { type: "neocloud", own_capex_B: 9 }, consensus: { revenue_B: { [FY1]: 9 } } } },
+  { sym: "CCC", deepDive: { capex_exposure: { type: "fab" } } },
+  { sym: "DDD", deepDive: { capex_exposure: { type: "direct" } } },          // direct but unmeasured
+  { sym: "EEE", deepDive: { capex_exposure: {} } },                          // untyped
+];
+ok("capex: the conservation sum counts ONLY measured direct names (rev_FY+1 × pct)",
+  (() => { const L = cxLift({ capex: { rows: CX_ROWS(["hold", "hold", "hold", "hold"]) } }, CX_BOOK).lint;
+    return L.impliedB === 22 && L.direct.length === 1 && L.direct[0].sym === "AAA" &&
+      L.unmeasured.join() === "DDD" && L.untyped.join() === "EEE"; })());
+ok("capex: fab is EXCLUDED from the sum — inside a direct name's COGS, counting both " +
+   "double-counts the same capex dollar",
+  cxLift({ capex: { rows: CX_ROWS(["hold", "hold", "hold", "hold"]) } }, CX_BOOK).lint.fab.join() === "CCC");
+ok("capex: neocloud is EXCLUDED from the sum and tracked on its OWN capex/rev ratio " +
+   "(the owner's NBIS ruling — pool-cut sign is two-sided for a renter-builder)",
+  (() => { const n = cxLift({ capex: { rows: CX_ROWS(["hold", "hold", "hold", "hold"]) } }, CX_BOOK).lint.neo;
+    return n.length === 1 && n[0].sym === "BBB" && n[0].ratio === 1; })());
+ok("capex: BREACH when the book implies more capex-funded revenue than the pool guided",
+  (() => {
+    const small = { capex: { rows: [{ co: "HYPA", fy_guide_B: 18, dir: "down", at: "2026-07-30" }] } };
+    const L = cxLift(small, CX_BOOK).lint;
+    return L.breach === true && L.impliedB === 22 && L.pctOfPool === 122;
+  })());
+ok("capex: a turning tape is a RED BADGE on the stance strip — visible while everything is closed",
+  adminSrc.includes("openDesk('dCapex')") && adminSrc.includes("⚡ capex ${cxSt.downs}↓ of ${cxSt.rows.length}"));
+ok("capex: the tape renders as its own DESK drawer whose closed summary carries the signal",
+  adminSrc.includes('id="dCapex"') && adminSrc.includes('setDrawer("dCapex","sCapex"') &&
+  adminSrc.includes("function renderCapex()"));
+ok("capex: capex_exposure is a HANDLED deep-dive key (purpose-built section, no double render)",
+  adminSrc.includes('"capex_exposure"])') && adminSrc.includes("function ddCapexExpSec(dd)") &&
+  ["DIRECT","FAB","POWER","NEOCLOUD"].every((t) => adminSrc.includes(t)));
+ok("capex: the tape REPORTS, never enforces — no veto path reads capexState",
+  !/AGREE_PICK[\s\S]{0,200}capexState|capexState\(\)[\s\S]{0,120}veto/.test(adminSrc));
+// Dashboard: the third leg of AI Unit Economics.
+ok("capex-dash: HYPERSCALER_CAPEX is curated WITH a reviewed date, rendered hatched + chipped, " +
+   "behind a CollapsedGroup like the GPU cost side",
+  dashSrc.includes("const HYPERSCALER_CAPEX") && /reviewed: "\d{4}-\d{2}-\d{2}"/.test(dashSrc) &&
+  /HyperscalerCapexCard[\s\S]{0,900}ILLUS_HATCH/.test(dashSrc) &&
+  dashSrc.includes('label="curated: hyperscaler capex funding flow"'));
+ok("capex-dash: the section header names all three legs (cost ↔ price ↔ funding)",
+  dashSrc.includes("cost ↔ price ↔ funding"));
+ok("capex-dash: it NEVER votes — computeRegime and the factor list are untouched by capex",
+  !/computeRegime[\s\S]{0,2400}capex/i.test(dashSrc) &&
+  !/REGIME_FACTOR_FIELDS=\[[^\]]*capex/i.test(dashSrc));
 
 // ═══════════ FEAT-NFCI (v3.43) — financial conditions ═══════════
 // Chosen over TLT (a levered inverse of the 10Y this page already carries) and over the

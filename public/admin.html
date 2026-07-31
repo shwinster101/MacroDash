@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <!-- AUDIT: kept in sync with package.json by test/smoke.mjs. admin.html is a Vite
      public/ passthrough, so it cannot receive __APP_VERSION__ — the guard is the fix. -->
-<title>TT TICKER TERMINAL v3.44.0</title>
+<title>TT TICKER TERMINAL v3.45.0</title>
 <style>
   :root{
     --bg:#05070a; --panel:#0a0f16; --panel2:#0d141d; --line:#16202c;
@@ -357,7 +357,7 @@
         onclick="toggleHeadInfo()">⋯ MENU</button>
     </div>
     <div id="headInfo" style="display:none">
-      <div class="brand">FINANCE&nbsp;BRO.AI // TT&nbsp;TICKER&nbsp;TERMINAL <small>v3.44.0 · single-pass deep-dive orchestrator</small></div>
+      <div class="brand">FINANCE&nbsp;BRO.AI // TT&nbsp;TICKER&nbsp;TERMINAL <small>v3.45.0 · single-pass deep-dive orchestrator</small></div>
       <div class="statusline">
         <span>BOOK: <b id="bookStamp">loading…</b></span>
         <span>AUTH: <b id="sessState">…</b></span>
@@ -432,6 +432,8 @@
           <div class="nd" id="upsideRank" style="margin-top:8px"></div>
           <!-- FEAT-TT-ESTRUN (v3.35): every modelled name's estimate run, one tap deep -->
           <div class="nd" id="estRunBoard" style="display:none;margin-top:8px"></div></details>
+        <details class="drawer" id="dCapex" style="display:none"><summary id="sCapex">CAPEX TAPE</summary>
+          <div class="nd" id="capexPanel"></div></details>
         <details class="drawer" id="dExp" style="display:none"><summary id="sExp">EXPOSURE</summary>
           <div class="nd" id="clusterLine" style="display:none"></div>
           <div class="nd" id="fundingLine" style="display:none;margin-top:8px"></div>
@@ -1630,7 +1632,7 @@ function render(){
   // FEAT-TT-SESSION: circuit first (it gates every add), then the queues, then clusters —
   // which must run AFTER renderUpsideRank so its overlap check reads the current top ranks.
   renderCircuit();renderNextDollar();renderFunding();renderOptLadder();renderUpsideRank();renderEstRunBoard();renderClusters();
-  renderBinaryCal();renderDecisions();renderCoverage();renderRollup();
+  renderCapex();renderBinaryCal();renderDecisions();renderCoverage();renderRollup();
   // v3.29: TODAY reads what the strips above computed (AGREE_PICK, LAST_RANK), so it can
   // never contradict them — one computation, rendered twice at different altitudes.
   renderToday();renderChanged();renderDrawers();renderScorecard();
@@ -1798,6 +1800,24 @@ function ddVal(v){
   if(Array.isArray(v))return v.map(x=>typeof x==="object"&&x!==null?ddVal(x):esc(x)).join(" · ");
   if(typeof v==="object")return Object.entries(v).map(([k,x])=>`<span style="color:var(--dim)">${esc(k)}:</span> ${typeof x==="object"&&x!==null?ddVal(x):esc(x)}`).join(" · ");
   return esc(v);
+}
+/* FEAT-TT-CAPEX (v3.45): typed hyperscaler-capex exposure — the transmission channel this
+   name's revenue rides. Type semantics matter (direct draws the pool; fab is inside a direct
+   name's COGS; power rides the buildout broadly; neocloud is two-sided), so a purpose-built
+   line beats the generic k/v fallback. Unknown/absent renders nothing. */
+function ddCapexExpSec(dd){
+  const e=dd&&dd.capex_exposure;
+  if(!e||typeof e!=="object"||Array.isArray(e))return "";
+  const T={direct:"DIRECT — revenue drawn from the tracked spenders' capex pool",
+    fab:"FAB — one step behind a direct name (inside its COGS; excluded from the pool sum to avoid double-count)",
+    power:"POWER/SHELL — rides the DC buildout broadly (utilities/colo too, not only the tracked spenders)",
+    neocloud:"NEOCLOUD — two-sided: rents to AI demand, competes with the spenders' internal capex; a pool cut can push overflow demand TO it"};
+  const t=String(e.type||"");
+  return `<div class="dd-sec"><div class="lbl">Hyperscaler-capex exposure</div>
+    <div style="font-size:11.5px">${T[t]?esc(T[t]):`<span style="color:var(--amber)">UNTYPED — set type direct|fab|power|neocloud so the conservation lint knows the transmission</span>`}</div>
+    ${isFinite(Number(e.pct_of_rev))?`<div style="font-size:11.5px;margin-top:3px">~<b>${esc(e.pct_of_rev)}%</b> of revenue capex-linked${Array.isArray(e.via)&&e.via.length?` · via ${e.via.map(esc).join(", ")}`:""}</div>`:""}
+    ${isFinite(Number(e.own_capex_B))?`<div style="font-size:11.5px;margin-top:3px">own capex <b>$${esc(e.own_capex_B)}B</b> — a spender profile; its OWN capex/rev ratio is the tracked metric</div>`:""}
+    ${e.note?`<div class="tdy-why" style="margin-top:3px">${esc(String(e.note).slice(0,240))}</div>`:""}</div>`;
 }
 function ddKvSec(title,obj){
   if(!obj||typeof obj!=="object"||Array.isArray(obj)||!Object.keys(obj).length)return "";
@@ -2201,7 +2221,7 @@ function ddKillSec(k){
 const DD_HANDLED=new Set(["ticker","name","thesis_version","updated","as_of","tier","ref_px","position_note",
   "pt_ladder","pt_model","pt_consensus","consensus","gates","hinges","leading_indicators","cert_probabilities","utilization_underwriting","capital",
   "dilution_grid","engine","pt_2040","kill_combination","key_dates","position","model_anchors","conditional_rules",
-  "linked_exposure","status_flags","tape","watchlist_unlocks","hedges","rules","open_items","telemetry"]);
+  "linked_exposure","status_flags","tape","watchlist_unlocks","hedges","rules","open_items","telemetry","capex_exposure"]);
 /* ═══════════ DEEP-DIVE FOCUS (FEAT-TT-DDFOCUS v3.31) ═══════════ */
 /* The tab opened ~20 sections at full size — exactly the pre-v3.29 board, one level down.
    A reader arrives at a name's tab with four questions and no others: what is it worth,
@@ -2451,7 +2471,7 @@ function renderDeepDive(sym){
   h+=ddDrawer("dates",`KEY DATES${(()=>{const n=ddNextDate(dd,todayET);
     return n?` · next ${esc(n.label)} in ${n.d}d`:` · <span style="color:var(--dim)">none dated</span>`;})()}`,kdHtml);
   h+=ddDrawer("cap",`CAPITAL &amp; EXPOSURE`+(dd.linked_exposure?` · <span style="color:var(--amber)">linked exposure</span>`:""),
-    ddKvSec("Capital",dd.capital)+ddGridSec(dd.dilution_grid)+
+    ddCapexExpSec(dd)+ddKvSec("Capital",dd.capital)+ddGridSec(dd.dilution_grid)+
     ddListSec("Capital disclosure watchlist (unlocks)",dd.watchlist_unlocks)+
     ddListSec("Hedges",dd.hedges)+ddKvSec("Position &amp; overlay",dd.position)+
     (dd.linked_exposure?`<div class="dd-sec"><div class="lbl">Linked exposure</div><div style="color:var(--amber);font-size:11.5px">⛓ ${ddVal(dd.linked_exposure)}</div></div>`:""));
@@ -3249,6 +3269,99 @@ function renderEstRunBoard(){
    the least expected return. Unmodelled and options-only names are NAMED, never silently
    missing (the RANKFAIR rule), and do_not_trim is flagged, never hidden — the session's
    asserted funding order is reconciled against this, married never merged. */
+/* ═══════════ FEAT-TT-CAPEX (v3.45) — the hyperscaler capex tape ═══════════ */
+/* Every AI-infra beneficiary's revenue estimate is implicitly a bet on the hyperscaler capex
+   pool, but the pool itself lived nowhere in the system — the same defect class as the v3.40
+   NVDA lens finding: an assumption buried in a number is unfalsifiable. The tape makes it a
+   dated, revision-tracked fact; the conservation lint makes the book's collective bet on it
+   checkable. Curated at each print (no $0 live source for guidance exists); the binary
+   calendar already tracks those dates as non-ticker prints. REPORTS, NEVER ENFORCES. */
+function capexState(){
+  const cx=BOARD.capex;
+  if(!cx||!Array.isArray(cx.rows)||!cx.rows.length)return null;
+  const rows=cx.rows.filter(r=>r&&isFinite(Number(r.fy_guide_B)));
+  if(!rows.length)return null;
+  const aggB=Math.round(rows.reduce((a,r)=>a+Number(r.fy_guide_B),0));
+  const downs=rows.filter(r=>String(r.dir)==="down").length;
+  const ups=rows.filter(r=>String(r.dir)==="up").length;
+  // The owner's regime-turn tripwire: >=2 of the tracked spenders guiding DOWN. Fires in
+  // both directions by design — a re-acceleration (>=2 up) is information too.
+  return{rows,aggB,downs,ups,turning:downs>=2,reacc:ups>=2,as_of:cx.as_of||BOARD.as_of};
+}
+function capexExposure(x){
+  const e=x&&x.deepDive&&x.deepDive.capex_exposure;
+  return(e&&typeof e==="object"&&!Array.isArray(e))?e:null;
+}
+/* The conservation check. Sum over DIRECT-typed names of (FY+1 revenue estimate ×
+   pct_of_rev) = the capex-funded revenue the book collectively implies; compare against the
+   tape's aggregate guide. Typed exclusions are the honesty:
+     fab      — TSM-class. Its revenue is inside a direct name's COGS; summing both counts
+                the same capex dollar twice.
+     neocloud — NBIS-class (owner call, v3.45): grouped in AI infra for the TRIPWIRE, but
+                its revenue draws from AI rental demand, not the tracked spenders' capex
+                pool — and a pool cut can push overflow demand TO it. Sign is two-sided, so
+                it is excluded from the sum and its OWN capex/rev ratio is tracked instead. */
+function lintCapexConservation(){
+  const st=capexState();if(!st)return null;
+  const fy=String(+new Date().toLocaleDateString("en-CA",{timeZone:"America/New_York"}).slice(0,4)+1);
+  const direct=[],unmeasured=[],fab=[],neo=[],untyped=[];
+  BOOK.forEach(x=>{
+    const e=capexExposure(x);if(!e)return;
+    const t=String(e.type||"");
+    if(t==="direct"){
+      const c=(x.deepDive&&x.deepDive.consensus)||{};
+      const rev=Number((c.revenue_B||{})[fy]),pct=Number(e.pct_of_rev);
+      if(isFinite(rev)&&isFinite(pct)&&pct>0)direct.push({sym:x.sym,impliedB:Math.round(rev*pct/10)/100*10,revB:rev,pct});
+      else unmeasured.push(x.sym);
+    }else if(t==="fab")fab.push(x.sym);
+    else if(t==="neocloud"){
+      const c=(x.deepDive&&x.deepDive.consensus)||{};
+      const rev=Number((c.revenue_B||{})[fy]),oc=Number(e.own_capex_B);
+      neo.push({sym:x.sym,ownCapexB:isFinite(oc)?oc:null,revB:isFinite(rev)?rev:null,
+        ratio:isFinite(oc)&&isFinite(rev)&&rev>0?Math.round(oc/rev*10)/10:null});
+    }else untyped.push(x.sym);
+  });
+  const impliedB=Math.round(direct.reduce((a,d)=>a+d.impliedB,0));
+  return{fy,st,direct,unmeasured,fab,neo,untyped,impliedB,
+    pctOfPool:st.aggB>0?Math.round(impliedB/st.aggB*100):null,
+    breach:st.aggB>0&&impliedB>st.aggB};
+}
+function renderCapex(){
+  const el=document.getElementById("capexPanel");if(!el)return;
+  const st=capexState();
+  if(!st){setDrawer("dCapex","sCapex","CAPEX TAPE",false);return;}
+  const L=lintCapexConservation();
+  const dirGlyph=d=>d==="down"?`<span style="color:var(--red)">▼ down</span>`:d==="up"?`<span style="color:var(--green)">▲ up</span>`:`<span style="color:var(--dim)">→ hold</span>`;
+  let h=`<div class="lbl">Hyperscaler capex tape — the funding pipe · ${sessChip(st.as_of)}</div>`;
+  if(st.turning)h+=`<div class="none" style="color:var(--red);font-weight:700">⚡ CAPEX REGIME TURNING — ${st.downs} of ${st.rows.length} tracked spenders guiding DOWN. Direct names take it first; fab one step behind; neoclouds two-sided (overflow rental demand vs shared AI-demand rollover).</div>`;
+  else if(st.reacc)h+=`<div class="none" style="color:var(--green);font-weight:700">▲ re-accelerating — ${st.ups} of ${st.rows.length} guiding up</div>`;
+  st.rows.forEach(r=>{
+    h+=`<div class="fdr-row"><span class="fdr-l"><span class="sym">${esc(r.co)}</span></span>`+
+      `<span class="fdr-p" style="color:var(--fg)">$${esc(r.fy_guide_B)}B</span>`+
+      `<span class="fdr-d">${dirGlyph(String(r.dir))} <span class="scope">guided ${esc(r.at)}${r.note?` · ${esc(String(r.note).slice(0,80))}`:""}</span></span></div>`;
+  });
+  h+=`<div class="none">aggregate <b>$${st.aggB}B</b> guided capex · enter each print's guide the day it lands — the binary calendar carries the dates</div>`;
+  if(L){
+    const col=L.breach?"var(--red)":(L.pctOfPool!==null&&L.pctOfPool>=80)?"var(--amber)":"var(--dim)";
+    h+=`<div class="none" style="color:${col}">CONSERVATION — book implies <b>$${L.impliedB}B</b> of capex-funded FY${L.fy} revenue`+
+      (L.pctOfPool!==null?` = <b>${L.pctOfPool}%</b> of the pool`:``)+
+      (L.breach?` — <b>the book collectively assumes more capex than the spenders have guided</b>: ${L.direct.map(d=>esc(d.sym)).join(", ")}`:``)+`</div>`;
+    if(L.direct.length)h+=`<div class="none">direct: ${L.direct.map(d=>`${esc(d.sym)} $${d.revB}B×${d.pct}% = $${Math.round(d.impliedB)}B`).join(" · ")}</div>`;
+    if(L.unmeasured.length)h+=`<div class="none" style="color:var(--amber)">direct but unmeasured (needs FY${L.fy} revenue + pct_of_rev): <b>${L.unmeasured.map(esc).join(", ")}</b> — the sum is a FLOOR</div>`;
+    if(L.fab.length)h+=`<div class="none">fab, excluded from the sum: <b>${L.fab.map(esc).join(", ")}</b> — inside a direct name's COGS; counting both double-counts the dollar</div>`;
+    L.neo.forEach(n=>{
+      h+=`<div class="none">neocloud, excluded (two-sided): <b>${esc(n.sym)}</b>`+
+        (n.ratio!==null?` — own capex $${n.ownCapexB}B vs FY${L.fy} rev $${n.revB}B = <b>${n.ratio}×</b> (a spender profile: revenue is capacity-built, not pool-drawn)`
+                       :` — own capex/rev not entered (capex_exposure.own_capex_B)`)+`</div>`;
+    });
+    if(L.untyped.length)h+=`<div class="none" style="color:var(--amber)">exposure declared but UNTYPED: <b>${L.untyped.map(esc).join(", ")}</b> — type direct|fab|power|neocloud so the lint knows the transmission</div>`;
+  }
+  el.innerHTML=h;
+  setDrawer("dCapex","sCapex",`CAPEX TAPE · `+
+    (st.turning?`<span style="color:var(--red)">⚡ ${st.downs} of ${st.rows.length} down</span>`
+      :`$${st.aggB}B agg${st.reacc?` · <span style=\"color:var(--green)\">▲ re-acc</span>`:``}`)+
+    (L&&L.breach?` · <span style="color:var(--red)">book &gt; pool</span>`:L&&L.pctOfPool!==null?` · implies ${L.pctOfPool}%`:``),true);
+}
 /* FEAT-TT-OPTMV (v3.44): the signed value of an options sleeve. Returns measured:false when
    ANY leg lacks mv — a partial sum would understate the sleeve and read as a smaller position
    than it is, which is the fail-closed rule pos.at and lastRun already follow. */
@@ -3483,6 +3596,7 @@ function renderStance(){
   const QC={bad:"var(--red)",warn:"var(--amber)",ok:"var(--green)",dim:"var(--dim)"};
   const breach=capChecks().filter(c=>c.over>0).length;
   const binToday=binaryEvents().filter(e=>e.inWindow).length;
+  const cxSt=capexState();
   /* v3.42 READABLE DESK: verdict as a TOKEN, qualifiers as chips, full prose one tap deep.
      Badges are real <button>s — focusable and Enter-activatable, same look. details.why is
      deliberately NOT class="drawer": the phone harness counts open drawers, and this is
@@ -3490,6 +3604,9 @@ function renderStance(){
   const badges=
     (breach?`<button class="badge" style="color:var(--red)" onclick="openDesk('dExp')">⚠ ${breach} over cap</button>`:"")+
     (binToday?`<button class="badge" style="color:var(--red)" onclick="openDesk('dCal')">◆ ${binToday} binaries ≤${BINARY_WINDOW_D}d</button>`:"")+
+    // FEAT-TT-CAPEX (v3.45): a turning capex tape is a red fact — visible while everything
+    // is closed, chip-length by the slice-1 rule, one tap to the full tape.
+    ((cxSt&&cxSt.turning)?`<button class="badge" style="color:var(--red)" onclick="openDesk('dCapex')">⚡ capex ${cxSt.downs}↓ of ${cxSt.rows.length}</button>`:"")+
     (CHANGED_N.n?`<button class="badge" style="color:${CHANGED_N.stops?"var(--red)":"var(--amber)"}" onclick="openDesk('dChanged')">Δ ${CHANGED_N.n} changed${CHANGED_N.stops?` · ${CHANGED_N.stops}!`:""}</button>`:"");
   const controls=`<span class="stance-right">`+
     (LIVE_AT?`<span class="scope">quotes ${esc(String(LIVE_AT).slice(11,16))}Z</span>`:"")+

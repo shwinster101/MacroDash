@@ -311,6 +311,24 @@ export function validateBoard(b) {
     if (!b.regime || typeof b.regime !== "object" || Array.isArray(b.regime)) return "regime must be an object";
     if (typeof b.regime.asserted !== "string" || !b.regime.asserted) return "regime.asserted (the session's read) is required";
   }
+  // FEAT-TT-CAPEX (v3.45): the hyperscaler capex tape — the funding pipe every AI-infra
+  // beneficiary's revenue estimate implicitly bets on, tracked as a dated, per-company set of
+  // guides with a REVISION DIRECTION. Curated at each print (the binary calendar already
+  // tracks those dates); there is no $0 live source for guidance. `dir` is the load-bearing
+  // field: >=2 of the set guiding "down" is the owner's regime-turn tripwire.
+  if (b.capex !== undefined) {
+    const cx = b.capex;
+    if (!cx || typeof cx !== "object" || Array.isArray(cx)) return "capex must be an object";
+    if (!Array.isArray(cx.rows) || !cx.rows.length) return "capex.rows must be a non-empty array";
+    for (const r of cx.rows) {
+      if (!r || typeof r !== "object") return "each capex row must be an object";
+      if (typeof r.co !== "string" || !/^[A-Z0-9.\-]{1,8}$/.test(r.co)) return "capex row co must be a 1-8 char code";
+      const g = Number(r.fy_guide_B);
+      if (!isFinite(g) || g <= 0 || g > 2000) return `capex row ${r.co} fy_guide_B out of band (0..2000 $B)`;
+      if (!["up", "hold", "down"].includes(String(r.dir))) return `capex row ${r.co} dir must be up|hold|down`;
+      if (!ISO_RE.test(String(r.at || ""))) return `capex row ${r.co} needs at (YYYY-MM-DD) — a guide without a print date cannot be aged`;
+    }
+  }
   // FEAT-TT-POS: the account-level measured block. `formula` is REQUIRED because mapping
   // broker fields to a leverage ratio is a judgment call, not a lookup — recording which
   // numbers were divided makes the figure that vetoes every add inspectable and correctable

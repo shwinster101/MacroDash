@@ -96,6 +96,22 @@ const GPU_PRICING = {
   note: "Falling on-demand $/hr = eroding AI-infra pricing power → the margin-compression hinge, visible before earnings.",
 };
 
+// FEAT-CAPEX (v3.45) — hyperscaler capex tape: the FUNDING FLOW leg of AI unit economics.
+// GPU $/hr is the supply cost, token $/Mtok the demand price; this is the pipe that pays for
+// both. Curated at each print (guidance has no $0 live source); `dir` is the revision
+// direction vs the prior guide — the number the market actually trades. ⚠ CURATED — figures
+// are placeholders to review at each print; the reviewed date is the honesty stamp.
+const HYPERSCALER_CAPEX = {
+  fy: "FY26", reviewed: "2026-07-30",
+  rows: [
+    { co: "MSFT",  guideB: 120, dir: "up"   },
+    { co: "AMZN",  guideB: 118, dir: "up"   },
+    { co: "GOOGL", guideB: 92,  dir: "up"   },
+    { co: "META",  guideB: 70,  dir: "hold" },
+  ],
+  note: "Big-4 guided capex — the pool that funds every AI-infra beneficiary's revenue. ≥2 guiding down = the regime-turn tell (headwind #1's $705B counts ALL AI capex incl. neoclouds; this tape tracks the four the market prices).",
+};
+
 // ELECTRIC SKIES — eVTOL FAA Type Certification tracker (Joby). The "next destination":
 // a subset of the IPO launch-stage pattern, but the gate is regulatory, not financial.
 // FAA TC is a 5-stage process; the final Type Certificate is the last gate before
@@ -608,6 +624,47 @@ const EvtolCertCard = () => {
 // AI INFRA — GPU on-demand list pricing tracker. Leading indicator for AI margin
 // compression; curated quarterly (see GPU_PRICING). Falling $/hr is the bearish read,
 // so a QoQ decline is colored amber (warning), not green.
+// FEAT-CAPEX (v3.45): the funding-flow card. Curated + dated, ILLUSTRATIVE always (no live
+// source, no SOURCES key), and it never votes — a directional read off a curated table would
+// break the v3.1 invariant. The aggregate and the revision arrows are the whole message.
+const HyperscalerCapexCard = () => {
+  const cx = HYPERSCALER_CAPEX;
+  const agg = cx.rows.reduce((a, r) => a + r.guideB, 0);
+  const downs = cx.rows.filter(r => r.dir === "down").length;
+  const glyph = (d) => d === "down" ? "▼" : d === "up" ? "▲" : "→";
+  const gcol  = (d) => d === "down" ? T.red : d === "up" ? T.green : T.textMuted;
+  return (
+    <div style={{ marginTop:16, background:T.surface, backgroundImage:ILLUS_HATCH, border:`1px solid ${T.border}`, borderRadius:6, padding:"12px 16px" }}>
+      <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", flexWrap:"wrap", gap:6 }}>
+        <SectionHeader>AI Infra · Hyperscaler CapEx (funding flow)</SectionHeader>
+        <div style={{ display:"flex", alignItems:"center", gap:6, flexWrap:"wrap" }}>
+          <span style={{ fontFamily:T.fontMono, fontSize:8, color:T.textMuted }}>{cx.fy} guides · reviewed {cx.reviewed}</span>
+          <IllustrativeChip/>
+        </div>
+      </div>
+      <div style={{ display:"flex", alignItems:"baseline", gap:10, margin:"8px 0 2px", flexWrap:"wrap" }}>
+        <span style={{ fontFamily:T.fontMono, fontSize:22, fontWeight:700, color:T.textPrimary }}>${agg}B</span>
+        <span style={{ fontFamily:T.fontMono, fontSize:9, color:downs >= 2 ? T.red : T.textMuted }}>
+          {downs >= 2 ? `⚡ ${downs} of ${cx.rows.length} guiding DOWN — the regime-turn tell` : `${downs} of ${cx.rows.length} guiding down`}
+        </span>
+      </div>
+      <div style={{ display:"grid", gridTemplateColumns:"repeat(auto-fill,minmax(120px,1fr))", gap:8, marginTop:8 }}>
+        {cx.rows.map(r => (
+          <div key={r.co} style={{ background:T.surfaceHigh, border:`1px solid ${T.border}`, borderRadius:5, padding:"8px 11px" }}>
+            <div style={{ display:"flex", justifyContent:"space-between", alignItems:"baseline" }}>
+              <span style={{ fontFamily:T.fontMono, fontSize:11, fontWeight:700, color:T.textPrimary }}>{r.co}</span>
+              <span style={{ fontFamily:T.fontMono, fontSize:10, color:gcol(r.dir) }}>{glyph(r.dir)}</span>
+            </div>
+            <div style={{ fontFamily:T.fontMono, fontSize:14, fontWeight:700, color:T.textSecondary }}>${r.guideB}B</div>
+          </div>
+        ))}
+      </div>
+      <div style={{ fontFamily:T.fontSans, fontSize:10, color:T.textSecondary, lineHeight:1.4, marginTop:8 }}>{cx.note}</div>
+      <SourceBox api="Manual" endpoint="earnings prints · curated per quarter" mode="MOCK"/>
+    </div>
+  );
+};
+
 const GpuPricingCard = () => {
   const g = GPU_PRICING;
   const qoq = (c) => parseFloat((((c.onDemand - c.prevQ) / c.prevQ) * 100).toFixed(1));
@@ -1426,7 +1483,7 @@ export default function Dashboard({ publicView = false } = {}) {
         {/* ── AI UNIT ECONOMICS · cost side (GPU $/hr) + price side (token $/Mtok) ── */}
         <div style={{marginTop:16,display:"flex",alignItems:"center",gap:10}}>
           <span style={{fontFamily:T.fontMono,fontSize:10,color:"#a78bfa",letterSpacing:"0.14em",whiteSpace:"nowrap"}}>◆ AI UNIT ECONOMICS</span>
-          <span style={{fontFamily:T.fontMono,fontSize:8,color:T.textMuted,whiteSpace:"nowrap"}}>cost ↔ price · the margin-compression hinge</span>
+          <span style={{fontFamily:T.fontMono,fontSize:8,color:T.textMuted,whiteSpace:"nowrap"}}>cost ↔ price ↔ funding · the margin-compression hinge</span>
           <div style={{height:1,flex:1,background:T.border}}/>
         </div>
         {/* FEAT-322: the live price side (OpenRouter) leads; the curated GPU cost side is
@@ -1434,6 +1491,10 @@ export default function Dashboard({ publicView = false } = {}) {
         <TokenomicsCard tok={d.tokenomics} mode={modeOf('tokenBlendedMtok')} asOf={asOfOf('tokenBlendedMtok')}/>
         <CollapsedGroup count={1} label="curated: GPU $/hr cost side">
           <GpuPricingCard />
+        </CollapsedGroup>
+        {/* FEAT-CAPEX (v3.45): the third leg — the capex pool that funds both sides above. */}
+        <CollapsedGroup count={1} label="curated: hyperscaler capex funding flow">
+          <HyperscalerCapexCard />
         </CollapsedGroup>
 
         {/* ── MAG 10 (full-width, collapsible) ── */}
