@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <!-- AUDIT: kept in sync with package.json by test/smoke.mjs. admin.html is a Vite
      public/ passthrough, so it cannot receive __APP_VERSION__ — the guard is the fix. -->
-<title>TT TICKER TERMINAL v3.43.1</title>
+<title>TT TICKER TERMINAL v3.44.0</title>
 <style>
   :root{
     --bg:#05070a; --panel:#0a0f16; --panel2:#0d141d; --line:#16202c;
@@ -357,7 +357,7 @@
         onclick="toggleHeadInfo()">⋯ MENU</button>
     </div>
     <div id="headInfo" style="display:none">
-      <div class="brand">FINANCE&nbsp;BRO.AI // TT&nbsp;TICKER&nbsp;TERMINAL <small>v3.43.1 · single-pass deep-dive orchestrator</small></div>
+      <div class="brand">FINANCE&nbsp;BRO.AI // TT&nbsp;TICKER&nbsp;TERMINAL <small>v3.44.0 · single-pass deep-dive orchestrator</small></div>
       <div class="statusline">
         <span>BOOK: <b id="bookStamp">loading…</b></span>
         <span>AUTH: <b id="sessState">…</b></span>
@@ -3249,6 +3249,17 @@ function renderEstRunBoard(){
    the least expected return. Unmodelled and options-only names are NAMED, never silently
    missing (the RANKFAIR rule), and do_not_trim is flagged, never hidden — the session's
    asserted funding order is reconciled against this, married never merged. */
+/* FEAT-TT-OPTMV (v3.44): the signed value of an options sleeve. Returns measured:false when
+   ANY leg lacks mv — a partial sum would understate the sleeve and read as a smaller position
+   than it is, which is the fail-closed rule pos.at and lastRun already follow. */
+function optSleeve(p){
+  const legs=Array.isArray(p&&p.opt)?p.opt:[];
+  if(!legs.length)return{measured:false,mv:0,why:"no legs"};
+  const missing=legs.filter(o=>!isFinite(Number(o.mv)));
+  if(missing.length)return{measured:false,mv:0,
+    why:`${missing.length} of ${legs.length} leg(s) have no synced value`};
+  return{measured:true,mv:legs.reduce((a,o)=>a+Number(o.mv),0),why:null};
+}
 function sellRank(){
   const tot=bookRollup().mv;
   if(!(tot>0))return null;
@@ -3256,9 +3267,24 @@ function sellRank(){
   const forced=[],disc=[],unmod=[],optOnly=[];
   BOOK.forEach(x=>{
     const p=posOf(x);if(!p)return;
+    /* FEAT-TT-OPTMV (v3.44): an options-only position is a real holding and a real source of
+       dollars, so it belongs IN this list — it used to be exiled to a footnote purely because
+       nothing in the schema carried its value. optSleeve() sums the SIGNED leg values: long
+       legs are assets you can sell, short legs are liabilities you must buy back, so a
+       net-short sleeve reports as an OBLIGATION rather than as funding. Unsynced legs make
+       the sleeve unmeasurable — which reads as "value not synced", never as zero. */
     const oo=Array.isArray(p.opt)&&p.opt.length>0&&!(Number(p.sh)>0);
-    if(oo){optOnly.push(x.sym);return;}
-    const mv=Number(p.mv);if(!isFinite(mv)||mv<=0)return;
+    const sleeve=oo?optSleeve(p):null;
+    const mv=oo?(sleeve&&sleeve.measured?sleeve.mv:NaN):Number(p.mv);
+    if(oo&&!(sleeve&&sleeve.measured)){optOnly.push({sym:x.sym,tier:x.tier,lens:x.lens,legs:p.opt.length,
+      why:sleeve?sleeve.why:"no legs"});return;}
+    if(!isFinite(mv)||mv<=0){
+      // A net-SHORT sleeve is not a funding source; naming it as an obligation is the honest
+      // rendering, and dropping it silently would hide a real position from the book.
+      if(oo)optOnly.push({sym:x.sym,tier:x.tier,lens:x.lens,legs:p.opt.length,
+        why:mv<=0?`net short — closing costs ${money(Math.abs(mv))}, a USE of cash`:"value not synced"});
+      return;
+    }
     // Cap decision prefers the broker-measured % of NAV (same rule as capChecks); the
     // tracked-book share is the fallback FLOOR when the sync didn't carry pct.
     const wNav=isFinite(Number(p.pct))?Number(p.pct):null;
@@ -3276,6 +3302,10 @@ function sellRank(){
       if(typeof tgt==="number"){ann=annualise(Math.round((tgt/px-1)*1000)/10,t.y);annRolled=pk.rolled;}
     }
     const row={sym:x.sym,tier:x.tier,lens:x.lens,w,mv,ann,annRolled,
+      // FEAT-TT-OPTMV: an option leg is levered and decaying, so the UNDERLYING's %/yr is not
+      // the leg's expected return. Options therefore rank on realisable dollars and say so,
+      // rather than borrowing a rate that isn't theirs — the same units discipline as D2.
+      optOnly:oo,basis:oo?"dollars":"return",legs:oo?p.opt.length:0,
       // A modelled name whose every rung is inside 3 months has a model — it just has no honest
       // ANNUAL rate. Lumping it under "no model" would be a new lie in place of the old one.
       modelled:rr.length>0,
@@ -3283,7 +3313,13 @@ function sellRank(){
       dnt:dnt.includes(x.sym),
       redH:Array.isArray(x.deepDive&&x.deepDive.hinges)?x.deepDive.hinges.filter(h=>h.state==="red").length:0,
       rs:runState(x.lastRun)};
-    if(w>=CAP_PCT){
+    /* v3.44: an options row ranks on DOLLARS, so it needs no model to qualify — requiring one
+       would have re-created the exclusion this feature removes. It also bypasses the cap tier:
+       CAP_PCT is a position-size rule computed against equity mv / broker pct, and a sleeve's
+       value is not comparable to that denominator (the RANKFAIR rule that an options position
+       gets its own marker rather than a misleading weight). */
+    if(oo){disc.push(row);}
+    else if(w>=CAP_PCT){
       row.trimPts=Math.round((w-CAP_PCT)*10)/10;
       row.trim$=Math.round(mv*(w-CAP_PCT)/w);
       forced.push(row);
@@ -3291,7 +3327,15 @@ function sellRank(){
     else unmod.push(row);
   });
   forced.sort((a,b)=>b.trimPts-a.trimPts);
-  disc.sort((a,b)=>a.ann-b.ann);
+  /* ONE list (v3.44). Rows that HAVE an honest annual rate keep the original rule — lowest
+     expected return funds first. Option rows have no comparable rate, so they follow, ordered
+     by the dollars they can actually realise. Mixing the two on a single numeric key would be
+     the exact units error D2 removed; interleaving them under one heading with a stated basis
+     per row is what "all holdings are in the ranking" can honestly mean. */
+  disc.sort((a,b)=>{
+    if(a.basis!==b.basis)return a.basis==="return"?-1:1;
+    return a.basis==="return"?a.ann-b.ann:b.mv-a.mv;
+  });
   return{forced,disc,unmod,optOnly,tot};
 }
 function renderSellBlock(){
@@ -3331,17 +3375,32 @@ function renderSellBlock(){
       (r.dnt?`<span class="bad2">⚠ cap and do-not-trim CONTRADICT — resolve, the board won't pick</span>`:"")+`</span></button>`;
   });
   s.disc.forEach((r,i)=>{
+    /* v3.44: one list, two honest bases. A share row's PRIMARY is its expected return (the
+       reason it funds first); an options row's PRIMARY is the dollars it can actually realise,
+       because a levered, decaying leg does not inherit the underlying's %/yr. Each row says
+       which basis ranked it, so the mixed ordering can never be mistaken for one key. */
+    const optRow=r.basis==="dollars";
     h+=`<button class="fdr-row" onclick="openCard('${esc(r.sym)}')">`+
       `<span class="fdr-l"><span class="scope">${i+1}</span>`+
       `<span class="sym">${esc(r.sym)}</span><span class="lens lens-${esc(r.lens)}">${esc(r.lens)}</span>`+
-      `<span class="scope">${r.w}%</span></span>`+
-      `<span class="fdr-p" style="color:${r.ann>=0?"var(--green)":"var(--red)"}">${r.ann>=0?"+":""}${r.ann}%/yr <span style="font-size:10px;font-weight:400">model</span></span>`+
-      `<span class="fdr-d"><span class="scope">lowest expected return funds first</span>${flags(r)}</span></button>`;
+      (optRow?`<span class="scope" style="color:var(--amber)">◇ ${r.legs} leg${r.legs===1?"":"s"}</span>`
+             :`<span class="scope">${r.w}%</span>`)+`</span>`+
+      (optRow
+        ?`<span class="fdr-p" style="color:var(--slate)">${money(r.mv)}</span>`
+        :`<span class="fdr-p" style="color:${r.ann>=0?"var(--green)":"var(--red)"}">${r.ann>=0?"+":""}${r.ann}%/yr <span style="font-size:10px;font-weight:400">model</span></span>`)+
+      `<span class="fdr-d"><span class="scope">${optRow
+        ?"ranked on realisable dollars — a leg's return is not the underlying's"
+        :"lowest expected return funds first"}</span>${flags(r)}</span></button>`;
   });
   const noModel=s.unmod.filter(r=>!r.modelled),noRate=s.unmod.filter(r=>r.modelled);
   if(noModel.length)h+=`<div class="none">cannot rank — no model: <b>${noModel.map(r=>esc(r.sym)).join(", ")}</b> (held, but the math has nothing to say)</div>`;
   if(noRate.length)h+=`<div class="none" style="color:var(--amber)">cannot rank — modelled but no annualisable rung (every one inside 3 months): <b>${noRate.map(r=>esc(r.sym)).join(", ")}</b></div>`;
-  if(s.optOnly.length)h+=`<div class="none">options-only, ranked separately: <b>${s.optOnly.map(esc).join(", ")}</b> — selling legs is not selling shares</div>`;
+  /* v3.44: options-only positions now rank IN the list above whenever their legs carry synced
+     values. What remains here is only what genuinely cannot be ranked — an unsynced sleeve, or
+     a NET SHORT one, which is an obligation rather than a source of dollars. Each says which. */
+  s.optOnly.forEach(o=>{
+    h+=`<div class="none"><b>${esc(o.sym)}</b> <span class="scope">◇ ${o.legs} leg${o.legs===1?"":"s"}</span> — ${esc(o.why)}</div>`;
+  });
   // Reconciliation: the session's ASSERTED first trim vs this COMPUTED first source.
   const assertedFirst=BOARD.funding&&Array.isArray(BOARD.funding.order)&&BOARD.funding.order[0]&&BOARD.funding.order[0].sym;
   const computedFirst=(s.forced[0]&&s.forced[0].sym)||(s.disc[0]&&s.disc[0].sym)||null;

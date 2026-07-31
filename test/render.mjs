@@ -118,7 +118,7 @@ const POSITIONS = {
   BBB: POS(10, 6090, 5.1),
   CCC: POS(700, 114100, 9.9),
   EEE: { at: `${TODAY_ET}T14:32:00Z`, src: "test", mv: 4200,
-    opt: [{ k: "call", side: "long", n: 2, strike: 100, exp: etDaysAgo(-52), src: "screenshot" }] },
+    opt: [{ k: "call", side: "long", n: 2, strike: 100, exp: etDaysAgo(-52), src: "screenshot", mv: 4200 }] },
   // FFF funds the deleverage line, so its short calls are what the trim blocker is verified
   // against. The SECOND leg is deliberately EXPIRED: before v3.39 the cover filter ignored exp
   // entirely, so an expired short call still "covered" shares in the one place the board says a
@@ -350,8 +350,10 @@ ok("sell: discretionary source is the LOWEST expected return (BBB), stated as su
   /BBB/.test(sellB) && /%\/yr model/.test(sellB) && /lowest expected return funds first/i.test(sellB));
 ok("sell: unmodelled held names are named, not silently missing",
   /cannot rank — no model:/i.test(sellB) && /CCC/.test(sellB) && /FFF/.test(sellB));
-ok("sell: options-only positions rank separately — legs are not shares",
-  /EEE/.test(sellB) && /selling legs is not selling shares/.test(sellB));
+// v3.44: an options-only position with synced legs ranks IN the list, on realisable dollars.
+ok("sell: an options-only position ranks IN the list, on dollars, and says so",
+  /EEE/.test(sellB) && /ranked on realisable dollars/.test(sellB) &&
+  !/selling legs is not selling shares/.test(sellB));
 ok("sell: the asserted funding order is confronted with the computed one",
   /asserts FFF first/i.test(sellB) && /computed says AAA/i.test(sellB));
 ok("sell: a tripped circuit makes SELL the active list",
