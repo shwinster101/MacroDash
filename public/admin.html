@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <!-- AUDIT: kept in sync with package.json by test/smoke.mjs. admin.html is a Vite
      public/ passthrough, so it cannot receive __APP_VERSION__ — the guard is the fix. -->
-<title>TT TICKER TERMINAL v3.47.0</title>
+<title>TT TICKER TERMINAL v3.48.0</title>
 <style>
   :root{
     --bg:#05070a; --panel:#0a0f16; --panel2:#0d141d; --line:#16202c;
@@ -357,7 +357,7 @@
         onclick="toggleHeadInfo()">⋯ MENU</button>
     </div>
     <div id="headInfo" style="display:none">
-      <div class="brand">FINANCE&nbsp;BRO.AI // TT&nbsp;TICKER&nbsp;TERMINAL <small>v3.47.0 · single-pass deep-dive orchestrator</small></div>
+      <div class="brand">FINANCE&nbsp;BRO.AI // TT&nbsp;TICKER&nbsp;TERMINAL <small>v3.48.0 · single-pass deep-dive orchestrator</small></div>
       <div class="statusline">
         <span>BOOK: <b id="bookStamp">loading…</b></span>
         <span>AUTH: <b id="sessState">…</b></span>
@@ -2221,7 +2221,12 @@ function ddEstRunSec(x,dd){
    at review, which is why the box has no state controls beyond ADD. Dots live on the
    book ENTRY (validateBook passthrough), not inside deepDive, so a payload replacement
    can never wipe the inventory. */
-const DOT_NOTE_MAX=280,DOT_URL_MAX=500,DOT_KEEP=30;
+// DOT_NOTE_MAX raised 280→800 (v3.48): a pointer is still a pointer, but the real capture
+// habit is pasting an article's lede/summary, and 280 clipped every one of those mid-word.
+// 800 fits ~3-5 sentences; 30 dots × 800 ≈ 24KB, negligible against the 200KB book cap. The
+// doctrine ("a POINTER, never the article body") is unchanged — the box just stops guillotining
+// a normal paste. dotIn is now a <textarea> so multi-line pastes are visible while capturing.
+const DOT_NOTE_MAX=800,DOT_URL_MAX=500,DOT_KEEP=30;
 function dotChip(st){return st==="promoted"?'<span style="color:var(--green)">★</span>'
   :st==="reviewed"?'<span style="color:var(--dim)">○</span>'
   :'<span style="color:var(--amber)">●</span>';}
@@ -2229,9 +2234,9 @@ function ddDotsSec(x){
   const dots=Array.isArray(x.dots)?x.dots:[];
   const newN=dots.filter(d=>(d.state||"new")==="new").length;
   let h=`<div class="dd-sec"><div class="lbl">Dots — inventory (${dots.length}${newN?` · <span style="color:var(--amber)">${newN} new</span>`:""}) · capture only — triage at review promotes or marks reviewed</div>`;
-  h+=`<div style="display:flex;gap:6px;flex-wrap:wrap;margin:4px 0 8px">
-    <input id="dotIn" placeholder="paste a line and/or URL — a pointer, not the article" style="flex:1;min-width:200px"/>
-    <button class="act" onclick="addDot('${esc(x.sym)}')">⊕ DOT</button></div>`;
+  h+=`<div style="display:flex;gap:6px;flex-wrap:wrap;align-items:flex-start;margin:4px 0 8px">
+    <textarea id="dotIn" rows="4" maxlength="${DOT_NOTE_MAX+DOT_URL_MAX+20}" placeholder="paste a line and/or URL — a pointer, not the article (up to ~${DOT_NOTE_MAX} chars)" style="flex:1;min-width:220px;resize:vertical;font-family:inherit;font-size:12px;line-height:1.4;padding:6px 8px"></textarea>
+    <button class="act" onclick="addDot('${esc(x.sym)}')" style="flex-shrink:0">⊕ DOT</button></div>`;
   h+=dots.map(d=>{
     const url=typeof d.url==="string"&&/^https?:\/\//i.test(d.url)?d.url:null;
     return `<div class="dd-kv"><div class="k">${dotChip(d.state||"new")} ${esc(d.t||"")}</div>
