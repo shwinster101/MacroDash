@@ -1177,6 +1177,52 @@ Jan-anchor shipped; see `snapshot.js` ~318–328), `spyMa100`, `spyMa200`, and a
   pin cannot prove a severity rule, and this one gates the green line) + **153 render** (+5: the
   bar leads both surfaces, every clock stated, and AAA's red hinge named on the bar while absent
   from the blocker list).
+- **v3.51 "the page tells the truth about itself" — the PUBLIC-side audit.** A second audit found
+  the public dashboard's positioning defensible (*"MacroDash tells you whether the market backdrop
+  supports taking risk — and abstains when the evidence is stale"*) and its moat correctly placed
+  in the **judgment layer, not the data layer**. Its Critical #1 (the two freshness realities) and
+  the NFCI chip/denominator defects were **already fixed by v3.49** — it audited a pre-fix
+  checkout. What survived, all of it the same shape: not a wrong NUMBER, a wrong CLAIM about
+  the page itself. **The engines are named** — this six-factor vote is the **MACRO BACKDROP**,
+  distinct from `/readout.json`'s six ORDER-GATING checks (both legitimate; unnamed, a reader
+  reasonably assumes one verdict disagreeing with itself). **"5-factor vote" → 6** in three
+  user-facing strings (NFCI has voted since v3.43), now pinned against `REGIME_FACTOR_FIELDS` so
+  a 7th voter fails the build. **Confidence, the audit's first-screen item**: Signal Quality
+  counted TILES and never said whether the VERDICT was trustworthy — the strip now reports
+  `BACKDROP N/6 factors voting`, **names** the excluded ones ("N of 6 usable" without saying
+  which is half a fact) and calls out a blind **crash gauge (VIX)** by name, all off
+  `computeRegime`'s own `counted`/`totalFactors` so it cannot drift from the vote. **SPY is
+  labelled the FRED SP500/10 proxy it has always been** (the tooltip claimed "S&P 500 ETF").
+  **CAPE credits `multpl.com`** — "Manual" beside a LIVE badge made the provenance vocabulary
+  self-contradictory (`api` is the fetch path, `mode` is freshness, and multpl IS the live
+  scrape). **The alert toggles state their real limit at the weight of the control** rather than
+  in 8px muted text — an ON/OFF beside "notifications not wired" is the honesty invariant
+  violated by an *affordance* instead of a number.
+  **FEAT-WHY3-MATERIAL — freshness is not relevance.** WHY #3 gated the top RSS item on
+  freshness alone, then labelled whatever returned "Headline driver": the audit caught a
+  **Fidelity death-certificate administrative story** presented as the driver of a macro regime
+  — fresh, dated, correctly attributed, explaining nothing. A confidently-irrelevant *why* is
+  worse than no why, exactly as a fabricated number is worse than a missing one.
+  `isMacroMaterial()` is a curated **allowlist of macro-transmission vocabulary** (policy ·
+  inflation · growth/labor · rates/credit · volatility · energy · systemic shocks *and their
+  resolution* — a ceasefire moves the tape like its onset). Deliberately **ONE-WAY**: a
+  non-matching headline is WITHHELD and the slot says *why* it was withheld — "today's top story
+  is not macro-material" is a different fact from "no headline arrived", and only the first stops
+  an administrative story reading as the market's driver. Never rewritten, never scored.
+  **Owner calls, honoured:** the **moon voice stays PRIMARY** (`wen moon?`/MOONING/HODL —
+  personality kept, and pinned so a later refactor can't quietly drop it), and of the audit's
+  demote list only the **Mag 10 quote strip** is cut — v3.43 took its curated fundamentals on the
+  Yahoo-dupe test and the surviving quote strip failed the *same* test. Component, mock array,
+  state, CSS and merge all removed; `mag10PricesJson` stays **mapped** because the same Finnhub
+  pull feeds QQQ. The cut took its attribution with it — and found that the **footer had been
+  crediting "Mag 10 fundamentals · SEC S-1" for two releases after v3.43 deleted both**, the
+  precise defect v3.43's own note warns about. Watchlist, headwinds, Peoria and the alert
+  toggles are KEPT per owner call. **Deferred (feature-scale):** "what would change the verdict"
+  — the exact thresholds that flip the posture — is the audit's remaining first-screen item and
+  its own scope.
+  Tests: **735 smoke** (+14) + **153 render**, plus a **14-check Chromium pass on the built
+  page** (every collapsed group expanded to prove nothing cut reappears, and that the footer
+  still RECORDS the retirement — history kept, like the CBOE note).
 - **Deferred:** stored fundamentals + Robinhood sync — now unblocked by the `x-tt-pin` header
   (v3.9): a chat-side daily review can PUT `status_flags`/`ref_px` into the deepDive payloads and
   stamp `lastRun`. When built, store the *triage* shape (`{at, px}` → "% moved since your last TT
@@ -1243,7 +1289,7 @@ npm run dev        # Vite dev server (mock unless VITE_DATA_MODE=live in .env)
 npm run build      # → dist/  (what Pages runs)
 npm run preview    # serve the built dist/
 
-node test/smoke.mjs   # 718-assertion no-network smoke test (needs Node ≥17)
+node test/smoke.mjs   # 735-assertion no-network smoke test (needs Node ≥17)
 npm run test:ui       # browser render test for admin.html (skips if no Chromium)
 
 # Cron Worker (separate deploy):

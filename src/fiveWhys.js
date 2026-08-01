@@ -17,6 +17,51 @@
 
 const pct = (v, d = 1) => `${v >= 0 ? "+" : ""}${Number(v).toFixed(d)}%`;
 
+/* MACRO-MATERIALITY FILTER (v3.51, public audit).
+   WHY #3 gated the top RSS item on FRESHNESS alone and then labelled whatever came back
+   "Headline driver". Freshness is not relevance: the audit caught a Fidelity death-certificate
+   administrative story presented as the driver of a macro regime — a fresh, correctly-dated,
+   correctly-attributed fact that explains nothing about risk posture, sitting in the one slot
+   whose whole job is to explain the verdict. A confidently-irrelevant "why" is worse than no
+   why, exactly as a fabricated number is worse than a missing one.
+   The filter is an ALLOWLIST of macro-transmission vocabulary — the channels this dashboard
+   actually votes on (policy · inflation · growth/labor · rates/credit · volatility/drawdown ·
+   energy · the systemic-risk words). It is deliberately BROAD-BUT-BOUNDED and, critically,
+   ONE-WAY: a non-matching headline is WITHHELD and the slot says so, never rewritten or
+   scored. Missing a real macro headline costs one narrative line; asserting an irrelevant one
+   as the market's driver costs the credibility of the whole explanation layer.
+   ⚠ Curated, like MARKET_HOLIDAYS: a genuinely new macro vocabulary (a novel crisis word)
+   needs an entry here, and until it gets one the slot abstains rather than guessing. */
+const MACRO_TERMS = [
+  // policy / central bank
+  "fed", "fomc", "powell", "rate cut", "rate hike", "central bank", "ecb", "boj", "monetary",
+  "quantitative", "basis point", "bps", "tightening", "easing",
+  // inflation / prices
+  "inflation", "cpi", "pce", "deflation", "price index", "wage growth",
+  // growth / labor
+  "gdp", "recession", "jobs report", "payroll", "unemployment", "jobless", "labor market",
+  "consumer spending", "retail sales", "manufacturing", "ism", "pmi",
+  // rates / credit / currency
+  "treasury", "yield", "bond", "credit spread", "default", "downgrade", "debt ceiling",
+  "dollar", "currency",
+  // market-wide risk (not a single company's tape)
+  "stocks", "equities", "s&p", "nasdaq", "dow", "selloff", "sell-off", "rally", "correction",
+  "bear market", "bull market", "volatility", "vix", "risk-off", "risk off", "drawdown",
+  "futures", "index", "benchmark",
+  // commodities / energy
+  "oil", "crude", "opec", "energy prices", "gold",
+  // systemic / geopolitical shocks that transmit to the macro tape
+  "tariff", "trade war", "sanctions", "war", "shutdown", "banking crisis", "bank failure",
+  "contagion", "sovereign", "stimulus",
+  // the RESOLUTION of a geopolitical shock moves the tape as much as its onset
+  "peace", "ceasefire", "truce",
+];
+export function isMacroMaterial(text) {
+  const t = String(text || "").toLowerCase();
+  if (!t) return false;
+  return MACRO_TERMS.some((k) => t.includes(k));
+}
+
 function sessionPrefix(session) {
   if (session === "PRE") return "Pre-open setup —";
   if (session === "CLOSE") return "Post-close —";
@@ -82,10 +127,21 @@ export function computeFiveWhys(data, regime = {}, opts = {}) {
     (excluded.length ? ` Excluded (mock/stale): ${excluded.map((k) => FIELD_LABEL[k]).join(", ")}.` : "")
   );
 
-  // WHY #3 — top market headline (dated, fact-attributed)
+  // WHY #3 — top market headline: fresh AND macro-material (v3.51). Both gates, in that
+  // order, so the reason for an empty slot is always the honest one.
   const hd = mp.headline;
-  if (hd && hd.text && hd.source && hd.source !== "—" && isLive("marketHeadline")) {
+  const hdFresh = !!(hd && hd.text && hd.source && hd.source !== "—" && isLive("marketHeadline"));
+  if (hdFresh && isMacroMaterial(hd.text)) {
     whys.push(`Headline driver (${hd.source}): “${hd.text}”`);
+  } else if (hdFresh) {
+    // The distinction is load-bearing: "we have today's top story and it is not about the
+    // macro tape" is a different fact from "no headline arrived", and it is the one that
+    // stops an administrative story being read as the market's driver.
+    whys.push(
+      `Headline driver: today's top market story (${hd.source}) is not macro-material — ` +
+      `it is not about policy, inflation, growth, rates, credit or volatility, so it is not ` +
+      `presented as driving the verdict. Direction is data-driven today, not news-driven.`
+    );
   } else {
     whys.push(`Headline driver: no fresh market headline today — direction is data-driven, not news-driven.`);
   }

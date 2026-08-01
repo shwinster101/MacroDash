@@ -7,7 +7,7 @@
 import { existsSync } from "node:fs";
 import { readFileSync } from "node:fs";
 import { mergeLiveOverMock, SOURCES, isStale, cadenceOf, parseObsDate, isMarketHoliday, MARKET_HOLIDAYS, DERIVED_OF as DERIVED_OF_SRC, DERIVED_EXEMPT, govAsOf } from "../src/sources.js";
-import { computeFiveWhys } from "../src/fiveWhys.js";
+import { computeFiveWhys, isMacroMaterial } from "../src/fiveWhys.js";
 import {
   bandSpyVs200d, bandVix, bandFearGreed, bandRs, bandTenYear, bandFedOdds,
   aggregateVerdict, computeMacroFlip, buildTtReadout, formatTtPaste, DERIVED_OF,
@@ -177,6 +177,32 @@ const withHL = { ...MOCK_DATA, marketPulse: { ...MOCK_DATA.marketPulse, headline
 ok("WHY #3 renders a fresh market headline when present",
   computeFiveWhys(withHL, fwRegime, { fresh: new Set(["marketHeadline"]) }).whys[2].includes("Peace deal lifts futures"));
 ok("WHY #3 falls back when no fresh headline", computeFiveWhys(MOCK_DATA, fwRegime, { fresh: new Set() }).whys[2].includes("no fresh market headline"));
+// ---- v3.51 (public audit): freshness is not RELEVANCE ----------------------
+// The audit caught a Fidelity death-certificate administrative story rendered as the macro
+// "Headline driver" — fresh, dated and correctly attributed, and explaining nothing about
+// risk posture. A confidently-irrelevant "why" is worse than no why.
+ok("materiality: macro-transmission vocabulary passes across every channel the regime votes on",
+  ["Fed holds rates steady", "CPI cools to 2.4%", "Treasury yields spike",
+   "Oil surges on OPEC cut", "Stocks sell off as volatility jumps", "New tariffs hit imports",
+   "Payrolls miss badly", "Peace deal lifts futures"].every(isMacroMaterial));
+ok("materiality: the audit's OWN false positive is rejected — an administrative story is not a driver",
+  !isMacroMaterial("Fidelity now requires a death certificate to transfer an account") &&
+  !isMacroMaterial("How to pick a financial advisor") &&
+  !isMacroMaterial("Best credit cards for travel in 2026"));
+ok("materiality: empty / missing text is never material (fails closed)",
+  !isMacroMaterial("") && !isMacroMaterial(null) && !isMacroMaterial(undefined));
+// The distinction is load-bearing: "we have today's story and it is not macro" is a DIFFERENT
+// fact from "no headline arrived", and only the first stops an irrelevant driver being asserted.
+const admin = { ...MOCK_DATA, marketPulse: { ...MOCK_DATA.marketPulse,
+  headline: { text: "Fidelity now requires a death certificate to transfer an account", source: "MarketWatch" } } };
+const fwAdmin = computeFiveWhys(admin, fwRegime, { fresh: new Set(["marketHeadline"]) });
+ok("WHY #3: a fresh but non-macro headline is WITHHELD, and the slot says WHY it was withheld",
+  /not macro-material/.test(fwAdmin.whys[2]) &&
+  !fwAdmin.whys[2].includes("death certificate") &&
+  !/no fresh market headline/.test(fwAdmin.whys[2]));
+ok("WHY #3: the filter is ONE-WAY — a material headline still renders verbatim, never rewritten",
+  computeFiveWhys(withHL, fwRegime, { fresh: new Set(["marketHeadline"]) }).whys[2]
+    .includes("Peace deal lifts futures"));
 
 // ---- 4. ttReadout — TT mapping table (FEAT-330 / DEC-33; gates real orders) ----------
 console.log("\n[4] ttReadout — TT band table + verdict + macro flip (every boundary)");
@@ -1884,12 +1910,22 @@ ok("cut: the SpaceX S-1 panel and the private Mag-10 entry are gone",
 ok("cut: Mag-10 curated fundamentals are gone (mkt cap, P/E, revenue, margins, FCF, capex)",
   ["mktCapT", "ttmPe", "fwdPe", "q1RevB", "fwdRevB", "yoyRevGrowth", "netMarginPct", "fcfTtmB", "capex26B"]
     .every((k) => !dashSrc.includes(k)));
-ok("cut: ...but the LIVE half survives — price + chgPct still overlay from mag10PricesJson",
-  dashSrc.includes("mag10PricesJson") && /\{ ticker:"NVDA", color:"[^"]+", isMusk:false, price:/.test(dashSrc));
+// v3.51 (public audit, owner call) finished the job: the surviving quote strip failed the SAME
+// Yahoo-dupe test that took its fundamentals. The FIELD stays mapped — the same Finnhub pull
+// feeds QQQ — but no component, mock array, CSS or merge for it remains.
+ok("cut v3.51: the Mag 10 quote strip is gone — component, mock array, state, CSS and merge",
+  !dashSrc.includes("Mag10Card") && !dashSrc.includes("mag10open") &&
+  !dashSrc.includes("mag10-scroll") && !dashSrc.includes("mag10ByTicker") &&
+  !/\n  mag10:\[/.test(dashSrc));
+ok("cut v3.51: mag10PricesJson stays MAPPED (QQQ rides the same Finnhub pull) and still resolves",
+  "mag10PricesJson" in SOURCES && MOCK_DATA.mag10PricesJson === "[]");
 ok("cut: no surviving label claims curated fundamentals or a market-cap sort (a cut must " +
    "take its own attribution with it, or the page lies about what it is showing)",
   !/fundamentals curated/i.test(dashSrc) && !/Ranked by market cap/i.test(dashSrc) &&
   !/SORTED BY MKT CAP/i.test(dashSrc));
+ok("cut v3.51: the FOOTER source list no longer credits data that was deleted — it claimed " +
+   "'Mag 10 fundamentals' and 'SEC S-1' for two v3.43 releases after both were cut",
+  !/Curated: Mag 10 fundamentals/.test(dashSrc) && !/· SEC S-1 ·/.test(dashSrc));
 ok("keep: GPU $/hr, headwinds and the watchlist are untouched — curated, but differentiated",
   dashSrc.includes("GPU_PRICING") && dashSrc.includes("headwinds") && dashSrc.includes("watchlist"));
 
@@ -2233,6 +2269,33 @@ ok("regime: the vote is described as 6-factor on the band and the source box",
 ok("regime: the stated count equals REGIME_FACTOR_FIELDS + the valuation factor",
   (() => { const m = /REGIME_FACTOR_FIELDS=\[([^\]]*)\]/.exec(dashSrc);
     return m && m[1].split(",").length + 1 === 6; })());
+
+// ---- 26. public audit (v3.51): naming, provenance vocabulary, and affordance honesty ----
+// The public product's promise is a TRUSTWORTHY posture. These are the places the page said
+// something not quite true about itself — none of them a wrong number, all of them a wrong claim.
+console.log("\n[26] public dashboard — the page tells the truth about itself");
+// Two structurally different regimes exist (this six-factor backdrop vs /readout.json's
+// six ORDER-GATING checks). Both legitimate; unnamed, a reader assumes one verdict.
+ok("naming: the public verdict is MACRO BACKDROP, distinct from the order-gating readout",
+  dashSrc.includes("Macro Backdrop") && !dashSrc.includes(">Macro Regime · wen moon?<"));
+ok("naming: the moon states survive as the primary voice (owner call — personality kept)",
+  dashSrc.includes("wen moon?") && dashSrc.includes("WEN_MOON_STATES"));
+// SPY on this page is SP500/10 from FRED — Stooq blocks the edge. The tooltip claimed "ETF".
+ok("provenance: SPY is labelled a FRED proxy, not an ETF quote it has never been",
+  /FRED SP500 proxy, NOT an SPY ETF quote/.test(dashSrc) && !/S&P 500 ETF — the broad US stock market/.test(dashSrc));
+// "Manual" + a LIVE badge on the same tile made the provenance vocabulary self-contradictory:
+// `api` is the FETCH PATH, `mode` is freshness — and multpl IS the live scrape.
+ok("provenance: CAPE credits its real fetch path (multpl scrape), not 'Manual' beside a LIVE badge",
+  dashSrc.includes('api="multpl.com"') && !/api="Manual" endpoint="Robert Shiller/.test(dashSrc));
+// An ON/OFF control beside 8px muted "notifications not wired" reads as a working alert system.
+ok("affordance: the alert toggles state their real limit at the weight of the control itself",
+  /no push, email or SMS is sent/.test(dashSrc) && !/Triggers evaluate live data · notifications not wired/.test(dashSrc));
+// Confidence: Signal Quality counted TILES and never said whether the VERDICT was trustworthy.
+ok("confidence: the strip reports how many factors actually voted, from computeRegime itself",
+  dashSrc.includes("BACKDROP {regimeConf.counted}/{regimeConf.total} factors voting") &&
+  dashSrc.includes("counted:regime.counted,total:regime.totalFactors"));
+ok("confidence: excluded factors are NAMED — 'N of 6 usable' without saying which is half a fact",
+  dashSrc.includes("excluded: {regimeConf.excluded.join") && dashSrc.includes("crash gauge (VIX) unavailable"));
 
 console.log(`\n=== SMOKE TEST: ${pass} passed, ${fail} failed ===`);
 process.exit(fail === 0 ? 0 : 1);

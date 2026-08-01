@@ -308,22 +308,6 @@ const MOCK_DATA = {
     { ticker:"AMZN", name:"Amazon",        tier:"A", thesis:"AWS margins + retail operating leverage" },
     { ticker:"TSM",  name:"TSMC",          tier:"A", thesis:"Foundry leader; pricing power on leading nodes" },
   ],
-  // FEAT-164: 9-row Mag 10 with FCF + merged CapEx; EV/EBITDA computed
-  // MAG-10 — v3.43: curated FUNDAMENTALS cut (mkt cap, P/E, revenue, margins, FCF, capex
-  // and the SpaceX S-1 block). Those were hand-maintained and are exactly what Yahoo/SA
-  // render better and fresher. What remains is the half this stack actually sources live:
-  // price + day change, overlaid from Finnhub via mag10PricesJson.
-  mag10:[
-    { ticker:"NVDA", color:"#f0a500", isMusk:false, price:134.72, chgPct:+3.4 },
-    { ticker:"GOOGL", color:"#3498db", isMusk:false, price:178.34, chgPct:+0.6 },
-    { ticker:"AAPL", color:"#9b59b6", isMusk:false, price:211.42, chgPct:+0.8 },
-    { ticker:"MSFT", color:"#2ecc71", isMusk:false, price:462.18, chgPct:+1.2 },
-    { ticker:"AVGO", color:"#06b6d4", isMusk:false, price:242.18, chgPct:+3.7 },
-    { ticker:"AMZN", color:"#f39c12", isMusk:false, price:224.61, chgPct:+1.8 },
-    { ticker:"META", color:"#e74c3c", isMusk:false, price:618.42, chgPct:+2.1 },
-    { ticker:"PLTR", color:"#8b5cf6", isMusk:false, price:158.23, chgPct:+1.4 },
-    { ticker:"TSLA", color:"#dc2626", isMusk:true, price:348.21, chgPct:-0.4 },
-  ],
   headwinds:[
     { id:1, name:"AI CapEx ROI Gap",    severity:"High", trend:"worsening", claim:"$705B FY26 capex vs $215B AI revenue. No hyperscaler can trace $X spent → $Y gained.", triggers:["AI rev <25% of CapEx","Hyperscaler guide-down"] },
     { id:2, name:"US Debt Service",     severity:"High", trend:"worsening", claim:"Interest payments ~18% of federal revenue. Crowding-out accelerating.", triggers:["10Y sustained >5%","Debt service >25% revenue"] },
@@ -342,8 +326,10 @@ const MOCK_DATA = {
     trend:[9.5,8.8,8.0,7.2,6.7,6.20], // oldest→newest; the decline IS the signal
     modelsJson:'[{"name":"Claude Sonnet","mtok":9.0},{"name":"GPT frontier","mtok":7.5},{"name":"Gemini Pro","mtok":6.2},{"name":"Llama large","mtok":2.4},{"name":"DeepSeek","mtok":1.1}]',
   },
-  // MAG 10 live prices (Finnhub) — JSON passthrough merged onto the mag10 array by ticker at
-  // render time. '[]' = no live prices yet (mock baseline); fundamentals always stay curated.
+  // MAG 10 live prices (Finnhub) — JSON passthrough. The per-ticker quote strip was CUT in
+  // v3.51 (public audit, Yahoo-dupe test), so nothing renders these today; the field stays
+  // mapped because the same Finnhub pull feeds QQQ and dropping it would change the fetch.
+  // '[]' = no live prices yet (mock baseline).
   mag10PricesJson:"[]",
   // fiveWhys: now computed at render time by computeFiveWhys() (src/fiveWhys.js) from live data.
   sessionDelta:{ alertsDelta:0, regimeDelta:"none", vixPct:-2.1, tenYBps:-4, spyPct:+0.29 },
@@ -944,7 +930,7 @@ const RegimeBand=({d,stale=new Set()})=>{
         {/* Left: label + sub */}
         <div style={{display:"flex",alignItems:"baseline",gap:12,flexWrap:"wrap",minWidth:0}}>
           <div>
-            <div style={{fontFamily:T.fontMono,fontSize:8,color:regime.color,letterSpacing:"0.14em",textTransform:"uppercase"}}>Macro Regime · wen moon?</div>
+            <div style={{fontFamily:T.fontMono,fontSize:8,color:regime.color,letterSpacing:"0.14em",textTransform:"uppercase"}}>Macro Backdrop · wen moon?</div>
             <div style={{display:"flex",alignItems:"baseline",gap:10,flexWrap:"wrap"}}>
               <span style={{fontFamily:T.fontMono,fontSize:22,fontWeight:700,color:regime.color,letterSpacing:"-0.01em"}}>{moon.label}</span>
               <span style={{fontFamily:T.fontMono,fontSize:10,color:T.textSecondary}}>{regime.label} · {regime.sub}</span>
@@ -1009,21 +995,6 @@ const FGGauge=({score,label,mode="MOCK",asOf})=>{
   );
 };
 
-// Mag 10 Card (FEAT-164: 9 rows, FCF + merged CapEx)
-const Mag10Card=({s})=>(
-  /* v3.43: a PRICE card. The curated fundamental rows (mkt cap, P/E, revenue, margins, FCF,
-     capex) were hand-maintained and are precisely what Yahoo/SA do better and fresher — the
-     Yahoo-dupe test that already cut SPY P/E. price + chgPct are the half this stack really
-     sources (Finnhub, overlaid via mag10PricesJson), so that is what survives. */
-  <div style={{background:T.surface,border:`1px solid ${T.border}`,borderRadius:5,padding:"10px 10px",minWidth:112,flex:"1 1 112px"}}>
-    <div style={{fontFamily:T.fontMono,fontSize:13,fontWeight:700,color:s.color}}>{s.ticker}</div>
-    <div style={{display:"flex",justifyContent:"space-between",marginTop:4}}>
-      <span style={{fontFamily:T.fontMono,fontSize:11,color:T.textPrimary,fontWeight:700}}>${s.price}</span>
-      <span style={{fontFamily:T.fontMono,fontSize:10,color:s.chgPct>=0?T.green:T.red,fontWeight:700}}>{s.chgPct>=0?"+":""}{s.chgPct}%</span>
-    </div>
-  </div>
-);
-
 // Alert row
 const AlertRow=({alert,onToggle,onDelete})=>{
   const color=alert.triggered?T.red:alert.active?T.green:T.textMuted;
@@ -1060,7 +1031,6 @@ const DEFAULT_ALERTS=[
 export default function Dashboard({ publicView = false } = {}) {
   const [alerts,setAlerts]=useState(DEFAULT_ALERTS);
   const [expandedHW,setExpandedHW]=useState(null);
-  const [mag10open,setMag10open]=useState(false); // FEAT-322: default closed — curated content doesn't own the default view
   const [watchlistOpen,setWatchlistOpen]=useState(false); // FEAT-322: default closed — curated content doesn't own the default view
   const [copied,setCopied]=useState(false);
   const [ttCopied,setTtCopied]=useState(false); // FEAT-332: "Copy TT readout" button state
@@ -1089,6 +1059,20 @@ export default function Dashboard({ publicView = false } = {}) {
   // field key is "shillerPe" — drop it from the vote when stale, like every other factor.
   if(modeOf("shillerPe")==="STALE") staleFactors.add("valuation");
   const regime=computeRegime(d, staleFactors);
+  /* Public audit, "Confidence": Signal Quality counted TILES (13 live / 1 stale / 1 mock) and
+     never answered the only question that matters about the verdict above it — is the REGIME
+     safe to trust? A posture computed from 3 of 6 voters is a different claim from the same
+     posture computed from 6, and nothing said which. `counted`/`totalFactors` come from
+     computeRegime itself (FIX-E), so this can never drift from the vote it describes, and the
+     EXCLUDED factors are NAMED — "5 of 6 usable" without saying which one is blind is half a
+     fact. The crash gauge (VIX) is called out by name: it is the input whose absence the
+     tt-v1 readout already refuses to print a TAILWIND without. */
+  const regimeConf=(()=>{
+    const fs=regimeFactors(d,staleFactors);
+    const out=fs.filter(f=>f.stale).map(f=>f.short);
+    return {counted:regime.counted,total:regime.totalFactors,excluded:out,
+      blind:staleFactors.has("vix")||modeOf("vix")==="MOCK"};
+  })();
   // Signal Quality rollup — at-a-glance trust: how many tracked signals are live+fresh vs
   // stale vs mock. Only meaningful in live mode (in mock everything is MOCK by design).
   const SIGNAL_FIELDS=["spyPrice","vix","fearGreed","tenYear","cpiHeadline","fedFunds","creditSpread","nfci","wti","btc","rateOddsHold","marketHeadline","savings","tokenBlendedMtok","shillerPe"];
@@ -1170,12 +1154,10 @@ export default function Dashboard({ publicView = false } = {}) {
     {label:"SPY",    val:fmt.pct(delta.spyPct), color:pctColor(delta.spyPct)},
   ];
 
-  // Overlay live Mag 10 prices (Finnhub, via mag10PricesJson passthrough) onto the curated
-  // array by ticker — price + chgPct go live; all fundamentals stay curated. '[]' = mock.
-  const mag10Live=(()=>{try{return JSON.parse(d.mag10PricesJson||"[]");}catch{return[];}})();
-  const mag10ByTicker=Object.fromEntries(mag10Live.map(p=>[p.ticker,p]));
-  const mag10=d.mag10.map(s=>{const lv=mag10ByTicker[s.ticker];return lv?{...s,price:lv.price,chgPct:lv.chgPct??s.chgPct}:s;});
-  const mag10PriceMode=modeOf('mag10PricesJson');
+  // Mag 10 strip CUT (v3.51). `mag10PricesJson` stays mapped in SOURCES and still arrives on
+  // the payload — the same Finnhub pull feeds QQQ — but nothing on this page renders per-ticker
+  // quotes any more, so the merge/derivation went with the UI. A live field with no consumer is
+  // how a cut leaves attribution behind (the v3.43 lesson).
 
   return(
     <div style={{background:T.bg,minHeight:"100vh",fontFamily:T.fontSans,color:T.textPrimary}}>
@@ -1191,13 +1173,11 @@ export default function Dashboard({ publicView = false } = {}) {
           .macro-strip-inner{display:grid!important;grid-template-columns:repeat(4,1fr)!important;gap:10px 6px!important;min-width:0!important;}
           .macro-strip-inner>div{min-width:0!important;}
           .delta-bar-inner{flex-wrap:nowrap!important;overflow-x:auto!important;}
-          .mag10-scroll{overflow-x:auto!important;}
           .dir-tiles{flex-wrap:wrap!important;}
           .hide-mobile{display:none!important;}
           /* IPO strip stays a horizontal swipeable row on mobile (not 3 stacked cards) */
           .wen-moon-mobile{display:none!important;}
         }
-        .mag10-fade{-webkit-mask-image:linear-gradient(to right,black 85%,transparent 100%);mask-image:linear-gradient(to right,black 85%,transparent 100%);}
         @media(prefers-reduced-motion:reduce){.pulse-anim{animation:none!important;}}
       `}</style>
 
@@ -1260,6 +1240,16 @@ export default function Dashboard({ publicView = false } = {}) {
         {sq.stale>0&&<span style={{fontFamily:T.fontMono,fontSize:9,color:T.amber}}>⏱ {sq.stale} stale</span>}
         {sq.mock>0&&<span style={{fontFamily:T.fontMono,fontSize:9,color:T.textMuted}}>○ {sq.mock} mock</span>}
         <span style={{fontFamily:T.fontMono,fontSize:8,color:T.textMuted}}>of {sq.total} tracked</span>
+        {/* The verdict's own confidence, not the tile census. */}
+        <span style={{fontFamily:T.fontMono,fontSize:9,color:regimeConf.counted===regimeConf.total?T.green:regimeConf.counted>regimeConf.total/2?T.amber:T.red,borderLeft:`1px solid ${T.border}`,paddingLeft:10}}>
+          BACKDROP {regimeConf.counted}/{regimeConf.total} factors voting
+        </span>
+        {regimeConf.excluded.length>0&&(
+          <span style={{fontFamily:T.fontMono,fontSize:8,color:T.amber}}>excluded: {regimeConf.excluded.join(" · ")}</span>
+        )}
+        {regimeConf.blind&&(
+          <span style={{fontFamily:T.fontMono,fontSize:8,color:T.red}}>⚠ crash gauge (VIX) unavailable</span>
+        )}
         {/* v3.1: one-line legend so a friend decodes the chips — ◫ ILLUSTRATIVE tiles are curated, not live */}
         <span style={{fontFamily:T.fontMono,fontSize:8,color:T.textMuted,marginLeft:"auto"}}>● live · ⏱ stale · <span style={{color:T.amber}}>◫ illustrative = curated, not live</span></span>
       </div>
@@ -1268,7 +1258,7 @@ export default function Dashboard({ publicView = false } = {}) {
       <div style={{background:T.surfaceHigh,borderBottom:`1px solid ${T.border}`,padding:"6px 20px",overflowX:"auto",display:"flex",alignItems:"center",justifyContent:"space-between",gap:12}} className="macro-strip">
         <div style={{display:"flex",gap:20,minWidth:"max-content",flex:1}} className="macro-strip-inner">
           {[
-            {l:"SPY",  f:"spyPrice", v:`$${d.marketPulse.spy.price}`,      s:fmt.pct(d.marketPulse.spy.changePct), sc:pctColor(d.marketPulse.spy.changePct), t:"S&P 500 ETF — the broad US stock market"},
+            {l:"SPY*", f:"spyPrice", v:`$${d.marketPulse.spy.price}`,      s:fmt.pct(d.marketPulse.spy.changePct), sc:pctColor(d.marketPulse.spy.changePct), t:"S&P 500 ÷ 10 (FRED SP500 proxy, NOT an SPY ETF quote — Stooq blocks the edge). Tracks the ETF closely; not identical."},
             {l:"QQQ",  f:"qqqPrice", v:`$${d.marketPulse.qqq.price}`,      s:fmt.pct(d.marketPulse.qqq.changePct), sc:pctColor(d.marketPulse.qqq.changePct), t:"Nasdaq-100 ETF — big tech"},
             {l:"VIX",  f:"vix", v:`${d.marketPulse.vix.current}`,     s:fmt.pct(d.marketPulse.vix.weekChg)+" WoW", sc:pctColor(d.marketPulse.vix.weekChg,true), t:"Volatility index — the market's fear gauge (lower = calmer)"},
             {l:"F&G",  f:"fearGreed", v:`${d.marketPulse.fearGreed.score}`, s:d.marketPulse.fearGreed.label, sc:d.marketPulse.fearGreed.score>55?T.green:T.red, t:"Fear & Greed — market sentiment, 0 = fear, 100 = greed"},
@@ -1315,7 +1305,7 @@ export default function Dashboard({ publicView = false } = {}) {
       {/* ── COMMAND CENTER GRID (FEAT-161: 60/40) ──
           FEAT-171 · ABOVE-FOLD CONTRACT (v1.7, DECISION-3 = YES):
             ABOVE FOLD @1280×800 → header + macro strip (all 8) + Regime Verdict band + SPY chart + YTD KPI tiles.
-            BELOW FOLD (one scroll) → cross-asset tiles + full macro grid + headwinds + 5 Whys + Mag 10 + alerts.
+            BELOW FOLD (one scroll) → cross-asset tiles + full macro grid + headwinds + 5 Whys + alerts.
             Maxim: "fit the content, don't squeeze the content." Zero-scroll abandoned as dishonest for a
             chart/gauge dashboard. Canonical contract owned by SRS §9/§12 (T1). */}
       <div style={{padding:"16px 20px"}}>
@@ -1566,7 +1556,7 @@ export default function Dashboard({ publicView = false } = {}) {
                     <div style={{fontFamily:T.fontMono,fontSize:8,color:T.textMuted}}>Mean {d.macro.shillerPe.mean} · Median {d.macro.shillerPe.median}</div>
                     <div style={{fontFamily:T.fontMono,fontSize:8,color:shIllus?T.textMuted:T.red}}>{shPctAth}% of ATH</div>
                   </div>
-                  <SourceBox api="Manual" endpoint="Robert Shiller · multpl/Yale" mode={shMode} asOf={asOfOf('shillerPe')}/>
+                  <SourceBox api="multpl.com" endpoint="Shiller CAPE (scraped, monthly cadence) · Yale/Shiller series" mode={shMode} asOf={asOfOf('shillerPe')}/>
                 </div>
                 );})()}
               </div>
@@ -1642,39 +1632,11 @@ export default function Dashboard({ publicView = false } = {}) {
           <HyperscalerCapexCard />
         </CollapsedGroup>
 
-        {/* ── MAG 10 (full-width, collapsible) ── */}
-        <div style={{marginTop:16,background:T.surface,border:`1px solid ${T.border}`,borderRadius:6,overflow:"hidden"}}>
-          <button onClick={()=>setMag10open(o=>!o)} aria-expanded={mag10open}
-            style={{width:"100%",display:"flex",justifyContent:"space-between",alignItems:"center",padding:"10px 16px",background:"none",border:"none",cursor:"pointer",borderBottom:mag10open?`1px solid ${T.border}`:"none"}}>
-            <div style={{display:"flex",gap:10,alignItems:"center"}}>
-              <span style={{fontFamily:T.fontMono,fontSize:10,color:T.amber,letterSpacing:"0.1em"}}>MAG 10</span>
-              <span style={{fontFamily:T.fontMono,fontSize:9,color:T.textMuted}}>prices {mag10PriceMode==="LIVE"||mag10PriceMode==="CACHED"?"live":"curated fallback"} · day move only (curated fundamentals cut v3.43)</span>
-            </div>
-            <div style={{display:"flex",gap:8,alignItems:"center"}}>
-              <span style={{fontFamily:T.fontMono,fontSize:10,color:T.textMuted}}>{mag10open?"▲":"▼"}</span>
-            </div>
-          </button>
-          {mag10open&&(
-            <div style={{padding:"12px 16px 16px"}}>
-              {/* Mag 8 (non-Musk public) — live prices only since v3.43 */}
-              <div style={{fontFamily:T.fontMono,fontSize:8,color:T.textMuted,letterSpacing:"0.1em",marginBottom:8}}>PUBLIC · LIVE PRICE + DAY MOVE</div>
-              <div style={{display:"flex",gap:8,overflowX:"auto",paddingBottom:4}} className="mag10-scroll mag10-fade">
-                {mag10.filter(s=>!s.isMusk).map(s=><Mag10Card key={s.ticker} s={s}/>)}
-              </div>
-              {/* Musk divider */}
-              <div style={{display:"flex",alignItems:"center",gap:10,margin:"14px 0 10px"}}>
-                <div style={{height:1,flex:1,background:T.border}}/>
-                <span style={{fontFamily:T.fontMono,fontSize:8,color:"#475569",whiteSpace:"nowrap",letterSpacing:"0.1em"}}>ELON MUSK VENTURES — DISTINCT ENTERPRISES</span>
-                <div style={{height:1,flex:1,background:T.border}}/>
-              </div>
-              <div style={{display:"flex",gap:8,overflowX:"auto",paddingBottom:4}} className="mag10-scroll">
-                {mag10.filter(s=>s.isMusk).map(s=><Mag10Card key={s.ticker} s={s}/>)}
-              </div>
-              <SourceBox api={mag10PriceMode==="LIVE"||mag10PriceMode==="CACHED"?"FMP":"Manual"} endpoint={`prices: ${mag10PriceMode==="LIVE"||mag10PriceMode==="CACHED"?"Finnhub live":"curated fallback"} · day move only`} mode={mag10PriceMode} asOf={asOfOf('mag10PricesJson')}/>
-            </div>
-          )}
-        </div>
-
+        {/* MAG 10 quote strip CUT (v3.51, public audit). v3.43 cut its curated fundamentals
+            on the Yahoo-dupe test ("Yahoo/SA do this better and fresher"); the surviving live
+            price + day-move strip fails the SAME test — it is the raw-data layer, and the moat
+            is the judgment layer. mag10PricesJson/SOURCES/fetchEquities stay wired: QQQ still
+            renders from the same Finnhub pull, so nothing upstream is removed. */}
         {/* ── MY CONVICTION · S/A TIER (full-width, collapsible) ── */}
         <div style={{marginTop:16,background:T.surface,border:`1px solid ${T.border}`,borderRadius:6,overflow:"hidden"}}>
           <button onClick={()=>setWatchlistOpen(o=>!o)} aria-expanded={watchlistOpen}
@@ -1723,7 +1685,13 @@ export default function Dashboard({ publicView = false } = {}) {
         <div style={{marginTop:16,background:T.surface,border:`1px solid ${T.border}`,borderRadius:6,padding:"12px 16px"}}>
           <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:10}}>
             <SectionHeader>Macro Alerts</SectionHeader>
-            <div style={{fontFamily:T.fontMono,fontSize:8,color:T.textMuted}}>Triggers evaluate live data · notifications not wired</div>
+            {/* Public audit: an ON/OFF toggle beside 8px muted "notifications not wired" reads as
+                a working alert system. The toggles are real (they gate the triggered dot on this
+                page) but nothing is DELIVERED, so the limit is stated at the same weight as the
+                control — the honesty invariant applied to an affordance instead of a number. */}
+            <div style={{fontFamily:T.fontMono,fontSize:9,color:T.amber,border:`1px solid ${T.amber}44`,borderRadius:3,padding:"2px 7px"}}>
+              ⚠ ON/OFF highlights the row on THIS page only — no push, email or SMS is sent
+            </div>
           </div>
           <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(260px,1fr))",gap:6}}>
             {alerts.map(a=><AlertRow key={a.id} alert={a} onToggle={id=>setAlerts(prev=>prev.map(x=>x.id===id?{...x,active:!x.active}:x))} onDelete={handleDeleteAlert}/>)}
@@ -1734,7 +1702,7 @@ export default function Dashboard({ publicView = false } = {}) {
         <div style={{marginTop:12,display:"flex",justifyContent:"space-between",alignItems:"center",flexWrap:"wrap",gap:4}}>
           <div style={{fontFamily:T.fontMono,fontSize:8,color:T.textMuted}}>{`MacroDash v${__APP_VERSION__} · Data refreshed daily · end-of-day sources`}</div>
           <div style={{fontFamily:T.fontMono,fontSize:8,color:T.textMuted}}>Not financial advice · Personal use</div>
-          <div style={{fontFamily:T.fontMono,fontSize:8,color:T.textMuted}}>Live: FRED · CNN · Kalshi · OpenRouter · Finnhub · multpl · Curated: Mag 10 fundamentals · GPU $/hr · SEC S-1 · Retired: CBOE Put/Call (free feed dead since 2019 · removed v3.2)</div>
+          <div style={{fontFamily:T.fontMono,fontSize:8,color:T.textMuted}}>Live: FRED · CNN · Kalshi · OpenRouter · Finnhub · multpl · Curated: GPU $/hr · hyperscaler capex · token efficiency · Retired: CBOE Put/Call (free feed dead 2019 · v3.2) · Mag 10 fundamentals + SEC S-1 (v3.43) · Mag 10 quote strip (v3.51)</div>
         </div>
       </div>
     </div>
