@@ -151,11 +151,16 @@ ok("WHY #1 is the SPY/200DMA/CPI/Fed core anchor",
 ok("WHY #5 is the synthesis (verdict + factor tally)", /Net:/.test(fw.whys[4]) && fw.whys[4].includes("RISK-ON"));
 ok("WHY #4 attributes headwinds as a curated register (not live tape)", /Risk register/.test(fw.whys[3]) && /curated/.test(fw.whys[3]));
 // FEAT-DQ: stale factor excluded from the vote tally (headline denominator + WHY #5 caveat)
+// FIX-E (v3.49): the denominator is the 6-voter set (FEAT-NFCI v3.43) and comes from
+// computeRegime's `counted` when provided — these pins previously froze the pre-NFCI "/5".
 const fwStale = computeFiveWhys(MOCK_DATA, fwRegime, { stale: new Set(["vix"]) });
-ok("5 Whys: denominator drops to /4 when one factor is stale",
-  fwStale.headline.includes("/4") && !fwStale.headline.includes("/5"));
+ok("5 Whys: denominator drops to /5 when one of the six factors is stale",
+  fwStale.headline.includes("/5") && !fwStale.headline.includes("/6"));
 ok("5 Whys: WHY #5 flags reduced-signal read when factors excluded", fwStale.whys[4].includes("excluded"));
-ok("5 Whys: default (no stale) keeps all 5 factors (DEC-31: P/C retired)", fw.headline.includes("/5"));
+ok("5 Whys: default (no stale) keeps all 6 factors (NFCI votes, v3.43)", fw.headline.includes("/6"));
+ok("5 Whys FIX-E: computeRegime's own counted/totalFactors govern the denominator when present",
+  computeFiveWhys(MOCK_DATA, { ...fwRegime, counted: 4, totalFactors: 6 }).headline.includes("/4") &&
+  computeFiveWhys(MOCK_DATA, { ...fwRegime, counted: 4, totalFactors: 6 }).whys[4].includes("2 excluded"));
 // ---- DEC-31 (v3.2): Put/Call fully retired ------------------------------
 ok("DEC-31: putCall absent from SOURCES", !("putCall" in SOURCES));
 ok("DEC-31: MOCK_DATA no longer carries marketPulse.putCall", MOCK_DATA.marketPulse.putCall === undefined);
@@ -645,10 +650,34 @@ ok("agree: every chip carries its TT verdict, unscored shown as TT — (never bl
   adminSrc.includes('`<span class="scope">TT —</span>`') && adminSrc.includes("TT ${esc(lab)}"));
 ok("agree: red hinge count rides the chip beside the verdict",
   adminSrc.includes("● ${r.redH} red"));
-ok("agree: NEXT DOLLAR lights only on gap AND quality AND R/R AND binary window",
-  adminSrc.includes("both stories agree") && adminSrc.includes('"no gap"') &&
+ok("agree: the green line lights only on gap AND quality AND R/R AND binary window",
+  adminSrc.includes("ELIGIBLE NEXT DOLLAR — all gates passed") && adminSrc.includes('"no gap"') &&
   adminSrc.includes("quality fails") && adminSrc.includes("R/R fails its floor") &&
   adminSrc.includes("no-new-adds"));
+// ---- FIX-B (v3.49, VALUE_PROPOSITION_AUDIT Critical #2): eligibility hard gates ----
+// The audit caught the green pick lighting with stance UNKNOWN, Macro Flip blind, and a
+// NEVER RUN name. Each is now a named veto, and an unreadable regime feed fails CLOSED.
+ok("FIX-B: an unknown stance vetoes the green line (a live regime read is mandatory)",
+  adminSrc.includes("stance UNKNOWN — no measured or asserted regime; a live regime read is mandatory before an add"));
+ok("FIX-B: a blind or absent Macro Flip vetoes — fail closed, never default-to-clear",
+  adminSrc.includes("mf.evaluable===false?(mf.reason||") &&
+  adminSrc.includes("readout carries no Macro Flip block") &&
+  adminSrc.includes("regime feed unavailable — Macro Flip cannot be read"));
+ok("FIX-B: a non-fresh TT run vetoes the pick, state named (never/aged)",
+  adminSrc.includes('r.rs.k!=="fresh")return r.rs.k==="never"?"no TT run on record — run one first"'));
+ok("FIX-B: a failed gate renders WAIT and leaves no stale AGREE_PICK behind",
+  adminSrc.includes("NEXT DOLLAR: WAIT — eligibility gate failed"));
+ok("FIX-B: red hinges stay surfaced-not-vetoed on the green line (D3 doctrine, v3.39)",
+  adminSrc.includes("not a veto (yours to weigh)"));
+// FIX-C: the two rankings carry the labels for what they actually are.
+ok("FIX-C: math list is labelled VALUATION GAP — math only; funding list is FUNDING PRIORITY",
+  adminSrc.includes("VALUATION GAP — math only · ranked by %/yr, weight-aware") &&
+  adminSrc.includes("FUNDING PRIORITY") && !adminSrc.includes("NEXT DOLLAR — SELL") &&
+  !adminSrc.includes("NEXT DOLLAR — BUY"));
+// FIX-D: no surface claims a NAV denominator — it is account equity, options excluded.
+ok("FIX-D: cap breaches state the account-equity denominator, never '% of NAV'",
+  !adminSrc.includes("% of NAV") &&
+  adminSrc.includes("denominator = account equity, options excluded — a floor, not NAV"));
 // v3.27.1: binary:false = calendar entry (re-score, tax date) — visible, never gating.
 ok("kd: non-binary key dates never trip the no-new-adds gate",
   adminSrc.includes("k.binary===false||!/") || adminSrc.includes("k.binary===false||!"));
@@ -790,8 +819,35 @@ ok("holiday: a regular Monday is not one", !isMarketHoliday("2026-07-06"));
 ok("holiday: unknown year fails open (weekday-only fallback, never a crash)", !isMarketHoliday("2028-01-17"));
 ok("isStale: Thu data viewed Mon across Good Friday = FRESH (holiday is not a missed session)",
   isStale("2026-04-02", new Date("2026-04-06")) === false);
+// FIX-A (v3.49): explicit ET instant — a bare "2026-04-07" is midnight UTC = Monday 8pm ET,
+// where Thursday data is legitimately fresh; "viewed Tuesday" must actually mean Tuesday ET.
 ok("isStale: same Thu data viewed Tue = STALE (Monday was a real session)",
-  isStale("2026-04-02", new Date("2026-04-07")) === true);
+  isStale("2026-04-02", new Date("2026-04-07T12:00:00-04:00")) === true);
+// ---- FIX-A (v3.49, VALUE_PROPOSITION_AUDIT Critical #1) — the ET/UTC rollover ----
+// "today" is the ET date of `now`, never the runtime-local date. On the UTC edge the old
+// local-midnight truncation advanced "today" at 8pm ET and aged normal prior-close data,
+// so /readout.json (edge) and the dashboard (ET browser) gave two different regime verdicts
+// for the same payload. These instants straddle the rollover; in a UTC runtime (this test
+// env, CI, and the edge itself) they regress the old behavior directly.
+ok("isStale FIX-A: Wed close viewed Thu 9pm ET (= Fri 01:00 UTC) is FRESH — the UTC date must not age it",
+  isStale("2026-07-29", new Date("2026-07-31T01:00:00Z")) === false);
+ok("isStale FIX-A: same data one real session later (Fri 9pm ET) IS stale — the fix must not over-correct",
+  isStale("2026-07-29", new Date("2026-08-01T01:00:00Z")) === true);
+ok("isStale FIX-A: weekly cadence unaffected by the rollover hour (12-day boundary judged in ET)",
+  isStale("2026-07-20", new Date("2026-08-01T01:00:00Z"), "weekly") === false);
+// End-to-end: the exact two-surface split the audit measured live. A snapshot whose fields
+// carry Wednesday's close, read at Thursday 9pm ET (Friday 01:00 UTC — the edge's clock):
+// every dated field must still vote. Before FIX-A the edge withheld them (INSUFFICIENT,
+// flip blind) while an ET browser voted them — two verdicts for one regime.
+ok("readout FIX-A: prior-close data at Thu 9pm ET (Fri UTC) still votes — no INSUFFICIENT from the rollover", (() => {
+  const dEve = "2026-07-29"; // Wednesday's close, the freshest possible print Thursday evening
+  const r = buildTtReadout({
+    spyPrice: 748.1, spyPriceAsOf: dEve, spyMa200: 700.0, spyChangePct: 0.41,
+    vix: 16.1, vixAsOf: dEve, fearGreed: 62, fearGreedAsOf: dEve, fearGreedLabel: "Greed",
+    qqqChangePct: 0.9, qqqPriceAsOf: dEve, tenYear: 4.46, tenYearAsOf: dEve, tenYearM1: 0.03,
+  }, { now: new Date("2026-07-31T01:00:00Z") });
+  return r.regime.verdict !== "INSUFFICIENT" && r.vix.value === 16.1 && r.macro_flip.evaluable === true;
+})());
 ok("isStale: Wed data viewed Fri across Thanksgiving = FRESH",
   isStale("2026-11-25", new Date("2026-11-27")) === false);
 ok("isStale: Thu Dec 24 data viewed Mon Dec 28 = FRESH (Xmas Friday + weekend)",
@@ -1795,7 +1851,11 @@ ok("nfci: it votes in the DASHBOARD regime (6th factor), off the SAME shared ban
 ok("nfci: a STALE nfci drops out of the vote like every other factor",
   /REGIME_FACTOR_FIELDS=\[[^\]]*"nfci"\]/.test(dashSrc));
 ok("nfci: it appears in the displayed factor breakdown, so 'X/Y bullish' matches the cast vote",
-  /\{key:"nfci",\s+label:"Fin Conditions"/.test(dashSrc) && dashSrc.includes("SD — "));
+  /\{key:"nfci",\s+short:"NFCI",\s+label:"Fin Conditions"/.test(dashSrc) && dashSrc.includes("SD — "));
+// FIX-E (v3.49): every factor carries its own chip label (`short`), and the chip strip renders
+// from it — the old hardcoded 5-label array left the 6th (NFCI) chip literally "undefined".
+ok("FIX-E: chip labels come from the factors themselves, not a parallel hardcoded array",
+  dashSrc.includes("{f.short} {f.stale?") && !dashSrc.includes('["10Y","VIX","F&G","CPI","VAL"][i]'));
 ok("nfci: the mock baseline (-0.42) sits in the NEUTRAL zone — the demo shows a factor that " +
    "ABSTAINS in ordinary conditions, not one wired to vote bullish by default",
   MOCK_DATA.macro.nfci.current > -0.5 && MOCK_DATA.macro.nfci.current < 0);

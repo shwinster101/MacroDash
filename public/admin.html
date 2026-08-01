@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <!-- AUDIT: kept in sync with package.json by test/smoke.mjs. admin.html is a Vite
      public/ passthrough, so it cannot receive __APP_VERSION__ — the guard is the fix. -->
-<title>TT TICKER TERMINAL v3.48.0</title>
+<title>TT TICKER TERMINAL v3.49.0</title>
 <style>
   :root{
     --bg:#05070a; --panel:#0a0f16; --panel2:#0d141d; --line:#16202c;
@@ -357,7 +357,7 @@
         onclick="toggleHeadInfo()">⋯ MENU</button>
     </div>
     <div id="headInfo" style="display:none">
-      <div class="brand">FINANCE&nbsp;BRO.AI // TT&nbsp;TICKER&nbsp;TERMINAL <small>v3.48.0 · single-pass deep-dive orchestrator</small></div>
+      <div class="brand">FINANCE&nbsp;BRO.AI // TT&nbsp;TICKER&nbsp;TERMINAL <small>v3.49.0 · single-pass deep-dive orchestrator</small></div>
       <div class="statusline">
         <span>BOOK: <b id="bookStamp">loading…</b></span>
         <span>AUTH: <b id="sessState">…</b></span>
@@ -1157,7 +1157,7 @@ function renderClusters(){
     return `<div style="margin-top:5px">`+
       `<span style="color:var(--amber);font-weight:700">⛓ ${esc(cl.label||cl.id)}</span> `+
       `<span class="scope">${inBook.length} in book${off.length?` · ${off.length} off-book`:""}</span>`+
-      (cap?` <span style="color:${cap.over?"var(--red)":"var(--green)"};font-weight:700">${cap.pct}% of NAV`+
+      (cap?` <span style="color:${cap.over?"var(--red)":"var(--green)"};font-weight:700">${cap.pct}% of acct equity`+
         `${cap.over?` — ${cap.over}pts OVER the ${CAP_PCT}% cap`:` / ${CAP_PCT}%`}</span> `+
         `<span class="scope">${cap.n} measured${cap.missing.length?` · ${cap.missing.length} unmeasured (${cap.missing.map(esc).join(", ")}) — the total is a FLOOR`:""}`+
         `${cap.age===null?" · ⚠ undated":cap.age>POS_STALE_D?` · ⚠ ${cap.age}d old`:""}</span>`:"")+`<br>`+
@@ -1357,9 +1357,9 @@ function todayActions(){
   capChecks().filter(c=>c.over>0).forEach(c=>{
     const stale=c.age===null?" (position mark undated)":c.age>POS_STALE_D?` (marks ${c.age}d old)`:"";
     out.push(c.kind==="name"
-      ?{sev:"stop",txt:`${c.sym} is ${c.pct}% of NAV — ${c.over}pts over the ${CAP_PCT}% cap`,
-        sub:"no conviction exceptions"+stale,go:()=>openCard(c.sym)}
-      :{sev:"stop",txt:`Cluster "${c.label}" is ${c.pct}% of NAV — ${c.over}pts over the ${CAP_PCT}% cap`,
+      ?{sev:"stop",txt:`${c.sym} is ${c.pct}% of acct equity — ${c.over}pts over the ${CAP_PCT}% cap`,
+        sub:"no conviction exceptions · denominator = account equity, options excluded — a floor, not NAV"+stale,go:()=>openCard(c.sym)}
+      :{sev:"stop",txt:`Cluster "${c.label}" is ${c.pct}% of acct equity — ${c.over}pts over the ${CAP_PCT}% cap`,
         sub:`one cluster sizes as one position${c.missing.length?` · ${c.missing.length} member(s) unmeasured, so the real total is higher`:""}${stale}`,
         go:()=>openDrawer("dExp")});
   });
@@ -1370,7 +1370,7 @@ function todayActions(){
     // With a measured position the trim stops being an abstraction: shares, value, and
     // whether the blocker is real (short calls actually on the book) rather than remembered.
     const fe=first&&find(first.sym),fp=fe&&posOf(fe);
-    const size=fp?` — ${fp.sh??"?"} sh${fp.mv!=null?`, ${money(fp.mv)}`:""}${isFinite(Number(fp.pct))?` (${fp.pct}% of NAV)`:""}`:"";
+    const size=fp?` — ${fp.sh??"?"} sh${fp.mv!=null?`, ${money(fp.mv)}`:""}${isFinite(Number(fp.pct))?` (${fp.pct}% of acct equity)`:""}`:"";
     // FEAT-TT-PTLINT (v3.39) BUG FIX: this filter ignored o.exp, so an ALREADY-EXPIRED short call
     // still counted as cover in the one place the board tells you a trim is blocked — while
     // renderOptLadder flagged the very same leg "expired?" two drawers away. An expired leg covers
@@ -1399,7 +1399,7 @@ function todayActions(){
   // An eligible add only ever appears when nothing above vetoes it — the green line must
   // not sit beside a red one and let the reader pick.
   if(!out.some(a=>a.sev==="stop")&&AGREE_PICK)
-    out.push({sev:"go",txt:`Add candidate: ${AGREE_PICK.sym} — gap and quality agree`,
+    out.push({sev:"go",txt:`Eligible next dollar: ${AGREE_PICK.sym} — all gates passed`,
       sub:"still your call: sizing, caps and the thesis are not weighed here",go:()=>openCard(AGREE_PICK.sym)});
   // Anything decision-adjacent running on an old rating is its own action.
   const stale=[...ndLeads(),...LAST_RANK.map(s=>find(s)).filter(Boolean)]
@@ -1615,7 +1615,7 @@ function render(){
         divergenceChip(x.sym,DIVERGENCE[x.sym]);
       const runTxt=rs.k==="never"?"TT run: NEVER RUN":`TT run ${x.lastRun} · ${rs.days}d ago`;
       c.title=[q?`$${q.px}${chg!==null?` (${chg>=0?"+":""}${chg}% today)`:""}`:null,
-        p?`held ${p.sh??"?"} sh${p.mv!=null?` · ${money(p.mv)}`:""}${wt!==null?` · ${wt}% of NAV`:""} (measured ${String(p.at).slice(0,10)})`:null,
+        p?`held ${p.sh??"?"} sh${p.mv!=null?` · ${money(p.mv)}`:""}${wt!==null?` · ${wt}% of acct equity`:""} (measured ${String(p.at).slice(0,10)})`:null,
         runTxt,(x.rank&&x.rank!=="—")?x.rank:null,x.note||null].filter(Boolean).join(" · ");
       chips.appendChild(c);
     });
@@ -2411,7 +2411,7 @@ function ddAnswerBlock(x,dd,todayET){
   const legs=p&&Array.isArray(p.opt)?p.opt:[];
   const shN=p?Number(p.sh):0;
   const own=p?{
-    txt:isFinite(Number(p.pct))?`${Number(p.pct)>CAP_PCT?`<span style="color:var(--red)">${p.pct}%</span>`:`${p.pct}%`} of NAV`
+    txt:isFinite(Number(p.pct))?`${Number(p.pct)>CAP_PCT?`<span style="color:var(--red)">${p.pct}%</span>`:`${p.pct}%`} of acct equity`
        :p.mv!=null?money(p.mv)
        :legs.length?`${legs.length} leg${legs.length===1?"":"s"}`
        :`<span style="color:var(--dim)">synced</span>`,
@@ -3244,11 +3244,34 @@ function renderUpsideRank(){
           `<span style="color:var(--red);font-weight:700">⛔ NEXT DOLLAR: NONE — leverage circuit tripped</span> `+
           `<span class="scope">${esc((BOARD.circuit&&BOARD.circuit.rule)||"deleverage-only until a live pull disproves it")}</span> `+
           `<span class="scope">· the gap ranking above still stands as math, but no name is eligible while the circuit holds</span></div>`;
+      /* FIX-B (v3.49, VALUE_PROPOSITION_AUDIT Critical #2): the green line once lit while
+         stance was UNKNOWN, Macro Flip was blind and the pick had NEVER RUN — against the
+         framework's own written rules (live data is mandatory; engine disagreement = WAIT).
+         ELIGIBLE now hard-WAITs on a missing gate, each veto named. Fail closed: a regime
+         feed that cannot be read is a veto, not a default. Red hinges remain surfaced-not-
+         vetoed (D3, v3.39 — enforcement is the owner's, awareness is not). */
+      const stc=stance();
+      const mf=REGIME&&REGIME.macro_flip;
+      const gateFail=
+        stc.k==="unknown"?"stance UNKNOWN — no measured or asserted regime; a live regime read is mandatory before an add"
+        :stc.k==="stop"?`adds suspended — ${stc.txt}`
+        :!REGIME?"regime feed unavailable — Macro Flip cannot be read, and an unreadable crash circuit vetoes rather than defaulting to clear"
+        :!mf?"readout carries no Macro Flip block — the crash circuit cannot be read"
+        :mf.evaluable===false?(mf.reason||"Macro Flip BLIND — missing inputs")
+        :mf.tripped?"Macro Flip TRIPPED — de-risk, no adds":null;
+      if(gateFail)
+        return `<div style="margin-top:6px;padding:5px 8px;border:1px solid var(--amber);border-radius:6px;font-size:11px">`+
+          `<span style="color:var(--amber);font-weight:700">⏸ NEXT DOLLAR: WAIT — eligibility gate failed</span> `+
+          `<span class="scope">${esc(gateFail)} · the gap ranking above still stands as math; no name is ELIGIBLE until the gate reads</span></div>`;
       const why=r=>{
         if(!(r.upside>0))return "no gap";
         // FEAT-TT-RANKFAIR: a name already at or over the single-name cap cannot receive the
         // NEXT dollar no matter how wide its gap — the board was proposing full positions.
         if(r.wt.w!==null&&r.wt.w>=CAP_PCT)return `already ${r.wt.w}% — at the ${CAP_PCT}% cap, no room`;
+        // FIX-B: a rating's age is a GATE, not a footnote — the audit found 5 fresh runs
+        // against 31 never-run while the green line still lit. Eligibility cannot outrun
+        // the evidence: anything but a fresh TT run (≤30d) vetoes, with the state named.
+        if(r.rs.k!=="fresh")return r.rs.k==="never"?"no TT run on record — run one first":`TT run ${r.rs.days}d old — re-run first`;
         if(!r.tt)return "unscored — no TT run";
         if(r.tt.tier==="C"||(r.tt.score!==null&&r.tt.score<5.5))return `TT ${r.tt.score!==null?r.tt.score.toFixed(1):"C"} — quality fails`;
         if(r.rrFail)return "R/R fails its floor";
@@ -3258,7 +3281,7 @@ function renderUpsideRank(){
       AGREE_PICK=q.length?q[0]:null;   // the TODAY card shows this only when nothing vetoes
       if(q.length){const b=q[0];
         return `<div style="margin-top:6px;padding:5px 8px;border:1px solid var(--green);border-radius:6px;font-size:11px">`+
-          `<span style="color:var(--green);font-weight:700">🎯 NEXT DOLLAR — both stories agree:</span> `+
+          `<span style="color:var(--green);font-weight:700">🎯 ELIGIBLE NEXT DOLLAR — all gates passed:</span> `+
           `<span class="sym" style="color:var(--green);cursor:pointer" onclick="openCard('${esc(b.sym)}')">${esc(b.sym)}</span> `+
           `${b.ann!==null?`${b.ann>=0?"+":""}${b.ann}%/yr`:""} · TT ${esc(b.tt.score!==null?b.tt.score.toFixed(1):b.tt.tier)}`+
           `${q.length>1?` <span class="scope">(then ${q.slice(1,3).map(r=>esc(r.sym)).join(", ")})</span>`:""}`+
@@ -3271,7 +3294,7 @@ function renderUpsideRank(){
           `</div>`;}
       const near=rows.slice(0,4).map(r=>`${esc(r.sym)}: ${esc(why(r))}`).join(" · ");
       return `<div style="margin-top:6px;padding:5px 8px;border:1px solid var(--amber);border-radius:6px;font-size:11px">`+
-        `<span style="color:var(--amber);font-weight:700">⏸ NEXT DOLLAR: WAIT</span> — no name passes gap + quality + R/R + binary window. `+
+        `<span style="color:var(--amber);font-weight:700">⏸ NEXT DOLLAR: WAIT</span> — no name passes gap + cap room + fresh TT run + quality + R/R + binary window. `+
         `<span class="scope">${near}</span> · disagreement is information, not a discount</div>`;
     })();
 }
@@ -3456,7 +3479,7 @@ function sellRank(){
         why:mv<=0?`net short — closing costs ${money(Math.abs(mv))}, a USE of cash`:"value not synced"});
       return;
     }
-    // Cap decision prefers the broker-measured % of NAV (same rule as capChecks); the
+    // Cap decision prefers the broker-measured % of account equity (same rule as capChecks); the
     // tracked-book share is the fallback FLOOR when the sync didn't carry pct.
     const wNav=isFinite(Number(p.pct))?Number(p.pct):null;
     const w=wNav!==null?wNav:Math.round(mv/tot*1000)/10;
@@ -3518,7 +3541,7 @@ function renderSellBlock(){
     // pop in and shift the board when the load lands. Genuinely-nothing still hides.
     if(POS_PENDING){
       el.style.display="";
-      el.innerHTML=`<div class="lbl">NEXT DOLLAR — SELL · where the next dollar comes from</div>`+
+      el.innerHTML=`<div class="lbl">FUNDING PRIORITY · where the next dollar comes from</div>`+
         `<div class="skel-row"></div><div class="skel-row"></div><div class="skel-row"></div>`;
       return;
     }
@@ -3532,7 +3555,7 @@ function renderSellBlock(){
     r.rs.k==="never"?`<span class="bad2">○ never run</span>`:"",
     r.upl!==null?`<span style="color:${r.upl>=0?"var(--green)":"var(--red)"};font-size:9.5px">${r.upl>=0?"+":""}${r.upl}% unrl</span>`:""
   ].filter(Boolean).join(" ");
-  let h=`<div class="lbl">NEXT DOLLAR — SELL${tripped?` · <span style="color:var(--red)">circuit tripped — this IS the active list (deleverage-only)</span>`:` · where the next dollar comes from`}</div>`;
+  let h=`<div class="lbl">FUNDING PRIORITY${tripped?` · <span style="color:var(--red)">circuit tripped — this IS the active list (deleverage-only)</span>`:` · where the next dollar comes from`}</div>`;
   /* v3.42 slice 2: grid rows. A forced trim's PRIMARY is its weight (the rule already
      broken); a discretionary source's PRIMARY is its %/yr (the reason it funds first).
      Every phrase is verbatim from v3.41 — only the layout moved. */
@@ -3587,9 +3610,9 @@ function renderBuyBlock(){
   const rows=UPSIDE_ROWS.slice(0,5);
   el.style.display="";
   const tripped=String(BOARD.circuit&&BOARD.circuit.state).toLowerCase()==="tripped";
-  let h=`<div class="lbl">NEXT DOLLAR — BUY · ranked by %/yr, weight-aware</div>`;
+  let h=`<div class="lbl">VALUATION GAP — math only · ranked by %/yr, weight-aware</div>`;
   if(tripped)h+=`<div class="none" style="color:var(--red);font-weight:700">⛔ NO NEW POSITIONS — leverage circuit tripped; the SELL list below is the active queue</div>`;
-  else if(AGREE_PICK)h+=`<div class="none" style="color:var(--green);font-weight:700">🎯 both stories agree: ${esc(AGREE_PICK.sym)}`+
+  else if(AGREE_PICK)h+=`<div class="none" style="color:var(--green);font-weight:700">🎯 ELIGIBLE NEXT DOLLAR: ${esc(AGREE_PICK.sym)}`+
     // FEAT-TT-PTLINT (D3): the primary view is the ONE surface guaranteed to be seen, so a red
     // hinge on the agreed pick cannot live only in the DESK drawer.
     (AGREE_PICK.redH?`<span style="color:var(--red)"> · ⚠ ${AGREE_PICK.redH} red: ${esc(AGREE_PICK.redLabels.slice(0,2).join(" · "))}</span>`:"")+`</div>`;

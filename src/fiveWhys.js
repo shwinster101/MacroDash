@@ -41,10 +41,16 @@ export function computeFiveWhys(data, regime = {}, opts = {}) {
   const label = regime.label || "MIXED";
   const sub = regime.sub || "cross-signals";
   const bull = regime.bullVotes ?? 0;
-  // Active = the 5 regime factors minus any excluded for staleness (matches RegimeBand).
-  // DEC-31 (v3.2): Put/Call retired from the factor set.
-  const active = ["tenYear", "vix", "fearGreed", "cpiHeadline", "valuation"]
-    .filter((k) => !stale.has(k)).length;
+  // FIX-E (v3.49, VALUE_PROPOSITION_AUDIT "regime denominators disagree"): the denominator
+  // comes FROM computeRegime (`counted`/`totalFactors`) — this module used to re-derive it
+  // from its own hardcoded factor list, which was still the pre-NFCI five, so the header
+  // said "3/6 bullish" while WHY #5 said "3/5 live factors" on the same page. The local
+  // list survives only as a fallback for a caller passing no regime (mock/demo), and now
+  // names all six voters (FEAT-NFCI v3.43; "valuation" is the shillerPe factor's key).
+  const total = regime.totalFactors ?? 6;
+  const active = regime.counted ??
+    ["tenYear", "vix", "fearGreed", "cpiHeadline", "valuation", "nfci"]
+      .filter((k) => !stale.has(k)).length;
 
   const headline =
     `${sessionPrefix(data.session)} ${label} regime, ${bull}/${active} bullish factors — SPY ${pct(spy.changePct)}.`;
@@ -99,7 +105,7 @@ export function computeFiveWhys(data, regime = {}, opts = {}) {
   // WHY #5 — synthesis + honest confidence caveat
   whys.push(
     `Net: ${label} — ${sub}. ${bull}/${active} live factors bullish` +
-    (active < 5 ? `; ${5 - active} excluded as stale/dead, so this is a reduced-signal read.` : "; full-signal read.")
+    (active < total ? `; ${total - active} excluded as stale/dead, so this is a reduced-signal read.` : "; full-signal read.")
   );
 
   return {

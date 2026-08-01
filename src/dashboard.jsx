@@ -405,10 +405,16 @@ function computeRegime(d, stale=new Set()) {
      was with five, so MIXED becomes more common. That is what adding a voter costs. */
   const bull = counted > 0 && bullVotes > counted / 2;
   const bear = counted > 0 && bearVotes > counted / 2;
+  // FIX-E (v3.49, VALUE_PROPOSITION_AUDIT "regime denominators disagree"): `counted` and
+  // `totalFactors` ride the verdict so every surface (RegimeBand header, 5-Whys headline,
+  // WHY #5) states the SAME denominator this vote was actually decided over — fiveWhys.js
+  // used to re-derive it from its own hardcoded pre-NFCI factor list and said "/5" while
+  // the header said "/6". One derivation, per the same rule that made governingRegime one.
+  const totalFactors = 6;
   // FEAT-v17-07: hyphen separators (was middot) for RISK-ON / RISK-OFF legibility
-  if(bull && !bear) return { label:"RISK-ON", sub:"Disinflation + low vol", tint:DT["regime-on-bg"], color:T.green, bullVotes, bearVotes };
-  if(bear && !bull) return { label:"RISK-OFF", sub:"Rate pressure + stress", tint:DT["regime-off-bg"], color:T.red, bullVotes, bearVotes };
-  return { label:"MIXED", sub:"Cross-signals — watch VIX", tint:DT["regime-mix-bg"], color:T.yellow, bullVotes, bearVotes };
+  if(bull && !bear) return { label:"RISK-ON", sub:"Disinflation + low vol", tint:DT["regime-on-bg"], color:T.green, bullVotes, bearVotes, counted, totalFactors };
+  if(bear && !bull) return { label:"RISK-OFF", sub:"Rate pressure + stress", tint:DT["regime-off-bg"], color:T.red, bullVotes, bearVotes, counted, totalFactors };
+  return { label:"MIXED", sub:"Cross-signals — watch VIX", tint:DT["regime-mix-bg"], color:T.yellow, bullVotes, bearVotes, counted, totalFactors };
 }
 
 // Live ET market session for the 5-Whys narrative frame (mirrors marketSession() in
@@ -432,12 +438,12 @@ function etSession(now = new Date()) {
 // bull tally so the displayed "X/Y bullish" matches the vote computeRegime actually cast.
 function regimeFactors(d, stale=new Set()) {
   const factors=[
-    {key:"tenYear",     label:"10Y Direction",  val:d.crossAsset.treasury10y.m1<-0.10?"Falling ↓ (bullish)":"Flat/rising",  bull:d.crossAsset.treasury10y.m1<-0.10},
-    {key:"vix",         label:"VIX Level",      val:`${d.marketPulse.vix.current} — ${d.marketPulse.vix.current<18?"Low (bullish)":d.marketPulse.vix.current<25?"Elevated":"Spiking (bearish)"}`, bull:d.marketPulse.vix.current<18},
-    {key:"fearGreed",   label:"Fear & Greed",   val:`${d.marketPulse.fearGreed.score} — ${d.marketPulse.fearGreed.label}`,   bull:d.marketPulse.fearGreed.score>55},
-    {key:"cpiHeadline", label:"CPI Trend",      val:d.macro.cpi.trend.slice(-1)[0]<d.macro.cpi.trend.slice(-2)[0]?"Cooling (bullish)":"Re-accelerating", bull:d.macro.cpi.trend.slice(-1)[0]<d.macro.cpi.trend.slice(-2)[0]},
-    {key:"valuation",   label:"Valuation",      val:`${d.macro.shillerPe.current} CAPE · ${(d.macro.shillerPe.ath?(d.macro.shillerPe.current/d.macro.shillerPe.ath)*100:d.macro.shillerPe.pctOfAth).toFixed(1)}% of ATH`, bull:d.macro.shillerPe.current<d.macro.shillerPe.mean*1.5},
-    {key:"nfci",        label:"Fin Conditions", val:`${d.macro.nfci.current>0?"+":""}${d.macro.nfci.current.toFixed(2)} SD — ${d.macro.nfci.current>NFCI_TIGHT?"Tighter than the 1971– mean (bearish)":d.macro.nfci.current<=NFCI_LOOSE?"≥½ SD below mean (bullish)":"Looser than mean, but within ½ SD"}`, bull:d.macro.nfci.current<=NFCI_LOOSE},
+    {key:"tenYear",     short:"10Y",  label:"10Y Direction",  val:d.crossAsset.treasury10y.m1<-0.10?"Falling ↓ (bullish)":"Flat/rising",  bull:d.crossAsset.treasury10y.m1<-0.10},
+    {key:"vix",         short:"VIX",  label:"VIX Level",      val:`${d.marketPulse.vix.current} — ${d.marketPulse.vix.current<18?"Low (bullish)":d.marketPulse.vix.current<25?"Elevated":"Spiking (bearish)"}`, bull:d.marketPulse.vix.current<18},
+    {key:"fearGreed",   short:"F&G",  label:"Fear & Greed",   val:`${d.marketPulse.fearGreed.score} — ${d.marketPulse.fearGreed.label}`,   bull:d.marketPulse.fearGreed.score>55},
+    {key:"cpiHeadline", short:"CPI",  label:"CPI Trend",      val:d.macro.cpi.trend.slice(-1)[0]<d.macro.cpi.trend.slice(-2)[0]?"Cooling (bullish)":"Re-accelerating", bull:d.macro.cpi.trend.slice(-1)[0]<d.macro.cpi.trend.slice(-2)[0]},
+    {key:"valuation",   short:"VAL",  label:"Valuation",      val:`${d.macro.shillerPe.current} CAPE · ${(d.macro.shillerPe.ath?(d.macro.shillerPe.current/d.macro.shillerPe.ath)*100:d.macro.shillerPe.pctOfAth).toFixed(1)}% of ATH`, bull:d.macro.shillerPe.current<d.macro.shillerPe.mean*1.5},
+    {key:"nfci",        short:"NFCI", label:"Fin Conditions", val:`${d.macro.nfci.current>0?"+":""}${d.macro.nfci.current.toFixed(2)} SD — ${d.macro.nfci.current>NFCI_TIGHT?"Tighter than the 1971– mean (bearish)":d.macro.nfci.current<=NFCI_LOOSE?"≥½ SD below mean (bullish)":"Looser than mean, but within ½ SD"}`, bull:d.macro.nfci.current<=NFCI_LOOSE},
   ];
   // Stale factors: neutralize the bull flag and annotate so the UI shows them as excluded.
   return factors.map(f => stale.has(f.key) ? { ...f, stale:true, bull:false, val:`${f.val} · STALE — excluded` } : f);
@@ -952,7 +958,7 @@ const RegimeBand=({d,stale=new Set()})=>{
               const c=f.stale?T.amber:f.bull?T.green:T.red;
               return(
               <span key={f.label} style={{fontFamily:T.fontMono,fontSize:8,color:c,border:`1px solid ${c}44`,borderRadius:3,padding:"1px 5px",letterSpacing:"0.03em",background:"#00000022",whiteSpace:"nowrap",opacity:f.stale?0.7:1}}>
-                {["10Y","VIX","F&G","CPI","VAL"][i]} {f.stale?"⏱":f.bull?"▲":"▼"}
+                {f.short} {f.stale?"⏱":f.bull?"▲":"▼"}
               </span>
             );})}
           </div>
