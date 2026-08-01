@@ -32,6 +32,16 @@ export const SOURCES = {
   tenYearW1:      { path: "crossAsset.treasury10y.w1",      kind: "num",    displayClass: "public" },
   tenYearM1:      { path: "crossAsset.treasury10y.m1",      kind: "num",    displayClass: "public" },
   tenYearSeries:  { path: "crossAsset.treasury10y.series",  kind: "series", displayClass: "public" },
+  // FEAT-30Y (v3.55) — the long end + the 10s30s term-premium spread. DGS30 is NOT derivable
+  // from DGS10 (which is why TLT was rejected in v3.43 but this is not): the SPREAD is the
+  // fiscal-risk gauge, and a long end breaking out while the front holds is its own channel.
+  thirtyYear:       { path: "crossAsset.treasury30y.current", kind: "num",    displayClass: "public" },
+  thirtyYearD1:     { path: "crossAsset.treasury30y.d1",      kind: "num",    displayClass: "public" },
+  thirtyYearW1:     { path: "crossAsset.treasury30y.w1",      kind: "num",    displayClass: "public" },
+  thirtyYearM1:     { path: "crossAsset.treasury30y.m1",      kind: "num",    displayClass: "public" },
+  thirtyYearSeries: { path: "crossAsset.treasury30y.series",  kind: "series", displayClass: "public" },
+  spread10s30s:       { path: "crossAsset.term.spread10s30s", kind: "num",    displayClass: "public" },
+  spread10s30sSeries: { path: "crossAsset.term.series",       kind: "series", displayClass: "public" },
   fedFunds:       { path: "macro.fedFunds.rate",            kind: "num",    displayClass: "public" },
   unemployment:   { path: "macro.unemployment.national",    kind: "num",    displayClass: "public" },
   unemploymentTrend: { path: "macro.unemployment.trend",    kind: "series", displayClass: "public" },
@@ -111,6 +121,11 @@ export const DERIVED_OF = {
   qqqChangePct: "qqqPrice",
   // rates (fetchFred — tenYear is the primary pull)
   tenYearD1: "tenYear", tenYearW1: "tenYear", tenYearM1: "tenYear", tenYearSeries: "tenYear",
+  thirtyYearD1: "thirtyYear", thirtyYearW1: "thirtyYear", thirtyYearM1: "thirtyYear",
+  thirtyYearSeries: "thirtyYear",
+  // spread10s30s IS stamped its own AsOf in snapshot.js (copied from thirtyYearAsOf), so its
+  // own derivative inherits from IT — the same shape as creditSpreadSeries.
+  spread10s30sSeries: "spread10s30s",
   // VIX (fetchFred — vix is the primary pull)
   vixWeekChg: "vix", vixSeries: "vix",
   // WTI / BTC (fetchFred)

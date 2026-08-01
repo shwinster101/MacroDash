@@ -280,6 +280,9 @@ const PRIMARY_ASOF_FIELDS = [
   "tenYear", "fedFunds", "unemployment", "lfpr", "savings", "mortgage30",
   "cpiHeadline", "cpiCore", "pceHeadline", "pceCore", "wti", "vix", "btc",
   "hySpread", "igSpread", "creditSpread", "nfci",
+  // v3.55: both carry their own AsOf — thirtyYear from its own FRED pull, spread10s30s
+  // copied from thirtyYearAsOf (the creditSpread pattern).
+  "thirtyYear", "spread10s30s",
   "fearGreed", "marketHeadline", "shillerPe", "tokenBlendedMtok", "rateOddsHold",
 ];
 ok("deriv: PRIMARY_ASOF_FIELDS + DERIVED_OF + DERIVED_EXEMPT partition ALL 63 SOURCES keys (reconciled, not hardcoded)", (() => {
@@ -1828,7 +1831,12 @@ ok("nfci: the FRED series is wired into the existing batched fetch (no new fetch
   /nfci:\s+"NFCI"/.test(snapSrc));
 ok("nfci: it is NOT in the DAILY set — the idx[5]/idx[21] week/month offsets would be " +
    "5 and 21 WEEKS on a weekly series, which is exactly the bug that gating exists to stop",
-  /const DAILY = new Set\(\["tenYear", "wti", "btc", "vix"\]\)/.test(snapSrc));
+  (() => { const m = /const DAILY = new Set\(\[([^\]]*)\]\)/.exec(snapSrc);
+    return m && !/nfci/.test(m[1]) && /"tenYear"/.test(m[1]) && /"vix"/.test(m[1]); })());
+// v3.55: DGS30 genuinely IS a daily series, so it belongs in DAILY — unlike NFCI, whose
+// weekly cadence is exactly why the gate exists.
+ok("30y: thirtyYear IS in the DAILY set — idx[5]/idx[21] really are ~1wk/~1mo on a daily series",
+  /const DAILY = new Set\(\[[^\]]*"thirtyYear"[^\]]*\]\)/.test(snapSrc));
 ok("nfci: W1 is derived from the prior observation, which on a weekly series really is a week",
   snapSrc.includes("out.nfciW1 = parseFloat((latest - prev).toFixed(3))"));
 ok("nfci: a plausibility band exists and is WIDE — ±5 against a record high of ~+3.3 (2008), " +
@@ -2576,6 +2584,139 @@ ok("http: the POST routes are actually reachable through the method router",
   /request\.method === "POST"\) return onRequestPost/.test(posSrc2));
 ok("http: POST still requires auth before doing anything (PIN-gated like every ledger read)",
   /onRequestPost\(\{ request, env \}\) \{\s*\n\s*const auth = await authorize\(request, env\);/.test(ledgerSrc2));
+
+// ---- 31. FEAT-TT-CAPABILITY (v3.55) — the demand-side falsifier ------------
+// FEAT-TT-CAPEX instruments the SUPPLY of AI capital and fires when >=2 spenders guide down.
+// The REASON they would guide down — capability/ROI disappointment — was instrumented nowhere.
+// This closes that, and is designed as a FALSIFIER: the threshold must be pre-committed.
+console.log("\n[31] FEAT-TT-CAPABILITY — the demand leg, pre-committed or rejected");
+const capBoard = (extra) => validateBoard({ as_of: "2026-08-01", ...extra });
+const CAP_OK = { metric: "task-horizon doubling (METR 50%)", observed_months: 7,
+  prior_months: 7, threshold_months: 18, source: "METR 2025", as_of: "2026-08-01" };
+ok("capability: a complete block validates", capBoard({ capability: CAP_OK }) === null);
+// THE load-bearing rule: no threshold, no block. This is the whole design.
+ok("capability: a reading WITHOUT a pre-committed threshold is REJECTED, and the message says why",
+  (() => { const { threshold_months, ...noThr } = CAP_OK;
+    const e = capBoard({ capability: noThr });
+    return typeof e === "string" && /threshold_months is required/.test(e) &&
+      /confirmation device/.test(e); })());
+ok("capability: prior_months is required too — the signal is the DELTA, not the level",
+  (() => { const { prior_months, ...noPrior } = CAP_OK;
+    return /prior_months is required/.test(capBoard({ capability: noPrior }) || ""); })());
+ok("capability: the metric must be named — an unnamed measure cannot be checked against a source",
+  /metric is required/.test(capBoard({ capability: { ...CAP_OK, metric: "  " } }) || ""));
+ok("capability: a source is required — this is the weakest-sourced input the book carries",
+  /source is required/.test(capBoard({ capability: { ...CAP_OK, source: "" } }) || ""));
+ok("capability: an undated read is rejected — it would age invisibly",
+  /as_of \(YYYY-MM-DD\) is required/.test(capBoard({ capability: { ...CAP_OK, as_of: "" } }) || ""));
+// Bands reject the impossible, not the unusual: a LONG doubling time is a stall, which is
+// exactly the signal this block exists to catch — it must not be banded away as a typo.
+ok("capability: a non-positive or absurd doubling time is out of band",
+  /out of band/.test(capBoard({ capability: { ...CAP_OK, observed_months: 0 } }) || "") &&
+  /out of band/.test(capBoard({ capability: { ...CAP_OK, observed_months: 999 } }) || ""));
+ok("capability: a very long doubling time (a genuine STALL) is ACCEPTED, not banded away",
+  capBoard({ capability: { ...CAP_OK, observed_months: 200, threshold_months: 18 } }) === null);
+ok("capability: the block is optional — absent leaves v3.54 behaviour untouched",
+  capBoard({}) === null);
+// Client state: lifted and RUN, since a tripwire is a claim about numbers.
+const CAPST = new Function("const CAPABILITY_MOVE_PCT=15;let BOARD={};" +
+  liftFns(adminSrc, ["ageDays", "capabilityState"]) +
+  "\nreturn {capabilityState,set:(b)=>{BOARD=b;}};")();
+const capSt = (o) => { CAPST.set({ capability: { ...CAP_OK, ...o } }); return CAPST.capabilityState(); };
+ok("capability: past the pre-committed threshold the falsifier TRIPS",
+  capSt({ observed_months: 20 }).impaired === true);
+ok("capability: inside the threshold it does not trip, and headroom is stated in the metric's unit",
+  capSt({}).impaired === false && capSt({}).headroom === 11);
+ok("capability: a materially LONGER doubling reads as slowing (capability compounding slower)",
+  capSt({ observed_months: 9, prior_months: 7 }).slowing === true);
+ok("capability: it fires in BOTH directions — a faster doubling is information, not silence",
+  capSt({ observed_months: 5, prior_months: 7 }).accelerating === true);
+ok("capability: a move inside the noise band is neither slowing nor accelerating",
+  (() => { const c = capSt({ observed_months: 7.5, prior_months: 7 });
+    return !c.slowing && !c.accelerating; })());
+ok("capability: absent or malformed state reads as UNKNOWN (fails closed, never healthy)",
+  (() => { CAPST.set({}); if (CAPST.capabilityState() !== null) return false;
+    CAPST.set({ capability: { observed_months: 7 } }); return CAPST.capabilityState() === null; })());
+// The non-negotiable: no projection anywhere in the feature.
+ok("capability: NOTHING extrapolates — no power/exp projection of a future capability level",
+  (() => { const i = adminSrc.indexOf("function capabilityState()");
+    const seg = adminSrc.slice(i, adminSrc.indexOf("function capexExposure", i));
+    return !/Math\.pow|\*\*|Math\.exp/.test(seg); })());
+ok("capability: the tripped falsifier reaches the stance strip — red survives every collapse",
+  /⚡ demand falsified/.test(adminSrc) && /demand falsifier tripped/.test(adminSrc));
+ok("capability: supply and demand share ONE badge — same thesis, same drawer, one chip",
+  /⚡ AI both legs/.test(adminSrc) &&
+  (adminSrc.match(/onclick="openDesk\('dCapex'\)">\$\{txt\}/g) || []).length === 1);
+ok("capability: an absent block SAYS the demand leg is unmeasured rather than implying health",
+  /Demand leg unmeasured/.test(adminSrc));
+ok("capability: the entry path documents the pre-commitment rule where the owner types it",
+  /threshold_months is REQUIRED/.test(adminSrc) && /is a confirmation device/.test(adminSrc));
+
+// ---- 32. FEAT-30Y (v3.55) — the long end and the 10s30s term spread -------
+// NOT the TLT rejection replayed: TLT was refused (v3.43) as a monotonic transform of the
+// 10Y already displayed. DGS30 is not derivable from DGS10 — the SPREAD is the term-premium /
+// fiscal-risk gauge, and "long end breaking out while the front holds" is its own channel.
+console.log("\n[32] FEAT-30Y — DGS30, the 10s30s spread, and its alerts");
+ok("30y: DGS30 is pulled through the existing fetchFred path, not a new fetcher",
+  /thirtyYear:\s*"DGS30"/.test(snapSrc) && !/fetchThirty|fetch30/.test(snapSrc));
+ok("30y: deltas are ABSOLUTE yield moves (pp), the same convention as the 10Y — never pct()",
+  /out\.thirtyYearD1 = parseFloat\(\(latest - prev\)/.test(snapSrc) &&
+  /out\.thirtyYearM1 = parseFloat\(\(latest - mAgo\)/.test(snapSrc));
+ok("30y: the 10s30s spread is DERIVED server-side and stamped its own AsOf (creditSpread pattern)",
+  /out\.spread10s30s = parseFloat\(\(out\.thirtyYear - out\.tenYear\)/.test(snapSrc) &&
+  /out\.spread10s30sAsOf = out\.thirtyYearAsOf/.test(snapSrc));
+ok("30y: the temp sparklines used to derive the spread are deleted, never leaked to the payload",
+  /delete out\._thirtySparkline/.test(snapSrc) && /delete out\._tenSparkline/.test(snapSrc));
+// Bands: reject the impossible, not the unusual. An INVERTED curve is the signal.
+ok("30y: bands accept every yield the bond market has actually produced (1981 peak ~15%)",
+  /thirtyYear:\s*\[0, 20\]/.test(snapSrc));
+ok("30y: the spread band ACCEPTS inversion — a negative 10s30s is the signal, not a parse fault",
+  (() => { const m = /spread10s30s:\s*\[(-?\d+), (\d+)\]/.exec(snapSrc);
+    return m && Number(m[1]) < 0; })());
+// Staleness must inherit, per the v3.41 table.
+ok("30y: every undated derivative maps to its parent in DERIVED_OF (no field votes undated)",
+  ["thirtyYearD1", "thirtyYearW1", "thirtyYearM1", "thirtyYearSeries"]
+    .every((k) => DERIVED_OF_SRC[k] === "thirtyYear") &&
+  DERIVED_OF_SRC.spread10s30sSeries === "spread10s30s");
+ok("30y: the spread inherits the 30Y's cadence (daily) rather than defaulting blindly",
+  cadenceOf("spread10s30sSeries") === "daily" && cadenceOf("thirtyYearM1") === "daily");
+// The merge path, end to end.
+ok("30y: a live payload overlays the 30Y and the spread onto the mock baseline", (() => {
+  const r = mergeLiveOverMock(MOCK_DATA, { live: {
+    thirtyYear: 5.24, thirtyYearAsOf: "2026-08-01", thirtyYearM1: 0.18,
+    spread10s30s: 0.78, spread10s30sAsOf: "2026-08-01" }, cached: false });
+  return r.data.crossAsset.treasury30y.current === 5.24 &&
+    r.data.crossAsset.term.spread10s30s === 0.78 &&
+    r.provenance.thirtyYear === "LIVE" && r.dataAsOf.thirtyYearM1 === "2026-08-01"; })());
+// The tile: a reference level, never a verdict off a level (the v3.1 invariant).
+ok("30y: the tile states the 5% reference as a REFERENCE, and never asserts a call from it",
+  /5\.00% = the 2007 pre-GFC reference level/.test(dashSrc) &&
+  !/BUBBLE|OVERVALUED/.test(dashSrc.slice(dashSrc.indexOf('label="30Y Treasury"'),
+    dashSrc.indexOf('label="30Y Treasury"') + 900)));
+ok("30y: the tile names the inversion explicitly when the spread goes negative",
+  /INVERTED/.test(dashSrc));
+// The alerts ride FEAT-ALERT-EVAL: live-gated, BLIND when not.
+ok("30y: both alerts are wired to real metrics, so they evaluate rather than sit inert",
+  /treasury30y: \{fields:\["thirtyYear"\]/.test(dashSrc) &&
+  /term10s30s:\s*\{fields:\["thirtyYear","tenYear"\]/.test(dashSrc));
+ok("30y: the 5.2% alert exists and is active", /30Y Above 5\.2%/.test(dashSrc));
+ok("30y: the spread alert needs BOTH legs live — one dead leg must blind it, not clear it",
+  evalAlert({ metric: "term10s30s", condition: "below", value: 0, active: true },
+    { crossAsset: { term: { spread10s30s: -0.2 } } },
+    (f) => f === "tenYear" ? "MOCK" : "LIVE").state === "blind");
+ok("30y: with both legs live an inversion TRIPS the spread alert",
+  evalAlert({ metric: "term10s30s", condition: "below", value: 0, active: true },
+    { crossAsset: { term: { spread10s30s: -0.2 } } }, () => "LIVE").state === "triggered");
+ok("30y: a 5.24% long bond trips the 5.2% alert; 5.10% is clear",
+  evalAlert({ metric: "treasury30y", condition: "above", value: 5.2, active: true },
+    { crossAsset: { treasury30y: { current: 5.24 } } }, () => "LIVE").state === "triggered" &&
+  evalAlert({ metric: "treasury30y", condition: "above", value: 5.2, active: true },
+    { crossAsset: { treasury30y: { current: 5.10 } } }, () => "LIVE").state === "clear");
+// Arrival rule: NFCI's precedent — a new series does not vote on day one.
+ok("30y: it does NOT vote — REGIME_BAND_TABLE is untouched and the readout math did not move",
+  !/thirtyYear|spread10s30s/.test(dashSrc.slice(dashSrc.indexOf("const REGIME_BAND_TABLE"),
+    dashSrc.indexOf("export function verdictFrom"))) &&
+  !/thirtyYear|spread10s30s/.test(readFileSync(new URL("../src/ttReadout.js", import.meta.url), "utf8")));
 
 console.log(`\n=== SMOKE TEST: ${pass} passed, ${fail} failed ===`);
 process.exit(fail === 0 ? 0 : 1);

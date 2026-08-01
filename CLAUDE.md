@@ -1340,6 +1340,67 @@ Jan-anchor shipped; see `snapshot.js` ~318–328), `spyMa100`, `spyMa200`, and a
   node it describes is almost certainly the 317px `whiteSpace:"nowrap"` subtitle **v3.53 fixed**
   hours earlier — consistent with auditing the deployed bundle before Pages redeployed.
   Tests: **802 smoke** (+31) + **153 render** + **28 public-render** (new).
+- **FEAT-TT-CAPABILITY (v3.55) — the demand side of the capex tripwire, built as a FALSIFIER.**
+  FEAT-TT-CAPEX (v3.45) instruments the **supply** of AI capital and fires when ≥2 spenders guide
+  down. But the *reason* they would guide down is capability/ROI disappointment, and that leading
+  indicator was instrumented nowhere: the book watched the announcement, not the thing that
+  causes it. `board.capability` closes it — and the design choice that matters is that it is a
+  **falsifier, not a confirmation**. A field reading *"capability: healthy"*, maintained by the
+  person holding the AI-infra book, is self-attestation at its most dangerous — the *"sophisticated
+  rationalization engine"* the value-proposition audit warned about. So **`threshold_months` is
+  REQUIRED by `validateBoard`**: the level at which you would change your mind must be
+  pre-committed and stored *before* a reading can be filed against it. A threshold chosen after
+  seeing the observation is exactly the rationalization this block exists to prevent, and the
+  validator is the only thing that can enforce the ordering. `prior_months` is required too (the
+  v3.29 rule that the signal is the DELTA), as are `metric`, `source` and `as_of`.
+  **Nothing extrapolates** — smoke asserts there is no `Math.pow`/`**`/`Math.exp` anywhere in
+  `capabilityState()`. A doubling time is a rate, and projecting "capability in 2030" from it is
+  the v3.46 window-annualising error with a longer fuse (a 12-week move raised to 52/11 read
+  −98.8%/yr: arithmetically correct, economically absurd). It reports what was measured and how
+  it MOVED. The tripwire is **bidirectional** like the capex tape — a materially faster doubling
+  is information too, and suppressing it would make the block a one-way confirmation of the bear
+  case. Bands reject the impossible, not the unusual: a **very long doubling time is a genuine
+  STALL**, which is the signal, so it must not be banded away as a typo. Fails closed — absent or
+  malformed reads as unknown, never as healthy.
+  Rendered in the SAME panel as the capex tape (supply and demand are two halves of one thesis)
+  and the drawer summary carries the demand state so a red thing survives the collapse. **Supply
+  and demand share ONE stance badge** (`⚡ AI both legs`): they open the same drawer, two chips
+  would be redundant, and — measured — a second chip cost a wrap row and blew the v3.42 390px
+  stance budget from 119px to 165px. That guard did its job; the fix was design, not truncation.
+  **Honest limit, stated rather than hidden:** this is the weakest-sourced input the book carries.
+  Task-horizon doubling is one research group's curve fit through a modest number of noisy points
+  across model generations — an observed trend, not a law like the compute scaling curves — and it
+  updates in months, not days. Survivable for a curated, non-voting block whose whole job is to
+  name a falsifier; it would **not** be survivable for anything that gates an order.
+  Tests: **+19 smoke** (validator rejections incl. the missing-threshold case, bands both ways,
+  and `capabilityState` lifted and RUN — a tripwire is a claim about numbers) + **+2 render**
+  (a tripped falsifier driven live against a synthetic fixture).
+- **FEAT-30Y (v3.55) — the long end, and why this is not the TLT rejection replayed.** v3.43
+  refused TLT because it is a ~17-duration monotonic transform of the `tenYear` this page already
+  carries — no new information, plus an ETF's expense drag. **DGS30 is not derivable from DGS10**:
+  the **10s30s spread** is the term-premium / fiscal-risk gauge, and *"the long end breaks out
+  while the front end holds"* is a different transmission channel from a parallel shift. It passes
+  the v3.43 test the same way NFCI did — Yahoo shows you the 30Y level; what it does not do is
+  judge it, abstain when stale, or pair it with the curve shape.
+  Wired through the existing `fetchFred` path (17 series = **one more batch of 5**, which is
+  exactly why the phase batching must not be collapsed), emitting `thirtyYear` + D1/W1/M1 +
+  sparkline, and the derived **`spread10s30s`** stamped from `thirtyYearAsOf` (the `creditSpread`
+  pattern) with the temp sparklines deleted rather than leaked. `thirtyYear` joins **DAILY** —
+  unlike NFCI, DGS30 genuinely is daily, so `idx[5]`/`idx[21]` really are ~1wk/~1mo. Deltas are
+  **absolute pp**, never `pct()`, matching the 10Y (rates move in points, not percent).
+  Bands `[0,20]` on the yield (the 1981 long-bond peak was ~15.2%) and **`[-10,10]` on the
+  spread — an INVERTED curve is the signal, not a parse fault** (the negative-WTI rule).
+  The tile sits beside the 10Y because the pair IS the point, states the 10s30s on its face
+  (naming `INVERTED` when negative), and carries **5.00% as a stated REFERENCE level, never a
+  verdict** — a directional call off a level would be the v3.1 invariant violated. Two alerts ride
+  FEAT-ALERT-EVAL: **30Y above 5.2%** (active) and **10s30s inverts** (off by default), both
+  live-gated, and the spread alert needs BOTH legs live or it reads **BLIND** rather than clear.
+  **It does NOT vote on arrival** — same rule NFCI arrived under: `REGIME_BAND_TABLE` and the
+  tt-v1 readout are untouched, because adding a voter changes the majority math for a contract
+  that gates real orders, and the bands would be asserted rather than calibrated (FRED is
+  unreachable from this build environment). Owner call once real values have been observed.
+  Tests: **+17 smoke** + a **15-check Chromium pass** across live and mock-fallback at 390px,
+  confirming the tile is ILLUSTRATIVE on mock and that the 5.2% alert trips at 5.24.
 - **Deferred:** stored fundamentals + Robinhood sync — now unblocked by the `x-tt-pin` header
   (v3.9): a chat-side daily review can PUT `status_flags`/`ref_px` into the deepDive payloads and
   stamp `lastRun`. When built, store the *triage* shape (`{at, px}` → "% moved since your last TT
@@ -1406,7 +1467,7 @@ npm run dev        # Vite dev server (mock unless VITE_DATA_MODE=live in .env)
 npm run build      # → dist/  (what Pages runs)
 npm run preview    # serve the built dist/
 
-node test/smoke.mjs   # 802-assertion no-network smoke test (needs Node ≥17)
+node test/smoke.mjs   # 840-assertion no-network smoke test (needs Node ≥17)
 npm run test:ui       # browser render test for admin.html (skips if no Chromium)
 npm run test:public   # build + browser STATE test for the public dashboard (skips likewise)
 
