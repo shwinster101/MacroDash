@@ -1249,6 +1249,43 @@ Jan-anchor shipped; see `snapshot.js` ~318–328), `spyMa100`, `spyMa200`, and a
   Tests: **748 smoke** (+13; `evalAlert` and the real `ALERT_METRICS` table lifted from source,
   since Node cannot import JSX — trip/clear/blind/stale/no-metric/non-finite all executed) +
   153 render + an 18-check Chromium pass.
+- **FEAT-FLIP (v3.53) — "what would change the verdict", and ONE band table.** The public
+  audit's fourth first-screen answer (Posture ✓ · Confidence ✓ v3.51 · Why ✓ · *what changes the
+  call* ✗) and the public-side counterpart to the terminal's `readiness()`: that one answers
+  *"is the evidence there to act"*, this answers *"what would move the answer"*.
+  **The structural half matters more than the feature.** The six bands were inline literals
+  inside `computeRegime`, so any flip surface needed a SECOND copy of every threshold — the
+  drift defect this project keeps paying for (the v3.49 5-vs-6 denominator, the v3.51 stale
+  factor-count label, the v3.39 PT audit). They now live in **`REGIME_BAND_TABLE`**, where
+  `vote()` is the ONLY expression of a band: `computeRegime` VOTES from it and `flipConditions`
+  measures DISTANCE to the same edges, so a flip claim can never contradict the verdict it
+  describes. `verdictFrom()` (the strict-majority rule) is extracted for the same reason — the
+  simulation runs the *identical* test, not a restatement. The refactor is behaviour-neutral and
+  every boundary is now EXECUTED rather than string-pinned (the DEC-33 convention), including
+  the two asymmetries that make a second copy dangerous: **F&G is the one INVERTED factor**
+  (bullish ABOVE its edge) and **NFCI is the one INCLUSIVE bull edge** (`<=`, so it reads "at or
+  below").
+  **Load-bearing, not decorative:** the naive version prints six distances. `flipConditions`
+  simulates each crossing through `verdictFrom` and keeps only those that actually change the
+  label — then sorts nearest-first. **Only ADJACENT transitions are offered**: from the bull band
+  you can reach neutral, not bear. Quoting "VIX above 25 would flip this" while VIX sits at 17 is
+  true arithmetic and a misleading next step.
+  **The three abstention rules, each with precedent here.** (1) A **stale** factor is not voting,
+  so its threshold is not load-bearing — it is listed as excluded, never as a distance (the same
+  gate as the vote). (2) A factor whose vote is not a single scalar crossing **abstains with the
+  reason named** — CPI votes on the SHAPE of its trend, CAPE on a two-condition OR; inventing a
+  crossing for a compound rule would be a fabricated number in a decision surface. (3) **"No
+  single flip changes this" is a real answer**, stated plainly in both the band and the panel,
+  never padded with the nearest distance to look responsive (the `readiness()` BLOCKED / one-way
+  `isMacroMaterial` withhold rule). Abstentions and exclusions RENDER — hiding them would read as
+  "these four are all there is".
+  **Deliberately NOT wired into `/readout.json`** — same reasoning as NFCI on arrival: that
+  contract gates real orders and a new field there is its own decision.
+  Found by the browser check while verifying: a **`whiteSpace:"nowrap"` subtitle in the v3.46 AI
+  unit-economics header blew the page to 488px at 390px wide** — pre-existing, now wrapping.
+  Tests: **771 smoke** (+23: every band boundary executed, the majority rule at 3/5/6 voters,
+  all three abstention rules, adjacency, inclusivity copy, sort order, and the render pins) +
+  153 render + a **14-check Chromium pass at 390px and 1200px**, panel open and closed.
 - **Deferred:** stored fundamentals + Robinhood sync — now unblocked by the `x-tt-pin` header
   (v3.9): a chat-side daily review can PUT `status_flags`/`ref_px` into the deepDive payloads and
   stamp `lastRun`. When built, store the *triage* shape (`{at, px}` → "% moved since your last TT
@@ -1315,7 +1352,7 @@ npm run dev        # Vite dev server (mock unless VITE_DATA_MODE=live in .env)
 npm run build      # → dist/  (what Pages runs)
 npm run preview    # serve the built dist/
 
-node test/smoke.mjs   # 748-assertion no-network smoke test (needs Node ≥17)
+node test/smoke.mjs   # 771-assertion no-network smoke test (needs Node ≥17)
 npm run test:ui       # browser render test for admin.html (skips if no Chromium)
 
 # Cron Worker (separate deploy):

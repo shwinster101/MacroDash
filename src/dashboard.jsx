@@ -342,65 +342,175 @@ const MOCK_DATA = {
 const NFCI_TIGHT = 0;      // above the historical mean → tighter than average → bearish
 const NFCI_LOOSE = -0.5;   // ≥ half an SD below the mean → genuinely accommodative → bullish
 
-// ─── REGIME VERDICT ENGINE (FEAT-163, rule-based for v1.6 mock) ────────────
+/* ═══ REGIME BAND TABLE (FEAT-FLIP, v3.53) — ONE table, two altitudes ═══════════════════
+   computeRegime() VOTES from this table; flipConditions() measures DISTANCE to the same
+   edges. Before this the bands were inline literals inside computeRegime, so any "what would
+   change the verdict" surface needed a SECOND copy of every threshold — the exact drift
+   defect this project keeps paying for (the v3.49 5-vs-6 denominator, the v3.51 stale factor-count
+   label, the v3.39 ptModelRows audit). A second copy of a threshold that gates a public
+   verdict is not a shortcut; it is a future bug with a date on it.
+   `vote()` returns bull | bear | neutral and is the ONLY place a band is expressed. A
+   non-finite value votes NEUTRAL by construction (every comparison against NaN is false) —
+   the same behaviour the inline ifs had, stated rather than incidental.
+   `flip` is OPTIONAL: present only where the vote turns on a single scalar crossing. Where
+   it is absent (CPI's trend shape, CAPE's two-condition OR) flipConditions ABSTAINS and
+   names the reason — inventing a crossing for a compound rule would be a fabricated number
+   in a decision surface, which is the one thing this dashboard exists not to do. */
+const REGIME_BAND_TABLE = [
+  { key:"tenYear", short:"10Y", label:"10Y Direction",
+    read:(d)=>d.crossAsset.treasury10y.m1,
+    vote:(v)=> v < -0.10 ? "bull" : v > 0.15 ? "bear" : "neutral",
+    flip:{ bullEdge:-0.10, bearEdge:0.15, bullSide:"below", bullInclusive:false,
+           unit:" ppt", dec:2, name:"the 10Y monthly change" } },
+  { key:"vix", short:"VIX", label:"VIX Level",
+    read:(d)=>d.marketPulse.vix.current,
+    vote:(v)=> v < 18 ? "bull" : v > 25 ? "bear" : "neutral",
+    flip:{ bullEdge:18, bearEdge:25, bullSide:"below", bullInclusive:false,
+           unit:"", dec:2, name:"VIX" } },
+  { key:"fearGreed", short:"F&G", label:"Fear & Greed",
+    read:(d)=>d.marketPulse.fearGreed.score,
+    vote:(v)=> v > 55 ? "bull" : v < 30 ? "bear" : "neutral",
+    // The one INVERTED factor: bullish ABOVE its edge, not below.
+    flip:{ bullEdge:55, bearEdge:30, bullSide:"above", bullInclusive:false,
+           unit:"", dec:0, name:"Fear & Greed" } },
+  { key:"cpiHeadline", short:"CPI", label:"CPI Trend",
+    read:(d)=>d.macro.cpi.trend,
+    vote:(t)=> t[t.length-1] < t[t.length-2] ? "bull"
+             : (t[t.length-1] - t[0] > 0.5 ? "bear" : "neutral"),
+    flip:null,
+    flipWhy:"votes on the SHAPE of its trend (latest print vs the prior one, and drift from the series start) — there is no single level to cross" },
+  { key:"valuation", short:"VAL", label:"Valuation",
+    read:(d)=>d.macro.shillerPe,
+    vote:(c)=>{ const p = c.ath ? (c.current / c.ath) * 100 : c.pctOfAth;
+                return c.current < c.mean * 1.5 ? "bull" : (c.current > 30 || p > 90 ? "bear" : "neutral"); },
+    flip:null,
+    flipWhy:"turns bearish on EITHER an absolute CAPE above 30 OR a level above 90% of its all-time high — two conditions, so no single crossing defines the flip" },
+  { key:"nfci", short:"NFCI", label:"Fin Conditions",
+    read:(d)=>d.macro.nfci.current,
+    // Asymmetric and INCLUSIVE on the bull side (<=), unlike every other factor — see the
+    // NFCI_BANDS derivation at the tile. flipConditions renders "at or below" for it.
+    vote:(v)=> v <= NFCI_LOOSE ? "bull" : v > NFCI_TIGHT ? "bear" : "neutral",
+    flip:{ bullEdge:NFCI_LOOSE, bearEdge:NFCI_TIGHT, bullSide:"below", bullInclusive:true,
+           unit:" SD", dec:2, name:"NFCI" } },
+];
+
+/* THRESHOLD (FEAT-NFCI, v3.43). DEC-31 set "≥3 of 5 = strict majority", explicitly moving
+   AWAY from ≥3 of 6 because that is 50%, not a majority. Adding NFCI as a 6th factor would
+   have silently reintroduced exactly that bug against a hardcoded 3. So the rule is computed
+   from the factors that actually voted: a STRICT majority of `counted`.
+     6 live → needs 4   (majority preserved, DEC-31's intent held)
+     5 live → needs 3   (IDENTICAL to the old constant — today's common case is unchanged)
+     3 live → needs 2   (the old constant demanded unanimity here, which was never intended)
+   Honest consequence: with all six live a verdict is harder to trigger, so MIXED is more
+   common. That is what adding a voter costs.
+   Extracted (v3.53) so flipConditions() SIMULATES with the identical rule rather than
+   restating it — a flip claim computed off a different majority test would be worse than none. */
+export function verdictFrom(bullVotes, bearVotes, counted) {
+  const bull = counted > 0 && bullVotes > counted / 2;
+  const bear = counted > 0 && bearVotes > counted / 2;
+  if (bull && !bear) return "RISK-ON";
+  if (bear && !bull) return "RISK-OFF";
+  return "MIXED";
+}
+const REGIME_META = {
+  // FEAT-v17-07: hyphen separators (was middot) for RISK-ON / RISK-OFF legibility
+  "RISK-ON":  { sub:"Disinflation + low vol",   tintKey:"regime-on-bg",  colorKey:"green"  },
+  "RISK-OFF": { sub:"Rate pressure + stress",   tintKey:"regime-off-bg", colorKey:"red"    },
+  "MIXED":    { sub:"Cross-signals — watch VIX", tintKey:"regime-mix-bg", colorKey:"yellow" },
+};
+
+// ─── REGIME VERDICT ENGINE (FEAT-163, rule-based) ──────────────────────────
 // FEAT-DQ: `stale` is a Set of factor keys whose live data has gone STALE (cadence-aware).
 // A stale factor is EXCLUDED from the vote — better to drop a signal than let a dead feed
 // (e.g. a dead scraper) cast a phantom bull/bear vote on today's tape.
 function computeRegime(d, stale=new Set()) {
   let bullVotes=0, bearVotes=0, counted=0;
   // `counted` = factors that actually voted (available, whatever way they leaned). It drives
-  // a STRICT MAJORITY of the live voters rather than a hardcoded number — see the threshold
-  // note below for why a fixed `>=3` stopped being correct once a 6th factor existed.
-  const use=(k)=>{ const live=!stale.has(k); if(live) counted++; return live; };
-  // 10Y direction: falling = bullish for equities
-  if(use("tenYear")){ if(d.crossAsset.treasury10y.m1 < -0.10) bullVotes++; else if(d.crossAsset.treasury10y.m1 > 0.15) bearVotes++; }
-  // VIX level
-  if(use("vix")){ if(d.marketPulse.vix.current < 18) bullVotes++; else if(d.marketPulse.vix.current > 25) bearVotes++; }
-  // F&G
-  if(use("fearGreed")){ if(d.marketPulse.fearGreed.score > 55) bullVotes++; else if(d.marketPulse.fearGreed.score < 30) bearVotes++; }
-  // CPI trend (last 2 readings)
-  if(use("cpiHeadline")){
-    const cpiTrend=d.macro.cpi.trend;
-    if(cpiTrend[cpiTrend.length-1] < cpiTrend[cpiTrend.length-2]) bullVotes++;
-    else if(cpiTrend[cpiTrend.length-1] - cpiTrend[0] > 0.5) bearVotes++;
-  }
-  // Valuation (Shiller CAPE) — contrarian: a stretched market is bearish for forward returns (FEAT-R1).
-  // v3.1: now LIVE (multpl scrape, monthly). Like every other factor it drops out when stale, so
-  // the hero verdict never counts a fabricated valuation. pctOfAth derived from current ÷ ATH.
-  if(use("valuation")){
-    const cape=d.macro.shillerPe;
-    const pctOfAth = cape.ath ? (cape.current / cape.ath) * 100 : cape.pctOfAth;
-    if(cape.current < cape.mean*1.5) bullVotes++; else if(cape.current > 30 || pctOfAth > 90) bearVotes++;
-  }
-  // Financial conditions (Chicago Fed NFCI). Same NFCI_TIGHT/NFCI_LOOSE thresholds the tile
-  // renders — one band table, two surfaces, so the vote can never disagree with the label.
-  // Asymmetric by design: see the NFCI_BANDS note at the tile. Drops out when STALE.
-  if(use("nfci")){
-    const n=d.macro.nfci.current;
-    if(n <= NFCI_LOOSE) bullVotes++; else if(n > NFCI_TIGHT) bearVotes++;
-  }
+  // the strict majority in verdictFrom rather than a hardcoded number.
+  REGIME_BAND_TABLE.forEach((f)=>{
+    if(stale.has(f.key)) return;
+    counted++;
+    const v=f.vote(f.read(d), d);
+    if(v==="bull") bullVotes++; else if(v==="bear") bearVotes++;
+  });
+  const label=verdictFrom(bullVotes, bearVotes, counted);
+  const m=REGIME_META[label];
+  // FIX-E (v3.49): `counted`/`totalFactors` ride the verdict so every surface (RegimeBand
+  // header, 5-Whys headline, WHY #5, the confidence strip) states the SAME denominator this
+  // vote was decided over — fiveWhys.js used to re-derive it from its own hardcoded pre-NFCI
+  // list and said "/5" while the header said "/6".
+  return { label, sub:m.sub, tint:DT[m.tintKey], color:T[m.colorKey],
+    bullVotes, bearVotes, counted, totalFactors:REGIME_BAND_TABLE.length };
+}
 
-  /* THRESHOLD (FEAT-NFCI, v3.43). DEC-31 set "≥3 of 5 = strict majority", explicitly moving
-     AWAY from ≥3 of 6 because that is 50%, not a majority. Adding NFCI as a 6th factor would
-     have silently reintroduced exactly that bug against a hardcoded 3. So the rule is now
-     computed from the factors that actually voted: a STRICT majority of `counted`.
-       6 live → needs 4   (majority preserved, DEC-31's intent held)
-       5 live → needs 3   (IDENTICAL to the old constant — today's common case is unchanged)
-       3 live → needs 2   (the old constant demanded unanimity here, which was never intended)
-     Note the honest consequence: with all six live, a verdict is harder to trigger than it
-     was with five, so MIXED becomes more common. That is what adding a voter costs. */
-  const bull = counted > 0 && bullVotes > counted / 2;
-  const bear = counted > 0 && bearVotes > counted / 2;
-  // FIX-E (v3.49, VALUE_PROPOSITION_AUDIT "regime denominators disagree"): `counted` and
-  // `totalFactors` ride the verdict so every surface (RegimeBand header, 5-Whys headline,
-  // WHY #5) states the SAME denominator this vote was actually decided over — fiveWhys.js
-  // used to re-derive it from its own hardcoded pre-NFCI factor list and said "/5" while
-  // the header said "/6". One derivation, per the same rule that made governingRegime one.
-  const totalFactors = 6;
-  // FEAT-v17-07: hyphen separators (was middot) for RISK-ON / RISK-OFF legibility
-  if(bull && !bear) return { label:"RISK-ON", sub:"Disinflation + low vol", tint:DT["regime-on-bg"], color:T.green, bullVotes, bearVotes, counted, totalFactors };
-  if(bear && !bull) return { label:"RISK-OFF", sub:"Rate pressure + stress", tint:DT["regime-off-bg"], color:T.red, bullVotes, bearVotes, counted, totalFactors };
-  return { label:"MIXED", sub:"Cross-signals — watch VIX", tint:DT["regime-mix-bg"], color:T.yellow, bullVotes, bearVotes, counted, totalFactors };
+/* ═══ FEAT-FLIP (v3.53) — "what would change the verdict" ═══════════════════════════════
+   The audit's last unbuilt first-screen item (Posture ✓ · Confidence ✓ v3.51 · Why ✓ · what
+   changes the call ✗), and the public-side counterpart to the terminal's readiness(): that
+   one answers "is the evidence there to act", this one answers "what would move the answer".
+   The naive version prints six distances. This computes which crossings are actually
+   LOAD-BEARING — it simulates the flip through verdictFrom (the SAME majority rule the vote
+   used) and keeps only the ones that change the label. Three abstention rules, all of which
+   have precedent here:
+     1. A STALE/excluded factor is not voting, so its threshold is not load-bearing — it is
+        listed as excluded, never as a distance. (Same gate as the vote itself.)
+     2. A factor whose vote is not a single scalar crossing ABSTAINS with the reason named
+        (CPI's trend shape, CAPE's two-condition OR) — never an invented number.
+     3. "No single flip changes this" is a real and common answer and is stated plainly,
+        never padded with the nearest distance to look responsive. (The counterpart to
+        readiness()'s BLOCKED, and to isMacroMaterial's one-way withhold.)
+   Only ADJACENT band transitions are offered: from the bull band you can reach neutral, not
+   bear. Claiming "VIX above 25 would flip this" while VIX sits at 17 would quote a distance
+   across a zone the value has to traverse first — true arithmetic, misleading as a next step. */
+export function flipConditions(d, stale=new Set()) {
+  const live=REGIME_BAND_TABLE.filter(f=>!stale.has(f.key));
+  const counted=live.length;
+  const votes={}; let bullVotes=0, bearVotes=0;
+  live.forEach(f=>{ const v=f.vote(f.read(d), d); votes[f.key]=v;
+    if(v==="bull") bullVotes++; else if(v==="bear") bearVotes++; });
+  const current=verdictFrom(bullVotes, bearVotes, counted);
+  // Simulate one factor moving to a new vote, through the SAME majority rule.
+  const sim=(key,to)=>{
+    let b=bullVotes, r=bearVotes;
+    const from=votes[key];
+    if(from==="bull") b--; else if(from==="bear") r--;
+    if(to==="bull") b++; else if(to==="bear") r++;
+    return verdictFrom(b, r, counted);
+  };
+  const flips=[], abstained=[];
+  live.forEach(f=>{
+    if(!f.flip){ abstained.push({key:f.key, short:f.short, label:f.label, why:f.flipWhy}); return; }
+    const v=f.read(d);
+    if(!Number.isFinite(v)){ abstained.push({key:f.key, short:f.short, label:f.label,
+      why:"no live value to measure a distance from"}); return; }
+    const cur=votes[f.key];
+    const bearSide=f.flip.bullSide==="below" ? "above" : "below";
+    // Adjacent transitions only (see the note above).
+    const targets = cur==="bull" ? [{to:"neutral", edge:f.flip.bullEdge, leaving:"bull"}]
+      : cur==="bear" ? [{to:"neutral", edge:f.flip.bearEdge, leaving:"bear"}]
+      : [{to:"bull", edge:f.flip.bullEdge}, {to:"bear", edge:f.flip.bearEdge}];
+    targets.forEach(t=>{
+      const would=sim(f.key, t.to);
+      if(would===current) return;   // crossing it changes nothing — not load-bearing
+      // Direction + inclusivity copy. Entering the bull band on an inclusive edge reads
+      // "at or below"; LEAVING that same band means strictly passing it.
+      let side, inclusive;
+      if(t.to==="bull"){ side=f.flip.bullSide; inclusive=f.flip.bullInclusive; }
+      else if(t.to==="bear"){ side=bearSide; inclusive=false; }
+      else { // leaving a band: cross back the other way
+        const leavingBull=t.leaving==="bull";
+        side=(leavingBull ? f.flip.bullSide : bearSide)==="below" ? "above" : "below";
+        inclusive=leavingBull ? !f.flip.bullInclusive : true;
+      }
+      flips.push({ key:f.key, short:f.short, label:f.label, name:f.flip.name,
+        to:t.to, leaving:t.leaving||null, edge:t.edge, value:v,
+        distance:Math.round(Math.abs(v-t.edge)*1000)/1000,
+        unit:f.flip.unit, dec:f.flip.dec, side, inclusive, would,
+        copy:`${f.flip.name} ${inclusive?`at or ${side}`:side} ${Number(t.edge).toFixed(f.flip.dec)}${f.flip.unit}` });
+    });
+  });
+  flips.sort((a,b)=>a.distance-b.distance);
+  return { current, counted, bullVotes, bearVotes, flips, abstained,
+    excluded:REGIME_BAND_TABLE.filter(f=>stale.has(f.key)).map(f=>({key:f.key, short:f.short, label:f.label})) };
 }
 
 // Live ET market session for the 5-Whys narrative frame (mirrors marketSession() in
@@ -442,6 +552,9 @@ const fmt = {
   pct:(v,d=1)=>`${v>=0?"+":""}${v.toFixed(d)}%`,
   bps:(v)=>`${v>=0?"+":""}${(v*100).toFixed(0)}bps`,
   price:(v)=>v>=1000?`$${(v/1000).toFixed(1)}K`:`$${v.toFixed(2)}`,
+  // FEAT-FLIP: a bare number at the precision its own band is expressed in (10Y/NFCI 2dp,
+  // F&G 0dp) — a distance printed at the wrong precision reads as false confidence.
+  num:(v,d=2)=>Number(v).toFixed(d),
 };
 const arrow=(v)=>v>0?"▲":v<0?"▼":"→";
 const pctColor=(v,inv=false)=>(inv?v<0:v>0)?T.green:v===0?T.textSecondary:T.red;
@@ -920,6 +1033,10 @@ const RegimeBand=({d,stale=new Set()})=>{
   const [open,setOpen]=useState(false);
   const regime=computeRegime(d,stale);
   const factors=regimeFactors(d,stale);
+  // FEAT-FLIP (v3.53): what would change this call. The NEAREST load-bearing crossing rides
+  // the first screen; the full set (plus abstentions and exclusions) lives one tap down.
+  const fc=flipConditions(d,stale);
+  const nearest=fc.flips[0]||null;
   const active=factors.filter(f=>!f.stale).length; // stale factors are excluded from the vote
   const bulls=factors.filter(f=>f.bull).length;
   // "wen moon?" — map the regime verdict to our moon ratings: RISK-ON→MOONING, MIXED→HODL, RISK-OFF→DIAMOND HANDS
@@ -936,6 +1053,18 @@ const RegimeBand=({d,stale=new Set()})=>{
               <span style={{fontFamily:T.fontMono,fontSize:22,fontWeight:700,color:regime.color,letterSpacing:"-0.01em"}}>{moon.label}</span>
               <span style={{fontFamily:T.fontMono,fontSize:10,color:T.textSecondary}}>{regime.label} · {regime.sub}</span>
               <span style={{fontFamily:T.fontMono,fontSize:9,color:T.textMuted}}>{bulls}/{active} bullish · {regime.bullVotes} vote{regime.bullVotes===1?"":"s"} bull / {regime.bearVotes} bear</span>
+            </div>
+            {/* FEAT-FLIP: the audit's fourth first-screen answer — what would change the call.
+                "Nothing single-handedly" is stated plainly rather than padded with the nearest
+                distance to look responsive (abstention rule 3). */}
+            <div style={{fontFamily:T.fontMono,fontSize:9,color:T.textSecondary,marginTop:3}}>
+              <span style={{color:T.textMuted}}>⇄ would change this: </span>
+              {nearest
+                ? <><span style={{color:regime.color}}>{nearest.copy}</span>
+                    <span style={{color:T.textMuted}}> ({fmt.num(nearest.distance,nearest.dec)}{nearest.unit} away) → </span>
+                    <span style={{color:T.textPrimary,fontWeight:700}}>{nearest.would}</span>
+                    {fc.flips.length>1&&<span style={{color:T.textMuted}}> · +{fc.flips.length-1} more</span>}</>
+                : <span style={{color:T.textMuted}}>no single factor crossing flips this verdict — it would take two</span>}
             </div>
           </div>
         </div>
@@ -966,6 +1095,35 @@ const RegimeBand=({d,stale=new Set()})=>{
               <div style={{fontFamily:T.fontMono,fontSize:9,color:f.stale?T.amber:f.bull?T.green:T.red}}>{f.val}</div>
             </div>
           ))}
+          {/* FEAT-FLIP: every load-bearing crossing, then what abstained and why. The
+              abstentions are NOT omitted — a factor that cannot express a single threshold is
+              a fact about the rule, and hiding it would read as "these four are all there is". */}
+          <div style={{gridColumn:"1/-1",borderTop:`1px solid ${T.border}`,marginTop:4,paddingTop:6}}>
+            <div style={{fontFamily:T.fontMono,fontSize:8,color:T.textMuted,letterSpacing:"0.1em",marginBottom:3}}>WHAT WOULD CHANGE THIS VERDICT</div>
+            {fc.flips.length===0&&(
+              <div style={{fontFamily:T.fontMono,fontSize:9,color:T.textSecondary}}>
+                No single factor crossing changes the call — at {fc.bullVotes} bull / {fc.bearVotes} bear of {fc.counted} voting,
+                it would take two factors moving together.
+              </div>
+            )}
+            {fc.flips.map(f=>(
+              <div key={`${f.key}-${f.to}`} style={{fontFamily:T.fontMono,fontSize:9,color:T.textSecondary,display:"flex",gap:6,flexWrap:"wrap",marginBottom:1}}>
+                <span style={{color:regime.color,minWidth:190}}>{f.copy}</span>
+                <span style={{color:T.textMuted}}>now {fmt.num(f.value,f.dec)}{f.unit} · {fmt.num(f.distance,f.dec)}{f.unit} away</span>
+                <span style={{color:T.textPrimary}}>→ {f.would}</span>
+              </div>
+            ))}
+            {fc.abstained.map(a=>(
+              <div key={a.key} style={{fontFamily:T.fontMono,fontSize:8,color:T.textMuted,marginTop:2}}>
+                {a.label}: no single threshold — {a.why}
+              </div>
+            ))}
+            {fc.excluded.length>0&&(
+              <div style={{fontFamily:T.fontMono,fontSize:8,color:T.amber,marginTop:2}}>
+                Excluded from the vote (stale), so their thresholds are not load-bearing: {fc.excluded.map(e=>e.short).join(" · ")}
+              </div>
+            )}
+          </div>
           <div style={{fontFamily:T.fontMono,fontSize:8,color:T.textMuted,gridColumn:"1/-1"}}>Rule-based 6-factor vote · stale/dead inputs auto-excluded · derived from live data</div>
         </div>
       )}
@@ -1671,7 +1829,10 @@ export default function Dashboard({ publicView = false } = {}) {
         {/* ── AI UNIT ECONOMICS · cost side (GPU $/hr) + price side (token $/Mtok) ── */}
         <div style={{marginTop:16,display:"flex",alignItems:"center",gap:10}}>
           <span style={{fontFamily:T.fontMono,fontSize:10,color:"#a78bfa",letterSpacing:"0.14em",whiteSpace:"nowrap"}}>◆ AI UNIT ECONOMICS</span>
-          <span style={{fontFamily:T.fontMono,fontSize:8,color:T.textMuted,whiteSpace:"nowrap"}}>cost ↔ price ↔ conversion ↔ funding · the margin-compression hinge</span>
+          {/* v3.53: `whiteSpace:"nowrap"` on a 317px string blew the PAGE out to 488px at 390px
+              wide — found by the flip-conditions browser check, pre-existing since v3.46. The
+              label is a subtitle; it wraps. */}
+          <span style={{fontFamily:T.fontMono,fontSize:8,color:T.textMuted,minWidth:0}}>cost ↔ price ↔ conversion ↔ funding · the margin-compression hinge</span>
           <div style={{height:1,flex:1,background:T.border}}/>
         </div>
         {/* FEAT-322: the live price side (OpenRouter) leads; the curated GPU cost side is

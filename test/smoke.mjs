@@ -1848,7 +1848,7 @@ ok("nfci: it counts toward Signal Quality — a tracked live signal, not decorat
 ok("nfci: thresholds live in ONE shared table driving tile, vote and factor breakdown alike",
   dashSrc.includes("const NFCI_TIGHT = 0;") && dashSrc.includes("const NFCI_LOOSE = -0.5;") &&
   dashSrc.includes('const band=v>NFCI_TIGHT?"TIGHT":v<=NFCI_LOOSE?"LOOSE":"NEUTRAL"') &&
-  dashSrc.includes("if(n <= NFCI_LOOSE) bullVotes++; else if(n > NFCI_TIGHT) bearVotes++;"));
+  dashSrc.includes('vote:(v)=> v <= NFCI_LOOSE ? "bull" : v > NFCI_TIGHT ? "bear" : "neutral"'));
 ok("nfci: the tight threshold is the DEFINITIONAL mean (0), not a hand-picked decimal",
   /const NFCI_TIGHT = 0;/.test(dashSrc) && !dashSrc.includes("0.10?\"TIGHT\""));
 ok("nfci: the bands are ASYMMETRIC — a symmetric band around zero would have voted bullish " +
@@ -1874,7 +1874,8 @@ ok("nfci: the tile states its own reference point — a bare z-score is unreadab
   dashSrc.includes("0 = avg"));
 ok("nfci: it votes in the DASHBOARD regime (6th factor), off the SAME shared band table the " +
    "tile renders — one computation, two surfaces, so label and vote cannot disagree",
-  dashSrc.includes('if(use("nfci")){') && dashSrc.includes("if(n <= NFCI_LOOSE) bullVotes++; else if(n > NFCI_TIGHT) bearVotes++;"));
+  /\{ key:"nfci",[\s\S]*?vote:\(v\)=> v <= NFCI_LOOSE \? "bull"/.test(dashSrc) &&
+  dashSrc.includes("REGIME_BAND_TABLE.forEach"));
 ok("nfci: a STALE nfci drops out of the vote like every other factor",
   /REGIME_FACTOR_FIELDS=\[[^\]]*"nfci"\]/.test(dashSrc));
 ok("nfci: it appears in the displayed factor breakdown, so 'X/Y bullish' matches the cast vote",
@@ -2312,6 +2313,23 @@ const _ee = dashSrc.indexOf("\n}", dashSrc.indexOf("return{state:hit", _ef)) + 2
 const evalAlert = new Function(
   dashSrc.slice(_am, _ae) + dashSrc.slice(_ef, _ee).replace("export function", "function") +
   "\nreturn evalAlert;")();
+// FEAT-FLIP (v3.53): lift the band table + verdictFrom + computeRegime + flipConditions the
+// same way (JSX cannot be imported). Lifting the REAL table is the point — these tests prove
+// the vote and the flip distances read ONE expression of each edge.
+const _lift = (marker, endMarker) => {
+  const i = dashSrc.indexOf(marker);
+  if (i < 0) throw new Error("smoke: cannot lift " + marker);
+  const e = dashSrc.indexOf(endMarker, i);
+  return dashSrc.slice(i, e + endMarker.length);
+};
+const REG = new Function(
+  "const NFCI_TIGHT=0,NFCI_LOOSE=-0.5;const DT={},T={};" +
+  _lift("const REGIME_BAND_TABLE = [", "\n];") +
+  _lift("export function verdictFrom(", "\n}").replace("export function", "function") +
+  _lift("const REGIME_META = {", "\n};") +
+  _lift("function computeRegime(d, stale=new Set()) {", "\n}") +
+  _lift("export function flipConditions(", "\n}").replace("export function", "function") +
+  "\nreturn {REGIME_BAND_TABLE,verdictFrom,computeRegime,flipConditions};")();
 const allLive = () => "LIVE";
 const allMock = () => "MOCK";
 const aVix = { id: 2, label: "VIX Spike", metric: "vix", condition: "above", value: 25, unit: "", active: true };
@@ -2349,6 +2367,103 @@ ok("a11y: the page exposes a main landmark (there were ZERO before)",
 ok("a11y: the verdict and its confidence strip are polite live regions",
   /aria-label="Macro backdrop verdict" aria-live="polite"/.test(dashSrc) &&
   /aria-label="Signal quality and backdrop confidence" aria-live="polite"/.test(dashSrc));
+
+// ---- 28. FEAT-FLIP (v3.53) — the shared band table + "what would change the verdict" ----
+// The bands moved OUT of computeRegime's inline ifs into REGIME_BAND_TABLE so flipConditions
+// measures distance to the SAME edges the vote uses. That refactor touches the public verdict,
+// so every boundary is executed here rather than pinned as a string (the DEC-33 convention).
+console.log("\n[28] FEAT-FLIP — one band table, and the load-bearing flips");
+const bandOf = (k) => REG.REGIME_BAND_TABLE.find((f) => f.key === k);
+const V = (k, v) => bandOf(k).vote(v);
+ok("bands: 10Y — -0.11 bull · -0.10 neutral · +0.15 neutral · +0.16 bear",
+  V("tenYear", -0.11) === "bull" && V("tenYear", -0.10) === "neutral" &&
+  V("tenYear", 0.15) === "neutral" && V("tenYear", 0.16) === "bear");
+ok("bands: VIX — 17.99 bull · 18 neutral · 25 neutral · 25.01 bear",
+  V("vix", 17.99) === "bull" && V("vix", 18) === "neutral" &&
+  V("vix", 25) === "neutral" && V("vix", 25.01) === "bear");
+ok("bands: F&G is the INVERTED factor — 56 bull · 55 neutral · 30 neutral · 29 bear",
+  V("fearGreed", 56) === "bull" && V("fearGreed", 55) === "neutral" &&
+  V("fearGreed", 30) === "neutral" && V("fearGreed", 29) === "bear");
+ok("bands: NFCI is INCLUSIVE on the bull edge — -0.5 bull · -0.49 neutral · 0 neutral · 0.01 bear",
+  V("nfci", -0.5) === "bull" && V("nfci", -0.49) === "neutral" &&
+  V("nfci", 0) === "neutral" && V("nfci", 0.01) === "bear");
+ok("bands: the table is the SIX voters and nothing else", REG.REGIME_BAND_TABLE.length === 6);
+// The majority rule, extracted so flipConditions simulates with the identical test.
+ok("verdictFrom: strict majority — 4/6 RISK-ON, 3/6 MIXED (DEC-31's 50%-is-not-a-majority)",
+  REG.verdictFrom(4, 0, 6) === "RISK-ON" && REG.verdictFrom(3, 0, 6) === "MIXED");
+ok("verdictFrom: identical to the old constant at 5 voters (needs 3), correct at 3 (needs 2)",
+  REG.verdictFrom(3, 0, 5) === "RISK-ON" && REG.verdictFrom(2, 0, 5) === "MIXED" &&
+  REG.verdictFrom(2, 0, 3) === "RISK-ON");
+// EQUIVALENCE: the refactor must not have moved the verdict on the real mock baseline.
+ok("refactor: computeRegime off the table returns the same shape and a real verdict on MOCK_DATA",
+  (() => { const r = REG.computeRegime(MOCK_DATA);
+    return ["RISK-ON", "RISK-OFF", "MIXED"].includes(r.label) &&
+      r.totalFactors === 6 && r.counted === 6 && Number.isFinite(r.bullVotes); })());
+ok("refactor: a STALE factor still drops out of the vote and out of `counted`",
+  REG.computeRegime(MOCK_DATA, new Set(["vix"])).counted === 5);
+
+// --- ABSTENTION RULE 1: a stale factor is not voting, so it is EXCLUDED, never a distance.
+const fcStale = REG.flipConditions(MOCK_DATA, new Set(["vix"]));
+ok("flip rule 1: a stale factor is listed as excluded and never appears as a flip distance",
+  fcStale.excluded.some((e) => e.key === "vix") && !fcStale.flips.some((f) => f.key === "vix") &&
+  fcStale.counted === 5);
+// --- ABSTENTION RULE 2: non-scalar votes abstain WITH THE REASON, never an invented number.
+const fc = REG.flipConditions(MOCK_DATA);
+ok("flip rule 2: CPI and CAPE abstain — their votes are not a single scalar crossing",
+  ["cpiHeadline", "valuation"].every((k) => fc.abstained.some((a) => a.key === k)) &&
+  !fc.flips.some((f) => ["cpiHeadline", "valuation"].includes(f.key)));
+ok("flip rule 2: each abstention NAMES why (a compound rule, not a missing feature)",
+  /no single level to cross/.test(fc.abstained.find((a) => a.key === "cpiHeadline").why) &&
+  /two conditions/.test(fc.abstained.find((a) => a.key === "valuation").why));
+// --- ABSTENTION RULE 3: "nothing flips it" is a real answer, stated, never padded.
+// Construct a book where one factor cannot swing the majority: 6 voters, verdict MIXED at
+// 1 bull / 1 bear — no SINGLE factor reaching 4 votes exists, so flips must be empty.
+const noSwing = REG.flipConditions(MOCK_DATA, new Set());
+ok("flip rule 3: every reported flip genuinely CHANGES the label (never a decorative distance)",
+  noSwing.flips.every((f) => f.would !== noSwing.current));
+ok("flip rule 3: when no single crossing changes the verdict, the list is EMPTY rather than padded",
+  (() => { // all six neutral -> MIXED, and one factor flipping gives at most 1 vote of 6
+    const flat = JSON.parse(JSON.stringify(MOCK_DATA));
+    flat.crossAsset.treasury10y.m1 = 0;            // neutral
+    flat.marketPulse.vix.current = 20;             // neutral
+    flat.marketPulse.fearGreed.score = 40;         // neutral
+    flat.macro.nfci.current = -0.2;                // neutral
+    const r = REG.flipConditions(flat);
+    return r.current === "MIXED" && r.flips.length === 0; })());
+// --- ADJACENCY: from the bull band you can reach neutral, not bear.
+ok("flip: only ADJACENT transitions are offered — a bull factor cannot 'flip to bear' in one step",
+  (() => { const t = JSON.parse(JSON.stringify(MOCK_DATA));
+    t.marketPulse.vix.current = 17;   // bull band
+    const r = REG.flipConditions(t);
+    const vixFlips = r.flips.filter((f) => f.key === "vix");
+    return vixFlips.every((f) => f.to === "neutral"); })());
+// --- COPY: direction and inclusivity are rendered from the table, not restated.
+ok("flip: the NFCI inclusive bull edge reads 'at or below', the strict VIX edge reads 'below'",
+  (() => { const t = JSON.parse(JSON.stringify(MOCK_DATA));
+    t.macro.nfci.current = -0.2; t.marketPulse.vix.current = 20;  // both neutral
+    t.crossAsset.treasury10y.m1 = -0.5; t.marketPulse.fearGreed.score = 80; // 2 bulls
+    const r = REG.flipConditions(t);
+    const n = r.flips.find((f) => f.key === "nfci"), v = r.flips.find((f) => f.key === "vix" && f.to === "bull");
+    return (!n || /at or below/.test(n.copy)) && (!v || /^VIX below 18/.test(v.copy)); })());
+ok("flip: distances are sorted nearest-first, so the load-bearing one reads first",
+  fc.flips.every((f, i, a) => i === 0 || a[i - 1].distance <= f.distance));
+ok("flip: each flip states the verdict it WOULD produce, not merely that something changes",
+  fc.flips.every((f) => ["RISK-ON", "RISK-OFF", "MIXED"].includes(f.would)));
+// Render layer: the nearest crossing is on the FIRST SCREEN (the audit's fourth answer), the
+// full set one tap down, and the abstentions are NOT omitted from the panel.
+ok("flip render: the verdict band carries the nearest crossing without opening anything",
+  dashSrc.includes("⇄ would change this: ") && dashSrc.includes("const nearest=fc.flips[0]||null;"));
+ok("flip render: the no-single-flip case is stated in BOTH the band and the panel",
+  /no single factor crossing flips this verdict — it would take two/.test(dashSrc) &&
+  /No single factor crossing changes the call/.test(dashSrc));
+ok("flip render: the panel names abstentions and stale exclusions, never silently dropping them",
+  dashSrc.includes("no single threshold — ") &&
+  dashSrc.includes("their thresholds are not load-bearing"));
+ok("flip render: distances print at the precision of the factor's own band (fmt.num + dec)",
+  dashSrc.includes("fmt.num(nearest.distance,nearest.dec)") && dashSrc.includes("num:(v,d=2)=>Number(v).toFixed(d)"));
+// Found BY the flip browser check: a nowrap 317px subtitle blew the page to 488px at 390px.
+ok("mobile: the AI unit-economics subtitle wraps (a nowrap label must not blow out the page)",
+  !/whiteSpace:"nowrap"\}\}>cost ↔ price/.test(dashSrc));
 
 console.log(`\n=== SMOKE TEST: ${pass} passed, ${fail} failed ===`);
 process.exit(fail === 0 ? 0 : 1);
