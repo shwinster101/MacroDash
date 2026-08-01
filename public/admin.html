@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <!-- AUDIT: kept in sync with package.json by test/smoke.mjs. admin.html is a Vite
      public/ passthrough, so it cannot receive __APP_VERSION__ — the guard is the fix. -->
-<title>TT TICKER TERMINAL v3.49.0</title>
+<title>TT TICKER TERMINAL v3.53.0</title>
 <style>
   :root{
     --bg:#05070a; --panel:#0a0f16; --panel2:#0d141d; --line:#16202c;
@@ -357,7 +357,7 @@
         onclick="toggleHeadInfo()">⋯ MENU</button>
     </div>
     <div id="headInfo" style="display:none">
-      <div class="brand">FINANCE&nbsp;BRO.AI // TT&nbsp;TICKER&nbsp;TERMINAL <small>v3.49.0 · single-pass deep-dive orchestrator</small></div>
+      <div class="brand">FINANCE&nbsp;BRO.AI // TT&nbsp;TICKER&nbsp;TERMINAL <small>v3.53.0 · single-pass deep-dive orchestrator</small></div>
       <div class="statusline">
         <span>BOOK: <b id="bookStamp">loading…</b></span>
         <span>AUTH: <b id="sessState">…</b></span>
@@ -2390,6 +2390,131 @@ function ddThesisSummary(dd){
   if(Array.isArray(dd.rules)&&dd.rules.length)parts.push(`${dd.rules.length} standing rules`);
   return `THESIS &amp; GATES${parts.length?` · ${parts.join(" · ")}`:""}`;
 }
+/* ═══════════ FEAT-TT-READY (v3.50) — ONE decision-readiness statement ═══════════ */
+/* VALUE_PROPOSITION_AUDIT_2026-07-31, "too many freshness clocks": a ticker page could
+   carry EIGHT independent dates — live quote, manual ref_px mark, last TT run, model/lint
+   state, hinge observations, position sync, option-screenshot provenance, thesis update —
+   each honest on its own and none of them answering the only question a reader actually
+   has: CAN I ACT ON THIS NAME RIGHT NOW? Eight truthful clocks that never sum is how a
+   name with a NEVER RUN rating and an undated thesis still read as maintained.
+   This is the consolidator. It does NOT invent a new clock: every part below reads the
+   SAME helper the individual chips already read (runState · ddDate/ageDays · ptModelRows/
+   lintPtModel · LIVE_PX/ref_px · posOf/posAge · hingeTally), so a part can never disagree
+   with the chip it summarizes — the ptModelRows rule (one computation, many altitudes).
+   SEVERITY DOCTRINE, straight from the audit's "gate the interface by evidence coverage":
+     BLOCKED  — the evidence needed to act is missing or expired (no current model, no
+                current TT run, no defined hinges, no usable price, an unresolved blocking
+                decision scoped to this name). Fails CLOSED: absent reads as blocked.
+     CAUTION  — evidence exists but is aging or partial. Actionable with eyes open.
+     READY    — every clock current.
+   Two deliberate NON-blockers. A RED HINGE is surfaced, never a veto (D3, v3.39 — the
+   board reports, the owner enforces). An ABSENT POSITION is a caution, not a block: an
+   unheld new name legitimately has none, and blocking it would gate exactly the names the
+   next dollar is FOR. `x` alone is enough — nothing here needs the tab to be open. */
+const READY_THESIS_D=30;   // same threshold ddAgeChip re-reviews on — one rule, two surfaces
+function readiness(x){
+  const parts=[];   // {sev:"block"|"caution"|"ok", t:<chip text>}
+  const add=(sev,t)=>parts.push({sev,t});
+  const dd=x&&x.deepDive;
+
+  // 1. TT run — the harness pass. ageDays fails CLOSED, so undated/future reads NEVER RUN.
+  const rs=runState(x&&x.lastRun);
+  if(rs.k==="never")add("block","TT never run");
+  else if(rs.k==="head")add("block",`TT run ${rs.days}d old`);
+  else if(rs.k==="stale")add("caution",`TT run ${rs.days}d old`);
+  else add("ok",`TT run ${rs.days}d ago`);
+
+  // 2. Thesis payload + its self-attested update date.
+  if(!dd)add("block","no thesis payload");
+  else{
+    const td=ageDays(ddDate(dd));
+    if(td===null||td<0)add("block","thesis undated");
+    else if(td>READY_THESIS_D)add("caution",`thesis ${td}d old`);
+    else add("ok",`thesis ${td}d old`);
+  }
+
+  // 3. The model — a target that computes, and no MIS-KEYED schedule under it. A MISKEY
+  // rung silently falls through to the floor (v3.39), so the number renders with full
+  // confidence while meaning something else: that is missing evidence, not a warning.
+  if(dd){
+    const rows=ptModelRows(dd).filter(r=>typeof r.prem==="number"||typeof r.fl==="number");
+    const ls=lintPtModel(dd);
+    if(!rows.length)add("block","no pt_model — no target computes");
+    else if(ls.some(l=>l.sev==="error"))add("block","pt_model MIS-KEYED");
+    else if(ls.length)add("caution",`${ls.length} model lint${ls.length===1?"":"s"}`);
+    else add("ok",`model ${rows.length} rung${rows.length===1?"":"s"}`);
+  }
+
+  // 4. Price. A LIVE quote beats a stamp (v3.36); a stale stamp silently poisons every %.
+  const q=LIVE_PX[x&&x.sym];
+  const stamp=dd&&dd.ref_px&&isFinite(dd.ref_px.px)&&dd.ref_px.px>0?dd.ref_px:null;
+  if(q&&isFinite(q.px)&&q.px>0)add("ok","price live");
+  else if(stamp){
+    const pd=ageDays(String(stamp.at||"").slice(0,10));
+    if(pd===null)add("caution","mark undated");
+    else if(pd>PX_STALE_D)add("caution",`mark ${pd}d old`);
+    else add("ok",`mark ${pd}d old`);
+  }else add("block","no usable price");
+
+  // 5. Position — measured FACT, the only non-asserted class here (v3.30). Absent is a
+  // caution and says so: not synced is not the same as not held.
+  const p=posOf(x);
+  if(!p)add("caution","position not synced");
+  else{
+    const pd=posAge(p);
+    if(pd===null)add("caution","position undated");
+    else if(pd>POS_STALE_D)add("caution",`position ${pd}d old`);
+    else add("ok","position current");
+  }
+
+  // 6. Hinges — the audit's "defined thesis hinges". None means nothing on this name says
+  // what would change your mind, which is the whole differentiator. Red is NAMED, not vetoed.
+  if(dd){
+    const n=hingeTally(dd),tot=n.green+n.amber+n.red+n.unknown;
+    if(!tot)add("block","no hinges defined");
+    else{
+      if(n.unknown)add("caution",`${n.unknown} hinge${n.unknown===1?"":"s"} unknown`);
+      if(n.red)add("caution",`${n.red} hinge${n.red===1?"":"s"} RED`);
+      if(!n.unknown&&!n.red)add("ok",`${tot} hinge${tot===1?"":"s"} observed`);
+    }
+  }
+
+  // 7. An unresolved BLOCKING decision scoped to this name. Scoping is by EXPLICIT
+  // `decision.sym` only — inferring which decision blocks which ticker from prose would be
+  // a guess, and a guessed blocker is worse than none. Unscoped blocking decisions stay
+  // board-level, where renderDecisions and TODAY already surface them.
+  const ds=Array.isArray(BOARD.decisions)?BOARD.decisions:[];
+  const mine=ds.filter(d=>d&&d.blocking&&d.sym&&String(d.sym).toUpperCase()===String(x&&x.sym).toUpperCase());
+  if(mine.length)add("block",`${mine.length} blocking decision${mine.length===1?"":"s"} open`);
+
+  const blockers=parts.filter(p=>p.sev==="block").map(p=>p.t);
+  const cautions=parts.filter(p=>p.sev==="caution").map(p=>p.t);
+  return{k:blockers.length?"blocked":cautions.length?"caution":"ready",
+    verdict:blockers.length?"BLOCKED":cautions.length?"CAUTION":"READY",
+    blockers,cautions,parts,
+    // The audit's one-line form, verbatim shape: "BLOCKED — TT never run; position current;
+    // model 6d old". Severity order, so the reason to stop is never buried behind an OK.
+    line:parts.slice().sort((a,b)=>({block:0,caution:1,ok:2})[a.sev]-({block:0,caution:1,ok:2})[b.sev])
+      .map(p=>p.t).join("; ")};
+}
+/* The readiness bar. Rendered wherever a per-ticker DECISION is read (the deep-dive tab and
+   the card), because that is where the eight clocks used to be scattered. The verdict is a
+   token; every blocker and caution stays a visible chip (v3.25: a summary is only honest if
+   the red things survive it), and the OK clocks ride along so "current" is stated, not
+   inferred from silence. */
+function readyBar(x){
+  const r=readiness(x);
+  const cls=r.k==="blocked"?"head":r.k==="caution"?"warn":"ok";
+  const chips=r.parts.slice().sort((a,b)=>({block:0,caution:1,ok:2})[a.sev]-({block:0,caution:1,ok:2})[b.sev])
+    .map(p=>`<span class="pill ${p.sev==="block"?"head":p.sev==="caution"?"warn":""}" style="font-size:9.5px;padding:0 6px">${esc(p.t)}</span>`).join(" ");
+  return `<div class="dd-sec" style="margin-top:6px"><div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap">`+
+    `<span style="color:var(--dim);font-size:9px;letter-spacing:.1em">DECISION READINESS</span>`+
+    `<span class="pill ${cls}" style="font-weight:700">${r.verdict}</span>${chips}</div>`+
+    (r.blockers.length?`<div class="none" style="color:var(--red);margin-top:3px">⛔ not actionable until: ${r.blockers.map(esc).join(" · ")}</div>`:
+     r.cautions.length?`<div class="none" style="color:var(--amber);margin-top:3px">actionable with eyes open — aging or partial evidence above</div>`:
+     `<div class="none" style="color:var(--green);margin-top:3px">every clock current — the evidence behind this name is complete</div>`)+
+    `</div>`;
+}
 function ddAnswerBlock(x,dd,todayET){
   const w=ddWorth(dd,x.sym);
   const n=hingeTally(dd),total=n.green+n.amber+n.red+n.unknown;
@@ -2481,6 +2606,9 @@ function renderDeepDive(sym){
   // FEAT-TT-DDFOCUS (v3.31): the four answers, above everything. This tab used to open ~20
   // sections at full size — the pre-v3.29 board one level down. The reader arrives with the
   // same four questions every time, so they are answered first and the corpus goes below.
+  // FEAT-TT-READY (v3.50): the meta-answer, above the four. Every clock this tab used to
+  // scatter across ~20 sections, consolidated into one verdict the reader can act on.
+  h+=readyBar(x);
   h+=ddAnswerBlock(x,dd,todayET);
   h+=ddOptSec(posOf(x));   // FEAT-TT-OWNDEBT: the legs expressing this thesis, beside it
   // FEAT-TT-ESTRUN (v3.35): the estimate run + dual PTs, ABOVE the fold — the analyst
@@ -3115,7 +3243,7 @@ function renderUpsideRank(){
       const dgap=Math.round((Date.parse(k.date+"T12:00:00Z")-Date.parse(todayET+"T12:00:00Z"))/86400000);
       if(kdSoon===null||dgap<kdSoon)kdSoon=dgap;
     });
-    rows.push({sym:x.sym,lens:x.lens,tier:x.tier,rs:runState(x.lastRun),basis:onFloor?"floor":"premium",
+    rows.push({sym:x.sym,lens:x.lens,tier:x.tier,rs:runState(x.lastRun),rdy:readiness(x),basis:onFloor?"floor":"premium",
       upside:up,ann:annualise(up,target.y),px:ref.px,at:ref.at,tgt,y:target.y,
       rolled:pk.rolled,
       tt,rrFail,redH,kdSoon,
@@ -3268,10 +3396,13 @@ function renderUpsideRank(){
         // FEAT-TT-RANKFAIR: a name already at or over the single-name cap cannot receive the
         // NEXT dollar no matter how wide its gap — the board was proposing full positions.
         if(r.wt.w!==null&&r.wt.w>=CAP_PCT)return `already ${r.wt.w}% — at the ${CAP_PCT}% cap, no room`;
-        // FIX-B: a rating's age is a GATE, not a footnote — the audit found 5 fresh runs
-        // against 31 never-run while the green line still lit. Eligibility cannot outrun
-        // the evidence: anything but a fresh TT run (≤30d) vetoes, with the state named.
-        if(r.rs.k!=="fresh")return r.rs.k==="never"?"no TT run on record — run one first":`TT run ${r.rs.days}d old — re-run first`;
+        /* FIX-B, widened by FEAT-TT-READY (v3.50): eligibility cannot outrun the evidence —
+           the audit found 5 fresh runs against 31 never-run while the green line still lit.
+           The gate is now readiness()'s OWN blocker list rather than a second opinion about
+           the same clocks, so this line and the name's readiness bar can never disagree
+           (the ptModelRows rule: one computation, many altitudes). Cautions do NOT veto —
+           aging evidence is the owner's to weigh; missing evidence is not. */
+        if(r.rdy.blockers.length)return `evidence: ${r.rdy.blockers.join(", ")}`;
         if(!r.tt)return "unscored — no TT run";
         if(r.tt.tier==="C"||(r.tt.score!==null&&r.tt.score<5.5))return `TT ${r.tt.score!==null?r.tt.score.toFixed(1):"C"} — quality fails`;
         if(r.rrFail)return "R/R fails its floor";
@@ -3892,12 +4023,15 @@ function openCard(sym){
     [q&&isFinite(q.px)?`$${q.px}${isFinite(q.chg)?` (${q.chg>=0?"+":""}${q.chg}% today)`:""}`:null,
      pp?[pp.sh!=null?`${pp.sh} sh`:null,
          pp.mv!=null?money(pp.mv):null,
-         isFinite(Number(pp.pct))?`${pp.pct}% NAV`:null,
+         isFinite(Number(pp.pct))?`${pp.pct}% of acct equity`:null,
          pp.cb!=null?`cost ${money(pp.cb)}`:null,
          isFinite(Number(pp.upl_pct))?`<span style="color:${pp.upl_pct>=0?"var(--green)":"var(--red)"}">${pp.upl_pct>=0?"+":""}${pp.upl_pct}% unrl</span>`:null,
          pp.src?`src ${esc(pp.src)}`:null].filter(Boolean).join(" · ")+" · "+posChip(pp):null
     ].filter(Boolean).join("<br>")+`</div></div>`:"";
-  let html=measured+`
+  // FEAT-TT-READY (v3.50): the card is the other per-ticker decision surface (and the only
+  // one a WATCH name with no deepDive tab ever gets), so the consolidated statement leads here too.
+  const rdyRow=`<div class="row"><div class="k">READINESS</div><div class="v">${readyBar(x)}</div></div>`;
+  let html=rdyRow+measured+`
     <div class="row"><div class="k">TIER</div><div class="v"><select id="fTier">${tierOpts}</select></div></div>
     <div class="row"><div class="k">LENS / ROUTE</div><div class="v"><select id="fLens">${lensOpts}</select></div></div>
     <div class="row"><div class="k">FP ROUTING</div><div class="v"><select id="fFp">

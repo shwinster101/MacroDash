@@ -7,7 +7,7 @@
 import { existsSync } from "node:fs";
 import { readFileSync } from "node:fs";
 import { mergeLiveOverMock, SOURCES, isStale, cadenceOf, parseObsDate, isMarketHoliday, MARKET_HOLIDAYS, DERIVED_OF as DERIVED_OF_SRC, DERIVED_EXEMPT, govAsOf } from "../src/sources.js";
-import { computeFiveWhys } from "../src/fiveWhys.js";
+import { computeFiveWhys, isMacroMaterial } from "../src/fiveWhys.js";
 import {
   bandSpyVs200d, bandVix, bandFearGreed, bandRs, bandTenYear, bandFedOdds,
   aggregateVerdict, computeMacroFlip, buildTtReadout, formatTtPaste, DERIVED_OF,
@@ -177,6 +177,32 @@ const withHL = { ...MOCK_DATA, marketPulse: { ...MOCK_DATA.marketPulse, headline
 ok("WHY #3 renders a fresh market headline when present",
   computeFiveWhys(withHL, fwRegime, { fresh: new Set(["marketHeadline"]) }).whys[2].includes("Peace deal lifts futures"));
 ok("WHY #3 falls back when no fresh headline", computeFiveWhys(MOCK_DATA, fwRegime, { fresh: new Set() }).whys[2].includes("no fresh market headline"));
+// ---- v3.51 (public audit): freshness is not RELEVANCE ----------------------
+// The audit caught a Fidelity death-certificate administrative story rendered as the macro
+// "Headline driver" — fresh, dated and correctly attributed, and explaining nothing about
+// risk posture. A confidently-irrelevant "why" is worse than no why.
+ok("materiality: macro-transmission vocabulary passes across every channel the regime votes on",
+  ["Fed holds rates steady", "CPI cools to 2.4%", "Treasury yields spike",
+   "Oil surges on OPEC cut", "Stocks sell off as volatility jumps", "New tariffs hit imports",
+   "Payrolls miss badly", "Peace deal lifts futures"].every(isMacroMaterial));
+ok("materiality: the audit's OWN false positive is rejected — an administrative story is not a driver",
+  !isMacroMaterial("Fidelity now requires a death certificate to transfer an account") &&
+  !isMacroMaterial("How to pick a financial advisor") &&
+  !isMacroMaterial("Best credit cards for travel in 2026"));
+ok("materiality: empty / missing text is never material (fails closed)",
+  !isMacroMaterial("") && !isMacroMaterial(null) && !isMacroMaterial(undefined));
+// The distinction is load-bearing: "we have today's story and it is not macro" is a DIFFERENT
+// fact from "no headline arrived", and only the first stops an irrelevant driver being asserted.
+const admin = { ...MOCK_DATA, marketPulse: { ...MOCK_DATA.marketPulse,
+  headline: { text: "Fidelity now requires a death certificate to transfer an account", source: "MarketWatch" } } };
+const fwAdmin = computeFiveWhys(admin, fwRegime, { fresh: new Set(["marketHeadline"]) });
+ok("WHY #3: a fresh but non-macro headline is WITHHELD, and the slot says WHY it was withheld",
+  /not macro-material/.test(fwAdmin.whys[2]) &&
+  !fwAdmin.whys[2].includes("death certificate") &&
+  !/no fresh market headline/.test(fwAdmin.whys[2]));
+ok("WHY #3: the filter is ONE-WAY — a material headline still renders verbatim, never rewritten",
+  computeFiveWhys(withHL, fwRegime, { fresh: new Set(["marketHeadline"]) }).whys[2]
+    .includes("Peace deal lifts futures"));
 
 // ---- 4. ttReadout — TT mapping table (FEAT-330 / DEC-33; gates real orders) ----------
 console.log("\n[4] ttReadout — TT band table + verdict + macro flip (every boundary)");
@@ -663,8 +689,9 @@ ok("FIX-B: a blind or absent Macro Flip vetoes — fail closed, never default-to
   adminSrc.includes("mf.evaluable===false?(mf.reason||") &&
   adminSrc.includes("readout carries no Macro Flip block") &&
   adminSrc.includes("regime feed unavailable — Macro Flip cannot be read"));
-ok("FIX-B: a non-fresh TT run vetoes the pick, state named (never/aged)",
-  adminSrc.includes('r.rs.k!=="fresh")return r.rs.k==="never"?"no TT run on record — run one first"'));
+ok("FIX-B: the eligibility veto reads readiness()'s OWN blockers — one derivation, not a second opinion",
+  adminSrc.includes("if(r.rdy.blockers.length)return `evidence: ${r.rdy.blockers.join(\", \")}`;") &&
+  adminSrc.includes("rdy:readiness(x)"));
 ok("FIX-B: a failed gate renders WAIT and leaves no stale AGREE_PICK behind",
   adminSrc.includes("NEXT DOLLAR: WAIT — eligibility gate failed"));
 ok("FIX-B: red hinges stay surfaced-not-vetoed on the green line (D3 doctrine, v3.39)",
@@ -1821,7 +1848,7 @@ ok("nfci: it counts toward Signal Quality — a tracked live signal, not decorat
 ok("nfci: thresholds live in ONE shared table driving tile, vote and factor breakdown alike",
   dashSrc.includes("const NFCI_TIGHT = 0;") && dashSrc.includes("const NFCI_LOOSE = -0.5;") &&
   dashSrc.includes('const band=v>NFCI_TIGHT?"TIGHT":v<=NFCI_LOOSE?"LOOSE":"NEUTRAL"') &&
-  dashSrc.includes("if(n <= NFCI_LOOSE) bullVotes++; else if(n > NFCI_TIGHT) bearVotes++;"));
+  dashSrc.includes('vote:(v)=> v <= NFCI_LOOSE ? "bull" : v > NFCI_TIGHT ? "bear" : "neutral"'));
 ok("nfci: the tight threshold is the DEFINITIONAL mean (0), not a hand-picked decimal",
   /const NFCI_TIGHT = 0;/.test(dashSrc) && !dashSrc.includes("0.10?\"TIGHT\""));
 ok("nfci: the bands are ASYMMETRIC — a symmetric band around zero would have voted bullish " +
@@ -1847,7 +1874,8 @@ ok("nfci: the tile states its own reference point — a bare z-score is unreadab
   dashSrc.includes("0 = avg"));
 ok("nfci: it votes in the DASHBOARD regime (6th factor), off the SAME shared band table the " +
    "tile renders — one computation, two surfaces, so label and vote cannot disagree",
-  dashSrc.includes('if(use("nfci")){') && dashSrc.includes("if(n <= NFCI_LOOSE) bullVotes++; else if(n > NFCI_TIGHT) bearVotes++;"));
+  /\{ key:"nfci",[\s\S]*?vote:\(v\)=> v <= NFCI_LOOSE \? "bull"/.test(dashSrc) &&
+  dashSrc.includes("REGIME_BAND_TABLE.forEach"));
 ok("nfci: a STALE nfci drops out of the vote like every other factor",
   /REGIME_FACTOR_FIELDS=\[[^\]]*"nfci"\]/.test(dashSrc));
 ok("nfci: it appears in the displayed factor breakdown, so 'X/Y bullish' matches the cast vote",
@@ -1883,12 +1911,22 @@ ok("cut: the SpaceX S-1 panel and the private Mag-10 entry are gone",
 ok("cut: Mag-10 curated fundamentals are gone (mkt cap, P/E, revenue, margins, FCF, capex)",
   ["mktCapT", "ttmPe", "fwdPe", "q1RevB", "fwdRevB", "yoyRevGrowth", "netMarginPct", "fcfTtmB", "capex26B"]
     .every((k) => !dashSrc.includes(k)));
-ok("cut: ...but the LIVE half survives — price + chgPct still overlay from mag10PricesJson",
-  dashSrc.includes("mag10PricesJson") && /\{ ticker:"NVDA", color:"[^"]+", isMusk:false, price:/.test(dashSrc));
+// v3.51 (public audit, owner call) finished the job: the surviving quote strip failed the SAME
+// Yahoo-dupe test that took its fundamentals. The FIELD stays mapped — the same Finnhub pull
+// feeds QQQ — but no component, mock array, CSS or merge for it remains.
+ok("cut v3.51: the Mag 10 quote strip is gone — component, mock array, state, CSS and merge",
+  !dashSrc.includes("Mag10Card") && !dashSrc.includes("mag10open") &&
+  !dashSrc.includes("mag10-scroll") && !dashSrc.includes("mag10ByTicker") &&
+  !/\n  mag10:\[/.test(dashSrc));
+ok("cut v3.51: mag10PricesJson stays MAPPED (QQQ rides the same Finnhub pull) and still resolves",
+  "mag10PricesJson" in SOURCES && MOCK_DATA.mag10PricesJson === "[]");
 ok("cut: no surviving label claims curated fundamentals or a market-cap sort (a cut must " +
    "take its own attribution with it, or the page lies about what it is showing)",
   !/fundamentals curated/i.test(dashSrc) && !/Ranked by market cap/i.test(dashSrc) &&
   !/SORTED BY MKT CAP/i.test(dashSrc));
+ok("cut v3.51: the FOOTER source list no longer credits data that was deleted — it claimed " +
+   "'Mag 10 fundamentals' and 'SEC S-1' for two v3.43 releases after both were cut",
+  !/Curated: Mag 10 fundamentals/.test(dashSrc) && !/· SEC S-1 ·/.test(dashSrc));
 ok("keep: GPU $/hr, headwinds and the watchlist are untouched — curated, but differentiated",
   dashSrc.includes("GPU_PRICING") && dashSrc.includes("headwinds") && dashSrc.includes("watchlist"));
 
@@ -2114,6 +2152,318 @@ ok("tokw-tt: it fails closed — a partial mix is called a FLOOR, a missing mix 
   adminSrc.includes("so this is a FLOOR") &&
   adminSrc.includes("productivity per watt unmeasured, which is not the same as average") &&
   /t\.at\?[\s\S]{0,120}undated<\/span>/.test(adminSrc));
+
+// ---- 24. FEAT-TT-READY (v3.50) — the ONE decision-readiness statement ------
+// VALUE_PROPOSITION_AUDIT "too many freshness clocks": eight honest dates that never summed
+// into the only question a reader has. readiness() is lifted and RUN — a string pin cannot
+// prove a severity rule, and this one now GATES the green line (FIX-B reads its blockers).
+console.log("\n[24] FEAT-TT-READY — decision readiness consolidates the eight clocks");
+const RDY_THESIS_D = /const READY_THESIS_D=(\d+);/.exec(adminSrc);
+ok("ready: the thesis threshold is the SAME 30d ddAgeChip re-reviews on (one rule, two surfaces)",
+  RDY_THESIS_D && RDY_THESIS_D[1] === "30" && adminSrc.includes("if(d>30)return `<span class=\"pill warn\">self-attested"));
+const RDY = new Function(
+  `const READY_THESIS_D=${RDY_THESIS_D[1]},POS_STALE_D=2,PX_STALE_D=4,LENS_MAX_PE=${LENS_MAX_PE_SRC[1]};` +
+  "let BOARD={},POSITIONS={},LIVE_PX={};" +
+  // readiness() reads the REAL model helpers (already exercised in [20]) rather than a stub —
+  // the whole design claim is that a readiness part can never disagree with the chip it
+  // summarizes, which only holds if both call the same function.
+  liftFns(adminSrc, ["ageDays", "runState", "ddDate", "hingeTally", "posOf", "posAge",
+    "schedAt", "ptRowYears", "ptModelRows", "lintPtModel", "readiness"]) +
+  "\nreturn {readiness,set:(b,p,q)=>{BOARD=b;POSITIONS=p;LIVE_PX=q;}};")();
+const iso = (dAgo) => new Date(Date.now() - dAgo * 86400000).toISOString().slice(0, 10);
+const YR = new Date().getFullYear();
+// A name with every clock current. ptModelRows/lintPtModel are NOT lifted here (they are
+// exercised in [20]); readiness calls them, so the fixture stubs them via the deepDive shape
+// the lifted copies would see — instead we assert the parts that do not need them by
+// checking blocker CONTENT, which is what the gate consumes.
+const mkEntry = (o = {}) => ({
+  sym: "RDY", lastRun: iso(3),
+  deepDive: {
+    thesis_version: "v1", updated: iso(5),
+    hinges: [{ label: "backlog", state: "green" }, { label: "pricing", state: "green" }],
+    ref_px: { px: 100, at: iso(1) },
+    // A correctly-keyed model (schedule keys = the YEAR-END PRICED, per [20]) so the model
+    // clock reads OK and each assertion below isolates the ONE clock it is about.
+    consensus: { revenue_B: { [YR + 1]: 100, [YR + 2]: 120 }, eps: { [YR + 1]: 5, [YR + 2]: 6 } },
+    pt_model: { pe_premium_multiple: { [YR]: 20, [YR + 1]: 18 }, pe_floor_multiple: 15, share_count_M: 1000 },
+    ...(o.dd || {}),
+  },
+  ...o,
+});
+RDY.set({}, {}, {});
+// The whole point: absent evidence FAILS CLOSED. A never-run name is BLOCKED, not "fresh
+// enough" — the audit's exact finding (5 fresh runs against 31 never, green line still lit).
+const rNever = RDY.readiness(mkEntry({ lastRun: null }));
+ok("ready: a NEVER RUN name is BLOCKED and says so (fails closed on a missing date)",
+  rNever.k === "blocked" && rNever.blockers.includes("TT never run") && rNever.verdict === "BLOCKED");
+ok("ready: a future-dated lastRun (typo) also reads NEVER RUN, never fresh",
+  RDY.readiness(mkEntry({ lastRun: iso(-5) })).blockers.includes("TT never run"));
+ok("ready: an aged-past-90d run BLOCKS; a 31-90d run only CAUTIONS (the runState bands hold)",
+  RDY.readiness(mkEntry({ lastRun: iso(120) })).blockers.some((b) => /^TT run \d{3}d old$/.test(b)) &&
+  RDY.readiness(mkEntry({ lastRun: iso(45) })).cautions.some((c) => /^TT run \d+d old$/.test(c)) &&
+  !RDY.readiness(mkEntry({ lastRun: iso(45) })).blockers.length);
+ok("ready: an undated thesis BLOCKS — self-attested and undated is not 'current'",
+  RDY.readiness(mkEntry({ dd: { updated: "" } })).blockers.includes("thesis undated"));
+ok("ready: a thesis past the 30d re-review window CAUTIONS, not blocks",
+  RDY.readiness(mkEntry({ dd: { updated: iso(40) } })).cautions.some((c) => /^thesis \d+d old$/.test(c)) &&
+  !RDY.readiness(mkEntry({ dd: { updated: iso(40) } })).blockers.length);
+ok("ready: NO HINGES blocks — the audit's 'defined thesis hinges'; nothing says what would change your mind",
+  RDY.readiness(mkEntry({ dd: { hinges: [] } })).blockers.includes("no hinges defined"));
+// D3 doctrine (v3.39) survives the consolidation: red is NAMED, never a veto.
+const rRed = RDY.readiness(mkEntry({ dd: { hinges: [{ label: "power", state: "red" }] } }));
+ok("ready: a RED hinge is surfaced as a caution, never a blocker (D3 — the board reports, it does not enforce)",
+  rRed.cautions.includes("1 hinge RED") && !rRed.blockers.some((b) => /RED/.test(b)));
+ok("ready: an UNKNOWN hinge cautions (the audit's 'one hinge unknown')",
+  RDY.readiness(mkEntry({ dd: { hinges: [{ label: "x", state: "unknown" }] } })).cautions.includes("1 hinge unknown"));
+// An unheld name must stay eligible — blocking it would gate exactly what the next dollar is for.
+ok("ready: an ABSENT position CAUTIONS, never blocks (unheld is a legitimate state for a new name)",
+  RDY.readiness(mkEntry()).cautions.includes("position not synced") &&
+  !RDY.readiness(mkEntry()).blockers.some((b) => /position/.test(b)));
+RDY.set({}, { RDY: { sh: 10, mv: 1000, at: iso(0) } }, {});
+ok("ready: a fresh measured position reads 'position current'",
+  RDY.readiness(mkEntry()).parts.some((p) => p.sev === "ok" && p.t === "position current"));
+RDY.set({}, { RDY: { sh: 10, mv: 1000, at: iso(9) } }, {});
+ok("ready: a position mark older than POS_STALE_D cautions with its age",
+  RDY.readiness(mkEntry()).cautions.some((c) => /^position \d+d old$/.test(c)));
+RDY.set({}, {}, {});
+// Price: a live quote beats a stamp (v3.36); no usable price at all is missing evidence.
+ok("ready: no usable price BLOCKS (neither a live quote nor a stamped mark)",
+  RDY.readiness(mkEntry({ dd: { ref_px: null } })).blockers.includes("no usable price"));
+ok("ready: a stamp older than PX_STALE_D cautions — a stale mark silently poisons every %",
+  RDY.readiness(mkEntry({ dd: { ref_px: { px: 100, at: iso(11) } } })).cautions.some((c) => /^mark \d+d old$/.test(c)));
+RDY.set({}, {}, { RDY: { px: 123, chg: 1 } });
+ok("ready: a LIVE quote satisfies the price clock even with no stamp at all",
+  RDY.readiness(mkEntry({ dd: { ref_px: null } })).parts.some((p) => p.t === "price live"));
+RDY.set({}, {}, {});
+// Blocking decisions scope by EXPLICIT sym only — a guessed blocker is worse than none.
+RDY.set({ decisions: [{ q: "trim?", blocking: true, sym: "RDY" }] }, {}, {});
+ok("ready: a blocking decision SCOPED to this name blocks it",
+  RDY.readiness(mkEntry()).blockers.includes("1 blocking decision open"));
+RDY.set({ decisions: [{ q: "is RDY overweight?", blocking: true }] }, {}, {});
+ok("ready: an UNSCOPED blocking decision does NOT block — inferring the ticker from prose would be a guess",
+  !RDY.readiness(mkEntry()).blockers.some((b) => /decision/.test(b)));
+RDY.set({}, {}, {});
+// The audit's literal output shape: "BLOCKED — TT never run; position current; model 6d old".
+const rLine = RDY.readiness(mkEntry({ lastRun: null }));
+ok("ready: the one-line statement orders blockers FIRST, so the reason to stop is never buried",
+  rLine.line.startsWith("TT never run") && rLine.line.includes(";"));
+ok("ready: every clock appears in the statement — an OK clock is STATED, not inferred from silence",
+  rLine.parts.some((p) => p.sev === "ok") && rLine.line.split("; ").length >= 4);
+// Rendering: the consolidator reaches both per-ticker decision surfaces, and the bar keeps
+// every red fact visible (v3.25 — a summary is only honest if the red things survive it).
+ok("ready: the bar renders on the deep-dive tab ABOVE the four answers",
+  /h\+=readyBar\(x\);\s*\n\s*h\+=ddAnswerBlock/.test(adminSrc));
+ok("ready: and on the card — the only per-ticker surface a WATCH name with no tab ever gets",
+  adminSrc.includes('<div class="k">READINESS</div>') && adminSrc.includes("let html=rdyRow+measured+"));
+ok("ready: blockers stay visible as chips on the bar, never collapsed into the verdict alone",
+  adminSrc.includes("⛔ not actionable until:") && adminSrc.includes('p.sev==="block"?"head"'));
+
+// ---- 25. public-audit: the factor count is stated, and stated correctly ----
+// A label that disagrees with the vote it describes is the FIX-E defect. NFCI made the vote
+// six in v3.43; three user-facing strings still said "5-factor". Pinned in BOTH directions so
+// a future 7th voter fails here rather than shipping a wrong count to the public page.
+console.log("\n[25] public dashboard — the stated factor count matches the vote cast");
+ok("regime: no surviving '5-factor' claim anywhere in the dashboard",
+  !/5-factor/.test(dashSrc));
+ok("regime: the vote is described as 6-factor on the band and the source box",
+  (dashSrc.match(/6-factor/g) || []).length >= 2);
+ok("regime: the stated count equals REGIME_FACTOR_FIELDS + the valuation factor",
+  (() => { const m = /REGIME_FACTOR_FIELDS=\[([^\]]*)\]/.exec(dashSrc);
+    return m && m[1].split(",").length + 1 === 6; })());
+
+// ---- 26. public audit (v3.51): naming, provenance vocabulary, and affordance honesty ----
+// The public product's promise is a TRUSTWORTHY posture. These are the places the page said
+// something not quite true about itself — none of them a wrong number, all of them a wrong claim.
+console.log("\n[26] public dashboard — the page tells the truth about itself");
+// Two structurally different regimes exist (this six-factor backdrop vs /readout.json's
+// six ORDER-GATING checks). Both legitimate; unnamed, a reader assumes one verdict.
+ok("naming: the public verdict is MACRO BACKDROP, distinct from the order-gating readout",
+  dashSrc.includes("Macro Backdrop") && !dashSrc.includes(">Macro Regime · wen moon?<"));
+ok("naming: the moon states survive as the primary voice (owner call — personality kept)",
+  dashSrc.includes("wen moon?") && dashSrc.includes("WEN_MOON_STATES"));
+// SPY on this page is SP500/10 from FRED — Stooq blocks the edge. The tooltip claimed "ETF".
+ok("provenance: SPY is labelled a FRED proxy, not an ETF quote it has never been",
+  /FRED SP500 proxy, NOT an SPY ETF quote/.test(dashSrc) && !/S&P 500 ETF — the broad US stock market/.test(dashSrc));
+// "Manual" + a LIVE badge on the same tile made the provenance vocabulary self-contradictory:
+// `api` is the FETCH PATH, `mode` is freshness — and multpl IS the live scrape.
+ok("provenance: CAPE credits its real fetch path (multpl scrape), not 'Manual' beside a LIVE badge",
+  dashSrc.includes('api="multpl.com"') && !/api="Manual" endpoint="Robert Shiller/.test(dashSrc));
+// An ON/OFF control beside 8px muted "notifications not wired" reads as a working alert system.
+ok("affordance: the alert toggles state their real limit at the weight of the control itself",
+  /no push, email or SMS is sent/.test(dashSrc) && !/Triggers evaluate live data · notifications not wired/.test(dashSrc));
+// Confidence: Signal Quality counted TILES and never said whether the VERDICT was trustworthy.
+ok("confidence: the strip reports how many factors actually voted, from computeRegime itself",
+  dashSrc.includes("BACKDROP {regimeConf.counted}/{regimeConf.total} factors voting") &&
+  dashSrc.includes("counted:regime.counted,total:regime.totalFactors"));
+ok("confidence: excluded factors are NAMED — 'N of 6 usable' without saying which is half a fact",
+  dashSrc.includes("excluded: {regimeConf.excluded.join") && dashSrc.includes("crash gauge (VIX) unavailable"));
+
+// ---- 27. FEAT-ALERT-EVAL (v3.52) — the alerts evaluate, or say they cannot ----
+// Suite audit called this "interface theater" for not DELIVERING. The defect was one layer
+// earlier and worse: `triggered` was a hardcoded false nothing ever wrote, while the header
+// claimed "Triggers evaluate live data" — a directional claim ("nothing tripped") asserted by
+// code that had never looked. v3.51 fixed only the delivery half of that sentence.
+console.log("\n[27] FEAT-ALERT-EVAL — evaluated alerts, gated on live data");
+// dashboard.jsx is JSX, so Node cannot import it — lift the pure evaluator (and the real
+// ALERT_METRICS table it reads) out by source, the same technique MOCK_DATA uses above.
+const _am = dashSrc.indexOf("const ALERT_METRICS={");
+const _ae = dashSrc.indexOf("\n};", _am) + 3;
+const _ef = dashSrc.indexOf("export function evalAlert(");
+const _ee = dashSrc.indexOf("\n}", dashSrc.indexOf("return{state:hit", _ef)) + 2;
+const evalAlert = new Function(
+  dashSrc.slice(_am, _ae) + dashSrc.slice(_ef, _ee).replace("export function", "function") +
+  "\nreturn evalAlert;")();
+// FEAT-FLIP (v3.53): lift the band table + verdictFrom + computeRegime + flipConditions the
+// same way (JSX cannot be imported). Lifting the REAL table is the point — these tests prove
+// the vote and the flip distances read ONE expression of each edge.
+const _lift = (marker, endMarker) => {
+  const i = dashSrc.indexOf(marker);
+  if (i < 0) throw new Error("smoke: cannot lift " + marker);
+  const e = dashSrc.indexOf(endMarker, i);
+  return dashSrc.slice(i, e + endMarker.length);
+};
+const REG = new Function(
+  "const NFCI_TIGHT=0,NFCI_LOOSE=-0.5;const DT={},T={};" +
+  _lift("const REGIME_BAND_TABLE = [", "\n];") +
+  _lift("export function verdictFrom(", "\n}").replace("export function", "function") +
+  _lift("const REGIME_META = {", "\n};") +
+  _lift("function computeRegime(d, stale=new Set()) {", "\n}") +
+  _lift("export function flipConditions(", "\n}").replace("export function", "function") +
+  "\nreturn {REGIME_BAND_TABLE,verdictFrom,computeRegime,flipConditions};")();
+const allLive = () => "LIVE";
+const allMock = () => "MOCK";
+const aVix = { id: 2, label: "VIX Spike", metric: "vix", condition: "above", value: 25, unit: "", active: true };
+ok("alert: no stored `triggered` flag survives — trigger state is COMPUTED every render",
+  !/triggered:false/.test(dashSrc.replace(/\s/g, "")) && dashSrc.includes("evalAlert(a,d,modeOf)"));
+ok("alert: an above-threshold live value TRIPS",
+  evalAlert(aVix, { marketPulse: { vix: { current: 30 } } }, allLive).state === "triggered");
+ok("alert: a below-threshold live value reads CLEAR",
+  evalAlert(aVix, { marketPulse: { vix: { current: 12 } } }, allLive).state === "clear");
+// The whole point: "has not tripped" and "cannot see whether it tripped" are different facts.
+ok("alert: a MOCK/STALE input yields BLIND, never a false CLEAR (fails closed, names the input)",
+  (() => { const e = evalAlert(aVix, { marketPulse: { vix: { current: 30 } } }, allMock);
+    return e.state === "blind" && /vix/.test(e.why) && e.state !== "clear"; })());
+ok("alert: a STALE input is as blind as a mock one — freshness is part of the gate",
+  evalAlert(aVix, { marketPulse: { vix: { current: 30 } } }, () => "STALE").state === "blind");
+// The SPY cross must judge against TODAY's moving average, not the number hardcoded at
+// authoring time — otherwise the alert silently drifts as the market moves.
+const aSpy = { id: 1, label: "SPY Below 200D MA", metric: "spy_200ma", condition: "below", value: 692.4, unit: "$", active: true };
+ok("alert: the SPY cross is judged against the LIVE 200-DMA, not the authored constant",
+  (() => { const e = evalAlert(aSpy, { marketPulse: { spy: { price: 700, ma200: 720 } } }, allLive);
+    return e.state === "triggered" && e.threshold === 720 && /live 200-DMA/.test(e.detail); })());
+ok("alert: ...and the same price against a LOWER live MA is clear (the constant would have lied)",
+  evalAlert(aSpy, { marketPulse: { spy: { price: 700, ma200: 650 } } }, allLive).state === "clear");
+ok("alert: a metric with no wiring is BLIND, never assumed clear",
+  evalAlert({ metric: "nope", condition: "above", value: 1, active: true }, {}, allLive).state === "blind");
+ok("alert: a non-finite live value is BLIND (a missing number is not a passing test)",
+  evalAlert(aVix, { marketPulse: { vix: { current: null } } }, allLive).state === "blind");
+ok("alert: the header reports BLIND separately — '0 FIRED' with dead inputs is a false clear",
+  dashSrc.includes("alertBlind") && dashSrc.includes("BLIND`} color={T.amber}"));
+ok("alert: the section states it evaluates HERE and delivers nothing",
+  /Evaluated live on THIS page only — no push, email or SMS is sent/.test(dashSrc));
+// ---- a11y (suite audit #2): landmarks + live regions on the public page ----
+ok("a11y: the page exposes a main landmark (there were ZERO before)",
+  /role="main"/.test(dashSrc));
+ok("a11y: the verdict and its confidence strip are polite live regions",
+  /aria-label="Macro backdrop verdict" aria-live="polite"/.test(dashSrc) &&
+  /aria-label="Signal quality and backdrop confidence" aria-live="polite"/.test(dashSrc));
+
+// ---- 28. FEAT-FLIP (v3.53) — the shared band table + "what would change the verdict" ----
+// The bands moved OUT of computeRegime's inline ifs into REGIME_BAND_TABLE so flipConditions
+// measures distance to the SAME edges the vote uses. That refactor touches the public verdict,
+// so every boundary is executed here rather than pinned as a string (the DEC-33 convention).
+console.log("\n[28] FEAT-FLIP — one band table, and the load-bearing flips");
+const bandOf = (k) => REG.REGIME_BAND_TABLE.find((f) => f.key === k);
+const V = (k, v) => bandOf(k).vote(v);
+ok("bands: 10Y — -0.11 bull · -0.10 neutral · +0.15 neutral · +0.16 bear",
+  V("tenYear", -0.11) === "bull" && V("tenYear", -0.10) === "neutral" &&
+  V("tenYear", 0.15) === "neutral" && V("tenYear", 0.16) === "bear");
+ok("bands: VIX — 17.99 bull · 18 neutral · 25 neutral · 25.01 bear",
+  V("vix", 17.99) === "bull" && V("vix", 18) === "neutral" &&
+  V("vix", 25) === "neutral" && V("vix", 25.01) === "bear");
+ok("bands: F&G is the INVERTED factor — 56 bull · 55 neutral · 30 neutral · 29 bear",
+  V("fearGreed", 56) === "bull" && V("fearGreed", 55) === "neutral" &&
+  V("fearGreed", 30) === "neutral" && V("fearGreed", 29) === "bear");
+ok("bands: NFCI is INCLUSIVE on the bull edge — -0.5 bull · -0.49 neutral · 0 neutral · 0.01 bear",
+  V("nfci", -0.5) === "bull" && V("nfci", -0.49) === "neutral" &&
+  V("nfci", 0) === "neutral" && V("nfci", 0.01) === "bear");
+ok("bands: the table is the SIX voters and nothing else", REG.REGIME_BAND_TABLE.length === 6);
+// The majority rule, extracted so flipConditions simulates with the identical test.
+ok("verdictFrom: strict majority — 4/6 RISK-ON, 3/6 MIXED (DEC-31's 50%-is-not-a-majority)",
+  REG.verdictFrom(4, 0, 6) === "RISK-ON" && REG.verdictFrom(3, 0, 6) === "MIXED");
+ok("verdictFrom: identical to the old constant at 5 voters (needs 3), correct at 3 (needs 2)",
+  REG.verdictFrom(3, 0, 5) === "RISK-ON" && REG.verdictFrom(2, 0, 5) === "MIXED" &&
+  REG.verdictFrom(2, 0, 3) === "RISK-ON");
+// EQUIVALENCE: the refactor must not have moved the verdict on the real mock baseline.
+ok("refactor: computeRegime off the table returns the same shape and a real verdict on MOCK_DATA",
+  (() => { const r = REG.computeRegime(MOCK_DATA);
+    return ["RISK-ON", "RISK-OFF", "MIXED"].includes(r.label) &&
+      r.totalFactors === 6 && r.counted === 6 && Number.isFinite(r.bullVotes); })());
+ok("refactor: a STALE factor still drops out of the vote and out of `counted`",
+  REG.computeRegime(MOCK_DATA, new Set(["vix"])).counted === 5);
+
+// --- ABSTENTION RULE 1: a stale factor is not voting, so it is EXCLUDED, never a distance.
+const fcStale = REG.flipConditions(MOCK_DATA, new Set(["vix"]));
+ok("flip rule 1: a stale factor is listed as excluded and never appears as a flip distance",
+  fcStale.excluded.some((e) => e.key === "vix") && !fcStale.flips.some((f) => f.key === "vix") &&
+  fcStale.counted === 5);
+// --- ABSTENTION RULE 2: non-scalar votes abstain WITH THE REASON, never an invented number.
+const fc = REG.flipConditions(MOCK_DATA);
+ok("flip rule 2: CPI and CAPE abstain — their votes are not a single scalar crossing",
+  ["cpiHeadline", "valuation"].every((k) => fc.abstained.some((a) => a.key === k)) &&
+  !fc.flips.some((f) => ["cpiHeadline", "valuation"].includes(f.key)));
+ok("flip rule 2: each abstention NAMES why (a compound rule, not a missing feature)",
+  /no single level to cross/.test(fc.abstained.find((a) => a.key === "cpiHeadline").why) &&
+  /two conditions/.test(fc.abstained.find((a) => a.key === "valuation").why));
+// --- ABSTENTION RULE 3: "nothing flips it" is a real answer, stated, never padded.
+// Construct a book where one factor cannot swing the majority: 6 voters, verdict MIXED at
+// 1 bull / 1 bear — no SINGLE factor reaching 4 votes exists, so flips must be empty.
+const noSwing = REG.flipConditions(MOCK_DATA, new Set());
+ok("flip rule 3: every reported flip genuinely CHANGES the label (never a decorative distance)",
+  noSwing.flips.every((f) => f.would !== noSwing.current));
+ok("flip rule 3: when no single crossing changes the verdict, the list is EMPTY rather than padded",
+  (() => { // all six neutral -> MIXED, and one factor flipping gives at most 1 vote of 6
+    const flat = JSON.parse(JSON.stringify(MOCK_DATA));
+    flat.crossAsset.treasury10y.m1 = 0;            // neutral
+    flat.marketPulse.vix.current = 20;             // neutral
+    flat.marketPulse.fearGreed.score = 40;         // neutral
+    flat.macro.nfci.current = -0.2;                // neutral
+    const r = REG.flipConditions(flat);
+    return r.current === "MIXED" && r.flips.length === 0; })());
+// --- ADJACENCY: from the bull band you can reach neutral, not bear.
+ok("flip: only ADJACENT transitions are offered — a bull factor cannot 'flip to bear' in one step",
+  (() => { const t = JSON.parse(JSON.stringify(MOCK_DATA));
+    t.marketPulse.vix.current = 17;   // bull band
+    const r = REG.flipConditions(t);
+    const vixFlips = r.flips.filter((f) => f.key === "vix");
+    return vixFlips.every((f) => f.to === "neutral"); })());
+// --- COPY: direction and inclusivity are rendered from the table, not restated.
+ok("flip: the NFCI inclusive bull edge reads 'at or below', the strict VIX edge reads 'below'",
+  (() => { const t = JSON.parse(JSON.stringify(MOCK_DATA));
+    t.macro.nfci.current = -0.2; t.marketPulse.vix.current = 20;  // both neutral
+    t.crossAsset.treasury10y.m1 = -0.5; t.marketPulse.fearGreed.score = 80; // 2 bulls
+    const r = REG.flipConditions(t);
+    const n = r.flips.find((f) => f.key === "nfci"), v = r.flips.find((f) => f.key === "vix" && f.to === "bull");
+    return (!n || /at or below/.test(n.copy)) && (!v || /^VIX below 18/.test(v.copy)); })());
+ok("flip: distances are sorted nearest-first, so the load-bearing one reads first",
+  fc.flips.every((f, i, a) => i === 0 || a[i - 1].distance <= f.distance));
+ok("flip: each flip states the verdict it WOULD produce, not merely that something changes",
+  fc.flips.every((f) => ["RISK-ON", "RISK-OFF", "MIXED"].includes(f.would)));
+// Render layer: the nearest crossing is on the FIRST SCREEN (the audit's fourth answer), the
+// full set one tap down, and the abstentions are NOT omitted from the panel.
+ok("flip render: the verdict band carries the nearest crossing without opening anything",
+  dashSrc.includes("⇄ would change this: ") && dashSrc.includes("const nearest=fc.flips[0]||null;"));
+ok("flip render: the no-single-flip case is stated in BOTH the band and the panel",
+  /no single factor crossing flips this verdict — it would take two/.test(dashSrc) &&
+  /No single factor crossing changes the call/.test(dashSrc));
+ok("flip render: the panel names abstentions and stale exclusions, never silently dropping them",
+  dashSrc.includes("no single threshold — ") &&
+  dashSrc.includes("their thresholds are not load-bearing"));
+ok("flip render: distances print at the precision of the factor's own band (fmt.num + dec)",
+  dashSrc.includes("fmt.num(nearest.distance,nearest.dec)") && dashSrc.includes("num:(v,d=2)=>Number(v).toFixed(d)"));
+// Found BY the flip browser check: a nowrap 317px subtitle blew the page to 488px at 390px.
+ok("mobile: the AI unit-economics subtitle wraps (a nowrap label must not blow out the page)",
+  !/whiteSpace:"nowrap"\}\}>cost ↔ price/.test(dashSrc));
 
 console.log(`\n=== SMOKE TEST: ${pass} passed, ${fail} failed ===`);
 process.exit(fail === 0 ? 0 : 1);

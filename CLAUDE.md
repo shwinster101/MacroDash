@@ -1146,6 +1146,146 @@ Jan-anchor shipped; see `snapshot.js` ~318–328), `spyMa100`, `spyMa200`, and a
   **148 render** (+5: a live PANIC-asserted board hard-WAITs with the gate named and leaves no
   AGREE_PICK; the cap-veto scenario now clears the asserted regime too, or it would pass for
   the wrong reason — plus the acct-equity pins).
+- **FEAT-TT-READY (v3.50) — one decision-readiness statement per name.** The audit's "too many
+  freshness clocks": a ticker page could carry **eight** independent dates — live quote · manual
+  `ref_px` mark · `lastRun` · model/lint state · hinge observations · `pos.at` · per-leg option
+  provenance · thesis `updated` — each honest alone, none of them answering *can I act on this
+  name right now?* Eight truthful clocks that never sum is how a NEVER-RUN name with an undated
+  thesis still read as maintained. **`readiness(x)`** consolidates them, and invents no new clock:
+  every part reads the SAME helper the individual chip already reads (`runState` · `ddDate`/
+  `ageDays` · `ptModelRows`/`lintPtModel` · `LIVE_PX`/`ref_px` · `posOf`/`posAge` · `hingeTally`),
+  so a part can never disagree with the chip it summarizes — the `ptModelRows` rule, one
+  computation at many altitudes. Severity follows the audit's *"gate the interface by evidence
+  coverage"*: **BLOCKED** = evidence needed to act is missing or expired (no current model, a
+  MIS-KEYED schedule — the v3.39 rung that silently floors is missing evidence, not a warning —
+  no current TT run, no defined hinges, no usable price, a blocking decision scoped to this
+  name) · **CAUTION** = evidence aging or partial · **READY** = every clock current. Two
+  deliberate NON-blockers: a **red hinge** is surfaced never vetoed (D3, v3.39), and an **absent
+  position** cautions rather than blocks — an unheld new name legitimately has none, and blocking
+  it would gate exactly the names the next dollar is FOR. Blocking decisions scope by **explicit
+  `decision.sym` only**; inferring which decision blocks which ticker from prose would be a guess,
+  and a guessed blocker is worse than none (unscoped ones stay board-level, where TODAY already
+  surfaces them). Rendered on **both** per-ticker decision surfaces — above the four answers on
+  the deep-dive tab, and leading the card (the only surface a WATCH name with no tab ever gets) —
+  with the verdict as a token and every blocker/caution as a visible chip (v3.25: a summary is
+  only honest if the red things survive it), OK clocks included so "current" is *stated*, not
+  inferred from silence. **FIX-B now vetoes on `readiness().blockers`** rather than re-deriving
+  the run check, so the green line and the name's own readiness bar cannot disagree; cautions
+  never veto (aging evidence is the owner's to weigh, missing evidence is not). Found while
+  wiring: one surviving `% NAV` claim on the card, missed by the FIX-D sweep.
+  Tests: **718 smoke** (+22, `readiness()` lifted and RUN against the real PT helpers — a string
+  pin cannot prove a severity rule, and this one gates the green line) + **153 render** (+5: the
+  bar leads both surfaces, every clock stated, and AAA's red hinge named on the bar while absent
+  from the blocker list).
+- **v3.51 "the page tells the truth about itself" — the PUBLIC-side audit.** A second audit found
+  the public dashboard's positioning defensible (*"MacroDash tells you whether the market backdrop
+  supports taking risk — and abstains when the evidence is stale"*) and its moat correctly placed
+  in the **judgment layer, not the data layer**. Its Critical #1 (the two freshness realities) and
+  the NFCI chip/denominator defects were **already fixed by v3.49** — it audited a pre-fix
+  checkout. What survived, all of it the same shape: not a wrong NUMBER, a wrong CLAIM about
+  the page itself. **The engines are named** — this six-factor vote is the **MACRO BACKDROP**,
+  distinct from `/readout.json`'s six ORDER-GATING checks (both legitimate; unnamed, a reader
+  reasonably assumes one verdict disagreeing with itself). **"5-factor vote" → 6** in three
+  user-facing strings (NFCI has voted since v3.43), now pinned against `REGIME_FACTOR_FIELDS` so
+  a 7th voter fails the build. **Confidence, the audit's first-screen item**: Signal Quality
+  counted TILES and never said whether the VERDICT was trustworthy — the strip now reports
+  `BACKDROP N/6 factors voting`, **names** the excluded ones ("N of 6 usable" without saying
+  which is half a fact) and calls out a blind **crash gauge (VIX)** by name, all off
+  `computeRegime`'s own `counted`/`totalFactors` so it cannot drift from the vote. **SPY is
+  labelled the FRED SP500/10 proxy it has always been** (the tooltip claimed "S&P 500 ETF").
+  **CAPE credits `multpl.com`** — "Manual" beside a LIVE badge made the provenance vocabulary
+  self-contradictory (`api` is the fetch path, `mode` is freshness, and multpl IS the live
+  scrape). **The alert toggles state their real limit at the weight of the control** rather than
+  in 8px muted text — an ON/OFF beside "notifications not wired" is the honesty invariant
+  violated by an *affordance* instead of a number.
+  **FEAT-WHY3-MATERIAL — freshness is not relevance.** WHY #3 gated the top RSS item on
+  freshness alone, then labelled whatever returned "Headline driver": the audit caught a
+  **Fidelity death-certificate administrative story** presented as the driver of a macro regime
+  — fresh, dated, correctly attributed, explaining nothing. A confidently-irrelevant *why* is
+  worse than no why, exactly as a fabricated number is worse than a missing one.
+  `isMacroMaterial()` is a curated **allowlist of macro-transmission vocabulary** (policy ·
+  inflation · growth/labor · rates/credit · volatility · energy · systemic shocks *and their
+  resolution* — a ceasefire moves the tape like its onset). Deliberately **ONE-WAY**: a
+  non-matching headline is WITHHELD and the slot says *why* it was withheld — "today's top story
+  is not macro-material" is a different fact from "no headline arrived", and only the first stops
+  an administrative story reading as the market's driver. Never rewritten, never scored.
+  **Owner calls, honoured:** the **moon voice stays PRIMARY** (`wen moon?`/MOONING/HODL —
+  personality kept, and pinned so a later refactor can't quietly drop it), and of the audit's
+  demote list only the **Mag 10 quote strip** is cut — v3.43 took its curated fundamentals on the
+  Yahoo-dupe test and the surviving quote strip failed the *same* test. Component, mock array,
+  state, CSS and merge all removed; `mag10PricesJson` stays **mapped** because the same Finnhub
+  pull feeds QQQ. The cut took its attribution with it — and found that the **footer had been
+  crediting "Mag 10 fundamentals · SEC S-1" for two releases after v3.43 deleted both**, the
+  precise defect v3.43's own note warns about. Watchlist, headwinds, Peoria and the alert
+  toggles are KEPT per owner call. **Deferred (feature-scale):** "what would change the verdict"
+  — the exact thresholds that flip the posture — is the audit's remaining first-screen item and
+  its own scope.
+  Tests: **735 smoke** (+14) + **153 render**, plus a **14-check Chromium pass on the built
+  page** (every collapsed group expanded to prove nothing cut reappears, and that the footer
+  still RECORDS the retirement — history kept, like the CBOE note).
+- **FEAT-ALERT-EVAL (v3.52) — the alerts evaluate, or say they cannot.** A cross-suite audit
+  called the Macro Alerts section *"interface theater"* for toggles beside "notifications not
+  wired". The defect was one layer earlier and worse than the finding: **`triggered` was a
+  hardcoded `false` that nothing ever wrote**, while the header claimed *"Triggers evaluate live
+  data"* — so the red dot was unreachable, `activeAlerts` was permanently 0, and the section
+  asserted "nothing has tripped" from code that **had never looked**. That is a directional claim
+  on absent evidence: the exact v3.1 invariant this project exists to enforce, violated by an
+  *affordance*. (v3.51 had fixed only the DELIVERY half of that sentence and left the evaluation
+  half standing — which is why this is a follow-up, not a new feature.)
+  Evaluation is now real and rides the same rails as everything else: `evalAlert()` judges a
+  threshold **only** from LIVE/CACHED, non-stale inputs, and a mock/stale input yields **BLIND**
+  — deliberately distinct from CLEAR, because *"this has not tripped"* and *"I cannot see whether
+  it tripped"* are different facts and only the second is true when the feed is dead (the v3.40
+  TAILWIND-withhold asymmetry, the v3.50 fail-closed rule). The header reports `N BLIND`
+  separately, since "0 FIRED" with dead inputs is a false clear. The **SPY/200-DMA cross is judged
+  against today's live moving average**, not the `692.4` hardcoded when the alert was authored —
+  a constant that silently drifts as the market moves is the same stale-mark defect `PX_STALE_D`
+  exists to catch. No stored `triggered` field survives; trigger state is computed every render.
+  **A11Y (same audit):** the public page had **zero landmarks and zero live regions** — the regime
+  verdict is the page's entire output and a screen reader was never told it changed. Added
+  `role="main"`, and `aria-live="polite"` on the verdict band and the confidence strip only —
+  politely, and not on every tile: a reader should hear *"the verdict's evidence base changed"*,
+  not each number ticking.
+  Tests: **748 smoke** (+13; `evalAlert` and the real `ALERT_METRICS` table lifted from source,
+  since Node cannot import JSX — trip/clear/blind/stale/no-metric/non-finite all executed) +
+  153 render + an 18-check Chromium pass.
+- **FEAT-FLIP (v3.53) — "what would change the verdict", and ONE band table.** The public
+  audit's fourth first-screen answer (Posture ✓ · Confidence ✓ v3.51 · Why ✓ · *what changes the
+  call* ✗) and the public-side counterpart to the terminal's `readiness()`: that one answers
+  *"is the evidence there to act"*, this answers *"what would move the answer"*.
+  **The structural half matters more than the feature.** The six bands were inline literals
+  inside `computeRegime`, so any flip surface needed a SECOND copy of every threshold — the
+  drift defect this project keeps paying for (the v3.49 5-vs-6 denominator, the v3.51 stale
+  factor-count label, the v3.39 PT audit). They now live in **`REGIME_BAND_TABLE`**, where
+  `vote()` is the ONLY expression of a band: `computeRegime` VOTES from it and `flipConditions`
+  measures DISTANCE to the same edges, so a flip claim can never contradict the verdict it
+  describes. `verdictFrom()` (the strict-majority rule) is extracted for the same reason — the
+  simulation runs the *identical* test, not a restatement. The refactor is behaviour-neutral and
+  every boundary is now EXECUTED rather than string-pinned (the DEC-33 convention), including
+  the two asymmetries that make a second copy dangerous: **F&G is the one INVERTED factor**
+  (bullish ABOVE its edge) and **NFCI is the one INCLUSIVE bull edge** (`<=`, so it reads "at or
+  below").
+  **Load-bearing, not decorative:** the naive version prints six distances. `flipConditions`
+  simulates each crossing through `verdictFrom` and keeps only those that actually change the
+  label — then sorts nearest-first. **Only ADJACENT transitions are offered**: from the bull band
+  you can reach neutral, not bear. Quoting "VIX above 25 would flip this" while VIX sits at 17 is
+  true arithmetic and a misleading next step.
+  **The three abstention rules, each with precedent here.** (1) A **stale** factor is not voting,
+  so its threshold is not load-bearing — it is listed as excluded, never as a distance (the same
+  gate as the vote). (2) A factor whose vote is not a single scalar crossing **abstains with the
+  reason named** — CPI votes on the SHAPE of its trend, CAPE on a two-condition OR; inventing a
+  crossing for a compound rule would be a fabricated number in a decision surface. (3) **"No
+  single flip changes this" is a real answer**, stated plainly in both the band and the panel,
+  never padded with the nearest distance to look responsive (the `readiness()` BLOCKED / one-way
+  `isMacroMaterial` withhold rule). Abstentions and exclusions RENDER — hiding them would read as
+  "these four are all there is".
+  **Deliberately NOT wired into `/readout.json`** — same reasoning as NFCI on arrival: that
+  contract gates real orders and a new field there is its own decision.
+  Found by the browser check while verifying: a **`whiteSpace:"nowrap"` subtitle in the v3.46 AI
+  unit-economics header blew the page to 488px at 390px wide** — pre-existing, now wrapping.
+  Tests: **771 smoke** (+23: every band boundary executed, the majority rule at 3/5/6 voters,
+  all three abstention rules, adjacency, inclusivity copy, sort order, and the render pins) +
+  153 render + a **14-check Chromium pass at 390px and 1200px**, panel open and closed.
 - **Deferred:** stored fundamentals + Robinhood sync — now unblocked by the `x-tt-pin` header
   (v3.9): a chat-side daily review can PUT `status_flags`/`ref_px` into the deepDive payloads and
   stamp `lastRun`. When built, store the *triage* shape (`{at, px}` → "% moved since your last TT
@@ -1212,7 +1352,7 @@ npm run dev        # Vite dev server (mock unless VITE_DATA_MODE=live in .env)
 npm run build      # → dist/  (what Pages runs)
 npm run preview    # serve the built dist/
 
-node test/smoke.mjs   # 696-assertion no-network smoke test (needs Node ≥17)
+node test/smoke.mjs   # 771-assertion no-network smoke test (needs Node ≥17)
 npm run test:ui       # browser render test for admin.html (skips if no Chromium)
 
 # Cron Worker (separate deploy):
