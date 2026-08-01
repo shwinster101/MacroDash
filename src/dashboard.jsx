@@ -433,7 +433,9 @@ function etSession(now = new Date()) {
   return "PRE";
 }
 
-// Shared 5-factor breakdown (used by RegimeBand · FEAT-169; DEC-31 retired Put/Call). `stale` (Set of factor keys)
+// Shared SIX-factor breakdown (RegimeBand · FEAT-169; DEC-31 retired Put/Call, FEAT-NFCI added NFCI).
+// ⚠ The count is stated in three user-facing strings below — a label that disagrees with the vote it
+// describes is the FIX-E defect; keep them and REGIME_FACTOR_FIELDS in step. `stale` (Set of factor keys)
 // marks factors backed by dead/stale live data — they are flagged and excluded from the
 // bull tally so the displayed "X/Y bullish" matches the vote computeRegime actually cast.
 function regimeFactors(d, stale=new Set()) {
@@ -977,7 +979,7 @@ const RegimeBand=({d,stale=new Set()})=>{
               <div style={{fontFamily:T.fontMono,fontSize:9,color:f.stale?T.amber:f.bull?T.green:T.red}}>{f.val}</div>
             </div>
           ))}
-          <div style={{fontFamily:T.fontMono,fontSize:8,color:T.textMuted,gridColumn:"1/-1"}}>Rule-based 5-factor vote · stale/dead inputs auto-excluded · derived from live data</div>
+          <div style={{fontFamily:T.fontMono,fontSize:8,color:T.textMuted,gridColumn:"1/-1"}}>Rule-based 6-factor vote · stale/dead inputs auto-excluded · derived from live data</div>
         </div>
       )}
     </div>
@@ -1614,7 +1616,7 @@ export default function Dashboard({ publicView = false } = {}) {
               {/* Freshness anchors to the equity close (SPY) — a market synthesis is "as of the
                   last close". Don't let a secondary input FRED publishes a day late (VIX/10Y)
                   drag the whole 5-Whys badge to STALE; per-tile VIX/10Y badges stay honest. */}
-              <SourceBox api="Rule-based" endpoint="5-factor regime · stale inputs excluded" mode={modeOf('spyPrice')} asOf={asOfOf('spyPrice')}/>
+              <SourceBox api="Rule-based" endpoint="6-factor regime · stale inputs excluded" mode={modeOf('spyPrice')} asOf={asOfOf('spyPrice')}/>
             </div>
           </div>
         </div>

@@ -2221,5 +2221,18 @@ ok("ready: and on the card — the only per-ticker surface a WATCH name with no 
 ok("ready: blockers stay visible as chips on the bar, never collapsed into the verdict alone",
   adminSrc.includes("⛔ not actionable until:") && adminSrc.includes('p.sev==="block"?"head"'));
 
+// ---- 25. public-audit: the factor count is stated, and stated correctly ----
+// A label that disagrees with the vote it describes is the FIX-E defect. NFCI made the vote
+// six in v3.43; three user-facing strings still said "5-factor". Pinned in BOTH directions so
+// a future 7th voter fails here rather than shipping a wrong count to the public page.
+console.log("\n[25] public dashboard — the stated factor count matches the vote cast");
+ok("regime: no surviving '5-factor' claim anywhere in the dashboard",
+  !/5-factor/.test(dashSrc));
+ok("regime: the vote is described as 6-factor on the band and the source box",
+  (dashSrc.match(/6-factor/g) || []).length >= 2);
+ok("regime: the stated count equals REGIME_FACTOR_FIELDS + the valuation factor",
+  (() => { const m = /REGIME_FACTOR_FIELDS=\[([^\]]*)\]/.exec(dashSrc);
+    return m && m[1].split(",").length + 1 === 6; })());
+
 console.log(`\n=== SMOKE TEST: ${pass} passed, ${fail} failed ===`);
 process.exit(fail === 0 ? 0 : 1);
