@@ -2649,6 +2649,12 @@ ok("capability: supply and demand share ONE badge — same thesis, same drawer, 
   (adminSrc.match(/onclick="openDesk\('dCapex'\)">\$\{txt\}/g) || []).length === 1);
 ok("capability: an absent block SAYS the demand leg is unmeasured rather than implying health",
   /Demand leg unmeasured/.test(adminSrc));
+ok("capability: threshold_basis is optional but must be real text when present",
+  capBoard({ capability: { ...CAP_OK, threshold_basis: "  " } }) !== null &&
+  capBoard({ capability: { ...CAP_OK, threshold_basis: "capex guidance cycle" } }) === null);
+ok("capability: a threshold with NO recorded basis is called out, not quietly accepted",
+  /threshold basis not recorded/.test(adminSrc) &&
+  /indistinguishable from a number someone liked/.test(adminSrc));
 ok("capability: the entry path documents the pre-commitment rule where the owner types it",
   /threshold_months is REQUIRED/.test(adminSrc) && /is a confirmation device/.test(adminSrc));
 

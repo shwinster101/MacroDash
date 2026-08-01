@@ -3525,7 +3525,7 @@ function capabilityState(){
   const slowing=deltaPct>=CAPABILITY_MOVE_PCT;
   const accelerating=deltaPct<=-CAPABILITY_MOVE_PCT;
   const age=ageDays(String(cp.as_of||"").slice(0,10));
-  return{metric:String(cp.metric||""),source:String(cp.source||""),
+  return{metric:String(cp.metric||""),source:String(cp.source||""),basis:String(cp.threshold_basis||""),
     obs,prior,thr,impaired,deltaPct,slowing,accelerating,age,as_of:cp.as_of||null,
     // Headroom to the falsifier, in the metric's own unit. Never a projected date.
     headroom:Math.round((thr-obs)*10)/10};
@@ -3586,7 +3586,9 @@ function capabilitySec(){
   return `<div class="none" style="color:${col};font-weight:${c.impaired?700:400}">DEMAND LEG · ${verdict}</div>`+
     `<div class="none"><span class="scope">${esc(c.metric)} · source ${esc(c.source)} · ${sessChip(c.as_of)}`+
     (c.age===null?` · <span style="color:var(--red)">undated</span>`:c.age>120?` · <span style="color:var(--amber)">${c.age}d old — this series updates in months, but check it</span>`:"")+
-    ` · reported as measured; deliberately NOT extrapolated to a future capability level</span></div>`;
+    ` · reported as measured; deliberately NOT extrapolated to a future capability level</span></div>`+
+    (c.basis?`<div class="none"><span class="scope">threshold basis: ${esc(c.basis)}</span></div>`
+            :`<div class="none"><span class="scope" style="color:var(--amber)">threshold basis not recorded — in six months "${c.thr}mo" will be indistinguishable from a number someone liked</span></div>`);
 }
 function renderCapex(){
   const el=document.getElementById("capexPanel");if(!el)return;

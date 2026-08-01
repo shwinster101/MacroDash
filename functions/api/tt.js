@@ -351,6 +351,11 @@ export function validateBoard(b) {
     }
     if (typeof cp.source !== "string" || !cp.source.trim())
       return "capability.source is required — this is the weakest-sourced input the book carries";
+    // Optional, but the reason a threshold was chosen is the part that rots fastest. Six months
+    // on, "18" with no basis is indistinguishable from a number someone liked.
+    if (cp.threshold_basis !== undefined &&
+        (typeof cp.threshold_basis !== "string" || !cp.threshold_basis.trim()))
+      return "capability.threshold_basis must be a non-empty string when present";
     if (!ISO_RE.test(String(cp.as_of || "")))
       return "capability.as_of (YYYY-MM-DD) is required — an undated capability read ages invisibly";
   }

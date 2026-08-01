@@ -154,7 +154,8 @@ const BOARD = {
   // threshold so the tripped falsifier is exercised end to end (20mo observed vs an 18mo
   // threshold), and slowing versus the prior reading.
   capability: { metric: "task-horizon doubling (synthetic)", observed_months: 20,
-    prior_months: 12, threshold_months: 18, source: "fixture", as_of: TODAY_ET },
+    prior_months: 12, threshold_months: 18, source: "fixture", as_of: TODAY_ET,
+    threshold_basis: "synthetic basis" },
   capex: { rows: [
     { co: "HYPA", fy_guide_B: 8, dir: "down", at: etDaysAgo(2) },
     { co: "HYPB", fy_guide_B: 6, dir: "down", at: etDaysAgo(1) },
@@ -714,6 +715,8 @@ const cxPanel = await txt(page, "capexPanel");
 // spent, capability trajectory is whether it stays worth spending.
 ok("capability: the tripped demand falsifier renders with both numbers named",
   /THESIS FALSIFIER TRIPPED/.test(cxPanel) && /20mo doubling is past your pre-committed 18mo/.test(cxPanel));
+ok("capability: the threshold's BASIS renders, so the number stays checkable later",
+  /threshold basis: synthetic basis/.test(cxPanel));
 ok("capability: it states the metric, the source and that it is NOT extrapolated",
   /task-horizon doubling \(synthetic\)/.test(cxPanel) && /source fixture/.test(cxPanel) &&
   /deliberately NOT extrapolated/.test(cxPanel));
