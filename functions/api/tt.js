@@ -316,6 +316,49 @@ export function validateBoard(b) {
   // guides with a REVISION DIRECTION. Curated at each print (the binary calendar already
   // tracks those dates); there is no $0 live source for guidance. `dir` is the load-bearing
   // field: >=2 of the set guiding "down" is the owner's regime-turn tripwire.
+  /* FEAT-TT-CAPABILITY (v3.55) — the DEMAND side of the capex tripwire.
+     FEAT-TT-CAPEX (v3.45) instruments the SUPPLY of AI capital and fires when >=2 spenders
+     guide down. But the reason they would guide down is capability/ROI disappointment, and
+     that leading indicator was instrumented nowhere: the book watched the announcement, not
+     the thing that causes it.
+     DESIGNED AS A FALSIFIER, NOT A CONFIRMATION. A field reading "capability: healthy",
+     maintained by the person holding the AI-infra book, is self-attestation at its most
+     dangerous — the "sophisticated rationalization engine" the value-proposition audit warned
+     about. So `threshold_months` is REQUIRED: the level at which you would change your mind
+     must be pre-committed and stored BEFORE a reading can be filed against it. A threshold
+     chosen after seeing the observation is the rationalization this block exists to prevent,
+     and the validator is the only thing that can actually enforce the ordering.
+     `prior_months` is also required — FEAT-TT-TODAY's rule that the signal is the DELTA, not
+     the level. Bands reject the impossible, not the unusual (the BANDS doctrine): a doubling
+     time is positive and finite, and a very long one is MEANINGFUL (a stall), not a typo. */
+  if (b.capability !== undefined) {
+    const cp = b.capability;
+    if (!cp || typeof cp !== "object" || Array.isArray(cp)) return "capability must be an object";
+    if (typeof cp.metric !== "string" || !cp.metric.trim())
+      return "capability.metric is required — an unnamed measure cannot be checked against its source";
+    const band = (v, name) => {
+      const n = Number(v);
+      if (!isFinite(n) || n <= 0 || n > 240) return `capability.${name} out of band (0..240 months)`;
+      return null;
+    };
+    for (const f of ["observed_months", "prior_months", "threshold_months"]) {
+      if (cp[f] === undefined || cp[f] === null)
+        return `capability.${f} is required — ${f === "threshold_months"
+          ? "the falsifier must be pre-committed, or this block is a confirmation device"
+          : "the signal is the change, which needs both readings"}`;
+      const err = band(cp[f], f);
+      if (err) return err;
+    }
+    if (typeof cp.source !== "string" || !cp.source.trim())
+      return "capability.source is required — this is the weakest-sourced input the book carries";
+    // Optional, but the reason a threshold was chosen is the part that rots fastest. Six months
+    // on, "18" with no basis is indistinguishable from a number someone liked.
+    if (cp.threshold_basis !== undefined &&
+        (typeof cp.threshold_basis !== "string" || !cp.threshold_basis.trim()))
+      return "capability.threshold_basis must be a non-empty string when present";
+    if (!ISO_RE.test(String(cp.as_of || "")))
+      return "capability.as_of (YYYY-MM-DD) is required — an undated capability read ages invisibly";
+  }
   if (b.capex !== undefined) {
     const cx = b.capex;
     if (!cx || typeof cx !== "object" || Array.isArray(cx)) return "capex must be an object";

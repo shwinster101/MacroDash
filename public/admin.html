@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <!-- AUDIT: kept in sync with package.json by test/smoke.mjs. admin.html is a Vite
      public/ passthrough, so it cannot receive __APP_VERSION__ — the guard is the fix. -->
-<title>TT TICKER TERMINAL v3.53.0</title>
+<title>TT TICKER TERMINAL v3.55.0</title>
 <style>
   :root{
     --bg:#05070a; --panel:#0a0f16; --panel2:#0d141d; --line:#16202c;
@@ -357,7 +357,7 @@
         onclick="toggleHeadInfo()">⋯ MENU</button>
     </div>
     <div id="headInfo" style="display:none">
-      <div class="brand">FINANCE&nbsp;BRO.AI // TT&nbsp;TICKER&nbsp;TERMINAL <small>v3.53.0 · single-pass deep-dive orchestrator</small></div>
+      <div class="brand">FINANCE&nbsp;BRO.AI // TT&nbsp;TICKER&nbsp;TERMINAL <small>v3.55.0 · single-pass deep-dive orchestrator</small></div>
       <div class="statusline">
         <span>BOOK: <b id="bookStamp">loading…</b></span>
         <span>AUTH: <b id="sessState">…</b></span>
@@ -875,7 +875,10 @@ function openSession(){
   document.getElementById("cBody").innerHTML=`
     <div class="derived" style="margin-bottom:8px">Board-level state a TT session produces that no single ticker owns:
     <b>circuit</b> (leverage), <b>clusters</b> (what is really one position), <b>funding</b> (what gets trimmed),
-    <b>decisions</b> (still open), <b>binaries</b> (non-ticker dates), <b>regime</b> (the session's asserted read).
+    <b>decisions</b> (still open), <b>binaries</b> (non-ticker dates), <b>regime</b> (the session's asserted read),
+    <b>capex</b> (the funding tape), <b>capability</b> (the demand leg — <i>threshold_months is REQUIRED
+    and must be set BEFORE you file a reading against it; a falsifier chosen after seeing the number
+    is a confirmation device</i>).
     All of it is self-attested, so <code>as_of</code> is required and every strip shows its age.</div>
     <textarea id="fSession" style="${ta}" placeholder='{"as_of":"YYYY-MM-DD","source":"TT session","circuit":{...}}'>${esc(cur)}</textarea>
     <div class="derived" style="margin:12px 0 8px;border-top:1px dashed var(--line);padding-top:10px">
@@ -3500,6 +3503,33 @@ function capexState(){
   // both directions by design — a re-acceleration (>=2 up) is information too.
   return{rows,aggB,downs,ups,turning:downs>=2,reacc:ups>=2,as_of:cx.as_of||BOARD.as_of};
 }
+/* FEAT-TT-CAPABILITY (v3.55) — the demand-side falsifier.
+   Reads the pre-committed threshold and the two observations; NEVER extrapolates. A doubling
+   time is a rate, and raising it to a power to project "capability in 2030" is exactly the
+   window-annualising error DEC-D2/v3.46 removed (a 12-week move raised to 52/11 read -98.8%/yr,
+   arithmetically correct and economically absurd). This reports what was measured and how it
+   MOVED. Nothing else.
+   Tripwire is bidirectional like the capex tape: crossing the threshold impairs the thesis,
+   and a materially FASTER doubling is information too (it is the re-acceleration case, and
+   suppressing it would make the block a one-way confirmation of the bear case instead of a
+   falsifier). Fails closed: absent/undated reads as unknown, never as healthy. */
+const CAPABILITY_MOVE_PCT=15;   // a change smaller than this is measurement noise, not signal
+function capabilityState(){
+  const cp=BOARD.capability;
+  if(!cp||typeof cp!=="object")return null;
+  const obs=Number(cp.observed_months),prior=Number(cp.prior_months),thr=Number(cp.threshold_months);
+  if(!isFinite(obs)||!isFinite(prior)||!isFinite(thr)||obs<=0||prior<=0||thr<=0)return null;
+  // A LONGER doubling time is worse: capability is compounding more slowly.
+  const impaired=obs>thr;
+  const deltaPct=Math.round((obs/prior-1)*1000)/10;
+  const slowing=deltaPct>=CAPABILITY_MOVE_PCT;
+  const accelerating=deltaPct<=-CAPABILITY_MOVE_PCT;
+  const age=ageDays(String(cp.as_of||"").slice(0,10));
+  return{metric:String(cp.metric||""),source:String(cp.source||""),basis:String(cp.threshold_basis||""),
+    obs,prior,thr,impaired,deltaPct,slowing,accelerating,age,as_of:cp.as_of||null,
+    // Headroom to the falsifier, in the metric's own unit. Never a projected date.
+    headroom:Math.round((thr-obs)*10)/10};
+}
 function capexExposure(x){
   const e=x&&x.deepDive&&x.deepDive.capex_exposure;
   return(e&&typeof e==="object"&&!Array.isArray(e))?e:null;
@@ -3538,6 +3568,28 @@ function lintCapexConservation(){
     pctOfPool:st.aggB>0?Math.round(impliedB/st.aggB*100):null,
     breach:st.aggB>0&&impliedB>st.aggB};
 }
+/* The demand leg, rendered beside the supply leg because they are two halves of one thesis:
+   capex is what the spenders are PUTTING IN, capability trajectory is whether it keeps being
+   worth it. Renders NOTHING when absent (the FEAT-TT-SESSION rule — no block loaded must look
+   exactly like v3.54, never like an empty placeholder). */
+function capabilitySec(){
+  const c=capabilityState();
+  if(!c)return `<div class="none" style="color:var(--dim)">Demand leg unmeasured — no capability trajectory filed. `+
+    `Capex tells you what is being spent; it cannot tell you whether it stays worth spending. `+
+    `Add <code>capability</code> in ◧ SESSION (a pre-committed threshold is required).</div>`;
+  const col=c.impaired?"var(--red)":c.slowing?"var(--amber)":"var(--green)";
+  const verdict=c.impaired
+    ?`⚡ THESIS FALSIFIER TRIPPED — ${c.obs}mo doubling is past your pre-committed ${c.thr}mo`
+    :c.slowing?`⚠ slowing — ${c.obs}mo vs ${c.prior}mo prior (${c.deltaPct>0?"+":""}${c.deltaPct}%), still inside the ${c.thr}mo threshold`
+    :c.accelerating?`▲ accelerating — ${c.obs}mo vs ${c.prior}mo prior (${c.deltaPct}%)`
+    :`holding — ${c.obs}mo doubling, ${c.headroom}mo of headroom to your ${c.thr}mo threshold`;
+  return `<div class="none" style="color:${col};font-weight:${c.impaired?700:400}">DEMAND LEG · ${verdict}</div>`+
+    `<div class="none"><span class="scope">${esc(c.metric)} · source ${esc(c.source)} · ${sessChip(c.as_of)}`+
+    (c.age===null?` · <span style="color:var(--red)">undated</span>`:c.age>120?` · <span style="color:var(--amber)">${c.age}d old — this series updates in months, but check it</span>`:"")+
+    ` · reported as measured; deliberately NOT extrapolated to a future capability level</span></div>`+
+    (c.basis?`<div class="none"><span class="scope">threshold basis: ${esc(c.basis)}</span></div>`
+            :`<div class="none"><span class="scope" style="color:var(--amber)">threshold basis not recorded — in six months "${c.thr}mo" will be indistinguishable from a number someone liked</span></div>`);
+}
 function renderCapex(){
   const el=document.getElementById("capexPanel");if(!el)return;
   const st=capexState();
@@ -3553,6 +3605,7 @@ function renderCapex(){
       `<span class="fdr-d">${dirGlyph(String(r.dir))} <span class="scope">guided ${esc(r.at)}${r.note?` · ${esc(String(r.note).slice(0,80))}`:""}</span></span></div>`;
   });
   h+=`<div class="none">aggregate <b>$${st.aggB}B</b> guided capex · enter each print's guide the day it lands — the binary calendar carries the dates</div>`;
+  h+=capabilitySec();
   if(L){
     const col=L.breach?"var(--red)":(L.pctOfPool!==null&&L.pctOfPool>=80)?"var(--amber)":"var(--dim)";
     h+=`<div class="none" style="color:${col}">CONSERVATION — book implies <b>$${L.impliedB}B</b> of capex-funded FY${L.fy} revenue`+
@@ -3570,6 +3623,9 @@ function renderCapex(){
   }
   el.innerHTML=h;
   setDrawer("dCapex","sCapex",`CAPEX TAPE · `+
+    ((()=>{const c=capabilityState();
+      return c&&c.impaired?`<span style="color:var(--red)">⚡ demand falsifier tripped</span> · `
+        :c&&c.slowing?`<span style="color:var(--amber)">⚠ demand slowing</span> · `:"";})())+
     (st.turning?`<span style="color:var(--red)">⚡ ${st.downs} of ${st.rows.length} down</span>`
       :`$${st.aggB}B agg${st.reacc?` · <span style=\"color:var(--green)\">▲ re-acc</span>`:``}`)+
     (L&&L.breach?` · <span style="color:var(--red)">book &gt; pool</span>`:L&&L.pctOfPool!==null?` · implies ${L.pctOfPool}%`:``),true);
@@ -3818,7 +3874,20 @@ function renderStance(){
     (binToday?`<button class="badge" style="color:var(--red)" onclick="openDesk('dCal')">◆ ${binToday} binaries ≤${BINARY_WINDOW_D}d</button>`:"")+
     // FEAT-TT-CAPEX (v3.45): a turning capex tape is a red fact — visible while everything
     // is closed, chip-length by the slice-1 rule, one tap to the full tape.
-    ((cxSt&&cxSt.turning)?`<button class="badge" style="color:var(--red)" onclick="openDesk('dCapex')">⚡ capex ${cxSt.downs}↓ of ${cxSt.rows.length}</button>`:"")+
+    /* FEAT-TT-CAPEX + FEAT-TT-CAPABILITY: ONE badge for the AI thesis, not two. A turning
+       supply tape and a falsified demand leg are two halves of the same thesis and open the
+       SAME drawer — two chips would be redundant AND would cost a wrap row against the 390px
+       stance budget (v3.42 slice 1), which is a real guard. Chip-length by that same rule:
+       it names which leg is red; the numbers live one tap away in the panel. */
+    ((()=>{const c=capabilityState();
+      const sup=!!(cxSt&&cxSt.turning),dem=!!(c&&c.impaired);
+      if(!sup&&!dem)return "";
+      // Kept SHORTER than the capex-only text it replaces: measured at 390px, a longer string
+      // tips one badge onto a new row and blows the 140px stance budget (119px -> 165px).
+      const txt=sup&&dem?`⚡ AI both legs`
+        :sup?`⚡ capex ${cxSt.downs}↓ of ${cxSt.rows.length}`
+        :`⚡ demand falsified`;
+      return `<button class="badge" style="color:var(--red)" onclick="openDesk('dCapex')">${txt}</button>`;})())+
     (CHANGED_N.n?`<button class="badge" style="color:${CHANGED_N.stops?"var(--red)":"var(--amber)"}" onclick="openDesk('dChanged')">Δ ${CHANGED_N.n} changed${CHANGED_N.stops?` · ${CHANGED_N.stops}!`:""}</button>`:"");
   const controls=`<span class="stance-right">`+
     (LIVE_AT?`<span class="scope">quotes ${esc(String(LIVE_AT).slice(11,16))}Z</span>`:"")+

@@ -36,6 +36,13 @@ const SETTLING_TTL = 60 * 60;     // short lock-in while the latest close looks 
 export const BANDS = {
   vix:          [1, 150],      // VIX high is 89.5 (2008); 150 is well past any real print
   tenYear:      [0, 20],       // 10Y: 1981 peak ~15.8%
+  // 30Y: same band as the 10Y — the 1981 long-bond peak was ~15.2%. Wide enough to accept
+  // anything the bond market has ever actually done, narrow enough to catch a decimal shift.
+  thirtyYear:   [0, 20],
+  // 10s30s term spread: deeply inverted (~-2pp) through to steep (~+4pp) covers every
+  // observed regime; ±10 rejects only a parse fault. An INVERTED curve is the signal, not
+  // an error, so the band must not exclude it (the negative-WTI rule).
+  spread10s30s: [-10, 10],
   fedFunds:     [0, 25],
   mortgage30:   [0, 25],
   fearGreed:    [0, 100],      // index is defined 0-100
@@ -261,6 +268,13 @@ async function fetchFred(key) {
 
   const series = {
     tenYear:      "DGS10",
+    /* FEAT-30Y (v3.55): the LONG END. This is NOT the TLT rejection (v3.43) replayed — TLT
+       was refused because it is a monotonic transform of the 10Y already displayed. DGS30 is
+       not derivable from DGS10: the 10s30s spread is the term-premium / fiscal-risk gauge,
+       and "long end breaking out while the Fed holds" is a different transmission channel
+       from "the whole curve moved". 17 series now = one more batch of 5, which is exactly
+       why the phase batching must not be collapsed. */
+    thirtyYear:   "DGS30",
     fedFunds:     "FEDFUNDS",
     cpiHeadline:  "CPIAUCSL",   // CPI index  → YoY % below
     cpiCore:      "CPILFESL",   // core CPI index → YoY %
@@ -334,7 +348,7 @@ async function fetchFred(key) {
   // DAILY-frequency fields only: idx[5]/idx[21] are ~1wk/~1mo back. Applying these
   // offsets to a MONTHLY series (FEDFUNDS, UNRATE…) would mean 5/21 *months* — garbage.
   // So w1/m1 derivation is gated to true daily series.
-  const DAILY = new Set(["tenYear", "wti", "btc", "vix"]);
+  const DAILY = new Set(["tenYear", "thirtyYear", "wti", "btc", "vix"]);
   // Percent-change helper (for price-like fields); rates use absolute yield deltas.
   // A zero base divides to Infinity; a NEGATIVE base inverts the sign, so a recovery
   // renders as a decline — and WTI really did settle at -$37.63 on 2020-04-20.
@@ -356,6 +370,14 @@ async function fetchFred(key) {
       if (daily && !isNaN(wAgo)) out.tenYearW1 = parseFloat((latest - wAgo).toFixed(4));
       if (daily && !isNaN(mAgo)) out.tenYearM1 = parseFloat((latest - mAgo).toFixed(4));
     }
+    // 30Y: absolute yield deltas, same convention as the 10Y (rates move in pp, not %).
+    if (field === "thirtyYear") {
+      if (!isNaN(prev)) out.thirtyYearD1 = parseFloat((latest - prev).toFixed(4));
+      if (daily && !isNaN(wAgo)) out.thirtyYearW1 = parseFloat((latest - wAgo).toFixed(4));
+      if (daily && !isNaN(mAgo)) out.thirtyYearM1 = parseFloat((latest - mAgo).toFixed(4));
+      if (Array.isArray(spark)) out._thirtySparkline = spark;
+    }
+    if (field === "tenYear" && Array.isArray(spark)) out._tenSparkline = spark;
     if (field === "vix") {
       // Real week-over-week: latest vs ~5 trading sessions ago (the tile labels it "WoW").
       // Falls back to the 1-day prior only if the 5-session point isn't available.
@@ -398,6 +420,22 @@ async function fetchFred(key) {
       out._igSparkline = spark; // temp
     }
   }
+
+  /* Derive the 10s30s term spread (FEAT-30Y). Steepening with the long end leading is the
+     fiscal/term-premium signature — a different thing from a parallel shift, and the reason
+     the 30Y earns a series of its own rather than riding the 10Y. Absolute pp, like its
+     inputs. Sparkline is derived pointwise, same pattern as creditSpreadSeries. */
+  if (out.tenYear !== undefined && out.thirtyYear !== undefined) {
+    out.spread10s30s = parseFloat((out.thirtyYear - out.tenYear).toFixed(3));
+    out.spread10s30sAsOf = out.thirtyYearAsOf || out.tenYearAsOf;
+    if (Array.isArray(out._thirtySparkline) && Array.isArray(out._tenSparkline)) {
+      const n = Math.min(out._thirtySparkline.length, out._tenSparkline.length);
+      out.spread10s30sSeries = Array.from({length: n}, (_, i) =>
+        parseFloat((out._thirtySparkline[i] - out._tenSparkline[i]).toFixed(3)));
+    }
+  }
+  delete out._thirtySparkline;
+  delete out._tenSparkline;
 
   // Derive HY-IG credit spread — the single highest-value cross-field metric.
   // Widening = bearish leading indicator (inverse correlation to S&P 500).

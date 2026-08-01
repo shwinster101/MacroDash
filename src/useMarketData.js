@@ -22,13 +22,20 @@ const RETRIES = 1;
 
 export function useMarketData(mockData, opts = {}) {
   const publicView = !!opts.publicView;
+  // FEAT-QUORUM (v3.54): `mode:"MOCK"` is AMBIGUOUS — it is both "this is a demo build" and
+  // "this is a live build whose fetch failed". Those must render differently: the demo's
+  // baseline IS mock and should show its verdict, while a live build falling back to mock has
+  // no evidence and must WITHHOLD one. `liveBuild` is the build's INTENT, constant for the
+  // session, and is the same distinction `demoted()` already makes via anyLive.
+  const liveBuild = MODE === "live";
   const [state, setState] = useState({
     data: mockData,
-    mode: MODE === "live" ? "LOADING" : "MOCK",
+    mode: liveBuild ? "LOADING" : "MOCK",
     asOf: null,
     provenance: {},
     dataAsOf: {},
-    loading: MODE === "live",
+    loading: liveBuild,
+    liveBuild,
   });
 
   useEffect(() => {
@@ -53,14 +60,14 @@ export function useMarketData(mockData, opts = {}) {
           clearTimeout(timeoutTimer);
           if (cancelled) return;
           const merged = mergeLiveOverMock(mockData, payload, publicView);
-          setState({ data: merged.data, mode: merged.badge, asOf: merged.asOf, provenance: merged.provenance, dataAsOf: merged.dataAsOf, loading: false });
+          setState({ data: merged.data, mode: merged.badge, asOf: merged.asOf, provenance: merged.provenance, dataAsOf: merged.dataAsOf, loading: false, liveBuild });
         })
         .catch((err) => {
           clearTimeout(timeoutTimer);
           if (cancelled) return;
           // Network/timeout/parse failure: fall back to mock with an honest MOCK badge
           // (never a stuck LOADING). The dashboard never breaks on a bad fetch.
-          setState({ data: mockData, mode: "MOCK", asOf: null, provenance: {}, dataAsOf: {}, loading: false });
+          setState({ data: mockData, mode: "MOCK", asOf: null, provenance: {}, dataAsOf: {}, loading: false, liveBuild });
           if (typeof console !== "undefined" && console.warn) {
             console.warn("[MacroDash] /api/snapshot fetch failed:", (err && err.message) || err);
           }

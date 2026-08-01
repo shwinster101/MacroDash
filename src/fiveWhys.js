@@ -102,14 +102,36 @@ export function computeFiveWhys(data, regime = {}, opts = {}) {
 
   const whys = [];
 
-  // WHY #1 — core anchor: SPY vs 200DMA, CPI, Fed rate
+  /* WHY #1 — core anchor. v3.54 (11.4.5 audit, High): this clause asserted SPY, CPI and Fed
+     values UNCONDITIONALLY while WHY #2 carefully freshness-gated its cross-signals. If CPI
+     or the Fed rate fell back to mock, the narrative still called it "today's core tape" — a
+     fabricated number in the page's own explanation of its verdict. Each of the three is now
+     gated independently, unavailable clauses are OMITTED rather than filled from mock, and
+     the count of usable core inputs is stated so a thin anchor is visible as thin. */
   const ma200 = spy.ma200;
   const above = ma200 != null && spy.price >= ma200;
-  whys.push(
-    `Core tape: SPY $${spy.price} (${pct(spy.changePct)}) ${ma200 != null ? (above ? `above its 200-DMA ($${ma200})` : `below its 200-DMA ($${ma200})`) : ""}; ` +
-    `CPI ${cpi.headline}% headline, Fed funds ${fed.rate}%. ` +
-    `${above ? "Primary trend intact; policy/inflation set the backdrop." : "Below the long trend — primary risk flag."}`
-  );
+  const coreParts = [];
+  if (isLive("spyPrice")) {
+    coreParts.push(
+      `SPY $${spy.price} (${pct(spy.changePct)})` +
+      (ma200 != null ? (above ? ` above its 200-DMA ($${ma200})` : ` below its 200-DMA ($${ma200})`) : "")
+    );
+  }
+  if (isLive("cpiHeadline")) coreParts.push(`CPI ${cpi.headline}% headline`);
+  if (isLive("fedFunds")) coreParts.push(`Fed funds ${fed.rate}%`);
+  const CORE_N = 3;
+  if (coreParts.length) {
+    whys.push(
+      `Core tape: ${coreParts.join(", ")}. ` +
+      (coreParts.length < CORE_N ? `${coreParts.length}/${CORE_N} core inputs usable — the rest are not live and are left out. ` : "") +
+      (isLive("spyPrice")
+        ? (above ? "Primary trend intact; policy/inflation set the backdrop." : "Below the long trend — primary risk flag.")
+        : "No live equity mark, so no primary-trend read.")
+    );
+  } else {
+    // Every core input unavailable: say so. An empty anchor is a fact, not a blank line.
+    whys.push(`Core tape: 0/${CORE_N} core inputs usable — no live equity, inflation or policy mark, so nothing anchors the read.`);
+  }
 
   // WHY #2 — other LIVE data only (mock/stale fields are skipped)
   const sig = [];

@@ -59,7 +59,14 @@ export async function onRequestGet({ request, env }) {
   if (!env.PULSE_CACHE) return json({ error: "KV unavailable" }, 503);
 
   const url = new URL(request.url);
-  if (url.searchParams.get("migrate") === "1") return runMigrate(env);
+  /* SEMANTICS (v3.54, 11.4.5 audit): the one-time migration MUTATES the book (it strips
+     embedded `pos` and re-saves), and it used to run on GET — so a prefetch, a link
+     preview, an uptime monitor or a replayed URL could trigger a write. GET must be safe.
+     It is now POST-only, behind the same Origin/CSRF guard every other mutation uses; the
+     idempotency contract is unchanged, so a re-run is still a no-op. A GET is answered with
+     405 + the correct verb rather than silently doing nothing. */
+  if (url.searchParams.get("migrate") === "1")
+    return json({ error: "migrate mutates state — use POST /api/positions?migrate=1" }, 405);
 
   let stored = null;
   try { stored = await env.PULSE_CACHE.get(POS_KEY, "json"); } catch (_e) {}
@@ -168,8 +175,18 @@ async function runMigrate(env) {
   return json({ migrated: embedded.length, syms: embedded.map((e) => e.sym), bookVersion: version });
 }
 
+export async function onRequestPost({ request, env }) {
+  const auth = await authorize(request, env);
+  if (!auth.ok) return json({ error: auth.error }, auth.status || 401);
+  if (!env.PULSE_CACHE) return json({ error: "KV unavailable" }, 503);
+  if (crossOrigin(request)) return json({ error: "cross-origin" }, 403);
+  const url = new URL(request.url);
+  if (url.searchParams.get("migrate") === "1") return runMigrate(env);
+  return json({ error: "unknown POST action" }, 400);
+}
 export async function onRequest({ request, ...rest }) {
   if (request.method === "GET") return onRequestGet({ request, ...rest });
   if (request.method === "PUT") return onRequestPut({ request, ...rest });
+  if (request.method === "POST") return onRequestPost({ request, ...rest });
   return json({ error: "method not allowed" }, 405);
 }

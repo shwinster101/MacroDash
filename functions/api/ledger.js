@@ -19,6 +19,13 @@ const LEDGER_PREFIX = "tt:ledger:";   // mirrors the constant in functions/api/t
 const LEDGER_INDEX_KEY = "tt:ledger:index";
 const SYM_RE = /^[A-Z.\-]{1,8}$/;
 
+// Mirrors the guard in tt.js / positions.js — a same-origin check on every mutation.
+function crossOrigin(request) {
+  const origin = request.headers.get("Origin");
+  if (!origin) return false;
+  try { return new URL(origin).host !== new URL(request.url).host; } catch (_e) { return true; }
+}
+
 const json = (body, status = 200) =>
   new Response(JSON.stringify(body), {
     status,
@@ -32,7 +39,12 @@ export async function onRequestGet({ request, env }) {
 
   const url = new URL(request.url);
 
-  if (url.searchParams.get("seed") === "1") return runSeed(env);
+  /* SEMANTICS (v3.54, 11.4.5 audit): the backfill WRITES ledger entries, and it used to run
+     on GET — a prefetch, link preview, uptime monitor or replayed URL could trigger it. GET
+     must be safe. POST-only now, behind the same Origin/CSRF guard the other mutations use;
+     the one-time idempotency contract is unchanged, so a re-run remains a no-op. */
+  if (url.searchParams.get("seed") === "1")
+    return json({ error: "seed mutates state — use POST /api/ledger?seed=1" }, 405);
 
   // Two client features need belief changes across the WHOLE book, not one sym: the
   // SCORECARD (tier/rank/comp, ranked by since-move) and FEAT-TT-SPREAD's divergence flag
@@ -143,4 +155,15 @@ async function runSeed(env) {
   catch (e) { return json({ error: "index write failed: " + (e?.message || "unknown") }, 503); }
 
   return json({ seeded: true, entries: allEntries.length, syms: bySym.size, states: snaps.length });
+}
+
+// The backfill is the ledger's ONLY mutation, so POST carries exactly it (v3.54).
+export async function onRequestPost({ request, env }) {
+  const auth = await authorize(request, env);
+  if (!auth.ok) return json({ error: "unauthorized" }, auth.status || 401);
+  if (!env.PULSE_CACHE) return json({ error: "KV unavailable" }, 503);
+  if (crossOrigin(request)) return json({ error: "cross-origin" }, 403);
+  const url = new URL(request.url);
+  if (url.searchParams.get("seed") === "1") return runSeed(env);
+  return json({ error: "unknown POST action" }, 400);
 }

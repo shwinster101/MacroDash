@@ -150,6 +150,12 @@ const BOARD = {
     rule: "size as ONE position" }],
   // FEAT-TT-CAPEX (v3.45): synthetic tape — 2 of 3 guiding down (tripwire) and a pool small
   // enough that AAA's direct exposure (55 × 40% = 22) BREACHES it (agg 18) — both red paths lit.
+  // FEAT-TT-CAPABILITY (v3.55): the demand leg, deliberately set PAST its pre-committed
+  // threshold so the tripped falsifier is exercised end to end (20mo observed vs an 18mo
+  // threshold), and slowing versus the prior reading.
+  capability: { metric: "task-horizon doubling (synthetic)", observed_months: 20,
+    prior_months: 12, threshold_months: 18, source: "fixture", as_of: TODAY_ET,
+    threshold_basis: "synthetic basis" },
   capex: { rows: [
     { co: "HYPA", fy_guide_B: 8, dir: "down", at: etDaysAgo(2) },
     { co: "HYPB", fy_guide_B: 6, dir: "down", at: etDaysAgo(1) },
@@ -705,6 +711,15 @@ console.log("\n[render] FEAT-TT-CAPEX — tape, tripwire, conservation, typed ex
 await page.evaluate(() => { document.getElementById("dDesk").open = true; document.getElementById("dCapex").open = true; });
 await page.waitForTimeout(100);
 const cxPanel = await txt(page, "capexPanel");
+// FEAT-TT-CAPABILITY (v3.55): supply and demand render in ONE panel — capex is what is being
+// spent, capability trajectory is whether it stays worth spending.
+ok("capability: the tripped demand falsifier renders with both numbers named",
+  /THESIS FALSIFIER TRIPPED/.test(cxPanel) && /20mo doubling is past your pre-committed 18mo/.test(cxPanel));
+ok("capability: the threshold's BASIS renders, so the number stays checkable later",
+  /threshold basis: synthetic basis/.test(cxPanel));
+ok("capability: it states the metric, the source and that it is NOT extrapolated",
+  /task-horizon doubling \(synthetic\)/.test(cxPanel) && /source fixture/.test(cxPanel) &&
+  /deliberately NOT extrapolated/.test(cxPanel));
 ok("capex: the tripwire banner fires at 2 of 3 down, naming the typed transmission order",
   /CAPEX REGIME TURNING/.test(cxPanel) && /2 of 3/.test(cxPanel) && /Direct names take it first/.test(cxPanel));
 ok("capex: the conservation lint computes AAA's implied draw (55 × 40% = $22B) against the $18B pool and BREACHES",
@@ -714,8 +729,11 @@ ok("capex: fab and neocloud are excluded WITH their reasons, and the neocloud sh
   /BBB/.test(cxPanel) && /two-sided/.test(cxPanel) && /1×/.test(cxPanel));
 ok("capex: the closed drawer summary carries the red count (v3.25 — a collapse never hides it)",
   /2 of 3 down/i.test(await txt(page, "sCapex")));   // drawer summaries are CSS-uppercased
+// v3.55: the fixture now has BOTH legs red (capex turning + demand falsified), so the strip
+// carries the MERGED badge — one chip for one thesis, one drawer. The capex-only and
+// demand-only forms are pinned at source in smoke.
 ok("capex: the stance strip carries the ⚡ badge while everything is closed",
-  /⚡ capex 2↓ of 3/.test(await txt(page, "stanceStrip")));
+  /⚡ AI both legs/.test(await txt(page, "stanceStrip")));
 await page.evaluate(() => switchTab("AAA"));
 await page.waitForTimeout(250);
 await page.evaluate(() => document.querySelectorAll("#deepView details").forEach((d) => (d.open = true)));

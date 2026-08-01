@@ -280,6 +280,9 @@ const PRIMARY_ASOF_FIELDS = [
   "tenYear", "fedFunds", "unemployment", "lfpr", "savings", "mortgage30",
   "cpiHeadline", "cpiCore", "pceHeadline", "pceCore", "wti", "vix", "btc",
   "hySpread", "igSpread", "creditSpread", "nfci",
+  // v3.55: both carry their own AsOf — thirtyYear from its own FRED pull, spread10s30s
+  // copied from thirtyYearAsOf (the creditSpread pattern).
+  "thirtyYear", "spread10s30s",
   "fearGreed", "marketHeadline", "shillerPe", "tokenBlendedMtok", "rateOddsHold",
 ];
 ok("deriv: PRIMARY_ASOF_FIELDS + DERIVED_OF + DERIVED_EXEMPT partition ALL 63 SOURCES keys (reconciled, not hardcoded)", (() => {
@@ -1356,9 +1359,16 @@ ok("tt.js: per-sym ledgers are capped, oldest pruned first",
 // history is a byproduct of book edits, never a thing edited directly.
 const ledgerSrc = readFileSync(new URL("../functions/api/ledger.js", import.meta.url), "utf8");
 ok("ledger.js: PIN-gated like /api/tt — belief history is as private as the book",
-  (ledgerSrc.match(/const auth = await authorize\(request, env\);/g) || []).length === 1);
-ok("ledger.js: read-only by design — no PUT/POST handler exists",
-  !/onRequestPut|onRequestPost/.test(ledgerSrc));
+  (ledgerSrc.match(/const auth = await authorize\(request, env\);/g) || []).length === 2);
+// v3.54: this pin used to read "read-only by design — no PUT/POST handler exists" and PASSED
+// while ?seed=1 wrote to KV on GET. It was measuring the VERB, not the SAFETY — the exact
+// gap the 11.4.5 audit found. The real invariant is that reading never mutates and the one
+// mutation is a guarded POST.
+ok("ledger.js: entries are never mutated by a read — the sole write is a guarded POST",
+  !/onRequestPut/.test(ledgerSrc) && /export async function onRequestPost/.test(ledgerSrc) &&
+  // runSeed must be unreachable from the GET handler: everything before onRequestPost.
+  !/return runSeed/.test(ledgerSrc.slice(0, ledgerSrc.indexOf("export async function onRequestPost"))) &&
+  /seed mutates state — use POST/.test(ledgerSrc));
 ok("ledger.js: the seed backfill is idempotent — a second call is a documented no-op",
   ledgerSrc.includes('reason: "already seeded') );
 ok("ledger.js: the recent-across-book mode is ONE list + N reads, not an N+1 client round trip",
@@ -1374,7 +1384,7 @@ ok("ledger.js: backfilled px uses ref_px only when dated near the entry, else st
 console.log("\n[16] functions/api/positions.js — pos split out of the book");
 const posSrc = readFileSync(new URL("../functions/api/positions.js", import.meta.url), "utf8");
 ok("positions.js: PIN-gated like /api/tt — position data is at least as sensitive as the book",
-  (posSrc.match(/const auth = await authorize\(request, env\);/g) || []).length === 2);
+  (posSrc.match(/const auth = await authorize\(request, env\);/g) || []).length === 3);
 ok("positions.js: reuses the shared validatePos from tt.js rather than redefining the bands",
   posSrc.includes('import { authorize, validatePos } from "./tt.js";') && !/function validatePos/.test(posSrc));
 ok("positions.js: PUT is MERGE-ONLY — a partial sync must never blank the names it didn't touch",
@@ -1391,8 +1401,9 @@ ok("positions.js: the one-time migration is idempotent — a second call is a do
   posSrc.includes('reason: "no embedded pos fields on the book — already migrated or nothing synced yet"'));
 ok("positions.js: migration snapshots the book before stripping it, same restore-point rule as tt.js",
   posSrc.includes("SNAP_PREFIX + etDate()") && posSrc.includes("if (!existing) await env.PULSE_CACHE.put(snapKey, JSON.stringify(book)"));
-ok("positions.js: no method beyond GET/PUT is handled",
-  !/onRequestPost|onRequestDelete/.test(posSrc));
+ok("positions.js: only GET/PUT/POST are handled, and POST carries the migration alone",
+  !/onRequestDelete/.test(posSrc) && /unknown POST action/.test(posSrc) &&
+  /if \(request\.method === "POST"\) return onRequestPost/.test(posSrc));
 ok("tt.js: validateBook no longer validates or even looks at e.pos — it moved out entirely",
   !ttSrc.includes('e.sym + " pos: "'));
 
@@ -1820,7 +1831,12 @@ ok("nfci: the FRED series is wired into the existing batched fetch (no new fetch
   /nfci:\s+"NFCI"/.test(snapSrc));
 ok("nfci: it is NOT in the DAILY set — the idx[5]/idx[21] week/month offsets would be " +
    "5 and 21 WEEKS on a weekly series, which is exactly the bug that gating exists to stop",
-  /const DAILY = new Set\(\["tenYear", "wti", "btc", "vix"\]\)/.test(snapSrc));
+  (() => { const m = /const DAILY = new Set\(\[([^\]]*)\]\)/.exec(snapSrc);
+    return m && !/nfci/.test(m[1]) && /"tenYear"/.test(m[1]) && /"vix"/.test(m[1]); })());
+// v3.55: DGS30 genuinely IS a daily series, so it belongs in DAILY — unlike NFCI, whose
+// weekly cadence is exactly why the gate exists.
+ok("30y: thirtyYear IS in the DAILY set — idx[5]/idx[21] really are ~1wk/~1mo on a daily series",
+  /const DAILY = new Set\(\[[^\]]*"thirtyYear"[^\]]*\]\)/.test(snapSrc));
 ok("nfci: W1 is derived from the prior observation, which on a weekly series really is a week",
   snapSrc.includes("out.nfciW1 = parseFloat((latest - prev).toFixed(3))"));
 ok("nfci: a plausibility band exists and is WIDE — ±5 against a record high of ~+3.3 (2008), " +
@@ -2324,6 +2340,7 @@ const _lift = (marker, endMarker) => {
 };
 const REG = new Function(
   "const NFCI_TIGHT=0,NFCI_LOOSE=-0.5;const DT={},T={};" +
+  _lift("const REGIME_QUORUM = ", ";") +
   _lift("const REGIME_BAND_TABLE = [", "\n];") +
   _lift("export function verdictFrom(", "\n}").replace("export function", "function") +
   _lift("const REGIME_META = {", "\n};") +
@@ -2464,6 +2481,248 @@ ok("flip render: distances print at the precision of the factor's own band (fmt.
 // Found BY the flip browser check: a nowrap 317px subtitle blew the page to 488px at 390px.
 ok("mobile: the AI unit-economics subtitle wraps (a nowrap label must not blow out the page)",
   !/whiteSpace:"nowrap"\}\}>cost ↔ price/.test(dashSrc));
+
+// ---- 29. FEAT-QUORUM (v3.54, 11.4.5 audit CRITICAL) — mock must never vote ----
+// The defect: only STALE factors were excluded, so during LOADING (and after a failed fetch)
+// all six voted off MOCK_DATA and the page rendered a confident posture while Signal Quality
+// truthfully said 0 live / 15 mock two rows above. The tiles have suppressed directional
+// calls on mock since v3.1; the HEADLINE VERDICT never did. It passed every prior test.
+console.log("\n[29] FEAT-QUORUM — mock factors cannot vote; the posture is withheld below quorum");
+ok("quorum: the dashboard now HAS an abstention rule (it had none; the tt-v1 readout always did)",
+  /const REGIME_QUORUM = 4;/.test(dashSrc));
+ok("quorum: below quorum the label is INSUFFICIENT, not a posture",
+  (() => { const r = REG.computeRegime(MOCK_DATA, new Set(["vix", "fearGreed", "cpiHeadline"]));
+    return r.counted === 3 && r.label === "INSUFFICIENT" && r.insufficient === true; })());
+ok("quorum: at exactly 4 usable factors a posture IS published (the boundary)",
+  (() => { const r = REG.computeRegime(MOCK_DATA, new Set(["vix", "fearGreed"]));
+    return r.counted === 4 && r.insufficient === false &&
+      ["RISK-ON", "RISK-OFF", "MIXED"].includes(r.label); })());
+ok("quorum: the withheld verdict still records what the majority WOULD have said (never silent)",
+  (() => { const r = REG.computeRegime(MOCK_DATA, new Set(["vix", "fearGreed", "cpiHeadline"]));
+    return ["RISK-ON", "RISK-OFF", "MIXED"].includes(r.raw) && r.label !== r.raw; })());
+ok("quorum: a single usable factor can never dictate the public posture",
+  REG.computeRegime(MOCK_DATA, new Set(["vix", "fearGreed", "cpiHeadline", "valuation", "nfci"])).label === "INSUFFICIENT");
+// The exclusion itself: MOCK is unusable in a LIVE build, but NOT in a demo build.
+ok("quorum: the vote excludes anything that is not LIVE/CACHED when the build is live",
+  dashSrc.includes('const unusable=(k)=>{const m=modeOf(k);return m==="STALE"||(liveBuild&&m!=="LIVE"&&m!=="CACHED");};') &&
+  dashSrc.includes('if(unusable("shillerPe")) staleFactors.add("valuation");'));
+ok("quorum: a pure DEMO build is unaffected — mock IS its baseline (the demoted()/anyLive rule)",
+  /liveBuild&&m!=="LIVE"/.test(dashSrc) &&
+  readFileSync(new URL("../src/useMarketData.js", import.meta.url), "utf8").includes('const liveBuild = MODE === "live";'));
+// mode:"MOCK" is ambiguous between demo and failed-live; the hook now says which.
+ok("quorum: the wiring point exposes build INTENT so a failed live fetch is not read as demo",
+  (() => { const src = readFileSync(new URL("../src/useMarketData.js", import.meta.url), "utf8");
+    return (src.match(/liveBuild/g) || []).length >= 4 && src.includes("loading: liveBuild"); })());
+// LOADING is not a verdict state.
+ok("quorum: LOADING withholds the posture outright rather than computing one from mock",
+  dashSrc.includes("const withheld=loading||regime.insufficient;") &&
+  dashSrc.includes('loading={mode==="LOADING"}'));
+ok("quorum: the withheld state gets its OWN moon voice, never a directional one defaulted",
+  /CAN'T CALL IT/.test(dashSrc) && dashSrc.includes("withheld?WEN_MOON_STATES[3]"));
+ok("quorum: the flip line is suppressed when there is no posture to flip",
+  /withheld\s*\n\s*\? <div/.test(dashSrc));
+ok("quorum: the confidence strip states the withhold, not a bare factor count",
+  /POSTURE WITHHELD \(needs \$\{regime\.quorum\}\)/.test(dashSrc));
+// ---- WHY #1 freshness gate (11.4.5 audit, High) ----
+// WHY #2 freshness-gated its cross-signals; WHY #1 asserted SPY/CPI/Fed unconditionally, so a
+// mock CPI could be narrated as "today's core tape" inside the verdict's own explanation.
+const fwCore = computeFiveWhys(MOCK_DATA, fwRegime, { fresh: new Set(["spyPrice"]) });
+ok("why1: a non-live core input is OMITTED, not asserted from mock",
+  !/CPI \d/.test(fwCore.whys[0]) && !/Fed funds/.test(fwCore.whys[0]) && /SPY \$/.test(fwCore.whys[0]));
+ok("why1: the thin anchor is STATED as thin (N/3 core inputs usable)",
+  /1\/3 core inputs usable/.test(fwCore.whys[0]));
+ok("why1: with every core input dead it says so rather than emitting a blank anchor",
+  /0\/3 core inputs usable/.test(computeFiveWhys(MOCK_DATA, fwRegime, { fresh: new Set() }).whys[0]));
+ok("why1: no live equity mark means no primary-trend claim either",
+  /No live equity mark, so no primary-trend read/.test(
+    computeFiveWhys(MOCK_DATA, fwRegime, { fresh: new Set(["cpiHeadline"]) }).whys[0]));
+ok("why1: demo/mock mode (fresh:null) still narrates all three — mock IS the baseline there",
+  /SPY \$/.test(fw.whys[0]) && /CPI /.test(fw.whys[0]) && /Fed funds/.test(fw.whys[0]));
+ok("why1: the dashboard actually PASSES the core fields into the freshness set",
+  /FW_FIELDS=\[[\s\S]*?"spyPrice","cpiHeadline","fedFunds"\]/.test(dashSrc));
+
+// ---- 30. 11.4.5 audit — a11y tokens, headings, and safe GET ----------------
+console.log("\n[30] 11.4.5 audit — contrast, focus, headings, HTTP semantics");
+// Contrast is COMPUTED here, not asserted in a comment — the previous "WCAG AA verified"
+// annotation on live-cyan-700 was false (3.20:1), which is the same defect class as a label
+// describing deleted data. This test makes the claim falsifiable.
+const srgb = (c) => { const v = c / 255; return v <= 0.03928 ? v / 12.92 : Math.pow((v + 0.055) / 1.055, 2.4); };
+const lum = (hex) => { const n = parseInt(hex.slice(1), 16);
+  return 0.2126 * srgb((n >> 16) & 255) + 0.7152 * srgb((n >> 8) & 255) + 0.0722 * srgb(n & 255); };
+const ratio = (a, b) => { const [x, y] = [lum(a), lum(b)].sort((p, q) => q - p); return (x + 0.05) / (y + 0.05); };
+const tok = (name) => (new RegExp('"' + name + '":\\s*"(#[0-9a-fA-F]{6})"').exec(dashSrc) || [])[1];
+ok("a11y: sanity — the contrast helper reproduces a known pair (white on black = 21:1)",
+  Math.round(ratio("#ffffff", "#000000")) === 21);
+ok("a11y: text-muted clears AA on both bg and surface (was #3d4760 = 2.15:1, below AA)",
+  ratio(tok("text-muted"), tok("bg")) >= 4.5 && ratio(tok("text-muted"), tok("surface")) >= 4.5);
+ok("a11y: text-secondary clears AA on bg", ratio(tok("text-secondary"), tok("bg")) >= 4.5);
+ok("a11y: the LIVE badge cyan clears AA on its OWN badge background (#0a1e24), not on bg",
+  ratio(tok("live-cyan-700"), "#0a1e24") >= 4.5);
+ok("a11y: no token still ASSERTS a compliance it was never measured for",
+  !/WCAG AA verified/.test(dashSrc));
+ok("a11y: a :focus-visible ring exists (focused controls had no indicator at all)",
+  /:focus-visible\{outline:2px solid/.test(dashSrc) && dashSrc.includes('"focus-ring"'));
+ok("a11y: focus styling uses :focus-visible, so a mouse click never paints a ring",
+  !/[^-]:focus\{/.test(dashSrc));
+ok("a11y: the page has a document heading (it had no h1–h6 at all)",
+  /<h1 className="visually-hidden">/.test(dashSrc) && /\.visually-hidden\{position:absolute/.test(dashSrc));
+// HTTP semantics: GET must be safe. Both of these WROTE.
+const ledgerSrc2 = readFileSync(new URL("../functions/api/ledger.js", import.meta.url), "utf8");
+const posSrc2 = readFileSync(new URL("../functions/api/positions.js", import.meta.url), "utf8");
+// The negative must be scoped to the GET path — the POST handler legitimately calls runSeed.
+const ledgerGet = ledgerSrc2.slice(0, ledgerSrc2.indexOf("export async function onRequestPost"));
+const posGet = posSrc2.slice(0, posSrc2.indexOf("export async function onRequestPost"));
+ok("http: ?seed=1 no longer mutates on GET — it 405s and names the correct verb",
+  /seed mutates state — use POST/.test(ledgerSrc2) && !/return runSeed/.test(ledgerGet));
+ok("http: ?migrate=1 no longer mutates on GET — it 405s and names the correct verb",
+  /migrate mutates state — use POST/.test(posSrc2) && !/return runMigrate/.test(posGet));
+ok("http: both mutations now live on POST behind the SAME Origin/CSRF guard as every other write",
+  /export async function onRequestPost/.test(ledgerSrc2) && /crossOrigin\(request\)\) return json/.test(ledgerSrc2) &&
+  /export async function onRequestPost/.test(posSrc2) &&
+  (posSrc2.match(/crossOrigin\(request\)\) return json/g) || []).length >= 2);
+ok("http: the POST routes are actually reachable through the method router",
+  /request\.method === "POST"\) return onRequestPost/.test(posSrc2));
+ok("http: POST still requires auth before doing anything (PIN-gated like every ledger read)",
+  /onRequestPost\(\{ request, env \}\) \{\s*\n\s*const auth = await authorize\(request, env\);/.test(ledgerSrc2));
+
+// ---- 31. FEAT-TT-CAPABILITY (v3.55) — the demand-side falsifier ------------
+// FEAT-TT-CAPEX instruments the SUPPLY of AI capital and fires when >=2 spenders guide down.
+// The REASON they would guide down — capability/ROI disappointment — was instrumented nowhere.
+// This closes that, and is designed as a FALSIFIER: the threshold must be pre-committed.
+console.log("\n[31] FEAT-TT-CAPABILITY — the demand leg, pre-committed or rejected");
+const capBoard = (extra) => validateBoard({ as_of: "2026-08-01", ...extra });
+const CAP_OK = { metric: "task-horizon doubling (METR 50%)", observed_months: 7,
+  prior_months: 7, threshold_months: 18, source: "METR 2025", as_of: "2026-08-01" };
+ok("capability: a complete block validates", capBoard({ capability: CAP_OK }) === null);
+// THE load-bearing rule: no threshold, no block. This is the whole design.
+ok("capability: a reading WITHOUT a pre-committed threshold is REJECTED, and the message says why",
+  (() => { const { threshold_months, ...noThr } = CAP_OK;
+    const e = capBoard({ capability: noThr });
+    return typeof e === "string" && /threshold_months is required/.test(e) &&
+      /confirmation device/.test(e); })());
+ok("capability: prior_months is required too — the signal is the DELTA, not the level",
+  (() => { const { prior_months, ...noPrior } = CAP_OK;
+    return /prior_months is required/.test(capBoard({ capability: noPrior }) || ""); })());
+ok("capability: the metric must be named — an unnamed measure cannot be checked against a source",
+  /metric is required/.test(capBoard({ capability: { ...CAP_OK, metric: "  " } }) || ""));
+ok("capability: a source is required — this is the weakest-sourced input the book carries",
+  /source is required/.test(capBoard({ capability: { ...CAP_OK, source: "" } }) || ""));
+ok("capability: an undated read is rejected — it would age invisibly",
+  /as_of \(YYYY-MM-DD\) is required/.test(capBoard({ capability: { ...CAP_OK, as_of: "" } }) || ""));
+// Bands reject the impossible, not the unusual: a LONG doubling time is a stall, which is
+// exactly the signal this block exists to catch — it must not be banded away as a typo.
+ok("capability: a non-positive or absurd doubling time is out of band",
+  /out of band/.test(capBoard({ capability: { ...CAP_OK, observed_months: 0 } }) || "") &&
+  /out of band/.test(capBoard({ capability: { ...CAP_OK, observed_months: 999 } }) || ""));
+ok("capability: a very long doubling time (a genuine STALL) is ACCEPTED, not banded away",
+  capBoard({ capability: { ...CAP_OK, observed_months: 200, threshold_months: 18 } }) === null);
+ok("capability: the block is optional — absent leaves v3.54 behaviour untouched",
+  capBoard({}) === null);
+// Client state: lifted and RUN, since a tripwire is a claim about numbers.
+const CAPST = new Function("const CAPABILITY_MOVE_PCT=15;let BOARD={};" +
+  liftFns(adminSrc, ["ageDays", "capabilityState"]) +
+  "\nreturn {capabilityState,set:(b)=>{BOARD=b;}};")();
+const capSt = (o) => { CAPST.set({ capability: { ...CAP_OK, ...o } }); return CAPST.capabilityState(); };
+ok("capability: past the pre-committed threshold the falsifier TRIPS",
+  capSt({ observed_months: 20 }).impaired === true);
+ok("capability: inside the threshold it does not trip, and headroom is stated in the metric's unit",
+  capSt({}).impaired === false && capSt({}).headroom === 11);
+ok("capability: a materially LONGER doubling reads as slowing (capability compounding slower)",
+  capSt({ observed_months: 9, prior_months: 7 }).slowing === true);
+ok("capability: it fires in BOTH directions — a faster doubling is information, not silence",
+  capSt({ observed_months: 5, prior_months: 7 }).accelerating === true);
+ok("capability: a move inside the noise band is neither slowing nor accelerating",
+  (() => { const c = capSt({ observed_months: 7.5, prior_months: 7 });
+    return !c.slowing && !c.accelerating; })());
+ok("capability: absent or malformed state reads as UNKNOWN (fails closed, never healthy)",
+  (() => { CAPST.set({}); if (CAPST.capabilityState() !== null) return false;
+    CAPST.set({ capability: { observed_months: 7 } }); return CAPST.capabilityState() === null; })());
+// The non-negotiable: no projection anywhere in the feature.
+ok("capability: NOTHING extrapolates — no power/exp projection of a future capability level",
+  (() => { const i = adminSrc.indexOf("function capabilityState()");
+    const seg = adminSrc.slice(i, adminSrc.indexOf("function capexExposure", i));
+    return !/Math\.pow|\*\*|Math\.exp/.test(seg); })());
+ok("capability: the tripped falsifier reaches the stance strip — red survives every collapse",
+  /⚡ demand falsified/.test(adminSrc) && /demand falsifier tripped/.test(adminSrc));
+ok("capability: supply and demand share ONE badge — same thesis, same drawer, one chip",
+  /⚡ AI both legs/.test(adminSrc) &&
+  (adminSrc.match(/onclick="openDesk\('dCapex'\)">\$\{txt\}/g) || []).length === 1);
+ok("capability: an absent block SAYS the demand leg is unmeasured rather than implying health",
+  /Demand leg unmeasured/.test(adminSrc));
+ok("capability: threshold_basis is optional but must be real text when present",
+  capBoard({ capability: { ...CAP_OK, threshold_basis: "  " } }) !== null &&
+  capBoard({ capability: { ...CAP_OK, threshold_basis: "capex guidance cycle" } }) === null);
+ok("capability: a threshold with NO recorded basis is called out, not quietly accepted",
+  /threshold basis not recorded/.test(adminSrc) &&
+  /indistinguishable from a number someone liked/.test(adminSrc));
+ok("capability: the entry path documents the pre-commitment rule where the owner types it",
+  /threshold_months is REQUIRED/.test(adminSrc) && /is a confirmation device/.test(adminSrc));
+
+// ---- 32. FEAT-30Y (v3.55) — the long end and the 10s30s term spread -------
+// NOT the TLT rejection replayed: TLT was refused (v3.43) as a monotonic transform of the
+// 10Y already displayed. DGS30 is not derivable from DGS10 — the SPREAD is the term-premium /
+// fiscal-risk gauge, and "long end breaking out while the front holds" is its own channel.
+console.log("\n[32] FEAT-30Y — DGS30, the 10s30s spread, and its alerts");
+ok("30y: DGS30 is pulled through the existing fetchFred path, not a new fetcher",
+  /thirtyYear:\s*"DGS30"/.test(snapSrc) && !/fetchThirty|fetch30/.test(snapSrc));
+ok("30y: deltas are ABSOLUTE yield moves (pp), the same convention as the 10Y — never pct()",
+  /out\.thirtyYearD1 = parseFloat\(\(latest - prev\)/.test(snapSrc) &&
+  /out\.thirtyYearM1 = parseFloat\(\(latest - mAgo\)/.test(snapSrc));
+ok("30y: the 10s30s spread is DERIVED server-side and stamped its own AsOf (creditSpread pattern)",
+  /out\.spread10s30s = parseFloat\(\(out\.thirtyYear - out\.tenYear\)/.test(snapSrc) &&
+  /out\.spread10s30sAsOf = out\.thirtyYearAsOf/.test(snapSrc));
+ok("30y: the temp sparklines used to derive the spread are deleted, never leaked to the payload",
+  /delete out\._thirtySparkline/.test(snapSrc) && /delete out\._tenSparkline/.test(snapSrc));
+// Bands: reject the impossible, not the unusual. An INVERTED curve is the signal.
+ok("30y: bands accept every yield the bond market has actually produced (1981 peak ~15%)",
+  /thirtyYear:\s*\[0, 20\]/.test(snapSrc));
+ok("30y: the spread band ACCEPTS inversion — a negative 10s30s is the signal, not a parse fault",
+  (() => { const m = /spread10s30s:\s*\[(-?\d+), (\d+)\]/.exec(snapSrc);
+    return m && Number(m[1]) < 0; })());
+// Staleness must inherit, per the v3.41 table.
+ok("30y: every undated derivative maps to its parent in DERIVED_OF (no field votes undated)",
+  ["thirtyYearD1", "thirtyYearW1", "thirtyYearM1", "thirtyYearSeries"]
+    .every((k) => DERIVED_OF_SRC[k] === "thirtyYear") &&
+  DERIVED_OF_SRC.spread10s30sSeries === "spread10s30s");
+ok("30y: the spread inherits the 30Y's cadence (daily) rather than defaulting blindly",
+  cadenceOf("spread10s30sSeries") === "daily" && cadenceOf("thirtyYearM1") === "daily");
+// The merge path, end to end.
+ok("30y: a live payload overlays the 30Y and the spread onto the mock baseline", (() => {
+  const r = mergeLiveOverMock(MOCK_DATA, { live: {
+    thirtyYear: 5.24, thirtyYearAsOf: "2026-08-01", thirtyYearM1: 0.18,
+    spread10s30s: 0.78, spread10s30sAsOf: "2026-08-01" }, cached: false });
+  return r.data.crossAsset.treasury30y.current === 5.24 &&
+    r.data.crossAsset.term.spread10s30s === 0.78 &&
+    r.provenance.thirtyYear === "LIVE" && r.dataAsOf.thirtyYearM1 === "2026-08-01"; })());
+// The tile: a reference level, never a verdict off a level (the v3.1 invariant).
+ok("30y: the tile states the 5% reference as a REFERENCE, and never asserts a call from it",
+  /5\.00% = the 2007 pre-GFC reference level/.test(dashSrc) &&
+  !/BUBBLE|OVERVALUED/.test(dashSrc.slice(dashSrc.indexOf('label="30Y Treasury"'),
+    dashSrc.indexOf('label="30Y Treasury"') + 900)));
+ok("30y: the tile names the inversion explicitly when the spread goes negative",
+  /INVERTED/.test(dashSrc));
+// The alerts ride FEAT-ALERT-EVAL: live-gated, BLIND when not.
+ok("30y: both alerts are wired to real metrics, so they evaluate rather than sit inert",
+  /treasury30y: \{fields:\["thirtyYear"\]/.test(dashSrc) &&
+  /term10s30s:\s*\{fields:\["thirtyYear","tenYear"\]/.test(dashSrc));
+ok("30y: the 5.2% alert exists and is active", /30Y Above 5\.2%/.test(dashSrc));
+ok("30y: the spread alert needs BOTH legs live — one dead leg must blind it, not clear it",
+  evalAlert({ metric: "term10s30s", condition: "below", value: 0, active: true },
+    { crossAsset: { term: { spread10s30s: -0.2 } } },
+    (f) => f === "tenYear" ? "MOCK" : "LIVE").state === "blind");
+ok("30y: with both legs live an inversion TRIPS the spread alert",
+  evalAlert({ metric: "term10s30s", condition: "below", value: 0, active: true },
+    { crossAsset: { term: { spread10s30s: -0.2 } } }, () => "LIVE").state === "triggered");
+ok("30y: a 5.24% long bond trips the 5.2% alert; 5.10% is clear",
+  evalAlert({ metric: "treasury30y", condition: "above", value: 5.2, active: true },
+    { crossAsset: { treasury30y: { current: 5.24 } } }, () => "LIVE").state === "triggered" &&
+  evalAlert({ metric: "treasury30y", condition: "above", value: 5.2, active: true },
+    { crossAsset: { treasury30y: { current: 5.10 } } }, () => "LIVE").state === "clear");
+// Arrival rule: NFCI's precedent — a new series does not vote on day one.
+ok("30y: it does NOT vote — REGIME_BAND_TABLE is untouched and the readout math did not move",
+  !/thirtyYear|spread10s30s/.test(dashSrc.slice(dashSrc.indexOf("const REGIME_BAND_TABLE"),
+    dashSrc.indexOf("export function verdictFrom"))) &&
+  !/thirtyYear|spread10s30s/.test(readFileSync(new URL("../src/ttReadout.js", import.meta.url), "utf8")));
 
 console.log(`\n=== SMOKE TEST: ${pass} passed, ${fail} failed ===`);
 process.exit(fail === 0 ? 0 : 1);

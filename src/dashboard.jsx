@@ -22,7 +22,10 @@ const DT = {
   "regime-off-bg":  "#1a0f0f",   // risk-off: deep red tint
   "regime-mix-bg":  "#1a1408",   // mixed: deep amber tint
   // DataMode states (FEAT-150)
-  "live-cyan-700":  "#0e7490",   // WCAG AA verified
+  "live-cyan-700":  "#1c93b0",   // 4.78:1 on the LIVE badge (#0a1e24). Was #0e7490 = 3.20:1,
+                                 // and was annotated as AA-compliant, which it never was.
+                                 // Measured by test, not asserted by comment.
+  "focus-ring":     "#4cc4e0",   // focus indicator only; needs to be seen, not read
   "stale-amber":    "#f0a500",
   "cached":         "#a1a1aa",   // FEAT-167: zinc-400, NOT gray-500 (#6b7280)
   // Sources
@@ -42,7 +45,7 @@ const DT = {
   // Text
   "text-primary":   "#e8eaf0",
   "text-secondary": "#8892a4",
-  "text-muted":     "#3d4760",
+  "text-muted":     "#717d92",   // 4.79:1 on bg / 4.54:1 on surface (was #3d4760 = 2.15:1, below AA)
   // Type
   "font-mono":      "'IBM Plex Mono','Courier New',monospace",
   "font-sans":      "'DM Sans',system-ui,sans-serif",
@@ -277,6 +280,10 @@ const MOCK_DATA = {
   },
   crossAsset:{
     treasury10y:{ current:4.32, d1:+0.08, w1:+0.12, m1:-0.15, yellowBand:0.10, series:[4.52,4.48,4.41,4.35,4.29,4.22,4.18,4.24,4.28,4.32] },
+    // FEAT-30Y (v3.55): the long end + the 10s30s term-premium spread. Mock baseline only —
+    // live values overlay via SOURCES (DGS30 + the derived spread), exactly like the 10Y.
+    treasury30y:{ current:5.18, d1:+0.02, w1:+0.09, m1:+0.21, series:[4.92,4.97,5.01,5.04,5.09,5.12,5.18,5.14,5.16,5.18] },
+    term:{ spread10s30s:0.86, series:[0.40,0.49,0.60,0.69,0.80,0.90,1.00,0.90,0.88,0.86] },
     wti:{         current:68.42, d1pct:-0.8, w1pct:-2.1, m1pct:+3.2, yellowBand:1.0, series:[64,65,66,67,69,70,69,68,69,68] },
     btc:{         current:109200,d1pct:+1.2, w1pct:+4.8, m1pct:+12.1,yellowBand:2.0, series:[88000,90000,92000,95000,98000,100000,104000,106000,108000,109200] },
   },
@@ -412,11 +419,23 @@ export function verdictFrom(bullVotes, bearVotes, counted) {
   if (bear && !bull) return "RISK-OFF";
   return "MIXED";
 }
+/* FEAT-QUORUM (v3.54, 11.4.5 audit Critical) — the dashboard had NO abstention rule.
+   The tt-v1 machine readout has refused to publish a verdict below 3 available checks since v3.3
+   ("a 1–2-input verdict must never gate an order"), but the PUBLIC page — the surface whose
+   entire promise is a trustworthy posture — would compute a confident MIXED/RISK-ON from a
+   single usable factor, or from six MOCK ones during LOADING. The two engines disagreed
+   about when to stay silent, and the human-facing one was the permissive side.
+   FOUR of six, deliberately STRICTER than the readout's three: the readout is consumed by a
+   maintainer who knows what INSUFFICIENT means, this page is read by someone who does not,
+   and 4/6 is two-thirds of the evidence base. One constant to change if that proves wrong. */
+const REGIME_QUORUM = 4;
 const REGIME_META = {
   // FEAT-v17-07: hyphen separators (was middot) for RISK-ON / RISK-OFF legibility
   "RISK-ON":  { sub:"Disinflation + low vol",   tintKey:"regime-on-bg",  colorKey:"green"  },
   "RISK-OFF": { sub:"Rate pressure + stress",   tintKey:"regime-off-bg", colorKey:"red"    },
   "MIXED":    { sub:"Cross-signals — watch VIX", tintKey:"regime-mix-bg", colorKey:"yellow" },
+  // Not a posture — the ABSENCE of one. Rendered as a withhold, never as a neutral reading.
+  "INSUFFICIENT": { sub:"not enough usable evidence to call it", tintKey:"regime-mix-bg", colorKey:"textMuted" },
 };
 
 // ─── REGIME VERDICT ENGINE (FEAT-163, rule-based) ──────────────────────────
@@ -433,14 +452,20 @@ function computeRegime(d, stale=new Set()) {
     const v=f.vote(f.read(d), d);
     if(v==="bull") bullVotes++; else if(v==="bear") bearVotes++;
   });
-  const label=verdictFrom(bullVotes, bearVotes, counted);
+  /* Below quorum the page states that it cannot call it, rather than calling it from
+     whatever survived. `raw` records what the majority WOULD have said — never silent about
+     the withhold, the same contract as the tt-v1 TAILWIND downgrade (v3.40). */
+  const raw=verdictFrom(bullVotes, bearVotes, counted);
+  const insufficient=counted < REGIME_QUORUM;
+  const label=insufficient ? "INSUFFICIENT" : raw;
   const m=REGIME_META[label];
   // FIX-E (v3.49): `counted`/`totalFactors` ride the verdict so every surface (RegimeBand
   // header, 5-Whys headline, WHY #5, the confidence strip) states the SAME denominator this
   // vote was decided over — fiveWhys.js used to re-derive it from its own hardcoded pre-NFCI
   // list and said "/5" while the header said "/6".
   return { label, sub:m.sub, tint:DT[m.tintKey], color:T[m.colorKey],
-    bullVotes, bearVotes, counted, totalFactors:REGIME_BAND_TABLE.length };
+    bullVotes, bearVotes, counted, totalFactors:REGIME_BAND_TABLE.length,
+    insufficient, raw, quorum:REGIME_QUORUM };
 }
 
 /* ═══ FEAT-FLIP (v3.53) — "what would change the verdict" ═══════════════════════════════
@@ -632,7 +657,7 @@ const UndoToast=({toasts, dismiss})=>{
 };
 
 // Direction tile (v1.3 stoplight)
-const DirTile=({label,value,d1,w1,m1,band,invert=false,spark,source,sourceEp,mode="MOCK",asOf})=>{
+const DirTile=({label,value,d1,w1,m1,band,invert=false,spark,source,sourceEp,mode="MOCK",asOf,note})=>{
   const illus=isIllustrative(mode); // v3.1: suppress the verdict + delta colors on mock/stale data
   const tc=t=>illus?T.textMuted:t==="yellow"?T.yellow:t===T.green?T.green:T.red;
   const t1=stoplightColor(d1,band,invert), t2=stoplightColor(w1,band,invert), t3=stoplightColor(m1,band,invert);
@@ -647,6 +672,10 @@ const DirTile=({label,value,d1,w1,m1,band,invert=false,spark,source,sourceEp,mod
           <div style={{fontFamily:T.fontMono,fontSize:10,color:tc(t)}}>{arrow(v)} {Math.abs(v).toFixed(Math.abs(v)<1?1:2)}</div></div>
         ))}
       </div>
+      {/* FEAT-30Y: an optional factual sub-line (e.g. the 10s30s spread + a reference level).
+          Rendered muted on mock/stale like every other number on an illustrative tile — it is
+          a FACT about the same data, so it inherits the same provenance treatment. */}
+      {note&&<div style={{fontFamily:T.fontMono,fontSize:8,color:illus?T.textMuted:T.textSecondary,marginBottom:5,lineHeight:1.35}}>{note}</div>}
       {/* Verdict only on live data; mock/stale shows an honest chip instead of a fabricated call */}
       {/* Short chip label — a ~110px tile can't fit "· not live"; hatch + SourceBox carry it */}
       {illus?(mode==="STALE"?<DataModeBadge mode="STALE"/>:<IllustrativeChip label="ILLUSTRATIVE"/>):<Badge label={verdict.label} color={verdict.color} small/>}
@@ -661,6 +690,11 @@ const WEN_MOON_STATES = [
   { label: "MOONING 🚀",       color: T.green, glow: T.green },
   { label: "HODL 💎",          color: T.amber, glow: T.amber },
   { label: "DIAMOND HANDS 🙌", color: T.red,   glow: T.red },
+  // FEAT-QUORUM (v3.54): "can't call it" is NOT one of the three postures. Defaulting an
+  // evidence-less state to HODL would render a real hold call made from nothing — the exact
+  // failure this release fixes. The moon voice stays primary (owner call), so it gets its
+  // own honest state instead of borrowing a directional one.
+  { label: "CAN'T CALL IT 🌫️", color: T.textMuted, glow: T.textMuted },
 ];
 function wenMoonState(spyChangePct) {
   const pct = typeof spyChangePct === "number" && isFinite(spyChangePct) ? spyChangePct : 0;
@@ -1029,10 +1063,13 @@ const MacroFlipBanner=({flip})=>{
 // The friend-readable headline ("wen moon?") — first signal
 // seen on mobile (above the command grid) and prominent on desktop. Soft regime tint
 // per AS2-01. Reuses computeRegime + regimeFactors.
-const RegimeBand=({d,stale=new Set()})=>{
+const RegimeBand=({d,stale=new Set(),loading=false,liveBuild=false})=>{
   const [open,setOpen]=useState(false);
   const regime=computeRegime(d,stale);
   const factors=regimeFactors(d,stale);
+  // FEAT-QUORUM: LOADING is not a verdict state — during the first fetch there is no evidence
+  // yet, so the posture is withheld outright rather than computed from the mock baseline.
+  const withheld=loading||regime.insufficient;
   // FEAT-FLIP (v3.53): what would change this call. The NEAREST load-bearing crossing rides
   // the first screen; the full set (plus abstentions and exclusions) lives one tap down.
   const fc=flipConditions(d,stale);
@@ -1040,7 +1077,7 @@ const RegimeBand=({d,stale=new Set()})=>{
   const active=factors.filter(f=>!f.stale).length; // stale factors are excluded from the vote
   const bulls=factors.filter(f=>f.bull).length;
   // "wen moon?" — map the regime verdict to our moon ratings: RISK-ON→MOONING, MIXED→HODL, RISK-OFF→DIAMOND HANDS
-  const moon=WEN_MOON_STATES[{ "RISK-ON":0, "MIXED":1, "RISK-OFF":2 }[regime.label] ?? 1];
+  const moon=withheld?WEN_MOON_STATES[3]:WEN_MOON_STATES[{ "RISK-ON":0, "MIXED":1, "RISK-OFF":2 }[regime.label] ?? 1];
   return(
     <div role="region" aria-label="Macro backdrop verdict" aria-live="polite"
       style={{background:regime.tint,borderBottom:`1px solid ${regime.color}33`,borderTop:`1px solid ${regime.color}22`,padding:"10px 20px",position:"relative"}}>
@@ -1051,13 +1088,28 @@ const RegimeBand=({d,stale=new Set()})=>{
             <div style={{fontFamily:T.fontMono,fontSize:8,color:regime.color,letterSpacing:"0.14em",textTransform:"uppercase"}}>Macro Backdrop · wen moon?</div>
             <div style={{display:"flex",alignItems:"baseline",gap:10,flexWrap:"wrap"}}>
               <span style={{fontFamily:T.fontMono,fontSize:22,fontWeight:700,color:regime.color,letterSpacing:"-0.01em"}}>{moon.label}</span>
-              <span style={{fontFamily:T.fontMono,fontSize:10,color:T.textSecondary}}>{regime.label} · {regime.sub}</span>
-              <span style={{fontFamily:T.fontMono,fontSize:9,color:T.textMuted}}>{bulls}/{active} bullish · {regime.bullVotes} vote{regime.bullVotes===1?"":"s"} bull / {regime.bearVotes} bear</span>
+              <span style={{fontFamily:T.fontMono,fontSize:10,color:T.textSecondary}}>
+                {loading?"LOADING · waiting for live data before calling a posture"
+                        :regime.insufficient?`INSUFFICIENT · ${regime.sub}`
+                        :`${regime.label} · ${regime.sub}`}
+              </span>
+              <span style={{fontFamily:T.fontMono,fontSize:9,color:T.textMuted}}>
+                {loading?"no factors voting yet"
+                        :regime.insufficient
+                          ?`only ${regime.counted} of ${regime.totalFactors} factors usable — ${regime.quorum} required`
+                          :`${bulls}/${active} bullish · ${regime.bullVotes} vote${regime.bullVotes===1?"":"s"} bull / ${regime.bearVotes} bear`}
+              </span>
             </div>
             {/* FEAT-FLIP: the audit's fourth first-screen answer — what would change the call.
                 "Nothing single-handedly" is stated plainly rather than padded with the nearest
                 distance to look responsive (abstention rule 3). */}
-            <div style={{fontFamily:T.fontMono,fontSize:9,color:T.textSecondary,marginTop:3}}>
+            {withheld
+              ? <div style={{fontFamily:T.fontMono,fontSize:9,color:T.textMuted,marginTop:3}}>
+                  {loading
+                    ? "Nothing is being asserted from the demo baseline while the live snapshot loads."
+                    : `The evidence base is too thin to call a posture${liveBuild?" — live data is unavailable or stale, so the mock baseline is NOT voting":""}.`}
+                </div>
+              : <div style={{fontFamily:T.fontMono,fontSize:9,color:T.textSecondary,marginTop:3}}>
               <span style={{color:T.textMuted}}>⇄ would change this: </span>
               {nearest
                 ? <><span style={{color:regime.color}}>{nearest.copy}</span>
@@ -1065,7 +1117,7 @@ const RegimeBand=({d,stale=new Set()})=>{
                     <span style={{color:T.textPrimary,fontWeight:700}}>{nearest.would}</span>
                     {fc.flips.length>1&&<span style={{color:T.textMuted}}> · +{fc.flips.length-1} more</span>}</>
                 : <span style={{color:T.textMuted}}>no single factor crossing flips this verdict — it would take two</span>}
-            </div>
+            </div>}
           </div>
         </div>
         {/* Right: factor chips (desktop) + info toggle */}
@@ -1175,6 +1227,11 @@ const ALERT_METRICS={
   vix:         {fields:["vix"],         read:(d)=>({v:d.marketPulse.vix.current})},
   feargreed:   {fields:["fearGreed"],   read:(d)=>({v:d.marketPulse.fearGreed.score})},
   treasury10y: {fields:["tenYear"],     read:(d)=>({v:d.crossAsset.treasury10y.current})},
+  // FEAT-30Y (v3.55): the long end. Judged against LIVE data or BLIND — never a stored flag.
+  treasury30y: {fields:["thirtyYear"],  read:(d)=>({v:d.crossAsset.treasury30y.current})},
+  // The 10s30s spread. An INVERSION (below 0) is the condition worth waking for, so this
+  // alert is authored "below 0" rather than as a level — the curve shape, not the yield.
+  term10s30s:  {fields:["thirtyYear","tenYear"], read:(d)=>({v:d.crossAsset.term.spread10s30s})},
   cpi:         {fields:["cpiHeadline"], read:(d)=>({v:d.macro.cpi.headline})},
 };
 export function evalAlert(alert,d,modeOf){
@@ -1226,6 +1283,10 @@ const DEFAULT_ALERTS=[
   {id:3,label:"F&G Extreme Fear",metric:"feargreed",condition:"below",value:20,unit:"",active:true},
   {id:4,label:"10Y > 5%",metric:"treasury10y",condition:"above",value:5.0,unit:"%",active:true},
   {id:5,label:"CPI > 4%",metric:"cpi",condition:"above",value:4.0,unit:"%",active:false},
+  // FEAT-30Y (v3.55): 5.2% is the level the long end just crossed — the highest since 2007.
+  // Stated as a threshold to watch, not a claim about what it means.
+  {id:6,label:"30Y Above 5.2%",metric:"treasury30y",condition:"above",value:5.2,unit:"%",active:true},
+  {id:7,label:"10s30s Inverts",metric:"term10s30s",condition:"below",value:0,unit:"pp",active:false},
 ];
 
 // ─── MAIN DASHBOARD (FEAT-161: Command Center spatial layout) ─────────────
@@ -1245,7 +1306,7 @@ export default function Dashboard({ publicView = false } = {}) {
   useEffect(()=>{const id=setInterval(()=>setSessionTick(t=>t+1),10*60*1000);return ()=>clearInterval(id);},[]);
   const { toasts, show:showToast, dismiss } = useUndoToast();
   // FEAT-204 wiring — single-point hook swap; mock stays default, operator flips live post-deploy
-  const { data: DATA, mode, asOf, provenance, dataAsOf } = useMarketData(MOCK_DATA, { publicView });
+  const { data: DATA, mode, asOf, provenance, dataAsOf, liveBuild } = useMarketData(MOCK_DATA, { publicView });
   const d=DATA;
   // FOMC countdown computed CLIENT-SIDE from nextFOMC (the snapshot's daysUntil is frozen at
   // fetch time and rounds up — it read "1d" on decision day). 0 = today. Falls back to the
@@ -1259,10 +1320,21 @@ export default function Dashboard({ publicView = false } = {}) {
   // FEAT-DQ: a regime factor backed by LIVE/CACHED data that has gone STALE (a dead feed)
   // must not cast a vote on today's tape.
   const REGIME_FACTOR_FIELDS=["tenYear","vix","fearGreed","cpiHeadline","nfci"];
-  const staleFactors=new Set(REGIME_FACTOR_FIELDS.filter(k=>modeOf(k)==="STALE"));
+  /* FEAT-QUORUM (v3.54, 11.4.5 audit Critical): only STALE was excluded, so a MOCK factor
+     VOTED. During LOADING (and after a failed fetch) every field is MOCK — the page rendered
+     "MIXED · 6/6 factors voting" computed entirely from MOCK_DATA, with Signal Quality
+     truthfully reporting 0 live / 15 mock two rows above it. The tiles have suppressed
+     directional calls on mock since v3.1 (isIllustrative); the HEADLINE VERDICT never did,
+     which is the one place it matters most.
+     Gated on `liveBuild` — in a pure demo build mock IS the baseline by design and the page
+     says MOCK everywhere, so excluding it there would blank the demo. Same distinction
+     `demoted()` makes via anyLive; here it must come from the build's intent, because a live
+     build whose fetch FAILED also reports mode "MOCK" and must withhold. */
+  const unusable=(k)=>{const m=modeOf(k);return m==="STALE"||(liveBuild&&m!=="LIVE"&&m!=="CACHED");};
+  const staleFactors=new Set(REGIME_FACTOR_FIELDS.filter(unusable));
   // v3.1: the valuation factor is now live (Shiller/multpl). The factor key is "valuation" but the
   // field key is "shillerPe" — drop it from the vote when stale, like every other factor.
-  if(modeOf("shillerPe")==="STALE") staleFactors.add("valuation");
+  if(unusable("shillerPe")) staleFactors.add("valuation");
   const regime=computeRegime(d, staleFactors);
   /* Public audit, "Confidence": Signal Quality counted TILES (13 live / 1 stale / 1 mock) and
      never answered the only question that matters about the verdict above it — is the REGIME
@@ -1289,7 +1361,11 @@ export default function Dashboard({ publicView = false } = {}) {
   // pre-open → midday → post-close through the day. sessionTick re-renders it on a timer.
   // WHY #2 must only assert LIVE+fresh data: build the `fresh` set from modeOf (LIVE/CACHED,
   // not STALE/MOCK). In mock/demo mode pass null so the demo still shows every signal.
-  const FW_FIELDS=["vix","fearGreed","tenYear","wti","btc","creditSpread","marketHeadline"];
+  // v3.54: WHY #1's core anchor (SPY/CPI/Fed) is now freshness-gated too, so those three
+  // fields MUST be in the set the `fresh` Set is built from — otherwise isLive() would read
+  // false for them in live mode and the anchor would drop inputs that are perfectly fresh.
+  const FW_FIELDS=["vix","fearGreed","tenYear","wti","btc","creditSpread","marketHeadline",
+                   "spyPrice","cpiHeadline","fedFunds"];
   const anyLive=mode==="LIVE"||mode==="CACHED";
   // FEAT-322: live-first view only applies when the app is actually live. In mock/demo mode
   // EVERYTHING is MOCK by design (mock IS the baseline — same convention as fresh:null in
@@ -1372,6 +1448,11 @@ export default function Dashboard({ publicView = false } = {}) {
   return(
     <div role="main" aria-label="MacroDash macro backdrop dashboard"
       style={{background:T.bg,minHeight:"100vh",fontFamily:T.fontSans,color:T.textPrimary}}>
+      {/* A11Y/IA (11.4.5 audit, High): the rendered page contained NO h1–h6 at all, so a
+          screen reader had no document outline to navigate. The visible identity is the
+          branded header below; duplicating it on screen would be noise, so the structural
+          heading is visually hidden rather than invented as new chrome. */}
+      <h1 className="visually-hidden">MacroDash — macro backdrop: is the market environment supportive of taking risk?</h1>
       <style>{`
         @import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;700&family=DM+Sans:wght@400;500;600&family=Syne:wght@700;800&display=swap');
         *{box-sizing:border-box;margin:0;padding:0;}
@@ -1390,6 +1471,12 @@ export default function Dashboard({ publicView = false } = {}) {
           .wen-moon-mobile{display:none!important;}
         }
         @media(prefers-reduced-motion:reduce){.pulse-anim{animation:none!important;}}
+        /* A11Y (11.4.5 audit, High): focused controls showed no outline or shadow at all.
+           :focus-visible (not :focus) so a mouse click never paints a ring. */
+        :focus-visible{outline:2px solid ${DT["focus-ring"]};outline-offset:2px;border-radius:3px;}
+        /* The heading is for structure and screen readers; the visible identity is the
+           branded header above it, so it is positioned off-screen rather than duplicated. */
+        .visually-hidden{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap;border:0;}
       `}</style>
 
       <UndoToast toasts={toasts} dismiss={dismiss}/>
@@ -1443,7 +1530,7 @@ export default function Dashboard({ publicView = false } = {}) {
       {flip&&(flip.tripped||flip.armed)&&<MacroFlipBanner flip={flip}/>}
 
       {/* FEAT-169 + R4c: Regime Verdict band — HERO, now FIRST under the header (mobile-first) */}
-      <RegimeBand d={d} stale={staleFactors}/>
+      <RegimeBand d={d} stale={staleFactors} loading={mode==="LOADING"} liveBuild={liveBuild}/>
 
       {/* ── SIGNAL QUALITY rollup — at-a-glance data trust (live vs stale vs mock) ── */}
       {/* A11Y: aria-live on the CONFIDENCE strip, not on every tile — a screen reader should
@@ -1456,8 +1543,8 @@ export default function Dashboard({ publicView = false } = {}) {
         {sq.mock>0&&<span style={{fontFamily:T.fontMono,fontSize:9,color:T.textMuted}}>○ {sq.mock} mock</span>}
         <span style={{fontFamily:T.fontMono,fontSize:8,color:T.textMuted}}>of {sq.total} tracked</span>
         {/* The verdict's own confidence, not the tile census. */}
-        <span style={{fontFamily:T.fontMono,fontSize:9,color:regimeConf.counted===regimeConf.total?T.green:regimeConf.counted>regimeConf.total/2?T.amber:T.red,borderLeft:`1px solid ${T.border}`,paddingLeft:10}}>
-          BACKDROP {regimeConf.counted}/{regimeConf.total} factors voting
+        <span style={{fontFamily:T.fontMono,fontSize:9,color:regime.insufficient?T.red:regimeConf.counted===regimeConf.total?T.green:T.amber,borderLeft:`1px solid ${T.border}`,paddingLeft:10}}>
+          BACKDROP {regimeConf.counted}/{regimeConf.total} factors voting{regime.insufficient?` — POSTURE WITHHELD (needs ${regime.quorum})`:""}
         </span>
         {regimeConf.excluded.length>0&&(
           <span style={{fontFamily:T.fontMono,fontSize:8,color:T.amber}}>excluded: {regimeConf.excluded.join(" · ")}</span>
@@ -1681,6 +1768,15 @@ export default function Dashboard({ publicView = false } = {}) {
               {(()=>{
                 const dirTiles=[
                   { f:"tenYear", render:()=><DirTile label="10Y Treasury" value={`${d.crossAsset.treasury10y.current}%`} d1={d.crossAsset.treasury10y.d1} w1={d.crossAsset.treasury10y.w1} m1={d.crossAsset.treasury10y.m1} band={0.10} invert={true} spark={d.crossAsset.treasury10y.series} source="FRED" sourceEp="DGS10" mode={modeOf('tenYear')} asOf={asOfOf('tenYear')}/> },
+                  /* FEAT-30Y (v3.55): the LONG END, beside the 10Y because the pair is the
+                     point. TLT was rejected in v3.43 as a monotonic transform of the 10Y —
+                     DGS30 is not: "long end breaking out while the front holds" is its own
+                     transmission channel (term premium / fiscal risk), and the tile states
+                     the 10s30s spread on its face so the pair reads as one signal. The 5%
+                     line is a stated REFERENCE, never a verdict — a directional call off a
+                     level would be the v3.1 invariant violated. */
+                  { f:"thirtyYear", render:()=><DirTile label="30Y Treasury" value={`${d.crossAsset.treasury30y.current}%`} d1={d.crossAsset.treasury30y.d1} w1={d.crossAsset.treasury30y.w1} m1={d.crossAsset.treasury30y.m1} band={0.10} invert={true} spark={d.crossAsset.treasury30y.series} source="FRED" sourceEp="DGS30" mode={modeOf('thirtyYear')} asOf={asOfOf('thirtyYear')}
+                      note={`10s30s ${d.crossAsset.term.spread10s30s>=0?"+":""}${d.crossAsset.term.spread10s30s.toFixed(2)}pp${d.crossAsset.term.spread10s30s<0?" — INVERTED":""} · 5.00% = the 2007 pre-GFC reference level`}/> },
                   { f:"wti", render:()=><DirTile label="WTI Crude"   value={`$${d.crossAsset.wti.current}`}         d1={d.crossAsset.wti.d1pct}  w1={d.crossAsset.wti.w1pct}  m1={d.crossAsset.wti.m1pct}  band={1.0} spark={d.crossAsset.wti.series}  source="FRED" sourceEp="DCOILWTICO" mode={modeOf('wti')} asOf={asOfOf('wti')}/> },
                   { f:"btc", render:()=><DirTile label="Bitcoin"     value={`$${(d.crossAsset.btc.current/1000).toFixed(1)}K`} d1={d.crossAsset.btc.d1pct} w1={d.crossAsset.btc.w1pct} m1={d.crossAsset.btc.m1pct} band={2.0} spark={d.crossAsset.btc.series} source="FRED" sourceEp="CBBTCUSD" mode={modeOf('btc')} asOf={asOfOf('btc')}/> },
                 ];
