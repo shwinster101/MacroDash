@@ -1099,6 +1099,53 @@ Jan-anchor shipped; see `snapshot.js` ~318–328), `spyMa100`, `spyMa200`, and a
   Tests: **682 smoke** (+3, incl. a profitable-name control that must still warn and the
   no-price fallback; `LENS_MAX_PE` is now lifted BY VALUE into the smoke harness — it was a free
   variable that the existing fixtures happened to short-circuit past).
+- **v3.49 "TRUSTWORTHY ELIGIBLE" — the value-proposition audit's critical trust failures, fixed.**
+  `ticker-terminal/VALUE_PROPOSITION_AUDIT_2026-07-31.md` (owner-commissioned) confirmed the niche
+  — *a personal capital-allocation system that remembers your thesis, detects what changed,
+  enforces your rules, and tells you what deserves the next dollar* — and found the green action
+  layer ahead of its trust controls. Five fixes, smallest coherent set:
+  **FIX-A (Critical #1, the two regime surfaces disagreed)** — `isStale()`'s "today" was the
+  RUNTIME-LOCAL date (`setHours(0,0,0,0)`): on Cloudflare's UTC edge it advanced at 8pm ET,
+  counted the just-closed session as MISSED, and aged normal prior-close data — `/readout.json`
+  read INSUFFICIENT (1 input, flip blind) while the same payload in an ET browser read MIXED.
+  `etYmd()` in `src/sources.js` now derives today as the **ET calendar date of `now`** in every
+  runtime; one clock fixes all three consumers at once (buildTtReadout, the dashboard's `modeOf`,
+  the paste projection — they all call `isStale`). The rollover is regression-tested at Thu-9pm-ET/
+  Fri-01:00-UTC instants, which genuinely exercise the bug in any UTC runtime (CI, the edge).
+  **FIX-B (Critical #2, a green pick despite missing mandatory gates)** — the board emitted
+  "both stories agree: TSM" while stance was UNKNOWN, Macro Flip was blind and TSM had NEVER RUN.
+  The agree block now **hard-WAITs on a missing gate, each veto named**: unknown stance, a
+  suspended (PANIC) stance, an unreadable regime feed or absent/blind/tripped Macro Flip (fail
+  CLOSED — an unreadable crash circuit vetoes rather than defaulting to clear), and a non-fresh
+  TT run per name (never/aged, ≤30d required — "5 fresh runs against 31 never" must not light a
+  green line). **Red hinges stay surfaced-not-vetoed** — D3 (v3.39) is a locked doctrine and the
+  audit's cited framework rules concern live data and regime, not hinges; the hinge is still
+  named in red on the pick itself.
+  **FIX-C (product ambiguities)** — labels now say what each list IS: the math ranking is
+  **"VALUATION GAP — math only"**, the green line is **"ELIGIBLE NEXT DOLLAR — all gates
+  passed"** (BETA-first-by-math vs TSM-first-eligible were different concepts blended by one
+  "NEXT DOLLAR — BUY" banner), and the sell list is **"FUNDING PRIORITY"** (it was never a sell
+  recommendation — a positive-upside name can appear purely because another has more).
+  **FIX-D (Critical #3, the risk denominator)** — no surface claims "% of NAV" any more: cap
+  breaches state **"% of acct equity"** and the TODAY stop names the denominator outright
+  ("account equity, options excluded — a floor, not NAV"). The direction of a breach is real;
+  the exact figure was never authoritative and now says so.
+  **FIX-E (regime denominators disagreed)** — the header said "3/6 bullish" while the 5 Whys
+  said "3/5 live factors": `fiveWhys.js` re-derived the denominator from its own hardcoded
+  **pre-NFCI five-factor list**. `computeRegime` now returns `counted`/`totalFactors` and every
+  surface consumes them (one derivation, the `governingRegime` rule); the fallback list names
+  all six voters. Also found: the RegimeBand chip strip had a hardcoded 5-label array, so the
+  6th (NFCI) chip rendered literally "undefined" — labels now ride the factor entries (`short`).
+  **Resolved by process, not code:** Critical #4 (production not reproducible) was an unpushed
+  local checkout; `origin/main` now carries v3.48/v3.49. **Deferred, feature-scale (audit
+  capability gaps 1–7):** outcome calibration/benchmarking, portfolio factor-correlation risk,
+  option Greeks/assignment exposure, tax-aware funding, clickable evidence citations,
+  operational alerts, broker-sync automation — each its own scope, owner to prioritize.
+  Tests: **696 smoke** (+14: the ET-rollover regression incl. an end-to-end readout assert,
+  the eligibility gates, the relabels, the no-NAV-claim sweep, the shared denominator) +
+  **148 render** (+5: a live PANIC-asserted board hard-WAITs with the gate named and leaves no
+  AGREE_PICK; the cap-veto scenario now clears the asserted regime too, or it would pass for
+  the wrong reason — plus the acct-equity pins).
 - **Deferred:** stored fundamentals + Robinhood sync — now unblocked by the `x-tt-pin` header
   (v3.9): a chat-side daily review can PUT `status_flags`/`ref_px` into the deepDive payloads and
   stamp `lastRun`. When built, store the *triage* shape (`{at, px}` → "% moved since your last TT
@@ -1165,7 +1212,7 @@ npm run dev        # Vite dev server (mock unless VITE_DATA_MODE=live in .env)
 npm run build      # → dist/  (what Pages runs)
 npm run preview    # serve the built dist/
 
-node test/smoke.mjs   # 683-assertion no-network smoke test (needs Node ≥17)
+node test/smoke.mjs   # 696-assertion no-network smoke test (needs Node ≥17)
 npm run test:ui       # browser render test for admin.html (skips if no Chromium)
 
 # Cron Worker (separate deploy):

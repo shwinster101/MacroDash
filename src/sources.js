@@ -298,6 +298,19 @@ export const MARKET_HOLIDAYS = new Set([
 ]);
 export function isMarketHoliday(dateStr) { return MARKET_HOLIDAYS.has(String(dateStr)); }
 
+// FIX-A (v3.49, VALUE_PROPOSITION_AUDIT_2026-07-31 Critical #1): the ET calendar date of an
+// instant. Every time-judge in this stack reasons in "completed ET trading sessions", so
+// "today" must be the ET date of `now` — NEVER the runtime's local date. The old
+// `setHours(0,0,0,0)` truncation was local-time: on Cloudflare's edge (UTC) it advanced
+// "today" at 8pm ET, counted the still-open/just-closed session as a MISSED one, and aged
+// normal prior-close data — /readout.json read INSUFFICIENT (1 input, flip blind) while the
+// same payload in an ET browser read MIXED on 3-of-5. Two verdicts for one regime is the
+// exact failure a decision system cannot have; one clock fixes all three consumers at once
+// (buildTtReadout, the dashboard's modeOf, the paste projection — they all call isStale).
+export function etYmd(now = new Date()) {
+  return now.toLocaleDateString("en-CA", { timeZone: "America/New_York" });
+}
+
 // FEAT-R3: a live field is STALE when its observation date trails the latest expected
 // release by more than its source's normal cadence. `cadence` (daily|weekly|monthly):
 //   - daily   → weekday-aware: any completed PRIOR trading session missing = stale.
@@ -310,7 +323,9 @@ export function isStale(dateStr, now = new Date(), cadence = "daily") {
   if (!dateStr) return false;
   const dt = parseObsDate(dateStr);
   if (!dt || isNaN(dt.getTime())) return false;
-  const today = new Date(now); today.setHours(0, 0, 0, 0);
+  // FIX-A: today = the ET date of `now`, parsed the same way `dt` was (local midnight of a
+  // Y-M-D), so the day-walk below compares like with like in every runtime timezone.
+  const today = parseObsDate(etYmd(now));
 
   if (cadence === "monthly" || cadence === "weekly") {
     const ageDays = (today - dt) / 86400000;

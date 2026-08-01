@@ -241,9 +241,9 @@ console.log("\n[render] TODAY — the default view answers the daily loop");
 const today = await txt(page, "todayCard");
 ok("stance leads with the circuit veto, not the macro read", /NO NEW POSITIONS/.test(today));
 ok("today names tonight's print before anything discretionary", /MACROEVT prints today/.test(today));
-ok("a single-name cap breach is a TODAY stop", /AAA is 21\.4% of NAV — 3\.4pts over the 18% cap/.test(today));
-ok("a cluster cap breach is a TODAY stop", /Cluster .*is 36\.4% of NAV — 18\.4pts over the 18% cap/.test(today));
-ok("the deleverage line carries real size", /FFF is first to trim — 412 sh, \$30k \(4\.2% of NAV\)/.test(today));
+ok("a single-name cap breach is a TODAY stop", /AAA is 21\.4% of acct equity — 3\.4pts over the 18% cap/.test(today));
+ok("a cluster cap breach is a TODAY stop", /Cluster .*is 36\.4% of acct equity — 18\.4pts over the 18% cap/.test(today));
+ok("the deleverage line carries real size", /FFF is first to trim — 412 sh, \$30k \(4\.2% of acct equity\)/.test(today));
 // FEAT-TT-PTLINT (v3.39): only LIVE legs cover, and the strike is named rather than every short
 // call counting alike. FFF holds 3 live contracts (exp 2028) + 5 EXPIRED ones: the cover claim
 // must count 300 shares, not 800, and must say the expired leg was dropped.
@@ -251,7 +251,7 @@ ok("the blocker is verified against real option legs — expired ones cover noth
   /3 live short call\(s\) cover 300 of 412 sh @ \$50/.test(today) &&
   /1 more expired or undated, NOT counted/.test(today) &&
   !/cover 800/.test(today));
-ok("no add candidate is offered while a stop is live", !/Add candidate/.test(today));
+ok("no add candidate is offered while a stop is live", !/Add candidate|Eligible next dollar/.test(today));
 
 console.log("\n[render] drawers — a closed drawer never hides a red thing");
 const sums = (await page.locator("#boardView details.drawer > summary").allInnerTexts()).join(" | ");
@@ -329,7 +329,7 @@ console.log("\n[render] exposure — clusters and reconciliation");
 await page.evaluate(() => document.querySelectorAll("details.drawer").forEach((d) => (d.open = true)));
 await page.waitForTimeout(150);
 const cl = await txt(page, "clusterLine");
-ok("cluster total is summed against the cap", /36\.4% of NAV/.test(cl) && /OVER the 18% cap/.test(cl));
+ok("cluster total is summed against the cap", /36\.4% of acct equity/.test(cl) && /OVER the 18% cap/.test(cl));
 ok("an unmeasured member is named and the total called a floor", /1 unmeasured \(DDD\)/.test(cl) && /FLOOR/.test(cl));
 ok("held-but-untracked exposure is surfaced", /1 held but NOT in the book/.test(cl) && /ZZZ/.test(cl));
 const circuit = await txt(page, "circuitLine");
@@ -438,6 +438,11 @@ ok("an unheld name is labelled, never left blank against a held one", /new — n
 // for the wrong reason. Restore both mutations before returning.
 const capped = await page.evaluate(() => {
   const prevState = BOARD.circuit.state, prevMv = POSITIONS.AAA.mv, prevPx = LIVE_PX.AAA;
+  // FIX-B (v3.49): the fixture's asserted PANIC regime now vetoes the whole agree block
+  // before why() ever runs — clear it too, or the cap veto is unreachable (the same
+  // passes-for-the-wrong-reason trap the circuit comment above describes).
+  const prevReg = BOARD.regime;
+  BOARD.regime = null;
   BOARD.circuit.state = "clear";
   // AAA must have a POSITIVE gap to reach the cap branch at all — why() returns "no gap"
   // first, and the fixture prices AAA ($800) above its nearest target ($400).
@@ -446,12 +451,25 @@ const capped = await page.evaluate(() => {
   render();
   const t = document.getElementById("upsideRank").innerText;
   const res = { over: /at the 18% cap, no room/.test(t), pick: AGREE_PICK ? AGREE_PICK.sym : null };
-  BOARD.circuit.state = prevState; POSITIONS.AAA = { ...POSITIONS.AAA, mv: prevMv }; LIVE_PX.AAA = prevPx;
+  BOARD.circuit.state = prevState; BOARD.regime = prevReg; POSITIONS.AAA = { ...POSITIONS.AAA, mv: prevMv }; LIVE_PX.AAA = prevPx;
   render();
   return res;
 });
 ok("a name over the cap is vetoed from the next dollar with its reason named", capped.over);
 ok("...and is never left standing as AGREE_PICK", capped.pick !== "AAA");
+// FIX-B (v3.49): with the circuit cleared but the session still asserting PANIC, the green
+// line hard-WAITs at board level with the gate NAMED — driven live, not just source-pinned.
+const gated = await page.evaluate(() => {
+  const prevState = BOARD.circuit.state;
+  BOARD.circuit.state = "clear";
+  render();
+  const t = document.getElementById("upsideRank").innerText;
+  BOARD.circuit.state = prevState;
+  render();
+  return { wait: /eligibility gate failed/.test(t) && /ADDS SUSPENDED/.test(t), pick: AGREE_PICK ? AGREE_PICK.sym : null };
+});
+ok("FIX-B: an asserted PANIC stance vetoes eligibility, gate named in the WAIT box", gated.wait);
+ok("FIX-B: no AGREE_PICK survives a failed eligibility gate", gated.pick === null);
 await page.waitForTimeout(120);
 
 console.log("\n[render] FEAT-TT-ESTRUN — the board expression inside NEXT DOLLAR");
@@ -492,7 +510,7 @@ const dv = (await page.locator("#deepView").innerText()).replace(/\s+/g, " ");
 ok("the four answers render above the corpus",
   /WHAT IT'S WORTH/i.test(dv) && /WHAT CHANGES MY MIND/i.test(dv) && /WHEN/i.test(dv) && /WHAT I OWN/i.test(dv));
 ok("what-changes-my-mind names the red hinge", /1 red/.test(dv) && /demand/.test(dv));
-ok("what-I-own reads the measured position", /21\.4% of NAV/.test(dv) && /30 sh/.test(dv));
+ok("what-I-own reads the measured position", /21\.4% of acct equity/.test(dv) && /30 sh/.test(dv));
 ok("when carries the next dated event", /own print/.test(dv));
 // FEAT-TT-OWNDEBT (v3.35): the own cell renders what the sync measured — all of it.
 ok("own cell carries cost basis, colored unrealized P/L and the source",
