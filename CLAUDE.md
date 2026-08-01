@@ -1146,6 +1146,37 @@ Jan-anchor shipped; see `snapshot.js` ~318–328), `spyMa100`, `spyMa200`, and a
   **148 render** (+5: a live PANIC-asserted board hard-WAITs with the gate named and leaves no
   AGREE_PICK; the cap-veto scenario now clears the asserted regime too, or it would pass for
   the wrong reason — plus the acct-equity pins).
+- **FEAT-TT-READY (v3.50) — one decision-readiness statement per name.** The audit's "too many
+  freshness clocks": a ticker page could carry **eight** independent dates — live quote · manual
+  `ref_px` mark · `lastRun` · model/lint state · hinge observations · `pos.at` · per-leg option
+  provenance · thesis `updated` — each honest alone, none of them answering *can I act on this
+  name right now?* Eight truthful clocks that never sum is how a NEVER-RUN name with an undated
+  thesis still read as maintained. **`readiness(x)`** consolidates them, and invents no new clock:
+  every part reads the SAME helper the individual chip already reads (`runState` · `ddDate`/
+  `ageDays` · `ptModelRows`/`lintPtModel` · `LIVE_PX`/`ref_px` · `posOf`/`posAge` · `hingeTally`),
+  so a part can never disagree with the chip it summarizes — the `ptModelRows` rule, one
+  computation at many altitudes. Severity follows the audit's *"gate the interface by evidence
+  coverage"*: **BLOCKED** = evidence needed to act is missing or expired (no current model, a
+  MIS-KEYED schedule — the v3.39 rung that silently floors is missing evidence, not a warning —
+  no current TT run, no defined hinges, no usable price, a blocking decision scoped to this
+  name) · **CAUTION** = evidence aging or partial · **READY** = every clock current. Two
+  deliberate NON-blockers: a **red hinge** is surfaced never vetoed (D3, v3.39), and an **absent
+  position** cautions rather than blocks — an unheld new name legitimately has none, and blocking
+  it would gate exactly the names the next dollar is FOR. Blocking decisions scope by **explicit
+  `decision.sym` only**; inferring which decision blocks which ticker from prose would be a guess,
+  and a guessed blocker is worse than none (unscoped ones stay board-level, where TODAY already
+  surfaces them). Rendered on **both** per-ticker decision surfaces — above the four answers on
+  the deep-dive tab, and leading the card (the only surface a WATCH name with no tab ever gets) —
+  with the verdict as a token and every blocker/caution as a visible chip (v3.25: a summary is
+  only honest if the red things survive it), OK clocks included so "current" is *stated*, not
+  inferred from silence. **FIX-B now vetoes on `readiness().blockers`** rather than re-deriving
+  the run check, so the green line and the name's own readiness bar cannot disagree; cautions
+  never veto (aging evidence is the owner's to weigh, missing evidence is not). Found while
+  wiring: one surviving `% NAV` claim on the card, missed by the FIX-D sweep.
+  Tests: **718 smoke** (+22, `readiness()` lifted and RUN against the real PT helpers — a string
+  pin cannot prove a severity rule, and this one gates the green line) + **153 render** (+5: the
+  bar leads both surfaces, every clock stated, and AAA's red hinge named on the bar while absent
+  from the blocker list).
 - **Deferred:** stored fundamentals + Robinhood sync — now unblocked by the `x-tt-pin` header
   (v3.9): a chat-side daily review can PUT `status_flags`/`ref_px` into the deepDive payloads and
   stamp `lastRun`. When built, store the *triage* shape (`{at, px}` → "% moved since your last TT
@@ -1212,7 +1243,7 @@ npm run dev        # Vite dev server (mock unless VITE_DATA_MODE=live in .env)
 npm run build      # → dist/  (what Pages runs)
 npm run preview    # serve the built dist/
 
-node test/smoke.mjs   # 696-assertion no-network smoke test (needs Node ≥17)
+node test/smoke.mjs   # 718-assertion no-network smoke test (needs Node ≥17)
 npm run test:ui       # browser render test for admin.html (skips if no Chromium)
 
 # Cron Worker (separate deploy):

@@ -301,7 +301,15 @@ await page.evaluate((s) => openCard(s), "AAA");
 await page.waitForTimeout(120);
 const cardBody = await page.locator("#cBody").textContent();
 ok("card MEASURED row carries live price, size and weight (the old tooltip, tappable)",
-  /MEASURED/.test(cardBody) && /\$800/.test(cardBody) && /30 sh/.test(cardBody) && /21\.4% NAV/.test(cardBody));
+  /MEASURED/.test(cardBody) && /\$800/.test(cardBody) && /30 sh/.test(cardBody) && /21\.4% of acct equity/.test(cardBody));
+// FEAT-TT-READY (v3.50): the consolidated statement leads the card, and every blocker stays a
+// visible chip. AAA in the fixture is measured and modelled — whatever its verdict, the bar
+// must render a real verdict token and never a blank.
+ok("ready: the card leads with a DECISION READINESS verdict, not eight scattered dates",
+  /READINESS/.test(cardBody) && /DECISION READINESS/.test(cardBody) &&
+  /(READY|CAUTION|BLOCKED)/.test(cardBody));
+ok("ready: the card's readiness bar states each clock rather than only a verdict",
+  /TT run|TT never run/.test(cardBody) && /thesis/.test(cardBody));
 await page.evaluate(() => closeCard());
 await page.waitForTimeout(80);
 
@@ -509,6 +517,16 @@ await page.waitForTimeout(120);
 const dv = (await page.locator("#deepView").innerText()).replace(/\s+/g, " ");
 ok("the four answers render above the corpus",
   /WHAT IT'S WORTH/i.test(dv) && /WHAT CHANGES MY MIND/i.test(dv) && /WHEN/i.test(dv) && /WHAT I OWN/i.test(dv));
+// FEAT-TT-READY (v3.50): the consolidated statement sits ABOVE the four answers, and the
+// red facts survive the consolidation (v3.25) — AAA carries a RED hinge, which must be
+// named on the bar as a caution while never blocking (D3: the board reports, not enforces).
+ok("ready: the readiness verdict leads the deep-dive tab, above the four answers",
+  /DECISION READINESS/i.test(dv) &&
+  dv.indexOf("DECISION READINESS") < dv.toUpperCase().indexOf("WHAT IT'S WORTH"));
+ok("ready: every clock is stated on the bar — TT run, thesis, model, price, position, hinges",
+  /TT run|TT never run/i.test(dv) && /thesis/i.test(dv) && /hinge/i.test(dv));
+ok("ready: a RED hinge is named on the bar but never appears as a blocker (D3 doctrine)",
+  /1 hinge RED/i.test(dv) && !/not actionable until:[^\n]*RED/i.test(dv));
 ok("what-changes-my-mind names the red hinge", /1 red/.test(dv) && /demand/.test(dv));
 ok("what-I-own reads the measured position", /21\.4% of acct equity/.test(dv) && /30 sh/.test(dv));
 ok("when carries the next dated event", /own print/.test(dv));

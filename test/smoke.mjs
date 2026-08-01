@@ -663,8 +663,9 @@ ok("FIX-B: a blind or absent Macro Flip vetoes — fail closed, never default-to
   adminSrc.includes("mf.evaluable===false?(mf.reason||") &&
   adminSrc.includes("readout carries no Macro Flip block") &&
   adminSrc.includes("regime feed unavailable — Macro Flip cannot be read"));
-ok("FIX-B: a non-fresh TT run vetoes the pick, state named (never/aged)",
-  adminSrc.includes('r.rs.k!=="fresh")return r.rs.k==="never"?"no TT run on record — run one first"'));
+ok("FIX-B: the eligibility veto reads readiness()'s OWN blockers — one derivation, not a second opinion",
+  adminSrc.includes("if(r.rdy.blockers.length)return `evidence: ${r.rdy.blockers.join(\", \")}`;") &&
+  adminSrc.includes("rdy:readiness(x)"));
 ok("FIX-B: a failed gate renders WAIT and leaves no stale AGREE_PICK behind",
   adminSrc.includes("NEXT DOLLAR: WAIT — eligibility gate failed"));
 ok("FIX-B: red hinges stay surfaced-not-vetoed on the green line (D3 doctrine, v3.39)",
@@ -2114,6 +2115,111 @@ ok("tokw-tt: it fails closed — a partial mix is called a FLOOR, a missing mix 
   adminSrc.includes("so this is a FLOOR") &&
   adminSrc.includes("productivity per watt unmeasured, which is not the same as average") &&
   /t\.at\?[\s\S]{0,120}undated<\/span>/.test(adminSrc));
+
+// ---- 24. FEAT-TT-READY (v3.50) — the ONE decision-readiness statement ------
+// VALUE_PROPOSITION_AUDIT "too many freshness clocks": eight honest dates that never summed
+// into the only question a reader has. readiness() is lifted and RUN — a string pin cannot
+// prove a severity rule, and this one now GATES the green line (FIX-B reads its blockers).
+console.log("\n[24] FEAT-TT-READY — decision readiness consolidates the eight clocks");
+const RDY_THESIS_D = /const READY_THESIS_D=(\d+);/.exec(adminSrc);
+ok("ready: the thesis threshold is the SAME 30d ddAgeChip re-reviews on (one rule, two surfaces)",
+  RDY_THESIS_D && RDY_THESIS_D[1] === "30" && adminSrc.includes("if(d>30)return `<span class=\"pill warn\">self-attested"));
+const RDY = new Function(
+  `const READY_THESIS_D=${RDY_THESIS_D[1]},POS_STALE_D=2,PX_STALE_D=4,LENS_MAX_PE=${LENS_MAX_PE_SRC[1]};` +
+  "let BOARD={},POSITIONS={},LIVE_PX={};" +
+  // readiness() reads the REAL model helpers (already exercised in [20]) rather than a stub —
+  // the whole design claim is that a readiness part can never disagree with the chip it
+  // summarizes, which only holds if both call the same function.
+  liftFns(adminSrc, ["ageDays", "runState", "ddDate", "hingeTally", "posOf", "posAge",
+    "schedAt", "ptRowYears", "ptModelRows", "lintPtModel", "readiness"]) +
+  "\nreturn {readiness,set:(b,p,q)=>{BOARD=b;POSITIONS=p;LIVE_PX=q;}};")();
+const iso = (dAgo) => new Date(Date.now() - dAgo * 86400000).toISOString().slice(0, 10);
+const YR = new Date().getFullYear();
+// A name with every clock current. ptModelRows/lintPtModel are NOT lifted here (they are
+// exercised in [20]); readiness calls them, so the fixture stubs them via the deepDive shape
+// the lifted copies would see — instead we assert the parts that do not need them by
+// checking blocker CONTENT, which is what the gate consumes.
+const mkEntry = (o = {}) => ({
+  sym: "RDY", lastRun: iso(3),
+  deepDive: {
+    thesis_version: "v1", updated: iso(5),
+    hinges: [{ label: "backlog", state: "green" }, { label: "pricing", state: "green" }],
+    ref_px: { px: 100, at: iso(1) },
+    // A correctly-keyed model (schedule keys = the YEAR-END PRICED, per [20]) so the model
+    // clock reads OK and each assertion below isolates the ONE clock it is about.
+    consensus: { revenue_B: { [YR + 1]: 100, [YR + 2]: 120 }, eps: { [YR + 1]: 5, [YR + 2]: 6 } },
+    pt_model: { pe_premium_multiple: { [YR]: 20, [YR + 1]: 18 }, pe_floor_multiple: 15, share_count_M: 1000 },
+    ...(o.dd || {}),
+  },
+  ...o,
+});
+RDY.set({}, {}, {});
+// The whole point: absent evidence FAILS CLOSED. A never-run name is BLOCKED, not "fresh
+// enough" — the audit's exact finding (5 fresh runs against 31 never, green line still lit).
+const rNever = RDY.readiness(mkEntry({ lastRun: null }));
+ok("ready: a NEVER RUN name is BLOCKED and says so (fails closed on a missing date)",
+  rNever.k === "blocked" && rNever.blockers.includes("TT never run") && rNever.verdict === "BLOCKED");
+ok("ready: a future-dated lastRun (typo) also reads NEVER RUN, never fresh",
+  RDY.readiness(mkEntry({ lastRun: iso(-5) })).blockers.includes("TT never run"));
+ok("ready: an aged-past-90d run BLOCKS; a 31-90d run only CAUTIONS (the runState bands hold)",
+  RDY.readiness(mkEntry({ lastRun: iso(120) })).blockers.some((b) => /^TT run \d{3}d old$/.test(b)) &&
+  RDY.readiness(mkEntry({ lastRun: iso(45) })).cautions.some((c) => /^TT run \d+d old$/.test(c)) &&
+  !RDY.readiness(mkEntry({ lastRun: iso(45) })).blockers.length);
+ok("ready: an undated thesis BLOCKS — self-attested and undated is not 'current'",
+  RDY.readiness(mkEntry({ dd: { updated: "" } })).blockers.includes("thesis undated"));
+ok("ready: a thesis past the 30d re-review window CAUTIONS, not blocks",
+  RDY.readiness(mkEntry({ dd: { updated: iso(40) } })).cautions.some((c) => /^thesis \d+d old$/.test(c)) &&
+  !RDY.readiness(mkEntry({ dd: { updated: iso(40) } })).blockers.length);
+ok("ready: NO HINGES blocks — the audit's 'defined thesis hinges'; nothing says what would change your mind",
+  RDY.readiness(mkEntry({ dd: { hinges: [] } })).blockers.includes("no hinges defined"));
+// D3 doctrine (v3.39) survives the consolidation: red is NAMED, never a veto.
+const rRed = RDY.readiness(mkEntry({ dd: { hinges: [{ label: "power", state: "red" }] } }));
+ok("ready: a RED hinge is surfaced as a caution, never a blocker (D3 — the board reports, it does not enforce)",
+  rRed.cautions.includes("1 hinge RED") && !rRed.blockers.some((b) => /RED/.test(b)));
+ok("ready: an UNKNOWN hinge cautions (the audit's 'one hinge unknown')",
+  RDY.readiness(mkEntry({ dd: { hinges: [{ label: "x", state: "unknown" }] } })).cautions.includes("1 hinge unknown"));
+// An unheld name must stay eligible — blocking it would gate exactly what the next dollar is for.
+ok("ready: an ABSENT position CAUTIONS, never blocks (unheld is a legitimate state for a new name)",
+  RDY.readiness(mkEntry()).cautions.includes("position not synced") &&
+  !RDY.readiness(mkEntry()).blockers.some((b) => /position/.test(b)));
+RDY.set({}, { RDY: { sh: 10, mv: 1000, at: iso(0) } }, {});
+ok("ready: a fresh measured position reads 'position current'",
+  RDY.readiness(mkEntry()).parts.some((p) => p.sev === "ok" && p.t === "position current"));
+RDY.set({}, { RDY: { sh: 10, mv: 1000, at: iso(9) } }, {});
+ok("ready: a position mark older than POS_STALE_D cautions with its age",
+  RDY.readiness(mkEntry()).cautions.some((c) => /^position \d+d old$/.test(c)));
+RDY.set({}, {}, {});
+// Price: a live quote beats a stamp (v3.36); no usable price at all is missing evidence.
+ok("ready: no usable price BLOCKS (neither a live quote nor a stamped mark)",
+  RDY.readiness(mkEntry({ dd: { ref_px: null } })).blockers.includes("no usable price"));
+ok("ready: a stamp older than PX_STALE_D cautions — a stale mark silently poisons every %",
+  RDY.readiness(mkEntry({ dd: { ref_px: { px: 100, at: iso(11) } } })).cautions.some((c) => /^mark \d+d old$/.test(c)));
+RDY.set({}, {}, { RDY: { px: 123, chg: 1 } });
+ok("ready: a LIVE quote satisfies the price clock even with no stamp at all",
+  RDY.readiness(mkEntry({ dd: { ref_px: null } })).parts.some((p) => p.t === "price live"));
+RDY.set({}, {}, {});
+// Blocking decisions scope by EXPLICIT sym only — a guessed blocker is worse than none.
+RDY.set({ decisions: [{ q: "trim?", blocking: true, sym: "RDY" }] }, {}, {});
+ok("ready: a blocking decision SCOPED to this name blocks it",
+  RDY.readiness(mkEntry()).blockers.includes("1 blocking decision open"));
+RDY.set({ decisions: [{ q: "is RDY overweight?", blocking: true }] }, {}, {});
+ok("ready: an UNSCOPED blocking decision does NOT block — inferring the ticker from prose would be a guess",
+  !RDY.readiness(mkEntry()).blockers.some((b) => /decision/.test(b)));
+RDY.set({}, {}, {});
+// The audit's literal output shape: "BLOCKED — TT never run; position current; model 6d old".
+const rLine = RDY.readiness(mkEntry({ lastRun: null }));
+ok("ready: the one-line statement orders blockers FIRST, so the reason to stop is never buried",
+  rLine.line.startsWith("TT never run") && rLine.line.includes(";"));
+ok("ready: every clock appears in the statement — an OK clock is STATED, not inferred from silence",
+  rLine.parts.some((p) => p.sev === "ok") && rLine.line.split("; ").length >= 4);
+// Rendering: the consolidator reaches both per-ticker decision surfaces, and the bar keeps
+// every red fact visible (v3.25 — a summary is only honest if the red things survive it).
+ok("ready: the bar renders on the deep-dive tab ABOVE the four answers",
+  /h\+=readyBar\(x\);\s*\n\s*h\+=ddAnswerBlock/.test(adminSrc));
+ok("ready: and on the card — the only per-ticker surface a WATCH name with no tab ever gets",
+  adminSrc.includes('<div class="k">READINESS</div>') && adminSrc.includes("let html=rdyRow+measured+"));
+ok("ready: blockers stay visible as chips on the bar, never collapsed into the verdict alone",
+  adminSrc.includes("⛔ not actionable until:") && adminSrc.includes('p.sev==="block"?"head"'));
 
 console.log(`\n=== SMOKE TEST: ${pass} passed, ${fail} failed ===`);
 process.exit(fail === 0 ? 0 : 1);
