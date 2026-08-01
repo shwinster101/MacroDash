@@ -1286,6 +1286,60 @@ Jan-anchor shipped; see `snapshot.js` ~318–328), `spyMa100`, `spyMa200`, and a
   Tests: **771 smoke** (+23: every band boundary executed, the majority rule at 3/5/6 voters,
   all three abstention rules, adjacency, inclusivity copy, sort order, and the render pins) +
   153 render + a **14-check Chromium pass at 390px and 1200px**, panel open and closed.
+- **FEAT-QUORUM (v3.54) — "mock must never vote": the 11.4.5 audit's CRITICAL.** The audit
+  found the one defect that mattered most and that **passed every existing test**: `staleFactors`
+  excluded only `STALE`, so a **MOCK factor still voted**. During `LOADING` — and after any
+  failed fetch — every field is MOCK, so the page computed a confident posture *entirely from
+  `MOCK_DATA`* while Signal Quality truthfully reported `0 live / 15 mock` two rows above it.
+  The tiles have suppressed directional calls on mock since v3.1 (`isIllustrative`); the
+  **headline verdict never did**, which is the one place it matters most.
+  Three linked fixes. **(1) MOCK is unusable in a live build**: `unusable()` drops anything not
+  LIVE/CACHED, gated on `liveBuild` so a pure demo build is untouched — mock IS the demo's
+  baseline by design (the `demoted()`/`anyLive` rule). That gate cannot come from `mode`, because
+  **`mode:"MOCK"` is ambiguous** between "demo build" and "live build whose fetch failed", and
+  only the second must withhold; `useMarketData` now exposes the build's **intent** (`liveBuild`).
+  **(2) A quorum**: `REGIME_QUORUM = 4` of 6 → below it the label is **INSUFFICIENT**, not a thin
+  verdict, with `raw` recording what the majority would have said (never silent, same contract as
+  the v3.40 TAILWIND downgrade). The dashboard had **no abstention rule at all** while the tt-v1
+  readout has refused to publish below 3 available checks since v3.3 — the two engines disagreed
+  about when to stay silent and the *human-facing* one was the permissive side. Four is
+  deliberately stricter than the readout's three: that consumer knows what INSUFFICIENT means,
+  a public reader does not. **(3) LOADING is not a verdict state** — the posture is withheld
+  outright, the flip line is suppressed (nothing to flip), and the moon voice gets its own
+  honest fourth state (`CAN'T CALL IT`) rather than defaulting to HODL, which would render a
+  real hold call made from no evidence.
+  **WHY #1 freshness-gated (audit High).** WHY #2 carefully gated its cross-signals while WHY #1
+  asserted SPY/CPI/Fed **unconditionally** — a mock CPI could be narrated as "today's core tape"
+  inside the verdict's own explanation. Each is now gated independently, unavailable clauses are
+  OMITTED rather than filled from mock, and a thin anchor states itself (`N/3 core inputs
+  usable`). Found while wiring: `FW_FIELDS` didn't contain the three core fields, so gating them
+  without adding them would have dropped inputs that were perfectly fresh.
+  **`test/public-render.mjs` (`npm run test:public`) — the structural fix.** The audit's sharpest
+  point was that this defect passed everything, and it was right: smoke covers pure functions and
+  source strings, `test/render.mjs` covers `admin.html`, and **nothing ever drove the public React
+  page through its data states**. The new suite serves the built bundle with a stubbed
+  `/api/snapshot` and asserts the contract across **loading · live · degraded · error**, plus
+  320/390/1280px reflow and the landmarks — 28 assertions. Skips cleanly without Chromium, same
+  additive convention as `test:ui`.
+  **A11Y (audit High).** `text-muted` `#3d4760` measured **2.15:1** on `--bg` while carrying 7–10px
+  PROVENANCE text — the honesty layer the whole product rests on — now `#717d92` (4.79:1 / 4.54:1
+  on surface). `live-cyan-700` was annotated AA-compliant and measured **3.20:1** on its own badge:
+  a token *asserting* a compliance it never had, the same defect class as a label describing
+  deleted data; now `#1c93b0` (4.78:1). **Contrast is now COMPUTED in smoke**, not claimed in a
+  comment. Added a `:focus-visible` ring (focused controls had **no** indicator) and the page's
+  first-ever heading — it contained no `h1`–`h6` at all, so a screen reader had no outline;
+  visually hidden, since the branded header is the visible identity.
+  **HTTP semantics (audit Medium).** `?seed=1` and `?migrate=1` **mutated state on GET**, so a
+  prefetch, link preview, uptime monitor or replayed URL could trigger a write. Both are now
+  POST-only behind the same Origin/CSRF guard every other mutation uses, idempotency unchanged,
+  with the GET path returning 405 naming the correct verb. The old pin literally read *"read-only
+  by design — no PUT/POST handler exists"* and **passed while the GET route wrote** — it measured
+  the verb, not the safety; it now measures the safety.
+  **Could NOT reproduce** the audit's *"320px: 19px horizontal overflow"*: measured 320px on the
+  real fetch-failure path, every collapsed group expanded, `scrollWidth === 320`. The overflowing
+  node it describes is almost certainly the 317px `whiteSpace:"nowrap"` subtitle **v3.53 fixed**
+  hours earlier — consistent with auditing the deployed bundle before Pages redeployed.
+  Tests: **802 smoke** (+31) + **153 render** + **28 public-render** (new).
 - **Deferred:** stored fundamentals + Robinhood sync — now unblocked by the `x-tt-pin` header
   (v3.9): a chat-side daily review can PUT `status_flags`/`ref_px` into the deepDive payloads and
   stamp `lastRun`. When built, store the *triage* shape (`{at, px}` → "% moved since your last TT
@@ -1352,8 +1406,9 @@ npm run dev        # Vite dev server (mock unless VITE_DATA_MODE=live in .env)
 npm run build      # → dist/  (what Pages runs)
 npm run preview    # serve the built dist/
 
-node test/smoke.mjs   # 771-assertion no-network smoke test (needs Node ≥17)
+node test/smoke.mjs   # 802-assertion no-network smoke test (needs Node ≥17)
 npm run test:ui       # browser render test for admin.html (skips if no Chromium)
+npm run test:public   # build + browser STATE test for the public dashboard (skips likewise)
 
 # Cron Worker (separate deploy):
 cd worker && npx wrangler deploy
