@@ -2297,5 +2297,58 @@ ok("confidence: the strip reports how many factors actually voted, from computeR
 ok("confidence: excluded factors are NAMED — 'N of 6 usable' without saying which is half a fact",
   dashSrc.includes("excluded: {regimeConf.excluded.join") && dashSrc.includes("crash gauge (VIX) unavailable"));
 
+// ---- 27. FEAT-ALERT-EVAL (v3.52) — the alerts evaluate, or say they cannot ----
+// Suite audit called this "interface theater" for not DELIVERING. The defect was one layer
+// earlier and worse: `triggered` was a hardcoded false nothing ever wrote, while the header
+// claimed "Triggers evaluate live data" — a directional claim ("nothing tripped") asserted by
+// code that had never looked. v3.51 fixed only the delivery half of that sentence.
+console.log("\n[27] FEAT-ALERT-EVAL — evaluated alerts, gated on live data");
+// dashboard.jsx is JSX, so Node cannot import it — lift the pure evaluator (and the real
+// ALERT_METRICS table it reads) out by source, the same technique MOCK_DATA uses above.
+const _am = dashSrc.indexOf("const ALERT_METRICS={");
+const _ae = dashSrc.indexOf("\n};", _am) + 3;
+const _ef = dashSrc.indexOf("export function evalAlert(");
+const _ee = dashSrc.indexOf("\n}", dashSrc.indexOf("return{state:hit", _ef)) + 2;
+const evalAlert = new Function(
+  dashSrc.slice(_am, _ae) + dashSrc.slice(_ef, _ee).replace("export function", "function") +
+  "\nreturn evalAlert;")();
+const allLive = () => "LIVE";
+const allMock = () => "MOCK";
+const aVix = { id: 2, label: "VIX Spike", metric: "vix", condition: "above", value: 25, unit: "", active: true };
+ok("alert: no stored `triggered` flag survives — trigger state is COMPUTED every render",
+  !/triggered:false/.test(dashSrc.replace(/\s/g, "")) && dashSrc.includes("evalAlert(a,d,modeOf)"));
+ok("alert: an above-threshold live value TRIPS",
+  evalAlert(aVix, { marketPulse: { vix: { current: 30 } } }, allLive).state === "triggered");
+ok("alert: a below-threshold live value reads CLEAR",
+  evalAlert(aVix, { marketPulse: { vix: { current: 12 } } }, allLive).state === "clear");
+// The whole point: "has not tripped" and "cannot see whether it tripped" are different facts.
+ok("alert: a MOCK/STALE input yields BLIND, never a false CLEAR (fails closed, names the input)",
+  (() => { const e = evalAlert(aVix, { marketPulse: { vix: { current: 30 } } }, allMock);
+    return e.state === "blind" && /vix/.test(e.why) && e.state !== "clear"; })());
+ok("alert: a STALE input is as blind as a mock one — freshness is part of the gate",
+  evalAlert(aVix, { marketPulse: { vix: { current: 30 } } }, () => "STALE").state === "blind");
+// The SPY cross must judge against TODAY's moving average, not the number hardcoded at
+// authoring time — otherwise the alert silently drifts as the market moves.
+const aSpy = { id: 1, label: "SPY Below 200D MA", metric: "spy_200ma", condition: "below", value: 692.4, unit: "$", active: true };
+ok("alert: the SPY cross is judged against the LIVE 200-DMA, not the authored constant",
+  (() => { const e = evalAlert(aSpy, { marketPulse: { spy: { price: 700, ma200: 720 } } }, allLive);
+    return e.state === "triggered" && e.threshold === 720 && /live 200-DMA/.test(e.detail); })());
+ok("alert: ...and the same price against a LOWER live MA is clear (the constant would have lied)",
+  evalAlert(aSpy, { marketPulse: { spy: { price: 700, ma200: 650 } } }, allLive).state === "clear");
+ok("alert: a metric with no wiring is BLIND, never assumed clear",
+  evalAlert({ metric: "nope", condition: "above", value: 1, active: true }, {}, allLive).state === "blind");
+ok("alert: a non-finite live value is BLIND (a missing number is not a passing test)",
+  evalAlert(aVix, { marketPulse: { vix: { current: null } } }, allLive).state === "blind");
+ok("alert: the header reports BLIND separately — '0 FIRED' with dead inputs is a false clear",
+  dashSrc.includes("alertBlind") && dashSrc.includes("BLIND`} color={T.amber}"));
+ok("alert: the section states it evaluates HERE and delivers nothing",
+  /Evaluated live on THIS page only — no push, email or SMS is sent/.test(dashSrc));
+// ---- a11y (suite audit #2): landmarks + live regions on the public page ----
+ok("a11y: the page exposes a main landmark (there were ZERO before)",
+  /role="main"/.test(dashSrc));
+ok("a11y: the verdict and its confidence strip are polite live regions",
+  /aria-label="Macro backdrop verdict" aria-live="polite"/.test(dashSrc) &&
+  /aria-label="Signal quality and backdrop confidence" aria-live="polite"/.test(dashSrc));
+
 console.log(`\n=== SMOKE TEST: ${pass} passed, ${fail} failed ===`);
 process.exit(fail === 0 ? 0 : 1);

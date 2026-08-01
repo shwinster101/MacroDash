@@ -925,7 +925,8 @@ const RegimeBand=({d,stale=new Set()})=>{
   // "wen moon?" — map the regime verdict to our moon ratings: RISK-ON→MOONING, MIXED→HODL, RISK-OFF→DIAMOND HANDS
   const moon=WEN_MOON_STATES[{ "RISK-ON":0, "MIXED":1, "RISK-OFF":2 }[regime.label] ?? 1];
   return(
-    <div style={{background:regime.tint,borderBottom:`1px solid ${regime.color}33`,borderTop:`1px solid ${regime.color}22`,padding:"10px 20px",position:"relative"}}>
+    <div role="region" aria-label="Macro backdrop verdict" aria-live="polite"
+      style={{background:regime.tint,borderBottom:`1px solid ${regime.color}33`,borderTop:`1px solid ${regime.color}22`,padding:"10px 20px",position:"relative"}}>
       <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",gap:12,flexWrap:"wrap"}}>
         {/* Left: label + sub */}
         <div style={{display:"flex",alignItems:"baseline",gap:12,flexWrap:"wrap",minWidth:0}}>
@@ -995,15 +996,59 @@ const FGGauge=({score,label,mode="MOCK",asOf})=>{
   );
 };
 
+/* FEAT-ALERT-EVAL (v3.52, suite audit) — the alerts EVALUATE, or they say they cannot.
+   The audit called this section "interface theater" for not delivering notifications. The
+   defect was worse and one layer earlier: `triggered` was a hardcoded `false` that NOTHING
+   ever wrote, while the header claimed "Triggers evaluate live data". No evaluation existed
+   at all, so the red dot was unreachable and `activeAlerts` was permanently 0 — a directional
+   claim ("nothing has tripped") asserted by code that had never looked. v3.51 fixed only the
+   DELIVERY half of that sentence and left the evaluation half standing, which is why this is
+   a follow-up rather than a new feature.
+   Evaluation is now real AND rides the v3.1 honesty invariant: a threshold is judged ONLY
+   from LIVE/CACHED, non-stale inputs. A mock or stale input yields BLIND — deliberately
+   distinct from CLEAR, because "this has not tripped" and "I cannot see whether it tripped"
+   are different facts, and only the second is true when the feed is dead. Same asymmetry as
+   the TAILWIND withhold (v3.40) and readiness()'s fail-closed rule (v3.50). */
+const ALERT_METRICS={
+  // `ref` (when present) is the LIVE comparison basis — the SPY/200DMA cross must be judged
+  // against today's actual moving average, not the 692.4 hardcoded when the alert was authored.
+  spy_200ma:   {fields:["spyPrice","spyMa200"], read:(d)=>({v:d.marketPulse.spy.price, ref:d.marketPulse.spy.ma200, u:"$", pre:true}),
+                basisLabel:"live 200-DMA"},
+  vix:         {fields:["vix"],         read:(d)=>({v:d.marketPulse.vix.current})},
+  feargreed:   {fields:["fearGreed"],   read:(d)=>({v:d.marketPulse.fearGreed.score})},
+  treasury10y: {fields:["tenYear"],     read:(d)=>({v:d.crossAsset.treasury10y.current})},
+  cpi:         {fields:["cpiHeadline"], read:(d)=>({v:d.macro.cpi.headline})},
+};
+export function evalAlert(alert,d,modeOf){
+  const m=ALERT_METRICS[alert.metric];
+  if(!m)return{state:"blind",why:"no live metric is wired to this alert"};
+  // FAIL CLOSED: every input the threshold depends on must be live+fresh, or we cannot judge.
+  const dead=m.fields.filter(f=>{const x=modeOf(f);return x!=="LIVE"&&x!=="CACHED";});
+  if(dead.length)return{state:"blind",why:`${dead.join(" + ")} not live — cannot evaluate`};
+  const {v,ref,u,pre}=m.read(d);
+  const threshold=ref!=null?ref:alert.value;
+  if(!Number.isFinite(v)||!Number.isFinite(threshold))return{state:"blind",why:"value unavailable"};
+  const hit=alert.condition==="below"?v<threshold:v>threshold;
+  const unit=u||alert.unit||"";
+  const fmtv=(n)=>pre?`${unit}${n}`:`${n}${unit}`;
+  return{state:hit?"triggered":"clear",v,threshold,
+    detail:`${fmtv(v)} vs ${fmtv(Math.round(threshold*100)/100)}${m.basisLabel?` (${m.basisLabel})`:""}`};
+}
 // Alert row
-const AlertRow=({alert,onToggle,onDelete})=>{
-  const color=alert.triggered?T.red:alert.active?T.green:T.textMuted;
+const AlertRow=({alert,ev,onToggle,onDelete})=>{
+  // BLIND is amber, never the green that would read as "checked and clear".
+  const color=!alert.active?T.textMuted:ev.state==="triggered"?T.red:ev.state==="blind"?T.amber:T.green;
+  const badge=ev.state==="triggered"?"TRIPPED":ev.state==="blind"?"BLIND":"clear";
   return(
-    <div style={{display:"flex",alignItems:"center",gap:8,padding:"7px 10px",background:T.surface,borderRadius:4,border:`1px solid ${T.border}`}}>
+    <div style={{display:"flex",alignItems:"center",gap:8,padding:"7px 10px",background:T.surface,borderRadius:4,border:`1px solid ${ev.state==="triggered"&&alert.active?T.red:T.border}`}}>
       <div style={{width:7,height:7,borderRadius:"50%",background:color,flexShrink:0,boxShadow:alert.active?`0 0 5px ${color}`:"none"}}/>
-      <div style={{flex:1}}>
-        <div style={{fontFamily:T.fontSans,fontSize:11,color:T.textPrimary}}>{alert.label}</div>
-        <div style={{fontFamily:T.fontMono,fontSize:9,color:T.textMuted}}>{alert.condition} {alert.value}{alert.unit}</div>
+      <div style={{flex:1,minWidth:0}}>
+        <div style={{fontFamily:T.fontSans,fontSize:11,color:T.textPrimary}}>{alert.label}
+          {alert.active&&<span style={{fontFamily:T.fontMono,fontSize:8,color,marginLeft:6,letterSpacing:"0.08em"}}>{badge}</span>}
+        </div>
+        <div style={{fontFamily:T.fontMono,fontSize:9,color:ev.state==="blind"?T.amber:T.textMuted}}>
+          {ev.state==="blind"?ev.why:ev.detail||`${alert.condition} ${alert.value}${alert.unit}`}
+        </div>
       </div>
       <button onClick={()=>onToggle(alert.id)} aria-label={`Toggle alert ${alert.label}`}
         style={{fontFamily:T.fontMono,fontSize:9,background:"none",border:`1px solid ${T.border}`,color:T.textSecondary,padding:"6px 10px",minWidth:44,minHeight:44,borderRadius:3,cursor:"pointer"}}>
@@ -1016,11 +1061,13 @@ const AlertRow=({alert,onToggle,onDelete})=>{
 };
 
 const DEFAULT_ALERTS=[
-  {id:1,label:"SPY Below 200D MA",metric:"spy_200ma",condition:"below",value:692.4,unit:"$",active:true,triggered:false},
-  {id:2,label:"VIX Spike",metric:"vix",condition:"above",value:25,unit:"",active:true,triggered:false},
-  {id:3,label:"F&G Extreme Fear",metric:"feargreed",condition:"below",value:20,unit:"",active:true,triggered:false},
-  {id:4,label:"10Y > 5%",metric:"treasury10y",condition:"above",value:5.0,unit:"%",active:true,triggered:false},
-  {id:5,label:"CPI > 4%",metric:"cpi",condition:"above",value:4.0,unit:"%",active:false,triggered:false},
+  // No `triggered` field: it is COMPUTED by evalAlert from live data every render. A stored
+  // trigger state is exactly what let this section assert "nothing tripped" without looking.
+  {id:1,label:"SPY Below 200D MA",metric:"spy_200ma",condition:"below",value:692.4,unit:"$",active:true},
+  {id:2,label:"VIX Spike",metric:"vix",condition:"above",value:25,unit:"",active:true},
+  {id:3,label:"F&G Extreme Fear",metric:"feargreed",condition:"below",value:20,unit:"",active:true},
+  {id:4,label:"10Y > 5%",metric:"treasury10y",condition:"above",value:5.0,unit:"%",active:true},
+  {id:5,label:"CPI > 4%",metric:"cpi",condition:"above",value:4.0,unit:"%",active:false},
 ];
 
 // ─── MAIN DASHBOARD (FEAT-161: Command Center spatial layout) ─────────────
@@ -1092,7 +1139,12 @@ export default function Dashboard({ publicView = false } = {}) {
   const demoted=(f)=>anyLive&&isIllustrative(modeOf(f));
   const freshSet=anyLive ? new Set(FW_FIELDS.filter(k=>{const m=modeOf(k);return m==="LIVE"||m==="CACHED";})) : null;
   const fw=computeFiveWhys({...d, session:etSession()}, regime, { stale:staleFactors, fresh:freshSet });
-  const activeAlerts=alerts.filter(a=>a.active&&a.triggered).length;
+  // FEAT-ALERT-EVAL: evaluated from live data every render (see evalAlert). `alertBlind` is
+  // reported separately — a header that says "0 FIRED" while every input is dead would be the
+  // same false-clear the stored `triggered` flag used to assert.
+  const alertEval=Object.fromEntries(alerts.map(a=>[a.id,evalAlert(a,d,modeOf)]));
+  const activeAlerts=alerts.filter(a=>a.active&&alertEval[a.id].state==="triggered").length;
+  const alertBlind=alerts.filter(a=>a.active&&alertEval[a.id].state==="blind").length;
 
   // FEAT-331: Macro Flip circuit. Render ONLY from live+fresh inputs (v3.1 honesty invariant —
   // a fabricated circuit state is worse than none). Mock/demo/stale => flip stays null => no banner.
@@ -1160,7 +1212,8 @@ export default function Dashboard({ publicView = false } = {}) {
   // how a cut leaves attribution behind (the v3.43 lesson).
 
   return(
-    <div style={{background:T.bg,minHeight:"100vh",fontFamily:T.fontSans,color:T.textPrimary}}>
+    <div role="main" aria-label="MacroDash macro backdrop dashboard"
+      style={{background:T.bg,minHeight:"100vh",fontFamily:T.fontSans,color:T.textPrimary}}>
       <style>{`
         @import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;700&family=DM+Sans:wght@400;500;600&family=Syne:wght@700;800&display=swap');
         *{box-sizing:border-box;margin:0;padding:0;}
@@ -1206,6 +1259,7 @@ export default function Dashboard({ publicView = false } = {}) {
         <div style={{display:"flex",alignItems:"center",gap:8}}>
           <DataModeBadge mode={mode}/>
           {activeAlerts>0&&<Badge label={`⚡ ${activeAlerts} FIRED`} color={T.red}/>}
+          {activeAlerts===0&&alertBlind>0&&<Badge label={`⚡ ${alertBlind} BLIND`} color={T.amber}/>}
           {/* FEAT-165: share button */}
           <button onClick={handleShare} aria-label="Copy dashboard link"
             style={{fontFamily:T.fontMono,fontSize:9,background:copied?"#1a3020":T.surfaceHigh,border:`1px solid ${copied?T.green:T.borderAccent}`,color:copied?T.green:T.textSecondary,padding:"5px 12px",borderRadius:4,cursor:"pointer",transition:"all 0.2s"}}>
@@ -1234,7 +1288,10 @@ export default function Dashboard({ publicView = false } = {}) {
       <RegimeBand d={d} stale={staleFactors}/>
 
       {/* ── SIGNAL QUALITY rollup — at-a-glance data trust (live vs stale vs mock) ── */}
-      <div style={{display:"flex",alignItems:"center",gap:10,flexWrap:"wrap",padding:"5px 20px",background:T.bg,borderBottom:`1px solid ${T.border}`}}>
+      {/* A11Y: aria-live on the CONFIDENCE strip, not on every tile — a screen reader should
+          hear "the verdict's evidence base changed", not each number ticking. */}
+      <div role="region" aria-label="Signal quality and backdrop confidence" aria-live="polite"
+        style={{display:"flex",alignItems:"center",gap:10,flexWrap:"wrap",padding:"5px 20px",background:T.bg,borderBottom:`1px solid ${T.border}`}}>
         <span style={{fontFamily:T.fontMono,fontSize:8,color:T.textMuted,letterSpacing:"0.12em",textTransform:"uppercase"}}>Signal Quality</span>
         <span style={{fontFamily:T.fontMono,fontSize:9,color:T.green}}>● {sq.fresh} live</span>
         {sq.stale>0&&<span style={{fontFamily:T.fontMono,fontSize:9,color:T.amber}}>⏱ {sq.stale} stale</span>}
@@ -1690,11 +1747,11 @@ export default function Dashboard({ publicView = false } = {}) {
                 page) but nothing is DELIVERED, so the limit is stated at the same weight as the
                 control — the honesty invariant applied to an affordance instead of a number. */}
             <div style={{fontFamily:T.fontMono,fontSize:9,color:T.amber,border:`1px solid ${T.amber}44`,borderRadius:3,padding:"2px 7px"}}>
-              ⚠ ON/OFF highlights the row on THIS page only — no push, email or SMS is sent
+              ⚠ Evaluated live on THIS page only — no push, email or SMS is sent
             </div>
           </div>
           <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(260px,1fr))",gap:6}}>
-            {alerts.map(a=><AlertRow key={a.id} alert={a} onToggle={id=>setAlerts(prev=>prev.map(x=>x.id===id?{...x,active:!x.active}:x))} onDelete={handleDeleteAlert}/>)}
+            {alerts.map(a=><AlertRow key={a.id} alert={a} ev={alertEval[a.id]} onToggle={id=>setAlerts(prev=>prev.map(x=>x.id===id?{...x,active:!x.active}:x))} onDelete={handleDeleteAlert}/>)}
           </div>
         </div>
 

@@ -1223,6 +1223,32 @@ Jan-anchor shipped; see `snapshot.js` ~318–328), `spyMa100`, `spyMa200`, and a
   Tests: **735 smoke** (+14) + **153 render**, plus a **14-check Chromium pass on the built
   page** (every collapsed group expanded to prove nothing cut reappears, and that the footer
   still RECORDS the retirement — history kept, like the CBOE note).
+- **FEAT-ALERT-EVAL (v3.52) — the alerts evaluate, or say they cannot.** A cross-suite audit
+  called the Macro Alerts section *"interface theater"* for toggles beside "notifications not
+  wired". The defect was one layer earlier and worse than the finding: **`triggered` was a
+  hardcoded `false` that nothing ever wrote**, while the header claimed *"Triggers evaluate live
+  data"* — so the red dot was unreachable, `activeAlerts` was permanently 0, and the section
+  asserted "nothing has tripped" from code that **had never looked**. That is a directional claim
+  on absent evidence: the exact v3.1 invariant this project exists to enforce, violated by an
+  *affordance*. (v3.51 had fixed only the DELIVERY half of that sentence and left the evaluation
+  half standing — which is why this is a follow-up, not a new feature.)
+  Evaluation is now real and rides the same rails as everything else: `evalAlert()` judges a
+  threshold **only** from LIVE/CACHED, non-stale inputs, and a mock/stale input yields **BLIND**
+  — deliberately distinct from CLEAR, because *"this has not tripped"* and *"I cannot see whether
+  it tripped"* are different facts and only the second is true when the feed is dead (the v3.40
+  TAILWIND-withhold asymmetry, the v3.50 fail-closed rule). The header reports `N BLIND`
+  separately, since "0 FIRED" with dead inputs is a false clear. The **SPY/200-DMA cross is judged
+  against today's live moving average**, not the `692.4` hardcoded when the alert was authored —
+  a constant that silently drifts as the market moves is the same stale-mark defect `PX_STALE_D`
+  exists to catch. No stored `triggered` field survives; trigger state is computed every render.
+  **A11Y (same audit):** the public page had **zero landmarks and zero live regions** — the regime
+  verdict is the page's entire output and a screen reader was never told it changed. Added
+  `role="main"`, and `aria-live="polite"` on the verdict band and the confidence strip only —
+  politely, and not on every tile: a reader should hear *"the verdict's evidence base changed"*,
+  not each number ticking.
+  Tests: **748 smoke** (+13; `evalAlert` and the real `ALERT_METRICS` table lifted from source,
+  since Node cannot import JSX — trip/clear/blind/stale/no-metric/non-finite all executed) +
+  153 render + an 18-check Chromium pass.
 - **Deferred:** stored fundamentals + Robinhood sync — now unblocked by the `x-tt-pin` header
   (v3.9): a chat-side daily review can PUT `status_flags`/`ref_px` into the deepDive payloads and
   stamp `lastRun`. When built, store the *triage* shape (`{at, px}` → "% moved since your last TT
@@ -1289,7 +1315,7 @@ npm run dev        # Vite dev server (mock unless VITE_DATA_MODE=live in .env)
 npm run build      # → dist/  (what Pages runs)
 npm run preview    # serve the built dist/
 
-node test/smoke.mjs   # 735-assertion no-network smoke test (needs Node ≥17)
+node test/smoke.mjs   # 748-assertion no-network smoke test (needs Node ≥17)
 npm run test:ui       # browser render test for admin.html (skips if no Chromium)
 
 # Cron Worker (separate deploy):
