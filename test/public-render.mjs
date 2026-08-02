@@ -26,9 +26,27 @@ const DIST = new URL("../dist/", import.meta.url);
 const PORT = 8793;
 
 // ── locate a browser, or skip (same contract as test/render.mjs) ────────────
+// CI-FIX (2026-08-02 audit §4): see the long note in test/render.mjs. Chrome-for-Testing
+// renamed the per-platform directory, so the pre-CfT-only list read a PRESENT browser as
+// absent and failed CI under REQUIRE_BROWSER=1. Both generations are searched, and
+// playwright's own registry is consulted before either.
+const CHROMIUM_RELS = [
+  "chrome-linux64/chrome",                                                       // linux-x64 (CfT)
+  "chrome-linux/chrome",                                                         // linux-arm64 + pre-CfT
+  "chrome-mac-arm64/Google Chrome for Testing.app/Contents/MacOS/Google Chrome for Testing",
+  "chrome-mac-x64/Google Chrome for Testing.app/Contents/MacOS/Google Chrome for Testing",
+  "chrome-mac/Chromium.app/Contents/MacOS/Chromium",                             // pre-CfT
+  "chrome-win64/chrome.exe",                                                     // win-x64
+];
 function findChromium() {
   const direct = process.env.PLAYWRIGHT_CHROMIUM_PATH;
   if (direct) return existsSync(direct) ? direct : null;
+  // playwright-core's registry is the source of truth for the layout; existence-checked
+  // because it computes a path for the build pinned in node_modules, not a verified one.
+  try {
+    const p = chromium.executablePath();
+    if (p && existsSync(p)) return p;
+  } catch (_e) { /* no registry entry for this platform — fall through to the scan */ }
   const roots = process.env.PLAYWRIGHT_BROWSERS_PATH
     ? [process.env.PLAYWRIGHT_BROWSERS_PATH]
     : ["/opt/pw-browsers"];
@@ -36,7 +54,7 @@ function findChromium() {
     if (!existsSync(root)) continue;
     for (const dir of readdirSync(root)) {
       if (!dir.startsWith("chromium-")) continue;
-      for (const rel of ["chrome-linux/chrome", "chrome-mac/Chromium.app/Contents/MacOS/Chromium"]) {
+      for (const rel of CHROMIUM_RELS) {
         const p = `${root}/${dir}/${rel}`;
         if (existsSync(p)) return p;
       }

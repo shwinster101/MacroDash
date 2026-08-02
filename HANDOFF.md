@@ -1,6 +1,17 @@
 # MacroDash — Session Handoff · 2026-07-18 (v3.3.0)
 
-**Live:** https://macrodash.pages.dev · footer **v3.3.0** on next deploy · smoke **116/116**.
+> ⚠️ **ARCHIVE — this is a dated snapshot, NOT current state.** Everything below describes
+> the repo as of **2026-07-18 (v3.3.0)** and has been overtaken by many releases since,
+> including the v3.40–v3.60 sprint. **`CLAUDE.md` is canonical** — its release notes are the
+> living record; read it for current state and treat this file as history.
+>
+> The 2026-08-02 audit (§5) found this file being read as current. Rather than hand-syncing
+> a second copy of the changelog — which is what rotted here in the first place — handoffs
+> are now explicitly point-in-time and CLAUDE.md holds the one living record. Later sessions
+> should append a new dated section rather than editing an older one to look current.
+
+**Live:** https://macrodash.pages.dev · footer **v3.3.0** on next deploy · smoke **116/116**
+*(all three figures accurate as of 2026-07-18 only)*.
 
 ## What shipped this session (v3.3.0 "TT readout")
 
