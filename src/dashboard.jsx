@@ -1086,6 +1086,25 @@ export function evalAlert(alert,d,modeOf){
   return{state:hit?"triggered":"clear",v,threshold,
     detail:`${fmtv(v)} vs ${fmtv(Math.round(threshold*100)/100)}${m.basisLabel?` (${m.basisLabel})`:""}`};
 }
+/* FEAT-ALERT-BLIND (v3.62.1): the header's ONE aggregate tell for the monitors.
+   The BLIND count used to render only when NOTHING had fired
+   (`activeAlerts===0&&alertBlind>0`), so "⚡ 1 FIRED" beside three unreadable monitors
+   printed as though the other five had been checked and were clear — the identical
+   false clear FEAT-ALERT-EVAL removed for the 0-FIRED case, surviving at a nonzero
+   numerator. The alerts section carries no rollup of its own, so this badge is the only
+   place the aggregate is stated.
+   Both facts ride ONE badge rather than two: the FEAT-TT-CAPABILITY precedent, where a
+   second chip cost a wrap row and blew the measured 390px stance budget. Red whenever
+   anything fired (a trip outranks a blind gauge) and amber when only blind — never the
+   green that would read as "checked and clear". Returns a colorKey for the UI to resolve,
+   the same contract regime.js uses. Exported for smoke: a string pin on the JSX cannot
+   prove a suppression rule, and a source pin on the OLD expression is what let this
+   defect read as covered. */
+export function alertBadge(fired,blind){
+  if(!(fired>0)&&!(blind>0))return null;
+  const parts=[fired>0&&`${fired} FIRED`,blind>0&&`${blind} BLIND`].filter(Boolean);
+  return{label:`⚡ ${parts.join(" · ")}`,colorKey:fired>0?"red":"amber"};
+}
 // Alert row
 const AlertRow=({alert,ev,onToggle,onDelete})=>{
   // BLIND is amber, never the green that would read as "checked and clear".
@@ -1247,8 +1266,11 @@ export default function Dashboard({ publicView = false } = {}) {
     :mode==="CACHED"?"derived from today's cached snapshot"
     :liveBuild?"live data unavailable — nothing derived":"illustrative demo — not live";
   // FEAT-ALERT-EVAL: evaluated from live data every render (see evalAlert). `alertBlind` is
-  // reported separately — a header that says "0 FIRED" while every input is dead would be the
-  // same false-clear the stored `triggered` flag used to assert.
+  // counted separately from `activeAlerts` — a header that says "0 FIRED" while every input is
+  // dead would be the same false-clear the stored `triggered` flag used to assert.
+  // FEAT-ALERT-BLIND (v3.62.1): separately COUNTED, but no longer separately RENDERED — the
+  // two counts share one badge (alertBadge), because rendering them as alternatives is what
+  // let a nonzero FIRED count suppress the blind one.
   const alertEval=Object.fromEntries(alerts.map(a=>[a.id,evalAlert(a,d,modeOf)]));
   const activeAlerts=alerts.filter(a=>a.active&&alertEval[a.id].state==="triggered").length;
   /* C4 (v3.60): the return-visit digest. Compare against the stored last-valid summary, THEN
@@ -1267,6 +1289,8 @@ export default function Dashboard({ publicView = false } = {}) {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   },[mode,asOf]);
   const alertBlind=alerts.filter(a=>a.active&&alertEval[a.id].state==="blind").length;
+  // FEAT-ALERT-BLIND: one derivation of the aggregate tell, resolved to a colour at render.
+  const alertBadgeInfo=alertBadge(activeAlerts,alertBlind);
 
   // FEAT-331: Macro Flip circuit. Render ONLY from live+fresh inputs (v3.1 honesty invariant —
   // a fabricated circuit state is worse than none). Mock/demo/stale => flip stays null => no banner.
@@ -1423,14 +1447,14 @@ export default function Dashboard({ publicView = false } = {}) {
         </div>
         <div style={{display:"flex",alignItems:"center",gap:8,flexWrap:"wrap",minWidth:0}}>
           <DataModeBadge mode={mode}/>
-          {/* FEAT-GLANCE (v3.61, newcomer audit): the alert badges are operator tooling — the
+          {/* FEAT-GLANCE (v3.61, newcomer audit): the alert badge is operator tooling — the
               Macro Alerts section itself is !publicView (A4), and "⚡ 3 BLIND" reads as a system
               failure to a visitor who can't see the monitors it describes. Same gate.
-              v3.62: these stay OUTSIDE the ⋯ OPS menu. A FIRED alert is a red fact and the v3.25
+              v3.62: it stays OUTSIDE the ⋯ OPS menu. A FIRED alert is a red fact and the v3.25
               rule holds board-wide — a collapse must never hide one. Only the always-available
-              actions below move behind the disclosure. */}
-          {!publicView&&activeAlerts>0&&<Badge label={`⚡ ${activeAlerts} FIRED`} color={T.red}/>}
-          {!publicView&&activeAlerts===0&&alertBlind>0&&<Badge label={`⚡ ${alertBlind} BLIND`} color={T.amber}/>}
+              actions below move behind the disclosure.
+              v3.62.1: ONE badge now carries both counts (was two mutually-exclusive ones). */}
+          {!publicView&&alertBadgeInfo&&<Badge label={alertBadgeInfo.label} color={T[alertBadgeInfo.colorKey]}/>}
           {/* FEAT-165: share button — stays in the bar; it is the one action a VISITOR wants. */}
           <button onClick={handleShare} aria-label="Copy dashboard link" className="hdr-act"
             style={{fontFamily:T.fontMono,fontSize:9,background:copied?"#1a3020":T.surfaceHigh,border:`1px solid ${copied?T.green:T.borderAccent}`,color:copied?T.green:T.textSecondary,padding:"5px 12px",borderRadius:4,cursor:"pointer",transition:"all 0.2s"}}>

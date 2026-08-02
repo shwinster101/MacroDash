@@ -1763,6 +1763,38 @@ Jan-anchor shipped; see `snapshot.js` ~318–328), `spyMa100`, `spyMa200`, and a
   chip carries `•` and NOT `▼`, that a real bear still shows `▼`, that the printed tally and
   the count of neutral chips are the SAME number — derived on both sides, never hardcoded —
   and that the OPS menu actually opens to reveal TERMINAL rather than merely existing in DOM).
+- **FEAT-ALERT-BLIND (v3.62.1) — the false clear survived at a nonzero numerator.** The first
+  ticket run end-to-end through [`HARNESS.md`](./HARNESS.md), and it surfaced a live instance
+  of the class the harness's H5 phase exists to hunt. FEAT-ALERT-EVAL (v3.52) fixed the alerts
+  section asserting *"nothing has tripped"* from code that had never looked, and reported
+  `N BLIND` **separately** so that *"0 FIRED"* with dead inputs could not read as a clear. But
+  the badge was rendered under `activeAlerts===0&&alertBlind>0` — the two counts were
+  **mutually exclusive at the render**, so the blind tell was suppressed by exactly the
+  condition that made the header most confident. With 1 fired and 3 blind the header printed
+  `⚡ 1 FIRED` alone, reading as *"six monitors, one tripped, five clear"* while three of them
+  could not see. The identical false clear v3.52 removed at zero, surviving at one. The alerts
+  section carries no rollup of its own, so this badge is the **only** place the aggregate is
+  stated — nothing else mitigated it.
+  Both counts now ride **ONE** badge (`alertBadge`, pure and exported): `⚡ 1 FIRED · 3 BLIND`,
+  red whenever anything fired (a trip outranks a blind gauge), amber when only blind, and
+  **nothing at all** when neither — a genuine clear says nothing rather than asserting one.
+  One badge and not two is the **FEAT-TT-CAPABILITY precedent**: a second chip cost a wrap row
+  and blew the measured 390px stance budget there, and the counts are one fact about one set
+  of monitors. It returns a `colorKey` for the UI to resolve — the `regime.js` contract.
+  **The defect read as covered because the test pinned the expression, not the behavior.** The
+  assertion standing over it was `dashSrc.includes("BLIND`} color={T.amber}")`, which is green
+  on a badge that renders only when nothing has fired: a source pin cannot see a **suppression
+  rule**, because the condition it must judge is the one thing it does not read. Both pins were
+  migrated to behavior against the lifted function. Two further instances of the same shape
+  turned up in the same pass — the fix's own explanatory comment quotes the old expression as
+  history, so a bare absence-pin matched that *prose* (scoped to the render, the smoke [43]
+  lesson, caught live), and the audit found two comments still describing the superseded
+  two-badge design (a cut takes its attribution with it, at comment altitude).
+  Tests: **993 smoke** (+7, `alertBadge` lifted and RUN — suppression, the one-badge label, the
+  red/amber ordering, the null-on-clear case, the colorKey contract and the single-derivation
+  pin; every one negative-controlled by reinstating the v3.52 defect, rendering blind-only as a
+  trip, badging a genuine clear, adding a second derivation, hardcoding the colour, and
+  flipping a trip to amber) + **173 render** + **82 public-render**.
 - **Deferred:** stored fundamentals + Robinhood sync — now unblocked by the `x-tt-pin` header
   (v3.9): a chat-side daily review can PUT `status_flags`/`ref_px` into the deepDive payloads and
   stamp `lastRun`. When built, store the *triage* shape (`{at, px}` → "% moved since your last TT

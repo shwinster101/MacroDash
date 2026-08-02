@@ -2382,8 +2382,34 @@ ok("alert: a metric with no wiring is BLIND, never assumed clear",
   evalAlert({ metric: "nope", condition: "above", value: 1, active: true }, {}, allLive).state === "blind");
 ok("alert: a non-finite live value is BLIND (a missing number is not a passing test)",
   evalAlert(aVix, { marketPulse: { vix: { current: null } } }, allLive).state === "blind");
-ok("alert: the header reports BLIND separately — '0 FIRED' with dead inputs is a false clear",
-  dashSrc.includes("alertBlind") && dashSrc.includes("BLIND`} color={T.amber}"));
+/* FEAT-ALERT-BLIND (v3.62.1) — the aggregate tell, run rather than pinned.
+   The assertion that stood here was `dashSrc.includes("BLIND`} color={T.amber}")`, and it is
+   the reason this defect read as covered for two releases: it pinned the EXPRESSION, so it
+   went green on a badge that rendered only when `activeAlerts===0`. A source pin cannot see a
+   SUPPRESSION rule — the condition it needed to judge was the one thing it did not read.
+   `alertBadge` is now exported and lifted, so these judge behavior. */
+const _ab = dashSrc.indexOf("export function alertBadge(");
+const alertBadge = new Function(
+  dashSrc.slice(_ab, dashSrc.indexOf("\n}", _ab) + 2).replace("export function", "function") +
+  "\nreturn alertBadge;")();
+ok("alert: a FIRED alert no longer SUPPRESSES the blind count — the defect, stated as a test",
+  /BLIND/.test(alertBadge(1, 3).label) && /FIRED/.test(alertBadge(1, 3).label));
+ok("alert: both facts ride ONE badge, not two (the FEAT-TT-CAPABILITY density precedent)",
+  alertBadge(1, 3).label === "⚡ 1 FIRED · 3 BLIND" &&
+  /\{!publicView&&alertBadgeInfo&&<Badge/.test(dashSrc) &&
+  // Scoped to the RENDER, not the file: the comment above the fix quotes the old expression
+  // as history, and a bare absence-pin matched that prose — the [43] lesson, caught live here.
+  !/activeAlerts===0&&alertBlind>0&&<Badge/.test(dashSrc));
+ok("alert: blind-only stays AMBER — never the green that would read as checked-and-clear",
+  alertBadge(0, 3).colorKey === "amber" && alertBadge(0, 3).label === "⚡ 3 BLIND");
+ok("alert: anything fired reads RED — a trip outranks a blind gauge",
+  alertBadge(1, 3).colorKey === "red" && alertBadge(2, 0).colorKey === "red");
+ok("alert: nothing fired and nothing blind renders NO badge — a genuine clear says nothing",
+  alertBadge(0, 0) === null);
+ok("alert: the badge returns a colorKey and the UI resolves it (the regime.js contract)",
+  /color=\{T\[alertBadgeInfo\.colorKey\]\}/.test(dashSrc));
+ok("alert: the aggregate has ONE derivation — the header is the only rollup that exists",
+  (dashSrc.match(/alertBadge\(/g) || []).length === 2); // the definition + the single call
 ok("alert: the section states it evaluates HERE and delivers nothing",
   /Evaluated live on THIS page only — no push, email or SMS is sent/.test(dashSrc));
 // ---- a11y (suite audit #2): landmarks + live regions on the public page ----
@@ -3166,8 +3192,7 @@ ok("glance: the TT copy button and the FIRED/BLIND alert badges gate on !publicV
     return /\{!publicView&&\(\s*\n?\s*<details className="hdr-ops"/.test(dashSrc) &&
       menu.includes("onClick={handleTtCopy}") && menu.includes('href="/admin.html"');
   })() &&
-  /\{!publicView&&activeAlerts>0&&<Badge/.test(dashSrc) &&
-  /\{!publicView&&activeAlerts===0&&alertBlind>0&&<Badge/.test(dashSrc));
+  /\{!publicView&&alertBadgeInfo&&<Badge/.test(dashSrc));
 // v3.62: a FIRED/BLIND badge is a red fact — the v3.25 rule (a collapse never hides one) means
 // the alert badges must stay OUTSIDE the disclosure even though they are also operator-only.
 ok("the OPS menu does not swallow the alert badges — a red fact stays visible while closed",
@@ -3175,7 +3200,8 @@ ok("the OPS menu does not swallow the alert badges — a red fact stays visible 
     const open = dashSrc.indexOf('<details className="hdr-ops"');
     const close = dashSrc.indexOf("</details>", open);
     const menu = open < 0 ? "" : dashSrc.slice(open, close);
-    return menu.length > 0 && !menu.includes("activeAlerts") && !menu.includes("alertBlind");
+    return menu.length > 0 && !menu.includes("activeAlerts") && !menu.includes("alertBlind") &&
+      !menu.includes("alertBadgeInfo");
   })());
 
 // ─────────────────────────────────────────────────────────────────────────────
