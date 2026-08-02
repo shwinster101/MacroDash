@@ -1229,7 +1229,7 @@ ok("render: the fixture is SYNTHETIC — no real book content enters this repo",
   renderSrc.includes("INVARIANT: the fixture is SYNTHETIC") &&
   ["AAA", "BBB", "CCC", "FFF"].every((s) => renderSrc.includes(`sym: "${s}"`)));
 ok("render: asserts at a phone width as well as desktop",
-  renderSrc.includes("await open(390)") && renderSrc.includes("no horizontal overflow at 390px"));
+  renderSrc.includes("await open(390, 844)") && renderSrc.includes("no horizontal overflow at 390px"));
 
 // ---- 14. audit patches (v3.31.1) -------------------------------------------
 console.log("\n[14] audit — composite parsing, mark staleness, version drift");
@@ -3177,6 +3177,34 @@ ok("the OPS menu does not swallow the alert badges — a red fact stays visible 
     const menu = open < 0 ? "" : dashSrc.slice(open, close);
     return menu.length > 0 && !menu.includes("activeAlerts") && !menu.includes("alertBlind");
   })());
+
+// ─────────────────────────────────────────────────────────────────────────────
+console.log("\n[42] FEAT-TT-DECK — mobile decision views and the shareable ranking artifact");
+ok("tt-deck: SHARE RANKS is a first-row action, not buried under MENU → MANAGE",
+  /<div class="hbar">[\s\S]*class="hb-ranks" onclick="exportRankings\(\)"[\s\S]*class="hb-more"/.test(adminSrc) &&
+  (adminSrc.match(/onclick="exportRankings\(\)"/g) || []).length === 1);
+ok("tt-deck: the promoted action names the decision logic carried by the export",
+  /aria-label="Share ticker rankings and decision logic"/.test(adminSrc) &&
+  /Share rankings, funding priority, methodology and caveats/.test(adminSrc));
+ok("tt-deck: BUY and FUND are two labelled tab panels — swipe is optional, never the only control",
+  /role="tablist" aria-label="Daily capital allocation views"/.test(adminSrc) &&
+  /id="decisionBuy" role="tabpanel"/.test(adminSrc) &&
+  /id="decisionFund" role="tabpanel"/.test(adminSrc) &&
+  /onclick="decisionGo\(0\)"/.test(adminSrc) && /onclick="decisionGo\(1\)"/.test(adminSrc));
+ok("tt-deck: phone layout uses horizontal scroll snap and a viewport-height focus panel",
+  /scroll-snap-type:x mandatory/.test(adminSrc) &&
+  /scroll-snap-align:start/.test(adminSrc) &&
+  /height:max\(520px,calc\(100svh - 220px\)\)/.test(adminSrc));
+ok("tt-deck: keyboard arrows switch the same two views and reduced motion is respected",
+  /function decisionKey\(e,i\)/.test(adminSrc) &&
+  /prefers-reduced-motion: reduce/.test(adminSrc) &&
+  /setDecisionTab\(Math\.max/.test(adminSrc) &&
+  /toggleAttribute\("inert",compact&&n!==i\)/.test(adminSrc));
+ok("tt-deck: forced trims stay visible; only the lower-priority funding tail collapses",
+  adminSrc.indexOf("s.forced.forEach") < adminSrc.indexOf("const FUNDING_VISIBLE=5") &&
+  /\+\$\{s\.disc\.length-FUNDING_VISIBLE\} lower-priority funding sources/.test(adminSrc));
+ok("tt-deck: the second view is honestly FUND / TRIM, never a fabricated HOLD recommendation",
+  adminSrc.includes(">FUND / TRIM</button>") && !/NEXT DOLLAR[^<]{0,20}HOLD/.test(adminSrc));
 
 // ─────────────────────────────────────────────────────────────────────────────
 console.log("\n[39] CI-FIX — the browser suites must not read a PRESENT browser as absent");

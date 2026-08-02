@@ -48,9 +48,9 @@
   /* ── header ── */
   /* v3.42 slice 5: the header measured 209px at 390×844 — larger than the stance bar and tab
      strip COMBINED, and the single biggest consumer of the 587px that sat above the first
-     answer. It is now ONE row (identity · MACRO pill · ⋯ MENU); everything that is STATUS
-     rather than an answer — version, BOOK/AUTH stamps, the DASH link, and the whole action
-     toolbar — lives inside the #headInfo disclosure, one tap away. */
+     answer. It is now ONE row. v3.62 promotes SHARE RANKS because sharing the actual decision
+     artifact is a primary workflow, not backup administration; all status and recovery
+     actions remain inside #headInfo. */
   header{border:1px solid var(--line);background:linear-gradient(180deg,#0b131c,#080c12);
     border-radius:8px;padding:8px 12px;margin-bottom:10px;position:relative;overflow:hidden}
   .hbar{display:flex;align-items:center;gap:8px;min-width:0}
@@ -60,6 +60,11 @@
     border-radius:6px;padding:2px 9px;font-family:inherit;font-size:var(--fs-xs);
     letter-spacing:.08em;cursor:pointer;white-space:nowrap}
   .hb-more:hover{color:var(--fg);border-color:var(--greenDim)}
+  .hb-ranks{margin-left:auto;background:#0c1a13;border:1px solid var(--greenDim);color:var(--green);
+    border-radius:6px;padding:3px 9px;font-family:inherit;font-size:var(--fs-xs);
+    letter-spacing:.06em;cursor:pointer;white-space:nowrap}
+  .hb-ranks:hover{border-color:var(--green);background:#10261a}
+  .hb-ranks+.hb-more{margin-left:0}
   #headInfo{margin-top:8px;padding-top:8px;border-top:1px dashed var(--line)}
   #headInfo .toolbar{margin-bottom:0;margin-top:8px}
   header::before{content:"";position:absolute;inset:0;
@@ -217,6 +222,31 @@
     .chip{min-height:40px}          /* v3.42 slice 3: thumb-sized book chips */
   }
   .fdr{margin-bottom:8px}
+  /* v3.62 DECISION DECK: the two daily capital-allocation answers become focus views on a
+     phone. Buttons keep the views discoverable and keyboard reachable; horizontal scroll
+     snap adds the optional swipe. Desktop preserves the familiar stacked layout. */
+  .decision-tabs{display:none}
+  .decision-deck{display:block}
+  .decision-page{min-width:0}
+  @media(max-width:700px){
+    .decision-tabs{display:flex;align-items:center;gap:6px;margin:2px 0 8px;padding:3px;
+      border:1px solid var(--line);border-radius:8px;background:#080d13;position:sticky;
+      top:env(safe-area-inset-top);z-index:12}
+    .decision-tabs button{flex:1;border:1px solid transparent;border-radius:6px;background:none;
+      color:var(--dim);font:inherit;font-size:var(--fs-s);letter-spacing:.08em;padding:8px 6px;
+      cursor:pointer;min-height:42px}
+    .decision-tabs button[aria-selected="true"]{color:var(--green);border-color:var(--greenDim);
+      background:#0c1a13;font-weight:700}
+    .decision-tabs .swipe-hint{font-size:var(--fs-xs);color:var(--dim);padding:0 5px;white-space:nowrap}
+    .decision-deck{display:flex;overflow-x:auto;overflow-y:hidden;scroll-snap-type:x mandatory;
+      overscroll-behavior-x:contain;-webkit-overflow-scrolling:touch;scrollbar-width:none;
+      margin:0 -14px 8px;height:520px;height:max(520px,calc(100svh - 220px))}
+    .decision-deck::-webkit-scrollbar{display:none}
+    .decision-page{flex:0 0 100%;height:100%;min-height:0;overflow-y:auto;
+      overscroll-behavior-y:contain;scroll-snap-align:start;scroll-snap-stop:always;
+      padding:0 14px 12px}
+    .decision-page>.nd{margin-bottom:0}
+  }
   /* v3.42 READABLE DESK slice 2: driver rows are a two-line GRID inside a real <button> —
      line 1 = identity (left) + the primary datum right-aligned at --fs-l; line 2 = detail +
      warning chips. The old single flex-wrap line interleaved 6–9 datums at 10px with the
@@ -347,9 +377,10 @@
 <body>
 <div class="wrap">
   <header>
-    <!-- v3.42 slice 5: ONE row. Only the two things that change a decision stay visible —
-         identity and the MACRO pill (Engine 0's measured read). Everything else is status,
-         not an answer, so it sits behind ⋯ MENU.
+    <!-- v3.42 slice 5: ONE row. Identity and the MACRO pill are decision state. v3.62 adds
+         SHARE RANKS as the one primary output action; it used to be buried two disclosures
+         deep under MENU → MANAGE and was functionally invisible on a phone. Everything else
+         is status or administration, so it stays behind ⋯ MENU.
          v3.29: labelled MACRO, not REGIME. This pill is MacroDash's MEASURED read; the
          session can assert a different one, and the TODAY stance shows which governs.
          An unqualified "REGIME:" made the header look like it contradicted the stance. -->
@@ -359,6 +390,9 @@
            unqualified pill made the header look like it contradicted the TODAY stance.
            It survives the slice-5 compaction for that reason. -->
       <span>MACRO: <span class="pill neutral" id="regimePill">loading…</span></span>
+      <button class="hb-ranks" onclick="exportRankings()"
+        aria-label="Share ticker rankings and decision logic"
+        title="Share rankings, funding priority, methodology and caveats">⇧ SHARE RANKS</button>
       <button class="hb-more" id="headToggle" aria-expanded="false" aria-controls="headInfo"
         onclick="toggleHeadInfo()">⋯ MENU</button>
     </div>
@@ -386,7 +420,6 @@
       <div class="toolbar" id="backupRow" style="display:none">
         <button class="act" onclick="openPinSetup()">🔐 PIN</button>
         <button class="act" onclick="exportBook()">⭳ EXPORT CANONICAL_BOOK.md</button>
-        <button class="act" onclick="exportRankings()">📊 RANKINGS → SHARE</button>
         <button class="act" onclick="exportJSON()">⭳ EXPORT JSON</button>
         <button class="act" onclick="openImport()">⇪ IMPORT JSON</button>
         <button class="act warn" onclick="openRestore()">⏱ RESTORE POINTS</button>
@@ -417,8 +450,24 @@
              Everything else lives one click away inside the DESK drawer below. The v3.25
              rule survives via the strip: it carries every red count while DESK is closed. -->
         <div class="stance-strip" id="stanceStrip" style="display:none"></div>
-        <div class="nd fdr" id="buyBlock" style="display:none"></div>
-        <div class="nd fdr" id="sellBlock" style="display:none"></div>
+        <div class="decision-tabs" role="tablist" aria-label="Daily capital allocation views">
+          <button id="decisionBuyTab" role="tab" aria-selected="true" aria-controls="decisionBuy"
+            onclick="decisionGo(0)" onkeydown="decisionKey(event,0)">NEXT $ IN</button>
+          <button id="decisionFundTab" role="tab" aria-selected="false" aria-controls="decisionFund" tabindex="-1"
+            onclick="decisionGo(1)" onkeydown="decisionKey(event,1)">FUND / TRIM</button>
+          <span class="swipe-hint" aria-hidden="true">swipe ↔</span>
+        </div>
+        <div class="decision-deck" id="decisionDeck" aria-label="Next dollar decisions"
+          onscroll="syncDecisionDeck()">
+          <section class="decision-page" id="decisionBuy" role="tabpanel"
+            aria-labelledby="decisionBuyTab">
+            <div class="nd fdr" id="buyBlock" style="display:none"></div>
+          </section>
+          <section class="decision-page" id="decisionFund" role="tabpanel"
+            aria-labelledby="decisionFundTab">
+            <div class="nd fdr" id="sellBlock" style="display:none"></div>
+          </section>
+        </div>
         <div class="nd fdr" id="calBlock" style="display:none"></div>
 
         <!-- FEAT-TT-GLANCE (v3.61): chip-length heading; the coaching line moved to the
@@ -3753,6 +3802,42 @@ function sellRank(){
   });
   return{forced,disc,unmod,optOnly,tot};
 }
+/* v3.62 DECISION DECK — optional swipe, never swipe-only. The segmented buttons are the
+   durable interaction and carry keyboard semantics; scrolling the deck merely keeps their
+   selected state in sync with a touch gesture. The computation stays in renderBuyBlock /
+   renderSellBlock — this is presentation only. */
+function setDecisionTab(i){
+  const tabs=[document.getElementById("decisionBuyTab"),document.getElementById("decisionFundTab")];
+  tabs.forEach((t,n)=>{if(t){t.setAttribute("aria-selected",n===i?"true":"false");t.tabIndex=n===i?0:-1;}});
+  const panels=[document.getElementById("decisionBuy"),document.getElementById("decisionFund")];
+  const compact=window.matchMedia&&window.matchMedia("(max-width: 700px)").matches;
+  panels.forEach((p,n)=>{if(p){
+    p.setAttribute("aria-hidden",compact&&n!==i?"true":"false");
+    p.toggleAttribute("inert",compact&&n!==i);
+  }});
+}
+function decisionGo(i,focus=false){
+  const deck=document.getElementById("decisionDeck");if(!deck)return;
+  const n=i>0?1:0;setDecisionTab(n);
+  const reduce=window.matchMedia&&window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+  deck.scrollTo({left:n*deck.clientWidth,behavior:reduce?"auto":"smooth"});
+  if(focus){const t=document.getElementById(n?"decisionFundTab":"decisionBuyTab");if(t)t.focus();}
+}
+function decisionKey(e,i){
+  if(!["ArrowLeft","ArrowRight","Home","End"].includes(e.key))return;
+  e.preventDefault();
+  const n=e.key==="Home"||e.key==="ArrowLeft"?0:1;
+  decisionGo(n,true);
+}
+function syncDecisionDeck(){
+  const deck=document.getElementById("decisionDeck");if(!deck||!deck.clientWidth)return;
+  setDecisionTab(Math.max(0,Math.min(1,Math.round(deck.scrollLeft/deck.clientWidth))));
+}
+setDecisionTab(0);
+window.addEventListener("resize",()=>{
+  const active=document.getElementById("decisionFundTab")?.getAttribute("aria-selected")==="true"?1:0;
+  setDecisionTab(active);
+});
 function renderSellBlock(){
   const el=document.getElementById("sellBlock");if(!el)return;
   const s=sellRank();
@@ -3789,13 +3874,13 @@ function renderSellBlock(){
       `<span style="color:var(--red)">≈ ${money(r.trim$)} to cap</span>${flags(r)}`+
       (r.dnt?`<span class="bad2">⚠ cap and do-not-trim CONTRADICT — resolve, the board won't pick</span>`:"")+`</span></button>`;
   });
-  s.disc.forEach((r,i)=>{
+  const fundingRow=(r,i)=>{
     /* v3.44: one list, two honest bases. A share row's PRIMARY is its expected return (the
        reason it funds first); an options row's PRIMARY is the dollars it can actually realise,
        because a levered, decaying leg does not inherit the underlying's %/yr. Each row says
        which basis ranked it, so the mixed ordering can never be mistaken for one key. */
     const optRow=r.basis==="dollars";
-    h+=`<button class="fdr-row" onclick="openCard('${esc(r.sym)}')">`+
+    return `<button class="fdr-row" onclick="openCard('${esc(r.sym)}')">`+
       `<span class="fdr-l"><span class="scope">${i+1}</span>`+
       `<span class="sym">${esc(r.sym)}</span><span class="lens lens-${esc(r.lens)}">${esc(r.lens)}</span>`+
       (optRow?`<span class="scope" style="color:var(--amber)">◇ ${r.legs} leg${r.legs===1?"":"s"}</span>`
@@ -3808,7 +3893,18 @@ function renderSellBlock(){
          the methodology expander below; the row keeps a chip-length basis tag so the mixed
          ordering still can't be mistaken for one key. */
       `<span class="fdr-d"><span class="scope">${optRow?"$ realisable":"%/yr"}</span>${flags(r)}</span></button>`;
-  });
+  };
+  /* v3.62: one phone screen should answer where funding starts, not reproduce the entire
+     holdings ledger. Forced cap trims always remain above the fold; the first five computed
+     sources stay visible and the lower-priority tail is explicitly counted one tap deeper. */
+  const FUNDING_VISIBLE=5;
+  s.disc.slice(0,FUNDING_VISIBLE).forEach((r,i)=>{h+=fundingRow(r,i);});
+  if(s.disc.length>FUNDING_VISIBLE){
+    h+=`<details class="est-mini"><summary><span class="scope">+${s.disc.length-FUNDING_VISIBLE} lower-priority funding sources</span>`+
+      `<span class="scope">${s.disc.length} ranked total</span></summary><div class="fdr">`;
+    s.disc.slice(FUNDING_VISIBLE).forEach((r,i)=>{h+=fundingRow(r,i+FUNDING_VISIBLE);});
+    h+=`</div></details>`;
+  }
   const noModel=s.unmod.filter(r=>!r.modelled),noRate=s.unmod.filter(r=>r.modelled);
   // Reconciliation: the session's ASSERTED first trim vs this COMPUTED first source. The
   // disagreement is SIGNAL (married never merged), so the chip-length line stays visible;

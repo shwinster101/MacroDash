@@ -255,8 +255,8 @@ const ok = (name, cond) => { console.log((cond ? "  PASS  " : "  FAIL  ") + name
 const browser = await chromium.launch({ executablePath: exe });
 const errors = [];
 
-async function open(width) {
-  const page = await browser.newPage({ viewport: { width, height: 2200 } });
+async function open(width, height=2200) {
+  const page = await browser.newPage({ viewport: { width, height } });
   page.on("pageerror", (e) => errors.push(`[${width}px] pageerror: ${e.message}`));
   page.on("console", (m) => { if (m.type() === "error") errors.push(`[${width}px] console: ${m.text()}`); });
   await page.goto(`http://127.0.0.1:${PORT}/admin.html`);
@@ -973,11 +973,18 @@ await page.close();
 
 // ── phone pass ──────────────────────────────────────────────────────────────
 console.log("\n[render] phone (390px) — the daily answer above the book");
-const phone = await open(390);
+// v3.62: use the phone HEIGHT named by this pass. A 2200px test viewport made 100svh
+// resolve to 2200px, so it could not truthfully exercise a viewport-height mobile surface.
+const phone = await open(390, 844);
 const tY = (await phone.locator("#stanceStrip").boundingBox()).y;
 const bY = (await phone.locator("#board").boundingBox()).y;
+const dailySpan = Math.round(bY - tY);
 ok("the stance strip leads the primary view, above the book", tY < bY);
-ok("the whole daily answer (stance → buy → sell → calendar) fits inside two phone screens", bY - tY < 1400);
+// v3.62: BUY and FUNDING are now horizontal alternatives, not two vertically stacked
+// answers. The hidden panel must not set the page height; one focus view plus the calendar
+// and the start of the book still fit inside the old two-screen budget.
+ok(`one decision focus view + calendar reaches the book inside two phone screens (${dailySpan}px)`,
+  dailySpan < 1688);
 // v3.42 READABLE DESK: the old stance strip wrapped ~5 lines of prose at 390px; the bar's
 // top row (token + chips + badges) must stay compact with the why drawer closed.
 const stanceTopH = (await phone.locator("#stanceStrip .stance-top").boundingBox()).height;
@@ -985,6 +992,34 @@ ok(`stance bar top row is compact at 390px — token and chips, never five lines
   stanceTopH < 140);
 ok("the tab strip is ONE row at 390px — it scrolls horizontally, it never wraps",
   (await phone.locator("#tabBar").boundingBox()).height < 60);
+// v3.62 FEAT-TT-DECK: the two capital-allocation answers are phone focus views. The buttons
+// are the accessible contract; scroll-snap is an optional touch shortcut.
+ok("decision deck: SHARE RANKS is visible without opening MENU",
+  await phone.locator("header .hb-ranks").isVisible() &&
+  !(await phone.locator("#headInfo").isVisible()));
+ok("decision deck: two labelled controls exist and BUY starts selected",
+  (await phone.locator('.decision-tabs [role="tab"]').count()) === 2 &&
+  (await phone.locator("#decisionBuyTab").getAttribute("aria-selected")) === "true" &&
+  (await phone.locator('.decision-tabs [role="tab"][tabindex="0"]').count()) === 1 &&
+  await phone.locator("#decisionFund").getAttribute("inert") !== null);
+await phone.evaluate(() => decisionGo(1));
+await phone.waitForTimeout(350);
+const fundDeck = await phone.evaluate(() => {
+  const d=document.getElementById("decisionDeck");
+  return { ratio:d.clientWidth?d.scrollLeft/d.clientWidth:0,
+    selected:document.getElementById("decisionFundTab").getAttribute("aria-selected") };
+});
+ok("decision deck: FUND / TRIM is reachable through the same programmatic path as a swipe",
+  fundDeck.ratio > .8 && fundDeck.selected === "true" &&
+  await phone.locator("#decisionBuy").getAttribute("inert") !== null &&
+  await phone.locator("#decisionFund").getAttribute("inert") === null);
+await phone.evaluate(() => decisionGo(0));
+await phone.waitForTimeout(350);
+ok("decision deck: each phone panel owns a viewport-height focus area",
+  (await phone.locator("#decisionBuy").boundingBox()).height > 500);
+const fundRows = await phone.locator("#sellBlock > .fdr-row").count();
+ok("decision deck: the visible funding queue is capped while lower-priority rows are counted",
+  fundRows <= 6 && (await phone.locator("#sellBlock details.est-mini").count()) >= 1);
 // v3.42 slice 5 — the headline metric. Measured at 390x844 before this slice: the BUY block
 // began at y=587 of an 844px viewport, so 70% of the first screen was spent on chrome before
 // the first answer (the header alone was 209px of it). These budgets are the whole point of
@@ -1007,8 +1042,10 @@ const buyTopPermissive = await phone.evaluate(() => {
 // not chrome, so the permissive budget accounts for it rather than pretending it away.
 // v3.45: the fixture's turning capex tape adds a FOURTH red badge to the strip — legitimate
 // red content, not chrome, so the budget moves with it (was <360 at three badges).
+// The 42px labelled view switcher is now part of the answer, not expendable chrome. Keep
+// the first ranked row in the upper half of the phone while budgeting that accessible control.
 ok(`slice5: on an everyday PERMISSIVE board the first ANSWER is high on screen — BUY at y=${buyTopPermissive} of 844, was 587`,
-  buyTopPermissive < 390);
+  buyTopPermissive < 450);
 ok(`slice5: even RESTRICTIVE (full stance bar, by design) the BUY block still clears the fold — y=${buyTopRestrictive}`,
   buyTopRestrictive < 460);
 ok("every drawer starts closed except what-changed",

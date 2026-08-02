@@ -1763,6 +1763,23 @@ Jan-anchor shipped; see `snapshot.js` ~318–328), `spyMa100`, `spyMa200`, and a
   chip carries `•` and NOT `▼`, that a real bear still shows `▼`, that the printed tally and
   the count of neutral chips are the SAME number — derived on both sides, never hardcoded —
   and that the OPS menu actually opens to reveal TERMINAL rather than merely existing in DOM).
+- **FEAT-TT-DECK (v3.62) — the terminal becomes a two-answer mobile decision surface.**
+  `NEXT $ IN` and `FUND / TRIM` are labelled, keyboard-reachable tab panels on phones with
+  horizontal scroll snap as an optional swipe shortcut; desktop keeps the stacked layout. Each
+  phone panel owns one real 390×844 focus viewport and scrolls its own overflow, so the hidden
+  funding list cannot lengthen the page. This deliberately does **not** call the second view
+  “HOLD”: the engine computes funding/trim priority, not a hold recommendation, and changing
+  the label would overstate the logic. Forced cap trims remain visible; the first five
+  discretionary funding sources render by default and the ranked tail is counted in a closed
+  expander. The existing rankings export was complete but effectively undiscoverable under
+  `MENU → MANAGE`; `⇧ SHARE RANKS` is now a first-row action and preserves its iOS File/share,
+  clipboard and download fallbacks. Its Markdown artifact still carries stance, master and
+  category rankings, funding priority, unranked names, methodology, provenance and caveats.
+  The render harness now actually opens its claimed **390×844** phone viewport (it previously
+  used 390×2200, making any `svh` assertion false by construction). Combined v3.62 head:
+  **985 smoke** (+7 from this feature) + **178 render** (+5 net from this feature, including
+  the real swipe path, visible export action, panel height, capped funding queue, two-screen
+  budget and zero mobile overflow).
 - **Deferred:** stored fundamentals + Robinhood sync — now unblocked by the `x-tt-pin` header
   (v3.9): a chat-side daily review can PUT `status_flags`/`ref_px` into the deepDive payloads and
   stamp `lastRun`. When built, store the *triage* shape (`{at, px}` → "% moved since your last TT
