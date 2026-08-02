@@ -355,8 +355,11 @@ Apply HARNESS.md §P.
 
 Close out <ticket>.
 
-1. Bump `version` in package.json. It is the single source of truth; nothing else
-   restates it.
+1. Bump `version` in package.json — the single source of truth. The public bundle reads it
+   through Vite, but the **buildless `/admin.html` cannot import and mirrors it** in its
+   `<title>` and brand line: sweep both in the same commit. Smoke pins that they match, so a
+   half-bump fails the gate. (This step read "nothing else restates it" until the first
+   ticket run through this harness hit that gate — the prompt was wrong, not the repo.)
 2. Write the CLAUDE.md changelog entry in the existing house style: what the defect WAS,
    why it survived, what the fix is, what was deliberately NOT changed, and the honest
    limits. Match the surrounding entries' voice. Do not add a summary line anywhere that
