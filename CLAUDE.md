@@ -82,16 +82,13 @@ index.html              Vite entry; mounts /src/main.jsx; PWA meta + manifest
 vite.config.js          Vite + react plugin (minimal)
 manifest.webmanifest    Add-to-Home-Screen
 package.json            deps + dev/build/preview scripts + version (SOURCE OF TRUTH)
-REGIME_LOGIC_REFERENCE_2026-08-01.md
-                        Date-stamped reference for BOTH regime engines (Macro Backdrop +
-                        the tt-v1 order-gating readout), the provenance layer they rest on,
-                        how TT consumes them, the locked doctrines and a constants appendix.
-                        Descriptive, not normative — smoke [33] pins its load-bearing numbers
-                        to source, so a band change without a restamp fails the build. §10
-                        documents the RANKING METHOD (entry rules, computed horizon, veto
-                        order, weight denominator, funding sort). It deliberately EXCLUDES the
-                        private TT framework AND all book content (KV-only, repo public) —
-                        smoke asserts no ticker/score data appears in it.
+
+(A consolidated REGIME LOGIC REFERENCE — both engines' bands, the veto order, the
+ ranking method and every constant — deliberately does NOT live here. It leaked no
+ book content, but one file describing the whole decision architecture is more
+ useful to an adversary than the same facts spread across source comments. Same
+ reasoning as the KV-only TT framework doc. It lives as a chat artifact; smoke [33]
+ asserts no REGIME_LOGIC_REFERENCE file exists in the repo under any name.)
 
 src/
   main.jsx              React root (StrictMode) → <App/>
@@ -1477,7 +1474,7 @@ npm run dev        # Vite dev server (mock unless VITE_DATA_MODE=live in .env)
 npm run build      # → dist/  (what Pages runs)
 npm run preview    # serve the built dist/
 
-node test/smoke.mjs   # 856-assertion no-network smoke test (needs Node ≥17)
+node test/smoke.mjs   # 845-assertion no-network smoke test (needs Node ≥17)
 npm run test:ui       # browser render test for admin.html (skips if no Chromium)
 npm run test:public   # build + browser STATE test for the public dashboard (skips likewise)
 

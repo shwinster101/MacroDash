@@ -4,7 +4,7 @@
 // real dashboard MOCK_DATA. The cron worker + /api/fred are no longer consumed by
 // the dashboard, so their internals belong to the worker's own suite, not this gate.
 
-import { existsSync } from "node:fs";
+import { existsSync, readdirSync } from "node:fs";
 import { readFileSync } from "node:fs";
 import { mergeLiveOverMock, SOURCES, isStale, cadenceOf, parseObsDate, isMarketHoliday, MARKET_HOLIDAYS, DERIVED_OF as DERIVED_OF_SRC, DERIVED_EXEMPT, govAsOf } from "../src/sources.js";
 import { computeFiveWhys, isMacroMaterial } from "../src/fiveWhys.js";
@@ -2724,64 +2724,21 @@ ok("30y: it does NOT vote — REGIME_BAND_TABLE is untouched and the readout mat
     dashSrc.indexOf("export function verdictFrom"))) &&
   !/thirtyYear|spread10s30s/.test(readFileSync(new URL("../src/ttReadout.js", import.meta.url), "utf8")));
 
-// ---- 33. REGIME_LOGIC_REFERENCE — the doc must not silently rot ------------
-// A reference doc with a wrong number is worse than none: it will be trusted. These pin the
-// load-bearing figures to the SOURCE, so changing a band without restamping the doc fails here.
-console.log("\n[33] REGIME_LOGIC_REFERENCE — pinned to source");
-const refPath = new URL("../REGIME_LOGIC_REFERENCE_2026-08-01.md", import.meta.url);
-const refDoc = existsSync(refPath) ? readFileSync(refPath, "utf8") : "";
-ok("ref: the reference doc exists and is date-stamped in its filename and body",
-  refDoc.length > 2000 && /\*\*Stamped:\*\* 2026-08-01 ET/.test(refDoc));
-ok("ref: it states the code wins on disagreement (a doc is never the source of truth)",
-  /the code is right and this file is stale/.test(refDoc));
-// The private framework must not be reproduced here — this repo is PUBLIC.
-ok("ref: it declares the private-framework boundary and does not reproduce that document",
-  /does \*\*not\*\* contain the owner's TT framework/.test(refDoc) &&
-  !/tt:framework:v1[\s\S]{0,80}=/.test(refDoc));
-// Load-bearing numbers, pinned against the real constants.
-ok("ref: the public quorum matches REGIME_QUORUM in source",
-  /`REGIME_QUORUM = 4` of 6/.test(refDoc) && /const REGIME_QUORUM = 4;/.test(dashSrc));
-ok("ref: the readout's INSUFFICIENT floor matches ttReadout",
-  /available < 3\s+→ INSUFFICIENT/.test(refDoc) &&
-  /available < 3\) verdict = "INSUFFICIENT"/.test(readFileSync(new URL("../src/ttReadout.js", import.meta.url), "utf8")));
-ok("ref: verdictFrom is transcribed VERBATIM, not paraphrased", (() => {
-  const i = dashSrc.indexOf("export function verdictFrom");
-  return dashSrc.slice(i, dashSrc.indexOf("\n}", i) + 2).split("\n")
-    .map((l) => l.trim()).filter(Boolean).every((l) => refDoc.includes(l)); })());
-ok("ref: the NFCI band constants match source", /`0` \/ `−0.5`/.test(refDoc) &&
-  /const NFCI_TIGHT = 0;/.test(dashSrc) && /const NFCI_LOOSE = -0.5;/.test(dashSrc));
-ok("ref: the constants appendix matches the real TT constants",
-  /`CAP_PCT` \| 18%/.test(refDoc) && /const CAP_PCT=18;/.test(adminSrc) &&
-  /`BINARY_WINDOW_D` \| 10d/.test(refDoc) && /const BINARY_WINDOW_D=10;/.test(adminSrc) &&
-  /`READY_THESIS_D` \| 30d/.test(refDoc) && /const READY_THESIS_D=30;/.test(adminSrc));
-// §10 documents the ranking METHOD. It must stay pinned to source AND stay free of book data.
-ok("ref §10: the veto order documented matches the order why() actually applies", (() => {
-  const sec = refDoc.slice(refDoc.indexOf("### 10.5"), refDoc.indexOf("### 10.6"));
-  const body = adminSrc.slice(adminSrc.indexOf("const why=r=>{"));
-  const src = body.slice(0, body.indexOf("return null;"));
-  const names = [["gap", /!\(r\.upside>0\)/, /no gap/], ["cap", /r\.wt\.w>=CAP_PCT/, /weight ≥ .CAP_PCT./],
-    ["rdy", /r\.rdy\.blockers/, /readiness\(\)\.blockers/], ["unscored", /!r\.tt\)/, /unscored/],
-    ["quality", /quality fails/, /quality fails/], ["rr", /r\.rrFail/, /R\/R fails/],
-    ["bin", /BINARY_WINDOW_D/, /no-new-adds/]];
-  const ord = (t, k) => names.map(([n, a, b]) => [n, t.search(k === 0 ? a : b)])
-    .filter(([, i]) => i >= 0).sort((x, y) => x[1] - y[1]).map(([n]) => n).join(">");
-  return ord(src, 0) === ord(sec, 1); })());
-ok("ref §10: the documented tier map matches the one implemented in admin.html",
-  /score ≥ 8\.5 → S/.test(refDoc) && adminSrc.includes('score>=8.5?"S":score>=7?"A":score>=5.5?"B":"C"'));
-ok("ref §10: the funding sort keys match sellRank (forced by pts over cap, then lowest rate)",
-  /sorted by points over the cap/.test(refDoc) && /LOWEST annualised upside/.test(refDoc) &&
-  /forced\.sort\(\(a,b\)=>b\.trimPts-a\.trimPts\)/.test(adminSrc) &&
-  /a\.ann-b\.ann:b\.mv-a\.mv/.test(adminSrc));
-// The whole point of §10: it documents the METHOD without publishing the book.
-ok("ref: NO book content is published — the repo is public and ships empty rails",
-  !/\b(NVDA|TSM|NBIS|GOOGL|UBER|RKLB|JOBY|CRDO|LITE|CELH|GRAB|TEM|GEV)\b/.test(refDoc) &&
+// ---- 33. the regime reference doc stays OUT of the public repo ------------
+// It leaked no book content, but CONSOLIDATION is itself the risk: one file describing the
+// whole decision architecture — every band, veto order, sort key and constant — is far more
+// useful to an adversary than the same facts scattered across source comments. Same reasoning
+// that keeps the TT framework doc in KV. It lives as a chat artifact instead (owner call).
+console.log("\n[33] regime reference — not in the public repo");
+ok("ref: the consolidated regime reference is NOT committed to this public repo",
+  !existsSync(new URL("../REGIME_LOGIC_REFERENCE_2026-08-01.md", import.meta.url)) &&
+  !existsSync(new URL("../docs/REGIME_LOGIC_REFERENCE_2026-08-01.md", import.meta.url)));
+ok("ref: no dated regime-reference file has crept back in under any name",
+  !readdirSync(new URL("../", import.meta.url)).some((f) => /REGIME_LOGIC_REFERENCE/i.test(f)));
+// The rails that make the whole thing safe to keep out of the repo in the first place.
+ok("ref: the terminal still ships EMPTY rails — no book, board or positions in the bundle",
   adminSrc.includes("const SEED=[];") && /^let BOARD=\{\};/m.test(adminSrc) &&
   /^let POSITIONS=\{\};/m.test(adminSrc));
-ok("ref: it points at the terminal's own export for populated rankings, not at this repo",
-  /EXPORT CANONICAL_BOOK\.md/.test(refDoc) && /Never this repository/.test(refDoc));
-ok("ref: the stated suite counts are not wildly stale (within 10% of actual)",
-  (() => { const m = /`node test\/smoke\.mjs` \((\d+)\)/.exec(refDoc);
-    return m && Math.abs(Number(m[1]) - (pass + fail + 1)) / (pass + fail + 1) < 0.1; })());
 
 console.log(`\n=== SMOKE TEST: ${pass} passed, ${fail} failed ===`);
 process.exit(fail === 0 ? 0 : 1);
