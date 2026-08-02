@@ -1441,6 +1441,37 @@ Jan-anchor shipped; see `snapshot.js` ~318–328), `spyMa100`, `spyMa200`, and a
   fixture and asserted for NaN/undefined leakage, plus the share chain driven with a stubbed
   `navigator.share` confirming a real `File` of the right name and type reaches the sheet, and
   that cancelling neither throws nor toasts a failure).
+- **v3.57 — end-to-end pass: five findings, one of them a white-screen.** The terminal driven
+  through empty / minimal / partial / adversarial books at 390px and 1200px, every API failure
+  mode (500, malformed JSON, wrong shapes, all-fail), and the pure functions fuzzed with hostile
+  inputs. Everything degraded gracefully except one path, and the bugs found were the kind no
+  render test catches because the fixture is always well-formed.
+  **(1) A malformed stored book white-screened the terminal.** `applyServer`'s `data.book||[]`
+  catches null/undefined but a truthy non-array (`book:{}` — a bad import, a hand-edited KV doc,
+  a partial write) sailed through and `BOOK.filter` threw, killing the whole board.
+  `validateBook` guards the PUT path; **GET trusts whatever KV holds**, so the client has to
+  fail closed too. It now degrades to EMPTY — which has an honest rendered state — and **says the
+  stored doc is malformed, warning against saving over it before exporting a backup**, rather
+  than silently pretending the book is fine.
+  **(2) `rankCategories` ranked a NaN rate** (introduced in v3.56): `!==null && !==undefined`
+  does not exclude NaN, so an unrankable name received a rank. Now `Number.isFinite`, which also
+  catches Infinity — the same rule as "unmeasured must never read as 0": unrankable means
+  EXCLUDED.
+  **(3) A string-typed payload accused the wrong field.** Quoted numbers (`"100"` not `100` —
+  what hand-edited JSON produces constantly) compute no rungs, and `NOFLOOR` then reported the
+  inputs as *missing* when they were present, sending you after the wrong defect. A new **`TYPES`
+  error** names the actual offending paths and the fix (`"100" is not 100`), and is careful not
+  to flag a genuinely non-numeric string like a `note`.
+  **(4) A comment still claimed the Kalshi odds were unwired** ("live Kalshi wiring TODO") —
+  live since v2.6.3. The same label-outliving-its-data defect as the Mag-10 footer.
+  **(5) Three files carried two body caps with no stated reason.** `positions.js` is 64KB while
+  the book is 200KB; that is deliberate (the store holds only `{sym: pos}` records, and a merge
+  PUT far larger is a malformed sync) but read as an oversight. Now documented.
+  Also confirmed working and left alone: `fl:"n/m"` on negative EPS is intentional (v3.17, no P/E
+  before profit) and is correctly filtered out of the candidate set by `pickRow`'s numeric test.
+  Tests: **878 smoke** (+15, incl. `applyServer` lifted and RUN against malformed shapes — and
+  a test-isolation bug caught while writing them, where a shared closure leaked toasts between
+  fixtures) + 169 render + 28 public-render.
 - **Deferred:** stored fundamentals + Robinhood sync — now unblocked by the `x-tt-pin` header
   (v3.9): a chat-side daily review can PUT `status_flags`/`ref_px` into the deepDive payloads and
   stamp `lastRun`. When built, store the *triage* shape (`{at, px}` → "% moved since your last TT
@@ -1507,7 +1538,7 @@ npm run dev        # Vite dev server (mock unless VITE_DATA_MODE=live in .env)
 npm run build      # → dist/  (what Pages runs)
 npm run preview    # serve the built dist/
 
-node test/smoke.mjs   # 863-assertion no-network smoke test (needs Node ≥17)
+node test/smoke.mjs   # 878-assertion no-network smoke test (needs Node ≥17)
 npm run test:ui       # browser render test for admin.html (skips if no Chromium)
 npm run test:public   # build + browser STATE test for the public dashboard (skips likewise)
 
