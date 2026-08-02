@@ -29,6 +29,12 @@ const BOOK_KEY = "tt:book:v1";               // mirrors the constant in function
 const SNAP_PREFIX = "tt:book:snap:";         // mirrors the constant in functions/api/tt.js
 const SNAP_TTL = 30 * 24 * 3600;
 const SYM_RE = /^[A-Z.\-]{1,8}$/;
+/* Deliberately 64KB, NOT the book's 200KB (v3.57, E2E). The split exists because this store
+   holds ONLY {sym: pos} records — no theses, no models, no dots — so 40 names of position data
+   with option legs sits comfortably inside it, and a merge PUT far larger than that is a
+   malformed sync rather than a legitimate one. Stated because three files carrying two
+   different caps with no reason reads as an oversight. The terminal never PUTs here (it GETs
+   only); the writer is the broker sync. */
 const MAX_BODY = 64 * 1024;
 
 const json = (body, status = 200) =>

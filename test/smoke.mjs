@@ -2799,5 +2799,79 @@ ok("share: text/plain is used for iOS target compatibility, with a .md filename"
   /type:"text\/plain"/.test(shSeg) && /TT-RANKINGS-\$\{/.test(shSeg));
 ok("share: the button exists in the toolbar", /onclick="exportRankings\(\)"/.test(adminSrc));
 
+// ---- 35. E2E pass (v3.57) — bugs and ambiguities found driving the terminal ----
+// An end-to-end pass: the terminal driven through empty/minimal/partial/adversarial books,
+// malformed and erroring APIs, and the pure functions fuzzed with hostile inputs.
+console.log("\n[35] E2E pass — malformed shapes, NaN ranks, string-typed payloads");
+
+// (1) HARD FAILURE: a KV doc with `book:{}` is truthy, so `||[]` did not catch it and
+// BOOK.filter() threw — white-screening the whole terminal. validateBook guards PUT; GET
+// trusts whatever KV holds, so the client must fail closed too.
+// toasts must RESET per call — the closure is shared, so without this a later assertion
+// sees warnings raised by an earlier malformed fixture (caught while writing these).
+const AS = new Function("let BOOK,CUT,BOARD,META,AUTH={};let toasts=[];" +
+  "const toast=(m)=>toasts.push(m),stampHeader=()=>{},stampAuthState=()=>{};" +
+  liftFns(adminSrc, ["applyServer"]) +
+  "\nreturn (d)=>{toasts=[];applyServer(d);return{BOOK,CUT,BOARD,toasts};};")();
+ok("e2e: a non-array `book` degrades to EMPTY instead of throwing",
+  (() => { const r = AS({ book: { a: 1 }, cut: [] });
+    return Array.isArray(r.BOOK) && r.BOOK.length === 0; })());
+ok("e2e: ...and it SAYS the stored book is malformed rather than pretending it is fine",
+  /malformed/i.test((AS({ book: { a: 1 } }).toasts[0]) || ""));
+ok("e2e: it warns against saving over a malformed doc before exporting a backup",
+  /export a backup/i.test((AS({ book: "nope" }).toasts[0]) || ""));
+ok("e2e: a non-array `cut` is caught by the same guard",
+  Array.isArray(AS({ book: [], cut: { x: 1 } }).CUT));
+ok("e2e: a non-object `board` degrades to {} rather than poisoning session reads",
+  (() => { const r = AS({ book: [], board: [1, 2] });
+    return r.BOARD && typeof r.BOARD === "object" && !Array.isArray(r.BOARD); })());
+ok("e2e: a WELL-FORMED payload still loads untouched, and warns about nothing",
+  (() => { const r = AS({ book: [{ sym: "A" }], cut: ["B"], board: { as_of: "x" } });
+    return r.BOOK.length === 1 && r.CUT.length === 1 && r.BOARD.as_of === "x" && !r.toasts.length; })());
+
+// (2) A NaN rate was RANKED — NaN is neither null nor undefined, so the old guard missed it.
+// Same class as "unmeasured must never read as 0": unrankable has to mean EXCLUDED.
+ok("e2e: rankCategories EXCLUDES a NaN rate rather than ranking it as a number",
+  (() => { const r = RX([{ sym: "A", ann: NaN, tier: "S", lens: "AI", tt: null, wt: { w: null } },
+    { sym: "B", ann: 10, tier: "S", lens: "AI", tt: null, wt: { w: null } }]);
+    return !r.overall.upside.map.has("A") && r.overall.upside.map.get("B") === 1 &&
+      r.overall.upside.n === 1; })());
+ok("e2e: Infinity is excluded too (a divide-by-zero must not top the ranking)",
+  !RX([{ sym: "A", ann: Infinity, tier: "S", lens: "AI", tt: null, wt: { w: null } }])
+    .overall.upside.map.has("A"));
+
+// (3) AMBIGUITY: quoted numbers ("100" not 100) produce zero rows, and NOFLOOR then reported
+// the inputs as MISSING when they were present — sending you after the wrong defect.
+const Y2 = new Date().getFullYear();
+const strTyped = { consensus: { revenue_B: { [Y2 + 1]: "100" }, eps: { [Y2 + 1]: "5" } },
+  pt_model: { ev_s_multiple: { [Y2]: "10" }, share_count_M: "100", pe_floor_multiple: "12" } };
+const strLints = PT.lintPtModel(strTyped);
+ok("e2e: a string-typed payload raises a TYPES error naming the actual defect",
+  strLints.some((l) => l.code === "TYPES" && l.sev === "error"));
+ok("e2e: the TYPES message names the offending fields and the fix",
+  (() => { const l = strLints.find((x) => x.code === "TYPES");
+    return /pt_model\.share_count_M/.test(l.msg) && /"100" is not 100/.test(l.msg); })());
+ok("e2e: a correctly-typed payload raises NO type lint (no false positive)",
+  !PT.lintPtModel({ consensus: { revenue_B: { [Y2 + 1]: 100 }, eps: { [Y2 + 1]: 5 } },
+    pt_model: { ev_s_multiple: { [Y2]: 10 }, share_count_M: 100, pe_floor_multiple: 12 } })
+    .some((l) => l.code === "TYPES"));
+ok("e2e: a genuinely non-numeric string (a note) is not mistaken for a mistyped number",
+  !PT.lintPtModel({ consensus: { revenue_B: { [Y2 + 1]: 100 }, eps: { [Y2 + 1]: 5 } },
+    pt_model: { ev_s_multiple: { [Y2]: 10 }, share_count_M: 100, pe_floor_multiple: 12,
+      note: "gate-contingent" } }).some((l) => l.code === "TYPES"));
+
+// (4) STALE CLAIM: the comment said Kalshi wiring was a TODO. It has been live since v2.6.3 —
+// the same "a label outliving its data" defect the Mag-10 footer had.
+ok("e2e: no comment still claims the Kalshi odds are unwired",
+  !/live Kalshi wiring TODO/.test(dashSrc) &&
+  /fetchRateOdds/.test(readFileSync(new URL("../functions/api/snapshot.js", import.meta.url), "utf8")));
+
+// (5) AMBIGUITY: three files, two body caps, no stated reason reads as an oversight.
+ok("e2e: the positions store's smaller cap is documented, not left to look accidental",
+  (() => { const src = readFileSync(new URL("../functions/api/positions.js", import.meta.url), "utf8");
+    return /Deliberately 64KB, NOT the book's 200KB/.test(src); })());
+ok("e2e: the book cap and its client pre-flight mirror still agree",
+  /const MAX_BODY = 200 \* 1024;/.test(ttSrc) && /const MAX_BODY=200\*1024;/.test(adminSrc));
+
 console.log(`\n=== SMOKE TEST: ${pass} passed, ${fail} failed ===`);
 process.exit(fail === 0 ? 0 : 1);

@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <!-- AUDIT: kept in sync with package.json by test/smoke.mjs. admin.html is a Vite
      public/ passthrough, so it cannot receive __APP_VERSION__ — the guard is the fix. -->
-<title>TT TICKER TERMINAL v3.56.0</title>
+<title>TT TICKER TERMINAL v3.57.0</title>
 <style>
   :root{
     --bg:#05070a; --panel:#0a0f16; --panel2:#0d141d; --line:#16202c;
@@ -357,7 +357,7 @@
         onclick="toggleHeadInfo()">⋯ MENU</button>
     </div>
     <div id="headInfo" style="display:none">
-      <div class="brand">FINANCE&nbsp;BRO.AI // TT&nbsp;TICKER&nbsp;TERMINAL <small>v3.56.0 · single-pass deep-dive orchestrator</small></div>
+      <div class="brand">FINANCE&nbsp;BRO.AI // TT&nbsp;TICKER&nbsp;TERMINAL <small>v3.57.0 · single-pass deep-dive orchestrator</small></div>
       <div class="statusline">
         <span>BOOK: <b id="bookStamp">loading…</b></span>
         <span>AUTH: <b id="sessState">…</b></span>
@@ -615,7 +615,17 @@ async function api(method,body,ifMatch){
   return data;
 }
 function applyServer(data){
-  BOOK=data.book||[];CUT=data.cut||[];BOARD=data.board||{};
+  /* E2E (v3.57): `||[]` catches null/undefined but NOT a truthy non-array — a KV doc with
+     `book:{}` reached BOOK.filter() and threw, white-screening the terminal. validateBook
+     guards the PUT path; GET trusts whatever is stored, so the client must fail closed too.
+     A malformed shape degrades to EMPTY (which has an honest rendered state) and SAYS so,
+     rather than pretending the book is fine or dying silently. */
+  const arr=(v)=>Array.isArray(v)?v:[];
+  const objOnly=(v)=>(v&&typeof v==="object"&&!Array.isArray(v))?v:{};
+  const shapeBad=(data.book!==undefined&&data.book!==null&&!Array.isArray(data.book))
+    ||(data.cut!==undefined&&data.cut!==null&&!Array.isArray(data.cut));
+  BOOK=arr(data.book);CUT=arr(data.cut);BOARD=objOnly(data.board);
+  if(shapeBad)toast("Stored book is malformed (not a list) — showing EMPTY. Do NOT save over it; export a backup first.");
   META={version:data.version,asOf:data.asOf};
   if(data.auth)AUTH=data.auth;
   stampHeader();stampAuthState();
@@ -2011,6 +2021,20 @@ function lintPtModel(dd){
   const c=(dd&&dd.consensus)||{};
   const eps=m.eps||c.eps||{};
   const years=ptRowYears(dd);
+  /* E2E (v3.57): a payload whose numbers are QUOTED ("100" not 100) produces zero rows, and
+     NOFLOOR then reports the inputs as missing when they are present — the message sends you
+     looking for the wrong defect. Name the actual one. Hand-edited JSON does this constantly. */
+  const strNum=[];
+  const scanNums=(o,path)=>{ if(!o||typeof o!=="object")return;
+    Object.entries(o).forEach(([k,v])=>{
+      if(v&&typeof v==="object")return scanNums(v,`${path}.${k}`);
+      if(typeof v==="string"&&v.trim()!==""&&isFinite(Number(v)))strNum.push(`${path}.${k}`);
+    });};
+  ["ev_s_multiple","pe_premium_multiple","pe_floor_multiple","share_count_M","net_cash_B"]
+    .forEach(k=>{ if(m[k]!==undefined)scanNums({[k]:m[k]},"pt_model"); });
+  ["revenue_B","eps"].forEach(k=>{ if(c[k]!==undefined)scanNums({[k]:c[k]},"consensus"); });
+  if(strNum.length)out.push({sev:"error",code:"TYPES",
+    msg:`${strNum.length} numeric field(s) are stored as STRINGS, so no rung computes: ${strNum.slice(0,4).join(", ")}${strNum.length>4?` +${strNum.length-4}`:""}. Remove the quotes — "100" is not 100.`});
   if(!years.length)return out;   // no future rows at all — ddEstRunSec already says UNRANKED
   const first=years[0],fwd=String(+first+1),e=eps[fwd];
   const fob=String(m.floor_only_before||"");
@@ -4386,7 +4410,9 @@ function rankCategories(rows){
      see that something is #1 on upside but #4 in its own tier. Ranks are DENSE (ties share a
      rank) because two names with the same score are not first and second. */
   const rank=(list,key,dir)=>{
-    const sorted=list.filter(r=>key(r)!==null&&key(r)!==undefined)
+    // Number.isFinite, not a null check: NaN is neither null nor undefined, and a NaN rate
+    // ranked as if it were a number (E2E fuzz, v3.57). Unrankable must mean EXCLUDED.
+    const sorted=list.filter(r=>Number.isFinite(key(r)))
       .sort((a,b)=>dir*(key(a)-key(b)));
     const out=new Map();let last=null,r=0,n=0;
     sorted.forEach(x=>{n++;const v=key(x);if(v!==last){r=n;last=v;}out.set(x.sym,r);});
