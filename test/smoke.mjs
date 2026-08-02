@@ -8,6 +8,13 @@ import { existsSync, readdirSync } from "node:fs";
 import { readFileSync } from "node:fs";
 import { mergeLiveOverMock, SOURCES, isStale, cadenceOf, parseObsDate, isMarketHoliday, MARKET_HOLIDAYS, DERIVED_OF as DERIVED_OF_SRC, DERIVED_EXEMPT, govAsOf } from "../src/sources.js";
 import { computeFiveWhys, isMacroMaterial } from "../src/fiveWhys.js";
+// C1 (v3.60): the regime engine is a real module now — smoke IMPORTS it instead of lifting
+// source text, which is stronger (the actual code runs) and immune to formatting drift.
+import { NFCI_TIGHT as REG_NFCI_TIGHT, NFCI_LOOSE as REG_NFCI_LOOSE, REGIME_BAND_TABLE,
+  REGIME_QUORUM, verdictFrom, computeRegime as regimeCompute, flipConditions as regimeFlips,
+  regimeFactors as regimeFactorRows } from "../src/regime.js";
+import { REGIME_FACTOR_FIELDS, FACTOR_FIELD, fieldMode, factorExclusions, buildEvidenceSet } from "../src/evidence.js";
+import { LASTVALID_KEY, summarizeEvidence, compareEvidence } from "../src/whatChanged.js";
 import {
   bandSpyVs200d, bandVix, bandFearGreed, bandRs, bandTenYear, bandFedOdds,
   aggregateVerdict, computeMacroFlip, buildTtReadout, formatTtPaste, DERIVED_OF,
@@ -20,6 +27,7 @@ const ok = (name, cond) => { if (cond) { pass++; console.log("  PASS  " + name);
 
 // Load real MOCK_DATA from dashboard.jsx (catches sources.js <-> dashboard drift).
 const dashSrc = readFileSync(new URL("../src/dashboard.jsx", import.meta.url), "utf8");
+const regimeSrc = readFileSync(new URL("../src/regime.js", import.meta.url), "utf8"); // C1 (v3.60)
 const _s = dashSrc.indexOf("const MOCK_DATA = {");
 let _i = dashSrc.indexOf("{", _s), _d = 0, _e = -1;
 for (; _i < dashSrc.length; _i++) { if (dashSrc[_i] === "{") _d++; else if (dashSrc[_i] === "}") { _d--; if (_d === 0) { _e = _i; break; } } }
@@ -1862,11 +1870,13 @@ ok("nfci: it counts toward Signal Quality — a tracked live signal, not decorat
 // 1971–, so its native unit is standard deviations: 0 is the definitional mean, -0.5 is half
 // an SD below it. The old ±0.10 was a decimal with no meaning in that unit.
 ok("nfci: thresholds live in ONE shared table driving tile, vote and factor breakdown alike",
-  dashSrc.includes("const NFCI_TIGHT = 0;") && dashSrc.includes("const NFCI_LOOSE = -0.5;") &&
+  regimeSrc.includes("export const NFCI_TIGHT = 0;") && regimeSrc.includes("export const NFCI_LOOSE = -0.5;") &&
   dashSrc.includes('const band=v>NFCI_TIGHT?"TIGHT":v<=NFCI_LOOSE?"LOOSE":"NEUTRAL"') &&
-  dashSrc.includes('vote:(v)=> v <= NFCI_LOOSE ? "bull" : v > NFCI_TIGHT ? "bear" : "neutral"'));
+  regimeSrc.includes('vote:(v)=> v <= NFCI_LOOSE ? "bull" : v > NFCI_TIGHT ? "bear" : "neutral"') &&
+  // …and the tile IMPORTS them rather than re-declaring (the one-table rule survives extraction)
+  /import \{ NFCI_TIGHT, NFCI_LOOSE,/.test(dashSrc));
 ok("nfci: the tight threshold is the DEFINITIONAL mean (0), not a hand-picked decimal",
-  /const NFCI_TIGHT = 0;/.test(dashSrc) && !dashSrc.includes("0.10?\"TIGHT\""));
+  /const NFCI_TIGHT = 0;/.test(regimeSrc) && !dashSrc.includes("0.10?\"TIGHT\""));
 ok("nfci: the bands are ASYMMETRIC — a symmetric band around zero would have voted bullish " +
    "nearly every week post-GFC, biasing the tally instead of informing it",
   (() => { const T = 0, L = -0.5;
@@ -1890,24 +1900,27 @@ ok("nfci: the tile states its own reference point — a bare z-score is unreadab
   dashSrc.includes("0 = avg"));
 ok("nfci: it votes in the DASHBOARD regime (6th factor), off the SAME shared band table the " +
    "tile renders — one computation, two surfaces, so label and vote cannot disagree",
-  /\{ key:"nfci",[\s\S]*?vote:\(v\)=> v <= NFCI_LOOSE \? "bull"/.test(dashSrc) &&
-  dashSrc.includes("REGIME_BAND_TABLE.forEach"));
-ok("nfci: a STALE nfci drops out of the vote like every other factor",
-  /REGIME_FACTOR_FIELDS=\[[^\]]*"nfci"\]/.test(dashSrc));
+  /\{ key:"nfci",[\s\S]*?vote:\(v\)=> v <= NFCI_LOOSE \? "bull"/.test(regimeSrc) &&
+  regimeSrc.includes("REGIME_BAND_TABLE.forEach"));
+ok("nfci: a STALE nfci drops out of the vote like every other factor (run, not pinned)",
+  (() => { const ex = factorExclusions({ provenance: { nfci: "LIVE" },
+    dataAsOf: { nfci: "2026-01-01" }, liveBuild: true, now: new Date("2026-08-01T12:00:00-04:00") });
+    return ex.has("nfci"); })() && REGIME_FACTOR_FIELDS.includes("nfci"));
 ok("nfci: it appears in the displayed factor breakdown, so 'X/Y bullish' matches the cast vote",
-  /\{key:"nfci",\s+short:"NFCI",\s+label:"Fin Conditions"/.test(dashSrc) && dashSrc.includes("SD — "));
+  /\{key:"nfci",\s+short:"NFCI",\s+label:"Fin Conditions"/.test(regimeSrc) && regimeSrc.includes("SD — "));
 // FIX-E (v3.49): every factor carries its own chip label (`short`), and the chip strip renders
 // from it — the old hardcoded 5-label array left the 6th (NFCI) chip literally "undefined".
 ok("FIX-E: chip labels come from the factors themselves, not a parallel hardcoded array",
-  dashSrc.includes("{f.short} {f.stale?") && !dashSrc.includes('["10Y","VIX","F&G","CPI","VAL"][i]'));
+  dashSrc.includes("{f.short} {f.stale?") && !dashSrc.includes('["10Y","VIX","F&G","CPI","VAL"][i]') &&
+  !regimeSrc.includes('["10Y","VIX","F&G","CPI","VAL"]'));
 ok("nfci: the mock baseline (-0.42) sits in the NEUTRAL zone — the demo shows a factor that " +
    "ABSTAINS in ordinary conditions, not one wired to vote bullish by default",
   MOCK_DATA.macro.nfci.current > -0.5 && MOCK_DATA.macro.nfci.current < 0);
 // The threshold had to generalize: DEC-31 chose ">=3 of 5" precisely because 3 of 6 is 50%,
 // not a majority — so a 6th factor against a hardcoded 3 would have re-created that bug.
 ok("nfci: the majority threshold is COMPUTED from the live voters, not a hardcoded 3",
-  dashSrc.includes("bullVotes > counted / 2") && dashSrc.includes("bearVotes > counted / 2") &&
-  !dashSrc.includes("const bull = bullVotes >= 3"));
+  regimeSrc.includes("bullVotes > counted / 2") && regimeSrc.includes("bearVotes > counted / 2") &&
+  !regimeSrc.includes("const bull = bullVotes >= 3"));
 ok("nfci: with 5 live voters the computed rule is IDENTICAL to the old constant (needs 3)",
   (() => { const need = (n) => { for (let v = 0; v <= n; v++) if (v > n / 2) return v; return null; };
            return need(5) === 3 && need(6) === 4 && need(3) === 2; })());
@@ -2284,8 +2297,7 @@ ok("regime: no surviving '5-factor' claim anywhere in the dashboard",
 ok("regime: the vote is described as 6-factor on the band and the source box",
   (dashSrc.match(/6-factor/g) || []).length >= 2);
 ok("regime: the stated count equals REGIME_FACTOR_FIELDS + the valuation factor",
-  (() => { const m = /REGIME_FACTOR_FIELDS=\[([^\]]*)\]/.exec(dashSrc);
-    return m && m[1].split(",").length + 1 === 6; })());
+  REGIME_FACTOR_FIELDS.length + 1 === 6 && FACTOR_FIELD.valuation === "shillerPe");
 
 // ---- 26. public audit (v3.51): naming, provenance vocabulary, and affordance honesty ----
 // The public product's promise is a TRUSTWORTHY posture. These are the places the page said
@@ -2308,9 +2320,9 @@ ok("provenance: CAPE credits its real fetch path (multpl scrape), not 'Manual' b
 ok("affordance: the alert toggles state their real limit at the weight of the control itself",
   /no push, email or SMS is sent/.test(dashSrc) && !/Triggers evaluate live data · notifications not wired/.test(dashSrc));
 // Confidence: Signal Quality counted TILES and never said whether the VERDICT was trustworthy.
-ok("confidence: the strip reports how many factors actually voted, from computeRegime itself",
+ok("confidence: the strip reports how many factors actually voted, from the EvidenceSet itself",
   dashSrc.includes("BACKDROP {regimeConf.counted}/{regimeConf.total} factors voting") &&
-  dashSrc.includes("counted:regime.counted,total:regime.totalFactors"));
+  dashSrc.includes("counted:evidenceSet.counted,total:evidenceSet.totalFactors"));
 ok("confidence: excluded factors are NAMED — 'N of 6 usable' without saying which is half a fact",
   dashSrc.includes("excluded: {regimeConf.excluded.join") && dashSrc.includes("crash gauge (VIX) unavailable"));
 
@@ -2338,15 +2350,8 @@ const _lift = (marker, endMarker) => {
   const e = dashSrc.indexOf(endMarker, i);
   return dashSrc.slice(i, e + endMarker.length);
 };
-const REG = new Function(
-  "const NFCI_TIGHT=0,NFCI_LOOSE=-0.5;const DT={},T={};" +
-  _lift("const REGIME_QUORUM = ", ";") +
-  _lift("const REGIME_BAND_TABLE = [", "\n];") +
-  _lift("export function verdictFrom(", "\n}").replace("export function", "function") +
-  _lift("const REGIME_META = {", "\n};") +
-  _lift("function computeRegime(d, stale=new Set()) {", "\n}") +
-  _lift("export function flipConditions(", "\n}").replace("export function", "function") +
-  "\nreturn {REGIME_BAND_TABLE,verdictFrom,computeRegime,flipConditions};")();
+// C1 (v3.60): REG now binds the REAL imported engine (see the import block at the top).
+const REG = { REGIME_BAND_TABLE, verdictFrom, computeRegime: regimeCompute, flipConditions: regimeFlips };
 const allLive = () => "LIVE";
 const allMock = () => "MOCK";
 const aVix = { id: 2, label: "VIX Spike", metric: "vix", condition: "above", value: 25, unit: "", active: true };
@@ -2381,9 +2386,21 @@ ok("alert: the section states it evaluates HERE and delivers nothing",
 // ---- a11y (suite audit #2): landmarks + live regions on the public page ----
 ok("a11y: the page exposes a main landmark (there were ZERO before)",
   /role="main"/.test(dashSrc));
-ok("a11y: the verdict and its confidence strip are polite live regions",
-  /aria-label="Macro backdrop verdict" aria-live="polite"/.test(dashSrc) &&
-  /aria-label="Signal quality and backdrop confidence" aria-live="polite"/.test(dashSrc));
+// B4 (v3.59) superseded the block-sized live regions: landmarks stay, announcement narrows
+// to ONE concise status sentence — a reader should hear "backdrop changed", not whole blocks.
+ok("a11y: verdict + confidence keep their LANDMARKS but are no longer block live regions",
+  /aria-label="Macro backdrop verdict"\n?/.test(dashSrc) &&
+  /aria-label="Signal quality and backdrop confidence"/.test(dashSrc) &&
+  !/aria-label="Macro backdrop verdict" aria-live/.test(dashSrc));
+ok("a11y B4: ONE concise visually-hidden status region announces state changes",
+  /aria-live="polite" role="status" className="visually-hidden"/.test(dashSrc) &&
+  /Backdrop \$\{regime\.label\}: \$\{regime\.counted\} of \$\{regime\.totalFactors\} factors usable\./.test(dashSrc));
+ok("a11y B4: header actions carry 44px thumb targets at phone width",
+  /\.hdr-act\{min-height:44px;min-width:44px/.test(dashSrc) &&
+  (dashSrc.match(/className="hdr-act"/g) || []).length === 3);
+ok("a11y B4: sparklines are decorative (aria-hidden); the SPY chart has a TEXT equivalent",
+  /\{spark&&<div aria-hidden="true"/.test(dashSrc) &&
+  /its 200-day average of/.test(dashSrc));
 
 // ---- 28. FEAT-FLIP (v3.53) — the shared band table + "what would change the verdict" ----
 // The bands moved OUT of computeRegime's inline ifs into REGIME_BAND_TABLE so flipConditions
@@ -2489,7 +2506,7 @@ ok("mobile: the AI unit-economics subtitle wraps (a nowrap label must not blow o
 // calls on mock since v3.1; the HEADLINE VERDICT never did. It passed every prior test.
 console.log("\n[29] FEAT-QUORUM — mock factors cannot vote; the posture is withheld below quorum");
 ok("quorum: the dashboard now HAS an abstention rule (it had none; the tt-v1 readout always did)",
-  /const REGIME_QUORUM = 4;/.test(dashSrc));
+  /export const REGIME_QUORUM = 4;/.test(regimeSrc) && REGIME_QUORUM === 4);
 ok("quorum: below quorum the label is INSUFFICIENT, not a posture",
   (() => { const r = REG.computeRegime(MOCK_DATA, new Set(["vix", "fearGreed", "cpiHeadline"]));
     return r.counted === 3 && r.label === "INSUFFICIENT" && r.insufficient === true; })());
@@ -2503,11 +2520,11 @@ ok("quorum: the withheld verdict still records what the majority WOULD have said
 ok("quorum: a single usable factor can never dictate the public posture",
   REG.computeRegime(MOCK_DATA, new Set(["vix", "fearGreed", "cpiHeadline", "valuation", "nfci"])).label === "INSUFFICIENT");
 // The exclusion itself: MOCK is unusable in a LIVE build, but NOT in a demo build.
-ok("quorum: the vote excludes anything that is not LIVE/CACHED when the build is live",
-  dashSrc.includes('const unusable=(k)=>{const m=modeOf(k);return m==="STALE"||(liveBuild&&m!=="LIVE"&&m!=="CACHED");};') &&
-  dashSrc.includes('if(unusable("shillerPe")) staleFactors.add("valuation");'));
-ok("quorum: a pure DEMO build is unaffected — mock IS its baseline (the demoted()/anyLive rule)",
-  /liveBuild&&m!=="LIVE"/.test(dashSrc) &&
+ok("quorum: the vote excludes anything that is not LIVE/CACHED when the build is live (run)",
+  (() => { const ex = factorExclusions({ provenance: {}, dataAsOf: {}, liveBuild: true });
+    return REGIME_FACTOR_FIELDS.every((k) => ex.has(k)) && ex.has("valuation") && ex.size === 6; })());
+ok("quorum: a pure DEMO build is unaffected — mock IS its baseline (run: zero exclusions)",
+  factorExclusions({ provenance: {}, dataAsOf: {}, liveBuild: false }).size === 0 &&
   readFileSync(new URL("../src/useMarketData.js", import.meta.url), "utf8").includes('const liveBuild = MODE === "live";'));
 // mode:"MOCK" is ambiguous between demo and failed-live; the hook now says which.
 ok("quorum: the wiring point exposes build INTENT so a failed live fetch is not read as demo",
@@ -2872,6 +2889,182 @@ ok("e2e: the positions store's smaller cap is documented, not left to look accid
     return /Deliberately 64KB, NOT the book's 200KB/.test(src); })());
 ok("e2e: the book cap and its client pre-flight mirror still agree",
   /const MAX_BODY = 200 \* 1024;/.test(ttSrc) && /const MAX_BODY=200\*1024;/.test(adminSrc));
+
+// ---- 36. v3.58 hotfix (UX re-audit fix-now) — truthfulness, 320px, boundary ----
+console.log("\n[36] v3.58 hotfix — no mock narration, 320px contract, public gate");
+// A1: freshSet keys on the build's INTENT. `anyLive` made a loading/failed live build pass
+// fresh:null — computeFiveWhys's "demo mode, narrate everything" — so the 5 Whys asserted
+// mock SPY/CPI/Fed under a withheld verdict.
+ok("A1: freshSet derives from liveBuild, never anyLive",
+  /const freshSet=liveBuild \? new Set/.test(dashSrc) && !/freshSet=anyLive/.test(dashSrc));
+ok("A1: demoted() still keys on anyLive — demotion is display, and the demo must not collapse",
+  /const demoted=\(f\)=>anyLive&&isIllustrative/.test(dashSrc));
+// Behavioral: an EMPTY fresh set (live build, nothing usable) must gate the HEADLINE too.
+const fwEmpty = computeFiveWhys(MOCK_DATA, fwRegime, { fresh: new Set() });
+ok("A1: with nothing fresh the headline carries no mock SPY day-move",
+  !/— SPY/.test(fwEmpty.headline) && /bullish factors\./.test(fwEmpty.headline));
+ok("A1: with spyPrice fresh the SPY clause returns (the gate is freshness, not deletion)",
+  /— SPY/.test(computeFiveWhys(MOCK_DATA, fwRegime, { fresh: new Set(["spyPrice"]) }).headline));
+ok("A1: demo mode (fresh:null) still narrates the full headline — mock IS that baseline",
+  /— SPY/.test(computeFiveWhys(MOCK_DATA, fwRegime).headline));
+// A2: the 320px contract — identity group may shrink, actions may wrap, wordmark yields first.
+ok("A2: header groups can shrink and wrap instead of forcing horizontal overflow",
+  /alignItems:"center",gap:14,minWidth:0,flexWrap:"wrap"/.test(dashSrc) &&
+  /alignItems:"center",gap:8,flexWrap:"wrap",minWidth:0/.test(dashSrc));
+ok("A2: the duplicate lowercase wordmark hides below 360px",
+  /@media\(max-width:359px\)\{\.sub-wordmark\{display:none;\}\}/.test(dashSrc));
+// A3: browser suites fail rather than skip under CI's flag; both routes are covered.
+ok("A3: both browser suites honor REQUIRE_BROWSER=1 (skip becomes a failure)",
+  /REQUIRE_BROWSER === "1"/.test(readFileSync(new URL("../test/public-render.mjs", import.meta.url), "utf8")) &&
+  /REQUIRE_BROWSER === "1"/.test(readFileSync(new URL("../test/render.mjs", import.meta.url), "utf8")));
+ok("A3: the public suite actually visits the public route, not only the operator one",
+  /\/\?view=public/.test(readFileSync(new URL("../test/public-render.mjs", import.meta.url), "utf8")));
+// A4: the boundary is ENFORCED by the gate, not described by a comment.
+ok("A4: MY CONVICTION and Macro Alerts are gated behind !publicView",
+  (dashSrc.match(/\{!publicView&&<div style=\{\{marginTop:16/g) || []).length === 2);
+ok("A4: the public footer NAMES the omission (a cut takes its attribution with it)",
+  /operator view carries the curated watchlist and alert monitors/.test(dashSrc));
+// A5: production dependency surface is classified and checkable in one command.
+ok("A5: audit:prod script exists (measured clean at v3.58 — all 3 advisories are dev toolchain)",
+  /"audit:prod": "npm audit --omit=dev"/.test(readFileSync(new URL("../package.json", import.meta.url), "utf8")));
+
+// ---- 37. v3.59 follow-ups — ERROR mode, provenance vocabulary, security ----
+console.log("\n[37] v3.59 — ERROR is not demo, fresh is not live, debug needs a token");
+const hookSrc = readFileSync(new URL("../src/useMarketData.js", import.meta.url), "utf8");
+// B1: a failed live fetch is ERROR, and MOCK means exactly one thing — a demo build.
+ok("B1: a failed live fetch sets mode ERROR, never the demo's MOCK",
+  /mode: "ERROR"/.test(hookSrc) && !/mode: "MOCK", asOf: null, provenance: \{\}, dataAsOf: \{\}, loading: false, liveBuild \}\)/.test(hookSrc));
+ok("B1: the hook exposes retry() and it re-arms the full fetch machinery",
+  /const retry = \(\) =>/.test(hookSrc) && /setRetryTick\(\(t\) => t \+ 1\)/.test(hookSrc) &&
+  /\[mockData, publicView, retryTick\]/.test(hookSrc));
+ok("B1: retry resets to LOADING first — no stale ERROR chrome mid-flight, and demo no-ops",
+  /if \(!liveBuild\) return;/.test(hookSrc) && /mode: "LOADING", loading: true, lastError: null/.test(hookSrc));
+ok("B1: the dashboard renders the outage and a Retry control, not 'demo baseline'",
+  /live service unavailable — numbers below are illustrative/.test(dashSrc) &&
+  /aria-label="Retry loading live data"/.test(dashSrc));
+ok("B1: ERROR wears its own red badge in DataModeBadge",
+  /ERROR:\s*\{ label:"⚠ ERROR"/.test(dashSrc));
+// B2: fresh ≠ live. The rollup names both parts; the footers derive from state.
+ok("B2: Signal Quality counts live and cached separately under a FRESH rollup",
+  /if\(m==="LIVE"\)\{a\.fresh\+\+;a\.live\+\+;\}else if\(m==="CACHED"\)\{a\.fresh\+\+;a\.cached\+\+;\}/.test(dashSrc) &&
+  /\{sq\.fresh\} fresh/.test(dashSrc) && /\{sq\.live\} live · \{sq\.cached\} cached/.test(dashSrc));
+ok("B2: 'derived from live data' is now STATE-derived, one derivation for both footers",
+  /const derivedLabel=mode==="LIVE"\?"derived from live data"/.test(dashSrc) &&
+  /derived from today's cached snapshot/.test(dashSrc) &&
+  /· \{srcLabel\}<\/div>/.test(dashSrc) && /· \{derivedLabel\} \(no LLM\)/.test(dashSrc));
+// B3: operational data needs a token; the public route gets a report-only CSP.
+const snapSrc2 = readFileSync(new URL("../functions/api/snapshot.js", import.meta.url), "utf8");
+ok("B3: ?debug requires the DEBUG_TOKEN secret — fail closed both ways",
+  /env\.DEBUG_TOKEN && debugParam && debugParam === env\.DEBUG_TOKEN/.test(snapSrc2) &&
+  !/const debug = params\.get\("debug"\) === "1"/.test(snapSrc2));
+const mwSrc = readFileSync(new URL("../functions/_middleware.js", import.meta.url), "utf8");
+ok("B3: report-only CSP on public routes; /admin.html and /api are deliberately exempt",
+  /content-security-policy-report-only/.test(mwSrc) &&
+  /cspPath !== "\/admin\.html"/.test(mwSrc) && /!cspPath\.startsWith\("\/api\/"\)/.test(mwSrc));
+ok("B3: the CSP is REPORT-ONLY (observe before enforcing), never the enforcing header yet",
+  !/h\.set\("content-security-policy",/.test(mwSrc));
+// B5: AGENTS.md carries no volatile facts — the rot vector is removed, not re-fed.
+const agentsSrc = readFileSync(new URL("../AGENTS.md", import.meta.url), "utf8");
+ok("B5: AGENTS.md is a thin pointer — no version numbers, no assertion counts",
+  !/v3\.\d+\.\d+/.test(agentsSrc) && !/\d{3}-assertion/.test(agentsSrc) &&
+  /CLAUDE\.md wins/.test(agentsSrc) && /npm test/.test(agentsSrc) && /REQUIRE_BROWSER=1/.test(agentsSrc));
+
+// ---- 38. v3.60 P0 sprint — EvidenceSet, What Changed, and the extraction ----
+// C1 extracted the regime engine to src/regime.js (imported above, replacing source-lifts)
+// and built evidence.js: ONE typed contract components render instead of each interpreting
+// provenance on its own. Every interface-contract state is EXECUTED here.
+console.log("\n[38] v3.60 — the EvidenceSet contract and the return-visit digest");
+const NOW = new Date("2026-08-01T12:00:00-04:00");
+const FRESH_PROV = Object.fromEntries(
+  ["tenYear", "vix", "fearGreed", "cpiHeadline", "shillerPe", "nfci"].map((k) => [k, "LIVE"]));
+const FRESH_ASOF = Object.fromEntries(
+  ["tenYear", "vix", "fearGreed", "cpiHeadline", "shillerPe", "nfci"].map((k) => [k, "2026-08-01"]));
+const ev = (o = {}) => buildEvidenceSet({ d: MOCK_DATA, provenance: FRESH_PROV,
+  dataAsOf: FRESH_ASOF, mode: "LIVE", liveBuild: true, now: NOW, ...o });
+// State machine — one assertion per contract row.
+ok("evidence: LIVE — full fresh inputs publish a posture with all six voting",
+  (() => { const e = ev(); return e.state === "LIVE" && !e.withheld && e.counted === 6 &&
+    ["RISK-ON", "RISK-OFF", "MIXED"].includes(e.regime.label) && e.flips !== null; })());
+ok("evidence: CACHED is its own state — publishable, but never labelled live (B2's rule)",
+  ev({ mode: "CACHED" }).state === "CACHED" && !ev({ mode: "CACHED" }).withheld);
+ok("evidence: LOADING withholds — no posture, no flips, nothing to narrate",
+  (() => { const e = ev({ mode: "LOADING", provenance: {}, dataAsOf: {} });
+    return e.state === "LOADING" && e.withheld && e.flips === null; })());
+ok("evidence: ERROR withholds identically (B1's mode reaches the contract)",
+  ev({ mode: "ERROR", provenance: {}, dataAsOf: {} }).state === "ERROR" &&
+  ev({ mode: "ERROR", provenance: {}, dataAsOf: {} }).withheld);
+ok("evidence: DEGRADED — quorate with exclusions publishes AND names the excluded",
+  (() => { const p = { ...FRESH_PROV }; delete p.vix; // vix mock in a live build
+    const e = ev({ provenance: p });
+    return e.state === "DEGRADED" && !e.withheld && e.counted === 5 &&
+      e.excludedKeys.includes("VIX") &&
+      e.factors.find((f) => f.key === "vix").reason === "not live in a live build"; })());
+ok("evidence: INSUFFICIENT below the 4-of-6 quorum — withheld with the count stated",
+  (() => { const e = ev({ provenance: { tenYear: "LIVE", vix: "LIVE" },
+    dataAsOf: { tenYear: "2026-08-01", vix: "2026-08-01" } });
+    return e.state === "INSUFFICIENT" && e.withheld && e.counted === 2 &&
+      e.freshSummary === "2/6 factors usable"; })());
+ok("evidence: DEMO — a mock build keeps its posture (mock IS that baseline)",
+  (() => { const e = ev({ mode: "MOCK", liveBuild: false, provenance: {}, dataAsOf: {} });
+    return e.state === "DEMO" && !e.withheld && e.counted === 6; })());
+// The factors carry the full honesty payload.
+ok("evidence: every factor row carries vote, mode, as-of and display copy",
+  ev().factors.every((f) => ["bull", "bear", "neutral", "excluded"].includes(f.vote) &&
+    f.mode && f.display && f.asOf === "2026-08-01") && ev().factors.length === 6);
+ok("evidence: a STALE factor's reason says stale-for-cadence, not the live-build wording",
+  (() => { const e = ev({ dataAsOf: { ...FRESH_ASOF, vix: "2026-01-02" } });
+    return e.factors.find((f) => f.key === "vix").reason === "stale for its cadence"; })());
+ok("evidence: the factor VOTE comes from the band table itself — spot-check NFCI neutral",
+  (() => { const f = ev().factors.find((x) => x.key === "nfci");
+    // mock NFCI is -0.42: inside the deadband, so neutral (v3.43.1's abstaining demo value)
+    return f.vote === "neutral"; })());
+// ---- whatChanged: the return-visit digest ----
+ok("changed: a withheld or demo set can never become a baseline",
+  summarizeEvidence(ev({ mode: "LOADING", provenance: {}, dataAsOf: {} })) === null &&
+  summarizeEvidence(ev({ mode: "MOCK", liveBuild: false, provenance: {}, dataAsOf: {} })) === null);
+const sumA = summarizeEvidence(ev(), "2026-07-31T20:00:00Z");
+ok("changed: a quorate live set summarizes to the versioned persisted shape",
+  sumA && sumA.v === 1 && sumA.posture === ev().regime.label &&
+  Object.keys(sumA.factors).length === 6);
+ok("changed: first visit is 'baseline set', never 'nothing changed' — different facts",
+  (() => { const c = compareEvidence(null, sumA); return c.baseline === true && c.changes.length === 0; })());
+ok("changed: a garbled or wrong-version baseline fails toward 'baseline set', never a fake diff",
+  compareEvidence({ v: 99 }, sumA).baseline === true &&
+  compareEvidence({ hello: "world" }, sumA).baseline === true);
+ok("changed: identical snapshots read 'no material change' explicitly (empty changes, not null)",
+  (() => { const c = compareEvidence(sumA, { ...sumA, at: "2026-08-01T20:00:00Z" });
+    return c.baseline === false && c.changes.length === 0 && c.since === sumA.at; })());
+ok("changed: a posture flip, a confidence move and a factor drop-out are each named",
+  (() => { const cur = JSON.parse(JSON.stringify(sumA));
+    cur.posture = cur.posture === "MIXED" ? "RISK-ON" : "MIXED";
+    cur.counted = 5; cur.factors.vix = { vote: "excluded", mode: "MOCK" };
+    const c = compareEvidence(sumA, cur);
+    return c.changes.some((x) => x.kind === "posture") &&
+      c.changes.some((x) => x.kind === "confidence") &&
+      c.changes.some((x) => x.kind === "vote" && /dropped out/.test(x.text)); })());
+ok("changed: a factor RECOVERY is information too, named as such",
+  (() => { const prev = JSON.parse(JSON.stringify(sumA));
+    prev.factors.vix = { vote: "excluded", mode: "MOCK" };
+    const c = compareEvidence(prev, sumA);
+    return c.changes.some((x) => x.kind === "vote" && /recovered/.test(x.text)); })());
+// ---- the extraction is wired, not duplicated ----
+const evidenceSrc = readFileSync(new URL("../src/evidence.js", import.meta.url), "utf8");
+ok("C1: evidence.js WRAPS the engine — it imports regime.js, never restates a band",
+  /from "\.\/regime\.js"/.test(evidenceSrc) && !/v < 18|v > 25|<= NFCI_LOOSE \?/.test(evidenceSrc));
+ok("C1: the dashboard's modeOf and exclusions ARE the shared derivations (no local copy)",
+  dashSrc.includes("const modeOf=(k)=>fieldMode(provenance, dataAsOf, k);") &&
+  dashSrc.includes("const staleFactors=factorExclusions({provenance, dataAsOf, liveBuild});") &&
+  !dashSrc.includes('const unusable=(k)=>'));
+ok("C2: a real <header> landmark, a Sections <nav>, and the six-anchor h2 outline exist",
+  /<header style=/.test(dashSrc) && /<nav aria-label="Sections"/.test(dashSrc) &&
+  ["overview", "drivers", "markets", "macro", "ai", "health"].every((id) =>
+    dashSrc.includes(`id="${id}"`)));
+ok("C3: the Drivers matrix renders the CONTRACT (evidenceSet.factors), not its own reading",
+  dashSrc.includes("evidenceSet.factors.map(f=>") && dashSrc.includes("excluded — {f.reason}"));
+ok("C4: the digest persists AFTER comparing, and only quorate sets become the baseline",
+  dashSrc.indexOf("compareEvidence(prev,cur)") < dashSrc.indexOf("localStorage.setItem(LASTVALID_KEY") &&
+  dashSrc.includes("baseline set — changes will be tracked from this snapshot") &&
+  dashSrc.includes("no material change since"));
 
 console.log(`\n=== SMOKE TEST: ${pass} passed, ${fail} failed ===`);
 process.exit(fail === 0 ? 0 : 1);

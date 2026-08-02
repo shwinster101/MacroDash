@@ -97,8 +97,11 @@ export function computeFiveWhys(data, regime = {}, opts = {}) {
     ["tenYear", "vix", "fearGreed", "cpiHeadline", "valuation", "nfci"]
       .filter((k) => !stale.has(k)).length;
 
+  // A1 (v3.58): the SPY clause freshness-gates like every other numeric claim — the headline
+  // used to assert the mock day-move even while the verdict was withheld during loading.
   const headline =
-    `${sessionPrefix(data.session)} ${label} regime, ${bull}/${active} bullish factors — SPY ${pct(spy.changePct)}.`;
+    `${sessionPrefix(data.session)} ${label} regime, ${bull}/${active} bullish factors` +
+    `${isLive("spyPrice") ? ` — SPY ${pct(spy.changePct)}` : ""}.`;
 
   const whys = [];
 

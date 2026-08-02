@@ -41,6 +41,11 @@ function findChromium() {
   return null;
 }
 const skip = (why) => {
+  // A3 (v3.58): under REQUIRE_BROWSER=1 (CI) a missing browser is a FAILURE, not a skip.
+  if (process.env.REQUIRE_BROWSER === "1") {
+    console.error(`\n=== RENDER TEST: FAILED — ${why} (REQUIRE_BROWSER=1) ===`);
+    process.exit(1);
+  }
   console.log(`\n=== RENDER TEST: SKIPPED — ${why} ===`);
   console.log("    (source guards in test/smoke.mjs still ran; this suite is additive)");
   process.exit(0);

@@ -105,6 +105,20 @@ src/
                         looksBehind). No React → Node-testable.
   fiveWhys.js           Pure rule-based 5-Whys generator (no React, no LLM, $0);
                         smoke-tested.
+  regime.js             THE public regime engine (C1, v3.60): NFCI bands, REGIME_BAND_TABLE,
+                        verdictFrom, computeRegime, flipConditions, regimeFactors,
+                        REGIME_QUORUM — extracted verbatim from dashboard.jsx; pure,
+                        Node-importable (smoke imports it directly, no more source-lifts).
+                        Returns tintKey/colorKey; the UI resolves colors.
+  evidence.js           The EvidenceSet contract (C1, v3.60): fieldMode + factorExclusions
+                        (ONE home for modeOf and the mock-cannot-vote rule) +
+                        buildEvidenceSet → {state LOADING|LIVE|CACHED|DEGRADED|INSUFFICIENT|
+                        ERROR|DEMO, factors[], flips, quorum…}. New components render THIS,
+                        never their own reading of provenance.
+  whatChanged.js        Return-visit digest (C4, v3.60): summarizeEvidence (only quorate
+                        live sets may become the baseline) + compareEvidence (posture flips,
+                        confidence moves, factor drop-outs/recoveries; "baseline set" ≠
+                        "no change"). localStorage key md:lastvalid:v1.
   ttReadout.js          Pure TT regime/Macro-Flip mapping (DEC-33 band table).
                         Imported by dashboard.jsx, functions/readout.json.js
                         (first functions→src import), and smoke. React-free.
@@ -1472,6 +1486,105 @@ Jan-anchor shipped; see `snapshot.js` ~318–328), `spyMa100`, `spyMa200`, and a
   Tests: **878 smoke** (+15, incl. `applyServer` lifted and RUN against malformed shapes — and
   a test-isolation bug caught while writing them, where a shared closure leaked toasts between
   fixtures) + 169 render + 28 public-render.
+- **v3.58 "the hotfix" — the public UX re-audit's five fix-now items.** The owner-commissioned
+  re-audit (of v3.55; reconciled against v3.57 before planning) returned **HOLD for hotfix, do
+  not roll back**: the v3.54 quorum fix is confirmed sound, but the page still contradicted its
+  own honesty contract in one place and broke its narrowest width. Five fixes:
+  **A1 — the 5 Whys narrated MOCK under a withheld verdict.** `freshSet` keyed on `anyLive`, so
+  a live build in its LOADING or fetch-error state passed `fresh:null` — computeFiveWhys's
+  "demo mode, narrate everything" — and the page's most explanatory section asserted mock
+  SPY/CPI/Fed as today's core tape while the verdict said CAN'T CALL IT. Keyed on **`liveBuild`**
+  (the v3.54 intent disambiguation, completing it): loading/error now passes an EMPTY set, every
+  clause freshness-gates out, and the anchor states itself (`0/3 core inputs usable`). The
+  HEADLINE's SPY clause is gated the same way — it embedded the mock day-move unconditionally.
+  Demo builds still pass `null`: mock IS that baseline (the `demoted()`/`anyLive` doctrine).
+  **A2 — the 320px contract.** The sticky header measured 327px on the deployed page. The
+  identity group gets `minWidth:0`, the action group wraps, and the duplicate lowercase
+  wordmark hides below 360px — the brand name is already the element beside it.
+  **A3 — the browser suite tells the truth about itself.** `public-render.mjs` navigated to `/`
+  only, so its "public" results actually described the OPERATOR header (with the TERMINAL
+  link). Routes are now explicit and BOTH are driven (4 widths × 2 routes), and all browser
+  suites honor **`REQUIRE_BROWSER=1`**: a missing Chromium becomes a hard failure instead of a
+  clean skip — a silently-skipped gate reads as a passed one. Bare machines keep the skip.
+  **A4 — the public/private boundary is enforced, not commented (owner decision).** The
+  shareable `?view=public` route now gates MY CONVICTION and Macro Alerts behind `!publicView`
+  (the TERMINAL-link pattern; the Zone-E gate finally has something to hide). The default view
+  keeps both — the v3.51 "keep" call stands for the operator's own page. The public footer
+  NAMES the omission, because a cut takes its attribution with it.
+  **A5 — the three npm advisories are classified, not mysterious.** Measured:
+  `npm audit --omit=dev` = **0 vulnerabilities**; all three (esbuild moderate, postcss high,
+  vite high) are dev-scope build toolchain, no production exposure. `npm run audit:prod` pins
+  the command; `npm audit fix` took the in-semver toolchain patches (nanoid, postcss).
+  Tests: **890 smoke** (+12, incl. the headline gate run behaviorally in all three freshness
+  modes) + 169 render + **50 public-render** (+22: both routes × 4 widths, the A4 route-pair
+  boundary proof, and the A1 no-mock-narration assertions in LOADING and ERROR — the audit's
+  exact exit condition) + REQUIRE_BROWSER verified to exit 1 against an empty browsers path.
+- **v3.59 "the follow-ups" — the re-audit's medium findings, closed.** Five pieces:
+  **B1 — ERROR is a mode, not a costume.** A failed live fetch collapsed to `mode:"MOCK"` —
+  indistinguishable from an intentional demo build, with no way to tell whether to wait, retry,
+  or shrug. `useMarketData` now sets **`ERROR`** (mock content still renders underneath,
+  everything stays ILLUSTRATIVE — graceful degradation holds), exposes `lastError` and a
+  **`retry()`** that resets to LOADING and re-arms the full fetch machinery. The header states
+  the outage ("live service unavailable — numbers below are illustrative") with a ↻ RETRY
+  button; `MOCK` now means exactly one thing: a demo build. This completes the `liveBuild`
+  disambiguation v3.54 started. The public suite drives the whole cycle: fail → ERROR badge →
+  flip the stub → Retry → posture appears.
+  **B2 — fresh is not live.** Signal Quality's "13 live" counted LIVE+CACHED under one word, so
+  a cached observation read as newly fetched. The rollup is now **`N fresh (L live · C cached)`**,
+  and the two static "derived from live data" footers became **state-derived** (live · cached
+  snapshot · unavailable · demo) from ONE derivation shared by both — a static string asserting
+  liveness across error states was the same class of lie as the alerts affordance.
+  **B3 — operational data needs a token.** `?debug=1` exposed `_diag` to anyone; it now requires
+  the **`DEBUG_TOKEN`** secret (`?debug=<token>`, fail closed both ways — no secret configured
+  means no `_diag` for anyone). And the public routes gain a **report-only CSP** (observe before
+  enforcing); `/admin.html` is deliberately exempt — its buildless inline script would need
+  `'unsafe-inline'` script-src, which defeats the point, and its CSP is the deferred
+  admin-extraction scope.
+  **B4 — a11y past the tokens.** Header actions get real 44px thumb targets at phone width;
+  sparklines are marked decorative and the SPY chart gains a visually-hidden **text equivalent**
+  (trend vs both moving averages — the decision content); and the two block-sized `aria-live`
+  regions narrowed to **one concise status sentence** ("Backdrop MIXED: 4 of 6 factors usable")
+  — a reader should hear that the call changed, not entire blocks re-read.
+  **B5 — AGENTS.md stops being a rot vector.** Its two incarnations both froze and drifted
+  (the re-audit caught it still claiming a long-outgrown suite size and a missing test script).
+  Now a thin pointer with **no volatile facts at all** — no versions, no counts — and smoke
+  enforces that shape, so the third incarnation cannot rot the same way.
+  Tests: **904 smoke** (+14) + 169 render + **56 public-render** (+6: the fail→retry→recover
+  cycle driven live, and the narrowed live-region contract).
+- **v3.60 "the P0 slice" — Overview shell, Evidence Matrix, What Changed (the committed
+  sprint).** The re-audit's recommended vertical slice, built behind the existing data with no
+  new fetches. **C1 — the extraction the last two audits both named as highest-leverage:** the
+  regime engine moved verbatim to **`src/regime.js`** (pure, Node-importable — smoke now
+  IMPORTS it instead of lifting source text, which is stronger and immune to formatting
+  drift; the one change is `tintKey`/`colorKey` out, colors resolved by the UI). On top of it,
+  **`src/evidence.js`** builds the **EvidenceSet**: ONE typed contract — state (the re-audit's
+  interface table, 1:1: LOADING · LIVE · CACHED · DEGRADED · INSUFFICIENT · ERROR · DEMO),
+  per-factor rows (value · vote from the band table itself · freshness · as-of · exclusion
+  reason), flips, quorum — that components render instead of each interpreting provenance.
+  The dashboard's own `modeOf` and `staleFactors` ARE now the shared `fieldMode`/
+  `factorExclusions` (no local copy to drift). **C2:** a real `<header>` landmark, a Sections
+  `<nav>` (now the sticky element — the header scrolls away instead of renting 60px of every
+  phone viewport), and a six-anchor `h2` outline (overview · drivers · markets · macro · ai ·
+  health) where the nav and the outline are the SAME structure. **C3:** the **Drivers matrix**
+  — six factor cards rendering the contract, an excluded factor NAMED with its reason on the
+  card ("4 of 6 usable" without which is half a fact). **C4:** **What Changed** — the baseline
+  is only ever a quorate, non-withheld, live-build snapshot (`summarizeEvidence` returns null
+  otherwise, so mock/thin evidence can never seed a diff); first visit says **"baseline set"**
+  (a different fact from "no change"); an identical return visit says **"no material change
+  since <date>"** explicitly; posture flips, confidence moves, factor drop-outs AND recoveries
+  are each named. Persist happens AFTER compare — the baseline advances exactly when a
+  comparison was rendered. A garbled/wrong-version stored baseline fails toward "baseline
+  set", never toward diffing a shape we don't understand. Plus a **Data Health** section
+  (per-source mode · cadence · as-of, ERROR + Retry surfaced there too).
+  **C5 — the repo's first CI** (`.github/workflows/test.yml`): smoke + BOTH browser suites
+  under `REQUIRE_BROWSER=1` (a missing browser FAILS in CI; bare machines keep the local
+  skip) + `audit:prod`. `PLAYWRIGHT_BROWSERS_PATH` is pinned because `findChromium()` does
+  not search playwright's default CI cache — found before it could fail a run.
+  Tests: **926 smoke** (+22: every contract state EXECUTED via real imports, the digest rules
+  incl. garbled-baseline and recovery cases, and the five engine pins migrated from source-
+  lifts to behavior) + 169 render + **67 public-render** (+11: nav/outline/landmark, the
+  matrix with a named exclusion driven live, and the baseline-set → no-material-change cycle
+  across a real reload).
 - **Deferred:** stored fundamentals + Robinhood sync — now unblocked by the `x-tt-pin` header
   (v3.9): a chat-side daily review can PUT `status_flags`/`ref_px` into the deepDive payloads and
   stamp `lastRun`. When built, store the *triage* shape (`{at, px}` → "% moved since your last TT
@@ -1538,7 +1651,7 @@ npm run dev        # Vite dev server (mock unless VITE_DATA_MODE=live in .env)
 npm run build      # → dist/  (what Pages runs)
 npm run preview    # serve the built dist/
 
-node test/smoke.mjs   # 878-assertion no-network smoke test (needs Node ≥17)
+node test/smoke.mjs   # 926-assertion no-network smoke test (needs Node ≥17)
 npm run test:ui       # browser render test for admin.html (skips if no Chromium)
 npm run test:public   # build + browser STATE test for the public dashboard (skips likewise)
 

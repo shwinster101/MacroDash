@@ -1,0 +1,41 @@
+# C5 (v3.60, UX-re-audit sprint) — the repo's first CI. Three gates:
+#   1. the no-network smoke suite (pure functions + source guards)
+#   2. BOTH browser suites under REQUIRE_BROWSER=1 — a missing browser FAILS here instead of
+#      the clean local skip; a silently-skipped gate reads as a passed one (A3's rule)
+#   3. the production-scope dependency audit (dev-toolchain advisories are classified
+#      separately and do not block; runtime advisories do)
+# Pages deploys on push regardless — this gate is the honest record beside it, not a blocker
+# in front of it. Making CI block the deploy is a Pages setting, owner's call.
+name: test
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      # The suites' findChromium() honors this path explicitly — playwright's default CI
+      # cache location is NOT on its search list, so the path must be pinned here.
+      PLAYWRIGHT_BROWSERS_PATH: ${{ github.workspace }}/.pw-browsers
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      - run: npm ci
+      - name: Smoke (no network)
+        run: npm test
+      - name: Install Chromium for the browser suites
+        # playwright-core is the dependency the suites already use; its CLI installs too
+        run: npx playwright-core install --with-deps chromium
+      - name: Browser suite — admin terminal
+        run: REQUIRE_BROWSER=1 npm run test:ui
+      - name: Browser suite — public dashboard states
+        run: REQUIRE_BROWSER=1 npm run test:public
+      - name: Production dependency audit
+        run: npm run audit:prod

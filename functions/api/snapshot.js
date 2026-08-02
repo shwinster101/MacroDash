@@ -104,8 +104,13 @@ export async function onRequest(context) {
   const { request, env } = context;
   const params = new URL(request.url).searchParams;
   const isPublic = params.get("view") === "public";
-  // _diag (source health, hasFredKey, etc.) is internal — only expose it on explicit ?debug=1.
-  const debug = params.get("debug") === "1";
+  /* B3 (v3.59, re-audit MED-security): ?debug=1 exposed _diag (source health, key presence,
+     cron outcomes) to ANYONE — operational data on a public endpoint. It now requires the
+     DEBUG_TOKEN secret: honored only when the secret is SET and ?debug=<token> matches.
+     Fail closed both ways — no secret configured means no _diag for anyone, and a bare
+     ?debug=1 is inert. (Set via: npx wrangler pages secret put DEBUG_TOKEN.) */
+  const debugParam = params.get("debug");
+  const debug = !!(env.DEBUG_TOKEN && debugParam && debugParam === env.DEBUG_TOKEN);
   const publicize = (obj) => { if (debug) return obj; const { _diag, ...rest } = obj; return rest; };
 
   // Per-ET-day cache key: first load each morning fetches fresh (FRED has the
