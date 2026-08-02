@@ -3068,7 +3068,7 @@ ok("C4: the digest persists AFTER comparing, and only quorate sets become the ba
   dashSrc.includes("no material change since your previous visit on this device"));
 
 // ---- 39. v3.61 FEAT-GLANCE — safe-area + first-glance density + newcomer fixes ----
-console.log("\n[39] v3.61 — safe-area, first-glance density, newcomer-audit fixes");
+console.log("\n[41] v3.61 — safe-area, first-glance density, newcomer-audit fixes");
 // F1: index.html has shipped viewport-fit=cover + black-translucent since v1 — the page is
 // deliberately drawn BEHIND the iOS status bar — but env(safe-area-inset-*) existed nowhere,
 // so the wordmark rendered under the Dynamic Island. The comment at index.html:5 claimed
@@ -3150,6 +3150,96 @@ ok("glance: the TT copy button and the FIRED/BLIND alert badges gate on !publicV
   /\{!publicView&&<button onClick=\{handleTtCopy\}/.test(dashSrc) &&
   /\{!publicView&&activeAlerts>0&&<Badge/.test(dashSrc) &&
   /\{!publicView&&activeAlerts===0&&alertBlind>0&&<Badge/.test(dashSrc));
+
+// ─────────────────────────────────────────────────────────────────────────────
+console.log("\n[39] CI-FIX — the browser suites must not read a PRESENT browser as absent");
+// WHY THIS SECTION EXISTS: the repo's first CI run (v3.60) failed on a browser that had
+// just downloaded successfully. findChromium() hardcoded playwright's PRE-Chrome-for-Testing
+// directory layout, so on linux-x64 the real binary at chrome-linux64/chrome was invisible —
+// and under REQUIRE_BROWSER=1 that reported a MISSING browser, the exact inverse of the
+// failure A3 (v3.58) added the flag to catch. A false skip reads as a passed gate; a false
+// failure blocks the gate entirely. Both are the same defect: a hardcoded copy of someone
+// else's layout, drifting. These pins are the same rule the app applies to itself.
+// renderSrc is already read above (section [21]); only the public suite is new here.
+const publicSrc = readFileSync(new URL("./public-render.mjs", import.meta.url), "utf8");
+for (const [label, src] of [["render.mjs", renderSrc], ["public-render.mjs", publicSrc]]) {
+  ok(`${label}: consults playwright's OWN registry first (immune to the next rename)`,
+    /chromium\.executablePath\(\)/.test(src));
+  ok(`${label}: the computed path is existence-checked, never trusted blindly`,
+    /const p = chromium\.executablePath\(\);\s*\n\s*if \(p && existsSync\(p\)\)/.test(src));
+  // The CfT x64 layout is the one CI actually runs on — its absence WAS the outage.
+  ok(`${label}: searches the Chrome-for-Testing linux-x64 layout (the CI bug)`,
+    src.includes("chrome-linux64/chrome"));
+  // The pre-CfT names still ship for linux-arm64 and older pinned images; dropping them
+  // would just move the false skip to a different machine.
+  ok(`${label}: still searches the pre-CfT layout (linux-arm64 + pinned images)`,
+    src.includes("chrome-linux/chrome"));
+  ok(`${label}: searches both Chrome-for-Testing macOS layouts (a dev machine is a gate too)`,
+    src.includes("chrome-mac-arm64/Google Chrome for Testing.app") &&
+    src.includes("chrome-mac-x64/Google Chrome for Testing.app"));
+  ok(`${label}: REQUIRE_BROWSER=1 still turns a genuinely missing browser into a FAILURE`,
+    /REQUIRE_BROWSER === "1"/.test(src) && /process\.exit\(1\)/.test(src));
+  ok(`${label}: a bare machine still SKIPS cleanly — this suite stays additive`,
+    /process\.exit\(0\)/.test(src));
+}
+// The list is only correct if it matches what playwright-core actually ships TODAY. Read its
+// own EXECUTABLE_PATHS table and assert every chromium layout it declares is searchable —
+// a string pin cannot notice a NEW platform being added, but this can.
+// Scoped to the CHROMIUM_RELS ARRAY, not the whole file: matching anywhere would let the
+// prose comment above satisfy the check while the actual entry was gone — a pin that passes
+// on the strength of its own documentation is the vacuous-assert defect this repo keeps
+// finding (v3.54's "read-only by design" pin that passed while the route wrote).
+const relsArray = (src) => {
+  const i = src.indexOf("const CHROMIUM_RELS = [");
+  return i < 0 ? "" : src.slice(i, src.indexOf("];", i));
+};
+ok("the search list covers every chromium layout playwright-core currently declares",
+  (() => {
+    let bundle;
+    try {
+      bundle = readFileSync(new URL("../node_modules/playwright-core/lib/coreBundle.js",
+        import.meta.url), "utf8");
+    } catch (_e) { return true; } // dependency absent (bare checkout) — nothing to reconcile
+    const i = bundle.indexOf("EXECUTABLE_PATHS = {");
+    if (i < 0) return true;      // playwright restructured; the pins above still stand
+    const chromiumBlock = bundle.slice(i, bundle.indexOf('"chromium-headless-shell"', i));
+    // Each entry looks like: "linux-x64": ["chrome-linux64", "chrome"]
+    const dirs = [...chromiumBlock.matchAll(/"(?:linux|mac|win)-[a-z0-9]+":\s*\[([^\]]+)\]/g)]
+      .map((m) => m[1].split(",")[0].trim().replace(/"/g, ""));
+    const rels = [relsArray(renderSrc), relsArray(publicSrc)];
+    return dirs.length > 0 && rels.every(Boolean) &&
+      dirs.every((d) => rels.every((r) => r.includes(d)));
+  })());
+
+// ─────────────────────────────────────────────────────────────────────────────
+console.log("\n[40] Doc drift — no volatile facts outside their one home");
+// The 2026-08-02 audit §5 found README.md asserting a version ~52 point releases stale, an
+// assertion count off by hundreds, and a `test` script that had existed for releases as
+// absent; CLAUDE.md's own status header was frozen ~58 releases back. This is precisely the
+// "label outliving its data" defect the app's changelog keeps fixing INSIDE the product
+// (the Mag-10 footer, the "5-factor vote" strings, the Kalshi TODO comment). v3.59 already
+// applied the cure to AGENTS.md and pinned its shape; these pins extend it to the rest.
+const readmeSrc = readFileSync(new URL("../README.md", import.meta.url), "utf8");
+const handoffSrc = readFileSync(new URL("../HANDOFF.md", import.meta.url), "utf8");
+const pkgVersion = JSON.parse(
+  readFileSync(new URL("../package.json", import.meta.url), "utf8")).version;
+ok("package.json still carries the version — the single source of truth",
+  typeof pkgVersion === "string" && /^\d+\.\d+\.\d+$/.test(pkgVersion));
+ok("README does not restate a version number (it rots; package.json is the home)",
+  !/Current version:\s*\d+\.\d+\.\d+/.test(readmeSrc));
+ok("README does not quote an assertion count (the suite prints its own total)",
+  !/\d{3,}[- ]assertion/.test(readmeSrc));
+// The false claim actively misdirected contributors to the wrong command for many releases.
+ok("README does not claim the `test` script is missing — it exists",
+  !/no `test` script/.test(readmeSrc) && /npm test/.test(readmeSrc));
+const claudeSrc = readFileSync(new URL("../CLAUDE.md", import.meta.url), "utf8");
+ok("CLAUDE.md does not claim the `test` script is missing either",
+  !/no `test` script in `package\.json`/.test(claudeSrc));
+ok("CLAUDE.md's status header no longer pins a hand-bumped version",
+  !/\*\*Status: v\d+\.\d+\.\d+/.test(claudeSrc));
+ok("HANDOFF.md declares itself a dated ARCHIVE, so it cannot read as current state",
+  /ARCHIVE/.test(handoffSrc) && /NOT current state/i.test(handoffSrc) &&
+  /`CLAUDE\.md` is canonical/i.test(handoffSrc));
 
 console.log(`\n=== SMOKE TEST: ${pass} passed, ${fail} failed ===`);
 process.exit(fail === 0 ? 0 : 1);

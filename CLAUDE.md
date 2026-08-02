@@ -14,8 +14,12 @@ boundary is smoke-tested; **first `functions/`→`src/` import** in the repo, es
 A **Macro Flip banner** (`FEAT-331`) and **"Copy TT readout" button** (`FEAT-332`) surface the
 same on the dashboard — both live-only, rendering nothing on mock/stale (honesty invariant holds).
 
-**Status: v3.2.0 "Cut to the Live Signal" — live FRED (incl. HY-IG credit spreads) + sentiment +
-Kalshi + RSS-headline + AI token economics + equity quotes + Shiller CAPE are flowing.** The
+**Status: the current version is whatever `package.json` says — this header deliberately no
+longer restates it.** It read "v3.2.0" for ~58 point releases while the changelog below ran
+current (2026-08-02 audit §5): a summary line that has to be hand-bumped on every release is
+a rot vector, and the release notes further down are the living record. **Live FRED (incl.
+HY-IG credit spreads) + sentiment + Kalshi + RSS-headline + AI token economics + equity
+quotes + Shiller CAPE are flowing.** The
 dashboard fetches `/api/snapshot` and overlays the mapped `SOURCES` fields (equity + rates +
 inflation YoY + sentiment + FOMC odds + top market headline + **personal saving rate** +
 **HY-IG credit spread** + **LLM token $/Mtok** + **QQQ/Mag-10 prices** + **Shiller CAPE**) on top
@@ -1585,6 +1589,59 @@ Jan-anchor shipped; see `snapshot.js` ~318–328), `spyMa100`, `spyMa200`, and a
   lifts to behavior) + 169 render + **67 public-render** (+11: nav/outline/landmark, the
   matrix with a named exclusion driven live, and the baseline-set → no-material-change cycle
   across a real reload).
+- **v3.60.1 — the gate that failed on a browser that was there (2026-08-02 scheduled audit).**
+  The repo's first CI run, shipped hours earlier in v3.60, went **red on `main`** — and the
+  failure was the inverse of the one it was built to catch. `findChromium()` (a copy in
+  `test/render.mjs` and `test/public-render.mjs`) hardcoded playwright's **pre-Chrome-for-
+  Testing** directory layout. playwright-core 1.62 ships CfT builds, whose own
+  `EXECUTABLE_PATHS` table reads `"linux-x64": ["chrome-linux64", "chrome"]` — so on
+  `ubuntu-latest` the browser downloaded **successfully** (`chromium-1234`) and was then
+  reported **absent**. Under `REQUIRE_BROWSER=1` that is a hard failure, so both browser
+  suites AND `audit:prod` never ran: the gate A3 (v3.58) added specifically so *"a
+  silently-skipped gate reads as a passed one"* failed loud on a **present** browser instead,
+  and every commit since landed unverified.
+  **The fix is not a wider guess.** The audit proposed adding the one x64 path; measured
+  against playwright's real table, the same hardcoded list was **also wrong for both macOS
+  layouts** (CfT renamed `Chromium.app` → the `Google Chrome for Testing.app` bundle, split
+  by arch), so a maintainer running `npm run test:ui` on an Apple-silicon machine got a
+  false SKIP — the *original* defect, silent. Root cause is the hardcoded copy itself, so
+  `chromium.executablePath()` — playwright's **own registry**, the source of truth for the
+  layout — is now consulted first and will survive the next rename. It COMPUTES a path for
+  the build pinned in `node_modules` rather than verifying one, so the result is
+  existence-checked, and the directory scan remains as the fallback for a browser installed
+  by a *different* playwright build (the pinned-image case, which is exactly what this
+  environment has). Both contracts are preserved and re-verified: an explicitly set
+  `PLAYWRIGHT_BROWSERS_PATH` still means "look nowhere else", `REQUIRE_BROWSER=1` with no
+  browser still exits 1, and a bare machine still skips cleanly at exit 0.
+  **Verified by reproduction, not inspection**: the CI layout was rebuilt locally
+  (`chromium-1234/chrome-linux64/chrome`) and the pre-fix code fails on it with CI's
+  *identical* error string while the fixed code passes 169 — the bug reproduced and closed,
+  rather than a diff assumed to work.
+  **Doc drift (audit §5), fixed by deletion rather than by bumping.** `README.md` asserted a
+  version ~52 point releases stale, an assertion count off by hundreds, and *"there is no
+  `test` script"* — which had been false for many releases and actively misdirected
+  contributors; CLAUDE.md's own **status header was frozen ~58 releases back** and carried
+  the same false `test`-script claim. That is the "label outliving its data" defect this
+  changelog keeps fixing *inside* the app (the Mag-10 footer, the "5-factor vote" strings,
+  the Kalshi TODO), so it gets the cure v3.59's B5 already proved on `AGENTS.md`: **state
+  where the truth lives, don't copy it.** No version, no counts, no feature list outside
+  their one home. `HANDOFF.md` is relabelled a dated **ARCHIVE** — hand-syncing a second
+  copy of the changelog is what rotted it — and future sessions append rather than edit.
+  Guards, because a doc rule nothing enforces is the rot vector again: smoke **[39]** pins
+  the browser-path contract (both CfT and pre-CfT layouts, the registry call, the
+  existence-check, and both skip/fail contracts) and **reconciles the list against
+  playwright-core's live `EXECUTABLE_PATHS`**, so a newly-added platform is caught rather
+  than merely string-pinned; smoke **[40]** pins the doc shape. Both were negative-controlled
+  — and the reconciliation caught itself passing **vacuously** on the first pass, matching
+  the directory name inside its own explanatory comment, so it is now scoped to the
+  `CHROMIUM_RELS` array (the same vacuous-assert defect v3.54 found in the "read-only by
+  design" pin that passed while the route wrote).
+  Not changed: the audit's §3 note that `computeFiveWhys`'s `opts.stale` is unreachable in
+  production is **correct and already documented at the call site** as a mock/demo fallback —
+  it is latent, not a defect, and removing a working fallback to satisfy an audit note would
+  be the riskier edit.
+  Tests: **948 smoke** (+22) + 169 render + 67 public-render + `audit:prod` clean — the full
+  CI gate, run locally under `REQUIRE_BROWSER=1` for the first time since it was written.
 - **FEAT-GLANCE (v3.61) — "First Glance": safe-area, and the density cut on BOTH surfaces.**
   Owner screenshot (iPhone, deployed v3.60): the wordmark rendered UNDER the Dynamic Island,
   and the first screen was word-dense for a new retail reader. Two root causes, one lesson.
@@ -1639,7 +1696,7 @@ Jan-anchor shipped; see `snapshot.js` ~318–328), `spyMa100`, `spyMa200`, and a
   warning, do-not-trim flags. The BUY block's sentences are decision-critical vetoes and did not
   move. The board h2 became chip-length (`THE BOOK`); the coaching line moved to the HOW THIS
   BOARD WORKS aside.
-  Tests: **945 smoke** (+19: safe-area literals on all three surfaces, the collapse structure,
+  Tests: **967 smoke** (+19 over v3.60.1: safe-area literals on all three surfaces, the collapse structure,
   the excluded-aware sub RUN behaviorally through the real regime.js import on three fixtures,
   the neutral-vote line, the public gates, the est-mini/never-drawer pin) + **173 render** (+4:
   closed-SELL chip tags with the sentences absent, the visible unranked count, the disagreement
@@ -1713,18 +1770,24 @@ npm run dev        # Vite dev server (mock unless VITE_DATA_MODE=live in .env)
 npm run build      # → dist/  (what Pages runs)
 npm run preview    # serve the built dist/
 
-node test/smoke.mjs   # 945-assertion no-network smoke test (needs Node ≥17)
+npm test              # no-network smoke suite (needs Node ≥17)
 npm run test:ui       # browser render test for admin.html (skips if no Chromium)
 npm run test:public   # build + browser STATE test for the public dashboard (skips likewise)
+npm run audit:prod    # production-scope dependency audit
 
 # Cron Worker (separate deploy):
 cd worker && npx wrangler deploy
 npx wrangler secret put FRED_KEY
 ```
 
-There is **no `test` script in `package.json`** — run the smoke test directly. It loads
-the real `MOCK_DATA` out of `dashboard.jsx` to catch `sources.js` ↔ dashboard drift, so
-it must stay green when you touch either file or any `SOURCES` path.
+`npm test` runs the smoke suite. It loads the real `MOCK_DATA` out of `dashboard.jsx` to
+catch `sources.js` ↔ dashboard drift, so it must stay green when you touch either file or
+any `SOURCES` path. (This paragraph read "there is **no** `test` script" for many releases
+after one was added — 2026-08-02 audit §5, the same defect class as the stale status header.
+Assertion counts are deliberately not quoted here; the suite prints its own total.)
+
+**CI** (`.github/workflows/test.yml`) runs all four on every push and pull request with
+`REQUIRE_BROWSER=1`, so a missing browser fails the run rather than skipping the gate.
 
 ## Conventions worth knowing
 

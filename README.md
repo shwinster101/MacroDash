@@ -5,8 +5,8 @@ Macro-intelligence dashboard: one responsive URL (mobile-primary) that answers
 FRED, CNN Fear & Greed, Kalshi FOMC odds, a market RSS headline, OpenRouter LLM
 token prices, Finnhub equity quotes, and the Shiller CAPE. React + Vite SPA on
 Cloudflare Pages, with live data assembled at the edge by Pages Functions and
-cached in KV. **Current version: 3.8.0 "FEAT-SNAP-SAFE"** (the footer
-renders `package.json`'s version — the single source of truth).
+cached in KV. **The version lives in `package.json`** — Vite injects it and the footer
+renders it. This file deliberately does not restate it (see the note at the bottom).
 
 **Live:** https://macrodash.pages.dev · friend view: `/?view=public`
 **Machine endpoint:** [`/readout.json`](https://macrodash.pages.dev/readout.json) — the TT
@@ -21,16 +21,27 @@ npm run dev           # mock data by default (no network)
 npm run build         # → dist/  (what Cloudflare Pages runs)
 npm run preview       # serve the built dist/
 
-node test/smoke.mjs   # 683-assertion no-network smoke test (Node ≥17)
-npm run test:ui       # browser render test for admin.html (skips if no Chromium)
+npm test              # no-network smoke suite (pure functions + source guards; Node ≥17)
+npm run test:ui       # browser suite for /admin.html    (skips cleanly without Chromium)
+npm run test:public   # build + browser STATE suite for the public dashboard (likewise)
+npm run audit:prod    # production-scope dependency audit
 ```
 
-There is no `test` script — run the smoke test directly, and keep it green before
-every commit.
+Keep all of them green before every commit. CI (`.github/workflows/test.yml`) runs the
+same four on every push and pull request, with `REQUIRE_BROWSER=1` so a missing browser
+fails the run instead of silently skipping the gate.
 
 ## Where everything is documented
 
 - **`CLAUDE.md`** — the project brain: architecture, data sources, Cloudflare
   deployment (Pages + KV + secrets + cron Worker), conventions, locked decisions.
-- **`HANDOFF.md`** — latest session state and what to verify next.
+  **Canonical — when any other file disagrees with it, it wins.**
+- **`HANDOFF.md`** — a point-in-time session record, not a current-state document.
 - **`worker/SETUP.md`** — deploying the separate cron Worker.
+
+> **No volatile facts in this file.** No version, no assertion counts, no feature list —
+> those belong in `package.json` and `CLAUDE.md` respectively. The 2026-08-02 audit found
+> this README asserting a version ~52 point releases stale, an assertion count off by
+> hundreds, and a `test` script that had existed for releases as absent. That is the same
+> "a label outliving its data" defect this project fixes *inside* the app, so it gets the
+> same treatment `AGENTS.md` already got: state where the truth lives, don't copy it.

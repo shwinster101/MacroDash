@@ -18,11 +18,36 @@ const ADMIN = new URL("../public/admin.html", import.meta.url);
 const PORT = 8791;
 
 // ── locate a browser, or skip ───────────────────────────────────────────────
+// CI-FIX (2026-08-02 audit §4): the repo's first CI run failed here on a browser that was
+// PRESENT. playwright-core ships Chrome-for-Testing builds, which renamed the per-platform
+// directory (linux-x64: chrome-linux/ → chrome-linux64/; mac: Chromium.app → the CfT
+// bundle). The hardcoded list below knew only the pre-CfT names, so on ubuntu-latest a
+// freshly-downloaded chromium read as absent — and under REQUIRE_BROWSER=1 that failed loud
+// on a present browser, which is the inverse of what A3 (v3.58) built that flag to catch.
+// The pre-CfT names still ship for linux-arm64 and older pinned images, so BOTH generations
+// have to be searched; searching only the new ones would just move the false skip.
+const CHROMIUM_RELS = [
+  "chrome-linux64/chrome",                                                       // linux-x64 (CfT)
+  "chrome-linux/chrome",                                                         // linux-arm64 + pre-CfT
+  "chrome-mac-arm64/Google Chrome for Testing.app/Contents/MacOS/Google Chrome for Testing",
+  "chrome-mac-x64/Google Chrome for Testing.app/Contents/MacOS/Google Chrome for Testing",
+  "chrome-mac/Chromium.app/Contents/MacOS/Chromium",                             // pre-CfT
+  "chrome-win64/chrome.exe",                                                     // win-x64
+];
 function findChromium() {
   // An explicit path is honoured only if it EXISTS — trusting it blindly turns a typo into
   // a launch stack trace instead of the clean skip this function is for.
   const direct = process.env.PLAYWRIGHT_CHROMIUM_PATH;
   if (direct) return existsSync(direct) ? direct : null;
+  // Ask playwright-core FIRST. Its own registry IS the source of truth for the layout, so
+  // this keeps working when the next build renames the directory again — the whole reason
+  // the hardcoded list rotted. It COMPUTES a path rather than verifying one (and computes it
+  // for the build pinned in node_modules), so the result is still existence-checked, and a
+  // browser installed by a DIFFERENT playwright build is left to the scan below.
+  try {
+    const p = chromium.executablePath();
+    if (p && existsSync(p)) return p;
+  } catch (_e) { /* no registry entry for this platform — fall through to the scan */ }
   // An explicitly set browsers path WINS outright. Quietly supplementing it with the
   // hardcoded fallback would mean the env var could never express "look nowhere else".
   const roots = process.env.PLAYWRIGHT_BROWSERS_PATH
@@ -32,7 +57,7 @@ function findChromium() {
     if (!existsSync(root)) continue;
     for (const dir of readdirSync(root)) {
       if (!dir.startsWith("chromium-")) continue;
-      for (const rel of ["chrome-linux/chrome", "chrome-mac/Chromium.app/Contents/MacOS/Chromium"]) {
+      for (const rel of CHROMIUM_RELS) {
         const p = `${root}/${dir}/${rel}`;
         if (existsSync(p)) return p;
       }
