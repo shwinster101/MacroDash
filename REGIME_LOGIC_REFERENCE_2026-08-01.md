@@ -294,8 +294,110 @@ Rules that constrain future changes. Each was paid for.
 - **Band changes** in either engine require a matching boundary test. DEC-33 exists because a silent drift here misclassifies live capital.
 - **Adding a voter** changes the majority math for every consumer. Arrive non-voting; enable on an explicit owner call once real values have been observed.
 - **`/readout.json` is a contract.** External systems gate orders on it. New fields are their own decision.
-- **Test suites:** `node test/smoke.mjs` (851) · `npm run test:ui` (156, admin.html) · `npm run test:public` (28, public state machine). The last two skip cleanly without Chromium.
+- **Test suites:** `node test/smoke.mjs` (856) · `npm run test:ui` (156, admin.html) · `npm run test:public` (28, public state machine). The last two skip cleanly without Chromium.
 - **`package.json` `version` is the single source of truth**, injected as `__APP_VERSION__`.
+
+---
+
+## 10. The ranking pipeline — how every list is computed
+
+**This section documents the METHOD. It contains no book content by design.** Tickers, composite scores, tiers, ranks and positions live only in KV (`tt:book:v1`), and this repository is public — see §0 and doctrine #8. To produce a populated ranking, use the terminal's own export (§10.7); it renders from your live data client-side and never touches this repo.
+
+### 10.1 Three lists, three different questions
+
+The single biggest source of confusion before v3.49 was one banner covering concepts that answer different questions. They are now named for what they are:
+
+| List | Question | Sort key | Weighs caps/thesis? |
+|---|---|---|---|
+| **VALUATION GAP — math only** | *What is cheapest against its own model?* | annualised upside, desc | **No** |
+| **ELIGIBLE NEXT DOLLAR** | *What may actually receive capital right now?* | first row surviving every veto | **Yes** |
+| **FUNDING PRIORITY** | *Where does a dollar come from?* | forced first, then lowest expected return | **Yes** |
+
+`FUNDING PRIORITY` is **not** a sell recommendation. A name with positive modelled upside can appear purely because another name has more.
+
+### 10.2 Entry requirements for the valuation ranking
+
+A name is ranked only if it has **all** of:
+1. a `deepDive` payload,
+2. a **usable price** — a live quote preferred, else a stamped `ref_px` (a stamp alone stopped being the entry ticket in v3.36; the requirement is a usable price, and a live one is strictly better),
+3. at least one `pt_model` row producing a premium **or** floor target.
+
+Names failing these are **counted and named** below the list, never silently dropped — including queue names carrying a manual rank but no model, which are exactly the names under active consideration that the math has nothing to say about.
+
+### 10.3 The horizon is computed, not asserted
+
+`autoHorizon()` = the **deepest year-end every modelled name reaches** (the intersection of all models' row years). Pinning a fixed year silently dropped names whose estimates ended earlier — disclosed only as a footnote count. The chip states both the pick and the rule.
+
+`pickRow()` is the **single** row selector for all three surfaces (they previously each chose differently, so BUY and SELL could rank the same name off different years). Under `ANN_MIN_Y = 0.25y` it **rolls to the next rung and says so**, rather than letting a raw two-month gap annualise into a nonsense rate.
+
+### 10.4 Composite → tier
+
+`parseComposite()` recovers the score from free text, **preferring a decimal over a bare integer** (so `"R3-A: 9.0"` reads 9.0, never 3 — that bug rated a 9.0 name as tier C and withheld the green line from it). A numeric field is taken as-is, so a legitimate score of 0 is not dropped by falsiness.
+
+Tier is the payload's `capped_tier`/`raw_tier` where recorded; otherwise derived:
+
+```
+score ≥ 8.5 → S     ≥ 7 → A     ≥ 5.5 → B     else C
+```
+
+*The framework's own scoring methodology — what feeds that score — is private (§0). Only this derivation, which is implemented in public source, is documented here.*
+
+### 10.5 Veto order for eligibility
+
+Board-level gates run **first**; any failure hard-WAITs the whole list with the gate named:
+
+1. leverage circuit `tripped`
+2. stance `UNKNOWN` (no measured or asserted regime — a live regime read is mandatory)
+3. stance suspended (PANIC)
+4. regime feed unreadable, or Macro Flip absent / blind / tripped — **fail closed**
+
+Then per name, in order:
+
+| # | Veto | Rationale |
+|---|---|---|
+| 1 | `upside ≤ 0` | no gap |
+| 2 | weight ≥ `CAP_PCT` | already full — the board must not propose an add into a capped position |
+| 3 | `readiness().blockers` | evidence missing (reads readiness's own list, so the green line and the name's readiness bar cannot disagree) |
+| 4 | unscored | no TT run |
+| 5 | tier C or score < 5.5 | quality fails |
+| 6 | R/R fails its floor | — |
+| 7 | binary within `BINARY_WINDOW_D` | no-new-adds |
+
+**Red hinges do NOT veto** (doctrine #2) — they are named in red on the pick itself. Cautions never veto; aging evidence is the owner's to weigh, missing evidence is not.
+
+### 10.6 Weight, and the honest denominator
+
+`rankWeight()` marks every pick: `**` at/over `CAP_PCT` · `*` ≥10% · `◇` options-only.
+
+- The denominator is **tracked-book market value, never NAV** (unmeasured), so every weight is a **floor** — the true percentage is lower.
+- `mv` is **equity-only**, so an options-only position gets its own marker rather than a misleading 0%.
+- An **unheld** name renders *"new — not held"*, distinct from *"held · size unmeasured"* — a blank was previously ambiguous between the two.
+
+### 10.7 Funding priority ordering
+
+```
+forced      → any name at/over CAP_PCT, sorted by points over the cap (desc)
+                a breach is a rule already broken, not a choice; carries the computed $ to cap
+discretionary → share rows by LOWEST annualised upside (least expected return funds first)
+                then options rows by realisable dollars (desc)
+```
+
+Share and option rows are **never mixed on one numeric key** — an option sleeve has no comparable annual rate, and borrowing the underlying's would be the units error doctrine #3 removes. Each row states its own basis. Option `mv` is **signed**: a short leg is a liability to buy back, a *use* of cash, not a source.
+
+`do_not_trim` is **flagged, never hidden** — a cap breach on a do-not-trim name is named as a contradiction to resolve.
+
+### 10.8 Producing a populated ranking (without publishing it)
+
+The terminal already exports its own state, rendered client-side from KV:
+
+| Control | Produces |
+|---|---|
+| `⭳ EXPORT CANONICAL_BOOK.md` | the book incl. `### DEEP_DIVE:` sections and a `## PROJECTIONS` table |
+| `EXPORT JSON` | full round-trip backup (re-importable) |
+| `NEXT DOLLAR & UPSIDE` → `est-mini` rows | per-name nearest target, annualised upside and tier |
+| `BOOK COVERAGE` strip | modelled / projected / run-fresh counts |
+
+Keep those outputs wherever private content belongs — local disk, a private repo, or the Artifacts copy. **Never this repository.**
 
 ---
 

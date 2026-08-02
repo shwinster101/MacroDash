@@ -2754,6 +2754,31 @@ ok("ref: the constants appendix matches the real TT constants",
   /`CAP_PCT` \| 18%/.test(refDoc) && /const CAP_PCT=18;/.test(adminSrc) &&
   /`BINARY_WINDOW_D` \| 10d/.test(refDoc) && /const BINARY_WINDOW_D=10;/.test(adminSrc) &&
   /`READY_THESIS_D` \| 30d/.test(refDoc) && /const READY_THESIS_D=30;/.test(adminSrc));
+// §10 documents the ranking METHOD. It must stay pinned to source AND stay free of book data.
+ok("ref §10: the veto order documented matches the order why() actually applies", (() => {
+  const sec = refDoc.slice(refDoc.indexOf("### 10.5"), refDoc.indexOf("### 10.6"));
+  const body = adminSrc.slice(adminSrc.indexOf("const why=r=>{"));
+  const src = body.slice(0, body.indexOf("return null;"));
+  const names = [["gap", /!\(r\.upside>0\)/, /no gap/], ["cap", /r\.wt\.w>=CAP_PCT/, /weight ≥ .CAP_PCT./],
+    ["rdy", /r\.rdy\.blockers/, /readiness\(\)\.blockers/], ["unscored", /!r\.tt\)/, /unscored/],
+    ["quality", /quality fails/, /quality fails/], ["rr", /r\.rrFail/, /R\/R fails/],
+    ["bin", /BINARY_WINDOW_D/, /no-new-adds/]];
+  const ord = (t, k) => names.map(([n, a, b]) => [n, t.search(k === 0 ? a : b)])
+    .filter(([, i]) => i >= 0).sort((x, y) => x[1] - y[1]).map(([n]) => n).join(">");
+  return ord(src, 0) === ord(sec, 1); })());
+ok("ref §10: the documented tier map matches the one implemented in admin.html",
+  /score ≥ 8\.5 → S/.test(refDoc) && adminSrc.includes('score>=8.5?"S":score>=7?"A":score>=5.5?"B":"C"'));
+ok("ref §10: the funding sort keys match sellRank (forced by pts over cap, then lowest rate)",
+  /sorted by points over the cap/.test(refDoc) && /LOWEST annualised upside/.test(refDoc) &&
+  /forced\.sort\(\(a,b\)=>b\.trimPts-a\.trimPts\)/.test(adminSrc) &&
+  /a\.ann-b\.ann:b\.mv-a\.mv/.test(adminSrc));
+// The whole point of §10: it documents the METHOD without publishing the book.
+ok("ref: NO book content is published — the repo is public and ships empty rails",
+  !/\b(NVDA|TSM|NBIS|GOOGL|UBER|RKLB|JOBY|CRDO|LITE|CELH|GRAB|TEM|GEV)\b/.test(refDoc) &&
+  adminSrc.includes("const SEED=[];") && /^let BOARD=\{\};/m.test(adminSrc) &&
+  /^let POSITIONS=\{\};/m.test(adminSrc));
+ok("ref: it points at the terminal's own export for populated rankings, not at this repo",
+  /EXPORT CANONICAL_BOOK\.md/.test(refDoc) && /Never this repository/.test(refDoc));
 ok("ref: the stated suite counts are not wildly stale (within 10% of actual)",
   (() => { const m = /`node test\/smoke\.mjs` \((\d+)\)/.exec(refDoc);
     return m && Math.abs(Number(m[1]) - (pass + fail + 1)) / (pass + fail + 1) < 0.1; })());
