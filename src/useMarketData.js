@@ -22,6 +22,9 @@ const RETRIES = 1;
 
 export function useMarketData(mockData, opts = {}) {
   const publicView = !!opts.publicView;
+  // B1 (v3.59): retryTick re-arms the whole fetch effect — the manual Retry the re-audit
+  // asked for. Incrementing it re-runs attempt() with the full timeout/retry machinery.
+  const [retryTick, setRetryTick] = useState(0);
   // FEAT-QUORUM (v3.54): `mode:"MOCK"` is AMBIGUOUS — it is both "this is a demo build" and
   // "this is a live build whose fetch failed". Those must render differently: the demo's
   // baseline IS mock and should show its verdict, while a live build falling back to mock has
@@ -36,6 +39,7 @@ export function useMarketData(mockData, opts = {}) {
     dataAsOf: {},
     loading: liveBuild,
     liveBuild,
+    lastError: null,
   });
 
   useEffect(() => {
@@ -65,9 +69,15 @@ export function useMarketData(mockData, opts = {}) {
         .catch((err) => {
           clearTimeout(timeoutTimer);
           if (cancelled) return;
-          // Network/timeout/parse failure: fall back to mock with an honest MOCK badge
-          // (never a stuck LOADING). The dashboard never breaks on a bad fetch.
-          setState({ data: mockData, mode: "MOCK", asOf: null, provenance: {}, dataAsOf: {}, loading: false, liveBuild });
+          /* B1 (v3.59, re-audit MED-robustness): a failed live fetch used to collapse to
+             mode:"MOCK" — indistinguishable from an intentional demo build, with no way to
+             tell whether to wait, retry, or treat the page as a demo. ERROR is now its own
+             mode: mock content still renders underneath (graceful degradation holds, and
+             everything mock stays ILLUSTRATIVE), but the page can say "the live service
+             failed" and offer Retry. MOCK now means exactly one thing: a demo build.
+             This completes the liveBuild disambiguation v3.54 started. */
+          setState({ data: mockData, mode: "ERROR", asOf: null, provenance: {}, dataAsOf: {}, loading: false, liveBuild,
+            lastError: (err && err.message) || String(err) });
           if (typeof console !== "undefined" && console.warn) {
             console.warn("[MacroDash] /api/snapshot fetch failed:", (err && err.message) || err);
           }
@@ -82,7 +92,14 @@ export function useMarketData(mockData, opts = {}) {
       clearTimeout(retryTimer);
       if (ctl) ctl.abort();
     };
-  }, [mockData, publicView]);
+  }, [mockData, publicView, retryTick]);
 
-  return state;
+  // Manual retry: reset to LOADING (so the UI withholds rather than showing stale ERROR
+  // chrome mid-flight) and re-arm the effect. No-op in a demo build — nothing to retry.
+  const retry = () => {
+    if (!liveBuild) return;
+    setState((s) => ({ ...s, mode: "LOADING", loading: true, lastError: null }));
+    setRetryTick((t) => t + 1);
+  };
+  return { ...state, retry };
 }

@@ -2381,9 +2381,21 @@ ok("alert: the section states it evaluates HERE and delivers nothing",
 // ---- a11y (suite audit #2): landmarks + live regions on the public page ----
 ok("a11y: the page exposes a main landmark (there were ZERO before)",
   /role="main"/.test(dashSrc));
-ok("a11y: the verdict and its confidence strip are polite live regions",
-  /aria-label="Macro backdrop verdict" aria-live="polite"/.test(dashSrc) &&
-  /aria-label="Signal quality and backdrop confidence" aria-live="polite"/.test(dashSrc));
+// B4 (v3.59) superseded the block-sized live regions: landmarks stay, announcement narrows
+// to ONE concise status sentence — a reader should hear "backdrop changed", not whole blocks.
+ok("a11y: verdict + confidence keep their LANDMARKS but are no longer block live regions",
+  /aria-label="Macro backdrop verdict"\n?/.test(dashSrc) &&
+  /aria-label="Signal quality and backdrop confidence"/.test(dashSrc) &&
+  !/aria-label="Macro backdrop verdict" aria-live/.test(dashSrc));
+ok("a11y B4: ONE concise visually-hidden status region announces state changes",
+  /aria-live="polite" role="status" className="visually-hidden"/.test(dashSrc) &&
+  /Backdrop \$\{regime\.label\}: \$\{regime\.counted\} of \$\{regime\.totalFactors\} factors usable\./.test(dashSrc));
+ok("a11y B4: header actions carry 44px thumb targets at phone width",
+  /\.hdr-act\{min-height:44px;min-width:44px/.test(dashSrc) &&
+  (dashSrc.match(/className="hdr-act"/g) || []).length === 3);
+ok("a11y B4: sparklines are decorative (aria-hidden); the SPY chart has a TEXT equivalent",
+  /\{spark&&<div aria-hidden="true"/.test(dashSrc) &&
+  /its 200-day average of/.test(dashSrc));
 
 // ---- 28. FEAT-FLIP (v3.53) — the shared band table + "what would change the verdict" ----
 // The bands moved OUT of computeRegime's inline ifs into REGIME_BAND_TABLE so flipConditions
@@ -2910,6 +2922,47 @@ ok("A4: the public footer NAMES the omission (a cut takes its attribution with i
 // A5: production dependency surface is classified and checkable in one command.
 ok("A5: audit:prod script exists (measured clean at v3.58 — all 3 advisories are dev toolchain)",
   /"audit:prod": "npm audit --omit=dev"/.test(readFileSync(new URL("../package.json", import.meta.url), "utf8")));
+
+// ---- 37. v3.59 follow-ups — ERROR mode, provenance vocabulary, security ----
+console.log("\n[37] v3.59 — ERROR is not demo, fresh is not live, debug needs a token");
+const hookSrc = readFileSync(new URL("../src/useMarketData.js", import.meta.url), "utf8");
+// B1: a failed live fetch is ERROR, and MOCK means exactly one thing — a demo build.
+ok("B1: a failed live fetch sets mode ERROR, never the demo's MOCK",
+  /mode: "ERROR"/.test(hookSrc) && !/mode: "MOCK", asOf: null, provenance: \{\}, dataAsOf: \{\}, loading: false, liveBuild \}\)/.test(hookSrc));
+ok("B1: the hook exposes retry() and it re-arms the full fetch machinery",
+  /const retry = \(\) =>/.test(hookSrc) && /setRetryTick\(\(t\) => t \+ 1\)/.test(hookSrc) &&
+  /\[mockData, publicView, retryTick\]/.test(hookSrc));
+ok("B1: retry resets to LOADING first — no stale ERROR chrome mid-flight, and demo no-ops",
+  /if \(!liveBuild\) return;/.test(hookSrc) && /mode: "LOADING", loading: true, lastError: null/.test(hookSrc));
+ok("B1: the dashboard renders the outage and a Retry control, not 'demo baseline'",
+  /live service unavailable — numbers below are illustrative/.test(dashSrc) &&
+  /aria-label="Retry loading live data"/.test(dashSrc));
+ok("B1: ERROR wears its own red badge in DataModeBadge",
+  /ERROR:\s*\{ label:"⚠ ERROR"/.test(dashSrc));
+// B2: fresh ≠ live. The rollup names both parts; the footers derive from state.
+ok("B2: Signal Quality counts live and cached separately under a FRESH rollup",
+  /if\(m==="LIVE"\)\{a\.fresh\+\+;a\.live\+\+;\}else if\(m==="CACHED"\)\{a\.fresh\+\+;a\.cached\+\+;\}/.test(dashSrc) &&
+  /\{sq\.fresh\} fresh/.test(dashSrc) && /\{sq\.live\} live · \{sq\.cached\} cached/.test(dashSrc));
+ok("B2: 'derived from live data' is now STATE-derived, one derivation for both footers",
+  /const derivedLabel=mode==="LIVE"\?"derived from live data"/.test(dashSrc) &&
+  /derived from today's cached snapshot/.test(dashSrc) &&
+  /· \{srcLabel\}<\/div>/.test(dashSrc) && /· \{derivedLabel\} \(no LLM\)/.test(dashSrc));
+// B3: operational data needs a token; the public route gets a report-only CSP.
+const snapSrc2 = readFileSync(new URL("../functions/api/snapshot.js", import.meta.url), "utf8");
+ok("B3: ?debug requires the DEBUG_TOKEN secret — fail closed both ways",
+  /env\.DEBUG_TOKEN && debugParam && debugParam === env\.DEBUG_TOKEN/.test(snapSrc2) &&
+  !/const debug = params\.get\("debug"\) === "1"/.test(snapSrc2));
+const mwSrc = readFileSync(new URL("../functions/_middleware.js", import.meta.url), "utf8");
+ok("B3: report-only CSP on public routes; /admin.html and /api are deliberately exempt",
+  /content-security-policy-report-only/.test(mwSrc) &&
+  /cspPath !== "\/admin\.html"/.test(mwSrc) && /!cspPath\.startsWith\("\/api\/"\)/.test(mwSrc));
+ok("B3: the CSP is REPORT-ONLY (observe before enforcing), never the enforcing header yet",
+  !/h\.set\("content-security-policy",/.test(mwSrc));
+// B5: AGENTS.md carries no volatile facts — the rot vector is removed, not re-fed.
+const agentsSrc = readFileSync(new URL("../AGENTS.md", import.meta.url), "utf8");
+ok("B5: AGENTS.md is a thin pointer — no version numbers, no assertion counts",
+  !/v3\.\d+\.\d+/.test(agentsSrc) && !/\d{3}-assertion/.test(agentsSrc) &&
+  /CLAUDE\.md wins/.test(agentsSrc) && /npm test/.test(agentsSrc) && /REQUIRE_BROWSER=1/.test(agentsSrc));
 
 console.log(`\n=== SMOKE TEST: ${pass} passed, ${fail} failed ===`);
 process.exit(fail === 0 ? 0 : 1);

@@ -122,7 +122,8 @@ async function open({ live, status = 200, delayMs = 0, width = 1280, route = "/"
   page.on("pageerror", (e) => errors.push(String(e)));
   await page.route("**/api/snapshot*", async (r) => {
     if (delayMs) await new Promise((res) => setTimeout(res, delayMs));
-    if (status !== 200) return r.fulfill({ status, body: "upstream failure" });
+    const st = typeof status === "function" ? status() : status;   // B1: flip-able stub
+    if (st !== 200) return r.fulfill({ status: st, body: "upstream failure" });
     r.fulfill({ status: 200, contentType: "application/json",
       body: JSON.stringify({ live, cached: false, asOf: new Date().toISOString() }) });
   });
@@ -213,6 +214,28 @@ console.log("\n[public] ERROR — a 500 falls back to mock, and mock does not vo
   await page.close();
 }
 
+// ── B1 (v3.59) — ERROR is a first-class mode with a manual Retry ───────────
+console.log("\n[public] B1 — ERROR is not demo, and Retry actually retries");
+{
+  let failNow = true;
+  const { page, errors } = await open({ live: FULL_LIVE, status: () => (failNow ? 500 : 200) });
+  await page.waitForTimeout(1500);
+  const body1 = await page.locator("body").innerText();
+  ok("B1: a failed live fetch wears the ERROR badge, never the demo's MOCK",
+    /⚠ ERROR/.test(body1) && !/demo baseline — not live/.test(body1));
+  ok("B1: the header states the outage and that the numbers below are illustrative",
+    /live service unavailable/i.test(body1));
+  ok("B1: a Retry control exists", await page.locator('button[aria-label="Retry loading live data"]').count() === 1);
+  failNow = false;
+  await page.locator('button[aria-label="Retry loading live data"]').click();
+  await page.waitForTimeout(1500);
+  const body2 = await page.locator("body").innerText();
+  ok("B1: Retry re-fetches and the posture appears once the service recovers",
+    /RISK-ON|RISK-OFF|MIXED/.test(body2) && !/⚠ ERROR/.test(body2));
+  ok("B1: no page errors through the fail→retry→recover cycle", errors.length === 0);
+  await page.close();
+}
+
 // ── 5. Responsive + a11y basics on the live state ───────────────────────────
 console.log("\n[public] responsive on BOTH routes — the 320px contract (A2/A3)");
 for (const route of ["/", "/?view=public"]) {
@@ -253,8 +276,14 @@ console.log("\n[public] A4 — the public/private boundary is ENFORCED, not comm
   const { page } = await open({ live: FULL_LIVE });
   await page.waitForTimeout(1200);
   ok("a11y: exactly one main landmark", await page.locator('[role="main"]').count() === 1);
-  ok("a11y: the verdict and confidence regions announce politely",
-    await page.locator('[aria-live="polite"]').count() >= 2);
+  // B4 (v3.59): the block regions stopped announcing; one concise status node does.
+  ok("a11y: exactly one concise polite status region announces backdrop changes",
+    await page.locator('[role="status"][aria-live="polite"]').count() === 1 &&
+    /Backdrop (RISK-ON|RISK-OFF|MIXED): \d of 6 factors usable\./.test(
+      await page.locator('[role="status"][aria-live="polite"]').innerText()));
+  ok("a11y: the verdict and confidence landmarks survive the live-region narrowing",
+    await page.locator('[aria-label="Macro backdrop verdict"]').count() === 1 &&
+    await page.locator('[aria-label="Signal quality and backdrop confidence"]').count() === 1);
   await page.close();
 }
 

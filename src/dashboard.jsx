@@ -214,6 +214,9 @@ const DataModeBadge = ({ mode }) => {
     LIVE:    { label:"LIVE",    bg:"#0a1e24", color:DT["live-cyan-700"], border:`1px solid ${DT["live-cyan-700"]}66` },
     STALE:   { label:"⏱ STALE", bg:"#1a140a", color:T.amber,            border:`1px solid ${T.amber}44` },
     CACHED:  { label:"CACHED",  bg:"#18181b", color:DT["cached"],        border:`1px dashed ${DT["cached"]}` },  // FEAT-167
+    // B1 (v3.59): a failed live fetch is ERROR, never "MOCK" — an outage must not wear the
+    // demo's badge. Red, because it is the one mode that asks the user to act (Retry).
+    ERROR:   { label:"⚠ ERROR", bg:"#190a0c", color:T.red,               border:`1px solid ${T.red}66` },
   }[mode] || { label:mode, bg:T.surface, color:T.textMuted, border:`1px solid ${T.border}` };
   return (
     <span style={{background:cfg.bg, color:cfg.color, border:cfg.border, borderRadius:3, padding:"1px 6px", fontSize:9, fontFamily:T.fontMono, letterSpacing:"0.04em"}}>{cfg.label}</span>
@@ -679,7 +682,7 @@ const DirTile=({label,value,d1,w1,m1,band,invert=false,spark,source,sourceEp,mod
       {/* Verdict only on live data; mock/stale shows an honest chip instead of a fabricated call */}
       {/* Short chip label — a ~110px tile can't fit "· not live"; hatch + SourceBox carry it */}
       {illus?(mode==="STALE"?<DataModeBadge mode="STALE"/>:<IllustrativeChip label="ILLUSTRATIVE"/>):<Badge label={verdict.label} color={verdict.color} small/>}
-      {spark&&<div style={{height:20,marginTop:5}}><ResponsiveContainer width="100%" height="100%"><LineChart data={spark.map((v,i)=>({v,i}))}><Line type="monotone" dataKey="v" stroke={illus?T.textMuted:T.amber} dot={false} strokeWidth={1}/></LineChart></ResponsiveContainer></div>}
+      {spark&&<div aria-hidden="true" style={{height:20,marginTop:5}}><ResponsiveContainer width="100%" height="100%"><LineChart data={spark.map((v,i)=>({v,i}))}><Line type="monotone" dataKey="v" stroke={illus?T.textMuted:T.amber} dot={false} strokeWidth={1}/></LineChart></ResponsiveContainer></div>}
       {source&&<SourceBox api={source} endpoint={sourceEp||""} mode={mode} asOf={asOf}/>}
     </div>
   );
@@ -1063,7 +1066,7 @@ const MacroFlipBanner=({flip})=>{
 // The friend-readable headline ("wen moon?") — first signal
 // seen on mobile (above the command grid) and prominent on desktop. Soft regime tint
 // per AS2-01. Reuses computeRegime + regimeFactors.
-const RegimeBand=({d,stale=new Set(),loading=false,liveBuild=false})=>{
+const RegimeBand=({d,stale=new Set(),loading=false,liveBuild=false,srcLabel="derived from live data"})=>{
   const [open,setOpen]=useState(false);
   const regime=computeRegime(d,stale);
   const factors=regimeFactors(d,stale);
@@ -1079,7 +1082,7 @@ const RegimeBand=({d,stale=new Set(),loading=false,liveBuild=false})=>{
   // "wen moon?" — map the regime verdict to our moon ratings: RISK-ON→MOONING, MIXED→HODL, RISK-OFF→DIAMOND HANDS
   const moon=withheld?WEN_MOON_STATES[3]:WEN_MOON_STATES[{ "RISK-ON":0, "MIXED":1, "RISK-OFF":2 }[regime.label] ?? 1];
   return(
-    <div role="region" aria-label="Macro backdrop verdict" aria-live="polite"
+    <div role="region" aria-label="Macro backdrop verdict"
       style={{background:regime.tint,borderBottom:`1px solid ${regime.color}33`,borderTop:`1px solid ${regime.color}22`,padding:"10px 20px",position:"relative"}}>
       <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",gap:12,flexWrap:"wrap"}}>
         {/* Left: label + sub */}
@@ -1176,7 +1179,7 @@ const RegimeBand=({d,stale=new Set(),loading=false,liveBuild=false})=>{
               </div>
             )}
           </div>
-          <div style={{fontFamily:T.fontMono,fontSize:8,color:T.textMuted,gridColumn:"1/-1"}}>Rule-based 6-factor vote · stale/dead inputs auto-excluded · derived from live data</div>
+          <div style={{fontFamily:T.fontMono,fontSize:8,color:T.textMuted,gridColumn:"1/-1"}}>Rule-based 6-factor vote · stale/dead inputs auto-excluded · {srcLabel}</div>
         </div>
       )}
     </div>
@@ -1306,7 +1309,7 @@ export default function Dashboard({ publicView = false } = {}) {
   useEffect(()=>{const id=setInterval(()=>setSessionTick(t=>t+1),10*60*1000);return ()=>clearInterval(id);},[]);
   const { toasts, show:showToast, dismiss } = useUndoToast();
   // FEAT-204 wiring — single-point hook swap; mock stays default, operator flips live post-deploy
-  const { data: DATA, mode, asOf, provenance, dataAsOf, liveBuild } = useMarketData(MOCK_DATA, { publicView });
+  const { data: DATA, mode, asOf, provenance, dataAsOf, liveBuild, lastError, retry } = useMarketData(MOCK_DATA, { publicView });
   const d=DATA;
   // FOMC countdown computed CLIENT-SIDE from nextFOMC (the snapshot's daysUntil is frozen at
   // fetch time and rounds up — it read "1d" on decision day). 0 = today. Falls back to the
@@ -1353,7 +1356,10 @@ export default function Dashboard({ publicView = false } = {}) {
   // Signal Quality rollup — at-a-glance trust: how many tracked signals are live+fresh vs
   // stale vs mock. Only meaningful in live mode (in mock everything is MOCK by design).
   const SIGNAL_FIELDS=["spyPrice","vix","fearGreed","tenYear","cpiHeadline","fedFunds","creditSpread","nfci","wti","btc","rateOddsHold","marketHeadline","savings","tokenBlendedMtok","shillerPe"];
-  const sq=SIGNAL_FIELDS.reduce((a,k)=>{const m=modeOf(k);if(m==="LIVE"||m==="CACHED")a.fresh++;else if(m==="STALE")a.stale++;else a.mock++;return a;},{fresh:0,stale:0,mock:0});
+  /* B2 (v3.59, re-audit MED-provenance): "13 live" counted LIVE+CACHED under one word, so a
+     technically-fresh cached observation read as newly fetched. FRESH is the rollup (both are
+     usable); live and cached are named separately inside it. */
+  const sq=SIGNAL_FIELDS.reduce((a,k)=>{const m=modeOf(k);if(m==="LIVE"){a.fresh++;a.live++;}else if(m==="CACHED"){a.fresh++;a.cached++;}else if(m==="STALE")a.stale++;else a.mock++;return a;},{fresh:0,live:0,cached:0,stale:0,mock:0});
   sq.total=SIGNAL_FIELDS.length;
   const asOfOf=(k)=>{const s=dataAsOf?.[k]; if(!s)return undefined; const dt=parseObsDate(s); return !dt||isNaN(dt.getTime())?s:`as of ${dt.toLocaleDateString("en-US",{month:"short",day:"numeric"})}`;}; // FEAT-R2: "as of Jun 4" (parses ISO + legacy M/D/YYYY)
   // 5 Whys: recomputed every render ($0, no LLM). Override the session frame with the LIVE
@@ -1381,6 +1387,11 @@ export default function Dashboard({ publicView = false } = {}) {
      still passes null — mock IS its baseline (the demoted()/anyLive doctrine, unchanged). */
   const freshSet=liveBuild ? new Set(FW_FIELDS.filter(k=>{const m=modeOf(k);return m==="LIVE"||m==="CACHED";})) : null;
   const fw=computeFiveWhys({...d, session:etSession()}, regime, { stale:staleFactors, fresh:freshSet });
+  /* B2 (v3.59): "derived from live data" was a STATIC string — it kept asserting liveness
+     across cached, degraded, error and demo states. One derivation, both footers. */
+  const derivedLabel=mode==="LIVE"?"derived from live data"
+    :mode==="CACHED"?"derived from today's cached snapshot"
+    :liveBuild?"live data unavailable — nothing derived":"illustrative demo — not live";
   // FEAT-ALERT-EVAL: evaluated from live data every render (see evalAlert). `alertBlind` is
   // reported separately — a header that says "0 FIRED" while every input is dead would be the
   // same false-clear the stored `triggered` flag used to assert.
@@ -1461,6 +1472,14 @@ export default function Dashboard({ publicView = false } = {}) {
           branded header below; duplicating it on screen would be noise, so the structural
           heading is visually hidden rather than invented as new chrome. */}
       <h1 className="visually-hidden">MacroDash — macro backdrop: is the market environment supportive of taking risk?</h1>
+      {/* B4 (v3.59): ONE concise live region. Announcing the full verdict band + confidence
+          strip read entire blocks aloud on every snapshot; a reader should hear one sentence. */}
+      <div aria-live="polite" role="status" className="visually-hidden">
+        {mode==="LOADING"?"Loading live data; posture withheld."
+          :mode==="ERROR"?"Live service unavailable; posture withheld."
+          :regime.insufficient?`Insufficient evidence: ${regime.counted} of ${regime.totalFactors} factors usable; posture withheld.`
+          :`Backdrop ${regime.label}: ${regime.counted} of ${regime.totalFactors} factors usable.`}
+      </div>
       <style>{`
         @import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;700&family=DM+Sans:wght@400;500;600&family=Syne:wght@700;800&display=swap');
         *{box-sizing:border-box;margin:0;padding:0;}
@@ -1481,6 +1500,8 @@ export default function Dashboard({ publicView = false } = {}) {
         @media(prefers-reduced-motion:reduce){.pulse-anim{animation:none!important;}}
         /* A2 (v3.58): 320px contract — the duplicate wordmark is the first thing to go. */
         @media(max-width:359px){.sub-wordmark{display:none;}}
+        /* B4 (v3.59): WCAG target size — header actions get real thumb targets on phones. */
+        @media(max-width:480px){.hdr-act{min-height:44px;min-width:44px;display:inline-flex;align-items:center;justify-content:center;}}
         /* A11Y (11.4.5 audit, High): focused controls showed no outline or shadow at all.
            :focus-visible (not :focus) so a mouse click never paints a ring. */
         :focus-visible{outline:2px solid ${DT["focus-ring"]};outline-offset:2px;border-radius:3px;}
@@ -1506,9 +1527,17 @@ export default function Dashboard({ publicView = false } = {}) {
               v3.1 honesty invariant says must never look live when it isn't. */}
           <div style={{display:"flex",alignItems:"center",gap:5,flexWrap:"wrap"}}>
             <div style={{width:6,height:6,borderRadius:"50%",background:anyLive?T.amber:T.textMuted,boxShadow:anyLive?`0 0 5px ${T.amber}`:"none"}} className="pulse-anim"/>
-            <span style={{fontFamily:T.fontMono,fontSize:9,color:T.textSecondary}}>
-              {anyLive?`${d.session} · ${d.lastRefresh}`:mode==="LOADING"?"fetching live data…":"demo baseline — not live"}
+            <span style={{fontFamily:T.fontMono,fontSize:9,color:mode==="ERROR"?T.red:T.textSecondary}}>
+              {anyLive?`${d.session} · ${d.lastRefresh}`
+                :mode==="LOADING"?"fetching live data…"
+                :mode==="ERROR"?"live service unavailable — numbers below are illustrative"
+                :"demo baseline — not live"}
             </span>
+            {/* B1 (v3.59): the manual retry the re-audit asked for. Only meaningful on ERROR. */}
+            {mode==="ERROR"&&<button onClick={retry} aria-label="Retry loading live data"
+              style={{fontFamily:T.fontMono,fontSize:9,background:T.surfaceHigh,border:`1px solid ${T.red}66`,color:T.red,padding:"2px 8px",borderRadius:3,cursor:"pointer"}}>
+              ↻ RETRY
+            </button>}
             {/* FINDING-4: set novice expectations — these are end-of-day, not real-time */}
             {anyLive&&<span style={{fontFamily:T.fontMono,fontSize:8,color:T.textMuted}}>· end-of-day, not real-time</span>}
           </div>
@@ -1518,19 +1547,19 @@ export default function Dashboard({ publicView = false } = {}) {
           {activeAlerts>0&&<Badge label={`⚡ ${activeAlerts} FIRED`} color={T.red}/>}
           {activeAlerts===0&&alertBlind>0&&<Badge label={`⚡ ${alertBlind} BLIND`} color={T.amber}/>}
           {/* FEAT-165: share button */}
-          <button onClick={handleShare} aria-label="Copy dashboard link"
+          <button onClick={handleShare} aria-label="Copy dashboard link" className="hdr-act"
             style={{fontFamily:T.fontMono,fontSize:9,background:copied?"#1a3020":T.surfaceHigh,border:`1px solid ${copied?T.green:T.borderAccent}`,color:copied?T.green:T.textSecondary,padding:"5px 12px",borderRadius:4,cursor:"pointer",transition:"all 0.2s"}}>
             {copied?"✓ COPIED":"⤴ SHARE"}
           </button>
           {/* FEAT-332: Copy TT readout — disabled unless live (an order-gating paste block must
               not ship mock numbers; a disabled button can't be trimmed the way a warning header can). */}
-          <button onClick={handleTtCopy} disabled={!anyLive} aria-label="Copy TT regime readout"
+          <button onClick={handleTtCopy} disabled={!anyLive} aria-label="Copy TT regime readout" className="hdr-act"
             title={anyLive?"Copy the TT regime readout paste block":"live data required"}
             style={{fontFamily:T.fontMono,fontSize:9,background:ttCopied?"#1a3020":T.surfaceHigh,border:`1px solid ${ttCopied?T.green:T.borderAccent}`,color:ttCopied?T.green:T.textSecondary,padding:"5px 12px",borderRadius:4,cursor:anyLive?"pointer":"not-allowed",opacity:anyLive?1:0.4,transition:"all 0.2s"}}>
             {ttCopied?"✓ TT COPIED":"⎘ TT"}
           </button>
           {/* FEAT-TT: link to the Access-gated Ticker Terminal admin portal (hidden on public view) */}
-          {!publicView&&<a href="/admin.html" aria-label="Open Ticker Terminal admin"
+          {!publicView&&<a href="/admin.html" aria-label="Open Ticker Terminal admin" className="hdr-act"
             title="TT Ticker Terminal (admin — email-gated)"
             style={{fontFamily:T.fontMono,fontSize:9,background:T.surfaceHigh,border:`1px solid ${T.borderAccent}`,color:T.textSecondary,padding:"5px 12px",borderRadius:4,textDecoration:"none",transition:"all 0.2s"}}>
             ⌁ TERMINAL
@@ -1542,15 +1571,15 @@ export default function Dashboard({ publicView = false } = {}) {
       {flip&&(flip.tripped||flip.armed)&&<MacroFlipBanner flip={flip}/>}
 
       {/* FEAT-169 + R4c: Regime Verdict band — HERO, now FIRST under the header (mobile-first) */}
-      <RegimeBand d={d} stale={staleFactors} loading={mode==="LOADING"} liveBuild={liveBuild}/>
+      <RegimeBand d={d} stale={staleFactors} loading={mode==="LOADING"} liveBuild={liveBuild} srcLabel={derivedLabel}/>
 
       {/* ── SIGNAL QUALITY rollup — at-a-glance data trust (live vs stale vs mock) ── */}
       {/* A11Y: aria-live on the CONFIDENCE strip, not on every tile — a screen reader should
           hear "the verdict's evidence base changed", not each number ticking. */}
-      <div role="region" aria-label="Signal quality and backdrop confidence" aria-live="polite"
+      <div role="region" aria-label="Signal quality and backdrop confidence"
         style={{display:"flex",alignItems:"center",gap:10,flexWrap:"wrap",padding:"5px 20px",background:T.bg,borderBottom:`1px solid ${T.border}`}}>
         <span style={{fontFamily:T.fontMono,fontSize:8,color:T.textMuted,letterSpacing:"0.12em",textTransform:"uppercase"}}>Signal Quality</span>
-        <span style={{fontFamily:T.fontMono,fontSize:9,color:T.green}}>● {sq.fresh} live</span>
+        <span style={{fontFamily:T.fontMono,fontSize:9,color:T.green}}>● {sq.fresh} fresh{sq.fresh>0&&<span style={{color:T.textMuted}}> ({sq.live} live · {sq.cached} cached)</span>}</span>
         {sq.stale>0&&<span style={{fontFamily:T.fontMono,fontSize:9,color:T.amber}}>⏱ {sq.stale} stale</span>}
         {sq.mock>0&&<span style={{fontFamily:T.fontMono,fontSize:9,color:T.textMuted}}>○ {sq.mock} mock</span>}
         <span style={{fontFamily:T.fontMono,fontSize:8,color:T.textMuted}}>of {sq.total} tracked</span>
@@ -1647,7 +1676,13 @@ export default function Dashboard({ publicView = false } = {}) {
                   <div style={{fontFamily:T.fontMono,fontSize:9,color:T.textMuted}}>S&amp;P 500 index {d.marketPulse.spx.index.toLocaleString()}</div>
                 </div>
               </div>
-              <div style={{height:140}}>
+              {/* B4 (v3.59): the chart is aria-hidden; the visually-hidden line below is its
+                  text equivalent — trend + both moving averages, the decision content. */}
+              <span className="visually-hidden">
+                SPY {d.marketPulse.spy.price>=d.marketPulse.spy.ma200?"above":"below"} its 200-day average of ${d.marketPulse.spy.ma200}
+                {" and "}{d.marketPulse.spy.price>=d.marketPulse.spy.ma100?"above":"below"} its 100-day average of ${d.marketPulse.spy.ma100}.
+              </span>
+              <div aria-hidden="true" style={{height:140}}>
                 <ResponsiveContainer width="100%" height="100%">
                   <LineChart data={spyData}>
                     <XAxis dataKey="date" hide/>
@@ -1925,7 +1960,7 @@ export default function Dashboard({ publicView = false } = {}) {
                   <div style={{fontFamily:T.fontSans,fontSize:11,color:T.textSecondary,lineHeight:1.5}}>{w}</div>
                 </div>
               ))}
-              <div style={{fontFamily:T.fontMono,fontSize:8,color:T.textMuted,marginTop:8}}>Rule-based · derived from live data (no LLM)</div>
+              <div style={{fontFamily:T.fontMono,fontSize:8,color:T.textMuted,marginTop:8}}>Rule-based · {derivedLabel} (no LLM)</div>
               {/* Freshness anchors to the equity close (SPY) — a market synthesis is "as of the
                   last close". Don't let a secondary input FRED publishes a day late (VIX/10Y)
                   drag the whole 5-Whys badge to STALE; per-tile VIX/10Y badges stay honest. */}

@@ -1505,6 +1505,38 @@ Jan-anchor shipped; see `snapshot.js` ~318–328), `spyMa100`, `spyMa200`, and a
   modes) + 169 render + **50 public-render** (+22: both routes × 4 widths, the A4 route-pair
   boundary proof, and the A1 no-mock-narration assertions in LOADING and ERROR — the audit's
   exact exit condition) + REQUIRE_BROWSER verified to exit 1 against an empty browsers path.
+- **v3.59 "the follow-ups" — the re-audit's medium findings, closed.** Five pieces:
+  **B1 — ERROR is a mode, not a costume.** A failed live fetch collapsed to `mode:"MOCK"` —
+  indistinguishable from an intentional demo build, with no way to tell whether to wait, retry,
+  or shrug. `useMarketData` now sets **`ERROR`** (mock content still renders underneath,
+  everything stays ILLUSTRATIVE — graceful degradation holds), exposes `lastError` and a
+  **`retry()`** that resets to LOADING and re-arms the full fetch machinery. The header states
+  the outage ("live service unavailable — numbers below are illustrative") with a ↻ RETRY
+  button; `MOCK` now means exactly one thing: a demo build. This completes the `liveBuild`
+  disambiguation v3.54 started. The public suite drives the whole cycle: fail → ERROR badge →
+  flip the stub → Retry → posture appears.
+  **B2 — fresh is not live.** Signal Quality's "13 live" counted LIVE+CACHED under one word, so
+  a cached observation read as newly fetched. The rollup is now **`N fresh (L live · C cached)`**,
+  and the two static "derived from live data" footers became **state-derived** (live · cached
+  snapshot · unavailable · demo) from ONE derivation shared by both — a static string asserting
+  liveness across error states was the same class of lie as the alerts affordance.
+  **B3 — operational data needs a token.** `?debug=1` exposed `_diag` to anyone; it now requires
+  the **`DEBUG_TOKEN`** secret (`?debug=<token>`, fail closed both ways — no secret configured
+  means no `_diag` for anyone). And the public routes gain a **report-only CSP** (observe before
+  enforcing); `/admin.html` is deliberately exempt — its buildless inline script would need
+  `'unsafe-inline'` script-src, which defeats the point, and its CSP is the deferred
+  admin-extraction scope.
+  **B4 — a11y past the tokens.** Header actions get real 44px thumb targets at phone width;
+  sparklines are marked decorative and the SPY chart gains a visually-hidden **text equivalent**
+  (trend vs both moving averages — the decision content); and the two block-sized `aria-live`
+  regions narrowed to **one concise status sentence** ("Backdrop MIXED: 4 of 6 factors usable")
+  — a reader should hear that the call changed, not entire blocks re-read.
+  **B5 — AGENTS.md stops being a rot vector.** Its two incarnations both froze and drifted
+  (the re-audit caught it still claiming a long-outgrown suite size and a missing test script).
+  Now a thin pointer with **no volatile facts at all** — no versions, no counts — and smoke
+  enforces that shape, so the third incarnation cannot rot the same way.
+  Tests: **904 smoke** (+14) + 169 render + **56 public-render** (+6: the fail→retry→recover
+  cycle driven live, and the narrowed live-region contract).
 - **Deferred:** stored fundamentals + Robinhood sync — now unblocked by the `x-tt-pin` header
   (v3.9): a chat-side daily review can PUT `status_flags`/`ref_px` into the deepDive payloads and
   stamp `lastRun`. When built, store the *triage* shape (`{at, px}` → "% moved since your last TT
@@ -1571,7 +1603,7 @@ npm run dev        # Vite dev server (mock unless VITE_DATA_MODE=live in .env)
 npm run build      # → dist/  (what Pages runs)
 npm run preview    # serve the built dist/
 
-node test/smoke.mjs   # 890-assertion no-network smoke test (needs Node ≥17)
+node test/smoke.mjs   # 904-assertion no-network smoke test (needs Node ≥17)
 npm run test:ui       # browser render test for admin.html (skips if no Chromium)
 npm run test:public   # build + browser STATE test for the public dashboard (skips likewise)
 
