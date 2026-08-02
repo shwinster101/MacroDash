@@ -237,6 +237,51 @@ console.log("\n[public] B1 — ERROR is not demo, and Retry actually retries");
 }
 
 // ── 5. Responsive + a11y basics on the live state ───────────────────────────
+// ── C (v3.60) — Overview shell, Evidence Matrix, What Changed, Data Health ──
+console.log("\n[public] v3.60 P0 slice — nav, matrix, digest, health");
+{
+  const { page, errors } = await open({ live: FULL_LIVE });
+  await page.waitForTimeout(1400);
+  ok("C2: a Sections nav landmark with the six anchors",
+    await page.locator('nav[aria-label="Sections"] a').count() === 6);
+  ok("C2: the h2 outline exists (six section headings + none visible as new chrome)",
+    await page.evaluate(() => document.querySelectorAll("h2").length) >= 6);
+  ok("C2: every nav anchor points at a real element",
+    await page.evaluate(() => [...document.querySelectorAll('nav[aria-label="Sections"] a')]
+      .every((a) => document.getElementById(a.getAttribute("href").slice(1)))));
+  ok("C2: the page header is a real <header> landmark", await page.locator("header").count() === 1);
+  const drivers = await page.locator('section[aria-labelledby="drivers"]').innerText();
+  ok("C3: the Evidence Matrix renders six factor cards with votes",
+    (drivers.match(/BULL|BEAR|NEUTRAL/g) || []).length >= 6 && /6\/6 factors usable/i.test(drivers));
+  ok("C3: each card carries freshness and an as-of date",
+    /LIVE/.test(drivers) && /as of \d{4}-\d{2}-\d{2}/.test(drivers));
+  const body1 = await page.locator("body").innerText();
+  ok("C4: first valid visit says BASELINE SET, never 'nothing changed'",
+    /baseline set — changes will be tracked/.test(body1));
+  ok("C4: Data Health lists per-source freshness with cadence",
+    /DATA HEALTH/i.test(body1) && /spyPrice/.test(body1) && /monthly/.test(body1));
+  // Reload in the SAME context: the baseline persisted, so an identical snapshot must say so.
+  await page.goto(page.url(), { waitUntil: "domcontentloaded" });
+  await page.waitForTimeout(1400);
+  const body2 = await page.locator("body").innerText();
+  ok("C4: an identical return visit reads 'no material change since <date>' — explicit, not blank",
+    /no material change since \d{4}-\d{2}-\d{2}/.test(body2));
+  ok("C: no page errors through the slice", errors.length === 0);
+  await page.close();
+}
+{
+  // DEGRADED: vix absent in a live build → excluded, and the matrix must NAME why.
+  const { live, ...rest } = { live: null };
+  const deg = { ...FULL_LIVE }; delete deg.vix; delete deg.vixAsOf;
+  const { page } = await open({ live: deg });
+  await page.waitForTimeout(1400);
+  const drivers = await page.locator('section[aria-labelledby="drivers"]').innerText();
+  ok("C3: an excluded factor is NAMED with its reason on the card itself",
+    /EXCLUDED/.test(drivers) && /excluded — not live in a live build/.test(drivers) &&
+    /5\/6 factors usable/i.test(drivers));
+  await page.close();
+}
+
 console.log("\n[public] responsive on BOTH routes — the 320px contract (A2/A3)");
 for (const route of ["/", "/?view=public"]) {
   for (const width of [320, 390, 768, 1280]) {

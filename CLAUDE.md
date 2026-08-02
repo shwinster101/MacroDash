@@ -105,6 +105,20 @@ src/
                         looksBehind). No React → Node-testable.
   fiveWhys.js           Pure rule-based 5-Whys generator (no React, no LLM, $0);
                         smoke-tested.
+  regime.js             THE public regime engine (C1, v3.60): NFCI bands, REGIME_BAND_TABLE,
+                        verdictFrom, computeRegime, flipConditions, regimeFactors,
+                        REGIME_QUORUM — extracted verbatim from dashboard.jsx; pure,
+                        Node-importable (smoke imports it directly, no more source-lifts).
+                        Returns tintKey/colorKey; the UI resolves colors.
+  evidence.js           The EvidenceSet contract (C1, v3.60): fieldMode + factorExclusions
+                        (ONE home for modeOf and the mock-cannot-vote rule) +
+                        buildEvidenceSet → {state LOADING|LIVE|CACHED|DEGRADED|INSUFFICIENT|
+                        ERROR|DEMO, factors[], flips, quorum…}. New components render THIS,
+                        never their own reading of provenance.
+  whatChanged.js        Return-visit digest (C4, v3.60): summarizeEvidence (only quorate
+                        live sets may become the baseline) + compareEvidence (posture flips,
+                        confidence moves, factor drop-outs/recoveries; "baseline set" ≠
+                        "no change"). localStorage key md:lastvalid:v1.
   ttReadout.js          Pure TT regime/Macro-Flip mapping (DEC-33 band table).
                         Imported by dashboard.jsx, functions/readout.json.js
                         (first functions→src import), and smoke. React-free.
@@ -1537,6 +1551,40 @@ Jan-anchor shipped; see `snapshot.js` ~318–328), `spyMa100`, `spyMa200`, and a
   enforces that shape, so the third incarnation cannot rot the same way.
   Tests: **904 smoke** (+14) + 169 render + **56 public-render** (+6: the fail→retry→recover
   cycle driven live, and the narrowed live-region contract).
+- **v3.60 "the P0 slice" — Overview shell, Evidence Matrix, What Changed (the committed
+  sprint).** The re-audit's recommended vertical slice, built behind the existing data with no
+  new fetches. **C1 — the extraction the last two audits both named as highest-leverage:** the
+  regime engine moved verbatim to **`src/regime.js`** (pure, Node-importable — smoke now
+  IMPORTS it instead of lifting source text, which is stronger and immune to formatting
+  drift; the one change is `tintKey`/`colorKey` out, colors resolved by the UI). On top of it,
+  **`src/evidence.js`** builds the **EvidenceSet**: ONE typed contract — state (the re-audit's
+  interface table, 1:1: LOADING · LIVE · CACHED · DEGRADED · INSUFFICIENT · ERROR · DEMO),
+  per-factor rows (value · vote from the band table itself · freshness · as-of · exclusion
+  reason), flips, quorum — that components render instead of each interpreting provenance.
+  The dashboard's own `modeOf` and `staleFactors` ARE now the shared `fieldMode`/
+  `factorExclusions` (no local copy to drift). **C2:** a real `<header>` landmark, a Sections
+  `<nav>` (now the sticky element — the header scrolls away instead of renting 60px of every
+  phone viewport), and a six-anchor `h2` outline (overview · drivers · markets · macro · ai ·
+  health) where the nav and the outline are the SAME structure. **C3:** the **Drivers matrix**
+  — six factor cards rendering the contract, an excluded factor NAMED with its reason on the
+  card ("4 of 6 usable" without which is half a fact). **C4:** **What Changed** — the baseline
+  is only ever a quorate, non-withheld, live-build snapshot (`summarizeEvidence` returns null
+  otherwise, so mock/thin evidence can never seed a diff); first visit says **"baseline set"**
+  (a different fact from "no change"); an identical return visit says **"no material change
+  since <date>"** explicitly; posture flips, confidence moves, factor drop-outs AND recoveries
+  are each named. Persist happens AFTER compare — the baseline advances exactly when a
+  comparison was rendered. A garbled/wrong-version stored baseline fails toward "baseline
+  set", never toward diffing a shape we don't understand. Plus a **Data Health** section
+  (per-source mode · cadence · as-of, ERROR + Retry surfaced there too).
+  **C5 — the repo's first CI** (`.github/workflows/test.yml`): smoke + BOTH browser suites
+  under `REQUIRE_BROWSER=1` (a missing browser FAILS in CI; bare machines keep the local
+  skip) + `audit:prod`. `PLAYWRIGHT_BROWSERS_PATH` is pinned because `findChromium()` does
+  not search playwright's default CI cache — found before it could fail a run.
+  Tests: **926 smoke** (+22: every contract state EXECUTED via real imports, the digest rules
+  incl. garbled-baseline and recovery cases, and the five engine pins migrated from source-
+  lifts to behavior) + 169 render + **67 public-render** (+11: nav/outline/landmark, the
+  matrix with a named exclusion driven live, and the baseline-set → no-material-change cycle
+  across a real reload).
 - **Deferred:** stored fundamentals + Robinhood sync — now unblocked by the `x-tt-pin` header
   (v3.9): a chat-side daily review can PUT `status_flags`/`ref_px` into the deepDive payloads and
   stamp `lastRun`. When built, store the *triage* shape (`{at, px}` → "% moved since your last TT
@@ -1603,7 +1651,7 @@ npm run dev        # Vite dev server (mock unless VITE_DATA_MODE=live in .env)
 npm run build      # → dist/  (what Pages runs)
 npm run preview    # serve the built dist/
 
-node test/smoke.mjs   # 904-assertion no-network smoke test (needs Node ≥17)
+node test/smoke.mjs   # 926-assertion no-network smoke test (needs Node ≥17)
 npm run test:ui       # browser render test for admin.html (skips if no Chromium)
 npm run test:public   # build + browser STATE test for the public dashboard (skips likewise)
 

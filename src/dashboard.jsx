@@ -2,6 +2,9 @@ import { Fragment, useState, useEffect, useCallback } from "react";
 import { LineChart, Line, BarChart, Bar, Cell, AreaChart, Area, XAxis, YAxis, Tooltip, ResponsiveContainer, ReferenceLine } from "recharts";
 import { useMarketData } from "./useMarketData.js"; // FEAT-204 wiring
 import { computeFiveWhys } from "./fiveWhys.js"; // v2.5: rule-based 5 Whys ($0, derived from live data)
+import { NFCI_TIGHT, NFCI_LOOSE, REGIME_BAND_TABLE, REGIME_QUORUM, verdictFrom, computeRegime, flipConditions, regimeFactors } from "./regime.js"; // C1 (v3.60): the extracted engine
+import { buildEvidenceSet, factorExclusions, fieldMode } from "./evidence.js"; // C1 (v3.60): the typed contract
+import { LASTVALID_KEY, summarizeEvidence, compareEvidence } from "./whatChanged.js"; // C4 (v3.60)
 import { isStale, cadenceOf, parseObsDate, isMarketHoliday } from "./sources.js"; // FEAT-R3: per-tile, cadence-aware staleness + shared market calendar
 import { computeMacroFlip, buildTtReadout, formatTtPaste } from "./ttReadout.js"; // FEAT-331/332: Macro Flip + TT paste
 
@@ -344,202 +347,10 @@ const MOCK_DATA = {
   // fiveWhys: now computed at render time by computeFiveWhys() (src/fiveWhys.js) from live data.
   sessionDelta:{ alertsDelta:0, regimeDelta:"none", vixPct:-2.1, tenYBps:-4, spyPct:+0.29 },
 };
-
-// NFCI band thresholds (v3.43.1) — shared by the tile, the regime vote and the factor
-// breakdown so a single table drives all three. Expressed in the index's own unit: NFCI is
-// standardized to mean 0 / SD 1 over 1971–, so 0 is the definitional mean and -0.5 is half a
-// standard deviation below it. ASYMMETRIC on purpose — full reasoning at the tile.
-const NFCI_TIGHT = 0;      // above the historical mean → tighter than average → bearish
-const NFCI_LOOSE = -0.5;   // ≥ half an SD below the mean → genuinely accommodative → bullish
-
-/* ═══ REGIME BAND TABLE (FEAT-FLIP, v3.53) — ONE table, two altitudes ═══════════════════
-   computeRegime() VOTES from this table; flipConditions() measures DISTANCE to the same
-   edges. Before this the bands were inline literals inside computeRegime, so any "what would
-   change the verdict" surface needed a SECOND copy of every threshold — the exact drift
-   defect this project keeps paying for (the v3.49 5-vs-6 denominator, the v3.51 stale factor-count
-   label, the v3.39 ptModelRows audit). A second copy of a threshold that gates a public
-   verdict is not a shortcut; it is a future bug with a date on it.
-   `vote()` returns bull | bear | neutral and is the ONLY place a band is expressed. A
-   non-finite value votes NEUTRAL by construction (every comparison against NaN is false) —
-   the same behaviour the inline ifs had, stated rather than incidental.
-   `flip` is OPTIONAL: present only where the vote turns on a single scalar crossing. Where
-   it is absent (CPI's trend shape, CAPE's two-condition OR) flipConditions ABSTAINS and
-   names the reason — inventing a crossing for a compound rule would be a fabricated number
-   in a decision surface, which is the one thing this dashboard exists not to do. */
-const REGIME_BAND_TABLE = [
-  { key:"tenYear", short:"10Y", label:"10Y Direction",
-    read:(d)=>d.crossAsset.treasury10y.m1,
-    vote:(v)=> v < -0.10 ? "bull" : v > 0.15 ? "bear" : "neutral",
-    flip:{ bullEdge:-0.10, bearEdge:0.15, bullSide:"below", bullInclusive:false,
-           unit:" ppt", dec:2, name:"the 10Y monthly change" } },
-  { key:"vix", short:"VIX", label:"VIX Level",
-    read:(d)=>d.marketPulse.vix.current,
-    vote:(v)=> v < 18 ? "bull" : v > 25 ? "bear" : "neutral",
-    flip:{ bullEdge:18, bearEdge:25, bullSide:"below", bullInclusive:false,
-           unit:"", dec:2, name:"VIX" } },
-  { key:"fearGreed", short:"F&G", label:"Fear & Greed",
-    read:(d)=>d.marketPulse.fearGreed.score,
-    vote:(v)=> v > 55 ? "bull" : v < 30 ? "bear" : "neutral",
-    // The one INVERTED factor: bullish ABOVE its edge, not below.
-    flip:{ bullEdge:55, bearEdge:30, bullSide:"above", bullInclusive:false,
-           unit:"", dec:0, name:"Fear & Greed" } },
-  { key:"cpiHeadline", short:"CPI", label:"CPI Trend",
-    read:(d)=>d.macro.cpi.trend,
-    vote:(t)=> t[t.length-1] < t[t.length-2] ? "bull"
-             : (t[t.length-1] - t[0] > 0.5 ? "bear" : "neutral"),
-    flip:null,
-    flipWhy:"votes on the SHAPE of its trend (latest print vs the prior one, and drift from the series start) — there is no single level to cross" },
-  { key:"valuation", short:"VAL", label:"Valuation",
-    read:(d)=>d.macro.shillerPe,
-    vote:(c)=>{ const p = c.ath ? (c.current / c.ath) * 100 : c.pctOfAth;
-                return c.current < c.mean * 1.5 ? "bull" : (c.current > 30 || p > 90 ? "bear" : "neutral"); },
-    flip:null,
-    flipWhy:"turns bearish on EITHER an absolute CAPE above 30 OR a level above 90% of its all-time high — two conditions, so no single crossing defines the flip" },
-  { key:"nfci", short:"NFCI", label:"Fin Conditions",
-    read:(d)=>d.macro.nfci.current,
-    // Asymmetric and INCLUSIVE on the bull side (<=), unlike every other factor — see the
-    // NFCI_BANDS derivation at the tile. flipConditions renders "at or below" for it.
-    vote:(v)=> v <= NFCI_LOOSE ? "bull" : v > NFCI_TIGHT ? "bear" : "neutral",
-    flip:{ bullEdge:NFCI_LOOSE, bearEdge:NFCI_TIGHT, bullSide:"below", bullInclusive:true,
-           unit:" SD", dec:2, name:"NFCI" } },
-];
-
-/* THRESHOLD (FEAT-NFCI, v3.43). DEC-31 set "≥3 of 5 = strict majority", explicitly moving
-   AWAY from ≥3 of 6 because that is 50%, not a majority. Adding NFCI as a 6th factor would
-   have silently reintroduced exactly that bug against a hardcoded 3. So the rule is computed
-   from the factors that actually voted: a STRICT majority of `counted`.
-     6 live → needs 4   (majority preserved, DEC-31's intent held)
-     5 live → needs 3   (IDENTICAL to the old constant — today's common case is unchanged)
-     3 live → needs 2   (the old constant demanded unanimity here, which was never intended)
-   Honest consequence: with all six live a verdict is harder to trigger, so MIXED is more
-   common. That is what adding a voter costs.
-   Extracted (v3.53) so flipConditions() SIMULATES with the identical rule rather than
-   restating it — a flip claim computed off a different majority test would be worse than none. */
-export function verdictFrom(bullVotes, bearVotes, counted) {
-  const bull = counted > 0 && bullVotes > counted / 2;
-  const bear = counted > 0 && bearVotes > counted / 2;
-  if (bull && !bear) return "RISK-ON";
-  if (bear && !bull) return "RISK-OFF";
-  return "MIXED";
-}
-/* FEAT-QUORUM (v3.54, 11.4.5 audit Critical) — the dashboard had NO abstention rule.
-   The tt-v1 machine readout has refused to publish a verdict below 3 available checks since v3.3
-   ("a 1–2-input verdict must never gate an order"), but the PUBLIC page — the surface whose
-   entire promise is a trustworthy posture — would compute a confident MIXED/RISK-ON from a
-   single usable factor, or from six MOCK ones during LOADING. The two engines disagreed
-   about when to stay silent, and the human-facing one was the permissive side.
-   FOUR of six, deliberately STRICTER than the readout's three: the readout is consumed by a
-   maintainer who knows what INSUFFICIENT means, this page is read by someone who does not,
-   and 4/6 is two-thirds of the evidence base. One constant to change if that proves wrong. */
-const REGIME_QUORUM = 4;
-const REGIME_META = {
-  // FEAT-v17-07: hyphen separators (was middot) for RISK-ON / RISK-OFF legibility
-  "RISK-ON":  { sub:"Disinflation + low vol",   tintKey:"regime-on-bg",  colorKey:"green"  },
-  "RISK-OFF": { sub:"Rate pressure + stress",   tintKey:"regime-off-bg", colorKey:"red"    },
-  "MIXED":    { sub:"Cross-signals — watch VIX", tintKey:"regime-mix-bg", colorKey:"yellow" },
-  // Not a posture — the ABSENCE of one. Rendered as a withhold, never as a neutral reading.
-  "INSUFFICIENT": { sub:"not enough usable evidence to call it", tintKey:"regime-mix-bg", colorKey:"textMuted" },
-};
-
-// ─── REGIME VERDICT ENGINE (FEAT-163, rule-based) ──────────────────────────
-// FEAT-DQ: `stale` is a Set of factor keys whose live data has gone STALE (cadence-aware).
-// A stale factor is EXCLUDED from the vote — better to drop a signal than let a dead feed
-// (e.g. a dead scraper) cast a phantom bull/bear vote on today's tape.
-function computeRegime(d, stale=new Set()) {
-  let bullVotes=0, bearVotes=0, counted=0;
-  // `counted` = factors that actually voted (available, whatever way they leaned). It drives
-  // the strict majority in verdictFrom rather than a hardcoded number.
-  REGIME_BAND_TABLE.forEach((f)=>{
-    if(stale.has(f.key)) return;
-    counted++;
-    const v=f.vote(f.read(d), d);
-    if(v==="bull") bullVotes++; else if(v==="bear") bearVotes++;
-  });
-  /* Below quorum the page states that it cannot call it, rather than calling it from
-     whatever survived. `raw` records what the majority WOULD have said — never silent about
-     the withhold, the same contract as the tt-v1 TAILWIND downgrade (v3.40). */
-  const raw=verdictFrom(bullVotes, bearVotes, counted);
-  const insufficient=counted < REGIME_QUORUM;
-  const label=insufficient ? "INSUFFICIENT" : raw;
-  const m=REGIME_META[label];
-  // FIX-E (v3.49): `counted`/`totalFactors` ride the verdict so every surface (RegimeBand
-  // header, 5-Whys headline, WHY #5, the confidence strip) states the SAME denominator this
-  // vote was decided over — fiveWhys.js used to re-derive it from its own hardcoded pre-NFCI
-  // list and said "/5" while the header said "/6".
-  return { label, sub:m.sub, tint:DT[m.tintKey], color:T[m.colorKey],
-    bullVotes, bearVotes, counted, totalFactors:REGIME_BAND_TABLE.length,
-    insufficient, raw, quorum:REGIME_QUORUM };
-}
-
-/* ═══ FEAT-FLIP (v3.53) — "what would change the verdict" ═══════════════════════════════
-   The audit's last unbuilt first-screen item (Posture ✓ · Confidence ✓ v3.51 · Why ✓ · what
-   changes the call ✗), and the public-side counterpart to the terminal's readiness(): that
-   one answers "is the evidence there to act", this one answers "what would move the answer".
-   The naive version prints six distances. This computes which crossings are actually
-   LOAD-BEARING — it simulates the flip through verdictFrom (the SAME majority rule the vote
-   used) and keeps only the ones that change the label. Three abstention rules, all of which
-   have precedent here:
-     1. A STALE/excluded factor is not voting, so its threshold is not load-bearing — it is
-        listed as excluded, never as a distance. (Same gate as the vote itself.)
-     2. A factor whose vote is not a single scalar crossing ABSTAINS with the reason named
-        (CPI's trend shape, CAPE's two-condition OR) — never an invented number.
-     3. "No single flip changes this" is a real and common answer and is stated plainly,
-        never padded with the nearest distance to look responsive. (The counterpart to
-        readiness()'s BLOCKED, and to isMacroMaterial's one-way withhold.)
-   Only ADJACENT band transitions are offered: from the bull band you can reach neutral, not
-   bear. Claiming "VIX above 25 would flip this" while VIX sits at 17 would quote a distance
-   across a zone the value has to traverse first — true arithmetic, misleading as a next step. */
-export function flipConditions(d, stale=new Set()) {
-  const live=REGIME_BAND_TABLE.filter(f=>!stale.has(f.key));
-  const counted=live.length;
-  const votes={}; let bullVotes=0, bearVotes=0;
-  live.forEach(f=>{ const v=f.vote(f.read(d), d); votes[f.key]=v;
-    if(v==="bull") bullVotes++; else if(v==="bear") bearVotes++; });
-  const current=verdictFrom(bullVotes, bearVotes, counted);
-  // Simulate one factor moving to a new vote, through the SAME majority rule.
-  const sim=(key,to)=>{
-    let b=bullVotes, r=bearVotes;
-    const from=votes[key];
-    if(from==="bull") b--; else if(from==="bear") r--;
-    if(to==="bull") b++; else if(to==="bear") r++;
-    return verdictFrom(b, r, counted);
-  };
-  const flips=[], abstained=[];
-  live.forEach(f=>{
-    if(!f.flip){ abstained.push({key:f.key, short:f.short, label:f.label, why:f.flipWhy}); return; }
-    const v=f.read(d);
-    if(!Number.isFinite(v)){ abstained.push({key:f.key, short:f.short, label:f.label,
-      why:"no live value to measure a distance from"}); return; }
-    const cur=votes[f.key];
-    const bearSide=f.flip.bullSide==="below" ? "above" : "below";
-    // Adjacent transitions only (see the note above).
-    const targets = cur==="bull" ? [{to:"neutral", edge:f.flip.bullEdge, leaving:"bull"}]
-      : cur==="bear" ? [{to:"neutral", edge:f.flip.bearEdge, leaving:"bear"}]
-      : [{to:"bull", edge:f.flip.bullEdge}, {to:"bear", edge:f.flip.bearEdge}];
-    targets.forEach(t=>{
-      const would=sim(f.key, t.to);
-      if(would===current) return;   // crossing it changes nothing — not load-bearing
-      // Direction + inclusivity copy. Entering the bull band on an inclusive edge reads
-      // "at or below"; LEAVING that same band means strictly passing it.
-      let side, inclusive;
-      if(t.to==="bull"){ side=f.flip.bullSide; inclusive=f.flip.bullInclusive; }
-      else if(t.to==="bear"){ side=bearSide; inclusive=false; }
-      else { // leaving a band: cross back the other way
-        const leavingBull=t.leaving==="bull";
-        side=(leavingBull ? f.flip.bullSide : bearSide)==="below" ? "above" : "below";
-        inclusive=leavingBull ? !f.flip.bullInclusive : true;
-      }
-      flips.push({ key:f.key, short:f.short, label:f.label, name:f.flip.name,
-        to:t.to, leaving:t.leaving||null, edge:t.edge, value:v,
-        distance:Math.round(Math.abs(v-t.edge)*1000)/1000,
-        unit:f.flip.unit, dec:f.flip.dec, side, inclusive, would,
-        copy:`${f.flip.name} ${inclusive?`at or ${side}`:side} ${Number(t.edge).toFixed(f.flip.dec)}${f.flip.unit}` });
-    });
-  });
-  flips.sort((a,b)=>a.distance-b.distance);
-  return { current, counted, bullVotes, bearVotes, flips, abstained,
-    excluded:REGIME_BAND_TABLE.filter(f=>stale.has(f.key)).map(f=>({key:f.key, short:f.short, label:f.label})) };
-}
+// ─── REGIME ENGINE: extracted to src/regime.js (C1, v3.60) ────────────────
+// The band table, verdictFrom, computeRegime, flipConditions, regimeFactors and the NFCI
+// thresholds now live in the pure module so evidence.js and Node tests import them directly.
+// This file resolves tintKey/colorKey to actual colors at the one place they render.
 
 // Live ET market session for the 5-Whys narrative frame (mirrors marketSession() in
 // snapshot.js). Computed client-side from the CURRENT clock so a reload at 2pm reads
@@ -557,23 +368,7 @@ function etSession(now = new Date()) {
   return "PRE";
 }
 
-// Shared SIX-factor breakdown (RegimeBand · FEAT-169; DEC-31 retired Put/Call, FEAT-NFCI added NFCI).
-// ⚠ The count is stated in three user-facing strings below — a label that disagrees with the vote it
-// describes is the FIX-E defect; keep them and REGIME_FACTOR_FIELDS in step. `stale` (Set of factor keys)
-// marks factors backed by dead/stale live data — they are flagged and excluded from the
-// bull tally so the displayed "X/Y bullish" matches the vote computeRegime actually cast.
-function regimeFactors(d, stale=new Set()) {
-  const factors=[
-    {key:"tenYear",     short:"10Y",  label:"10Y Direction",  val:d.crossAsset.treasury10y.m1<-0.10?"Falling ↓ (bullish)":"Flat/rising",  bull:d.crossAsset.treasury10y.m1<-0.10},
-    {key:"vix",         short:"VIX",  label:"VIX Level",      val:`${d.marketPulse.vix.current} — ${d.marketPulse.vix.current<18?"Low (bullish)":d.marketPulse.vix.current<25?"Elevated":"Spiking (bearish)"}`, bull:d.marketPulse.vix.current<18},
-    {key:"fearGreed",   short:"F&G",  label:"Fear & Greed",   val:`${d.marketPulse.fearGreed.score} — ${d.marketPulse.fearGreed.label}`,   bull:d.marketPulse.fearGreed.score>55},
-    {key:"cpiHeadline", short:"CPI",  label:"CPI Trend",      val:d.macro.cpi.trend.slice(-1)[0]<d.macro.cpi.trend.slice(-2)[0]?"Cooling (bullish)":"Re-accelerating", bull:d.macro.cpi.trend.slice(-1)[0]<d.macro.cpi.trend.slice(-2)[0]},
-    {key:"valuation",   short:"VAL",  label:"Valuation",      val:`${d.macro.shillerPe.current} CAPE · ${(d.macro.shillerPe.ath?(d.macro.shillerPe.current/d.macro.shillerPe.ath)*100:d.macro.shillerPe.pctOfAth).toFixed(1)}% of ATH`, bull:d.macro.shillerPe.current<d.macro.shillerPe.mean*1.5},
-    {key:"nfci",        short:"NFCI", label:"Fin Conditions", val:`${d.macro.nfci.current>0?"+":""}${d.macro.nfci.current.toFixed(2)} SD — ${d.macro.nfci.current>NFCI_TIGHT?"Tighter than the 1971– mean (bearish)":d.macro.nfci.current<=NFCI_LOOSE?"≥½ SD below mean (bullish)":"Looser than mean, but within ½ SD"}`, bull:d.macro.nfci.current<=NFCI_LOOSE},
-  ];
-  // Stale factors: neutralize the bull flag and annotate so the UI shows them as excluded.
-  return factors.map(f => stale.has(f.key) ? { ...f, stale:true, bull:false, val:`${f.val} · STALE — excluded` } : f);
-}
+
 
 // ─── HELPERS ─────────────────────────────────────────────────────────────
 const fmt = {
@@ -1069,6 +864,8 @@ const MacroFlipBanner=({flip})=>{
 const RegimeBand=({d,stale=new Set(),loading=false,liveBuild=false,srcLabel="derived from live data"})=>{
   const [open,setOpen]=useState(false);
   const regime=computeRegime(d,stale);
+  // C1 (v3.60): the pure engine returns token KEYS; the UI owns the palette.
+  regime.tint=DT[regime.tintKey]; regime.color=T[regime.colorKey];
   const factors=regimeFactors(d,stale);
   // FEAT-QUORUM: LOADING is not a verdict state — during the first fetch there is no evidence
   // yet, so the posture is withheld outright rather than computed from the mock baseline.
@@ -1319,26 +1116,18 @@ export default function Dashboard({ publicView = false } = {}) {
   // baked-in meeting date went by.
   const fomcDays=(()=>{const nx=d.macro.fedFunds.nextFOMC;const dt=nx?parseObsDate(nx):null;if(!dt||isNaN(dt.getTime()))return d.macro.fedFunds.daysUntil;const t=new Date();t.setHours(0,0,0,0);const days=Math.round((dt-t)/86400000);return days<0?null:days;})();
   const fomcLabel=fomcDays==null?"—":fomcDays===0?"today":`${fomcDays}d`;
-  const modeOf=(k)=>{const m=provenance?.[k]||"MOCK"; return (m==="LIVE"||m==="CACHED")&&isStale(dataAsOf?.[k], new Date(), cadenceOf(k))?"STALE":m;}; // FEAT-R3: cadence-aware LIVE | CACHED | STALE | MOCK
+  // C1 (v3.60): modeOf is now the SHARED fieldMode from evidence.js — the dashboard and the
+  // EvidenceSet can never disagree about a field's freshness. Same rule, one home.
+  const modeOf=(k)=>fieldMode(provenance, dataAsOf, k); // cadence-aware LIVE | CACHED | STALE | MOCK
   // FEAT-DQ: a regime factor backed by LIVE/CACHED data that has gone STALE (a dead feed)
   // must not cast a vote on today's tape.
-  const REGIME_FACTOR_FIELDS=["tenYear","vix","fearGreed","cpiHeadline","nfci"];
-  /* FEAT-QUORUM (v3.54, 11.4.5 audit Critical): only STALE was excluded, so a MOCK factor
-     VOTED. During LOADING (and after a failed fetch) every field is MOCK — the page rendered
-     "MIXED · 6/6 factors voting" computed entirely from MOCK_DATA, with Signal Quality
-     truthfully reporting 0 live / 15 mock two rows above it. The tiles have suppressed
-     directional calls on mock since v3.1 (isIllustrative); the HEADLINE VERDICT never did,
-     which is the one place it matters most.
-     Gated on `liveBuild` — in a pure demo build mock IS the baseline by design and the page
-     says MOCK everywhere, so excluding it there would blank the demo. Same distinction
-     `demoted()` makes via anyLive; here it must come from the build's intent, because a live
-     build whose fetch FAILED also reports mode "MOCK" and must withhold. */
-  const unusable=(k)=>{const m=modeOf(k);return m==="STALE"||(liveBuild&&m!=="LIVE"&&m!=="CACHED");};
-  const staleFactors=new Set(REGIME_FACTOR_FIELDS.filter(unusable));
-  // v3.1: the valuation factor is now live (Shiller/multpl). The factor key is "valuation" but the
-  // field key is "shillerPe" — drop it from the vote when stale, like every other factor.
-  if(unusable("shillerPe")) staleFactors.add("valuation");
-  const regime=computeRegime(d, staleFactors);
+  /* C1 (v3.60): the exclusion derivation (STALE always; MOCK-in-a-live-build per
+     FEAT-QUORUM v3.54) moved to evidence.js — one home, imported by both this file and the
+     EvidenceSet. The full contract is built once here and the new Overview/Drivers/Data
+     Health surfaces render IT, never their own reading of provenance. */
+  const staleFactors=factorExclusions({provenance, dataAsOf, liveBuild});
+  const evidenceSet=buildEvidenceSet({d, provenance, dataAsOf, mode, liveBuild});
+  const regime={...evidenceSet.regime, tint:DT[evidenceSet.regime.tintKey], color:T[evidenceSet.regime.colorKey]};
   /* Public audit, "Confidence": Signal Quality counted TILES (13 live / 1 stale / 1 mock) and
      never answered the only question that matters about the verdict above it — is the REGIME
      safe to trust? A posture computed from 3 of 6 voters is a different claim from the same
@@ -1347,12 +1136,9 @@ export default function Dashboard({ publicView = false } = {}) {
      EXCLUDED factors are NAMED — "5 of 6 usable" without saying which one is blind is half a
      fact. The crash gauge (VIX) is called out by name: it is the input whose absence the
      tt-v1 readout already refuses to print a TAILWIND without. */
-  const regimeConf=(()=>{
-    const fs=regimeFactors(d,staleFactors);
-    const out=fs.filter(f=>f.stale).map(f=>f.short);
-    return {counted:regime.counted,total:regime.totalFactors,excluded:out,
-      blind:staleFactors.has("vix")||modeOf("vix")==="MOCK"};
-  })();
+  const regimeConf={counted:evidenceSet.counted,total:evidenceSet.totalFactors,
+    excluded:evidenceSet.excludedKeys,
+    blind:staleFactors.has("vix")||modeOf("vix")==="MOCK"};
   // Signal Quality rollup — at-a-glance trust: how many tracked signals are live+fresh vs
   // stale vs mock. Only meaningful in live mode (in mock everything is MOCK by design).
   const SIGNAL_FIELDS=["spyPrice","vix","fearGreed","tenYear","cpiHeadline","fedFunds","creditSpread","nfci","wti","btc","rateOddsHold","marketHeadline","savings","tokenBlendedMtok","shillerPe"];
@@ -1397,6 +1183,21 @@ export default function Dashboard({ publicView = false } = {}) {
   // same false-clear the stored `triggered` flag used to assert.
   const alertEval=Object.fromEntries(alerts.map(a=>[a.id,evalAlert(a,d,modeOf)]));
   const activeAlerts=alerts.filter(a=>a.active&&alertEval[a.id].state==="triggered").length;
+  /* C4 (v3.60): the return-visit digest. Compare against the stored last-valid summary, THEN
+     store the current one — so the baseline advances exactly when a comparison was rendered.
+     Only a quorate, non-withheld, live-build set may become the baseline (summarizeEvidence
+     returns null otherwise), so mock/thin evidence can never seed a diff. Keyed on [mode,asOf]
+     — once per settled data state, not per render. */
+  const [changed,setChanged]=useState(null);
+  useEffect(()=>{
+    const cur=summarizeEvidence(evidenceSet, asOf||undefined);
+    if(!cur){setChanged(null);return;}
+    let prev=null;
+    try{prev=JSON.parse(localStorage.getItem(LASTVALID_KEY)||"null");}catch{/* garbled = first visit */}
+    setChanged(compareEvidence(prev,cur));
+    try{localStorage.setItem(LASTVALID_KEY,JSON.stringify(cur));}catch{/* storage may be denied */}
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  },[mode,asOf]);
   const alertBlind=alerts.filter(a=>a.active&&alertEval[a.id].state==="blind").length;
 
   // FEAT-331: Macro Flip circuit. Render ONLY from live+fresh inputs (v3.1 honesty invariant —
@@ -1512,8 +1313,10 @@ export default function Dashboard({ publicView = false } = {}) {
 
       <UndoToast toasts={toasts} dismiss={dismiss}/>
 
-      {/* ── HEADER (FEAT-161, FEAT-165) ── */}
-      <div style={{background:T.surface,borderBottom:`1px solid ${T.border}`,padding:"8px 20px",display:"flex",justifyContent:"space-between",alignItems:"center",gap:8,flexWrap:"wrap",position:"sticky",top:0,zIndex:50}}>
+      {/* ── HEADER (FEAT-161, FEAT-165) — a real <header> landmark since C2 (v3.60). The
+          section nav below is the sticky element now, so the header scrolls away on phones
+          instead of spending 60px of every viewport. ── */}
+      <header style={{background:T.surface,borderBottom:`1px solid ${T.border}`,padding:"8px 20px",display:"flex",justifyContent:"space-between",alignItems:"center",gap:8,flexWrap:"wrap"}}>
         {/* A2 (v3.58): minWidth:0 lets the identity group shrink inside the flex row instead of
             forcing overflow; the sub-wordmark hides below 360px (it duplicates the brand). */}
         <div style={{display:"flex",alignItems:"center",gap:14,minWidth:0,flexWrap:"wrap"}}>
@@ -1565,11 +1368,20 @@ export default function Dashboard({ publicView = false } = {}) {
             ⌁ TERMINAL
           </a>}
         </div>
-      </div>
+      </header>
 
       {/* FEAT-331: Macro Flip circuit — above the hero when armed/tripped (live data only) */}
       {flip&&(flip.tripped||flip.armed)&&<MacroFlipBanner flip={flip}/>}
 
+      {/* C2 (v3.60): section navigation — the page had one hidden h1 and no way to jump.
+          Real <nav> landmark; each link targets the section's h2. Sticky in the header's place. */}
+      <nav aria-label="Sections" style={{display:"flex",gap:2,overflowX:"auto",padding:"4px 16px",background:T.surface,borderBottom:`1px solid ${T.border}`,position:"sticky",top:0,zIndex:40}}>
+        {[["overview","Overview"],["drivers","Drivers"],["markets","Markets"],["macro","Macro"],["ai","AI"],["health","Data Health"]].map(([id,label])=>(
+          <a key={id} href={`#${id}`} style={{fontFamily:T.fontMono,fontSize:9,letterSpacing:"0.08em",color:T.textSecondary,textDecoration:"none",padding:"6px 10px",borderRadius:3,whiteSpace:"nowrap"}}>{label}</a>
+        ))}
+      </nav>
+
+      <h2 id="overview" className="visually-hidden">Overview — posture, confidence, and what changed</h2>
       {/* FEAT-169 + R4c: Regime Verdict band — HERO, now FIRST under the header (mobile-first) */}
       <RegimeBand d={d} stale={staleFactors} loading={mode==="LOADING"} liveBuild={liveBuild} srcLabel={derivedLabel}/>
 
@@ -1597,6 +1409,48 @@ export default function Dashboard({ publicView = false } = {}) {
         <span style={{fontFamily:T.fontMono,fontSize:8,color:T.textMuted,marginLeft:"auto"}}>● live · ⏱ stale · <span style={{color:T.amber}}>◫ illustrative = curated, not live</span></span>
       </div>
 
+      {/* ── C4 (v3.60): WHAT CHANGED since the last valid snapshot ── */}
+      {changed&&(
+        <div style={{padding:"6px 20px",background:T.bg,borderBottom:`1px solid ${T.border}`,display:"flex",gap:10,alignItems:"baseline",flexWrap:"wrap"}}>
+          <span style={{fontFamily:T.fontMono,fontSize:8,color:T.textMuted,letterSpacing:"0.12em",textTransform:"uppercase"}}>What changed</span>
+          {changed.baseline
+            ?<span style={{fontFamily:T.fontMono,fontSize:9,color:T.textSecondary}}>baseline set — changes will be tracked from this snapshot</span>
+            :changed.changes.length
+              ?changed.changes.slice(0,4).map((c,i)=>(
+                <span key={i} style={{fontFamily:T.fontMono,fontSize:9,color:c.kind==="posture"?T.amber:T.textSecondary}}>{c.text}</span>))
+              :<span style={{fontFamily:T.fontMono,fontSize:9,color:T.textMuted}}>no material change since {String(changed.since||"").slice(0,10)}</span>}
+        </div>
+      )}
+
+      {/* ── C3 (v3.60): DRIVERS — the six-factor Evidence Matrix. Renders the EvidenceSet
+          contract, never its own reading: value · vote · freshness · as-of · exclusion
+          reason per factor. Cards wrap on phones, rows on desktop (flex-wrap). ── */}
+      <section aria-labelledby="drivers" style={{padding:"10px 20px",borderBottom:`1px solid ${T.border}`}}>
+        <h2 id="drivers" className="visually-hidden">Drivers — the six factors and their votes</h2>
+        <div style={{fontFamily:T.fontMono,fontSize:8,color:T.textMuted,letterSpacing:"0.12em",textTransform:"uppercase",marginBottom:6}}>
+          Evidence · {evidenceSet.freshSummary}{evidenceSet.withheld?" · posture withheld":""}
+        </div>
+        <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
+          {evidenceSet.factors.map(f=>{
+            const vc=f.vote==="bull"?T.green:f.vote==="bear"?T.red:f.vote==="excluded"?T.amber:T.textSecondary;
+            return (
+              <div key={f.key} style={{flex:"1 1 240px",minWidth:0,background:T.surface,border:`1px solid ${f.excluded?T.amber+"44":T.border}`,borderRadius:5,padding:"8px 10px",opacity:f.excluded?0.85:1}}>
+                <div style={{display:"flex",justifyContent:"space-between",gap:8,alignItems:"baseline"}}>
+                  <span style={{fontFamily:T.fontMono,fontSize:10,fontWeight:700,color:T.textPrimary}}>{f.short} <span style={{fontWeight:400,color:T.textMuted}}>{f.label}</span></span>
+                  <span style={{fontFamily:T.fontMono,fontSize:9,fontWeight:700,color:vc,textTransform:"uppercase"}}>{f.vote}</span>
+                </div>
+                <div style={{fontFamily:T.fontMono,fontSize:9,color:T.textSecondary,marginTop:3,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{f.display}</div>
+                <div style={{display:"flex",gap:6,alignItems:"center",marginTop:4,flexWrap:"wrap"}}>
+                  <DataModeBadge mode={f.mode}/>
+                  {f.asOf&&<span style={{fontFamily:T.fontMono,fontSize:8,color:T.textMuted}}>as of {String(f.asOf).slice(0,10)}</span>}
+                  {f.excluded&&<span style={{fontFamily:T.fontMono,fontSize:8,color:T.amber}}>excluded — {f.reason}</span>}
+                </div>
+              </div>
+            );})}
+        </div>
+      </section>
+
+      <h2 id="markets" className="visually-hidden">Markets — equities, rates and cross-asset</h2>
       {/* ── MACRO STRIP (persistent ticker — always visible; FEAT-170 reflows on mobile) ── */}
       <div style={{background:T.surfaceHigh,borderBottom:`1px solid ${T.border}`,padding:"6px 20px",overflowX:"auto",display:"flex",alignItems:"center",justifyContent:"space-between",gap:12}} className="macro-strip">
         <div style={{display:"flex",gap:20,minWidth:"max-content",flex:1}} className="macro-strip-inner">
@@ -1848,6 +1702,8 @@ export default function Dashboard({ publicView = false } = {}) {
           </div>
 
           {/* ── ZONE B (right 40%) ── */}
+          {/* C2 (v3.60): the macro anchor lands where the macro grid begins */}
+          <h2 id="macro" className="visually-hidden">Macro — inflation, labor, credit and conditions</h2>
           <div className="zone-b" style={{display:"flex",flexDirection:"column",gap:12}}>
 
             {/* FEAT-169: RegimeTile relocated to full-width RegimeBand under macro strip (was here). */}
@@ -1969,6 +1825,7 @@ export default function Dashboard({ publicView = false } = {}) {
           </div>
         </div>
 
+        <h2 id="ai" className="visually-hidden">AI unit economics — cost, price, conversion and funding</h2>
         {/* ── AI UNIT ECONOMICS · cost side (GPU $/hr) + price side (token $/Mtok) ── */}
         <div style={{marginTop:16,display:"flex",alignItems:"center",gap:10}}>
           <span style={{fontFamily:T.fontMono,fontSize:10,color:"#a78bfa",letterSpacing:"0.14em",whiteSpace:"nowrap"}}>◆ AI UNIT ECONOMICS</span>
@@ -2063,6 +1920,31 @@ export default function Dashboard({ publicView = false } = {}) {
             {alerts.map(a=><AlertRow key={a.id} alert={a} ev={alertEval[a.id]} onToggle={id=>setAlerts(prev=>prev.map(x=>x.id===id?{...x,active:!x.active}:x))} onDelete={handleDeleteAlert}/>)}
           </div>
         </div>}
+
+        {/* ── C2/C4 (v3.60): DATA HEALTH — is the product current, degraded, or recovering? ── */}
+        <section aria-labelledby="health" style={{marginTop:16,background:T.surface,border:`1px solid ${T.border}`,borderRadius:6,padding:"12px 16px"}}>
+          <h2 id="health" className="visually-hidden">Data health — per-source freshness and recovery</h2>
+          <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:8,flexWrap:"wrap",gap:6}}>
+            <SectionHeader>Data Health</SectionHeader>
+            {mode==="ERROR"&&<div style={{fontFamily:T.fontMono,fontSize:9,color:T.red,display:"flex",gap:8,alignItems:"center"}}>
+              live fetch failed{lastError?`: ${String(lastError).slice(0,60)}`:""}
+              <button onClick={retry} style={{fontFamily:T.fontMono,fontSize:9,background:T.surfaceHigh,border:`1px solid ${T.red}66`,color:T.red,padding:"2px 8px",borderRadius:3,cursor:"pointer"}}>↻ RETRY</button>
+            </div>}
+          </div>
+          <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(210px,1fr))",gap:6}}>
+            {SIGNAL_FIELDS.map(k=>(
+              <div key={k} style={{display:"flex",gap:6,alignItems:"center",fontFamily:T.fontMono,fontSize:9,color:T.textSecondary,padding:"4px 6px",background:T.bg,borderRadius:3,flexWrap:"wrap"}}>
+                <span style={{minWidth:88,color:T.textPrimary}}>{k}</span>
+                <DataModeBadge mode={modeOf(k)}/>
+                <span style={{fontSize:8,color:T.textMuted}}>{cadenceOf(k)}</span>
+                {dataAsOf?.[k]&&<span style={{fontSize:8,color:T.textMuted}}>{String(dataAsOf[k]).slice(0,10)}</span>}
+              </div>
+            ))}
+          </div>
+          <div style={{fontFamily:T.fontMono,fontSize:8,color:T.textMuted,marginTop:6}}>
+            cadence is each source's normal release rhythm — a monthly print weeks old can still be the freshest available
+          </div>
+        </section>
 
         {/* ── FOOTER ── */}
         <div style={{marginTop:12,display:"flex",justifyContent:"space-between",alignItems:"center",flexWrap:"wrap",gap:4}}>
