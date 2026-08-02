@@ -376,3 +376,18 @@ public repos.*
   MacroDash's existing public `/readout.json` — no MacroDash-side changes,
   no new Worker; the endpoint was already public, CORS-open, and
   unauthenticated, exactly as the spec's phrasing implies.
+- **OPEN-4 (broker MCP access)**: meaningfully addressed, though not exactly
+  as originally framed. No broker-MCP connection is wired into this
+  standalone CLI (a Claude session's own Robinhood MCP tools can't be
+  called from a plain `python -m tt.rank` invocation). Instead,
+  `tt/macrodash_client.py` reads MacroDash's own already-live data —
+  `GET /api/tt` (real book tier), `GET /api/positions` (real measured
+  `tt:pos:v1`), `GET /api/quotes` (MacroDash's existing Finnhub-backed
+  quotes) — over the `x-tt-pin` header path MacroDash's own CLAUDE.md names
+  as "the automation path that unlocks future chat-side sync." Section 4.7
+  ("if available, self-satisfies") is now true whenever `TT_PIN` is set;
+  the hand-maintained `quotes.json`/`holdings.json`/`roster.json` remain the
+  fallback OPEN-4 itself describes, used automatically when it isn't. See
+  README.md's "Live MacroDash integration" section for the unit-conversion
+  detail (`pos.pct` is 0–100 on MacroDash's side, a 0–1 fraction here) and
+  the lockout-safety design (never guesses the PIN, never retries a 401/403).

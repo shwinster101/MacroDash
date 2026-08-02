@@ -58,39 +58,97 @@ tt/
   render.py     section 7 — every panel (valuation gap, funding priority, delta signal,
                 near-term, status bar, overrides, binary calendar) as pure functions
   readout.py    fetches MacroDash's public /readout.json for the section 7.5 status bar
+  macrodash_client.py   fetches MacroDash's PIN-gated /api/tt (book), /api/positions
+                (measured holdings) and /api/quotes (live prices) — real KV data,
+                replacing/supplementing the local .json files where it's available
   queue.py      section 8.6 — run_queue.md emitter
 
-tests/          157 tests: one group per formula (derive), one per precedence
-                rung (bucket), end-to-end fixture-file tests (test_end_to_end.py)
+tests/          184 tests: one group per formula (derive), one per precedence
+                rung (bucket), end-to-end fixture-file tests (test_end_to_end.py),
+                mocked-HTTP tests for the MacroDash client (never a real network
+                call against the live PIN-gated endpoint — see below)
 tests/fixtures/ SYNTHETIC cards only (ZZZQ is not a real ticker) — same invariant
                 MacroDash holds for its own test fixtures
 
 tt_cards/       real cards land here via ingest, one file per symbol, git-committed
 inbox/          pasted-but-unvalidated JSON; gitignored, working state only
-holdings.json, roster.json, quotes.json   real data; gitignored — .example.json
-                versions show the shape
+holdings.json, roster.json, quotes.json   LOCAL fallback data; gitignored —
+                .example.json versions show the shape. Only used for symbols the
+                live MacroDash sync (below) doesn't cover, once TT_PIN is set.
 ```
 
 ## Commands
 
 ```bash
 pip install -e ".[dev]"
-pytest                              # 157 tests
+pytest                              # 184 tests
 
 python -m tt.ingest                 # process inbox/*.json
 python -m tt.ingest --paste         # read one card from stdin
 echo '{...card json...}' | python -m tt.ingest --paste
 
 python -m tt.rank                   # recompute + render section 7, write run_queue.md
-python -m tt.rank --no-network      # skip the /readout.json fetch (offline/testing)
+python -m tt.rank --no-network      # skip ALL network calls (readout + live sync)
+python -m tt.rank --no-live         # skip only the book/positions/quotes sync
 ```
+
+## Live MacroDash integration (KV + secrets)
+
+`python -m tt.rank` pulls real data straight from MacroDash's KV store instead
+of requiring you to hand-maintain a second copy in `roster.json`/
+`holdings.json`/`quotes.json`:
+
+| Local fallback | Live source (when `TT_PIN` is set) |
+|---|---|
+| `roster.json` (book tier) | `GET /api/tt` — the real book, tier per symbol |
+| `holdings.json` (measured positions) | `GET /api/positions` — the real `tt:pos:v1` |
+| `quotes.json` (manual quotes) | `GET /api/quotes` — live Finnhub quotes MacroDash already fetches |
+
+This is exactly the integration path MacroDash's own `CLAUDE.md` describes:
+the `x-tt-pin` header is called out there as *"the automation path that
+unlocks future chat-side sync"* — `tt/macrodash_client.py` is that sync, not
+a workaround.
+
+**Setup — once:**
+```bash
+export TT_PIN=<your 6-digit TT_PIN>   # NEVER as a CLI flag, NEVER pasted into chat
+```
+That's it. `python -m tt.rank` auto-detects `TT_PIN` and pulls live automatically;
+without it, behavior is unchanged (local files only, exactly as before this
+feature existed). `--no-live` forces local-only even with `TT_PIN` set.
+
+**Unit conversion, the one place this is easy to get quietly wrong:**
+MacroDash's `pos.pct` is a **percent** (`0..100`, confirmed against
+`functions/api/tt.js`'s `validatePos`). tt-engine's `HoldingRecord.pct` is a
+**fraction** (`0..1`, `tt/config.py`'s `WEIGHT_DENOMINATOR`). `macrodash_client.py`
+divides by 100 at that one boundary — `tests/test_macrodash_client.py` pins
+this exactly against the spec's own NBIS anchor (31.2% → 0.312).
+
+**Never guess the PIN.** MacroDash's PIN auth has an escalating lockout (5
+wrong attempts → 15 min, 10 → 24h) — the same wall a real login attacker
+would hit. `macrodash_client.py` raises immediately on a 401/403 and never
+retries with a different value; a network failure (MacroDash briefly down)
+degrades gracefully to local files with a warning instead of crashing the
+run. Every test in `test_macrodash_client.py` mocks the HTTP layer — none of
+them, or anything else in this test suite, ever sends a real request to the
+live endpoint.
+
+**Book-tier mapping:** MacroDash's book tier is `S/A/B/DEF/WATCH` (roster
+membership + status), a different axis from tt-engine's `S/A/B/C` quality
+grade (spec section 4.4, compared against the composite-derived tier via
+`tier_mismatch()`). `S/A/B` map straight across; `DEF` (deferred/tactical)
+maps to `C` as the closest "deprioritized" reading; `WATCH` (not held) is
+excluded entirely rather than assigned a quality grade nobody gave it.
 
 ## What's NOT built (deliberately deferred, matching the spec's own scope)
 
-- **OPEN-4 (broker MCP access):** no live broker connection. Quotes and
-  positions are hand-maintained JSON (`quotes.json`, `holdings.json`) until
-  a real sync exists — the spec's own stated fallback.
 - **Real card backfill (build order step 6, "~40 session cards"):** not
   attempted here — that's real trading thesis data only the owner can
   supply, paste-ingested one card at a time same as any future card.
 - **OPEN-5 (dividend display column):** spec marks this deferred; not built.
+- **The market-open/closed check for live quotes** (`macrodash_client.is_market_open_et`)
+  is a deliberate weekday+hours approximation, not MacroDash's real
+  market-holiday calendar (`src/sources.js`, JS-only) — porting that
+  calendar here would duplicate its own annual-maintenance burden for a few
+  days a year. It fails toward stricter (a holiday reads as "open" and
+  demands a fresher quote than a holiday would produce), never looser.

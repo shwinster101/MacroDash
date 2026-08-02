@@ -13,6 +13,8 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
+import urllib.error
 from dataclasses import dataclass
 from datetime import date
 from pathlib import Path
@@ -213,14 +215,45 @@ def _load_cards(card_dir: Path) -> dict[str, Card]:
     return cards
 
 
+def _load_live_sources(cards: dict[str, Card], macrodash_url: str):
+    """Pulls roster (book tier) + holdings (measured positions) + quotes
+    from MacroDash's live PIN-gated API, per tt.macrodash_client. Returns
+    (roster, holdings, quotes, note) -- `note` is a one-line summary printed
+    by main() so a reader can tell at a glance real synced data was used,
+    never silently. Raises MacrodashAuthError if TT_PIN is unset or wrong --
+    the caller decides whether that's fatal or a fall-through to local files."""
+    from tt.holdings import Holdings
+    from tt.macrodash_client import (
+        MacrodashClient,
+        holdings_from_positions,
+        quotes_from_live,
+        roster_from_book,
+    )
+
+    client = MacrodashClient(base_url=macrodash_url)
+    book = client.get_book()
+    roster = roster_from_book(book)
+    positions = client.get_positions()
+    holdings = holdings_from_positions(positions)
+    quotes_json = client.get_quotes(list(cards.keys()))
+    quotes = quotes_from_live(quotes_json)
+    note = (
+        f"LIVE from MacroDash ({macrodash_url}): {len(roster)} book-tier symbols, "
+        f"{len(holdings.all_weights())} measured positions (asOf {holdings.as_of}), "
+        f"{len(quotes)} live quotes ({len(quotes_json.get('missing') or [])} missing)"
+    )
+    return roster, holdings, quotes, note
+
+
 def main(argv: list[str] | None = None) -> int:
     # Deferred imports: tt.render imports RankedCard/board functions FROM
     # this module, so importing tt.render at module scope here would be a
     # circular import. Delaying to call-time (main() only runs once, as the
     # CLI entry point) breaks the cycle without restructuring either module.
     from tt.holdings import Holdings
+    from tt.macrodash_client import MacrodashAuthError
     from tt.queue import run_queue_entries, write_run_queue
-    from tt.readout import fetch_status
+    from tt.readout import DEFAULT_URL as DEFAULT_READOUT_URL, fetch_status
     from tt.render import render_report
     from tt.roster import load_roster
     from tt.quotes import load_quotes
@@ -232,15 +265,50 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--roster", default="roster.json")
     parser.add_argument("--quotes", default="quotes.json")
     parser.add_argument("--readout-url", default=None, help="override the /readout.json URL")
+    parser.add_argument("--macrodash-url", default=DEFAULT_READOUT_URL.rsplit("/readout.json", 1)[0],
+                         help="MacroDash base URL for the live book/positions/quotes sync")
     parser.add_argument("--run-queue", default="run_queue.md")
-    parser.add_argument("--no-network", action="store_true", help="skip the /readout.json fetch (tests/offline)")
+    parser.add_argument("--no-network", action="store_true", help="skip ALL network calls (readout + live sync)")
+    parser.add_argument("--no-live", action="store_true",
+                         help="skip the book/positions/quotes sync even if TT_PIN is set (local files only)")
     args = parser.parse_args(argv)
 
     today = today_et()
     cards = _load_cards(Path(args.cards))
+
+    # Local files are ALWAYS the baseline (OPEN-4's stated fallback, and
+    # what every existing test in this repo exercises) -- the live sync
+    # only SUPPLEMENTS or overrides them, per-source, never replaces the
+    # whole config wholesale, so a symbol only tt-engine knows about (not
+    # yet in the real book) still gets whatever local data exists for it.
     holdings = Holdings.load(args.holdings)
     roster = load_roster(args.roster)
     quotes = load_quotes(args.quotes)
+
+    if not args.no_network and not args.no_live and os.environ.get("TT_PIN"):
+        try:
+            live_roster, live_holdings, live_quotes, note = _load_live_sources(cards, args.macrodash_url)
+            print(note)
+            roster = {**roster, **live_roster}
+            quotes = {**quotes, **live_quotes}
+            # Holdings has no natural "merge" (it's a whole measured snapshot,
+            # not a per-symbol map with independent provenance like roster/
+            # quotes) -- live REPLACES local outright when it's available,
+            # exactly like MacroDash's own tt:pos:v1 is the one measured
+            # source of truth once it exists.
+            holdings = live_holdings
+        except MacrodashAuthError as e:
+            print(f"WARNING: live MacroDash sync skipped -- {e}")
+        except (urllib.error.URLError, OSError, json.JSONDecodeError, TimeoutError) as e:
+            # A network blip or MacroDash being briefly down must NOT crash
+            # the whole ranking run -- graceful degradation to local files
+            # is this codebase's (and MacroDash's own) core invariant, not
+            # an afterthought. Only genuine auth rejections (above) carry
+            # the sharper "do not retry" warning; this is just "try later."
+            print(f"WARNING: live MacroDash sync failed ({e}) -- using local files for this run")
+    elif not args.no_network and not args.no_live:
+        print("NOTE: TT_PIN not set -- using local holdings.json/roster.json/quotes.json only. "
+              "export TT_PIN=<pin> to pull the real book/positions/quotes from MacroDash.")
 
     if args.no_network:
         from tt.render import ReadoutStatus
