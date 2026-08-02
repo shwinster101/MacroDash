@@ -1,0 +1,36 @@
+{
+  "schema_version": "2.0",
+  "symbol": "ZZZQ",
+  "run_date": "2026-07-29",
+  "run_type": "DEEP",
+  "lens": "AI",
+  "composite": 6.80,
+  "pillars": {"V": 6, "G": 7, "P": 7, "M": 6, "R": 8},
+  "weights_used": "STANDARD",
+  "gates": {
+    "G1": {"status": "FAIL", "hard_stop": false, "tag": null, "note": "one quarter of margin compression, watching"},
+    "G2": {"status": "PASS", "hard_stop": false, "tag": null, "note": "demand intact"}
+  },
+  "entry": {"state": "mid_range", "support": null, "resistance": null},
+  "correlation_cluster": "ai_capex_compute",
+  "pt_model": {
+    "target": 140.0,
+    "horizon": "2028-06-30",
+    "basis": "SYNTHETIC fixture -- illustrative target held under a live override, not real analysis",
+    "return_type": "price_only"
+  },
+  "next_binary": null,
+  "next_earnings_date": "2026-10-15",
+  "override": {
+    "scope": "G1 margin-compression FAIL",
+    "size_limit_pct": 10.0,
+    "review_trigger": "next quarterly print",
+    "expiry_date": "2026-10-31"
+  },
+  "hinges": [
+    {"id": "margin-trend", "state": "amber", "test": "gross margin stabilizes above prior floor"}
+  ],
+  "thesis": "SYNTHETIC fixture -- a single-gate-FAIL card kept eligible only by a live, dated override. Not real investment analysis.",
+  "flags": ["override expires 2026-10-31 -- re-paper or let it lapse"],
+  "sources": ["synthetic fixture -- not a real source"]
+}

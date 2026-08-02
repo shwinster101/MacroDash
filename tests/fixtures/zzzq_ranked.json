@@ -1,0 +1,32 @@
+{
+  "schema_version": "2.0",
+  "symbol": "ZZZQ",
+  "run_date": "2026-07-29",
+  "run_type": "DEEP",
+  "lens": "AI",
+  "composite": 8.10,
+  "pillars": {"V": 8, "G": 9, "P": 8, "M": 7, "R": 8},
+  "weights_used": "STANDARD",
+  "gates": {
+    "G1": {"status": "PASS", "hard_stop": false, "tag": null, "note": "unit economics clean"},
+    "G2": {"status": "FLAG", "hard_stop": false, "tag": null, "note": "watch competitive pricing"}
+  },
+  "entry": {"state": "at_support", "support": 90.0, "resistance": 120.0},
+  "correlation_cluster": "ai_capex_compute",
+  "pt_model": {
+    "target": 180.0,
+    "horizon": "2029-06-30",
+    "basis": "SYNTHETIC fixture -- illustrative multiple x forward estimate, not real analysis",
+    "return_type": "price_only"
+  },
+  "next_binary": null,
+  "next_earnings_date": "2026-11-05",
+  "override": null,
+  "hinges": [
+    {"id": "capex-cycle", "state": "green", "test": "hyperscaler capex guide holds"},
+    {"id": "customer-concentration", "state": "amber", "test": "top-3 customer share stays under 40%"}
+  ],
+  "thesis": "SYNTHETIC fixture thesis -- exists only to exercise the ingest/rank pipeline end to end. Not real investment analysis of any real security.",
+  "flags": [],
+  "sources": ["synthetic fixture -- not a real source"]
+}

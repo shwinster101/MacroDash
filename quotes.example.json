@@ -1,0 +1,4 @@
+{
+  "_readme": "Template only -- copy to quotes.json (gitignored) and refresh before each `python -m tt.rank` run. OPEN-4 (broker MCP access): no live broker connection is wired into this standalone CLI, so quote sync is manual -- see tt/quotes.py. market_open/age_min feed the market-hours freshness check (section 4.7); is_latest_close feeds the after-hours branch.",
+  "EXAMPLE": {"price": 100.0, "market_open": true, "age_min": 5, "is_latest_close": false}
+}

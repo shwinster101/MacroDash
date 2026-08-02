@@ -1,0 +1,7 @@
+{
+  "_readme": "Template only -- copy to holdings.json (gitignored) and fill in real broker data. pct is a FRACTION of tracked-book MV (WEIGHT_DENOMINATOR, tt/config.py) -- 0.18 means 18%, not 18. legs = distinct concurrent expressions of that ONE symbol (shares+LEAPs+puts all held at once on the same ticker); cross-symbol duplication (e.g. NBIS+NEBX) is handled separately via tt.config.UNDERLIER_COMPLEX, not here.",
+  "as_of": null,
+  "holdings": {
+    "EXAMPLE": {"pct": 0.05, "legs": 1}
+  }
+}

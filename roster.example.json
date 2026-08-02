@@ -1,0 +1,4 @@
+{
+  "_readme": "Template only -- copy to roster.json (gitignored) and fill in real book-tier assignments. This is OWNER-ASSERTED roster membership (S/A/B/C), deliberately kept separate from the composite-derived tier (tt.derive.tier_from_composite) so tt.derive.tier_mismatch() has something independent to compare against -- see spec section 4.4.",
+  "EXAMPLE": "S"
+}
