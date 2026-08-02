@@ -3321,5 +3321,54 @@ ok("regimeFactors derives its vote from the band table, keeping no second copy o
 ok("evidence.js consumes that vote rather than re-deriving it from the bands",
   evidenceSrc.includes("vote: f.vote") && !evidenceSrc.includes("band.vote(band.read(d), d)"));
 
+// ─────────────────────────────────────────────────────────────────────────────
+console.log("\n[43] HARNESS.md — the phase prompts inherit §P, they do not copy it");
+// WHY THIS SECTION EXISTS: HARNESS.md is a doc that describes a PROCESS, which makes it
+// the same rot risk [40] found in README/CLAUDE — plus one of its own. Its nine phase
+// prompts all need the same standing invariants, and the obvious way to write that is to
+// paste them into each prompt. That is a second copy of a threshold wearing prose: change
+// the honesty rule once and eight prompts silently keep teaching the old one. So §P is the
+// ONE home and every prompt opens by reference. These pins enforce both properties.
+const harnessSrc = readFileSync(new URL("../HARNESS.md", import.meta.url), "utf8");
+// Scope everything to the fenced prompt blocks. A whole-file grep would match the prose in
+// §P and §E that EXPLAINS the reference rule — the exact vacuous-assert pattern [39] caught
+// when a reconciliation matched the directory name inside its own comment.
+const harnessBlocks = harnessSrc.match(/```[\s\S]*?```/g) || [];
+const harnessPrompts = harnessBlocks.filter((b) => /Apply HARNESS\.md §P/.test(b));
+ok("every phase declares a MODEL, and every prompt block belongs to a declared phase",
+  harnessPrompts.length > 0 &&
+  (harnessSrc.match(/^\*\*MODEL: /gm) || []).length === harnessPrompts.length &&
+  (harnessSrc.match(/^#{2,3} (?:§\d+\. )?H\d[a-z]? — /gm) || []).length === harnessPrompts.length);
+ok("every prompt OPENS with the §P reference — inheritance, not a preamble by convention",
+  harnessPrompts.every((b) => /^Apply HARNESS\.md §P/.test(b.split("\n")[1] || "")));
+// The load-bearing pin: the invariant body exists exactly once in the whole file.
+ok("§P's invariants live in ONE place — no prompt carries its own copy",
+  (harnessSrc.match(/One computation, many altitudes/g) || []).length === 1 &&
+  harnessPrompts.every((b) => !/One computation, many altitudes/.test(b)));
+ok("the two assignment rules are stated, with the rotation table that operationalises them",
+  /auditor is never the builder/i.test(harnessSrc) &&
+  /build-tier is inverse to test-net strength/i.test(harnessSrc) &&
+  /\|\s*If the builder \(H2\) is/.test(harnessSrc));
+// H3 is the phase that exists BECAUSE of the vacuous asserts [39]/[40] were written for.
+ok("H3 carries the negative-control rule — name the failing edit, then make it fail",
+  /THE NEGATIVE-CONTROL RULE/.test(harnessSrc) &&
+  /whose failing edit you cannot name is VACUOUS/.test(harnessSrc));
+ok("H5 enumerates all five audit classes and forbids silence on a class it skipped",
+  ["LABEL OUTLIVING ITS DATA", "SECOND COPY OF A THRESHOLD", "VACUOUS ASSERT",
+   "CLAIM ON ABSENT EVIDENCE", "THE UNGATED DERIVATIVE"].every((c) => harnessSrc.includes(c)) &&
+  /unmentioned class reads as checked/.test(harnessSrc));
+ok("the enhancement slot demands all five fields, so a new phase cannot arrive unmodelled",
+  /## §E\. Enhancement slot/.test(harnessSrc) &&
+  ["**MODEL**", "**ROTATION**", "**GATE**", "**OUTPUT CONTRACT**", "**STOP CONDITION**"]
+    .every((f) => harnessSrc.includes(f)) &&
+  /Do not copy §P into the new prompt/.test(harnessSrc));
+// Same rule [40] applies to README/CLAUDE/AGENTS: this file states process, never state.
+ok("HARNESS.md quotes no version and no assertion count (the [40] rule, extended)",
+  !/v\d+\.\d+\.\d+/.test(harnessSrc) && !/\d{3,}[- ]assertion/.test(harnessSrc) &&
+  /CLAUDE\.md wins/.test(harnessSrc));
+ok("README and CLAUDE.md point AT the harness rather than restating its prompts",
+  /`HARNESS\.md`/.test(readmeSrc) && /HARNESS\.md/.test(claudeSrc) &&
+  !/THE NEGATIVE-CONTROL RULE/.test(readmeSrc) && !/THE NEGATIVE-CONTROL RULE/.test(claudeSrc));
+
 console.log(`\n=== SMOKE TEST: ${pass} passed, ${fail} failed ===`);
 process.exit(fail === 0 ? 0 : 1);

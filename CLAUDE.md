@@ -1874,4 +1874,11 @@ Assertion counts are deliberately not quoted here; the suite prints its own tota
   - **Highest-leverage question** the maintainer can answer (1 bullet).
   - **Highest-leverage next move** (1 bullet).
 
+**The phase prompts live in [`HARNESS.md`](./HARNESS.md)** — plan · build · test-design ·
+fix · audit · UI · newcomer-read · release, each with the model assigned to it, the two
+rules that govern the assignment (the auditor is never the builder; build-tier is inverse
+to test-net strength), and one shared preamble (`§P`) that every prompt inherits **by
+reference rather than by copy** — eight copies of an invariant rot exactly the way eight
+copies of a threshold do. The per-pass protocol above is `§P.10`, so it is stated once.
+
 _(More locked decisions — `ROADMAP_v2.5_v3.0.md` Section A — to be folded in during roadmap Phase 0.)_
