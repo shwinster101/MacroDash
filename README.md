@@ -36,6 +36,8 @@ fails the run instead of silently skipping the gate.
 - **`CLAUDE.md`** — the project brain: architecture, data sources, Cloudflare
   deployment (Pages + KV + secrets + cron Worker), conventions, locked decisions.
   **Canonical — when any other file disagrees with it, it wins.**
+- **`HARNESS.md`** — how a change gets made: the per-phase build framework, the
+  model assigned to each phase, and the exact prompt to run it with.
 - **`HANDOFF.md`** — a point-in-time session record, not a current-state document.
 - **`worker/SETUP.md`** — deploying the separate cron Worker.
 

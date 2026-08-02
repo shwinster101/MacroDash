@@ -2382,8 +2382,34 @@ ok("alert: a metric with no wiring is BLIND, never assumed clear",
   evalAlert({ metric: "nope", condition: "above", value: 1, active: true }, {}, allLive).state === "blind");
 ok("alert: a non-finite live value is BLIND (a missing number is not a passing test)",
   evalAlert(aVix, { marketPulse: { vix: { current: null } } }, allLive).state === "blind");
-ok("alert: the header reports BLIND separately — '0 FIRED' with dead inputs is a false clear",
-  dashSrc.includes("alertBlind") && dashSrc.includes("BLIND`} color={T.amber}"));
+/* FEAT-ALERT-BLIND (v3.62.1) — the aggregate tell, run rather than pinned.
+   The assertion that stood here was `dashSrc.includes("BLIND`} color={T.amber}")`, and it is
+   the reason this defect read as covered for two releases: it pinned the EXPRESSION, so it
+   went green on a badge that rendered only when `activeAlerts===0`. A source pin cannot see a
+   SUPPRESSION rule — the condition it needed to judge was the one thing it did not read.
+   `alertBadge` is now exported and lifted, so these judge behavior. */
+const _ab = dashSrc.indexOf("export function alertBadge(");
+const alertBadge = new Function(
+  dashSrc.slice(_ab, dashSrc.indexOf("\n}", _ab) + 2).replace("export function", "function") +
+  "\nreturn alertBadge;")();
+ok("alert: a FIRED alert no longer SUPPRESSES the blind count — the defect, stated as a test",
+  /BLIND/.test(alertBadge(1, 3).label) && /FIRED/.test(alertBadge(1, 3).label));
+ok("alert: both facts ride ONE badge, not two (the FEAT-TT-CAPABILITY density precedent)",
+  alertBadge(1, 3).label === "⚡ 1 FIRED · 3 BLIND" &&
+  /\{!publicView&&alertBadgeInfo&&<Badge/.test(dashSrc) &&
+  // Scoped to the RENDER, not the file: the comment above the fix quotes the old expression
+  // as history, and a bare absence-pin matched that prose — the [43] lesson, caught live here.
+  !/activeAlerts===0&&alertBlind>0&&<Badge/.test(dashSrc));
+ok("alert: blind-only stays AMBER — never the green that would read as checked-and-clear",
+  alertBadge(0, 3).colorKey === "amber" && alertBadge(0, 3).label === "⚡ 3 BLIND");
+ok("alert: anything fired reads RED — a trip outranks a blind gauge",
+  alertBadge(1, 3).colorKey === "red" && alertBadge(2, 0).colorKey === "red");
+ok("alert: nothing fired and nothing blind renders NO badge — a genuine clear says nothing",
+  alertBadge(0, 0) === null);
+ok("alert: the badge returns a colorKey and the UI resolves it (the regime.js contract)",
+  /color=\{T\[alertBadgeInfo\.colorKey\]\}/.test(dashSrc));
+ok("alert: the aggregate has ONE derivation — the header is the only rollup that exists",
+  (dashSrc.match(/alertBadge\(/g) || []).length === 2); // the definition + the single call
 ok("alert: the section states it evaluates HERE and delivers nothing",
   /Evaluated live on THIS page only — no push, email or SMS is sent/.test(dashSrc));
 // ---- a11y (suite audit #2): landmarks + live regions on the public page ----
@@ -3166,8 +3192,7 @@ ok("glance: the TT copy button and the FIRED/BLIND alert badges gate on !publicV
     return /\{!publicView&&\(\s*\n?\s*<details className="hdr-ops"/.test(dashSrc) &&
       menu.includes("onClick={handleTtCopy}") && menu.includes('href="/admin.html"');
   })() &&
-  /\{!publicView&&activeAlerts>0&&<Badge/.test(dashSrc) &&
-  /\{!publicView&&activeAlerts===0&&alertBlind>0&&<Badge/.test(dashSrc));
+  /\{!publicView&&alertBadgeInfo&&<Badge/.test(dashSrc));
 // v3.62: a FIRED/BLIND badge is a red fact — the v3.25 rule (a collapse never hides one) means
 // the alert badges must stay OUTSIDE the disclosure even though they are also operator-only.
 ok("the OPS menu does not swallow the alert badges — a red fact stays visible while closed",
@@ -3175,7 +3200,8 @@ ok("the OPS menu does not swallow the alert badges — a red fact stays visible 
     const open = dashSrc.indexOf('<details className="hdr-ops"');
     const close = dashSrc.indexOf("</details>", open);
     const menu = open < 0 ? "" : dashSrc.slice(open, close);
-    return menu.length > 0 && !menu.includes("activeAlerts") && !menu.includes("alertBlind");
+    return menu.length > 0 && !menu.includes("activeAlerts") && !menu.includes("alertBlind") &&
+      !menu.includes("alertBadgeInfo");
   })());
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -3320,6 +3346,79 @@ ok("regimeFactors derives its vote from the band table, keeping no second copy o
   !/bull:d\.marketPulse\.fearGreed\.score>55/.test(regimeSrc));
 ok("evidence.js consumes that vote rather than re-deriving it from the bands",
   evidenceSrc.includes("vote: f.vote") && !evidenceSrc.includes("band.vote(band.read(d), d)"));
+
+// ─────────────────────────────────────────────────────────────────────────────
+console.log("\n[43] HARNESS.md — the phase prompts inherit §P, they do not copy it");
+// WHY THIS SECTION EXISTS: HARNESS.md is a doc that describes a PROCESS, which makes it
+// the same rot risk [40] found in README/CLAUDE — plus one of its own. Its nine phase
+// prompts all need the same standing invariants, and the obvious way to write that is to
+// paste them into each prompt. That is a second copy of a threshold wearing prose: change
+// the honesty rule once and eight prompts silently keep teaching the old one. So §P is the
+// ONE home and every prompt opens by reference. These pins enforce both properties.
+const harnessSrc = readFileSync(new URL("../HARNESS.md", import.meta.url), "utf8");
+// Scope everything to the fenced prompt blocks. A whole-file grep would match the prose in
+// §P and §E that EXPLAINS the reference rule — the exact vacuous-assert pattern [39] caught
+// when a reconciliation matched the directory name inside its own comment.
+const harnessBlocks = harnessSrc.match(/```[\s\S]*?```/g) || [];
+const harnessPrompts = harnessBlocks.filter((b) => /Apply HARNESS\.md §P/.test(b));
+ok("every phase declares a MODEL, and every prompt block belongs to a declared phase",
+  harnessPrompts.length > 0 &&
+  (harnessSrc.match(/^\*\*MODEL: /gm) || []).length === harnessPrompts.length &&
+  (harnessSrc.match(/^#{2,3} (?:§\d+\. )?H\d[a-z]? — /gm) || []).length === harnessPrompts.length);
+ok("every prompt OPENS with the §P reference — inheritance, not a preamble by convention",
+  harnessPrompts.every((b) => /^Apply HARNESS\.md §P/.test(b.split("\n")[1] || "")));
+// The load-bearing pin: the invariant body exists exactly once in the whole file.
+ok("§P's invariants live in ONE place — no prompt carries its own copy",
+  (harnessSrc.match(/One computation, many altitudes/g) || []).length === 1 &&
+  harnessPrompts.every((b) => !/One computation, many altitudes/.test(b)));
+ok("the two assignment rules are stated, with the rotation table that operationalises them",
+  /auditor is never the builder/i.test(harnessSrc) &&
+  /build-tier is inverse to test-net strength/i.test(harnessSrc) &&
+  /\|\s*If the builder \(H2\) is/.test(harnessSrc));
+// H3 is the phase that exists BECAUSE of the vacuous asserts [39]/[40] were written for.
+ok("H3 carries the negative-control rule — name the failing edit, then make it fail",
+  /THE NEGATIVE-CONTROL RULE/.test(harnessSrc) &&
+  /whose failing edit you cannot name is VACUOUS/.test(harnessSrc));
+ok("H5 enumerates all five audit classes and forbids silence on a class it skipped",
+  ["LABEL OUTLIVING ITS DATA", "SECOND COPY OF A THRESHOLD", "VACUOUS ASSERT",
+   "CLAIM ON ABSENT EVIDENCE", "THE UNGATED DERIVATIVE"].every((c) => harnessSrc.includes(c)) &&
+  /unmentioned class reads as checked/.test(harnessSrc));
+ok("the enhancement slot demands all five fields, so a new phase cannot arrive unmodelled",
+  /## §E\. Enhancement slot/.test(harnessSrc) &&
+  ["**MODEL**", "**ROTATION**", "**GATE**", "**OUTPUT CONTRACT**", "**STOP CONDITION**"]
+    .every((f) => harnessSrc.includes(f)) &&
+  /Do not copy §P into the new prompt/.test(harnessSrc));
+// Same rule [40] applies to README/CLAUDE/AGENTS: this file states process, never state.
+ok("HARNESS.md quotes no version and no assertion count (the [40] rule, extended)",
+  !/v\d+\.\d+\.\d+/.test(harnessSrc) && !/\d{3,}[- ]assertion/.test(harnessSrc) &&
+  /CLAUDE\.md wins/.test(harnessSrc));
+/* The first end-to-end run rewrote the flow: discovery was unstaffed (every other phase
+   starts from "TICKET: <...>" and assumes one exists), three phases ran with no trigger,
+   and rotation silently degraded because one model held every context. */
+ok("H0 discovery exists and is a distinct job from auditing a diff",
+  /^## H0 — DISCOVERY/m.test(harnessSrc) &&
+  /H5 judges a change, H0 judges a codebase/.test(harnessSrc));
+ok("the single-model degradation is STATED — Rule 1 without it is documentation, not a control",
+  /Rule 3 — when one model runs every phase/.test(harnessSrc) &&
+  /fresh session/.test(harnessSrc) &&
+  // Prose wraps: match a phrase that cannot straddle the fold, not a full sentence.
+  /Rule 1 without this note is documentation/.test(harnessSrc));
+ok("the conditional phases each declare the trigger that makes them run",
+  ["## H4", "## H6", "## H7"].every((h) => {
+    const i = harnessSrc.indexOf(h);
+    return i > 0 && /^\*\*CONDITIONAL\*\* — runs/m.test(harnessSrc.slice(i, i + 400));
+  }));
+// Rule 4 exists because a hand-chained `npm test | grep FAIL && git commit` exits 0 when
+// grep FINDS a failure — that let a red commit through on this harness's first run.
+ok("the gates are a script, not a chain the operator can get wrong",
+  /npm run gates/.test(harnessSrc) && /A gate you can mis-chain is not a gate/.test(harnessSrc) &&
+  (() => { const g = JSON.parse(readFileSync(new URL("../package.json", import.meta.url),
+      "utf8")).scripts.gates || "";
+    return ["npm test", "test:ui", "test:public", "audit:prod"].every((x) => g.includes(x)) &&
+      !g.includes("|"); })());
+ok("README and CLAUDE.md point AT the harness rather than restating its prompts",
+  /`HARNESS\.md`/.test(readmeSrc) && /HARNESS\.md/.test(claudeSrc) &&
+  !/THE NEGATIVE-CONTROL RULE/.test(readmeSrc) && !/THE NEGATIVE-CONTROL RULE/.test(claudeSrc));
 
 console.log(`\n=== SMOKE TEST: ${pass} passed, ${fail} failed ===`);
 process.exit(fail === 0 ? 0 : 1);

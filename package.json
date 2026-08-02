@@ -1,7 +1,7 @@
 {
   "name": "macrodash",
   "private": true,
-  "version": "3.62.0",
+  "version": "3.62.1",
   "type": "module",
   "engines": {
     "node": ">=18"
@@ -13,7 +13,8 @@
     "test": "node test/smoke.mjs",
     "test:ui": "node test/render.mjs",
     "test:public": "npm run build && node test/public-render.mjs",
-    "audit:prod": "npm audit --omit=dev"
+    "audit:prod": "npm audit --omit=dev",
+    "gates": "npm test && npm run test:ui && npm run test:public && npm run audit:prod"
   },
   "dependencies": {
     "lucide-react": "^0.383.0",
