@@ -1371,7 +1371,15 @@ export default function Dashboard({ publicView = false } = {}) {
   // EVERYTHING is MOCK by design (mock IS the baseline — same convention as fresh:null in
   // fiveWhys), so nothing provenance-dependent collapses there.
   const demoted=(f)=>anyLive&&isIllustrative(modeOf(f));
-  const freshSet=anyLive ? new Set(FW_FIELDS.filter(k=>{const m=modeOf(k);return m==="LIVE"||m==="CACHED";})) : null;
+  /* A1 (v3.58, UX re-audit HIGH): this ternary keyed on `anyLive`, so a LIVE BUILD in its
+     LOADING or fetch-error state passed `fresh:null` — which computeFiveWhys defines as
+     "mock/demo mode, narrate everything". The verdict said CAN'T CALL IT while the 5 Whys
+     asserted mock SPY/CPI/Fed as today's tape — the page's most explanatory section
+     contradicting its own honesty contract. Keyed on `liveBuild` (the build's INTENT, the
+     v3.54 disambiguation): a loading/failed live build passes an EMPTY set, so every WHY
+     clause freshness-gates out and the anchor states itself as 0/3 usable. A demo build
+     still passes null — mock IS its baseline (the demoted()/anyLive doctrine, unchanged). */
+  const freshSet=liveBuild ? new Set(FW_FIELDS.filter(k=>{const m=modeOf(k);return m==="LIVE"||m==="CACHED";})) : null;
   const fw=computeFiveWhys({...d, session:etSession()}, regime, { stale:staleFactors, fresh:freshSet });
   // FEAT-ALERT-EVAL: evaluated from live data every render (see evalAlert). `alertBlind` is
   // reported separately — a header that says "0 FIRED" while every input is dead would be the
@@ -1471,6 +1479,8 @@ export default function Dashboard({ publicView = false } = {}) {
           .wen-moon-mobile{display:none!important;}
         }
         @media(prefers-reduced-motion:reduce){.pulse-anim{animation:none!important;}}
+        /* A2 (v3.58): 320px contract — the duplicate wordmark is the first thing to go. */
+        @media(max-width:359px){.sub-wordmark{display:none;}}
         /* A11Y (11.4.5 audit, High): focused controls showed no outline or shadow at all.
            :focus-visible (not :focus) so a mouse click never paints a ring. */
         :focus-visible{outline:2px solid ${DT["focus-ring"]};outline-offset:2px;border-radius:3px;}
@@ -1483,11 +1493,13 @@ export default function Dashboard({ publicView = false } = {}) {
 
       {/* ── HEADER (FEAT-161, FEAT-165) ── */}
       <div style={{background:T.surface,borderBottom:`1px solid ${T.border}`,padding:"8px 20px",display:"flex",justifyContent:"space-between",alignItems:"center",gap:8,flexWrap:"wrap",position:"sticky",top:0,zIndex:50}}>
-        <div style={{display:"flex",alignItems:"center",gap:14}}>
+        {/* A2 (v3.58): minWidth:0 lets the identity group shrink inside the flex row instead of
+            forcing overflow; the sub-wordmark hides below 360px (it duplicates the brand). */}
+        <div style={{display:"flex",alignItems:"center",gap:14,minWidth:0,flexWrap:"wrap"}}>
           <div style={{fontFamily:T.fontDisplay,fontSize:20,fontWeight:800,color:T.amber,letterSpacing:"-0.02em"}}>MacroDash</div>
           {/* FEAT-165: friendly sub-headline */}
           {/* FINDING-1: orientation line now visible on mobile (was hide-mobile) */}
-          <div style={{fontFamily:T.fontSans,fontSize:10,color:T.textMuted}}>macrodash</div>
+          <div className="sub-wordmark" style={{fontFamily:T.fontSans,fontSize:10,color:T.textMuted}}>macrodash</div>
           {/* FEAT-SNAP-UX: the session · timestamp line renders ONLY from live data. The mock
               baseline's hardcoded lastRefresh next to a pulsing dot read as "the site last
               refreshed <months-old date>" — a timestamp is exactly the kind of number the
@@ -1501,7 +1513,7 @@ export default function Dashboard({ publicView = false } = {}) {
             {anyLive&&<span style={{fontFamily:T.fontMono,fontSize:8,color:T.textMuted}}>· end-of-day, not real-time</span>}
           </div>
         </div>
-        <div style={{display:"flex",alignItems:"center",gap:8}}>
+        <div style={{display:"flex",alignItems:"center",gap:8,flexWrap:"wrap",minWidth:0}}>
           <DataModeBadge mode={mode}/>
           {activeAlerts>0&&<Badge label={`⚡ ${activeAlerts} FIRED`} color={T.red}/>}
           {activeAlerts===0&&alertBlind>0&&<Badge label={`⚡ ${alertBlind} BLIND`} color={T.amber}/>}
@@ -1952,7 +1964,10 @@ export default function Dashboard({ publicView = false } = {}) {
             is the judgment layer. mag10PricesJson/SOURCES/fetchEquities stay wired: QQQ still
             renders from the same Finnhub pull, so nothing upstream is removed. */}
         {/* ── MY CONVICTION · S/A TIER (full-width, collapsible) ── */}
-        <div style={{marginTop:16,background:T.surface,border:`1px solid ${T.border}`,borderRadius:6,overflow:"hidden"}}>
+        {/* A4 (v3.58): PRIVATE on the shareable route. Authored conviction tiers are the
+            owner's judgment layer — the friend-share view must not disclose them (owner call,
+            composing the v3.51 keep-on-default decision with the re-audit's public gate). */}
+        {!publicView&&<div style={{marginTop:16,background:T.surface,border:`1px solid ${T.border}`,borderRadius:6,overflow:"hidden"}}>
           <button onClick={()=>setWatchlistOpen(o=>!o)} aria-expanded={watchlistOpen}
             style={{width:"100%",display:"flex",justifyContent:"space-between",alignItems:"center",padding:"10px 16px",background:"none",border:"none",cursor:"pointer",borderBottom:watchlistOpen?`1px solid ${T.border}`:"none"}}>
             <div style={{display:"flex",gap:10,alignItems:"center"}}>
@@ -1993,10 +2008,12 @@ export default function Dashboard({ publicView = false } = {}) {
               <SourceBox api="Manual" endpoint="personal watchlist · names + tiers only" mode="MOCK"/>
             </div>
           )}
-        </div>
+        </div>}
 
         {/* ── ALERTS STRIP (compact, at bottom) ── */}
-        <div style={{marginTop:16,background:T.surface,border:`1px solid ${T.border}`,borderRadius:6,padding:"12px 16px"}}>
+        {/* A4 (v3.58): PRIVATE on the shareable route — page-local toggles imply user state a
+            visitor does not have; monitors are the operator's, not the share view's. */}
+        {!publicView&&<div style={{marginTop:16,background:T.surface,border:`1px solid ${T.border}`,borderRadius:6,padding:"12px 16px"}}>
           <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:10}}>
             <SectionHeader>Macro Alerts</SectionHeader>
             {/* Public audit: an ON/OFF toggle beside 8px muted "notifications not wired" reads as
@@ -2010,11 +2027,11 @@ export default function Dashboard({ publicView = false } = {}) {
           <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(260px,1fr))",gap:6}}>
             {alerts.map(a=><AlertRow key={a.id} alert={a} ev={alertEval[a.id]} onToggle={id=>setAlerts(prev=>prev.map(x=>x.id===id?{...x,active:!x.active}:x))} onDelete={handleDeleteAlert}/>)}
           </div>
-        </div>
+        </div>}
 
         {/* ── FOOTER ── */}
         <div style={{marginTop:12,display:"flex",justifyContent:"space-between",alignItems:"center",flexWrap:"wrap",gap:4}}>
-          <div style={{fontFamily:T.fontMono,fontSize:8,color:T.textMuted}}>{`MacroDash v${__APP_VERSION__} · Data refreshed daily · end-of-day sources`}</div>
+          <div style={{fontFamily:T.fontMono,fontSize:8,color:T.textMuted}}>{`MacroDash v${__APP_VERSION__} · Data refreshed daily · end-of-day sources`}{publicView?" · public view — the operator view carries the curated watchlist and alert monitors":""}</div>
           <div style={{fontFamily:T.fontMono,fontSize:8,color:T.textMuted}}>Not financial advice · Personal use</div>
           <div style={{fontFamily:T.fontMono,fontSize:8,color:T.textMuted}}>Live: FRED · CNN · Kalshi · OpenRouter · Finnhub · multpl · Curated: GPU $/hr · hyperscaler capex · token efficiency · Retired: CBOE Put/Call (free feed dead 2019 · v3.2) · Mag 10 fundamentals + SEC S-1 (v3.43) · Mag 10 quote strip (v3.51)</div>
         </div>

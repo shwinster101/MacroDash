@@ -1472,6 +1472,39 @@ Jan-anchor shipped; see `snapshot.js` ~318–328), `spyMa100`, `spyMa200`, and a
   Tests: **878 smoke** (+15, incl. `applyServer` lifted and RUN against malformed shapes — and
   a test-isolation bug caught while writing them, where a shared closure leaked toasts between
   fixtures) + 169 render + 28 public-render.
+- **v3.58 "the hotfix" — the public UX re-audit's five fix-now items.** The owner-commissioned
+  re-audit (of v3.55; reconciled against v3.57 before planning) returned **HOLD for hotfix, do
+  not roll back**: the v3.54 quorum fix is confirmed sound, but the page still contradicted its
+  own honesty contract in one place and broke its narrowest width. Five fixes:
+  **A1 — the 5 Whys narrated MOCK under a withheld verdict.** `freshSet` keyed on `anyLive`, so
+  a live build in its LOADING or fetch-error state passed `fresh:null` — computeFiveWhys's
+  "demo mode, narrate everything" — and the page's most explanatory section asserted mock
+  SPY/CPI/Fed as today's core tape while the verdict said CAN'T CALL IT. Keyed on **`liveBuild`**
+  (the v3.54 intent disambiguation, completing it): loading/error now passes an EMPTY set, every
+  clause freshness-gates out, and the anchor states itself (`0/3 core inputs usable`). The
+  HEADLINE's SPY clause is gated the same way — it embedded the mock day-move unconditionally.
+  Demo builds still pass `null`: mock IS that baseline (the `demoted()`/`anyLive` doctrine).
+  **A2 — the 320px contract.** The sticky header measured 327px on the deployed page. The
+  identity group gets `minWidth:0`, the action group wraps, and the duplicate lowercase
+  wordmark hides below 360px — the brand name is already the element beside it.
+  **A3 — the browser suite tells the truth about itself.** `public-render.mjs` navigated to `/`
+  only, so its "public" results actually described the OPERATOR header (with the TERMINAL
+  link). Routes are now explicit and BOTH are driven (4 widths × 2 routes), and all browser
+  suites honor **`REQUIRE_BROWSER=1`**: a missing Chromium becomes a hard failure instead of a
+  clean skip — a silently-skipped gate reads as a passed one. Bare machines keep the skip.
+  **A4 — the public/private boundary is enforced, not commented (owner decision).** The
+  shareable `?view=public` route now gates MY CONVICTION and Macro Alerts behind `!publicView`
+  (the TERMINAL-link pattern; the Zone-E gate finally has something to hide). The default view
+  keeps both — the v3.51 "keep" call stands for the operator's own page. The public footer
+  NAMES the omission, because a cut takes its attribution with it.
+  **A5 — the three npm advisories are classified, not mysterious.** Measured:
+  `npm audit --omit=dev` = **0 vulnerabilities**; all three (esbuild moderate, postcss high,
+  vite high) are dev-scope build toolchain, no production exposure. `npm run audit:prod` pins
+  the command; `npm audit fix` took the in-semver toolchain patches (nanoid, postcss).
+  Tests: **890 smoke** (+12, incl. the headline gate run behaviorally in all three freshness
+  modes) + 169 render + **50 public-render** (+22: both routes × 4 widths, the A4 route-pair
+  boundary proof, and the A1 no-mock-narration assertions in LOADING and ERROR — the audit's
+  exact exit condition) + REQUIRE_BROWSER verified to exit 1 against an empty browsers path.
 - **Deferred:** stored fundamentals + Robinhood sync — now unblocked by the `x-tt-pin` header
   (v3.9): a chat-side daily review can PUT `status_flags`/`ref_px` into the deepDive payloads and
   stamp `lastRun`. When built, store the *triage* shape (`{at, px}` → "% moved since your last TT
@@ -1538,7 +1571,7 @@ npm run dev        # Vite dev server (mock unless VITE_DATA_MODE=live in .env)
 npm run build      # → dist/  (what Pages runs)
 npm run preview    # serve the built dist/
 
-node test/smoke.mjs   # 878-assertion no-network smoke test (needs Node ≥17)
+node test/smoke.mjs   # 890-assertion no-network smoke test (needs Node ≥17)
 npm run test:ui       # browser render test for admin.html (skips if no Chromium)
 npm run test:public   # build + browser STATE test for the public dashboard (skips likewise)
 

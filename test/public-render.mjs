@@ -45,6 +45,12 @@ function findChromium() {
   return null;
 }
 const skip = (why) => {
+  // A3 (v3.58): under REQUIRE_BROWSER=1 (CI), missing browser tooling is a FAILURE — a
+  // silently-skipped gate reads as a passed one. Bare machines keep the clean skip.
+  if (process.env.REQUIRE_BROWSER === "1") {
+    console.error(`\n=== PUBLIC RENDER TEST: FAILED — ${why} (REQUIRE_BROWSER=1) ===`);
+    process.exit(1);
+  }
   console.log(`\n=== PUBLIC RENDER TEST: SKIPPED — ${why} ===`);
   console.log("    (source guards in test/smoke.mjs still ran; this suite is additive)");
   process.exit(0);
@@ -106,17 +112,21 @@ const ok = (name, cond) => { if (cond) { pass++; console.log("  PASS  " + name);
 const browser = await chromium.launch({ executablePath: exe });
 
 // Open the page with /api/snapshot stubbed per scenario.
-async function open({ live, status = 200, delayMs = 0, width = 1280 }) {
+// A3 (v3.58, re-audit "important test ambiguity"): this suite navigated to "/" only, so its
+// 320px result described the DEFAULT/OPERATOR header (with the TERMINAL link) while the file's
+// name implied the public route was covered. `route` is now explicit; scenarios name which
+// surface they prove.
+async function open({ live, status = 200, delayMs = 0, width = 1280, route = "/" }) {
   const page = await browser.newPage({ viewport: { width, height: 900 } });
   const errors = [];
   page.on("pageerror", (e) => errors.push(String(e)));
-  await page.route("**/api/snapshot*", async (route) => {
-    if (delayMs) await new Promise((r) => setTimeout(r, delayMs));
-    if (status !== 200) return route.fulfill({ status, body: "upstream failure" });
-    route.fulfill({ status: 200, contentType: "application/json",
+  await page.route("**/api/snapshot*", async (r) => {
+    if (delayMs) await new Promise((res) => setTimeout(res, delayMs));
+    if (status !== 200) return r.fulfill({ status, body: "upstream failure" });
+    r.fulfill({ status: 200, contentType: "application/json",
       body: JSON.stringify({ live, cached: false, asOf: new Date().toISOString() }) });
   });
-  await page.goto(`http://localhost:${PORT}/`, { waitUntil: "domcontentloaded" });
+  await page.goto(`http://localhost:${PORT}${route}`, { waitUntil: "domcontentloaded" });
   return { page, errors };
 }
 const bandText = (page) => page.locator('[aria-label="Macro backdrop verdict"]').innerText();
@@ -138,6 +148,15 @@ console.log("\n[public] LOADING — a posture must not be computed from the mock
   ok("loading: no factors are claimed to be voting", /no factors voting yet/i.test(band));
   ok("loading: the flip line is suppressed — there is no posture to flip",
     !/would change this/i.test(band));
+  // A1 (v3.58, re-audit HIGH): the verdict said CAN'T CALL IT while the 5 Whys narrated mock
+  // SPY/CPI/Fed as today's core tape. The narrative must carry ZERO mock numbers now.
+  const loadBody = await page.locator("body").innerText();
+  ok("loading A1: the 5 Whys asserts NO mock core tape (no 'Core tape: SPY $…')",
+    !/Core tape: SPY \$/.test(loadBody));
+  ok("loading A1: the anchor states itself as empty — 0/3 core inputs usable",
+    /0\/3 core inputs usable/.test(loadBody));
+  ok("loading A1: the headline carries no mock SPY day-move",
+    !/bullish factors — SPY/.test(loadBody));
   ok("loading: no page errors", errors.length === 0);
   await page.close();
 }
@@ -185,20 +204,49 @@ console.log("\n[public] ERROR — a 500 falls back to mock, and mock does not vo
   ok("error: no posture is published after the fetch fails", !POSTURES.test(band));
   ok("error: the withheld state is explicit, not a silent blank",
     /INSUFFICIENT|CAN'T CALL IT/i.test(band));
+  const errBody = await page.locator("body").innerText();
   ok("error: the page still renders (graceful degradation holds — it never breaks)",
-    (await page.locator("body").innerText()).length > 500);
+    errBody.length > 500);
+  ok("error A1: the 5 Whys narrates no mock numbers after a failed fetch either",
+    !/Core tape: SPY \$/.test(errBody) && /0\/3 core inputs usable/.test(errBody));
   ok("error: no page errors", errors.length === 0);
   await page.close();
 }
 
 // ── 5. Responsive + a11y basics on the live state ───────────────────────────
-console.log("\n[public] responsive + a11y on the published state");
-for (const width of [320, 390, 1280]) {
-  const { page, errors } = await open({ live: FULL_LIVE, width });
+console.log("\n[public] responsive on BOTH routes — the 320px contract (A2/A3)");
+for (const route of ["/", "/?view=public"]) {
+  for (const width of [320, 390, 768, 1280]) {
+    const { page, errors } = await open({ live: FULL_LIVE, width, route });
+    await page.waitForTimeout(1200);
+    const name = route === "/" ? "operator" : "public";
+    ok(`${name} @${width}px: no horizontal overflow`,
+      await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth + 1));
+    ok(`${name} @${width}px: no page errors`, errors.length === 0);
+    await page.close();
+  }
+}
+console.log("\n[public] A4 — the public/private boundary is ENFORCED, not commented");
+{
+  const { page } = await open({ live: FULL_LIVE, route: "/" });
   await page.waitForTimeout(1200);
-  ok(`${width}px: no horizontal overflow`,
-    await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth + 1));
-  ok(`${width}px: no page errors`, errors.length === 0);
+  const op = await page.locator("body").innerText();
+  ok("operator route: MY CONVICTION renders (the v3.51 keep call stands)", /MY CONVICTION/.test(op));
+  ok("operator route: Macro Alerts render", /Macro Alerts/i.test(op));
+  ok("operator route: TERMINAL link present", /TERMINAL/.test(op));
+  await page.close();
+}
+{
+  const { page } = await open({ live: FULL_LIVE, route: "/?view=public" });
+  await page.waitForTimeout(1200);
+  const pub = await page.locator("body").innerText();
+  ok("public route: MY CONVICTION is gated out", !/MY CONVICTION/.test(pub));
+  ok("public route: Macro Alerts are gated out", !/Macro Alerts/i.test(pub));
+  ok("public route: TERMINAL link hidden", !/⌁ TERMINAL/.test(pub));
+  ok("public route: the footer NAMES the omission (a cut takes its attribution with it)",
+    /operator view carries the curated watchlist and alert monitors/.test(pub));
+  ok("public route: the verdict itself still publishes — the gate hides content, not judgment",
+    /RISK-ON|RISK-OFF|MIXED/.test(pub));
   await page.close();
 }
 {

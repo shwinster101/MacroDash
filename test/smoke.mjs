@@ -2873,5 +2873,43 @@ ok("e2e: the positions store's smaller cap is documented, not left to look accid
 ok("e2e: the book cap and its client pre-flight mirror still agree",
   /const MAX_BODY = 200 \* 1024;/.test(ttSrc) && /const MAX_BODY=200\*1024;/.test(adminSrc));
 
+// ---- 36. v3.58 hotfix (UX re-audit fix-now) — truthfulness, 320px, boundary ----
+console.log("\n[36] v3.58 hotfix — no mock narration, 320px contract, public gate");
+// A1: freshSet keys on the build's INTENT. `anyLive` made a loading/failed live build pass
+// fresh:null — computeFiveWhys's "demo mode, narrate everything" — so the 5 Whys asserted
+// mock SPY/CPI/Fed under a withheld verdict.
+ok("A1: freshSet derives from liveBuild, never anyLive",
+  /const freshSet=liveBuild \? new Set/.test(dashSrc) && !/freshSet=anyLive/.test(dashSrc));
+ok("A1: demoted() still keys on anyLive — demotion is display, and the demo must not collapse",
+  /const demoted=\(f\)=>anyLive&&isIllustrative/.test(dashSrc));
+// Behavioral: an EMPTY fresh set (live build, nothing usable) must gate the HEADLINE too.
+const fwEmpty = computeFiveWhys(MOCK_DATA, fwRegime, { fresh: new Set() });
+ok("A1: with nothing fresh the headline carries no mock SPY day-move",
+  !/— SPY/.test(fwEmpty.headline) && /bullish factors\./.test(fwEmpty.headline));
+ok("A1: with spyPrice fresh the SPY clause returns (the gate is freshness, not deletion)",
+  /— SPY/.test(computeFiveWhys(MOCK_DATA, fwRegime, { fresh: new Set(["spyPrice"]) }).headline));
+ok("A1: demo mode (fresh:null) still narrates the full headline — mock IS that baseline",
+  /— SPY/.test(computeFiveWhys(MOCK_DATA, fwRegime).headline));
+// A2: the 320px contract — identity group may shrink, actions may wrap, wordmark yields first.
+ok("A2: header groups can shrink and wrap instead of forcing horizontal overflow",
+  /alignItems:"center",gap:14,minWidth:0,flexWrap:"wrap"/.test(dashSrc) &&
+  /alignItems:"center",gap:8,flexWrap:"wrap",minWidth:0/.test(dashSrc));
+ok("A2: the duplicate lowercase wordmark hides below 360px",
+  /@media\(max-width:359px\)\{\.sub-wordmark\{display:none;\}\}/.test(dashSrc));
+// A3: browser suites fail rather than skip under CI's flag; both routes are covered.
+ok("A3: both browser suites honor REQUIRE_BROWSER=1 (skip becomes a failure)",
+  /REQUIRE_BROWSER === "1"/.test(readFileSync(new URL("../test/public-render.mjs", import.meta.url), "utf8")) &&
+  /REQUIRE_BROWSER === "1"/.test(readFileSync(new URL("../test/render.mjs", import.meta.url), "utf8")));
+ok("A3: the public suite actually visits the public route, not only the operator one",
+  /\/\?view=public/.test(readFileSync(new URL("../test/public-render.mjs", import.meta.url), "utf8")));
+// A4: the boundary is ENFORCED by the gate, not described by a comment.
+ok("A4: MY CONVICTION and Macro Alerts are gated behind !publicView",
+  (dashSrc.match(/\{!publicView&&<div style=\{\{marginTop:16/g) || []).length === 2);
+ok("A4: the public footer NAMES the omission (a cut takes its attribution with it)",
+  /operator view carries the curated watchlist and alert monitors/.test(dashSrc));
+// A5: production dependency surface is classified and checkable in one command.
+ok("A5: audit:prod script exists (measured clean at v3.58 — all 3 advisories are dev toolchain)",
+  /"audit:prod": "npm audit --omit=dev"/.test(readFileSync(new URL("../package.json", import.meta.url), "utf8")));
+
 console.log(`\n=== SMOKE TEST: ${pass} passed, ${fail} failed ===`);
 process.exit(fail === 0 ? 0 : 1);
