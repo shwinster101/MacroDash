@@ -14,7 +14,7 @@ model that phase actually needs.** The phases are prompts, not vibes — copy th
 
 ---
 
-## §0. The two rules that make the rest work
+## §0. The rules that make the rest work
 
 **Rule 1 — the auditor is never the builder.** The reviewing model must be a *different
 family* than the building model, or a *strictly higher tier*. **Never the same model.**
@@ -37,6 +37,33 @@ the build tier for that pass and say so in the ticket.
 
 H3 and H5 should also differ from **each other** where budget allows: they are the two
 skeptical passes, and sharing a family halves their coverage.
+
+**Rule 3 — when one model runs every phase, rotation degrades to SESSION isolation.**
+A single-model operator cannot satisfy Rule 1, and running H5 as a different *prompt* in
+the same conversation is not a substitute: the context that produced the diff is the same
+context judging it. The available substitute is a **fresh session** — H0, H3 and H5 each
+started with no memory of the build. This is weaker than a different family and must be
+stated in the pass, not assumed away. Rule 1 without this note is documentation, not a
+control.
+
+**Rule 4 — the gates are run by a script, never by a chained command.** `npm run gates`
+runs all four in order and fails on the first red. This exists because a hand-chained
+`npm test | grep FAIL && git commit` exits 0 when grep *finds* a failure, which let a red
+commit through on this harness's first run. A gate you can mis-chain is not a gate.
+
+### Phase cost, measured
+
+Phases are **not** equal in demand, and the first end-to-end run redistributed the budget:
+discovery and test-design turned out to carry the pass, while planning a small ticket was
+near-mechanical once the defect was found.
+
+| Phase | Demand | Runs |
+|---|---|---|
+| H0 discovery · H3 test design | **highest** — heavyweight, fresh session | always |
+| H5 audit | high | always |
+| H1 plan | scales with ticket size | always (compressed for micro tickets) |
+| H2 build · H8 release | mid | always |
+| H4 fix · H6 UI · H7 newcomer | — | **conditional**, see each phase |
 
 ---
 
@@ -76,7 +103,48 @@ an invariant changes, it changes here, once.
 
 ---
 
-## §1. H1 — PLAN
+## H0 — DISCOVERY
+
+**MODEL: Claude Opus 5** · alternate: GPT-5.6 Sol · **fresh session, no build context**
+*Why:* every other phase starts from `TICKET: <...>` and assumes one exists. Finding the
+ticket is a different job from auditing a diff — H5 judges a change, H0 judges a codebase
+with nothing to anchor on — and on this harness's first run it was the phase that produced
+the work. Unstaffed, it silently becomes "whatever the maintainer happened to notice."
+
+```
+Apply HARNESS.md §P.
+
+Sweep the codebase for defects. There is no ticket — you are producing candidates.
+Do NOT edit anything. Do NOT propose fixes yet.
+
+Hunt the five classes. For each, the search is concrete, not impressionistic:
+
+  A. LABEL OUTLIVING ITS DATA — for each recently deleted or renamed thing, grep every
+     header, footer, tooltip, comment, count and attribution that referenced it.
+  B. SECOND COPY OF A THRESHOLD — grep each numeric literal that gates a decision and
+     count its homes. More than one is the finding.
+  C. VACUOUS ASSERT — read the suite for assertions that pin an EXPRESSION where the
+     claim is about BEHAVIOR or SAFETY. A pin that would stay green while the defect it
+     names is present is the highest-value find here.
+  D. CLAIM ON ABSENT EVIDENCE — for each aggregate, rollup, badge or count: enumerate
+     the states of its inputs and ask which combination makes it assert something it did
+     not check. Pay attention to conditions that suppress one fact when another is
+     present — a false clear can survive at a NONZERO numerator.
+  E. UNGATED DERIVATIVE — for each computed value, name the parent whose staleness,
+     provenance or absence it must inherit, then verify it does.
+
+For each candidate output: class · file:line · the exact input state that exposes it ·
+what a person would wrongly believe · whether any OTHER surface mitigates it (if one
+does, say so and downgrade — an aggregate with a second honest rollup nearby is a
+different severity than one that is the only tell).
+
+Rank by (a person acts on it) × (nothing else catches it). Return the top three as
+ticket-shaped one-liners. Say explicitly which classes you searched and found NOTHING in.
+```
+
+---
+
+## H1 — PLAN
 
 **MODEL: GPT-5.6 Sol** · alternate: Claude Opus 5
 *Why:* dependency graphs and threat modelling across a system whose failure mode is a
@@ -125,7 +193,7 @@ STOP. Do not proceed to implementation. Output the plan and wait for approval.
 
 ---
 
-## §2. H2 — BUILD
+## H2 — BUILD
 
 **MODEL: Claude Sonnet 5** · alternate: GPT-5.6 Luna
 *Why:* sustained adherence to contract boundaries across a long single-file edit. Safe at
@@ -178,7 +246,7 @@ Report: files touched, count of replacements, and the full output of `npm test`.
 
 ---
 
-## §3. H3 — TEST DESIGN
+## H3 — TEST DESIGN
 
 **MODEL: Claude Opus 5** · alternate: GPT-5.6 Sol *(must differ from H2 — §0 Rule 1)*
 *Why:* this is where the repo's worst defects are born. A test that passes for the wrong
@@ -216,8 +284,10 @@ Output the assertions plus, for each, its named failing edit and the red/green e
 
 ---
 
-## §4. H4 — FIX LOOP
+## H4 — FIX LOOP
 
+**CONDITIONAL** — runs only when a gate is red for a reason H3 did not intend. A pin that
+H3 deliberately rewrote is not a fix-loop entry; that work belongs to H3.
 **MODEL: Grok 4.5 Heavy** · alternate: Gemini 3.6 Flash for one-line fixes
 *Why:* convergent work against a known failure. Note this is the *deliberate-reasoning*
 variant — if you want speed here instead, drop to a fast model; do not pay Heavy's
@@ -244,7 +314,7 @@ Do not fix a second, unrelated thing you noticed. Report it as a finding instead
 
 ---
 
-## §5. H5 — AUDIT
+## H5 — AUDIT
 
 **MODEL: GPT-5.6 Sol** · alternate: Grok 4.5 Heavy *(must differ from H2 and, budget
 permitting, from H3 — §0 Rule 1)*
@@ -282,8 +352,11 @@ Then answer explicitly, even if the answer is "none":
 
 ---
 
-## §6. H6 — UI STRUCTURE
+## H6 — UI STRUCTURE
 
+**CONDITIONAL** — runs when the ticket changes layout, hierarchy or the COUNT of rendered
+elements. A change that swaps one element's content for another's is not a layout change;
+say so and skip, rather than measuring a page that did not move.
 **MODEL: Claude Sonnet 5** · alternate: Gemini 3.6 Flash for pure layout
 *Why:* responsive structure and state visibility across two very different surfaces.
 
@@ -312,8 +385,11 @@ Finish with the browser suites' real output, plus the before/after measurements.
 
 ---
 
-## §7. H7 — NEWCOMER READ  ⟵ *the single Fable 5 slot*
+## H7 — NEWCOMER READ  ⟵ *the single Fable 5 slot*
 
+**CONDITIONAL** — runs when the ticket changes what a NON-OPERATOR reads. Operator-only
+surfaces (anything behind `!publicView`, anything in `/admin.html`) have no newcomer, and
+running this phase on one produces confident feedback from the wrong persona.
 **MODEL: Fable 5** · no alternate — spend the slot here
 *Why:* the remaining open thread on this product is legibility, which is a *reading*
 problem, not a reasoning-depth problem. It wants a model that has not been marinating in
@@ -345,7 +421,7 @@ Findings only. No code, no mockups. Rank by how much a reader loses to each.
 
 ---
 
-## §8. H8 — RELEASE
+## H8 — RELEASE
 
 **MODEL: Claude Sonnet 5** · alternate: GPT-5.6 Luna
 *Why:* house-style prose against a strict template, plus a mechanical doc-rot sweep.
@@ -368,7 +444,8 @@ Close out <ticket>.
 3. DOC-ROT SWEEP. Grep the repo for anything that describes what this ticket changed:
    README, AGENTS.md, HARNESS.md, source comments, rendered footers, tooltips, test
    comments. A cut takes its attribution with it (§P.5).
-4. Confirm all four gates green with real output: npm test · test:ui · test:public ·
+4. Run `npm run gates` — all four in order, failing on the first red (§0 Rule 4; do NOT
+   hand-chain them). Paste the real output. Equivalent to: npm test · test:ui · test:public ·
    audit:prod.
 5. Commit with a message naming the ticket. Push to the working branch.
 ```
@@ -398,18 +475,49 @@ Two standing rules for enhancements:
 
 ---
 
-## §9. Running a pass
+## §F. The flow
 
 ```
-H1 Plan  ──►  [approve]  ──►  H2 Build  ──►  H3 Test design  ──►  H4 Fix (loop until green)
-                                                     │
-                                                     ▼
-                                   H5 Audit  ──►  [H6 / H7 if the ticket is UI]  ──►  H8 Release
+        ┌─ fresh session ─┐                          ┌─ fresh session ─┐
+        │   H0 DISCOVERY  │                          │ H3 TEST DESIGN  │
+        └────────┬────────┘                          └────────┬────────┘
+                 │  top-3 candidates                          │  assertions + negative controls
+                 ▼                                            │
+   [pick one] ──► H1 PLAN ──► [approve] ──► H2 BUILD ──────────┤
+                                                              ▼
+                                                    H4 FIX  (only if red)
+                                                              │
+                        ┌─ fresh session ─┐                   ▼
+                        │    H5 AUDIT     │ ◄─────────────────┘
+                        └────────┬────────┘
+                                 ▼
+              H6 UI · H7 NEWCOMER  (each only if its trigger fires)
+                                 ▼
+                    [approve] ──► H8 RELEASE ──► npm run gates
 ```
 
+- **Three phases want a fresh session** (H0, H3, H5) — the §0 Rule 3 substitute for
+  rotation when one model runs everything. If you have multiple models, use both.
 - **Approval gates** are at H1→H2 and before H8. Everything between runs without asking.
+- **H1 compresses for a micro ticket** — a one-line fix with a known blast radius gets
+  items 1, 2, 5 and 7 only, inline, and skips the approval stop. Items 3, 4 and 6 are
+  where a large ticket earns its plan; a micro ticket that needs them is not micro.
 - **H3 may send work back to H2**; H4 loops until green. Neither is a failure state.
-- **H5 findings** re-enter at H2 as new tickets, not as edits to the ticket under audit —
-  single-purpose tickets debug faster than bundled ones.
+- **H3 rewriting an existing assertion is normal, not a regression.** A pin that resists
+  the fix is usually a pin that encoded the defect — that is a finding, not an obstacle.
+- **H5 findings** re-enter at H0's candidate list, not as edits to the ticket under audit
+  — single-purpose tickets debug faster than bundled ones. The exception is a finding
+  *about the diff itself* (a stale comment the change just created), which H5 fixes in
+  place, because a cut takes its attribution with it in the SAME change (§P.5).
+- **A skipped conditional phase is stated, never silent** (§P.9): "H7 skipped — the
+  surface is operator-only" is an output; saying nothing is not.
 - **A phase that wants to edit outside its scope stops and reports.** That is the
   designed behavior, not an obstruction.
+
+### Feeding the harness back into itself
+
+The first run corrected two of its own prompts (H8 asserted a version-bump rule this repo
+does not follow; H4/H6/H7 ran unconditionally when they had no trigger). **A phase prompt
+that turns out to be wrong about the repo is a ticket against this file**, and it is the
+cheapest ticket available — nothing else in the system fixes an instruction that is
+confidently wrong. Log it in the pass's *Completed*, fix it in the same commit.

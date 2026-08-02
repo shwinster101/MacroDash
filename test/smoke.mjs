@@ -3392,6 +3392,30 @@ ok("the enhancement slot demands all five fields, so a new phase cannot arrive u
 ok("HARNESS.md quotes no version and no assertion count (the [40] rule, extended)",
   !/v\d+\.\d+\.\d+/.test(harnessSrc) && !/\d{3,}[- ]assertion/.test(harnessSrc) &&
   /CLAUDE\.md wins/.test(harnessSrc));
+/* The first end-to-end run rewrote the flow: discovery was unstaffed (every other phase
+   starts from "TICKET: <...>" and assumes one exists), three phases ran with no trigger,
+   and rotation silently degraded because one model held every context. */
+ok("H0 discovery exists and is a distinct job from auditing a diff",
+  /^## H0 — DISCOVERY/m.test(harnessSrc) &&
+  /H5 judges a change, H0 judges a codebase/.test(harnessSrc));
+ok("the single-model degradation is STATED — Rule 1 without it is documentation, not a control",
+  /Rule 3 — when one model runs every phase/.test(harnessSrc) &&
+  /fresh session/.test(harnessSrc) &&
+  // Prose wraps: match a phrase that cannot straddle the fold, not a full sentence.
+  /Rule 1 without this note is documentation/.test(harnessSrc));
+ok("the conditional phases each declare the trigger that makes them run",
+  ["## H4", "## H6", "## H7"].every((h) => {
+    const i = harnessSrc.indexOf(h);
+    return i > 0 && /^\*\*CONDITIONAL\*\* — runs/m.test(harnessSrc.slice(i, i + 400));
+  }));
+// Rule 4 exists because a hand-chained `npm test | grep FAIL && git commit` exits 0 when
+// grep FINDS a failure — that let a red commit through on this harness's first run.
+ok("the gates are a script, not a chain the operator can get wrong",
+  /npm run gates/.test(harnessSrc) && /A gate you can mis-chain is not a gate/.test(harnessSrc) &&
+  (() => { const g = JSON.parse(readFileSync(new URL("../package.json", import.meta.url),
+      "utf8")).scripts.gates || "";
+    return ["npm test", "test:ui", "test:public", "audit:prod"].every((x) => g.includes(x)) &&
+      !g.includes("|"); })());
 ok("README and CLAUDE.md point AT the harness rather than restating its prompts",
   /`HARNESS\.md`/.test(readmeSrc) && /HARNESS\.md/.test(claudeSrc) &&
   !/THE NEGATIVE-CONTROL RULE/.test(readmeSrc) && !/THE NEGATIVE-CONTROL RULE/.test(claudeSrc));
