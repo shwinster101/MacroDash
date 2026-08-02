@@ -65,7 +65,24 @@ def test_rung2b_stale_red_hinge():
 def test_rung3_no_pt_model():
     card = make(pt_model=None)
     r = bucket(card, TODAY, **LIVE)
-    assert r.bucket == "PENDING" and r.reason == "no_target"
+    assert r.bucket == "PENDING" and r.reason == "no_target" and r.eligible is False
+
+
+def test_rung3_eligible_is_false_even_when_gate_is_eligible():
+    # Regression: eligible must be hardcoded False here, never gate.eligible --
+    # the global eligible formula requires pt_model is not None as its own AND
+    # condition, so a clean (PASS-only) gate must not leak eligible=True through
+    # a card that has no price target at all.
+    card = make(
+        pt_model=None,
+        gates={"G1": {"status": "PASS", "hard_stop": False, "tag": None, "note": ""}},
+    )
+    from tt.derive import gate_multiplier
+
+    gate = gate_multiplier(card, TODAY)
+    assert gate.eligible is True  # precondition: the gate alone would say eligible
+    r = bucket(card, TODAY, **LIVE)
+    assert r.eligible is False
 
 
 def test_rung4_horizon_lapsed():

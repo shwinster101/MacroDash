@@ -43,10 +43,16 @@ class Holdings:
             # Every fit_mult call degrades to its "unheld" branch (1.00).
             return cls(as_of=None, records={})
         data = json.loads(p.read_text())
-        records = {
-            sym.upper(): HoldingRecord(pct=float(v.get("pct", 0.0)), legs=int(v.get("legs", 1)))
-            for sym, v in data.get("holdings", {}).items()
-        }
+        # Missing "pct" is SKIPPED, never defaulted to 0.0 -- matching
+        # macrodash_client.holdings_from_positions()'s "unmeasured weight --
+        # never invented as a 0" doctrine (tt.js's own rule). A hand-edited
+        # holdings.json that omits pct for a real position must not silently
+        # read as a real, measured 0% and mask a cap breach.
+        records = {}
+        for sym, v in data.get("holdings", {}).items():
+            if v.get("pct") is None:
+                continue
+            records[sym.upper()] = HoldingRecord(pct=float(v["pct"]), legs=int(v.get("legs", 1)))
         return cls(as_of=data.get("as_of"), records=records)
 
     def weight(self, symbol: str) -> float:

@@ -264,7 +264,7 @@ def render_report(
         lines.append(f"  {f.symbol:<6} {f.line}")
     lines.append("  -- discretionary (ascending, weakest first) --")
     for row in funding["discretionary"]:
-        lines.append(f"  #{row['rank']:<3} {row['sym']:<6} {row['rank_constrained']*100:.2f}")
+        lines.append(f"  #{row['rank']:<3} {row['sym']:<6} {row['rank_constrained']*100:.2f}%/yr")
 
     near = near_term_board(entries)
     lines.append("")

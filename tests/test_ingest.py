@@ -77,6 +77,21 @@ def test_git_commit_is_a_noop_on_identical_content(tmp_path):
     assert log.stdout.count("\n") == 1  # exactly one commit total
 
 
+def test_git_commit_handles_dash_leading_filename(tmp_path):
+    # Regression: a bare "-AB.json" (no directory prefix, which happens when
+    # --cards is "." and the symbol itself starts with "-" -- models.py's
+    # symbol regex permits that) must not be parsed as a git flag. Without
+    # "--" separating the pathspec, `git add -AB.json` fails with "unknown
+    # switch `B'".
+    repo = init_repo(tmp_path)
+    f = repo / "-AB.json"
+    f.write_text('{"x": 1}\n')
+    made = git_commit(repo, f, "tt: -AB DEEP 2026-08-02")
+    assert made is True
+    log = subprocess.run(["git", "log", "--oneline"], cwd=repo, capture_output=True, text=True, check=True)
+    assert "tt: -AB DEEP 2026-08-02" in log.stdout
+
+
 def _write_inbox(inbox: Path, name: str, payload: dict) -> Path:
     inbox.mkdir(parents=True, exist_ok=True)
     p = inbox / name

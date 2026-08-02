@@ -55,9 +55,11 @@ def bucket(
     if is_stale(card, today):
         return BucketResult("UNVALIDATED", None, False, gate, None, None)
 
-    # rung 3: no pt_model at all.
+    # rung 3: no pt_model at all. eligible is hardcoded False (not gate.eligible) --
+    # the global eligible formula requires pt_model is not None as its own AND
+    # condition, so it can never be true here regardless of gate state.
     if card.pt_model is None:
-        return BucketResult("PENDING", "no_target", gate.eligible, gate, None, None)
+        return BucketResult("PENDING", "no_target", False, gate, None, None)
 
     days_to_horizon = (card.pt_model.horizon - today).days
 

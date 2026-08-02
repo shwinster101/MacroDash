@@ -63,10 +63,14 @@ def git_commit(repo_dir: Path, path: Path, message: str) -> bool:
     """Returns True if a commit was actually made. Ingesting a byte-identical
     card a second time (re-running the same paste) must not create an empty
     commit -- `git diff --cached --quiet` is how that's detected."""
-    subprocess.run(["git", "add", str(path)], cwd=repo_dir, check=True)
+    # "--" separates the pathspec from flags -- a symbol allowed to start with
+    # "-" (models.py's own regex) plus a relative --cards path with no
+    # directory prefix would otherwise let e.g. "-AB.json" be parsed as a
+    # git flag instead of a filename.
+    subprocess.run(["git", "add", "--", str(path)], cwd=repo_dir, check=True)
     diff = subprocess.run(["git", "diff", "--cached", "--quiet"], cwd=repo_dir)
     if diff.returncode == 0:
-        subprocess.run(["git", "reset", "-q", str(path)], cwd=repo_dir, check=True)
+        subprocess.run(["git", "reset", "-q", "--", str(path)], cwd=repo_dir, check=True)
         return False
     subprocess.run(["git", "commit", "-q", "-m", message], cwd=repo_dir, check=True)
     return True
