@@ -12,7 +12,7 @@ import { computeFiveWhys, isMacroMaterial } from "../src/fiveWhys.js";
 // source text, which is stronger (the actual code runs) and immune to formatting drift.
 import { NFCI_TIGHT as REG_NFCI_TIGHT, NFCI_LOOSE as REG_NFCI_LOOSE, REGIME_BAND_TABLE,
   REGIME_QUORUM, verdictFrom, computeRegime as regimeCompute, flipConditions as regimeFlips,
-  regimeFactors as regimeFactorRows } from "../src/regime.js";
+  regimeFactors as regimeFactorRows, voteStyle } from "../src/regime.js";
 import { REGIME_FACTOR_FIELDS, FACTOR_FIELD, fieldMode, factorExclusions, buildEvidenceSet } from "../src/evidence.js";
 import { LASTVALID_KEY, summarizeEvidence, compareEvidence } from "../src/whatChanged.js";
 import {
@@ -1911,7 +1911,10 @@ ok("nfci: it appears in the displayed factor breakdown, so 'X/Y bullish' matches
 // FIX-E (v3.49): every factor carries its own chip label (`short`), and the chip strip renders
 // from it — the old hardcoded 5-label array left the 6th (NFCI) chip literally "undefined".
 ok("FIX-E: chip labels come from the factors themselves, not a parallel hardcoded array",
-  dashSrc.includes("{f.short} {f.stale?") && !dashSrc.includes('["10Y","VIX","F&G","CPI","VAL"][i]') &&
+  // v3.62: the glyph moved from an inline `f.stale?…` ternary to the shared voteStyle map, so
+  // the pin follows it. The CONTRACT is unchanged and is what these three clauses measure:
+  // the label comes from the row's own `short`, and no parallel label array exists anywhere.
+  dashSrc.includes("{f.short} {vs.glyph}") && !dashSrc.includes('["10Y","VIX","F&G","CPI","VAL"][i]') &&
   !regimeSrc.includes('["10Y","VIX","F&G","CPI","VAL"]'));
 ok("nfci: the mock baseline (-0.42) sits in the NEUTRAL zone — the demo shows a factor that " +
    "ABSTAINS in ordinary conditions, not one wired to vote bullish by default",
@@ -2396,8 +2399,12 @@ ok("a11y B4: ONE concise visually-hidden status region announces state changes",
   /aria-live="polite" role="status" className="visually-hidden"/.test(dashSrc) &&
   /Backdrop \$\{regime\.label\}: \$\{regime\.counted\} of \$\{regime\.totalFactors\} factors usable\./.test(dashSrc));
 ok("a11y B4: header actions carry 44px thumb targets at phone width",
+  // v3.62: the TT and TERMINAL actions moved inside the ⋯ OPS disclosure, and the summary
+  // itself became an action — so the count is 4 (share · OPS · TT · TERMINAL). The contract is
+  // unchanged and is what matters: EVERY header action gets a real thumb target, including the
+  // ones now one tap deep, which is why they kept the class rather than losing it to the menu.
   /\.hdr-act\{min-height:44px;min-width:44px/.test(dashSrc) &&
-  (dashSrc.match(/className="hdr-act"/g) || []).length === 3);
+  (dashSrc.match(/className="hdr-act"/g) || []).length === 4);
 ok("a11y B4: sparklines are decorative (aria-hidden); the SPY chart has a TEXT equivalent",
   /\{spark&&<div aria-hidden="true"/.test(dashSrc) &&
   /its 200-day average of/.test(dashSrc));
@@ -3147,9 +3154,29 @@ ok("tt-glance: the board heading is chip-length; the coaching line lives in the 
   adminSrc.includes("click any ticker chip to open its TT Card"));
 // F2b-3: operator tooling off the public route (the A4 pattern).
 ok("glance: the TT copy button and the FIRED/BLIND alert badges gate on !publicView",
-  /\{!publicView&&<button onClick=\{handleTtCopy\}/.test(dashSrc) &&
+  // v3.62: TT and TERMINAL now live inside the ⋯ OPS disclosure, so the gate moved OUT to the
+  // <details> that wraps them — the contract ("a visitor never sees operator tooling") is
+  // measured by checking the menu is gated AND that both actions are genuinely inside it,
+  // rather than pinning the old adjacency of one button to one `!publicView`.
+  (() => {
+    const open = dashSrc.indexOf('<details className="hdr-ops"');
+    const close = dashSrc.indexOf("</details>", open);
+    if (open < 0 || close < 0) return false;
+    const menu = dashSrc.slice(open, close);
+    return /\{!publicView&&\(\s*\n?\s*<details className="hdr-ops"/.test(dashSrc) &&
+      menu.includes("onClick={handleTtCopy}") && menu.includes('href="/admin.html"');
+  })() &&
   /\{!publicView&&activeAlerts>0&&<Badge/.test(dashSrc) &&
   /\{!publicView&&activeAlerts===0&&alertBlind>0&&<Badge/.test(dashSrc));
+// v3.62: a FIRED/BLIND badge is a red fact — the v3.25 rule (a collapse never hides one) means
+// the alert badges must stay OUTSIDE the disclosure even though they are also operator-only.
+ok("the OPS menu does not swallow the alert badges — a red fact stays visible while closed",
+  (() => {
+    const open = dashSrc.indexOf('<details className="hdr-ops"');
+    const close = dashSrc.indexOf("</details>", open);
+    const menu = open < 0 ? "" : dashSrc.slice(open, close);
+    return menu.length > 0 && !menu.includes("activeAlerts") && !menu.includes("alertBlind");
+  })());
 
 // ─────────────────────────────────────────────────────────────────────────────
 console.log("\n[39] CI-FIX — the browser suites must not read a PRESENT browser as absent");
@@ -3240,6 +3267,59 @@ ok("CLAUDE.md's status header no longer pins a hand-bumped version",
 ok("HANDOFF.md declares itself a dated ARCHIVE, so it cannot read as current state",
   /ARCHIVE/.test(handoffSrc) && /NOT current state/i.test(handoffSrc) &&
   /`CLAUDE\.md` is canonical/i.test(handoffSrc));
+
+// ─────────────────────────────────────────────────────────────────────────────
+console.log("\n[42] FEAT-NEUTRAL — a neutral factor must never render as bearish");
+// WHY THIS SECTION EXISTS: regimeFactors() predated REGIME_BAND_TABLE and was never migrated,
+// so each row carried a hand-written boolean `bull` duplicating the table's BULL edge with NO
+// copy of the BEAR edge. RegimeBand branched on that boolean, so red ▼ was the fallthrough and
+// EVERY neutral factor rendered bearish — while the line directly above printed "N neutral"
+// and the Drivers matrix showed the same factor as grey NEUTRAL. `regimeFactors` was imported
+// into this file as `regimeFactorRows` and NEVER CALLED, which is how it went unnoticed.
+const neutralD = {
+  crossAsset:{ treasury10y:{ m1:0.0 } },                                  // inside [-0.10, 0.15]
+  marketPulse:{ vix:{ current:21 }, fearGreed:{ score:42, label:"Fear" } },// 18–25 and 30–55
+  macro:{ cpi:{ trend:[3.0,2.9,2.8] },                                    // cooling → bull
+    shillerPe:{ current:40.91, mean:17.6, ath:44.19, pctOfAth:92.6 },     // >30 → bear
+    nfci:{ current:-0.55 } },                                            // ≤ -0.5 → bull
+};
+const nRows = regimeFactorRows(neutralD);
+const rowOf = (k) => nRows.find((r) => r.key === k);
+ok("every row carries a 4-state vote, never a bear/neutral-collapsing boolean",
+  nRows.length === 6 && nRows.every((r) => ["bull","bear","neutral","excluded"].includes(r.vote)) &&
+  nRows.every((r) => !("bull" in r)));
+ok("a factor in its neutral zone votes NEUTRAL (F&G 42 — the audit's live case)",
+  rowOf("fearGreed").vote === "neutral" && rowOf("vix").vote === "neutral" &&
+  rowOf("tenYear").vote === "neutral");
+ok("neutral is visually DISTINCT from bear — the defect, stated as a test",
+  voteStyle("neutral").glyph !== voteStyle("bear").glyph &&
+  voteStyle("neutral").colorKey !== voteStyle("bear").colorKey);
+ok("a genuinely bearish factor still reads bearish (no over-correction)",
+  rowOf("valuation").vote === "bear" && voteStyle("bear").glyph === "▼");
+ok("the row vote matches the vote computeRegime actually counted — one derivation",
+  (() => { const r = regimeCompute(neutralD);
+    const bulls = nRows.filter((x) => x.vote === "bull").length;
+    const bears = nRows.filter((x) => x.vote === "bear").length;
+    return r.bullVotes === bulls && r.bearVotes === bears && r.counted === 6; })());
+ok("EXCLUDED wins over the band vote — a factor that is not counted reports no lean",
+  (() => { const ex = regimeFactorRows(neutralD, new Set(["valuation"]));
+    const v = ex.find((r) => r.key === "valuation");
+    return v.vote === "excluded" && v.stale === true && /STALE — excluded/.test(v.val); })());
+ok("a non-finite reading votes NEUTRAL, not a confident bearish chip",
+  (() => { const bad = JSON.parse(JSON.stringify(neutralD));
+    bad.marketPulse.vix.current = NaN;
+    return regimeFactorRows(bad).find((r) => r.key === "vix").vote === "neutral"; })());
+// The whole point of the shared map: the two altitudes cannot resolve a vote differently.
+ok("BOTH altitudes resolve appearance through the ONE voteStyle map (hero + Drivers matrix)",
+  dashSrc.includes("const vs=voteStyle(f.vote)") &&
+  dashSrc.includes("const vc=T[voteStyle(f.vote).colorKey]") &&
+  !/f\.vote==="bull"\?T\.green/.test(dashSrc));
+ok("regimeFactors derives its vote from the band table, keeping no second copy of a threshold",
+  regimeSrc.includes("band.vote(band.read(d), d)") &&
+  !/bull:d\.marketPulse\.vix\.current<18/.test(regimeSrc) &&
+  !/bull:d\.marketPulse\.fearGreed\.score>55/.test(regimeSrc));
+ok("evidence.js consumes that vote rather than re-deriving it from the bands",
+  evidenceSrc.includes("vote: f.vote") && !evidenceSrc.includes("band.vote(band.read(d), d)"));
 
 console.log(`\n=== SMOKE TEST: ${pass} passed, ${fail} failed ===`);
 process.exit(fail === 0 ? 0 : 1);

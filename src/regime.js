@@ -36,34 +36,40 @@ export const NFCI_LOOSE = -0.5;   // ≥ half an SD below the mean → genuinely
    in a decision surface, which is the one thing this dashboard exists not to do. */
 export const REGIME_BAND_TABLE = [
   { key:"tenYear", short:"10Y", label:"10Y Direction",
+    plain:"the 10-year yield",
     read:(d)=>d.crossAsset.treasury10y.m1,
     vote:(v)=> v < -0.10 ? "bull" : v > 0.15 ? "bear" : "neutral",
     flip:{ bullEdge:-0.10, bearEdge:0.15, bullSide:"below", bullInclusive:false,
            unit:" ppt", dec:2, name:"the 10Y monthly change" } },
   { key:"vix", short:"VIX", label:"VIX Level",
+    plain:"volatility",
     read:(d)=>d.marketPulse.vix.current,
     vote:(v)=> v < 18 ? "bull" : v > 25 ? "bear" : "neutral",
     flip:{ bullEdge:18, bearEdge:25, bullSide:"below", bullInclusive:false,
            unit:"", dec:2, name:"VIX" } },
   { key:"fearGreed", short:"F&G", label:"Fear & Greed",
+    plain:"sentiment",
     read:(d)=>d.marketPulse.fearGreed.score,
     vote:(v)=> v > 55 ? "bull" : v < 30 ? "bear" : "neutral",
     // The one INVERTED factor: bullish ABOVE its edge, not below.
     flip:{ bullEdge:55, bearEdge:30, bullSide:"above", bullInclusive:false,
            unit:"", dec:0, name:"Fear & Greed" } },
   { key:"cpiHeadline", short:"CPI", label:"CPI Trend",
+    plain:"inflation",
     read:(d)=>d.macro.cpi.trend,
     vote:(t)=> t[t.length-1] < t[t.length-2] ? "bull"
              : (t[t.length-1] - t[0] > 0.5 ? "bear" : "neutral"),
     flip:null,
     flipWhy:"votes on the SHAPE of its trend (latest print vs the prior one, and drift from the series start) — there is no single level to cross" },
   { key:"valuation", short:"VAL", label:"Valuation",
+    plain:"valuation",
     read:(d)=>d.macro.shillerPe,
     vote:(c)=>{ const p = c.ath ? (c.current / c.ath) * 100 : c.pctOfAth;
                 return c.current < c.mean * 1.5 ? "bull" : (c.current > 30 || p > 90 ? "bear" : "neutral"); },
     flip:null,
     flipWhy:"turns bearish on EITHER an absolute CAPE above 30 OR a level above 90% of its all-time high — two conditions, so no single crossing defines the flip" },
   { key:"nfci", short:"NFCI", label:"Fin Conditions",
+    plain:"financial conditions",
     read:(d)=>d.macro.nfci.current,
     // Asymmetric and INCLUSIVE on the bull side (<=), unlike every other factor — see the
     // NFCI_BANDS derivation at the tile. flipConditions renders "at or below" for it.
@@ -232,15 +238,47 @@ export function flipConditions(d, stale=new Set()) {
 // describes is the FIX-E defect; keep them and REGIME_FACTOR_FIELDS in step. `stale` (Set of factor keys)
 // marks factors backed by dead/stale live data — they are flagged and excluded from the
 // bull tally so the displayed "X/Y bullish" matches the vote computeRegime actually cast.
+/* FEAT-NEUTRAL (v3.62) — the row's STATE comes from REGIME_BAND_TABLE, never from a second
+   copy of the thresholds.
+
+   This function predates the band table and was never migrated, so until now each row carried
+   a hand-written boolean `bull` that duplicated the table's BULL edge (`<-0.10`, `<18`, `>55`,
+   `<=NFCI_LOOSE`) and had no copy of the BEAR edge at all. That made `neutral` and `bear`
+   indistinguishable downstream, and RegimeBand — whose only inputs were these rows — rendered
+   every non-bull factor as a red ▼. The hero therefore printed "N bull · N neutral · N bear"
+   while painting the neutral factor bearish, and the Drivers matrix (which reads the real
+   4-state vote) disagreed with it 500px lower on the same page.
+
+   `vote` is now exactly what computeRegime counted: one derivation, many altitudes — the same
+   rule the terminal's ptModelRows follows. EXCLUDED wins over the band vote, because a factor
+   that is not voting has no lean to report. */
 export function regimeFactors(d, stale=new Set()) {
+  const voteOf=(key)=>{
+    const band=REGIME_BAND_TABLE.find((t)=>t.key===key);
+    return band ? band.vote(band.read(d), d) : "neutral";
+  };
   const factors=[
-    {key:"tenYear",     short:"10Y",  label:"10Y Direction",  val:d.crossAsset.treasury10y.m1<-0.10?"Falling ↓ (bullish)":"Flat/rising",  bull:d.crossAsset.treasury10y.m1<-0.10},
-    {key:"vix",         short:"VIX",  label:"VIX Level",      val:`${d.marketPulse.vix.current} — ${d.marketPulse.vix.current<18?"Low (bullish)":d.marketPulse.vix.current<25?"Elevated":"Spiking (bearish)"}`, bull:d.marketPulse.vix.current<18},
-    {key:"fearGreed",   short:"F&G",  label:"Fear & Greed",   val:`${d.marketPulse.fearGreed.score} — ${d.marketPulse.fearGreed.label}`,   bull:d.marketPulse.fearGreed.score>55},
-    {key:"cpiHeadline", short:"CPI",  label:"CPI Trend",      val:d.macro.cpi.trend.slice(-1)[0]<d.macro.cpi.trend.slice(-2)[0]?"Cooling (bullish)":"Re-accelerating", bull:d.macro.cpi.trend.slice(-1)[0]<d.macro.cpi.trend.slice(-2)[0]},
-    {key:"valuation",   short:"VAL",  label:"Valuation",      val:`${d.macro.shillerPe.current} CAPE · ${(d.macro.shillerPe.ath?(d.macro.shillerPe.current/d.macro.shillerPe.ath)*100:d.macro.shillerPe.pctOfAth).toFixed(1)}% of ATH`, bull:d.macro.shillerPe.current<d.macro.shillerPe.mean*1.5},
-    {key:"nfci",        short:"NFCI", label:"Fin Conditions", val:`${d.macro.nfci.current>0?"+":""}${d.macro.nfci.current.toFixed(2)} SD — ${d.macro.nfci.current>NFCI_TIGHT?"Tighter than the 1971– mean (bearish)":d.macro.nfci.current<=NFCI_LOOSE?"≥½ SD below mean (bullish)":"Looser than mean, but within ½ SD"}`, bull:d.macro.nfci.current<=NFCI_LOOSE},
-  ];
-  // Stale factors: neutralize the bull flag and annotate so the UI shows them as excluded.
-  return factors.map(f => stale.has(f.key) ? { ...f, stale:true, bull:false, val:`${f.val} · STALE — excluded` } : f);
+    {key:"tenYear",     short:"10Y",  label:"10Y Direction",  val:d.crossAsset.treasury10y.m1<-0.10?"Falling ↓ (bullish)":"Flat/rising"},
+    {key:"vix",         short:"VIX",  label:"VIX Level",      val:`${d.marketPulse.vix.current} — ${d.marketPulse.vix.current<18?"Low (bullish)":d.marketPulse.vix.current<25?"Elevated":"Spiking (bearish)"}`},
+    {key:"fearGreed",   short:"F&G",  label:"Fear & Greed",   val:`${d.marketPulse.fearGreed.score} — ${d.marketPulse.fearGreed.label}`},
+    {key:"cpiHeadline", short:"CPI",  label:"CPI Trend",      val:d.macro.cpi.trend.slice(-1)[0]<d.macro.cpi.trend.slice(-2)[0]?"Cooling (bullish)":"Re-accelerating"},
+    {key:"valuation",   short:"VAL",  label:"Valuation",      val:`${d.macro.shillerPe.current} CAPE · ${(d.macro.shillerPe.ath?(d.macro.shillerPe.current/d.macro.shillerPe.ath)*100:d.macro.shillerPe.pctOfAth).toFixed(1)}% of ATH`},
+    {key:"nfci",        short:"NFCI", label:"Fin Conditions", val:`${d.macro.nfci.current>0?"+":""}${d.macro.nfci.current.toFixed(2)} SD — ${d.macro.nfci.current>NFCI_TIGHT?"Tighter than the 1971– mean (bearish)":d.macro.nfci.current<=NFCI_LOOSE?"≥½ SD below mean (bullish)":"Looser than mean, but within ½ SD"}`},
+  ].map((f)=>({ ...f, vote:voteOf(f.key) }));
+  // Stale factors: the vote becomes EXCLUDED and the row says so — a factor the model refuses
+  // to count must never also report a lean.
+  return factors.map(f => stale.has(f.key)
+    ? { ...f, stale:true, vote:"excluded", val:`${f.val} · STALE — excluded` }
+    : f);
 }
+
+/* The ONE vote→appearance mapping. Both altitudes that render a factor (the hero chip strip in
+   RegimeBand and the C3 Drivers matrix) resolve through this, so they cannot drift apart again
+   — which is exactly how a neutral factor came to be green-or-red with no third option. */
+export const VOTE_STYLE = {
+  bull:     { colorKey:"green",         glyph:"▲", word:"BULL"     },
+  bear:     { colorKey:"red",           glyph:"▼", word:"BEAR"     },
+  neutral:  { colorKey:"textSecondary", glyph:"•", word:"NEUTRAL"  },
+  excluded: { colorKey:"amber",         glyph:"⏱", word:"EXCLUDED" },
+};
+export const voteStyle = (vote) => VOTE_STYLE[vote] || VOTE_STYLE.neutral;

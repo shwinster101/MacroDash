@@ -2,8 +2,8 @@ import { Fragment, useState, useEffect, useCallback } from "react";
 import { LineChart, Line, BarChart, Bar, Cell, AreaChart, Area, XAxis, YAxis, Tooltip, ResponsiveContainer, ReferenceLine } from "recharts";
 import { useMarketData } from "./useMarketData.js"; // FEAT-204 wiring
 import { computeFiveWhys } from "./fiveWhys.js"; // v2.5: rule-based 5 Whys ($0, derived from live data)
-import { NFCI_TIGHT, NFCI_LOOSE, REGIME_BAND_TABLE, REGIME_QUORUM, verdictFrom, computeRegime, flipConditions, regimeFactors } from "./regime.js"; // C1 (v3.60): the extracted engine
-import { buildEvidenceSet, factorExclusions, fieldMode } from "./evidence.js"; // C1 (v3.60): the typed contract
+import { NFCI_TIGHT, NFCI_LOOSE, REGIME_BAND_TABLE, REGIME_QUORUM, verdictFrom, computeRegime, flipConditions, regimeFactors, voteStyle } from "./regime.js"; // C1 (v3.60): the extracted engine; voteStyle = FEAT-NEUTRAL (v3.62)
+import { buildEvidenceSet, factorExclusions, fieldMode, FACTOR_FIELD } from "./evidence.js"; // C1 (v3.60): the typed contract
 import { LASTVALID_KEY, summarizeEvidence, compareEvidence } from "./whatChanged.js"; // C4 (v3.60)
 import { isStale, cadenceOf, parseObsDate, isMarketHoliday } from "./sources.js"; // FEAT-R3: per-tile, cadence-aware staleness + shared market calendar
 import { computeMacroFlip, buildTtReadout, formatTtPaste } from "./ttReadout.js"; // FEAT-331/332: Macro Flip + TT paste
@@ -53,6 +53,17 @@ const DT = {
   "font-mono":      "'IBM Plex Mono','Courier New',monospace",
   "font-sans":      "'DM Sans',system-ui,sans-serif",
   "font-display":   "'Syne',sans-serif",
+  /* TYPE SCALE (v3.62, newcomer audit) — this file had ~200 hardcoded `fontSize:` literals and
+     no scale at all, while public/admin.html has had `--fs-*` since v3.42. The audit measured
+     the load-bearing text — provenance, factor chips, the verdict sub-line — at 7–9px, which
+     is the honesty layer the whole product rests on rendered at a size a phone reader has to
+     work to read. These are the sizes to reach for; the literals stay where they are decorative
+     so this stays a targeted lift, not a reflow of every component (owner call). */
+  "fs-xs":          9,    // micro-labels: section eyebrows, DEMO/TAPE tags
+  "fs-s":           10,   // secondary detail
+  "fs-m":           11,   // provenance + factor chips — the load-bearing minimum
+  "fs-l":           13,   // sub-headlines
+  "fs-xl":          22,   // the verdict itself
 };
 const T = {
   bg:DT["bg"], surface:DT["surface"], surfaceHigh:DT["surface-high"],
@@ -63,6 +74,7 @@ const T = {
   blue:"#3498db", purple:"#9b59b6",
   textPrimary:DT["text-primary"], textSecondary:DT["text-secondary"], textMuted:DT["text-muted"],
   fontMono:DT["font-mono"], fontSans:DT["font-sans"], fontDisplay:DT["font-display"],
+  fsXs:DT["fs-xs"], fsS:DT["fs-s"], fsM:DT["fs-m"], fsL:DT["fs-l"], fsXl:DT["fs-xl"],
 };
 
 // ─── WEN MOON METER THRESHOLDS (configurable) ─────────────────────────────
@@ -513,7 +525,8 @@ const WenMoonBadge = ({ spyChangePct }) => {
   return (
     <div
       onClick={handleClick}
-      title={IS_DEV ? "Click to cycle mood (dev only)" : undefined}
+      title={IS_DEV ? "Click to cycle mood (dev only)"
+                    : "Today's tape — SPY's move so far today. Not the macro backdrop verdict, which is the six-factor call at the top of the page."}
       style={{
         display:"flex", alignItems:"center", gap:6, flexShrink:0,
         background: s.color + "18",
@@ -525,6 +538,14 @@ const WenMoonBadge = ({ spyChangePct }) => {
         userSelect: "none",
         transition: "all 0.2s",
       }}>
+      {/* FEAT-TAPE (v3.62): this badge and the hero verdict emit the SAME three words
+          (MOONING / HODL / DIAMOND HANDS) from the shared WEN_MOON_STATES, but from
+          unrelated inputs — this one is SPY's daily move (±0.5%), the hero is the six-factor
+          regime. They can therefore disagree on one screen (hero HODL, badge MOONING) and
+          nothing said which question each answered. The hero already labels itself "Macro
+          Backdrop"; this one now names its own scope. The vibe is untouched (owner call) —
+          only the ambiguity is removed. */}
+      <div style={{ fontFamily:T.fontMono, fontSize:7, color:T.textMuted, letterSpacing:"0.1em", whiteSpace:"nowrap" }}>TAPE</div>
       <div style={{ fontFamily:T.fontMono, fontSize:10, fontWeight:700, color:s.color, whiteSpace:"nowrap", letterSpacing:"0.04em" }}>
         {s.label}
       </div>
@@ -891,13 +912,13 @@ const RegimeBand=({d,stale=new Set(),loading=false,liveBuild=false,srcLabel="der
           <div>
             <div style={{fontFamily:T.fontMono,fontSize:8,color:regime.color,letterSpacing:"0.14em",textTransform:"uppercase"}}>Macro Backdrop · wen moon?</div>
             <div style={{display:"flex",alignItems:"baseline",gap:10,flexWrap:"wrap"}}>
-              <span style={{fontFamily:T.fontMono,fontSize:22,fontWeight:700,color:regime.color,letterSpacing:"-0.01em"}}>{moon.label}</span>
-              <span style={{fontFamily:T.fontMono,fontSize:10,color:T.textSecondary}}>
+              <span style={{fontFamily:T.fontMono,fontSize:T.fsXl,fontWeight:700,color:regime.color,letterSpacing:"-0.01em"}}>{moon.label}</span>
+              <span style={{fontFamily:T.fontMono,fontSize:T.fsL,color:T.textSecondary}}>
                 {loading?"LOADING · waiting for live data before calling a posture"
                         :regime.insufficient?`INSUFFICIENT · ${regime.sub}`
                         :`${regime.label} · ${regime.sub}`}
               </span>
-              <span style={{fontFamily:T.fontMono,fontSize:9,color:T.textMuted}}>
+              <span style={{fontFamily:T.fontMono,fontSize:T.fsS,color:T.textMuted}}>
                 {loading?"no factors voting yet"
                         :regime.insufficient
                           ?`only ${regime.counted} of ${regime.totalFactors} factors usable — ${regime.quorum} required`
@@ -913,12 +934,17 @@ const RegimeBand=({d,stale=new Set(),loading=false,liveBuild=false,srcLabel="der
                     ? "Nothing is being asserted from the demo baseline while the live snapshot loads."
                     : `The evidence base is too thin to call a posture${liveBuild?" — live data is unavailable or stale, so the mock baseline is NOT voting":""}.`}
                 </div>
-              : <div style={{fontFamily:T.fontMono,fontSize:9,color:T.textSecondary,marginTop:3}}>
+              : <div style={{fontFamily:T.fontMono,fontSize:T.fsS,color:T.textSecondary,marginTop:3}}>
               <span style={{color:T.textMuted}}>⇄ would change this: </span>
               {nearest
                 ? <><span style={{color:regime.color}}>{nearest.copy}</span>
                     <span style={{color:T.textMuted}}> ({fmt.num(nearest.distance,nearest.dec)}{nearest.unit} away) → </span>
                     <span style={{color:T.textPrimary,fontWeight:700}}>{nearest.would}</span>
+                    {/* v3.62 (newcomer audit): state the assumption. flipConditions simulates
+                        exactly ONE crossing through verdictFrom holding the others fixed, so
+                        without this the line reads as a forecast or a guaranteed trigger. The
+                        caveat is literally what the code computes. */}
+                    <span style={{color:T.textMuted}}> if other signals stay put</span>
                     {fc.flips.length>1&&<span style={{color:T.textMuted}}> · +{fc.flips.length-1} more</span>}</>
                 : <span style={{color:T.textMuted}}>no single factor crossing flips this verdict — it would take two</span>}
             </div>}
@@ -928,11 +954,16 @@ const RegimeBand=({d,stale=new Set(),loading=false,liveBuild=false,srcLabel="der
         <div style={{display:"flex",alignItems:"center",gap:8}}>
           {/* FINDING-2: compact factor "why" — now always visible (mobile too), short labels; full detail via ℹ */}
           <div style={{display:"flex",gap:5,flexWrap:"wrap",justifyContent:"flex-end"}}>
+            {/* FEAT-NEUTRAL (v3.62): the chip renders the factor's REAL 4-state vote through the
+                shared voteStyle map. It used to branch on a boolean (`f.bull ? green▲ : red▼`),
+                so a NEUTRAL factor fell through to the bearish arm — the hero printed
+                "N bull · N neutral · N bear" one line above while painting that neutral factor
+                red, and the Drivers matrix showed the same factor as grey NEUTRAL further down. */}
             {factors.map((f,i)=>{
-              const c=f.stale?T.amber:f.bull?T.green:T.red;
+              const vs=voteStyle(f.vote); const c=T[vs.colorKey];
               return(
-              <span key={f.label} style={{fontFamily:T.fontMono,fontSize:8,color:c,border:`1px solid ${c}44`,borderRadius:3,padding:"1px 5px",letterSpacing:"0.03em",background:"#00000022",whiteSpace:"nowrap",opacity:f.stale?0.7:1}}>
-                {f.short} {f.stale?"⏱":f.bull?"▲":"▼"}
+              <span key={f.label} title={`${f.label}: ${vs.word}`} style={{fontFamily:T.fontMono,fontSize:T.fsM,color:c,border:`1px solid ${c}44`,borderRadius:3,padding:"1px 5px",letterSpacing:"0.03em",background:"#00000022",whiteSpace:"nowrap",opacity:f.vote==="excluded"?0.7:1}}>
+                {f.short} {vs.glyph}
               </span>
             );})}
           </div>
@@ -948,7 +979,9 @@ const RegimeBand=({d,stale=new Set(),loading=false,liveBuild=false,srcLabel="der
           {factors.map(f=>(
             <div key={f.label} style={{display:"flex",gap:8,alignItems:"baseline"}}>
               <div style={{fontFamily:T.fontMono,fontSize:9,color:T.textMuted,minWidth:100,flexShrink:0}}>{f.label}</div>
-              <div style={{fontFamily:T.fontMono,fontSize:9,color:f.stale?T.amber:f.bull?T.green:T.red}}>{f.val}</div>
+              {/* Same 4-state map as the chips — the drawer used to paint NFCI's own honest
+                  "Looser than mean, but within ½ SD" copy red, contradicting its own words. */}
+              <div style={{fontFamily:T.fontMono,fontSize:9,color:T[voteStyle(f.vote).colorKey]}}>{f.val}</div>
             </div>
           ))}
           {/* FEAT-FLIP: every load-bearing crossing, then what abstained and why. The
@@ -1098,6 +1131,37 @@ const DEFAULT_ALERTS=[
 // NOTE: this build has NO Zone E (401k / compound sim) — that lived only in the
 // artifact fork. There is currently no private-only section to gate; the guard
 // pattern below is wired and ready for when private content is added.
+/* C2b (v3.62, newcomer audit) — the Sections nav gains an ACTIVE state.
+   The six <h2>s are visually-hidden, so a jump previously landed with no orientation cue at
+   all: every link looked identical before and after the click. Tracking the hash is enough to
+   fix that and stays honest — it marks where the reader ASKED to go, which is a fact, rather
+   than guessing a "current section" from scroll position (a scroll-spy would need to pick an
+   arbitrary threshold and would disagree with the URL). `aria-current="location"` gives a
+   screen reader the same cue the highlight gives everyone else. */
+// Every SOURCES field that casts a regime vote (all six, CAPE's shillerPe alias included).
+const VOTING_FIELDS=new Set(Object.values(FACTOR_FIELD));
+
+const SECTIONS=[["overview","Overview"],["drivers","Drivers"],["markets","Markets"],["macro","Macro"],["ai","AI"],["health","Data Health"]];
+const SectionNav=()=>{
+  const [hash,setHash]=useState(typeof window!=="undefined"?window.location.hash.slice(1):"");
+  useEffect(()=>{
+    const onHash=()=>setHash(window.location.hash.slice(1));
+    window.addEventListener("hashchange",onHash);
+    return()=>window.removeEventListener("hashchange",onHash);
+  },[]);
+  return(
+    <nav aria-label="Sections" style={{display:"flex",gap:2,overflowX:"auto",padding:"4px 16px",background:T.surface,borderBottom:`1px solid ${T.border}`,position:"sticky",top:"env(safe-area-inset-top)",zIndex:40}}>
+      {SECTIONS.map(([id,label])=>{
+        const on=hash===id;
+        return(
+        <a key={id} href={`#${id}`} aria-current={on?"location":undefined}
+          style={{fontFamily:T.fontMono,fontSize:T.fsS,letterSpacing:"0.08em",color:on?T.textPrimary:T.textSecondary,textDecoration:"none",padding:"6px 10px",borderRadius:3,whiteSpace:"nowrap",
+            background:on?T.surfaceHigh:"transparent",border:`1px solid ${on?T.borderAccent:"transparent"}`}}>{label}</a>
+      );})}
+    </nav>
+  );
+};
+
 export default function Dashboard({ publicView = false } = {}) {
   const [alerts,setAlerts]=useState(DEFAULT_ALERTS);
   const [expandedHW,setExpandedHW]=useState(null);
@@ -1307,6 +1371,10 @@ export default function Dashboard({ publicView = false } = {}) {
         @media(max-width:359px){.sub-wordmark{display:none;}}
         /* B4 (v3.59): WCAG target size — header actions get real thumb targets on phones. */
         @media(max-width:480px){.hdr-act{min-height:44px;min-width:44px;display:inline-flex;align-items:center;justify-content:center;}}
+        /* v3.62: the ⋯ OPS disclosure. The default triangle marker is suppressed so the summary
+           reads as the button it is; it keeps native keyboard/AT behaviour either way. */
+        .hdr-ops>summary::-webkit-details-marker{display:none;}
+        .hdr-ops>summary::marker{content:"";}
         /* A11Y (11.4.5 audit, High): focused controls showed no outline or shadow at all.
            :focus-visible (not :focus) so a mouse click never paints a ring. */
         :focus-visible{outline:2px solid ${DT["focus-ring"]};outline-offset:2px;border-radius:3px;}
@@ -1357,28 +1425,46 @@ export default function Dashboard({ publicView = false } = {}) {
           <DataModeBadge mode={mode}/>
           {/* FEAT-GLANCE (v3.61, newcomer audit): the alert badges are operator tooling — the
               Macro Alerts section itself is !publicView (A4), and "⚡ 3 BLIND" reads as a system
-              failure to a visitor who can't see the monitors it describes. Same gate. */}
+              failure to a visitor who can't see the monitors it describes. Same gate.
+              v3.62: these stay OUTSIDE the ⋯ OPS menu. A FIRED alert is a red fact and the v3.25
+              rule holds board-wide — a collapse must never hide one. Only the always-available
+              actions below move behind the disclosure. */}
           {!publicView&&activeAlerts>0&&<Badge label={`⚡ ${activeAlerts} FIRED`} color={T.red}/>}
           {!publicView&&activeAlerts===0&&alertBlind>0&&<Badge label={`⚡ ${alertBlind} BLIND`} color={T.amber}/>}
-          {/* FEAT-165: share button */}
+          {/* FEAT-165: share button — stays in the bar; it is the one action a VISITOR wants. */}
           <button onClick={handleShare} aria-label="Copy dashboard link" className="hdr-act"
             style={{fontFamily:T.fontMono,fontSize:9,background:copied?"#1a3020":T.surfaceHigh,border:`1px solid ${copied?T.green:T.borderAccent}`,color:copied?T.green:T.textSecondary,padding:"5px 12px",borderRadius:4,cursor:"pointer",transition:"all 0.2s"}}>
             {copied?"✓ COPIED":"⤴ SHARE"}
           </button>
-          {/* FEAT-332: Copy TT readout — disabled unless live (an order-gating paste block must
-              not ship mock numbers; a disabled button can't be trimmed the way a warning header can).
-              v3.61: !publicView — it feeds the operator's terminal, not a shared view. */}
-          {!publicView&&<button onClick={handleTtCopy} disabled={!anyLive} aria-label="Copy TT regime readout" className="hdr-act"
-            title={anyLive?"Copy the TT regime readout paste block":"live data required"}
-            style={{fontFamily:T.fontMono,fontSize:9,background:ttCopied?"#1a3020":T.surfaceHigh,border:`1px solid ${ttCopied?T.green:T.borderAccent}`,color:ttCopied?T.green:T.textSecondary,padding:"5px 12px",borderRadius:4,cursor:anyLive?"pointer":"not-allowed",opacity:anyLive?1:0.4,transition:"all 0.2s"}}>
-            {ttCopied?"✓ TT COPIED":"⎘ TT"}
-          </button>}
-          {/* FEAT-TT: link to the Access-gated Ticker Terminal admin portal (hidden on public view) */}
-          {!publicView&&<a href="/admin.html" aria-label="Open Ticker Terminal admin" className="hdr-act"
-            title="TT Ticker Terminal (admin — email-gated)"
-            style={{fontFamily:T.fontMono,fontSize:9,background:T.surfaceHigh,border:`1px solid ${T.borderAccent}`,color:T.textSecondary,padding:"5px 12px",borderRadius:4,textDecoration:"none",transition:"all 0.2s"}}>
-            ⌁ TERMINAL
-          </a>}
+          {/* v3.62 (newcomer audit, "default route still shows TT and TERMINAL"): the operator
+              ACTIONS consolidate behind one ⋯ OPS disclosure — the admin.html header pattern.
+              Owner call: the default route stays the operator view, so this reduces the clutter
+              without moving anyone's daily surface. Native <details> — no new state, keyboard
+              and screen-reader behaviour for free. */}
+          {!publicView&&(
+            <details className="hdr-ops" style={{position:"relative"}}>
+              <summary aria-label="Operator actions" className="hdr-act"
+                style={{fontFamily:T.fontMono,fontSize:9,background:T.surfaceHigh,border:`1px solid ${T.borderAccent}`,color:T.textSecondary,padding:"5px 12px",borderRadius:4,cursor:"pointer",listStyle:"none",whiteSpace:"nowrap"}}>
+                ⋯ OPS
+              </summary>
+              <div style={{position:"absolute",right:0,top:"calc(100% + 4px)",display:"flex",flexDirection:"column",gap:6,background:T.surface,border:`1px solid ${T.borderAccent}`,borderRadius:5,padding:8,zIndex:60,minWidth:150,boxShadow:"0 6px 18px #00000055"}}>
+                {/* FEAT-332: Copy TT readout — disabled unless live (an order-gating paste block
+                    must not ship mock numbers; a disabled button can't be trimmed the way a
+                    warning header can). */}
+                <button onClick={handleTtCopy} disabled={!anyLive} aria-label="Copy TT regime readout" className="hdr-act"
+                  title={anyLive?"Copy the TT regime readout paste block":"live data required"}
+                  style={{fontFamily:T.fontMono,fontSize:9,background:ttCopied?"#1a3020":T.surfaceHigh,border:`1px solid ${ttCopied?T.green:T.borderAccent}`,color:ttCopied?T.green:T.textSecondary,padding:"7px 12px",borderRadius:4,cursor:anyLive?"pointer":"not-allowed",opacity:anyLive?1:0.4,textAlign:"left"}}>
+                  {ttCopied?"✓ TT COPIED":"⎘ TT readout"}
+                </button>
+                {/* FEAT-TT: link to the Access-gated Ticker Terminal admin portal */}
+                <a href="/admin.html" aria-label="Open Ticker Terminal admin" className="hdr-act"
+                  title="TT Ticker Terminal (admin — email-gated)"
+                  style={{fontFamily:T.fontMono,fontSize:9,background:T.surfaceHigh,border:`1px solid ${T.borderAccent}`,color:T.textSecondary,padding:"7px 12px",borderRadius:4,textDecoration:"none",whiteSpace:"nowrap"}}>
+                  ⌁ TERMINAL
+                </a>
+              </div>
+            </details>
+          )}
         </div>
       </header>
 
@@ -1391,15 +1477,35 @@ export default function Dashboard({ publicView = false } = {}) {
           the island strip, and the sticky nav offsets below it — padding the nav instead
           would render a permanent inset-height band even when it isn't stuck. */}
       <div aria-hidden="true" style={{position:"fixed",top:0,left:0,right:0,height:"env(safe-area-inset-top)",background:T.bg,zIndex:45}}/>
-      <nav aria-label="Sections" style={{display:"flex",gap:2,overflowX:"auto",padding:"4px 16px",background:T.surface,borderBottom:`1px solid ${T.border}`,position:"sticky",top:"env(safe-area-inset-top)",zIndex:40}}>
-        {[["overview","Overview"],["drivers","Drivers"],["markets","Markets"],["macro","Macro"],["ai","AI"],["health","Data Health"]].map(([id,label])=>(
-          <a key={id} href={`#${id}`} style={{fontFamily:T.fontMono,fontSize:9,letterSpacing:"0.08em",color:T.textSecondary,textDecoration:"none",padding:"6px 10px",borderRadius:3,whiteSpace:"nowrap"}}>{label}</a>
-        ))}
-      </nav>
+      <SectionNav/>
 
       <h2 id="overview" className="visually-hidden">Overview — posture, confidence, and what changed</h2>
       {/* FEAT-169 + R4c: Regime Verdict band — HERO, now FIRST under the header (mobile-first) */}
       <RegimeBand d={d} stale={staleFactors} loading={mode==="LOADING"} liveBuild={liveBuild} srcLabel={derivedLabel}/>
+
+      {/* ── FEAT-WHY (v3.62): WHY THIS POSTURE — the conclusion in words, before the reader has
+          to decode six abbreviations and their thresholds. This is a PROJECTION of the same
+          evidenceSet.factors the chips and the Drivers matrix render, so it cannot disagree
+          with them. Withheld postures render nothing: there is no "why" for a call that was
+          not made, and inventing one would be the fabricated-explanation defect (v3.51's
+          isMacroMaterial rule). EXCLUDED factors are shown as UNAVAILABLE, never folded into
+          NEUTRAL — "not counted" and "counted, no lean" are different facts. ── */}
+      {!evidenceSet.withheld&&evidenceSet.summary&&(
+        <div role="region" aria-label="Why this posture"
+          style={{padding:"7px 20px",background:T.bg,borderBottom:`1px solid ${T.border}`}}>
+          <div style={{fontFamily:T.fontMono,fontSize:8,color:T.textMuted,letterSpacing:"0.12em",textTransform:"uppercase",marginBottom:4}}>Why this posture</div>
+          <div style={{fontFamily:T.fontMono,fontSize:T.fsL,color:T.textPrimary,lineHeight:1.5,maxWidth:"72ch"}}>{evidenceSet.summary.sentence}</div>
+          <div style={{display:"flex",gap:14,flexWrap:"wrap",marginTop:6}}>
+            {evidenceSet.summary.groups.map(g=>(
+              <div key={g.key} style={{minWidth:0}}>
+                <div style={{fontFamily:T.fontMono,fontSize:T.fsXs,color:T[voteStyle(g.vote).colorKey],letterSpacing:"0.1em"}}>{g.label}</div>
+                {/* An empty bucket says so with an em dash — a blank cell reads as "not computed". */}
+                <div style={{fontFamily:T.fontMono,fontSize:T.fsM,color:g.shorts.length?T.textSecondary:T.textMuted}}>{g.shorts.join(" · ")||"—"}</div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
 
       {/* ── SIGNAL QUALITY rollup — at-a-glance data trust (live vs stale vs mock) ── */}
       {/* A11Y: aria-live on the CONFIDENCE strip, not on every tile — a screen reader should
@@ -1407,9 +1513,9 @@ export default function Dashboard({ publicView = false } = {}) {
       <div role="region" aria-label="Signal quality and backdrop confidence"
         style={{display:"flex",alignItems:"center",gap:10,flexWrap:"wrap",padding:"5px 20px",background:T.bg,borderBottom:`1px solid ${T.border}`}}>
         <span style={{fontFamily:T.fontMono,fontSize:8,color:T.textMuted,letterSpacing:"0.12em",textTransform:"uppercase"}}>Signal Quality</span>
-        <span style={{fontFamily:T.fontMono,fontSize:9,color:T.green}}>● {sq.fresh} fresh{sq.fresh>0&&<span style={{color:T.textMuted}}> ({sq.live} live · {sq.cached} cached)</span>}</span>
-        {sq.stale>0&&<span style={{fontFamily:T.fontMono,fontSize:9,color:T.amber}}>⏱ {sq.stale} stale</span>}
-        {sq.mock>0&&<span style={{fontFamily:T.fontMono,fontSize:9,color:T.textMuted}}>○ {sq.mock} mock</span>}
+        <span style={{fontFamily:T.fontMono,fontSize:T.fsM,color:T.green}}>● {sq.fresh} fresh{sq.fresh>0&&<span style={{color:T.textMuted}}> ({sq.live} live · {sq.cached} cached)</span>}</span>
+        {sq.stale>0&&<span style={{fontFamily:T.fontMono,fontSize:T.fsM,color:T.amber}}>⏱ {sq.stale} stale</span>}
+        {sq.mock>0&&<span style={{fontFamily:T.fontMono,fontSize:T.fsM,color:T.textMuted}}>○ {sq.mock} mock</span>}
         <span style={{fontFamily:T.fontMono,fontSize:8,color:T.textMuted}}>of {sq.total} tracked</span>
         {/* The verdict's own confidence, not the tile census. */}
         <span style={{fontFamily:T.fontMono,fontSize:9,color:regime.insufficient?T.red:regimeConf.counted===regimeConf.total?T.green:T.amber,borderLeft:`1px solid ${T.border}`,paddingLeft:10}}>
@@ -1445,8 +1551,11 @@ export default function Dashboard({ publicView = false } = {}) {
           reason per factor. Cards wrap on phones, rows on desktop (flex-wrap). ── */}
       <section aria-labelledby="drivers" style={{padding:"10px 20px",borderBottom:`1px solid ${T.border}`}}>
         <h2 id="drivers" className="visually-hidden">Drivers — the six factors and their votes</h2>
-        <div style={{fontFamily:T.fontMono,fontSize:8,color:T.textMuted,letterSpacing:"0.12em",textTransform:"uppercase",marginBottom:6}}>
-          Evidence · {evidenceSet.freshSummary}{evidenceSet.withheld?" · posture withheld":""}
+        {/* v3.62 (newcomer audit): say which numbers actually DECIDED the posture. Voting and
+            context indicators sat at the same visual weight all over the page, so a reader had
+            no way to tell the six that cast a vote from the dozens that did not. */}
+        <div style={{fontFamily:T.fontMono,fontSize:T.fsXs,color:T.textMuted,letterSpacing:"0.12em",textTransform:"uppercase",marginBottom:6}}>
+          Used in today's posture · {evidenceSet.freshSummary}{evidenceSet.withheld?" · posture withheld":""}
         </div>
         {/* FEAT-GLANCE (v3.61): the six full cards collapse — the band's chip row above is
             already the icon-first six-factor view, so a second full-size rendering of the
@@ -1457,7 +1566,10 @@ export default function Dashboard({ publicView = false } = {}) {
         <CollapsedGroup count={evidenceSet.factors.length} label="factor evidence detail" chip={false}>
         <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
           {evidenceSet.factors.map(f=>{
-            const vc=f.vote==="bull"?T.green:f.vote==="bear"?T.red:f.vote==="excluded"?T.amber:T.textSecondary;
+            // FEAT-NEUTRAL (v3.62): resolves through the SAME shared map as the hero chips.
+            // This card was already 4-state and correct; routing it through voteStyle is what
+            // makes it structurally impossible for the two altitudes to disagree again.
+            const vc=T[voteStyle(f.vote).colorKey];
             return (
               <div key={f.key} style={{flex:"1 1 240px",minWidth:0,background:T.surface,border:`1px solid ${f.excluded?T.amber+"44":T.border}`,borderRadius:5,padding:"8px 10px",opacity:f.excluded?0.85:1}}>
                 <div style={{display:"flex",justifyContent:"space-between",gap:8,alignItems:"baseline"}}>
@@ -1491,11 +1603,20 @@ export default function Dashboard({ publicView = false } = {}) {
           ].map(({l,f,v,s,sc,t})=>{
             const m=modeOf(f); const live=m==="LIVE"||m==="CACHED";
             const dot=live?T.green:m==="STALE"?T.amber:T.textMuted; // provenance dot: live/stale/mock
+            /* v3.62 (newcomer audit): "voting indicators and context indicators are mixed".
+               A blanket per-SECTION label would be false here — this one strip carries both
+               (VIX/F&G/10Y/CPI vote, SPY/QQQ/FED do not) — so the marker goes on the ITEM.
+               Derived from FACTOR_FIELD's VALUES, not REGIME_FACTOR_FIELDS: that array holds
+               only the five whose field key equals their factor key, with CAPE riding a
+               separate `shillerPe`→`valuation` alias line in factorExclusions. Using it here
+               would silently un-mark a CAPE tile the day one is added to a strip. */
+            const votes=VOTING_FIELDS.has(f);
             return(
-            <div key={l} title={`${t}\n(${m.toLowerCase()})`} style={{flexShrink:0,minWidth:68,cursor:"help"}}>
+            <div key={l} title={`${t}\n(${m.toLowerCase()})${votes?"\nCounts toward today's posture.":"\nContext only — does not vote."}`} style={{flexShrink:0,minWidth:68,cursor:"help"}}>
               <div style={{display:"flex",alignItems:"center",gap:3}}>
                 <span style={{width:5,height:5,borderRadius:"50%",background:live?dot:"transparent",border:`1px solid ${dot}`,flexShrink:0}}/>
                 <span style={{fontFamily:T.fontMono,fontSize:8,color:T.textMuted}}>{l}</span>
+                {votes&&<span aria-hidden="true" title="counts toward today's posture" style={{fontFamily:T.fontMono,fontSize:7,color:T.amber,letterSpacing:"0.05em"}}>▪</span>}
               </div>
               <div style={{fontFamily:T.fontMono,fontSize:13,color:T.textPrimary,fontWeight:700,lineHeight:1.1}}>{v}</div>
               <div style={{fontFamily:T.fontMono,fontSize:9,color:sc}}>{s}</div>

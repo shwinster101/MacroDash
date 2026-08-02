@@ -18,6 +18,9 @@
 //   DEMO          mock build                  → demo posture allowed, everything ILLUSTRATIVE
 
 import { isStale, cadenceOf } from "./sources.js";
+// REGIME_BAND_TABLE is read here ONLY for each factor's plain-English name (`plain`), which
+// postureSummary needs. The VOTE is no longer re-derived from it: since FEAT-NEUTRAL (v3.62)
+// regimeFactors carries the vote it already derived, so a threshold has one consumer, not two.
 import { REGIME_BAND_TABLE, REGIME_QUORUM, computeRegime, flipConditions, regimeFactors } from "./regime.js";
 
 // The six regime voters by SOURCES field key (the staleness vocabulary), plus the one
@@ -66,19 +69,21 @@ export function buildEvidenceSet({ d, provenance, dataAsOf, mode, liveBuild, now
     : mode === "CACHED" ? "CACHED" : "LIVE";
   const withheld = WITHHELD.has(state);
 
-  // Per-factor rows: display copy from regimeFactors, the VOTE from the band table itself
-  // (the only expression of a band), freshness from fieldMode. An excluded factor's vote is
-  // "excluded" with the reason named — "4 of 6 usable" without saying which is half a fact.
+  // Per-factor rows: display copy AND the vote both come from regimeFactors, which since
+  // FEAT-NEUTRAL (v3.62) derives the vote from REGIME_BAND_TABLE itself (the only expression
+  // of a band) and already resolves an excluded factor to "excluded". This used to re-derive
+  // `band.vote(...)` here — correct, but a second call site for the same rule; now there is
+  // one. Freshness still comes from fieldMode. An excluded factor's vote is "excluded" with
+  // the reason named — "4 of 6 usable" without saying which is half a fact.
   const rows = regimeFactors(d, exclusions);
   const factors = rows.map((f) => {
     const field = FACTOR_FIELD[f.key];
     const fm = fieldMode(provenance, dataAsOf, field, now);
     const excluded = exclusions.has(f.key);
-    const band = REGIME_BAND_TABLE.find((t) => t.key === f.key);
     return {
       key: f.key, short: f.short, label: f.label, field,
       display: f.val,
-      vote: excluded ? "excluded" : band.vote(band.read(d), d),
+      vote: f.vote,
       mode: fm,
       asOf: (dataAsOf && dataAsOf[field]) || null,
       excluded,
@@ -98,5 +103,56 @@ export function buildEvidenceSet({ d, provenance, dataAsOf, mode, liveBuild, now
     totalFactors: regime.totalFactors,
     freshSummary: `${regime.counted}/${regime.totalFactors} factors usable`,
     excludedKeys: factors.filter((f) => f.excluded).map((f) => f.short),
+    summary: postureSummary(factors),
+  };
+}
+
+/* FEAT-WHY (v3.62) — "why this posture", in words, from the SAME factor rows.
+
+   The newcomer audit's finding was that the verdict is defensible but not legible: every
+   input was on screen, and the reader had to reconstruct the conclusion from six abbreviated
+   chips and a threshold table. This states it once, in plain English.
+
+   It is a PROJECTION of `factors`, never a second opinion — the buckets are the votes those
+   rows already carry, so the sentence cannot contradict the chips, the matrix or the tally.
+   Each factor's noun phrase (`plain`) lives on its band in REGIME_BAND_TABLE, beside the rule
+   it describes, so there is no parallel copy-table to drift. An excluded factor is reported as
+   UNAVAILABLE and never silently folded into "neutral" — "not counted" and "counted, no lean"
+   are different facts, which is the whole lesson of this release. */
+const listOf = (xs) => xs.length <= 1 ? (xs[0] || "")
+  : xs.length === 2 ? `${xs[0]} and ${xs[1]}`
+  : `${xs.slice(0, -1).join(", ")} and ${xs[xs.length - 1]}`;
+
+export function postureSummary(factors = []) {
+  const plainOf = (f) => {
+    const band = REGIME_BAND_TABLE.find((t) => t.key === f.key);
+    return (band && band.plain) || f.label;
+  };
+  const pick = (v) => factors.filter((f) => f.vote === v);
+  const buckets = {
+    supports:    pick("bull"),
+    neutral:     pick("neutral"),
+    addsRisk:    pick("bear"),
+    unavailable: pick("excluded"),
+  };
+  const names = (k) => buckets[k].map(plainOf);
+  const parts = [];
+  if (buckets.supports.length)  parts.push(`${listOf(names("supports"))} support${buckets.supports.length === 1 ? "s" : ""} risk`);
+  if (buckets.addsRisk.length)  parts.push(`${listOf(names("addsRisk"))} add${buckets.addsRisk.length === 1 ? "s" : ""} risk`);
+  if (buckets.neutral.length)   parts.push(`${listOf(names("neutral"))} ${buckets.neutral.length === 1 ? "is" : "are"} neutral`);
+  if (buckets.unavailable.length) parts.push(`${listOf(names("unavailable"))} ${buckets.unavailable.length === 1 ? "is" : "are"} unavailable`);
+  // No usable evidence at all is a real state (LOADING, or a live build with a dead feed) and
+  // must read as an absence, not as a balanced picture.
+  const sentence = parts.length
+    ? parts.join("; ").replace(/^./, (c) => c.toUpperCase()) + "."
+    : "No factor is currently usable, so nothing is being asserted.";
+  return {
+    sentence,
+    groups: [
+      { key: "supports",    label: "SUPPORTS",    vote: "bull",     shorts: buckets.supports.map((f) => f.short) },
+      { key: "neutral",     label: "NEUTRAL",     vote: "neutral",  shorts: buckets.neutral.map((f) => f.short) },
+      { key: "addsRisk",    label: "ADDS RISK",   vote: "bear",     shorts: buckets.addsRisk.map((f) => f.short) },
+      { key: "unavailable", label: "UNAVAILABLE", vote: "excluded", shorts: buckets.unavailable.map((f) => f.short) },
+    ],
   };
 }

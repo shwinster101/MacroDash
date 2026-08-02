@@ -1704,6 +1704,65 @@ Jan-anchor shipped; see `snapshot.js` ~318–328), `spyMa100`, `spyMa200`, and a
   (+7: collapsed-by-default proofs for matrix and Data Health with red facts visible while
   closed, the legend's new home, the device-scope copy on both visits, and the TT/BLIND gate on
   the route pair).
+- **FEAT-NEUTRAL + FEAT-WHY (v3.62) — the newcomer audit: a neutral factor was rendering as
+  BEARISH, and the verdict was defensible but not legible.** A UX audit found the HODL call
+  correct and the interface making the reader reconstruct it. Its central code claim was real,
+  and worse than stated. **`regimeFactors()` predated `REGIME_BAND_TABLE` and was never
+  migrated**, so every row carried a hand-written boolean `bull` that duplicated the table's
+  BULL edge (`<-0.10`, `<18`, `>55`, `<=NFCI_LOOSE`) and **carried no BEAR edge at all** — the
+  exact second-copy-of-a-threshold defect `regime.js`'s own header comment warns against.
+  `RegimeBand`'s only input was those rows, so its chip branched `f.bull ? green ▲ : red ▼`
+  with **red as the fallthrough**: F&G at 42 (a genuine `neutral`) rendered identically to CAPE
+  at 40.91 (a genuine `bear`). Two things made it worse than cosmetic — **the component
+  contradicted itself** (v3.61 had just changed the line directly above to print
+  `N bull · N neutral · N bear`, so the hero *stated* "1 neutral" while painting it red), and
+  **the same factor rendered correctly 500px lower** in the C3 Drivers matrix, which already
+  read the true 4-state `evidenceSet.factors[].vote`. One page, two answers. A non-finite
+  reading votes neutral by construction, so a `NaN` was rendering as a confident bearish chip.
+  **Nothing tested it**: `regimeFactors` was imported into smoke as `regimeFactorRows` and
+  never called — the v3.54 lesson ("the defect that passed every existing test") again.
+  **Fixed at the root, not the render**: `regimeFactors()` now derives `vote` from
+  `REGIME_BAND_TABLE` itself, `evidence.js` consumes that vote instead of re-deriving it (one
+  call site for a threshold, not two), and a shared **`voteStyle()`** map is the ONE
+  vote→appearance expression — the hero chips, the hero drawer and the Drivers matrix all
+  resolve through it, so the two altitudes cannot drift apart again (the `ptModelRows`
+  doctrine). `f.bull` is gone. EXCLUDED still wins over the band vote: a factor the model
+  refuses to count must never also report a lean.
+  **FEAT-WHY — the conclusion in words.** `postureSummary()` (pure, in `evidence.js`) renders
+  *"Inflation and financial conditions support risk; valuation adds risk; sentiment is
+  neutral; VIX and the 10-year yield are unavailable."* plus SUPPORTS / NEUTRAL / ADDS RISK /
+  UNAVAILABLE buckets, under the existing hero. It is a **projection of the same factor rows**,
+  so it cannot contradict the chips or the tally, and each factor's noun phrase (`plain`) lives
+  on its band beside the rule it describes — no parallel copy-table to rot. Withheld postures
+  render nothing (there is no "why" for a call that was not made). EXCLUDED is reported as
+  UNAVAILABLE, never folded into NEUTRAL — "not counted" and "counted, no lean" are different
+  facts, which is the whole lesson of this release.
+  **Also:** the flip line states its assumption (*"if other signals stay put"* — `flipConditions`
+  simulates exactly ONE crossing, so without it the line read as a forecast) · the SPY-derived
+  mood badge and the six-factor hero **emit the same three words** from the shared
+  `WEN_MOON_STATES` via unrelated inputs and could disagree on one screen, so the badge now
+  names its scope (`TAPE`) — vibe untouched, ambiguity removed · strip items carry a **▪ marker
+  when they actually vote**, derived from `FACTOR_FIELD`'s values rather than
+  `REGIME_FACTOR_FIELDS` (which holds only the five whose field key equals their factor key —
+  CAPE rides a separate alias, so the obvious array would have silently un-marked it) · a
+  per-section "context only" label was rejected as FALSE, since the macro strip carries both
+  kinds · the Drivers eyebrow reads **"Used in today's posture"** · the Sections nav gains an
+  active state + `aria-current` (the six `h2`s are visually-hidden, so a jump landed with no
+  orientation cue) · operator actions (TT readout, TERMINAL) consolidate behind a **⋯ OPS**
+  disclosure while the **FIRED/BLIND badges stay outside it** (v3.25: a collapse never hides a
+  red fact) · and a **type scale** (`fs-xs`…`fs-xl`) lands in `DT` with a targeted lift of the
+  load-bearing text — provenance, factor chips, the verdict sub-line — which the audit measured
+  at 7–9px, the honesty layer rendered at a size a phone reader has to work to read.
+  **Owner calls, recorded (the audit's relabel layer stays DECLINED, as in v3.61):** HODL stays
+  primary, DIAMOND HANDS stays, the fresh/cached/stale vocabulary stays, the full 5 Whys stays
+  expanded, and the default route stays the operator view.
+  Tests: **978 smoke** (+11, incl. `regimeFactors` executed for the first time — neutral zones,
+  the NaN case, excluded-beats-vote, and that both altitudes resolve through the one map;
+  negative-controlled by re-collapsing neutral into bear and by reverting the chip render) +
+  **173 render** + **82 public-render** (+9: a neutral-fixture driven live asserting the F&G
+  chip carries `•` and NOT `▼`, that a real bear still shows `▼`, that the printed tally and
+  the count of neutral chips are the SAME number — derived on both sides, never hardcoded —
+  and that the OPS menu actually opens to reveal TERMINAL rather than merely existing in DOM).
 - **Deferred:** stored fundamentals + Robinhood sync — now unblocked by the `x-tt-pin` header
   (v3.9): a chat-side daily review can PUT `status_flags`/`ref_px` into the deepDive payloads and
   stamp `lastRun`. When built, store the *triage* shape (`{at, px}` → "% moved since your last TT

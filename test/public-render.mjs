@@ -195,6 +195,43 @@ console.log("\n[public] LIVE — a full snapshot publishes a posture");
   await page.close();
 }
 
+// ── 2b. NEUTRAL — FEAT-NEUTRAL (v3.62): a neutral factor must not render as bearish ────────
+// The defect this release fixes was invisible to every existing test: the hero chips branched
+// on a boolean, so a factor voting NEUTRAL fell through to the bearish arm and rendered red ▼
+// while the tally beside it said "1 neutral". Driven in a real browser because the bug was in
+// the render, not the engine — the engine had been right the whole time.
+console.log("\n[public] NEUTRAL — a neutral vote renders as neutral, not bearish");
+{
+  // VIX 21 (between the 18/25 edges) and F&G 42 (between 30/55) both vote NEUTRAL.
+  const NEUTRAL_MIX = { ...FULL_LIVE, vix: 21, fearGreed: 42, fearGreedLabel: "Fear" };
+  const { page, errors } = await open({ live: NEUTRAL_MIX });
+  await page.waitForTimeout(1200);
+  const fg = page.locator('[title="Fear & Greed: NEUTRAL"]');
+  ok("neutral: the F&G chip is labelled NEUTRAL, not bull/bear",
+    await fg.count() === 1);
+  ok("neutral: that chip carries the neutral glyph and NOT the bearish ▼ — the bug, as a test",
+    await (async () => { const t = (await fg.first().innerText()).trim();
+      return t.includes("•") && !t.includes("▼") && !t.includes("▲"); })());
+  ok("neutral: a genuinely bearish factor still renders ▼ (no over-correction)",
+    await page.locator('[title="Valuation: BEAR"]').count() === 1);
+  const why = await page.locator('[aria-label="Why this posture"]').innerText();
+  ok("why: the plain-language summary renders and names the neutral factor",
+    /neutral/i.test(why) && /F&G/.test(why));
+  ok("why: the four buckets are labelled",
+    /SUPPORTS/.test(why) && /NEUTRAL/.test(why) && /ADDS RISK/.test(why) && /UNAVAILABLE/.test(why));
+  // The contradiction this release removes, stated directly: the printed tally and the number
+  // of neutral-rendering chips must be the SAME number. Derived on both sides, never hardcoded
+  // — a literal here would only prove this one fixture.
+  ok("why: the hero tally and the chips agree on the neutral count",
+    await (async () => {
+      const chips = await page.locator('[title$=": NEUTRAL"]').count();
+      const m = (await bandText(page)).match(/(\d+)\s+neutral/);
+      return m !== null && Number(m[1]) === chips && chips > 0;
+    })());
+  ok("neutral: no page errors", errors.length === 0);
+  await page.close();
+}
+
 // ── 3. DEGRADED — below quorum, no thin verdict ─────────────────────────────
 console.log("\n[public] DEGRADED — below-quorum evidence yields INSUFFICIENT");
 {
@@ -343,7 +380,17 @@ console.log("\n[public] A4 — the public/private boundary is ENFORCED, not comm
   const op = await page.locator("body").innerText();
   ok("operator route: MY CONVICTION renders (the v3.51 keep call stands)", /MY CONVICTION/.test(op));
   ok("operator route: Macro Alerts render", /Macro Alerts/i.test(op));
-  ok("operator route: TERMINAL link present", /TERMINAL/.test(op));
+  // v3.62: TERMINAL moved inside the ⋯ OPS disclosure, so it is no longer in the closed page's
+  // innerText. Assert the stronger thing instead — the menu exists AND actually opens to reveal
+  // a real link. A DOM-presence check would have passed even if the disclosure never opened.
+  ok("operator route: the OPS menu is present", await page.locator("details.hdr-ops").count() === 1);
+  ok("operator route: TERMINAL link is reachable by opening the OPS menu",
+    await (async () => {
+      await page.locator("details.hdr-ops > summary").click();
+      await page.waitForTimeout(150);
+      const link = page.locator('details.hdr-ops a[href="/admin.html"]');
+      return await link.count() === 1 && await link.isVisible();
+    })());
   ok("operator route: the TT copy button renders (v3.61 gate leaves the operator view whole)",
     await page.locator('button[aria-label="Copy TT regime readout"]').count() === 1);
   await page.close();
