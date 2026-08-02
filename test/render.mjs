@@ -449,18 +449,34 @@ console.log("\n[render] v3.38 FOUR DRIVERS — stance strip, buy, sell, calendar
 const sellB = await txt(page, "sellBlock");
 ok("sell: a cap breach is a FORCED trim with the computed dollar amount",
   /TRIM/.test(sellB) && /AAA/.test(sellB) && /3\.4pts over the 18% cap/.test(sellB) && /\$4k to cap/.test(sellB));
+// FEAT-TT-GLANCE (v3.61): the methodology sentences + the unranked tail moved into a closed
+// est-mini expander. What stays visible while closed: the rows, chip-length basis tags, the
+// unranked COUNT, and the session-disagreement chip (signal, not explanation).
+ok("glance: closed SELL shows chip-length basis tags, never the repeated sentences",
+  /%\/yr model/.test(sellB) && !/lowest expected return funds first/i.test(sellB) &&
+  !/ranked on realisable dollars/.test(sellB));
+ok("glance: the unranked COUNT is visible while the expander is closed (no silent truncation)",
+  /○ 2 unranked/.test(sellB) && /how this list is ranked/i.test(sellB));
+ok("glance: the disagreement chip stays visible while closed — it is signal",
+  /⚖ session: FFF first · computed: AAA/.test(sellB));
+ok("glance: the SELL methodology expander is est-mini class, never drawer (phone harness rule)",
+  (await page.locator("#sellBlock details.est-mini").count()) === 1 &&
+  (await page.locator("#sellBlock details.drawer").count()) === 0);
+// One tap deep, everything survives verbatim.
+await page.locator("#sellBlock details.est-mini > summary").click();
+const sellOpen = await txt(page, "sellBlock");
 ok("sell: discretionary source is the LOWEST expected return (BBB), stated as such",
-  /BBB/.test(sellB) && /%\/yr model/.test(sellB) && /lowest expected return funds first/i.test(sellB));
+  /BBB/.test(sellOpen) && /%\/yr model/.test(sellOpen) && /lowest expected return funds first/i.test(sellOpen));
 ok("sell: unmodelled held names are named, not silently missing",
-  /cannot rank — no model:/i.test(sellB) && /CCC/.test(sellB) && /FFF/.test(sellB));
+  /cannot rank — no model:/i.test(sellOpen) && /CCC/.test(sellOpen) && /FFF/.test(sellOpen));
 // v3.44: an options-only position with synced legs ranks IN the list, on realisable dollars.
 ok("sell: an options-only position ranks IN the list, on dollars, and says so",
-  /EEE/.test(sellB) && /ranked on realisable dollars/.test(sellB) &&
-  !/selling legs is not selling shares/.test(sellB));
+  /EEE/.test(sellOpen) && /ranked on realisable dollars/.test(sellOpen) &&
+  !/selling legs is not selling shares/.test(sellOpen));
 ok("sell: the asserted funding order is confronted with the computed one",
-  /asserts FFF first/i.test(sellB) && /computed says AAA/i.test(sellB));
+  /asserts FFF first/i.test(sellOpen) && /computed says AAA/i.test(sellOpen));
 ok("sell: a tripped circuit makes SELL the active list",
-  /this IS the active list/i.test(sellB));
+  /this IS the active list/i.test(sellOpen));
 const buyB = await txt(page, "buyBlock");
 ok("buy: compact block carries the veto banner and the same ranked rows",
   /NO NEW POSITIONS/.test(buyB) && /AAA/.test(buyB) && /13\.4%\*/.test(buyB));
