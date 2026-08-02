@@ -1408,6 +1408,39 @@ Jan-anchor shipped; see `snapshot.js` ~318–328), `spyMa100`, `spyMa200`, and a
   unreachable from this build environment). Owner call once real values have been observed.
   Tests: **+17 smoke** + a **15-check Chromium pass** across live and mock-fallback at 390px,
   confirming the tile is ILLUSTRATIVE on mock and that the 5.2% alert trips at 5.24.
+- **FEAT-TT-RANKEXPORT (v3.56) — the populated rankings, off the phone.** The rankings document
+  cannot live in the public repo (book content is KV-only), so the terminal produces it where the
+  data actually is: **📊 RANKINGS → SHARE** builds it client-side from memory and hands a real
+  `File` to `navigator.share()`, which on iOS opens the native sheet — Save to Files, Notes,
+  Messages, AirDrop.
+  **The load-bearing property is REUSE.** `buildRankingsMd()` reads `UPSIDE_ROWS`, `AGREE_PICK`,
+  `sellRank()`, `readiness()`, `ttInfo()` and `rankWeight()` — it never calls `ptModelRows` or
+  `pickRow` itself. An export that re-derived its own ranking could disagree with the screen it
+  was exported from, which is the exact drift defect doctrine #1 exists to stop (smoke asserts
+  the recompute functions are absent from the section).
+  Contents, in the order the daily loop asks for them: **STANCE** first (whether capital may move
+  outranks any ranking) · a **master table** carrying composite, %/yr, weight, readiness, flags
+  and **four category ranks per name** (overall upside · composite · within tier · within lens) ·
+  **per-tier and per-lens leaderboards** · **ELIGIBLE NEXT DOLLAR** with *why each other name is
+  not* · **FUNDING PRIORITY** carrying its own "not a sell recommendation" disclaimer · names it
+  could **NOT** rank (silent truncation reads as full coverage) · model lints · and a
+  **provenance footer** stating the floor denominator, the self-attestation limit, and that the
+  file is private book content.
+  **Ranks are DENSE** — two names tied on upside share rank 1 and the next is 3, because tied
+  scores are not first and second; a name with no rate is *excluded* from that ranking rather
+  than sorted last as if it were 0.
+  **The iOS gesture rule is respected:** the document is built **synchronously** before any
+  `await`, because Safari requires `navigator.share()` to be reached from the user gesture.
+  Fallback chain: file share → text share → clipboard → download. `text/plain` (not
+  `text/markdown`) with a `.md` filename, since iOS share targets accept it far more reliably.
+  **A cancelled sheet is an `AbortError` and is never reported as a failure.**
+  Found by the browser check: the stance line printed its verdict twice (`st.txt` already leads
+  with it) — now one line, with the qualifier chips as bullets.
+  Tests: **863 smoke** (+17, incl. `rankCategories` lifted and RUN — dense ties, excluded
+  no-rate rows, per-category scoping) + **169 render** (+13: the real document built from the
+  fixture and asserted for NaN/undefined leakage, plus the share chain driven with a stubbed
+  `navigator.share` confirming a real `File` of the right name and type reaches the sheet, and
+  that cancelling neither throws nor toasts a failure).
 - **Deferred:** stored fundamentals + Robinhood sync — now unblocked by the `x-tt-pin` header
   (v3.9): a chat-side daily review can PUT `status_flags`/`ref_px` into the deepDive payloads and
   stamp `lastRun`. When built, store the *triage* shape (`{at, px}` → "% moved since your last TT
@@ -1474,7 +1507,7 @@ npm run dev        # Vite dev server (mock unless VITE_DATA_MODE=live in .env)
 npm run build      # → dist/  (what Pages runs)
 npm run preview    # serve the built dist/
 
-node test/smoke.mjs   # 845-assertion no-network smoke test (needs Node ≥17)
+node test/smoke.mjs   # 863-assertion no-network smoke test (needs Node ≥17)
 npm run test:ui       # browser render test for admin.html (skips if no Chromium)
 npm run test:public   # build + browser STATE test for the public dashboard (skips likewise)
 

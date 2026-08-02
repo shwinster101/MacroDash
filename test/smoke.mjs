@@ -2740,5 +2740,64 @@ ok("ref: the terminal still ships EMPTY rails — no book, board or positions in
   adminSrc.includes("const SEED=[];") && /^let BOARD=\{\};/m.test(adminSrc) &&
   /^let POSITIONS=\{\};/m.test(adminSrc));
 
+// ---- 34. FEAT-TT-RANKEXPORT (v3.56) — the rankings, off the phone ---------
+// The populated ranking cannot live in the public repo (book content is KV-only), so the
+// terminal produces it where the data is. The load-bearing property is that it REUSES the
+// board's computations — an export that re-derived its ranking could disagree with the screen.
+console.log("\n[34] FEAT-TT-RANKEXPORT — reuse, ranks, and the iOS share chain");
+const rxSeg = adminSrc.slice(adminSrc.indexOf("function buildRankingsMd"),
+  adminSrc.indexOf("function download(", adminSrc.indexOf("function buildRankingsMd")));
+ok("rankexport: it READS the board's own rows and picks, never recomputing its own ranking",
+  /UPSIDE_ROWS/.test(rxSeg) && /AGREE_PICK/.test(rxSeg) && /sellRank\(\)/.test(rxSeg) &&
+  !/ptModelRows\(/.test(rxSeg) && !/pickRow\(/.test(rxSeg));
+ok("rankexport: readiness is reused for per-name verdicts and veto reasons",
+  /readiness\(e\)/.test(rxSeg) && /rd\.blockers\.join/.test(rxSeg));
+// Dense ranking, executed — a tie must share a rank, not become first-and-second.
+const RX = new Function(liftFns(adminSrc, ["rankCategories"]) + "\nreturn rankCategories;")();
+const mkRow = (sym, ann, score, w, tier, lens) => ({ sym, ann, tier, lens,
+  tt: score === null ? null : { score, tier: "A" }, wt: { w } });
+const rc = RX([mkRow("AAA", 40, 9.0, 12, "S", "AI"), mkRow("BBB", 40, 7.0, 5, "S", "AI"),
+  mkRow("CCC", 10, 8.0, 20, "A", "QC"), mkRow("DDD", null, null, null, "A", "AI")]);
+ok("rankexport: ranks are DENSE — two names tied on upside share rank 1, next is 3",
+  rc.overall.upside.map.get("AAA") === 1 && rc.overall.upside.map.get("BBB") === 1 &&
+  rc.overall.upside.map.get("CCC") === 3);
+ok("rankexport: a name with no rate is excluded from that ranking, not ranked last as 0",
+  !rc.overall.upside.map.has("DDD") && rc.overall.upside.n === 3);
+ok("rankexport: composite and weight get their own independent rankings",
+  rc.overall.composite.map.get("AAA") === 1 && rc.overall.composite.map.get("CCC") === 2 &&
+  rc.overall.weight.map.get("CCC") === 1);
+ok("rankexport: per-TIER and per-LENS ranks are scoped to their own category",
+  rc.tier.S.n === 2 && rc.tier.A.n === 1 && rc.lens.AI.n === 2 && rc.lens.QC.n === 1 &&
+  rc.tier.A.map.get("CCC") === 1);
+// The document must explain itself, not just list.
+ok("rankexport: it leads with STANCE — whether capital may move outranks any ranking",
+  /## STANCE/.test(rxSeg) && rxSeg.indexOf("## STANCE") < rxSeg.indexOf("## MASTER RANKING"));
+ok("rankexport: it names WHY the other names are not eligible, not just the winner",
+  /Why the others are not eligible/.test(rxSeg));
+ok("rankexport: names what it could NOT rank — silent truncation reads as full coverage",
+  /## NOT RANKED/.test(rxSeg) && /NOT judged unattractive/.test(rxSeg));
+ok("rankexport: funding priority carries its own disclaimer, since it is not a sell call",
+  /NOT a sell recommendation/.test(rxSeg));
+ok("rankexport: provenance states the floor denominator and the self-attestation limit",
+  /a floor — NAV unmeasured/.test(rxSeg) && /SELF-ATTESTED/.test(rxSeg));
+ok("rankexport: the file marks itself private book content",
+  /keep out of public repos/.test(rxSeg));
+// The iOS share chain.
+const shSeg = adminSrc.slice(adminSrc.indexOf("async function exportRankings"),
+  adminSrc.indexOf("function download(", adminSrc.indexOf("async function exportRankings")));
+ok("share: the document is built SYNCHRONOUSLY before any await, so the gesture survives",
+  /md=buildRankingsMd\(\);/.test(shSeg) &&
+  shSeg.indexOf("buildRankingsMd()") < shSeg.indexOf("await navigator.share"));
+ok("share: it feature-DETECTS file sharing rather than assuming it (canShare with files)",
+  /navigator\.canShare\(\{files:\[file\]\}\)/.test(shSeg));
+ok("share: full fallback chain — file share, text share, clipboard, download",
+  /navigator\.share\(\{files/.test(shSeg) && /navigator\.share\(\{title:"TT Rankings",text:md\}\)/.test(shSeg) &&
+  /clipboard\.writeText\(md\)/.test(shSeg) && /download\(name,md/.test(shSeg));
+ok("share: a CANCELLED sheet is an AbortError and is never reported as a failure",
+  (shSeg.match(/AbortError"\)return/g) || []).length === 2);
+ok("share: text/plain is used for iOS target compatibility, with a .md filename",
+  /type:"text\/plain"/.test(shSeg) && /TT-RANKINGS-\$\{/.test(shSeg));
+ok("share: the button exists in the toolbar", /onclick="exportRankings\(\)"/.test(adminSrc));
+
 console.log(`\n=== SMOKE TEST: ${pass} passed, ${fail} failed ===`);
 process.exit(fail === 0 ? 0 : 1);

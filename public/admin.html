@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <!-- AUDIT: kept in sync with package.json by test/smoke.mjs. admin.html is a Vite
      public/ passthrough, so it cannot receive __APP_VERSION__ — the guard is the fix. -->
-<title>TT TICKER TERMINAL v3.55.0</title>
+<title>TT TICKER TERMINAL v3.56.0</title>
 <style>
   :root{
     --bg:#05070a; --panel:#0a0f16; --panel2:#0d141d; --line:#16202c;
@@ -357,7 +357,7 @@
         onclick="toggleHeadInfo()">⋯ MENU</button>
     </div>
     <div id="headInfo" style="display:none">
-      <div class="brand">FINANCE&nbsp;BRO.AI // TT&nbsp;TICKER&nbsp;TERMINAL <small>v3.55.0 · single-pass deep-dive orchestrator</small></div>
+      <div class="brand">FINANCE&nbsp;BRO.AI // TT&nbsp;TICKER&nbsp;TERMINAL <small>v3.56.0 · single-pass deep-dive orchestrator</small></div>
       <div class="statusline">
         <span>BOOK: <b id="bookStamp">loading…</b></span>
         <span>AUTH: <b id="sessState">…</b></span>
@@ -380,6 +380,7 @@
       <div class="toolbar" id="backupRow" style="display:none">
         <button class="act" onclick="openPinSetup()">🔐 PIN</button>
         <button class="act" onclick="exportBook()">⭳ EXPORT CANONICAL_BOOK.md</button>
+        <button class="act" onclick="exportRankings()">📊 RANKINGS → SHARE</button>
         <button class="act" onclick="exportJSON()">⭳ EXPORT JSON</button>
         <button class="act" onclick="openImport()">⇪ IMPORT JSON</button>
         <button class="act warn" onclick="openRestore()">⏱ RESTORE POINTS</button>
@@ -4372,6 +4373,190 @@ function exportJSON(){
 }
 
 /* ═══════════ UTIL ═══════════ */
+/* ═══════════ FEAT-TT-RANKEXPORT (v3.56) — the rankings, off the phone ═══════════
+   The populated ranking cannot live in the public repo (book content is KV-only), so the
+   terminal produces it where the data actually is: client-side, from memory, into the iOS
+   share sheet — Save to Files, Notes, Messages, AirDrop.
+   INVARIANT: this REUSES the board's own computations (UPSIDE_ROWS, AGREE_PICK, sellRank,
+   readiness, ttInfo, rankWeight) rather than recomputing. Doctrine #1 — one computation, many
+   altitudes: an export that re-derived its own ranking could disagree with the screen it was
+   exported from, which is the exact drift defect this project keeps paying for. */
+function rankCategories(rows){
+  /* "Ranks per category" — a name's position within each axis it belongs to, so a reader can
+     see that something is #1 on upside but #4 in its own tier. Ranks are DENSE (ties share a
+     rank) because two names with the same score are not first and second. */
+  const rank=(list,key,dir)=>{
+    const sorted=list.filter(r=>key(r)!==null&&key(r)!==undefined)
+      .sort((a,b)=>dir*(key(a)-key(b)));
+    const out=new Map();let last=null,r=0,n=0;
+    sorted.forEach(x=>{n++;const v=key(x);if(v!==last){r=n;last=v;}out.set(x.sym,r);});
+    return{map:out,n:sorted.length};
+  };
+  const up=(r)=>r.ann!==null&&r.ann!==undefined?r.ann:null;
+  const comp=(r)=>r.tt&&r.tt.score!==null?r.tt.score:null;
+  const wt=(r)=>r.wt&&r.wt.w!==null?r.wt.w:null;
+  const out={overall:{upside:rank(rows,up,-1),composite:rank(rows,comp,-1),weight:rank(rows,wt,-1)},
+    tier:{},lens:{}};
+  [...new Set(rows.map(r=>r.tier))].forEach(t=>{out.tier[t]=rank(rows.filter(r=>r.tier===t),up,-1);});
+  [...new Set(rows.map(r=>r.lens))].forEach(l=>{out.lens[l]=rank(rows.filter(r=>r.lens===l),up,-1);});
+  return out;
+}
+function buildRankingsMd(){
+  const et=new Date().toLocaleDateString("en-CA",{timeZone:"America/New_York"});
+  const rows=Array.isArray(UPSIDE_ROWS)?UPSIDE_ROWS:[];
+  const st=stance(),hz=effHorizon(),roll=bookRollup();
+  const cats=rankCategories(rows);
+  const R=(m,sym)=>m.map.has(sym)?`${m.map.get(sym)}/${m.n}`:"—";
+  const pc=(v)=>v===null||v===undefined?"—":`${v>=0?"+":""}${v}%`;
+  let m=`# TT RANKINGS — ${et} ET\n\n`;
+
+  // 1. Can capital move at all? Everything below is subordinate to this line.
+  // st.txt ALREADY leads with the verdict, so printing both reads "NO NEW POSITIONS — NO NEW
+  // POSITIONS — leverage circuit tripped". One line, the qualifiers ride the bullets below.
+  m+=`## STANCE\n\n**${st.txt}**\n\n> ${st.why}\n\n`;
+  if(Array.isArray(st.quals)&&st.quals.length)
+    m+=st.quals.map(q=>`- ${q.t}`).join("\n")+`\n\n`;
+  const macro=(REGIME&&REGIME.regime&&REGIME.regime.verdict)||"unavailable";
+  const mf=REGIME&&REGIME.macro_flip;
+  m+=`- Macro (measured): **${macro}**`+
+    (mf?(mf.evaluable===false?` · flip **BLIND** (${mf.reason||"missing inputs"})`
+      :mf.tripped?` · flip **TRIPPED**`:mf.armed?` · flip armed`:` · flip clear`):` · flip n/a`)+`\n`;
+  if(BOARD.regime&&BOARD.regime.asserted)m+=`- Session (asserted): **${esc(BOARD.regime.asserted)}** — the stricter of the two governs\n`;
+  m+=`- Horizon: **${hz?`year-end ${hz}`:"nearest rung"}**${HORIZON===HZ_AUTO?" (auto — deepest year every modelled name reaches)":""}\n`;
+  m+=`- Tracked book: **${roll.mvN?money(roll.mv):"unmeasured"}**${roll.mvN?` across ${roll.mvN}/${BOOK.length} measured`:""} — a FLOOR, not NAV\n\n`;
+
+  // 2. The master table — every ranked name, every category rank.
+  m+=`## MASTER RANKING (${rows.length} of ${BOOK.length} names)\n\n`;
+  m+=`Sorted by annualised upside. "Composite" is the TT score; ranks are dense (ties share a rank).\n\n`;
+  m+=`| # | Sym | Tier | Lens | Composite | %/yr | Weight | Rank: upside | Rank: comp | Rank: in tier | Rank: in lens | Readiness | Flags |\n`;
+  m+=`|--:|---|---|---|--:|--:|--:|---|---|---|---|---|---|\n`;
+  rows.forEach((r,i)=>{
+    const e=find(r.sym),rd=e?readiness(e):null;
+    const flags=[
+      r.redH?`${r.redH} red hinge${r.redH===1?"":"s"}`:"",
+      r.rs.k==="never"?"NEVER RUN":r.rs.k!=="fresh"?`run ${r.rs.days}d`:"",
+      r.wt.optOnly?"options-only":"",
+      r.rolled?`rolled ${r.rolled}→${r.y}`:"",
+      r.rrFail?"R/R fails":"",
+      r.kdSoon!==null&&r.kdSoon<=BINARY_WINDOW_D?`binary ${r.kdSoon}d`:"",
+      r.live?"":"stamped px",
+    ].filter(Boolean).join(" · ")||"—";
+    m+=`| ${i+1} | **${r.sym}** | ${r.tier} | ${r.lens} | ${r.tt&&r.tt.score!==null?r.tt.score.toFixed(1):(r.tt&&r.tt.tier)||"—"} `+
+      `| ${r.ann!==null?pc(r.ann):`${pc(r.upside)} raw`} | ${r.wt.w!==null?r.wt.w+"%"+r.wt.mark:(r.wt.held?"unmeasured":"not held")} `+
+      `| ${R(cats.overall.upside,r.sym)} | ${R(cats.overall.composite,r.sym)} | ${R(cats.tier[r.tier],r.sym)} `+
+      `| ${R(cats.lens[r.lens],r.sym)} | ${rd?rd.verdict:"—"} | ${flags} |\n`;
+  });
+  m+=`\n`;
+
+  // 3. Per-category leaderboards — the same rows, re-cut by the axis being asked about.
+  m+=`## RANKS BY CATEGORY\n\n`;
+  const board=(title,list)=>{
+    if(!list.length)return "";
+    let t=`### ${title}\n\n`;
+    list.forEach((r,i)=>{t+=`${i+1}. **${r.sym}** — ${r.ann!==null?pc(r.ann):pc(r.upside)+" raw"}`+
+      `${r.tt&&r.tt.score!==null?` · composite ${r.tt.score.toFixed(1)}`:""}`+
+      `${r.wt.w!==null?` · ${r.wt.w}%`:""}\n`;});
+    return t+`\n`;
+  };
+  TIER_ORDER.forEach(t=>{m+=board(`Tier ${TIER_LABEL[t]||t}`,rows.filter(r=>r.tier===t));});
+  Object.keys(LENS_NAME).forEach(l=>{m+=board(`Lens ${l} — ${LENS_NAME[l]}`,rows.filter(r=>r.lens===l));});
+  const byComp=rows.filter(r=>r.tt&&r.tt.score!==null).sort((a,b)=>b.tt.score-a.tt.score);
+  if(byComp.length){
+    m+=`### By composite score\n\n`;
+    byComp.forEach((r,i)=>{m+=`${i+1}. **${r.sym}** — ${r.tt.score.toFixed(1)} (${r.tt.tier}) · ${r.ann!==null?pc(r.ann):"no rate"}\n`;});
+    m+=`\n`;
+  }
+
+  // 4. Eligibility — the green line, or every reason there isn't one.
+  m+=`## ELIGIBLE NEXT DOLLAR\n\n`;
+  if(AGREE_PICK){
+    m+=`**${AGREE_PICK.sym}** — all gates passed`+
+      (AGREE_PICK.ann!==null?` · ${pc(AGREE_PICK.ann)}/yr`:"")+
+      (AGREE_PICK.tt?` · TT ${AGREE_PICK.tt.score!==null?AGREE_PICK.tt.score.toFixed(1):AGREE_PICK.tt.tier}`:"")+`\n\n`;
+    if(AGREE_PICK.redH)m+=`> ⚠ ${AGREE_PICK.redH} red hinge(s): ${AGREE_PICK.redLabels.join(" · ")} — surfaced, not a veto\n\n`;
+  }else{
+    m+=`**WAIT — no name is eligible.** The valuation ranking above still stands as math.\n\n`;
+  }
+  // Vetoes for the top names, so the export explains itself rather than just listing.
+  const vetoed=rows.slice(0,10).map(r=>{
+    const e=find(r.sym),rd=e?readiness(e):null;
+    const why=!(r.upside>0)?"no gap"
+      :(r.wt.w!==null&&r.wt.w>=CAP_PCT)?`at the ${CAP_PCT}% cap`
+      :(rd&&rd.blockers.length)?`evidence: ${rd.blockers.join(", ")}`
+      :!r.tt?"unscored — no TT run"
+      :(r.tt.tier==="C"||(r.tt.score!==null&&r.tt.score<5.5))?"quality fails"
+      :r.rrFail?"R/R below floor"
+      :(r.kdSoon!==null&&r.kdSoon<=BINARY_WINDOW_D)?`binary ${r.kdSoon}d — no-new-adds`:null;
+    return why?`- **${r.sym}** — ${why}`:null;
+  }).filter(Boolean);
+  if(vetoed.length)m+=`### Why the others are not eligible\n\n${vetoed.join("\n")}\n\n`;
+
+  // 5. Funding priority — where a dollar comes FROM. Not a sell recommendation.
+  const sr=sellRank();
+  m+=`## FUNDING PRIORITY\n\n_Where the next dollar comes from. NOT a sell recommendation — a name with positive upside can appear purely because another has more._\n\n`;
+  if(sr&&sr.forced.length){
+    m+=`### Forced (at/over the ${CAP_PCT}% cap — a rule already broken)\n\n`;
+    sr.forced.forEach((r,i)=>{m+=`${i+1}. **${r.sym}** — ${r.w}% · ${r.trimPts}pts over · ≈ ${money(r.trim$)} to cap${r.dnt?" · ⚠ marked do-not-trim (contradiction to resolve)":""}\n`;});
+    m+=`\n`;
+  }
+  if(sr&&sr.disc.length){
+    m+=`### Discretionary (lowest expected return funds first)\n\n`;
+    sr.disc.forEach((r,i)=>{m+=`${i+1}. **${r.sym}** — ${r.basis==="return"?`${pc(r.ann)}/yr`:`${money(r.mv)} realisable (options — no comparable rate)`}${r.dnt?" · do-not-trim":""}\n`;});
+    m+=`\n`;
+  }
+  if(sr&&sr.unmod.length)m+=`_Held but unmodelled, so unrankable here: ${sr.unmod.map(r=>r.sym).join(", ")}._\n\n`;
+  if(sr&&sr.optOnly.length)m+=`_Options sleeves with no synced value: ${sr.optOnly.map(r=>r.sym).join(", ")}._\n\n`;
+  if(!sr)m+=`_No measured positions — nothing to rank._\n\n`;
+
+  // 6. What the ranking could NOT see. Silent truncation reads as "covered everything".
+  const unranked=BOOK.filter(x=>!rows.some(r=>r.sym===x.sym));
+  if(unranked.length){
+    m+=`## NOT RANKED (${unranked.length})\n\n_No pt_model target, or no usable price. NOT judged unattractive._\n\n`;
+    unranked.forEach(x=>{const rd=readiness(x);
+      m+=`- **${x.sym}** (${x.tier}/${x.lens}) — ${rd.blockers.length?rd.blockers.join(", "):"no model target"}\n`;});
+    m+=`\n`;
+  }
+  const lints=BOOK.map(x=>({sym:x.sym,ls:x.deepDive?lintPtModel(x.deepDive):[]})).filter(h=>h.ls.length);
+  if(lints.length){
+    m+=`## MODEL LINTS\n\n`;
+    lints.forEach(h=>{m+=`- **${h.sym}** — ${h.ls.map(l=>`${l.sev==="error"?"⛔":"⚠"} ${l.code}`).join(" · ")}\n`;});
+    m+=`\n`;
+  }
+
+  // 7. Provenance. Every number above is only as good as its mark.
+  m+=`---\n\n## PROVENANCE\n\n`;
+  m+=`- Quotes: ${LIVE_AT?`${String(LIVE_AT).slice(0,16).replace("T"," ")}Z`:"not loaded"}`+
+    ` · ${rows.filter(r=>r.live).length}/${rows.length} live, rest on stamped marks\n`;
+  m+=`- Positions: ${roll.mvN} measured${roll.stale?`, ${roll.stale} stale`:""}${roll.undated?`, ${roll.undated} undated`:""}\n`;
+  m+=`- Weights are % of TRACKED BOOK (a floor — NAV unmeasured), equity-only\n`;
+  m+=`- Composite scores and tiers are SELF-ATTESTED; run ages are the honesty check on them\n`;
+  m+=`- Generated ${et} ET from the TT terminal. Private — book content, keep out of public repos.\n`;
+  return m;
+}
+/* iOS share. navigator.share MUST be reached from the user gesture, so the document is built
+   SYNCHRONOUSLY first (everything is already in memory) and share() is the first await.
+   Fallback chain, best to worst: file share (Files/Notes/Messages/AirDrop) → text share →
+   clipboard → download. A user CANCELLING the sheet is an AbortError and is not a failure. */
+async function exportRankings(){
+  let md;
+  try{ md=buildRankingsMd(); }
+  catch(e){ return toast("Could not build rankings: "+(e&&e.message||e)); }
+  const name=`TT-RANKINGS-${new Date().toLocaleDateString("en-CA",{timeZone:"America/New_York"})}.md`;
+  // text/plain (not text/markdown): iOS share targets accept it far more reliably, and the
+  // .md extension still opens correctly in Files, Notes and any editor.
+  try{
+    const file=new File([md],name,{type:"text/plain"});
+    if(navigator.canShare&&navigator.canShare({files:[file]})){
+      await navigator.share({files:[file],title:"TT Rankings"});
+      return toast("Shared");
+    }
+  }catch(e){ if(e&&e.name==="AbortError")return; }
+  try{
+    if(navigator.share){ await navigator.share({title:"TT Rankings",text:md}); return toast("Shared"); }
+  }catch(e){ if(e&&e.name==="AbortError")return; }
+  if(navigator.clipboard){ try{ await navigator.clipboard.writeText(md); toast("Copied to clipboard"); }catch(_e){} }
+  download(name,md,"text/markdown");
+}
 function download(name,text,mime){
   const a=document.createElement("a");
   a.href=URL.createObjectURL(new Blob([text],{type:mime}));

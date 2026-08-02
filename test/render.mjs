@@ -259,6 +259,73 @@ ok("the blocker is verified against real option legs — expired ones cover noth
   !/cover 800/.test(today));
 ok("no add candidate is offered while a stop is live", !/Add candidate|Eligible next dollar/.test(today));
 
+// FEAT-TT-RANKEXPORT (v3.56): build the real document from the fixture and drive the share
+// chain. A string pin cannot prove a document renders; this executes it.
+console.log("\n[render] FEAT-TT-RANKEXPORT — the rankings document and the share chain");
+const rank = await page.evaluate(() => {
+  const md = buildRankingsMd();
+  return { md, len: md.length,
+    rows: (md.match(/\n\| \d+ \| \*\*/g) || []).length,
+    hasNaN: /NaN|undefined|\[object/.test(md) };
+});
+ok("rankexport: the document builds and is substantial", rank.len > 800);
+ok("rankexport: no NaN/undefined/[object Object] leaked into the output", !rank.hasNaN);
+ok("rankexport: it leads with STANCE, then the master ranking",
+  /# TT RANKINGS/.test(rank.md) && rank.md.indexOf("## STANCE") < rank.md.indexOf("## MASTER RANKING"));
+ok("rankexport: the fixture's tripped circuit is carried into the stance line",
+  /NO NEW POSITIONS/.test(rank.md));
+ok("rankexport: the stance verdict is not printed twice on one line",
+  !/\*\*NO NEW POSITIONS\*\* — NO NEW POSITIONS/.test(rank.md) &&
+  (rank.md.match(/NO NEW POSITIONS/g) || []).length <= 2);
+ok("rankexport: every ranked name gets a master-table row with category ranks",
+  rank.rows >= 3 && /Rank: in tier/.test(rank.md));
+ok("rankexport: per-tier and per-lens leaderboards render",
+  /### Tier /.test(rank.md) && /### Lens /.test(rank.md));
+ok("rankexport: funding priority carries its not-a-sell-call disclaimer",
+  /NOT a sell recommendation/.test(rank.md));
+ok("rankexport: unranked names are NAMED rather than silently dropped",
+  /## NOT RANKED/.test(rank.md));
+ok("rankexport: provenance states the floor denominator", /a floor — NAV unmeasured/.test(rank.md));
+if(process.env.DUMP_RANKINGS)console.log("\n----- SAMPLE OUTPUT -----\n"+rank.md+"\n----- END -----\n");
+// Share chain: stub navigator.share and confirm a File is what gets offered.
+const shared = await page.evaluate(async () => {
+  const seen = {};
+  const origShare = navigator.share, origCan = navigator.canShare;
+  Object.defineProperty(navigator, "canShare", { value: () => true, configurable: true });
+  Object.defineProperty(navigator, "share", { value: async (d) => {
+    seen.files = d.files ? d.files.length : 0;
+    seen.name = d.files && d.files[0] ? d.files[0].name : null;
+    seen.type = d.files && d.files[0] ? d.files[0].type : null;
+    seen.size = d.files && d.files[0] ? d.files[0].size : 0;
+  }, configurable: true });
+  await exportRankings();
+  if (origShare) Object.defineProperty(navigator, "share", { value: origShare, configurable: true });
+  else delete navigator.share;
+  if (origCan) Object.defineProperty(navigator, "canShare", { value: origCan, configurable: true });
+  else delete navigator.canShare;
+  return seen;
+});
+ok("share: a real File is handed to the share sheet (what iOS needs for Files/Notes)",
+  shared.files === 1 && shared.size > 800);
+ok("share: the filename is dated .md and the type is iOS-friendly text/plain",
+  /^TT-RANKINGS-\d{4}-\d{2}-\d{2}\.md$/.test(shared.name || "") && shared.type === "text/plain");
+// A cancelled sheet must not surface as an error.
+const cancelled = await page.evaluate(async () => {
+  const origShare = navigator.share, origCan = navigator.canShare;
+  Object.defineProperty(navigator, "canShare", { value: () => true, configurable: true });
+  Object.defineProperty(navigator, "share", { value: async () => {
+    const e = new Error("cancelled"); e.name = "AbortError"; throw e; }, configurable: true });
+  let threw = false;
+  try { await exportRankings(); } catch (_e) { threw = true; }
+  if (origShare) Object.defineProperty(navigator, "share", { value: origShare, configurable: true });
+  else delete navigator.share;
+  if (origCan) Object.defineProperty(navigator, "canShare", { value: origCan, configurable: true });
+  else delete navigator.canShare;
+  return { threw, toast: (document.getElementById("toast").textContent || "") };
+});
+ok("share: cancelling the sheet neither throws nor reports a failure",
+  !cancelled.threw && !/could not|fail/i.test(cancelled.toast));
+
 console.log("\n[render] drawers — a closed drawer never hides a red thing");
 const sums = (await page.locator("#boardView details.drawer > summary").allInnerTexts()).join(" | ");
 ok("exposure summary carries the cap breach count", /OVER THE 18% CAP/i.test(sums));
