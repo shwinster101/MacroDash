@@ -2724,5 +2724,39 @@ ok("30y: it does NOT vote — REGIME_BAND_TABLE is untouched and the readout mat
     dashSrc.indexOf("export function verdictFrom"))) &&
   !/thirtyYear|spread10s30s/.test(readFileSync(new URL("../src/ttReadout.js", import.meta.url), "utf8")));
 
+// ---- 33. REGIME_LOGIC_REFERENCE — the doc must not silently rot ------------
+// A reference doc with a wrong number is worse than none: it will be trusted. These pin the
+// load-bearing figures to the SOURCE, so changing a band without restamping the doc fails here.
+console.log("\n[33] REGIME_LOGIC_REFERENCE — pinned to source");
+const refPath = new URL("../REGIME_LOGIC_REFERENCE_2026-08-01.md", import.meta.url);
+const refDoc = existsSync(refPath) ? readFileSync(refPath, "utf8") : "";
+ok("ref: the reference doc exists and is date-stamped in its filename and body",
+  refDoc.length > 2000 && /\*\*Stamped:\*\* 2026-08-01 ET/.test(refDoc));
+ok("ref: it states the code wins on disagreement (a doc is never the source of truth)",
+  /the code is right and this file is stale/.test(refDoc));
+// The private framework must not be reproduced here — this repo is PUBLIC.
+ok("ref: it declares the private-framework boundary and does not reproduce that document",
+  /does \*\*not\*\* contain the owner's TT framework/.test(refDoc) &&
+  !/tt:framework:v1[\s\S]{0,80}=/.test(refDoc));
+// Load-bearing numbers, pinned against the real constants.
+ok("ref: the public quorum matches REGIME_QUORUM in source",
+  /`REGIME_QUORUM = 4` of 6/.test(refDoc) && /const REGIME_QUORUM = 4;/.test(dashSrc));
+ok("ref: the readout's INSUFFICIENT floor matches ttReadout",
+  /available < 3\s+→ INSUFFICIENT/.test(refDoc) &&
+  /available < 3\) verdict = "INSUFFICIENT"/.test(readFileSync(new URL("../src/ttReadout.js", import.meta.url), "utf8")));
+ok("ref: verdictFrom is transcribed VERBATIM, not paraphrased", (() => {
+  const i = dashSrc.indexOf("export function verdictFrom");
+  return dashSrc.slice(i, dashSrc.indexOf("\n}", i) + 2).split("\n")
+    .map((l) => l.trim()).filter(Boolean).every((l) => refDoc.includes(l)); })());
+ok("ref: the NFCI band constants match source", /`0` \/ `−0.5`/.test(refDoc) &&
+  /const NFCI_TIGHT = 0;/.test(dashSrc) && /const NFCI_LOOSE = -0.5;/.test(dashSrc));
+ok("ref: the constants appendix matches the real TT constants",
+  /`CAP_PCT` \| 18%/.test(refDoc) && /const CAP_PCT=18;/.test(adminSrc) &&
+  /`BINARY_WINDOW_D` \| 10d/.test(refDoc) && /const BINARY_WINDOW_D=10;/.test(adminSrc) &&
+  /`READY_THESIS_D` \| 30d/.test(refDoc) && /const READY_THESIS_D=30;/.test(adminSrc));
+ok("ref: the stated suite counts are not wildly stale (within 10% of actual)",
+  (() => { const m = /`node test\/smoke\.mjs` \((\d+)\)/.exec(refDoc);
+    return m && Math.abs(Number(m[1]) - (pass + fail + 1)) / (pass + fail + 1) < 0.1; })());
+
 console.log(`\n=== SMOKE TEST: ${pass} passed, ${fail} failed ===`);
 process.exit(fail === 0 ? 0 : 1);
