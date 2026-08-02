@@ -455,7 +455,7 @@ const UndoToast=({toasts, dismiss})=>{
 };
 
 // Direction tile (v1.3 stoplight)
-const DirTile=({label,value,d1,w1,m1,band,invert=false,spark,source,sourceEp,mode="MOCK",asOf,note})=>{
+const DirTile=({label,value,d1,w1,m1,band,invert=false,spark,source,sourceEp,mode="MOCK",asOf,note,noteTitle})=>{
   const illus=isIllustrative(mode); // v3.1: suppress the verdict + delta colors on mock/stale data
   const tc=t=>illus?T.textMuted:t==="yellow"?T.yellow:t===T.green?T.green:T.red;
   const t1=stoplightColor(d1,band,invert), t2=stoplightColor(w1,band,invert), t3=stoplightColor(m1,band,invert);
@@ -473,7 +473,10 @@ const DirTile=({label,value,d1,w1,m1,band,invert=false,spark,source,sourceEp,mod
       {/* FEAT-30Y: an optional factual sub-line (e.g. the 10s30s spread + a reference level).
           Rendered muted on mock/stale like every other number on an illustrative tile — it is
           a FACT about the same data, so it inherits the same provenance treatment. */}
-      {note&&<div style={{fontFamily:T.fontMono,fontSize:8,color:illus?T.textMuted:T.textSecondary,marginBottom:5,lineHeight:1.35}}>{note}</div>}
+      {/* v3.61 (FEAT-GLANCE): the note carries the FACT (it can read INVERTED — a red fact
+          that must survive the default view); explanatory reference prose rides noteTitle
+          as a tooltip instead of a rendered line. */}
+      {note&&<div title={noteTitle||undefined} style={{fontFamily:T.fontMono,fontSize:8,color:illus?T.textMuted:T.textSecondary,marginBottom:5,lineHeight:1.35}}>{note}</div>}
       {/* Verdict only on live data; mock/stale shows an honest chip instead of a fabricated call */}
       {/* Short chip label — a ~110px tile can't fit "· not live"; hatch + SourceBox carry it */}
       {illus?(mode==="STALE"?<DataModeBadge mode="STALE"/>:<IllustrativeChip label="ILLUSTRATIVE"/>):<Badge label={verdict.label} color={verdict.color} small/>}
@@ -874,8 +877,9 @@ const RegimeBand=({d,stale=new Set(),loading=false,liveBuild=false,srcLabel="der
   // the first screen; the full set (plus abstentions and exclusions) lives one tap down.
   const fc=flipConditions(d,stale);
   const nearest=fc.flips[0]||null;
-  const active=factors.filter(f=>!f.stale).length; // stale factors are excluded from the vote
-  const bulls=factors.filter(f=>f.bull).length;
+  // FEAT-GLANCE (v3.61, newcomer audit): the neutral vote is STATED, not implicit — the old
+  // "2/4 bullish · 2 votes bull / 1 bear" left a vote unaccounted for.
+  const neutralVotes=Math.max(0,regime.counted-regime.bullVotes-regime.bearVotes);
   // "wen moon?" — map the regime verdict to our moon ratings: RISK-ON→MOONING, MIXED→HODL, RISK-OFF→DIAMOND HANDS
   const moon=withheld?WEN_MOON_STATES[3]:WEN_MOON_STATES[{ "RISK-ON":0, "MIXED":1, "RISK-OFF":2 }[regime.label] ?? 1];
   return(
@@ -897,7 +901,7 @@ const RegimeBand=({d,stale=new Set(),loading=false,liveBuild=false,srcLabel="der
                 {loading?"no factors voting yet"
                         :regime.insufficient
                           ?`only ${regime.counted} of ${regime.totalFactors} factors usable — ${regime.quorum} required`
-                          :`${bulls}/${active} bullish · ${regime.bullVotes} vote${regime.bullVotes===1?"":"s"} bull / ${regime.bearVotes} bear`}
+                          :`${regime.bullVotes} bull · ${neutralVotes} neutral · ${regime.bearVotes} bear — ${regime.counted} of ${regime.totalFactors} usable`}
               </span>
             </div>
             {/* FEAT-FLIP: the audit's fourth first-screen answer — what would change the call.
@@ -1267,7 +1271,7 @@ export default function Dashboard({ publicView = false } = {}) {
 
   return(
     <div role="main" aria-label="MacroDash macro backdrop dashboard"
-      style={{background:T.bg,minHeight:"100vh",fontFamily:T.fontSans,color:T.textPrimary}}>
+      style={{background:T.bg,minHeight:"100vh",fontFamily:T.fontSans,color:T.textPrimary,paddingLeft:"env(safe-area-inset-left)",paddingRight:"env(safe-area-inset-right)"}}>
       {/* A11Y/IA (11.4.5 audit, High): the rendered page contained NO h1–h6 at all, so a
           screen reader had no document outline to navigate. The visible identity is the
           branded header below; duplicating it on screen would be noise, so the structural
@@ -1316,7 +1320,11 @@ export default function Dashboard({ publicView = false } = {}) {
       {/* ── HEADER (FEAT-161, FEAT-165) — a real <header> landmark since C2 (v3.60). The
           section nav below is the sticky element now, so the header scrolls away on phones
           instead of spending 60px of every viewport. ── */}
-      <header style={{background:T.surface,borderBottom:`1px solid ${T.border}`,padding:"8px 20px",display:"flex",justifyContent:"space-between",alignItems:"center",gap:8,flexWrap:"wrap"}}>
+      {/* FEAT-GLANCE (v3.61): safe-area — index.html has shipped viewport-fit=cover +
+          black-translucent since v1 (the page is deliberately drawn BEHIND the iOS status
+          bar), but env(safe-area-inset-*) was never added, so the wordmark rendered under
+          the Dynamic Island. env() resolves to 0 everywhere else — no visual change. */}
+      <header style={{background:T.surface,borderBottom:`1px solid ${T.border}`,padding:"calc(8px + env(safe-area-inset-top)) 20px 8px",display:"flex",justifyContent:"space-between",alignItems:"center",gap:8,flexWrap:"wrap"}}>
         {/* A2 (v3.58): minWidth:0 lets the identity group shrink inside the flex row instead of
             forcing overflow; the sub-wordmark hides below 360px (it duplicates the brand). */}
         <div style={{display:"flex",alignItems:"center",gap:14,minWidth:0,flexWrap:"wrap"}}>
@@ -1347,20 +1355,24 @@ export default function Dashboard({ publicView = false } = {}) {
         </div>
         <div style={{display:"flex",alignItems:"center",gap:8,flexWrap:"wrap",minWidth:0}}>
           <DataModeBadge mode={mode}/>
-          {activeAlerts>0&&<Badge label={`⚡ ${activeAlerts} FIRED`} color={T.red}/>}
-          {activeAlerts===0&&alertBlind>0&&<Badge label={`⚡ ${alertBlind} BLIND`} color={T.amber}/>}
+          {/* FEAT-GLANCE (v3.61, newcomer audit): the alert badges are operator tooling — the
+              Macro Alerts section itself is !publicView (A4), and "⚡ 3 BLIND" reads as a system
+              failure to a visitor who can't see the monitors it describes. Same gate. */}
+          {!publicView&&activeAlerts>0&&<Badge label={`⚡ ${activeAlerts} FIRED`} color={T.red}/>}
+          {!publicView&&activeAlerts===0&&alertBlind>0&&<Badge label={`⚡ ${alertBlind} BLIND`} color={T.amber}/>}
           {/* FEAT-165: share button */}
           <button onClick={handleShare} aria-label="Copy dashboard link" className="hdr-act"
             style={{fontFamily:T.fontMono,fontSize:9,background:copied?"#1a3020":T.surfaceHigh,border:`1px solid ${copied?T.green:T.borderAccent}`,color:copied?T.green:T.textSecondary,padding:"5px 12px",borderRadius:4,cursor:"pointer",transition:"all 0.2s"}}>
             {copied?"✓ COPIED":"⤴ SHARE"}
           </button>
           {/* FEAT-332: Copy TT readout — disabled unless live (an order-gating paste block must
-              not ship mock numbers; a disabled button can't be trimmed the way a warning header can). */}
-          <button onClick={handleTtCopy} disabled={!anyLive} aria-label="Copy TT regime readout" className="hdr-act"
+              not ship mock numbers; a disabled button can't be trimmed the way a warning header can).
+              v3.61: !publicView — it feeds the operator's terminal, not a shared view. */}
+          {!publicView&&<button onClick={handleTtCopy} disabled={!anyLive} aria-label="Copy TT regime readout" className="hdr-act"
             title={anyLive?"Copy the TT regime readout paste block":"live data required"}
             style={{fontFamily:T.fontMono,fontSize:9,background:ttCopied?"#1a3020":T.surfaceHigh,border:`1px solid ${ttCopied?T.green:T.borderAccent}`,color:ttCopied?T.green:T.textSecondary,padding:"5px 12px",borderRadius:4,cursor:anyLive?"pointer":"not-allowed",opacity:anyLive?1:0.4,transition:"all 0.2s"}}>
             {ttCopied?"✓ TT COPIED":"⎘ TT"}
-          </button>
+          </button>}
           {/* FEAT-TT: link to the Access-gated Ticker Terminal admin portal (hidden on public view) */}
           {!publicView&&<a href="/admin.html" aria-label="Open Ticker Terminal admin" className="hdr-act"
             title="TT Ticker Terminal (admin — email-gated)"
@@ -1375,7 +1387,11 @@ export default function Dashboard({ publicView = false } = {}) {
 
       {/* C2 (v3.60): section navigation — the page had one hidden h1 and no way to jump.
           Real <nav> landmark; each link targets the section's h2. Sticky in the header's place. */}
-      <nav aria-label="Sections" style={{display:"flex",gap:2,overflowX:"auto",padding:"4px 16px",background:T.surface,borderBottom:`1px solid ${T.border}`,position:"sticky",top:0,zIndex:40}}>
+      {/* Safe-area (v3.61): a fixed opaque scrim keeps scrolled content from showing through
+          the island strip, and the sticky nav offsets below it — padding the nav instead
+          would render a permanent inset-height band even when it isn't stuck. */}
+      <div aria-hidden="true" style={{position:"fixed",top:0,left:0,right:0,height:"env(safe-area-inset-top)",background:T.bg,zIndex:45}}/>
+      <nav aria-label="Sections" style={{display:"flex",gap:2,overflowX:"auto",padding:"4px 16px",background:T.surface,borderBottom:`1px solid ${T.border}`,position:"sticky",top:"env(safe-area-inset-top)",zIndex:40}}>
         {[["overview","Overview"],["drivers","Drivers"],["markets","Markets"],["macro","Macro"],["ai","AI"],["health","Data Health"]].map(([id,label])=>(
           <a key={id} href={`#${id}`} style={{fontFamily:T.fontMono,fontSize:9,letterSpacing:"0.08em",color:T.textSecondary,textDecoration:"none",padding:"6px 10px",borderRadius:3,whiteSpace:"nowrap"}}>{label}</a>
         ))}
@@ -1405,20 +1421,22 @@ export default function Dashboard({ publicView = false } = {}) {
         {regimeConf.blind&&(
           <span style={{fontFamily:T.fontMono,fontSize:8,color:T.red}}>⚠ crash gauge (VIX) unavailable</span>
         )}
-        {/* v3.1: one-line legend so a friend decodes the chips — ◫ ILLUSTRATIVE tiles are curated, not live */}
-        <span style={{fontFamily:T.fontMono,fontSize:8,color:T.textMuted,marginLeft:"auto"}}>● live · ⏱ stale · <span style={{color:T.amber}}>◫ illustrative = curated, not live</span></span>
+        {/* v3.61: the v3.1 decode legend moved into the Data Health expander — explanation,
+            not evidence, and the strip's job is the one-line tell. */}
       </div>
 
       {/* ── C4 (v3.60): WHAT CHANGED since the last valid snapshot ── */}
       {changed&&(
         <div style={{padding:"6px 20px",background:T.bg,borderBottom:`1px solid ${T.border}`,display:"flex",gap:10,alignItems:"baseline",flexWrap:"wrap"}}>
           <span style={{fontFamily:T.fontMono,fontSize:8,color:T.textMuted,letterSpacing:"0.12em",textTransform:"uppercase"}}>What changed</span>
+          {/* v3.61 (newcomer audit): the baseline is BROWSER-LOCAL (localStorage), not an
+              account — the copy states the device scope rather than implying a server history. */}
           {changed.baseline
-            ?<span style={{fontFamily:T.fontMono,fontSize:9,color:T.textSecondary}}>baseline set — changes will be tracked from this snapshot</span>
+            ?<span style={{fontFamily:T.fontMono,fontSize:9,color:T.textSecondary}}>baseline set — tracking starts today on this device</span>
             :changed.changes.length
               ?changed.changes.slice(0,4).map((c,i)=>(
                 <span key={i} style={{fontFamily:T.fontMono,fontSize:9,color:c.kind==="posture"?T.amber:T.textSecondary}}>{c.text}</span>))
-              :<span style={{fontFamily:T.fontMono,fontSize:9,color:T.textMuted}}>no material change since {String(changed.since||"").slice(0,10)}</span>}
+              :<span style={{fontFamily:T.fontMono,fontSize:9,color:T.textMuted}}>no material change since your previous visit on this device ({String(changed.since||"").slice(0,10)})</span>}
         </div>
       )}
 
@@ -1430,6 +1448,13 @@ export default function Dashboard({ publicView = false } = {}) {
         <div style={{fontFamily:T.fontMono,fontSize:8,color:T.textMuted,letterSpacing:"0.12em",textTransform:"uppercase",marginBottom:6}}>
           Evidence · {evidenceSet.freshSummary}{evidenceSet.withheld?" · posture withheld":""}
         </div>
+        {/* FEAT-GLANCE (v3.61): the six full cards collapse — the band's chip row above is
+            already the icon-first six-factor view, so a second full-size rendering of the
+            same six facts was the duplication the newcomer audit flagged. Red facts survive
+            the collapse: the summary line above stays, exclusions stay named in Signal
+            Quality, and the ⏱ chips stay on the band (the v3.25 rule). chip={false} — this
+            is live evidence, not curated content. */}
+        <CollapsedGroup count={evidenceSet.factors.length} label="factor evidence detail" chip={false}>
         <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
           {evidenceSet.factors.map(f=>{
             const vc=f.vote==="bull"?T.green:f.vote==="bear"?T.red:f.vote==="excluded"?T.amber:T.textSecondary;
@@ -1448,6 +1473,7 @@ export default function Dashboard({ publicView = false } = {}) {
               </div>
             );})}
         </div>
+        </CollapsedGroup>
       </section>
 
       <h2 id="markets" className="visually-hidden">Markets — equities, rates and cross-asset</h2>
@@ -1677,7 +1703,8 @@ export default function Dashboard({ publicView = false } = {}) {
                      line is a stated REFERENCE, never a verdict — a directional call off a
                      level would be the v3.1 invariant violated. */
                   { f:"thirtyYear", render:()=><DirTile label="30Y Treasury" value={`${d.crossAsset.treasury30y.current}%`} d1={d.crossAsset.treasury30y.d1} w1={d.crossAsset.treasury30y.w1} m1={d.crossAsset.treasury30y.m1} band={0.10} invert={true} spark={d.crossAsset.treasury30y.series} source="FRED" sourceEp="DGS30" mode={modeOf('thirtyYear')} asOf={asOfOf('thirtyYear')}
-                      note={`10s30s ${d.crossAsset.term.spread10s30s>=0?"+":""}${d.crossAsset.term.spread10s30s.toFixed(2)}pp${d.crossAsset.term.spread10s30s<0?" — INVERTED":""} · 5.00% = the 2007 pre-GFC reference level`}/> },
+                      note={`10s30s ${d.crossAsset.term.spread10s30s>=0?"+":""}${d.crossAsset.term.spread10s30s.toFixed(2)}pp${d.crossAsset.term.spread10s30s<0?" — INVERTED":""}`}
+                      noteTitle={"5.00% = the 2007 pre-GFC reference level"}/> },
                   { f:"wti", render:()=><DirTile label="WTI Crude"   value={`$${d.crossAsset.wti.current}`}         d1={d.crossAsset.wti.d1pct}  w1={d.crossAsset.wti.w1pct}  m1={d.crossAsset.wti.m1pct}  band={1.0} spark={d.crossAsset.wti.series}  source="FRED" sourceEp="DCOILWTICO" mode={modeOf('wti')} asOf={asOfOf('wti')}/> },
                   { f:"btc", render:()=><DirTile label="Bitcoin"     value={`$${(d.crossAsset.btc.current/1000).toFixed(1)}K`} d1={d.crossAsset.btc.d1pct} w1={d.crossAsset.btc.w1pct} m1={d.crossAsset.btc.m1pct} band={2.0} spark={d.crossAsset.btc.series} source="FRED" sourceEp="CBBTCUSD" mode={modeOf('btc')} asOf={asOfOf('btc')}/> },
                 ];
@@ -1931,6 +1958,10 @@ export default function Dashboard({ publicView = false } = {}) {
               <button onClick={retry} style={{fontFamily:T.fontMono,fontSize:9,background:T.surfaceHigh,border:`1px solid ${T.red}66`,color:T.red,padding:"2px 8px",borderRadius:3,cursor:"pointer"}}>↻ RETRY</button>
             </div>}
           </div>
+          {/* FEAT-GLANCE (v3.61): the 15-row per-source grid is diagnostic depth, one tap
+              away. The section header + the ERROR/Retry row stay outside the collapse —
+              an outage is a red fact and must not need a click to discover. */}
+          <CollapsedGroup count={SIGNAL_FIELDS.length} label="per-source detail" chip={false}>
           <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(210px,1fr))",gap:6}}>
             {SIGNAL_FIELDS.map(k=>(
               <div key={k} style={{display:"flex",gap:6,alignItems:"center",fontFamily:T.fontMono,fontSize:9,color:T.textSecondary,padding:"4px 6px",background:T.bg,borderRadius:3,flexWrap:"wrap"}}>
@@ -1944,6 +1975,10 @@ export default function Dashboard({ publicView = false } = {}) {
           <div style={{fontFamily:T.fontMono,fontSize:8,color:T.textMuted,marginTop:6}}>
             cadence is each source's normal release rhythm — a monthly print weeks old can still be the freshest available
           </div>
+          {/* The chip legend lives with the diagnostics it decodes (moved from the always-visible
+              Signal Quality strip, v3.61 — explanation, not evidence). */}
+          <div style={{fontFamily:T.fontMono,fontSize:8,color:T.textMuted,marginTop:4}}>legend: ● live · ⏱ stale · <span style={{color:T.amber}}>◫ illustrative = curated, not live</span></div>
+          </CollapsedGroup>
         </section>
 
         {/* ── FOOTER ── */}

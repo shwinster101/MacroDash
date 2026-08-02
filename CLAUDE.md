@@ -1585,6 +1585,68 @@ Jan-anchor shipped; see `snapshot.js` ~318–328), `spyMa100`, `spyMa200`, and a
   lifts to behavior) + 169 render + **67 public-render** (+11: nav/outline/landmark, the
   matrix with a named exclusion driven live, and the baseline-set → no-material-change cycle
   across a real reload).
+- **FEAT-GLANCE (v3.61) — "First Glance": safe-area, and the density cut on BOTH surfaces.**
+  Owner screenshot (iPhone, deployed v3.60): the wordmark rendered UNDER the Dynamic Island,
+  and the first screen was word-dense for a new retail reader. Two root causes, one lesson.
+  **Safe-area:** `index.html` has shipped `viewport-fit=cover` + `black-translucent` since v1 —
+  the page is *deliberately* drawn behind the iOS status bar — but `env(safe-area-inset-*)`
+  appeared **nowhere in the repo**, and the comment at `index.html:5` claimed safe-area handling
+  that was never implemented (the label-outlives-its-data defect class again). The header now
+  pads `calc(8px + env(safe-area-inset-top))`, the sticky Sections nav offsets below a fixed
+  opaque **scrim** over the island strip (padding the nav instead would render a permanent
+  inset-height band when it isn't stuck), and the root pads the landscape edges. `admin.html`
+  had zero handling either and renders fullscreen inside the installed PWA shell: it gains
+  `viewport-fit=cover`, `.wrap` top/bottom insets, a `.toast` that clears the home-indicator
+  strip, and overlay padding on both edges. `env()` resolves to 0 everywhere else — Chromium
+  can't simulate insets, so the proof is smoke pins + the owner's on-device check.
+  **Density (dashboard):** the two largest always-expanded blocks were both v3.60 diagnostics —
+  the six-card **Drivers matrix** and the 15-row **Data Health grid**. Both collapse behind the
+  FEAT-321 `CollapsedGroup` (`chip={false}` — live evidence, not curated) with their `<section>`/
+  h2 wrappers and summary lines outside, so nav anchors resolve and the v3.25 rule holds: the
+  matrix's exclusions stay named in Signal Quality and as ⏱ chips on the band, and Data Health's
+  ERROR/Retry row stays outside the collapse — an outage must not need a click to discover. The
+  first-principles call: **the band's chip row IS the icon-first six-factor view**, so a second
+  full-size rendering of the same six facts was duplication (the newcomer audit's point), not
+  depth. The Signal Quality decode legend moved into the Data Health expander (explanation, not
+  evidence); the 30Y tile note keeps its FACT (spread + INVERTED) and moves the 2007-reference
+  prose to a tooltip. Owner calls, recorded: the Macro Regime grid stays visible (numbers are
+  indicators, not prose), **full 5 Whys stays**, and **the WSB lingo/vibe stays wherever
+  language is in play** (HODL primary, bull/bear vocabulary — personal tool, not commercial; the
+  newcomer audit's relabel layer was declined).
+  **Newcomer-audit structural fixes (vibe untouched):** (1) **the verdict sub can no longer name
+  an excluded factor** — MIXED read "Cross-signals — watch VIX" while VIX sat two rows below
+  marked stale-excluded, the hero explanation resting on evidence the model says it cannot use;
+  `computeRegime` now re-derives the watch from the **nearest load-bearing flip** (`watchKey` on
+  `REGIME_META`, one derivation — `flipConditions` already computes exactly that), falling back
+  to "N of 6 inputs usable" when no single crossing flips it. (2) **The neutral vote is stated**
+  — "2/4 bullish · 2 votes bull / 1 bear" left a vote unaccounted; now `N bull · N neutral · N
+  bear — N of 6 usable`. (3) **Operator tooling off the public route** (the A4 pattern): the
+  `⎘ TT` copy button and the `⚡ N FIRED/BLIND` alert badges gate on `!publicView` — BLIND reads
+  as a system failure to a visitor who can't see the monitors it counts. (4) **What Changed
+  names its device scope** — "baseline set — tracking starts today on this device" / "no
+  material change since your previous visit on this device" — the localStorage limitation
+  stated, not implied away.
+  **Density (terminal, FEAT-TT-GLANCE):** post-v3.42 the remaining full-size prose concentrated
+  in the SELL block. The ranking-basis sentences (repeated on EVERY row) are stated ONCE in a
+  closed **`details.est-mini`** expander — "how this list is ranked" — together with the two
+  unbounded "cannot rank" name lists, the options-only tail and the tax-lots disclaimer; rows
+  keep chip-length basis tags (`%/yr` / `$ realisable`) so the mixed ordering still can't be
+  mistaken for one key. The **unranked COUNT rides the closed summary** (silent truncation reads
+  as full coverage) and the **session-vs-computed disagreement stays visible** as a chip-length
+  line (`⚖ session: X first · computed: Y`) — it is signal, married-never-merged; the doctrine
+  prose lives inside. est-mini, deliberately NEVER `drawer` — the phone harness counts open
+  drawers (the est-run precedent). Red facts untouched: ⛔ TRIM rows, the cap-contradiction
+  warning, do-not-trim flags. The BUY block's sentences are decision-critical vetoes and did not
+  move. The board h2 became chip-length (`THE BOOK`); the coaching line moved to the HOW THIS
+  BOARD WORKS aside.
+  Tests: **945 smoke** (+19: safe-area literals on all three surfaces, the collapse structure,
+  the excluded-aware sub RUN behaviorally through the real regime.js import on three fixtures,
+  the neutral-vote line, the public gates, the est-mini/never-drawer pin) + **173 render** (+4:
+  closed-SELL chip tags with the sentences absent, the visible unranked count, the disagreement
+  chip, expander-class proof — then everything verbatim one tap deep) + **74 public-render**
+  (+7: collapsed-by-default proofs for matrix and Data Health with red facts visible while
+  closed, the legend's new home, the device-scope copy on both visits, and the TT/BLIND gate on
+  the route pair).
 - **Deferred:** stored fundamentals + Robinhood sync — now unblocked by the `x-tt-pin` header
   (v3.9): a chat-side daily review can PUT `status_flags`/`ref_px` into the deepDive payloads and
   stamp `lastRun`. When built, store the *triage* shape (`{at, px}` → "% moved since your last TT
@@ -1651,7 +1713,7 @@ npm run dev        # Vite dev server (mock unless VITE_DATA_MODE=live in .env)
 npm run build      # → dist/  (what Pages runs)
 npm run preview    # serve the built dist/
 
-node test/smoke.mjs   # 926-assertion no-network smoke test (needs Node ≥17)
+node test/smoke.mjs   # 945-assertion no-network smoke test (needs Node ≥17)
 npm run test:ui       # browser render test for admin.html (skips if no Chromium)
 npm run test:public   # build + browser STATE test for the public dashboard (skips likewise)
 

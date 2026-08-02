@@ -3063,8 +3063,93 @@ ok("C3: the Drivers matrix renders the CONTRACT (evidenceSet.factors), not its o
   dashSrc.includes("evidenceSet.factors.map(f=>") && dashSrc.includes("excluded — {f.reason}"));
 ok("C4: the digest persists AFTER comparing, and only quorate sets become the baseline",
   dashSrc.indexOf("compareEvidence(prev,cur)") < dashSrc.indexOf("localStorage.setItem(LASTVALID_KEY") &&
-  dashSrc.includes("baseline set — changes will be tracked from this snapshot") &&
-  dashSrc.includes("no material change since"));
+  // v3.61 (newcomer audit): the copy states the localStorage device scope explicitly.
+  dashSrc.includes("baseline set — tracking starts today on this device") &&
+  dashSrc.includes("no material change since your previous visit on this device"));
+
+// ---- 39. v3.61 FEAT-GLANCE — safe-area + first-glance density + newcomer fixes ----
+console.log("\n[39] v3.61 — safe-area, first-glance density, newcomer-audit fixes");
+// F1: index.html has shipped viewport-fit=cover + black-translucent since v1 — the page is
+// deliberately drawn BEHIND the iOS status bar — but env(safe-area-inset-*) existed nowhere,
+// so the wordmark rendered under the Dynamic Island. The comment at index.html:5 claimed
+// safe-area handling; these pins make the claim true and keep it true.
+const indexSrc = readFileSync(new URL("../index.html", import.meta.url), "utf8");
+ok("glance: index.html still ships viewport-fit=cover (the env() half depends on it)",
+  /viewport-fit=cover/.test(indexSrc));
+ok("glance: the header pads for the island — calc(8px + env(safe-area-inset-top))",
+  dashSrc.includes('padding:"calc(8px + env(safe-area-inset-top)) 20px 8px"'));
+ok("glance: the sticky nav offsets below the island with an opaque scrim over the strip " +
+   "(padding the nav instead would render a permanent inset-height band when not stuck)",
+  dashSrc.includes('top:"env(safe-area-inset-top)"') &&
+  dashSrc.includes('height:"env(safe-area-inset-top)"'));
+ok("glance: landscape notch edges — root pads left/right insets",
+  dashSrc.includes('paddingLeft:"env(safe-area-inset-left)"') &&
+  dashSrc.includes('paddingRight:"env(safe-area-inset-right)"'));
+// F2: the two big v3.60 diagnostic blocks collapse behind the FEAT-321 idiom. chip={false}
+// both times — live evidence, not curated content.
+ok("glance: the Drivers matrix cards collapse (band chips are the icon-first six-factor view)",
+  /label="factor evidence detail" chip=\{false\}/.test(dashSrc));
+ok("glance: the Data Health per-source grid collapses; the ERROR/Retry row stays OUTSIDE",
+  /label="per-source detail" chip=\{false\}/.test(dashSrc) &&
+  dashSrc.indexOf('mode==="ERROR"&&<div style={{fontFamily:T.fontMono,fontSize:9,color:T.red') <
+  dashSrc.indexOf('label="per-source detail"'));
+ok("glance: the decode legend moved INTO the Data Health expander — the always-visible strip " +
+   "no longer carries explanation, only evidence",
+  dashSrc.includes("legend: ● live · ⏱ stale ·") &&
+  !/marginLeft:"auto"\}\}>● live · ⏱ stale ·/.test(dashSrc));
+ok("glance: the 30Y tile note keeps the FACT (spread + INVERTED) and moves the reference " +
+   "prose to a tooltip — a red fact must survive the default view",
+  dashSrc.includes('noteTitle={"5.00% = the 2007 pre-GFC reference level"}') &&
+  /title=\{noteTitle\|\|undefined\}/.test(dashSrc));
+// F2b-1 (behavioral, real import): the verdict sub must never name an excluded factor.
+const subFix = (fg, cpiLast) => ({
+  crossAsset: { treasury10y: { m1: -0.2 } },
+  marketPulse: { vix: { current: 17.09 }, fearGreed: { score: fg } },
+  macro: { cpi: { trend: [3.2, 3.1, 3.0, 2.9, 2.8, cpiLast] },
+    shillerPe: { current: 24, mean: 17.6, ath: 44.19 }, nfci: { current: -0.42 } },
+});
+ok("glance: MIXED with VIX voting keeps the canonical 'watch VIX' sub",
+  regimeCompute(subFix(42, 2.9), new Set()).sub === "Cross-signals — watch VIX");
+ok("glance: MIXED with VIX excluded re-derives the watch from the NEAREST load-bearing flip",
+  (() => { const r = regimeCompute(subFix(50, 2.9), new Set(["vix"]));
+    return r.label === "MIXED" && !r.sub.includes("VIX") && /watch (NFCI|F&G|10Y)/.test(r.sub); })());
+ok("glance: MIXED with VIX excluded and NO load-bearing flip states the evidence base instead",
+  (() => { // deep-MIXED shape (2 bull / 1 bear / 2 neutral of 5): no single crossing flips it
+    const d = { crossAsset: { treasury10y: { m1: 0.05 } },
+      marketPulse: { vix: { current: 17.09 }, fearGreed: { score: 42 } },
+      macro: { cpi: { trend: [3.2, 3.1, 3.0, 2.9, 2.8, 2.7] },
+        shillerPe: { current: 40.91, mean: 17.6, ath: 44.19 }, nfci: { current: -0.42 } } };
+    const r = regimeCompute(d, new Set(["vix"]));
+    return r.label === "MIXED" && r.sub === "Cross-signals — 5 of 6 inputs usable"; })());
+// F2b-2: the neutral vote is stated, not implicit.
+ok("glance: the vote line accounts for every counted vote — bull · neutral · bear of usable",
+  /\$\{regime\.bullVotes\} bull · \$\{neutralVotes\} neutral · \$\{regime\.bearVotes\} bear — \$\{regime\.counted\} of \$\{regime\.totalFactors\} usable/.test(dashSrc));
+// F3a: the terminal gets the same treatment — inside the installed PWA shell admin.html
+// renders fullscreen too, and it had ZERO safe-area handling.
+ok("tt-glance: admin viewport gains viewport-fit=cover",
+  /viewport-fit=cover/.test(adminSrc));
+ok("tt-glance: .wrap pads top+bottom insets; .toast clears the home-indicator strip",
+  /\.wrap\{[^}]*calc\(14px \+ env\(safe-area-inset-top\)\)/s.test(adminSrc) &&
+  /calc\(60px \+ env\(safe-area-inset-bottom\)\)/.test(adminSrc) &&
+  /\.toast\{position:fixed;bottom:calc\(18px \+ env\(safe-area-inset-bottom\)\)/.test(adminSrc));
+ok("tt-glance: the modal overlay clears both edges",
+  /\.overlay\{[^}]*calc\(32px \+ env\(safe-area-inset-top\)\) 16px calc\(32px \+ env\(safe-area-inset-bottom\)\)/s.test(adminSrc));
+// F3b: the SELL methodology moved behind an est-mini (NEVER drawer — the phone harness
+// counts open drawers), stated once instead of repeated per row; the strings survive.
+ok("tt-glance: the SELL expander is est-mini and the methodology is stated ONCE, not per row",
+  /details class="est-mini"><summary><span class="scope">how this list is ranked<\/span>/.test(adminSrc) &&
+  adminSrc.includes("shares: lowest expected return funds first · options: ranked on realisable dollars — a leg's return is not the underlying's") &&
+  !/fdr-d"><span class="scope">\$\{optRow\s*\?"ranked on realisable dollars/.test(adminSrc));
+ok("tt-glance: the unranked count rides the closed summary — no silent truncation",
+  /\(unrankedN\?`<span style="color:var\(--amber\)">○ \$\{unrankedN\} unranked<\/span>`:""\)/.test(adminSrc));
+ok("tt-glance: the board heading is chip-length; the coaching line lives in the aside",
+  adminSrc.includes("<h2 style=\"margin-top:14px\">THE BOOK</h2>") &&
+  adminSrc.includes("click any ticker chip to open its TT Card"));
+// F2b-3: operator tooling off the public route (the A4 pattern).
+ok("glance: the TT copy button and the FIRED/BLIND alert badges gate on !publicView",
+  /\{!publicView&&<button onClick=\{handleTtCopy\}/.test(dashSrc) &&
+  /\{!publicView&&activeAlerts>0&&<Badge/.test(dashSrc) &&
+  /\{!publicView&&activeAlerts===0&&alertBlind>0&&<Badge/.test(dashSrc));
 
 console.log(`\n=== SMOKE TEST: ${pass} passed, ${fail} failed ===`);
 process.exit(fail === 0 ? 0 : 1);

@@ -2,10 +2,14 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<!-- FEAT-TT-GLANCE (v3.61): viewport-fit=cover + env(safe-area-inset-*) — inside the
+     installed PWA shell this page renders fullscreen behind the iOS status bar and home
+     indicator; the insets keep the header below the Dynamic Island and the toast above
+     the home strip. env() resolves to 0 everywhere else. -->
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
 <!-- AUDIT: kept in sync with package.json by test/smoke.mjs. admin.html is a Vite
      public/ passthrough, so it cannot receive __APP_VERSION__ — the guard is the fix. -->
-<title>TT TICKER TERMINAL v3.60.0</title>
+<title>TT TICKER TERMINAL v3.61.0</title>
 <style>
   :root{
     --bg:#05070a; --panel:#0a0f16; --panel2:#0d141d; --line:#16202c;
@@ -39,7 +43,8 @@
     -webkit-font-smoothing:antialiased;
   }
   a{color:var(--cyan);text-decoration:none}
-  .wrap{max-width:1360px;margin:0 auto;padding:14px 16px 60px}
+  .wrap{max-width:1360px;margin:0 auto;
+    padding:calc(14px + env(safe-area-inset-top)) 16px calc(60px + env(safe-area-inset-bottom))}
   /* ── header ── */
   /* v3.42 slice 5: the header measured 209px at 390×844 — larger than the stance bar and tab
      strip COMBINED, and the single biggest consumer of the 587px that sat above the first
@@ -295,7 +300,8 @@
   .blk{color:var(--red)} .arm{color:var(--amber)} .ok{color:var(--green)}
   /* ── detail / card modal ── */
   .overlay{position:fixed;inset:0;background:rgba(2,4,6,.72);backdrop-filter:blur(3px);
-    display:none;align-items:flex-start;justify-content:center;padding:32px 16px;z-index:50;overflow:auto}
+    display:none;align-items:flex-start;justify-content:center;z-index:50;overflow:auto;
+    padding:calc(32px + env(safe-area-inset-top)) 16px calc(32px + env(safe-area-inset-bottom))}
   .overlay.on{display:flex}
   .card{width:min(760px,100%);border:1px solid var(--greenDim);border-radius:10px;
     background:linear-gradient(180deg,#0a1017,#070b10);box-shadow:0 0 40px rgba(31,122,85,.25);
@@ -326,7 +332,7 @@
   button.act.warn:hover{background:#1d1607}
   button.act.danger{color:var(--red);border-color:#4a1a20;background:#150708}
   /* toast */
-  .toast{position:fixed;bottom:18px;left:50%;transform:translateX(-50%) translateY(20px);
+  .toast{position:fixed;bottom:calc(18px + env(safe-area-inset-bottom));left:50%;transform:translateX(-50%) translateY(20px);
     background:#0c1a13;border:1px solid var(--greenDim);color:var(--green);padding:8px 16px;
     border-radius:8px;opacity:0;transition:.25s;z-index:80;font-size:12px;box-shadow:0 0 20px rgba(31,122,85,.3)}
   .toast.on{opacity:1;transform:translateX(-50%) translateY(0)}
@@ -357,7 +363,7 @@
         onclick="toggleHeadInfo()">⋯ MENU</button>
     </div>
     <div id="headInfo" style="display:none">
-      <div class="brand">FINANCE&nbsp;BRO.AI // TT&nbsp;TICKER&nbsp;TERMINAL <small>v3.60.0 · single-pass deep-dive orchestrator</small></div>
+      <div class="brand">FINANCE&nbsp;BRO.AI // TT&nbsp;TICKER&nbsp;TERMINAL <small>v3.61.0 · single-pass deep-dive orchestrator</small></div>
       <div class="statusline">
         <span>BOOK: <b id="bookStamp">loading…</b></span>
         <span>AUTH: <b id="sessState">…</b></span>
@@ -415,7 +421,9 @@
         <div class="nd fdr" id="sellBlock" style="display:none"></div>
         <div class="nd fdr" id="calBlock" style="display:none"></div>
 
-        <h2 style="margin-top:14px">The Book &nbsp;·&nbsp; click any ticker to open its TT Card</h2>
+        <!-- FEAT-TT-GLANCE (v3.61): chip-length heading; the coaching line moved to the
+             HOW THIS BOARD WORKS aside — onboarding prose, not board state. -->
+        <h2 style="margin-top:14px">THE BOOK</h2>
         <div id="board"></div>
 
         <!-- DESK: the full detail — every pre-v3.38 strip, unchanged, one click deep.
@@ -484,6 +492,7 @@
 
       <details class="drawer"><summary>HOW THIS BOARD WORKS</summary>
         <ul class="tight">
+          <li><b>THE BOOK</b>: click any ticker chip to open its TT Card.</li>
           <li><b>TODAY</b> is derived, never typed: stance = circuit then the stricter regime; actions are ordered by irreversibility (tonight's print outranks any add).</li>
           <li><b>WHAT CHANGED</b> diffs against the moment you last hit <i>mark seen</i> — not against an arbitrary session window.</li>
           <li>Open decisions live in the <b>DECISIONS</b> drawer and age in public; an undated one reads as the worst, never the freshest.</li>
@@ -3794,25 +3803,38 @@ function renderSellBlock(){
       (optRow
         ?`<span class="fdr-p" style="color:var(--slate)">${money(r.mv)}</span>`
         :`<span class="fdr-p" style="color:${r.ann>=0?"var(--green)":"var(--red)"}">${r.ann>=0?"+":""}${r.ann}%/yr <span style="font-size:10px;font-weight:400">model</span></span>`)+
-      `<span class="fdr-d"><span class="scope">${optRow
-        ?"ranked on realisable dollars — a leg's return is not the underlying's"
-        :"lowest expected return funds first"}</span>${flags(r)}</span></button>`;
+      /* FEAT-TT-GLANCE (v3.61): the ranking-basis clause was a full sentence repeated on
+         EVERY row. It is a constant of the list, not a fact about the row — stated once in
+         the methodology expander below; the row keeps a chip-length basis tag so the mixed
+         ordering still can't be mistaken for one key. */
+      `<span class="fdr-d"><span class="scope">${optRow?"$ realisable":"%/yr"}</span>${flags(r)}</span></button>`;
   });
   const noModel=s.unmod.filter(r=>!r.modelled),noRate=s.unmod.filter(r=>r.modelled);
-  if(noModel.length)h+=`<div class="none">cannot rank — no model: <b>${noModel.map(r=>esc(r.sym)).join(", ")}</b> (held, but the math has nothing to say)</div>`;
-  if(noRate.length)h+=`<div class="none" style="color:var(--amber)">cannot rank — modelled but no annualisable rung (every one inside 3 months): <b>${noRate.map(r=>esc(r.sym)).join(", ")}</b></div>`;
-  /* v3.44: options-only positions now rank IN the list above whenever their legs carry synced
-     values. What remains here is only what genuinely cannot be ranked — an unsynced sleeve, or
-     a NET SHORT one, which is an obligation rather than a source of dollars. Each says which. */
-  s.optOnly.forEach(o=>{
-    h+=`<div class="none"><b>${esc(o.sym)}</b> <span class="scope">◇ ${o.legs} leg${o.legs===1?"":"s"}</span> — ${esc(o.why)}</div>`;
-  });
-  // Reconciliation: the session's ASSERTED first trim vs this COMPUTED first source.
+  // Reconciliation: the session's ASSERTED first trim vs this COMPUTED first source. The
+  // disagreement is SIGNAL (married never merged), so the chip-length line stays visible;
+  // the "information, not an average" doctrine prose rides the expander with the rest.
   const assertedFirst=BOARD.funding&&Array.isArray(BOARD.funding.order)&&BOARD.funding.order[0]&&BOARD.funding.order[0].sym;
   const computedFirst=(s.forced[0]&&s.forced[0].sym)||(s.disc[0]&&s.disc[0].sym)||null;
-  if(assertedFirst&&computedFirst&&assertedFirst!==computedFirst)
-    h+=`<div class="none" style="color:var(--amber)">⚖ session funding order asserts <b>${esc(assertedFirst)}</b> first · computed says <b>${esc(computedFirst)}</b> — disagreement is information, not an average</div>`;
-  h+=`<div class="none">±unrl% is measured; tax lots are NOT — weights are % of tracked book (a floor) · <button class="linklike" onclick="openDesk('dExp')">full exposure detail ↗</button></div>`;
+  const disagree=!!(assertedFirst&&computedFirst&&assertedFirst!==computedFirst);
+  if(disagree)
+    h+=`<div class="none" style="color:var(--amber)">⚖ session: <b>${esc(assertedFirst)}</b> first · computed: <b>${esc(computedFirst)}</b></div>`;
+  /* FEAT-TT-GLANCE (v3.61): methodology, the unranked tail and the tax disclaimer live ONE
+     tap down. The COUNT stays on the closed summary — silent truncation reads as full
+     coverage (the v3.36 rule). est-mini class, deliberately NOT `drawer`: the phone harness
+     counts open details.drawer in #boardView (the est-run precedent). */
+  const unrankedN=s.unmod.length+s.optOnly.length;
+  h+=`<details class="est-mini"><summary><span class="scope">how this list is ranked</span>`+
+    (unrankedN?`<span style="color:var(--amber)">○ ${unrankedN} unranked</span>`:"")+`</summary><div>`+
+    `<div class="none">shares: lowest expected return funds first · options: ranked on realisable dollars — a leg's return is not the underlying's</div>`+
+    (noModel.length?`<div class="none">cannot rank — no model: <b>${noModel.map(r=>esc(r.sym)).join(", ")}</b> (held, but the math has nothing to say)</div>`:"")+
+    (noRate.length?`<div class="none" style="color:var(--amber)">cannot rank — modelled but no annualisable rung (every one inside 3 months): <b>${noRate.map(r=>esc(r.sym)).join(", ")}</b></div>`:"")+
+    /* v3.44: options-only positions rank IN the list whenever their legs carry synced values.
+       What remains here is only what genuinely cannot be ranked — an unsynced sleeve, or a
+       NET SHORT one, which is an obligation rather than a source of dollars. Each says which. */
+    s.optOnly.map(o=>`<div class="none"><b>${esc(o.sym)}</b> <span class="scope">◇ ${o.legs} leg${o.legs===1?"":"s"}</span> — ${esc(o.why)}</div>`).join("")+
+    (disagree?`<div class="none" style="color:var(--amber)">⚖ session funding order asserts <b>${esc(assertedFirst)}</b> first · computed says <b>${esc(computedFirst)}</b> — disagreement is information, not an average</div>`:"")+
+    `<div class="none">±unrl% is measured; tax lots are NOT — weights are % of tracked book (a floor) · <button class="linklike" onclick="openDesk('dExp')">full exposure detail ↗</button></div>`+
+    `</div></details>`;
   el.innerHTML=h;
 }
 /* Compact BUY block — renders the SAME rows renderUpsideRank sorted (UPSIDE_ROWS), so the

@@ -250,22 +250,39 @@ console.log("\n[public] v3.60 P0 slice — nav, matrix, digest, health");
     await page.evaluate(() => [...document.querySelectorAll('nav[aria-label="Sections"] a')]
       .every((a) => document.getElementById(a.getAttribute("href").slice(1)))));
   ok("C2: the page header is a real <header> landmark", await page.locator("header").count() === 1);
+  // FEAT-GLANCE (v3.61): the six-card matrix is COLLAPSED by default — the band chips are
+  // the icon-first six-factor view; the summary line stays visible while closed.
+  const driversClosed = await page.locator('section[aria-labelledby="drivers"]').innerText();
+  ok("glance: the matrix starts collapsed — summary visible, no full cards",
+    /factors usable/i.test(driversClosed) && /factor evidence detail/i.test(driversClosed) &&
+    !/as of \d{4}-\d{2}-\d{2}/.test(driversClosed));
+  await page.locator('section[aria-labelledby="drivers"] button[aria-expanded]').click();
+  await page.waitForTimeout(200);
   const drivers = await page.locator('section[aria-labelledby="drivers"]').innerText();
-  ok("C3: the Evidence Matrix renders six factor cards with votes",
+  ok("C3: the Evidence Matrix renders six factor cards with votes (one tap deep)",
     (drivers.match(/BULL|BEAR|NEUTRAL/g) || []).length >= 6 && /6\/6 factors usable/i.test(drivers));
   ok("C3: each card carries freshness and an as-of date",
     /LIVE/.test(drivers) && /as of \d{4}-\d{2}-\d{2}/.test(drivers));
   const body1 = await page.locator("body").innerText();
   ok("C4: first valid visit says BASELINE SET, never 'nothing changed'",
-    /baseline set — changes will be tracked/.test(body1));
-  ok("C4: Data Health lists per-source freshness with cadence",
-    /DATA HEALTH/i.test(body1) && /spyPrice/.test(body1) && /monthly/.test(body1));
+    /baseline set — tracking starts today on this device/.test(body1));
+  // FEAT-GLANCE (v3.61): Data Health's per-source grid collapses the same way — the header
+  // stays; the 15 rows are one tap deep.
+  ok("glance: Data Health header visible while the per-source grid starts collapsed",
+    /DATA HEALTH/i.test(body1) && !/spyPrice/.test(body1));
+  await page.locator('section[aria-labelledby="health"] button[aria-expanded]').click();
+  await page.waitForTimeout(200);
+  const health = await page.locator('section[aria-labelledby="health"]').innerText();
+  ok("C4: Data Health lists per-source freshness with cadence (one tap deep)",
+    /spyPrice/.test(health) && /monthly/.test(health));
+  ok("glance: the decode legend lives with the diagnostics it decodes",
+    /legend: ● live · ⏱ stale/.test(health) && /illustrative = curated, not live/.test(health));
   // Reload in the SAME context: the baseline persisted, so an identical snapshot must say so.
   await page.goto(page.url(), { waitUntil: "domcontentloaded" });
   await page.waitForTimeout(1400);
   const body2 = await page.locator("body").innerText();
-  ok("C4: an identical return visit reads 'no material change since <date>' — explicit, not blank",
-    /no material change since \d{4}-\d{2}-\d{2}/.test(body2));
+  ok("C4: an identical return visit names the device scope — 'since your previous visit on this device'",
+    /no material change since your previous visit on this device \(\d{4}-\d{2}-\d{2}\)/.test(body2));
   ok("C: no page errors through the slice", errors.length === 0);
   await page.close();
 }
@@ -275,6 +292,13 @@ console.log("\n[public] v3.60 P0 slice — nav, matrix, digest, health");
   const deg = { ...FULL_LIVE }; delete deg.vix; delete deg.vixAsOf;
   const { page } = await open({ live: deg });
   await page.waitForTimeout(1400);
+  // The red facts survive the v3.61 collapse: the summary count while closed, the exclusion
+  // named in the Signal Quality strip, and the ⏱ chip on the band (v3.25 rule).
+  const closed = await page.locator("body").innerText();
+  ok("glance: the exclusion is visible while the matrix is closed (Signal Quality names it)",
+    /5\/6 factors voting/i.test(closed) && /excluded: VIX/i.test(closed));
+  await page.locator('section[aria-labelledby="drivers"] button[aria-expanded]').click();
+  await page.waitForTimeout(200);
   const drivers = await page.locator('section[aria-labelledby="drivers"]').innerText();
   ok("C3: an excluded factor is NAMED with its reason on the card itself",
     /EXCLUDED/.test(drivers) && /excluded — not live in a live build/.test(drivers) &&
@@ -302,6 +326,8 @@ console.log("\n[public] A4 — the public/private boundary is ENFORCED, not comm
   ok("operator route: MY CONVICTION renders (the v3.51 keep call stands)", /MY CONVICTION/.test(op));
   ok("operator route: Macro Alerts render", /Macro Alerts/i.test(op));
   ok("operator route: TERMINAL link present", /TERMINAL/.test(op));
+  ok("operator route: the TT copy button renders (v3.61 gate leaves the operator view whole)",
+    await page.locator('button[aria-label="Copy TT regime readout"]').count() === 1);
   await page.close();
 }
 {
@@ -315,6 +341,11 @@ console.log("\n[public] A4 — the public/private boundary is ENFORCED, not comm
     /operator view carries the curated watchlist and alert monitors/.test(pub));
   ok("public route: the verdict itself still publishes — the gate hides content, not judgment",
     /RISK-ON|RISK-OFF|MIXED/.test(pub));
+  // FEAT-GLANCE (v3.61, newcomer audit #5): TT and the alert badges are operator tooling —
+  // "⚡ 3 BLIND" reads as a system failure to a visitor who can't see the monitors it counts.
+  ok("public route: the TT copy button is gated out",
+    await page.locator('button[aria-label="Copy TT regime readout"]').count() === 0);
+  ok("public route: no FIRED/BLIND alert badge leaks", !/⚡ \d+ (FIRED|BLIND)/.test(pub));
   await page.close();
 }
 {

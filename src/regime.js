@@ -104,7 +104,11 @@ const REGIME_META = {
   // FEAT-v17-07: hyphen separators (was middot) for RISK-ON / RISK-OFF legibility
   "RISK-ON":  { sub:"Disinflation + low vol",   tintKey:"regime-on-bg",  colorKey:"green"  },
   "RISK-OFF": { sub:"Rate pressure + stress",   tintKey:"regime-off-bg", colorKey:"red"    },
-  "MIXED":    { sub:"Cross-signals — watch VIX", tintKey:"regime-mix-bg", colorKey:"yellow" },
+  // `watchKey` names the factor the sub tells the reader to watch, so computeRegime can
+  // re-derive the sub when that factor is EXCLUDED (v3.61, newcomer audit: the hero read
+  // "watch VIX" while VIX sat two rows below marked stale-excluded — the first explanation
+  // resting on evidence the model says it cannot use).
+  "MIXED":    { sub:"Cross-signals — watch VIX", watchKey:"vix", tintKey:"regime-mix-bg", colorKey:"yellow" },
   // Not a posture — the ABSENCE of one. Rendered as a withhold, never as a neutral reading.
   "INSUFFICIENT": { sub:"not enough usable evidence to call it", tintKey:"regime-mix-bg", colorKey:"textMuted" },
 };
@@ -137,7 +141,18 @@ export function computeRegime(d, stale=new Set()) {
   // C1 (v3.60): PURE — the engine returns token KEYS; the UI resolves them to colors at its
   // one consumer (RegimeBand). This module must stay React/token-free so evidence.js and the
   // Node test suite can import it directly.
-  return { label, sub:m.sub, tintKey:m.tintKey, colorKey:m.colorKey,
+  // v3.61 (FEAT-GLANCE): the sub must never name an excluded factor. If the meta copy's
+  // watched factor is not voting, derive "watch X" from the NEAREST load-bearing flip —
+  // flipConditions already computes exactly "the nearest usable factor that would change
+  // this call" (one derivation, no second copy of any threshold). No flip → state the
+  // evidence base instead of naming a gauge the model cannot see.
+  let sub=m.sub;
+  if(!insufficient && m.watchKey && stale.has(m.watchKey)){
+    const nearest=flipConditions(d, stale).flips[0];
+    sub=nearest ? `Cross-signals — watch ${nearest.short}`
+                : `Cross-signals — ${counted} of ${REGIME_BAND_TABLE.length} inputs usable`;
+  }
+  return { label, sub, tintKey:m.tintKey, colorKey:m.colorKey,
     bullVotes, bearVotes, counted, totalFactors:REGIME_BAND_TABLE.length,
     insufficient, raw, quorum:REGIME_QUORUM };
 }
