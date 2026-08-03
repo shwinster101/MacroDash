@@ -1504,6 +1504,21 @@ ok("estrun: the merged renderers are DEAD — no second render path for estimate
   !adminSrc.includes("function ddPtModelSec") && !adminSrc.includes("function ddConsensusSec"));
 ok("estrun: the section label carries the tier — the math renders under the tier claim",
   adminSrc.includes("ESTIMATE RUN — ${esc(TIER_LABEL[x.tier]"));
+/* v3.67: the deck height is a budget, not a floor. */
+ok("deck: sizeDecisionDeck measures ONLY the active panel — the hidden one still cannot lengthen the page",
+  /function sizeDecisionDeck\(\)/.test(adminSrc)
+  && /getElementById\(active\?"decisionFund":"decisionBuy"\)/.test(adminSrc));
+ok("deck: measured height is capped at the SAME budget the CSS names (520 / viewport−220) — over-budget panels still scroll",
+  /Math\.max\(520,Math\.round\(\(window\.visualViewport\?visualViewport\.height:innerHeight\)-220\)\)/.test(adminSrc)
+  && /Math\.min\(need,budget\)/.test(adminSrc));
+ok("deck: the CSS fixed height SURVIVES as the no-JS fallback, and desktop clears the inline override",
+  adminSrc.includes("height:max(520px,calc(100svh - 220px))")
+  && /matchMedia\("\(max-width: 700px\)"\)\.matches\)\{deck\.style\.height="";return;\}/.test(adminSrc));
+ok("deck: async content lands re-measure via a debounced MutationObserver, and every tab switch re-sizes",
+  /new MutationObserver[\s\S]{0,120}sizeDecisionDeck/.test(adminSrc)
+  && /toggleAttribute\("inert",compact&&n!==i\);\s*\}\}\);\s*sizeDecisionDeck\(\);/.test(adminSrc));
+ok("deck: .decision-page is position:relative so child offsetTop measures page-relative",
+  /\.decision-page\{flex:0 0 100%;height:100%;min-height:0;overflow-y:auto;position:relative;/.test(adminSrc));
 /* v3.66 QUIET BOARD: every free-text blob on a decision surface is chip-length in place and
    verbatim one tap deep. Machine reds (runState flags, lints, sev=stop changes, dropped-name
    warnings) stay visible while everything around them collapses — the v3.25 rule. */
@@ -3284,8 +3299,11 @@ ok("tt-deck-forced: the four states are distinct strings — pending, unmeasured
   /c\.innerHTML="";/.test(adminSrc));
 ok("tt-deck-forced: the panel never auto-opens off the forced count — no decisionGo() call reads SELL_FORCED_N",
   !/decisionGo\([^)]*\).*SELL_FORCED_N|SELL_FORCED_N[\s\S]{0,80}decisionGo\(/.test(adminSrc));
-ok("tt-deck-forced: the 700px breakpoint deferral (H1 §3) holds — still exactly 5 homes, the label adds none",
-  (adminSrc.match(/700px/g) || []).length === 5);
+// v3.67: sizeDecisionDeck() is the 6th home — it MUST mirror the deck media query (same as
+// setDecisionTab already does) or the height override would apply on the stacked desktop
+// layout. The deferral still holds: no new breakpoint VALUE, one more reader of the same one.
+ok("tt-deck-forced: the 700px breakpoint deferral (H1 §3) holds — exactly 6 homes, all the same value",
+  (adminSrc.match(/700px/g) || []).length === 6);
 
 // ─────────────────────────────────────────────────────────────────────────────
 console.log("\n[39] CI-FIX — the browser suites must not read a PRESENT browser as absent");

@@ -1780,6 +1780,24 @@ Jan-anchor shipped; see `snapshot.js` ~318–328), `spyMa100`, `spyMa200`, and a
   **985 smoke** (+7 from this feature) + **178 render** (+5 net from this feature, including
   the real swipe path, visible export action, panel height, capped funding queue, two-screen
   budget and zero mobile overflow).
+- **v3.67 — the deck height becomes a budget, not a floor.** The v3.62 deck gave each phone
+  panel a fixed `max(520px, 100svh−220px)` viewport so the hidden FUND/TRIM panel could never
+  lengthen the page — correct doctrine, wrong implementation detail: the SAME fixed height held
+  a ~620px frame open under a ~300px BUY list, renting a blank half-screen on the primary view
+  (owner screenshot). **`sizeDecisionDeck()`** now measures the ACTIVE panel's content
+  (`lastElementChild.offsetTop+offsetHeight`, page made `position:relative`) and sets the deck
+  to `min(need, budget)` — the hidden panel still cannot lengthen the page because it is never
+  measured, and a panel taller than the budget still scrolls its own overflow exactly as
+  before. Re-measures on every tab switch (hooked at the end of `setDecisionTab`, which swipe
+  sync and the resize listener already route through) and on async content landing (debounced
+  MutationObserver on the deck subtree — quotes, positions and regime each re-fire their
+  renderer). The CSS fixed height **survives as the no-JS fallback**, so a script failure
+  degrades to v3.62 behaviour, never a broken layout; desktop (>700px) clears the inline
+  override. The 700px-breakpoint smoke pin moved 5→6 homes — `sizeDecisionDeck` must mirror
+  the deck media query or the override would apply to the stacked desktop layout. NOT verified
+  in a live browser (no Chromium in this environment): the render harness pins panel height
+  and the two-screen budget, and this change only ever makes the deck SHORTER, but the
+  measured heights themselves await the next harness run.
 - **v3.66 "QUIET BOARD" — free text is chip-length in place, verbatim one tap deep.** Owner
   verdict on five live screenshots: *"ridiculous — all text that isn't directly highest leverage
   needs to be hidden under an expander."* The audit agreed: six render sites were inlining

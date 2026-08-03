@@ -9,7 +9,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
 <!-- AUDIT: kept in sync with package.json by test/smoke.mjs. admin.html is a Vite
      public/ passthrough, so it cannot receive __APP_VERSION__ — the guard is the fix. -->
-<title>TT TICKER TERMINAL v3.66.0</title>
+<title>TT TICKER TERMINAL v3.67.0</title>
 <style>
   :root{
     --bg:#05070a; --panel:#0a0f16; --panel2:#0d141d; --line:#16202c;
@@ -242,7 +242,8 @@
       overscroll-behavior-x:contain;-webkit-overflow-scrolling:touch;scrollbar-width:none;
       margin:0 -14px 8px;height:520px;height:max(520px,calc(100svh - 220px))}
     .decision-deck::-webkit-scrollbar{display:none}
-    .decision-page{flex:0 0 100%;height:100%;min-height:0;overflow-y:auto;
+    /* v3.67: position:relative so sizeDecisionDeck() can read child offsetTop page-relative. */
+    .decision-page{flex:0 0 100%;height:100%;min-height:0;overflow-y:auto;position:relative;
       overscroll-behavior-y:contain;scroll-snap-align:start;scroll-snap-stop:always;
       padding:0 14px 12px}
     .decision-page>.nd{margin-bottom:0}
@@ -397,7 +398,7 @@
         onclick="toggleHeadInfo()">⋯ MENU</button>
     </div>
     <div id="headInfo" style="display:none">
-      <div class="brand">FINANCE&nbsp;BRO.AI // TT&nbsp;TICKER&nbsp;TERMINAL <small>v3.66.0 · single-pass deep-dive orchestrator</small></div>
+      <div class="brand">FINANCE&nbsp;BRO.AI // TT&nbsp;TICKER&nbsp;TERMINAL <small>v3.67.0 · single-pass deep-dive orchestrator</small></div>
       <div class="statusline">
         <span>BOOK: <b id="bookStamp">loading…</b></span>
         <span>AUTH: <b id="sessState">…</b></span>
@@ -3896,7 +3897,33 @@ function setDecisionTab(i){
     p.setAttribute("aria-hidden",compact&&n!==i?"true":"false");
     p.toggleAttribute("inert",compact&&n!==i);
   }});
+  sizeDecisionDeck();
 }
+/* v3.67: the deck height is a BUDGET, not a floor. The CSS fixed height
+   (max(520px, 100svh−220px)) exists so the HIDDEN panel can never lengthen the page (v3.62) —
+   but it also held a ~620px viewport open under a ~300px BUY list, renting a blank half-screen
+   on the primary view (owner screenshot, 2026-08-03). The height is now measured from the
+   ACTIVE panel's content and capped at that same budget: the hidden panel still cannot
+   lengthen the page (only the active panel is ever measured), and a panel taller than the
+   budget still scrolls its own overflow exactly as before. The CSS height stays as the no-JS
+   fallback, so a script failure degrades to v3.62 behaviour, never to a broken layout. */
+function sizeDecisionDeck(){
+  const deck=document.getElementById("decisionDeck");if(!deck)return;
+  if(!window.matchMedia||!matchMedia("(max-width: 700px)").matches){deck.style.height="";return;}
+  const active=document.getElementById("decisionFundTab")?.getAttribute("aria-selected")==="true"?1:0;
+  const page=document.getElementById(active?"decisionFund":"decisionBuy");
+  const last=page&&page.lastElementChild;
+  if(!last){deck.style.height="";return;}
+  const budget=Math.max(520,Math.round((window.visualViewport?visualViewport.height:innerHeight)-220));
+  const need=last.offsetTop+last.offsetHeight+14;   // page is position:relative; +bottom pad
+  deck.style.height=Math.max(180,Math.min(need,budget))+"px";
+}
+// Content lands async (quotes, positions, regime each re-fire their renderer), so re-measure
+// on any DOM change inside the deck — debounced, one measurement per settle.
+(()=>{const d=document.getElementById("decisionDeck");
+  if(d&&window.MutationObserver)new MutationObserver(()=>{
+    clearTimeout(sizeDecisionDeck._t);sizeDecisionDeck._t=setTimeout(sizeDecisionDeck,60);
+  }).observe(d,{childList:true,subtree:true});})();
 function decisionGo(i,focus=false){
   const deck=document.getElementById("decisionDeck");if(!deck)return;
   const n=i>0?1:0;setDecisionTab(n);
