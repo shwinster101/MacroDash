@@ -18,7 +18,9 @@ import { LASTVALID_KEY, summarizeEvidence, compareEvidence } from "../src/whatCh
 import {
   bandSpyVs200d, bandVix, bandFearGreed, bandRs, bandTenYear, bandFedOdds,
   aggregateVerdict, computeMacroFlip, buildTtReadout, formatTtPaste, DERIVED_OF,
+  conservativeVote, CARRY_SESSIONS, readoutQuality, compareQuality,
 } from "../src/ttReadout.js";
+import { sessionsBehind } from "../src/sources.js";
 import { validateBook, validateBoard, validatePos, conflictCheck, authMode, lockoutState, recordFailure, parseCookie, hashPin, LOCK_TIERS, diffForLedger } from "../functions/api/tt.js";
 import { plausible, applyBands, quorum, QUORUM_FIELDS, QUORUM_MIN, marketSession, BANDS } from "../functions/api/snapshot.js";
 
@@ -375,9 +377,12 @@ ok("safety: with BOTH gauges blind, the downgrade names both", (() => {
   const r = buildTtReadout(mkLive({ vix: undefined, fearGreed: undefined, fearGreedAsOf: undefined, fearGreedLabel: undefined }), { now: TT_NOW });
   return r.regime.downgraded && /VIX/.test(r.regime.downgraded) && /Fear & Greed/.test(r.regime.downgraded);
 })());
-ok("readout: INSUFFICIENT with <3 available checks", (() => { const r = buildTtReadout({ vix: 16.1, vixAsOf: D, fearGreed: 62, fearGreedAsOf: D }, { now: TT_NOW }); return r.regime.available === 2 && r.regime.verdict === "INSUFFICIENT"; })());
+// ENGINE0-CONT: <3 usable no longer PUBLISHES "INSUFFICIENT" — the operational posture is the
+// deterministic wait state (NEUTRAL · LOW · HOLD · DATA DEGRADED); the raw aggregate survives
+// in raw_verdict so the record of what the counts said is never silent.
+ok("readout: <3 available checks -> NEUTRAL / LOW / HOLD / DATA DEGRADED (raw INSUFFICIENT kept)", (() => { const r = buildTtReadout({ vix: 16.1, vixAsOf: D, fearGreed: 62, fearGreedAsOf: D }, { now: TT_NOW }); return r.regime.available === 2 && r.regime.verdict === "NEUTRAL" && r.regime.raw_verdict === "INSUFFICIENT" && r.regime.confidence === "LOW" && r.regime.actionability === "HOLD" && r.regime.status === "DATA DEGRADED"; })());
 ok("readout: stale input gated out (fresh value but 10-day-old AsOf -> unavailable)", (() => { const r = buildTtReadout(mkLive({ vixAsOf: "2026-07-01" }), { now: TT_NOW }); return r.vix.value === null && r.regime.checks[1].state === "unavailable"; })());
-ok("readout: empty live -> all checks unavailable, verdict INSUFFICIENT", (() => { const r = buildTtReadout({}, { now: TT_NOW }); return r.regime.verdict === "INSUFFICIENT" && r.regime.checks.every((c) => c.state === "unavailable"); })());
+ok("readout: empty live -> all checks unavailable, wait posture (never the word INSUFFICIENT as verdict)", (() => { const r = buildTtReadout({}, { now: TT_NOW }); return r.regime.verdict === "NEUTRAL" && r.regime.actionability === "HOLD" && r.regime.status === "DATA DEGRADED" && r.regime.checks.every((c) => c.state === "unavailable"); })());
 
 // macro_flip truth table (null-safe)
 ok("macro_flip: vix 22 not armed, 22.1 armed", computeMacroFlip({ vix: 22 }).armed === false && computeMacroFlip({ vix: 22.1 }).armed === true);
@@ -418,6 +423,139 @@ ok("paste: a withheld TAILWIND prints an explicit warning line naming the blind 
   return /⚠.*TAILWIND withheld/.test(p) && /VIX/.test(p);
 })());
 ok("paste: a non-withheld verdict carries no warning line", !/⚠/.test(paste));
+
+// ---- ENGINE0-CONT: evidence tiers, historical carry, two-axis contract -------------------
+console.log("\n[5b] ENGINE0-CONT — evidence continuity (tiers · carry · confidence · actionability)");
+
+// sessionsBehind: the unit every carry window is expressed in. TT_NOW = Wed 2026-07-15.
+ok("sessions: same-day obs = 0 behind", sessionsBehind("2026-07-15", TT_NOW) === 0);
+ok("sessions: prior trading day = 0 behind (today's close may not be posted)", sessionsBehind("2026-07-14", TT_NOW) === 0);
+ok("sessions: Mon obs on Wed = 1 · Fri obs on Wed = 2 (weekend skipped)",
+  sessionsBehind("2026-07-13", TT_NOW) === 1 && sessionsBehind("2026-07-10", TT_NOW) === 2);
+ok("sessions: unparseable/absent date = null, never 0", sessionsBehind(null, TT_NOW) === null && sessionsBehind("garbage", TT_NOW) === null);
+
+// conservativeVote: historical bullish -> neutral; bearish and neutral survive.
+ok("transform: historical bullish -> neutral · bearish stays · neutral stays",
+  conservativeVote("bullish") === "neutral" && conservativeVote("bearish") === "bearish" && conservativeVote("neutral") === "neutral");
+
+// D-boundary (matrix D): VIX carry = 2 completed sessions, exact edge both sides.
+ok("carry: VIX exactly AT the 2-session edge -> HISTORICAL, votes conservatively", (() => {
+  const r = buildTtReadout(mkLive({ vixAsOf: "2026-07-10" }), { now: TT_NOW }); // 2 sessions behind
+  const c = r.regime.checks[1];
+  return c.tier === "HISTORICAL" && c.original_vote === "bullish" && c.effective_vote === "neutral" && c.state === "neutral";
+})());
+ok("carry: VIX one session BEYOND the edge -> MISSING, no vote", (() => {
+  const r = buildTtReadout(mkLive({ vixAsOf: "2026-07-09" }), { now: TT_NOW }); // 3 sessions behind
+  return r.regime.checks[1].tier === "MISSING" && r.regime.checks[1].state === "unavailable";
+})());
+ok("carry: 10Y trend carries to 5 sessions (its longer window), not VIX's 2", (() => {
+  const r = buildTtReadout(mkLive({ tenYearAsOf: "2026-07-07" }), { now: TT_NOW }); // 5 sessions behind
+  return r.regime.checks[4].tier === "HISTORICAL";
+})());
+
+// Matrix B: historical BULLISH evidence can never produce TAILWIND or FULL.
+ok("matrix B: all-historical bullish inputs -> never TAILWIND, never FULL", (() => {
+  const H = "2026-07-13"; // 1 session behind => HISTORICAL for every daily check
+  const r = buildTtReadout(mkLive({ spyPriceAsOf: H, vixAsOf: H, fearGreedAsOf: H, qqqPriceAsOf: H, tenYearAsOf: H, rateOddsHoldAsOf: H }), { now: TT_NOW });
+  return r.regime.verdict !== "TAILWIND" && r.regime.actionability !== "FULL" && r.regime.historical === 6;
+})());
+
+// Matrix C: historical BEARISH survives (flagged), flip not CLEAR, actionability HOLD.
+ok("matrix C: historical VIX 26 keeps its bearish caution, flip ARMED_FROM_LAST_CLOSE, HOLD", (() => {
+  const r = buildTtReadout(mkLive({ vix: 26, vixAsOf: "2026-07-13" }), { now: TT_NOW });
+  const c = r.regime.checks[1];
+  return c.effective_vote === "bearish" && /carried/.test(c.reason) &&
+    r.macro_flip.state === "ARMED_FROM_LAST_CLOSE" && r.macro_flip.evaluable === false &&
+    r.macro_flip.armed === null && r.regime.actionability === "HOLD";
+})());
+ok("matrix C: historical VIX <=22 reads UNCONFIRMED_FROM_LAST_CLOSE, never 'not armed'", (() => {
+  const r = buildTtReadout(mkLive({ vix: 16.1, vixAsOf: "2026-07-13" }), { now: TT_NOW });
+  return r.macro_flip.state === "UNCONFIRMED_FROM_LAST_CLOSE" && r.macro_flip.armed === null;
+})());
+ok("flip: a fully-current circuit carries state CLEAR/ARMED/TRIPPED + FULL/RESTRICTED/HOLD", (() => {
+  const clear = buildTtReadout(mkLive(), { now: TT_NOW }).macro_flip;
+  const tripped = buildTtReadout(mkLive({ vix: 26, spyPrice: 650 }), { now: TT_NOW }).macro_flip;
+  return clear.state === "CLEAR" && clear.actionability === "FULL" && tripped.state === "TRIPPED" && tripped.actionability === "HOLD";
+})());
+
+// Matrix A: the exact 2026-08-03 production shape — the ticket's reproduction case.
+ok("matrix A: production shape (SPY+F&G current · VIX missing · RS missing · 10Y historical · Kalshi missing) -> NEUTRAL/LOW/HOLD/DATA DEGRADED", (() => {
+  const r = buildTtReadout({
+    spyPrice: 748.1, spyPriceAsOf: D, spyMa200: 700.0,
+    fearGreed: 62, fearGreedAsOf: D, fearGreedLabel: "Greed",
+    tenYear: 4.46, tenYearAsOf: "2026-07-13", tenYearM1: 0.03,
+  }, { now: TT_NOW });
+  return r.regime.verdict === "NEUTRAL" && r.regime.confidence === "LOW" &&
+    r.regime.actionability === "HOLD" && r.regime.status === "DATA DEGRADED" &&
+    r.regime.current === 2 && r.regime.historical === 1 && r.regime.missing === 3 &&
+    /current VIX unavailable/.test(r.regime.reason);
+})());
+
+// PANIC needs CURRENT gauges — a carried print can neither fire nor clear it.
+ok("panic: historical vix 26 + current F&G 19 does NOT fire PANIC", (() => {
+  const r = buildTtReadout(mkLive({ vix: 26, vixAsOf: "2026-07-13", fearGreed: 19 }), { now: TT_NOW });
+  return r.regime.panic_inputs.panic === false && r.regime.verdict !== "PANIC";
+})());
+
+// Two-axis contract on a fully-healthy day.
+ok("axis: all-current healthy day -> HIGH confidence, FULL actionability, status OK", (() => {
+  const r = rBull.regime;
+  return r.confidence === "HIGH" && r.actionability === "FULL" && r.status === "OK" && r.current === 6 && r.historical === 0;
+})());
+ok("axis: Kalshi missing alone -> still HIGH (5 current, both gauges current), and the miss is NAMED in reason", (() => {
+  const r = buildTtReadout(mkLive({ rateOddsHold: undefined, rateOddsCut: undefined, rateOddsHike: undefined }), { now: TT_NOW }).regime;
+  return r.confidence === "HIGH" && /missing: fed_next_meeting/.test(r.reason);
+})());
+
+// Matrix G (pure half): odds for a CLOSED event are discarded, never carried.
+ok("matrix G: Kalshi odds whose FOMC event date has passed are discarded with the reason named", (() => {
+  const r = buildTtReadout(mkLive({ nextFomcDate: "2026-07-01" }), { now: TT_NOW });
+  const c = r.regime.checks[5];
+  return c.state === "unavailable" && /closed FOMC event/.test(c.reason) && r.fed_odds === null;
+})());
+
+// RS pairing: the NASDAQ100/SP500 index pair is preferred and NAMED; the ETF pair is the
+// labeled fallback (the dashboard's paste projection only carries SOURCES fields).
+ok("rs: ndxSpxRs preferred over the ETF pair and attributed NASDAQ100/SP500", (() => {
+  const r = buildTtReadout(mkLive({ ndxSpxRs: 0.5, ndxSpxRsAsOf: D, ndx1dPct: 0.91, spx1dPct: 0.41 }), { now: TT_NOW });
+  return r.qqq_spy_rs.pair === "NASDAQ100/SP500" && r.qqq_spy_rs.state === "leading";
+})());
+ok("rs: without the index pair the ETF fallback still works and says it is the proxy", (() => {
+  const r = buildTtReadout(mkLive(), { now: TT_NOW });
+  return r.qqq_spy_rs.pair === "QQQ/SPY (ETF proxy)";
+})());
+
+// Candidate quality (§7.2): flip-evaluable dominates; asOf epoch is only the tiebreak.
+ok("quality: a flip-evaluable candidate beats a blind one regardless of recency", (() => {
+  const good = readoutQuality(buildTtReadout(mkLive(), { now: TT_NOW }), 1000);
+  const blind = readoutQuality(buildTtReadout(mkLive({ vix: undefined }), { now: TT_NOW }), 2000);
+  return compareQuality(good, blind) > 0;
+})());
+ok("quality: equal evidence -> the newer candidate wins (asOf tiebreak)", (() => {
+  const a = readoutQuality(buildTtReadout(mkLive(), { now: TT_NOW }), 2000);
+  const b = readoutQuality(buildTtReadout(mkLive(), { now: TT_NOW }), 1000);
+  return compareQuality(a, b) > 0 && compareQuality(b, a) < 0;
+})());
+ok("quality: more historical checks compares WORSE at equal current", (() => {
+  const cur = readoutQuality(buildTtReadout(mkLive({ rateOddsHold: undefined, rateOddsCut: undefined, rateOddsHike: undefined }), { now: TT_NOW }), 0);
+  const hist = readoutQuality(buildTtReadout(mkLive({ rateOddsHoldAsOf: "2026-07-13" }), { now: TT_NOW }), 0);
+  return compareQuality(cur, hist) !== 0; // differ on the evidence axes, not only recency
+})());
+
+// The paste block carries the two-axis contract (the ONE human-facing surface).
+ok("paste: EVIDENCE line prints confidence + actionability + counts", (() => {
+  const p = formatTtPaste(buildTtReadout({ spyPrice: 748.1, spyPriceAsOf: D, spyMa200: 700 }, { now: TT_NOW }), {});
+  return /EVIDENCE\s+LOW/.test(p) && /actionability HOLD/.test(p) && /DATA DEGRADED/.test(p);
+})());
+ok("paste: a carried-VIX flip prints its FROM_LAST_CLOSE state, never 'not armed'", (() => {
+  const p = formatTtPaste(buildTtReadout(mkLive({ vix: 26, vixAsOf: "2026-07-13" }), { now: TT_NOW }), {});
+  const l = p.split("\n").find((x) => x.startsWith("MACRO FLIP"));
+  return /ARMED_FROM_LAST_CLOSE/.test(l) && !/not armed/.test(l);
+})());
+ok("paste/readout: the literal verdict INSUFFICIENT is never published", (() => {
+  const r = buildTtReadout({}, { now: TT_NOW });
+  return r.regime.verdict !== "INSUFFICIENT" && !formatTtPaste(r, {}).split("\n").some((l) => l.startsWith("REGIME") && /INSUFFICIENT/.test(l));
+})());
 ok("one-wiring-point intact: dashboard.jsx does not fetch readout.json", !dashSrc.includes("readout.json"));
 
 // ---- 6. /api/tt validateBook — the TT book contract ---------------------

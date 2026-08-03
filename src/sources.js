@@ -352,6 +352,22 @@ export function isStale(dateStr, now = new Date(), cadence = "daily") {
   // missing PRIOR session means the feed is behind = stale (e.g. Thursday data on a Sunday).
   // Weekends AND market holidays are skipped — Thursday data viewed the Monday after Good
   // Friday is the freshest possible, not stale (holiday false-positives cried wolf).
+  // ENGINE0-CONT: the walk itself now lives in sessionsBehind() — ONE session counter for
+  // this staleness gate AND the evidence-tier carry windows (a second copy of the walk is
+  // exactly the drift defect §P.4 forbids).
+  const missed = sessionsBehind(dateStr, now);
+  return missed == null ? false : missed >= 1;
+}
+
+// ENGINE0-CONT: completed trading sessions strictly between an observation date and the ET
+// "today" of `now` — the unit every historical carry window is expressed in. 0 = the freshest
+// a prior-close series can be (today's own close may not be posted yet); 1+ = sessions the
+// feed has missed. Returns null when the date is absent/unparseable (nothing to count — the
+// caller must treat that as unjudgeable, not as fresh).
+export function sessionsBehind(dateStr, now = new Date()) {
+  const dt = parseObsDate(dateStr);
+  if (!dt || isNaN(dt.getTime())) return null;
+  const today = parseObsDate(etYmd(now));
   const ymd = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
   let missed = 0;
   const cur = new Date(dt);
@@ -361,5 +377,5 @@ export function isStale(dateStr, now = new Date(), cadence = "daily") {
     if (dow !== 0 && dow !== 6 && !isMarketHoliday(ymd(cur))) missed++;
     cur.setDate(cur.getDate() + 1);
   }
-  return missed >= 1;
+  return missed;
 }
