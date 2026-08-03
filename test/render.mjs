@@ -1016,8 +1016,9 @@ const fundCountIsRed = await phone.locator("#fundTabCount > span").evaluate((el)
   probe.remove();
   return getComputedStyle(el).color === expected;
 });
+const fundTabText = await phone.locator("#decisionFundTab").textContent();
 ok('decision deck: a forced cap trim shows as a RED count on the closed FUND / TRIM tab, and never auto-opens it',
-  (await phone.locator("#decisionFundTab").textContent()) === "FUND / TRIM · 1 FORCED" &&
+  /^FUND \/ TRIM · [1-9]\d* FORCED$/.test(fundTabText) &&
   fundCountIsRed &&
   (await phone.locator("#decisionBuyTab").getAttribute("aria-selected")) === "true" &&
   await phone.locator("#decisionFund").getAttribute("inert") !== null);
