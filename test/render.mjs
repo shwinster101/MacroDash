@@ -1002,14 +1002,38 @@ ok("decision deck: two labelled controls exist and BUY starts selected",
   (await phone.locator("#decisionBuyTab").getAttribute("aria-selected")) === "true" &&
   (await phone.locator('.decision-tabs [role="tab"][tabindex="0"]').count()) === 1 &&
   await phone.locator("#decisionFund").getAttribute("inert") !== null);
-await phone.evaluate(() => decisionGo(1));
+// FEAT-TT-DECK follow-up (H1 2026-08-03, R4/R7): AAA sits at 21.4%, over the 18% cap — a
+// real forced trim in this fixture. It must surface as a RED count on the CLOSED tab, and
+// the owner's "do not auto-open" call means the default selection must be untouched by it —
+// nothing may silently flip the panel just because there is something forced to see.
+ok('decision deck: a forced cap trim shows as a RED count on the closed FUND / TRIM tab, and never auto-opens it',
+  (await phone.locator("#decisionFundTab").textContent()) === "FUND / TRIM · 1 FORCED" &&
+  (await phone.locator("#decisionBuyTab").getAttribute("aria-selected")) === "true" &&
+  await phone.locator("#decisionFund").getAttribute("inert") !== null);
+// R1 (H5 finding, confirmed vacuous): the old assertion called decisionGo(1) directly, which
+// never exercises onscroll="syncDecisionDeck()" — the actual swipe path. Drive a REAL scroll.
+await phone.evaluate(() => {
+  const d = document.getElementById("decisionDeck");
+  d.scrollLeft = d.clientWidth;
+  d.dispatchEvent(new Event("scroll"));
+});
+await phone.waitForTimeout(50);
+ok("decision deck: a REAL horizontal scroll (not a decisionGo() call) flips the selected tab — the swipe path itself is exercised",
+  (await phone.locator("#decisionFundTab").getAttribute("aria-selected")) === "true" &&
+  await phone.locator("#decisionBuy").getAttribute("inert") !== null &&
+  await phone.locator("#decisionFund").getAttribute("inert") === null);
+await phone.evaluate(() => decisionGo(0));
+await phone.waitForTimeout(350);
+// R2: a real .click() on the button — depends on onclick="decisionGo(1)" actually being
+// wired in the markup, which calling decisionGo() directly would not have caught.
+await phone.locator("#decisionFundTab").click();
 await phone.waitForTimeout(350);
 const fundDeck = await phone.evaluate(() => {
   const d=document.getElementById("decisionDeck");
   return { ratio:d.clientWidth?d.scrollLeft/d.clientWidth:0,
     selected:document.getElementById("decisionFundTab").getAttribute("aria-selected") };
 });
-ok("decision deck: FUND / TRIM is reachable through the same programmatic path as a swipe",
+ok("decision deck: FUND / TRIM is reachable through a real click on the tab button (the onclick wiring)",
   fundDeck.ratio > .8 && fundDeck.selected === "true" &&
   await phone.locator("#decisionBuy").getAttribute("inert") !== null &&
   await phone.locator("#decisionFund").getAttribute("inert") === null);
@@ -1017,9 +1041,74 @@ await phone.evaluate(() => decisionGo(0));
 await phone.waitForTimeout(350);
 ok("decision deck: each phone panel owns a viewport-height focus area",
   (await phone.locator("#decisionBuy").boundingBox()).height > 500);
-const fundRows = await phone.locator("#sellBlock > .fdr-row").count();
-ok("decision deck: the visible funding queue is capped while lower-priority rows are counted",
-  fundRows <= 6 && (await phone.locator("#sellBlock details.est-mini").count()) >= 1);
+
+// R3/R5/R6 (H1 §7): run on a DEDICATED phone page, not the shared one above — v3.57 already
+// lost time to a shared closure leaking state between fixtures; a separate page makes that
+// structurally impossible rather than dependent on every mutation's restore executing.
+const phone2 = await open(390, 844);
+// R6: positions still in flight must read as unmeasured-loading, never a false zero.
+const pending = await phone2.evaluate(() => {
+  const P = POSITIONS, f = POS_PENDING;
+  POSITIONS = {}; POS_PENDING = true; render();
+  const txt = document.getElementById("decisionFundTab").textContent;
+  POSITIONS = P; POS_PENDING = f; render();
+  return txt;
+});
+ok(`decision deck: positions still loading reads "…", never a false zero (was "${pending}")`,
+  pending === "FUND / TRIM · …");
+// The H1 open decision (§5, adopted recommendation): loaded, but bookRollup().mv <= 0 means
+// sellRank() itself returns null — nothing is MEASURED, which must not fall through to the
+// plain checked-clear label (that would assert a clear the board never checked, §P.2/§P.3).
+const unmeasured = await phone2.evaluate(() => {
+  const P = POSITIONS, f = POS_PENDING;
+  POSITIONS = {}; POS_PENDING = false; render();
+  const txt = document.getElementById("decisionFundTab").textContent;
+  POSITIONS = P; POS_PENDING = f; render();
+  return txt;
+});
+ok(`decision deck: loaded with nothing measured reads "?", never the plain checked-clear label (was "${unmeasured}")`,
+  unmeasured === "FUND / TRIM · ?");
+// R5: nothing over cap must read as a plain, honest checked-clear — no stale suffix.
+const clear = await phone2.evaluate(() => {
+  const P = POSITIONS, f = POS_PENDING;
+  POSITIONS = { ...POSITIONS, AAA: { ...POSITIONS.AAA, pct: 5 } };
+  POS_PENDING = false; render();
+  const txt = document.getElementById("decisionFundTab").textContent;
+  POSITIONS = P; POS_PENDING = f; render();
+  return txt;
+});
+ok(`decision deck: nothing over cap reads the plain, honest "FUND / TRIM" — no stale suffix (was "${clear}")`,
+  clear === "FUND / TRIM");
+// R3 (H5 finding, confirmed vacuous in BOTH conjuncts): the shared fixture only ever yields
+// 2 discretionary rows, so the old "<=6 rows, some details.est-mini exists" assertion never
+// actually observed a tail — and the est-mini it found was the unconditional "how this list
+// is ranked" methodology expander, a different element. Extend the fixture IN-PAGE (cloning
+// BBB's modelled shape) rather than the shared BOOK/POSITIONS globals, which would ripple
+// into tier counts, cluster sums, the BUY top-5 and the rankings export.
+const extraDisc = ["G1", "G2", "G3", "G4", "G5", "G6"].map((sym, i) =>
+  ({ sym, tier: "WATCH", lens: "AI", lastRun: etDaysAgo(1),
+    deepDive: dd(100 + i, { 2027: 9, 2028: 11 }, { 2027: 18, 2028: 22 }) }));
+const extraPos = {};
+extraDisc.forEach((e, i) => { extraPos[e.sym] = POS(10, 1000 + i, 2 + i); });
+const tail = await phone2.evaluate(({ book, pos }) => {
+  const B = BOOK, P = POSITIONS, f = POS_PENDING;
+  BOOK = [...BOOK, ...book]; POSITIONS = { ...POSITIONS, ...pos }; POS_PENDING = false;
+  render();
+  const sellEl = document.getElementById("sellBlock");
+  const directRows = sellEl.querySelectorAll(":scope > button.fdr-row").length;
+  const tailDetails = [...sellEl.querySelectorAll("details.est-mini")]
+    .find((d) => d.querySelector("summary").textContent.includes("lower-priority funding sources"));
+  const tailRows = tailDetails ? tailDetails.querySelectorAll(".fdr-row").length : -1;
+  const tailSummary = tailDetails ? tailDetails.querySelector("summary").textContent : "";
+  BOOK = B; POSITIONS = P; POS_PENDING = f; render();
+  return { directRows, tailRows, tailSummary };
+}, { book: extraDisc, pos: extraPos });
+ok(`decision deck: exactly 5 discretionary rows show by default with 8 total; the rest are counted, not hidden (direct=${tail.directRows}, tail=${tail.tailRows}, "${tail.tailSummary}")`,
+  tail.directRows === 6 &&   // 1 forced + 5 visible discretionary
+  tail.tailRows === 3 &&     // 8 disc - 5 visible = 3 in the tail
+  /\+3 lower-priority funding sources/.test(tail.tailSummary) &&
+  /8 ranked total/.test(tail.tailSummary));
+await phone2.close();
 // v3.42 slice 5 — the headline metric. Measured at 390x844 before this slice: the BUY block
 // began at y=587 of an 844px viewport, so 70% of the first screen was spent on chrome before
 // the first answer (the header alone was 209px of it). These budgets are the whole point of
@@ -1046,8 +1135,13 @@ const buyTopPermissive = await phone.evaluate(() => {
 // the first ranked row in the upper half of the phone while budgeting that accessible control.
 ok(`slice5: on an everyday PERMISSIVE board the first ANSWER is high on screen — BUY at y=${buyTopPermissive} of 844, was 587`,
   buyTopPermissive < 450);
+// FEAT-TT-DECK follow-up (H1 2026-08-03): the forced-trim count on FUND / TRIM is a
+// deliberate two-line badge (measured: the 22-char "FUND / TRIM · 1 FORCED" does not fit
+// beside the label in a ~128px monospace tab, so it wraps unpredictably unless forced onto
+// its own line) — legitimate red content restoring a v3.25 violation, not chrome, so the
+// budget moves with it, same precedent as the v3.45 capex badge (was <460 with no count).
 ok(`slice5: even RESTRICTIVE (full stance bar, by design) the BUY block still clears the fold — y=${buyTopRestrictive}`,
-  buyTopRestrictive < 460);
+  buyTopRestrictive < 475);
 ok("every drawer starts closed except what-changed",
   (await phone.locator("#boardView details.drawer[open]").count()) <= 1);
 ok("no horizontal overflow at 390px",

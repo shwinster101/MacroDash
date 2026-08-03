@@ -454,7 +454,7 @@
           <button id="decisionBuyTab" role="tab" aria-selected="true" aria-controls="decisionBuy"
             onclick="decisionGo(0)" onkeydown="decisionKey(event,0)">NEXT $ IN</button>
           <button id="decisionFundTab" role="tab" aria-selected="false" aria-controls="decisionFund" tabindex="-1"
-            onclick="decisionGo(1)" onkeydown="decisionKey(event,1)">FUND / TRIM</button>
+            onclick="decisionGo(1)" onkeydown="decisionKey(event,1)">FUND / TRIM<span id="fundTabCount"></span></button>
           <span class="swipe-hint" aria-hidden="true">swipe ↔</span>
         </div>
         <div class="decision-deck" id="decisionDeck" aria-label="Next dollar decisions"
@@ -1487,6 +1487,12 @@ function todayActions(){
   return out;
 }
 let AGREE_PICK=null;   // set by renderUpsideRank when both stories agree and nothing vetoes
+// FEAT-TT-DECK follow-up (H1 2026-08-03): cardinality of sellRank().forced, stashed by
+// renderSellBlock so the FUND / TRIM tab label never runs a second sellRank() pass (§P.4).
+// null means "not yet known" — either POS_PENDING, or sellRank() itself returned null
+// (nothing measured) — the two states the label must tell apart, neither of which may
+// read as the plain, checked-clear label (§P.2/§P.3). See renderDecisionFundLabel().
+let SELL_FORCED_N=null;
 function renderToday(){
   const el=document.getElementById("todayCard");if(!el)return;
   const s=stance();
@@ -3838,9 +3844,36 @@ window.addEventListener("resize",()=>{
   const active=document.getElementById("decisionFundTab")?.getAttribute("aria-selected")==="true"?1:0;
   setDecisionTab(active);
 });
+/* FEAT-TT-DECK follow-up (H1 2026-08-03): the deck (v3.62) turned FUND / TRIM into a hidden,
+   inert panel on phones — a forced cap trim (a rule already broken) could sit invisible on
+   the default view, a v3.25 violation. This restores the red fact to the CLOSED tab without
+   auto-opening the panel (owner call: a count, never a forced switch) and without touching
+   cap math, ranking order or selection. Four states, owner-specified:
+     POS_PENDING          → "…"        (not yet loaded — never a false zero)
+     loaded, not measured → "?"  amber (sellRank() returned null — §P.2: a false clear is
+                                         worse than an honest "I cannot check this")
+     loaded, forced === 0 → ""         (checked, genuinely clear)
+     loaded, forced  >  0 → "N FORCED" (red) */
+function renderDecisionFundLabel(){
+  const c=document.getElementById("fundTabCount");if(!c)return;
+  // display:block puts the suffix on its OWN tight line: measured, a 22-char forced-count
+  // phrase does not fit beside "FUND / TRIM" in a ~128px monospace tab at fs-s and wraps
+  // unpredictably mid-phrase. A deliberate two-line badge (fs-xs) reads better than that,
+  // and the fold budgets below (test/render.mjs) are measured against this shape.
+  const line=(txt,color,bold)=>`<span style="display:block;font-size:var(--fs-xs);line-height:1.3;color:${color}${bold?";font-weight:700":""}"> ${txt}</span>`;
+  if(POS_PENDING){c.innerHTML=line("· …","var(--dim)");return;}
+  if(SELL_FORCED_N===null){c.innerHTML=line("· ?","var(--amber)");return;}
+  if(SELL_FORCED_N>0){c.innerHTML=line(`· ${SELL_FORCED_N} FORCED`,"var(--red)",true);return;}
+  c.innerHTML="";
+}
 function renderSellBlock(){
+  // Reset BEFORE compute (the AGREE_PICK precedent, :1489) — an early return, or sellRank()
+  // itself returning null, must never leave yesterday's count on the tab.
+  SELL_FORCED_N=null;
   const el=document.getElementById("sellBlock");if(!el)return;
   const s=sellRank();
+  if(s)SELL_FORCED_N=s.forced.length;
+  renderDecisionFundLabel();
   if(!s||(!s.forced.length&&!s.disc.length&&!s.unmod.length&&!s.optOnly.length)){
     // v3.42 slice 2: while the positions map is still in flight "nothing measured" is
     // UNKNOWN — hold the geometry with skeletons instead of hiding, so the block doesn't

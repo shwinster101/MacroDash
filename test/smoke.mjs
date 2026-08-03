@@ -3204,7 +3204,40 @@ ok("tt-deck: forced trims stay visible; only the lower-priority funding tail col
   adminSrc.indexOf("s.forced.forEach") < adminSrc.indexOf("const FUNDING_VISIBLE=5") &&
   /\+\$\{s\.disc\.length-FUNDING_VISIBLE\} lower-priority funding sources/.test(adminSrc));
 ok("tt-deck: the second view is honestly FUND / TRIM, never a fabricated HOLD recommendation",
-  adminSrc.includes(">FUND / TRIM</button>") && !/NEXT DOLLAR[^<]{0,20}HOLD/.test(adminSrc));
+  adminSrc.includes('>FUND / TRIM<span id="fundTabCount"></span></button>') &&
+  !/NEXT DOLLAR[^<]{0,20}HOLD/.test(adminSrc));
+
+// ─────────────────────────────────────────────────────────────────────────────
+console.log("\n[43] FEAT-TT-DECK follow-up — the forced-trim count, H1 2026-08-03");
+// H5 (fresh session) found the deck hid a forced cap trim — a rule already broken — behind
+// an inert panel with nothing on the closed tab naming it, a v3.25 violation. H1 planned the
+// fix as a red count on FUND / TRIM, never an auto-open (owner call). These pin the SOURCE
+// contract; test/render.mjs proves the four label states and the real-scroll/click paths
+// behaviorally (R1-R7 in the H1 plan, harness/H1-tt-deck-forced-count-2026-08-03.md).
+ok("tt-deck-forced: the tab carries a dedicated count span, not a full-button text overwrite",
+  /<span id="fundTabCount"><\/span>/.test(adminSrc));
+ok("tt-deck-forced: SELL_FORCED_N is reset before sellRank() runs — an early return can never leave yesterday's count (the AGREE_PICK precedent)",
+  adminSrc.indexOf("SELL_FORCED_N=null;") < adminSrc.indexOf("const s=sellRank();") &&
+  /if\(s\)SELL_FORCED_N=s\.forced\.length;/.test(adminSrc));
+ok("tt-deck-forced: the label reads SELL_FORCED_N directly — it recomputes neither CAP_PCT nor capChecks()",
+  (() => {
+    const m = adminSrc.match(/function renderDecisionFundLabel\(\)\{[\s\S]*?\n\}/);
+    return !!m && m[0].includes("SELL_FORCED_N") &&
+      !m[0].includes("CAP_PCT") && !m[0].includes("capChecks(");
+  })());
+ok("tt-deck-forced: sellRank() is still CALLED exactly twice (renderSellBlock + the rankings export) — the tab adds no third pass",
+  (adminSrc.match(/=sellRank\(\);/g) || []).length === 2 &&
+  !adminSrc.slice(adminSrc.indexOf("function renderDecisionFundLabel"),
+    adminSrc.indexOf("function renderSellBlock")).includes("sellRank("));
+ok("tt-deck-forced: the four states are distinct strings — pending, unmeasured, checked-clear and forced never collapse into each other",
+  /line\("· …","var\(--dim\)"\)/.test(adminSrc) &&
+  /line\("· \?","var\(--amber\)"\)/.test(adminSrc) &&
+  /line\(`· \$\{SELL_FORCED_N\} FORCED`,"var\(--red\)",true\)/.test(adminSrc) &&
+  /c\.innerHTML="";/.test(adminSrc));
+ok("tt-deck-forced: the panel never auto-opens off the forced count — no decisionGo() call reads SELL_FORCED_N",
+  !/decisionGo\([^)]*\).*SELL_FORCED_N|SELL_FORCED_N[\s\S]{0,80}decisionGo\(/.test(adminSrc));
+ok("tt-deck-forced: the 700px breakpoint deferral (H1 §3) holds — still exactly 5 homes, the label adds none",
+  (adminSrc.match(/700px/g) || []).length === 5);
 
 // ─────────────────────────────────────────────────────────────────────────────
 console.log("\n[39] CI-FIX — the browser suites must not read a PRESENT browser as absent");
