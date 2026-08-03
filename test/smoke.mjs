@@ -1504,6 +1504,13 @@ ok("estrun: the merged renderers are DEAD — no second render path for estimate
   !adminSrc.includes("function ddPtModelSec") && !adminSrc.includes("function ddConsensusSec"));
 ok("estrun: the section label carries the tier — the math renders under the tier claim",
   adminSrc.includes("ESTIMATE RUN — ${esc(TIER_LABEL[x.tier]"));
+/* v3.68: the PT horizon is stated where the %/yr is read. */
+ok("hz-chip: ONE builder (hzDeckChip) states year + auto/pinned and deep-links to the picker",
+  /function hzDeckChip\(\)/.test(adminSrc)
+  && /openDesk\('dNext'\)" title="PT horizon/.test(adminSrc)
+  && /\$\{isAuto\?"auto":"pinned"\}/.test(adminSrc));
+ok("hz-chip: BOTH deck labels carry it (BUY + both FUNDING PRIORITY branches) — 3 call sites, zero drift",
+  (adminSrc.match(/\$\{hzDeckChip\(\)\}/g)||[]).length===3);
 /* v3.67: the deck height is a budget, not a floor. */
 ok("deck: sizeDecisionDeck measures ONLY the active panel — the hidden one still cannot lengthen the page",
   /function sizeDecisionDeck\(\)/.test(adminSrc)

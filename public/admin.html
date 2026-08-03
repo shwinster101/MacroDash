@@ -9,7 +9,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
 <!-- AUDIT: kept in sync with package.json by test/smoke.mjs. admin.html is a Vite
      public/ passthrough, so it cannot receive __APP_VERSION__ — the guard is the fix. -->
-<title>TT TICKER TERMINAL v3.67.0</title>
+<title>TT TICKER TERMINAL v3.68.0</title>
 <style>
   :root{
     --bg:#05070a; --panel:#0a0f16; --panel2:#0d141d; --line:#16202c;
@@ -398,7 +398,7 @@
         onclick="toggleHeadInfo()">⋯ MENU</button>
     </div>
     <div id="headInfo" style="display:none">
-      <div class="brand">FINANCE&nbsp;BRO.AI // TT&nbsp;TICKER&nbsp;TERMINAL <small>v3.67.0 · single-pass deep-dive orchestrator</small></div>
+      <div class="brand">FINANCE&nbsp;BRO.AI // TT&nbsp;TICKER&nbsp;TERMINAL <small>v3.68.0 · single-pass deep-dive orchestrator</small></div>
       <div class="statusline">
         <span>BOOK: <b id="bookStamp">loading…</b></span>
         <span>AUTH: <b id="sessState">…</b></span>
@@ -3968,6 +3968,15 @@ function renderDecisionFundLabel(){
   if(SELL_FORCED_N>0){c.innerHTML=line(`· ${SELL_FORCED_N} FORCED`,"var(--red)",true);return;}
   c.innerHTML="";
 }
+/* v3.68: the horizon governs every %/yr on BOTH deck panels, but its picker lived two taps
+   deep in DESK — the owner had to be told where "auto" was. One shared chip states the year
+   in force and whether it is auto or pinned, AT the altitude the numbers are read; tapping it
+   deep-links to the full picker. ONE builder feeding both labels, so the two decks can never
+   disagree about the year their %/yr shares. */
+function hzDeckChip(){
+  const hz=effHorizon(),isAuto=HORIZON===HZ_AUTO;
+  return ` · <button class="linklike" onclick="openDesk('dNext')" title="PT horizon — tap to change">${hz?"YE"+esc(hz):"nearest"} ${isAuto?"auto":"pinned"} ⌄</button>`;
+}
 function renderSellBlock(){
   // Reset BEFORE compute (the AGREE_PICK precedent, :1489) — an early return, or sellRank()
   // itself returning null, must never leave yesterday's count on the tab.
@@ -3982,7 +3991,7 @@ function renderSellBlock(){
     // pop in and shift the board when the load lands. Genuinely-nothing still hides.
     if(POS_PENDING){
       el.style.display="";
-      el.innerHTML=`<div class="lbl">FUNDING PRIORITY · where the next dollar comes from</div>`+
+      el.innerHTML=`<div class="lbl">FUNDING PRIORITY · where the next dollar comes from${hzDeckChip()}</div>`+
         `<div class="skel-row"></div><div class="skel-row"></div><div class="skel-row"></div>`;
       return;
     }
@@ -3996,7 +4005,7 @@ function renderSellBlock(){
     r.rs.k==="never"?`<span class="bad2">○ never run</span>`:"",
     r.upl!==null?`<span style="color:${r.upl>=0?"var(--green)":"var(--red)"};font-size:9.5px">${r.upl>=0?"+":""}${r.upl}% unrl</span>`:""
   ].filter(Boolean).join(" ");
-  let h=`<div class="lbl">FUNDING PRIORITY${tripped?` · <span style="color:var(--red)">circuit tripped — this IS the active list (deleverage-only)</span>`:` · where the next dollar comes from`}</div>`;
+  let h=`<div class="lbl">FUNDING PRIORITY${tripped?` · <span style="color:var(--red)">circuit tripped — this IS the active list (deleverage-only)</span>`:` · where the next dollar comes from`}${hzDeckChip()}</div>`;
   /* v3.42 slice 2: grid rows. A forced trim's PRIMARY is its weight (the rule already
      broken); a discretionary source's PRIMARY is its %/yr (the reason it funds first).
      Every phrase is verbatim from v3.41 — only the layout moved. */
@@ -4075,7 +4084,7 @@ function renderBuyBlock(){
   const rows=UPSIDE_ROWS.slice(0,5);
   el.style.display="";
   const tripped=String(BOARD.circuit&&BOARD.circuit.state).toLowerCase()==="tripped";
-  let h=`<div class="lbl">VALUATION GAP — math only · ranked by %/yr, weight-aware</div>`;
+  let h=`<div class="lbl">VALUATION GAP — math only · ranked by %/yr, weight-aware${hzDeckChip()}</div>`;
   if(tripped)h+=`<div class="none" style="color:var(--red);font-weight:700">⛔ NO NEW POSITIONS — leverage circuit tripped; the SELL list below is the active queue</div>`;
   else if(AGREE_PICK)h+=`<div class="none" style="color:var(--green);font-weight:700">🎯 ELIGIBLE NEXT DOLLAR: ${esc(AGREE_PICK.sym)}`+
     // FEAT-TT-PTLINT (D3): the primary view is the ONE surface guaranteed to be seen, so a red

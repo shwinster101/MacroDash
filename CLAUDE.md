@@ -1780,6 +1780,12 @@ Jan-anchor shipped; see `snapshot.js` ~318–328), `spyMa100`, `spyMa200`, and a
   **985 smoke** (+7 from this feature) + **178 render** (+5 net from this feature, including
   the real swipe path, visible export action, panel height, capped funding queue, two-screen
   budget and zero mobile overflow).
+- **v3.68 — the PT horizon is stated where the %/yr is read.** The horizon governs every rate on
+  both deck panels, but its picker lived two taps deep in DESK — the owner had to be told where
+  "auto" was. **`hzDeckChip()`** (one builder, three call sites: the BUY label and both FUNDING
+  PRIORITY branches) states the year in force and whether it is **auto or pinned** at the altitude
+  the numbers are read, and deep-links to the existing full picker (`openDesk('dNext')`). One
+  builder so the two decks can never disagree about the year their %/yr shares.
 - **v3.67 — the deck height becomes a budget, not a floor.** The v3.62 deck gave each phone
   panel a fixed `max(520px, 100svh−220px)` viewport so the hidden FUND/TRIM panel could never
   lengthen the page — correct doctrine, wrong implementation detail: the SAME fixed height held
