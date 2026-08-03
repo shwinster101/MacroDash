@@ -1780,6 +1780,31 @@ Jan-anchor shipped; see `snapshot.js` ~318–328), `spyMa100`, `spyMa200`, and a
   **985 smoke** (+7 from this feature) + **178 render** (+5 net from this feature, including
   the real swipe path, visible export action, panel height, capped funding queue, two-screen
   budget and zero mobile overflow).
+- **v3.69 "NARRATIVE FIRST" — the public dashboard reorder, and the session the browser suites
+  finally ran.** Owner verdict on live screenshots: the macro board was "very overwhelming and
+  wordy" with the 5 Whys — the page's narrative — rendering LAST in Zone B, ~5 phone screens down.
+  Root cause was structural: the FEAT-161 60/40 command-center grid stacked Zone A (chart + 4 tile
+  rows) entirely before Zone B on mobile, so the words always lost the race to the numbers.
+  Owner-chosen scope: reorder + condense, one page, six anchors. **(1) The 5 Whys moved to the
+  overview region directly under the hero** (verdict → posture sentence → the whys), content and
+  data flow byte-identical — and it must never collapse: the LOADING/ERROR anchors ("0/3 core
+  inputs usable") are read from body text by the public suite. **(2) The macro strip IS the market
+  summary** — always visible with its provenance dots and voting markers — and the chart + 10
+  tiles behind it moved into ONE `CollapsedGroup` ("full market detail — chart & tiles"); the
+  Session Δ bar stays outside (conditional signal, v3.25). **(3) The 60/40 grid is GONE** — every
+  region is now a sequential full-width stack, so DOM order IS reading order at every width.
+  **(4) markets/macro/ai became real `<section>` extents** (the drivers/health pattern; bare h2s
+  meant the ai anchor silently swallowed Conviction+Alerts, which now sit in their own labeled
+  section). **(5)** Dead never-rendered components deleted (`LaunchCostCard`/`EvtolCertCard`,
+  ~75 lines); the stale command-grid media rule went with them.
+  **The verification milestone:** `npm install` had never been run in this environment, so every
+  browser-suite "run" since v3.62 was a clean SKIP. Installing deps let all three suites actually
+  execute — and they caught THREE stale pins from those browser-unverified releases (the v3.66
+  methodology text moved into an est-mini that innerText cannot read closed; the v3.67 deck-height
+  budget replacing the old >500px floor) plus a case bug in this release's own new pin (Chromium
+  innerText APPLIES text-transform:uppercase, so /full market detail/ needed /i). Each re-pinned
+  on the CURRENT contract with the reason documented.
+  Tests: **1016 smoke + 184 render + 86 public-render — all three suites green in a real browser.**
 - **v3.68 — the PT horizon is stated where the %/yr is read.** The horizon governs every rate on
   both deck panels, but its picker lived two taps deep in DESK — the owner had to be told where
   "auto" was. **`hzDeckChip()`** (one builder, three call sites: the BUY label and both FUNDING

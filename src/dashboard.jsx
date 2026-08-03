@@ -584,81 +584,6 @@ function approxCountdown(targetDate) {
   return `~${months} months`;
 }
 
-// COST TO ORBIT tracker — sits in the launch strip; secular cost-collapse signal.
-const LaunchCostCard = () => {
-  const lc = LAUNCH_COST;
-  const dropPct = Math.round((1 - lc.costPerKg / lc.prevEra.costPerKg) * 100);
-  return (
-    <div style={{
-      flex:"1 1 200px", minWidth:200, background:T.surface, backgroundImage:ILLUS_HATCH,
-      border:`1px solid ${T.green}44`, borderRadius:6, padding:"12px 14px",
-    }}>
-      <div style={{ display:"flex", alignItems:"center", gap:6, marginBottom:6 }}>
-        <span style={{ fontSize:13 }}>🚀</span>
-        <span style={{ fontFamily:T.fontMono, fontSize:9, color:T.green, letterSpacing:"0.06em" }}>COST TO ORBIT</span>
-        <span style={{ fontFamily:T.fontMono, fontSize:8, color:T.textMuted }}>$/KG → LEO</span>
-      </div>
-      <div style={{ fontFamily:T.fontMono, fontSize:22, fontWeight:700, color:T.textPrimary }}>
-        ${lc.costPerKg.toLocaleString()}
-      </div>
-      <div style={{ fontFamily:T.fontMono, fontSize:9, color:T.textMuted }}>{lc.vehicle}</div>
-      <div style={{ fontFamily:T.fontMono, fontSize:9, color:T.green, marginTop:2 }}>
-        ▼ {dropPct}% from {lc.prevEra.name} (${(lc.prevEra.costPerKg/1000).toFixed(1)}K)
-      </div>
-      <div style={{ height:26, marginTop:6 }}>
-        <ResponsiveContainer width="100%" height="100%">
-          <LineChart data={lc.series.map((v,i)=>({v,i}))}>
-            <Line type="monotone" dataKey="v" stroke={T.green} dot={false} strokeWidth={1.5}/>
-          </LineChart>
-        </ResponsiveContainer>
-      </div>
-      <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginTop:6 }}>
-        <span style={{ fontFamily:T.fontMono, fontSize:8, color:T.textMuted }}>{lc.target.name} target ~${lc.target.costPerKg}</span>
-        <IllustrativeChip/>
-      </div>
-    </div>
-  );
-};
-
-// ELECTRIC SKIES — eVTOL FAA Type-Cert tracker (Joby). Subset of the IPO stage pattern;
-// the "destination" is the Type Certificate. Curated projection (see EVTOL_CERT).
-const EvtolCertCard = () => {
-  const e = EVTOL_CERT;
-  const blue = "#3498db";
-  return (
-    <div style={{ flex:"1 1 220px", minWidth:220, background:T.surface, backgroundImage:ILLUS_HATCH, border:`1px solid ${blue}44`, borderRadius:6, padding:"12px 14px" }}>
-      <div style={{ display:"flex", alignItems:"center", gap:6, marginBottom:6 }}>
-        <span style={{ fontSize:13 }}>🛩️</span>
-        <span style={{ fontFamily:T.fontMono, fontSize:9, color:blue, letterSpacing:"0.06em" }}>ELECTRIC SKIES · eVTOL FAA CERT</span>
-      </div>
-      <div style={{ display:"flex", alignItems:"baseline", justifyContent:"space-between" }}>
-        <span style={{ fontFamily:T.fontDisplay, fontSize:15, fontWeight:700, color:T.textPrimary }}>{e.company}</span>
-        <span style={{ fontFamily:T.fontMono, fontSize:9, color:blue }}>{e.ticker}</span>
-      </div>
-      <div style={{ fontFamily:T.fontMono, fontSize:18, fontWeight:700, color:T.textPrimary, marginTop:4 }}>
-        Stage {e.stageIndex+1} <span style={{ fontSize:11, color:T.textMuted }}>/ {e.stages.length}</span>
-      </div>
-      <div style={{ fontFamily:T.fontMono, fontSize:9, color:T.textMuted }}>{e.stageLabel}</div>
-      {/* FAA 5-stage progress dots (subset of the IPO stage tracker) */}
-      <div style={{ display:"flex", alignItems:"center", gap:4, marginTop:8 }}>
-        {e.stages.map((s,i)=>(
-          <div key={s} style={{ flex:1, height:4, borderRadius:2, background: i<=e.stageIndex ? blue : T.border }}/>
-        ))}
-      </div>
-      <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginTop:8 }}>
-        <span style={{ fontFamily:T.fontMono, fontSize:9, color:blue }}>Type Cert target ~{e.targetTC}</span>
-        <IllustrativeChip label="ILLUSTRATIVE · projection"/>
-      </div>
-    </div>
-  );
-};
-
-// AI INFRA — GPU on-demand list pricing tracker. Leading indicator for AI margin
-// compression; curated quarterly (see GPU_PRICING). Falling $/hr is the bearish read,
-// so a QoQ decline is colored amber (warning), not green.
-// FEAT-CAPEX (v3.45): the funding-flow card. Curated + dated, ILLUSTRATIVE always (no live
-// source, no SOURCES key), and it never votes — a directional read off a curated table would
-// break the v3.1 invariant. The aggregate and the revision arrows are the whole message.
 const HyperscalerCapexCard = () => {
   const cx = HYPERSCALER_CAPEX;
   const agg = cx.rows.reduce((a, r) => a + r.guideB, 0);
@@ -1354,7 +1279,6 @@ export default function Dashboard({ publicView = false } = {}) {
         *{box-sizing:border-box;margin:0;padding:0;}
         ::-webkit-scrollbar{width:4px;height:4px;background:${T.bg};}
         ::-webkit-scrollbar-thumb{background:${T.borderAccent};border-radius:2px;}
-        @media(max-width:1024px){.command-grid{display:block!important;}.zone-b{margin-top:16px!important;}}
         @media(max-width:640px){
           /* FEAT-170: macro strip reflows to a 4-col grid (4+3 after DEC-31) — all signals visible, NO horizontal scroll */
           .macro-strip{overflow-x:visible!important;}
@@ -1507,6 +1431,29 @@ export default function Dashboard({ publicView = false } = {}) {
         </div>
       )}
 
+      {/* ── 5 WHYS (moved here v3.69 NARRATIVE-FIRST — owner call: the narrative outranks the
+          tiles; it previously rendered LAST in Zone B, ~5 phone screens down). Content and
+          data flow byte-identical; only the container changed from Zone-B card to overview
+          strip. Always expanded (owner-pinned) — and the LOADING/ERROR anchors ("0/3 core
+          inputs usable") are read from body innerText by the public-render suite, so this
+          block must never collapse. ── */}
+      <div style={{padding:"10px 20px",background:T.bg,borderBottom:`1px solid ${T.border}`}}>
+              <SectionHeader>5 Whys · Today</SectionHeader>
+              <div style={{fontFamily:T.fontMono,fontSize:9,color:T.amber,marginBottom:6}}>{fw.regime}</div>
+              <div style={{fontFamily:T.fontSans,fontSize:12,color:T.textSecondary,lineHeight:1.6,fontStyle:"italic"}}>"{fw.headline}"</div>
+              {fw.whys.map((w,i)=>(
+                <div key={i} style={{borderLeft:`2px solid ${T.amber}44`,paddingLeft:8,marginTop:8}}>
+                  <div style={{fontFamily:T.fontMono,fontSize:8,color:T.amber}}>WHY #{i+1}</div>
+                  <div style={{fontFamily:T.fontSans,fontSize:11,color:T.textSecondary,lineHeight:1.5}}>{w}</div>
+                </div>
+              ))}
+              <div style={{fontFamily:T.fontMono,fontSize:8,color:T.textMuted,marginTop:8}}>Rule-based · {derivedLabel} (no LLM)</div>
+              {/* Freshness anchors to the equity close (SPY) — a market synthesis is "as of the
+                  last close". Don't let a secondary input FRED publishes a day late (VIX/10Y)
+                  drag the whole 5-Whys badge to STALE; per-tile VIX/10Y badges stay honest. */}
+              <SourceBox api="Rule-based" endpoint="6-factor regime · stale inputs excluded" mode={modeOf('spyPrice')} asOf={asOfOf('spyPrice')}/>
+      </div>
+
       {/* ── SIGNAL QUALITY rollup — at-a-glance data trust (live vs stale vs mock) ── */}
       {/* A11Y: aria-live on the CONFIDENCE strip, not on every tile — a screen reader should
           hear "the verdict's evidence base changed", not each number ticking. */}
@@ -1588,6 +1535,9 @@ export default function Dashboard({ publicView = false } = {}) {
         </CollapsedGroup>
       </section>
 
+      {/* v3.69 NARRATIVE-FIRST: markets/macro/ai gain real <section> extents (the drivers/
+          health pattern) — previously bare h2s, so the ai anchor swallowed Conviction+Alerts. */}
+      <section aria-labelledby="markets">
       <h2 id="markets" className="visually-hidden">Markets — equities, rates and cross-asset</h2>
       {/* ── MACRO STRIP (persistent ticker — always visible; FEAT-170 reflows on mobile) ── */}
       <div style={{background:T.surfaceHigh,borderBottom:`1px solid ${T.border}`,padding:"6px 20px",overflowX:"auto",display:"flex",alignItems:"center",justifyContent:"space-between",gap:12}} className="macro-strip">
@@ -1646,16 +1596,18 @@ export default function Dashboard({ publicView = false } = {}) {
         </div>
       )}
 
-      {/* ── COMMAND CENTER GRID (FEAT-161: 60/40) ──
-          FEAT-171 · ABOVE-FOLD CONTRACT (v1.7, DECISION-3 = YES):
-            ABOVE FOLD @1280×800 → header + macro strip (all 8) + Regime Verdict band + SPY chart + YTD KPI tiles.
-            BELOW FOLD (one scroll) → cross-asset tiles + full macro grid + headwinds + 5 Whys + alerts.
-            Maxim: "fit the content, don't squeeze the content." Zero-scroll abandoned as dishonest for a
-            chart/gauge dashboard. Canonical contract owned by SRS §9/§12 (T1). */}
-      <div style={{padding:"16px 20px"}}>
-        <div className="command-grid" style={{display:"grid",gridTemplateColumns:"60fr 40fr",gap:16,alignItems:"start"}}>
+      {/* v3.69 NARRATIVE-FIRST supersedes the FEAT-161 60/40 COMMAND CENTER GRID and the
+          FEAT-171 above-fold contract: the two-column race is what buried the 5 Whys ~5 phone
+          screens down (Zone A stacked entirely before Zone B on mobile). The narrative now
+          leads in the overview; the chart and tile rows are reference material behind ONE
+          expander (the macro strip above stays the always-visible summary — v3.25: its
+          provenance dots and voting markers survive the collapse). Count = 1 chart + 2 YTD
+          + 4 signal + 4 cross-asset tiles. */}
+      <div style={{padding:"12px 20px 0"}}>
+        <CollapsedGroup count={11} label="full market detail — chart & tiles" chip={false}>
+        <div style={{display:"grid",gap:16,marginTop:8}}>
 
-          {/* ── ZONE A (left 60%) ── */}
+          {/* ── market detail (was ZONE A) ── */}
           <div style={{display:"flex",flexDirection:"column",gap:12}}>
 
             {/* A1: SPY Chart + MA cross */}
@@ -1849,10 +1801,16 @@ export default function Dashboard({ publicView = false } = {}) {
             </div>
           </div>
 
-          {/* ── ZONE B (right 40%) ── */}
-          {/* C2 (v3.60): the macro anchor lands where the macro grid begins */}
-          <h2 id="macro" className="visually-hidden">Macro — inflation, labor, credit and conditions</h2>
-          <div className="zone-b" style={{display:"flex",flexDirection:"column",gap:12}}>
+        </div>
+        </CollapsedGroup>
+      </div>
+      </section>
+
+      <section aria-labelledby="macro">
+      {/* C2 (v3.60): the macro anchor lands where the macro grid begins */}
+      <h2 id="macro" className="visually-hidden">Macro — inflation, labor, credit and conditions</h2>
+      <div style={{padding:"12px 20px 0"}}>
+          <div style={{display:"flex",flexDirection:"column",gap:12}}>
 
             {/* FEAT-169: RegimeTile relocated to full-width RegimeBand under macro strip (was here). */}
 
@@ -1953,26 +1911,13 @@ export default function Dashboard({ publicView = false } = {}) {
               </CollapsedGroup>
             </div>
 
-            {/* 5 Whys headline */}
-            <div style={{background:T.surface,border:`1px solid ${T.border}`,borderRadius:6,padding:"14px 16px"}}>
-              <SectionHeader>5 Whys · Today</SectionHeader>
-              <div style={{fontFamily:T.fontMono,fontSize:9,color:T.amber,marginBottom:6}}>{fw.regime}</div>
-              <div style={{fontFamily:T.fontSans,fontSize:12,color:T.textSecondary,lineHeight:1.6,fontStyle:"italic"}}>"{fw.headline}"</div>
-              {fw.whys.map((w,i)=>(
-                <div key={i} style={{borderLeft:`2px solid ${T.amber}44`,paddingLeft:8,marginTop:8}}>
-                  <div style={{fontFamily:T.fontMono,fontSize:8,color:T.amber}}>WHY #{i+1}</div>
-                  <div style={{fontFamily:T.fontSans,fontSize:11,color:T.textSecondary,lineHeight:1.5}}>{w}</div>
-                </div>
-              ))}
-              <div style={{fontFamily:T.fontMono,fontSize:8,color:T.textMuted,marginTop:8}}>Rule-based · {derivedLabel} (no LLM)</div>
-              {/* Freshness anchors to the equity close (SPY) — a market synthesis is "as of the
-                  last close". Don't let a secondary input FRED publishes a day late (VIX/10Y)
-                  drag the whole 5-Whys badge to STALE; per-tile VIX/10Y badges stay honest. */}
-              <SourceBox api="Rule-based" endpoint="6-factor regime · stale inputs excluded" mode={modeOf('spyPrice')} asOf={asOfOf('spyPrice')}/>
-            </div>
-          </div>
-        </div>
 
+          </div>
+      </div>
+      </section>
+
+      <section aria-labelledby="ai">
+      <div style={{padding:"0 20px"}}>
         <h2 id="ai" className="visually-hidden">AI unit economics — cost, price, conversion and funding</h2>
         {/* ── AI UNIT ECONOMICS · cost side (GPU $/hr) + price side (token $/Mtok) ── */}
         <div style={{marginTop:16,display:"flex",alignItems:"center",gap:10}}>
@@ -1997,6 +1942,12 @@ export default function Dashboard({ publicView = false } = {}) {
         <CollapsedGroup count={1} label="curated: hyperscaler capex funding flow">
           <HyperscalerCapexCard />
         </CollapsedGroup>
+      </div>
+      </section>
+
+      {/* v3.69: operator monitors + health + footer share the bottom padded container the old
+          command-center wrapper used to provide. */}
+      <div style={{padding:"0 20px 16px"}}>
 
         {/* MAG 10 quote strip CUT (v3.51, public audit). v3.43 cut its curated fundamentals
             on the Yahoo-dupe test ("Yahoo/SA do this better and fresher"); the surviving live
@@ -2007,6 +1958,7 @@ export default function Dashboard({ publicView = false } = {}) {
         {/* A4 (v3.58): PRIVATE on the shareable route. Authored conviction tiers are the
             owner's judgment layer — the friend-share view must not disclose them (owner call,
             composing the v3.51 keep-on-default decision with the re-audit's public gate). */}
+        {!publicView&&(<section aria-label="Operator monitors — conviction and alerts">
         {!publicView&&<div style={{marginTop:16,background:T.surface,border:`1px solid ${T.border}`,borderRadius:6,overflow:"hidden"}}>
           <button onClick={()=>setWatchlistOpen(o=>!o)} aria-expanded={watchlistOpen}
             style={{width:"100%",display:"flex",justifyContent:"space-between",alignItems:"center",padding:"10px 16px",background:"none",border:"none",cursor:"pointer",borderBottom:watchlistOpen?`1px solid ${T.border}`:"none"}}>
@@ -2068,8 +2020,10 @@ export default function Dashboard({ publicView = false } = {}) {
             {alerts.map(a=><AlertRow key={a.id} alert={a} ev={alertEval[a.id]} onToggle={id=>setAlerts(prev=>prev.map(x=>x.id===id?{...x,active:!x.active}:x))} onDelete={handleDeleteAlert}/>)}
           </div>
         </div>}
+        </section>)}
 
         {/* ── C2/C4 (v3.60): DATA HEALTH — is the product current, degraded, or recovering? ── */}
+
         <section aria-labelledby="health" style={{marginTop:16,background:T.surface,border:`1px solid ${T.border}`,borderRadius:6,padding:"12px 16px"}}>
           <h2 id="health" className="visually-hidden">Data health — per-source freshness and recovery</h2>
           <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:8,flexWrap:"wrap",gap:6}}>

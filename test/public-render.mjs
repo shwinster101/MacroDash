@@ -338,6 +338,33 @@ console.log("\n[public] v3.60 P0 slice — nav, matrix, digest, health");
   const body2 = await page.locator("body").innerText();
   ok("C4: an identical return visit names the device scope — 'since your previous visit on this device'",
     /no material change since your previous visit on this device \(\d{4}-\d{2}-\d{2}\)/.test(body2));
+  // ── v3.69 NARRATIVE FIRST ─────────────────────────────────────────────────
+  // (a) the 5 Whys renders in the overview region, BEFORE the market strip — the owner call
+  // this release exists for. DOM order, not pixels: it must hold at every width.
+  ok("v3.69: 5 Whys precedes the markets section in DOM order",
+    await page.evaluate(() => {
+      const whys = [...document.querySelectorAll("*")].find(n => n.childElementCount === 0 && /5 Whys · Today/.test(n.textContent || ""));
+      const mkts = document.querySelector('section[aria-labelledby="markets"]');
+      return !!whys && !!mkts && !!(whys.compareDocumentPosition(mkts) & Node.DOCUMENT_POSITION_FOLLOWING);
+    }));
+  // (b) market detail starts collapsed — chart/tiles out of the DOM — while the macro strip
+  // (the always-visible summary) and its SPY* item survive the collapse (v3.25).
+  const mktsClosed = await page.locator('section[aria-labelledby="markets"]').innerText();
+  ok("v3.69: market detail collapsed by default; the macro strip stays visible while closed",
+    /SPY\*/.test(mktsClosed) && !/MARKET PULSE/i.test(mktsClosed) && /full market detail/i.test(mktsClosed));
+  // (c) one tap opens the chart.
+  await page.locator('section[aria-labelledby="markets"] button[aria-expanded]').click();
+  await page.waitForTimeout(200);
+  ok("v3.69: expanding market detail reveals the Market Pulse chart card",
+    /MARKET PULSE/i.test(await page.locator('section[aria-labelledby="markets"]').innerText()));
+  // (d) real section extents: ai no longer swallows the operator monitors.
+  ok("v3.69: markets/macro/ai anchors have real <section> extents, and ai does NOT contain MY CONVICTION",
+    await page.evaluate(() => {
+      const m = document.querySelector('section[aria-labelledby="markets"]');
+      const mac = document.querySelector('section[aria-labelledby="macro"]');
+      const ai = document.querySelector('section[aria-labelledby="ai"]');
+      return !!m && !!mac && !!ai && !/MY CONVICTION/.test(ai.innerText);
+    }));
   ok("C: no page errors through the slice", errors.length === 0);
   await page.close();
 }

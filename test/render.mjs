@@ -554,8 +554,15 @@ console.log("\n[render] FEAT-TT-RANKFAIR — held weight is a ranking input, not
 // AAA is 24000/178494 = 13.4% of the tracked book -> "*" (thin). EEE is options-only -> "◇".
 const upRank = await txt(page, "upsideRank");
 ok("a ranked pick carries the weight already held", /13\.4%\*/.test(upRank));
+// v3.66 QUIET BOARD: the methodology (denominator, shared-horizon note, floor/premium
+// definitions) moved one tap deep into the "how this list is ranked" est-mini. The facts
+// must still EXIST — read them with the expander open, and pin that the summary invites it.
+ok("the ranking methodology lives one tap deep — 'how this list is ranked' summary present",
+  /how this list is ranked/i.test(upRank));
+await page.evaluate(() => { document.querySelectorAll("#upsideRank details.est-mini").forEach(d => d.open = true); });
+const upRankOpen = await txt(page, "upsideRank");
 ok("the denominator is stated as tracked-book, never NAV",
-  /% of TRACKED BOOK \(a floor/.test(upRank));
+  /% of TRACKED BOOK \(a floor/i.test(upRankOpen));
 ok("queue names with no pt_model are NAMED rather than silently absent",
   /cannot be ranked here — no pt_model/.test(upRank));
 // BBB is modelled but carries NO position — the ranking spans both universes and must say so.
@@ -729,6 +736,7 @@ ok("a new name without tier+lens is rejected whole, with a precise message",
 console.log("\n[render] FEAT-TT-PTLINT — model lints, auto horizon, derived marks, leg provenance");
 await page.evaluate(() => { setHorizon("auto"); switchTab("BOARD"); });
 await page.waitForTimeout(200);
+await page.evaluate(() => { document.querySelectorAll("#upsideRank details.est-mini").forEach(d => d.open = true); });
 const rankTxt = await txt(page, "upsideRank");
 // D1: the auto pick must SAY it is auto and say WHY — an auto horizon that looked deliberate is
 // how "2028" survived long enough to silently drop three modelled names from the ranking.
@@ -1051,8 +1059,15 @@ ok("decision deck: FUND / TRIM is reachable through a real click on the tab butt
   await phone.locator("#decisionFund").getAttribute("inert") === null);
 await phone.evaluate(() => decisionGo(0));
 await phone.waitForTimeout(350);
-ok("decision deck: each phone panel owns a viewport-height focus area",
-  (await phone.locator("#decisionBuy").boundingBox()).height > 500);
+// v3.67: the deck height is a BUDGET, not a floor — it shrinks to the active panel's
+// content (min 180) and never exceeds max(520, viewport−220). A short BUY list no longer
+// rents a blank half-screen; a tall panel still scrolls inside the same ceiling.
+ok("decision deck: panel height stays within the v3.67 budget (shrinks to content, caps at viewport budget)",
+  await phone.evaluate(() => {
+    const h = document.getElementById("decisionBuy").getBoundingClientRect().height;
+    const budget = Math.max(520, Math.round((window.visualViewport ? visualViewport.height : innerHeight) - 220));
+    return h >= 180 && h <= budget + 2;
+  }));
 
 // R3/R5/R6 (H1 §7): run on a DEDICATED phone page, not the shared one above — v3.57 already
 // lost time to a shared closure leaking state between fixtures; a separate page makes that

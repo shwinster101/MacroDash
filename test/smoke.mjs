@@ -1505,6 +1505,24 @@ ok("estrun: the merged renderers are DEAD — no second render path for estimate
 ok("estrun: the section label carries the tier — the math renders under the tier claim",
   adminSrc.includes("ESTIMATE RUN — ${esc(TIER_LABEL[x.tier]"));
 /* v3.68: the PT horizon is stated where the %/yr is read. */
+/* v3.69 NARRATIVE FIRST — the public dashboard reorder. */
+ok("v3.69: the 5 Whys block renders in the overview region, before the markets section (source order)",
+  dashSrc.indexOf("5 Whys · Today") > dashSrc.indexOf('id="overview"')
+  && dashSrc.indexOf("5 Whys · Today") < dashSrc.indexOf('aria-labelledby="markets"'));
+ok("v3.69: the 5 Whys is NOT inside any CollapsedGroup (LOADING/ERROR anchors are read from body text)",
+  !/CollapsedGroup[^>]*>[\s\S]{0,600}5 Whys · Today/.test(dashSrc));
+ok("v3.69: ONE market-detail CollapsedGroup (chart + 10 tiles) inside the markets section, chip-free",
+  dashSrc.includes('label="full market detail — chart & tiles" chip={false}')
+  && (dashSrc.match(/full market detail/g)||[]).length===1);
+ok("v3.69: the 60/40 command-center grid is gone — no two-column race can bury the narrative again",
+  !dashSrc.includes("command-grid") && !dashSrc.includes("60fr 40fr"));
+ok("v3.69: markets/macro/ai are real sections (drivers/health pattern), and the operator monitors have their own",
+  dashSrc.includes('<section aria-labelledby="markets">')
+  && dashSrc.includes('<section aria-labelledby="macro">')
+  && dashSrc.includes('<section aria-labelledby="ai">')
+  && dashSrc.includes('aria-label="Operator monitors — conviction and alerts"'));
+ok("v3.69: dead components deleted (defined-but-never-rendered LaunchCostCard/EvtolCertCard)",
+  !dashSrc.includes("LaunchCostCard") && !dashSrc.includes("EvtolCertCard"));
 ok("hz-chip: ONE builder (hzDeckChip) states year + auto/pinned and deep-links to the picker",
   /function hzDeckChip\(\)/.test(adminSrc)
   && /openDesk\('dNext'\)" title="PT horizon/.test(adminSrc)
