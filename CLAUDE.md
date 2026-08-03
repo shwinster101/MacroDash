@@ -7,8 +7,11 @@ edge by Pages Functions and cached in KV.
 
 **v3.3 "TT readout" adds a machine-readable regime API.** `/readout.json` (Pages Function
 `functions/readout.json.js`, CORS-open, `tt-v1` schema) derives an external trading-terminal
-readout from the same per-ET-day snapshot: six band checks → `TAILWIND|NEUTRAL|HEADWIND|PANIC|
-INSUFFICIENT` + a **Macro Flip** circuit (armed VIX>22 · tripped SPY<200d AND VIX>25). The pure
+readout from the same per-ET-day snapshot: six band checks → `TAILWIND|NEUTRAL|HEADWIND|PANIC`
+(**ENGINE0-CONT, v3.63: the literal `INSUFFICIENT` is no longer PUBLISHED as a verdict** — a
+<3-usable day reads `NEUTRAL` on the direction axis and says so on the evidence axis,
+`confidence`/`actionability`/`status`; `raw_verdict` keeps the honest record) + a **Macro Flip**
+circuit (armed VIX>22 · tripped SPY<200d AND VIX>25). The pure
 mapping lives in **`src/ttReadout.js`** (`DEC-33` band table — it gates real orders, so every
 boundary is smoke-tested; **first `functions/`→`src/` import** in the repo, esbuild-inlined).
 A **Macro Flip banner** (`FEAT-331`) and **"Copy TT readout" button** (`FEAT-332`) surface the
@@ -1780,6 +1783,112 @@ Jan-anchor shipped; see `snapshot.js` ~318–328), `spyMa100`, `spyMa200`, and a
   **985 smoke** (+7 from this feature) + **178 render** (+5 net from this feature, including
   the real swipe path, visible export action, panel height, capped funding queue, two-screen
   budget and zero mobile overflow).
+- **ENGINE0-CONT (v3.63) — source continuity: Engine 0 stops confusing "I cannot see" with
+  "nothing is there".** The reproduction case was a live 2026-08-03 body: SPY and F&G current,
+  VIX missing, RS missing, 10Y a session behind, Kalshi dead — two usable checks, so the readout
+  published `INSUFFICIENT` and every downstream surface treated the whole day as a dead end. But
+  a 10Y print from last Thursday is not *nothing*; it is the last official observation, and the
+  system had **exactly two states** for it (fresh, or gone) where the honest answer needs three.
+  Five pieces, all on the existing rails:
+  **(1) EVIDENCE TIERS.** Every Engine 0 input now resolves to an EvidencePoint before it reaches
+  a band — `CURRENT` · `CACHED` (same observation from the day's KV, full vote, never relabelled
+  "live") · `HISTORICAL` (stale but inside a named carry window) · `MISSING`. `PROXY` exists in
+  the vocabulary and **nothing emits it**: a substitute must never pass through the original
+  metric's bands, so shipping the word without the behavior is deliberate.
+  **The carry is CONSERVATIVE and asymmetric**, the same doctrine as the v3.40 TAILWIND withhold:
+  a historical vote passes the SAME band, then stale **bullish → neutral** (stale bullishness is
+  not evidence of safety) while stale **bearish survives, flagged** — with the observation date
+  and the session count carried in the reason string, never as a bare number. Windows are in
+  COMPLETED MARKET SESSIONS, and the counter is `sessionsBehind()` **extracted out of `isStale`**
+  so the carry policy and the staleness gate can never disagree about what a session is (§P.4 —
+  a second copy of that weekend/holiday walk is precisely the drift this repo keeps paying for).
+  VIX gets the shortest window (2) because the crash gauge decays fastest; 10Y the longest (5)
+  because a monthly delta tolerates a publisher lag. Fed odds carry 5 **and only while the
+  referenced FOMC event is still open** — odds from a decided meeting must never roll into the
+  next one.
+  **(2) THE TWO-AXIS CONTRACT.** A verdict was being asked to answer two different questions —
+  *which way* and *may I act* — and `INSUFFICIENT` was the tell: it is not a direction at all, it
+  is a statement about the evidence, wedged into the direction field. `confidence` (HIGH/MEDIUM/
+  LOW), `actionability` (FULL/RESTRICTED/HOLD) and `status` (OK/PARTIAL DATA/DATA DEGRADED) now
+  carry the evidence axis, and a <3-usable day publishes the deterministic wait posture
+  `NEUTRAL · LOW · HOLD · DATA DEGRADED` — **a claim about the system's evidence, never a claim
+  the tape is neutral.** `raw_verdict` keeps what the counts alone said, so the change is never
+  silent. **PANIC now requires both gauges CURRENT**: a carried print may keep a bearish caution
+  but must never fire — or clear — the most safety-critical override. The Macro Flip circuit is
+  the same rule: it evaluates only CURRENT/CACHED inputs, and a carried VIX narrates
+  `ARMED_FROM_LAST_CLOSE` / `UNCONFIRMED_FROM_LAST_CLOSE` — pointedly **not** "not armed",
+  because absence of confirmation is not a clear.
+  **(3) CONTINUITY AT THE SOURCE.** Per-FIELD last-good (`pulse:source:lastgood:*`, 30d) so one
+  failed FRED batch stops erasing unrelated history; records keep their REAL observation dates,
+  so a served fallback classifies HISTORICAL downstream and is never dressed as fresh. A
+  **same-date-paired NASDAQ100/SP500** RS check replaces the order-gating dependency on Finnhub's
+  QQQ quote — both legs' latest AND prior dates must match or **no RS is emitted**, because a
+  cross-day delta dressed as a 1-day read is a fabricated number. An official **UST par-yield
+  fallback** for the 10Y (the upstream FRED's DGS10 republishes, so the level is equivalent by
+  construction; only the attribution changes) fires only when the DGS10 leg failed. A **Kalshi
+  transport ladder** tries `external-api.kalshi.com` then the deployed-working elections base —
+  **the base that served is recorded in `_diag.sources`, never implied**, because the doc claim
+  could not be network-verified from this build environment. And the FRED pull now runs its two
+  criticals (VIX, DGS10) FIRST at concurrency 2, so a slow or rate-limited FRED degrades the
+  dashboard-only tail rather than the order-gating head.
+  **(4) THE PUBLISH GATE.** `publishIfNoWorse()` — a candidate is compared against the stored
+  snapshot on a lexicographic quality tuple built FROM the readout (one computation, the same
+  counts the readout renders) and **refused if it is worse**, so a partial rebuild can never
+  overwrite a good morning warm. The asOf tiebreak means an equal-quality newer candidate wins
+  but is explicitly **not** called an improvement. This retires the cron's old
+  delete-then-sleep-then-refetch, which was destroy-and-hope against an eventually-consistent
+  store: `POST /api/snapshot/refresh` (auth: the terminal's PIN session, or `x-refresh-token`
+  for the cron — no secret configured means no token path for anyone) builds without deleting
+  anything and **returns the complete readout in the response body**, so no caller ever rereads
+  KV hoping the write is globally visible yet. TTL now rides confidence (48h HIGH · 15min MEDIUM ·
+  5min LOW), deliberately NOT actionability — a tripped circuit on perfect data is HOLD but
+  perfect evidence, and a 5-minute TTL there would hammer FRED all day during exactly the tape
+  that makes rate limits matter.
+  **(5) THE HUMAN SURFACES.** The paste block gains an `EVIDENCE` line (never a bare verdict
+  again); the terminal's pill renders `HOLD`/`RESTRICTED`/`DATA DEGRADED` and can never colour
+  green on a non-FULL actionability; `⟳ RANKS` became `⟳ DATA+RANKS` and now actually rebuilds
+  (the old button only re-GET the same per-day KV value — a pseudo-refresh), with an honest
+  failure ladder: 429 says cooling down, an older deploy degrades to the read-only reload,
+  stated rather than silent. On the public dashboard the withheld posture renders **`DATA HOLD`**
+  through one shared `WITHHELD_LABEL` — the engine keeps its internal `INSUFFICIENT` sentinel
+  (`regime.js` is untouched; presentation only), because the word reads to a non-operator as a
+  system dead end rather than the wait state it is.
+  **What was deliberately NOT changed.** No band moved. `computeRegime` and `REGIME_BAND_TABLE`
+  are untouched — the dashboard's six-factor backdrop is a different engine from the six tt-v1
+  order-gating checks, and this ticket had no mandate over the public vote. The carry windows are
+  **data-availability policy, not economic thresholds**, and they are asserted rather than
+  calibrated (FRED is unreachable from this build environment) — which is why every boundary is
+  smoke-tested at the exact session and one beyond, with literal dates rather than dates computed
+  from `CARRY_SESSIONS`, so a policy edit goes red until someone reviews it.
+  **Honest limits, and one of them is load-bearing.** The H5 audit of this diff found that
+  collapsing `INSUFFICIENT` into `NEUTRAL` **removed a veto** it did not replace: the terminal's
+  `governingRegime()` reads only `regime.verdict`, and `REG_RANK` has no `INSUFFICIENT` key, so
+  the old value fell through to an unranked read → `STANCE UNKNOWN` → the FIX-B (v3.49) hard-WAIT.
+  `NEUTRAL` **is** ranked, so a two-check day can now reach `ADDS OK` and, when the flip happens
+  to be evaluable, light `ELIGIBLE NEXT DOLLAR — all gates passed` — while the same payload says
+  `HOLD · LOW · DATA DEGRADED` on the pill directly above it. The evidence axis is published and
+  rendered; **the gate simply does not read it yet**. That is a one-field fix (`actionability !==
+  "FULL"` in the `gateFail` ladder) and it is filed as the next ticket rather than bundled here,
+  because a change to the order-gating eligibility rule deserves its own plan and its own
+  approval (§P.8) — but it is named here, at full weight, because a limit discovered and left
+  unstated is the defect this file exists to prevent. Two smaller ones from the same audit, also
+  filed not bundled: the ARM threshold `22` now has a second executable home in the carried-VIX
+  narration, and `fetchEquities` records its group status `ok:true` one line before it throws on
+  zero quotes.
+  Tests: **1037 smoke** + **191 render** + **84 public-render**, plus five negative controls run
+  for this entry — disabling `conservativeVote`, `degradedFallback`, the publish gate and the RS
+  date-pairing each turns the suite red, and moving VIX's carry window from 2 to 3 sessions turns
+  exactly one boundary red. The sixth found a **vacuous assert**: *"matrix B: all-historical
+  bullish inputs → never TAILWIND"* stays GREEN with `conservativeVote` fully disabled, because
+  the v3.40 blind-gauge downgrade suppresses TAILWIND independently whenever VIX is not CURRENT —
+  which that fixture guarantees. The transform IS covered (two other assertions go red), but the
+  pin that reads as matrix-B coverage proves a pre-existing rule. Filed for H3 rather than
+  quietly rewritten under the audit.
+- **Harness reconciliation (same release).** `npm run gates` now exists — all four suites in
+  order, failing on the first red. It is not a convenience: a hand-chained
+  `npm test | grep FAIL && git commit` exits 0 when grep *finds* the failure, which is how a red
+  commit once got through. README, AGENTS.md and the Commands block above all point at the runner
+  rather than restating the four commands as a sequence someone has to chain correctly.
 - **Deferred:** stored fundamentals + Robinhood sync — now unblocked by the `x-tt-pin` header
   (v3.9): a chat-side daily review can PUT `status_flags`/`ref_px` into the deepDive payloads and
   stamp `lastRun`. When built, store the *triage* shape (`{at, px}` → "% moved since your last TT
@@ -1831,12 +1940,20 @@ not read at runtime. Mock remains the always-present runtime fallback (graceful 
   overnight) → write-through. **Every load the rest of the day** hits KV → instant,
   badge = `CACHED`. *Your morning visit is the refresh trigger* — the snapshot path needs
   no cron.
-- **Write-through only when healthy**: requires `spy` fulfilled AND ≥6 FRED fields. A
-  degraded pull is returned but **never cached**, so a bad morning can't lock in for the day.
-- `CACHE_TTL` is 48h (cleanup only); the per-day **key** is what drives freshness.
-- Fetches run in **phases** (FRED batched ≤5, then SPY + 2 scrapers) to stay under
-  Cloudflare's ~6-connection cap — saturating it makes queued calls time out. Don't
-  collapse these back into one big `Promise.all`.
+- **Write-through is now a QUALITY compare, not a boolean** (ENGINE0-CONT, v3.63):
+  `publishIfNoWorse()` builds the candidate's own readout and refuses to replace a stored
+  snapshot that scores better on the lexicographic `readoutQuality` tuple — so a partial
+  rebuild can never overwrite a good morning warm. The old named-field `quorum()` survives
+  and still drives `_diag.healthy`/`settled`, and `settled:false` still forces the short TTL.
+- **TTL rides CONFIDENCE, not a flat 48h**: `chooseTtl()` → `CACHE_TTL` 48h only at HIGH
+  confidence on a settled close, `TTL_MEDIUM` 15min, `TTL_LOW` 5min. Consequence worth
+  knowing: on a degraded day the day's key expires every 5–15 minutes and the next visit
+  pays a full rebuild, so *"your morning visit is the refresh trigger"* holds only while the
+  evidence is HIGH. Deliberate — a degraded day is exactly the one that should retry.
+- Fetches run in **phases** (FRED batched — the two Engine 0 criticals VIX/DGS10 FIRST at
+  concurrency 2, the rest ≤5 — then SPY + NASDAQ100 + scrapers) to stay under Cloudflare's
+  ~6-connection cap; saturating it makes queued calls time out. Don't collapse these back
+  into one big `Promise.all`, and don't un-prioritize the critical head.
 
 ## Commands
 
@@ -1850,6 +1967,7 @@ npm test              # no-network smoke suite (needs Node ≥17)
 npm run test:ui       # browser render test for admin.html (skips if no Chromium)
 npm run test:public   # build + browser STATE test for the public dashboard (skips likewise)
 npm run audit:prod    # production-scope dependency audit
+npm run gates         # all four in order, failing on the first red (never hand-chain them)
 
 # Cron Worker (separate deploy):
 cd worker && npx wrangler deploy

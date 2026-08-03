@@ -785,7 +785,13 @@ export function rateOddsStillOpen(lg, now = new Date()) {
 // ENGINE0-CONT §7.1: per-FIELD last-good for the FRED-sourced Engine 0 criticals (the
 // scrapers already ride withLastGood above). Grouped by source pull so a value never
 // travels without its observation date and derivatives; each group's PRIMARY key decides
-// presence. Band-checked on the way back in — a stored implausible value stays dropped.
+// presence. The group PRIMARY is band-checked on the way back in, so an implausible stored
+// vix/tenYear/spyPrice/ndxSpxRs stays dropped. KNOWN GAP, stated rather than implied away:
+// this restore runs AFTER applyBands(), and only the primary is re-checked — a group whose
+// primary is plausible but whose DERIVATIVE is not (a poisoned vixWeekChg, a tenYearM1
+// written before a band was tightened) is served unbanded. Closing it means either banding
+// the whole restored group or moving applyBands() after this call; deliberately deferred,
+// because reordering the band pass touches every field, not just the restored ones.
 const FIELD_LG_GROUPS = {
   vix:        ["vix", "vixAsOf", "vixWeekChg", "vixSeries"],
   tenyear:    ["tenYear", "tenYearAsOf", "tenYearD1", "tenYearW1", "tenYearM1", "tenYearSeries", "tenYearSource"],

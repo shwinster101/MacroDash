@@ -9,7 +9,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
 <!-- AUDIT: kept in sync with package.json by test/smoke.mjs. admin.html is a Vite
      public/ passthrough, so it cannot receive __APP_VERSION__ — the guard is the fix. -->
-<title>TT TICKER TERMINAL v3.62.0</title>
+<title>TT TICKER TERMINAL v3.63.0</title>
 <style>
   :root{
     --bg:#05070a; --panel:#0a0f16; --panel2:#0d141d; --line:#16202c;
@@ -397,7 +397,7 @@
         onclick="toggleHeadInfo()">⋯ MENU</button>
     </div>
     <div id="headInfo" style="display:none">
-      <div class="brand">FINANCE&nbsp;BRO.AI // TT&nbsp;TICKER&nbsp;TERMINAL <small>v3.62.0 · single-pass deep-dive orchestrator</small></div>
+      <div class="brand">FINANCE&nbsp;BRO.AI // TT&nbsp;TICKER&nbsp;TERMINAL <small>v3.63.0 · single-pass deep-dive orchestrator</small></div>
       <div class="statusline">
         <span>BOOK: <b id="bookStamp">loading…</b></span>
         <span>AUTH: <b id="sessState">…</b></span>
@@ -2854,7 +2854,10 @@ function rankScope(rank){
 }
 /* FEAT-TT-REGIME: the standing Engine-0 modifier (TT doc STEP 0) rendered where the next
    dollar gets decided. Only HEADWIND/PANIC produce one — a NEUTRAL banner would be noise,
-   and an unknown/INSUFFICIENT regime must not fabricate a modifier either way. */
+   and an unranked regime must not fabricate a modifier either way. (Pre-ENGINE0-CONT that
+   unranked case was the literal verdict INSUFFICIENT; the readout no longer publishes it,
+   so the `REG_RANK[measured]===undefined` branch below is now reachable only from an older
+   deploy or a malformed body — kept for exactly those, not as a live state.) */
 /* v3.28 FEAT-TT-SESSION: two regime engines now exist — MacroDash MEASURES one from live
    data (/readout.json, Engine 0) and a TT session ASSERTS one from the tape it read. They
    are married, never merged: the modifier applies the STRICTER of the two (an add gated
@@ -4846,8 +4849,14 @@ document.getElementById("pinInput").addEventListener("keydown",e=>{
 
 /* ═══════════ REGIME PILL (FEAT-TT-REGIME v3.11 — Engine 0 goes live) ═══════════ */
 /* The pill renders /readout.json's verdict — same origin, CORS-open, zero new infra.
-   Honesty inherited end-to-end: INSUFFICIENT and fetch-failure render amber and say so;
-   only a real verdict colors. Non-blocking: the book never waits on the regime. */
+   Honesty inherited end-to-end: a fetch failure renders amber and says so; only a real
+   verdict colors. Non-blocking: the book never waits on the regime.
+   ENGINE0-CONT: the readout no longer PUBLISHES the literal verdict INSUFFICIENT — a
+   <3-usable day now reads NEUTRAL · LOW · HOLD · DATA DEGRADED, and `actionability` is
+   what says "don't gate on this". The INSUFFICIENT row below is kept DEFENSIVELY, not
+   because the current feed emits it: an older cached deploy, or any consumer pinned to
+   the pre-ENGINE0-CONT tt-v1 body, can still hand us that verdict, and an unmapped
+   verdict would fall through to the bare `["warn", v]` default with no explanation. */
 let REGIME=null;
 const REGIME_STYLE={
   TAILWIND:["ok","TAILWIND"],
