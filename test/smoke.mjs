@@ -741,7 +741,7 @@ ok("fw: the framework document is NOT committed to the public repo",
 // v3.18.1 audit patches — the widget ranks a SUBSET, off a price mark that can go stale,
 // across horizons that can differ. Each of those must be visible, not inferred.
 ok("upside: states the denominator — no silent truncation of the ranked set",
-  adminSrc.includes("ranking ${rows.length} of ${BOOK.length} names") &&
+  adminSrc.includes("ranking <b>${rows.length} of ${BOOK.length}</b>") &&
   adminSrc.includes("NOT judged unattractive"));
 ok("upside: flags a stale/undated price mark (a stale ref_px silently poisons the %)",
   adminSrc.includes("r.pxAge===null||r.pxAge>PX_STALE_D") && adminSrc.includes("⚠ px "));
@@ -989,13 +989,14 @@ ok("sess: decisions and circuit state fold into the coverage rollup",
 ok("regime: the STRICTER of measured and asserted governs the standing modifier",
   adminSrc.includes("const REG_RANK={TAILWIND:0,NEUTRAL:1,HEADWIND:2,PANIC:3};") &&
   adminSrc.includes("(aR>mR?asserted:measured)"));
-ok("regime: disagreement is printed with both readings, never averaged",
-  adminSrc.includes("engines disagree — MacroDash measures") &&
-  adminSrc.includes("disagreement is information, not an average"));
+ok("regime: disagreement is printed with both readings, never averaged (v3.66: asserted truncates on the line, verbatim one tap deep)",
+  adminSrc.includes("engines disagree — measured <b>${esc(measured)}</b> vs asserted <b>${aShort}</b>") &&
+  adminSrc.includes("disagreement is information, not an average") &&
+  adminSrc.includes("full session read · provenance"));
 ok("regime: an asserted regime always carries its provenance and verified flag",
   adminSrc.includes('ar.verified===true?"reconciled":"UNVERIFIED"'));
 ok("regime: MacroDash INSUFFICIENT/unavailable never silently confirms the asserted read",
-  adminSrc.includes("MacroDash unavailable, so nothing measured confirms it") &&
+  adminSrc.includes("MacroDash unavailable, nothing measured confirms it") &&
   adminSrc.includes("unconfirmed, don't gate on the measured side"));
 ok("regime: the HEADWIND/PANIC modifier text survives the two-engine rewrite",
   adminSrc.includes("R/R floors +0.5") && adminSrc.includes("8+ support quality"));
@@ -1503,11 +1504,31 @@ ok("estrun: the merged renderers are DEAD — no second render path for estimate
   !adminSrc.includes("function ddPtModelSec") && !adminSrc.includes("function ddConsensusSec"));
 ok("estrun: the section label carries the tier — the math renders under the tier claim",
   adminSrc.includes("ESTIMATE RUN — ${esc(TIER_LABEL[x.tier]"));
+/* v3.66 QUIET BOARD: every free-text blob on a decision surface is chip-length in place and
+   verbatim one tap deep. Machine reds (runState flags, lints, sev=stop changes, dropped-name
+   warnings) stay visible while everything around them collapses — the v3.25 rule. */
+ok("quiet: TODAY stance splits the parenthetical into an est-mini at RENDER; stance() prose untouched",
+  adminSrc.includes('const par=s.txt.indexOf(" (");')
+  && /tdy-stance[\s\S]{0,200}details class="est-mini"><summary>why<\/summary>/.test(adminSrc));
+ok("quiet: queue pick chips truncate rank prose at 32ch; runState red flags are NOT truncated",
+  adminSrc.includes('scopeFull.length>32?scopeFull.slice(0,32).trim()+"…"')
+  && adminSrc.includes('○ no TT run on record'));
+ok("quiet: est-run board summaries carry tier only — rank prose renders in the body (v3.64 at board altitude)",
+  /<summary><span class="sym">\$\{esc\(it\.x\.sym\)\}[\s\S]{0,120}\$\{esc\(it\.x\.tier\)\}<\/span>/.test(adminSrc)
+  && !/<summary>[\s\S]{0,300}\$\{esc\(it\.x\.rank\)\}[\s\S]{0,120}<\/summary>/.test(adminSrc)
+  && /rank note<\/span><br>\$\{esc\(it\.x\.rank\)\}/.test(adminSrc));
+ok("quiet: upside methodology + model-note caveats live in an est-mini; ranked count + dropped names + price basis stay visible",
+  adminSrc.includes("how this list is ranked${excluded?")
+  && /est-mini"><summary>how this list is ranked[\s\S]{0,2000}caveats\+/.test(adminSrc)
+  && (adminSrc.match(/caveats\+/g)||[]).length===1);
+ok("quiet: WHAT CHANGED keeps sev=stop rows visible and groups the rest behind a counted est-mini",
+  adminSrc.includes('dStops.map(row).join("")')
+  && /dRest\.length\?`<details class="est-mini"><summary>\$\{dRest\.length\} more change/.test(adminSrc));
 ok("horizon: names dropped for lacking the pinned year are NAMED, not just counted (v3.65)",
   /noRungSyms=hz\?cands\.filter/.test(adminSrc)
-  && /dropped for having no \$\{esc\(hz\)\} rung: \$\{noRungSyms\.map\(esc\)\.join/.test(adminSrc));
+  && /dropped — no \$\{esc\(hz\)\} rung: \$\{noRungSyms\.map\(esc\)\.join/.test(adminSrc));
 ok("horizon: a pinned horizon that drops names points at 'auto' as the fix, and does not when already auto",
-  /isAuto\?"":`; "auto" would pick a year every model reaches`/.test(adminSrc));
+  /isAuto\?"":` · "auto" would pick a year every model reaches`/.test(adminSrc));
 ok("est-run: the label carries the TIER ONLY — rank prose and estimate source moved into an expander (v3.64)",
   /ESTIMATE RUN — \$\{esc\(TIER_LABEL\[x\.tier\]\|\|x\.tier\)\}<\/div>/.test(adminSrc));
 ok("est-run: rank + source render inside a details.est-mini, never a drawer (the phone harness counts open drawers)",

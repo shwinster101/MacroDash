@@ -1780,6 +1780,29 @@ Jan-anchor shipped; see `snapshot.js` ~318–328), `spyMa100`, `spyMa200`, and a
   **985 smoke** (+7 from this feature) + **178 render** (+5 net from this feature, including
   the real swipe path, visible export action, panel height, capped funding queue, two-screen
   budget and zero mobile overflow).
+- **v3.66 "QUIET BOARD" — free text is chip-length in place, verbatim one tap deep.** Owner
+  verdict on five live screenshots: *"ridiculous — all text that isn't directly highest leverage
+  needs to be hidden under an expander."* The audit agreed: six render sites were inlining
+  UNBOUNDED free-text fields at full size on decision surfaces. The first-principles rule this
+  release applies everywhere: **a decision surface shows the decision; free text is chip-length in
+  place and verbatim one tap deep; machine-known reds are never collapsed** (v3.25). The six:
+  **(1)** the DESK stance box bolded the whole parenthetical (which embeds the 40+-word asserted
+  regime) — split at render into head + `details.est-mini` "why"; `stance()` itself is untouched,
+  its prose is pinned. **(2)** the engines-disagree line inlined the full asserted string — now
+  truncated at 40ch on the line (the v3.42 chip-truncation precedent) with the verbatim assert +
+  provenance in an est-mini; the DECISION (which engine governs) stays fully visible. **(3)** queue
+  pick chips rendered the whole rank tail (`rankScope` strips only the "#N") — 32ch cap; runState
+  red flags NOT truncated. **(4)** est-run board summaries carried the full `rank` string — the
+  v3.64 defect at the board altitude; tier stays, rank prose moved into the body above the table.
+  **(5)** the computed-upside footer was one ~90-word paragraph — split: visible = ranked count,
+  the v3.65 dropped-names warning, price basis; one tap deep = methodology, definitions, weights
+  note, and the per-name `pt_model.note` caveat walls (count on the summary). **(6)** WHAT CHANGED
+  rendered all items expanded — sev=stop rows stay visible, the rest group behind a counted
+  est-mini. All est-mini, never `drawer` (the phone harness counts open drawers). Five stale
+  string-pins re-pinned on behaviour; +5 new pins. **Known, deliberately untouched:** the large
+  blank region below the BUY deck panel (screenshot 4) is the v3.62 fixed-height deck viewport —
+  diagnosing it needs the live render harness (no Chromium in this environment), and blind CSS
+  changes to a snap-scroll container the render suite pins would be the riskier edit.
 - **v3.65 — a pinned horizon must NAME what it drops.** Owner screenshot: the board ranked 6 of 36
   with the horizon pinned at 2030, and TSM (model ends YE2028) and NVDA (YE2029) were **absent from
   the next-dollar list entirely** — the two names just re-run that day. The exclusion WAS disclosed,

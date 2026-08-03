@@ -9,7 +9,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
 <!-- AUDIT: kept in sync with package.json by test/smoke.mjs. admin.html is a Vite
      public/ passthrough, so it cannot receive __APP_VERSION__ — the guard is the fix. -->
-<title>TT TICKER TERMINAL v3.65.0</title>
+<title>TT TICKER TERMINAL v3.66.0</title>
 <style>
   :root{
     --bg:#05070a; --panel:#0a0f16; --panel2:#0d141d; --line:#16202c;
@@ -397,7 +397,7 @@
         onclick="toggleHeadInfo()">⋯ MENU</button>
     </div>
     <div id="headInfo" style="display:none">
-      <div class="brand">FINANCE&nbsp;BRO.AI // TT&nbsp;TICKER&nbsp;TERMINAL <small>v3.65.0 · single-pass deep-dive orchestrator</small></div>
+      <div class="brand">FINANCE&nbsp;BRO.AI // TT&nbsp;TICKER&nbsp;TERMINAL <small>v3.66.0 · single-pass deep-dive orchestrator</small></div>
       <div class="statusline">
         <span>BOOK: <b id="bookStamp">loading…</b></span>
         <span>AUTH: <b id="sessState">…</b></span>
@@ -1498,9 +1498,17 @@ function renderToday(){
   const s=stance();
   const col={stop:"var(--red)",caution:"var(--amber)",go:"var(--green)",unknown:"var(--slate)"}[s.k];
   const glyph={stop:"⛔",caution:"⚠",go:"●",unknown:"?"}[s.k];
+  // v3.66 QUIET BOARD: stance() stays byte-identical (its prose is pinned) — the SPLIT is
+  // display-only. The verdict head is the decision; the parenthetical (which embeds the whole
+  // asserted-regime string) and the why are explanation, one tap deep. The v3.25 rule holds:
+  // the verdict glyph/color IS the red channel and stays visible.
+  const par=s.txt.indexOf(" (");
+  const head=par>0?s.txt.slice(0,par):s.txt, tail=par>0?s.txt.slice(par+1):"";
   let h=`<div class="tdy-stance" style="color:${col};border-color:${col}">`+
-    `<span style="font-size:15px">${glyph}</span> <b>${esc(s.txt)}</b>`+
-    `<div class="tdy-why">${esc(s.why)}</div></div>`;
+    `<span style="font-size:15px">${glyph}</span> <b>${esc(head)}</b>`+
+    ((tail||s.why)?`<details class="est-mini"><summary>why</summary><div>`+
+      (tail?`<div class="tdy-why">${esc(tail.replace(/\)$/,""))}</div>`:"")+
+      (s.why?`<div class="tdy-why">${esc(s.why)}</div>`:"")+`</div></details>`:"")+`</div>`;
   const acts=todayActions();
   h+=`<div class="tdy-lbl">Today${acts.length>1?` · ${acts.length} items`:""}</div>`;
   h+=acts.map((a,i)=>{
@@ -1603,10 +1611,16 @@ function renderChanged(){
   sum.innerHTML=d.length
     ?`<span style="color:${stops?"var(--red)":"var(--amber)"}">WHAT CHANGED · ${d.length}${stops?` · ${stops} need attention`:""}</span>`
     :`<span style="color:var(--dim)">WHAT CHANGED · nothing since ${when}</span>`;
+  // v3.66 QUIET BOARD: 13 fully-expanded rows made the diff a wall. Items that NEED ATTENTION
+  // (sev=stop) stay visible — v3.25, a collapse never hides a red — and routine changes group
+  // behind one est-mini whose summary carries the count, so "13 changed" never reads as "2".
+  const row=x=>{const c={stop:"var(--red)",warn:"var(--amber)",go:"var(--green)"}[x.sev];
+    return `<div class="none" style="color:var(--fg)"><span style="color:${c}">●</span> ${esc(x.t)}`+
+      (x.sym&&find(x.sym)?` <span class="scope" style="cursor:pointer" onclick="openCard('${esc(x.sym)}')">open</span>`:"")+`</div>`;};
+  const dStops=d.filter(x=>x.sev==="stop"),dRest=d.filter(x=>x.sev!=="stop");
   panel.innerHTML=(d.length
-    ?d.map(x=>{const c={stop:"var(--red)",warn:"var(--amber)",go:"var(--green)"}[x.sev];
-        return `<div class="none" style="color:var(--fg)"><span style="color:${c}">●</span> ${esc(x.t)}`+
-          (x.sym&&find(x.sym)?` <span class="scope" style="cursor:pointer" onclick="openCard('${esc(x.sym)}')">open</span>`:"")+`</div>`;}).join("")
+    ?dStops.map(row).join("")+
+     (dRest.length?`<details class="est-mini"><summary>${dRest.length} more change${dRest.length>1?"s":""} — routine</summary><div>${dRest.map(row).join("")}</div></details>`:"")
     :`<div class="none">Nothing has changed since ${esc(when)}.</div>`)+
     `<div class="none" style="margin-top:6px">since <b>${esc(when)}</b> · the baseline moves only when you say so — `+
     `<a href="javascript:markSeen()">✓ mark seen</a></div>`;
@@ -2916,14 +2930,22 @@ function regimeModifier(){
   if(mod)h+=`<div class="none" style="color:${mod[0]}">${mod[1]}</div>`;
   if(asserted){
     const prov=`<span class="scope">asserted${ar.source?` by ${esc(ar.source)}`:""}, ${ar.verified===true?"reconciled":"UNVERIFIED"}</span> ${sessChip(ar.as_of||BOARD.as_of)}`;
+    // v3.66 QUIET BOARD: the asserted regime is FREE TEXT and can run 40+ words — inlining it
+    // made this the longest line on the board. Chip-length on the line (the v3.42 truncation
+    // precedent: truncate on the chip, verbatim one tap deep); the full assert + provenance
+    // live in an est-mini. The DECISION (which engine governs) stays fully visible.
+    const CUT=40;
+    const aCut=asserted.length>CUT;
+    const aShort=aCut?esc(asserted.slice(0,CUT).trim())+"…":esc(asserted);
+    const full=`<details class="est-mini"><summary>full session read · provenance</summary><div><div class="none">${esc(asserted)}</div><div class="none">${prov}</div></div></details>`;
     if(!measured)
-      h+=`<div class="none" style="color:var(--amber)">⚖ session reads <b>${esc(asserted)}</b> — MacroDash unavailable, so nothing measured confirms it · ${prov}</div>`;
+      h+=`<div class="none" style="color:var(--amber)">⚖ session reads <b>${aShort}</b> — MacroDash unavailable, nothing measured confirms it</div>`+full;
     else if(REG_RANK[measured]===undefined)
-      h+=`<div class="none" style="color:var(--amber)">⚖ session reads <b>${esc(asserted)}</b> · MacroDash returned ${esc(measured)} — unconfirmed, don't gate on the measured side · ${prov}</div>`;
+      h+=`<div class="none" style="color:var(--amber)">⚖ session reads <b>${aShort}</b> · MacroDash returned ${esc(measured)} — unconfirmed, don't gate on the measured side</div>`+full;
     else if(asserted!==measured)
-      h+=`<div class="none" style="color:var(--amber)">⚖ engines disagree — MacroDash measures <b>${esc(measured)}</b>, session asserts <b>${esc(asserted)}</b> · the stricter reading (<b>${esc(gov)}</b>) governs; disagreement is information, not an average · ${prov}</div>`;
+      h+=`<div class="none" style="color:var(--amber)">⚖ engines disagree — measured <b>${esc(measured)}</b> vs asserted <b>${aShort}</b> · the stricter (<b>${esc(gov)}</b>) governs; disagreement is information, not an average</div>`+full;
     else
-      h+=`<div class="none">⚖ both engines read <b>${esc(measured)}</b> — measured and asserted agree · ${prov}</div>`;
+      h+=`<div class="none">⚖ both engines read <b>${esc(measured)}</b> — measured and asserted agree</div>`+full;
   }
   return h;
 }
@@ -2954,10 +2976,14 @@ function renderNextDollar(){
     const flag=rs.k==="never"?`<span class="bad2">○ no TT run on record</span>`
       :rs.k==="head"?`<span class="bad2">⏱ ${rs.days}d — re-run first</span>`
       :rs.k==="stale"?`<span class="warn2">⏱ ${rs.days}d old</span>`:"";
-    const scope=rankScope(x.rank);
+    // v3.66 QUIET BOARD: rankScope() strips only the "#N", so a rank carrying real prose
+    // (LITE: a 40-word decision note) rendered whole on the chip. Chip-length here; the full
+    // rank is on the card, one tap away. The runState flags (machine reds) are NOT truncated.
+    const scopeFull=rankScope(x.rank);
+    const scope=scopeFull.length>32?scopeFull.slice(0,32).trim()+"…":scopeFull;
     return `<span class="pick" onclick="openCard('${x.sym}')" title="${(x.note||"").replace(/"/g,"&quot;")}">
       <span class="sym">${x.sym}</span><span class="lens lens-${x.lens}">${x.lens}</span>
-      ${scope?`<span class="scope">${scope}</span>`:""}${flag}</span>`;
+      ${scope?`<span class="scope">${esc(scope)}</span>`:""}${flag}</span>`;
   }).join("");
   el.innerHTML=`<div class="lbl">Next dollar · queue #${top}`+
     (leads.length>1?` · ${leads.length} co-leads (different buckets — not a single ranking)`:"")+
@@ -3460,16 +3486,28 @@ function renderUpsideRank(){
   const noRung=noRungSyms.length;
   const notAnn=rows.filter(r=>r.ann===null).map(r=>r.sym);
   const rolled=rows.filter(r=>r.rolled);
-  el.innerHTML=`<div class="lbl">Computed upside — ANNUALISED to ${hz?"year-end "+esc(hz)+(isAuto?" (auto)":""):"the nearest rung"} · ranked by %/yr so horizons compare · math only, not a recommendation (no sizing/caps/thesis weighed)</div>`+
+  // v3.66 QUIET BOARD: the footer was ONE ~90-word paragraph — count, exclusions, horizon
+  // note, price basis, floor/premium definitions and the weights denominator all inline.
+  // First-principles split: what stays visible is what changes a DECISION read right now
+  // (how many ranked · which modelled names are missing · whether the prices are real);
+  // what explains the method moves one tap deep (the v3.61 SELL-block precedent, same
+  // "how this list is ranked" phrase). Machine warnings (rolled/raw-gap/lints/queue-gap)
+  // stay visible below — those are reds/ambers about the numbers currently shown (v3.25).
+  const liveN=rows.filter(r=>r.live).length;
+  const pxFact=liveN===rows.length?"all prices LIVE":liveN?`${liveN} live / ${rows.length-liveN} on stamped marks`:`⚠ all prices are stamped marks, not live`;
+  el.innerHTML=`<div class="lbl">Computed upside · ${hz?"year-end "+esc(hz)+(isAuto?" (auto)":""):"nearest rung"} · %/yr · math only</div>`+
     hzUI+`<div class="picks">${picks}</div>`+
-    `<div class="none">ranking ${rows.length} of ${BOOK.length} names`+
-    (excluded?` — ${excluded} excluded (no pt_model target, or no usable price), NOT judged unattractive`:"")+
-    (noRung?` · <b>${noRung} modelled name${noRung>1?"s":""} dropped for having no ${esc(hz)} rung: ${noRungSyms.map(esc).join(", ")}</b> — their estimate series end earlier${isAuto?"":`; "auto" would pick a year every model reaches`}`:"")+
-    (hz?` · all % share the ${esc(hz)} horizon`:` · horizons differ, each % is to its own year`)+
-    (()=>{const l=rows.filter(r=>r.live).length;
-      return l===rows.length?` · all prices LIVE`:l?` · ${l} live / ${rows.length-l} on stamped marks`:` · all prices are stamped marks, not live`;})()+
-    ` · "floor" = the name's own pe_floor_multiple × FY+1 EPS (12–18× across the book — no re-rating assumed); "premium" = the owner's asserted multiple`+
-    ` · weights are % of TRACKED BOOK (a floor — NAV unmeasured), equity-only, so ◇ opt-only names show none</div>`+
+    `<div class="none">ranking <b>${rows.length} of ${BOOK.length}</b>`+
+    (noRung?` · <b style="color:var(--amber)">${noRung} modelled name${noRung>1?"s":""} dropped — no ${esc(hz)} rung: ${noRungSyms.map(esc).join(", ")}</b>${isAuto?"":` · "auto" would pick a year every model reaches`}`:"")+
+    ` · ${pxFact}</div>`+
+    `<details class="est-mini"><summary>how this list is ranked${excluded?` · ${excluded} unmodelled excluded`:""}${caveats?` · ⚠ ${shown.filter(r=>r.caveat).length} model note${shown.filter(r=>r.caveat).length>1?"s":""}`:""}</summary><div>`+
+      `<div class="none">Annualised to ${hz?"year-end "+esc(hz):"each name's nearest rung"}, ranked by %/yr so horizons compare · math only, not a recommendation (no sizing/caps/thesis weighed).</div>`+
+      (excluded?`<div class="none">${excluded} excluded (no pt_model target, or no usable price) — NOT judged unattractive.</div>`:"")+
+      `<div class="none">${hz?`all % share the ${esc(hz)} horizon`:`horizons differ, each % is to its own year`}.</div>`+
+      `<div class="none">"floor" = the name's own pe_floor_multiple × FY+1 EPS (12–18× across the book — no re-rating assumed); "premium" = the owner's asserted multiple.</div>`+
+      `<div class="none">weights are % of TRACKED BOOK (a floor — NAV unmeasured), equity-only, so ◇ opt-only names show none.</div>`+
+      caveats+
+    `</div></details>`+
     // FEAT-TT-PTLINT (D2): both residual cases of the Q4 cliff are stated, never absorbed.
     (rolled.length?`<div class="none" style="color:var(--amber)">↷ ${rolled.length} name${rolled.length===1?"":"s"} rolled to a later rung (the nearer one is inside 3 months, where annualising amplifies noise): ${rolled.map(r=>`<b>${esc(r.sym)}</b> ${esc(r.rolled)}→${esc(r.y)}`).join(" · ")}</div>`:"")+
     (notAnn.length?`<div class="none" style="color:var(--amber)">⚠ ${notAnn.map(esc).join(", ")} shown as a RAW gap — every rung sits inside 3 months, so no honest annual rate exists; sorted last rather than mixed into the %/yr order</div>`:"")+
@@ -3488,7 +3526,6 @@ function renderUpsideRank(){
         (errs.length?`⛔ ${errs.length} model${errs.length===1?"":"s"} MIS-KEYED — the rung shown is a floor fallback, not the model: <b>${errs.map(h=>esc(h.sym)).join(", ")}</b>. `:"")+
         (warns.length?`⚠ ${warns.length} model lint${warns.length===1?"":"s"}: ${warns.map(h=>`<b>${esc(h.sym)}</b> ${h.ls.map(l=>esc(l.code)).join("/")}`).join(" · ")}`:"")+
         `<span class="scope"> — open the name's tab for the detail</span></div>`;})()+
-    caveats+
     (()=>{ // FEAT-TT-AGREE: light only when BOTH stories say yes; otherwise WAIT, blockers named.
       // v3.28: a tripped leverage circuit is a THIRD veto that no per-name score can clear —
       // in deleverage-only mode the next dollar funds debt, so the green line must not light
@@ -3587,13 +3624,16 @@ function renderEstRunBoard(){
       const upTxt=it.up===null?`<span class="scope">no px</span>`
         :`<span style="color:${it.up>=0?"var(--green)":"var(--red)"};font-weight:700">${it.ann!==null?`${it.ann>=0?"+":""}${it.ann}%/yr`:`${it.up>=0?"+":""}${it.up}%`}</span>`;
       const pxFlag=it.px!==null&&(it.pxAge===null||it.pxAge>PX_STALE_D)?`<span class="bad2">⚠ px ${it.pxAge===null?"undated":it.pxAge+"d"}</span>`:"";
+      // v3.66 QUIET BOARD: the summary carried the WHOLE rank string — the v3.64 defect at the
+      // board altitude (TSM's 40-word trigger note rendered on every collapsed row). Tier stays
+      // (it is the claim the numbers test); rank prose moves inside, above the table.
       return `<details class="est-mini"${EST_OPEN.has(it.x.sym)?" open":""} ontoggle="estToggle('${esc(it.x.sym)}',this.open)">
         <summary><span class="sym">${esc(it.x.sym)}</span><span class="lens lens-${esc(it.x.lens)}">${esc(it.x.lens)}</span>
-          <span class="scope">${esc(it.x.tier)}${it.x.rank?` ${esc(it.x.rank)}`:""}</span>
+          <span class="scope">${esc(it.x.tier)}</span>
           ${it.tgt!==null?`<span>$${esc(it.tgt)} by ${esc(it.r.y)} <span class="scope">${esc(it.r.lens)}</span></span>`:""}
           ${upTxt}${pxFlag}${it.rolled?`<span class="warn2">↷ from ${esc(it.rolled)}</span>`:""}
           <span class="scope" style="margin-left:auto;cursor:pointer" onclick="event.stopPropagation();switchTab('${esc(it.x.sym)}')">tab ↗</span></summary>
-        <div>${estRunTable(it.x,it.x.deepDive)}</div></details>`;}).join("");
+        <div>${it.x.rank?`<div class="none" style="margin-top:4px"><span style="color:var(--dim);letter-spacing:.5px">rank note</span><br>${esc(it.x.rank)}</div>`:""}${estRunTable(it.x,it.x.deepDive)}</div></details>`;}).join("");
 }
 /* ═══════════ FEAT-TT-FOCUS2 + FEAT-TT-SELLRANK (v3.38) ═══════════ */
 /* The primary view is FOUR DRIVERS: next dollar in, next dollar out, the binary calendar,
