@@ -9,7 +9,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
 <!-- AUDIT: kept in sync with package.json by test/smoke.mjs. admin.html is a Vite
      public/ passthrough, so it cannot receive __APP_VERSION__ — the guard is the fix. -->
-<title>TT TICKER TERMINAL v3.63.0</title>
+<title>TT TICKER TERMINAL v3.64.0</title>
 <style>
   :root{
     --bg:#05070a; --panel:#0a0f16; --panel2:#0d141d; --line:#16202c;
@@ -397,7 +397,7 @@
         onclick="toggleHeadInfo()">⋯ MENU</button>
     </div>
     <div id="headInfo" style="display:none">
-      <div class="brand">FINANCE&nbsp;BRO.AI // TT&nbsp;TICKER&nbsp;TERMINAL <small>v3.63.0 · single-pass deep-dive orchestrator</small></div>
+      <div class="brand">FINANCE&nbsp;BRO.AI // TT&nbsp;TICKER&nbsp;TERMINAL <small>v3.64.0 · single-pass deep-dive orchestrator</small></div>
       <div class="statusline">
         <span>BOOK: <b id="bookStamp">loading…</b></span>
         <span>AUTH: <b id="sessState">…</b></span>
@@ -2284,7 +2284,26 @@ function ddEstRunSec(x,dd){
   const table=estRunTable(x,dd);
   // The section label carries the TIER — the estimate run is the math under the tier
   // claim, and putting them on one line is what makes a mispriced tier visible.
-  let h=`<div class="dd-sec"><div class="lbl">ESTIMATE RUN — ${esc(TIER_LABEL[x.tier]||x.tier)}${x.rank?` · ${esc(x.rank)}`:""}${c&&c.source?` · ${esc(c.source)}`:m&&m.source?` · ${esc(m.source)}`:""}</div>`;
+  // v3.64: the TIER is all that stays. The label used to glue in the WHOLE `rank` string AND
+  // the WHOLE consensus/pt_model `source` string, so a name carrying real prose in both (TSM:
+  // a 40-word trigger note plus a 45-word estimate-provenance note) rendered a seven-line
+  // uppercase wall ABOVE the table it was labelling — the reader met the footnote before the
+  // number. Both move one tap down.
+  // On the v3.25 red-stays-visible rule: `rank` and `source` are FREE TEXT and are not a
+  // machine-known red channel. The reds the system actually knows — red hinges, readiness
+  // blockers, cap breaches — all render OUTSIDE this collapse (the readiness bar and WHAT
+  // CHANGES MY MIND sit directly above it), so nothing red is hidden by closing this.
+  // est-mini, never `drawer`: the phone harness counts open drawers.
+  const noteBits=[];
+  if(x.rank)noteBits.push(["rank note",x.rank]);
+  const srcStr=(c&&c.source)||(m&&m.source)||"";
+  if(srcStr)noteBits.push(["estimate source",srcStr]);
+  let h=`<div class="dd-sec"><div class="lbl">ESTIMATE RUN — ${esc(TIER_LABEL[x.tier]||x.tier)}</div>`;
+  if(noteBits.length){
+    h+=`<details class="est-mini"><summary>${noteBits.map(b=>esc(b[0])).join(" · ")}</summary><div>`
+      +noteBits.map(b=>`<div style="margin-top:5px"><span style="color:var(--dim);letter-spacing:.5px">${esc(b[0])}</span><br>${esc(b[1])}</div>`).join("")
+      +`</div></details>`;
+  }
   if(table){
     h+=table;
     const pe=+((m||{}).pe_floor_multiple)||null;

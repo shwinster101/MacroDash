@@ -1497,6 +1497,14 @@ ok("estrun: the merged renderers are DEAD — no second render path for estimate
   !adminSrc.includes("function ddPtModelSec") && !adminSrc.includes("function ddConsensusSec"));
 ok("estrun: the section label carries the tier — the math renders under the tier claim",
   adminSrc.includes("ESTIMATE RUN — ${esc(TIER_LABEL[x.tier]"));
+ok("est-run: the label carries the TIER ONLY — rank prose and estimate source moved into an expander (v3.64)",
+  /ESTIMATE RUN — \$\{esc\(TIER_LABEL\[x\.tier\]\|\|x\.tier\)\}<\/div>/.test(adminSrc));
+ok("est-run: rank + source render inside a details.est-mini, never a drawer (the phone harness counts open drawers)",
+  /noteBits\.push\(\["rank note",x\.rank\]\)/.test(adminSrc)
+  && /details class="est-mini"><summary>\$\{noteBits/.test(adminSrc)
+  && !/noteBits[\s\S]{0,400}class="drawer"/.test(adminSrc));
+ok("est-run: the collapse documents WHY it cannot hide a red (reds render outside it)",
+  /not a\s*\n\s*\/\/ machine-known red channel/.test(adminSrc));
 ok("estrun: renders above the fold in the deep dive, not inside the val drawer",
   adminSrc.indexOf("h+=ddEstRunSec(x,dd);") < adminSrc.indexOf('h+=ddDrawer("val"') &&
   adminSrc.indexOf("h+=ddEstRunSec(x,dd);") > 0);

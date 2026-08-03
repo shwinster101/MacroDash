@@ -1780,6 +1780,20 @@ Jan-anchor shipped; see `snapshot.js` ~318–328), `spyMa100`, `spyMa200`, and a
   **985 smoke** (+7 from this feature) + **178 render** (+5 net from this feature, including
   the real swipe path, visible export action, panel height, capped funding queue, two-screen
   budget and zero mobile overflow).
+- **v3.64 — the ESTIMATE RUN label stops being a wall.** Owner screenshot, TSM tab: seven lines of
+  uppercase prose sat ABOVE the table they labelled, so the reader met the footnote before the number.
+  Cause: the `.lbl` glued `TIER` + the **whole** `rank` string + the **whole** `consensus.source`
+  string onto one line — fine when both are short, a wall on a name carrying real prose in each (TSM's
+  rank is a 40-word trigger note; its estimate source a 45-word provenance note). **Only the TIER
+  stays** — it is the point of the line, the estimate run being the math under the tier claim — and
+  both notes move one tap down into a `details.est-mini`. **est-mini, never `drawer`**: the phone
+  harness counts open drawers (the FEAT-TT-ESTRUN precedent). On the v3.25 red-stays-visible rule:
+  `rank` and `source` are FREE TEXT and are not a machine-known red channel — the reds the system
+  actually knows (red hinges, readiness blockers, cap breaches) all render OUTSIDE this collapse, with
+  the readiness bar and WHAT CHANGES MY MIND sitting directly above it, so closing it hides no red.
+  Also trimmed the `key_dates.event` strings on TSM/NVDA: the WHEN cell renders them VERBATIM and in
+  full, so an event string has to be a decision line, not a footnote — CONFIRMED-vs-forecast, the
+  guided bar and the no-new-adds window date kept; context moved to a sibling note field.
 - **v3.63 — `DD_MAX` 8KB -> 15KB.** The per-payload cap was rejecting COMPLETE theses, not runaway
   ones: a fully-populated payload (consensus to FY2035 + `pt_model` + five-pillar composite + gates +
   hinges + `key_dates` + `capital` + `open_items`) lands at 8-12KB. Measured while filling NVDA's
