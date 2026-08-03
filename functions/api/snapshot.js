@@ -24,8 +24,32 @@
 // can never disagree about which weekdays had a session.
 import { isMarketHoliday } from "../../src/sources.js";
 
+// ENGINE0-CONT: the readout contract now lives in src/ttReadout.js and the snapshot layer
+// consumes it for publish decisions — THIRD functions/→src/ import, same esbuild-inline path.
+import { buildTtReadout, readoutQuality, compareQuality } from "../../src/ttReadout.js";
+
 const CACHE_TTL = 48 * 60 * 60;   // 48h cleanup; the per-day cache KEY drives freshness
 const SETTLING_TTL = 60 * 60;     // short lock-in while the latest close looks not-yet-posted
+/* ENGINE0-CONT §7.3 TTL policy — NAMED, driven by CONFIDENCE (data quality), deliberately NOT
+   by actionability: a tripped Macro Flip on fully-current data is HOLD but perfect evidence,
+   and a 5-minute TTL there would hammer FRED/CNN all day during the exact tape that rate-limits
+   matter most. The plan's "HIGH+FULL / MEDIUM / LOW" ladder is preserved on its data axis. */
+export const TTL_MEDIUM = 15 * 60;  // MEDIUM confidence: retry in 15 minutes
+export const TTL_LOW = 5 * 60;      // LOW confidence: retry in 5 minutes
+export function chooseTtl(readout, settled = true) {
+  const c = readout && readout.regime && readout.regime.confidence;
+  if (c === "HIGH") return settled ? CACHE_TTL : SETTLING_TTL;
+  if (c === "MEDIUM") return TTL_MEDIUM;
+  return TTL_LOW;
+}
+
+// ENGINE0-CONT §7.1: per-FIELD last-good store — one partial FRED batch must not erase
+// unrelated history. Retention (30d) is diagnosis retention, NOT voting freshness: the
+// evidence-tier carry windows in src/ttReadout.js independently enforce how long a stored
+// observation may still vote. Records carry their REAL observation dates, so the readout
+// layer classifies them honestly (HISTORICAL/MISSING) downstream.
+const LG_PREFIX = "pulse:source:lastgood:";
+const LG_TTL = 30 * 24 * 3600;
 
 // ── FEAT-SNAP-SAFE: plausibility bands ──────────────────────────────────────
 // The v3.1 honesty invariant enforced LIVENESS and PROVENANCE but never PLAUSIBILITY:
@@ -148,98 +172,17 @@ export async function onRequest(context) {
     // KV unavailable — skip cache, fetch fresh
   }
 
-  // ── 2. Fetch sources in PHASES (stay under Cloudflare's ~6-connection cap) ──
-  // 13 simultaneous fetches saturate the cap; queued calls burn their
-  // AbortSignal.timeout budget while waiting, and the heavy SP500 (limit=220)
-  // holds a slot — starving the FRED burst (=> fred:ok:4, spy:TimeoutError).
-  // Phase 1: FRED macro alone (batched to <=5 inside fetchFred), no competition.
-  const [fred] = await Promise.allSettled([fetchFred(env.FRED_KEY)]);
-  // Phase 2: heavy SPY (220-pt) + two light scrapers = 3 connections, under cap.
-  // FEAT-R8: the two scrapers are wrapped in withLastGood — a failed fetch serves the
-  // last good scrape from KV (with its real date) instead of reverting to mock. The
-  // stale date then trips the existing STALE badge, so an outage degrades honestly.
-  const [spy, fearGreed, rateOdds, headline] = await Promise.allSettled([
-    fetchSpy(env.FRED_KEY),   // SPY via FRED SP500 — Stooq blocks Cloudflare edge IPs
-    withLastGood(env, "feargreed", fetchFearGreed),
-    withLastGood(env, "rateodds", fetchRateOdds),
-    withLastGood(env, "headline", fetchHeadline), // FEAT-NEWS: top market headline (non-FRED)
-  ]);
-  // Phase 3: tokenomics moat (OpenRouter, keyless) + equities (Finnhub, key-gated) — their
-  // own phase so they never compete with Phase 2 for the ~6-connection cap, and a slow/blocked
-  // add-on can't starve the core feeds. Neither gates the write-through health check (both are
-  // add-ons, not core). fetchEquities batches its symbol-calls ≤5 internally.
-  const [tokenomics, equities, shiller] = await Promise.allSettled([
-    withLastGood(env, "tokenomics", () => fetchTokenomics(env)),
-    withLastGood(env, "equities", () => fetchEquities(env)),
-    withLastGood(env, "shiller", fetchShiller), // CAPE for the regime's valuation vote
-  ]);
+  // ── 2. Build a complete candidate snapshot (phases live in buildSnapshot) ──
+  const built = await buildSnapshot(env, { scope: "all" });
+  const { snapshot, readout } = built;
 
-  // ── 3. Assemble live overlay ───────────────────────────────────────────
-  // Only include fields where we got a valid value.
-  // mergeSnapshot() in useMarketData.js falls back to mock for anything missing.
-  const now = new Date().toISOString();
-  const live = {
-    lastRefresh: formatET(now),
-    session:     marketSession(),
-    ...(fred.status === "fulfilled" ? fred.value : {}),
-    ...(spy.status === "fulfilled" ? spy.value : {}),
-    ...(fearGreed.status === "fulfilled" ? fearGreed.value : {}),
-    ...(rateOdds.status === "fulfilled" ? rateOdds.value : {}),
-    ...(headline.status === "fulfilled" ? headline.value : {}),
-    ...(tokenomics.status === "fulfilled" ? tokenomics.value : {}),
-    ...(equities.status === "fulfilled" ? equities.value : {}),
-    ...(shiller.status === "fulfilled" ? shiller.value : {}),
-  };
-
-  // FEAT-SNAP-SAFE: drop implausible values BEFORE anything renders or caches them.
-  const droppedByBand = applyBands(live);
-
-  const snapshot = { live, asOf: now, cached: false };
-
-  const diag = {
-    hasFredKey: !!env.FRED_KEY,
-    hasKV: !!env.PULSE_CACHE,
-    bandDropped: droppedByBand.length ? droppedByBand : "none",
-    fred: fred.status === "fulfilled" ? `ok:${Object.keys(fred.value).length}` : String(fred.reason),
-    spy: spy.status === "fulfilled" ? "ok" : String(spy.reason),
-    fearGreed: fearGreed.status === "fulfilled" ? "ok" : String(fearGreed.reason),
-    rateOdds: rateOdds.status === "fulfilled" ? "ok" : String(rateOdds.reason),
-    headline: headline.status === "fulfilled" ? "ok" : String(headline.reason),
-    tokenomics: tokenomics.status === "fulfilled" ? "ok" : String(tokenomics.reason),
-    equities: equities.status === "fulfilled" ? `ok:${Object.keys(equities.value).length}` : String(equities.reason),
-    shiller: shiller.status === "fulfilled" ? "ok" : String(shiller.reason),
-  };
-  snapshot._diag = diag;
-
-  // ── 4. Write-through cache (ONLY if healthy — never lock in a degraded pull) ──
-  // FEAT-SNAP-SAFE: quorum over NAMED regime-voting fields, not a key count. See the
-  // QUORUM_FIELDS comment at the top of this file for why the old `fredCount >= 6` gate
-  // was satisfiable by a single FRED series.
-  const q = quorum(live);
-  const healthy = q.ok;
-  // BUGFIX (2026-06-08): FRED doesn't always have the prior session's close posted
-  // by the time of the day's FIRST visit — a 10:01 ET fetch this morning locked in
-  // Thursday's SPY close (Friday's hadn't posted yet) into the full-day cache, so the
-  // dashboard served 2-session-stale prices straight through to market close. If the
-  // freshest SPY date trails today by more than the normal ~1-session lag (mirrors
-  // isStale() in sources.js), write through with a short SETTLING_TTL instead — a
-  // later visit re-fetches and, once FRED catches up, locks in the settled close for
-  // the rest of the day as before.
-  const spyAsOf = spy.status === "fulfilled" ? spy.value.spyPriceAsOf : null;
-  const settled = healthy && !looksBehind(spyAsOf, etDate);
-  snapshot._diag.healthy = healthy;
-  snapshot._diag.settled = settled;
-  snapshot._diag.quorum = `${q.count}/${QUORUM_FIELDS.length}` + (q.missing.length ? ` missing:${q.missing.join(",")}` : "");
-  // Below quorum we STILL serve (mock-first covers the gaps) but cache only briefly, so
-  // the next visitor retries rather than inheriting a gutted day. The old gate skipped the
-  // write entirely on failure, which meant every request re-ran the full cold fetch.
-  try {
-    await env.PULSE_CACHE?.put(cacheKey, JSON.stringify(snapshot), {
-      expirationTtl: (healthy && settled) ? CACHE_TTL : SETTLING_TTL,
-    });
-  } catch {
-    // Cache write failed — return uncached, non-fatal
-  }
+  // ── 3. Publish only if NO WORSE than what the day's key already holds (§7.2) ──
+  // On this GET path the key was a miss moments ago, so the compare is usually against
+  // nothing — but a concurrent warm/refresh may have landed a better candidate in between,
+  // and a partial rebuild must never replace it.
+  const pub = await publishIfNoWorse(env, cacheKey, snapshot, readout);
+  snapshot._diag.published = pub.published;
+  snapshot._diag.improved = pub.improved;
 
   // ?debug=1: attach cron warm health AFTER the cache write, so the marker is always read
   // fresh at serve time and never frozen into the day's cached _diag.
@@ -250,25 +193,200 @@ export async function onRequest(context) {
     } catch { /* diagnostic only */ }
   }
 
-  // ── 5. Return (strip FMP/licensed fields if public view; _diag only on ?debug=1) ──
+  // ── 4. Return (strip FMP/licensed fields if public view; _diag only on ?debug=1) ──
   return json(publicize(isPublic ? { ...stripPrivate(snapshot), cached: false } : snapshot));
 }
 
-// ─── resilient fetch: 1 retry + generous timeout (mirrors the cron worker) ──
+// ─── ENGINE0-CONT: the candidate builder (shared by GET, POST /api/snapshot/refresh, cron) ──
+// scope "all"      — every phase (the daily build).
+// scope "critical" — only the Engine 0 gating sources (FRED macro incl. VIX/10Y, SP500,
+//                    NASDAQ100, F&G, Kalshi); non-gating feeds (headline, tokenomics,
+//                    equities, CAPE) are FILLED FROM priorLive so an operator recovering
+//                    Engine 0 never waits on — or loses — the add-ons.
+export async function buildSnapshot(env, { scope = "all", priorLive = null } = {}) {
+  const all = scope !== "critical";
+  const statuses = []; // per-upstream-item status records (§9) — protected diagnostics
+  // Phase 1: FRED macro alone (critical series first at low concurrency inside fetchFred).
+  const [fred] = await Promise.allSettled([fetchFred(env.FRED_KEY, statuses)]);
+  // Phase 2: heavy SPY (265-pt) + light NASDAQ100 + scrapers — ≤5 concurrent, under the cap.
+  const [spy, ndx, fearGreed, rateOdds, headline] = await Promise.allSettled([
+    fetchSpy(env.FRED_KEY, statuses),      // SPY via FRED SP500 — Stooq blocks Cloudflare edge IPs
+    fetchNdx(env.FRED_KEY, statuses),      // NASDAQ100 — the RS check's index leg (no Finnhub dependency)
+    withLastGood(env, "feargreed", () => fetchFearGreed(statuses)),
+    withLastGood(env, "rateodds", () => fetchRateOdds(statuses), rateOddsStillOpen),
+    all ? withLastGood(env, "headline", fetchHeadline) : Promise.reject(new Error("skipped (critical scope)")),
+  ]);
+  // Phase 2.5: official Treasury par-yield fallback for the 10Y — ONLY when FRED's DGS10
+  // leg failed. DGS10 *is* FRED's republication of this same Treasury par yield curve
+  // (H.15), so the numbers are equivalent by construction; the attribution changes.
+  let treasury = { status: "rejected", reason: "not needed" };
+  if (fred.status !== "fulfilled" || fred.value.tenYear === undefined) {
+    [treasury] = await Promise.allSettled([fetchTreasury10y(statuses)]);
+  }
+  // Phase 3 (scope "all" only): tokenomics moat + equities + CAPE — add-ons, never gating.
+  const skipped = () => Promise.reject(new Error("skipped (critical scope)"));
+  const [tokenomics, equities, shiller] = await Promise.allSettled(all ? [
+    withLastGood(env, "tokenomics", () => fetchTokenomics(env)),
+    withLastGood(env, "equities", () => fetchEquities(env, statuses)),
+    withLastGood(env, "shiller", fetchShiller), // CAPE for the regime's valuation vote
+  ] : [skipped(), skipped(), skipped()]);
+
+  // ── Assemble live overlay (only fields with a valid value; mock covers the rest) ──
+  const now = new Date().toISOString();
+  const live = {
+    lastRefresh: formatET(now),
+    session:     marketSession(),
+    ...(fred.status === "fulfilled" ? fred.value : {}),
+    ...(treasury.status === "fulfilled" ? treasury.value : {}),
+    ...(spy.status === "fulfilled" ? spy.value : {}),
+    ...(fearGreed.status === "fulfilled" ? fearGreed.value : {}),
+    ...(rateOdds.status === "fulfilled" ? rateOdds.value : {}),
+    ...(headline.status === "fulfilled" ? headline.value : {}),
+    ...(tokenomics.status === "fulfilled" ? tokenomics.value : {}),
+    ...(equities.status === "fulfilled" ? equities.value : {}),
+    ...(shiller.status === "fulfilled" ? shiller.value : {}),
+  };
+
+  // NASDAQ100 vs SP500 1-day relative strength — SAME-DATE-PAIRED (§5.3): a mismatched
+  // observation pair (one index posted, the other not) yields NO RS value, never a
+  // cross-day delta dressed as a 1-day read.
+  const rs = pairRs(ndx.status === "fulfilled" ? ndx.value : null,
+                    spy.status === "fulfilled" ? spy.value._spx1d : null);
+  if (rs) { live.ndxSpxRs = rs.rs; live.ndxSpxRsAsOf = rs.asOf; live.ndx1dPct = rs.ndx1d; live.spx1dPct = rs.spx1d; }
+  delete live._spx1d; // internal pairing payload — never cached or served
+
+  // FEAT-SNAP-SAFE: drop implausible values BEFORE anything renders or caches them.
+  const droppedByBand = applyBands(live);
+
+  // ENGINE0-CONT §7.1: per-field last-good — write what succeeded, fall back for what
+  // did not. Records keep their REAL observation dates, so a served fallback reads
+  // HISTORICAL (or MISSING, past its carry window) at the evidence layer — never LIVE.
+  await applyFieldLastGood(env, live);
+
+  // scope "critical": everything the critical phases did not (re)fetch is carried from
+  // the prior snapshot — a targeted Engine 0 recovery must not blank the dashboard.
+  if (!all && priorLive && typeof priorLive === "object") {
+    for (const [k, v] of Object.entries(priorLive)) {
+      if (live[k] === undefined && k !== "lastRefresh" && k !== "session") live[k] = v;
+    }
+  }
+
+  const snapshot = { live, asOf: now, cached: false };
+  const okOf = (s, extra = "") => (s.status === "fulfilled" ? `ok${extra}` : String(s.reason));
+  const diag = {
+    hasFredKey: !!env.FRED_KEY,
+    hasKV: !!env.PULSE_CACHE,
+    scope,
+    bandDropped: droppedByBand.length ? droppedByBand : "none",
+    fred: okOf(fred, fred.status === "fulfilled" ? `:${Object.keys(fred.value).length}` : ""),
+    spy: okOf(spy),
+    ndx: okOf(ndx),
+    treasury: treasury.reason === "not needed" ? "not needed" : okOf(treasury),
+    fearGreed: okOf(fearGreed),
+    rateOdds: okOf(rateOdds),
+    headline: okOf(headline),
+    tokenomics: okOf(tokenomics),
+    equities: okOf(equities, equities.status === "fulfilled" ? `:${Object.keys(equities.value).length}` : ""),
+    shiller: okOf(shiller),
+    // §9: per-upstream-item detail (http status / error class / attempts / latency) —
+    // debug-token-gated like the rest of _diag; never in the public body.
+    sources: statuses,
+  };
+  snapshot._diag = diag;
+
+  // Legacy health markers (kept for continuity; the TTL now rides readout confidence).
+  const q = quorum(live);
+  const spyAsOf = live.spyPriceAsOf ?? null;
+  snapshot._diag.healthy = q.ok;
+  snapshot._diag.settled = q.ok && !looksBehind(spyAsOf, new Date().toLocaleDateString("en-CA", { timeZone: "America/New_York" }));
+  snapshot._diag.quorum = `${q.count}/${QUORUM_FIELDS.length}` + (q.missing.length ? ` missing:${q.missing.join(",")}` : "");
+
+  // The candidate's own readout — computed BEFORE any publish decision (§7.2).
+  const readout = buildTtReadout(live, {});
+  return { snapshot, readout, statuses };
+}
+
+// §7.2: publish a candidate to the day's key only if it is AT LEAST AS GOOD as what is
+// already stored (lexicographic quality tuple from src/ttReadout.js; asOf epoch is the
+// final tiebreak so an equal-quality newer candidate wins). A worse rebuild is returned
+// to the caller for diagnosis but never replaces the better stored snapshot.
+export async function publishIfNoWorse(env, cacheKey, snapshot, readout) {
+  let existingQ = null;
+  try {
+    const existing = await env.PULSE_CACHE?.get(cacheKey, "json");
+    if (existing && existing.live) {
+      const exReadout = buildTtReadout(existing.live, { cached: true });
+      existingQ = readoutQuality(exReadout, Date.parse(existing.asOf) || 0);
+    }
+  } catch { /* unreadable existing — treat as absent */ }
+  const candQ = readoutQuality(readout, Date.parse(snapshot.asOf) || 0);
+  if (existingQ && compareQuality(candQ, existingQ) < 0) {
+    return { published: false, improved: false, reason: "candidate worse than stored snapshot — retained the prior snapshot" };
+  }
+  // improved = better on an EVIDENCE axis (not merely newer — the tiebreak is not improvement).
+  const improved = !existingQ || compareQuality(candQ.slice(0, 6), existingQ.slice(0, 6)) > 0;
+  try {
+    await env.PULSE_CACHE?.put(cacheKey, JSON.stringify(snapshot), {
+      expirationTtl: chooseTtl(readout, snapshot._diag ? snapshot._diag.settled !== false : true),
+    });
+  } catch {
+    return { published: false, improved: false, reason: "KV write failed" };
+  }
+  return { published: true, improved };
+}
+
+// ─── resilient fetch: retries + generous timeout (mirrors the cron worker) ──
+// ENGINE0-CONT §9: instrumented. Exponential backoff + jitter on 429/5xx (never an
+// immediate hammer-retry into a rate limit); the thrown error carries http_status,
+// error_class, attempts and latency_ms so callers can record REAL evidence of the miss
+// instead of discarding it — the deployed code's per-series errors were unrecoverable.
+function classifyError(e, httpStatus) {
+  if (httpStatus === 429) return "rate_limit";
+  if (httpStatus != null) return "http";
+  const msg = String((e && e.name) || "") + String((e && e.message) || "");
+  if (/Timeout|Abort/i.test(msg)) return "timeout";
+  if (/JSON|parse/i.test(msg)) return "parse";
+  return "network";
+}
 async function fetchRetry(url, opts = {}, attempts = 2, timeoutMs = 9000) {
-  let lastErr;
+  const started = Date.now();
+  let lastErr, lastStatus = null;
   for (let i = 0; i < attempts; i++) {
+    if (i > 0 && (lastStatus === 429 || (lastStatus != null && lastStatus >= 500) || lastStatus === null)) {
+      // 500ms · 1s · 2s … + up to 250ms jitter — bounded so the phase budget survives.
+      await new Promise((r) => setTimeout(r, Math.min(4000, 500 * 2 ** (i - 1)) + Math.random() * 250));
+    }
     try {
       const r = await fetch(url, { ...opts, signal: AbortSignal.timeout(timeoutMs) });
-      if (!r.ok) throw new Error(`HTTP ${r.status}`);
+      if (!r.ok) { lastStatus = r.status; throw new Error(`HTTP ${r.status}`); }
+      r._attempts = i + 1; r._latencyMs = Date.now() - started;
       return r;
     } catch (e) { lastErr = e; }
   }
-  throw lastErr;
+  const err = lastErr instanceof Error ? lastErr : new Error(String(lastErr));
+  err.http_status = lastStatus;
+  err.error_class = classifyError(err, lastStatus);
+  err.attempts = attempts;
+  err.latency_ms = Date.now() - started;
+  throw err;
+}
+// One status record per upstream item (§9) — pushed into the per-build collector.
+function recordStatus(statuses, source, item, okOrErr, extra = {}) {
+  if (!Array.isArray(statuses)) return;
+  if (okOrErr === true) statuses.push({ source, item, ok: true, ...extra });
+  else statuses.push({
+    source, item, ok: false,
+    http_status: okOrErr?.http_status ?? null,
+    error_class: okOrErr?.error_class ?? classifyError(okOrErr, okOrErr?.http_status ?? null),
+    message: String(okOrErr?.message ?? okOrErr),
+    attempts: okOrErr?.attempts ?? 1,
+    latency_ms: okOrErr?.latency_ms ?? null,
+    observed_at: null, ...extra,
+  });
 }
 
 // ─── FRED fetcher ─────────────────────────────────────────────────────────
-async function fetchFred(key) {
+async function fetchFred(key, statuses = null) {
   if (!key) throw new Error("FRED_KEY not set");
 
   const series = {
@@ -308,14 +426,19 @@ async function fetchFred(key) {
   // 6-point YoY trend (obs[m] vs obs[m+12]).
   const INFLATION = new Set(["cpiHeadline", "cpiCore", "pceHeadline", "pceCore"]);
 
-  // Fetch FRED series in batches of 5 — even alone, 10 parallel exceeds the
-  // ~6-connection cap, so a queued call's timeout fires before it gets a socket.
-  // Two sequential batches of 5 complete reliably (~0.5s each for small payloads).
-  const entries = Object.entries(series);
+  // Fetch FRED series in batches — even alone, 10 parallel exceeds the ~6-connection
+  // cap, so a queued call's timeout fires before it gets a socket. ENGINE0-CONT §9:
+  // the Engine 0 CRITICAL series (VIX, DGS10) go FIRST at concurrency 2, so a
+  // rate-limited or slow FRED degrades the dashboard-only tail, never the order-gating
+  // head; the rest follow in batches of 5 as before. Every series records a status.
+  const CRITICAL_SERIES = new Set(["vix", "tenYear"]);
+  const entries = [...Object.entries(series)].sort(
+    (a, b) => (CRITICAL_SERIES.has(b[0]) ? 1 : 0) - (CRITICAL_SERIES.has(a[0]) ? 1 : 0));
   const results = [];
-  for (let i = 0; i < entries.length; i += 5) {
+  for (let i = 0; i < entries.length; i += (i < CRITICAL_SERIES.size ? 2 : 5)) {
+    const batchSize = i < CRITICAL_SERIES.size ? 2 : 5;
     const settled = await Promise.allSettled(
-      entries.slice(i, i + 5).map(async ([field, id]) => {
+      entries.slice(i, i + batchSize).map(async ([field, id]) => {
         // Inflation series need ~18 monthly points to derive a 6-point YoY trend.
         // Other series: 26 points so DAILY fields can derive a 1-week (idx[5]) and
         // 1-month (idx[21]) change off the same pull — zero extra fetches. Payload
@@ -323,9 +446,18 @@ async function fetchFred(key) {
         const limit = INFLATION.has(field) ? 20 : 26;
         const url = `https://api.stlouisfed.org/fred/series/observations`
           + `?series_id=${id}&api_key=${key}&limit=${limit}&sort_order=desc&file_type=json`;
-        const r = await fetchRetry(url, {}, 2, 9000);
-        const d = await r.json();
+        let r, d;
+        try {
+          r = await fetchRetry(url, {}, 2, 9000);
+          d = await r.json();
+        } catch (e) {
+          recordStatus(statuses, "fred", id, e); // §9: the miss is EVIDENCE, kept per series
+          throw e;
+        }
         const obs = d.observations?.filter(o => o.value !== ".") ?? [];
+        recordStatus(statuses, "fred", id,
+          obs.length ? true : Object.assign(new Error("no_observation"), { error_class: "no_observation", attempts: r._attempts }),
+          obs.length ? { attempts: r._attempts, latency_ms: r._latencyMs, observed_at: obs[0]?.date ?? null } : {});
         if (INFLATION.has(field)) {
           // Convert index → YoY %: (this month / 12 months ago − 1) × 100.
           const yoyAt = (m) => {
@@ -467,14 +599,17 @@ async function fetchFred(key) {
 // Stooq blocks Cloudflare edge IPs, so we source SPY from FRED's SP500 index.
 // SPY ≈ S&P 500 index / 10 (the ETF was designed at ~1/10th of the index).
 // This reuses the proven-working FRED path (same key as VIX/10Y which already work).
-async function fetchSpy(key) {
+async function fetchSpy(key, statuses = null) {
   if (!key) throw new Error("FRED_KEY not set");
   // 265 obs (~1yr + buffer) so the prior Dec 31 is always in the window for
   // any month of the year (220 misses Nov–Dec; 265 is safe year-round).
   const url = `https://api.stlouisfed.org/fred/series/observations`
     + `?series_id=SP500&api_key=${key}&limit=265&sort_order=desc&file_type=json`;
-  const r = await fetchRetry(url, {}, 2, 9000);
-  const d = await r.json();
+  let r, d;
+  try {
+    r = await fetchRetry(url, {}, 2, 9000);
+    d = await r.json();
+  } catch (e) { recordStatus(statuses, "fred", "SP500", e); throw e; }
 
   // FRED returns "." for non-trading days — filter them. Newest first (desc).
   const validObs = (d.observations ?? []).filter(o => o.value !== "." && !isNaN(parseFloat(o.value)));
@@ -504,6 +639,7 @@ async function fetchSpy(key) {
   // 20-day sparkline, oldest→newest, in SPY scale
   const series = idx.slice(0, 20).reverse().map(toSpy);
 
+  recordStatus(statuses, "fred", "SP500", true, { attempts: r._attempts, latency_ms: r._latencyMs, observed_at: validObs[0]?.date ?? null });
   return {
     spyPrice:     toSpy(latest),
     spyChangePct: parseFloat((((latest - prev) / prev) * 100).toFixed(2)),
@@ -514,7 +650,94 @@ async function fetchSpy(key) {
     spyPriceAsOf: validObs[0]?.date, spxIndexAsOf: validObs[0]?.date, // FEAT-R2: SP500 observation date
     ...(ma100 !== null ? { spyMa100: ma100 } : {}),
     ...(ma200 !== null ? { spyMa200: ma200 } : {}),
+    // ENGINE0-CONT §5.3: internal pairing payload for the NASDAQ100/SP500 relative-strength
+    // derivation — stripped from `live` before caching/serving (see buildSnapshot).
+    _spx1d: { latest, prev, latestDate: validObs[0]?.date ?? null, prevDate: validObs[1]?.date ?? null },
   };
+}
+
+// ─── NASDAQ100 fetcher (ENGINE0-CONT §5.3) ────────────────────────────────
+// The RS check's index leg — FRED NASDAQ100 daily closes, replacing the order-gating
+// dependency on Finnhub's QQQ quote (Finnhub stays for display-only marks). 8 obs is
+// plenty for a latest/prior pair across holidays.
+async function fetchNdx(key, statuses = null) {
+  if (!key) throw new Error("FRED_KEY not set");
+  const url = `https://api.stlouisfed.org/fred/series/observations`
+    + `?series_id=NASDAQ100&api_key=${key}&limit=8&sort_order=desc&file_type=json`;
+  let r, d;
+  try {
+    r = await fetchRetry(url, {}, 2, 9000);
+    d = await r.json();
+  } catch (e) { recordStatus(statuses, "fred", "NASDAQ100", e); throw e; }
+  const validObs = (d.observations ?? []).filter(o => o.value !== "." && !isNaN(parseFloat(o.value)));
+  if (validObs.length < 2) {
+    recordStatus(statuses, "fred", "NASDAQ100", Object.assign(new Error("no_observation"), { error_class: "no_observation" }));
+    throw new Error("NASDAQ100 no data");
+  }
+  recordStatus(statuses, "fred", "NASDAQ100", true, { attempts: r._attempts, latency_ms: r._latencyMs, observed_at: validObs[0].date });
+  return { latest: parseFloat(validObs[0].value), prev: parseFloat(validObs[1].value),
+           latestDate: validObs[0].date, prevDate: validObs[1].date };
+}
+
+// PURE (exported for smoke): same-date pairing of the two index legs. Both the latest AND
+// the prior observation dates must match — otherwise one leg's stale close would masquerade
+// as a 1-day relative read. Returns null (no RS emitted) on any mismatch or bad input.
+export function pairRs(ndx, spx) {
+  if (!ndx || !spx) return null;
+  const nums = [ndx.latest, ndx.prev, spx.latest, spx.prev];
+  if (!nums.every((v) => Number.isFinite(v) && v > 0)) return null;
+  if (!ndx.latestDate || ndx.latestDate !== spx.latestDate || !ndx.prevDate || ndx.prevDate !== spx.prevDate) return null;
+  const p = (a, b) => parseFloat((((a - b) / b) * 100).toFixed(2));
+  const ndx1d = p(ndx.latest, ndx.prev), spx1d = p(spx.latest, spx.prev);
+  return { rs: parseFloat((ndx1d - spx1d).toFixed(2)), ndx1d, spx1d, asOf: ndx.latestDate };
+}
+
+// ─── Treasury 10Y fallback (ENGINE0-CONT §5.4) ────────────────────────────
+// U.S. Treasury Daily Par Yield Curve — the OFFICIAL upstream FRED's DGS10 republishes
+// (H.15 par yields), so the level is equivalent by construction; only the attribution
+// changes. Invoked ONLY when FRED's DGS10 leg failed. The year CSV carries the full
+// year-to-date history, so the same D1/W1/M1 deltas derive from one pull.
+export function parseTreasuryCsv(csv) {
+  const lines = String(csv || "").trim().split(/\r?\n/);
+  if (lines.length < 2) return null;
+  const header = lines[0].split(",").map((s) => s.replace(/"/g, "").trim());
+  const dateIdx = header.findIndex((h) => /^date$/i.test(h));
+  const tenIdx = header.findIndex((h) => /^10\s*Yr$/i.test(h));
+  if (dateIdx < 0 || tenIdx < 0) return null;
+  const rows = [];
+  for (let i = 1; i < lines.length; i++) {
+    const cells = lines[i].split(",").map((s) => s.replace(/"/g, "").trim());
+    const v = parseFloat(cells[tenIdx]);
+    const dm = (cells[dateIdx] || "").match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
+    if (!Number.isFinite(v) || !dm) continue;
+    rows.push({ date: `${dm[3]}-${dm[1].padStart(2, "0")}-${dm[2].padStart(2, "0")}`, v });
+  }
+  if (!rows.length) return null;
+  rows.sort((a, b) => (a.date < b.date ? 1 : -1)); // newest first, like FRED desc
+  const latest = rows[0], prev = rows[1], wAgo = rows[5], mAgo = rows[21];
+  const out = { tenYear: latest.v, tenYearAsOf: latest.date, tenYearSource: "UST par yield curve" };
+  if (prev) out.tenYearD1 = parseFloat((latest.v - prev.v).toFixed(4));
+  if (wAgo) out.tenYearW1 = parseFloat((latest.v - wAgo.v).toFixed(4));
+  if (mAgo) out.tenYearM1 = parseFloat((latest.v - mAgo.v).toFixed(4));
+  const spark = rows.slice(0, 10).map((r2) => r2.v).reverse();
+  if (spark.length) out.tenYearSeries = spark;
+  return out;
+}
+async function fetchTreasury10y(statuses = null) {
+  const year = new Date().toLocaleDateString("en-CA", { timeZone: "America/New_York" }).slice(0, 4);
+  const url = `https://home.treasury.gov/resource-center/data-chart-center/interest-rates/daily-treasury-rates.csv/${year}/all?type=daily_treasury_yield_curve&field_tdr_date_value=${year}&_format=csv`;
+  let r, csv;
+  try {
+    r = await fetchRetry(url, { headers: { Accept: "text/csv,*/*" } }, 2, 9000);
+    csv = await r.text();
+  } catch (e) { recordStatus(statuses, "treasury", "daily_treasury_yield_curve", e); throw e; }
+  const out = parseTreasuryCsv(csv);
+  if (!out) {
+    recordStatus(statuses, "treasury", "daily_treasury_yield_curve", Object.assign(new Error("parse failed"), { error_class: "parse" }));
+    throw new Error("Treasury CSV parse failed");
+  }
+  recordStatus(statuses, "treasury", "daily_treasury_yield_curve", true, { attempts: r._attempts, latency_ms: r._latencyMs, observed_at: out.tenYearAsOf });
+  return out;
 }
 
 // ─── CNN Fear & Greed scraper ─────────────────────────────────────────────
@@ -531,7 +754,10 @@ async function fetchSpy(key) {
 // failure we serve that last good instead — it keeps its original observation date,
 // so the dashboard's isStale() check flags it STALE automatically. If there is no
 // last good either, we re-throw and the field falls back to mock (invariant holds).
-async function withLastGood(env, key, fetcher) {
+// ENGINE0-CONT: optional `validate(lg)` gates the FALLBACK read — a stored last-good that
+// no longer describes a live question (e.g. Kalshi odds for a meeting that has since
+// happened) is discarded rather than served (§5.6 / matrix G).
+async function withLastGood(env, key, fetcher, validate = null) {
   const lgKey = `pulse:lastgood:${key}`;
   try {
     const fresh = await fetcher();
@@ -542,15 +768,57 @@ async function withLastGood(env, key, fetcher) {
   } catch (err) {
     try {
       const lg = await env.PULSE_CACHE?.get(lgKey, "json");
-      if (lg && Object.keys(lg).length) return lg; // stale but real — beats mock
+      if (lg && Object.keys(lg).length && (!validate || validate(lg))) return lg; // stale but real — beats mock
     } catch {}
     throw err;
   }
 }
 
-async function fetchFearGreed() {
+// Matrix G guard: last-good FOMC odds are servable ONLY while their referenced event is
+// still in the future — odds from a decided meeting must never carry into the next one.
+export function rateOddsStillOpen(lg, now = new Date()) {
+  const d = lg && typeof lg.nextFomcDate === "string" ? lg.nextFomcDate.slice(0, 10) : null;
+  if (!d) return false;
+  return d >= now.toLocaleDateString("en-CA", { timeZone: "America/New_York" });
+}
+
+// ENGINE0-CONT §7.1: per-FIELD last-good for the FRED-sourced Engine 0 criticals (the
+// scrapers already ride withLastGood above). Grouped by source pull so a value never
+// travels without its observation date and derivatives; each group's PRIMARY key decides
+// presence. Band-checked on the way back in — a stored implausible value stays dropped.
+const FIELD_LG_GROUPS = {
+  vix:        ["vix", "vixAsOf", "vixWeekChg", "vixSeries"],
+  tenyear:    ["tenYear", "tenYearAsOf", "tenYearD1", "tenYearW1", "tenYearM1", "tenYearSeries", "tenYearSource"],
+  spy:        ["spyPrice", "spyPriceAsOf", "spyChangePct", "spyYtd", "spySeries", "spyMa100", "spyMa200", "spxIndex", "spxIndexAsOf", "spxPrevClose"],
+  ndx_spx_rs: ["ndxSpxRs", "ndxSpxRsAsOf", "ndx1dPct", "spx1dPct"],
+};
+const FIELD_LG_PRIMARY = { vix: "vix", tenyear: "tenYear", spy: "spyPrice", ndx_spx_rs: "ndxSpxRs" };
+async function applyFieldLastGood(env, live) {
+  for (const [group, keys] of Object.entries(FIELD_LG_GROUPS)) {
+    const primary = FIELD_LG_PRIMARY[group];
+    if (live[primary] !== undefined) {
+      // Success path: persist the group (with its real dates) for the next outage.
+      const rec = {};
+      for (const k of keys) if (live[k] !== undefined) rec[k] = live[k];
+      try { await env.PULSE_CACHE?.put(LG_PREFIX + group, JSON.stringify({ schema: 1, stored_at: new Date().toISOString(), fields: rec }), { expirationTtl: LG_TTL }); } catch {}
+      continue;
+    }
+    // Miss path: serve the last official observation — its REAL date rides along, so the
+    // evidence layer downstream classifies it HISTORICAL (or MISSING past its carry window).
+    try {
+      const lg = await env.PULSE_CACHE?.get(LG_PREFIX + group, "json");
+      const rec = lg && lg.fields;
+      if (rec && Number.isFinite(rec[primary]) && plausible(primary, rec[primary])) {
+        for (const k of keys) if (rec[k] !== undefined && live[k] === undefined) live[k] = rec[k];
+      }
+    } catch { /* no last good — the field stays absent, mock-first covers it */ }
+  }
+}
+
+async function fetchFearGreed(statuses = null) {
   const day = new Date().toLocaleDateString("en-CA", { timeZone: "America/New_York" }); // YYYY-MM-DD
   const url = `https://production.dataviz.cnn.io/index/fearandgreed/graphdata/${day}`;
+  const started = Date.now();
   const r = await fetch(url, {
     headers: {
       "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
@@ -561,7 +829,10 @@ async function fetchFearGreed() {
     },
     signal: AbortSignal.timeout(9000),
   });
-  if (!r.ok) throw new Error(`F&G ${r.status}`);
+  if (!r.ok) {
+    recordStatus(statuses, "cnn", "fear_greed", Object.assign(new Error(`F&G ${r.status}`), { http_status: r.status, latency_ms: Date.now() - started }));
+    throw new Error(`F&G ${r.status}`);
+  }
   const d = await r.json();
   // Current value lives in fear_and_greed.score; historical points in
   // fear_and_greed_historical.data[].y — prefer the live score, fall back to
@@ -571,9 +842,12 @@ async function fetchFearGreed() {
   const raw = d?.fear_and_greed?.score ?? d?.score ?? histLatest;
   // `Number("") === 0` and `isNaN(0) === false`, so a BLANK score used to sail through as
   // fearGreed: 0 → "Extreme Fear" → a bear vote in the regime engine. Require real digits.
-  if (raw == null || String(raw).trim() === "" || !Number.isFinite(Number(raw)))
+  if (raw == null || String(raw).trim() === "" || !Number.isFinite(Number(raw))) {
+    recordStatus(statuses, "cnn", "fear_greed", Object.assign(new Error("F&G parse failed"), { error_class: "parse", latency_ms: Date.now() - started }));
     throw new Error("F&G parse failed");
+  }
   const score = Math.round(Number(raw));
+  recordStatus(statuses, "cnn", "fear_greed", true, { latency_ms: Date.now() - started, observed_at: day });
   return { fearGreed: score, fearGreedLabel: fgLabel(score), fearGreedAsOf: day };
 }
 
@@ -639,21 +913,40 @@ async function fetchHeadline() {
 // (last_price_dollars, 0–1 = implied probability) into hold / cut / hike percents.
 // Wrapped in withLastGood at the call site, so a Kalshi outage (or an edge-IP block,
 // the way Stooq blocks us) serves the last good odds + STALE instead of mock.
-async function fetchRateOdds() {
-  const base = "https://api.elections.kalshi.com/trade-api/v2";
+async function fetchRateOdds(statuses = null) {
+  /* ENGINE0-CONT §5.6: transport LADDER over the same API shape. The plan names
+     external-api.kalshi.com as the currently-documented production base; the elections
+     base is the deployed-working legacy transport, kept as the fallback because the doc
+     claim could not be network-verified from this build environment (docs.kalshi.com is
+     blocked here). Whichever base serves is recorded in provenance — never implied. */
+  const KALSHI_BASES = [
+    "https://external-api.kalshi.com/trade-api/v2",
+    "https://api.elections.kalshi.com/trade-api/v2",
+  ];
   const hdrs = { headers: { Accept: "application/json" } };
-  // 1. nearest OPEN Fed-decision event (soonest future strike_date)
-  const er = await fetchRetry(`${base}/events?series_ticker=KXFEDDECISION&status=open&limit=200`, hdrs);
-  if (!er.ok) throw new Error(`Kalshi events ${er.status}`);
-  const events = (await er.json()).events || [];
+  let events = null, base = null, lastErr = null;
+  for (const b of KALSHI_BASES) {
+    try {
+      // 1. nearest OPEN Fed-decision event (soonest future strike_date)
+      const er = await fetchRetry(`${b}/events?series_ticker=KXFEDDECISION&status=open&limit=200`, hdrs);
+      const body = await er.json();
+      if (!Array.isArray(body.events)) throw Object.assign(new Error("Kalshi events: bad shape"), { error_class: "parse" });
+      events = body.events; base = b;
+      break;
+    } catch (e) { lastErr = e; recordStatus(statuses, "kalshi", `events @ ${new URL(b).host}`, e); }
+  }
+  if (!events) throw lastErr || new Error("Kalshi unreachable");
   const now = Date.now();
   const ev = events
     .filter((e) => e.strike_date && new Date(e.strike_date).getTime() > now)
     .sort((a, b) => new Date(a.strike_date) - new Date(b.strike_date))[0];
-  if (!ev) throw new Error("Kalshi: no upcoming FOMC event");
+  if (!ev) {
+    // §9: "no future event" is a DIFFERENT fact from an HTTP failure — named as such.
+    recordStatus(statuses, "kalshi", `events @ ${new URL(base).host}`, Object.assign(new Error("no upcoming FOMC event"), { error_class: "no_observation" }));
+    throw new Error("Kalshi: no upcoming FOMC event");
+  }
   // 2. its buckets
   const mr = await fetchRetry(`${base}/markets?event_ticker=${ev.event_ticker}&limit=50`, hdrs);
-  if (!mr.ok) throw new Error(`Kalshi markets ${mr.status}`);
   const markets = (await mr.json()).markets || [];
   let hold = 0, cut = 0, hike = 0, seen = 0;
   for (const m of markets) {
@@ -670,7 +963,11 @@ async function fetchRateOdds() {
     else if (suf[0] === "C") cut += p;
     else if (suf[0] === "H") hike += p;
   }
-  if (!seen) throw new Error("Kalshi: no priced buckets");
+  if (!seen) {
+    recordStatus(statuses, "kalshi", ev.event_ticker, Object.assign(new Error("no priced buckets"), { error_class: "parse" }));
+    throw new Error("Kalshi: no priced buckets");
+  }
+  recordStatus(statuses, "kalshi", ev.event_ticker, true, { base: new URL(base).host, markets: markets.length, priced: seen });
   // Buckets are independent YES markets, so their prices don't sum to exactly 1
   // (spreads + last-trade skew). Normalize to a clean 100% while preserving the
   // relative odds, so the three displayed numbers add up.
@@ -697,24 +994,31 @@ async function fetchRateOdds() {
 // invariant holds, nothing breaks). Prices go live; Mag 10 FUNDAMENTALS stay curated.
 // NOTE (deploy): set env.FINNHUB_KEY in Pages Settings, and verify it isn't edge-IP
 // blocked the way Stooq was (key-authed REST APIs usually pass; swap to Twelve Data if not).
-async function fetchEquities(env) {
+async function fetchEquities(env, statuses = null) {
   const key = env.FINNHUB_KEY;
   if (!key) throw new Error("FINNHUB_KEY not set");
   const MAG10 = ["NVDA", "GOOGL", "AAPL", "MSFT", "AVGO", "AMZN", "META", "PLTR", "TSLA"];
   const symbols = ["QQQ", ...MAG10];
   const quotes = {};
+  const failed = []; // §9: the group must never read healthy because one symbol succeeded
   // Batch ≤5 to stay under the ~6-connection cap (mirrors fetchFred).
   for (let i = 0; i < symbols.length; i += 5) {
-    const res = await Promise.allSettled(symbols.slice(i, i + 5).map(async (sym) => {
+    const batch = symbols.slice(i, i + 5);
+    const res = await Promise.allSettled(batch.map(async (sym) => {
       const r = await fetchRetry(`https://finnhub.io/api/v1/quote?symbol=${sym}&token=${key}`,
         { headers: { Accept: "application/json" } }, 2, 9000);
       const q = await r.json();
       const price = parseFloat(q.c), chg = parseFloat(q.dp);
-      if (!isFinite(price) || price <= 0) throw new Error(`${sym} no quote`);
+      if (!isFinite(price) || price <= 0) throw Object.assign(new Error(`${sym} no quote`), { error_class: "no_observation" });
       return [sym, { price: parseFloat(price.toFixed(2)), chgPct: isFinite(chg) ? parseFloat(chg.toFixed(2)) : null }];
     }));
-    for (const r of res) if (r.status === "fulfilled") quotes[r.value[0]] = r.value[1];
+    res.forEach((r, j) => {
+      if (r.status === "fulfilled") quotes[r.value[0]] = r.value[1];
+      else { failed.push(batch[j]); recordStatus(statuses, "finnhub", batch[j], r.reason); }
+    });
   }
+  recordStatus(statuses, "finnhub", "quotes", true,
+    { requested: symbols.length, succeeded: Object.keys(quotes).length, failed_symbols: failed.length ? failed : undefined });
   if (!Object.keys(quotes).length) throw new Error("equities: no quotes");
   const asOf = new Date().toLocaleDateString("en-CA", { timeZone: "America/New_York" });
   const out = {};

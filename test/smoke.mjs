@@ -22,7 +22,9 @@ import {
 } from "../src/ttReadout.js";
 import { sessionsBehind } from "../src/sources.js";
 import { validateBook, validateBoard, validatePos, conflictCheck, authMode, lockoutState, recordFailure, parseCookie, hashPin, LOCK_TIERS, diffForLedger } from "../functions/api/tt.js";
-import { plausible, applyBands, quorum, QUORUM_FIELDS, QUORUM_MIN, marketSession, BANDS } from "../functions/api/snapshot.js";
+import { plausible, applyBands, quorum, QUORUM_FIELDS, QUORUM_MIN, marketSession, BANDS,
+  pairRs, parseTreasuryCsv, rateOddsStillOpen, chooseTtl, publishIfNoWorse, TTL_MEDIUM, TTL_LOW } from "../functions/api/snapshot.js";
+import { etYmd } from "../src/sources.js";
 
 let pass = 0, fail = 0;
 const ok = (name, cond) => { if (cond) { pass++; console.log("  PASS  " + name); } else { fail++; console.log("  FAIL  " + name); } };
@@ -555,6 +557,91 @@ ok("paste: a carried-VIX flip prints its FROM_LAST_CLOSE state, never 'not armed
 ok("paste/readout: the literal verdict INSUFFICIENT is never published", (() => {
   const r = buildTtReadout({}, { now: TT_NOW });
   return r.regime.verdict !== "INSUFFICIENT" && !formatTtPaste(r, {}).split("\n").some((l) => l.startsWith("REGIME") && /INSUFFICIENT/.test(l));
+})());
+
+// ---- ENGINE0-CONT: snapshot continuity helpers (functions/api/snapshot.js, pure) ---------
+console.log("\n[5c] ENGINE0-CONT — snapshot continuity (pairing · treasury · rollover · publish gate)");
+
+// Matrix E: NASDAQ100/SP500 same-date pairing — no matched pair, no RS.
+const NDXFIX = { latest: 23000, prev: 22770, latestDate: "2026-07-15", prevDate: "2026-07-14" };
+const SPXFIX = { latest: 7481, prev: 7450, latestDate: "2026-07-15", prevDate: "2026-07-14" };
+ok("pairRs: matched dates -> rs = ndx1d - spx1d, dated from the pair", (() => {
+  const r = pairRs(NDXFIX, SPXFIX);
+  return r && r.rs === parseFloat((r.ndx1d - r.spx1d).toFixed(2)) && r.asOf === "2026-07-15";
+})());
+ok("matrix E: latest-date mismatch -> null (no RS from a cross-day pair)",
+  pairRs({ ...NDXFIX, latestDate: "2026-07-14", prevDate: "2026-07-13" }, SPXFIX) === null);
+ok("matrix E: PRIOR-date mismatch also refuses (both legs of the delta must pair)",
+  pairRs({ ...NDXFIX, prevDate: "2026-07-13" }, SPXFIX) === null);
+ok("pairRs: absent/non-finite leg -> null, never a fabricated 0",
+  pairRs(null, SPXFIX) === null && pairRs({ ...NDXFIX, latest: NaN }, SPXFIX) === null);
+
+// Matrix F: Treasury daily par-yield CSV parse (the official upstream DGS10 republishes).
+const TCSV = 'Date,"1 Mo","10 Yr","30 Yr"\n07/15/2026,5.1,4.46,4.9\n07/14/2026,5.1,4.43,4.9\n07/11/2026,5.1,4.40,4.9';
+ok("matrix F: Treasury CSV -> tenYear + D1 + real ISO AsOf + UST attribution", (() => {
+  const t = parseTreasuryCsv(TCSV);
+  return t && t.tenYear === 4.46 && t.tenYearAsOf === "2026-07-15" &&
+    t.tenYearD1 === 0.03 && /UST/.test(t.tenYearSource);
+})());
+ok("matrix F: a CSV without a 10 Yr column -> null (parse failure, never a guessed column)",
+  parseTreasuryCsv('Date,"1 Mo"\n07/15/2026,5.1') === null);
+
+// Matrix G (transport half): stored Kalshi odds survive only while their event is open.
+ok("matrix G: last-good odds for a FUTURE event are servable; a PAST event's are discarded", (() => {
+  const today = etYmd(new Date());
+  return rateOddsStillOpen({ nextFomcDate: "2099-01-01" }) === true &&
+    rateOddsStillOpen({ nextFomcDate: "2020-01-01" }) === false &&
+    rateOddsStillOpen({ nextFomcDate: today }) === true &&   // meeting day: still open
+    rateOddsStillOpen({}) === false;                          // undated: fail closed
+})());
+
+// §7.3 TTL policy: named, confidence-driven (deliberately NOT actionability-driven — a
+// tripped flip on fully-current data must not hammer upstreams all day).
+ok("ttl: HIGH -> daily lock · MEDIUM -> 15m · LOW -> 5m", (() => {
+  const mk = (c) => ({ regime: { confidence: c } });
+  return chooseTtl(mk("HIGH")) === 48 * 3600 && chooseTtl(mk("MEDIUM")) === TTL_MEDIUM &&
+    chooseTtl(mk("LOW")) === TTL_LOW && TTL_MEDIUM === 15 * 60 && TTL_LOW === 5 * 60;
+})());
+
+// Matrix H/I: the publish gate — build-before-publish, never replace a better snapshot.
+const mkKV = (init = {}) => {
+  const store = new Map(Object.entries(init).map(([k, v]) => [k, JSON.stringify(v)]));
+  return {
+    async get(k, type) { const v = store.get(k); return v == null ? null : (type === "json" ? JSON.parse(v) : v); },
+    async put(k, v) { store.set(k, String(v)); },
+    _store: store,
+  };
+};
+const TODAY_ET = etYmd(new Date());
+const liveToday = (o = {}) => ({
+  spyPrice: 748.1, spyPriceAsOf: TODAY_ET, spyMa200: 700.0, spyChangePct: 0.41,
+  vix: 16.1, vixAsOf: TODAY_ET, fearGreed: 62, fearGreedAsOf: TODAY_ET, fearGreedLabel: "Greed",
+  qqqChangePct: 0.9, qqqPriceAsOf: TODAY_ET, tenYear: 4.46, tenYearAsOf: TODAY_ET, tenYearM1: 0.03,
+  rateOddsHold: 98, rateOddsCut: 1, rateOddsHike: 1, rateOddsHoldAsOf: TODAY_ET, nextFomcDate: "2099-09-17", fomcDays: 61,
+  ...o,
+});
+ok("matrix H: a WORSE candidate is refused — the good stored snapshot survives", await (async () => {
+  const goodSnap = { live: liveToday(), asOf: "2026-08-03T12:00:00Z" };
+  const kv = mkKV({ "k": goodSnap });
+  const gutted = { live: { spyPrice: 748.1, spyPriceAsOf: TODAY_ET, spyMa200: 700 }, asOf: "2026-08-03T13:00:00Z", _diag: {} };
+  const res = await publishIfNoWorse({ PULSE_CACHE: kv }, "k", gutted, buildTtReadout(gutted.live, {}));
+  const stored = JSON.parse(kv._store.get("k"));
+  return res.published === false && /worse/.test(res.reason) && stored.live.vix === 16.1;
+})());
+ok("matrix I: a BETTER candidate replaces a gutted stored snapshot", await (async () => {
+  const gutted = { live: { spyPrice: 748.1, spyPriceAsOf: TODAY_ET, spyMa200: 700 }, asOf: "2026-08-03T12:00:00Z" };
+  const kv = mkKV({ "k": gutted });
+  const full = { live: liveToday(), asOf: "2026-08-03T13:00:00Z", _diag: {} };
+  const res = await publishIfNoWorse({ PULSE_CACHE: kv }, "k", full, buildTtReadout(full.live, {}));
+  const stored = JSON.parse(kv._store.get("k"));
+  return res.published === true && res.improved === true && stored.live.vix === 16.1;
+})());
+ok("publish: equal-quality NEWER candidate publishes but is NOT called an improvement", await (async () => {
+  const a = { live: liveToday(), asOf: "2026-08-03T12:00:00Z" };
+  const kv = mkKV({ "k": a });
+  const b = { live: liveToday(), asOf: "2026-08-03T13:00:00Z", _diag: {} };
+  const res = await publishIfNoWorse({ PULSE_CACHE: kv }, "k", b, buildTtReadout(b.live, {}));
+  return res.published === true && res.improved === false;
 })());
 ok("one-wiring-point intact: dashboard.jsx does not fetch readout.json", !dashSrc.includes("readout.json"));
 
