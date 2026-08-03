@@ -1005,9 +1005,20 @@ ok("decision deck: two labelled controls exist and BUY starts selected",
 // FEAT-TT-DECK follow-up (H1 2026-08-03, R4/R7): AAA sits at 21.4%, over the 18% cap — a
 // real forced trim in this fixture. It must surface as a RED count on the CLOSED tab, and
 // the owner's "do not auto-open" call means the default selection must be untouched by it —
-// nothing may silently flip the panel just because there is something forced to see.
+// nothing may silently flip the panel just because there is something forced to see. Resolve
+// --red through a probe rather than copying its hex: the assertion must fail if the rendered
+// badge changes to amber even when its text remains correct (H3 negative control).
+const fundCountIsRed = await phone.locator("#fundTabCount > span").evaluate((el) => {
+  const probe = document.createElement("span");
+  probe.style.color = "var(--red)";
+  document.body.appendChild(probe);
+  const expected = getComputedStyle(probe).color;
+  probe.remove();
+  return getComputedStyle(el).color === expected;
+});
 ok('decision deck: a forced cap trim shows as a RED count on the closed FUND / TRIM tab, and never auto-opens it',
   (await phone.locator("#decisionFundTab").textContent()) === "FUND / TRIM · 1 FORCED" &&
+  fundCountIsRed &&
   (await phone.locator("#decisionBuyTab").getAttribute("aria-selected")) === "true" &&
   await phone.locator("#decisionFund").getAttribute("inert") !== null);
 // R1 (H5 finding, confirmed vacuous): the old assertion called decisionGo(1) directly, which

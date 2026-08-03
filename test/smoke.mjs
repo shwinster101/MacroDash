@@ -3217,8 +3217,13 @@ console.log("\n[43] FEAT-TT-DECK follow-up — the forced-trim count, H1 2026-08
 ok("tt-deck-forced: the tab carries a dedicated count span, not a full-button text overwrite",
   /<span id="fundTabCount"><\/span>/.test(adminSrc));
 ok("tt-deck-forced: SELL_FORCED_N is reset before sellRank() runs — an early return can never leave yesterday's count (the AGREE_PICK precedent)",
-  adminSrc.indexOf("SELL_FORCED_N=null;") < adminSrc.indexOf("const s=sellRank();") &&
-  /if\(s\)SELL_FORCED_N=s\.forced\.length;/.test(adminSrc));
+  (() => {
+    const body = adminSrc.match(/function renderSellBlock\(\)\{([\s\S]*?)\n\}/)?.[1] || "";
+    const reset = body.indexOf("SELL_FORCED_N=null;");
+    const compute = body.indexOf("const s=sellRank();");
+    return reset >= 0 && compute >= 0 && reset < compute &&
+      /if\(s\)SELL_FORCED_N=s\.forced\.length;/.test(body);
+  })());
 ok("tt-deck-forced: the label reads SELL_FORCED_N directly — it recomputes neither CAP_PCT nor capChecks()",
   (() => {
     const m = adminSrc.match(/function renderDecisionFundLabel\(\)\{[\s\S]*?\n\}/);
@@ -3226,9 +3231,9 @@ ok("tt-deck-forced: the label reads SELL_FORCED_N directly — it recomputes nei
       !m[0].includes("CAP_PCT") && !m[0].includes("capChecks(");
   })());
 ok("tt-deck-forced: sellRank() is still CALLED exactly twice (renderSellBlock + the rankings export) — the tab adds no third pass",
-  (adminSrc.match(/=sellRank\(\);/g) || []).length === 2 &&
-  !adminSrc.slice(adminSrc.indexOf("function renderDecisionFundLabel"),
-    adminSrc.indexOf("function renderSellBlock")).includes("sellRank("));
+  (adminSrc.match(/=\s*sellRank\s*\(\s*\)\s*;/g) || []).length === 2 &&
+  !/\bsellRank\s*\(/.test(adminSrc.slice(adminSrc.indexOf("function renderDecisionFundLabel"),
+    adminSrc.indexOf("function renderSellBlock"))));
 ok("tt-deck-forced: the four states are distinct strings — pending, unmeasured, checked-clear and forced never collapse into each other",
   /line\("· …","var\(--dim\)"\)/.test(adminSrc) &&
   /line\("· \?","var\(--amber\)"\)/.test(adminSrc) &&
