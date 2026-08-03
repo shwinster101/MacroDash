@@ -636,6 +636,31 @@ ok("matrix I: a BETTER candidate replaces a gutted stored snapshot", await (asyn
   const stored = JSON.parse(kv._store.get("k"));
   return res.published === true && res.improved === true && stored.live.vix === 16.1;
 })());
+// Matrix K: refresh endpoint security — the guard paths are pure (they return before any
+// upstream fetch), so they run here; the authed happy path is browser-tested with a stub.
+const { onRequestGet: refreshGet, onRequestPost: refreshPost } = await import("../functions/api/snapshot/refresh.js");
+const mkRefreshReq = (method, headers = {}, body = null) => ({
+  method, url: "https://macrodash.pages.dev/api/snapshot/refresh",
+  headers: { get: (k) => headers[k.toLowerCase()] ?? null },
+  json: async () => body ?? {},
+});
+ok("matrix K: GET /api/snapshot/refresh -> 405 naming POST (a mutation never rides a GET)", await (async () => {
+  const r = await refreshGet();
+  return r.status === 405 && r.headers.get("Allow") === "POST";
+})());
+ok("matrix K: cross-origin POST -> 403 before any work", await (async () => {
+  const r = await refreshPost({ request: mkRefreshReq("POST", { origin: "https://evil.example" }), env: {} });
+  return r.status === 403;
+})());
+ok("matrix K: anonymous POST fails CLOSED (401/403/503 — never a build, never a 200)", await (async () => {
+  const r = await refreshPost({ request: mkRefreshReq("POST", {}), env: {} });
+  return r.status >= 401 && r.status <= 503;
+})());
+ok("matrix K: a WRONG x-refresh-token does not open the server path", await (async () => {
+  const r = await refreshPost({ request: mkRefreshReq("POST", { "x-refresh-token": "wrong" }), env: { REFRESH_TOKEN: "right" } });
+  return r.status >= 401 && r.status <= 503;
+})());
+
 ok("publish: equal-quality NEWER candidate publishes but is NOT called an improvement", await (async () => {
   const a = { live: liveToday(), asOf: "2026-08-03T12:00:00Z" };
   const kv = mkKV({ "k": a });
