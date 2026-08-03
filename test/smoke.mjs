@@ -440,20 +440,31 @@ ok("sessions: unparseable/absent date = null, never 0", sessionsBehind(null, TT_
 ok("transform: historical bullish -> neutral · bearish stays · neutral stays",
   conservativeVote("bullish") === "neutral" && conservativeVote("bearish") === "bearish" && conservativeVote("neutral") === "neutral");
 
-// D-boundary (matrix D): VIX carry = 2 completed sessions, exact edge both sides.
+// D-boundary (matrix D): VIX's historical vote stays conservative at its exact edge.
 ok("carry: VIX exactly AT the 2-session edge -> HISTORICAL, votes conservatively", (() => {
   const r = buildTtReadout(mkLive({ vixAsOf: "2026-07-10" }), { now: TT_NOW }); // 2 sessions behind
   const c = r.regime.checks[1];
   return c.tier === "HISTORICAL" && c.original_vote === "bullish" && c.effective_vote === "neutral" && c.state === "neutral";
 })());
-ok("carry: VIX one session BEYOND the edge -> MISSING, no vote", (() => {
-  const r = buildTtReadout(mkLive({ vixAsOf: "2026-07-09" }), { now: TT_NOW }); // 3 sessions behind
-  return r.regime.checks[1].tier === "MISSING" && r.regime.checks[1].state === "unavailable";
-})());
-ok("carry: 10Y trend carries to 5 sessions (its longer window), not VIX's 2", (() => {
-  const r = buildTtReadout(mkLive({ tenYearAsOf: "2026-07-07" }), { now: TT_NOW }); // 5 sessions behind
-  return r.regime.checks[4].tier === "HISTORICAL";
-})());
+
+// Every named carry policy is pinned at the exact allowed session and one session beyond.
+// Dates are deliberately literal test expectations, not calculated from CARRY_SESSIONS: a
+// production-window edit must move one of these assertions red until the policy is reviewed.
+const carryBoundaryCases = [
+  { key: "spy_vs_200d", max: 3, check: 0, edge: "2026-07-09", beyond: "2026-07-08", fields: (d) => ({ spyPriceAsOf: d }) },
+  { key: "vix", max: 2, check: 1, edge: "2026-07-10", beyond: "2026-07-09", fields: (d) => ({ vixAsOf: d }) },
+  { key: "fear_greed", max: 2, check: 2, edge: "2026-07-10", beyond: "2026-07-09", fields: (d) => ({ fearGreedAsOf: d }) },
+  { key: "qqq_spy_rs", max: 3, check: 3, edge: "2026-07-09", beyond: "2026-07-08", fields: (d) => ({ ndxSpxRs: 0.5, ndxSpxRsAsOf: d, ndx1dPct: 0.9, spx1dPct: 0.4, qqqPriceAsOf: d, spyPriceAsOf: d }) },
+  { key: "us10y_trend", max: 5, check: 4, edge: "2026-07-07", beyond: "2026-07-06", fields: (d) => ({ tenYearAsOf: d }) },
+  { key: "fed_next_meeting", max: 5, check: 5, edge: "2026-07-07", beyond: "2026-07-06", fields: (d) => ({ rateOddsHoldAsOf: d, nextFomcDate: "2099-09-17" }) },
+];
+for (const c of carryBoundaryCases) {
+  ok(`carry boundary: ${c.key} is HISTORICAL at ${c.max} sessions and MISSING at ${c.max + 1}`, (() => {
+    const edge = buildTtReadout(mkLive(c.fields(c.edge)), { now: TT_NOW }).regime.checks[c.check];
+    const beyond = buildTtReadout(mkLive(c.fields(c.beyond)), { now: TT_NOW }).regime.checks[c.check];
+    return edge.tier === "HISTORICAL" && beyond.tier === "MISSING" && beyond.state === "unavailable";
+  })());
+}
 
 // Matrix B: historical BULLISH evidence can never produce TAILWIND or FULL.
 ok("matrix B: all-historical bullish inputs -> never TAILWIND, never FULL", (() => {
@@ -538,10 +549,14 @@ ok("quality: equal evidence -> the newer candidate wins (asOf tiebreak)", (() =>
   const b = readoutQuality(buildTtReadout(mkLive(), { now: TT_NOW }), 1000);
   return compareQuality(a, b) > 0 && compareQuality(b, a) < 0;
 })());
-ok("quality: more historical checks compares WORSE at equal current", (() => {
-  const cur = readoutQuality(buildTtReadout(mkLive({ rateOddsHold: undefined, rateOddsCut: undefined, rateOddsHike: undefined }), { now: TT_NOW }), 0);
-  const hist = readoutQuality(buildTtReadout(mkLive({ rateOddsHoldAsOf: "2026-07-13" }), { now: TT_NOW }), 0);
-  return compareQuality(cur, hist) !== 0; // differ on the evidence axes, not only recency
+ok("quality: FEWER historical checks wins when every earlier axis ties", (() => {
+  const qualityWith = (historical) => readoutQuality({
+    macro_flip: { evaluable: false },
+    regime: { current_panic_gauges: 1, current: 3, usable: 5, historical, missing: 1 },
+  }, 0);
+  const fewer = qualityWith(1);
+  const more = qualityWith(2);
+  return compareQuality(fewer, more) > 0 && compareQuality(more, fewer) < 0;
 })());
 
 // The paste block carries the two-axis contract (the ONE human-facing surface).
@@ -667,6 +682,14 @@ ok("publish: equal-quality NEWER candidate publishes but is NOT called an improv
   const b = { live: liveToday(), asOf: "2026-08-03T13:00:00Z", _diag: {} };
   const res = await publishIfNoWorse({ PULSE_CACHE: kv }, "k", b, buildTtReadout(b.live, {}));
   return res.published === true && res.improved === false;
+})());
+ok("publish: equal-quality OLDER candidate is refused and the newer stored snapshot survives", await (async () => {
+  const newer = { live: liveToday(), asOf: "2026-08-03T13:00:00Z" };
+  const kv = mkKV({ "k": newer });
+  const older = { live: liveToday(), asOf: "2026-08-03T12:00:00Z", _diag: {} };
+  const res = await publishIfNoWorse({ PULSE_CACHE: kv }, "k", older, buildTtReadout(older.live, {}));
+  const stored = JSON.parse(kv._store.get("k"));
+  return res.published === false && /worse/.test(res.reason) && stored.asOf === newer.asOf;
 })());
 ok("one-wiring-point intact: dashboard.jsx does not fetch readout.json", !dashSrc.includes("readout.json"));
 
