@@ -233,20 +233,30 @@ console.log("\n[public] NEUTRAL — a neutral vote renders as neutral, not beari
 }
 
 // ── 3. DEGRADED — below quorum, no thin verdict ─────────────────────────────
-console.log("\n[public] DEGRADED — below-quorum evidence yields INSUFFICIENT");
+// ENGINE0-CONT: the withheld posture RENDERS as "DATA HOLD" — the engine's internal
+// INSUFFICIENT sentinel must never reach a reader (acceptance #1).
+console.log("\n[public] DEGRADED — below-quorum evidence yields DATA HOLD");
 {
   const { page, errors } = await open({ live: DEGRADED });
   await page.waitForTimeout(1200);
   const band = await bandText(page);
   const body = await page.locator("body").innerText();
   ok("degraded: the posture is withheld, not computed from what survived",
-    /INSUFFICIENT/i.test(band) && !POSTURES.test(band));
+    /DATA HOLD/i.test(band) && !POSTURES.test(band));
+  // Case-sensitive: the acceptance criterion bans the all-caps VERDICT token; prose may
+  // still say "insufficient" as an ordinary word without lying about the posture.
+  ok("degraded: the literal verdict token INSUFFICIENT appears nowhere on the page",
+    !/INSUFFICIENT/.test(body));
   ok("degraded: the band names how much evidence is missing",
     /only 3 of 6 factors usable/i.test(band) && /4 required/i.test(band));
   ok("degraded: the confidence strip states the withhold too",
     /POSTURE WITHHELD/i.test(body));
   ok("degraded: it explains that the mock baseline is deliberately NOT voting",
     /mock baseline is NOT voting/i.test(band));
+  // ENGINE0-CONT §8: a degraded-but-served day gets a REAL refresh control — a cached
+  // degraded snapshot is exactly when a rebuild helps, not only on HTTP ERROR.
+  ok("degraded: the operator route offers ↻ REFRESH DATA",
+    /↻ REFRESH DATA/.test(body));
   ok("degraded: no page errors", errors.length === 0);
   await page.close();
 }
@@ -259,7 +269,7 @@ console.log("\n[public] ERROR — a 500 falls back to mock, and mock does not vo
   const band = await bandText(page);
   ok("error: no posture is published after the fetch fails", !POSTURES.test(band));
   ok("error: the withheld state is explicit, not a silent blank",
-    /INSUFFICIENT|CAN'T CALL IT/i.test(band));
+    /DATA HOLD|CAN'T CALL IT/i.test(band));
   const errBody = await page.locator("body").innerText();
   ok("error: the page still renders (graceful degradation holds — it never breaks)",
     errBody.length > 500);

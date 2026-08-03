@@ -4067,7 +4067,7 @@ function renderStance(){
     (CHANGED_N.n?`<button class="badge" style="color:${CHANGED_N.stops?"var(--red)":"var(--amber)"}" onclick="openDesk('dChanged')">Δ ${CHANGED_N.n} changed${CHANGED_N.stops?` · ${CHANGED_N.stops}!`:""}</button>`:"");
   const controls=`<span class="stance-right">`+
     (LIVE_AT?`<span class="scope">quotes ${esc(String(LIVE_AT).slice(11,16))}Z</span>`:"")+
-    `<button class="rfr" id="refreshRanks" onclick="refreshRanks()">⟳ RANKS</button>`+
+    `<button class="rfr" id="refreshRanks" onclick="refreshRanks()" title="Rebuild the macro snapshot (Engine 0), then reload quotes, positions and both ranks">⟳ DATA+RANKS</button>`+
     `<button class="badge u-dim" onclick="openDesk()">DESK ▾</button></span>`;
   /* v3.42 slice 5 — the stance is ASYMMETRIC, because its two states are not equally worth
      your attention. "ADDS OK" is the PERMISSIVE DEFAULT: it says nothing is stopping you,
@@ -4098,17 +4098,37 @@ function openDesk(inner){
   if(inner)openDrawer(inner);
   d.scrollIntoView({behavior:"smooth",block:"start"});
 }
-/* FEAT-TT-REFRESH: recompute both ranks from fresh quotes + positions, on demand.
+/* FEAT-TT-REFRESH + ENGINE0-CONT §8: "refresh data + ranks". The old button only re-GET
+   /readout.json, which rereads the same per-day KV value — a pseudo-refresh. It now POSTs
+   the AUTHENTICATED active-snapshot rebuild (same-origin PIN session cookie authorizes it)
+   and renders the readout DIRECTLY from the response body, then reloads quotes+positions.
+   Failure ladder is honest: 429 = cooling down; 401/404/405 (older deploy / no session) or
+   an unreachable endpoint degrade to the old read-only reload — stated, never silent.
    HONESTY: /api/quotes serves a 2-minute KV cache — a second tap inside that window
    returns the same marks, and the stamp beside the button says when they were taken. */
 async function refreshRanks(){
   const b=document.getElementById("refreshRanks");
   if(b){b.disabled=true;b.textContent="⟳ …";}
   try{
-    await Promise.all([loadQuotes(),loadPositions(),loadRegime()]);
-    toast("Ranks refreshed — quotes as of "+(LIVE_AT?String(LIVE_AT).slice(11,16)+"Z":"unknown")+" (server caches 2 min)");
+    let refreshed=null;
+    try{
+      const res=await fetch("/api/snapshot/refresh",{method:"POST",cache:"no-store",
+        headers:{"content-type":"application/json"},
+        body:JSON.stringify({scope:"critical",reason:"operator"})});
+      if(res.ok)refreshed=await res.json();
+      else if(res.status===429)toast("Data refresh cooling down — ranks reloaded from current data");
+      else if(res.status!==401&&res.status!==404&&res.status!==405)toast("Data refresh failed (HTTP "+res.status+") — ranks reloaded from current data");
+    }catch(_e){/* endpoint unreachable — read-only reload below */}
+    if(refreshed&&refreshed.readout){
+      applyRegime(refreshed.readout);
+      toast(refreshed.message||"data refreshed");
+      await Promise.all([loadQuotes(),loadPositions()]);
+    }else{
+      await Promise.all([loadQuotes(),loadPositions(),loadRegime()]);
+      toast("Ranks refreshed — quotes as of "+(LIVE_AT?String(LIVE_AT).slice(11,16)+"Z":"unknown")+" (server caches 2 min)");
+    }
   }catch(_e){toast("Refresh failed — showing the last good data");}
-  finally{if(b){b.disabled=false;b.textContent="⟳ RANKS";}render();}
+  finally{if(b){b.disabled=false;b.textContent="⟳ DATA+RANKS";}render();}
 }
 
 /* v3.26 FEAT-TT-BINCAL: the binary calendar. Earnings dates lived inside individual
@@ -4836,6 +4856,56 @@ const REGIME_STYLE={
   PANIC:["head","⛔ PANIC"],
   INSUFFICIENT:["warn","INSUFFICIENT — don't gate on this"],
 };
+/* ENGINE0-CONT: applyRegime renders a readout BODY — loadRegime fetches then applies, and
+   the refresh button applies the POST response DIRECTLY (never rereading eventually-
+   consistent KV and hoping the write is visible yet). */
+function applyRegime(r){
+  const el=document.getElementById("regimePill");
+  REGIME=r;
+  const reg=r&&r.regime;
+  const v=reg&&reg.verdict;
+  let [cls,label]=REGIME_STYLE[v]||["warn",v||"unknown"];
+  // FEAT-DERIV-OWN (v3.41): a withheld TAILWIND must not read as a plain NEUTRAL — the pill
+  // is the ONE place the maintainer looks before adding, so the withhold has to land here.
+  const downgraded=reg&&reg.downgraded;
+  if(downgraded){cls="warn";label="NEUTRAL — TAILWIND withheld";}
+  /* ENGINE0-CONT two-axis contract: the verdict is direction; actionability says whether it
+     may gate capital. HOLD/RESTRICTED must never render on a green pill — amber unless the
+     verdict itself is already the red head class (HEADWIND/PANIC are more alarming, keep). */
+  const act=reg&&reg.actionability;
+  if(act&&act!=="FULL"){
+    if(cls==="ok"||cls==="neutral")cls="warn";
+    label+=act==="HOLD"?" · HOLD":" · RESTRICTED";
+    if(reg.status==="DATA DEGRADED")label+=" · DATA DEGRADED";
+  }
+  /* v3.42 slice 5: the pill now sits in a one-row header, so a full ISO date wrapped it to
+     two lines. Show MM-DD — but ONLY when the year is the current one; a readout from a
+     different year must still print in full, or a year-stale macro read would render as
+     today's. Freshness is the whole reason the date is on the pill. */
+  const asOfRaw=(r&&r.as_of?String(r.as_of):"").slice(0,10);
+  const nowY=new Date().toLocaleDateString("en-CA",{timeZone:"America/New_York"}).slice(0,4);
+  const asOf=asOfRaw&&asOfRaw.slice(0,4)===nowY?asOfRaw.slice(5):asOfRaw;
+  const mf=r&&r.macro_flip;
+  // A blind circuit (evaluable:false) used to collapse into the same "" suffix as a genuine
+  // "not armed". ENGINE0-CONT: a carried-VIX circuit narrates its FROM_LAST_CLOSE state —
+  // "cannot confirm off a carried close" is a different fact from "cannot see at all".
+  const flip=mf&&mf.evaluable===false
+    ?(mf.state==="ARMED_FROM_LAST_CLOSE"?" · flip ARMED (last close)"
+     :mf.state==="UNCONFIRMED_FROM_LAST_CLOSE"?" · flip unconfirmed (last close)"
+     :" · flip BLIND")
+    :mf&&mf.tripped?" · FLIP TRIPPED":mf&&mf.armed?" · flip armed":"";
+  el.className="pill "+cls;
+  el.textContent=label+flip+(asOf?" · "+asOf:"");
+  // §11 admin: current/historical counts + observation times live on the pill's tooltip —
+  // the one-row header cannot carry them inline.
+  if(reg&&typeof reg.current==="number"){
+    const d=(b)=>(b&&b.as_of)||"n/a";
+    el.title=`${reg.current} current · ${reg.historical} historical · ${reg.missing} missing`
+      +` — SPY ${d(r.spy)} · VIX ${d(r.vix)} · F&G ${d(r.fear_greed)} · 10Y ${d(r.us10y)}`
+      +(reg.reason?` — ${reg.reason}`:"");
+  }
+  renderNextDollar(); // the HEADWIND/PANIC modifier may now apply
+}
 async function loadRegime(){
   const el=document.getElementById("regimePill");
   try{
@@ -4843,28 +4913,7 @@ async function loadRegime(){
     const res=await fetch("/readout.json",{signal:ctl.signal});
     clearTimeout(t);
     if(!res.ok)throw new Error("HTTP "+res.status);
-    const r=await res.json();
-    REGIME=r;
-    const v=r&&r.regime&&r.regime.verdict;
-    let [cls,label]=REGIME_STYLE[v]||["warn",v||"unknown"];
-    // FEAT-DERIV-OWN (v3.41): a withheld TAILWIND must not read as a plain NEUTRAL — the pill
-    // is the ONE place the maintainer looks before adding, so the withhold has to land here.
-    const downgraded=r&&r.regime&&r.regime.downgraded;
-    if(downgraded){cls="warn";label="NEUTRAL — TAILWIND withheld";}
-    /* v3.42 slice 5: the pill now sits in a one-row header, so a full ISO date wrapped it to
-       two lines. Show MM-DD — but ONLY when the year is the current one; a readout from a
-       different year must still print in full, or a year-stale macro read would render as
-       today's. Freshness is the whole reason the date is on the pill. */
-    const asOfRaw=(r&&r.as_of?String(r.as_of):"").slice(0,10);
-    const nowY=new Date().toLocaleDateString("en-CA",{timeZone:"America/New_York"}).slice(0,4);
-    const asOf=asOfRaw&&asOfRaw.slice(0,4)===nowY?asOfRaw.slice(5):asOfRaw;
-    const mf=r&&r.macro_flip;
-    // A blind circuit (evaluable:false) used to collapse into the same "" suffix as a genuine
-    // "not armed" — the crash detector could be unable to see and the pill said nothing.
-    const flip=mf&&mf.evaluable===false?" · flip BLIND":mf&&mf.tripped?" · FLIP TRIPPED":mf&&mf.armed?" · flip armed":"";
-    el.className="pill "+cls;
-    el.textContent=label+flip+(asOf?" · "+asOf:"");
-    renderNextDollar(); // the HEADWIND/PANIC modifier may now apply
+    applyRegime(await res.json());
   }catch(_e){
     el.className="pill warn";
     el.textContent="unavailable — tap DASH";

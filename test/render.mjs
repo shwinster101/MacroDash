@@ -223,10 +223,17 @@ const LEDGER_RECENT_FIXTURE = [
 // body and re-open the page — loadRegime() re-fetches on every navigation, so this is enough to
 // drive the pill through every state without a second server.
 let READOUT_FIXTURE = { as_of: `${TODAY_ET}T14:30:00Z`, regime: { verdict: "HEADWIND" }, macro_flip: { armed: true } };
+// ENGINE0-CONT: null = endpoint absent (404), so the pre-existing refreshRanks test keeps
+// exercising the read-only fallback ladder; set to a body to drive the real POST path.
+let REFRESH_FIXTURE = null;
 
 const server = http.createServer((req, res) => {
   const url = new URL(req.url, "http://x");
   const json = (o) => { res.writeHead(200, { "content-type": "application/json" }); res.end(JSON.stringify(o)); };
+  if (url.pathname === "/api/snapshot/refresh") {
+    if (req.method !== "POST" || !REFRESH_FIXTURE) { res.writeHead(REFRESH_FIXTURE ? 405 : 404); return res.end(); }
+    return json(REFRESH_FIXTURE);
+  }
   if (url.pathname === "/api/tt")
     return json({ version: "1.1", asOf: TODAY_ET, book: BOOK, cut: ["XXX"], board: BOARD,
       empty: false, auth: { mode: "pin", src: "kv", session_days_left: 29 } });
@@ -258,7 +265,14 @@ const errors = [];
 async function open(width, height=2200) {
   const page = await browser.newPage({ viewport: { width, height } });
   page.on("pageerror", (e) => errors.push(`[${width}px] pageerror: ${e.message}`));
-  page.on("console", (m) => { if (m.type() === "error") errors.push(`[${width}px] console: ${m.text()}`); });
+  page.on("console", (m) => {
+    if (m.type() !== "error") return;
+    // ENGINE0-CONT: the refresh button feature-detects POST /api/snapshot/refresh; on an
+    // older deploy (this stub's 404 default) the browser logs the failed resource before
+    // the client's documented fallback runs. That probe is by-design — not a page error.
+    if (/Failed to load resource/.test(m.text()) && /\/api\/snapshot\/refresh/.test(m.location()?.url || "")) return;
+    errors.push(`[${width}px] console: ${m.text()}`);
+  });
   await page.goto(`http://127.0.0.1:${PORT}/admin.html`);
   await page.waitForTimeout(1200);
   return page;
@@ -1216,6 +1230,54 @@ const healthyPill = await txt(healthyPage, "regimePill");
 ok("a fully-fed, unarmed circuit still reads as a plain TAILWIND (no false BLIND tell)",
   /TAILWIND/.test(healthyPill) && !/BLIND/.test(healthyPill) && !/withheld/.test(healthyPill));
 await healthyPage.close();
+
+/* ENGINE0-CONT: the two admin states the continuity plan adds — a degraded HOLD pill that
+   is amber and never says INSUFFICIENT, and a refresh button that renders the POST
+   response DIRECTLY (never rereading eventually-consistent KV). */
+console.log("\n[render] ENGINE0-CONT — degraded HOLD pill + real data refresh");
+READOUT_FIXTURE = { as_of: `${TODAY_ET}T14:30:00Z`,
+  regime: { verdict: "NEUTRAL", raw_verdict: "INSUFFICIENT", confidence: "LOW", actionability: "HOLD",
+    status: "DATA DEGRADED", current: 2, historical: 3, missing: 1,
+    reason: "3 checks use historical observations; current VIX unavailable" },
+  spy: { as_of: TODAY_ET }, vix: { as_of: "2026-07-31" }, fear_greed: { as_of: TODAY_ET }, us10y: { as_of: "2026-07-30" },
+  macro_flip: { armed: null, tripped: null, evaluable: false, state: "UNCONFIRMED_FROM_LAST_CLOSE",
+    reason: "latest VIX is historical (2026-07-31) — circuit cannot confirm" } };
+const holdPage = await open(1200);
+const holdPill = await txt(holdPage, "regimePill");
+const holdCls = await holdPage.locator("#regimePill").getAttribute("class");
+ok("degraded-hold: pill carries HOLD · DATA DEGRADED and is amber, never green",
+  /HOLD/.test(holdPill) && /DATA DEGRADED/.test(holdPill) && /\bwarn\b/.test(holdCls) && !/\bok\b/.test(holdCls));
+ok("degraded-hold: the literal INSUFFICIENT never renders on the pill", !/INSUFFICIENT/.test(holdPill));
+ok("degraded-hold: a carried-VIX circuit reads 'flip unconfirmed (last close)', never blank",
+  /flip unconfirmed \(last close\)/.test(holdPill));
+ok("degraded-hold: counts + observation dates ride the pill tooltip",
+  /2 current · 3 historical/.test(await holdPage.locator("#regimePill").getAttribute("title") || ""));
+
+REFRESH_FIXTURE = { ok: true, published: true, improved: true,
+  message: "Engine 0 recovered to 6 current check(s) (HIGH confidence, FULL)",
+  readout: { as_of: `${TODAY_ET}T15:00:00Z`,
+    regime: { verdict: "TAILWIND", confidence: "HIGH", actionability: "FULL", status: "OK", current: 6, historical: 0, missing: 0 },
+    spy: { as_of: TODAY_ET }, vix: { as_of: TODAY_ET }, fear_greed: { as_of: TODAY_ET }, us10y: { as_of: TODAY_ET },
+    macro_flip: { armed: false, tripped: false, evaluable: true, state: "CLEAR", reason: null } } };
+await holdPage.evaluate(() => refreshRanks());
+await holdPage.waitForTimeout(600);
+const refreshedPill = await txt(holdPage, "regimePill");
+ok("refresh: the pill renders the RETURNED readout immediately (HOLD -> TAILWIND, no KV reread)",
+  /TAILWIND/.test(refreshedPill) && !/HOLD/.test(refreshedPill));
+ok("refresh: the server's recovery message reaches the operator",
+  /recovered to 6 current/.test(await holdPage.locator("#toast").innerText()));
+ok("refresh: the button re-enables in finally",
+  await holdPage.evaluate(() => !document.getElementById("refreshRanks").disabled));
+
+REFRESH_FIXTURE = { ok: true, published: false, improved: false,
+  message: "refresh completed but the candidate was worse; retained the prior snapshot",
+  readout: READOUT_FIXTURE };
+await holdPage.evaluate(() => refreshRanks());
+await holdPage.waitForTimeout(600);
+ok("refresh-failure: 'retained the prior snapshot' is reported, never silent",
+  /retained the prior snapshot/.test(await holdPage.locator("#toast").innerText()));
+await holdPage.close();
+REFRESH_FIXTURE = null;
 
 await browser.close();
 server.close();
