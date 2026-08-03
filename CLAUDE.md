@@ -1780,6 +1780,21 @@ Jan-anchor shipped; see `snapshot.js` ~318–328), `spyMa100`, `spyMa200`, and a
   **985 smoke** (+7 from this feature) + **178 render** (+5 net from this feature, including
   the real swipe path, visible export action, panel height, capped funding queue, two-screen
   budget and zero mobile overflow).
+- **v3.65 — a pinned horizon must NAME what it drops.** Owner screenshot: the board ranked 6 of 36
+  with the horizon pinned at 2030, and TSM (model ends YE2028) and NVDA (YE2029) were **absent from
+  the next-dollar list entirely** — the two names just re-run that day. The exclusion WAS disclosed,
+  but only as a bare count (*"2 of them dropped for having no 2030 rung"*), which reads as a rounding
+  note. Stated as **"TSM, NVDA"** it is the moment you notice your freshest work has vanished from the
+  queue. This is the **v3.36 coverage-gap precedent applied to the other exclusion path**: that fix
+  named the no-`pt_model` names while the no-rung-at-this-year names stayed a count. The line now names
+  them and, when the horizon is pinned rather than auto, points at `auto` as the fix — suppressed when
+  already auto, since telling someone to pick the option they have picked is noise.
+  Note the horizon itself is **device-local** (`localStorage` `tt:hz`), not book state, so it cannot be
+  set server-side — which is precisely why the disclosure has to carry its own remedy.
+  Also re-pinned the v3.39 smoke assert that string-matched the literal `cands.length-rows.length`
+  expression: naming the dropped names is a strict improvement and failed it, so the pin now measures
+  the BEHAVIOUR (count still derived from the candidate/row gap, drop still disclosed) rather than one
+  spelling of the arithmetic.
 - **v3.64 — the ESTIMATE RUN label stops being a wall.** Owner screenshot, TSM tab: seven lines of
   uppercase prose sat ABOVE the table they labelled, so the reader met the footnote before the number.
   Cause: the `.lbl` glued `TIER` + the **whole** `rank` string + the **whole** `consensus.source`

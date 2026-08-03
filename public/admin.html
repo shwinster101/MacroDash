@@ -9,7 +9,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
 <!-- AUDIT: kept in sync with package.json by test/smoke.mjs. admin.html is a Vite
      public/ passthrough, so it cannot receive __APP_VERSION__ — the guard is the fix. -->
-<title>TT TICKER TERMINAL v3.64.0</title>
+<title>TT TICKER TERMINAL v3.65.0</title>
 <style>
   :root{
     --bg:#05070a; --panel:#0a0f16; --panel2:#0d141d; --line:#16202c;
@@ -397,7 +397,7 @@
         onclick="toggleHeadInfo()">⋯ MENU</button>
     </div>
     <div id="headInfo" style="display:none">
-      <div class="brand">FINANCE&nbsp;BRO.AI // TT&nbsp;TICKER&nbsp;TERMINAL <small>v3.64.0 · single-pass deep-dive orchestrator</small></div>
+      <div class="brand">FINANCE&nbsp;BRO.AI // TT&nbsp;TICKER&nbsp;TERMINAL <small>v3.65.0 · single-pass deep-dive orchestrator</small></div>
       <div class="statusline">
         <span>BOOK: <b id="bookStamp">loading…</b></span>
         <span>AUTH: <b id="sessState">…</b></span>
@@ -3450,14 +3450,21 @@ function renderUpsideRank(){
     .map(r=>`<div style="color:var(--amber);font-size:10px;margin-top:2px">⚠ ${esc(r.sym)}: ${esc(r.caveat)}</div>`).join("");
   // With a horizon pinned every % shares one year, so the mixed-horizon warning must NOT
   // keep claiming otherwise — but names dropped for lacking that year have to be named.
-  const noRung=hz?cands.length-rows.length:0;
+  // v3.65: NAME the horizon-dropped names, do not merely count them. A pinned horizon that
+  // reports "2 dropped" reads as a rounding note; the same fact stated as "TSM, NVDA" is the
+  // moment you notice the two names you just re-ran have vanished from the queue. This is the
+  // v3.36 coverage-gap precedent applied to the other exclusion path — that fix named the
+  // no-pt_model names, while the no-rung-at-this-year names stayed a bare count, which is
+  // exactly how a 2030 pin silently hid TSM (model ends YE2028) and NVDA (YE2029).
+  const noRungSyms=hz?cands.filter(c=>!rows.some(r=>r.sym===c.sym)).map(c=>c.sym):[];
+  const noRung=noRungSyms.length;
   const notAnn=rows.filter(r=>r.ann===null).map(r=>r.sym);
   const rolled=rows.filter(r=>r.rolled);
   el.innerHTML=`<div class="lbl">Computed upside — ANNUALISED to ${hz?"year-end "+esc(hz)+(isAuto?" (auto)":""):"the nearest rung"} · ranked by %/yr so horizons compare · math only, not a recommendation (no sizing/caps/thesis weighed)</div>`+
     hzUI+`<div class="picks">${picks}</div>`+
     `<div class="none">ranking ${rows.length} of ${BOOK.length} names`+
     (excluded?` — ${excluded} excluded (no pt_model target, or no usable price), NOT judged unattractive`:"")+
-    (noRung?` · ${noRung} of them dropped for having no ${esc(hz)} rung (estimate series end at different years)`:"")+
+    (noRung?` · <b>${noRung} modelled name${noRung>1?"s":""} dropped for having no ${esc(hz)} rung: ${noRungSyms.map(esc).join(", ")}</b> — their estimate series end earlier${isAuto?"":`; "auto" would pick a year every model reaches`}`:"")+
     (hz?` · all % share the ${esc(hz)} horizon`:` · horizons differ, each % is to its own year`)+
     (()=>{const l=rows.filter(r=>r.live).length;
       return l===rows.length?` · all prices LIVE`:l?` · ${l} live / ${rows.length-l} on stamped marks`:` · all prices are stamped marks, not live`;})()+

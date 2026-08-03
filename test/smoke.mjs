@@ -761,8 +761,14 @@ ok("hz: horizon state + setter normalises and re-renders every surface that read
   /function setHorizon\(y\)\{[\s\S]{0,700}if\(TAB!=="BOARD"\)renderDeepDive\(TAB\);/.test(adminSrc));
 ok("hz: a pinned horizon selects that exact rung, never a substitute year",
   adminSrc.includes("if(hz&&!at)return null;"));
-ok("hz: names lacking the chosen year are dropped AND counted (no silent substitution)",
-  adminSrc.includes("const noRung=hz?cands.length-rows.length:0;") && adminSrc.includes("no ${esc(hz)} rung"));
+// v3.65: this pinned the literal expression `cands.length-rows.length`, so naming the dropped
+// names (a strict improvement) failed it. Re-pinned on the BEHAVIOUR it exists to protect —
+// the count is still derived from the candidate/row gap, and the drop is still disclosed —
+// rather than on one spelling of the arithmetic.
+ok("hz: names lacking the chosen year are dropped AND disclosed (no silent substitution)",
+  adminSrc.includes("const noRung=noRungSyms.length;")
+  && /noRungSyms=hz\?cands\.filter\(c=>!rows\.some\(r=>r\.sym===c\.sym\)\)/.test(adminSrc)
+  && adminSrc.includes("no ${esc(hz)} rung"));
 ok("hz: the mixed-horizon warning flips off once every % shares one year",
   adminSrc.includes("all % share the ${esc(hz)} horizon"));
 ok("hz: selector offers nearest plus the union of available rung years",
@@ -1497,6 +1503,11 @@ ok("estrun: the merged renderers are DEAD — no second render path for estimate
   !adminSrc.includes("function ddPtModelSec") && !adminSrc.includes("function ddConsensusSec"));
 ok("estrun: the section label carries the tier — the math renders under the tier claim",
   adminSrc.includes("ESTIMATE RUN — ${esc(TIER_LABEL[x.tier]"));
+ok("horizon: names dropped for lacking the pinned year are NAMED, not just counted (v3.65)",
+  /noRungSyms=hz\?cands\.filter/.test(adminSrc)
+  && /dropped for having no \$\{esc\(hz\)\} rung: \$\{noRungSyms\.map\(esc\)\.join/.test(adminSrc));
+ok("horizon: a pinned horizon that drops names points at 'auto' as the fix, and does not when already auto",
+  /isAuto\?"":`; "auto" would pick a year every model reaches`/.test(adminSrc));
 ok("est-run: the label carries the TIER ONLY — rank prose and estimate source moved into an expander (v3.64)",
   /ESTIMATE RUN — \$\{esc\(TIER_LABEL\[x\.tier\]\|\|x\.tier\)\}<\/div>/.test(adminSrc));
 ok("est-run: rank + source render inside a details.est-mini, never a drawer (the phone harness counts open drawers)",
