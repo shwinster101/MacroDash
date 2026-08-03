@@ -575,7 +575,10 @@ ok("hinge: a red hinge force-opens the section rather than hiding behind a chevr
   adminSrc.includes('${n.red?" open":""}'));
 ok("hinge: unrecognised states fall into unknown, never silently into green",
   (adminSrc.match(/\["green","amber","red"\]\.includes\(g\.state\)/g) || []).length >= 2);
-ok("dd: per-payload size cap present (8KB, under the 200KB book PUT limit)", adminSrc.includes("DD_MAX=8*1024"));
+ok("dd: per-payload size cap present (15KB, raised from 8KB in v3.63 — a complete thesis is 8-12KB)",
+  adminSrc.includes("DD_MAX=15*1024"));
+ok("dd: the payload cap states that the BOOK cap now binds first (36 x 15KB > the 200KB MAX_BODY)",
+  /binding constraint is now the BOOK/.test(adminSrc) && /540KB/.test(adminSrc));
 ok("dd: past key-dates flag 'passed — re-confirm' (the FOMC lesson)", adminSrc.includes("passed — re-confirm"));
 ok("dd: rendered payload strings are HTML-escaped (esc used in the deep renderer)",
   adminSrc.includes("function esc(") && adminSrc.includes("${esc(dd.thesis_version)}"));

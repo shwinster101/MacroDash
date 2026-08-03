@@ -1780,6 +1780,19 @@ Jan-anchor shipped; see `snapshot.js` ~318–328), `spyMa100`, `spyMa200`, and a
   **985 smoke** (+7 from this feature) + **178 render** (+5 net from this feature, including
   the real swipe path, visible export action, panel height, capped funding queue, two-screen
   budget and zero mobile overflow).
+- **v3.63 — `DD_MAX` 8KB -> 15KB.** The per-payload cap was rejecting COMPLETE theses, not runaway
+  ones: a fully-populated payload (consensus to FY2035 + `pt_model` + five-pillar composite + gates +
+  hinges + `key_dates` + `capital` + `open_items`) lands at 8-12KB. Measured while filling NVDA's
+  payload — it came in at 8,175 bytes and had to be trimmed four times to fit, losing evidence prose
+  each round; meanwhile NBIS (8,978) and BETA (12,329) **already exceeded the cap** and only survived
+  because `validateDeepDive` runs on the editor path, not on load. A cap that the two richest existing
+  payloads violate is not enforcing anything. Client-side only (`admin.html`) — no server mirror; the
+  smoke pin moved with it. **The comment was also stale**: it claimed "keeps the whole book far under
+  the 64KB PUT limit" when v3.34 raised `MAX_BODY` to 200KB, the same label-outliving-its-data defect
+  this changelog keeps fixing. It now states the real constraint — **the BOOK cap binds first**, since
+  36 entries at 15KB is 540KB against a 200KB body, so this buys headroom for a few rich names and not
+  for all of them. Splitting `deepDive` into its own KV document (the pattern `pos` and the ledger both
+  proved) remains the actual fix and stays deliberately deferred.
 - **Deferred:** stored fundamentals + Robinhood sync — now unblocked by the `x-tt-pin` header
   (v3.9): a chat-side daily review can PUT `status_flags`/`ref_px` into the deepDive payloads and
   stamp `lastRun`. When built, store the *triage* shape (`{at, px}` → "% moved since your last TT
