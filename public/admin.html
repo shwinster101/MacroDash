@@ -9,7 +9,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
 <!-- AUDIT: kept in sync with package.json by test/smoke.mjs. admin.html is a Vite
      public/ passthrough, so it cannot receive __APP_VERSION__ — the guard is the fix. -->
-<title>TT TICKER TERMINAL v3.69.0</title>
+<title>TT TICKER TERMINAL v3.70.0</title>
 <style>
   :root{
     --bg:#05070a; --panel:#0a0f16; --panel2:#0d141d; --line:#16202c;
@@ -398,7 +398,7 @@
         onclick="toggleHeadInfo()">⋯ MENU</button>
     </div>
     <div id="headInfo" style="display:none">
-      <div class="brand">FINANCE&nbsp;BRO.AI // TT&nbsp;TICKER&nbsp;TERMINAL <small>v3.69.0 · single-pass deep-dive orchestrator</small></div>
+      <div class="brand">FINANCE&nbsp;BRO.AI // TT&nbsp;TICKER&nbsp;TERMINAL <small>v3.70.0 · single-pass deep-dive orchestrator</small></div>
       <div class="statusline">
         <span>BOOK: <b id="bookStamp">loading…</b></span>
         <span>AUTH: <b id="sessState">…</b></span>
@@ -754,7 +754,7 @@ async function loadBook(){
    re-GET the server copy and overwrote BOOK — silently destroying the user's work.
    Never re-GET on a save failure: the local edit is the only copy of it. */
 let DIRTY=false;
-const MAX_BODY=200*1024; // mirror of the server cap in functions/api/tt.js (raised from 64KB, v3.34 follow-up)
+const MAX_BODY=600*1024; // mirror of the server cap in functions/api/tt.js (64KB->200KB v3.34, ->600KB v3.70)
 function bookDoc(){return{book:BOOK,cut:CUT,board:BOARD&&Object.keys(BOARD).length?BOARD:null};}
 async function persist(){
   const raw=JSON.stringify(bookDoc());
@@ -1743,16 +1743,14 @@ function render(){
    strings are HTML-escaped (paste-imported JSON must never inject markup). */
 let TAB=(location.hash||"").replace("#","").toUpperCase()||"BOARD";
 const DD_STATES=["green","amber","red","unknown"];
-/* Per-payload cap, raised 8KB->15KB (v3.63): a fully-populated payload — consensus out to
-   FY2035, a pt_model, five-pillar composite, gates, hinges, key_dates, capital and open_items
-   — lands at 8-12KB, so 8KB was rejecting COMPLETE theses (NVDA's fill came in at 8,175 and
-   had to be trimmed; NBIS 8,978 and BETA 12,329 already exceeded it and only survived because
-   this check runs on the editor path, not on load).
-   NOTE the binding constraint is now the BOOK, not the payload: MAX_BODY is 200KB and 36
-   entries at 15KB would be 540KB, so the book cap bites first if several names grow together.
-   Splitting deepDive into its own KV document (the pattern `pos` and the ledger already proved)
-   remains the real fix — see the v3.34 MAX_BODY note. */
-const DD_MAX=15*1024;
+/* Per-payload cap, raised 8KB->15KB (v3.63), then 15KB->45KB (v3.70, owner call: +30KB per
+   name for SOTP/stake/moat evidence — the 2026-08-04 composite widening added balance_sheet,
+   sotp and moat records per name and the book hit 2.6KB of total headroom the same day).
+   NOTE the binding constraint is the BOOK, not the payload: MAX_BODY (raised to 600KB in the
+   same release) still bites first if many names grow together — 38 entries at 45KB would be
+   1.7MB. Splitting deepDive into its own KV document (the pattern `pos` and the ledger
+   already proved) remains the real fix — see the v3.34 MAX_BODY note. */
+const DD_MAX=45*1024;
 function esc(s){return String(s).replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));}
 /* v3.13: contract accepts the deep-dive corpus files AS-IS — `as_of` aliases `updated`,
    key_dates accept `event`, hinges accept `{id, role}`, pt_ladder values may be objects. */

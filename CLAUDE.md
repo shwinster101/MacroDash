@@ -1780,6 +1780,17 @@ Jan-anchor shipped; see `snapshot.js` ~318–328), `spyMa100`, `spyMa200`, and a
   **985 smoke** (+7 from this feature) + **178 render** (+5 net from this feature, including
   the real swipe path, visible export action, panel height, capped funding queue, two-screen
   budget and zero mobile overflow).
+- **v3.70 — the caps raised for the composite's new evidence fields (owner call: "+30KB per
+  name").** The 2026-08-04 composite widening (weights → V30/G25/P20/M10/R15; P3 → Profitability
+  & Balance Sheet; per-name `balance_sheet`/`sotp`/`moat` evidence records; half-point pillar
+  granularity — all of it KV/framework content, none of it repo code) left the LIVE book 2.6KB
+  from the 200KB `MAX_BODY` wall the same day it shipped. `DD_MAX` 15KB → **45KB** and
+  `MAX_BODY` 200KB → **600KB** (server + the admin.html pre-flight mirror, in sync as always;
+  `positions.js` deliberately stays 64KB — its comment now names the raised book cap so the
+  documented contrast survives). Both remain arbitrary app-level runaway-write stops, not KV
+  limits, and the deepDive KV split remains the real fix, still deferred. Smoke pins moved with
+  the values (the 15KB pin, the binds-first arithmetic pin, the cap-mirror pin, the positions
+  contrast pin).
 - **v3.69 "NARRATIVE FIRST" — the public dashboard reorder, and the session the browser suites
   finally ran.** Owner verdict on live screenshots: the macro board was "very overwhelming and
   wordy" with the 5 Whys — the page's narrative — rendering LAST in Zone B, ~5 phone screens down.

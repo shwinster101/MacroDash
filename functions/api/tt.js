@@ -23,9 +23,12 @@ const SYM_RE = /^[A-Z.\-]{1,8}$/;
 // app-level safety cap, not a KV or Cloudflare platform limit (KV values go up to 25MB) —
 // the pos-store split bought back headroom but only ~400 bytes of it, and the very next
 // deep-dive addition (a real NVDA entry with its own consensus + pt_model) blew through it
-// again immediately. Raising the ceiling is the fast unblock; splitting deepDive out of the
-// book the way pos/ledger already were is the permanent fix, deliberately deferred.
-const MAX_BODY = 200 * 1024;
+// again immediately. v3.70 (owner call): 200KB -> 600KB alongside DD_MAX 15KB -> 45KB — the
+// 2026-08-04 composite widening (balance_sheet/sotp/moat records on every scored name) left
+// the live book 2.6KB from the wall the same day it shipped. Still a runaway-write stop, not
+// a target. Raising the ceiling is the fast unblock; splitting deepDive out of the book the
+// way pos/ledger already were is the permanent fix, deliberately deferred.
+const MAX_BODY = 600 * 1024;
 
 const json = (obj, status = 200) =>
   new Response(JSON.stringify(obj), {
