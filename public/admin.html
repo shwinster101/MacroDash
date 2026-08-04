@@ -9,7 +9,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
 <!-- AUDIT: kept in sync with package.json by test/smoke.mjs. admin.html is a Vite
      public/ passthrough, so it cannot receive __APP_VERSION__ — the guard is the fix. -->
-<title>TT TICKER TERMINAL v3.71.0</title>
+<title>TT TICKER TERMINAL v3.72.0</title>
 <style>
   :root{
     --bg:#05070a; --panel:#0a0f16; --panel2:#0d141d; --line:#16202c;
@@ -398,7 +398,7 @@
         onclick="toggleHeadInfo()">⋯ MENU</button>
     </div>
     <div id="headInfo" style="display:none">
-      <div class="brand">FINANCE&nbsp;BRO.AI // TT&nbsp;TICKER&nbsp;TERMINAL <small>v3.71.0 · single-pass deep-dive orchestrator</small></div>
+      <div class="brand">FINANCE&nbsp;BRO.AI // TT&nbsp;TICKER&nbsp;TERMINAL <small>v3.72.0 · single-pass deep-dive orchestrator</small></div>
       <div class="statusline">
         <span>BOOK: <b id="bookStamp">loading…</b></span>
         <span>AUTH: <b id="sessState">…</b></span>
@@ -3984,12 +3984,23 @@ function renderDecisionFundLabel(){
 }
 /* v3.68: the horizon governs every %/yr on BOTH deck panels, but its picker lived two taps
    deep in DESK — the owner had to be told where "auto" was. One shared chip states the year
-   in force and whether it is auto or pinned, AT the altitude the numbers are read; tapping it
-   deep-links to the full picker. ONE builder feeding both labels, so the two decks can never
-   disagree about the year their %/yr shares. */
+   in force and whether it is auto or pinned, AT the altitude the numbers are read.
+   v3.72: tapping it used to only DEEP-LINK to the full picker — the owner hit the exact
+   failure this was meant to prevent (a stale YE2030 pin silently dropping 35 of 41 names)
+   and still had to leave the widget to clear it. AUTO and NEAREST — the two safe, computed
+   modes, and the fix for a stale pin — are now ONE TAP right here, calling setHorizon()
+   directly so the deck panels re-render in place with no navigation. Pinning a SPECIFIC
+   year is deliberately still one tap deeper (opens the full picker): the dangerous action
+   should take a slightly more deliberate path than the two recommended ones. ONE builder
+   feeding all three call sites, so the decks can never disagree about the year their %/yr
+   shares. */
 function hzDeckChip(){
-  const hz=effHorizon(),isAuto=HORIZON===HZ_AUTO;
-  return ` · <button class="linklike" onclick="openDesk('dNext')" title="PT horizon — tap to change">${hz?"YE"+esc(hz):"nearest"} ${isAuto?"auto":"pinned"} ⌄</button>`;
+  const hz=effHorizon(),isAuto=HORIZON===HZ_AUTO,isNearest=!isAuto&&!HORIZON;
+  const quick=(v,lab)=>`<button class="linklike" onclick="setHorizon('${v}')" `+
+    `style="color:${(v===HZ_AUTO?isAuto:isNearest)?"var(--green)":"var(--dim)"};font-weight:${(v===HZ_AUTO?isAuto:isNearest)?"700":"400"}">${lab}</button>`;
+  return ` · <span style="font-size:9.5px;color:var(--dim)">HORIZON</span> ${quick(HZ_AUTO,"auto")} ${quick("","nearest")} `+
+    `<button class="linklike" onclick="openDesk('dNext')" title="pin a specific year — opens the full picker">`+
+    `${!isAuto&&!isNearest?"YE"+esc(hz)+" pinned":hz?"(YE"+esc(hz)+")":"—"} ⌄</button>`;
 }
 function renderSellBlock(){
   // Reset BEFORE compute (the AGREE_PICK precedent, :1489) — an early return, or sellRank()

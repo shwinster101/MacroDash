@@ -2045,6 +2045,22 @@ Jan-anchor shipped; see `snapshot.js` ~318–328), `spyMa100`, `spyMa200`, and a
   string-pinning it — the project's own recurring lesson (v3.40, v3.54: state computed and
   rendered but not read at the gate) is exactly the shape a string pin cannot catch.
   Tests: **1067 smoke** (+6) + 192 render + 88 public-render.
+- **v3.72.0 — the horizon picker stops being a deep-link to itself.** Owner hit the exact
+  failure v3.68's chip existed to prevent: the board was pinned to YE2030, silently dropping
+  35 of 41 names from the next-dollar ranking, and clearing it meant leaving the compact
+  BUY/FUND deck panel to hunt through DESK for the full picker — the chip only ever
+  deep-linked, it never let you act. `hzDeckChip()` (one builder, all 3 call sites, unchanged)
+  now puts **auto** and **nearest** — the two safe, computed modes, and the actual fix for a
+  stale pin — one tap away, calling `setHorizon()` directly so both deck panels re-render in
+  place with no navigation. Pinning a **specific** year is deliberately left one tap deeper
+  (still opens the full picker in DESK): the dangerous action keeps a slightly more
+  deliberate path than the two recommended ones. The horizon itself is still device-local
+  (`localStorage tt:hz`, v3.65) and still defaults to auto with nothing stored — this closes
+  the gap between "the default is already auto" and "clearing a stale pin takes one tap, not
+  a hunt."
+  Tests: **1068 smoke** (+1, net — a 1-assertion string pin split into 2 behavioral checks
+  covering the inline auto/nearest buttons and the still-deep-linked specific-year path) +
+  192 render (verified live in Chromium, no regression).
 - **Deferred:** stored fundamentals + Robinhood sync — now unblocked by the `x-tt-pin` header
   (v3.9): a chat-side daily review can PUT `status_flags`/`ref_px` into the deepDive payloads and
   stamp `lastRun`. When built, store the *triage* shape (`{at, px}` → "% moved since your last TT

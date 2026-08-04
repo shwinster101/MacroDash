@@ -1796,10 +1796,13 @@ ok("v3.69: markets/macro/ai are real sections (drivers/health pattern), and the 
   && dashSrc.includes('aria-label="Operator monitors — conviction and alerts"'));
 ok("v3.69: dead components deleted (defined-but-never-rendered LaunchCostCard/EvtolCertCard)",
   !dashSrc.includes("LaunchCostCard") && !dashSrc.includes("EvtolCertCard"));
-ok("hz-chip: ONE builder (hzDeckChip) states year + auto/pinned and deep-links to the picker",
+ok("hz-chip: ONE builder (hzDeckChip) states the year and offers auto/nearest INLINE, one tap, no navigation",
   /function hzDeckChip\(\)/.test(adminSrc)
-  && /openDesk\('dNext'\)" title="PT horizon/.test(adminSrc)
-  && /\$\{isAuto\?"auto":"pinned"\}/.test(adminSrc));
+  && /quick\(HZ_AUTO,"auto"\)/.test(adminSrc)
+  && /quick\("","nearest"\)/.test(adminSrc)
+  && /onclick="setHorizon\('\$\{v\}'\)"/.test(adminSrc));
+ok("hz-chip: pinning a SPECIFIC year still deep-links to the full picker — only auto/nearest are one-tap",
+  /openDesk\('dNext'\)" title="pin a specific year/.test(adminSrc));
 ok("hz-chip: BOTH deck labels carry it (BUY + both FUNDING PRIORITY branches) — 3 call sites, zero drift",
   (adminSrc.match(/\$\{hzDeckChip\(\)\}/g)||[]).length===3);
 /* v3.67: the deck height is a budget, not a floor. */
