@@ -25,6 +25,10 @@ import { validateBook, validateBoard, validatePos, conflictCheck, authMode, lock
 import { plausible, applyBands, quorum, QUORUM_FIELDS, QUORUM_MIN, marketSession, BANDS,
   pairRs, parseTreasuryCsv, rateOddsStillOpen, chooseTtl, publishIfNoWorse, TTL_MEDIUM, TTL_LOW } from "../functions/api/snapshot.js";
 import { etYmd } from "../src/sources.js";
+// UI-OVERHAUL Slice 1 (task 1.1): tokens are a real module now — smoke IMPORTS it (the v3.60
+// convention: the actual export is tested, immune to formatting drift) instead of regexing
+// hex values out of dashboard.jsx source text.
+import { DT, T as TOK_T } from "../src/design-tokens.js";
 
 let pass = 0, fail = 0;
 const ok = (name, cond) => { if (cond) { pass++; console.log("  PASS  " + name); } else { fail++; console.log("  FAIL  " + name); } };
@@ -2933,7 +2937,9 @@ const srgb = (c) => { const v = c / 255; return v <= 0.03928 ? v / 12.92 : Math.
 const lum = (hex) => { const n = parseInt(hex.slice(1), 16);
   return 0.2126 * srgb((n >> 16) & 255) + 0.7152 * srgb((n >> 8) & 255) + 0.0722 * srgb(n & 255); };
 const ratio = (a, b) => { const [x, y] = [lum(a), lum(b)].sort((p, q) => q - p); return (x + 0.05) / (y + 0.05); };
-const tok = (name) => (new RegExp('"' + name + '":\\s*"(#[0-9a-fA-F]{6})"').exec(dashSrc) || [])[1];
+// tok() reads the EXPORT, not source text — the tokens moved to src/design-tokens.js (task 1.1),
+// so a regex against dashSrc would silently return undefined and vacuously fail these ratios.
+const tok = (name) => DT[name];
 ok("a11y: sanity — the contrast helper reproduces a known pair (white on black = 21:1)",
   Math.round(ratio("#ffffff", "#000000")) === 21);
 ok("a11y: text-muted clears AA on both bg and surface (was #3d4760 = 2.15:1, below AA)",
@@ -3786,6 +3792,43 @@ ok("gate: a tripped flip still vetoes on its own message even at FULL actionabil
     macro_flip: { evaluable: true, tripped: true } })));
 ok("gate: an unreadable feed still vetoes before actionability is even inspected (unchanged)",
   /regime feed unavailable/.test(GF(stcOk, null)));
+
+// ═══════════ [45] UI-OVERHAUL Slice 1 (task 1.1) — design tokens extracted ═══════════
+// The DT/T objects moved verbatim from dashboard.jsx to src/design-tokens.js — the ONE home.
+// These pins hold the extraction contract: the module is pure (Node-importable, no React),
+// the dashboard actually imports it (no inline second copy left to drift), and every token
+// key the render code references — static bracket lookups, T.* dot lookups, AND the dynamic
+// colorKey/tintKey values regime.js emits — resolves in the export. Completeness is COMPUTED
+// against dashSrc, not pinned as a hardcoded key list (the v3.41 SOURCES-reconciliation rule:
+// a hardcoded list is true only by coincidence).
+console.log("\n[45] UI-OVERHAUL task 1.1 — design tokens are a module, complete and pure");
+const tokSrc = readFileSync(new URL("../src/design-tokens.js", import.meta.url), "utf8");
+ok("tokens: the module is pure — no React, no JSX, nothing but data",
+  !/from ['"]react['"]/.test(tokSrc) && !/</.test(tokSrc.replace(/\/\/[^\n]*|\/\*[\s\S]*?\*\//g, "").replace(/<=?/g, "")) &&
+  Object.keys(DT).length >= 35 && Object.keys(TOK_T).length >= 20);
+ok("tokens: dashboard.jsx IMPORTS the module and keeps no inline copy to drift",
+  dashSrc.includes('from "./design-tokens.js"') && !/\nconst DT = \{/.test(dashSrc) && !/\nconst T = \{/.test(dashSrc));
+ok("tokens: the empty-export guard exists and WARNS rather than claiming a fallback that isn't there",
+  /Object\.keys\(DT\)\.length\)/.test(dashSrc) && /console\.warn\("design-tokens/.test(dashSrc));
+ok("tokens: every DT[\"…\"] key referenced in dashboard.jsx resolves in the export (computed, not listed)",
+  (() => { const refs = [...dashSrc.matchAll(/DT\["([^"]+)"\]/g)].map((m) => m[1]);
+    return refs.length >= 15 && refs.every((k) => DT[k] !== undefined); })());
+ok("tokens: every static T.* lookup in dashboard.jsx resolves in the export",
+  (() => { const refs = [...new Set([...dashSrc.matchAll(/\bT\.([A-Za-z][A-Za-z0-9]*)/g)].map((m) => m[1]))];
+    return refs.length >= 10 && refs.every((k) => TOK_T[k] !== undefined); })());
+ok("tokens: the DYNAMIC keys — every tintKey/colorKey regime.js can emit resolves (T[regime.colorKey], DT[regime.tintKey])",
+  (() => { const tints = [...regimeSrc.matchAll(/tintKey:"([^"]+)"/g)].map((m) => m[1]);
+    const colors = [...regimeSrc.matchAll(/colorKey:"([^"]+)"/g)].map((m) => m[1]);
+    return tints.length >= 4 && colors.length >= 8 &&
+      tints.every((k) => DT[k] !== undefined) && colors.every((k) => TOK_T[k] !== undefined); })());
+ok("tokens: voteStyle's four states all resolve to real T colors (the two-altitude map cannot dangle)",
+  ["bull", "bear", "neutral", "excluded"].every((v) => TOK_T[voteStyle(v).colorKey] !== undefined));
+ok("tokens: the type scale is numeric and ordered (fs-xs < fs-s < fs-m < fs-l < fs-xl)",
+  (() => { const s = ["fs-xs", "fs-s", "fs-m", "fs-l", "fs-xl"].map((k) => DT[k]);
+    return s.every((n) => typeof n === "number") && s.every((n, i) => i === 0 || n > s[i - 1]); })());
+ok("tokens: T aliases stay derived from DT, never a second literal (spot-check the load-bearing ones)",
+  TOK_T.bg === DT["bg"] && TOK_T.textMuted === DT["text-muted"] && TOK_T.fontMono === DT["font-mono"] &&
+  TOK_T.fsM === DT["fs-m"] && TOK_T.green === DT["green"] && TOK_T.red === DT["red"]);
 
 console.log(`\n=== SMOKE TEST: ${pass} passed, ${fail} failed ===`);
 process.exit(fail === 0 ? 0 : 1);
