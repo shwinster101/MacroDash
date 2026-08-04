@@ -2024,6 +2024,27 @@ Jan-anchor shipped; see `snapshot.js` ~318–328), `spyMa100`, `spyMa200`, and a
   `npm test | grep FAIL && git commit` exits 0 when grep *finds* the failure, which is how a red
   commit once got through. README, AGENTS.md and the Commands block above all point at the runner
   rather than restating the four commands as a sequence someone has to chain correctly.
+  **`package.json`/`admin.html` were never actually bumped to v3.71** when this entry's heading
+  claimed the number at merge time — the same label-outliving-its-data defect this changelog
+  keeps fixing elsewhere, caught while closing the gap immediately below. Completed here rather
+  than skipped, so no version number in this file is ever a phantom.
+- **v3.71.0 follow-up (same day) — the deferred ENGINE0-CONT limit, closed.** ENGINE0-CONT's own
+  "honest limits" section named this exactly and filed it as the next ticket rather than bundling
+  it: `readout.json` publishes a two-axis contract (`verdict` = which way, `actionability` = may
+  this gate capital), and the terminal's pill renders both correctly — but `admin.html`'s
+  `gateFail` ladder (the veto chain guarding **ELIGIBLE NEXT DOLLAR**) read only
+  `governingRegime()`, which reads only `regime.verdict`. `INSUFFICIENT` collapsing into
+  `NEUTRAL` removed a veto `REG_RANK` never replaced: `NEUTRAL` **is** ranked, so a <3-usable or
+  degraded day (`NEUTRAL · LOW · HOLD · DATA DEGRADED`) could rank ADDS OK and light the green
+  line while the pill one row above it read HOLD. A new rung — `reg.actionability &&
+  reg.actionability!=="FULL"` — vetoes before the Macro Flip checks, naming the actionability
+  state and `status` in the WAIT reason; a `FULL`/absent actionability (legacy or cached tt-v1
+  bodies) is unchanged, and the existing veto order (stance → feed → flip) is untouched. Smoke
+  slices the live ternary text out of `admin.html` and RUNS it against fixture regime payloads
+  (FULL+clear, HOLD+DEGRADED, RESTRICTED, absent, tripped-at-FULL, unreadable-feed) rather than
+  string-pinning it — the project's own recurring lesson (v3.40, v3.54: state computed and
+  rendered but not read at the gate) is exactly the shape a string pin cannot catch.
+  Tests: **1067 smoke** (+6) + 192 render + 88 public-render.
 - **Deferred:** stored fundamentals + Robinhood sync — now unblocked by the `x-tt-pin` header
   (v3.9): a chat-side daily review can PUT `status_flags`/`ref_px` into the deepDive payloads and
   stamp `lastRun`. When built, store the *triage* shape (`{at, px}` → "% moved since your last TT

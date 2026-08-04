@@ -3746,5 +3746,43 @@ ok("regimeFactors derives its vote from the band table, keeping no second copy o
 ok("evidence.js consumes that vote rather than re-deriving it from the bands",
   evidenceSrc.includes("vote: f.vote") && !evidenceSrc.includes("band.vote(band.read(d), d)"));
 
+// ═══════════ [44] ACTIONABILITY GATE — the deferred ENGINE0-CONT limit, closed ═══════════
+// CLAUDE.md named this exactly: readout.json publishes a two-axis contract (verdict = which
+// way, actionability = may this gate capital), and the pill correctly renders both — but
+// gateFail (the ELIGIBLE NEXT DOLLAR veto ladder) read only regime.verdict. A <3-usable or
+// degraded day publishes NEUTRAL, which IS ranked in REG_RANK -> ADDS OK, so the green line
+// could light directly under a pill reading "HOLD"/"RESTRICTED". Sliced and RUN against the
+// live ternary text, not string-pinned — a defect exactly this shape (state computed and
+// rendered but not read at the gate) is the project's own recurring lesson (v3.40, v3.54).
+console.log("\n[44] ACTIONABILITY GATE — a degraded/HOLD regime must veto ELIGIBLE, not just discolor the pill");
+const GF = (() => {
+  const a = adminSrc.indexOf("const stc=stance();");
+  const b = adminSrc.indexOf('mf.tripped?"Macro Flip TRIPPED — de-risk, no adds":null;') +
+    'mf.tripped?"Macro Flip TRIPPED — de-risk, no adds":null;'.length;
+  if (a < 0 || b < 0) throw new Error("smoke: gateFail markers not found");
+  return new Function("stance", "REGIME", adminSrc.slice(a, b) + "\nreturn gateFail;");
+})();
+const stcOk = () => ({ k: "ok" });
+const fullClear = { regime: { verdict: "TAILWIND", actionability: "FULL" },
+  macro_flip: { evaluable: true, tripped: false } };
+ok("gate: FULL actionability + clear flip -> no veto (the ordinary case is untouched)",
+  GF(stcOk, fullClear) === null);
+const holdDegraded = { regime: { verdict: "NEUTRAL", actionability: "HOLD", status: "DATA DEGRADED" },
+  macro_flip: { evaluable: true, tripped: false } };
+ok("gate: NEUTRAL + actionability HOLD vetoes even though NEUTRAL alone would rank as ADDS OK",
+  /regime actionability HOLD/.test(GF(stcOk, holdDegraded)) &&
+  /DATA DEGRADED/.test(GF(stcOk, holdDegraded)));
+const restricted = { regime: { verdict: "TAILWIND", actionability: "RESTRICTED" },
+  macro_flip: { evaluable: true, tripped: false } };
+ok("gate: RESTRICTED vetoes too, and a TAILWIND verdict does not mask it",
+  /regime actionability RESTRICTED/.test(GF(stcOk, restricted)));
+ok("gate: absent actionability field (legacy/cached tt-v1 body) does not falsely veto",
+  GF(stcOk, { regime: { verdict: "TAILWIND" }, macro_flip: { evaluable: true, tripped: false } }) === null);
+ok("gate: a tripped flip still vetoes on its own message even at FULL actionability (unchanged)",
+  /Macro Flip TRIPPED/.test(GF(stcOk, { regime: { verdict: "TAILWIND", actionability: "FULL" },
+    macro_flip: { evaluable: true, tripped: true } })));
+ok("gate: an unreadable feed still vetoes before actionability is even inspected (unchanged)",
+  /regime feed unavailable/.test(GF(stcOk, null)));
+
 console.log(`\n=== SMOKE TEST: ${pass} passed, ${fail} failed ===`);
 process.exit(fail === 0 ? 0 : 1);

@@ -9,7 +9,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
 <!-- AUDIT: kept in sync with package.json by test/smoke.mjs. admin.html is a Vite
      public/ passthrough, so it cannot receive __APP_VERSION__ — the guard is the fix. -->
-<title>TT TICKER TERMINAL v3.70.0</title>
+<title>TT TICKER TERMINAL v3.71.0</title>
 <style>
   :root{
     --bg:#05070a; --panel:#0a0f16; --panel2:#0d141d; --line:#16202c;
@@ -398,7 +398,7 @@
         onclick="toggleHeadInfo()">⋯ MENU</button>
     </div>
     <div id="headInfo" style="display:none">
-      <div class="brand">FINANCE&nbsp;BRO.AI // TT&nbsp;TICKER&nbsp;TERMINAL <small>v3.70.0 · single-pass deep-dive orchestrator</small></div>
+      <div class="brand">FINANCE&nbsp;BRO.AI // TT&nbsp;TICKER&nbsp;TERMINAL <small>v3.71.0 · single-pass deep-dive orchestrator</small></div>
       <div class="statusline">
         <span>BOOK: <b id="bookStamp">loading…</b></span>
         <span>AUTH: <b id="sessState">…</b></span>
@@ -3548,10 +3548,21 @@ function renderUpsideRank(){
          vetoed (D3, v3.39 — enforcement is the owner's, awareness is not). */
       const stc=stance();
       const mf=REGIME&&REGIME.macro_flip;
+      const reg=REGIME&&REGIME.regime;
+      // ENGINE0-CONT closes the gap CLAUDE.md names as the deferred limit: the readout
+      // publishes a two-axis contract (verdict = direction, actionability = may this gate
+      // capital) but this ladder only ever read the verdict. A <3-usable/degraded day
+      // publishes NEUTRAL — which IS ranked in REG_RANK, so ADDS OK — while the pill above
+      // correctly renders "HOLD"/"RESTRICTED". Without this rung the green ELIGIBLE line
+      // could light directly under a pill saying don't act on this (the v3.40/v3.54 defect
+      // class one layer up: evidence-quality state computed and rendered, but not read at
+      // the one place it gates money). Only a non-FULL actionability vetoes here — the
+      // verdict/stance checks above and the Macro Flip checks below are unchanged.
       const gateFail=
         stc.k==="unknown"?"stance UNKNOWN — no measured or asserted regime; a live regime read is mandatory before an add"
         :stc.k==="stop"?`adds suspended — ${stc.txt}`
         :!REGIME?"regime feed unavailable — Macro Flip cannot be read, and an unreadable crash circuit vetoes rather than defaulting to clear"
+        :(reg&&reg.actionability&&reg.actionability!=="FULL")?`regime actionability ${reg.actionability}${reg.status?` (${reg.status})`:""} — the evidence axis says don't gate on this, regardless of the verdict`
         :!mf?"readout carries no Macro Flip block — the crash circuit cannot be read"
         :mf.evaluable===false?(mf.reason||"Macro Flip BLIND — missing inputs")
         :mf.tripped?"Macro Flip TRIPPED — de-risk, no adds":null;
