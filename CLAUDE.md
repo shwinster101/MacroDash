@@ -1785,15 +1785,16 @@ Jan-anchor shipped; see `snapshot.js` ~318–328), `spyMa100`, `spyMa200`, and a
   & Balance Sheet; per-name `balance_sheet`/`sotp`/`moat` evidence records; half-point pillar
   granularity — all of it KV/framework content, none of it repo code) left the LIVE book 2.6KB
   from the 200KB `MAX_BODY` wall the same day it shipped, and the SOTP sweep that followed had
-  to be trimmed mid-write to fit. `DD_MAX` 15KB → **45KB** and `MAX_BODY` 200KB → **500KB**
-  (both owner-set; server + the admin.html pre-flight mirror in sync as always, and
-  `positions.js` deliberately stays 64KB — its comment now names the raised book cap so the
-  documented contrast survives). Both remain arbitrary app-level runaway-write stops, not KV
-  limits (KV values go to 25MB). **The BOOK cap still binds first and by a wide margin** — 38
-  entries at 45KB would be ~1.7MB, ~3.4x the book cap — so the per-name raise is headroom for a
-  handful of rich names, NOT for all of them, and the deepDive KV split remains the real fix,
-  still deferred. Smoke pins moved with the values (the payload-cap pin, the binds-first
-  arithmetic pin, the cap-mirror pin, the positions-contrast pin).
+  to be trimmed mid-write to fit. `DD_MAX` 15KB → **45KB** and `MAX_BODY` 200KB → **300KB**
+  (both owner-set — the number moved 300→500→300 over the course of the same day before
+  settling; server + the admin.html pre-flight mirror in sync as always, and `positions.js`
+  deliberately stays 64KB — its comment now names the raised book cap so the documented
+  contrast survives). Both remain arbitrary app-level runaway-write stops, not KV limits (KV
+  values go to 25MB). **The BOOK cap still binds first and by a wide margin** — 38 entries at
+  45KB would be ~1.7MB, ~5.8x the book cap — so the per-name raise is headroom for a handful of
+  rich names, NOT for all of them, and the deepDive KV split remains the real fix, still
+  deferred. Smoke pins moved with the values (the payload-cap pin, the binds-first arithmetic
+  pin, the cap-mirror pin, the positions-contrast pin).
 - **v3.69 "NARRATIVE FIRST" — the public dashboard reorder, and the session the browser suites
   finally ran.** Owner verdict on live screenshots: the macro board was "very overwhelming and
   wordy" with the 5 Whys — the page's narrative — rendering LAST in Zone B, ~5 phone screens down.

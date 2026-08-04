@@ -577,8 +577,8 @@ ok("hinge: unrecognised states fall into unknown, never silently into green",
   (adminSrc.match(/\["green","amber","red"\]\.includes\(g\.state\)/g) || []).length >= 2);
 ok("dd: per-payload size cap present (45KB — 8KB v3.13, 15KB v3.63, 45KB v3.70 owner call)",
   adminSrc.includes("DD_MAX=45*1024"));
-ok("dd: the payload cap states that the BOOK cap binds first (38 x 45KB = 1.7MB vs the 500KB MAX_BODY)",
-  /binding constraint is the BOOK/.test(adminSrc) && /1\.7MB/.test(adminSrc) && /3\.4x the book cap/.test(adminSrc));
+ok("dd: the payload cap states that the BOOK cap binds first (38 x 45KB = 1.7MB vs the 300KB MAX_BODY)",
+  /binding constraint is the BOOK/.test(adminSrc) && /1\.7MB/.test(adminSrc) && /5\.8x the book cap/.test(adminSrc));
 ok("dd: past key-dates flag 'passed — re-confirm' (the FOMC lesson)", adminSrc.includes("passed — re-confirm"));
 ok("dd: rendered payload strings are HTML-escaped (esc used in the deep renderer)",
   adminSrc.includes("function esc(") && adminSrc.includes("${esc(dd.thesis_version)}"));
@@ -2976,9 +2976,9 @@ ok("e2e: no comment still claims the Kalshi odds are unwired",
 // (5) AMBIGUITY: three files, two body caps, no stated reason reads as an oversight.
 ok("e2e: the positions store's smaller cap is documented, not left to look accidental",
   (() => { const src = readFileSync(new URL("../functions/api/positions.js", import.meta.url), "utf8");
-    return /Deliberately 64KB, NOT the book's 500KB/.test(src); })());
+    return /Deliberately 64KB, NOT the book's 300KB/.test(src); })());
 ok("e2e: the book cap and its client pre-flight mirror still agree",
-  /const MAX_BODY = 500 \* 1024;/.test(ttSrc) && /const MAX_BODY=500\*1024;/.test(adminSrc));
+  /const MAX_BODY = 300 \* 1024;/.test(ttSrc) && /const MAX_BODY=300\*1024;/.test(adminSrc));
 
 // ---- 36. v3.58 hotfix (UX re-audit fix-now) — truthfulness, 320px, boundary ----
 console.log("\n[36] v3.58 hotfix — no mock narration, 320px contract, public gate");

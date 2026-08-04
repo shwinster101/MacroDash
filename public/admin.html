@@ -754,7 +754,7 @@ async function loadBook(){
    re-GET the server copy and overwrote BOOK — silently destroying the user's work.
    Never re-GET on a save failure: the local edit is the only copy of it. */
 let DIRTY=false;
-const MAX_BODY=500*1024; // mirror of the server cap in functions/api/tt.js (64KB->200KB v3.34, ->500KB v3.70)
+const MAX_BODY=300*1024; // mirror of the server cap in functions/api/tt.js (64KB->200KB v3.34, ->300KB v3.70)
 function bookDoc(){return{book:BOOK,cut:CUT,board:BOARD&&Object.keys(BOARD).length?BOARD:null};}
 async function persist(){
   const raw=JSON.stringify(bookDoc());
@@ -1746,9 +1746,9 @@ const DD_STATES=["green","amber","red","unknown"];
 /* Per-payload cap, raised 8KB->15KB (v3.63), then 15KB->45KB (v3.70, owner call: +30KB per
    name for SOTP/stake/moat evidence — the 2026-08-04 composite widening added balance_sheet,
    sotp and moat records per name and the book hit 2.6KB of total headroom the same day).
-   NOTE the binding constraint is the BOOK, not the payload: MAX_BODY (raised to 500KB in the
+   NOTE the binding constraint is the BOOK, not the payload: MAX_BODY (raised to 300KB in the
    same release) still bites FIRST and by a wide margin — 38 entries at 45KB would be 1.7MB,
-   ~3.4x the book cap. So 45KB is headroom for a handful of rich names, NOT for all of them;
+   ~5.8x the book cap. So 45KB is headroom for a handful of rich names, NOT for all of them;
    the book cap is what you will actually hit. Splitting deepDive into its own KV document
    (the pattern `pos` and the ledger already proved) remains the real fix — see the v3.34
    MAX_BODY note. */
