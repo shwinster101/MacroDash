@@ -172,42 +172,52 @@ function authorized(request, env) {
 // Record each warm/refresh outcome in KV so /api/snapshot?debug=1 can surface cron health
 // from a browser (_diag.cronLastWarm) — a silently edge-blocked warm previously looked
 // identical to no cron at all, and only `wrangler tail` at the right moment could tell.
-async function recordWarm(env, job, ok, status) {
+async function recordWarm(env, job, ok, status, extra = null) {
   try {
     await env.PULSE_CACHE.put("pulse:cron:lastwarm",
-      JSON.stringify({ at: new Date().toISOString(), job, ok, status }),
+      JSON.stringify({ at: new Date().toISOString(), job, ok, status, ...(extra || {}) }),
       { expirationTtl: 7 * 24 * 3600 });
   } catch { /* diagnostic only — never blocks the warm itself */ }
 }
 
-// Force-refresh the /api/snapshot per-day cache: delete the day's key, then trigger the
-// Pages Function (now a cache MISS) so it pulls fresh FRED and write-throughs to KV.
-// The short delay lets the KV delete propagate before the re-fetch — KV is eventually
-// consistent, so without it the Function may still read the pre-delete value.
+// ENGINE0-CONT: force-refresh the /api/snapshot per-day cache through the AUTHENTICATED
+// refresh endpoint. The old flow deleted the day's key, slept 3s, then re-fetched — KV is
+// eventually consistent, so that was destroy-then-hope: a partial rebuild could replace a
+// better 08:00 warm, and a failed rebuild left the day cold. The endpoint builds a
+// candidate WITHOUT deleting anything and publishes only if it is no worse (§7.2); this
+// Worker records whether the candidate improved and whether it was published.
+// Auth: `npx wrangler secret put REFRESH_TOKEN` here, and the same value as a Pages
+// secret — no token configured means the endpoint path is skipped (fail closed) and the
+// cron degrades to a NON-DESTRUCTIVE GET (which only fills a missing day, never deletes).
+const SNAPSHOT_REFRESH_URL = "https://macrodash.pages.dev/api/snapshot/refresh";
 async function refreshSnapshot(env) {
   try {
-    // Reachability pre-check BEFORE deleting: if the edge is blocking this Worker (e.g. a
-    // Cloudflare Access app scoped beyond /admin* + /api/tt*, or a WAF/bot rule), a
-    // delete-then-fail would leave the day COLD for the first human visitor. Never destroy
-    // a cache you haven't proven you can rebuild. The pre-check GET is cheap — it hits KV.
-    const pre = await fetch(SNAPSHOT_URL, { headers: { "user-agent": "macrodash-snapshot-refresher" } });
-    if (!pre.ok) {
-      console.error(`snapshot refresh: pre-check got HTTP ${pre.status} from ${SNAPSHOT_URL} — the cron is blocked at the edge (check Cloudflare Access app scope / WAF rules); NOT deleting the day's cache`);
-      await recordWarm(env, "refresh-10amET", false, pre.status);
-      return;
+    if (env.REFRESH_TOKEN) {
+      const res = await fetch(SNAPSHOT_REFRESH_URL, {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+          "user-agent": "macrodash-snapshot-refresher",
+          "x-refresh-token": env.REFRESH_TOKEN,
+        },
+        body: JSON.stringify({ scope: "all", reason: "cron" }),
+      });
+      if (res.ok) {
+        const body = await res.json().catch(() => null);
+        await recordWarm(env, "refresh-10amET", true, res.status,
+          body ? { published: body.published, improved: body.improved, message: body.message } : null);
+        return;
+      }
+      console.error(`snapshot refresh: POST ${SNAPSHOT_REFRESH_URL} got HTTP ${res.status} — check REFRESH_TOKEN on both deploys / Access scope; falling back to non-destructive warm`);
+    } else {
+      console.error("snapshot refresh: no REFRESH_TOKEN secret — cannot use the authenticated refresh endpoint; falling back to non-destructive warm");
     }
-    const etDate = new Date().toLocaleDateString("en-CA", { timeZone: "America/New_York" }); // YYYY-MM-DD
-    // SYNC HAZARD: this key version MUST match the cacheKey in functions/api/snapshot.js (and
-    // functions/readout.json.js). Separate deploys, no shared module — this literal drifted once
-    // (deleted v5 while snapshot wrote v15 → the 10am force-refresh was inert). Fixed v3.3.0.
-    // Grep "pulse:snapshot:v" across worker/ + functions/ on every bump.
-    await env.PULSE_CACHE.delete(`pulse:snapshot:v15:${etDate}`);
-    await new Promise((r) => setTimeout(r, 3000)); // let the delete propagate before re-fetch
+    // Fallback: a plain GET. On a cache MISS it builds and (no-worse) publishes; on a hit
+    // it is a no-op. It can never delete or downgrade the stored day.
     const res = await fetch(SNAPSHOT_URL, { headers: { "user-agent": "macrodash-snapshot-refresher" } });
-    if (!res.ok) console.error(`snapshot refresh: rebuild fetch got HTTP ${res.status} — next visitor pays the cold fetch`);
-    await recordWarm(env, "refresh-10amET", res.ok, res.status);
+    if (!res.ok) console.error(`snapshot refresh fallback: GET got HTTP ${res.status} — the cron is blocked at the edge (check Cloudflare Access app scope / WAF rules)`);
+    await recordWarm(env, "refresh-10amET", res.ok, res.status, { fallback: "get-warm" });
   } catch (e) {
-    /* a degraded fetch won't re-cache (snapshot.js healthy-gate); next visitor refetches */
     console.error("snapshot refresh failed:", (e && e.message) || e);
     await recordWarm(env, "refresh-10amET", false, 0);
   }
@@ -256,15 +266,29 @@ export default {
     );
   },
 
-  // Optional manual warm: POST /refresh with x-refresh-secret. Lets the operator
-  // populate the cache once before flipping VITE_DATA_MODE=live. Not required.
+  // Optional manual warm: POST /refresh with x-refresh-secret. ENGINE0-CONT: this used to
+  // write ONLY the legacy pulse:macro:latest key while claiming to be "the" refresh — it
+  // now ALSO routes through the active snapshot refresh endpoint (best-effort), so the
+  // key a human actually reads is the one that refreshes.
   async fetch(request, env) {
     const url = new URL(request.url);
     if (url.pathname === "/refresh" && request.method === "POST") {
       if (!authorized(request, env)) return new Response("forbidden", { status: 403 });
       const payload = await buildMacroPayload(env, { cron: "manual" });
       await env.PULSE_CACHE.put(KV_KEY, JSON.stringify(payload), { expirationTtl: 93600 });
-      return new Response(JSON.stringify({ ok: true, wrote: Object.keys(payload.metrics).length }), {
+      let active = null;
+      if (env.REFRESH_TOKEN) {
+        try {
+          const r = await fetch(SNAPSHOT_REFRESH_URL, {
+            method: "POST",
+            headers: { "content-type": "application/json", "x-refresh-token": env.REFRESH_TOKEN, "user-agent": "macrodash-cron-manual" },
+            body: JSON.stringify({ scope: "all", reason: "cron" }),
+          });
+          active = r.ok ? await r.json().catch(() => ({ ok: true })) : { ok: false, status: r.status };
+        } catch (e) { active = { ok: false, error: String((e && e.message) || e) }; }
+      }
+      return new Response(JSON.stringify({ ok: true, wrote: Object.keys(payload.metrics).length,
+        legacy_key: KV_KEY, active_refresh: active ?? "skipped (no REFRESH_TOKEN)" }), {
         headers: { "content-type": "application/json" },
       });
     }

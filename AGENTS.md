@@ -26,6 +26,7 @@ npm test              # no-network smoke suite (pure functions + source guards; 
 npm run test:ui       # browser suite for /admin.html   (skips cleanly without Chromium)
 npm run test:public   # build + browser STATE suite for the public dashboard (likewise)
 npm run audit:prod    # production-scope dependency audit
+npm run gates         # ALL FOUR in order, failing on the first red — never hand-chain them
 
 # Cron Worker (separate deploy):
 cd worker && npx wrangler deploy

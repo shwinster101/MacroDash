@@ -18,9 +18,13 @@ import { LASTVALID_KEY, summarizeEvidence, compareEvidence } from "../src/whatCh
 import {
   bandSpyVs200d, bandVix, bandFearGreed, bandRs, bandTenYear, bandFedOdds,
   aggregateVerdict, computeMacroFlip, buildTtReadout, formatTtPaste, DERIVED_OF,
+  conservativeVote, CARRY_SESSIONS, readoutQuality, compareQuality,
 } from "../src/ttReadout.js";
+import { sessionsBehind } from "../src/sources.js";
 import { validateBook, validateBoard, validatePos, conflictCheck, authMode, lockoutState, recordFailure, parseCookie, hashPin, LOCK_TIERS, diffForLedger } from "../functions/api/tt.js";
-import { plausible, applyBands, quorum, QUORUM_FIELDS, QUORUM_MIN, marketSession, BANDS } from "../functions/api/snapshot.js";
+import { plausible, applyBands, quorum, QUORUM_FIELDS, QUORUM_MIN, marketSession, BANDS,
+  pairRs, parseTreasuryCsv, rateOddsStillOpen, chooseTtl, publishIfNoWorse, TTL_MEDIUM, TTL_LOW } from "../functions/api/snapshot.js";
+import { etYmd } from "../src/sources.js";
 
 let pass = 0, fail = 0;
 const ok = (name, cond) => { if (cond) { pass++; console.log("  PASS  " + name); } else { fail++; console.log("  FAIL  " + name); } };
@@ -375,9 +379,12 @@ ok("safety: with BOTH gauges blind, the downgrade names both", (() => {
   const r = buildTtReadout(mkLive({ vix: undefined, fearGreed: undefined, fearGreedAsOf: undefined, fearGreedLabel: undefined }), { now: TT_NOW });
   return r.regime.downgraded && /VIX/.test(r.regime.downgraded) && /Fear & Greed/.test(r.regime.downgraded);
 })());
-ok("readout: INSUFFICIENT with <3 available checks", (() => { const r = buildTtReadout({ vix: 16.1, vixAsOf: D, fearGreed: 62, fearGreedAsOf: D }, { now: TT_NOW }); return r.regime.available === 2 && r.regime.verdict === "INSUFFICIENT"; })());
+// ENGINE0-CONT: <3 usable no longer PUBLISHES "INSUFFICIENT" — the operational posture is the
+// deterministic wait state (NEUTRAL · LOW · HOLD · DATA DEGRADED); the raw aggregate survives
+// in raw_verdict so the record of what the counts said is never silent.
+ok("readout: <3 available checks -> NEUTRAL / LOW / HOLD / DATA DEGRADED (raw INSUFFICIENT kept)", (() => { const r = buildTtReadout({ vix: 16.1, vixAsOf: D, fearGreed: 62, fearGreedAsOf: D }, { now: TT_NOW }); return r.regime.available === 2 && r.regime.verdict === "NEUTRAL" && r.regime.raw_verdict === "INSUFFICIENT" && r.regime.confidence === "LOW" && r.regime.actionability === "HOLD" && r.regime.status === "DATA DEGRADED"; })());
 ok("readout: stale input gated out (fresh value but 10-day-old AsOf -> unavailable)", (() => { const r = buildTtReadout(mkLive({ vixAsOf: "2026-07-01" }), { now: TT_NOW }); return r.vix.value === null && r.regime.checks[1].state === "unavailable"; })());
-ok("readout: empty live -> all checks unavailable, verdict INSUFFICIENT", (() => { const r = buildTtReadout({}, { now: TT_NOW }); return r.regime.verdict === "INSUFFICIENT" && r.regime.checks.every((c) => c.state === "unavailable"); })());
+ok("readout: empty live -> all checks unavailable, wait posture (never the word INSUFFICIENT as verdict)", (() => { const r = buildTtReadout({}, { now: TT_NOW }); return r.regime.verdict === "NEUTRAL" && r.regime.actionability === "HOLD" && r.regime.status === "DATA DEGRADED" && r.regime.checks.every((c) => c.state === "unavailable"); })());
 
 // macro_flip truth table (null-safe)
 ok("macro_flip: vix 22 not armed, 22.1 armed", computeMacroFlip({ vix: 22 }).armed === false && computeMacroFlip({ vix: 22.1 }).armed === true);
@@ -418,6 +425,272 @@ ok("paste: a withheld TAILWIND prints an explicit warning line naming the blind 
   return /⚠.*TAILWIND withheld/.test(p) && /VIX/.test(p);
 })());
 ok("paste: a non-withheld verdict carries no warning line", !/⚠/.test(paste));
+
+// ---- ENGINE0-CONT: evidence tiers, historical carry, two-axis contract -------------------
+console.log("\n[5b] ENGINE0-CONT — evidence continuity (tiers · carry · confidence · actionability)");
+
+// sessionsBehind: the unit every carry window is expressed in. TT_NOW = Wed 2026-07-15.
+ok("sessions: same-day obs = 0 behind", sessionsBehind("2026-07-15", TT_NOW) === 0);
+ok("sessions: prior trading day = 0 behind (today's close may not be posted)", sessionsBehind("2026-07-14", TT_NOW) === 0);
+ok("sessions: Mon obs on Wed = 1 · Fri obs on Wed = 2 (weekend skipped)",
+  sessionsBehind("2026-07-13", TT_NOW) === 1 && sessionsBehind("2026-07-10", TT_NOW) === 2);
+ok("sessions: unparseable/absent date = null, never 0", sessionsBehind(null, TT_NOW) === null && sessionsBehind("garbage", TT_NOW) === null);
+
+// conservativeVote: historical bullish -> neutral; bearish and neutral survive.
+ok("transform: historical bullish -> neutral · bearish stays · neutral stays",
+  conservativeVote("bullish") === "neutral" && conservativeVote("bearish") === "bearish" && conservativeVote("neutral") === "neutral");
+
+// D-boundary (matrix D): VIX's historical vote stays conservative at its exact edge.
+ok("carry: VIX exactly AT the 2-session edge -> HISTORICAL, votes conservatively", (() => {
+  const r = buildTtReadout(mkLive({ vixAsOf: "2026-07-10" }), { now: TT_NOW }); // 2 sessions behind
+  const c = r.regime.checks[1];
+  return c.tier === "HISTORICAL" && c.original_vote === "bullish" && c.effective_vote === "neutral" && c.state === "neutral";
+})());
+
+// Every named carry policy is pinned at the exact allowed session and one session beyond.
+// Dates are deliberately literal test expectations, not calculated from CARRY_SESSIONS: a
+// production-window edit must move one of these assertions red until the policy is reviewed.
+const carryBoundaryCases = [
+  { key: "spy_vs_200d", max: 3, check: 0, edge: "2026-07-09", beyond: "2026-07-08", fields: (d) => ({ spyPriceAsOf: d }) },
+  { key: "vix", max: 2, check: 1, edge: "2026-07-10", beyond: "2026-07-09", fields: (d) => ({ vixAsOf: d }) },
+  { key: "fear_greed", max: 2, check: 2, edge: "2026-07-10", beyond: "2026-07-09", fields: (d) => ({ fearGreedAsOf: d }) },
+  { key: "qqq_spy_rs", max: 3, check: 3, edge: "2026-07-09", beyond: "2026-07-08", fields: (d) => ({ ndxSpxRs: 0.5, ndxSpxRsAsOf: d, ndx1dPct: 0.9, spx1dPct: 0.4, qqqPriceAsOf: d, spyPriceAsOf: d }) },
+  { key: "us10y_trend", max: 5, check: 4, edge: "2026-07-07", beyond: "2026-07-06", fields: (d) => ({ tenYearAsOf: d }) },
+  { key: "fed_next_meeting", max: 5, check: 5, edge: "2026-07-07", beyond: "2026-07-06", fields: (d) => ({ rateOddsHoldAsOf: d, nextFomcDate: "2099-09-17" }) },
+];
+for (const c of carryBoundaryCases) {
+  ok(`carry boundary: ${c.key} is HISTORICAL at ${c.max} sessions and MISSING at ${c.max + 1}`, (() => {
+    const edge = buildTtReadout(mkLive(c.fields(c.edge)), { now: TT_NOW }).regime.checks[c.check];
+    const beyond = buildTtReadout(mkLive(c.fields(c.beyond)), { now: TT_NOW }).regime.checks[c.check];
+    return edge.tier === "HISTORICAL" && beyond.tier === "MISSING" && beyond.state === "unavailable";
+  })());
+}
+
+// Matrix B: historical BULLISH evidence can never produce TAILWIND or FULL.
+ok("matrix B: all-historical bullish inputs -> never TAILWIND, never FULL", (() => {
+  const H = "2026-07-13"; // 1 session behind => HISTORICAL for every daily check
+  const r = buildTtReadout(mkLive({ spyPriceAsOf: H, vixAsOf: H, fearGreedAsOf: H, qqqPriceAsOf: H, tenYearAsOf: H, rateOddsHoldAsOf: H }), { now: TT_NOW });
+  return r.regime.verdict !== "TAILWIND" && r.regime.actionability !== "FULL" && r.regime.historical === 6;
+})());
+
+// Matrix C: historical BEARISH survives (flagged), flip not CLEAR, actionability HOLD.
+ok("matrix C: historical VIX 26 keeps its bearish caution, flip ARMED_FROM_LAST_CLOSE, HOLD", (() => {
+  const r = buildTtReadout(mkLive({ vix: 26, vixAsOf: "2026-07-13" }), { now: TT_NOW });
+  const c = r.regime.checks[1];
+  return c.effective_vote === "bearish" && /carried/.test(c.reason) &&
+    r.macro_flip.state === "ARMED_FROM_LAST_CLOSE" && r.macro_flip.evaluable === false &&
+    r.macro_flip.armed === null && r.regime.actionability === "HOLD";
+})());
+ok("matrix C: historical VIX <=22 reads UNCONFIRMED_FROM_LAST_CLOSE, never 'not armed'", (() => {
+  const r = buildTtReadout(mkLive({ vix: 16.1, vixAsOf: "2026-07-13" }), { now: TT_NOW });
+  return r.macro_flip.state === "UNCONFIRMED_FROM_LAST_CLOSE" && r.macro_flip.armed === null;
+})());
+ok("flip: a fully-current circuit carries state CLEAR/ARMED/TRIPPED + FULL/RESTRICTED/HOLD", (() => {
+  const clear = buildTtReadout(mkLive(), { now: TT_NOW }).macro_flip;
+  const tripped = buildTtReadout(mkLive({ vix: 26, spyPrice: 650 }), { now: TT_NOW }).macro_flip;
+  return clear.state === "CLEAR" && clear.actionability === "FULL" && tripped.state === "TRIPPED" && tripped.actionability === "HOLD";
+})());
+
+// Matrix A: the exact 2026-08-03 production shape — the ticket's reproduction case.
+ok("matrix A: production shape (SPY+F&G current · VIX missing · RS missing · 10Y historical · Kalshi missing) -> NEUTRAL/LOW/HOLD/DATA DEGRADED", (() => {
+  const r = buildTtReadout({
+    spyPrice: 748.1, spyPriceAsOf: D, spyMa200: 700.0,
+    fearGreed: 62, fearGreedAsOf: D, fearGreedLabel: "Greed",
+    tenYear: 4.46, tenYearAsOf: "2026-07-13", tenYearM1: 0.03,
+  }, { now: TT_NOW });
+  return r.regime.verdict === "NEUTRAL" && r.regime.confidence === "LOW" &&
+    r.regime.actionability === "HOLD" && r.regime.status === "DATA DEGRADED" &&
+    r.regime.current === 2 && r.regime.historical === 1 && r.regime.missing === 3 &&
+    /current VIX unavailable/.test(r.regime.reason);
+})());
+
+// PANIC needs CURRENT gauges — a carried print can neither fire nor clear it.
+ok("panic: historical vix 26 + current F&G 19 does NOT fire PANIC", (() => {
+  const r = buildTtReadout(mkLive({ vix: 26, vixAsOf: "2026-07-13", fearGreed: 19 }), { now: TT_NOW });
+  return r.regime.panic_inputs.panic === false && r.regime.verdict !== "PANIC";
+})());
+
+// Two-axis contract on a fully-healthy day.
+ok("axis: all-current healthy day -> HIGH confidence, FULL actionability, status OK", (() => {
+  const r = rBull.regime;
+  return r.confidence === "HIGH" && r.actionability === "FULL" && r.status === "OK" && r.current === 6 && r.historical === 0;
+})());
+ok("axis: Kalshi missing alone -> still HIGH (5 current, both gauges current), and the miss is NAMED in reason", (() => {
+  const r = buildTtReadout(mkLive({ rateOddsHold: undefined, rateOddsCut: undefined, rateOddsHike: undefined }), { now: TT_NOW }).regime;
+  return r.confidence === "HIGH" && /missing: fed_next_meeting/.test(r.reason);
+})());
+
+// Matrix G (pure half): odds for a CLOSED event are discarded, never carried.
+ok("matrix G: Kalshi odds whose FOMC event date has passed are discarded with the reason named", (() => {
+  const r = buildTtReadout(mkLive({ nextFomcDate: "2026-07-01" }), { now: TT_NOW });
+  const c = r.regime.checks[5];
+  return c.state === "unavailable" && /closed FOMC event/.test(c.reason) && r.fed_odds === null;
+})());
+
+// RS pairing: the NASDAQ100/SP500 index pair is preferred and NAMED; the ETF pair is the
+// labeled fallback (the dashboard's paste projection only carries SOURCES fields).
+ok("rs: ndxSpxRs preferred over the ETF pair and attributed NASDAQ100/SP500", (() => {
+  const r = buildTtReadout(mkLive({ ndxSpxRs: 0.5, ndxSpxRsAsOf: D, ndx1dPct: 0.91, spx1dPct: 0.41 }), { now: TT_NOW });
+  return r.qqq_spy_rs.pair === "NASDAQ100/SP500" && r.qqq_spy_rs.state === "leading";
+})());
+ok("rs: without the index pair the ETF fallback still works and says it is the proxy", (() => {
+  const r = buildTtReadout(mkLive(), { now: TT_NOW });
+  return r.qqq_spy_rs.pair === "QQQ/SPY (ETF proxy)";
+})());
+
+// Candidate quality (§7.2): flip-evaluable dominates; asOf epoch is only the tiebreak.
+ok("quality: a flip-evaluable candidate beats a blind one regardless of recency", (() => {
+  const good = readoutQuality(buildTtReadout(mkLive(), { now: TT_NOW }), 1000);
+  const blind = readoutQuality(buildTtReadout(mkLive({ vix: undefined }), { now: TT_NOW }), 2000);
+  return compareQuality(good, blind) > 0;
+})());
+ok("quality: equal evidence -> the newer candidate wins (asOf tiebreak)", (() => {
+  const a = readoutQuality(buildTtReadout(mkLive(), { now: TT_NOW }), 2000);
+  const b = readoutQuality(buildTtReadout(mkLive(), { now: TT_NOW }), 1000);
+  return compareQuality(a, b) > 0 && compareQuality(b, a) < 0;
+})());
+ok("quality: FEWER historical checks wins when every earlier axis ties", (() => {
+  const qualityWith = (historical) => readoutQuality({
+    macro_flip: { evaluable: false },
+    regime: { current_panic_gauges: 1, current: 3, usable: 5, historical, missing: 1 },
+  }, 0);
+  const fewer = qualityWith(1);
+  const more = qualityWith(2);
+  return compareQuality(fewer, more) > 0 && compareQuality(more, fewer) < 0;
+})());
+
+// The paste block carries the two-axis contract (the ONE human-facing surface).
+ok("paste: EVIDENCE line prints confidence + actionability + counts", (() => {
+  const p = formatTtPaste(buildTtReadout({ spyPrice: 748.1, spyPriceAsOf: D, spyMa200: 700 }, { now: TT_NOW }), {});
+  return /EVIDENCE\s+LOW/.test(p) && /actionability HOLD/.test(p) && /DATA DEGRADED/.test(p);
+})());
+ok("paste: a carried-VIX flip prints its FROM_LAST_CLOSE state, never 'not armed'", (() => {
+  const p = formatTtPaste(buildTtReadout(mkLive({ vix: 26, vixAsOf: "2026-07-13" }), { now: TT_NOW }), {});
+  const l = p.split("\n").find((x) => x.startsWith("MACRO FLIP"));
+  return /ARMED_FROM_LAST_CLOSE/.test(l) && !/not armed/.test(l);
+})());
+ok("paste/readout: the literal verdict INSUFFICIENT is never published", (() => {
+  const r = buildTtReadout({}, { now: TT_NOW });
+  return r.regime.verdict !== "INSUFFICIENT" && !formatTtPaste(r, {}).split("\n").some((l) => l.startsWith("REGIME") && /INSUFFICIENT/.test(l));
+})());
+
+// ---- ENGINE0-CONT: snapshot continuity helpers (functions/api/snapshot.js, pure) ---------
+console.log("\n[5c] ENGINE0-CONT — snapshot continuity (pairing · treasury · rollover · publish gate)");
+
+// Matrix E: NASDAQ100/SP500 same-date pairing — no matched pair, no RS.
+const NDXFIX = { latest: 23000, prev: 22770, latestDate: "2026-07-15", prevDate: "2026-07-14" };
+const SPXFIX = { latest: 7481, prev: 7450, latestDate: "2026-07-15", prevDate: "2026-07-14" };
+ok("pairRs: matched dates -> rs = ndx1d - spx1d, dated from the pair", (() => {
+  const r = pairRs(NDXFIX, SPXFIX);
+  return r && r.rs === parseFloat((r.ndx1d - r.spx1d).toFixed(2)) && r.asOf === "2026-07-15";
+})());
+ok("matrix E: latest-date mismatch -> null (no RS from a cross-day pair)",
+  pairRs({ ...NDXFIX, latestDate: "2026-07-14", prevDate: "2026-07-13" }, SPXFIX) === null);
+ok("matrix E: PRIOR-date mismatch also refuses (both legs of the delta must pair)",
+  pairRs({ ...NDXFIX, prevDate: "2026-07-13" }, SPXFIX) === null);
+ok("pairRs: absent/non-finite leg -> null, never a fabricated 0",
+  pairRs(null, SPXFIX) === null && pairRs({ ...NDXFIX, latest: NaN }, SPXFIX) === null);
+
+// Matrix F: Treasury daily par-yield CSV parse (the official upstream DGS10 republishes).
+const TCSV = 'Date,"1 Mo","10 Yr","30 Yr"\n07/15/2026,5.1,4.46,4.9\n07/14/2026,5.1,4.43,4.9\n07/11/2026,5.1,4.40,4.9';
+ok("matrix F: Treasury CSV -> tenYear + D1 + real ISO AsOf + UST attribution", (() => {
+  const t = parseTreasuryCsv(TCSV);
+  return t && t.tenYear === 4.46 && t.tenYearAsOf === "2026-07-15" &&
+    t.tenYearD1 === 0.03 && /UST/.test(t.tenYearSource);
+})());
+ok("matrix F: a CSV without a 10 Yr column -> null (parse failure, never a guessed column)",
+  parseTreasuryCsv('Date,"1 Mo"\n07/15/2026,5.1') === null);
+
+// Matrix G (transport half): stored Kalshi odds survive only while their event is open.
+ok("matrix G: last-good odds for a FUTURE event are servable; a PAST event's are discarded", (() => {
+  const today = etYmd(new Date());
+  return rateOddsStillOpen({ nextFomcDate: "2099-01-01" }) === true &&
+    rateOddsStillOpen({ nextFomcDate: "2020-01-01" }) === false &&
+    rateOddsStillOpen({ nextFomcDate: today }) === true &&   // meeting day: still open
+    rateOddsStillOpen({}) === false;                          // undated: fail closed
+})());
+
+// §7.3 TTL policy: named, confidence-driven (deliberately NOT actionability-driven — a
+// tripped flip on fully-current data must not hammer upstreams all day).
+ok("ttl: HIGH -> daily lock · MEDIUM -> 15m · LOW -> 5m", (() => {
+  const mk = (c) => ({ regime: { confidence: c } });
+  return chooseTtl(mk("HIGH")) === 48 * 3600 && chooseTtl(mk("MEDIUM")) === TTL_MEDIUM &&
+    chooseTtl(mk("LOW")) === TTL_LOW && TTL_MEDIUM === 15 * 60 && TTL_LOW === 5 * 60;
+})());
+
+// Matrix H/I: the publish gate — build-before-publish, never replace a better snapshot.
+const mkKV = (init = {}) => {
+  const store = new Map(Object.entries(init).map(([k, v]) => [k, JSON.stringify(v)]));
+  return {
+    async get(k, type) { const v = store.get(k); return v == null ? null : (type === "json" ? JSON.parse(v) : v); },
+    async put(k, v) { store.set(k, String(v)); },
+    _store: store,
+  };
+};
+const TODAY_ET = etYmd(new Date());
+const liveToday = (o = {}) => ({
+  spyPrice: 748.1, spyPriceAsOf: TODAY_ET, spyMa200: 700.0, spyChangePct: 0.41,
+  vix: 16.1, vixAsOf: TODAY_ET, fearGreed: 62, fearGreedAsOf: TODAY_ET, fearGreedLabel: "Greed",
+  qqqChangePct: 0.9, qqqPriceAsOf: TODAY_ET, tenYear: 4.46, tenYearAsOf: TODAY_ET, tenYearM1: 0.03,
+  rateOddsHold: 98, rateOddsCut: 1, rateOddsHike: 1, rateOddsHoldAsOf: TODAY_ET, nextFomcDate: "2099-09-17", fomcDays: 61,
+  ...o,
+});
+ok("matrix H: a WORSE candidate is refused — the good stored snapshot survives", await (async () => {
+  const goodSnap = { live: liveToday(), asOf: "2026-08-03T12:00:00Z" };
+  const kv = mkKV({ "k": goodSnap });
+  const gutted = { live: { spyPrice: 748.1, spyPriceAsOf: TODAY_ET, spyMa200: 700 }, asOf: "2026-08-03T13:00:00Z", _diag: {} };
+  const res = await publishIfNoWorse({ PULSE_CACHE: kv }, "k", gutted, buildTtReadout(gutted.live, {}));
+  const stored = JSON.parse(kv._store.get("k"));
+  return res.published === false && /worse/.test(res.reason) && stored.live.vix === 16.1;
+})());
+ok("matrix I: a BETTER candidate replaces a gutted stored snapshot", await (async () => {
+  const gutted = { live: { spyPrice: 748.1, spyPriceAsOf: TODAY_ET, spyMa200: 700 }, asOf: "2026-08-03T12:00:00Z" };
+  const kv = mkKV({ "k": gutted });
+  const full = { live: liveToday(), asOf: "2026-08-03T13:00:00Z", _diag: {} };
+  const res = await publishIfNoWorse({ PULSE_CACHE: kv }, "k", full, buildTtReadout(full.live, {}));
+  const stored = JSON.parse(kv._store.get("k"));
+  return res.published === true && res.improved === true && stored.live.vix === 16.1;
+})());
+// Matrix K: refresh endpoint security — the guard paths are pure (they return before any
+// upstream fetch), so they run here; the authed happy path is browser-tested with a stub.
+const { onRequestGet: refreshGet, onRequestPost: refreshPost } = await import("../functions/api/snapshot/refresh.js");
+const mkRefreshReq = (method, headers = {}, body = null) => ({
+  method, url: "https://macrodash.pages.dev/api/snapshot/refresh",
+  headers: { get: (k) => headers[k.toLowerCase()] ?? null },
+  json: async () => body ?? {},
+});
+ok("matrix K: GET /api/snapshot/refresh -> 405 naming POST (a mutation never rides a GET)", await (async () => {
+  const r = await refreshGet();
+  return r.status === 405 && r.headers.get("Allow") === "POST";
+})());
+ok("matrix K: cross-origin POST -> 403 before any work", await (async () => {
+  const r = await refreshPost({ request: mkRefreshReq("POST", { origin: "https://evil.example" }), env: {} });
+  return r.status === 403;
+})());
+ok("matrix K: anonymous POST fails CLOSED (401/403/503 — never a build, never a 200)", await (async () => {
+  const r = await refreshPost({ request: mkRefreshReq("POST", {}), env: {} });
+  return r.status >= 401 && r.status <= 503;
+})());
+ok("matrix K: a WRONG x-refresh-token does not open the server path", await (async () => {
+  const r = await refreshPost({ request: mkRefreshReq("POST", { "x-refresh-token": "wrong" }), env: { REFRESH_TOKEN: "right" } });
+  return r.status >= 401 && r.status <= 503;
+})());
+
+ok("publish: equal-quality NEWER candidate publishes but is NOT called an improvement", await (async () => {
+  const a = { live: liveToday(), asOf: "2026-08-03T12:00:00Z" };
+  const kv = mkKV({ "k": a });
+  const b = { live: liveToday(), asOf: "2026-08-03T13:00:00Z", _diag: {} };
+  const res = await publishIfNoWorse({ PULSE_CACHE: kv }, "k", b, buildTtReadout(b.live, {}));
+  return res.published === true && res.improved === false;
+})());
+ok("publish: equal-quality OLDER candidate is refused and the newer stored snapshot survives", await (async () => {
+  const newer = { live: liveToday(), asOf: "2026-08-03T13:00:00Z" };
+  const kv = mkKV({ "k": newer });
+  const older = { live: liveToday(), asOf: "2026-08-03T12:00:00Z", _diag: {} };
+  const res = await publishIfNoWorse({ PULSE_CACHE: kv }, "k", older, buildTtReadout(older.live, {}));
+  const stored = JSON.parse(kv._store.get("k"));
+  return res.published === false && /worse/.test(res.reason) && stored.asOf === newer.asOf;
+})());
 ok("one-wiring-point intact: dashboard.jsx does not fetch readout.json", !dashSrc.includes("readout.json"));
 
 // ---- 6. /api/tt validateBook — the TT book contract ---------------------

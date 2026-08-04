@@ -499,6 +499,10 @@ const DirTile=({label,value,d1,w1,m1,band,invert=false,spark,source,sourceEp,mod
 };
 
 // ─── WEN MOON METER (mood badge for Macro Strip) ─────────────────────────
+// ENGINE0-CONT: the ONE rendered label for a withheld posture (the engine's internal
+// INSUFFICIENT sentinel never reaches a reader). Shared by the verdict band, the 5 Whys
+// (via regimeView), and pinned by the public render suite.
+const WITHHELD_LABEL = "DATA HOLD";
 const WEN_MOON_STATES = [
   { label: "MOONING 🚀",       color: T.green, glow: T.green },
   { label: "HODL 💎",          color: T.amber, glow: T.amber },
@@ -839,8 +843,12 @@ const RegimeBand=({d,stale=new Set(),loading=false,liveBuild=false,srcLabel="der
             <div style={{display:"flex",alignItems:"baseline",gap:10,flexWrap:"wrap"}}>
               <span style={{fontFamily:T.fontMono,fontSize:T.fsXl,fontWeight:700,color:regime.color,letterSpacing:"-0.01em"}}>{moon.label}</span>
               <span style={{fontFamily:T.fontMono,fontSize:T.fsL,color:T.textSecondary}}>
+                {/* ENGINE0-CONT: the rendered label is DATA HOLD — a deterministic wait
+                    posture ("the system lacks evidence, hold"), not the internal
+                    INSUFFICIENT sentinel the engine still uses (regime.js is untouched;
+                    presentation only). The literal INSUFFICIENT never reaches a reader. */}
                 {loading?"LOADING · waiting for live data before calling a posture"
-                        :regime.insufficient?`INSUFFICIENT · ${regime.sub}`
+                        :regime.insufficient?`${WITHHELD_LABEL} · ${regime.sub}`
                         :`${regime.label} · ${regime.sub}`}
               </span>
               <span style={{fontFamily:T.fontMono,fontSize:T.fsS,color:T.textMuted}}>
@@ -1120,7 +1128,30 @@ export default function Dashboard({ publicView = false } = {}) {
      Health surfaces render IT, never their own reading of provenance. */
   const staleFactors=factorExclusions({provenance, dataAsOf, liveBuild});
   const evidenceSet=buildEvidenceSet({d, provenance, dataAsOf, mode, liveBuild});
+  /* ENGINE0-CONT §8: a REAL refresh, distinct from the network-error retry. The operator
+     view first asks the server to REBUILD the active snapshot (POST /api/snapshot/refresh —
+     authorized by the terminal's same-origin PIN session cookie when one exists; a 401/404
+     falls through), then re-fetches. The public friend view only re-fetches (GET) — it must
+     never hold an upstream-spending force endpoint. Offered for DEGRADED/withheld evidence,
+     not only on HTTP ERROR: a cached-degraded day is exactly when a rebuild can help. */
+  const refreshData=async()=>{
+    if(!publicView){
+      try{
+        const r=await fetch("/api/snapshot/refresh",{method:"POST",cache:"no-store",
+          headers:{"content-type":"application/json"},
+          body:JSON.stringify({scope:"critical",reason:"operator"})});
+        if(r.ok){retry();return;}
+      }catch(_e){/* endpoint unreachable/unauthorized — plain re-fetch below */}
+    }
+    retry();
+  };
   const regime={...evidenceSet.regime, tint:DT[evidenceSet.regime.tintKey], color:T[evidenceSet.regime.colorKey]};
+  /* ENGINE0-CONT: ONE presentation mapping for the withheld posture. The engine keeps its
+     internal INSUFFICIENT sentinel (regime.js untouched); every surface that RENDERS the
+     label — the verdict band, the 5 Whys narration — reads this view, so the literal
+     verdict INSUFFICIENT never reaches a reader (it reads as a system dead end; DATA HOLD
+     is the deterministic wait posture the continuity plan specifies). */
+  const regimeView=regime.insufficient?{...regime,label:WITHHELD_LABEL}:regime;
   /* Public audit, "Confidence": Signal Quality counted TILES (13 live / 1 stale / 1 mock) and
      never answered the only question that matters about the verdict above it — is the REGIME
      safe to trust? A posture computed from 3 of 6 voters is a different claim from the same
@@ -1165,7 +1196,7 @@ export default function Dashboard({ publicView = false } = {}) {
      clause freshness-gates out and the anchor states itself as 0/3 usable. A demo build
      still passes null — mock IS its baseline (the demoted()/anyLive doctrine, unchanged). */
   const freshSet=liveBuild ? new Set(FW_FIELDS.filter(k=>{const m=modeOf(k);return m==="LIVE"||m==="CACHED";})) : null;
-  const fw=computeFiveWhys({...d, session:etSession()}, regime, { stale:staleFactors, fresh:freshSet });
+  const fw=computeFiveWhys({...d, session:etSession()}, regimeView, { stale:staleFactors, fresh:freshSet });
   /* B2 (v3.59): "derived from live data" was a STATIC string — it kept asserting liveness
      across cached, degraded, error and demo states. One derivation, both footers. */
   const derivedLabel=mode==="LIVE"?"derived from live data"
@@ -1271,7 +1302,7 @@ export default function Dashboard({ publicView = false } = {}) {
       <div aria-live="polite" role="status" className="visually-hidden">
         {mode==="LOADING"?"Loading live data; posture withheld."
           :mode==="ERROR"?"Live service unavailable; posture withheld."
-          :regime.insufficient?`Insufficient evidence: ${regime.counted} of ${regime.totalFactors} factors usable; posture withheld.`
+          :regime.insufficient?`Data hold: only ${regime.counted} of ${regime.totalFactors} factors usable; posture withheld.`
           :`Backdrop ${regime.label}: ${regime.counted} of ${regime.totalFactors} factors usable.`}
       </div>
       <style>{`
@@ -1341,6 +1372,13 @@ export default function Dashboard({ publicView = false } = {}) {
               style={{fontFamily:T.fontMono,fontSize:9,background:T.surfaceHigh,border:`1px solid ${T.red}66`,color:T.red,padding:"2px 8px",borderRadius:3,cursor:"pointer"}}>
               ↻ RETRY
             </button>}
+            {/* ENGINE0-CONT: degraded-but-served days get a real refresh, not only outages.
+                Operator: rebuild-then-refetch; public: plain re-check (see refreshData). */}
+            {mode!=="ERROR"&&mode!=="LOADING"&&liveBuild&&(regime.insufficient||evidenceSet.state==="DEGRADED")&&
+              <button onClick={refreshData} aria-label={publicView?"Check for fresher data":"Rebuild and reload live data"}
+                style={{fontFamily:T.fontMono,fontSize:9,background:T.surfaceHigh,border:`1px solid ${T.amber}66`,color:T.amber,padding:"2px 8px",borderRadius:3,cursor:"pointer"}}>
+                {publicView?"↻ CHECK AGAIN":"↻ REFRESH DATA"}
+              </button>}
             {/* FINDING-4: set novice expectations — these are end-of-day, not real-time */}
             {anyLive&&<span style={{fontFamily:T.fontMono,fontSize:8,color:T.textMuted}}>· end-of-day, not real-time</span>}
           </div>

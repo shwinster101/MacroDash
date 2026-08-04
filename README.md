@@ -25,9 +25,11 @@ npm test              # no-network smoke suite (pure functions + source guards; 
 npm run test:ui       # browser suite for /admin.html    (skips cleanly without Chromium)
 npm run test:public   # build + browser STATE suite for the public dashboard (likewise)
 npm run audit:prod    # production-scope dependency audit
+npm run gates         # ALL FOUR in order, failing on the first red — never hand-chain them
 ```
 
-Keep all of them green before every commit. CI (`.github/workflows/test.yml`) runs the
+Run them with `npm run gates` — a hand-chained `npm test | grep FAIL && …` exits 0 when
+grep FINDS the failure, so a red run can slip through. CI (`.github/workflows/test.yml`) runs the
 same four on every push and pull request, with `REQUIRE_BROWSER=1` so a missing browser
 fails the run instead of silently skipping the gate.
 

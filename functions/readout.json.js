@@ -47,21 +47,39 @@ export async function onRequest(context) {
   }
 
   // 3) buildTtReadout projects ONLY a named whitelist of fields, so KV's _diag can never leak.
-  //    Empty/failed live still yields a stable shape with verdict "INSUFFICIENT".
+  //    Empty/failed live still yields a stable shape — ENGINE0-CONT: the wait posture is
+  //    NEUTRAL · LOW · HOLD · DATA DEGRADED, never the literal verdict INSUFFICIENT.
+  const readout = buildTtReadout(live || {}, { cached });
   const body = {
     schema: "tt-v1",
     as_of: asOf,
     generated_at: new Date().toISOString(),
     cached,
-    ...buildTtReadout(live || {}, {}),
+    ...readout,
+  };
+  // ENGINE0-CONT §6/§10: machine-consumable health — enough structured provenance for an
+  // external terminal (or an LLM read tool) to EXPLAIN the state without fetching or
+  // inventing raw finance values. Names only; private diagnostics stay debug-gated.
+  const conf = readout.regime.confidence;
+  const retryMs = conf === "HIGH" ? null : conf === "MEDIUM" ? 15 * 60 * 1000 : 5 * 60 * 1000;
+  body.health = {
+    can_gate: readout.regime.actionability === "FULL",
+    current_inputs: readout.regime.current,
+    historical_inputs: readout.regime.historical,
+    missing: readout.regime.checks.filter((c) => c.tier === "MISSING").map((c) => c.name),
+    next_retry_at: retryMs ? new Date(Date.now() + retryMs).toISOString() : null,
+    sources: readout.attribution,
   };
   if (debug) body.debug = { kv_key: cacheKey, kv_hit: kvHit, snapshot_diag: snapDiag };
 
+  // ?fresh=1: an explicit operator/refresh re-check must not be hidden by the 5-minute
+  // shared cache (§8 HTTP-cache rule) — no-store on demand, shared caching otherwise.
+  const noStore = url.searchParams.get("fresh") === "1";
   return new Response(JSON.stringify(body, null, 2), {
     headers: {
       "content-type": "application/json; charset=utf-8",
       "access-control-allow-origin": "*",              // survives _middleware (non-/api path)
-      "cache-control": "public, max-age=300",          // per-ET-day data, but flip re-checks must not cache-stick
+      "cache-control": noStore ? "no-store" : "public, max-age=300",
     },
   });
 }
