@@ -18,6 +18,10 @@ import { Badge, Label } from "./primitives/atoms.jsx"; // wave 9
 import MarketDetail from "./sections/MarketDetail.jsx"; // task 5.2: presentation only
 import MacroRegime from "./sections/MacroRegime.jsx"; // task 5.3: presentation only
 import Headwinds from "./sections/Headwinds.jsx"; // task 5.4: presentation only
+import AIUnitEconomics from "./sections/AIUnitEconomics.jsx"; // task 7.1: presentation only
+import Alerts from "./sections/Alerts.jsx"; // task 7.2: evaluation stays here
+import DataHealth from "./sections/DataHealth.jsx"; // task 7.3: presentation only
+import Watchlist from "./sections/Watchlist.jsx"; // task 7.4: A4 gate stays at the call site
 import MacroStrip from "./sections/MacroStrip.jsx"; // task 3.1: presentation only
 import SignalQuality from "./sections/SignalQuality.jsx"; // task 3.2: presentation only
 import WhatChanged from "./sections/WhatChanged.jsx"; // task 3.3: presentation only
@@ -40,136 +44,10 @@ const WEN_MOON_UP = 0.5;    // above this → MOONING
 const WEN_MOON_DOWN = -0.5; // below this → DIAMOND HANDS
 
 
-// COST TO ORBIT — $ to put 1 kg into Low Earth Orbit, by era. Curated/Manual: there
-// is no free live feed for launch cost, and it changes on the order of years, not days.
-// The secular collapse (Shuttle → Falcon 9 reusable → Starship target) is the signal.
-// ⚠️ Update `costPerKg` + `series` as new vehicles/prices are confirmed.
-const LAUNCH_COST = {
-  vehicle: "Falcon 9 reusable",
-  costPerKg: 2720,
-  prevEra:  { name: "Space Shuttle", costPerKg: 54500 },
-  target:   { name: "Starship",      costPerKg: 200 },
-  // Era progression, oldest→newest (Shuttle → EELV → Falcon 9 expendable → F9 reusable → trend)
-  series: [54500, 18500, 9100, 4700, 2720, 2200],
-};
-
-// GPU ON-DEMAND LIST PRICING — leading indicator for the AI margin-compression hinge.
-// Curated/Manual, updated QUARTERLY: there is no free live feed for neocloud/hyperscaler
-// on-demand $/GPU-hr, and published rates reprice on a quarterly cadence, not daily. This
-// is the cleanest EXTERNAL read on AI-infra pricing power — visible before it shows up in
-// hyperscaler earnings. Falling $/hr ⇒ eroding pricing power ⇒ margin compression (ties to
-// the "AI CapEx ROI Gap" headwind). ⚠️ Update `onDemand`/`prevQ`/`trend` each quarter.
-const GPU_PRICING = {
-  quarter: "Q2 2026",
-  chips: [
-    { name: "H200",  onDemand: 3.10, prevQ: 3.40 }, // Hopper refresh — most liquid market
-    { name: "B200",  onDemand: 5.40, prevQ: 5.70 }, // Blackwell — repricing as supply lands
-    { name: "GB300", onDemand: 7.20, prevQ: 7.20 }, // Grace-Blackwell Ultra — newest, still scarce
-  ],
-  // Blended on-demand index, oldest→newest (quarterly) — the decline IS the signal.
-  trend: [6.80, 6.10, 5.50, 5.20, 5.00, 4.90],
-  note: "Falling on-demand $/hr = eroding AI-infra pricing power → the margin-compression hinge, visible before earnings.",
-};
-
-// FEAT-CAPEX (v3.45) — hyperscaler capex tape: the FUNDING FLOW leg of AI unit economics.
-// GPU $/hr is the supply cost, token $/Mtok the demand price; this is the pipe that pays for
-// both. Curated at each print (guidance has no $0 live source); `dir` is the revision
-// direction vs the prior guide — the number the market actually trades. ⚠ CURATED — figures
-// are placeholders to review at each print; the reviewed date is the honesty stamp.
-// FEAT-TOKW (v3.46) — TOKENS/WATT: the CONVERSION leg of AI unit economics.
-//
-// FIRST PRINCIPLES. Power is the binding CONSTRAINT, not the dominant cost: a ~1kW accelerator
-// costing ~$40k burns roughly $1.5k of electricity over three years at industrial rates, so
-// depreciation dominates energy ~25:1. Tokens/watt matters because MW ALLOCATIONS are the input
-// that cannot be bought on demand — grid interconnect, not capital, gates a neocloud's capacity.
-// It is therefore a CAPACITY-PRODUCTIVITY metric: how much sellable output a fixed, hard-to-
-// expand power envelope yields.
-//
-// THE IDENTITY:  revenue per MW  ∝  (tokens per watt) × ($ per token)
-// In growth terms the two rates COMPOSE: (1+efficiency%) × (1+price%) − 1. That product is the
-// only part of this that is honestly sourceable — the absolute levels are not. Published
-// tokens/watt swings 10-50x on model size, batch depth, quantization and GPU-only-vs-PUE, and
-// $/Mtok is RETAIL api pricing carrying the model provider's margin, not a neocloud's wholesale
-// realization. Both scale factors CANCEL in the ratio, so the index is defensible where a
-// dollar figure would be confidently wrong. Hence: stored as a RELATIVE INDEX, and this card is
-// forbidden by construction from ever printing a $/MW figure (smoke-pinned).
-//
-// WHY IT EARNS SCREEN SPACE: utilization underwriting answers "will the capacity sell?" It
-// cannot answer "is a sold MW worth less than last year?" A fully-utilized neocloud can still
-// see revenue per MW compress — the margin-compression hinge arriving through the physical
-// layer rather than the P&L. ⚠ CURATED, relative: review at each chip-generation step.
-const TOKEN_EFFICIENCY = {
-  basis: "system-level tokens/W, relative index (H100 generation = 1.00)",
-  reviewed: "2026-07-30",
-  // oldest→newest; `at` dates the generation's volume availability, not its announcement.
-  gens: [
-    { gen: "H100",  at: "2023-06-30", idx: 1.00 },
-    { gen: "H200",  at: "2024-06-30", idx: 1.40 },
-    { gen: "B200",  at: "2025-06-30", idx: 3.00 },
-    { gen: "GB300", at: "2026-06-30", idx: 4.50 },
-  ],
-  // THE WINDOW IS NEVER ANNUALISED. The rolling $/Mtok series is ~12 weekly points at most, and
-  // raising a 12-week move to the 52/11 power turns a −35% drift into −98.8%/yr — a number that
-  // is arithmetically correct and economically absurd, the same units error DEC-D2 removed from
-  // sellRank. So the EFFICIENCY CAGR (multi-year, robust) is instead projected DOWN onto the
-  // price window's own span, and the scissors is reported over that observed span, stated.
-  minWeeks: 8,      // below this the window is noise; the band is withheld, not guessed.
-  deadbandPct: 5,   // % move over the OBSERVED window — measurement noise, not an economic line.
-  note: "Efficiency vs price: if $/Mtok falls faster than tokens/W improves, revenue per MW compresses EVEN AT FULL UTILIZATION — the neocloud risk utilization alone cannot see.",
-};
-
-// Compose the two rates into the scissors. Pure, and deliberately returns NO dollar figure.
-// `trend` is the live rolling $/Mtok series (weekly cadence, values only — the emitted field
-// drops its dates), so its span is inferred from the point count and STATED on the card.
-//
-// Returns: effCagr (%/yr, the durable multi-year rate) · effWin/pxWin (both over the SAME
-// observed window) · idx (the composite over that window) · weeks · band. Comparing a rate to
-// a window move would be the units error; both legs are always in window terms.
-function tokenScissors(trend) {
-  const g = TOKEN_EFFICIENCY.gens;
-  const yrs = (a, b) => (Date.parse(b) - Date.parse(a)) / (365.25 * 86400000);
-  const effYrsSpan = yrs(g[0].at, g[g.length - 1].at);
-  const effCagr = (effYrsSpan > 0 && g[0].idx > 0 && g[g.length - 1].idx > 0)
-    ? Math.pow(g[g.length - 1].idx / g[0].idx, 1 / effYrsSpan) - 1 : null;
-  const t = Array.isArray(trend) ? trend.filter(v => Number.isFinite(v) && v > 0) : [];
-  // Weekly cadence (CADENCE.tokenTrend), so n points span (n-1) weeks.
-  const weeks = t.length >= 2 ? t.length - 1 : null;
-  const none = { effCagr, effWin: null, pxWin: null, idx: null, weeks, band: null };
-  if (effCagr === null || weeks === null) return none;
-  const pxWin = t[t.length - 1] / t[0] - 1;                       // observed, never annualised
-  const effWin = Math.pow(1 + effCagr, weeks / 52) - 1;           // CAGR projected onto that span
-  const idx = (1 + effWin) * (1 + pxWin) - 1;
-  if (weeks < TOKEN_EFFICIENCY.minWeeks) return { ...none, effWin, pxWin, idx, short: true };
-  const dbd = TOKEN_EFFICIENCY.deadbandPct / 100;
-  return { effCagr, effWin, pxWin, idx, weeks, short: false,
-    band: idx > dbd ? "EXPANDING" : idx < -dbd ? "COMPRESSING" : "FLAT" };
-}
-
-const HYPERSCALER_CAPEX = {
-  fy: "FY26", reviewed: "2026-07-30",
-  rows: [
-    { co: "MSFT",  guideB: 120, dir: "up"   },
-    { co: "AMZN",  guideB: 118, dir: "up"   },
-    { co: "GOOGL", guideB: 92,  dir: "up"   },
-    { co: "META",  guideB: 70,  dir: "hold" },
-  ],
-  note: "Big-4 guided capex — the pool that funds every AI-infra beneficiary's revenue. ≥2 guiding down = the regime-turn tell (headwind #1's $705B counts ALL AI capex incl. neoclouds; this tape tracks the four the market prices).",
-};
-
-// ELECTRIC SKIES — eVTOL FAA Type Certification tracker (Joby). The "next destination":
-// a subset of the IPO launch-stage pattern, but the gate is regulatory, not financial.
-// FAA TC is a 5-stage process; the final Type Certificate is the last gate before
-// commercial passenger ops. Curated/Manual projection — no live feed, milestones move on
-// a multi-quarter cadence. ⚠️ Update `stageIndex`/`progressPct`/`targetTC` as the FAA advances.
-const EVTOL_CERT = {
-  company: "Joby Aviation", ticker: "JOBY",
-  stages: ["Cert Basis", "Cert Plan", "Testing", "For-Credit (TIA)", "Type Cert"], // FAA 5-stage TC
-  stageIndex: 3,            // 0-based → Stage 4 of 5 (for-credit / TIA flight testing)
-  stageLabel: "For-Credit Testing (TIA)",
-  progressPct: 78,          // approx through the area-specific certification plans
-  targetTC: "H2 2026",      // projected FAA Type Certificate (curated estimate)
-  note: "FAA Type Certification — final regulatory gate before commercial eVTOL passenger ops.",
-};
+// GPU_PRICING / TOKEN_EFFICIENCY / tokenScissors / HYPERSCALER_CAPEX moved to
+// src/aiEcon.js (wave 12). LAUNCH_COST + EVTOL_CERT are DELETED, not moved — their
+// consumer components (LaunchCostCard/EvtolCertCard) were removed in v3.69 and the
+// constants rendered nowhere since (the Divider rule: dead data is a rot vector).
 
 // ─── SOURCE BOX — extracted to src/primitives/SourceBox.jsx (task 1.4) ───────
 
@@ -414,203 +292,7 @@ function approxCountdown(targetDate) {
   return `~${months} months`;
 }
 
-const HyperscalerCapexCard = () => {
-  const cx = HYPERSCALER_CAPEX;
-  const agg = cx.rows.reduce((a, r) => a + r.guideB, 0);
-  const downs = cx.rows.filter(r => r.dir === "down").length;
-  const glyph = (d) => d === "down" ? "▼" : d === "up" ? "▲" : "→";
-  const gcol  = (d) => d === "down" ? T.red : d === "up" ? T.green : T.textMuted;
-  return (
-    <div style={{ marginTop:16, background:T.surface, backgroundImage:ILLUS_HATCH, border:`1px solid ${T.border}`, borderRadius:6, padding:"12px 16px" }}>
-      <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", flexWrap:"wrap", gap:6 }}>
-        <SectionHeader>AI Infra · Hyperscaler CapEx (funding flow)</SectionHeader>
-        <div style={{ display:"flex", alignItems:"center", gap:6, flexWrap:"wrap" }}>
-          <span style={{ fontFamily:T.fontMono, fontSize:8, color:T.textMuted }}>{cx.fy} guides · reviewed {cx.reviewed}</span>
-          <IllustrativeChip/>
-        </div>
-      </div>
-      <div style={{ display:"flex", alignItems:"baseline", gap:10, margin:"8px 0 2px", flexWrap:"wrap" }}>
-        <span style={{ fontFamily:T.fontMono, fontSize:22, fontWeight:700, color:T.textPrimary }}>${agg}B</span>
-        <span style={{ fontFamily:T.fontMono, fontSize:9, color:downs >= 2 ? T.red : T.textMuted }}>
-          {downs >= 2 ? `⚡ ${downs} of ${cx.rows.length} guiding DOWN — the regime-turn tell` : `${downs} of ${cx.rows.length} guiding down`}
-        </span>
-      </div>
-      <div style={{ display:"grid", gridTemplateColumns:"repeat(auto-fill,minmax(120px,1fr))", gap:8, marginTop:8 }}>
-        {cx.rows.map(r => (
-          <div key={r.co} style={{ background:T.surfaceHigh, border:`1px solid ${T.border}`, borderRadius:5, padding:"8px 11px" }}>
-            <div style={{ display:"flex", justifyContent:"space-between", alignItems:"baseline" }}>
-              <span style={{ fontFamily:T.fontMono, fontSize:11, fontWeight:700, color:T.textPrimary }}>{r.co}</span>
-              <span style={{ fontFamily:T.fontMono, fontSize:10, color:gcol(r.dir) }}>{glyph(r.dir)}</span>
-            </div>
-            <div style={{ fontFamily:T.fontMono, fontSize:14, fontWeight:700, color:T.textSecondary }}>${r.guideB}B</div>
-          </div>
-        ))}
-      </div>
-      <div style={{ fontFamily:T.fontSans, fontSize:10, color:T.textSecondary, lineHeight:1.4, marginTop:8 }}>{cx.note}</div>
-      <SourceBox api="Manual" endpoint="earnings prints · curated per quarter" mode="MOCK"/>
-    </div>
-  );
-};
-
-const GpuPricingCard = () => {
-  const g = GPU_PRICING;
-  const qoq = (c) => parseFloat((((c.onDemand - c.prevQ) / c.prevQ) * 100).toFixed(1));
-  return (
-    <div style={{ marginTop:16, background:T.surface, backgroundImage:ILLUS_HATCH, border:`1px solid ${T.border}`, borderRadius:6, padding:"12px 16px" }}>
-      <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", flexWrap:"wrap", gap:6 }}>
-        <SectionHeader>AI Infra · GPU On-Demand $/hr</SectionHeader>
-        <div style={{ display:"flex", alignItems:"center", gap:6, flexWrap:"wrap" }}>
-          <span style={{ fontFamily:T.fontMono, fontSize:8, color:T.textMuted }}>{g.quarter} · curated quarterly</span>
-          <IllustrativeChip/>
-        </div>
-      </div>
-      <div style={{ fontFamily:T.fontSans, fontSize:10, color:T.textSecondary, lineHeight:1.4, margin:"6px 0 10px" }}>{g.note}</div>
-      <div style={{ display:"grid", gridTemplateColumns:"repeat(auto-fill,minmax(150px,1fr))", gap:8 }}>
-        {g.chips.map(c => {
-          const dq = qoq(c);
-          const col = dq < -2 ? T.amber : dq > 2 ? T.green : T.textMuted;
-          return (
-            <div key={c.name} style={{ background:T.surfaceHigh, border:`1px solid ${T.border}`, borderRadius:5, padding:"9px 11px" }}>
-              <div style={{ display:"flex", justifyContent:"space-between", alignItems:"baseline" }}>
-                <span style={{ fontFamily:T.fontMono, fontSize:12, fontWeight:700, color:T.textPrimary }}>{c.name}</span>
-                <span style={{ fontFamily:T.fontMono, fontSize:8, color:T.textMuted }}>NVIDIA</span>
-              </div>
-              <div style={{ fontFamily:T.fontMono, fontSize:18, fontWeight:700, color:T.textPrimary, marginTop:2 }}>${c.onDemand.toFixed(2)}</div>
-              <div style={{ fontFamily:T.fontMono, fontSize:9, color:col }}>{dq>0?"▲":dq<0?"▼":"▬"} {Math.abs(dq).toFixed(1)}% QoQ</div>
-            </div>
-          );
-        })}
-      </div>
-      <div style={{ height:30, marginTop:10 }}>
-        <ResponsiveContainer width="100%" height="100%">
-          <LineChart data={g.trend.map((v,i)=>({v,i}))}>
-            <Line type="monotone" dataKey="v" stroke={T.amber} dot={false} strokeWidth={1.5}/>
-          </LineChart>
-        </ResponsiveContainer>
-      </div>
-      <SourceBox api="Manual" endpoint="GPU list/on-demand · curated quarterly" mode="MOCK"/>
-    </div>
-  );
-};
-
-// AI UNIT ECONOMICS · LLM token pricing (the moat — price side, pairs with GPU $/hr cost side).
-// Live from OpenRouter (props.tok = d.tokenomics; mode/asOf from provenance). Falling $/Mtok is the
-// bearish read (intelligence commoditizing → pricing-power erosion), colored amber like the GPU card.
-const TokenomicsCard = ({ tok, mode = "MOCK", asOf }) => {
-  let models = [];
-  try { models = JSON.parse(tok?.modelsJson || "[]"); } catch { models = []; }
-  const trend = Array.isArray(tok?.trend) ? tok.trend : [];
-  const blended = tok?.blendedMtok;
-  // QoQ-style read off the trend: first vs last (the decline is the signal).
-  const drop = trend.length >= 2 ? Math.round((1 - trend[trend.length - 1] / trend[0]) * 100) : null;
-  const cheapest = models.length ? models.reduce((a, b) => (b.mtok < a.mtok ? b : a)) : null;
-  return (
-    <div style={{ marginTop:16, background:T.surface, border:`1px solid ${T.border}`, borderRadius:6, padding:"12px 16px" }}>
-      <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", flexWrap:"wrap", gap:6 }}>
-        <SectionHeader>AI Infra · LLM Token Price $/Mtok</SectionHeader>
-        <span style={{ fontFamily:T.fontMono, fontSize:8, color:T.textMuted }}>price side of AI unit economics · pairs with GPU $/hr</span>
-      </div>
-      <div style={{ fontFamily:T.fontSans, fontSize:10, color:T.textSecondary, lineHeight:1.4, margin:"6px 0 10px" }}>
-        Falling $/Mtok = intelligence commoditizing → AI pricing-power erosion. The demand-side mirror of the GPU $/hr supply squeeze — together, the AI margin-compression hinge.
-      </div>
-      <div style={{ display:"flex", gap:18, alignItems:"baseline", flexWrap:"wrap" }}>
-        <div>
-          <div style={{ fontFamily:T.fontMono, fontSize:8, color:T.textMuted }}>BLENDED FRONTIER · 3:1 in:out</div>
-          <div style={{ fontFamily:T.fontMono, fontSize:24, fontWeight:700, color:T.textPrimary }}>${blended?.toFixed(2)}<span style={{ fontSize:11, color:T.textMuted }}>/Mtok</span></div>
-        </div>
-        {drop !== null && <div style={{ fontFamily:T.fontMono, fontSize:11, color:T.amber }}>▼ {drop}% over window</div>}
-        {cheapest && <div style={{ fontFamily:T.fontMono, fontSize:9, color:T.textMuted }}>floor: {cheapest.name} ${cheapest.mtok}/Mtok</div>}
-      </div>
-      {models.length > 0 && (
-        <div style={{ display:"grid", gridTemplateColumns:"repeat(auto-fill,minmax(130px,1fr))", gap:8, marginTop:10 }}>
-          {models.map((m) => (
-            <div key={m.name} style={{ background:T.surfaceHigh, border:`1px solid ${T.border}`, borderRadius:5, padding:"8px 10px" }}>
-              <div style={{ fontFamily:T.fontMono, fontSize:10, fontWeight:700, color:T.textPrimary }}>{m.name}</div>
-              <div style={{ fontFamily:T.fontMono, fontSize:15, fontWeight:700, color:T.textPrimary, marginTop:2 }}>${Number(m.mtok).toFixed(2)}</div>
-              <div style={{ fontFamily:T.fontMono, fontSize:8, color:T.textMuted }}>$/Mtok</div>
-            </div>
-          ))}
-        </div>
-      )}
-      {trend.length >= 3 ? (
-        <div style={{ height:30, marginTop:10 }}>
-          <ResponsiveContainer width="100%" height="100%">
-            <LineChart data={trend.map((v, i) => ({ v, i }))}>
-              <Line type="monotone" dataKey="v" stroke={T.amber} dot={false} strokeWidth={1.5}/>
-            </LineChart>
-          </ResponsiveContainer>
-        </div>
-      ) : (
-        mode !== "MOCK" && <div style={{ fontFamily:T.fontMono, fontSize:8, color:T.textMuted, marginTop:8 }}>trend accruing ({trend.length} pt{trend.length === 1 ? "" : "s"}) — builds daily</div>
-      )}
-      <SourceBox api="OpenRouter" endpoint="api/v1/models · frontier basket · blended $/Mtok" mode={mode} asOf={asOf}/>
-    </div>
-  );
-};
-
-// FEAT-TOKW (v3.46): the CONVERSION leg — tokens/watt × $/token = revenue per MW (in RATES only;
-// see the TOKEN_EFFICIENCY comment for why no level is printable). Half live (the $/Mtok window
-// from OpenRouter), half curated (the efficiency index), so the card is ILLUSTRATIVE always and
-// NEVER votes. The band is withheld on mock/stale price data AND on a window shorter than
-// minWeeks — "too short to read" and "flat" are different facts.
-const TokenEfficiencyCard = ({ tok, mode = "MOCK" }) => {
-  const e = TOKEN_EFFICIENCY;
-  const s = tokenScissors(Array.isArray(tok?.trend) ? tok.trend : []);
-  const pct = (v) => v === null || v === undefined ? "—" : `${v >= 0 ? "+" : ""}${(v * 100).toFixed(1)}%`;
-  // A directional read off mock/stale price data is exactly what the v3.1 invariant forbids.
-  const band = isIllustrative(mode) ? null : s.band;
-  const bcol = band === "COMPRESSING" ? T.red : band === "EXPANDING" ? T.green : T.textMuted;
-  const win = s.weeks ? `${s.weeks}-week window` : "no price window";
-  return (
-    <div style={{ marginTop:16, background:T.surface, backgroundImage:ILLUS_HATCH, border:`1px solid ${T.border}`, borderRadius:6, padding:"12px 16px" }}>
-      <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", flexWrap:"wrap", gap:6 }}>
-        <SectionHeader>AI Infra · Tokens/Watt × $/Token (revenue per MW)</SectionHeader>
-        <div style={{ display:"flex", alignItems:"center", gap:6, flexWrap:"wrap" }}>
-          <span style={{ fontFamily:T.fontMono, fontSize:8, color:T.textMuted }}>efficiency index reviewed {e.reviewed}</span>
-          <IllustrativeChip/>
-        </div>
-      </div>
-      <div style={{ fontFamily:T.fontSans, fontSize:10, color:T.textSecondary, lineHeight:1.4, margin:"6px 0 10px" }}>{e.note}</div>
-      <div style={{ display:"flex", gap:18, alignItems:"baseline", flexWrap:"wrap" }}>
-        <div>
-          <div style={{ fontFamily:T.fontMono, fontSize:8, color:T.textMuted }}>SCISSORS · {win}</div>
-          <div style={{ fontFamily:T.fontMono, fontSize:24, fontWeight:700, color: band ? bcol : T.textPrimary }}>
-            {s.idx === null ? "—" : pct(s.idx)}
-          </div>
-        </div>
-        {band
-          ? <span style={{ fontFamily:T.fontMono, fontSize:11, color:bcol }}>{band === "COMPRESSING" ? "▼" : band === "EXPANDING" ? "▲" : "▬"} {band}</span>
-          : <span style={{ fontFamily:T.fontMono, fontSize:9, color:T.textMuted }}>
-              {s.short ? `window too short to read (<${e.minWeeks}w) — no verdict` : "verdict suppressed — price leg not live"}
-            </span>}
-      </div>
-      <div style={{ display:"grid", gridTemplateColumns:"repeat(auto-fill,minmax(150px,1fr))", gap:8, marginTop:10 }}>
-        <div style={{ background:T.surfaceHigh, border:`1px solid ${T.border}`, borderRadius:5, padding:"8px 11px" }}>
-          <div style={{ fontFamily:T.fontMono, fontSize:8, color:T.textMuted }}>EFFICIENCY (curated)</div>
-          <div style={{ fontFamily:T.fontMono, fontSize:15, fontWeight:700, color:T.green }}>{pct(s.effWin)}</div>
-          <div style={{ fontFamily:T.fontMono, fontSize:8, color:T.textMuted }}>{pct(s.effCagr)}/yr projected onto the window</div>
-        </div>
-        <div style={{ background:T.surfaceHigh, border:`1px solid ${T.border}`, borderRadius:5, padding:"8px 11px" }}>
-          <div style={{ fontFamily:T.fontMono, fontSize:8, color:T.textMuted }}>TOKEN PRICE ({mode === "MOCK" ? "mock" : "observed"})</div>
-          <div style={{ fontFamily:T.fontMono, fontSize:15, fontWeight:700, color:T.amber }}>{pct(s.pxWin)}</div>
-          <div style={{ fontFamily:T.fontMono, fontSize:8, color:T.textMuted }}>never annualised — the window as measured</div>
-        </div>
-      </div>
-      <div style={{ display:"grid", gridTemplateColumns:"repeat(auto-fill,minmax(100px,1fr))", gap:8, marginTop:8 }}>
-        {e.gens.map(g => (
-          <div key={g.gen} style={{ background:T.surfaceHigh, border:`1px solid ${T.border}`, borderRadius:5, padding:"7px 10px" }}>
-            <div style={{ fontFamily:T.fontMono, fontSize:10, fontWeight:700, color:T.textPrimary }}>{g.gen}</div>
-            <div style={{ fontFamily:T.fontMono, fontSize:13, fontWeight:700, color:T.textSecondary }}>{g.idx.toFixed(2)}×</div>
-          </div>
-        ))}
-      </div>
-      <div style={{ fontFamily:T.fontMono, fontSize:8, color:T.textMuted, marginTop:8, lineHeight:1.5 }}>
-        {e.basis} · relative only — no $/MW figure is derivable from public data and none is shown.
-      </div>
-      <SourceBox api="Manual" endpoint="chip-generation tokens/W index × live OpenRouter $/Mtok" mode="MOCK"/>
-    </div>
-  );
-};
+// AI cards extracted to src/sections/AIUnitEconomics.jsx (wave 12).
 
 // ─── FEAT-331 · MACRO FLIP BANNER (the TT circuit, surfaced on the page) ──────
 // The maintainer's most consequential circuit lived only in the TT docs. Now it renders
@@ -684,32 +366,7 @@ export function evalAlert(alert,d,modeOf){
   return{state:hit?"triggered":"clear",v,threshold,
     detail:`${fmtv(v)} vs ${fmtv(Math.round(threshold*100)/100)}${m.basisLabel?` (${m.basisLabel})`:""}`};
 }
-// Alert row
-const AlertRow=({alert,ev,onToggle,onDelete})=>{
-  // BLIND is amber, never the green that would read as "checked and clear".
-  const color=!alert.active?T.textMuted:ev.state==="triggered"?T.red:ev.state==="blind"?T.amber:T.green;
-  const badge=ev.state==="triggered"?"TRIPPED":ev.state==="blind"?"BLIND":"clear";
-  return(
-    <div style={{display:"flex",alignItems:"center",gap:8,padding:"7px 10px",background:T.surface,borderRadius:4,border:`1px solid ${ev.state==="triggered"&&alert.active?T.red:T.border}`}}>
-      <div style={{width:7,height:7,borderRadius:"50%",background:color,flexShrink:0,boxShadow:alert.active?`0 0 5px ${color}`:"none"}}/>
-      <div style={{flex:1,minWidth:0}}>
-        <div style={{fontFamily:T.fontSans,fontSize:11,color:T.textPrimary}}>{alert.label}
-          {alert.active&&<span style={{fontFamily:T.fontMono,fontSize:8,color,marginLeft:6,letterSpacing:"0.08em"}}>{badge}</span>}
-        </div>
-        <div style={{fontFamily:T.fontMono,fontSize:9,color:ev.state==="blind"?T.amber:T.textMuted}}>
-          {ev.state==="blind"?ev.why:ev.detail||`${alert.condition} ${alert.value}${alert.unit}`}
-        </div>
-      </div>
-      <button onClick={()=>onToggle(alert.id)} aria-label={`Toggle alert ${alert.label}`}
-        style={{fontFamily:T.fontMono,fontSize:9,background:"none",border:`1px solid ${T.border}`,color:T.textSecondary,padding:"6px 10px",minWidth:44,minHeight:44,borderRadius:3,cursor:"pointer"}}>
-        {alert.active?"ON":"OFF"}
-      </button>
-      <button onClick={()=>onDelete(alert.id)} aria-label={`Delete alert ${alert.label}`}
-        style={{fontFamily:T.fontMono,fontSize:9,background:"none",border:`1px solid ${T.redDim}`,color:T.red,padding:"6px 8px",minWidth:44,minHeight:44,borderRadius:3,cursor:"pointer"}}>✕</button>
-    </div>
-  );
-};
-
+// AlertRow moved into src/sections/Alerts.jsx (wave 12) — its only consumer.
 const DEFAULT_ALERTS=[
   // No `triggered` field: it is COMPUTED by evalAlert from live data every render. A stored
   // trigger state is exactly what let this section assert "nothing tripped" without looking.
@@ -762,7 +419,6 @@ const SectionNav=()=>{
 
 export default function Dashboard({ publicView = false } = {}) {
   const [alerts,setAlerts]=useState(DEFAULT_ALERTS);
-  const [watchlistOpen,setWatchlistOpen]=useState(false); // FEAT-322: default closed — curated content doesn't own the default view
   const [copied,setCopied]=useState(false);
   const [ttCopied,setTtCopied]=useState(false); // FEAT-332: "Copy TT readout" button state
   // Re-render every 10 min so the live 5-Whys session frame advances (pre-open→midday→
@@ -1241,32 +897,9 @@ export default function Dashboard({ publicView = false } = {}) {
       </section>
 
       <section aria-labelledby="ai">
-      <div style={{padding:"0 20px"}}>
-        <h2 id="ai" className="visually-hidden">AI unit economics — cost, price, conversion and funding</h2>
-        {/* ── AI UNIT ECONOMICS · cost side (GPU $/hr) + price side (token $/Mtok) ── */}
-        <div style={{marginTop:16,display:"flex",alignItems:"center",gap:10}}>
-          <span style={{fontFamily:T.fontMono,fontSize:10,color:"#a78bfa",letterSpacing:"0.14em",whiteSpace:"nowrap"}}>◆ AI UNIT ECONOMICS</span>
-          {/* v3.53: `whiteSpace:"nowrap"` on a 317px string blew the PAGE out to 488px at 390px
-              wide — found by the flip-conditions browser check, pre-existing since v3.46. The
-              label is a subtitle; it wraps. */}
-          <span style={{fontFamily:T.fontMono,fontSize:8,color:T.textMuted,minWidth:0}}>cost ↔ price ↔ conversion ↔ funding · the margin-compression hinge</span>
-          <div style={{height:1,flex:1,background:T.border}}/>
-        </div>
-        {/* FEAT-322: the live price side (OpenRouter) leads; the curated GPU cost side is
-            one tap away — always-curated content doesn't own the default view. */}
-        <TokenomicsCard tok={d.tokenomics} mode={modeOf('tokenBlendedMtok')} asOf={asOfOf('tokenBlendedMtok')}/>
-        <CollapsedGroup count={1} label="curated: GPU $/hr cost side">
-          <GpuPricingCard />
-        </CollapsedGroup>
-        {/* FEAT-TOKW (v3.46): the conversion leg — what a fixed MW of power converts into. */}
-        <CollapsedGroup count={1} label="curated: tokens/watt × $/token conversion">
-          <TokenEfficiencyCard tok={d.tokenomics} mode={modeOf('tokenBlendedMtok')} />
-        </CollapsedGroup>
-        {/* FEAT-CAPEX (v3.45): the third leg — the capex pool that funds both sides above. */}
-        <CollapsedGroup count={1} label="curated: hyperscaler capex funding flow">
-          <HyperscalerCapexCard />
-        </CollapsedGroup>
-      </div>
+      {/* ── AI UNIT ECONOMICS — extracted to src/sections/AIUnitEconomics.jsx
+          (task 7.1), presentation only; data + scissors in src/aiEcon.js. ── */}
+      <AIUnitEconomics d={d} modeOf={modeOf} asOfOf={asOfOf}/>
       </section>
 
       {/* v3.69: operator monitors + health + footer share the bottom padded container the old
@@ -1278,107 +911,22 @@ export default function Dashboard({ publicView = false } = {}) {
             price + day-move strip fails the SAME test — it is the raw-data layer, and the moat
             is the judgment layer. mag10PricesJson/SOURCES/fetchEquities stay wired: QQQ still
             renders from the same Finnhub pull, so nothing upstream is removed. */}
-        {/* ── MY CONVICTION · S/A TIER (full-width, collapsible) ── */}
-        {/* A4 (v3.58): PRIVATE on the shareable route. Authored conviction tiers are the
-            owner's judgment layer — the friend-share view must not disclose them (owner call,
-            composing the v3.51 keep-on-default decision with the re-audit's public gate). */}
+        {/* ── MY CONVICTION — extracted to src/sections/Watchlist.jsx (task 7.4);
+            A4: the !publicView gate stays on this wrapper. ── */}
         {!publicView&&(<section aria-label="Operator monitors — conviction and alerts">
-        {!publicView&&<div style={{marginTop:16,background:T.surface,border:`1px solid ${T.border}`,borderRadius:6,overflow:"hidden"}}>
-          <button onClick={()=>setWatchlistOpen(o=>!o)} aria-expanded={watchlistOpen}
-            style={{width:"100%",display:"flex",justifyContent:"space-between",alignItems:"center",padding:"10px 16px",background:"none",border:"none",cursor:"pointer",borderBottom:watchlistOpen?`1px solid ${T.border}`:"none"}}>
-            <div style={{display:"flex",gap:10,alignItems:"center"}}>
-              <span style={{fontFamily:T.fontMono,fontSize:10,color:T.amber,letterSpacing:"0.1em"}}>MY CONVICTION</span>
-              <span style={{fontFamily:T.fontMono,fontSize:9,color:T.textMuted}}>Personal watchlist · tiered by conviction · no prices</span>
-            </div>
-            <span style={{fontFamily:T.fontMono,fontSize:10,color:T.textMuted}}>{watchlistOpen?"▲":"▼"}</span>
-          </button>
-          {watchlistOpen&&(
-            <div style={{padding:"12px 16px 16px"}}>
-              {[
-                {tier:"S", accent:T.amber, blurb:"Highest conviction · core holdings"},
-                {tier:"A", accent:T.blue,  blurb:"High conviction · sized below S"},
-              ].map(({tier,accent,blurb})=>{
-                const picks=d.watchlist.filter(w=>w.tier===tier);
-                if(!picks.length) return null;
-                return(
-                  <div key={tier} style={{marginBottom:14}}>
-                    <div style={{display:"flex",gap:8,alignItems:"center",marginBottom:8}}>
-                      <span style={{fontFamily:T.fontMono,fontSize:13,fontWeight:700,color:accent,border:`1px solid ${accent}66`,borderRadius:3,padding:"1px 8px",background:accent+"18"}}>{tier}</span>
-                      <span style={{fontFamily:T.fontMono,fontSize:8,color:T.textMuted,letterSpacing:"0.08em"}}>{blurb.toUpperCase()}</span>
-                      <div style={{height:1,flex:1,background:T.border}}/>
-                    </div>
-                    <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(200px,1fr))",gap:8}}>
-                      {picks.map(w=>(
-                        <div key={w.ticker} style={{background:T.surfaceHigh,border:`1px solid ${accent}33`,borderLeft:`3px solid ${accent}`,borderRadius:5,padding:"9px 11px"}}>
-                          <div style={{display:"flex",justifyContent:"space-between",alignItems:"baseline",gap:6}}>
-                            <span style={{fontFamily:T.fontMono,fontSize:13,fontWeight:700,color:T.textPrimary}}>{w.ticker}</span>
-                            <span style={{fontFamily:T.fontMono,fontSize:8,color:T.textMuted,textAlign:"right"}}>{w.name}</span>
-                          </div>
-                          {w.thesis&&<div style={{fontFamily:T.fontSans,fontSize:10,color:T.textSecondary,lineHeight:1.4,marginTop:5}}>{w.thesis}</div>}
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                );
-              })}
-              <SourceBox api="Manual" endpoint="personal watchlist · names + tiers only" mode="MOCK"/>
-            </div>
-          )}
-        </div>}
+        <Watchlist watchlist={d.watchlist}/>
 
-        {/* ── ALERTS STRIP (compact, at bottom) ── */}
-        {/* A4 (v3.58): PRIVATE on the shareable route — page-local toggles imply user state a
-            visitor does not have; monitors are the operator's, not the share view's. */}
-        {!publicView&&<div style={{marginTop:16,background:T.surface,border:`1px solid ${T.border}`,borderRadius:6,padding:"12px 16px"}}>
-          <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:10}}>
-            <SectionHeader>Macro Alerts</SectionHeader>
-            {/* Public audit: an ON/OFF toggle beside 8px muted "notifications not wired" reads as
-                a working alert system. The toggles are real (they gate the triggered dot on this
-                page) but nothing is DELIVERED, so the limit is stated at the same weight as the
-                control — the honesty invariant applied to an affordance instead of a number. */}
-            <div style={{fontFamily:T.fontMono,fontSize:9,color:T.amber,border:`1px solid ${T.amber}44`,borderRadius:3,padding:"2px 7px"}}>
-              ⚠ Evaluated live on THIS page only — no push, email or SMS is sent
-            </div>
-          </div>
-          <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(260px,1fr))",gap:6}}>
-            {alerts.map(a=><AlertRow key={a.id} alert={a} ev={alertEval[a.id]} onToggle={id=>setAlerts(prev=>prev.map(x=>x.id===id?{...x,active:!x.active}:x))} onDelete={handleDeleteAlert}/>)}
-          </div>
-        </div>}
+        {/* ── ALERTS STRIP — extracted to src/sections/Alerts.jsx (task 7.2);
+            evaluation + state stay here, the A4 gate stays on the wrapper. ── */}
+        <Alerts alerts={alerts} alertEval={alertEval}
+          onToggle={id=>setAlerts(prev=>prev.map(x=>x.id===id?{...x,active:!x.active}:x))}
+          onDelete={handleDeleteAlert}/>
         </section>)}
 
-        {/* ── C2/C4 (v3.60): DATA HEALTH — is the product current, degraded, or recovering? ── */}
-
-        <section aria-labelledby="health" style={{marginTop:16,background:T.surface,border:`1px solid ${T.border}`,borderRadius:6,padding:"12px 16px"}}>
-          <h2 id="health" className="visually-hidden">Data health — per-source freshness and recovery</h2>
-          <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:8,flexWrap:"wrap",gap:6}}>
-            <SectionHeader>Data Health</SectionHeader>
-            {mode==="ERROR"&&<div style={{fontFamily:T.fontMono,fontSize:9,color:T.red,display:"flex",gap:8,alignItems:"center"}}>
-              live fetch failed{lastError?`: ${String(lastError).slice(0,60)}`:""}
-              <button onClick={retry} style={{fontFamily:T.fontMono,fontSize:9,background:T.surfaceHigh,border:`1px solid ${T.red}66`,color:T.red,padding:"2px 8px",borderRadius:3,cursor:"pointer"}}>↻ RETRY</button>
-            </div>}
-          </div>
-          {/* FEAT-GLANCE (v3.61): the 15-row per-source grid is diagnostic depth, one tap
-              away. The section header + the ERROR/Retry row stay outside the collapse —
-              an outage is a red fact and must not need a click to discover. */}
-          <CollapsedGroup count={SIGNAL_FIELDS.length} label="per-source detail" chip={false}>
-          <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(210px,1fr))",gap:6}}>
-            {SIGNAL_FIELDS.map(k=>(
-              <div key={k} style={{display:"flex",gap:6,alignItems:"center",fontFamily:T.fontMono,fontSize:9,color:T.textSecondary,padding:"4px 6px",background:T.bg,borderRadius:3,flexWrap:"wrap"}}>
-                <span style={{minWidth:88,color:T.textPrimary}}>{k}</span>
-                <DataModeBadge mode={modeOf(k)}/>
-                <span style={{fontSize:8,color:T.textMuted}}>{cadenceOf(k)}</span>
-                {dataAsOf?.[k]&&<span style={{fontSize:8,color:T.textMuted}}>{String(dataAsOf[k]).slice(0,10)}</span>}
-              </div>
-            ))}
-          </div>
-          <div style={{fontFamily:T.fontMono,fontSize:8,color:T.textMuted,marginTop:6}}>
-            cadence is each source's normal release rhythm — a monthly print weeks old can still be the freshest available
-          </div>
-          {/* The chip legend lives with the diagnostics it decodes (moved from the always-visible
-              Signal Quality strip, v3.61 — explanation, not evidence). */}
-          <div style={{fontFamily:T.fontMono,fontSize:8,color:T.textMuted,marginTop:4}}>legend: ● live · ⏱ stale · <span style={{color:T.amber}}>◫ illustrative = curated, not live</span></div>
-          </CollapsedGroup>
-        </section>
+        {/* ── DATA HEALTH — extracted to src/sections/DataHealth.jsx (task 7.3);
+            the whole <section> moved so the health anchor + h2 travel together. ── */}
+        <DataHealth signalFields={SIGNAL_FIELDS} modeOf={modeOf} dataAsOf={dataAsOf}
+          mode={mode} lastError={lastError} retry={retry}/>
 
         {/* ── FOOTER ── */}
         <div style={{marginTop:12,display:"flex",justifyContent:"space-between",alignItems:"center",flexWrap:"wrap",gap:4}}>

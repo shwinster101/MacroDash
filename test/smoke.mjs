@@ -54,7 +54,13 @@ const mdSrc = readFileSync(new URL("../src/sections/MarketDetail.jsx", import.me
 const mrSrc = readFileSync(new URL("../src/sections/MacroRegime.jsx", import.meta.url), "utf8");
 const hwSrc = readFileSync(new URL("../src/sections/Headwinds.jsx", import.meta.url), "utf8");
 const dtSrc = readFileSync(new URL("../src/primitives/DirTile.jsx", import.meta.url), "utf8");
-const uiSrc = dashSrc + bandSrc + whysSrc + sbSrc + shSrc + stripSrc + sqSrc + wcSrc + mdSrc + mrSrc + hwSrc + dtSrc;
+// wave 12 (tasks 7.1-7.4): AIUnitEconomics, Alerts, DataHealth, Watchlist + aiEcon.js.
+const aiSrc = readFileSync(new URL("../src/sections/AIUnitEconomics.jsx", import.meta.url), "utf8");
+const alSrc = readFileSync(new URL("../src/sections/Alerts.jsx", import.meta.url), "utf8");
+const dhSrc = readFileSync(new URL("../src/sections/DataHealth.jsx", import.meta.url), "utf8");
+const wlSrc = readFileSync(new URL("../src/sections/Watchlist.jsx", import.meta.url), "utf8");
+const aiEconSrc = readFileSync(new URL("../src/aiEcon.js", import.meta.url), "utf8");
+const uiSrc = dashSrc + bandSrc + whysSrc + sbSrc + shSrc + stripSrc + sqSrc + wcSrc + mdSrc + mrSrc + hwSrc + dtSrc + aiSrc + alSrc + dhSrc + wlSrc;
 const _s = dashSrc.indexOf("const MOCK_DATA = {");
 let _i = dashSrc.indexOf("{", _s), _d = 0, _e = -1;
 for (; _i < dashSrc.length; _i++) { if (dashSrc[_i] === "{") _d++; else if (dashSrc[_i] === "}") { _d--; if (_d === 0) { _e = _i; break; } } }
@@ -1819,7 +1825,8 @@ ok("v3.69: markets/macro/ai are real sections (drivers/health pattern), and the 
   && dashSrc.includes('<section aria-labelledby="ai">')
   && dashSrc.includes('aria-label="Operator monitors — conviction and alerts"'));
 ok("v3.69: dead components deleted (defined-but-never-rendered LaunchCostCard/EvtolCertCard)",
-  !dashSrc.includes("LaunchCostCard") && !dashSrc.includes("EvtolCertCard"));
+  !/const LaunchCostCard|const EvtolCertCard/.test(uiSrc) &&
+  !/const LAUNCH_COST|const EVTOL_CERT/.test(uiSrc) && !/LAUNCH_COST|EVTOL_CERT/.test(aiEconSrc));
 ok("hz-chip: ONE builder (hzDeckChip) states the year and offers auto/nearest INLINE, one tap, no navigation",
   /function hzDeckChip\(\)/.test(adminSrc)
   && /quick\(HZ_AUTO,"auto"\)/.test(adminSrc)
@@ -2204,14 +2211,14 @@ ok("capex: the tape REPORTS, never enforces — no veto path reads capexState",
 // Dashboard: the third leg of AI Unit Economics.
 ok("capex-dash: HYPERSCALER_CAPEX is curated WITH a reviewed date, rendered hatched + chipped, " +
    "behind a CollapsedGroup like the GPU cost side",
-  dashSrc.includes("const HYPERSCALER_CAPEX") && /reviewed: "\d{4}-\d{2}-\d{2}"/.test(dashSrc) &&
-  /HyperscalerCapexCard[\s\S]{0,900}ILLUS_HATCH/.test(dashSrc) &&
-  dashSrc.includes('label="curated: hyperscaler capex funding flow"'));
+  aiEconSrc.includes("export const HYPERSCALER_CAPEX") && /reviewed: "\d{4}-\d{2}-\d{2}"/.test(aiEconSrc) &&
+  /HyperscalerCapexCard[\s\S]{0,900}ILLUS_HATCH/.test(aiSrc) &&
+  aiSrc.includes('label="curated: hyperscaler capex funding flow"'));
 ok("capex-dash: the section header names every leg (cost ↔ price ↔ conversion ↔ funding)",
-  dashSrc.includes("cost ↔ price ↔ conversion ↔ funding"));
+  aiSrc.includes("cost ↔ price ↔ conversion ↔ funding"));
 ok("capex-dash: it NEVER votes — computeRegime and the factor list are untouched by capex",
-  !/computeRegime[\s\S]{0,2400}capex/i.test(dashSrc) &&
-  !/REGIME_FACTOR_FIELDS=\[[^\]]*capex/i.test(dashSrc));
+  !/computeRegime[\s\S]{0,2400}capex/i.test(regimeSrc) &&
+  !/REGIME_FACTOR_FIELDS=\[[^\]]*capex/i.test(uiSrc) && !/capex/i.test(regimeSrc));
 
 // ═══════════ FEAT-NFCI (v3.43) — financial conditions ═══════════
 // Chosen over TLT (a levered inverse of the 10Y this page already carries) and over the
@@ -2508,11 +2515,9 @@ ok("legs: ddOptSec no longer claims broker sync for legs it cannot vouch for",
 // The math is lifted and RUN, not string-pinned: the whole point of this feature is that a
 // short price window must never be annualised, and a string pin cannot prove a number.
 console.log("\n[25] FEAT-TOKW — tokens/watt × $/token");
-const TW = (() => {
-  const a = dashSrc.indexOf("const TOKEN_EFFICIENCY");
-  const b = dashSrc.indexOf("const HYPERSCALER_CAPEX");
-  return new Function(dashSrc.slice(a, b) + "\nreturn {TOKEN_EFFICIENCY,tokenScissors};")();
-})();
+// wave 12: the math lives in src/aiEcon.js (pure) — smoke IMPORTS and runs the real export,
+// which is stronger than the old dashSrc source-lift (the v3.60 convention).
+const TW = await import("../src/aiEcon.js").then((m) => ({ TOKEN_EFFICIENCY: m.TOKEN_EFFICIENCY, tokenScissors: m.tokenScissors }));
 const TW_LIVE = [6.8, 6.5, 6.3, 6.1, 5.9, 5.8, 5.6, 5.5, 5.4, 5.3, 5.2, 5.1]; // 12 pts = 11 weeks
 ok("tokw: the price window is NEVER annualised — the v3.39-D2 units error, one layer up. " +
    "A 12-week −25% move reports −25% over 11 weeks, not the −98%/yr an extrapolation gives",
@@ -2543,18 +2548,18 @@ ok("tokw: COMPRESSING/FLAT/EXPANDING land on the right side of the deadband",
            band(-d) === "FLAT" && band(0.2) === "EXPANDING"; })());
 ok("tokw-dash: the card is ILLUSTRATIVE + chipped, behind a CollapsedGroup like every other " +
    "curated block, and prints NO $/MW level — only ratios are sourceable",
-  /TokenEfficiencyCard[\s\S]{0,1200}ILLUS_HATCH/.test(dashSrc) &&
-  dashSrc.includes('label="curated: tokens/watt × $/token conversion"') &&
-  (() => { const card = dashSrc.slice(dashSrc.indexOf("const TokenEfficiencyCard"),
-                                     dashSrc.indexOf("MACRO FLIP BANNER"));
+  /TokenEfficiencyCard[\s\S]{0,1200}ILLUS_HATCH/.test(aiSrc) &&
+  aiSrc.includes('label="curated: tokens/watt × $/token conversion"') &&
+  (() => { const card = aiSrc.slice(aiSrc.indexOf("const TokenEfficiencyCard"),
+                                     aiSrc.indexOf("const AIUnitEconomics"));
     return !/\$\{[^}]*\}\s*\/\s*MW/.test(card) && !/\$\d[\d.,]*\s*\/\s*MW/.test(card) &&
            card.includes("no $/MW figure is derivable"); })());
 ok("tokw-dash: the verdict is SUPPRESSED on mock/stale price data (v3.1 invariant) — the " +
    "band is gated through isIllustrative, not rendered raw",
-  /const band = isIllustrative\(mode\) \? null : s\.band;/.test(dashSrc));
+  /const band = isIllustrative\(mode\) \? null : s\.band;/.test(aiSrc));
 ok("tokw-dash: it NEVER votes — computeRegime and the factor list know nothing about it",
-  !/computeRegime[\s\S]{0,2400}(tokenScissors|TOKEN_EFFICIENCY)/.test(dashSrc) &&
-  !/REGIME_FACTOR_FIELDS=\[[^\]]*token/i.test(dashSrc));
+  !/tokenScissors|TOKEN_EFFICIENCY/.test(regimeSrc) &&
+  !/REGIME_FACTOR_FIELDS=\[[^\]]*token/i.test(uiSrc));
 ok("tokw-tt: tokens_per_watt is a HANDLED deep-dive key rendered beside utilization " +
    "underwriting — the factor a utilization model structurally cannot see",
   adminSrc.includes('"tokens_per_watt"]') && adminSrc.includes("function ddTokWSec(dd)") &&
@@ -2704,7 +2709,7 @@ ok("provenance: CAPE credits its real fetch path (multpl scrape), not 'Manual' b
   mrSrc.includes('api="multpl.com"') && !/api="Manual" endpoint="Robert Shiller/.test(uiSrc));
 // An ON/OFF control beside 8px muted "notifications not wired" reads as a working alert system.
 ok("affordance: the alert toggles state their real limit at the weight of the control itself",
-  /no push, email or SMS is sent/.test(dashSrc) && !/Triggers evaluate live data · notifications not wired/.test(dashSrc));
+  /no push, email or SMS is sent/.test(alSrc) && !/Triggers evaluate live data · notifications not wired/.test(uiSrc));
 // Confidence: Signal Quality counted TILES and never said whether the VERDICT was trustworthy.
 ok("confidence: the strip reports how many factors actually voted, from the EvidenceSet itself",
   sqSrc.includes("BACKDROP {regimeConf.counted}/{regimeConf.total} factors voting") &&
@@ -2768,7 +2773,7 @@ ok("alert: a non-finite live value is BLIND (a missing number is not a passing t
 ok("alert: the header reports BLIND separately — '0 FIRED' with dead inputs is a false clear",
   dashSrc.includes("alertBlind") && dashSrc.includes("BLIND`} color={T.amber}"));
 ok("alert: the section states it evaluates HERE and delivers nothing",
-  /Evaluated live on THIS page only — no push, email or SMS is sent/.test(dashSrc));
+  /Evaluated live on THIS page only — no push, email or SMS is sent/.test(alSrc));
 // ---- a11y (suite audit #2): landmarks + live regions on the public page ----
 ok("a11y: the page exposes a main landmark (there were ZERO before)",
   /role="main"/.test(dashSrc));
@@ -3313,7 +3318,8 @@ ok("A3: the public suite actually visits the public route, not only the operator
   /\/\?view=public/.test(readFileSync(new URL("../test/public-render.mjs", import.meta.url), "utf8")));
 // A4: the boundary is ENFORCED by the gate, not described by a comment.
 ok("A4: MY CONVICTION and Macro Alerts are gated behind !publicView",
-  (dashSrc.match(/\{!publicView&&<div style=\{\{marginTop:16/g) || []).length === 2);
+  /\{!publicView&&\(<section aria-label="Operator monitors — conviction and alerts">\s*\n\s*<Watchlist /.test(dashSrc) &&
+  /<Alerts alerts=\{alerts\}[\s\S]{0,200}\/>\s*\n\s*<\/section>\)\}/.test(dashSrc));
 ok("A4: the public footer NAMES the omission (a cut takes its attribution with it)",
   /operator view carries the curated watchlist and alert monitors/.test(dashSrc));
 // A5: production dependency surface is classified and checkable in one command.
@@ -3450,8 +3456,8 @@ ok("C1: the dashboard's modeOf and exclusions ARE the shared derivations (no loc
   !dashSrc.includes('const unusable=(k)=>'));
 ok("C2: a real <header> landmark, a Sections <nav>, and the six-anchor h2 outline exist",
   /<header style=/.test(dashSrc) && /<nav aria-label="Sections"/.test(dashSrc) &&
-  ["overview", "drivers", "markets", "macro", "ai", "health"].every((id) =>
-    dashSrc.includes(`id="${id}"`)));
+  ["overview", "drivers", "markets", "macro"].every((id) =>
+    dashSrc.includes(`id="${id}"`)) && aiSrc.includes('id="ai"') && dhSrc.includes('id="health"'));
 ok("C3: the Drivers matrix renders the CONTRACT (evidenceSet.factors), not its own reading",
   dashSrc.includes("evidenceSet.factors.map(f=>") && dashSrc.includes("excluded — {f.reason}"));
 ok("C4: the digest persists AFTER comparing, and only quorate sets become the baseline",
@@ -3483,13 +3489,13 @@ ok("glance: landscape notch edges — root pads left/right insets",
 ok("glance: the Drivers matrix cards collapse (band chips are the icon-first six-factor view)",
   /label="factor evidence detail" chip=\{false\}/.test(dashSrc));
 ok("glance: the Data Health per-source grid collapses; the ERROR/Retry row stays OUTSIDE",
-  /label="per-source detail" chip=\{false\}/.test(dashSrc) &&
-  dashSrc.indexOf('mode==="ERROR"&&<div style={{fontFamily:T.fontMono,fontSize:9,color:T.red') <
-  dashSrc.indexOf('label="per-source detail"'));
+  /label="per-source detail" chip=\{false\}/.test(dhSrc) &&
+  dhSrc.indexOf('mode==="ERROR"&&<div style={{fontFamily:T.fontMono,fontSize:9,color:T.red') <
+  dhSrc.indexOf('label="per-source detail"'));
 ok("glance: the decode legend moved INTO the Data Health expander — the always-visible strip " +
    "no longer carries explanation, only evidence",
-  dashSrc.includes("legend: ● live · ⏱ stale ·") &&
-  !/marginLeft:"auto"\}\}>● live · ⏱ stale ·/.test(dashSrc));
+  dhSrc.includes("legend: ● live · ⏱ stale ·") &&
+  !/marginLeft:"auto"\}\}>● live · ⏱ stale ·/.test(uiSrc));
 ok("glance: the 30Y tile note keeps the FACT (spread + INVERTED) and moves the reference " +
    "prose to a tooltip — a red fact must survive the default view",
   mdSrc.includes('noteTitle={"5.00% = the 2007 pre-GFC reference level"}') &&
@@ -3988,6 +3994,40 @@ ok("wave9: sections under 300 lines, primitives under 100 (Property 10)",
   dtSrc.split("\n").length <= 100 && fgSrc.split("\n").length <= 100 && atomsSrc.split("\n").length <= 100);
 ok("wave9: the NFCI band constants are IMPORTED from the engine, never re-declared in a section",
   !/const NFCI_TIGHT/.test(mdSrc) && !/const NFCI_LOOSE/.test(mdSrc));
+
+// ═══════════ [51] UI-OVERHAUL wave 12 (tasks 7.1-7.4) — AI, Alerts, DataHealth, Watchlist ═══════════
+// Four more verbatim moves. The judgment calls this wave: alert EVALUATION stays in the
+// orchestrator (only the rendering moved), the A4 public/private gate stays at ONE call
+// site, the ai/health anchors travel WITH their sections, aiEcon.js is pure so the
+// scissors math is now IMPORTED and RUN (no more source-lift), and the v3.69 orphaned
+// constants (LAUNCH_COST/EVTOL_CERT) were deleted, not moved.
+console.log("\n[51] UI-OVERHAUL wave 12 — AI/Alerts/DataHealth/Watchlist are modules");
+ok("wave12: presentation only — the sections import no computation, hook, or storage",
+  [aiSrc, alSrc, dhSrc, wlSrc].every((src) => {
+    const code = src.replace(/\/\/[^\n]*|\/\*[\s\S]*?\*\//g, "");
+    return !/useMarketData|computeRegime|buildEvidenceSet|evalAlert|localStorage/.test(code);
+  }));
+ok("wave12: evaluation stays home — evalAlert/ALERT_METRICS/DEFAULT_ALERTS remain in the orchestrator",
+  dashSrc.includes("export function evalAlert") && dashSrc.includes("const ALERT_METRICS=") &&
+  dashSrc.includes("const DEFAULT_ALERTS=[") && !/evalAlert\s*\(/.test(alSrc.replace(/\/\/[^\n]*/g,"")));
+ok("wave12: the aiEcon module is PURE (Node-importable) and the section imports it",
+  !/from ['\"]react['\"]/.test(aiEconSrc) &&
+  aiSrc.includes('import { GPU_PRICING, TOKEN_EFFICIENCY, tokenScissors, HYPERSCALER_CAPEX } from "../aiEcon.js"'));
+ok("wave12: tokenScissors really runs from the import (behavior, not string): 11-week window, never annualised",
+  (() => { const r = TW.tokenScissors([6.8, 6.5, 6.3, 6.1, 5.9, 5.8, 5.6, 5.5, 5.4, 5.3, 5.2, 5.1]);
+    return r.weeks === 11 && Math.abs(r.pxWin + 0.25) < 1e-9; })());
+ok("wave12: Watchlist owns its open state; DEFAULT CLOSED survives the move (FEAT-322)",
+  wlSrc.includes("const [watchlistOpen,setWatchlistOpen]=useState(false);") &&
+  !dashSrc.includes("watchlistOpen"));
+ok("wave12: null-safety on all four (Property 9)",
+  /if\(!d\|\|typeof modeOf!=="function"\)return <div aria-hidden="true"\/>;/.test(aiSrc) &&
+  /if\(!Array\.isArray\(alerts\)\|\|!alertEval\)return <div aria-hidden="true"\/>;/.test(alSrc) &&
+  /if\(!Array\.isArray\(signalFields\)\|\|typeof modeOf!=="function"\)return <div aria-hidden="true"\/>;/.test(dhSrc) &&
+  /if\(!Array\.isArray\(watchlist\)\)return <div aria-hidden="true"\/>;/.test(wlSrc));
+ok("wave12: module size bounds hold (sections ≤300)",
+  [aiSrc, alSrc, dhSrc, wlSrc].every((src) => src.split("\n").length <= 300));
+ok("wave12: the DataHealth section carries its own landmark — anchor + h2 travel together",
+  dhSrc.includes('<section aria-labelledby="health"') && dhSrc.includes('<h2 id="health"'));
 
 console.log(`\n=== SMOKE TEST: ${pass} passed, ${fail} failed ===`);
 process.exit(fail === 0 ? 0 : 1);
