@@ -258,7 +258,8 @@ const server = http.createServer((req, res) => {
         raw_score: null, raw_tier: null, capped_tier: null, input_hash: "sha256:aaaa1111",
         blockers: ["falsifier_health: AWAITING_FALSIFIERS", "owner_valuation: NO_FLOOR_PREPROFIT"],
         pillars: { owner_valuation: { score: null, weight: 0.25, basis_used: "NONE", premium_prerequisite_state: "UNKNOWN",
-            blockers: ["NO_FLOOR_PREPROFIT"], context_premium: { target: 382, note: "CONTEXT ONLY — contingent premium, not a pillar score" } },
+            blockers: ["NO_FLOOR_PREPROFIT"], context_premium: { target: 382, target_year: "2027",
+              annualized_return_pct: 45.75, note: "CONTEXT ONLY — contingent premium, not a pillar score" } },
           trajectory: { score: null, weight: 0.25, blockers: ["trajectory inputs missing"] },
           economic_quality: { score: null, weight: 0.25, blockers: ["quality inputs missing"] },
           falsifier_health: { score: null, weight: 0.25, bootstrap: "PRECOMMITTED_PENDING", blockers: ["AWAITING_FALSIFIERS"] } },
@@ -708,7 +709,10 @@ ok("score: the shadow panel renders between readiness and the four answers (§15
   dvS.indexOf("DECISION READINESS") < dvS.toUpperCase().indexOf("TT UNDERWRITING") &&
   dvS.toUpperCase().indexOf("TT UNDERWRITING") < dvS.toUpperCase().indexOf("WHAT IT'S WORTH"));
 ok("score: AWAITING_FALSIFIERS and NO_FLOOR_PREPROFIT render as NAMED states, never a score",
-  /AWAITING_FALSIFIERS/.test(dvS) && /NO_FLOOR_PREPROFIT/.test(dvS) && /UNSCORABLE/.test(dvS));
+  /AWAITING_FALSIFIERS/.test(dvS) && /NO_FLOOR_PREPROFIT/.test(dvS));
+ok("score: the bootstrap head LEADS with the measurable diagnostic, never the blocker count",
+  /\$382 2027 · \+45\.75%\/yr/.test(dvS) && /bootstrap 0\/4 pillars/.test(dvS) &&
+  !/13 blockers/.test(dvS));
 await page.evaluate(() => { document.querySelectorAll("#deepView details.schema").forEach((d) => { d.open = true; }); });
 const dvSO = (await page.locator("#deepView").innerText()).replace(/\s+/g, " ");
 ok("score: the contingent premium is labelled CONTEXT ONLY with no pillar contribution",

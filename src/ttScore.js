@@ -149,6 +149,15 @@ export function scoreP1({ dd, horizon, price, premiumGateState, etToday, nowMs }
     res.blockers.push("NO_FLOOR_PREPROFIT");
     if (typeof row.prem === "number")
       res.context_premium = { target: row.prem, note: "CONTEXT ONLY — contingent premium, not a pillar score" };
+    // The diagnostic still computes (§14.7: bootstrap may display available diagnostics) —
+    // the OWNER's read "the TT should always give an output" is right at the diagnostic
+    // level; the refusal is only ever about the blended pillar SCORE, never the number.
+    if (res.context_premium) {
+      const yrsCtx = (Date.parse(row.y + "-12-31T21:00:00Z") - nowMs) / (365.25 * 86400000);
+      if (yrsCtx >= 0.25)
+        res.context_premium.annualized_return_pct = round2(100 * (Math.pow(row.prem / price.px, 1 / yrsCtx) - 1));
+      res.context_premium.target_year = row.y;
+    }
     return res;
   }
   const years = (Date.parse(row.y + "-12-31T21:00:00Z") - nowMs) / (365.25 * 86400000);

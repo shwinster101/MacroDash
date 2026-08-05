@@ -2164,6 +2164,19 @@ Jan-anchor shipped; see `snapshot.js` ~318–328), `spyMa100`, `spyMa200`, and a
   proven <64KB, [49] byte-identity tripwire; 4 pins re-pinned on invariants) + **198 render**
   (+6, the shadow panel driven live in Chromium) + 88 public-render (untouched — the public
   dashboard has no scoring surface).
+- **v3.74.1 — the bootstrap head leads with the output, never the blocker count (owner call:
+  "the TT should ALWAYS give a score or output").** The shadow panel's unscored head read
+  `UNSCORABLE · 13 blockers`, burying what the engine DOES know — the owner read it as the tool
+  refusing to answer, and at the presentation level they were right. The refusal was only ever
+  about the blended pillar SCORE (§14.7 forbids partial subtotals); every computable diagnostic
+  may print, and now does: `scoreP1` stamps the contingent premium with its own `%/yr` and
+  target year even when the prerequisite gate withholds the pillar, and the head renders
+  `$382 2027 · +45.8%/yr contingent — prereq gate UNKNOWN · bootstrap 0/4 pillars` instead of a
+  bare blocker count. Nothing about the abstention DOCTRINE moved: the blended score, tier and
+  rank still require all four pillars; binaries still gate only the ELIGIBLE line and never the
+  VALUATION GAP ranking (§11.1 — the ranking always renders, which is the owner's actual
+  "always an output" contract, and it was never suspended). Tests: 1223 smoke (+2) + 199
+  render (+1).
 - **Deferred:** stored fundamentals + Robinhood sync — now unblocked by the `x-tt-pin` header
   (v3.9): a chat-side daily review can PUT `status_flags`/`ref_px` into the deepDive payloads and
   stamp `lastRun`. When built, store the *triage* shape (`{at, px}` → "% moved since your last TT

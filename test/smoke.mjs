@@ -3895,6 +3895,10 @@ console.log("\n[46] ttScore pillars — P1..P4 contracts run behaviorally");
   ok("P1: prerequisite UNKNOWN + pre-profit (floor n/m) → NO_FLOOR_PREPROFIT, premium kept as CONTEXT ONLY",
     p1unk.score === null && p1unk.blockers.includes("NO_FLOOR_PREPROFIT") &&
     p1unk.context_premium && /CONTEXT ONLY/.test(p1unk.context_premium.note));
+  ok("P1: the contingent premium still carries its own %/yr diagnostic — an output always exists; only the blended SCORE is withheld",
+    p1unk.context_premium.target_year === "2027" &&
+    typeof p1unk.context_premium.annualized_return_pct === "number" &&
+    Math.abs(p1unk.context_premium.annualized_return_pct - p1pass.annualized_return_pct) < 0.01);
   const flooredDd = { consensus: { revenue_B: { 2027: 10 }, eps: { 2027: 2 } }, pt_model: { pe_floor_multiple: 18 } };
   const p1floor = TS.scoreP1({ dd: flooredDd, horizon: "2026", price: { px: 30, at: "2026-08-03" }, premiumGateState: "FAIL", etToday: "2026-08-05", nowMs: NOW });
   ok("P1: prerequisite not PASS with a real floor → FLOOR scored, basis recorded",
