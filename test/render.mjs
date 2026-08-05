@@ -124,7 +124,10 @@ const BOOK = [
     }) },
   { sym: "BBB", tier: "WATCH", lens: "AI", rank: "#1 optics", lastRun: etDaysAgo(1), note: "queued too",
     deepDive: dd(609, { 2027: 9, 2028: 11 }, { 2027: 18, 2028: 22 },
-      { capex_exposure: { type: "neocloud", own_capex_B: 9 },
+      { // v3.73 TT-SCORE: legacy composite tier S vs the shadow fixture's capped B — the
+        // methods-disagree line must render. Synthetic, as always.
+        composite: { score: 8.7, basis: "V9 G9 P8 M8 R8 (synthetic)", capped_tier: "S — conviction" },
+        capex_exposure: { type: "neocloud", own_capex_B: 9 },
         // FEAT-TOKW (v3.46): the neocloud case — mix sums to 100, so the fleet index is
         // exact: (40×1.00 + 60×4.50)/100 = 3.10 vs frontier 4.50 = 69% of frontier tokens/W.
         tokens_per_watt: { at: "2026-07-30", mw_now: 100, mw_planned: 300,
@@ -244,6 +247,33 @@ const server = http.createServer((req, res) => {
   if (url.pathname === "/api/quotes")
     return json({ asOf: `${TODAY_ET}T14:35:00Z`, quotes: { AAA: { px: 800, chg: -11, at: TODAY_ET },
       BBB: { px: 609, chg: -14.5, at: TODAY_ET } } });
+  // v3.73 TT-SCORE: shadow scorecard fixtures. AAA = awaiting falsifiers with a
+  // NO_FLOOR_PREPROFIT + context premium; BBB = SCORED but DISAGREEING with the legacy
+  // composite, so the methods-disagree line renders. Synthetic only, as always.
+  if (url.pathname === "/api/score") {
+    const s = url.searchParams.get("sym");
+    if (s === "AAA") return json({ sym: "AAA", record: { sym: "AAA", underwriting_inputs: {},
+      scorecard: { methodology_version: "tt-underwriting-v2.3.0", status: "UNSCORABLE", actionability: "BLOCKED",
+        route: "AI_INFRA", profile: null, route_mapping_version: "tt-route-v1",
+        raw_score: null, raw_tier: null, capped_tier: null, input_hash: "sha256:aaaa1111",
+        blockers: ["falsifier_health: AWAITING_FALSIFIERS", "owner_valuation: NO_FLOOR_PREPROFIT"],
+        pillars: { owner_valuation: { score: null, weight: 0.25, basis_used: "NONE", premium_prerequisite_state: "UNKNOWN",
+            blockers: ["NO_FLOOR_PREPROFIT"], context_premium: { target: 382, note: "CONTEXT ONLY — contingent premium, not a pillar score" } },
+          trajectory: { score: null, weight: 0.25, blockers: ["trajectory inputs missing"] },
+          economic_quality: { score: null, weight: 0.25, blockers: ["quality inputs missing"] },
+          falsifier_health: { score: null, weight: 0.25, bootstrap: "PRECOMMITTED_PENDING", blockers: ["AWAITING_FALSIFIERS"] } },
+        gate_results: [{ id: "AI_G3_2028_BRIDGE", state: "UNKNOWN", premium_prerequisite: true, raw_state: "DEMANDING-BUT-CREDIBLE" }] } } });
+    if (s === "BBB") return json({ sym: "BBB", record: { sym: "BBB", underwriting_inputs: {},
+      scorecard: { methodology_version: "tt-underwriting-v2.3.0", status: "SCORED", actionability: "CAUTION",
+        route: "PHYSICAL_AI", profile: null, route_mapping_version: "tt-route-v1",
+        raw_score: 6.12, raw_tier: "B", capped_tier: "B", input_hash: "sha256:bbbb2222",
+        blockers: [], pillars: { owner_valuation: { score: 6.5, weight: 0.25, basis_used: "FLOOR", premium_prerequisite_state: "UNKNOWN", blockers: [] },
+          trajectory: { score: 7.0, weight: 0.25, blockers: [] },
+          economic_quality: { score: 5.0, weight: 0.25, blockers: [] },
+          falsifier_health: { score: 6.0, weight: 0.25, blockers: [] } },
+        gate_results: [] } } });
+    return json({ sym: s, record: null });
+  }
   if (url.pathname === "/api/ledger") {
     const p = url.searchParams;
     if (p.get("recent") === "1") return json({ days: 90, entries: LEDGER_RECENT_FIXTURE });
@@ -668,6 +698,35 @@ ok("ready: every clock is stated on the bar — TT run, thesis, model, price, po
 ok("ready: a RED hinge is named on the bar but never appears as a blocker (D3 doctrine)",
   /1 hinge RED/i.test(dv) && !/not actionable until:[^\n]*RED/i.test(dv));
 ok("what-changes-my-mind names the red hinge", /1 red/.test(dv) && /demand/.test(dv));
+// ═══ v3.73 TT-SCORE: the shadow scorecard panel — server result rendered verbatim ═══
+// AAA's stub is UNSCORABLE/AWAITING_FALSIFIERS with a NO_FLOOR_PREPROFIT and a contingent
+// premium: the panel must render the NAMED states and never a placeholder score.
+await page.waitForTimeout(400);   // lazy score fetch lands and re-renders the tab
+const dvS = (await page.locator("#deepView").innerText()).replace(/\s+/g, " ");
+ok("score: the shadow panel renders between readiness and the four answers (§15 order)",
+  /TT UNDERWRITING · SHADOW/i.test(dvS) &&
+  dvS.indexOf("DECISION READINESS") < dvS.toUpperCase().indexOf("TT UNDERWRITING") &&
+  dvS.toUpperCase().indexOf("TT UNDERWRITING") < dvS.toUpperCase().indexOf("WHAT IT'S WORTH"));
+ok("score: AWAITING_FALSIFIERS and NO_FLOOR_PREPROFIT render as NAMED states, never a score",
+  /AWAITING_FALSIFIERS/.test(dvS) && /NO_FLOOR_PREPROFIT/.test(dvS) && /UNSCORABLE/.test(dvS));
+await page.evaluate(() => { document.querySelectorAll("#deepView details.schema").forEach((d) => { d.open = true; }); });
+const dvSO = (await page.locator("#deepView").innerText()).replace(/\s+/g, " ");
+ok("score: the contingent premium is labelled CONTEXT ONLY with no pillar contribution",
+  /CONTEXT ONLY/.test(dvSO) && /contingent premium \$382/.test(dvSO));
+ok("score: a normalized legacy gate label shows its raw state for audit",
+  /AI_G3_2028_BRIDGE UNKNOWN/.test(dvSO) && /was: DEMANDING-BUT-CREDIBLE/.test(dvSO));
+// BBB's stub is a COMPLETE shadow score (B) against a legacy S composite — during shadow
+// the disagreement renders as WAIT — methods disagree, and legacy keeps governing.
+await page.evaluate(() => switchTab("BBB"));
+await page.waitForTimeout(500);
+await page.evaluate(() => { document.querySelectorAll("#deepView details.schema").forEach((d) => { d.open = true; }); });
+const dvB = (await page.locator("#deepView").innerText()).replace(/\s+/g, " ");
+ok("score: a complete shadow score that disagrees with legacy renders WAIT — methods disagree",
+  /WAIT — methods disagree/.test(dvB) && /legacy S vs TT B/.test(dvB) && /legacy governs/i.test(dvB));
+ok("score: the legacy composite is relabelled LEGACY \/ UNVERIFIED inside the panel (one home)",
+  /LEGACY \/ UNVERIFIED/.test(dvB) && /governs the board until activation/.test(dvB));
+await page.evaluate(() => switchTab("AAA"));
+await page.waitForTimeout(150);
 ok("what-I-own reads the measured position", /21\.4% of acct equity/.test(dv) && /30 sh/.test(dv));
 ok("when carries the next dated event", /own print/.test(dv));
 // FEAT-TT-OWNDEBT (v3.35): the own cell renders what the sync measured — all of it.

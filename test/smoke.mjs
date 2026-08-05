@@ -2532,7 +2532,7 @@ ok("tokw-dash: it NEVER votes — computeRegime and the factor list know nothing
   !/REGIME_FACTOR_FIELDS=\[[^\]]*token/i.test(dashSrc));
 ok("tokw-tt: tokens_per_watt is a HANDLED deep-dive key rendered beside utilization " +
    "underwriting — the factor a utilization model structurally cannot see",
-  adminSrc.includes('"tokens_per_watt"]') && adminSrc.includes("function ddTokWSec(dd)") &&
+  /"tokens_per_watt"[,\]]/.test(adminSrc) && adminSrc.includes("function ddTokWSec(dd)") &&
   /ddKvSec\("Utilization underwriting",dd\.utilization_underwriting\)\+\s*\n?\s*ddTokWSec\(dd\)/.test(adminSrc));
 ok("tokw-tt: the gen index is carried by the PAYLOAD, not copied from src/ — a buildless " +
    "file cannot import, and a drifting hand-copied constant is worse than a self-attested one",
@@ -2642,7 +2642,11 @@ ok("ready: every clock appears in the statement — an OK clock is STATED, not i
 // Rendering: the consolidator reaches both per-ticker decision surfaces, and the bar keeps
 // every red fact visible (v3.25 — a summary is only honest if the red things survive it).
 ok("ready: the bar renders on the deep-dive tab ABOVE the four answers",
-  /h\+=readyBar\(x\);\s*\n\s*h\+=ddAnswerBlock/.test(adminSrc));
+  // v3.73: the shadow TT UNDERWRITING bar sits between them (§15 order: readiness →
+  // underwriting → answers) — the invariant is readiness FIRST, answers after, nothing else.
+  /h\+=readyBar\(x\);[\s\S]{0,400}h\+=ddAnswerBlock/.test(adminSrc) &&
+  adminSrc.indexOf("h+=readyBar(x);") < adminSrc.indexOf("h+=ddScoreBar(x);") &&
+  adminSrc.indexOf("h+=ddScoreBar(x);") < adminSrc.indexOf("h+=ddAnswerBlock(x,dd,todayET);"));
 ok("ready: and on the card — the only per-ticker surface a WATCH name with no tab ever gets",
   adminSrc.includes('<div class="k">READINESS</div>') && adminSrc.includes("let html=rdyRow+measured+"));
 ok("ready: blockers stay visible as chips on the bar, never collapsed into the verdict alone",

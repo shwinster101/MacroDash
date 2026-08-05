@@ -2413,7 +2413,11 @@ function ddKillSec(k){
 const DD_HANDLED=new Set(["ticker","name","thesis_version","updated","as_of","tier","ref_px","position_note",
   "pt_ladder","pt_model","pt_consensus","consensus","gates","hinges","leading_indicators","cert_probabilities","utilization_underwriting","capital",
   "dilution_grid","engine","pt_2040","kill_combination","key_dates","position","model_anchors","conditional_rules",
-  "linked_exposure","status_flags","tape","watchlist_unlocks","hedges","rules","open_items","telemetry","capex_exposure","tokens_per_watt"]);
+  "linked_exposure","status_flags","tape","watchlist_unlocks","hedges","rules","open_items","telemetry","capex_exposure","tokens_per_watt",
+  // v3.73 TT-SCORE: composite renders inside the score panel as LEGACY / UNVERIFIED — one
+  // home, not the unknown-fields drawer. (falsifiers_v2_draft deliberately NOT handled:
+  // staged pre-commitment content stays visible in OTHER STORED FIELDS until promoted.)
+  "composite"]);
 /* ═══════════ DEEP-DIVE FOCUS (FEAT-TT-DDFOCUS v3.31) ═══════════ */
 /* The tab opened ~20 sections at full size — exactly the pre-v3.29 board, one level down.
    A reader arrives at a name's tab with four questions and no others: what is it worth,
@@ -2744,6 +2748,9 @@ function renderDeepDive(sym){
   // FEAT-TT-READY (v3.50): the meta-answer, above the four. Every clock this tab used to
   // scatter across ~20 sections, consolidated into one verdict the reader can act on.
   h+=readyBar(x);
+  // v3.73 TT-SCORE: the server scorecard, SHADOW mode — §15 puts TT UNDERWRITING directly
+  // under DECISION READINESS. Renders only what /api/score returned; legacy governs.
+  h+=ddScoreBar(x);
   h+=ddAnswerBlock(x,dd,todayET);
   h+=ddOptSec(posOf(x));   // FEAT-TT-OWNDEBT: the legs expressing this thesis, beside it
   // FEAT-TT-ESTRUN (v3.35): the estimate run + dual PTs, ABOVE the fold — the analyst
@@ -3148,6 +3155,98 @@ async function loadPositions(){
    pure READ — nothing here ever writes a ledger entry; that only happens as a side effect
    of a normal book save. Fetched lazily (per-sym on tab open, recent-across-book once for
    the scorecard) and cached for the session — never re-fetched on every render. */
+/* ═══════════ TT UNDERWRITING SCORE — shadow-mode client (v3.73, spec §14.7/§15) ═══════════
+   The client NEVER computes a score, tier, cap or eligibility result — it renders exactly
+   what /api/score returned (§5.2/§13; the server 409s any divergent client copy, so there
+   is nothing to be gained by trying). During shadow the LEGACY composite keeps governing
+   the board; a complete shadow score that disagrees renders "WAIT — methods disagree"
+   beside it, never replacing it. Lazy-fetched per tab open, the ledger-HISTORY rail. */
+const SCORE_CACHE={};       // sym -> record|null once loaded; absent key = not yet fetched
+const SCORE_INFLIGHT=new Set();
+async function loadScoreSym(sym){
+  if(SCORE_CACHE[sym]!==undefined||SCORE_INFLIGHT.has(sym))return;
+  SCORE_INFLIGHT.add(sym);
+  try{
+    const ctl=new AbortController();const t=setTimeout(()=>ctl.abort(),8000);
+    const r=await fetch("/api/score?sym="+encodeURIComponent(sym),{signal:ctl.signal});
+    clearTimeout(t);
+    if(r.ok){const d=await r.json();SCORE_CACHE[sym]=d.record||null;}
+    else SCORE_CACHE[sym]=null;
+  }catch(_e){SCORE_CACHE[sym]=null;/* shadow panel degrades to "unavailable" — never breaks the tab */}
+  finally{
+    SCORE_INFLIGHT.delete(sym);
+    if(TAB===sym)renderDeepDive(sym);
+  }
+}
+/* §6.4.1 step 2-3: promote the book-staged pre-committed draft (deepDive.falsifiers_v2_draft,
+   server-stamped via the book PUT before the qualifying observation) into the score record.
+   Hinges land PRECOMMITTED_PENDING — no state, no observation — so the scorecard reads
+   AWAITING_FALSIFIERS until a genuinely post-definition observation is ingested. Promotion
+   never touches the book document. */
+async function promoteFalsifiers(sym){
+  const x=find(sym);const draft=x&&x.deepDive&&x.deepDive.falsifiers_v2_draft;
+  if(!draft||!Array.isArray(draft.hinges))return toast("no pre-committed draft on this name");
+  const falsifiers=draft.hinges.map(h=>({id:h.id,definition:h.id.replace(/_/g," "),
+    green_condition:h.green,amber_condition:h.amber,red_condition:h.red,
+    importance:h.importance,kill:!!h.kill,cadence_days:h.cadence_days||90,
+    defined_at:draft.defined_at_client||new Date().toISOString(),
+    provenance:draft.provenance||null}));
+  const rec=SCORE_CACHE[sym];
+  try{
+    const r=await fetch("/api/score?sym="+encodeURIComponent(sym),{method:"PUT",
+      headers:{"content-type":"application/json",
+        "If-Match":(rec&&rec.scorecard&&rec.scorecard.input_hash)||"*"},
+      body:JSON.stringify({underwriting_inputs:{methodology_version:"tt-underwriting-v2.3.0",
+        thesis_version:draft.thesis_version||null,falsifiers,route_gates:{}}})});
+    const d=await r.json();
+    if(!r.ok)return toast("promotion failed: "+(d.error||r.status));
+    SCORE_CACHE[sym]=d.record||null;
+    toast("falsifiers promoted — PRECOMMITTED_PENDING until a post-definition observation lands");
+    if(TAB===sym)renderDeepDive(sym);
+  }catch(_e){toast("promotion failed — network");}
+}
+function ddScoreBar(x){
+  const sym=x.sym,rec=SCORE_CACHE[sym],dd=x.deepDive||{};
+  const draft=dd.falsifiers_v2_draft;
+  const promoteBtn=draft?` <button class="act" style="font-size:9.5px;padding:1px 6px" onclick="promoteFalsifiers('${esc(sym)}')">⇧ PROMOTE DRAFT FALSIFIERS</button>`:"";
+  if(rec===undefined){loadScoreSym(sym);
+    return `<div class="dd-sec" style="color:var(--dim);font-size:10.5px">TT UNDERWRITING · shadow — loading server scorecard…</div>`;}
+  if(rec===null)
+    return `<div class="dd-sec" style="font-size:11px"><span style="color:var(--dim);letter-spacing:.08em;font-size:9.5px">TT UNDERWRITING · SHADOW</span> <span class="scope">no score record — the server has never scored this name</span>${promoteBtn}</div>`;
+  const sc=rec.scorecard||{};
+  const scored=sc.status==="SCORED";
+  const col=sc.status==="LEGACY_UNVERIFIED"?"var(--dim)":scored?(sc.actionability==="FULL"?"var(--green)":"var(--amber)"):"var(--amber)";
+  const awaiting=(sc.blockers||[]).some(b=>/AWAITING_FALSIFIERS/.test(b));
+  const noFloor=(sc.blockers||[]).some(b=>/NO_FLOOR_PREPROFIT/.test(b));
+  const head=scored
+    ?`${sc.raw_score} · ${esc(sc.raw_tier)}→${esc(sc.capped_tier)}${sc.cap_source?` (cap: ${esc(sc.cap_source)})`:""} · ${esc(sc.actionability)}`
+    :`${esc(sc.status)}${awaiting?" · AWAITING_FALSIFIERS":""}${noFloor?" · NO_FLOOR_PREPROFIT":""} · ${(sc.blockers||[]).length} blocker${(sc.blockers||[]).length===1?"":"s"}`;
+  // Methods married, never merged: legacy governs until activation; disagreement is stated.
+  const legacy=ttInfo(dd);
+  const disagree=scored&&legacy&&legacy.tier&&sc.capped_tier&&legacy.tier!==sc.capped_tier
+    ?`<div style="color:var(--amber);font-size:10.5px;margin-top:3px">⏸ WAIT — methods disagree: legacy ${esc(legacy.tier)} vs TT ${esc(sc.capped_tier)} (legacy governs until activation, §14.7)</div>`:"";
+  const p1=(sc.pillars||{}).owner_valuation||{};
+  const pillarRows=Object.entries(sc.pillars||{}).map(([k,p])=>{
+    const bits=[`<b>${esc(k)}</b>`,p.score!=null?esc(p.score):'<span style="color:var(--dim)">—</span>',
+      `w ${p.weight}`,
+      k==="owner_valuation"&&p.basis_used?`basis ${esc(p.basis_used)}${p.premium_prerequisite_state?` · prereq ${esc(p.premium_prerequisite_state)}`:""}`:"",
+      k==="falsifier_health"&&p.bootstrap?`<span style="color:var(--amber)">${esc(p.bootstrap)}</span>`:"",
+      (p.blockers||[]).length?`<span style="color:var(--red)">${p.blockers.length} blocked</span>`:""].filter(Boolean);
+    return `<div style="font-size:10.5px;margin-top:2px">${bits.join(" · ")}</div>`;}).join("");
+  const ctx=p1.context_premium
+    ?`<div style="color:var(--dim);font-size:10px;margin-top:2px">contingent premium $${esc(p1.context_premium.target)} — CONTEXT ONLY, not a pillar score</div>`:"";
+  const legacyComp=dd.composite
+    ?`<div style="margin-top:6px;font-size:10.5px"><span style="color:var(--dim);letter-spacing:.08em;font-size:9px">COMPOSITE — LEGACY / UNVERIFIED (governs the board until activation)</span><br>${esc(typeof dd.composite.score==="object"?JSON.stringify(dd.composite.score):dd.composite.score)}${dd.composite.basis?` · ${esc(dd.composite.basis)}`:""}</div>`:"";
+  return `<div class="dd-sec" style="font-size:11px">
+    <span style="color:var(--dim);letter-spacing:.08em;font-size:9.5px">TT UNDERWRITING · SHADOW</span>
+    <span style="color:${col};font-weight:700"> ${head}</span>${promoteBtn}${disagree}
+    <details class="schema"><summary style="font-size:10px">pillars, gates &amp; legacy composite</summary>
+      ${pillarRows}${ctx}
+      <div style="font-size:10px;color:var(--dim);margin-top:4px">route ${esc(sc.route||"—")}${sc.profile?`/${esc(sc.profile)}`:""} · ${esc(sc.route_mapping_version||"")} · hash ${esc(String(sc.input_hash||"").slice(0,18))}…</div>
+      ${(sc.gate_results||[]).map(g=>`<div style="font-size:10px;margin-top:1px"><span style="color:${g.state==="PASS"?"var(--green)":g.state==="FAIL"?"var(--red)":"var(--amber)"}">●</span> ${esc(g.id)} ${esc(g.state)}${g.premium_prerequisite?" ★prereq":""}${g.raw_state?` <span class="scope">(was: ${esc(g.raw_state)})</span>`:""}</div>`).join("")}
+      ${legacyComp}
+    </details></div>`;
+}
 const LEDGER_CACHE={};      // sym -> entries[] once loaded; absent key = not yet fetched
 const LEDGER_INFLIGHT=new Set();
 let LEDGER_RECENT=null;     // recent cross-book tier/rank/comp entries, for the scorecard
