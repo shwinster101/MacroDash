@@ -381,8 +381,20 @@ ok("rankexport: per-tier and per-lens leaderboards render",
   /### Tier /.test(rank.md) && /### Lens /.test(rank.md));
 ok("rankexport: funding priority carries its not-a-sell-call disclaimer",
   /NOT a sell recommendation/.test(rank.md));
+// v3.76: the flat NOT RANKED bin split into a reviewed-but-unpriceable RANKING (ordered on
+// the TT composite) and a genuinely-not-reviewed list. Coverage must still be total, so this
+// asserts every book name lands in exactly one of the three places rather than pinning a heading.
+// COVERAGE, not a heading: every book name must land somewhere. The fixture's unranked names
+// all carry a lastRun, so NOT REVIEWED is correctly ABSENT — an empty section that rendered
+// anyway would be the placeholder-noise this board refuses everywhere else.
 ok("rankexport: unranked names are NAMED rather than silently dropped",
-  /## NOT RANKED/.test(rank.md));
+  /## REVIEWED — NOT RATE-RANKABLE/.test(rank.md) && !/## NOT REVIEWED/.test(rank.md) &&
+  BOOK.every((x) => new RegExp("\\*\\*" + x.sym + "\\*\\*").test(rank.md)));
+ok("rankexport: the reviewed-but-unpriceable section is a RANKING on the TT composite, and " +
+   "every row names its missing input WITH the fix — never a bare 'unrankable'",
+  /Ranked on TT composite/.test(rank.md) && /Why no %\/yr\|Fix/.test(rank.md) &&
+  /no thesis payload stored\|add a deep-dive payload/.test(rank.md) &&
+  /— no score yet/.test(rank.md));
 ok("rankexport: provenance states the floor denominator", /a floor — NAV unmeasured/.test(rank.md));
 if(process.env.DUMP_RANKINGS)console.log("\n----- SAMPLE OUTPUT -----\n"+rank.md+"\n----- END -----\n");
 // Share chain: stub navigator.share and confirm a File is what gets offered.
@@ -1427,6 +1439,50 @@ REFRESH_FIXTURE = null;
   ok("ddstore: a re-render does not refetch and does not collapse the reader's open sections",
     await p2.evaluate(() => !DD_INFLIGHT.has("JJJ")) && before > 0);
   await p2.close();
+}
+
+/* ── FEAT-TT-ALLREVIEWED (v3.76) — the reviewed-but-unpriced tail, driven live ──────────
+   Owner: "every TT review must factor into the next dollar even if with an asterisk." The
+   fixture's CCC/DDD/EEE/FFF all carry a run stamp and no model, so they are exactly the case
+   that used to leave the surface entirely and survive as a sentence in a collapsed expander. */
+{
+  const p3 = await open(390, 844);
+  await p3.waitForTimeout(1200);
+  const buy = (await p3.locator("#buyBlock").innerText()).replace(/\s+/g, " ");
+  ok("allreviewed: the PRIMARY view carries the asterisked tail — a reviewed name is never " +
+     "absent from the next dollar merely because the math cannot price it",
+    /reviewed · no %\/yr yet/i.test(buy) && /ranked on TT composite/i.test(buy));
+  ok("allreviewed: each primary-view tail row names the missing input",
+    /no thesis payload stored/i.test(buy));
+  ok("allreviewed: the tail rows are real buttons (a card is one tap from the ranking)",
+    await p3.evaluate(() => {
+      const btns = [...document.querySelectorAll("#buyBlock button.fdr-row")];
+      return btns.length > 0 && btns.some((b) => /no thesis payload/i.test(b.innerText));
+    }));
+  ok("allreviewed: the footer counts BOTH populations, so 'N ranked of M' can no longer read " +
+     "as though the remainder was never considered",
+    /ranked of/i.test(buy) && /reviewed but unpriced/i.test(buy));
+  // The two bases must stay visually and semantically separate — a tail row must never show a
+  // %/yr, or the reader would sort it against the ranked rows above.
+  ok("allreviewed: no tail row shows a %/yr — the rate it does not have never leaks in",
+    await p3.evaluate(() => [...document.querySelectorAll("#buyBlock button.fdr-row")]
+      .filter((b) => /no thesis payload|no pt_model|no usable price|rung/i.test(b.innerText))
+      .every((b) => !/%\/yr/.test(b.innerText))));
+  ok("allreviewed: the tail adds no horizontal overflow at 390px",
+    await p3.evaluate(() => document.documentElement.scrollWidth <= 390));
+  // And the same array, one level down, in the DESK ranking.
+  await p3.evaluate(() => openDesk("dNext"));
+  await p3.waitForTimeout(500);
+  const desk = (await p3.locator("#upsideRank").innerText()).replace(/\s+/g, " ");
+  ok("allreviewed: the DESK ranking renders the SAME tail with its full reason list",
+    /Reviewed · not rate-rankable/i.test(desk) && /ordered by TT composite/i.test(desk));
+  ok("allreviewed: the DESK tail count equals the board's — one computation, two altitudes",
+    await p3.evaluate(() => {
+      const n = UNRANKED_ROWS.length;
+      const deskN = document.querySelectorAll("#upsideRank .picks")[1]?.children.length || 0;
+      return n > 0 && deskN === n;
+    }));
+  await p3.close();
 }
 
 await browser.close();

@@ -2049,6 +2049,45 @@ Jan-anchor shipped; see `snapshot.js` ~318–328), `spyMa100`, `spyMa200`, and a
   string-pinning it — the project's own recurring lesson (v3.40, v3.54: state computed and
   rendered but not read at the gate) is exactly the shape a string pin cannot catch.
   Tests: **1067 smoke** (+6) + 192 render + 88 public-render.
+- **FEAT-TT-ALLREVIEWED (v3.76) — every TT review reaches the next dollar, asterisked.**
+  Owner's rule, stated twice now and only half-honoured the first time: *"the TT should ALWAYS
+  give a score or output for next dollar hierarchy at the least"*, then *"every TT review must
+  factor into the next dollar even if with an asterisk."* v3.74.1 fixed the panel HEAD (it led
+  with a blocker count instead of an output). This fixes the LIST. A reviewed name the math
+  could say nothing about left the next-dollar surface **entirely** and survived only as a
+  SENTENCE — a count in a footer, a comma list inside a collapsed methodology expander. That
+  is the v3.65 lesson one step further: naming the dropped names beat counting them, but a
+  name mentioned in prose beside a column of ranked rows still reads as excluded — and the
+  names most often in that state are exactly the ones just reviewed, because **a fresh TT run
+  routinely precedes the model** (BA, CAT, GEV, CRDO all landed there this week).
+  The ranking now has **TWO BASES, married never merged** (the measured/asserted doctrine):
+  the rows above rank on **%/yr, the measured gap**; the tail ranks on the **TT composite, the
+  asserted judgment**, marked `*`. A tail row **never borrows a rate it does not have** — that
+  would be exactly the units error DEC-D2 removed from `sellRank` — and carries no `ann`/
+  `upside` field at all, so a rate cannot leak into a sort or a render even by accident.
+  **The reason is the specific missing input, with its fix**: `no thesis payload stored` →
+  *add a deep-dive payload* · `no pt_model target` → *add a pt_model* · `no usable price` →
+  *stamp a ref_px or wait for a quote* · `no year-end <hz> rung` → *extend the estimates, or
+  set the horizon to auto*. A generic "unrankable" names a state; this names the next action.
+  **"Reviewed" is deliberately broad** — a run stamp, a stored thesis, OR a composite — because
+  any one of them means a human looked at the name, which is the thing the owner asked never to
+  lose. A name with none of the three is **not** in the tail and gets its own **NOT REVIEWED**
+  section in the export: *"never looked at"* and *"reviewed but unpriceable"* are different
+  facts, and only the second belongs in a next-dollar hierarchy. A reviewed name with no
+  composite yet sorts LAST but is still present, reading *"reviewed, no score yet"* — the state
+  a fresh run is usually in, and a `0` there would have read as a judgment.
+  **`UNRANKED_ROWS` is one computation at three altitudes** (the `ptModelRows` rule): the
+  compact BUY block on the primary view, the DESK ranking, and the rankings export — which
+  re-ranks its old flat "NOT RANKED" bin into the same composite order rather than re-deriving
+  anything. **Red hinges and never-run flags ride the tail row**, so a name demoted to the
+  second basis does not lose its reds on the way down (v3.25). And the empty-ranking branch now
+  **emits the tail instead of an apology** — the owner's rule is that this surface always
+  produces an ordered output.
+  Tests: **1275 smoke** (+13: the classifier lifted and RUN — the full reason taxonomy, the
+  composite ordering, no-rate-leakage, red-hinge carry, and that an unreviewed name stays out)
+  + **215 render** (+10: the tail driven live at 390px on both altitudes, the export's two
+  sections, and total coverage — every book name lands in exactly one place). Negative-
+  controlled: disabling the primary-view tail turns three assertions red.
 - **FEAT-TT-DDSTORE (v3.75) — the deferral comes due: `deepDive` gets its own KV document.**
   Third time at the same wall, and the changelog called it every time. `pos` was split out in
   v3.34 and the belief ledger in v3.32, each because a growing thing was riding inside one

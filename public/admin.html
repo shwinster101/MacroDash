@@ -9,7 +9,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
 <!-- AUDIT: kept in sync with package.json by test/smoke.mjs. admin.html is a Vite
      public/ passthrough, so it cannot receive __APP_VERSION__ — the guard is the fix. -->
-<title>TT TICKER TERMINAL v3.75.0</title>
+<title>TT TICKER TERMINAL v3.76.0</title>
 <style>
   :root{
     --bg:#05070a; --panel:#0a0f16; --panel2:#0d141d; --line:#16202c;
@@ -398,7 +398,7 @@
         onclick="toggleHeadInfo()">⋯ MENU</button>
     </div>
     <div id="headInfo" style="display:none">
-      <div class="brand">FINANCE&nbsp;BRO.AI // TT&nbsp;TICKER&nbsp;TERMINAL <small>v3.75.0 · single-pass deep-dive orchestrator</small></div>
+      <div class="brand">FINANCE&nbsp;BRO.AI // TT&nbsp;TICKER&nbsp;TERMINAL <small>v3.76.0 · single-pass deep-dive orchestrator</small></div>
       <div class="statusline">
         <span>BOOK: <b id="bookStamp">loading…</b></span>
         <span>AUTH: <b id="sessState">…</b></span>
@@ -1219,6 +1219,10 @@ function renderOptLadder(){
 /* ── correlation clusters: "cluster = one position" ── */
 let LAST_RANK=[];   // top computed-upside syms, set by renderUpsideRank
 let UPSIDE_ROWS=[];  // FEAT-TT-FOCUS2: full sorted rows from renderUpsideRank (one computation)
+/* FEAT-TT-ALLREVIEWED (v3.76): the reviewed names the MATH cannot rank, ordered by the TT
+   composite instead of by %/yr. Same one-computation rule as UPSIDE_ROWS — the DESK list,
+   the compact BUY block and the rankings export all read THIS, never their own re-derivation. */
+let UNRANKED_ROWS=[];
 let CHANGED_N={n:0,stops:0}; // FEAT-TT-FOCUS2: what-changed counts for the stance strip
 /* FEAT-TT-POS: book-vs-broker reconciliation. Renders only once something has synced —
    before that every name would read as "not held" purely because nothing has been measured. */
@@ -3667,6 +3671,85 @@ function renderUpsideRank(){
       // but invisible here — a contingent target ranked identically to a modeled one.
       caveat:(dd.pt_model&&dd.pt_model.note)||""});
   });
+  /* ═══ FEAT-TT-ALLREVIEWED (v3.76) ═══════════════════════════════════════════════════
+     Owner: "every TT review must factor into the next dollar even if with an asterisk."
+     Until now a reviewed name the math could say nothing about left the next-dollar surface
+     ENTIRELY and survived only as a SENTENCE — a count in a footer, a comma list inside the
+     collapsed methodology expander. That is the v3.65 lesson one step further: naming the
+     dropped names beat counting them, but a name mentioned in prose beside a list of ranked
+     rows still reads as excluded, and the names most often in that state are precisely the
+     ones just reviewed (a fresh TT run frequently PRECEDES the model).
+     So the ranking now has TWO bases, married never merged (the measured/asserted rule):
+       · rows above  — ranked on %/yr, the MEASURED gap
+       · this tail   — ranked on the TT composite, the ASSERTED judgment, asterisked
+     A tail row NEVER borrows a rate it does not have (the D2 units rule) and never invents a
+     rank; it carries the judgment that DOES exist plus the exact reason the math does not.
+     One computation: UNRANKED_ROWS is read by the DESK list, the compact BUY block and the
+     rankings export, exactly as UPSIDE_ROWS is. */
+  const rankedSyms=new Set(rows.map(r=>r.sym));
+  const candSyms=new Set(cands.map(c=>c.x.sym));
+  UNRANKED_ROWS=BOOK.filter(x=>!rankedSyms.has(x.sym)).map(x=>{
+    const dd=ddOf(x);
+    // "TT-reviewed" is deliberately broad: a run stamp, a stored thesis, or a composite. Any
+    // one of them means a human has looked at this name, which is the thing the owner asked
+    // never to lose. A name with none of the three is NOT a review and stays out.
+    const reviewed=!!(x.lastRun||dd||(dd&&ttInfo(dd)));
+    if(!reviewed)return null;
+    const stamp=(dd&&dd.ref_px&&isFinite(dd.ref_px.px)&&dd.ref_px.px>0)?dd.ref_px:null;
+    const live=LIVE_PX[x.sym];
+    const hasPx=!!((live&&isFinite(live.px)&&live.px>0)||stamp);
+    const rr=dd?ptModelRows(dd).filter(r=>typeof r.prem==="number"||typeof r.fl==="number"):[];
+    // The reason is the SPECIFIC missing input, in the order the ranking needs them, so it
+    // names what to go and do — not a generic "unrankable".
+    const why=!dd?"no thesis payload stored"
+      :!rr.length?"no pt_model target"
+      :!hasPx?"no usable price (no live quote, no stamped ref_px)"
+      :candSyms.has(x.sym)?`no ${hz?"year-end "+hz:"usable"} rung`
+      :"model present but no rung resolved";
+    const fix=!dd?"add a deep-dive payload"
+      :!rr.length?"add a pt_model"
+      :!hasPx?"stamp a ref_px or wait for a quote"
+      :"extend the estimate series, or set the horizon to auto";
+    return {sym:x.sym,lens:x.lens,tier:x.tier,tt:dd?ttInfo(dd):null,rs:runState(x.lastRun),
+      rdy:readiness(x),wt:rankWeight(x.sym),why,fix,
+      redH:(Array.isArray(dd&&dd.hinges)?dd.hinges:[]).filter(g=>g.state==="red").length,
+      redLabels:(Array.isArray(dd&&dd.hinges)?dd.hinges:[]).filter(g=>g.state==="red").map(g=>g.label||g.key||g.id||"unnamed")};
+  }).filter(Boolean);
+  // Ordered by the judgment that EXISTS — composite score, then tier, then symbol. A name
+  // carrying no score at all sorts last rather than being dropped: "reviewed, no score yet"
+  // is a real state, and it is the one a fresh run is usually in.
+  UNRANKED_ROWS.sort((a,b)=>{
+    const as=a.tt&&a.tt.score!=null?a.tt.score:-1, bs=b.tt&&b.tt.score!=null?b.tt.score:-1;
+    if(bs!==as)return bs-as;
+    const at=TIER_ORDER.indexOf(a.tier),bt=TIER_ORDER.indexOf(b.tier);
+    if(at!==bt)return at-bt;
+    return a.sym<b.sym?-1:1;
+  });
+  const unrankedHtml=()=>{
+    if(!UNRANKED_ROWS.length)return "";
+    const row=(r)=>{
+      const tt=r.tt?`<span style="color:${r.tt.tier==="C"?"var(--red)":(r.tt.score!=null&&r.tt.score>=7)||r.tt.tier==="S"||r.tt.tier==="A"?"var(--green)":"var(--amber)"};font-size:9.5px;font-weight:700">TT ${esc(r.tt.score!=null?r.tt.score.toFixed(1):r.tt.tier)}</span>`
+        : `<span class="scope" style="color:var(--amber)">TT — reviewed, no score yet</span>`;
+      const w=r.wt;
+      const wTxt=w.optOnly&&w.w===null?`<span class="scope" style="color:var(--amber)">◇ opt-only</span>`
+        :w.w===null?(w.held?`<span class="scope">held · unmeasured</span>`:`<span class="scope" style="color:var(--green)">new — not held</span>`)
+        :`<span style="color:${w.w>=CAP_PCT?"var(--red)":w.w>=10?"var(--amber)":"var(--slate)"};font-size:9.5px;font-weight:700">${w.w}%${esc(w.mark)}</span>`;
+      return `<span class="pick" onclick="openCard('${esc(r.sym)}')" title="${esc(r.why)} — ${esc(r.fix)}">`+
+        `<span style="color:var(--amber);font-weight:700">*</span>`+
+        `<span class="sym">${esc(r.sym)}</span><span class="lens lens-${esc(r.lens)}">${esc(r.lens)}</span>`+
+        `<span class="scope">${esc(TIER_LABEL[r.tier]||r.tier)}</span>${wTxt}${tt}`+
+        `<span class="scope" style="color:var(--amber)">no %/yr — ${esc(r.why)}</span>`+
+        (r.redH?`<span class="bad2" title="${esc(r.redLabels.join(" · "))}">● ${r.redH} red</span>`:"")+
+        (r.rs.k==="never"?`<span class="bad2">○ no TT run on record</span>`:"")+
+        `</span>`;
+    };
+    return `<div class="lbl" style="margin-top:8px">Reviewed · not rate-rankable · ${UNRANKED_ROWS.length} name${UNRANKED_ROWS.length===1?"":"s"} — ordered by TT composite</div>`+
+      `<div class="picks">${UNRANKED_ROWS.map(row).join("")}</div>`+
+      `<details class="est-mini"><summary>why these carry no %/yr</summary><div>`+
+      `<div class="none">These are NOT judged unattractive and are NOT excluded from the next dollar — the model simply cannot price them yet, so they are ranked on the TT composite (asserted judgment) instead of on %/yr (measured gap). The two bases are never mixed into one order: a name here has no rate, and borrowing one would be a units error.</div>`+
+      UNRANKED_ROWS.map(r=>`<div class="none"><b>${esc(r.sym)}</b> — ${esc(r.why)} · fix: ${esc(r.fix)}</div>`).join("")+
+      `</div></details>`;
+  };
   const hzBtn=(v,lab)=>`<span onclick="setHorizon('${v}')" style="cursor:pointer;padding:1px 6px;border-radius:8px;font-size:9.5px;`+
     `border:1px solid ${(HORIZON||"")===v?"var(--green)":"#24333f"};color:${(HORIZON||"")===v?"var(--green)":"var(--dim)"}">${lab}</span>`;
   // FEAT-TT-PTLINT (D1): the auto pick must STATE itself. An auto-selected horizon that looked
@@ -3676,9 +3759,13 @@ function renderUpsideRank(){
     hzBtn(HZ_AUTO,"auto")+hzBtn("","nearest")+years.map(y=>hzBtn(y,y)).join("")+
     (isAuto?`<span class="scope">auto · ${hz?"year-end "+esc(hz)+" — the deepest year EVERY modelled name reaches":"nearest — no year is shared by every model yet"}</span>`:"")+`</div>`;
   if(!rows.length){
+    // v3.76: even with NOTHING rate-rankable the surface still produces an ORDERED output —
+    // the owner's rule that a next-dollar hierarchy must always exist. The old branch ended
+    // at an apology.
     el.innerHTML=`<div class="lbl">Computed upside</div>`+hzUI+`<div class="none">`+
       (cands.length?`no ranked name has a rung at ${esc(hz)} — pick another horizon (estimate series end at different years).`
-        :`no name yet has a usable price (live quote or stamped ref_px) and a pt_model target — nothing to rank.`)+`</div>`;
+        :`no name yet has a usable price (live quote or stamped ref_px) and a pt_model target — nothing to rank on %/yr.`)+`</div>`+
+      unrankedHtml();
     return;
   }
   // Sort on the ANNUALISED figure — the only one comparable across differing horizons.
@@ -3773,6 +3860,7 @@ function renderUpsideRank(){
     // FEAT-TT-RANKFAIR: the coverage gap the two rankings hid. Queue names carrying a manual
     // rank but NO pt_model can never appear above — the names under active consideration were
     // exactly the ones the math had nothing to say about, and nothing said so.
+    unrankedHtml()+
     (()=>{const gap=BOOK.filter(x=>String(x.rank||"").startsWith("#")&&!(ddOf(x)&&ptModelRows(ddOf(x)).length)).map(x=>x.sym);
       return gap.length?`<div style="color:var(--amber);font-size:10px;margin-top:3px">⚠ ${gap.length} name${gap.length===1?"":"s"} in the manual queue cannot be ranked here — no pt_model: <b>${gap.map(esc).join(", ")}</b>. The queue and this list are answering different questions until they are modelled.</div>`:"";})()+
     // FEAT-TT-PTLINT: every target above is only as good as the model under it. Name the offenders
@@ -4373,8 +4461,12 @@ function renderBuyBlock(){
   else if(rows.length)h+=`<div class="none" style="color:var(--amber)">⏸ WAIT — no name passes every gate (reasons in DESK)</div>`;
   // v3.42 slice 2: while the first quote load is still in flight an empty rank is UNKNOWN,
   // not empty — skeleton rows hold the geometry so the board doesn't shift when data lands.
+  // v3.76: "nothing to rank" is only true when there is also nothing REVIEWED to fall back
+  // on. With reviewed-but-unpriced names present the tail below IS the output, so this must
+  // not claim the surface is empty.
   if(!rows.length)h+=QUOTES_PENDING
     ?`<div class="skel-row"></div><div class="skel-row"></div><div class="skel-row"></div>`
+    :UNRANKED_ROWS.length?`<div class="none">nothing priced on %/yr yet — the reviewed names below are ranked on TT composite instead</div>`
     :`<div class="none">nothing modelled+priced yet — nothing to rank</div>`;
   const MEDAL=["🥇","🥈","🥉","4","5"];
   rows.forEach((r,i)=>{
@@ -4395,7 +4487,28 @@ function renderBuyBlock(){
       (r.redH?`<span class="bad2">● ${r.redH} red</span>`:"")+
       (r.rolled?`<span class="warn2">↷ ${esc(r.rolled)}→${esc(r.y)}</span>`:"")+`</span></button>`;
   });
-  h+=`<div class="none"><button class="linklike" onclick="openDesk('dNext')">full math, horizons &amp; caveats ↗</button> · ${UPSIDE_ROWS.length} ranked of ${BOOK.length}</div>`;
+  /* FEAT-TT-ALLREVIEWED (v3.76): the reviewed names the math cannot price still reach the
+     PRIMARY view — the owner's rule that every TT review factors into the next dollar, if
+     only with an asterisk. Same UNRANKED_ROWS the DESK list renders (one computation), top 3
+     by TT composite, each carrying the specific missing input. Deliberately BELOW the ranked
+     rows and visually marked `*`: it is a different basis, not a continuation of the order. */
+  if(UNRANKED_ROWS.length){
+    const tail=UNRANKED_ROWS.slice(0,3);
+    h+=`<div class="none" style="margin-top:6px;color:var(--amber)">* reviewed · no %/yr yet — ranked on TT composite</div>`;
+    tail.forEach(r=>{
+      h+=`<button class="fdr-row" onclick="openCard('${esc(r.sym)}')">`+
+        `<span class="fdr-l"><span style="color:var(--amber);font-weight:700">*</span>`+
+        `<span class="sym">${esc(r.sym)}</span><span class="lens lens-${esc(r.lens)}">${esc(r.lens)}</span>`+
+        `<span class="scope">${esc(r.tier)}</span></span>`+
+        `<span class="fdr-p" style="color:var(--amber)">${r.tt&&r.tt.score!=null?"TT "+r.tt.score.toFixed(1):r.tt?"TT "+esc(r.tt.tier):"TT —"}</span>`+
+        `<span class="fdr-d"><span class="scope">${esc(r.why)}</span>`+
+        (r.redH?`<span class="bad2">● ${r.redH} red</span>`:"")+
+        (r.rs.k==="never"?`<span class="bad2">○ never run</span>`:"")+`</span></button>`;
+    });
+    if(UNRANKED_ROWS.length>3)h+=`<div class="none"><button class="linklike" onclick="openDesk('dNext')">+${UNRANKED_ROWS.length-3} more reviewed-but-unpriced ↗</button></div>`;
+  }
+  h+=`<div class="none"><button class="linklike" onclick="openDesk('dNext')">full math, horizons &amp; caveats ↗</button> · ${UPSIDE_ROWS.length} ranked of ${BOOK.length}`+
+    (UNRANKED_ROWS.length?` · ${UNRANKED_ROWS.length} reviewed but unpriced`:"")+`</div>`;
   el.innerHTML=h;
 }
 /* Compact calendar block — same binaryEvents() computation the DESK calendar renders. */
@@ -5124,12 +5237,27 @@ function buildRankingsMd(){
   if(sr&&sr.optOnly.length)m+=`_Options sleeves with no synced value: ${sr.optOnly.map(r=>r.sym).join(", ")}._\n\n`;
   if(!sr)m+=`_No measured positions — nothing to rank._\n\n`;
 
-  // 6. What the ranking could NOT see. Silent truncation reads as "covered everything".
-  const unranked=BOOK.filter(x=>!rows.some(r=>r.sym===x.sym));
-  if(unranked.length){
-    m+=`## NOT RANKED (${unranked.length})\n\n_No pt_model target, or no usable price. NOT judged unattractive._\n\n`;
-    unranked.forEach(x=>{const rd=readiness(x);
-      m+=`- **${x.sym}** (${x.tier}/${x.lens}) — ${rd.blockers.length?rd.blockers.join(", "):"no model target"}\n`;});
+  /* 6. The reviewed names the math could not price. v3.76: these used to be a flat "NOT
+     RANKED" list appended after the real rankings, which reads as a leftovers bin. They are
+     now the SECOND RANKING — ordered by TT composite, the judgment that does exist — because
+     the owner's rule is that every TT review factors into the next dollar. Read from
+     UNRANKED_ROWS, the same computation the board renders (the doctrine-#1 reuse rule); the
+     remainder, which is not a review at all, is still listed so coverage stays honest. */
+  if(UNRANKED_ROWS.length){
+    m+=`## REVIEWED — NOT RATE-RANKABLE (${UNRANKED_ROWS.length})\n\n`;
+    m+=`_Ranked on TT composite (asserted judgment), NOT on %/yr (measured gap) — the model cannot price these yet. NOT judged unattractive, and NOT excluded from the next dollar. The two bases are never merged into one order: a name here has no rate, and borrowing one would be a units error._\n\n`;
+    m+=`|#|Sym|Tier|Lens|TT|Weight|Why no %/yr|Fix|\n|---|---|---|---|---|---|---|---|\n`;
+    UNRANKED_ROWS.forEach((r,i)=>{
+      const w=r.wt;
+      const wt=w.optOnly&&w.w===null?"opt-only":w.w===null?(w.held?"held, unmeasured":"not held"):`${w.w}%${w.mark||""}`;
+      m+=`|${i+1}|**${r.sym}**|${r.tier}|${r.lens}|${r.tt?(r.tt.score!=null?r.tt.score.toFixed(1):r.tt.tier):"— no score yet"}|${wt}|${r.why}|${r.fix}|\n`;
+    });
+    m+=`\n`;
+  }
+  const untouched=BOOK.filter(x=>!rows.some(r=>r.sym===x.sym)&&!UNRANKED_ROWS.some(r=>r.sym===x.sym));
+  if(untouched.length){
+    m+=`## NOT REVIEWED (${untouched.length})\n\n_No TT run on record, no thesis payload, no composite — these have never been looked at, which is a different fact from being unrankable._\n\n`;
+    untouched.forEach(x=>{m+=`- **${x.sym}** (${x.tier}/${x.lens})\n`;});
     m+=`\n`;
   }
   const lints=BOOK.map(x=>({sym:x.sym,ls:ddOf(x)?lintPtModel(ddOf(x)):[]})).filter(h=>h.ls.length);

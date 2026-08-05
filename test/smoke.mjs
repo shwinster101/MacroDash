@@ -3205,8 +3205,18 @@ ok("rankexport: it leads with STANCE — whether capital may move outranks any r
   /## STANCE/.test(rxSeg) && rxSeg.indexOf("## STANCE") < rxSeg.indexOf("## MASTER RANKING"));
 ok("rankexport: it names WHY the other names are not eligible, not just the winner",
   /Why the others are not eligible/.test(rxSeg));
+// v3.76 re-pinned on the CURRENT contract: the flat "NOT RANKED" bin became TWO sections,
+// because "reviewed but the math can't price it" and "never looked at" are different facts and
+// only the first belongs in a next-dollar hierarchy. Coverage is still total — every book name
+// lands in exactly one of ranked / reviewed-not-rate-rankable / not-reviewed.
 ok("rankexport: names what it could NOT rank — silent truncation reads as full coverage",
-  /## NOT RANKED/.test(rxSeg) && /NOT judged unattractive/.test(rxSeg));
+  /## REVIEWED — NOT RATE-RANKABLE/.test(rxSeg) && /NOT judged unattractive/.test(rxSeg) &&
+  /## NOT REVIEWED/.test(rxSeg) && /never been looked at/.test(rxSeg));
+ok("rankexport: the reviewed-but-unpriced section is a RANKING on the TT composite, and reads " +
+   "UNRANKED_ROWS rather than re-deriving it (doctrine #1 — one computation, many altitudes)",
+  /UNRANKED_ROWS\.forEach\(\(r, ?i\) ?=>/.test(rxSeg) &&
+  /Why no %\/yr\|Fix/.test(rxSeg) && /borrowing one would be a units error/.test(rxSeg) &&
+  !/ptModelRows\(/.test(rxSeg));
 ok("rankexport: funding priority carries its own disclaimer, since it is not a sell call",
   /NOT a sell recommendation/.test(rxSeg));
 ok("rankexport: provenance states the floor denominator and the self-attestation limit",
@@ -4804,6 +4814,111 @@ console.log("\n[50] FEAT-TT-DDSTORE — deepDive moves to tt:dd:v1:<SYM>");
   ok("ddstore: the index load settles in a finally, so a dead feed falls back to any embedded " +
      "payload rather than stranding the board (the loadQuotes/loadPositions precedent)",
     /async function loadDeepDiveIndex\(\)\{[\s\S]*?finally\{DD_PENDING=false;render\(\);\}/.test(adminSrc));
+}
+
+
+// ---- 51. FEAT-TT-ALLREVIEWED (v3.76) — every TT review reaches the next dollar ------
+// Owner: "every TT review must factor into the next dollar even if with an asterisk." A
+// reviewed name the math could say nothing about used to leave the surface entirely and
+// survive as a SENTENCE — a count in a footer, a comma list inside a collapsed expander.
+// The classification and the ORDER are claims about data, so the real code is lifted and RUN.
+console.log("\n[51] FEAT-TT-ALLREVIEWED — the reviewed-but-unpriced ranking");
+{
+  // The tail lives inside renderUpsideRank (it needs cands/rows), so lift the classifier by
+  // slicing the block and running it over fixtures with the real helpers behind it.
+  const i0 = adminSrc.indexOf("UNRANKED_ROWS=BOOK.filter(x=>!rankedSyms.has(x.sym))");
+  const i1 = adminSrc.indexOf("const unrankedHtml=", i0);
+  const seg = adminSrc.slice(i0, i1);
+  ok("allreviewed: the classifier block exists and is the ONE place the tail is built", i0 > 0 && i1 > i0);
+  const PRICED = { px: 100, at: "2026-08-01" };
+  const BOOK1 = [
+    { sym: "RANKED", tier: "S", lens: "AI", lastRun: "2026-08-01" },
+    { sym: "NOMODEL", tier: "A", lens: "AI", lastRun: "2026-08-01" },   // reviewed, payload w/o rows
+    { sym: "NOPX",    tier: "A", lens: "AI", lastRun: "2026-08-01" },   // rows but no price
+    { sym: "NORUNG",  tier: "B", lens: "AI", lastRun: "2026-08-01" },   // priced+modelled, no rung at hz
+    { sym: "NOPAY",   tier: "B", lens: "AI", lastRun: "2026-08-01" },   // run stamp only
+    { sym: "NEVER",   tier: "C", lens: "AI" },                          // never reviewed at all
+  ];
+  const DD1 = {
+    RANKED:  { rows: [{ y: "2027", prem: 200 }], ref_px: PRICED, composite: { score: 7.0, tier: "A" } },
+    NOMODEL: { rows: [], ref_px: PRICED, composite: { score: 9.1, tier: "S" } },
+    NOPX:    { rows: [{ y: "2027", prem: 200 }], composite: { score: 8.2, tier: "A" } },
+    NORUNG:  { rows: [{ y: "2027", prem: 200 }], ref_px: PRICED, composite: { score: 6.0, tier: "B" } },
+    NOPAY:   null,
+  };
+  const TO = ["S", "A", "B", "C", "WATCH", "DEF"];
+  // The classifier is run with the real helpers behind the claims it makes (ptModelRows
+  // presence, hinge reds, the horizon) and thin stand-ins where it makes none.
+  const out = (() => {
+    const F = new Function("BOOK", "LIVE_PX", "hz", "DD", "TIER_ORDER", "RANKED",
+      "let UNRANKED_ROWS=[];" +
+      "const ddOf=(x)=>DD[x.sym]||null;" +
+      "const ttInfo=(dd)=>dd&&dd.composite?{score:dd.composite.score,tier:dd.composite.tier}:null;" +
+      "const runState=(d)=>({k:d?'fresh':'never',days:null});" +
+      "const readiness=()=>({verdict:'BLOCKED',blockers:[],cautions:[]});" +
+      "const rankWeight=()=>({w:null,held:false,optOnly:false,mark:''});" +
+      "const ptModelRows=(dd)=>(dd&&dd.rows)||[];" +
+      "const cands=BOOK.filter(x=>{const d=DD[x.sym];return d&&(d.rows||[]).length&&(LIVE_PX[x.sym]||(d.ref_px&&d.ref_px.px>0));});" +
+      "const candSyms=new Set(cands.map(x=>x.sym));" +
+      "const rankedSyms=RANKED;" +
+      seg + "\nreturn UNRANKED_ROWS;");
+    return F(BOOK1, {}, "2027", DD1, TO, new Set(["RANKED"]));
+  })();
+  const bySym = Object.fromEntries(out.map((r) => [r.sym, r]));
+  ok("allreviewed: an already-ranked name never appears in the tail (one name, one basis)",
+    !bySym.RANKED);
+  ok("allreviewed: a name with NO review at all is not in the tail — 'never looked at' is a " +
+     "different fact from 'reviewed but unpriceable', and only the second is a next-dollar input",
+    !bySym.NEVER && out.length === 4);
+  // The reason must name the SPECIFIC missing input, in the order the ranking needs them —
+  // a generic "unrankable" tells you nothing about what to go and do.
+  ok("allreviewed: each row names the specific missing input, not a generic 'unrankable'",
+    /no thesis payload/.test(bySym.NOPAY.why) &&
+    /no pt_model target/.test(bySym.NOMODEL.why) &&
+    /no usable price/.test(bySym.NOPX.why) &&
+    /no year-end 2027 rung/.test(bySym.NORUNG.why));
+  ok("allreviewed: each row also carries the FIX — the reason is actionable, not a diagnosis",
+    bySym.NOPAY.fix === "add a deep-dive payload" && bySym.NOMODEL.fix === "add a pt_model" &&
+    /stamp a ref_px/.test(bySym.NOPX.fix) && /horizon to auto/.test(bySym.NORUNG.fix));
+  // Ordered by the judgment that EXISTS. Borrowing a rate would be the D2 units error.
+  ok("allreviewed: the tail is ORDERED by TT composite (asserted judgment), never by a " +
+     "borrowed %/yr — 9.1 leads 8.2 leads 6.0",
+    out.map((r) => r.sym).slice(0, 3).join() === "NOMODEL,NOPX,NORUNG");
+  ok("allreviewed: no row carries an upside/ann field at all — a rate it does not have cannot " +
+     "leak into a sort or a render",
+    out.every((r) => r.ann === undefined && r.upside === undefined));
+  ok("allreviewed: a reviewed name with NO composite sorts LAST but is still present — " +
+     "'reviewed, no score yet' is the state a fresh run is usually in",
+    out[out.length - 1].sym === "NOPAY" && out[out.length - 1].tt === null);
+  ok("allreviewed: red hinges ride the tail row (v3.25 — a name demoted to the tail must not " +
+     "lose its reds on the way)",
+    (() => {
+      const DD2 = { ...DD1, NOMODEL: { ...DD1.NOMODEL, hinges: [{ label: "funding", state: "red" }, { label: "x", state: "green" }] } };
+      const F = new Function("BOOK", "LIVE_PX", "hz", "DD", "TIER_ORDER", "RANKED",
+        "let UNRANKED_ROWS=[];const ddOf=(x)=>DD[x.sym]||null;" +
+        "const ttInfo=(dd)=>dd&&dd.composite?{score:dd.composite.score,tier:dd.composite.tier}:null;" +
+        "const runState=(d)=>({k:d?'fresh':'never',days:null});const readiness=()=>({verdict:'x',blockers:[],cautions:[]});" +
+        "const rankWeight=()=>({w:null,held:false,optOnly:false,mark:''});const ptModelRows=(dd)=>(dd&&dd.rows)||[];" +
+        "const cands=BOOK.filter(x=>{const d=DD[x.sym];return d&&(d.rows||[]).length&&(d.ref_px&&d.ref_px.px>0);});" +
+        "const candSyms=new Set(cands.map(x=>x.sym));const rankedSyms=RANKED;" + seg + "\nreturn UNRANKED_ROWS;");
+      const o = F(BOOK1, {}, "2027", DD2, TO, new Set(["RANKED"]));
+      const n = o.find((r) => r.sym === "NOMODEL");
+      return n.redH === 1 && n.redLabels.join() === "funding";
+    })());
+  // Renders at BOTH altitudes off the SAME array — the ptModelRows doctrine.
+  ok("allreviewed: UNRANKED_ROWS is module-level and read by the DESK list, the compact BUY " +
+     "block and the export — never re-derived per surface",
+    /^let UNRANKED_ROWS=\[\];/m.test(adminSrc) &&
+    (adminSrc.match(/UNRANKED_ROWS/g) || []).length >= 8 &&
+    /function renderBuyBlock\(\)\{[\s\S]*?UNRANKED_ROWS\.slice\(0,3\)/.test(adminSrc));
+  ok("allreviewed: the empty-ranking branch still emits the tail — the owner's rule is that a " +
+     "next-dollar hierarchy ALWAYS produces an output, never an apology",
+    /if\(!rows\.length\)\{[\s\S]{0,700}?unrankedHtml\(\);\s*\n\s*return;/.test(adminSrc));
+  ok("allreviewed: the BUY block stops claiming 'nothing to rank' when reviewed names are present",
+    adminSrc.includes("the reviewed names below are ranked on TT composite instead"));
+  ok("allreviewed: the tail states that it is a DIFFERENT basis and that the two are never merged",
+    adminSrc.includes("borrowing one would be a units error") &&
+    adminSrc.includes("NOT excluded from the next dollar"));
 }
 
 console.log(`\n=== SMOKE TEST: ${pass} passed, ${fail} failed ===`);
