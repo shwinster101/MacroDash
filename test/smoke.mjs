@@ -4015,5 +4015,175 @@ console.log("\n[47] route registry + normalization — every boundary at -e/boun
       return w.state === "WEAKENING" && k.state === "CONTRADICTED" && nb.state === "INSUFFICIENT"; })());
 }
 
+// ═══════════ [48] /api/score handler — fake KV + real authorize (commit 3) ═══════════
+// The refresh.js precedent: the Pages Function imports directly in Node; a fake KV and
+// hand-rolled requests drive the full auth/validation/write ladder without HTTP.
+console.log("\n[48] /api/score — server-authoritative scoring endpoint");
+{
+  const score = await import("../functions/api/score.js");
+  const mkKV2 = (init = {}) => {
+    const store = new Map(Object.entries(init).map(([k, v]) => [k, JSON.stringify(v)]));
+    return {
+      async get(k, type) { const v = store.get(k); return v == null ? null : (type === "json" ? JSON.parse(v) : v); },
+      async put(k, v) { store.set(k, String(v)); },
+      async delete(k) { store.delete(k); },
+      async list({ prefix, limit = 50 }) {
+        const keys = [...store.keys()].filter((k) => k.startsWith(prefix)).slice(0, limit).map((name) => ({ name }));
+        return { keys, list_complete: true, cursor: null };
+      },
+      _store: store,
+    };
+  };
+  const PIN = "123456";
+  const mkReq = (method, { params = "", headers = {}, body = null } = {}) => ({
+    method,
+    url: "https://macrodash.pages.dev/api/score" + params,
+    headers: { get: (k) => headers[k] ?? headers[k.toLowerCase()] ?? null },
+    text: async () => (body == null ? "" : JSON.stringify(body)),
+  });
+  const seedBook = { version: "1.0", book: [
+    { sym: "AAA", tier: "S", lens: "AI", deepDive: {
+      consensus: { revenue_B: { 2027: 11.45, 2028: 21.56 }, eps: { 2027: -1.61, 2028: -2.04 } },
+      pt_model: { ev_s_multiple: { 2026: 5.5, 2027: 5.45 }, share_count_M: 310 },
+      ref_px: { px: 212.58, at: new Date(Date.now() - 86400000).toISOString().slice(0, 10) } } },
+    { sym: "ZZZ", tier: "B", lens: "??", deepDive: {} },
+  ], cut: [] };
+  const env = () => ({ TT_PIN: PIN, PULSE_CACHE: mkKV2({ "tt:book:v1": seedBook }) });
+  const UI = { methodology_version: "tt-underwriting-v2.3.0", route_gates: {}, falsifiers: [] };
+
+  ok("score: anonymous GET fails closed (401)", await (async () => {
+    const r = await score.onRequestGet({ request: mkReq("GET", { params: "?sym=AAA" }), env: env() });
+    return r.status === 401;
+  })());
+  ok("score: cross-origin PUT → 403 before any work", await (async () => {
+    const r = await score.onRequestPut({ request: mkReq("PUT", { params: "?sym=AAA", headers: { Origin: "https://evil.example", "x-tt-pin": PIN } }), env: env() });
+    return r.status === 403;
+  })());
+  ok("score: unknown method → 405", await (async () => {
+    const r = await score.onRequest({ request: mkReq("DELETE", {}), env: env() });
+    return r.status === 405;
+  })());
+  const e1 = env();
+  const put1 = await score.onRequestPut({ request: mkReq("PUT", { params: "?sym=AAA", headers: { "x-tt-pin": PIN }, body: { underwriting_inputs: UI } }), env: e1 });
+  const rec1 = JSON.parse(await put1.text());
+  ok("score: first PUT computes server-side and returns the normalized record (never rereads KV)",
+    put1.status === 200 && rec1.record.scorecard.route === "AI_INFRA" &&
+    rec1.record.scorecard.status === "UNSCORABLE" &&
+    rec1.record.scorecard.blockers.some((b3) => /AWAITING_FALSIFIERS/.test(b3)) &&
+    /^sha256:/.test(rec1.record.scorecard.input_hash));
+  ok("score: the record, snapshot and index were all written; ledger got a compact diff",
+    e1.PULSE_CACHE._store.has("tt:score:v1:AAA") &&
+    [...e1.PULSE_CACHE._store.keys()].some((k) => k.startsWith("tt:score:snap:v1:AAA:sha256:")) &&
+    JSON.parse(e1.PULSE_CACHE._store.get("tt:score:index:v1")).entries.AAA.status === "UNSCORABLE" &&
+    e1.PULSE_CACHE._store.has("tt:ledger:AAA"));
+  ok("score: a client-supplied scorecard is IGNORED — the server result carries no client total", await (async () => {
+    const e2 = env();
+    const r = await score.onRequestPut({ request: mkReq("PUT", { params: "?sym=AAA", headers: { "x-tt-pin": PIN },
+      body: { underwriting_inputs: UI, scorecard: { raw_score: 9.99, raw_tier: "S" } } }), env: e2 });
+    const j = JSON.parse(await r.text());
+    return r.status === 200 && j.record.scorecard.raw_score === null && j.record.scorecard.raw_tier === null;
+  })());
+  ok("score: a second PUT without a matching If-Match hash 409s WITH the server record", await (async () => {
+    const r = await score.onRequestPut({ request: mkReq("PUT", { params: "?sym=AAA", headers: { "x-tt-pin": PIN }, body: { underwriting_inputs: UI } }), env: e1 });
+    const j = JSON.parse(await r.text());
+    return r.status === 409 && j.error === "SCORE_VERSION_MISMATCH" && j.server.scorecard.input_hash === rec1.record.scorecard.input_hash;
+  })());
+  ok("score: If-Match with the current hash (or '*') updates cleanly", await (async () => {
+    const r = await score.onRequestPut({ request: mkReq("PUT", { params: "?sym=AAA",
+      headers: { "x-tt-pin": PIN, "If-Match": rec1.record.scorecard.input_hash }, body: { underwriting_inputs: UI } }), env: e1 });
+    return r.status === 200;
+  })());
+  ok("score: a stale methodology version 409s (LEGACY_UNVERIFIED is read-side, never write-side)", await (async () => {
+    const r = await score.onRequestPut({ request: mkReq("PUT", { params: "?sym=AAA", headers: { "x-tt-pin": PIN },
+      body: { underwriting_inputs: { ...UI, methodology_version: "tt-underwriting-v2.2.1" } } }), env: env() });
+    return r.status === 409;
+  })());
+  ok("score: an UNMAPPED stored lens is a named 422, never inferred from ticker/sector/prose", await (async () => {
+    const r = await score.onRequestPut({ request: mkReq("PUT", { params: "?sym=ZZZ", headers: { "x-tt-pin": PIN }, body: { underwriting_inputs: UI } }), env: env() });
+    const j = JSON.parse(await r.text());
+    return r.status === 422 && /UNMAPPED lens/.test(j.error);
+  })());
+  ok("score: a sym not in the book is 404 — score records exist only for tracked names", await (async () => {
+    const r = await score.onRequestPut({ request: mkReq("PUT", { params: "?sym=NOPE", headers: { "x-tt-pin": PIN }, body: { underwriting_inputs: UI } }), env: env() });
+    return r.status === 404;
+  })());
+  ok("score: oversize fails closed naming key, measured bytes and limit — no silent truncation", await (async () => {
+    const r = await score.onRequestPut({ request: mkReq("PUT", { params: "?sym=AAA", headers: { "x-tt-pin": PIN },
+      body: { underwriting_inputs: { ...UI, pad: "x".repeat(65 * 1024) } } }), env: env() });
+    const j = JSON.parse(await r.text());
+    return r.status === 400 && j.error === "oversize" && j.key === "tt:score:v1:AAA" && j.bytes > j.limit && j.limit === 64 * 1024;
+  })());
+  ok("score: GET ?book=1 returns the compact index + deployed caps recorded as metadata", await (async () => {
+    const r = await score.onRequestGet({ request: mkReq("GET", { params: "?book=1", headers: { "x-tt-pin": PIN } }), env: e1 });
+    const j = JSON.parse(await r.text());
+    return r.status === 200 && j.deployed_caps.dd_max === 45 * 1024 && j.deployed_caps.max_body === 300 * 1024 && j.index.AAA.route === "AI_INFRA";
+  })());
+  ok("decision: a stale scorecard hash is rejected (409 STALE_SCORECARD_HASH), never rewritten", await (async () => {
+    const r = await score.onRequestPost({ request: mkReq("POST", { params: "?decision=1", headers: { "x-tt-pin": PIN },
+      body: { event: "ELIGIBLE_SET_CHANGED", selected: { sym: "AAA", price: 212, annualized_return: 30 },
+        scorecard_hashes: { AAA: "sha256:deadbeef" } } }), env: e1 });
+    const j = JSON.parse(await r.text());
+    return r.status === 409 && j.error === "STALE_SCORECARD_HASH";
+  })());
+  ok("decision: a verified event persists SERVER-stamped into the paginated journal", await (async () => {
+    const cur = JSON.parse(e1.PULSE_CACHE._store.get("tt:score:v1:AAA")).scorecard.input_hash;
+    const r = await score.onRequestPost({ request: mkReq("POST", { params: "?decision=1", headers: { "x-tt-pin": PIN },
+      body: { event: "ELIGIBLE_SET_CHANGED", selected: { sym: "AAA", price: 212, annualized_return: 30 },
+        alternatives: [], scorecard_hashes: { AAA: cur } } }), env: e1 });
+    if (r.status !== 200) return false;
+    const list = await score.onRequestGet({ request: mkReq("GET", { params: "?decisions=1", headers: { "x-tt-pin": PIN } }), env: e1 });
+    const j = JSON.parse(await list.text());
+    return j.events.length === 1 && j.events[0].at && j.events[0].event === "ELIGIBLE_SET_CHANGED";
+  })());
+  ok("score: deployed-caps metadata matches the REAL tt.js MAX_BODY and admin.html DD_MAX (three-way pin)",
+    (() => {
+      const scoreSrc = readFileSync(new URL("../functions/api/score.js", import.meta.url), "utf8");
+      return /dd_max: 45 \* 1024/.test(scoreSrc) && /max_body: 300 \* 1024/.test(scoreSrc) &&
+        ttSrc.includes("const MAX_BODY = 300 * 1024") && adminSrc.includes("const MAX_BODY=300*1024") &&
+        adminSrc.includes("const DD_MAX=45*1024");
+    })());
+  ok("score: zero bytes added to the book document — the handler never writes tt:book:v1", await (async () => {
+    const before = e1.PULSE_CACHE._store.get("tt:book:v1");
+    await score.onRequestPut({ request: mkReq("PUT", { params: "?sym=AAA",
+      headers: { "x-tt-pin": PIN, "If-Match": "*" }, body: { underwriting_inputs: UI } }), env: e1 });
+    return e1.PULSE_CACHE._store.get("tt:book:v1") === before;
+  })());
+  // §4.5 max-shape fixture: 4 sourced pillars, 8 maximum-length falsifiers, every gate
+  // result, one outcome-memory cycle — must serialize under the dedicated limit.
+  ok("max-shape: the §4.5 synthetic fixture stays under 64KB with zero truncation", await (async () => {
+    const long = (s) => s.repeat(40).slice(0, 600);
+    const REC2 = (v) => ({ value: v, unit: "pct", as_of: "2026-08-01", observed_at: "2026-08-01T12:00:00Z",
+      source: { kind: "PRIMARY", name: long("src "), ref: "https://example.com/" + "x".repeat(180) },
+      derivation: { formula: long("(a/b) "), inputs: ["a", "b"] } });
+    const H2 = (i2) => ({ id: "hinge_" + i2, definition: long("def "), green_condition: long("g "),
+      amber_condition: long("a "), red_condition: long("r "), importance: 2, state: "GREEN", kill: i2 === 0,
+      cadence_days: 90, defined_at: "2026-08-04T23:30:00Z", as_of: "2026-08-05",
+      source: { kind: "PRIMARY", ref: "https://example.com/" + "y".repeat(180) },
+      qualifying_observation: { id: "obs" + i2, observed_at: "2026-08-05T02:00:00Z" } });
+    const maxUI = { methodology_version: "tt-underwriting-v2.3.0",
+      trajectory: { mode: "PREPROFIT", preprofit_second_series: "EBITDA_CAGR", ebitda_basis: "ADJUSTED",
+        ebitda_reconciliation: REC2(1), revenue: [REC2(1), REC2(2)].map((r2, i2) => ({ ...r2, fy: String(2027 + i2) })),
+        ebitda: [REC2(0.1), REC2(0.5)].map((r2, i2) => ({ ...r2, fy: String(2027 + i2) })),
+        duration_years: [{ fy: "2027", metrics: [REC2(1)] }, { fy: "2028", metrics: [REC2(1)] }] },
+      economic_quality: { mode: "PREPROFIT", unit_economics: { state: "IMPROVING", source: { kind: "PRIMARY" }, rationale: long("r ") },
+        margin_direction: { state: "IMPROVING", source: { kind: "PRIMARY" }, rationale: long("r ") },
+        runway_months: REC2(24), path_to_profit: { state: "DATED_MILESTONES", source: { kind: "PRIMARY" }, rationale: long("r ") } },
+      falsifiers: [...Array(8)].map((_, i2) => H2(i2)),
+      route_gates: Object.fromEntries(["AI_G1_BUILDOUT", "AI_G2_CIRCULARITY", "AI_G3_2028_BRIDGE",
+        "GLOBAL_GUIDANCE_WITHDRAWN", "GLOBAL_CUSTOMER_LOSS", "GLOBAL_RESTATEMENT",
+        "GLOBAL_KEY_PERSON_EXIT", "GLOBAL_MOAT_INVALIDATION", "GLOBAL_LOOP_UNWIND"]
+        .map((id) => [id, { occurred: false, capex_funded_12mo: true, milestone_within_90d: true,
+          supplier_equity_pct: 9.3, supplier_is_primary_vendor: true, top_customer_backlog_pct: 59,
+          ev_fy2_rev_multiple: 2.7, fy1_fy2_growth_pct: 88, analyst_count_fy2: 12, as_of: "2026-08-05",
+          legacy_label: "PASS-with-note" }])) };
+    const e3 = env();
+    const r = await score.onRequestPut({ request: mkReq("PUT", { params: "?sym=AAA", headers: { "x-tt-pin": PIN },
+      body: { underwriting_inputs: maxUI } }), env: e3 });
+    if (r.status !== 200) return false;
+    const stored = e3.PULSE_CACHE._store.get("tt:score:v1:AAA");
+    return stored.length < 64 * 1024 && JSON.parse(stored).underwriting_inputs.falsifiers.length === 8;
+  })());
+}
+
 console.log(`\n=== SMOKE TEST: ${pass} passed, ${fail} failed ===`);
 process.exit(fail === 0 ? 0 : 1);
