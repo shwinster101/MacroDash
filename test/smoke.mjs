@@ -4921,5 +4921,223 @@ console.log("\n[51] FEAT-TT-ALLREVIEWED — the reviewed-but-unpriced ranking");
     adminSrc.includes("NOT excluded from the next dollar"));
 }
 
+
+// ---- 52. v3.75 follow-up — the SERVER consumers of deepDive ------------------------
+// FEAT-TT-DDSTORE gave the CLIENT one resolution point (ddOf) and its changelog claimed the
+// move was "invisible to every renderer". True, and incomplete: score.js and the belief
+// ledger read `entry.deepDive` straight off the book, and the migration emptied it under
+// them — P1 lost every valuation input, and the ledger's thesis/hinge/pt/comp/est kinds went
+// silent. These run against a POST-MIGRATION book shape (no embedded payloads), which is the
+// only shape that can catch it — section [48]'s fixtures embed them and pass either way.
+console.log("\n[52] DDSTORE server consumers — post-migration book shape");
+{
+  const ddm = await import("../functions/api/deepdive.js");
+  const scoreM = await import("../functions/api/score.js");
+  const ttM = await import("../functions/api/tt.js");
+  const mkKV4 = (init = {}) => {
+    const store = new Map(Object.entries(init).map(([k, v]) => [k, JSON.stringify(v)]));
+    return {
+      async get(k, type) { const v = store.get(k); return v == null ? null : (type === "json" ? JSON.parse(v) : v); },
+      async put(k, v) { store.set(k, String(v)); },
+      async delete(k) { store.delete(k); },
+      async list({ prefix, limit = 50 }) {
+        return { keys: [...store.keys()].filter((k) => k.startsWith(prefix)).slice(0, limit).map((name) => ({ name })), list_complete: true, cursor: null };
+      },
+      _store: store,
+    };
+  };
+  const PIN = "123456";
+  const rq = (method, path, { params = "", headers = {}, body = null } = {}) => ({
+    method, url: "https://macrodash.pages.dev" + path + params,
+    headers: { get: (k) => headers[k] ?? headers[k.toLowerCase()] ?? null },
+    text: async () => (body == null ? "" : JSON.stringify(body)),
+  });
+  const A = { "x-tt-pin": PIN };
+  const YEAR = new Date().getFullYear();
+  const PAY = { thesis_version: "v1", updated: "2026-08-05",
+    consensus: { revenue_B: { [YEAR + 1]: 11.45, [YEAR + 2]: 21.56 }, eps: { [YEAR + 1]: -1.61, [YEAR + 2]: -2.04 } },
+    pt_model: { ev_s_multiple: { [YEAR]: 5.5, [YEAR + 1]: 5.45 }, share_count_M: 310 },
+    ref_px: { px: 212.58, at: new Date(Date.now() - 86400000).toISOString().slice(0, 10) },
+    hinges: [{ label: "funding", state: "green" }] };
+  // POST-MIGRATION: the book entry carries NO deepDive; the payload lives in its own key.
+  const POST_BOOK = { version: "1.0", book: [{ sym: "AAA", tier: "S", lens: "AI" }], cut: [] };
+  const envPost = () => ({ TT_PIN: PIN, PULSE_CACHE: mkKV4({ "tt:book:v1": POST_BOOK, "tt:dd:v1:AAA": PAY }) });
+
+  ok("ddsrv: readDeepDive resolves from the payload STORE when the book carries nothing " +
+     "(the post-migration shape)", await (async () => {
+    const dd = await ddm.readDeepDive(envPost(), "AAA");
+    return !!dd && dd.pt_model.share_count_M === 310;
+  })());
+  ok("ddsrv: readDeepDive still falls back to a still-embedded payload — a pre-migration book " +
+     "keeps working, the same fallback order ddOf() uses client-side", await (async () => {
+    const env = { TT_PIN: PIN, PULSE_CACHE: mkKV4({ "tt:book:v1": { version: "1.0", book: [{ sym: "BBB", tier: "S", lens: "AI", deepDive: PAY }], cut: [] } }) };
+    const dd = await ddm.readDeepDive(env, "BBB");
+    return !!dd && dd.pt_model.share_count_M === 310;
+  })());
+  ok("ddsrv: an unknown sym reads null rather than throwing",
+    (await ddm.readDeepDive(envPost(), "ZZZ")) === null);
+  // THE REGRESSION TEST. Before the fix this scored with dd={} — no pt_model, no consensus,
+  // no ref_px — so P1 silently had nothing to value and said so for the wrong reason.
+  ok("ddsrv: score.js computes P1 from the payload STORE — after the migration it was reading " +
+     "an empty deepDive off the book, so the valuation pillar lost every input", await (async () => {
+    const env = envPost();
+    const r = await scoreM.onRequestPut({
+      request: rq("PUT", "/api/score", { params: "?sym=AAA", headers: A,
+        body: { underwriting_inputs: { methodology_version: "tt-underwriting-v2.3.0", route_gates: {}, falsifiers: [] } } }),
+      env });
+    if (r.status !== 200) return false;
+    const rec = JSON.parse(env.PULSE_CACHE._store.get("tt:score:v1:AAA"));
+    const p1 = rec.scorecard.pillars.owner_valuation;
+    // A pre-profit name still yields no FLOOR — but it must reach the PREMIUM math and emit a
+    // context premium, which is only possible if pt_model/consensus/price actually arrived.
+    return !!p1.context_premium && typeof p1.context_premium.target === "number";
+  })());
+
+  // ---- the belief ledger's thesis half, on the path that now carries it ----
+  ok("ddsrv: diffDeepDive is exported and pure — the extraction is shared by both write paths",
+    typeof ttM.diffDeepDive === "function" &&
+    ttM.diffDeepDive(null, null, "AAA", "t", 1).length === 0);
+  ok("ddsrv: diffDeepDive still detects every belief kind the inline block did " +
+     "(thesis/hinge/pt/comp/est) — the extraction is behavior-neutral", (() => {
+    const before = { thesis_version: "v1", hinges: [{ label: "funding", state: "green" }],
+      pt_model: { pe_floor_multiple: 18 }, composite: { score: 7.0 },
+      consensus: { revenue_B: { 2027: 10 }, eps: { 2027: 1 } } };
+    const after = { thesis_version: "v2", hinges: [{ label: "funding", state: "red" }],
+      pt_model: { pe_floor_multiple: 14 }, composite: { score: 8.5 },
+      consensus: { revenue_B: { 2027: 12 }, eps: { 2027: 1 } } };
+    const kinds = ttM.diffDeepDive(before, after, "AAA", "t", 1).map((e) => e.kind).sort();
+    return kinds.join() === "comp,est,hinge,pt,thesis";
+  })());
+  ok("ddsrv: hinges are still matched by IDENTITY, so a reordered array is not N state changes",
+    (() => {
+      const a = { hinges: [{ label: "x", state: "green" }, { label: "y", state: "red" }] };
+      const b = { hinges: [{ label: "y", state: "red" }, { label: "x", state: "green" }] };
+      return ttM.diffDeepDive(a, b, "AAA", "t", 1).length === 0;
+    })());
+  // The silent-memory-loss regression: a payload PUT must reach the ledger, because after the
+  // split it is the ONLY path a thesis change travels.
+  ok("ddsrv: a payload PUT appends belief entries to the ledger — after the split this is the " +
+     "only path a thesis change travels, and without it the terminal's memory goes silent",
+    await (async () => {
+      const env = envPost();
+      const next = JSON.parse(JSON.stringify(PAY));
+      next.hinges = [{ label: "funding", state: "red" }];
+      next.composite = { score: 9.0 };
+      const r = await ddm.onRequestPut({ request: rq("PUT", "/api/deepdive", { params: "?sym=AAA", headers: A, body: { deepDive: next } }), env });
+      if (r.status !== 200) return false;
+      const led = JSON.parse(env.PULSE_CACHE._store.get("tt:ledger:AAA") || "[]");
+      const kinds = led.map((e) => e.kind).sort();
+      return kinds.includes("hinge") && kinds.includes("comp") &&
+        led.find((e) => e.kind === "hinge").to === "red";
+    })());
+  ok("ddsrv: a ledger fault never fails the payload write the user is waiting on",
+    await (async () => {
+      const env = envPost();
+      const realPut = env.PULSE_CACHE.put.bind(env.PULSE_CACHE);
+      env.PULSE_CACHE.put = async (k, v) => { if (k.startsWith("tt:ledger:")) throw new Error("kv down"); return realPut(k, v); };
+      const next = { ...PAY, composite: { score: 9.9 } };
+      const r = await ddm.onRequestPut({ request: rq("PUT", "/api/deepdive", { params: "?sym=AAA", headers: A, body: { deepDive: next } }), env });
+      return r.status === 200 && JSON.parse(env.PULSE_CACHE._store.get("tt:dd:v1:AAA")).composite.score === 9.9;
+    })());
+  ok("ddsrv: no server file reads entry.deepDive directly any more — every consumer goes " +
+     "through the one choke point (ledger.js's snapshot walk is the documented exception)",
+    (() => {
+      const sc = readFileSync(new URL("../functions/api/score.js", import.meta.url), "utf8");
+      const tt = readFileSync(new URL("../functions/api/tt.js", import.meta.url), "utf8");
+      // Comments are stripped first: this must measure the CODE, not prose that happens to
+      // mention the old field (the vacuous-assert lesson from v3.60.1).
+      const code = (t) => t.replace(/\/\*[\s\S]*?\*\//g, "").replace(/^\s*\/\/.*$/gm, "");
+      // tt.js may still PASS an embedded payload into diffDeepDive (pre-migration books), but
+      // must not read it for computation.
+      return !/entry\.deepDive/.test(code(sc)) && /readDeepDive\(env, sym, book\)/.test(code(sc)) &&
+        /diffDeepDive\(prev\.deepDive, next\.deepDive/.test(code(tt));
+    })());
+}
+
+
+// ---- 53. v3.77 — pre-commitment is VERIFIED, not self-attested -----------------------
+// Found running the owner's 2026-08-05 JOBY payload: five falsifiers, all graded GREEN off a
+// print observed the same day, scored P4 = 10/10 (the maximum). The engine's only pre-
+// commitment test compared h.defined_at against h.qualifying_observation.observed_at — two
+// CLIENT-SUPPLIED fields arriving in the SAME request. §6.4.1 exists precisely to stop a
+// falsifier set being authored after the observation it grades; a self-attested date cannot
+// enforce it, and the self-reported defined_at_post_hoc flag is not a control either (the
+// client that would misdate is the client that would omit the flag).
+console.log("\n[53] PRE-COMMITMENT VERIFICATION — the server decides what was on file");
+{
+  const { scoreP4, commitFingerprint, buildScorecard } = await import("../src/ttScore.js");
+  const H = (id, extra = {}) => ({ id, green_condition: "g", amber_condition: "a", red_condition: "r",
+    importance: 3, kill: false, cadence_days: 90, state: "GREEN",
+    as_of: new Date().toLocaleDateString("en-CA", { timeZone: "America/New_York" }),
+    defined_at: "2026-08-04T20:00:00Z",
+    qualifying_observation: { observed_at: "2026-08-05T13:00:00Z" }, ...extra });
+  const SET = [H("a"), H("b"), H("c")];
+  const ET = new Date().toLocaleDateString("en-CA", { timeZone: "America/New_York" });
+
+  // The documented offline/no-context path is unchanged, so a direct engine call is never
+  // made stricter than its caller can satisfy.
+  ok("precommit: with NO server context the old client-attested comparison still applies " +
+     "(the pure-engine path is not silently made unsatisfiable)",
+    scoreP4(SET, { etToday: ET }).score === 10);
+  // THE FIX. Same payload, same timestamps, but the server has nothing on file.
+  ok("precommit: a set arriving in the SAME write as its own observation is PRECOMMITTED_" +
+     "PENDING, however its self-reported timestamps read — backdating no longer scores",
+    (() => { const r = scoreP4(SET, { etToday: ET, committed: {} });
+      return r.score === null && r.bootstrap === "PRECOMMITTED_PENDING" &&
+        r.blockers.includes("AWAITING_FALSIFIERS") &&
+        r.warnings.some((w) => /first commitment, pending a later observation/.test(w)); })());
+  ok("precommit: once the SERVER holds the same conditions, a later observation scores — " +
+     "which is exactly §6.4.1's bootstrap, now by construction rather than by good manners",
+    (() => { const committed = Object.fromEntries(SET.map((h) => [h.id, commitFingerprint(h)]));
+      return scoreP4(SET, { etToday: ET, committed }).score === 10; })());
+  // A fingerprint, not just a date: editing the goalposts must re-open the commitment.
+  ok("precommit: EDITING a stored condition re-opens the commitment and says so — moving the " +
+     "goalposts after the fact is the same defect as backdating them",
+    (() => {
+      const committed = Object.fromEntries(SET.map((h) => [h.id, commitFingerprint(h)]));
+      const edited = SET.map((h) => h.id === "b" ? { ...h, red_condition: "r-but-easier" } : h);
+      const r = scoreP4(edited, { etToday: ET, committed });
+      return r.score === null && r.bootstrap === "PRECOMMITTED_PENDING" &&
+        r.warnings.some((w) => /b: .*EDITED, which re-opens the commitment/.test(w));
+    })());
+  ok("precommit: the fingerprint covers weighting and the kill flag too — silently dropping " +
+     "kill:true would change what a RED hinge MEANS without changing any condition text",
+    commitFingerprint(H("a")) !== commitFingerprint(H("a", { kill: true })) &&
+    commitFingerprint(H("a")) !== commitFingerprint(H("a", { importance: 1 })));
+  ok("precommit: identical conditions fingerprint identically regardless of the other fields " +
+     "(state, as_of and the observation all move between writes and must not re-open it)",
+    commitFingerprint(H("a")) === commitFingerprint(H("a", { state: "RED", as_of: "2026-01-01",
+      qualifying_observation: { observed_at: "2027-01-01T00:00:00Z" } })));
+
+  // ---- the declared methodology version ----
+  const DD = { pt_model: { ev_s_multiple: { 2026: 5 }, share_count_M: 100 },
+    consensus: { revenue_B: { 2027: 10 }, eps: { 2027: 1 } }, ref_px: { px: 100, at: ET } };
+  ok("precommit: a payload declaring a methodology this engine does not implement is BLOCKED " +
+     "and the declared version RECORDED — the card used to stamp its own version over it, " +
+     "erasing the mismatch with the very field that should reveal it",
+    await (async () => {
+      const c = await buildScorecard({ sym: "AAA", lens: "AI", nowMs: Date.now(), dd: DD,
+        price: DD.ref_px, underwriting_inputs: { methodology_version: "tt-underwriting-v2.4.0", route_gates: {}, falsifiers: [] } });
+      return c.status === "UNSCORABLE" && c.declared_methodology_version === "tt-underwriting-v2.4.0" &&
+        c.blockers.some((b) => /METHODOLOGY_VERSION_MISMATCH/.test(b)) &&
+        c.methodology_version === "tt-underwriting-v2.3.0";
+    })());
+  ok("precommit: a matching or ABSENT declared version still computes (absent = the offline call)",
+    await (async () => {
+      const a = await buildScorecard({ sym: "AAA", lens: "AI", nowMs: Date.now(), dd: DD, price: DD.ref_px,
+        underwriting_inputs: { methodology_version: "tt-underwriting-v2.3.0", route_gates: {}, falsifiers: [] } });
+      const b = await buildScorecard({ sym: "AAA", lens: "AI", nowMs: Date.now(), dd: DD, price: DD.ref_px,
+        underwriting_inputs: { route_gates: {}, falsifiers: [] } });
+      return !a.blockers.some((x) => /METHODOLOGY_VERSION_MISMATCH/.test(x)) &&
+        !b.blockers.some((x) => /METHODOLOGY_VERSION_MISMATCH/.test(x)) && b.declared_methodology_version === null;
+    })());
+  ok("precommit: score.js builds the committed map from the STORED record, so the deployed " +
+     "path always enforces it (an empty map is still a map — absent context is the exception)",
+    (() => { const sc = readFileSync(new URL("../functions/api/score.js", import.meta.url), "utf8");
+      return /const committed = \{\};/.test(sc) &&
+        /prev && prev\.underwriting_inputs && prev\.underwriting_inputs\.falsifiers/.test(sc) &&
+        /nowMs: Date\.now\(\), committed,/.test(sc); })());
+}
+
 console.log(`\n=== SMOKE TEST: ${pass} passed, ${fail} failed ===`);
 process.exit(fail === 0 ? 0 : 1);

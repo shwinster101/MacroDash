@@ -29,7 +29,7 @@
 // WRITE SHAPE: PUT is per-symbol and whole-payload for that symbol only; one name's save
 // can never touch another's, which is a strictly stronger guarantee than the whole-book
 // replace it replaces.
-import { authorize } from "./tt.js";
+import { authorize, diffDeepDive, appendLedger } from "./tt.js";
 
 const DD_PREFIX = "tt:dd:v1:";
 const DD_INDEX = "tt:dd:index:v1";
@@ -117,6 +117,20 @@ async function rebuildIndexEntry(env, sym, dd) {
   return idx;
 }
 
+/* THE SERVER-SIDE CHOKE POINT — the counterpart to admin.html's ddOf(). v3.75 gave the CLIENT
+   one resolution point and claimed the storage move was "invisible to every renderer", which
+   was true and also incomplete: `functions/api/score.js` and the belief ledger read
+   `entry.deepDive` straight off the book, and the migration silently emptied it under them.
+   Every server consumer now goes through here: the payload store first, then a still-embedded
+   payload for a pre-migration book — the same fallback order, so nothing breaks mid-migration. */
+export async function readDeepDive(env, sym, book) {
+  const stored = await kvGet(env, DD_PREFIX + sym);
+  if (stored) return stored;
+  const b = book || (await kvGet(env, BOOK_KEY));
+  const e = b && Array.isArray(b.book) ? b.book.find((x) => x && x.sym === sym) : null;
+  return (e && e.deepDive) || null;
+}
+
 export async function onRequestGet({ request, env }) {
   const auth = await authorize(request, env);
   if (!auth.ok) return json({ error: auth.error }, auth.status || 401);
@@ -176,6 +190,11 @@ export async function onRequestPut({ request, env }) {
   if (dd !== null && (!dd || typeof dd !== "object" || Array.isArray(dd)))
     return json({ error: "deepDive must be an object, or null to remove" }, 400);
 
+  // The belief ledger has to see this write. Before v3.75 a payload change arrived inside the
+  // whole-book PUT and tt.js's diff caught it; after the split it arrives HERE and nowhere
+  // else, so without this the ledger's thesis/hinge/pt/comp/est kinds go silent — the
+  // terminal's memory, which is the one thing it has that a quote screen does not.
+  const before = await kvGet(env, DD_PREFIX + sym);
   try {
     if (dd === null) await env.PULSE_CACHE.delete(DD_PREFIX + sym);
     else await env.PULSE_CACHE.put(DD_PREFIX + sym, JSON.stringify(dd));
@@ -183,6 +202,12 @@ export async function onRequestPut({ request, env }) {
   } catch (e) {
     return json({ error: "storage write failed: " + (e?.message || "unknown") }, 503);
   }
+  // Fire-and-forget AFTER the write succeeds, exactly as tt.js does it: a ledger fault must
+  // never fail the save the user is waiting on.
+  try {
+    const entries = diffDeepDive(before, dd, sym, new Date().toISOString(), null);
+    if (entries.length) await appendLedger(env, entries);
+  } catch (_e) { /* belief history is best-effort; the payload is already stored */ }
   return json({ sym, deepDive: dd, stored: true });
 }
 

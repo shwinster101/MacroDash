@@ -296,7 +296,31 @@ export function scoreP3(q, { etToday, nowMs } = {}) {
 
 /* ═══════════ P4 — Falsifier Health (§6.4 + §6.4.1 bootstrap) ═══════════ */
 const HINGE_SCORE = { GREEN: 10, AMBER: 5, RED: 0 };
-export function scoreP4(falsifiers, { etToday } = {}) {
+/* THE COMMITMENT FINGERPRINT (v3.77). §6.4.1 says a falsifier set only becomes SCORABLE once
+   a qualifying observation lands AFTER the conditions were pre-committed. The engine used to
+   test that by comparing two CLIENT-SUPPLIED timestamps — h.defined_at against
+   h.qualifying_observation.observed_at — both of which arrive in the SAME request. A set
+   authored today, stamped yesterday, and graded all-GREEN therefore scored 10/10, which is
+   precisely the "sophisticated rationalization engine" the methodology exists to prevent; a
+   self-reported `defined_at_post_hoc` flag is not a control, because the client that would lie
+   about the date is the client that would omit the flag.
+   Pre-commitment is now verified against what the SERVER already stored: this fingerprint
+   covers the conditions, weighting and kill flag, so editing ANY of them — not merely the
+   date — re-opens the commitment and the hinge returns to PRECOMMITTED_PENDING. It is a
+   fingerprint, not a signature: it proves "these exact conditions were on file before this
+   write", which is the property §6.4.1 actually asks for. */
+export function commitFingerprint(h) {
+  if (!h) return null;
+  return [h.id || "", h.green_condition || "", h.amber_condition || "", h.red_condition || "",
+    String(h.importance ?? ""), h.kill === true ? "kill" : "nokill"].join("\u0000");
+}
+
+/* `committed` maps hinge id → the fingerprint the SERVER holds from an earlier write. Omitted
+   entirely (undefined) means "no server context available" — the pure-engine/offline case —
+   and the old client-attested comparison is used, so a direct engine call is not silently
+   made stricter than its caller can satisfy. score.js ALWAYS passes a map (possibly empty),
+   which is what makes the deployed path enforce it. */
+export function scoreP4(falsifiers, { etToday, committed } = {}) {
   const res = { pillar: "falsifier_health", score: null, blockers: [], warnings: [],
     states: [], broken_thesis: false, bootstrap: null };
   const all = Array.isArray(falsifiers) ? falsifiers : [];
@@ -317,6 +341,20 @@ export function scoreP4(falsifiers, { etToday } = {}) {
     if (!h.defined_at || !h.qualifying_observation || !(h.qualifying_observation.observed_at > h.defined_at)) {
       res.blockers.push("AWAITING_FALSIFIERS"); res.bootstrap = "PRECOMMITTED_PENDING";
       return res;                                                   // one pending hinge nulls the pillar
+    }
+    // Server-verified pre-commitment. A set arriving in the SAME write as its own qualifying
+    // observation has never been on file and cannot be pre-committed, however its timestamps
+    // read — that is the whole content of §6.4.1's bootstrap, and it is why the first write is
+    // PRECOMMITTED_PENDING by design rather than by accident.
+    if (committed) {
+      const fp = commitFingerprint(h);
+      if (committed[id] !== fp) {
+        res.blockers.push("AWAITING_FALSIFIERS");
+        res.warnings.push(id + ": conditions not on file before this write — " +
+          (committed[id] ? "they were EDITED, which re-opens the commitment" : "first commitment, pending a later observation"));
+        res.bootstrap = "PRECOMMITTED_PENDING";
+        return res;
+      }
     }
     if (h.defined_at_post_hoc === true) { res.blockers.push(id + ": POST_HOC_DEFINITION"); continue; }
     if (!(h.state in HINGE_SCORE)) { res.blockers.push(id + ": state UNKNOWN — missing is not 5"); continue; }
@@ -442,7 +480,7 @@ export async function inputHash(normalizedInputs) {
 }
 
 /* ═══════════ the orchestrator — one scorecard from one input set ═══════════ */
-export async function buildScorecard({ sym, lens, underwriting_inputs, dd, price, horizon, nowMs }) {
+export async function buildScorecard({ sym, lens, underwriting_inputs, dd, price, horizon, nowMs, committed }) {
   const etToday = etDateOf(nowMs);
   const routed = routeFor(lens);
   const card = {
@@ -456,6 +494,19 @@ export async function buildScorecard({ sym, lens, underwriting_inputs, dd, price
   };
   if (routed.route === "UNMAPPED") { card.blockers.push("UNMAPPED lens \"" + lens + "\""); return card; }
   const ui = underwriting_inputs || {};
+  /* The card stamps METHODOLOGY_VERSION (the version that actually did the computing). That
+     silently overwrote whatever the INPUTS declared, so a payload authored to a different spec
+     scored under this engine and the record then showed this engine's version — the mismatch
+     erased by the very field that should reveal it. functions/api/score.js already 409s on
+     this, but the pure engine is exported, smoke-tested and reusable, so it must not depend on
+     one caller to fail closed. Recorded either way; blocking only when a version is declared
+     and differs (an ABSENT version stays permitted — the offline/no-context call). */
+  card.declared_methodology_version = ui.methodology_version || null;
+  if (ui.methodology_version && ui.methodology_version !== METHODOLOGY_VERSION) {
+    card.blockers.push("METHODOLOGY_VERSION_MISMATCH: inputs declare " + ui.methodology_version +
+      ", this engine implements " + METHODOLOGY_VERSION);
+    return card;
+  }
 
   // Route gates first — P1's premium prerequisite needs them.
   const gateInputs = ui.route_gates || {};
@@ -475,7 +526,7 @@ export async function buildScorecard({ sym, lens, underwriting_inputs, dd, price
   const p1 = scoreP1({ dd, horizon, price, premiumGateState: prereqState, etToday, nowMs });
   const p2 = scoreP2(ui.trajectory, { etToday });
   const p3 = scoreP3(ui.economic_quality, { etToday, nowMs });
-  const p4 = scoreP4(ui.falsifiers, { etToday });
+  const p4 = scoreP4(ui.falsifiers, { etToday, committed });
   const parts = { owner_valuation: p1, trajectory: p2, economic_quality: p3, falsifier_health: p4 };
   for (const [k, p] of Object.entries(parts)) {
     card.pillars[k] = { score: p.score, weight: 0.25, blockers: p.blockers, warnings: p.warnings || [],

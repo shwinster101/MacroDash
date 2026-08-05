@@ -1,3 +1,59 @@
+/* FEAT-TT-DDSTORE (v3.75) follow-up: the thesis half of the belief ledger, extracted so the
+   TWO write paths that can now change a payload share ONE implementation.
+   Why this had to move: before v3.75 a deepDive change arrived inside the whole-book PUT, so
+   diffing prev/next book entries caught it. After the split, payload writes go to
+   /api/deepdive and NEVER pass through /api/tt — which silently killed the ledger's
+   thesis/hinge/pt/comp/est kinds, i.e. the belief history the terminal exists to keep. The
+   book path still calls this (a pre-migration book can still carry an embedded payload) and
+   so does the payload store. Pure + exported so smoke can run it directly. */
+export function diffDeepDive(pdd, ndd, sym, t, v) {
+  const out = [];
+  const push = (kind, s2, from, to, field) => out.push({ t, v, kind, sym: s2, field: field ?? null, from: from ?? null, to: to ?? null });
+  if (!pdd && !ndd) return out;
+
+  const pThesis = pdd && (pdd.thesis_version || pdd.updated || pdd.as_of);
+  const nThesis = ndd && (ndd.thesis_version || ndd.updated || ndd.as_of);
+  if ((pThesis || null) !== (nThesis || null)) push("thesis", sym, pThesis || null, nThesis || null);
+
+  // Hinges: matched by identity (same rule as the client's validateDeepDive), so a
+  // reordered array never reads as N state changes.
+  const pHinges = new Map((Array.isArray(pdd && pdd.hinges) ? pdd.hinges : []).map((h) => [hingeKey(h), h]).filter(([k]) => k));
+  const nHinges = new Map((Array.isArray(ndd && ndd.hinges) ? ndd.hinges : []).map((h) => [hingeKey(h), h]).filter(([k]) => k));
+  for (const [key, nh] of nHinges) {
+    const ph = pHinges.get(key);
+    if (ph && (ph.state || "unknown") !== (nh.state || "unknown"))
+      push("hinge", sym, ph.state || "unknown", nh.state || "unknown", key);
+  }
+
+  // pt_model: the floor multiple is the one owner-editable field with a clean before/
+  // after number (multEditor); any other change to the model still counts, generically.
+  const pPt = (pdd && pdd.pt_model) || null, nPt = (ndd && ndd.pt_model) || null;
+  if (JSON.stringify(pPt) !== JSON.stringify(nPt)) {
+    const pFloor = pPt && pPt.pe_floor_multiple, nFloor = nPt && nPt.pe_floor_multiple;
+    if (pFloor !== nFloor) push("pt", sym, pFloor ?? null, nFloor ?? null, "floor");
+    else push("pt", sym, null, "revised", "model");
+  }
+
+  const comp = compositeScoreOf(pdd) !== null || compositeScoreOf(ndd) !== null ? [compositeScoreOf(pdd), compositeScoreOf(ndd)] : null;
+  if (comp && comp[0] !== comp[1]) push("comp", sym, comp[0], comp[1]);
+
+  // Estimate revisions feed FEAT-TT-SPREAD's divergence flag (est up + price down =
+  // the CRDO pattern). Capped at 3 changed (year,field) pairs per sym per write so a
+  // bulk consensus refresh can't flood the ledger.
+  const pCons = (pdd && pdd.consensus) || {}, nCons = (ndd && ndd.consensus) || {};
+  const estChanges = [];
+  for (const field of ["revenue_B", "eps"]) {
+    const pf = pCons[field] || {}, nf = nCons[field] || {};
+    const years = [...new Set([...Object.keys(pf), ...Object.keys(nf)])].sort();
+    for (const y of years) {
+      if (pf[y] !== undefined && nf[y] !== undefined && pf[y] !== nf[y])
+        estChanges.push([`${field === "eps" ? "eps" : "rev"}:${y}`, pf[y], nf[y]]);
+    }
+  }
+  estChanges.slice(0, 3).forEach(([field, from, to]) => push("est", sym, from, to, field));
+  return out;
+}
+
 // FEAT-TT (v3.4.0): /api/tt — Ticker Terminal CANONICAL_BOOK store.
 // Auth is CONFIG-GATED (FEAT-TT-PIN, v3.9.0):
 //   env.TT_PIN set (exactly 6 digits) → PIN mode: POST {pin} mints a 30-day KV device
@@ -531,49 +587,8 @@ export function diffForLedger(prevBook, nextBook, prevCut, nextCut, t, v) {
     if ((prev.rank || null) !== (next.rank || null)) push("rank", sym, prev.rank || null, next.rank || null);
     if ((prev.lastRun || null) !== (next.lastRun || null)) push("run", sym, prev.lastRun || null, next.lastRun || null);
 
-    const pdd = prev.deepDive, ndd = next.deepDive;
-    if (pdd || ndd) {
-      const pThesis = pdd && (pdd.thesis_version || pdd.updated || pdd.as_of);
-      const nThesis = ndd && (ndd.thesis_version || ndd.updated || ndd.as_of);
-      if ((pThesis || null) !== (nThesis || null)) push("thesis", sym, pThesis || null, nThesis || null);
-
-      // Hinges: matched by identity (same rule as the client's validateDeepDive), so a
-      // reordered array never reads as N state changes.
-      const pHinges = new Map((Array.isArray(pdd && pdd.hinges) ? pdd.hinges : []).map((h) => [hingeKey(h), h]).filter(([k]) => k));
-      const nHinges = new Map((Array.isArray(ndd && ndd.hinges) ? ndd.hinges : []).map((h) => [hingeKey(h), h]).filter(([k]) => k));
-      for (const [key, nh] of nHinges) {
-        const ph = pHinges.get(key);
-        if (ph && (ph.state || "unknown") !== (nh.state || "unknown"))
-          push("hinge", sym, ph.state || "unknown", nh.state || "unknown", key);
-      }
-
-      // pt_model: the floor multiple is the one owner-editable field with a clean before/
-      // after number (multEditor); any other change to the model still counts, generically.
-      const pPt = (pdd && pdd.pt_model) || null, nPt = (ndd && ndd.pt_model) || null;
-      if (JSON.stringify(pPt) !== JSON.stringify(nPt)) {
-        const pFloor = pPt && pPt.pe_floor_multiple, nFloor = nPt && nPt.pe_floor_multiple;
-        if (pFloor !== nFloor) push("pt", sym, pFloor ?? null, nFloor ?? null, "floor");
-        else push("pt", sym, null, "revised", "model");
-      }
-
-      const comp = compositeScoreOf(pdd) !== null || compositeScoreOf(ndd) !== null ? [compositeScoreOf(pdd), compositeScoreOf(ndd)] : null;
-      if (comp && comp[0] !== comp[1]) push("comp", sym, comp[0], comp[1]);
-
-      // Estimate revisions feed FEAT-TT-SPREAD's divergence flag (est up + price down =
-      // the CRDO pattern). Capped at 3 changed (year,field) pairs per sym per write so a
-      // bulk consensus refresh can't flood the ledger.
-      const pCons = (pdd && pdd.consensus) || {}, nCons = (ndd && ndd.consensus) || {};
-      const estChanges = [];
-      for (const field of ["revenue_B", "eps"]) {
-        const pf = pCons[field] || {}, nf = nCons[field] || {};
-        const years = [...new Set([...Object.keys(pf), ...Object.keys(nf)])].sort();
-        for (const y of years) {
-          if (pf[y] !== undefined && nf[y] !== undefined && pf[y] !== nf[y])
-            estChanges.push([`${field === "eps" ? "eps" : "rev"}:${y}`, pf[y], nf[y]]);
-        }
-      }
-      estChanges.slice(0, 3).forEach(([field, from, to]) => push("est", sym, from, to, field));
-    }
+    // v3.75 follow-up: one implementation, shared with the payload store's own write path.
+    for (const d of diffDeepDive(prev.deepDive, next.deepDive, sym, t, v)) out.push(d);
 
     const pProj = prev.projection, nProj = next.projection;
     if (JSON.stringify(pProj || null) !== JSON.stringify(nProj || null)) {
@@ -767,7 +782,7 @@ export async function onRequestPut({ request, env }) {
 
 // Stamp px per entry (from the quotes cache, else a same-day ref_px, else honestly null —
 // never fabricated) and append to each affected sym's ledger, capping at LEDGER_CAP.
-async function appendLedger(env, entries) {
+export async function appendLedger(env, entries) {
   const today = etDate();
   const bySym = new Map();
   for (const e of entries) { if (!bySym.has(e.sym)) bySym.set(e.sym, []); bySym.get(e.sym).push(e); }

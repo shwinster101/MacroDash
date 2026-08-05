@@ -127,6 +127,11 @@ async function runSeed(env) {
 
   const pxFor = (bookAfter, sym, dateStr) => {
     const e = (bookAfter || []).find((x) => x.sym === sym);
+    /* v3.75: reads the BOOK SNAPSHOTS, which is why this still resolves — pre-migration
+       snapshots carry the embedded payload. Post-migration snapshots do not, so this returns
+       null more often over time. That is honest degradation, not a bug: historical px here has
+       always been declared best-effort (a nearby-dated ref_px or null, NEVER fabricated), and
+       a null reads as "unknown" everywhere downstream. */
     const rp = e && e.deepDive && e.deepDive.ref_px;
     if (!rp || !isFinite(rp.px) || !rp.at) return null;
     const d1 = Date.parse(rp.at + "T12:00:00Z"), d2 = Date.parse(dateStr + "T12:00:00Z");
