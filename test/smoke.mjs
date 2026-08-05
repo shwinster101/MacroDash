@@ -29,6 +29,7 @@ import { etYmd } from "../src/sources.js";
 // convention: the actual export is tested, immune to formatting drift) instead of regexing
 // hex values out of dashboard.jsx source text.
 import { DT, T as TOK_T } from "../src/design-tokens.js";
+import { fmt } from "../src/format.js"; // task 1.3: shared format helpers, tested by execution
 
 let pass = 0, fail = 0;
 const ok = (name, cond) => { if (cond) { pass++; console.log("  PASS  " + name); } else { fail++; console.log("  FAIL  " + name); } };
@@ -36,6 +37,11 @@ const ok = (name, cond) => { if (cond) { pass++; console.log("  PASS  " + name);
 // Load real MOCK_DATA from dashboard.jsx (catches sources.js <-> dashboard drift).
 const dashSrc = readFileSync(new URL("../src/dashboard.jsx", import.meta.url), "utf8");
 const regimeSrc = readFileSync(new URL("../src/regime.js", import.meta.url), "utf8"); // C1 (v3.60)
+// UI-OVERHAUL task 1.3: the verdict band moved verbatim to its own module. Pins that
+// describe the BAND read bandSrc; pins whose contract spans both surfaces (a negative
+// that must hold everywhere, a vocabulary shared across files) read uiSrc.
+const bandSrc = readFileSync(new URL("../src/sections/RegimeBand.jsx", import.meta.url), "utf8");
+const uiSrc = dashSrc + bandSrc;
 const _s = dashSrc.indexOf("const MOCK_DATA = {");
 let _i = dashSrc.indexOf("{", _s), _d = 0, _e = -1;
 for (; _i < dashSrc.length; _i++) { if (dashSrc[_i] === "{") _d++; else if (dashSrc[_i] === "}") { _d--; if (_d === 0) { _e = _i; break; } } }
@@ -2277,7 +2283,7 @@ ok("FIX-E: chip labels come from the factors themselves, not a parallel hardcode
   // v3.62: the glyph moved from an inline `f.stale?…` ternary to the shared voteStyle map, so
   // the pin follows it. The CONTRACT is unchanged and is what these three clauses measure:
   // the label comes from the row's own `short`, and no parallel label array exists anywhere.
-  dashSrc.includes("{f.short} {vs.glyph}") && !dashSrc.includes('["10Y","VIX","F&G","CPI","VAL"][i]') &&
+  bandSrc.includes("{f.short} {vs.glyph}") && !uiSrc.includes('["10Y","VIX","F&G","CPI","VAL"][i]') &&
   !regimeSrc.includes('["10Y","VIX","F&G","CPI","VAL"]'));
 ok("nfci: the mock baseline (-0.42) sits in the NEUTRAL zone — the demo shows a factor that " +
    "ABSTAINS in ordinary conditions, not one wired to vote bullish by default",
@@ -2659,9 +2665,9 @@ ok("ready: blockers stay visible as chips on the bar, never collapsed into the v
 // a future 7th voter fails here rather than shipping a wrong count to the public page.
 console.log("\n[25] public dashboard — the stated factor count matches the vote cast");
 ok("regime: no surviving '5-factor' claim anywhere in the dashboard",
-  !/5-factor/.test(dashSrc));
+  !/5-factor/.test(uiSrc));
 ok("regime: the vote is described as 6-factor on the band and the source box",
-  (dashSrc.match(/6-factor/g) || []).length >= 2);
+  /6-factor/.test(bandSrc) && /6-factor/.test(dashSrc));
 ok("regime: the stated count equals REGIME_FACTOR_FIELDS + the valuation factor",
   REGIME_FACTOR_FIELDS.length + 1 === 6 && FACTOR_FIELD.valuation === "shillerPe");
 
@@ -2672,9 +2678,9 @@ console.log("\n[26] public dashboard — the page tells the truth about itself")
 // Two structurally different regimes exist (this six-factor backdrop vs /readout.json's
 // six ORDER-GATING checks). Both legitimate; unnamed, a reader assumes one verdict.
 ok("naming: the public verdict is MACRO BACKDROP, distinct from the order-gating readout",
-  dashSrc.includes("Macro Backdrop") && !dashSrc.includes(">Macro Regime · wen moon?<"));
+  bandSrc.includes("Macro Backdrop") && !uiSrc.includes(">Macro Regime · wen moon?<"));
 ok("naming: the moon states survive as the primary voice (owner call — personality kept)",
-  dashSrc.includes("wen moon?") && dashSrc.includes("WEN_MOON_STATES"));
+  bandSrc.includes("wen moon?") && dashSrc.includes("WEN_MOON_STATES"));
 // SPY on this page is SP500/10 from FRED — Stooq blocks the edge. The tooltip claimed "ETF".
 ok("provenance: SPY is labelled a FRED proxy, not an ETF quote it has never been",
   /FRED SP500 proxy, NOT an SPY ETF quote/.test(dashSrc) && !/S&P 500 ETF — the broad US stock market/.test(dashSrc));
@@ -2755,9 +2761,9 @@ ok("a11y: the page exposes a main landmark (there were ZERO before)",
 // B4 (v3.59) superseded the block-sized live regions: landmarks stay, announcement narrows
 // to ONE concise status sentence — a reader should hear "backdrop changed", not whole blocks.
 ok("a11y: verdict + confidence keep their LANDMARKS but are no longer block live regions",
-  /aria-label="Macro backdrop verdict"\n?/.test(dashSrc) &&
+  /aria-label="Macro backdrop verdict"\n?/.test(bandSrc) &&
   /aria-label="Signal quality and backdrop confidence"/.test(dashSrc) &&
-  !/aria-label="Macro backdrop verdict" aria-live/.test(dashSrc));
+  !/aria-label="Macro backdrop verdict" aria-live/.test(bandSrc));
 ok("a11y B4: ONE concise visually-hidden status region announces state changes",
   /aria-live="polite" role="status" className="visually-hidden"/.test(dashSrc) &&
   /Backdrop \$\{regime\.label\}: \$\{regime\.counted\} of \$\{regime\.totalFactors\} factors usable\./.test(dashSrc));
@@ -2856,15 +2862,15 @@ ok("flip: each flip states the verdict it WOULD produce, not merely that somethi
 // Render layer: the nearest crossing is on the FIRST SCREEN (the audit's fourth answer), the
 // full set one tap down, and the abstentions are NOT omitted from the panel.
 ok("flip render: the verdict band carries the nearest crossing without opening anything",
-  dashSrc.includes("⇄ would change this: ") && dashSrc.includes("const nearest=fc.flips[0]||null;"));
+  bandSrc.includes("⇄ would change this: ") && bandSrc.includes("const nearest=fc.flips[0]||null;"));
 ok("flip render: the no-single-flip case is stated in BOTH the band and the panel",
-  /no single factor crossing flips this verdict — it would take two/.test(dashSrc) &&
-  /No single factor crossing changes the call/.test(dashSrc));
+  /no single factor crossing flips this verdict — it would take two/.test(bandSrc) &&
+  /No single factor crossing changes the call/.test(bandSrc));
 ok("flip render: the panel names abstentions and stale exclusions, never silently dropping them",
-  dashSrc.includes("no single threshold — ") &&
-  dashSrc.includes("their thresholds are not load-bearing"));
+  bandSrc.includes("no single threshold — ") &&
+  bandSrc.includes("their thresholds are not load-bearing"));
 ok("flip render: distances print at the precision of the factor's own band (fmt.num + dec)",
-  dashSrc.includes("fmt.num(nearest.distance,nearest.dec)") && dashSrc.includes("num:(v,d=2)=>Number(v).toFixed(d)"));
+  bandSrc.includes("fmt.num(nearest.distance,nearest.dec)") && fmt.num(1.2345, 2) === "1.23" && fmt.num(42, 0) === "42");
 // Found BY the flip browser check: a nowrap 317px subtitle blew the page to 488px at 390px.
 ok("mobile: the AI unit-economics subtitle wraps (a nowrap label must not blow out the page)",
   !/whiteSpace:"nowrap"\}\}>cost ↔ price/.test(dashSrc));
@@ -2902,12 +2908,12 @@ ok("quorum: the wiring point exposes build INTENT so a failed live fetch is not 
     return (src.match(/liveBuild/g) || []).length >= 4 && src.includes("loading: liveBuild"); })());
 // LOADING is not a verdict state.
 ok("quorum: LOADING withholds the posture outright rather than computing one from mock",
-  dashSrc.includes("const withheld=loading||regime.insufficient;") &&
+  bandSrc.includes("const withheld=loading||regime.insufficient;") &&
   dashSrc.includes('loading={mode==="LOADING"}'));
 ok("quorum: the withheld state gets its OWN moon voice, never a directional one defaulted",
-  /CAN'T CALL IT/.test(dashSrc) && dashSrc.includes("withheld?WEN_MOON_STATES[3]"));
+  /CAN'T CALL IT/.test(bandSrc) && bandSrc.includes("withheld?WEN_MOON_STATES[3]"));
 ok("quorum: the flip line is suppressed when there is no posture to flip",
-  /withheld\s*\n\s*\? <div/.test(dashSrc));
+  /withheld\s*\n\s*\? <div/.test(bandSrc));
 ok("quorum: the confidence strip states the withhold, not a bare factor count",
   /POSTURE WITHHELD \(needs \$\{regime\.quorum\}\)/.test(dashSrc));
 // ---- WHY #1 freshness gate (11.4.5 audit, High) ----
@@ -3323,7 +3329,7 @@ ok("B2: Signal Quality counts live and cached separately under a FRESH rollup",
 ok("B2: 'derived from live data' is now STATE-derived, one derivation for both footers",
   /const derivedLabel=mode==="LIVE"\?"derived from live data"/.test(dashSrc) &&
   /derived from today's cached snapshot/.test(dashSrc) &&
-  /· \{srcLabel\}<\/div>/.test(dashSrc) && /· \{derivedLabel\} \(no LLM\)/.test(dashSrc));
+  /· \{srcLabel\}<\/div>/.test(bandSrc) && /· \{derivedLabel\} \(no LLM\)/.test(dashSrc));
 // B3: operational data needs a token; the public route gets a report-only CSP.
 const snapSrc2 = readFileSync(new URL("../functions/api/snapshot.js", import.meta.url), "utf8");
 ok("B3: ?debug requires the DEBUG_TOKEN secret — fail closed both ways",
@@ -3495,7 +3501,7 @@ ok("glance: MIXED with VIX excluded and NO load-bearing flip states the evidence
     return r.label === "MIXED" && r.sub === "Cross-signals — 5 of 6 inputs usable"; })());
 // F2b-2: the neutral vote is stated, not implicit.
 ok("glance: the vote line accounts for every counted vote — bull · neutral · bear of usable",
-  /\$\{regime\.bullVotes\} bull · \$\{neutralVotes\} neutral · \$\{regime\.bearVotes\} bear — \$\{regime\.counted\} of \$\{regime\.totalFactors\} usable/.test(dashSrc));
+  /\$\{regime\.bullVotes\} bull · \$\{neutralVotes\} neutral · \$\{regime\.bearVotes\} bear — \$\{regime\.counted\} of \$\{regime\.totalFactors\} usable/.test(bandSrc));
 // F3a: the terminal gets the same treatment — inside the installed PWA shell admin.html
 // renders fullscreen too, and it had ZERO safe-area handling.
 ok("tt-glance: admin viewport gains viewport-fit=cover",
@@ -3745,9 +3751,9 @@ ok("a non-finite reading votes NEUTRAL, not a confident bearish chip",
     return regimeFactorRows(bad).find((r) => r.key === "vix").vote === "neutral"; })());
 // The whole point of the shared map: the two altitudes cannot resolve a vote differently.
 ok("BOTH altitudes resolve appearance through the ONE voteStyle map (hero + Drivers matrix)",
-  dashSrc.includes("const vs=voteStyle(f.vote)") &&
+  bandSrc.includes("const vs=voteStyle(f.vote)") &&
   dashSrc.includes("const vc=T[voteStyle(f.vote).colorKey]") &&
-  !/f\.vote==="bull"\?T\.green/.test(dashSrc));
+  !/f\.vote==="bull"\?T\.green/.test(uiSrc));
 ok("regimeFactors derives its vote from the band table, keeping no second copy of a threshold",
   regimeSrc.includes("band.vote(band.read(d), d)") &&
   !/bull:d\.marketPulse\.vix\.current<18/.test(regimeSrc) &&
@@ -3829,6 +3835,25 @@ ok("tokens: the type scale is numeric and ordered (fs-xs < fs-s < fs-m < fs-l < 
 ok("tokens: T aliases stay derived from DT, never a second literal (spot-check the load-bearing ones)",
   TOK_T.bg === DT["bg"] && TOK_T.textMuted === DT["text-muted"] && TOK_T.fontMono === DT["font-mono"] &&
   TOK_T.fsM === DT["fs-m"] && TOK_T.green === DT["green"] && TOK_T.red === DT["red"]);
+
+// ═══════════ [46] UI-OVERHAUL task 1.3 — RegimeBand extracted to src/sections/ ═══════════
+// The verdict band moved VERBATIM (the only addition is the Property-9 null guard). These
+// pins hold the extraction contract; the band's own behavior pins above were repointed to
+// bandSrc and still hold, and the public render suite drives the real render.
+console.log("\n[46] UI-OVERHAUL task 1.3 — RegimeBand is a module; one copy of everything");
+ok("band: dashboard imports the component AND the verdict vocabulary from the one home",
+  dashSrc.includes('import RegimeBand, { WITHHELD_LABEL, WEN_MOON_STATES } from "./sections/RegimeBand.jsx"') &&
+  !/\nconst RegimeBand=/.test(dashSrc) && !/\nconst WEN_MOON_STATES = \[/.test(dashSrc) &&
+  !/\nconst WITHHELD_LABEL/.test(dashSrc));
+ok("band: fmt has ONE home (src/format.js) — neither surface redefines it",
+  !/\nconst fmt = \{/.test(dashSrc) && !/\nconst fmt\b/.test(bandSrc) &&
+  dashSrc.includes('import { fmt } from "./format.js"') && bandSrc.includes('import { fmt } from "../format.js"'));
+ok("band: a missing data prop renders a safe empty state, never a throw (Property 9)",
+  /if\(!d\)return <div aria-hidden="true"\/>;/.test(bandSrc));
+ok("band: the module stays under the 300-line bound (Property 10)",
+  bandSrc.split("\n").length <= 300);
+ok("band: the call site still passes the live wiring (stale set, LOADING gate, liveBuild intent, state-derived label)",
+  /<RegimeBand d=\{d\} stale=\{staleFactors\} loading=\{mode==="LOADING"\} liveBuild=\{liveBuild\} srcLabel=\{derivedLabel\}\/>/.test(dashSrc));
 
 console.log(`\n=== SMOKE TEST: ${pass} passed, ${fail} failed ===`);
 process.exit(fail === 0 ? 0 : 1);

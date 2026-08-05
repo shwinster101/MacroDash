@@ -7,6 +7,8 @@ import { buildEvidenceSet, factorExclusions, fieldMode, FACTOR_FIELD } from "./e
 import { LASTVALID_KEY, summarizeEvidence, compareEvidence } from "./whatChanged.js"; // C4 (v3.60)
 import { isStale, cadenceOf, parseObsDate, isMarketHoliday } from "./sources.js"; // FEAT-R3: per-tile, cadence-aware staleness + shared market calendar
 import { computeMacroFlip, buildTtReadout, formatTtPaste } from "./ttReadout.js"; // FEAT-331/332: Macro Flip + TT paste
+import { fmt } from "./format.js"; // task 1.3: one shared copy
+import RegimeBand, { WITHHELD_LABEL, WEN_MOON_STATES } from "./sections/RegimeBand.jsx"; // task 1.3: the verdict band + its vocabulary
 
 // ─── DESIGN TOKENS ──────────────────────────────────────────────────────────
 // UI-OVERHAUL Slice 1 (task 1.1): tokens live in src/design-tokens.js — the ONE
@@ -326,14 +328,7 @@ function etSession(now = new Date()) {
 
 
 // ─── HELPERS ─────────────────────────────────────────────────────────────
-const fmt = {
-  pct:(v,d=1)=>`${v>=0?"+":""}${v.toFixed(d)}%`,
-  bps:(v)=>`${v>=0?"+":""}${(v*100).toFixed(0)}bps`,
-  price:(v)=>v>=1000?`$${(v/1000).toFixed(1)}K`:`$${v.toFixed(2)}`,
-  // FEAT-FLIP: a bare number at the precision its own band is expressed in (10Y/NFCI 2dp,
-  // F&G 0dp) — a distance printed at the wrong precision reads as false confidence.
-  num:(v,d=2)=>Number(v).toFixed(d),
-};
+// fmt moved to src/format.js (task 1.3) — one copy, shared with extracted sections.
 const arrow=(v)=>v>0?"▲":v<0?"▼":"→";
 const pctColor=(v,inv=false)=>(inv?v<0:v>0)?T.green:v===0?T.textSecondary:T.red;
 const peColor=(pe)=>pe>80?T.red:pe>40?T.yellow:pe>25?T.textPrimary:T.green;
@@ -442,20 +437,9 @@ const DirTile=({label,value,d1,w1,m1,band,invert=false,spark,source,sourceEp,mod
 };
 
 // ─── WEN MOON METER (mood badge for Macro Strip) ─────────────────────────
-// ENGINE0-CONT: the ONE rendered label for a withheld posture (the engine's internal
-// INSUFFICIENT sentinel never reaches a reader). Shared by the verdict band, the 5 Whys
-// (via regimeView), and pinned by the public render suite.
-const WITHHELD_LABEL = "DATA HOLD";
-const WEN_MOON_STATES = [
-  { label: "MOONING 🚀",       color: T.green, glow: T.green },
-  { label: "HODL 💎",          color: T.amber, glow: T.amber },
-  { label: "DIAMOND HANDS 🙌", color: T.red,   glow: T.red },
-  // FEAT-QUORUM (v3.54): "can't call it" is NOT one of the three postures. Defaulting an
-  // evidence-less state to HODL would render a real hold call made from nothing — the exact
-  // failure this release fixes. The moon voice stays primary (owner call), so it gets its
-  // own honest state instead of borrowing a directional one.
-  { label: "CAN'T CALL IT 🌫️", color: T.textMuted, glow: T.textMuted },
-];
+// WITHHELD_LABEL + WEN_MOON_STATES moved WITH the verdict band to
+// src/sections/RegimeBand.jsx (task 1.3) — the verdict's vocabulary lives in the
+// verdict's home, imported here so there is exactly one copy.
 function wenMoonState(spyChangePct) {
   const pct = typeof spyChangePct === "number" && isFinite(spyChangePct) ? spyChangePct : 0;
   if (pct > WEN_MOON_UP)   return WEN_MOON_STATES[0]; // MOONING
@@ -753,148 +737,8 @@ const MacroFlipBanner=({flip})=>{
   );
 };
 
-// ─── FEAT-169 · REGIME VERDICT BAND (full-width, relocated under macro strip) ──
-// The friend-readable headline ("wen moon?") — first signal
-// seen on mobile (above the command grid) and prominent on desktop. Soft regime tint
-// per AS2-01. Reuses computeRegime + regimeFactors.
-const RegimeBand=({d,stale=new Set(),loading=false,liveBuild=false,srcLabel="derived from live data"})=>{
-  const [open,setOpen]=useState(false);
-  const regime=computeRegime(d,stale);
-  // C1 (v3.60): the pure engine returns token KEYS; the UI owns the palette.
-  regime.tint=DT[regime.tintKey]; regime.color=T[regime.colorKey];
-  const factors=regimeFactors(d,stale);
-  // FEAT-QUORUM: LOADING is not a verdict state — during the first fetch there is no evidence
-  // yet, so the posture is withheld outright rather than computed from the mock baseline.
-  const withheld=loading||regime.insufficient;
-  // FEAT-FLIP (v3.53): what would change this call. The NEAREST load-bearing crossing rides
-  // the first screen; the full set (plus abstentions and exclusions) lives one tap down.
-  const fc=flipConditions(d,stale);
-  const nearest=fc.flips[0]||null;
-  // FEAT-GLANCE (v3.61, newcomer audit): the neutral vote is STATED, not implicit — the old
-  // "2/4 bullish · 2 votes bull / 1 bear" left a vote unaccounted for.
-  const neutralVotes=Math.max(0,regime.counted-regime.bullVotes-regime.bearVotes);
-  // "wen moon?" — map the regime verdict to our moon ratings: RISK-ON→MOONING, MIXED→HODL, RISK-OFF→DIAMOND HANDS
-  const moon=withheld?WEN_MOON_STATES[3]:WEN_MOON_STATES[{ "RISK-ON":0, "MIXED":1, "RISK-OFF":2 }[regime.label] ?? 1];
-  return(
-    <div role="region" aria-label="Macro backdrop verdict"
-      style={{background:regime.tint,borderBottom:`1px solid ${regime.color}33`,borderTop:`1px solid ${regime.color}22`,padding:"10px 20px",position:"relative"}}>
-      <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",gap:12,flexWrap:"wrap"}}>
-        {/* Left: label + sub */}
-        <div style={{display:"flex",alignItems:"baseline",gap:12,flexWrap:"wrap",minWidth:0}}>
-          <div>
-            <div style={{fontFamily:T.fontMono,fontSize:8,color:regime.color,letterSpacing:"0.14em",textTransform:"uppercase"}}>Macro Backdrop · wen moon?</div>
-            <div style={{display:"flex",alignItems:"baseline",gap:10,flexWrap:"wrap"}}>
-              <span style={{fontFamily:T.fontMono,fontSize:T.fsXl,fontWeight:700,color:regime.color,letterSpacing:"-0.01em"}}>{moon.label}</span>
-              <span style={{fontFamily:T.fontMono,fontSize:T.fsL,color:T.textSecondary}}>
-                {/* ENGINE0-CONT: the rendered label is DATA HOLD — a deterministic wait
-                    posture ("the system lacks evidence, hold"), not the internal
-                    INSUFFICIENT sentinel the engine still uses (regime.js is untouched;
-                    presentation only). The literal INSUFFICIENT never reaches a reader. */}
-                {loading?"LOADING · waiting for live data before calling a posture"
-                        :regime.insufficient?`${WITHHELD_LABEL} · ${regime.sub}`
-                        :`${regime.label} · ${regime.sub}`}
-              </span>
-              <span style={{fontFamily:T.fontMono,fontSize:T.fsS,color:T.textMuted}}>
-                {loading?"no factors voting yet"
-                        :regime.insufficient
-                          ?`only ${regime.counted} of ${regime.totalFactors} factors usable — ${regime.quorum} required`
-                          :`${regime.bullVotes} bull · ${neutralVotes} neutral · ${regime.bearVotes} bear — ${regime.counted} of ${regime.totalFactors} usable`}
-              </span>
-            </div>
-            {/* FEAT-FLIP: the audit's fourth first-screen answer — what would change the call.
-                "Nothing single-handedly" is stated plainly rather than padded with the nearest
-                distance to look responsive (abstention rule 3). */}
-            {withheld
-              ? <div style={{fontFamily:T.fontMono,fontSize:9,color:T.textMuted,marginTop:3}}>
-                  {loading
-                    ? "Nothing is being asserted from the demo baseline while the live snapshot loads."
-                    : `The evidence base is too thin to call a posture${liveBuild?" — live data is unavailable or stale, so the mock baseline is NOT voting":""}.`}
-                </div>
-              : <div style={{fontFamily:T.fontMono,fontSize:T.fsS,color:T.textSecondary,marginTop:3}}>
-              <span style={{color:T.textMuted}}>⇄ would change this: </span>
-              {nearest
-                ? <><span style={{color:regime.color}}>{nearest.copy}</span>
-                    <span style={{color:T.textMuted}}> ({fmt.num(nearest.distance,nearest.dec)}{nearest.unit} away) → </span>
-                    <span style={{color:T.textPrimary,fontWeight:700}}>{nearest.would}</span>
-                    {/* v3.62 (newcomer audit): state the assumption. flipConditions simulates
-                        exactly ONE crossing through verdictFrom holding the others fixed, so
-                        without this the line reads as a forecast or a guaranteed trigger. The
-                        caveat is literally what the code computes. */}
-                    <span style={{color:T.textMuted}}> if other signals stay put</span>
-                    {fc.flips.length>1&&<span style={{color:T.textMuted}}> · +{fc.flips.length-1} more</span>}</>
-                : <span style={{color:T.textMuted}}>no single factor crossing flips this verdict — it would take two</span>}
-            </div>}
-          </div>
-        </div>
-        {/* Right: factor chips (desktop) + info toggle */}
-        <div style={{display:"flex",alignItems:"center",gap:8}}>
-          {/* FINDING-2: compact factor "why" — now always visible (mobile too), short labels; full detail via ℹ */}
-          <div style={{display:"flex",gap:5,flexWrap:"wrap",justifyContent:"flex-end"}}>
-            {/* FEAT-NEUTRAL (v3.62): the chip renders the factor's REAL 4-state vote through the
-                shared voteStyle map. It used to branch on a boolean (`f.bull ? green▲ : red▼`),
-                so a NEUTRAL factor fell through to the bearish arm — the hero printed
-                "N bull · N neutral · N bear" one line above while painting that neutral factor
-                red, and the Drivers matrix showed the same factor as grey NEUTRAL further down. */}
-            {factors.map((f,i)=>{
-              const vs=voteStyle(f.vote); const c=T[vs.colorKey];
-              return(
-              <span key={f.label} title={`${f.label}: ${vs.word}`} style={{fontFamily:T.fontMono,fontSize:T.fsM,color:c,border:`1px solid ${c}44`,borderRadius:3,padding:"1px 5px",letterSpacing:"0.03em",background:"#00000022",whiteSpace:"nowrap",opacity:f.vote==="excluded"?0.7:1}}>
-                {f.short} {vs.glyph}
-              </span>
-            );})}
-          </div>
-          <button onClick={()=>setOpen(o=>!o)} aria-label="Show regime factors" aria-expanded={open}
-            style={{background:"none",border:`1px solid ${regime.color}44`,borderRadius:3,color:regime.color,cursor:"pointer",padding:"4px 8px",minWidth:44,minHeight:44,fontFamily:T.fontMono,fontSize:11,flexShrink:0}}>
-            {open?"▲":"ℹ"}
-          </button>
-        </div>
-      </div>
-      {/* Expandable plain-language breakdown */}
-      {open&&(
-        <div style={{marginTop:10,borderTop:`1px solid ${T.border}`,paddingTop:8,display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(220px,1fr))",gap:"4px 18px"}}>
-          {factors.map(f=>(
-            <div key={f.label} style={{display:"flex",gap:8,alignItems:"baseline"}}>
-              <div style={{fontFamily:T.fontMono,fontSize:9,color:T.textMuted,minWidth:100,flexShrink:0}}>{f.label}</div>
-              {/* Same 4-state map as the chips — the drawer used to paint NFCI's own honest
-                  "Looser than mean, but within ½ SD" copy red, contradicting its own words. */}
-              <div style={{fontFamily:T.fontMono,fontSize:9,color:T[voteStyle(f.vote).colorKey]}}>{f.val}</div>
-            </div>
-          ))}
-          {/* FEAT-FLIP: every load-bearing crossing, then what abstained and why. The
-              abstentions are NOT omitted — a factor that cannot express a single threshold is
-              a fact about the rule, and hiding it would read as "these four are all there is". */}
-          <div style={{gridColumn:"1/-1",borderTop:`1px solid ${T.border}`,marginTop:4,paddingTop:6}}>
-            <div style={{fontFamily:T.fontMono,fontSize:8,color:T.textMuted,letterSpacing:"0.1em",marginBottom:3}}>WHAT WOULD CHANGE THIS VERDICT</div>
-            {fc.flips.length===0&&(
-              <div style={{fontFamily:T.fontMono,fontSize:9,color:T.textSecondary}}>
-                No single factor crossing changes the call — at {fc.bullVotes} bull / {fc.bearVotes} bear of {fc.counted} voting,
-                it would take two factors moving together.
-              </div>
-            )}
-            {fc.flips.map(f=>(
-              <div key={`${f.key}-${f.to}`} style={{fontFamily:T.fontMono,fontSize:9,color:T.textSecondary,display:"flex",gap:6,flexWrap:"wrap",marginBottom:1}}>
-                <span style={{color:regime.color,minWidth:190}}>{f.copy}</span>
-                <span style={{color:T.textMuted}}>now {fmt.num(f.value,f.dec)}{f.unit} · {fmt.num(f.distance,f.dec)}{f.unit} away</span>
-                <span style={{color:T.textPrimary}}>→ {f.would}</span>
-              </div>
-            ))}
-            {fc.abstained.map(a=>(
-              <div key={a.key} style={{fontFamily:T.fontMono,fontSize:8,color:T.textMuted,marginTop:2}}>
-                {a.label}: no single threshold — {a.why}
-              </div>
-            ))}
-            {fc.excluded.length>0&&(
-              <div style={{fontFamily:T.fontMono,fontSize:8,color:T.amber,marginTop:2}}>
-                Excluded from the vote (stale), so their thresholds are not load-bearing: {fc.excluded.map(e=>e.short).join(" · ")}
-              </div>
-            )}
-          </div>
-          <div style={{fontFamily:T.fontMono,fontSize:8,color:T.textMuted,gridColumn:"1/-1"}}>Rule-based 6-factor vote · stale/dead inputs auto-excluded · {srcLabel}</div>
-        </div>
-      )}
-    </div>
-  );
-};
+// ─── FEAT-169 · REGIME VERDICT BAND ──────────────────────────────────────
+// Extracted VERBATIM to src/sections/RegimeBand.jsx (UI-OVERHAUL task 1.3).
 
 // Fear & Greed gauge
 const FGGauge=({score,label,mode="MOCK",asOf})=>{
