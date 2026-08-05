@@ -9,6 +9,9 @@ import { isStale, cadenceOf, parseObsDate, isMarketHoliday } from "./sources.js"
 import { computeMacroFlip, buildTtReadout, formatTtPaste } from "./ttReadout.js"; // FEAT-331/332: Macro Flip + TT paste
 import { fmt } from "./format.js"; // task 1.3: one shared copy
 import RegimeBand, { WITHHELD_LABEL, WEN_MOON_STATES } from "./sections/RegimeBand.jsx"; // task 1.3: the verdict band + its vocabulary
+import FiveWhys from "./sections/FiveWhys.jsx"; // task 1.4: presentation only — computeFiveWhys stays here
+import SourceBox, { DataModeBadge } from "./primitives/SourceBox.jsx"; // task 1.4
+import SectionHeader from "./primitives/SectionHeader.jsx"; // task 1.4
 
 // ─── DESIGN TOKENS ──────────────────────────────────────────────────────────
 // UI-OVERHAUL Slice 1 (task 1.1): tokens live in src/design-tokens.js — the ONE
@@ -159,37 +162,7 @@ const EVTOL_CERT = {
   note: "FAA Type Certification — final regulatory gate before commercial eVTOL passenger ops.",
 };
 
-// ─── SOURCE BOX ────────────────────────────────────────────────────────────
-// FEAT-167: CACHED badge uses dashed border + zinc-400 (#a1a1aa)
-const apiColors = {
-  FMP:DT["src-fmp"], FRED:DT["src-fred"], Anthropic:DT["src-anthropic"],
-  CNN:DT["src-cnn"], CBOE:DT["src-cboe"], Zillow:DT["src-zillow"], Manual:DT["src-manual"], "Rule-based":DT["src-manual"],
-  Kalshi:DT["src-manual"], OpenRouter:"#a78bfa",
-  CACHED:DT["cached"],
-};
-const DataModeBadge = ({ mode }) => {
-  const cfg = {
-    MOCK:    { label:"MOCK",    bg:"#1a1f2e", color:T.textMuted,         border:`1px solid ${T.border}` },
-    LOADING: { label:"↻ LOADING", bg:"#1a140a", color:T.amber,           border:`1px solid ${T.amber}44` },
-    LIVE:    { label:"LIVE",    bg:"#0a1e24", color:DT["live-cyan-700"], border:`1px solid ${DT["live-cyan-700"]}66` },
-    STALE:   { label:"⏱ STALE", bg:"#1a140a", color:T.amber,            border:`1px solid ${T.amber}44` },
-    CACHED:  { label:"CACHED",  bg:"#18181b", color:DT["cached"],        border:`1px dashed ${DT["cached"]}` },  // FEAT-167
-    // B1 (v3.59): a failed live fetch is ERROR, never "MOCK" — an outage must not wear the
-    // demo's badge. Red, because it is the one mode that asks the user to act (Retry).
-    ERROR:   { label:"⚠ ERROR", bg:"#190a0c", color:T.red,               border:`1px solid ${T.red}66` },
-  }[mode] || { label:mode, bg:T.surface, color:T.textMuted, border:`1px solid ${T.border}` };
-  return (
-    <span style={{background:cfg.bg, color:cfg.color, border:cfg.border, borderRadius:3, padding:"1px 6px", fontSize:9, fontFamily:T.fontMono, letterSpacing:"0.04em"}}>{cfg.label}</span>
-  );
-};
-const SourceBox = ({ api, endpoint, asOf, mode }) => (
-  <div style={{ display:"flex", alignItems:"center", gap:5, marginTop:6, flexWrap:"wrap" }}>
-    {mode && <DataModeBadge mode={mode}/>}
-    <span style={{ background:(apiColors[api]||T.border)+"22", color:apiColors[api]||T.textMuted, border:`1px solid ${(apiColors[api]||T.border)}44`, borderRadius:3, padding:"1px 5px", fontSize:9, fontFamily:T.fontMono, flexShrink:0 }}>{api}</span>
-    <span style={{ fontFamily:T.fontMono, fontSize:8, color:T.textMuted, overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" }}>{endpoint}</span>
-    {asOf && <span style={{ fontFamily:T.fontMono, fontSize:8, color:T.textMuted, flexShrink:0 }}>{asOf}</span>}
-  </div>
-);
+// ─── SOURCE BOX — extracted to src/primitives/SourceBox.jsx (task 1.4) ───────
 
 // ─── ILLUSTRATIVE TREATMENT (v3.1 friends-cockpit safety) ─────────────────────
 // A friend skimming must never mistake a no-feed/mock tile for live data. Curated tiles
@@ -372,9 +345,7 @@ const Label=({children,color})=>(
   <div style={{fontFamily:T.fontMono,fontSize:9,color:color||T.textMuted,letterSpacing:"0.1em",textTransform:"uppercase",marginBottom:3}}>{children}</div>
 );
 const Divider=()=><div style={{height:1,background:T.border,margin:"10px 0"}}/>;
-const SectionHeader=({children})=>(
-  <div style={{fontFamily:T.fontMono,fontSize:9,color:DT["text-muted"],letterSpacing:"0.14em",textTransform:"uppercase",paddingBottom:6,marginBottom:10,borderBottom:`1px solid ${T.border}`}}>{children}</div>
-);
+// SectionHeader extracted to src/primitives/SectionHeader.jsx (task 1.4).
 
 // UndoToast (FEAT-166: 5s mobile / 4s desktop). Stacks multiple toasts so a rapid second
 // delete never overwrites the first one's undo — each toast has its own id, timer, and dismiss.
@@ -1256,28 +1227,11 @@ export default function Dashboard({ publicView = false } = {}) {
         </div>
       )}
 
-      {/* ── 5 WHYS (moved here v3.69 NARRATIVE-FIRST — owner call: the narrative outranks the
-          tiles; it previously rendered LAST in Zone B, ~5 phone screens down). Content and
-          data flow byte-identical; only the container changed from Zone-B card to overview
-          strip. Always expanded (owner-pinned) — and the LOADING/ERROR anchors ("0/3 core
-          inputs usable") are read from body innerText by the public-render suite, so this
-          block must never collapse. ── */}
-      <div style={{padding:"10px 20px",background:T.bg,borderBottom:`1px solid ${T.border}`}}>
-              <SectionHeader>5 Whys · Today</SectionHeader>
-              <div style={{fontFamily:T.fontMono,fontSize:9,color:T.amber,marginBottom:6}}>{fw.regime}</div>
-              <div style={{fontFamily:T.fontSans,fontSize:12,color:T.textSecondary,lineHeight:1.6,fontStyle:"italic"}}>"{fw.headline}"</div>
-              {fw.whys.map((w,i)=>(
-                <div key={i} style={{borderLeft:`2px solid ${T.amber}44`,paddingLeft:8,marginTop:8}}>
-                  <div style={{fontFamily:T.fontMono,fontSize:8,color:T.amber}}>WHY #{i+1}</div>
-                  <div style={{fontFamily:T.fontSans,fontSize:11,color:T.textSecondary,lineHeight:1.5}}>{w}</div>
-                </div>
-              ))}
-              <div style={{fontFamily:T.fontMono,fontSize:8,color:T.textMuted,marginTop:8}}>Rule-based · {derivedLabel} (no LLM)</div>
-              {/* Freshness anchors to the equity close (SPY) — a market synthesis is "as of the
-                  last close". Don't let a secondary input FRED publishes a day late (VIX/10Y)
-                  drag the whole 5-Whys badge to STALE; per-tile VIX/10Y badges stay honest. */}
-              <SourceBox api="Rule-based" endpoint="6-factor regime · stale inputs excluded" mode={modeOf('spyPrice')} asOf={asOfOf('spyPrice')}/>
-      </div>
+      {/* ── 5 WHYS (moved here v3.69 NARRATIVE-FIRST — owner call: the narrative outranks
+          the tiles). Extracted to src/sections/FiveWhys.jsx (task 1.4), presentation only —
+          content and data flow byte-identical; must never collapse (LOADING/ERROR anchors
+          are read from body innerText by the public-render suite). ── */}
+      <FiveWhys fw={fw} derivedLabel={derivedLabel} mode={modeOf('spyPrice')} asOf={asOfOf('spyPrice')}/>
 
       {/* ── SIGNAL QUALITY rollup — at-a-glance data trust (live vs stale vs mock) ── */}
       {/* A11Y: aria-live on the CONFIDENCE strip, not on every tile — a screen reader should

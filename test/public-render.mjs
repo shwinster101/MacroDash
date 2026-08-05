@@ -465,6 +465,32 @@ console.log("\n[public] A4 — the public/private boundary is ENFORCED, not comm
   await page.close();
 }
 
+// ── Slice 1 (UI-OVERHAUL tasks 1.3–1.5) — the mobile verdict contract ────────
+// The extracted RegimeBand + FiveWhys must render the complete verdict (posture +
+// confidence line + "would change this" why sentence) within the first 600px of
+// vertical space at 375px, with the narrative present and no horizontal overflow.
+// Driven against the REAL live-stubbed page — the extraction is proven by behavior,
+// not by string pins.
+console.log("\n[public] Slice 1 — verdict above the fold at 375px (extracted band + whys)");
+{
+  const { page, errors } = await open({ live: FULL_LIVE, width: 375 });
+  await page.waitForTimeout(1200);
+  const band = page.locator('[aria-label="Macro backdrop verdict"]');
+  const box = await band.boundingBox();
+  ok("slice1 @375px: the extracted band renders a posture", POSTURES.test(await band.innerText()));
+  ok("slice1 @375px: the complete verdict region ends within the first 600px",
+    box !== null && box.y + box.height <= 600);
+  ok("slice1 @375px: the confidence tally and flip sentence ride inside that region",
+    /of \d+ usable/.test(await band.innerText()) && /would change this/i.test(await band.innerText()));
+  const body = await page.locator("body").innerText();
+  ok("slice1 @375px: the extracted 5 Whys narrative renders (WHY #1–#5 present)",
+    /WHY #1/.test(body) && /WHY #5/.test(body) && /5 Whys · Today/i.test(body));
+  ok("slice1 @375px: no horizontal overflow",
+    await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth + 1));
+  ok("slice1 @375px: no page errors from the extracted modules", errors.length === 0);
+  await page.close();
+}
+
 await browser.close();
 srv.close();
 console.log(`\n=== PUBLIC RENDER TEST: ${pass} passed, ${fail} failed ===`);

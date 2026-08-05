@@ -41,7 +41,11 @@ const regimeSrc = readFileSync(new URL("../src/regime.js", import.meta.url), "ut
 // describe the BAND read bandSrc; pins whose contract spans both surfaces (a negative
 // that must hold everywhere, a vocabulary shared across files) read uiSrc.
 const bandSrc = readFileSync(new URL("../src/sections/RegimeBand.jsx", import.meta.url), "utf8");
-const uiSrc = dashSrc + bandSrc;
+// task 1.4: FiveWhys + the SourceBox/SectionHeader primitives moved out too.
+const whysSrc = readFileSync(new URL("../src/sections/FiveWhys.jsx", import.meta.url), "utf8");
+const sbSrc = readFileSync(new URL("../src/primitives/SourceBox.jsx", import.meta.url), "utf8");
+const shSrc = readFileSync(new URL("../src/primitives/SectionHeader.jsx", import.meta.url), "utf8");
+const uiSrc = dashSrc + bandSrc + whysSrc + sbSrc + shSrc;
 const _s = dashSrc.indexOf("const MOCK_DATA = {");
 let _i = dashSrc.indexOf("{", _s), _d = 0, _e = -1;
 for (; _i < dashSrc.length; _i++) { if (dashSrc[_i] === "{") _d++; else if (dashSrc[_i] === "}") { _d--; if (_d === 0) { _e = _i; break; } } }
@@ -1790,10 +1794,11 @@ ok("estrun: the section label carries the tier — the math renders under the ti
 /* v3.68: the PT horizon is stated where the %/yr is read. */
 /* v3.69 NARRATIVE FIRST — the public dashboard reorder. */
 ok("v3.69: the 5 Whys block renders in the overview region, before the markets section (source order)",
-  dashSrc.indexOf("5 Whys · Today") > dashSrc.indexOf('id="overview"')
-  && dashSrc.indexOf("5 Whys · Today") < dashSrc.indexOf('aria-labelledby="markets"'));
+  whysSrc.includes("5 Whys · Today") &&
+  dashSrc.indexOf("<FiveWhys ") > dashSrc.indexOf('id="overview"')
+  && dashSrc.indexOf("<FiveWhys ") < dashSrc.indexOf('aria-labelledby="markets"'));
 ok("v3.69: the 5 Whys is NOT inside any CollapsedGroup (LOADING/ERROR anchors are read from body text)",
-  !/CollapsedGroup[^>]*>[\s\S]{0,600}5 Whys · Today/.test(dashSrc));
+  !/CollapsedGroup[^>]*>[\s\S]{0,600}<FiveWhys /.test(dashSrc) && !/CollapsedGroup/.test(whysSrc));
 ok("v3.69: ONE market-detail CollapsedGroup (chart + 10 tiles) inside the markets section, chip-free",
   dashSrc.includes('label="full market detail — chart & tiles" chip={false}')
   && (dashSrc.match(/full market detail/g)||[]).length===1);
@@ -2667,7 +2672,7 @@ console.log("\n[25] public dashboard — the stated factor count matches the vot
 ok("regime: no surviving '5-factor' claim anywhere in the dashboard",
   !/5-factor/.test(uiSrc));
 ok("regime: the vote is described as 6-factor on the band and the source box",
-  /6-factor/.test(bandSrc) && /6-factor/.test(dashSrc));
+  /6-factor/.test(bandSrc) && /6-factor/.test(whysSrc));
 ok("regime: the stated count equals REGIME_FACTOR_FIELDS + the valuation factor",
   REGIME_FACTOR_FIELDS.length + 1 === 6 && FACTOR_FIELD.valuation === "shillerPe");
 
@@ -3321,7 +3326,7 @@ ok("B1: the dashboard renders the outage and a Retry control, not 'demo baseline
   /live service unavailable — numbers below are illustrative/.test(dashSrc) &&
   /aria-label="Retry loading live data"/.test(dashSrc));
 ok("B1: ERROR wears its own red badge in DataModeBadge",
-  /ERROR:\s*\{ label:"⚠ ERROR"/.test(dashSrc));
+  /ERROR:\s*\{ label:"⚠ ERROR"/.test(sbSrc));
 // B2: fresh ≠ live. The rollup names both parts; the footers derive from state.
 ok("B2: Signal Quality counts live and cached separately under a FRESH rollup",
   /if\(m==="LIVE"\)\{a\.fresh\+\+;a\.live\+\+;\}else if\(m==="CACHED"\)\{a\.fresh\+\+;a\.cached\+\+;\}/.test(dashSrc) &&
@@ -3329,7 +3334,8 @@ ok("B2: Signal Quality counts live and cached separately under a FRESH rollup",
 ok("B2: 'derived from live data' is now STATE-derived, one derivation for both footers",
   /const derivedLabel=mode==="LIVE"\?"derived from live data"/.test(dashSrc) &&
   /derived from today's cached snapshot/.test(dashSrc) &&
-  /· \{srcLabel\}<\/div>/.test(bandSrc) && /· \{derivedLabel\} \(no LLM\)/.test(dashSrc));
+  /· \{srcLabel\}<\/div>/.test(bandSrc) && /· \{derivedLabel\} \(no LLM\)/.test(whysSrc) &&
+  /derivedLabel=\{derivedLabel\}/.test(dashSrc));
 // B3: operational data needs a token; the public route gets a report-only CSP.
 const snapSrc2 = readFileSync(new URL("../functions/api/snapshot.js", import.meta.url), "utf8");
 ok("B3: ?debug requires the DEBUG_TOKEN secret — fail closed both ways",
@@ -3816,11 +3822,11 @@ ok("tokens: dashboard.jsx IMPORTS the module and keeps no inline copy to drift",
   dashSrc.includes('from "./design-tokens.js"') && !/\nconst DT = \{/.test(dashSrc) && !/\nconst T = \{/.test(dashSrc));
 ok("tokens: the empty-export guard exists and WARNS rather than claiming a fallback that isn't there",
   /Object\.keys\(DT\)\.length\)/.test(dashSrc) && /console\.warn\("design-tokens/.test(dashSrc));
-ok("tokens: every DT[\"…\"] key referenced in dashboard.jsx resolves in the export (computed, not listed)",
-  (() => { const refs = [...dashSrc.matchAll(/DT\["([^"]+)"\]/g)].map((m) => m[1]);
+ok("tokens: every DT[\"…\"] key referenced in ANY UI surface resolves in the export (computed, not listed)",
+  (() => { const refs = [...uiSrc.matchAll(/DT\["([^"]+)"\]/g)].map((m) => m[1]);
     return refs.length >= 15 && refs.every((k) => DT[k] !== undefined); })());
-ok("tokens: every static T.* lookup in dashboard.jsx resolves in the export",
-  (() => { const refs = [...new Set([...dashSrc.matchAll(/\bT\.([A-Za-z][A-Za-z0-9]*)/g)].map((m) => m[1]))];
+ok("tokens: every static T.* lookup in ANY UI surface resolves in the export",
+  (() => { const refs = [...new Set([...uiSrc.matchAll(/\bT\.([A-Za-z][A-Za-z0-9]*)/g)].map((m) => m[1]))];
     return refs.length >= 10 && refs.every((k) => TOK_T[k] !== undefined); })());
 ok("tokens: the DYNAMIC keys — every tintKey/colorKey regime.js can emit resolves (T[regime.colorKey], DT[regime.tintKey])",
   (() => { const tints = [...regimeSrc.matchAll(/tintKey:"([^"]+)"/g)].map((m) => m[1]);
@@ -3854,6 +3860,31 @@ ok("band: the module stays under the 300-line bound (Property 10)",
   bandSrc.split("\n").length <= 300);
 ok("band: the call site still passes the live wiring (stale set, LOADING gate, liveBuild intent, state-derived label)",
   /<RegimeBand d=\{d\} stale=\{staleFactors\} loading=\{mode==="LOADING"\} liveBuild=\{liveBuild\} srcLabel=\{derivedLabel\}\/>/.test(dashSrc));
+
+// ═══════════ [47] UI-OVERHAUL task 1.4 — FiveWhys extracted, presentation only ═══════════
+// The 5 Whys strip moved verbatim to src/sections/FiveWhys.jsx. The separation contract:
+// computeFiveWhys, the FW_FIELDS freshness set and the derivedLabel derivation STAY in the
+// orchestrator — the section renders what it is handed and computes nothing. SourceBox (+
+// DataModeBadge) and SectionHeader became primitives with one home each.
+console.log("\n[47] UI-OVERHAUL task 1.4 — FiveWhys is a module; logic stays in the orchestrator");
+ok("whys: presentation only — the CODE never imports or calls the computation (comments may name it)",
+  (() => { const code = whysSrc.replace(/\/\/[^\n]*|\/\*[\s\S]*?\*\//g, "");
+    return !/fiveWhys\.js/.test(code) && !/computeFiveWhys/.test(code) &&
+           !/useMarketData/.test(code) && !/FW_FIELDS/.test(code); })());
+ok("whys: the computation and freshness gating stay in the orchestrator (A1 contract intact)",
+  dashSrc.includes("const fw=computeFiveWhys({...d, session:etSession()}, regimeView, { stale:staleFactors, fresh:freshSet });") &&
+  /const freshSet=liveBuild \? new Set/.test(dashSrc));
+ok("whys: a missing fw prop renders a safe empty state, never a throw (Property 9)",
+  /if\(!fw\|\|!Array\.isArray\(fw\.whys\)\)return <div aria-hidden="true"\/>;/.test(whysSrc));
+ok("whys: the call site hands over narrative, state-derived label, and equity-close provenance",
+  /<FiveWhys fw=\{fw\} derivedLabel=\{derivedLabel\} mode=\{modeOf\('spyPrice'\)\} asOf=\{asOfOf\('spyPrice'\)\}\/>/.test(dashSrc));
+ok("whys: module stays under the 300-line bound (Property 10); primitives under 100",
+  whysSrc.split("\n").length <= 300 && sbSrc.split("\n").length <= 100 && shSrc.split("\n").length <= 100);
+ok("primitives: SourceBox/DataModeBadge/SectionHeader have ONE home each — no inline copies left",
+  !/\nconst SourceBox = /.test(dashSrc) && !/\nconst DataModeBadge = /.test(dashSrc) &&
+  !/\nconst SectionHeader=/.test(dashSrc) && !/\nconst apiColors = /.test(dashSrc) &&
+  dashSrc.includes('import SourceBox, { DataModeBadge } from "./primitives/SourceBox.jsx"') &&
+  dashSrc.includes('import SectionHeader from "./primitives/SectionHeader.jsx"'));
 
 console.log(`\n=== SMOKE TEST: ${pass} passed, ${fail} failed ===`);
 process.exit(fail === 0 ? 0 : 1);
