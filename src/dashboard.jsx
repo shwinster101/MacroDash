@@ -7,11 +7,14 @@ import { buildEvidenceSet, factorExclusions, fieldMode, FACTOR_FIELD } from "./e
 import { LASTVALID_KEY, summarizeEvidence, compareEvidence } from "./whatChanged.js"; // C4 (v3.60)
 import { isStale, cadenceOf, parseObsDate, isMarketHoliday } from "./sources.js"; // FEAT-R3: per-tile, cadence-aware staleness + shared market calendar
 import { computeMacroFlip, buildTtReadout, formatTtPaste } from "./ttReadout.js"; // FEAT-331/332: Macro Flip + TT paste
-import { fmt } from "./format.js"; // task 1.3: one shared copy
+import { fmt, pctColor } from "./format.js"; // task 1.3/3.1: one shared copy
 import RegimeBand, { WITHHELD_LABEL, WEN_MOON_STATES } from "./sections/RegimeBand.jsx"; // task 1.3: the verdict band + its vocabulary
 import FiveWhys from "./sections/FiveWhys.jsx"; // task 1.4: presentation only — computeFiveWhys stays here
 import SourceBox, { DataModeBadge } from "./primitives/SourceBox.jsx"; // task 1.4
 import SectionHeader from "./primitives/SectionHeader.jsx"; // task 1.4
+import MacroStrip from "./sections/MacroStrip.jsx"; // task 3.1: presentation only
+import SignalQuality from "./sections/SignalQuality.jsx"; // task 3.2: presentation only
+import WhatChanged from "./sections/WhatChanged.jsx"; // task 3.3: presentation only
 
 // ─── DESIGN TOKENS ──────────────────────────────────────────────────────────
 // UI-OVERHAUL Slice 1 (task 1.1): tokens live in src/design-tokens.js — the ONE
@@ -303,7 +306,7 @@ function etSession(now = new Date()) {
 // ─── HELPERS ─────────────────────────────────────────────────────────────
 // fmt moved to src/format.js (task 1.3) — one copy, shared with extracted sections.
 const arrow=(v)=>v>0?"▲":v<0?"▼":"→";
-const pctColor=(v,inv=false)=>(inv?v<0:v>0)?T.green:v===0?T.textSecondary:T.red;
+// pctColor moved to src/format.js (task 3.1) — one copy, shared with MacroStrip.
 const peColor=(pe)=>pe>80?T.red:pe>40?T.yellow:pe>25?T.textPrimary:T.green;
 const marginColor=(m)=>m===null?T.textMuted:m>30?T.green:m>15?T.textPrimary:m>5?T.yellow:T.red;
 const yoyColor=(g)=>g>50?T.green:g>15?T.green:g>0?T.textPrimary:g>=0?T.yellow:T.red;
@@ -1233,44 +1236,13 @@ export default function Dashboard({ publicView = false } = {}) {
           are read from body innerText by the public-render suite). ── */}
       <FiveWhys fw={fw} derivedLabel={derivedLabel} mode={modeOf('spyPrice')} asOf={asOfOf('spyPrice')}/>
 
-      {/* ── SIGNAL QUALITY rollup — at-a-glance data trust (live vs stale vs mock) ── */}
-      {/* A11Y: aria-live on the CONFIDENCE strip, not on every tile — a screen reader should
-          hear "the verdict's evidence base changed", not each number ticking. */}
-      <div role="region" aria-label="Signal quality and backdrop confidence"
-        style={{display:"flex",alignItems:"center",gap:10,flexWrap:"wrap",padding:"5px 20px",background:T.bg,borderBottom:`1px solid ${T.border}`}}>
-        <span style={{fontFamily:T.fontMono,fontSize:8,color:T.textMuted,letterSpacing:"0.12em",textTransform:"uppercase"}}>Signal Quality</span>
-        <span style={{fontFamily:T.fontMono,fontSize:T.fsM,color:T.green}}>● {sq.fresh} fresh{sq.fresh>0&&<span style={{color:T.textMuted}}> ({sq.live} live · {sq.cached} cached)</span>}</span>
-        {sq.stale>0&&<span style={{fontFamily:T.fontMono,fontSize:T.fsM,color:T.amber}}>⏱ {sq.stale} stale</span>}
-        {sq.mock>0&&<span style={{fontFamily:T.fontMono,fontSize:T.fsM,color:T.textMuted}}>○ {sq.mock} mock</span>}
-        <span style={{fontFamily:T.fontMono,fontSize:8,color:T.textMuted}}>of {sq.total} tracked</span>
-        {/* The verdict's own confidence, not the tile census. */}
-        <span style={{fontFamily:T.fontMono,fontSize:9,color:regime.insufficient?T.red:regimeConf.counted===regimeConf.total?T.green:T.amber,borderLeft:`1px solid ${T.border}`,paddingLeft:10}}>
-          BACKDROP {regimeConf.counted}/{regimeConf.total} factors voting{regime.insufficient?` — POSTURE WITHHELD (needs ${regime.quorum})`:""}
-        </span>
-        {regimeConf.excluded.length>0&&(
-          <span style={{fontFamily:T.fontMono,fontSize:8,color:T.amber}}>excluded: {regimeConf.excluded.join(" · ")}</span>
-        )}
-        {regimeConf.blind&&(
-          <span style={{fontFamily:T.fontMono,fontSize:8,color:T.red}}>⚠ crash gauge (VIX) unavailable</span>
-        )}
-        {/* v3.61: the v3.1 decode legend moved into the Data Health expander — explanation,
-            not evidence, and the strip's job is the one-line tell. */}
-      </div>
+      {/* ── SIGNAL QUALITY — extracted to src/sections/SignalQuality.jsx (task 3.2),
+          presentation only; the SIGNAL_FIELDS census + regimeConf derivation stay here. ── */}
+      <SignalQuality sq={sq} regimeConf={regimeConf} regime={regime}/>
 
-      {/* ── C4 (v3.60): WHAT CHANGED since the last valid snapshot ── */}
-      {changed&&(
-        <div style={{padding:"6px 20px",background:T.bg,borderBottom:`1px solid ${T.border}`,display:"flex",gap:10,alignItems:"baseline",flexWrap:"wrap"}}>
-          <span style={{fontFamily:T.fontMono,fontSize:8,color:T.textMuted,letterSpacing:"0.12em",textTransform:"uppercase"}}>What changed</span>
-          {/* v3.61 (newcomer audit): the baseline is BROWSER-LOCAL (localStorage), not an
-              account — the copy states the device scope rather than implying a server history. */}
-          {changed.baseline
-            ?<span style={{fontFamily:T.fontMono,fontSize:9,color:T.textSecondary}}>baseline set — tracking starts today on this device</span>
-            :changed.changes.length
-              ?changed.changes.slice(0,4).map((c,i)=>(
-                <span key={i} style={{fontFamily:T.fontMono,fontSize:9,color:c.kind==="posture"?T.amber:T.textSecondary}}>{c.text}</span>))
-              :<span style={{fontFamily:T.fontMono,fontSize:9,color:T.textMuted}}>no material change since your previous visit on this device ({String(changed.since||"").slice(0,10)})</span>}
-        </div>
-      )}
+      {/* ── C4 (v3.60): WHAT CHANGED — extracted to src/sections/WhatChanged.jsx
+          (task 3.3), presentation only; compare-then-persist sequencing stays here. ── */}
+      <WhatChanged changed={changed}/>
 
       {/* ── C3 (v3.60): DRIVERS — the six-factor Evidence Matrix. Renders the EvidenceSet
           contract, never its own reading: value · vote · freshness · as-of · exclusion
@@ -1318,44 +1290,11 @@ export default function Dashboard({ publicView = false } = {}) {
           health pattern) — previously bare h2s, so the ai anchor swallowed Conviction+Alerts. */}
       <section aria-labelledby="markets">
       <h2 id="markets" className="visually-hidden">Markets — equities, rates and cross-asset</h2>
-      {/* ── MACRO STRIP (persistent ticker — always visible; FEAT-170 reflows on mobile) ── */}
-      <div style={{background:T.surfaceHigh,borderBottom:`1px solid ${T.border}`,padding:"6px 20px",overflowX:"auto",display:"flex",alignItems:"center",justifyContent:"space-between",gap:12}} className="macro-strip">
-        <div style={{display:"flex",gap:20,minWidth:"max-content",flex:1}} className="macro-strip-inner">
-          {[
-            {l:"SPY*", f:"spyPrice", v:`$${d.marketPulse.spy.price}`,      s:fmt.pct(d.marketPulse.spy.changePct), sc:pctColor(d.marketPulse.spy.changePct), t:"S&P 500 ÷ 10 (FRED SP500 proxy, NOT an SPY ETF quote — Stooq blocks the edge). Tracks the ETF closely; not identical."},
-            {l:"QQQ",  f:"qqqPrice", v:`$${d.marketPulse.qqq.price}`,      s:fmt.pct(d.marketPulse.qqq.changePct), sc:pctColor(d.marketPulse.qqq.changePct), t:"Nasdaq-100 ETF — big tech"},
-            {l:"VIX",  f:"vix", v:`${d.marketPulse.vix.current}`,     s:fmt.pct(d.marketPulse.vix.weekChg)+" WoW", sc:pctColor(d.marketPulse.vix.weekChg,true), t:"Volatility index — the market's fear gauge (lower = calmer)"},
-            {l:"F&G",  f:"fearGreed", v:`${d.marketPulse.fearGreed.score}`, s:d.marketPulse.fearGreed.label, sc:d.marketPulse.fearGreed.score>55?T.green:T.red, t:"Fear & Greed — market sentiment, 0 = fear, 100 = greed"},
-            {l:"10Y",  f:"tenYear", v:`${d.crossAsset.treasury10y.current}%`, s:fmt.bps(d.crossAsset.treasury10y.d1)+" 1D", sc:pctColor(-d.crossAsset.treasury10y.d1), t:"10-year Treasury yield — the benchmark interest rate"},
-            {l:"FED",  f:"fedFunds", v:`${d.macro.fedFunds.rate}%`,        s:`FOMC ${fomcLabel}`, sc:fomcDays===0?T.amber:T.textMuted, t:"Fed funds rate — the central bank's policy rate"},
-            {l:"CPI",  f:"cpiHeadline", v:`${d.macro.cpi.headline}%`,         s:`Core ${d.macro.cpi.core}%`, sc:d.macro.cpi.headline>3?T.red:T.green, t:"Consumer Price Index — inflation, year-over-year"},
-          ].map(({l,f,v,s,sc,t})=>{
-            const m=modeOf(f); const live=m==="LIVE"||m==="CACHED";
-            const dot=live?T.green:m==="STALE"?T.amber:T.textMuted; // provenance dot: live/stale/mock
-            /* v3.62 (newcomer audit): "voting indicators and context indicators are mixed".
-               A blanket per-SECTION label would be false here — this one strip carries both
-               (VIX/F&G/10Y/CPI vote, SPY/QQQ/FED do not) — so the marker goes on the ITEM.
-               Derived from FACTOR_FIELD's VALUES, not REGIME_FACTOR_FIELDS: that array holds
-               only the five whose field key equals their factor key, with CAPE riding a
-               separate `shillerPe`→`valuation` alias line in factorExclusions. Using it here
-               would silently un-mark a CAPE tile the day one is added to a strip. */
-            const votes=VOTING_FIELDS.has(f);
-            return(
-            <div key={l} title={`${t}\n(${m.toLowerCase()})${votes?"\nCounts toward today's posture.":"\nContext only — does not vote."}`} style={{flexShrink:0,minWidth:68,cursor:"help"}}>
-              <div style={{display:"flex",alignItems:"center",gap:3}}>
-                <span style={{width:5,height:5,borderRadius:"50%",background:live?dot:"transparent",border:`1px solid ${dot}`,flexShrink:0}}/>
-                <span style={{fontFamily:T.fontMono,fontSize:8,color:T.textMuted}}>{l}</span>
-                {votes&&<span aria-hidden="true" title="counts toward today's posture" style={{fontFamily:T.fontMono,fontSize:7,color:T.amber,letterSpacing:"0.05em"}}>▪</span>}
-              </div>
-              <div style={{fontFamily:T.fontMono,fontSize:13,color:T.textPrimary,fontWeight:700,lineHeight:1.1}}>{v}</div>
-              <div style={{fontFamily:T.fontMono,fontSize:9,color:sc}}>{s}</div>
-            </div>
-            );
-          })}
-        </div>
-        {/* WEN MOON METER — mood badge based on SPY daily change (hidden on mobile to declutter the 2x4 strip, per the unused .wen-moon-mobile rule) */}
-        <div className="wen-moon-mobile"><WenMoonBadge spyChangePct={d.marketPulse.spy.changePct}/></div>
-      </div>
+      {/* ── MACRO STRIP — extracted to src/sections/MacroStrip.jsx (task 3.1),
+          presentation only (FEAT-170 4-col mobile reflow rides the .macro-strip rules in
+          the stylesheet above; v3.25: always visible while market detail collapses). ── */}
+      <MacroStrip d={d} modeOf={modeOf} fomcLabel={fomcLabel} fomcDays={fomcDays}
+        votingFields={VOTING_FIELDS} badge={<WenMoonBadge spyChangePct={d.marketPulse.spy.changePct}/>}/>
 
 
       {/* FEAT-162: Session Delta Bar — Alerts Δ first (conditional: hidden when nothing actionable) */}

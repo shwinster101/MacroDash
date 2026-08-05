@@ -45,7 +45,11 @@ const bandSrc = readFileSync(new URL("../src/sections/RegimeBand.jsx", import.me
 const whysSrc = readFileSync(new URL("../src/sections/FiveWhys.jsx", import.meta.url), "utf8");
 const sbSrc = readFileSync(new URL("../src/primitives/SourceBox.jsx", import.meta.url), "utf8");
 const shSrc = readFileSync(new URL("../src/primitives/SectionHeader.jsx", import.meta.url), "utf8");
-const uiSrc = dashSrc + bandSrc + whysSrc + sbSrc + shSrc;
+// wave 5 (tasks 3.1-3.3): MacroStrip, SignalQuality, WhatChanged moved out too.
+const stripSrc = readFileSync(new URL("../src/sections/MacroStrip.jsx", import.meta.url), "utf8");
+const sqSrc = readFileSync(new URL("../src/sections/SignalQuality.jsx", import.meta.url), "utf8");
+const wcSrc = readFileSync(new URL("../src/sections/WhatChanged.jsx", import.meta.url), "utf8");
+const uiSrc = dashSrc + bandSrc + whysSrc + sbSrc + shSrc + stripSrc + sqSrc + wcSrc;
 const _s = dashSrc.indexOf("const MOCK_DATA = {");
 let _i = dashSrc.indexOf("{", _s), _d = 0, _e = -1;
 for (; _i < dashSrc.length; _i++) { if (dashSrc[_i] === "{") _d++; else if (dashSrc[_i] === "}") { _d--; if (_d === 0) { _e = _i; break; } } }
@@ -2688,7 +2692,7 @@ ok("naming: the moon states survive as the primary voice (owner call — persona
   bandSrc.includes("wen moon?") && dashSrc.includes("WEN_MOON_STATES"));
 // SPY on this page is SP500/10 from FRED — Stooq blocks the edge. The tooltip claimed "ETF".
 ok("provenance: SPY is labelled a FRED proxy, not an ETF quote it has never been",
-  /FRED SP500 proxy, NOT an SPY ETF quote/.test(dashSrc) && !/S&P 500 ETF — the broad US stock market/.test(dashSrc));
+  /FRED SP500 proxy, NOT an SPY ETF quote/.test(stripSrc) && !/S&P 500 ETF — the broad US stock market/.test(uiSrc));
 // "Manual" + a LIVE badge on the same tile made the provenance vocabulary self-contradictory:
 // `api` is the FETCH PATH, `mode` is freshness — and multpl IS the live scrape.
 ok("provenance: CAPE credits its real fetch path (multpl scrape), not 'Manual' beside a LIVE badge",
@@ -2698,10 +2702,10 @@ ok("affordance: the alert toggles state their real limit at the weight of the co
   /no push, email or SMS is sent/.test(dashSrc) && !/Triggers evaluate live data · notifications not wired/.test(dashSrc));
 // Confidence: Signal Quality counted TILES and never said whether the VERDICT was trustworthy.
 ok("confidence: the strip reports how many factors actually voted, from the EvidenceSet itself",
-  dashSrc.includes("BACKDROP {regimeConf.counted}/{regimeConf.total} factors voting") &&
+  sqSrc.includes("BACKDROP {regimeConf.counted}/{regimeConf.total} factors voting") &&
   dashSrc.includes("counted:evidenceSet.counted,total:evidenceSet.totalFactors"));
 ok("confidence: excluded factors are NAMED — 'N of 6 usable' without saying which is half a fact",
-  dashSrc.includes("excluded: {regimeConf.excluded.join") && dashSrc.includes("crash gauge (VIX) unavailable"));
+  sqSrc.includes("excluded: {regimeConf.excluded.join") && sqSrc.includes("crash gauge (VIX) unavailable"));
 
 // ---- 27. FEAT-ALERT-EVAL (v3.52) — the alerts evaluate, or say they cannot ----
 // Suite audit called this "interface theater" for not DELIVERING. The defect was one layer
@@ -2767,7 +2771,7 @@ ok("a11y: the page exposes a main landmark (there were ZERO before)",
 // to ONE concise status sentence — a reader should hear "backdrop changed", not whole blocks.
 ok("a11y: verdict + confidence keep their LANDMARKS but are no longer block live regions",
   /aria-label="Macro backdrop verdict"\n?/.test(bandSrc) &&
-  /aria-label="Signal quality and backdrop confidence"/.test(dashSrc) &&
+  /aria-label="Signal quality and backdrop confidence"/.test(sqSrc) &&
   !/aria-label="Macro backdrop verdict" aria-live/.test(bandSrc));
 ok("a11y B4: ONE concise visually-hidden status region announces state changes",
   /aria-live="polite" role="status" className="visually-hidden"/.test(dashSrc) &&
@@ -2920,7 +2924,7 @@ ok("quorum: the withheld state gets its OWN moon voice, never a directional one 
 ok("quorum: the flip line is suppressed when there is no posture to flip",
   /withheld\s*\n\s*\? <div/.test(bandSrc));
 ok("quorum: the confidence strip states the withhold, not a bare factor count",
-  /POSTURE WITHHELD \(needs \$\{regime\.quorum\}\)/.test(dashSrc));
+  /POSTURE WITHHELD \(needs \$\{regime\.quorum\}\)/.test(sqSrc));
 // ---- WHY #1 freshness gate (11.4.5 audit, High) ----
 // WHY #2 freshness-gated its cross-signals; WHY #1 asserted SPY/CPI/Fed unconditionally, so a
 // mock CPI could be narrated as "today's core tape" inside the verdict's own explanation.
@@ -3330,7 +3334,7 @@ ok("B1: ERROR wears its own red badge in DataModeBadge",
 // B2: fresh ≠ live. The rollup names both parts; the footers derive from state.
 ok("B2: Signal Quality counts live and cached separately under a FRESH rollup",
   /if\(m==="LIVE"\)\{a\.fresh\+\+;a\.live\+\+;\}else if\(m==="CACHED"\)\{a\.fresh\+\+;a\.cached\+\+;\}/.test(dashSrc) &&
-  /\{sq\.fresh\} fresh/.test(dashSrc) && /\{sq\.live\} live · \{sq\.cached\} cached/.test(dashSrc));
+  /\{sq\.fresh\} fresh/.test(sqSrc) && /\{sq\.live\} live · \{sq\.cached\} cached/.test(sqSrc));
 ok("B2: 'derived from live data' is now STATE-derived, one derivation for both footers",
   /const derivedLabel=mode==="LIVE"\?"derived from live data"/.test(dashSrc) &&
   /derived from today's cached snapshot/.test(dashSrc) &&
@@ -3448,8 +3452,8 @@ ok("C3: the Drivers matrix renders the CONTRACT (evidenceSet.factors), not its o
 ok("C4: the digest persists AFTER comparing, and only quorate sets become the baseline",
   dashSrc.indexOf("compareEvidence(prev,cur)") < dashSrc.indexOf("localStorage.setItem(LASTVALID_KEY") &&
   // v3.61 (newcomer audit): the copy states the localStorage device scope explicitly.
-  dashSrc.includes("baseline set — tracking starts today on this device") &&
-  dashSrc.includes("no material change since your previous visit on this device"));
+  wcSrc.includes("baseline set — tracking starts today on this device") &&
+  wcSrc.includes("no material change since your previous visit on this device"));
 
 // ---- 39. v3.61 FEAT-GLANCE — safe-area + first-glance density + newcomer fixes ----
 console.log("\n[41] v3.61 — safe-area, first-glance density, newcomer-audit fixes");
@@ -3853,7 +3857,8 @@ ok("band: dashboard imports the component AND the verdict vocabulary from the on
   !/\nconst WITHHELD_LABEL/.test(dashSrc));
 ok("band: fmt has ONE home (src/format.js) — neither surface redefines it",
   !/\nconst fmt = \{/.test(dashSrc) && !/\nconst fmt\b/.test(bandSrc) &&
-  dashSrc.includes('import { fmt } from "./format.js"') && bandSrc.includes('import { fmt } from "../format.js"'));
+  /import \{ fmt(, pctColor)? \} from "\.\/format\.js"/.test(dashSrc) &&
+  /import \{ fmt(, pctColor)? \} from "\.\.\/format\.js"/.test(bandSrc));
 ok("band: a missing data prop renders a safe empty state, never a throw (Property 9)",
   /if\(!d\)return <div aria-hidden="true"\/>;/.test(bandSrc));
 ok("band: the module stays under the 300-line bound (Property 10)",
@@ -3885,6 +3890,39 @@ ok("primitives: SourceBox/DataModeBadge/SectionHeader have ONE home each — no 
   !/\nconst SectionHeader=/.test(dashSrc) && !/\nconst apiColors = /.test(dashSrc) &&
   dashSrc.includes('import SourceBox, { DataModeBadge } from "./primitives/SourceBox.jsx"') &&
   dashSrc.includes('import SectionHeader from "./primitives/SectionHeader.jsx"'));
+
+// ═══════════ [48] UI-OVERHAUL wave 5 (tasks 3.1-3.3) — strip, quality, digest ═══════════
+// Three more verbatim moves, same separation contract: the modules render what the
+// orchestrator computes. Their behavior pins above were repointed and still hold; the
+// public render suite drives all three live (strip visible while detail collapses, the
+// confidence sentence, the baseline-set/no-change cycle across a reload).
+console.log("\n[48] UI-OVERHAUL wave 5 — MacroStrip/SignalQuality/WhatChanged are modules");
+ok("wave5: presentation only — none of the three imports computation or the data hook",
+  [stripSrc, sqSrc, wcSrc].every((src) => {
+    const code = src.replace(/\/\/[^\n]*|\/\*[\s\S]*?\*\//g, "");
+    return !/useMarketData|computeRegime|buildEvidenceSet|summarizeEvidence|compareEvidence|localStorage/.test(code);
+  }));
+ok("wave5: the census, confidence derivation and compare-then-persist all STAY in the orchestrator",
+  dashSrc.includes("const sq=SIGNAL_FIELDS.reduce") &&
+  dashSrc.includes("counted:evidenceSet.counted,total:evidenceSet.totalFactors") &&
+  dashSrc.indexOf("compareEvidence(prev,cur)") < dashSrc.indexOf("localStorage.setItem(LASTVALID_KEY"));
+ok("wave5: every call site hands over computed props, including the voting-marker set and the badge slot",
+  /<MacroStrip d=\{d\} modeOf=\{modeOf\} fomcLabel=\{fomcLabel\} fomcDays=\{fomcDays\}/.test(dashSrc) &&
+  /votingFields=\{VOTING_FIELDS\} badge=\{<WenMoonBadge spyChangePct=\{d\.marketPulse\.spy\.changePct\}\/>\}/.test(dashSrc) &&
+  /<SignalQuality sq=\{sq\} regimeConf=\{regimeConf\} regime=\{regime\}\/>/.test(dashSrc) &&
+  /<WhatChanged changed=\{changed\}\/>/.test(dashSrc));
+ok("wave5: null-safety — a missing prop is a safe empty state on all three (Property 9)",
+  /if\(!d\|\|typeof modeOf!=="function"\)return <div aria-hidden="true"\/>;/.test(stripSrc) &&
+  /if\(!sq\|\|!regimeConf\|\|!regime\)return <div aria-hidden="true"\/>;/.test(sqSrc) &&
+  /if\(!changed\)return null;/.test(wcSrc));
+ok("wave5: the FEAT-170 4-col reflow contract survives — module classes match the stylesheet rules",
+  stripSrc.includes('className="macro-strip"') && stripSrc.includes('className="macro-strip-inner"') &&
+  dashSrc.includes(".macro-strip-inner{display:grid!important;grid-template-columns:repeat(4,1fr)!important"));
+ok("wave5: all three stay under the 300-line bound (Property 10)",
+  [stripSrc, sqSrc, wcSrc].every((src) => src.split("\n").length <= 300));
+ok("wave5: pctColor joined fmt in src/format.js — no inline copy left anywhere",
+  !/\nconst pctColor=/.test(dashSrc) && !/const pctColor=/.test(stripSrc) &&
+  readFileSync(new URL("../src/format.js", import.meta.url), "utf8").includes("export const pctColor="));
 
 console.log(`\n=== SMOKE TEST: ${pass} passed, ${fail} failed ===`);
 process.exit(fail === 0 ? 0 : 1);
