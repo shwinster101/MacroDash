@@ -60,7 +60,8 @@ const alSrc = readFileSync(new URL("../src/sections/Alerts.jsx", import.meta.url
 const dhSrc = readFileSync(new URL("../src/sections/DataHealth.jsx", import.meta.url), "utf8");
 const wlSrc = readFileSync(new URL("../src/sections/Watchlist.jsx", import.meta.url), "utf8");
 const aiEconSrc = readFileSync(new URL("../src/aiEcon.js", import.meta.url), "utf8");
-const uiSrc = dashSrc + bandSrc + whysSrc + sbSrc + shSrc + stripSrc + sqSrc + wcSrc + mdSrc + mrSrc + hwSrc + dtSrc + aiSrc + alSrc + dhSrc + wlSrc;
+const navSrc = readFileSync(new URL("../src/sections/StickyNav.jsx", import.meta.url), "utf8"); // wave 15
+const uiSrc = dashSrc + bandSrc + whysSrc + sbSrc + shSrc + stripSrc + sqSrc + wcSrc + mdSrc + mrSrc + hwSrc + dtSrc + aiSrc + alSrc + dhSrc + wlSrc + navSrc;
 const _s = dashSrc.indexOf("const MOCK_DATA = {");
 let _i = dashSrc.indexOf("{", _s), _d = 0, _e = -1;
 for (; _i < dashSrc.length; _i++) { if (dashSrc[_i] === "{") _d++; else if (dashSrc[_i] === "}") { _d--; if (_d === 0) { _e = _i; break; } } }
@@ -2976,8 +2977,8 @@ ok("a11y: no token still ASSERTS a compliance it was never measured for",
   !/WCAG AA verified/.test(dashSrc));
 ok("a11y: a :focus-visible ring exists (focused controls had no indicator at all)",
   /:focus-visible\{outline:2px solid/.test(dashSrc) && dashSrc.includes('"focus-ring"'));
-ok("a11y: focus styling uses :focus-visible, so a mouse click never paints a ring",
-  !/[^-]:focus\{/.test(dashSrc));
+ok("a11y: focus styling uses :focus-visible, so a mouse click never paints a ring (the skip link is the one deliberate :focus rule — it must reveal on keyboard focus)",
+  !/[^-]:focus\{/.test(dashSrc.replace(".skip-link:focus{","")));
 ok("a11y: the page has a document heading (it had no h1–h6 at all)",
   /<h1 className="visually-hidden">/.test(dashSrc) && /\.visually-hidden\{position:absolute/.test(dashSrc));
 // HTTP semantics: GET must be safe. Both of these WROTE.
@@ -3455,7 +3456,7 @@ ok("C1: the dashboard's modeOf and exclusions ARE the shared derivations (no loc
   dashSrc.includes("const staleFactors=factorExclusions({provenance, dataAsOf, liveBuild});") &&
   !dashSrc.includes('const unusable=(k)=>'));
 ok("C2: a real <header> landmark, a Sections <nav>, and the six-anchor h2 outline exist",
-  /<header style=/.test(dashSrc) && /<nav aria-label="Sections"/.test(dashSrc) &&
+  /<header style=/.test(dashSrc) && /<nav aria-label="Sections"/.test(navSrc) &&
   ["overview", "drivers", "markets", "macro"].every((id) =>
     dashSrc.includes(`id="${id}"`)) && aiSrc.includes('id="ai"') && dhSrc.includes('id="health"'));
 ok("C3: the Drivers matrix renders the CONTRACT (evidenceSet.factors), not its own reading",
@@ -3479,7 +3480,7 @@ ok("glance: the header pads for the island — calc(8px + env(safe-area-inset-to
   dashSrc.includes('padding:"calc(8px + env(safe-area-inset-top)) 20px 8px"'));
 ok("glance: the sticky nav offsets below the island with an opaque scrim over the strip " +
    "(padding the nav instead would render a permanent inset-height band when not stuck)",
-  dashSrc.includes('top:"env(safe-area-inset-top)"') &&
+  navSrc.includes('top:"env(safe-area-inset-top)"') &&
   dashSrc.includes('height:"env(safe-area-inset-top)"'));
 ok("glance: landscape notch edges — root pads left/right insets",
   dashSrc.includes('paddingLeft:"env(safe-area-inset-left)"') &&
@@ -4028,6 +4029,35 @@ ok("wave12: module size bounds hold (sections ≤300)",
   [aiSrc, alSrc, dhSrc, wlSrc].every((src) => src.split("\n").length <= 300));
 ok("wave12: the DataHealth section carries its own landmark — anchor + h2 travel together",
   dhSrc.includes('<section aria-labelledby="health"') && dhSrc.includes('<h2 id="health"'));
+
+// ═══════════ [52] UI-OVERHAUL wave 15 (tasks 9.1-9.5) — responsive + keyboard + focus ═══════════
+// StickyNav extracted with viewport tracking (supersedes the v3.62 hash-only active state —
+// a click still wins instantly); skip link; focus-on-resolve; hamburger ≤320px; 44px targets.
+// The behavioral proofs run in public-render; these pin the source contracts.
+console.log("\n[52] UI-OVERHAUL wave 15 — nav, skip link, focus, tap targets");
+ok("9.2: StickyNav owns the nav — IntersectionObserver tracking + hashchange, disconnect on unmount",
+  navSrc.includes("new IntersectionObserver") && navSrc.includes('addEventListener("hashchange"') &&
+  navSrc.includes("io.disconnect()") && !/const SectionNav=/.test(dashSrc) &&
+  dashSrc.includes("<StickyNav/>"));
+ok("9.2: a click still wins instantly — the hash sets active synchronously beside the observer",
+  navSrc.includes("setActive(window.location.hash.slice(1))"));
+ok("9.1: the hamburger form exists and is CSS-switched at ≤320px (native <details>, no JS query)",
+  navSrc.includes('className="nav-burger"') && navSrc.includes("☰ SECTIONS") &&
+  dashSrc.includes("@media(max-width:320px){") && dashSrc.includes(".nav-burger{display:block!important;}"));
+ok("9.1: the ≤320px header budget is enforced (max-height 56px + wordmark downsizes)",
+  dashSrc.includes("header{max-height:56px;overflow:hidden") && dashSrc.includes('className="wordmark"'));
+ok("9.1: the 44px rule covers the remaining controls (nav links, CollapsedGroup, headwind rows)",
+  dashSrc.includes(".nav-link,.cg-toggle,.hw-row{min-height:44px;}") &&
+  cgSrc.includes('className="cg-toggle"') && hwSrc.includes('className="hw-row"'));
+ok("9.3: the skip link is first-focusable markup and reveals on :focus only",
+  dashSrc.includes('<a href="#overview" className="skip-link">Skip to verdict</a>') &&
+  dashSrc.includes(".skip-link:focus{left:8px") && dashSrc.includes(".skip-link{position:absolute;left:-9999px"));
+ok("9.3: focus moves to the verdict ONLY on the first LOADING->settled transition, never on refreshes",
+  dashSrc.includes('if(prev==="LOADING"&&(mode==="LIVE"||mode==="CACHED"||mode==="ERROR"))') &&
+  dashSrc.includes('document.getElementById("overview")?.focus()') &&
+  dashSrc.includes('<h2 id="overview" tabIndex={-1}'));
+ok("9.2/8.2: headwind rows are real buttons now — keyboard-operable with aria-expanded",
+  hwSrc.includes("aria-expanded={isExp}") && !/<div[^>]*onClick=\{\(\)=>setExpandedHW/.test(hwSrc));
 
 console.log(`\n=== SMOKE TEST: ${pass} passed, ${fail} failed ===`);
 process.exit(fail === 0 ? 0 : 1);

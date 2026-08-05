@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from "react"; // Fragment left with MarketDetail (wave 9)
+import { useState, useEffect, useCallback, useRef } from "react"; // Fragment left with MarketDetail (wave 9)
 import { LineChart, Line, BarChart, Bar, Cell, AreaChart, Area, XAxis, YAxis, Tooltip, ResponsiveContainer, ReferenceLine } from "recharts";
 import { useMarketData } from "./useMarketData.js"; // FEAT-204 wiring
 import { computeFiveWhys } from "./fiveWhys.js"; // v2.5: rule-based 5 Whys ($0, derived from live data)
@@ -22,6 +22,7 @@ import AIUnitEconomics from "./sections/AIUnitEconomics.jsx"; // task 7.1: prese
 import Alerts from "./sections/Alerts.jsx"; // task 7.2: evaluation stays here
 import DataHealth from "./sections/DataHealth.jsx"; // task 7.3: presentation only
 import Watchlist from "./sections/Watchlist.jsx"; // task 7.4: A4 gate stays at the call site
+import StickyNav from "./sections/StickyNav.jsx"; // task 9.2: viewport-tracked active state
 import MacroStrip from "./sections/MacroStrip.jsx"; // task 3.1: presentation only
 import SignalQuality from "./sections/SignalQuality.jsx"; // task 3.2: presentation only
 import WhatChanged from "./sections/WhatChanged.jsx"; // task 3.3: presentation only
@@ -386,36 +387,12 @@ const DEFAULT_ALERTS=[
 // NOTE: this build has NO Zone E (401k / compound sim) — that lived only in the
 // artifact fork. There is currently no private-only section to gate; the guard
 // pattern below is wired and ready for when private content is added.
-/* C2b (v3.62, newcomer audit) — the Sections nav gains an ACTIVE state.
-   The six <h2>s are visually-hidden, so a jump previously landed with no orientation cue at
-   all: every link looked identical before and after the click. Tracking the hash is enough to
-   fix that and stays honest — it marks where the reader ASKED to go, which is a fact, rather
-   than guessing a "current section" from scroll position (a scroll-spy would need to pick an
-   arbitrary threshold and would disagree with the URL). `aria-current="location"` gives a
-   screen reader the same cue the highlight gives everyone else. */
 // Every SOURCES field that casts a regime vote (all six, CAPE's shillerPe alias included).
 const VOTING_FIELDS=new Set(Object.values(FACTOR_FIELD));
 
-const SECTIONS=[["overview","Overview"],["drivers","Drivers"],["markets","Markets"],["macro","Macro"],["ai","AI"],["health","Data Health"]];
-const SectionNav=()=>{
-  const [hash,setHash]=useState(typeof window!=="undefined"?window.location.hash.slice(1):"");
-  useEffect(()=>{
-    const onHash=()=>setHash(window.location.hash.slice(1));
-    window.addEventListener("hashchange",onHash);
-    return()=>window.removeEventListener("hashchange",onHash);
-  },[]);
-  return(
-    <nav aria-label="Sections" style={{display:"flex",gap:2,overflowX:"auto",padding:"4px 16px",background:T.surface,borderBottom:`1px solid ${T.border}`,position:"sticky",top:"env(safe-area-inset-top)",zIndex:40}}>
-      {SECTIONS.map(([id,label])=>{
-        const on=hash===id;
-        return(
-        <a key={id} href={`#${id}`} aria-current={on?"location":undefined}
-          style={{fontFamily:T.fontMono,fontSize:T.fsS,letterSpacing:"0.08em",color:on?T.textPrimary:T.textSecondary,textDecoration:"none",padding:"6px 10px",borderRadius:3,whiteSpace:"nowrap",
-            background:on?T.surfaceHigh:"transparent",border:`1px solid ${on?T.borderAccent:"transparent"}`}}>{label}</a>
-      );})}
-    </nav>
-  );
-};
+// SectionNav extracted to src/sections/StickyNav.jsx (wave 15, task 9.2) — the v3.62
+// hash-only active state is SUPERSEDED by IntersectionObserver viewport tracking
+// (Req 3.7); a click still wins instantly via the hash. Hamburger form at ≤320px.
 
 export default function Dashboard({ publicView = false } = {}) {
   const [alerts,setAlerts]=useState(DEFAULT_ALERTS);
@@ -426,6 +403,16 @@ export default function Dashboard({ publicView = false } = {}) {
   const [,setSessionTick]=useState(0);
   useEffect(()=>{const id=setInterval(()=>setSessionTick(t=>t+1),10*60*1000);return ()=>clearInterval(id);},[]);
   const { toasts, show:showToast, dismiss } = useUndoToast();
+  // 9.3 (Req 8.9): when the FIRST fetch resolves (LOADING -> LIVE/CACHED/ERROR), move
+  // keyboard focus to the verdict region so a screen reader hears the settled posture
+  // without hunting for it. Only on that one transition — later snapshot refreshes must
+  // never steal focus from whatever the user is doing.
+  const prevModeRef=useRef(null);
+  useEffect(()=>{
+    const prev=prevModeRef.current; prevModeRef.current=mode;
+    if(prev==="LOADING"&&(mode==="LIVE"||mode==="CACHED"||mode==="ERROR"))
+      document.getElementById("overview")?.focus();
+  });
   // FEAT-204 wiring — single-point hook swap; mock stays default, operator flips live post-deploy
   const { data: DATA, mode, asOf, provenance, dataAsOf, liveBuild, lastError, retry } = useMarketData(MOCK_DATA, { publicView });
   const d=DATA;
@@ -617,6 +604,9 @@ export default function Dashboard({ publicView = false } = {}) {
           branded header below; duplicating it on screen would be noise, so the structural
           heading is visually hidden rather than invented as new chrome. */}
       <h1 className="visually-hidden">MacroDash — macro backdrop: is the market environment supportive of taking risk?</h1>
+      {/* 9.3 (Req 8.2): skip-navigation — first focusable element, visually hidden until
+          focused, jumps keyboard/SR users straight to the verdict region. */}
+      <a href="#overview" className="skip-link">Skip to verdict</a>
       {/* B4 (v3.59): ONE concise live region. Announcing the full verdict band + confidence
           strip read entire blocks aloud on every snapshot; a reader should hear one sentence. */}
       <div aria-live="polite" role="status" className="visually-hidden">
@@ -644,6 +634,20 @@ export default function Dashboard({ publicView = false } = {}) {
         @media(prefers-reduced-motion:reduce){.pulse-anim{animation:none!important;}}
         /* A2 (v3.58): 320px contract — the duplicate wordmark is the first thing to go. */
         @media(max-width:359px){.sub-wordmark{display:none;}}
+        /* 9.3 (Req 8.2): the skip link is the first focusable element — hidden until focused. */
+        .skip-link{position:absolute;left:-9999px;z-index:100;background:${T.surfaceHigh};color:${T.textPrimary};font-family:${T.fontMono};font-size:11px;padding:10px 16px;border:1px solid ${DT["focus-ring"]};border-radius:3px;}
+        .skip-link:focus{left:8px;top:calc(8px + env(safe-area-inset-top));}
+        /* 9.1 (Req 6.4): ≤320px — nav collapses to a hamburger, header stays ≤56px. */
+        @media(max-width:320px){
+          .nav-row{display:none!important;}
+          .nav-burger{display:block!important;}
+          header{max-height:56px;overflow:hidden;flex-wrap:nowrap!important;}
+          .wordmark{font-size:16px!important;}
+        }
+        /* 9.1 (Req 6.3): 44px tap targets on the remaining interactive controls at phone width. */
+        @media(max-width:480px){
+          .nav-link,.cg-toggle,.hw-row{min-height:44px;}
+        }
         /* B4 (v3.59): WCAG target size — header actions get real thumb targets on phones. */
         @media(max-width:480px){.hdr-act{min-height:44px;min-width:44px;display:inline-flex;align-items:center;justify-content:center;}}
         /* v3.62: the ⋯ OPS disclosure. The default triangle marker is suppressed so the summary
@@ -671,7 +675,7 @@ export default function Dashboard({ publicView = false } = {}) {
         {/* A2 (v3.58): minWidth:0 lets the identity group shrink inside the flex row instead of
             forcing overflow; the sub-wordmark hides below 360px (it duplicates the brand). */}
         <div style={{display:"flex",alignItems:"center",gap:14,minWidth:0,flexWrap:"wrap"}}>
-          <div style={{fontFamily:T.fontDisplay,fontSize:20,fontWeight:800,color:T.amber,letterSpacing:"-0.02em"}}>MacroDash</div>
+          <div className="wordmark" style={{fontFamily:T.fontDisplay,fontSize:20,fontWeight:800,color:T.amber,letterSpacing:"-0.02em"}}>MacroDash</div>
           {/* FEAT-165: friendly sub-headline */}
           {/* FINDING-1: orientation line now visible on mobile (was hide-mobile) */}
           <div className="sub-wordmark" style={{fontFamily:T.fontSans,fontSize:10,color:T.textMuted}}>macrodash</div>
@@ -759,9 +763,11 @@ export default function Dashboard({ publicView = false } = {}) {
           the island strip, and the sticky nav offsets below it — padding the nav instead
           would render a permanent inset-height band even when it isn't stuck. */}
       <div aria-hidden="true" style={{position:"fixed",top:0,left:0,right:0,height:"env(safe-area-inset-top)",background:T.bg,zIndex:45}}/>
-      <SectionNav/>
+      <StickyNav/>
 
-      <h2 id="overview" className="visually-hidden">Overview — posture, confidence, and what changed</h2>
+      {/* 9.3: the overview heading is the skip-link target — tabIndex -1 makes it
+          programmatically focusable for the skip jump AND the LOADING-resolve focus move. */}
+      <h2 id="overview" tabIndex={-1} className="visually-hidden">Overview — posture, confidence, and what changed</h2>
       {/* FEAT-169 + R4c: Regime Verdict band — HERO, now FIRST under the header (mobile-first) */}
       <RegimeBand d={d} stale={staleFactors} loading={mode==="LOADING"} liveBuild={liveBuild} srcLabel={derivedLabel}/>
 

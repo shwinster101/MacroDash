@@ -28,13 +28,17 @@ const Headwinds=({d})=>{
                   const sevColor=hw.severity==="High"?T.red:hw.severity==="Med"?T.yellow:T.green;
                   const isExp=expandedHW===hw.id;
                   return(
-                    <div key={hw.id} style={{borderBottom:`1px solid ${T.border}`,paddingBottom:8,marginBottom:8,cursor:"pointer"}} onClick={()=>setExpandedHW(isExp?null:hw.id)}>
-                      <div style={{display:"flex",gap:6,alignItems:"center",marginBottom:2}}>
+                    <div key={hw.id} style={{borderBottom:`1px solid ${T.border}`,paddingBottom:8,marginBottom:8}}>
+                      {/* wave 15 (Req 8.2/6.3): the row header is a real <button> — keyboard-
+                          operable (Enter/Space free), aria-expanded, 44px target at ≤480px
+                          (.hw-row). A clickable <div> was invisible to the Tab order. */}
+                      <button onClick={()=>setExpandedHW(isExp?null:hw.id)} aria-expanded={isExp} className="hw-row"
+                        style={{display:"flex",gap:6,alignItems:"center",marginBottom:2,width:"100%",background:"none",border:"none",cursor:"pointer",padding:0,textAlign:"left"}}>
                         <Badge label={hw.severity} color={sevColor} small/>
                         <Badge label={hw.trend} color={hw.trend==="worsening"?T.red:hw.trend==="improving"?T.green:T.yellow} small/>
                         <div style={{fontFamily:T.fontSans,fontSize:11,color:T.textPrimary,flex:1}}>{hw.name}</div>
                         <span style={{color:T.textMuted,fontSize:10}}>{isExp?"▲":"▼"}</span>
-                      </div>
+                      </button>
                       {isExp&&<div style={{fontFamily:T.fontMono,fontSize:9,color:T.textSecondary,marginTop:4,lineHeight:1.6}}>{hw.claim}</div>}
                     </div>
                   );

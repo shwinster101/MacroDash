@@ -307,8 +307,10 @@ console.log("\n[public] v3.60 P0 slice — nav, matrix, digest, health");
 {
   const { page, errors } = await open({ live: FULL_LIVE });
   await page.waitForTimeout(1400);
-  ok("C2: a Sections nav landmark with the six anchors",
-    await page.locator('nav[aria-label="Sections"] a').count() === 6);
+  ok("C2: a Sections nav landmark with the six anchors (row form; the ≤320px burger mirrors them)",
+    await page.locator('nav[aria-label="Sections"] .nav-row a').count() === 6 &&
+    await page.evaluate(() => new Set([...document.querySelectorAll('nav[aria-label="Sections"] a')]
+      .map((a) => a.getAttribute("href"))).size === 6));
   ok("C2: the h2 outline exists (six section headings + none visible as new chrome)",
     await page.evaluate(() => document.querySelectorAll("h2").length) >= 6);
   ok("C2: every nav anchor points at a real element",
@@ -488,6 +490,63 @@ console.log("\n[public] Slice 1 — verdict above the fold at 375px (extracted b
   ok("slice1 @375px: no horizontal overflow",
     await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth + 1));
   ok("slice1 @375px: no page errors from the extracted modules", errors.length === 0);
+  await page.close();
+}
+
+// ── Wave 15 (tasks 9.1-9.5) — responsive + keyboard + focus, driven live ─────
+console.log("\n[public] wave 15 — skip link, focus-on-resolve, hamburger, tap targets");
+{
+  const { page, errors } = await open({ live: FULL_LIVE, width: 390 });
+  await page.waitForTimeout(1400);
+  // 9.3 (Req 8.9): the LOADING->settled transition MOVED FOCUS to the verdict region —
+  // asserted directly: after the live snapshot lands, the active element IS #overview.
+  ok("9.3: focus sits on the verdict region after LOADING resolves (Req 8.9, live-proven)",
+    await page.evaluate(() => document.activeElement && document.activeElement.id === "overview"));
+  // 9.3: the skip link is the first focusable element in DOM order and reveals on focus.
+  ok("9.3: the skip link is the document's first link, revealed on keyboard focus",
+    await page.evaluate(() => {
+      const links = document.querySelectorAll("a");
+      const sk = document.querySelector(".skip-link");
+      if (!sk || links[0] !== sk) return false;
+      sk.focus();
+      return document.activeElement === sk && sk.getBoundingClientRect().left > 0;
+    }));
+  await page.keyboard.press("Enter");
+  await page.waitForTimeout(150);
+  ok("9.3: activating it jumps to the verdict region (#overview)",
+    await page.evaluate(() => location.hash === "#overview"));
+  // 8.4: the one polite announcement stays within the 120-char bound.
+  ok("9.4: the aria-live announcement is ≤120 characters",
+    await page.evaluate(() =>
+      document.querySelector('[role="status"][aria-live="polite"]').textContent.length <= 120));
+  // 9.1: 44px targets on nav links + CollapsedGroup toggles at phone width.
+  ok("9.1: every VISIBLE nav link and disclosure toggle measures ≥44px tall at 390px",
+    await page.evaluate(() =>
+      [...document.querySelectorAll(".nav-link, .cg-toggle")]
+        .filter((el) => el.getClientRects().length)
+        .every((el) => el.getBoundingClientRect().height >= 44)));
+  ok("wave15: no page errors", errors.length === 0);
+  await page.close();
+}
+{
+  const { page } = await open({ live: FULL_LIVE, width: 320 });
+  await page.waitForTimeout(1200);
+  // 9.1 (Req 6.4): at 320px the nav row is gone, the hamburger disclosure serves the links.
+  ok("9.1 @320px: nav collapses to the hamburger form",
+    await page.evaluate(() => {
+      const row = document.querySelector(".nav-row"), burger = document.querySelector(".nav-burger");
+      return getComputedStyle(row).display === "none" && getComputedStyle(burger).display !== "none";
+    }));
+  ok("9.1 @320px: the hamburger opens to all six section links",
+    await (async () => {
+      await page.locator(".nav-burger > summary").click();
+      await page.waitForTimeout(120);
+      return await page.locator(".nav-burger a").count() === 6;
+    })());
+  ok("9.1 @320px: the header stays within the 56px budget",
+    await page.evaluate(() => document.querySelector("header").getBoundingClientRect().height <= 56));
+  ok("9.1 @320px: still no horizontal overflow",
+    await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth + 1));
   await page.close();
 }
 

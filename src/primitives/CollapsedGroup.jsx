@@ -17,7 +17,9 @@ const CollapsedGroup = ({ count, label, chip = true, defaultOpen = false, childr
   const [open, setOpen] = useState(defaultOpen);
   return (
     <div>
-      <button onClick={() => setOpen(o => !o)} aria-expanded={open}
+      {/* .cg-toggle: 44px min tap target at ≤480px (wave 15, Req 6.3 — rule lives in the
+          orchestrator's stylesheet beside the other media rules). */}
+      <button onClick={() => setOpen(o => !o)} aria-expanded={open} className="cg-toggle"
         style={{ width:"100%", display:"flex", alignItems:"center", gap:8, padding:"6px 0",
                  background:"none", border:"none", cursor:"pointer", textAlign:"left" }}>
         <span style={{ fontFamily:T.fontMono, fontSize:8, color:T.textMuted,
