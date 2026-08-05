@@ -12,6 +12,8 @@ import RegimeBand, { WITHHELD_LABEL, WEN_MOON_STATES } from "./sections/RegimeBa
 import FiveWhys from "./sections/FiveWhys.jsx"; // task 1.4: presentation only — computeFiveWhys stays here
 import SourceBox, { DataModeBadge } from "./primitives/SourceBox.jsx"; // task 1.4
 import SectionHeader from "./primitives/SectionHeader.jsx"; // task 1.4
+import CollapsedGroup from "./primitives/CollapsedGroup.jsx"; // task 5.1
+import { ILLUS_HATCH, IllustrativeChip, isIllustrative } from "./primitives/Illustrative.jsx"; // task 5.1
 import MacroStrip from "./sections/MacroStrip.jsx"; // task 3.1: presentation only
 import SignalQuality from "./sections/SignalQuality.jsx"; // task 3.2: presentation only
 import WhatChanged from "./sections/WhatChanged.jsx"; // task 3.3: presentation only
@@ -167,40 +169,8 @@ const EVTOL_CERT = {
 
 // ─── SOURCE BOX — extracted to src/primitives/SourceBox.jsx (task 1.4) ───────
 
-// ─── ILLUSTRATIVE TREATMENT (v3.1 friends-cockpit safety) ─────────────────────
-// A friend skimming must never mistake a no-feed/mock tile for live data. Curated tiles
-// get a diagonal-hatch wash + an unmistakable "ILLUSTRATIVE · not live" chip, and any
-// directional VERDICT (BULLISH/BEARISH/BUBBLE) is SUPPRESSED on mock/stale data — a
-// fabricated directional call is worse than a fabricated number.
-const ILLUS_HATCH = "repeating-linear-gradient(45deg, transparent, transparent 5px, rgba(255,255,255,0.025) 5px, rgba(255,255,255,0.025) 10px)";
-const IllustrativeChip = ({ label = "ILLUSTRATIVE · not live" }) => (
-  // FEAT-322: inline-block + maxWidth/ellipsis so a chip inside a narrow tile truncates
-  // gracefully instead of forcing horizontal page scroll at 390px (v3.1 clipped raw).
-  <span style={{ fontFamily:T.fontMono, fontSize:8, letterSpacing:"0.06em", color:T.amber, background:T.amber+"18", border:`1px solid ${T.amber}55`, borderRadius:3, padding:"1px 6px", whiteSpace:"nowrap", flexShrink:0, display:"inline-block", maxWidth:"100%", overflow:"hidden", textOverflow:"ellipsis", boxSizing:"border-box" }}>◫ {label}</span>
-);
-// True when a tile's data carries no live signal and must not render a verdict.
-const isIllustrative = (mode) => mode === "MOCK" || mode === "STALE";
-// FEAT-321 (v3.2 "cut to the live signal"): the ONE idiom for demoting stale/curated
-// content out of the default view. Visual style copied from the v3.1 IPO cut-to-edge
-// toggle; self-contained open state (nothing external reads it).
-// Collapsing is a RENDER concern only: the data stays complete in MOCK_DATA.
-const CollapsedGroup = ({ count, label, chip = true, defaultOpen = false, children }) => {
-  const [open, setOpen] = useState(defaultOpen);
-  return (
-    <div>
-      <button onClick={() => setOpen(o => !o)} aria-expanded={open}
-        style={{ width:"100%", display:"flex", alignItems:"center", gap:8, padding:"6px 0",
-                 background:"none", border:"none", cursor:"pointer", textAlign:"left" }}>
-        <span style={{ fontFamily:T.fontMono, fontSize:8, color:T.textMuted,
-                       letterSpacing:"0.12em", textTransform:"uppercase" }}>
-          {open ? "▾ hide" : `▸ +${count}`} {label}
-        </span>
-        {chip && <IllustrativeChip label="ILLUSTRATIVE" />}
-      </button>
-      {open && children}
-    </div>
-  );
-};
+// ─── ILLUSTRATIVE TREATMENT + COLLAPSED GROUP — extracted to src/primitives/
+// (Illustrative.jsx + CollapsedGroup.jsx, task 5.1). One idiom, one home each.
 
 // ─── DATA ─────────────────────────────────────────────────────────────────
 const MOCK_DATA = {

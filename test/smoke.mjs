@@ -3924,5 +3924,28 @@ ok("wave5: pctColor joined fmt in src/format.js — no inline copy left anywhere
   !/\nconst pctColor=/.test(dashSrc) && !/const pctColor=/.test(stripSrc) &&
   readFileSync(new URL("../src/format.js", import.meta.url), "utf8").includes("export const pctColor="));
 
+// ═══════════ [49] UI-OVERHAUL task 5.1 — CollapsedGroup + Illustrative primitives ═══════════
+// The ONE disclosure idiom and the v3.1 illustrative treatment each get one home. NO
+// forceOpen prop and NO mode-based default were added — the v3.25 rule (a red fact is
+// never placed inside a collapse) is stronger than the spec's proposed mechanism, and
+// open-by-mode stays the caller's decision via demoted()/defaultOpen.
+console.log("\n[49] UI-OVERHAUL task 5.1 — CollapsedGroup/Illustrative are primitives");
+const cgSrc = readFileSync(new URL("../src/primitives/CollapsedGroup.jsx", import.meta.url), "utf8");
+const ilSrc = readFileSync(new URL("../src/primitives/Illustrative.jsx", import.meta.url), "utf8");
+ok("cg: one home each — no inline definitions left in the orchestrator",
+  !/\nconst CollapsedGroup = /.test(dashSrc) && !/\nconst IllustrativeChip = /.test(dashSrc) &&
+  !/\nconst ILLUS_HATCH = /.test(dashSrc) && !/\nconst isIllustrative = /.test(dashSrc) &&
+  dashSrc.includes('import CollapsedGroup from "./primitives/CollapsedGroup.jsx"') &&
+  dashSrc.includes('import { ILLUS_HATCH, IllustrativeChip, isIllustrative } from "./primitives/Illustrative.jsx"'));
+ok("cg: the disclosure contract survives the move — aria-expanded, count-while-closed, chip default",
+  cgSrc.includes("aria-expanded={open}") && cgSrc.includes("`▸ +${count}`") &&
+  cgSrc.includes("chip = true") && cgSrc.includes("defaultOpen = false") &&
+  cgSrc.includes("{open && children}"));
+ok("cg: primitives stay under the 100-line bound",
+  cgSrc.split("\n").length <= 100 && ilSrc.split("\n").length <= 100);
+ok("cg: isIllustrative keeps the v3.1 rule — MOCK and STALE suppress, everything else renders",
+  (() => { const m = /export const isIllustrative = \(mode\) => mode === "MOCK" \|\| mode === "STALE";/.test(ilSrc);
+    return m; })());
+
 console.log(`\n=== SMOKE TEST: ${pass} passed, ${fail} failed ===`);
 process.exit(fail === 0 ? 0 : 1);
