@@ -25,6 +25,11 @@ import { validateBook, validateBoard, validatePos, conflictCheck, authMode, lock
 import { plausible, applyBands, quorum, QUORUM_FIELDS, QUORUM_MIN, marketSession, BANDS,
   pairRs, parseTreasuryCsv, rateOddsStillOpen, chooseTtl, publishIfNoWorse, TTL_MEDIUM, TTL_LOW } from "../functions/api/snapshot.js";
 import { etYmd } from "../src/sources.js";
+// UI-OVERHAUL Slice 1 (task 1.1): tokens are a real module now — smoke IMPORTS it (the v3.60
+// convention: the actual export is tested, immune to formatting drift) instead of regexing
+// hex values out of dashboard.jsx source text.
+import { DT, T as TOK_T } from "../src/design-tokens.js";
+import { fmt } from "../src/format.js"; // task 1.3: shared format helpers, tested by execution
 
 let pass = 0, fail = 0;
 const ok = (name, cond) => { if (cond) { pass++; console.log("  PASS  " + name); } else { fail++; console.log("  FAIL  " + name); } };
@@ -32,6 +37,31 @@ const ok = (name, cond) => { if (cond) { pass++; console.log("  PASS  " + name);
 // Load real MOCK_DATA from dashboard.jsx (catches sources.js <-> dashboard drift).
 const dashSrc = readFileSync(new URL("../src/dashboard.jsx", import.meta.url), "utf8");
 const regimeSrc = readFileSync(new URL("../src/regime.js", import.meta.url), "utf8"); // C1 (v3.60)
+// UI-OVERHAUL task 1.3: the verdict band moved verbatim to its own module. Pins that
+// describe the BAND read bandSrc; pins whose contract spans both surfaces (a negative
+// that must hold everywhere, a vocabulary shared across files) read uiSrc.
+const bandSrc = readFileSync(new URL("../src/sections/RegimeBand.jsx", import.meta.url), "utf8");
+// task 1.4: FiveWhys + the SourceBox/SectionHeader primitives moved out too.
+const whysSrc = readFileSync(new URL("../src/sections/FiveWhys.jsx", import.meta.url), "utf8");
+const sbSrc = readFileSync(new URL("../src/primitives/SourceBox.jsx", import.meta.url), "utf8");
+const shSrc = readFileSync(new URL("../src/primitives/SectionHeader.jsx", import.meta.url), "utf8");
+// wave 5 (tasks 3.1-3.3): MacroStrip, SignalQuality, WhatChanged moved out too.
+const stripSrc = readFileSync(new URL("../src/sections/MacroStrip.jsx", import.meta.url), "utf8");
+const sqSrc = readFileSync(new URL("../src/sections/SignalQuality.jsx", import.meta.url), "utf8");
+const wcSrc = readFileSync(new URL("../src/sections/WhatChanged.jsx", import.meta.url), "utf8");
+// wave 9 (tasks 5.2-5.4): MarketDetail, MacroRegime, Headwinds + the DirTile primitive.
+const mdSrc = readFileSync(new URL("../src/sections/MarketDetail.jsx", import.meta.url), "utf8");
+const mrSrc = readFileSync(new URL("../src/sections/MacroRegime.jsx", import.meta.url), "utf8");
+const hwSrc = readFileSync(new URL("../src/sections/Headwinds.jsx", import.meta.url), "utf8");
+const dtSrc = readFileSync(new URL("../src/primitives/DirTile.jsx", import.meta.url), "utf8");
+// wave 12 (tasks 7.1-7.4): AIUnitEconomics, Alerts, DataHealth, Watchlist + aiEcon.js.
+const aiSrc = readFileSync(new URL("../src/sections/AIUnitEconomics.jsx", import.meta.url), "utf8");
+const alSrc = readFileSync(new URL("../src/sections/Alerts.jsx", import.meta.url), "utf8");
+const dhSrc = readFileSync(new URL("../src/sections/DataHealth.jsx", import.meta.url), "utf8");
+const wlSrc = readFileSync(new URL("../src/sections/Watchlist.jsx", import.meta.url), "utf8");
+const aiEconSrc = readFileSync(new URL("../src/aiEcon.js", import.meta.url), "utf8");
+const navSrc = readFileSync(new URL("../src/sections/StickyNav.jsx", import.meta.url), "utf8"); // wave 15
+const uiSrc = dashSrc + bandSrc + whysSrc + sbSrc + shSrc + stripSrc + sqSrc + wcSrc + mdSrc + mrSrc + hwSrc + dtSrc + aiSrc + alSrc + dhSrc + wlSrc + navSrc;
 const _s = dashSrc.indexOf("const MOCK_DATA = {");
 let _i = dashSrc.indexOf("{", _s), _d = 0, _e = -1;
 for (; _i < dashSrc.length; _i++) { if (dashSrc[_i] === "{") _d++; else if (dashSrc[_i] === "}") { _d--; if (_d === 0) { _e = _i; break; } } }
@@ -1780,13 +1810,14 @@ ok("estrun: the section label carries the tier — the math renders under the ti
 /* v3.68: the PT horizon is stated where the %/yr is read. */
 /* v3.69 NARRATIVE FIRST — the public dashboard reorder. */
 ok("v3.69: the 5 Whys block renders in the overview region, before the markets section (source order)",
-  dashSrc.indexOf("5 Whys · Today") > dashSrc.indexOf('id="overview"')
-  && dashSrc.indexOf("5 Whys · Today") < dashSrc.indexOf('aria-labelledby="markets"'));
+  whysSrc.includes("5 Whys · Today") &&
+  dashSrc.indexOf("<FiveWhys ") > dashSrc.indexOf('id="overview"')
+  && dashSrc.indexOf("<FiveWhys ") < dashSrc.indexOf('aria-labelledby="markets"'));
 ok("v3.69: the 5 Whys is NOT inside any CollapsedGroup (LOADING/ERROR anchors are read from body text)",
-  !/CollapsedGroup[^>]*>[\s\S]{0,600}5 Whys · Today/.test(dashSrc));
+  !/CollapsedGroup[^>]*>[\s\S]{0,600}<FiveWhys /.test(dashSrc) && !/CollapsedGroup/.test(whysSrc));
 ok("v3.69: ONE market-detail CollapsedGroup (chart + 10 tiles) inside the markets section, chip-free",
-  dashSrc.includes('label="full market detail — chart & tiles" chip={false}')
-  && (dashSrc.match(/full market detail/g)||[]).length===1);
+  mdSrc.includes('label="full market detail — chart & tiles" chip={false}')
+  && (uiSrc.match(/full market detail — chart & tiles\" chip/g)||[]).length===1);
 ok("v3.69: the 60/40 command-center grid is gone — no two-column race can bury the narrative again",
   !dashSrc.includes("command-grid") && !dashSrc.includes("60fr 40fr"));
 ok("v3.69: markets/macro/ai are real sections (drivers/health pattern), and the operator monitors have their own",
@@ -1795,7 +1826,8 @@ ok("v3.69: markets/macro/ai are real sections (drivers/health pattern), and the 
   && dashSrc.includes('<section aria-labelledby="ai">')
   && dashSrc.includes('aria-label="Operator monitors — conviction and alerts"'));
 ok("v3.69: dead components deleted (defined-but-never-rendered LaunchCostCard/EvtolCertCard)",
-  !dashSrc.includes("LaunchCostCard") && !dashSrc.includes("EvtolCertCard"));
+  !/const LaunchCostCard|const EvtolCertCard/.test(uiSrc) &&
+  !/const LAUNCH_COST|const EVTOL_CERT/.test(uiSrc) && !/LAUNCH_COST|EVTOL_CERT/.test(aiEconSrc));
 ok("hz-chip: ONE builder (hzDeckChip) states the year and offers auto/nearest INLINE, one tap, no navigation",
   /function hzDeckChip\(\)/.test(adminSrc)
   && /quick\(HZ_AUTO,"auto"\)/.test(adminSrc)
@@ -2180,14 +2212,14 @@ ok("capex: the tape REPORTS, never enforces — no veto path reads capexState",
 // Dashboard: the third leg of AI Unit Economics.
 ok("capex-dash: HYPERSCALER_CAPEX is curated WITH a reviewed date, rendered hatched + chipped, " +
    "behind a CollapsedGroup like the GPU cost side",
-  dashSrc.includes("const HYPERSCALER_CAPEX") && /reviewed: "\d{4}-\d{2}-\d{2}"/.test(dashSrc) &&
-  /HyperscalerCapexCard[\s\S]{0,900}ILLUS_HATCH/.test(dashSrc) &&
-  dashSrc.includes('label="curated: hyperscaler capex funding flow"'));
+  aiEconSrc.includes("export const HYPERSCALER_CAPEX") && /reviewed: "\d{4}-\d{2}-\d{2}"/.test(aiEconSrc) &&
+  /HyperscalerCapexCard[\s\S]{0,900}ILLUS_HATCH/.test(aiSrc) &&
+  aiSrc.includes('label="curated: hyperscaler capex funding flow"'));
 ok("capex-dash: the section header names every leg (cost ↔ price ↔ conversion ↔ funding)",
-  dashSrc.includes("cost ↔ price ↔ conversion ↔ funding"));
+  aiSrc.includes("cost ↔ price ↔ conversion ↔ funding"));
 ok("capex-dash: it NEVER votes — computeRegime and the factor list are untouched by capex",
-  !/computeRegime[\s\S]{0,2400}capex/i.test(dashSrc) &&
-  !/REGIME_FACTOR_FIELDS=\[[^\]]*capex/i.test(dashSrc));
+  !/computeRegime[\s\S]{0,2400}capex/i.test(regimeSrc) &&
+  !/REGIME_FACTOR_FIELDS=\[[^\]]*capex/i.test(uiSrc) && !/capex/i.test(regimeSrc));
 
 // ═══════════ FEAT-NFCI (v3.43) — financial conditions ═══════════
 // Chosen over TLT (a levered inverse of the 10Y this page already carries) and over the
@@ -2230,12 +2262,12 @@ ok("nfci: it counts toward Signal Quality — a tracked live signal, not decorat
 // an SD below it. The old ±0.10 was a decimal with no meaning in that unit.
 ok("nfci: thresholds live in ONE shared table driving tile, vote and factor breakdown alike",
   regimeSrc.includes("export const NFCI_TIGHT = 0;") && regimeSrc.includes("export const NFCI_LOOSE = -0.5;") &&
-  dashSrc.includes('const band=v>NFCI_TIGHT?"TIGHT":v<=NFCI_LOOSE?"LOOSE":"NEUTRAL"') &&
+  mdSrc.includes('const band=v>NFCI_TIGHT?"TIGHT":v<=NFCI_LOOSE?"LOOSE":"NEUTRAL"') &&
   regimeSrc.includes('vote:(v)=> v <= NFCI_LOOSE ? "bull" : v > NFCI_TIGHT ? "bear" : "neutral"') &&
   // …and the tile IMPORTS them rather than re-declaring (the one-table rule survives extraction)
-  /import \{ NFCI_TIGHT, NFCI_LOOSE,/.test(dashSrc));
+  /import \{ NFCI_TIGHT, NFCI_LOOSE(, REGIME_BAND_TABLE)? \} from "\.\.\/regime\.js"/.test(mdSrc));
 ok("nfci: the tight threshold is the DEFINITIONAL mean (0), not a hand-picked decimal",
-  /const NFCI_TIGHT = 0;/.test(regimeSrc) && !dashSrc.includes("0.10?\"TIGHT\""));
+  /const NFCI_TIGHT = 0;/.test(regimeSrc) && !uiSrc.includes("0.10?\"TIGHT\""));
 ok("nfci: the bands are ASYMMETRIC — a symmetric band around zero would have voted bullish " +
    "nearly every week post-GFC, biasing the tally instead of informing it",
   (() => { const T = 0, L = -0.5;
@@ -2254,9 +2286,9 @@ ok("nfci: boundaries are exact — -0.5 votes bull (inclusive), 0 does not vote 
   })());
 ok("nfci: TIGHT/LOOSE is a DIRECTIONAL call, so it is suppressed on mock/stale exactly like " +
    "the CAPE BUBBLE verdict (v3.1 honesty invariant)",
-  /nIllus\?\(nMode==="STALE"\?<DataModeBadge mode="STALE"\/>:<IllustrativeChip\/>\)\s*:<Badge label=\{band\}/.test(dashSrc));
+  /nIllus\?\(nMode==="STALE"\?<DataModeBadge mode="STALE"\/>:<IllustrativeChip\/>\)\s*:<Badge label=\{band\}/.test(mdSrc));
 ok("nfci: the tile states its own reference point — a bare z-score is unreadable without it",
-  dashSrc.includes("0 = avg"));
+  mdSrc.includes("0 = avg"));
 ok("nfci: it votes in the DASHBOARD regime (6th factor), off the SAME shared band table the " +
    "tile renders — one computation, two surfaces, so label and vote cannot disagree",
   /\{ key:"nfci",[\s\S]*?vote:\(v\)=> v <= NFCI_LOOSE \? "bull"/.test(regimeSrc) &&
@@ -2273,7 +2305,7 @@ ok("FIX-E: chip labels come from the factors themselves, not a parallel hardcode
   // v3.62: the glyph moved from an inline `f.stale?…` ternary to the shared voteStyle map, so
   // the pin follows it. The CONTRACT is unchanged and is what these three clauses measure:
   // the label comes from the row's own `short`, and no parallel label array exists anywhere.
-  dashSrc.includes("{f.short} {vs.glyph}") && !dashSrc.includes('["10Y","VIX","F&G","CPI","VAL"][i]') &&
+  bandSrc.includes("{f.short} {vs.glyph}") && !uiSrc.includes('["10Y","VIX","F&G","CPI","VAL"][i]') &&
   !regimeSrc.includes('["10Y","VIX","F&G","CPI","VAL"]'));
 ok("nfci: the mock baseline (-0.42) sits in the NEUTRAL zone — the demo shows a factor that " +
    "ABSTAINS in ordinary conditions, not one wired to vote bullish by default",
@@ -2483,11 +2515,9 @@ ok("legs: ddOptSec no longer claims broker sync for legs it cannot vouch for",
 // The math is lifted and RUN, not string-pinned: the whole point of this feature is that a
 // short price window must never be annualised, and a string pin cannot prove a number.
 console.log("\n[25] FEAT-TOKW — tokens/watt × $/token");
-const TW = (() => {
-  const a = dashSrc.indexOf("const TOKEN_EFFICIENCY");
-  const b = dashSrc.indexOf("const HYPERSCALER_CAPEX");
-  return new Function(dashSrc.slice(a, b) + "\nreturn {TOKEN_EFFICIENCY,tokenScissors};")();
-})();
+// wave 12: the math lives in src/aiEcon.js (pure) — smoke IMPORTS and runs the real export,
+// which is stronger than the old dashSrc source-lift (the v3.60 convention).
+const TW = await import("../src/aiEcon.js").then((m) => ({ TOKEN_EFFICIENCY: m.TOKEN_EFFICIENCY, tokenScissors: m.tokenScissors }));
 const TW_LIVE = [6.8, 6.5, 6.3, 6.1, 5.9, 5.8, 5.6, 5.5, 5.4, 5.3, 5.2, 5.1]; // 12 pts = 11 weeks
 ok("tokw: the price window is NEVER annualised — the v3.39-D2 units error, one layer up. " +
    "A 12-week −25% move reports −25% over 11 weeks, not the −98%/yr an extrapolation gives",
@@ -2518,18 +2548,18 @@ ok("tokw: COMPRESSING/FLAT/EXPANDING land on the right side of the deadband",
            band(-d) === "FLAT" && band(0.2) === "EXPANDING"; })());
 ok("tokw-dash: the card is ILLUSTRATIVE + chipped, behind a CollapsedGroup like every other " +
    "curated block, and prints NO $/MW level — only ratios are sourceable",
-  /TokenEfficiencyCard[\s\S]{0,1200}ILLUS_HATCH/.test(dashSrc) &&
-  dashSrc.includes('label="curated: tokens/watt × $/token conversion"') &&
-  (() => { const card = dashSrc.slice(dashSrc.indexOf("const TokenEfficiencyCard"),
-                                     dashSrc.indexOf("MACRO FLIP BANNER"));
+  /TokenEfficiencyCard[\s\S]{0,1200}ILLUS_HATCH/.test(aiSrc) &&
+  aiSrc.includes('label="curated: tokens/watt × $/token conversion"') &&
+  (() => { const card = aiSrc.slice(aiSrc.indexOf("const TokenEfficiencyCard"),
+                                     aiSrc.indexOf("const AIUnitEconomics"));
     return !/\$\{[^}]*\}\s*\/\s*MW/.test(card) && !/\$\d[\d.,]*\s*\/\s*MW/.test(card) &&
            card.includes("no $/MW figure is derivable"); })());
 ok("tokw-dash: the verdict is SUPPRESSED on mock/stale price data (v3.1 invariant) — the " +
    "band is gated through isIllustrative, not rendered raw",
-  /const band = isIllustrative\(mode\) \? null : s\.band;/.test(dashSrc));
+  /const band = isIllustrative\(mode\) \? null : s\.band;/.test(aiSrc));
 ok("tokw-dash: it NEVER votes — computeRegime and the factor list know nothing about it",
-  !/computeRegime[\s\S]{0,2400}(tokenScissors|TOKEN_EFFICIENCY)/.test(dashSrc) &&
-  !/REGIME_FACTOR_FIELDS=\[[^\]]*token/i.test(dashSrc));
+  !/tokenScissors|TOKEN_EFFICIENCY/.test(regimeSrc) &&
+  !/REGIME_FACTOR_FIELDS=\[[^\]]*token/i.test(uiSrc));
 ok("tokw-tt: tokens_per_watt is a HANDLED deep-dive key rendered beside utilization " +
    "underwriting — the factor a utilization model structurally cannot see",
   /"tokens_per_watt"[,\]]/.test(adminSrc) && adminSrc.includes("function ddTokWSec(dd)") &&
@@ -2658,9 +2688,9 @@ ok("ready: blockers stay visible as chips on the bar, never collapsed into the v
 // a future 7th voter fails here rather than shipping a wrong count to the public page.
 console.log("\n[25] public dashboard — the stated factor count matches the vote cast");
 ok("regime: no surviving '5-factor' claim anywhere in the dashboard",
-  !/5-factor/.test(dashSrc));
+  !/5-factor/.test(uiSrc));
 ok("regime: the vote is described as 6-factor on the band and the source box",
-  (dashSrc.match(/6-factor/g) || []).length >= 2);
+  /6-factor/.test(bandSrc) && /6-factor/.test(whysSrc));
 ok("regime: the stated count equals REGIME_FACTOR_FIELDS + the valuation factor",
   REGIME_FACTOR_FIELDS.length + 1 === 6 && FACTOR_FIELD.valuation === "shillerPe");
 
@@ -2671,25 +2701,25 @@ console.log("\n[26] public dashboard — the page tells the truth about itself")
 // Two structurally different regimes exist (this six-factor backdrop vs /readout.json's
 // six ORDER-GATING checks). Both legitimate; unnamed, a reader assumes one verdict.
 ok("naming: the public verdict is MACRO BACKDROP, distinct from the order-gating readout",
-  dashSrc.includes("Macro Backdrop") && !dashSrc.includes(">Macro Regime · wen moon?<"));
+  bandSrc.includes("Macro Backdrop") && !uiSrc.includes(">Macro Regime · wen moon?<"));
 ok("naming: the moon states survive as the primary voice (owner call — personality kept)",
-  dashSrc.includes("wen moon?") && dashSrc.includes("WEN_MOON_STATES"));
+  bandSrc.includes("wen moon?") && dashSrc.includes("WEN_MOON_STATES"));
 // SPY on this page is SP500/10 from FRED — Stooq blocks the edge. The tooltip claimed "ETF".
 ok("provenance: SPY is labelled a FRED proxy, not an ETF quote it has never been",
-  /FRED SP500 proxy, NOT an SPY ETF quote/.test(dashSrc) && !/S&P 500 ETF — the broad US stock market/.test(dashSrc));
+  /FRED SP500 proxy, NOT an SPY ETF quote/.test(stripSrc) && !/S&P 500 ETF — the broad US stock market/.test(uiSrc));
 // "Manual" + a LIVE badge on the same tile made the provenance vocabulary self-contradictory:
 // `api` is the FETCH PATH, `mode` is freshness — and multpl IS the live scrape.
 ok("provenance: CAPE credits its real fetch path (multpl scrape), not 'Manual' beside a LIVE badge",
-  dashSrc.includes('api="multpl.com"') && !/api="Manual" endpoint="Robert Shiller/.test(dashSrc));
+  mrSrc.includes('api="multpl.com"') && !/api="Manual" endpoint="Robert Shiller/.test(uiSrc));
 // An ON/OFF control beside 8px muted "notifications not wired" reads as a working alert system.
 ok("affordance: the alert toggles state their real limit at the weight of the control itself",
-  /no push, email or SMS is sent/.test(dashSrc) && !/Triggers evaluate live data · notifications not wired/.test(dashSrc));
+  /no push, email or SMS is sent/.test(alSrc) && !/Triggers evaluate live data · notifications not wired/.test(uiSrc));
 // Confidence: Signal Quality counted TILES and never said whether the VERDICT was trustworthy.
 ok("confidence: the strip reports how many factors actually voted, from the EvidenceSet itself",
-  dashSrc.includes("BACKDROP {regimeConf.counted}/{regimeConf.total} factors voting") &&
+  sqSrc.includes("BACKDROP {regimeConf.counted}/{regimeConf.total} factors voting") &&
   dashSrc.includes("counted:evidenceSet.counted,total:evidenceSet.totalFactors"));
 ok("confidence: excluded factors are NAMED — 'N of 6 usable' without saying which is half a fact",
-  dashSrc.includes("excluded: {regimeConf.excluded.join") && dashSrc.includes("crash gauge (VIX) unavailable"));
+  sqSrc.includes("excluded: {regimeConf.excluded.join") && sqSrc.includes("crash gauge (VIX) unavailable"));
 
 // ---- 27. FEAT-ALERT-EVAL (v3.52) — the alerts evaluate, or say they cannot ----
 // Suite audit called this "interface theater" for not DELIVERING. The defect was one layer
@@ -2747,16 +2777,16 @@ ok("alert: a non-finite live value is BLIND (a missing number is not a passing t
 ok("alert: the header reports BLIND separately — '0 FIRED' with dead inputs is a false clear",
   dashSrc.includes("alertBlind") && dashSrc.includes("BLIND`} color={T.amber}"));
 ok("alert: the section states it evaluates HERE and delivers nothing",
-  /Evaluated live on THIS page only — no push, email or SMS is sent/.test(dashSrc));
+  /Evaluated live on THIS page only — no push, email or SMS is sent/.test(alSrc));
 // ---- a11y (suite audit #2): landmarks + live regions on the public page ----
 ok("a11y: the page exposes a main landmark (there were ZERO before)",
   /role="main"/.test(dashSrc));
 // B4 (v3.59) superseded the block-sized live regions: landmarks stay, announcement narrows
 // to ONE concise status sentence — a reader should hear "backdrop changed", not whole blocks.
 ok("a11y: verdict + confidence keep their LANDMARKS but are no longer block live regions",
-  /aria-label="Macro backdrop verdict"\n?/.test(dashSrc) &&
-  /aria-label="Signal quality and backdrop confidence"/.test(dashSrc) &&
-  !/aria-label="Macro backdrop verdict" aria-live/.test(dashSrc));
+  /aria-label="Macro backdrop verdict"\n?/.test(bandSrc) &&
+  /aria-label="Signal quality and backdrop confidence"/.test(sqSrc) &&
+  !/aria-label="Macro backdrop verdict" aria-live/.test(bandSrc));
 ok("a11y B4: ONE concise visually-hidden status region announces state changes",
   /aria-live="polite" role="status" className="visually-hidden"/.test(dashSrc) &&
   /Backdrop \$\{regime\.label\}: \$\{regime\.counted\} of \$\{regime\.totalFactors\} factors usable\./.test(dashSrc));
@@ -2768,8 +2798,8 @@ ok("a11y B4: header actions carry 44px thumb targets at phone width",
   /\.hdr-act\{min-height:44px;min-width:44px/.test(dashSrc) &&
   (dashSrc.match(/className="hdr-act"/g) || []).length === 4);
 ok("a11y B4: sparklines are decorative (aria-hidden); the SPY chart has a TEXT equivalent",
-  /\{spark&&<div aria-hidden="true"/.test(dashSrc) &&
-  /its 200-day average of/.test(dashSrc));
+  /\{spark&&<div aria-hidden="true"/.test(dtSrc) &&
+  /its 200-day average of/.test(mdSrc));
 
 // ---- 28. FEAT-FLIP (v3.53) — the shared band table + "what would change the verdict" ----
 // The bands moved OUT of computeRegime's inline ifs into REGIME_BAND_TABLE so flipConditions
@@ -2855,15 +2885,15 @@ ok("flip: each flip states the verdict it WOULD produce, not merely that somethi
 // Render layer: the nearest crossing is on the FIRST SCREEN (the audit's fourth answer), the
 // full set one tap down, and the abstentions are NOT omitted from the panel.
 ok("flip render: the verdict band carries the nearest crossing without opening anything",
-  dashSrc.includes("⇄ would change this: ") && dashSrc.includes("const nearest=fc.flips[0]||null;"));
+  bandSrc.includes("⇄ would change this: ") && bandSrc.includes("const nearest=fc.flips[0]||null;"));
 ok("flip render: the no-single-flip case is stated in BOTH the band and the panel",
-  /no single factor crossing flips this verdict — it would take two/.test(dashSrc) &&
-  /No single factor crossing changes the call/.test(dashSrc));
+  /no single factor crossing flips this verdict — it would take two/.test(bandSrc) &&
+  /No single factor crossing changes the call/.test(bandSrc));
 ok("flip render: the panel names abstentions and stale exclusions, never silently dropping them",
-  dashSrc.includes("no single threshold — ") &&
-  dashSrc.includes("their thresholds are not load-bearing"));
+  bandSrc.includes("no single threshold — ") &&
+  bandSrc.includes("their thresholds are not load-bearing"));
 ok("flip render: distances print at the precision of the factor's own band (fmt.num + dec)",
-  dashSrc.includes("fmt.num(nearest.distance,nearest.dec)") && dashSrc.includes("num:(v,d=2)=>Number(v).toFixed(d)"));
+  bandSrc.includes("fmt.num(nearest.distance,nearest.dec)") && fmt.num(1.2345, 2) === "1.23" && fmt.num(42, 0) === "42");
 // Found BY the flip browser check: a nowrap 317px subtitle blew the page to 488px at 390px.
 ok("mobile: the AI unit-economics subtitle wraps (a nowrap label must not blow out the page)",
   !/whiteSpace:"nowrap"\}\}>cost ↔ price/.test(dashSrc));
@@ -2901,14 +2931,14 @@ ok("quorum: the wiring point exposes build INTENT so a failed live fetch is not 
     return (src.match(/liveBuild/g) || []).length >= 4 && src.includes("loading: liveBuild"); })());
 // LOADING is not a verdict state.
 ok("quorum: LOADING withholds the posture outright rather than computing one from mock",
-  dashSrc.includes("const withheld=loading||regime.insufficient;") &&
+  bandSrc.includes("const withheld=loading||regime.insufficient;") &&
   dashSrc.includes('loading={mode==="LOADING"}'));
 ok("quorum: the withheld state gets its OWN moon voice, never a directional one defaulted",
-  /CAN'T CALL IT/.test(dashSrc) && dashSrc.includes("withheld?WEN_MOON_STATES[3]"));
+  /CAN'T CALL IT/.test(bandSrc) && bandSrc.includes("withheld?WEN_MOON_STATES[3]"));
 ok("quorum: the flip line is suppressed when there is no posture to flip",
-  /withheld\s*\n\s*\? <div/.test(dashSrc));
+  /withheld\s*\n\s*\? <div/.test(bandSrc));
 ok("quorum: the confidence strip states the withhold, not a bare factor count",
-  /POSTURE WITHHELD \(needs \$\{regime\.quorum\}\)/.test(dashSrc));
+  /POSTURE WITHHELD \(needs \$\{regime\.quorum\}\)/.test(sqSrc));
 // ---- WHY #1 freshness gate (11.4.5 audit, High) ----
 // WHY #2 freshness-gated its cross-signals; WHY #1 asserted SPY/CPI/Fed unconditionally, so a
 // mock CPI could be narrated as "today's core tape" inside the verdict's own explanation.
@@ -2936,7 +2966,9 @@ const srgb = (c) => { const v = c / 255; return v <= 0.03928 ? v / 12.92 : Math.
 const lum = (hex) => { const n = parseInt(hex.slice(1), 16);
   return 0.2126 * srgb((n >> 16) & 255) + 0.7152 * srgb((n >> 8) & 255) + 0.0722 * srgb(n & 255); };
 const ratio = (a, b) => { const [x, y] = [lum(a), lum(b)].sort((p, q) => q - p); return (x + 0.05) / (y + 0.05); };
-const tok = (name) => (new RegExp('"' + name + '":\\s*"(#[0-9a-fA-F]{6})"').exec(dashSrc) || [])[1];
+// tok() reads the EXPORT, not source text — the tokens moved to src/design-tokens.js (task 1.1),
+// so a regex against dashSrc would silently return undefined and vacuously fail these ratios.
+const tok = (name) => DT[name];
 ok("a11y: sanity — the contrast helper reproduces a known pair (white on black = 21:1)",
   Math.round(ratio("#ffffff", "#000000")) === 21);
 ok("a11y: text-muted clears AA on both bg and surface (was #3d4760 = 2.15:1, below AA)",
@@ -2948,8 +2980,8 @@ ok("a11y: no token still ASSERTS a compliance it was never measured for",
   !/WCAG AA verified/.test(dashSrc));
 ok("a11y: a :focus-visible ring exists (focused controls had no indicator at all)",
   /:focus-visible\{outline:2px solid/.test(dashSrc) && dashSrc.includes('"focus-ring"'));
-ok("a11y: focus styling uses :focus-visible, so a mouse click never paints a ring",
-  !/[^-]:focus\{/.test(dashSrc));
+ok("a11y: focus styling uses :focus-visible, so a mouse click never paints a ring (the skip link is the one deliberate :focus rule — it must reveal on keyboard focus)",
+  !/[^-]:focus\{/.test(dashSrc.replace(".skip-link:focus{","")));
 ok("a11y: the page has a document heading (it had no h1–h6 at all)",
   /<h1 className="visually-hidden">/.test(dashSrc) && /\.visually-hidden\{position:absolute/.test(dashSrc));
 // HTTP semantics: GET must be safe. Both of these WROTE.
@@ -3082,11 +3114,11 @@ ok("30y: a live payload overlays the 30Y and the spread onto the mock baseline",
     r.provenance.thirtyYear === "LIVE" && r.dataAsOf.thirtyYearM1 === "2026-08-01"; })());
 // The tile: a reference level, never a verdict off a level (the v3.1 invariant).
 ok("30y: the tile states the 5% reference as a REFERENCE, and never asserts a call from it",
-  /5\.00% = the 2007 pre-GFC reference level/.test(dashSrc) &&
-  !/BUBBLE|OVERVALUED/.test(dashSrc.slice(dashSrc.indexOf('label="30Y Treasury"'),
-    dashSrc.indexOf('label="30Y Treasury"') + 900)));
+  /5\.00% = the 2007 pre-GFC reference level/.test(mdSrc) &&
+  !/BUBBLE|OVERVALUED/.test(mdSrc.slice(mdSrc.indexOf('label="30Y Treasury"'),
+    mdSrc.indexOf('label="30Y Treasury"') + 900)));
 ok("30y: the tile names the inversion explicitly when the spread goes negative",
-  /INVERTED/.test(dashSrc));
+  /INVERTED/.test(mdSrc));
 // The alerts ride FEAT-ALERT-EVAL: live-gated, BLIND when not.
 ok("30y: both alerts are wired to real metrics, so they evaluate rather than sit inert",
   /treasury30y: \{fields:\["thirtyYear"\]/.test(dashSrc) &&
@@ -3290,7 +3322,8 @@ ok("A3: the public suite actually visits the public route, not only the operator
   /\/\?view=public/.test(readFileSync(new URL("../test/public-render.mjs", import.meta.url), "utf8")));
 // A4: the boundary is ENFORCED by the gate, not described by a comment.
 ok("A4: MY CONVICTION and Macro Alerts are gated behind !publicView",
-  (dashSrc.match(/\{!publicView&&<div style=\{\{marginTop:16/g) || []).length === 2);
+  /\{!publicView&&\(<section aria-label="Operator monitors — conviction and alerts">\s*\n\s*<Watchlist /.test(dashSrc) &&
+  /<Alerts alerts=\{alerts\}[\s\S]{0,200}\/>\s*\n\s*<\/section>\)\}/.test(dashSrc));
 ok("A4: the public footer NAMES the omission (a cut takes its attribution with it)",
   /operator view carries the curated watchlist and alert monitors/.test(dashSrc));
 // A5: production dependency surface is classified and checkable in one command.
@@ -3312,15 +3345,16 @@ ok("B1: the dashboard renders the outage and a Retry control, not 'demo baseline
   /live service unavailable — numbers below are illustrative/.test(dashSrc) &&
   /aria-label="Retry loading live data"/.test(dashSrc));
 ok("B1: ERROR wears its own red badge in DataModeBadge",
-  /ERROR:\s*\{ label:"⚠ ERROR"/.test(dashSrc));
+  /ERROR:\s*\{ label:"⚠ ERROR"/.test(sbSrc));
 // B2: fresh ≠ live. The rollup names both parts; the footers derive from state.
 ok("B2: Signal Quality counts live and cached separately under a FRESH rollup",
   /if\(m==="LIVE"\)\{a\.fresh\+\+;a\.live\+\+;\}else if\(m==="CACHED"\)\{a\.fresh\+\+;a\.cached\+\+;\}/.test(dashSrc) &&
-  /\{sq\.fresh\} fresh/.test(dashSrc) && /\{sq\.live\} live · \{sq\.cached\} cached/.test(dashSrc));
+  /\{sq\.fresh\} fresh/.test(sqSrc) && /\{sq\.live\} live · \{sq\.cached\} cached/.test(sqSrc));
 ok("B2: 'derived from live data' is now STATE-derived, one derivation for both footers",
   /const derivedLabel=mode==="LIVE"\?"derived from live data"/.test(dashSrc) &&
   /derived from today's cached snapshot/.test(dashSrc) &&
-  /· \{srcLabel\}<\/div>/.test(dashSrc) && /· \{derivedLabel\} \(no LLM\)/.test(dashSrc));
+  /· \{srcLabel\}<\/div>/.test(bandSrc) && /· \{derivedLabel\} \(no LLM\)/.test(whysSrc) &&
+  /derivedLabel=\{derivedLabel\}/.test(dashSrc));
 // B3: operational data needs a token; the public route gets a report-only CSP.
 const snapSrc2 = readFileSync(new URL("../functions/api/snapshot.js", import.meta.url), "utf8");
 ok("B3: ?debug requires the DEBUG_TOKEN secret — fail closed both ways",
@@ -3425,16 +3459,16 @@ ok("C1: the dashboard's modeOf and exclusions ARE the shared derivations (no loc
   dashSrc.includes("const staleFactors=factorExclusions({provenance, dataAsOf, liveBuild});") &&
   !dashSrc.includes('const unusable=(k)=>'));
 ok("C2: a real <header> landmark, a Sections <nav>, and the six-anchor h2 outline exist",
-  /<header style=/.test(dashSrc) && /<nav aria-label="Sections"/.test(dashSrc) &&
-  ["overview", "drivers", "markets", "macro", "ai", "health"].every((id) =>
-    dashSrc.includes(`id="${id}"`)));
+  /<header style=/.test(dashSrc) && /<nav aria-label="Sections"/.test(navSrc) &&
+  ["overview", "drivers", "markets", "macro"].every((id) =>
+    dashSrc.includes(`id="${id}"`)) && aiSrc.includes('id="ai"') && dhSrc.includes('id="health"'));
 ok("C3: the Drivers matrix renders the CONTRACT (evidenceSet.factors), not its own reading",
   dashSrc.includes("evidenceSet.factors.map(f=>") && dashSrc.includes("excluded — {f.reason}"));
 ok("C4: the digest persists AFTER comparing, and only quorate sets become the baseline",
   dashSrc.indexOf("compareEvidence(prev,cur)") < dashSrc.indexOf("localStorage.setItem(LASTVALID_KEY") &&
   // v3.61 (newcomer audit): the copy states the localStorage device scope explicitly.
-  dashSrc.includes("baseline set — tracking starts today on this device") &&
-  dashSrc.includes("no material change since your previous visit on this device"));
+  wcSrc.includes("baseline set — tracking starts today on this device") &&
+  wcSrc.includes("no material change since your previous visit on this device"));
 
 // ---- 39. v3.61 FEAT-GLANCE — safe-area + first-glance density + newcomer fixes ----
 console.log("\n[41] v3.61 — safe-area, first-glance density, newcomer-audit fixes");
@@ -3449,7 +3483,7 @@ ok("glance: the header pads for the island — calc(8px + env(safe-area-inset-to
   dashSrc.includes('padding:"calc(8px + env(safe-area-inset-top)) 20px 8px"'));
 ok("glance: the sticky nav offsets below the island with an opaque scrim over the strip " +
    "(padding the nav instead would render a permanent inset-height band when not stuck)",
-  dashSrc.includes('top:"env(safe-area-inset-top)"') &&
+  navSrc.includes('top:"env(safe-area-inset-top)"') &&
   dashSrc.includes('height:"env(safe-area-inset-top)"'));
 ok("glance: landscape notch edges — root pads left/right insets",
   dashSrc.includes('paddingLeft:"env(safe-area-inset-left)"') &&
@@ -3459,17 +3493,17 @@ ok("glance: landscape notch edges — root pads left/right insets",
 ok("glance: the Drivers matrix cards collapse (band chips are the icon-first six-factor view)",
   /label="factor evidence detail" chip=\{false\}/.test(dashSrc));
 ok("glance: the Data Health per-source grid collapses; the ERROR/Retry row stays OUTSIDE",
-  /label="per-source detail" chip=\{false\}/.test(dashSrc) &&
-  dashSrc.indexOf('mode==="ERROR"&&<div style={{fontFamily:T.fontMono,fontSize:9,color:T.red') <
-  dashSrc.indexOf('label="per-source detail"'));
+  /label="per-source detail" chip=\{false\}/.test(dhSrc) &&
+  dhSrc.indexOf('mode==="ERROR"&&<div style={{fontFamily:T.fontMono,fontSize:9,color:T.red') <
+  dhSrc.indexOf('label="per-source detail"'));
 ok("glance: the decode legend moved INTO the Data Health expander — the always-visible strip " +
    "no longer carries explanation, only evidence",
-  dashSrc.includes("legend: ● live · ⏱ stale ·") &&
-  !/marginLeft:"auto"\}\}>● live · ⏱ stale ·/.test(dashSrc));
+  dhSrc.includes("legend: ● live · ⏱ stale ·") &&
+  !/marginLeft:"auto"\}\}>● live · ⏱ stale ·/.test(uiSrc));
 ok("glance: the 30Y tile note keeps the FACT (spread + INVERTED) and moves the reference " +
    "prose to a tooltip — a red fact must survive the default view",
-  dashSrc.includes('noteTitle={"5.00% = the 2007 pre-GFC reference level"}') &&
-  /title=\{noteTitle\|\|undefined\}/.test(dashSrc));
+  mdSrc.includes('noteTitle={"5.00% = the 2007 pre-GFC reference level"}') &&
+  /title=\{noteTitle\|\|undefined\}/.test(dtSrc));
 // F2b-1 (behavioral, real import): the verdict sub must never name an excluded factor.
 const subFix = (fg, cpiLast) => ({
   crossAsset: { treasury10y: { m1: -0.2 } },
@@ -3492,7 +3526,7 @@ ok("glance: MIXED with VIX excluded and NO load-bearing flip states the evidence
     return r.label === "MIXED" && r.sub === "Cross-signals — 5 of 6 inputs usable"; })());
 // F2b-2: the neutral vote is stated, not implicit.
 ok("glance: the vote line accounts for every counted vote — bull · neutral · bear of usable",
-  /\$\{regime\.bullVotes\} bull · \$\{neutralVotes\} neutral · \$\{regime\.bearVotes\} bear — \$\{regime\.counted\} of \$\{regime\.totalFactors\} usable/.test(dashSrc));
+  /\$\{regime\.bullVotes\} bull · \$\{neutralVotes\} neutral · \$\{regime\.bearVotes\} bear — \$\{regime\.counted\} of \$\{regime\.totalFactors\} usable/.test(bandSrc));
 // F3a: the terminal gets the same treatment — inside the installed PWA shell admin.html
 // renders fullscreen too, and it had ZERO safe-area handling.
 ok("tt-glance: admin viewport gains viewport-fit=cover",
@@ -3742,9 +3776,9 @@ ok("a non-finite reading votes NEUTRAL, not a confident bearish chip",
     return regimeFactorRows(bad).find((r) => r.key === "vix").vote === "neutral"; })());
 // The whole point of the shared map: the two altitudes cannot resolve a vote differently.
 ok("BOTH altitudes resolve appearance through the ONE voteStyle map (hero + Drivers matrix)",
-  dashSrc.includes("const vs=voteStyle(f.vote)") &&
+  bandSrc.includes("const vs=voteStyle(f.vote)") &&
   dashSrc.includes("const vc=T[voteStyle(f.vote).colorKey]") &&
-  !/f\.vote==="bull"\?T\.green/.test(dashSrc));
+  !/f\.vote==="bull"\?T\.green/.test(uiSrc));
 ok("regimeFactors derives its vote from the band table, keeping no second copy of a threshold",
   regimeSrc.includes("band.vote(band.read(d), d)") &&
   !/bull:d\.marketPulse\.vix\.current<18/.test(regimeSrc) &&
@@ -4188,6 +4222,310 @@ console.log("\n[48] /api/score — server-authoritative scoring endpoint");
     return stored.length < 64 * 1024 && JSON.parse(stored).underwriting_inputs.falsifiers.length === 8;
   })());
 }
+// ═══════════ [45] UI-OVERHAUL Slice 1 (task 1.1) — design tokens extracted ═══════════
+// The DT/T objects moved verbatim from dashboard.jsx to src/design-tokens.js — the ONE home.
+// These pins hold the extraction contract: the module is pure (Node-importable, no React),
+// the dashboard actually imports it (no inline second copy left to drift), and every token
+// key the render code references — static bracket lookups, T.* dot lookups, AND the dynamic
+// colorKey/tintKey values regime.js emits — resolves in the export. Completeness is COMPUTED
+// against dashSrc, not pinned as a hardcoded key list (the v3.41 SOURCES-reconciliation rule:
+// a hardcoded list is true only by coincidence).
+console.log("\n[45] UI-OVERHAUL task 1.1 — design tokens are a module, complete and pure");
+const tokSrc = readFileSync(new URL("../src/design-tokens.js", import.meta.url), "utf8");
+ok("tokens: the module is pure — no React, no JSX, nothing but data",
+  !/from ['"]react['"]/.test(tokSrc) && !/</.test(tokSrc.replace(/\/\/[^\n]*|\/\*[\s\S]*?\*\//g, "").replace(/<=?/g, "")) &&
+  Object.keys(DT).length >= 35 && Object.keys(TOK_T).length >= 20);
+ok("tokens: dashboard.jsx IMPORTS the module and keeps no inline copy to drift",
+  dashSrc.includes('from "./design-tokens.js"') && !/\nconst DT = \{/.test(dashSrc) && !/\nconst T = \{/.test(dashSrc));
+ok("tokens: the empty-export guard exists and WARNS rather than claiming a fallback that isn't there",
+  /Object\.keys\(DT\)\.length\)/.test(dashSrc) && /console\.warn\("design-tokens/.test(dashSrc));
+ok("tokens: every DT[\"…\"] key referenced in ANY UI surface resolves in the export (computed, not listed)",
+  (() => { const refs = [...uiSrc.matchAll(/DT\["([^"]+)"\]/g)].map((m) => m[1]);
+    return refs.length >= 15 && refs.every((k) => DT[k] !== undefined); })());
+ok("tokens: every static T.* lookup in ANY UI surface resolves in the export",
+  (() => { const refs = [...new Set([...uiSrc.matchAll(/\bT\.([A-Za-z][A-Za-z0-9]*)/g)].map((m) => m[1]))];
+    return refs.length >= 10 && refs.every((k) => TOK_T[k] !== undefined); })());
+ok("tokens: the DYNAMIC keys — every tintKey/colorKey regime.js can emit resolves (T[regime.colorKey], DT[regime.tintKey])",
+  (() => { const tints = [...regimeSrc.matchAll(/tintKey:"([^"]+)"/g)].map((m) => m[1]);
+    const colors = [...regimeSrc.matchAll(/colorKey:"([^"]+)"/g)].map((m) => m[1]);
+    return tints.length >= 4 && colors.length >= 8 &&
+      tints.every((k) => DT[k] !== undefined) && colors.every((k) => TOK_T[k] !== undefined); })());
+ok("tokens: voteStyle's four states all resolve to real T colors (the two-altitude map cannot dangle)",
+  ["bull", "bear", "neutral", "excluded"].every((v) => TOK_T[voteStyle(v).colorKey] !== undefined));
+ok("tokens: the type scale is numeric and ordered (fs-xs < fs-s < fs-m < fs-l < fs-xl)",
+  (() => { const s = ["fs-xs", "fs-s", "fs-m", "fs-l", "fs-xl"].map((k) => DT[k]);
+    return s.every((n) => typeof n === "number") && s.every((n, i) => i === 0 || n > s[i - 1]); })());
+ok("tokens: T aliases stay derived from DT, never a second literal (spot-check the load-bearing ones)",
+  TOK_T.bg === DT["bg"] && TOK_T.textMuted === DT["text-muted"] && TOK_T.fontMono === DT["font-mono"] &&
+  TOK_T.fsM === DT["fs-m"] && TOK_T.green === DT["green"] && TOK_T.red === DT["red"]);
+
+// ═══════════ [46] UI-OVERHAUL task 1.3 — RegimeBand extracted to src/sections/ ═══════════
+// The verdict band moved VERBATIM (the only addition is the Property-9 null guard). These
+// pins hold the extraction contract; the band's own behavior pins above were repointed to
+// bandSrc and still hold, and the public render suite drives the real render.
+console.log("\n[46] UI-OVERHAUL task 1.3 — RegimeBand is a module; one copy of everything");
+ok("band: dashboard imports the component AND the verdict vocabulary from the one home",
+  dashSrc.includes('import RegimeBand, { WITHHELD_LABEL, WEN_MOON_STATES } from "./sections/RegimeBand.jsx"') &&
+  !/\nconst RegimeBand=/.test(dashSrc) && !/\nconst WEN_MOON_STATES = \[/.test(dashSrc) &&
+  !/\nconst WITHHELD_LABEL/.test(dashSrc));
+ok("band: fmt has ONE home (src/format.js) — neither surface redefines it",
+  !/\nconst fmt = \{/.test(dashSrc) && !/\nconst fmt\b/.test(bandSrc) &&
+  /import \{ fmt(, pctColor)? \} from "\.\/format\.js"/.test(dashSrc) &&
+  /import \{ fmt(, pctColor)? \} from "\.\.\/format\.js"/.test(bandSrc));
+ok("band: a missing data prop renders a safe empty state, never a throw (Property 9)",
+  /if\(!d\)return <div aria-hidden="true"\/>;/.test(bandSrc));
+ok("band: the module stays under the 300-line bound (Property 10)",
+  bandSrc.split("\n").length <= 300);
+ok("band: the call site still passes the live wiring (stale set, LOADING gate, liveBuild intent, state-derived label)",
+  /<RegimeBand d=\{d\} stale=\{staleFactors\} loading=\{mode==="LOADING"\} liveBuild=\{liveBuild\} srcLabel=\{derivedLabel\}\/>/.test(dashSrc));
+
+// ═══════════ [47] UI-OVERHAUL task 1.4 — FiveWhys extracted, presentation only ═══════════
+// The 5 Whys strip moved verbatim to src/sections/FiveWhys.jsx. The separation contract:
+// computeFiveWhys, the FW_FIELDS freshness set and the derivedLabel derivation STAY in the
+// orchestrator — the section renders what it is handed and computes nothing. SourceBox (+
+// DataModeBadge) and SectionHeader became primitives with one home each.
+console.log("\n[47] UI-OVERHAUL task 1.4 — FiveWhys is a module; logic stays in the orchestrator");
+ok("whys: presentation only — the CODE never imports or calls the computation (comments may name it)",
+  (() => { const code = whysSrc.replace(/\/\/[^\n]*|\/\*[\s\S]*?\*\//g, "");
+    return !/fiveWhys\.js/.test(code) && !/computeFiveWhys/.test(code) &&
+           !/useMarketData/.test(code) && !/FW_FIELDS/.test(code); })());
+ok("whys: the computation and freshness gating stay in the orchestrator (A1 contract intact)",
+  dashSrc.includes("const fw=computeFiveWhys({...d, session:etSession()}, regimeView, { stale:staleFactors, fresh:freshSet });") &&
+  /const freshSet=liveBuild \? new Set/.test(dashSrc));
+ok("whys: a missing fw prop renders a safe empty state, never a throw (Property 9)",
+  /if\(!fw\|\|!Array\.isArray\(fw\.whys\)\)return <div aria-hidden="true"\/>;/.test(whysSrc));
+ok("whys: the call site hands over narrative, state-derived label, and equity-close provenance",
+  /<FiveWhys fw=\{fw\} derivedLabel=\{derivedLabel\} mode=\{modeOf\('spyPrice'\)\} asOf=\{asOfOf\('spyPrice'\)\}\/>/.test(dashSrc));
+ok("whys: module stays under the 300-line bound (Property 10); primitives under 100",
+  whysSrc.split("\n").length <= 300 && sbSrc.split("\n").length <= 100 && shSrc.split("\n").length <= 100);
+ok("primitives: SourceBox/DataModeBadge/SectionHeader have ONE home each — no inline copies left",
+  !/\nconst SourceBox = /.test(dashSrc) && !/\nconst DataModeBadge = /.test(dashSrc) &&
+  !/\nconst SectionHeader=/.test(dashSrc) && !/\nconst apiColors = /.test(dashSrc) &&
+  dashSrc.includes('import SourceBox, { DataModeBadge } from "./primitives/SourceBox.jsx"') &&
+  dashSrc.includes('import SectionHeader from "./primitives/SectionHeader.jsx"'));
+
+// ═══════════ [48] UI-OVERHAUL wave 5 (tasks 3.1-3.3) — strip, quality, digest ═══════════
+// Three more verbatim moves, same separation contract: the modules render what the
+// orchestrator computes. Their behavior pins above were repointed and still hold; the
+// public render suite drives all three live (strip visible while detail collapses, the
+// confidence sentence, the baseline-set/no-change cycle across a reload).
+console.log("\n[48] UI-OVERHAUL wave 5 — MacroStrip/SignalQuality/WhatChanged are modules");
+ok("wave5: presentation only — none of the three imports computation or the data hook",
+  [stripSrc, sqSrc, wcSrc].every((src) => {
+    const code = src.replace(/\/\/[^\n]*|\/\*[\s\S]*?\*\//g, "");
+    return !/useMarketData|computeRegime|buildEvidenceSet|summarizeEvidence|compareEvidence|localStorage/.test(code);
+  }));
+ok("wave5: the census, confidence derivation and compare-then-persist all STAY in the orchestrator",
+  dashSrc.includes("const sq=SIGNAL_FIELDS.reduce") &&
+  dashSrc.includes("counted:evidenceSet.counted,total:evidenceSet.totalFactors") &&
+  dashSrc.indexOf("compareEvidence(prev,cur)") < dashSrc.indexOf("localStorage.setItem(LASTVALID_KEY"));
+ok("wave5: every call site hands over computed props, including the voting-marker set and the badge slot",
+  /<MacroStrip d=\{d\} modeOf=\{modeOf\} fomcLabel=\{fomcLabel\} fomcDays=\{fomcDays\}/.test(dashSrc) &&
+  /votingFields=\{VOTING_FIELDS\} badge=\{<WenMoonBadge spyChangePct=\{d\.marketPulse\.spy\.changePct\}\/>\}/.test(dashSrc) &&
+  /<SignalQuality sq=\{sq\} regimeConf=\{regimeConf\} regime=\{regime\}\/>/.test(dashSrc) &&
+  /<WhatChanged changed=\{changed\}\/>/.test(dashSrc));
+ok("wave5: null-safety — a missing prop is a safe empty state on all three (Property 9)",
+  /if\(!d\|\|typeof modeOf!=="function"\)return <div aria-hidden="true"\/>;/.test(stripSrc) &&
+  /if\(!sq\|\|!regimeConf\|\|!regime\)return <div aria-hidden="true"\/>;/.test(sqSrc) &&
+  /if\(!changed\)return null;/.test(wcSrc));
+ok("wave5: the FEAT-170 4-col reflow contract survives — module classes match the stylesheet rules",
+  stripSrc.includes('className="macro-strip"') && stripSrc.includes('className="macro-strip-inner"') &&
+  dashSrc.includes(".macro-strip-inner{display:grid!important;grid-template-columns:repeat(4,1fr)!important"));
+ok("wave5: all three stay under the 300-line bound (Property 10)",
+  [stripSrc, sqSrc, wcSrc].every((src) => src.split("\n").length <= 300));
+ok("wave5: pctColor joined fmt in src/format.js — no inline copy left anywhere",
+  !/\nconst pctColor=/.test(dashSrc) && !/const pctColor=/.test(stripSrc) &&
+  readFileSync(new URL("../src/format.js", import.meta.url), "utf8").includes("export const pctColor="));
+
+// ═══════════ [49] UI-OVERHAUL task 5.1 — CollapsedGroup + Illustrative primitives ═══════════
+// The ONE disclosure idiom and the v3.1 illustrative treatment each get one home. NO
+// forceOpen prop and NO mode-based default were added — the v3.25 rule (a red fact is
+// never placed inside a collapse) is stronger than the spec's proposed mechanism, and
+// open-by-mode stays the caller's decision via demoted()/defaultOpen.
+console.log("\n[49] UI-OVERHAUL task 5.1 — CollapsedGroup/Illustrative are primitives");
+const cgSrc = readFileSync(new URL("../src/primitives/CollapsedGroup.jsx", import.meta.url), "utf8");
+const ilSrc = readFileSync(new URL("../src/primitives/Illustrative.jsx", import.meta.url), "utf8");
+ok("cg: one home each — no inline definitions left in the orchestrator",
+  !/\nconst CollapsedGroup = /.test(dashSrc) && !/\nconst IllustrativeChip = /.test(dashSrc) &&
+  !/\nconst ILLUS_HATCH = /.test(dashSrc) && !/\nconst isIllustrative = /.test(dashSrc) &&
+  dashSrc.includes('import CollapsedGroup from "./primitives/CollapsedGroup.jsx"') &&
+  dashSrc.includes('import { ILLUS_HATCH, IllustrativeChip, isIllustrative } from "./primitives/Illustrative.jsx"'));
+ok("cg: the disclosure contract survives the move — aria-expanded, count-while-closed, chip default",
+  cgSrc.includes("aria-expanded={open}") && cgSrc.includes("`▸ +${count}`") &&
+  cgSrc.includes("chip = true") && cgSrc.includes("defaultOpen = false") &&
+  cgSrc.includes("{open && children}"));
+ok("cg: primitives stay under the 100-line bound",
+  cgSrc.split("\n").length <= 100 && ilSrc.split("\n").length <= 100);
+ok("cg: isIllustrative keeps the v3.1 rule — MOCK and STALE suppress, everything else renders",
+  (() => { const m = /export const isIllustrative = \(mode\) => mode === "MOCK" \|\| mode === "STALE";/.test(ilSrc);
+    return m; })());
+
+// ═══════════ [50] UI-OVERHAUL wave 9 (tasks 5.2-5.4) — detail panels + tile primitives ═══════════
+// MarketDetail, MacroRegime and Headwinds moved verbatim; Badge/Label became atoms;
+// DirTile (with its three private helpers) and FGGauge became primitives; Divider was
+// deleted (rendered nowhere). Same separation contract as every prior wave.
+console.log("\n[50] UI-OVERHAUL wave 9 — detail panels are modules; primitives have one home");
+const atomsSrc = readFileSync(new URL("../src/primitives/atoms.jsx", import.meta.url), "utf8");
+const fgSrc = readFileSync(new URL("../src/primitives/FGGauge.jsx", import.meta.url), "utf8");
+ok("wave9: presentation only — none of the three sections imports computation or the data hook",
+  [mdSrc, mrSrc, hwSrc].every((src) => {
+    const code = src.replace(/\/\/[^\n]*|\/\*[\s\S]*?\*\//g, "");
+    return !/useMarketData|computeRegime|buildEvidenceSet|evalAlert\(/.test(code);
+  }));
+ok("wave9: the call sites hand over computed props (demotion rule, chart series, MA cross, FOMC)",
+  /<MarketDetail d=\{d\} modeOf=\{modeOf\} asOfOf=\{asOfOf\} demoted=\{demoted\} spyData=\{spyData\} goldenCross=\{goldenCross\}\/>/.test(dashSrc) &&
+  /<MacroRegime d=\{d\} modeOf=\{modeOf\} asOfOf=\{asOfOf\} fomcDays=\{fomcDays\}\/>/.test(dashSrc) &&
+  /<Headwinds d=\{d\}\/>/.test(dashSrc));
+ok("wave9: null-safety on all three (Property 9)",
+  /if\(!d\|\|typeof modeOf!=="function"\|\|!Array\.isArray\(spyData\)\)return <div aria-hidden="true"\/>;/.test(mdSrc) &&
+  /if\(!d\|\|typeof modeOf!=="function"\)return <div aria-hidden="true"\/>;/.test(mrSrc) &&
+  /if\(!d\|\|!Array\.isArray\(d\.headwinds\)\)return <div aria-hidden="true"\/>;/.test(hwSrc));
+ok("wave9: Headwinds owns its per-row expand state — nothing external ever read it",
+  hwSrc.includes("const [expandedHW,setExpandedHW]=useState(null);") &&
+  !dashSrc.includes("expandedHW"));
+ok("wave9: one home each — no inline Badge/Label/DirTile/FGGauge/stoplight helpers left behind",
+  !/\nconst Badge=/.test(dashSrc) && !/\nconst Label=/.test(dashSrc) &&
+  !/\nconst DirTile=/.test(dashSrc) && !/\nconst FGGauge=/.test(dashSrc) &&
+  !/\nfunction stoplightColor/.test(dashSrc) && !/\nfunction verdictFromTones/.test(dashSrc) &&
+  !/\nconst Divider=/.test(dashSrc) && !/<Divider/.test(uiSrc));
+ok("wave9: DirTile carries its three private helpers — their ONLY consumer",
+  dtSrc.includes("const arrow=") && dtSrc.includes("function stoplightColor") &&
+  dtSrc.includes("function verdictFromTones"));
+ok("wave9: sections under 300 lines, primitives under 100 (Property 10)",
+  mdSrc.split("\n").length <= 300 && mrSrc.split("\n").length <= 300 && hwSrc.split("\n").length <= 300 &&
+  dtSrc.split("\n").length <= 100 && fgSrc.split("\n").length <= 100 && atomsSrc.split("\n").length <= 100);
+ok("wave9: the NFCI band constants are IMPORTED from the engine, never re-declared in a section",
+  !/const NFCI_TIGHT/.test(mdSrc) && !/const NFCI_LOOSE/.test(mdSrc));
+
+// ═══════════ [51] UI-OVERHAUL wave 12 (tasks 7.1-7.4) — AI, Alerts, DataHealth, Watchlist ═══════════
+// Four more verbatim moves. The judgment calls this wave: alert EVALUATION stays in the
+// orchestrator (only the rendering moved), the A4 public/private gate stays at ONE call
+// site, the ai/health anchors travel WITH their sections, aiEcon.js is pure so the
+// scissors math is now IMPORTED and RUN (no more source-lift), and the v3.69 orphaned
+// constants (LAUNCH_COST/EVTOL_CERT) were deleted, not moved.
+console.log("\n[51] UI-OVERHAUL wave 12 — AI/Alerts/DataHealth/Watchlist are modules");
+ok("wave12: presentation only — the sections import no computation, hook, or storage",
+  [aiSrc, alSrc, dhSrc, wlSrc].every((src) => {
+    const code = src.replace(/\/\/[^\n]*|\/\*[\s\S]*?\*\//g, "");
+    return !/useMarketData|computeRegime|buildEvidenceSet|evalAlert|localStorage/.test(code);
+  }));
+ok("wave12: evaluation stays home — evalAlert/ALERT_METRICS/DEFAULT_ALERTS remain in the orchestrator",
+  dashSrc.includes("export function evalAlert") && dashSrc.includes("const ALERT_METRICS=") &&
+  dashSrc.includes("const DEFAULT_ALERTS=[") && !/evalAlert\s*\(/.test(alSrc.replace(/\/\/[^\n]*/g,"")));
+ok("wave12: the aiEcon module is PURE (Node-importable) and the section imports it",
+  !/from ['\"]react['\"]/.test(aiEconSrc) &&
+  aiSrc.includes('import { GPU_PRICING, TOKEN_EFFICIENCY, tokenScissors, HYPERSCALER_CAPEX } from "../aiEcon.js"'));
+ok("wave12: tokenScissors really runs from the import (behavior, not string): 11-week window, never annualised",
+  (() => { const r = TW.tokenScissors([6.8, 6.5, 6.3, 6.1, 5.9, 5.8, 5.6, 5.5, 5.4, 5.3, 5.2, 5.1]);
+    return r.weeks === 11 && Math.abs(r.pxWin + 0.25) < 1e-9; })());
+ok("wave12: Watchlist owns its open state; DEFAULT CLOSED survives the move (FEAT-322)",
+  wlSrc.includes("const [watchlistOpen,setWatchlistOpen]=useState(false);") &&
+  !dashSrc.includes("watchlistOpen"));
+ok("wave12: null-safety on all four (Property 9)",
+  /if\(!d\|\|typeof modeOf!=="function"\)return <div aria-hidden="true"\/>;/.test(aiSrc) &&
+  /if\(!Array\.isArray\(alerts\)\|\|!alertEval\)return <div aria-hidden="true"\/>;/.test(alSrc) &&
+  /if\(!Array\.isArray\(signalFields\)\|\|typeof modeOf!=="function"\)return <div aria-hidden="true"\/>;/.test(dhSrc) &&
+  /if\(!Array\.isArray\(watchlist\)\)return <div aria-hidden="true"\/>;/.test(wlSrc));
+ok("wave12: module size bounds hold (sections ≤300)",
+  [aiSrc, alSrc, dhSrc, wlSrc].every((src) => src.split("\n").length <= 300));
+ok("wave12: the DataHealth section carries its own landmark — anchor + h2 travel together",
+  dhSrc.includes('<section aria-labelledby="health"') && dhSrc.includes('<h2 id="health"'));
+
+// ═══════════ [52] UI-OVERHAUL wave 15 (tasks 9.1-9.5) — responsive + keyboard + focus ═══════════
+// StickyNav extracted with viewport tracking (supersedes the v3.62 hash-only active state —
+// a click still wins instantly); skip link; focus-on-resolve; hamburger ≤320px; 44px targets.
+// The behavioral proofs run in public-render; these pin the source contracts.
+console.log("\n[52] UI-OVERHAUL wave 15 — nav, skip link, focus, tap targets");
+ok("9.2: StickyNav owns the nav — IntersectionObserver tracking + hashchange, disconnect on unmount",
+  navSrc.includes("new IntersectionObserver") && navSrc.includes('addEventListener("hashchange"') &&
+  navSrc.includes("io.disconnect()") && !/const SectionNav=/.test(dashSrc) &&
+  dashSrc.includes("<StickyNav/>"));
+ok("9.2: a click still wins instantly — the hash sets active synchronously beside the observer",
+  navSrc.includes("setActive(window.location.hash.slice(1))"));
+ok("9.1: the hamburger form exists and is CSS-switched at ≤320px (native <details>, no JS query)",
+  navSrc.includes('className="nav-burger"') && navSrc.includes("☰ SECTIONS") &&
+  dashSrc.includes("@media(max-width:320px){") && dashSrc.includes(".nav-burger{display:block!important;}"));
+ok("9.1: the ≤320px header budget is enforced (max-height 56px + wordmark downsizes)",
+  dashSrc.includes("header{max-height:56px;overflow:hidden") && dashSrc.includes('className="wordmark"'));
+ok("9.1: the 44px rule covers the remaining controls (nav links, CollapsedGroup, headwind rows)",
+  dashSrc.includes(".nav-link,.cg-toggle,.hw-row{min-height:44px;}") &&
+  cgSrc.includes('className="cg-toggle"') && hwSrc.includes('className="hw-row"'));
+ok("9.3: the skip link is first-focusable markup and reveals on :focus only",
+  dashSrc.includes('<a href="#overview" className="skip-link">Skip to verdict</a>') &&
+  dashSrc.includes(".skip-link:focus{left:8px") && dashSrc.includes(".skip-link{position:absolute;left:-9999px"));
+ok("9.3: focus moves to the verdict ONLY on the first LOADING->settled transition, never on refreshes",
+  dashSrc.includes('if(prev==="LOADING"&&(mode==="LIVE"||mode==="CACHED"||mode==="ERROR"))') &&
+  dashSrc.includes('document.getElementById("overview")?.focus()') &&
+  dashSrc.includes('<h2 id="overview" tabIndex={-1}'));
+ok("9.2/8.2: headwind rows are real buttons now — keyboard-operable with aria-expanded",
+  hwSrc.includes("aria-expanded={isExp}") && !/<div[^>]*onClick=\{\(\)=>setExpandedHW/.test(hwSrc));
+
+// ═══════════ [53] UI-OVERHAUL wave 16 (task 9.6) — confirmed-not-optimistic copy claims ═══════════
+// The interactive-state matrix (LOADING withhold, ERROR banner+retry, MOCK suppression,
+// DEGRADED refresh, stale exclusion chain) predates this wave and stays pinned/driven where
+// it lives. The one real gap was Req 7.9: both copy handlers claimed ✓ before the clipboard
+// write settled — a denied permission flashed a false green success. Now: success confirms,
+// failure reverts silently (<300ms, no toast), no clipboard API claims nothing.
+console.log("\n[53] UI-OVERHAUL wave 16 — copy claims are confirmed, never optimistic");
+ok("7.9: handleShare confirms on .then, reverts on .catch, and claims nothing without the API",
+  /const p=navigator\.clipboard\?\.writeText\(window\.location\.href\);\s*\n\s*if\(!p\)\{return;\}/.test(dashSrc) &&
+  /p\.then\(\(\)=>\{setCopied\(true\);setTimeout\(\(\)=>setCopied\(false\),2000\);\}\)\s*\n\s*\.catch\(\(\)=>\{setCopied\(false\);\}\);/.test(dashSrc));
+ok("7.9: handleTtCopy — the order-gating block — follows the same confirmed rule",
+  /const p=navigator\.clipboard\?\.writeText\(block\);/.test(dashSrc) &&
+  /p\.then\(\(\)=>\{setTtCopied\(true\);setTimeout\(\(\)=>setTtCopied\(false\),2000\);\}\)\s*\n\s*\.catch\(\(\)=>\{setTtCopied\(false\);\}\);/.test(dashSrc));
+ok("7.9: no optimistic set survives anywhere — ✓ can only follow a settled write",
+  !/writeText\([^)]*\)\.catch\(\(\)=>\{\}\);\s*\n\s*set(Tt)?Copied\(true\)/.test(dashSrc));
+ok("7.9: failure is SILENT — no error toast rides either handler",
+  !/showToast[\s\S]{0,80}(clipboard|copy failed|share failed)/i.test(dashSrc));
+
+// ═══════════ [54] UI-OVERHAUL wave 17 — the docs exist and CANNOT rot ═══════════
+// design-system.md and RISKS.md are MAPS, not mirrors (the AGENTS.md/B5 rule): they may
+// name modules and rules but never restate volatile facts — no version numbers, no
+// assertion counts, no line numbers, no token values. These pins enforce that shape, so
+// the third incarnation of a stale doc cannot happen here.
+console.log("\n[54] UI-OVERHAUL wave 17 — docs are maps, not mirrors");
+const dsDoc = readFileSync(new URL("../docs/design-system.md", import.meta.url), "utf8");
+const rkDoc = readFileSync(new URL("../docs/RISKS.md", import.meta.url), "utf8");
+ok("docs: design-system.md names the one token home and the enforcement suite",
+  dsDoc.includes("src/design-tokens.js") && dsDoc.includes("npm run gates") &&
+  dsDoc.includes("map, not a mirror"));
+ok("docs: design-system.md carries NO volatile facts — no current-version claim, counts, or hex values (historical rule names like 'v3.1 invariant' are stable and allowed)",
+  !/current version|as of v\d|version is v\d/i.test(dsDoc) &&
+  !/\d+ (assertions|lines|tokens|components)/.test(dsDoc) && !/#[0-9a-fA-F]{6}/.test(dsDoc));
+ok("docs: RISKS.md carries the five risks and five assumptions by id, and bans a status column",
+  ["R1","R2","R3","R4","R5","A1","A2","A3","A4","A5"].every((id)=>rkDoc.includes(`**${id}`)) &&
+  rkDoc.includes("Status lives in git history"));
+ok("docs: RISKS.md states the pin-repoint rule (the risk this branch lived with every wave)",
+  /repoints pins to\s*\n?\s*the new module/.test(rkDoc) && rkDoc.includes("uiSrc"));
+
+// ═══════════ [55] wave-17 audit fix — strip/tile colors derive from the ONE band table ═══════════
+// Findings 1-3: the strip painted a neutral F&G bearish red off a hand-written `>55`
+// binary (one page, three answers: red strip number, grey gauge, • band chip), CPI
+// asserted red/green off a `>3` level the engine never uses (it votes on trend SHAPE),
+// and the VIX tile carried a second copy of the 18/25 edges. All three now branch on
+// REGIME_BAND_TABLE's own vote; vote-derived strip colors are MUTED when the field is
+// not live (a directional read off mock/stale is the v3.1 invariant's exact target).
+console.log("\n[55] wave-17 audit fix — one band table, every altitude");
+ok("fix1: no hand-written F&G or CPI threshold survives in the strip",
+  !/score>55\?/.test(stripSrc) && !/headline>3\?/.test(stripSrc) &&
+  stripSrc.includes('voteKey:"fearGreed"') && stripSrc.includes('voteKey:"cpiHeadline"'));
+ok("fix1: the strip resolves vote colors through the band table + the ONE voteStyle map, muted when not live",
+  stripSrc.includes("sc=b&&live?T[voteStyle(b.vote(b.read(d))).colorKey]:T.textMuted") &&
+  stripSrc.includes('import { REGIME_BAND_TABLE, voteStyle } from "../regime.js"'));
+ok("fix1 BEHAVIOR: a neutral F&G (42) now resolves to the neutral color, never red — and a real extreme still reads directionally",
+  (() => { const b = REGIME_BAND_TABLE.find((x) => x.key === "fearGreed");
+    return voteStyle(b.vote(42)).colorKey === "textSecondary" &&
+           voteStyle(b.vote(62)).colorKey === "green" && voteStyle(b.vote(15)).colorKey === "red"; })());
+ok("fix2 BEHAVIOR: CPI color follows the trend-shape vote (cooling green, drifting-up red), not a level",
+  (() => { const b = REGIME_BAND_TABLE.find((x) => x.key === "cpiHeadline");
+    return voteStyle(b.vote([3.0, 2.9, 2.8])).colorKey === "green" &&
+           voteStyle(b.vote([2.4, 2.9, 3.1])).colorKey === "red" &&
+           voteStyle(b.vote([3.0, 2.9, 2.9])).colorKey === "textSecondary"; })());
+ok("fix2: the VIX tile branches on the band's OWN vote — no 18/25 second copy left",
+  mdSrc.includes('REGIME_BAND_TABLE.find((b)=>b.key==="vix").vote(') &&
+  !/vix\.current>25\?T\.red/.test(mdSrc) && !/current>18\?T\.yellow/.test(mdSrc));
+ok("fix3: delta colors (pctColor day-moves) keep their treatment — facts, not verdicts",
+  stripSrc.includes("sc:pctColor(d.marketPulse.spy.changePct)"));
 
 console.log(`\n=== SMOKE TEST: ${pass} passed, ${fail} failed ===`);
 process.exit(fail === 0 ? 0 : 1);

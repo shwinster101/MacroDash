@@ -2061,10 +2061,48 @@ Jan-anchor shipped; see `snapshot.js` ~318–328), `spyMa100`, `spyMa200`, and a
   Tests: **1068 smoke** (+1, net — a 1-assertion string pin split into 2 behavioral checks
   covering the inline auto/nearest buttons and the still-deep-linked specific-year path) +
   192 render (verified live in Chromium, no regression).
-- **FEAT-TT-SCORE (v3.73.0) — the TT Underwriting Score engine ships, SHADOW mode.** Implements
-  the owner-approved `tt-underwriting-v2.3.0` methodology (private spec, KV/artifact-only — the
-  document itself never enters this repo) in the §14 order: storage split first, UI after server,
-  legacy governing until activation. Five commits:
+- **FEAT-UIMOD (v3.73.0) — the UI overhaul: the public dashboard's monolith becomes a module
+  tree, behavior-identical and behaviorally proven.** The owner-approved spec (requirements/
+  design/tasks, 5 vertical slices) executed wave-by-wave on one branch. `dashboard.jsx`
+  2106→~950 lines, now an ORCHESTRATOR (hook call, derived state, the A4 gate, the global
+  stylesheet, composition); everything it renders lives in **`src/sections/`** (RegimeBand ·
+  FiveWhys · MacroStrip · SignalQuality · WhatChanged · MarketDetail · MacroRegime · Headwinds ·
+  AIUnitEconomics · Alerts · DataHealth · Watchlist · StickyNav) and **`src/primitives/`**
+  (SourceBox+DataModeBadge · SectionHeader · CollapsedGroup · Illustrative · atoms(Badge/Label) ·
+  DirTile · FGGauge), with new pure modules **`src/design-tokens.js`** (DT/T — the ONE token
+  home; the "design-tokens.json canonical" comment named a file that never existed),
+  **`src/format.js`** and **`src/aiEcon.js`** (curated AI data + tokenScissors, now IMPORTED
+  and RUN by smoke instead of source-lifted). Every move is VERBATIM — sections are
+  presentation-only (smoke-enforced: no computation/hook/storage imports; the documented
+  exceptions import the pure engine so a threshold is never re-declared) and every extraction
+  repointed its pins in the same commit (the spec's own R1 risk, lived every wave; negatives
+  sweep `uiSrc`, the concatenation of all UI surfaces). Deleted, not moved: `Divider`,
+  `LAUNCH_COST`, `EVTOL_CERT`, `.hide-mobile` — all rendered/consumed NOWHERE (dead code is a
+  rot vector), each negatively pinned. New capability landed with the extraction: skip-nav
+  link + focus-to-verdict on the first LOADING→settled transition (Req 8.9, proven live);
+  StickyNav with IntersectionObserver active tracking (supersedes the v3.62 hash-only state —
+  a click still wins instantly) + a ≤320px hamburger; the ≤320px header ≤56px budget; 44px
+  tap-target gap-fill (nav links, CollapsedGroup, headwind rows — which became real buttons);
+  **confirmed-not-optimistic copy claims** (Req 7.9: a denied clipboard write no longer
+  flashes ✓ COPIED over an empty clipboard — worst on the order-gating TT block); and the
+  **wave-17 audit fix**: the strip's F&G/CPI colors and the VIX tile now branch on
+  `REGIME_BAND_TABLE`'s own vote (a neutral F&G painted bearish red off a hand-written `>55`
+  while the gauge showed grey and the chip `•` — one page, three answers; CPI asserted a
+  `>3` level the engine never uses), muted when the field is not live. Docs:
+  `docs/design-system.md` + `docs/RISKS.md` in the B5 maps-not-mirrors shape, smoke-enforced.
+  Audit findings left OPEN as owner calls: Watchlist's custom toggle vs the one disclosure
+  idiom; hover-only strip explanations unreachable on touch.
+  Tests: **1137 smoke** (sections [45]–[55] hold the extraction contracts) + **192 render** +
+  **111 public-render** (new behavioral proofs: the 375px/600px verdict contract, the A4
+  boundary, skip-link/focus/hamburger driven live, clipboard-failure revert + success control,
+  and the strip-vs-chip agreement fixture) — all green under `npm run gates`.
+- **FEAT-TT-SCORE (v3.74.0) — the TT Underwriting Score engine ships, SHADOW mode.**
+  *Relabelled from v3.73.0 at merge (2026-08-05): FEAT-UIMOD shipped in parallel on a separate
+  branch and landed on main first, owning the number — the same collision ENGINE0-CONT already
+  documented once; this entry takes the next true sequence number, content otherwise verbatim.*
+  Implements the owner-approved `tt-underwriting-v2.3.0` methodology (private spec,
+  KV/artifact-only — the document itself never enters this repo) in the §14 order: storage split
+  first, UI after server, legacy governing until activation. Five commits:
   **(1) `src/ptModel.js`** — the PT chain (schedAt/ptModelRows/ptRowYears/lintPtModel/
   yrsToYearEnd/annualise/pickRow + LENS_MAX_PE/ANN_MIN_Y) extracted verbatim so the server can
   run the SAME math the terminal renders. admin.html (buildless) keeps byte-identical copies;

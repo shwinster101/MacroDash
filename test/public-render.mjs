@@ -307,8 +307,10 @@ console.log("\n[public] v3.60 P0 slice — nav, matrix, digest, health");
 {
   const { page, errors } = await open({ live: FULL_LIVE });
   await page.waitForTimeout(1400);
-  ok("C2: a Sections nav landmark with the six anchors",
-    await page.locator('nav[aria-label="Sections"] a').count() === 6);
+  ok("C2: a Sections nav landmark with the six anchors (row form; the ≤320px burger mirrors them)",
+    await page.locator('nav[aria-label="Sections"] .nav-row a').count() === 6 &&
+    await page.evaluate(() => new Set([...document.querySelectorAll('nav[aria-label="Sections"] a')]
+      .map((a) => a.getAttribute("href"))).size === 6));
   ok("C2: the h2 outline exists (six section headings + none visible as new chrome)",
     await page.evaluate(() => document.querySelectorAll("h2").length) >= 6);
   ok("C2: every nav anchor points at a real element",
@@ -462,6 +464,153 @@ console.log("\n[public] A4 — the public/private boundary is ENFORCED, not comm
   ok("a11y: the verdict and confidence landmarks survive the live-region narrowing",
     await page.locator('[aria-label="Macro backdrop verdict"]').count() === 1 &&
     await page.locator('[aria-label="Signal quality and backdrop confidence"]').count() === 1);
+  await page.close();
+}
+
+// ── Slice 1 (UI-OVERHAUL tasks 1.3–1.5) — the mobile verdict contract ────────
+// The extracted RegimeBand + FiveWhys must render the complete verdict (posture +
+// confidence line + "would change this" why sentence) within the first 600px of
+// vertical space at 375px, with the narrative present and no horizontal overflow.
+// Driven against the REAL live-stubbed page — the extraction is proven by behavior,
+// not by string pins.
+console.log("\n[public] Slice 1 — verdict above the fold at 375px (extracted band + whys)");
+{
+  const { page, errors } = await open({ live: FULL_LIVE, width: 375 });
+  await page.waitForTimeout(1200);
+  const band = page.locator('[aria-label="Macro backdrop verdict"]');
+  const box = await band.boundingBox();
+  ok("slice1 @375px: the extracted band renders a posture", POSTURES.test(await band.innerText()));
+  ok("slice1 @375px: the complete verdict region ends within the first 600px",
+    box !== null && box.y + box.height <= 600);
+  ok("slice1 @375px: the confidence tally and flip sentence ride inside that region",
+    /of \d+ usable/.test(await band.innerText()) && /would change this/i.test(await band.innerText()));
+  const body = await page.locator("body").innerText();
+  ok("slice1 @375px: the extracted 5 Whys narrative renders (WHY #1–#5 present)",
+    /WHY #1/.test(body) && /WHY #5/.test(body) && /5 Whys · Today/i.test(body));
+  ok("slice1 @375px: no horizontal overflow",
+    await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth + 1));
+  ok("slice1 @375px: no page errors from the extracted modules", errors.length === 0);
+  await page.close();
+}
+
+// ── Wave 15 (tasks 9.1-9.5) — responsive + keyboard + focus, driven live ─────
+console.log("\n[public] wave 15 — skip link, focus-on-resolve, hamburger, tap targets");
+{
+  const { page, errors } = await open({ live: FULL_LIVE, width: 390 });
+  await page.waitForTimeout(1400);
+  // 9.3 (Req 8.9): the LOADING->settled transition MOVED FOCUS to the verdict region —
+  // asserted directly: after the live snapshot lands, the active element IS #overview.
+  ok("9.3: focus sits on the verdict region after LOADING resolves (Req 8.9, live-proven)",
+    await page.evaluate(() => document.activeElement && document.activeElement.id === "overview"));
+  // 9.3: the skip link is the first focusable element in DOM order and reveals on focus.
+  ok("9.3: the skip link is the document's first link, revealed on keyboard focus",
+    await page.evaluate(() => {
+      const links = document.querySelectorAll("a");
+      const sk = document.querySelector(".skip-link");
+      if (!sk || links[0] !== sk) return false;
+      sk.focus();
+      return document.activeElement === sk && sk.getBoundingClientRect().left > 0;
+    }));
+  await page.keyboard.press("Enter");
+  await page.waitForTimeout(150);
+  ok("9.3: activating it jumps to the verdict region (#overview)",
+    await page.evaluate(() => location.hash === "#overview"));
+  // 8.4: the one polite announcement stays within the 120-char bound.
+  ok("9.4: the aria-live announcement is ≤120 characters",
+    await page.evaluate(() =>
+      document.querySelector('[role="status"][aria-live="polite"]').textContent.length <= 120));
+  // 9.1: 44px targets on nav links + CollapsedGroup toggles at phone width.
+  ok("9.1: every VISIBLE nav link and disclosure toggle measures ≥44px tall at 390px",
+    await page.evaluate(() =>
+      [...document.querySelectorAll(".nav-link, .cg-toggle")]
+        .filter((el) => el.getClientRects().length)
+        .every((el) => el.getBoundingClientRect().height >= 44)));
+  ok("wave15: no page errors", errors.length === 0);
+  await page.close();
+}
+{
+  const { page } = await open({ live: FULL_LIVE, width: 320 });
+  await page.waitForTimeout(1200);
+  // 9.1 (Req 6.4): at 320px the nav row is gone, the hamburger disclosure serves the links.
+  ok("9.1 @320px: nav collapses to the hamburger form",
+    await page.evaluate(() => {
+      const row = document.querySelector(".nav-row"), burger = document.querySelector(".nav-burger");
+      return getComputedStyle(row).display === "none" && getComputedStyle(burger).display !== "none";
+    }));
+  ok("9.1 @320px: the hamburger opens to all six section links",
+    await (async () => {
+      await page.locator(".nav-burger > summary").click();
+      await page.waitForTimeout(120);
+      return await page.locator(".nav-burger a").count() === 6;
+    })());
+  ok("9.1 @320px: the header stays within the 56px budget",
+    await page.evaluate(() => document.querySelector("header").getBoundingClientRect().height <= 56));
+  ok("9.1 @320px: still no horizontal overflow",
+    await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth + 1));
+  await page.close();
+}
+
+// ── Wave 16 (task 9.6, Req 7.9) — a denied clipboard write claims nothing ────
+// The old handlers set ✓ COPIED optimistically, so a rejected write still flashed a
+// green success for 2s. Driven live: writeText is stubbed to REJECT, the button must
+// stay on (or revert to) its idle label within 300ms, and no toast may appear.
+console.log("\n[public] wave 16 — share failure reverts to idle, silently");
+{
+  const { page, errors } = await open({ live: FULL_LIVE });
+  await page.waitForTimeout(1400);
+  await page.evaluate(() => {
+    navigator.clipboard.writeText = () => Promise.reject(new Error("denied"));
+  });
+  const share = page.locator("button", { hasText: "⤴ SHARE" });
+  await share.click();
+  await page.waitForTimeout(300);
+  ok("7.9: after a rejected write the button reads its IDLE label, never ✓ COPIED",
+    /⤴ SHARE/.test(await share.innerText()));
+  ok("7.9: no error toast is shown for a cancelled/denied share",
+    !/denied|failed|error/i.test(await page.locator("body").innerText().then(t =>
+      t.split("\n").filter(l => /toast|denied|clipboard/i.test(l)).join(" "))));
+  // Control: a SUCCESSFUL write still confirms — the fix must not have muted real success.
+  await page.evaluate(() => {
+    navigator.clipboard.writeText = () => Promise.resolve();
+  });
+  await share.click();
+  await page.waitForTimeout(200);
+  ok("7.9 control: a successful write still confirms ✓ COPIED",
+    /✓ COPIED/.test(await page.locator("button", { hasText: /COPIED|SHARE/ }).first().innerText()));
+  ok("wave16: no page errors", errors.length === 0);
+  await page.close();
+}
+
+// ── Wave-17 audit fix — the strip's F&G color agrees with the vote, live ─────
+// The defect: F&G 45 votes NEUTRAL (• chip, grey gauge) while the strip painted it
+// red off a hand-written `>55` binary — one page, three answers. Driven at both a
+// neutral and a greed reading.
+console.log("\n[public] wave-17 fix — strip F&G color derives from the band vote");
+{
+  const { page } = await open({ live: { ...FULL_LIVE, fearGreed: 45, fearGreedLabel: "Neutral" } });
+  await page.waitForTimeout(1400);
+  const col = await page.evaluate(() => {
+    const cell = [...document.querySelectorAll(".macro-strip-inner > div")]
+      .find((el) => /F&G/.test(el.textContent));
+    return getComputedStyle(cell.lastElementChild).color;
+  });
+  ok("fix: a NEUTRAL F&G (45) renders the neutral grey on the strip, not bearish red",
+    col === "rgb(136, 146, 164)");
+  const chips = await page.locator('[aria-label="Macro backdrop verdict"]').innerText();
+  ok("fix control: the band chip agrees — F&G carries • (neutral), and the two surfaces now match",
+    /F&G •/.test(chips));
+  await page.close();
+}
+{
+  const { page } = await open({ live: FULL_LIVE });
+  await page.waitForTimeout(1400);
+  const col = await page.evaluate(() => {
+    const cell = [...document.querySelectorAll(".macro-strip-inner > div")]
+      .find((el) => /F&G/.test(el.textContent));
+    return getComputedStyle(cell.lastElementChild).color;
+  });
+  ok("fix control: a genuine greed reading (62, bull) still renders green — no over-correction",
+    col === "rgb(46, 204, 113)");
   await page.close();
 }
 
