@@ -49,7 +49,12 @@ const shSrc = readFileSync(new URL("../src/primitives/SectionHeader.jsx", import
 const stripSrc = readFileSync(new URL("../src/sections/MacroStrip.jsx", import.meta.url), "utf8");
 const sqSrc = readFileSync(new URL("../src/sections/SignalQuality.jsx", import.meta.url), "utf8");
 const wcSrc = readFileSync(new URL("../src/sections/WhatChanged.jsx", import.meta.url), "utf8");
-const uiSrc = dashSrc + bandSrc + whysSrc + sbSrc + shSrc + stripSrc + sqSrc + wcSrc;
+// wave 9 (tasks 5.2-5.4): MarketDetail, MacroRegime, Headwinds + the DirTile primitive.
+const mdSrc = readFileSync(new URL("../src/sections/MarketDetail.jsx", import.meta.url), "utf8");
+const mrSrc = readFileSync(new URL("../src/sections/MacroRegime.jsx", import.meta.url), "utf8");
+const hwSrc = readFileSync(new URL("../src/sections/Headwinds.jsx", import.meta.url), "utf8");
+const dtSrc = readFileSync(new URL("../src/primitives/DirTile.jsx", import.meta.url), "utf8");
+const uiSrc = dashSrc + bandSrc + whysSrc + sbSrc + shSrc + stripSrc + sqSrc + wcSrc + mdSrc + mrSrc + hwSrc + dtSrc;
 const _s = dashSrc.indexOf("const MOCK_DATA = {");
 let _i = dashSrc.indexOf("{", _s), _d = 0, _e = -1;
 for (; _i < dashSrc.length; _i++) { if (dashSrc[_i] === "{") _d++; else if (dashSrc[_i] === "}") { _d--; if (_d === 0) { _e = _i; break; } } }
@@ -1804,8 +1809,8 @@ ok("v3.69: the 5 Whys block renders in the overview region, before the markets s
 ok("v3.69: the 5 Whys is NOT inside any CollapsedGroup (LOADING/ERROR anchors are read from body text)",
   !/CollapsedGroup[^>]*>[\s\S]{0,600}<FiveWhys /.test(dashSrc) && !/CollapsedGroup/.test(whysSrc));
 ok("v3.69: ONE market-detail CollapsedGroup (chart + 10 tiles) inside the markets section, chip-free",
-  dashSrc.includes('label="full market detail — chart & tiles" chip={false}')
-  && (dashSrc.match(/full market detail/g)||[]).length===1);
+  mdSrc.includes('label="full market detail — chart & tiles" chip={false}')
+  && (uiSrc.match(/full market detail — chart & tiles\" chip/g)||[]).length===1);
 ok("v3.69: the 60/40 command-center grid is gone — no two-column race can bury the narrative again",
   !dashSrc.includes("command-grid") && !dashSrc.includes("60fr 40fr"));
 ok("v3.69: markets/macro/ai are real sections (drivers/health pattern), and the operator monitors have their own",
@@ -2249,12 +2254,12 @@ ok("nfci: it counts toward Signal Quality — a tracked live signal, not decorat
 // an SD below it. The old ±0.10 was a decimal with no meaning in that unit.
 ok("nfci: thresholds live in ONE shared table driving tile, vote and factor breakdown alike",
   regimeSrc.includes("export const NFCI_TIGHT = 0;") && regimeSrc.includes("export const NFCI_LOOSE = -0.5;") &&
-  dashSrc.includes('const band=v>NFCI_TIGHT?"TIGHT":v<=NFCI_LOOSE?"LOOSE":"NEUTRAL"') &&
+  mdSrc.includes('const band=v>NFCI_TIGHT?"TIGHT":v<=NFCI_LOOSE?"LOOSE":"NEUTRAL"') &&
   regimeSrc.includes('vote:(v)=> v <= NFCI_LOOSE ? "bull" : v > NFCI_TIGHT ? "bear" : "neutral"') &&
   // …and the tile IMPORTS them rather than re-declaring (the one-table rule survives extraction)
-  /import \{ NFCI_TIGHT, NFCI_LOOSE,/.test(dashSrc));
+  /import \{ NFCI_TIGHT, NFCI_LOOSE \} from "\.\.\/regime\.js"/.test(mdSrc));
 ok("nfci: the tight threshold is the DEFINITIONAL mean (0), not a hand-picked decimal",
-  /const NFCI_TIGHT = 0;/.test(regimeSrc) && !dashSrc.includes("0.10?\"TIGHT\""));
+  /const NFCI_TIGHT = 0;/.test(regimeSrc) && !uiSrc.includes("0.10?\"TIGHT\""));
 ok("nfci: the bands are ASYMMETRIC — a symmetric band around zero would have voted bullish " +
    "nearly every week post-GFC, biasing the tally instead of informing it",
   (() => { const T = 0, L = -0.5;
@@ -2273,9 +2278,9 @@ ok("nfci: boundaries are exact — -0.5 votes bull (inclusive), 0 does not vote 
   })());
 ok("nfci: TIGHT/LOOSE is a DIRECTIONAL call, so it is suppressed on mock/stale exactly like " +
    "the CAPE BUBBLE verdict (v3.1 honesty invariant)",
-  /nIllus\?\(nMode==="STALE"\?<DataModeBadge mode="STALE"\/>:<IllustrativeChip\/>\)\s*:<Badge label=\{band\}/.test(dashSrc));
+  /nIllus\?\(nMode==="STALE"\?<DataModeBadge mode="STALE"\/>:<IllustrativeChip\/>\)\s*:<Badge label=\{band\}/.test(mdSrc));
 ok("nfci: the tile states its own reference point — a bare z-score is unreadable without it",
-  dashSrc.includes("0 = avg"));
+  mdSrc.includes("0 = avg"));
 ok("nfci: it votes in the DASHBOARD regime (6th factor), off the SAME shared band table the " +
    "tile renders — one computation, two surfaces, so label and vote cannot disagree",
   /\{ key:"nfci",[\s\S]*?vote:\(v\)=> v <= NFCI_LOOSE \? "bull"/.test(regimeSrc) &&
@@ -2696,7 +2701,7 @@ ok("provenance: SPY is labelled a FRED proxy, not an ETF quote it has never been
 // "Manual" + a LIVE badge on the same tile made the provenance vocabulary self-contradictory:
 // `api` is the FETCH PATH, `mode` is freshness — and multpl IS the live scrape.
 ok("provenance: CAPE credits its real fetch path (multpl scrape), not 'Manual' beside a LIVE badge",
-  dashSrc.includes('api="multpl.com"') && !/api="Manual" endpoint="Robert Shiller/.test(dashSrc));
+  mrSrc.includes('api="multpl.com"') && !/api="Manual" endpoint="Robert Shiller/.test(uiSrc));
 // An ON/OFF control beside 8px muted "notifications not wired" reads as a working alert system.
 ok("affordance: the alert toggles state their real limit at the weight of the control itself",
   /no push, email or SMS is sent/.test(dashSrc) && !/Triggers evaluate live data · notifications not wired/.test(dashSrc));
@@ -2784,8 +2789,8 @@ ok("a11y B4: header actions carry 44px thumb targets at phone width",
   /\.hdr-act\{min-height:44px;min-width:44px/.test(dashSrc) &&
   (dashSrc.match(/className="hdr-act"/g) || []).length === 4);
 ok("a11y B4: sparklines are decorative (aria-hidden); the SPY chart has a TEXT equivalent",
-  /\{spark&&<div aria-hidden="true"/.test(dashSrc) &&
-  /its 200-day average of/.test(dashSrc));
+  /\{spark&&<div aria-hidden="true"/.test(dtSrc) &&
+  /its 200-day average of/.test(mdSrc));
 
 // ---- 28. FEAT-FLIP (v3.53) — the shared band table + "what would change the verdict" ----
 // The bands moved OUT of computeRegime's inline ifs into REGIME_BAND_TABLE so flipConditions
@@ -3100,11 +3105,11 @@ ok("30y: a live payload overlays the 30Y and the spread onto the mock baseline",
     r.provenance.thirtyYear === "LIVE" && r.dataAsOf.thirtyYearM1 === "2026-08-01"; })());
 // The tile: a reference level, never a verdict off a level (the v3.1 invariant).
 ok("30y: the tile states the 5% reference as a REFERENCE, and never asserts a call from it",
-  /5\.00% = the 2007 pre-GFC reference level/.test(dashSrc) &&
-  !/BUBBLE|OVERVALUED/.test(dashSrc.slice(dashSrc.indexOf('label="30Y Treasury"'),
-    dashSrc.indexOf('label="30Y Treasury"') + 900)));
+  /5\.00% = the 2007 pre-GFC reference level/.test(mdSrc) &&
+  !/BUBBLE|OVERVALUED/.test(mdSrc.slice(mdSrc.indexOf('label="30Y Treasury"'),
+    mdSrc.indexOf('label="30Y Treasury"') + 900)));
 ok("30y: the tile names the inversion explicitly when the spread goes negative",
-  /INVERTED/.test(dashSrc));
+  /INVERTED/.test(mdSrc));
 // The alerts ride FEAT-ALERT-EVAL: live-gated, BLIND when not.
 ok("30y: both alerts are wired to real metrics, so they evaluate rather than sit inert",
   /treasury30y: \{fields:\["thirtyYear"\]/.test(dashSrc) &&
@@ -3487,8 +3492,8 @@ ok("glance: the decode legend moved INTO the Data Health expander — the always
   !/marginLeft:"auto"\}\}>● live · ⏱ stale ·/.test(dashSrc));
 ok("glance: the 30Y tile note keeps the FACT (spread + INVERTED) and moves the reference " +
    "prose to a tooltip — a red fact must survive the default view",
-  dashSrc.includes('noteTitle={"5.00% = the 2007 pre-GFC reference level"}') &&
-  /title=\{noteTitle\|\|undefined\}/.test(dashSrc));
+  mdSrc.includes('noteTitle={"5.00% = the 2007 pre-GFC reference level"}') &&
+  /title=\{noteTitle\|\|undefined\}/.test(dtSrc));
 // F2b-1 (behavioral, real import): the verdict sub must never name an excluded factor.
 const subFix = (fg, cpiLast) => ({
   crossAsset: { treasury10y: { m1: -0.2 } },
@@ -3946,6 +3951,43 @@ ok("cg: primitives stay under the 100-line bound",
 ok("cg: isIllustrative keeps the v3.1 rule — MOCK and STALE suppress, everything else renders",
   (() => { const m = /export const isIllustrative = \(mode\) => mode === "MOCK" \|\| mode === "STALE";/.test(ilSrc);
     return m; })());
+
+// ═══════════ [50] UI-OVERHAUL wave 9 (tasks 5.2-5.4) — detail panels + tile primitives ═══════════
+// MarketDetail, MacroRegime and Headwinds moved verbatim; Badge/Label became atoms;
+// DirTile (with its three private helpers) and FGGauge became primitives; Divider was
+// deleted (rendered nowhere). Same separation contract as every prior wave.
+console.log("\n[50] UI-OVERHAUL wave 9 — detail panels are modules; primitives have one home");
+const atomsSrc = readFileSync(new URL("../src/primitives/atoms.jsx", import.meta.url), "utf8");
+const fgSrc = readFileSync(new URL("../src/primitives/FGGauge.jsx", import.meta.url), "utf8");
+ok("wave9: presentation only — none of the three sections imports computation or the data hook",
+  [mdSrc, mrSrc, hwSrc].every((src) => {
+    const code = src.replace(/\/\/[^\n]*|\/\*[\s\S]*?\*\//g, "");
+    return !/useMarketData|computeRegime|buildEvidenceSet|evalAlert\(/.test(code);
+  }));
+ok("wave9: the call sites hand over computed props (demotion rule, chart series, MA cross, FOMC)",
+  /<MarketDetail d=\{d\} modeOf=\{modeOf\} asOfOf=\{asOfOf\} demoted=\{demoted\} spyData=\{spyData\} goldenCross=\{goldenCross\}\/>/.test(dashSrc) &&
+  /<MacroRegime d=\{d\} modeOf=\{modeOf\} asOfOf=\{asOfOf\} fomcDays=\{fomcDays\}\/>/.test(dashSrc) &&
+  /<Headwinds d=\{d\}\/>/.test(dashSrc));
+ok("wave9: null-safety on all three (Property 9)",
+  /if\(!d\|\|typeof modeOf!=="function"\|\|!Array\.isArray\(spyData\)\)return <div aria-hidden="true"\/>;/.test(mdSrc) &&
+  /if\(!d\|\|typeof modeOf!=="function"\)return <div aria-hidden="true"\/>;/.test(mrSrc) &&
+  /if\(!d\|\|!Array\.isArray\(d\.headwinds\)\)return <div aria-hidden="true"\/>;/.test(hwSrc));
+ok("wave9: Headwinds owns its per-row expand state — nothing external ever read it",
+  hwSrc.includes("const [expandedHW,setExpandedHW]=useState(null);") &&
+  !dashSrc.includes("expandedHW"));
+ok("wave9: one home each — no inline Badge/Label/DirTile/FGGauge/stoplight helpers left behind",
+  !/\nconst Badge=/.test(dashSrc) && !/\nconst Label=/.test(dashSrc) &&
+  !/\nconst DirTile=/.test(dashSrc) && !/\nconst FGGauge=/.test(dashSrc) &&
+  !/\nfunction stoplightColor/.test(dashSrc) && !/\nfunction verdictFromTones/.test(dashSrc) &&
+  !/\nconst Divider=/.test(dashSrc) && !/<Divider/.test(uiSrc));
+ok("wave9: DirTile carries its three private helpers — their ONLY consumer",
+  dtSrc.includes("const arrow=") && dtSrc.includes("function stoplightColor") &&
+  dtSrc.includes("function verdictFromTones"));
+ok("wave9: sections under 300 lines, primitives under 100 (Property 10)",
+  mdSrc.split("\n").length <= 300 && mrSrc.split("\n").length <= 300 && hwSrc.split("\n").length <= 300 &&
+  dtSrc.split("\n").length <= 100 && fgSrc.split("\n").length <= 100 && atomsSrc.split("\n").length <= 100);
+ok("wave9: the NFCI band constants are IMPORTED from the engine, never re-declared in a section",
+  !/const NFCI_TIGHT/.test(mdSrc) && !/const NFCI_LOOSE/.test(mdSrc));
 
 console.log(`\n=== SMOKE TEST: ${pass} passed, ${fail} failed ===`);
 process.exit(fail === 0 ? 0 : 1);

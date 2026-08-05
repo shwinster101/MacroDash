@@ -1,4 +1,4 @@
-import { Fragment, useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback } from "react"; // Fragment left with MarketDetail (wave 9)
 import { LineChart, Line, BarChart, Bar, Cell, AreaChart, Area, XAxis, YAxis, Tooltip, ResponsiveContainer, ReferenceLine } from "recharts";
 import { useMarketData } from "./useMarketData.js"; // FEAT-204 wiring
 import { computeFiveWhys } from "./fiveWhys.js"; // v2.5: rule-based 5 Whys ($0, derived from live data)
@@ -14,6 +14,10 @@ import SourceBox, { DataModeBadge } from "./primitives/SourceBox.jsx"; // task 1
 import SectionHeader from "./primitives/SectionHeader.jsx"; // task 1.4
 import CollapsedGroup from "./primitives/CollapsedGroup.jsx"; // task 5.1
 import { ILLUS_HATCH, IllustrativeChip, isIllustrative } from "./primitives/Illustrative.jsx"; // task 5.1
+import { Badge, Label } from "./primitives/atoms.jsx"; // wave 9
+import MarketDetail from "./sections/MarketDetail.jsx"; // task 5.2: presentation only
+import MacroRegime from "./sections/MacroRegime.jsx"; // task 5.3: presentation only
+import Headwinds from "./sections/Headwinds.jsx"; // task 5.4: presentation only
 import MacroStrip from "./sections/MacroStrip.jsx"; // task 3.1: presentation only
 import SignalQuality from "./sections/SignalQuality.jsx"; // task 3.2: presentation only
 import WhatChanged from "./sections/WhatChanged.jsx"; // task 3.3: presentation only
@@ -275,7 +279,7 @@ function etSession(now = new Date()) {
 
 // ─── HELPERS ─────────────────────────────────────────────────────────────
 // fmt moved to src/format.js (task 1.3) — one copy, shared with extracted sections.
-const arrow=(v)=>v>0?"▲":v<0?"▼":"→";
+// arrow moved into src/primitives/DirTile.jsx (its only consumer, wave 9).
 // pctColor moved to src/format.js (task 3.1) — one copy, shared with MacroStrip.
 const peColor=(pe)=>pe>80?T.red:pe>40?T.yellow:pe>25?T.textPrimary:T.green;
 const marginColor=(m)=>m===null?T.textMuted:m>30?T.green:m>15?T.textPrimary:m>5?T.yellow:T.red;
@@ -296,29 +300,10 @@ function spyDatesFrom(anchorDateStr, count) {
   return dates;
 }
 
-// Stoplight color for direction tiles
-function stoplightColor(val, band, invert=false) {
-  if(Math.abs(val) <= band) return "yellow";
-  const up = val > band;
-  return (invert ? !up : up) ? T.green : T.red;
-}
-function verdictFromTones(tones) {
-  const g=tones.filter(t=>t===T.green).length;
-  const r=tones.filter(t=>t===T.red).length;
-  if(g>=2) return { label:"BULLISH", color:T.green };
-  if(r>=2) return { label:"BEARISH", color:T.red };
-  return { label:"NEUTRAL", color:T.yellow };
-}
+// stoplightColor/verdictFromTones moved into src/primitives/DirTile.jsx (wave 9).
 
-// ─── PRIMITIVE COMPONENTS ─────────────────────────────────────────────────
-const Badge=({label,color,small})=>(
-  <span style={{background:color+"22",color,border:`1px solid ${color}44`,borderRadius:3,padding:small?"0 4px":"1px 6px",fontSize:small?8:10,fontFamily:T.fontMono,letterSpacing:"0.04em",whiteSpace:"nowrap"}}>{label}</span>
-);
-const Label=({children,color})=>(
-  <div style={{fontFamily:T.fontMono,fontSize:9,color:color||T.textMuted,letterSpacing:"0.1em",textTransform:"uppercase",marginBottom:3}}>{children}</div>
-);
-const Divider=()=><div style={{height:1,background:T.border,margin:"10px 0"}}/>;
-// SectionHeader extracted to src/primitives/SectionHeader.jsx (task 1.4).
+// ─── PRIMITIVE COMPONENTS — Badge/Label extracted to src/primitives/atoms.jsx
+// (wave 9; Divider was rendered nowhere and was deleted, not moved).
 
 // UndoToast (FEAT-166: 5s mobile / 4s desktop). Stacks multiple toasts so a rapid second
 // delete never overwrites the first one's undo — each toast has its own id, timer, and dismiss.
@@ -348,37 +333,7 @@ const UndoToast=({toasts, dismiss})=>{
   );
 };
 
-// Direction tile (v1.3 stoplight)
-const DirTile=({label,value,d1,w1,m1,band,invert=false,spark,source,sourceEp,mode="MOCK",asOf,note,noteTitle})=>{
-  const illus=isIllustrative(mode); // v3.1: suppress the verdict + delta colors on mock/stale data
-  const tc=t=>illus?T.textMuted:t==="yellow"?T.yellow:t===T.green?T.green:T.red;
-  const t1=stoplightColor(d1,band,invert), t2=stoplightColor(w1,band,invert), t3=stoplightColor(m1,band,invert);
-  const verdict=verdictFromTones([t1,t2,t3]);
-  return(
-    <div style={{background:illus?T.surface:verdict.label==="BULLISH"?DT["regime-on-bg"]:verdict.label==="BEARISH"?DT["regime-off-bg"]:T.surface,backgroundImage:illus?ILLUS_HATCH:undefined,border:`1px solid ${illus?T.border:verdict.label==="BULLISH"?T.green+"44":verdict.label==="BEARISH"?T.red+"44":T.border}`,borderRadius:5,padding:"10px 12px",flex:"1 1 110px",minWidth:110,opacity:illus?0.92:1}}>
-      <Label>{label}</Label>
-      <div style={{fontFamily:T.fontMono,fontSize:16,color:illus?T.textSecondary:T.textPrimary,fontWeight:700,marginBottom:4}}>{value}</div>
-      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:3,marginBottom:5}}>
-        {[["1D",d1,t1],["1W",w1,t2],["1M",m1,t3]].map(([p,v,t])=>(
-          <div key={p}><div style={{fontFamily:T.fontMono,fontSize:8,color:T.textMuted}}>{p}</div>
-          <div style={{fontFamily:T.fontMono,fontSize:10,color:tc(t)}}>{arrow(v)} {Math.abs(v).toFixed(Math.abs(v)<1?1:2)}</div></div>
-        ))}
-      </div>
-      {/* FEAT-30Y: an optional factual sub-line (e.g. the 10s30s spread + a reference level).
-          Rendered muted on mock/stale like every other number on an illustrative tile — it is
-          a FACT about the same data, so it inherits the same provenance treatment. */}
-      {/* v3.61 (FEAT-GLANCE): the note carries the FACT (it can read INVERTED — a red fact
-          that must survive the default view); explanatory reference prose rides noteTitle
-          as a tooltip instead of a rendered line. */}
-      {note&&<div title={noteTitle||undefined} style={{fontFamily:T.fontMono,fontSize:8,color:illus?T.textMuted:T.textSecondary,marginBottom:5,lineHeight:1.35}}>{note}</div>}
-      {/* Verdict only on live data; mock/stale shows an honest chip instead of a fabricated call */}
-      {/* Short chip label — a ~110px tile can't fit "· not live"; hatch + SourceBox carry it */}
-      {illus?(mode==="STALE"?<DataModeBadge mode="STALE"/>:<IllustrativeChip label="ILLUSTRATIVE"/>):<Badge label={verdict.label} color={verdict.color} small/>}
-      {spark&&<div aria-hidden="true" style={{height:20,marginTop:5}}><ResponsiveContainer width="100%" height="100%"><LineChart data={spark.map((v,i)=>({v,i}))}><Line type="monotone" dataKey="v" stroke={illus?T.textMuted:T.amber} dot={false} strokeWidth={1}/></LineChart></ResponsiveContainer></div>}
-      {source&&<SourceBox api={source} endpoint={sourceEp||""} mode={mode} asOf={asOf}/>}
-    </div>
-  );
-};
+// DirTile extracted to src/primitives/DirTile.jsx (wave 9).
 
 // ─── WEN MOON METER (mood badge for Macro Strip) ─────────────────────────
 // WITHHELD_LABEL + WEN_MOON_STATES moved WITH the verdict band to
@@ -684,28 +639,7 @@ const MacroFlipBanner=({flip})=>{
 // ─── FEAT-169 · REGIME VERDICT BAND ──────────────────────────────────────
 // Extracted VERBATIM to src/sections/RegimeBand.jsx (UI-OVERHAUL task 1.3).
 
-// Fear & Greed gauge
-const FGGauge=({score,label,mode="MOCK",asOf})=>{
-  const pct=score/100;
-  const color=score<25?T.red:score<45?T.yellow:score<55?T.textSecondary:score<75?T.green:"#27ae60";
-  const angle=-135+pct*270;
-  return(
-    <div style={{background:T.surface,border:`1px solid ${T.border}`,borderRadius:5,padding:"10px 12px",textAlign:"center"}}>
-      <Label>Fear & Greed</Label>
-      <div style={{position:"relative",width:80,height:48,margin:"4px auto 0"}}>
-        <svg viewBox="0 0 80 48" style={{width:"100%",height:"100%"}}>
-          <path d="M8,44 A36,36 0 0,1 72,44" fill="none" stroke={T.border} strokeWidth={6} strokeLinecap="round"/>
-          <path d="M8,44 A36,36 0 0,1 72,44" fill="none" stroke={color} strokeWidth={6} strokeLinecap="round" strokeDasharray={`${pct*113} 113`}/>
-          <line x1="40" y1="44" x2={40+30*Math.cos((angle-90)*Math.PI/180)} y2={44+30*Math.sin((angle-90)*Math.PI/180)} stroke={T.textSecondary} strokeWidth={1.5} strokeLinecap="round"/>
-          <circle cx="40" cy="44" r="3" fill={T.textSecondary}/>
-        </svg>
-      </div>
-      <div style={{fontFamily:T.fontMono,fontSize:20,color,fontWeight:700}}>{score}</div>
-      <div style={{fontFamily:T.fontMono,fontSize:9,color:T.textSecondary}}>{label}</div>
-      <SourceBox api="CNN" endpoint="fear-and-greed-index" mode={mode} asOf={asOf}/>
-    </div>
-  );
-};
+// FGGauge extracted to src/primitives/FGGauge.jsx (wave 9).
 
 /* FEAT-ALERT-EVAL (v3.52, suite audit) — the alerts EVALUATE, or they say they cannot.
    The audit called this section "interface theater" for not delivering notifications. The
@@ -828,7 +762,6 @@ const SectionNav=()=>{
 
 export default function Dashboard({ publicView = false } = {}) {
   const [alerts,setAlerts]=useState(DEFAULT_ALERTS);
-  const [expandedHW,setExpandedHW]=useState(null);
   const [watchlistOpen,setWatchlistOpen]=useState(false); // FEAT-322: default closed — curated content doesn't own the default view
   const [copied,setCopied]=useState(false);
   const [ttCopied,setTtCopied]=useState(false); // FEAT-332: "Copy TT readout" button state
@@ -1284,214 +1217,9 @@ export default function Dashboard({ publicView = false } = {}) {
         </div>
       )}
 
-      {/* v3.69 NARRATIVE-FIRST supersedes the FEAT-161 60/40 COMMAND CENTER GRID and the
-          FEAT-171 above-fold contract: the two-column race is what buried the 5 Whys ~5 phone
-          screens down (Zone A stacked entirely before Zone B on mobile). The narrative now
-          leads in the overview; the chart and tile rows are reference material behind ONE
-          expander (the macro strip above stays the always-visible summary — v3.25: its
-          provenance dots and voting markers survive the collapse). Count = 1 chart + 2 YTD
-          + 4 signal + 4 cross-asset tiles. */}
-      <div style={{padding:"12px 20px 0"}}>
-        <CollapsedGroup count={11} label="full market detail — chart & tiles" chip={false}>
-        <div style={{display:"grid",gap:16,marginTop:8}}>
-
-          {/* ── market detail (was ZONE A) ── */}
-          <div style={{display:"flex",flexDirection:"column",gap:12}}>
-
-            {/* A1: SPY Chart + MA cross */}
-            <div style={{background:T.surface,border:`1px solid ${T.border}`,borderRadius:6,padding:"14px 16px"}}>
-              <SectionHeader>Market Pulse</SectionHeader>
-              <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:10,flexWrap:"wrap",gap:6}}>
-                <div>
-                  <div style={{fontFamily:T.fontSans,fontSize:11,color:T.textMuted}}>S&P 500 — 100D & 200D Moving Average</div>
-                  <div style={{display:"flex",gap:6,marginTop:5,flexWrap:"wrap"}}>
-                    <Badge label={`100D MA $${d.marketPulse.spy.ma100}`} color={T.blue} small/>
-                    <Badge label={`200D MA $${d.marketPulse.spy.ma200}`} color={T.purple} small/>
-                    <Badge label={goldenCross?"GOLDEN CROSS ✓":"DEATH CROSS ✗"} color={goldenCross?T.green:T.red} small/>
-                  </div>
-                </div>
-                <div style={{textAlign:"right"}}>
-                  <div style={{fontFamily:T.fontMono,fontSize:22,color:T.textPrimary,fontWeight:700}}>${d.marketPulse.spy.price}</div>
-                  <div style={{fontFamily:T.fontMono,fontSize:11,color:pctColor(d.marketPulse.spy.changePct)}}>{fmt.pct(d.marketPulse.spy.changePct)} today</div>
-                  {/* FEAT-202: live S&P 500 index (FRED SP500) */}
-                  <div style={{fontFamily:T.fontMono,fontSize:9,color:T.textMuted}}>S&amp;P 500 index {d.marketPulse.spx.index.toLocaleString()}</div>
-                </div>
-              </div>
-              {/* B4 (v3.59): the chart is aria-hidden; the visually-hidden line below is its
-                  text equivalent — trend + both moving averages, the decision content. */}
-              <span className="visually-hidden">
-                SPY {d.marketPulse.spy.price>=d.marketPulse.spy.ma200?"above":"below"} its 200-day average of ${d.marketPulse.spy.ma200}
-                {" and "}{d.marketPulse.spy.price>=d.marketPulse.spy.ma100?"above":"below"} its 100-day average of ${d.marketPulse.spy.ma100}.
-              </span>
-              <div aria-hidden="true" style={{height:140}}>
-                <ResponsiveContainer width="100%" height="100%">
-                  <LineChart data={spyData}>
-                    <XAxis dataKey="date" hide/>
-                    <YAxis domain={["auto","auto"]} tick={{fontSize:8,fill:T.textMuted}} width={38}/>
-                    <Tooltip contentStyle={{background:T.surfaceHigh,border:`1px solid ${T.border}`,fontSize:10,fontFamily:T.fontMono}} formatter={(val)=>[`$${val.toFixed(2)}`,"Price"]}/>
-                    <ReferenceLine y={d.marketPulse.spy.ma200} stroke={T.purple} strokeDasharray="4 2" strokeWidth={1}/>
-                    <ReferenceLine y={d.marketPulse.spy.ma100} stroke={T.blue} strokeDasharray="4 2" strokeWidth={1}/>
-                    <Line type="monotone" dataKey="price" stroke={T.amber} dot={false} strokeWidth={2}/>
-                  </LineChart>
-                </ResponsiveContainer>
-              </div>
-              <SourceBox api="FRED" endpoint="SP500 ÷10 proxy" mode={modeOf('spyPrice')} asOf={asOfOf('spyPrice')}/>
-            </div>
-
-            {/* A2-A5: KPI row — v3.1: SPY P/E (mock, Yahoo-dupe) cut; each tile carries provenance */}
-            <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
-              {[
-                {l:"SPY YTD",  f:"spyYtd", v:fmt.pct(d.marketPulse.spy.ytd),  c:pctColor(d.marketPulse.spy.ytd)},
-                {l:"QQQ YTD",  f:"qqqYtd", v:fmt.pct(d.marketPulse.qqq.ytd),  c:pctColor(d.marketPulse.qqq.ytd)},
-              ].map(({l,v,c})=>{
-                const m=modeOf(l==="SPY YTD"?"spyYtd":"qqqYtd"); const illus=isIllustrative(m);
-                return(
-                <div key={l} style={{background:T.surface,backgroundImage:illus?ILLUS_HATCH:undefined,border:`1px solid ${T.border}`,borderRadius:5,padding:"8px 12px",flex:"1 1 90px",opacity:illus?0.92:1}}>
-                  <Label>{l}</Label>
-                  <div style={{fontFamily:T.fontMono,fontSize:18,color:illus?T.textSecondary:c,fontWeight:700}}>{v}</div>
-                  <div style={{marginTop:2}}>{illus?(m==="STALE"?<DataModeBadge mode="STALE"/>:<IllustrativeChip/>):<DataModeBadge mode={m}/>}</div>
-                </div>
-                );
-              })}
-            </div>
-
-            {/* A6-A8: Signal tiles, live-first (FEAT-322) — equity fear (VIX | F&G) + credit
-                risk. Descriptor array so stale tiles demote into a CollapsedGroup instead of
-                renting default-view space at full size (DEC-31 already retired P/C). */}
-            {(()=>{
-              const signalTiles=[
-                { f:"vix", render:()=>(
-                  <div style={{background:T.surface,border:`1px solid ${T.border}`,borderRadius:5,padding:"10px 12px"}}>
-                    <Label>VIX</Label>
-                    <div style={{fontFamily:T.fontMono,fontSize:20,color:d.marketPulse.vix.current>25?T.red:d.marketPulse.vix.current>18?T.yellow:T.green,fontWeight:700}}>{d.marketPulse.vix.current}</div>
-                    <div style={{fontFamily:T.fontMono,fontSize:9,color:pctColor(d.marketPulse.vix.weekChg,true)}}>{fmt.pct(d.marketPulse.vix.weekChg)} WoW</div>
-                    <div style={{height:28,marginTop:6}}><ResponsiveContainer width="100%" height="100%"><LineChart data={d.marketPulse.vix.series.map((v,i)=>({v,i}))}><Line type="monotone" dataKey="v" stroke={T.amber} dot={false} strokeWidth={1.5}/></LineChart></ResponsiveContainer></div>
-                    <SourceBox api="FRED" endpoint="VIXCLS" mode={modeOf('vix')} asOf={asOfOf('vix')}/>
-                  </div>
-                )},
-                { f:"fearGreed", render:()=>(
-                  <FGGauge score={d.marketPulse.fearGreed.score} label={d.marketPulse.fearGreed.label} mode={modeOf('fearGreed')} asOf={asOfOf('fearGreed')}/>
-                )},
-                // HY-IG Credit Spread — widening is a bearish leading indicator for equities
-                { f:"creditSpread", render:()=>(
-                  <div style={{background:T.surface,border:`1px solid ${T.border}`,borderRadius:5,padding:"10px 12px"}}>
-                    <Label>HY–IG SPREAD</Label>
-                    <div style={{fontFamily:T.fontMono,fontSize:20,color:d.macro.credit.spread>5?T.red:d.macro.credit.spread>3.5?T.yellow:T.textPrimary,fontWeight:700}}>
-                      {d.macro.credit.spread.toFixed(2)}<span style={{fontSize:11}}>pp</span>
-                    </div>
-                    <div style={{fontFamily:T.fontMono,fontSize:9,color:d.macro.credit.spreadD1>0?T.red:d.macro.credit.spreadD1<0?T.green:T.textMuted}}>
-                      {d.macro.credit.spreadD1>0?"▲":d.macro.credit.spreadD1<0?"▼":"→"} {Math.abs(d.macro.credit.spreadD1).toFixed(2)}pp {d.macro.credit.spreadD1>0?"widening":d.macro.credit.spreadD1<0?"tightening":"unchanged"}
-                    </div>
-                    <div style={{height:28,marginTop:6}}><ResponsiveContainer width="100%" height="100%"><LineChart data={d.macro.credit.series.map((v,i)=>({v,i}))}><Line type="monotone" dataKey="v" stroke={d.macro.credit.spreadD1>0?T.red:T.green} dot={false} strokeWidth={1.5}/></LineChart></ResponsiveContainer></div>
-                    <div style={{fontFamily:T.fontMono,fontSize:8,color:T.textMuted,marginTop:3}}>HY {d.macro.credit.hy.toFixed(2)}% · IG {d.macro.credit.ig.toFixed(2)}%</div>
-                    <SourceBox api="FRED" endpoint="ICE BofA OAS" mode={modeOf('creditSpread')} asOf={asOfOf('creditSpread')}/>
-                  </div>
-                )},
-                /* FEAT-NFCI (v3.43): financial conditions — the closest thing to a direct
-                   answer to this dashboard's own thesis question, and the one macro series
-                   here that a retail site (Yahoo/SA/TipRanks) effectively never surfaces.
-                   Sits beside HY-IG because both are risk-TRANSMISSION gauges: credit prices
-                   the risk, NFCI measures how tight the plumbing carrying it has become. */
-                { f:"nfci", render:()=>{
-                  const nMode=modeOf('nfci'), nIllus=isIllustrative(nMode);
-                  const v=d.macro.nfci.current, w=d.macro.nfci.w1;
-                  /* NFCI_BANDS (v3.43.1) — derived, not asserted. The index is a Z-SCORE by
-                     construction (mean 0, SD 1 over 1971–), so its native unit is standard
-                     deviations and a decimal deadband like the old ±0.10 meant nothing in it.
-                     Two thresholds, each with a reason:
-                       > 0     TIGHT — zero is the DEFINITIONAL mean, so crossing it is the event
-                       ≤ -0.5  LOOSE — a half standard deviation below the mean, stated in the
-                               index's own unit rather than a made-up decimal
-                     Deliberately ASYMMETRIC (the same doctrine as the v3.40 TAILWIND withhold):
-                     tight conditions CAUSE drawdowns, while merely-looser-than-average is the
-                     ordinary post-GFC backdrop, not a buy signal. A symmetric band around zero
-                     would have voted bullish nearly every week — a factor that always votes the
-                     same way does not inform a majority tally, it silently biases it. */
-                  const band=v>NFCI_TIGHT?"TIGHT":v<=NFCI_LOOSE?"LOOSE":"NEUTRAL";
-                  const bandCol=band==="TIGHT"?T.red:band==="LOOSE"?T.green:T.yellow;
-                  return (
-                  <div style={{background:T.surface,border:`1px solid ${T.border}`,borderRadius:5,padding:"10px 12px",
-                    backgroundImage:nIllus?ILLUS_HATCH:undefined,opacity:nIllus?0.92:1}}>
-                    <div style={{display:"flex",justifyContent:"space-between",alignItems:"baseline",gap:6,flexWrap:"wrap"}}>
-                      <Label>FIN CONDITIONS</Label>
-                      {/* v3.1 honesty invariant: TIGHT/LOOSE is a directional call, so it is
-                          suppressed on mock/stale exactly like the CAPE BUBBLE verdict. */}
-                      {nIllus?(nMode==="STALE"?<DataModeBadge mode="STALE"/>:<IllustrativeChip/>)
-                             :<Badge label={band} color={bandCol} small/>}
-                    </div>
-                    <div style={{fontFamily:T.fontMono,fontSize:20,color:nIllus?T.textSecondary:bandCol,fontWeight:700}}>
-                      {v>0?"+":""}{v.toFixed(2)}
-                    </div>
-                    <div style={{fontFamily:T.fontMono,fontSize:9,color:T.textMuted}}>
-                      {w==null?"—":`${w>0?"▲ +":w<0?"▼ ":"→ "}${Math.abs(w).toFixed(2)} WoW`} · 0 = avg
-                    </div>
-                    <div style={{height:28,marginTop:6}}><ResponsiveContainer width="100%" height="100%"><LineChart data={d.macro.nfci.series.map((val,i)=>({v:val,i}))}><Line type="monotone" dataKey="v" stroke={nIllus?T.textMuted:bandCol} dot={false} strokeWidth={1.5}/></LineChart></ResponsiveContainer></div>
-                    <SourceBox api="FRED" endpoint="NFCI · Chicago Fed" mode={nMode} asOf={asOfOf('nfci')}/>
-                  </div>
-                );}},
-              ];
-              const liveSig=signalTiles.filter(t=>!demoted(t.f));
-              const degSig=signalTiles.filter(t=>demoted(t.f));
-              return (
-                <>
-                  <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8}}>
-                    {liveSig.map(t=><Fragment key={t.f}>{t.render()}</Fragment>)}
-                  </div>
-                  {degSig.length>0&&(
-                    <CollapsedGroup count={degSig.length} label={`stale signal tile${degSig.length===1?"":"s"}`}>
-                      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8,marginTop:4}}>
-                        {degSig.map(t=><Fragment key={t.f}>{t.render()}</Fragment>)}
-                      </div>
-                    </CollapsedGroup>
-                  )}
-                </>
-              );
-            })()}
-
-            {/* Cross-asset direction tiles — live-first (FEAT-322): live tiles own the row;
-                curated (Gold has no SOURCES key — permanently Manual) + stale ones demote
-                behind a "+N stale/curated" expander. */}
-            <div>
-              <SectionHeader>Cross-Asset Direction</SectionHeader>
-              {(()=>{
-                const dirTiles=[
-                  { f:"tenYear", render:()=><DirTile label="10Y Treasury" value={`${d.crossAsset.treasury10y.current}%`} d1={d.crossAsset.treasury10y.d1} w1={d.crossAsset.treasury10y.w1} m1={d.crossAsset.treasury10y.m1} band={0.10} invert={true} spark={d.crossAsset.treasury10y.series} source="FRED" sourceEp="DGS10" mode={modeOf('tenYear')} asOf={asOfOf('tenYear')}/> },
-                  /* FEAT-30Y (v3.55): the LONG END, beside the 10Y because the pair is the
-                     point. TLT was rejected in v3.43 as a monotonic transform of the 10Y —
-                     DGS30 is not: "long end breaking out while the front holds" is its own
-                     transmission channel (term premium / fiscal risk), and the tile states
-                     the 10s30s spread on its face so the pair reads as one signal. The 5%
-                     line is a stated REFERENCE, never a verdict — a directional call off a
-                     level would be the v3.1 invariant violated. */
-                  { f:"thirtyYear", render:()=><DirTile label="30Y Treasury" value={`${d.crossAsset.treasury30y.current}%`} d1={d.crossAsset.treasury30y.d1} w1={d.crossAsset.treasury30y.w1} m1={d.crossAsset.treasury30y.m1} band={0.10} invert={true} spark={d.crossAsset.treasury30y.series} source="FRED" sourceEp="DGS30" mode={modeOf('thirtyYear')} asOf={asOfOf('thirtyYear')}
-                      note={`10s30s ${d.crossAsset.term.spread10s30s>=0?"+":""}${d.crossAsset.term.spread10s30s.toFixed(2)}pp${d.crossAsset.term.spread10s30s<0?" — INVERTED":""}`}
-                      noteTitle={"5.00% = the 2007 pre-GFC reference level"}/> },
-                  { f:"wti", render:()=><DirTile label="WTI Crude"   value={`$${d.crossAsset.wti.current}`}         d1={d.crossAsset.wti.d1pct}  w1={d.crossAsset.wti.w1pct}  m1={d.crossAsset.wti.m1pct}  band={1.0} spark={d.crossAsset.wti.series}  source="FRED" sourceEp="DCOILWTICO" mode={modeOf('wti')} asOf={asOfOf('wti')}/> },
-                  { f:"btc", render:()=><DirTile label="Bitcoin"     value={`$${(d.crossAsset.btc.current/1000).toFixed(1)}K`} d1={d.crossAsset.btc.d1pct} w1={d.crossAsset.btc.w1pct} m1={d.crossAsset.btc.m1pct} band={2.0} spark={d.crossAsset.btc.series} source="FRED" sourceEp="CBBTCUSD" mode={modeOf('btc')} asOf={asOfOf('btc')}/> },
-                ];
-                const liveDir=dirTiles.filter(t=>!(t.curated||demoted(t.f)));
-                const degDir=dirTiles.filter(t=>t.curated||demoted(t.f));
-                return (
-                  <>
-                    <div style={{display:"flex",gap:8,flexWrap:"wrap"}} className="dir-tiles">
-                      {liveDir.map(t=><Fragment key={t.f}>{t.render()}</Fragment>)}
-                    </div>
-                    {degDir.length>0&&(
-                      <CollapsedGroup count={degDir.length} label="stale/curated cross-asset">
-                        <div style={{display:"flex",gap:8,flexWrap:"wrap"}} className="dir-tiles">
-                          {degDir.map(t=><Fragment key={t.f}>{t.render()}</Fragment>)}
-                        </div>
-                      </CollapsedGroup>
-                    )}
-                  </>
-                );
-              })()}
-            </div>
-          </div>
-
-        </div>
-        </CollapsedGroup>
-      </div>
+      {/* ── MARKET DETAIL — extracted to src/sections/MarketDetail.jsx (task 5.2),
+          presentation only (v3.69: ONE expander behind the always-visible strip). ── */}
+      <MarketDetail d={d} modeOf={modeOf} asOfOf={asOfOf} demoted={demoted} spyData={spyData} goldenCross={goldenCross}/>
       </section>
 
       <section aria-labelledby="macro">
@@ -1502,102 +1230,10 @@ export default function Dashboard({ publicView = false } = {}) {
 
             {/* FEAT-169: RegimeTile relocated to full-width RegimeBand under macro strip (was here). */}
 
-            {/* Macro Regime grid */}
-            <div style={{background:T.surface,border:`1px solid ${T.border}`,borderRadius:6,padding:"14px 16px"}}>
-              <SectionHeader>Macro Regime</SectionHeader>
-              <div style={{display:"flex",flexDirection:"column",gap:10}}>
-                {/* Fed */}
-                <div style={{display:"flex",justifyContent:"space-between",alignItems:"baseline",paddingBottom:8,borderBottom:`1px solid ${T.border}`}}>
-                  <div>
-                    <Label>Fed Funds Rate</Label>
-                    <div style={{fontFamily:T.fontMono,fontSize:22,color:T.amber,fontWeight:700}}>{d.macro.fedFunds.rate}%</div>
-                    <div style={{fontFamily:T.fontMono,fontSize:9,color:fomcDays===0?T.amber:T.textMuted}}>{fomcDays==null?"Next FOMC — awaiting schedule":fomcDays===0?"FOMC decision today":`Next FOMC in ${fomcDays} day${fomcDays===1?"":"s"}`}</div>
-                    {/* Next-FOMC decision odds (Kalshi prediction market) */}
-                    <div style={{display:"flex",gap:6,marginTop:4,flexWrap:"wrap",alignItems:"baseline"}}>
-                      <span style={{fontFamily:T.fontMono,fontSize:7,color:T.textMuted,letterSpacing:"0.08em"}}>NEXT-MTG</span>
-                      <span style={{fontFamily:T.fontMono,fontSize:9,color:T.textMuted}}>Hold {d.macro.fedFunds.odds.hold}%</span>
-                      <span style={{fontFamily:T.fontMono,fontSize:9,color:T.green}}>Cut {d.macro.fedFunds.odds.cut}%</span>
-                      <span style={{fontFamily:T.fontMono,fontSize:9,color:T.red}}>Hike {d.macro.fedFunds.odds.hike}%</span>
-                      <span style={{fontFamily:T.fontMono,fontSize:7,color:T.textMuted,border:`1px dashed ${T.border}`,borderRadius:2,padding:"0 3px"}}>Kalshi · {modeOf('rateOddsHold').toLowerCase()}</span>
-                    </div>
-                  </div>
-                  <SourceBox api="FRED" endpoint="FEDFUNDS · odds: Kalshi" mode={modeOf('fedFunds')} asOf={asOfOf('fedFunds')}/>
-                </div>
-                {/* CPI */}
-                <div style={{paddingBottom:8,borderBottom:`1px solid ${T.border}`}}>
-                  <div style={{fontFamily:T.fontMono,fontSize:8,color:T.textMuted,marginBottom:4,letterSpacing:"0.1em"}}>INFLATION · FED TARGETS CORE PCE</div>
-                  <div style={{display:"flex",gap:14,marginBottom:5,flexWrap:"wrap"}}>
-                    <div><Label>PCE Core</Label><div style={{fontFamily:T.fontMono,fontSize:18,color:d.macro.pce.core>2.5?T.yellow:T.green,fontWeight:700}}>{d.macro.pce.core}%</div></div>
-                    <div><Label>PCE Head</Label><div style={{fontFamily:T.fontMono,fontSize:16,color:T.textSecondary,fontWeight:700}}>{d.macro.pce.headline}%</div></div>
-                    <div><Label>CPI Head</Label><div style={{fontFamily:T.fontMono,fontSize:16,color:T.textSecondary,fontWeight:700}}>{d.macro.cpi.headline}%</div></div>
-                    <div><Label>CPI Core</Label><div style={{fontFamily:T.fontMono,fontSize:16,color:T.textSecondary,fontWeight:700}}>{d.macro.cpi.core}%</div></div>
-                  </div>
-                  <div style={{height:36}}><ResponsiveContainer width="100%" height="100%"><LineChart data={d.macro.cpi.trend.map((v,i)=>({v,i}))}><Line type="monotone" dataKey="v" stroke={T.red} dot={false} strokeWidth={1.5}/><ReferenceLine y={2.0} stroke={T.green} strokeDasharray="3 2" strokeWidth={1}/></LineChart></ResponsiveContainer></div>
-                  <SourceBox api="FRED" endpoint="CPIAUCSL + CPILFESL" mode={modeOf('cpiHeadline')}/>
-                </div>
-                {/* Labor + household savings */}
-                <div style={{display:"flex",gap:12,paddingBottom:8,borderBottom:`1px solid ${T.border}`,alignItems:"flex-start"}}>
-                  <div><Label>Unemployment</Label><div style={{fontFamily:T.fontMono,fontSize:16,color:T.textPrimary,fontWeight:700}}>{d.macro.unemployment.national}%</div></div>
-                  <div><Label>Entry Level</Label><div style={{fontFamily:T.fontMono,fontSize:16,color:T.yellow,fontWeight:700}}>{d.macro.unemployment.entryLevel}%</div></div>
-                  <div><Label>LFPR</Label><div style={{fontFamily:T.fontMono,fontSize:16,color:T.textPrimary,fontWeight:700}}>{d.macro.unemployment.lfpr}%</div></div>
-                  <div title="Personal Saving Rate — % of disposable income households save (FRED PSAVERT). Lower = thinner consumer cushion.">
-                    <Label>Savings Rate</Label>
-                    <div style={{fontFamily:T.fontMono,fontSize:16,color:d.macro.savings.rate<4?T.yellow:T.textPrimary,fontWeight:700}}>{d.macro.savings.rate}%</div>
-                    <SourceBox api="FRED" endpoint="PSAVERT" mode={modeOf('savings')} asOf={asOfOf('savings')}/>
-                  </div>
-                </div>
-                {/* Housing */}
-                <div style={{display:"flex",gap:12,paddingBottom:8,borderBottom:`1px solid ${T.border}`}}>
-                  <div><Label>30Y Mortgage</Label><div style={{fontFamily:T.fontMono,fontSize:16,color:T.red,fontWeight:700}}>{d.macro.mortgage.national}%</div></div>
-                  <div><Label>Peoria IL</Label><div style={{fontFamily:T.fontMono,fontSize:14,color:T.yellow,fontWeight:700}}>{d.macro.mortgage.peoria}%</div><div style={{fontFamily:T.fontMono,fontSize:9,color:T.textMuted}}>${d.macro.housing.peoria.toLocaleString()}</div></div>
-                </div>
-                {/* Shiller PE — v3.1: live (multpl); suppress BUBBLE/ELEVATED verdict + red on mock/stale */}
-                {(()=>{const shMode=modeOf('shillerPe'); const shIllus=isIllustrative(shMode);
-                  const shPctAth=(d.macro.shillerPe.ath?(d.macro.shillerPe.current/d.macro.shillerPe.ath)*100:d.macro.shillerPe.pctOfAth).toFixed(1); return (
-                <div style={{backgroundImage:shIllus?ILLUS_HATCH:undefined,borderRadius:5,padding:shIllus?"6px 8px":0,opacity:shIllus?0.92:1}}>
-                  <div style={{display:"flex",justifyContent:"space-between",alignItems:"baseline",gap:6,flexWrap:"wrap"}}>
-                    <Label>Shiller P/E (CAPE)</Label>
-                    {shIllus?(shMode==="STALE"?<DataModeBadge mode="STALE"/>:<IllustrativeChip/>):<Badge label={d.macro.shillerPe.current>40?"BUBBLE":"ELEVATED"} color={d.macro.shillerPe.current>40?"#7f1d1d":T.red} small/>}
-                  </div>
-                  <div style={{fontFamily:T.fontMono,fontSize:22,color:shIllus?T.textSecondary:"#ef4444",fontWeight:700}}>{d.macro.shillerPe.current}</div>
-                  <div style={{display:"flex",gap:12,marginTop:2}}>
-                    <div style={{fontFamily:T.fontMono,fontSize:8,color:T.textMuted}}>Mean {d.macro.shillerPe.mean} · Median {d.macro.shillerPe.median}</div>
-                    <div style={{fontFamily:T.fontMono,fontSize:8,color:shIllus?T.textMuted:T.red}}>{shPctAth}% of ATH</div>
-                  </div>
-                  <SourceBox api="multpl.com" endpoint="Shiller CAPE (scraped, monthly cadence) · Yale/Shiller series" mode={shMode} asOf={asOfOf('shillerPe')}/>
-                </div>
-                );})()}
-              </div>
-            </div>
-
-            {/* Top headwinds — curated thesis register, honestly dated. FEAT-322: the list
-                collapses to 0 visible (the largest curated block must not own the default
-                scroll); WHY #4 still reads d.headwinds regardless of render state, so the
-                5-Whys narrative loses nothing. One disclosure idiom only — the old "+N more"
-                sub-toggle is gone; open shows all. */}
-            <div style={{background:T.surface,backgroundImage:ILLUS_HATCH,border:`1px solid ${T.border}`,borderRadius:6,padding:"14px 16px"}}>
-              <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",flexWrap:"wrap",gap:6}}>
-                <SectionHeader>Top Headwinds</SectionHeader>
-                <IllustrativeChip label={`ILLUSTRATIVE · reviewed ${d.headwindsAsOf}`}/>
-              </div>
-              <CollapsedGroup count={d.headwinds.length} label="curated headwinds" chip={false}>
-                {d.headwinds.map(hw=>{
-                  const sevColor=hw.severity==="High"?T.red:hw.severity==="Med"?T.yellow:T.green;
-                  const isExp=expandedHW===hw.id;
-                  return(
-                    <div key={hw.id} style={{borderBottom:`1px solid ${T.border}`,paddingBottom:8,marginBottom:8,cursor:"pointer"}} onClick={()=>setExpandedHW(isExp?null:hw.id)}>
-                      <div style={{display:"flex",gap:6,alignItems:"center",marginBottom:2}}>
-                        <Badge label={hw.severity} color={sevColor} small/>
-                        <Badge label={hw.trend} color={hw.trend==="worsening"?T.red:hw.trend==="improving"?T.green:T.yellow} small/>
-                        <div style={{fontFamily:T.fontSans,fontSize:11,color:T.textPrimary,flex:1}}>{hw.name}</div>
-                        <span style={{color:T.textMuted,fontSize:10}}>{isExp?"▲":"▼"}</span>
-                      </div>
-                      {isExp&&<div style={{fontFamily:T.fontMono,fontSize:9,color:T.textSecondary,marginTop:4,lineHeight:1.6}}>{hw.claim}</div>}
-                    </div>
-                  );
-                })}
-              </CollapsedGroup>
-            </div>
+            {/* Macro Regime grid + Top Headwinds — extracted to src/sections/
+                MacroRegime.jsx + Headwinds.jsx (tasks 5.3/5.4), presentation only. */}
+            <MacroRegime d={d} modeOf={modeOf} asOfOf={asOfOf} fomcDays={fomcDays}/>
+            <Headwinds d={d}/>
 
 
           </div>
