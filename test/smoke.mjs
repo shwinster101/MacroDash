@@ -4077,5 +4077,25 @@ ok("7.9: no optimistic set survives anywhere — ✓ can only follow a settled w
 ok("7.9: failure is SILENT — no error toast rides either handler",
   !/showToast[\s\S]{0,80}(clipboard|copy failed|share failed)/i.test(dashSrc));
 
+// ═══════════ [54] UI-OVERHAUL wave 17 — the docs exist and CANNOT rot ═══════════
+// design-system.md and RISKS.md are MAPS, not mirrors (the AGENTS.md/B5 rule): they may
+// name modules and rules but never restate volatile facts — no version numbers, no
+// assertion counts, no line numbers, no token values. These pins enforce that shape, so
+// the third incarnation of a stale doc cannot happen here.
+console.log("\n[54] UI-OVERHAUL wave 17 — docs are maps, not mirrors");
+const dsDoc = readFileSync(new URL("../docs/design-system.md", import.meta.url), "utf8");
+const rkDoc = readFileSync(new URL("../docs/RISKS.md", import.meta.url), "utf8");
+ok("docs: design-system.md names the one token home and the enforcement suite",
+  dsDoc.includes("src/design-tokens.js") && dsDoc.includes("npm run gates") &&
+  dsDoc.includes("map, not a mirror"));
+ok("docs: design-system.md carries NO volatile facts — no current-version claim, counts, or hex values (historical rule names like 'v3.1 invariant' are stable and allowed)",
+  !/current version|as of v\d|version is v\d/i.test(dsDoc) &&
+  !/\d+ (assertions|lines|tokens|components)/.test(dsDoc) && !/#[0-9a-fA-F]{6}/.test(dsDoc));
+ok("docs: RISKS.md carries the five risks and five assumptions by id, and bans a status column",
+  ["R1","R2","R3","R4","R5","A1","A2","A3","A4","A5"].every((id)=>rkDoc.includes(`**${id}`)) &&
+  rkDoc.includes("Status lives in git history"));
+ok("docs: RISKS.md states the pin-repoint rule (the risk this branch lived with every wave)",
+  /repoints pins to\s*\n?\s*the new module/.test(rkDoc) && rkDoc.includes("uiSrc"));
+
 console.log(`\n=== SMOKE TEST: ${pass} passed, ${fail} failed ===`);
 process.exit(fail === 0 ? 0 : 1);

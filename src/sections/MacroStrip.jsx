@@ -49,7 +49,9 @@ const MacroStrip=({d,modeOf,fomcLabel,fomcDays,votingFields,badge})=>{
           );
         })}
       </div>
-      {/* WEN MOON METER — mood badge based on SPY daily change (hidden on mobile to declutter the 2x4 strip, per the unused .wen-moon-mobile rule) */}
+      {/* WEN MOON METER — mood badge based on SPY daily change. Hidden ≤640px by the
+          .wen-moon-mobile rule (which IS in use — the old comment called it "unused", a
+          label-outliving-its-data defect caught by the wave-17 audit). */}
       {badge&&<div className="wen-moon-mobile">{badge}</div>}
     </div>
   );

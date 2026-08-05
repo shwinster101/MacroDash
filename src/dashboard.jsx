@@ -638,7 +638,7 @@ export default function Dashboard({ publicView = false } = {}) {
           .macro-strip-inner>div{min-width:0!important;}
           .delta-bar-inner{flex-wrap:nowrap!important;overflow-x:auto!important;}
           .dir-tiles{flex-wrap:wrap!important;}
-          .hide-mobile{display:none!important;}
+          /* .hide-mobile rule DELETED (wave 17 audit): zero consumers since FINDING-1. */
           /* IPO strip stays a horizontal swipeable row on mobile (not 3 stacked cards) */
           .wen-moon-mobile{display:none!important;}
         }
