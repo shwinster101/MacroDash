@@ -2061,6 +2061,71 @@ Jan-anchor shipped; see `snapshot.js` ~318–328), `spyMa100`, `spyMa200`, and a
   Tests: **1068 smoke** (+1, net — a 1-assertion string pin split into 2 behavioral checks
   covering the inline auto/nearest buttons and the still-deep-linked specific-year path) +
   192 render (verified live in Chromium, no regression).
+- **FEAT-TT-SCORE (v3.73.0) — the TT Underwriting Score engine ships, SHADOW mode.** Implements
+  the owner-approved `tt-underwriting-v2.3.0` methodology (private spec, KV/artifact-only — the
+  document itself never enters this repo) in the §14 order: storage split first, UI after server,
+  legacy governing until activation. Five commits:
+  **(1) `src/ptModel.js`** — the PT chain (schedAt/ptModelRows/ptRowYears/lintPtModel/
+  yrsToYearEnd/annualise/pickRow + LENS_MAX_PE/ANN_MIN_Y) extracted verbatim so the server can
+  run the SAME math the terminal renders. admin.html (buildless) keeps byte-identical copies;
+  **smoke [49] lifts them and asserts identity against the module exports**, so the two copies
+  cannot drift silently — the tripwire readout.json.js's header named as the inlining fallback,
+  now real. Only signature change: an optional trailing clock argument (identical in both
+  copies), which finally lets the v3.39 Q4-cliff proof drive the REAL pickRow at a December
+  instant instead of stubbing yrsToYearEnd.
+  **(2) `src/ttScore.js` + `src/ttScoreRegistry.js`** — the pure engine: piecewise + every
+  anchor table; ET freshness/atomic validation (numeric strings named, future dates INVALID);
+  the §8.1 legacy-gate normalization (`tt-gate-normalization-v1`: PASS-with-note→PASS,
+  NO_EVIDENCE/NOT_STARTED/DEMANDING-BUT-CREDIBLE/FLAG→UNKNOWN, unrecognized→UNKNOWN fail-closed,
+  **no label can manufacture FAIL**); four pillar calculators — P1 owner valuation
+  (premium ONLY on prerequisite-gate PASS, else floor, else **NO_FLOOR_PREPROFIT** with the
+  contingent premium kept as CONTEXT ONLY, never a score; 4-day price boundary; hard lints
+  unscorable), P2 trajectory (declared PREPROFIT second series GROSS_PROFIT|EBITDA with fixed
+  basis — the scorer never picks opportunistically; **consensus years need analyst_count≥3 to
+  extend duration**, the book's own ≤2-analyst dimming rule made load-bearing), P3 economic
+  quality (both modes, every enum sourced-and-rationaled, missing is never 5), P4 falsifier
+  health (§6.4.1 bootstrap: LEGACY_POST_HOC never scores, one PRECOMMITTED_PENDING hinge nulls
+  the pillar, kill:true+RED = broken thesis); order-independent gate precedence (BROKEN_THESIS >
+  BLOCK_ADD > strictest TIER_CAP, UNKNOWN blocks); typed CLUSTER_CONSTRAINT evaluation (sizing
+  is WHETHER — deliberately not a fourth gate effect); eligibility (CAUTION caps at
+  YAY_ON_TRIGGER; binary days 0–10 inclusive); risk-first outcome memory (improvements never
+  net away a worsening); canonical key-sorted SHA-256 input hashing. The registry maps all six
+  lenses (`tt-route-v1`; IND = QUALITY_COMPOUNDER/INDUSTRIAL_CYCLICAL — the profile that encodes
+  the book's own "a cresting cycle earns a LOWER terminal multiple" doctrine as a gate; unknown
+  lens → UNMAPPED, never inferred) and every Appendix C gate as a typed pure function with exact
+  boundaries. **The engine reproduces the 2026-08-05 NBIS dry run exactly** (P1 9.03 PREMIUM at
+  +51.75%/yr with the 2028-bridge gate passing on the stored real inputs, UNSCORABLE overall on
+  AWAITING_FALSIFIERS).
+  **(3) `functions/api/score.js`** — PIN-gated (authorize imported from tt.js; crossOrigin
+  mirrored, the positions.js precedent). GET `?sym`/`?book=1`/`?decisions=1`; PUT `?sym` with
+  **If-Match:<input_hash>** two-device safety (409 SCORE_VERSION_MISMATCH returns the normalized
+  server record — no floating-point acceptance loophole); POST `?decision=1` verifies every
+  named scorecard hash before persisting a server-stamped ELIGIBLE_SET_CHANGED event. Dedicated
+  KV keys (`tt:score:v1:<SYM>` · snap 450d TTL · compact index · paginated decision journal) at
+  explicit 64KB/16KB caps failing closed with key+bytes+limit. Route derived from the stored
+  book lens — a client-supplied route is ignored; client-supplied scorecards are ignored
+  entirely. Compact belief diffs ride the existing per-sym ledger fire-and-forget. **Zero bytes
+  added to the book document, proven by test** — the same isolation FEAT-TT-POSSTORE (v3.34)
+  established for `pos`, applied before the squeeze this time instead of after.
+  **(4) The shadow SCORE panel** (`ddScoreBar`, deep-dive tab, §15 order: under DECISION
+  READINESS) — renders the server result verbatim, named states never placeholder scores, raw
+  legacy gate labels kept for audit, the stored composite relabelled **LEGACY / UNVERIFIED
+  (governs the board until activation)** in one home, and a complete shadow score that disagrees
+  rendering **"WAIT — methods disagree"** — married, never merged. `promoteFalsifiers()` lifts
+  the book-staged pre-committed drafts (NBIS/JOBY, server-stamped 2026-08-04 BEFORE their
+  qualifying observations) into score records as PRECOMMITTED_PENDING.
+  **(5) Deliberately NOT in this release:** the existing `gateFail`/AGREE_PICK eligibility
+  ladder is untouched (legacy governs, §14.7); the remaining ~40 names' falsifier bootstrap and
+  the 10 genuine shadow runs are operational owner work; the 30/90/365-day outcome evaluation
+  jobs wait until decision events exist to evaluate. Deployed caps (DD_MAX 45KB / MAX_BODY
+  300KB) are recorded in every scorecard as implementation metadata and three-way pinned in
+  smoke against tt.js and admin.html — the spec's own §4.1 rule that book limits are deployment
+  facts, not methodology constants.
+  Tests: **1153 smoke** (+75 net: [45] engine, [46] pillars, [47] registry/normalization at
+  −ε/boundary/+ε, [48] endpoint via fake KV + real authorize incl. the §4.5 max-shape fixture
+  proven <64KB, [49] byte-identity tripwire; 4 pins re-pinned on invariants) + **198 render**
+  (+6, the shadow panel driven live in Chromium) + 88 public-render (untouched — the public
+  dashboard has no scoring surface).
 - **Deferred:** stored fundamentals + Robinhood sync — now unblocked by the `x-tt-pin` header
   (v3.9): a chat-side daily review can PUT `status_flags`/`ref_px` into the deepDive payloads and
   stamp `lastRun`. When built, store the *triage* shape (`{at, px}` → "% moved since your last TT
