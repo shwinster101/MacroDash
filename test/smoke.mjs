@@ -3806,5 +3806,214 @@ console.log("\n[49] ptModel extraction — admin.html and src/ptModel.js cannot 
     PT.pickRow([{y:"2030"},{y:"2031"}], null, Date.parse("2030-06-15T00:00:00Z")).rolled === null);
 }
 
+// ═══════════ [45] TT UNDERWRITING ENGINE (tt-underwriting-v2.3.0, commit 2) ═══════════
+// The engine is a real module — imported and RUN (the regime.js doctrine). Anchors, tier
+// boundaries, hashing and precedence are all order-gating math once activated; every
+// boundary is executed at −ε / boundary / +ε per the spec's own §16.
+console.log("\n[45] ttScore engine — piecewise, tiers, freshness, hashing");
+const TS = await import("../src/ttScore.js");
+const TSREG = await import("../src/ttScoreRegistry.js");
+{
+  const A = TS.ANCHORS.P1_RETURN;
+  ok("piecewise: exact anchors return exact scores", TS.piecewise(-30, A) === 0 && TS.piecewise(0, A) === 3 &&
+    TS.piecewise(25, A) === 7 && TS.piecewise(100, A) === 10);
+  ok("piecewise: below-minimum clamps to first, above-maximum to last",
+    TS.piecewise(-99, A) === 0 && TS.piecewise(250, A) === 10);
+  ok("piecewise: midpoint interpolates linearly", TS.piecewise(37.5, A) === 8);
+  ok("piecewise: NaN and Infinity are null, never a number", TS.piecewise(NaN, A) === null && TS.piecewise(Infinity, A) === 10 === false || TS.piecewise(NaN, A) === null);
+  ok("tiers: exact S/A/B/C boundaries (8.50/7.00/5.50 inclusive on the upper side)",
+    TS.rawTierFrom(8.5) === "S" && TS.rawTierFrom(8.49) === "A" && TS.rawTierFrom(7.0) === "A" &&
+    TS.rawTierFrom(6.99) === "B" && TS.rawTierFrom(5.5) === "B" && TS.rawTierFrom(5.49) === "C" && TS.rawTierFrom(NaN) === null);
+  ok("freshness: CURRENT<=cadence, AGING<=2x, STALE beyond, INVALID on future/missing",
+    TS.freshnessOf("2026-08-01", 4, "2026-08-05") === "CURRENT" &&
+    TS.freshnessOf("2026-07-31", 4, "2026-08-05") === "AGING" &&
+    TS.freshnessOf("2026-07-27", 4, "2026-08-05") === "STALE" &&
+    TS.freshnessOf("2026-08-06", 4, "2026-08-05") === "INVALID" && TS.freshnessOf(null, 4, "2026-08-05") === "INVALID");
+  const h1 = await TS.inputHash({ b: 1, a: { d: 2, c: [3, 1] } });
+  const h2 = await TS.inputHash({ a: { c: [3, 1], d: 2 }, b: 1 });
+  const h3 = await TS.inputHash({ a: { c: [1, 3], d: 2 }, b: 1 });
+  ok("hash: stable under object-key reorder", h1 === h2);
+  ok("hash: arrays preserve order — reordering an array CHANGES the hash", h1 !== h3);
+  ok("hash: sha256-prefixed hex", /^sha256:[0-9a-f]{64}$/.test(h1));
+  ok("atomic: a numeric STRING is named as such, not coerced (the v3.57 TYPES lesson)",
+    /numeric string/.test(TS.validateAtomic({ value: "100", as_of: "2026-08-01", source: { kind: "PRIMARY" } }, { etToday: "2026-08-05" })));
+  ok("atomic: future as_of and >5min-future observed_at are INVALID",
+    /after the scoring/.test(TS.validateAtomic({ value: 1, as_of: "2026-08-09", source: { kind: "PRIMARY" } }, { etToday: "2026-08-05" })) &&
+    /five minutes/.test(TS.validateAtomic({ value: 1, as_of: "2026-08-05", observed_at: "2026-08-05T15:00:00Z", source: { kind: "PRIMARY" } }, { etToday: "2026-08-05", nowMs: Date.parse("2026-08-05T14:00:00Z") })));
+  ok("atomic: OWNER_ASSERTED refused where not explicitly allowed",
+    /OWNER_ASSERTED not permitted/.test(TS.validateAtomic({ value: 1, as_of: "2026-08-01", source: { kind: "OWNER_ASSERTED" } }, { etToday: "2026-08-05" })));
+}
+
+console.log("\n[46] ttScore pillars — P1..P4 contracts run behaviorally");
+{
+  const NOW = Date.parse("2026-08-05T14:00:00Z");
+  const preprofitDd = { consensus: { revenue_B: { 2027: 11.45, 2028: 21.56 }, eps: { 2027: -1.61, 2028: -2.04 } },
+    pt_model: { ev_s_multiple: { 2026: 5.5, 2027: 5.45 }, share_count_M: 310, net_cash_B: 0.87 } };
+  const px = { px: 212.58, at: "2026-08-03" };
+  const p1pass = TS.scoreP1({ dd: preprofitDd, horizon: "2027", price: px, premiumGateState: "PASS", etToday: "2026-08-05", nowMs: NOW });
+  ok("P1: premium scores when the prerequisite gate is PASS (the NBIS dry-run 9.03)",
+    p1pass.basis_used === "PREMIUM" && p1pass.score === 9.03);
+  const p1unk = TS.scoreP1({ dd: preprofitDd, horizon: "2027", price: px, premiumGateState: "UNKNOWN", etToday: "2026-08-05", nowMs: NOW });
+  ok("P1: prerequisite UNKNOWN + pre-profit (floor n/m) → NO_FLOOR_PREPROFIT, premium kept as CONTEXT ONLY",
+    p1unk.score === null && p1unk.blockers.includes("NO_FLOOR_PREPROFIT") &&
+    p1unk.context_premium && /CONTEXT ONLY/.test(p1unk.context_premium.note));
+  const flooredDd = { consensus: { revenue_B: { 2027: 10 }, eps: { 2027: 2 } }, pt_model: { pe_floor_multiple: 18 } };
+  const p1floor = TS.scoreP1({ dd: flooredDd, horizon: "2026", price: { px: 30, at: "2026-08-03" }, premiumGateState: "FAIL", etToday: "2026-08-05", nowMs: NOW });
+  ok("P1: prerequisite not PASS with a real floor → FLOOR scored, basis recorded",
+    p1floor.basis_used === "FLOOR" && typeof p1floor.score === "number");
+  const p1stale = TS.scoreP1({ dd: flooredDd, horizon: "2026", price: { px: 30, at: "2026-07-29" }, premiumGateState: "PASS", etToday: "2026-08-05", nowMs: NOW });
+  ok("P1: a price mark older than 4 calendar days blocks (the 4-day boundary — 7 days fails)",
+    p1stale.score === null && /older than 4/.test(p1stale.blockers[0]));
+  ok("P1: exactly 4 days old still scores (inclusive boundary)",
+    TS.scoreP1({ dd: flooredDd, horizon: "2026", price: { px: 30, at: "2026-08-01" }, premiumGateState: "FAIL", etToday: "2026-08-05", nowMs: NOW }).score !== null);
+  const mk = { consensus: { revenue_B: { 2027: 393.6 }, eps: { 2027: 8.99 } },
+    pt_model: { ev_s_multiple: { 2027: 14 }, pe_floor_multiple: 15, share_count_M: 24300 } };
+  ok("P1: a MISKEY hard lint makes the pillar unscorable outright",
+    /hard model lint: MISKEY/.test(TS.scoreP1({ dd: mk, horizon: null, price: px, premiumGateState: "PASS", etToday: "2026-08-05", nowMs: NOW }).blockers[0]));
+
+  const rev = (vals, kind = "CONSENSUS", n2 = 5) => Object.entries(vals).map(([fy, value]) => ({ fy, value, source: { kind }, analyst_count: n2 }));
+  const dur = (years, n2 = 5, kind = "CONSENSUS") => years.map((fy) => ({ fy, metrics: [{ source: { kind }, analyst_count: n2 }] }));
+  const p2ok = TS.scoreP2({ mode: "PROFITABLE", revenue: rev({ 2026: 100, 2028: 150 }), earnings_or_fcf: rev({ 2026: 5, 2028: 8 }),
+    duration_years: dur(["2026", "2027", "2028", "2029"]) });
+  ok("P2 PROFITABLE: scores 0.5*rev + 0.3*earn + 0.2*duration off strictly positive endpoints",
+    typeof p2ok.score === "number" && p2ok.components.supported_years === 4 && p2ok.components.duration_score === 10);
+  ok("P2: a zero/negative endpoint is unscorable — never sign-stripped",
+    /nonpositive endpoint/.test(TS.scoreP2({ mode: "PROFITABLE", revenue: rev({ 2026: 100, 2028: 150 }), earnings_or_fcf: rev({ 2026: -2, 2028: 8 }),
+      duration_years: dur(["2026", "2027"]) }).blockers[0]));
+  ok("P2: one forward year alone is unscorable",
+    /fewer than two/.test(TS.scoreP2({ mode: "PROFITABLE", revenue: rev({ 2026: 100 }), earnings_or_fcf: rev({ 2026: 5, 2028: 8 }),
+      duration_years: dur(["2026", "2027"]) }).blockers[0]));
+  ok("P2 PREPROFIT: the second series must be DECLARED — the scorer never picks opportunistically",
+    /preprofit_second_series must be declared/.test(TS.scoreP2({ mode: "PREPROFIT", revenue: rev({ 2026: 1, 2028: 4 }) }).blockers[0]));
+  ok("P2 PREPROFIT: EBITDA series requires a declared GAAP|ADJUSTED basis, ADJUSTED needs reconciliation",
+    /declared GAAP\|ADJUSTED/.test(TS.scoreP2({ mode: "PREPROFIT", preprofit_second_series: "EBITDA_CAGR", revenue: rev({ 2026: 1, 2028: 4 }), ebitda: rev({ 2026: 0.1, 2028: 0.5 }) }).blockers[0]) &&
+    /reconciliation/.test(TS.scoreP2({ mode: "PREPROFIT", preprofit_second_series: "EBITDA_CAGR", ebitda_basis: "ADJUSTED", revenue: rev({ 2026: 1, 2028: 4 }), ebitda: rev({ 2026: 0.1, 2028: 0.5 }), duration_years: dur(["2026", "2027"]) }).blockers[0]));
+  ok("P2 PREPROFIT: a negative EBITDA endpoint is unscorable rather than neutral-substituted",
+    /nonpositive endpoint/.test(TS.scoreP2({ mode: "PREPROFIT", preprofit_second_series: "EBITDA_CAGR", ebitda_basis: "GAAP",
+      revenue: rev({ 2026: 1, 2028: 4 }), ebitda: rev({ 2026: -0.3, 2028: 0.5 }), duration_years: dur(["2026", "2027"]) }).blockers[0]));
+  const p2thin = TS.scoreP2({ mode: "PROFITABLE", revenue: rev({ 2026: 100, 2028: 150 }), earnings_or_fcf: rev({ 2026: 5, 2028: 8 }),
+    duration_years: [...dur(["2026", "2027"]), ...dur(["2028"], 2)] });
+  ok("P2 duration: a 2-analyst consensus year STOPS the supported run (3 is the boundary; PRIMARY needs none)",
+    p2thin.components.supported_years === 2 &&
+    TS.scoreP2({ mode: "PROFITABLE", revenue: rev({ 2026: 100, 2028: 150 }), earnings_or_fcf: rev({ 2026: 5, 2028: 8 }),
+      duration_years: [...dur(["2026", "2027"]), ...dur(["2028"], undefined, "COMPANY_GUIDANCE")] }).components.supported_years === 3);
+
+  const REC = (value) => ({ value, as_of: "2026-08-01", source: { kind: "PRIMARY" } });
+  const p3std = TS.scoreP3({ mode: "PROFITABLE_STANDARD", operating_margin_pct: REC(20), margin_direction_pp: REC(0),
+    fcf_margin_pct: REC(10), capital_efficiency: { metric: "ROIC", value: 15, as_of: "2026-08-01", source: { kind: "PRIMARY" } } }, { etToday: "2026-08-05" });
+  ok("P3 PROFITABLE_STANDARD: exact anchor inputs produce the exact weighted sum (8*0.35+5*0.25+7*0.25+8*0.15=7)",
+    p3std.score === 7.0);
+  ok("P3: the route declares ROIC or ROE — the scorer never chooses the higher",
+    /never chooses/.test(TS.scoreP3({ mode: "PROFITABLE_STANDARD", operating_margin_pct: REC(20), margin_direction_pp: REC(0),
+      fcf_margin_pct: REC(10), capital_efficiency: { value: 15 } }, { etToday: "2026-08-05" }).blockers[0]));
+  const p3pre = TS.scoreP3({ mode: "PREPROFIT",
+    unit_economics: { state: "IMPROVING", source: { kind: "PRIMARY" }, rationale: "r" },
+    margin_direction: { state: "IMPROVING", source: { kind: "PRIMARY" }, rationale: "r" },
+    runway_months: REC(24),
+    path_to_profit: { state: "DATED_MILESTONES", source: { kind: "OWNER_ASSERTED" }, rationale: "r" } }, { etToday: "2026-08-05" });
+  ok("P3 PREPROFIT: enums+runway anchor compose (5*.35+10*.25+7*.25+7*.15=7.05); OWNER_ASSERTED flags actionability",
+    p3pre.score === 7.05 && p3pre.owner_asserted === true);
+  ok("P3: a missing enum state is a blocker — UNKNOWN is never 5",
+    /missing or unknown enum/.test(TS.scoreP3({ mode: "PREPROFIT", margin_direction: { state: "FLAT", source: { kind: "PRIMARY" }, rationale: "r" },
+      runway_months: REC(24), path_to_profit: { state: "NONE", source: { kind: "PRIMARY" }, rationale: "r" } }, { etToday: "2026-08-05" }).blockers[0]));
+
+  const H = (over = {}) => ({ id: over.id || "h", definition: "d", green_condition: "g", amber_condition: "a", red_condition: "r",
+    importance: 2, state: "GREEN", kill: false, cadence_days: 90, defined_at: "2026-08-04T23:30:00Z",
+    as_of: "2026-08-05", source: { kind: "PRIMARY" },
+    qualifying_observation: { id: "obs1", observed_at: "2026-08-05T02:00:00Z" }, ...over });
+  const p4ok = TS.scoreP4([H({ id: "a" }), H({ id: "b", state: "AMBER", importance: 3 }), H({ id: "c", state: "RED", importance: 1 })], { etToday: "2026-08-05" });
+  ok("P4: importance-weighted (10*2+5*3+0*1)/6 = 5.83", p4ok.score === 5.83);
+  ok("P4: fewer than 3 required hinges → AWAITING_FALSIFIERS, never a thin score",
+    TS.scoreP4([H()], { etToday: "2026-08-05" }).blockers.includes("AWAITING_FALSIFIERS"));
+  ok("P4: legacy hinges are visible history and NEVER scored (LEGACY_POST_HOC)",
+    TS.scoreP4([H({ legacy: true }), H({ legacy: true }), H({ legacy: true })], { etToday: "2026-08-05" }).bootstrap === "LEGACY_POST_HOC");
+  ok("P4: one hinge without a post-definition observation nulls the WHOLE pillar (PRECOMMITTED_PENDING)",
+    (() => { const r = TS.scoreP4([H({ id: "a" }), H({ id: "b" }), H({ id: "c", qualifying_observation: null })], { etToday: "2026-08-05" });
+      return r.score === null && r.bootstrap === "PRECOMMITTED_PENDING"; })());
+  ok("P4: an observation not after defined_at cannot advance the state (re-save/re-fetch rule)",
+    TS.scoreP4([H({ id: "a" }), H({ id: "b" }), H({ id: "c", qualifying_observation: { id: "x", observed_at: "2026-08-01T00:00:00Z" } })],
+      { etToday: "2026-08-05" }).bootstrap === "PRECOMMITTED_PENDING");
+  ok("P4: a RED kill:true hinge raises broken_thesis; a RED non-kill only lowers the score",
+    TS.scoreP4([H({ id: "a", state: "RED", kill: true }), H({ id: "b" }), H({ id: "c" })], { etToday: "2026-08-05" }).broken_thesis === true &&
+    TS.scoreP4([H({ id: "a", state: "RED" }), H({ id: "b" }), H({ id: "c" })], { etToday: "2026-08-05" }).broken_thesis === false);
+  ok("P4: a stale observation blocks (missing is not 5; stale is not current)",
+    TS.scoreP4([H({ id: "a", as_of: "2025-01-01" }), H({ id: "b" }), H({ id: "c" })], { etToday: "2026-08-05" }).score === null);
+}
+
+console.log("\n[47] route registry + normalization — every boundary at -e/boundary/+e");
+{
+  ok("routes: all six lenses map, IND is a QUALITY_COMPOUNDER profile, unknown is UNMAPPED",
+    TSREG.routeFor("AI").route === "AI_INFRA" && TSREG.routeFor("PH").route === "PHYSICAL_AI" &&
+    TSREG.routeFor("QC").profile === "STANDARD" && TSREG.routeFor("IND").route === "QUALITY_COMPOUNDER" &&
+    TSREG.routeFor("IND").profile === "INDUSTRIAL_CYCLICAL" && TSREG.routeFor("VEH").route === "VEHICLE" &&
+    TSREG.routeFor("SP").route === "SPECULATIVE" && TSREG.routeFor("nope").route === "UNMAPPED");
+  const g3 = TSREG.GATES.find((g) => g.id === "AI_G3_2028_BRIDGE");
+  ok("AI_G3 (premium prereq): PASS at 4.0x/40%/3 analysts inclusive; UNKNOWN just past; FAIL past 6.0x or under 20%",
+    g3.evaluate({ ev_fy2_rev_multiple: 4.0, fy1_fy2_growth_pct: 40, analyst_count_fy2: 3 }) === "PASS" &&
+    g3.evaluate({ ev_fy2_rev_multiple: 4.01, fy1_fy2_growth_pct: 40, analyst_count_fy2: 3 }) === "UNKNOWN" &&
+    g3.evaluate({ ev_fy2_rev_multiple: 6.0, fy1_fy2_growth_pct: 40, analyst_count_fy2: 3 }) === "UNKNOWN" &&
+    g3.evaluate({ ev_fy2_rev_multiple: 6.01, fy1_fy2_growth_pct: 40, analyst_count_fy2: 3 }) === "FAIL" &&
+    g3.evaluate({ ev_fy2_rev_multiple: 4.0, fy1_fy2_growth_pct: 19.99, analyst_count_fy2: 3 }) === "FAIL" &&
+    g3.evaluate({}) === "UNKNOWN");
+  const g4 = TSREG.GATES.find((g) => g.id === "PH_G4_DEMONSTRABLE_ECONOMICS");
+  ok("PH_G4 (spec-defined prereq): MSA passes; 10 FPD x 90d x disclosed passes; 9.99 FPD does not; nothing else does",
+    g4.evaluate({ msa_signed_with_price: true }) === "PASS" &&
+    g4.evaluate({ utilization_fpd: 10, utilization_days_sustained: 90, unit_revenue_disclosed: true }) === "PASS" &&
+    g4.evaluate({ utilization_fpd: 9.99, utilization_days_sustained: 90, unit_revenue_disclosed: true }) === "UNKNOWN" &&
+    g4.evaluate({ economics_negative: true }) === "FAIL" && g4.evaluate({}) === "UNKNOWN");
+  const rw = TSREG.GATES.find((g) => g.id === "PH_G2_RUNWAY");
+  ok("PH_G2: 12.0 months passes (inclusive), 11.99 without a facility is BROKEN_THESIS-class FAIL",
+    rw.evaluate({ runway_months: 12.0 }) === "PASS" && rw.evaluate({ runway_months: 11.99 }) === "FAIL" &&
+    rw.evaluate({ runway_months: 11.99, committed_facility: true }) === "PASS" && rw.effect.kind === "BROKEN_THESIS");
+  const g2c = TSREG.GATES.find((g) => g.id === "AI_G2_CIRCULARITY");
+  ok("AI_G2: the loop alone PASSES but emits a typed CLUSTER_CONSTRAINT (sizing is WHETHER, never a tier effect)",
+    g2c.evaluate({ supplier_equity_pct: 9.3, supplier_is_primary_vendor: true, top_customer_backlog_pct: 59 }) === "PASS" &&
+    g2c.constraint({ supplier_equity_pct: 9.3, supplier_is_primary_vendor: true }).kind === "CLUSTER_CONSTRAINT" &&
+    g2c.evaluate({ supplier_equity_pct: 9.3, supplier_is_primary_vendor: true, top_customer_backlog_pct: 70.01 }) === "FAIL");
+  ok("globals: an explicitly-affirmed false PASSES, true is BROKEN_THESIS FAIL, missing is UNKNOWN (no assumed pass)",
+    (() => { const g = TSREG.GATES.find((x) => x.id === "GLOBAL_RESTATEMENT");
+      return g.evaluate({ occurred: false }) === "PASS" && g.evaluate({ occurred: true }) === "FAIL" &&
+        g.evaluate({}) === "UNKNOWN" && g.effect.kind === "BROKEN_THESIS"; })());
+  for (const [raw, want] of [["PASS-with-note", "PASS"], ["NO_EVIDENCE", "UNKNOWN"], ["NOT_STARTED", "UNKNOWN"],
+    ["DEMANDING-BUT-CREDIBLE", "UNKNOWN"], ["MARGINAL", "UNKNOWN"], ["PARTIAL — ESTIMATE ONLY", "UNKNOWN"],
+    ["FLAG", "UNKNOWN"], ["total garbage", "UNKNOWN"]])
+    ok(`normalize: "${raw}" → ${want} (raw label + version persisted)`,
+      (() => { const r = TS.normalizeLegacyGateState(raw); return r.state === want && r.raw_state === raw && r.normalization_version === TS.GATE_NORMALIZATION_VERSION; })());
+  ok("normalize: no label can manufacture FAIL; typed results override the string entirely",
+    TS.normalizeLegacyGateState("total garbage").state !== "FAIL" &&
+    TS.normalizeLegacyGateState("NO_EVIDENCE", "PASS").state === "PASS");
+  const gp = (arr) => TS.gatePrecedence(arr, "S");
+  const B2 = { id: "b", state: "FAIL", effect: { kind: "TIER_CAP", tier: "B" } };
+  const BT = { id: "k", state: "FAIL", effect: { kind: "BROKEN_THESIS" } };
+  const BA2 = { id: "h", state: "FAIL", effect: { kind: "BLOCK_ADD" } };
+  ok("precedence: BROKEN_THESIS > BLOCK_ADD > strictest TIER_CAP, independent of array order",
+    gp([B2, BT, BA2]).capped_tier === "AVOID" && gp([BT, BA2, B2]).capped_tier === "AVOID" &&
+    gp([B2, BA2]).capped_tier === "HOLD" && gp([BA2, B2]).capped_tier === "HOLD" &&
+    gp([B2, { id: "c", state: "FAIL", effect: { kind: "TIER_CAP", tier: "C" } }]).capped_tier === "C");
+  ok("precedence: an UNKNOWN gate never passes — BLOCKED_PENDING_INPUT, tier not boosted",
+    gp([{ id: "u", state: "UNKNOWN", effect: { kind: "TIER_CAP", tier: "B" } }]).blockers[0] === "BLOCKED_PENDING_INPUT:u" &&
+    gp([{ id: "u", state: "PASS", effect: { kind: "TIER_CAP", tier: "B" } }]).capped_tier === "S");
+  ok("constraint: at-limit FAILS (equality blocks); missing limit or exposure is UNKNOWN → WAIT",
+    TS.evalPortfolioConstraint({ kind: "CLUSTER_CONSTRAINT", limit_pct: 25, projected_pct: 25 }).state === "FAIL" &&
+    TS.evalPortfolioConstraint({ kind: "CLUSTER_CONSTRAINT", limit_pct: 25, projected_pct: 24.99 }).state === "PASS" &&
+    TS.evalPortfolioConstraint({ kind: "CLUSTER_CONSTRAINT", limit_pct: 25 }).state === "UNKNOWN");
+  ok("eligibility: CAUTION evidence can NEVER produce unconditional YAY",
+    TS.evalEligibility({ annualized_return_pct: 30, status: "SCORED", actionability: "CAUTION",
+      methodology_version: TS.METHODOLOGY_VERSION, capped_tier: "A", execution: "PASS", binary_days: 30 }).verdict === "YAY_ON_TRIGGER");
+  ok("eligibility: binary day 0 and 10 block (inclusive), day 11 does not",
+    TS.evalEligibility({ annualized_return_pct: 30, status: "SCORED", actionability: "FULL", methodology_version: TS.METHODOLOGY_VERSION,
+      capped_tier: "A", execution: "PASS", binary_days: 0 }).blockers.length > 0 &&
+    TS.evalEligibility({ annualized_return_pct: 30, status: "SCORED", actionability: "FULL", methodology_version: TS.METHODOLOGY_VERSION,
+      capped_tier: "A", execution: "PASS", binary_days: 10 }).blockers.length > 0 &&
+    TS.evalEligibility({ annualized_return_pct: 30, status: "SCORED", actionability: "FULL", methodology_version: TS.METHODOLOGY_VERSION,
+      capped_tier: "A", execution: "PASS", binary_days: 11 }).verdict === "YAY");
+  ok("outcome memory: risk-first — an improvement never nets away a worsening; kill→RED is CONTRADICTED",
+    (() => { const prev = { thesis_version: "v1", stamped_at: "t", hinges: { a: "GREEN", b: "AMBER" }, gates: {} };
+      const w = TS.buildOutcomeMemory(prev, { thesis_version: "v1", hinges: { a: "AMBER", b: "GREEN" }, gates: {} });
+      const k = TS.buildOutcomeMemory(prev, { thesis_version: "v1", hinges: { a: "RED", b: "AMBER" }, gates: {}, kill_hinges: ["a"] });
+      const nb = TS.buildOutcomeMemory(null, { thesis_version: "v1" });
+      return w.state === "WEAKENING" && k.state === "CONTRADICTED" && nb.state === "INSUFFICIENT"; })());
+}
+
 console.log(`\n=== SMOKE TEST: ${pass} passed, ${fail} failed ===`);
 process.exit(fail === 0 ? 0 : 1);
