@@ -1,4 +1,4 @@
-import { Fragment, useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react"; // Fragment left with MarketDetail (wave 9)
 import { LineChart, Line, BarChart, Bar, Cell, AreaChart, Area, XAxis, YAxis, Tooltip, ResponsiveContainer, ReferenceLine } from "recharts";
 import { useMarketData } from "./useMarketData.js"; // FEAT-204 wiring
 import { computeFiveWhys } from "./fiveWhys.js"; // v2.5: rule-based 5 Whys ($0, derived from live data)
@@ -7,75 +7,37 @@ import { buildEvidenceSet, factorExclusions, fieldMode, FACTOR_FIELD } from "./e
 import { LASTVALID_KEY, summarizeEvidence, compareEvidence } from "./whatChanged.js"; // C4 (v3.60)
 import { isStale, cadenceOf, parseObsDate, isMarketHoliday } from "./sources.js"; // FEAT-R3: per-tile, cadence-aware staleness + shared market calendar
 import { computeMacroFlip, buildTtReadout, formatTtPaste } from "./ttReadout.js"; // FEAT-331/332: Macro Flip + TT paste
+import { fmt, pctColor } from "./format.js"; // task 1.3/3.1: one shared copy
+import RegimeBand, { WITHHELD_LABEL, WEN_MOON_STATES } from "./sections/RegimeBand.jsx"; // task 1.3: the verdict band + its vocabulary
+import FiveWhys from "./sections/FiveWhys.jsx"; // task 1.4: presentation only — computeFiveWhys stays here
+import SourceBox, { DataModeBadge } from "./primitives/SourceBox.jsx"; // task 1.4
+import SectionHeader from "./primitives/SectionHeader.jsx"; // task 1.4
+import CollapsedGroup from "./primitives/CollapsedGroup.jsx"; // task 5.1
+import { ILLUS_HATCH, IllustrativeChip, isIllustrative } from "./primitives/Illustrative.jsx"; // task 5.1
+import { Badge, Label } from "./primitives/atoms.jsx"; // wave 9
+import MarketDetail from "./sections/MarketDetail.jsx"; // task 5.2: presentation only
+import MacroRegime from "./sections/MacroRegime.jsx"; // task 5.3: presentation only
+import Headwinds from "./sections/Headwinds.jsx"; // task 5.4: presentation only
+import AIUnitEconomics from "./sections/AIUnitEconomics.jsx"; // task 7.1: presentation only
+import Alerts from "./sections/Alerts.jsx"; // task 7.2: evaluation stays here
+import DataHealth from "./sections/DataHealth.jsx"; // task 7.3: presentation only
+import Watchlist from "./sections/Watchlist.jsx"; // task 7.4: A4 gate stays at the call site
+import StickyNav from "./sections/StickyNav.jsx"; // task 9.2: viewport-tracked active state
+import MacroStrip from "./sections/MacroStrip.jsx"; // task 3.1: presentation only
+import SignalQuality from "./sections/SignalQuality.jsx"; // task 3.2: presentation only
+import WhatChanged from "./sections/WhatChanged.jsx"; // task 3.3: presentation only
 
-// ─── DESIGN TOKENS v1.6 (FEAT-152 + FEAT-167) ─────────────────────────────
-// design-tokens.json canonical. Inline mirror — keep in sync.
-const DT = {
-  // Brand
-  "amber":          "#f0a500",
-  "amber-dim":      "#8a5f00",
-  // Stoplights
-  "green":          "#2ecc71",
-  "green-dim":      "#1a5c3a",
-  "red":            "#e74c3c",
-  "red-dim":        "#5c1a1a",
-  "yellow":         "#f39c12",
-  // Regime tints (soft — AS2-01 alarm calibration fix)
-  "regime-on-bg":   "#0d2218",   // risk-on: deep green tint, NOT stoplight green
-  "regime-off-bg":  "#1a0f0f",   // risk-off: deep red tint
-  "regime-mix-bg":  "#1a1408",   // mixed: deep amber tint
-  // DataMode states (FEAT-150)
-  "live-cyan-700":  "#1c93b0",   // 4.78:1 on the LIVE badge (#0a1e24). Was #0e7490 = 3.20:1,
-                                 // and was annotated as AA-compliant, which it never was.
-                                 // Measured by test, not asserted by comment.
-  "focus-ring":     "#4cc4e0",   // focus indicator only; needs to be seen, not read
-  "stale-amber":    "#f0a500",
-  "cached":         "#a1a1aa",   // FEAT-167: zinc-400, NOT gray-500 (#6b7280)
-  // Sources
-  "src-fmp":        "#3b82f6",
-  "src-fred":       "#10b981",
-  "src-anthropic":  "#f97316",
-  "src-cnn":        "#ef4444",
-  "src-cboe":       "#8b5cf6",
-  "src-zillow":     "#14b8a6",
-  "src-manual":     "#6b7280",
-  // Surfaces
-  "bg":             "#08090b",
-  "surface":        "#0f1115",
-  "surface-high":   "#161921",
-  "border":         "#1a1f2e",
-  "border-accent":  "#252d40",
-  // Text
-  "text-primary":   "#e8eaf0",
-  "text-secondary": "#8892a4",
-  "text-muted":     "#717d92",   // 4.79:1 on bg / 4.54:1 on surface (was #3d4760 = 2.15:1, below AA)
-  // Type
-  "font-mono":      "'IBM Plex Mono','Courier New',monospace",
-  "font-sans":      "'DM Sans',system-ui,sans-serif",
-  "font-display":   "'Syne',sans-serif",
-  /* TYPE SCALE (v3.62, newcomer audit) — this file had ~200 hardcoded `fontSize:` literals and
-     no scale at all, while public/admin.html has had `--fs-*` since v3.42. The audit measured
-     the load-bearing text — provenance, factor chips, the verdict sub-line — at 7–9px, which
-     is the honesty layer the whole product rests on rendered at a size a phone reader has to
-     work to read. These are the sizes to reach for; the literals stay where they are decorative
-     so this stays a targeted lift, not a reflow of every component (owner call). */
-  "fs-xs":          9,    // micro-labels: section eyebrows, DEMO/TAPE tags
-  "fs-s":           10,   // secondary detail
-  "fs-m":           11,   // provenance + factor chips — the load-bearing minimum
-  "fs-l":           13,   // sub-headlines
-  "fs-xl":          22,   // the verdict itself
-};
-const T = {
-  bg:DT["bg"], surface:DT["surface"], surfaceHigh:DT["surface-high"],
-  border:DT["border"], borderAccent:DT["border-accent"],
-  amber:DT["amber"], amberDim:DT["amber-dim"],
-  green:DT["green"], greenDim:DT["green-dim"],
-  red:DT["red"], redDim:DT["red-dim"], yellow:DT["yellow"],
-  blue:"#3498db", purple:"#9b59b6",
-  textPrimary:DT["text-primary"], textSecondary:DT["text-secondary"], textMuted:DT["text-muted"],
-  fontMono:DT["font-mono"], fontSans:DT["font-sans"], fontDisplay:DT["font-display"],
-  fsXs:DT["fs-xs"], fsS:DT["fs-s"], fsM:DT["fs-m"], fsL:DT["fs-l"], fsXl:DT["fs-xl"],
-};
+// ─── DESIGN TOKENS ──────────────────────────────────────────────────────────
+// UI-OVERHAUL Slice 1 (task 1.1): tokens live in src/design-tokens.js — the ONE
+// home (the old "design-tokens.json canonical" comment named a file that never
+// existed in the repo). Deliberate deviation from spec Req 11.4: no inline
+// fallback copy is kept — a static-ESM Vite bundle turns a missing module into
+// a BUILD failure, not a runtime state, and a byte-copy fallback would be the
+// exact second-copy drift defect this repo keeps paying for. The guard below
+// covers the only reachable failure (an emptied export) by warning, not lying.
+import { DT, T } from "./design-tokens.js";
+if (!DT || !Object.keys(DT).length)
+  console.warn("design-tokens module could not be resolved — token lookups will render unstyled");
 
 // ─── WEN MOON METER THRESHOLDS (configurable) ─────────────────────────────
 // SPY daily change % thresholds for the mood badge on the Macro Strip
@@ -83,203 +45,15 @@ const WEN_MOON_UP = 0.5;    // above this → MOONING
 const WEN_MOON_DOWN = -0.5; // below this → DIAMOND HANDS
 
 
-// COST TO ORBIT — $ to put 1 kg into Low Earth Orbit, by era. Curated/Manual: there
-// is no free live feed for launch cost, and it changes on the order of years, not days.
-// The secular collapse (Shuttle → Falcon 9 reusable → Starship target) is the signal.
-// ⚠️ Update `costPerKg` + `series` as new vehicles/prices are confirmed.
-const LAUNCH_COST = {
-  vehicle: "Falcon 9 reusable",
-  costPerKg: 2720,
-  prevEra:  { name: "Space Shuttle", costPerKg: 54500 },
-  target:   { name: "Starship",      costPerKg: 200 },
-  // Era progression, oldest→newest (Shuttle → EELV → Falcon 9 expendable → F9 reusable → trend)
-  series: [54500, 18500, 9100, 4700, 2720, 2200],
-};
+// GPU_PRICING / TOKEN_EFFICIENCY / tokenScissors / HYPERSCALER_CAPEX moved to
+// src/aiEcon.js (wave 12). LAUNCH_COST + EVTOL_CERT are DELETED, not moved — their
+// consumer components (LaunchCostCard/EvtolCertCard) were removed in v3.69 and the
+// constants rendered nowhere since (the Divider rule: dead data is a rot vector).
 
-// GPU ON-DEMAND LIST PRICING — leading indicator for the AI margin-compression hinge.
-// Curated/Manual, updated QUARTERLY: there is no free live feed for neocloud/hyperscaler
-// on-demand $/GPU-hr, and published rates reprice on a quarterly cadence, not daily. This
-// is the cleanest EXTERNAL read on AI-infra pricing power — visible before it shows up in
-// hyperscaler earnings. Falling $/hr ⇒ eroding pricing power ⇒ margin compression (ties to
-// the "AI CapEx ROI Gap" headwind). ⚠️ Update `onDemand`/`prevQ`/`trend` each quarter.
-const GPU_PRICING = {
-  quarter: "Q2 2026",
-  chips: [
-    { name: "H200",  onDemand: 3.10, prevQ: 3.40 }, // Hopper refresh — most liquid market
-    { name: "B200",  onDemand: 5.40, prevQ: 5.70 }, // Blackwell — repricing as supply lands
-    { name: "GB300", onDemand: 7.20, prevQ: 7.20 }, // Grace-Blackwell Ultra — newest, still scarce
-  ],
-  // Blended on-demand index, oldest→newest (quarterly) — the decline IS the signal.
-  trend: [6.80, 6.10, 5.50, 5.20, 5.00, 4.90],
-  note: "Falling on-demand $/hr = eroding AI-infra pricing power → the margin-compression hinge, visible before earnings.",
-};
+// ─── SOURCE BOX — extracted to src/primitives/SourceBox.jsx (task 1.4) ───────
 
-// FEAT-CAPEX (v3.45) — hyperscaler capex tape: the FUNDING FLOW leg of AI unit economics.
-// GPU $/hr is the supply cost, token $/Mtok the demand price; this is the pipe that pays for
-// both. Curated at each print (guidance has no $0 live source); `dir` is the revision
-// direction vs the prior guide — the number the market actually trades. ⚠ CURATED — figures
-// are placeholders to review at each print; the reviewed date is the honesty stamp.
-// FEAT-TOKW (v3.46) — TOKENS/WATT: the CONVERSION leg of AI unit economics.
-//
-// FIRST PRINCIPLES. Power is the binding CONSTRAINT, not the dominant cost: a ~1kW accelerator
-// costing ~$40k burns roughly $1.5k of electricity over three years at industrial rates, so
-// depreciation dominates energy ~25:1. Tokens/watt matters because MW ALLOCATIONS are the input
-// that cannot be bought on demand — grid interconnect, not capital, gates a neocloud's capacity.
-// It is therefore a CAPACITY-PRODUCTIVITY metric: how much sellable output a fixed, hard-to-
-// expand power envelope yields.
-//
-// THE IDENTITY:  revenue per MW  ∝  (tokens per watt) × ($ per token)
-// In growth terms the two rates COMPOSE: (1+efficiency%) × (1+price%) − 1. That product is the
-// only part of this that is honestly sourceable — the absolute levels are not. Published
-// tokens/watt swings 10-50x on model size, batch depth, quantization and GPU-only-vs-PUE, and
-// $/Mtok is RETAIL api pricing carrying the model provider's margin, not a neocloud's wholesale
-// realization. Both scale factors CANCEL in the ratio, so the index is defensible where a
-// dollar figure would be confidently wrong. Hence: stored as a RELATIVE INDEX, and this card is
-// forbidden by construction from ever printing a $/MW figure (smoke-pinned).
-//
-// WHY IT EARNS SCREEN SPACE: utilization underwriting answers "will the capacity sell?" It
-// cannot answer "is a sold MW worth less than last year?" A fully-utilized neocloud can still
-// see revenue per MW compress — the margin-compression hinge arriving through the physical
-// layer rather than the P&L. ⚠ CURATED, relative: review at each chip-generation step.
-const TOKEN_EFFICIENCY = {
-  basis: "system-level tokens/W, relative index (H100 generation = 1.00)",
-  reviewed: "2026-07-30",
-  // oldest→newest; `at` dates the generation's volume availability, not its announcement.
-  gens: [
-    { gen: "H100",  at: "2023-06-30", idx: 1.00 },
-    { gen: "H200",  at: "2024-06-30", idx: 1.40 },
-    { gen: "B200",  at: "2025-06-30", idx: 3.00 },
-    { gen: "GB300", at: "2026-06-30", idx: 4.50 },
-  ],
-  // THE WINDOW IS NEVER ANNUALISED. The rolling $/Mtok series is ~12 weekly points at most, and
-  // raising a 12-week move to the 52/11 power turns a −35% drift into −98.8%/yr — a number that
-  // is arithmetically correct and economically absurd, the same units error DEC-D2 removed from
-  // sellRank. So the EFFICIENCY CAGR (multi-year, robust) is instead projected DOWN onto the
-  // price window's own span, and the scissors is reported over that observed span, stated.
-  minWeeks: 8,      // below this the window is noise; the band is withheld, not guessed.
-  deadbandPct: 5,   // % move over the OBSERVED window — measurement noise, not an economic line.
-  note: "Efficiency vs price: if $/Mtok falls faster than tokens/W improves, revenue per MW compresses EVEN AT FULL UTILIZATION — the neocloud risk utilization alone cannot see.",
-};
-
-// Compose the two rates into the scissors. Pure, and deliberately returns NO dollar figure.
-// `trend` is the live rolling $/Mtok series (weekly cadence, values only — the emitted field
-// drops its dates), so its span is inferred from the point count and STATED on the card.
-//
-// Returns: effCagr (%/yr, the durable multi-year rate) · effWin/pxWin (both over the SAME
-// observed window) · idx (the composite over that window) · weeks · band. Comparing a rate to
-// a window move would be the units error; both legs are always in window terms.
-function tokenScissors(trend) {
-  const g = TOKEN_EFFICIENCY.gens;
-  const yrs = (a, b) => (Date.parse(b) - Date.parse(a)) / (365.25 * 86400000);
-  const effYrsSpan = yrs(g[0].at, g[g.length - 1].at);
-  const effCagr = (effYrsSpan > 0 && g[0].idx > 0 && g[g.length - 1].idx > 0)
-    ? Math.pow(g[g.length - 1].idx / g[0].idx, 1 / effYrsSpan) - 1 : null;
-  const t = Array.isArray(trend) ? trend.filter(v => Number.isFinite(v) && v > 0) : [];
-  // Weekly cadence (CADENCE.tokenTrend), so n points span (n-1) weeks.
-  const weeks = t.length >= 2 ? t.length - 1 : null;
-  const none = { effCagr, effWin: null, pxWin: null, idx: null, weeks, band: null };
-  if (effCagr === null || weeks === null) return none;
-  const pxWin = t[t.length - 1] / t[0] - 1;                       // observed, never annualised
-  const effWin = Math.pow(1 + effCagr, weeks / 52) - 1;           // CAGR projected onto that span
-  const idx = (1 + effWin) * (1 + pxWin) - 1;
-  if (weeks < TOKEN_EFFICIENCY.minWeeks) return { ...none, effWin, pxWin, idx, short: true };
-  const dbd = TOKEN_EFFICIENCY.deadbandPct / 100;
-  return { effCagr, effWin, pxWin, idx, weeks, short: false,
-    band: idx > dbd ? "EXPANDING" : idx < -dbd ? "COMPRESSING" : "FLAT" };
-}
-
-const HYPERSCALER_CAPEX = {
-  fy: "FY26", reviewed: "2026-07-30",
-  rows: [
-    { co: "MSFT",  guideB: 120, dir: "up"   },
-    { co: "AMZN",  guideB: 118, dir: "up"   },
-    { co: "GOOGL", guideB: 92,  dir: "up"   },
-    { co: "META",  guideB: 70,  dir: "hold" },
-  ],
-  note: "Big-4 guided capex — the pool that funds every AI-infra beneficiary's revenue. ≥2 guiding down = the regime-turn tell (headwind #1's $705B counts ALL AI capex incl. neoclouds; this tape tracks the four the market prices).",
-};
-
-// ELECTRIC SKIES — eVTOL FAA Type Certification tracker (Joby). The "next destination":
-// a subset of the IPO launch-stage pattern, but the gate is regulatory, not financial.
-// FAA TC is a 5-stage process; the final Type Certificate is the last gate before
-// commercial passenger ops. Curated/Manual projection — no live feed, milestones move on
-// a multi-quarter cadence. ⚠️ Update `stageIndex`/`progressPct`/`targetTC` as the FAA advances.
-const EVTOL_CERT = {
-  company: "Joby Aviation", ticker: "JOBY",
-  stages: ["Cert Basis", "Cert Plan", "Testing", "For-Credit (TIA)", "Type Cert"], // FAA 5-stage TC
-  stageIndex: 3,            // 0-based → Stage 4 of 5 (for-credit / TIA flight testing)
-  stageLabel: "For-Credit Testing (TIA)",
-  progressPct: 78,          // approx through the area-specific certification plans
-  targetTC: "H2 2026",      // projected FAA Type Certificate (curated estimate)
-  note: "FAA Type Certification — final regulatory gate before commercial eVTOL passenger ops.",
-};
-
-// ─── SOURCE BOX ────────────────────────────────────────────────────────────
-// FEAT-167: CACHED badge uses dashed border + zinc-400 (#a1a1aa)
-const apiColors = {
-  FMP:DT["src-fmp"], FRED:DT["src-fred"], Anthropic:DT["src-anthropic"],
-  CNN:DT["src-cnn"], CBOE:DT["src-cboe"], Zillow:DT["src-zillow"], Manual:DT["src-manual"], "Rule-based":DT["src-manual"],
-  Kalshi:DT["src-manual"], OpenRouter:"#a78bfa",
-  CACHED:DT["cached"],
-};
-const DataModeBadge = ({ mode }) => {
-  const cfg = {
-    MOCK:    { label:"MOCK",    bg:"#1a1f2e", color:T.textMuted,         border:`1px solid ${T.border}` },
-    LOADING: { label:"↻ LOADING", bg:"#1a140a", color:T.amber,           border:`1px solid ${T.amber}44` },
-    LIVE:    { label:"LIVE",    bg:"#0a1e24", color:DT["live-cyan-700"], border:`1px solid ${DT["live-cyan-700"]}66` },
-    STALE:   { label:"⏱ STALE", bg:"#1a140a", color:T.amber,            border:`1px solid ${T.amber}44` },
-    CACHED:  { label:"CACHED",  bg:"#18181b", color:DT["cached"],        border:`1px dashed ${DT["cached"]}` },  // FEAT-167
-    // B1 (v3.59): a failed live fetch is ERROR, never "MOCK" — an outage must not wear the
-    // demo's badge. Red, because it is the one mode that asks the user to act (Retry).
-    ERROR:   { label:"⚠ ERROR", bg:"#190a0c", color:T.red,               border:`1px solid ${T.red}66` },
-  }[mode] || { label:mode, bg:T.surface, color:T.textMuted, border:`1px solid ${T.border}` };
-  return (
-    <span style={{background:cfg.bg, color:cfg.color, border:cfg.border, borderRadius:3, padding:"1px 6px", fontSize:9, fontFamily:T.fontMono, letterSpacing:"0.04em"}}>{cfg.label}</span>
-  );
-};
-const SourceBox = ({ api, endpoint, asOf, mode }) => (
-  <div style={{ display:"flex", alignItems:"center", gap:5, marginTop:6, flexWrap:"wrap" }}>
-    {mode && <DataModeBadge mode={mode}/>}
-    <span style={{ background:(apiColors[api]||T.border)+"22", color:apiColors[api]||T.textMuted, border:`1px solid ${(apiColors[api]||T.border)}44`, borderRadius:3, padding:"1px 5px", fontSize:9, fontFamily:T.fontMono, flexShrink:0 }}>{api}</span>
-    <span style={{ fontFamily:T.fontMono, fontSize:8, color:T.textMuted, overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" }}>{endpoint}</span>
-    {asOf && <span style={{ fontFamily:T.fontMono, fontSize:8, color:T.textMuted, flexShrink:0 }}>{asOf}</span>}
-  </div>
-);
-
-// ─── ILLUSTRATIVE TREATMENT (v3.1 friends-cockpit safety) ─────────────────────
-// A friend skimming must never mistake a no-feed/mock tile for live data. Curated tiles
-// get a diagonal-hatch wash + an unmistakable "ILLUSTRATIVE · not live" chip, and any
-// directional VERDICT (BULLISH/BEARISH/BUBBLE) is SUPPRESSED on mock/stale data — a
-// fabricated directional call is worse than a fabricated number.
-const ILLUS_HATCH = "repeating-linear-gradient(45deg, transparent, transparent 5px, rgba(255,255,255,0.025) 5px, rgba(255,255,255,0.025) 10px)";
-const IllustrativeChip = ({ label = "ILLUSTRATIVE · not live" }) => (
-  // FEAT-322: inline-block + maxWidth/ellipsis so a chip inside a narrow tile truncates
-  // gracefully instead of forcing horizontal page scroll at 390px (v3.1 clipped raw).
-  <span style={{ fontFamily:T.fontMono, fontSize:8, letterSpacing:"0.06em", color:T.amber, background:T.amber+"18", border:`1px solid ${T.amber}55`, borderRadius:3, padding:"1px 6px", whiteSpace:"nowrap", flexShrink:0, display:"inline-block", maxWidth:"100%", overflow:"hidden", textOverflow:"ellipsis", boxSizing:"border-box" }}>◫ {label}</span>
-);
-// True when a tile's data carries no live signal and must not render a verdict.
-const isIllustrative = (mode) => mode === "MOCK" || mode === "STALE";
-// FEAT-321 (v3.2 "cut to the live signal"): the ONE idiom for demoting stale/curated
-// content out of the default view. Visual style copied from the v3.1 IPO cut-to-edge
-// toggle; self-contained open state (nothing external reads it).
-// Collapsing is a RENDER concern only: the data stays complete in MOCK_DATA.
-const CollapsedGroup = ({ count, label, chip = true, defaultOpen = false, children }) => {
-  const [open, setOpen] = useState(defaultOpen);
-  return (
-    <div>
-      <button onClick={() => setOpen(o => !o)} aria-expanded={open}
-        style={{ width:"100%", display:"flex", alignItems:"center", gap:8, padding:"6px 0",
-                 background:"none", border:"none", cursor:"pointer", textAlign:"left" }}>
-        <span style={{ fontFamily:T.fontMono, fontSize:8, color:T.textMuted,
-                       letterSpacing:"0.12em", textTransform:"uppercase" }}>
-          {open ? "▾ hide" : `▸ +${count}`} {label}
-        </span>
-        {chip && <IllustrativeChip label="ILLUSTRATIVE" />}
-      </button>
-      {open && children}
-    </div>
-  );
-};
+// ─── ILLUSTRATIVE TREATMENT + COLLAPSED GROUP — extracted to src/primitives/
+// (Illustrative.jsx + CollapsedGroup.jsx, task 5.1). One idiom, one home each.
 
 // ─── DATA ─────────────────────────────────────────────────────────────────
 const MOCK_DATA = {
@@ -383,16 +157,9 @@ function etSession(now = new Date()) {
 
 
 // ─── HELPERS ─────────────────────────────────────────────────────────────
-const fmt = {
-  pct:(v,d=1)=>`${v>=0?"+":""}${v.toFixed(d)}%`,
-  bps:(v)=>`${v>=0?"+":""}${(v*100).toFixed(0)}bps`,
-  price:(v)=>v>=1000?`$${(v/1000).toFixed(1)}K`:`$${v.toFixed(2)}`,
-  // FEAT-FLIP: a bare number at the precision its own band is expressed in (10Y/NFCI 2dp,
-  // F&G 0dp) — a distance printed at the wrong precision reads as false confidence.
-  num:(v,d=2)=>Number(v).toFixed(d),
-};
-const arrow=(v)=>v>0?"▲":v<0?"▼":"→";
-const pctColor=(v,inv=false)=>(inv?v<0:v>0)?T.green:v===0?T.textSecondary:T.red;
+// fmt moved to src/format.js (task 1.3) — one copy, shared with extracted sections.
+// arrow moved into src/primitives/DirTile.jsx (its only consumer, wave 9).
+// pctColor moved to src/format.js (task 3.1) — one copy, shared with MacroStrip.
 const peColor=(pe)=>pe>80?T.red:pe>40?T.yellow:pe>25?T.textPrimary:T.green;
 const marginColor=(m)=>m===null?T.textMuted:m>30?T.green:m>15?T.textPrimary:m>5?T.yellow:T.red;
 const yoyColor=(g)=>g>50?T.green:g>15?T.green:g>0?T.textPrimary:g>=0?T.yellow:T.red;
@@ -412,31 +179,10 @@ function spyDatesFrom(anchorDateStr, count) {
   return dates;
 }
 
-// Stoplight color for direction tiles
-function stoplightColor(val, band, invert=false) {
-  if(Math.abs(val) <= band) return "yellow";
-  const up = val > band;
-  return (invert ? !up : up) ? T.green : T.red;
-}
-function verdictFromTones(tones) {
-  const g=tones.filter(t=>t===T.green).length;
-  const r=tones.filter(t=>t===T.red).length;
-  if(g>=2) return { label:"BULLISH", color:T.green };
-  if(r>=2) return { label:"BEARISH", color:T.red };
-  return { label:"NEUTRAL", color:T.yellow };
-}
+// stoplightColor/verdictFromTones moved into src/primitives/DirTile.jsx (wave 9).
 
-// ─── PRIMITIVE COMPONENTS ─────────────────────────────────────────────────
-const Badge=({label,color,small})=>(
-  <span style={{background:color+"22",color,border:`1px solid ${color}44`,borderRadius:3,padding:small?"0 4px":"1px 6px",fontSize:small?8:10,fontFamily:T.fontMono,letterSpacing:"0.04em",whiteSpace:"nowrap"}}>{label}</span>
-);
-const Label=({children,color})=>(
-  <div style={{fontFamily:T.fontMono,fontSize:9,color:color||T.textMuted,letterSpacing:"0.1em",textTransform:"uppercase",marginBottom:3}}>{children}</div>
-);
-const Divider=()=><div style={{height:1,background:T.border,margin:"10px 0"}}/>;
-const SectionHeader=({children})=>(
-  <div style={{fontFamily:T.fontMono,fontSize:9,color:DT["text-muted"],letterSpacing:"0.14em",textTransform:"uppercase",paddingBottom:6,marginBottom:10,borderBottom:`1px solid ${T.border}`}}>{children}</div>
-);
+// ─── PRIMITIVE COMPONENTS — Badge/Label extracted to src/primitives/atoms.jsx
+// (wave 9; Divider was rendered nowhere and was deleted, not moved).
 
 // UndoToast (FEAT-166: 5s mobile / 4s desktop). Stacks multiple toasts so a rapid second
 // delete never overwrites the first one's undo — each toast has its own id, timer, and dismiss.
@@ -466,53 +212,12 @@ const UndoToast=({toasts, dismiss})=>{
   );
 };
 
-// Direction tile (v1.3 stoplight)
-const DirTile=({label,value,d1,w1,m1,band,invert=false,spark,source,sourceEp,mode="MOCK",asOf,note,noteTitle})=>{
-  const illus=isIllustrative(mode); // v3.1: suppress the verdict + delta colors on mock/stale data
-  const tc=t=>illus?T.textMuted:t==="yellow"?T.yellow:t===T.green?T.green:T.red;
-  const t1=stoplightColor(d1,band,invert), t2=stoplightColor(w1,band,invert), t3=stoplightColor(m1,band,invert);
-  const verdict=verdictFromTones([t1,t2,t3]);
-  return(
-    <div style={{background:illus?T.surface:verdict.label==="BULLISH"?DT["regime-on-bg"]:verdict.label==="BEARISH"?DT["regime-off-bg"]:T.surface,backgroundImage:illus?ILLUS_HATCH:undefined,border:`1px solid ${illus?T.border:verdict.label==="BULLISH"?T.green+"44":verdict.label==="BEARISH"?T.red+"44":T.border}`,borderRadius:5,padding:"10px 12px",flex:"1 1 110px",minWidth:110,opacity:illus?0.92:1}}>
-      <Label>{label}</Label>
-      <div style={{fontFamily:T.fontMono,fontSize:16,color:illus?T.textSecondary:T.textPrimary,fontWeight:700,marginBottom:4}}>{value}</div>
-      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:3,marginBottom:5}}>
-        {[["1D",d1,t1],["1W",w1,t2],["1M",m1,t3]].map(([p,v,t])=>(
-          <div key={p}><div style={{fontFamily:T.fontMono,fontSize:8,color:T.textMuted}}>{p}</div>
-          <div style={{fontFamily:T.fontMono,fontSize:10,color:tc(t)}}>{arrow(v)} {Math.abs(v).toFixed(Math.abs(v)<1?1:2)}</div></div>
-        ))}
-      </div>
-      {/* FEAT-30Y: an optional factual sub-line (e.g. the 10s30s spread + a reference level).
-          Rendered muted on mock/stale like every other number on an illustrative tile — it is
-          a FACT about the same data, so it inherits the same provenance treatment. */}
-      {/* v3.61 (FEAT-GLANCE): the note carries the FACT (it can read INVERTED — a red fact
-          that must survive the default view); explanatory reference prose rides noteTitle
-          as a tooltip instead of a rendered line. */}
-      {note&&<div title={noteTitle||undefined} style={{fontFamily:T.fontMono,fontSize:8,color:illus?T.textMuted:T.textSecondary,marginBottom:5,lineHeight:1.35}}>{note}</div>}
-      {/* Verdict only on live data; mock/stale shows an honest chip instead of a fabricated call */}
-      {/* Short chip label — a ~110px tile can't fit "· not live"; hatch + SourceBox carry it */}
-      {illus?(mode==="STALE"?<DataModeBadge mode="STALE"/>:<IllustrativeChip label="ILLUSTRATIVE"/>):<Badge label={verdict.label} color={verdict.color} small/>}
-      {spark&&<div aria-hidden="true" style={{height:20,marginTop:5}}><ResponsiveContainer width="100%" height="100%"><LineChart data={spark.map((v,i)=>({v,i}))}><Line type="monotone" dataKey="v" stroke={illus?T.textMuted:T.amber} dot={false} strokeWidth={1}/></LineChart></ResponsiveContainer></div>}
-      {source&&<SourceBox api={source} endpoint={sourceEp||""} mode={mode} asOf={asOf}/>}
-    </div>
-  );
-};
+// DirTile extracted to src/primitives/DirTile.jsx (wave 9).
 
 // ─── WEN MOON METER (mood badge for Macro Strip) ─────────────────────────
-// ENGINE0-CONT: the ONE rendered label for a withheld posture (the engine's internal
-// INSUFFICIENT sentinel never reaches a reader). Shared by the verdict band, the 5 Whys
-// (via regimeView), and pinned by the public render suite.
-const WITHHELD_LABEL = "DATA HOLD";
-const WEN_MOON_STATES = [
-  { label: "MOONING 🚀",       color: T.green, glow: T.green },
-  { label: "HODL 💎",          color: T.amber, glow: T.amber },
-  { label: "DIAMOND HANDS 🙌", color: T.red,   glow: T.red },
-  // FEAT-QUORUM (v3.54): "can't call it" is NOT one of the three postures. Defaulting an
-  // evidence-less state to HODL would render a real hold call made from nothing — the exact
-  // failure this release fixes. The moon voice stays primary (owner call), so it gets its
-  // own honest state instead of borrowing a directional one.
-  { label: "CAN'T CALL IT 🌫️", color: T.textMuted, glow: T.textMuted },
-];
+// WITHHELD_LABEL + WEN_MOON_STATES moved WITH the verdict band to
+// src/sections/RegimeBand.jsx (task 1.3) — the verdict's vocabulary lives in the
+// verdict's home, imported here so there is exactly one copy.
 function wenMoonState(spyChangePct) {
   const pct = typeof spyChangePct === "number" && isFinite(spyChangePct) ? spyChangePct : 0;
   if (pct > WEN_MOON_UP)   return WEN_MOON_STATES[0]; // MOONING
@@ -588,203 +293,7 @@ function approxCountdown(targetDate) {
   return `~${months} months`;
 }
 
-const HyperscalerCapexCard = () => {
-  const cx = HYPERSCALER_CAPEX;
-  const agg = cx.rows.reduce((a, r) => a + r.guideB, 0);
-  const downs = cx.rows.filter(r => r.dir === "down").length;
-  const glyph = (d) => d === "down" ? "▼" : d === "up" ? "▲" : "→";
-  const gcol  = (d) => d === "down" ? T.red : d === "up" ? T.green : T.textMuted;
-  return (
-    <div style={{ marginTop:16, background:T.surface, backgroundImage:ILLUS_HATCH, border:`1px solid ${T.border}`, borderRadius:6, padding:"12px 16px" }}>
-      <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", flexWrap:"wrap", gap:6 }}>
-        <SectionHeader>AI Infra · Hyperscaler CapEx (funding flow)</SectionHeader>
-        <div style={{ display:"flex", alignItems:"center", gap:6, flexWrap:"wrap" }}>
-          <span style={{ fontFamily:T.fontMono, fontSize:8, color:T.textMuted }}>{cx.fy} guides · reviewed {cx.reviewed}</span>
-          <IllustrativeChip/>
-        </div>
-      </div>
-      <div style={{ display:"flex", alignItems:"baseline", gap:10, margin:"8px 0 2px", flexWrap:"wrap" }}>
-        <span style={{ fontFamily:T.fontMono, fontSize:22, fontWeight:700, color:T.textPrimary }}>${agg}B</span>
-        <span style={{ fontFamily:T.fontMono, fontSize:9, color:downs >= 2 ? T.red : T.textMuted }}>
-          {downs >= 2 ? `⚡ ${downs} of ${cx.rows.length} guiding DOWN — the regime-turn tell` : `${downs} of ${cx.rows.length} guiding down`}
-        </span>
-      </div>
-      <div style={{ display:"grid", gridTemplateColumns:"repeat(auto-fill,minmax(120px,1fr))", gap:8, marginTop:8 }}>
-        {cx.rows.map(r => (
-          <div key={r.co} style={{ background:T.surfaceHigh, border:`1px solid ${T.border}`, borderRadius:5, padding:"8px 11px" }}>
-            <div style={{ display:"flex", justifyContent:"space-between", alignItems:"baseline" }}>
-              <span style={{ fontFamily:T.fontMono, fontSize:11, fontWeight:700, color:T.textPrimary }}>{r.co}</span>
-              <span style={{ fontFamily:T.fontMono, fontSize:10, color:gcol(r.dir) }}>{glyph(r.dir)}</span>
-            </div>
-            <div style={{ fontFamily:T.fontMono, fontSize:14, fontWeight:700, color:T.textSecondary }}>${r.guideB}B</div>
-          </div>
-        ))}
-      </div>
-      <div style={{ fontFamily:T.fontSans, fontSize:10, color:T.textSecondary, lineHeight:1.4, marginTop:8 }}>{cx.note}</div>
-      <SourceBox api="Manual" endpoint="earnings prints · curated per quarter" mode="MOCK"/>
-    </div>
-  );
-};
-
-const GpuPricingCard = () => {
-  const g = GPU_PRICING;
-  const qoq = (c) => parseFloat((((c.onDemand - c.prevQ) / c.prevQ) * 100).toFixed(1));
-  return (
-    <div style={{ marginTop:16, background:T.surface, backgroundImage:ILLUS_HATCH, border:`1px solid ${T.border}`, borderRadius:6, padding:"12px 16px" }}>
-      <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", flexWrap:"wrap", gap:6 }}>
-        <SectionHeader>AI Infra · GPU On-Demand $/hr</SectionHeader>
-        <div style={{ display:"flex", alignItems:"center", gap:6, flexWrap:"wrap" }}>
-          <span style={{ fontFamily:T.fontMono, fontSize:8, color:T.textMuted }}>{g.quarter} · curated quarterly</span>
-          <IllustrativeChip/>
-        </div>
-      </div>
-      <div style={{ fontFamily:T.fontSans, fontSize:10, color:T.textSecondary, lineHeight:1.4, margin:"6px 0 10px" }}>{g.note}</div>
-      <div style={{ display:"grid", gridTemplateColumns:"repeat(auto-fill,minmax(150px,1fr))", gap:8 }}>
-        {g.chips.map(c => {
-          const dq = qoq(c);
-          const col = dq < -2 ? T.amber : dq > 2 ? T.green : T.textMuted;
-          return (
-            <div key={c.name} style={{ background:T.surfaceHigh, border:`1px solid ${T.border}`, borderRadius:5, padding:"9px 11px" }}>
-              <div style={{ display:"flex", justifyContent:"space-between", alignItems:"baseline" }}>
-                <span style={{ fontFamily:T.fontMono, fontSize:12, fontWeight:700, color:T.textPrimary }}>{c.name}</span>
-                <span style={{ fontFamily:T.fontMono, fontSize:8, color:T.textMuted }}>NVIDIA</span>
-              </div>
-              <div style={{ fontFamily:T.fontMono, fontSize:18, fontWeight:700, color:T.textPrimary, marginTop:2 }}>${c.onDemand.toFixed(2)}</div>
-              <div style={{ fontFamily:T.fontMono, fontSize:9, color:col }}>{dq>0?"▲":dq<0?"▼":"▬"} {Math.abs(dq).toFixed(1)}% QoQ</div>
-            </div>
-          );
-        })}
-      </div>
-      <div style={{ height:30, marginTop:10 }}>
-        <ResponsiveContainer width="100%" height="100%">
-          <LineChart data={g.trend.map((v,i)=>({v,i}))}>
-            <Line type="monotone" dataKey="v" stroke={T.amber} dot={false} strokeWidth={1.5}/>
-          </LineChart>
-        </ResponsiveContainer>
-      </div>
-      <SourceBox api="Manual" endpoint="GPU list/on-demand · curated quarterly" mode="MOCK"/>
-    </div>
-  );
-};
-
-// AI UNIT ECONOMICS · LLM token pricing (the moat — price side, pairs with GPU $/hr cost side).
-// Live from OpenRouter (props.tok = d.tokenomics; mode/asOf from provenance). Falling $/Mtok is the
-// bearish read (intelligence commoditizing → pricing-power erosion), colored amber like the GPU card.
-const TokenomicsCard = ({ tok, mode = "MOCK", asOf }) => {
-  let models = [];
-  try { models = JSON.parse(tok?.modelsJson || "[]"); } catch { models = []; }
-  const trend = Array.isArray(tok?.trend) ? tok.trend : [];
-  const blended = tok?.blendedMtok;
-  // QoQ-style read off the trend: first vs last (the decline is the signal).
-  const drop = trend.length >= 2 ? Math.round((1 - trend[trend.length - 1] / trend[0]) * 100) : null;
-  const cheapest = models.length ? models.reduce((a, b) => (b.mtok < a.mtok ? b : a)) : null;
-  return (
-    <div style={{ marginTop:16, background:T.surface, border:`1px solid ${T.border}`, borderRadius:6, padding:"12px 16px" }}>
-      <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", flexWrap:"wrap", gap:6 }}>
-        <SectionHeader>AI Infra · LLM Token Price $/Mtok</SectionHeader>
-        <span style={{ fontFamily:T.fontMono, fontSize:8, color:T.textMuted }}>price side of AI unit economics · pairs with GPU $/hr</span>
-      </div>
-      <div style={{ fontFamily:T.fontSans, fontSize:10, color:T.textSecondary, lineHeight:1.4, margin:"6px 0 10px" }}>
-        Falling $/Mtok = intelligence commoditizing → AI pricing-power erosion. The demand-side mirror of the GPU $/hr supply squeeze — together, the AI margin-compression hinge.
-      </div>
-      <div style={{ display:"flex", gap:18, alignItems:"baseline", flexWrap:"wrap" }}>
-        <div>
-          <div style={{ fontFamily:T.fontMono, fontSize:8, color:T.textMuted }}>BLENDED FRONTIER · 3:1 in:out</div>
-          <div style={{ fontFamily:T.fontMono, fontSize:24, fontWeight:700, color:T.textPrimary }}>${blended?.toFixed(2)}<span style={{ fontSize:11, color:T.textMuted }}>/Mtok</span></div>
-        </div>
-        {drop !== null && <div style={{ fontFamily:T.fontMono, fontSize:11, color:T.amber }}>▼ {drop}% over window</div>}
-        {cheapest && <div style={{ fontFamily:T.fontMono, fontSize:9, color:T.textMuted }}>floor: {cheapest.name} ${cheapest.mtok}/Mtok</div>}
-      </div>
-      {models.length > 0 && (
-        <div style={{ display:"grid", gridTemplateColumns:"repeat(auto-fill,minmax(130px,1fr))", gap:8, marginTop:10 }}>
-          {models.map((m) => (
-            <div key={m.name} style={{ background:T.surfaceHigh, border:`1px solid ${T.border}`, borderRadius:5, padding:"8px 10px" }}>
-              <div style={{ fontFamily:T.fontMono, fontSize:10, fontWeight:700, color:T.textPrimary }}>{m.name}</div>
-              <div style={{ fontFamily:T.fontMono, fontSize:15, fontWeight:700, color:T.textPrimary, marginTop:2 }}>${Number(m.mtok).toFixed(2)}</div>
-              <div style={{ fontFamily:T.fontMono, fontSize:8, color:T.textMuted }}>$/Mtok</div>
-            </div>
-          ))}
-        </div>
-      )}
-      {trend.length >= 3 ? (
-        <div style={{ height:30, marginTop:10 }}>
-          <ResponsiveContainer width="100%" height="100%">
-            <LineChart data={trend.map((v, i) => ({ v, i }))}>
-              <Line type="monotone" dataKey="v" stroke={T.amber} dot={false} strokeWidth={1.5}/>
-            </LineChart>
-          </ResponsiveContainer>
-        </div>
-      ) : (
-        mode !== "MOCK" && <div style={{ fontFamily:T.fontMono, fontSize:8, color:T.textMuted, marginTop:8 }}>trend accruing ({trend.length} pt{trend.length === 1 ? "" : "s"}) — builds daily</div>
-      )}
-      <SourceBox api="OpenRouter" endpoint="api/v1/models · frontier basket · blended $/Mtok" mode={mode} asOf={asOf}/>
-    </div>
-  );
-};
-
-// FEAT-TOKW (v3.46): the CONVERSION leg — tokens/watt × $/token = revenue per MW (in RATES only;
-// see the TOKEN_EFFICIENCY comment for why no level is printable). Half live (the $/Mtok window
-// from OpenRouter), half curated (the efficiency index), so the card is ILLUSTRATIVE always and
-// NEVER votes. The band is withheld on mock/stale price data AND on a window shorter than
-// minWeeks — "too short to read" and "flat" are different facts.
-const TokenEfficiencyCard = ({ tok, mode = "MOCK" }) => {
-  const e = TOKEN_EFFICIENCY;
-  const s = tokenScissors(Array.isArray(tok?.trend) ? tok.trend : []);
-  const pct = (v) => v === null || v === undefined ? "—" : `${v >= 0 ? "+" : ""}${(v * 100).toFixed(1)}%`;
-  // A directional read off mock/stale price data is exactly what the v3.1 invariant forbids.
-  const band = isIllustrative(mode) ? null : s.band;
-  const bcol = band === "COMPRESSING" ? T.red : band === "EXPANDING" ? T.green : T.textMuted;
-  const win = s.weeks ? `${s.weeks}-week window` : "no price window";
-  return (
-    <div style={{ marginTop:16, background:T.surface, backgroundImage:ILLUS_HATCH, border:`1px solid ${T.border}`, borderRadius:6, padding:"12px 16px" }}>
-      <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", flexWrap:"wrap", gap:6 }}>
-        <SectionHeader>AI Infra · Tokens/Watt × $/Token (revenue per MW)</SectionHeader>
-        <div style={{ display:"flex", alignItems:"center", gap:6, flexWrap:"wrap" }}>
-          <span style={{ fontFamily:T.fontMono, fontSize:8, color:T.textMuted }}>efficiency index reviewed {e.reviewed}</span>
-          <IllustrativeChip/>
-        </div>
-      </div>
-      <div style={{ fontFamily:T.fontSans, fontSize:10, color:T.textSecondary, lineHeight:1.4, margin:"6px 0 10px" }}>{e.note}</div>
-      <div style={{ display:"flex", gap:18, alignItems:"baseline", flexWrap:"wrap" }}>
-        <div>
-          <div style={{ fontFamily:T.fontMono, fontSize:8, color:T.textMuted }}>SCISSORS · {win}</div>
-          <div style={{ fontFamily:T.fontMono, fontSize:24, fontWeight:700, color: band ? bcol : T.textPrimary }}>
-            {s.idx === null ? "—" : pct(s.idx)}
-          </div>
-        </div>
-        {band
-          ? <span style={{ fontFamily:T.fontMono, fontSize:11, color:bcol }}>{band === "COMPRESSING" ? "▼" : band === "EXPANDING" ? "▲" : "▬"} {band}</span>
-          : <span style={{ fontFamily:T.fontMono, fontSize:9, color:T.textMuted }}>
-              {s.short ? `window too short to read (<${e.minWeeks}w) — no verdict` : "verdict suppressed — price leg not live"}
-            </span>}
-      </div>
-      <div style={{ display:"grid", gridTemplateColumns:"repeat(auto-fill,minmax(150px,1fr))", gap:8, marginTop:10 }}>
-        <div style={{ background:T.surfaceHigh, border:`1px solid ${T.border}`, borderRadius:5, padding:"8px 11px" }}>
-          <div style={{ fontFamily:T.fontMono, fontSize:8, color:T.textMuted }}>EFFICIENCY (curated)</div>
-          <div style={{ fontFamily:T.fontMono, fontSize:15, fontWeight:700, color:T.green }}>{pct(s.effWin)}</div>
-          <div style={{ fontFamily:T.fontMono, fontSize:8, color:T.textMuted }}>{pct(s.effCagr)}/yr projected onto the window</div>
-        </div>
-        <div style={{ background:T.surfaceHigh, border:`1px solid ${T.border}`, borderRadius:5, padding:"8px 11px" }}>
-          <div style={{ fontFamily:T.fontMono, fontSize:8, color:T.textMuted }}>TOKEN PRICE ({mode === "MOCK" ? "mock" : "observed"})</div>
-          <div style={{ fontFamily:T.fontMono, fontSize:15, fontWeight:700, color:T.amber }}>{pct(s.pxWin)}</div>
-          <div style={{ fontFamily:T.fontMono, fontSize:8, color:T.textMuted }}>never annualised — the window as measured</div>
-        </div>
-      </div>
-      <div style={{ display:"grid", gridTemplateColumns:"repeat(auto-fill,minmax(100px,1fr))", gap:8, marginTop:8 }}>
-        {e.gens.map(g => (
-          <div key={g.gen} style={{ background:T.surfaceHigh, border:`1px solid ${T.border}`, borderRadius:5, padding:"7px 10px" }}>
-            <div style={{ fontFamily:T.fontMono, fontSize:10, fontWeight:700, color:T.textPrimary }}>{g.gen}</div>
-            <div style={{ fontFamily:T.fontMono, fontSize:13, fontWeight:700, color:T.textSecondary }}>{g.idx.toFixed(2)}×</div>
-          </div>
-        ))}
-      </div>
-      <div style={{ fontFamily:T.fontMono, fontSize:8, color:T.textMuted, marginTop:8, lineHeight:1.5 }}>
-        {e.basis} · relative only — no $/MW figure is derivable from public data and none is shown.
-      </div>
-      <SourceBox api="Manual" endpoint="chip-generation tokens/W index × live OpenRouter $/Mtok" mode="MOCK"/>
-    </div>
-  );
-};
+// AI cards extracted to src/sections/AIUnitEconomics.jsx (wave 12).
 
 // ─── FEAT-331 · MACRO FLIP BANNER (the TT circuit, surfaced on the page) ──────
 // The maintainer's most consequential circuit lived only in the TT docs. Now it renders
@@ -810,171 +319,10 @@ const MacroFlipBanner=({flip})=>{
   );
 };
 
-// ─── FEAT-169 · REGIME VERDICT BAND (full-width, relocated under macro strip) ──
-// The friend-readable headline ("wen moon?") — first signal
-// seen on mobile (above the command grid) and prominent on desktop. Soft regime tint
-// per AS2-01. Reuses computeRegime + regimeFactors.
-const RegimeBand=({d,stale=new Set(),loading=false,liveBuild=false,srcLabel="derived from live data"})=>{
-  const [open,setOpen]=useState(false);
-  const regime=computeRegime(d,stale);
-  // C1 (v3.60): the pure engine returns token KEYS; the UI owns the palette.
-  regime.tint=DT[regime.tintKey]; regime.color=T[regime.colorKey];
-  const factors=regimeFactors(d,stale);
-  // FEAT-QUORUM: LOADING is not a verdict state — during the first fetch there is no evidence
-  // yet, so the posture is withheld outright rather than computed from the mock baseline.
-  const withheld=loading||regime.insufficient;
-  // FEAT-FLIP (v3.53): what would change this call. The NEAREST load-bearing crossing rides
-  // the first screen; the full set (plus abstentions and exclusions) lives one tap down.
-  const fc=flipConditions(d,stale);
-  const nearest=fc.flips[0]||null;
-  // FEAT-GLANCE (v3.61, newcomer audit): the neutral vote is STATED, not implicit — the old
-  // "2/4 bullish · 2 votes bull / 1 bear" left a vote unaccounted for.
-  const neutralVotes=Math.max(0,regime.counted-regime.bullVotes-regime.bearVotes);
-  // "wen moon?" — map the regime verdict to our moon ratings: RISK-ON→MOONING, MIXED→HODL, RISK-OFF→DIAMOND HANDS
-  const moon=withheld?WEN_MOON_STATES[3]:WEN_MOON_STATES[{ "RISK-ON":0, "MIXED":1, "RISK-OFF":2 }[regime.label] ?? 1];
-  return(
-    <div role="region" aria-label="Macro backdrop verdict"
-      style={{background:regime.tint,borderBottom:`1px solid ${regime.color}33`,borderTop:`1px solid ${regime.color}22`,padding:"10px 20px",position:"relative"}}>
-      <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",gap:12,flexWrap:"wrap"}}>
-        {/* Left: label + sub */}
-        <div style={{display:"flex",alignItems:"baseline",gap:12,flexWrap:"wrap",minWidth:0}}>
-          <div>
-            <div style={{fontFamily:T.fontMono,fontSize:8,color:regime.color,letterSpacing:"0.14em",textTransform:"uppercase"}}>Macro Backdrop · wen moon?</div>
-            <div style={{display:"flex",alignItems:"baseline",gap:10,flexWrap:"wrap"}}>
-              <span style={{fontFamily:T.fontMono,fontSize:T.fsXl,fontWeight:700,color:regime.color,letterSpacing:"-0.01em"}}>{moon.label}</span>
-              <span style={{fontFamily:T.fontMono,fontSize:T.fsL,color:T.textSecondary}}>
-                {/* ENGINE0-CONT: the rendered label is DATA HOLD — a deterministic wait
-                    posture ("the system lacks evidence, hold"), not the internal
-                    INSUFFICIENT sentinel the engine still uses (regime.js is untouched;
-                    presentation only). The literal INSUFFICIENT never reaches a reader. */}
-                {loading?"LOADING · waiting for live data before calling a posture"
-                        :regime.insufficient?`${WITHHELD_LABEL} · ${regime.sub}`
-                        :`${regime.label} · ${regime.sub}`}
-              </span>
-              <span style={{fontFamily:T.fontMono,fontSize:T.fsS,color:T.textMuted}}>
-                {loading?"no factors voting yet"
-                        :regime.insufficient
-                          ?`only ${regime.counted} of ${regime.totalFactors} factors usable — ${regime.quorum} required`
-                          :`${regime.bullVotes} bull · ${neutralVotes} neutral · ${regime.bearVotes} bear — ${regime.counted} of ${regime.totalFactors} usable`}
-              </span>
-            </div>
-            {/* FEAT-FLIP: the audit's fourth first-screen answer — what would change the call.
-                "Nothing single-handedly" is stated plainly rather than padded with the nearest
-                distance to look responsive (abstention rule 3). */}
-            {withheld
-              ? <div style={{fontFamily:T.fontMono,fontSize:9,color:T.textMuted,marginTop:3}}>
-                  {loading
-                    ? "Nothing is being asserted from the demo baseline while the live snapshot loads."
-                    : `The evidence base is too thin to call a posture${liveBuild?" — live data is unavailable or stale, so the mock baseline is NOT voting":""}.`}
-                </div>
-              : <div style={{fontFamily:T.fontMono,fontSize:T.fsS,color:T.textSecondary,marginTop:3}}>
-              <span style={{color:T.textMuted}}>⇄ would change this: </span>
-              {nearest
-                ? <><span style={{color:regime.color}}>{nearest.copy}</span>
-                    <span style={{color:T.textMuted}}> ({fmt.num(nearest.distance,nearest.dec)}{nearest.unit} away) → </span>
-                    <span style={{color:T.textPrimary,fontWeight:700}}>{nearest.would}</span>
-                    {/* v3.62 (newcomer audit): state the assumption. flipConditions simulates
-                        exactly ONE crossing through verdictFrom holding the others fixed, so
-                        without this the line reads as a forecast or a guaranteed trigger. The
-                        caveat is literally what the code computes. */}
-                    <span style={{color:T.textMuted}}> if other signals stay put</span>
-                    {fc.flips.length>1&&<span style={{color:T.textMuted}}> · +{fc.flips.length-1} more</span>}</>
-                : <span style={{color:T.textMuted}}>no single factor crossing flips this verdict — it would take two</span>}
-            </div>}
-          </div>
-        </div>
-        {/* Right: factor chips (desktop) + info toggle */}
-        <div style={{display:"flex",alignItems:"center",gap:8}}>
-          {/* FINDING-2: compact factor "why" — now always visible (mobile too), short labels; full detail via ℹ */}
-          <div style={{display:"flex",gap:5,flexWrap:"wrap",justifyContent:"flex-end"}}>
-            {/* FEAT-NEUTRAL (v3.62): the chip renders the factor's REAL 4-state vote through the
-                shared voteStyle map. It used to branch on a boolean (`f.bull ? green▲ : red▼`),
-                so a NEUTRAL factor fell through to the bearish arm — the hero printed
-                "N bull · N neutral · N bear" one line above while painting that neutral factor
-                red, and the Drivers matrix showed the same factor as grey NEUTRAL further down. */}
-            {factors.map((f,i)=>{
-              const vs=voteStyle(f.vote); const c=T[vs.colorKey];
-              return(
-              <span key={f.label} title={`${f.label}: ${vs.word}`} style={{fontFamily:T.fontMono,fontSize:T.fsM,color:c,border:`1px solid ${c}44`,borderRadius:3,padding:"1px 5px",letterSpacing:"0.03em",background:"#00000022",whiteSpace:"nowrap",opacity:f.vote==="excluded"?0.7:1}}>
-                {f.short} {vs.glyph}
-              </span>
-            );})}
-          </div>
-          <button onClick={()=>setOpen(o=>!o)} aria-label="Show regime factors" aria-expanded={open}
-            style={{background:"none",border:`1px solid ${regime.color}44`,borderRadius:3,color:regime.color,cursor:"pointer",padding:"4px 8px",minWidth:44,minHeight:44,fontFamily:T.fontMono,fontSize:11,flexShrink:0}}>
-            {open?"▲":"ℹ"}
-          </button>
-        </div>
-      </div>
-      {/* Expandable plain-language breakdown */}
-      {open&&(
-        <div style={{marginTop:10,borderTop:`1px solid ${T.border}`,paddingTop:8,display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(220px,1fr))",gap:"4px 18px"}}>
-          {factors.map(f=>(
-            <div key={f.label} style={{display:"flex",gap:8,alignItems:"baseline"}}>
-              <div style={{fontFamily:T.fontMono,fontSize:9,color:T.textMuted,minWidth:100,flexShrink:0}}>{f.label}</div>
-              {/* Same 4-state map as the chips — the drawer used to paint NFCI's own honest
-                  "Looser than mean, but within ½ SD" copy red, contradicting its own words. */}
-              <div style={{fontFamily:T.fontMono,fontSize:9,color:T[voteStyle(f.vote).colorKey]}}>{f.val}</div>
-            </div>
-          ))}
-          {/* FEAT-FLIP: every load-bearing crossing, then what abstained and why. The
-              abstentions are NOT omitted — a factor that cannot express a single threshold is
-              a fact about the rule, and hiding it would read as "these four are all there is". */}
-          <div style={{gridColumn:"1/-1",borderTop:`1px solid ${T.border}`,marginTop:4,paddingTop:6}}>
-            <div style={{fontFamily:T.fontMono,fontSize:8,color:T.textMuted,letterSpacing:"0.1em",marginBottom:3}}>WHAT WOULD CHANGE THIS VERDICT</div>
-            {fc.flips.length===0&&(
-              <div style={{fontFamily:T.fontMono,fontSize:9,color:T.textSecondary}}>
-                No single factor crossing changes the call — at {fc.bullVotes} bull / {fc.bearVotes} bear of {fc.counted} voting,
-                it would take two factors moving together.
-              </div>
-            )}
-            {fc.flips.map(f=>(
-              <div key={`${f.key}-${f.to}`} style={{fontFamily:T.fontMono,fontSize:9,color:T.textSecondary,display:"flex",gap:6,flexWrap:"wrap",marginBottom:1}}>
-                <span style={{color:regime.color,minWidth:190}}>{f.copy}</span>
-                <span style={{color:T.textMuted}}>now {fmt.num(f.value,f.dec)}{f.unit} · {fmt.num(f.distance,f.dec)}{f.unit} away</span>
-                <span style={{color:T.textPrimary}}>→ {f.would}</span>
-              </div>
-            ))}
-            {fc.abstained.map(a=>(
-              <div key={a.key} style={{fontFamily:T.fontMono,fontSize:8,color:T.textMuted,marginTop:2}}>
-                {a.label}: no single threshold — {a.why}
-              </div>
-            ))}
-            {fc.excluded.length>0&&(
-              <div style={{fontFamily:T.fontMono,fontSize:8,color:T.amber,marginTop:2}}>
-                Excluded from the vote (stale), so their thresholds are not load-bearing: {fc.excluded.map(e=>e.short).join(" · ")}
-              </div>
-            )}
-          </div>
-          <div style={{fontFamily:T.fontMono,fontSize:8,color:T.textMuted,gridColumn:"1/-1"}}>Rule-based 6-factor vote · stale/dead inputs auto-excluded · {srcLabel}</div>
-        </div>
-      )}
-    </div>
-  );
-};
+// ─── FEAT-169 · REGIME VERDICT BAND ──────────────────────────────────────
+// Extracted VERBATIM to src/sections/RegimeBand.jsx (UI-OVERHAUL task 1.3).
 
-// Fear & Greed gauge
-const FGGauge=({score,label,mode="MOCK",asOf})=>{
-  const pct=score/100;
-  const color=score<25?T.red:score<45?T.yellow:score<55?T.textSecondary:score<75?T.green:"#27ae60";
-  const angle=-135+pct*270;
-  return(
-    <div style={{background:T.surface,border:`1px solid ${T.border}`,borderRadius:5,padding:"10px 12px",textAlign:"center"}}>
-      <Label>Fear & Greed</Label>
-      <div style={{position:"relative",width:80,height:48,margin:"4px auto 0"}}>
-        <svg viewBox="0 0 80 48" style={{width:"100%",height:"100%"}}>
-          <path d="M8,44 A36,36 0 0,1 72,44" fill="none" stroke={T.border} strokeWidth={6} strokeLinecap="round"/>
-          <path d="M8,44 A36,36 0 0,1 72,44" fill="none" stroke={color} strokeWidth={6} strokeLinecap="round" strokeDasharray={`${pct*113} 113`}/>
-          <line x1="40" y1="44" x2={40+30*Math.cos((angle-90)*Math.PI/180)} y2={44+30*Math.sin((angle-90)*Math.PI/180)} stroke={T.textSecondary} strokeWidth={1.5} strokeLinecap="round"/>
-          <circle cx="40" cy="44" r="3" fill={T.textSecondary}/>
-        </svg>
-      </div>
-      <div style={{fontFamily:T.fontMono,fontSize:20,color,fontWeight:700}}>{score}</div>
-      <div style={{fontFamily:T.fontMono,fontSize:9,color:T.textSecondary}}>{label}</div>
-      <SourceBox api="CNN" endpoint="fear-and-greed-index" mode={mode} asOf={asOf}/>
-    </div>
-  );
-};
+// FGGauge extracted to src/primitives/FGGauge.jsx (wave 9).
 
 /* FEAT-ALERT-EVAL (v3.52, suite audit) — the alerts EVALUATE, or they say they cannot.
    The audit called this section "interface theater" for not delivering notifications. The
@@ -1019,32 +367,7 @@ export function evalAlert(alert,d,modeOf){
   return{state:hit?"triggered":"clear",v,threshold,
     detail:`${fmtv(v)} vs ${fmtv(Math.round(threshold*100)/100)}${m.basisLabel?` (${m.basisLabel})`:""}`};
 }
-// Alert row
-const AlertRow=({alert,ev,onToggle,onDelete})=>{
-  // BLIND is amber, never the green that would read as "checked and clear".
-  const color=!alert.active?T.textMuted:ev.state==="triggered"?T.red:ev.state==="blind"?T.amber:T.green;
-  const badge=ev.state==="triggered"?"TRIPPED":ev.state==="blind"?"BLIND":"clear";
-  return(
-    <div style={{display:"flex",alignItems:"center",gap:8,padding:"7px 10px",background:T.surface,borderRadius:4,border:`1px solid ${ev.state==="triggered"&&alert.active?T.red:T.border}`}}>
-      <div style={{width:7,height:7,borderRadius:"50%",background:color,flexShrink:0,boxShadow:alert.active?`0 0 5px ${color}`:"none"}}/>
-      <div style={{flex:1,minWidth:0}}>
-        <div style={{fontFamily:T.fontSans,fontSize:11,color:T.textPrimary}}>{alert.label}
-          {alert.active&&<span style={{fontFamily:T.fontMono,fontSize:8,color,marginLeft:6,letterSpacing:"0.08em"}}>{badge}</span>}
-        </div>
-        <div style={{fontFamily:T.fontMono,fontSize:9,color:ev.state==="blind"?T.amber:T.textMuted}}>
-          {ev.state==="blind"?ev.why:ev.detail||`${alert.condition} ${alert.value}${alert.unit}`}
-        </div>
-      </div>
-      <button onClick={()=>onToggle(alert.id)} aria-label={`Toggle alert ${alert.label}`}
-        style={{fontFamily:T.fontMono,fontSize:9,background:"none",border:`1px solid ${T.border}`,color:T.textSecondary,padding:"6px 10px",minWidth:44,minHeight:44,borderRadius:3,cursor:"pointer"}}>
-        {alert.active?"ON":"OFF"}
-      </button>
-      <button onClick={()=>onDelete(alert.id)} aria-label={`Delete alert ${alert.label}`}
-        style={{fontFamily:T.fontMono,fontSize:9,background:"none",border:`1px solid ${T.redDim}`,color:T.red,padding:"6px 8px",minWidth:44,minHeight:44,borderRadius:3,cursor:"pointer"}}>✕</button>
-    </div>
-  );
-};
-
+// AlertRow moved into src/sections/Alerts.jsx (wave 12) — its only consumer.
 const DEFAULT_ALERTS=[
   // No `triggered` field: it is COMPUTED by evalAlert from live data every render. A stored
   // trigger state is exactly what let this section assert "nothing tripped" without looking.
@@ -1064,41 +387,15 @@ const DEFAULT_ALERTS=[
 // NOTE: this build has NO Zone E (401k / compound sim) — that lived only in the
 // artifact fork. There is currently no private-only section to gate; the guard
 // pattern below is wired and ready for when private content is added.
-/* C2b (v3.62, newcomer audit) — the Sections nav gains an ACTIVE state.
-   The six <h2>s are visually-hidden, so a jump previously landed with no orientation cue at
-   all: every link looked identical before and after the click. Tracking the hash is enough to
-   fix that and stays honest — it marks where the reader ASKED to go, which is a fact, rather
-   than guessing a "current section" from scroll position (a scroll-spy would need to pick an
-   arbitrary threshold and would disagree with the URL). `aria-current="location"` gives a
-   screen reader the same cue the highlight gives everyone else. */
 // Every SOURCES field that casts a regime vote (all six, CAPE's shillerPe alias included).
 const VOTING_FIELDS=new Set(Object.values(FACTOR_FIELD));
 
-const SECTIONS=[["overview","Overview"],["drivers","Drivers"],["markets","Markets"],["macro","Macro"],["ai","AI"],["health","Data Health"]];
-const SectionNav=()=>{
-  const [hash,setHash]=useState(typeof window!=="undefined"?window.location.hash.slice(1):"");
-  useEffect(()=>{
-    const onHash=()=>setHash(window.location.hash.slice(1));
-    window.addEventListener("hashchange",onHash);
-    return()=>window.removeEventListener("hashchange",onHash);
-  },[]);
-  return(
-    <nav aria-label="Sections" style={{display:"flex",gap:2,overflowX:"auto",padding:"4px 16px",background:T.surface,borderBottom:`1px solid ${T.border}`,position:"sticky",top:"env(safe-area-inset-top)",zIndex:40}}>
-      {SECTIONS.map(([id,label])=>{
-        const on=hash===id;
-        return(
-        <a key={id} href={`#${id}`} aria-current={on?"location":undefined}
-          style={{fontFamily:T.fontMono,fontSize:T.fsS,letterSpacing:"0.08em",color:on?T.textPrimary:T.textSecondary,textDecoration:"none",padding:"6px 10px",borderRadius:3,whiteSpace:"nowrap",
-            background:on?T.surfaceHigh:"transparent",border:`1px solid ${on?T.borderAccent:"transparent"}`}}>{label}</a>
-      );})}
-    </nav>
-  );
-};
+// SectionNav extracted to src/sections/StickyNav.jsx (wave 15, task 9.2) — the v3.62
+// hash-only active state is SUPERSEDED by IntersectionObserver viewport tracking
+// (Req 3.7); a click still wins instantly via the hash. Hamburger form at ≤320px.
 
 export default function Dashboard({ publicView = false } = {}) {
   const [alerts,setAlerts]=useState(DEFAULT_ALERTS);
-  const [expandedHW,setExpandedHW]=useState(null);
-  const [watchlistOpen,setWatchlistOpen]=useState(false); // FEAT-322: default closed — curated content doesn't own the default view
   const [copied,setCopied]=useState(false);
   const [ttCopied,setTtCopied]=useState(false); // FEAT-332: "Copy TT readout" button state
   // Re-render every 10 min so the live 5-Whys session frame advances (pre-open→midday→
@@ -1106,6 +403,16 @@ export default function Dashboard({ publicView = false } = {}) {
   const [,setSessionTick]=useState(0);
   useEffect(()=>{const id=setInterval(()=>setSessionTick(t=>t+1),10*60*1000);return ()=>clearInterval(id);},[]);
   const { toasts, show:showToast, dismiss } = useUndoToast();
+  // 9.3 (Req 8.9): when the FIRST fetch resolves (LOADING -> LIVE/CACHED/ERROR), move
+  // keyboard focus to the verdict region so a screen reader hears the settled posture
+  // without hunting for it. Only on that one transition — later snapshot refreshes must
+  // never steal focus from whatever the user is doing.
+  const prevModeRef=useRef(null);
+  useEffect(()=>{
+    const prev=prevModeRef.current; prevModeRef.current=mode;
+    if(prev==="LOADING"&&(mode==="LIVE"||mode==="CACHED"||mode==="ERROR"))
+      document.getElementById("overview")?.focus();
+  });
   // FEAT-204 wiring — single-point hook swap; mock stays default, operator flips live post-deploy
   const { data: DATA, mode, asOf, provenance, dataAsOf, liveBuild, lastError, retry } = useMarketData(MOCK_DATA, { publicView });
   const d=DATA;
@@ -1229,10 +536,17 @@ export default function Dashboard({ publicView = false } = {}) {
   const flipLive=["spyPrice","spyMa200","vix"].every(k=>{const m=modeOf(k);return m==="LIVE"||m==="CACHED";});
   const flip=flipLive?computeMacroFlip({vix:d.marketPulse.vix.current,spyPrice:d.marketPulse.spy.price,spyMa200:d.marketPulse.spy.ma200}):null;
 
-  // FEAT-165: Share button
+  // FEAT-165: Share button.
+  // Wave 16 (Req 7.9): the ✓ COPIED claim is CONFIRMED, never optimistic — the old handler
+  // set it before the write settled, so a denied clipboard permission still flashed a green
+  // success for 2s (a false success claim, the honesty invariant applied to an affordance).
+  // A failed or cancelled write reverts to the idle label immediately (<300ms) with NO error
+  // toast — the user cancelled or the browser refused; nagging adds nothing.
   const handleShare=()=>{
-    navigator.clipboard?.writeText(window.location.href).catch(()=>{});
-    setCopied(true); setTimeout(()=>setCopied(false),2000);
+    const p=navigator.clipboard?.writeText(window.location.href);
+    if(!p){return;} // no clipboard API — claim nothing
+    p.then(()=>{setCopied(true);setTimeout(()=>setCopied(false),2000);})
+     .catch(()=>{setCopied(false);});
   };
 
   // FEAT-332: Copy TT readout — format the §1.2 paste block from LIVE/CACHED fields only, so a
@@ -1252,8 +566,12 @@ export default function Dashboard({ publicView = false } = {}) {
     if(flat.qqqChangePct!==undefined&&dataAsOf?.qqqPrice)flat.qqqPriceAsOf=dataAsOf.qqqPrice;
     if(flat.rateOddsHold!==undefined&&dataAsOf?.rateOddsHold)flat.rateOddsHoldAsOf=dataAsOf.rateOddsHold;
     const block=formatTtPaste(buildTtReadout(flat,{}),{generatedEt:d.lastRefresh});
-    navigator.clipboard?.writeText(block).catch(()=>{});
-    setTtCopied(true); setTimeout(()=>setTtCopied(false),2000);
+    // Wave 16 (Req 7.9): same confirmed-not-optimistic rule as handleShare — this block gates
+    // real orders, so a false "✓ TT COPIED" over an empty clipboard is strictly worse here.
+    const p=navigator.clipboard?.writeText(block);
+    if(!p){return;}
+    p.then(()=>{setTtCopied(true);setTimeout(()=>setTtCopied(false),2000);})
+     .catch(()=>{setTtCopied(false);});
   };
 
   // Alert delete with undo (FEAT-166)
@@ -1297,6 +615,9 @@ export default function Dashboard({ publicView = false } = {}) {
           branded header below; duplicating it on screen would be noise, so the structural
           heading is visually hidden rather than invented as new chrome. */}
       <h1 className="visually-hidden">MacroDash — macro backdrop: is the market environment supportive of taking risk?</h1>
+      {/* 9.3 (Req 8.2): skip-navigation — first focusable element, visually hidden until
+          focused, jumps keyboard/SR users straight to the verdict region. */}
+      <a href="#overview" className="skip-link">Skip to verdict</a>
       {/* B4 (v3.59): ONE concise live region. Announcing the full verdict band + confidence
           strip read entire blocks aloud on every snapshot; a reader should hear one sentence. */}
       <div aria-live="polite" role="status" className="visually-hidden">
@@ -1317,13 +638,27 @@ export default function Dashboard({ publicView = false } = {}) {
           .macro-strip-inner>div{min-width:0!important;}
           .delta-bar-inner{flex-wrap:nowrap!important;overflow-x:auto!important;}
           .dir-tiles{flex-wrap:wrap!important;}
-          .hide-mobile{display:none!important;}
+          /* .hide-mobile rule DELETED (wave 17 audit): zero consumers since FINDING-1. */
           /* IPO strip stays a horizontal swipeable row on mobile (not 3 stacked cards) */
           .wen-moon-mobile{display:none!important;}
         }
         @media(prefers-reduced-motion:reduce){.pulse-anim{animation:none!important;}}
         /* A2 (v3.58): 320px contract — the duplicate wordmark is the first thing to go. */
         @media(max-width:359px){.sub-wordmark{display:none;}}
+        /* 9.3 (Req 8.2): the skip link is the first focusable element — hidden until focused. */
+        .skip-link{position:absolute;left:-9999px;z-index:100;background:${T.surfaceHigh};color:${T.textPrimary};font-family:${T.fontMono};font-size:11px;padding:10px 16px;border:1px solid ${DT["focus-ring"]};border-radius:3px;}
+        .skip-link:focus{left:8px;top:calc(8px + env(safe-area-inset-top));}
+        /* 9.1 (Req 6.4): ≤320px — nav collapses to a hamburger, header stays ≤56px. */
+        @media(max-width:320px){
+          .nav-row{display:none!important;}
+          .nav-burger{display:block!important;}
+          header{max-height:56px;overflow:hidden;flex-wrap:nowrap!important;}
+          .wordmark{font-size:16px!important;}
+        }
+        /* 9.1 (Req 6.3): 44px tap targets on the remaining interactive controls at phone width. */
+        @media(max-width:480px){
+          .nav-link,.cg-toggle,.hw-row{min-height:44px;}
+        }
         /* B4 (v3.59): WCAG target size — header actions get real thumb targets on phones. */
         @media(max-width:480px){.hdr-act{min-height:44px;min-width:44px;display:inline-flex;align-items:center;justify-content:center;}}
         /* v3.62: the ⋯ OPS disclosure. The default triangle marker is suppressed so the summary
@@ -1351,7 +686,7 @@ export default function Dashboard({ publicView = false } = {}) {
         {/* A2 (v3.58): minWidth:0 lets the identity group shrink inside the flex row instead of
             forcing overflow; the sub-wordmark hides below 360px (it duplicates the brand). */}
         <div style={{display:"flex",alignItems:"center",gap:14,minWidth:0,flexWrap:"wrap"}}>
-          <div style={{fontFamily:T.fontDisplay,fontSize:20,fontWeight:800,color:T.amber,letterSpacing:"-0.02em"}}>MacroDash</div>
+          <div className="wordmark" style={{fontFamily:T.fontDisplay,fontSize:20,fontWeight:800,color:T.amber,letterSpacing:"-0.02em"}}>MacroDash</div>
           {/* FEAT-165: friendly sub-headline */}
           {/* FINDING-1: orientation line now visible on mobile (was hide-mobile) */}
           <div className="sub-wordmark" style={{fontFamily:T.fontSans,fontSize:10,color:T.textMuted}}>macrodash</div>
@@ -1439,9 +774,11 @@ export default function Dashboard({ publicView = false } = {}) {
           the island strip, and the sticky nav offsets below it — padding the nav instead
           would render a permanent inset-height band even when it isn't stuck. */}
       <div aria-hidden="true" style={{position:"fixed",top:0,left:0,right:0,height:"env(safe-area-inset-top)",background:T.bg,zIndex:45}}/>
-      <SectionNav/>
+      <StickyNav/>
 
-      <h2 id="overview" className="visually-hidden">Overview — posture, confidence, and what changed</h2>
+      {/* 9.3: the overview heading is the skip-link target — tabIndex -1 makes it
+          programmatically focusable for the skip jump AND the LOADING-resolve focus move. */}
+      <h2 id="overview" tabIndex={-1} className="visually-hidden">Overview — posture, confidence, and what changed</h2>
       {/* FEAT-169 + R4c: Regime Verdict band — HERO, now FIRST under the header (mobile-first) */}
       <RegimeBand d={d} stale={staleFactors} loading={mode==="LOADING"} liveBuild={liveBuild} srcLabel={derivedLabel}/>
 
@@ -1469,67 +806,19 @@ export default function Dashboard({ publicView = false } = {}) {
         </div>
       )}
 
-      {/* ── 5 WHYS (moved here v3.69 NARRATIVE-FIRST — owner call: the narrative outranks the
-          tiles; it previously rendered LAST in Zone B, ~5 phone screens down). Content and
-          data flow byte-identical; only the container changed from Zone-B card to overview
-          strip. Always expanded (owner-pinned) — and the LOADING/ERROR anchors ("0/3 core
-          inputs usable") are read from body innerText by the public-render suite, so this
-          block must never collapse. ── */}
-      <div style={{padding:"10px 20px",background:T.bg,borderBottom:`1px solid ${T.border}`}}>
-              <SectionHeader>5 Whys · Today</SectionHeader>
-              <div style={{fontFamily:T.fontMono,fontSize:9,color:T.amber,marginBottom:6}}>{fw.regime}</div>
-              <div style={{fontFamily:T.fontSans,fontSize:12,color:T.textSecondary,lineHeight:1.6,fontStyle:"italic"}}>"{fw.headline}"</div>
-              {fw.whys.map((w,i)=>(
-                <div key={i} style={{borderLeft:`2px solid ${T.amber}44`,paddingLeft:8,marginTop:8}}>
-                  <div style={{fontFamily:T.fontMono,fontSize:8,color:T.amber}}>WHY #{i+1}</div>
-                  <div style={{fontFamily:T.fontSans,fontSize:11,color:T.textSecondary,lineHeight:1.5}}>{w}</div>
-                </div>
-              ))}
-              <div style={{fontFamily:T.fontMono,fontSize:8,color:T.textMuted,marginTop:8}}>Rule-based · {derivedLabel} (no LLM)</div>
-              {/* Freshness anchors to the equity close (SPY) — a market synthesis is "as of the
-                  last close". Don't let a secondary input FRED publishes a day late (VIX/10Y)
-                  drag the whole 5-Whys badge to STALE; per-tile VIX/10Y badges stay honest. */}
-              <SourceBox api="Rule-based" endpoint="6-factor regime · stale inputs excluded" mode={modeOf('spyPrice')} asOf={asOfOf('spyPrice')}/>
-      </div>
+      {/* ── 5 WHYS (moved here v3.69 NARRATIVE-FIRST — owner call: the narrative outranks
+          the tiles). Extracted to src/sections/FiveWhys.jsx (task 1.4), presentation only —
+          content and data flow byte-identical; must never collapse (LOADING/ERROR anchors
+          are read from body innerText by the public-render suite). ── */}
+      <FiveWhys fw={fw} derivedLabel={derivedLabel} mode={modeOf('spyPrice')} asOf={asOfOf('spyPrice')}/>
 
-      {/* ── SIGNAL QUALITY rollup — at-a-glance data trust (live vs stale vs mock) ── */}
-      {/* A11Y: aria-live on the CONFIDENCE strip, not on every tile — a screen reader should
-          hear "the verdict's evidence base changed", not each number ticking. */}
-      <div role="region" aria-label="Signal quality and backdrop confidence"
-        style={{display:"flex",alignItems:"center",gap:10,flexWrap:"wrap",padding:"5px 20px",background:T.bg,borderBottom:`1px solid ${T.border}`}}>
-        <span style={{fontFamily:T.fontMono,fontSize:8,color:T.textMuted,letterSpacing:"0.12em",textTransform:"uppercase"}}>Signal Quality</span>
-        <span style={{fontFamily:T.fontMono,fontSize:T.fsM,color:T.green}}>● {sq.fresh} fresh{sq.fresh>0&&<span style={{color:T.textMuted}}> ({sq.live} live · {sq.cached} cached)</span>}</span>
-        {sq.stale>0&&<span style={{fontFamily:T.fontMono,fontSize:T.fsM,color:T.amber}}>⏱ {sq.stale} stale</span>}
-        {sq.mock>0&&<span style={{fontFamily:T.fontMono,fontSize:T.fsM,color:T.textMuted}}>○ {sq.mock} mock</span>}
-        <span style={{fontFamily:T.fontMono,fontSize:8,color:T.textMuted}}>of {sq.total} tracked</span>
-        {/* The verdict's own confidence, not the tile census. */}
-        <span style={{fontFamily:T.fontMono,fontSize:9,color:regime.insufficient?T.red:regimeConf.counted===regimeConf.total?T.green:T.amber,borderLeft:`1px solid ${T.border}`,paddingLeft:10}}>
-          BACKDROP {regimeConf.counted}/{regimeConf.total} factors voting{regime.insufficient?` — POSTURE WITHHELD (needs ${regime.quorum})`:""}
-        </span>
-        {regimeConf.excluded.length>0&&(
-          <span style={{fontFamily:T.fontMono,fontSize:8,color:T.amber}}>excluded: {regimeConf.excluded.join(" · ")}</span>
-        )}
-        {regimeConf.blind&&(
-          <span style={{fontFamily:T.fontMono,fontSize:8,color:T.red}}>⚠ crash gauge (VIX) unavailable</span>
-        )}
-        {/* v3.61: the v3.1 decode legend moved into the Data Health expander — explanation,
-            not evidence, and the strip's job is the one-line tell. */}
-      </div>
+      {/* ── SIGNAL QUALITY — extracted to src/sections/SignalQuality.jsx (task 3.2),
+          presentation only; the SIGNAL_FIELDS census + regimeConf derivation stay here. ── */}
+      <SignalQuality sq={sq} regimeConf={regimeConf} regime={regime}/>
 
-      {/* ── C4 (v3.60): WHAT CHANGED since the last valid snapshot ── */}
-      {changed&&(
-        <div style={{padding:"6px 20px",background:T.bg,borderBottom:`1px solid ${T.border}`,display:"flex",gap:10,alignItems:"baseline",flexWrap:"wrap"}}>
-          <span style={{fontFamily:T.fontMono,fontSize:8,color:T.textMuted,letterSpacing:"0.12em",textTransform:"uppercase"}}>What changed</span>
-          {/* v3.61 (newcomer audit): the baseline is BROWSER-LOCAL (localStorage), not an
-              account — the copy states the device scope rather than implying a server history. */}
-          {changed.baseline
-            ?<span style={{fontFamily:T.fontMono,fontSize:9,color:T.textSecondary}}>baseline set — tracking starts today on this device</span>
-            :changed.changes.length
-              ?changed.changes.slice(0,4).map((c,i)=>(
-                <span key={i} style={{fontFamily:T.fontMono,fontSize:9,color:c.kind==="posture"?T.amber:T.textSecondary}}>{c.text}</span>))
-              :<span style={{fontFamily:T.fontMono,fontSize:9,color:T.textMuted}}>no material change since your previous visit on this device ({String(changed.since||"").slice(0,10)})</span>}
-        </div>
-      )}
+      {/* ── C4 (v3.60): WHAT CHANGED — extracted to src/sections/WhatChanged.jsx
+          (task 3.3), presentation only; compare-then-persist sequencing stays here. ── */}
+      <WhatChanged changed={changed}/>
 
       {/* ── C3 (v3.60): DRIVERS — the six-factor Evidence Matrix. Renders the EvidenceSet
           contract, never its own reading: value · vote · freshness · as-of · exclusion
@@ -1577,44 +866,11 @@ export default function Dashboard({ publicView = false } = {}) {
           health pattern) — previously bare h2s, so the ai anchor swallowed Conviction+Alerts. */}
       <section aria-labelledby="markets">
       <h2 id="markets" className="visually-hidden">Markets — equities, rates and cross-asset</h2>
-      {/* ── MACRO STRIP (persistent ticker — always visible; FEAT-170 reflows on mobile) ── */}
-      <div style={{background:T.surfaceHigh,borderBottom:`1px solid ${T.border}`,padding:"6px 20px",overflowX:"auto",display:"flex",alignItems:"center",justifyContent:"space-between",gap:12}} className="macro-strip">
-        <div style={{display:"flex",gap:20,minWidth:"max-content",flex:1}} className="macro-strip-inner">
-          {[
-            {l:"SPY*", f:"spyPrice", v:`$${d.marketPulse.spy.price}`,      s:fmt.pct(d.marketPulse.spy.changePct), sc:pctColor(d.marketPulse.spy.changePct), t:"S&P 500 ÷ 10 (FRED SP500 proxy, NOT an SPY ETF quote — Stooq blocks the edge). Tracks the ETF closely; not identical."},
-            {l:"QQQ",  f:"qqqPrice", v:`$${d.marketPulse.qqq.price}`,      s:fmt.pct(d.marketPulse.qqq.changePct), sc:pctColor(d.marketPulse.qqq.changePct), t:"Nasdaq-100 ETF — big tech"},
-            {l:"VIX",  f:"vix", v:`${d.marketPulse.vix.current}`,     s:fmt.pct(d.marketPulse.vix.weekChg)+" WoW", sc:pctColor(d.marketPulse.vix.weekChg,true), t:"Volatility index — the market's fear gauge (lower = calmer)"},
-            {l:"F&G",  f:"fearGreed", v:`${d.marketPulse.fearGreed.score}`, s:d.marketPulse.fearGreed.label, sc:d.marketPulse.fearGreed.score>55?T.green:T.red, t:"Fear & Greed — market sentiment, 0 = fear, 100 = greed"},
-            {l:"10Y",  f:"tenYear", v:`${d.crossAsset.treasury10y.current}%`, s:fmt.bps(d.crossAsset.treasury10y.d1)+" 1D", sc:pctColor(-d.crossAsset.treasury10y.d1), t:"10-year Treasury yield — the benchmark interest rate"},
-            {l:"FED",  f:"fedFunds", v:`${d.macro.fedFunds.rate}%`,        s:`FOMC ${fomcLabel}`, sc:fomcDays===0?T.amber:T.textMuted, t:"Fed funds rate — the central bank's policy rate"},
-            {l:"CPI",  f:"cpiHeadline", v:`${d.macro.cpi.headline}%`,         s:`Core ${d.macro.cpi.core}%`, sc:d.macro.cpi.headline>3?T.red:T.green, t:"Consumer Price Index — inflation, year-over-year"},
-          ].map(({l,f,v,s,sc,t})=>{
-            const m=modeOf(f); const live=m==="LIVE"||m==="CACHED";
-            const dot=live?T.green:m==="STALE"?T.amber:T.textMuted; // provenance dot: live/stale/mock
-            /* v3.62 (newcomer audit): "voting indicators and context indicators are mixed".
-               A blanket per-SECTION label would be false here — this one strip carries both
-               (VIX/F&G/10Y/CPI vote, SPY/QQQ/FED do not) — so the marker goes on the ITEM.
-               Derived from FACTOR_FIELD's VALUES, not REGIME_FACTOR_FIELDS: that array holds
-               only the five whose field key equals their factor key, with CAPE riding a
-               separate `shillerPe`→`valuation` alias line in factorExclusions. Using it here
-               would silently un-mark a CAPE tile the day one is added to a strip. */
-            const votes=VOTING_FIELDS.has(f);
-            return(
-            <div key={l} title={`${t}\n(${m.toLowerCase()})${votes?"\nCounts toward today's posture.":"\nContext only — does not vote."}`} style={{flexShrink:0,minWidth:68,cursor:"help"}}>
-              <div style={{display:"flex",alignItems:"center",gap:3}}>
-                <span style={{width:5,height:5,borderRadius:"50%",background:live?dot:"transparent",border:`1px solid ${dot}`,flexShrink:0}}/>
-                <span style={{fontFamily:T.fontMono,fontSize:8,color:T.textMuted}}>{l}</span>
-                {votes&&<span aria-hidden="true" title="counts toward today's posture" style={{fontFamily:T.fontMono,fontSize:7,color:T.amber,letterSpacing:"0.05em"}}>▪</span>}
-              </div>
-              <div style={{fontFamily:T.fontMono,fontSize:13,color:T.textPrimary,fontWeight:700,lineHeight:1.1}}>{v}</div>
-              <div style={{fontFamily:T.fontMono,fontSize:9,color:sc}}>{s}</div>
-            </div>
-            );
-          })}
-        </div>
-        {/* WEN MOON METER — mood badge based on SPY daily change (hidden on mobile to declutter the 2x4 strip, per the unused .wen-moon-mobile rule) */}
-        <div className="wen-moon-mobile"><WenMoonBadge spyChangePct={d.marketPulse.spy.changePct}/></div>
-      </div>
+      {/* ── MACRO STRIP — extracted to src/sections/MacroStrip.jsx (task 3.1),
+          presentation only (FEAT-170 4-col mobile reflow rides the .macro-strip rules in
+          the stylesheet above; v3.25: always visible while market detail collapses). ── */}
+      <MacroStrip d={d} modeOf={modeOf} fomcLabel={fomcLabel} fomcDays={fomcDays}
+        votingFields={VOTING_FIELDS} badge={<WenMoonBadge spyChangePct={d.marketPulse.spy.changePct}/>}/>
 
 
       {/* FEAT-162: Session Delta Bar — Alerts Δ first (conditional: hidden when nothing actionable) */}
@@ -1634,214 +890,9 @@ export default function Dashboard({ publicView = false } = {}) {
         </div>
       )}
 
-      {/* v3.69 NARRATIVE-FIRST supersedes the FEAT-161 60/40 COMMAND CENTER GRID and the
-          FEAT-171 above-fold contract: the two-column race is what buried the 5 Whys ~5 phone
-          screens down (Zone A stacked entirely before Zone B on mobile). The narrative now
-          leads in the overview; the chart and tile rows are reference material behind ONE
-          expander (the macro strip above stays the always-visible summary — v3.25: its
-          provenance dots and voting markers survive the collapse). Count = 1 chart + 2 YTD
-          + 4 signal + 4 cross-asset tiles. */}
-      <div style={{padding:"12px 20px 0"}}>
-        <CollapsedGroup count={11} label="full market detail — chart & tiles" chip={false}>
-        <div style={{display:"grid",gap:16,marginTop:8}}>
-
-          {/* ── market detail (was ZONE A) ── */}
-          <div style={{display:"flex",flexDirection:"column",gap:12}}>
-
-            {/* A1: SPY Chart + MA cross */}
-            <div style={{background:T.surface,border:`1px solid ${T.border}`,borderRadius:6,padding:"14px 16px"}}>
-              <SectionHeader>Market Pulse</SectionHeader>
-              <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:10,flexWrap:"wrap",gap:6}}>
-                <div>
-                  <div style={{fontFamily:T.fontSans,fontSize:11,color:T.textMuted}}>S&P 500 — 100D & 200D Moving Average</div>
-                  <div style={{display:"flex",gap:6,marginTop:5,flexWrap:"wrap"}}>
-                    <Badge label={`100D MA $${d.marketPulse.spy.ma100}`} color={T.blue} small/>
-                    <Badge label={`200D MA $${d.marketPulse.spy.ma200}`} color={T.purple} small/>
-                    <Badge label={goldenCross?"GOLDEN CROSS ✓":"DEATH CROSS ✗"} color={goldenCross?T.green:T.red} small/>
-                  </div>
-                </div>
-                <div style={{textAlign:"right"}}>
-                  <div style={{fontFamily:T.fontMono,fontSize:22,color:T.textPrimary,fontWeight:700}}>${d.marketPulse.spy.price}</div>
-                  <div style={{fontFamily:T.fontMono,fontSize:11,color:pctColor(d.marketPulse.spy.changePct)}}>{fmt.pct(d.marketPulse.spy.changePct)} today</div>
-                  {/* FEAT-202: live S&P 500 index (FRED SP500) */}
-                  <div style={{fontFamily:T.fontMono,fontSize:9,color:T.textMuted}}>S&amp;P 500 index {d.marketPulse.spx.index.toLocaleString()}</div>
-                </div>
-              </div>
-              {/* B4 (v3.59): the chart is aria-hidden; the visually-hidden line below is its
-                  text equivalent — trend + both moving averages, the decision content. */}
-              <span className="visually-hidden">
-                SPY {d.marketPulse.spy.price>=d.marketPulse.spy.ma200?"above":"below"} its 200-day average of ${d.marketPulse.spy.ma200}
-                {" and "}{d.marketPulse.spy.price>=d.marketPulse.spy.ma100?"above":"below"} its 100-day average of ${d.marketPulse.spy.ma100}.
-              </span>
-              <div aria-hidden="true" style={{height:140}}>
-                <ResponsiveContainer width="100%" height="100%">
-                  <LineChart data={spyData}>
-                    <XAxis dataKey="date" hide/>
-                    <YAxis domain={["auto","auto"]} tick={{fontSize:8,fill:T.textMuted}} width={38}/>
-                    <Tooltip contentStyle={{background:T.surfaceHigh,border:`1px solid ${T.border}`,fontSize:10,fontFamily:T.fontMono}} formatter={(val)=>[`$${val.toFixed(2)}`,"Price"]}/>
-                    <ReferenceLine y={d.marketPulse.spy.ma200} stroke={T.purple} strokeDasharray="4 2" strokeWidth={1}/>
-                    <ReferenceLine y={d.marketPulse.spy.ma100} stroke={T.blue} strokeDasharray="4 2" strokeWidth={1}/>
-                    <Line type="monotone" dataKey="price" stroke={T.amber} dot={false} strokeWidth={2}/>
-                  </LineChart>
-                </ResponsiveContainer>
-              </div>
-              <SourceBox api="FRED" endpoint="SP500 ÷10 proxy" mode={modeOf('spyPrice')} asOf={asOfOf('spyPrice')}/>
-            </div>
-
-            {/* A2-A5: KPI row — v3.1: SPY P/E (mock, Yahoo-dupe) cut; each tile carries provenance */}
-            <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
-              {[
-                {l:"SPY YTD",  f:"spyYtd", v:fmt.pct(d.marketPulse.spy.ytd),  c:pctColor(d.marketPulse.spy.ytd)},
-                {l:"QQQ YTD",  f:"qqqYtd", v:fmt.pct(d.marketPulse.qqq.ytd),  c:pctColor(d.marketPulse.qqq.ytd)},
-              ].map(({l,v,c})=>{
-                const m=modeOf(l==="SPY YTD"?"spyYtd":"qqqYtd"); const illus=isIllustrative(m);
-                return(
-                <div key={l} style={{background:T.surface,backgroundImage:illus?ILLUS_HATCH:undefined,border:`1px solid ${T.border}`,borderRadius:5,padding:"8px 12px",flex:"1 1 90px",opacity:illus?0.92:1}}>
-                  <Label>{l}</Label>
-                  <div style={{fontFamily:T.fontMono,fontSize:18,color:illus?T.textSecondary:c,fontWeight:700}}>{v}</div>
-                  <div style={{marginTop:2}}>{illus?(m==="STALE"?<DataModeBadge mode="STALE"/>:<IllustrativeChip/>):<DataModeBadge mode={m}/>}</div>
-                </div>
-                );
-              })}
-            </div>
-
-            {/* A6-A8: Signal tiles, live-first (FEAT-322) — equity fear (VIX | F&G) + credit
-                risk. Descriptor array so stale tiles demote into a CollapsedGroup instead of
-                renting default-view space at full size (DEC-31 already retired P/C). */}
-            {(()=>{
-              const signalTiles=[
-                { f:"vix", render:()=>(
-                  <div style={{background:T.surface,border:`1px solid ${T.border}`,borderRadius:5,padding:"10px 12px"}}>
-                    <Label>VIX</Label>
-                    <div style={{fontFamily:T.fontMono,fontSize:20,color:d.marketPulse.vix.current>25?T.red:d.marketPulse.vix.current>18?T.yellow:T.green,fontWeight:700}}>{d.marketPulse.vix.current}</div>
-                    <div style={{fontFamily:T.fontMono,fontSize:9,color:pctColor(d.marketPulse.vix.weekChg,true)}}>{fmt.pct(d.marketPulse.vix.weekChg)} WoW</div>
-                    <div style={{height:28,marginTop:6}}><ResponsiveContainer width="100%" height="100%"><LineChart data={d.marketPulse.vix.series.map((v,i)=>({v,i}))}><Line type="monotone" dataKey="v" stroke={T.amber} dot={false} strokeWidth={1.5}/></LineChart></ResponsiveContainer></div>
-                    <SourceBox api="FRED" endpoint="VIXCLS" mode={modeOf('vix')} asOf={asOfOf('vix')}/>
-                  </div>
-                )},
-                { f:"fearGreed", render:()=>(
-                  <FGGauge score={d.marketPulse.fearGreed.score} label={d.marketPulse.fearGreed.label} mode={modeOf('fearGreed')} asOf={asOfOf('fearGreed')}/>
-                )},
-                // HY-IG Credit Spread — widening is a bearish leading indicator for equities
-                { f:"creditSpread", render:()=>(
-                  <div style={{background:T.surface,border:`1px solid ${T.border}`,borderRadius:5,padding:"10px 12px"}}>
-                    <Label>HY–IG SPREAD</Label>
-                    <div style={{fontFamily:T.fontMono,fontSize:20,color:d.macro.credit.spread>5?T.red:d.macro.credit.spread>3.5?T.yellow:T.textPrimary,fontWeight:700}}>
-                      {d.macro.credit.spread.toFixed(2)}<span style={{fontSize:11}}>pp</span>
-                    </div>
-                    <div style={{fontFamily:T.fontMono,fontSize:9,color:d.macro.credit.spreadD1>0?T.red:d.macro.credit.spreadD1<0?T.green:T.textMuted}}>
-                      {d.macro.credit.spreadD1>0?"▲":d.macro.credit.spreadD1<0?"▼":"→"} {Math.abs(d.macro.credit.spreadD1).toFixed(2)}pp {d.macro.credit.spreadD1>0?"widening":d.macro.credit.spreadD1<0?"tightening":"unchanged"}
-                    </div>
-                    <div style={{height:28,marginTop:6}}><ResponsiveContainer width="100%" height="100%"><LineChart data={d.macro.credit.series.map((v,i)=>({v,i}))}><Line type="monotone" dataKey="v" stroke={d.macro.credit.spreadD1>0?T.red:T.green} dot={false} strokeWidth={1.5}/></LineChart></ResponsiveContainer></div>
-                    <div style={{fontFamily:T.fontMono,fontSize:8,color:T.textMuted,marginTop:3}}>HY {d.macro.credit.hy.toFixed(2)}% · IG {d.macro.credit.ig.toFixed(2)}%</div>
-                    <SourceBox api="FRED" endpoint="ICE BofA OAS" mode={modeOf('creditSpread')} asOf={asOfOf('creditSpread')}/>
-                  </div>
-                )},
-                /* FEAT-NFCI (v3.43): financial conditions — the closest thing to a direct
-                   answer to this dashboard's own thesis question, and the one macro series
-                   here that a retail site (Yahoo/SA/TipRanks) effectively never surfaces.
-                   Sits beside HY-IG because both are risk-TRANSMISSION gauges: credit prices
-                   the risk, NFCI measures how tight the plumbing carrying it has become. */
-                { f:"nfci", render:()=>{
-                  const nMode=modeOf('nfci'), nIllus=isIllustrative(nMode);
-                  const v=d.macro.nfci.current, w=d.macro.nfci.w1;
-                  /* NFCI_BANDS (v3.43.1) — derived, not asserted. The index is a Z-SCORE by
-                     construction (mean 0, SD 1 over 1971–), so its native unit is standard
-                     deviations and a decimal deadband like the old ±0.10 meant nothing in it.
-                     Two thresholds, each with a reason:
-                       > 0     TIGHT — zero is the DEFINITIONAL mean, so crossing it is the event
-                       ≤ -0.5  LOOSE — a half standard deviation below the mean, stated in the
-                               index's own unit rather than a made-up decimal
-                     Deliberately ASYMMETRIC (the same doctrine as the v3.40 TAILWIND withhold):
-                     tight conditions CAUSE drawdowns, while merely-looser-than-average is the
-                     ordinary post-GFC backdrop, not a buy signal. A symmetric band around zero
-                     would have voted bullish nearly every week — a factor that always votes the
-                     same way does not inform a majority tally, it silently biases it. */
-                  const band=v>NFCI_TIGHT?"TIGHT":v<=NFCI_LOOSE?"LOOSE":"NEUTRAL";
-                  const bandCol=band==="TIGHT"?T.red:band==="LOOSE"?T.green:T.yellow;
-                  return (
-                  <div style={{background:T.surface,border:`1px solid ${T.border}`,borderRadius:5,padding:"10px 12px",
-                    backgroundImage:nIllus?ILLUS_HATCH:undefined,opacity:nIllus?0.92:1}}>
-                    <div style={{display:"flex",justifyContent:"space-between",alignItems:"baseline",gap:6,flexWrap:"wrap"}}>
-                      <Label>FIN CONDITIONS</Label>
-                      {/* v3.1 honesty invariant: TIGHT/LOOSE is a directional call, so it is
-                          suppressed on mock/stale exactly like the CAPE BUBBLE verdict. */}
-                      {nIllus?(nMode==="STALE"?<DataModeBadge mode="STALE"/>:<IllustrativeChip/>)
-                             :<Badge label={band} color={bandCol} small/>}
-                    </div>
-                    <div style={{fontFamily:T.fontMono,fontSize:20,color:nIllus?T.textSecondary:bandCol,fontWeight:700}}>
-                      {v>0?"+":""}{v.toFixed(2)}
-                    </div>
-                    <div style={{fontFamily:T.fontMono,fontSize:9,color:T.textMuted}}>
-                      {w==null?"—":`${w>0?"▲ +":w<0?"▼ ":"→ "}${Math.abs(w).toFixed(2)} WoW`} · 0 = avg
-                    </div>
-                    <div style={{height:28,marginTop:6}}><ResponsiveContainer width="100%" height="100%"><LineChart data={d.macro.nfci.series.map((val,i)=>({v:val,i}))}><Line type="monotone" dataKey="v" stroke={nIllus?T.textMuted:bandCol} dot={false} strokeWidth={1.5}/></LineChart></ResponsiveContainer></div>
-                    <SourceBox api="FRED" endpoint="NFCI · Chicago Fed" mode={nMode} asOf={asOfOf('nfci')}/>
-                  </div>
-                );}},
-              ];
-              const liveSig=signalTiles.filter(t=>!demoted(t.f));
-              const degSig=signalTiles.filter(t=>demoted(t.f));
-              return (
-                <>
-                  <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8}}>
-                    {liveSig.map(t=><Fragment key={t.f}>{t.render()}</Fragment>)}
-                  </div>
-                  {degSig.length>0&&(
-                    <CollapsedGroup count={degSig.length} label={`stale signal tile${degSig.length===1?"":"s"}`}>
-                      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8,marginTop:4}}>
-                        {degSig.map(t=><Fragment key={t.f}>{t.render()}</Fragment>)}
-                      </div>
-                    </CollapsedGroup>
-                  )}
-                </>
-              );
-            })()}
-
-            {/* Cross-asset direction tiles — live-first (FEAT-322): live tiles own the row;
-                curated (Gold has no SOURCES key — permanently Manual) + stale ones demote
-                behind a "+N stale/curated" expander. */}
-            <div>
-              <SectionHeader>Cross-Asset Direction</SectionHeader>
-              {(()=>{
-                const dirTiles=[
-                  { f:"tenYear", render:()=><DirTile label="10Y Treasury" value={`${d.crossAsset.treasury10y.current}%`} d1={d.crossAsset.treasury10y.d1} w1={d.crossAsset.treasury10y.w1} m1={d.crossAsset.treasury10y.m1} band={0.10} invert={true} spark={d.crossAsset.treasury10y.series} source="FRED" sourceEp="DGS10" mode={modeOf('tenYear')} asOf={asOfOf('tenYear')}/> },
-                  /* FEAT-30Y (v3.55): the LONG END, beside the 10Y because the pair is the
-                     point. TLT was rejected in v3.43 as a monotonic transform of the 10Y —
-                     DGS30 is not: "long end breaking out while the front holds" is its own
-                     transmission channel (term premium / fiscal risk), and the tile states
-                     the 10s30s spread on its face so the pair reads as one signal. The 5%
-                     line is a stated REFERENCE, never a verdict — a directional call off a
-                     level would be the v3.1 invariant violated. */
-                  { f:"thirtyYear", render:()=><DirTile label="30Y Treasury" value={`${d.crossAsset.treasury30y.current}%`} d1={d.crossAsset.treasury30y.d1} w1={d.crossAsset.treasury30y.w1} m1={d.crossAsset.treasury30y.m1} band={0.10} invert={true} spark={d.crossAsset.treasury30y.series} source="FRED" sourceEp="DGS30" mode={modeOf('thirtyYear')} asOf={asOfOf('thirtyYear')}
-                      note={`10s30s ${d.crossAsset.term.spread10s30s>=0?"+":""}${d.crossAsset.term.spread10s30s.toFixed(2)}pp${d.crossAsset.term.spread10s30s<0?" — INVERTED":""}`}
-                      noteTitle={"5.00% = the 2007 pre-GFC reference level"}/> },
-                  { f:"wti", render:()=><DirTile label="WTI Crude"   value={`$${d.crossAsset.wti.current}`}         d1={d.crossAsset.wti.d1pct}  w1={d.crossAsset.wti.w1pct}  m1={d.crossAsset.wti.m1pct}  band={1.0} spark={d.crossAsset.wti.series}  source="FRED" sourceEp="DCOILWTICO" mode={modeOf('wti')} asOf={asOfOf('wti')}/> },
-                  { f:"btc", render:()=><DirTile label="Bitcoin"     value={`$${(d.crossAsset.btc.current/1000).toFixed(1)}K`} d1={d.crossAsset.btc.d1pct} w1={d.crossAsset.btc.w1pct} m1={d.crossAsset.btc.m1pct} band={2.0} spark={d.crossAsset.btc.series} source="FRED" sourceEp="CBBTCUSD" mode={modeOf('btc')} asOf={asOfOf('btc')}/> },
-                ];
-                const liveDir=dirTiles.filter(t=>!(t.curated||demoted(t.f)));
-                const degDir=dirTiles.filter(t=>t.curated||demoted(t.f));
-                return (
-                  <>
-                    <div style={{display:"flex",gap:8,flexWrap:"wrap"}} className="dir-tiles">
-                      {liveDir.map(t=><Fragment key={t.f}>{t.render()}</Fragment>)}
-                    </div>
-                    {degDir.length>0&&(
-                      <CollapsedGroup count={degDir.length} label="stale/curated cross-asset">
-                        <div style={{display:"flex",gap:8,flexWrap:"wrap"}} className="dir-tiles">
-                          {degDir.map(t=><Fragment key={t.f}>{t.render()}</Fragment>)}
-                        </div>
-                      </CollapsedGroup>
-                    )}
-                  </>
-                );
-              })()}
-            </div>
-          </div>
-
-        </div>
-        </CollapsedGroup>
-      </div>
+      {/* ── MARKET DETAIL — extracted to src/sections/MarketDetail.jsx (task 5.2),
+          presentation only (v3.69: ONE expander behind the always-visible strip). ── */}
+      <MarketDetail d={d} modeOf={modeOf} asOfOf={asOfOf} demoted={demoted} spyData={spyData} goldenCross={goldenCross}/>
       </section>
 
       <section aria-labelledby="macro">
@@ -1852,102 +903,10 @@ export default function Dashboard({ publicView = false } = {}) {
 
             {/* FEAT-169: RegimeTile relocated to full-width RegimeBand under macro strip (was here). */}
 
-            {/* Macro Regime grid */}
-            <div style={{background:T.surface,border:`1px solid ${T.border}`,borderRadius:6,padding:"14px 16px"}}>
-              <SectionHeader>Macro Regime</SectionHeader>
-              <div style={{display:"flex",flexDirection:"column",gap:10}}>
-                {/* Fed */}
-                <div style={{display:"flex",justifyContent:"space-between",alignItems:"baseline",paddingBottom:8,borderBottom:`1px solid ${T.border}`}}>
-                  <div>
-                    <Label>Fed Funds Rate</Label>
-                    <div style={{fontFamily:T.fontMono,fontSize:22,color:T.amber,fontWeight:700}}>{d.macro.fedFunds.rate}%</div>
-                    <div style={{fontFamily:T.fontMono,fontSize:9,color:fomcDays===0?T.amber:T.textMuted}}>{fomcDays==null?"Next FOMC — awaiting schedule":fomcDays===0?"FOMC decision today":`Next FOMC in ${fomcDays} day${fomcDays===1?"":"s"}`}</div>
-                    {/* Next-FOMC decision odds (Kalshi prediction market) */}
-                    <div style={{display:"flex",gap:6,marginTop:4,flexWrap:"wrap",alignItems:"baseline"}}>
-                      <span style={{fontFamily:T.fontMono,fontSize:7,color:T.textMuted,letterSpacing:"0.08em"}}>NEXT-MTG</span>
-                      <span style={{fontFamily:T.fontMono,fontSize:9,color:T.textMuted}}>Hold {d.macro.fedFunds.odds.hold}%</span>
-                      <span style={{fontFamily:T.fontMono,fontSize:9,color:T.green}}>Cut {d.macro.fedFunds.odds.cut}%</span>
-                      <span style={{fontFamily:T.fontMono,fontSize:9,color:T.red}}>Hike {d.macro.fedFunds.odds.hike}%</span>
-                      <span style={{fontFamily:T.fontMono,fontSize:7,color:T.textMuted,border:`1px dashed ${T.border}`,borderRadius:2,padding:"0 3px"}}>Kalshi · {modeOf('rateOddsHold').toLowerCase()}</span>
-                    </div>
-                  </div>
-                  <SourceBox api="FRED" endpoint="FEDFUNDS · odds: Kalshi" mode={modeOf('fedFunds')} asOf={asOfOf('fedFunds')}/>
-                </div>
-                {/* CPI */}
-                <div style={{paddingBottom:8,borderBottom:`1px solid ${T.border}`}}>
-                  <div style={{fontFamily:T.fontMono,fontSize:8,color:T.textMuted,marginBottom:4,letterSpacing:"0.1em"}}>INFLATION · FED TARGETS CORE PCE</div>
-                  <div style={{display:"flex",gap:14,marginBottom:5,flexWrap:"wrap"}}>
-                    <div><Label>PCE Core</Label><div style={{fontFamily:T.fontMono,fontSize:18,color:d.macro.pce.core>2.5?T.yellow:T.green,fontWeight:700}}>{d.macro.pce.core}%</div></div>
-                    <div><Label>PCE Head</Label><div style={{fontFamily:T.fontMono,fontSize:16,color:T.textSecondary,fontWeight:700}}>{d.macro.pce.headline}%</div></div>
-                    <div><Label>CPI Head</Label><div style={{fontFamily:T.fontMono,fontSize:16,color:T.textSecondary,fontWeight:700}}>{d.macro.cpi.headline}%</div></div>
-                    <div><Label>CPI Core</Label><div style={{fontFamily:T.fontMono,fontSize:16,color:T.textSecondary,fontWeight:700}}>{d.macro.cpi.core}%</div></div>
-                  </div>
-                  <div style={{height:36}}><ResponsiveContainer width="100%" height="100%"><LineChart data={d.macro.cpi.trend.map((v,i)=>({v,i}))}><Line type="monotone" dataKey="v" stroke={T.red} dot={false} strokeWidth={1.5}/><ReferenceLine y={2.0} stroke={T.green} strokeDasharray="3 2" strokeWidth={1}/></LineChart></ResponsiveContainer></div>
-                  <SourceBox api="FRED" endpoint="CPIAUCSL + CPILFESL" mode={modeOf('cpiHeadline')}/>
-                </div>
-                {/* Labor + household savings */}
-                <div style={{display:"flex",gap:12,paddingBottom:8,borderBottom:`1px solid ${T.border}`,alignItems:"flex-start"}}>
-                  <div><Label>Unemployment</Label><div style={{fontFamily:T.fontMono,fontSize:16,color:T.textPrimary,fontWeight:700}}>{d.macro.unemployment.national}%</div></div>
-                  <div><Label>Entry Level</Label><div style={{fontFamily:T.fontMono,fontSize:16,color:T.yellow,fontWeight:700}}>{d.macro.unemployment.entryLevel}%</div></div>
-                  <div><Label>LFPR</Label><div style={{fontFamily:T.fontMono,fontSize:16,color:T.textPrimary,fontWeight:700}}>{d.macro.unemployment.lfpr}%</div></div>
-                  <div title="Personal Saving Rate — % of disposable income households save (FRED PSAVERT). Lower = thinner consumer cushion.">
-                    <Label>Savings Rate</Label>
-                    <div style={{fontFamily:T.fontMono,fontSize:16,color:d.macro.savings.rate<4?T.yellow:T.textPrimary,fontWeight:700}}>{d.macro.savings.rate}%</div>
-                    <SourceBox api="FRED" endpoint="PSAVERT" mode={modeOf('savings')} asOf={asOfOf('savings')}/>
-                  </div>
-                </div>
-                {/* Housing */}
-                <div style={{display:"flex",gap:12,paddingBottom:8,borderBottom:`1px solid ${T.border}`}}>
-                  <div><Label>30Y Mortgage</Label><div style={{fontFamily:T.fontMono,fontSize:16,color:T.red,fontWeight:700}}>{d.macro.mortgage.national}%</div></div>
-                  <div><Label>Peoria IL</Label><div style={{fontFamily:T.fontMono,fontSize:14,color:T.yellow,fontWeight:700}}>{d.macro.mortgage.peoria}%</div><div style={{fontFamily:T.fontMono,fontSize:9,color:T.textMuted}}>${d.macro.housing.peoria.toLocaleString()}</div></div>
-                </div>
-                {/* Shiller PE — v3.1: live (multpl); suppress BUBBLE/ELEVATED verdict + red on mock/stale */}
-                {(()=>{const shMode=modeOf('shillerPe'); const shIllus=isIllustrative(shMode);
-                  const shPctAth=(d.macro.shillerPe.ath?(d.macro.shillerPe.current/d.macro.shillerPe.ath)*100:d.macro.shillerPe.pctOfAth).toFixed(1); return (
-                <div style={{backgroundImage:shIllus?ILLUS_HATCH:undefined,borderRadius:5,padding:shIllus?"6px 8px":0,opacity:shIllus?0.92:1}}>
-                  <div style={{display:"flex",justifyContent:"space-between",alignItems:"baseline",gap:6,flexWrap:"wrap"}}>
-                    <Label>Shiller P/E (CAPE)</Label>
-                    {shIllus?(shMode==="STALE"?<DataModeBadge mode="STALE"/>:<IllustrativeChip/>):<Badge label={d.macro.shillerPe.current>40?"BUBBLE":"ELEVATED"} color={d.macro.shillerPe.current>40?"#7f1d1d":T.red} small/>}
-                  </div>
-                  <div style={{fontFamily:T.fontMono,fontSize:22,color:shIllus?T.textSecondary:"#ef4444",fontWeight:700}}>{d.macro.shillerPe.current}</div>
-                  <div style={{display:"flex",gap:12,marginTop:2}}>
-                    <div style={{fontFamily:T.fontMono,fontSize:8,color:T.textMuted}}>Mean {d.macro.shillerPe.mean} · Median {d.macro.shillerPe.median}</div>
-                    <div style={{fontFamily:T.fontMono,fontSize:8,color:shIllus?T.textMuted:T.red}}>{shPctAth}% of ATH</div>
-                  </div>
-                  <SourceBox api="multpl.com" endpoint="Shiller CAPE (scraped, monthly cadence) · Yale/Shiller series" mode={shMode} asOf={asOfOf('shillerPe')}/>
-                </div>
-                );})()}
-              </div>
-            </div>
-
-            {/* Top headwinds — curated thesis register, honestly dated. FEAT-322: the list
-                collapses to 0 visible (the largest curated block must not own the default
-                scroll); WHY #4 still reads d.headwinds regardless of render state, so the
-                5-Whys narrative loses nothing. One disclosure idiom only — the old "+N more"
-                sub-toggle is gone; open shows all. */}
-            <div style={{background:T.surface,backgroundImage:ILLUS_HATCH,border:`1px solid ${T.border}`,borderRadius:6,padding:"14px 16px"}}>
-              <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",flexWrap:"wrap",gap:6}}>
-                <SectionHeader>Top Headwinds</SectionHeader>
-                <IllustrativeChip label={`ILLUSTRATIVE · reviewed ${d.headwindsAsOf}`}/>
-              </div>
-              <CollapsedGroup count={d.headwinds.length} label="curated headwinds" chip={false}>
-                {d.headwinds.map(hw=>{
-                  const sevColor=hw.severity==="High"?T.red:hw.severity==="Med"?T.yellow:T.green;
-                  const isExp=expandedHW===hw.id;
-                  return(
-                    <div key={hw.id} style={{borderBottom:`1px solid ${T.border}`,paddingBottom:8,marginBottom:8,cursor:"pointer"}} onClick={()=>setExpandedHW(isExp?null:hw.id)}>
-                      <div style={{display:"flex",gap:6,alignItems:"center",marginBottom:2}}>
-                        <Badge label={hw.severity} color={sevColor} small/>
-                        <Badge label={hw.trend} color={hw.trend==="worsening"?T.red:hw.trend==="improving"?T.green:T.yellow} small/>
-                        <div style={{fontFamily:T.fontSans,fontSize:11,color:T.textPrimary,flex:1}}>{hw.name}</div>
-                        <span style={{color:T.textMuted,fontSize:10}}>{isExp?"▲":"▼"}</span>
-                      </div>
-                      {isExp&&<div style={{fontFamily:T.fontMono,fontSize:9,color:T.textSecondary,marginTop:4,lineHeight:1.6}}>{hw.claim}</div>}
-                    </div>
-                  );
-                })}
-              </CollapsedGroup>
-            </div>
+            {/* Macro Regime grid + Top Headwinds — extracted to src/sections/
+                MacroRegime.jsx + Headwinds.jsx (tasks 5.3/5.4), presentation only. */}
+            <MacroRegime d={d} modeOf={modeOf} asOfOf={asOfOf} fomcDays={fomcDays}/>
+            <Headwinds d={d}/>
 
 
           </div>
@@ -1955,32 +914,9 @@ export default function Dashboard({ publicView = false } = {}) {
       </section>
 
       <section aria-labelledby="ai">
-      <div style={{padding:"0 20px"}}>
-        <h2 id="ai" className="visually-hidden">AI unit economics — cost, price, conversion and funding</h2>
-        {/* ── AI UNIT ECONOMICS · cost side (GPU $/hr) + price side (token $/Mtok) ── */}
-        <div style={{marginTop:16,display:"flex",alignItems:"center",gap:10}}>
-          <span style={{fontFamily:T.fontMono,fontSize:10,color:"#a78bfa",letterSpacing:"0.14em",whiteSpace:"nowrap"}}>◆ AI UNIT ECONOMICS</span>
-          {/* v3.53: `whiteSpace:"nowrap"` on a 317px string blew the PAGE out to 488px at 390px
-              wide — found by the flip-conditions browser check, pre-existing since v3.46. The
-              label is a subtitle; it wraps. */}
-          <span style={{fontFamily:T.fontMono,fontSize:8,color:T.textMuted,minWidth:0}}>cost ↔ price ↔ conversion ↔ funding · the margin-compression hinge</span>
-          <div style={{height:1,flex:1,background:T.border}}/>
-        </div>
-        {/* FEAT-322: the live price side (OpenRouter) leads; the curated GPU cost side is
-            one tap away — always-curated content doesn't own the default view. */}
-        <TokenomicsCard tok={d.tokenomics} mode={modeOf('tokenBlendedMtok')} asOf={asOfOf('tokenBlendedMtok')}/>
-        <CollapsedGroup count={1} label="curated: GPU $/hr cost side">
-          <GpuPricingCard />
-        </CollapsedGroup>
-        {/* FEAT-TOKW (v3.46): the conversion leg — what a fixed MW of power converts into. */}
-        <CollapsedGroup count={1} label="curated: tokens/watt × $/token conversion">
-          <TokenEfficiencyCard tok={d.tokenomics} mode={modeOf('tokenBlendedMtok')} />
-        </CollapsedGroup>
-        {/* FEAT-CAPEX (v3.45): the third leg — the capex pool that funds both sides above. */}
-        <CollapsedGroup count={1} label="curated: hyperscaler capex funding flow">
-          <HyperscalerCapexCard />
-        </CollapsedGroup>
-      </div>
+      {/* ── AI UNIT ECONOMICS — extracted to src/sections/AIUnitEconomics.jsx
+          (task 7.1), presentation only; data + scissors in src/aiEcon.js. ── */}
+      <AIUnitEconomics d={d} modeOf={modeOf} asOfOf={asOfOf}/>
       </section>
 
       {/* v3.69: operator monitors + health + footer share the bottom padded container the old
@@ -1992,107 +928,22 @@ export default function Dashboard({ publicView = false } = {}) {
             price + day-move strip fails the SAME test — it is the raw-data layer, and the moat
             is the judgment layer. mag10PricesJson/SOURCES/fetchEquities stay wired: QQQ still
             renders from the same Finnhub pull, so nothing upstream is removed. */}
-        {/* ── MY CONVICTION · S/A TIER (full-width, collapsible) ── */}
-        {/* A4 (v3.58): PRIVATE on the shareable route. Authored conviction tiers are the
-            owner's judgment layer — the friend-share view must not disclose them (owner call,
-            composing the v3.51 keep-on-default decision with the re-audit's public gate). */}
+        {/* ── MY CONVICTION — extracted to src/sections/Watchlist.jsx (task 7.4);
+            A4: the !publicView gate stays on this wrapper. ── */}
         {!publicView&&(<section aria-label="Operator monitors — conviction and alerts">
-        {!publicView&&<div style={{marginTop:16,background:T.surface,border:`1px solid ${T.border}`,borderRadius:6,overflow:"hidden"}}>
-          <button onClick={()=>setWatchlistOpen(o=>!o)} aria-expanded={watchlistOpen}
-            style={{width:"100%",display:"flex",justifyContent:"space-between",alignItems:"center",padding:"10px 16px",background:"none",border:"none",cursor:"pointer",borderBottom:watchlistOpen?`1px solid ${T.border}`:"none"}}>
-            <div style={{display:"flex",gap:10,alignItems:"center"}}>
-              <span style={{fontFamily:T.fontMono,fontSize:10,color:T.amber,letterSpacing:"0.1em"}}>MY CONVICTION</span>
-              <span style={{fontFamily:T.fontMono,fontSize:9,color:T.textMuted}}>Personal watchlist · tiered by conviction · no prices</span>
-            </div>
-            <span style={{fontFamily:T.fontMono,fontSize:10,color:T.textMuted}}>{watchlistOpen?"▲":"▼"}</span>
-          </button>
-          {watchlistOpen&&(
-            <div style={{padding:"12px 16px 16px"}}>
-              {[
-                {tier:"S", accent:T.amber, blurb:"Highest conviction · core holdings"},
-                {tier:"A", accent:T.blue,  blurb:"High conviction · sized below S"},
-              ].map(({tier,accent,blurb})=>{
-                const picks=d.watchlist.filter(w=>w.tier===tier);
-                if(!picks.length) return null;
-                return(
-                  <div key={tier} style={{marginBottom:14}}>
-                    <div style={{display:"flex",gap:8,alignItems:"center",marginBottom:8}}>
-                      <span style={{fontFamily:T.fontMono,fontSize:13,fontWeight:700,color:accent,border:`1px solid ${accent}66`,borderRadius:3,padding:"1px 8px",background:accent+"18"}}>{tier}</span>
-                      <span style={{fontFamily:T.fontMono,fontSize:8,color:T.textMuted,letterSpacing:"0.08em"}}>{blurb.toUpperCase()}</span>
-                      <div style={{height:1,flex:1,background:T.border}}/>
-                    </div>
-                    <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(200px,1fr))",gap:8}}>
-                      {picks.map(w=>(
-                        <div key={w.ticker} style={{background:T.surfaceHigh,border:`1px solid ${accent}33`,borderLeft:`3px solid ${accent}`,borderRadius:5,padding:"9px 11px"}}>
-                          <div style={{display:"flex",justifyContent:"space-between",alignItems:"baseline",gap:6}}>
-                            <span style={{fontFamily:T.fontMono,fontSize:13,fontWeight:700,color:T.textPrimary}}>{w.ticker}</span>
-                            <span style={{fontFamily:T.fontMono,fontSize:8,color:T.textMuted,textAlign:"right"}}>{w.name}</span>
-                          </div>
-                          {w.thesis&&<div style={{fontFamily:T.fontSans,fontSize:10,color:T.textSecondary,lineHeight:1.4,marginTop:5}}>{w.thesis}</div>}
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                );
-              })}
-              <SourceBox api="Manual" endpoint="personal watchlist · names + tiers only" mode="MOCK"/>
-            </div>
-          )}
-        </div>}
+        <Watchlist watchlist={d.watchlist}/>
 
-        {/* ── ALERTS STRIP (compact, at bottom) ── */}
-        {/* A4 (v3.58): PRIVATE on the shareable route — page-local toggles imply user state a
-            visitor does not have; monitors are the operator's, not the share view's. */}
-        {!publicView&&<div style={{marginTop:16,background:T.surface,border:`1px solid ${T.border}`,borderRadius:6,padding:"12px 16px"}}>
-          <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:10}}>
-            <SectionHeader>Macro Alerts</SectionHeader>
-            {/* Public audit: an ON/OFF toggle beside 8px muted "notifications not wired" reads as
-                a working alert system. The toggles are real (they gate the triggered dot on this
-                page) but nothing is DELIVERED, so the limit is stated at the same weight as the
-                control — the honesty invariant applied to an affordance instead of a number. */}
-            <div style={{fontFamily:T.fontMono,fontSize:9,color:T.amber,border:`1px solid ${T.amber}44`,borderRadius:3,padding:"2px 7px"}}>
-              ⚠ Evaluated live on THIS page only — no push, email or SMS is sent
-            </div>
-          </div>
-          <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(260px,1fr))",gap:6}}>
-            {alerts.map(a=><AlertRow key={a.id} alert={a} ev={alertEval[a.id]} onToggle={id=>setAlerts(prev=>prev.map(x=>x.id===id?{...x,active:!x.active}:x))} onDelete={handleDeleteAlert}/>)}
-          </div>
-        </div>}
+        {/* ── ALERTS STRIP — extracted to src/sections/Alerts.jsx (task 7.2);
+            evaluation + state stay here, the A4 gate stays on the wrapper. ── */}
+        <Alerts alerts={alerts} alertEval={alertEval}
+          onToggle={id=>setAlerts(prev=>prev.map(x=>x.id===id?{...x,active:!x.active}:x))}
+          onDelete={handleDeleteAlert}/>
         </section>)}
 
-        {/* ── C2/C4 (v3.60): DATA HEALTH — is the product current, degraded, or recovering? ── */}
-
-        <section aria-labelledby="health" style={{marginTop:16,background:T.surface,border:`1px solid ${T.border}`,borderRadius:6,padding:"12px 16px"}}>
-          <h2 id="health" className="visually-hidden">Data health — per-source freshness and recovery</h2>
-          <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:8,flexWrap:"wrap",gap:6}}>
-            <SectionHeader>Data Health</SectionHeader>
-            {mode==="ERROR"&&<div style={{fontFamily:T.fontMono,fontSize:9,color:T.red,display:"flex",gap:8,alignItems:"center"}}>
-              live fetch failed{lastError?`: ${String(lastError).slice(0,60)}`:""}
-              <button onClick={retry} style={{fontFamily:T.fontMono,fontSize:9,background:T.surfaceHigh,border:`1px solid ${T.red}66`,color:T.red,padding:"2px 8px",borderRadius:3,cursor:"pointer"}}>↻ RETRY</button>
-            </div>}
-          </div>
-          {/* FEAT-GLANCE (v3.61): the 15-row per-source grid is diagnostic depth, one tap
-              away. The section header + the ERROR/Retry row stay outside the collapse —
-              an outage is a red fact and must not need a click to discover. */}
-          <CollapsedGroup count={SIGNAL_FIELDS.length} label="per-source detail" chip={false}>
-          <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(210px,1fr))",gap:6}}>
-            {SIGNAL_FIELDS.map(k=>(
-              <div key={k} style={{display:"flex",gap:6,alignItems:"center",fontFamily:T.fontMono,fontSize:9,color:T.textSecondary,padding:"4px 6px",background:T.bg,borderRadius:3,flexWrap:"wrap"}}>
-                <span style={{minWidth:88,color:T.textPrimary}}>{k}</span>
-                <DataModeBadge mode={modeOf(k)}/>
-                <span style={{fontSize:8,color:T.textMuted}}>{cadenceOf(k)}</span>
-                {dataAsOf?.[k]&&<span style={{fontSize:8,color:T.textMuted}}>{String(dataAsOf[k]).slice(0,10)}</span>}
-              </div>
-            ))}
-          </div>
-          <div style={{fontFamily:T.fontMono,fontSize:8,color:T.textMuted,marginTop:6}}>
-            cadence is each source's normal release rhythm — a monthly print weeks old can still be the freshest available
-          </div>
-          {/* The chip legend lives with the diagnostics it decodes (moved from the always-visible
-              Signal Quality strip, v3.61 — explanation, not evidence). */}
-          <div style={{fontFamily:T.fontMono,fontSize:8,color:T.textMuted,marginTop:4}}>legend: ● live · ⏱ stale · <span style={{color:T.amber}}>◫ illustrative = curated, not live</span></div>
-          </CollapsedGroup>
-        </section>
+        {/* ── DATA HEALTH — extracted to src/sections/DataHealth.jsx (task 7.3);
+            the whole <section> moved so the health anchor + h2 travel together. ── */}
+        <DataHealth signalFields={SIGNAL_FIELDS} modeOf={modeOf} dataAsOf={dataAsOf}
+          mode={mode} lastError={lastError} retry={retry}/>
 
         {/* ── FOOTER ── */}
         <div style={{marginTop:12,display:"flex",justifyContent:"space-between",alignItems:"center",flexWrap:"wrap",gap:4}}>
