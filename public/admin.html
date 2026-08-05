@@ -4484,6 +4484,12 @@ function renderBuyBlock(){
       `<span class="fdr-d"><span class="scope">$${esc(r.tgt)} by ${esc(r.y)} · ${esc(r.basis)}</span>`+
       ((r.pxAge===null||r.pxAge>PX_STALE_D)?`<span class="bad2">⚠ px ${r.pxAge===null?"undated":r.pxAge+"d"}</span>`:"")+
       (r.wt.w!==null&&r.wt.w>=CAP_PCT?`<span class="bad2">no room</span>`:"")+
+      /* v3.76: the payload's OWN caveat (pt_model.note) reached only the DESK list, so the two
+         names topping this ranking could both say "distrust this number" in stored text while
+         the primary view rendered them at #1 and #2 with nothing. That is the D3/v3.25 class
+         exactly — a machine-known warning about the number being shown, present one level down
+         and absent where the decision is read. Chip-length here, verbatim one tap deep (v3.66). */
+      (r.caveat?`<span class="warn2" title="${esc(r.caveat)}">⚠ model note</span>`:"")+
       (r.redH?`<span class="bad2">● ${r.redH} red</span>`:"")+
       (r.rolled?`<span class="warn2">↷ ${esc(r.rolled)}→${esc(r.y)}</span>`:"")+`</span></button>`;
   });

@@ -96,7 +96,8 @@ const dd = (px, rev, eps, extra = {}) => ({
   thesis_version: "v1.0 (2026-07-20)", updated: etDaysAgo(3),
   ref_px: { px, at: TODAY_ET },
   consensus: { revenue_B: rev, eps },
-  pt_model: { ev_s_multiple: 8, share_count_M: 1100, pe_floor_multiple: 18 },
+  pt_model: { ev_s_multiple: 8, share_count_M: 1100, pe_floor_multiple: 18,
+    note: "synthetic caveat — the payload distrusts its own number" },
   hinges: [{ label: "demand", state: "red", note: "supplier layer" }],
   key_dates: [{ date: etDaysAgo(-22), label: "own print" }],
   gates: [{ name: "G1 scale", status: "PASS" }, { name: "G2 funding", status: "FAIL" }],
@@ -1468,6 +1469,15 @@ REFRESH_FIXTURE = null;
     await p3.evaluate(() => [...document.querySelectorAll("#buyBlock button.fdr-row")]
       .filter((b) => /no thesis payload|no pt_model|no usable price|rung/i.test(b.innerText))
       .every((b) => !/%\/yr/.test(b.innerText))));
+  // Found live on 2026-08-05: the two names topping the real ranking both carried a
+  // pt_model.note saying distrust the number, and that note reached only the DESK list.
+  ok("allreviewed: a model caveat on a ranked pick surfaces on the PRIMARY view, not only in " +
+     "DESK — a stored warning about the number being shown must reach where it is acted on",
+    await p3.evaluate(() => {
+      const b = [...document.querySelectorAll("#buyBlock button.fdr-row")]
+        .find((n) => /⚠ model note/.test(n.innerText));
+      return !!b && /\S/.test(b.querySelector('[title]')?.getAttribute("title") || "");
+    }));
   ok("allreviewed: the tail adds no horizontal overflow at 390px",
     await p3.evaluate(() => document.documentElement.scrollWidth <= 390));
   // And the same array, one level down, in the DESK ranking.

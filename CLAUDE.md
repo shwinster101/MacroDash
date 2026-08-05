@@ -2083,11 +2083,22 @@ Jan-anchor shipped; see `snapshot.js` ~318–328), `spyMa100`, `spyMa200`, and a
   second basis does not lose its reds on the way down (v3.25). And the empty-ranking branch now
   **emits the tail instead of an apology** — the owner's rule is that this surface always
   produces an ordered output.
-  Tests: **1275 smoke** (+13: the classifier lifted and RUN — the full reason taxonomy, the
+  **Found while verifying against the live book, and fixed in the same release:** the two names
+  topping the real ranking (SNDK, MU) each carry a `pt_model.note` that says *distrust this
+  number* — SNDK's names Bernstein's protected $214 as "the DEFENSIBLE anchor… model the
+  protected number, not the consensus one", MU's says the floor "applies a market multiple to
+  PEAK memory EPS, exactly what this book's BE note forbids". That caveat was stored, was
+  computed into the row as `r.caveat`, and rendered **only in the DESK list** — so the primary
+  view showed both at #1 and #2 with nothing. Same defect class as D3 and v3.25: a
+  machine-known warning *about the number being shown*, present one level down and absent where
+  the decision is read. Now a chip-length `⚠ model note` on the row with the text in its title,
+  verbatim one tap deep (v3.66).
+  Tests: **1276 smoke/render** (+13 smoke: the classifier lifted and RUN — the full reason taxonomy, the
   composite ordering, no-rate-leakage, red-hinge carry, and that an unreviewed name stays out)
-  + **215 render** (+10: the tail driven live at 390px on both altitudes, the export's two
-  sections, and total coverage — every book name lands in exactly one place). Negative-
-  controlled: disabling the primary-view tail turns three assertions red.
+  + **216 render** (+11: the tail driven live at 390px on both altitudes, the export's two
+  sections, the caveat chip, and total coverage — every book name lands in exactly one place).
+  Negative-controlled twice: disabling the primary-view tail turns three assertions red, and
+  removing the caveat chip turns one red.
 - **FEAT-TT-DDSTORE (v3.75) — the deferral comes due: `deepDive` gets its own KV document.**
   Third time at the same wall, and the changelog called it every time. `pos` was split out in
   v3.34 and the belief ledger in v3.32, each because a growing thing was riding inside one
