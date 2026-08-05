@@ -926,7 +926,7 @@ ok("dot: coverage strip counts untriaged dots", adminSrc.includes("new dots"));
 // NEXT DOLLAR queue, and sharing ptModelRows() so the ranked number can never drift
 // from the deep-dive table it came from.
 ok("upside: shares ptModelRows with the deep-dive table (one computation, not two)",
-  adminSrc.includes("function ptModelRows(dd)") && adminSrc.includes("const rows=ptModelRows(dd);"));
+  adminSrc.includes("function ptModelRows(dd,_y0)") && adminSrc.includes("const rows=ptModelRows(dd);"));
 ok("upside: ranks ALL tiers, not just the watchlist queue (S/A/B/DEF included)",
   /BOOK\.forEach\(x=>\{\s*const dd=x\.deepDive/.test(adminSrc));
 // Pin the two INVARIANTS (a usable ref_px, and at least one usable rung), not the exact
@@ -1050,7 +1050,7 @@ ok("hz: empty-at-this-horizon renders its own message, not the no-data one",
   adminSrc.includes("pick another horizon"));
 // v3.22 FEAT-TT-CAGR: a raw gap is not a return. Ranking must annualise or the longest
 // horizon always wins on arithmetic alone.
-ok("cagr: annualises the gap over time-to-year-end", adminSrc.includes("function yrsToYearEnd(y)") &&
+ok("cagr: annualises the gap over time-to-year-end", adminSrc.includes("function yrsToYearEnd(y,_now)") &&
   adminSrc.includes("Math.pow(1+pct/100,1/t)-1"));
 ok("cagr: withholds annualisation under ~3 months (amplifies noise) and at total loss",
   adminSrc.includes("const ANN_MIN_Y=0.25;") && adminSrc.includes("if(!(t>=ANN_MIN_Y)||pct<=-100)return null;"));
@@ -2346,14 +2346,14 @@ function liftFns(src, names) {
   }).join("\n");
   return out;
 }
-// LENS_MAX_PE is a module-level const in admin.html, not a function — lift it by value so the
-// lens lint is exercised with the real threshold rather than a free variable that happens to be
-// short-circuited past.
+// TT-SCORE commit 1 (v3.73): the PT chain is a real module now — smoke IMPORTS it instead of
+// lifting source text (the src/regime.js precedent, :11-12). admin.html keeps byte-identical
+// copies (buildless, cannot import); section [49] lifts THOSE and asserts identity against
+// these imports, so the lift stays as the tripwire's raw material rather than the test rig.
 const LENS_MAX_PE_SRC = /const LENS_MAX_PE=(\d+);/.exec(adminSrc);
-const PT = new Function(
-  `const LENS_MAX_PE=${LENS_MAX_PE_SRC[1]};` +
-  liftFns(adminSrc, ["schedAt", "ptModelRows", "ptRowYears", "lintPtModel"]) +
-  "\nreturn {schedAt,ptModelRows,ptRowYears,lintPtModel};")();
+const PT = await import("../src/ptModel.js");
+ok("ptmodel: admin.html's LENS_MAX_PE and the module's are the same value",
+  PT.LENS_MAX_PE === +LENS_MAX_PE_SRC[1]);
 
 // THE NVDA FAILURE, reconstructed: 4 multiples keyed at the estimate years.
 const Y = new Date().getFullYear();
@@ -2424,24 +2424,23 @@ ok("ptlint: lints render at BOTH altitudes — the name's tab and the whole-book
 // D2: the Q4 cliff. pickRow must ROLL rather than let a raw gap enter an annualised sort. Today's
 // date cannot exercise this (in July no future year-end is inside 3 months), so the clock is
 // STUBBED — the rule is tested, not the calendar.
-const ROLL = new Function(
-  "const ANN_MIN_Y=0.25;\nlet NOW_Y=0;\nfunction yrsToYearEnd(y){return NOW_Y[y];}\n" +
-  liftFns(adminSrc, ["pickRow"]) +
-  "\nreturn {pickRow,setClock:(m)=>{NOW_Y=m;}};")();
+// TT-SCORE commit 1 (v3.73): pickRow is imported from src/ptModel.js and driven through its
+// clock parameter (_now) instead of a stubbed yrsToYearEnd — the SAME code the terminal and
+// the server run, exercised at a December instant no July test run could otherwise supply.
+const YE2030 = Date.parse("2030-12-31T21:00:00Z");
+const YRS = (y) => y * 365.25 * 86400000;
 const near = [{ y: "2030", prem: 110 }, { y: "2031", prem: 150 }];
-ROLL.setClock({ 2030: 0.10, 2031: 1.10 });   // the near rung is ~5 weeks out
-const rolled = ROLL.pickRow(near, null);
+const nowNear = YE2030 - YRS(0.10);   // the near rung is ~5 weeks out
+const rolled = PT.pickRow(near, null, nowNear);
 ok("cliff: a rung inside ~3 months ROLLS to the next one and reports what it rolled from",
   rolled.row.y === "2031" && rolled.rolled === "2030");
-ROLL.setClock({ 2030: 0.60, 2031: 1.60 });
+const nowFar = YE2030 - YRS(0.60);
 ok("cliff: a rung outside the window is used as-is, with no roll claimed",
-  ROLL.pickRow(near, null).row.y === "2030" && ROLL.pickRow(near, null).rolled === null);
-ROLL.setClock({ 2030: 0.10 });
+  PT.pickRow(near, null, nowFar).row.y === "2030" && PT.pickRow(near, null, nowFar).rolled === null);
 ok("cliff: when NOTHING is far enough out, the near rung is kept (never dropped silently)",
-  ROLL.pickRow([{ y: "2030", prem: 110 }], null).row.y === "2030");
-ROLL.setClock({ 2030: 0.60, 2031: 1.60 });
+  PT.pickRow([{ y: "2030", prem: 110 }], null, nowNear).row.y === "2030");
 ok("cliff: a pinned year the name lacks is EXCLUDED, never substituted with another year",
-  ROLL.pickRow(near, "2099") === null && ROLL.pickRow(near, "2031").row.y === "2031");
+  PT.pickRow(near, "2099", nowFar) === null && PT.pickRow(near, "2031", nowFar).row.y === "2031");
 ok("cliff: both residual cases are DISCLOSED, not absorbed (rolled list + raw-gap list)",
   adminSrc.includes("rolled to a later rung") && adminSrc.includes("shown as a RAW gap"));
 ok("cliff: SELL stops mislabelling a modelled name as unmodelled when only the RATE is missing",
@@ -3786,6 +3785,26 @@ ok("gate: a tripped flip still vetoes on its own message even at FULL actionabil
     macro_flip: { evaluable: true, tripped: true } })));
 ok("gate: an unreadable feed still vetoes before actionability is even inspected (unchanged)",
   /regime feed unavailable/.test(GF(stcOk, null)));
+
+// ═══════════ [49] PT-CHAIN BYTE-IDENTITY TRIPWIRE (TT-SCORE commit 1, v3.73) ═══════════
+// src/ptModel.js extracted the PT chain so the scorer can run it server-side. admin.html is
+// buildless and keeps its OWN copies — a second copy of order-gating math is exactly the drift
+// this repo keeps paying for (v3.41 DERIV-OWN, v3.49 FIX-E), so the copies are pinned to each
+// other: lift each function's source out of admin.html and assert it is byte-identical to the
+// module export's own source. A change to either side alone goes red here.
+console.log("\n[49] ptModel extraction — admin.html and src/ptModel.js cannot drift");
+{
+  const norm = (s) => s.replace(/\s+/g, " ").trim();
+  for (const n of ["schedAt", "ptModelRows", "ptRowYears", "lintPtModel",
+                   "yrsToYearEnd", "annualise", "pickRow"])
+    ok(`tripwire: ${n}() is byte-identical in admin.html and src/ptModel.js`,
+      norm(liftFns(adminSrc, [n])) === norm(PT[n].toString()));
+  ok("tripwire: ANN_MIN_Y matches across both copies",
+    +/const ANN_MIN_Y=([\d.]+);/.exec(adminSrc)[1] === PT.ANN_MIN_Y);
+  ok("tripwire: the module is genuinely clock-injectable (Dec instant rolls, July instant holds)",
+    PT.pickRow([{y:"2030"},{y:"2031"}], null, Date.parse("2030-12-15T00:00:00Z")).rolled === "2030" &&
+    PT.pickRow([{y:"2030"},{y:"2031"}], null, Date.parse("2030-06-15T00:00:00Z")).rolled === null);
+}
 
 console.log(`\n=== SMOKE TEST: ${pass} passed, ${fail} failed ===`);
 process.exit(fail === 0 ? 0 : 1);

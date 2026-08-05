@@ -2050,13 +2050,13 @@ function schedAt(s,y){
 /* Shared by the deep-dive render (ddEstRunSec) and the cross-book upside widget
    (renderUpsideRank) — ONE computation, so the ranked "next dollar" number can never
    drift from the table the maintainer is looking at on the tab itself. */
-function ptModelRows(dd){
+function ptModelRows(dd,_y0){
   const m=dd&&dd.pt_model;
   if(!m||typeof m!=="object")return [];
   const c=dd.consensus||{};
   const rev=m.revenue_B||c.revenue_B||{},eps=m.eps||c.eps||{};
   const pe=+m.pe_floor_multiple||null;
-  const y0=new Date().toLocaleDateString("en-CA",{timeZone:"America/New_York"}).slice(0,4);
+  const y0=_y0||new Date().toLocaleDateString("en-CA",{timeZone:"America/New_York"}).slice(0,4);
   const fmt=v=>v>=100?Math.round(v):Math.round(v*100)/100;
   const years=[...new Set([...Object.keys(rev),...Object.keys(eps)].map(y=>String(+y-1)))]
     .filter(y=>y>=y0).sort();
@@ -2096,19 +2096,19 @@ function ptModelRows(dd){
    line — deliberately permissive (NVDA sits at ~22x, TSM ~24x, UBER ~18x), so it silences only
    the nominal case and never a genuinely-expensive profitable name. */
 const LENS_MAX_PE=100;
-function ptRowYears(dd){
+function ptRowYears(dd,_y0){
   const m=(dd&&dd.pt_model)||{},c=(dd&&dd.consensus)||{};
   const rev=m.revenue_B||c.revenue_B||{},eps=m.eps||c.eps||{};
-  const y0=new Date().toLocaleDateString("en-CA",{timeZone:"America/New_York"}).slice(0,4);
+  const y0=_y0||new Date().toLocaleDateString("en-CA",{timeZone:"America/New_York"}).slice(0,4);
   return [...new Set([...Object.keys(rev),...Object.keys(eps)].map(y=>String(+y-1)))]
     .filter(y=>y>=y0).sort();
 }
-function lintPtModel(dd){
+function lintPtModel(dd,_y0){
   const out=[],m=dd&&dd.pt_model;
   if(!m||typeof m!=="object")return out;
   const c=(dd&&dd.consensus)||{};
   const eps=m.eps||c.eps||{};
-  const years=ptRowYears(dd);
+  const years=ptRowYears(dd,_y0);
   /* E2E (v3.57): a payload whose numbers are QUOTED ("100" not 100) produces zero rows, and
      NOFLOOR then reports the inputs as missing when they are present — the message sends you
      looking for the wrong defect. Name the actual one. Hand-edited JSON does this constantly. */
@@ -2164,7 +2164,7 @@ function lintPtModel(dd){
   // NOFLOOR only when the payload does NOT already explain itself. A pt_model carrying basis/note
   // with no computable rung is the DELIBERATELY-UNRANKED case ddEstRunSec renders as "⊘ … not
   // overlooked" — calling that a defect would contradict a decision the owner already made.
-  if(!ptModelRows(dd).length&&!(m.basis||m.note))
+  if(!ptModelRows(dd,_y0).length&&!(m.basis||m.note))
     out.push({sev:"warn",code:"NOFLOOR",
       msg:"no rung is computable and nothing here says why — a premium needs (ev_s_multiple + share_count_M + revenue) or (pe_premium_multiple + positive EPS); a floor needs pe_floor_multiple. Add basis/note if being unranked is deliberate."});
   return out;
@@ -3056,13 +3056,13 @@ function setHorizon(y){
    board sorts on. Within a single pinned horizon the order is unchanged (same t for every
    name, monotonic transform); it only bites in `nearest` mode and across horizons, which
    is exactly where the raw number was lying. */
-function yrsToYearEnd(y){
+function yrsToYearEnd(y,_now){
   const end=Date.parse(y+"-12-31T21:00:00Z"); // ~4pm ET on the last session of that year
-  return (end-Date.now())/(365.25*86400000);
+  return (end-(_now!=null?_now:Date.now()))/(365.25*86400000);
 }
 const ANN_MIN_Y=0.25;      // under ~3 months, annualising amplifies noise into absurdity
-function annualise(pct,y){
-  const t=yrsToYearEnd(y);
+function annualise(pct,y,_now){
+  const t=yrsToYearEnd(y,_now);
   if(!(t>=ANN_MIN_Y)||pct<=-100)return null;
   return Math.round((Math.pow(1+pct/100,1/t)-1)*1000)/10;
 }
@@ -3075,13 +3075,13 @@ function annualise(pct,y){
    sorts as a raw gap against other names' %/yr — a +8%-in-2-months rung (≈+58%/yr) would rank
    BELOW a +40%/yr name. The rule is now explicit: when the chosen rung is too near to annualise
    honestly, ROLL to the next one and say so, rather than mixing units in a single sort. */
-function pickRow(rr,hz){
+function pickRow(rr,hz,_now){
   if(!rr||!rr.length)return null;
   const at=hz?rr.find(r=>r.y===hz):null;
   if(hz&&!at)return null;               // pinned year absent → excluded and counted, never substituted
   const want=at||rr[0];
-  if(yrsToYearEnd(want.y)>=ANN_MIN_Y)return{row:want,rolled:null};
-  const next=rr.find(r=>yrsToYearEnd(r.y)>=ANN_MIN_Y);
+  if(yrsToYearEnd(want.y,_now)>=ANN_MIN_Y)return{row:want,rolled:null};
+  const next=rr.find(r=>yrsToYearEnd(r.y,_now)>=ANN_MIN_Y);
   return next?{row:next,rolled:want.y}:{row:want,rolled:null};
 }
 /* v3.24 FEAT-TT-LIVEPX: rank off the CURRENT price, not the stamped mark. ref_px is a
