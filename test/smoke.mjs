@@ -886,7 +886,15 @@ ok("dd: past key-dates flag 'passed — re-confirm' (the FOMC lesson)", adminSrc
 ok("dd: rendered payload strings are HTML-escaped (esc used in the deep renderer)",
   adminSrc.includes("function esc(") && adminSrc.includes("${esc(dd.thesis_version)}"));
 ok("dd: export carries DEEP_DIVE sections (persistence rule survives the port)",
-  adminSrc.includes("### DEEP_DIVE: ${x.sym}"));
+  adminSrc.includes("### DEEP_DIVE: ${s}"));
+// v3.75 DDSTORE: payloads load lazily, so an export must pull the FULL set rather than
+// serialize whatever the client happens to hold — a backup that looks complete and is not
+// is worse than none, so a failed fetch ABORTS the export instead of writing it partial.
+ok("dd: both exports pull the whole payload set first and REFUSE rather than write a partial backup",
+  /async function allDeepDives\(\)/.test(adminSrc) &&
+  adminSrc.includes('fetch("/api/deepdive?all=1")') &&
+  adminSrc.includes("EXPORT ABORTED") &&
+  (adminSrc.match(/const dds=await allDeepDives\(\);if\(!dds\)return;|const ddMap=await allDeepDives\(\);if\(!ddMap\)return;/g) || []).length === 2);
 ok("dd: import validates deepDive before overwriting the book", adminSrc.includes("deep dive: "));
 // v3.13 corpus-native: the uploaded deep-dive JSONs must parse AS-IS.
 ok("dd: as_of aliases updated (corpus files carry as_of)", adminSrc.includes("dd.updated||dd.as_of"));
@@ -958,7 +966,7 @@ ok("dot: coverage strip counts untriaged dots", adminSrc.includes("new dots"));
 ok("upside: shares ptModelRows with the deep-dive table (one computation, not two)",
   adminSrc.includes("function ptModelRows(dd,_y0)") && adminSrc.includes("const rows=ptModelRows(dd);"));
 ok("upside: ranks ALL tiers, not just the watchlist queue (S/A/B/DEF included)",
-  /BOOK\.forEach\(x=>\{\s*const dd=x\.deepDive/.test(adminSrc));
+  /BOOK\.forEach\(x=>\{\s*const dd=ddOf\(x\)/.test(adminSrc));
 // Pin the two INVARIANTS (a usable ref_px, and at least one usable rung), not the exact
 // expression — the horizon refactor moved this code and a literal match broke on it.
 // v3.36: the gate is a USABLE price (live preferred, stamp as fallback) — it used to demand
@@ -979,7 +987,7 @@ ok("upside: wired into the render pipeline",
   /renderNextDollar\(\);[\s\S]{0,80}renderUpsideRank\(\);[\s\S]{0,200}renderCoverage\(\)/.test(adminSrc));
 // v3.26 FEAT-TT-BINCAL: scheduled binaries surface board-level, not one tab at a time.
 ok("bincal: aggregates future key_dates across the whole book",
-  adminSrc.includes("function renderBinaryCal()") && adminSrc.includes("x.deepDive&&x.deepDive.key_dates"));
+  adminSrc.includes("function renderBinaryCal()") && adminSrc.includes("ddOf(x)&&ddOf(x).key_dates"));
 ok("bincal: past dates are excluded from the queue", adminSrc.includes("k.date<today)return;"));
 ok("bincal: flags the no-new-adds window without enforcing it",
   adminSrc.includes("const BINARY_WINDOW_D=10;") && adminSrc.includes("reported, not enforced"));
@@ -1153,7 +1161,7 @@ ok("livepx: each pick shows whether it used a live or stamped price",
 ok("livepx: footer counts live vs stamped rather than implying all are current",
   adminSrc.includes("live / ") && adminSrc.includes("all prices are stamped marks, not live"));
 ok("livepx: quote fetch is non-blocking and failure leaves the board unchanged",
-  adminSrc.includes("loadBook().then(()=>{loadQuotes();loadPositions();});") && adminSrc.includes("never break the board on a quote feed"));
+  adminSrc.includes("loadBook().then(()=>{loadQuotes();loadPositions();loadDeepDiveIndex();});") && adminSrc.includes("never break the board on a quote feed"));
 
 // ---- 9. market calendar — holidays across the honesty stack ---------------
 // The time-judges (isStale, marketSession/etSession, looksBehind) share ONE
@@ -1307,7 +1315,7 @@ ok("regime: the HEADWIND/PANIC modifier text survives the two-engine rewrite",
 ok("bincal: board-level binaries merge into the same dated queue",
   adminSrc.includes("BOARD.binaries") && adminSrc.includes("board-level, not a book ticker"));
 ok("bincal: a binary only opens a tab that actually exists (no dead click)",
-  adminSrc.includes("const tabbable=!e.board||!!(find(e.sym)&&find(e.sym).deepDive);"));
+  adminSrc.includes("const tabbable=!e.board||!!(find(e.sym)&&ddOf(find(e.sym)));"));
 ok("sess: the circuit's asserted state and its measurement are dated separately",
   adminSrc.includes("measurement undated — the number's own age is unknown") &&
   adminSrc.includes("c.measured_at?"));
@@ -1466,7 +1474,7 @@ ok("pos: an absent position renders NOTHING — not a 0 or a dash that reads as 
   adminSrc.includes("absent number; a dash or a 0 here would read"));
 ok("pos: fetched from its own endpoint at boot, alongside the book and quotes",
   adminSrc.includes('const r=await fetch("/api/positions");') &&
-  adminSrc.includes("loadBook().then(()=>{loadQuotes();loadPositions();});"));
+  adminSrc.includes("loadBook().then(()=>{loadQuotes();loadPositions();loadDeepDiveIndex();});"));
 ok("pos: a fetch failure leaves POSITIONS={} — every posOf() reads null, never stale data",
   adminSrc.includes("POSITIONS stays {} — posOf() reads null for everyone, never stale data"));
 ok("pos: measured marks age like everything else, undated being the worst",
@@ -1900,7 +1908,7 @@ ok("estrun: board rows are est-mini, never drawer — the phone harness counts o
   adminSrc.includes("details.est-mini{") && !adminSrc.includes('class="drawer est-mini"') &&
   !adminSrc.includes('class="est-mini drawer"'));
 ok("estrun: the board table IS the deep-dive table — one renderer, two surfaces",
-  adminSrc.includes("estRunTable(it.x,it.x.deepDive)"));
+  adminSrc.includes("estRunTable(it.x,ddOf(it.x))"));
 ok("estrun: the board states its denominator (N modelled of M)",
   adminSrc.includes("modelled of ${BOOK.length}"));
 
@@ -2161,7 +2169,11 @@ ok("capex: validateBoard accepts a well-formed tape and rejects each malformatio
 const cxLift = (() => {
   const g = (n) => { const i = adminSrc.indexOf(`function ${n}(`); return adminSrc.slice(i, adminSrc.indexOf("\n}", i) + 2); };
   const ctx = {};
-  new Function("ctx", "let BOARD={},BOOK=[];" + g("capexState") + "\n" + g("capexExposure") + "\n" + g("lintCapexConservation") +
+  // v3.75 DDSTORE: ddOf is the ONE payload choke point every consumer goes through, so the
+  // real one is lifted here rather than stubbed — these fixtures carry embedded payloads,
+  // which is exactly the pre-migration fallback branch it must keep serving.
+  new Function("ctx", "let BOARD={},BOOK=[],DD_FULL={},DD_INDEX_MAP={};" + g("ddOf") + "\n" +
+    g("capexState") + "\n" + g("capexExposure") + "\n" + g("lintCapexConservation") +
     "\nctx.run=(board,book)=>{BOARD=board;BOOK=book;return{st:capexState(),lint:lintCapexConservation()};};")(ctx);
   return ctx.run;
 })();
@@ -2583,11 +2595,12 @@ ok("ready: the thesis threshold is the SAME 30d ddAgeChip re-reviews on (one rul
   RDY_THESIS_D && RDY_THESIS_D[1] === "30" && adminSrc.includes("if(d>30)return `<span class=\"pill warn\">self-attested"));
 const RDY = new Function(
   `const READY_THESIS_D=${RDY_THESIS_D[1]},POS_STALE_D=2,PX_STALE_D=4,LENS_MAX_PE=${LENS_MAX_PE_SRC[1]};` +
-  "let BOARD={},POSITIONS={},LIVE_PX={};" +
+  "let BOARD={},POSITIONS={},LIVE_PX={},DD_FULL={},DD_INDEX_MAP={};" +
   // readiness() reads the REAL model helpers (already exercised in [20]) rather than a stub —
   // the whole design claim is that a readiness part can never disagree with the chip it
-  // summarizes, which only holds if both call the same function.
-  liftFns(adminSrc, ["ageDays", "runState", "ddDate", "hingeTally", "posOf", "posAge",
+  // summarizes, which only holds if both call the same function. ddOf (v3.75) is lifted for
+  // the same reason: it is the payload choke point readiness resolves the thesis through.
+  liftFns(adminSrc, ["ageDays", "runState", "ddDate", "hingeTally", "posOf", "posAge", "ddOf",
     "schedAt", "ptRowYears", "ptModelRows", "lintPtModel", "readiness"]) +
   "\nreturn {readiness,set:(b,p,q)=>{BOARD=b;POSITIONS=p;LIVE_PX=q;}};")();
 const iso = (dAgo) => new Date(Date.now() - dAgo * 86400000).toISOString().slice(0, 10);
@@ -4530,6 +4543,268 @@ ok("fix2: the VIX tile branches on the band's OWN vote — no 18/25 second copy 
   !/vix\.current>25\?T\.red/.test(mdSrc) && !/current>18\?T\.yellow/.test(mdSrc));
 ok("fix3: delta colors (pctColor day-moves) keep their treatment — facts, not verdicts",
   stripSrc.includes("sc:pctColor(d.marketPulse.spy.changePct)"));
+
+
+// ---- 50. FEAT-TT-DDSTORE (v3.75) — thesis payloads get their own KV document --------
+// The third time this exact wall was hit: `pos` was split out in v3.34 and the ledger in
+// v3.32, each because a growing thing rode inside one fixed-size PUT. On 2026-08-05 the book
+// reached 306,425 of 307,200 bytes (99.7%) and a routine two-name TT pass had to be written
+// tighter to fit. v3.70's own note called the cap raise "a stopgap, not the fix" — this is
+// the fix. The handler is RUN against a fake KV, not string-pinned: the migration reorders
+// writes for crash-safety and the index decides which facts the board can still see, and
+// neither of those is a claim a string match can prove.
+console.log("\n[50] FEAT-TT-DDSTORE — deepDive moves to tt:dd:v1:<SYM>");
+{
+  const dd = await import("../functions/api/deepdive.js");
+  const mkKV3 = (init = {}) => {
+    const store = new Map(Object.entries(init).map(([k, v]) => [k, JSON.stringify(v)]));
+    return {
+      async get(k, type) { const v = store.get(k); return v == null ? null : (type === "json" ? JSON.parse(v) : v); },
+      async put(k, v) { store.set(k, String(v)); },
+      async delete(k) { store.delete(k); },
+      _store: store,
+    };
+  };
+  const PIN = "123456";
+  const rq = (method, { params = "", headers = {}, body = null } = {}) => ({
+    method,
+    url: "https://macrodash.pages.dev/api/deepdive" + params,
+    headers: { get: (k) => headers[k] ?? headers[k.toLowerCase()] ?? null },
+    text: async () => (body == null ? "" : JSON.stringify(body)),
+  });
+  const AUTHED = { "x-tt-pin": PIN };
+  const PAYLOAD = (sym) => ({
+    thesis_version: "v1.0", updated: "2026-08-05", name: sym + " Corp",
+    // prose the index must NOT carry — the whole point of a working set
+    thesis: "x".repeat(4000), open_items: ["a".repeat(2000)],
+    consensus: { revenue_B: { 2027: 10 }, eps: { 2027: 1.5 }, analysts: 12 },
+    pt_model: { ev_s_multiple: { 2026: 5 }, share_count_M: 100 },
+    ref_px: { px: 100, at: "2026-08-04" },
+    hinges: [{ label: "funding", state: "red", note: "n".repeat(500), asOf: "2026-08-01" },
+             { label: "ramp", state: "green" }, { id: "util", state: "unknown" }],
+    key_dates: [{ date: "2026-09-01", event: "print" }],
+    composite: { score: 8.1, raw_tier: "A", capped_tier: "A", evidence: "e".repeat(1000) },
+  });
+  const bookWith = (syms) => ({ version: "12.0", asOf: "2026-08-05",
+    book: syms.map((s) => ({ sym: s, tier: "A", lens: "AI", deepDive: PAYLOAD(s) })), cut: [] });
+
+  ok("ddstore: anonymous GET fails closed (401) — thesis content is as private as the book",
+    (await dd.onRequestGet({ request: rq("GET", { params: "?sym=AAA" }), env: { TT_PIN: PIN, PULSE_CACHE: mkKV3() } })).status === 401);
+  ok("ddstore: cross-origin PUT → 403 before any write (the same CSRF guard /api/tt uses)",
+    (await dd.onRequestPut({ request: rq("PUT", { params: "?sym=AAA", headers: { ...AUTHED, Origin: "https://evil.example" }, body: { deepDive: {} } }),
+      env: { TT_PIN: PIN, PULSE_CACHE: mkKV3() } })).status === 403);
+  ok("ddstore: an unknown method is 405, not a silent no-op",
+    (await dd.onRequest({ request: rq("DELETE"), env: { TT_PIN: PIN, PULSE_CACHE: mkKV3() } })).status === 405);
+  // The v3.54 rule: a route that MUTATES must not be reachable by GET, where a prefetch,
+  // link preview or replayed URL can trigger it.
+  ok("ddstore: GET ?migrate=1 is 405 and NAMES the correct verb (migrate mutates)",
+    await (async () => {
+      const r = await dd.onRequestGet({ request: rq("GET", { params: "?migrate=1", headers: AUTHED }), env: { TT_PIN: PIN, PULSE_CACHE: mkKV3() } });
+      return r.status === 405 && /POST/.test((await r.json()).error);
+    })());
+
+  // ---- the index is a WHITELIST, and it must keep every red hinge visible ----
+  const idxE = dd.ddIndexEntry(PAYLOAD("AAA"));
+  ok("ddstore: the index carries the ranking inputs (pt_model, consensus, ref_px) verbatim",
+    idxE.pt_model.share_count_M === 100 && idxE.consensus.revenue_B[2027] === 10 && idxE.ref_px.px === 100);
+  ok("ddstore: the index is a whitelist — prose the board never ranks on is left in the payload",
+    idxE.thesis === undefined && idxE.open_items === undefined && idxE.composite.evidence === undefined);
+  // The one that matters most: every board surface that counts reds (readiness, the chip
+  // strip, the BUY-row naming) reads dd.hinges DIRECTLY. A precomputed tally would have made
+  // all of them silently report ZERO reds for any name whose tab was never opened — a red
+  // fact vanishing behind a collapse, which is the v3.25 rule this repo enforces everywhere.
+  ok("ddstore: hinges ride the index as the SAME array shape, so a red hinge stays countable " +
+     "on a name whose tab was never opened (v3.25 — a collapse never hides a red fact)",
+    Array.isArray(idxE.hinges) && idxE.hinges.length === 3 &&
+    idxE.hinges.filter((h) => h.state === "red").length === 1 &&
+    idxE.hinges[0].label === "funding");
+  ok("ddstore: only identity and state travel — hinge notes, evidence and observation dates stay behind",
+    idxE.hinges[0].note === undefined && idxE.hinges[0].asOf === undefined);
+  ok("ddstore: an unrecognized hinge state reads UNKNOWN, never a defaulted green",
+    dd.ddIndexEntry({ hinges: [{ label: "h", state: "greenish" }] }).hinges[0].state === "unknown");
+  ok("ddstore: the index is materially smaller than the payload it summarizes",
+    JSON.stringify(idxE).length * 4 < JSON.stringify(PAYLOAD("AAA")).length);
+  ok("ddstore: ddIndexEntry(null) is null — an absent payload is never summarized into existence",
+    dd.ddIndexEntry(null) === null && dd.ddIndexEntry("nope") === null);
+
+  // ---- PUT round-trip, removal, oversize ----
+  ok("ddstore: PUT stores under tt:dd:v1:<SYM> and rebuilds that sym's index entry", await (async () => {
+    const kv = mkKV3();
+    const r = await dd.onRequestPut({ request: rq("PUT", { params: "?sym=AAA", headers: AUTHED, body: { deepDive: PAYLOAD("AAA") } }),
+      env: { TT_PIN: PIN, PULSE_CACHE: kv } });
+    const idx = JSON.parse(kv._store.get("tt:dd:index:v1"));
+    return r.status === 200 && !!kv._store.get("tt:dd:v1:AAA") && idx.entries.AAA.pt_model.share_count_M === 100;
+  })());
+  ok("ddstore: one name's save can never touch another's — a strictly stronger guarantee " +
+     "than the whole-book replace it replaces", await (async () => {
+    const kv = mkKV3();
+    await dd.onRequestPut({ request: rq("PUT", { params: "?sym=AAA", headers: AUTHED, body: { deepDive: PAYLOAD("AAA") } }), env: { TT_PIN: PIN, PULSE_CACHE: kv } });
+    const before = kv._store.get("tt:dd:v1:AAA");
+    await dd.onRequestPut({ request: rq("PUT", { params: "?sym=BBB", headers: AUTHED, body: { deepDive: PAYLOAD("BBB") } }), env: { TT_PIN: PIN, PULSE_CACHE: kv } });
+    const idx = JSON.parse(kv._store.get("tt:dd:index:v1"));
+    return kv._store.get("tt:dd:v1:AAA") === before && !!idx.entries.AAA && !!idx.entries.BBB;
+  })());
+  ok("ddstore: null is the explicit removal path (positions' {sym:null} precedent) and drops " +
+     "the index entry with it", await (async () => {
+    const kv = mkKV3();
+    await dd.onRequestPut({ request: rq("PUT", { params: "?sym=AAA", headers: AUTHED, body: { deepDive: PAYLOAD("AAA") } }), env: { TT_PIN: PIN, PULSE_CACHE: kv } });
+    await dd.onRequestPut({ request: rq("PUT", { params: "?sym=AAA", headers: AUTHED, body: { deepDive: null } }), env: { TT_PIN: PIN, PULSE_CACHE: kv } });
+    return !kv._store.has("tt:dd:v1:AAA") && JSON.parse(kv._store.get("tt:dd:index:v1")).entries.AAA === undefined;
+  })());
+  ok("ddstore: a non-object payload is rejected — only an object, or null to remove",
+    (await dd.onRequestPut({ request: rq("PUT", { params: "?sym=AAA", headers: AUTHED, body: { deepDive: [1, 2] } }),
+      env: { TT_PIN: PIN, PULSE_CACHE: mkKV3() } })).status === 400);
+  ok("ddstore: oversize fails CLOSED naming key, bytes and limit — never a truncated write", await (async () => {
+    const kv = mkKV3();
+    const r = await dd.onRequestPut({ request: rq("PUT", { params: "?sym=AAA", headers: AUTHED, body: { deepDive: { big: "x".repeat(60 * 1024) } } }),
+      env: { TT_PIN: PIN, PULSE_CACHE: kv } });
+    const b = await r.json();
+    return r.status === 400 && b.error === "oversize" && b.key === "tt:dd:v1:AAA" &&
+      b.bytes > b.limit && b.limit === 45 * 1024 && !kv._store.has("tt:dd:v1:AAA");
+  })());
+  ok("ddstore: the per-key cap mirrors DD_MAX in admin.html (45KB, v3.70) — one number, two homes",
+    /const MAX_BODY = 45 \* 1024;/.test(readFileSync(new URL("../functions/api/deepdive.js", import.meta.url), "utf8")) &&
+    /const DD_MAX=45\*1024/.test(adminSrc));
+
+  // ---- ?all=1: export integrity ----
+  ok("ddstore: ?all=1 returns every stored payload IN FULL — the export path, never the board's", await (async () => {
+    const kv = mkKV3();
+    for (const s of ["AAA", "BBB"])
+      await dd.onRequestPut({ request: rq("PUT", { params: "?sym=" + s, headers: AUTHED, body: { deepDive: PAYLOAD(s) } }), env: { TT_PIN: PIN, PULSE_CACHE: kv } });
+    const b = await (await dd.onRequestGet({ request: rq("GET", { params: "?all=1", headers: AUTHED }), env: { TT_PIN: PIN, PULSE_CACHE: kv } })).json();
+    return b.count === 2 && b.deepDives.AAA.thesis.length === 4000 && b.missing.length === 0;
+  })());
+  ok("ddstore: a sym the index claims but whose payload key is gone is NAMED, never quietly absent",
+    await (async () => {
+      const kv = mkKV3();
+      await dd.onRequestPut({ request: rq("PUT", { params: "?sym=AAA", headers: AUTHED, body: { deepDive: PAYLOAD("AAA") } }), env: { TT_PIN: PIN, PULSE_CACHE: kv } });
+      kv._store.delete("tt:dd:v1:AAA");
+      const b = await (await dd.onRequestGet({ request: rq("GET", { params: "?all=1", headers: AUTHED }), env: { TT_PIN: PIN, PULSE_CACHE: kv } })).json();
+      return b.missing.join() === "AAA" && b.count === 0;
+    })());
+
+  // ---- the migration ----
+  const migrate = async (kv) => (await dd.onRequestPost({ request: rq("POST", { params: "?migrate=1", headers: AUTHED }), env: { TT_PIN: PIN, PULSE_CACHE: kv } })).json();
+  ok("ddstore: migrate moves every embedded payload out, strips the book and RECLAIMS the bytes " +
+     "that motivated the split", await (async () => {
+    const kv = mkKV3({ "tt:book:v1": bookWith(["AAA", "BBB", "CCC"]) });
+    const b = await migrate(kv);
+    const book = JSON.parse(kv._store.get("tt:book:v1"));
+    return b.migrated === 3 && b.reclaimed > 0 && b.book_bytes_after < b.book_bytes_before &&
+      book.book.every((e) => e.deepDive === undefined) &&
+      book.book.every((e) => e.sym && e.tier) &&              // nothing else was stripped
+      ["AAA", "BBB", "CCC"].every((s) => !!kv._store.get("tt:dd:v1:" + s));
+  })());
+  ok("ddstore: migrate is IDEMPOTENT — a second run is a no-op that says so, not a double write",
+    await (async () => {
+      const kv = mkKV3({ "tt:book:v1": bookWith(["AAA"]) });
+      await migrate(kv);
+      const v1 = JSON.parse(kv._store.get("tt:book:v1")).version;
+      const b2 = await migrate(kv);
+      return b2.migrated === 0 && /already migrated/.test(b2.reason) &&
+        JSON.parse(kv._store.get("tt:book:v1")).version === v1;
+    })());
+  ok("ddstore: migrate snapshots the book BEFORE stripping it (the same first-write-of-the-day " +
+     "restore point tt.js's own PUT keeps), and the snapshot still holds the payloads",
+    await (async () => {
+      const kv = mkKV3({ "tt:book:v1": bookWith(["AAA"]) });
+      await migrate(kv);
+      const snapKey = [...kv._store.keys()].find((k) => k.startsWith("tt:book:snap:"));
+      return !!snapKey && !!JSON.parse(kv._store.get(snapKey)).book[0].deepDive;
+    })());
+  // Ordering is the crash-safety property: payloads are SAFE before the book is touched, so a
+  // failure at any step leaves a recoverable state and the retry above is a no-op.
+  ok("ddstore: a payload-store failure leaves the BOOK UNTOUCHED and says it is safe to retry",
+    await (async () => {
+      const kv = mkKV3({ "tt:book:v1": bookWith(["AAA"]) });
+      const before = kv._store.get("tt:book:v1");
+      kv.put = async (k) => { if (k.startsWith("tt:dd:v1:")) throw new Error("kv down"); };
+      const b = await migrate(kv);
+      return /safe to retry/.test(b.error) && kv._store.get("tt:book:v1") === before;
+    })());
+  // The invisible-loss rule: a skipped thesis must be NAMED, never silently dropped.
+  ok("ddstore: an oversize payload is NAMED and left embedded rather than dropped", await (async () => {
+    const big = bookWith(["AAA", "BBB"]);
+    big.book[1].deepDive.blob = "x".repeat(60 * 1024);
+    const kv = mkKV3({ "tt:book:v1": big });
+    const b = await migrate(kv);
+    const book = JSON.parse(kv._store.get("tt:book:v1"));
+    return b.migrated === 1 && b.oversize.length === 1 && b.oversize[0].sym === "BBB" &&
+      book.book.find((e) => e.sym === "BBB").deepDive !== undefined &&
+      book.book.find((e) => e.sym === "AAA").deepDive === undefined;
+  })());
+  ok("ddstore: migrate builds the index for exactly the syms it wrote", await (async () => {
+    const kv = mkKV3({ "tt:book:v1": bookWith(["AAA", "BBB"]) });
+    await migrate(kv);
+    const idx = JSON.parse(kv._store.get("tt:dd:index:v1"));
+    return Object.keys(idx.entries).sort().join() === "AAA,BBB" &&
+      idx.entries.AAA.hinges.filter((h) => h.state === "red").length === 1;
+  })());
+
+  // ---- the client choke point ----
+  // ddOf() is to deepDive what posOf() was to pos: ONE resolution point, so the storage move
+  // is invisible to every renderer. Its fallback ORDER is the migration-safety property —
+  // full payload, then board index, then a still-embedded payload for a pre-migration book.
+  const DDOF = new Function("let DD_FULL={},DD_INDEX_MAP={};" +
+    liftFns(adminSrc, ["ddOf", "ddIsPartial"]) +
+    "\nreturn {ddOf,ddIsPartial,set:(f,i)=>{DD_FULL=f;DD_INDEX_MAP=i;}};")();
+  ok("ddstore: ddOf prefers the full payload, falls back to the index, then to a still-embedded " +
+     "payload — so a pre-migration book keeps rendering with no per-call-site change",
+    (() => {
+      const x = { sym: "AAA", deepDive: { src: "embedded" } };
+      DDOF.set({}, {}); const emb = DDOF.ddOf(x).src;
+      DDOF.set({}, { AAA: { src: "index" } }); const idx = DDOF.ddOf(x).src;
+      DDOF.set({ AAA: { src: "full" } }, { AAA: { src: "index" } }); const full = DDOF.ddOf(x).src;
+      return emb === "embedded" && idx === "index" && full === "full";
+    })());
+  ok("ddstore: ddOf returns null for an unknown name rather than throwing", (() => {
+    DDOF.set({}, {}); return DDOF.ddOf(null) === null && DDOF.ddOf({ sym: "ZZZ" }) === null;
+  })());
+  ok("ddstore: ddIsPartial is true ONLY while the index is standing in for the whole thesis", (() => {
+    DDOF.set({}, { AAA: {} }); const a = DDOF.ddIsPartial("AAA");
+    DDOF.set({ AAA: {} }, { AAA: {} }); const b = DDOF.ddIsPartial("AAA");
+    DDOF.set({}, {}); return a === true && b === false && DDOF.ddIsPartial("AAA") === false;
+  })());
+  // The most dangerous path in the whole split: seeding the editor from an index and pressing
+  // SAVE would write the board summary back over the full thesis and destroy everything the
+  // index omits. The editor loads first and REFUSES to open rather than open on a partial.
+  ok("ddstore: the payload editor force-loads the full thesis and REFUSES to open on a partial " +
+     "(a save from the index would overwrite the thesis with its own summary)",
+    /async function openDeepDive\(sym\)\{[\s\S]{0,600}?if\(ddIsPartial\(sym\)\)\{[\s\S]{0,300}?await loadDeepDiveSym\(sym\);[\s\S]{0,200}?if\(ddIsPartial\(sym\)\)return toast\(/.test(adminSrc) &&
+    adminSrc.includes("would overwrite it with the board summary"));
+  ok("ddstore: saveFloorMultiple edits a COPY and writes through the payload store, never a book persist",
+    /async function saveFloorMultiple\(sym\)\{[\s\S]*?const next=JSON\.parse\(JSON\.stringify\(dd\)\);[\s\S]*?ddPersist\(sym,next\)/.test(adminSrc));
+  ok("ddstore: ddPersist is the ONE write path and REVERTS the local edit on failure " +
+     "(v3.6: a failed save must never leave the screen showing the edit as landed)",
+    /async function ddPersist\(sym,dd\)\{/.test(adminSrc) &&
+    adminSrc.includes("your edit was reverted, re-open and retry") &&
+    (adminSrc.match(/ddPersist\(sym,/g) || []).length >= 3);
+  ok("ddstore: removal PUTs null through the store and reverts on failure — a payload that " +
+     "vanished locally but survives on the server would come back on the next boot",
+    /async function ddRemoveConfirmed\(sym\)\{[\s\S]*?JSON\.stringify\(\{deepDive:null\}\)/.test(adminSrc) &&
+    adminSrc.includes("the payload is still on the server"));
+  // persist() is the ONE drain point: import, session handoff and any pre-migration entry all
+  // reach the server through it, so the book can never re-inflate with payloads after migration.
+  ok("ddstore: persist() drains any embedded payload out of the book first — one implementation " +
+     "covering import, handoff and pre-migration entries alike",
+    /async function persist\(\)\{\s*await drainEmbeddedDeepDives\(\);/.test(adminSrc) &&
+    /async function drainEmbeddedDeepDives\(\)\{[\s\S]*?if\(ok\)delete x\.deepDive; else failed\.push/.test(adminSrc));
+  ok("ddstore: the drain writes the payload BEFORE stripping the entry — a store failure leaves " +
+     "it embedded and still saved, never dropped",
+    adminSrc.includes("still saved with the book, retry the save"));
+  // The import validators must read the INCOMING payload. ddOf would resolve to what is already
+  // stored for that sym and validate the wrong object entirely — passing a malformed import.
+  ok("ddstore: import and handoff validate e.deepDive / u.deepDive, NOT ddOf() — validating the " +
+     "stored payload would pass an import whose own payload is malformed",
+    adminSrc.includes("if(e.deepDive!==undefined){const der=validateDeepDive(e.deepDive);") &&
+    adminSrc.includes("if(u.deepDive!==undefined){const e=validateDeepDive(u.deepDive);") &&
+    !/validateDeepDive\(ddOf\(/.test(adminSrc));
+  ok("ddstore: the deep-dive tab kicks the full fetch and LABELS the interim render as partial",
+    adminSrc.includes("loadDeepDiveSym(sym);") && adminSrc.includes("board index only — the full thesis is still loading"));
+  ok("ddstore: the index load settles in a finally, so a dead feed falls back to any embedded " +
+     "payload rather than stranding the board (the loadQuotes/loadPositions precedent)",
+    /async function loadDeepDiveIndex\(\)\{[\s\S]*?finally\{DD_PENDING=false;render\(\);\}/.test(adminSrc));
+}
 
 console.log(`\n=== SMOKE TEST: ${pass} passed, ${fail} failed ===`);
 process.exit(fail === 0 ? 0 : 1);

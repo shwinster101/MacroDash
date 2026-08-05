@@ -139,6 +139,9 @@ functions/              Cloudflare Pages Functions (run at the edge, same origin
                         esbuild-inline path readout.json.js proved.
   api/fred.js           Legacy/fallback. Reads ONLY the cron-written KV key
                         (pulse:macro:latest); has NO key, makes NO upstream calls.
+  api/deepdive.js       Thesis payloads, ONE KEY PER SYMBOL (tt:dd:v1:<SYM>) + a small
+                        board index (tt:dd:index:v1). PIN-gated like /api/tt. The book
+                        document no longer carries deepDive at all (v3.75).
   readout.json.js       /readout.json — public tt-v1 regime readout (CORS-open).
                         Reads the day's snapshot KV (subrequest /api/snapshot on
                         miss); maps via src/ttReadout.js. No new infra/cron.
@@ -663,6 +666,7 @@ Jan-anchor shipped; see `snapshot.js` ~318–328), `spyMa100`, `spyMa200`, and a
   in sync as always. **This is a stopgap, not the fix**: splitting `deepDive` payloads out of
   the book into their own KV document (same pattern `pos` and the ledger already proved) is
   the permanent answer and remains deliberately deferred — a bigger, separate piece of scope.
+  *(CLOSED in v3.75, FEAT-TT-DDSTORE — see the entry below.)*
 - **FEAT-TT-PTLINT (v3.39) — guards for the chain the whole terminal hangs on.** An audit of the
   price-target chain confirmed what it was supposed to: `ptModelRows()` really is the single
   computation every decision surface reads (est-run table · `ddWorth` · `renderUpsideRank`→
@@ -1796,7 +1800,7 @@ Jan-anchor shipped; see `snapshot.js` ~318–328), `spyMa100`, `spyMa200`, and a
   values go to 25MB). **The BOOK cap still binds first and by a wide margin** — 38 entries at
   45KB would be ~1.7MB, ~5.8x the book cap — so the per-name raise is headroom for a handful of
   rich names, NOT for all of them, and the deepDive KV split remains the real fix, still
-  deferred. Smoke pins moved with the values (the payload-cap pin, the binds-first arithmetic
+  deferred *(CLOSED in v3.75, FEAT-TT-DDSTORE)*. Smoke pins moved with the values (the payload-cap pin, the binds-first arithmetic
   pin, the cap-mirror pin, the positions-contrast pin).
 - **v3.69 "NARRATIVE FIRST" — the public dashboard reorder, and the session the browser suites
   finally ran.** Owner verdict on live screenshots: the macro board was "very overwhelming and
@@ -1911,7 +1915,7 @@ Jan-anchor shipped; see `snapshot.js` ~318–328), `spyMa100`, `spyMa200`, and a
   this changelog keeps fixing. It now states the real constraint — **the BOOK cap binds first**, since
   36 entries at 15KB is 540KB against a 200KB body, so this buys headroom for a few rich names and not
   for all of them. Splitting `deepDive` into its own KV document (the pattern `pos` and the ledger both
-  proved) remains the actual fix and stays deliberately deferred.
+  proved) remains the actual fix and stays deliberately deferred *(CLOSED in v3.75, FEAT-TT-DDSTORE)*.
 - **ENGINE0-CONT (v3.71) — source continuity: Engine 0 stops confusing "I cannot see" with
   "nothing is there".** *Relabelled from v3.63 at merge (2026-08-04): this shipped in parallel on a
   separate branch and independently claimed v3.63, colliding with the DD_MAX entry immediately
@@ -2045,6 +2049,71 @@ Jan-anchor shipped; see `snapshot.js` ~318–328), `spyMa100`, `spyMa200`, and a
   string-pinning it — the project's own recurring lesson (v3.40, v3.54: state computed and
   rendered but not read at the gate) is exactly the shape a string pin cannot catch.
   Tests: **1067 smoke** (+6) + 192 render + 88 public-render.
+- **FEAT-TT-DDSTORE (v3.75) — the deferral comes due: `deepDive` gets its own KV document.**
+  Third time at the same wall, and the changelog called it every time. `pos` was split out in
+  v3.34 and the belief ledger in v3.32, each because a growing thing was riding inside one
+  fixed-size PUT. `deepDive` is by far the largest and fastest-growing such thing — consensus
+  tables, `pt_model` schedules, hinges, gates, projections, capex/tokens blocks and
+  pre-committed falsifier drafts, per name — and `DD_MAX` went 8KB → 15KB (v3.63) → 45KB
+  (v3.70) with `MAX_BODY` 64KB → 200KB (v3.34) → 300KB (v3.70) chasing it. v3.70's own note
+  said plainly that raising the cap "is a stopgap, not the fix" and that this split "is the
+  permanent answer and remains deliberately deferred." On 2026-08-05 the book reached
+  **306,425 of 307,200 bytes — 99.7%** — and a routine two-name TT pass (CRDO/LITE) had to be
+  rewritten tighter to land, leaving 775 bytes of headroom. That is the deferral coming due.
+  **Storage is ONE KEY PER SYMBOL** (`tt:dd:v1:<SYM>`), unlike positions' single map — a
+  deliberate difference, because the shapes differ: position records are tiny and the terminal
+  needs all of them at boot to compute caps and clusters, so one document beats a fan-out;
+  thesis payloads are up to `DD_MAX` each and only ONE is ever rendered at a time, so
+  per-symbol keys mean a tab open reads ~10KB instead of ~300KB and **one name's growth can
+  never squeeze another's**. A PUT is per-symbol and whole-payload-for-that-symbol, which is a
+  strictly stronger guarantee than the whole-book replace it replaces.
+  **`tt:dd:index:v1` is the board's working set**, and it is a **WHITELIST, not a blacklist**:
+  a payload block added later must not silently start bloating the document the whole board
+  loads. Which fields belong in it was settled EMPIRICALLY rather than by reading — the render
+  fixture's JJJ was moved to store-only with **every pre-existing JJJ assertion left
+  unchanged**, so a field the board reads but the index omits fails the suite. That caught
+  `capex_exposure` (the FEAT-TT-CAPEX conservation lint sums it across the book) and
+  `pt_consensus` (FEAT-TT-SPREAD's street-vs-mine). **Hinges ride as the same trimmed ARRAY,
+  never a precomputed tally**: every board surface that counts reds — readiness, the chip
+  strip, the BUY-row naming — reads `dd.hinges` directly, so a tally field would have made all
+  of them silently report ZERO reds for any name whose tab was never opened. A red fact
+  disappearing behind lazy loading is the v3.25 rule broken by a storage decision.
+  **`ddOf(x)` is the client choke point** — full payload, then board index, then a
+  still-embedded payload — so the move is invisible to every renderer, the same property
+  `posOf()` gave the position split, and a pre-migration book keeps working throughout.
+  **The dangerous path is the editor**, and it fails closed: seeding from an index and pressing
+  SAVE would write the board summary back over the full thesis, so `openDeepDive` force-loads
+  and **REFUSES to open** rather than open on a partial. `saveFloorMultiple` edits a COPY for
+  the same reason. `ddPersist()` is the ONE write path and REVERTS the local edit on failure
+  (the v3.6 rule that a failed save must never leave the screen showing the edit as landed);
+  removal PUTs `null` (positions' `{sym:null}` precedent) and reverts likewise.
+  **`persist()` is the ONE drain point** — import, session handoff and any pre-migration entry
+  all reach the server through it, so the book can never re-inflate with payloads after the
+  migration; the drain writes the payload BEFORE stripping the entry, so a store failure
+  leaves it embedded and still saved rather than dropped.
+  **Export integrity needed its own route.** Payloads load lazily, so an export built from what
+  the client happens to hold would silently omit every name never opened this session — a
+  backup that looks complete and is not is worse than none. `GET ?all=1` pulls the full set,
+  both exports re-embed it into a single self-contained restore artifact, and a failed fetch
+  **ABORTS the export** rather than writing it partial. A sym the index claims but whose
+  payload key is gone is NAMED, never quietly absent.
+  **The migration** (`POST ?migrate=1`, idempotent, POST-only per the v3.54 GET-must-not-mutate
+  rule) writes payloads FIRST, snapshots the book, then strips and re-saves — so a failure at
+  any step leaves a recoverable state and the retry is a no-op. An oversize payload is **named
+  and left embedded**, never silently skipped.
+  Found while wiring, and it was mine: `renderDeepDive` calls the loader on every render, so
+  keying the "already tried" guard on `DD_FULL` (which a no-payload answer never populates)
+  was an unbounded fetch loop, and an unconditional re-render on landing **collapsed every
+  `<details>` the reader had just opened** — the same async-landing defect `EST_OPEN`/`DD_OPEN`
+  exist to prevent. Caught by the render suite, fixed with `DD_TRIED` + a re-render only when
+  a payload actually arrived.
+  Tests: **1261 smoke** (+37: the handler RUN against a fake KV — index whitelist and hinge
+  visibility, per-symbol isolation, the null removal path, oversize fail-closed, `?all=1`
+  including the named-missing case, and the migration's crash-safe ordering, idempotency,
+  snapshot and oversize naming; plus `ddOf`/`ddIsPartial` lifted and executed for the fallback
+  order) + **206 render** (+7, incl. the store-only name ranking and its red hinge counted with
+  no tab ever opened) + 111 public-render. Two negative controls run: collapsing hinges back to
+  a tally and reordering the migration's writes each turn the suite red.
 - **v3.72.0 — the horizon picker stops being a deep-link to itself.** Owner hit the exact
   failure v3.68's chip existed to prevent: the board was pinned to YE2030, silently dropping
   35 of 41 names from the next-dollar ranking, and clearing it meant leaving the compact

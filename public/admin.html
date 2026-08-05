@@ -9,7 +9,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
 <!-- AUDIT: kept in sync with package.json by test/smoke.mjs. admin.html is a Vite
      public/ passthrough, so it cannot receive __APP_VERSION__ — the guard is the fix. -->
-<title>TT TICKER TERMINAL v3.74.1</title>
+<title>TT TICKER TERMINAL v3.75.0</title>
 <style>
   :root{
     --bg:#05070a; --panel:#0a0f16; --panel2:#0d141d; --line:#16202c;
@@ -398,7 +398,7 @@
         onclick="toggleHeadInfo()">⋯ MENU</button>
     </div>
     <div id="headInfo" style="display:none">
-      <div class="brand">FINANCE&nbsp;BRO.AI // TT&nbsp;TICKER&nbsp;TERMINAL <small>v3.74.1 · single-pass deep-dive orchestrator</small></div>
+      <div class="brand">FINANCE&nbsp;BRO.AI // TT&nbsp;TICKER&nbsp;TERMINAL <small>v3.75.0 · single-pass deep-dive orchestrator</small></div>
       <div class="statusline">
         <span>BOOK: <b id="bookStamp">loading…</b></span>
         <span>AUTH: <b id="sessState">…</b></span>
@@ -756,7 +756,26 @@ async function loadBook(){
 let DIRTY=false;
 const MAX_BODY=300*1024; // mirror of the server cap in functions/api/tt.js (64KB->200KB v3.34, ->300KB v3.70)
 function bookDoc(){return{book:BOOK,cut:CUT,board:BOARD&&Object.keys(BOARD).length?BOARD:null};}
+/* FEAT-TT-DDSTORE (v3.75): the ONE place a payload can be drained out of the book document.
+   Import, session handoff and any pre-migration entry all reach the server through persist(),
+   so stripping here covers every path with one implementation instead of three — and it means
+   the book document can never re-inflate with thesis payloads after the migration.
+   Payloads are written FIRST and the entry is stripped only on a confirmed store write, so a
+   failure leaves the payload embedded (still saved with the book, still visible) rather than
+   dropped: the same safe ordering the server-side migration uses. */
+async function drainEmbeddedDeepDives(){
+  const carriers=BOOK.filter(x=>x&&x.deepDive&&typeof x.deepDive==="object");
+  if(!carriers.length)return;
+  const failed=[];
+  for(const x of carriers){
+    const ok=await ddPersist(x.sym,x.deepDive);
+    if(ok)delete x.deepDive; else failed.push(x.sym);
+  }
+  if(failed.length)toast("thesis payload not moved to its own store for "+failed.join(", ")+
+    " — still saved with the book, retry the save");
+}
 async function persist(){
+  await drainEmbeddedDeepDives();
   const raw=JSON.stringify(bookDoc());
   if(raw.length>MAX_BODY){ // pre-flight, so overflow reads as a specific local message
     DIRTY=true;showUnsaved(`payload ${Math.round(raw.length/1024)}KB exceeds the ${MAX_BODY/1024}KB server cap`);
@@ -916,6 +935,9 @@ async function importSave(){
     syms.add(e.sym);
     if(!TIER_ORDER.includes(e.tier))return toast("Import rejected: bad tier for "+e.sym);
     if(e.lastRun!==undefined&&!/^\d{4}-\d{2}-\d{2}$/.test(String(e.lastRun)))return toast("Import rejected: bad lastRun for "+e.sym);
+    // e.deepDive, NOT ddOf(e): this is the INCOMING payload being validated before it
+    // replaces anything. ddOf would resolve to what is already stored for that sym and
+    // validate the wrong object entirely — passing an import whose payload is malformed.
     if(e.deepDive!==undefined){const der=validateDeepDive(e.deepDive);if(der)return toast("Import rejected: "+e.sym+" deep dive: "+der);}
     if(e.projection!==undefined){const per=validateProjection(e.projection);if(per)return toast("Import rejected: "+e.sym+" projection: "+per);}
   }
@@ -998,6 +1020,7 @@ function applyHandoff(){
     if(u.lens!==undefined&&!Object.keys(LENS_NAME).includes(u.lens))return toast("Rejected: bad lens for "+u.sym);
     if(u.lastRun!==undefined&&!/^\d{4}-\d{2}-\d{2}$/.test(String(u.lastRun)))return toast("Rejected: bad lastRun for "+u.sym);
     if(u.note!==undefined&&(typeof u.note!=="string"||u.note.length>500))return toast("Rejected: note too long for "+u.sym);
+    // u.deepDive, not ddOf(u) — same reason as importSave: this validates the INCOMING patch.
     if(u.deepDive!==undefined){const e=validateDeepDive(u.deepDive);if(e)return toast("Rejected: "+u.sym+" deep dive: "+e);}
     if(u.projection!==undefined){const e=validateProjection(u.projection);if(e)return toast("Rejected: "+u.sym+" projection: "+e);}
   }
@@ -1538,7 +1561,7 @@ function stateDigest(){
     // gap being measured would be stamp-vs-live, not then-vs-now.
     b[x.sym]={px:live&&isFinite(live.px)?live.px:null,
       tier:x.tier,rank:x.rank||null,lastRun:x.lastRun||null,
-      red:Array.isArray(x.deepDive&&x.deepDive.hinges)?x.deepDive.hinges.filter(g=>g.state==="red").length:0,
+      red:Array.isArray(ddOf(x)&&ddOf(x).hinges)?ddOf(x).hinges.filter(g=>g.state==="red").length:0,
       dots:Array.isArray(x.dots)?x.dots.filter(d=>(d.state||"new")==="new").length:0};
   });
   return{at:new Date().toISOString(),book:b,
@@ -1799,7 +1822,7 @@ function validateDeepDive(dd){
   if(hard.length)return hard[0].msg;
   return null;
 }
-function ddEntries(){return BOOK.filter(x=>x.deepDive);}
+function ddEntries(){return BOOK.filter(x=>ddOf(x));}
 
 /* ═══════════ THE 3 QUESTIONS — PROJECTIONS (FEAT-TT-3Q v3.14) ═══════════ */
 /* Every name should carry written answers to: (1) revenue in 3 years — a SPECIFIC number;
@@ -2208,11 +2231,19 @@ function multEditor(sym,m){
   </div>`;
 }
 async function saveFloorMultiple(sym){
-  const x=find(sym);if(!x||!x.deepDive)return;
+  const x=find(sym);if(!x||!ddOf(x))return;
   const el=document.getElementById("fFloorMult");
   const raw=(el&&el.value||"").trim();
-  x.deepDive.pt_model=x.deepDive.pt_model||{};
-  const m=x.deepDive.pt_model;
+  /* FEAT-TT-DDSTORE: this edits ONE field of a payload that now lives in its own KV document,
+     so it must write through /api/deepdive — a book persist() would no longer carry it. The
+     edit is made on a COPY: ddOf(x) may still be resolving to the small board index, and
+     mutating that in place would write a summary back over the full thesis. */
+  if(ddIsPartial(sym))await loadDeepDiveSym(sym);
+  const dd=ddOf(x);if(!dd)return;
+  if(ddIsPartial(sym))return toast("full thesis not loaded yet — reopen the tab and retry");
+  const next=JSON.parse(JSON.stringify(dd));
+  next.pt_model=next.pt_model||{};
+  const m=next.pt_model;
   if(raw===""){ // clearing removes the floor entirely rather than silently keeping the old one
     delete m.pe_floor_multiple;delete m.multiple_edited;
   }else{
@@ -2222,7 +2253,7 @@ async function saveFloorMultiple(sym){
     m.pe_floor_multiple=v;
     m.multiple_edited=new Date().toLocaleDateString("en-CA",{timeZone:"America/New_York"});
   }
-  await persist();
+  if(await ddPersist(sym,next))toast("floor multiple saved");
   renderDeepDive(sym);
 }
 /* FEAT-TT-ESTRUN (v3.35): the estimate run and the targets it prices, ONE table — the
@@ -2554,7 +2585,7 @@ const READY_THESIS_D=30;   // same threshold ddAgeChip re-reviews on — one rul
 function readiness(x){
   const parts=[];   // {sev:"block"|"caution"|"ok", t:<chip text>}
   const add=(sev,t)=>parts.push({sev,t});
-  const dd=x&&x.deepDive;
+  const dd=x&&ddOf(x);
 
   // 1. TT run — the harness pass. ageDays fails CLOSED, so undated/future reads NEVER RUN.
   const rs=runState(x&&x.lastRun);
@@ -2729,8 +2760,14 @@ function ddOptSec(p){
 }
 function renderDeepDive(sym){
   const x=find(sym);const dv=document.getElementById("deepView");
-  if(!x||!x.deepDive){dv.innerHTML='<div class="empty">no payload</div>';return;}
-  const dd=x.deepDive;
+  // v3.75 DDSTORE: the tab needs the FULL payload, not the board index. Kick the fetch on
+  // open (idempotent, re-renders when it lands) and label the interim render as partial —
+  // a page that silently renders an index as if it were the whole thesis would be the
+  // stored-but-invisible failure this renderer forbids.
+  loadDeepDiveSym(sym);
+  if(!x||!ddOf(x)){dv.innerHTML='<div class="empty">no payload</div>';return;}
+  const dd=ddOf(x);
+  const ddPartial=ddIsPartial(sym);
   const todayET=new Date().toLocaleDateString("en-CA",{timeZone:"America/New_York"});
   let h=`<div style="display:flex;justify-content:space-between;align-items:baseline;gap:8px;flex-wrap:wrap">
     <div><span style="color:var(--green);font-weight:700;font-size:16px;letter-spacing:1px">${esc(x.sym)}</span>
@@ -2738,6 +2775,7 @@ function renderDeepDive(sym){
       <span class="lens lens-${esc(x.lens)}" style="font-size:10px;padding:0 6px;border:1px solid currentColor;border-radius:8px">${esc(x.lens)}</span>
       <span style="color:var(--dim);font-size:11px"> · ${esc(dd.tier||TIER_LABEL[x.tier]||x.tier)} · thesis ${esc(dd.thesis_version)}</span></div>
     <div>${ddAgeChip(ddDate(dd))}</div></div>`;
+  if(ddPartial)h+=`<div style="color:var(--amber);font-size:10.5px;margin-top:4px">⏳ board index only — the full thesis is still loading; sections below may be incomplete</div>`;
   if(dd.ref_px)h+=`<div style="color:var(--slate);font-size:11px;margin-top:4px">ref $${esc(dd.ref_px.px)}${dd.ref_px.at?` · as of ${esc(dd.ref_px.at)}`:""} — manual mark, not a live quote</div>`;
   if(dd.position_note)h+=`<div style="color:var(--slate);font-size:11px;margin-top:4px">${esc(dd.position_note)}</div>`;
   // v3.35 fixpack: the 3-questions block used to ALSO render inline here — a verbatim
@@ -2844,11 +2882,21 @@ function ddPtSec(pt){
 const DD_TEMPLATE={thesis_version:"v1.0 (YYYY-MM-DD)",updated:"",pt_ladder:{"2028":[0,0,0]},
   hinges:[{key:"example",label:"Example hinge",state:"unknown",note:""}],
   key_dates:[{date:"2026-12-31",label:"example"}],position:{},linked_exposure:"",status_flags:{},rules:[]};
-function openDeepDive(sym){
+async function openDeepDive(sym){
   const x=find(sym);if(!x)return;
+  /* FEAT-TT-DDSTORE: the editor MUST seed from the whole thesis. ddOf() falls back to the
+     board index, which carries only the ranking fields — seeding from that and pressing SAVE
+     would write the summary back over the full payload and destroy everything the index
+     omits. So the full payload is loaded first, and if it cannot be, the editor refuses to
+     open rather than opening on a partial that looks complete. */
+  if(ddIsPartial(sym)){
+    toast("loading "+sym+"'s full thesis…");
+    await loadDeepDiveSym(sym);
+    if(ddIsPartial(sym))return toast("could not load "+sym+"'s full thesis — editing now would overwrite it with the board summary. Retry when the connection is back");
+  }
   CURRENT=null;
   document.getElementById("cTitle").textContent="DEEP DIVE — "+x.sym;
-  const seed=x.deepDive||{...DD_TEMPLATE,updated:new Date().toLocaleDateString("en-CA",{timeZone:"America/New_York"})};
+  const seed=ddOf(x)||{...DD_TEMPLATE,updated:new Date().toLocaleDateString("en-CA",{timeZone:"America/New_York"})};
   document.getElementById("cBody").innerHTML=`
     <div class="derived" style="margin-bottom:8px">Standing-model payload (self-attested). Contract:
     thesis_version + updated required; pt_ladder / hinges / key_dates / position / linked_exposure /
@@ -2858,7 +2906,7 @@ function openDeepDive(sym){
   document.getElementById("cBtns").innerHTML=`
     <button class="act" onclick="ddSave('${esc(x.sym)}')">✔ SAVE PAYLOAD</button>
     <button class="act warn" onclick="ddClear()">⌫ CLEAR</button>`+
-    (x.deepDive?`<button class="act danger" onclick="ddRemove('${esc(x.sym)}')">🗑 REMOVE PAYLOAD</button>`:"")+
+    (ddOf(x)?`<button class="act danger" onclick="ddRemove('${esc(x.sym)}')">🗑 REMOVE PAYLOAD</button>`:"")+
     `<button class="act" onclick="closeCard()">CANCEL</button>`;
   openModal();
 }
@@ -2870,15 +2918,19 @@ function ddClear(){
   el.value="";el.focus();
   toast("Editor cleared — paste the new payload, then SAVE (CANCEL discards)");
 }
-function ddSave(sym){
+/* v3.75 DDSTORE: payloads save to /api/deepdive (their own KV key), NOT through the whole-book
+   PUT. One name's save can no longer touch another's, and a thesis can never again consume the
+   book's byte budget. The optimistic local write keeps the tab responsive; a failure reverts it
+   rather than leaving the screen showing a save that did not happen (the persist() lesson). */
+async function ddSave(sym){
   const x=find(sym);if(!x)return;
   let dd;
   try{dd=JSON.parse(document.getElementById("fDeepDive").value);}
   catch(_e){return toast("Invalid JSON");}
   const err=validateDeepDive(dd);
   if(err)return toast("Payload rejected: "+err);
-  x.deepDive=dd;
-  closeCard();render();switchTab(sym);toast(sym+" deep dive saved — saving to server…");persist();
+  closeCard();render();switchTab(sym);toast(sym+" deep dive saved — saving to server…");
+  if(await ddPersist(sym,dd))toast(sym+" deep dive saved");
 }
 function ddRemove(sym){
   document.getElementById("cBtns").innerHTML=`
@@ -2886,10 +2938,30 @@ function ddRemove(sym){
     <button class="act danger" onclick="ddRemoveConfirmed('${esc(sym)}')">✔ YES, REMOVE</button>
     <button class="act" onclick="openDeepDive('${esc(sym)}')">CANCEL</button>`;
 }
-function ddRemoveConfirmed(sym){
+/* FEAT-TT-DDSTORE: removal is a PUT of null to the payload store (the documented removal
+   path, mirroring positions' {sym:null}) — NOT a book save. It reverts on failure for the
+   same reason ddSave does: a payload that vanished locally but survives on the server would
+   read as removed and come back on the next boot. */
+async function ddRemoveConfirmed(sym){
   const x=find(sym);if(!x)return;
-  delete x.deepDive;
-  closeCard();TAB="BOARD";render();toast(sym+" payload removed — saving…");persist();
+  const prevFull=DD_FULL[sym],prevIdx=DD_INDEX_MAP[sym],prevEmb=x.deepDive;
+  DD_FULL[sym]=null;delete DD_INDEX_MAP[sym];if(prevEmb!==undefined)delete x.deepDive;
+  closeCard();TAB="BOARD";render();toast(sym+" payload removed — saving…");
+  try{
+    const r=await fetch("/api/deepdive?sym="+encodeURIComponent(sym),{method:"PUT",
+      headers:{"content-type":"application/json"},body:JSON.stringify({deepDive:null})});
+    const d=await r.json().catch(()=>({}));
+    if(!r.ok){
+      DD_FULL[sym]=prevFull;if(prevIdx!==undefined)DD_INDEX_MAP[sym]=prevIdx;if(prevEmb!==undefined)x.deepDive=prevEmb;
+      render();return toast("REMOVE FAILED — "+(d.error||r.status)+" — the payload is still on the server");
+    }
+    delete DD_FULL[sym];
+    toast(sym+" payload removed");
+    if(prevEmb!==undefined)persist(); // a pre-migration entry still carried it in the book
+  }catch(_e){
+    DD_FULL[sym]=prevFull;if(prevIdx!==undefined)DD_INDEX_MAP[sym]=prevIdx;if(prevEmb!==undefined)x.deepDive=prevEmb;
+    render();toast("REMOVE FAILED — network. The payload is still on the server");
+  }
 }
 /* FEAT-TT-ND: the next-dollar line. Ranks are free text ("#1 infra", "#1 cross-bucket",
    "#3", "—"), and the real book carries TWO #1s scoped to different buckets — so the queue
@@ -3035,7 +3107,7 @@ function renderNextDollar(){
 const HZ_KEY="tt:hz",HZ_AUTO="auto";
 let HORIZON=(()=>{try{const v=localStorage.getItem(HZ_KEY);return v===null?HZ_AUTO:(v||null);}catch(_e){return HZ_AUTO;}})();
 function autoHorizon(){
-  const sets=BOOK.map(x=>x.deepDive?ptModelRows(x.deepDive).filter(r=>typeof r.prem==="number"||typeof r.fl==="number").map(r=>r.y):[])
+  const sets=BOOK.map(x=>ddOf(x)?ptModelRows(ddOf(x)).filter(r=>typeof r.prem==="number"||typeof r.fl==="number").map(r=>r.y):[])
     .filter(a=>a.length);
   if(!sets.length)return null;
   const shared=sets.reduce((a,b)=>a.filter(y=>b.includes(y)));
@@ -3147,6 +3219,82 @@ async function loadPositions(){
   finally{POS_PENDING=false;render();}
 }
 
+/* ═══════════ FEAT-TT-DDSTORE (v3.75) — thesis payloads live in their own KV ═══════════ */
+/* The book document hit 99.7% of its 300KB cap on 2026-08-05 and a routine two-name TT pass
+   had to be written tighter to fit; deepDive was ~80% of the weight. Payloads now live at
+   tt:dd:v1:<SYM> behind /api/deepdive, exactly as `pos` (v3.34) and the ledger (v3.32) did
+   before them. The board loads a small INDEX (only the fields ranking/readiness/chips read);
+   a full payload is fetched when its tab opens.
+   ddOf(x) is the ONE choke point every consumer already went through as `ddOf(x)` — it
+   returns the full payload once loaded, else the index entry, else the still-embedded
+   payload for a pre-migration book. So every renderer keeps working through the migration
+   with no per-call-site change, which is the same property posOf() gave the pos split. */
+let DD_INDEX_MAP={},DD_FULL={},DD_INFLIGHT=new Set(),DD_TRIED=new Set(),DD_PENDING=true;
+function ddOf(x){
+  if(!x||!x.sym)return null;
+  return DD_FULL[x.sym]||DD_INDEX_MAP[x.sym]||x.deepDive||null;
+}
+// True when what we hold for this name is the board index, not the whole thesis — the
+// deep-dive tab needs the full payload and must SAY so rather than render a partial as complete.
+function ddIsPartial(sym){return !DD_FULL[sym]&&!!DD_INDEX_MAP[sym];}
+async function loadDeepDiveIndex(){
+  try{
+    const r=await fetch("/api/deepdive?index=1");
+    if(r.ok){const d=await r.json();
+      DD_INDEX_MAP=(d&&typeof d.entries==="object"&&!Array.isArray(d.entries))?d.entries:{};}
+  }catch(_e){/* stays {} — ddOf falls back to any still-embedded payload, never stale data */}
+  finally{DD_PENDING=false;render();}
+}
+async function loadDeepDiveSym(sym){
+  // DD_TRIED, not "DD_FULL is undefined": a name with NO stored payload (or a failed fetch)
+  // never populates DD_FULL, so keying the guard on it would refire the request on every
+  // render — and renderDeepDive calls this on every render, so that is an unbounded loop.
+  if(DD_FULL[sym]!==undefined||DD_TRIED.has(sym)||DD_INFLIGHT.has(sym))return;
+  DD_INFLIGHT.add(sym);
+  let landed=false;
+  try{
+    const ctl=new AbortController();const t=setTimeout(()=>ctl.abort(),8000);
+    const r=await fetch("/api/deepdive?sym="+encodeURIComponent(sym),{signal:ctl.signal});
+    clearTimeout(t);
+    if(r.ok){const d=await r.json();if(d&&d.deepDive){DD_FULL[sym]=d.deepDive;landed=true;}
+      DD_TRIED.add(sym);}   // a clean "no payload stored" answer — don't ask again this session
+  }catch(_e){/* tab keeps rendering from the index, labelled partial; a retry is allowed */}
+  finally{
+    DD_INFLIGHT.delete(sym);
+    // Re-render ONLY when something actually arrived. An unconditional re-render would
+    // collapse every <details> the reader had just opened for a fetch that changed nothing —
+    // the same async-landing defect EST_OPEN/DD_OPEN exist to prevent.
+    if(landed&&TAB===sym)renderDeepDive(sym);
+  }
+}
+/* The ONE write path for a thesis payload. Optimistic (the editor closes immediately) and
+   REVERTING on failure, which is the persist() rule from v3.6: a save that failed must never
+   leave the screen showing the edit as though it landed. Resolves to true on success so
+   callers can decide what to re-render. */
+async function ddPersist(sym,dd){
+  const prevFull=DD_FULL[sym],prevIdx=DD_INDEX_MAP[sym];
+  const revert=()=>{if(prevFull===undefined)delete DD_FULL[sym];else DD_FULL[sym]=prevFull;
+    if(prevIdx===undefined)delete DD_INDEX_MAP[sym];else DD_INDEX_MAP[sym]=prevIdx;render();};
+  DD_FULL[sym]=dd;
+  try{
+    const r=await fetch("/api/deepdive?sym="+encodeURIComponent(sym),{method:"PUT",
+      headers:{"content-type":"application/json"},body:JSON.stringify({deepDive:dd})});
+    const d=await r.json().catch(()=>({}));
+    if(!r.ok){
+      revert();
+      toast("SAVE FAILED — "+(d.error||r.status)+(d.bytes?` (${d.bytes}B vs ${d.limit}B)`:"")+
+        " — your edit was reverted, re-open and retry");
+      return false;
+    }
+    // The index entry the board ranks on is rebuilt server-side; drop the stale local copy so
+    // ddOf resolves to the payload we just saved rather than a pre-edit summary of it.
+    delete DD_INDEX_MAP[sym];
+    return true;
+  }catch(_e){
+    revert();toast("SAVE FAILED — network. Your edit was reverted, re-open and retry");return false;
+  }
+}
+
 /* ═══════════ THE BELIEF LEDGER (FEAT-TT-LEDGER v3.32) ═══════════ */
 /* Every other field in this book overwrites in place — tier, projection, hinge state, all
    replaced silently on the next save. This is the one place the terminal remembers what
@@ -3184,7 +3332,7 @@ async function loadScoreSym(sym){
    AWAITING_FALSIFIERS until a genuinely post-definition observation is ingested. Promotion
    never touches the book document. */
 async function promoteFalsifiers(sym){
-  const x=find(sym);const draft=x&&x.deepDive&&x.deepDive.falsifiers_v2_draft;
+  const x=find(sym);const draft=x&&ddOf(x)&&ddOf(x).falsifiers_v2_draft;
   if(!draft||!Array.isArray(draft.hinges))return toast("no pre-committed draft on this name");
   const falsifiers=draft.hinges.map(h=>({id:h.id,definition:h.id.replace(/_/g," "),
     green_condition:h.green,amber_condition:h.amber,red_condition:h.red,
@@ -3206,7 +3354,7 @@ async function promoteFalsifiers(sym){
   }catch(_e){toast("promotion failed — network");}
 }
 function ddScoreBar(x){
-  const sym=x.sym,rec=SCORE_CACHE[sym],dd=x.deepDive||{};
+  const sym=x.sym,rec=SCORE_CACHE[sym],dd=ddOf(x)||{};
   const draft=dd.falsifiers_v2_draft;
   const promoteBtn=draft?` <button class="act" style="font-size:9.5px;padding:1px 6px" onclick="promoteFalsifiers('${esc(sym)}')">⇧ PROMOTE DRAFT FALSIFIERS</button>`:"";
   if(rec===undefined){loadScoreSym(sym);
@@ -3464,7 +3612,7 @@ function renderUpsideRank(){
   const todayET=new Date().toLocaleDateString("en-CA",{timeZone:"America/New_York"});
   const cands=[];
   BOOK.forEach(x=>{
-    const dd=x.deepDive;if(!dd)return;
+    const dd=ddOf(x);if(!dd)return;
     // v3.36 AUDIT FIX: a STAMPED ref_px used to be the entry ticket — a name with a full
     // model and a LIVE quote was excluded outright because nobody had hand-stamped it.
     // The requirement is a usable price, and a live one is strictly better than a stamp.
@@ -3625,11 +3773,11 @@ function renderUpsideRank(){
     // FEAT-TT-RANKFAIR: the coverage gap the two rankings hid. Queue names carrying a manual
     // rank but NO pt_model can never appear above — the names under active consideration were
     // exactly the ones the math had nothing to say about, and nothing said so.
-    (()=>{const gap=BOOK.filter(x=>String(x.rank||"").startsWith("#")&&!(x.deepDive&&ptModelRows(x.deepDive).length)).map(x=>x.sym);
+    (()=>{const gap=BOOK.filter(x=>String(x.rank||"").startsWith("#")&&!(ddOf(x)&&ptModelRows(ddOf(x)).length)).map(x=>x.sym);
       return gap.length?`<div style="color:var(--amber);font-size:10px;margin-top:3px">⚠ ${gap.length} name${gap.length===1?"":"s"} in the manual queue cannot be ranked here — no pt_model: <b>${gap.map(esc).join(", ")}</b>. The queue and this list are answering different questions until they are modelled.</div>`:"";})()+
     // FEAT-TT-PTLINT: every target above is only as good as the model under it. Name the offenders
     // at the altitude the ranking is read, not just on each tab — a defect nobody opens is invisible.
-    (()=>{const hits=BOOK.map(x=>({sym:x.sym,ls:x.deepDive?lintPtModel(x.deepDive):[]})).filter(h=>h.ls.length);
+    (()=>{const hits=BOOK.map(x=>({sym:x.sym,ls:ddOf(x)?lintPtModel(ddOf(x)):[]})).filter(h=>h.ls.length);
       if(!hits.length)return "";
       const errs=hits.filter(h=>h.ls.some(l=>l.sev==="error"));
       const warns=hits.filter(h=>!h.ls.some(l=>l.sev==="error"));
@@ -3725,7 +3873,7 @@ const EST_OPEN=new Set();
 function estToggle(sym,open){open?EST_OPEN.add(sym):EST_OPEN.delete(sym);}
 function renderEstRunBoard(){
   const el=document.getElementById("estRunBoard");if(!el)return;
-  const cands=BOOK.map(x=>({x,rows:x.deepDive?ptModelRows(x.deepDive):[]})).filter(c=>c.rows.length);
+  const cands=BOOK.map(x=>({x,rows:ddOf(x)?ptModelRows(ddOf(x)):[]})).filter(c=>c.rows.length);
   if(!cands.length){el.style.display="none";el.innerHTML="";return;}
   el.style.display="";
   // FEAT-TT-PTLINT: the third picker, now the SAME one — this list used rows[0] unconditionally
@@ -3733,7 +3881,7 @@ function renderEstRunBoard(){
   const items=cands.map(({x,rows})=>{
     const pk=pickRow(rows,effHorizon())||pickRow(rows,null);
     const r=pk.row;
-    const live=LIVE_PX[x.sym],stamp=x.deepDive.ref_px;
+    const live=LIVE_PX[x.sym],stamp=ddOf(x).ref_px;
     const px=live&&isFinite(live.px)?live.px:(stamp&&isFinite(stamp.px)?stamp.px:null);
     const tgt=typeof r.prem==="number"?r.prem:(typeof r.fl==="number"?r.fl:null);
     const up=px!==null&&tgt!==null?Math.round((tgt/px-1)*1000)/10:null;
@@ -3755,7 +3903,7 @@ function renderEstRunBoard(){
           ${it.tgt!==null?`<span>$${esc(it.tgt)} by ${esc(it.r.y)} <span class="scope">${esc(it.r.lens)}</span></span>`:""}
           ${upTxt}${pxFlag}${it.rolled?`<span class="warn2">↷ from ${esc(it.rolled)}</span>`:""}
           <span class="scope" style="margin-left:auto;cursor:pointer" onclick="event.stopPropagation();switchTab('${esc(it.x.sym)}')">tab ↗</span></summary>
-        <div>${it.x.rank?`<div class="none" style="margin-top:4px"><span style="color:var(--dim);letter-spacing:.5px">rank note</span><br>${esc(it.x.rank)}</div>`:""}${estRunTable(it.x,it.x.deepDive)}</div></details>`;}).join("");
+        <div>${it.x.rank?`<div class="none" style="margin-top:4px"><span style="color:var(--dim);letter-spacing:.5px">rank note</span><br>${esc(it.x.rank)}</div>`:""}${estRunTable(it.x,ddOf(it.x))}</div></details>`;}).join("");
 }
 /* ═══════════ FEAT-TT-FOCUS2 + FEAT-TT-SELLRANK (v3.38) ═══════════ */
 /* The primary view is FOUR DRIVERS: next dollar in, next dollar out, the binary calendar,
@@ -3817,7 +3965,7 @@ function capabilityState(){
     headroom:Math.round((thr-obs)*10)/10};
 }
 function capexExposure(x){
-  const e=x&&x.deepDive&&x.deepDive.capex_exposure;
+  const e=x&&ddOf(x)&&ddOf(x).capex_exposure;
   return(e&&typeof e==="object"&&!Array.isArray(e))?e:null;
 }
 /* The conservation check. Sum over DIRECT-typed names of (FY+1 revenue estimate ×
@@ -3837,13 +3985,13 @@ function lintCapexConservation(){
     const e=capexExposure(x);if(!e)return;
     const t=String(e.type||"");
     if(t==="direct"){
-      const c=(x.deepDive&&x.deepDive.consensus)||{};
+      const c=(ddOf(x)&&ddOf(x).consensus)||{};
       const rev=Number((c.revenue_B||{})[fy]),pct=Number(e.pct_of_rev);
       if(isFinite(rev)&&isFinite(pct)&&pct>0)direct.push({sym:x.sym,impliedB:Math.round(rev*pct/10)/100*10,revB:rev,pct});
       else unmeasured.push(x.sym);
     }else if(t==="fab")fab.push(x.sym);
     else if(t==="neocloud"){
-      const c=(x.deepDive&&x.deepDive.consensus)||{};
+      const c=(ddOf(x)&&ddOf(x).consensus)||{};
       const rev=Number((c.revenue_B||{})[fy]),oc=Number(e.own_capex_B);
       neo.push({sym:x.sym,ownCapexB:isFinite(oc)?oc:null,revB:isFinite(rev)?rev:null,
         ratio:isFinite(oc)&&isFinite(rev)&&rev>0?Math.round(oc/rev*10)/10:null});
@@ -3956,9 +4104,9 @@ function sellRank(){
     // tracked-book share is the fallback FLOOR when the sync didn't carry pct.
     const wNav=isFinite(Number(p.pct))?Number(p.pct):null;
     const w=wNav!==null?wNav:Math.round(mv/tot*1000)/10;
-    const live=LIVE_PX[x.sym],stamp=x.deepDive&&x.deepDive.ref_px;
+    const live=LIVE_PX[x.sym],stamp=ddOf(x)&&ddOf(x).ref_px;
     const px=live&&isFinite(live.px)?live.px:(stamp&&isFinite(stamp.px)?stamp.px:null);
-    const rr=x.deepDive?ptModelRows(x.deepDive).filter(r=>typeof r.prem==="number"||typeof r.fl==="number"):[];
+    const rr=ddOf(x)?ptModelRows(ddOf(x)).filter(r=>typeof r.prem==="number"||typeof r.fl==="number"):[];
     // FEAT-TT-PTLINT (D2/D3): the SELL side used rr[0] regardless of the board's horizon and then
     // silently substituted a RAW % for a rate (`if(ann===null)ann=up`) — so a trim could be ranked
     // against a number in different units from the BUY list it was funding. One picker, one unit.
@@ -3978,7 +4126,7 @@ function sellRank(){
       modelled:rr.length>0,
       upl:isFinite(Number(p.upl_pct))?Number(p.upl_pct):null,
       dnt:dnt.includes(x.sym),
-      redH:Array.isArray(x.deepDive&&x.deepDive.hinges)?x.deepDive.hinges.filter(h=>h.state==="red").length:0,
+      redH:Array.isArray(ddOf(x)&&ddOf(x).hinges)?ddOf(x).hinges.filter(h=>h.state==="red").length:0,
       rs:runState(x.lastRun)};
     /* v3.44: an options row ranks on DOLLARS, so it needs no model to qualify — requiring one
        would have re-created the exclusion this feature removes. It also bypasses the cap tier:
@@ -4388,7 +4536,7 @@ function binaryEvents(){
   const today=new Date().toLocaleDateString("en-CA",{timeZone:"America/New_York"});
   const ev=[];
   BOOK.forEach(x=>{
-    const kd=x.deepDive&&x.deepDive.key_dates;
+    const kd=ddOf(x)&&ddOf(x).key_dates;
     if(!Array.isArray(kd))return;
     kd.forEach(k=>{
       if(!k||!/^\d{4}-\d{2}-\d{2}$/.test(k.date)||k.date<today)return;   // past dates belong to the tab, not the queue
@@ -4422,7 +4570,7 @@ function renderBinaryCal(){
     // Only open a tab that exists. A board-level binary scoped to a name you hold links to
     // that tab; one scoped to a supplier or a macro print has none, and must not render a
     // dead click that silently does nothing.
-    const tabbable=!e.board||!!(find(e.sym)&&find(e.sym).deepDive);
+    const tabbable=!e.board||!!(find(e.sym)&&ddOf(find(e.sym)));
     return `<span class="pick"${tabbable?` onclick="switchTab('${esc(e.sym)}')"`:""} title="${esc(e.label)}">
       <span class="sym"${e.board?' style="color:var(--slate)"':""}>${esc(e.sym)}</span>
       <span style="color:${col};font-weight:700">${e.d===0?"TODAY":e.d+"d"}</span>
@@ -4762,7 +4910,7 @@ function tierTable(t){
   }
   return out;
 }
-function exportBook(){
+async function exportBook(){
   const d=new Date().toISOString().slice(0,10);
   let m=`# CANONICAL_BOOK v1.1 — Portfolio State of Record\n\n`;
   m+=`**As of: ${d} · Re-versioned from TT Terminal GUI. Chat memory never overrides this file.**\n\n---\n\n`;
@@ -4774,10 +4922,12 @@ function exportBook(){
   m+=`### CUT FROM BOOK (equity)\n\n${CUT.join(" · ")}\n\n---\n\n`;
   // FEAT-TT-DD: deep-dive payloads travel with the book (the handoff's persistence rule —
   // re-seeding from an export must never lose thesis state).
-  const dds=BOOK.filter(x=>x.deepDive);
-  if(dds.length){
+  // FEAT-TT-DDSTORE: the FULL set, not what happens to be loaded — see allDeepDives().
+  const ddMap=await allDeepDives();if(!ddMap)return;
+  const ddSyms=BOOK.map(x=>x.sym).filter(s=>ddMap[s]);
+  if(ddSyms.length){
     m+=`## DEEP_DIVE PAYLOADS\n\n`;
-    dds.forEach(x=>{m+=`### DEEP_DIVE: ${x.sym}\n\n\`\`\`json\n${JSON.stringify(x.deepDive,null,2)}\n\`\`\`\n\n`;});
+    ddSyms.forEach(s=>{m+=`### DEEP_DIVE: ${s}\n\n\`\`\`json\n${JSON.stringify(ddMap[s],null,2)}\n\`\`\`\n\n`;});
     m+=`---\n\n`;
   }
   // FEAT-TT-3Q: the three answers travel with the book.
@@ -4799,13 +4949,39 @@ function exportBook(){
   download(`CANONICAL_BOOK_${d}.md`,m,"text/markdown");
   toast("Exported CANONICAL_BOOK — save it back to your project as the new source of truth");
 }
-function exportJSON(){
+/* FEAT-TT-DDSTORE: EXPORT INTEGRITY. Payloads load lazily (one per tab open), so an export
+   built from what the client happens to hold would silently omit every name the user never
+   opened this session — a backup that looks complete and is not. Both exports pull the full
+   set first. If the fetch fails the export is REFUSED rather than written partial: the whole
+   point of a backup is that you can trust it without checking. Returns null on failure. */
+async function allDeepDives(){
+  const out={};
+  BOOK.forEach(x=>{const local=DD_FULL[x.sym]||x.deepDive;if(local)out[x.sym]=local;});
+  try{
+    const r=await fetch("/api/deepdive?all=1");
+    if(!r.ok)throw new Error(String(r.status));
+    const d=await r.json();
+    Object.entries(d.deepDives||{}).forEach(([s,dd])=>{if(!out[s])out[s]=dd;});
+    if(Array.isArray(d.missing)&&d.missing.length)
+      toast("warning — the index lists "+d.missing.join(", ")+" but no payload is stored for them");
+    return out;
+  }catch(_e){
+    toast("EXPORT ABORTED — could not load the full thesis set. A partial backup would look complete; retry when the connection is back");
+    return null;
+  }
+}
+async function exportJSON(){
+  const dds=await allDeepDives();if(!dds)return;
+  // Payloads are re-embedded INTO the exported entries, so a backup file stays a single
+  // self-contained restore artifact even though storage is now split. importSave's drain
+  // routes them back out to their own keys on restore.
+  const book=BOOK.map(x=>dds[x.sym]?{...x,deepDive:dds[x.sym]}:x);
   const d=new Date().toISOString().slice(0,10);
   // Report the REAL version — the old hardcoded "1.1" mislabeled every backup, and an
   // export→import round-trip silently reset it.
   // FEAT-TT-SESSION: board-level state rides the same backup — a restore that lost the
   // circuit, the clusters and the open decisions would restore only half the book.
-  download(`tt_book_${d}.json`,JSON.stringify({version:META.version||"1.0",asOf:META.asOf||d,book:BOOK,cut:CUT,
+  download(`tt_book_${d}.json`,JSON.stringify({version:META.version||"1.0",asOf:META.asOf||d,book,cut:CUT,
     ...(BOARD&&Object.keys(BOARD).length?{board:BOARD}:{})},null,2),"application/json");
   toast("Exported book JSON");
 }
@@ -4956,7 +5132,7 @@ function buildRankingsMd(){
       m+=`- **${x.sym}** (${x.tier}/${x.lens}) — ${rd.blockers.length?rd.blockers.join(", "):"no model target"}\n`;});
     m+=`\n`;
   }
-  const lints=BOOK.map(x=>({sym:x.sym,ls:x.deepDive?lintPtModel(x.deepDive):[]})).filter(h=>h.ls.length);
+  const lints=BOOK.map(x=>({sym:x.sym,ls:ddOf(x)?lintPtModel(ddOf(x)):[]})).filter(h=>h.ls.length);
   if(lints.length){
     m+=`## MODEL LINTS\n\n`;
     lints.forEach(h=>{m+=`- **${h.sym}** — ${h.ls.map(l=>`${l.sev==="error"?"⛔":"⚠"} ${l.code}`).join(" · ")}\n`;});
@@ -5175,7 +5351,7 @@ if(window.innerWidth<480)search.placeholder="ticker · HELP · TIER · ADD";
    v3.24: quotes chase the book (they need BOOK populated to know which symbols to ask
    for) and are equally non-blocking — the board renders on stamped marks first, then
    upgrades to live prices if and when they arrive. */
-loadBook().then(()=>{loadQuotes();loadPositions();});
+loadBook().then(()=>{loadQuotes();loadPositions();loadDeepDiveIndex();});
 loadRegime();
 </script>
 </body>

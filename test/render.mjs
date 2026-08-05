@@ -13,6 +13,8 @@
 
 import http from "node:http";
 import { readFileSync, readdirSync, existsSync } from "node:fs";
+// The production index builder — see the /api/deepdive stub below.
+import { ddIndexEntry } from "../functions/api/deepdive.js";
 
 const ADMIN = new URL("../public/admin.html", import.meta.url);
 const PORT = 8791;
@@ -141,12 +143,19 @@ const BOOK = [
   { sym: "FFF", tier: "B", lens: "SP", lastRun: etDaysAgo(45), note: "leveraged" },
   // JJJ is MODELLED BUT NOT HELD (no entry in POSITIONS) — the v3.37 case: the ranking
   // deliberately spans both universes, so an unheld name must be labelled, not left blank.
-  { sym: "JJJ", tier: "WATCH", lens: "AI", lastRun: etDaysAgo(2), note: "candidate, no position",
-    deepDive: dd(100, { 2027: 5, 2028: 6, 2029: 7 }, { 2027: 3, 2028: 4, 2029: 5 },
-      // A PARTIAL mix (sums to 80) and no date — the fail-closed path: FLOOR, not an average.
-      { capex_exposure: { type: "fab" },
-        tokens_per_watt: { gen_mix: [{ gen: "G1", pct: 80, idx: 1.00 }] } }) },
+  // FEAT-TT-DDSTORE (v3.75): JJJ's payload is deliberately NOT embedded here — it lives ONLY
+  // in the /api/deepdive store below. Every JJJ assertion in this suite (the ranking, the fab
+  // exclusion, the tokens/watt FLOOR, the unheld label) was written before the split and is
+  // left UNCHANGED, so their continuing to pass is the proof that the storage move is
+  // invisible to every renderer — the same property posOf() gave the position split. A field
+  // the board reads but the index omits fails HERE, which is how capex_exposure was caught.
+  { sym: "JJJ", tier: "WATCH", lens: "AI", lastRun: etDaysAgo(2), note: "candidate, no position" },
 ];
+// A PARTIAL mix (sums to 80) and no date — the fail-closed path: FLOOR, not an average.
+const JJJ_DD = dd(100, { 2027: 5, 2028: 6, 2029: 7 }, { 2027: 3, 2028: 4, 2029: 5 },
+  { capex_exposure: { type: "fab" },
+    tokens_per_watt: { gen_mix: [{ gen: "G1", pct: 80, idx: 1.00 }] } });
+const DD_STORE = { JJJ: JJJ_DD };
 // FEAT-TT-POSSTORE (v3.34): pos now lives at /api/positions, not embedded in the book —
 // same fixture data, moved to its own map, keyed by sym.
 // FEAT-TT-OWNDEBT (v3.35): AAA carries cost basis + P/L + a strikeless put (the
@@ -242,6 +251,20 @@ const server = http.createServer((req, res) => {
       empty: false, auth: { mode: "pin", src: "kv", session_days_left: 29 } });
   if (url.pathname === "/readout.json")
     return json(READOUT_FIXTURE);
+  // FEAT-TT-DDSTORE (v3.75). The index is built by the REAL ddIndexEntry, imported from the
+  // handler — a hand-written fixture index could quietly disagree with what production emits,
+  // which is the exact drift this suite exists to catch.
+  if (url.pathname === "/api/deepdive") {
+    const p = url.searchParams;
+    if (p.get("index") === "1") {
+      const entries = {};
+      for (const [k, v] of Object.entries(DD_STORE)) entries[k] = ddIndexEntry(v);
+      return json({ asOf: TODAY_ET, entries });
+    }
+    if (p.get("all") === "1") return json({ asOf: TODAY_ET, deepDives: DD_STORE, count: Object.keys(DD_STORE).length, missing: [] });
+    const s2 = p.get("sym");
+    return json({ sym: s2, deepDive: DD_STORE[s2] || null });
+  }
   if (url.pathname === "/api/positions")
     return json({ asOf: TODAY_ET, positions: POSITIONS });
   if (url.pathname === "/api/quotes")
@@ -1356,6 +1379,55 @@ ok("refresh-failure: 'retained the prior snapshot' is reported, never silent",
   /retained the prior snapshot/.test(await holdPage.locator("#toast").innerText()));
 await holdPage.close();
 REFRESH_FIXTURE = null;
+
+/* ── FEAT-TT-DDSTORE (v3.75) — the split, driven live ────────────────────────────────
+   JJJ's payload is NOT embedded in the book fixture; it exists only behind /api/deepdive.
+   The strongest evidence for the split is negative and already recorded above: every JJJ
+   assertion in this suite predates it and still passes. What follows tests the two things
+   those cannot — that the board can act on a name it never opened, and that the tab shows
+   strictly MORE than the board's working set once the full payload lands. */
+{
+  const p2 = await open(1200);
+  await p2.waitForTimeout(700);
+  const board = (await p2.locator("body").innerText()).replace(/\s+/g, " ");
+  // The board ranks JJJ off index-carried pt_model/consensus/ref_px with no tab ever opened.
+  ok("ddstore: a name whose payload is store-only still reaches the board's ranking — the index " +
+     "carries the fields the ranking reads, so lazy loading never costs a name its place",
+    /JJJ/.test(board));
+  // v3.25, the rule this split could most easily have broken: a red hinge that only lives in
+  // the full payload would silently read as zero reds on every unopened name.
+  ok("ddstore: JJJ's red hinge is counted on the board WITHOUT the tab ever being opened",
+    await p2.evaluate(() => {
+      const dd = ddOf(find("JJJ"));
+      return !!dd && Array.isArray(dd.hinges) && dd.hinges.filter((h) => h.state === "red").length === 1;
+    }));
+  ok("ddstore: what the board holds for JJJ IS the index — partial, and it says so",
+    await p2.evaluate(() => ddIsPartial("JJJ") === true));
+  // The index is a whitelist: prose it omits must be absent from the board's copy, or the
+  // split would have bought nothing.
+  ok("ddstore: the board's copy carries the ranking inputs and NOT the prose the tab renders",
+    await p2.evaluate(() => {
+      const dd = ddOf(find("JJJ"));
+      return !!dd.pt_model && !!dd.consensus && !!dd.ref_px && dd.rules === undefined && dd.kill_combination === undefined;
+    }));
+  // Opening the tab must fetch the whole thesis and render what the index never carried.
+  await p2.evaluate(() => switchTab("JJJ"));
+  await p2.waitForTimeout(600);
+  await p2.evaluate(() => { document.querySelectorAll("#deepView details").forEach((d) => { d.open = true; }); });
+  const dvJ = (await p2.locator("#deepView").innerText()).replace(/\s+/g, " ");
+  ok("ddstore: opening the tab loads the FULL payload — fields the index omits render there",
+    /never average down into a broken base/.test(dvJ) && await p2.evaluate(() => ddIsPartial("JJJ") === false));
+  ok("ddstore: once the full payload has landed the partial banner is gone",
+    !/board index only/.test(dvJ));
+  // A fetch that changes nothing must not collapse what the reader just opened, and must not
+  // refire on every render — renderDeepDive calls the loader unconditionally.
+  const before = await p2.evaluate(() => document.querySelectorAll("#deepView details[open]").length);
+  await p2.evaluate(() => renderDeepDive("JJJ"));
+  await p2.waitForTimeout(400);
+  ok("ddstore: a re-render does not refetch and does not collapse the reader's open sections",
+    await p2.evaluate(() => !DD_INFLIGHT.has("JJJ")) && before > 0);
+  await p2.close();
+}
 
 await browser.close();
 server.close();
