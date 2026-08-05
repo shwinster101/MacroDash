@@ -550,6 +550,37 @@ console.log("\n[public] wave 15 — skip link, focus-on-resolve, hamburger, tap 
   await page.close();
 }
 
+// ── Wave 16 (task 9.6, Req 7.9) — a denied clipboard write claims nothing ────
+// The old handlers set ✓ COPIED optimistically, so a rejected write still flashed a
+// green success for 2s. Driven live: writeText is stubbed to REJECT, the button must
+// stay on (or revert to) its idle label within 300ms, and no toast may appear.
+console.log("\n[public] wave 16 — share failure reverts to idle, silently");
+{
+  const { page, errors } = await open({ live: FULL_LIVE });
+  await page.waitForTimeout(1400);
+  await page.evaluate(() => {
+    navigator.clipboard.writeText = () => Promise.reject(new Error("denied"));
+  });
+  const share = page.locator("button", { hasText: "⤴ SHARE" });
+  await share.click();
+  await page.waitForTimeout(300);
+  ok("7.9: after a rejected write the button reads its IDLE label, never ✓ COPIED",
+    /⤴ SHARE/.test(await share.innerText()));
+  ok("7.9: no error toast is shown for a cancelled/denied share",
+    !/denied|failed|error/i.test(await page.locator("body").innerText().then(t =>
+      t.split("\n").filter(l => /toast|denied|clipboard/i.test(l)).join(" "))));
+  // Control: a SUCCESSFUL write still confirms — the fix must not have muted real success.
+  await page.evaluate(() => {
+    navigator.clipboard.writeText = () => Promise.resolve();
+  });
+  await share.click();
+  await page.waitForTimeout(200);
+  ok("7.9 control: a successful write still confirms ✓ COPIED",
+    /✓ COPIED/.test(await page.locator("button", { hasText: /COPIED|SHARE/ }).first().innerText()));
+  ok("wave16: no page errors", errors.length === 0);
+  await page.close();
+}
+
 await browser.close();
 srv.close();
 console.log(`\n=== PUBLIC RENDER TEST: ${pass} passed, ${fail} failed ===`);

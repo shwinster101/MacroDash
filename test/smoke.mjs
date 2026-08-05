@@ -4059,5 +4059,23 @@ ok("9.3: focus moves to the verdict ONLY on the first LOADING->settled transitio
 ok("9.2/8.2: headwind rows are real buttons now — keyboard-operable with aria-expanded",
   hwSrc.includes("aria-expanded={isExp}") && !/<div[^>]*onClick=\{\(\)=>setExpandedHW/.test(hwSrc));
 
+// ═══════════ [53] UI-OVERHAUL wave 16 (task 9.6) — confirmed-not-optimistic copy claims ═══════════
+// The interactive-state matrix (LOADING withhold, ERROR banner+retry, MOCK suppression,
+// DEGRADED refresh, stale exclusion chain) predates this wave and stays pinned/driven where
+// it lives. The one real gap was Req 7.9: both copy handlers claimed ✓ before the clipboard
+// write settled — a denied permission flashed a false green success. Now: success confirms,
+// failure reverts silently (<300ms, no toast), no clipboard API claims nothing.
+console.log("\n[53] UI-OVERHAUL wave 16 — copy claims are confirmed, never optimistic");
+ok("7.9: handleShare confirms on .then, reverts on .catch, and claims nothing without the API",
+  /const p=navigator\.clipboard\?\.writeText\(window\.location\.href\);\s*\n\s*if\(!p\)\{return;\}/.test(dashSrc) &&
+  /p\.then\(\(\)=>\{setCopied\(true\);setTimeout\(\(\)=>setCopied\(false\),2000\);\}\)\s*\n\s*\.catch\(\(\)=>\{setCopied\(false\);\}\);/.test(dashSrc));
+ok("7.9: handleTtCopy — the order-gating block — follows the same confirmed rule",
+  /const p=navigator\.clipboard\?\.writeText\(block\);/.test(dashSrc) &&
+  /p\.then\(\(\)=>\{setTtCopied\(true\);setTimeout\(\(\)=>setTtCopied\(false\),2000\);\}\)\s*\n\s*\.catch\(\(\)=>\{setTtCopied\(false\);\}\);/.test(dashSrc));
+ok("7.9: no optimistic set survives anywhere — ✓ can only follow a settled write",
+  !/writeText\([^)]*\)\.catch\(\(\)=>\{\}\);\s*\n\s*set(Tt)?Copied\(true\)/.test(dashSrc));
+ok("7.9: failure is SILENT — no error toast rides either handler",
+  !/showToast[\s\S]{0,80}(clipboard|copy failed|share failed)/i.test(dashSrc));
+
 console.log(`\n=== SMOKE TEST: ${pass} passed, ${fail} failed ===`);
 process.exit(fail === 0 ? 0 : 1);

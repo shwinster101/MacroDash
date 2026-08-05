@@ -536,10 +536,17 @@ export default function Dashboard({ publicView = false } = {}) {
   const flipLive=["spyPrice","spyMa200","vix"].every(k=>{const m=modeOf(k);return m==="LIVE"||m==="CACHED";});
   const flip=flipLive?computeMacroFlip({vix:d.marketPulse.vix.current,spyPrice:d.marketPulse.spy.price,spyMa200:d.marketPulse.spy.ma200}):null;
 
-  // FEAT-165: Share button
+  // FEAT-165: Share button.
+  // Wave 16 (Req 7.9): the ✓ COPIED claim is CONFIRMED, never optimistic — the old handler
+  // set it before the write settled, so a denied clipboard permission still flashed a green
+  // success for 2s (a false success claim, the honesty invariant applied to an affordance).
+  // A failed or cancelled write reverts to the idle label immediately (<300ms) with NO error
+  // toast — the user cancelled or the browser refused; nagging adds nothing.
   const handleShare=()=>{
-    navigator.clipboard?.writeText(window.location.href).catch(()=>{});
-    setCopied(true); setTimeout(()=>setCopied(false),2000);
+    const p=navigator.clipboard?.writeText(window.location.href);
+    if(!p){return;} // no clipboard API — claim nothing
+    p.then(()=>{setCopied(true);setTimeout(()=>setCopied(false),2000);})
+     .catch(()=>{setCopied(false);});
   };
 
   // FEAT-332: Copy TT readout — format the §1.2 paste block from LIVE/CACHED fields only, so a
@@ -559,8 +566,12 @@ export default function Dashboard({ publicView = false } = {}) {
     if(flat.qqqChangePct!==undefined&&dataAsOf?.qqqPrice)flat.qqqPriceAsOf=dataAsOf.qqqPrice;
     if(flat.rateOddsHold!==undefined&&dataAsOf?.rateOddsHold)flat.rateOddsHoldAsOf=dataAsOf.rateOddsHold;
     const block=formatTtPaste(buildTtReadout(flat,{}),{generatedEt:d.lastRefresh});
-    navigator.clipboard?.writeText(block).catch(()=>{});
-    setTtCopied(true); setTimeout(()=>setTtCopied(false),2000);
+    // Wave 16 (Req 7.9): same confirmed-not-optimistic rule as handleShare — this block gates
+    // real orders, so a false "✓ TT COPIED" over an empty clipboard is strictly worse here.
+    const p=navigator.clipboard?.writeText(block);
+    if(!p){return;}
+    p.then(()=>{setTtCopied(true);setTimeout(()=>setTtCopied(false),2000);})
+     .catch(()=>{setTtCopied(false);});
   };
 
   // Alert delete with undo (FEAT-166)
