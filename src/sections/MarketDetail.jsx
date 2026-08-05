@@ -9,7 +9,7 @@
 import { Fragment } from "react";
 import { LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer, ReferenceLine } from "recharts";
 import { T } from "../design-tokens.js";
-import { NFCI_TIGHT, NFCI_LOOSE } from "../regime.js";
+import { NFCI_TIGHT, NFCI_LOOSE, REGIME_BAND_TABLE } from "../regime.js";
 import { fmt, pctColor } from "../format.js";
 import { Badge, Label } from "../primitives/atoms.jsx";
 import SectionHeader from "../primitives/SectionHeader.jsx";
@@ -98,15 +98,21 @@ const MarketDetail=({d,modeOf,asOfOf,demoted,spyData,goldenCross})=>{
                 renting default-view space at full size (DEC-31 already retired P/C). */}
             {(()=>{
               const signalTiles=[
-                { f:"vix", render:()=>(
+                { f:"vix", render:()=>{
+                  /* Wave-17 audit fix (finding 2): the 18/25 edges were a hand-written second
+                     copy of the VIX band — if the band moved, this tile silently disagreed
+                     with the vote it sits beside. The color now branches on the band table's
+                     OWN vote (bull/neutral/bear -> the tile's green/yellow/red palette). */
+                  const vixVote=REGIME_BAND_TABLE.find((b)=>b.key==="vix").vote(d.marketPulse.vix.current);
+                  return (
                   <div style={{background:T.surface,border:`1px solid ${T.border}`,borderRadius:5,padding:"10px 12px"}}>
                     <Label>VIX</Label>
-                    <div style={{fontFamily:T.fontMono,fontSize:20,color:d.marketPulse.vix.current>25?T.red:d.marketPulse.vix.current>18?T.yellow:T.green,fontWeight:700}}>{d.marketPulse.vix.current}</div>
+                    <div style={{fontFamily:T.fontMono,fontSize:20,color:{bull:T.green,neutral:T.yellow,bear:T.red}[vixVote]||T.textSecondary,fontWeight:700}}>{d.marketPulse.vix.current}</div>
                     <div style={{fontFamily:T.fontMono,fontSize:9,color:pctColor(d.marketPulse.vix.weekChg,true)}}>{fmt.pct(d.marketPulse.vix.weekChg)} WoW</div>
                     <div style={{height:28,marginTop:6}}><ResponsiveContainer width="100%" height="100%"><LineChart data={d.marketPulse.vix.series.map((v,i)=>({v,i}))}><Line type="monotone" dataKey="v" stroke={T.amber} dot={false} strokeWidth={1.5}/></LineChart></ResponsiveContainer></div>
                     <SourceBox api="FRED" endpoint="VIXCLS" mode={modeOf('vix')} asOf={asOfOf('vix')}/>
                   </div>
-                )},
+                );}},
                 { f:"fearGreed", render:()=>(
                   <FGGauge score={d.marketPulse.fearGreed.score} label={d.marketPulse.fearGreed.label} mode={modeOf('fearGreed')} asOf={asOfOf('fearGreed')}/>
                 )},

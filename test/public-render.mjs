@@ -581,6 +581,39 @@ console.log("\n[public] wave 16 — share failure reverts to idle, silently");
   await page.close();
 }
 
+// ── Wave-17 audit fix — the strip's F&G color agrees with the vote, live ─────
+// The defect: F&G 45 votes NEUTRAL (• chip, grey gauge) while the strip painted it
+// red off a hand-written `>55` binary — one page, three answers. Driven at both a
+// neutral and a greed reading.
+console.log("\n[public] wave-17 fix — strip F&G color derives from the band vote");
+{
+  const { page } = await open({ live: { ...FULL_LIVE, fearGreed: 45, fearGreedLabel: "Neutral" } });
+  await page.waitForTimeout(1400);
+  const col = await page.evaluate(() => {
+    const cell = [...document.querySelectorAll(".macro-strip-inner > div")]
+      .find((el) => /F&G/.test(el.textContent));
+    return getComputedStyle(cell.lastElementChild).color;
+  });
+  ok("fix: a NEUTRAL F&G (45) renders the neutral grey on the strip, not bearish red",
+    col === "rgb(136, 146, 164)");
+  const chips = await page.locator('[aria-label="Macro backdrop verdict"]').innerText();
+  ok("fix control: the band chip agrees — F&G carries • (neutral), and the two surfaces now match",
+    /F&G •/.test(chips));
+  await page.close();
+}
+{
+  const { page } = await open({ live: FULL_LIVE });
+  await page.waitForTimeout(1400);
+  const col = await page.evaluate(() => {
+    const cell = [...document.querySelectorAll(".macro-strip-inner > div")]
+      .find((el) => /F&G/.test(el.textContent));
+    return getComputedStyle(cell.lastElementChild).color;
+  });
+  ok("fix control: a genuine greed reading (62, bull) still renders green — no over-correction",
+    col === "rgb(46, 204, 113)");
+  await page.close();
+}
+
 await browser.close();
 srv.close();
 console.log(`\n=== PUBLIC RENDER TEST: ${pass} passed, ${fail} failed ===`);

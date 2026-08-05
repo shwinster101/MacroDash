@@ -7,9 +7,21 @@
 // PRESENTATION ONLY — provenance (modeOf), the FOMC label and the voting-fields
 // set are computed in the orchestrator and handed over; `badge` is a slot for
 // the WenMoonBadge so the tape mood stays the orchestrator's concern.
-// The only addition is the Property-9 null guard.
+// Wave-17 audit fix (findings 1-3): the F&G and CPI sub-line colors are DERIVED
+// from REGIME_BAND_TABLE's own vote — the strip painted a NEUTRAL F&G (30-55)
+// bearish red off a hand-written `>55` binary while the gauge below rendered it
+// grey and the band chip rendered `•` (the FEAT-NEUTRAL defect surviving on one
+// surface), and CPI asserted red/green off a `>3` level threshold that exists
+// nowhere in the engine (the factor votes on trend SHAPE). One band, one home —
+// the same documented exception MarketDetail's NFCI constants use. And because a
+// vote-derived color IS a directional read, it is muted when the field is not
+// live (the NFCI TIGHT/LOOSE precedent, v3.1). Delta colors (pctColor on day
+// moves) are arithmetic facts, not verdicts, and keep their existing treatment.
 import { T } from "../design-tokens.js";
+import { REGIME_BAND_TABLE, voteStyle } from "../regime.js";
 import { fmt, pctColor } from "../format.js";
+
+const bandOf=(k)=>REGIME_BAND_TABLE.find((b)=>b.key===k);
 
 const MacroStrip=({d,modeOf,fomcLabel,fomcDays,votingFields,badge})=>{
   if(!d||typeof modeOf!=="function")return <div aria-hidden="true"/>;
@@ -21,12 +33,16 @@ const MacroStrip=({d,modeOf,fomcLabel,fomcDays,votingFields,badge})=>{
           {l:"SPY*", f:"spyPrice", v:`$${d.marketPulse.spy.price}`,      s:fmt.pct(d.marketPulse.spy.changePct), sc:pctColor(d.marketPulse.spy.changePct), t:"S&P 500 ÷ 10 (FRED SP500 proxy, NOT an SPY ETF quote — Stooq blocks the edge). Tracks the ETF closely; not identical."},
           {l:"QQQ",  f:"qqqPrice", v:`$${d.marketPulse.qqq.price}`,      s:fmt.pct(d.marketPulse.qqq.changePct), sc:pctColor(d.marketPulse.qqq.changePct), t:"Nasdaq-100 ETF — big tech"},
           {l:"VIX",  f:"vix", v:`${d.marketPulse.vix.current}`,     s:fmt.pct(d.marketPulse.vix.weekChg)+" WoW", sc:pctColor(d.marketPulse.vix.weekChg,true), t:"Volatility index — the market's fear gauge (lower = calmer)"},
-          {l:"F&G",  f:"fearGreed", v:`${d.marketPulse.fearGreed.score}`, s:d.marketPulse.fearGreed.label, sc:d.marketPulse.fearGreed.score>55?T.green:T.red, t:"Fear & Greed — market sentiment, 0 = fear, 100 = greed"},
+          {l:"F&G",  f:"fearGreed", v:`${d.marketPulse.fearGreed.score}`, s:d.marketPulse.fearGreed.label, voteKey:"fearGreed", t:"Fear & Greed — market sentiment, 0 = fear, 100 = greed"},
           {l:"10Y",  f:"tenYear", v:`${d.crossAsset.treasury10y.current}%`, s:fmt.bps(d.crossAsset.treasury10y.d1)+" 1D", sc:pctColor(-d.crossAsset.treasury10y.d1), t:"10-year Treasury yield — the benchmark interest rate"},
           {l:"FED",  f:"fedFunds", v:`${d.macro.fedFunds.rate}%`,        s:`FOMC ${fomcLabel}`, sc:fomcDays===0?T.amber:T.textMuted, t:"Fed funds rate — the central bank's policy rate"},
-          {l:"CPI",  f:"cpiHeadline", v:`${d.macro.cpi.headline}%`,         s:`Core ${d.macro.cpi.core}%`, sc:d.macro.cpi.headline>3?T.red:T.green, t:"Consumer Price Index — inflation, year-over-year"},
-        ].map(({l,f,v,s,sc,t})=>{
+          {l:"CPI",  f:"cpiHeadline", v:`${d.macro.cpi.headline}%`,         s:`Core ${d.macro.cpi.core}%`, voteKey:"cpiHeadline", t:"Consumer Price Index — inflation, year-over-year"},
+        ].map(({l,f,v,s,sc,voteKey,t})=>{
           const m=modeOf(f); const live=m==="LIVE"||m==="CACHED";
+          // Vote-derived sub-line color: the band table is the ONE expression of the
+          // threshold, voteStyle the ONE vote->appearance map. Not live -> muted (a
+          // directional read off mock/stale is what the v3.1 invariant forbids).
+          if(voteKey){const b=bandOf(voteKey);sc=b&&live?T[voteStyle(b.vote(b.read(d))).colorKey]:T.textMuted;}
           const dot=live?T.green:m==="STALE"?T.amber:T.textMuted; // provenance dot: live/stale/mock
           /* v3.62 (newcomer audit): "voting indicators and context indicators are mixed".
              A blanket per-SECTION label would be false here — this one strip carries both

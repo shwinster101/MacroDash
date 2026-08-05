@@ -2265,7 +2265,7 @@ ok("nfci: thresholds live in ONE shared table driving tile, vote and factor brea
   mdSrc.includes('const band=v>NFCI_TIGHT?"TIGHT":v<=NFCI_LOOSE?"LOOSE":"NEUTRAL"') &&
   regimeSrc.includes('vote:(v)=> v <= NFCI_LOOSE ? "bull" : v > NFCI_TIGHT ? "bear" : "neutral"') &&
   // …and the tile IMPORTS them rather than re-declaring (the one-table rule survives extraction)
-  /import \{ NFCI_TIGHT, NFCI_LOOSE \} from "\.\.\/regime\.js"/.test(mdSrc));
+  /import \{ NFCI_TIGHT, NFCI_LOOSE(, REGIME_BAND_TABLE)? \} from "\.\.\/regime\.js"/.test(mdSrc));
 ok("nfci: the tight threshold is the DEFINITIONAL mean (0), not a hand-picked decimal",
   /const NFCI_TIGHT = 0;/.test(regimeSrc) && !uiSrc.includes("0.10?\"TIGHT\""));
 ok("nfci: the bands are ASYMMETRIC — a symmetric band around zero would have voted bullish " +
@@ -4096,6 +4096,35 @@ ok("docs: RISKS.md carries the five risks and five assumptions by id, and bans a
   rkDoc.includes("Status lives in git history"));
 ok("docs: RISKS.md states the pin-repoint rule (the risk this branch lived with every wave)",
   /repoints pins to\s*\n?\s*the new module/.test(rkDoc) && rkDoc.includes("uiSrc"));
+
+// ═══════════ [55] wave-17 audit fix — strip/tile colors derive from the ONE band table ═══════════
+// Findings 1-3: the strip painted a neutral F&G bearish red off a hand-written `>55`
+// binary (one page, three answers: red strip number, grey gauge, • band chip), CPI
+// asserted red/green off a `>3` level the engine never uses (it votes on trend SHAPE),
+// and the VIX tile carried a second copy of the 18/25 edges. All three now branch on
+// REGIME_BAND_TABLE's own vote; vote-derived strip colors are MUTED when the field is
+// not live (a directional read off mock/stale is the v3.1 invariant's exact target).
+console.log("\n[55] wave-17 audit fix — one band table, every altitude");
+ok("fix1: no hand-written F&G or CPI threshold survives in the strip",
+  !/score>55\?/.test(stripSrc) && !/headline>3\?/.test(stripSrc) &&
+  stripSrc.includes('voteKey:"fearGreed"') && stripSrc.includes('voteKey:"cpiHeadline"'));
+ok("fix1: the strip resolves vote colors through the band table + the ONE voteStyle map, muted when not live",
+  stripSrc.includes("sc=b&&live?T[voteStyle(b.vote(b.read(d))).colorKey]:T.textMuted") &&
+  stripSrc.includes('import { REGIME_BAND_TABLE, voteStyle } from "../regime.js"'));
+ok("fix1 BEHAVIOR: a neutral F&G (42) now resolves to the neutral color, never red — and a real extreme still reads directionally",
+  (() => { const b = REGIME_BAND_TABLE.find((x) => x.key === "fearGreed");
+    return voteStyle(b.vote(42)).colorKey === "textSecondary" &&
+           voteStyle(b.vote(62)).colorKey === "green" && voteStyle(b.vote(15)).colorKey === "red"; })());
+ok("fix2 BEHAVIOR: CPI color follows the trend-shape vote (cooling green, drifting-up red), not a level",
+  (() => { const b = REGIME_BAND_TABLE.find((x) => x.key === "cpiHeadline");
+    return voteStyle(b.vote([3.0, 2.9, 2.8])).colorKey === "green" &&
+           voteStyle(b.vote([2.4, 2.9, 3.1])).colorKey === "red" &&
+           voteStyle(b.vote([3.0, 2.9, 2.9])).colorKey === "textSecondary"; })());
+ok("fix2: the VIX tile branches on the band's OWN vote — no 18/25 second copy left",
+  mdSrc.includes('REGIME_BAND_TABLE.find((b)=>b.key==="vix").vote(') &&
+  !/vix\.current>25\?T\.red/.test(mdSrc) && !/current>18\?T\.yellow/.test(mdSrc));
+ok("fix3: delta colors (pctColor day-moves) keep their treatment — facts, not verdicts",
+  stripSrc.includes("sc:pctColor(d.marketPulse.spy.changePct)"));
 
 console.log(`\n=== SMOKE TEST: ${pass} passed, ${fail} failed ===`);
 process.exit(fail === 0 ? 0 : 1);
