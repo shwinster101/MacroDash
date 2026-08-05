@@ -277,7 +277,7 @@ const server = http.createServer((req, res) => {
   if (url.pathname === "/api/score") {
     const s = url.searchParams.get("sym");
     if (s === "AAA") return json({ sym: "AAA", record: { sym: "AAA", underwriting_inputs: {},
-      scorecard: { methodology_version: "tt-underwriting-v2.3.0", status: "UNSCORABLE", actionability: "BLOCKED",
+      scorecard: { methodology_version: "tt-underwriting-v2.4.0", status: "UNSCORABLE", actionability: "BLOCKED",
         route: "AI_INFRA", profile: null, route_mapping_version: "tt-route-v1",
         raw_score: null, raw_tier: null, capped_tier: null, input_hash: "sha256:aaaa1111",
         blockers: ["falsifier_health: AWAITING_FALSIFIERS", "owner_valuation: NO_FLOOR_PREPROFIT"],
@@ -289,7 +289,7 @@ const server = http.createServer((req, res) => {
           falsifier_health: { score: null, weight: 0.25, bootstrap: "PRECOMMITTED_PENDING", blockers: ["AWAITING_FALSIFIERS"] } },
         gate_results: [{ id: "AI_G3_2028_BRIDGE", state: "UNKNOWN", premium_prerequisite: true, raw_state: "DEMANDING-BUT-CREDIBLE" }] } } });
     if (s === "BBB") return json({ sym: "BBB", record: { sym: "BBB", underwriting_inputs: {},
-      scorecard: { methodology_version: "tt-underwriting-v2.3.0", status: "SCORED", actionability: "CAUTION",
+      scorecard: { methodology_version: "tt-underwriting-v2.4.0", status: "SCORED", actionability: "CAUTION",
         route: "PHYSICAL_AI", profile: null, route_mapping_version: "tt-route-v1",
         raw_score: 6.12, raw_tier: "B", capped_tier: "B", input_hash: "sha256:bbbb2222",
         blockers: [], pillars: { owner_valuation: { score: 6.5, weight: 0.25, basis_used: "FLOOR", premium_prerequisite_state: "UNKNOWN", blockers: [] },

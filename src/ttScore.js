@@ -2,7 +2,7 @@
 // PURE, React-free, token-free, Node-importable — the same convention as sources.js,
 // ttReadout.js, regime.js, evidence.js and ptModel.js.
 //
-// THE TT UNDERWRITING SCORE ENGINE (tt-underwriting-v2.3.0): four evidence-typed pillars
+// THE TT UNDERWRITING SCORE ENGINE (see METHODOLOGY_VERSION below): four evidence-typed pillars
 // at fixed 25% weights → raw score/tier; route gates (via ttScoreRegistry.js) → capped
 // tier; actionability rollup; eligibility; outcome memory; canonical input hashing.
 // The SERVER computes — functions/api/score.js imports this and is authoritative; the
@@ -10,7 +10,12 @@
 // floating-point acceptance loophole, 409 on any client-computed divergence >0.01).
 //
 // Doctrine encoded here, not just documented:
-//   · No missing pillar is neutralized, omitted, or reweighted — all four or UNSCORABLE.
+//   · No missing pillar is neutralized, omitted, or reweighted — the BLENDED raw_score is
+//     all four or nothing. The ONE labeled exception (v2.4.0, §6.4.1): when P1–P3 are all
+//     numeric and P4 is blocked SOLELY on falsifier bootstrap, a PROVISIONAL diagnostic is
+//     published beside the null blend — tier hard-capped at B, never SCORED, never eligible
+//     (evalEligibility requires status SCORED). The owner's rule ("the TT always gives an
+//     output") at the diagnostic level; the composite's refusal is untouched.
 //   · Evidence state and score are orthogonal (§7): DERIVED/OWNER_ASSERTED move
 //     actionability, never the number. Duration (P2) is the ONE deliberate exception.
 //   · Momentum is nowhere in this file's pillar math — execution is WHEN, not WHAT.
@@ -25,7 +30,7 @@
 import { ptModelRows, lintPtModel, pickRow } from "./ptModel.js";
 import { routeFor, gatesFor, premiumPrerequisiteFor, ROUTE_MAP_VERSION } from "./ttScoreRegistry.js";
 
-export const METHODOLOGY_VERSION = "tt-underwriting-v2.3.0";
+export const METHODOLOGY_VERSION = "tt-underwriting-v2.4.0";
 export const GATE_NORMALIZATION_VERSION = "tt-gate-normalization-v1";
 
 /* ═══════════ §5.1 piecewise — the ONE numerical map ═══════════ */
@@ -493,6 +498,30 @@ export async function buildScorecard({ sym, lens, underwriting_inputs, dd, price
     card.raw_score = round2(scores.reduce((a, b2) => a + b2, 0) * 0.25);
     card.raw_tier = rawTierFrom(card.raw_score);
     card.status = "SCORED";
+  } else if (
+    // §6.4.1 bootstrap scoring (v2.4.0). PROVISIONAL fires ONLY when the sole thing standing
+    // between this card and SCORED is the falsifier bootstrap — P4's blockers must be nothing
+    // but AWAITING_FALSIFIERS (a malformed hinge, a stale observation or an UNKNOWN state is
+    // an input DEFECT, and a defect stays UNSCORABLE so it gets fixed, never averaged past).
+    // raw_score/raw_tier stay null: the 4-pillar blend is never partially computed. The
+    // provisional tier is HARD-CAPPED at B regardless of the P1–P3 mean — a name whose
+    // downside framework is unwritten must not rank above names that carry one — and
+    // eligibility is structurally blocked (status !== "SCORED" fails evalEligibility), so a
+    // provisional card can inform ranking but never gate capital.
+    [p1.score, p2.score, p3.score].every((s) => typeof s === "number") &&
+    p4.bootstrap && p4.blockers.every((b2) => b2 === "AWAITING_FALSIFIERS")
+  ) {
+    const mean = round2((p1.score + p2.score + p3.score) / 3);
+    const uncapped = rawTierFrom(mean);
+    card.status = "PROVISIONAL";
+    card.provisional = {
+      score: mean,
+      tier: TIER_ORDER[uncapped] > TIER_ORDER.B ? "B" : uncapped,
+      tier_uncapped: uncapped,
+      pending: p4.bootstrap,
+      basis: "P1-P3 mean — falsifier health unmeasured, never neutralized into the blend",
+    };
+    card.blockers.push("PROVISIONAL: P4 " + p4.bootstrap + " — never eligible until falsifiers commit, observe, and the card reaches SCORED");
   }
   const prec = gatePrecedence(card.gate_results, card.raw_tier);
   card.capped_tier = prec.capped_tier; card.cap_source = prec.cap_source || null;

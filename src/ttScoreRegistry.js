@@ -2,7 +2,7 @@
 // PURE, React-free, token-free, Node-importable — the same convention as sources.js,
 // ttReadout.js, regime.js, evidence.js and ptModel.js.
 //
-// THE VERSIONED ROUTE REGISTRY for the TT Underwriting Score (tt-underwriting-v2.3.0):
+// THE VERSIONED ROUTE REGISTRY for the TT Underwriting Score (METHODOLOGY_VERSION lives in ttScore.js):
 //   1. tt-route-v1 — the lens→route/profile mapping (§4.4). Lens is the book/UI taxonomy,
 //      route is the scorer methodology; the server derives route from THIS table and a
 //      client-supplied route is ignored. Unknown lens → UNMAPPED → UNSCORABLE/BLOCKED,

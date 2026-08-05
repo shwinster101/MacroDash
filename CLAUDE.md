@@ -2049,6 +2049,47 @@ Jan-anchor shipped; see `snapshot.js` ~318–328), `spyMa100`, `spyMa200`, and a
   string-pinning it — the project's own recurring lesson (v3.40, v3.54: state computed and
   rendered but not read at the gate) is exactly the shape a string pin cannot catch.
   Tests: **1067 smoke** (+6) + 192 render + 88 public-render.
+- **FEAT-TT-PROVISIONAL (v3.77) — the falsifier-bootstrap feedback, integrated at the
+  high-leverage set only (owner call).** Two owner-commissioned analyses of the UNSCORABLE
+  symptom landed the same root cause: P4 (falsifier health) demands ≥3 pre-committed
+  falsifiers with post-definition observations — owner-authored thesis content no data feed
+  can supply — and one null pillar nulls the whole card, so every freshly-added name reads
+  UNSCORABLE regardless of how complete P1–P3 are. Integrated, from their recommendations:
+  **(1) PROVISIONAL bootstrap scoring** (the analyses' Option A; methodology bump →
+  `tt-underwriting-v2.4.0`, §4.3). When P1–P3 are all numeric and P4 is blocked **solely** on
+  falsifier bootstrap (`p4.blockers.every === "AWAITING_FALSIFIERS"` — a malformed hinge or a
+  stale observation is an input DEFECT and stays UNSCORABLE so it gets fixed, never averaged
+  past), `buildScorecard` publishes `card.provisional` beside a **null blend**: the P1–P3
+  mean, tier **hard-capped at B** (uncapped tier recorded, never worn), `pending` naming the
+  bootstrap state. `raw_score`/`raw_tier` stay null — the four-pillar doctrine holds for the
+  composite; this is the owner's "the TT always gives an output" rule at the diagnostic
+  level, one step past v3.74.1's head fix. Eligibility is **structurally** blocked
+  (`evalEligibility` requires `status === "SCORED"` — no new rule to forget), actionability
+  stays BLOCKED, and the shadow panel renders it amber-never-green with the cap and the
+  ineligibility in the same breath. The score index carries `provisional_score`/`_tier` so
+  a bootstrap name can rank on the board summary; the ledger's score diff now logs **status
+  transitions** (provisional→scored is a belief event, the analyses' constraint 6).
+  **(2) Found while integrating, and bigger than the feature: `/api/score` was still scoring
+  P1 blind on every migrated name.** It read `entry.deepDive` from the book — but
+  FEAT-TT-DDSTORE (v3.75) moved payloads to `tt:dd:v1:<SYM>` and strips them from entries,
+  so a migrated name's complete PT model sat one key away while P1 reported "no computable
+  model row". The handler now reads the store first, embedded payload as the pre-migration
+  fallback (the client's own `ddOf()` order, server-side) — the OTHER half of "how is a
+  fully-documented name unscorable". **Declined, with reasons:** the 30-day provisional
+  auto-expiry (a server-stamped record must never self-mutate on read; the card is already
+  BLOCKED and labeled, so a second clock changes no decision) · min-1 falsifier (one hinge
+  is confirmation, not triangulation — the analyses' own assessment) · template-stamped
+  starter falsifiers (a pre-committed condition generated from a route profile is not
+  pre-committed — the exact §6.4.1 rationalization risk) · re-validating scorecards in
+  `tt.js`'s book PUT (the analysis itself concludes the server-authoritative `/api/score`
+  split is correct as built). Version literals updated everywhere they live (client PUT
+  body, fixtures); stored v2.3.0 records read LEGACY_UNVERIFIED until re-scored — the
+  designed §4.3 consequence, safe in shadow mode where legacy governs.
+  Tests: **1284 smoke** (+9: the provisional path, the B-cap, the never-eligible proof, both
+  UNSCORABLE controls run through the real `buildScorecard`, the dd-store read driven
+  through the endpoint against a migrated fixture, the endpoint-level provisional with index
+  + ledger asserts, the amber-never-green client pin) + **216 render** + **111
+  public-render** + `audit:prod` clean — all four gates run, browser suites in real Chromium.
 - **FEAT-TT-ALLREVIEWED (v3.76) — every TT review reaches the next dollar, asterisked.**
   Owner's rule, stated twice now and only half-honoured the first time: *"the TT should ALWAYS
   give a score or output for next dollar hierarchy at the least"*, then *"every TT review must

@@ -9,7 +9,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
 <!-- AUDIT: kept in sync with package.json by test/smoke.mjs. admin.html is a Vite
      public/ passthrough, so it cannot receive __APP_VERSION__ — the guard is the fix. -->
-<title>TT TICKER TERMINAL v3.76.0</title>
+<title>TT TICKER TERMINAL v3.77.0</title>
 <style>
   :root{
     --bg:#05070a; --panel:#0a0f16; --panel2:#0d141d; --line:#16202c;
@@ -398,7 +398,7 @@
         onclick="toggleHeadInfo()">⋯ MENU</button>
     </div>
     <div id="headInfo" style="display:none">
-      <div class="brand">FINANCE&nbsp;BRO.AI // TT&nbsp;TICKER&nbsp;TERMINAL <small>v3.76.0 · single-pass deep-dive orchestrator</small></div>
+      <div class="brand">FINANCE&nbsp;BRO.AI // TT&nbsp;TICKER&nbsp;TERMINAL <small>v3.77.0 · single-pass deep-dive orchestrator</small></div>
       <div class="statusline">
         <span>BOOK: <b id="bookStamp">loading…</b></span>
         <span>AUTH: <b id="sessState">…</b></span>
@@ -3348,7 +3348,7 @@ async function promoteFalsifiers(sym){
     const r=await fetch("/api/score?sym="+encodeURIComponent(sym),{method:"PUT",
       headers:{"content-type":"application/json",
         "If-Match":(rec&&rec.scorecard&&rec.scorecard.input_hash)||"*"},
-      body:JSON.stringify({underwriting_inputs:{methodology_version:"tt-underwriting-v2.3.0",
+      body:JSON.stringify({underwriting_inputs:{methodology_version:"tt-underwriting-v2.4.0",
         thesis_version:draft.thesis_version||null,falsifiers,route_gates:{}}})});
     const d=await r.json();
     if(!r.ok)return toast("promotion failed: "+(d.error||r.status));
@@ -3367,7 +3367,9 @@ function ddScoreBar(x){
     return `<div class="dd-sec" style="font-size:11px"><span style="color:var(--dim);letter-spacing:.08em;font-size:9.5px">TT UNDERWRITING · SHADOW</span> <span class="scope">no score record — the server has never scored this name</span>${promoteBtn}</div>`;
   const sc=rec.scorecard||{};
   const scored=sc.status==="SCORED";
-  const col=sc.status==="LEGACY_UNVERIFIED"?"var(--dim)":scored?(sc.actionability==="FULL"?"var(--green)":"var(--amber)"):"var(--amber)";
+  const provisional=sc.status==="PROVISIONAL";
+  // PROVISIONAL is always amber — a bootstrap diagnostic must never wear SCORED's green.
+  const col=sc.status==="LEGACY_UNVERIFIED"?"var(--dim)":scored&&!provisional?(sc.actionability==="FULL"?"var(--green)":"var(--amber)"):"var(--amber)";
   const awaiting=(sc.blockers||[]).some(b=>/AWAITING_FALSIFIERS/.test(b));
   const noFloor=(sc.blockers||[]).some(b=>/NO_FLOOR_PREPROFIT/.test(b));
   // The bootstrap head LEADS with what is measurable, never with the blocker count — the
@@ -3380,6 +3382,10 @@ function ddScoreBar(x){
     :(p1d.context_premium?`$${esc(p1d.context_premium.target)}${p1d.context_premium.target_year?` ${esc(p1d.context_premium.target_year)}`:""}${p1d.context_premium.annualized_return_pct!=null?` · ${p1d.context_premium.annualized_return_pct>=0?"+":""}${p1d.context_premium.annualized_return_pct}%/yr`:""} <span class="scope">contingent — prereq gate ${esc(p1d.premium_prerequisite_state||"UNKNOWN")}</span>`:"");
   const head=scored
     ?`${sc.raw_score} · ${esc(sc.raw_tier)}→${esc(sc.capped_tier)}${sc.cap_source?` (cap: ${esc(sc.cap_source)})`:""} · ${esc(sc.actionability)}`
+    :provisional&&sc.provisional
+    // v2.4.0 bootstrap: the P1-P3 diagnostic leads, the cap and the ineligibility are stated
+    // in the same breath — a provisional number must never read as an actionable score.
+    ?`PROVISIONAL ${sc.provisional.score} · tier ≤${esc(sc.provisional.tier)} — pending falsifiers (${esc(sc.provisional.pending||"")}), never eligible until SCORED`
     :`${diag?diag+" · ":""}bootstrap ${measurable}/4 pillars${awaiting?" · AWAITING_FALSIFIERS":""}${noFloor?" · NO_FLOOR_PREPROFIT":""}`;
   // Methods married, never merged: legacy governs until activation; disagreement is stated.
   const legacy=ttInfo(dd);

@@ -2694,6 +2694,12 @@ ok("ready: and on the card — the only per-ticker surface a WATCH name with no 
   adminSrc.includes('<div class="k">READINESS</div>') && adminSrc.includes("let html=rdyRow+measured+"));
 ok("ready: blockers stay visible as chips on the bar, never collapsed into the verdict alone",
   adminSrc.includes("⛔ not actionable until:") && adminSrc.includes('p.sev==="block"?"head"'));
+// v2.4.0 PROVISIONAL: the shadow head leads with the capped bootstrap diagnostic and states
+// its ineligibility in the same breath — and the color branch can never paint it green.
+ok("shadow: PROVISIONAL renders capped + never-eligible on the head, amber never SCORED's green",
+  adminSrc.includes("never eligible until SCORED") &&
+  adminSrc.includes('const provisional=sc.status==="PROVISIONAL"') &&
+  adminSrc.includes("scored&&!provisional?"));
 
 // ---- 25. public-audit: the factor count is stated, and stated correctly ----
 // A label that disagrees with the vote it describes is the FIX-E defect. NFCI made the vote
@@ -3867,7 +3873,7 @@ console.log("\n[49] ptModel extraction — admin.html and src/ptModel.js cannot 
     PT.pickRow([{y:"2030"},{y:"2031"}], null, Date.parse("2030-06-15T00:00:00Z")).rolled === null);
 }
 
-// ═══════════ [45] TT UNDERWRITING ENGINE (tt-underwriting-v2.3.0, commit 2) ═══════════
+// ═══════════ [45] TT UNDERWRITING ENGINE (METHODOLOGY_VERSION in ttScore.js) ═══════════
 // The engine is a real module — imported and RUN (the regime.js doctrine). Anchors, tier
 // boundaries, hashing and precedence are all order-gating math once activated; every
 // boundary is executed at −ε / boundary / +ε per the spec's own §16.
@@ -4003,6 +4009,44 @@ console.log("\n[46] ttScore pillars — P1..P4 contracts run behaviorally");
     TS.scoreP4([H({ id: "a", state: "RED" }), H({ id: "b" }), H({ id: "c" })], { etToday: "2026-08-05" }).broken_thesis === false);
   ok("P4: a stale observation blocks (missing is not 5; stale is not current)",
     TS.scoreP4([H({ id: "a", as_of: "2025-01-01" }), H({ id: "b" }), H({ id: "c" })], { etToday: "2026-08-05" }).score === null);
+
+  // ─── v2.4.0 PROVISIONAL bootstrap — the ONE labeled exception to all-four-or-nothing ───
+  // P1–P3 numeric + P4 blocked SOLELY on falsifier bootstrap → a provisional diagnostic
+  // beside a null blend: tier hard-capped at B, actionability BLOCKED, never eligible.
+  const provUI = {
+    trajectory: { mode: "PROFITABLE", revenue: rev({ 2026: 100, 2028: 150 }), earnings_or_fcf: rev({ 2026: 5, 2028: 8 }),
+      duration_years: dur(["2026", "2027", "2028", "2029"]) },
+    economic_quality: { mode: "PROFITABLE_STANDARD", operating_margin_pct: REC(20), margin_direction_pp: REC(0),
+      fcf_margin_pct: REC(10), capital_efficiency: { metric: "ROIC", value: 15, as_of: "2026-08-01", source: { kind: "PRIMARY" } } },
+    falsifiers: [], route_gates: {} };
+  const provCard = await TS.buildScorecard({ sym: "T", lens: "AI", underwriting_inputs: provUI,
+    dd: flooredDd, price: { px: 30, at: "2026-08-03" }, horizon: "2026", nowMs: NOW });
+  const provMean = Math.round(((p1floor.score + p2ok.score + p3std.score) / 3) * 100) / 100;
+  ok("PROVISIONAL: P1-P3 numeric + falsifiers empty → status PROVISIONAL with the P1-P3 mean, blend stays null",
+    provCard.status === "PROVISIONAL" && provCard.raw_score === null && provCard.raw_tier === null &&
+    provCard.provisional && provCard.provisional.score === provMean &&
+    provCard.provisional.pending === "LEGACY_POST_HOC");
+  ok("PROVISIONAL: tier is HARD-CAPPED at B — the uncapped tier is recorded, never worn",
+    (provCard.provisional.tier_uncapped === "S" || provCard.provisional.tier_uncapped === "A") &&
+    provCard.provisional.tier === "B" &&
+    provCard.provisional.tier_uncapped === TS.rawTierFrom(provCard.provisional.score));
+  ok("PROVISIONAL: actionability stays BLOCKED and the blocker names the pending bootstrap state",
+    provCard.actionability === "BLOCKED" &&
+    provCard.blockers.some((b3) => /^PROVISIONAL: P4 LEGACY_POST_HOC/.test(b3)));
+  ok("PROVISIONAL: never eligible — evalEligibility WAITs on 'scorecard not SCORED' even with everything else clean",
+    (() => { const e2 = TS.evalEligibility({ annualized_return_pct: 30, status: provCard.status, actionability: "FULL",
+      methodology_version: provCard.methodology_version, capped_tier: "B", execution: "PASS" });
+      return e2.verdict === "WAIT" && e2.blockers.includes("scorecard not SCORED"); })());
+  const provDefect = await TS.buildScorecard({ sym: "T", lens: "AI",
+    underwriting_inputs: { ...provUI, falsifiers: [H({ id: "a", importance: 9 }), H({ id: "b", qualifying_observation: null }), H({ id: "c" })] },
+    dd: flooredDd, price: { px: 30, at: "2026-08-03" }, horizon: "2026", nowMs: NOW });
+  ok("PROVISIONAL control: a malformed hinge beside the pending one is a DEFECT — UNSCORABLE, never averaged past",
+    provDefect.status === "UNSCORABLE" && provDefect.provisional === undefined);
+  const provThin = await TS.buildScorecard({ sym: "T", lens: "AI",
+    underwriting_inputs: { ...provUI, trajectory: undefined },
+    dd: flooredDd, price: { px: 30, at: "2026-08-03" }, horizon: "2026", nowMs: NOW });
+  ok("PROVISIONAL control: a missing P1-P3 pillar stays UNSCORABLE — bootstrap never thins below three measured pillars",
+    provThin.status === "UNSCORABLE" && provThin.provisional === undefined);
 }
 
 console.log("\n[47] route registry + normalization — every boundary at -e/boundary/+e");
@@ -4112,9 +4156,15 @@ console.log("\n[48] /api/score — server-authoritative scoring endpoint");
       pt_model: { ev_s_multiple: { 2026: 5.5, 2027: 5.45 }, share_count_M: 310 },
       ref_px: { px: 212.58, at: new Date(Date.now() - 86400000).toISOString().slice(0, 10) } } },
     { sym: "ZZZ", tier: "B", lens: "??", deepDive: {} },
+    // BBB is a MIGRATED name (FEAT-TT-DDSTORE, v3.75): NO embedded deepDive — the thesis
+    // payload lives only at tt:dd:v1:BBB. The endpoint must read the store or P1 is blind.
+    { sym: "BBB", tier: "S", lens: "AI" },
   ], cut: [] };
-  const env = () => ({ TT_PIN: PIN, PULSE_CACHE: mkKV2({ "tt:book:v1": seedBook }) });
-  const UI = { methodology_version: "tt-underwriting-v2.3.0", route_gates: {}, falsifiers: [] };
+  const bbbDd = { consensus: { revenue_B: { 2027: 10, 2028: 13 }, eps: { 2027: 2, 2028: 2.4 } },
+    pt_model: { pe_floor_multiple: 18 },
+    ref_px: { px: 30, at: new Date(Date.now() - 86400000).toISOString().slice(0, 10) } };
+  const env = () => ({ TT_PIN: PIN, PULSE_CACHE: mkKV2({ "tt:book:v1": seedBook, "tt:dd:v1:BBB": bbbDd }) });
+  const UI = { methodology_version: "tt-underwriting-v2.4.0", route_gates: {}, falsifiers: [] };
 
   ok("score: anonymous GET fails closed (401)", await (async () => {
     const r = await score.onRequestGet({ request: mkReq("GET", { params: "?sym=AAA" }), env: env() });
@@ -4178,6 +4228,35 @@ console.log("\n[48] /api/score — server-authoritative scoring endpoint");
     const j = JSON.parse(await r.text());
     return r.status === 400 && j.error === "oversize" && j.key === "tt:score:v1:AAA" && j.bytes > j.limit && j.limit === 64 * 1024;
   })());
+  ok("score: a MIGRATED name's thesis is read from tt:dd:v1:<SYM> — P1 scores off the store, never blind (the v3.75 gap)", await (async () => {
+    const e4 = env();
+    const r = await score.onRequestPut({ request: mkReq("PUT", { params: "?sym=BBB", headers: { "x-tt-pin": PIN },
+      body: { underwriting_inputs: UI } }), env: e4 });
+    const j = JSON.parse(await r.text());
+    return r.status === 200 && typeof j.record.scorecard.pillars.owner_valuation.score === "number" &&
+      !j.record.scorecard.blockers.some((b3) => /no computable model row|no usable price/.test(b3));
+  })());
+  ok("score: PROVISIONAL rides the endpoint — index carries the capped diagnostic, ledger logs the status", await (async () => {
+    const e5 = env();
+    const rev2 = (vals) => Object.entries(vals).map(([fy, value]) => ({ fy, value, source: { kind: "CONSENSUS" }, analyst_count: 5 }));
+    const fullUI = { ...UI,
+      trajectory: { mode: "PROFITABLE", revenue: rev2({ 2026: 100, 2028: 150 }), earnings_or_fcf: rev2({ 2026: 5, 2028: 8 }),
+        duration_years: ["2026", "2027"].map((fy) => ({ fy, metrics: [{ source: { kind: "CONSENSUS" }, analyst_count: 5 }] })) },
+      economic_quality: { mode: "PROFITABLE_STANDARD", operating_margin_pct: { value: 20, as_of: "2026-08-01", source: { kind: "PRIMARY" } },
+        margin_direction_pp: { value: 0, as_of: "2026-08-01", source: { kind: "PRIMARY" } },
+        fcf_margin_pct: { value: 10, as_of: "2026-08-01", source: { kind: "PRIMARY" } },
+        capital_efficiency: { metric: "ROIC", value: 15, as_of: "2026-08-01", source: { kind: "PRIMARY" } } },
+      horizon: "2027" };
+    const r = await score.onRequestPut({ request: mkReq("PUT", { params: "?sym=BBB", headers: { "x-tt-pin": PIN },
+      body: { underwriting_inputs: fullUI } }), env: e5 });
+    const j = JSON.parse(await r.text());
+    if (r.status !== 200 || j.record.scorecard.status !== "PROVISIONAL") return false;
+    const idx2 = JSON.parse(e5.PULSE_CACHE._store.get("tt:score:index:v1")).entries.BBB;
+    const led = JSON.parse(e5.PULSE_CACHE._store.get("tt:ledger:BBB"));
+    return j.record.scorecard.raw_score === null && j.record.scorecard.provisional.tier === "B" &&
+      idx2.status === "PROVISIONAL" && typeof idx2.provisional_score === "number" && idx2.provisional_tier === "B" &&
+      idx2.raw_score === null && led[0].to.status === "PROVISIONAL";
+  })());
   ok("score: GET ?book=1 returns the compact index + deployed caps recorded as metadata", await (async () => {
     const r = await score.onRequestGet({ request: mkReq("GET", { params: "?book=1", headers: { "x-tt-pin": PIN } }), env: e1 });
     const j = JSON.parse(await r.text());
@@ -4225,7 +4304,7 @@ console.log("\n[48] /api/score — server-authoritative scoring endpoint");
       cadence_days: 90, defined_at: "2026-08-04T23:30:00Z", as_of: "2026-08-05",
       source: { kind: "PRIMARY", ref: "https://example.com/" + "y".repeat(180) },
       qualifying_observation: { id: "obs" + i2, observed_at: "2026-08-05T02:00:00Z" } });
-    const maxUI = { methodology_version: "tt-underwriting-v2.3.0",
+    const maxUI = { methodology_version: "tt-underwriting-v2.4.0",
       trajectory: { mode: "PREPROFIT", preprofit_second_series: "EBITDA_CAGR", ebitda_basis: "ADJUSTED",
         ebitda_reconciliation: REC2(1), revenue: [REC2(1), REC2(2)].map((r2, i2) => ({ ...r2, fy: String(2027 + i2) })),
         ebitda: [REC2(0.1), REC2(0.5)].map((r2, i2) => ({ ...r2, fy: String(2027 + i2) })),

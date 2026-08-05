@@ -1,4 +1,4 @@
-// functions/api/score.js — the TT Underwriting Score endpoint (tt-underwriting-v2.3.0)
+// functions/api/score.js — the TT Underwriting Score endpoint (METHODOLOGY_VERSION in ttScore.js)
 //
 // THE SERVER COMPUTES; THE CLIENT SUBMITS EVIDENCE (spec §5.2/§13). The buildless admin
 // client never calculates a score, tier, cap, or eligibility result — it PUTs normalized
@@ -29,6 +29,7 @@ const SNAP_PREFIX = "tt:score:snap:v1:";
 const INDEX_KEY = "tt:score:index:v1";
 const DECISION_PREFIX = "tt:decision:v1:";
 const BOOK_KEY = "tt:book:v1";
+const DD_PREFIX = "tt:dd:v1:";        // FEAT-TT-DDSTORE (v3.75): the thesis payload's real home
 const LEDGER_PREFIX = "tt:ledger:";
 const LEDGER_INDEX = "tt:ledger:index";
 const LEDGER_CAP = 500;
@@ -74,6 +75,7 @@ async function appendScoreDiff(env, sym, prev, next) {
     const changed =
       !prev || prev.scorecard?.raw_score !== next.scorecard?.raw_score ||
       prev.scorecard?.capped_tier !== next.scorecard?.capped_tier ||
+      prev.scorecard?.status !== next.scorecard?.status ||
       prev.underwriting_inputs?.thesis_version !== next.underwriting_inputs?.thesis_version;
     if (!changed) return;
     const key = LEDGER_PREFIX + sym;
@@ -81,8 +83,10 @@ async function appendScoreDiff(env, sym, prev, next) {
     cur.unshift({
       t: new Date().toISOString(), v: "score", kind: "score", sym,
       field: "tt_underwriting",
-      from: prev ? { score: prev.scorecard?.raw_score ?? null, tier: prev.scorecard?.capped_tier ?? null } : null,
+      from: prev ? { score: prev.scorecard?.raw_score ?? null, tier: prev.scorecard?.capped_tier ?? null,
+        status: prev.scorecard?.status ?? null } : null,
       to: { score: next.scorecard?.raw_score ?? null, tier: next.scorecard?.capped_tier ?? null,
+        status: next.scorecard?.status ?? null,
         mv: next.scorecard?.methodology_version, hash: next.scorecard?.input_hash },
     });
     if (cur.length > LEDGER_CAP) cur.length = LEDGER_CAP;
@@ -98,6 +102,9 @@ async function updateIndex(env, sym, rec) {
   idx.entries[sym] = {
     status: sc.status ?? null, raw_score: sc.raw_score ?? null,
     raw_tier: sc.raw_tier ?? null, capped_tier: sc.capped_tier ?? null,
+    // PROVISIONAL (v2.4.0): the board summary carries the bootstrap diagnostic so a
+    // provisional name can rank — capped at B by construction, never eligible.
+    provisional_score: sc.provisional?.score ?? null, provisional_tier: sc.provisional?.tier ?? null,
     actionability: sc.actionability ?? null, route: sc.route ?? null, profile: sc.profile ?? null,
     input_hash: sc.input_hash ?? null, computed_at: sc.computed_at ?? null,
     blockers: (sc.blockers || []).length,
@@ -169,13 +176,21 @@ export async function onRequestPut({ request, env }) {
   if (routeFor(lens).route === "UNMAPPED")
     return json({ error: "UNMAPPED lens \"" + (lens || "") + "\" — fix the stored lens via the normal book workflow" }, 422);
 
+  // The thesis payload lives in its OWN KV document since FEAT-TT-DDSTORE (v3.75) — a
+  // migrated book entry carries no deepDive at all, so reading only entry.deepDive scored
+  // P1 blind on every migrated name ("no computable model row" with a complete model one
+  // key away). Store first, embedded payload as the pre-migration fallback — the ddOf()
+  // resolution order, server-side.
+  const ddStored = await kvGet(env, DD_PREFIX + sym);   // the payload rides the key directly
+  const dd = ddStored || entry.deepDive || {};
+
   // Server-authoritative compute. Client-supplied scorecard fields are IGNORED entirely;
   // a recovery client's divergent copy surfaces as the 409 above, never a silent accept.
   let card;
   try {
     card = await buildScorecard({
-      sym, lens, underwriting_inputs: ui, dd: entry.deepDive || {},
-      price: ui.price || (entry.deepDive && entry.deepDive.ref_px) || null,
+      sym, lens, underwriting_inputs: ui, dd,
+      price: ui.price || dd.ref_px || null,
       horizon: ui.horizon || null, nowMs: Date.now(),
     });
   } catch (e) {
