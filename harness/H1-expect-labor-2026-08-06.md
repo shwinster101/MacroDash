@@ -330,13 +330,23 @@ resolution at session creation rather than at edit time; **"do not route around 
 mirror, proxy or scrape workaround was attempted, and why none should be. This plan records a
 blocked host and stops.
 
-**Most likely mechanism, and the decisive test.** The two `.pages.dev` entries and the two data
-providers plausibly differ only in *when they were added* — a policy snapshot taken at session
-creation would serve the older entries and miss the newer ones. That is cheap to settle:
-**start a brand-new session and re-run the §6.0 host table.** If the providers answer, the
-mechanism is snapshot timing and the operational rule is "edit the allowlist, then start a fresh
-session." If they still 403 with `macrodash.pages.dev` still at 200, the entries are being
-denied by something above the user allowlist and the next step is support, not another retry.
+**Snapshot-timing hypothesis: raised, then FALSIFIED by the owner in the same pass.** The
+proposed mechanism was that the two `.pages.dev` entries predated session creation while the two
+providers were added after it, so a policy snapshot would serve the former and miss the latter.
+**The owner confirms all four entries were added BEFORE this session started.** That removes the
+only benign explanation: same list, same age, same session — two entries served, two denied.
+
+**What that leaves.** The denial is applied by something with **precedence over the user
+allowlist** — an org- or gateway-level policy that classifies these hosts independently of the
+per-account list. This session cannot see that layer, so the mechanism is not further diagnosable
+from inside, and per the README the correct action is to **report it**, not to keep probing. A
+fresh session is still worth one cheap re-run of the §6.0 host table (it costs nothing and rules
+out a stale process), but it is **no longer the expected fix** and should not be planned around.
+
+*(Third hypothesis, noted and NOT relied on: `*.pages.dev` may be reachable by default rather
+than because it is on the list, in which case the list may not be functioning at all and row 1
+proves less than it appears. Distinguishing that needs visibility this session does not have —
+recorded so a later reader does not treat "the allowlist works" as established fact.)*
 
 **Two gaps in the list, one of which matters:**
 
