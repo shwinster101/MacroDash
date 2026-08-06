@@ -50,6 +50,11 @@ because a plan that quietly acquires a new belief is the defect class this repo 
 | 6 | Repo state `194514e` / v3.63 | `bf681a9` / **v3.79.0** — 16 releases on | header |
 | 7 | *(WebSearch not considered)* | Available, and **must not be laundered as calibration** | §6.3 |
 
+**Rev 3 (same day).** The owner confirmed the allowlist entries are in place and supplied a
+screenshot. Re-tested: the allowlist mechanism is **proven live in this session**, and the two
+data providers are **still denied**. The remaining variable is session scope, not the allowlist.
+Two concrete gaps in the list itself are named in §6.0.1 — one of them matters.
+
 Rev-1 sections **re-verified against current `main` and still true**: §3's greps (no existing
 home for either metric), §4's quorum finding (`src/regime.js:107` — the comment literally reads
 *"4/6 is two-thirds of the evidence base"*), and F1 (`thirtyYearSeries` declared at
@@ -298,6 +303,59 @@ transports failing identically is the tell that this is policy, not transport.
 The keyless `fredgraph.csv` endpoint was tried specifically because it needs no `FRED_KEY`; it is
 blocked too, so **this is not a credential problem** and provisioning a key would not help.
 
+### §6.0.1 — rev 3: the allowlist is configured, live, and still not enough
+
+The owner confirmed the egress allowlist (claude.ai → Settings → Capabilities → *Additional
+allowed domains*) carries: `api.stlouisfed.org` · `macrotrends.net` · `macrodash.pages.dev` ·
+`pialax.pages.dev`.
+
+Re-tested in the same session, container age 149s:
+
+| Host | On the allowlist? | Result |
+|---|---|---|
+| `macrodash.pages.dev` | **yes** | **200** |
+| `api.stlouisfed.org` | **yes** | `CONNECT 403` |
+| `macrotrends.net` | **yes** | `CONNECT 403` |
+| `fred.stlouisfed.org` | no | `CONNECT 403` |
+| `www.macrotrends.net` | no *(bare entry does not cover it)* | `CONNECT 403` |
+
+**The first row is the finding.** A user-added domain resolving to `200` proves the allowlist
+mechanism reaches this session — so the earlier hypothesis that the whole list was being ignored
+is itself now falsified. Two entries on that same list are nonetheless denied.
+
+`/root/.ccr/README.md` classifies this exactly: *"403/407 — the destination host is not allowed by
+your organization's egress policy **for this session**. Do not retry or route around it — report
+the blocked host."* Both halves are load-bearing. **"for this session"** points at policy
+resolution at session creation rather than at edit time; **"do not route around it"** is why no
+mirror, proxy or scrape workaround was attempted, and why none should be. This plan records a
+blocked host and stops.
+
+**Most likely mechanism, and the decisive test.** The two `.pages.dev` entries and the two data
+providers plausibly differ only in *when they were added* — a policy snapshot taken at session
+creation would serve the older entries and miss the newer ones. That is cheap to settle:
+**start a brand-new session and re-run the §6.0 host table.** If the providers answer, the
+mechanism is snapshot timing and the operational rule is "edit the allowlist, then start a fresh
+session." If they still 403 with `macrodash.pages.dev` still at 200, the entries are being
+denied by something above the user allowlist and the next step is support, not another retry.
+
+**Two gaps in the list, one of which matters:**
+
+1. **`fred.stlouisfed.org` is absent, and it is the host calibration actually wants.**
+   `api.stlouisfed.org` requires a `FRED_KEY`; `fred.stlouisfed.org/graph/fredgraph.csv` is
+   **keyless** and returns a full CSV series in one request — which is precisely the shape §12
+   needs (a distribution, not a level). Recommend **`*.stlouisfed.org`** to cover both hosts in
+   one entry; the field's own placeholder (`example.com or *.example…`) confirms wildcards.
+2. **`www.macrotrends.net` is not covered by the bare `macrotrends.net` entry** — they are
+   different hosts. Fixable with `*.macrotrends.net`, but **low value: F2 concluded macrotrends
+   is not a source we want** (§9-F2), and that conclusion is access-independent. Recorded for
+   completeness, not recommended.
+
+**What the owner cannot fix from here, and neither can I.** The allowlist is a claude.ai account
+setting with no API or tool surface exposed to this session — there is no tool call that edits
+it. The owner's instruction to "make the environmental allowlist change" is therefore already
+discharged on their side; the remaining action is a fresh session (and, worth doing in the same
+edit, adding `*.stlouisfed.org`).
+
 ### §6.1 — build-time access ≠ runtime access
 
 The distinction rev 1 never drew, and the one that matters most:
@@ -464,6 +522,13 @@ after which a new session picks it up. Two independent transports (container pro
 server-side `WebFetch`) fail identically, and the keyless endpoint fails too — so it is neither
 transport nor credentials.
 
+**Rev 3:** the owner has since confirmed `api.stlouisfed.org` and `macrotrends.net` ARE on the
+egress allowlist, and a sibling entry (`macrodash.pages.dev`) returns **200** — so the allowlist
+is live in this session while those two entries are still denied (§6.0.1). The remedy narrows to
+**a fresh session** (policy is resolved per-session), plus adding **`*.stlouisfed.org`** so the
+keyless `fredgraph.csv` host is covered. Per the proxy README this is a *report-it* condition, not
+a route-around-it one; no workaround was attempted.
+
 This is the standing blocker behind **three** asserted-band items now, not one: the uncalibrated
 NFCI deadband (v3.43.1), the 30Y/10s30s bands (v3.55), and any future `ICSA` promotion (§4). That
 accumulation — not this ticket — is the argument for fixing it.
@@ -481,6 +546,11 @@ accumulation — not this ticket — is the argument for fixing it.
    queue* (§6.2): the deferred `ICSA` promotion plus the already-shipped asserted NFCI and 30Y
    bands. **Ask:** is fixing the environment allowlist worth doing now, as its own small task, to
    unblock all three at once? If yes, §12's protocol is how the resulting numbers get earned.
+   **ANSWERED (rev 3): yes — owner authorised it and the allowlist entries are in place.** The
+   remaining steps are not this session's to take: add **`*.stlouisfed.org`** (the keyless
+   `fredgraph.csv` host is currently uncovered — §6.0.1), then **start a fresh session**, whose
+   first act is to re-run the §6.0 host table and record the result here. Until that table comes
+   back green, every §6.2 calibration item stays deferred and every band stays `ASSERTED`.
 3. **NEW (rev 2) — tile placement.** Do the two tiles go in `MarketDetail.jsx` (collapsed, beside
    NFCI — the closest structural precedent) or does `T5YIFR` belong in the always-visible
    `MacroStrip.jsx` beside the `cpiHeadline` it qualifies? This determines H2's permitted file
