@@ -50,6 +50,11 @@ because a plan that quietly acquires a new belief is the defect class this repo 
 | 6 | Repo state `194514e` / v3.63 | `bf681a9` / **v3.79.0** — 16 releases on | header |
 | 7 | *(WebSearch not considered)* | Available, and **must not be laundered as calibration** | §6.3 |
 
+**Rev 4 (same day).** The maintainer supplied the four FRED CSVs as files. The calibration ran
+(§6.4) and found a **live defect in a shipped band** — `BANDS.nfci` rejected the observed record
+high — which is fixed in this pass. `NFCI_LOOSE = -0.5` is VALIDATED (post-2010 median -0.5010);
+`NFCI_TIGHT = 0` is recorded as an open finding for owner decision, not changed, per §P.8.
+
 **Rev 3 (same day).** The owner confirmed the allowlist entries are in place and supplied a
 screenshot. Re-tested: the allowlist mechanism is **proven live in this session**, and the two
 data providers are **still denied**. The remaining variable is session scope, not the allowlist.
@@ -420,6 +425,98 @@ So access is worth having, and it is worth asking the owner for — but it unblo
 already-deferred calibration work**, not this ticket. That queue is now three items deep and is
 the strongest argument for fixing the environment policy: it is the standing blocker behind every
 asserted band in the codebase, and each one is a number the product cannot currently defend.
+
+### §6.4 — rev 4: the data arrived, and the calibration ran
+
+The maintainer fetched the four `fredgraph.csv` files in a browser and supplied them as files —
+the route §6.1 identified, taken. **This closes the §6.2 blocker for everything except the items
+that need an owner decision**, and it is the first time this repo has been able to earn the
+`CALIBRATED` tag its own H1 item 6 requires.
+
+**Provenance (§12 output contract).** Series `NFCI` · `ICSA` · `T5YIFR` · `DGS10,DGS30`, all from
+`fred.stlouisfed.org/graph/fredgraph.csv`, fetched by the maintainer 2026-08-06 and handed to the
+session as files. Computed locally by `calibrate.mjs`; percentiles by linear interpolation on
+sorted values, SD population. Windows and N are stated per row below. Recorded in full **because
+the build container cannot re-fetch them** — the window is not reproducible from inside, so it
+travels with the constant.
+
+| Series | Window | N | Measured |
+|---|---|---|---|
+| NFCI | 1971-01-08 → 2026-07-31 | 2900 | mean **-0.000**, SD **1.000**; min -1.096 (1993-08-13), max **+5.214** (1974-07-19) |
+| ICSA | 1967-01-07 → 2026-08-01 | 3109 | min 162,000; max 6,137,000 (2020); 4wk-MA now 198,750 = **0.5th pct since 2015**, YoY **-10.3%** |
+| T5YIFR | 2003-01-02 → 2026-08-05 | 5902 (253 blank dropped) | min 0.43, max 3.05; p50 2.28; **current 2.26** |
+| 10s30s | paired legs only, 12,362 rows | — | min -0.84, max +1.60; inverted 13.2% of days; **current +0.55** |
+
+**The mean/SD result is the control that matters:** NFCI measures 0.000 / 1.000 to three decimals,
+confirming the documented z-score construction rather than assuming it. Every band claim below
+rests on that holding.
+
+#### The defect this found — FIXED in this pass
+
+**`BANDS.nfci` was `[-5, 5]` and REJECTED six real observations** (1974-07-05 → 1974-08-09, peak
+**5.214**). The comment justifying it cited *"record high is ~+3.3 (2008-10)"* — wrong twice over:
+2008 peaked at **3.072**, and the true record is 5.214, more than two full SD higher. Because
+`applyBands` **drops** an out-of-band value, the worst financial-conditions reading in the entire
+series would have vanished from the tile and dropped NFCI out of the regime vote — at precisely
+the moment the page exists to see it. A plausibility band must reject the impossible, not the
+unusual (the negative-WTI rule); this one rejected the observed maximum.
+
+Upper edge → **+10** (1.92x the true record, matching the headroom the other bands carry: VIX
+1.68x, DGS30 1.31x, ICSA 1.63x). Lower edge stays -5 (4.5x below a record low of -1.096) —
+asymmetric on purpose, because the series is right-skewed. **The smoke assertion had encoded the
+defect**, pinning `b[1] === 5` and the remembered "~+3.3"; it is re-pinned on the *observed*
+maximum and on `applyBands` end-to-end. Negative-controlled: reverting the band turns exactly
+those two assertions red.
+
+#### Bands VALIDATED (no change needed, now `CALIBRATED` rather than asserted)
+
+`thirtyYear [0,20]` (observed max 15.21) · `spread10s30s [-10,10]` (observed -0.84…+1.60) ·
+and, for this ticket, the two proposed in §6: **`T5YIFR [0,10]`** (observed 0.43…3.05) and
+**`ICSA [0, 10_000_000]`** (observed max 6,137,000 — the plan's "~6.1M" was exactly right).
+
+#### ⚠ OPEN FINDING — `NFCI_TIGHT = 0` is unreachable in the modern regime
+
+Not changed here: this is a **voting** threshold in `REGIME_BAND_TABLE`, and §P.8 makes that its
+own ticket with its own approval. Recorded with the evidence so the decision is a one-liner.
+
+Vote mix under the shipped bands (`bull ≤ -0.5`, `bear > 0`), by era:
+
+| Era | N | bull | neutral | bear |
+|---|---|---|---|---|
+| 1971–1990 | 991 | 9.5% | 23.1% | **67.4%** |
+| 1990–2010 | 1043 | 57.3% | 25.9% | 16.8% |
+| 2010–2020 | 522 | 59.4% | 40.6% | **0.0%** |
+| 2020–2027 | 344 | 37.8% | 59.9% | **2.3%** |
+
+**Since 2010 the bear vote has fired in 8 weeks out of 866 — one episode, 2020-03-13 → 2020-05-01
+(COVID, peak 0.306).** The post-2010 maximum is 0.306, so NFCI **could not register the 2022 bear
+market at all**: through the fastest hiking cycle in forty years it stayed negative and voted
+neutral or bull. The bear channel is structurally unreachable outside a systemic liquidity event.
+
+The cause is that `0` is the mean of a 55-year window dominated by a monetary regime that no
+longer exists (1971–1990 was 67.4% bear). v3.43.1 diagnosed exactly this asymmetry and fixed only
+the LOOSE side.
+
+**LOOSE = -0.5 is VALIDATED and should not move** — and this is the pass's other genuine result.
+The post-2010 median is **-0.5010**: the asserted threshold sits within 0.001 of the modern median,
+splitting the era 50.2% bull / 48.9% neutral. That is what an informative factor looks like, and
+it was a good call made without data.
+
+**Owner decision, if any:** leave `0` (defensible — it becomes an explicit rare-event crisis
+detector, but then the tile should SAY so, because a factor that reads "neutral" through a 25%
+drawdown is misleading at the weight the page gives it), or move TIGHT to a modern-regime
+percentile (post-2010 p90 = -0.213, p95 = -0.146; a -0.15 edge would fire ~5% of weeks — rare but
+reachable). **No recommendation is implemented either way**; the choice is whether NFCI is a
+crisis detector or a continuous gauge, which is a product judgement, not a measurement.
+
+#### What the data says about this ticket's own two metrics
+
+**`ICSA` is the strongest argument in the plan.** The 4-week average is at the **0.5th percentile
+since 2015** and down **10.3% YoY** — the labor channel is at a decade extreme, and the regime
+currently has no way to see it (§0: no labor or growth factor at all). **`T5YIFR` at 2.26 sits
+essentially at its 23-year median (2.28)** — expectations are anchored, so the divergence read
+would render its *confirming* branch today, which is the honest and unexciting answer and exactly
+why v1 ships no threshold.
 
 ### §6.3 — the one capability that IS new, and its limit
 

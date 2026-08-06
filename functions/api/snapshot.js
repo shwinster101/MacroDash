@@ -85,10 +85,26 @@ export const BANDS = {
   shillerPe:    [3, 100],      // was an inline guard in fetchShiller; centralized here
   creditSpread: [0, 30],
   tokenBlendedMtok: [0, 10000],
-  // NFCI is standardized to mean 0 / SD 1 over its full 1971– history. Its record high is
-  // ~+3.3 (2008-10) and its record low ~-1.0, so ±5 rejects the impossible (a decimal shift,
-  // a parse fault) without rejecting the unusual — the same rule that keeps negative WTI.
-  nfci:         [-5, 5],
+  /* NFCI is standardized to mean 0 / SD 1 over its full 1971– history.
+     FEAT-EXPECT-LABOR calibration (2026-08-06) — the first band in this repo measured against
+     the real series rather than asserted. CALIBRATED: series NFCI, fredgraph.csv, 1971-01-08 →
+     2026-07-31, N=2900, no missing rows. Fetched by the maintainer in a browser and supplied as
+     a file — this build container is egress-blocked from FRED, so the observation window is
+     recorded here precisely because it cannot be re-fetched from inside.
+       measured: mean -0.000, SD 1.000 (confirms the documented z-score construction)
+       measured: min -1.096 (1993-08-13), max +5.214 (1974-07-19); 2008-11 peak +3.072
+     The upper edge was +5 and the comment justifying it cited "record high ~+3.3 (2008-10)".
+     BOTH were wrong: 2008 peaked at 3.072, and the true record is 5.214 — so the band REJECTED
+     six real observations (1974-07-05 → 1974-08-09). applyBands DROPS an out-of-band value, so
+     the worst financial-conditions reading in the series would have vanished from the tile and
+     dropped NFCI out of the regime vote, at exactly the moment the page most needs to see it:
+     a plausibility band is meant to reject the impossible, not the unusual (the negative-WTI
+     rule), and this one rejected the observed maximum.
+     Upper edge → +10: 1.92x the true record, in line with the headroom the other bands carry
+     (VIX 1.68x, DGS30 1.31x, ICSA 1.63x) and still tight enough to catch a decimal shift.
+     ASYMMETRIC on purpose — the series is right-skewed (crises spike tight; "loose" is bounded
+     in practice), so -5 already sits 4.5x below a record low of -1.096 and does not move. */
+  nfci:         [-5, 10],
 };
 // True when v is absent (nothing to judge) or inside its band. Unbanded fields pass.
 export function plausible(key, v) {

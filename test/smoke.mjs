@@ -2250,10 +2250,20 @@ ok("30y: thirtyYear IS in the DAILY set — idx[5]/idx[21] really are ~1wk/~1mo 
   /const DAILY = new Set\(\[[^\]]*"thirtyYear"[^\]]*\]\)/.test(snapSrc));
 ok("nfci: W1 is derived from the prior observation, which on a weekly series really is a week",
   snapSrc.includes("out.nfciW1 = parseFloat((latest - prev).toFixed(3))"));
-ok("nfci: a plausibility band exists and is WIDE — ±5 against a record high of ~+3.3 (2008), " +
-   "rejecting the impossible without rejecting the unusual",
-  (() => { const b = BANDS.nfci; return Array.isArray(b) && b[0] === -5 && b[1] === 5 &&
-    plausible("nfci", 3.3) && plausible("nfci", -0.9) && !plausible("nfci", 42); })());
+/* FEAT-EXPECT-LABOR (2026-08-06). This assertion previously read "±5 against a record high of
+   ~+3.3 (2008)" and pinned b[1] === 5 — it encoded the defect rather than catching it. Measured
+   against the real NFCI series (N=2900, 1971-01-08 → 2026-07-31): the 2008 peak is 3.072 and the
+   true record high is 5.214 (1974-07-19), so the shipped band dropped six real observations.
+   The load-bearing case is now the OBSERVED MAXIMUM, not a remembered one. */
+ok("nfci: the plausibility band CONTAINS the true observed record (5.214, 1974-07-19) — the old " +
+   "±5 band dropped the worst financial-conditions reading in the series",
+  (() => { const b = BANDS.nfci; return Array.isArray(b) && b[0] === -5 && b[1] === 10 &&
+    plausible("nfci", 5.214) && plausible("nfci", 3.072) && plausible("nfci", -1.096); })());
+ok("nfci: the band still rejects the impossible — a decimal shift does not survive it",
+  !plausible("nfci", 42) && !plausible("nfci", 52.14) && !plausible("nfci", -52));
+ok("nfci: applyBands would have DROPPED the 1974 peak under the old band, and keeps it now — " +
+   "the failure this calibration fixes, asserted end-to-end rather than on the constant alone",
+  (() => { const dropped = applyBands({ nfci: 5.214 }); return dropped.length === 0; })());
 ok("nfci: cadence is WEEKLY, and its derivatives inherit that through the v3.41 parent " +
    "fallback rather than each needing their own entry",
   cadenceOf("nfci") === "weekly" && cadenceOf("nfciW1") === "weekly" && cadenceOf("nfciSeries") === "weekly");
