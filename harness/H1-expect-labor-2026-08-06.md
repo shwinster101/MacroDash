@@ -348,6 +348,20 @@ than because it is on the list, in which case the list may not be functioning at
 proves less than it appears. Distinguishing that needs visibility this session does not have —
 recorded so a later reader does not treat "the allowlist works" as established fact.)*
 
+**Rev 3b — the positive control, run on the owner's instruction.** The full calibration prompt
+(§12 shape) was executed from this session against all four keyless `fredgraph.csv` URLs
+(`NFCI`, `ICSA`, `T5YIFR`, `DGS10,DGS30`) using the server-side fetch path rather than the
+container proxy. **All four returned 403.** The control run immediately after — the same tool,
+same session, against `macrodash.pages.dev` — **succeeded and returned the live page title.**
+
+That control matters because it eliminates the last non-policy explanation: the fetch tool is
+functional, the network path is functional, and the denial is **specific to these hosts**. Every
+diagnosable cause is now excluded from inside the session — not transport (two transports),
+not credentials (the keyless endpoint), not session timing (entries predate the session), not
+tool fault (this control). What remains is a policy layer this session cannot inspect, which is
+the definition of the README's report-it condition. **No further probing is warranted; the next
+action is support, not another attempt.**
+
 **Two gaps in the list, one of which matters:**
 
 1. **`fred.stlouisfed.org` is absent, and it is the host calibration actually wants.**
