@@ -3964,6 +3964,39 @@ console.log("\n[46] ttScore pillars — P1..P4 contracts run behaviorally");
       revenue: rev({ 2026: 1, 2028: 4 }), ebitda: rev({ 2026: -0.3, 2028: 0.5 }), duration_years: dur(["2026", "2027"]) }).blockers[0]));
   const p2thin = TS.scoreP2({ mode: "PROFITABLE", revenue: rev({ 2026: 100, 2028: 150 }), earnings_or_fcf: rev({ 2026: 5, 2028: 8 }),
     duration_years: [...dur(["2026", "2027"]), ...dur(["2028"], 2)] });
+  // ─── §6.2.4 (v2.5.0) YEARS_TO_CROSSOVER — the pre-profit second series when NO profit
+  // line exists (every candidate CAGR is NM between negatives; the old rule demanded a
+  // profit trend from a name declared pre-profit). Distance to the consensus EPS crossover.
+  const epsJoby = rev({ 2027: -0.82, 2028: -0.72, 2029: -0.53, 2030: -0.19, 2031: 0.30 });
+  const p2x = TS.scoreP2({ mode: "PREPROFIT", preprofit_second_series: "YEARS_TO_CROSSOVER",
+    revenue: rev({ 2026: 100, 2028: 150 }), eps: epsJoby,
+    duration_years: dur(["2026", "2027", "2028", "2029"]) }, { etToday: "2026-08-05" });
+  ok("P2 crossover: scores off the consensus EPS crossover distance (2031 from 2026 = 5y -> 2.5; 0.5*8+0.3*2.5+0.2*10=6.75)",
+    p2x.score === 6.75 && p2x.components.years_to_crossover === 5 && p2x.components.crossover_fy === "2031" &&
+    p2x.components.second_series_score === 2.5);
+  ok("P2 crossover: the step table — sooner is better, ceiling 9 never 10, floor 1 (asserted, the NFCI-deadband class)",
+    TS.CROSSOVER_SCORE(0) === 9 && TS.CROSSOVER_SCORE(1) === 9 && TS.CROSSOVER_SCORE(2) === 7.5 &&
+    TS.CROSSOVER_SCORE(3) === 6 && TS.CROSSOVER_SCORE(4) === 4 && TS.CROSSOVER_SCORE(5) === 2.5 &&
+    TS.CROSSOVER_SCORE(6) === 1 && TS.CROSSOVER_SCORE(9) === 1);
+  ok("P2 crossover: a series that never crosses is a NAMED blocker — 'no modeled path to profit' is different from a low score",
+    /never crosses positive/.test(TS.scoreP2({ mode: "PREPROFIT", preprofit_second_series: "YEARS_TO_CROSSOVER",
+      revenue: rev({ 2026: 100, 2028: 150 }), eps: rev({ 2027: -1, 2028: -0.9 }),
+      duration_years: dur(["2026", "2027"]) }, { etToday: "2026-08-05" }).blockers[0]));
+  ok("P2 crossover: fewer than two eps rows blocks (one point cannot locate a path)",
+    /fewer than two/.test(TS.scoreP2({ mode: "PREPROFIT", preprofit_second_series: "YEARS_TO_CROSSOVER",
+      revenue: rev({ 2026: 100, 2028: 150 }), eps: rev({ 2031: 0.3 }),
+      duration_years: dur(["2026", "2027"]) }, { etToday: "2026-08-05" }).blockers[0]));
+  ok("P2 crossover: thin consensus coverage at the crossover year WARNS (never blocks — the book's 3-analyst dimming rule)",
+    (() => { const thin = rev({ 2027: -0.8, 2033: 1.09 }, "CONSENSUS", 2);
+      const r = TS.scoreP2({ mode: "PREPROFIT", preprofit_second_series: "YEARS_TO_CROSSOVER",
+        revenue: rev({ 2026: 100, 2028: 150 }), eps: thin,
+        duration_years: dur(["2026", "2027"]) }, { etToday: "2026-08-05" });
+      return typeof r.score === "number" && r.warnings.some((w) => /thin coverage at the crossover year/.test(w)); })());
+  ok("P2 crossover: a past/current crossover year warns to re-check the PREPROFIT declaration",
+    TS.scoreP2({ mode: "PREPROFIT", preprofit_second_series: "YEARS_TO_CROSSOVER",
+      revenue: rev({ 2026: 100, 2028: 150 }), eps: rev({ 2025: -0.5, 2026: 0.2 }),
+      duration_years: dur(["2026", "2027"]) }, { etToday: "2026-08-05" })
+      .warnings.some((w) => /not in the future/.test(w)));
   ok("P2 duration: a 2-analyst consensus year STOPS the supported run (3 is the boundary; PRIMARY needs none)",
     p2thin.components.supported_years === 2 &&
     TS.scoreP2({ mode: "PROFITABLE", revenue: rev({ 2026: 100, 2028: 150 }), earnings_or_fcf: rev({ 2026: 5, 2028: 8 }),
@@ -4164,7 +4197,7 @@ console.log("\n[48] /api/score — server-authoritative scoring endpoint");
     pt_model: { pe_floor_multiple: 18 },
     ref_px: { px: 30, at: new Date(Date.now() - 86400000).toISOString().slice(0, 10) } };
   const env = () => ({ TT_PIN: PIN, PULSE_CACHE: mkKV2({ "tt:book:v1": seedBook, "tt:dd:v1:BBB": bbbDd }) });
-  const UI = { methodology_version: "tt-underwriting-v2.4.0", route_gates: {}, falsifiers: [] };
+  const UI = { methodology_version: "tt-underwriting-v2.5.0", route_gates: {}, falsifiers: [] };
 
   ok("score: anonymous GET fails closed (401)", await (async () => {
     const r = await score.onRequestGet({ request: mkReq("GET", { params: "?sym=AAA" }), env: env() });
@@ -4343,7 +4376,7 @@ console.log("\n[48] /api/score — server-authoritative scoring endpoint");
       cadence_days: 90, defined_at: "2026-08-04T23:30:00Z", as_of: "2026-08-05",
       source: { kind: "PRIMARY", ref: "https://example.com/" + "y".repeat(180) },
       qualifying_observation: { id: "obs" + i2, observed_at: "2026-08-05T02:00:00Z" } });
-    const maxUI = { methodology_version: "tt-underwriting-v2.4.0",
+    const maxUI = { methodology_version: "tt-underwriting-v2.5.0",
       trajectory: { mode: "PREPROFIT", preprofit_second_series: "EBITDA_CAGR", ebitda_basis: "ADJUSTED",
         ebitda_reconciliation: REC2(1), revenue: [REC2(1), REC2(2)].map((r2, i2) => ({ ...r2, fy: String(2027 + i2) })),
         ebitda: [REC2(0.1), REC2(0.5)].map((r2, i2) => ({ ...r2, fy: String(2027 + i2) })),
@@ -5101,7 +5134,7 @@ console.log("\n[52] DDSTORE server consumers — post-migration book shape");
     const env = envPost();
     const r = await scoreM.onRequestPut({
       request: rq("PUT", "/api/score", { params: "?sym=AAA", headers: A,
-        body: { underwriting_inputs: { methodology_version: "tt-underwriting-v2.4.0", route_gates: {}, falsifiers: [] } } }),
+        body: { underwriting_inputs: { methodology_version: "tt-underwriting-v2.5.0", route_gates: {}, falsifiers: [] } } }),
       env });
     if (r.status !== 200) return false;
     const rec = JSON.parse(env.PULSE_CACHE._store.get("tt:score:v1:AAA"));
@@ -5239,12 +5272,12 @@ console.log("\n[53] PRE-COMMITMENT VERIFICATION — the server decides what was 
         price: DD.ref_px, underwriting_inputs: { methodology_version: "tt-underwriting-v2.3.0", route_gates: {}, falsifiers: [] } });
       return c.status === "UNSCORABLE" && c.declared_methodology_version === "tt-underwriting-v2.3.0" &&
         c.blockers.some((b) => /METHODOLOGY_VERSION_MISMATCH/.test(b)) &&
-        c.methodology_version === "tt-underwriting-v2.4.0";
+        c.methodology_version === "tt-underwriting-v2.5.0";
     })());
   ok("precommit: a matching or ABSENT declared version still computes (absent = the offline call)",
     await (async () => {
       const a = await buildScorecard({ sym: "AAA", lens: "AI", nowMs: Date.now(), dd: DD, price: DD.ref_px,
-        underwriting_inputs: { methodology_version: "tt-underwriting-v2.4.0", route_gates: {}, falsifiers: [] } });
+        underwriting_inputs: { methodology_version: "tt-underwriting-v2.5.0", route_gates: {}, falsifiers: [] } });
       const b = await buildScorecard({ sym: "AAA", lens: "AI", nowMs: Date.now(), dd: DD, price: DD.ref_px,
         underwriting_inputs: { route_gates: {}, falsifiers: [] } });
       return !a.blockers.some((x) => /METHODOLOGY_VERSION_MISMATCH/.test(x)) &&

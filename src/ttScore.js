@@ -30,7 +30,7 @@
 import { ptModelRows, lintPtModel, pickRow } from "./ptModel.js";
 import { routeFor, gatesFor, premiumPrerequisiteFor, ROUTE_MAP_VERSION } from "./ttScoreRegistry.js";
 
-export const METHODOLOGY_VERSION = "tt-underwriting-v2.4.0";
+export const METHODOLOGY_VERSION = "tt-underwriting-v2.5.0";
 export const GATE_NORMALIZATION_VERSION = "tt-gate-normalization-v1";
 
 /* ═══════════ §5.1 piecewise — the ONE numerical map ═══════════ */
@@ -61,6 +61,12 @@ export const ANCHORS = {
   RUNWAY_MO:   [[0, 0], [6, 1], [12, 3], [18, 5], [24, 7], [36, 9], [48, 10]],
 };
 export const DURATION_SCORE = (years) => (years >= 4 ? 10.0 : years === 3 ? 7.5 : years === 2 ? 5.0 : null);
+/* §6.2.4 (v2.5.0) — the YEARS_TO_CROSSOVER step table: distance from the scoring ET year to
+   the first consensus-positive EPS year. ASSERTED, not calibrated (the NFCI-deadband class);
+   sooner is better, and the ceiling is deliberately 9 not 10 — a name still pre-profit never
+   maxes the growth-quality leg. Measured against the live book: RKLB 1y→9 · TEM 2y→7.5 ·
+   ACHR/NBIS 3y→6 · BETA 4y→4 · JOBY 5y→2.5. */
+export const CROSSOVER_SCORE = (y) => (y <= 1 ? 9 : y === 2 ? 7.5 : y === 3 ? 6 : y === 4 ? 4 : y === 5 ? 2.5 : 1);
 
 /* ═══════════ §5.3 dates, age, freshness ═══════════ */
 export function etDateOf(nowMs) {
@@ -217,16 +223,39 @@ export function scoreP2(traj, { etToday } = {}) {
   if (mode !== "PROFITABLE" && mode !== "PREPROFIT") { res.blockers.push("trajectory_mode required (PROFITABLE|PREPROFIT)"); return res; }
   const rev = seriesCagr(traj.revenue);
   if (rev.err) { res.blockers.push("revenue series: " + rev.err); return res; }
-  let secondName, secondAnchors, second;
+  let secondName, secondAnchors, second, crossComp = null;
   if (mode === "PROFITABLE") {
     secondName = "earnings_or_fcf"; secondAnchors = ANCHORS.EARN_CAGR; second = seriesCagr(traj.earnings_or_fcf);
   } else {
     const decl = traj.preprofit_second_series;
-    if (decl !== "GROSS_PROFIT_CAGR" && decl !== "EBITDA_CAGR") { res.blockers.push("preprofit_second_series must be declared (GROSS_PROFIT_CAGR|EBITDA_CAGR) before scoring"); return res; }
+    if (decl !== "GROSS_PROFIT_CAGR" && decl !== "EBITDA_CAGR" && decl !== "YEARS_TO_CROSSOVER") { res.blockers.push("preprofit_second_series must be declared (GROSS_PROFIT_CAGR|EBITDA_CAGR|YEARS_TO_CROSSOVER) before scoring"); return res; }
     if (decl === "EBITDA_CAGR") {
       if (traj.ebitda_basis !== "GAAP" && traj.ebitda_basis !== "ADJUSTED") { res.blockers.push("EBITDA_CAGR requires a declared GAAP|ADJUSTED basis"); return res; }
       if (traj.ebitda_basis === "ADJUSTED" && !traj.ebitda_reconciliation) { res.blockers.push("ADJUSTED EBITDA requires a reconciliation source"); return res; }
       secondName = "ebitda"; secondAnchors = ANCHORS.EARN_CAGR; second = seriesCagr(traj.ebitda);
+    } else if (decl === "YEARS_TO_CROSSOVER") {
+      /* §6.2.4 (v2.5.0). For pre-profit names NO profit-adjacent consensus line exists at all
+         — every candidate series (EBITDA, EBIT, net income, EPS, FCF) prints NM because a
+         growth rate between two negative numbers is undefined, so demanding a profit CAGR
+         made PREPROFIT self-contradictory ("declare a pre-profit path, now show me a profit
+         trend"). Distance to the consensus EPS crossover is forward-looking, consensus-
+         sourced (the crossover year is whatever the street models, never owner-picked), and
+         DISCRIMINATING — 1 year from profit and 5 years from profit are different facts the
+         old rule collapsed into the same blocker. Known, priced-in overlap: P3's
+         path_to_profit enum reads the same fact qualitatively (~3.75% of composite); this leg
+         is ~7.5% — documented, not hidden. */
+      const eps = Array.isArray(traj.eps) ? traj.eps : [];
+      if (eps.length < 2) { res.blockers.push("eps series: fewer than two dated future observations"); return res; }
+      const sorted = [...eps].sort((a, b) => String(a.fy).localeCompare(String(b.fy)));
+      const cross = sorted.find((p) => typeof p.value === "number" && isFinite(p.value) && p.value > 0);
+      if (!cross) { res.blockers.push("consensus EPS never crosses positive within the provided series — extend the series, or the name has no modeled path to profit"); return res; }
+      const curYr = etToday ? +etToday.slice(0, 4) : +sorted[0].fy;
+      const yrsOut = Math.max(0, +cross.fy - curYr);
+      if (+cross.fy <= curYr) res.warnings.push("crossover year " + cross.fy + " is not in the future — confirm PREPROFIT mode is still correct");
+      if (cross.source && cross.source.kind === "CONSENSUS" && !(typeof cross.analyst_count === "number" && cross.analyst_count >= 3))
+        res.warnings.push("thin coverage at the crossover year (" + cross.fy + ": " + (cross.analyst_count ?? "?") + " analysts)");
+      secondName = "years_to_crossover"; second = { crossover: true };
+      crossComp = { years_to_crossover: yrsOut, crossover_fy: cross.fy, second_series_score: CROSSOVER_SCORE(yrsOut) };
     } else {
       secondName = "gross_profit"; secondAnchors = ANCHORS.REV_CAGR; second = seriesCagr(traj.gross_profit);
     }
@@ -237,9 +266,9 @@ export function scoreP2(traj, { etToday } = {}) {
   const durScore = DURATION_SCORE(dur);
   if (durScore === null) { res.blockers.push("duration: fewer than two consecutive supported forward years (" + dur + ")"); return res; }
   const revScore = piecewise(rev.cagr, ANCHORS.REV_CAGR);
-  const secScore = piecewise(second.cagr, secondAnchors);
+  const secScore = crossComp ? crossComp.second_series_score : piecewise(second.cagr, secondAnchors);
   res.components = { revenue_cagr_pct: round2(rev.cagr), revenue_score: round2(revScore),
-    [secondName + "_cagr_pct"]: round2(second.cagr), second_series_score: round2(secScore),
+    ...(crossComp ? crossComp : { [secondName + "_cagr_pct"]: round2(second.cagr), second_series_score: round2(secScore) }),
     supported_years: dur, duration_score: durScore };
   res.score = round2(0.5 * revScore + 0.3 * secScore + 0.2 * durScore);
   return res;

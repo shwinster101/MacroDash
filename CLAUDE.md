@@ -2049,6 +2049,35 @@ Jan-anchor shipped; see `snapshot.js` ~318–328), `spyMa100`, `spyMa200`, and a
   string-pinning it — the project's own recurring lesson (v3.40, v3.54: state computed and
   rendered but not read at the gate) is exactly the shape a string pin cannot catch.
   Tests: **1067 smoke** (+6) + 192 render + 88 public-render.
+- **FEAT-TT-CROSSOVER (v3.79) — YEARS_TO_CROSSOVER: the pre-profit second series that can
+  actually exist (methodology → `tt-underwriting-v2.5.0`).** Running JOBY through v2.5's P2
+  hit a wall the whole pre-profit class shares: PREPROFIT demanded a GROSS_PROFIT or EBITDA
+  CAGR, and **no such consensus line exists** — SA prints NM on EBITDA/EBIT/net income/EPS/FCF
+  growth for these names because a growth rate between two negative numbers is undefined
+  (owner screenshot, confirmed via SA's own assistant: only rev+EPS estimates, revision
+  counts, and HISTORICAL gross profit are published). So the rule read "declare a pre-profit
+  path, now show me a profit trend" — self-contradictory, and it collapsed decision-grade
+  information into one undifferentiated blocker. **Measured against the live book: 6 of 30
+  payloads are pre-profit (ACHR·BETA·JOBY·NBIS·RKLB·TEM — NBIS is the core position), every
+  one carrying only `revenue_B`+`eps`, and their consensus EPS crossovers span 2027→2031** —
+  RKLB is 1 year from modeled profit, JOBY is 5, and the engine returned the identical blocker
+  for both. "5 years from profit" is information; "I cannot see" is absence — the v3.1 lesson
+  one layer down. **The fix:** `preprofit_second_series: "YEARS_TO_CROSSOVER"` — distance from
+  the scoring ET year to the first consensus-positive EPS year, scored on the step table
+  `CROSSOVER_SCORE` (≤1y→9 · 2y→7.5 · 3y→6 · 4y→4 · 5y→2.5 · 6+→1). Anti-gaming by
+  construction: the crossover year is whatever the street models, never owner-picked, and the
+  eps series rides the same consensus rows the payload already stores. **Honest limits,
+  stated:** the step table is ASSERTED, not calibrated (the NFCI-deadband class, every
+  boundary smoke-tested so changing it is one edit plus one red test); the ceiling is 9 never
+  10 (a still-pre-profit name never maxes the growth-quality leg); and the deliberate overlap
+  with P3's `path_to_profit` enum (~7.5% of composite here vs ~3.75% there) is documented at
+  the code site, priced-in not hidden. Fail-closed edges: a series that never crosses is a
+  NAMED blocker ("no modeled path to profit" ≠ a low score), <2 rows blocks, thin coverage at
+  the crossover year warns (the 3-analyst dimming rule), a past crossover warns to re-check
+  the PREPROFIT declaration. The other two second-series paths are byte-identical.
+  Tests: **1310 smoke** (+6: the JOBY-shaped 6.75 composite run behaviorally, every step
+  boundary, both blockers, both warnings) + 216 render + 111 public-render + `audit:prod`
+  clean. Stored v2.4.0 records read LEGACY_UNVERIFIED until re-scored (§4.3, designed).
 - **FEAT-TT-PROVISIONAL (v3.78) — the falsifier-bootstrap feedback, integrated at the
   high-leverage set only (owner call).** *Relabelled from v3.77 at merge (2026-08-06): the
   pre-commitment fix below shipped in parallel on `main` and independently claimed v3.77,
