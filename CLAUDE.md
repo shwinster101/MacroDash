@@ -2049,8 +2049,26 @@ Jan-anchor shipped; see `snapshot.js` ~318–328), `spyMa100`, `spyMa200`, and a
   string-pinning it — the project's own recurring lesson (v3.40, v3.54: state computed and
   rendered but not read at the gate) is exactly the shape a string pin cannot catch.
   Tests: **1067 smoke** (+6) + 192 render + 88 public-render.
-- **FEAT-TT-PROVISIONAL (v3.77) — the falsifier-bootstrap feedback, integrated at the
-  high-leverage set only (owner call).** Two owner-commissioned analyses of the UNSCORABLE
+- **FEAT-TT-PROVISIONAL (v3.78) — the falsifier-bootstrap feedback, integrated at the
+  high-leverage set only (owner call).** *Relabelled from v3.77 at merge (2026-08-06): the
+  pre-commitment fix below shipped in parallel on `main` and independently claimed v3.77,
+  landing first and owning the number — the same collision ENGINE0-CONT and FEAT-TT-SCORE
+  each documented once; this entry takes the next true sequence number, content otherwise
+  as committed. The two v3.77s COMPOSE, which is why the merge is a union not a pick:
+  the pre-commitment fingerprint makes a first-write P4 = 10 impossible (the JOBY dry run's
+  own number, correctly distrusted), and PROVISIONAL makes the honest first-write state —
+  PRECOMMITTED_PENDING, now reached by construction — still produce a capped, never-eligible
+  output. One fix removes the false score; the other keeps the owner's "always an output"
+  rule through the wait. The methodology version lands at v2.4.0 (this entry's bump), which
+  v3.77's declared-version gate now enforces engine-side as well. The reconciliation took
+  main's `readDeepDive()` over this branch's inline dd-store read (one server-side resolution
+  point beats two), flipped v3.77's version-gate test literals to the merged v2.4.0 engine,
+  and added ONE test neither parent could hold — the composed lifecycle driven through the
+  real endpoint: a backdated first write lands PROVISIONAL + PRECOMMITTED_PENDING, the second
+  write with the same conditions on file reaches SCORED, and the ledger carries the status
+  transition. Merged head: **1304 smoke** + 216 render + 111 public-render + `audit:prod`
+  clean.*
+  Two owner-commissioned analyses of the UNSCORABLE
   symptom landed the same root cause: P4 (falsifier health) demands ≥3 pre-committed
   falsifiers with post-definition observations — owner-authored thesis content no data feed
   can supply — and one null pillar nulls the whole card, so every freshly-added name reads
@@ -2090,6 +2108,58 @@ Jan-anchor shipped; see `snapshot.js` ~318–328), `spyMa100`, `spyMa200`, and a
   through the endpoint against a migrated fixture, the endpoint-level provisional with index
   + ledger asserts, the amber-never-green client pin) + **216 render** + **111
   public-render** + `audit:prod` clean — all four gates run, browser suites in real Chromium.
+- **v3.77 — the two defects the owner's JOBY payload exposed, and a regression v3.75 caused.**
+  Running the 2026-08-05 JOBY `underwriting_inputs` through the engine returned **P4 = 10/10**
+  off five falsifiers all graded GREEN against a print observed the same day. That number was
+  not trustworthy, and finding out why turned up three separate faults.
+  **(1) Pre-commitment was self-attested.** §6.4.1's entire content is that a falsifier set
+  must be on file BEFORE the observation it is graded against — it is the control that stops
+  the book becoming the *"sophisticated rationalization engine"* FEAT-TT-CAPABILITY warned
+  about. The engine tested it by comparing `h.defined_at` against
+  `h.qualifying_observation.observed_at` — **two client-supplied fields arriving in the same
+  request**. A set authored today and stamped yesterday scored the maximum; the
+  `defined_at_post_hoc` flag is not a control either, since the client that would misdate is
+  the client that would omit the flag. The server holds the prior record, so it can answer the
+  question properly, and now does: **`commitFingerprint()`** covers conditions, importance and
+  the kill flag, `score.js` builds the map from the STORED record, and a hinge scores only if
+  those exact conditions were already on file. It is a **fingerprint, not just a date** — so
+  *editing* a red condition re-opens the commitment and says so, because moving the goalposts
+  after the fact is the same defect as backdating them. The first write is now
+  `PRECOMMITTED_PENDING` **by construction rather than by good manners**, which is what §6.4.1
+  always described. A call with no server context (the pure/offline path) keeps the old
+  comparison, so the exported engine is never made stricter than its caller can satisfy.
+  **(2) The declared methodology version was erased by the field that should reveal it.** The
+  card stamps `METHODOLOGY_VERSION` — the version that did the computing — over whatever the
+  inputs declared, so this v2.4.0 payload scored under a v2.3.0 engine and the record then read
+  v2.3.0. `functions/api/score.js` does 409 on the mismatch, but the engine is exported and
+  reusable and must not depend on one caller to fail closed: it now records
+  `declared_methodology_version` and blocks on a declared-and-different version. An ABSENT
+  version still computes (that is the offline call, not a mismatch).
+  **(3) FEAT-TT-DDSTORE broke two server consumers — my regression, shipped the day before.**
+  v3.75's own entry claimed the storage move was *"invisible to every renderer"*. True for the
+  client, where `ddOf()` is the choke point; **the server was never swept.** `score.js` read
+  `entry.deepDive` off the book, so after the migration **P1 lost every valuation input**
+  (pt_model, consensus, ref_px) and reported "no floor" for the wrong reason entirely. Worse,
+  `diffForLedger` diffed `prev.deepDive` against `next.deepDive` inside the **book** PUT — and
+  payload writes no longer pass through `/api/tt` at all, so the belief ledger's
+  `thesis`/`hinge`/`pt`/`comp`/`est` kinds **went silent**: the terminal's memory, which is the
+  one thing it has that a quote screen does not. **`readDeepDive()`** is now the server-side
+  counterpart to `ddOf()` (store first, then a still-embedded payload for a pre-migration
+  book), and **`diffDeepDive()`** is extracted so the two write paths that can change a payload
+  share ONE implementation — the book path (pre-migration books can still carry one) and the
+  payload store, which appends fire-and-forget after its write succeeds, exactly as `tt.js`
+  does. `ledger.js`'s snapshot walk is the documented exception: it reads historical book
+  snapshots, so it degrades honestly to `null` rather than fabricating a price.
+  **Why the existing tests missed all three:** section [48]'s score fixtures embed `deepDive`
+  in the book, so they passed identically before and after the migration. The new coverage runs
+  against the **post-migration book shape**, which is the only shape that can catch it.
+  Tests: **1294 smoke** (+19: [52] the server consumers — store-first resolution, the P1
+  regression, ledger entries on a payload PUT, ledger-fault isolation, and a comment-stripped
+  sweep proving no server file reads `entry.deepDive` in code; [53] pre-commitment — backdating
+  refused, the bootstrap completing once conditions are on file, edits re-opening it, the kill
+  flag inside the fingerprint, and the version gate both ways) + 216 render + 111 public-render.
+  Negative-controlled: reverting the `score.js` read turns two red, disabling the ledger append
+  turns one red.
 - **FEAT-TT-ALLREVIEWED (v3.76) — every TT review reaches the next dollar, asterisked.**
   Owner's rule, stated twice now and only half-honoured the first time: *"the TT should ALWAYS
   give a score or output for next dollar hierarchy at the least"*, then *"every TT review must

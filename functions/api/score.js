@@ -21,7 +21,8 @@
 // the positions.js/ledger.js precedent). Belief history is as private as the book.
 
 import { authorize } from "./tt.js";
-import { buildScorecard, inputHash, METHODOLOGY_VERSION } from "../../src/ttScore.js";
+import { buildScorecard, inputHash, METHODOLOGY_VERSION, commitFingerprint } from "../../src/ttScore.js";
+import { readDeepDive } from "./deepdive.js";
 import { routeFor, ROUTE_MAP_VERSION } from "../../src/ttScoreRegistry.js";
 
 const SCORE_PREFIX = "tt:score:v1:";
@@ -29,7 +30,6 @@ const SNAP_PREFIX = "tt:score:snap:v1:";
 const INDEX_KEY = "tt:score:index:v1";
 const DECISION_PREFIX = "tt:decision:v1:";
 const BOOK_KEY = "tt:book:v1";
-const DD_PREFIX = "tt:dd:v1:";        // FEAT-TT-DDSTORE (v3.75): the thesis payload's real home
 const LEDGER_PREFIX = "tt:ledger:";
 const LEDGER_INDEX = "tt:ledger:index";
 const LEDGER_CAP = 500;
@@ -176,13 +176,23 @@ export async function onRequestPut({ request, env }) {
   if (routeFor(lens).route === "UNMAPPED")
     return json({ error: "UNMAPPED lens \"" + (lens || "") + "\" — fix the stored lens via the normal book workflow" }, 422);
 
-  // The thesis payload lives in its OWN KV document since FEAT-TT-DDSTORE (v3.75) — a
-  // migrated book entry carries no deepDive at all, so reading only entry.deepDive scored
-  // P1 blind on every migrated name ("no computable model row" with a complete model one
-  // key away). Store first, embedded payload as the pre-migration fallback — the ddOf()
-  // resolution order, server-side.
-  const ddStored = await kvGet(env, DD_PREFIX + sym);   // the payload rides the key directly
-  const dd = ddStored || entry.deepDive || {};
+  /* v3.75 follow-up: the thesis payload no longer lives on the book entry (FEAT-TT-DDSTORE),
+     so P1's whole valuation input — pt_model, consensus, ref_px — has to come from the payload
+     store. Read through readDeepDive, the ONE server-side resolution point, which still falls
+     back to an embedded payload for a pre-migration book. Reading entry.deepDive here after the
+     migration silently produced an empty dd and therefore no valuation at all. */
+  const dd = (await readDeepDive(env, sym, book)) || {};
+
+  /* SERVER-VERIFIED PRE-COMMITMENT (v3.77). §6.4.1's whole point is that a falsifier set must
+     be on file BEFORE the observation it is graded against. The engine used to check that by
+     comparing two fields of the SAME request, so a set written today and stamped yesterday
+     scored 10/10 — the failure mode the methodology was built to prevent, reachable by an
+     honest client with a wrong clock as easily as a careless one. The server holds the prior
+     record, so it can answer the question properly: which conditions were already on file?
+     A fingerprint (not just the date) means EDITING a condition re-opens the commitment. */
+  const committed = {};
+  for (const h of (prev && prev.underwriting_inputs && prev.underwriting_inputs.falsifiers) || [])
+    if (h && h.id) committed[h.id] = commitFingerprint(h);
 
   // Server-authoritative compute. Client-supplied scorecard fields are IGNORED entirely;
   // a recovery client's divergent copy surfaces as the 409 above, never a silent accept.
@@ -190,8 +200,8 @@ export async function onRequestPut({ request, env }) {
   try {
     card = await buildScorecard({
       sym, lens, underwriting_inputs: ui, dd,
-      price: ui.price || dd.ref_px || null,
-      horizon: ui.horizon || null, nowMs: Date.now(),
+      price: ui.price || (dd && dd.ref_px) || null,
+      horizon: ui.horizon || null, nowMs: Date.now(), committed,
     });
   } catch (e) {
     // A scorer exception fails the affected ticker CLOSED with a structured error — it must
