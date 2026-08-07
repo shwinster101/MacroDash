@@ -12,9 +12,30 @@
 | **Phase** | H1 — PLAN |
 | **Model** | Claude Opus 5 (the documented alternate; H1's primary is GPT-5.6 Sol) |
 | **Harness** | `HARNESS.md` §P, from `b4c730c` (branch `claude/harness-model-assignment-d6xhlb`) |
-| **Repo state** | `main` @ `194514e` — v3.63.0, ENGINE0-CONT close-out |
+| **Authored against** | `main` @ `194514e` — v3.63.0, ENGINE0-CONT close-out |
+| **Re-verified against** | `main` @ `21e7a14` — **v3.80.0** (see REVISION below) |
 | **Origin** | Owner-directed. Candidate metrics surfaced by browsing macrotrends.net; see §9 |
 | **Status** | **Awaiting approval.** Two decisions open, §10 |
+
+> ### ⚠ REVISION — 2026-08-06, same day
+>
+> This plan was authored against v3.63.0. `main` had already advanced to **v3.80.0** (17 minor
+> releases) — discovered when a separate TT triage session referenced a `/api/deepdive` store and
+> a version this plan's base did not contain. Both of that session's repo-state claims checked
+> out. Re-verified here rather than left to fail on contact:
+>
+> **Substance HOLDS — all four load-bearing claims re-checked against `21e7a14`:**
+> - `REGIME_BAND_TABLE` still carries exactly six factors and **still has no growth/labor
+>   channel** — §0's central argument is intact.
+> - `REGIME_QUORUM` is still `4` — §4's latent quorum defect is still live.
+> - `T5YIFR` and `ICSA` are still absent from the codebase — §3's duplication check still holds.
+> - `thirtyYearSeries` is still emitted **zero** times — finding F1 (§9) is still live.
+>
+> **§2 was WRONG and is corrected below.** `src/dashboard.jsx` was decomposed into
+> `src/sections/*` (−1360 lines) somewhere in v3.64–v3.80, so three of the plan's touchpoints
+> moved. Left uncorrected, H2 would have halted on its own scope rule at the first file not in
+> the list — the plan would have failed on contact rather than on merit. §2 now reflects the
+> real tree; nothing else in the plan changed.
 
 **Rotation note (§0 Rule 3).** This plan was authored in the **same session** that ran H2 for
 ENGINE0-CONT. That is weaker than the session isolation the prior H1 pass carried. It is
@@ -103,14 +124,25 @@ surface*, and what prevents each:
 
 ## §2. BLAST RADIUS
 
-**Files touched**
+**Files touched** *(corrected 2026-08-06 for the `src/sections/*` decomposition — see REVISION)*
 
 1. `functions/api/snapshot.js` — 2 entries in the `series` map; `ICSA` 4-week average derivation;
    2 `BANDS` entries
 2. `src/sources.js` — `SOURCES` keys; `CADENCE` (`ICSA` = weekly); `DERIVED_OF` for any derivative
-3. `src/dashboard.jsx` — `MOCK_DATA` baseline paths; 2 tiles; `FW_FIELDS`; `SIGNAL_FIELDS` (15 → 17)
-4. `src/fiveWhys.js` — WHY #1 divergence clause; WHY #2 claims cross-signal; `FIELD_LABEL`
-5. `test/smoke.mjs`, `test/public-render.mjs`
+3. `src/fiveWhys.js` — WHY #1 divergence clause; WHY #2 claims cross-signal; `FIELD_LABEL`
+   *(the pure engine; unmoved by the decomposition)*
+4. `src/dashboard.jsx` — `MOCK_DATA` baseline paths, and the **orchestrator** role: provenance and
+   the field sets are computed here and handed down to the sections
+5. `src/sections/MarketDetail.jsx` — **the two new tiles** (this is where the NFCI tile lives, the
+   closest analogue)
+6. `src/sections/FiveWhys.jsx` — `FW_FIELDS`
+7. `src/sections/SignalQuality.jsx` **and** `src/sections/DataHealth.jsx` — `SIGNAL_FIELDS`
+   (15 → 17); both read it, so both must move together or the two rollups disagree
+8. `test/smoke.mjs`, `test/public-render.mjs`
+
+**⚠ H2 must re-confirm this list before editing.** It was corrected by inspection at `21e7a14`,
+not by a full second H1 pass. If `main` has moved again, re-run the locator greps in §3 first —
+this ticket has already been bitten once by planning against a stale tree.
 
 **Files deliberately NOT touched** — load-bearing, and the ticket's main defense against creep:
 
