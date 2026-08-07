@@ -9,7 +9,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
 <!-- AUDIT: kept in sync with package.json by test/smoke.mjs. admin.html is a Vite
      public/ passthrough, so it cannot receive __APP_VERSION__ — the guard is the fix. -->
-<title>TT TICKER TERMINAL v3.79.0</title>
+<title>TT TICKER TERMINAL v3.80.0</title>
 <style>
   :root{
     --bg:#05070a; --panel:#0a0f16; --panel2:#0d141d; --line:#16202c;
@@ -398,7 +398,7 @@
         onclick="toggleHeadInfo()">⋯ MENU</button>
     </div>
     <div id="headInfo" style="display:none">
-      <div class="brand">FINANCE&nbsp;BRO.AI // TT&nbsp;TICKER&nbsp;TERMINAL <small>v3.79.0 · single-pass deep-dive orchestrator</small></div>
+      <div class="brand">FINANCE&nbsp;BRO.AI // TT&nbsp;TICKER&nbsp;TERMINAL <small>v3.80.0 · single-pass deep-dive orchestrator</small></div>
       <div class="statusline">
         <span>BOOK: <b id="bookStamp">loading…</b></span>
         <span>AUTH: <b id="sessState">…</b></span>
@@ -2762,6 +2762,80 @@ function ddOptSec(p){
     <div style="color:var(--dim);font-size:10px;margin-top:4px">strike shown only where captured · ⚠ = ≤${OPT_NEAR_D}d to expiry · src: sync = broker, shot/manual = hand-entered (verify side — a short put is not a short call)`+
     (unk?` · <span style="color:var(--red)">no provenance recorded on ${unk} leg${unk===1?"":"s"} — not verifiable as broker data</span>`:"")+`</div></div>`;
 }
+/* ═══════════ FEAT-TT-INTAKE (v3.80) — the data-intake checklist ═══════════════════════
+   WHY: filling a name's payload took FOUR screenshot round-trips (HOOD, 2026-08-07), not
+   because anything failed to store but because each gap was discovered only AFTER the
+   previous one closed. Twice a "Growth Rates (TTM)" capture was sent expecting it to fill P3,
+   which it structurally cannot — P3 wants margin LEVELS, that screen carries growth RATES,
+   and nothing said so up front. Serial discovery, not bad data.
+   This computes the COMPLETE missing set for a name in one pass, straight off the same pillar
+   contracts src/ttScore.js enforces, and names the exact source screen for each gap. It is the
+   readiness() pattern pointed at intake instead of at decisions: readiness answers "can I act
+   on this name", this answers "what do I still have to fetch before the engine can score it".
+   It stores nothing and asserts nothing — every row is derived from what IS present. */
+const INTAKE_SRC={
+  REV_VAL:{screen:"SA · Consensus Revenue Estimates — value column",api:null},
+  REV_N:{screen:"SA · Consensus Revenue Estimates — SCROLL RIGHT to '# of Analysts'",api:null},
+  EPS_VAL:{screen:"SA · Consensus EPS Estimates — value column",api:null},
+  EPS_N:{screen:"SA · Consensus EPS Estimates — SCROLL RIGHT to '# of Analysts'",api:null},
+  PE:{screen:"SA · P/E Ratio page (provenance cross-check — reveals the price consensus was struck at)",api:null},
+  MARGINS:{screen:"SA · Profitability tab — margin LEVELS (operating margin %, FCF margin %, ROE)",api:"get_financials"},
+  RUNWAY:{screen:"cash + guided burn (10-Q or shareholder letter)",api:"get_financials"},
+  PX:{screen:"live quote or a stamped ref_px",api:"get_equity_quotes"},
+  MODEL:{screen:"owner-authored pt_model (multiple schedule + share count)",api:null},
+  FALS:{screen:"owner-authored falsifier set — 3-8 pre-committed hinges (NOT a screenshot)",api:null},
+};
+function intakeChecklist(x){
+  const rows=[],dd=x&&ddOf(x);
+  const add=(pillar,key,why)=>rows.push({pillar,key,screen:INTAKE_SRC[key].screen,api:INTAKE_SRC[key].api,why});
+  const c=(dd&&dd.consensus)||{};
+  const nonEmpty=(o)=>o&&typeof o==="object"&&Object.keys(o).length>0;
+  const counts=c.analyst_counts;
+  // A count map only counts if it is an OBJECT of years — the prose placeholder several
+  // payloads carry ("NOT CAPTURED — ...") must never read as data.
+  const cntOk=(k)=>counts&&typeof counts[k]==="object"&&counts[k]!==null&&Object.keys(counts[k]).length>0;
+  // PROFITABLE vs PREPROFIT from the near consensus EPS, the same rule the payloads use.
+  const epsYears=nonEmpty(c.eps)?Object.keys(c.eps).sort():[];
+  const nearEps=epsYears.length?c.eps[epsYears[0]]:null;
+  const preprofit=typeof nearEps==="number"&&nearEps<=0;
+
+  // ── P1 owner valuation ──
+  if(!nonEmpty(c.revenue_B)&&!nonEmpty(c.eps))add("P1","REV_VAL","no consensus series at all — nothing to price");
+  if(!dd||!dd.pt_model||!ptModelRows(dd).length)add("P1","MODEL","no computable model row");
+  const live=LIVE_PX[x&&x.sym],stamp=dd&&dd.ref_px&&isFinite(dd.ref_px.px)&&dd.ref_px.px>0;
+  if(!live&&!stamp)add("P1","PX","no usable price");
+  if(nonEmpty(c.eps)&&!c.pe_table_2026_08_07&&!c.pe_table)add("P1","PE","no provenance cross-check on the stored consensus");
+
+  // ── P2 trajectory ── (the four-round-trip case: values and counts are DIFFERENT captures)
+  if(!nonEmpty(c.revenue_B))add("P2","REV_VAL","revenue series missing");
+  if(!nonEmpty(c.eps))add("P2","EPS_VAL","EPS series missing");
+  if(nonEmpty(c.revenue_B)&&!cntOk("revenue"))add("P2","REV_N","supportedDuration needs >=3 analysts on revenue per year; without it duration=0 and P2 cannot score");
+  if(nonEmpty(c.eps)&&!cntOk("eps"))add("P2","EPS_N","supportedDuration needs >=3 analysts on EPS per year; BOTH series must clear it on the SAME year");
+
+  // ── P3 economic quality ──
+  const q=(dd&&dd.economic_quality)||null;
+  if(preprofit){ if(!q||!q.runway_months)add("P3","RUNWAY","PREPROFIT quality needs runway_months"); }
+  else if(!q||!q.operating_margin_pct||!q.fcf_margin_pct||!q.capital_efficiency)
+    add("P3","MARGINS","PROFITABLE_STANDARD needs margin LEVELS — a 'Growth Rates (TTM)' capture gives RATES and cannot fill this");
+
+  // ── P4 falsifier health ──
+  const f=(dd&&dd.falsifiers_v2_draft&&dd.falsifiers_v2_draft.hinges)||null;
+  if(!f||f.length<3)add("P4","FALS","P4 needs 3-8 pre-committed hinges; they must be on file BEFORE the next qualifying observation or that print cannot be scored against them");
+  return rows;
+}
+function renderIntake(x){
+  const rows=intakeChecklist(x);
+  if(!rows.length)return `<div class="dd-sec"><div class="lbl" style="color:var(--green)">✔ INTAKE COMPLETE — every pillar input is on file</div></div>`;
+  const byApi=rows.filter(r=>r.api),byShot=rows.filter(r=>!r.api);
+  const row=(r)=>`<div class="none" style="margin-top:3px"><span class="scope" style="color:var(--amber)">${esc(r.pillar)}</span> `+
+    `<b>${esc(r.screen)}</b>${r.api?` <span class="scope" style="color:var(--green)">· API: ${esc(r.api)}</span>`:""}`+
+    `<br><span class="scope">${esc(r.why)}</span></div>`;
+  return `<div class="dd-sec"><div class="lbl">DATA INTAKE — ${rows.length} input${rows.length===1?"":"s"} still needed`+
+    `${byApi.length?` · ${byApi.length} available via API`:""}</div>`+
+    (byShot.length?`<div class="none" style="color:var(--dim);letter-spacing:.5px;margin-top:4px">CAPTURE (${byShot.length})</div>`+byShot.map(row).join(""):"")+
+    (byApi.length?`<div class="none" style="color:var(--dim);letter-spacing:.5px;margin-top:6px">FETCHABLE — no screenshot needed (${byApi.length})</div>`+byApi.map(row).join(""):"")+
+    `<div class="none" style="margin-top:6px;color:var(--dim)">Computed from what is stored — every line is a gap the engine itself reports, not a wish list.</div></div>`;
+}
 function renderDeepDive(sym){
   const x=find(sym);const dv=document.getElementById("deepView");
   // v3.75 DDSTORE: the tab needs the FULL payload, not the board index. Kick the fetch on
@@ -2793,6 +2867,7 @@ function renderDeepDive(sym){
   // v3.73 TT-SCORE: the server scorecard, SHADOW mode — §15 puts TT UNDERWRITING directly
   // under DECISION READINESS. Renders only what /api/score returned; legacy governs.
   h+=ddScoreBar(x);
+  h+=renderIntake(x);   // FEAT-TT-INTAKE: what still has to be fetched, beside what it blocks
   h+=ddAnswerBlock(x,dd,todayET);
   h+=ddOptSec(posOf(x));   // FEAT-TT-OWNDEBT: the legs expressing this thesis, beside it
   // FEAT-TT-ESTRUN (v3.35): the estimate run + dual PTs, ABOVE the fold — the analyst

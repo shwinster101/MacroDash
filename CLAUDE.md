@@ -2049,6 +2049,46 @@ Jan-anchor shipped; see `snapshot.js` ~318–328), `spyMa100`, `spyMa200`, and a
   string-pinning it — the project's own recurring lesson (v3.40, v3.54: state computed and
   rendered but not read at the gate) is exactly the shape a string pin cannot catch.
   Tests: **1067 smoke** (+6) + 192 render + 88 public-render.
+- **FEAT-TT-INTAKE (v3.80) — the data-intake checklist, and an evening time-bomb in the suite.**
+  Filling HOOD's payload took **four screenshot round-trips** on 2026-08-07, and not one of them
+  was a storage failure: each gap surfaced only AFTER the previous one closed. Round 1 revenue
+  + EPS + TTM growth → asked for analyst counts; round 2 P/E table → still none; round 3 EPS
+  counts → but not revenue counts; round 4 revenue counts → P2 finally scored 7.73. Twice a
+  *"Growth Rates (TTM)"* capture was sent reasonably expecting it to fill P3, which it
+  **structurally cannot** — P3 wants margin LEVELS, that screen carries growth RATES — and
+  nothing said so up front. Serial discovery, not bad data.
+  **`intakeChecklist(x)`** computes the COMPLETE missing set in one pass, derived from the same
+  pillar contracts `src/ttScore.js` enforces, and names the exact source screen per gap. It is
+  the `readiness()` pattern pointed at intake rather than at decisions: readiness answers *"can
+  I act on this name"*, this answers *"what must still be fetched before the engine can score
+  it"*. It stores nothing and asserts nothing — **every row is derived from what IS present**,
+  and a fully-fed payload renders a DONE state rather than an empty box.
+  Three properties that carry the weight. **(1)** Values and analyst counts are DIFFERENT
+  captures on the same SA screen, so both count rows are emitted TOGETHER — the four-trip
+  defect, closed. **(2)** The count rows name the **SCROLL** (`SCROLL RIGHT to '# of Analysts'`),
+  because that column was cropped three times for being off-screen right on mobile. **(3)** A
+  prose placeholder — several live payloads carry `analyst_counts: "NOT CAPTURED — cropped"` —
+  **never reads as data**; only an object of years satisfies the requirement. Mode routing is
+  real too: a PREPROFIT name (negative near EPS) is asked for RUNWAY and never for an operating
+  margin that does not exist. Rows fetchable by API (`get_financials`, `get_equity_quotes`)
+  are tagged and kept OFF the capture list, and the P4 gap is explicitly labelled **NOT a
+  screenshot** — it is owner-authored thesis work, and sending someone hunting a screen that
+  does not exist is its own defect.
+  **Found while running the gate: one assert was red on `main`, and it fails only in the
+  evening.** The v3.78 merge's composed-lifecycle test stamps its qualifying observation with
+  `new Date().toISOString().slice(0,10)` — a **UTC** date — while `scoreP4` validates freshness
+  against the **ET** date. From ~8pm ET the two diverge, the observation reads as FUTURE-dated,
+  and the engine correctly rejects it as `observation INVALID`. The engine was right; the
+  fixture was wrong, and the test passed by daylight and went red every night. This is the
+  identical defect **v3.11** fixed for run stamps (*"the old `toISOString()` UTC stamp rolled
+  evening runs to tomorrow → runState read them as future = NEVER RUN"*) and the **v3.35**
+  fixpack fixed for render fixtures — third recurrence, now in a test written at the v3.78
+  merge. Fixed to the ET idiom and **verified inside the failure window** (23:35 ET / 03:35
+  UTC), which is the only time the proof means anything.
+  Tests: **1325 smoke** (+15 intake: the complete-set contract, both count rows together, the
+  prose-placeholder rejection, half-captured counts, PREPROFIT/PROFITABLE mode routing, API
+  tagging, the not-a-screenshot label, the ≥3-hinge floor, read-only purity, and the scroll
+  hint; +1 fixed) + 216 render + 111 public-render + `audit:prod` clean.
 - **FEAT-TT-CROSSOVER (v3.79) — YEARS_TO_CROSSOVER: the pre-profit second series that can
   actually exist (methodology → `tt-underwriting-v2.5.0`).** Running JOBY through v2.5's P2
   hit a wall the whole pre-profit class shares: PREPROFIT demanded a GROSS_PROFIT or EBITDA

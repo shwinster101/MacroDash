@@ -4301,7 +4301,12 @@ console.log("\n[48] /api/score — server-authoritative scoring endpoint");
     const rev3 = (vals) => Object.entries(vals).map(([fy, value]) => ({ fy, value, source: { kind: "CONSENSUS" }, analyst_count: 5 }));
     const F = (id) => ({ id, green_condition: "g", amber_condition: "a", red_condition: "r",
       importance: 2, kill: false, cadence_days: 90, state: "GREEN",
-      as_of: new Date().toISOString().slice(0, 10), defined_at: "2026-08-04T20:00:00Z",
+      // ET, NOT toISOString(): the engine validates observation freshness against the ET
+      // date, so a UTC stamp future-dates the observation after ~8pm ET and scoreP4 correctly
+      // rejects it as INVALID — turning this assert red every evening. Exactly the defect
+      // v3.11 fixed for run stamps and the v3.35 fixpack fixed for render fixtures.
+      as_of: new Date().toLocaleDateString("en-CA", { timeZone: "America/New_York" }),
+      defined_at: "2026-08-04T20:00:00Z",
       qualifying_observation: { id: "obs", observed_at: "2026-08-05T13:00:00Z" } });
     const base = { ...UI,
       trajectory: { mode: "PROFITABLE", revenue: rev3({ 2026: 100, 2028: 150 }), earnings_or_fcf: rev3({ 2026: 5, 2028: 8 }),
@@ -5289,6 +5294,90 @@ console.log("\n[53] PRE-COMMITMENT VERIFICATION — the server decides what was 
       return /const committed = \{\};/.test(sc) &&
         /prev && prev\.underwriting_inputs && prev\.underwriting_inputs\.falsifiers/.test(sc) &&
         /nowMs: Date\.now\(\), committed,/.test(sc); })());
+}
+
+
+// ---- 54. FEAT-TT-INTAKE (v3.80) — the data-intake checklist -------------------------
+// Filling HOOD took FOUR screenshot round-trips on 2026-08-07, none of them a storage
+// failure: each gap only surfaced after the previous one closed. Twice a "Growth Rates
+// (TTM)" capture was sent expecting it to fill P3, which it structurally cannot. The
+// checklist computes the COMPLETE missing set in one pass off the same pillar contracts
+// ttScore.js enforces. Lifted and RUN — a string pin cannot prove a requirements mapping.
+console.log("\n[54] FEAT-TT-INTAKE — the complete missing set, in one pass");
+{
+  const tbl = adminSrc.slice(adminSrc.indexOf("const INTAKE_SRC="), adminSrc.indexOf("function intakeChecklist("));
+  const IC = new Function("DD", "LIVE_PX",
+    "const ddOf=(x)=>DD[x.sym]||null;" +
+    "const ptModelRows=(dd)=>((dd&&dd.pt_model&&dd.pt_model.__rows)||[]);" +
+    tbl + liftFns(adminSrc, ["intakeChecklist"]) + "\nreturn intakeChecklist;");
+  const run = (dd, px = true) => IC({ T: dd }, px ? { T: { px: 1 } } : {})({ sym: "T" });
+  const keys = (dd, px) => run(dd, px).map((r) => r.key).sort();
+  const FED = {
+    consensus: { revenue_B: { 2026: 5 }, eps: { 2026: 2 },
+      analyst_counts: { revenue: { 2026: 22 }, eps: { 2026: 18 } }, pe_table: {} },
+    pt_model: { __rows: [{ y: "2026", fl: 48 }] }, ref_px: { px: 90 },
+    economic_quality: { operating_margin_pct: { value: 20 }, fcf_margin_pct: { value: 15 },
+      capital_efficiency: { metric: "ROE", value: 22 } },
+    falsifiers_v2_draft: { hinges: [1, 2, 3] },
+  };
+  const drop = (mut) => { const d = JSON.parse(JSON.stringify(FED)); mut(d); return d; };
+
+  ok("intake: a fully-fed payload reports ZERO gaps — the checklist can actually be finished",
+    run(FED).length === 0);
+  // THE FOUR-ROUND-TRIP CASE. Values present, counts absent: BOTH count rows must be named
+  // in the SAME pass. Emitting them one at a time is the exact defect this exists to remove.
+  ok("intake: values-without-counts emits BOTH analyst-count rows AT ONCE — the serial " +
+     "discovery that cost four round trips on HOOD",
+    (() => { const k = keys(drop((d) => { delete d.consensus.analyst_counts; }));
+      return k.includes("REV_N") && k.includes("EPS_N"); })());
+  // The prose placeholder several live payloads carry must never read as data.
+  ok("intake: a prose placeholder ('NOT CAPTURED — cropped') does NOT satisfy the count " +
+     "requirement — only an object of years does",
+    (() => { const k = keys(drop((d) => { d.consensus.analyst_counts = "NOT CAPTURED — cropped"; }));
+      return k.includes("REV_N") && k.includes("EPS_N"); })());
+  ok("intake: a HALF-captured count set still names the missing half, not both and not neither",
+    (() => { const k = keys(drop((d) => { delete d.consensus.analyst_counts.revenue; }));
+      return k.includes("REV_N") && !k.includes("EPS_N"); })());
+  // Mode routing: P3's requirement differs by profitability, and asking a pre-profit name for
+  // an operating margin is asking for something that does not exist.
+  ok("intake: a PREPROFIT name (negative near EPS) is asked for RUNWAY, never margin levels",
+    (() => { const k = keys(drop((d) => { d.consensus.eps = { 2027: -0.82 }; delete d.economic_quality; }));
+      return k.includes("RUNWAY") && !k.includes("MARGINS"); })());
+  ok("intake: a PROFITABLE name is asked for margin LEVELS, never runway",
+    (() => { const k = keys(drop((d) => { delete d.economic_quality; }));
+      return k.includes("MARGINS") && !k.includes("RUNWAY"); })());
+  // The rows that do NOT need a screenshot are tagged, so the capture list stays minimal.
+  ok("intake: fetchable inputs carry their API name, so they never land on the capture list",
+    (() => { const rows = run(drop((d) => { delete d.economic_quality; }));
+      const m = rows.find((r) => r.key === "MARGINS");
+      return m && m.api === "get_financials"; })());
+  ok("intake: a missing price is tagged fetchable too (quotes are already approved)",
+    (() => { const rows = run(drop((d) => { delete d.ref_px; }), false);
+      const px = rows.find((r) => r.key === "PX");
+      return px && px.api === "get_equity_quotes"; })());
+  // P4 is a thesis exercise, not a capture — mislabeling it would send the owner hunting a
+  // screen that does not exist.
+  ok("intake: the falsifier gap is explicitly NOT a screenshot and says so",
+    (() => { const rows = run(drop((d) => { delete d.falsifiers_v2_draft; }));
+      const f = rows.find((r) => r.key === "FALS");
+      return f && f.api === null && /NOT a screenshot/i.test(f.screen); })());
+  ok("intake: fewer than 3 pre-committed hinges still counts as a P4 gap (the >=3 floor)",
+    keys(drop((d) => { d.falsifiers_v2_draft.hinges = [1, 2]; })).includes("FALS"));
+  ok("intake: every row names the pillar it blocks, so a gap is never an orphan chore",
+    run(drop((d) => { delete d.economic_quality; delete d.falsifiers_v2_draft; }))
+      .every((r) => /^P[1-4]$/.test(r.pillar)));
+  // The whole point of the analyst-count rows: say WHERE the column is. It was cropped three
+  // times because it is off-screen right on mobile.
+  ok("intake: the analyst-count rows name the SCROLL, which is why the column was cropped 3x",
+    run(drop((d) => { delete d.consensus.analyst_counts; }))
+      .filter((r) => /_N$/.test(r.key)).every((r) => /SCROLL RIGHT/.test(r.screen)));
+  ok("intake: the checklist is READ-ONLY — it stores nothing and mutates no payload",
+    (() => { const d = drop(() => {}); const before = JSON.stringify(d);
+      run(d); return JSON.stringify(d) === before; })());
+  ok("intake: renders on the deep-dive tab directly under the score bar",
+    /h\+=ddScoreBar\(x\);\s*\n\s*h\+=renderIntake\(x\);/.test(adminSrc));
+  ok("intake: a complete payload renders the DONE state, not an empty box",
+    /INTAKE COMPLETE/.test(adminSrc));
 }
 
 console.log(`\n=== SMOKE TEST: ${pass} passed, ${fail} failed ===`);
