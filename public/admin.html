@@ -2819,7 +2819,13 @@ function intakeChecklist(x){
     const live=LIVE_PX[x&&x.sym],stamp=dd&&dd.ref_px&&isFinite(dd.ref_px.px)&&dd.ref_px.px>0;
     if(!live&&!stamp)add("P1","PX","no usable price");
   }
-  if(nonEmpty(c.eps)&&!c.pe_table_2026_08_07&&!c.pe_table)add("P1","PE","no provenance cross-check on the stored consensus");
+  /* Match the SUBSTANCE, not one spelling. A first cut hardcoded `pe_table_2026_08_07` — a
+     DATE-STAMPED key, so tomorrow's capture would have gone unrecognized and the row would
+     have nagged forever. It also missed MU, whose P/E cross-check was genuinely performed and
+     stored as prose under `provenance_2026_08_06`. Same defect as the JOBY false positive one
+     commit earlier: testing for a storage shape instead of for the thing itself. */
+  const hasProv=Object.keys(c).some((k)=>/^pe_table|^provenance/.test(k));
+  if(nonEmpty(c.eps)&&!hasProv)add("P1","PE","no provenance cross-check on the stored consensus");
 
   // ── P2 trajectory ── (the four-round-trip case: values and counts are DIFFERENT captures)
   if(!scored("trajectory")){

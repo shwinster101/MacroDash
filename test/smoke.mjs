@@ -5401,6 +5401,18 @@ console.log("\n[54] FEAT-TT-INTAKE — the complete missing set, in one pass");
     (() => { const sc = { underwriting_inputs: {}, scorecard: { pillars: { trajectory: { score: 7.75 } } } };
       const k = runS(JOBY_SHAPE, sc).map((r) => r.key);
       return !k.includes("REV_N") && !k.includes("EPS_N") && k.includes("FALS"); })());
+  // The P/E provenance row must match the SUBSTANCE, not one spelling. Hardcoding the
+  // date-stamped key `pe_table_2026_08_07` would nag forever once the date rolled, and it
+  // missed MU, whose cross-check was done and stored as prose under `provenance_2026_08_06`.
+  ok("intake: the provenance row accepts ANY pe_table*/provenance* key — a date-stamped key " +
+     "must not rot into a permanent false nag",
+    (() => {
+      const noProv = drop((d) => { delete d.consensus.pe_table; });
+      if (!keys(noProv).includes("PE")) return false;                       // absent -> asked for
+      const dated = drop((d) => { delete d.consensus.pe_table; d.consensus.pe_table_2027_01_09 = {}; });
+      const prose = drop((d) => { delete d.consensus.pe_table; d.consensus.provenance_2026_08_06 = "cross-checked"; });
+      return !keys(dated).includes("PE") && !keys(prose).includes("PE");    // either shape satisfies it
+    })());
   ok("intake: renders on the deep-dive tab directly under the score bar",
     /h\+=ddScoreBar\(x\);\s*\n\s*h\+=renderIntake\(x\);/.test(adminSrc));
   ok("intake: a complete payload renders the DONE state, not an empty box",
