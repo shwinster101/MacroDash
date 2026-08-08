@@ -5306,11 +5306,12 @@ console.log("\n[53] PRE-COMMITMENT VERIFICATION — the server decides what was 
 console.log("\n[54] FEAT-TT-INTAKE — the complete missing set, in one pass");
 {
   const tbl = adminSrc.slice(adminSrc.indexOf("const INTAKE_SRC="), adminSrc.indexOf("function intakeChecklist("));
-  const IC = new Function("DD", "LIVE_PX",
+  const IC = new Function("DD", "LIVE_PX", "SCORE_CACHE",
     "const ddOf=(x)=>DD[x.sym]||null;" +
     "const ptModelRows=(dd)=>((dd&&dd.pt_model&&dd.pt_model.__rows)||[]);" +
     tbl + liftFns(adminSrc, ["intakeChecklist"]) + "\nreturn intakeChecklist;");
-  const run = (dd, px = true) => IC({ T: dd }, px ? { T: { px: 1 } } : {})({ sym: "T" });
+  const runS = (dd, sc, px = true) => IC({ T: dd }, px ? { T: { px: 1 } } : {}, { T: sc || undefined })({ sym: "T" });
+  const run = (dd, px = true) => runS(dd, null, px);
   const keys = (dd, px) => run(dd, px).map((r) => r.key).sort();
   const FED = {
     consensus: { revenue_B: { 2026: 5 }, eps: { 2026: 2 },
@@ -5374,6 +5375,32 @@ console.log("\n[54] FEAT-TT-INTAKE — the complete missing set, in one pass");
   ok("intake: the checklist is READ-ONLY — it stores nothing and mutates no payload",
     (() => { const d = drop(() => {}); const before = JSON.stringify(d);
       run(d); return JSON.stringify(d) === before; })());
+  /* THE REGRESSION. A first cut read P3/P4 inputs off the deepDive payload, but promoted
+     falsifiers and economic_quality live in the SCORE record's underwriting_inputs — so JOBY,
+     whose P4 is SCORED at 10 with five stored hinges, was told to go capture falsifiers it
+     already had. Two false positives on the most complete name in the book. A checklist that
+     invents chores is worse than no checklist, so the authority is now the scorecard itself. */
+  const SCORED_ALL = { underwriting_inputs: { falsifiers: [1, 2, 3, 4, 5], economic_quality: { runway_months: { value: 34.5 } } },
+    scorecard: { pillars: { owner_valuation: { score: 2.02 }, trajectory: { score: 7.75 },
+      economic_quality: { score: 7.49 }, falsifier_health: { score: 10 } } } };
+  const JOBY_SHAPE = drop((d) => { d.consensus.eps = { 2027: -0.82 }; delete d.economic_quality; delete d.falsifiers_v2_draft; });
+  ok("intake: a pillar the engine already SCORED reports NO gap — the scorecard is the " +
+     "authority, never a second guess at where its inputs live (the JOBY false-positive)",
+    runS(JOBY_SHAPE, SCORED_ALL).length === 0);
+  ok("intake: promoted falsifiers in the score record satisfy P4 even with no draft on the " +
+     "payload — the draft is only the pre-promotion staging home",
+    (() => { const sc = { underwriting_inputs: { falsifiers: [1, 2, 3] }, scorecard: { pillars: {} } };
+      return !runS(JOBY_SHAPE, sc).some((r) => r.key === "FALS"); })());
+  ok("intake: economic_quality read from the score record satisfies P3 the same way",
+    (() => { const sc = { underwriting_inputs: { economic_quality: { runway_months: { value: 30 } } }, scorecard: { pillars: {} } };
+      return !runS(JOBY_SHAPE, sc).some((r) => r.key === "RUNWAY"); })());
+  ok("intake: with NO score record the input-presence fallback still reports the real gaps",
+    (() => { const k = runS(JOBY_SHAPE, null).map((r) => r.key);
+      return k.includes("RUNWAY") && k.includes("FALS"); })());
+  ok("intake: a partially-scored name reports only its UNSCORED pillars",
+    (() => { const sc = { underwriting_inputs: {}, scorecard: { pillars: { trajectory: { score: 7.75 } } } };
+      const k = runS(JOBY_SHAPE, sc).map((r) => r.key);
+      return !k.includes("REV_N") && !k.includes("EPS_N") && k.includes("FALS"); })());
   ok("intake: renders on the deep-dive tab directly under the score bar",
     /h\+=ddScoreBar\(x\);\s*\n\s*h\+=renderIntake\(x\);/.test(adminSrc));
   ok("intake: a complete payload renders the DONE state, not an empty box",

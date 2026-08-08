@@ -2787,6 +2787,19 @@ const INTAKE_SRC={
 };
 function intakeChecklist(x){
   const rows=[],dd=x&&ddOf(x);
+  /* AUTHORITY: the server scorecard, not a second guess at it. A first cut of this read P3/P4
+     inputs off the deepDive payload — but those live in the SCORE record's underwriting_inputs
+     (functions/api/score.js), so JOBY, whose P4 is SCORED at 10 with 5 stored hinges, was told
+     to go and capture falsifiers it already had. Two false positives on the most complete name
+     in the book, and a checklist that invents chores is worse than none.
+     The rule now: if a pillar carries a numeric score, the engine HAD what it needed and there
+     is no intake gap, full stop. Input-presence checks are only the fallback for a name with no
+     score record yet. Same doctrine as ptModelRows — one computation, read at many altitudes,
+     never re-derived. */
+  const rec=(typeof SCORE_CACHE!=="undefined"&&SCORE_CACHE[x&&x.sym])||null;
+  const card=rec&&rec.scorecard;
+  const ui=(rec&&rec.underwriting_inputs)||{};
+  const scored=(k)=>!!(card&&card.pillars&&card.pillars[k]&&typeof card.pillars[k].score==="number");
   const add=(pillar,key,why)=>rows.push({pillar,key,screen:INTAKE_SRC[key].screen,api:INTAKE_SRC[key].api,why});
   const c=(dd&&dd.consensus)||{};
   const nonEmpty=(o)=>o&&typeof o==="object"&&Object.keys(o).length>0;
@@ -2800,27 +2813,39 @@ function intakeChecklist(x){
   const preprofit=typeof nearEps==="number"&&nearEps<=0;
 
   // ── P1 owner valuation ──
-  if(!nonEmpty(c.revenue_B)&&!nonEmpty(c.eps))add("P1","REV_VAL","no consensus series at all — nothing to price");
-  if(!dd||!dd.pt_model||!ptModelRows(dd).length)add("P1","MODEL","no computable model row");
-  const live=LIVE_PX[x&&x.sym],stamp=dd&&dd.ref_px&&isFinite(dd.ref_px.px)&&dd.ref_px.px>0;
-  if(!live&&!stamp)add("P1","PX","no usable price");
+  if(!scored("owner_valuation")){
+    if(!nonEmpty(c.revenue_B)&&!nonEmpty(c.eps))add("P1","REV_VAL","no consensus series at all — nothing to price");
+    if(!dd||!dd.pt_model||!ptModelRows(dd).length)add("P1","MODEL","no computable model row");
+    const live=LIVE_PX[x&&x.sym],stamp=dd&&dd.ref_px&&isFinite(dd.ref_px.px)&&dd.ref_px.px>0;
+    if(!live&&!stamp)add("P1","PX","no usable price");
+  }
   if(nonEmpty(c.eps)&&!c.pe_table_2026_08_07&&!c.pe_table)add("P1","PE","no provenance cross-check on the stored consensus");
 
   // ── P2 trajectory ── (the four-round-trip case: values and counts are DIFFERENT captures)
-  if(!nonEmpty(c.revenue_B))add("P2","REV_VAL","revenue series missing");
-  if(!nonEmpty(c.eps))add("P2","EPS_VAL","EPS series missing");
-  if(nonEmpty(c.revenue_B)&&!cntOk("revenue"))add("P2","REV_N","supportedDuration needs >=3 analysts on revenue per year; without it duration=0 and P2 cannot score");
-  if(nonEmpty(c.eps)&&!cntOk("eps"))add("P2","EPS_N","supportedDuration needs >=3 analysts on EPS per year; BOTH series must clear it on the SAME year");
+  if(!scored("trajectory")){
+    if(!nonEmpty(c.revenue_B))add("P2","REV_VAL","revenue series missing");
+    if(!nonEmpty(c.eps))add("P2","EPS_VAL","EPS series missing");
+    if(nonEmpty(c.revenue_B)&&!cntOk("revenue"))add("P2","REV_N","supportedDuration needs >=3 analysts on revenue per year; without it duration=0 and P2 cannot score");
+    if(nonEmpty(c.eps)&&!cntOk("eps"))add("P2","EPS_N","supportedDuration needs >=3 analysts on EPS per year; BOTH series must clear it on the SAME year");
+  }
 
   // ── P3 economic quality ──
-  const q=(dd&&dd.economic_quality)||null;
-  if(preprofit){ if(!q||!q.runway_months)add("P3","RUNWAY","PREPROFIT quality needs runway_months"); }
-  else if(!q||!q.operating_margin_pct||!q.fcf_margin_pct||!q.capital_efficiency)
-    add("P3","MARGINS","PROFITABLE_STANDARD needs margin LEVELS — a 'Growth Rates (TTM)' capture gives RATES and cannot fill this");
+  // economic_quality lives in the SCORE record's underwriting_inputs, not the deepDive.
+  const q=ui.economic_quality||(dd&&dd.economic_quality)||null;
+  if(!scored("economic_quality")){
+    if(preprofit){ if(!q||!q.runway_months)add("P3","RUNWAY","PREPROFIT quality needs runway_months"); }
+    else if(!q||!q.operating_margin_pct||!q.fcf_margin_pct||!q.capital_efficiency)
+      add("P3","MARGINS","PROFITABLE_STANDARD needs margin LEVELS — a 'Growth Rates (TTM)' capture gives RATES and cannot fill this");
+  }
 
   // ── P4 falsifier health ──
-  const f=(dd&&dd.falsifiers_v2_draft&&dd.falsifiers_v2_draft.hinges)||null;
-  if(!f||f.length<3)add("P4","FALS","P4 needs 3-8 pre-committed hinges; they must be on file BEFORE the next qualifying observation or that print cannot be scored against them");
+  // PROMOTED falsifiers live in the score record; falsifiers_v2_draft is only the
+  // pre-promotion staging home. Reading the draft alone reported a gap on every name whose
+  // hinges had already been promoted — including JOBY at P4 = 10.
+  const f=(Array.isArray(ui.falsifiers)&&ui.falsifiers.length?ui.falsifiers:null)
+    ||(dd&&dd.falsifiers_v2_draft&&dd.falsifiers_v2_draft.hinges)||null;
+  if(!scored("falsifier_health")&&(!f||f.length<3))
+    add("P4","FALS","P4 needs 3-8 pre-committed hinges; they must be on file BEFORE the next qualifying observation or that print cannot be scored against them");
   return rows;
 }
 function renderIntake(x){
