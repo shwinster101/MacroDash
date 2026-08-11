@@ -9,7 +9,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
 <!-- AUDIT: kept in sync with package.json by test/smoke.mjs. admin.html is a Vite
      public/ passthrough, so it cannot receive __APP_VERSION__ — the guard is the fix. -->
-<title>TT TICKER TERMINAL v3.80.0</title>
+<title>TT TICKER TERMINAL v3.80.1</title>
 <style>
   :root{
     --bg:#05070a; --panel:#0a0f16; --panel2:#0d141d; --line:#16202c;
@@ -398,7 +398,7 @@
         onclick="toggleHeadInfo()">⋯ MENU</button>
     </div>
     <div id="headInfo" style="display:none">
-      <div class="brand">FINANCE&nbsp;BRO.AI // TT&nbsp;TICKER&nbsp;TERMINAL <small>v3.80.0 · single-pass deep-dive orchestrator</small></div>
+      <div class="brand">FINANCE&nbsp;BRO.AI // TT&nbsp;TICKER&nbsp;TERMINAL <small>v3.80.1 · single-pass deep-dive orchestrator</small></div>
       <div class="statusline">
         <span>BOOK: <b id="bookStamp">loading…</b></span>
         <span>AUTH: <b id="sessState">…</b></span>
@@ -2784,6 +2784,11 @@ const INTAKE_SRC={
   PX:{screen:"live quote or a stamped ref_px",api:"get_equity_quotes"},
   MODEL:{screen:"owner-authored pt_model (multiple schedule + share count)",api:null},
   FALS:{screen:"owner-authored falsifier set — 3-8 pre-committed hinges (NOT a screenshot)",api:null},
+  /* OWNER DIRECTIVE 2026-08-10: debt schedules are not on Seeking Alpha, so they are never an
+     owner capture — the ASSISTANT sources them externally (SEC filings, IR releases, ratings
+     notes) for every new ticker. `ext` marks the row so it renders under its own group and
+     can never land on the screenshot list. */
+  DEBT:{screen:"net debt + maturity schedule — SOURCED EXTERNALLY by the assistant (10-Q/10-K, IR, ratings), never an SA capture",api:null,ext:true},
 };
 function intakeChecklist(x){
   const rows=[],dd=x&&ddOf(x);
@@ -2800,7 +2805,7 @@ function intakeChecklist(x){
   const card=rec&&rec.scorecard;
   const ui=(rec&&rec.underwriting_inputs)||{};
   const scored=(k)=>!!(card&&card.pillars&&card.pillars[k]&&typeof card.pillars[k].score==="number");
-  const add=(pillar,key,why)=>rows.push({pillar,key,screen:INTAKE_SRC[key].screen,api:INTAKE_SRC[key].api,why});
+  const add=(pillar,key,why)=>rows.push({pillar,key,screen:INTAKE_SRC[key].screen,api:INTAKE_SRC[key].api,ext:!!INTAKE_SRC[key].ext,why});
   const c=(dd&&dd.consensus)||{};
   const nonEmpty=(o)=>o&&typeof o==="object"&&Object.keys(o).length>0;
   const counts=c.analyst_counts;
@@ -2826,6 +2831,10 @@ function intakeChecklist(x){
      commit earlier: testing for a storage shape instead of for the thing itself. */
   const hasProv=Object.keys(c).some((k)=>/^pe_table|^provenance/.test(k));
   if(nonEmpty(c.eps)&&!hasProv)add("P1","PE","no provenance cross-check on the stored consensus");
+  // Net debt blocks the EV lens outright; either sign satisfies it (NBIS stores net_cash_B).
+  const m=(dd&&dd.pt_model)||{},bs=(dd&&dd.balance_sheet)||{};
+  if(m.net_cash_B==null&&m.net_debt_B==null&&bs.net_debt_B==null)
+    add("P1","DEBT","no net debt/cash on file — the EV lens cannot be built, and the maturity wall is unmeasured");
 
   // ── P2 trajectory ── (the four-round-trip case: values and counts are DIFFERENT captures)
   if(!scored("trajectory")){
@@ -2857,7 +2866,7 @@ function intakeChecklist(x){
 function renderIntake(x){
   const rows=intakeChecklist(x);
   if(!rows.length)return `<div class="dd-sec"><div class="lbl" style="color:var(--green)">✔ INTAKE COMPLETE — every pillar input is on file</div></div>`;
-  const byApi=rows.filter(r=>r.api),byShot=rows.filter(r=>!r.api);
+  const byExt=rows.filter(r=>r.ext),byApi=rows.filter(r=>r.api&&!r.ext),byShot=rows.filter(r=>!r.api&&!r.ext);
   const row=(r)=>`<div class="none" style="margin-top:3px"><span class="scope" style="color:var(--amber)">${esc(r.pillar)}</span> `+
     `<b>${esc(r.screen)}</b>${r.api?` <span class="scope" style="color:var(--green)">· API: ${esc(r.api)}</span>`:""}`+
     `<br><span class="scope">${esc(r.why)}</span></div>`;
@@ -2865,6 +2874,7 @@ function renderIntake(x){
     `${byApi.length?` · ${byApi.length} available via API`:""}</div>`+
     (byShot.length?`<div class="none" style="color:var(--dim);letter-spacing:.5px;margin-top:4px">CAPTURE (${byShot.length})</div>`+byShot.map(row).join(""):"")+
     (byApi.length?`<div class="none" style="color:var(--dim);letter-spacing:.5px;margin-top:6px">FETCHABLE — no screenshot needed (${byApi.length})</div>`+byApi.map(row).join(""):"")+
+    (byExt.length?`<div class="none" style="color:var(--dim);letter-spacing:.5px;margin-top:6px">SOURCED EXTERNALLY — the assistant fetches these, not you (${byExt.length})</div>`+byExt.map(row).join(""):"")+
     `<div class="none" style="margin-top:6px;color:var(--dim)">Computed from what is stored — every line is a gap the engine itself reports, not a wish list.</div></div>`;
 }
 function renderDeepDive(sym){

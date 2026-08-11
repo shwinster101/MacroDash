@@ -5316,7 +5316,10 @@ console.log("\n[54] FEAT-TT-INTAKE — the complete missing set, in one pass");
   const FED = {
     consensus: { revenue_B: { 2026: 5 }, eps: { 2026: 2 },
       analyst_counts: { revenue: { 2026: 22 }, eps: { 2026: 18 } }, pe_table: {} },
-    pt_model: { __rows: [{ y: "2026", fl: 48 }] }, ref_px: { px: 90 },
+    // net_cash_B: "fully fed" now includes the balance sheet — the 2026-08-10 owner
+    // directive added the externally-sourced DEBT requirement, so a fixture without it
+    // is not complete any more (these two asserts went red the moment the row landed).
+    pt_model: { __rows: [{ y: "2026", fl: 48 }], net_cash_B: 0.5 }, ref_px: { px: 90 },
     economic_quality: { operating_margin_pct: { value: 20 }, fcf_margin_pct: { value: 15 },
       capital_efficiency: { metric: "ROE", value: 22 } },
     falsifiers_v2_draft: { hinges: [1, 2, 3] },
@@ -5413,6 +5416,26 @@ console.log("\n[54] FEAT-TT-INTAKE — the complete missing set, in one pass");
       const prose = drop((d) => { delete d.consensus.pe_table; d.consensus.provenance_2026_08_06 = "cross-checked"; });
       return !keys(dated).includes("PE") && !keys(prose).includes("PE");    // either shape satisfies it
     })());
+  /* OWNER DIRECTIVE 2026-08-10 (CRWV pass): debt schedules are not on SA — the assistant
+     sources them externally for every new ticker. The row exists so a new name can never skip
+     the balance sheet, and the ext tag exists so it can never be asked of the owner. */
+  ok("intake: a name with NO net debt/cash on file gets the DEBT row, tagged EXTERNAL — " +
+     "the assistant's job, never on the owner's capture list",
+    (() => { const rows = run(drop((d) => { delete d.pt_model.net_cash_B; }));
+      const dRow = rows.find((r) => r.key === "DEBT");
+      return !!dRow && dRow.ext === true && /SOURCED EXTERNALLY/.test(dRow.screen); })());
+  ok("intake: EITHER sign satisfies the debt requirement — NBIS stores net_cash_B, CRWV " +
+     "stores net_debt_B, and both must read as measured",
+    (() => {
+      const cash = drop((d) => { d.pt_model.net_cash_B = 0.87; });
+      const debt = drop((d) => { d.pt_model.net_debt_B = 32.88; });
+      const bs   = drop((d) => { d.balance_sheet = { net_debt_B: 32.88 }; });
+      return [cash, debt, bs].every((x) => !run(x).some((r) => r.key === "DEBT")); })());
+  ok("intake: the render splits three groups — CAPTURE / FETCHABLE / SOURCED EXTERNALLY — " +
+     "so an ext row can never be misread as a screenshot ask",
+    adminSrc.includes("SOURCED EXTERNALLY — the assistant fetches these, not you") &&
+    /byExt=rows\.filter\(r=>r\.ext\)/.test(adminSrc) &&
+    /byShot=rows\.filter\(r=>!r\.api&&!r\.ext\)/.test(adminSrc));
   ok("intake: renders on the deep-dive tab directly under the score bar",
     /h\+=ddScoreBar\(x\);\s*\n\s*h\+=renderIntake\(x\);/.test(adminSrc));
   ok("intake: a complete payload renders the DONE state, not an empty box",

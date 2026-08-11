@@ -2049,6 +2049,16 @@ Jan-anchor shipped; see `snapshot.js` ~318–328), `spyMa100`, `spyMa200`, and a
   string-pinning it — the project's own recurring lesson (v3.40, v3.54: state computed and
   rendered but not read at the gate) is exactly the shape a string pin cannot catch.
   Tests: **1067 smoke** (+6) + 192 render + 88 public-render.
+- **v3.80.1 — the intake checklist gains a third source class: SOURCED EXTERNALLY.** Owner
+  directive from the CRWV pass (2026-08-10): debt maturity schedules are not on Seeking Alpha,
+  so they are **never an owner capture — the assistant sources them externally** (SEC filings,
+  IR releases, ratings notes) **for every new ticker**. Encoded, not remembered: a `DEBT` row
+  (net debt + maturity schedule) fires for any name with no `net_cash_B`/`net_debt_B` on file
+  — either sign satisfies it, since NBIS stores cash and CRWV stores debt — and carries an
+  `ext` tag that renders it under its own **SOURCED EXTERNALLY — the assistant fetches these,
+  not you** group, structurally unable to land on the screenshot list. The two "fully fed"
+  fixtures went red the moment the row landed (they had no balance sheet), which is the
+  requirement working; they now carry one. Tests: **1334 smoke** (+3).
 - **FEAT-TT-INTAKE (v3.80) — the data-intake checklist, and an evening time-bomb in the suite.**
   Filling HOOD's payload took **four screenshot round-trips** on 2026-08-07, and not one of them
   was a storage failure: each gap surfaced only AFTER the previous one closed. Round 1 revenue
