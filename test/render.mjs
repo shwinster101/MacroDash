@@ -863,6 +863,47 @@ ok("every modelled+priced name is ranked at the auto horizon (nothing silently d
   /AAA/.test(rankTxt) && /BBB/.test(rankTxt) && /JJJ/.test(rankTxt) &&
   !/dropped for having no/.test(rankTxt) && /all % share the 2027 horizon/i.test(rankTxt));
 
+// v3.81: the picker itself. It rendered the CHOICE at 9.5px but offered no usable way to
+// CHANGE it, which is how a live book sat on "nearest" reporting +1970%/yr. Driven for real:
+// the colour must be readable before the tap, and the tap must actually move the horizon.
+const hzKinds = await page.evaluate(() => [...document.querySelectorAll("#upsideRank .hzb")]
+  .map(b => ({ lab: b.textContent.trim(), tag: b.tagName, pressed: b.getAttribute("aria-pressed"),
+               c: getComputedStyle(b).getPropertyValue("--hzc").trim() })));
+const hzAuto = hzKinds.find(b => b.lab === "auto"), hzNear = hzKinds.find(b => b.lab === "nearest");
+const hzYear = hzKinds.find(b => /^\d{4}$/.test(b.lab));
+ok("horizon picker: every option is a real <button> carrying aria-pressed, and auto reads pressed",
+  hzKinds.length >= 3 && hzKinds.every(b => b.tag === "BUTTON" && b.pressed !== null)
+  && hzAuto.pressed === "true" && hzNear.pressed === "false");
+ok("horizon picker: the three kinds paint three DIFFERENT colours — the mode is legible before the tap",
+  !!hzAuto && !!hzNear && !!hzYear
+  && new Set([hzAuto.c, hzNear.c, hzYear.c]).size === 3
+  && hzAuto.c !== "" && hzNear.c !== "");
+// A real click, not a setHorizon() call — the whole defect was that the control could be seen
+// and not used, so the proof has to go through the element. (The session modal from the block
+// above is still open and would intercept the pointer.)
+await page.evaluate(() => closeCard());
+await page.waitForTimeout(100);
+await page.locator("#upsideRank .hzb", { hasText: /^nearest$/ }).click();
+await page.waitForTimeout(150);
+const nearState = await page.evaluate(() => ({
+  horizon: HORIZON,
+  pressed: [...document.querySelectorAll("#upsideRank .hzb")]
+    .filter(b => b.getAttribute("aria-pressed") === "true").map(b => b.textContent.trim()),
+  txt: document.getElementById("upsideRank").innerText,
+}));
+// setHorizon normalises a falsy pick to null (the v3.21 contract), so "nearest" is null here.
+ok("horizon picker: clicking an option actually moves the horizon and moves the pressed state with it",
+  nearState.horizon === null && nearState.pressed.length === 1 && nearState.pressed[0] === "nearest");
+// The fixture's nearest rungs are ordinary, so the distortion warning must NOT fire — it is a
+// measurement, not decoration. (The four-figure case is executed in smoke against real rows.)
+ok("horizon picker: no distortion nag on an undistorted nearest ranking — the warning is computed, not decorative",
+  !/NEAREST is distorting/i.test(nearState.txt));
+const backToAuto = await page.evaluate(() => {
+  const b = [...document.querySelectorAll("#upsideRank .hzb")].find(x => x.textContent.trim() === "auto");
+  b.click(); return HORIZON;
+});
+ok("horizon picker: auto is one tap back from nearest, with no navigation", backToAuto === "auto");
+
 // The whole-book lint: a mis-keyed schedule must be named at the altitude the ranking is read,
 // not only on a tab nobody opened. Mutated in-page then restored, so no fixture count shifts.
 const lintSeen = await page.evaluate(() => {
@@ -1113,6 +1154,18 @@ ok(`stance bar top row is compact at 390px — token and chips, never five lines
   stanceTopH < 140);
 ok("the tab strip is ONE row at 390px — it scrolls horizontally, it never wraps",
   (await phone.locator("#tabBar").boundingBox()).height < 60);
+// v3.81: the horizon defect was reachability, not visibility — measure the thumb target where
+// the failure actually happened. The picker lives in DESK on the phone layout.
+await phone.evaluate(() => openDesk("dNext"));
+await phone.waitForTimeout(200);
+const hzBox = await phone.locator("#upsideRank .hzb").first().boundingBox();
+ok(`horizon picker: a real thumb target at 390px, not the old 9.5px chip (${Math.round(hzBox.height)}px)`,
+  hzBox.height >= 40);
+// Restore the closed default — the later assertions budget the primary view, and a left-open
+// DESK would both fail the closed-drawer contract and widen the page.
+await phone.evaluate(() => { document.querySelectorAll("#boardView details[open]")
+  .forEach(d => { if (d.id !== "dChanged") d.open = false; }); });
+await phone.waitForTimeout(100);
 // v3.62 FEAT-TT-DECK: the two capital-allocation answers are phone focus views. The buttons
 // are the accessible contract; scroll-snap is an optional touch shortcut.
 ok("decision deck: SHARE RANKS is visible without opening MENU",

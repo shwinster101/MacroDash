@@ -2049,6 +2049,37 @@ Jan-anchor shipped; see `snapshot.js` ~318–328), `spyMa100`, `spyMa200`, and a
   string-pinning it — the project's own recurring lesson (v3.40, v3.54: state computed and
   rendered but not read at the gate) is exactly the shape a string pin cannot catch.
   Tests: **1067 smoke** (+6) + 192 render + 88 public-render.
+- **v3.81.0 — the horizon picker becomes a control, not a caption.** Owner screenshot
+  (2026-08-11): the live board was ranking on **nearest**, reporting **MU +1970.1%/yr** and
+  **SNDK +1035.2%/yr**. Both figures are arithmetically correct — YE2026 is ~0.39 years out, so
+  a +225% gain compounds to ~1977%/yr — and economically meaningless, which is the exact units
+  trap `ANN_MIN_Y` and the auto horizon already exist to prevent. The interesting part is *why
+  the book sat there*: v3.72 added inline `auto`/`nearest` to the deck CHIP, but the **full
+  picker** at the ranking itself was still the original 9.5px `<span>` with **1px padding** — it
+  RENDERED the choice and offered no usable affordance to change it. A control that can be read
+  and not tapped is the v3.52 "interface theater" finding in the other direction: not a claim
+  the code never evaluated, but an evaluation the human can never reach.
+  **Three fixes.** (1) Real `<button>`s with `aria-pressed`, a filled + 2px-border selected
+  state, and **40px thumb targets at ≤480px** — the defect was reachability, not visibility, so
+  the render suite measures the box at 390px rather than pinning a string. (2) **Colour-coded by
+  KIND**, from ONE `HZ_KIND` map that drives both the colour and the tooltip so a swatch can
+  never disagree with the mode it paints: **auto = green** (computed, the recommended default),
+  **nearest = amber** (a legitimate choice that annualises whatever rung is closest), **a pinned
+  year = slate** (deliberate, and silently drops names lacking that rung). (3) A **computed**
+  distortion warning — when nearest actually produces rates ≥200%/yr it names the count, explains
+  the division that caused it, and puts *switch to auto* one tap away. Computed from the rows on
+  screen, never asserted: an ordinary nearest ranking is not nagged, `null` rates cannot trip it,
+  the threshold is two-sided (a −400%/yr rung is the same trap as +400), and on auto or a pinned
+  year it cannot fire at all — it is a claim about NEAREST specifically.
+  Pinning a **specific** year still routes through the picker rather than gaining a shortcut: the
+  two safe modes get the direct path, the lossy one keeps a slightly more deliberate one.
+  Tests: **1345 smoke** (+11: the button/aria contract, the one-map colour rule, the fill-not-
+  shift selected state, the tap-target media query, and the warning predicate **lifted and RUN**
+  against fixture rows — a string pin cannot prove a threshold) + **222 render** (+6: the three
+  kinds' computed colours read live, a **real click** moving the horizon and the pressed state
+  with it, the one-tap return to auto, and the 390px thumb target measured). Negative-controlled
+  three ways — moving the threshold to 2000, collapsing the slate kind into green, and shrinking
+  the tap target each turn the suites red.
 - **v3.80.1 — the intake checklist gains a third source class: SOURCED EXTERNALLY.** Owner
   directive from the CRWV pass (2026-08-10): debt maturity schedules are not on Seeking Alpha,
   so they are **never an owner capture — the assistant sources them externally** (SEC filings,

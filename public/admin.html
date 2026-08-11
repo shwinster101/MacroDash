@@ -9,7 +9,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
 <!-- AUDIT: kept in sync with package.json by test/smoke.mjs. admin.html is a Vite
      public/ passthrough, so it cannot receive __APP_VERSION__ — the guard is the fix. -->
-<title>TT TICKER TERMINAL v3.80.1</title>
+<title>TT TICKER TERMINAL v3.81.0</title>
 <style>
   :root{
     --bg:#05070a; --panel:#0a0f16; --panel2:#0d141d; --line:#16202c;
@@ -291,7 +291,18 @@
     color:var(--dim);font-size:12px;letter-spacing:1px;background:#0a0f16;user-select:none;
     flex-shrink:0;white-space:nowrap}
   .tabs .tab.on{color:var(--green);border-color:var(--greenDim);background:#0c1a13}
-  .dd-sec{margin:12px 0;border-top:1px dashed var(--line);padding-top:8px}
+  /* v3.81 horizon picker — was a 9.5px span with 1px padding; unusable on a phone. */
+.hzbar{display:flex;gap:6px;flex-wrap:wrap;margin-top:6px;align-items:center}
+.hzb{background:transparent;border:1.5px solid var(--hzc,#24333f);color:var(--hzc,var(--dim));
+  border-radius:8px;padding:5px 11px;font-family:inherit;font-size:11.5px;font-weight:600;
+  letter-spacing:.03em;cursor:pointer;line-height:1.15;transition:none}
+.hzb:hover{border-color:var(--hzc);filter:brightness(1.25)}
+.hzb.on{background:color-mix(in srgb,var(--hzc) 18%,transparent);border-width:2px;
+  border-color:var(--hzc);color:var(--hzc);font-weight:800;padding:4px 10px}
+.hzb:focus-visible{outline:2px solid var(--focus);outline-offset:2px}
+@media(max-width:480px){.hzb{min-height:40px;padding:8px 13px;font-size:12.5px}
+  .hzb.on{padding:7px 12px}}
+.dd-sec{margin:12px 0;border-top:1px dashed var(--line);padding-top:8px}
   .dd-sec .lbl{font-size:9px;letter-spacing:.16em;color:var(--dim);text-transform:uppercase;margin-bottom:6px}
   .dd-hinge{display:flex;gap:8px;align-items:baseline;padding:3px 0;font-size:11.5px}
   .dd-hinge .st{flex-shrink:0;width:14px;text-align:center}
@@ -398,7 +409,7 @@
         onclick="toggleHeadInfo()">⋯ MENU</button>
     </div>
     <div id="headInfo" style="display:none">
-      <div class="brand">FINANCE&nbsp;BRO.AI // TT&nbsp;TICKER&nbsp;TERMINAL <small>v3.80.1 · single-pass deep-dive orchestrator</small></div>
+      <div class="brand">FINANCE&nbsp;BRO.AI // TT&nbsp;TICKER&nbsp;TERMINAL <small>v3.81.0 · single-pass deep-dive orchestrator</small></div>
       <div class="statusline">
         <span>BOOK: <b id="bookStamp">loading…</b></span>
         <span>AUTH: <b id="sessState">…</b></span>
@@ -3872,14 +3883,35 @@ function renderUpsideRank(){
       UNRANKED_ROWS.map(r=>`<div class="none"><b>${esc(r.sym)}</b> — ${esc(r.why)} · fix: ${esc(r.fix)}</div>`).join("")+
       `</div></details>`;
   };
-  const hzBtn=(v,lab)=>`<span onclick="setHorizon('${v}')" style="cursor:pointer;padding:1px 6px;border-radius:8px;font-size:9.5px;`+
-    `border:1px solid ${(HORIZON||"")===v?"var(--green)":"#24333f"};color:${(HORIZON||"")===v?"var(--green)":"var(--dim)"}">${lab}</span>`;
+  /* v3.81: the picker was a 9.5px <span> with 1px padding — effectively untappable on a
+     phone, which is how a book can sit on "nearest" for days while the ranking reports
+     +1970%/yr. Now real <button>s, COLOUR-CODED BY KIND so the choice reads before it is
+     tapped: auto = green (computed, the recommended default), nearest = amber (it is a
+     legitimate choice but it annualises whatever rung is closest, which distorts rates near
+     a year-end), a pinned year = slate (deliberate, and silently drops names lacking that
+     rung). Selected state is a filled background plus a 2px border, not a colour shift. */
+  const HZ_KIND=(v)=>v===HZ_AUTO?{c:"var(--green)",t:"computed — the deepest year-end EVERY modelled name reaches"}
+    :v===""?{c:"var(--amber)",t:"each name's closest rung — rates distort badly inside ~12 months"}
+    :{c:"var(--slate)",t:"pinned to YE"+v+" — names with no rung that year are dropped and named below"};
+  const hzBtn=(v,lab)=>{const on=(HORIZON||"")===v,k=HZ_KIND(v);
+    return `<button type="button" class="hzb${on?" on":""}" onclick="setHorizon('${v}')" title="${esc(k.t)}" `+
+      `aria-pressed="${on}" style="--hzc:${k.c}">${esc(lab)}</button>`;};
   // FEAT-TT-PTLINT (D1): the auto pick must STATE itself. An auto-selected horizon that looked
   // like a deliberate one is how "2028" survived long enough to silently drop three names.
-  const hzUI=`<div style="display:flex;gap:5px;flex-wrap:wrap;margin-top:5px;align-items:center">`+
-    `<span style="color:var(--dim);font-size:9px;letter-spacing:.1em">HORIZON</span>`+
-    hzBtn(HZ_AUTO,"auto")+hzBtn("","nearest")+years.map(y=>hzBtn(y,y)).join("")+
-    (isAuto?`<span class="scope">auto · ${hz?"year-end "+esc(hz)+" — the deepest year EVERY modelled name reaches":"nearest — no year is shared by every model yet"}</span>`:"")+`</div>`;
+  /* v3.81: when NEAREST is selected the rates are annualised off whatever rung is closest,
+     so a rung a few months out turns an ordinary gain into a four-figure %/yr. That is
+     arithmetically correct and economically meaningless — the same units trap ANN_MIN_Y and
+     the auto horizon exist to prevent. If it is actually happening, SAY SO, with the fix
+     one tap away. Computed from the rows on screen, never asserted. */
+  const isNearest=!isAuto&&!HORIZON;
+  const wild=isNearest?rows.filter(r=>r.ann!==null&&Math.abs(r.ann)>=200).length:0;
+  const hzUI=`<div class="hzbar">`+
+    `<span style="color:var(--dim);font-size:9.5px;letter-spacing:.1em;align-self:center">HORIZON</span>`+
+    hzBtn(HZ_AUTO,"auto")+hzBtn("","nearest")+years.map(y=>hzBtn(y,y)).join("")+`</div>`+
+    (isAuto?`<div class="none">auto · ${hz?"year-end "+esc(hz)+" — the deepest year EVERY modelled name reaches":"nearest — no year is shared by every model yet"}</div>`:"")+
+    (wild?`<div class="none" style="color:var(--amber)">⚠ NEAREST is distorting the order — ${wild} name${wild===1?"":"s"} `+
+      `annualising above 200%/yr off a rung under a year out. A +225% gain by YE2026 reads +1970%/yr because it is divided by ~0.4 of a year. `+
+      `<button class="linklike" onclick="setHorizon('${HZ_AUTO}')" style="color:var(--green);font-weight:700">switch to auto</button></div>`:"");
   if(!rows.length){
     // v3.76: even with NOTHING rate-rankable the surface still produces an ORDERED output —
     // the owner's rule that a next-dollar hierarchy must always exist. The old branch ended

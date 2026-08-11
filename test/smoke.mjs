@@ -1845,6 +1845,44 @@ ok("hz-chip: pinning a SPECIFIC year still deep-links to the full picker — onl
   /openDesk\('dNext'\)" title="pin a specific year/.test(adminSrc));
 ok("hz-chip: BOTH deck labels carry it (BUY + both FUNDING PRIORITY branches) — 3 call sites, zero drift",
   (adminSrc.match(/\$\{hzDeckChip\(\)\}/g)||[]).length===3);
+/* v3.81: the full picker was a 9.5px <span> with 1px padding. It rendered the CHOICE but not
+   an affordance to change it, which is how a live book sat on "nearest" for days while the
+   ranking reported +1970%/yr. Real buttons, colour-coded by KIND, plus a warning computed
+   from the rows actually on screen. */
+ok("hz-picker: real <button>s with aria-pressed — not the 9.5px span that made the control untappable",
+  /class="hzb\$\{on\?" on":""\}" onclick="setHorizon\('\$\{v\}'\)"/.test(adminSrc)
+  && /aria-pressed="\$\{on\}"/.test(adminSrc)
+  && !/<span onclick="setHorizon/.test(adminSrc));
+ok("hz-picker: ONE kind map drives colour AND tooltip, so a colour can never disagree with the mode it paints",
+  /const HZ_KIND=\(v\)=>v===HZ_AUTO\?\{c:"var\(--green\)"/.test(adminSrc)
+  && /:v===""\?\{c:"var\(--amber\)"/.test(adminSrc)
+  && /:\{c:"var\(--slate\)"/.test(adminSrc)
+  && /style="--hzc:\$\{k\.c\}"/.test(adminSrc)
+  && /title="\$\{esc\(k\.t\)\}"/.test(adminSrc));
+ok("hz-picker: the selected state is a FILL plus a 2px border, not a colour shift a 9.5px chip could hide",
+  /\.hzb\.on\{background:color-mix\(in srgb,var\(--hzc\) 18%,transparent\);border-width:2px;/.test(adminSrc));
+ok("hz-picker: 40px thumb targets at <=480px — the defect was reachability, not visibility",
+  /@media\(max-width:480px\)\{\.hzb\{min-height:40px;/.test(adminSrc));
+{ // the distortion warning is COMPUTED from the rendered rows, never asserted — lift and RUN it.
+  const m = adminSrc.match(/const wild=isNearest\?(rows\.filter\([\s\S]*?\)\.length):0;/);
+  ok("hz-picker: the nearest-distortion warning has a computed predicate to lift", !!m);
+  const wildOf = (rows, isNearest) => Function("rows", "isNearest",
+    `return isNearest?${m[1]}:0;`)(rows, isNearest);
+  const R = (ann) => ({ ann });
+  ok("hz-picker: warns only when nearest ACTUALLY produces four-figure rates (the +1970%/yr the owner saw)",
+    wildOf([R(1970.1), R(1035.2), R(41)], true) === 2);
+  ok("hz-picker: an ordinary nearest ranking is NOT nagged — 200%/yr is the line, and 199 is under it",
+    wildOf([R(199), R(-88), R(0)], true) === 0);
+  ok("hz-picker: the threshold is two-sided — a -400%/yr rung is the same units trap as +400",
+    wildOf([R(-400)], true) === 1);
+  ok("hz-picker: a name with no rate cannot trip it (null is not a big number)",
+    wildOf([R(null), R(null)], true) === 0);
+  ok("hz-picker: on auto or a pinned year the warning never fires — it is a claim about NEAREST",
+    wildOf([R(1970.1)], false) === 0);
+}
+ok("hz-picker: the warning carries its own fix — one tap to auto, no navigation",
+  /NEAREST is distorting the order/.test(adminSrc)
+  && /onclick="setHorizon\('\$\{HZ_AUTO\}'\)"[^>]*>switch to auto</.test(adminSrc));
 /* v3.67: the deck height is a budget, not a floor. */
 ok("deck: sizeDecisionDeck measures ONLY the active panel — the hidden one still cannot lengthen the page",
   /function sizeDecisionDeck\(\)/.test(adminSrc)
