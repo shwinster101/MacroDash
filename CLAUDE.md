@@ -2049,6 +2049,67 @@ Jan-anchor shipped; see `snapshot.js` ~318–328), `spyMa100`, `spyMa200`, and a
   string-pinning it — the project's own recurring lesson (v3.40, v3.54: state computed and
   rendered but not read at the gate) is exactly the shape a string pin cannot catch.
   Tests: **1067 smoke** (+6) + 192 render + 88 public-render.
+- **FEAT-TT-TECHREAD (v3.83.0) — the WHEN leg gets a BANDED VERDICT, and the collinearity audit
+  that reshaped it.** v3.82 shipped WHEN as a single measured distance (price vs a committed
+  entry). The owner asked for the rest of the picture — "indicators patterns charts lines and
+  levels along with price action… knowing the bullish and bearish logic like on macro dash" —
+  and that last clause is the actual specification: the macro board's strength is not six
+  factors, it is that `REGIME_BAND_TABLE` is ONE table where `vote()` is the only expression of
+  a band, so the verdict and the flip distances can never contradict each other. **`src/techRead.js`**
+  is that architecture applied to price — pure, React-free, Node-importable, mirroring
+  `verdictFrom`/`computeRegime`/`flipConditions` one-for-one (`techVerdictFrom` ·
+  `computeTechRead` · `techFlips`), so a reader who understands one understands the other.
+  **The owner's two directives CONFLICTED and are reconciled by structure, not by picking.**
+  v3.82's brief said indicators are lagging and WHEN should be price-action; this one asks for
+  indicators too. Every factor therefore carries a `kind` (price_action | indicator | pattern),
+  the tally is reported **SPLIT by kind**, and — load-bearing — a **BULLISH verdict is
+  DOWNGRADED to MIXED when price action does not confirm**, `raw`/`downgraded` keeping the
+  record. BEARISH passes through untouched: a bull call carried by lagging inputs is the one
+  that gets you long at the top; a caution assembled from them is still safe. That is the v3.40
+  TAILWIND-withhold asymmetry pointed at price.
+  **THE AUDIT FINDING, and it was a defect in this release's own first draft.** The table
+  shipped `price vs 50d`, `price vs 200d` and `50d/200d alignment` as three separate voters —
+  and they are **COLLINEAR**, all functions of the same `{px, ma50, ma200}`. A price above both
+  averages cast **three bull votes for one fact**, and the split tally printed `price action
+  4▲/0▼ of 4` on what was really one observation plus the range. A tally exists to measure how
+  much *independent* evidence agrees; triple-counting inflates precisely the number the reader
+  trusts. The three comparisons are now **COMPONENTS of one alignment score (−3…+3)** voting
+  once at 2-of-3 — the same call, without the fake corroboration. **The quorum moved 4→3 WITH
+  it** rather than being held at a number the table can no longer support: levels alone measure
+  exactly two independent things, so a levels-only stamp now honestly reads **UNREAD** until
+  momentum or a pattern lands. And the consequence worth naming: price action can now supply at
+  most 2 of 5 votes and **can never be a vote majority** — so *"price action is primary"* is
+  encoded as **the withhold, not vote weight**. A veto is a stronger form of primacy than a
+  heavier vote, because it cannot be outvoted.
+  **MISSING IS EXCLUDED, NEVER NEUTRAL** — the one deliberate divergence from
+  `REGIME_BAND_TABLE` (where a non-finite value votes neutral by construction). A technical
+  read is built incrementally, so an unstamped RSI voting "neutral" would dilute a real tally
+  toward MIXED and make an unfinished stamp look like a considered non-lean. Unmeasured factors
+  are dropped and NAMED; an out-of-enum pattern is an unrecognised assertion, not a lean
+  (the gate-normalizer rule: no label can manufacture a vote). Stale levels withhold the whole
+  read — an 8-day-old 200-day average is not a fact about today's tape.
+  **RSI is deliberately TWO-SIDED** (bull 55–80, bear below 45 OR at/above 80): encoding only
+  ">70 overbought" fights every uptrend the ranking exists to find, encoding only ">55 bull"
+  calls a blow-off top a buy. Being compound, it ABSTAINS from `techFlips` with the reason
+  named — the CPI/CAPE precedent — as does the categorical pattern factor.
+  **⚠ MARRIED, NEVER MERGED, and now enforced three ways.** The verdict may not enter the
+  ranking sort, `gateFail`, `why()`, or `sellRank` — smoke pins each surface by slicing the
+  real source region and asserting no reference. WHAT (the valuation gap, measured) and WHEN
+  (this) render as two lines, never one blended score. `techOf()` is the ONE resolution point,
+  so the eligible-line chip and the deep-dive band table cannot disagree.
+  admin.html is buildless and carries a copy; the tripwire is **behavioural identity** (both
+  implementations run over a 7-case fixture matrix and must return identical verdicts) rather
+  than the ptModel byte-identity check — a table of arrow functions is brittle to whitespace
+  but its VOTES are exactly what must not drift.
+  Tests: **1385 smoke** (+24: every band boundary executed, the collapse pinned in both
+  directions, the veto proven un-outvotable against a unanimous 3-0 indicator tally, quorum,
+  staleness, flip adjacency and abstention, the four married-never-merged guards, and the
+  cross-implementation matrix) + **229 render** (+4: BULLISH with the split tally driven live,
+  WHAT and WHEN as separate lines, the read flipping BEARISH on inverted levels, and the pick
+  staying ELIGIBLE under a bearish tape — the never-veto proof). Negative-controlled twice:
+  disabling the withhold turns 3 red, loosening the trend band turns 2 red. Float note recorded
+  at the test site: `pct(102,100)` is 2.0000000000000018, so component reads are pinned clear of
+  the edges and the edges themselves are pinned on `vote()` against literals.
 - **FEAT-TT-ENTRY (v3.82.0) — the WHEN leg: price action on the eligible line.** The framework
   doctrine has three legs — fundamentals decide WHAT, support/resistance decide WHEN, the regime
   decides HOW STRICT — and an audit of the marriage found only two instrumented. WHEN lived

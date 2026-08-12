@@ -727,6 +727,57 @@ ok("entry: the SAME chip renders on the primary-view BUY block (one builder, two
 ok("entry: price reaching the committed level flips the chip to AT ENTRY, live",
   paLive.hit);
 
+// FEAT-TT-TECHREAD (v3.83): the banded WHEN verdict, driven live. Same recipe — clear the
+// gates, stamp levels that make AAA a clean price-action uptrend, and assert the verdict
+// prints beside (never inside) the valuation answer. Then flip the levels bearish and prove
+// the read follows the tape rather than the ranking.
+const techLive = await page.evaluate(() => {
+  const a = BOOK.find((e) => e.sym === "AAA");
+  const prev = { reg: BOARD.regime, circ: BOARD.circuit.state, px: LIVE_PX.AAA,
+    comp: a.deepDive.composite, pa: a.deepDive.price_action };
+  BOARD.regime = null; BOARD.circuit.state = "clear";
+  LIVE_PX.AAA = { px: 300, chg: 0, at: prev.px.at };
+  a.deepDive.composite = { score: 8.0, basis: "synthetic", capped_tier: "A" };
+  const today = new Date().toLocaleDateString("en-CA", { timeZone: "America/New_York" });
+  // px 300 vs ma50 280 (+7.1%) vs ma200 240 (+25%), cross +16.7%, range (300-200)/(320-200)=83%
+  // → all four price-action factors bull → BULLISH, no withhold.
+  a.deepDive.price_action = { as_of: today,
+    levels: { ma50: 280, ma200: 240, swing_lo_3m: 200, swing_hi_3m: 320 },
+    indicators: { rsi14: 62, macd_hist: 0.4 } };
+  render();
+  const t = document.getElementById("upsideRank").innerText;
+  const out = { pick: AGREE_PICK ? AGREE_PICK.sym : null,
+    bull: /TECH BULLISH/.test(t),
+    // 2 price-action factors post-collinearity-fix, not 4 — the tally must report the real
+    // count of independent observations, which is the whole point of that fix.
+    split: /price action 2▲\/0▼ of 2/.test(t),
+    // WHAT and WHEN are two lines, not one blended score — the married-never-merged proof.
+    both: /%\/yr/.test(t) && /TECH BULLISH/.test(t) };
+  // Now invert the levels: price below both MAs, bottom of range → BEARISH, and the pick
+  // must SURVIVE (the read reports, it never vetoes).
+  a.deepDive.price_action = { as_of: today,
+    levels: { ma50: 340, ma200: 360, swing_lo_3m: 290, swing_hi_3m: 420 },
+    indicators: { rsi14: 32, macd_hist: -0.4 } };
+  render();
+  const t2 = document.getElementById("upsideRank").innerText;
+  out.bear = /TECH BEARISH/.test(t2);
+  out.stillEligible = /ELIGIBLE NEXT DOLLAR — all gates passed/.test(t2)
+    && (AGREE_PICK ? AGREE_PICK.sym : null) === "AAA";
+  BOARD.regime = prev.reg; BOARD.circuit.state = prev.circ; LIVE_PX.AAA = prev.px;
+  a.deepDive.composite = prev.comp;
+  if (prev.pa === undefined) delete a.deepDive.price_action; else a.deepDive.price_action = prev.pa;
+  render();
+  return out;
+});
+ok("techread: a clean price-action uptrend renders TECH BULLISH with the split tally on the eligible line",
+  techLive.bull && techLive.split);
+ok("techread: WHAT (%/yr) and WHEN (the tech verdict) print as separate answers — married, never merged",
+  techLive.both);
+ok("techread: inverting the levels flips the read to BEARISH — it follows the tape, not the ranking",
+  techLive.bear);
+ok("techread: a BEARISH tape does NOT veto — the pick stays eligible, the read is reported beside it",
+  techLive.stillEligible);
+
 console.log("\n[render] FEAT-TT-ESTRUN — the board expression inside NEXT DOLLAR");
 const estBoard = await txt(page, "estRunBoard");
 ok("every modelled name gets a row, denominator stated",

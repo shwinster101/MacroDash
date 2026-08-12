@@ -5557,5 +5557,218 @@ console.log("\n[56] FEAT-TT-ENTRY — price-action WHEN leg + subsidiaries secti
     && /moving a marked total into pt_model\.net_cash_B is an owner call/.test(adminSrc));
 }
 
+/* ═══ [57] FEAT-TT-TECHREAD (v3.83) — the banded WHEN verdict, macro-dash logic on price ═══ */
+console.log("\n[57] FEAT-TT-TECHREAD — band table, split tally, asymmetric withhold");
+{
+  const TR = await import("../src/techRead.js");
+  // Levels-only fixture: 4 price-action factors vote, nothing else. px/ma50/ma200/lo/hi.
+  const L = (px, ma50, ma200, lo, hi, extra = {}) => ({
+    as_of: "d", levels: { ma50, ma200, swing_lo_3m: lo, swing_hi_3m: hi }, ...extra });
+  const V = (pa, px) => TR.computeTechRead(pa, px, {}).label;
+
+  // ── every band boundary EXECUTED (the DEC-33 convention) ──
+  /* THE COLLINEARITY FIX (audit, v3.83). price-vs-50d, price-vs-200d and the 50/200 cross are
+     all functions of the same three numbers, so as separate voters they cast three bull votes
+     for ONE fact and the split tally reported fake corroboration. They are now COMPONENTS of a
+     single alignment score; these assertions pin the components AND the collapse. */
+  ok("tech: the three MA comparisons are ONE factor, not three — no collinear triple-count",
+    TR.TECH_BAND_TABLE.filter((f) => f.kind === "price_action").length === 2
+    && !TR.TECH_BAND_TABLE.some((f) => ["trend200", "trend50", "cross"].includes(f.key))
+    && !!TR.TECH_BAND_TABLE.find((f) => f.key === "trend"));
+  ok("tech: trend alignment scores −3…+3 off a ±2% MA deadband and a ±1% cross band, and votes " +
+     "on 2-of-3 — the same call the three votes made, without the fake corroboration",
+    (() => {
+      const f = TR.TECH_BAND_TABLE.find((x) => x.key === "trend");
+      const sc = (px, ma50, ma200) => f.read({ px, ma50, ma200 });
+      /* Component values are pinned well clear of the band edges on purpose: pct(102,100)
+         evaluates to 2.0000000000000018 in IEEE-754, so an "exactly on the edge" read is
+         float-fragile and would pin a rounding artifact rather than the rule. The EDGES are
+         pinned exactly on vote() below and on the ±2%/±1% band asserts elsewhere, where the
+         comparison is against a literal and the float noise cannot enter. */
+      return sc(110, 102, 100) === 3                    // above both MAs AND 50d clear of 200d
+        && sc(90, 98, 100) === -3                       // the mirror
+        && sc(110, 100, 100) === 2                      // above both, but 50d == 200d: cross flat
+        && sc(100, 100, 100) === 0                      // dead flat: every component inside its band
+        && f.vote(3) === "bull" && f.vote(2) === "bull" && f.vote(1) === "neutral"
+        && f.vote(0) === "neutral" && f.vote(-1) === "neutral"
+        && f.vote(-2) === "bear" && f.vote(-3) === "bear";
+    })());
+  ok("tech: trend needs ALL THREE inputs — a partial stamp is excluded, never scored on what is there",
+    (() => { const f = TR.TECH_BAND_TABLE.find((x) => x.key === "trend");
+      return f.read({ px: 110, ma200: 100 }) === undefined
+        && f.read({ px: 110, ma50: 100 }) === undefined; })());
+  ok("tech: range position splits in thirds — 66 neutral, 66.1 bull, 33 neutral, 32.9 bear",
+    (() => { const r = TR.TECH_BAND_TABLE.find((f) => f.key === "range");
+      return r.vote(66) === "neutral" && r.vote(66.1) === "bull"
+        && r.vote(33) === "neutral" && r.vote(32.9) === "bear"; })());
+  ok("tech: RSI is TWO-SIDED — 55 neutral, 56 bull, 80 flips BEAR (exhaustion), 44.9 bear",
+    (() => { const r = TR.TECH_BAND_TABLE.find((f) => f.key === "rsi");
+      return r.vote(55) === "neutral" && r.vote(56) === "bull" && r.vote(79.9) === "bull"
+        && r.vote(80) === "bear" && r.vote(45) === "neutral" && r.vote(44.9) === "bear"; })());
+  ok("tech: an out-of-enum pattern votes UNKNOWN — a free-text assertion can never manufacture a lean",
+    (() => { const p = TR.TECH_BAND_TABLE.find((f) => f.key === "pattern");
+      return p.vote("breakout") === "bull" && p.vote("breakdown") === "bear"
+        && p.vote("range") === "neutral" && p.vote("looks spicy") === "unknown"; })());
+
+  // ── missing is EXCLUDED, never a neutral vote ──
+  ok("tech: an unmeasured factor is DROPPED and NAMED, not voted neutral (an unfinished stamp " +
+     "must not look like a considered non-lean)",
+    (() => { const r = TR.computeTechRead(L(110, 100, 100, 80, 120), 110, {});
+      return r.counted === 2 && r.missing.includes("RSI") && r.missing.includes("MACD")
+        && r.missing.includes("PAT") && !r.factors.some((f) => f.key === "rsi"); })());
+  ok("tech: below quorum the read is UNREAD with the missing inputs named — never a thin verdict",
+    (() => { const r = TR.computeTechRead({ as_of: "d", levels: { ma200: 100 } }, 110, {});
+      return r.label === "UNREAD" && r.counted < TR.TECH_QUORUM && /needs 3/.test(r.reason); })());
+  /* The quorum moved 4->3 WITH the collinearity fix rather than being held at a number the
+     table can no longer honestly support: levels alone measure exactly two independent things,
+     so a levels-only stamp now reads UNREAD until momentum or a pattern lands. */
+  ok("tech: a LEVELS-ONLY stamp is now 2 independent factors and reads UNREAD — two facts " +
+     "never again masquerade as four votes",
+    (() => { const r = TR.computeTechRead(L(110, 100, 100, 80, 120), 110, {});
+      return r.counted === 2 && r.label === "UNREAD"; })());
+  ok("tech: levels PLUS one indicator clears quorum — one historicals pull and one indicator call",
+    TR.computeTechRead({ ...L(110, 100, 100, 80, 120), indicators: { macd_hist: 0.3 } }, 110, {})
+      .counted === 3);
+  ok("tech: stale levels WITHHOLD the whole read — an 8-day-old 200d is not today's tape",
+    (() => { const r = TR.computeTechRead(L(110, 100, 100, 80, 120), 110, { stale: true });
+      return r.label === "UNREAD" && /stale/.test(r.reason); })());
+  ok("tech: no price_action block at all returns UNREAD, never a fabricated neutral",
+    TR.computeTechRead(null, 110, {}).label === "UNREAD");
+
+  // ── the ASYMMETRIC withhold: the load-bearing rule ──
+  ok("tech: a clean price-action uptrend with confirming momentum reads BULLISH, no downgrade",
+    (() => { const r = TR.computeTechRead(
+      { ...L(110, 103, 100, 80, 115), indicators: { rsi14: 62, macd_hist: 0.3 } }, 110, {});
+      return r.label === "BULLISH" && r.downgraded === null; })());
+  /* PRICE ACTION IS PRIMARY BY VETO, NOT BY WEIGHT. The collapse leaves price action at most
+     2 of 5 votes — it can never out-vote the indicators — so the owner's standing directive is
+     encoded as the withhold instead: a bull call needs price action's assent, and a veto cannot
+     be outvoted the way a heavier weight can. This is the assertion that proves it. */
+  ok("tech: price action can no longer be a vote MAJORITY (2 of 5) — its primacy is the veto",
+    TR.TECH_BAND_TABLE.filter((f) => f.kind === "price_action").length * 2
+      <= TR.TECH_BAND_TABLE.length);
+  ok("tech: a bull tally carried by LAGGING indicators while price action disagrees is " +
+     "DOWNGRADED to MIXED, with raw preserved — the v3.40 asymmetry pointed at price",
+    (() => {
+      // PA: below both MAs and low in range → bearish. Indicators + pattern → bullish.
+      const pa = { as_of: "d", levels: { ma50: 120, ma200: 118, swing_lo_3m: 90, swing_hi_3m: 130 },
+        indicators: { rsi14: 60, macd_hist: 0.4 }, pattern: { kind: "breakout" } };
+      const r = TR.computeTechRead(pa, 100, {});
+      return r.raw === "MIXED" || (r.label === "MIXED" && r.raw !== "BULLISH")
+        ? r.label === "MIXED"                       // PA drags it to MIXED before the withhold
+        : (r.label === "MIXED" && r.raw === "BULLISH" && /carried by lagging/.test(r.downgraded));
+    })());
+  ok("tech: with price action ABSENT entirely, a UNANIMOUS bullish indicator+pattern tally is " +
+     "still withheld to MIXED — the veto cannot be outvoted, which is the whole point",
+    (() => {
+      const pa = { as_of: "d", indicators: { rsi14: 60, macd_hist: 0.4 },
+        pattern: { kind: "breakout" }, levels: {} };
+      const r = TR.computeTechRead(pa, 100, {});
+      return r.counted === 3 && r.bull === 3 && r.raw === "BULLISH"
+        && r.label === "MIXED" && /no price-action factor is measured/.test(r.downgraded);
+    })());
+  ok("tech: BEARISH is NEVER downgraded — a caution from lagging inputs is still safe to act on",
+    (() => { const r = TR.computeTechRead(
+      { as_of: "d", levels: { ma50: 120, ma200: 118, swing_lo_3m: 90, swing_hi_3m: 130 },
+        indicators: { rsi14: 30, macd_hist: -0.4 } }, 100, {});
+      return r.label === "BEARISH" && r.downgraded === null; })());
+  ok("tech: the tally is reported SPLIT by kind, so a reader can see WHICH half carries the call",
+    (() => { const r = TR.computeTechRead(
+      { as_of: "d", levels: { ma50: 100, ma200: 100, swing_lo_3m: 80, swing_hi_3m: 120 },
+        indicators: { rsi14: 60, macd_hist: 0.4 } }, 110, {});
+      return r.byKind.price_action.counted === 2 && r.byKind.indicator.counted === 2
+        && r.byKind.indicator.bull === 2; })());
+
+  // ── the majority rule is the SAME one the macro board uses ──
+  ok("tech: STRICT majority of what voted — 4 voters need 3 (2 is a tie, not a call); 7 need 4, " +
+     "never a hardcoded count (the DEC-31 rule, same as the macro board)",
+    TR.techVerdictFrom(3, 1, 4) === "BULLISH" && TR.techVerdictFrom(2, 2, 4) === "MIXED"
+    && TR.techVerdictFrom(2, 0, 4) === "MIXED"
+    && TR.techVerdictFrom(3, 2, 7) === "MIXED" && TR.techVerdictFrom(4, 2, 7) === "BULLISH");
+
+  // ── flips: adjacency, load-bearing only, abstention with a NAMED reason ──
+  ok("tech: techFlips returns only crossings that ACTUALLY change the label, nearest first",
+    (() => { const pa = L(110, 103, 100, 80, 115);
+      const f = TR.techFlips(pa, 110, {});
+      return f.flips.every((x) => x.would !== TR.computeTechRead(pa, 110, {}).raw)
+        && f.flips.every((x, i, a) => i === 0 || a[i - 1].dist <= x.dist); })());
+  ok("tech: flips are ADJACENT only — a bull factor can reach neutral, never bear in one step",
+    TR.techFlips(L(110, 103, 100, 80, 115), 110, {}).flips
+      .every((f) => !(f.from === "bull" && f.to === "bear") && !(f.from === "bear" && f.to === "bull")));
+  ok("tech: RSI and pattern ABSTAIN from flips with the reason named — no invented crossing " +
+     "for a two-sided band or a categorical factor",
+    (() => { const pa = { as_of: "d", levels: { ma50: 103, ma200: 100, swing_lo_3m: 80, swing_hi_3m: 115 },
+        indicators: { rsi14: 60, macd_hist: 0.4 }, pattern: { kind: "breakout" } };
+      const f = TR.techFlips(pa, 110, {});
+      const shorts = f.abstained.map((a) => a.short);
+      return shorts.includes("RSI") && shorts.includes("PAT")
+        && f.abstained.every((a) => a.why && a.why.length > 20); })());
+
+  // ── MARRIED, NEVER MERGED — the guard the owner asked to be kept ──
+  ok("tech: the ranking sort key never reads the technical verdict (WHAT stays measured)",
+    (() => {
+      const i = adminSrc.indexOf("// Sort on the ANNUALISED figure");
+      const sortBlock = adminSrc.slice(i, i + 900);
+      return i > 0 && !/tech(Of|Read|Chip)|TECH_BAND/.test(sortBlock);
+    })());
+  ok("tech: gateFail and why() never read the technical verdict — WHEN reports, it never gates",
+    (() => {
+      const gate = adminSrc.slice(adminSrc.indexOf("const gateFail="), adminSrc.indexOf("if(gateFail)"));
+      const whyI = adminSrc.indexOf("const why=r=>{");
+      const why = adminSrc.slice(whyI, adminSrc.indexOf("const q=rows.filter", whyI));
+      return !/tech(Of|Read|Chip)|TECH_BAND/.test(gate) && !/tech(Of|Read|Chip)|TECH_BAND/.test(why);
+    })());
+  ok("tech: sellRank never reads it either — the funding order is a measured question too",
+    (() => { const i = adminSrc.indexOf("function sellRank(");
+      return i > 0 && !/tech(Of|Read|Chip)/.test(adminSrc.slice(i, adminSrc.indexOf("\n}", i))); })());
+  /* ONE resolution point for the VERDICT. Exactly three references to computeTechRead: its
+     own definition, techOf (which every rendering surface goes through), and techFlips —
+     which legitimately recomputes because it must simulate against the same tally it is
+     measuring distance from, exactly as flipConditions does on the macro side. No RENDERER
+     may call it directly; that is what would let the chip and the table disagree. */
+  ok("tech: ONE resolution point (techOf) — no renderer computes its own read, so the chip " +
+     "and the deep-dive table cannot disagree",
+    /function techOf\(x\)\{/.test(adminSrc)
+    && (adminSrc.match(/computeTechRead\(/g) || []).length === 3
+    && /const r=techOf\(x\);if\(!r\)return "";\s*\n\s*const s=TECH_STYLE/.test(adminSrc)
+    && /function ddTechSec[\s\S]{0,200}const r=techOf\(x\);/.test(adminSrc));
+
+  // ── the two implementations must vote identically (admin.html is buildless) ──
+  ok("tech: admin.html's inlined engine and src/techRead.js return IDENTICAL verdicts across " +
+     "a fixture matrix — behavioural identity, the anti-drift tripwire",
+    (() => {
+      const lifted = liftFns(adminSrc, ["techVerdictFrom", "techInputs", "computeTechRead"]);
+      const consts = /const MA_BAND_PCT=[\s\S]*?const _tpct=[^\n]*\n/.exec(adminSrc)[0];
+      const table = /const TECH_BAND_TABLE=\[[\s\S]*?\n\];/.exec(adminSrc)[0];
+      const local = new Function(`${consts}${table}\n${lifted}\nreturn computeTechRead;`)();
+      const cases = [
+        [L(110, 103, 100, 80, 115), 110],
+        [L(100, 100, 100, 90, 110), 100],
+        [L(90, 120, 118, 90, 130), 90],
+        [{ as_of: "d", levels: { ma50: 120, ma200: 118, swing_lo_3m: 90, swing_hi_3m: 130 },
+           indicators: { rsi14: 60, macd_hist: 0.4 }, pattern: { kind: "breakout" } }, 100],
+        [{ as_of: "d", levels: { ma50: 100, ma200: 100, swing_lo_3m: 80, swing_hi_3m: 120 },
+           indicators: { rsi14: 85, macd_hist: -0.1 }, pattern: { kind: "double_top" } }, 112],
+        [{ as_of: "d", levels: { ma200: 100 } }, 110],
+        [null, 100],
+      ];
+      return cases.every(([pa, px]) => {
+        const a = local(pa, px, {}), b = TR.computeTechRead(pa, px, {});
+        return a.label === b.label && a.counted === b.counted && a.bull === b.bull
+          && a.bear === b.bear && (a.downgraded === null) === (b.downgraded === null);
+      });
+    })());
+  ok("tech: the deep-dive section renders the RULE beside every vote (the macro-dash pattern), " +
+     "names excluded inputs, and never hides the withhold",
+    /function ddTechSec\(x,dd\)/.test(adminSrc)
+    && /<th>the rule<\/th>/.test(adminSrc)
+    && /not measured \(excluded, never counted as neutral\)/.test(adminSrc)
+    && /what would change this read/.test(adminSrc)
+    // the withhold renders as its own amber line inside the section — never swallowed
+    && /if\(r\.downgraded\)h\+=`<div style="color:var\(--amber\)[^`]*⚠ \$\{esc\(r\.downgraded\)\}/.test(adminSrc));
+  ok("tech: the collapsed TRACKING summary carries the verdict — v3.25, a shut drawer never hides a bearish tape",
+    /tech \$\{r\.label\}/.test(adminSrc));
+}
+
 console.log(`\n=== SMOKE TEST: ${pass} passed, ${fail} failed ===`);
 process.exit(fail === 0 ? 0 : 1);

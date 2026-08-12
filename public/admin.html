@@ -9,7 +9,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
 <!-- AUDIT: kept in sync with package.json by test/smoke.mjs. admin.html is a Vite
      public/ passthrough, so it cannot receive __APP_VERSION__ — the guard is the fix. -->
-<title>TT TICKER TERMINAL v3.82.0</title>
+<title>TT TICKER TERMINAL v3.83.0</title>
 <style>
   :root{
     --bg:#05070a; --panel:#0a0f16; --panel2:#0d141d; --line:#16202c;
@@ -409,7 +409,7 @@
         onclick="toggleHeadInfo()">⋯ MENU</button>
     </div>
     <div id="headInfo" style="display:none">
-      <div class="brand">FINANCE&nbsp;BRO.AI // TT&nbsp;TICKER&nbsp;TERMINAL <small>v3.82.0 · single-pass deep-dive orchestrator</small></div>
+      <div class="brand">FINANCE&nbsp;BRO.AI // TT&nbsp;TICKER&nbsp;TERMINAL <small>v3.83.0 · single-pass deep-dive orchestrator</small></div>
       <div class="statusline">
         <span>BOOK: <b id="bookStamp">loading…</b></span>
         <span>AUTH: <b id="sessState">…</b></span>
@@ -1964,6 +1964,69 @@ function ddPaSec(dd){
   if(pa.src)h+=`<div class="scope">${esc(pa.src)}</div>`;
   return h+`</div>`;
 }
+/* FEAT-TT-TECHREAD (v3.83): the band table rendered — every factor, its measured value, the
+   band it fell in, and (below) what would flip the read. This is the macro dash's own
+   "bullish and bearish logic" pattern applied to price: the reader sees the RULE, not just
+   the verdict, so a call can be argued with rather than trusted. */
+function ddTechSec(x,dd){
+  const pa=dd&&dd.price_action;if(!pa)return "";
+  const r=techOf(x);if(!r)return "";
+  const s=TECH_STYLE[r.label],VS={bull:["▲","var(--green)"],bear:["▼","var(--red)"],neutral:["•","var(--amber)"]};
+  let h=`<div class="dd-sec"><div class="lbl">TECHNICAL READ — the WHEN verdict `+
+    `<span style="color:${s.c}">${s.m} ${esc(r.label)}</span></div>`;
+  if(r.label==="UNREAD")return h+`<div class="none">${esc(r.reason||"not measured")}</div></div>`;
+  h+=`<div style="font-size:11px;margin-bottom:4px">${r.bull}▲ / ${r.bear}▼ of ${r.counted} voting`+
+    ` · <b>price action ${r.byKind.price_action.bull}▲/${r.byKind.price_action.bear}▼</b>`+
+    ` · indicators ${r.byKind.indicator.bull}▲/${r.byKind.indicator.bear}▼`+
+    ` · pattern ${r.byKind.pattern.bull}▲/${r.byKind.pattern.bear}▼</div>`;
+  // The withhold is NEVER silent — same contract as the macro TAILWIND downgrade.
+  if(r.downgraded)h+=`<div style="color:var(--amber);font-size:11px;margin-bottom:4px">⚠ ${esc(r.downgraded)}</div>`;
+  h+=`<div class="tblx"><table class="dd-pt"><tr><th>factor</th><th>kind</th><th>reading</th><th>vote</th><th>the rule</th></tr>`+
+    r.factors.map(f=>{const v=VS[f.vote];
+      const bt=TECH_BAND_TABLE.find(b=>b.key===f.key);
+      const rule=bt.flip
+        ? `bull ${bt.flip.bullEdge>bt.flip.bearEdge?">":"<"}${bt.flip.bullEdge}${bt.flip.unit} · bear ${bt.flip.bullEdge>bt.flip.bearEdge?"<":">"}${bt.flip.bearEdge}${bt.flip.unit}`
+        : esc(bt.flipWhy||"");
+      return `<tr><td>${esc(f.label)}</td><td class="scope">${esc(f.kind.replace("_"," "))}</td>`+
+        `<td>${typeof f.value==="number"?f.value.toFixed(bt.flip?bt.flip.dec:1)+(bt.flip?bt.flip.unit:""):esc(String(f.value))}</td>`+
+        `<td style="color:${v[1]}">${v[0]} ${f.vote}</td><td class="scope">${rule}</td></tr>`;}).join("")+
+    `</table></div>`;
+  if(r.missing.length)h+=`<div class="scope">not measured (excluded, never counted as neutral): ${r.missing.map(esc).join(", ")}</div>`;
+  // What would flip it — the techFlips counterpart to the macro board's flip line.
+  const fl=techFlips(pa,(()=>{const p=paRead(x);return p?p.px:null;})(),{stale:false});
+  if(fl.flips.length){
+    h+=`<div style="font-size:11px;margin-top:4px"><b>what would change this read</b> <span class="scope">(one crossing, others held put)</span></div>`+
+      fl.flips.slice(0,3).map(f=>`<div class="scope">· ${esc(f.name)} ${f.to==="bull"?"to":"to"} ${esc(f.to)} at ${f.edge}${esc(f.unit)} — now ${f.now.toFixed(f.dec)}${esc(f.unit)} (${f.dist.toFixed(f.dec)} away) → ${esc(f.would)}</div>`).join("");
+  }else h+=`<div class="scope">no single factor crossing changes this read — it does not turn on one line</div>`;
+  if(fl.abstained.length)h+=`<div class="scope">no single crossing defined for: ${fl.abstained.map(a=>esc(a.short)).join(", ")}</div>`;
+  return h+`</div>`;
+}
+/* techFlips — behavioural copy of src/techRead.js's export (see the TECH_BAND_TABLE note). */
+function techFlips(pa,px,opts){
+  const read=computeTechRead(pa,px,opts||{});
+  if(read.label==="UNREAD")return {flips:[],abstained:[],reason:read.reason};
+  const flips=[],abstained=[];
+  for(const f of TECH_BAND_TABLE){
+    const cur=read.factors.find(x=>x.key===f.key);
+    if(!cur)continue;
+    if(!f.flip){abstained.push({short:f.short,why:f.flipWhy});continue;}
+    for(const target of ["bull","bear","neutral"]){
+      if(target===cur.vote)continue;
+      let bull=read.bull,bear=read.bear;
+      if(cur.vote==="bull")bull--;else if(cur.vote==="bear")bear--;
+      if(target==="bull")bull++;else if(target==="bear")bear++;
+      const would=techVerdictFrom(bull,bear,read.counted);
+      if(would===read.raw)continue;
+      if(cur.vote==="bull"&&target==="bear")continue;
+      if(cur.vote==="bear"&&target==="bull")continue;
+      const edge=target==="bull"?f.flip.bullEdge:f.flip.bearEdge;
+      flips.push({key:f.key,short:f.short,name:f.flip.name,from:cur.vote,to:target,
+        now:cur.value,edge,unit:f.flip.unit,dec:f.flip.dec,dist:Math.abs(cur.value-edge),would});
+    }
+  }
+  flips.sort((a,b)=>a.dist-b.dist);
+  return {flips,abstained,reason:null};
+}
 /* FEAT-TT-ENTRY (v3.82): subsidiaries/SOTP as a typed section instead of prose. Marks sum
    only where numeric; unmarked rows are NAMED and the total called a FLOOR (the capChecks
    rule); basis "assertion" is flagged. Deliberately NOT auto-wired into pt_model — moving a
@@ -3016,8 +3079,11 @@ function renderDeepDive(sym){
     ddListSec("Hedges",dd.hedges)+ddKvSec("Position &amp; overlay",dd.position)+
     (dd.linked_exposure?`<div class="dd-sec"><div class="lbl">Linked exposure</div><div style="color:var(--amber);font-size:11.5px">⛓ ${ddVal(dd.linked_exposure)}</div></div>`:""));
   h+=ddDrawer("track",`TRACKING &amp; MODEL`+
-    (dd.price_action&&dd.price_action.entry&&isFinite(dd.price_action.entry.level)?` · entry $${dd.price_action.entry.level}`:""),
-    ddPaSec(dd)+
+    (dd.price_action&&dd.price_action.entry&&isFinite(dd.price_action.entry.level)?` · entry $${dd.price_action.entry.level}`:"")+
+    // v3.25: the collapsed summary carries the read, so a BEARISH tape is visible while shut.
+    (()=>{const r=dd.price_action?techOf(x):null;
+      return r&&r.label!=="UNREAD"?` · <span style="color:${TECH_STYLE[r.label].c}">${TECH_STYLE[r.label].m} tech ${r.label}</span>`:"";})(),
+    ddPaSec(dd)+ddTechSec(x,dd)+
     ddKvSec("Leading indicators",dd.leading_indicators)+
     ddKvSec("Certification probabilities",dd.cert_probabilities)+
     ddKvSec("Utilization underwriting",dd.utilization_underwriting)+
@@ -3455,6 +3521,111 @@ function paRead(x){
   if(ref&&px!==null)
     return {src:"ref",kind:"ref",hit:null,dist:(px/ref.v-1)*100,level:ref.v,ref:ref.k,px,stale,age};
   return {src:"none",kind:"none",hit:null,dist:null,level:null,px,stale,age};
+}
+/* FEAT-TT-TECHREAD (v3.83) — the banded technical read. BYTE-FOR-BEHAVIOUR copy of
+   src/techRead.js; admin.html is buildless and cannot import. Smoke section [57] runs BOTH
+   implementations over a fixture matrix and asserts identical verdicts — behavioural
+   identity rather than the ptModel byte-identity tripwire, because a table of arrow
+   functions is brittle to whitespace but its VOTES are exactly what must not drift.
+   Full doctrine (the split tally, the asymmetric bull withhold, missing-is-excluded, and
+   the married-never-merged rule) lives in that module's header — read it there, not twice. */
+const MA_BAND_PCT=2,CROSS_BAND_PCT=1,RANGE_HI=66,RANGE_LO=33,TECH_QUORUM=3;
+const PATTERN_BULL=["higher_highs","breakout","cup_handle","ascending_triangle","double_bottom","bull_flag","reclaim"];
+const PATTERN_BEAR=["lower_lows","breakdown","head_shoulders","descending_triangle","double_top","bear_flag","rejection"];
+const PATTERN_NEUTRAL=["consolidation","range","base","coil"];
+const _tpct=(a,b)=>(a/b-1)*100;
+const TECH_BAND_TABLE=[
+  /* ONE trend factor, not three — the collinearity fix; full reasoning in src/techRead.js. */
+  {key:"trend",short:"TRND",label:"Trend alignment",kind:"price_action",plain:"the trend",
+   read:t=>{if(!(isFinite(t.px)&&isFinite(t.ma50)&&isFinite(t.ma200)&&t.ma50>0&&t.ma200>0))return undefined;
+     const step=(v,b)=>v>b?1:v<-b?-1:0;
+     return step(_tpct(t.px,t.ma50),MA_BAND_PCT)+step(_tpct(t.px,t.ma200),MA_BAND_PCT)
+       +step(_tpct(t.ma50,t.ma200),CROSS_BAND_PCT);},
+   vote:v=>v>=2?"bull":v<=-2?"bear":"neutral",
+   flip:{bullEdge:2,bearEdge:-2,unit:" of 3",dec:0,name:"trend alignment"}},
+  {key:"range",short:"RNG",label:"Position in 3-mo range",kind:"price_action",plain:"where price sits in its recent range",
+   read:t=>(isFinite(t.px)&&isFinite(t.lo)&&isFinite(t.hi)&&t.hi>t.lo?((t.px-t.lo)/(t.hi-t.lo))*100:undefined),
+   vote:v=>v>RANGE_HI?"bull":v<RANGE_LO?"bear":"neutral",
+   flip:{bullEdge:RANGE_HI,bearEdge:RANGE_LO,unit:"% of range",dec:0,name:"position in the 3-month range"}},
+  {key:"rsi",short:"RSI",label:"RSI(14)",kind:"indicator",plain:"momentum",
+   read:t=>(isFinite(t.rsi14)?t.rsi14:undefined),
+   vote:v=>(v>=80||v<45)?"bear":v>55?"bull":"neutral",flip:null,
+   flipWhy:"votes on a TWO-SIDED band — bullish between 55 and 80, bearish below 45 OR above 80 (exhaustion) — so no single crossing defines the flip"},
+  {key:"macd",short:"MACD",label:"MACD histogram",kind:"indicator",plain:"the momentum trend",
+   read:t=>(isFinite(t.macd_hist)?t.macd_hist:undefined),
+   vote:v=>v>0?"bull":v<0?"bear":"neutral",
+   flip:{bullEdge:0,bearEdge:0,unit:"",dec:2,name:"the MACD histogram"}},
+  {key:"pattern",short:"PAT",label:"Chart pattern",kind:"pattern",plain:"the chart pattern",
+   read:t=>(typeof t.pattern==="string"&&t.pattern?t.pattern:undefined),
+   vote:v=>PATTERN_BULL.includes(v)?"bull":PATTERN_BEAR.includes(v)?"bear":PATTERN_NEUTRAL.includes(v)?"neutral":"unknown",
+   flip:null,flipWhy:"is categorical — a named chart formation, not a level, so there is no distance to an edge"},
+];
+function techVerdictFrom(bull,bear,counted){
+  const b=counted>0&&bull>counted/2,s=counted>0&&bear>counted/2;
+  if(b&&!s)return "BULLISH";if(s&&!b)return "BEARISH";return "MIXED";
+}
+function techInputs(pa,px){
+  const lv=(pa&&pa.levels)||{},ind=(pa&&pa.indicators)||{},pat=pa&&pa.pattern;
+  return {px:isFinite(px)&&px>0?px:undefined,ma50:lv.ma50,ma100:lv.ma100,ma200:lv.ma200,
+    lo:lv.swing_lo_3m,hi:lv.swing_hi_3m,rsi14:ind.rsi14,macd_hist:ind.macd_hist,
+    pattern:pat&&typeof pat==="object"?pat.kind:pat};
+}
+function computeTechRead(pa,px,opts){
+  opts=opts||{};
+  const zero=()=>({bull:0,bear:0,counted:0});
+  const base={label:"UNREAD",factors:[],bull:0,bear:0,counted:0,total:TECH_BAND_TABLE.length,
+    byKind:{price_action:zero(),indicator:zero(),pattern:zero()},raw:null,downgraded:null,
+    quorum:TECH_QUORUM,missing:[],stale:!!opts.stale};
+  if(!pa||typeof pa!=="object")return Object.assign(base,{reason:"no price_action block stored"});
+  if(opts.stale)return Object.assign(base,{reason:"levels are stale — a technical read off aged levels is not a fact about today's tape"});
+  const t=techInputs(pa,px),factors=[],missing=[];
+  let bull=0,bear=0,counted=0;
+  const byKind={price_action:zero(),indicator:zero(),pattern:zero()};
+  for(const f of TECH_BAND_TABLE){
+    const v=f.read(t);
+    if(v===undefined){missing.push(f.short);continue;}
+    const vote=f.vote(v);
+    if(vote==="unknown"){missing.push(`${f.short} (unrecognised: ${v})`);continue;}
+    counted++;byKind[f.kind].counted++;
+    if(vote==="bull"){bull++;byKind[f.kind].bull++;}else if(vote==="bear"){bear++;byKind[f.kind].bear++;}
+    factors.push({key:f.key,short:f.short,label:f.label,kind:f.kind,plain:f.plain,value:v,vote});
+  }
+  if(counted<TECH_QUORUM)
+    return Object.assign(base,{factors,counted,bull,bear,byKind,missing,label:"UNREAD",
+      reason:`only ${counted} of ${TECH_BAND_TABLE.length} technical inputs measured (needs ${TECH_QUORUM}) — missing ${missing.join(", ")}`});
+  const raw=techVerdictFrom(bull,bear,counted);
+  let label=raw,downgraded=null;
+  if(raw==="BULLISH"){
+    const p=byKind.price_action;
+    if(p.counted===0){label="MIXED";
+      downgraded="BULLISH withheld — no price-action factor is measured, and a bull call resting only on lagging indicators is the one that must not stand alone";}
+    else if(!(p.bull>p.bear)){label="MIXED";
+      downgraded=`BULLISH withheld — price action does not confirm (${p.bull} bull vs ${p.bear} bear of ${p.counted} price-action factors); the bull tally is carried by lagging inputs`;}
+  }
+  return {label,factors,bull,bear,counted,total:TECH_BAND_TABLE.length,byKind,raw,downgraded,
+    quorum:TECH_QUORUM,missing,stale:false,reason:null};
+}
+/* The read, resolved for one book entry. ONE resolution point — every technical surface
+   (the eligible-line chip, the deep-dive section) goes through this, so the chip and the
+   table can never report different verdicts (the ptModelRows rule). */
+function techOf(x){
+  const dd=ddOf(x);const pa=dd&&dd.price_action;if(!pa)return null;
+  const p=paRead(x);
+  return computeTechRead(pa,p?p.px:null,{stale:p?p.stale:true});
+}
+const TECH_STYLE={BULLISH:{c:"var(--green)",m:"▲"},BEARISH:{c:"var(--red)",m:"▼"},
+  MIXED:{c:"var(--amber)",m:"•"},UNREAD:{c:"var(--dim)",m:"○"}};
+function techChip(sym){
+  const x=BOOK.find(e=>e.sym===sym)||{sym};
+  const r=techOf(x);if(!r)return "";
+  const s=TECH_STYLE[r.label];
+  if(r.label==="UNREAD")
+    return `<span class="scope">${s.m} technicals UNREAD — ${esc(r.reason||"not measured")}</span>`;
+  const p=r.byKind.price_action;
+  return `<span style="color:${s.c}">${s.m} TECH ${r.label}</span>`+
+    `<span class="scope"> ${r.bull}▲/${r.bear}▼ of ${r.counted}`+
+    ` · price action ${p.bull}▲/${p.bear}▼ of ${p.counted}`+
+    (r.downgraded?` · <span style="color:var(--amber)">${esc(r.raw)} withheld</span>`:"")+`</span>`;
 }
 function paChip(sym){
   const x=BOOK.find(e=>e.sym===sym)||{sym};
@@ -4202,6 +4373,10 @@ function renderUpsideRank(){
           // green line lights on fundamentals+gates; this says whether price is where the
           // owner committed to wanting it. Absent block = no line at all, never a guess.
           (()=>{const pc=paChip(b.sym);return pc?`<div style="margin-top:2px">${pc}<span class="scope"> · WHEN — price action, reported never enforced</span></div>`:"";})()+
+          // FEAT-TT-TECHREAD (v3.83): the banded read renders on its OWN line beside the
+          // entry distance — two different questions (is the tape with me / is the price
+          // where I committed), never blended into one score, and neither one a veto.
+          (()=>{const tc=techChip(b.sym);return tc?`<div style="margin-top:2px">${tc}</div>`:"";})()+
           (b.rolled?`<div class="scope" style="margin-top:2px">↷ priced off the ${esc(b.y)} rung — the ${esc(b.rolled)} one is inside 3 months</div>`:"")+
           `</div>`;}
       const near=rows.slice(0,4).map(r=>`${esc(r.sym)}: ${esc(why(r))}`).join(" · ");
