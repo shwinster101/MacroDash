@@ -96,13 +96,13 @@ export function tokenScissors(trend) {
 }
 
 export const HYPERSCALER_CAPEX = {
-  fy: "FY26", reviewed: "2026-07-30",
+  fy: "FY26", reviewed: "2026-08-12",
   rows: [
-    { co: "MSFT",  guideB: 120, dir: "up"   },
-    { co: "AMZN",  guideB: 118, dir: "up"   },
-    { co: "GOOGL", guideB: 92,  dir: "up"   },
-    { co: "META",  guideB: 70,  dir: "hold" },
+    { co: "AMZN",  guideB: 220,   dir: "up" },   // raised 200→~220 at Q2 print 2026-07-30 (memory costs)
+    { co: "GOOGL", guideB: 200,   dir: "up" },   // 195–205 mid, 3rd raise of 2026 (2026-07-22)
+    { co: "META",  guideB: 137.5, dir: "up" },   // 130–145 mid, 2nd raise (2026-07-29)
+    { co: "MSFT",  guideB: 257.5, dir: "up" },   // FY27 guide (Jul-26→Jun-27) 255–260 mid — see note
   ],
-  note: "Big-4 guided capex — the pool that funds every AI-infra beneficiary's revenue. ≥2 guiding down = the regime-turn tell (headwind #1's $705B counts ALL AI capex incl. neoclouds; this tape tracks the four the market prices).",
+  note: "Big-4 guided capex — the pool that funds every AI-infra beneficiary's revenue. ≥2 guiding down = the regime-turn tell. All four RAISED at the Jul-26 Q2 prints. MSFT is its FY27 fiscal guide (Jul-26→Jun-27) — MSFT guides fiscal, not calendar (cal-26 ≈ $190B is an analyst estimate, not a guide), so the aggregate mixes windows and overstates calendar 2026.",
 };
 
