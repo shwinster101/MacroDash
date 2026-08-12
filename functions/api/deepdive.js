@@ -95,6 +95,12 @@ export function ddIndexEntry(dd) {
     // a reason that was really just lazy loading
     capex_exposure: dd.capex_exposure || null,
     pt_consensus: dd.pt_consensus || null,   // FEAT-TT-SPREAD's "street vs mine" is board-visible
+    // FEAT-TT-ENTRY (v3.82): the eligible line renders entry distance at BOARD altitude,
+    // before any tab is opened — omitting this would make the WHEN chip silently vanish for
+    // any store-only name (the same lazy-loading trap that put hinges in this index).
+    // `subsidiaries` is deliberately NOT here: it renders only on the tab, and the whitelist
+    // doctrine is that the index carries exactly what the board reads, nothing more.
+    price_action: dd.price_action || null,
     thesis_version: dd.thesis_version || null,
     as_of: dd.as_of || dd.updated || null,
     // the quality gate reads score+tier only, never the prose

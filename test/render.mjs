@@ -687,6 +687,46 @@ ok("FIX-B: an asserted PANIC stance vetoes eligibility, gate named in the WAIT b
 ok("FIX-B: no AGREE_PICK survives a failed eligibility gate", gated.pick === null);
 await page.waitForTimeout(120);
 
+// FEAT-TT-ENTRY (v3.82): the WHEN leg driven live. Clear the gates (the capped-test recipe),
+// give AAA a composite + a positive gap + a committed entry ABOVE the live price (pullback
+// unmet), and the eligible line must light green WITH the distance chip — proving in one
+// pass both that WHEN renders where the decision is read and that it never vetoes.
+const paLive = await page.evaluate(() => {
+  const a = BOOK.find((e) => e.sym === "AAA");
+  const prev = { reg: BOARD.regime, circ: BOARD.circuit.state, px: LIVE_PX.AAA,
+    comp: a.deepDive.composite, pa: a.deepDive.price_action };
+  BOARD.regime = null; BOARD.circuit.state = "clear";
+  LIVE_PX.AAA = { px: 300, chg: 0, at: prev.px.at };
+  a.deepDive.composite = { score: 8.0, basis: "synthetic", capped_tier: "A" };
+  const today = new Date().toLocaleDateString("en-CA", { timeZone: "America/New_York" });
+  a.deepDive.price_action = { as_of: today,
+    levels: { ma50: 280, ma200: 240 },
+    entry: { level: 250, kind: "pullback", set_at: today } };
+  render();
+  const t = document.getElementById("upsideRank").innerText;
+  const buy = document.getElementById("buyBlock").innerText;
+  const out = { pick: AGREE_PICK ? AGREE_PICK.sym : null,
+    green: /ELIGIBLE NEXT DOLLAR — all gates passed/.test(t),
+    chip: /\+20\.0% above committed entry \$250/.test(t),
+    when: /WHEN — price action, reported never enforced/.test(t),
+    buyChip: /above committed entry \$250/.test(buy) };
+  // Now move the price TO the committed level — the chip must flip to AT ENTRY.
+  LIVE_PX.AAA = { px: 245, chg: 0, at: prev.px.at };
+  render();
+  out.hit = /✓ AT ENTRY/.test(document.getElementById("upsideRank").innerText);
+  BOARD.regime = prev.reg; BOARD.circuit.state = prev.circ; LIVE_PX.AAA = prev.px;
+  a.deepDive.composite = prev.comp;
+  if (prev.pa === undefined) delete a.deepDive.price_action; else a.deepDive.price_action = prev.pa;
+  render();
+  return out;
+});
+ok("entry: the eligible line lights green WITH the entry distance — WHEN reported beside WHAT, not a veto",
+  paLive.pick === "AAA" && paLive.green && paLive.chip && paLive.when);
+ok("entry: the SAME chip renders on the primary-view BUY block (one builder, two altitudes)",
+  paLive.buyChip);
+ok("entry: price reaching the committed level flips the chip to AT ENTRY, live",
+  paLive.hit);
+
 console.log("\n[render] FEAT-TT-ESTRUN — the board expression inside NEXT DOLLAR");
 const estBoard = await txt(page, "estRunBoard");
 ok("every modelled name gets a row, denominator stated",

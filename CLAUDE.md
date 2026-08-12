@@ -2049,6 +2049,53 @@ Jan-anchor shipped; see `snapshot.js` ~318–328), `spyMa100`, `spyMa200`, and a
   string-pinning it — the project's own recurring lesson (v3.40, v3.54: state computed and
   rendered but not read at the gate) is exactly the shape a string pin cannot catch.
   Tests: **1067 smoke** (+6) + 192 render + 88 public-render.
+- **FEAT-TT-ENTRY (v3.82.0) — the WHEN leg: price action on the eligible line.** The framework
+  doctrine has three legs — fundamentals decide WHAT, support/resistance decide WHEN, the regime
+  decides HOW STRICT — and an audit of the marriage found only two instrumented. WHEN lived
+  solely as prose in the free-text `rank` field ("#1 on pullback to X"), a trigger the owner
+  asserted in a sentence nothing measured; the green **ELIGIBLE NEXT DOLLAR — all gates passed**
+  line checked stance, flip, run freshness and the cap — WHAT + HOW STRICT — and silently
+  delegated WHEN back to the owner at the moment of the order. This closes it with the
+  **falsifier discipline pointed at price**: a payload block `price_action` carrying
+  (a) **assistant-stamped reference levels** (50/100/200-day MAs, 3-month swings — computed from
+  the broker historicals API at each TT run, never owner-typed; the owner's input burden stays
+  exactly key-metrics + fwd rev/EPS, by explicit owner constraint) and (b) an **optional
+  owner-committed `entry`** `{level, kind: pullback|breakout, set_at}` — a level written down
+  BEFORE the tape gets there, an edit re-stamping `set_at` (the re-commit rule).
+  **PRICE ACTION ONLY, deliberately** — no oscillators, no RSI: the macro board's indicators are
+  lagging by construction (owner's observation) and this leg exists to be the opposite. Distance
+  is live-price-vs-level, nothing else. **REPORT, NEVER VETO** (the BINCAL doctrine, smoke-pinned
+  both ways): `paChip` renders ON the eligible line at BOTH altitudes (DESK + primary BUY block,
+  one builder, zero drift) so WHAT and WHEN print together — married, never merged — but neither
+  `gateFail` nor `why()` may reference it. Fail-closed everywhere: an undated block is stale, a
+  >7-day stamp is stale (`PA_STALE_D=7` — a pre-print pullback level is arguably invalid the
+  morning after a print), no live quote falls back to `ref_px`, neither at all renders no
+  distance, and an absent block renders NOTHING — never a guess. `price_action` joins the
+  dd-index whitelist (the eligible line is board altitude — omitting it would silently blank the
+  chip for store-only names, the lazy-loading trap that put hinges in the index); `subsidiaries`
+  deliberately does NOT (tab-only).
+  **FEAT-TT-SUBS (same release) — subsidiaries/SOTP as a typed section.** Stake value lived in
+  prose and composite adjustments (NBIS's ~13%-of-cap stakes, ACHR's Wisk/SkyGrid); a typed
+  `subsidiaries` block `{as_of, rows:[{name, kind, pct, mark_B, basis}]}` now renders its own
+  table in CAPITAL & EXPOSURE: marks sum only where numeric, **unmarked rows are NAMED and the
+  total called a FLOOR** (the capChecks rule), an "assertion" basis is flagged amber, and the
+  section states outright that it is **NOT wired into the PT ladder** — moving a marked total
+  into `pt_model.net_cash_B` moves every rung and is an owner call per name.
+  Ratified with no code change (the smallest-change answer): valuation-primary = forward P/E
+  with consensus-forward growth, profitability/margins weighed within — already encoded as the
+  earnings-lens rule + consensus-driven rungs + the composite's P3 pillar.
+  Not shipped this release: real level stamps for CRWV/NBIS — the historicals API needs the
+  next session's tool approval, and the two web sources consulted DISAGREED on the 200d
+  (96.66 vs 93.2), which fails the measured-fact bar; stamping contradictory second-hand
+  numbers would be the exact defect the block exists to prevent.
+  Tests: **1356 smoke** (+11: `paRead` lifted and RUN — both kinds' hit/miss with the mirror
+  comparator proven distinct, signed distance, the three fail-closed paths, the never-veto pin
+  on both gate sites, the one-builder-two-altitudes pin, the index whitelist run through the
+  real `ddIndexEntry`, and the subsidiaries floor/assertion/never-auto-wired pins) + **225
+  render** (+3: the eligible line driven green WITH the distance chip live in Chromium, the
+  same chip on the primary BUY block, and the price moved to the committed level flipping it to
+  AT ENTRY). Negative-controlled: collapsing the pullback/breakout comparator turns the mirror
+  pin red.
 - **v3.81.0 — the horizon picker becomes a control, not a caption.** Owner screenshot
   (2026-08-11): the live board was ranking on **nearest**, reporting **MU +1970.1%/yr** and
   **SNDK +1035.2%/yr**. Both figures are arithmetically correct — YE2026 is ~0.39 years out, so

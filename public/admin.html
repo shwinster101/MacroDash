@@ -9,7 +9,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
 <!-- AUDIT: kept in sync with package.json by test/smoke.mjs. admin.html is a Vite
      public/ passthrough, so it cannot receive __APP_VERSION__ — the guard is the fix. -->
-<title>TT TICKER TERMINAL v3.81.0</title>
+<title>TT TICKER TERMINAL v3.82.0</title>
 <style>
   :root{
     --bg:#05070a; --panel:#0a0f16; --panel2:#0d141d; --line:#16202c;
@@ -409,7 +409,7 @@
         onclick="toggleHeadInfo()">⋯ MENU</button>
     </div>
     <div id="headInfo" style="display:none">
-      <div class="brand">FINANCE&nbsp;BRO.AI // TT&nbsp;TICKER&nbsp;TERMINAL <small>v3.81.0 · single-pass deep-dive orchestrator</small></div>
+      <div class="brand">FINANCE&nbsp;BRO.AI // TT&nbsp;TICKER&nbsp;TERMINAL <small>v3.82.0 · single-pass deep-dive orchestrator</small></div>
       <div class="statusline">
         <span>BOOK: <b id="bookStamp">loading…</b></span>
         <span>AUTH: <b id="sessState">…</b></span>
@@ -1945,6 +1945,46 @@ function ddVal(v){
    name's revenue rides. Type semantics matter (direct draws the pool; fab is inside a direct
    name's COGS; power rides the buildout broadly; neocloud is two-sided), so a purpose-built
    line beats the generic k/v fallback. Unknown/absent renders nothing. */
+/* FEAT-TT-ENTRY (v3.82): the price-action block on the tab. Levels are assistant-stamped
+   (src states it); the committed entry, when present, is the owner's — and an edit
+   re-stamps set_at, so a level can never claim to predate a move it was drawn after. */
+function ddPaSec(dd){
+  const pa=dd&&dd.price_action;if(!pa||typeof pa!=="object")return "";
+  const age=ageDays(pa.as_of),stale=age===null||age>PA_STALE_D;
+  const lv=pa.levels||{};const e=pa.entry;
+  let h=`<div class="dd-sec"><div class="lbl">PRICE ACTION — the WHEN leg`+
+    (stale?` · <span style="color:var(--amber)">levels ${age===null?"undated":age+"d old"} — restamp at next TT run</span>`:` · stamped ${esc(pa.as_of)}`)+`</div>`;
+  if(e&&isFinite(e.level))
+    h+=`<div style="font-size:11.5px"><b style="color:var(--cyan)">committed entry: $${e.level}</b> (${esc(e.kind||"pullback")}, set ${esc(e.set_at||"undated")})`+
+      (e.note?` — ${esc(e.note)}`:"")+`</div>`;
+  else h+=`<div class="none">no committed entry — the eligible line shows reference-level distance only; committing a level is an owner call, made BEFORE the tape gets there</div>`;
+  const rows=[["50d MA",lv.ma50],["100d MA",lv.ma100],["200d MA",lv.ma200],["3-mo swing lo",lv.swing_lo_3m],["3-mo swing hi",lv.swing_hi_3m]]
+    .filter(r=>isFinite(r[1]));
+  if(rows.length)h+=`<div style="font-size:11px;color:var(--dim);margin-top:3px">${rows.map(r=>`${r[0]} $${r[1]}`).join(" · ")}</div>`;
+  if(pa.src)h+=`<div class="scope">${esc(pa.src)}</div>`;
+  return h+`</div>`;
+}
+/* FEAT-TT-ENTRY (v3.82): subsidiaries/SOTP as a typed section instead of prose. Marks sum
+   only where numeric; unmarked rows are NAMED and the total called a FLOOR (the capChecks
+   rule); basis "assertion" is flagged. Deliberately NOT auto-wired into pt_model — moving a
+   marked total into net_cash_B changes every rung and is an owner call per name. */
+function ddSubsSec(dd){
+  const s=dd&&dd.subsidiaries;if(!s||!Array.isArray(s.rows)||!s.rows.length)return "";
+  const marked=s.rows.filter(r=>isFinite(r.mark_B)),unmarked=s.rows.filter(r=>!isFinite(r.mark_B));
+  const tot=marked.reduce((a,r)=>a+r.mark_B,0);
+  let h=`<div class="dd-sec"><div class="lbl">SUBSIDIARIES &amp; STAKES${s.as_of?` · ${esc(s.as_of)}`:""}</div>`;
+  h+=`<div class="tblx"><table class="dd-pt"><tr><th>name</th><th>kind</th><th>%</th><th>mark</th><th>basis</th></tr>`+
+    s.rows.map(r=>`<tr><td>${esc(r.name||"?")}</td><td>${esc(r.kind||"stake")}</td>`+
+      `<td>${isFinite(r.pct)?r.pct+"%":"—"}</td>`+
+      `<td>${isFinite(r.mark_B)?"$"+r.mark_B+"B":'<span style="color:var(--amber)">unmarked</span>'}</td>`+
+      `<td>${/assert/i.test(r.basis||"")?'<span style="color:var(--amber)">'+esc(r.basis)+"</span>":esc(r.basis||"—")}</td></tr>`).join("")+
+    `</table></div>`;
+  h+=`<div style="font-size:11px;margin-top:3px">marked total <b>$${tot.toFixed(2)}B</b>`+
+    (unmarked.length?` — <span style="color:var(--amber)">a FLOOR: ${unmarked.map(r=>esc(r.name)).join(", ")} carr${unmarked.length===1?"ies":"y"} no mark</span>`:"")+`</div>`;
+  h+=`<div class="scope">not wired into the PT ladder — moving a marked total into pt_model.net_cash_B is an owner call per name</div>`;
+  if(s.note)h+=`<div class="scope">${esc(s.note)}</div>`;
+  return h+`</div>`;
+}
 function ddCapexExpSec(dd){
   const e=dd&&dd.capex_exposure;
   if(!e||typeof e!=="object"||Array.isArray(e))return "";
@@ -2463,7 +2503,10 @@ const DD_HANDLED=new Set(["ticker","name","thesis_version","updated","as_of","ti
   // v3.73 TT-SCORE: composite renders inside the score panel as LEGACY / UNVERIFIED — one
   // home, not the unknown-fields drawer. (falsifiers_v2_draft deliberately NOT handled:
   // staged pre-commitment content stays visible in OTHER STORED FIELDS until promoted.)
-  "composite"]);
+  "composite",
+  // FEAT-TT-ENTRY (v3.82): price_action renders in TRACKING (ddPaSec) + on the eligible
+  // line; subsidiaries renders in CAPITAL & EXPOSURE (ddSubsSec).
+  "price_action","subsidiaries"]);
 /* ═══════════ DEEP-DIVE FOCUS (FEAT-TT-DDFOCUS v3.31) ═══════════ */
 /* The tab opened ~20 sections at full size — exactly the pre-v3.29 board, one level down.
    A reader arrives at a name's tab with four questions and no others: what is it worth,
@@ -2966,12 +3009,15 @@ function renderDeepDive(sym){
     ddListSec("Open items",dd.open_items));
   h+=ddDrawer("dates",`KEY DATES${(()=>{const n=ddNextDate(dd,todayET);
     return n?` · next ${esc(n.label)} in ${n.d}d`:` · <span style="color:var(--dim)">none dated</span>`;})()}`,kdHtml);
-  h+=ddDrawer("cap",`CAPITAL &amp; EXPOSURE`+(dd.linked_exposure?` · <span style="color:var(--amber)">linked exposure</span>`:""),
-    ddCapexExpSec(dd)+ddKvSec("Capital",dd.capital)+ddGridSec(dd.dilution_grid)+
+  h+=ddDrawer("cap",`CAPITAL &amp; EXPOSURE`+(dd.linked_exposure?` · <span style="color:var(--amber)">linked exposure</span>`:"")+
+    (dd.subsidiaries&&Array.isArray(dd.subsidiaries.rows)&&dd.subsidiaries.rows.length?` · ${dd.subsidiaries.rows.length} stake${dd.subsidiaries.rows.length===1?"":"s"}`:""),
+    ddSubsSec(dd)+ddCapexExpSec(dd)+ddKvSec("Capital",dd.capital)+ddGridSec(dd.dilution_grid)+
     ddListSec("Capital disclosure watchlist (unlocks)",dd.watchlist_unlocks)+
     ddListSec("Hedges",dd.hedges)+ddKvSec("Position &amp; overlay",dd.position)+
     (dd.linked_exposure?`<div class="dd-sec"><div class="lbl">Linked exposure</div><div style="color:var(--amber);font-size:11.5px">⛓ ${ddVal(dd.linked_exposure)}</div></div>`:""));
-  h+=ddDrawer("track",`TRACKING &amp; MODEL`,
+  h+=ddDrawer("track",`TRACKING &amp; MODEL`+
+    (dd.price_action&&dd.price_action.entry&&isFinite(dd.price_action.entry.level)?` · entry $${dd.price_action.entry.level}`:""),
+    ddPaSec(dd)+
     ddKvSec("Leading indicators",dd.leading_indicators)+
     ddKvSec("Certification probabilities",dd.cert_probabilities)+
     ddKvSec("Utilization underwriting",dd.utilization_underwriting)+
@@ -3368,6 +3414,61 @@ function ddOf(x){
 // True when what we hold for this name is the board index, not the whole thesis — the
 // deep-dive tab needs the full payload and must SAY so rather than render a partial as complete.
 function ddIsPartial(sym){return !DD_FULL[sym]&&!!DD_INDEX_MAP[sym];}
+/* ═══════════ FEAT-TT-ENTRY (v3.82) — the WHEN leg, price action only ══════════════════════
+   The framework doctrine has three legs — fundamentals decide WHAT, price action decides
+   WHEN, the regime decides HOW STRICT — and the terminal instrumented two of them. WHEN
+   lived solely as prose in the free-text `rank` field: the owner asserting "on pullback to
+   X" in a sentence nothing measured. This closes it with the falsifier discipline pointed
+   at price: a payload block `price_action` carrying (a) assistant-stamped reference LEVELS
+   (50/100/200-day MAs, 3-month swing lo/hi — computed from the broker historicals API at
+   each TT run, never owner-typed; the owner's input burden does not grow) and (b) an
+   OPTIONAL owner-committed `entry` {level, kind: pullback|breakout, set_at} — a level
+   written down BEFORE the tape gets there, same pre-commitment rule as hinges.
+   PRICE ACTION ONLY, deliberately: no oscillators, no RSI — the macro board's indicators
+   are lagging by construction and this leg exists to be the opposite of that. Distance is
+   measured live-price-vs-level, nothing else.
+   REPORT, NEVER VETO (the FEAT-TT-BINCAL doctrine): paChip renders ON the eligible line so
+   WHAT and WHEN print together — married, never merged — but it never enters gateFail or
+   why(). Fundamentals said the name; this says whether the price is where you said you
+   wanted it. Enforcement is the owner's; awareness is not.
+   Levels age like every other clock: PA_STALE_D=7 (price levels decay fast — a pre-print
+   pullback level is arguably invalid the morning after a print), missing as_of fails
+   closed to stale, and an edited entry re-stamps set_at (the re-commit rule). */
+const PA_STALE_D=7;
+function paRead(x){
+  const dd=ddOf(x);const pa=dd&&dd.price_action;
+  if(!pa||typeof pa!=="object")return null;
+  const live=LIVE_PX[x.sym];
+  const px=(live&&isFinite(live.px)&&live.px>0)?live.px
+    :(dd.ref_px&&isFinite(dd.ref_px.px)&&dd.ref_px.px>0?dd.ref_px.px:null);
+  const age=ageDays(pa.as_of);
+  const stale=age===null||age>PA_STALE_D;   // fail closed: undated levels are stale levels
+  const e=pa.entry;
+  if(e&&isFinite(e.level)&&e.level>0&&px!==null){
+    const kind=e.kind==="breakout"?"breakout":"pullback";
+    // pullback = want price AT/BELOW the level; breakout = want price AT/ABOVE it.
+    const hit=kind==="breakout"?px>=e.level:px<=e.level;
+    return {src:"entry",kind,hit,dist:(px/e.level-1)*100,level:e.level,px,stale,age};
+  }
+  const lv=pa.levels||{};
+  const ref=isFinite(lv.ma50)?{k:"50d",v:lv.ma50}:isFinite(lv.ma200)?{k:"200d",v:lv.ma200}:null;
+  if(ref&&px!==null)
+    return {src:"ref",kind:"ref",hit:null,dist:(px/ref.v-1)*100,level:ref.v,ref:ref.k,px,stale,age};
+  return {src:"none",kind:"none",hit:null,dist:null,level:null,px,stale,age};
+}
+function paChip(sym){
+  const x=BOOK.find(e=>e.sym===sym)||{sym};
+  const p=paRead(x);
+  if(!p)return "";   // no price_action block stored — the chip renders NOTHING, not a guess
+  const d=p.dist===null?"":`${p.dist>=0?"+":""}${p.dist.toFixed(1)}%`;
+  const staleTag=p.stale?` <span style="color:var(--amber)">· levels ${p.age===null?"undated":p.age+"d old"} — restamp</span>`:"";
+  if(p.src==="entry"){
+    if(p.hit)return `<span style="color:var(--green)">✓ AT ENTRY — $${p.px.toFixed(2)} ${p.kind==="breakout"?"above breakout":"at/below pullback"} $${p.level}</span>${staleTag}`;
+    return `<span style="color:var(--amber)">⏳ ${d} ${p.kind==="breakout"?"below breakout":"above committed entry"} $${p.level}</span>${staleTag}`;
+  }
+  if(p.src==="ref")return `<span class="scope">◦ no committed entry · ${d} vs ${p.ref}</span>${staleTag}`;
+  return `<span class="scope">◦ price-action block stored, no levels usable</span>${staleTag}`;
+}
 async function loadDeepDiveIndex(){
   try{
     const r=await fetch("/api/deepdive?index=1");
@@ -4097,6 +4198,10 @@ function renderUpsideRank(){
           // entry trigger broken and say nothing HERE, which is where the decision is read.
           // Surfaced, named, and on the same line: enforcement is the owner's, awareness is not.
           (b.redH?`<div style="color:var(--red);margin-top:3px">⚠ ${b.redH} red hinge${b.redH===1?"":"s"} on this name — <b>${esc(b.redLabels.join(" · "))}</b><span class="scope"> · not a veto (yours to weigh), but it is what would change your mind</span></div>`:"")+
+          // FEAT-TT-ENTRY (v3.82): WHEN prints beside WHAT. Reported, never a veto — the
+          // green line lights on fundamentals+gates; this says whether price is where the
+          // owner committed to wanting it. Absent block = no line at all, never a guess.
+          (()=>{const pc=paChip(b.sym);return pc?`<div style="margin-top:2px">${pc}<span class="scope"> · WHEN — price action, reported never enforced</span></div>`:"";})()+
           (b.rolled?`<div class="scope" style="margin-top:2px">↷ priced off the ${esc(b.y)} rung — the ${esc(b.rolled)} one is inside 3 months</div>`:"")+
           `</div>`;}
       const near=rows.slice(0,4).map(r=>`${esc(r.sym)}: ${esc(why(r))}`).join(" · ");
@@ -4611,7 +4716,10 @@ function renderBuyBlock(){
   else if(AGREE_PICK)h+=`<div class="none" style="color:var(--green);font-weight:700">🎯 ELIGIBLE NEXT DOLLAR: ${esc(AGREE_PICK.sym)}`+
     // FEAT-TT-PTLINT (D3): the primary view is the ONE surface guaranteed to be seen, so a red
     // hinge on the agreed pick cannot live only in the DESK drawer.
-    (AGREE_PICK.redH?`<span style="color:var(--red)"> · ⚠ ${AGREE_PICK.redH} red: ${esc(AGREE_PICK.redLabels.slice(0,2).join(" · "))}</span>`:"")+`</div>`;
+    (AGREE_PICK.redH?`<span style="color:var(--red)"> · ⚠ ${AGREE_PICK.redH} red: ${esc(AGREE_PICK.redLabels.slice(0,2).join(" · "))}</span>`:"")+
+    // FEAT-TT-ENTRY (v3.82): the same paChip as the DESK eligible line — one builder, two
+    // altitudes, zero drift (the ptModelRows rule). Compact here; never a veto anywhere.
+    (()=>{const pc=paChip(AGREE_PICK.sym);return pc?`<span style="font-weight:400"> · ${pc}</span>`:"";})()+`</div>`;
   else if(rows.length)h+=`<div class="none" style="color:var(--amber)">⏸ WAIT — no name passes every gate (reasons in DESK)</div>`;
   // v3.42 slice 2: while the first quote load is still in flight an empty rank is UNKNOWN,
   // not empty — skeleton rows hold the geometry so the board doesn't shift when data lands.

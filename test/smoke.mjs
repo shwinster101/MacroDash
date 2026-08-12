@@ -5480,5 +5480,82 @@ console.log("\n[54] FEAT-TT-INTAKE — the complete missing set, in one pass");
     /INTAKE COMPLETE/.test(adminSrc));
 }
 
+/* ═══ [56] FEAT-TT-ENTRY (v3.82) — the WHEN leg: price action, reported never enforced ═══ */
+console.log("\n[56] FEAT-TT-ENTRY — price-action WHEN leg + subsidiaries section");
+{
+  const ddMod = await import("../functions/api/deepdive.js");
+  // paRead is the decision predicate — lift it and RUN it (a string pin cannot prove a
+  // hit/miss rule). Stub its three externals: ddOf, LIVE_PX, ageDays (the real ageDays is
+  // date-relative, so the stub pins the fail-closed contract explicitly instead).
+  const paSrc = liftFns(adminSrc, ["paRead"]);
+  const mkPa = (dd, live, ageOf) =>
+    new Function("ddOf", "LIVE_PX", "ageDays", "PA_STALE_D", `${paSrc}; return paRead;`)(
+      () => dd, live, ageOf, 7);
+  const fresh = (iso) => (iso ? 2 : null), old = (iso) => (iso ? 30 : null);
+  const DD = (pa) => ({ ref_px: { px: 100, at: "x" }, price_action: pa });
+  ok("pa: pullback entry HIT at/below the level, MISS above it — and the distance is signed",
+    (() => {
+      const f = mkPa(DD({ as_of: "d", entry: { level: 90, kind: "pullback" } }), { AAA: { px: 85 } }, fresh);
+      const hit = f({ sym: "AAA" });
+      const g = mkPa(DD({ as_of: "d", entry: { level: 90, kind: "pullback" } }), { AAA: { px: 99 } }, fresh);
+      const miss = g({ sym: "AAA" });
+      return hit.hit === true && miss.hit === false && miss.dist > 9.9 && miss.dist < 10.1;
+    })());
+  ok("pa: breakout is the MIRROR — hit at/above, miss below (the two kinds must not share a comparator)",
+    (() => {
+      const f = mkPa(DD({ as_of: "d", entry: { level: 90, kind: "breakout" } }), { AAA: { px: 95 } }, fresh);
+      const g = mkPa(DD({ as_of: "d", entry: { level: 90, kind: "breakout" } }), { AAA: { px: 85 } }, fresh);
+      return f({ sym: "AAA" }).hit === true && g({ sym: "AAA" }).hit === false;
+    })());
+  ok("pa: no committed entry falls back to reference-level distance (50d preferred), never a fabricated verdict",
+    (() => {
+      const f = mkPa(DD({ as_of: "d", levels: { ma50: 80, ma200: 60 } }), { AAA: { px: 88 } }, fresh);
+      const r = f({ sym: "AAA" });
+      return r.src === "ref" && r.ref === "50d" && r.hit === null && Math.abs(r.dist - 10) < 0.1;
+    })());
+  ok("pa: an UNDATED block fails closed to stale, and >7d is stale — levels age like every other clock",
+    (() => {
+      const und = mkPa(DD({ entry: { level: 90 } }), { AAA: { px: 85 } }, fresh)({ sym: "AAA" });
+      const aged = mkPa(DD({ as_of: "d", entry: { level: 90 } }), { AAA: { px: 85 } }, old)({ sym: "AAA" });
+      const ok7 = mkPa(DD({ as_of: "d", entry: { level: 90 } }), { AAA: { px: 85 } }, fresh)({ sym: "AAA" });
+      return und.stale === true && aged.stale === true && ok7.stale === false;
+    })());
+  ok("pa: no live quote falls back to the stamped ref_px; neither at all -> no distance, never a guess",
+    (() => {
+      const f = mkPa(DD({ as_of: "d", entry: { level: 90 } }), {}, fresh)({ sym: "AAA" });   // ref_px 100
+      const g = mkPa({ price_action: { as_of: "d", entry: { level: 90 } } }, {}, fresh)({ sym: "AAA" });
+      return f.px === 100 && f.hit === false && g.dist === null && g.src === "none";
+    })());
+  ok("pa: no price_action block stored -> paRead returns null and paChip renders NOTHING (absent is absent)",
+    (() => { const f = mkPa({ ref_px: { px: 100 } }, {}, fresh); return f({ sym: "AAA" }) === null; })()
+    && /if\(!p\)return "";\s*\/\/ no price_action block stored/.test(adminSrc));
+  // REPORT, NEVER VETO — the load-bearing doctrine pin. The gateFail ladder and why() are
+  // the two places a veto could hide; neither may reference the WHEN leg.
+  ok("pa: gateFail ladder and why() never read price_action/paRead — WHEN reports, it does not gate",
+    (() => {
+      const gate = adminSrc.slice(adminSrc.indexOf("const gateFail="), adminSrc.indexOf("if(gateFail)"));
+      const whyI = adminSrc.indexOf("const why=r=>{");
+      const why = adminSrc.slice(whyI, adminSrc.indexOf("const q=rows.filter", whyI));
+      return !/price_action|paRead|paChip/.test(gate) && !/price_action|paRead|paChip/.test(why);
+    })());
+  ok("pa: ONE chip builder at BOTH eligible-line altitudes (DESK + primary view) — zero drift",
+    (adminSrc.match(/paChip\(b\.sym\)/g) || []).length === 1
+    && (adminSrc.match(/paChip\(AGREE_PICK\.sym\)/g) || []).length === 1);
+  ok("pa: the index whitelist carries price_action (board altitude) and deliberately NOT subsidiaries (tab-only)",
+    (() => {
+      const payload = { price_action: { as_of: "d" }, subsidiaries: { rows: [{ name: "X" }] }, hinges: [] };
+      const e = ddMod.ddIndexEntry(payload);
+      return e.price_action && !("subsidiaries" in e);
+    })());
+  ok("pa: both blocks are registered in DD_HANDLED and both sections exist",
+    /"price_action","subsidiaries"\]\)/.test(adminSrc)
+    && /function ddPaSec\(dd\)/.test(adminSrc) && /function ddSubsSec\(dd\)/.test(adminSrc));
+  ok("subs: marked stakes sum, unmarked are NAMED and the total called a FLOOR; assertion-basis flagged; never auto-wired to the ladder",
+    /marked total <b>/.test(adminSrc)
+    && /a FLOOR: \$\{unmarked\.map\(r=>esc\(r\.name\)\)/.test(adminSrc)
+    && /assert/.test(liftFns(adminSrc, ["ddSubsSec"]))
+    && /moving a marked total into pt_model\.net_cash_B is an owner call/.test(adminSrc));
+}
+
 console.log(`\n=== SMOKE TEST: ${pass} passed, ${fail} failed ===`);
 process.exit(fail === 0 ? 0 : 1);
