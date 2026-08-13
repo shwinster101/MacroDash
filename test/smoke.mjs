@@ -1843,8 +1843,8 @@ ok("hz-chip: ONE builder (hzDeckChip) states the year and offers auto/nearest IN
   && /onclick="setHorizon\('\$\{v\}'\)"/.test(adminSrc));
 ok("hz-chip: pinning a SPECIFIC year still deep-links to the full picker — only auto/nearest are one-tap",
   /openDesk\('dNext'\)" title="pin a specific year/.test(adminSrc));
-ok("hz-chip: BOTH deck labels carry it (BUY + both FUNDING PRIORITY branches) — 3 call sites, zero drift",
-  (adminSrc.match(/\$\{hzDeckChip\(\)\}/g)||[]).length===3);
+ok("hz-chip: every deck label carries it (BUY + both FUNDING branches + MAG 7, v3.84) — 4 call sites, one builder, zero drift",
+  (adminSrc.match(/\$\{hzDeckChip\(\)\}/g)||[]).length===4);
 /* v3.81: the full picker was a 9.5px <span> with 1px padding. It rendered the CHOICE but not
    an affordance to change it, which is how a live book sat on "nearest" for days while the
    ranking reported +1970%/yr. Real buttons, colour-coded by KIND, plus a warning computed
@@ -1884,9 +1884,10 @@ ok("hz-picker: the warning carries its own fix — one tap to auto, no navigatio
   /NEAREST is distorting the order/.test(adminSrc)
   && /onclick="setHorizon\('\$\{HZ_AUTO\}'\)"[^>]*>switch to auto</.test(adminSrc));
 /* v3.67: the deck height is a budget, not a floor. */
-ok("deck: sizeDecisionDeck measures ONLY the active panel — the hidden one still cannot lengthen the page",
+ok("deck: sizeDecisionDeck measures ONLY the active panel — the hidden ones still cannot lengthen the page (v3.84: active derived from DECK_PAGES, not a binary ternary)",
   /function sizeDecisionDeck\(\)/.test(adminSrc)
-  && /getElementById\(active\?"decisionFund":"decisionBuy"\)/.test(adminSrc));
+  && /const active=Math\.max\(0,tabs\.findIndex\(t=>t&&t\.getAttribute\("aria-selected"\)==="true"\)\);/.test(adminSrc)
+  && /const page=document\.getElementById\(DECK_PAGES\[active\]\);/.test(adminSrc));
 ok("deck: measured height is capped at the SAME budget the CSS names (520 / viewport−220) — over-budget panels still scroll",
   /Math\.max\(520,Math\.round\(\(window\.visualViewport\?visualViewport\.height:innerHeight\)-220\)\)/.test(adminSrc)
   && /Math\.min\(need,budget\)/.test(adminSrc));
@@ -2033,7 +2034,7 @@ ok("focus2: the stance strip carries the red counts a closed DESK would otherwis
   adminSrc.includes("over cap</button>") && adminSrc.includes('onclick="openDesk(') &&
   adminSrc.includes("function renderStance()"));
 ok("focus2: primary blocks render LAST in the chain, reading what the strips computed",
-  adminSrc.includes("renderStance();renderBuyBlock();renderSellBlock();renderCalBlock();renderTabs();"));
+  adminSrc.includes("renderStance();renderBuyBlock();renderSellBlock();renderMagBlock();renderCalBlock();renderTabs();"));
 ok("refresh: the button refetches quotes+positions+regime and reports the quote-cache window honestly",
   adminSrc.includes("async function refreshRanks()") &&
   adminSrc.includes("Promise.all([loadQuotes(),loadPositions(),loadRegime()])") &&
@@ -5768,6 +5769,74 @@ console.log("\n[57] FEAT-TT-TECHREAD — band table, split tally, asymmetric wit
     && /if\(r\.downgraded\)h\+=`<div style="color:var\(--amber\)[^`]*⚠ \$\{esc\(r\.downgraded\)\}/.test(adminSrc));
   ok("tech: the collapsed TRACKING summary carries the verdict — v3.25, a shut drawer never hides a bearish tape",
     /tech \$\{r\.label\}/.test(adminSrc));
+}
+
+/* ═══ [58] FEAT-TT-MAG7 (v3.84) — the mega-cap panel + the MAGS basket row ═══ */
+console.log("\n[58] FEAT-TT-MAG7 — deck panel, basket average, honesty gates");
+{
+  // The basket-injection block, lifted and RUN — an average with a membership gate is a
+  // numeric claim, and a string pin cannot prove a threshold.
+  const bi = adminSrc.indexOf("MAG_BASKET=null;\n  {");
+  ok("mag7: the basket-injection block exists at the ranking site (before the sort)", bi > 0
+    && bi < adminSrc.indexOf("rows.sort((a,b)=>(b.ann===null?-Infinity:b.ann)"));
+  const blk = adminSrc.slice(bi, adminSrc.indexOf("\n  }", bi) + 4);
+  const runBasket = (rows, book, live) => {
+    const env = { MAG7_SET: new Set(["GOOGL","META","MSFT","AMZN","TSLA","NVDA","AAPL"]),
+      BOOK: book, LIVE_PX: live, MAG_BASKET: null,
+      runState: () => ({ k: "never" }), readiness: () => ({ blockers: ["no current model"], cautions: [] }),
+      ttInfo: () => ({ score: null, tier: null }), ddOf: () => null, rankWeight: () => ({ w: null, held: false, mark: "" }) };
+    const fn = new Function("rows", ...Object.keys(env),
+      `MAG_BASKET=null;{${blk.slice(blk.indexOf("{") + 1, blk.lastIndexOf("}"))}}return {MAG_BASKET, rows};`);
+    return fn(rows, ...Object.values(env));
+  };
+  const R = (sym, ann, upside) => ({ sym, ann, upside });
+  const M4 = [R("GOOGL", 8, 30), R("META", 14, 58), R("MSFT", 15, 53), R("NVDA", 16, 31)];
+  ok("mag7: >=4 members with a rate AND MAGS in the book -> basket row appended with the equal-weight mean",
+    (() => { const { MAG_BASKET, rows } = runBasket([...M4], [{ sym: "MAGS", lens: "VEH", tier: "WATCH" }], {});
+      const mags = rows.find(r => r.sym === "MAGS");
+      return MAG_BASKET && MAG_BASKET.n === 4 && Math.abs(MAG_BASKET.ann - 13.3) < 0.06
+        && mags && mags.basket === true && mags.ann === MAG_BASKET.ann; })());
+  ok("mag7: THREE members is not the basket — no row, no average (an avg of 3 is not the Mag 7)",
+    (() => { const { MAG_BASKET, rows } = runBasket(M4.slice(0, 3), [{ sym: "MAGS" }], {});
+      return MAG_BASKET === null && !rows.some(r => r.sym === "MAGS"); })());
+  ok("mag7: MAGS absent from the book -> no synthetic row (the basket needs a real, holdable instrument)",
+    (() => { const { MAG_BASKET } = runBasket([...M4], [{ sym: "AAA" }], {});
+      return MAG_BASKET === null; })());
+  ok("mag7: missing members are NAMED on the caveat, never silently averaged around",
+    (() => { const { rows } = runBasket([...M4], [{ sym: "MAGS" }], {});
+      const c = rows.find(r => r.sym === "MAGS").caveat;
+      return /avg of 4 of 7/.test(c) && /TSLA/.test(c) && /AAPL/.test(c) && /AMZN/.test(c)
+        && /not MAGS's own model/.test(c); })());
+  ok("mag7: a member with ann=null is excluded from the mean, not counted as zero",
+    (() => { const { MAG_BASKET } = runBasket([...M4, R("TSLA", null, 5)], [{ sym: "MAGS" }], {});
+      return MAG_BASKET.n === 4 && Math.abs(MAG_BASKET.ann - 13.3) < 0.06; })());
+  // The honesty gates: the basket row rides the ORDINARY gates — nothing in the eligibility
+  // ladder special-cases it, so readiness (no model on MAGS itself) keeps it off the green line.
+  ok("mag7: no special-case in why()/gateFail — the basket row is gated by the same rules as every row",
+    (() => {
+      const gate = adminSrc.slice(adminSrc.indexOf("const gateFail="), adminSrc.indexOf("if(gateFail)"));
+      const whyI = adminSrc.indexOf("const why=r=>{");
+      const why = adminSrc.slice(whyI, adminSrc.indexOf("const q=rows.filter", whyI));
+      return !/basket|MAG_BASKET|MAG7/.test(gate) && !/basket|MAG_BASKET|MAG7/.test(why);
+    })());
+  ok("mag7: the panel renders from UPSIDE_ROWS — one computation, third altitude (never its own rates)",
+    /function renderMagBlock\(\)/.test(adminSrc)
+    && /const m7=UPSIDE_ROWS\.filter\(r=>MAG7_SET\.has\(r\.sym\)\)/.test(adminSrc)
+    && !/ptModelRows|pickRow/.test(liftFns(adminSrc, ["renderMagBlock"])));
+  ok("mag7: unranked members and the below-threshold basket state are NAMED in the panel",
+    /no rate at this horizon: \$\{un\.map\(esc\)\.join/.test(adminSrc)
+    && /basket line renders when ≥4 of 7 members carry a rate/.test(adminSrc));
+  ok("mag7: the deck is a PAGE LIST, not six binary ternaries — all five nav sites derive from DECK_PAGES",
+    /const DECK_PAGES=\["decisionBuy","decisionFund","decisionMag"\];/.test(adminSrc)
+    && (adminSrc.match(/DECK_PAGES/g) || []).length >= 8
+    && !/i>0\?1:0/.test(adminSrc)
+    && !/Math\.min\(1,Math\.round\(deck\.scrollLeft/.test(adminSrc));
+  ok("mag7: the third tab + panel exist with the tablist contract (tab id = page id + 'Tab')",
+    /id="decisionMagTab" role="tab"[^>]*aria-controls="decisionMag"/.test(adminSrc)
+    && /id="decisionMag" role="tabpanel"/.test(adminSrc)
+    && /decisionKey\(event,2\)/.test(adminSrc));
+  ok("mag7: basket row cannot print a null target — all three row templates branch on r.basket",
+    (adminSrc.match(/r\.basket\?/g) || []).length >= 3);
 }
 
 console.log(`\n=== SMOKE TEST: ${pass} passed, ${fail} failed ===`);

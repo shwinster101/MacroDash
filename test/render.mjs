@@ -1262,8 +1262,8 @@ await phone.waitForTimeout(100);
 ok("decision deck: SHARE RANKS is visible without opening MENU",
   await phone.locator("header .hb-ranks").isVisible() &&
   !(await phone.locator("#headInfo").isVisible()));
-ok("decision deck: two labelled controls exist and BUY starts selected",
-  (await phone.locator('.decision-tabs [role="tab"]').count()) === 2 &&
+ok("decision deck: three labelled controls exist (BUY / FUND / MAG 7, v3.84) and BUY starts selected",
+  (await phone.locator('.decision-tabs [role="tab"]').count()) === 3 &&
   (await phone.locator("#decisionBuyTab").getAttribute("aria-selected")) === "true" &&
   (await phone.locator('.decision-tabs [role="tab"][tabindex="0"]').count()) === 1 &&
   await phone.locator("#decisionFund").getAttribute("inert") !== null);
@@ -1299,6 +1299,18 @@ ok("decision deck: a REAL horizontal scroll (not a decisionGo() call) flips the 
   (await phone.locator("#decisionFundTab").getAttribute("aria-selected")) === "true" &&
   await phone.locator("#decisionBuy").getAttribute("inert") !== null &&
   await phone.locator("#decisionFund").getAttribute("inert") === null);
+// FEAT-TT-MAG7 (v3.84): the third panel, driven for real. End key from the FUND tab reaches
+// MAG 7; the panel renders the honest empty state on this fixture (no Mag-7 name is modelled).
+await phone.locator("#decisionFundTab").focus();
+await phone.keyboard.press("End");
+await phone.waitForTimeout(350);
+ok("mag7 deck: End key reaches the MAG 7 tab and its panel is active (not inert)",
+  (await phone.locator("#decisionMagTab").getAttribute("aria-selected")) === "true" &&
+  await phone.locator("#decisionMag").getAttribute("inert") === null);
+const magTxt = await phone.locator("#magBlock").innerText();
+ok("mag7 deck: with no Mag-7 name modelled the panel states it honestly — never an empty box",
+  /no Mag-7 name carries a rankable model/i.test(magTxt) &&
+  /the main ranking is the source/i.test(magTxt));
 await phone.evaluate(() => decisionGo(0));
 await phone.waitForTimeout(350);
 // R2: a real .click() on the button — depends on onclick="decisionGo(1)" actually being
@@ -1417,8 +1429,11 @@ const buyTopPermissive = await phone.evaluate(() => {
 // red content, not chrome, so the budget moves with it (was <360 at three badges).
 // The 42px labelled view switcher is now part of the answer, not expendable chrome. Keep
 // the first ranked row in the upper half of the phone while budgeting that accessible control.
+// FEAT-TT-MAG7 (v3.84): the third tab is a labelled accessible control for a real view —
+// legitimate content, not chrome, so the budget moves with it (the v3.45 capex-badge and H1
+// forced-trim precedents). Measured +6px at 390px (the wider tab row).
 ok(`slice5: on an everyday PERMISSIVE board the first ANSWER is high on screen — BUY at y=${buyTopPermissive} of 844, was 587`,
-  buyTopPermissive < 450);
+  buyTopPermissive < 470);
 // FEAT-TT-DECK follow-up (H1 2026-08-03): the forced-trim count on FUND / TRIM is a
 // deliberate two-line badge (measured: the 22-char "FUND / TRIM · 1 FORCED" does not fit
 // beside the label in a ~128px monospace tab, so it wraps unpredictably unless forced onto

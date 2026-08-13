@@ -9,7 +9,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
 <!-- AUDIT: kept in sync with package.json by test/smoke.mjs. admin.html is a Vite
      public/ passthrough, so it cannot receive __APP_VERSION__ — the guard is the fix. -->
-<title>TT TICKER TERMINAL v3.83.0</title>
+<title>TT TICKER TERMINAL v3.84.0</title>
 <style>
   :root{
     --bg:#05070a; --panel:#0a0f16; --panel2:#0d141d; --line:#16202c;
@@ -409,7 +409,7 @@
         onclick="toggleHeadInfo()">⋯ MENU</button>
     </div>
     <div id="headInfo" style="display:none">
-      <div class="brand">FINANCE&nbsp;BRO.AI // TT&nbsp;TICKER&nbsp;TERMINAL <small>v3.83.0 · single-pass deep-dive orchestrator</small></div>
+      <div class="brand">FINANCE&nbsp;BRO.AI // TT&nbsp;TICKER&nbsp;TERMINAL <small>v3.84.0 · single-pass deep-dive orchestrator</small></div>
       <div class="statusline">
         <span>BOOK: <b id="bookStamp">loading…</b></span>
         <span>AUTH: <b id="sessState">…</b></span>
@@ -467,6 +467,12 @@
             onclick="decisionGo(0)" onkeydown="decisionKey(event,0)">NEXT $ IN</button>
           <button id="decisionFundTab" role="tab" aria-selected="false" aria-controls="decisionFund" tabindex="-1"
             onclick="decisionGo(1)" onkeydown="decisionKey(event,1)">FUND / TRIM<span id="fundTabCount"></span></button>
+          <!-- FEAT-TT-MAG7 (v3.84): the mega-cap sleeve gets its own panel AFTER fund/trim —
+               owner call ("separate swipe tab after next dollar out"). It renders the SAME
+               UPSIDE_ROWS the main ranking computed (one computation, two altitudes), filtered
+               to the seven; it never re-derives a rate. -->
+          <button id="decisionMagTab" role="tab" aria-selected="false" aria-controls="decisionMag" tabindex="-1"
+            onclick="decisionGo(2)" onkeydown="decisionKey(event,2)">MAG 7</button>
           <span class="swipe-hint" aria-hidden="true">swipe ↔</span>
         </div>
         <div class="decision-deck" id="decisionDeck" aria-label="Next dollar decisions"
@@ -478,6 +484,10 @@
           <section class="decision-page" id="decisionFund" role="tabpanel"
             aria-labelledby="decisionFundTab">
             <div class="nd fdr" id="sellBlock" style="display:none"></div>
+          </section>
+          <section class="decision-page" id="decisionMag" role="tabpanel"
+            aria-labelledby="decisionMagTab">
+            <div class="nd fdr" id="magBlock"></div>
           </section>
         </div>
         <div class="nd fdr" id="calBlock" style="display:none"></div>
@@ -1526,6 +1536,9 @@ function todayActions(){
   return out;
 }
 let AGREE_PICK=null;   // set by renderUpsideRank when both stories agree and nothing vetoes
+/* FEAT-TT-MAG7 (v3.84): the seven mega-caps and the basket average computed from their rows. */
+const MAG7_SET=new Set(["GOOGL","META","MSFT","AMZN","TSLA","NVDA","AAPL"]);
+let MAG_BASKET=null;   // set by renderUpsideRank when >=4 of 7 have a rate and MAGS is in the book
 // FEAT-TT-DECK follow-up (H1 2026-08-03): cardinality of sellRank().forced, stashed by
 // renderSellBlock so the FUND / TRIM tab label never runs a second sellRank() pass (§P.4).
 // null means "not yet known" — either POS_PENDING, or sellRank() itself returned null
@@ -1769,7 +1782,7 @@ function render(){
   renderToday();renderChanged();renderDrawers();renderScorecard();
   // FEAT-TT-FOCUS2 (v3.38): the four-driver primary blocks render LAST — they read what
   // the strips above computed (UPSIDE_ROWS, AGREE_PICK, CHANGED_N), never recompute it.
-  renderStance();renderBuyBlock();renderSellBlock();renderCalBlock();renderTabs();
+  renderStance();renderBuyBlock();renderSellBlock();renderMagBlock();renderCalBlock();renderTabs();
 }
 
 /* ═══════════ DEEP-DIVE TABS (FEAT-TT-DD v3.12) ═══════════ */
@@ -3368,7 +3381,7 @@ function setHorizon(y){
   // v3.39: ddWorth and the est-run table read effHorizon() too, so a horizon change made while
   // parked on a name's tab left its WORTH cell quoting the OLD year — the exact
   // two-surfaces-disagree bug the one-computation rule exists to prevent.
-  renderBuyBlock();renderSellBlock();renderEstRunBoard();
+  renderBuyBlock();renderSellBlock();renderMagBlock();renderEstRunBoard();
   if(TAB!=="BOARD")renderDeepDive(TAB);
 }
 /* v3.22 FEAT-TT-CAGR: the raw gap is NOT a return. A +21% target 5 months out and a +73%
@@ -4194,6 +4207,36 @@ function renderUpsideRank(){
       unrankedHtml();
     return;
   }
+  /* FEAT-TT-MAG7 (v3.84): MAGS carries the Mag-7 basket AVERAGE into this ranking (owner
+     call: "as a whole, MAGS / the average of the mag 7 can be ranked in next dollar").
+     Honesty rules, all load-bearing: (1) the rate is the EQUAL-WEIGHT MEAN of the seven
+     names' OWN ranked rates at the horizon in force — computed from the rows above, never a
+     second derivation; (2) it requires >=4 of 7 members ranked, else NO row (an average of
+     two is not the basket); (3) missing members are NAMED on the row's caveat; (4) the row
+     rides the ordinary gates — readiness(MAGS) has no model/run, so it can rank but can
+     never take the ELIGIBLE line, which is correct for a derived rate. MAGS (Roundhill) is
+     a real, holdable instrument that actually owns these seven — the basket rate is its
+     honest model-by-proxy, marked as exactly that. */
+  MAG_BASKET=null;
+  {
+    const m7=rows.filter(r=>MAG7_SET.has(r.sym)&&r.ann!==null);
+    const mx=BOOK.find(e=>e.sym==="MAGS");
+    if(mx&&m7.length>=4){
+      const avg=a=>a.reduce((s,v)=>s+v,0)/a.length;
+      const missing=[...MAG7_SET].filter(s=>!m7.some(r=>r.sym===s));
+      MAG_BASKET={n:m7.length,total:MAG7_SET.size,ann:+avg(m7.map(r=>r.ann)).toFixed(1),
+        up:+avg(m7.map(r=>r.upside)).toFixed(1),missing};
+      const live=LIVE_PX.MAGS;
+      rows.push({sym:"MAGS",basket:true,lens:mx.lens,tier:mx.tier,rs:runState(mx.lastRun),
+        rdy:readiness(mx),basis:"basket",upside:MAG_BASKET.up,ann:MAG_BASKET.ann,
+        px:(live&&isFinite(live.px))?live.px:null,at:null,tgt:null,y:"basket avg",rolled:null,
+        tt:ttInfo(ddOf(mx)),rrFail:false,redH:0,kdSoon:null,redLabels:[],
+        live:!!(live&&isFinite(live.px)),chg:live&&live.chg,pxAge:0,
+        wt:rankWeight("MAGS"),
+        caveat:`basket: equal-weight avg of ${MAG_BASKET.n} of 7 Mag-7 model rates`+
+          (missing.length?` (no rate: ${missing.join(", ")})`:"")+` — not MAGS's own model`});
+    }
+  }
   // Sort on the ANNUALISED figure — the only one comparable across differing horizons.
   // FEAT-TT-PTLINT (D2): the old fallback `r.ann!==null?r.ann:r.upside` mixed UNITS inside one
   // sort — a raw gap competing with rates. pickRow() now rolls a too-near rung forward, so this
@@ -4214,7 +4257,7 @@ function renderUpsideRank(){
       ?`<span class="bad2">⚠ px ${r.pxAge===null?"undated":r.pxAge+"d old"}</span>`:"";
     const col=r.upside>=0?"var(--green)":"var(--red)";
     return `<span class="pick" onclick="openCard('${esc(r.sym)}')"
-      title="ref $${esc(r.px)}${r.at?` (${esc(r.at)})`:""} → $${esc(r.tgt)} ${esc(r.y)} pt_model target">
+      title="${r.basket?esc(r.caveat):`ref $${esc(r.px)}${r.at?` (${esc(r.at)})`:""} → $${esc(r.tgt)} ${esc(r.y)} pt_model target`}">
       <span>${MEDAL[i]}</span><span class="sym">${esc(r.sym)}</span><span class="lens lens-${esc(r.lens)}">${esc(r.lens)}</span>
       <span class="scope">${esc(TIER_LABEL[r.tier]||r.tier)}</span>
       ${(()=>{ // FEAT-TT-RANKFAIR: already-held weight, so a ranking can't propose a full name
@@ -4228,7 +4271,7 @@ function renderUpsideRank(){
         return `<span style="color:${c};font-size:9.5px;font-weight:700">${w.w}%${esc(w.mark)}</span>`;
       })()}
       <span style="color:${col};font-weight:700">${r.ann!==null?`${r.ann>=0?"+":""}${r.ann}%/yr`:`${r.upside>=0?"+":""}${r.upside}% raw`}</span>
-      <span class="scope">${r.ann!==null?`(${r.upside>=0?"+":""}${r.upside}% by ${esc(r.y)})`:`to ${esc(r.y)} — too near to annualise`} · ${esc(r.basis)}</span>
+      <span class="scope">${r.basket?`≈ ${esc(r.caveat)}`:`${r.ann!==null?`(${r.upside>=0?"+":""}${r.upside}% by ${esc(r.y)})`:`to ${esc(r.y)} — too near to annualise`} · ${esc(r.basis)}`}</span>
       ${r.rolled?`<span class="warn2">↷ rolled from ${esc(r.rolled)} (inside 3mo)</span>`:""}
       ${(()=>{ // TT verdict tag — the quality story beside the gap story, never blended into it
         if(!r.tt)return `<span class="scope">TT —</span>`;
@@ -4679,10 +4722,14 @@ function sellRank(){
    durable interaction and carry keyboard semantics; scrolling the deck merely keeps their
    selected state in sync with a touch gesture. The computation stays in renderBuyBlock /
    renderSellBlock — this is presentation only. */
+/* FEAT-TT-MAG7 (v3.84): the deck was hardcoded binary at six separate sites — a third panel
+   meant either six copy-paste branches (the drift defect this repo keeps paying for) or ONE
+   page list every site derives from. Tab ids are PAGE_ID+"Tab" by construction. */
+const DECK_PAGES=["decisionBuy","decisionFund","decisionMag"];
 function setDecisionTab(i){
-  const tabs=[document.getElementById("decisionBuyTab"),document.getElementById("decisionFundTab")];
+  const tabs=DECK_PAGES.map(id=>document.getElementById(id+"Tab"));
   tabs.forEach((t,n)=>{if(t){t.setAttribute("aria-selected",n===i?"true":"false");t.tabIndex=n===i?0:-1;}});
-  const panels=[document.getElementById("decisionBuy"),document.getElementById("decisionFund")];
+  const panels=DECK_PAGES.map(id=>document.getElementById(id));
   const compact=window.matchMedia&&window.matchMedia("(max-width: 700px)").matches;
   panels.forEach((p,n)=>{if(p){
     p.setAttribute("aria-hidden",compact&&n!==i?"true":"false");
@@ -4701,8 +4748,9 @@ function setDecisionTab(i){
 function sizeDecisionDeck(){
   const deck=document.getElementById("decisionDeck");if(!deck)return;
   if(!window.matchMedia||!matchMedia("(max-width: 700px)").matches){deck.style.height="";return;}
-  const active=document.getElementById("decisionFundTab")?.getAttribute("aria-selected")==="true"?1:0;
-  const page=document.getElementById(active?"decisionFund":"decisionBuy");
+  const tabs=DECK_PAGES.map(id=>document.getElementById(id+"Tab"));
+  const active=Math.max(0,tabs.findIndex(t=>t&&t.getAttribute("aria-selected")==="true"));
+  const page=document.getElementById(DECK_PAGES[active]);
   const last=page&&page.lastElementChild;
   if(!last){deck.style.height="";return;}
   const budget=Math.max(520,Math.round((window.visualViewport?visualViewport.height:innerHeight)-220));
@@ -4717,25 +4765,26 @@ function sizeDecisionDeck(){
   }).observe(d,{childList:true,subtree:true});})();
 function decisionGo(i,focus=false){
   const deck=document.getElementById("decisionDeck");if(!deck)return;
-  const n=i>0?1:0;setDecisionTab(n);
+  const n=Math.max(0,Math.min(DECK_PAGES.length-1,i|0));setDecisionTab(n);
   const reduce=window.matchMedia&&window.matchMedia("(prefers-reduced-motion: reduce)").matches;
   deck.scrollTo({left:n*deck.clientWidth,behavior:reduce?"auto":"smooth"});
-  if(focus){const t=document.getElementById(n?"decisionFundTab":"decisionBuyTab");if(t)t.focus();}
+  if(focus){const t=document.getElementById(DECK_PAGES[n]+"Tab");if(t)t.focus();}
 }
 function decisionKey(e,i){
   if(!["ArrowLeft","ArrowRight","Home","End"].includes(e.key))return;
   e.preventDefault();
-  const n=e.key==="Home"||e.key==="ArrowLeft"?0:1;
+  const last=DECK_PAGES.length-1;
+  const n=e.key==="Home"?0:e.key==="End"?last:e.key==="ArrowLeft"?Math.max(0,i-1):Math.min(last,i+1);
   decisionGo(n,true);
 }
 function syncDecisionDeck(){
   const deck=document.getElementById("decisionDeck");if(!deck||!deck.clientWidth)return;
-  setDecisionTab(Math.max(0,Math.min(1,Math.round(deck.scrollLeft/deck.clientWidth))));
+  setDecisionTab(Math.max(0,Math.min(DECK_PAGES.length-1,Math.round(deck.scrollLeft/deck.clientWidth))));
 }
 setDecisionTab(0);
 window.addEventListener("resize",()=>{
-  const active=document.getElementById("decisionFundTab")?.getAttribute("aria-selected")==="true"?1:0;
-  setDecisionTab(active);
+  const tabs=DECK_PAGES.map(id=>document.getElementById(id+"Tab"));
+  setDecisionTab(Math.max(0,tabs.findIndex(t=>t&&t.getAttribute("aria-selected")==="true")));
 });
 /* FEAT-TT-DECK follow-up (H1 2026-08-03): the deck (v3.62) turned FUND / TRIM into a hidden,
    inert panel on phones — a forced cap trim (a rule already broken) could sit invisible on
@@ -4881,6 +4930,43 @@ function renderSellBlock(){
 }
 /* Compact BUY block — renders the SAME rows renderUpsideRank sorted (UPSIDE_ROWS), so the
    two views can never disagree; all prose lives one click away in DESK → NEXT DOLLAR. */
+/* FEAT-TT-MAG7 (v3.84): the MAG 7 panel — the mega-cap sleeve ranked by the SAME rates the
+   main ranking computed (UPSIDE_ROWS is the single source; this filters, it never re-derives —
+   the ptModelRows rule at a third altitude). Names with no rate at the horizon are NAMED with
+   the reason, and the MAGS basket line states its derivation and where it ranks overall. */
+function renderMagBlock(){
+  const el=document.getElementById("magBlock");if(!el)return;
+  const m7=UPSIDE_ROWS.filter(r=>MAG7_SET.has(r.sym));
+  const ranked=UPSIDE_ROWS.filter(r=>r.ann!==null);
+  let h=`<div class="lbl">MAG 7 — valuation gap, same math as NEXT $ IN${hzDeckChip()}</div>`;
+  if(!m7.length){
+    el.innerHTML=h+`<div class="none">no Mag-7 name carries a rankable model in this book — the sleeve renders when models land (the main ranking is the source; this panel never computes its own).</div>`;
+    return;
+  }
+  const row=r=>{
+    const overall=ranked.findIndex(x=>x.sym===r.sym)+1;
+    return `<button type="button" class="fdr-row" onclick="openCard('${esc(r.sym)}')">`+
+      `<span class="fdr-l1"><span class="sym">${esc(r.sym)}</span>`+
+      `<span class="scope"> ${overall>0?`#${overall} overall`:""}${r.tt&&r.tt.score!==null?` · TT ${r.tt.score.toFixed(1)}`:r.tt&&r.tt.tier?` · TT ${esc(r.tt.tier)}`:""}</span>`+
+      `<span class="fdr-num">${r.ann!==null?`${r.ann>=0?"+":""}${r.ann}%/yr`:"no rate"}</span></span>`+
+      `<span class="fdr-l2 scope">${r.basket?esc(r.caveat):`${r.upside>=0?"+":""}${r.upside}% to $${r.tgt} by ${esc(r.y)}`}`+
+      `${r.redH?` <span class="bad2">● ${r.redH} red</span>`:""}`+
+      `${r.rs&&r.rs.k==="never"?` <span class="bad2">○ never run</span>`:""}</span></button>`;
+  };
+  h+=`<div class="picks">${m7.map(row).join("")}</div>`;
+  const un=[...MAG7_SET].filter(s=>BOOK.some(e=>e.sym===s)&&!m7.some(r=>r.sym===s));
+  if(un.length)h+=`<div class="none">no rate at this horizon: ${un.map(esc).join(", ")} — model or rung missing, named not hidden.</div>`;
+  if(MAG_BASKET){
+    const mr=UPSIDE_ROWS.find(r=>r.sym==="MAGS");
+    const overall=mr?ranked.findIndex(x=>x.sym==="MAGS")+1:0;
+    h+=`<div class="none" style="border-top:1px dashed var(--line);padding-top:5px;color:var(--fg)">`+
+      `<span class="sym" style="cursor:pointer" onclick="openCard('MAGS')">MAGS</span> `+
+      `<b>${MAG_BASKET.ann>=0?"+":""}${MAG_BASKET.ann}%/yr</b> ≈ basket (avg of ${MAG_BASKET.n}/7 model rates)`+
+      `${overall>0?` — ranks <b>#${overall}</b> in NEXT $ IN`:""}`+
+      `${MAG_BASKET.missing.length?` · <span class="scope">no rate: ${MAG_BASKET.missing.map(esc).join(", ")}</span>`:""}</div>`;
+  } else h+=`<div class="none">MAGS basket line renders when ≥4 of 7 members carry a rate${BOOK.some(e=>e.sym==="MAGS")?"":" and MAGS is in the book"}.</div>`;
+  el.innerHTML=h;
+}
 function renderBuyBlock(){
   const el=document.getElementById("buyBlock");if(!el)return;
   const rows=UPSIDE_ROWS.slice(0,5);
@@ -4918,7 +5004,7 @@ function renderBuyBlock(){
       `<span class="sym">${esc(r.sym)}</span><span class="lens lens-${esc(r.lens)}">${esc(r.lens)}</span>`+
       `<span class="scope">${esc(r.tier)}</span>${wTxt}</span>`+
       `<span class="fdr-p" style="color:${r.upside>=0?"var(--green)":"var(--red)"}">${r.ann!==null?`${r.ann>=0?"+":""}${r.ann}%/yr`:`${r.upside>=0?"+":""}${r.upside}%`}</span>`+
-      `<span class="fdr-d"><span class="scope">$${esc(r.tgt)} by ${esc(r.y)} · ${esc(r.basis)}</span>`+
+      `<span class="fdr-d"><span class="scope">${r.basket?"basket avg — see MAG 7 tab":`$${esc(r.tgt)} by ${esc(r.y)} · ${esc(r.basis)}`}</span>`+
       ((r.pxAge===null||r.pxAge>PX_STALE_D)?`<span class="bad2">⚠ px ${r.pxAge===null?"undated":r.pxAge+"d"}</span>`:"")+
       (r.wt.w!==null&&r.wt.w>=CAP_PCT?`<span class="bad2">no room</span>`:"")+
       /* v3.76: the payload's OWN caveat (pt_model.note) reached only the DESK list, so the two

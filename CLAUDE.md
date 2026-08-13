@@ -2049,6 +2049,48 @@ Jan-anchor shipped; see `snapshot.js` ~318–328), `spyMa100`, `spyMa200`, and a
   string-pinning it — the project's own recurring lesson (v3.40, v3.54: state computed and
   rendered but not read at the gate) is exactly the shape a string pin cannot catch.
   Tests: **1067 smoke** (+6) + 192 render + 88 public-render.
+- **FEAT-TT-MAG7 (v3.84.0) — the mega-cap sleeve: a third deck panel, and MAGS as the basket.**
+  Owner call after a two-day data sprint that put REAL consensus means and finalized multiples
+  on all seven mega-caps: "add a small widget ranking them in next dollar separate swipe tab
+  after next dollar out. As a whole, MAGS / the average of the mag 7 can be ranked in next
+  dollar." Two pieces, one honesty rule.
+  **The deck generalizes.** The v3.62 decision deck was hardcoded binary at SIX separate sites
+  (`i>0?1:0` ternaries, `active?"decisionFund":"decisionBuy"` lookups, a clamp of literal 1) —
+  a third panel meant either six copy-paste branches or ONE page list every site derives from.
+  **`DECK_PAGES`** is that list; tab ids are `PAGE_ID+"Tab"` by construction, `decisionKey`
+  moves RELATIVELY (Arrow keys step, Home/End jump), and the smoke pin that used to bless the
+  binary ternary now blesses the derivation. The **MAG 7 panel** renders the seven from the
+  SAME `UPSIDE_ROWS` the main ranking computed — one computation, third altitude; smoke pins
+  that `renderMagBlock` contains no `ptModelRows`/`pickRow` call — with each name's overall
+  rank stated, unranked members NAMED with the reason, and an honest empty state.
+  **MAGS carries the basket into NEXT $ IN.** The Roundhill ETF actually owns the seven, so it
+  gets the basket's honest model-by-proxy: the EQUAL-WEIGHT MEAN of the members' own ranked
+  rates at the horizon in force, computed from the rows above the sort — never a second
+  derivation. Guards, each smoke-run against a lifted copy of the injection block: **>=4 of 7
+  members required** (an average of two is not the basket — no row below threshold), missing
+  members NAMED on the caveat, `ann===null` members excluded (never counted as zero), MAGS
+  must actually be in the book, and — the load-bearing one — **no special-case anywhere in the
+  eligibility ladder**: the basket row rides the ordinary gates, and since `readiness(MAGS)`
+  has no model/run/hinges, it can RANK but can never take the ELIGIBLE line. A derived rate
+  may inform the queue; it may not light the green light. All three row templates branch on
+  `r.basket` so a null target can never print.
+  **The data sprint it ships on (same release, KV-only):** all seven mega-caps now carry real
+  SA consensus means (verified against stated YoY to <0.15pp per name) and FINALIZED multiples
+  (owner delegation 2026-08-13), each with its logic prose at `pt_model.multiple_ruling` —
+  incl. TSLA's horizon-decay schedule (120x→50x: the robotaxi ramp is IN consensus EPS, so the
+  multiple must decay as the option converts or it double-counts), AMZN's trough-normalized
+  YE2026 (28x on the capex-trough year — the INDC_G4 mirror), and AAPL's above-market-but-
+  still-rich read. The GOOGL FY2026 EPS quarantine was REVERSED same-day on owner evidence
+  (quarterly history reconciles $20.58 via H1 actuals — one-time equity marks, not a capture
+  error) and the correction is recorded, not silently fixed. Midpoint-interpolation calibration
+  measured on four names: AMZN's -12% EPS miss was the outlier; META reversed the direction;
+  MSFT/AAPL under 1-3% — no universal correction factor exists, per-name means remain required.
+  Tests: **1397 smoke** (+12: the injection block lifted and RUN — the >=4 gate both ways, the
+  null-member exclusion, missing-members-named, no-MAGS-no-row, the no-special-case sweep of
+  gateFail/why(), the one-computation pin, the DECK_PAGES derivation with the binary ternaries
+  pinned ABSENT, and the null-target branch count) + **231 render** (+4 net: three labelled
+  tabs, End-key reaching the live MAG panel, the honest empty state driven at 390px, and the
+  slice5 fold budget moved 450→470 WITH the reason — the v3.45 legitimate-content precedent).
 - **FEAT-TT-TECHREAD (v3.83.0) — the WHEN leg gets a BANDED VERDICT, and the collinearity audit
   that reshaped it.** v3.82 shipped WHEN as a single measured distance (price vs a committed
   entry). The owner asked for the rest of the picture — "indicators patterns charts lines and
