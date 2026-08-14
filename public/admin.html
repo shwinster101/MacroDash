@@ -9,7 +9,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
 <!-- AUDIT: kept in sync with package.json by test/smoke.mjs. admin.html is a Vite
      public/ passthrough, so it cannot receive __APP_VERSION__ — the guard is the fix. -->
-<title>TT TICKER TERMINAL v3.84.0</title>
+<title>TT TICKER TERMINAL v3.85.0</title>
 <style>
   :root{
     --bg:#05070a; --panel:#0a0f16; --panel2:#0d141d; --line:#16202c;
@@ -409,7 +409,7 @@
         onclick="toggleHeadInfo()">⋯ MENU</button>
     </div>
     <div id="headInfo" style="display:none">
-      <div class="brand">FINANCE&nbsp;BRO.AI // TT&nbsp;TICKER&nbsp;TERMINAL <small>v3.84.0 · single-pass deep-dive orchestrator</small></div>
+      <div class="brand">FINANCE&nbsp;BRO.AI // TT&nbsp;TICKER&nbsp;TERMINAL <small>v3.85.0 · single-pass deep-dive orchestrator</small></div>
       <div class="statusline">
         <span>BOOK: <b id="bookStamp">loading…</b></span>
         <span>AUTH: <b id="sessState">…</b></span>
@@ -2903,17 +2903,37 @@ function ddOptSec(p){
    readiness() pattern pointed at intake instead of at decisions: readiness answers "can I act
    on this name", this answers "what do I still have to fetch before the engine can score it".
    It stores nothing and asserts nothing — every row is derived from what IS present. */
+/* OWNER STANDING RULE 2026-08-14, and it is the reason three row classes exist below:
+   "All I provide are the forward revenue and EPS conjectures. And by default, they will all be
+   at least five analysts or more, so no need for the analyst count either. All other information
+   you need, please source from Yahoo Finance or another online source."
+   Encoded, not remembered — the v3.80.1 DEBT precedent. Three consequences:
+   (1) the owner's CAPTURE list is now exactly two rows, REV_VAL and EPS_VAL;
+   (2) analyst counts stop being a capture entirely — see INTAKE_COUNT_FLOOR;
+   (3) margins, runway and the P/E provenance cross-check move to `ext`, joining DEBT. */
+const INTAKE_COUNT_FLOOR=5;
 const INTAKE_SRC={
   REV_VAL:{screen:"SA · Consensus Revenue Estimates — value column",api:null},
-  REV_N:{screen:"SA · Consensus Revenue Estimates — SCROLL RIGHT to '# of Analysts'",api:null},
   EPS_VAL:{screen:"SA · Consensus EPS Estimates — value column",api:null},
-  EPS_N:{screen:"SA · Consensus EPS Estimates — SCROLL RIGHT to '# of Analysts'",api:null},
-  PE:{screen:"SA · P/E Ratio page (provenance cross-check — reveals the price consensus was struck at)",api:null},
-  MARGINS:{screen:"SA · Profitability tab — margin LEVELS (operating margin %, FCF margin %, ROE)",api:"get_financials"},
-  RUNWAY:{screen:"cash + guided burn (10-Q or shareholder letter)",api:"get_financials"},
+  /* Was two CAPTURE rows (REV_N/EPS_N) telling the owner to SCROLL RIGHT to the '# of Analysts'
+     column — the v3.80 fix for a column cropped three times on mobile. Superseded: the owner's
+     standing rule sets a DEFAULT FLOOR of >=5 analysts on every year, so the count is no longer
+     missing data, it is a known default the assistant stamps. Kept as a row rather than deleted
+     because the field must still be WRITTEN for the engine to read it — a gap that stops being
+     visible is the stored-but-invisible failure this checklist forbids. The floor, not a guess
+     at the true count: >=5 clears the P2 duration rule (>=3) and thin-coverage dimming (<=2) for
+     every year, which is the only place the number can change a ranking. */
+  COUNTS:{screen:"analyst counts — SOURCED BY THE ASSISTANT at the standing floor of >="+INTAKE_COUNT_FLOOR+"/yr (owner rule 2026-08-14), never an SA capture",api:null,ext:true},
+  PE:{screen:"P/E provenance cross-check — SOURCED EXTERNALLY (Yahoo Finance or equivalent); reveals the price consensus was struck at",api:null,ext:true},
+  MARGINS:{screen:"margin LEVELS — operating margin %, FCF margin %, ROE — SOURCED EXTERNALLY (Yahoo Finance, IR release or 10-Q). NOT growth rates.",api:"get_financials",ext:true},
+  RUNWAY:{screen:"cash + guided burn — SOURCED EXTERNALLY (10-Q or shareholder letter)",api:"get_financials",ext:true},
   PX:{screen:"live quote or a stamped ref_px",api:"get_equity_quotes"},
-  MODEL:{screen:"owner-authored pt_model (multiple schedule + share count)",api:null},
-  FALS:{screen:"owner-authored falsifier set — 3-8 pre-committed hinges (NOT a screenshot)",api:null},
+  /* `own` = owner-authored THESIS work, not a screenshot and not something the assistant can
+     source. Split out of the capture group because a list headed "CAPTURE" containing "write a
+     falsifier set" sends the owner hunting a screen that does not exist — v3.80 half-fixed that
+     with prose in the row; this fixes it with the group. */
+  MODEL:{screen:"pt_model — multiple schedule + share count (owner ruling, NOT a screenshot)",api:null,own:true},
+  FALS:{screen:"falsifier set — 3-8 pre-committed hinges (owner-authored, NOT a screenshot)",api:null,own:true},
   /* OWNER DIRECTIVE 2026-08-10: debt schedules are not on Seeking Alpha, so they are never an
      owner capture — the ASSISTANT sources them externally (SEC filings, IR releases, ratings
      notes) for every new ticker. `ext` marks the row so it renders under its own group and
@@ -2935,13 +2955,19 @@ function intakeChecklist(x){
   const card=rec&&rec.scorecard;
   const ui=(rec&&rec.underwriting_inputs)||{};
   const scored=(k)=>!!(card&&card.pillars&&card.pillars[k]&&typeof card.pillars[k].score==="number");
-  const add=(pillar,key,why)=>rows.push({pillar,key,screen:INTAKE_SRC[key].screen,api:INTAKE_SRC[key].api,ext:!!INTAKE_SRC[key].ext,why});
+  const add=(pillar,key,why)=>rows.push({pillar,key,screen:INTAKE_SRC[key].screen,api:INTAKE_SRC[key].api,ext:!!INTAKE_SRC[key].ext,own:!!INTAKE_SRC[key].own,why});
   const c=(dd&&dd.consensus)||{};
   const nonEmpty=(o)=>o&&typeof o==="object"&&Object.keys(o).length>0;
   const counts=c.analyst_counts;
-  // A count map only counts if it is an OBJECT of years — the prose placeholder several
-  // payloads carry ("NOT CAPTURED — ...") must never read as data.
-  const cntOk=(k)=>counts&&typeof counts[k]==="object"&&counts[k]!==null&&Object.keys(counts[k]).length>0;
+  /* A count map only counts if it is an OBJECT — the prose placeholder several payloads carry
+     ("NOT CAPTURED — cropped") must never read as data. Two accepted SHAPES, because the owner
+     rule changed what gets written: the pre-v3.85 per-series form {revenue:{yr:n}, eps:{yr:n}}
+     and the flat per-year form {yr:n} the assistant now stamps at the standing floor. Accepting
+     both is deliberate — ~40 stored payloads carry the old shape and re-writing them all to
+     satisfy a checklist would be churn, not evidence. */
+  const cntObj=counts&&typeof counts==="object"&&!Array.isArray(counts)&&Object.keys(counts).length>0;
+  const cntOk=cntObj&&Object.values(counts).some(v=>
+    (v&&typeof v==="object"&&Object.keys(v).length>0)||Number.isFinite(v));
   // PROFITABLE vs PREPROFIT from the near consensus EPS, the same rule the payloads use.
   const epsYears=nonEmpty(c.eps)?Object.keys(c.eps).sort():[];
   const nearEps=epsYears.length?c.eps[epsYears[0]]:null;
@@ -2970,8 +2996,11 @@ function intakeChecklist(x){
   if(!scored("trajectory")){
     if(!nonEmpty(c.revenue_B))add("P2","REV_VAL","revenue series missing");
     if(!nonEmpty(c.eps))add("P2","EPS_VAL","EPS series missing");
-    if(nonEmpty(c.revenue_B)&&!cntOk("revenue"))add("P2","REV_N","supportedDuration needs >=3 analysts on revenue per year; without it duration=0 and P2 cannot score");
-    if(nonEmpty(c.eps)&&!cntOk("eps"))add("P2","EPS_N","supportedDuration needs >=3 analysts on EPS per year; BOTH series must clear it on the SAME year");
+    /* ONE row, assistant-sourced, replacing the two owner-capture rows v3.80 emitted together.
+       supportedDuration still needs the field present — the standing floor supplies the VALUE,
+       it does not write it for us. */
+    if((nonEmpty(c.revenue_B)||nonEmpty(c.eps))&&!cntOk)
+      add("P2","COUNTS","supportedDuration needs >=3 analysts per year and the field is absent; stamp the standing floor of >="+INTAKE_COUNT_FLOOR+" rather than asking the owner to capture it");
   }
 
   // ── P3 economic quality ──
@@ -2996,13 +3025,15 @@ function intakeChecklist(x){
 function renderIntake(x){
   const rows=intakeChecklist(x);
   if(!rows.length)return `<div class="dd-sec"><div class="lbl" style="color:var(--green)">✔ INTAKE COMPLETE — every pillar input is on file</div></div>`;
-  const byExt=rows.filter(r=>r.ext),byApi=rows.filter(r=>r.api&&!r.ext),byShot=rows.filter(r=>!r.api&&!r.ext);
+  const byExt=rows.filter(r=>r.ext),byOwn=rows.filter(r=>r.own&&!r.ext),
+        byApi=rows.filter(r=>r.api&&!r.ext&&!r.own),byShot=rows.filter(r=>!r.api&&!r.ext&&!r.own);
   const row=(r)=>`<div class="none" style="margin-top:3px"><span class="scope" style="color:var(--amber)">${esc(r.pillar)}</span> `+
     `<b>${esc(r.screen)}</b>${r.api?` <span class="scope" style="color:var(--green)">· API: ${esc(r.api)}</span>`:""}`+
     `<br><span class="scope">${esc(r.why)}</span></div>`;
   return `<div class="dd-sec"><div class="lbl">DATA INTAKE — ${rows.length} input${rows.length===1?"":"s"} still needed`+
     `${byApi.length?` · ${byApi.length} available via API`:""}</div>`+
-    (byShot.length?`<div class="none" style="color:var(--dim);letter-spacing:.5px;margin-top:4px">CAPTURE (${byShot.length})</div>`+byShot.map(row).join(""):"")+
+    (byShot.length?`<div class="none" style="color:var(--dim);letter-spacing:.5px;margin-top:4px">CAPTURE — forward revenue &amp; EPS only, the one thing the assistant cannot source (${byShot.length})</div>`+byShot.map(row).join(""):"")+
+    (byOwn.length?`<div class="none" style="color:var(--dim);letter-spacing:.5px;margin-top:6px">OWNER-AUTHORED — a ruling or a thesis, not a screenshot (${byOwn.length})</div>`+byOwn.map(row).join(""):"")+
     (byApi.length?`<div class="none" style="color:var(--dim);letter-spacing:.5px;margin-top:6px">FETCHABLE — no screenshot needed (${byApi.length})</div>`+byApi.map(row).join(""):"")+
     (byExt.length?`<div class="none" style="color:var(--dim);letter-spacing:.5px;margin-top:6px">SOURCED EXTERNALLY — the assistant fetches these, not you (${byExt.length})</div>`+byExt.map(row).join(""):"")+
     `<div class="none" style="margin-top:6px;color:var(--dim)">Computed from what is stored — every line is a gap the engine itself reports, not a wish list.</div></div>`;

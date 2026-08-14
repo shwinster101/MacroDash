@@ -5344,7 +5344,10 @@ console.log("\n[53] PRE-COMMITMENT VERIFICATION — the server decides what was 
 // ttScore.js enforces. Lifted and RUN — a string pin cannot prove a requirements mapping.
 console.log("\n[54] FEAT-TT-INTAKE — the complete missing set, in one pass");
 {
-  const tbl = adminSrc.slice(adminSrc.indexOf("const INTAKE_SRC="), adminSrc.indexOf("function intakeChecklist("));
+  // Lift from INTAKE_COUNT_FLOOR, not INTAKE_SRC — the table interpolates the floor into the
+  // COUNTS row, so slicing at the table alone leaves the constant undefined (caught on the
+  // first run of the v3.85 change).
+  const tbl = adminSrc.slice(adminSrc.indexOf("const INTAKE_COUNT_FLOOR="), adminSrc.indexOf("function intakeChecklist("));
   const IC = new Function("DD", "LIVE_PX", "SCORE_CACHE",
     "const ddOf=(x)=>DD[x.sym]||null;" +
     "const ptModelRows=(dd)=>((dd&&dd.pt_model&&dd.pt_model.__rows)||[]);" +
@@ -5367,20 +5370,33 @@ console.log("\n[54] FEAT-TT-INTAKE — the complete missing set, in one pass");
 
   ok("intake: a fully-fed payload reports ZERO gaps — the checklist can actually be finished",
     run(FED).length === 0);
-  // THE FOUR-ROUND-TRIP CASE. Values present, counts absent: BOTH count rows must be named
-  // in the SAME pass. Emitting them one at a time is the exact defect this exists to remove.
-  ok("intake: values-without-counts emits BOTH analyst-count rows AT ONCE — the serial " +
-     "discovery that cost four round trips on HOOD",
+  /* OWNER STANDING RULE 2026-08-14 supersedes the four-round-trip fix's SHAPE while keeping its
+     substance. v3.80 emitted REV_N and EPS_N together so the owner never discovered the second
+     after closing the first; the owner now supplies forward revenue/EPS ONLY and every series
+     carries >=5 analysts by default, so the count stopped being a capture at all. One
+     assistant-sourced row replaces the two, and the gap stays visible because the field must
+     still be written for supportedDuration to read it. */
+  ok("intake: values-without-counts emits ONE assistant-sourced COUNTS row, and the retired " +
+     "REV_N/EPS_N capture rows are gone entirely",
     (() => { const k = keys(drop((d) => { delete d.consensus.analyst_counts; }));
-      return k.includes("REV_N") && k.includes("EPS_N"); })());
+      return k.includes("COUNTS") && !k.includes("REV_N") && !k.includes("EPS_N"); })());
+  ok("intake: the COUNTS row is `ext` — it can NEVER land on the owner's capture list",
+    (() => { const r = run(drop((d) => { delete d.consensus.analyst_counts; }))
+      .find((x) => x.key === "COUNTS"); return !!r && r.ext === true; })());
+  ok("intake: the COUNTS row states the standing FLOOR of >=5, not a guess at the true count",
+    (() => { const r = run(drop((d) => { delete d.consensus.analyst_counts; }))
+      .find((x) => x.key === "COUNTS"); return !!r && /&gt;=5|>=5/.test(r.screen + r.why); })());
   // The prose placeholder several live payloads carry must never read as data.
   ok("intake: a prose placeholder ('NOT CAPTURED — cropped') does NOT satisfy the count " +
-     "requirement — only an object of years does",
-    (() => { const k = keys(drop((d) => { d.consensus.analyst_counts = "NOT CAPTURED — cropped"; }));
-      return k.includes("REV_N") && k.includes("EPS_N"); })());
-  ok("intake: a HALF-captured count set still names the missing half, not both and not neither",
-    (() => { const k = keys(drop((d) => { delete d.consensus.analyst_counts.revenue; }));
-      return k.includes("REV_N") && !k.includes("EPS_N"); })());
+     "requirement — only an object does",
+    keys(drop((d) => { d.consensus.analyst_counts = "NOT CAPTURED — cropped"; })).includes("COUNTS"));
+  /* BOTH stored shapes satisfy it: the pre-v3.85 per-series form and the flat per-year form the
+     assistant now stamps. ~40 payloads carry the old shape; rewriting them to satisfy a
+     checklist would be churn, not evidence. */
+  ok("intake: the legacy per-series count shape {revenue:{yr:n},eps:{yr:n}} still satisfies it",
+    !keys(FED).includes("COUNTS"));
+  ok("intake: the flat per-year shape {yr:5} the standing floor writes ALSO satisfies it",
+    !keys(drop((d) => { d.consensus.analyst_counts = { 2026: 5, 2027: 5 }; })).includes("COUNTS"));
   // Mode routing: P3's requirement differs by profitability, and asking a pre-profit name for
   // an operating margin is asking for something that does not exist.
   ok("intake: a PREPROFIT name (negative near EPS) is asked for RUNWAY, never margin levels",
@@ -5394,6 +5410,31 @@ console.log("\n[54] FEAT-TT-INTAKE — the complete missing set, in one pass");
     (() => { const rows = run(drop((d) => { delete d.economic_quality; }));
       const m = rows.find((r) => r.key === "MARGINS");
       return m && m.api === "get_financials"; })());
+  /* OWNER STANDING RULE 2026-08-14: "all other information you need, please source from Yahoo
+     Finance or another online source." Margins were the row that proved it — NOW's and CRM's
+     QC_G2 gates both stalled on operating margins the owner was being asked for and the
+     assistant could simply fetch. MARGINS/RUNWAY/PE join DEBT in the `ext` class. */
+  ok("intake: MARGINS is `ext` — an operating margin is assistant-sourced, never an owner ask",
+    (() => { const m = run(drop((d) => { delete d.economic_quality; }))
+      .find((r) => r.key === "MARGINS"); return !!m && m.ext === true; })());
+  ok("intake: RUNWAY is `ext` too — same rule, the PREPROFIT branch of the same question",
+    (() => { const r = run(drop((d) => { d.consensus.eps = { 2027: -0.82 }; delete d.economic_quality; }))
+      .find((x) => x.key === "RUNWAY"); return !!r && r.ext === true; })());
+  ok("intake: the P/E provenance cross-check is `ext` — it was an SA capture, now sourced online",
+    (() => { const r = run(drop((d) => { delete d.consensus.pe_table; }))
+      .find((x) => x.key === "PE"); return !!r && r.ext === true; })());
+  /* THE POINT OF THE WHOLE RULE, asserted directly: whatever else is missing, the only things
+     that can ever reach the owner's CAPTURE group are the two series they said they provide. */
+  ok("intake: the owner's CAPTURE group can only ever contain REV_VAL/EPS_VAL — everything " +
+     "else is assistant-sourced, owner-authored, or API-fetchable",
+    (() => { const rows = run(drop((d) => { d.consensus = {}; delete d.pt_model;
+        delete d.ref_px; delete d.economic_quality; delete d.falsifiers_v2_draft; }), false);
+      const shot = rows.filter((r) => !r.api && !r.ext && !r.own);
+      return shot.length > 0 && shot.every((r) => r.key === "REV_VAL" || r.key === "EPS_VAL"); })());
+  ok("intake: pt_model and the falsifier set are `own` — a ruling and a thesis, never a capture",
+    (() => { const rows = run(drop((d) => { delete d.pt_model; delete d.falsifiers_v2_draft; }));
+      const m = rows.find((r) => r.key === "MODEL"), f = rows.find((r) => r.key === "FALS");
+      return !!m && m.own === true && !!f && f.own === true; })());
   ok("intake: a missing price is tagged fetchable too (quotes are already approved)",
     (() => { const rows = run(drop((d) => { delete d.ref_px; }), false);
       const px = rows.find((r) => r.key === "PX");
@@ -5409,11 +5450,14 @@ console.log("\n[54] FEAT-TT-INTAKE — the complete missing set, in one pass");
   ok("intake: every row names the pillar it blocks, so a gap is never an orphan chore",
     run(drop((d) => { delete d.economic_quality; delete d.falsifiers_v2_draft; }))
       .every((r) => /^P[1-4]$/.test(r.pillar)));
-  // The whole point of the analyst-count rows: say WHERE the column is. It was cropped three
-  // times because it is off-screen right on mobile.
-  ok("intake: the analyst-count rows name the SCROLL, which is why the column was cropped 3x",
+  /* The v3.80 row said WHERE the column was (off-screen right, cropped three times on mobile).
+     With counts no longer an owner capture there is no column to point at, so the pin inverts:
+     NO row may still send the owner scrolling for a count. Kept as an assertion rather than
+     deleted — a retired instruction quietly reappearing is the label-outlives-its-data defect
+     this changelog keeps fixing. */
+  ok("intake: no row sends the owner hunting the '# of Analysts' column any more",
     run(drop((d) => { delete d.consensus.analyst_counts; }))
-      .filter((r) => /_N$/.test(r.key)).every((r) => /SCROLL RIGHT/.test(r.screen)));
+      .every((r) => !/SCROLL RIGHT/.test(r.screen)));
   ok("intake: the checklist is READ-ONLY — it stores nothing and mutates no payload",
     (() => { const d = drop(() => {}); const before = JSON.stringify(d);
       run(d); return JSON.stringify(d) === before; })());
@@ -5470,11 +5514,20 @@ console.log("\n[54] FEAT-TT-INTAKE — the complete missing set, in one pass");
       const debt = drop((d) => { d.pt_model.net_debt_B = 32.88; });
       const bs   = drop((d) => { d.balance_sheet = { net_debt_B: 32.88 }; });
       return [cash, debt, bs].every((x) => !run(x).some((r) => r.key === "DEBT")); })());
-  ok("intake: the render splits three groups — CAPTURE / FETCHABLE / SOURCED EXTERNALLY — " +
-     "so an ext row can never be misread as a screenshot ask",
+  /* Was three groups; v3.85's owner rule makes it FOUR. OWNER-AUTHORED split out of CAPTURE
+     because a list headed "CAPTURE" containing "write a falsifier set" sends the owner hunting
+     a screen that does not exist. The exclusion chain is the load-bearing part: byShot is what
+     is left after ext, own and api are removed, so a new row is CAPTURE only by omission of
+     every other class — the safe direction, since an over-classified row costs a fetch and an
+     under-classified one costs the owner a round trip. */
+  ok("intake: the render splits FOUR groups — CAPTURE / OWNER-AUTHORED / FETCHABLE / SOURCED " +
+     "EXTERNALLY — so neither an ext row nor a thesis ask can be misread as a screenshot",
     adminSrc.includes("SOURCED EXTERNALLY — the assistant fetches these, not you") &&
+    adminSrc.includes("OWNER-AUTHORED — a ruling or a thesis, not a screenshot") &&
+    /CAPTURE — forward revenue &amp; EPS only/.test(adminSrc) &&
     /byExt=rows\.filter\(r=>r\.ext\)/.test(adminSrc) &&
-    /byShot=rows\.filter\(r=>!r\.api&&!r\.ext\)/.test(adminSrc));
+    /byOwn=rows\.filter\(r=>r\.own&&!r\.ext\)/.test(adminSrc) &&
+    /byShot=rows\.filter\(r=>!r\.api&&!r\.ext&&!r\.own\)/.test(adminSrc));
   ok("intake: renders on the deep-dive tab directly under the score bar",
     /h\+=ddScoreBar\(x\);\s*\n\s*h\+=renderIntake\(x\);/.test(adminSrc));
   ok("intake: a complete payload renders the DONE state, not an empty box",

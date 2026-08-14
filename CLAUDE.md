@@ -2049,6 +2049,48 @@ Jan-anchor shipped; see `snapshot.js` ~318–328), `spyMa100`, `spyMa200`, and a
   string-pinning it — the project's own recurring lesson (v3.40, v3.54: state computed and
   rendered but not read at the gate) is exactly the shape a string pin cannot catch.
   Tests: **1067 smoke** (+6) + 192 render + 88 public-render.
+- **FEAT-TT-SOURCING (v3.85.0) — who sources what, encoded rather than remembered.** Owner
+  standing rule, verbatim: *"All I provide are the forward revenue and EPS conjectures. And by
+  default, they will all be at least five analysts or more. So no need for the analyst count
+  either. All other information you need, please source from Yahoo Finance or another online
+  source."* This is the v3.80.1 DEBT precedent applied to the whole intake surface, and the
+  trigger was concrete: NOW's and CRM's `QC_G2_UNIT_ECONOMICS` gates both stalled on operating
+  margins the checklist was asking the OWNER for and the assistant could simply fetch — four
+  web searches closed both. A rule nobody encodes is a rule the next pass asks about again.
+  **`intakeChecklist()` now has four row classes, not two.** `REV_N`/`EPS_N` — the two
+  analyst-count CAPTURE rows v3.80 added, emitted together precisely so the owner could never
+  discover the second after closing the first — are **retired**, replaced by a single `ext`
+  **`COUNTS`** row. Counts stopped being missing data: `INTAKE_COUNT_FLOOR = 5` is a standing
+  default the assistant stamps. It is stored as a **FLOOR, not a guess at the true count** —
+  the weakest claim the rule guarantees — and the floor is chosen because ≥5 clears the P2
+  duration rule (≥3) and thin-coverage dimming (≤2) for every year, which is the only place
+  the number can change a ranking. The row survives rather than being deleted because the
+  field must still be WRITTEN for `supportedDuration` to read it; a gap that stops being
+  visible is the stored-but-invisible failure this checklist exists to forbid. `cntOk` now
+  accepts **both stored shapes** — the pre-v3.85 per-series `{revenue:{yr:n}, eps:{yr:n}}` and
+  the flat per-year `{yr:5}` the floor writes — because ~40 payloads carry the old shape and
+  rewriting them to satisfy a checklist would be churn, not evidence.
+  **`MARGINS`, `RUNWAY` and `PE` join `DEBT` in the `ext` class**, and a new **`own`** class
+  splits `MODEL`/`FALS` out of CAPTURE: a list headed "CAPTURE" containing *"write a falsifier
+  set"* sends the owner hunting a screen that does not exist — v3.80 half-fixed that with prose
+  inside the row, this fixes it with the group. The owner's capture list is now **exactly two
+  rows, `REV_VAL` and `EPS_VAL`**, and that is asserted directly rather than implied: with every
+  input stripped, every row landing in the CAPTURE group must be one of those two. The
+  exclusion chain is the load-bearing detail — `byShot` is what remains after `ext`, `own` and
+  `api` are removed, so a row added later is CAPTURE only by omission of every other class,
+  which fails in the safe direction (an over-classified row costs a fetch; an under-classified
+  one costs the owner a round trip). The retired "SCROLL RIGHT to '# of Analysts'" instruction
+  is pinned **ABSENT** rather than merely deleted — a withdrawn instruction quietly reappearing
+  is the label-outlives-its-data defect this changelog keeps fixing.
+  Found on the first run: `test/smoke.mjs` lifted the table from `const INTAKE_SRC=`, but the
+  `COUNTS` row interpolates `INTAKE_COUNT_FLOOR`, so the lift left the constant undefined — the
+  slice now starts at the constant. The v3.47 `LENS_MAX_PE` lesson (a free variable the existing
+  fixtures happened to short-circuit past) one file over.
+  Tests: **1405 smoke** (+9 net over v3.84: the single `ext` COUNTS row with the retired capture
+  rows pinned absent, the floor stated, both count shapes accepted, `MARGINS`/`RUNWAY`/`PE`
+  proven `ext`, `MODEL`/`FALS` proven `own`, the four-group render, and the direct
+  CAPTURE-is-only-REV_VAL/EPS_VAL sweep) + **231 render** + **111 public-render** +
+  `audit:prod` clean.
 - **FEAT-TT-MAG7 (v3.84.0) — the mega-cap sleeve: a third deck panel, and MAGS as the basket.**
   Owner call after a two-day data sprint that put REAL consensus means and finalized multiples
   on all seven mega-caps: "add a small widget ranking them in next dollar separate swipe tab
