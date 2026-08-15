@@ -2211,7 +2211,9 @@ const cxLift = (() => {
   // v3.75 DDSTORE: ddOf is the ONE payload choke point every consumer goes through, so the
   // real one is lifted here rather than stubbed — these fixtures carry embedded payloads,
   // which is exactly the pre-migration fallback branch it must keep serving.
-  new Function("ctx", "let BOARD={},BOOK=[],DD_FULL={},DD_INDEX_MAP={};" + g("ddOf") + "\n" +
+  // FEAT-CAPEX-OCF (v3.83): the funding-tell constants, pinned BY VALUE — the lifted
+  // capexState references them, and a silent threshold move must go red here.
+  new Function("ctx", "let BOARD={},BOOK=[],DD_FULL={},DD_INDEX_MAP={};const CAPEX_OCF_RATIO_MAX=1.0,CAPEX_OCF_N=2;" + g("ddOf") + "\n" +
     g("capexState") + "\n" + g("capexExposure") + "\n" + g("lintCapexConservation") +
     "\nctx.run=(board,book)=>{BOARD=board;BOOK=book;return{st:capexState(),lint:lintCapexConservation()};};")(ctx);
   return ctx.run;
@@ -2260,6 +2262,35 @@ ok("capex: capex_exposure is a HANDLED deep-dive key (purpose-built section, no 
   ["DIRECT","FAB","POWER","NEOCLOUD"].every((t) => adminSrc.includes(t)));
 ok("capex: the tape REPORTS, never enforces — no veto path reads capexState",
   !/AGREE_PICK[\s\S]{0,200}capexState|capexState\(\)[\s\S]{0,120}veto/.test(adminSrc));
+// ── FEAT-CAPEX-OCF (v3.83): funding quality — capex/OCF per spender ──
+ok("capex-ocf: validateBoard accepts an absent ocf_B and rejects each out-of-band value",
+  (() => {
+    const mk = (ocf) => ({ as_of: "2026-08-15", capex: { rows: [
+      { co: "HYPA", fy_guide_B: 120, dir: "up", at: "2026-08-15", ...(ocf === undefined ? {} : { ocf_B: ocf }) }] } });
+    return validateBoard(mk(undefined)) === null && validateBoard(mk(100)) === null &&
+      validateBoard(mk(-5)) !== null && validateBoard(mk(0)) !== null && validateBoard(mk(5000)) !== null;
+  })());
+const CX_OCF = (rows) => ({ capex: { rows: rows.map((r, i) => ({ co: "HYP" + "ABCD"[i], fy_guide_B: r.g, dir: "up", at: "2026-08-15", ...(r.o === undefined ? {} : { ocf_B: r.o }) })) } });
+ok("capex-ocf: exactly self-funded (ratio 1.00) does NOT count — the boundary is strict",
+  (() => { const st = cxLift(CX_OCF([{ g: 100, o: 100 }, { g: 101, o: 100 }]), []).st;
+    return st.overOcf === 1 && st.debtFunded === false && st.ocfMeasured === 2; })());
+ok("capex-ocf: two spenders past OCF fire the funding tell",
+  (() => { const st = cxLift(CX_OCF([{ g: 101, o: 100 }, { g: 150, o: 100 }, { g: 90, o: 100 }]), []).st;
+    return st.debtFunded === true && st.overOcf === 2 && st.overSyms.join() === "HYPA,HYPB"; })());
+ok("capex-ocf: an UNMEASURED row never counts toward the tell — one over + one unmeasured stays quiet (fail-closed)",
+  (() => { const st = cxLift(CX_OCF([{ g: 150, o: 100 }, { g: 200 }, { g: 90, o: 100 }]), []).st;
+    return st.debtFunded === false && st.overOcf === 1 && st.ocfMeasured === 2 &&
+      st.ratios.find((x) => x.co === "HYPB").ratio === null; })());
+ok("capex-ocf: the amber banner, per-row ratio chip, unmeasured naming and drawer chip all render",
+  adminSrc.includes("⚠ DEBT-FUNDED BUILDOUT") && adminSrc.includes("capex/OCF ${ra.toFixed(2)}") &&
+  adminSrc.includes("unmeasured never counts toward the funding tell") &&
+  adminSrc.includes("⚠ debt-funded ${st.overOcf}/${st.ocfMeasured}"));
+ok("capex-ocf: the funding tell is AMBER and never a stance badge — the strip literal is byte-identical",
+  adminSrc.includes("⚡ capex ${cxSt.downs}↓ of ${cxSt.rows.length}") &&
+  !/debtFunded[\s\S]{0,400}renderStance|renderStance[\s\S]{0,2000}debtFunded/.test(adminSrc));
+ok("capex-ocf: the curated dashboard card mirrors the ratio inline with real OCF and never a 0 for unmeasured",
+  /ocfB:\s*\d/.test(aiEconSrc) && aiSrc.includes("capex/OCF ${ratio(r).toFixed(2)}") &&
+  aiSrc.includes('"OCF unmeasured"') && aiSrc.includes("debt-funded buildout"));
 // Dashboard: the third leg of AI Unit Economics.
 ok("capex-dash: HYPERSCALER_CAPEX is curated WITH a reviewed date, rendered hatched + chipped, " +
    "behind a CollapsedGroup like the GPU cost side",

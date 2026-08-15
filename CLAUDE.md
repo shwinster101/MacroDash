@@ -2049,6 +2049,41 @@ Jan-anchor shipped; see `snapshot.js` ~318–328), `spyMa100`, `spyMa200`, and a
   string-pinning it — the project's own recurring lesson (v3.40, v3.54: state computed and
   rendered but not read at the gate) is exactly the shape a string pin cannot catch.
   Tests: **1067 smoke** (+6) + 192 render + 88 public-render.
+- **FEAT-CAPEX-OCF (v3.87.0) — funding quality: the capex tape learns whether the buildout is
+  self-funded.** *Relabelled from v3.83.0 at merge (2026-08-15): FEAT-TT-SOURCING and
+  FEAT-TT-DOTHOME shipped in parallel on `main` and claimed v3.85/v3.86 — the same collision
+  ENGINE0-CONT, FEAT-TT-SCORE and FEAT-TT-PROVISIONAL each documented; this entry takes the
+  next true sequence number, content otherwise as committed (test counts are the branch's
+  pre-merge totals).* The tape's `dir` tripwire fires on the ANNOUNCEMENT (a guide cut) — a lagging
+  event. The leading question, from the 2026-08-15 buildout-vs-maintenance analysis, is whether
+  the spenders can keep paying from operations: **guide > trailing-4Q OCF means the gap is
+  debt, and debt-funded capex is what gets cut at the first ROI disappointment** (Amazon
+  already guides FCF-negative). Optional per-row **`ocf_B`** on `board.capex`
+  (`validateBoard` band **(0, 500]** — the field exists solely to feed capex/OCF, which is
+  meaningless at OCF ≤ 0, so a genuinely negative-OCF spender is represented honestly by
+  OMISSION; upper 500 stops a decimal shift, largest real ~$175B). `capexState()` derives
+  per-row ratios and **`debtFunded`: > 1.0 (STRICT — exactly self-funded does not count) on
+  ≥2 MEASURED spenders**; an unmeasured row never counts toward the tell and is NAMED (the
+  RANKFAIR rule). Surfaces: amber ⚠ DEBT-FUNDED BUILDOUT banner + per-row `capex/OCF N.NN`
+  chips in the tape panel, an amber `⚠ debt-funded N/M` chip on the CLOSED drawer summary
+  (v3.25), and the curated dashboard card mirrors the ratio inline off new sourced `ocfB`
+  values (trailing-4Q OCF at the Q2-26 prints: AMZN 148.5 · GOOGL 174.4 · META 124 ·
+  MSFT 169.7 — the v3.80.1 SOURCED-EXTERNALLY class). **Deliberately NOT a stance badge**
+  (owner call): the strip is red-only facts under a pinned 390px budget; amber lives one tap
+  deep, and the two stance-badge string pins stay byte-identical. Measured against the live
+  tape: **all four spenders guide past OCF** (AMZN 1.48 · GOOGL 1.15 · META 1.11 · MSFT 1.52),
+  so the tell fires immediately — the honest read of a buildout the market already prices as
+  FCF-negative. Also in this release: **v3.82.1 shipped with `admin.html`'s two version
+  strings unbumped** (package.json moved after the gate run — the exact drift smoke [14]
+  exists to catch, and it caught it on the next run); healed here with all three homes moved
+  together. Same session, KV-side (no code): **`price_action` levels stamped for 36 of 37
+  payload names** from broker-measured daily bars (SMA-50/100/200 closes + 63-day swing
+  lo/hi, split-adjusted, owner `entry` blocks preserved on NBIS/JOBY; SPCX skipped and named —
+  44 bars cannot compute a level), settling the CRWV 200d the v3.82 web sources disagreed on
+  (broker: 92.94). Tests: **1363 smoke** (+6 behavioral: the strict 1.00 boundary, the
+  two-spender fire, unmeasured-never-counts, validator bands, both-surface render pins, the
+  no-stance-badge guard) + **228 render** (+3: banner/ratios/unmeasured-naming and the amber
+  drawer chip driven live at 390px) + 111 public-render + `audit:prod` clean.
 - **FEAT-TT-DOTHOME (v3.86) — an invariant a human has to police is not an invariant.** FEAT-TT-DOT
   (v3.17) deliberately put `dots` on the BOOK ENTRY (`e.dots`) so that *"replacing a deepDive payload
   can never wipe the inventory."* FEAT-TT-DDSTORE (v3.75) then made `/api/deepdive` the one path that
@@ -2227,8 +2262,7 @@ Jan-anchor shipped; see `snapshot.js` ~318–328), `spyMa100`, `spyMa200`, and a
   staying ELIGIBLE under a bearish tape — the never-veto proof). Negative-controlled twice:
   disabling the withhold turns 3 red, loosening the trend band turns 2 red. Float note recorded
   at the test site: `pct(102,100)` is 2.0000000000000018, so component reads are pinned clear of
-  the edges and the edges themselves are pinned on `vote()` against literals.
-- **FEAT-TT-ENTRY (v3.82.0) — the WHEN leg: price action on the eligible line.** The framework
+  the edges and the edges themselves are pinned on `vote()` against literals.- **FEAT-TT-ENTRY (v3.82.0) — the WHEN leg: price action on the eligible line.** The framework
   doctrine has three legs — fundamentals decide WHAT, support/resistance decide WHEN, the regime
   decides HOW STRICT — and an audit of the marriage found only two instrumented. WHEN lived
   solely as prose in the free-text `rank` field ("#1 on pullback to X"), a trigger the owner

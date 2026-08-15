@@ -431,6 +431,15 @@ export function validateBoard(b) {
       const g = Number(r.fy_guide_B);
       if (!isFinite(g) || g <= 0 || g > 2000) return `capex row ${r.co} fy_guide_B out of band (0..2000 $B)`;
       if (!["up", "hold", "down"].includes(String(r.dir))) return `capex row ${r.co} dir must be up|hold|down`;
+      // FEAT-CAPEX-OCF (v3.83): optional trailing-4Q operating cash flow, the funding-quality
+      // denominator. Banded (0, 500]: the field exists solely to feed capex/OCF, which is
+      // meaningless at OCF <= 0 — a genuinely negative-OCF spender is represented honestly by
+      // OMISSION (the row reads unmeasured, never a verdict), and 0/negative for a tracked
+      // hyperscaler is a typo class. Upper 500 stops a decimal shift (largest real ~$175B).
+      if (r.ocf_B !== undefined) {
+        const o = Number(r.ocf_B);
+        if (!isFinite(o) || o <= 0 || o > 500) return `capex row ${r.co} ocf_B out of band (0..500 $B trailing-4Q OCF)`;
+      }
       if (!ISO_RE.test(String(r.at || ""))) return `capex row ${r.co} needs at (YYYY-MM-DD) — a guide without a print date cannot be aged`;
     }
   }
