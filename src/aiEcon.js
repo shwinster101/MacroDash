@@ -96,13 +96,16 @@ export function tokenScissors(trend) {
 }
 
 export const HYPERSCALER_CAPEX = {
-  fy: "FY26", reviewed: "2026-08-12",
+  fy: "FY26", reviewed: "2026-08-15",
+  // ocfB = trailing-4Q operating cash flow at the same Q2-2026 prints (10-Q facts, sourced
+  // externally — the v3.80.1 class). capex/OCF > 1 = the buildout outruns operations and the
+  // gap is debt; the card computes the ratio inline (the `downs >= 2` mirror precedent).
   rows: [
-    { co: "AMZN",  guideB: 220,   dir: "up" },   // raised 200→~220 at Q2 print 2026-07-30 (memory costs)
-    { co: "GOOGL", guideB: 200,   dir: "up" },   // 195–205 mid, 3rd raise of 2026 (2026-07-22)
-    { co: "META",  guideB: 137.5, dir: "up" },   // 130–145 mid, 2nd raise (2026-07-29)
-    { co: "MSFT",  guideB: 257.5, dir: "up" },   // FY27 guide (Jul-26→Jun-27) 255–260 mid — see note
+    { co: "AMZN",  guideB: 220,   ocfB: 148.5,  dir: "up" },   // raised 200→~220 at Q2 print 2026-07-30 (memory costs)
+    { co: "GOOGL", guideB: 200,   ocfB: 174.4,  dir: "up" },   // 195–205 mid, 3rd raise of 2026 (2026-07-22)
+    { co: "META",  guideB: 137.5, ocfB: 124,    dir: "up" },   // 130–145 mid, 2nd raise (2026-07-29)
+    { co: "MSFT",  guideB: 257.5, ocfB: 169.7,  dir: "up" },   // FY27 guide (Jul-26→Jun-27) 255–260 mid — see note
   ],
-  note: "Big-4 guided capex — the pool that funds every AI-infra beneficiary's revenue. ≥2 guiding down = the regime-turn tell. All four RAISED at the Jul-26 Q2 prints. MSFT is its FY27 fiscal guide (Jul-26→Jun-27) — MSFT guides fiscal, not calendar (cal-26 ≈ $190B is an analyst estimate, not a guide), so the aggregate mixes windows and overstates calendar 2026.",
+  note: "Big-4 guided capex — the pool that funds every AI-infra beneficiary's revenue. ≥2 guiding down = the regime-turn tell. All four RAISED at the Jul-26 Q2 prints, and all four guide capex PAST trailing-4Q operating cash flow — the buildout is no longer self-funded. MSFT is its FY27 fiscal guide (Jul-26→Jun-27) — MSFT guides fiscal, not calendar (cal-26 ≈ $190B is an analyst estimate, not a guide), so the aggregate mixes windows and overstates calendar 2026.",
 };
 

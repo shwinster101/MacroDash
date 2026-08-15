@@ -16,6 +16,11 @@ const HyperscalerCapexCard = () => {
   const cx = HYPERSCALER_CAPEX;
   const agg = cx.rows.reduce((a, r) => a + r.guideB, 0);
   const downs = cx.rows.filter(r => r.dir === "down").length;
+  // FEAT-CAPEX-OCF (v3.83): capex/OCF inline — the `downs >= 2` mirror precedent. >1 = the
+  // buildout outruns operations (debt-funded); unmeasured (no ocfB) never counts, never a 0.
+  const ratio = (r) => (Number.isFinite(r.ocfB) && r.ocfB > 0) ? r.guideB / r.ocfB : null;
+  const overOcf = cx.rows.filter(r => ratio(r) !== null && ratio(r) > 1).length;
+  const ocfMeasured = cx.rows.filter(r => ratio(r) !== null).length;
   const glyph = (d) => d === "down" ? "▼" : d === "up" ? "▲" : "→";
   const gcol  = (d) => d === "down" ? T.red : d === "up" ? T.green : T.textMuted;
   return (
@@ -32,6 +37,11 @@ const HyperscalerCapexCard = () => {
         <span style={{ fontFamily:T.fontMono, fontSize:9, color:downs >= 2 ? T.red : T.textMuted }}>
           {downs >= 2 ? `⚡ ${downs} of ${cx.rows.length} guiding DOWN — the regime-turn tell` : `${downs} of ${cx.rows.length} guiding down`}
         </span>
+        {overOcf >= 2 && (
+          <span style={{ fontFamily:T.fontMono, fontSize:9, color:T.yellow }}>
+            ⚠ {overOcf} of {ocfMeasured} measured guide capex past trailing-4Q OCF — debt-funded buildout
+          </span>
+        )}
       </div>
       <div style={{ display:"grid", gridTemplateColumns:"repeat(auto-fill,minmax(120px,1fr))", gap:8, marginTop:8 }}>
         {cx.rows.map(r => (
@@ -41,6 +51,9 @@ const HyperscalerCapexCard = () => {
               <span style={{ fontFamily:T.fontMono, fontSize:10, color:gcol(r.dir) }}>{glyph(r.dir)}</span>
             </div>
             <div style={{ fontFamily:T.fontMono, fontSize:14, fontWeight:700, color:T.textSecondary }}>${r.guideB}B</div>
+            <div style={{ fontFamily:T.fontMono, fontSize:9, color:ratio(r) !== null ? (ratio(r) > 1 ? T.yellow : T.textMuted) : T.textMuted }}>
+              {ratio(r) !== null ? `capex/OCF ${ratio(r).toFixed(2)}` : "OCF unmeasured"}
+            </div>
           </div>
         ))}
       </div>

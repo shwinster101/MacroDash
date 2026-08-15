@@ -9,7 +9,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
 <!-- AUDIT: kept in sync with package.json by test/smoke.mjs. admin.html is a Vite
      public/ passthrough, so it cannot receive __APP_VERSION__ — the guard is the fix. -->
-<title>TT TICKER TERMINAL v3.82.0</title>
+<title>TT TICKER TERMINAL v3.83.0</title>
 <style>
   :root{
     --bg:#05070a; --panel:#0a0f16; --panel2:#0d141d; --line:#16202c;
@@ -409,7 +409,7 @@
         onclick="toggleHeadInfo()">⋯ MENU</button>
     </div>
     <div id="headInfo" style="display:none">
-      <div class="brand">FINANCE&nbsp;BRO.AI // TT&nbsp;TICKER&nbsp;TERMINAL <small>v3.82.0 · single-pass deep-dive orchestrator</small></div>
+      <div class="brand">FINANCE&nbsp;BRO.AI // TT&nbsp;TICKER&nbsp;TERMINAL <small>v3.83.0 · single-pass deep-dive orchestrator</small></div>
       <div class="statusline">
         <span>BOOK: <b id="bookStamp">loading…</b></span>
         <span>AUTH: <b id="sessState">…</b></span>
@@ -4272,6 +4272,13 @@ function renderEstRunBoard(){
    dated, revision-tracked fact; the conservation lint makes the book's collective bet on it
    checkable. Curated at each print (no $0 live source for guidance exists); the binary
    calendar already tracks those dates as non-ticker prints. REPORTS, NEVER ENFORCES. */
+/* FEAT-CAPEX-OCF (v3.83): funding quality — capex/OCF per spender. The tape's `dir` tripwire
+   fires on the ANNOUNCEMENT (a cut); the funding ratio fires EARLIER, when the buildout stops
+   being self-funded: guide > trailing-4Q operating cash flow means the gap is debt, and
+   debt-funded capex is what gets cut at the first ROI disappointment. Ratio > 1.0 (strict —
+   exactly self-funded does not count) on >= CAPEX_OCF_N measured spenders = the amber tell.
+   Unmeasured rows (no ocf_B) NEVER count toward it and are NAMED (the RANKFAIR rule). */
+const CAPEX_OCF_RATIO_MAX=1.0,CAPEX_OCF_N=2;
 function capexState(){
   const cx=BOARD.capex;
   if(!cx||!Array.isArray(cx.rows)||!cx.rows.length)return null;
@@ -4280,9 +4287,13 @@ function capexState(){
   const aggB=Math.round(rows.reduce((a,r)=>a+Number(r.fy_guide_B),0));
   const downs=rows.filter(r=>String(r.dir)==="down").length;
   const ups=rows.filter(r=>String(r.dir)==="up").length;
+  const ratioOf=r=>{const o=Number(r.ocf_B);return isFinite(o)&&o>0?Math.round(Number(r.fy_guide_B)/o*100)/100:null;};
+  const ratios=rows.map(r=>({co:r.co,ratio:ratioOf(r)}));
+  const over=ratios.filter(x=>x.ratio!==null&&x.ratio>CAPEX_OCF_RATIO_MAX);
+  const ocfMeasured=ratios.filter(x=>x.ratio!==null).length;
   // The owner's regime-turn tripwire: >=2 of the tracked spenders guiding DOWN. Fires in
   // both directions by design — a re-acceleration (>=2 up) is information too.
-  return{rows,aggB,downs,ups,turning:downs>=2,reacc:ups>=2,as_of:cx.as_of||BOARD.as_of};
+  return{rows,aggB,downs,ups,turning:downs>=2,reacc:ups>=2,ratios,ocfMeasured,overOcf:over.length,overSyms:over.map(x=>x.co),debtFunded:over.length>=CAPEX_OCF_N,as_of:cx.as_of||BOARD.as_of};
 }
 /* FEAT-TT-CAPABILITY (v3.55) — the demand-side falsifier.
    Reads the pre-committed threshold and the two observations; NEVER extrapolates. A doubling
@@ -4380,12 +4391,20 @@ function renderCapex(){
   let h=`<div class="lbl">Hyperscaler capex tape — the funding pipe · ${sessChip(st.as_of)}</div>`;
   if(st.turning)h+=`<div class="none" style="color:var(--red);font-weight:700">⚡ CAPEX REGIME TURNING — ${st.downs} of ${st.rows.length} tracked spenders guiding DOWN. Direct names take it first; fab one step behind; neoclouds two-sided (overflow rental demand vs shared AI-demand rollover).</div>`;
   else if(st.reacc)h+=`<div class="none" style="color:var(--green);font-weight:700">▲ re-accelerating — ${st.ups} of ${st.rows.length} guiding up</div>`;
+  // FEAT-CAPEX-OCF: the funding-quality tell — amber, leading, distinct from the red turn.
+  if(st.debtFunded)h+=`<div class="none" style="color:var(--amber);font-weight:700">⚠ DEBT-FUNDED BUILDOUT — ${st.overOcf} of ${st.ocfMeasured} measured spenders guiding capex past trailing-4Q OCF (${st.overSyms.map(esc).join(", ")}). Leading, not a turn: the pool stops being self-funded before it shrinks.</div>`;
+  const ratioBySym={};st.ratios.forEach(x=>{ratioBySym[x.co]=x.ratio;});
   st.rows.forEach(r=>{
+    const ra=ratioBySym[r.co];
+    const raChip=ra!==null&&ra!==undefined
+      ?` <span style="color:${ra>CAPEX_OCF_RATIO_MAX?"var(--amber)":"var(--dim)"}">capex/OCF ${ra.toFixed(2)}</span>`
+      :"";
     h+=`<div class="fdr-row"><span class="fdr-l"><span class="sym">${esc(r.co)}</span></span>`+
       `<span class="fdr-p" style="color:var(--fg)">$${esc(r.fy_guide_B)}B</span>`+
-      `<span class="fdr-d">${dirGlyph(String(r.dir))} <span class="scope">guided ${esc(r.at)}${r.note?` · ${esc(String(r.note).slice(0,80))}`:""}</span></span></div>`;
+      `<span class="fdr-d">${dirGlyph(String(r.dir))}${raChip} <span class="scope">guided ${esc(r.at)}${r.note?` · ${esc(String(r.note).slice(0,80))}`:""}</span></span></div>`;
   });
   h+=`<div class="none">aggregate <b>$${st.aggB}B</b> guided capex · enter each print's guide the day it lands — the binary calendar carries the dates</div>`;
+  if(st.ocfMeasured<st.rows.length)h+=`<div class="none" style="color:var(--amber)">funding unmeasured (no ocf_B): <b>${st.ratios.filter(x=>x.ratio===null).map(x=>esc(x.co)).join(", ")}</b> — unmeasured never counts toward the funding tell</div>`;
   h+=capabilitySec();
   if(L){
     const col=L.breach?"var(--red)":(L.pctOfPool!==null&&L.pctOfPool>=80)?"var(--amber)":"var(--dim)";
@@ -4409,6 +4428,7 @@ function renderCapex(){
         :c&&c.slowing?`<span style="color:var(--amber)">⚠ demand slowing</span> · `:"";})())+
     (st.turning?`<span style="color:var(--red)">⚡ ${st.downs} of ${st.rows.length} down</span>`
       :`$${st.aggB}B agg${st.reacc?` · <span style=\"color:var(--green)\">▲ re-acc</span>`:``}`)+
+    (st.debtFunded?` · <span style="color:var(--amber)">⚠ debt-funded ${st.overOcf}/${st.ocfMeasured}</span>`:``)+
     (L&&L.breach?` · <span style="color:var(--red)">book &gt; pool</span>`:L&&L.pctOfPool!==null?` · implies ${L.pctOfPool}%`:``),true);
 }
 /* FEAT-TT-OPTMV (v3.44): the signed value of an options sleeve. Returns measured:false when

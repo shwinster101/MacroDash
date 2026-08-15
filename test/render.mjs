@@ -199,9 +199,11 @@ const BOARD = {
   capability: { metric: "task-horizon doubling (synthetic)", observed_months: 20,
     prior_months: 12, threshold_months: 18, source: "fixture", as_of: TODAY_ET,
     threshold_basis: "synthetic basis" },
+  // FEAT-CAPEX-OCF (v3.83): HYPA 8/6=1.33 and HYPB 6/5=1.20 both past OCF (debt-funded fires
+  // at ≥2); HYPC carries no ocf_B — the unmeasured row must be NAMED, never counted.
   capex: { rows: [
-    { co: "HYPA", fy_guide_B: 8, dir: "down", at: etDaysAgo(2) },
-    { co: "HYPB", fy_guide_B: 6, dir: "down", at: etDaysAgo(1) },
+    { co: "HYPA", fy_guide_B: 8, ocf_B: 6, dir: "down", at: etDaysAgo(2) },
+    { co: "HYPB", fy_guide_B: 6, ocf_B: 5, dir: "down", at: etDaysAgo(1) },
     { co: "HYPC", fy_guide_B: 4, dir: "hold", at: etDaysAgo(4) },
   ] },
   funding: { as_of: TODAY_ET, rule: "trims fund debt first",
@@ -1044,6 +1046,15 @@ ok("capex: fab and neocloud are excluded WITH their reasons, and the neocloud sh
   /BBB/.test(cxPanel) && /two-sided/.test(cxPanel) && /1×/.test(cxPanel));
 ok("capex: the closed drawer summary carries the red count (v3.25 — a collapse never hides it)",
   /2 of 3 down/i.test(await txt(page, "sCapex")));   // drawer summaries are CSS-uppercased
+// FEAT-CAPEX-OCF (v3.83): the funding tell — amber, leading, distinct from the red turn.
+ok("capex-ocf: the DEBT-FUNDED banner fires at 2 of 2 measured past OCF, naming both",
+  /DEBT-FUNDED BUILDOUT/.test(cxPanel) && /2 of 2 measured/.test(cxPanel) &&
+  /HYPA, HYPB/.test(cxPanel));
+ok("capex-ocf: per-row ratios render (8/6 = 1.33) and the unmeasured row is NAMED, never counted",
+  /capex\/OCF 1\.33/.test(cxPanel) && /capex\/OCF 1\.20/.test(cxPanel) &&
+  /funding unmeasured \(no ocf_B\): HYPC/.test(cxPanel));
+ok("capex-ocf: the closed drawer summary carries the amber funding chip beside the red count",
+  /debt-funded 2\/2/i.test(await txt(page, "sCapex")));
 // v3.55: the fixture now has BOTH legs red (capex turning + demand falsified), so the strip
 // carries the MERGED badge — one chip for one thesis, one drawer. The capex-only and
 // demand-only forms are pinned at source in smoke.
