@@ -199,7 +199,7 @@ async function checkPin(pin, env, cfg) {
 // CSRF guard for state-changing methods: browsers always send Origin on POST/PUT; a
 // value from another host is a cross-site request. Absent Origin (curl, native) passes —
 // the cookie is SameSite=Strict, so a browser can't be tricked into sending it cross-site.
-function crossOrigin(request) {
+export function crossOrigin(request) {
   const origin = request.headers.get("Origin");
   if (!origin) return false;
   try { return new URL(origin).host !== new URL(request.url).host; } catch (_e) { return true; }

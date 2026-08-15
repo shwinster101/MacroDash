@@ -146,6 +146,14 @@ functions/              Cloudflare Pages Functions (run at the edge, same origin
   readout.json.js       /readout.json — public tt-v1 regime readout (CORS-open).
                         Reads the day's snapshot KV (subrequest /api/snapshot on
                         miss); maps via src/ttReadout.js. No new infra/cron.
+  lib/tt-v2.js          Shared pure licensed-input schema, metrics, composite, gate
+                        receipt and attestation logic used by Functions + smoke.
+  lib/tt-technicals.js  Deterministic OHLC/ATR/pivot/support/stop/R-R derivation.
+  lib/tt-facts.js       SEC normalization + merge-only last-good fact semantics.
+  api/street.js         Reviewed SA/TipRanks records + immutable revision history.
+  api/street/ocr.js     Ephemeral Workers AI screenshot-to-review-draft route.
+  api/ticker-facts.js   Finnhub/SEC per-symbol measured-facts refresh/store.
+  api/ticker-analysis.js Server-side gate run + immutable attested receipt history.
 
 worker/                 SEPARATE Cloudflare Worker (not part of Pages)
   cron.js               Scheduled handler: pulls FRED twice daily → writes KV
@@ -261,6 +269,20 @@ Jan-anchor shipped; see `snapshot.js` ~318–328), `spyMa100`, `spyMa200`, and a
   the book, every mutation (add / card save / remove→CUT / import) optimistically updates then PUTs.
   KV key **`tt:book:v1`** (no TTL) in `PULSE_CACHE` holds `{version, asOf, book, cut}` — plus an
   optional **`board`** (FEAT-TT-SESSION, v3.28) for state no single ticker owns.
+- **FEAT-TT-V2 — the operative ticker answer consumes two reviewed licensed inputs.** The owner
+  supplies Seeking Alpha forward annual revenue/EPS and TipRanks' published rolling-12-month
+  average/low/high target (plus visible analyst/rating counts) through a narrow screenshot/OCR
+  review form. OCR is draft-only and has no persistence binding. `/api/street` server-validates
+  the confirmed packet and stores it outside the replace-all book; `/api/ticker-facts` separately
+  stores merge-only Finnhub/SEC facts; `/api/ticker-analysis` produces an immutable receipt bound
+  to exact street/facts/`/readout.json` versions and hashes. The browser renders this receipt — it
+  does not decide eligibility. TipRanks' **published average** is consumed directly and is never
+  recomputed from low/average/high. `ELIGIBLE` is ticker-level and position-independent; exposure,
+  the 18% cap, funding, taxes, and legacy owner `pt_model` are separate sizing/execution context.
+  Any required `UNKNOWN`, Engine 0 `HOLD`, blind Macro Flip, stale quote/input, <15% gap, failed
+  composite/cited qualitative rubric, insufficient R/R, or binary inside 10 days yields `WAIT`.
+  Current contract: `ticker-terminal/README.md`; full schemas/calibration/migration:
+  `ticker-terminal/TICKER_TERMINAL_LOGIC_REDESIGN_PLAN_2026-08-15.md`.
 - **Auth = config-gated (FEAT-TT-PIN, v3.9.0).** With **`env.TT_PIN` set (exactly 6 digits;
   `npx wrangler pages secret put TT_PIN`)** the terminal runs **PIN mode**: `POST /api/tt {pin}`
   mints a 30-day KV device session (`tt:session:<token>`, HttpOnly/Secure/SameSite=Strict cookie),
@@ -2852,6 +2874,38 @@ Jan-anchor shipped; see `snapshot.js` ~318–328), `spyMa100`, `spyMa200`, and a
   VALUATION GAP ranking (§11.1 — the ranking always renders, which is the owner's actual
   "always an output" contract, and it was never suspended). Tests: 1223 smoke (+2) + 199
   render (+1).
+- **FEAT-TT-V2 (v3.90.0) — reviewed street inputs → sourced facts → attested street-eligibility
+  receipts.** The old
+  ranking could not work from the intended inputs: `ptModelRows()` required owner multiples,
+  shares and sometimes net cash; TipRanks-shaped `pt_consensus` was display-only and would
+  arithmetic-average low/average/high into a fabricated fourth target. The operative path now
+  has three ownership classes and KV stores: reviewed SA/TipRanks packets (`tt:street:*`),
+  merge-only Finnhub/SEC facts (`tt:facts:*`), and server gate receipts (`tt:analysis:*`). The
+  screenshot route accepts at most three bounded image files, sends them to Workers AI in-memory,
+  returns a review draft, and cannot persist; only explicit CONFIRM calls the validated street
+  route. Immutable street and receipt histories retain every revision instead of the belief
+  ledger's lossy three-change cap.
+  The shared pure engine consumes TipRanks' **published 12-month average**, derives explicit-period
+  revenue/EPS growth and forward P/E without chart interpolation, renormalizes missing composite
+  pillars rather than scoring them zero, and derives ATR/pivots/support/stop/R-R from sufficient
+  sourced daily candles. Every gate emits PASS/FAIL/UNKNOWN with reason/evidence; eligibility is
+  all-PASS only. Engine 0 HOLD/blind health, a quote older than 15 minutes, unknown quote currency,
+  stale licensed inputs, missing citations/technicals/calendar, sub-floor R/R, or an event ≤10d
+  fails closed. RESTRICTED remains a visible, named veto: only FULL may gate capital. Receipts
+  bind street confirmation, facts update, Engine 0 as-of/actionability/verdict/flip, input hash,
+  result hash and engine version; changing any input invalidates the displayed result.
+  This is an additive evidence and eligibility surface: the canonical `/api/score` underwriting
+  score and the portfolio-aware **NEXT DOLLAR** framework remain authoritative and are never
+  overwritten by the receipt's diagnostic composite. Position weight and the 18% cap cannot veto
+  a street receipt; they remain visibly separate portfolio constraints. Legacy
+  `pt_model`, `projection`, and `pt_consensus` stay readable during migration but are labelled
+  optional/comparison-only. Missing net cash no longer equals zero in legacy EV/S math, partial
+  year-map overrides merge rather than erase sibling estimates, and an explicit legacy average is
+  read directly instead of re-averaging aggregates. The exact NVDA screenshot packet calibrates
+  the offline acceptance math, including the HOLD override and 10-day event boundary; synthetic
+  desktop/phone tests cover OCR-before-confirm, independent persistence, receipts, published-target
+  ranking, position independence and HOLD invalidation. The dated implementation contract is
+  `ticker-terminal/TICKER_TERMINAL_LOGIC_REDESIGN_PLAN_2026-08-15.md`.
 - **Deferred:** stored fundamentals + Robinhood sync — now unblocked by the `x-tt-pin` header
   (v3.9): a chat-side daily review can PUT `status_flags`/`ref_px` into the deepDive payloads and
   stamp `lastRun`. When built, store the *triage* shape (`{at, px}` → "% moved since your last TT
@@ -2873,6 +2927,12 @@ Jan-anchor shipped; see `snapshot.js` ~318–328), `spyMa100`, `spyMa200`, and a
   **Post-deploy: verify Finnhub isn't edge-IP blocked** the way Stooq was — `?debug=1` →
   `_diag.equities` should read `ok:N`; if blocked, swap to Twelve Data (same shape). The
   tokenomics moat (OpenRouter) needs **no key**.
+- **TT v2 provider requirements:** bind Pages Workers AI as **`AI`** for screenshot vision and
+  the cited private-framework rubric; set **`SEC_USER_AGENT`** to a descriptive application +
+  contact string for `data.sec.gov`; retain `FINNHUB_KEY` for quotes/profile/calendar/news. The
+  selected Finnhub plan must entitle daily `/stock/candle` history. Missing AI, SEC identity, or
+  candle entitlement is an honest degraded state: manual street entry remains available, but any
+  dependent qualitative/technical gate is `UNKNOWN` and the ticker stays `WAIT`.
 - `_middleware.js` adds hardening headers (`nosniff`, `x-frame-options: DENY`,
   `permissions-policy`, etc.) and keeps `/api` same-origin (no `Access-Control-Allow-Origin`).
 

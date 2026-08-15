@@ -63,7 +63,10 @@ export async function onRequest(context) {
   const conf = readout.regime.confidence;
   const retryMs = conf === "HIGH" ? null : conf === "MEDIUM" ? 15 * 60 * 1000 : 5 * 60 * 1000;
   body.health = {
+    // One contract across every consumer: only FULL may gate capital. RESTRICTED is a
+    // named wait state, never a softer route around the canonical Engine 0 veto.
     can_gate: readout.regime.actionability === "FULL",
+    gate_mode: readout.regime.actionability,
     current_inputs: readout.regime.current,
     historical_inputs: readout.regime.historical,
     missing: readout.regime.checks.filter((c) => c.tier === "MISSING").map((c) => c.name),

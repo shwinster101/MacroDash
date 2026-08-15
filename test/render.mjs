@@ -118,11 +118,9 @@ const BOOK = [
       // 8x EV/S, -36.4% — keep testing the ladder rather than the marker.
       consensus: { revenue_B: { 2027: 55, 2028: 62, 2029: 70 }, eps: { 2027: 40, 2028: 46, 2029: 52 },
         derived: { 2027: ["rev", "eps"] } },
-      // FEAT-TT-SPREAD (v3.33): pt_consensus on the SAME horizon (2028, fwd=2029) as the
-      // pt_model row — lets the test confirm the "street $X vs mine $Y" confrontation.
-      // "severe" is deliberately excluded from the street average (same dim rule as
-      // ddPtConsensusSec: /floor|bear|severe/i), leaving base+bull -> avg 485.
-      pt_consensus: { rows: { "2028": { severe: 300, base: 450, bull: 520 } } },
+      // Legacy comparison only. An explicit provider average must win; low/average/high
+      // are aggregates, not scenarios to average into a fourth invented target.
+      pt_consensus: { rows: { "2028": { low: 300, average: 485, high: 520 } } },
       capex_exposure: { type: "direct", pct_of_rev: 40, via: ["HYPA", "HYPB"] },
     }) },
   { sym: "BBB", tier: "WATCH", lens: "AI", rank: "#1 optics", lastRun: etDaysAgo(1), note: "queued too",
@@ -234,15 +232,112 @@ const LEDGER_RECENT_FIXTURE = [
   { t: "2026-07-26T12:00:00Z", v: "1.08", kind: "est", sym: "BBB", field: "rev:2028", from: 9, to: 11, px: 700 },
 ];
 
-// FEAT-DERIV-OWN (v3.41): mutable so a later test can swap in a blind-circuit / withheld-verdict
-// body and re-open the page — loadRegime() re-fetches on every navigation, so this is enough to
-// drive the pill through every state without a second server.
-let READOUT_FIXTURE = { as_of: `${TODAY_ET}T14:30:00Z`, regime: { verdict: "HEADWIND" }, macro_flip: { armed: true } };
+// FEAT-TT-V2: the browser exercises the same split persistence contract as production — the
+// reviewed licensed packet, measured facts and attested analysis receipt are three independent
+// responses. The values stay synthetic; only the contract mirrors the NVDA acceptance fixture.
+const READOUT_AS_OF = `${TODAY_ET}T14:30:00Z`;
+const nextFiscal = (n) => `${new Date().getUTCFullYear() + n}-01-31`;
+const streetPacket = (symbol, rows, target) => ({
+  schema: "tt-street-v1", symbol, confirmedAt: `${TODAY_ET}T17:00:00.000Z`,
+  storedAt: `${TODAY_ET}T17:00:00.000Z`, version: `fixture-${symbol.toLowerCase()}`,
+  estimates: {
+    provider: "Seeking Alpha", sourceUrl: "https://seekingalpha.com/", asOf: TODAY_ET,
+    currency: "USD", revenueUnit: "B", epsBasis: "diluted", periods: rows,
+  },
+  analystTarget: {
+    provider: "TipRanks", sourceUrl: "https://www.tipranks.com/", asOf: TODAY_ET,
+    currency: "USD", low: target.low, average: target.average, high: target.high,
+    analystCount: 15, ratings: { buy: 12, hold: 2, sell: 1 },
+    lookbackMonths: 3, horizonMonths: 12, referencePrice: target.referencePrice,
+  },
+});
+let STREET_FIXTURE = {
+  AAA: streetPacket("AAA", [
+    { periodEnd: nextFiscal(1), revenueB: 55, eps: 40 },
+    { periodEnd: nextFiscal(2), revenueB: 62, eps: 46 },
+    { periodEnd: nextFiscal(3), revenueB: 70, eps: 52 },
+  ], { low: 850, average: 1100, high: 1500, referencePrice: 800 }),
+  BBB: streetPacket("BBB", [
+    { periodEnd: nextFiscal(1), revenueB: 9, eps: 18 },
+    { periodEnd: nextFiscal(2), revenueB: 11, eps: 22 },
+  ], { low: 560, average: 650, high: 800, referencePrice: 609 }),
+  JJJ: streetPacket("JJJ", [
+    { periodEnd: nextFiscal(1), revenueB: 5, eps: 3 },
+    { periodEnd: nextFiscal(2), revenueB: 6, eps: 4 },
+  ], { low: 90, average: 160, high: 220, referencePrice: 100 }),
+};
+const fact = (value, extra = {}) => ({
+  value, status: "LIVE", provider: "synthetic provider", observedAt: `${TODAY_ET}T14:35:00Z`,
+  retrievedAt: `${TODAY_ET}T14:35:00Z`, ...extra,
+});
+let FACTS_FIXTURE = {
+  AAA: { schema: "tt-facts-v1", symbol: "AAA", updatedAt: `${TODAY_ET}T14:35:00Z`, fields: {
+    quote: fact(800, { currency: "USD", changePct: -1.1 }), nextEarnings: fact(etDaysAgo(-22)),
+    netCashB: fact(42.3, { unit: "USD B", provider: "SEC" }),
+  } },
+  BBB: { schema: "tt-facts-v1", symbol: "BBB", updatedAt: `${TODAY_ET}T14:35:00Z`, fields: {
+    quote: fact(609, { currency: "USD", changePct: -1.4 }), nextEarnings: fact(etDaysAgo(-22)),
+  } },
+  JJJ: { schema: "tt-facts-v1", symbol: "JJJ", updatedAt: `${TODAY_ET}T14:35:00Z`, fields: {
+    quote: fact(100, { currency: "USD", changePct: 0.5 }), nextEarnings: fact(etDaysAgo(-22)),
+  } },
+};
+const gate = (id, status, reason, evidence = []) => ({ id, status, reason, evidence });
+const analysisReceipt = (sym, { gap, target, eligible, failing = null }) => {
+  const gates = [
+    gate("macro", "PASS", "Engine 0 permits full evaluation", ["actionability FULL"]),
+    gate("quote", "PASS", "usable live quote", ["synthetic provider"]),
+    gate("street_gap", failing === "street_gap" ? "FAIL" : "PASS",
+      failing === "street_gap" ? `TipRanks published average is only ${gap}% above the sourced quote` :
+        `TipRanks published average is ${gap}% above the sourced quote`, ["minimum 15%"]),
+    gate("licensed_freshness", "PASS", "SA estimates and TipRanks target are current"),
+    gate("composite", "PASS", "8.2/10 across 4 available pillars", ["revisions unavailable"]),
+    gate("qualitative", failing === "qualitative" ? "UNKNOWN" : "PASS",
+      failing === "qualitative" ? "primary filing evidence is unavailable" : "primary evidence supports the rubric",
+      failing === "qualitative" ? [] : ["https://www.sec.gov/fixture"]),
+    gate("reward_risk", "PASS", "3x reward/risk clears 2x", ["ATR stop"]),
+    gate("binary", "PASS", "next binary event is 22 days away", [etDaysAgo(-22)]),
+  ];
+  const blockers = gates.filter((g) => g.status !== "PASS").map((g) => ({ id: g.id, status: g.status, reason: g.reason }));
+  return {
+    schema: "tt-analysis-v1", engineVersion: "tt-gates-v1", symbol: sym,
+    evaluatedAt: `${TODAY_ET}T14:36:00Z`, status: eligible ? "ELIGIBLE" : "WAIT", eligible,
+    gates, blockers, warnings: [],
+    metrics: { status: "OK", quote: FACTS_FIXTURE[sym].fields.quote.value,
+      gaps: { averagePct: gap, lowPct: null, highPct: null }, target: { average: target } },
+    technicals: { status: "OK", rewardRisk: 3, trend: "UPTREND", evidence: ["ATR stop"] },
+    composite: { status: "PASS", score: 8.2, reason: "8.2/10 across 4 available pillars" },
+    qualitative: failing === "qualitative"
+      ? { status: "UNKNOWN", score: null, reason: "primary filing evidence is unavailable", citations: [] }
+      : { status: "PASS", score: 8, reason: "primary evidence supports the rubric", citations: ["https://www.sec.gov/fixture"] },
+    policy: { streetGapMinPct: 15, binaryWindowDays: 10, rrFloor: 2 },
+    attestation: { at: `${TODAY_ET}T14:36:00Z`, engineVersion: "tt-gates-v1", status: eligible ? "ELIGIBLE" : "WAIT",
+      inputVersions: { street: STREET_FIXTURE[sym].confirmedAt, facts: FACTS_FIXTURE[sym].updatedAt,
+        regime: READOUT_AS_OF, regimeActionability: "FULL", regimeVerdict: "HEADWIND", macroFlipState: "ARMED", riskTier: "tactical" },
+      inputHash: "a".repeat(64), resultHash: "b".repeat(64) },
+  };
+};
+let ANALYSIS_FIXTURE = {
+  AAA: analysisReceipt("AAA", { gap: 37.5, target: 1100, eligible: true }),
+  BBB: analysisReceipt("BBB", { gap: 6.7, target: 650, eligible: false, failing: "street_gap" }),
+  JJJ: analysisReceipt("JJJ", { gap: 60, target: 160, eligible: false, failing: "qualitative" }),
+};
+let STREET_PUTS = 0;
+let OCR_CALLS = 0;
+
+// FEAT-DERIV-OWN (v3.41): mutable so later tests can swap in blind/HOLD readouts and
+// reopen the page. FULL + evaluable is required for the initial receipt to remain current.
+let READOUT_FIXTURE = {
+  as_of: READOUT_AS_OF,
+  regime: { verdict: "HEADWIND", actionability: "FULL", status: "OK" },
+  health: { can_gate: true },
+  macro_flip: { armed: true, tripped: false, evaluable: true, state: "ARMED", reason: null },
+};
 // ENGINE0-CONT: null = endpoint absent (404), so the pre-existing refreshRanks test keeps
 // exercising the read-only fallback ladder; set to a body to drive the real POST path.
 let REFRESH_FIXTURE = null;
 
-const server = http.createServer((req, res) => {
+const server = http.createServer(async (req, res) => {
   const url = new URL(req.url, "http://x");
   const json = (o) => { res.writeHead(200, { "content-type": "application/json" }); res.end(JSON.stringify(o)); };
   if (url.pathname === "/api/snapshot/refresh") {
@@ -300,6 +395,40 @@ const server = http.createServer((req, res) => {
           falsifier_health: { score: 6.0, weight: 0.25, blockers: [] } },
         gate_results: [] } } });
     return json({ sym: s, record: null });
+  }
+  if (url.pathname === "/api/street/ocr") {
+    OCR_CALLS++;
+    return json({ draft: JSON.parse(JSON.stringify(STREET_FIXTURE.AAA)), warnings: ["synthetic OCR draft — verify every field"] });
+  }
+  if (url.pathname === "/api/street") {
+    if (req.method === "PUT") {
+      STREET_PUTS++;
+      const chunks = []; for await (const chunk of req) chunks.push(chunk);
+      const packet = JSON.parse(Buffer.concat(chunks).toString("utf8"));
+      const record = { ...packet, storedAt: `${TODAY_ET}T17:05:00.000Z`, version: `fixture-${packet.symbol.toLowerCase()}-saved` };
+      STREET_FIXTURE = { ...STREET_FIXTURE, [packet.symbol]: record };
+      return json({ record, changes: [{ path: "confirmedAt", from: null, to: packet.confirmedAt }] });
+    }
+    return json({ records: STREET_FIXTURE, missing: [] });
+  }
+  if (url.pathname === "/api/ticker-facts") {
+    let sym = String(url.searchParams.get("sym") || "").toUpperCase();
+    if (req.method === "POST") {
+      const chunks = []; for await (const chunk of req) chunks.push(chunk);
+      sym = String(JSON.parse(Buffer.concat(chunks).toString("utf8")).symbol || "").toUpperCase();
+    }
+    return json({ records: sym ? { [sym]: FACTS_FIXTURE[sym] } : FACTS_FIXTURE, missing: [] });
+  }
+  if (url.pathname === "/api/ticker-analysis") {
+    if (req.method === "POST") {
+      const chunks = []; for await (const chunk of req) chunks.push(chunk);
+      const body = JSON.parse(Buffer.concat(chunks).toString("utf8"));
+      const sym = String(body.symbol || "").toUpperCase();
+      const receipt = ANALYSIS_FIXTURE[sym];
+      if (receipt) receipt.attestation.inputVersions.street = STREET_FIXTURE[sym]?.confirmedAt || null;
+      return json({ receipt: receipt || null });
+    }
+    return json({ records: ANALYSIS_FIXTURE, missing: [] });
   }
   if (url.pathname === "/api/ledger") {
     const p = url.searchParams;
@@ -494,8 +623,35 @@ ok("card MEASURED row carries live price, size and weight (the old tooltip, tapp
 ok("ready: the card leads with a DECISION READINESS verdict, not eight scattered dates",
   /READINESS/.test(cardBody) && /DECISION READINESS/.test(cardBody) &&
   /(READY|CAUTION|BLOCKED)/.test(cardBody));
-ok("ready: the card's readiness bar states each clock rather than only a verdict",
-  /TT run|TT never run/.test(cardBody) && /thesis/.test(cardBody));
+ok("ready: the card's readiness bar renders the attested gate chain rather than legacy clocks",
+  /macro:/.test(cardBody) && /street gap:/.test(cardBody) && /reward risk:/.test(cardBody) && /binary:/.test(cardBody));
+await page.evaluate(() => closeCard());
+await page.waitForTimeout(80);
+
+console.log("\n[render] FEAT-TT-V2 — screenshot draft, explicit review, confirmed write");
+await page.evaluate(() => openStreetImport("AAA"));
+await page.waitForTimeout(120);
+const streetFlow = { title: await page.locator("#cTitle").innerText(), body: await page.locator("#cBody").innerText(), accept: await page.locator("#streetImages").getAttribute("accept") };
+ok("the narrow input flow names both licensed providers and exposes an image-only draft control",
+  /REVIEW STREET INPUTS/i.test(streetFlow.title) &&
+  /Seeking Alpha source URL/i.test(streetFlow.body) &&
+  /TipRanks average/i.test(streetFlow.body) &&
+  streetFlow.accept === "image/png,image/jpeg,image/webp");
+await page.locator("#streetImages").setInputFiles({
+  name: "synthetic-street.png", mimeType: "image/png", buffer: Buffer.from("synthetic image fixture"),
+});
+await page.evaluate(() => ocrStreetDraft());
+await page.waitForTimeout(220);
+ok("OCR returns an editable draft with the provider-published average intact",
+  (await page.inputValue("#stAvg")) === "1100" && (await page.locator("#streetPeriods .street-period").count()) === 3 &&
+  /verify every field/i.test(await page.locator("#cBody").innerText()));
+ok("OCR itself is ephemeral — no licensed packet write occurs before explicit confirmation",
+  OCR_CALLS === 1 && STREET_PUTS === 0);
+await page.evaluate(() => saveStreetPacket());
+await page.waitForTimeout(450);
+ok("CONFIRM persists exactly one reviewed packet, refreshes facts, and returns an attested card",
+  STREET_PUTS === 1 && /TICKER GATES/.test(await page.locator("#cBody").innerText()) &&
+  /ELIGIBLE/.test(await page.locator("#cBody").innerText()));
 await page.evaluate(() => closeCard());
 await page.waitForTimeout(80);
 
@@ -586,7 +742,7 @@ ok("sell: the asserted funding order is confronted with the computed one",
 ok("sell: a tripped circuit makes SELL the active list",
   /this IS the active list/i.test(sellOpen));
 const buyB = await txt(page, "buyBlock");
-ok("buy: compact block carries the veto banner and the same ranked rows",
+ok("buy: compact block carries the veto banner and the same canonical ranked rows",
   /NO NEW POSITIONS/.test(buyB) && /AAA/.test(buyB) && /13\.4%\*/.test(buyB));
 const calB = await txt(page, "calBlock");
 ok("calendar block leads with today's binary", /TODAY/.test(calB) && /MACROEVT/.test(calB));
@@ -634,7 +790,6 @@ ok("refresh button refetches and reports, cache window named",
   /Ranks refreshed/.test(await page.locator("#toast").innerText()));
 
 console.log("\n[render] FEAT-TT-RANKFAIR — held weight is a ranking input, not a footnote");
-// AAA is 24000/178494 = 13.4% of the tracked book -> "*" (thin). EEE is options-only -> "◇".
 const upRank = await txt(page, "upsideRank");
 ok("a ranked pick carries the weight already held", /13\.4%\*/.test(upRank));
 // v3.66 QUIET BOARD: the methodology (denominator, shared-horizon note, floor/premium
@@ -674,8 +829,6 @@ const capped = await page.evaluate(() => {
 });
 ok("a name over the cap is vetoed from the next dollar with its reason named", capped.over);
 ok("...and is never left standing as AGREE_PICK", capped.pick !== "AAA");
-// FIX-B (v3.49): with the circuit cleared but the session still asserting PANIC, the green
-// line hard-WAITs at board level with the gate NAMED — driven live, not just source-pinned.
 const gated = await page.evaluate(() => {
   const prevState = BOARD.circuit.state;
   BOARD.circuit.state = "clear";
@@ -687,6 +840,42 @@ const gated = await page.evaluate(() => {
 });
 ok("FIX-B: an asserted PANIC stance vetoes eligibility, gate named in the WAIT box", gated.wait);
 ok("FIX-B: no AGREE_PICK survives a failed eligibility gate", gated.pick === null);
+await page.waitForTimeout(120);
+
+console.log("\n[render] FEAT-TT-V2 — published target receipt, additive to canonical ranking");
+const streetRank = await txt(page, "streetEligibility");
+ok("the receipt uses TipRanks' explicit published average on one 12-month horizon",
+  /\$1100 published average · 12m/.test(streetRank) && /\+37\.5%/.test(streetRank) && /low\/average\/high are never re-averaged/.test(streetRank));
+ok("the receipt explicitly ignores position size, names its denominator, and disclaims canonical scoring",
+  /position ignored/i.test(streetRank) && /diagnostic, not canonical score/i.test(streetRank) && /3 reviewed of 7/.test(streetRank));
+ok("a wider gap cannot outrun a failed sourced gate",
+  /JJJ[\s\S]*WAIT[\s\S]*\+60%/.test(streetRank) && /STREET RECEIPT PASS: AAA/.test(streetRank));
+ok("a below-hurdle provider target is named as WAIT, never promoted by an owner model",
+  /BBB[\s\S]*WAIT[\s\S]*\+6\.7%/.test(streetRank) && /only 6\.7% above/.test(streetRank));
+
+const exposureIndependent = await page.evaluate(() => {
+  const keep = JSON.parse(JSON.stringify(POSITIONS.AAA));
+  const before = document.getElementById("streetEligibility").innerText;
+  POSITIONS.AAA = { ...POSITIONS.AAA, mv: 999999999, pct: 99.9 };
+  render();
+  const during = document.getElementById("streetEligibility").innerText;
+  POSITIONS.AAA = keep; render();
+  return { before, during };
+});
+ok("changing exposure cannot veto or reorder the ticker-level street receipt",
+  exposureIndependent.during === exposureIndependent.before && /STREET RECEIPT PASS: AAA/.test(exposureIndependent.during) && !/cap, no room/.test(exposureIndependent.during));
+
+const holdInvalidates = await page.evaluate(() => {
+  const reg = JSON.parse(JSON.stringify(REGIME));
+  REGIME.regime.actionability = "HOLD"; REGIME.health.can_gate = false;
+  REGIME.macro_flip.evaluable = false; REGIME.macro_flip.state = "UNCONFIRMED";
+  render();
+  const during = document.getElementById("streetEligibility").innerText;
+  REGIME = reg; render();
+  return during;
+});
+ok("an Engine 0 HOLD invalidates the prior FULL street receipt fail-closed",
+  /WAIT/.test(holdInvalidates) && /predates current Engine 0 readout/.test(holdInvalidates));
 await page.waitForTimeout(120);
 
 // FEAT-TT-ENTRY (v3.82): the WHEN leg driven live. Clear the gates (the capped-test recipe),
@@ -789,8 +978,8 @@ ok("every modelled name gets a row, denominator stated",
 // surfaces now share pickRow(), so every row here targets the horizon in force. The fixture's
 // auto horizon is 2027: AAA and JJJ reach 2028 but BBB's estimates stop at 2027, and the auto
 // rule picks the deepest year EVERY modelled name reaches.
-ok("every row targets the horizon in force, not its own nearest rung (auto = 2027 here)",
-  /\$451 by 2027/.test(estBoard) && /%\/yr/.test(estBoard) &&
+ok("legacy owner comparisons still share one explicit horizon after leaving eligibility",
+  /by 2027/.test(estBoard) && /%\/yr/.test(estBoard) &&
   (estBoard.match(/by 2027/g) || []).length === 3 && !/by 2026/.test(estBoard));
 await page.evaluate(() => { document.querySelector("#estRunBoard details").open = true; });
 await page.waitForTimeout(120);
@@ -823,10 +1012,11 @@ ok("the four answers render above the corpus",
 ok("ready: the readiness verdict leads the deep-dive tab, above the four answers",
   /DECISION READINESS/i.test(dv) &&
   dv.indexOf("DECISION READINESS") < dv.toUpperCase().indexOf("WHAT IT'S WORTH"));
-ok("ready: every clock is stated on the bar — TT run, thesis, model, price, position, hinges",
-  /TT run|TT never run/i.test(dv) && /thesis/i.test(dv) && /hinge/i.test(dv));
-ok("ready: a RED hinge is named on the bar but never appears as a blocker (D3 doctrine)",
-  /1 hinge RED/i.test(dv) && !/not actionable until:[^\n]*RED/i.test(dv));
+ok("ready: every server gate is stated on the bar and position is not one of them",
+  /macro:/i.test(dv) && /street gap:/i.test(dv) && /qualitative:/i.test(dv) && /reward risk:/i.test(dv) &&
+  !/position:/.test(dv));
+ok("ready: thesis hinges remain visible below the receipt without becoming ticker blockers",
+  /1 red/i.test(dv) && /demand/i.test(dv) && !/not actionable until:[^\n]*hinge/i.test(dv));
 ok("what-changes-my-mind names the red hinge", /1 red/.test(dv) && /demand/.test(dv));
 // ═══ v3.73 TT-SCORE: the shadow scorecard panel — server result rendered verbatim ═══
 // AAA's stub is UNSCORABLE/AWAITING_FALSIFIERS with a NO_FLOOR_PREPROFIT and a contingent
@@ -873,25 +1063,23 @@ ok("the section label carries the tier — the math renders under the tier claim
   /ESTIMATE RUN — WATCHLIST/i.test(dv));
 ok("per-year YoY growth renders beside the estimates (rev 62→70 = +12.9%)",
   /\+12\.9%/.test(dv) && /\+13%/.test(dv));
-ok("the PT columns join the SAME rows ptModelRows computed ($509 by 2028 · 8× EV/S)",
-  /\$509/.test(dv) && /8× EV\/S/.test(dv));
-ok("upside prices the best target against the live quote (509/800 → -36.4%)",
-  /-36\.4%/.test(dv));
+ok("the legacy EV/S premium refuses to equate missing net cash with zero",
+  !/\$509/.test(dv) && /18× FY\+1 EPS/.test(dv));
+ok("the explicit floor remains available as an owner comparison ($936 vs $800 → +17%)",
+  /\$936/.test(dv) && /\+17%/.test(dv));
 ok("the old split sections are gone — one table, one year axis",
   !/Consensus estimates/i.test(dv) && !/PT ladder — computed from inputs/i.test(dv));
 
 // SHOTS=/path/prefix → drop full-page screenshots for a human eyeball pass (never in CI).
 if (process.env.SHOTS) await page.screenshot({ path: process.env.SHOTS + "-desktop-dd.png", fullPage: true });
 
-console.log("\n[render] FEAT-TT-SPREAD — the worth cell confronts market vs mine");
-// AAA's 2028 row (fwd 2029, rev $70B, 8x, 1100M sh) prices $509; at the live $800 quote
-// that implies the market is paying ~12.57x FY+1 revenue against the 8x underwritten.
-ok("the spread inverts the SAME row the ladder computed (never a second number)",
-  /market pays 12\.57× FY\+1 vs you 8×/.test(dv));
-ok("the spread states what % of the case the market already credits",
-  /credits 157\.2% of your 2028 case/.test(dv));
-ok("street PT (pt_consensus, non-bear columns averaged) is confronted against mine",
-  /street ~\$485 vs mine \$509/.test(dv));
+console.log("\n[render] FEAT-TT-SPREAD — legacy comparison stays honest under missing inputs");
+ok("missing net cash suppresses the EV/S inversion instead of assuming exactly zero",
+  !/market pays/.test(dv) && !/credits [\d.]+% of your 2028 case/.test(dv));
+ok("the published legacy average is read directly rather than recomputing low/average/high",
+  /street ~\$485 vs mine \$936/.test(dv));
+ok("the additive street receipt separately labels TipRanks' 12-month published average",
+  /\$1100 published average · 12m/.test(streetRank));
 
 console.log("\n[render] FEAT-TT-LEDGER — the per-name HISTORY drawer");
 // AAA's ledger carries 3 entries fetched lazily on tab open; wait for that fetch to land.
@@ -944,14 +1132,8 @@ await page.evaluate(() => { setHorizon("auto"); switchTab("BOARD"); });
 await page.waitForTimeout(200);
 await page.evaluate(() => { document.querySelectorAll("#upsideRank details.est-mini").forEach(d => d.open = true); });
 const rankTxt = await txt(page, "upsideRank");
-// D1: the auto pick must SAY it is auto and say WHY — an auto horizon that looked deliberate is
-// how "2028" survived long enough to silently drop three modelled names from the ranking.
 ok("the auto horizon states itself and its rule, never passing as a deliberate choice",
   /auto · year-end 2027/i.test(rankTxt) && /deepest year EVERY modelled name reaches/i.test(rankTxt));
-// Every modelled+priced name must appear — the D1 bug was that a pinned year silently dropped
-// names whose estimates ended earlier. Asserted as a PROPERTY (all three modelled names ranked,
-// no drop notice) rather than a tally: an earlier handoff-merge test adds a name to BOOK, so a
-// hardcoded denominator here would be test-order dependent.
 ok("every modelled+priced name is ranked at the auto horizon (nothing silently dropped)",
   /AAA/.test(rankTxt) && /BBB/.test(rankTxt) && /JJJ/.test(rankTxt) &&
   !/dropped for having no/.test(rankTxt) && /all % share the 2027 horizon/i.test(rankTxt));
@@ -997,24 +1179,26 @@ const backToAuto = await page.evaluate(() => {
 });
 ok("horizon picker: auto is one tap back from nearest, with no navigation", backToAuto === "auto");
 
-// The whole-book lint: a mis-keyed schedule must be named at the altitude the ranking is read,
-// not only on a tab nobody opened. Mutated in-page then restored, so no fixture count shifts.
+// The whole-book lint remains canonical, while the provider receipt must stay independent of
+// owner-model schedules. Mutated in-page then restored, so no fixture count shifts.
 const lintSeen = await page.evaluate(() => {
+  const streetBefore = document.getElementById("streetEligibility").innerText;
   const keep = JSON.parse(JSON.stringify(BOOK[0].deepDive.pt_model));
-  // Key the schedule at the ESTIMATE years instead of the year-end priced — the NVDA bug.
   BOOK[0].deepDive.pt_model.ev_s_multiple = { 2028: 8, 2029: 7 };
   render();
   const board = document.getElementById("upsideRank").innerText;
+  const streetAfter = document.getElementById("streetEligibility").innerText;
   switchTab("AAA");
   const tab = document.getElementById("deepView").innerText;
   BOOK[0].deepDive.pt_model = keep;
   switchTab("BOARD"); render();
-  return { board, tab };
+  return { streetBefore, streetAfter, board, tab };
 });
-ok("a mis-keyed multiple schedule is named on the BOARD, not just buried on its tab",
-  /MIS-KEYED/i.test(lintSeen.board) && /AAA/.test(lintSeen.board) &&
-  /the rung shown is a floor fallback/i.test(lintSeen.board));
-ok("...and the name's own tab explains it, naming the year-end-priced convention",
+ok("a mis-keyed multiple schedule is named on the canonical BOARD",
+  /MIS-KEYED/i.test(lintSeen.board) && /AAA/.test(lintSeen.board) && /the rung shown is a floor fallback/i.test(lintSeen.board));
+ok("changing an owner multiple cannot change the independent published-target receipt",
+  lintSeen.streetAfter === lintSeen.streetBefore && !/MIS-KEYED/i.test(lintSeen.streetAfter));
+ok("the name's own tab explains a bad schedule and its convention",
   /MISKEY/.test(lintSeen.tab) && /YEAR-END PRICED/i.test(lintSeen.tab));
 await page.waitForTimeout(150);
 
@@ -1536,6 +1720,20 @@ ok("degraded-hold: a carried-VIX circuit reads 'flip unconfirmed (last close)', 
   /flip unconfirmed \(last close\)/.test(holdPill));
 ok("degraded-hold: counts + observation dates ride the pill tooltip",
   /2 current · 3 historical/.test(await holdPage.locator("#regimePill").getAttribute("title") || ""));
+const holdGateState = await holdPage.evaluate(() => {
+  BOARD.circuit.state = "clear"; render();
+  return {
+    stance: stance().txt,
+    rank: document.getElementById("upsideRank").textContent,
+    street: document.getElementById("streetEligibility").textContent,
+    pick: AGREE_PICK && AGREE_PICK.sym,
+  };
+});
+ok("degraded-hold: Engine 0 HOLD is a hard WAIT in stance, not a permissive NEUTRAL",
+  /ADDS SUSPENDED — Engine 0 HOLD/.test(holdGateState.stance));
+ok("degraded-hold: a prior FULL street receipt becomes WAIT and the canonical pick also clears",
+  holdGateState.pick === null && /WAIT/.test(holdGateState.rank) && /WAIT/.test(holdGateState.street) &&
+  /predates current Engine 0 readout/.test(holdGateState.street));
 
 REFRESH_FIXTURE = { ok: true, published: true, improved: true,
   message: "Engine 0 recovered to 6 current check(s) (HIGH confidence, FULL)",

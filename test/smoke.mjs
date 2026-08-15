@@ -22,6 +22,16 @@ import {
 } from "../src/ttReadout.js";
 import { sessionsBehind } from "../src/sources.js";
 import { validateBook, validateBoard, validatePos, conflictCheck, authMode, lockoutState, recordFailure, parseCookie, hashPin, LOCK_TIERS, diffForLedger } from "../functions/api/tt.js";
+import {
+  validateStreetPacket, deriveStreetMetrics, deriveAutomaticComposite, renormalizeComposite,
+  buildGateReceipt, rewardRiskFloor, attestGateReceipt, STREET_GAP_MIN_PCT,
+} from "../functions/lib/tt-v2.js";
+import { deriveTechnicals } from "../functions/lib/tt-technicals.js";
+import { extractSecFacts, mergeFactsRecord } from "../functions/lib/tt-facts.js";
+import { streetRevision, onRequestPut as putStreetPacket, onRequestGet as getStreetPacket } from "../functions/api/street.js";
+import { mergeOcrExtractions, onRequestPost as postStreetOcr } from "../functions/api/street/ocr.js";
+import { onRequestGet as getTickerFacts, onRequestPost as postTickerFacts, quoteFact } from "../functions/api/ticker-facts.js";
+import { onRequestPost as postTickerAnalysis, riskTierForBookEntry } from "../functions/api/ticker-analysis.js";
 import { plausible, applyBands, quorum, QUORUM_FIELDS, QUORUM_MIN, marketSession, BANDS,
   pairRs, parseTreasuryCsv, rateOddsStillOpen, chooseTtl, publishIfNoWorse, TTL_MEDIUM, TTL_LOW } from "../functions/api/snapshot.js";
 import { etYmd } from "../src/sources.js";
@@ -859,8 +869,8 @@ ok("terminal: INSUFFICIENT and fetch-failure both render as don't-trust states",
 ok("terminal: lastRun stamps the ET date — no UTC toISOString on the run stamp",
   adminSrc.includes('new Date().toLocaleDateString("en-CA",{timeZone:"America/New_York"})') &&
   !/fLastRun"\)\.value=new Date\(\)\.toISOString/.test(adminSrc));
-ok("terminal: HEADWIND/PANIC modifiers wired to the next-dollar line",
-  adminSrc.includes("R/R floors +0.5") && adminSrc.includes("8+ support quality"));
+ok("terminal: HEADWIND raises the R/R floor while PANIC blocks ticker eligibility",
+  adminSrc.includes("R/R floors +0.5") && adminSrc.includes("PANIC regime — ticker eligibility blocked"));
 ok("terminal: stamp flow routes through saveCard (persist rails, not a side channel)",
   adminSrc.includes("function stampAndSave(){stampRunToday();saveCard();}"));
 // FEAT-TT-DD (v3.12): deep-dive tabs. The payload rides validateBook's deliberate
@@ -946,8 +956,9 @@ ok("dd: CLEAR empties the editor without saving (paste-over on mobile)",
 ok("ptm: registered as a handled section", /"pt_model"/.test(DD_HANDLED_SRC));
 ok("ptm: rows computed from the model, never typed",
   adminSrc.includes("(mult*rev[fwd]+nc)*1000/sh") && adminSrc.includes("computed — edit inputs, not rows"));
-ok("ptm: revenue/EPS default to the sibling consensus block (one source of estimate truth)",
-  adminSrc.includes("m.revenue_B||c.revenue_B") && adminSrc.includes("m.eps||c.eps"));
+ok("ptm: per-year owner overrides merge onto sibling consensus (one estimate map, no dropped years)",
+  adminSrc.includes("{...(c.revenue_B||{}),...(m.revenue_B||{})}") &&
+  adminSrc.includes("{...(c.eps||{}),...(m.eps||{})}"));
 ok("ptm: floor renders n/m where EPS <= 0 (no P/E before profit)", adminSrc.includes('e>0?fmt(pe*e):"n/m"'));
 ok("ptm: schedules accept per-year maps with nearest-key fallback", adminSrc.includes("function schedAt"));
 ok("ptm: past year-end rows auto-drop (>= current ET year)", adminSrc.includes(".filter(y=>y>=y0)"));
@@ -1027,9 +1038,10 @@ ok("FIX-B: a failed gate renders WAIT and leaves no stale AGREE_PICK behind",
   adminSrc.includes("NEXT DOLLAR: WAIT — eligibility gate failed"));
 ok("FIX-B: red hinges stay surfaced-not-vetoed on the green line (D3 doctrine, v3.39)",
   adminSrc.includes("not a veto (yours to weigh)"));
-// FIX-C: the two rankings carry the labels for what they actually are.
-ok("FIX-C: math list is labelled VALUATION GAP — math only; funding list is FUNDING PRIORITY",
+// FIX-C: canonical valuation, sourced receipt, and funding carry distinct labels.
+ok("FIX-C: canonical valuation, diagnostic street receipt and funding remain distinct",
   adminSrc.includes("VALUATION GAP — math only · ranked by %/yr, weight-aware") &&
+  adminSrc.includes("STREET ELIGIBILITY RECEIPT · diagnostic, not canonical score") &&
   adminSrc.includes("FUNDING PRIORITY") && !adminSrc.includes("NEXT DOLLAR — SELL") &&
   !adminSrc.includes("NEXT DOLLAR — BUY"));
 // FIX-D: no surface claims a NAV denominator — it is account equity, options excluded.
@@ -1167,7 +1179,7 @@ ok("livepx: each pick shows whether it used a live or stamped price",
 ok("livepx: footer counts live vs stamped rather than implying all are current",
   adminSrc.includes("live / ") && adminSrc.includes("all prices are stamped marks, not live"));
 ok("livepx: quote fetch is non-blocking and failure leaves the board unchanged",
-  adminSrc.includes("loadBook().then(()=>{loadQuotes();loadPositions();loadDeepDiveIndex();});") && adminSrc.includes("never break the board on a quote feed"));
+  adminSrc.includes("loadBook().then(()=>{loadQuotes();loadPositions();loadDeepDiveIndex();loadTickerV2();});") && adminSrc.includes("never break the board on a quote feed"));
 
 // ---- 9. market calendar — holidays across the honesty stack ---------------
 // The time-judges (isStale, marketSession/etSession, looksBehind) share ONE
@@ -1315,8 +1327,8 @@ ok("regime: an asserted regime always carries its provenance and verified flag",
 ok("regime: MacroDash INSUFFICIENT/unavailable never silently confirms the asserted read",
   adminSrc.includes("MacroDash unavailable, nothing measured confirms it") &&
   adminSrc.includes("unconfirmed, don't gate on the measured side"));
-ok("regime: the HEADWIND/PANIC modifier text survives the two-engine rewrite",
-  adminSrc.includes("R/R floors +0.5") && adminSrc.includes("8+ support quality"));
+ok("regime: HEADWIND/PANIC policy survives the two-engine rewrite",
+  adminSrc.includes("R/R floors +0.5") && adminSrc.includes("PANIC regime — ticker eligibility blocked"));
 // Non-ticker binaries — a supplier's print that sets the tone for names you do hold.
 ok("bincal: board-level binaries merge into the same dated queue",
   adminSrc.includes("BOARD.binaries") && adminSrc.includes("board-level, not a book ticker"));
@@ -1480,7 +1492,7 @@ ok("pos: an absent position renders NOTHING — not a 0 or a dash that reads as 
   adminSrc.includes("absent number; a dash or a 0 here would read"));
 ok("pos: fetched from its own endpoint at boot, alongside the book and quotes",
   adminSrc.includes('const r=await fetch("/api/positions");') &&
-  adminSrc.includes("loadBook().then(()=>{loadQuotes();loadPositions();loadDeepDiveIndex();});"));
+  adminSrc.includes("loadBook().then(()=>{loadQuotes();loadPositions();loadDeepDiveIndex();loadTickerV2();});"));
 ok("pos: a fetch failure leaves POSITIONS={} — every posOf() reads null, never stale data",
   adminSrc.includes("POSITIONS stays {} — posOf() reads null for everyone, never stale data"));
 ok("pos: measured marks age like everything else, undated being the worst",
@@ -1567,7 +1579,7 @@ const PKG = JSON.parse(readFileSync(new URL("../package.json", import.meta.url),
 // __APP_VERSION__, so a guard is the only thing that can hold the invariant.
 ok("version: the terminal's title and brand both match package.json (no third version)",
   adminSrc.includes(`<title>TT TICKER TERMINAL v${PKG.version}</title>`) &&
-  adminSrc.includes(`<small>v${PKG.version} · single-pass deep-dive orchestrator</small>`));
+  adminSrc.includes(`<small>v${PKG.version} · underwriting + sourced gates</small>`));
 // ttInfo's score decides whether the NEXT DOLLAR line lights. It is parsed from prose.
 ok("composite: a decimal score is preferred over an earlier bare integer",
   adminSrc.includes("function parseComposite(v)") && adminSrc.includes("const dec=s.match(/\\d+\\.\\d+/);"));
@@ -1760,8 +1772,9 @@ ok("spread: impliedMultiple inverts the SAME row ptModelRows computed (no second
   adminSrc.includes("sh,nc,revFwd:rev[fwd],epsFwd:e,pe};"));
 ok("spread: a floor-only row (no premium multiple) renders no spread — nothing to invert",
   adminSrc.includes("if(!onFloor){") && adminSrc.includes("const imp=impliedMultiple(t,px);"));
-ok("spread: street PT excludes bear/floor/severe columns, the same dim rule ddPtConsensusSec uses",
-  (adminSrc.match(/floor\|bear\|severe/g) || []).length >= 2);
+ok("spread: legacy street PT consumes one explicitly published value, never an average of scenarios",
+  adminSrc.includes("const published=[pcRow.average,pcRow.mean,pcRow.base].find") &&
+  !adminSrc.includes("streetVals.reduce((a,b)=>a+b,0)/streetVals.length"));
 ok("spread: street PT renders only when that year's pt_consensus row actually exists",
   adminSrc.includes("const pcRow=dd.pt_consensus&&dd.pt_consensus.rows&&dd.pt_consensus.rows[t.y];"));
 
@@ -2033,8 +2046,9 @@ ok("sellrank: the asserted funding order is reconciled, married never merged",
   adminSrc.includes("disagreement is information, not an average"));
 ok("sellrank: the cap decision prefers measured % of NAV, falling back to the tracked floor",
   adminSrc.includes("const wNav=isFinite(Number(p.pct))?Number(p.pct):null;"));
-ok("focus2: the buy block renders the SAME rows the upside rank sorted — never a second sort",
-  adminSrc.includes("UPSIDE_ROWS=rows;") && adminSrc.includes("const rows=UPSIDE_ROWS.slice(0,5);"));
+ok("focus2: the buy block renders the SAME canonical rows the Next Dollar rank sorted",
+  adminSrc.includes("UPSIDE_ROWS=rows;") && adminSrc.includes("const rows=UPSIDE_ROWS.slice(0,5);") &&
+  !/function renderStreetEligibility\(\)[\s\S]{0,2200}UPSIDE_ROWS\s*=/.test(adminSrc));
 // v3.42: the badges became real <button>s (focusable, Enter-activatable) — same red counts.
 ok("focus2: the stance strip carries the red counts a closed DESK would otherwise hide",
   adminSrc.includes("over cap</button>") && adminSrc.includes('onclick="openDesk(') &&
@@ -2126,11 +2140,11 @@ ok("slice3: chips get the 40px thumb target at phone widths, same rule as slice 
   /max-width:480px[^}]*\{[\s\S]{0,260}\.chip\{min-height:40px\}/.test(adminSrc));
 
 // ---- slice 4: modal focus management + destructive-action confirm + live toast ----------
-ok("slice4: all 9 overlay-open call sites funnel through ONE openModal() — " +
+ok("slice4: all 10 overlay-open call sites funnel through ONE openModal() — " +
    'document.getElementById("overlay").classList.add("on") appears exactly once now, ' +
    "inside openModal() itself, not duplicated at each site (toast/pinGate keep their own)",
   (adminSrc.match(/document\.getElementById\("overlay"\)\.classList\.add\("on"\)/g)||[]).length===1 &&
-  (adminSrc.match(/openModal\(\);/g)||[]).length===9);
+  (adminSrc.match(/openModal\(\);/g)||[]).length===10);
 ok("slice4: closeCard is now a thin wrapper over closeModal (same public name every onclick calls)",
   adminSrc.includes("function closeCard(){CURRENT=null;closeModal();}"));
 ok("slice4: openModal remembers what was focused before opening, so closing restores it",
@@ -2161,7 +2175,7 @@ ok("slice5: the header is ONE row — identity, the MACRO pill, and a ⋯ MENU d
   adminSrc.includes('id="headToggle" aria-expanded="false" aria-controls="headInfo"'));
 ok("slice5: version, BOOK/AUTH stamps, DASH and the whole action toolbar moved behind that " +
    "disclosure — status and occasional actions, never answers",
-  /id="headInfo"[\s\S]{0,1800}single-pass deep-dive orchestrator[\s\S]{0,900}id="bookStamp"[\s\S]{0,900}id="sessState"[\s\S]{0,1200}\+ ADD TICKER[\s\S]{0,900}id="backupRow"/.test(adminSrc));
+  /id="headInfo"[\s\S]{0,1800}underwriting \+ sourced gates[\s\S]{0,900}id="bookStamp"[\s\S]{0,900}id="sessState"[\s\S]{0,1200}\+ ADD TICKER[\s\S]{0,900}id="backupRow"/.test(adminSrc));
 ok("slice5: the banners stay OUTSIDE the disclosure — an expired session or an unsaved edit " +
    "must never require opening a menu to discover",
   /id="headInfo"[\s\S]*?<\/div>\s*<!--[\s\S]*?-->\s*<div id="authBanner"/.test(adminSrc) &&
@@ -2496,6 +2510,7 @@ ok("ptlint: and the bug it describes is real — that row's premium IS null, so 
 // Re-keying to the priced year is the fix, and it must clear the error.
 const fixed = JSON.parse(JSON.stringify(miskeyed));
 fixed.pt_model.ev_s_multiple = { [Y]: 14, [Y + 1]: 12 };
+fixed.pt_model.net_cash_B = 0; // explicit zero; absent no longer silently means zero
 ok("ptlint: re-keying to the year-end priced clears MISKEY and computes the real premium",
   !PT.lintPtModel(fixed).some((l) => l.code === "MISKEY") &&
   typeof PT.ptModelRows(fixed)[0].prem === "number" && PT.ptModelRows(fixed)[0].prem > 0);
@@ -2573,10 +2588,9 @@ ok("cliff: SELL stops mislabelling a modelled name as unmodelled when only the R
 // D3: red hinges surface, never veto — the board reports (the FEAT-TT-BINCAL doctrine).
 ok("hinge: why() still has NO hinge veto — enforcement stays the owner's",
   !/function why[\s\S]{0,600}state==="red"/.test(adminSrc));
-ok("hinge: but the AGREE line and the compact BUY row both NAME the red hinges",
-  adminSrc.includes("red hinge${b.redH===1?\"\":\"s\"} on this name") &&
-  adminSrc.includes("not a veto (yours to weigh)") &&
-  adminSrc.includes("AGREE_PICK.redLabels.slice(0,2)"));
+ok("hinge: street receipts render server blockers; red hinges stay surfaced but never become a veto",
+  adminSrc.includes('r.blockers.slice(0,2).join(" · ")') &&
+  adminSrc.includes("red hinges do NOT veto") && adminSrc.includes("not a veto (yours to weigh)"));
 
 // D4 + the derived-estimate marker.
 ok("derived: consensus.derived is validated only when present, and only rev|eps are legal",
@@ -2770,7 +2784,7 @@ ok("ready: the bar renders on the deep-dive tab ABOVE the four answers",
   adminSrc.indexOf("h+=readyBar(x);") < adminSrc.indexOf("h+=ddScoreBar(x);") &&
   adminSrc.indexOf("h+=ddScoreBar(x);") < adminSrc.indexOf("h+=ddAnswerBlock(x,dd,todayET);"));
 ok("ready: and on the card — the only per-ticker surface a WATCH name with no tab ever gets",
-  adminSrc.includes('<div class="k">READINESS</div>') && adminSrc.includes("let html=rdyRow+measured+"));
+  adminSrc.includes('<div class="k">READINESS</div>') && adminSrc.includes("let html=v2CardHtml(x.sym)+rdyRow+measured+"));
 ok("ready: blockers stay visible as chips on the bar, never collapsed into the verdict alone",
   adminSrc.includes("⛔ not actionable until:") && adminSrc.includes('p.sev==="block"?"head"'));
 // v2.4.0 PROVISIONAL: the shadow head leads with the capped bootstrap diagnostic and states
@@ -5226,7 +5240,7 @@ console.log("\n[52] DDSTORE server consumers — post-migration book shape");
   const YEAR = new Date().getFullYear();
   const PAY = { thesis_version: "v1", updated: "2026-08-05",
     consensus: { revenue_B: { [YEAR + 1]: 11.45, [YEAR + 2]: 21.56 }, eps: { [YEAR + 1]: -1.61, [YEAR + 2]: -2.04 } },
-    pt_model: { ev_s_multiple: { [YEAR]: 5.5, [YEAR + 1]: 5.45 }, share_count_M: 310 },
+    pt_model: { ev_s_multiple: { [YEAR]: 5.5, [YEAR + 1]: 5.45 }, share_count_M: 310, net_cash_B: 0 },
     ref_px: { px: 212.58, at: new Date(Date.now() - 86400000).toISOString().slice(0, 10) },
     hinges: [{ label: "funding", state: "green" }] };
   // POST-MIGRATION: the book entry carries NO deepDive; the payload lives in its own key.
@@ -6132,6 +6146,315 @@ console.log("\n[58] FEAT-TT-MAG7 — deck panel, basket average, honesty gates")
       return m.data.tokenomics.volDay === 3.05 && m.data.tokenomics.volTrend.length === 3 &&
         m.provenance.tokenVolDay === "LIVE" && m.dataAsOf.tokenVolTrend === "2026-08-14";
     })());}
+// ─────────────────────────────────────────────────────────────────────────────
+console.log("\n[61] FEAT-TT-V2 — two licensed inputs, sourced facts, fail-closed receipts");
+const NVDA_STREET = {
+  schema: "tt-street-v1", symbol: "NVDA", confirmedAt: "2026-08-15T17:09:00.000Z",
+  estimates: {
+    provider: "Seeking Alpha", sourceUrl: "https://seekingalpha.com/", asOf: "2026-08-15",
+    currency: "USD", revenueUnit: "B", epsBasis: "diluted", periods: [
+      { periodEnd: "2027-01-31", revenueB: 393.93, eps: 8.96 },
+      { periodEnd: "2028-01-31", revenueB: 562.14, eps: 12.80 },
+      { periodEnd: "2029-01-31", revenueB: 692.37, eps: 15.93 },
+      { periodEnd: "2030-01-31", eps: 17.50 },
+      { periodEnd: "2035-01-31", revenueB: 1150 },
+    ],
+  },
+  analystTarget: {
+    provider: "TipRanks", sourceUrl: "https://www.tipranks.com/", asOf: "2026-08-15",
+    currency: "USD", average: 309.94, low: 250, high: 500, analystCount: 37,
+    ratings: { buy: 36, hold: 1, sell: 0 }, lookbackMonths: 3, horizonMonths: 12,
+    referencePrice: 225.16,
+  },
+};
+const V2_NOW = new Date("2026-08-15T19:00:00.000Z");
+const v2Near = (a, b, tol = 0.001) => Math.abs(a - b) <= tol;
+const checkedNvda = validateStreetPacket(NVDA_STREET, { now: V2_NOW });
+ok("street schema: the exact SA + TipRanks NVDA packet validates", checkedNvda.ok && checkedNvda.errors.length === 0);
+ok("street schema: source/as-of/currency and a published average are server-required",
+  !validateStreetPacket({ ...NVDA_STREET, analystTarget: { ...NVDA_STREET.analystTarget, sourceUrl: "", average: null } }, { now: V2_NOW }).ok);
+ok("street schema: EPS basis cannot be silently defaulted to diluted GAAP",
+  !validateStreetPacket({ ...NVDA_STREET, estimates: { ...NVDA_STREET.estimates, epsBasis: undefined } }, { now: V2_NOW }).ok);
+ok("street schema: provider names and source domains are fixed to SA and TipRanks",
+  (() => { const bad = JSON.parse(JSON.stringify(NVDA_STREET)); bad.estimates.provider = "Other"; bad.analystTarget.sourceUrl = "https://example.com/target";
+    const e = validateStreetPacket(bad, { now: V2_NOW }).errors.join(" "); return /Seeking Alpha/.test(e) && /tipranks\.com/.test(e); })());
+ok("street schema: a future confirmation timestamp cannot self-attest a later review",
+  !validateStreetPacket({ ...NVDA_STREET, confirmedAt: "2026-08-16T19:00:00.000Z" }, { now: V2_NOW }).ok);
+ok("street schema: low/average/high must bracket, and rating counts must reconcile",
+  (() => { const bad = JSON.parse(JSON.stringify(NVDA_STREET)); bad.analystTarget.low = 400; bad.analystTarget.ratings.buy = 35;
+    const e = validateStreetPacket(bad, { now: V2_NOW }).errors.join(" "); return /low/.test(e) && /ratings total/.test(e); })());
+ok("street schema: a supplied analyst count must be positive, while an unknown count may stay absent",
+  !validateStreetPacket({ ...NVDA_STREET, analystTarget: { ...NVDA_STREET.analystTarget, analystCount: 0,
+    ratings: {} } }, { now: V2_NOW }).ok &&
+  validateStreetPacket({ ...NVDA_STREET, analystTarget: { ...NVDA_STREET.analystTarget,
+    analystCount: undefined, ratings: {} } }, { now: V2_NOW }).ok);
+ok("street schema: rolling target horizon is exactly 12 months, never joined to a fiscal rung",
+  !validateStreetPacket({ ...NVDA_STREET, analystTarget: { ...NVDA_STREET.analystTarget, horizonMonths: 24 } }, { now: V2_NOW }).ok);
 
+class V2MemoryKv {
+  constructor() { this.values = new Map(); this.puts = []; }
+  async get(key, type) {
+    const value = this.values.get(key);
+    if (value === undefined) return null;
+    return type === "json" ? JSON.parse(value) : value;
+  }
+  async put(key, value) { this.values.set(key, value); this.puts.push(key); }
+  async list({ prefix = "" } = {}) { return { keys: [...this.values.keys()].filter((k) => k.startsWith(prefix)).map((name) => ({ name })) }; }
+}
+const streetKv = new V2MemoryKv();
+const streetEnv = { ACCESS_DEV_BYPASS: "1", PULSE_CACHE: streetKv };
+const streetRequest = (body, extra = {}) => new Request("https://fixture.test/api/street", {
+  method: "PUT", headers: { "content-type": "application/json", ...(extra.headers || {}) },
+  body: typeof body === "string" ? body : JSON.stringify(body),
+});
+const malformedStreetResponse = await putStreetPacket({ request: streetRequest({ symbol: "NVDA" }), env: streetEnv });
+ok("street API: malformed licensed payload is rejected server-side before any KV write",
+  malformedStreetResponse.status === 400 && streetKv.puts.length === 0 && /invalid street packet/.test(await malformedStreetResponse.text()));
+const crossOriginStreetResponse = await putStreetPacket({
+  request: streetRequest(NVDA_STREET, { headers: { Origin: "https://evil.test" } }), env: streetEnv,
+});
+ok("street API: cross-origin mutation fails closed before persistence",
+  crossOriginStreetResponse.status === 403 && streetKv.puts.length === 0);
+const storedStreetResponse = await putStreetPacket({ request: streetRequest(NVDA_STREET), env: streetEnv });
+const storedStreetBody = await storedStreetResponse.json();
+const fetchedStreetResponse = await getStreetPacket({
+  request: new Request("https://fixture.test/api/street?sym=NVDA"), env: streetEnv,
+});
+const fetchedStreetBody = await fetchedStreetResponse.json();
+ok("street API: a valid reviewed packet writes immutable history plus current and reads back typed",
+  storedStreetResponse.status === 201 && streetKv.puts.length === 2 &&
+  streetKv.puts.some((k) => k.startsWith("tt:street:history:NVDA:")) &&
+  storedStreetBody.record.version && fetchedStreetBody.records.NVDA.analystTarget.average === 309.94);
+const duplicateStreetResponse = await putStreetPacket({ request: streetRequest(NVDA_STREET), env: streetEnv });
+const duplicateStreetBody = await duplicateStreetResponse.json();
+ok("street API: storage metadata cannot manufacture a revision from an identical reviewed packet",
+  duplicateStreetResponse.status === 200 && duplicateStreetBody.unchanged === true &&
+  duplicateStreetBody.changes.length === 0 && streetKv.puts.length === 2);
+const ocrKv = new V2MemoryKv();
+const noAiOcrResponse = await postStreetOcr({
+  request: new Request("https://fixture.test/api/street/ocr", { method: "POST" }),
+  env: { ACCESS_DEV_BYPASS: "1", PULSE_CACHE: ocrKv },
+});
+const noAiOcrBody = await noAiOcrResponse.json();
+ok("OCR API: missing Workers AI returns a review draft and never touches KV",
+  noAiOcrResponse.status === 503 && noAiOcrBody.requires_confirmation === true &&
+  noAiOcrBody.draft.analystTarget.provider === "TipRanks" && ocrKv.puts.length === 0);
+const factsKv = new V2MemoryKv();
+const factsEnv = { ACCESS_DEV_BYPASS: "1", PULSE_CACHE: factsKv };
+const mutatingGetResponse = await getTickerFacts({
+  request: new Request("https://fixture.test/api/ticker-facts?sym=NVDA&refresh=1"), env: factsEnv,
+});
+ok("facts API: GET is read-only and rejects the legacy refresh query instead of writing on a GET",
+  mutatingGetResponse.status === 405 && factsKv.puts.length === 0);
+const crossOriginFactsResponse = await postTickerFacts({
+  request: new Request("https://fixture.test/api/ticker-facts", {
+    method: "POST", headers: { Origin: "https://evil.test", "content-type": "application/json" }, body: '{"symbol":"NVDA"}',
+  }), env: factsEnv,
+});
+ok("facts API: refresh is a same-origin authenticated POST and cross-origin attempts do no work",
+  crossOriginFactsResponse.status === 403 && factsKv.puts.length === 0);
+
+const nvdaMetrics = deriveStreetMetrics(NVDA_STREET, 225.16, { now: V2_NOW });
+ok("NVDA: TipRanks published average/low/high gaps calibrate exactly (never re-averaged)",
+  v2Near(nvdaMetrics.gaps.averagePct, 37.653224, 1e-6) && v2Near(nvdaMetrics.gaps.lowPct, 11.032155, 1e-6) && v2Near(nvdaMetrics.gaps.highPct, 122.06431, 1e-6));
+ok("NVDA: explicit annual revenue growth + contiguous CAGR calibrate; the 2035 tooltip is not interpolated",
+  nvdaMetrics.revenueGrowth.length === 2 && v2Near(nvdaMetrics.revenueGrowth[0].pct, 42.70048, 1e-5) &&
+  v2Near(nvdaMetrics.revenueGrowth[1].pct, 23.166827, 1e-5) && v2Near(nvdaMetrics.revenueCagr.pct, 32.574376, 1e-5));
+ok("NVDA: EPS growth and 2027–2030 CAGR calibrate",
+  nvdaMetrics.epsGrowth.length === 3 && v2Near(nvdaMetrics.epsGrowth[0].pct, 42.857143, 1e-5) &&
+  v2Near(nvdaMetrics.epsGrowth[1].pct, 24.453125, 1e-5) && v2Near(nvdaMetrics.epsGrowth[2].pct, 9.855618, 1e-5) && v2Near(nvdaMetrics.epsCagr.pct, 25, 1e-6));
+ok("NVDA: forward P/E series and 12m-target implied FY2028 P/E calibrate",
+  [25.129464, 17.590625, 14.134338, 12.866286].every((x, i) => v2Near(nvdaMetrics.forwardPe[i].value, x, 1e-6)) &&
+  nvdaMetrics.targetImpliedPe.periodEnd === "2028-01-31" && v2Near(nvdaMetrics.targetImpliedPe.value, 24.214062, 1e-6));
+
+const ocr = mergeOcrExtractions([
+  { image: 1, data: { symbol: "NVDA", analystTarget: { average: 309.94, low: 250, high: 500, analystCount: 37, ratings: { buy: 36, hold: 1, sell: 0 }, referencePrice: 225.16 } } },
+  { image: 2, data: { estimates: { periods: [{ periodEnd: "Jan 2027", revenue: "393.93B", eps: 8.96 }, { periodEnd: "Jan 2028", revenue: "562.14B", eps: 12.8 }] } } },
+  { image: 3, data: { estimates: { periods: [{ periodEnd: "Jan 2035", revenue: "1.15T" }] } } },
+], "2026-08-15");
+ok("OCR merge: published average survives verbatim; low/average/high are never averaged",
+  ocr.draft.analystTarget.average === 309.94 && ocr.draft.analystTarget.low === 250 && ocr.draft.analystTarget.high === 500);
+ok("OCR merge: T→B normalization and visible chart endpoint work without interpolating missing years",
+  ocr.draft.estimates.periods.find((x) => x.periodEnd === "2035-01-31").revenueB === 1150 &&
+  !ocr.draft.estimates.periods.some((x) => /^203[1-4]-/.test(x.periodEnd)));
+ok("street revisions are lossless — every changed estimate/target field is kept, not sliced to three",
+  (() => { const next = JSON.parse(JSON.stringify(NVDA_STREET)); next.estimates.periods[0].revenueB++; next.estimates.periods[0].eps++;
+    next.estimates.periods[1].revenueB++; next.estimates.periods[1].eps++; next.analystTarget.average++;
+    return streetRevision(NVDA_STREET, next).length === 5; })());
+
+const firstComposite = deriveAutomaticComposite(nvdaMetrics, { trend: "UPTREND", support: { quality: 8 }, evidence: ["sourced candles"] });
+ok("composite: first snapshot renormalizes V/G/P/M and names revisions as missing (never zero)",
+  firstComposite.status === "PASS" && firstComposite.used.length === 4 && firstComposite.missing.includes("revisions") &&
+  v2Near(firstComposite.used.reduce((s, x) => s + x.normalizedWeight, 0), 1, 1e-4));
+ok("composite: no available pillar is UNKNOWN, not a confident zero",
+  renormalizeComposite({ revisions: { status: "MISSING" } }).status === "UNKNOWN");
+
+const fact = (value, extra = {}) => ({ value, status: "LIVE", provider: "fixture", observedAt: "2026-08-15T18:59:00.000Z", ...extra });
+const nvdaFacts = { schema: "tt-facts-v1", symbol: "NVDA", updatedAt: V2_NOW.toISOString(), fields: {
+  quote: fact(225.16, { currency: "USD" }), nextEarnings: fact("2026-08-26"),
+} };
+const fullReadout = { as_of: "2026-08-15T18:00:00Z", regime: { verdict: "NEUTRAL", actionability: "FULL" },
+  health: { can_gate: true }, macro_flip: { evaluable: true, tripped: false, state: "CLEAR" } };
+const holdReadout = { ...fullReadout, regime: { verdict: "NEUTRAL", actionability: "HOLD", status: "DATA DEGRADED" },
+  health: { can_gate: false }, macro_flip: { evaluable: false, tripped: null, state: "UNCONFIRMED" } };
+const qPass = { status: "PASS", score: 8, reason: "primary evidence supports the rubric", citations: ["https://www.sec.gov/fixture"] };
+const techPass = { status: "OK", rewardRisk: 3, evidence: ["ATR stop"] };
+ok("street gap: a mismatched sourced quote currency blocks the comparison",
+  (() => { const f = JSON.parse(JSON.stringify(nvdaFacts)); f.fields.quote.currency = "EUR";
+    const rr = buildGateReceipt({ street: NVDA_STREET, facts: f, readout: fullReadout, composite: firstComposite, qualitative: qPass, technicals: techPass, now: V2_NOW });
+    return rr.gates.find((g) => g.id === "street_gap").status === "UNKNOWN" && /EUR/.test(rr.gates.find((g) => g.id === "street_gap").reason); })());
+ok("unknown analyst count remains eligible when all gates pass but is named as lower-confidence evidence",
+  (() => { const s = JSON.parse(JSON.stringify(NVDA_STREET)); delete s.analystTarget.analystCount;
+    const rr = buildGateReceipt({ street: s, facts: nvdaFacts, readout: fullReadout, composite: firstComposite, qualitative: qPass, technicals: techPass, now: V2_NOW });
+    return rr.eligible && rr.warnings.some((w) => /analyst count.*unknown/i.test(w)); })());
+const waitReceipt = buildGateReceipt({ street: NVDA_STREET, facts: nvdaFacts, readout: holdReadout, composite: firstComposite, qualitative: qPass, technicals: techPass, now: V2_NOW });
+ok("NVDA acceptance: positive 37.7% street gap cannot override Engine 0 HOLD / blind health",
+  waitReceipt.status === "WAIT" && waitReceipt.gates.find((g) => g.id === "macro").status === "FAIL" &&
+  waitReceipt.gates.find((g) => g.id === "street_gap").status === "PASS");
+ok("binary boundary: Aug 26 is 11d away on Aug 15 (PASS), then exactly 10d on Aug 16 (FAIL)",
+  waitReceipt.gates.find((g) => g.id === "binary").status === "PASS" &&
+  buildGateReceipt({ street: NVDA_STREET, facts: nvdaFacts, readout: fullReadout, composite: firstComposite, qualitative: qPass, technicals: techPass,
+    now: new Date("2026-08-16T19:00:00Z") }).gates.find((g) => g.id === "binary").status === "FAIL");
+const eligibleReceipt = buildGateReceipt({ street: NVDA_STREET, facts: nvdaFacts, readout: fullReadout, composite: firstComposite, qualitative: qPass, technicals: techPass, now: V2_NOW });
+ok("fully sourced fixture becomes ELIGIBLE without any position/exposure input",
+  eligibleReceipt.eligible === true && eligibleReceipt.status === "ELIGIBLE" && !eligibleReceipt.gates.some((g) => /position|cap/i.test(g.id + g.reason)));
+ok("RESTRICTED is a named veto — only FULL may gate capital",
+  (() => { const rr = buildGateReceipt({ street: NVDA_STREET, facts: nvdaFacts,
+      readout: { ...fullReadout, regime: { verdict: "NEUTRAL", actionability: "RESTRICTED" }, health: { can_gate: false } },
+      composite: firstComposite, qualitative: qPass, technicals: techPass, now: V2_NOW });
+    return !rr.eligible && rr.gates.find((g) => g.id === "macro").status === "FAIL" && /only FULL/.test(rr.gates.find((g) => g.id === "macro").reason); })());
+ok("missing R/R and missing calendar both fail closed as UNKNOWN",
+  (() => { const f = JSON.parse(JSON.stringify(nvdaFacts)); delete f.fields.nextEarnings;
+    const rr = buildGateReceipt({ street: NVDA_STREET, facts: f, readout: fullReadout, composite: firstComposite, qualitative: qPass, technicals: null, now: V2_NOW });
+    return rr.gates.find((g) => g.id === "reward_risk").status === "UNKNOWN" && rr.gates.find((g) => g.id === "binary").status === "UNKNOWN" && !rr.eligible; })());
+ok("a LIVE label cannot launder an old quote; observation age independently fails closed",
+  (() => { const f = JSON.parse(JSON.stringify(nvdaFacts)); f.fields.quote.observedAt = "2026-08-15T18:00:00.000Z";
+    const rr = buildGateReceipt({ street: NVDA_STREET, facts: f, readout: fullReadout, composite: firstComposite, qualitative: qPass, technicals: techPass, now: V2_NOW });
+    return rr.gates.find((g) => g.id === "quote").status === "UNKNOWN" && /60 minutes old/.test(rr.gates.find((g) => g.id === "quote").reason); })());
+ok("quote freshness requires the provider observation; current retrieval time cannot substitute for it",
+  (() => { const f = JSON.parse(JSON.stringify(nvdaFacts)); delete f.fields.quote.observedAt;
+    f.fields.quote.retrievedAt = V2_NOW.toISOString();
+    const rr = buildGateReceipt({ street: NVDA_STREET, facts: f, readout: fullReadout, composite: firstComposite, qualitative: qPass, technicals: techPass, now: V2_NOW });
+    return rr.gates.find((g) => g.id === "quote").status === "UNKNOWN" && /observation time/.test(rr.gates.find((g) => g.id === "quote").reason); })());
+ok("a stale calendar observation is UNKNOWN even when its old value is still a future date",
+  (() => { const f = JSON.parse(JSON.stringify(nvdaFacts)); f.fields.nextEarnings.status = "STALE";
+    const rr = buildGateReceipt({ street: NVDA_STREET, facts: f, readout: fullReadout, composite: firstComposite, qualitative: qPass, technicals: techPass, now: V2_NOW });
+    return rr.gates.find((g) => g.id === "binary").status === "UNKNOWN" && !rr.eligible; })());
+ok("R/R policy preserves 2.0/2.5/3.0 and adds 0.5 only in HEADWIND",
+  rewardRiskFloor("core", "NEUTRAL") === 2 && rewardRiskFloor("tactical", "NEUTRAL") === 2.5 &&
+  rewardRiskFloor("speculative", "NEUTRAL") === 3 && rewardRiskFloor("speculative", "HEADWIND") === 3.5);
+ok("analysis risk tier is derived server-side from the private book, never accepted from the browser",
+  riskTierForBookEntry({ sym: "A", tier: "WATCH", lens: "AI" }) === "tactical" &&
+  riskTierForBookEntry({ sym: "B", tier: "S", lens: "SP" }) === "speculative" &&
+  riskTierForBookEntry({ sym: "C", tier: "A", lens: "QC" }) === "core" && riskTierForBookEntry(null) === null);
+const nvdaAttestation = await attestGateReceipt(eligibleReceipt, { street: NVDA_STREET, facts: nvdaFacts, readout: fullReadout, riskTier: "core" });
+ok("attestation binds the result to exact street/facts/regime versions and hashes",
+  nvdaAttestation.status === "ELIGIBLE" && /^[a-f0-9]{64}$/.test(nvdaAttestation.inputHash) &&
+  /^[a-f0-9]{64}$/.test(nvdaAttestation.resultHash) && nvdaAttestation.inputVersions.regimeActionability === "FULL" &&
+  nvdaAttestation.inputVersions.riskTier === "core");
+const analysisKv = new V2MemoryKv();
+analysisKv.values.set("tt:street:NVDA:v1", JSON.stringify(storedStreetBody.record));
+analysisKv.values.set("tt:facts:NVDA:v1", JSON.stringify(nvdaFacts));
+const analysisEnv = { ACCESS_DEV_BYPASS: "1", PULSE_CACHE: analysisKv };
+const analysisRequest = () => new Request("https://fixture.test/api/ticker-analysis", {
+  method: "POST", headers: { "content-type": "application/json" },
+  body: JSON.stringify({ symbol: "NVDA", tier: "speculative" }),
+});
+const missingBookAnalysis = await postTickerAnalysis({ request: analysisRequest(), env: analysisEnv });
+ok("analysis API: a symbol outside the private book is rejected before any receipt write",
+  missingBookAnalysis.status === 409 && analysisKv.puts.length === 0);
+analysisKv.values.set("tt:book:v1", JSON.stringify({ book: [{ sym: "NVDA", tier: "WATCH", lens: "AI" }], cut: [] }));
+const realFetch = globalThis.fetch;
+globalThis.fetch = async (input) => String(input).includes("/readout.json")
+  ? new Response(JSON.stringify(fullReadout), { status: 200, headers: { "content-type": "application/json" } })
+  : realFetch(input);
+let serverAnalysisResponse;
+try { serverAnalysisResponse = await postTickerAnalysis({ request: analysisRequest(), env: analysisEnv }); }
+finally { globalThis.fetch = realFetch; }
+const serverAnalysisBody = await serverAnalysisResponse.json();
+ok("analysis API: browser-supplied tier is ignored; book-derived tier is bound into the receipt",
+  serverAnalysisResponse.status === 200 && serverAnalysisBody.receipt.policy.riskTier === "tactical" &&
+  serverAnalysisBody.receipt.attestation.inputVersions.riskTier === "tactical" &&
+  analysisKv.puts.some((k) => k.startsWith("tt:analysis:history:NVDA:")) &&
+  analysisKv.puts.includes("tt:analysis:NVDA:v1"));
+
+const secUnit = (val, end = "2026-04-26") => [{ val, end, filed: "2026-05-20", form: "10-Q", accn: "0001" }];
+const secFixture = { facts: { "us-gaap": {
+  CashAndCashEquivalentsAtCarryingValue: { units: { USD: secUnit(8_000_000_000) } },
+  MarketableSecuritiesCurrent: { units: { USD: secUnit(42_335_000_000) } },
+  LongTermDebtCurrent: { units: { USD: secUnit(1_250_000_000) } },
+  LongTermDebtNoncurrent: { units: { USD: secUnit(7_220_000_000) } },
+  WeightedAverageNumberOfDilutedSharesOutstanding: { units: { shares: secUnit(24_391_000_000) } },
+} } };
+const secFacts = extractSecFacts(secFixture, { retrievedAt: V2_NOW.toISOString(), sourceUrl: "https://www.sec.gov/fixture" });
+ok("SEC normalization: diluted shares and component-auditable conservative net cash calibrate",
+  secFacts.dilutedSharesB.value === 24.391 && secFacts.netCashB.value === 41.865 && secFacts.netCashB.components.currentDebtB === 1.25);
+ok("SEC normalization: a missing balance-sheet component stays MISSING; absent never equals zero",
+  (() => { const x = JSON.parse(JSON.stringify(secFixture)); delete x.facts["us-gaap"].MarketableSecuritiesCurrent;
+    return extractSecFacts(x).netCashB.status === "MISSING" && extractSecFacts(x).netCashB.value === null; })());
+ok("facts merge: provider failure retains last-good value but marks it STALE with the error",
+  (() => { const old = { symbol: "NVDA", fields: { quote: fact(225.16) } };
+    const bad = { symbol: "NVDA", fields: { quote: { value: null, status: "MISSING", error: "HTTP 429" } } };
+    const merged = mergeFactsRecord(old, bad, V2_NOW); return merged.fields.quote.value === 225.16 && merged.fields.quote.status === "STALE" && /429/.test(merged.fields.quote.lastRefreshError); })());
+ok("facts merge: repeated provider failures retain the same last-good observation instead of erasing it",
+  (() => { const old = { symbol: "NVDA", fields: { quote: fact(225.16) } };
+    const bad = { symbol: "NVDA", fields: { quote: { value: null, status: "MISSING", error: "HTTP 429" } } };
+    const once = mergeFactsRecord(old, bad, V2_NOW);
+    const twice = mergeFactsRecord(once, bad, new Date(V2_NOW.getTime() + 60000));
+    return twice.fields.quote.value === 225.16 && twice.fields.quote.status === "STALE" &&
+      twice.fields.quote.observedAt === old.fields.quote.observedAt; })());
+ok("Finnhub normalization preserves the provider's quote timestamp and never stamps retrieval as observation",
+  (() => { const providerAt = Date.parse("2026-08-15T18:58:00.000Z") / 1000;
+    const q = quoteFact({ c: 225.16, dp: -0.06, t: providerAt }, { currency: "USD" }, V2_NOW.toISOString());
+    const unknown = quoteFact({ c: 225.16 }, { currency: "USD" }, V2_NOW.toISOString());
+    return q.status === "LIVE" && q.observedAt === "2026-08-15T18:58:00.000Z" && q.retrievedAt === V2_NOW.toISOString() &&
+      unknown.status === "UNKNOWN" && unknown.observedAt === null && /not substituted/.test(unknown.reason); })());
+
+const syntheticCandles = Array.from({ length: 230 }, (_, i) => {
+  const close = 100 + i * 0.22 + Math.sin(i / 4) * 4;
+  const date = new Date(Date.UTC(2025, 0, 1 + i)).toISOString().slice(0, 10);
+  return { date, open: close - 0.4, high: close + 1.4, low: close - 1.4, close, volume: 1_000_000 + i * 1000 };
+});
+ok("technicals: fewer than 201 sourced daily candles is UNKNOWN, never an invented stop",
+  deriveTechnicals(syntheticCandles.slice(0, 100), { quote: 120, target: 150 }).status === "UNKNOWN");
+ok("technicals: ATR/pivots/support/stop/RR are deterministic on a sufficient OHLC history",
+  (() => { const a = deriveTechnicals(syntheticCandles, { quote: syntheticCandles.at(-1).close, target: 180 });
+    const b = deriveTechnicals(syntheticCandles, { quote: syntheticCandles.at(-1).close, target: 180 });
+    return a.status === "OK" && a.atr14 > 0 && a.support.price > 0 && a.stop < a.quote && a.rewardRisk > 0 && JSON.stringify(a) === JSON.stringify(b); })());
+
+const ocrRouteSrc = readFileSync(new URL("../functions/api/street/ocr.js", import.meta.url), "utf8");
+ok("admin v2: screenshots are reviewed and the OCR route has no persistence binding",
+  adminSrc.includes('/api/street/ocr') && adminSrc.includes('✔ CONFIRM &amp; SAVE') &&
+  adminSrc.includes('v2Json("/api/street",{method:"PUT"') && !ocrRouteSrc.includes("PULSE_CACHE") &&
+  ocrRouteSrc.includes("requires_confirmation: true"));
+ok("admin v2: additive street receipt uses TipRanks published average and cannot mutate canonical rank state",
+  adminSrc.includes("function buildV2Rows()") && adminSrc.includes('basis:"TipRanks published average"') &&
+  adminSrc.includes("function renderStreetEligibility()") && adminSrc.includes("diagnostic, not canonical score") &&
+  !/function buildV2Rows\(\)[\s\S]{0,2600}CAP_PCT/.test(adminSrc) &&
+  !/function renderStreetEligibility\(\)[\s\S]{0,2200}(UPSIDE_ROWS\s*=|AGREE_PICK\s*=|LAST_RANK\s*=)/.test(adminSrc));
+ok("admin v2: every non-FULL Engine 0 actionability is a hard stance stop",
+  adminSrc.includes('actionability!=="FULL"') && !adminSrc.includes("TICKER GATES OPEN — Engine 0 RESTRICTED") &&
+  adminSrc.includes('ADDS SUSPENDED — Engine 0'));
+ok("admin v2: reviewed data, facts, and receipts load outside the replace-all book",
+  adminSrc.includes("/api/street?syms=") && adminSrc.includes("/api/ticker-facts?syms=") && adminSrc.includes("/api/ticker-analysis?syms=") &&
+  !/function bookDoc\(\)[^\n]*(STREET|FACTS|ANALYSIS)/.test(adminSrc));
+ok("admin v2: legacy PT comparison consumes one explicit value and never averages scenarios or aggregates",
+  adminSrc.includes("[pcRow.average,pcRow.mean,pcRow.base].find") &&
+  !/const vals=typeof pcRow\.average[\s\S]{0,300}reduce/.test(adminSrc));
+ok("admin v2: unknown/thin analyst coverage is visible rather than normal-confidence silence",
+  adminSrc.includes("analyst count unknown") && adminSrc.includes("thin coverage"));
+ok("admin v2: SA and TipRanks keep independent as-ofs and screenshot EPS is not relabelled GAAP",
+  adminSrc.includes('id="stSaAsOf"') && adminSrc.includes('id="stTrAsOf"') &&
+  adminSrc.includes('epsBasis:"provider-consensus"') && !adminSrc.includes('epsBasis:"diluted"'));
+ok("docs: the current plan names /admin.html, /readout.json, KV separation, and the two manual inputs",
+  (() => { const d = readFileSync(new URL("../ticker-terminal/TICKER_TERMINAL_LOGIC_REDESIGN_PLAN_2026-08-15.md", import.meta.url), "utf8");
+    return d.includes("/admin.html") && d.includes("/readout.json") && d.includes("Seeking Alpha") &&
+      d.includes("TipRanks") && d.includes("tt:street:") && d.includes("tt:facts:"); })());
+ok("docs: one current README points at runtime while both obsolete GUI/spec artifacts say ARCHIVE",
+  (() => { const current = readFileSync(new URL("../ticker-terminal/README.md", import.meta.url), "utf8");
+    const spec = readFileSync(new URL("../ticker-terminal/TT_TICKER_TERMINAL.md", import.meta.url), "utf8");
+    const gui = readFileSync(new URL("../ticker-terminal/tt_terminal.html", import.meta.url), "utf8");
+    return current.includes("public/admin.html") && current.includes("/readout.json") && current.includes("tt:analysis:") &&
+      /^# ARCHIVE/m.test(spec) && /ARCHIVE TEMPLATE/.test(gui); })());
 console.log(`\n=== SMOKE TEST: ${pass} passed, ${fail} failed ===`);
 process.exit(fail === 0 ? 0 : 1);

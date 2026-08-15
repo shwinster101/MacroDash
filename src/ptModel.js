@@ -37,7 +37,7 @@ function ptModelRows(dd,_y0){
   const m=dd&&dd.pt_model;
   if(!m||typeof m!=="object")return [];
   const c=dd.consensus||{};
-  const rev=m.revenue_B||c.revenue_B||{},eps=m.eps||c.eps||{};
+  const rev={...(c.revenue_B||{}),...(m.revenue_B||{})},eps={...(c.eps||{}),...(m.eps||{})};
   const pe=+m.pe_floor_multiple||null;
   const y0=_y0||new Date().toLocaleDateString("en-CA",{timeZone:"America/New_York"}).slice(0,4);
   const fmt=v=>v>=100?Math.round(v):Math.round(v*100)/100;
@@ -45,7 +45,7 @@ function ptModelRows(dd,_y0){
     .filter(y=>y>=y0).sort();
   return years.map(y=>{
     const fwd=String(+y+1);
-    const mult=schedAt(m.ev_s_multiple,y),sh=schedAt(m.share_count_M,y),nc=schedAt(m.net_cash_B,y)||0;
+    const mult=schedAt(m.ev_s_multiple,y),sh=schedAt(m.share_count_M,y),nc=schedAt(m.net_cash_B,y);
     const e=eps[fwd];
     // Two lenses, chosen per name. The EV/S premium was built for pre-profit compounders
     // (NBIS/JOBY); forcing it onto an already-profitable name (UBER at ~18x trailing)
@@ -54,7 +54,7 @@ function ptModelRows(dd,_y0){
     const pePrem=schedAt(m.pe_premium_multiple,y);
     const earnLens=pePrem>0&&typeof e==="number"&&e>0;
     const prem=earnLens?fmt(pePrem*e)
-      :(mult>0&&sh>0&&rev[fwd]!=null)?fmt((mult*rev[fwd]+nc)*1000/sh):null;
+      :(mult>0&&sh>0&&rev[fwd]!=null&&typeof nc==="number"&&isFinite(nc))?fmt((mult*rev[fwd]+nc)*1000/sh):null;
     const fl=(pe>0&&typeof e==="number")?(e>0?fmt(pe*e):"n/m"):null;
     // v3.33 FEAT-TT-SPREAD: carry the raw inputs a row was built from (sh/nc/revFwd/epsFwd)
     // alongside the computed prem/fl. Nothing downstream of ptModelRows breaks — these are
@@ -66,7 +66,7 @@ function ptModelRows(dd,_y0){
 }
 function ptRowYears(dd,_y0){
   const m=(dd&&dd.pt_model)||{},c=(dd&&dd.consensus)||{};
-  const rev=m.revenue_B||c.revenue_B||{},eps=m.eps||c.eps||{};
+  const rev={...(c.revenue_B||{}),...(m.revenue_B||{})},eps={...(c.eps||{}),...(m.eps||{})};
   const y0=_y0||new Date().toLocaleDateString("en-CA",{timeZone:"America/New_York"}).slice(0,4);
   return [...new Set([...Object.keys(rev),...Object.keys(eps)].map(y=>String(+y-1)))]
     .filter(y=>y>=y0).sort();
@@ -75,7 +75,7 @@ function lintPtModel(dd,_y0){
   const out=[],m=dd&&dd.pt_model;
   if(!m||typeof m!=="object")return out;
   const c=(dd&&dd.consensus)||{};
-  const eps=m.eps||c.eps||{};
+  const eps={...(c.eps||{}),...(m.eps||{})};
   const years=ptRowYears(dd,_y0);
   /* E2E (v3.57): a payload whose numbers are QUOTED ("100" not 100) produces zero rows, and
      NOFLOOR then reports the inputs as missing when they are present — the message sends you

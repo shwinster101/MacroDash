@@ -9,7 +9,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
 <!-- AUDIT: kept in sync with package.json by test/smoke.mjs. admin.html is a Vite
      public/ passthrough, so it cannot receive __APP_VERSION__ — the guard is the fix. -->
-<title>TT TICKER TERMINAL v3.89.2</title>
+<title>TT TICKER TERMINAL v3.90.0</title>
 <style>
   :root{
     --bg:#05070a; --panel:#0a0f16; --panel2:#0d141d; --line:#16202c;
@@ -380,6 +380,16 @@
   .toast.on{opacity:1;transform:translateX(-50%) translateY(0)}
   .foot{margin-top:14px;color:var(--dim);font-size:11px;text-align:center;line-height:1.6}
   .toolbar{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:10px}
+  /* FEAT-TT-V2: narrow reviewed-input form. OCR fills these controls; it never bypasses
+     them or writes a screenshot-derived value directly. */
+  .street-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:7px;margin-top:7px}
+  .street-grid label{font-size:9px;color:var(--dim);letter-spacing:.06em;text-transform:uppercase}
+  .street-grid input{display:block;width:100%;margin-top:3px}
+  .street-period{display:grid;grid-template-columns:1.25fr 1fr 1fr auto;gap:6px;align-items:end;margin-top:6px}
+  .street-period button{min-height:30px}
+  .gate-list{display:grid;gap:4px;margin-top:6px}
+  .gate-item{border-left:3px solid var(--line);padding:4px 7px;background:#080d13;font-size:10.5px}
+  @media(max-width:600px){.street-grid{grid-template-columns:1fr 1fr}.street-period{grid-template-columns:1fr 1fr 1fr auto}}
   .cursor{animation:blink 1s steps(1) infinite}
   @keyframes blink{50%{opacity:0}}
   .empty{color:var(--dim);padding:10px 0}
@@ -409,7 +419,7 @@
         onclick="toggleHeadInfo()">⋯ MENU</button>
     </div>
     <div id="headInfo" style="display:none">
-      <div class="brand">FINANCE&nbsp;BRO.AI // TT&nbsp;TICKER&nbsp;TERMINAL <small>v3.89.2 · single-pass deep-dive orchestrator</small></div>
+      <div class="brand">FINANCE&nbsp;BRO.AI // TT&nbsp;TICKER&nbsp;TERMINAL <small>v3.90.0 · underwriting + sourced gates</small></div>
       <div class="statusline">
         <span>BOOK: <b id="bookStamp">loading…</b></span>
         <span>AUTH: <b id="sessState">…</b></span>
@@ -423,6 +433,7 @@
            and press ↵ to open its card, or to add it if it isn't in the book). -->
       <div class="toolbar">
         <button class="act" onclick="openAdd()">+ ADD TICKER</button>
+        <button class="act" onclick="openStreetImport('')">⇧ STREET INPUTS</button>
         <button class="act" onclick="openSession()">◧ SESSION</button>
         <button class="act warn" onclick="reloadBook()">⟲ RELOAD</button>
         <!-- v3.29: PIN joins the manage row. It is a once-per-30-days action and it was the
@@ -510,6 +521,7 @@
         <details class="drawer" id="dNext"><summary id="sNext">NEXT DOLLAR &amp; UPSIDE</summary>
           <div class="nd" id="nextDollar"></div>
           <div class="nd" id="upsideRank" style="margin-top:8px"></div>
+          <div class="nd" id="streetEligibility" style="margin-top:8px"></div>
           <!-- FEAT-TT-ESTRUN (v3.35): every modelled name's estimate run, one tap deep -->
           <div class="nd" id="estRunBoard" style="display:none;margin-top:8px"></div></details>
         <details class="drawer" id="dCapex" style="display:none"><summary id="sCapex">CAPEX TAPE</summary>
@@ -613,7 +625,7 @@
 /* ═══════════ SEED DATA — empty template (load your own book) ═══════════ */
 const LENS_NAME={AI:"AI Infrastructure v2",PH:"Physical AI",QC:"Quality Compounder",VEH:"Vehicle eval",SP:"Speculative"};
 const TIER_ORDER=["S","A","B","DEF","WATCH"];
-const TIER_LABEL={S:"S-TIER",A:"A-TIER",B:"B-TIER",DEF:"DEFENSIVE",WATCH:"WATCHLIST / NEXT-DOLLAR QUEUE"};
+const TIER_LABEL={S:"S-TIER",A:"A-TIER",B:"B-TIER",DEF:"DEFENSIVE",WATCH:"WATCHLIST"};
 
 /* FEAT-TT: book lives server-side (KV via /api/tt behind Cloudflare Access) —
    never seeded in this file. SEED stays empty by invariant. */
@@ -628,6 +640,10 @@ let BOARD={};
    (functions/api/positions.js, tt:pos:v1), keyed by sym — never in the book, and never
    seeded here (same invariant as SEED/BOARD: real position data has no home in the repo). */
 let POSITIONS={};
+/* FEAT-TT-V2: licensed street inputs, merge-only facts, and server gate receipts live in
+   separate KV records. They never ride a replace-all book save. */
+let STREET={},FACTS={},ANALYSIS={};
+let V2_ROWS=[],V2_PENDING=true,STREET_DRAFT=null;
 
 /* TT CARD schema — the fixed DEEP-mode output lines (populated by a live TT run) */
 const CARD_FIELDS=[
@@ -638,7 +654,7 @@ const CARD_FIELDS=[
   ["tech","TECHNICALS","Supp $ (q/10) | Res $ (q/10) | Trend | Vol | RS"],
   ["rr","R/R","Entry | Stop | T1 | T2 → X.X:1 vs floor → MEETS/FAILS"],
   ["constraints","CONSTRAINTS","18% cap | bucket conc. | Roth fit | K-1"],
-  ["nextdollar","NEXT DOLLAR","YAY / YAY-on-trigger / NAY — vs best alt | trigger"],
+  ["eligibility","TICKER ELIGIBILITY","ELIGIBLE / WAIT — server gate receipt, no sizing claim"],
   ["expression","EXPRESSION","Shares / CSP @ $floor / DITM LEAP · sizing band"],
   ["insight","INSIGHT","the single highest-leverage line"],
   ["action","ACTION","Add now / starter / on pullback / breakout / Hold / Trim / Watch / Avoid"],
@@ -1444,18 +1460,29 @@ function stance(){
   if(st==="tripped")return{k:"stop",txt:"NO NEW POSITIONS — leverage circuit tripped",
     why:(BOARD.circuit&&BOARD.circuit.rule)||"deleverage-only until a live pull disproves it",
     verdict:"NO NEW POSITIONS",quals:[{t:"circuit TRIPPED",c:"bad"}]};
-  const{measured,asserted,gov,ranked,disagree}=governingRegime();
+  const{measured,asserted,gov,ranked,disagree,actionability,canGate,macroFlip}=governingRegime();
   if(!ranked)
     return{k:"unknown",txt:"STANCE UNKNOWN — no measured or asserted regime",
       why:"MacroDash returned "+(measured||"nothing")+" and no session regime is loaded — don't gate on this either way",
       verdict:"UNKNOWN",quals:[{t:"no measured or asserted regime",c:"warn"}]};
+  /* FEAT-TT-V2: direction and permission are orthogonal. Engine 0 can publish a measured
+     NEUTRAL while explicitly saying HOLD because the evidence/circuit cannot gate capital.
+     No asserted session regime can override that data-quality veto. */
+  if(!actionability)
+    return{k:"unknown",txt:"STANCE UNKNOWN — Engine 0 actionability unavailable",
+      why:"a directional verdict without FULL/RESTRICTED/HOLD permission cannot gate a ticker",
+      verdict:"UNKNOWN",quals:[{t:"actionability missing",c:"warn"}]};
+  if(actionability!=="FULL"||canGate===false||!macroFlip||macroFlip.evaluable!==true)
+    return{k:"stop",txt:`ADDS SUSPENDED — Engine 0 ${actionability||"HOLD"}`,
+      why:(REGIME&&REGIME.regime&&REGIME.regime.reason)||macroFlip&&macroFlip.reason||"macro evidence cannot safely gate capital",
+      verdict:"WAIT",quals:[{t:`Engine 0 ${actionability||"HOLD"}`,c:"bad"},{t:"macro gate unavailable",c:"bad"}]};
   const both=disagree?` (measured ${measured} · asserted ${asserted} — stricter governs)`:"";
   /* v3.42 READABLE DESK: `asserted` is free text and can run long (the 7/29 session's read
      was 60+ chars) — inlined into prose it wrapped the stance to five phone lines. The chip
      TRUNCATES it; the full pairing stays verbatim in `txt`, one tap deep in the why drawer. */
   const tr=(s)=>{s=String(s);return s.length>26?s.slice(0,25)+"…":s;};
   const dq=disagree?[{t:`⚖ measured ${measured} · asserted ${tr(asserted)} — stricter governs`,c:"warn"}]:[];
-  if(gov==="PANIC")return{k:"stop",txt:"ADDS SUSPENDED — PANIC regime"+both,why:"only S-tier at 8+ support quality is eligible",
+  if(gov==="PANIC")return{k:"stop",txt:"ADDS SUSPENDED — PANIC regime"+both,why:"PANIC blocks ticker eligibility until Engine 0 clears",
     verdict:"ADDS SUSPENDED",quals:[{t:"PANIC regime",c:"bad"},...dq]};
   if(gov==="HEADWIND")return{k:"caution",txt:"ADDS GATED — HEADWIND regime"+both,why:"entry standards +1 notch · R/R floors +0.5×",
     verdict:"ADDS GATED",quals:[{t:"HEADWIND regime",c:"warn"},{t:"entry +1 notch · R/R +0.5×",c:"warn"},...dq]};
@@ -1775,7 +1802,7 @@ function render(){
   cut.appendChild(cc);b.appendChild(cut);
   // FEAT-TT-SESSION: circuit first (it gates every add), then the queues, then clusters —
   // which must run AFTER renderUpsideRank so its overlap check reads the current top ranks.
-  renderCircuit();renderNextDollar();renderFunding();renderOptLadder();renderUpsideRank();renderEstRunBoard();renderClusters();
+  renderCircuit();renderNextDollar();renderFunding();renderOptLadder();renderUpsideRank();renderStreetEligibility();renderEstRunBoard();renderClusters();
   renderCapex();renderBinaryCal();renderDecisions();renderCoverage();renderRollup();
   // v3.29: TODAY reads what the strips above computed (AGREE_PICK, LAST_RANK), so it can
   // never contradict them — one computation, rendered twice at different altitudes.
@@ -2182,7 +2209,7 @@ function ddPtConsensusSec(pc){
       return `<td style="color:${dim?"var(--dim)":"var(--fg)"}">${v!=null?"$"+esc(v):"—"}</td>`;
     }).join("")+`</tr>`;
   });
-  return `<div class="dd-sec"><div class="lbl">Consensus-derived PT ladder${pc.source?` · ${esc(pc.source)}`:""}</div>${t}</table></div>`+
+  return `<div class="dd-sec"><div class="lbl">Legacy scenario PT ladder${pc.source?` · ${esc(pc.source)}`:""}</div>${t}</table></div>`+
     (pc.basis?`<div style="color:var(--dim);font-size:10px;margin-top:4px">${esc(pc.basis)}</div>`:"")+`</div>`;
 }
 /* v3.17 FEAT-TT-PTM: PT ladder COMPUTED from inputs — the dilution-grid pattern applied
@@ -2208,7 +2235,7 @@ function ptModelRows(dd,_y0){
   const m=dd&&dd.pt_model;
   if(!m||typeof m!=="object")return [];
   const c=dd.consensus||{};
-  const rev=m.revenue_B||c.revenue_B||{},eps=m.eps||c.eps||{};
+  const rev={...(c.revenue_B||{}),...(m.revenue_B||{})},eps={...(c.eps||{}),...(m.eps||{})};
   const pe=+m.pe_floor_multiple||null;
   const y0=_y0||new Date().toLocaleDateString("en-CA",{timeZone:"America/New_York"}).slice(0,4);
   const fmt=v=>v>=100?Math.round(v):Math.round(v*100)/100;
@@ -2216,7 +2243,7 @@ function ptModelRows(dd,_y0){
     .filter(y=>y>=y0).sort();
   return years.map(y=>{
     const fwd=String(+y+1);
-    const mult=schedAt(m.ev_s_multiple,y),sh=schedAt(m.share_count_M,y),nc=schedAt(m.net_cash_B,y)||0;
+    const mult=schedAt(m.ev_s_multiple,y),sh=schedAt(m.share_count_M,y),nc=schedAt(m.net_cash_B,y);
     const e=eps[fwd];
     // Two lenses, chosen per name. The EV/S premium was built for pre-profit compounders
     // (NBIS/JOBY); forcing it onto an already-profitable name (UBER at ~18x trailing)
@@ -2225,7 +2252,7 @@ function ptModelRows(dd,_y0){
     const pePrem=schedAt(m.pe_premium_multiple,y);
     const earnLens=pePrem>0&&typeof e==="number"&&e>0;
     const prem=earnLens?fmt(pePrem*e)
-      :(mult>0&&sh>0&&rev[fwd]!=null)?fmt((mult*rev[fwd]+nc)*1000/sh):null;
+      :(mult>0&&sh>0&&rev[fwd]!=null&&typeof nc==="number"&&isFinite(nc))?fmt((mult*rev[fwd]+nc)*1000/sh):null;
     const fl=(pe>0&&typeof e==="number")?(e>0?fmt(pe*e):"n/m"):null;
     // v3.33 FEAT-TT-SPREAD: carry the raw inputs a row was built from (sh/nc/revFwd/epsFwd)
     // alongside the computed prem/fl. Nothing downstream of ptModelRows breaks — these are
@@ -2252,7 +2279,7 @@ function ptModelRows(dd,_y0){
 const LENS_MAX_PE=100;
 function ptRowYears(dd,_y0){
   const m=(dd&&dd.pt_model)||{},c=(dd&&dd.consensus)||{};
-  const rev=m.revenue_B||c.revenue_B||{},eps=m.eps||c.eps||{};
+  const rev={...(c.revenue_B||{}),...(m.revenue_B||{})},eps={...(c.eps||{}),...(m.eps||{})};
   const y0=_y0||new Date().toLocaleDateString("en-CA",{timeZone:"America/New_York"}).slice(0,4);
   return [...new Set([...Object.keys(rev),...Object.keys(eps)].map(y=>String(+y-1)))]
     .filter(y=>y>=y0).sort();
@@ -2261,7 +2288,7 @@ function lintPtModel(dd,_y0){
   const out=[],m=dd&&dd.pt_model;
   if(!m||typeof m!=="object")return out;
   const c=(dd&&dd.consensus)||{};
-  const eps=m.eps||c.eps||{};
+  const eps={...(c.eps||{}),...(m.eps||{})};
   const years=ptRowYears(dd,_y0);
   /* E2E (v3.57): a payload whose numbers are QUOTED ("100" not 100) produces zero rows, and
      NOFLOOR then reports the inputs as missing when they are present — the message sends you
@@ -2395,7 +2422,7 @@ async function saveFloorMultiple(sym){
    quote, falling back to the stamped mark with the same PX_STALE_D flag ddWorth uses. */
 function estRunTable(x,dd){
   const m=dd.pt_model||{},c=dd.consensus||{};
-  const rev=m.revenue_B||c.revenue_B||{},eps=m.eps||c.eps||{},an=c.analysts||{};
+  const rev={...(c.revenue_B||{}),...(m.revenue_B||{})},eps={...(c.eps||{}),...(m.eps||{})},an=c.analysts||{};
   const rows=ptModelRows(dd);
   const rowsByFwd={};rows.forEach(r=>{rowsByFwd[String(+r.y+1)]=r;});
   const years=[...new Set([...Object.keys(rev),...Object.keys(eps)])].sort();
@@ -2426,8 +2453,8 @@ function estRunTable(x,dd){
   const anyDer=Object.keys(derv).length>0;
   let t=`<div class="tblx"><table class="dd-pt"><tr><th>FY</th><th>rev $B</th><th>Δrev</th><th>EPS</th><th>ΔEPS</th><th>n</th>${hasPT?`<th>PT rev-lens</th><th>PT floor</th><th>upside</th>`:""}</tr>`;
   years.forEach(y=>{
-    const n=an[y],thin=typeof n==="number"&&n<=2;
-    const col=thin?"var(--dim)":"var(--fg)";
+    const n=an[y],thin=typeof n==="number"&&n<=2,unknown=n==null;
+    const col=thin||unknown?"var(--dim)":"var(--fg)";
     const e=eps[y];
     const eCol=typeof e==="number"?(e<0?"var(--red)":"var(--green)"):col;
     let pt="";
@@ -2445,7 +2472,7 @@ function estRunTable(x,dd){
         `<td${derTgt?' class="derived"':""}>${up!==null?`<span style="color:${up>=0?"var(--green)":"var(--red)"};font-weight:700">${up>=0?"+":""}${up}%</span>`:""}</td>`;
     }
     t+=`<tr style="color:${col}"><th>${esc(y)}</th><td${dcls(y,"rev")}>${rev[y]!=null?esc(rev[y]):""}</td>${yoyCell(yoy(rev,y))}`+
-      `<td${dcls(y,"eps")} style="color:${eCol}">${e!=null?esc(e):""}</td>${yoyCell(yoy(eps,y))}<td>${n!=null?esc(n):""}</td>${pt}`+`</tr>`;
+      `<td${dcls(y,"eps")} style="color:${eCol}">${e!=null?esc(e):""}</td>${yoyCell(yoy(eps,y))}<td>${n!=null?esc(n):'<span title="analyst count unknown">?</span>'}</td>${pt}`+`</tr>`;
   });
   t+=`</table></div>`;
   if(anyDer)t+=`<div style="color:var(--dim);font-size:10px;margin-top:3px"><span class="derived">italic°</span> = DERIVED — an extrapolation, a company target, or a single-source estimate, not a pulled analyst row; the targets computed off them are marked too</div>`;
@@ -2645,18 +2672,14 @@ function ddWorth(dd,sym){
       spread=` · market pays ${imp}${t.lens==="P/E"?"×":"× FY+1"} vs you ${t.mult}× · credits ${credited}% of your ${t.y} case`;
     }
   }
-  // Street vs mine: confront the SAME horizon year against pt_consensus (the consensus-
-  // derived ladder), averaging its non-bear/floor/severe columns — the same distinction
-  // ddPtConsensusSec already dims. Renders only when that year's row actually exists;
-  // never invents a street number the payload doesn't carry.
+  // Legacy street vs mine: consume an explicitly labelled provider value only. Scenario
+  // columns are not observations to average, and low/average/high are already aggregates.
+  // Renders only when that year's row actually exists; never invents a fourth target.
   let street="";
   const pcRow=dd.pt_consensus&&dd.pt_consensus.rows&&dd.pt_consensus.rows[t.y];
   if(pcRow&&typeof pcRow==="object"){
-    const vals=Object.entries(pcRow).filter(([k,v])=>typeof v==="number"&&isFinite(v)&&!/floor|bear|severe/i.test(k)).map(([,v])=>v);
-    if(vals.length){
-      const avg=Math.round(vals.reduce((a,b)=>a+b,0)/vals.length);
-      street=` · street ~$${avg} vs mine $${tgt}`;
-    }
+    const published=[pcRow.average,pcRow.mean,pcRow.base].find(v=>typeof v==="number"&&isFinite(v));
+    if(published!==undefined)street=` · street ~$${Math.round(published)} vs mine $${tgt}`;
   }
   return{txt:`$${tgt} ${t.y} · <span style="color:${up>=0?"var(--green)":"var(--red)"}">${up>=0?"+":""}${up}%</span>`,
     sub:`${onFloor?`floor (${esc(t.pe)}× FY+1 EPS)`:"premium"} vs ${live?"live":"stamped"} $${px}${ann!==null?` · ${ann>=0?"+":""}${ann}%/yr`:""}${pxFlag}${substituted}${spread}${street}`};
@@ -2716,9 +2739,45 @@ function ddThesisSummary(dd){
    unheld new name legitimately has none, and blocking it would gate exactly the names the
    next dollar is FOR. `x` alone is enough — nothing here needs the tab to be open. */
 const READY_THESIS_D=30;   // same threshold ddAgeChip re-reviews on — one rule, two surfaces
+function v2ReceiptCurrent(r){
+  if(!r||!r.attestation)return false;
+  const expected=(REGIME&&((REGIME.as_of)||(REGIME.generated_at)))||null;
+  const used=r.attestation&&r.attestation.inputVersions&&r.attestation.inputVersions.regime;
+  const iv=r.attestation&&r.attestation.inputVersions||{};
+  const reg=REGIME&&REGIME.regime,mf=REGIME&&REGIME.macro_flip;
+  const sym=r.symbol,street=STREET&&STREET[sym],facts=FACTS&&FACTS[sym];
+  return !!expected&&used===expected
+    &&!!street&&!!iv.street&&iv.street===street.confirmedAt
+    &&!!facts&&!!iv.facts&&iv.facts===facts.updatedAt
+    &&!!reg&&!!iv.regimeActionability&&iv.regimeActionability===reg.actionability
+    &&!!iv.regimeVerdict&&iv.regimeVerdict===reg.verdict
+    &&!!mf&&!!iv.macroFlipState&&iv.macroFlipState===mf.state
+    &&!!iv.riskTier&&iv.riskTier===analysisTier(sym);
+}
 function readiness(x){
   const parts=[];   // {sev:"block"|"caution"|"ok", t:<chip text>}
   const add=(sev,t)=>parts.push({sev,t});
+  const aMap=typeof ANALYSIS!=="undefined"?ANALYSIS:{},sMap=typeof STREET!=="undefined"?STREET:{};
+  const receipt=x&&aMap[x.sym];
+  /* FEAT-TT-V2: a server receipt supersedes the self-attested legacy clock/model checklist.
+     Position exposure is intentionally absent: this is ticker eligibility, not sizing. */
+  if(receipt||x&&sMap[x.sym]){
+    if(!receipt)add("block","gate receipt not run");
+    else{
+      if(!v2ReceiptCurrent(receipt))add("block","analysis predates current Engine 0 readout");
+      (Array.isArray(receipt.gates)?receipt.gates:[]).forEach(g=>{
+        const label=`${String(g.id||"gate").replace(/_/g," ")}: ${g.reason||g.status||"unknown"}`;
+        if(g.status==="PASS")add("ok",label);
+        else add("block",label);
+      });
+    }
+    const blockers=parts.filter(p=>p.sev==="block").map(p=>p.t);
+    const cautions=parts.filter(p=>p.sev==="caution").map(p=>p.t);
+    return{k:blockers.length?"blocked":cautions.length?"caution":"ready",
+      verdict:blockers.length?"BLOCKED":cautions.length?"CAUTION":"READY",
+      blockers,cautions,parts,
+      line:parts.slice().sort((a,b)=>({block:0,caution:1,ok:2})[a.sev]-({block:0,caution:1,ok:2})[b.sev]).map(p=>p.t).join("; ")};
+  }
   const dd=x&&ddOf(x);
 
   // 1. TT run — the harness pass. ageDays fails CLOSED, so undated/future reads NEVER RUN.
@@ -3276,7 +3335,7 @@ function rankScope(rank){
 const REG_RANK={TAILWIND:0,NEUTRAL:1,HEADWIND:2,PANIC:3};
 const REG_MOD={
   HEADWIND:["var(--amber)","⚠ HEADWIND regime — entry standards +1 notch · R/R floors +0.5×"],
-  PANIC:["var(--red)","⛔ PANIC regime — only S-tier at 8+ support quality eligible"],
+  PANIC:["var(--red)","⛔ PANIC regime — ticker eligibility blocked"],
 };
 /* v3.30: ONE derivation of the governing regime. stance() and regimeModifier() each used to
    re-derive "the stricter of measured and asserted" from REG_RANK, and two copies of a rule
@@ -3289,7 +3348,10 @@ function governingRegime(){
   const mR=REG_RANK[measured],aR=REG_RANK[asserted];
   const gov=mR===undefined&&aR===undefined?null
     :mR===undefined?asserted:aR===undefined?measured:(aR>mR?asserted:measured);
-  return{measured,asserted,gov,ar,
+  const actionability=(REGIME&&REGIME.regime&&REGIME.regime.actionability)||null;
+  const canGate=REGIME&&REGIME.health?REGIME.health.can_gate:undefined;
+  const macroFlip=REGIME&&REGIME.macro_flip;
+  return{measured,asserted,gov,ar,actionability,canGate,macroFlip,
     ranked:!(mR===undefined&&aR===undefined),
     disagree:!!(measured&&asserted&&measured!==asserted)};
 }
@@ -3332,9 +3394,9 @@ function renderNextDollar(){
   const ranked=BOOK.filter(x=>x.tier==="WATCH"&&rankNum(x.rank)!==null);
   if(!ranked.length){
     const watch=BOOK.filter(x=>x.tier==="WATCH").length;
-    el.innerHTML=`<div class="lbl">Next dollar</div><div class="none">`+
-      (watch?`${watch} name${watch===1?"":"s"} on the watchlist, none ranked — set a QUEUE RANK (e.g. "#1 infra") to surface the next dollar.`
-            :`Watchlist is empty — nothing queued for the next dollar.`)+`</div>`+regimeModifier();
+    el.innerHTML=`<div class="lbl">OWNER WATCHLIST QUEUE · legacy comparison, not a gate</div><div class="none">`+
+      (watch?`${watch} name${watch===1?"":"s"} on the watchlist, none manually ranked.`
+            :`Watchlist is empty.`)+`</div>`+regimeModifier();
     return;
   }
   const top=Math.min(...ranked.map(x=>rankNum(x.rank)));
@@ -3355,7 +3417,7 @@ function renderNextDollar(){
       <span class="sym">${x.sym}</span><span class="lens lens-${x.lens}">${x.lens}</span>
       ${scope?`<span class="scope">${esc(scope)}</span>`:""}${flag}</span>`;
   }).join("");
-  el.innerHTML=`<div class="lbl">Next dollar · queue #${top}`+
+  el.innerHTML=`<div class="lbl">Owner watchlist queue · manual #${top}`+
     (leads.length>1?` · ${leads.length} co-leads (different buckets — not a single ranking)`:"")+
     `</div><div class="picks">${picks}</div>`+regimeModifier();
 }
@@ -3486,6 +3548,54 @@ async function loadQuotes(){
   // v3.42 slice 2: settle the pending flag on success AND failure — a dead quote feed must
   // resolve the skeletons into the honest empty state, never leave placeholders shimmering.
   finally{QUOTES_PENDING=false;render();/* chips, the upside rank and the TODAY delta all read LIVE_PX */}
+}
+
+/* ═══════════ FEAT-TT-V2: licensed street + sourced facts + gate receipts ═══════════ */
+async function v2Json(url,opts){
+  const res=await fetch(url,{cache:"no-store",...(opts||{})});
+  const data=await res.json().catch(()=>({}));
+  if(res.status===401){const e=new Error(data.error||"PIN required");e.pinRequired=true;throw e;}
+  if(!res.ok){const e=new Error(data.error||("HTTP "+res.status));e.data=data;throw e;}
+  return data;
+}
+async function loadTickerV2(){
+  const syms=BOOK.map(x=>x.sym).slice(0,40);
+  if(!syms.length){V2_PENDING=false;render();return;}
+  const q=encodeURIComponent(syms.join(","));
+  try{
+    const [s,f,a]=await Promise.all([
+      v2Json("/api/street?syms="+q),v2Json("/api/ticker-facts?syms="+q),v2Json("/api/ticker-analysis?syms="+q)
+    ]);
+    STREET=s.records||{};FACTS=f.records||{};ANALYSIS=a.records||{};
+  }catch(e){
+    if(e.pinRequired)showPinGate(loadTickerV2);
+    else toast("Ticker v2 inputs unavailable — legacy book remains visible");
+  }finally{V2_PENDING=false;render();}
+}
+function analysisTier(sym){
+  const x=find(sym);
+  return x&&x.lens==="SP"?"speculative":x&&x.tier==="WATCH"?"tactical":"core";
+}
+async function runTickerAnalysis(sym){
+  sym=String(sym||"").trim().toUpperCase();
+  if(!sym)return toast("Choose a ticker first");
+  toast(sym+" — refreshing sourced facts…");
+  try{
+    const f=await v2Json("/api/ticker-facts",{method:"POST",headers:{"content-type":"application/json"},
+      body:JSON.stringify({symbol:sym})});
+    if(f.records&&f.records[sym])FACTS[sym]=f.records[sym];
+    toast(sym+" — running deterministic gates + cited rubric…");
+    const a=await v2Json("/api/ticker-analysis",{method:"POST",headers:{"content-type":"application/json"},
+      body:JSON.stringify({symbol:sym,readout:REGIME})});
+    if(a.receipt)ANALYSIS[sym]=a.receipt;
+    render();
+    toast(sym+" — "+(a.receipt&&a.receipt.status||"analysis complete"));
+    return a.receipt;
+  }catch(e){
+    if(e.pinRequired){showPinGate(()=>runTickerAnalysis(sym));return null;}
+    toast(sym+" analysis blocked: "+e.message);
+    return null;
+  }
 }
 
 /* FEAT-TT-POSSTORE (v3.34): the whole positions map, one GET at boot — everything that
@@ -4459,6 +4569,63 @@ function renderUpsideRank(){
         `<span class="scope">${near}</span> · disagreement is information, not a discount</div>`;
     })();
 }
+/* FEAT-TT-V2: an additive street-evidence diagnostic at one explicit 12-month horizon and
+   one provider number — TipRanks' published average. It does not mutate UPSIDE_ROWS,
+   AGREE_PICK or LAST_RANK: canonical /api/score underwriting and the portfolio-aware Next
+   Dollar framework remain authoritative. A reviewed receipt can still fail readiness closed. */
+function buildV2Rows(){
+  const rows=[];
+  BOOK.forEach(x=>{
+    const street=STREET[x.sym];if(!street)return;
+    const receipt=ANALYSIS[x.sym]||null,metrics=receipt&&receipt.metrics;
+    const gap=metrics&&isFinite(metrics.gaps&&metrics.gaps.averagePct)?metrics.gaps.averagePct:null;
+    const score=receipt&&receipt.composite&&isFinite(receipt.composite.score)?receipt.composite.score:null;
+    const tTier=score===null?null:score>=8.5?"S":score>=7?"A":score>=5.5?"B":"C";
+    const current=v2ReceiptCurrent(receipt);
+    const blockers=receipt&&Array.isArray(receipt.blockers)?receipt.blockers.map(b=>b.reason):["gate receipt not run"];
+    if(receipt&&!current)blockers.unshift("analysis predates current Engine 0 readout");
+    const g=(receipt&&receipt.gates||[]).reduce((o,v)=>(o[v.id]=v,o),{});
+    const f=FACTS[x.sym],q=f&&f.fields&&f.fields.quote;
+    rows.push({sym:x.sym,lens:x.lens,tier:x.tier,street,receipt,gap,
+      eligible:!!(receipt&&receipt.eligible&&current),blockers,current,
+      tgt:street.analystTarget.average,px:q&&q.value,y:"12m",basis:"TipRanks published average",
+      upside:gap,ann:gap,tt:score===null?null:{score,tier:tTier},
+      wt:rankWeight(x.sym),rs:runState(x.lastRun),rdy:readiness(x),
+      rrFail:!!(g.reward_risk&&g.reward_risk.status!=="PASS"),kdSoon:null,
+      redH:0,redLabels:[],live:!!(q&&q.status==="LIVE"),chg:q&&q.changePct,
+      qualitative:receipt&&receipt.qualitative||null});
+  });
+  return rows.sort((a,b)=>(b.gap===null?-Infinity:b.gap)-(a.gap===null?-Infinity:a.gap));
+}
+function renderStreetEligibility(){
+  const el=document.getElementById("streetEligibility");if(!el)return;
+  V2_ROWS=buildV2Rows();
+  const eligible=V2_ROWS.filter(r=>r.eligible);
+  const streetPick=eligible[0]||null;
+  if(!V2_ROWS.length){
+    el.innerHTML=`<div class="lbl">12-month street gap · TipRanks published average</div><div class="none">`+
+      (V2_PENDING?`loading reviewed street records…`:`no confirmed street packet — import Seeking Alpha estimates + TipRanks target; legacy pt_model is comparison-only`)+`</div>`;
+    return;
+  }
+  const medal=["🥇","🥈","🥉","4","5"];
+  const rows=V2_ROWS.slice(0,5).map((r,i)=>{
+    const col=r.eligible?"var(--green)":r.gap!==null&&r.gap>=15?"var(--amber)":"var(--red)";
+    const why=r.eligible?"all ticker gates passed":r.blockers.slice(0,2).join(" · ");
+    return `<button class="fdr-row" onclick="openCard('${esc(r.sym)}')">`+
+      `<span class="fdr-l"><span>${medal[i]}</span><span class="sym">${esc(r.sym)}</span>`+
+      `<span class="lens lens-${esc(r.lens)}">${esc(r.lens)}</span>`+
+      `<span class="pill ${r.eligible?"ok":"warn"}">${r.eligible?"ELIGIBLE":"WAIT"}</span></span>`+
+      `<span class="fdr-p" style="color:${col}">${r.gap===null?"—":`${r.gap>=0?"+":""}${Math.round(r.gap*10)/10}%`}</span>`+
+      `<span class="fdr-d"><span class="scope">$${esc(r.tgt)} published average · 12m · position ignored</span>`+
+      `<span style="color:${r.eligible?"var(--green)":"var(--amber)"}">${esc(why||"receipt unavailable")}</span></span></button>`;
+  }).join("");
+  const status=streetPick
+    ?`<div class="none" style="color:var(--green);font-weight:700">✓ STREET RECEIPT PASS: ${esc(streetPick.sym)} — every sourced gate passed</div>`
+    :`<div class="none" style="color:var(--amber)">⏸ WAIT — no reviewed ticker passes every server gate</div>`;
+  el.innerHTML=`<div class="lbl">STREET ELIGIBILITY RECEIPT · diagnostic, not canonical score · TipRanks published average · 12m</div>${status}${rows}`+
+    `<div class="none">${V2_ROWS.length} reviewed of ${BOOK.length} book names · low/average/high are never re-averaged · <button class="linklike" onclick="openStreetImport('')">import screenshots</button></div>`;
+}
+
 /* FEAT-TT-ESTRUN (v3.35): the board expression — every modelled name, one compact row
    (nearest target · annualised upside · tier), expanding to the SAME estRunTable the
    deep dive renders. Open-state persists in EST_OPEN because quotes, positions and the
@@ -5048,8 +5215,6 @@ function renderBuyBlock(){
     const wTxt=w.optOnly&&w.w===null?`<span class="scope" style="color:var(--amber)">◇ opt-only</span>`
       :w.w===null?(w.held?`<span class="scope">held · unmeasured</span>`:`<span class="scope" style="color:var(--green)">new — not held</span>`)
       :`<span style="color:${w.w>=CAP_PCT?"var(--red)":w.w>=10?"var(--amber)":"var(--slate)"};font-size:10px;font-weight:700">${w.w}%${esc(w.mark)}</span>`;
-    /* v3.42 slice 2: grid row — identity left, the %/yr PRIMARY right at --fs-l, target +
-       warning chips on the detail line. Same datums, same phrases; only the layout moved. */
     h+=`<button class="fdr-row" onclick="openCard('${esc(r.sym)}')">`+
       `<span class="fdr-l"><span>${MEDAL[i]}</span>`+
       `<span class="sym">${esc(r.sym)}</span><span class="lens lens-${esc(r.lens)}">${esc(r.lens)}</span>`+
@@ -5357,6 +5522,142 @@ document.getElementById("overlay").addEventListener("keydown",e=>{
   if(e.shiftKey&&document.activeElement===first){e.preventDefault();last.focus();}
   else if(!e.shiftKey&&document.activeElement===last){e.preventDefault();first.focus();}
 });
+
+function v2CardHtml(sym){
+  const s=STREET[sym],f=FACTS[sym],r=ANALYSIS[sym];
+  if(!s&&!r)return `<div class="row"><div class="k">TICKER GATES</div><div class="v"><span class="pill warn">NOT RUN</span> `+
+    `<button class="linklike" onclick="openStreetImport('${esc(sym)}')">import SA + TipRanks screenshots</button></div></div>`;
+  const q=f&&f.fields&&f.fields.quote,nc=f&&f.fields&&f.fields.netCashB;
+  const gaps=r&&r.metrics&&r.metrics.gaps;
+  const gates=r&&Array.isArray(r.gates)?r.gates:[];
+  const gateHtml=gates.map(g=>`<div class="gate-item" style="border-left-color:${g.status==="PASS"?"var(--green)":g.status==="FAIL"?"var(--red)":"var(--amber)"}">`+
+    `<b style="color:${g.status==="PASS"?"var(--green)":g.status==="FAIL"?"var(--red)":"var(--amber)"}">${esc(g.status)}</b> · ${esc(String(g.id||"").replace(/_/g," "))} — ${esc(g.reason||"")}</div>`).join("");
+  const current=r&&v2ReceiptCurrent(r);
+  const status=r&&r.eligible&&current?"ELIGIBLE":"WAIT";
+  const cls=status==="ELIGIBLE"?"ok":"head";
+  const qual=r&&r.qualitative;
+  const analystN=s&&s.analystTarget&&s.analystTarget.analystCount;
+  const analystTell=isFinite(analystN)
+    ?` · <span style="color:${analystN<=2?"var(--amber)":"var(--slate)"}">${analystN} analyst${analystN===1?"":"s"}${analystN<=2?" · thin coverage":""}</span>`
+    :` · <span style="color:var(--amber)">analyst count unknown</span>`;
+  const cites=qual&&Array.isArray(qual.citations)?qual.citations.map((u,i)=>`<a href="${esc(u)}" target="_blank" rel="noopener">source ${i+1}</a>`).join(" · "):"";
+  return `<div class="row"><div class="k">TICKER GATES</div><div class="v">`+
+    `<span class="pill ${cls}" style="font-weight:700">${status}</span>`+
+    (!current&&r?` <span class="pill warn">receipt predates current macro readout</span>`:"")+
+    `<div style="margin-top:5px">${s?`TipRanks avg <b>$${esc(s.analystTarget.average)}</b>${analystTell}`:"street missing"}`+
+    `${gaps&&isFinite(gaps.averagePct)?` · <span style="color:${gaps.averagePct>=15?"var(--green)":"var(--red)"}">${gaps.averagePct>=0?"+":""}${Math.round(gaps.averagePct*10)/10}% vs sourced quote</span>`:""}`+
+    `${q&&isFinite(q.value)?` · quote $${esc(q.value)} (${esc(q.status)})`:""}</div>`+
+    `<div class="scope">12-month published average · position/exposure not assessed`+
+    `${nc&&isFinite(nc.value)?` · SEC net cash $${Math.round(nc.value*100)/100}B`:nc?` · net cash ${esc(nc.status)}`:""}</div>`+
+    (gateHtml?`<div class="gate-list">${gateHtml}</div>`:`<div class="none">confirmed inputs saved; run gates to refresh facts and compute a receipt</div>`)+
+    (qual?`<div class="none">cited rubric ${qual.score!=null?qual.score+"/10":"UNKNOWN"}${cites?` · ${cites}`:""}</div>`:"")+
+    (r&&Array.isArray(r.warnings)&&r.warnings.length?`<div class="none" style="color:var(--amber)">⚠ ${r.warnings.map(esc).join(" · ")}</div>`:"")+`</div></div>`;
+}
+
+function blankStreetDraft(sym){
+  const d=new Date().toLocaleDateString("en-CA",{timeZone:"America/New_York"});
+  return{symbol:sym||"",estimates:{provider:"Seeking Alpha",sourceUrl:"https://seekingalpha.com/",asOf:d,currency:"USD",revenueUnit:"B",epsBasis:"provider-consensus",periods:[]},
+    analystTarget:{provider:"TipRanks",sourceUrl:"https://www.tipranks.com/",asOf:d,currency:"USD",average:null,low:null,high:null,analystCount:null,ratings:{buy:null,hold:null,sell:null},lookbackMonths:3,horizonMonths:12,referencePrice:null}};
+}
+function streetPeriodHtml(row){
+  row=row||{};
+  const v=x=>x===null||x===undefined?"":esc(x);
+  return `<div class="street-period">`+
+    `<label>period end<input class="sp-date" type="date" value="${v(row.periodEnd)}"></label>`+
+    `<label>revenue $B<input class="sp-rev" type="number" step="0.01" inputmode="decimal" value="${v(row.revenueB)}"></label>`+
+    `<label>EPS<input class="sp-eps" type="number" step="0.01" inputmode="decimal" value="${v(row.eps)}"></label>`+
+    `<button class="act danger" type="button" onclick="this.closest('.street-period').remove()" aria-label="Remove estimate row">×</button></div>`;
+}
+function streetReviewHtml(d,warnings){
+  const v=x=>x===null||x===undefined?"":esc(x),t=d.analystTarget||{},r=t.ratings||{},e=d.estimates||{};
+  const periods=(e.periods&&e.periods.length?e.periods:[{},{},{}]).map(streetPeriodHtml).join("");
+  return `<div class="derived">Upload up to 3 screenshots for an OCR <b>draft</b>, then verify every field. Images are discarded; only CONFIRM saves numbers.</div>`+
+    `<div style="margin-top:8px"><input id="streetImages" type="file" accept="image/png,image/jpeg,image/webp" multiple></div>`+
+    (warnings&&warnings.length?`<div class="none" style="color:var(--amber)">⚠ ${warnings.map(esc).join(" · ")}</div>`:"")+
+    `<div class="street-grid">`+
+      `<label>symbol<input id="stSym" maxlength="8" value="${v(d.symbol)}" autocapitalize="characters"></label>`+
+      `<label>SA as-of<input id="stSaAsOf" type="date" value="${v(e.asOf)}"></label>`+
+      `<label>TipRanks as-of<input id="stTrAsOf" type="date" value="${v(t.asOf||e.asOf)}"></label>`+
+      `<label>currency<input id="stCurrency" maxlength="3" value="${v(e.currency||"USD")}"></label>`+
+      `<label style="grid-column:span 3">Seeking Alpha source URL<input id="stSaUrl" type="url" value="${v(e.sourceUrl||"https://seekingalpha.com/")}"></label>`+
+      `<label>TipRanks average<input id="stAvg" type="number" step="0.01" value="${v(t.average)}"></label>`+
+      `<label>low<input id="stLow" type="number" step="0.01" value="${v(t.low)}"></label>`+
+      `<label>high<input id="stHigh" type="number" step="0.01" value="${v(t.high)}"></label>`+
+      `<label>analysts<input id="stCount" type="number" step="1" value="${v(t.analystCount)}"></label>`+
+      `<label>buy<input id="stBuy" type="number" step="1" value="${v(r.buy)}"></label>`+
+      `<label>hold<input id="stHold" type="number" step="1" value="${v(r.hold)}"></label>`+
+      `<label>sell<input id="stSell" type="number" step="1" value="${v(r.sell)}"></label>`+
+      `<label>reference px<input id="stRef" type="number" step="0.01" value="${v(t.referencePrice)}"></label>`+
+      `<label style="grid-column:span 3">TipRanks source URL<input id="stTrUrl" type="url" value="${v(t.sourceUrl||"https://www.tipranks.com/")}"></label>`+
+    `</div>`+
+    `<div class="lbl" style="margin-top:12px">SEEKING ALPHA ANNUAL ESTIMATES · explicit observations only</div>`+
+    `<div id="streetPeriods">${periods}</div>`+
+    `<button class="act" type="button" style="margin-top:7px" onclick="document.getElementById('streetPeriods').insertAdjacentHTML('beforeend',streetPeriodHtml({}))">+ PERIOD</button>`;
+}
+function renderStreetReview(d,warnings){
+  STREET_DRAFT=d;
+  document.getElementById("cTitle").textContent="REVIEW STREET INPUTS"+(d.symbol?" — "+d.symbol:"");
+  document.getElementById("cBody").innerHTML=streetReviewHtml(d,warnings||[]);
+  document.getElementById("cBtns").innerHTML=`<button class="act" onclick="ocrStreetDraft()">◉ OCR DRAFT</button>`+
+    `<button class="act" onclick="saveStreetPacket()">✔ CONFIRM &amp; SAVE</button>`+
+    (d.symbol?`<button class="act" onclick="runTickerAnalysis('${esc(d.symbol)}')">⟳ RUN GATES</button>`:"")+
+    `<button class="act" onclick="closeCard()">CANCEL</button>`;
+}
+function openStreetImport(sym){
+  sym=String(sym||CURRENT||"").trim().toUpperCase();
+  const existing=STREET[sym];
+  const d=existing?JSON.parse(JSON.stringify(existing)):blankStreetDraft(sym);
+  renderStreetReview(d,[]);openModal();
+}
+async function ocrStreetDraft(){
+  const input=document.getElementById("streetImages"),files=input&&input.files;
+  if(!files||!files.length)return toast("Attach 1–3 screenshots first");
+  if(files.length>3)return toast("At most 3 screenshots");
+  const keepSym=(document.getElementById("stSym")&&document.getElementById("stSym").value||"").trim().toUpperCase();
+  const form=new FormData();[...files].forEach(f=>form.append("images",f));
+  toast("OCR is building a review draft — nothing is being saved");
+  try{
+    const res=await fetch("/api/street/ocr",{method:"POST",body:form});
+    const data=await res.json().catch(()=>({}));
+    if(!res.ok&&!(data&&data.draft))throw new Error(data.error||("HTTP "+res.status));
+    const d=data.draft||blankStreetDraft(keepSym);if(!d.symbol)d.symbol=keepSym;
+    renderStreetReview(d,[...(data.warnings||[]),...(data.degraded?[data.error||"OCR unavailable — enter manually"]:[])]);
+    toast("OCR draft ready — verify every field before CONFIRM");
+  }catch(e){toast("OCR unavailable: "+e.message+" — manual fields remain available");}
+}
+function inputNumber(id){
+  const el=document.getElementById(id),raw=el&&(el.value||"").trim();
+  if(!raw)return undefined;const n=Number(raw);return isFinite(n)?n:undefined;
+}
+function readStreetPacket(){
+  const sym=(document.getElementById("stSym").value||"").trim().toUpperCase();
+  const saAsOf=document.getElementById("stSaAsOf").value;
+  const trAsOf=document.getElementById("stTrAsOf").value;
+  const periods=[...document.querySelectorAll("#streetPeriods .street-period")].map(row=>{
+    const date=row.querySelector(".sp-date").value,rv=(row.querySelector(".sp-rev").value||"").trim(),ep=(row.querySelector(".sp-eps").value||"").trim();
+    return date?{periodEnd:date,...(rv!==""?{revenueB:Number(rv)}:{}),...(ep!==""?{eps:Number(ep)}:{})}:null;
+  }).filter(x=>x&&(x.revenueB!==undefined||x.eps!==undefined));
+  const optional=(id,key,o)=>{const n=inputNumber(id);if(n!==undefined)o[key]=n;};
+  const target={provider:"TipRanks",sourceUrl:(document.getElementById("stTrUrl").value||"").trim(),asOf:trAsOf,
+    currency:(document.getElementById("stCurrency").value||"USD").trim().toUpperCase(),average:inputNumber("stAvg"),ratings:{},lookbackMonths:3,horizonMonths:12};
+  optional("stLow","low",target);optional("stHigh","high",target);optional("stCount","analystCount",target);optional("stRef","referencePrice",target);
+  optional("stBuy","buy",target.ratings);optional("stHold","hold",target.ratings);optional("stSell","sell",target.ratings);
+  return{schema:"tt-street-v1",symbol:sym,confirmedAt:new Date().toISOString(),
+    estimates:{provider:"Seeking Alpha",sourceUrl:(document.getElementById("stSaUrl").value||"").trim(),asOf:saAsOf,
+      currency:target.currency,revenueUnit:"B",epsBasis:"provider-consensus",periods},analystTarget:target};
+}
+async function saveStreetPacket(){
+  const packet=readStreetPacket();
+  try{
+    const data=await v2Json("/api/street",{method:"PUT",headers:{"content-type":"application/json"},body:JSON.stringify(packet)});
+    STREET[packet.symbol]=data.record;render();toast(packet.symbol+" confirmed — refreshing facts and gates");
+    const receipt=await runTickerAnalysis(packet.symbol);
+    if(find(packet.symbol)){closeCard();openCard(packet.symbol);}
+    else if(receipt)toast(packet.symbol+" saved; add it to the book to display it on the board");
+  }catch(e){
+    const details=e.data&&e.data.details;toast("Street input not saved: "+(details&&details.length?details[0]:e.message));
+  }
+}
 function openCard(sym){
   const x=find(sym);if(!x)return;
   CURRENT=x.sym;
@@ -5380,7 +5681,7 @@ function openCard(sym){
   // FEAT-TT-READY (v3.50): the card is the other per-ticker decision surface (and the only
   // one a WATCH name with no deepDive tab ever gets), so the consolidated statement leads here too.
   const rdyRow=`<div class="row"><div class="k">READINESS</div><div class="v">${readyBar(x)}</div></div>`;
-  let html=rdyRow+measured+`
+  let html=v2CardHtml(x.sym)+rdyRow+measured+`
     <div class="row"><div class="k">TIER</div><div class="v"><select id="fTier">${tierOpts}</select></div></div>
     <div class="row"><div class="k">LENS / ROUTE</div><div class="v"><select id="fLens">${lensOpts}</select></div></div>
     <div class="row"><div class="k">FP ROUTING</div><div class="v"><select id="fFp">
@@ -5403,7 +5704,7 @@ function openCard(sym){
 
   // FEAT-TT-3Q: the three questions every name should have written answers to.
   const p=x.projection||{},pr=p.rev_3yr||{},pm=p.margins||{},pmu=p.multiple||{};
-  html+=`<details class="schema" ${x.projection?"open":""}><summary>📐 PROJECTION — the 3 questions ${x.projection?`· answered ${p.as_of||""}`:"· ○ UNANSWERED"}</summary>
+  html+=`<details class="schema"><summary>LEGACY OWNER PROJECTION — optional comparison ${x.projection?`· answered ${p.as_of||""}`:"· not required for ticker gates"}</summary>
     <div class="row"><div class="k">READOUT</div><div class="v">${x.projection?projLine(p):`<span class="derived">Future price = future EPS × future multiple — answer all three to run the math</span>`}</div></div>
     <div class="row"><div class="k">1 · REV IN 3 YRS</div><div class="v" style="display:flex;gap:6px;flex-wrap:wrap;align-items:center">
       <input id="fPRevB" type="number" step="0.01" inputmode="decimal" placeholder="$B — specific" value="${pr.value_B??""}" style="width:110px"/>
@@ -5435,7 +5736,8 @@ function openCard(sym){
 }
 function cardBtns(sym){return `
   <button class="act" onclick="saveCard()">✔ SAVE CHANGES</button>
-  <button class="act" onclick="stampAndSave()">✓ RAN IT — stamp today</button>
+  <button class="act" onclick="openStreetImport('${sym}')">⇧ SA + TIPRANKS</button>
+  <button class="act" onclick="runTickerAnalysis('${sym}')">⟳ REFRESH FACTS + GATES</button>
   <button class="act" onclick="copyTTRun()">⧉ COPY 'TT: ${sym}' PROMPT</button>
   <button class="act" onclick="openDeepDive('${sym}')">📊 DEEP DIVE</button>
   <button class="act danger" onclick="removeCard()">🗑 REMOVE FROM BOOK</button>`;}
@@ -5731,12 +6033,12 @@ function buildRankingsMd(){
     (mf?(mf.evaluable===false?` · flip **BLIND** (${mf.reason||"missing inputs"})`
       :mf.tripped?` · flip **TRIPPED**`:mf.armed?` · flip armed`:` · flip clear`):` · flip n/a`)+`\n`;
   if(BOARD.regime&&BOARD.regime.asserted)m+=`- Session (asserted): **${esc(BOARD.regime.asserted)}** — the stricter of the two governs\n`;
-  m+=`- Horizon: **${hz?`year-end ${hz}`:"nearest rung"}**${HORIZON===HZ_AUTO?" (auto — deepest year every modelled name reaches)":""}\n`;
+  m+=`- Ticker ranking horizon: **12 months** — TipRanks published average\n`;
   m+=`- Tracked book: **${roll.mvN?money(roll.mv):"unmeasured"}**${roll.mvN?` across ${roll.mvN}/${BOOK.length} measured`:""} — a FLOOR, not NAV\n\n`;
 
   // 2. The master table — every ranked name, every category rank.
   m+=`## MASTER RANKING (${rows.length} of ${BOOK.length} names)\n\n`;
-  m+=`Sorted by annualised upside. "Composite" is the TT score; ranks are dense (ties share a rank).\n\n`;
+  m+=`Sorted by 12-month street gap. "Composite" is the sourced four/five-pillar score; ranks are dense (ties share a rank).\n\n`;
   m+=`| # | Sym | Tier | Lens | Composite | %/yr | Weight | Rank: upside | Rank: comp | Rank: in tier | Rank: in lens | Readiness | Flags |\n`;
   m+=`|--:|---|---|---|--:|--:|--:|---|---|---|---|---|---|\n`;
   rows.forEach((r,i)=>{
@@ -5777,25 +6079,20 @@ function buildRankingsMd(){
   }
 
   // 4. Eligibility — the green line, or every reason there isn't one.
-  m+=`## ELIGIBLE NEXT DOLLAR\n\n`;
+  m+=`## TICKER ELIGIBILITY\n\n`;
   if(AGREE_PICK){
     m+=`**${AGREE_PICK.sym}** — all gates passed`+
-      (AGREE_PICK.ann!==null?` · ${pc(AGREE_PICK.ann)}/yr`:"")+
+      (AGREE_PICK.ann!==null?` · ${pc(AGREE_PICK.ann)} vs 12-month street average`:"")+
       (AGREE_PICK.tt?` · TT ${AGREE_PICK.tt.score!==null?AGREE_PICK.tt.score.toFixed(1):AGREE_PICK.tt.tier}`:"")+`\n\n`;
     if(AGREE_PICK.redH)m+=`> ⚠ ${AGREE_PICK.redH} red hinge(s): ${AGREE_PICK.redLabels.join(" · ")} — surfaced, not a veto\n\n`;
   }else{
-    m+=`**WAIT — no name is eligible.** The valuation ranking above still stands as math.\n\n`;
+    m+=`**WAIT — no reviewed name passes every ticker gate.** Position exposure is not an eligibility input.\n\n`;
   }
   // Vetoes for the top names, so the export explains itself rather than just listing.
   const vetoed=rows.slice(0,10).map(r=>{
     const e=find(r.sym),rd=e?readiness(e):null;
-    const why=!(r.upside>0)?"no gap"
-      :(r.wt.w!==null&&r.wt.w>=CAP_PCT)?`at the ${CAP_PCT}% cap`
-      :(rd&&rd.blockers.length)?`evidence: ${rd.blockers.join(", ")}`
-      :!r.tt?"unscored — no TT run"
-      :(r.tt.tier==="C"||(r.tt.score!==null&&r.tt.score<5.5))?"quality fails"
-      :r.rrFail?"R/R below floor"
-      :(r.kdSoon!==null&&r.kdSoon<=BINARY_WINDOW_D)?`binary ${r.kdSoon}d — no-new-adds`:null;
+    const why=r.eligible?null:(r.blockers&&r.blockers.length?r.blockers.join(", ")
+      :(rd&&rd.blockers.length)?`evidence: ${rd.blockers.join(", ")}`:"server receipt unavailable");
     return why?`- **${r.sym}** — ${why}`:null;
   }).filter(Boolean);
   if(vetoed.length)m+=`### Why the others are not eligible\n\n${vetoed.join("\n")}\n\n`;
@@ -6037,7 +6334,7 @@ function applyRegime(r){
       +` — SPY ${d(r.spy)} · VIX ${d(r.vix)} · F&G ${d(r.fear_greed)} · 10Y ${d(r.us10y)}`
       +(reg.reason?` — ${reg.reason}`:"");
   }
-  renderNextDollar(); // the HEADWIND/PANIC modifier may now apply
+  render(); // stance + every v2 receipt-current check must see the new actionability
 }
 async function loadRegime(){
   const el=document.getElementById("regimePill");
@@ -6059,7 +6356,7 @@ if(window.innerWidth<480)search.placeholder="ticker · HELP · TIER · ADD";
    v3.24: quotes chase the book (they need BOOK populated to know which symbols to ask
    for) and are equally non-blocking — the board renders on stamped marks first, then
    upgrades to live prices if and when they arrive. */
-loadBook().then(()=>{loadQuotes();loadPositions();loadDeepDiveIndex();});
+loadBook().then(()=>{loadQuotes();loadPositions();loadDeepDiveIndex();loadTickerV2();});
 loadRegime();
 </script>
 </body>

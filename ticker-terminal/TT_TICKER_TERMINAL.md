@@ -1,3 +1,11 @@
+# ARCHIVE — pre-implementation TT prompt specification
+
+> Historical reference only. This prompt-era document predates the server gate receipt,
+> separate street/facts stores, and ticker-level eligibility contract. Do not implement from it
+> and do not treat `CANONICAL_BOOK.md` as the runtime source of truth. The current contract is
+> [`README.md`](./README.md); the implemented migration/schema plan is
+> [`TICKER_TERMINAL_LOGIC_REDESIGN_PLAN_2026-08-15.md`](./TICKER_TERMINAL_LOGIC_REDESIGN_PLAN_2026-08-15.md).
+
 # FINANCE BRO.AI — TT TICKER TERMINAL v1.0
 
 ### Single-Pass Deep-Dive Orchestrator · Ratings → Tier Placement → Next-Dollar Verdict
