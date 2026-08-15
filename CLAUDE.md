@@ -27,7 +27,8 @@ dashboard fetches `/api/snapshot` and overlays the mapped `SOURCES` fields (equi
 inflation YoY + sentiment + FOMC odds + top market headline + **personal saving rate** +
 **HY-IG credit spread** + **LLM token $/Mtok** + **QQQ/Mag-10 prices** + **Shiller CAPE**) on top
 of the mock baseline. **v3.0 differentiator = "AI Unit Economics":** the curated GPU $/hr cost
-side is paired with the live LLM token-price demand side (OpenRouter) — the two halves of the AI
+side is paired with the live LLM token price (P) and token volume (Q, both OpenRouter; P×Q
+is the demand read, v3.85) — the two halves of the AI
 margin-compression hinge.
 **v3.1 safety invariant: no number a friend could act on may read as live unless it is.**
 Mock/no-feed tiles get a diagonal-hatch **ILLUSTRATIVE** treatment, and any directional VERDICT
@@ -231,7 +232,8 @@ Jan-anchor shipped; see `snapshot.js` ~318–328), `spyMa100`, `spyMa200`, and a
   API (`openrouter.ai/api/v1/models`, no key — like Kalshi). Blends a frontier-model basket
   into a median **$/Mtok** (3:1 in:out), tracks the cheapest-frontier floor, and accrues a
   rolling 12-pt trend in KV (`pulse:tokentrend`). Falling $/Mtok = intelligence commoditizing
-  → the demand-side mirror of the curated GPU $/hr supply squeeze. Rendered as the
+  → the P leg beside the curated GPU $/hr supply squeeze (token VOLUME is the Q leg since
+  v3.85; P×Q is the demand read). Rendered as the
   **"AI Unit Economics"** section (TokenomicsCard beside GpuPricingCard). Emits via SOURCES
   `tokenBlendedMtok`/`tokenTrend`/`tokenModelsJson` (weekly cadence). On the `withLastGood` rails.
 - **Equity quotes** (`fetchEquities`, v3.0): **Finnhub** free-tier (`finnhub.io/api/v1/quote`,
@@ -2049,6 +2051,37 @@ Jan-anchor shipped; see `snapshot.js` ~318–328), `spyMa100`, `spyMa200`, and a
   string-pinning it — the project's own recurring lesson (v3.40, v3.54: state computed and
   rendered but not read at the gate) is exactly the shape a string pin cannot catch.
   Tests: **1067 smoke** (+6) + 192 render + 88 public-render.
+- **FEAT-TOKVOL (v3.85.0) — token VOLUME: the Q beside the P, and the demand read that was
+  mislabelled for two years.** The $/Mtok trend has been called "the demand side" since v3.0 —
+  but price alone is ambiguous: falling $/Mtok is bullish commoditization ONLY if volume rises
+  faster than price falls (revenue ∝ P×Q). **`fetchTokenVolume`** pulls OpenRouter's datasets
+  API (`datasets/rankings/daily` — the daily token totals behind its public rankings, top-50
+  models + the aggregated "other" row). Unlike `/models` it is **KEYED**, so the fetch is
+  **KEY-GATED like Finnhub** (`env.OPENROUTER_KEY`; without it → throw → last-good → mock,
+  the invariant holds — **set the secret to go live**: any free OpenRouter key, one call/day
+  against a 500/day limit). Fail-closed parser (two documented shapes accepted, anything else
+  throws; several days in a response are never summed into one "day" — only the latest date
+  counts); KV accrual copies `pulse:tokentrend` verbatim under **`pulse:tokenvoltrend`**
+  (per-ET-day dedup, cap 12, faults swallowed); the Phase-3 destructure and its
+  critical-scope `skipped()` arm moved together. **`tokenDemand(trendPx, trendVol)`**
+  (`src/aiEcon.js`, pure, smoke-RUN) composes the two legs in **WINDOW terms, never
+  annualised** (the v3.46 rule) over the SAME newest-aligned span — the shorter series bounds
+  the window, since composing two spans is the units error in time instead of rate — and
+  withholds below `minWeeks`. The card renders TOKENS/DAY with its **own SourceBox**
+  (a volume figure under the price feed's badge would be borrowed provenance) and the P×Q
+  line **suppressed when EITHER leg is illustrative**; the mock volume trend is deliberately
+  below `minWeeks`, so the demo cannot fake a demand verdict. The **wording fix** travels
+  with the feature (the label-outlives-data class): the price leg is no longer called "the
+  demand side" in snapshot.js, the card, the mock comment, or this file — P is the price
+  leg, P×Q is the demand read, and smoke pins the old phrase's absence. **Honest limit:**
+  the datasets response shape could not be verified from this environment (no key yet) —
+  the parser fails closed and `withLastGood` degrades honestly on any drift, but the first
+  keyed call is the real schema check. `tokenVolDay` stays OUT of `SIGNAL_FIELDS`
+  (key-gated, the qqqPrice precedent) and votes nowhere.
+  Tests: **1397 smoke** (+13: the key gate, the accrual copy, the fail-closed parser pins,
+  `tokenDemand` executed — the −25%×+40%→+5.0% window composition, the shorter-series bound,
+  the withheld short read — partition 72, the both-legs illustrative suppression, the
+  wording sweep) + 228 render + 114 public-render + `audit:prod` clean.
 - **v3.84.0 "the recession rails" — CCC junk tail · Sahm rule · 10y–3m, all NON-VOTING on
   arrival.** Three live FRED signals from the 2026-08-15 gap analysis, all passing the v3.43
   moat test (Yahoo shows the level; it does not judge it, abstain when stale, or pair it with

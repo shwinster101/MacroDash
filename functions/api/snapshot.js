@@ -86,6 +86,7 @@ export const BANDS = {
   savings:      [0, 60],
   shillerPe:    [3, 100],      // was an inline guard in fetchShiller; centralized here
   creditSpread: [0, 30],
+  tokenVolDay:  [0, 10000], // trillions/day — OpenRouter routes ~3T/day today; 10000 is a decimal-shift stop
   // FEAT-CCC (v3.84): CCC-and-lower OAS — the junk TAIL. Record ~44pp (2008-12); 60 rejects
   // a decimal shift without excluding any print that has ever happened. ≤0 is a parse fault
   // for an OAS.
@@ -237,12 +238,15 @@ export async function buildSnapshot(env, { scope = "all", priorLive = null } = {
     [treasury] = await Promise.allSettled([fetchTreasury10y(statuses)]);
   }
   // Phase 3 (scope "all" only): tokenomics moat + equities + CAPE — add-ons, never gating.
+  // FEAT-TOKVOL (v3.85): the volume leg rides here too — the destructure and the
+  // critical-scope skipped() arm move TOGETHER (positional).
   const skipped = () => Promise.reject(new Error("skipped (critical scope)"));
-  const [tokenomics, equities, shiller] = await Promise.allSettled(all ? [
+  const [tokenomics, tokenVol, equities, shiller] = await Promise.allSettled(all ? [
     withLastGood(env, "tokenomics", () => fetchTokenomics(env)),
+    withLastGood(env, "tokenvol", () => fetchTokenVolume(env)),
     withLastGood(env, "equities", () => fetchEquities(env, statuses)),
     withLastGood(env, "shiller", fetchShiller), // CAPE for the regime's valuation vote
-  ] : [skipped(), skipped(), skipped()]);
+  ] : [skipped(), skipped(), skipped(), skipped()]);
 
   // ── Assemble live overlay (only fields with a valid value; mock covers the rest) ──
   const now = new Date().toISOString();
@@ -256,6 +260,7 @@ export async function buildSnapshot(env, { scope = "all", priorLive = null } = {
     ...(rateOdds.status === "fulfilled" ? rateOdds.value : {}),
     ...(headline.status === "fulfilled" ? headline.value : {}),
     ...(tokenomics.status === "fulfilled" ? tokenomics.value : {}),
+    ...(tokenVol.status === "fulfilled" ? tokenVol.value : {}),
     ...(equities.status === "fulfilled" ? equities.value : {}),
     ...(shiller.status === "fulfilled" ? shiller.value : {}),
   };
@@ -299,6 +304,7 @@ export async function buildSnapshot(env, { scope = "all", priorLive = null } = {
     rateOdds: okOf(rateOdds),
     headline: okOf(headline),
     tokenomics: okOf(tokenomics),
+    tokenVol: okOf(tokenVol),
     equities: okOf(equities, equities.status === "fulfilled" ? `:${Object.keys(equities.value).length}` : ""),
     shiller: okOf(shiller),
     // §9: per-upstream-item detail (http status / error class / attempts / latency) —
@@ -1128,7 +1134,8 @@ async function fetchShiller() {
 // OpenRouter's public models API (no auth, no key — like Kalshi, a sanctioned free
 // source) lists every model's per-token pricing. We blend a fixed basket of frontier
 // models into a single $/Mtok headline and a cheapest-frontier floor. Falling $/Mtok =
-// intelligence commoditizing → pricing-power erosion, the demand-side mirror of the
+// intelligence commoditizing → pricing-power erosion — the P leg; token VOLUME (Q,
+// fetchTokenVolume below) is the quantity leg, and P×Q is the demand read. Beside the
 // GPU $/hr supply-side squeeze (the two halves of AI unit economics). Wrapped in
 // withLastGood at the call site, so an outage serves the last good prices + STALE.
 //   - $/Mtok blend assumes a 3:1 input:output token mix (typical real-world usage).
@@ -1187,6 +1194,53 @@ async function fetchTokenomics(env) {
     tokenTrend: trend.map((t) => t.v),
     tokenModelsJson: JSON.stringify(picked),
     tokenBlendedMtokAsOf: asOf,
+  };
+}
+
+/* ─── FEAT-TOKVOL (v3.85): token VOLUME — the Q beside the P ─────────────────
+   The $/Mtok trend is the PRICE leg; falling price is bullish commoditization only if
+   volume rises faster than price falls (revenue ∝ P×Q). OpenRouter's datasets API serves
+   the daily token totals behind its public rankings page — top 50 models + an aggregated
+   "other" row — but unlike /models it is KEYED (any OpenRouter key, 30 req/min, 500/day;
+   one call per ET day is nothing). KEY-GATED like Finnhub: no OPENROUTER_KEY → throw →
+   mock (the graceful-degradation invariant holds, and withLastGood serves last-good
+   first). The rolling-trend accrual copies pulse:tokentrend EXACTLY, under its own key. */
+async function fetchTokenVolume(env) {
+  if (!env.OPENROUTER_KEY) throw new Error("tokenvol: no OPENROUTER_KEY configured");
+  const r = await fetchRetry("https://openrouter.ai/api/v1/datasets/rankings/daily",
+    { headers: { Accept: "application/json", Authorization: `Bearer ${env.OPENROUTER_KEY}` } }, 2, 9000);
+  const d = await r.json();
+  // Fail-closed parser: the rows may arrive as {data:[...]} or a bare array; each row's
+  // token total may be named total_tokens or tokens (prompt+completion, per the docs).
+  // Anything else → throw → last-good/mock, never a guessed number.
+  const rows = Array.isArray(d?.data) ? d.data : Array.isArray(d) ? d : null;
+  if (!rows) throw new Error("tokenvol: unrecognized response shape");
+  // The endpoint can return several days; take only the LATEST date present so a
+  // multi-day window is never summed into one "day".
+  const dateOf = (row) => String(row.date || row.day || "").slice(0, 10);
+  const latestDate = rows.map(dateOf).filter(Boolean).sort().pop() || null;
+  const dayRows = latestDate ? rows.filter((row) => dateOf(row) === latestDate) : rows;
+  const tokOf = (row) => { const t = Number(row.total_tokens ?? row.tokens); return Number.isFinite(t) && t >= 0 ? t : null; };
+  const total = dayRows.reduce((a, row) => { const t = tokOf(row); return t === null ? a : a + t; }, 0);
+  if (!(total > 0)) throw new Error("tokenvol: no usable token totals");
+  const volT = parseFloat((total / 1e12).toFixed(3));   // trillions/day
+  const asOf = latestDate || new Date().toLocaleDateString("en-CA", { timeZone: "America/New_York" });
+
+  // Rolling trend in KV — the pulse:tokentrend accrual verbatim, own key.
+  let trend = [];
+  try { const prev = await env.PULSE_CACHE?.get("pulse:tokenvoltrend", "json"); if (Array.isArray(prev)) trend = prev; } catch {}
+  if (!trend.length || trend[trend.length - 1].date !== asOf) {
+    trend.push({ date: asOf, v: volT });
+    if (trend.length > 12) trend = trend.slice(-12);
+  } else {
+    trend[trend.length - 1].v = volT; // refresh the same day's point on a re-fetch
+  }
+  try { await env.PULSE_CACHE?.put("pulse:tokenvoltrend", JSON.stringify(trend), { expirationTtl: 120 * 24 * 3600 }); } catch {}
+
+  return {
+    tokenVolDay: volT,
+    tokenVolTrend: trend.map((t) => t.v),
+    tokenVolDayAsOf: asOf,
   };
 }
 

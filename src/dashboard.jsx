@@ -128,11 +128,15 @@ const MOCK_DATA = {
   headwindsAsOf:"2026-Q1",
   // AI TOKEN ECONOMICS (the moat) — live overlay from OpenRouter (tokenBlendedMtok/Trend/ModelsJson);
   // mock is the fallback baseline. $/Mtok = blended frontier-basket price (3:1 in:out). Falling = the
-  // demand-side mirror of GPU $/hr — together they frame the AI margin-compression hinge with live data.
+  // the P leg beside GPU $/hr (volDay/volTrend are the Q leg, v3.85; P×Q is the demand read).
   tokenomics:{
     blendedMtok:6.20,
     trend:[9.5,8.8,8.0,7.2,6.7,6.20], // oldest→newest; the decline IS the signal
     modelsJson:'[{"name":"Claude Sonnet","mtok":9.0},{"name":"GPT frontier","mtok":7.5},{"name":"Gemini Pro","mtok":6.2},{"name":"Llama large","mtok":2.4},{"name":"DeepSeek","mtok":1.1}]',
+    // FEAT-TOKVOL (v3.85): the Q leg. 6 pts = 5 intervals — below minWeeks like the price
+    // trend above, so the mock P×Q read is "window too short" by construction (never a
+    // fabricated demand verdict; the demand line is also illustrative-suppressed).
+    volDay:2.95, volTrend:[2.1,2.3,2.4,2.6,2.8,2.95],
   },
   // MAG 10 live prices (Finnhub) — JSON passthrough. The per-ticker quote strip was CUT in
   // v3.51 (public audit, Yahoo-dupe test), so nothing renders these today; the field stays

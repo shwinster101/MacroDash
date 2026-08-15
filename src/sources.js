@@ -106,6 +106,9 @@ export const SOURCES = {
   tokenBlendedMtok: { path: "tokenomics.blendedMtok",      kind: "num",    displayClass: "public" },
   tokenTrend:       { path: "tokenomics.trend",            kind: "series", displayClass: "public" },
   tokenModelsJson:  { path: "tokenomics.modelsJson",       kind: "str",    displayClass: "public" },
+  // FEAT-TOKVOL (v3.85): the Q leg (OpenRouter datasets API, key-gated) — P×Q is the demand read.
+  tokenVolDay:      { path: "tokenomics.volDay",           kind: "num",    displayClass: "public" },
+  tokenVolTrend:    { path: "tokenomics.volTrend",         kind: "series", displayClass: "public" },
   // RATE-DECISION ODDS (FEAT-R9 — Kalshi KXFEDDECISION prediction market)
   rateOddsHold:   { path: "macro.fedFunds.odds.hold",       kind: "num",    displayClass: "public" },
   rateOddsCut:    { path: "macro.fedFunds.odds.cut",        kind: "num",    displayClass: "public" },
@@ -162,6 +165,8 @@ export const DERIVED_OF = {
   marketHeadlineSource: "marketHeadline",
   // AI token economics (OpenRouter — tokenBlendedMtok is the primary pull)
   tokenTrend: "tokenBlendedMtok", tokenModelsJson: "tokenBlendedMtok",
+  // FEAT-TOKVOL (v3.85): tokenVolDay carries its own AsOf; only its trend derives from it.
+  tokenVolTrend: "tokenVolDay",
   // Kalshi FOMC odds (rateOddsHold is the only field snapshot.js stamps an AsOf on —
   // FOUND during the v3.41 audit: cut/hike/fomcDays/nextFomcDate rode with NO date at all,
   // so bandFedOdds (keyed on cut/hike) could vote off a stale Kalshi pull undetected)
@@ -190,6 +195,10 @@ const CADENCE = {
   nfci: "weekly",
   // weekly (LLM token prices reprice on model launches, not daily)
   tokenBlendedMtok: "weekly", tokenTrend: "weekly", tokenModelsJson: "weekly",
+  // FEAT-TOKVOL (v3.85): same weekly read as the price leg — the tokenDemand window math
+  // interprets trend points as weeks, so the cadences must agree (mirrored, incl. the
+  // pre-existing per-ET-day-accrual-vs-weekly-read tension — flagged, not fixed here).
+  tokenVolDay: "weekly", tokenVolTrend: "weekly",
 };
 // Own cadence first; else the DERIVED_OF parent's cadence (so a future derivative under a
 // non-daily parent is correct by default even if nobody remembers to list it explicitly

@@ -330,8 +330,10 @@ const PRIMARY_ASOF_FIELDS = [
   // carries its OWN stamped AsOf, so it is primary for the partition).
   "creditTail", "threeMonth", "spread10y3m", "sahm",
   "fearGreed", "marketHeadline", "shillerPe", "tokenBlendedMtok", "rateOddsHold",
+  // v3.85: the volume leg carries its own AsOf (the dataset's own latest date).
+  "tokenVolDay",
 ];
-ok("deriv: PRIMARY_ASOF_FIELDS + DERIVED_OF + DERIVED_EXEMPT partition ALL 70 SOURCES keys (reconciled, not hardcoded)", (() => {
+ok("deriv: PRIMARY_ASOF_FIELDS + DERIVED_OF + DERIVED_EXEMPT partition ALL 72 SOURCES keys (reconciled, not hardcoded)", (() => {
   const keys = Object.keys(SOURCES);
   const derivedKeys = Object.keys(DERIVED_OF);
   const inPrimary = (k) => PRIMARY_ASOF_FIELDS.includes(k);
@@ -4673,7 +4675,7 @@ ok("wave12: evaluation stays home — evalAlert/ALERT_METRICS/DEFAULT_ALERTS rem
   dashSrc.includes("const DEFAULT_ALERTS=[") && !/evalAlert\s*\(/.test(alSrc.replace(/\/\/[^\n]*/g,"")));
 ok("wave12: the aiEcon module is PURE (Node-importable) and the section imports it",
   !/from ['\"]react['\"]/.test(aiEconSrc) &&
-  aiSrc.includes('import { GPU_PRICING, TOKEN_EFFICIENCY, tokenScissors, HYPERSCALER_CAPEX } from "../aiEcon.js"'));
+  aiSrc.includes('import { GPU_PRICING, TOKEN_EFFICIENCY, tokenScissors, tokenDemand, HYPERSCALER_CAPEX } from "../aiEcon.js"'));
 ok("wave12: tokenScissors really runs from the import (behavior, not string): 11-week window, never annualised",
   (() => { const r = TW.tokenScissors([6.8, 6.5, 6.3, 6.1, 5.9, 5.8, 5.6, 5.5, 5.4, 5.3, 5.2, 5.1]);
     return r.weeks === 11 && Math.abs(r.pxWin + 0.25) < 1e-9; })());
@@ -5699,6 +5701,65 @@ console.log("\n[56] FEAT-TT-ENTRY — price-action WHEN leg + subsidiaries secti
     })());
   ok("v384: SIGNAL_FIELDS gains creditTail at the END — the creditSpread/nfci adjacency pin survives",
     dashSrc.includes('"creditSpread","nfci"') && /SIGNAL_FIELDS=\[[^\]]*"creditTail"\]/.test(dashSrc));
+}
+
+// ---- 58. FEAT-TOKVOL (v3.85) — token volume: the Q beside the P ------------------------
+{
+  console.log("\n[58] FEAT-TOKVOL — the Q leg, key-gated, and the P×Q window read");
+  const { tokenDemand } = await import("../src/aiEcon.js");
+  ok("tokvol: KEY-GATED like Finnhub — no OPENROUTER_KEY throws before any fetch (mock holds)",
+    /if \(!env\.OPENROUTER_KEY\) throw new Error\("tokenvol: no OPENROUTER_KEY/.test(snapSrc) &&
+    /withLastGood\(env, "tokenvol", \(\) => fetchTokenVolume\(env\)\)/.test(snapSrc));
+  ok("tokvol: the KV accrual copies pulse:tokentrend verbatim under its own key (dedup, cap 12, faults swallowed)",
+    /pulse:tokenvoltrend/.test(snapSrc) &&
+    (snapSrc.match(/trend = trend\.slice\(-12\)/g) || []).length === 2 &&
+    /tokenVolDayAsOf: asOf/.test(snapSrc));
+  ok("tokvol: the parser fails CLOSED — unrecognized shape or zero total throws, never a guessed number",
+    /unrecognized response shape/.test(snapSrc) && /no usable token totals/.test(snapSrc) &&
+    /latestDate/.test(snapSrc));   // several days in a response must never sum into one "day"
+  ok("tokvol: the Phase-3 destructure and the critical-scope skipped() arm moved TOGETHER",
+    /\[tokenomics, tokenVol, equities, shiller\] = await Promise\.allSettled/.test(snapSrc) &&
+    /\[skipped\(\), skipped\(\), skipped\(\), skipped\(\)\]/.test(snapSrc));
+  // tokenDemand RUN — a string pin cannot prove window math.
+  ok("tokvol: P×Q composes in WINDOW terms — −25% px × +40% vol = +5.0% over the same 11w span",
+    (() => {
+      const px = [8.0, 7.7, 7.4, 7.2, 7.0, 6.8, 6.6, 6.5, 6.3, 6.2, 6.1, 6.0];
+      const vol = [2.0, 2.1, 2.2, 2.3, 2.4, 2.5, 2.6, 2.65, 2.7, 2.74, 2.77, 2.8];
+      const d = tokenDemand(px, vol);
+      return d.weeks === 11 && d.short === false &&
+        Math.abs(d.pxWin + 0.25) < 1e-9 && Math.abs(d.volWin - 0.40) < 1e-9 &&
+        Math.abs(d.revProxyWin - 0.05) < 1e-9;
+    })());
+  ok("tokvol: the SHORTER series bounds the window (composing two spans is the units error in time)",
+    (() => { const d = tokenDemand([10, 9, 8, 7, 6, 5, 4, 3, 2, 1.5, 1.2, 1], [3.0, 3.3]);
+      // n = min(12, 2) = 2 → px newest-aligned slice is [1.2, 1] → pxWin = 1/1.2 − 1
+      return d.weeks === 1 && d.short === true && Math.abs(d.pxWin - (1 / 1.2 - 1)) < 1e-9; })());
+  ok("tokvol: below minWeeks the read is withheld (short:true), and junk input returns nulls",
+    tokenDemand([6.2], [2.9]).revProxyWin === null && tokenDemand(null, null).short === true &&
+    tokenDemand([1, 2, 3, 4, 5, 6, 7, 8], [1, 1, 1, 1, 1, 1, 1, 1]).short === true);
+  // Wiring: SOURCES/DERIVED_OF/cadence/band, and the mock stays verdict-free.
+  ok("tokvol: SOURCES + DERIVED_OF + weekly cadence + band all wired; partition holds at 72",
+    SOURCES.tokenVolDay.path === "tokenomics.volDay" && SOURCES.tokenVolTrend.kind === "series" &&
+    DERIVED_OF_SRC.tokenVolTrend === "tokenVolDay" && cadenceOf("tokenVolDay") === "weekly" &&
+    cadenceOf("tokenVolTrend") === "weekly" && plausible("tokenVolDay", 3.1) && !plausible("tokenVolDay", -1));
+  ok("tokvol: the mock volume trend is deliberately BELOW minWeeks — the demo cannot fake a P×Q verdict",
+    MOCK_DATA.tokenomics.volTrend.length - 1 < 8);
+  ok("tokvol: the card suppresses the P×Q read when EITHER leg is illustrative, and the volume line has its OWN SourceBox",
+    /isIllustrative\(mode\) \|\| isIllustrative\(volMode\)/.test(aiSrc) &&
+    /datasets\/rankings\/daily · total tokens \(keyed\)/.test(aiSrc) &&
+    /never annualised/.test(aiSrc));
+  ok("tokvol: the price leg is no longer mislabelled 'the demand side' anywhere in code",
+    !/demand-side mirror/.test(snapSrc) && !/demand-side mirror/.test(aiSrc) && !/demand-side mirror/.test(dashSrc));
+  ok("tokvol: tokenVolDay stays OUT of SIGNAL_FIELDS (key-gated — the qqqPrice precedent)",
+    !/SIGNAL_FIELDS=\[[^\]]*tokenVolDay/.test(dashSrc));
+  // Merge end-to-end: overlay + provenance + own-date inheritance for the trend.
+  ok("tokvol: mergeLiveOverMock overlays volDay/volTrend with LIVE provenance and the trend inherits the day's date",
+    (() => {
+      const m = mergeLiveOverMock(MOCK_DATA, { live: {
+        tokenVolDay: 3.05, tokenVolTrend: [2.8, 2.9, 3.05], tokenVolDayAsOf: "2026-08-14" }, cached: false });
+      return m.data.tokenomics.volDay === 3.05 && m.data.tokenomics.volTrend.length === 3 &&
+        m.provenance.tokenVolDay === "LIVE" && m.dataAsOf.tokenVolTrend === "2026-08-14";
+    })());
 }
 
 console.log(`\n=== SMOKE TEST: ${pass} passed, ${fail} failed ===`);
