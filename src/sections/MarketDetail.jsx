@@ -9,7 +9,7 @@
 import { Fragment } from "react";
 import { LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer, ReferenceLine } from "recharts";
 import { T } from "../design-tokens.js";
-import { NFCI_TIGHT, NFCI_LOOSE, REGIME_BAND_TABLE } from "../regime.js";
+import { NFCI_TIGHT, NFCI_LOOSE, CREDIT_TAIL_CALM, CREDIT_TAIL_STRESS, REGIME_BAND_TABLE } from "../regime.js";
 import { fmt, pctColor } from "../format.js";
 import { Badge, Label } from "../primitives/atoms.jsx";
 import SectionHeader from "../primitives/SectionHeader.jsx";
@@ -173,6 +173,36 @@ const MarketDetail=({d,modeOf,asOfOf,demoted,spyData,goldenCross})=>{
                     <SourceBox api="FRED" endpoint="NFCI · Chicago Fed" mode={nMode} asOf={asOfOf('nfci')}/>
                   </div>
                 );}},
+                /* FEAT-CCC (v3.84): the junk TAIL — CCC & Lower OAS. AI-infra debt (the
+                   CRWV-class neocloud complex) is rated single-B/CCC, and the tail widens
+                   FIRST while broad HY still looks calm: the funding-pipe stress gauge.
+                   Thresholds imported from regime.js (ASSERTED, not calibrated — stated
+                   there); the CALM/NEUTRAL/STRESSED verdict is suppressed on mock/stale
+                   exactly like NFCI's TIGHT/LOOSE (v3.1 honesty invariant). NON-VOTING. */
+                { f:"creditTail", render:()=>{
+                  const cMode=modeOf('creditTail'), cIllus=isIllustrative(cMode);
+                  const v=d.macro.credit.tail, dd1=d.macro.credit.tailD1;
+                  const band=v>CREDIT_TAIL_STRESS?"STRESSED":v<CREDIT_TAIL_CALM?"CALM":"NEUTRAL";
+                  const bandCol=band==="STRESSED"?T.red:band==="CALM"?T.green:T.yellow;
+                  return (
+                  <div style={{background:T.surface,border:`1px solid ${T.border}`,borderRadius:5,padding:"10px 12px",
+                    backgroundImage:cIllus?ILLUS_HATCH:undefined,opacity:cIllus?0.92:1}}>
+                    <div style={{display:"flex",justifyContent:"space-between",alignItems:"baseline",gap:6,flexWrap:"wrap"}}>
+                      <Label>CCC JUNK TAIL</Label>
+                      {cIllus?(cMode==="STALE"?<DataModeBadge mode="STALE"/>:<IllustrativeChip/>)
+                             :<Badge label={band} color={bandCol} small/>}
+                    </div>
+                    <div style={{fontFamily:T.fontMono,fontSize:20,color:cIllus?T.textSecondary:bandCol,fontWeight:700}}>
+                      {v.toFixed(2)}<span style={{fontSize:11}}>pp</span>
+                    </div>
+                    <div style={{fontFamily:T.fontMono,fontSize:9,color:dd1>0?T.red:dd1<0?T.green:T.textMuted}}
+                         title="The tail funds the neocloud buildout — it widens before broad HY does">
+                      {dd1>0?"▲":dd1<0?"▼":"→"} {Math.abs(dd1??0).toFixed(2)}pp {dd1>0?"widening":dd1<0?"tightening":"unchanged"} · funds the AI buildout
+                    </div>
+                    <div style={{height:28,marginTop:6}}><ResponsiveContainer width="100%" height="100%"><LineChart data={d.macro.credit.tailSeries.map((val,i)=>({v:val,i}))}><Line type="monotone" dataKey="v" stroke={cIllus?T.textMuted:bandCol} dot={false} strokeWidth={1.5}/></LineChart></ResponsiveContainer></div>
+                    <SourceBox api="FRED" endpoint="BAMLH0A3HYC · ICE BofA CCC" mode={cMode} asOf={asOfOf('creditTail')}/>
+                  </div>
+                );}},
               ];
               const liveSig=signalTiles.filter(t=>!demoted(t.f));
               const degSig=signalTiles.filter(t=>demoted(t.f));
@@ -199,7 +229,13 @@ const MarketDetail=({d,modeOf,asOfOf,demoted,spyData,goldenCross})=>{
               <SectionHeader>Cross-Asset Direction</SectionHeader>
               {(()=>{
                 const dirTiles=[
-                  { f:"tenYear", render:()=><DirTile label="10Y Treasury" value={`${d.crossAsset.treasury10y.current}%`} d1={d.crossAsset.treasury10y.d1} w1={d.crossAsset.treasury10y.w1} m1={d.crossAsset.treasury10y.m1} band={0.10} invert={true} spark={d.crossAsset.treasury10y.series} source="FRED" sourceEp="DGS10" mode={modeOf('tenYear')} asOf={asOfOf('tenYear')}/> },
+                  /* FEAT-SAHM (v3.84): the 10y–3m note — the classic recession lead, stated
+                     as a fact on the 10Y's face (the 30Y already carries the 10s30s note;
+                     one curve note per long tile). INVERTED is the signal word; no "for N
+                     months" memory — that would be asserted, not measured. */
+                  { f:"tenYear", render:()=><DirTile label="10Y Treasury" value={`${d.crossAsset.treasury10y.current}%`} d1={d.crossAsset.treasury10y.d1} w1={d.crossAsset.treasury10y.w1} m1={d.crossAsset.treasury10y.m1} band={0.10} invert={true} spark={d.crossAsset.treasury10y.series} source="FRED" sourceEp="DGS10" mode={modeOf('tenYear')} asOf={asOfOf('tenYear')}
+                      note={`10y–3m ${d.crossAsset.term.spread10y3m>=0?"+":""}${d.crossAsset.term.spread10y3m.toFixed(2)}pp${d.crossAsset.term.spread10y3m<0?" — INVERTED":""}`}
+                      noteTitle={"10Y minus 3-month bill — the NY Fed recession-model spread; inversion has led every US recession since 1969"}/> },
                   /* FEAT-30Y (v3.55): the LONG END, beside the 10Y because the pair is the
                      point. TLT was rejected in v3.43 as a monotonic transform of the 10Y —
                      DGS30 is not: "long end breaking out while the front holds" is its own

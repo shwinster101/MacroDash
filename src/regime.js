@@ -20,6 +20,15 @@
 export const NFCI_TIGHT = 0;      // above the historical mean → tighter than average → bearish
 export const NFCI_LOOSE = -0.5;   // ≥ half an SD below the mean → genuinely accommodative → bullish
 
+// FEAT-CCC (v3.84): CCC-and-lower OAS thresholds — shared by the tile and smoke, and
+// deliberately NOT in REGIME_BAND_TABLE (arrives NON-VOTING, the NFCI/30Y rule: a new voter
+// changes the majority math and these bands are ASSERTED, not calibrated — FRED is
+// unreachable from this build environment). Full-history mean ~10pp; <7 ≈ tight-market
+// regimes, >12 ≈ recession-scare territory. Every boundary is smoke-tested, so moving one
+// is one edit plus one red test.
+export const CREDIT_TAIL_CALM   = 7;
+export const CREDIT_TAIL_STRESS = 12;
+
 /* ═══ REGIME BAND TABLE (FEAT-FLIP, v3.53) — ONE table, two altitudes ═══════════════════
    computeRegime() VOTES from this table; flipConditions() measures DISTANCE to the same
    edges. Before this the bands were inline literals inside computeRegime, so any "what would

@@ -27,7 +27,8 @@ dashboard fetches `/api/snapshot` and overlays the mapped `SOURCES` fields (equi
 inflation YoY + sentiment + FOMC odds + top market headline + **personal saving rate** +
 **HY-IG credit spread** + **LLM token $/Mtok** + **QQQ/Mag-10 prices** + **Shiller CAPE**) on top
 of the mock baseline. **v3.0 differentiator = "AI Unit Economics":** the curated GPU $/hr cost
-side is paired with the live LLM token-price demand side (OpenRouter) — the two halves of the AI
+side is paired with the live LLM token price (P) and token volume (Q, both OpenRouter; P×Q
+is the demand read, v3.89) — the two halves of the AI
 margin-compression hinge.
 **v3.1 safety invariant: no number a friend could act on may read as live unless it is.**
 Mock/no-feed tiles get a diagonal-hatch **ILLUSTRATIVE** treatment, and any directional VERDICT
@@ -231,7 +232,8 @@ Jan-anchor shipped; see `snapshot.js` ~318–328), `spyMa100`, `spyMa200`, and a
   API (`openrouter.ai/api/v1/models`, no key — like Kalshi). Blends a frontier-model basket
   into a median **$/Mtok** (3:1 in:out), tracks the cheapest-frontier floor, and accrues a
   rolling 12-pt trend in KV (`pulse:tokentrend`). Falling $/Mtok = intelligence commoditizing
-  → the demand-side mirror of the curated GPU $/hr supply squeeze. Rendered as the
+  → the P leg beside the curated GPU $/hr supply squeeze (token VOLUME is the Q leg since
+  v3.89; P×Q is the demand read). Rendered as the
   **"AI Unit Economics"** section (TokenomicsCard beside GpuPricingCard). Emits via SOURCES
   `tokenBlendedMtok`/`tokenTrend`/`tokenModelsJson` (weekly cadence). On the `withLastGood` rails.
 - **Equity quotes** (`fetchEquities`, v3.0): **Finnhub** free-tier (`finnhub.io/api/v1/quote`,
@@ -2049,13 +2051,86 @@ Jan-anchor shipped; see `snapshot.js` ~318–328), `spyMa100`, `spyMa200`, and a
   string-pinning it — the project's own recurring lesson (v3.40, v3.54: state computed and
   rendered but not read at the gate) is exactly the shape a string pin cannot catch.
   Tests: **1067 smoke** (+6) + 192 render + 88 public-render.
+- **FEAT-TOKVOL (v3.89.0) — token VOLUME: the Q beside the P, and the demand read that was
+  mislabelled for two years.** *Relabelled from v3.85.0 at merge (2026-08-15): the parallel
+  terminal line on `main` claimed v3.83–v3.87 (TECHREAD/MAG7/SOURCING/DOTHOME/CAPEX-OCF) —
+  the documented collision pattern; this entry takes the next true sequence number, content
+  otherwise as committed (test counts are the branch's pre-merge totals; the smoke sections
+  renumbered [58]→[60] at merge).* The $/Mtok trend has been called "the demand side" since v3.0 —
+  but price alone is ambiguous: falling $/Mtok is bullish commoditization ONLY if volume rises
+  faster than price falls (revenue ∝ P×Q). **`fetchTokenVolume`** pulls OpenRouter's datasets
+  API (`datasets/rankings/daily` — the daily token totals behind its public rankings, top-50
+  models + the aggregated "other" row). Unlike `/models` it is **KEYED**, so the fetch is
+  **KEY-GATED like Finnhub** (`env.OPENROUTER_KEY`; without it → throw → last-good → mock,
+  the invariant holds — **set the secret to go live**: any free OpenRouter key, one call/day
+  against a 500/day limit). Fail-closed parser (two documented shapes accepted, anything else
+  throws; several days in a response are never summed into one "day" — only the latest date
+  counts); KV accrual copies `pulse:tokentrend` verbatim under **`pulse:tokenvoltrend`**
+  (per-ET-day dedup, cap 12, faults swallowed); the Phase-3 destructure and its
+  critical-scope `skipped()` arm moved together. **`tokenDemand(trendPx, trendVol)`**
+  (`src/aiEcon.js`, pure, smoke-RUN) composes the two legs in **WINDOW terms, never
+  annualised** (the v3.46 rule) over the SAME newest-aligned span — the shorter series bounds
+  the window, since composing two spans is the units error in time instead of rate — and
+  withholds below `minWeeks`. The card renders TOKENS/DAY with its **own SourceBox**
+  (a volume figure under the price feed's badge would be borrowed provenance) and the P×Q
+  line **suppressed when EITHER leg is illustrative**; the mock volume trend is deliberately
+  below `minWeeks`, so the demo cannot fake a demand verdict. The **wording fix** travels
+  with the feature (the label-outlives-data class): the price leg is no longer called "the
+  demand side" in snapshot.js, the card, the mock comment, or this file — P is the price
+  leg, P×Q is the demand read, and smoke pins the old phrase's absence. **Honest limit:**
+  the datasets response shape could not be verified from this environment (no key yet) —
+  the parser fails closed and `withLastGood` degrades honestly on any drift, but the first
+  keyed call is the real schema check. `tokenVolDay` stays OUT of `SIGNAL_FIELDS`
+  (key-gated, the qqqPrice precedent) and votes nowhere.
+  Tests: **1397 smoke** (+13: the key gate, the accrual copy, the fail-closed parser pins,
+  `tokenDemand` executed — the −25%×+40%→+5.0% window composition, the shorter-series bound,
+  the withheld short read — partition 72, the both-legs illustrative suppression, the
+  wording sweep) + 228 render + 114 public-render + `audit:prod` clean.
+- **v3.88.0 "the recession rails" — CCC junk tail · Sahm rule · 10y–3m, all NON-VOTING on
+  arrival.** *Relabelled from v3.84.0 at merge (2026-08-15), same collision note as the
+  FEAT-TOKVOL entry above; smoke section renumbered [57]→[59].* Three live FRED signals from the 2026-08-15 gap analysis, all passing the v3.43
+  moat test (Yahoo shows the level; it does not judge it, abstain when stale, or pair it with
+  the transmission story), all arriving under the NFCI/30Y rule: no `REGIME_BAND_TABLE`,
+  `evidence.js` or `ttReadout.js` change — a new voter moves the majority math for a contract
+  that gates real orders, and two of these carry asserted bands (smoke-pinned absent from all
+  three files). **(1) `creditTail` (`BAMLH0A3HYC`, ICE BofA CCC & Lower OAS)** — the junk
+  TAIL: AI-infra debt (the CRWV-class neocloud complex) is rated single-B/CCC and the tail
+  widens FIRST while broad HY looks calm — the funding-pipe stress gauge for exactly the
+  buildout this book is long. Own tile beside HY–IG (NOT a sub-line — it needs its own
+  provenance, its own `demoted()` key, its own illustrative gate; borrowed provenance is the
+  label-outlives-data class). CALM/NEUTRAL/STRESSED off `CREDIT_TAIL_CALM=7`/
+  `CREDIT_TAIL_STRESS=12` in `regime.js` (one Node-importable home; **ASSERTED, not
+  calibrated** — FRED unreachable from this build env, the NFCI precedent, every boundary
+  executed in smoke), verdict suppressed on mock/stale. **(2) `sahm`** — computed from the
+  SAME UNRATE pull inside the fetch closure (only 10 of 26 points escape it via `spark`, the
+  rule needs 15 — the tuple gained an 8th `extra` slot), math in new pure **`src/sahm.js`**
+  (`SAHM_TRIGGER=0.5` is Sahm's own printed definition, a CITATION not a fit; `sahmFrom`
+  fails closed below 15 points — cannot-compute must never read as 0.00 = maximally clear).
+  Cell in the labor row, `>=` comparison ("0.50 or more"), TRIGGERED/CLEAR-with-distance
+  suppressed on mock/stale; can differ ±0.01 from FRED's SAHMREALTIME (rounding/vintage —
+  stated, not hidden). **(3) `spread10y3m`** — DGS3MO joins the series map (19 series = one
+  extra 2-wide tail batch; the VIX/DGS10 critical head untouched) and the classic recession
+  lead derives from LEGS, not FRED's precomputed T10Y3M, so a stale leg BLINDS the spread
+  instead of a precomputed number wearing a fresh date. Stated as a fact on the 10Y tile
+  (`10y–3m +0.37pp` / `— INVERTED`); no "inverted N months" memory (asserted, not measured).
+  Two alerts (CCC >12pp · 10y–3m inverts), both OFF by default, the 10y–3m on the two-leg
+  blind rule. Mock values all abstain by construction (tail 9.4 neutral · sahm 0.13 CLEAR ·
+  spread +0.37 positive-normal). Found by the suite: five labor cells no longer fit one
+  320px row — the row wraps now (an overflowing row is a suite red since v3.54).
+  Tests: **1384 smoke** (+21: bands executed both ways incl. inversion, `sahmFrom` run at
+  flat/shock/14-point boundaries, the trigger at 0.49/0.50, CCC boundaries at −ε/edge/+ε,
+  the two-leg alert blind naming its dead leg, merge end-to-end with own-date inheritance,
+  the non-voting absence sweep, the mock-abstain proof) + 228 render + **114 public-render**
+  (+3: the CCC tile's judged state driven live, the 10y–3m fact line, the Sahm CLEAR badge
+  with distance) + `audit:prod` clean.
+- **FEAT-CAPEX-OCF (v3.83.0) — funding quality: the capex tape learns whether the buildout is
+  self-funded.** The tape's `dir` tripwire fires on the ANNOUNCEMENT (a guide cut) — a lagging
 - **FEAT-CAPEX-OCF (v3.87.0) — funding quality: the capex tape learns whether the buildout is
   self-funded.** *Relabelled from v3.83.0 at merge (2026-08-15): FEAT-TT-SOURCING and
   FEAT-TT-DOTHOME shipped in parallel on `main` and claimed v3.85/v3.86 — the same collision
   ENGINE0-CONT, FEAT-TT-SCORE and FEAT-TT-PROVISIONAL each documented; this entry takes the
   next true sequence number, content otherwise as committed (test counts are the branch's
-  pre-merge totals).* The tape's `dir` tripwire fires on the ANNOUNCEMENT (a guide cut) — a lagging
-  event. The leading question, from the 2026-08-15 buildout-vs-maintenance analysis, is whether
+  pre-merge totals).* The tape's `dir` tripwire fires on the ANNOUNCEMENT (a guide cut) — a lagging  event. The leading question, from the 2026-08-15 buildout-vs-maintenance analysis, is whether
   the spenders can keep paying from operations: **guide > trailing-4Q OCF means the gap is
   debt, and debt-funded capex is what gets cut at the first ROI disappointment** (Amazon
   already guides FCF-negative). Optional per-row **`ocf_B`** on `board.capex`

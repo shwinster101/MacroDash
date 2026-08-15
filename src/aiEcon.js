@@ -95,6 +95,26 @@ export function tokenScissors(trend) {
     band: idx > dbd ? "EXPANDING" : idx < -dbd ? "COMPRESSING" : "FLAT" };
 }
 
+/* ─── FEAT-TOKVOL (v3.85): P×Q — the demand read ─────────────────────────────
+   Price alone is ambiguous: falling $/Mtok is bullish commoditization ONLY if volume rises
+   faster than price falls (revenue ∝ P×Q). Both legs are read over the SAME observed window
+   in WINDOW terms, never annualised (the v3.46 rule — a 12-week move raised to 52/11 once
+   read −98.8%/yr). The shorter series bounds the window: composing two different spans is
+   the same units error in time instead of rate. Below minWeeks the read is withheld —
+   "window too short" and "flat" are different facts. Pure; smoke imports and RUNS it. */
+export function tokenDemand(trendPx, trendVol) {
+  const clean = (a) => (Array.isArray(a) ? a.filter((v) => Number.isFinite(v) && v > 0) : []);
+  const px = clean(trendPx), vol = clean(trendVol);
+  const n = Math.min(px.length, vol.length);
+  if (n < 2) return { pxWin: null, volWin: null, revProxyWin: null, weeks: null, short: true };
+  const weeks = n - 1;                          // CADENCE: points read as weeks
+  const p = px.slice(-n), q = vol.slice(-n);    // SAME span, newest-aligned
+  const pxWin = p[p.length - 1] / p[0] - 1;     // observed, never annualised
+  const volWin = q[q.length - 1] / q[0] - 1;
+  return { pxWin, volWin, revProxyWin: (1 + pxWin) * (1 + volWin) - 1,
+    weeks, short: weeks < TOKEN_EFFICIENCY.minWeeks };
+}
+
 export const HYPERSCALER_CAPEX = {
   fy: "FY26", reviewed: "2026-08-15",
   // ocfB = trailing-4Q operating cash flow at the same Q2-2026 prints (10-Q facts, sourced

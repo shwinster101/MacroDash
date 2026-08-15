@@ -23,6 +23,8 @@
 // marketSession/looksBehind here and isStale/etSession client-side, so the two sides
 // can never disagree about which weekdays had a session.
 import { isMarketHoliday } from "../../src/sources.js";
+// FEAT-SAHM (v3.84): the Sahm math — one home (src/sahm.js), same esbuild-inline path.
+import { sahmFrom } from "../../src/sahm.js";
 
 // ENGINE0-CONT: the readout contract now lives in src/ttReadout.js and the snapshot layer
 // consumes it for publish decisions — THIRD functions/→src/ import, same esbuild-inline path.
@@ -84,6 +86,18 @@ export const BANDS = {
   savings:      [0, 60],
   shillerPe:    [3, 100],      // was an inline guard in fetchShiller; centralized here
   creditSpread: [0, 30],
+  tokenVolDay:  [0, 10000], // trillions/day — OpenRouter routes ~3T/day today; 10000 is a decimal-shift stop
+  // FEAT-CCC (v3.84): CCC-and-lower OAS — the junk TAIL. Record ~44pp (2008-12); 60 rejects
+  // a decimal shift without excluding any print that has ever happened. ≤0 is a parse fault
+  // for an OAS.
+  creditTail:   [0, 60],
+  // FEAT-SAHM (v3.84): a difference of unemployment-rate averages — ±a few tenths in normal
+  // times, ~+9 at the 2020 spike. [-5, 10] rejects the impossible only.
+  sahm:         [-5, 10],
+  threeMonth:   [0, 25],       // 3-month bill: 1981 peak ~17%; same family as fedFunds
+  // 10y–3m term spread: inverted is the SIGNAL (the classic recession lead), not a parse
+  // fault — the same negative-WTI rule as spread10s30s above.
+  spread10y3m:  [-10, 10],
   tokenBlendedMtok: [0, 10000],
   // NFCI is standardized to mean 0 / SD 1 over its full 1971– history. Its record high is
   // ~+3.3 (2008-10) and its record low ~-1.0, so ±5 rejects the impossible (a decimal shift,
@@ -224,12 +238,15 @@ export async function buildSnapshot(env, { scope = "all", priorLive = null } = {
     [treasury] = await Promise.allSettled([fetchTreasury10y(statuses)]);
   }
   // Phase 3 (scope "all" only): tokenomics moat + equities + CAPE — add-ons, never gating.
+  // FEAT-TOKVOL (v3.85): the volume leg rides here too — the destructure and the
+  // critical-scope skipped() arm move TOGETHER (positional).
   const skipped = () => Promise.reject(new Error("skipped (critical scope)"));
-  const [tokenomics, equities, shiller] = await Promise.allSettled(all ? [
+  const [tokenomics, tokenVol, equities, shiller] = await Promise.allSettled(all ? [
     withLastGood(env, "tokenomics", () => fetchTokenomics(env)),
+    withLastGood(env, "tokenvol", () => fetchTokenVolume(env)),
     withLastGood(env, "equities", () => fetchEquities(env, statuses)),
     withLastGood(env, "shiller", fetchShiller), // CAPE for the regime's valuation vote
-  ] : [skipped(), skipped(), skipped()]);
+  ] : [skipped(), skipped(), skipped(), skipped()]);
 
   // ── Assemble live overlay (only fields with a valid value; mock covers the rest) ──
   const now = new Date().toISOString();
@@ -243,6 +260,7 @@ export async function buildSnapshot(env, { scope = "all", priorLive = null } = {
     ...(rateOdds.status === "fulfilled" ? rateOdds.value : {}),
     ...(headline.status === "fulfilled" ? headline.value : {}),
     ...(tokenomics.status === "fulfilled" ? tokenomics.value : {}),
+    ...(tokenVol.status === "fulfilled" ? tokenVol.value : {}),
     ...(equities.status === "fulfilled" ? equities.value : {}),
     ...(shiller.status === "fulfilled" ? shiller.value : {}),
   };
@@ -286,6 +304,7 @@ export async function buildSnapshot(env, { scope = "all", priorLive = null } = {
     rateOdds: okOf(rateOdds),
     headline: okOf(headline),
     tokenomics: okOf(tokenomics),
+    tokenVol: okOf(tokenVol),
     equities: okOf(equities, equities.status === "fulfilled" ? `:${Object.keys(equities.value).length}` : ""),
     shiller: okOf(shiller),
     // §9: per-upstream-item detail (http status / error class / attempts / latency) —
@@ -398,6 +417,10 @@ async function fetchFred(key, statuses = null) {
        from "the whole curve moved". 17 series now = one more batch of 5, which is exactly
        why the phase batching must not be collapsed. */
     thirtyYear:   "DGS30",
+    // FEAT-SAHM/FEAT-CCC (v3.84): 19 series = one extra 2-wide tail batch (2+5+5+5+2). The
+    // critical head (VIX/DGS10 first at concurrency 2) is untouched; the tail only delays
+    // dashboard-grade fields, never the order-gating ones.
+    threeMonth:   "DGS3MO",     // 3-month bill — the short leg of the 10y–3m recession lead
     fedFunds:     "FEDFUNDS",
     cpiHeadline:  "CPIAUCSL",   // CPI index  → YoY % below
     cpiCore:      "CPILFESL",   // core CPI index → YoY %
@@ -412,6 +435,12 @@ async function fetchFred(key, statuses = null) {
     btc:          "CBBTCUSD",
     hySpread:     "BAMLH0A0HYM2",  // ICE BofA US HY OAS — daily credit risk gauge
     igSpread:     "BAMLC0A0CM",    // ICE BofA US IG OAS — investment-grade counterpart
+    /* FEAT-CCC (v3.84): the junk TAIL. AI-infra debt (the CRWV-class neocloud complex) is
+       rated single-B/CCC, and the tail widens FIRST while the broad HY index still looks
+       calm — the funding-pipe stress gauge for exactly the buildout this book is long.
+       Passes the v3.43 sorting rule the same way NFCI did: Yahoo shows the level; it does
+       not judge it, abstain when stale, or pair it with the transmission story. */
+    creditTail:   "BAMLH0A3HYC",   // ICE BofA CCC & Lower US HY OAS
     // FEAT-NFCI (v3.43): Chicago Fed National Financial Conditions Index. WEEKLY (released
     // Wednesday for the week ending the prior Friday). 105 underlying measures across money
     // markets, debt/equity markets and the banking system — standardized so that ZERO is the
@@ -476,6 +505,15 @@ async function fetchFred(key, statuses = null) {
         const mAgo   = vals[21];  // ~1 trading month back (DAILY fields only)
         // Series of last 10 for sparkline (newest last)
         const spark  = vals.slice(0, 10).reverse();
+        // FEAT-SAHM (v3.84): computed HERE because only 10 of the 26 monthly points escape
+        // this closure via `spark`, and the rule needs 15. The math lives in src/sahm.js
+        // (one home, Node-testable); the 8th tuple member is an extras object every other
+        // series omits — the destructure downstream tolerates undefined.
+        if (field === "unemployment") {
+          const s = sahmFrom(vals);
+          return [field, latest, prev, spark, obs[0]?.date, wAgo, mAgo,
+            s === null ? undefined : { sahm: s, sahmAsOf: obs[0]?.date }];
+        }
         return [field, latest, prev, spark, obs[0]?.date, wAgo, mAgo];
       })
     );
@@ -484,8 +522,10 @@ async function fetchFred(key, statuses = null) {
 
   // DAILY-frequency fields only: idx[5]/idx[21] are ~1wk/~1mo back. Applying these
   // offsets to a MONTHLY series (FEDFUNDS, UNRATE…) would mean 5/21 *months* — garbage.
-  // So w1/m1 derivation is gated to true daily series.
-  const DAILY = new Set(["tenYear", "thirtyYear", "wti", "btc", "vix"]);
+  // So w1/m1 derivation is gated to true daily series. threeMonth (DGS3MO) is genuinely
+  // daily (the 30Y precedent); creditTail's legs-family (hySpread/igSpread) is not listed,
+  // so the tail follows its family: D1-only.
+  const DAILY = new Set(["tenYear", "thirtyYear", "threeMonth", "wti", "btc", "vix"]);
   // Percent-change helper (for price-like fields); rates use absolute yield deltas.
   // A zero base divides to Infinity; a NEGATIVE base inverts the sign, so a recovery
   // renders as a decline — and WTI really did settle at -$37.63 on 2020-04-20.
@@ -496,10 +536,14 @@ async function fetchFred(key, statuses = null) {
   const out = {};
   for (const r of results) {
     if (r.status !== "fulfilled") continue;
-    const [field, latest, prev, spark, asOf, wAgo, mAgo] = r.value;
+    const [field, latest, prev, spark, asOf, wAgo, mAgo, extra] = r.value;
     if (isNaN(latest)) continue;
     out[field] = latest;
     out[field + "AsOf"] = asOf; // FEAT-R2: observation date, for per-tile freshness
+    // FEAT-SAHM (v3.84): per-series extras computed inside the fetch closure (where the
+    // full 26-point pull is in scope) ride the 8th tuple slot; today only unemployment
+    // emits one ({sahm, sahmAsOf} — its own AsOf, the creditSpread PRIMARY_ASOF pattern).
+    if (extra && typeof extra === "object") Object.assign(out, extra);
     const daily = DAILY.has(field);
     // Derived deltas for specific fields. 10Y = absolute yield Δ (pp); WTI/BTC = % Δ.
     if (field === "tenYear") {
@@ -556,6 +600,15 @@ async function fetchFred(key, statuses = null) {
       if (!isNaN(prev)) out.igSpreadD1 = parseFloat((latest - prev).toFixed(4));
       out._igSparkline = spark; // temp
     }
+    // FEAT-CCC (v3.84): the junk tail — direct emission (own AsOf), D1 + series, following
+    // its hySpread/igSpread family: absolute pp deltas, no W1/M1 (not in DAILY).
+    if (field === "creditTail") {
+      if (!isNaN(prev)) out.creditTailD1 = parseFloat((latest - prev).toFixed(4));
+      out.creditTailSeries = spark;
+    }
+    // FEAT-SAHM (v3.84): the short leg of 10y–3m. Level + temp sparkline only — nothing
+    // renders a 3-month D1, and the spread below carries the decision content.
+    if (field === "threeMonth") out._threeMoSparkline = spark;
   }
 
   /* Derive the 10s30s term spread (FEAT-30Y). Steepening with the long end leading is the
@@ -571,8 +624,22 @@ async function fetchFred(key, statuses = null) {
         parseFloat((out._thirtySparkline[i] - out._tenSparkline[i]).toFixed(3)));
     }
   }
+  /* Derive the 10y–3m term spread (FEAT-SAHM, v3.84) — the classic recession lead (the
+     NY Fed's own model basis). Derived from LEGS rather than FRED's precomputed T10Y3M so
+     two-leg staleness stays honest: a stale leg blinds the spread instead of a precomputed
+     number wearing a fresh date. Absolute pp; inversion is the signal (negative-WTI rule). */
+  if (out.tenYear !== undefined && out.threeMonth !== undefined) {
+    out.spread10y3m = parseFloat((out.tenYear - out.threeMonth).toFixed(3));
+    out.spread10y3mAsOf = out.tenYearAsOf || out.threeMonthAsOf;
+    if (Array.isArray(out._tenSparkline) && Array.isArray(out._threeMoSparkline)) {
+      const n = Math.min(out._tenSparkline.length, out._threeMoSparkline.length);
+      out.spread10y3mSeries = Array.from({length: n}, (_, i) =>
+        parseFloat((out._tenSparkline[i] - out._threeMoSparkline[i]).toFixed(3)));
+    }
+  }
   delete out._thirtySparkline;
   delete out._tenSparkline;
+  delete out._threeMoSparkline;
 
   // Derive HY-IG credit spread — the single highest-value cross-field metric.
   // Widening = bearish leading indicator (inverse correlation to S&P 500).
@@ -1067,7 +1134,8 @@ async function fetchShiller() {
 // OpenRouter's public models API (no auth, no key — like Kalshi, a sanctioned free
 // source) lists every model's per-token pricing. We blend a fixed basket of frontier
 // models into a single $/Mtok headline and a cheapest-frontier floor. Falling $/Mtok =
-// intelligence commoditizing → pricing-power erosion, the demand-side mirror of the
+// intelligence commoditizing → pricing-power erosion — the P leg; token VOLUME (Q,
+// fetchTokenVolume below) is the quantity leg, and P×Q is the demand read. Beside the
 // GPU $/hr supply-side squeeze (the two halves of AI unit economics). Wrapped in
 // withLastGood at the call site, so an outage serves the last good prices + STALE.
 //   - $/Mtok blend assumes a 3:1 input:output token mix (typical real-world usage).
@@ -1126,6 +1194,53 @@ async function fetchTokenomics(env) {
     tokenTrend: trend.map((t) => t.v),
     tokenModelsJson: JSON.stringify(picked),
     tokenBlendedMtokAsOf: asOf,
+  };
+}
+
+/* ─── FEAT-TOKVOL (v3.85): token VOLUME — the Q beside the P ─────────────────
+   The $/Mtok trend is the PRICE leg; falling price is bullish commoditization only if
+   volume rises faster than price falls (revenue ∝ P×Q). OpenRouter's datasets API serves
+   the daily token totals behind its public rankings page — top 50 models + an aggregated
+   "other" row — but unlike /models it is KEYED (any OpenRouter key, 30 req/min, 500/day;
+   one call per ET day is nothing). KEY-GATED like Finnhub: no OPENROUTER_KEY → throw →
+   mock (the graceful-degradation invariant holds, and withLastGood serves last-good
+   first). The rolling-trend accrual copies pulse:tokentrend EXACTLY, under its own key. */
+async function fetchTokenVolume(env) {
+  if (!env.OPENROUTER_KEY) throw new Error("tokenvol: no OPENROUTER_KEY configured");
+  const r = await fetchRetry("https://openrouter.ai/api/v1/datasets/rankings/daily",
+    { headers: { Accept: "application/json", Authorization: `Bearer ${env.OPENROUTER_KEY}` } }, 2, 9000);
+  const d = await r.json();
+  // Fail-closed parser: the rows may arrive as {data:[...]} or a bare array; each row's
+  // token total may be named total_tokens or tokens (prompt+completion, per the docs).
+  // Anything else → throw → last-good/mock, never a guessed number.
+  const rows = Array.isArray(d?.data) ? d.data : Array.isArray(d) ? d : null;
+  if (!rows) throw new Error("tokenvol: unrecognized response shape");
+  // The endpoint can return several days; take only the LATEST date present so a
+  // multi-day window is never summed into one "day".
+  const dateOf = (row) => String(row.date || row.day || "").slice(0, 10);
+  const latestDate = rows.map(dateOf).filter(Boolean).sort().pop() || null;
+  const dayRows = latestDate ? rows.filter((row) => dateOf(row) === latestDate) : rows;
+  const tokOf = (row) => { const t = Number(row.total_tokens ?? row.tokens); return Number.isFinite(t) && t >= 0 ? t : null; };
+  const total = dayRows.reduce((a, row) => { const t = tokOf(row); return t === null ? a : a + t; }, 0);
+  if (!(total > 0)) throw new Error("tokenvol: no usable token totals");
+  const volT = parseFloat((total / 1e12).toFixed(3));   // trillions/day
+  const asOf = latestDate || new Date().toLocaleDateString("en-CA", { timeZone: "America/New_York" });
+
+  // Rolling trend in KV — the pulse:tokentrend accrual verbatim, own key.
+  let trend = [];
+  try { const prev = await env.PULSE_CACHE?.get("pulse:tokenvoltrend", "json"); if (Array.isArray(prev)) trend = prev; } catch {}
+  if (!trend.length || trend[trend.length - 1].date !== asOf) {
+    trend.push({ date: asOf, v: volT });
+    if (trend.length > 12) trend = trend.slice(-12);
+  } else {
+    trend[trend.length - 1].v = volT; // refresh the same day's point on a re-fetch
+  }
+  try { await env.PULSE_CACHE?.put("pulse:tokenvoltrend", JSON.stringify(trend), { expirationTtl: 120 * 24 * 3600 }); } catch {}
+
+  return {
+    tokenVolDay: volT,
+    tokenVolTrend: trend.map((t) => t.v),
+    tokenVolDayAsOf: asOf,
   };
 }
 

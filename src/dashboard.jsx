@@ -75,7 +75,11 @@ const MOCK_DATA = {
     // FEAT-30Y (v3.55): the long end + the 10s30s term-premium spread. Mock baseline only —
     // live values overlay via SOURCES (DGS30 + the derived spread), exactly like the 10Y.
     treasury30y:{ current:5.18, d1:+0.02, w1:+0.09, m1:+0.21, series:[4.92,4.97,5.01,5.04,5.09,5.12,5.18,5.14,5.16,5.18] },
-    term:{ spread10s30s:0.86, series:[0.40,0.49,0.60,0.69,0.80,0.90,1.00,0.90,0.88,0.86] },
+    // FEAT-SAHM (v3.84): 3M bill + the 10y–3m recession lead. Mock spread is POSITIVE-normal
+    // on purpose — the demo must not fake a recession signal (the NFCI abstain precedent).
+    treasury3m:{ current:3.95 },
+    term:{ spread10s30s:0.86, series:[0.40,0.49,0.60,0.69,0.80,0.90,1.00,0.90,0.88,0.86],
+           spread10y3m:0.37, series10y3m:[0.10,0.14,0.18,0.22,0.25,0.28,0.30,0.33,0.35,0.37] },
     wti:{         current:68.42, d1pct:-0.8, w1pct:-2.1, m1pct:+3.2, yellowBand:1.0, series:[64,65,66,67,69,70,69,68,69,68] },
     btc:{         current:109200,d1pct:+1.2, w1pct:+4.8, m1pct:+12.1,yellowBand:2.0, series:[88000,90000,92000,95000,98000,100000,104000,106000,108000,109200] },
   },
@@ -83,11 +87,16 @@ const MOCK_DATA = {
     fedFunds:{ rate:3.625, nextFOMC:"2026-06-17", daysUntil:14, odds:{ hold:84, cut:13, hike:3 } }, // odds: Kalshi FOMC market — LIVE since v2.6.3 (fetchRateOdds); these are the mock baseline only
     cpi:{ headline:3.8, core:2.8, nextRelease:"2026-06-11", trend:[3.2,3.4,3.5,3.6,3.7,3.8] },
     pce:{ headline:3.1, core:2.9, nextRelease:"2026-06-26", trend:[2.6,2.7,2.8,2.9,3.0,3.1] }, // Fed's preferred inflation gauge (FRED PCEPI/PCEPILFE — mock until YoY wired)
-    unemployment:{ national:4.3, entryLevel:6.1, lfpr:62.4, trend:[3.8,3.9,4.0,4.1,4.2,4.3] },
+    // sahm 0.13 = deliberately CLEAR (trigger is >= 0.50) — the demo abstains, never a verdict.
+    unemployment:{ national:4.3, entryLevel:6.1, lfpr:62.4, sahm:0.13, trend:[3.8,3.9,4.0,4.1,4.2,4.3] },
     savings:{ rate:4.2, trend:[4.6,4.5,4.4,4.3,4.3,4.2] }, // FRED PSAVERT — personal saving rate, % of disposable income
     mortgage:{ national:6.51, peoria:6.31 },
+    // FEAT-CCC (v3.84): tail 9.4 sits in the NEUTRAL zone (calm <7, stress >12) on purpose —
+    // the demo shows a gauge that abstains in ordinary conditions (the NFCI mock precedent).
     credit:{ hy:3.85, ig:0.92, spread:2.93, spreadD1:+0.04,
-             series:[2.80,2.78,2.82,2.85,2.88,2.84,2.87,2.90,2.91,2.93] },
+             series:[2.80,2.78,2.82,2.85,2.88,2.84,2.87,2.90,2.91,2.93],
+             tail:9.4, tailD1:+0.05,
+             tailSeries:[9.1,9.0,9.2,9.3,9.2,9.1,9.3,9.4,9.3,9.4] },
     // FEAT-NFCI (v3.43): Chicago Fed National Financial Conditions Index (weekly).
     // Standardized so ZERO is the historical average: positive = tighter than average,
     // negative = looser. The post-GFC era has generally run negative (loose).
@@ -119,11 +128,15 @@ const MOCK_DATA = {
   headwindsAsOf:"2026-Q1",
   // AI TOKEN ECONOMICS (the moat) — live overlay from OpenRouter (tokenBlendedMtok/Trend/ModelsJson);
   // mock is the fallback baseline. $/Mtok = blended frontier-basket price (3:1 in:out). Falling = the
-  // demand-side mirror of GPU $/hr — together they frame the AI margin-compression hinge with live data.
+  // the P leg beside GPU $/hr (volDay/volTrend are the Q leg, v3.85; P×Q is the demand read).
   tokenomics:{
     blendedMtok:6.20,
     trend:[9.5,8.8,8.0,7.2,6.7,6.20], // oldest→newest; the decline IS the signal
     modelsJson:'[{"name":"Claude Sonnet","mtok":9.0},{"name":"GPT frontier","mtok":7.5},{"name":"Gemini Pro","mtok":6.2},{"name":"Llama large","mtok":2.4},{"name":"DeepSeek","mtok":1.1}]',
+    // FEAT-TOKVOL (v3.85): the Q leg. 6 pts = 5 intervals — below minWeeks like the price
+    // trend above, so the mock P×Q read is "window too short" by construction (never a
+    // fabricated demand verdict; the demand line is also illustrative-suppressed).
+    volDay:2.95, volTrend:[2.1,2.3,2.4,2.6,2.8,2.95],
   },
   // MAG 10 live prices (Finnhub) — JSON passthrough. The per-ticker quote strip was CUT in
   // v3.51 (public audit, Yahoo-dupe test), so nothing renders these today; the field stays
@@ -350,6 +363,11 @@ const ALERT_METRICS={
   // The 10s30s spread. An INVERSION (below 0) is the condition worth waking for, so this
   // alert is authored "below 0" rather than as a level — the curve shape, not the yield.
   term10s30s:  {fields:["thirtyYear","tenYear"], read:(d)=>({v:d.crossAsset.term.spread10s30s})},
+  // FEAT-SAHM (v3.84): the 10y–3m inversion — the two-leg blind rule: one MOCK leg blinds
+  // the alert (a spread judged off one stale leg is a fabricated number).
+  term10y3m:   {fields:["tenYear","threeMonth"], read:(d)=>({v:d.crossAsset.term.spread10y3m})},
+  // FEAT-CCC (v3.84): the junk tail, single-leg.
+  credittail:  {fields:["creditTail"],  read:(d)=>({v:d.macro.credit.tail})},
   cpi:         {fields:["cpiHeadline"], read:(d)=>({v:d.macro.cpi.headline})},
 };
 export function evalAlert(alert,d,modeOf){
@@ -380,6 +398,10 @@ const DEFAULT_ALERTS=[
   // Stated as a threshold to watch, not a claim about what it means.
   {id:6,label:"30Y Above 5.2%",metric:"treasury30y",condition:"above",value:5.2,unit:"%",active:true},
   {id:7,label:"10s30s Inverts",metric:"term10s30s",condition:"below",value:0,unit:"pp",active:false},
+  // FEAT-CCC/FEAT-SAHM (v3.84): both OFF by default — thresholds to watch, arriving with
+  // the same author-time-number convention as the 30Y 5.2 (not imported constants).
+  {id:8,label:"CCC Tail Above 12pp",metric:"credittail",condition:"above",value:12,unit:"pp",active:false},
+  {id:9,label:"10y–3m Inverts",metric:"term10y3m",condition:"below",value:0,unit:"pp",active:false},
 ];
 
 // ─── MAIN DASHBOARD (FEAT-161: Command Center spatial layout) ─────────────
@@ -472,7 +494,7 @@ export default function Dashboard({ publicView = false } = {}) {
     blind:staleFactors.has("vix")||modeOf("vix")==="MOCK"};
   // Signal Quality rollup — at-a-glance trust: how many tracked signals are live+fresh vs
   // stale vs mock. Only meaningful in live mode (in mock everything is MOCK by design).
-  const SIGNAL_FIELDS=["spyPrice","vix","fearGreed","tenYear","cpiHeadline","fedFunds","creditSpread","nfci","wti","btc","rateOddsHold","marketHeadline","savings","tokenBlendedMtok","shillerPe"];
+  const SIGNAL_FIELDS=["spyPrice","vix","fearGreed","tenYear","cpiHeadline","fedFunds","creditSpread","nfci","wti","btc","rateOddsHold","marketHeadline","savings","tokenBlendedMtok","shillerPe","creditTail"]; // creditTail appended at the END — smoke pins the "creditSpread","nfci" adjacency
   /* B2 (v3.59, re-audit MED-provenance): "13 live" counted LIVE+CACHED under one word, so a
      technically-fresh cached observation read as newly fetched. FRESH is the rollup (both are
      usable); live and cached are named separately inside it. */

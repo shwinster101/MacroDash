@@ -9,6 +9,7 @@ import { Badge, Label } from "../primitives/atoms.jsx";
 import SectionHeader from "../primitives/SectionHeader.jsx";
 import SourceBox, { DataModeBadge } from "../primitives/SourceBox.jsx";
 import { ILLUS_HATCH, IllustrativeChip, isIllustrative } from "../primitives/Illustrative.jsx";
+import { SAHM_TRIGGER } from "../sahm.js";
 
 const MacroRegime=({d,modeOf,asOfOf,fomcDays})=>{
   if(!d||typeof modeOf!=="function")return <div aria-hidden="true"/>;
@@ -45,8 +46,9 @@ const MacroRegime=({d,modeOf,asOfOf,fomcDays})=>{
                   <div style={{height:36}}><ResponsiveContainer width="100%" height="100%"><LineChart data={d.macro.cpi.trend.map((v,i)=>({v,i}))}><Line type="monotone" dataKey="v" stroke={T.red} dot={false} strokeWidth={1.5}/><ReferenceLine y={2.0} stroke={T.green} strokeDasharray="3 2" strokeWidth={1}/></LineChart></ResponsiveContainer></div>
                   <SourceBox api="FRED" endpoint="CPIAUCSL + CPILFESL" mode={modeOf('cpiHeadline')}/>
                 </div>
-                {/* Labor + household savings */}
-                <div style={{display:"flex",gap:12,paddingBottom:8,borderBottom:`1px solid ${T.border}`,alignItems:"flex-start"}}>
+                {/* Labor + household savings (+ Sahm, v3.84 — wraps at phone widths: five
+                    cells no longer fit one 320px row, and an overflowing row is a suite red) */}
+                <div style={{display:"flex",gap:12,paddingBottom:8,borderBottom:`1px solid ${T.border}`,alignItems:"flex-start",flexWrap:"wrap"}}>
                   <div><Label>Unemployment</Label><div style={{fontFamily:T.fontMono,fontSize:16,color:T.textPrimary,fontWeight:700}}>{d.macro.unemployment.national}%</div></div>
                   <div><Label>Entry Level</Label><div style={{fontFamily:T.fontMono,fontSize:16,color:T.yellow,fontWeight:700}}>{d.macro.unemployment.entryLevel}%</div></div>
                   <div><Label>LFPR</Label><div style={{fontFamily:T.fontMono,fontSize:16,color:T.textPrimary,fontWeight:700}}>{d.macro.unemployment.lfpr}%</div></div>
@@ -55,6 +57,25 @@ const MacroRegime=({d,modeOf,asOfOf,fomcDays})=>{
                     <div style={{fontFamily:T.fontMono,fontSize:16,color:d.macro.savings.rate<4?T.yellow:T.textPrimary,fontWeight:700}}>{d.macro.savings.rate}%</div>
                     <SourceBox api="FRED" endpoint="PSAVERT" mode={modeOf('savings')} asOf={asOfOf('savings')}/>
                   </div>
+                  {/* FEAT-SAHM (v3.84): 3-mo avg U-3 minus its trailing-12-mo min; >= 0.50
+                      ("0.50 or more" — Sahm's own definition, so the comparison is >=) has
+                      marked every US recession start since 1970. TRIGGERED/CLEAR is a
+                      directional call → suppressed on mock/stale (the CAPE/NFCI pattern).
+                      Computed from the same UNRATE pull (src/sahm.js) — can differ ±0.01
+                      from FRED's SAHMREALTIME (rounding/vintage). NON-VOTING on arrival. */}
+                  {(()=>{const sMode=modeOf('sahm'); const sIllus=isIllustrative(sMode);
+                    const sv=d.macro.unemployment.sahm; const trig=sv>=SAHM_TRIGGER; return (
+                  <div title="Sahm rule: 3-month average unemployment minus its 12-month low. 0.50pp or more = recession signal (every US recession since 1970, no real-time false positives)."
+                       style={{backgroundImage:sIllus?ILLUS_HATCH:undefined,borderRadius:5,padding:sIllus?"2px 6px":0,opacity:sIllus?0.92:1}}>
+                    <Label>Sahm Rule</Label>
+                    <div style={{fontFamily:T.fontMono,fontSize:16,color:sIllus?T.textSecondary:trig?T.red:T.green,fontWeight:700}}>
+                      {sv>=0?"+":""}{sv.toFixed(2)}<span style={{fontSize:10}}>pp</span>
+                    </div>
+                    {sIllus?(sMode==="STALE"?<DataModeBadge mode="STALE"/>:<IllustrativeChip/>)
+                           :<Badge label={trig?"TRIGGERED":`CLEAR · ${(SAHM_TRIGGER-sv).toFixed(2)} to trigger`} color={trig?T.red:T.green} small/>}
+                    <SourceBox api="FRED" endpoint="UNRATE → Sahm (computed)" mode={sMode} asOf={asOfOf('sahm')}/>
+                  </div>
+                  );})()}
                 </div>
                 {/* Housing */}
                 <div style={{display:"flex",gap:12,paddingBottom:8,borderBottom:`1px solid ${T.border}`}}>

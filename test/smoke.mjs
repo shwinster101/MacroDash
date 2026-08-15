@@ -325,9 +325,15 @@ const PRIMARY_ASOF_FIELDS = [
   // v3.55: both carry their own AsOf — thirtyYear from its own FRED pull, spread10s30s
   // copied from thirtyYearAsOf (the creditSpread pattern).
   "thirtyYear", "spread10s30s",
+  // v3.84: creditTail + threeMonth are direct pulls; spread10y3m copies tenYearAsOf ||
+  // threeMonthAsOf; sahm copies the UNRATE observation date (computed, not derived — it
+  // carries its OWN stamped AsOf, so it is primary for the partition).
+  "creditTail", "threeMonth", "spread10y3m", "sahm",
   "fearGreed", "marketHeadline", "shillerPe", "tokenBlendedMtok", "rateOddsHold",
+  // v3.85: the volume leg carries its own AsOf (the dataset's own latest date).
+  "tokenVolDay",
 ];
-ok("deriv: PRIMARY_ASOF_FIELDS + DERIVED_OF + DERIVED_EXEMPT partition ALL 63 SOURCES keys (reconciled, not hardcoded)", (() => {
+ok("deriv: PRIMARY_ASOF_FIELDS + DERIVED_OF + DERIVED_EXEMPT partition ALL 72 SOURCES keys (reconciled, not hardcoded)", (() => {
   const keys = Object.keys(SOURCES);
   const derivedKeys = Object.keys(DERIVED_OF);
   const inPrimary = (k) => PRIMARY_ASOF_FIELDS.includes(k);
@@ -2346,8 +2352,11 @@ ok("nfci: thresholds live in ONE shared table driving tile, vote and factor brea
   regimeSrc.includes("export const NFCI_TIGHT = 0;") && regimeSrc.includes("export const NFCI_LOOSE = -0.5;") &&
   mdSrc.includes('const band=v>NFCI_TIGHT?"TIGHT":v<=NFCI_LOOSE?"LOOSE":"NEUTRAL"') &&
   regimeSrc.includes('vote:(v)=> v <= NFCI_LOOSE ? "bull" : v > NFCI_TIGHT ? "bear" : "neutral"') &&
-  // …and the tile IMPORTS them rather than re-declaring (the one-table rule survives extraction)
-  /import \{ NFCI_TIGHT, NFCI_LOOSE(, REGIME_BAND_TABLE)? \} from "\.\.\/regime\.js"/.test(mdSrc));
+  // …and the tile IMPORTS them rather than re-declaring (the one-table rule survives
+  // extraction; v3.84 re-pinned on intent — the import line also carries the CREDIT_TAIL
+  // constants now, so the pin requires both NFCI names inside a regime.js import rather
+  // than one exact spelling of the whole line)
+  /import \{[^}]*NFCI_TIGHT, NFCI_LOOSE[^}]*\} from "\.\.\/regime\.js"/.test(mdSrc));
 ok("nfci: the tight threshold is the DEFINITIONAL mean (0), not a hand-picked decimal",
   /const NFCI_TIGHT = 0;/.test(regimeSrc) && !uiSrc.includes("0.10?\"TIGHT\""));
 ok("nfci: the bands are ASYMMETRIC — a symmetric band around zero would have voted bullish " +
@@ -4667,7 +4676,7 @@ ok("wave12: evaluation stays home — evalAlert/ALERT_METRICS/DEFAULT_ALERTS rem
   dashSrc.includes("const DEFAULT_ALERTS=[") && !/evalAlert\s*\(/.test(alSrc.replace(/\/\/[^\n]*/g,"")));
 ok("wave12: the aiEcon module is PURE (Node-importable) and the section imports it",
   !/from ['\"]react['\"]/.test(aiEconSrc) &&
-  aiSrc.includes('import { GPU_PRICING, TOKEN_EFFICIENCY, tokenScissors, HYPERSCALER_CAPEX } from "../aiEcon.js"'));
+  aiSrc.includes('import { GPU_PRICING, TOKEN_EFFICIENCY, tokenScissors, tokenDemand, HYPERSCALER_CAPEX } from "../aiEcon.js"'));
 ok("wave12: tokenScissors really runs from the import (behavior, not string): 11-week window, never annualised",
   (() => { const r = TW.tokenScissors([6.8, 6.5, 6.3, 6.1, 5.9, 5.8, 5.6, 5.5, 5.4, 5.3, 5.2, 5.1]);
     return r.weeks === 11 && Math.abs(r.pxWin + 0.25) < 1e-9; })());
@@ -5957,6 +5966,170 @@ console.log("\n[58] FEAT-TT-MAG7 — deck panel, basket average, honesty gates")
   ok("mag7: basket row cannot print a null target — all three row templates branch on r.basket",
     (adminSrc.match(/r\.basket\?/g) || []).length >= 3);
 }
+
+// ---- 59. v3.88 — CCC junk tail · Sahm rule · 10y–3m (all NON-VOTING on arrival) --------
+{
+  console.log("\n[59] v3.88 — creditTail, sahm, spread10y3m");
+  const { sahmFrom, SAHM_TRIGGER } = await import("../src/sahm.js");
+  const RG = await import("../src/regime.js");
+  // Series wired through the existing fetch path — no new fetcher (the 30Y rule).
+  ok("v388: BAMLH0A3HYC + DGS3MO ride the existing series map, no new fetcher",
+    /creditTail:\s*"BAMLH0A3HYC"/.test(snapSrc) && /threeMonth:\s*"DGS3MO"/.test(snapSrc) &&
+    !/fetchCredit|fetchSahm|fetchThreeMonth/.test(snapSrc));
+  // Bands RUN, boundaries both ways: reject the impossible, not the unusual.
+  ok("v388: creditTail band accepts the 2008 record (~44pp) and rejects a decimal shift",
+    plausible("creditTail", 44) && !plausible("creditTail", -1) && !plausible("creditTail", 300));
+  ok("v388: spread10y3m band ACCEPTS inversion — negative is the signal (negative-WTI rule)",
+    plausible("spread10y3m", -1.9) && !plausible("spread10y3m", -50) &&
+    (() => { const m = /spread10y3m:\s*\[(-?\d+), (\d+)\]/.exec(snapSrc); return m && Number(m[1]) < 0; })());
+  ok("v388: sahm band accepts the 2020 spike (~+9) and rejects garbage",
+    plausible("sahm", 9.2) && !plausible("sahm", 40) && plausible("threeMonth", 17) && !plausible("threeMonth", -2));
+  // DAILY membership: threeMonth is genuinely daily (W-offsets valid); creditTail follows
+  // its hySpread family (NOT listed → D1 only, no idx[5]/idx[21] misread).
+  ok("v388: threeMonth IS in DAILY, creditTail is NOT",
+    /DAILY = new Set\(\[[^\]]*"threeMonth"[^\]]*\]\)/.test(snapSrc) &&
+    !/DAILY = new Set\(\[[^\]]*"creditTail"[^\]]*\]\)/.test(snapSrc));
+  // Derivations + AsOf stamping + temp-sparkline hygiene (the spread10s30s pattern exactly).
+  ok("v388: spread10y3m derives from LEGS with its own AsOf, and the 3M temp sparkline is deleted",
+    /out\.spread10y3m = parseFloat\(\(out\.tenYear - out\.threeMonth\)/.test(snapSrc) &&
+    /out\.spread10y3mAsOf = out\.tenYearAsOf \|\| out\.threeMonthAsOf/.test(snapSrc) &&
+    /delete out\._threeMoSparkline/.test(snapSrc));
+  ok("v388: sahm is computed INSIDE the unemployment fetch closure (only 10 of 26 points escape it) and stamped the UNRATE obs date",
+    /field === "unemployment"[\s\S]{0,300}sahmFrom\(vals\)/.test(snapSrc) &&
+    /sahm: s, sahmAsOf: obs\[0\]\?\.date/.test(snapSrc));
+  // The Sahm math, RUN — a string pin cannot prove an average-of-averages.
+  ok("v388: sahmFrom — flat unemployment reads 0.00, never a verdict",
+    sahmFrom(Array(20).fill(4.0)) === 0);
+  ok("v388: sahmFrom — a genuine deterioration computes the rise of the 3-mo avg over its 12-mo min",
+    // newest-first: 3-mo avg now = 4.6; the trailing min of 3-mo avgs = 4.0 → 0.60
+    sahmFrom([4.7, 4.6, 4.5, 4.3, 4.2, 4.1, 4.0, 4.0, 4.0, 4.0, 4.0, 4.0, 4.0, 4.0, 4.0, 4.0]) === 0.6);
+  ok("v388: sahmFrom fails CLOSED — 14 points is null (cannot-compute never reads as 0.00 = clear)",
+    sahmFrom(Array(14).fill(4.0)) === null && sahmFrom(null) === null && sahmFrom("4.0") === null);
+  ok("v388: the trigger is Sahm's own printed 0.50, compared >= ('0.50 or more'), executed at the boundary",
+    SAHM_TRIGGER === 0.5 && (0.5 >= SAHM_TRIGGER) === true && (0.49 >= SAHM_TRIGGER) === false &&
+    /const trig=sv>=SAHM_TRIGGER/.test(mrSrc) && /import \{ SAHM_TRIGGER \} from "\.\.\/sahm\.js"/.test(mrSrc));
+  // CCC thresholds: ONE home (regime.js), imported by the tile, executed at −ε/edge/+ε.
+  ok("v388: CREDIT_TAIL thresholds live in regime.js, the tile imports them, boundaries execute",
+    (() => {
+      const band = (v) => v > RG.CREDIT_TAIL_STRESS ? "STRESSED" : v < RG.CREDIT_TAIL_CALM ? "CALM" : "NEUTRAL";
+      return RG.CREDIT_TAIL_CALM === 7 && RG.CREDIT_TAIL_STRESS === 12 &&
+        band(6.99) === "CALM" && band(7) === "NEUTRAL" && band(12) === "NEUTRAL" && band(12.01) === "STRESSED" &&
+        /import \{[^}]*CREDIT_TAIL_CALM, CREDIT_TAIL_STRESS[^}]*\} from "\.\.\/regime\.js"/.test(mdSrc) &&
+        mdSrc.includes('const band=v>CREDIT_TAIL_STRESS?"STRESSED":v<CREDIT_TAIL_CALM?"CALM":"NEUTRAL"');
+    })());
+  ok("v388: the CALM/STRESSED verdict is suppressed on mock/stale (the NFCI badge pattern)",
+    /cIllus\?\(cMode==="STALE"\?<DataModeBadge mode="STALE"\/>:<IllustrativeChip\/>\)/.test(mdSrc));
+  // DERIVED_OF + cadence inheritance.
+  ok("v388: every undated derivative maps to its parent; sahm ages monthly with UNRATE",
+    DERIVED_OF_SRC.creditTailD1 === "creditTail" && DERIVED_OF_SRC.creditTailSeries === "creditTail" &&
+    DERIVED_OF_SRC.spread10y3mSeries === "spread10y3m" &&
+    cadenceOf("sahm") === "monthly" && cadenceOf("creditTail") === "daily" && cadenceOf("spread10y3m") === "daily");
+  // End-to-end overlay through the real merge.
+  ok("v388: mergeLiveOverMock overlays all four with LIVE provenance and their own dates",
+    (() => {
+      const m = mergeLiveOverMock(MOCK_DATA, { live: {
+        creditTail: 11.2, creditTailD1: 0.31, creditTailSeries: [10, 10.5, 11.2], creditTailAsOf: "2026-08-14",
+        sahm: 0.23, sahmAsOf: "2026-07-01",
+        threeMonth: 4.05, threeMonthAsOf: "2026-08-14",
+        spread10y3m: -0.15, spread10y3mSeries: [0.1, 0, -0.15], spread10y3mAsOf: "2026-08-14",
+      }, cached: false });
+      return m.data.macro.credit.tail === 11.2 && m.data.macro.unemployment.sahm === 0.23 &&
+        m.data.crossAsset.treasury3m.current === 4.05 && m.data.crossAsset.term.spread10y3m === -0.15 &&
+        m.provenance.creditTail === "LIVE" && m.provenance.sahm === "LIVE" &&
+        m.dataAsOf.sahm === "2026-07-01" && m.dataAsOf.spread10y3mSeries === "2026-08-14";
+    })());
+  // Alerts: executed — trip, and the two-leg blind (one MOCK leg blinds the spread).
+  const v384Live = () => "LIVE";
+  const v384D = { macro: { credit: { tail: 12.5 }, cpi: {} }, crossAsset: { term: { spread10y3m: -0.1 } } };
+  ok("v388: the CCC alert trips above 12 on live data and goes BLIND (not clear) on a dead feed",
+    evalAlert({ metric: "credittail", condition: "above", value: 12 }, v384D, v384Live).state === "triggered" &&
+    evalAlert({ metric: "credittail", condition: "above", value: 12 }, v384D, () => "MOCK").state === "blind");
+  ok("v388: the 10y–3m alert needs BOTH legs live — a MOCK threeMonth blinds it, naming the leg",
+    (() => {
+      const half = (f) => (f === "tenYear" ? "LIVE" : "MOCK");
+      const e = evalAlert({ metric: "term10y3m", condition: "below", value: 0 }, v384D, half);
+      return e.state === "blind" && /threeMonth/.test(e.why) &&
+        evalAlert({ metric: "term10y3m", condition: "below", value: 0 }, v384D, v384Live).state === "triggered";
+    })());
+  ok("v388: both new alerts ship OFF by default",
+    /id:8[^}]*credittail[^}]*active:false/.test(dashSrc) && /id:9[^}]*term10y3m[^}]*active:false/.test(dashSrc));
+  // NON-VOTING arrival (the NFCI/30Y rule): not in the band table, not a factor, not in tt-v1.
+  ok("v388: none of the four appears in REGIME_BAND_TABLE, the factor lists, or ttReadout",
+    (() => {
+      const bandSlice = regimeSrc.slice(regimeSrc.indexOf("REGIME_BAND_TABLE"), regimeSrc.indexOf("verdictFrom"));
+      const evSrc = readFileSync(new URL("../src/evidence.js", import.meta.url), "utf8");
+      const ttSrc = readFileSync(new URL("../src/ttReadout.js", import.meta.url), "utf8");
+      return ["creditTail", "sahm", "spread10y3m", "threeMonth"].every((k) =>
+        !bandSlice.includes(k) && !evSrc.includes(k) && !ttSrc.includes(k));
+    })());
+  // The demo abstains: mock values sit in the no-verdict zones on purpose.
+  ok("v388: mock values abstain — tail in the neutral band, sahm CLEAR, 10y–3m positive-normal",
+    (() => {
+      const t = MOCK_DATA.macro.credit.tail, s = MOCK_DATA.macro.unemployment.sahm,
+        sp = MOCK_DATA.crossAsset.term.spread10y3m;
+      return t > RG.CREDIT_TAIL_CALM && t <= RG.CREDIT_TAIL_STRESS && s < SAHM_TRIGGER && sp > 0;
+    })());
+  ok("v388: SIGNAL_FIELDS gains creditTail at the END — the creditSpread/nfci adjacency pin survives",
+    dashSrc.includes('"creditSpread","nfci"') && /SIGNAL_FIELDS=\[[^\]]*"creditTail"\]/.test(dashSrc));
+}
+
+// ---- 60. FEAT-TOKVOL (v3.89) — token volume: the Q beside the P ------------------------
+{
+  console.log("\n[60] FEAT-TOKVOL — the Q leg, key-gated, and the P×Q window read");
+  const { tokenDemand } = await import("../src/aiEcon.js");
+  ok("tokvol: KEY-GATED like Finnhub — no OPENROUTER_KEY throws before any fetch (mock holds)",
+    /if \(!env\.OPENROUTER_KEY\) throw new Error\("tokenvol: no OPENROUTER_KEY/.test(snapSrc) &&
+    /withLastGood\(env, "tokenvol", \(\) => fetchTokenVolume\(env\)\)/.test(snapSrc));
+  ok("tokvol: the KV accrual copies pulse:tokentrend verbatim under its own key (dedup, cap 12, faults swallowed)",
+    /pulse:tokenvoltrend/.test(snapSrc) &&
+    (snapSrc.match(/trend = trend\.slice\(-12\)/g) || []).length === 2 &&
+    /tokenVolDayAsOf: asOf/.test(snapSrc));
+  ok("tokvol: the parser fails CLOSED — unrecognized shape or zero total throws, never a guessed number",
+    /unrecognized response shape/.test(snapSrc) && /no usable token totals/.test(snapSrc) &&
+    /latestDate/.test(snapSrc));   // several days in a response must never sum into one "day"
+  ok("tokvol: the Phase-3 destructure and the critical-scope skipped() arm moved TOGETHER",
+    /\[tokenomics, tokenVol, equities, shiller\] = await Promise\.allSettled/.test(snapSrc) &&
+    /\[skipped\(\), skipped\(\), skipped\(\), skipped\(\)\]/.test(snapSrc));
+  // tokenDemand RUN — a string pin cannot prove window math.
+  ok("tokvol: P×Q composes in WINDOW terms — −25% px × +40% vol = +5.0% over the same 11w span",
+    (() => {
+      const px = [8.0, 7.7, 7.4, 7.2, 7.0, 6.8, 6.6, 6.5, 6.3, 6.2, 6.1, 6.0];
+      const vol = [2.0, 2.1, 2.2, 2.3, 2.4, 2.5, 2.6, 2.65, 2.7, 2.74, 2.77, 2.8];
+      const d = tokenDemand(px, vol);
+      return d.weeks === 11 && d.short === false &&
+        Math.abs(d.pxWin + 0.25) < 1e-9 && Math.abs(d.volWin - 0.40) < 1e-9 &&
+        Math.abs(d.revProxyWin - 0.05) < 1e-9;
+    })());
+  ok("tokvol: the SHORTER series bounds the window (composing two spans is the units error in time)",
+    (() => { const d = tokenDemand([10, 9, 8, 7, 6, 5, 4, 3, 2, 1.5, 1.2, 1], [3.0, 3.3]);
+      // n = min(12, 2) = 2 → px newest-aligned slice is [1.2, 1] → pxWin = 1/1.2 − 1
+      return d.weeks === 1 && d.short === true && Math.abs(d.pxWin - (1 / 1.2 - 1)) < 1e-9; })());
+  ok("tokvol: below minWeeks the read is withheld (short:true), and junk input returns nulls",
+    tokenDemand([6.2], [2.9]).revProxyWin === null && tokenDemand(null, null).short === true &&
+    tokenDemand([1, 2, 3, 4, 5, 6, 7, 8], [1, 1, 1, 1, 1, 1, 1, 1]).short === true);
+  // Wiring: SOURCES/DERIVED_OF/cadence/band, and the mock stays verdict-free.
+  ok("tokvol: SOURCES + DERIVED_OF + weekly cadence + band all wired; partition holds at 72",
+    SOURCES.tokenVolDay.path === "tokenomics.volDay" && SOURCES.tokenVolTrend.kind === "series" &&
+    DERIVED_OF_SRC.tokenVolTrend === "tokenVolDay" && cadenceOf("tokenVolDay") === "weekly" &&
+    cadenceOf("tokenVolTrend") === "weekly" && plausible("tokenVolDay", 3.1) && !plausible("tokenVolDay", -1));
+  ok("tokvol: the mock volume trend is deliberately BELOW minWeeks — the demo cannot fake a P×Q verdict",
+    MOCK_DATA.tokenomics.volTrend.length - 1 < 8);
+  ok("tokvol: the card suppresses the P×Q read when EITHER leg is illustrative, and the volume line has its OWN SourceBox",
+    /isIllustrative\(mode\) \|\| isIllustrative\(volMode\)/.test(aiSrc) &&
+    /datasets\/rankings\/daily · total tokens \(keyed\)/.test(aiSrc) &&
+    /never annualised/.test(aiSrc));
+  ok("tokvol: the price leg is no longer mislabelled 'the demand side' anywhere in code",
+    !/demand-side mirror/.test(snapSrc) && !/demand-side mirror/.test(aiSrc) && !/demand-side mirror/.test(dashSrc));
+  ok("tokvol: tokenVolDay stays OUT of SIGNAL_FIELDS (key-gated — the qqqPrice precedent)",
+    !/SIGNAL_FIELDS=\[[^\]]*tokenVolDay/.test(dashSrc));
+  // Merge end-to-end: overlay + provenance + own-date inheritance for the trend.
+  ok("tokvol: mergeLiveOverMock overlays volDay/volTrend with LIVE provenance and the trend inherits the day's date",
+    (() => {
+      const m = mergeLiveOverMock(MOCK_DATA, { live: {
+        tokenVolDay: 3.05, tokenVolTrend: [2.8, 2.9, 3.05], tokenVolDayAsOf: "2026-08-14" }, cached: false });
+      return m.data.tokenomics.volDay === 3.05 && m.data.tokenomics.volTrend.length === 3 &&
+        m.provenance.tokenVolDay === "LIVE" && m.dataAsOf.tokenVolTrend === "2026-08-14";
+    })());}
 
 console.log(`\n=== SMOKE TEST: ${pass} passed, ${fail} failed ===`);
 process.exit(fail === 0 ? 0 : 1);

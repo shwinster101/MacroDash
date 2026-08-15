@@ -6,7 +6,7 @@
 // PRESENTATION ONLY; the only addition is the Property-9 null guard.
 import { LineChart, Line, ResponsiveContainer } from "recharts";
 import { T } from "../design-tokens.js";
-import { GPU_PRICING, TOKEN_EFFICIENCY, tokenScissors, HYPERSCALER_CAPEX } from "../aiEcon.js";
+import { GPU_PRICING, TOKEN_EFFICIENCY, tokenScissors, tokenDemand, HYPERSCALER_CAPEX } from "../aiEcon.js";
 import SectionHeader from "../primitives/SectionHeader.jsx";
 import SourceBox from "../primitives/SourceBox.jsx";
 import { ILLUS_HATCH, IllustrativeChip, isIllustrative } from "../primitives/Illustrative.jsx";
@@ -107,7 +107,7 @@ const GpuPricingCard = () => {
 // AI UNIT ECONOMICS · LLM token pricing (the moat — price side, pairs with GPU $/hr cost side).
 // Live from OpenRouter (props.tok = d.tokenomics; mode/asOf from provenance). Falling $/Mtok is the
 // bearish read (intelligence commoditizing → pricing-power erosion), colored amber like the GPU card.
-const TokenomicsCard = ({ tok, mode = "MOCK", asOf }) => {
+const TokenomicsCard = ({ tok, mode = "MOCK", asOf, volMode = "MOCK", volAsOf }) => {
   let models = [];
   try { models = JSON.parse(tok?.modelsJson || "[]"); } catch { models = []; }
   const trend = Array.isArray(tok?.trend) ? tok.trend : [];
@@ -115,6 +115,12 @@ const TokenomicsCard = ({ tok, mode = "MOCK", asOf }) => {
   // QoQ-style read off the trend: first vs last (the decline is the signal).
   const drop = trend.length >= 2 ? Math.round((1 - trend[trend.length - 1] / trend[0]) * 100) : null;
   const cheapest = models.length ? models.reduce((a, b) => (b.mtok < a.mtok ? b : a)) : null;
+  // FEAT-TOKVOL (v3.85): the Q leg + the P×Q read (src/aiEcon.js tokenDemand — window terms,
+  // never annualised; withheld when short, SUPPRESSED when either leg is illustrative:
+  // a demand verdict off a mock leg is the v3.1 target exactly).
+  const volTrend = Array.isArray(tok?.volTrend) ? tok.volTrend : [];
+  const volDay = tok?.volDay;
+  const dem = (isIllustrative(mode) || isIllustrative(volMode)) ? null : tokenDemand(trend, volTrend);
   return (
     <div style={{ marginTop:16, background:T.surface, border:`1px solid ${T.border}`, borderRadius:6, padding:"12px 16px" }}>
       <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", flexWrap:"wrap", gap:6 }}>
@@ -122,7 +128,7 @@ const TokenomicsCard = ({ tok, mode = "MOCK", asOf }) => {
         <span style={{ fontFamily:T.fontMono, fontSize:8, color:T.textMuted }}>price side of AI unit economics · pairs with GPU $/hr</span>
       </div>
       <div style={{ fontFamily:T.fontSans, fontSize:10, color:T.textSecondary, lineHeight:1.4, margin:"6px 0 10px" }}>
-        Falling $/Mtok = intelligence commoditizing → AI pricing-power erosion. The demand-side mirror of the GPU $/hr supply squeeze — together, the AI margin-compression hinge.
+        Falling $/Mtok = intelligence commoditizing → AI pricing-power erosion. The P leg of the demand read — volume (Q) below completes it; P×Q beats either alone.
       </div>
       <div style={{ display:"flex", gap:18, alignItems:"baseline", flexWrap:"wrap" }}>
         <div>
@@ -155,6 +161,34 @@ const TokenomicsCard = ({ tok, mode = "MOCK", asOf }) => {
         mode !== "MOCK" && <div style={{ fontFamily:T.fontMono, fontSize:8, color:T.textMuted, marginTop:8 }}>trend accruing ({trend.length} pt{trend.length === 1 ? "" : "s"}) — builds daily</div>
       )}
       <SourceBox api="OpenRouter" endpoint="api/v1/models · frontier basket · blended $/Mtok" mode={mode} asOf={asOf}/>
+      {/* FEAT-TOKVOL (v3.85): TOKENS/DAY — the Q leg, own provenance (own SourceBox: a
+          volume figure under the price feed's badge would be borrowed provenance). */}
+      <div style={{ display:"flex", gap:18, alignItems:"baseline", flexWrap:"wrap", marginTop:10, borderTop:`1px solid ${T.border}`, paddingTop:10 }}>
+        <div>
+          <div style={{ fontFamily:T.fontMono, fontSize:8, color:T.textMuted }}>TOKENS ROUTED · T/day</div>
+          <div style={{ fontFamily:T.fontMono, fontSize:20, fontWeight:700, color:T.textPrimary }}>{Number.isFinite(volDay) ? volDay.toFixed(2) : "—"}<span style={{ fontSize:11, color:T.textMuted }}>T</span></div>
+        </div>
+        {dem && !dem.short && dem.revProxyWin !== null && (
+          <div style={{ fontFamily:T.fontMono, fontSize:10, color:dem.revProxyWin > 0 ? T.green : T.amber }}
+               title="Revenue proxy = (1+price move)×(1+volume move) over the SAME observed window — never annualised">
+            P×Q {dem.revProxyWin > 0 ? "+" : ""}{(dem.revProxyWin * 100).toFixed(1)}% over {dem.weeks}w window
+            <span style={{ color:T.textMuted }}> · P {(dem.pxWin * 100).toFixed(1)}% · Q {dem.volWin > 0 ? "+" : ""}{(dem.volWin * 100).toFixed(1)}%</span>
+          </div>
+        )}
+        {dem && dem.short && (
+          <div style={{ fontFamily:T.fontMono, fontSize:9, color:T.textMuted }}>P×Q window too short to read ({dem.weeks ?? 0}w &lt; {TOKEN_EFFICIENCY.minWeeks}w)</div>
+        )}
+        {volTrend.length >= 3 && (
+          <div style={{ height:26, flex:1, minWidth:120 }}>
+            <ResponsiveContainer width="100%" height="100%">
+              <LineChart data={volTrend.map((v, i) => ({ v, i }))}>
+                <Line type="monotone" dataKey="v" stroke={T.green} dot={false} strokeWidth={1.5}/>
+              </LineChart>
+            </ResponsiveContainer>
+          </div>
+        )}
+      </div>
+      <SourceBox api="OpenRouter" endpoint="datasets/rankings/daily · total tokens (keyed)" mode={volMode} asOf={volAsOf}/>
     </div>
   );
 };
@@ -239,7 +273,7 @@ const AIUnitEconomics=({d,modeOf,asOfOf})=>{
         </div>
         {/* FEAT-322: the live price side (OpenRouter) leads; the curated GPU cost side is
             one tap away — always-curated content doesn't own the default view. */}
-        <TokenomicsCard tok={d.tokenomics} mode={modeOf('tokenBlendedMtok')} asOf={asOfOf('tokenBlendedMtok')}/>
+        <TokenomicsCard tok={d.tokenomics} mode={modeOf('tokenBlendedMtok')} asOf={asOfOf('tokenBlendedMtok')} volMode={modeOf('tokenVolDay')} volAsOf={asOfOf('tokenVolDay')}/>
         <CollapsedGroup count={1} label="curated: GPU $/hr cost side">
           <GpuPricingCard />
         </CollapsedGroup>
