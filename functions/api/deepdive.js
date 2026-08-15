@@ -196,6 +196,27 @@ export async function onRequestPut({ request, env }) {
   if (dd !== null && (!dd || typeof dd !== "object" || Array.isArray(dd)))
     return json({ error: "deepDive must be an object, or null to remove" }, 400);
 
+  /* FEAT-TT-DOTHOME (v3.84): `dots` belong to the BOOK ENTRY, never to the payload — and until
+     now nothing enforced it. FEAT-TT-DOT (v3.17) put them on the entry precisely so that
+     "replacing a deepDive payload can never wipe the inventory"; after the v3.75 split this
+     endpoint became the one write path that replaces a payload wholesale, so a dot stored here
+     is a dot with a single copy sitting in the blast radius of the next save.
+     MEASURED 2026-08-13: ACHR, NU, SOFI and SYM each carried one, and for ACHR/NU/SOFI it was
+     their ONLY dot — the 8/04 "first gates+composite pass" record, one editor save away from
+     silent loss, and invisible to the terminal's dots UI (which reads e.dots) the whole time.
+     A triage run had to notice by hand; an invariant a human has to police is not an invariant.
+     HARD REJECT, not a silent strip: the caller holds the only copy at that moment, so dropping
+     it quietly would destroy exactly what this guard exists to protect. The live store was
+     cleaned before this shipped, so no existing payload can be rejected on re-save — the same
+     rule MISKEY was held to in v3.39. */
+  if (dd && Object.prototype.hasOwnProperty.call(dd, "dots"))
+    return json({
+      error: "deepDive must not carry `dots` — they belong on the book entry (e.dots), " +
+        "so that replacing a payload can never wipe the inventory. Move them to the book " +
+        "entry via PUT /api/tt FIRST, then re-save this payload without the key.",
+      key: DD_PREFIX + sym,
+    }, 400);
+
   // The belief ledger has to see this write. Before v3.75 a payload change arrived inside the
   // whole-book PUT and tt.js's diff caught it; after the split it arrives HERE and nowhere
   // else, so without this the ledger's thesis/hinge/pt/comp/est kinds go silent — the

@@ -4832,6 +4832,41 @@ console.log("\n[50] FEAT-TT-DDSTORE — deepDive moves to tt:dd:v1:<SYM>");
   ok("ddstore: ddIndexEntry(null) is null — an absent payload is never summarized into existence",
     dd.ddIndexEntry(null) === null && dd.ddIndexEntry("nope") === null);
 
+  /* FEAT-TT-DOTHOME (v3.84): `dots` live on the BOOK ENTRY, never in the payload. FEAT-TT-DOT
+     (v3.17) put them there so replacing a payload could never wipe the inventory — but after
+     the v3.75 split this endpoint became the one path that replaces a payload wholesale, and
+     nothing enforced the rule. Measured 2026-08-13: ACHR/NU/SOFI/SYM each carried one, and for
+     three of them it was their ONLY copy — one editor save from silent loss, and invisible to
+     the dots UI (which reads e.dots) throughout. A triage run caught it by hand; an invariant a
+     human has to police is not an invariant. */
+  ok("dothome: a payload carrying `dots` is REJECTED, naming the book entry as their home", await (async () => {
+    const kv = mkKV3();
+    const p = PAYLOAD("AAA"); p.dots = [{ t: "2026-08-04", state: "new", note: "belongs on the entry" }];
+    const r = await dd.onRequestPut({ request: rq("PUT", { params: "?sym=AAA", headers: AUTHED, body: { deepDive: p } }),
+      env: { TT_PIN: PIN, PULSE_CACHE: kv } });
+    const body = await r.json();
+    // Rejected loudly AND nothing written — a silent strip would destroy the caller's only copy.
+    return r.status === 400 && /e\.dots/.test(body.error) && /book entry/i.test(body.error) &&
+      !kv._store.get("tt:dd:v1:AAA");
+  })());
+  ok("dothome: an EMPTY dots array is rejected too — the key itself is the defect, not its length",
+    await (async () => {
+      const kv = mkKV3();
+      const p = PAYLOAD("AAA"); p.dots = [];
+      const r = await dd.onRequestPut({ request: rq("PUT", { params: "?sym=AAA", headers: AUTHED, body: { deepDive: p } }),
+        env: { TT_PIN: PIN, PULSE_CACHE: kv } });
+      return r.status === 400;
+    })());
+  ok("dothome: a payload WITHOUT dots is unaffected — no existing payload can be rejected on re-save",
+    await (async () => {
+      const kv = mkKV3();
+      const r = await dd.onRequestPut({ request: rq("PUT", { params: "?sym=AAA", headers: AUTHED, body: { deepDive: PAYLOAD("AAA") } }),
+        env: { TT_PIN: PIN, PULSE_CACHE: kv } });
+      return r.status === 200 && !!kv._store.get("tt:dd:v1:AAA");
+    })());
+  ok("dothome: the index never carries dots either (whitelist), so the board cannot resurrect them",
+    dd.ddIndexEntry({ hinges: [], dots: [{ t: "x" }] }).dots === undefined);
+
   // ---- PUT round-trip, removal, oversize ----
   ok("ddstore: PUT stores under tt:dd:v1:<SYM> and rebuilds that sym's index entry", await (async () => {
     const kv = mkKV3();

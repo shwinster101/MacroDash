@@ -2049,6 +2049,40 @@ Jan-anchor shipped; see `snapshot.js` ~318–328), `spyMa100`, `spyMa200`, and a
   string-pinning it — the project's own recurring lesson (v3.40, v3.54: state computed and
   rendered but not read at the gate) is exactly the shape a string pin cannot catch.
   Tests: **1067 smoke** (+6) + 192 render + 88 public-render.
+- **FEAT-TT-DOTHOME (v3.86) — an invariant a human has to police is not an invariant.** FEAT-TT-DOT
+  (v3.17) deliberately put `dots` on the BOOK ENTRY (`e.dots`) so that *"replacing a deepDive payload
+  can never wipe the inventory."* FEAT-TT-DDSTORE (v3.75) then made `/api/deepdive` the one path that
+  replaces a payload **wholesale** — and nothing anywhere enforced where dots may live. **Measured
+  2026-08-13: ACHR, NU, SOFI and SYM each carried a dot inside the payload, and for ACHR/NU/SOFI it
+  was their ONLY dot** — the 8/04 "first gates+composite pass" record, one editor save away from
+  silent loss, and invisible to the terminal's dots UI (which reads `e.dots`) the entire time. A
+  triage pass caught it by hand, which is the tell: the rule existed only as prose.
+  The PUT now **HARD-REJECTS** a payload carrying `dots`, naming the book entry as their home. Reject,
+  not silent strip — at that moment the caller holds the only copy, so quietly dropping the key would
+  destroy exactly what the guard protects. The live store was repaired *before* the guard shipped
+  (dots moved to the entry first, payloads stripped second — the crash-safe order v3.75's own
+  migration used), so **no existing payload can be rejected on re-save**, the same bar `MISKEY` was
+  held to in v3.39. An **empty** `dots` array is rejected too: the key is the defect, not its length.
+  Tests: **1389 smoke** (+4) + 229 render + 111 public-render.
+- **Session log 2026-08-13 — five falsifier windows, and what the prints actually said.** Five
+  pre-committed falsifier drafts were server-stamped 8/04-8/05 and never ratified; by 8/13 their
+  qualifying observations had **closed** (RKLB & TSM 8/10, LITE 8/11, BETA & NBIS 8/12), with only
+  NVDA's still open (8/26). The stamps predate the observations, so `commitFingerprint` (v3.77) will
+  still honour them — **promoting them unchanged remains valid; editing a condition now re-opens the
+  commitment and is post-hoc by definition**, since the outcomes are known. That asymmetry is the
+  whole point of §6.4.1 and is recorded here because the human decision precedes the server check.
+  Outcomes captured as dots on each name: **NBIS** revenue $582M +454%, ARR $3.0B (+56% QoQ), FY guide
+  reaffirmed — with **capex $20-25B against $3.0-3.4B revenue (6-8x)**, making it explicitly a funding
+  thesis and the archetypal neocloud the **NVDA $500B consortium** exists to fund (two ends of one
+  trade — the cluster rule with real numbers). **LITE** beat and guided Q1-FY27 to $1.23-1.28B /
+  $4.05-4.35 EPS, which annualises at or above the stored FY2027 $16.67 **before** further ramp — the
+  model's estimates now look conservative and should be re-derived. **BETA** beat revenue and RAISED
+  FY guidance to $42-50M, but missed EPS and guided Q3 revenue *down* sequentially; reiterated adj
+  EBITDA loss $400-445M **plus** capex $150-200M = ~$550-645M/yr against $1.51B net cash = **~2.3-2.7
+  years, not the ~3.1 the payload's G2 records** off the net-loss run-rate alone. **TSM**'s 8/10 was
+  the July monthly (+44.7% YoY, accelerating vs +37.0% YTD; capex raised to $60-64B), not earnings.
+  **RKLB** beat revenue, missed EPS, backlog +137%, and fell on Neutron timing — the tape punished the
+  schedule, not the quarter.
 - **FEAT-TT-SOURCING (v3.85.0) — who sources what, encoded rather than remembered.** Owner
   standing rule, verbatim: *"All I provide are the forward revenue and EPS conjectures. And by
   default, they will all be at least five analysts or more. So no need for the analyst count
