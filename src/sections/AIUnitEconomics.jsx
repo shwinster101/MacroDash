@@ -188,7 +188,7 @@ const TokenomicsCard = ({ tok, mode = "MOCK", asOf, volMode = "MOCK", volAsOf })
           </div>
         )}
       </div>
-      <SourceBox api="OpenRouter" endpoint="datasets/rankings/daily · total tokens (keyed)" mode={volMode} asOf={volAsOf}/>
+      <SourceBox api="OpenRouter" endpoint="datasets/rankings-daily · total tokens (keyed)" mode={volMode} asOf={volAsOf}/>
     </div>
   );
 };

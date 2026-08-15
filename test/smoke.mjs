@@ -6081,7 +6081,7 @@ console.log("\n[58] FEAT-TT-MAG7 — deck panel, basket average, honesty gates")
     /throw new Error\("tokenvol: no OPENROUTER_KEY configured"\)/.test(snapSrc) &&
     /withLastGood\(env, "tokenvol", \(\) => fetchTokenVolume\(env, statuses\)\)/.test(snapSrc) &&
     // v3.89.1: every failure path RECORDS status (§9) — no more invisible tokenvol miss.
-    (snapSrc.match(/recordStatus\(statuses, "openrouter", "datasets\/rankings\/daily"/g) || []).length >= 4);
+    (snapSrc.match(/recordStatus\(statuses, "openrouter", "datasets\/rankings-daily"/g) || []).length >= 4);
   ok("tokvol: the KV accrual copies pulse:tokentrend verbatim under its own key (dedup, cap 12, faults swallowed)",
     /pulse:tokenvoltrend/.test(snapSrc) &&
     (snapSrc.match(/trend = trend\.slice\(-12\)/g) || []).length === 2 &&
@@ -6118,7 +6118,7 @@ console.log("\n[58] FEAT-TT-MAG7 — deck panel, basket average, honesty gates")
     MOCK_DATA.tokenomics.volTrend.length - 1 < 8);
   ok("tokvol: the card suppresses the P×Q read when EITHER leg is illustrative, and the volume line has its OWN SourceBox",
     /isIllustrative\(mode\) \|\| isIllustrative\(volMode\)/.test(aiSrc) &&
-    /datasets\/rankings\/daily · total tokens \(keyed\)/.test(aiSrc) &&
+    /datasets\/rankings-daily · total tokens \(keyed\)/.test(aiSrc) &&
     /never annualised/.test(aiSrc));
   ok("tokvol: the price leg is no longer mislabelled 'the demand side' anywhere in code",
     !/demand-side mirror/.test(snapSrc) && !/demand-side mirror/.test(aiSrc) && !/demand-side mirror/.test(dashSrc));

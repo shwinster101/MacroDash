@@ -1210,17 +1210,17 @@ async function fetchTokenVolume(env, statuses = null) {
   // v3.89 first cut threw invisibly: absent output with nothing in source_status, the exact
   // silent-failure class ENGINE0-CONT closed for FRED/Kalshi/Finnhub.
   if (!env.OPENROUTER_KEY) {
-    recordStatus(statuses, "openrouter", "datasets/rankings/daily",
+    recordStatus(statuses, "openrouter", "datasets/rankings-daily",
       Object.assign(new Error("no_key"), { error_class: "no_key" }));
     throw new Error("tokenvol: no OPENROUTER_KEY configured");
   }
   let r, d;
   try {
-    r = await fetchRetry("https://openrouter.ai/api/v1/datasets/rankings/daily",
+    r = await fetchRetry("https://openrouter.ai/api/v1/datasets/rankings-daily",
       { headers: { Accept: "application/json", Authorization: `Bearer ${env.OPENROUTER_KEY}` } }, 2, 9000);
     d = await r.json();
   } catch (e) {
-    recordStatus(statuses, "openrouter", "datasets/rankings/daily", e);
+    recordStatus(statuses, "openrouter", "datasets/rankings-daily", e);
     throw e;
   }
   // Fail-closed parser: the rows may arrive as {data:[...]} or a bare array; each row's
@@ -1230,7 +1230,7 @@ async function fetchTokenVolume(env, statuses = null) {
   if (!rows) {
     // Name the shape we actually got — the schema check this feature shipped without.
     const shape = d && typeof d === "object" ? Object.keys(d).slice(0, 6).join(",") : typeof d;
-    recordStatus(statuses, "openrouter", "datasets/rankings/daily",
+    recordStatus(statuses, "openrouter", "datasets/rankings-daily",
       Object.assign(new Error("bad_shape"), { error_class: "bad_shape:" + shape }));
     throw new Error("tokenvol: unrecognized response shape");
   }
@@ -1242,11 +1242,11 @@ async function fetchTokenVolume(env, statuses = null) {
   const tokOf = (row) => { const t = Number(row.total_tokens ?? row.tokens); return Number.isFinite(t) && t >= 0 ? t : null; };
   const total = dayRows.reduce((a, row) => { const t = tokOf(row); return t === null ? a : a + t; }, 0);
   if (!(total > 0)) {
-    recordStatus(statuses, "openrouter", "datasets/rankings/daily",
+    recordStatus(statuses, "openrouter", "datasets/rankings-daily",
       Object.assign(new Error("no_totals"), { error_class: "no_totals" }));
     throw new Error("tokenvol: no usable token totals");
   }
-  recordStatus(statuses, "openrouter", "datasets/rankings/daily", true,
+  recordStatus(statuses, "openrouter", "datasets/rankings-daily", true,
     { observed_at: latestDate || null });
   const volT = parseFloat((total / 1e12).toFixed(3));   // trillions/day
   const asOf = latestDate || new Date().toLocaleDateString("en-CA", { timeZone: "America/New_York" });
