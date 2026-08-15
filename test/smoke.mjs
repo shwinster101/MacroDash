@@ -6078,8 +6078,10 @@ console.log("\n[58] FEAT-TT-MAG7 — deck panel, basket average, honesty gates")
   console.log("\n[60] FEAT-TOKVOL — the Q leg, key-gated, and the P×Q window read");
   const { tokenDemand } = await import("../src/aiEcon.js");
   ok("tokvol: KEY-GATED like Finnhub — no OPENROUTER_KEY throws before any fetch (mock holds)",
-    /if \(!env\.OPENROUTER_KEY\) throw new Error\("tokenvol: no OPENROUTER_KEY/.test(snapSrc) &&
-    /withLastGood\(env, "tokenvol", \(\) => fetchTokenVolume\(env\)\)/.test(snapSrc));
+    /throw new Error\("tokenvol: no OPENROUTER_KEY configured"\)/.test(snapSrc) &&
+    /withLastGood\(env, "tokenvol", \(\) => fetchTokenVolume\(env, statuses\)\)/.test(snapSrc) &&
+    // v3.89.1: every failure path RECORDS status (§9) — no more invisible tokenvol miss.
+    (snapSrc.match(/recordStatus\(statuses, "openrouter", "datasets\/rankings\/daily"/g) || []).length >= 4);
   ok("tokvol: the KV accrual copies pulse:tokentrend verbatim under its own key (dedup, cap 12, faults swallowed)",
     /pulse:tokenvoltrend/.test(snapSrc) &&
     (snapSrc.match(/trend = trend\.slice\(-12\)/g) || []).length === 2 &&
