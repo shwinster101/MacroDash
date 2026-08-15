@@ -2049,6 +2049,42 @@ Jan-anchor shipped; see `snapshot.js` ~318–328), `spyMa100`, `spyMa200`, and a
   string-pinning it — the project's own recurring lesson (v3.40, v3.54: state computed and
   rendered but not read at the gate) is exactly the shape a string pin cannot catch.
   Tests: **1067 smoke** (+6) + 192 render + 88 public-render.
+- **v3.84.0 "the recession rails" — CCC junk tail · Sahm rule · 10y–3m, all NON-VOTING on
+  arrival.** Three live FRED signals from the 2026-08-15 gap analysis, all passing the v3.43
+  moat test (Yahoo shows the level; it does not judge it, abstain when stale, or pair it with
+  the transmission story), all arriving under the NFCI/30Y rule: no `REGIME_BAND_TABLE`,
+  `evidence.js` or `ttReadout.js` change — a new voter moves the majority math for a contract
+  that gates real orders, and two of these carry asserted bands (smoke-pinned absent from all
+  three files). **(1) `creditTail` (`BAMLH0A3HYC`, ICE BofA CCC & Lower OAS)** — the junk
+  TAIL: AI-infra debt (the CRWV-class neocloud complex) is rated single-B/CCC and the tail
+  widens FIRST while broad HY looks calm — the funding-pipe stress gauge for exactly the
+  buildout this book is long. Own tile beside HY–IG (NOT a sub-line — it needs its own
+  provenance, its own `demoted()` key, its own illustrative gate; borrowed provenance is the
+  label-outlives-data class). CALM/NEUTRAL/STRESSED off `CREDIT_TAIL_CALM=7`/
+  `CREDIT_TAIL_STRESS=12` in `regime.js` (one Node-importable home; **ASSERTED, not
+  calibrated** — FRED unreachable from this build env, the NFCI precedent, every boundary
+  executed in smoke), verdict suppressed on mock/stale. **(2) `sahm`** — computed from the
+  SAME UNRATE pull inside the fetch closure (only 10 of 26 points escape it via `spark`, the
+  rule needs 15 — the tuple gained an 8th `extra` slot), math in new pure **`src/sahm.js`**
+  (`SAHM_TRIGGER=0.5` is Sahm's own printed definition, a CITATION not a fit; `sahmFrom`
+  fails closed below 15 points — cannot-compute must never read as 0.00 = maximally clear).
+  Cell in the labor row, `>=` comparison ("0.50 or more"), TRIGGERED/CLEAR-with-distance
+  suppressed on mock/stale; can differ ±0.01 from FRED's SAHMREALTIME (rounding/vintage —
+  stated, not hidden). **(3) `spread10y3m`** — DGS3MO joins the series map (19 series = one
+  extra 2-wide tail batch; the VIX/DGS10 critical head untouched) and the classic recession
+  lead derives from LEGS, not FRED's precomputed T10Y3M, so a stale leg BLINDS the spread
+  instead of a precomputed number wearing a fresh date. Stated as a fact on the 10Y tile
+  (`10y–3m +0.37pp` / `— INVERTED`); no "inverted N months" memory (asserted, not measured).
+  Two alerts (CCC >12pp · 10y–3m inverts), both OFF by default, the 10y–3m on the two-leg
+  blind rule. Mock values all abstain by construction (tail 9.4 neutral · sahm 0.13 CLEAR ·
+  spread +0.37 positive-normal). Found by the suite: five labor cells no longer fit one
+  320px row — the row wraps now (an overflowing row is a suite red since v3.54).
+  Tests: **1384 smoke** (+21: bands executed both ways incl. inversion, `sahmFrom` run at
+  flat/shock/14-point boundaries, the trigger at 0.49/0.50, CCC boundaries at −ε/edge/+ε,
+  the two-leg alert blind naming its dead leg, merge end-to-end with own-date inheritance,
+  the non-voting absence sweep, the mock-abstain proof) + 228 render + **114 public-render**
+  (+3: the CCC tile's judged state driven live, the 10y–3m fact line, the Sahm CLEAR badge
+  with distance) + `audit:prod` clean.
 - **FEAT-CAPEX-OCF (v3.83.0) — funding quality: the capex tape learns whether the buildout is
   self-funded.** The tape's `dir` tripwire fires on the ANNOUNCEMENT (a guide cut) — a lagging
   event. The leading question, from the 2026-08-15 buildout-vs-maintenance analysis, is whether

@@ -100,6 +100,12 @@ const FULL_LIVE = {
   fedFunds: 3.63, fedFundsAsOf: daysAgo(20),
   nfci: -0.62, nfciAsOf: daysAgo(4),
   shillerPe: 31.2, shillerPeAsOf: daysAgo(20),
+  // v3.84 (non-voting): the CCC junk tail + Sahm + 10y–3m, live-dated so the tiles render
+  // their judged states rather than ILLUSTRATIVE in this harness.
+  creditTail: 11.2, creditTailD1: 0.31, creditTailSeries: [10.1, 10.4, 10.8, 11.0, 11.2], creditTailAsOf: TODAY,
+  sahm: 0.23, sahmAsOf: daysAgo(20),
+  threeMonth: 4.05, threeMonthAsOf: TODAY,
+  spread10y3m: 0.41, spread10y3mSeries: [0.2, 0.3, 0.35, 0.38, 0.41], spread10y3mAsOf: TODAY,
 };
 // Only three factors usable → below the 4-of-6 quorum.
 const DEGRADED = {
@@ -369,6 +375,18 @@ console.log("\n[public] v3.60 P0 slice — nav, matrix, digest, health");
   await page.waitForTimeout(200);
   ok("v3.69: expanding market detail reveals the Market Pulse chart card",
     /MARKET PULSE/i.test(await page.locator('section[aria-labelledby="markets"]').innerText()));
+  // v3.84: the CCC junk-tail tile renders its judged state on live data (11.2 → NEUTRAL —
+  // the badge would be suppressed on mock), and the 10Y carries the 10y–3m note as a fact.
+  const mktsOpen = await page.locator('section[aria-labelledby="markets"]').innerText();
+  ok("v3.84: the CCC tail tile renders live with the NEUTRAL band and its transmission line",
+    /CCC JUNK TAIL/i.test(mktsOpen) && /11\.2/.test(mktsOpen) && /NEUTRAL/.test(mktsOpen) &&
+    /funds the AI buildout/i.test(mktsOpen) && /BAMLH0A3HYC/i.test(mktsOpen));
+  ok("v3.84: the 10Y tile states the 10y–3m spread as a fact (+0.41pp, not INVERTED here)",
+    /10y–3m \+0\.41pp/.test(mktsOpen) && !/10y–3m \+0\.41pp — INVERTED/.test(mktsOpen));
+  // v3.84: the Sahm cell (macro section, always visible) — CLEAR with the distance stated.
+  const macTxt = await page.locator('section[aria-labelledby="macro"]').innerText();
+  ok("v3.84: the Sahm cell renders CLEAR with distance-to-trigger on live data",
+    /SAHM RULE/i.test(macTxt) && /\+0\.23/.test(macTxt) && /CLEAR · 0\.27 to trigger/i.test(macTxt));
   // (d) real section extents: ai no longer swallows the operator monitors.
   ok("v3.69: markets/macro/ai anchors have real <section> extents, and ai does NOT contain MY CONVICTION",
     await page.evaluate(() => {

@@ -23,6 +23,8 @@
 // marketSession/looksBehind here and isStale/etSession client-side, so the two sides
 // can never disagree about which weekdays had a session.
 import { isMarketHoliday } from "../../src/sources.js";
+// FEAT-SAHM (v3.84): the Sahm math — one home (src/sahm.js), same esbuild-inline path.
+import { sahmFrom } from "../../src/sahm.js";
 
 // ENGINE0-CONT: the readout contract now lives in src/ttReadout.js and the snapshot layer
 // consumes it for publish decisions — THIRD functions/→src/ import, same esbuild-inline path.
@@ -84,6 +86,17 @@ export const BANDS = {
   savings:      [0, 60],
   shillerPe:    [3, 100],      // was an inline guard in fetchShiller; centralized here
   creditSpread: [0, 30],
+  // FEAT-CCC (v3.84): CCC-and-lower OAS — the junk TAIL. Record ~44pp (2008-12); 60 rejects
+  // a decimal shift without excluding any print that has ever happened. ≤0 is a parse fault
+  // for an OAS.
+  creditTail:   [0, 60],
+  // FEAT-SAHM (v3.84): a difference of unemployment-rate averages — ±a few tenths in normal
+  // times, ~+9 at the 2020 spike. [-5, 10] rejects the impossible only.
+  sahm:         [-5, 10],
+  threeMonth:   [0, 25],       // 3-month bill: 1981 peak ~17%; same family as fedFunds
+  // 10y–3m term spread: inverted is the SIGNAL (the classic recession lead), not a parse
+  // fault — the same negative-WTI rule as spread10s30s above.
+  spread10y3m:  [-10, 10],
   tokenBlendedMtok: [0, 10000],
   // NFCI is standardized to mean 0 / SD 1 over its full 1971– history. Its record high is
   // ~+3.3 (2008-10) and its record low ~-1.0, so ±5 rejects the impossible (a decimal shift,
@@ -398,6 +411,10 @@ async function fetchFred(key, statuses = null) {
        from "the whole curve moved". 17 series now = one more batch of 5, which is exactly
        why the phase batching must not be collapsed. */
     thirtyYear:   "DGS30",
+    // FEAT-SAHM/FEAT-CCC (v3.84): 19 series = one extra 2-wide tail batch (2+5+5+5+2). The
+    // critical head (VIX/DGS10 first at concurrency 2) is untouched; the tail only delays
+    // dashboard-grade fields, never the order-gating ones.
+    threeMonth:   "DGS3MO",     // 3-month bill — the short leg of the 10y–3m recession lead
     fedFunds:     "FEDFUNDS",
     cpiHeadline:  "CPIAUCSL",   // CPI index  → YoY % below
     cpiCore:      "CPILFESL",   // core CPI index → YoY %
@@ -412,6 +429,12 @@ async function fetchFred(key, statuses = null) {
     btc:          "CBBTCUSD",
     hySpread:     "BAMLH0A0HYM2",  // ICE BofA US HY OAS — daily credit risk gauge
     igSpread:     "BAMLC0A0CM",    // ICE BofA US IG OAS — investment-grade counterpart
+    /* FEAT-CCC (v3.84): the junk TAIL. AI-infra debt (the CRWV-class neocloud complex) is
+       rated single-B/CCC, and the tail widens FIRST while the broad HY index still looks
+       calm — the funding-pipe stress gauge for exactly the buildout this book is long.
+       Passes the v3.43 sorting rule the same way NFCI did: Yahoo shows the level; it does
+       not judge it, abstain when stale, or pair it with the transmission story. */
+    creditTail:   "BAMLH0A3HYC",   // ICE BofA CCC & Lower US HY OAS
     // FEAT-NFCI (v3.43): Chicago Fed National Financial Conditions Index. WEEKLY (released
     // Wednesday for the week ending the prior Friday). 105 underlying measures across money
     // markets, debt/equity markets and the banking system — standardized so that ZERO is the
@@ -476,6 +499,15 @@ async function fetchFred(key, statuses = null) {
         const mAgo   = vals[21];  // ~1 trading month back (DAILY fields only)
         // Series of last 10 for sparkline (newest last)
         const spark  = vals.slice(0, 10).reverse();
+        // FEAT-SAHM (v3.84): computed HERE because only 10 of the 26 monthly points escape
+        // this closure via `spark`, and the rule needs 15. The math lives in src/sahm.js
+        // (one home, Node-testable); the 8th tuple member is an extras object every other
+        // series omits — the destructure downstream tolerates undefined.
+        if (field === "unemployment") {
+          const s = sahmFrom(vals);
+          return [field, latest, prev, spark, obs[0]?.date, wAgo, mAgo,
+            s === null ? undefined : { sahm: s, sahmAsOf: obs[0]?.date }];
+        }
         return [field, latest, prev, spark, obs[0]?.date, wAgo, mAgo];
       })
     );
@@ -484,8 +516,10 @@ async function fetchFred(key, statuses = null) {
 
   // DAILY-frequency fields only: idx[5]/idx[21] are ~1wk/~1mo back. Applying these
   // offsets to a MONTHLY series (FEDFUNDS, UNRATE…) would mean 5/21 *months* — garbage.
-  // So w1/m1 derivation is gated to true daily series.
-  const DAILY = new Set(["tenYear", "thirtyYear", "wti", "btc", "vix"]);
+  // So w1/m1 derivation is gated to true daily series. threeMonth (DGS3MO) is genuinely
+  // daily (the 30Y precedent); creditTail's legs-family (hySpread/igSpread) is not listed,
+  // so the tail follows its family: D1-only.
+  const DAILY = new Set(["tenYear", "thirtyYear", "threeMonth", "wti", "btc", "vix"]);
   // Percent-change helper (for price-like fields); rates use absolute yield deltas.
   // A zero base divides to Infinity; a NEGATIVE base inverts the sign, so a recovery
   // renders as a decline — and WTI really did settle at -$37.63 on 2020-04-20.
@@ -496,10 +530,14 @@ async function fetchFred(key, statuses = null) {
   const out = {};
   for (const r of results) {
     if (r.status !== "fulfilled") continue;
-    const [field, latest, prev, spark, asOf, wAgo, mAgo] = r.value;
+    const [field, latest, prev, spark, asOf, wAgo, mAgo, extra] = r.value;
     if (isNaN(latest)) continue;
     out[field] = latest;
     out[field + "AsOf"] = asOf; // FEAT-R2: observation date, for per-tile freshness
+    // FEAT-SAHM (v3.84): per-series extras computed inside the fetch closure (where the
+    // full 26-point pull is in scope) ride the 8th tuple slot; today only unemployment
+    // emits one ({sahm, sahmAsOf} — its own AsOf, the creditSpread PRIMARY_ASOF pattern).
+    if (extra && typeof extra === "object") Object.assign(out, extra);
     const daily = DAILY.has(field);
     // Derived deltas for specific fields. 10Y = absolute yield Δ (pp); WTI/BTC = % Δ.
     if (field === "tenYear") {
@@ -556,6 +594,15 @@ async function fetchFred(key, statuses = null) {
       if (!isNaN(prev)) out.igSpreadD1 = parseFloat((latest - prev).toFixed(4));
       out._igSparkline = spark; // temp
     }
+    // FEAT-CCC (v3.84): the junk tail — direct emission (own AsOf), D1 + series, following
+    // its hySpread/igSpread family: absolute pp deltas, no W1/M1 (not in DAILY).
+    if (field === "creditTail") {
+      if (!isNaN(prev)) out.creditTailD1 = parseFloat((latest - prev).toFixed(4));
+      out.creditTailSeries = spark;
+    }
+    // FEAT-SAHM (v3.84): the short leg of 10y–3m. Level + temp sparkline only — nothing
+    // renders a 3-month D1, and the spread below carries the decision content.
+    if (field === "threeMonth") out._threeMoSparkline = spark;
   }
 
   /* Derive the 10s30s term spread (FEAT-30Y). Steepening with the long end leading is the
@@ -571,8 +618,22 @@ async function fetchFred(key, statuses = null) {
         parseFloat((out._thirtySparkline[i] - out._tenSparkline[i]).toFixed(3)));
     }
   }
+  /* Derive the 10y–3m term spread (FEAT-SAHM, v3.84) — the classic recession lead (the
+     NY Fed's own model basis). Derived from LEGS rather than FRED's precomputed T10Y3M so
+     two-leg staleness stays honest: a stale leg blinds the spread instead of a precomputed
+     number wearing a fresh date. Absolute pp; inversion is the signal (negative-WTI rule). */
+  if (out.tenYear !== undefined && out.threeMonth !== undefined) {
+    out.spread10y3m = parseFloat((out.tenYear - out.threeMonth).toFixed(3));
+    out.spread10y3mAsOf = out.tenYearAsOf || out.threeMonthAsOf;
+    if (Array.isArray(out._tenSparkline) && Array.isArray(out._threeMoSparkline)) {
+      const n = Math.min(out._tenSparkline.length, out._threeMoSparkline.length);
+      out.spread10y3mSeries = Array.from({length: n}, (_, i) =>
+        parseFloat((out._tenSparkline[i] - out._threeMoSparkline[i]).toFixed(3)));
+    }
+  }
   delete out._thirtySparkline;
   delete out._tenSparkline;
+  delete out._threeMoSparkline;
 
   // Derive HY-IG credit spread — the single highest-value cross-field metric.
   // Widening = bearish leading indicator (inverse correlation to S&P 500).

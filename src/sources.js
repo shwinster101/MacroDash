@@ -42,6 +42,12 @@ export const SOURCES = {
   thirtyYearSeries: { path: "crossAsset.treasury30y.series",  kind: "series", displayClass: "public" },
   spread10s30s:       { path: "crossAsset.term.spread10s30s", kind: "num",    displayClass: "public" },
   spread10s30sSeries: { path: "crossAsset.term.series",       kind: "series", displayClass: "public" },
+  // FEAT-SAHM (v3.84): the short leg + the classic recession-lead spread (10y–3m). The
+  // spread is stamped its own AsOf in snapshot.js (tenYearAsOf || threeMonthAsOf), so its
+  // series derivative inherits from IT — the spread10s30s shape exactly.
+  threeMonth:         { path: "crossAsset.treasury3m.current", kind: "num",    displayClass: "public" },
+  spread10y3m:        { path: "crossAsset.term.spread10y3m",   kind: "num",    displayClass: "public" },
+  spread10y3mSeries:  { path: "crossAsset.term.series10y3m",   kind: "series", displayClass: "public" },
   fedFunds:       { path: "macro.fedFunds.rate",            kind: "num",    displayClass: "public" },
   unemployment:   { path: "macro.unemployment.national",    kind: "num",    displayClass: "public" },
   unemploymentTrend: { path: "macro.unemployment.trend",    kind: "series", displayClass: "public" },
@@ -80,6 +86,14 @@ export const SOURCES = {
   creditSpread:       { path: "macro.credit.spread",      kind: "num",    displayClass: "public" },
   creditSpreadD1:     { path: "macro.credit.spreadD1",    kind: "num",    displayClass: "public" },
   creditSpreadSeries: { path: "macro.credit.series",      kind: "series", displayClass: "public" },
+  // FEAT-CCC (v3.84): the junk TAIL (ICE BofA CCC & Lower OAS) — AI-infra debt is rated
+  // single-B/CCC, and the tail widens FIRST while broad HY still looks calm.
+  creditTail:         { path: "macro.credit.tail",        kind: "num",    displayClass: "public" },
+  creditTailD1:       { path: "macro.credit.tailD1",      kind: "num",    displayClass: "public" },
+  creditTailSeries:   { path: "macro.credit.tailSeries",  kind: "series", displayClass: "public" },
+  // FEAT-SAHM (v3.84): computed from the same UNRATE pull (src/sahm.js), stamped its own
+  // AsOf (the UNRATE observation date) in snapshot.js — PRIMARY, not derived.
+  sahm:               { path: "macro.unemployment.sahm",  kind: "num",    displayClass: "public" },
   // SENTIMENT (scrapers — CNN F&G). DEC-31 (v3.2): CBOE Put/Call retired (feed dead since 2019).
   fearGreed:      { path: "marketPulse.fearGreed.score",    kind: "num",    displayClass: "citation" },
   fearGreedLabel: { path: "marketPulse.fearGreed.label",    kind: "str",    displayClass: "citation" },
@@ -134,6 +148,10 @@ export const DERIVED_OF = {
   // credit spread (creditSpread itself IS stamped its own AsOf — copied from hySpreadAsOf in
   // snapshot.js — so its own derivatives inherit from IT, not from hySpread directly)
   creditSpreadD1: "creditSpread", creditSpreadSeries: "creditSpread",
+  // FEAT-CCC (v3.84): the tail is a direct pull with its own AsOf; derivatives inherit.
+  creditTailD1: "creditTail", creditTailSeries: "creditTail",
+  // FEAT-SAHM (v3.84): spread10y3m carries its own AsOf (tenYearAsOf || threeMonthAsOf).
+  spread10y3mSeries: "spread10y3m",
   nfciW1: "nfci", nfciSeries: "nfci",
   // monthly/weekly FRED trends (primary field already carries its own AsOf)
   unemploymentTrend: "unemployment", savingsTrend: "savings",
@@ -160,6 +178,7 @@ export const DERIVED_EXEMPT = ["lastRefresh", "session"];
 const CADENCE = {
   // monthly FRED releases (period-dated at month start + a publication lag)
   fedFunds: "monthly", unemployment: "monthly", unemploymentTrend: "monthly", lfpr: "monthly",
+  sahm: "monthly",     // FEAT-SAHM (v3.84): derived from monthly UNRATE — ages with it
   savings: "monthly", savingsTrend: "monthly",
   shillerPe: "monthly", // CAPE is a monthly-cadence metric
   cpiHeadline: "monthly", cpiCore: "monthly", cpiTrend: "monthly",
