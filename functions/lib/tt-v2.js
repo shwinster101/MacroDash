@@ -6,11 +6,10 @@
 
 export const TT_STREET_SCHEMA = "tt-street-v1";
 export const TT_FACTS_SCHEMA = "tt-facts-v1";
-export const TT_ANALYSIS_SCHEMA = "tt-analysis-v1";
-// v2.1.0 (v3.91): binary window moved OUTSIDE the eligibility set (report-only, BINCAL
-// doctrine) and the quote gate became session-aware — both change what a receipt of a given
-// version means, so the engine version moves with them (receipts bind engineVersion).
-export const TT_ENGINE_VERSION = "tt-gates-v2.1.0";
+import { isMarketHoliday } from "../../src/sources.js";
+
+export const TT_ANALYSIS_SCHEMA = "tt-analysis-v2";
+export const TT_ENGINE_VERSION = "tt-gates-v2.2.0";
 
 export const TARGET_FRESH_DAYS = 30;
 export const ESTIMATE_FRESH_DAYS = 45;
@@ -356,6 +355,57 @@ function factValue(facts, name) {
   return f === undefined ? null : { value: f, status: "UNKNOWN" };
 }
 
+function etParts(now) {
+  const parts = new Intl.DateTimeFormat("en-US", {
+    timeZone: "America/New_York", year: "numeric", month: "2-digit", day: "2-digit",
+    hour: "2-digit", minute: "2-digit", hourCycle: "h23", weekday: "short",
+  }).formatToParts(now).reduce((out, p) => (out[p.type] = p.value, out), {});
+  return {
+    date: `${parts.year}-${parts.month}-${parts.day}`,
+    minute: Number(parts.hour) * 60 + Number(parts.minute),
+    weekday: parts.weekday,
+  };
+}
+
+function tradingDate(value) {
+  const d = new Date(`${value}T12:00:00Z`);
+  if (!Number.isFinite(d.getTime())) return false;
+  const dow = d.getUTCDay();
+  return dow !== 0 && dow !== 6 && !isMarketHoliday(value);
+}
+
+function previousTradingDate(value) {
+  const d = new Date(`${value}T12:00:00Z`);
+  if (!Number.isFinite(d.getTime())) return null;
+  do d.setUTCDate(d.getUTCDate() - 1);
+  while (!tradingDate(d.toISOString().slice(0, 10)));
+  return d.toISOString().slice(0, 10);
+}
+
+export function evaluationQuote(facts, now = new Date()) {
+  const quote = factValue(facts, "quote");
+  const et = etParts(now);
+  const tradingToday = tradingDate(et.date);
+  const marketOpen = tradingToday && et.minute >= 570 && et.minute < 960; // 09:30–16:00 ET
+  if (marketOpen) return quote ? { ...quote, basis: "INTRADAY", sessionDate: et.date } : null;
+
+  const expectedDate = tradingToday && et.minute >= 960 ? et.date : previousTradingDate(et.date);
+  const candles = factValue(facts, "candles");
+  const rows = Array.isArray(candles?.value) ? candles.value : [];
+  const close = rows.findLast((row) => String(row?.date || "").slice(0, 10) === expectedDate && finite(Number(row?.close)) && Number(row.close) > 0);
+  if (!close) return {
+    value: null, status: "UNKNOWN", basis: "PRIOR_CLOSE", sessionDate: expectedDate,
+    reason: `most recent completed-session close (${expectedDate || "unknown"}) is unavailable`,
+  };
+  const status = String(candles?.status || "UNKNOWN").toUpperCase();
+  const currency = quote?.currency || facts?.fields?.profile?.value?.currency || null;
+  return {
+    value: Number(close.close), currency, status, basis: "PRIOR_CLOSE", sessionDate: expectedDate,
+    observedAt: expectedDate, retrievedAt: candles?.retrievedAt, provider: candles?.provider,
+    sourceUrl: candles?.sourceUrl,
+  };
+}
+
 function macroGate(readout) {
   const regime = readout?.regime || readout;
   const actionability = String(regime?.actionability || readout?.actionability || "").toUpperCase();
@@ -379,11 +429,7 @@ function macroGate(readout) {
   return gate("macro", "PASS", "Engine 0 permits full evaluation", evidence);
 }
 
-// v3.91 (audit #5): the closed-market carry window for a last-close print. 72h covers a
-// weekend + one holiday; anything older is a genuinely dead feed, not a closed market.
-export const QUOTE_CLOSED_MAX_AGE_HOURS = 72;
-
-function quoteGate(quote, now, session = null) {
+function quoteGate(quote, now) {
   if (!quote || !finite(quote.value) || quote.value <= 0)
     return gate("quote", "UNKNOWN", "no usable sourced quote", []);
   const status = String(quote.status || "UNKNOWN").toUpperCase();
@@ -391,34 +437,18 @@ function quoteGate(quote, now, session = null) {
     return gate("quote", "UNKNOWN", `quote status is ${status}`, [quote.observedAt, quote.provider].filter(Boolean));
   // Retrieval time is not market observation time. Falling back to it would let a delayed
   // provider response relabel an old print as a fresh quote.
+  if (quote.basis === "PRIOR_CLOSE")
+    return gate("quote", "PASS", `using ${quote.sessionDate} completed-session close`, [quote.provider, quote.observedAt].filter(Boolean));
   const observed = Date.parse(String(quote.observedAt || ""));
   const ageMinutes = Number.isFinite(observed) ? (now.getTime() - observed) / 60000 : null;
-  if (ageMinutes === null || ageMinutes < -5)
-    return gate("quote", "UNKNOWN", ageMinutes === null ? "quote observation time is unavailable" : "quote observation time is in the future",
-      [quote.observedAt, quote.retrievedAt].filter(Boolean));
-  /* v3.91 (audit #5): SESSION-AWARE freshness. The 15-minute rule is an intraday claim —
-     applied around the clock it made street eligibility perpetually WAIT outside regular
-     hours, because every close print is >15min old by 16:16 ET. Outside an OPEN session the
-     last close IS the freshest fact the market has produced, so it passes inside a bounded
-     carry window, with the session NAMED on the gate. session comes from the same Engine 0
-     readout the macro gate already consumes (one clock, never a second session derivation);
-     an UNAVAILABLE session keeps the strict intraday rule — fail closed, never assume closed. */
-  const sess = String(session || "").toUpperCase();
-  const marketOpen = sess ? sess === "OPEN" : true;   // unknown session → strict
-  if (marketOpen) {
-    if (ageMinutes > QUOTE_MAX_AGE_MINUTES)
-      return gate("quote", "UNKNOWN", `quote is ${Math.round(ageMinutes)} minutes old`,
-        [quote.observedAt, quote.retrievedAt, `maximum ${QUOTE_MAX_AGE_MINUTES} minutes intraday`].filter(Boolean));
-    return gate("quote", "PASS", `usable ${status.toLowerCase()} quote`, [quote.provider, quote.observedAt].filter(Boolean));
-  }
-  if (ageMinutes > QUOTE_CLOSED_MAX_AGE_HOURS * 60)
-    return gate("quote", "UNKNOWN", `quote is ${Math.round(ageMinutes / 60)} hours old — past the closed-market carry window`,
-      [quote.observedAt, `maximum ${QUOTE_CLOSED_MAX_AGE_HOURS}h while closed`].filter(Boolean));
-  return gate("quote", "PASS", `market ${sess} — last-close print accepted (${Math.round(ageMinutes / 60)}h old)`,
-    [quote.provider, quote.observedAt].filter(Boolean));
+  if (ageMinutes === null || ageMinutes < -5 || ageMinutes > QUOTE_MAX_AGE_MINUTES)
+    return gate("quote", "UNKNOWN", ageMinutes === null ? "quote observation time is unavailable" :
+      `quote is ${Math.max(0, Math.round(ageMinutes))} minutes old`,
+      [quote.observedAt, quote.retrievedAt, `maximum ${QUOTE_MAX_AGE_MINUTES} minutes`].filter(Boolean));
+  return gate("quote", "PASS", `usable ${status.toLowerCase()} intraday quote`, [quote.provider, quote.observedAt].filter(Boolean));
 }
 
-function binaryGate(nextEvent, now) {
+function binaryAdvisory(nextEvent, now) {
   if (!nextEvent || !validDate(nextEvent.value)) return gate("binary", "UNKNOWN", "earnings/catalyst calendar is unavailable", []);
   const status = String(nextEvent.status || "UNKNOWN").toUpperCase();
   if (!["LIVE", "CACHED"].includes(status))
@@ -428,8 +458,8 @@ function binaryGate(nextEvent, now) {
   const days = Math.round((event - today) / 86400000);
   if (days < 0) return gate("binary", "UNKNOWN", "next event date is in the past", [nextEvent.value]);
   if (days <= BINARY_WINDOW_DAYS)
-    return gate("binary", "FAIL", `binary event in ${days} day${days === 1 ? "" : "s"} (≤${BINARY_WINDOW_DAYS})`, [nextEvent.value, nextEvent.provider].filter(Boolean));
-  return gate("binary", "PASS", `next binary event is ${days} days away`, [nextEvent.value, nextEvent.provider].filter(Boolean));
+    return gate("binary", "SOON", `binary event in ${days} day${days === 1 ? "" : "s"} (≤${BINARY_WINDOW_DAYS}) — advisory only`, [nextEvent.value, nextEvent.provider].filter(Boolean));
+  return gate("binary", "CLEAR", `next binary event is ${days} days away`, [nextEvent.value, nextEvent.provider].filter(Boolean));
 }
 
 export function rewardRiskFloor(tier = "core", regimeVerdict = "NEUTRAL") {
@@ -437,15 +467,12 @@ export function rewardRiskFloor(tier = "core", regimeVerdict = "NEUTRAL") {
   return base + (String(regimeVerdict).toUpperCase() === "HEADWIND" ? 0.5 : 0);
 }
 
-export function buildGateReceipt({ street, facts, readout, composite, qualitative, technicals, tier = "core", now = new Date() } = {}) {
-  const quote = factValue(facts, "quote");
+export function buildGateReceipt({ street, facts, readout, composite, qualitative, technicals, revisionContext = null, tier = "core", now = new Date() } = {}) {
+  const quote = evaluationQuote(facts, now);
   const metrics = street ? deriveStreetMetrics(street, quote, { now }) : { status: "INVALID", errors: ["street packet unavailable"] };
-  // v3.91 (audit #5): the session comes from the SAME readout the macro gate consumes —
-  // one clock. Absent → quoteGate stays strict intraday.
-  const session = readout?.session || readout?.regime?.session || null;
   const gates = [];
   gates.push(macroGate(readout));
-  gates.push(quoteGate(quote, now, session));
+  gates.push(quoteGate(quote, now));
 
   if (metrics.status !== "OK") {
     gates.push(gate("street_gap", "UNKNOWN", "confirmed street packet is unavailable or invalid", metrics.errors || []));
@@ -490,19 +517,9 @@ export function buildGateReceipt({ street, facts, readout, composite, qualitativ
     ? gate("reward_risk", "PASS", `${round(technicals.rewardRisk, 2)}x reward/risk clears ${floor}x`, technicals.evidence || [])
     : gate("reward_risk", "FAIL", `${round(technicals.rewardRisk, 2)}x reward/risk is below ${floor}x`, technicals.evidence || []));
 
-  /* v3.91 (audit #4): the binary window REPORTS, never enforces — the BINCAL doctrine
-     (v3.26) now holds on BOTH surfaces. v3.90 had the same earnings date hard-veto street
-     eligibility while the canonical board deliberately only reported it: a doctrine
-     inversion between two surfaces reading one fact. The gate still evaluates (its FAIL/
-     UNKNOWN states are real information) but it sits OUTSIDE the eligibility set: it can
-     never produce WAIT, only a named warning the receipt carries. */
-  const binary = binaryGate(factValue(facts, "nextEarnings"), now);
   const eligible = gates.every((g) => g.status === "PASS");
+  const advisories = [binaryAdvisory(factValue(facts, "nextEarnings"), now)];
   const warnings = [];
-  if (binary.status === "FAIL")
-    warnings.push(`${binary.reason} — reported, never enforced (BINCAL doctrine); sizing near a print is the owner's call`);
-  else if (binary.status === "UNKNOWN")
-    warnings.push(`binary calendar: ${binary.reason}`);
   if (metrics.status === "OK" && metrics.analystConfidence === "UNKNOWN")
     warnings.push("TipRanks analyst count was not captured; coverage confidence is unknown");
   else if (metrics.status === "OK" && metrics.analystConfidence === "THIN")
@@ -515,10 +532,13 @@ export function buildGateReceipt({ street, facts, readout, composite, qualitativ
     status: eligible ? "ELIGIBLE" : "WAIT",
     eligible,
     gates,
-    binary,
+    advisories,
     blockers: gates.filter((g) => g.status !== "PASS").map((g) => ({ id: g.id, status: g.status, reason: g.reason })),
     warnings,
     metrics: metrics.status === "OK" ? metrics : null,
+    priceBasis: quote ? { kind: quote.basis || "INTRADAY", value: quote.value ?? null, observedAt: quote.observedAt || null,
+      sessionDate: quote.sessionDate || null, provider: quote.provider || null } : null,
+    revisionContext,
     technicals: technicals || null,
     composite: composite || null,
     qualitative: qualitative || null,
@@ -553,6 +573,11 @@ export async function attestGateReceipt(receipt, inputs) {
       regimeVerdict: inputs?.readout?.regime?.verdict || null,
       macroFlipState: inputs?.readout?.macro_flip?.state || null,
       riskTier: inputs?.riskTier || null,
+      aiRubricVersion: inputs?.rubric?.version || null,
+      aiRubricHash: inputs?.rubric?.text ? await sha256Hex(inputs.rubric.text) : null,
+      aiModel: inputs?.aiModel || null,
+      priceBasis: receipt?.priceBasis?.kind || null,
+      priceObservedAt: receipt?.priceBasis?.observedAt || null,
     },
     inputHash,
     resultHash,

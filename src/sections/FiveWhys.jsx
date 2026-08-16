@@ -35,7 +35,7 @@ const FiveWhys=({fw,derivedLabel,mode,asOf,label="5 whys · today — narrative 
   // hidden region, never a throw and never a fabricated narrative.
   if(!fw||!Array.isArray(fw.whys))return <div aria-hidden="true"/>;
   return(
-    <div style={{padding:"10px 20px",background:T.bg,borderBottom:`1px solid ${T.border}`}}>
+    <div style={{padding:"9px 20px",background:T.bg,borderBottom:`1px solid ${T.border}`}}>
       {/* v3.93 QUIET-2 (screenshot-measured: three rows of chrome cost 100px at 390px for a
           collapsed block): ONE toggle row. The section header and the regime line are gone
           from the closed view — the regime state is a byte-for-byte duplicate of the hero

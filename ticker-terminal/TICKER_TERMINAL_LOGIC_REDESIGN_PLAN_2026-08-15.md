@@ -22,7 +22,7 @@ retrieval time, units, and status. Missing evidence remains `UNKNOWN`; it is nev
 coerced to zero or allowed to pass a gate.
 
 TipRanks' **published average** is the street target used by the valuation-gap gate and street
-ranking. The terminal must never average TipRanks low/average/high into a new number. The target
+comparison. The terminal must never average TipRanks low/average/high into a new number. The target
 is a rolling 12-month target based on the analysts in TipRanks' stated lookback (normally the
 last three months); it is not joined to a fiscal-year model rung.
 
@@ -30,6 +30,12 @@ Ticker eligibility is independent of the owner's current portfolio exposure. Pos
 and the existing 18% cap remain portfolio information, but they cannot veto the ticker-level
 answer. The UI must not label the result “NEXT DOLLAR,” because no funding or position-sizing
 decision has been made.
+
+The street receipt is also independent of canonical decision readiness in the other direction.
+It cannot add a blocker to `readiness()`, change `UPSIDE_ROWS`, select `AGREE_PICK`, reorder the
+book, or promote/demote the canonical Next Dollar answer. It is a book-order comparison surface
+with no winner or medals. Canonical and street paths share measured facts and Engine 0 evidence,
+but neither consumes the other path's conclusion.
 
 ## Data classes and ownership
 
@@ -145,17 +151,24 @@ when every required gate is `PASS`; `UNKNOWN` fails closed.
 1. **Macro actionability.** Engine 0 `HOLD`, unreadable/insufficient health, non-evaluable Macro
    Flip, or `PANIC` blocks. `RESTRICTED` is a visible WAIT; only `FULL` may gate capital.
 2. **Street gap.** Fresh TipRanks published average must be at least 15% above the live quote.
-3. **Evidence freshness.** Fresh confirmed SA estimates, fresh TipRanks target, and a usable live
-   or explicitly cached quote are required.
+3. **Evidence freshness.** Fresh confirmed SA estimates, fresh TipRanks target, and a usable quote
+   are required. During the regular session, the quote must be no more than 15 minutes old. Outside
+   the regular session, the exact most recent completed-session close is used until the next open;
+   weekends and market holidays do not create a perpetual stale-quote WAIT.
 4. **Composite quality.** Available pillars are renormalized; any mandatory qualitative pillar
    without cited evidence is `UNKNOWN`, not a pass.
 5. **Reward/risk.** Minimum 2.0x core, 2.5x tactical, 3.0x speculative; add 0.5x in HEADWIND.
    A missing stop, target, candle history, or computed R/R is `UNKNOWN` and blocks.
-6. **Binary window.** A known earnings/catalyst calendar is required. An event in 10 calendar
-   days or less blocks a new entry; an empty or failed calendar is `UNKNOWN` and blocks.
+6. **Binary advisory.** Earnings/catalyst timing is report-only on both surfaces. An event in 10
+   calendar days or less emits `SOON`; a missing/stale calendar emits `UNKNOWN`. Neither changes
+   street eligibility or the canonical Next Dollar answer. This preserves the existing
+   FEAT-TT-BINCAL doctrine: the board reports binaries and the owner decides.
 
 An attestation receipt records `{at, engineVersion, inputVersions, inputHash, resultHash, status}`.
 A “ran it” timestamp without bound inputs/results is not evidence.
+
+Missing Engine 0 `actionability` fails closed on both paths. Only an explicit `FULL` can pass;
+cached/legacy payloads do not receive a permissive compatibility exception.
 
 The old `lastRun`, `pt_model`, prose-parsed score, manual `projection`, and portfolio weight are
 not v2 eligibility gates. They remain legacy/read-only until migration is complete.
@@ -172,6 +185,24 @@ not v2 eligibility gates. They remain legacy/read-only until migration is comple
 
 An absent `AI` binding, rejected image, OCR parse error, or low-confidence field degrades to a
 clear manual-entry draft. It can never write inferred values directly.
+
+The qualitative gate never sends the full private framework to Workers AI. The owner must create
+and explicitly approve a separate, redacted `aiRubric` (text, version, approval timestamp) in the
+framework KV record. Only that bounded rubric plus cited measured evidence enters the assembled
+prompt. The rubric version/hash and model are bound into the receipt attestation. This is an
+accepted Cloudflare processing boundary, not permission to disclose the consolidated framework.
+
+## Corrections and revision history
+
+Street history is append-only, but a bad confirmation is retractable. `DELETE /api/street?sym=…`
+requires the current version via `If-Match` and a reason, appends an audited retraction, replaces
+current street evidence with a tombstone, and tombstones its dependent current analysis receipt.
+Nothing is physically deleted. A later reviewed confirmation supersedes the tombstone; reads bind
+to the latest active, non-voided record.
+
+Confirmed estimate changes—not the beliefs ledger—carry revision direction and a quote baseline
+into the analysis receipt. The divergence flag prefers this street revision context and uses the
+legacy belief ledger only as fallback, so migration cannot make estimate/price divergence blind.
 
 ## NVDA calibration and acceptance fixture
 
@@ -194,8 +225,8 @@ The offline acceptance fixture supplies same-period SEC XBRL components that pro
 diluted shares and a conservative $41.865B net-cash construction, plus a 2026-08-26 earnings
 date. Those values calibrate normalization and the date boundary; production never inherits
 them. Its SEC and calendar adapters must fetch and stamp their own evidence. On 2026-08-15 the
-fixture event is 11 days away, so the binary rule passes on that date and blocks beginning
-2026-08-16.
+fixture event is 11 days away, so the binary advisory reads `CLEAR`; beginning 2026-08-16 it
+reads `SOON` at the inclusive 10-day boundary without changing eligibility.
 
 The captured 2026-08-15 Engine 0 calibration is deliberately a WAIT: `actionability=HOLD`,
 degraded health, `health.can_gate=false`, and Macro Flip is not evaluable. The positive 37.7%
@@ -210,8 +241,9 @@ fixture, not a claim about the current production regime.
 3. Add the terminal screenshot review form and read-only sourced-facts/gate receipt view.
 4. Make Engine 0 actionability and every hard dependency fail closed; replace the old green
    “NEXT DOLLAR” line with ticker-level `ELIGIBLE`/`WAIT` semantics.
-5. Prefer the published street average for ranking; keep owner `pt_model` as an optional private
-   comparison, never an eligibility prerequisite.
+5. Use the published street average for the book-order comparison; keep owner `pt_model` as an
+   optional private canonical model, never a street-eligibility prerequisite. Do not create a
+   second ranking or winner from the diagnostic composite.
 6. Split street/fact revision history from the beliefs ledger, add server-side payload tests,
    and retire duplicated `projection`/`pt_consensus` writes.
 7. Archive-label the legacy terminal guide and make `/admin.html`, `/readout.json`, KV ownership,
@@ -240,35 +272,34 @@ fields are labelled legacy/optional and cannot affect v2 eligibility.
 - Legacy records may display during migration but cannot be silently promoted to v2 evidence.
 - A provider outage serves last-good values with their real age and blocks when the field's
   freshness limit is exceeded.
+- Outside market hours the quote gate resolves the prior completed-session candle; during the
+  session it retains the 15-minute observation-age rule.
+- Missing legacy EV/S net cash withholds the premium and emits `NETCASH`; an on-board/exported
+  migration audit names the target and rank that the retired implicit-zero behavior would have
+  produced. Explicit zero and owner-declared floor-only remain distinct valid states.
 
 ---
 
-## v3.91 addendum (2026-08-15) — the integrity audit's fixes
+## v3.96 integrity follow-up (2026-08-16)
 
-The v3.90 contract is amended in five places; `TT_ENGINE_VERSION` moved to `tt-gates-v2.1.0`.
+The implemented contract tightens the earlier v3.91 reconciliation:
 
-1. **Binary window is REPORT-ONLY** (BINCAL doctrine now holds on both surfaces): the gate
-   still evaluates but sits outside the eligibility set as `receipt.binary`; a ≤10d event
-   yields a named warning, never WAIT. "Eligibility is all-PASS" now ranges over the
-   remaining gates.
-2. **Quote freshness is SESSION-AWARE**: 15 minutes intraday (session OPEN, read from the
-   same Engine 0 readout the macro gate consumes); a last-close print passes while closed
-   inside a 72h carry window, session named on the gate; unknown session stays strict.
-3. **Tombstones**: `POST /api/street?void=1 {symbol, version, reason}` appends an audited
-   `tt-street-tombstone-v1` to history (nothing is ever deleted) and removes the current
-   record → downstream gates read WAIT until a corrected packet is re-confirmed. Reason and
-   exact version are required.
-4. **Street-based divergence**: the server stamps `lastEstRevision {at, dir, px}` on the
-   current street record (direction from the revision's own eps/revenue changes, px from the
-   tt:quote cache); the client divergence flag reads it FIRST, ledger `est` entries remain
-   the legacy fallback. `lastEstRevision` is derived metadata — excluded from revision
-   comparison like `storedAt`/`version`.
-5. **Rubric redaction**: the qualitative gate sends ONLY the framework's marked
-   "## Qualitative Rubric" section to Workers AI; an unmarked framework yields UNKNOWN with
-   the fix named — the full document is never the fallback.
+The receipt contract is `tt-analysis-v2` / `tt-gates-v2.2.0`; older receipts fail closed.
 
-Also: `lintPtModel` gains **NOCASH** (the net-cash migration audit — EV/S models whose
-premium rungs were withheld by the retired implicit zero are NAMED at both altitudes), and
-the street/canonical boundary pin now covers `UPSIDE_ROWS`, `AGREE_PICK` and `LAST_RANK`
-across the whole street path, with the street list pinned to order by the licensed gap,
-never its diagnostic composite.
+1. Binary timing remains report-only in `receipt.advisories`; `SOON` and `UNKNOWN` never enter
+   the eligibility gate set.
+2. Closed-market pricing resolves the exact most recent completed-session candle, including
+   weekends and listed holidays. It never carries an arbitrary intraday quote for a fixed number
+   of hours. During regular trading the 15-minute observation-age rule remains strict.
+3. A mistaken confirmation is retracted with authenticated `DELETE /api/street?sym=...`, an
+   exact `If-Match` version, and a bounded reason. The current street and dependent receipt keys
+   become typed tombstones; immutable history remains, and a later confirmation supersedes them.
+4. Estimate-revision divergence reads the analysis receipt's attested `revisionContext` first;
+   the belief ledger is legacy fallback only.
+5. Workers AI receives only a separately stored, explicitly approved, bounded `aiRubric`.
+   Extracting a convenient section from the private framework is no longer an approval act.
+6. `NETCASH` is year-aware and excludes earnings-lens and declared floor-only periods. The
+   migration audit reports the retired implicit-zero target/rank beside the measured-only result.
+7. Every TT-run response reports a surface-labeled composite, sourced/horizon-labeled PT, and an
+   explicit `BUY`, `WAIT`, or `SELL` call. Missing values print `UNAVAILABLE`; diagnostic and
+   canonical surfaces are never blended.

@@ -279,8 +279,9 @@ Jan-anchor shipped; see `snapshot.js` ~318–328), `spyMa100`, `spyMa200`, and a
   does not decide eligibility. TipRanks' **published average** is consumed directly and is never
   recomputed from low/average/high. `ELIGIBLE` is ticker-level and position-independent; exposure,
   the 18% cap, funding, taxes, and legacy owner `pt_model` are separate sizing/execution context.
-  Any required `UNKNOWN`, Engine 0 `HOLD`, blind Macro Flip, stale quote/input, <15% gap, failed
-  composite/cited qualitative rubric, insufficient R/R, or binary inside 10 days yields `WAIT`.
+  Any required `UNKNOWN`, absent/non-FULL Engine 0 actionability, blind Macro Flip, stale
+  session-aware quote/input, <15% gap, failed composite/cited qualitative rubric, or insufficient
+  R/R yields `WAIT`; the binary calendar is report-only on both decision surfaces.
   Current contract: `ticker-terminal/README.md`; full schemas/calibration/migration:
   `ticker-terminal/TICKER_TERMINAL_LOGIC_REDESIGN_PLAN_2026-08-15.md`.
 - **Auth = config-gated (FEAT-TT-PIN, v3.9.0).** With **`env.TT_PIN` set (exactly 6 digits;
@@ -2874,6 +2875,23 @@ Jan-anchor shipped; see `snapshot.js` ~318–328), `spyMa100`, `spyMa200`, and a
   VALUATION GAP ranking (§11.1 — the ranking always renders, which is the owner's actual
   "always an output" contract, and it was never suspended). Tests: 1223 smoke (+2) + 199
   render (+1).
+- **v3.96.0 — TT receipt integrity follow-up + response contract.** Closed-market pricing now
+  binds to the exact most recent completed-session candle instead of carrying an arbitrary quote
+  for a fixed number of hours; the 15-minute rule remains intraday. The changed quote/advisory
+  meaning advances receipts to `tt-analysis-v2` / `tt-gates-v2.2.0`, so cached v2.1 results fail
+  closed instead of being reinterpreted. Reviewed-packet retraction is
+  an authenticated, version-matched `DELETE` that leaves typed street and dependent-analysis
+  tombstones plus immutable history. Estimate divergence reads the attested receipt revision
+  context before the legacy belief ledger. Workers AI receives only a separately stored,
+  explicitly approved, bounded `aiRubric`; the full private framework is never parsed as an
+  implicit approval. `NETCASH` is year-aware, and the board/export names the retired
+  implicit-zero target/rank beside the measured-only result. Every TT-run response must end with
+  a surface-labeled composite, a basis/horizon/source-labeled PT, and an explicit `BUY`, `WAIT`,
+  or `SELL` call; missing values print `UNAVAILABLE`, and diagnostic/canonical surfaces are never
+  blended. `BUY` still requires the canonical ELIGIBLE NEXT DOLLAR line; `SELL` still requires an
+  explicit forced-exit, kill, or over-cap trim rule.
+  The inherited v3.95 Simple-view whys row is tightened by 1px per vertical edge so the locked
+  540px glance budget holds in the current real-Chrome harness; the ceiling is not loosened.
 - **v3.95.0 — the whys come back to Simple, behind ONE remembered expander (owner call on
   a live Simple screenshot).** v3.94 put the reasoning group behind `!simple`, which made the
   Simple view clean and left it unable to answer the one question a newcomer asks next: the
@@ -3051,7 +3069,7 @@ Jan-anchor shipped; see `snapshot.js` ~318–328), `spyMa100`, `spyMa200`, and a
   read directly instead of re-averaging aggregates. The exact NVDA screenshot packet calibrates
   the offline acceptance math, including the HOLD override and 10-day event boundary; synthetic
   desktop/phone tests cover OCR-before-confirm, independent persistence, receipts, published-target
-  ranking, position independence and HOLD invalidation. The dated implementation contract is
+  comparison, position independence and HOLD invalidation. The dated implementation contract is
   `ticker-terminal/TICKER_TERMINAL_LOGIC_REDESIGN_PLAN_2026-08-15.md`.
 - **Deferred:** stored fundamentals + Robinhood sync — now unblocked by the `x-tt-pin` header
   (v3.9): a chat-side daily review can PUT `status_flags`/`ref_px` into the deepDive payloads and
@@ -3075,7 +3093,8 @@ Jan-anchor shipped; see `snapshot.js` ~318–328), `spyMa100`, `spyMa200`, and a
   `_diag.equities` should read `ok:N`; if blocked, swap to Twelve Data (same shape). The
   tokenomics moat (OpenRouter) needs **no key**.
 - **TT v2 provider requirements:** bind Pages Workers AI as **`AI`** for screenshot vision and
-  the cited private-framework rubric; set **`SEC_USER_AGENT`** to a descriptive application +
+  the explicitly approved redacted qualitative rubric (never the full private framework); set
+  **`SEC_USER_AGENT`** to a descriptive application +
   contact string for `data.sec.gov`; retain `FINNHUB_KEY` for quotes/profile/calendar/news. The
   selected Finnhub plan must entitle daily `/stock/candle` history. Missing AI, SEC identity, or
   candle entitlement is an honest degraded state: manual street entry remains available, but any
@@ -3174,6 +3193,16 @@ Assertion counts are deliberately not quoted here; the suite prints its own tota
 ### Working rhythm (per-pass protocol)
 
 - **Before every pass**, review what has materially changed since the last response.
+- **After every TT run**, end with one compact line per requested ticker in this shape:
+  **`SYM — Composite: <score>/10 (<surface>) · PT: $<value> (<basis>, <horizon>, <source>) ·
+  Call: BUY|WAIT|SELL — <governing reason>`**. A missing score or target prints `UNAVAILABLE`
+  plus the missing gate; it is never omitted or backfilled. Canonical `/api/score` composites
+  and owner-model PTs are labeled separately from street diagnostic composites and TipRanks'
+  published 12-month average—never blend the two or choose the more favorable result. `BUY`
+  requires the canonical **ELIGIBLE NEXT DOLLAR** line to name that ticker; `SELL` requires an
+  explicit canonical forced-exit, kill, or over-cap trim rule. Diagnostic `ELIGIBLE`, target
+  upside, or a funding-priority row alone is not a buy/sell call. Every other state, disagreement,
+  missing gate, or unavailable governing surface is `WAIT`.
 - **End every pass with**, in this order:
   - **Completed** — what got done this pass (**max 2 bullets**).
   - **Highest-leverage question** the maintainer can answer (1 bullet).

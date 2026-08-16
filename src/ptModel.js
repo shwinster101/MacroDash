@@ -75,7 +75,7 @@ function lintPtModel(dd,_y0){
   const out=[],m=dd&&dd.pt_model;
   if(!m||typeof m!=="object")return out;
   const c=(dd&&dd.consensus)||{};
-  const eps={...(c.eps||{}),...(m.eps||{})};
+  const rev={...(c.revenue_B||{}),...(m.revenue_B||{})},eps={...(c.eps||{}),...(m.eps||{})};
   const years=ptRowYears(dd,_y0);
   /* E2E (v3.57): a payload whose numbers are QUOTED ("100" not 100) produces zero rows, and
      NOFLOOR then reports the inputs as missing when they are present — the message sends you
@@ -111,6 +111,14 @@ function lintPtModel(dd,_y0){
     keys.filter(k=>k<=last&&!used.has(k)).forEach(k=>out.push({sev:"warn",code:"ORPHAN",
       msg:`${name} key ${k} is never used — every row (${years.join(", ")}) resolves to a later key, so this one is a leftover`}));
   });
+  const netCashYears=years.filter(y=>{
+    const fwd=String(+y+1),mult=schedAt(m.ev_s_multiple,y),sh=schedAt(m.share_count_M,y);
+    const pePrem=schedAt(m.pe_premium_multiple,y),earnLens=pePrem>0&&typeof eps[fwd]==="number"&&eps[fwd]>0;
+    const nc=schedAt(m.net_cash_B,y),declaredFloorOnly=fob&&y<fob;
+    return !earnLens&&!declaredFloorOnly&&mult>0&&sh>0&&typeof rev[fwd]==="number"&&!(typeof nc==="number"&&isFinite(nc));
+  });
+  if(netCashYears.length)out.push({sev:"warn",code:"NETCASH",
+    msg:`premium withheld: net cash is unmeasured for ${netCashYears.join(", ")} — the visible row uses its floor, not the configured EV/S premium. Enter the measured value, explicit 0, or declare the period floor-only.`});
   // Lens doctrine (the TSM/UBER rule): a sales multiple prices the wrong thing for a name that
   // already earns. WARN only — which lens fits is the owner's judgement, never the lint's.
   // v3.47: "EPS > 0" is not the same as "the name earns". RKLB's FY2027 consensus EPS is 0.05,
@@ -135,13 +143,6 @@ function lintPtModel(dd,_y0){
   if(!ptModelRows(dd,_y0).length&&!(m.basis||m.note))
     out.push({sev:"warn",code:"NOFLOOR",
       msg:"no rung is computable and nothing here says why — a premium needs (ev_s_multiple + share_count_M + revenue) or (pe_premium_multiple + positive EPS); a floor needs pe_floor_multiple. Add basis/note if being unranked is deliberate."});
-  // NOCASH (v3.91, audit #3): v3.90 retired the implicit net_cash_B=0 in EV/S math, so a
-  // sales-lens model with NO net_cash_B silently lost its premium rungs and fell to floor-only
-  // — indistinguishable on the board from a deliberate floor-only decision. Name it: this is
-  // the migration audit, rendered at both altitudes like every lint. Explicit 0 still computes.
-  if(m.ev_s_multiple!=null&&m.net_cash_B==null&&m.pe_premium_multiple==null)
-    out.push({sev:"warn",code:"NOCASH",
-      msg:"EV/S premium withheld — net_cash_B is unmeasured and the implicit 0 was retired (v3.90): rows fall to the floor. Set net_cash_B (0 is an explicit, honest value) to restore premium rungs."});
   return out;
 }
 function yrsToYearEnd(y,_now){

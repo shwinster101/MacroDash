@@ -296,13 +296,12 @@ const analysisReceipt = (sym, { gap, target, eligible, failing = null }) => {
       failing === "qualitative" ? "primary filing evidence is unavailable" : "primary evidence supports the rubric",
       failing === "qualitative" ? [] : ["https://www.sec.gov/fixture"]),
     gate("reward_risk", "PASS", "3x reward/risk clears 2x", ["ATR stop"]),
-    gate("binary", "PASS", "next binary event is 22 days away", [etDaysAgo(-22)]),
   ];
   const blockers = gates.filter((g) => g.status !== "PASS").map((g) => ({ id: g.id, status: g.status, reason: g.reason }));
   return {
-    schema: "tt-analysis-v1", engineVersion: "tt-gates-v1", symbol: sym,
+    schema: "tt-analysis-v2", engineVersion: "tt-gates-v2.2.0", symbol: sym,
     evaluatedAt: `${TODAY_ET}T14:36:00Z`, status: eligible ? "ELIGIBLE" : "WAIT", eligible,
-    gates, blockers, warnings: [],
+    gates, advisories: [gate("binary", "CLEAR", "next binary event is 22 days away", [etDaysAgo(-22)])], blockers, warnings: [],
     metrics: { status: "OK", quote: FACTS_FIXTURE[sym].fields.quote.value,
       gaps: { averagePct: gap, lowPct: null, highPct: null }, target: { average: target } },
     technicals: { status: "OK", rewardRisk: 3, trend: "UPTREND", evidence: ["ATR stop"] },
@@ -310,8 +309,10 @@ const analysisReceipt = (sym, { gap, target, eligible, failing = null }) => {
     qualitative: failing === "qualitative"
       ? { status: "UNKNOWN", score: null, reason: "primary filing evidence is unavailable", citations: [] }
       : { status: "PASS", score: 8, reason: "primary evidence supports the rubric", citations: ["https://www.sec.gov/fixture"] },
+    priceBasis: { kind: "INTRADAY", value: FACTS_FIXTURE[sym].fields.quote.value,
+      observedAt: FACTS_FIXTURE[sym].fields.quote.observedAt, provider: "synthetic provider" },
     policy: { streetGapMinPct: 15, binaryWindowDays: 10, rrFloor: 2 },
-    attestation: { at: `${TODAY_ET}T14:36:00Z`, engineVersion: "tt-gates-v1", status: eligible ? "ELIGIBLE" : "WAIT",
+    attestation: { at: `${TODAY_ET}T14:36:00Z`, engineVersion: "tt-gates-v2.2.0", status: eligible ? "ELIGIBLE" : "WAIT",
       inputVersions: { street: STREET_FIXTURE[sym].confirmedAt, facts: FACTS_FIXTURE[sym].updatedAt,
         regime: READOUT_AS_OF, regimeActionability: "FULL", regimeVerdict: "HEADWIND", macroFlipState: "ARMED", riskTier: "tactical" },
       inputHash: "a".repeat(64), resultHash: "b".repeat(64) },
@@ -623,8 +624,9 @@ ok("card MEASURED row carries live price, size and weight (the old tooltip, tapp
 ok("ready: the card leads with a DECISION READINESS verdict, not eight scattered dates",
   /READINESS/.test(cardBody) && /DECISION READINESS/.test(cardBody) &&
   /(READY|CAUTION|BLOCKED)/.test(cardBody));
-ok("ready: the card's readiness bar renders the attested gate chain rather than legacy clocks",
-  /macro:/.test(cardBody) && /street gap:/.test(cardBody) && /reward risk:/.test(cardBody) && /binary:/.test(cardBody));
+ok("ready: canonical readiness stays distinct while the ticker-gates block renders the attested chain and binary advisory",
+  /DECISION READINESS/.test(cardBody) && /TICKER GATES/.test(cardBody) && /macro/.test(cardBody) &&
+  /street gap/.test(cardBody) && /reward risk/.test(cardBody) && /binary/.test(cardBody));
 await page.evaluate(() => closeCard());
 await page.waitForTimeout(80);
 
@@ -803,6 +805,8 @@ ok("the denominator is stated as tracked-book, never NAV",
   /% of TRACKED BOOK \(a floor/i.test(upRankOpen));
 ok("queue names with no pt_model are NAMED rather than silently absent",
   /cannot be ranked here — no pt_model/.test(upRank));
+ok("missing net cash produces a visible migration audit naming the retired implicit-zero target/rank effect",
+  /net-cash migration audit/i.test(upRankOpen) && /old implicit-zero target/i.test(upRankOpen) && /measured-only target/i.test(upRankOpen));
 // BBB is modelled but carries NO position — the ranking spans both universes and must say so.
 ok("an unheld name is labelled, never left blank against a held one", /new — not held/.test(upRank));
 // The load-bearing fix. The fixture circuit is TRIPPED, which short-circuits the whole
@@ -849,7 +853,7 @@ ok("the receipt uses TipRanks' explicit published average on one 12-month horizo
 ok("the receipt explicitly ignores position size, names its denominator, and disclaims canonical scoring",
   /position ignored/i.test(streetRank) && /diagnostic, not canonical score/i.test(streetRank) && /3 reviewed of 7/.test(streetRank));
 ok("a wider gap cannot outrun a failed sourced gate",
-  /JJJ[\s\S]*WAIT[\s\S]*\+60%/.test(streetRank) && /STREET RECEIPT PASS: AAA/.test(streetRank));
+  /JJJ[\s\S]*WAIT[\s\S]*\+60%/.test(streetRank) && /1 ELIGIBLE/.test(streetRank) && /no winner selected/.test(streetRank));
 ok("a below-hurdle provider target is named as WAIT, never promoted by an owner model",
   /BBB[\s\S]*WAIT[\s\S]*\+6\.7%/.test(streetRank) && /only 6\.7% above/.test(streetRank));
 
@@ -863,7 +867,7 @@ const exposureIndependent = await page.evaluate(() => {
   return { before, during };
 });
 ok("changing exposure cannot veto or reorder the ticker-level street receipt",
-  exposureIndependent.during === exposureIndependent.before && /STREET RECEIPT PASS: AAA/.test(exposureIndependent.during) && !/cap, no room/.test(exposureIndependent.during));
+  exposureIndependent.during === exposureIndependent.before && /1 ELIGIBLE/.test(exposureIndependent.during) && !/cap, no room/.test(exposureIndependent.during));
 
 const holdInvalidates = await page.evaluate(() => {
   const reg = JSON.parse(JSON.stringify(REGIME));
@@ -1012,9 +1016,9 @@ ok("the four answers render above the corpus",
 ok("ready: the readiness verdict leads the deep-dive tab, above the four answers",
   /DECISION READINESS/i.test(dv) &&
   dv.indexOf("DECISION READINESS") < dv.toUpperCase().indexOf("WHAT IT'S WORTH"));
-ok("ready: every server gate is stated on the bar and position is not one of them",
-  /macro:/i.test(dv) && /street gap:/i.test(dv) && /qualitative:/i.test(dv) && /reward risk:/i.test(dv) &&
-  !/position:/.test(dv));
+const deepReadyText = await page.locator("#deepView .dd-sec").filter({ hasText: "DECISION READINESS" }).first().innerText();
+ok("ready: canonical deep-dive readiness contains no street receipt gate — the two conclusions remain separate",
+  /DECISION READINESS/i.test(deepReadyText) && !/street gap|qualitative|reward risk|TICKER GATES/i.test(deepReadyText));
 ok("ready: thesis hinges remain visible below the receipt without becoming ticker blockers",
   /1 red/i.test(dv) && /demand/i.test(dv) && !/not actionable until:[^\n]*hinge/i.test(dv));
 ok("what-changes-my-mind names the red hinge", /1 red/.test(dv) && /demand/.test(dv));

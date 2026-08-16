@@ -9,7 +9,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
 <!-- AUDIT: kept in sync with package.json by test/smoke.mjs. admin.html is a Vite
      public/ passthrough, so it cannot receive __APP_VERSION__ — the guard is the fix. -->
-<title>TT TICKER TERMINAL v3.95.0</title>
+<title>TT TICKER TERMINAL v3.96.0</title>
 <style>
   :root{
     --bg:#05070a; --panel:#0a0f16; --panel2:#0d141d; --line:#16202c;
@@ -419,7 +419,7 @@
         onclick="toggleHeadInfo()">⋯ MENU</button>
     </div>
     <div id="headInfo" style="display:none">
-      <div class="brand">FINANCE&nbsp;BRO.AI // TT&nbsp;TICKER&nbsp;TERMINAL <small>v3.95.0 · underwriting + sourced gates</small></div>
+      <div class="brand">FINANCE&nbsp;BRO.AI // TT&nbsp;TICKER&nbsp;TERMINAL <small>v3.96.0 · underwriting + sourced gates</small></div>
       <div class="statusline">
         <span>BOOK: <b id="bookStamp">loading…</b></span>
         <span>AUTH: <b id="sessState">…</b></span>
@@ -442,6 +442,7 @@
       </div>
       <div class="toolbar" id="backupRow" style="display:none">
         <button class="act" onclick="openPinSetup()">🔐 PIN</button>
+        <button class="act" onclick="openAiRubric()">◈ AI RUBRIC</button>
         <button class="act" onclick="exportBook()">⭳ EXPORT CANONICAL_BOOK.md</button>
         <button class="act" onclick="exportJSON()">⭳ EXPORT JSON</button>
         <button class="act" onclick="openImport()">⇪ IMPORT JSON</button>
@@ -642,8 +643,8 @@ let BOARD={};
 let POSITIONS={};
 /* FEAT-TT-V2: licensed street inputs, merge-only facts, and server gate receipts live in
    separate KV records. They never ride a replace-all book save. */
-let STREET={},FACTS={},ANALYSIS={};
-let V2_ROWS=[],V2_PENDING=true,STREET_DRAFT=null;
+let STREET={},FACTS={},ANALYSIS={},STREET_VOIDED={},ANALYSIS_VOIDED={};
+let V2_ROWS=[],V2_PENDING=true,STREET_DRAFT=null,AI_FRAMEWORK_RECORD=null;
 
 /* TT CARD schema — the fixed DEEP-mode output lines (populated by a live TT run) */
 const CARD_FIELDS=[
@@ -1256,6 +1257,7 @@ function renderOptLadder(){
 /* ── correlation clusters: "cluster = one position" ── */
 let LAST_RANK=[];   // top computed-upside syms, set by renderUpsideRank
 let UPSIDE_ROWS=[];  // FEAT-TT-FOCUS2: full sorted rows from renderUpsideRank (one computation)
+let NETCASH_AUDIT=[]; // v3.91: names whose old implicit-zero EV/S premium changed the ranking
 /* FEAT-TT-ALLREVIEWED (v3.76): the reviewed names the MATH cannot rank, ordered by the TT
    composite instead of by %/yr. Same one-computation rule as UPSIDE_ROWS — the DESK list,
    the compact BUY block and the rankings export all read THIS, never their own re-derivation. */
@@ -2288,7 +2290,7 @@ function lintPtModel(dd,_y0){
   const out=[],m=dd&&dd.pt_model;
   if(!m||typeof m!=="object")return out;
   const c=(dd&&dd.consensus)||{};
-  const eps={...(c.eps||{}),...(m.eps||{})};
+  const rev={...(c.revenue_B||{}),...(m.revenue_B||{})},eps={...(c.eps||{}),...(m.eps||{})};
   const years=ptRowYears(dd,_y0);
   /* E2E (v3.57): a payload whose numbers are QUOTED ("100" not 100) produces zero rows, and
      NOFLOOR then reports the inputs as missing when they are present — the message sends you
@@ -2324,6 +2326,14 @@ function lintPtModel(dd,_y0){
     keys.filter(k=>k<=last&&!used.has(k)).forEach(k=>out.push({sev:"warn",code:"ORPHAN",
       msg:`${name} key ${k} is never used — every row (${years.join(", ")}) resolves to a later key, so this one is a leftover`}));
   });
+  const netCashYears=years.filter(y=>{
+    const fwd=String(+y+1),mult=schedAt(m.ev_s_multiple,y),sh=schedAt(m.share_count_M,y);
+    const pePrem=schedAt(m.pe_premium_multiple,y),earnLens=pePrem>0&&typeof eps[fwd]==="number"&&eps[fwd]>0;
+    const nc=schedAt(m.net_cash_B,y),declaredFloorOnly=fob&&y<fob;
+    return !earnLens&&!declaredFloorOnly&&mult>0&&sh>0&&typeof rev[fwd]==="number"&&!(typeof nc==="number"&&isFinite(nc));
+  });
+  if(netCashYears.length)out.push({sev:"warn",code:"NETCASH",
+    msg:`premium withheld: net cash is unmeasured for ${netCashYears.join(", ")} — the visible row uses its floor, not the configured EV/S premium. Enter the measured value, explicit 0, or declare the period floor-only.`});
   // Lens doctrine (the TSM/UBER rule): a sales multiple prices the wrong thing for a name that
   // already earns. WARN only — which lens fits is the owner's judgement, never the lint's.
   // v3.47: "EPS > 0" is not the same as "the name earns". RKLB's FY2027 consensus EPS is 0.05,
@@ -2348,13 +2358,6 @@ function lintPtModel(dd,_y0){
   if(!ptModelRows(dd,_y0).length&&!(m.basis||m.note))
     out.push({sev:"warn",code:"NOFLOOR",
       msg:"no rung is computable and nothing here says why — a premium needs (ev_s_multiple + share_count_M + revenue) or (pe_premium_multiple + positive EPS); a floor needs pe_floor_multiple. Add basis/note if being unranked is deliberate."});
-  // NOCASH (v3.91, audit #3): v3.90 retired the implicit net_cash_B=0 in EV/S math, so a
-  // sales-lens model with NO net_cash_B silently lost its premium rungs and fell to floor-only
-  // — indistinguishable on the board from a deliberate floor-only decision. Name it: this is
-  // the migration audit, rendered at both altitudes like every lint. Explicit 0 still computes.
-  if(m.ev_s_multiple!=null&&m.net_cash_B==null&&m.pe_premium_multiple==null)
-    out.push({sev:"warn",code:"NOCASH",
-      msg:"EV/S premium withheld — net_cash_B is unmeasured and the implicit 0 was retired (v3.90): rows fall to the floor. Set net_cash_B (0 is an explicit, honest value) to restore premium rungs."});
   return out;
 }
 /* One renderer for both altitudes: the deep-dive tab (per name) and the board (whole book).
@@ -2747,7 +2750,7 @@ function ddThesisSummary(dd){
    next dollar is FOR. `x` alone is enough — nothing here needs the tab to be open. */
 const READY_THESIS_D=30;   // same threshold ddAgeChip re-reviews on — one rule, two surfaces
 function v2ReceiptCurrent(r){
-  if(!r||!r.attestation)return false;
+  if(!r||r.schema!=="tt-analysis-v2"||r.engineVersion!=="tt-gates-v2.2.0"||!r.attestation||r.attestation.engineVersion!=="tt-gates-v2.2.0")return false;
   const expected=(REGIME&&((REGIME.as_of)||(REGIME.generated_at)))||null;
   const used=r.attestation&&r.attestation.inputVersions&&r.attestation.inputVersions.regime;
   const iv=r.attestation&&r.attestation.inputVersions||{};
@@ -2764,27 +2767,8 @@ function v2ReceiptCurrent(r){
 function readiness(x){
   const parts=[];   // {sev:"block"|"caution"|"ok", t:<chip text>}
   const add=(sev,t)=>parts.push({sev,t});
-  const aMap=typeof ANALYSIS!=="undefined"?ANALYSIS:{},sMap=typeof STREET!=="undefined"?STREET:{};
-  const receipt=x&&aMap[x.sym];
-  /* FEAT-TT-V2: a server receipt supersedes the self-attested legacy clock/model checklist.
-     Position exposure is intentionally absent: this is ticker eligibility, not sizing. */
-  if(receipt||x&&sMap[x.sym]){
-    if(!receipt)add("block","gate receipt not run");
-    else{
-      if(!v2ReceiptCurrent(receipt))add("block","analysis predates current Engine 0 readout");
-      (Array.isArray(receipt.gates)?receipt.gates:[]).forEach(g=>{
-        const label=`${String(g.id||"gate").replace(/_/g," ")}: ${g.reason||g.status||"unknown"}`;
-        if(g.status==="PASS")add("ok",label);
-        else add("block",label);
-      });
-    }
-    const blockers=parts.filter(p=>p.sev==="block").map(p=>p.t);
-    const cautions=parts.filter(p=>p.sev==="caution").map(p=>p.t);
-    return{k:blockers.length?"blocked":cautions.length?"caution":"ready",
-      verdict:blockers.length?"BLOCKED":cautions.length?"CAUTION":"READY",
-      blockers,cautions,parts,
-      line:parts.slice().sort((a,b)=>({block:0,caution:1,ok:2})[a.sev]-({block:0,caution:1,ok:2})[b.sev]).map(p=>p.t).join("; ")};
-  }
+  /* v3.91: canonical readiness is fully independent of reviewed street receipts. A receipt
+     has its own server gates and can neither veto nor promote the portfolio-aware decision. */
   const dd=x&&ddOf(x);
 
   // 1. TT run — the harness pass. ageDays fails CLOSED, so undated/future reads NEVER RUN.
@@ -3573,7 +3557,8 @@ async function loadTickerV2(){
     const [s,f,a]=await Promise.all([
       v2Json("/api/street?syms="+q),v2Json("/api/ticker-facts?syms="+q),v2Json("/api/ticker-analysis?syms="+q)
     ]);
-    STREET=s.records||{};FACTS=f.records||{};ANALYSIS=a.records||{};
+    STREET=s.records||{};STREET_VOIDED=s.voided||{};FACTS=f.records||{};
+    ANALYSIS=a.records||{};ANALYSIS_VOIDED=a.voided||{};
   }catch(e){
     if(e.pinRequired)showPinGate(loadTickerV2);
     else toast("Ticker v2 inputs unavailable — legacy book remains visible");
@@ -4047,32 +4032,35 @@ async function loadLedgerRecent(){
    way and price has since moved the OPPOSITE way by at least MOVE_PCT, that is the signal —
    same-direction moves are just the market agreeing with the revision, not a divergence.
    Needs both a ledger entry's own px AND a live quote; either missing renders nothing. */
-/* v3.91 (audit #6): STREET-FIRST. Estimate intake now moves through confirmed street
-   packets, which never emit ledger `est` entries — reading the ledger alone made this flag
-   go progressively blind as intake migrated. The server stamps `lastEstRevision {at,dir,px}`
-   on each current street record (direction from the revision's own change list, px from the
-   same tt:quote cache the ledger stamps from); that is the primary source, the ledger is the
-   legacy fallback for names still on hand-typed consensus. Same rule both paths: only the
-   SPLIT is the signal, and a missing px renders nothing rather than a guessed baseline. */
+/* v3.96: STREET-FIRST. Estimate intake now moves through confirmed street packets, which
+   never emit ledger `est` entries. The immutable analysis receipt binds revision direction,
+   baseline price, and observation time in `revisionContext`; that is the primary source, and
+   the belief ledger remains a legacy fallback for names still on hand-typed consensus. Same
+   rule both paths: only the SPLIT is the signal, and a missing px renders nothing rather than
+   a guessed baseline. */
 function computeDivergence(){
   const out={};
-  Object.keys(typeof STREET==="object"&&STREET?STREET:{}).forEach(sym=>{
-    const rev=STREET[sym]&&STREET[sym].lastEstRevision;
-    if(!rev||(rev.dir!=="up"&&rev.dir!=="down"))return;   // mixed is not a direction
-    if(rev.px==null||!isFinite(rev.px))return;
+  // v3.91: confirmed street revisions are facts history, not owner-belief changes. Prefer
+  // the attested revision baseline; retain the belief ledger only as a legacy fallback.
+  Object.keys(ANALYSIS||{}).forEach(sym=>{
+    const r=ANALYSIS[sym],ctx=r&&r.revisionContext;
+    if(!ctx||!(ctx.direction==="UP"||ctx.direction==="DOWN")||
+       !isFinite(ctx.baselinePrice)||!ctx.baselineObservedAt)return;
     const live=LIVE_PX[sym];if(!live||!isFinite(live.px))return;
-    const pxMove=Math.round((live.px/rev.px-1)*1000)/10;
+    const pxMove=Math.round((live.px/ctx.baselinePrice-1)*1000)/10;
     if(Math.abs(pxMove)<MOVE_PCT)return;
-    const pxDir=pxMove>0?"up":"down";
-    if(rev.dir===pxDir)return;   // agreement is not the signal — only the split is
-    out[sym]={estDir:rev.dir,pxDir,field:"street est",estFrom:"revised",estTo:rev.dir,
-      px:rev.px,pxMove,t:rev.at};
+    const estDir=ctx.direction.toLowerCase(),pxDir=pxMove>0?"up":"down";
+    if(estDir===pxDir)return;
+    const fields=(Array.isArray(ctx.changedFields)?ctx.changedFields:[]).map(x=>x.path).filter(Boolean);
+    out[sym]={estDir,pxDir,field:fields.join(", ")||"confirmed street estimates",
+      estFrom:"prior packet",estTo:"confirmed packet",px:ctx.baselinePrice,pxMove,
+      t:ctx.baselineObservedAt,source:"street receipt"};
   });
   if(!Array.isArray(LEDGER_RECENT))return out;
   const bySym={};
   LEDGER_RECENT.forEach(e=>{if(e.kind==="est")(bySym[e.sym]=bySym[e.sym]||[]).push(e);});
   Object.keys(bySym).forEach(sym=>{
-    if(out[sym])return;   // street-based read wins; the ledger is the legacy fallback
+    if(out[sym])return;   // attested street-receipt context wins; ledger is legacy fallback
     const latest=bySym[sym].sort((a,b)=>Date.parse(b.t)-Date.parse(a.t))[0];
     if(!isFinite(latest.from)||!isFinite(latest.to)||latest.from===latest.to)return;
     if(latest.px==null||!isFinite(latest.px))return;
@@ -4082,14 +4070,14 @@ function computeDivergence(){
     const estDir=latest.to>latest.from?"up":"down",pxDir=pxMove>0?"up":"down";
     if(estDir===pxDir)return;   // agreement is not the signal — only the split is
     out[sym]={estDir,pxDir,field:latest.field,estFrom:latest.from,estTo:latest.to,
-      px:latest.px,pxMove,t:latest.t};
+      px:latest.px,pxMove,t:latest.t,source:"legacy belief ledger"};
   });
   return out;
 }
 function divergenceChip(sym,d){
   if(!d)return "";
   const live=LIVE_PX[sym];
-  return `<span class="div" title="${esc(d.field)} ${esc(d.estFrom)}→${esc(d.estTo)} on ${esc(ledgerDateShort(d.t))} @ $${esc(d.px)}`+
+  return `<span class="div" title="${esc(d.source||"revision history")} · ${esc(d.field)} ${esc(d.estFrom)}→${esc(d.estTo)} on ${esc(ledgerDateShort(d.t))} @ $${esc(d.px)}`+
     `${live?` · now $${esc(live.px)} (${d.pxMove>=0?"+":""}${esc(d.pxMove)}%)`:""}">`+
     `⚠ est${d.estDir==="up"?"↑":"↓"} px${d.pxDir==="up"?"↑":"↓"}</span>`;
 }
@@ -4192,6 +4180,55 @@ function rankWeight(sym){
   return{w,optOnly,held:true,
     mark:w>=CAP_PCT?"**":w>=10?"*":optOnly?"◇":"",
     room:w>=CAP_PCT?"no room":w>=10?"thin":"open"};
+}
+/* v3.91 migration audit: reconstruct ONLY the retired implicit-zero behavior for models
+   whose EV/S premium is presently withheld for missing net cash. This never changes the
+   live ranking; it names the target/rank movement caused by the integrity fix. */
+function netCashMigrationAudit(currentRows,hz){
+  // Keep derived basket rows in both orderings so reported ranks match the visible board.
+  const liveRows=(currentRows||[]),legacy=liveRows.map(r=>({...r})),details=[];
+  BOOK.forEach(x=>{
+    const dd=ddOf(x),m=dd&&dd.pt_model,c=dd&&dd.consensus||{};if(!m)return;
+    const rev={...(c.revenue_B||{}),...(m.revenue_B||{})};
+    const eps={...(c.eps||{}),...(m.eps||{})};
+    const fob=String(m.floor_only_before||"");
+    const years=ptRowYears(dd).filter(y=>{
+      const fwd=String(+y+1),pePrem=schedAt(m.pe_premium_multiple,y),nc=schedAt(m.net_cash_B,y);
+      const earningsLens=pePrem>0&&typeof eps[fwd]==="number"&&eps[fwd]>0;
+      return !earningsLens&&!(fob&&y<fob)&&schedAt(m.ev_s_multiple,y)>0&&
+        schedAt(m.share_count_M,y)>0&&typeof rev[fwd]==="number"&&
+        !(typeof nc==="number"&&isFinite(nc));
+    });
+    if(!years.length)return;
+    const clone=JSON.parse(JSON.stringify(dd));
+    const fill=clone.pt_model.net_cash_B&&typeof clone.pt_model.net_cash_B==="object"
+      ?{...clone.pt_model.net_cash_B}:{};
+    years.forEach(y=>{fill[y]=0;});clone.pt_model.net_cash_B=fill;
+    const pk=pickRow(ptModelRows(clone).filter(r=>typeof r.prem==="number"||typeof r.fl==="number"),hz);
+    const live=LIVE_PX[x.sym],stamp=dd.ref_px&&isFinite(dd.ref_px.px)&&dd.ref_px.px>0?dd.ref_px:null;
+    const px=live&&isFinite(live.px)&&live.px>0?live.px:stamp&&stamp.px;
+    if(!pk||!(px>0)){details.push({sym:x.sym,years,currentTarget:null,legacyTarget:null});return;}
+    const legacyTarget=typeof pk.row.prem==="number"?pk.row.prem:pk.row.fl;
+    const upside=Math.round((legacyTarget/px-1)*1000)/10,ann=annualise(upside,pk.row.y);
+    const i=legacy.findIndex(r=>r.sym===x.sym);
+    const next={...(i>=0?legacy[i]:{sym:x.sym}),ann,upside,tgt:legacyTarget,y:pk.row.y};
+    if(i>=0)legacy[i]=next;else legacy.push(next);
+    const cur=liveRows.find(r=>r.sym===x.sym);
+    details.push({sym:x.sym,years,currentTarget:cur&&cur.tgt||null,legacyTarget});
+  });
+  legacy.sort((a,b)=>(b.ann===null?-Infinity:b.ann)-(a.ann===null?-Infinity:a.ann));
+  details.forEach(d=>{
+    const currentIndex=liveRows.findIndex(r=>r.sym===d.sym),legacyIndex=legacy.findIndex(r=>r.sym===d.sym);
+    d.currentRank=currentIndex<0?null:currentIndex+1;d.legacyRank=legacyIndex<0?null:legacyIndex+1;
+  });
+  return details;
+}
+function netCashAuditHtml(){
+  if(!NETCASH_AUDIT.length)return "";
+  return `<details class="est-mini"><summary>⚠ net-cash migration audit · ${NETCASH_AUDIT.length} affected</summary><div>`+
+    NETCASH_AUDIT.map(d=>`<div class="none"><b>${esc(d.sym)}</b> · ${esc(d.years.join(", "))}: old implicit-zero target ${d.legacyTarget==null?"unresolved":"$"+esc(d.legacyTarget)}`+
+      ` / rank ${d.legacyRank==null?"—":d.legacyRank} → measured-only target ${d.currentTarget==null?"withheld/floor-only":"$"+esc(d.currentTarget)}`+
+      ` / rank ${d.currentRank==null?"—":d.currentRank}</div>`).join("")+`</div></details>`;
 }
 function renderUpsideRank(){
   const el=document.getElementById("upsideRank");if(!el)return;
@@ -4366,13 +4403,14 @@ function renderUpsideRank(){
       `annualising above 200%/yr off a rung under a year out. A +225% gain by YE2026 reads +1970%/yr because it is divided by ~0.4 of a year. `+
       `<button class="linklike" onclick="setHorizon('${HZ_AUTO}')" style="color:var(--green);font-weight:700">switch to auto</button></div>`:"");
   if(!rows.length){
+    NETCASH_AUDIT=netCashMigrationAudit(rows,hz);
     // v3.76: even with NOTHING rate-rankable the surface still produces an ORDERED output —
     // the owner's rule that a next-dollar hierarchy must always exist. The old branch ended
     // at an apology.
     el.innerHTML=`<div class="lbl">Computed upside</div>`+hzUI+`<div class="none">`+
       (cands.length?`no ranked name has a rung at ${esc(hz)} — pick another horizon (estimate series end at different years).`
         :`no name yet has a usable price (live quote or stamped ref_px) and a pt_model target — nothing to rank on %/yr.`)+`</div>`+
-      unrankedHtml();
+      unrankedHtml()+netCashAuditHtml();
     return;
   }
   /* FEAT-TT-MAG7 (v3.84): MAGS carries the Mag-7 basket AVERAGE into this ranking (owner
@@ -4411,6 +4449,7 @@ function renderUpsideRank(){
   // is only reachable when EVERY rung of a name sits inside ANN_MIN_Y; those sort last and are
   // named below rather than being silently interleaved at the wrong scale.
   rows.sort((a,b)=>(b.ann===null?-Infinity:b.ann)-(a.ann===null?-Infinity:a.ann));
+  NETCASH_AUDIT=netCashMigrationAudit(rows,hz);
   UPSIDE_ROWS=rows;   // FEAT-TT-FOCUS2: the compact BUY block reads the SAME rows
   const shown=rows.slice(0,3);
   LAST_RANK=shown.map(r=>r.sym);   // FEAT-TT-SESSION: the cluster strip checks overlap with these
@@ -4510,6 +4549,7 @@ function renderUpsideRank(){
         (errs.length?`⛔ ${errs.length} model${errs.length===1?"":"s"} MIS-KEYED — the rung shown is a floor fallback, not the model: <b>${errs.map(h=>esc(h.sym)).join(", ")}</b>. `:"")+
         (warns.length?`⚠ ${warns.length} model lint${warns.length===1?"":"s"}: ${warns.map(h=>`<b>${esc(h.sym)}</b> ${h.ls.map(l=>esc(l.code)).join("/")}`).join(" · ")}`:"")+
         `<span class="scope"> — open the name's tab for the detail</span></div>`;})()+
+    netCashAuditHtml()+
     (()=>{ // FEAT-TT-AGREE: light only when BOTH stories say yes; otherwise WAIT, blockers named.
       // v3.28: a tripped leverage circuit is a THIRD veto that no per-name score can clear —
       // in deleverage-only mode the next dollar funds debt, so the green line must not light
@@ -4536,13 +4576,16 @@ function renderUpsideRank(){
       // correctly renders "HOLD"/"RESTRICTED". Without this rung the green ELIGIBLE line
       // could light directly under a pill saying don't act on this (the v3.40/v3.54 defect
       // class one layer up: evidence-quality state computed and rendered, but not read at
-      // the one place it gates money). Only a non-FULL actionability vetoes here — the
-      // verdict/stance checks above and the Macro Flip checks below are unchanged.
+      // the one place it gates money). Missing actionability also fails closed: cached
+      // legacy bodies cannot light the
+      // canonical line while the street receipt correctly says UNKNOWN. The verdict/stance
+      // checks above and the Macro Flip checks below are otherwise unchanged.
       const gateFail=
         stc.k==="unknown"?"stance UNKNOWN — no measured or asserted regime; a live regime read is mandatory before an add"
         :stc.k==="stop"?`adds suspended — ${stc.txt}`
         :!REGIME?"regime feed unavailable — Macro Flip cannot be read, and an unreadable crash circuit vetoes rather than defaulting to clear"
-        :(reg&&reg.actionability&&reg.actionability!=="FULL")?`regime actionability ${reg.actionability}${reg.status?` (${reg.status})`:""} — the evidence axis says don't gate on this, regardless of the verdict`
+        :(!reg||!reg.actionability)?"Engine 0 actionability unavailable — only an explicit FULL may gate capital"
+        :reg.actionability!=="FULL"?`regime actionability ${reg.actionability}${reg.status?` (${reg.status})`:""} — the evidence axis says don't gate on this, regardless of the verdict`
         :!mf?"readout carries no Macro Flip block — the crash circuit cannot be read"
         :mf.evaluable===false?(mf.reason||"Macro Flip BLIND — missing inputs")
         :mf.tripped?"Macro Flip TRIPPED — de-risk, no adds":null;
@@ -4565,7 +4608,6 @@ function renderUpsideRank(){
         if(!r.tt)return "unscored — no TT run";
         if(r.tt.tier==="C"||(r.tt.score!==null&&r.tt.score<5.5))return `TT ${r.tt.score!==null?r.tt.score.toFixed(1):"C"} — quality fails`;
         if(r.rrFail)return "R/R fails its floor";
-        if(r.kdSoon!==null&&r.kdSoon<=BINARY_WINDOW_D)return `binary ${r.kdSoon}d — no-new-adds`;
         return null;};
       const q=rows.filter(r=>why(r)===null);
       AGREE_PICK=q.length?q[0]:null;   // the TODAY card shows this only when nothing vetoes
@@ -4588,18 +4630,20 @@ function renderUpsideRank(){
           // entry distance — two different questions (is the tape with me / is the price
           // where I committed), never blended into one score, and neither one a veto.
           (()=>{const tc=techChip(b.sym);return tc?`<div style="margin-top:2px">${tc}</div>`:"";})()+
+          (b.kdSoon!==null&&b.kdSoon<=BINARY_WINDOW_D?`<div style="color:var(--amber);margin-top:2px">⚠ binary ${esc(b.kdSoon)}d — advisory only; owner decides</div>`:"")+
           (b.rolled?`<div class="scope" style="margin-top:2px">↷ priced off the ${esc(b.y)} rung — the ${esc(b.rolled)} one is inside 3 months</div>`:"")+
           `</div>`;}
       const near=rows.slice(0,4).map(r=>`${esc(r.sym)}: ${esc(why(r))}`).join(" · ");
       return `<div style="margin-top:6px;padding:5px 8px;border:1px solid var(--amber);border-radius:6px;font-size:11px">`+
-        `<span style="color:var(--amber);font-weight:700">⏸ NEXT DOLLAR: WAIT</span> — no name passes gap + cap room + fresh TT run + quality + R/R + binary window. `+
+        `<span style="color:var(--amber);font-weight:700">⏸ NEXT DOLLAR: WAIT</span> — no name passes gap + cap room + fresh TT run + quality + R/R. `+
         `<span class="scope">${near}</span> · disagreement is information, not a discount</div>`;
     })();
 }
 /* FEAT-TT-V2: an additive street-evidence diagnostic at one explicit 12-month horizon and
    one provider number — TipRanks' published average. It does not mutate UPSIDE_ROWS,
    AGREE_PICK or LAST_RANK: canonical /api/score underwriting and the portfolio-aware Next
-   Dollar framework remain authoritative. A reviewed receipt can still fail readiness closed. */
+   Dollar framework remain authoritative. v3.91 makes the separation bidirectional: receipts
+   cannot veto canonical readiness, and canonical state cannot promote a receipt. */
 function buildV2Rows(){
   const rows=[];
   BOOK.forEach(x=>{
@@ -4611,44 +4655,39 @@ function buildV2Rows(){
     const current=v2ReceiptCurrent(receipt);
     const blockers=receipt&&Array.isArray(receipt.blockers)?receipt.blockers.map(b=>b.reason):["gate receipt not run"];
     if(receipt&&!current)blockers.unshift("analysis predates current Engine 0 readout");
-    const g=(receipt&&receipt.gates||[]).reduce((o,v)=>(o[v.id]=v,o),{});
-    const f=FACTS[x.sym],q=f&&f.fields&&f.fields.quote;
+    const price=receipt&&receipt.priceBasis;
     rows.push({sym:x.sym,lens:x.lens,tier:x.tier,street,receipt,gap,
       eligible:!!(receipt&&receipt.eligible&&current),blockers,current,
-      tgt:street.analystTarget.average,px:q&&q.value,y:"12m",basis:"TipRanks published average",
+      tgt:street.analystTarget.average,px:price&&price.value,y:"12m",basis:"TipRanks published average",
       upside:gap,ann:gap,tt:score===null?null:{score,tier:tTier},
-      wt:rankWeight(x.sym),rs:runState(x.lastRun),rdy:readiness(x),
-      rrFail:!!(g.reward_risk&&g.reward_risk.status!=="PASS"),kdSoon:null,
-      redH:0,redLabels:[],live:!!(q&&q.status==="LIVE"),chg:q&&q.changePct,
+      advisories:receipt&&Array.isArray(receipt.advisories)?receipt.advisories:[],
       qualitative:receipt&&receipt.qualitative||null});
   });
-  return rows.sort((a,b)=>(b.gap===null?-Infinity:b.gap)-(a.gap===null?-Infinity:a.gap));
+  return rows;
 }
 function renderStreetEligibility(){
   const el=document.getElementById("streetEligibility");if(!el)return;
   V2_ROWS=buildV2Rows();
   const eligible=V2_ROWS.filter(r=>r.eligible);
-  const streetPick=eligible[0]||null;
   if(!V2_ROWS.length){
     el.innerHTML=`<div class="lbl">12-month street gap · TipRanks published average</div><div class="none">`+
       (V2_PENDING?`loading reviewed street records…`:`no confirmed street packet — import Seeking Alpha estimates + TipRanks target; legacy pt_model is comparison-only`)+`</div>`;
     return;
   }
-  const medal=["🥇","🥈","🥉","4","5"];
-  const rows=V2_ROWS.slice(0,5).map((r,i)=>{
+  const rows=V2_ROWS.slice(0,5).map(r=>{
     const col=r.eligible?"var(--green)":r.gap!==null&&r.gap>=15?"var(--amber)":"var(--red)";
     const why=r.eligible?"all ticker gates passed":r.blockers.slice(0,2).join(" · ");
+    const advisory=r.advisories.find(a=>a.status==="SOON"||a.status==="UNKNOWN");
     return `<button class="fdr-row" onclick="openCard('${esc(r.sym)}')">`+
-      `<span class="fdr-l"><span>${medal[i]}</span><span class="sym">${esc(r.sym)}</span>`+
+      `<span class="fdr-l"><span class="sym">${esc(r.sym)}</span>`+
       `<span class="lens lens-${esc(r.lens)}">${esc(r.lens)}</span>`+
       `<span class="pill ${r.eligible?"ok":"warn"}">${r.eligible?"ELIGIBLE":"WAIT"}</span></span>`+
       `<span class="fdr-p" style="color:${col}">${r.gap===null?"—":`${r.gap>=0?"+":""}${Math.round(r.gap*10)/10}%`}</span>`+
       `<span class="fdr-d"><span class="scope">$${esc(r.tgt)} published average · 12m · position ignored</span>`+
-      `<span style="color:${r.eligible?"var(--green)":"var(--amber)"}">${esc(why||"receipt unavailable")}</span></span></button>`;
+      `<span style="color:${r.eligible?"var(--green)":"var(--amber)"}">${esc(why||"receipt unavailable")}</span>`+
+      (advisory?`<span style="color:var(--amber)">⚠ ${esc(advisory.reason)}</span>`:"")+`</span></button>`;
   }).join("");
-  const status=streetPick
-    ?`<div class="none" style="color:var(--green);font-weight:700">✓ STREET RECEIPT PASS: ${esc(streetPick.sym)} — every sourced gate passed</div>`
-    :`<div class="none" style="color:var(--amber)">⏸ WAIT — no reviewed ticker passes every server gate</div>`;
+  const status=`<div class="none" style="color:${eligible.length?"var(--green)":"var(--amber)"}">${eligible.length} ELIGIBLE · ${V2_ROWS.length-eligible.length} WAIT — comparison only; no winner selected</div>`;
   el.innerHTML=`<div class="lbl">STREET ELIGIBILITY RECEIPT · diagnostic, not canonical score · TipRanks published average · 12m</div>${status}${rows}`+
     `<div class="none">${V2_ROWS.length} reviewed of ${BOOK.length} book names · low/average/high are never re-averaged · <button class="linklike" onclick="openStreetImport('')">import screenshots</button></div>`;
 }
@@ -5552,13 +5591,19 @@ document.getElementById("overlay").addEventListener("keydown",e=>{
 
 function v2CardHtml(sym){
   const s=STREET[sym],f=FACTS[sym],r=ANALYSIS[sym];
+  const voided=STREET_VOIDED[sym];
+  if(!s&&voided)return `<div class="row"><div class="k">TICKER GATES</div><div class="v"><span class="pill warn">VOIDED</span> `+
+    `${esc(voided.reason||"reviewed packet retracted")} · <button class="linklike" onclick="openStreetImport('${esc(sym)}')">confirm a replacement</button></div></div>`;
   if(!s&&!r)return `<div class="row"><div class="k">TICKER GATES</div><div class="v"><span class="pill warn">NOT RUN</span> `+
     `<button class="linklike" onclick="openStreetImport('${esc(sym)}')">import SA + TipRanks screenshots</button></div></div>`;
   const q=f&&f.fields&&f.fields.quote,nc=f&&f.fields&&f.fields.netCashB;
   const gaps=r&&r.metrics&&r.metrics.gaps;
   const gates=r&&Array.isArray(r.gates)?r.gates:[];
+  const advisories=r&&Array.isArray(r.advisories)?r.advisories:[];
   const gateHtml=gates.map(g=>`<div class="gate-item" style="border-left-color:${g.status==="PASS"?"var(--green)":g.status==="FAIL"?"var(--red)":"var(--amber)"}">`+
     `<b style="color:${g.status==="PASS"?"var(--green)":g.status==="FAIL"?"var(--red)":"var(--amber)"}">${esc(g.status)}</b> · ${esc(String(g.id||"").replace(/_/g," "))} — ${esc(g.reason||"")}</div>`).join("");
+  const advisoryHtml=advisories.map(g=>`<div class="gate-item" style="border-left-color:var(--amber)">`+
+    `<b style="color:var(--amber)">${esc(g.status)}</b> · ${esc(String(g.id||"").replace(/_/g," "))} — ${esc(g.reason||"")}</div>`).join("");
   const current=r&&v2ReceiptCurrent(r);
   const status=r&&r.eligible&&current?"ELIGIBLE":"WAIT";
   const cls=status==="ELIGIBLE"?"ok":"head";
@@ -5576,9 +5621,40 @@ function v2CardHtml(sym){
     `${q&&isFinite(q.value)?` · quote $${esc(q.value)} (${esc(q.status)})`:""}</div>`+
     `<div class="scope">12-month published average · position/exposure not assessed`+
     `${nc&&isFinite(nc.value)?` · SEC net cash $${Math.round(nc.value*100)/100}B`:nc?` · net cash ${esc(nc.status)}`:""}</div>`+
-    (gateHtml?`<div class="gate-list">${gateHtml}</div>`:`<div class="none">confirmed inputs saved; run gates to refresh facts and compute a receipt</div>`)+
+    (gateHtml?`<div class="gate-list">${gateHtml}${advisoryHtml}</div>`:`<div class="none">confirmed inputs saved; run gates to refresh facts and compute a receipt</div>`)+
     (qual?`<div class="none">cited rubric ${qual.score!=null?qual.score+"/10":"UNKNOWN"}${cites?` · ${cites}`:""}</div>`:"")+
-    (r&&Array.isArray(r.warnings)&&r.warnings.length?`<div class="none" style="color:var(--amber)">⚠ ${r.warnings.map(esc).join(" · ")}</div>`:"")+`</div></div>`;
+    (r&&Array.isArray(r.warnings)&&r.warnings.length?`<div class="none" style="color:var(--amber)">⚠ ${r.warnings.map(esc).join(" · ")}</div>`:"")+
+    (s?`<div class="none"><button class="linklike" style="color:var(--red)" onclick="voidStreetPacket('${esc(sym)}')">void reviewed packet</button></div>`:"")+`</div></div>`;
+}
+
+async function openAiRubric(){
+  try{
+    const rec=await v2Json("/api/framework?aiRubric=1");
+    if(!rec||rec.empty||!rec.hasFramework)return toast("Store the private framework before approving an AI-safe rubric");
+    AI_FRAMEWORK_RECORD=rec;
+    const safe=rec.aiRubric||{};
+    document.getElementById("cTitle").textContent="APPROVED AI-SAFE RUBRIC";
+    document.getElementById("cBody").innerHTML=`<div class="derived">Only this redacted field may be sent to Cloudflare Workers AI. The full private framework is never included in an AI prompt. MacroDash does not persist screenshots, OCR drafts, or assembled prompts; Cloudflare processing remains subject to the linked data-use terms.</div>`+
+      `<div class="none" style="margin-top:6px"><a href="https://developers.cloudflare.com/workers-ai/platform/data-usage/" target="_blank" rel="noopener">Cloudflare Workers AI data-use terms</a></div>`+
+      `<label style="display:block;margin-top:10px">rubric version<input id="aiRubricVersion" maxlength="120" value="${esc(safe.version||"")}"></label>`+
+      `<label style="display:block;margin-top:8px">redacted rubric · max 8 KiB<textarea id="aiRubricText" maxlength="8192" style="width:100%;min-height:260px;background:#060b0f;color:var(--slate);border:1px solid var(--line);border-radius:6px;padding:9px;font:11px/1.5 var(--mono)">${esc(safe.text||"")}</textarea></label>`+
+      `<div class="none">Saving records explicit approval time and invalidates receipts bound to an older rubric.</div>`;
+    document.getElementById("cBtns").innerHTML=`<button class="act" onclick="saveAiRubric(false)">✔ APPROVE &amp; SAVE</button>`+
+      `<button class="act danger" onclick="saveAiRubric(true)">VOID AI RUBRIC</button><button class="act" onclick="closeCard()">CANCEL</button>`;
+    openModal();
+  }catch(e){if(e.pinRequired)showPinGate(openAiRubric);else toast("AI rubric unavailable: "+e.message);}
+}
+async function saveAiRubric(clear){
+  const rec=AI_FRAMEWORK_RECORD;if(!rec||!rec.hasFramework)return toast("Framework record unavailable — reload");
+  const text=clear?"":(document.getElementById("aiRubricText").value||"").trim();
+  const version=clear?"":(document.getElementById("aiRubricVersion").value||"").trim();
+  if(!clear&&(!text||!version))return toast("Rubric text and version are required");
+  try{
+    await v2Json("/api/framework",{method:"PUT",headers:{"content-type":"application/json"},body:JSON.stringify({
+      aiRubric:clear?null:{text,version,approvedAt:new Date().toISOString()},
+    })});
+    AI_FRAMEWORK_RECORD=null;closeCard();toast(clear?"AI-safe rubric voided — qualitative receipts will WAIT":"AI-safe rubric approved — rerun receipts to bind the new version");
+  }catch(e){toast("AI rubric not saved: "+e.message);}
 }
 
 function blankStreetDraft(sym){
@@ -5677,13 +5753,26 @@ async function saveStreetPacket(){
   const packet=readStreetPacket();
   try{
     const data=await v2Json("/api/street",{method:"PUT",headers:{"content-type":"application/json"},body:JSON.stringify(packet)});
-    STREET[packet.symbol]=data.record;render();toast(packet.symbol+" confirmed — refreshing facts and gates");
+    STREET[packet.symbol]=data.record;delete STREET_VOIDED[packet.symbol];delete ANALYSIS_VOIDED[packet.symbol];
+    render();toast(packet.symbol+" confirmed — refreshing facts and gates");
     const receipt=await runTickerAnalysis(packet.symbol);
     if(find(packet.symbol)){closeCard();openCard(packet.symbol);}
     else if(receipt)toast(packet.symbol+" saved; add it to the book to display it on the board");
   }catch(e){
     const details=e.data&&e.data.details;toast("Street input not saved: "+(details&&details.length?details[0]:e.message));
   }
+}
+async function voidStreetPacket(sym){
+  const current=STREET[sym];if(!current||!current.version)return toast("No active reviewed packet to void");
+  if(!confirm(`Void ${sym}'s reviewed street packet? Its immutable history will remain.`))return;
+  const reason=(prompt("Reason for voiding this confirmation:")||"").trim();
+  if(!reason)return toast("Void cancelled — a reason is required");
+  try{
+    const data=await v2Json("/api/street?sym="+encodeURIComponent(sym),{method:"DELETE",
+      headers:{"content-type":"application/json","If-Match":current.version},body:JSON.stringify({reason})});
+    delete STREET[sym];delete ANALYSIS[sym];STREET_VOIDED[sym]=data.voided;ANALYSIS_VOIDED[sym]={status:"VOID"};
+    render();closeCard();openCard(sym);toast(sym+" reviewed packet voided — confirm a replacement before rerunning gates");
+  }catch(e){toast("Street packet not voided: "+e.message);}
 }
 function openCard(sym){
   const x=find(sym);if(!x)return;
@@ -6168,6 +6257,14 @@ function buildRankingsMd(){
   if(lints.length){
     m+=`## MODEL LINTS\n\n`;
     lints.forEach(h=>{m+=`- **${h.sym}** — ${h.ls.map(l=>`${l.sev==="error"?"⛔":"⚠"} ${l.code}`).join(" · ")}\n`;});
+    m+=`\n`;
+  }
+  if(NETCASH_AUDIT.length){
+    m+=`## MODEL INTEGRITY — NET CASH MIGRATION\n\n`;
+    m+=`_Audit only: the live ranking never assumes missing net cash is zero. This reconstructs the retired implicit-zero behavior so any target/rank movement is named._\n\n`;
+    NETCASH_AUDIT.forEach(d=>{
+      m+=`- **${d.sym}** (${d.years.join(", ")}) — old implicit-zero target ${d.legacyTarget==null?"unresolved":"$"+d.legacyTarget}, rank ${d.legacyRank??"—"} → measured-only ${d.currentTarget==null?"premium withheld / floor-only":"$"+d.currentTarget}, rank ${d.currentRank??"—"}\n`;
+    });
     m+=`\n`;
   }
 
