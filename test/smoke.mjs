@@ -74,7 +74,8 @@ const dhSrc = readFileSync(new URL("../src/sections/DataHealth.jsx", import.meta
 const wlSrc = readFileSync(new URL("../src/sections/Watchlist.jsx", import.meta.url), "utf8");
 const aiEconSrc = readFileSync(new URL("../src/aiEcon.js", import.meta.url), "utf8");
 const navSrc = readFileSync(new URL("../src/sections/StickyNav.jsx", import.meta.url), "utf8"); // wave 15
-const uiSrc = dashSrc + bandSrc + whysSrc + sbSrc + shSrc + stripSrc + sqSrc + wcSrc + mdSrc + mrSrc + hwSrc + dtSrc + aiSrc + alSrc + dhSrc + wlSrc + navSrc;
+const spSrc = readFileSync(new URL("../src/sections/SharedPicks.jsx", import.meta.url), "utf8"); // v3.97
+const uiSrc = dashSrc + bandSrc + whysSrc + sbSrc + shSrc + stripSrc + sqSrc + wcSrc + mdSrc + mrSrc + hwSrc + dtSrc + aiSrc + alSrc + dhSrc + wlSrc + navSrc + spSrc;
 const _s = dashSrc.indexOf("const MOCK_DATA = {");
 let _i = dashSrc.indexOf("{", _s), _d = 0, _e = -1;
 for (; _i < dashSrc.length; _i++) { if (dashSrc[_i] === "{") _d++; else if (dashSrc[_i] === "}") { _d--; if (_d === 0) { _e = _i; break; } } }
@@ -4604,8 +4605,12 @@ ok("band: a missing data prop renders a safe empty state, never a throw (Propert
   /if\(!d\)return <div aria-hidden="true"\/>;/.test(bandSrc));
 ok("band: the module stays under the 300-line bound (Property 10)",
   bandSrc.split("\n").length <= 300);
-ok("band: the call site still passes the live wiring (+ v3.94: the sentence and the confidence)",
-  /<RegimeBand d=\{d\} stale=\{staleFactors\} loading=\{mode==="LOADING"\} liveBuild=\{liveBuild\} srcLabel=\{derivedLabel\}\s*\n\s*sentence=\{!evidenceSet\.withheld&&evidenceSet\.summary\?evidenceSet\.summary\.sentence:null\} conf=\{regimeConf\}\/>/.test(dashSrc));
+// v3.97: the hero explanation SWAPS by mode — sentence gated !simple (Power), prose gated
+// simple (the newbie pair). One derivation (postureSummary), never stacked.
+ok("band: the call site still passes the live wiring (+ v3.97: sentence/prose swap by mode)",
+  /sentence=\{!simple&&!evidenceSet\.withheld&&evidenceSet\.summary\?evidenceSet\.summary\.sentence:null\}/.test(dashSrc) &&
+  /prose=\{simple&&!evidenceSet\.withheld&&evidenceSet\.summary\?evidenceSet\.summary\.prose:null\} conf=\{regimeConf\}\/>/.test(dashSrc) &&
+  /<RegimeBand d=\{d\} stale=\{staleFactors\} loading=\{mode==="LOADING"\} liveBuild=\{liveBuild\} srcLabel=\{derivedLabel\}/.test(dashSrc));
 
 // ═══════════ [47] UI-OVERHAUL task 1.4 — FiveWhys extracted, presentation only ═══════════
 // The 5 Whys strip moved verbatim to src/sections/FiveWhys.jsx. The separation contract:
@@ -6632,5 +6637,82 @@ ok("docs: every TT-run response must report a surfaced composite, sourced/horizo
       /SELL` requires[\s\S]{0,180}(forced-exit|kill|over-cap trim)/.test(current) &&
       /diagnostic `ELIGIBLE`[\s\S]{0,180}cannot create a buy\/sell call/.test(current);
   })());
+
+// ═══════════ [62] v3.97 SHAREABLE SIMPLE — newbie prose + the public picks whitelist ═══════════
+// Two owner calls: the Simple hero speaks in DIRECTIONAL verb phrases (a bare noun list
+// misleads — "working for the market: inflation" reads as inflation-is-good when the factor
+// is bullish because inflation is COOLING), and /api/picks is the ONE deliberately-public
+// book projection (S-tier tickers only, whitelist by explicit field picks).
+console.log("\n[62] v3.97 SHAREABLE SIMPLE — prose derivation + picks whitelist");
+{
+  const { REGIME_BAND_TABLE } = await import("../src/regime.js");
+  ok("prose: every band carries a plainBull/plainBear verb-phrase pair beside its plain noun",
+    REGIME_BAND_TABLE.every((b) => typeof b.plainBull === "string" && typeof b.plainBear === "string" &&
+      / (is|are) /.test(b.plainBull) && / (is|are) /.test(b.plainBear)));
+  const { postureSummary } = await import("../src/evidence.js");
+  const F = (key, vote) => ({ key, vote, label: key, short: key });
+  const both = postureSummary([F("cpiHeadline","bull"), F("nfci","bull"), F("valuation","bear"), F("fearGreed","neutral")]);
+  ok("prose: directional phrases, both buckets — cooling inflation FOR, stretched valuations AGAINST",
+    both.prose.for === "Working for the market right now: inflation is cooling and money is flowing easily." &&
+    both.prose.against === "Working against it: valuations are stretched.");
+  const oneSide = postureSummary([F("vix","bull")]);
+  ok("prose: an empty bucket states itself — 'nothing is clearly working against it'",
+    oneSide.prose.for === "Working for the market right now: volatility is calm." &&
+    oneSide.prose.against === "Nothing is clearly working against it right now.");
+  ok("prose: all-neutral/excluded yields NULL — the sentence covers it, two 'nothing' lines would be filler",
+    postureSummary([F("vix","neutral"), F("cpiHeadline","excluded")]).prose === null &&
+    postureSummary([]).prose === null);
+  ok("prose: an unknown factor key falls back to its label, never a blank",
+    postureSummary([F("mystery","bull")]).prose.for.includes("mystery"));
+  ok("prose: the call site SWAPS by mode — sentence !simple, prose simple (never stacked)",
+    /sentence=\{!simple&&/.test(dashSrc) && /prose=\{simple&&/.test(dashSrc) &&
+    /!withheld&&prose&&/.test(bandSrc));
+
+  // ── the picks endpoint: RUN against a fake KV, whitelist proven ──
+  const { projectPicks, onRequestGet: picksGet } = await import("../functions/api/picks.js");
+  const richEntry = { sym: "NBIS", tier: "S", rank: "#1 secret trigger", lastRun: "2026-08-15",
+    share_note: "  the one-liner  ", comp: "R3-A: 9.0", dots: [{ t: "x" }],
+    deepDive: { thesis: "PRIVATE", pt_model: { x: 1 } }, pos: { sh: 100, mv: 5000 } };
+  const book = { version: 7, asOf: "2026-08-16", book: [
+    richEntry, { sym: "TSM", tier: "A", share_note: "wrong tier — must not appear" },
+    { sym: "bad sym!", tier: "S" }, { sym: "AAPL", tier: "S", share_note: "x".repeat(200) } ] };
+  const out = projectPicks(book);
+  ok("picks: S-only, book order, sym-validated — NBIS and AAPL, never the A-tier or the bad sym",
+    out.schema === "picks-v1" && out.asOf === "2026-08-16" &&
+    out.picks.map((p) => p.sym).join(",") === "NBIS,AAPL");
+  ok("picks: WHITELIST projection — nothing book-shaped leaks (rank/comp/dots/deepDive/pos/lastRun)",
+    (() => { const j = JSON.stringify(out);
+      return !/PRIVATE|pt_model|secret trigger|R3-A|lastRun|"pos"|"dots"/.test(j) &&
+        out.picks.every((p) => Object.keys(p).every((k) => ["sym","tier","note"].includes(k))); })());
+  ok("picks: share_note trims and truncates at 140, never silently dropped",
+    out.picks[0].note === "the one-liner" && out.picks[1].note.length === 140);
+  ok("picks: a missing or malformed book yields {picks:[]}, never a throw",
+    projectPicks(null).picks.length === 0 && projectPicks({ book: "not-an-array" }).picks.length === 0);
+  const res = await picksGet({ env: { PULSE_CACHE: { get: async () => book } } });
+  const body = JSON.parse(await res.text());
+  ok("picks: the handler serves the projection with a 5-min public cache header (KV cannot be hammered)",
+    res.status === 200 && body.picks.length === 2 &&
+    res.headers.get("cache-control") === "public, max-age=300");
+  const dead = await picksGet({ env: { PULSE_CACHE: { get: async () => { throw new Error("kv down"); } } } });
+  ok("picks: a KV fault degrades to an empty list, never a 500",
+    dead.status === 200 && JSON.parse(await dead.text()).picks.length === 0);
+  ok("picks: every OTHER book endpoint stays PIN-gated — picks.js is the one no-auth read, and says so",
+    !/authorize/.test(readFileSync(new URL("../functions/api/picks.js", import.meta.url), "utf8")) &&
+    /ONE ENDPOINT THAT PUBLISHES BOOK-DERIVED CONTENT WITHOUT A PIN/.test(readFileSync(new URL("../functions/api/picks.js", import.meta.url), "utf8")));
+
+  // ── the section: presentation-only, honest empty state, no dead buttons ──
+  ok("picks section: presentation only — no fetch, hook, or storage in the section; the orchestrator owns the fetch",
+    (() => { const code = spSrc.replace(/\/\/[^\n]*|\/\*[\s\S]*?\*\//g, "");
+      return !/fetch\(|useEffect|useState|localStorage/.test(code) &&
+        /fetch\("\/api\/picks"\)/.test(dashSrc) && /if\(!liveBuild\)return;/.test(dashSrc); })());
+  ok("picks section: renders NOTHING without live-fetched data, and its chips are divs, never buttons",
+    /if\(!picks\|\|!Array\.isArray\(picks\.picks\)\|\|picks\.picks\.length===0\)return null;/.test(spSrc) &&
+    !/<button/.test(spSrc) && /not investment advice/.test(spSrc));
+  ok("picks section: Simple-only at the call site, and NOT publicView-gated (exposure was decided at the endpoint)",
+    /\{simple&&<SharedPicks picks=\{picks\}\/>\}/.test(dashSrc) && !/publicView[^\n]*<SharedPicks/.test(dashSrc));
+  ok("watchlist: the v3.97 fix reads the PROP — the d.watchlist ReferenceError is gone",
+    !/d\.watchlist/.test(wlSrc) && /\(watchlist\|\|\[\]\)\.filter/.test(wlSrc));
+}
+
 console.log(`\n=== SMOKE TEST: ${pass} passed, ${fail} failed ===`);
 process.exit(fail === 0 ? 0 : 1);

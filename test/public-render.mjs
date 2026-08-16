@@ -140,7 +140,7 @@ const browser = await chromium.launch({ executablePath: exe });
 // 320px result described the DEFAULT/OPERATOR header (with the TERMINAL link) while the file's
 // name implied the public route was covered. `route` is now explicit; scenarios name which
 // surface they prove.
-async function open({ live, status = 200, delayMs = 0, width = 1280, route = "/", power = true }) {
+async function open({ live, status = 200, delayMs = 0, width = 1280, route = "/", power = true, picks = null }) {
   const page = await browser.newPage({ viewport: { width, height: 900 } });
   // v3.94 SIMPLE/POWER: SIMPLE is the product default; the legacy scenarios below assert the
   // full analytical view, so they seed the persisted Power preference the way a returning
@@ -156,6 +156,11 @@ async function open({ live, status = 200, delayMs = 0, width = 1280, route = "/"
     r.fulfill({ status: 200, contentType: "application/json",
       body: JSON.stringify({ live, cached: false, asOf: new Date().toISOString() }) });
   });
+  // v3.97: /api/picks stub — pass a picks-v1 body to render the strip, omit (null) to
+  // simulate the failed/absent feed (the strip must then render NOTHING, never example data).
+  await page.route("**/api/picks*", (r) => picks
+    ? r.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(picks) })
+    : r.fulfill({ status: 500, body: "no picks feed" }));
   await page.goto(`http://localhost:${PORT}${route}`, { waitUntil: "domcontentloaded" });
   return { page, errors };
 }
@@ -345,9 +350,16 @@ console.log("\n[public] v3.94 — Simple default, the toggle, persistence, red f
   const { page, errors } = await open({ live: deg, width: 390, power: false });
   await page.waitForTimeout(1200);
   const body = await page.locator("body").innerText();
-  ok("simple: the Glance layer renders — verdict, sentence, confidence, freshness, key numbers",
-    POSTURES.test(body) && /support risk|adds risk|unavailable/i.test(body) &&
+  // v3.97: in Simple the compact sentence is REPLACED by the two directional newbie
+  // sentences (swap, not stack) — same buckets, friendlier words.
+  ok("simple: the Glance layer renders — verdict, newbie prose, confidence, freshness, key numbers",
+    POSTURES.test(body) && /Working for the market right now:/.test(body) &&
+    /Working against it:|Nothing is clearly working against it/.test(body) &&
     /factors voting/.test(body) && /SIGNAL QUALITY/i.test(body) && /SPY/.test(body));
+  ok("v3.97 simple: the prose is DIRECTIONAL, not a bare noun list — and the compact sentence is gone",
+    /is (cooling|calm|falling|flowing)|are (upbeat|reasonable)/.test(body) && !/support(s)? risk/.test(body));
+  ok("v3.97 simple: no picks feed → the strip renders NOTHING, never example picks",
+    !/My S-Tier/i.test(body) && !/not investment advice/i.test(body));
   ok("simple: Layer 2/3 content is NOT in the DOM — the Power reasoning group, factor evidence, market detail, macro grid",
     !/the reasoning/i.test(body) && !/factor evidence/i.test(body) &&
     !/full market detail/i.test(body) && !/MACRO REGIME/i.test(body) && !/Data Health/i.test(body));
@@ -388,10 +400,38 @@ console.log("\n[public] v3.94 — Simple default, the toggle, persistence, red f
   const powerBody = await page.locator("body").innerText();
   ok("power: one tap reveals the Explain/Dig layers",
     /the reasoning/i.test(powerBody) && /factor evidence/i.test(powerBody) && /full market detail/i.test(powerBody));
+  ok("v3.97 power: the compact sentence returns and the newbie prose leaves (swap, not stack)",
+    /support(s)? risk|adds? risk/.test(powerBody) && !/Working for the market right now:/.test(powerBody));
   await page.reload(); await page.waitForTimeout(1200);
   ok("power: the choice is remembered per device across a reload",
     /the reasoning/i.test(await page.locator("body").innerText()));
   ok("v3.94: no page errors through both modes", errors.length === 0);
+  await page.close();
+}
+
+// ── v3.97 SHAREABLE SIMPLE — the live S-tier picks strip ────────────────────
+console.log("\n[public] v3.97 — picks strip renders live-fetched syms, bottom of Simple, both routes");
+{
+  const PICKS = { schema: "picks-v1", asOf: TODAY, picks: [
+    { sym: "AAA", tier: "S", note: "synthetic fixture pick" }, { sym: "BBB", tier: "S" } ] };
+  const { page, errors } = await open({ live: FULL_LIVE, width: 390, power: false, picks: PICKS, route: "/?view=public" });
+  await page.waitForTimeout(1200);
+  const body = await page.locator("body").innerText();
+  ok("picks: the strip renders the fetched syms with the not-advice line and asOf — on the ?view=public route too",
+    /My S-Tier/i.test(body) && /AAA/.test(body) && /BBB/.test(body) &&
+    /not investment advice/i.test(body) && body.includes(`as of ${TODAY}`));
+  ok("picks: the owner-authored share_note rides its chip",
+    /synthetic fixture pick/.test(body));
+  ok("picks: chips are non-interactive — no button inside the strip (a dead button is a lie)",
+    await page.locator('[aria-label="My S-tier picks"] button').count() === 0);
+  ok("picks: the strip sits BELOW the key numbers (bottom of the page, never above the answer)",
+    await page.evaluate(() => {
+      const strip = document.querySelector('[aria-label="My S-tier picks"]');
+      const spy = [...document.querySelectorAll("*")].find((n) =>
+        n.children.length === 0 && /^●?\s*SPY\*?$/m.test(n.textContent || "") && n.getBoundingClientRect().height > 0);
+      return !!strip && !!spy && strip.getBoundingClientRect().top > spy.getBoundingClientRect().top;
+    }));
+  ok("v3.97: no page errors with the picks feed live", errors.length === 0);
   await page.close();
 }
 

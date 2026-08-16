@@ -42,22 +42,30 @@ export const CREDIT_TAIL_STRESS = 12;
    `flip` is OPTIONAL: present only where the vote turns on a single scalar crossing. Where
    it is absent (CPI's trend shape, CAPE's two-condition OR) flipConditions ABSTAINS and
    names the reason — inventing a crossing for a compound rule would be a fabricated number
-   in a decision surface, which is the one thing this dashboard exists not to do. */
+   in a decision surface, which is the one thing this dashboard exists not to do. 
+   `plainBull`/`plainBear` (v3.97 SHAREABLE SIMPLE) are the newbie-facing DIRECTIONAL verb
+   phrases — a bare noun list misleads ("working for the market: inflation" reads as
+   inflation-is-good when the factor is bullish because inflation is COOLING). They live
+   HERE, beside the rule they describe, for the same reason `plain` does: one home per band,
+   no parallel copy-table to rot. */
 export const REGIME_BAND_TABLE = [
   { key:"tenYear", short:"10Y", label:"10Y Direction",
     plain:"the 10-year yield",
+    plainBull:"the 10-year yield is falling", plainBear:"the 10-year yield is climbing",
     read:(d)=>d.crossAsset.treasury10y.m1,
     vote:(v)=> v < -0.10 ? "bull" : v > 0.15 ? "bear" : "neutral",
     flip:{ bullEdge:-0.10, bearEdge:0.15, bullSide:"below", bullInclusive:false,
            unit:" ppt", dec:2, name:"the 10Y monthly change" } },
   { key:"vix", short:"VIX", label:"VIX Level",
     plain:"volatility",
+    plainBull:"volatility is calm", plainBear:"volatility is spiking",
     read:(d)=>d.marketPulse.vix.current,
     vote:(v)=> v < 18 ? "bull" : v > 25 ? "bear" : "neutral",
     flip:{ bullEdge:18, bearEdge:25, bullSide:"below", bullInclusive:false,
            unit:"", dec:2, name:"VIX" } },
   { key:"fearGreed", short:"F&G", label:"Fear & Greed",
     plain:"sentiment",
+    plainBull:"investors are upbeat", plainBear:"investors are fearful",
     read:(d)=>d.marketPulse.fearGreed.score,
     vote:(v)=> v > 55 ? "bull" : v < 30 ? "bear" : "neutral",
     // The one INVERTED factor: bullish ABOVE its edge, not below.
@@ -65,6 +73,7 @@ export const REGIME_BAND_TABLE = [
            unit:"", dec:0, name:"Fear & Greed" } },
   { key:"cpiHeadline", short:"CPI", label:"CPI Trend",
     plain:"inflation",
+    plainBull:"inflation is cooling", plainBear:"inflation is running hot",
     read:(d)=>d.macro.cpi.trend,
     vote:(t)=> t[t.length-1] < t[t.length-2] ? "bull"
              : (t[t.length-1] - t[0] > 0.5 ? "bear" : "neutral"),
@@ -72,6 +81,7 @@ export const REGIME_BAND_TABLE = [
     flipWhy:"votes on the SHAPE of its trend (latest print vs the prior one, and drift from the series start) — there is no single level to cross" },
   { key:"valuation", short:"VAL", label:"Valuation",
     plain:"valuation",
+    plainBull:"valuations are reasonable", plainBear:"valuations are stretched",
     read:(d)=>d.macro.shillerPe,
     vote:(c)=>{ const p = c.ath ? (c.current / c.ath) * 100 : c.pctOfAth;
                 return c.current < c.mean * 1.5 ? "bull" : (c.current > 30 || p > 90 ? "bear" : "neutral"); },
@@ -79,6 +89,7 @@ export const REGIME_BAND_TABLE = [
     flipWhy:"turns bearish on EITHER an absolute CAPE above 30 OR a level above 90% of its all-time high — two conditions, so no single crossing defines the flip" },
   { key:"nfci", short:"NFCI", label:"Fin Conditions",
     plain:"financial conditions",
+    plainBull:"money is flowing easily", plainBear:"financial conditions are tightening",
     read:(d)=>d.macro.nfci.current,
     // Asymmetric and INCLUSIVE on the bull side (<=), unlike every other factor — see the
     // NFCI_BANDS derivation at the tile. flipConditions renders "at or below" for it.

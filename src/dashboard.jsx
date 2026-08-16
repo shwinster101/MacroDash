@@ -22,6 +22,7 @@ import AIUnitEconomics from "./sections/AIUnitEconomics.jsx"; // task 7.1: prese
 import Alerts from "./sections/Alerts.jsx"; // task 7.2: evaluation stays here
 import DataHealth from "./sections/DataHealth.jsx"; // task 7.3: presentation only
 import Watchlist from "./sections/Watchlist.jsx"; // task 7.4: A4 gate stays at the call site
+import SharedPicks from "./sections/SharedPicks.jsx"; // v3.97: live S-tier strip (Simple); fetch stays here
 import StickyNav from "./sections/StickyNav.jsx"; // task 9.2: viewport-tracked active state
 import MacroStrip from "./sections/MacroStrip.jsx"; // task 3.1: presentation only
 import SignalQuality from "./sections/SignalQuality.jsx"; // task 3.2: presentation only
@@ -449,6 +450,17 @@ export default function Dashboard({ publicView = false } = {}) {
   });
   // FEAT-204 wiring — single-point hook swap; mock stays default, operator flips live post-deploy
   const { data: DATA, mode, asOf, provenance, dataAsOf, liveBuild, lastError, retry } = useMarketData(MOCK_DATA, { publicView });
+  /* v3.97 SHAREABLE SIMPLE: the live S-tier picks. Sections are presentation-only
+     (smoke-enforced), so the fetch lives here. LIVE BUILDS ONLY — a demo build must never
+     show a picks strip (mock conviction is the v3.1 invariant's exact target), and a fetch
+     failure resolves to null so the strip renders nothing rather than example data. */
+  const [picks,setPicks]=useState(null);
+  useEffect(()=>{
+    if(!liveBuild)return;
+    let dead=false;
+    fetch("/api/picks").then(r=>r.ok?r.json():null).then(j=>{if(!dead)setPicks(j);}).catch(()=>{/* strip renders nothing */});
+    return ()=>{dead=true;};
+  },[liveBuild]);
   const d=DATA;
   // FOMC countdown computed CLIENT-SIDE from nextFOMC (the snapshot's daysUntil is frozen at
   // fetch time and rounds up — it read "1d" on decision day). 0 = today. Falls back to the
@@ -825,8 +837,12 @@ export default function Dashboard({ publicView = false } = {}) {
           programmatically focusable for the skip jump AND the LOADING-resolve focus move. */}
       <h2 id="overview" tabIndex={-1} className="visually-hidden">Overview — posture, confidence, and what changed</h2>
       {/* FEAT-169 + R4c: Regime Verdict band — HERO, now FIRST under the header (mobile-first) */}
+      {/* v3.97 SHAREABLE SIMPLE: the hero explanation SWAPS by mode, never stacks — Simple
+          gets the two directional newbie sentences (prose), Power keeps the compact
+          one-liner (sentence). Same buckets, one derivation (postureSummary). */}
       <RegimeBand d={d} stale={staleFactors} loading={mode==="LOADING"} liveBuild={liveBuild} srcLabel={derivedLabel}
-        sentence={!evidenceSet.withheld&&evidenceSet.summary?evidenceSet.summary.sentence:null} conf={regimeConf}/>
+        sentence={!simple&&!evidenceSet.withheld&&evidenceSet.summary?evidenceSet.summary.sentence:null}
+        prose={simple&&!evidenceSet.withheld&&evidenceSet.summary?evidenceSet.summary.prose:null} conf={regimeConf}/>
 
       {/* FEAT-WHY (v3.62) sentence now renders INSIDE the hero (v3.94 DRIVERS-ONLY — one
           render site beside the verdict it explains). postureSummary stays computed and
@@ -957,6 +973,13 @@ export default function Dashboard({ publicView = false } = {}) {
           (task 7.1), presentation only; data + scissors in src/aiEcon.js. ── */}
       <AIUnitEconomics d={d} modeOf={modeOf} asOfOf={asOfOf}/>
       </section>}
+
+      {/* ── v3.97 SHAREABLE SIMPLE: the live S-tier picks strip, Simple only, bottom of the
+          page. Renders on BOTH routes — the owner opted into public exposure at the
+          /api/picks endpoint itself, and hiding the strip on ?view=public while the JSON is
+          world-readable would be theater. The A4 gate on the operator Watchlist below is
+          untouched. Renders NOTHING without live-fetched data (never example picks). ── */}
+      {simple&&<SharedPicks picks={picks}/>}
 
       {/* v3.69: operator monitors + health + footer share the bottom padded container the old
           command-center wrapper used to provide. */}

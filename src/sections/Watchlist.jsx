@@ -26,7 +26,10 @@ const Watchlist=({watchlist})=>{
                 {tier:"S", accent:T.amber, blurb:"Highest conviction · core holdings"},
                 {tier:"A", accent:T.blue,  blurb:"High conviction · sized below S"},
               ].map(({tier,accent,blurb})=>{
-                const picks=d.watchlist.filter(w=>w.tier===tier);
+                // v3.97 fix: read the PROP — `d` was never in scope after the wave-9
+                // extraction, so expanding this panel threw a ReferenceError (latent only
+                // because it defaults closed and is Power+operator-only).
+                const picks=(watchlist||[]).filter(w=>w.tier===tier);
                 if(!picks.length) return null;
                 return(
                   <div key={tier} style={{marginBottom:14}}>

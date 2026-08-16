@@ -33,7 +33,11 @@ export const WEN_MOON_STATES = [
    SENTENCE (moved here from the standalone WHY block), and ONE status line whose red facts
    (crash gauge blind, exclusions) stay visible (v3.25). The tally, the flip line and the
    factor chips — evidence, not the answer — moved INSIDE the existing ℹ panel: one click. */
-const RegimeBand=({d,stale=new Set(),loading=false,liveBuild=false,srcLabel="derived from live data",sentence=null,conf=null})=>{
+// v3.97 SHAREABLE SIMPLE: `prose` is the newbie two-sentence pair ({for, against}) derived
+// from the same buckets as `sentence`. The orchestrator passes EXACTLY ONE of the two —
+// prose in Simple (friendlier, directional verb phrases), sentence in Power (denser is
+// correct there). Withheld postures render neither: no "why" for a call not made.
+const RegimeBand=({d,stale=new Set(),loading=false,liveBuild=false,srcLabel="derived from live data",sentence=null,conf=null,prose=null})=>{
   const [open,setOpen]=useState(false);
   // Property 9 (null-safe): no data object means nothing to compute — an empty, hidden
   // region, never a throw. The orchestrator always passes `d`; this guards extraction reuse.
@@ -79,6 +83,14 @@ const RegimeBand=({d,stale=new Set(),loading=false,liveBuild=false,srcLabel="der
               </span>}
             </div>
             {!withheld&&sentence&&<div style={{fontFamily:T.fontMono,fontSize:T.fsM,color:T.textPrimary,lineHeight:1.5,maxWidth:"72ch",marginTop:3}}>{sentence}</div>}
+            {/* Two sentences where the compact one-liner stood — measured at 390×844 against
+                the locked 540px glance budget, so the block runs tighter (lineHeight 1.35,
+                marginTop 2) than the sentence it replaces. Font size stays fsM: shrinking the
+                newbie copy below the operator copy would defeat its purpose. */}
+            {!withheld&&prose&&<div style={{fontFamily:T.fontSans,fontSize:T.fsM,color:T.textPrimary,lineHeight:1.35,maxWidth:"72ch",marginTop:2}}>
+              <div>{prose.for}</div>
+              <div>{prose.against}</div>
+            </div>}
             {conf&&!loading&&<div style={{fontFamily:T.fontMono,fontSize:9,marginTop:3,display:"flex",gap:10,flexWrap:"wrap"}}>
               <span style={{color:regime.insufficient?T.red:conf.counted===conf.total?T.green:T.amber}}>{conf.counted}/{conf.total} factors voting</span>
               {conf.excluded.length>0&&<span style={{color:T.amber}}>excluded: {conf.excluded.join(" · ")}</span>}

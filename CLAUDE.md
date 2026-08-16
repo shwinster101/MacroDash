@@ -2875,6 +2875,48 @@ Jan-anchor shipped; see `snapshot.js` ~318–328), `spyMa100`, `spyMa200`, and a
   VALUATION GAP ranking (§11.1 — the ranking always renders, which is the owner's actual
   "always an output" contract, and it was never suspended). Tests: 1223 smoke (+2) + 199
   render (+1).
+- **v3.97.0 "SHAREABLE SIMPLE" — newbie bull/bear prose + the live S-tier picks strip
+  (owner call: Simple is the share-with-friends page; Power is the operator view).** Two
+  builds and a latent-crash fix. **(1) The Simple hero speaks in DIRECTIONAL verb phrases.**
+  The newbie audit of the first draft caught its own defect: a bare noun list misleads —
+  "working for the market: inflation" reads as inflation-is-good when the factor is bullish
+  because inflation is COOLING. Each `REGIME_BAND_TABLE` entry now carries a
+  **`plainBull`/`plainBear`** pair beside its `plain` noun (one home per band, no parallel
+  copy-table), and `postureSummary` returns `prose` — *"Working for the market right now:
+  inflation is cooling and money is flowing easily. Working against it: valuations are
+  stretched."* — from the SAME buckets as the sentence (one derivation; an empty bucket
+  states itself, both empty → null, withheld renders nothing). **The hero SWAPS by mode,
+  never stacks**: prose in Simple, the compact one-liner in Power. The v3.96-defended 540px
+  glance budget HELD without loosening — the prose block runs tighter (lineHeight 1.35) than
+  the sentence it replaces, measured 536px at 390×844. **(2) `/api/picks` — the ONE
+  deliberately-public book projection.** Verified first: no endpoint leaked book content
+  before this (all PIN-gated), so the exposure is an explicit owner opt-in, bounded by a
+  WHITELIST projection (the readout.json pattern): S-tier entries only, `{sym, tier}` plus
+  an optional owner-authored **`share_note`** (trimmed, truncated at 140 — never silently
+  dropped), book array order (never re-sorted by a metric the endpoint refuses to publish —
+  sorting by upside would leak the ranking), `{picks:[]}` on any fault, 5-min public cache
+  so anonymous traffic can't hammer KV. **`SharedPicks`** renders it at the bottom of Simple
+  with the not-advice line and the book's asOf: live-fetched data ONLY — a failed fetch, an
+  empty list, or a demo build renders NOTHING (mock conviction is the v3.1 invariant's exact
+  target), chips are divs never buttons (a dead button is a lie), and the strip shows on
+  BOTH routes — hiding it on `?view=public` while the JSON is world-readable would be
+  theater (the A4 gate on the operator Watchlist is untouched). The fetch lives in the
+  orchestrator (sections stay presentation-only). **(3) Watchlist crash fixed**:
+  `Watchlist.jsx` read `d.watchlist` after the wave-9 extraction renamed the prop — a
+  ReferenceError on expand, latent only because the panel defaults closed. **Deferred,
+  named:** the moon vocabulary in front of newbie friends (locked ruling, but it predates
+  this audience — owner call, cheapest fix is a Simple-only gloss line); a terminal card
+  input for `share_note`; A-tier joining the strip; retiring the curated example Watchlist.
+  Tests: **1544 smoke** (+17: the verb-phrase pairs, `postureSummary.prose` EXECUTED through
+  both/one/empty/unknown-key buckets, the swap pin, `projectPicks` + the handler RUN against
+  a fake KV — whitelist leak sweep over a maximally-rich entry, sym validation, note
+  truncation, KV-fault degradation, the cache header, the stated no-auth exception — and the
+  section's presentation-only/render-nothing/no-button/call-site pins; negative-controlled:
+  leaking `rank` into the projection and dropping a verb phrase each turn the suite red) +
+  248 render + **138 public-render** (+8: the directional prose live with the compact
+  sentence proven absent in Simple and returning in Power, the no-feed strip absence, and
+  the picks scenario on the `?view=public` route — syms + note + asOf + no buttons + the
+  strip measured BELOW the key numbers).
 - **v3.96.0 — TT receipt integrity follow-up + response contract.** Closed-market pricing now
   binds to the exact most recent completed-session candle instead of carrying an arbitrary quote
   for a fixed number of hours; the 15-minute rule remains intraday. The changed quote/advisory

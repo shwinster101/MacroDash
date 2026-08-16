@@ -146,8 +146,28 @@ export function postureSummary(factors = []) {
   const sentence = parts.length
     ? parts.join("; ").replace(/^./, (c) => c.toUpperCase()) + "."
     : "No factor is currently usable, so nothing is being asserted.";
+  // v3.97 SHAREABLE SIMPLE — the newbie prose: the SAME buckets rendered as two directional
+  // sentences for the Simple hero. A bare noun list misleads a first-time reader ("working
+  // for the market: inflation" reads as inflation-is-good when the factor is bullish because
+  // inflation is COOLING), so each factor speaks through its `plainBull`/`plainBear` verb
+  // phrase from the band table, falling back to the `plain` noun if a pair is missing —
+  // fail toward the old copy, never a blank. Both buckets empty → null (the sentence above
+  // covers it; two "nothing" sentences would be filler).
+  const verbOf = (side) => (f) => {
+    const band = REGIME_BAND_TABLE.find((t) => t.key === f.key);
+    return (band && band[side]) || (band && band.plain) || f.label;
+  };
+  const prose = (buckets.supports.length || buckets.addsRisk.length) ? {
+    for: buckets.supports.length
+      ? `Working for the market right now: ${listOf(buckets.supports.map(verbOf("plainBull")))}.`
+      : "Nothing is clearly working for the market right now.",
+    against: buckets.addsRisk.length
+      ? `Working against it: ${listOf(buckets.addsRisk.map(verbOf("plainBear")))}.`
+      : "Nothing is clearly working against it right now.",
+  } : null;
   return {
     sentence,
+    prose,
     groups: [
       { key: "supports",    label: "SUPPORTS",    vote: "bull",     shorts: buckets.supports.map((f) => f.short) },
       { key: "neutral",     label: "NEUTRAL",     vote: "neutral",  shorts: buckets.neutral.map((f) => f.short) },
