@@ -240,3 +240,35 @@ fields are labelled legacy/optional and cannot affect v2 eligibility.
 - Legacy records may display during migration but cannot be silently promoted to v2 evidence.
 - A provider outage serves last-good values with their real age and blocks when the field's
   freshness limit is exceeded.
+
+---
+
+## v3.91 addendum (2026-08-15) — the integrity audit's fixes
+
+The v3.90 contract is amended in five places; `TT_ENGINE_VERSION` moved to `tt-gates-v2.1.0`.
+
+1. **Binary window is REPORT-ONLY** (BINCAL doctrine now holds on both surfaces): the gate
+   still evaluates but sits outside the eligibility set as `receipt.binary`; a ≤10d event
+   yields a named warning, never WAIT. "Eligibility is all-PASS" now ranges over the
+   remaining gates.
+2. **Quote freshness is SESSION-AWARE**: 15 minutes intraday (session OPEN, read from the
+   same Engine 0 readout the macro gate consumes); a last-close print passes while closed
+   inside a 72h carry window, session named on the gate; unknown session stays strict.
+3. **Tombstones**: `POST /api/street?void=1 {symbol, version, reason}` appends an audited
+   `tt-street-tombstone-v1` to history (nothing is ever deleted) and removes the current
+   record → downstream gates read WAIT until a corrected packet is re-confirmed. Reason and
+   exact version are required.
+4. **Street-based divergence**: the server stamps `lastEstRevision {at, dir, px}` on the
+   current street record (direction from the revision's own eps/revenue changes, px from the
+   tt:quote cache); the client divergence flag reads it FIRST, ledger `est` entries remain
+   the legacy fallback. `lastEstRevision` is derived metadata — excluded from revision
+   comparison like `storedAt`/`version`.
+5. **Rubric redaction**: the qualitative gate sends ONLY the framework's marked
+   "## Qualitative Rubric" section to Workers AI; an unmarked framework yields UNKNOWN with
+   the fix named — the full document is never the fallback.
+
+Also: `lintPtModel` gains **NOCASH** (the net-cash migration audit — EV/S models whose
+premium rungs were withheld by the retired implicit zero are NAMED at both altitudes), and
+the street/canonical boundary pin now covers `UPSIDE_ROWS`, `AGREE_PICK` and `LAST_RANK`
+across the whole street path, with the street list pinned to order by the licensed gap,
+never its diagnostic composite.

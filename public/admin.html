@@ -9,7 +9,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
 <!-- AUDIT: kept in sync with package.json by test/smoke.mjs. admin.html is a Vite
      public/ passthrough, so it cannot receive __APP_VERSION__ — the guard is the fix. -->
-<title>TT TICKER TERMINAL v3.90.0</title>
+<title>TT TICKER TERMINAL v3.91.0</title>
 <style>
   :root{
     --bg:#05070a; --panel:#0a0f16; --panel2:#0d141d; --line:#16202c;
@@ -419,7 +419,7 @@
         onclick="toggleHeadInfo()">⋯ MENU</button>
     </div>
     <div id="headInfo" style="display:none">
-      <div class="brand">FINANCE&nbsp;BRO.AI // TT&nbsp;TICKER&nbsp;TERMINAL <small>v3.90.0 · underwriting + sourced gates</small></div>
+      <div class="brand">FINANCE&nbsp;BRO.AI // TT&nbsp;TICKER&nbsp;TERMINAL <small>v3.91.0 · underwriting + sourced gates</small></div>
       <div class="statusline">
         <span>BOOK: <b id="bookStamp">loading…</b></span>
         <span>AUTH: <b id="sessState">…</b></span>
@@ -2348,6 +2348,13 @@ function lintPtModel(dd,_y0){
   if(!ptModelRows(dd,_y0).length&&!(m.basis||m.note))
     out.push({sev:"warn",code:"NOFLOOR",
       msg:"no rung is computable and nothing here says why — a premium needs (ev_s_multiple + share_count_M + revenue) or (pe_premium_multiple + positive EPS); a floor needs pe_floor_multiple. Add basis/note if being unranked is deliberate."});
+  // NOCASH (v3.91, audit #3): v3.90 retired the implicit net_cash_B=0 in EV/S math, so a
+  // sales-lens model with NO net_cash_B silently lost its premium rungs and fell to floor-only
+  // — indistinguishable on the board from a deliberate floor-only decision. Name it: this is
+  // the migration audit, rendered at both altitudes like every lint. Explicit 0 still computes.
+  if(m.ev_s_multiple!=null&&m.net_cash_B==null&&m.pe_premium_multiple==null)
+    out.push({sev:"warn",code:"NOCASH",
+      msg:"EV/S premium withheld — net_cash_B is unmeasured and the implicit 0 was retired (v3.90): rows fall to the floor. Set net_cash_B (0 is an explicit, honest value) to restore premium rungs."});
   return out;
 }
 /* One renderer for both altitudes: the deep-dive tab (per name) and the board (whole book).
@@ -4040,12 +4047,32 @@ async function loadLedgerRecent(){
    way and price has since moved the OPPOSITE way by at least MOVE_PCT, that is the signal —
    same-direction moves are just the market agreeing with the revision, not a divergence.
    Needs both a ledger entry's own px AND a live quote; either missing renders nothing. */
+/* v3.91 (audit #6): STREET-FIRST. Estimate intake now moves through confirmed street
+   packets, which never emit ledger `est` entries — reading the ledger alone made this flag
+   go progressively blind as intake migrated. The server stamps `lastEstRevision {at,dir,px}`
+   on each current street record (direction from the revision's own change list, px from the
+   same tt:quote cache the ledger stamps from); that is the primary source, the ledger is the
+   legacy fallback for names still on hand-typed consensus. Same rule both paths: only the
+   SPLIT is the signal, and a missing px renders nothing rather than a guessed baseline. */
 function computeDivergence(){
   const out={};
+  Object.keys(typeof STREET==="object"&&STREET?STREET:{}).forEach(sym=>{
+    const rev=STREET[sym]&&STREET[sym].lastEstRevision;
+    if(!rev||(rev.dir!=="up"&&rev.dir!=="down"))return;   // mixed is not a direction
+    if(rev.px==null||!isFinite(rev.px))return;
+    const live=LIVE_PX[sym];if(!live||!isFinite(live.px))return;
+    const pxMove=Math.round((live.px/rev.px-1)*1000)/10;
+    if(Math.abs(pxMove)<MOVE_PCT)return;
+    const pxDir=pxMove>0?"up":"down";
+    if(rev.dir===pxDir)return;   // agreement is not the signal — only the split is
+    out[sym]={estDir:rev.dir,pxDir,field:"street est",estFrom:"revised",estTo:rev.dir,
+      px:rev.px,pxMove,t:rev.at};
+  });
   if(!Array.isArray(LEDGER_RECENT))return out;
   const bySym={};
   LEDGER_RECENT.forEach(e=>{if(e.kind==="est")(bySym[e.sym]=bySym[e.sym]||[]).push(e);});
   Object.keys(bySym).forEach(sym=>{
+    if(out[sym])return;   // street-based read wins; the ledger is the legacy fallback
     const latest=bySym[sym].sort((a,b)=>Date.parse(b.t)-Date.parse(a.t))[0];
     if(!isFinite(latest.from)||!isFinite(latest.to)||latest.from===latest.to)return;
     if(latest.px==null||!isFinite(latest.px))return;

@@ -2874,6 +2874,54 @@ Jan-anchor shipped; see `snapshot.js` ~318–328), `spyMa100`, `spyMa200`, and a
   VALUATION GAP ranking (§11.1 — the ranking always renders, which is the owner's actual
   "always an output" contract, and it was never suspended). Tests: 1223 smoke (+2) + 199
   render (+1).
+- **v3.91.0 "the integrity fixes" — the v3.90 audit's ten findings, closed.** The owner-
+  commissioned ambiguity audit of FEAT-TT-V2 found ten; every one now has a ruling, most have
+  code, all have tests (`TT_ENGINE_VERSION` → `tt-gates-v2.1.0`, since two changes alter what
+  a receipt of a given version means). **(1) Strict Engine 0 parity** — v3.90's stance()
+  already vetoes on absent actionability; now PROVEN in the same breath as the street path
+  (absent → macro UNKNOWN → WAIT), so the two surfaces can no longer diverge on a cached
+  legacy readout. **(2) Session-aware quotes** — the 15-minute rule is an intraday claim;
+  applied around the clock it made street eligibility perpetually WAIT after 16:16 ET.
+  `quoteGate` reads the SAME readout's `session` the macro gate consumes (one clock): OPEN →
+  strict 15min; closed → the last-close print passes inside a 72h carry window with the
+  session NAMED; unknown session stays strict (fail closed, never assume closed). **(3)
+  Report-only binaries** — the BINCAL doctrine (v3.26, "reports, never enforces") now holds
+  on BOTH surfaces: the binary gate still evaluates but sits OUTSIDE the eligibility set as
+  `receipt.binary`; ≤10d yields a named warning, never WAIT — the v3.90 doctrine inversion
+  (one fact enforced on one surface, reported on the other) is gone. One v3.90 pin flipped
+  DELIBERATELY with it: a stale calendar now warns instead of blocking. **(4) Tombstones** —
+  merge-only + immutable history had no retraction path for a wrongly-CONFIRMED packet:
+  `POST /api/street?void=1` appends an audited `tt-street-tombstone-v1` (reason REQUIRED —
+  an unexplained void is an unexplained number; version must match or 409 with the server's
+  copy) and removes the current record so every gate honestly reads WAIT until re-confirm.
+  Nothing is ever deleted from history. **(5) Street-based divergence** — estimate intake now
+  moves through street packets, which never emit ledger `est` entries, so the CRDO flag was
+  going progressively blind. The server stamps `lastEstRevision {at, dir, px}` on the current
+  record (direction from the revision's own eps/revenue changes — mixed is NOT a direction;
+  px from the same tt:quote cache the ledger stamps from); `computeDivergence` reads it
+  FIRST, ledger fallback for legacy names. Found by the suite on first run: the stamp itself
+  tripped the identical-re-submit diff — `lastEstRevision` is derived metadata and joins
+  `storedAt`/`version` in the revision-comparison strip. **(6) NOCASH** — the net-cash
+  migration audit: v3.90 retired the implicit `net_cash_B=0`, silently dropping premium rungs
+  to floor-only, indistinguishable from a deliberate floor. `lintPtModel` names it at both
+  altitudes (explicit 0 stays quiet — it is an honest value), edited identically in both
+  byte-identity-pinned homes. **(7) No street-side composite ordering** — the street list is
+  pinned to order by the LICENSED gap, never its diagnostic composite (the v3.36
+  two-rankings lesson). **(8) Widened boundary pin** — the isolation guard now covers
+  `UPSIDE_ROWS`, `AGREE_PICK` AND `LAST_RANK` across the WHOLE street path, not 2200 chars
+  of one function. **(9) Rubric redaction** — v3.90 sliced the first 12KB of the ENTIRE
+  private framework into the Workers AI prompt (gates, thresholds, R/R floors, tax routes);
+  `rubricSection()` now extracts ONLY the marked "## Qualitative Rubric" section, and an
+  unmarked framework yields UNKNOWN with the fix named — the full document is never the
+  fallback. **(10)** resolved by (1)+(8): the ownership table's "may veto readiness" wording
+  is retired — the surfaces are fully decoupled, influence in neither direction.
+  Contract addendum in `ticker-terminal/TICKER_TERMINAL_LOGIC_REDESIGN_PLAN_2026-08-15.md`.
+  Tests: **1517 smoke** (+11 behavioral: parity, the session/carry boundaries at 20min/10h/
+  80h, report-only proven as warning-not-blocker at the 10d edge, tombstone lifecycle against
+  a fake KV with real auth, estRevisionDir up/down/mixed/none, street-first divergence with
+  ledger fallback, NOCASH three ways, rubric extraction incl. the full-doc-slice absence pin;
+  3 v3.90 pins re-pinned on the new contract) + **247 render** + 114 public-render +
+  `audit:prod` clean.
 - **FEAT-TT-V2 (v3.90.0) — reviewed street inputs → sourced facts → attested street-eligibility
   receipts.** The old
   ranking could not work from the intended inputs: `ptModelRows()` required owner multiples,

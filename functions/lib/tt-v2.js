@@ -7,7 +7,10 @@
 export const TT_STREET_SCHEMA = "tt-street-v1";
 export const TT_FACTS_SCHEMA = "tt-facts-v1";
 export const TT_ANALYSIS_SCHEMA = "tt-analysis-v1";
-export const TT_ENGINE_VERSION = "tt-gates-v2.0.0";
+// v2.1.0 (v3.91): binary window moved OUTSIDE the eligibility set (report-only, BINCAL
+// doctrine) and the quote gate became session-aware — both change what a receipt of a given
+// version means, so the engine version moves with them (receipts bind engineVersion).
+export const TT_ENGINE_VERSION = "tt-gates-v2.1.0";
 
 export const TARGET_FRESH_DAYS = 30;
 export const ESTIMATE_FRESH_DAYS = 45;
@@ -376,7 +379,11 @@ function macroGate(readout) {
   return gate("macro", "PASS", "Engine 0 permits full evaluation", evidence);
 }
 
-function quoteGate(quote, now) {
+// v3.91 (audit #5): the closed-market carry window for a last-close print. 72h covers a
+// weekend + one holiday; anything older is a genuinely dead feed, not a closed market.
+export const QUOTE_CLOSED_MAX_AGE_HOURS = 72;
+
+function quoteGate(quote, now, session = null) {
   if (!quote || !finite(quote.value) || quote.value <= 0)
     return gate("quote", "UNKNOWN", "no usable sourced quote", []);
   const status = String(quote.status || "UNKNOWN").toUpperCase();
@@ -386,11 +393,29 @@ function quoteGate(quote, now) {
   // provider response relabel an old print as a fresh quote.
   const observed = Date.parse(String(quote.observedAt || ""));
   const ageMinutes = Number.isFinite(observed) ? (now.getTime() - observed) / 60000 : null;
-  if (ageMinutes === null || ageMinutes < -5 || ageMinutes > QUOTE_MAX_AGE_MINUTES)
-    return gate("quote", "UNKNOWN", ageMinutes === null ? "quote observation time is unavailable" :
-      `quote is ${Math.max(0, Math.round(ageMinutes))} minutes old`,
-      [quote.observedAt, quote.retrievedAt, `maximum ${QUOTE_MAX_AGE_MINUTES} minutes`].filter(Boolean));
-  return gate("quote", "PASS", `usable ${status.toLowerCase()} quote`, [quote.provider, quote.observedAt].filter(Boolean));
+  if (ageMinutes === null || ageMinutes < -5)
+    return gate("quote", "UNKNOWN", ageMinutes === null ? "quote observation time is unavailable" : "quote observation time is in the future",
+      [quote.observedAt, quote.retrievedAt].filter(Boolean));
+  /* v3.91 (audit #5): SESSION-AWARE freshness. The 15-minute rule is an intraday claim —
+     applied around the clock it made street eligibility perpetually WAIT outside regular
+     hours, because every close print is >15min old by 16:16 ET. Outside an OPEN session the
+     last close IS the freshest fact the market has produced, so it passes inside a bounded
+     carry window, with the session NAMED on the gate. session comes from the same Engine 0
+     readout the macro gate already consumes (one clock, never a second session derivation);
+     an UNAVAILABLE session keeps the strict intraday rule — fail closed, never assume closed. */
+  const sess = String(session || "").toUpperCase();
+  const marketOpen = sess ? sess === "OPEN" : true;   // unknown session → strict
+  if (marketOpen) {
+    if (ageMinutes > QUOTE_MAX_AGE_MINUTES)
+      return gate("quote", "UNKNOWN", `quote is ${Math.round(ageMinutes)} minutes old`,
+        [quote.observedAt, quote.retrievedAt, `maximum ${QUOTE_MAX_AGE_MINUTES} minutes intraday`].filter(Boolean));
+    return gate("quote", "PASS", `usable ${status.toLowerCase()} quote`, [quote.provider, quote.observedAt].filter(Boolean));
+  }
+  if (ageMinutes > QUOTE_CLOSED_MAX_AGE_HOURS * 60)
+    return gate("quote", "UNKNOWN", `quote is ${Math.round(ageMinutes / 60)} hours old — past the closed-market carry window`,
+      [quote.observedAt, `maximum ${QUOTE_CLOSED_MAX_AGE_HOURS}h while closed`].filter(Boolean));
+  return gate("quote", "PASS", `market ${sess} — last-close print accepted (${Math.round(ageMinutes / 60)}h old)`,
+    [quote.provider, quote.observedAt].filter(Boolean));
 }
 
 function binaryGate(nextEvent, now) {
@@ -415,9 +440,12 @@ export function rewardRiskFloor(tier = "core", regimeVerdict = "NEUTRAL") {
 export function buildGateReceipt({ street, facts, readout, composite, qualitative, technicals, tier = "core", now = new Date() } = {}) {
   const quote = factValue(facts, "quote");
   const metrics = street ? deriveStreetMetrics(street, quote, { now }) : { status: "INVALID", errors: ["street packet unavailable"] };
+  // v3.91 (audit #5): the session comes from the SAME readout the macro gate consumes —
+  // one clock. Absent → quoteGate stays strict intraday.
+  const session = readout?.session || readout?.regime?.session || null;
   const gates = [];
   gates.push(macroGate(readout));
-  gates.push(quoteGate(quote, now));
+  gates.push(quoteGate(quote, now, session));
 
   if (metrics.status !== "OK") {
     gates.push(gate("street_gap", "UNKNOWN", "confirmed street packet is unavailable or invalid", metrics.errors || []));
@@ -462,9 +490,19 @@ export function buildGateReceipt({ street, facts, readout, composite, qualitativ
     ? gate("reward_risk", "PASS", `${round(technicals.rewardRisk, 2)}x reward/risk clears ${floor}x`, technicals.evidence || [])
     : gate("reward_risk", "FAIL", `${round(technicals.rewardRisk, 2)}x reward/risk is below ${floor}x`, technicals.evidence || []));
 
-  gates.push(binaryGate(factValue(facts, "nextEarnings"), now));
+  /* v3.91 (audit #4): the binary window REPORTS, never enforces — the BINCAL doctrine
+     (v3.26) now holds on BOTH surfaces. v3.90 had the same earnings date hard-veto street
+     eligibility while the canonical board deliberately only reported it: a doctrine
+     inversion between two surfaces reading one fact. The gate still evaluates (its FAIL/
+     UNKNOWN states are real information) but it sits OUTSIDE the eligibility set: it can
+     never produce WAIT, only a named warning the receipt carries. */
+  const binary = binaryGate(factValue(facts, "nextEarnings"), now);
   const eligible = gates.every((g) => g.status === "PASS");
   const warnings = [];
+  if (binary.status === "FAIL")
+    warnings.push(`${binary.reason} — reported, never enforced (BINCAL doctrine); sizing near a print is the owner's call`);
+  else if (binary.status === "UNKNOWN")
+    warnings.push(`binary calendar: ${binary.reason}`);
   if (metrics.status === "OK" && metrics.analystConfidence === "UNKNOWN")
     warnings.push("TipRanks analyst count was not captured; coverage confidence is unknown");
   else if (metrics.status === "OK" && metrics.analystConfidence === "THIN")
@@ -477,6 +515,7 @@ export function buildGateReceipt({ street, facts, readout, composite, qualitativ
     status: eligible ? "ELIGIBLE" : "WAIT",
     eligible,
     gates,
+    binary,
     blockers: gates.filter((g) => g.status !== "PASS").map((g) => ({ id: g.id, status: g.status, reason: g.reason })),
     warnings,
     metrics: metrics.status === "OK" ? metrics : null,

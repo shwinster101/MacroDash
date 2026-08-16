@@ -2048,7 +2048,26 @@ ok("sellrank: the cap decision prefers measured % of NAV, falling back to the tr
   adminSrc.includes("const wNav=isFinite(Number(p.pct))?Number(p.pct):null;"));
 ok("focus2: the buy block renders the SAME canonical rows the Next Dollar rank sorted",
   adminSrc.includes("UPSIDE_ROWS=rows;") && adminSrc.includes("const rows=UPSIDE_ROWS.slice(0,5);") &&
-  !/function renderStreetEligibility\(\)[\s\S]{0,2200}UPSIDE_ROWS\s*=/.test(adminSrc));
+  (() => {
+    /* v3.91 (audit #10): the boundary pin covers the WHOLE street path and ALL THREE
+       canonical variables — the v3.90 pin sliced 2200 chars of one function and guarded
+       only UPSIDE_ROWS, narrower than the invariant it claimed. Brace-agnostic: slice from
+       buildV2Rows to the next top-level `function ` after renderStreetEligibility ends. */
+    const a = adminSrc.indexOf("function buildV2Rows()");
+    const rse = adminSrc.indexOf("function renderStreetEligibility()", a);
+    const b = adminSrc.indexOf("\nfunction ", rse + 10);
+    const street = adminSrc.slice(a, b);
+    return a > 0 && rse > a && b > rse &&
+      !/(?:UPSIDE_ROWS|AGREE_PICK|LAST_RANK)\s*=(?!=)/.test(street);
+  })());
+ok("v391: the street list orders by the LICENSED gap, never by its diagnostic composite",
+  (() => {
+    const a = adminSrc.indexOf("function buildV2Rows()");
+    const b = adminSrc.indexOf("\nfunction ", a);
+    const src = adminSrc.slice(a, b);
+    return /rows\.sort\(\(a,b\)=>\(b\.gap===null\?-Infinity:b\.gap\)-\(a\.gap===null\?-Infinity:a\.gap\)\)/.test(src) &&
+      !/sort[^)]*score/.test(src);
+  })());
 // v3.42: the badges became real <button>s (focusable, Enter-activatable) — same red counts.
 ok("focus2: the stance strip carries the red counts a closed DESK would otherwise hide",
   adminSrc.includes("over cap</button>") && adminSrc.includes('onclick="openDesk(') &&
@@ -6311,10 +6330,16 @@ const waitReceipt = buildGateReceipt({ street: NVDA_STREET, facts: nvdaFacts, re
 ok("NVDA acceptance: positive 37.7% street gap cannot override Engine 0 HOLD / blind health",
   waitReceipt.status === "WAIT" && waitReceipt.gates.find((g) => g.id === "macro").status === "FAIL" &&
   waitReceipt.gates.find((g) => g.id === "street_gap").status === "PASS");
-ok("binary boundary: Aug 26 is 11d away on Aug 15 (PASS), then exactly 10d on Aug 16 (FAIL)",
-  waitReceipt.gates.find((g) => g.id === "binary").status === "PASS" &&
-  buildGateReceipt({ street: NVDA_STREET, facts: nvdaFacts, readout: fullReadout, composite: firstComposite, qualitative: qPass, technicals: techPass,
-    now: new Date("2026-08-16T19:00:00Z") }).gates.find((g) => g.id === "binary").status === "FAIL");
+// v3.91 (audit #4): binary REPORTS, never enforces — it left the gate set for receipt.binary.
+ok("binary boundary: Aug 26 is 11d away on Aug 15 (PASS), then exactly 10d on Aug 16 (FAIL) — and a FAIL is a WARNING, never a blocker",
+  (() => { // session CLOSE so the day-old close print rides the carry — eligibility then
+    // hinges on everything EXCEPT the in-window binary, which is the claim under test.
+    const inWindow = buildGateReceipt({ street: NVDA_STREET, facts: nvdaFacts, readout: { ...fullReadout, session: "CLOSE" }, composite: firstComposite, qualitative: qPass, technicals: techPass,
+      now: new Date("2026-08-16T19:00:00Z") });
+    return waitReceipt.binary.status === "PASS" && !waitReceipt.gates.some((g) => g.id === "binary") &&
+      inWindow.binary.status === "FAIL" && inWindow.eligible === true &&
+      !inWindow.blockers.some((b) => b.id === "binary") &&
+      inWindow.warnings.some((w) => /reported, never enforced/.test(w)); })());
 const eligibleReceipt = buildGateReceipt({ street: NVDA_STREET, facts: nvdaFacts, readout: fullReadout, composite: firstComposite, qualitative: qPass, technicals: techPass, now: V2_NOW });
 ok("fully sourced fixture becomes ELIGIBLE without any position/exposure input",
   eligibleReceipt.eligible === true && eligibleReceipt.status === "ELIGIBLE" && !eligibleReceipt.gates.some((g) => /position|cap/i.test(g.id + g.reason)));
@@ -6326,7 +6351,7 @@ ok("RESTRICTED is a named veto — only FULL may gate capital",
 ok("missing R/R and missing calendar both fail closed as UNKNOWN",
   (() => { const f = JSON.parse(JSON.stringify(nvdaFacts)); delete f.fields.nextEarnings;
     const rr = buildGateReceipt({ street: NVDA_STREET, facts: f, readout: fullReadout, composite: firstComposite, qualitative: qPass, technicals: null, now: V2_NOW });
-    return rr.gates.find((g) => g.id === "reward_risk").status === "UNKNOWN" && rr.gates.find((g) => g.id === "binary").status === "UNKNOWN" && !rr.eligible; })());
+    return rr.gates.find((g) => g.id === "reward_risk").status === "UNKNOWN" && rr.binary.status === "UNKNOWN" && !rr.eligible; })());
 ok("a LIVE label cannot launder an old quote; observation age independently fails closed",
   (() => { const f = JSON.parse(JSON.stringify(nvdaFacts)); f.fields.quote.observedAt = "2026-08-15T18:00:00.000Z";
     const rr = buildGateReceipt({ street: NVDA_STREET, facts: f, readout: fullReadout, composite: firstComposite, qualitative: qPass, technicals: techPass, now: V2_NOW });
@@ -6336,10 +6361,11 @@ ok("quote freshness requires the provider observation; current retrieval time ca
     f.fields.quote.retrievedAt = V2_NOW.toISOString();
     const rr = buildGateReceipt({ street: NVDA_STREET, facts: f, readout: fullReadout, composite: firstComposite, qualitative: qPass, technicals: techPass, now: V2_NOW });
     return rr.gates.find((g) => g.id === "quote").status === "UNKNOWN" && /observation time/.test(rr.gates.find((g) => g.id === "quote").reason); })());
-ok("a stale calendar observation is UNKNOWN even when its old value is still a future date",
+ok("a stale calendar observation is UNKNOWN — and under report-only (v3.91) it WARNS instead of blocking",
   (() => { const f = JSON.parse(JSON.stringify(nvdaFacts)); f.fields.nextEarnings.status = "STALE";
     const rr = buildGateReceipt({ street: NVDA_STREET, facts: f, readout: fullReadout, composite: firstComposite, qualitative: qPass, technicals: techPass, now: V2_NOW });
-    return rr.gates.find((g) => g.id === "binary").status === "UNKNOWN" && !rr.eligible; })());
+    return rr.binary.status === "UNKNOWN" && rr.eligible === true &&
+      rr.warnings.some((w) => /binary calendar/.test(w)); })());
 ok("R/R policy preserves 2.0/2.5/3.0 and adds 0.5 only in HEADWIND",
   rewardRiskFloor("core", "NEUTRAL") === 2 && rewardRiskFloor("tactical", "NEUTRAL") === 2.5 &&
   rewardRiskFloor("speculative", "NEUTRAL") === 3 && rewardRiskFloor("speculative", "HEADWIND") === 3.5);
@@ -6456,5 +6482,100 @@ ok("docs: one current README points at runtime while both obsolete GUI/spec arti
     const gui = readFileSync(new URL("../ticker-terminal/tt_terminal.html", import.meta.url), "utf8");
     return current.includes("public/admin.html") && current.includes("/readout.json") && current.includes("tt:analysis:") &&
       /^# ARCHIVE/m.test(spec) && /ARCHIVE TEMPLATE/.test(gui); })());
+// ---- 61. v3.91 — the v3.90 integrity audit's fixes, executed ---------------------------
+{
+  console.log("\n[61] v3.91 — parity, session quotes, report-only binary, tombstones, divergence, NOCASH, rubric");
+  const V2 = await import("../functions/lib/tt-v2.js");
+  const ST = await import("../functions/api/street.js");
+  const TA = await import("../functions/api/ticker-analysis.js");
+  const PM = await import("../src/ptModel.js");
+  ok("v391: the engine version moved with the contract (receipts bind it)",
+    V2.TT_ENGINE_VERSION === "tt-gates-v2.1.0");
+  // Audit #2 — strict Engine 0 parity: ABSENT actionability vetoes BOTH surfaces.
+  ok("v391 parity: absent actionability is UNKNOWN→WAIT on the street path AND STANCE UNKNOWN on the canonical path",
+    (() => { const rr = buildGateReceipt({ street: NVDA_STREET, facts: nvdaFacts,
+        readout: { as_of: "2026-08-15T18:00:00Z", regime: { verdict: "NEUTRAL" } },
+        composite: firstComposite, qualitative: qPass, technicals: techPass, now: V2_NOW });
+      return rr.gates.find((g) => g.id === "macro").status === "UNKNOWN" && !rr.eligible &&
+        adminSrc.includes("STANCE UNKNOWN — Engine 0 actionability unavailable") &&
+        adminSrc.includes('actionability!=="FULL"||canGate===false'); })());
+  // Audit #5 — session-aware quote gate: intraday strict, closed-market carry, bounded, named.
+  const qAt = (minsOld, session) => {
+    const f = JSON.parse(JSON.stringify(nvdaFacts));
+    f.fields.quote.observedAt = new Date(V2_NOW.getTime() - minsOld * 60000).toISOString();
+    const readout = session ? { ...fullReadout, session } : fullReadout;
+    return buildGateReceipt({ street: NVDA_STREET, facts: f, readout, composite: firstComposite,
+      qualitative: qPass, technicals: techPass, now: V2_NOW }).gates.find((g) => g.id === "quote");
+  };
+  ok("v391 quotes: 20min old — UNKNOWN intraday (OPEN), PASS while CLOSED with the session NAMED",
+    qAt(20, "OPEN").status === "UNKNOWN" && qAt(20, "CLOSE").status === "PASS" &&
+    /market CLOSE — last-close print accepted/.test(qAt(20, "CLOSE").reason));
+  ok("v391 quotes: the closed-market carry is BOUNDED (10h passes, 80h is a dead feed) and an absent session stays STRICT",
+    qAt(600, "CLOSE").status === "PASS" && qAt(80 * 60, "CLOSE").status === "UNKNOWN" &&
+    /carry window/.test(qAt(80 * 60, "CLOSE").reason) && qAt(20, null).status === "UNKNOWN");
+  // Audit #6 — estRevisionDir: only eps/revenue moves count; mixed is not a direction.
+  ok("v391 divergence: estRevisionDir reads up/down/mixed/none from the revision's own change list",
+    ST.estRevisionDir([{ path: "estimates.periods[0].eps", from: 4, to: 5 }]) === "up" &&
+    ST.estRevisionDir([{ path: "estimates.periods[0].revenue", from: 5, to: 4 }]) === "down" &&
+    ST.estRevisionDir([{ path: "estimates.periods[0].eps", from: 4, to: 5 },
+                       { path: "estimates.periods[1].eps", from: 6, to: 5 }]) === "mixed" &&
+    ST.estRevisionDir([{ path: "analystTarget.average", from: 400, to: 500 }]) === null);
+  // Audit #6 — the client flag is STREET-FIRST with the ledger as legacy fallback.
+  const dvLift = new Function("STREET", "LIVE_PX", "LEDGER_RECENT", "MOVE_PCT",
+    liftFns(adminSrc, ["computeDivergence"]) + "\nreturn computeDivergence();");
+  ok("v391 divergence: street est↑ + px↓15% flags; agreement does not; street wins over a ledger entry",
+    (() => {
+      const street = { AAA: { lastEstRevision: { at: "2026-08-10T00:00:00Z", dir: "up", px: 100 } } };
+      const led = [{ kind: "est", sym: "AAA", t: "2026-08-01T00:00:00Z", from: 1, to: 2, px: 200 }];
+      const hit = dvLift(street, { AAA: { px: 85 } }, led, 5);
+      const agree = dvLift(street, { AAA: { px: 120 } }, [], 5);
+      return hit.AAA && hit.AAA.estDir === "up" && hit.AAA.pxDir === "down" && hit.AAA.px === 100 &&
+        !agree.AAA; })());
+  ok("v391 divergence: a name with no street revision still reads the LEDGER (legacy fallback), and mixed never flags",
+    (() => {
+      const led = [{ kind: "est", sym: "BBB", t: "2026-08-01T00:00:00Z", from: 2, to: 3, px: 50 }];
+      const fb = dvLift({}, { BBB: { px: 40 } }, led, 5);
+      const mixed = dvLift({ CCC: { lastEstRevision: { at: "x", dir: "mixed", px: 100 } } },
+        { CCC: { px: 80 } }, [], 5);
+      return fb.BBB && fb.BBB.estDir === "up" && !mixed.CCC; })());
+  // Audit #8 — tombstones: reason required, version checked, history keeps everything.
+  const tombKv = new V2MemoryKv();
+  tombKv.delete = async function (key) { this.values.delete(key); };
+  const tombEnv = { ACCESS_DEV_BYPASS: "1", PULSE_CACHE: tombKv };
+  await ST.onRequestPut({ request: new Request("https://fixture.test/api/street", {
+    method: "PUT", headers: { "content-type": "application/json" }, body: JSON.stringify(NVDA_STREET) }), env: tombEnv });
+  const tombCur = await tombKv.get("tt:street:NVDA:v1", "json");
+  const voidReq = (body) => new Request("https://fixture.test/api/street?void=1", {
+    method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) });
+  ok("v391 tombstone: an unexplained void is refused, and a version mismatch returns the server's copy",
+    (await ST.onRequestPost({ request: voidReq({ symbol: "NVDA", version: tombCur.version }), env: tombEnv })).status === 400 &&
+    (await ST.onRequestPost({ request: voidReq({ symbol: "NVDA", version: "wrong", reason: "bad OCR" }), env: tombEnv })).status === 409);
+  ok("v391 tombstone: a reasoned void APPENDS to history and removes the current record — gates read WAIT, nothing is deleted from the audit trail",
+    await (async () => {
+      const r = await ST.onRequestPost({ request: voidReq({ symbol: "NVDA", version: tombCur.version, reason: "bad OCR confirmed by mistake" }), env: tombEnv });
+      const gone = await tombKv.get("tt:street:NVDA:v1", "json");
+      const hist = (await tombKv.list({ prefix: "tt:street:history:NVDA:" })).keys;
+      const tomb = hist.find((k) => /void-/.test(k.name));
+      const rec = tomb && JSON.parse(tombKv.values.get(tomb.name));
+      return r.status === 200 && gone === null && hist.length >= 2 && rec &&
+        rec.schema === "tt-street-tombstone-v1" && rec.reason === "bad OCR confirmed by mistake" &&
+        rec.record.version === tombCur.version; })());
+  // Audit #9 — the model sees ONLY the marked rubric section, never the framework document.
+  ok("v391 rubric: only the marked '## Qualitative Rubric' section is extracted; an unmarked doc yields null (fail closed, full doc never the fallback)",
+    (() => {
+      const md = "# TT FRAMEWORK\nsecret gates and tax routes\n\n## Qualitative Rubric\nGrade moat and evidence.\n\n## Kill Gates\nnever share";
+      const r = TA.rubricSection(md);
+      return r === "Grade moat and evidence." && TA.rubricSection("# doc\nno marked section") === null &&
+        !/framework\.md\)\.slice\(0, 12000\)/.test(readFileSync(new URL("../functions/api/ticker-analysis.js", import.meta.url), "utf8")); })());
+  // Audit #3 — the NOCASH migration lint, run in the shared module (admin copy is byte-identity-pinned).
+  ok("v391 NOCASH: an EV/S model with no net_cash_B is NAMED; explicit 0 and the earnings lens stay quiet",
+    (() => {
+      const base = { pt_model: { ev_s_multiple: 5, share_count_M: 100 }, consensus: { revenue_B: { 2027: 10 }, eps: {} } };
+      const missing = PM.lintPtModel(base, "2026").some((l) => l.code === "NOCASH");
+      const explicit = PM.lintPtModel({ ...base, pt_model: { ...base.pt_model, net_cash_B: 0 } }, "2026").some((l) => l.code === "NOCASH");
+      const earnings = PM.lintPtModel({ pt_model: { pe_premium_multiple: 20, pe_floor_multiple: 10 }, consensus: { eps: { 2027: 5 } } }, "2026").some((l) => l.code === "NOCASH");
+      return missing && !explicit && !earnings; })());
+}
+
 console.log(`\n=== SMOKE TEST: ${pass} passed, ${fail} failed ===`);
 process.exit(fail === 0 ? 0 : 1);

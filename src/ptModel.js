@@ -135,6 +135,13 @@ function lintPtModel(dd,_y0){
   if(!ptModelRows(dd,_y0).length&&!(m.basis||m.note))
     out.push({sev:"warn",code:"NOFLOOR",
       msg:"no rung is computable and nothing here says why — a premium needs (ev_s_multiple + share_count_M + revenue) or (pe_premium_multiple + positive EPS); a floor needs pe_floor_multiple. Add basis/note if being unranked is deliberate."});
+  // NOCASH (v3.91, audit #3): v3.90 retired the implicit net_cash_B=0 in EV/S math, so a
+  // sales-lens model with NO net_cash_B silently lost its premium rungs and fell to floor-only
+  // — indistinguishable on the board from a deliberate floor-only decision. Name it: this is
+  // the migration audit, rendered at both altitudes like every lint. Explicit 0 still computes.
+  if(m.ev_s_multiple!=null&&m.net_cash_B==null&&m.pe_premium_multiple==null)
+    out.push({sev:"warn",code:"NOCASH",
+      msg:"EV/S premium withheld — net_cash_B is unmeasured and the implicit 0 was retired (v3.90): rows fall to the floor. Set net_cash_B (0 is an explicit, honest value) to restore premium rungs."});
   return out;
 }
 function yrsToYearEnd(y,_now){
