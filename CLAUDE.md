@@ -2874,6 +2874,30 @@ Jan-anchor shipped; see `snapshot.js` ~318–328), `spyMa100`, `spyMa200`, and a
   VALUATION GAP ranking (§11.1 — the ranking always renders, which is the owner's actual
   "always an output" contract, and it was never suspended). Tests: 1223 smoke (+2) + 199
   render (+1).
+- **v3.95.0 — the whys come back to Simple, behind ONE remembered expander (owner call on
+  a live Simple screenshot).** v3.94 put the reasoning group behind `!simple`, which made the
+  Simple view clean and left it unable to answer the one question a newcomer asks next: the
+  five why statements were **not reachable at all** without switching to Power. The fix is one
+  expander directly under the hero sentence, labelled for what the reader wants (**"why this
+  posture — 5 whys"**) rather than for the method, holding the chain and nothing else — chips,
+  the factor tally, the flip line and the evidence matrix stay Power-only, so this adds the
+  NARRATIVE layer without the technical one. **The open state is remembered per device**:
+  `CollapsedGroup` gains an optional **`persistKey`** (`md:exp:whys:v1`, shared by both call
+  sites — the same block at two altitudes, one preference), so a reader who wants the chain
+  does not re-open it every visit. Persistence is deliberately **OPT-IN**: every other group
+  demotes stale or curated content, and a remembered "open" there would quietly undo FEAT-321.
+  A storage fault or an unrecognized stored value falls back to the caller's stated
+  `defaultOpen`, never to a guessed one. **The glance budget is re-pinned 520→540 WITH the
+  reason** (the v3.45 legitimate-content precedent, not a budget quietly loosened): the
+  expander is one toggle row and measured **+10px, 520→530** at 390×844 — chrome creeping back
+  still fails the build. The main sentence is unchanged: it is `postureSummary`'s honest
+  one-liner and already fits one scannable line; shortening it further would cost a named
+  factor, which is the trade this project does not make.
+  Tests: **1521 smoke** (+4: persistKey opt-in, `readOpen` EXECUTED through the storage-fault
+  and unknown-value paths, the Simple call site, and a sweep proving the technical layer stayed
+  Power-only) + 247 render + **130 public-render** (+4: the expander present-and-closed on a
+  first visit with no `WHY #1` in the body, one tap opening the full chain, the technical layer
+  proven NOT to come with it, and the open state surviving a real reload).
 - **v3.94.0 "SIMPLE/POWER" — three-layer progressive disclosure, Simple by default (owner
   directive: "audit the key drivers and only show those — everything else 2-3 clicks
   away").** The overview adopts the glance → explain → dig model. **Layer 1 (SIMPLE, the

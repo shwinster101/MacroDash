@@ -348,9 +348,26 @@ console.log("\n[public] v3.94 — Simple default, the toggle, persistence, red f
   ok("simple: the Glance layer renders — verdict, sentence, confidence, freshness, key numbers",
     POSTURES.test(body) && /support risk|adds risk|unavailable/i.test(body) &&
     /factors voting/.test(body) && /SIGNAL QUALITY/i.test(body) && /SPY/.test(body));
-  ok("simple: Layer 2/3 content is NOT in the DOM — whys, factor evidence, market detail, macro grid",
+  ok("simple: Layer 2/3 content is NOT in the DOM — the Power reasoning group, factor evidence, market detail, macro grid",
     !/the reasoning/i.test(body) && !/factor evidence/i.test(body) &&
     !/full market detail/i.test(body) && !/MACRO REGIME/i.test(body) && !/Data Health/i.test(body));
+  // v3.95: the whys ARE reachable in Simple — one honestly-labelled expander under the
+  // hero sentence, closed on a first visit, holding the chain and nothing technical.
+  ok("v3.95 simple: the whys expander is present and CLOSED — label visible, no why statements",
+    /why this posture — 5 whys/i.test(body) && !/WHY #1/.test(body));
+  await page.locator("button.cg-toggle", { hasText: "why this posture" }).click();
+  await page.waitForTimeout(250);
+  const whysOpen = await page.locator("body").innerText();
+  ok("v3.95 simple: one tap opens the five why statements",
+    /WHY #1/.test(whysOpen) && /WHY #5/.test(whysOpen));
+  ok("v3.95 simple: opening the whys does NOT pull the technical layer in with it",
+    !/factor evidence/i.test(whysOpen) && !/full market detail/i.test(whysOpen));
+  await page.reload(); await page.waitForTimeout(1200);
+  ok("v3.95 simple: the open state is remembered per device across a reload",
+    /WHY #1/.test(await page.locator("body").innerText()));
+  // Back to closed for the glance measurement below — the budget is a first-visit claim.
+  await page.locator("button.cg-toggle", { hasText: "why this posture" }).click();
+  await page.waitForTimeout(250);
   ok("simple: red facts ignore the mode — the crash-gauge warning renders in Simple",
     /crash gauge \(VIX\) unavailable/.test(body));
   ok("simple: the toggle is present, labelled honestly, Simple pressed",
@@ -360,8 +377,11 @@ console.log("\n[public] v3.94 — Simple default, the toggle, persistence, red f
       n.children.length === 0 && /^●?\s*SPY\*?$/m.test(n.textContent || "") && n.getBoundingClientRect().height > 0);
     return el ? Math.round(el.getBoundingClientRect().top + window.scrollY) : null;
   });
-  ok("v3.94 glance budget: in Simple the key numbers begin within 520px at 390×844",
-    glance !== null && glance <= 520);
+  // v3.95 re-pin 520 -> 540, WITH the reason (the v3.45 legitimate-content precedent, not a
+  // budget quietly loosened): the owner-requested whys expander is ONE toggle row under the
+  // hero sentence and measured +10px (520 -> 530). Chrome creeping back still fails the build.
+  ok("v3.95 glance budget: in Simple the key numbers begin within 540px at 390×844",
+    glance !== null && glance <= 540);
   // One tap to Power: the full view appears; the choice persists across reload.
   await page.locator("button", { hasText: "Power" }).click();
   await page.waitForTimeout(400);

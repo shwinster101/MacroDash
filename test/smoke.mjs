@@ -4672,6 +4672,29 @@ ok("cg: the disclosure contract survives the move — aria-expanded, count-while
   cgSrc.includes("aria-expanded={open}") && cgSrc.includes("`▸ +${count}`") &&
   cgSrc.includes("chip = true") && cgSrc.includes("defaultOpen = false") &&
   cgSrc.includes("{open && children}"));
+// v3.95 (owner call): `persistKey` remembers ONE group's open state per device. It is
+// deliberately OPT-IN — a remembered "open" on a demoted stale/curated group would quietly
+// undo FEAT-321 — and a storage fault or unrecognized value falls back to the caller's
+// stated defaultOpen, never a guessed one.
+ok("cg v3.95: persistKey is opt-in and defaults to null (no group remembers state by accident)",
+  /persistKey = null/.test(cgSrc) && /const \[open, setOpen\] = useState\(\(\) => readOpen\(persistKey, defaultOpen\)\)/.test(cgSrc));
+ok("cg v3.95: a storage fault or unknown stored value falls back to defaultOpen, never to open",
+  (() => { const m = cgSrc.match(/const readOpen = [\s\S]*?\n\};/); if (!m) return false;
+    const readOpen = eval("(" + m[0].replace(/^const readOpen = /, "").replace(/;$/, "") + ")");
+    const g = globalThis.localStorage; globalThis.localStorage = undefined;
+    const faulted = readOpen("k", false) === false && readOpen("k", true) === true;
+    globalThis.localStorage = { getItem: () => "yes-please" };
+    const unknown = readOpen("k", false) === false;
+    globalThis.localStorage = { getItem: () => "1" };
+    const stored = readOpen("k", false) === true && readOpen(null, false) === false;
+    globalThis.localStorage = g; return faulted && unknown && stored; })());
+ok("whys v3.95: the whys are reachable in SIMPLE — one honestly-labelled expander, chain only",
+  /\{simple&&<FiveWhys fw=\{fw\}[\s\S]{0,180}label="why this posture — 5 whys"\/>\}/.test(dashSrc) &&
+  /export const WHYS_KEY="md:exp:whys:v1";/.test(whysSrc) &&
+  /persistKey=WHYS_KEY/.test(whysSrc));
+ok("whys v3.95: the technical layer stays POWER-only — chips/tally/flip live in the hero panel, matrix behind !simple",
+  /\{!simple&&<section aria-labelledby="drivers"/.test(dashSrc) && !/simple&&<EvidenceMatrix/.test(dashSrc));
+
 ok("cg: primitives stay under the 100-line bound",
   cgSrc.split("\n").length <= 100 && ilSrc.split("\n").length <= 100);
 ok("cg: isIllustrative keeps the v3.1 rule — MOCK and STALE suppress, everything else renders",

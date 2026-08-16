@@ -832,6 +832,17 @@ export default function Dashboard({ publicView = false } = {}) {
           render site beside the verdict it explains). postureSummary stays computed and
           smoke-tested in evidence.js; withheld postures still render no sentence. */}
 
+      {/* ── v3.95 (owner call on a live Simple screenshot): in Simple the whys were not
+          reachable AT ALL — the whole reasoning group is Power-only, so the one question a
+          newcomer asks next ("why?") had no answer on the page. ONE honestly-labelled
+          expander sits directly under the hero sentence, holds the five why statements and
+          nothing else, and REMEMBERS its open state per device (WHYS_KEY) so a reader who
+          wants the chain does not re-open it every visit. Chips, the factor tally, the flip
+          line and the full evidence matrix stay Power-only — this adds the narrative, not
+          the technical layer. ── */}
+      {simple&&<FiveWhys fw={fw} derivedLabel={derivedLabel} mode={modeOf('spyPrice')} asOf={asOfOf('spyPrice')}
+        label="why this posture — 5 whys"/>}
+
       {/* ── v3.94 DRIVERS-ONLY: the REASONING group — 5 whys + what-changed under ONE
           toggle (2 clicks to any why, inside the owner's 2-3 budget). The label carries the
           change count while closed (v3.25: a material delta is signal, never hidden silently);

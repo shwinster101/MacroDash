@@ -20,7 +20,17 @@ import { T } from "../design-tokens.js";
 import SourceBox from "../primitives/SourceBox.jsx";
 import CollapsedGroup from "../primitives/CollapsedGroup.jsx";
 
-const FiveWhys=({fw,derivedLabel,mode,asOf})=>{
+//        label        — the toggle's copy. v3.95 (owner call on a live Simple screenshot):
+//                       in Simple this block IS the whole explanation, so it is labelled for
+//                       what a reader is looking for ("why this posture") rather than for the
+//                       method ("5 whys · today"); Power keeps the method label, where the
+//                       group above it already says "the reasoning".
+//        persistKey   — remember the open state per device, so a reader who wants the chain
+//                       does not re-open it every visit (WHYS_KEY below; both call sites
+//                       share ONE key — the same block, two altitudes, one preference).
+export const WHYS_KEY="md:exp:whys:v1";
+
+const FiveWhys=({fw,derivedLabel,mode,asOf,label="5 whys · today — narrative & provenance",persistKey=WHYS_KEY})=>{
   // Property 9 (null-safe): nothing computed yet means nothing to narrate — an empty,
   // hidden region, never a throw and never a fabricated narrative.
   if(!fw||!Array.isArray(fw.whys))return <div aria-hidden="true"/>;
@@ -31,7 +41,7 @@ const FiveWhys=({fw,derivedLabel,mode,asOf})=>{
           from the closed view — the regime state is a byte-for-byte duplicate of the hero
           verdict 100px above, so v3.25 is satisfied by the hero itself; the line rides
           INSIDE the collapse so the chain still opens with its own anchor. */}
-      <CollapsedGroup count={5} label="5 whys · today — narrative & provenance" chip={false}>
+      <CollapsedGroup count={5} label={label} chip={false} persistKey={persistKey}>
         <div style={{fontFamily:T.fontMono,fontSize:9,color:T.amber,marginBottom:2}}>{fw.regime}</div>
         <div style={{fontFamily:T.fontSans,fontSize:12,color:T.textSecondary,lineHeight:1.6,fontStyle:"italic"}}>"{fw.headline}"</div>
         {fw.whys.map((w,i)=>(
