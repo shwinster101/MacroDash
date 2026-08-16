@@ -28,7 +28,12 @@ export const WEN_MOON_STATES = [
   { label: "CAN'T CALL IT 🌫️", color: T.textMuted, glow: T.textMuted },
 ];
 
-const RegimeBand=({d,stale=new Set(),loading=false,liveBuild=false,srcLabel="derived from live data"})=>{
+/* v3.94 DRIVERS-ONLY (owner call: "audit the key drivers and only show those — everything
+   else 2-3 clicks away"): the hero's visible surface is the VERDICT, the plain-language
+   SENTENCE (moved here from the standalone WHY block), and ONE status line whose red facts
+   (crash gauge blind, exclusions) stay visible (v3.25). The tally, the flip line and the
+   factor chips — evidence, not the answer — moved INSIDE the existing ℹ panel: one click. */
+const RegimeBand=({d,stale=new Set(),loading=false,liveBuild=false,srcLabel="derived from live data",sentence=null,conf=null})=>{
   const [open,setOpen]=useState(false);
   // Property 9 (null-safe): no data object means nothing to compute — an empty, hidden
   // region, never a throw. The orchestrator always passes `d`; this guards extraction reuse.
@@ -68,55 +73,29 @@ const RegimeBand=({d,stale=new Set(),loading=false,liveBuild=false,srcLabel="der
                         :regime.insufficient?`${WITHHELD_LABEL} · ${regime.sub}`
                         :`${regime.label} · ${regime.sub}`}
               </span>
-              <span style={{fontFamily:T.fontMono,fontSize:T.fsS,color:T.textMuted}}>
+              {(loading||regime.insufficient)&&<span style={{fontFamily:T.fontMono,fontSize:T.fsS,color:T.textMuted}}>
                 {loading?"no factors voting yet"
-                        :regime.insufficient
-                          ?`only ${regime.counted} of ${regime.totalFactors} factors usable — ${regime.quorum} required`
-                          :`${regime.bullVotes} bull · ${neutralVotes} neutral · ${regime.bearVotes} bear — ${regime.counted} of ${regime.totalFactors} usable`}
-              </span>
+                        :`only ${regime.counted} of ${regime.totalFactors} factors usable — ${regime.quorum} required`}
+              </span>}
             </div>
+            {!withheld&&sentence&&<div style={{fontFamily:T.fontMono,fontSize:T.fsM,color:T.textPrimary,lineHeight:1.5,maxWidth:"72ch",marginTop:3}}>{sentence}</div>}
+            {conf&&!loading&&<div style={{fontFamily:T.fontMono,fontSize:9,marginTop:3,display:"flex",gap:10,flexWrap:"wrap"}}>
+              <span style={{color:regime.insufficient?T.red:conf.counted===conf.total?T.green:T.amber}}>{conf.counted}/{conf.total} factors voting</span>
+              {conf.excluded.length>0&&<span style={{color:T.amber}}>excluded: {conf.excluded.join(" · ")}</span>}
+              {conf.blind&&<span style={{color:T.red}}>⚠ crash gauge (VIX) unavailable</span>}
+            </div>}
             {/* FEAT-FLIP: the audit's fourth first-screen answer — what would change the call.
                 "Nothing single-handedly" is stated plainly rather than padded with the nearest
                 distance to look responsive (abstention rule 3). */}
-            {withheld
-              ? <div style={{fontFamily:T.fontMono,fontSize:9,color:T.textMuted,marginTop:3}}>
+            {withheld&&<div style={{fontFamily:T.fontMono,fontSize:9,color:T.textMuted,marginTop:3}}>
                   {loading
                     ? "Nothing is being asserted from the demo baseline while the live snapshot loads."
                     : `evidence too thin${liveBuild?" — live data unavailable or stale; the mock baseline is NOT voting":""}.`}
-                </div>
-              : <div style={{fontFamily:T.fontMono,fontSize:T.fsS,color:T.textSecondary,marginTop:3}}>
-              <span style={{color:T.textMuted}}>⇄ would change this: </span>
-              {nearest
-                ? <><span style={{color:regime.color}}>{nearest.copy}</span>
-                    <span style={{color:T.textMuted}}> ({fmt.num(nearest.distance,nearest.dec)}{nearest.unit} away) → </span>
-                    <span style={{color:T.textPrimary,fontWeight:700}}>{nearest.would}</span>
-                    {/* v3.62 (newcomer audit): state the assumption. flipConditions simulates
-                        exactly ONE crossing through verdictFrom holding the others fixed, so
-                        without this the line reads as a forecast or a guaranteed trigger. The
-                        caveat is literally what the code computes. */}
-                    <span style={{color:T.textMuted}}> if other signals stay put</span>
-                    {fc.flips.length>1&&<span style={{color:T.textMuted}}> · +{fc.flips.length-1} more</span>}</>
-                : <span style={{color:T.textMuted}}>no single factor crossing flips this verdict — it would take two</span>}
-            </div>}
+                </div>}
           </div>
         </div>
-        {/* Right: factor chips (desktop) + info toggle */}
+        {/* Right: the ℹ toggle — the chips ride inside the panel now (v3.94: evidence, one click). */}
         <div style={{display:"flex",alignItems:"center",gap:8}}>
-          {/* FINDING-2: compact factor "why" — now always visible (mobile too), short labels; full detail via ℹ */}
-          <div style={{display:"flex",gap:5,flexWrap:"wrap",justifyContent:"flex-end"}}>
-            {/* FEAT-NEUTRAL (v3.62): the chip renders the factor's REAL 4-state vote through the
-                shared voteStyle map. It used to branch on a boolean (`f.bull ? green▲ : red▼`),
-                so a NEUTRAL factor fell through to the bearish arm — the hero printed
-                "N bull · N neutral · N bear" one line above while painting that neutral factor
-                red, and the Drivers matrix showed the same factor as grey NEUTRAL further down. */}
-            {factors.map((f,i)=>{
-              const vs=voteStyle(f.vote); const c=T[vs.colorKey];
-              return(
-              <span key={f.label} title={`${f.label}: ${vs.word}`} style={{fontFamily:T.fontMono,fontSize:T.fsM,color:c,border:`1px solid ${c}44`,borderRadius:3,padding:"1px 5px",letterSpacing:"0.03em",background:"#00000022",whiteSpace:"nowrap",opacity:f.vote==="excluded"?0.7:1}}>
-                {f.short} {vs.glyph}
-              </span>
-            );})}
-          </div>
           <button onClick={()=>setOpen(o=>!o)} aria-label="Show regime factors" aria-expanded={open}
             style={{background:"none",border:`1px solid ${regime.color}44`,borderRadius:3,color:regime.color,cursor:"pointer",padding:"4px 8px",minWidth:44,minHeight:44,fontFamily:T.fontMono,fontSize:11,flexShrink:0}}>
             {open?"▲":"ℹ"}
@@ -126,6 +105,30 @@ const RegimeBand=({d,stale=new Set(),loading=false,liveBuild=false,srcLabel="der
       {/* Expandable plain-language breakdown */}
       {open&&(
         <div style={{marginTop:10,borderTop:`1px solid ${T.border}`,paddingTop:8,display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(220px,1fr))",gap:"4px 18px"}}>
+          {/* v3.94: the chips + tally + nearest flip — formerly first-screen, now the panel head.
+              FEAT-NEUTRAL (v3.62) holds: chips render the REAL 4-state vote via voteStyle. */}
+          <div style={{gridColumn:"1/-1",display:"flex",gap:5,flexWrap:"wrap",alignItems:"center"}}>
+            {factors.map((f)=>{
+              const vs=voteStyle(f.vote); const c=T[vs.colorKey];
+              return(
+              <span key={f.label} title={`${f.label}: ${vs.word}`} style={{fontFamily:T.fontMono,fontSize:T.fsM,color:c,border:`1px solid ${c}44`,borderRadius:3,padding:"1px 5px",letterSpacing:"0.03em",background:"#00000022",whiteSpace:"nowrap",opacity:f.vote==="excluded"?0.7:1}}>
+                {f.short} {vs.glyph}
+              </span>
+            );})}
+            <span style={{fontFamily:T.fontMono,fontSize:T.fsS,color:T.textMuted}}>
+              {`${regime.bullVotes} bull · ${neutralVotes} neutral · ${regime.bearVotes} bear — ${regime.counted} of ${regime.totalFactors} usable`}
+            </span>
+          </div>
+          {!withheld&&<div style={{gridColumn:"1/-1",fontFamily:T.fontMono,fontSize:T.fsS,color:T.textSecondary}}>
+            <span style={{color:T.textMuted}}>⇄ would change this: </span>
+            {nearest
+              ? <><span style={{color:regime.color}}>{nearest.copy}</span>
+                  <span style={{color:T.textMuted}}> ({fmt.num(nearest.distance,nearest.dec)}{nearest.unit} away) → </span>
+                  <span style={{color:T.textPrimary,fontWeight:700}}>{nearest.would}</span>
+                  <span style={{color:T.textMuted}}> if other signals stay put</span>
+                  {fc.flips.length>1&&<span style={{color:T.textMuted}}> · +{fc.flips.length-1} more</span>}</>
+              : <span style={{color:T.textMuted}}>no single factor crossing flips this verdict — it would take two</span>}
+          </div>}
           {factors.map(f=>(
             <div key={f.label} style={{display:"flex",gap:8,alignItems:"baseline"}}>
               <div style={{fontFamily:T.fontMono,fontSize:9,color:T.textMuted,minWidth:100,flexShrink:0}}>{f.label}</div>

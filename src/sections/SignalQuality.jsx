@@ -10,27 +10,22 @@
 // not blocks re-read). The only addition is the Property-9 null guard.
 import { T } from "../design-tokens.js";
 
-const SignalQuality=({sq,regimeConf,regime})=>{
-  if(!sq||!regimeConf||!regime)return <div aria-hidden="true"/>;
+/* v3.94 DRIVERS-ONLY: the strip is the CENSUS one-liner only. The verdict-confidence
+   segments (BACKDROP N/M voting · excluded names · the red crash-gauge warning) moved into
+   the hero's status line — they are facts about the VERDICT and now sit beside it, so this
+   strip and the hero can never disagree about them (one render site). The withheld state
+   keeps its own red POSTURE WITHHELD copy in the hero (v3.25: red facts stay visible). */
+const SignalQuality=({sq})=>{
+  if(!sq)return <div aria-hidden="true"/>;
   return(
-    <div role="region" aria-label="Signal quality and backdrop confidence"
+    <div role="region" aria-label="Signal quality"
       style={{display:"flex",alignItems:"center",gap:10,flexWrap:"wrap",padding:"5px 20px",background:T.bg,borderBottom:`1px solid ${T.border}`}}>
       <span style={{fontFamily:T.fontMono,fontSize:8,color:T.textMuted,letterSpacing:"0.12em",textTransform:"uppercase"}}>Signal Quality</span>
       <span style={{fontFamily:T.fontMono,fontSize:T.fsM,color:T.green}}>● {sq.fresh} fresh{sq.fresh>0&&<span style={{color:T.textMuted}}> ({sq.live} live · {sq.cached} cached)</span>}</span>
       {sq.stale>0&&<span style={{fontFamily:T.fontMono,fontSize:T.fsM,color:T.amber}}>⏱ {sq.stale} stale</span>}
       {sq.mock>0&&<span style={{fontFamily:T.fontMono,fontSize:T.fsM,color:T.textMuted}}>○ {sq.mock} mock</span>}
       <span style={{fontFamily:T.fontMono,fontSize:8,color:T.textMuted}}>of {sq.total} tracked</span>
-      {/* The verdict's own confidence, not the tile census. */}
-      <span style={{fontFamily:T.fontMono,fontSize:9,color:regime.insufficient?T.red:regimeConf.counted===regimeConf.total?T.green:T.amber,borderLeft:`1px solid ${T.border}`,paddingLeft:10}}>
-        BACKDROP {regimeConf.counted}/{regimeConf.total} factors voting{regime.insufficient?` — POSTURE WITHHELD (needs ${regime.quorum})`:""}
-      </span>
-      {regimeConf.excluded.length>0&&(
-        <span style={{fontFamily:T.fontMono,fontSize:8,color:T.amber}}>excluded: {regimeConf.excluded.join(" · ")}</span>
-      )}
-      {regimeConf.blind&&(
-        <span style={{fontFamily:T.fontMono,fontSize:8,color:T.red}}>⚠ crash gauge (VIX) unavailable</span>
-      )}
-      {/* v3.61: the v3.1 decode legend moved into the Data Health expander — explanation,
+      {/* v3.61: the v3.1 decode legend lives in the Data Health expander — explanation,
           not evidence, and the strip's job is the one-line tell. */}
     </div>
   );

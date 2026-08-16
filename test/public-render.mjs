@@ -140,8 +140,13 @@ const browser = await chromium.launch({ executablePath: exe });
 // 320px result described the DEFAULT/OPERATOR header (with the TERMINAL link) while the file's
 // name implied the public route was covered. `route` is now explicit; scenarios name which
 // surface they prove.
-async function open({ live, status = 200, delayMs = 0, width = 1280, route = "/" }) {
+async function open({ live, status = 200, delayMs = 0, width = 1280, route = "/", power = true }) {
   const page = await browser.newPage({ viewport: { width, height: 900 } });
+  // v3.94 SIMPLE/POWER: SIMPLE is the product default; the legacy scenarios below assert the
+  // full analytical view, so they seed the persisted Power preference the way a returning
+  // power user's device would carry it. Simple-mode scenarios pass power: false (nothing
+  // stored — the true first-visit state).
+  if (power) await page.addInitScript(() => { try { localStorage.setItem("md:view:v1", "power"); } catch (_e) {} });
   const errors = [];
   page.on("pageerror", (e) => errors.push(String(e)));
   await page.route("**/api/snapshot*", async (r) => {
@@ -180,7 +185,11 @@ console.log("\n[public] LOADING — a posture must not be computed from the mock
   ok("v3.92: the whys collapse by default with the regime state visible while closed",
     !/WHY #1/.test(await page.locator("body").innerText()) &&
     /DATA HOLD|CAN'T CALL IT|LOADING/i.test(await page.locator("body").innerText()));
-  await page.locator("button.cg-toggle", { hasText: "5 whys" }).click();
+  // v3.94: the whys are TWO clicks deep (reasoning group → why chain); the inner toggle is
+  // matched on its unique tail — the group label also contains "5 whys".
+  await page.locator("button.cg-toggle", { hasText: "the reasoning" }).click();
+  await page.waitForTimeout(150);
+  await page.locator("button.cg-toggle", { hasText: "narrative & provenance" }).click();
   await page.waitForTimeout(150);
   const loadBody = await page.locator("body").innerText();
   ok("loading A1: the 5 Whys asserts NO mock core tape (no 'Core tape: SPY $…')",
@@ -201,7 +210,10 @@ console.log("\n[public] LIVE — a full snapshot publishes a posture");
   const band = await bandText(page);
   ok("live: a posture IS published when the evidence supports one", POSTURES.test(band));
   ok("live: all six factors vote", /6\/6 factors voting|6 bullish|of 6/i.test(await page.locator("body").innerText()));
-  ok("live: the flip line returns once there is a posture to flip", /would change this/i.test(band));
+  await page.locator('button[aria-label="Show regime factors"]').click();
+  await page.waitForTimeout(150);
+  ok("live: the flip line returns once there is a posture to flip (v3.94: inside the ℹ evidence panel)",
+    /would change this/i.test(await bandText(page)));
   ok("live: the moon voice is a real directional state again",
     /MOONING|HODL|DIAMOND HANDS/i.test(band) && !/CAN'T CALL IT/i.test(band));
   ok("live: no page errors", errors.length === 0);
@@ -219,6 +231,8 @@ console.log("\n[public] NEUTRAL — a neutral vote renders as neutral, not beari
   const NEUTRAL_MIX = { ...FULL_LIVE, vix: 21, fearGreed: 42, fearGreedLabel: "Fear" };
   const { page, errors } = await open({ live: NEUTRAL_MIX });
   await page.waitForTimeout(1200);
+  await page.locator('button[aria-label="Show regime factors"]').click();   // v3.94: chips ride the ℹ panel
+  await page.waitForTimeout(150);
   const fg = page.locator('[title="Fear & Greed: NEUTRAL"]');
   ok("neutral: the F&G chip is labelled NEUTRAL, not bull/bear",
     await fg.count() === 1);
@@ -227,10 +241,10 @@ console.log("\n[public] NEUTRAL — a neutral vote renders as neutral, not beari
       return t.includes("•") && !t.includes("▼") && !t.includes("▲"); })());
   ok("neutral: a genuinely bearish factor still renders ▼ (no over-correction)",
     await page.locator('[title="Valuation: BEAR"]').count() === 1);
-  // v3.93 QUIET-2: the bucket grid is CUT (a strict restatement of the sentence + the hero
-  // chips — the v3.43 Yahoo-dupe rule); the sentence carries the whole claim in plain words.
-  const why = await page.locator('[aria-label="Why this posture"]').innerText();
-  ok("why: the plain-language sentence renders and names the neutral factor; the bucket grid is gone",
+  // v3.93/v3.94: the bucket grid is CUT and the sentence renders INSIDE the hero, beside
+  // the verdict it explains (one render site — the v3.43 Yahoo-dupe rule for the grid).
+  const why = await bandText(page);
+  ok("why: the plain-language sentence renders in the hero and names the neutral factor; the bucket grid is gone",
     /neutral/i.test(why) && !/SUPPORTS/.test(why) && !/ADDS RISK/.test(why));
   ok("why: the per-factor detail still exists one tap deep in the Drivers expander (nothing lost)",
     /factor evidence/i.test(await page.locator('section[aria-labelledby="drivers"]').innerText()));
@@ -285,7 +299,9 @@ console.log("\n[public] ERROR — a 500 falls back to mock, and mock does not vo
   ok("error: no posture is published after the fetch fails", !POSTURES.test(band));
   ok("error: the withheld state is explicit, not a silent blank",
     /DATA HOLD|CAN'T CALL IT/i.test(band));
-  await page.locator("button.cg-toggle", { hasText: "5 whys" }).click();   // v3.92: chain is one tap deep
+  await page.locator("button.cg-toggle", { hasText: "the reasoning" }).click();   // v3.94: two clicks deep
+  await page.waitForTimeout(150);
+  await page.locator("button.cg-toggle", { hasText: "narrative & provenance" }).click();
   await page.waitForTimeout(150);
   const errBody = await page.locator("body").innerText();
   ok("error: the page still renders (graceful degradation holds — it never breaks)",
@@ -311,13 +327,51 @@ console.log("\n[public] v3.93 — the 390px overview budget");
         n.children.length === 0 && re.test(n.textContent || "") && n.getBoundingClientRect().height > 0);
       return el ? Math.round(el.getBoundingClientRect().top + window.scrollY) : null;
     };
-    return { whys: top(/5 whys · today/i), sq: top(/SIGNAL QUALITY/i), spy: top(/^●?\s*SPY\*?$/m) };
+    return { whys: top(/the reasoning/i), sq: top(/SIGNAL QUALITY/i), spy: top(/^●?\s*SPY\*?$/m) };
   });
   ok("v3.93 budget: first market data begins within 700px at 390×844 (measured 663 at pass time)",
     tops.spy !== null && tops.spy <= 700);
-  ok("v3.93 budget: the closed whys block is ONE toggle row (≤60px to the next block)",
+  ok("v3.93 budget: the closed reasoning block is ONE toggle row (≤60px to the next block)",
     tops.whys !== null && tops.sq !== null && tops.sq - tops.whys <= 60);
   ok("v3.93 budget: no page errors", errors.length === 0);
+  await page.close();
+}
+
+// ── v3.94 SIMPLE/POWER — the three-layer model, Simple default ──────────────
+console.log("\n[public] v3.94 — Simple default, the toggle, persistence, red facts");
+{
+  // First visit, nothing stored, VIX missing → the crash-gauge warning must show IN Simple.
+  const deg = { ...FULL_LIVE }; delete deg.vix; delete deg.vixAsOf;
+  const { page, errors } = await open({ live: deg, width: 390, power: false });
+  await page.waitForTimeout(1200);
+  const body = await page.locator("body").innerText();
+  ok("simple: the Glance layer renders — verdict, sentence, confidence, freshness, key numbers",
+    POSTURES.test(body) && /support risk|adds risk|unavailable/i.test(body) &&
+    /factors voting/.test(body) && /SIGNAL QUALITY/i.test(body) && /SPY/.test(body));
+  ok("simple: Layer 2/3 content is NOT in the DOM — whys, factor evidence, market detail, macro grid",
+    !/the reasoning/i.test(body) && !/factor evidence/i.test(body) &&
+    !/full market detail/i.test(body) && !/MACRO REGIME/i.test(body) && !/Data Health/i.test(body));
+  ok("simple: red facts ignore the mode — the crash-gauge warning renders in Simple",
+    /crash gauge \(VIX\) unavailable/.test(body));
+  ok("simple: the toggle is present, labelled honestly, Simple pressed",
+    await page.locator('button[aria-pressed="true"]', { hasText: "Simple" }).count() === 1);
+  const glance = await page.evaluate(() => {
+    const el = [...document.querySelectorAll("*")].find((n) =>
+      n.children.length === 0 && /^●?\s*SPY\*?$/m.test(n.textContent || "") && n.getBoundingClientRect().height > 0);
+    return el ? Math.round(el.getBoundingClientRect().top + window.scrollY) : null;
+  });
+  ok("v3.94 glance budget: in Simple the key numbers begin within 520px at 390×844",
+    glance !== null && glance <= 520);
+  // One tap to Power: the full view appears; the choice persists across reload.
+  await page.locator("button", { hasText: "Power" }).click();
+  await page.waitForTimeout(400);
+  const powerBody = await page.locator("body").innerText();
+  ok("power: one tap reveals the Explain/Dig layers",
+    /the reasoning/i.test(powerBody) && /factor evidence/i.test(powerBody) && /full market detail/i.test(powerBody));
+  await page.reload(); await page.waitForTimeout(1200);
+  ok("power: the choice is remembered per device across a reload",
+    /the reasoning/i.test(await page.locator("body").innerText()));
+  ok("v3.94: no page errors through both modes", errors.length === 0);
   await page.close();
 }
 
@@ -372,6 +426,8 @@ console.log("\n[public] v3.60 P0 slice — nav, matrix, digest, health");
     (drivers.match(/BULL|BEAR|NEUTRAL/g) || []).length >= 6 && /6\/6 factors usable/i.test(drivers));
   ok("C3: each card carries freshness and an as-of date",
     /LIVE/.test(drivers) && /as of \d{4}-\d{2}-\d{2}/.test(drivers));
+  await page.locator("button.cg-toggle", { hasText: "the reasoning" }).click();   // v3.94: WC rides the group
+  await page.waitForTimeout(150);
   const body1 = await page.locator("body").innerText();
   ok("C4: first valid visit says BASELINE SET, never 'nothing changed'",
     /baseline set — tracking starts today on this device/.test(body1));
@@ -389,6 +445,8 @@ console.log("\n[public] v3.60 P0 slice — nav, matrix, digest, health");
   // Reload in the SAME context: the baseline persisted, so an identical snapshot must say so.
   await page.goto(page.url(), { waitUntil: "domcontentloaded" });
   await page.waitForTimeout(1400);
+  await page.locator("button.cg-toggle", { hasText: "the reasoning" }).click();   // v3.94
+  await page.waitForTimeout(150);
   const body2 = await page.locator("body").innerText();
   ok("C4: an identical return visit names the device scope — 'since your previous visit on this device'",
     /no material change since your previous visit on this device \(\d{4}-\d{2}-\d{2}\)/.test(body2));
@@ -397,7 +455,7 @@ console.log("\n[public] v3.60 P0 slice — nav, matrix, digest, health");
   // this release exists for. DOM order, not pixels: it must hold at every width.
   ok("v3.69: 5 Whys precedes the markets section in DOM order",
     await page.evaluate(() => {
-      const whys = [...document.querySelectorAll("*")].find(n => n.childElementCount === 0 && /5 whys · today/i.test(n.textContent || ""));   // v3.93: identity lives on the toggle label (raw textContent is lowercase)
+      const whys = [...document.querySelectorAll("*")].find(n => n.childElementCount === 0 && /the reasoning — 5 whys/i.test(n.textContent || ""));   // v3.94: the group toggle is the whys' closed identity
       const mkts = document.querySelector('section[aria-labelledby="markets"]');
       return !!whys && !!mkts && !!(whys.compareDocumentPosition(mkts) & Node.DOCUMENT_POSITION_FOLLOWING);
     }));
@@ -517,7 +575,7 @@ console.log("\n[public] A4 — the public/private boundary is ENFORCED, not comm
       await page.locator('[role="status"][aria-live="polite"]').innerText()));
   ok("a11y: the verdict and confidence landmarks survive the live-region narrowing",
     await page.locator('[aria-label="Macro backdrop verdict"]').count() === 1 &&
-    await page.locator('[aria-label="Signal quality and backdrop confidence"]').count() === 1);
+    await page.locator('[aria-label="Signal quality"]').count() === 1);   // v3.94: confidence on the hero
   await page.close();
 }
 
@@ -536,9 +594,13 @@ console.log("\n[public] Slice 1 — verdict above the fold at 375px (extracted b
   ok("slice1 @375px: the extracted band renders a posture", POSTURES.test(await band.innerText()));
   ok("slice1 @375px: the complete verdict region ends within the first 600px",
     box !== null && box.y + box.height <= 600);
-  ok("slice1 @375px: the confidence tally and flip sentence ride inside that region",
+  await page.locator('button[aria-label="Show regime factors"]').click();   // v3.94: evidence panel
+  await page.waitForTimeout(150);
+  ok("slice1 @375px: the confidence tally and flip sentence ride one tap deep in the band's evidence panel",
     /of \d+ usable/.test(await band.innerText()) && /would change this/i.test(await band.innerText()));
-  await page.locator("button.cg-toggle", { hasText: "5 whys" }).click();   // v3.92: chain is one tap deep
+  await page.locator("button.cg-toggle", { hasText: "the reasoning" }).click();   // v3.94: two clicks deep
+  await page.waitForTimeout(150);
+  await page.locator("button.cg-toggle", { hasText: "narrative & provenance" }).click();
   await page.waitForTimeout(150);
   const body = await page.locator("body").innerText();
   ok("slice1 @375px: the extracted 5 Whys narrative renders one tap deep (WHY #1–#5 present)",
@@ -652,6 +714,8 @@ console.log("\n[public] wave-17 fix — strip F&G color derives from the band vo
   });
   ok("fix: a NEUTRAL F&G (45) renders the neutral grey on the strip, not bearish red",
     col === "rgb(136, 146, 164)");
+  await page.locator('button[aria-label="Show regime factors"]').click();   // v3.94: chips in the panel
+  await page.waitForTimeout(150);
   const chips = await page.locator('[aria-label="Macro backdrop verdict"]').innerText();
   ok("fix control: the band chip agrees — F&G carries • (neutral), and the two surfaces now match",
     /F&G •/.test(chips));

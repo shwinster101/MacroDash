@@ -2861,11 +2861,14 @@ ok("provenance: CAPE credits its real fetch path (multpl scrape), not 'Manual' b
 ok("affordance: the alert toggles state their real limit at the weight of the control itself",
   /no push, email or SMS is sent/.test(alSrc) && !/Triggers evaluate live data · notifications not wired/.test(uiSrc));
 // Confidence: Signal Quality counted TILES and never said whether the VERDICT was trustworthy.
-ok("confidence: the strip reports how many factors actually voted, from the EvidenceSet itself",
-  sqSrc.includes("BACKDROP {regimeConf.counted}/{regimeConf.total} factors voting") &&
-  dashSrc.includes("counted:evidenceSet.counted,total:evidenceSet.totalFactors"));
-ok("confidence: excluded factors are NAMED — 'N of 6 usable' without saying which is half a fact",
-  sqSrc.includes("excluded: {regimeConf.excluded.join") && sqSrc.includes("crash gauge (VIX) unavailable"));
+// v3.94 DRIVERS-ONLY: the verdict-confidence segments render in the HERO's status line
+// (one render site beside the verdict they describe); the strip keeps the census only.
+ok("confidence: the hero status line reports how many factors actually voted, from the EvidenceSet itself",
+  bandSrc.includes("{conf.counted}/{conf.total} factors voting") &&
+  dashSrc.includes("counted:evidenceSet.counted,total:evidenceSet.totalFactors") &&
+  dashSrc.includes("conf={regimeConf}"));
+ok("confidence: excluded factors are NAMED on the hero — 'N of 6 usable' without saying which is half a fact",
+  bandSrc.includes("excluded: {conf.excluded.join") && bandSrc.includes("crash gauge (VIX) unavailable"));
 
 // ---- 27. FEAT-ALERT-EVAL (v3.52) — the alerts evaluate, or say they cannot ----
 // Suite audit called this "interface theater" for not DELIVERING. The defect was one layer
@@ -2931,7 +2934,7 @@ ok("a11y: the page exposes a main landmark (there were ZERO before)",
 // to ONE concise status sentence — a reader should hear "backdrop changed", not whole blocks.
 ok("a11y: verdict + confidence keep their LANDMARKS but are no longer block live regions",
   /aria-label="Macro backdrop verdict"\n?/.test(bandSrc) &&
-  /aria-label="Signal quality and backdrop confidence"/.test(sqSrc) &&
+  /aria-label="Signal quality"/.test(sqSrc) &&   // v3.94: confidence lives on the hero now
   !/aria-label="Macro backdrop verdict" aria-live/.test(bandSrc));
 ok("a11y B4: ONE concise visually-hidden status region announces state changes",
   /aria-live="polite" role="status" className="visually-hidden"/.test(dashSrc) &&
@@ -2942,7 +2945,9 @@ ok("a11y B4: header actions carry 44px thumb targets at phone width",
   // unchanged and is what matters: EVERY header action gets a real thumb target, including the
   // ones now one tap deep, which is why they kept the class rather than losing it to the menu.
   /\.hdr-act\{min-height:44px;min-width:44px/.test(dashSrc) &&
-  (dashSrc.match(/className="hdr-act"/g) || []).length === 4);
+  // v3.94: +1 source site — the Simple|Power toggle (ONE mapped element rendering two
+  // buttons at runtime) carries the same thumb-target class.
+  (dashSrc.match(/className="hdr-act"/g) || []).length === 5);
 ok("a11y B4: sparklines are decorative (aria-hidden); the SPY chart has a TEXT equivalent",
   /\{spark&&<div aria-hidden="true"/.test(dtSrc) &&
   /its 200-day average of/.test(mdSrc));
@@ -3081,10 +3086,11 @@ ok("quorum: LOADING withholds the posture outright rather than computing one fro
   dashSrc.includes('loading={mode==="LOADING"}'));
 ok("quorum: the withheld state gets its OWN moon voice, never a directional one defaulted",
   /CAN'T CALL IT/.test(bandSrc) && bandSrc.includes("withheld?WEN_MOON_STATES[3]"));
-ok("quorum: the flip line is suppressed when there is no posture to flip",
-  /withheld\s*\n\s*\? <div/.test(bandSrc));
-ok("quorum: the confidence strip states the withhold, not a bare factor count",
-  /POSTURE WITHHELD \(needs \$\{regime\.quorum\}\)/.test(sqSrc));
+ok("quorum: the flip line is suppressed when there is no posture to flip (v3.94: it lives in the panel, gated !withheld)",
+  /\{!withheld&&<div[^>]*>\s*\n?\s*<span style=\{\{color:T\.textMuted\}\}>⇄ would change this: <\/span>/.test(bandSrc) &&
+  /\{withheld&&<div/.test(bandSrc));
+ok("quorum: the hero states the withhold with the quorum named, visible while everything is closed",
+  /only \$\{regime\.counted\} of \$\{regime\.totalFactors\} factors usable — \$\{regime\.quorum\} required/.test(bandSrc));
 // ---- WHY #1 freshness gate (11.4.5 audit, High) ----
 // WHY #2 freshness-gated its cross-signals; WHY #1 asserted SPY/CPI/Fed unconditionally, so a
 // mock CPI could be narrated as "today's core tape" inside the verdict's own explanation.
@@ -3478,7 +3484,7 @@ ok("A3: the public suite actually visits the public route, not only the operator
   /\/\?view=public/.test(readFileSync(new URL("../test/public-render.mjs", import.meta.url), "utf8")));
 // A4: the boundary is ENFORCED by the gate, not described by a comment.
 ok("A4: MY CONVICTION and Macro Alerts are gated behind !publicView",
-  /\{!publicView&&\(<section aria-label="Operator monitors — conviction and alerts">\s*\n\s*<Watchlist /.test(dashSrc) &&
+  /\{!publicView&&!simple&&\(<section aria-label="Operator monitors — conviction and alerts">\s*\n\s*<Watchlist /.test(dashSrc) &&   // v3.94: + the Simple gate
   /<Alerts alerts=\{alerts\}[\s\S]{0,200}\/>\s*\n\s*<\/section>\)\}/.test(dashSrc));
 ok("A4: the public footer NAMES the omission (a cut takes its attribution with it)",
   /operator view carries the curated watchlist and alert monitors/.test(dashSrc));
@@ -4588,8 +4594,8 @@ ok("band: a missing data prop renders a safe empty state, never a throw (Propert
   /if\(!d\)return <div aria-hidden="true"\/>;/.test(bandSrc));
 ok("band: the module stays under the 300-line bound (Property 10)",
   bandSrc.split("\n").length <= 300);
-ok("band: the call site still passes the live wiring (stale set, LOADING gate, liveBuild intent, state-derived label)",
-  /<RegimeBand d=\{d\} stale=\{staleFactors\} loading=\{mode==="LOADING"\} liveBuild=\{liveBuild\} srcLabel=\{derivedLabel\}\/>/.test(dashSrc));
+ok("band: the call site still passes the live wiring (+ v3.94: the sentence and the confidence)",
+  /<RegimeBand d=\{d\} stale=\{staleFactors\} loading=\{mode==="LOADING"\} liveBuild=\{liveBuild\} srcLabel=\{derivedLabel\}\s*\n\s*sentence=\{!evidenceSet\.withheld&&evidenceSet\.summary\?evidenceSet\.summary\.sentence:null\} conf=\{regimeConf\}\/>/.test(dashSrc));
 
 // ═══════════ [47] UI-OVERHAUL task 1.4 — FiveWhys extracted, presentation only ═══════════
 // The 5 Whys strip moved verbatim to src/sections/FiveWhys.jsx. The separation contract:
@@ -4634,11 +4640,11 @@ ok("wave5: the census, confidence derivation and compare-then-persist all STAY i
 ok("wave5: every call site hands over computed props, including the voting-marker set and the badge slot",
   /<MacroStrip d=\{d\} modeOf=\{modeOf\} fomcLabel=\{fomcLabel\} fomcDays=\{fomcDays\}/.test(dashSrc) &&
   /votingFields=\{VOTING_FIELDS\} badge=\{<WenMoonBadge spyChangePct=\{d\.marketPulse\.spy\.changePct\}\/>\}/.test(dashSrc) &&
-  /<SignalQuality sq=\{sq\} regimeConf=\{regimeConf\} regime=\{regime\}\/>/.test(dashSrc) &&
+  /<SignalQuality sq=\{sq\}\/>/.test(dashSrc) &&   // v3.94: confidence props moved to the hero
   /<WhatChanged changed=\{changed\}\/>/.test(dashSrc));
 ok("wave5: null-safety — a missing prop is a safe empty state on all three (Property 9)",
   /if\(!d\|\|typeof modeOf!=="function"\)return <div aria-hidden="true"\/>;/.test(stripSrc) &&
-  /if\(!sq\|\|!regimeConf\|\|!regime\)return <div aria-hidden="true"\/>;/.test(sqSrc) &&
+  /if\(!sq\)return <div aria-hidden="true"\/>;/.test(sqSrc) &&
   /if\(!changed\)return null;/.test(wcSrc));
 ok("wave5: the FEAT-170 4-col reflow contract survives — module classes match the stylesheet rules",
   stripSrc.includes('className="macro-strip"') && stripSrc.includes('className="macro-strip-inner"') &&

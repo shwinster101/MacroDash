@@ -418,6 +418,18 @@ const VOTING_FIELDS=new Set(Object.values(FACTOR_FIELD));
 
 export default function Dashboard({ publicView = false } = {}) {
   const [alerts,setAlerts]=useState(DEFAULT_ALERTS);
+  /* v3.94 SIMPLE/POWER (owner directive — three-layer progressive disclosure): SIMPLE is the
+     default and shows the Glance layer only — the verdict + sentence + confidence, the data-
+     freshness line, and the key market numbers. POWER is the full analytical view. Persisted
+     per device (the localStorage precedent of md:lastvalid/tt:hz); an unknown stored value
+     falls back to SIMPLE — the safe default is the readable one. Red facts ignore the mode:
+     the ERROR banner, the FIRED/BLIND badges and the hero's crash-gauge warning render in
+     BOTH (v3.25 — a mode switch must never hide a red fact). */
+  const [viewMode,setViewModeRaw]=useState(()=>{
+    try{return localStorage.getItem("md:view:v1")==="power"?"power":"simple";}catch(_e){return "simple";}
+  });
+  const setViewMode=(m)=>{setViewModeRaw(m);try{localStorage.setItem("md:view:v1",m);}catch(_e){/* private mode */}};
+  const simple=viewMode==="simple";
   const [copied,setCopied]=useState(false);
   const [ttCopied,setTtCopied]=useState(false); // FEAT-332: "Copy TT readout" button state
   // Re-render every 10 min so the live 5-Whys session frame advances (pre-open→midday→
@@ -750,6 +762,17 @@ export default function Dashboard({ publicView = false } = {}) {
               actions below move behind the disclosure. */}
           {!publicView&&activeAlerts>0&&<Badge label={`⚡ ${activeAlerts} FIRED`} color={T.red}/>}
           {!publicView&&activeAlerts===0&&alertBlind>0&&<Badge label={`⚡ ${alertBlind} BLIND`} color={T.amber}/>}
+          {/* v3.94: the Simple|Power toggle — persistent, remembered per device. */}
+          <div role="group" aria-label="View mode" style={{display:"flex",border:`1px solid ${T.borderAccent}`,borderRadius:4,overflow:"hidden"}}>
+            {["simple","power"].map(m=>(
+              <button key={m} onClick={()=>setViewMode(m)} aria-pressed={viewMode===m} className="hdr-act"
+                style={{fontFamily:T.fontMono,fontSize:9,padding:"5px 10px",cursor:"pointer",border:"none",
+                        background:viewMode===m?T.surfaceHigh:"transparent",
+                        color:viewMode===m?T.textPrimary:T.textMuted,fontWeight:viewMode===m?700:400}}>
+                {m==="simple"?"Simple":"Power"}
+              </button>
+            ))}
+          </div>
           {/* FEAT-165: share button — stays in the bar; it is the one action a VISITOR wants. */}
           <button onClick={handleShare} aria-label="Copy dashboard link" className="hdr-act"
             style={{fontFamily:T.fontMono,fontSize:9,background:copied?"#1a3020":T.surfaceHigh,border:`1px solid ${copied?T.green:T.borderAccent}`,color:copied?T.green:T.textSecondary,padding:"5px 12px",borderRadius:4,cursor:"pointer",transition:"all 0.2s"}}>
@@ -796,53 +819,42 @@ export default function Dashboard({ publicView = false } = {}) {
           the island strip, and the sticky nav offsets below it — padding the nav instead
           would render a permanent inset-height band even when it isn't stuck. */}
       <div aria-hidden="true" style={{position:"fixed",top:0,left:0,right:0,height:"env(safe-area-inset-top)",background:T.bg,zIndex:45}}/>
-      <StickyNav/>
+      {!simple&&<StickyNav/>}
 
       {/* 9.3: the overview heading is the skip-link target — tabIndex -1 makes it
           programmatically focusable for the skip jump AND the LOADING-resolve focus move. */}
       <h2 id="overview" tabIndex={-1} className="visually-hidden">Overview — posture, confidence, and what changed</h2>
       {/* FEAT-169 + R4c: Regime Verdict band — HERO, now FIRST under the header (mobile-first) */}
-      <RegimeBand d={d} stale={staleFactors} loading={mode==="LOADING"} liveBuild={liveBuild} srcLabel={derivedLabel}/>
+      <RegimeBand d={d} stale={staleFactors} loading={mode==="LOADING"} liveBuild={liveBuild} srcLabel={derivedLabel}
+        sentence={!evidenceSet.withheld&&evidenceSet.summary?evidenceSet.summary.sentence:null} conf={regimeConf}/>
 
-      {/* ── FEAT-WHY (v3.62): WHY THIS POSTURE — the conclusion in words, before the reader has
-          to decode six abbreviations and their thresholds. This is a PROJECTION of the same
-          evidenceSet.factors the chips and the Drivers matrix render, so it cannot disagree
-          with them. Withheld postures render nothing: there is no "why" for a call that was
-          not made, and inventing one would be the fabricated-explanation defect (v3.51's
-          isMacroMaterial rule). EXCLUDED factors are shown as UNAVAILABLE, never folded into
-          NEUTRAL — "not counted" and "counted, no lean" are different facts. ── */}
-      {!evidenceSet.withheld&&evidenceSet.summary&&(
-        <div role="region" aria-label="Why this posture"
-          style={{padding:"7px 20px",background:T.bg,borderBottom:`1px solid ${T.border}`}}>
-          <div style={{fontFamily:T.fontMono,fontSize:8,color:T.textMuted,letterSpacing:"0.12em",textTransform:"uppercase",marginBottom:4}}>Why this posture</div>
-          <div style={{fontFamily:T.fontMono,fontSize:T.fsL,color:T.textPrimary,lineHeight:1.5,maxWidth:"72ch"}}>{evidenceSet.summary.sentence}</div>
-          {/* v3.93 QUIET-2: the bucket grid is CUT (the v3.43 Yahoo-dupe rule) — it was a
-              strict restatement of the sentence above (plain words, every factor named by
-              role) and the hero chips above that (per-factor lean), the same facts a third
-              time; a measured toggle cost nearly what the grid did, so a menu was not the
-              fix. postureSummary's groups stay computed in evidence.js (the contract is
-              smoke-tested); the per-factor detail lives in the Drivers expander. */}
-        </div>
-      )}
+      {/* FEAT-WHY (v3.62) sentence now renders INSIDE the hero (v3.94 DRIVERS-ONLY — one
+          render site beside the verdict it explains). postureSummary stays computed and
+          smoke-tested in evidence.js; withheld postures still render no sentence. */}
 
-      {/* ── 5 WHYS (moved here v3.69 NARRATIVE-FIRST — owner call: the narrative outranks
-          the tiles). Extracted to src/sections/FiveWhys.jsx (task 1.4), presentation only —
-          content and data flow byte-identical; must never collapse (LOADING/ERROR anchors
-          are read from body innerText by the public-render suite). ── */}
-      <FiveWhys fw={fw} derivedLabel={derivedLabel} mode={modeOf('spyPrice')} asOf={asOfOf('spyPrice')}/>
+      {/* ── v3.94 DRIVERS-ONLY: the REASONING group — 5 whys + what-changed under ONE
+          toggle (2 clicks to any why, inside the owner's 2-3 budget). The label carries the
+          change count while closed (v3.25: a material delta is signal, never hidden silently);
+          posture-flip deltas also surface in the hero itself, which never collapsed.
+          POWER-ONLY (the Explain/Dig layers). ── */}
+      {!simple&&<div style={{padding:"2px 20px",background:T.bg,borderBottom:`1px solid ${T.border}`}}>
+        <CollapsedGroup chip={false} count={5+(changed&&changed.changes?changed.changes.length:0)}
+          label={`the reasoning — 5 whys · what changed${changed&&changed.changes&&changed.changes.length?` (${changed.changes.length} new)`:""}`}>
+          <FiveWhys fw={fw} derivedLabel={derivedLabel} mode={modeOf('spyPrice')} asOf={asOfOf('spyPrice')}/>
+          <WhatChanged changed={changed}/>
+        </CollapsedGroup>
+      </div>}
 
       {/* ── SIGNAL QUALITY — extracted to src/sections/SignalQuality.jsx (task 3.2),
           presentation only; the SIGNAL_FIELDS census + regimeConf derivation stay here. ── */}
-      <SignalQuality sq={sq} regimeConf={regimeConf} regime={regime}/>
+      <SignalQuality sq={sq}/>
 
-      {/* ── C4 (v3.60): WHAT CHANGED — extracted to src/sections/WhatChanged.jsx
-          (task 3.3), presentation only; compare-then-persist sequencing stays here. ── */}
-      <WhatChanged changed={changed}/>
+      {/* C4 WHAT CHANGED rides inside the reasoning group above (v3.94). */}
 
       {/* ── C3 (v3.60): DRIVERS — the six-factor Evidence Matrix. Renders the EvidenceSet
           contract, never its own reading: value · vote · freshness · as-of · exclusion
           reason per factor. Cards wrap on phones, rows on desktop (flex-wrap). ── */}
-      <section aria-labelledby="drivers" style={{padding:"10px 20px",borderBottom:`1px solid ${T.border}`}}>
+      {!simple&&<section aria-labelledby="drivers" style={{padding:"10px 20px",borderBottom:`1px solid ${T.border}`}}>
         <h2 id="drivers" className="visually-hidden">Drivers — the six factors and their votes</h2>
         {/* v3.62 eyebrow, folded into the toggle row itself (v3.93 QUIET-2 — two rows were
             saying one thing). The count summary stays visible while closed (v3.25). */}
@@ -876,7 +888,7 @@ export default function Dashboard({ publicView = false } = {}) {
             );})}
         </div>
         </CollapsedGroup>
-      </section>
+      </section>}
 
       {/* v3.69 NARRATIVE-FIRST: markets/macro/ai gain real <section> extents (the drivers/
           health pattern) — previously bare h2s, so the ai anchor swallowed Conviction+Alerts. */}
@@ -908,10 +920,10 @@ export default function Dashboard({ publicView = false } = {}) {
 
       {/* ── MARKET DETAIL — extracted to src/sections/MarketDetail.jsx (task 5.2),
           presentation only (v3.69: ONE expander behind the always-visible strip). ── */}
-      <MarketDetail d={d} modeOf={modeOf} asOfOf={asOfOf} demoted={demoted} spyData={spyData} goldenCross={goldenCross}/>
+      {!simple&&<MarketDetail d={d} modeOf={modeOf} asOfOf={asOfOf} demoted={demoted} spyData={spyData} goldenCross={goldenCross}/>}
       </section>
 
-      <section aria-labelledby="macro">
+      {!simple&&<section aria-labelledby="macro">
       {/* C2 (v3.60): the macro anchor lands where the macro grid begins */}
       <h2 id="macro" className="visually-hidden">Macro — inflation, labor, credit and conditions</h2>
       <div style={{padding:"12px 20px 0"}}>
@@ -927,13 +939,13 @@ export default function Dashboard({ publicView = false } = {}) {
 
           </div>
       </div>
-      </section>
+      </section>}
 
-      <section aria-labelledby="ai">
+      {!simple&&<section aria-labelledby="ai">
       {/* ── AI UNIT ECONOMICS — extracted to src/sections/AIUnitEconomics.jsx
           (task 7.1), presentation only; data + scissors in src/aiEcon.js. ── */}
       <AIUnitEconomics d={d} modeOf={modeOf} asOfOf={asOfOf}/>
-      </section>
+      </section>}
 
       {/* v3.69: operator monitors + health + footer share the bottom padded container the old
           command-center wrapper used to provide. */}
@@ -946,7 +958,7 @@ export default function Dashboard({ publicView = false } = {}) {
             renders from the same Finnhub pull, so nothing upstream is removed. */}
         {/* ── MY CONVICTION — extracted to src/sections/Watchlist.jsx (task 7.4);
             A4: the !publicView gate stays on this wrapper. ── */}
-        {!publicView&&(<section aria-label="Operator monitors — conviction and alerts">
+        {!publicView&&!simple&&(<section aria-label="Operator monitors — conviction and alerts">
         <Watchlist watchlist={d.watchlist}/>
 
         {/* ── ALERTS STRIP — extracted to src/sections/Alerts.jsx (task 7.2);
@@ -958,8 +970,8 @@ export default function Dashboard({ publicView = false } = {}) {
 
         {/* ── DATA HEALTH — extracted to src/sections/DataHealth.jsx (task 7.3);
             the whole <section> moved so the health anchor + h2 travel together. ── */}
-        <DataHealth signalFields={SIGNAL_FIELDS} modeOf={modeOf} dataAsOf={dataAsOf}
-          mode={mode} lastError={lastError} retry={retry}/>
+        {!simple&&<DataHealth signalFields={SIGNAL_FIELDS} modeOf={modeOf} dataAsOf={dataAsOf}
+          mode={mode} lastError={lastError} retry={retry}/>}
 
         {/* ── FOOTER ── */}
         <div style={{marginTop:12,display:"flex",justifyContent:"space-between",alignItems:"center",flexWrap:"wrap",gap:4}}>

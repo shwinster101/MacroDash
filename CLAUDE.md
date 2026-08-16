@@ -2874,6 +2874,35 @@ Jan-anchor shipped; see `snapshot.js` ~318–328), `spyMa100`, `spyMa200`, and a
   VALUATION GAP ranking (§11.1 — the ranking always renders, which is the owner's actual
   "always an output" contract, and it was never suspended). Tests: 1223 smoke (+2) + 199
   render (+1).
+- **v3.94.0 "SIMPLE/POWER" — three-layer progressive disclosure, Simple by default (owner
+  directive: "audit the key drivers and only show those — everything else 2-3 clicks
+  away").** The overview adopts the glance → explain → dig model. **Layer 1 (SIMPLE, the
+  default)**: the verdict + the plain-English sentence (moved INTO the hero — one render
+  site beside the verdict it explains; the standalone WHY block is gone) + ONE confidence
+  status line (`N/M factors voting · excluded names · ⚠ crash-gauge warning` — moved from
+  Signal Quality so the hero and the strip can never disagree) + the Signal Quality census
+  one-liner + the macro strip's key numbers. Nothing else renders — not collapsed, absent.
+  **Layer 2 (one explicit tap)**: the hero's ℹ evidence panel now holds the tally, the
+  factor chips and the flip sentence (formerly first-screen); the REASONING group holds the
+  5-why chain + WHAT CHANGED under one honest label carrying the change count. **Layer 3**:
+  the existing expanders (factor evidence, full market detail, per-source health). The
+  **Simple | Power toggle** lives in the top bar (real buttons, aria-pressed, 44px targets),
+  persisted per device (`md:view:v1`); an unknown stored value falls back to SIMPLE — the
+  safe default is the readable one. **Red facts ignore the mode** (v3.25): the ERROR banner,
+  FIRED/BLIND badges and the hero's crash-gauge warning render in both, proven live (the
+  Simple scenario runs with VIX missing and asserts the warning). Power = the full
+  analytical view, byte-for-byte content-complete: nothing was deleted, only layered.
+  In Simple the key numbers begin ≤520px at 390×844 (pinned); the Power budget pins from
+  v3.93 hold (re-targeted to the reasoning row). The legacy suite scenarios seed the
+  persisted Power preference (they assert the full view — a returning power user's device);
+  a new scenario proves the Simple default, the Layer-2/3 DOM absence, the toggle, and
+  persistence across reload. StickyNav is Power-only (its anchors point at hidden sections
+  in Simple — a nav to nowhere is a lie).
+  Tests: 1517 smoke (10 pins re-pinned on the layer moves — confidence to the hero, the
+  ℹ-panel flip/chips, the census-only strip, the A4+Simple gate, the toggle's thumb
+  targets) + 247 render + **126 public-render** (+8: the Simple scenario incl. the glance
+  budget and red-facts-in-Simple; every whys/chips/flip assertion re-pathed through its
+  layer) + `audit:prod` clean.
 - **v3.93.0 "QUIET-2" — the second pass, screenshot-MEASURED (the v3.42 stance-budget
   method).** v3.92 collapsed the why chain; the owner's next screenshot (LIVE · MOONING)
   showed where the remaining fat was, and a headless 390×844 measurement of the built bundle
