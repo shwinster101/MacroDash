@@ -125,7 +125,7 @@ export function computeFiveWhys(data, regime = {}, opts = {}) {
   const CORE_N = 3;
   if (coreParts.length) {
     whys.push(
-      `Core tape: ${coreParts.join(", ")}. ` +
+      `The scoreboard: ${coreParts.join(", ")}. ` +
       (coreParts.length < CORE_N ? `${coreParts.length}/${CORE_N} core inputs usable — the rest are not live and are left out. ` : "") +
       (isLive("spyPrice")
         ? (above ? "Primary trend intact; policy/inflation set the backdrop." : "Below the long trend — primary risk flag.")
@@ -133,7 +133,7 @@ export function computeFiveWhys(data, regime = {}, opts = {}) {
     );
   } else {
     // Every core input unavailable: say so. An empty anchor is a fact, not a blank line.
-    whys.push(`Core tape: 0/${CORE_N} core inputs usable — no live equity, inflation or policy mark, so nothing anchors the read.`);
+    whys.push(`The scoreboard: 0/${CORE_N} core inputs usable — no live equity, inflation or policy mark, so nothing anchors the read.`);
   }
 
   // WHY #2 — other LIVE data only (mock/stale fields are skipped)

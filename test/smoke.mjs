@@ -6653,12 +6653,12 @@ console.log("\n[62] v3.97 SHAREABLE SIMPLE — prose derivation + picks whitelis
   const F = (key, vote) => ({ key, vote, label: key, short: key });
   const both = postureSummary([F("cpiHeadline","bull"), F("nfci","bull"), F("valuation","bear"), F("fearGreed","neutral")]);
   ok("prose: directional phrases, both buckets — cooling inflation FOR, stretched valuations AGAINST",
-    both.prose.for === "Working for the market right now: inflation is cooling and money is flowing easily." &&
-    both.prose.against === "Working against it: valuations are stretched.");
+    both.prose.for === "The bull case right now: inflation is cooling and credit is cheap and easy." &&
+    both.prose.against === "The bear case: stocks are priced for perfection.");
   const oneSide = postureSummary([F("vix","bull")]);
-  ok("prose: an empty bucket states itself — 'nothing is clearly working against it'",
-    oneSide.prose.for === "Working for the market right now: volatility is calm." &&
-    oneSide.prose.against === "Nothing is clearly working against it right now.");
+  ok("prose: an empty bucket states itself — 'no clear bear case on the board'",
+    oneSide.prose.for === "The bull case right now: volatility is asleep." &&
+    oneSide.prose.against === "No clear bear case on the board right now.");
   ok("prose: all-neutral/excluded yields NULL — the sentence covers it, two 'nothing' lines would be filler",
     postureSummary([F("vix","neutral"), F("cpiHeadline","excluded")]).prose === null &&
     postureSummary([]).prose === null);

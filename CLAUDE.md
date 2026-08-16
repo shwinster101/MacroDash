@@ -2875,6 +2875,20 @@ Jan-anchor shipped; see `snapshot.js` ~318–328), `spyMa100`, `spyMa200`, and a
   VALUATION GAP ranking (§11.1 — the ranking always renders, which is the owner's actual
   "always an output" contract, and it was never suspended). Tests: 1223 smoke (+2) + 199
   render (+1).
+- **v3.97.1 — the prose learns to talk like retail (owner call on the live Simple
+  screenshot: "flowing easily", "core tape" and "working against it" read vague or
+  low-leverage).** Copy-only, same derivation, every string still living in its one home:
+  the prose leads become the vocabulary retail actually thinks in — **"The bull case right
+  now: …" / "The bear case: …"** (empty buckets read "No clear bull/bear case on the board
+  right now") — and the band-table verb phrases sharpen: *the crowd is greedy/fearful* (F&G's
+  own labels) · *volatility is asleep/spiking* · *long-term rates are falling/climbing* ·
+  *credit is cheap and easy / tightening up* · *valuations are sane / **stocks are priced for
+  perfection*** (inflation cooling/running hot kept). WHY #1's "Core tape:" → **"The
+  scoreboard:"** in both its branches. The two A1 mock-narration pins moved to the new label
+  — after a rename `!/Core tape: SPY \$/` passes **vacuously** and guards nothing (the v3.54
+  vacuous-assert lesson), which is exactly how a renamed label would have let mock numbers
+  narrate again undetected. Tests: 1544 smoke + 248 render + 138 public-render re-pinned on
+  the new copy, totals unchanged.
 - **v3.97.0 "SHAREABLE SIMPLE" — newbie bull/bear prose + the live S-tier picks strip
   (owner call: Simple is the share-with-friends page; Power is the operator view).** Two
   builds and a latent-crash fix. **(1) The Simple hero speaks in DIRECTIONAL verb phrases.**

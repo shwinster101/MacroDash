@@ -51,21 +51,21 @@ export const CREDIT_TAIL_STRESS = 12;
 export const REGIME_BAND_TABLE = [
   { key:"tenYear", short:"10Y", label:"10Y Direction",
     plain:"the 10-year yield",
-    plainBull:"the 10-year yield is falling", plainBear:"the 10-year yield is climbing",
+    plainBull:"long-term rates are falling", plainBear:"long-term rates are climbing",
     read:(d)=>d.crossAsset.treasury10y.m1,
     vote:(v)=> v < -0.10 ? "bull" : v > 0.15 ? "bear" : "neutral",
     flip:{ bullEdge:-0.10, bearEdge:0.15, bullSide:"below", bullInclusive:false,
            unit:" ppt", dec:2, name:"the 10Y monthly change" } },
   { key:"vix", short:"VIX", label:"VIX Level",
     plain:"volatility",
-    plainBull:"volatility is calm", plainBear:"volatility is spiking",
+    plainBull:"volatility is asleep", plainBear:"volatility is spiking",
     read:(d)=>d.marketPulse.vix.current,
     vote:(v)=> v < 18 ? "bull" : v > 25 ? "bear" : "neutral",
     flip:{ bullEdge:18, bearEdge:25, bullSide:"below", bullInclusive:false,
            unit:"", dec:2, name:"VIX" } },
   { key:"fearGreed", short:"F&G", label:"Fear & Greed",
     plain:"sentiment",
-    plainBull:"investors are upbeat", plainBear:"investors are fearful",
+    plainBull:"the crowd is greedy", plainBear:"the crowd is fearful",
     read:(d)=>d.marketPulse.fearGreed.score,
     vote:(v)=> v > 55 ? "bull" : v < 30 ? "bear" : "neutral",
     // The one INVERTED factor: bullish ABOVE its edge, not below.
@@ -81,7 +81,7 @@ export const REGIME_BAND_TABLE = [
     flipWhy:"votes on the SHAPE of its trend (latest print vs the prior one, and drift from the series start) — there is no single level to cross" },
   { key:"valuation", short:"VAL", label:"Valuation",
     plain:"valuation",
-    plainBull:"valuations are reasonable", plainBear:"valuations are stretched",
+    plainBull:"valuations are sane", plainBear:"stocks are priced for perfection",
     read:(d)=>d.macro.shillerPe,
     vote:(c)=>{ const p = c.ath ? (c.current / c.ath) * 100 : c.pctOfAth;
                 return c.current < c.mean * 1.5 ? "bull" : (c.current > 30 || p > 90 ? "bear" : "neutral"); },
@@ -89,7 +89,7 @@ export const REGIME_BAND_TABLE = [
     flipWhy:"turns bearish on EITHER an absolute CAPE above 30 OR a level above 90% of its all-time high — two conditions, so no single crossing defines the flip" },
   { key:"nfci", short:"NFCI", label:"Fin Conditions",
     plain:"financial conditions",
-    plainBull:"money is flowing easily", plainBear:"financial conditions are tightening",
+    plainBull:"credit is cheap and easy", plainBear:"credit is tightening up",
     read:(d)=>d.macro.nfci.current,
     // Asymmetric and INCLUSIVE on the bull side (<=), unlike every other factor — see the
     // NFCI_BANDS derivation at the tile. flipConditions renders "at or below" for it.

@@ -159,11 +159,11 @@ export function postureSummary(factors = []) {
   };
   const prose = (buckets.supports.length || buckets.addsRisk.length) ? {
     for: buckets.supports.length
-      ? `Working for the market right now: ${listOf(buckets.supports.map(verbOf("plainBull")))}.`
-      : "Nothing is clearly working for the market right now.",
+      ? `The bull case right now: ${listOf(buckets.supports.map(verbOf("plainBull")))}.`
+      : "No clear bull case on the board right now.",
     against: buckets.addsRisk.length
-      ? `Working against it: ${listOf(buckets.addsRisk.map(verbOf("plainBear")))}.`
-      : "Nothing is clearly working against it right now.",
+      ? `The bear case: ${listOf(buckets.addsRisk.map(verbOf("plainBear")))}.`
+      : "No clear bear case on the board right now.",
   } : null;
   return {
     sentence,
