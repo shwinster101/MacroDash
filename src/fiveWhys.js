@@ -114,10 +114,14 @@ export function computeFiveWhys(data, regime = {}, opts = {}) {
   const ma200 = spy.ma200;
   const above = ma200 != null && spy.price >= ma200;
   const coreParts = [];
+  // VOICE (v3.97.2, owner rules): sharp trader talking to a trader, not a research note —
+  // no section labels ("The scoreboard:", "Net:"), natural flow, light slang. The honesty
+  // literals are untouched: "N/3 core inputs usable", the named exclusions, the
+  // reduced-signal caveat. Tone changed; structure and invariants did not.
   if (isLive("spyPrice")) {
     coreParts.push(
       `SPY $${spy.price} (${pct(spy.changePct)})` +
-      (ma200 != null ? (above ? ` above its 200-DMA ($${ma200})` : ` below its 200-DMA ($${ma200})`) : "")
+      (ma200 != null ? (above ? `, sitting pretty above its 200-day ($${ma200})` : `, stuck under its 200-day ($${ma200})`) : "")
     );
   }
   if (isLive("cpiHeadline")) coreParts.push(`CPI ${cpi.headline}% headline`);
@@ -125,15 +129,15 @@ export function computeFiveWhys(data, regime = {}, opts = {}) {
   const CORE_N = 3;
   if (coreParts.length) {
     whys.push(
-      `The scoreboard: ${coreParts.join(", ")}. ` +
-      (coreParts.length < CORE_N ? `${coreParts.length}/${CORE_N} core inputs usable — the rest are not live and are left out. ` : "") +
+      `${coreParts.join(", ")}. ` +
+      (coreParts.length < CORE_N ? `${coreParts.length}/${CORE_N} core inputs usable — the rest aren't live, so they don't get a say. ` : "") +
       (isLive("spyPrice")
-        ? (above ? "Primary trend intact; policy/inflation set the backdrop." : "Below the long trend — primary risk flag.")
-        : "No live equity mark, so no primary-trend read.")
+        ? (above ? "Primary trend intact; policy and inflation set the backdrop." : "Trading under the long trend — that's the primary risk flag.")
+        : "No live SPY mark, so no trend read.")
     );
   } else {
     // Every core input unavailable: say so. An empty anchor is a fact, not a blank line.
-    whys.push(`The scoreboard: 0/${CORE_N} core inputs usable — no live equity, inflation or policy mark, so nothing anchors the read.`);
+    whys.push(`0/${CORE_N} core inputs usable — no live SPY, inflation or policy mark, so nothing anchors this read.`);
   }
 
   // WHY #2 — other LIVE data only (mock/stale fields are skipped)
@@ -148,8 +152,8 @@ export function computeFiveWhys(data, regime = {}, opts = {}) {
     ? ["vix", "fearGreed", "tenYear", "wti", "btc", "creditSpread"].filter((k) => !fresh.has(k))
     : [];
   whys.push(
-    `Live cross-signals: ${sig.length ? sig.join(", ") : "none fresh right now"}.` +
-    (excluded.length ? ` Excluded (mock/stale): ${excluded.map((k) => FIELD_LABEL[k]).join(", ")}.` : "")
+    `Elsewhere on the tape: ${sig.length ? sig.join(", ") : "nothing else is fresh right now"}.` +
+    (excluded.length ? ` ${excluded.map((k) => FIELD_LABEL[k]).join(", ")} ${excluded.length === 1 ? "is" : "are"} dark (mock/stale) — not counted.` : "")
   );
 
   // WHY #3 — top market headline: fresh AND macro-material (v3.51). Both gates, in that
@@ -157,18 +161,18 @@ export function computeFiveWhys(data, regime = {}, opts = {}) {
   const hd = mp.headline;
   const hdFresh = !!(hd && hd.text && hd.source && hd.source !== "—" && isLive("marketHeadline"));
   if (hdFresh && isMacroMaterial(hd.text)) {
-    whys.push(`Headline driver (${hd.source}): “${hd.text}”`);
+    whys.push(`Top story (${hd.source}): “${hd.text}”`);
   } else if (hdFresh) {
     // The distinction is load-bearing: "we have today's top story and it is not about the
     // macro tape" is a different fact from "no headline arrived", and it is the one that
     // stops an administrative story being read as the market's driver.
     whys.push(
-      `Headline driver: today's top market story (${hd.source}) is not macro-material — ` +
-      `it is not about policy, inflation, growth, rates, credit or volatility, so it is not ` +
-      `presented as driving the verdict. Direction is data-driven today, not news-driven.`
+      `Today's top story (${hd.source}) is noise, not macro-material — nothing about policy, ` +
+      `inflation, growth, rates, credit or vol — so it doesn't drive the call. ` +
+      `Today is data-driven, not news-driven.`
     );
   } else {
-    whys.push(`Headline driver: no fresh market headline today — direction is data-driven, not news-driven.`);
+    whys.push(`No fresh market headline today — the call is data-driven, not news-driven.`);
   }
 
   // WHY #4 — the tracked headwinds / tailwinds. These are a CURATED thesis register (no live
@@ -176,17 +180,17 @@ export function computeFiveWhys(data, regime = {}, opts = {}) {
   const hw = Array.isArray(data.headwinds) ? data.headwinds : [];
   const worsening = hw.filter((h) => h.trend === "worsening").map((h) => h.name);
   const improving = hw.filter((h) => h.trend === "improving").map((h) => h.name);
-  const reviewed = data.headwindsAsOf ? ` (curated, reviewed ${data.headwindsAsOf})` : " (curated)";
+  const reviewed = data.headwindsAsOf ? ` (hand-curated, reviewed ${data.headwindsAsOf})` : " (hand-curated)";
   whys.push(
-    `Risk register${reviewed}: ${worsening.length ? `${worsening.join(", ")} worsening` : "no headwind worsening"}` +
+    `Slow-burn risks we track${reviewed}: ${worsening.length ? `${worsening.join(", ")} getting worse` : "nothing on the list getting worse"}` +
     `${improving.length ? `; ${improving.join(", ")} improving` : ""}. ` +
-    `${worsening.length >= 2 ? "Structural risks still building." : "No fresh escalation today."}`
+    `${worsening.length >= 2 ? "The structural stuff is still building." : "No fresh escalation today."}`
   );
 
   // WHY #5 — synthesis + honest confidence caveat
   whys.push(
-    `Net: ${label} — ${sub}. ${bull}/${active} live factors bullish` +
-    (active < total ? `; ${total - active} excluded as stale/dead, so this is a reduced-signal read.` : "; full-signal read.")
+    `Bottom line: still ${label} — ${sub}. ${bull}/${active} live factors leaning bullish` +
+    (active < total ? `; ${total - active} excluded as stale/dead — a reduced-signal read, so don't get cute.` : "; full-signal read.")
   );
 
   return {

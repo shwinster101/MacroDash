@@ -2875,6 +2875,24 @@ Jan-anchor shipped; see `snapshot.js` ~318–328), `spyMa100`, `spyMa200`, and a
   VALUATION GAP ranking (§11.1 — the ranking always renders, which is the owner's actual
   "always an output" contract, and it was never suspended). Tests: 1223 smoke (+2) + 199
   render (+1).
+- **v3.98.1 — the 5 Whys get the trader voice (owner voice rules, standing).** The owner set
+  voice rules for ALL MacroDash copy: *a sharp, slightly irreverent trader who still respects
+  the data — short sentences, light slang, natural flow over labeled sections, and NEVER
+  invented conviction when factors are excluded.* This applies them to `computeFiveWhys`,
+  tone-only — every gate, count and exclusion literal survives byte-identical where it is
+  load-bearing. The banned memo labels are gone: WHY #1 is **labelless** ("SPY $778.58
+  (−0.2%), sitting pretty above its 200-day…"), "Live cross-signals:" → **"Elsewhere on the
+  tape:"** with exclusions read as *"VIX, 10Y are dark (mock/stale) — not counted"*,
+  "Headline driver:" → **"Top story:"** / *"noise, not macro-material… Today is data-driven,
+  not news-driven"*, "Risk register (curated…)" → **"Slow-burn risks we track
+  (hand-curated, reviewed …)"**, "Net:" → **"Bottom line: still RISK-ON… 2 excluded as
+  stale/dead — a reduced-signal read, so don't get cute."** Honesty invariants untouched and
+  re-proven: "N/3 core inputs usable" literals kept (three suites pin them), exclusions still
+  NAMED, the materiality withhold still says *not macro-material*, full-signal/reduced-signal
+  still split. Six smoke pins re-pinned on the new copy; the two A1 mock-narration guards
+  moved from the deleted "The scoreboard:" label to the narrated SHAPE (`SPY $<px> (<pct>)`) —
+  a label-based guard would have passed vacuously forever (the v3.54 lesson, second time this
+  release cycle). Tests: 1544 smoke + 248 render + 138 public-render, totals unchanged.
 - **v3.98.0 "TT OHLC CONTINUITY" — Nasdaq is the permanent automatic daily-candle
   fallback.** Finnhub remains primary; when its daily-candle product is unavailable, the
   measured-facts refresh requests three bounded, non-overlapping Nasdaq history windows,

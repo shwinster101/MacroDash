@@ -197,8 +197,11 @@ console.log("\n[public] LOADING — a posture must not be computed from the mock
   await page.locator("button.cg-toggle", { hasText: "narrative & provenance" }).click();
   await page.waitForTimeout(150);
   const loadBody = await page.locator("body").innerText();
-  ok("loading A1: the 5 Whys asserts NO mock core numbers (no 'The scoreboard: SPY $…')",
-    !/The scoreboard: SPY \$/.test(loadBody));
+  // v3.97.2: WHY #1 is labelless (voice rules), so the guard pins the narrated SHAPE —
+  // "SPY $<price> (<pct>)" — which only the whys emit (the macro strip breaks price onto
+  // its own line, so it can never match).
+  ok("loading A1: the 5 Whys narrates NO mock core numbers (no 'SPY $<px> (<pct>)' clause)",
+    !/SPY \$[\d.]+ \(/.test(loadBody));
   ok("loading A1: the anchor states itself as empty — 0/3 core inputs usable",
     /0\/3 core inputs usable/.test(loadBody));
   ok("loading A1: the headline carries no mock SPY day-move",
@@ -312,7 +315,7 @@ console.log("\n[public] ERROR — a 500 falls back to mock, and mock does not vo
   ok("error: the page still renders (graceful degradation holds — it never breaks)",
     errBody.length > 500);
   ok("error A1: the 5 Whys narrates no mock numbers after a failed fetch either",
-    !/The scoreboard: SPY \$/.test(errBody) && /0\/3 core inputs usable/.test(errBody));
+    !/SPY \$[\d.]+ \(/.test(errBody) && /0\/3 core inputs usable/.test(errBody));
   ok("error: no page errors", errors.length === 0);
   await page.close();
 }

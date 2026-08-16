@@ -202,10 +202,10 @@ ok("session prefix flips PRE vs CLOSE",
   computeFiveWhys({ ...MOCK_DATA, session: "CLOSE" }, fwRegime).headline.startsWith("Post-close"));
 ok("does not throw on MOCK_DATA with default regime", (() => { try { computeFiveWhys(MOCK_DATA); return true; } catch { return false; } })());
 // WHY #1 anchors on SPY/200DMA/CPI/Fed; WHY #5 is the synthesis
-ok("WHY #1 is the SPY/200DMA/CPI/Fed core anchor",
-  /SPY/.test(fw.whys[0]) && /200-DMA/.test(fw.whys[0]) && /CPI/.test(fw.whys[0]) && /Fed/.test(fw.whys[0]));
-ok("WHY #5 is the synthesis (verdict + factor tally)", /Net:/.test(fw.whys[4]) && fw.whys[4].includes("RISK-ON"));
-ok("WHY #4 attributes headwinds as a curated register (not live tape)", /Risk register/.test(fw.whys[3]) && /curated/.test(fw.whys[3]));
+ok("WHY #1 is the SPY/200-day/CPI/Fed core anchor (v3.97.2 voice: 200-day, no label)",
+  /SPY/.test(fw.whys[0]) && /200-day/.test(fw.whys[0]) && /CPI/.test(fw.whys[0]) && /Fed/.test(fw.whys[0]));
+ok("WHY #5 is the synthesis (verdict + factor tally)", /Bottom line:/.test(fw.whys[4]) && fw.whys[4].includes("RISK-ON"));
+ok("WHY #4 attributes headwinds as a curated register (not live tape)", /Slow-burn risks we track/.test(fw.whys[3]) && /curated/.test(fw.whys[3]));
 // FEAT-DQ: stale factor excluded from the vote tally (headline denominator + WHY #5 caveat)
 // FIX-E (v3.49): the denominator is the 6-voter set (FEAT-NFCI v3.43) and comes from
 // computeRegime's `counted` when provided — these pins previously froze the pre-NFCI "/5".
@@ -227,12 +227,12 @@ ok("5 Whys: WHY #5 reads full-signal at 5/5", computeFiveWhys(MOCK_DATA, fwRegim
 // FEAT-NEWS WHY #2: only LIVE+fresh fields appear; stale/mock are named as excluded
 const fwFresh = computeFiveWhys(MOCK_DATA, fwRegime, { fresh: new Set(["fearGreed"]) });
 ok("WHY #2 includes a fresh field (F&G) and excludes a non-fresh one (VIX)",
-  fwFresh.whys[1].includes("F&G") && !fwFresh.whys[1].includes("VIX ") && /Excluded/.test(fwFresh.whys[1]));
+  fwFresh.whys[1].includes("F&G") && !fwFresh.whys[1].includes("VIX ") && /dark \(mock\/stale\) — not counted/.test(fwFresh.whys[1]));
 // FEAT-NEWS WHY #3: shows a live headline when fresh, falls back to "no fresh headline" otherwise
 const withHL = { ...MOCK_DATA, marketPulse: { ...MOCK_DATA.marketPulse, headline: { text: "Peace deal lifts futures", source: "MarketWatch" } } };
 ok("WHY #3 renders a fresh market headline when present",
   computeFiveWhys(withHL, fwRegime, { fresh: new Set(["marketHeadline"]) }).whys[2].includes("Peace deal lifts futures"));
-ok("WHY #3 falls back when no fresh headline", computeFiveWhys(MOCK_DATA, fwRegime, { fresh: new Set() }).whys[2].includes("no fresh market headline"));
+ok("WHY #3 falls back when no fresh headline", /No fresh market headline/.test(computeFiveWhys(MOCK_DATA, fwRegime, { fresh: new Set() }).whys[2]));
 // ---- v3.51 (public audit): freshness is not RELEVANCE ----------------------
 // The audit caught a Fidelity death-certificate administrative story rendered as the macro
 // "Headline driver" — fresh, dated and correctly attributed, and explaining nothing about
@@ -3113,7 +3113,7 @@ ok("why1: the thin anchor is STATED as thin (N/3 core inputs usable)",
 ok("why1: with every core input dead it says so rather than emitting a blank anchor",
   /0\/3 core inputs usable/.test(computeFiveWhys(MOCK_DATA, fwRegime, { fresh: new Set() }).whys[0]));
 ok("why1: no live equity mark means no primary-trend claim either",
-  /No live equity mark, so no primary-trend read/.test(
+  /No live SPY mark, so no trend read/.test(
     computeFiveWhys(MOCK_DATA, fwRegime, { fresh: new Set(["cpiHeadline"]) }).whys[0]));
 ok("why1: demo/mock mode (fresh:null) still narrates all three — mock IS the baseline there",
   /SPY \$/.test(fw.whys[0]) && /CPI /.test(fw.whys[0]) && /Fed funds/.test(fw.whys[0]));
