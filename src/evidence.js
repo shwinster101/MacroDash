@@ -137,10 +137,12 @@ export function postureSummary(factors = []) {
   };
   const names = (k) => buckets[k].map(plainOf);
   const parts = [];
-  if (buckets.supports.length)  parts.push(`${listOf(names("supports"))} support${buckets.supports.length === 1 ? "s" : ""} risk`);
-  if (buckets.addsRisk.length)  parts.push(`${listOf(names("addsRisk"))} add${buckets.addsRisk.length === 1 ? "s" : ""} risk`);
+  // v3.98.2 (owner voice rules): the Power one-liner talks retail too — factors "lean
+  // bullish/bearish", unusable ones are "dark". Same buckets, same honesty, sharper words.
+  if (buckets.supports.length)  parts.push(`${listOf(names("supports"))} lean${buckets.supports.length === 1 ? "s" : ""} bullish`);
+  if (buckets.addsRisk.length)  parts.push(`${listOf(names("addsRisk"))} lean${buckets.addsRisk.length === 1 ? "s" : ""} bearish`);
   if (buckets.neutral.length)   parts.push(`${listOf(names("neutral"))} ${buckets.neutral.length === 1 ? "is" : "are"} neutral`);
-  if (buckets.unavailable.length) parts.push(`${listOf(names("unavailable"))} ${buckets.unavailable.length === 1 ? "is" : "are"} unavailable`);
+  if (buckets.unavailable.length) parts.push(`${listOf(names("unavailable"))} ${buckets.unavailable.length === 1 ? "is" : "are"} dark`);
   // No usable evidence at all is a real state (LOADING, or a live build with a dead feed) and
   // must read as an absence, not as a balanced picture.
   const sentence = parts.length

@@ -943,6 +943,10 @@ async function fetchHeadline() {
   const decode = (s) => s
     .replace(/<!\[CDATA\[|\]\]>/g, "")
     .replace(/<[^>]+>/g, "")
+    // v3.98.2: NUMERIC entities, hex + decimal — the live MarketWatch feed shipped
+    // "Fed&#x2019;s" and the named-only list below let it through to the page verbatim.
+    .replace(/&#x([0-9a-f]+);/gi, (_m, h) => String.fromCodePoint(parseInt(h, 16)))
+    .replace(/&#(\d+);/g, (_m, d) => String.fromCodePoint(Number(d)))
     .replace(/&amp;/g, "&").replace(/&#39;|&apos;/g, "'").replace(/&quot;/g, '"')
     .replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&#8217;|&rsquo;/g, "’")
     .replace(/&#8216;|&lsquo;/g, "‘").replace(/&#8211;|&ndash;/g, "–")

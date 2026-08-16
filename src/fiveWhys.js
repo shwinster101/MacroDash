@@ -17,6 +17,13 @@
 
 const pct = (v, d = 1) => `${v >= 0 ? "+" : ""}${Number(v).toFixed(d)}%`;
 
+// v3.98.2: numeric-entity decode at RENDER too — the day's KV snapshot may still carry a
+// pre-fix headline ("Fed&#x2019;s"), and a stored artifact must not print raw entities.
+const deent = (t) => String(t || "")
+  .replace(/&#x([0-9a-f]+);/gi, (_m, h) => String.fromCodePoint(parseInt(h, 16)))
+  .replace(/&#(\d+);/g, (_m, d) => String.fromCodePoint(Number(d)))
+  .replace(/&amp;/g, "&").replace(/&apos;/g, "'").replace(/&quot;/g, '"');
+
 /* MACRO-MATERIALITY FILTER (v3.51, public audit).
    WHY #3 gated the top RSS item on FRESHNESS alone and then labelled whatever came back
    "Headline driver". Freshness is not relevance: the audit caught a Fidelity death-certificate
@@ -121,23 +128,23 @@ export function computeFiveWhys(data, regime = {}, opts = {}) {
   if (isLive("spyPrice")) {
     coreParts.push(
       `SPY $${spy.price} (${pct(spy.changePct)})` +
-      (ma200 != null ? (above ? `, sitting pretty above its 200-day ($${ma200})` : `, stuck under its 200-day ($${ma200})`) : "")
+      (ma200 != null ? (above ? `, sitting pretty above its 200-day` : `, stuck under its 200-day`) : "")
     );
   }
-  if (isLive("cpiHeadline")) coreParts.push(`CPI ${cpi.headline}% headline`);
-  if (isLive("fedFunds")) coreParts.push(`Fed funds ${fed.rate}%`);
+  if (isLive("cpiHeadline")) coreParts.push(`CPI ${cpi.headline}%`);
+  if (isLive("fedFunds")) coreParts.push(`Fed at ${fed.rate}%`);
   const CORE_N = 3;
   if (coreParts.length) {
     whys.push(
       `${coreParts.join(", ")}. ` +
-      (coreParts.length < CORE_N ? `${coreParts.length}/${CORE_N} core inputs usable — the rest aren't live, so they don't get a say. ` : "") +
+      (coreParts.length < CORE_N ? `${coreParts.length}/${CORE_N} core inputs usable — the rest don't get a say. ` : "") +
       (isLive("spyPrice")
-        ? (above ? "Primary trend intact; policy and inflation set the backdrop." : "Trading under the long trend — that's the primary risk flag.")
+        ? (above ? "Trend intact." : "Under the long trend — that's the primary risk flag.")
         : "No live SPY mark, so no trend read.")
     );
   } else {
     // Every core input unavailable: say so. An empty anchor is a fact, not a blank line.
-    whys.push(`0/${CORE_N} core inputs usable — no live SPY, inflation or policy mark, so nothing anchors this read.`);
+    whys.push(`0/${CORE_N} core inputs usable — nothing live to anchor on.`);
   }
 
   // WHY #2 — other LIVE data only (mock/stale fields are skipped)
@@ -153,7 +160,7 @@ export function computeFiveWhys(data, regime = {}, opts = {}) {
     : [];
   whys.push(
     `Elsewhere on the tape: ${sig.length ? sig.join(", ") : "nothing else is fresh right now"}.` +
-    (excluded.length ? ` ${excluded.map((k) => FIELD_LABEL[k]).join(", ")} ${excluded.length === 1 ? "is" : "are"} dark (mock/stale) — not counted.` : "")
+    (excluded.length ? ` ${excluded.map((k) => FIELD_LABEL[k]).join(", ")} ${excluded.length === 1 ? "is" : "are"} dark — not counted.` : "")
   );
 
   // WHY #3 — top market headline: fresh AND macro-material (v3.51). Both gates, in that
@@ -161,14 +168,13 @@ export function computeFiveWhys(data, regime = {}, opts = {}) {
   const hd = mp.headline;
   const hdFresh = !!(hd && hd.text && hd.source && hd.source !== "—" && isLive("marketHeadline"));
   if (hdFresh && isMacroMaterial(hd.text)) {
-    whys.push(`Top story (${hd.source}): “${hd.text}”`);
+    whys.push(`Top story (${hd.source}): “${deent(hd.text)}”`);
   } else if (hdFresh) {
     // The distinction is load-bearing: "we have today's top story and it is not about the
     // macro tape" is a different fact from "no headline arrived", and it is the one that
     // stops an administrative story being read as the market's driver.
     whys.push(
-      `Today's top story (${hd.source}) is noise, not macro-material — nothing about policy, ` +
-      `inflation, growth, rates, credit or vol — so it doesn't drive the call. ` +
+      `Today's top story (${hd.source}) is noise, not macro-material — it doesn't drive the call. ` +
       `Today is data-driven, not news-driven.`
     );
   } else {
@@ -180,9 +186,9 @@ export function computeFiveWhys(data, regime = {}, opts = {}) {
   const hw = Array.isArray(data.headwinds) ? data.headwinds : [];
   const worsening = hw.filter((h) => h.trend === "worsening").map((h) => h.name);
   const improving = hw.filter((h) => h.trend === "improving").map((h) => h.name);
-  const reviewed = data.headwindsAsOf ? ` (hand-curated, reviewed ${data.headwindsAsOf})` : " (hand-curated)";
+  const reviewed = data.headwindsAsOf ? ` (hand-curated, ${data.headwindsAsOf})` : " (hand-curated)";
   whys.push(
-    `Slow-burn risks we track${reviewed}: ${worsening.length ? `${worsening.join(", ")} getting worse` : "nothing on the list getting worse"}` +
+    `Slow-burn risks${reviewed}: ${worsening.length ? `${worsening.join(", ")} getting worse` : "nothing getting worse"}` +
     `${improving.length ? `; ${improving.join(", ")} improving` : ""}. ` +
     `${worsening.length >= 2 ? "The structural stuff is still building." : "No fresh escalation today."}`
   );

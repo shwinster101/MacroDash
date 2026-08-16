@@ -44,12 +44,16 @@ const FiveWhys=({fw,derivedLabel,mode,asOf,label="5 whys · today — narrative 
       <CollapsedGroup count={5} label={label} chip={false} persistKey={persistKey}>
         <div style={{fontFamily:T.fontMono,fontSize:9,color:T.amber,marginBottom:2}}>{fw.regime}</div>
         <div style={{fontFamily:T.fontSans,fontSize:12,color:T.textSecondary,lineHeight:1.6,fontStyle:"italic"}}>"{fw.headline}"</div>
-        {fw.whys.map((w,i)=>(
-          <div key={i} style={{borderLeft:`2px solid ${T.amber}44`,paddingLeft:8,marginTop:8}}>
+        {/* v3.98.2 (owner call): WHY #5 is the summary a reader actually takes away, so the
+            LAST why renders at full weight (primary color, heavier border) while the
+            evidence whys above it stay secondary — emphasis, not reordering; the chain and
+            every honesty literal are byte-identical. */}
+        {fw.whys.map((w,i)=>{const last=i===fw.whys.length-1;return(
+          <div key={i} style={{borderLeft:`${last?3:2}px solid ${T.amber}${last?"":"44"}`,paddingLeft:8,marginTop:8}}>
             <div style={{fontFamily:T.fontMono,fontSize:8,color:T.amber}}>WHY #{i+1}</div>
-            <div style={{fontFamily:T.fontSans,fontSize:11,color:T.textSecondary,lineHeight:1.5}}>{w}</div>
+            <div style={{fontFamily:T.fontSans,fontSize:11,color:last?T.textPrimary:T.textSecondary,fontWeight:last?600:400,lineHeight:1.5}}>{w}</div>
           </div>
-        ))}
+        );})}
         <div style={{fontFamily:T.fontMono,fontSize:8,color:T.textMuted,marginTop:8}}>Rule-based · {derivedLabel} (no LLM)</div>
         <SourceBox api="Rule-based" endpoint="6-factor regime · stale inputs excluded" mode={mode} asOf={asOf}/>
       </CollapsedGroup>

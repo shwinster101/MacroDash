@@ -360,7 +360,7 @@ console.log("\n[public] v3.94 — Simple default, the toggle, persistence, red f
     /The bear case:|No clear bear case on the board/.test(body) &&
     /factors voting/.test(body) && /SIGNAL QUALITY/i.test(body) && /SPY/.test(body));
   ok("v3.97 simple: the prose is DIRECTIONAL, not a bare noun list — and the compact sentence is gone",
-    /is (cooling|asleep|cheap)|are (greedy|falling|sane)|priced for perfection/.test(body) && !/support(s)? risk/.test(body));
+    /is (cooling|asleep|cheap)|are (greedy|falling|sane)|priced for perfection/.test(body) && !/leans? bullish;|leans? bearish;/.test(body));
   ok("v3.97 simple: no picks feed → the strip renders NOTHING, never example picks",
     !/My S-Tier/i.test(body) && !/not investment advice/i.test(body));
   ok("simple: Layer 2/3 content is NOT in the DOM — the Power reasoning group, factor evidence, market detail, macro grid",
@@ -404,7 +404,7 @@ console.log("\n[public] v3.94 — Simple default, the toggle, persistence, red f
   ok("power: one tap reveals the Explain/Dig layers",
     /the reasoning/i.test(powerBody) && /factor evidence/i.test(powerBody) && /full market detail/i.test(powerBody));
   ok("v3.97 power: the compact sentence returns and the newbie prose leaves (swap, not stack)",
-    /support(s)? risk|adds? risk/.test(powerBody) && !/The bull case right now:/.test(powerBody));
+    /leans? (bullish|bearish)/.test(powerBody) && !/The bull case right now:/.test(powerBody));
   await page.reload(); await page.waitForTimeout(1200);
   ok("power: the choice is remembered per device across a reload",
     /the reasoning/i.test(await page.locator("body").innerText()));

@@ -2875,6 +2875,27 @@ Jan-anchor shipped; see `snapshot.js` ~318–328), `spyMa100`, `spyMa200`, and a
   VALUATION GAP ranking (§11.1 — the ranking always renders, which is the owner's actual
   "always an output" contract, and it was never suspended). Tests: 1223 smoke (+2) + 199
   render (+1).
+- **v3.98.2 — the tightening pass: every why is 1–2 sentences, WHY #5 carries the weight,
+  and Power talks retail too.** Owner review of the live v3.98.1 whys: keep the layout and
+  expander, cut the parentheticals and asides, prefer "sentiment is greedy" over "the crowd
+  is greedy", make WHY #5 the strongest line, and sweep the Power surfaces into the same
+  voice. Applied: WHY #1 drops the 200-day level parenthetical and lands on "Trend intact."
+  · WHY #2 drops the "(mock/stale)" aside (WHY #5 already says *excluded as stale/dead* —
+  saying it twice was the heaviness) while the dark inputs stay NAMED · WHY #3's noise
+  branch loses its channel enumeration · WHY #4 tightens to "Slow-burn risks (hand-curated,
+  <date>)" · WHY #5 is unchanged in copy and now renders at FULL WEIGHT (primary color,
+  600, solid border) while the evidence whys stay secondary — emphasis, never reordering.
+  Measured against the live shape: 92–159 chars per why, down from ~300 at the longest.
+  **Power's compact sentence joins the voice**: factors "lean bullish/bearish" and unusable
+  ones are "dark" (was "support risk / adds risk / unavailable") — same buckets, same
+  derivation, sharper words; the F&G verb pair becomes *sentiment is greedy/fearful*.
+  **Found in the owner's screenshot and fixed at both ends: `Fed&#x2019;s` rendered raw** —
+  the RSS decoder handled named + decimal entities but not HEX numerics. snapshot.js now
+  decodes both numeric forms at fetch, and `deent()` in fiveWhys.js decodes at render too,
+  because the day's stored KV snapshot still carries the pre-fix text — a stored artifact
+  must not print raw entities for up to 48h after the fix ships.
+  Tests: 1547 smoke + 248 render + 138 public-render (six pins re-pinned on the tightened
+  copy and the lean-bullish sentence), audit:prod clean.
 - **v3.98.1 — the 5 Whys get the trader voice (owner voice rules, standing).** The owner set
   voice rules for ALL MacroDash copy: *a sharp, slightly irreverent trader who still respects
   the data — short sentences, light slang, natural flow over labeled sections, and NEVER

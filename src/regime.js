@@ -65,7 +65,7 @@ export const REGIME_BAND_TABLE = [
            unit:"", dec:2, name:"VIX" } },
   { key:"fearGreed", short:"F&G", label:"Fear & Greed",
     plain:"sentiment",
-    plainBull:"the crowd is greedy", plainBear:"the crowd is fearful",
+    plainBull:"sentiment is greedy", plainBear:"sentiment is fearful",
     read:(d)=>d.marketPulse.fearGreed.score,
     vote:(v)=> v > 55 ? "bull" : v < 30 ? "bear" : "neutral",
     // The one INVERTED factor: bullish ABOVE its edge, not below.
