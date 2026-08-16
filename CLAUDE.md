@@ -2874,6 +2874,25 @@ Jan-anchor shipped; see `snapshot.js` ~318–328), `spyMa100`, `spyMa200`, and a
   VALUATION GAP ranking (§11.1 — the ranking always renders, which is the owner's actual
   "always an output" contract, and it was never suspended). Tests: 1223 smoke (+2) + 199
   render (+1).
+- **v3.92.0 "QUIET OVERVIEW" — the 5-why chain goes one tap deep (owner call, REVERSING
+  v3.61/v3.62's "full 5 Whys stays expanded").** A live phone screenshot of the DATA-HOLD
+  state: the overview rendered ~2 screens of prose — five full why-paragraphs plus the hero's
+  two-line explainer — for a page whose entire message was "nothing is callable". Owner
+  verdict: *"too wordy, much of this can be hidden with menus."* The same collapse discipline
+  v3.42/v3.66/v3.69 applied elsewhere, now on the overview: **the why CHAIN (headline, five
+  whys, rule-based footer, SourceBox) collapses behind the house `CollapsedGroup`**
+  (chip-free — live evidence, not curated), while **the regime state line stays OUTSIDE the
+  collapse** — it is this block's one red/amber fact, so v3.25 holds: DATA HOLD is visible
+  while closed. The hero's withheld explainer shrinks to one line, keeping the pinned
+  "mock baseline is NOT voting" honesty literal. The v3.69 always-expanded smoke pin is
+  formally REVERSED (the reversal note lives at the pin), and the public-render suite now
+  proves BOTH states: closed by default with the regime state visible and WHY #1 absent,
+  then open-then-read for the LOADING/ERROR anchors ("0/3 core inputs usable") — the anchors
+  themselves are unchanged, they just sit one tap deep. Screenshot triage note: the ERROR
+  banner in the same screenshot was a transient deploy-window fetch failure (the API measured
+  healthy at 200/0.66s immediately after) — B1's RETRY is the designed recovery, no defect.
+  Tests: 1517 smoke (1 pin reversed with the ruling documented) + 247 render + **115
+  public-render** (+1: the closed-state proof) + `audit:prod` clean.
 - **v3.91.0 "the integrity fixes" — the v3.90 audit's ten findings, closed.** The owner-
   commissioned ambiguity audit of FEAT-TT-V2 found ten; every one now has a ruling, most have
   code, all have tests (`TT_ENGINE_VERSION` → `tt-gates-v2.1.0`, since two changes alter what

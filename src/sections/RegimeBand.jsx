@@ -82,7 +82,7 @@ const RegimeBand=({d,stale=new Set(),loading=false,liveBuild=false,srcLabel="der
               ? <div style={{fontFamily:T.fontMono,fontSize:9,color:T.textMuted,marginTop:3}}>
                   {loading
                     ? "Nothing is being asserted from the demo baseline while the live snapshot loads."
-                    : `The evidence base is too thin to call a posture${liveBuild?" — live data is unavailable or stale, so the mock baseline is NOT voting":""}.`}
+                    : `evidence too thin${liveBuild?" — live data unavailable or stale; the mock baseline is NOT voting":""}.`}
                 </div>
               : <div style={{fontFamily:T.fontMono,fontSize:T.fsS,color:T.textSecondary,marginTop:3}}>
               <span style={{color:T.textMuted}}>⇄ would change this: </span>

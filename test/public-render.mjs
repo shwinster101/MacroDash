@@ -175,6 +175,13 @@ console.log("\n[public] LOADING — a posture must not be computed from the mock
     !/would change this/i.test(band));
   // A1 (v3.58, re-audit HIGH): the verdict said CAN'T CALL IT while the 5 Whys narrated mock
   // SPY/CPI/Fed as today's core tape. The narrative must carry ZERO mock numbers now.
+  // v3.92 QUIET OVERVIEW: the chain is one tap deep — the regime state stays visible while
+  // closed (pinned), and the anchors are read AFTER opening the expander.
+  ok("v3.92: the whys collapse by default with the regime state visible while closed",
+    !/WHY #1/.test(await page.locator("body").innerText()) &&
+    /DATA HOLD|CAN'T CALL IT|LOADING/i.test(await page.locator("body").innerText()));
+  await page.locator("button.cg-toggle", { hasText: "why chain" }).click();
+  await page.waitForTimeout(150);
   const loadBody = await page.locator("body").innerText();
   ok("loading A1: the 5 Whys asserts NO mock core tape (no 'Core tape: SPY $…')",
     !/Core tape: SPY \$/.test(loadBody));
@@ -276,6 +283,8 @@ console.log("\n[public] ERROR — a 500 falls back to mock, and mock does not vo
   ok("error: no posture is published after the fetch fails", !POSTURES.test(band));
   ok("error: the withheld state is explicit, not a silent blank",
     /DATA HOLD|CAN'T CALL IT/i.test(band));
+  await page.locator("button.cg-toggle", { hasText: "why chain" }).click();   // v3.92: chain is one tap deep
+  await page.waitForTimeout(150);
   const errBody = await page.locator("body").innerText();
   ok("error: the page still renders (graceful degradation holds — it never breaks)",
     errBody.length > 500);
@@ -502,8 +511,10 @@ console.log("\n[public] Slice 1 — verdict above the fold at 375px (extracted b
     box !== null && box.y + box.height <= 600);
   ok("slice1 @375px: the confidence tally and flip sentence ride inside that region",
     /of \d+ usable/.test(await band.innerText()) && /would change this/i.test(await band.innerText()));
+  await page.locator("button.cg-toggle", { hasText: "why chain" }).click();   // v3.92: chain is one tap deep
+  await page.waitForTimeout(150);
   const body = await page.locator("body").innerText();
-  ok("slice1 @375px: the extracted 5 Whys narrative renders (WHY #1–#5 present)",
+  ok("slice1 @375px: the extracted 5 Whys narrative renders one tap deep (WHY #1–#5 present)",
     /WHY #1/.test(body) && /WHY #5/.test(body) && /5 Whys · Today/i.test(body));
   ok("slice1 @375px: no horizontal overflow",
     await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth + 1));

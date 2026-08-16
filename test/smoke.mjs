@@ -1840,8 +1840,19 @@ ok("v3.69: the 5 Whys block renders in the overview region, before the markets s
   whysSrc.includes("5 Whys · Today") &&
   dashSrc.indexOf("<FiveWhys ") > dashSrc.indexOf('id="overview"')
   && dashSrc.indexOf("<FiveWhys ") < dashSrc.indexOf('aria-labelledby="markets"'));
-ok("v3.69: the 5 Whys is NOT inside any CollapsedGroup (LOADING/ERROR anchors are read from body text)",
-  !/CollapsedGroup[^>]*>[\s\S]{0,600}<FiveWhys /.test(dashSrc) && !/CollapsedGroup/.test(whysSrc));
+/* v3.92 QUIET OVERVIEW — this pin REVERSED. v3.69/v3.61 pinned the whys always-expanded on
+   an owner call; a 2026-08-15 phone screenshot reversed it ("too wordy — hide with menus").
+   The new contract: the CHAIN collapses behind the house CollapsedGroup, while the regime
+   state line (this block's one red/amber fact) stays OUTSIDE the collapse — the v3.25 rule,
+   proven structurally here and behaviorally in public-render (closed state + open-then-read). */
+ok("v3.92: the why CHAIN is inside a chip-free CollapsedGroup with the regime line OUTSIDE it",
+  (() => {
+    const cg = whysSrc.indexOf("<CollapsedGroup");
+    const regimeLine = whysSrc.indexOf("{fw.regime}");
+    const chain = whysSrc.indexOf("fw.whys.map");
+    return cg > 0 && regimeLine > 0 && regimeLine < cg && chain > cg &&
+      /chip=\{false\}/.test(whysSrc.slice(cg, whysSrc.indexOf(">", cg) + 1));
+  })());
 ok("v3.69: ONE market-detail CollapsedGroup (chart + 10 tiles) inside the markets section, chip-free",
   mdSrc.includes('label="full market detail — chart & tiles" chip={false}')
   && (uiSrc.match(/full market detail — chart & tiles\" chip/g)||[]).length===1);
