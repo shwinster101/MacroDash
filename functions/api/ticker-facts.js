@@ -73,6 +73,53 @@ function candlesFact(raw, retrievedAt) {
   };
 }
 
+const cleanNasdaqNumber = (value) => Number(String(value ?? "").replace(/[$,]/g, ""));
+const isoFromNasdaqDate = (value) => {
+  const m = /^(\d{2})\/(\d{2})\/(\d{4})$/.exec(String(value || ""));
+  return m ? `${m[3]}-${m[1]}-${m[2]}` : null;
+};
+
+export function nasdaqCandlesFact(payloads, retrievedAt) {
+  const rows = (Array.isArray(payloads) ? payloads : [payloads]).flatMap((raw) =>
+    Array.isArray(raw?.data?.tradesTable?.rows) ? raw.data.tradesTable.rows : [])
+    .map((r) => ({
+      date: isoFromNasdaqDate(r?.date), open: cleanNasdaqNumber(r?.open), high: cleanNasdaqNumber(r?.high),
+      low: cleanNasdaqNumber(r?.low), close: cleanNasdaqNumber(r?.close), volume: cleanNasdaqNumber(r?.volume),
+    }))
+    .filter((r) => r.date && [r.open, r.high, r.low, r.close].every((v) => Number.isFinite(v) && v > 0)
+      && r.high >= r.low && r.high >= r.open && r.high >= r.close && r.low <= r.open && r.low <= r.close)
+    .sort((a, b) => a.date.localeCompare(b.date));
+  const unique = [...new Map(rows.map((r) => [r.date, r])).values()];
+  if (unique.length < 2) return missing("Nasdaq", "daily historical response was empty", retrievedAt, "https://www.nasdaq.com/market-activity/stocks");
+  return {
+    value: unique, status: "LIVE", provider: "Nasdaq", sourceUrl: "https://www.nasdaq.com/market-activity/stocks",
+    observedAt: unique.at(-1).date, retrievedAt, resolution: "D",
+  };
+}
+
+async function nasdaqCandles(sym, now, retrievedAt) {
+  // Nasdaq truncates broad requests. Three bounded, non-overlapping windows provide
+  // enough sourced sessions for the 200-day moving average without weakening the gate.
+  const windows = [];
+  let end = new Date(now);
+  for (let i = 0; i < 3; i++) {
+    const start = new Date(end.getTime() - 180 * DAY * 1000);
+    windows.push({ start: start.toISOString().slice(0, 10), end: end.toISOString().slice(0, 10) });
+    end = new Date(start.getTime() - DAY * 1000);
+  }
+  const headers = {
+    "User-Agent": "Mozilla/5.0 (compatible; MacroDash/1.0)",
+    Accept: "application/json, text/plain, */*", Origin: "https://www.nasdaq.com", Referer: "https://www.nasdaq.com/",
+  };
+  const results = await Promise.allSettled(windows.map(({ start, end: to }) => getJson(
+    `https://api.nasdaq.com/api/quote/${encodeURIComponent(sym)}/historical?assetclass=stocks&fromdate=${start}&todate=${to}&limit=5000`,
+    { headers, timeout: 12000 },
+  )));
+  const payloads = results.filter((x) => x.status === "fulfilled").map((x) => x.value);
+  if (!payloads.length) throw results.find((x) => x.status === "rejected")?.reason || new Error("Nasdaq history unavailable");
+  return nasdaqCandlesFact(payloads, retrievedAt);
+}
+
 function earningsFact(raw, today, retrievedAt) {
   const rows = Array.isArray(raw?.earningsCalendar) ? raw.earningsCalendar : [];
   const next = rows.filter((x) => /^\d{4}-\d{2}-\d{2}$/.test(String(x?.date || "")) && x.date >= today)
@@ -172,6 +219,12 @@ export async function refreshTickerFacts(sym, env, now = new Date()) {
   } else fields.profile = missing("Finnhub", profile.reason?.message || "profile unavailable", retrievedAt, "https://finnhub.io/");
   fields.candles = candles.status === "fulfilled" ? candlesFact(candles.value, retrievedAt)
     : missing("Finnhub", candles.reason?.message || "daily candles unavailable", retrievedAt, "https://finnhub.io/");
+  if (fields.candles.status === "MISSING") {
+    try { fields.candles = await nasdaqCandles(sym, now, retrievedAt); }
+    catch (e) {
+      fields.candles.reason = `${fields.candles.reason}; Nasdaq fallback unavailable: ${e?.message || "unknown"}`;
+    }
+  }
   fields.nextEarnings = earnings.status === "fulfilled" ? earningsFact(earnings.value, today, retrievedAt)
     : missing("Finnhub", earnings.reason?.message || "earnings calendar unavailable", retrievedAt, "https://finnhub.io/");
   fields.companyNews = news.status === "fulfilled" ? newsFact(news.value, retrievedAt)

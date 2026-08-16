@@ -2875,6 +2875,19 @@ Jan-anchor shipped; see `snapshot.js` ~318–328), `spyMa100`, `spyMa200`, and a
   VALUATION GAP ranking (§11.1 — the ranking always renders, which is the owner's actual
   "always an output" contract, and it was never suspended). Tests: 1223 smoke (+2) + 199
   render (+1).
+- **v3.98.0 "TT OHLC CONTINUITY" — Nasdaq is the permanent automatic daily-candle
+  fallback.** Finnhub remains primary; when its daily-candle product is unavailable, the
+  measured-facts refresh requests three bounded, non-overlapping Nasdaq history windows,
+  normalizes currency-formatted OHLCV, sorts and de-duplicates boundary dates, and persists
+  the actual provider/as-of beside the rows. The 201-valid-session requirement, ATR/pivot
+  support, stop, R/R floor, freshness checks, and last-good merge policy are unchanged — a
+  fallback repairs availability, never relaxes evidence. Partial Nasdaq window success is
+  usable only if the downstream 201-session gate is still met; empty/bad responses stay
+  MISSING. Yahoo was rejected as the fallback after both chart hosts returned HTTP 429, and
+  Google Finance has no supported server OHLC API. Technical evidence now says `sourced daily
+  candles`; the facts record, not a hard-coded sentence, owns provider attribution.
+  Tests: **1547 smoke** (+3: Nasdaq parsing/chunk de-duplication/provider attribution, empty
+  fail-closed behavior, and provider-neutral technical evidence); existing TT gates unchanged.
 - **v3.97.1 — the prose learns to talk like retail (owner call on the live Simple
   screenshot: "flowing easily", "core tape" and "working against it" read vague or
   low-leverage).** Copy-only, same derivation, every string still living in its one home:

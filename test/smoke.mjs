@@ -33,7 +33,7 @@ import { streetRevision, onRequestPut as putStreetPacket, onRequestGet as getStr
   onRequestDelete as deleteStreetPacket } from "../functions/api/street.js";
 import { onRequestGet as getFramework, onRequestPut as putFramework } from "../functions/api/framework.js";
 import { mergeOcrExtractions, onRequestPost as postStreetOcr } from "../functions/api/street/ocr.js";
-import { onRequestGet as getTickerFacts, onRequestPost as postTickerFacts, quoteFact } from "../functions/api/ticker-facts.js";
+import { onRequestGet as getTickerFacts, onRequestPost as postTickerFacts, nasdaqCandlesFact, quoteFact } from "../functions/api/ticker-facts.js";
 import { onRequestPost as postTickerAnalysis, riskTierForBookEntry } from "../functions/api/ticker-analysis.js";
 import { plausible, applyBands, quorum, QUORUM_FIELDS, QUORUM_MIN, marketSession, BANDS,
   pairRs, parseTreasuryCsv, rateOddsStillOpen, chooseTtl, publishIfNoWorse, TTL_MEDIUM, TTL_LOW } from "../functions/api/snapshot.js";
@@ -6577,6 +6577,26 @@ ok("Finnhub normalization preserves the provider's quote timestamp and never sta
     return q.status === "LIVE" && q.observedAt === "2026-08-15T18:58:00.000Z" && q.retrievedAt === V2_NOW.toISOString() &&
       unknown.status === "UNKNOWN" && unknown.observedAt === null && /not substituted/.test(unknown.reason); })());
 
+const nasdaqFixture = [
+  { data: { tradesTable: { rows: [
+    { date: "08/15/2026", close: "$229.94", volume: "12,240,000", open: "$233.66", high: "$248.57", low: "$227.67" },
+    { date: "08/14/2026", close: "$236.22", volume: "14,440,000", open: "$240.00", high: "$244.00", low: "$231.00" },
+  ] } } },
+  { data: { tradesTable: { rows: [
+    { date: "08/14/2026", close: "$236.22", volume: "14,440,000", open: "$240.00", high: "$244.00", low: "$231.00" },
+    { date: "02/14/2026", close: "$139.74", volume: "6,000,000", open: "$141.00", high: "$143.00", low: "$138.00" },
+  ] } } },
+];
+ok("Nasdaq fallback normalization parses attributed OHLC, sorts ascending, and de-duplicates chunk boundaries",
+  (() => { const x = nasdaqCandlesFact(nasdaqFixture, V2_NOW.toISOString());
+    return x.status === "LIVE" && x.provider === "Nasdaq" && x.value.length === 3 &&
+      x.value[0].date === "2026-02-14" && x.value.at(-1).close === 229.94 && x.observedAt === "2026-08-15"; })());
+ok("Nasdaq fallback cannot launder empty or malformed OHLC into sourced candles",
+  nasdaqCandlesFact({ data: { tradesTable: { rows: [] } } }, V2_NOW.toISOString()).status === "MISSING" &&
+  nasdaqCandlesFact({ data: { tradesTable: { rows: [
+    { date: "08/15/2026", close: "$229.94", open: "", high: "$220", low: "$230" },
+  ] } } }, V2_NOW.toISOString()).status === "MISSING");
+
 const syntheticCandles = Array.from({ length: 230 }, (_, i) => {
   const close = 100 + i * 0.22 + Math.sin(i / 4) * 4;
   const date = new Date(Date.UTC(2025, 0, 1 + i)).toISOString().slice(0, 10);
@@ -6588,6 +6608,9 @@ ok("technicals: ATR/pivots/support/stop/RR are deterministic on a sufficient OHL
   (() => { const a = deriveTechnicals(syntheticCandles, { quote: syntheticCandles.at(-1).close, target: 180 });
     const b = deriveTechnicals(syntheticCandles, { quote: syntheticCandles.at(-1).close, target: 180 });
     return a.status === "OK" && a.atr14 > 0 && a.support.price > 0 && a.stop < a.quote && a.rewardRisk > 0 && JSON.stringify(a) === JSON.stringify(b); })());
+ok("technicals: evidence is provider-neutral because the facts record owns candle provenance",
+  deriveTechnicals(syntheticCandles, { quote: syntheticCandles.at(-1).close, target: 180 }).evidence[0] ===
+    `230 sourced daily candles through ${syntheticCandles.at(-1).date}`);
 
 const ocrRouteSrc = readFileSync(new URL("../functions/api/street/ocr.js", import.meta.url), "utf8");
 ok("admin v2: screenshots are reviewed and the OCR route has no persistence binding",

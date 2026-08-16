@@ -120,7 +120,7 @@ export function deriveTechnicals(candles, { target, quote } = {}) {
     target: finite(upsideTarget) ? round(upsideTarget, 4) : null,
     rewardRisk: round(rr, 4),
     evidence: [
-      `${rows.length} Finnhub daily candles through ${last.date}`,
+      `${rows.length} sourced daily candles through ${last.date}`,
       `ATR(14) ${round(atr14, 2)}`,
       `support ${round(support.price, 2)} from ${support.touches} pivot touch${support.touches === 1 ? "" : "es"}`,
       `stop ${round(stop, 2)}`,
