@@ -2874,6 +2874,33 @@ Jan-anchor shipped; see `snapshot.js` ~318–328), `spyMa100`, `spyMa200`, and a
   VALUATION GAP ranking (§11.1 — the ranking always renders, which is the owner's actual
   "always an output" contract, and it was never suspended). Tests: 1223 smoke (+2) + 199
   render (+1).
+- **v3.93.0 "QUIET-2" — the second pass, screenshot-MEASURED (the v3.42 stance-budget
+  method).** v3.92 collapsed the why chain; the owner's next screenshot (LIVE · MOONING)
+  showed where the remaining fat was, and a headless 390×844 measurement of the built bundle
+  named it exactly: **first market data began at 782px of 844** — the entire first screen was
+  verdict prose — with WHY-THIS-POSTURE costing 154px, the *collapsed* whys still costing
+  100px (three rows of chrome for a closed block), and the drivers eyebrow 77px. The common
+  defect: **three blocks each restating the "N of M usable" fact the hero already states.**
+  Three cuts, all measured before/after: **(1)** the whys block is ONE toggle row — the
+  section header and the regime line left the closed view (the line is a byte-for-byte
+  duplicate of the hero verdict 100px above, so v3.25 is satisfied by the hero; it rides
+  INSIDE the collapse as the chain's own anchor). 100→44px. **(2)** the posture-summary
+  bucket grid is **CUT outright** (the v3.43 Yahoo-dupe rule): it restated the sentence
+  above it and the hero chips above that — the same facts a third time — and the first
+  attempt (a toggle) measured within 3px of the grid it hid, proving a menu was not the fix;
+  the sentence carries the whole claim, `postureSummary`'s groups stay computed and
+  smoke-tested in evidence.js, and the per-factor detail lives in the Drivers expander
+  (public-render proves the relocation, not just the absence). 154→107px. **(3)** the
+  drivers eyebrow folded into its own toggle row — two rows were saying one thing; the count
+  summary stays visible while closed. 77→48px. **Net: first data 782→663px** (ERROR state
+  671→606), and the budget is PINNED — first market data ≤700px at 390×844 and the closed
+  whys ≤60px tall, measured live in Chromium, so chrome creeping back fails the build.
+  Also in the owner's screenshot: "takes a while but it decides mooning eventually" — that
+  is the designed degraded-day behavior (LOW/MEDIUM-confidence snapshots carry 5–15min TTLs,
+  so an evening visit can pay a full rebuild; the 8am ET pre-warm covers mornings), and the
+  4/6 MOONING read (10Y·VIX excluded) is the Saturday publisher lag, not a defect.
+  Tests: 1517 smoke (3 pins re-pinned on the new structure) + 247 render + **118
+  public-render** (+3: the two budget pins and the relocation proof) + `audit:prod` clean.
 - **v3.92.0 "QUIET OVERVIEW" — the 5-why chain goes one tap deep (owner call, REVERSING
   v3.61/v3.62's "full 5 Whys stays expanded").** A live phone screenshot of the DATA-HOLD
   state: the overview rendered ~2 screens of prose — five full why-paragraphs plus the hero's

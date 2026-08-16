@@ -1837,7 +1837,7 @@ ok("estrun: the section label carries the tier — the math renders under the ti
 /* v3.68: the PT horizon is stated where the %/yr is read. */
 /* v3.69 NARRATIVE FIRST — the public dashboard reorder. */
 ok("v3.69: the 5 Whys block renders in the overview region, before the markets section (source order)",
-  whysSrc.includes("5 Whys · Today") &&
+  whysSrc.includes("5 whys · today") &&   // v3.93: the identity moved onto the toggle label
   dashSrc.indexOf("<FiveWhys ") > dashSrc.indexOf('id="overview"')
   && dashSrc.indexOf("<FiveWhys ") < dashSrc.indexOf('aria-labelledby="markets"'));
 /* v3.92 QUIET OVERVIEW — this pin REVERSED. v3.69/v3.61 pinned the whys always-expanded on
@@ -1845,12 +1845,16 @@ ok("v3.69: the 5 Whys block renders in the overview region, before the markets s
    The new contract: the CHAIN collapses behind the house CollapsedGroup, while the regime
    state line (this block's one red/amber fact) stays OUTSIDE the collapse — the v3.25 rule,
    proven structurally here and behaviorally in public-render (closed state + open-then-read). */
-ok("v3.92: the why CHAIN is inside a chip-free CollapsedGroup with the regime line OUTSIDE it",
+/* v3.93 QUIET-2 re-pin (screenshot-measured): the regime line moved INSIDE the collapse —
+   it is a byte-for-byte duplicate of the hero verdict 100px above, so v3.25 is satisfied by
+   the hero; the block's closed form is ONE toggle row. */
+ok("v3.93: the whys are ONE toggle row — regime line and chain both inside the chip-free collapse",
   (() => {
     const cg = whysSrc.indexOf("<CollapsedGroup");
     const regimeLine = whysSrc.indexOf("{fw.regime}");
     const chain = whysSrc.indexOf("fw.whys.map");
-    return cg > 0 && regimeLine > 0 && regimeLine < cg && chain > cg &&
+    return cg > 0 && regimeLine > cg && chain > regimeLine &&
+      !/SectionHeader/.test(whysSrc) &&
       /chip=\{false\}/.test(whysSrc.slice(cg, whysSrc.indexOf(">", cg) + 1));
   })());
 ok("v3.69: ONE market-detail CollapsedGroup (chart + 10 tiles) inside the markets section, chip-free",
@@ -3643,7 +3647,9 @@ ok("glance: landscape notch edges — root pads left/right insets",
 // F2: the two big v3.60 diagnostic blocks collapse behind the FEAT-321 idiom. chip={false}
 // both times — live evidence, not curated content.
 ok("glance: the Drivers matrix cards collapse (band chips are the icon-first six-factor view)",
-  /label="factor evidence detail" chip=\{false\}/.test(dashSrc));
+  // v3.93: the eyebrow folded into the toggle label — count summary visible while closed.
+  /label=\{`factor evidence — used in today's posture · \$\{evidenceSet\.freshSummary\}/.test(dashSrc) &&
+  /count=\{evidenceSet\.factors\.length\} chip=\{false\}/.test(dashSrc));
 ok("glance: the Data Health per-source grid collapses; the ERROR/Retry row stays OUTSIDE",
   /label="per-source detail" chip=\{false\}/.test(dhSrc) &&
   dhSrc.indexOf('mode==="ERROR"&&<div style={{fontFamily:T.fontMono,fontSize:9,color:T.red') <

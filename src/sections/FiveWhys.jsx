@@ -17,7 +17,6 @@
 //                       market synthesis is "as of the last close"; a secondary input
 //                       FRED publishes a day late must not drag the whole badge STALE)
 import { T } from "../design-tokens.js";
-import SectionHeader from "../primitives/SectionHeader.jsx";
 import SourceBox from "../primitives/SourceBox.jsx";
 import CollapsedGroup from "../primitives/CollapsedGroup.jsx";
 
@@ -27,11 +26,13 @@ const FiveWhys=({fw,derivedLabel,mode,asOf})=>{
   if(!fw||!Array.isArray(fw.whys))return <div aria-hidden="true"/>;
   return(
     <div style={{padding:"10px 20px",background:T.bg,borderBottom:`1px solid ${T.border}`}}>
-      <SectionHeader>5 Whys · Today</SectionHeader>
-      {/* The signal stays visible while closed (v3.25): the regime state is this block's
-          one decision-relevant fact, so it lives OUTSIDE the collapse. */}
-      <div style={{fontFamily:T.fontMono,fontSize:9,color:T.amber,marginBottom:2}}>{fw.regime}</div>
-      <CollapsedGroup count={5} label="the why chain — narrative & provenance" chip={false}>
+      {/* v3.93 QUIET-2 (screenshot-measured: three rows of chrome cost 100px at 390px for a
+          collapsed block): ONE toggle row. The section header and the regime line are gone
+          from the closed view — the regime state is a byte-for-byte duplicate of the hero
+          verdict 100px above, so v3.25 is satisfied by the hero itself; the line rides
+          INSIDE the collapse so the chain still opens with its own anchor. */}
+      <CollapsedGroup count={5} label="5 whys · today — narrative & provenance" chip={false}>
+        <div style={{fontFamily:T.fontMono,fontSize:9,color:T.amber,marginBottom:2}}>{fw.regime}</div>
         <div style={{fontFamily:T.fontSans,fontSize:12,color:T.textSecondary,lineHeight:1.6,fontStyle:"italic"}}>"{fw.headline}"</div>
         {fw.whys.map((w,i)=>(
           <div key={i} style={{borderLeft:`2px solid ${T.amber}44`,paddingLeft:8,marginTop:8}}>

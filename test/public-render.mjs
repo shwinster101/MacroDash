@@ -180,7 +180,7 @@ console.log("\n[public] LOADING — a posture must not be computed from the mock
   ok("v3.92: the whys collapse by default with the regime state visible while closed",
     !/WHY #1/.test(await page.locator("body").innerText()) &&
     /DATA HOLD|CAN'T CALL IT|LOADING/i.test(await page.locator("body").innerText()));
-  await page.locator("button.cg-toggle", { hasText: "why chain" }).click();
+  await page.locator("button.cg-toggle", { hasText: "5 whys" }).click();
   await page.waitForTimeout(150);
   const loadBody = await page.locator("body").innerText();
   ok("loading A1: the 5 Whys asserts NO mock core tape (no 'Core tape: SPY $…')",
@@ -227,11 +227,13 @@ console.log("\n[public] NEUTRAL — a neutral vote renders as neutral, not beari
       return t.includes("•") && !t.includes("▼") && !t.includes("▲"); })());
   ok("neutral: a genuinely bearish factor still renders ▼ (no over-correction)",
     await page.locator('[title="Valuation: BEAR"]').count() === 1);
+  // v3.93 QUIET-2: the bucket grid is CUT (a strict restatement of the sentence + the hero
+  // chips — the v3.43 Yahoo-dupe rule); the sentence carries the whole claim in plain words.
   const why = await page.locator('[aria-label="Why this posture"]').innerText();
-  ok("why: the plain-language summary renders and names the neutral factor",
-    /neutral/i.test(why) && /F&G/.test(why));
-  ok("why: the four buckets are labelled",
-    /SUPPORTS/.test(why) && /NEUTRAL/.test(why) && /ADDS RISK/.test(why) && /UNAVAILABLE/.test(why));
+  ok("why: the plain-language sentence renders and names the neutral factor; the bucket grid is gone",
+    /neutral/i.test(why) && !/SUPPORTS/.test(why) && !/ADDS RISK/.test(why));
+  ok("why: the per-factor detail still exists one tap deep in the Drivers expander (nothing lost)",
+    /factor evidence/i.test(await page.locator('section[aria-labelledby="drivers"]').innerText()));
   // The contradiction this release removes, stated directly: the printed tally and the number
   // of neutral-rendering chips must be the SAME number. Derived on both sides, never hardcoded
   // — a literal here would only prove this one fixture.
@@ -283,7 +285,7 @@ console.log("\n[public] ERROR — a 500 falls back to mock, and mock does not vo
   ok("error: no posture is published after the fetch fails", !POSTURES.test(band));
   ok("error: the withheld state is explicit, not a silent blank",
     /DATA HOLD|CAN'T CALL IT/i.test(band));
-  await page.locator("button.cg-toggle", { hasText: "why chain" }).click();   // v3.92: chain is one tap deep
+  await page.locator("button.cg-toggle", { hasText: "5 whys" }).click();   // v3.92: chain is one tap deep
   await page.waitForTimeout(150);
   const errBody = await page.locator("body").innerText();
   ok("error: the page still renders (graceful degradation holds — it never breaks)",
@@ -291,6 +293,31 @@ console.log("\n[public] ERROR — a 500 falls back to mock, and mock does not vo
   ok("error A1: the 5 Whys narrates no mock numbers after a failed fetch either",
     !/Core tape: SPY \$/.test(errBody) && /0\/3 core inputs usable/.test(errBody));
   ok("error: no page errors", errors.length === 0);
+  await page.close();
+}
+
+// ── v3.93 QUIET-2 — the screenshot-measured phone budget ────────────────────
+// Measured before the pass (LIVE, 390×844): first market data began at 782px of 844 — the
+// entire first screen was verdict prose. After: 663px. Pinned with headroom at 700 so chrome
+// creeping back fails the build (the v3.42 stance-budget method). The whys block is pinned to
+// its one-row closed form the same way.
+console.log("\n[public] v3.93 — the 390px overview budget");
+{
+  const { page, errors } = await open({ live: FULL_LIVE, width: 390 });
+  await page.waitForTimeout(1200);
+  const tops = await page.evaluate(() => {
+    const top = (re) => {
+      const el = [...document.querySelectorAll("*")].find((n) =>
+        n.children.length === 0 && re.test(n.textContent || "") && n.getBoundingClientRect().height > 0);
+      return el ? Math.round(el.getBoundingClientRect().top + window.scrollY) : null;
+    };
+    return { whys: top(/5 whys · today/i), sq: top(/SIGNAL QUALITY/i), spy: top(/^●?\s*SPY\*?$/m) };
+  });
+  ok("v3.93 budget: first market data begins within 700px at 390×844 (measured 663 at pass time)",
+    tops.spy !== null && tops.spy <= 700);
+  ok("v3.93 budget: the closed whys block is ONE toggle row (≤60px to the next block)",
+    tops.whys !== null && tops.sq !== null && tops.sq - tops.whys <= 60);
+  ok("v3.93 budget: no page errors", errors.length === 0);
   await page.close();
 }
 
@@ -336,7 +363,7 @@ console.log("\n[public] v3.60 P0 slice — nav, matrix, digest, health");
   // the icon-first six-factor view; the summary line stays visible while closed.
   const driversClosed = await page.locator('section[aria-labelledby="drivers"]').innerText();
   ok("glance: the matrix starts collapsed — summary visible, no full cards",
-    /factors usable/i.test(driversClosed) && /factor evidence detail/i.test(driversClosed) &&
+    /factors usable/i.test(driversClosed) && /factor evidence/i.test(driversClosed) &&
     !/as of \d{4}-\d{2}-\d{2}/.test(driversClosed));
   await page.locator('section[aria-labelledby="drivers"] button[aria-expanded]').click();
   await page.waitForTimeout(200);
@@ -370,7 +397,7 @@ console.log("\n[public] v3.60 P0 slice — nav, matrix, digest, health");
   // this release exists for. DOM order, not pixels: it must hold at every width.
   ok("v3.69: 5 Whys precedes the markets section in DOM order",
     await page.evaluate(() => {
-      const whys = [...document.querySelectorAll("*")].find(n => n.childElementCount === 0 && /5 Whys · Today/.test(n.textContent || ""));
+      const whys = [...document.querySelectorAll("*")].find(n => n.childElementCount === 0 && /5 whys · today/i.test(n.textContent || ""));   // v3.93: identity lives on the toggle label (raw textContent is lowercase)
       const mkts = document.querySelector('section[aria-labelledby="markets"]');
       return !!whys && !!mkts && !!(whys.compareDocumentPosition(mkts) & Node.DOCUMENT_POSITION_FOLLOWING);
     }));
@@ -511,7 +538,7 @@ console.log("\n[public] Slice 1 — verdict above the fold at 375px (extracted b
     box !== null && box.y + box.height <= 600);
   ok("slice1 @375px: the confidence tally and flip sentence ride inside that region",
     /of \d+ usable/.test(await band.innerText()) && /would change this/i.test(await band.innerText()));
-  await page.locator("button.cg-toggle", { hasText: "why chain" }).click();   // v3.92: chain is one tap deep
+  await page.locator("button.cg-toggle", { hasText: "5 whys" }).click();   // v3.92: chain is one tap deep
   await page.waitForTimeout(150);
   const body = await page.locator("body").innerText();
   ok("slice1 @375px: the extracted 5 Whys narrative renders one tap deep (WHY #1–#5 present)",

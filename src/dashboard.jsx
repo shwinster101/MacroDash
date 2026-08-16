@@ -816,15 +816,12 @@ export default function Dashboard({ publicView = false } = {}) {
           style={{padding:"7px 20px",background:T.bg,borderBottom:`1px solid ${T.border}`}}>
           <div style={{fontFamily:T.fontMono,fontSize:8,color:T.textMuted,letterSpacing:"0.12em",textTransform:"uppercase",marginBottom:4}}>Why this posture</div>
           <div style={{fontFamily:T.fontMono,fontSize:T.fsL,color:T.textPrimary,lineHeight:1.5,maxWidth:"72ch"}}>{evidenceSet.summary.sentence}</div>
-          <div style={{display:"flex",gap:14,flexWrap:"wrap",marginTop:6}}>
-            {evidenceSet.summary.groups.map(g=>(
-              <div key={g.key} style={{minWidth:0}}>
-                <div style={{fontFamily:T.fontMono,fontSize:T.fsXs,color:T[voteStyle(g.vote).colorKey],letterSpacing:"0.1em"}}>{g.label}</div>
-                {/* An empty bucket says so with an em dash — a blank cell reads as "not computed". */}
-                <div style={{fontFamily:T.fontMono,fontSize:T.fsM,color:g.shorts.length?T.textSecondary:T.textMuted}}>{g.shorts.join(" · ")||"—"}</div>
-              </div>
-            ))}
-          </div>
+          {/* v3.93 QUIET-2: the bucket grid is CUT (the v3.43 Yahoo-dupe rule) — it was a
+              strict restatement of the sentence above (plain words, every factor named by
+              role) and the hero chips above that (per-factor lean), the same facts a third
+              time; a measured toggle cost nearly what the grid did, so a menu was not the
+              fix. postureSummary's groups stay computed in evidence.js (the contract is
+              smoke-tested); the per-factor detail lives in the Drivers expander. */}
         </div>
       )}
 
@@ -847,19 +844,16 @@ export default function Dashboard({ publicView = false } = {}) {
           reason per factor. Cards wrap on phones, rows on desktop (flex-wrap). ── */}
       <section aria-labelledby="drivers" style={{padding:"10px 20px",borderBottom:`1px solid ${T.border}`}}>
         <h2 id="drivers" className="visually-hidden">Drivers — the six factors and their votes</h2>
-        {/* v3.62 (newcomer audit): say which numbers actually DECIDED the posture. Voting and
-            context indicators sat at the same visual weight all over the page, so a reader had
-            no way to tell the six that cast a vote from the dozens that did not. */}
-        <div style={{fontFamily:T.fontMono,fontSize:T.fsXs,color:T.textMuted,letterSpacing:"0.12em",textTransform:"uppercase",marginBottom:6}}>
-          Used in today's posture · {evidenceSet.freshSummary}{evidenceSet.withheld?" · posture withheld":""}
-        </div>
+        {/* v3.62 eyebrow, folded into the toggle row itself (v3.93 QUIET-2 — two rows were
+            saying one thing). The count summary stays visible while closed (v3.25). */}
         {/* FEAT-GLANCE (v3.61): the six full cards collapse — the band's chip row above is
             already the icon-first six-factor view, so a second full-size rendering of the
             same six facts was the duplication the newcomer audit flagged. Red facts survive
             the collapse: the summary line above stays, exclusions stay named in Signal
             Quality, and the ⏱ chips stay on the band (the v3.25 rule). chip={false} — this
             is live evidence, not curated content. */}
-        <CollapsedGroup count={evidenceSet.factors.length} label="factor evidence detail" chip={false}>
+        <CollapsedGroup count={evidenceSet.factors.length} chip={false}
+          label={`factor evidence — used in today's posture · ${evidenceSet.freshSummary}${evidenceSet.withheld?" · posture withheld":""}`}>
         <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
           {evidenceSet.factors.map(f=>{
             // FEAT-NEUTRAL (v3.62): resolves through the SAME shared map as the hero chips.
