@@ -49,14 +49,34 @@ const MacroRegime=({d,modeOf,asOfOf,fomcDays,fomcSource=null})=>{
                       {fomcDays==null?"Next FOMC — awaiting schedule":fomcDays===0?"FOMC decision today":`Next FOMC in ${fomcDays} day${fomcDays===1?"":"s"}`}
                       {fomcSource&&fomcDays!=null&&<span style={{color:T.textMuted}}> · {fomcSource==="calendar"?"published Fed calendar":"market strike date"}</span>}
                     </div>
-                    {/* Next-FOMC decision odds (Kalshi prediction market) */}
-                    <div style={{display:"flex",gap:6,marginTop:4,flexWrap:"wrap",alignItems:"baseline"}}>
-                      <span style={{fontFamily:T.fontMono,fontSize:7,color:T.textMuted,letterSpacing:"0.08em"}}>NEXT-MTG</span>
-                      <span style={{fontFamily:T.fontMono,fontSize:9,color:T.textMuted}}>Hold {d.macro.fedFunds.odds.hold}%</span>
-                      <span style={{fontFamily:T.fontMono,fontSize:9,color:T.green}}>Cut {d.macro.fedFunds.odds.cut}%</span>
-                      <span style={{fontFamily:T.fontMono,fontSize:9,color:T.red}}>Hike {d.macro.fedFunds.odds.hike}%</span>
-                      <span style={{fontFamily:T.fontMono,fontSize:7,color:T.textMuted,border:`1px dashed ${T.border}`,borderRadius:2,padding:"0 3px"}}>Kalshi · {modeOf('rateOddsHold').toLowerCase()}</span>
-                    </div>
+                    {/* Next-FOMC decision odds (Kalshi prediction market).
+                        v3.99.1 (owner call): the mock 84/13/3 baseline is NO LONGER RENDERED.
+                        Every other mock number on this page is a LEVEL a reader can sanity-check
+                        against the world; these are PROBABILITIES about a future decision, which
+                        nobody can check and which read as the market's actual view. With Kalshi
+                        rate-limited (HTTP 429 on both bases) that made the one number on this tile
+                        that could not be verified also the one most likely to be believed. The
+                        explicit unavailable state is the v3.1 invariant applied to a percentage:
+                        "I cannot see" and "the market says 84% hold" are different facts. */}
+                    {(() => {
+                      const oMode=modeOf('rateOddsHold');
+                      const o=d.macro.fedFunds.odds||{};
+                      const usable=!isIllustrative(oMode)&&Number.isFinite(o.hold)&&Number.isFinite(o.cut)&&Number.isFinite(o.hike);
+                      return(
+                      <div style={{display:"flex",gap:6,marginTop:4,flexWrap:"wrap",alignItems:"baseline"}}>
+                        <span style={{fontFamily:T.fontMono,fontSize:7,color:T.textMuted,letterSpacing:"0.08em"}}>NEXT-MTG</span>
+                        {usable?(<>
+                          <span style={{fontFamily:T.fontMono,fontSize:9,color:T.textMuted}}>Hold {o.hold}%</span>
+                          <span style={{fontFamily:T.fontMono,fontSize:9,color:T.green}}>Cut {o.cut}%</span>
+                          <span style={{fontFamily:T.fontMono,fontSize:9,color:T.red}}>Hike {o.hike}%</span>
+                          <span style={{fontFamily:T.fontMono,fontSize:7,color:T.textMuted,border:`1px dashed ${T.border}`,borderRadius:2,padding:"0 3px"}}>Kalshi · {oMode.toLowerCase()}</span>
+                        </>):(
+                          <span style={{fontFamily:T.fontMono,fontSize:9,color:T.textMuted}}>
+                            odds unavailable — Kalshi feed not live<span style={{color:T.textMuted}}> · the date above stands on its own</span>
+                          </span>
+                        )}
+                      </div>);
+                    })()}
                   </div>
                   <SourceBox api="FRED" endpoint="DFEDTARU/L target · FEDFUNDS eff · Kalshi odds" mode={modeOf('fedFunds')} asOf={asOfOf('fedFunds')}/>
                 </div>

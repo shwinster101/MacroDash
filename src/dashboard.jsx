@@ -5,7 +5,7 @@ import { computeFiveWhys } from "./fiveWhys.js"; // v2.5: rule-based 5 Whys ($0,
 import { NFCI_TIGHT, NFCI_LOOSE, REGIME_BAND_TABLE, REGIME_QUORUM, verdictFrom, computeRegime, flipConditions, regimeFactors, voteStyle } from "./regime.js"; // C1 (v3.60): the extracted engine; voteStyle = FEAT-NEUTRAL (v3.62)
 import { buildEvidenceSet, factorExclusions, fieldMode, FACTOR_FIELD } from "./evidence.js"; // C1 (v3.60): the typed contract
 import { LASTVALID_KEY, summarizeEvidence, compareEvidence } from "./whatChanged.js"; // C4 (v3.60)
-import { isStale, cadenceOf, parseObsDate, isMarketHoliday, nextFomcDate } from "./sources.js"; // FEAT-R3: per-tile, cadence-aware staleness + shared market calendar; v3.99: curated FOMC calendar
+import { isStale, cadenceOf, parseObsDate, isMarketHoliday, nextFomcDate, etYmd } from "./sources.js"; // FEAT-R3: per-tile, cadence-aware staleness + shared market calendar; v3.99: curated FOMC calendar
 import { computeMacroFlip, buildTtReadout, formatTtPaste } from "./ttReadout.js"; // FEAT-331/332: Macro Flip + TT paste
 import { fmt, pctColor } from "./format.js"; // task 1.3/3.1: one shared copy
 import RegimeBand, { WITHHELD_LABEL, WEN_MOON_STATES } from "./sections/RegimeBand.jsx"; // task 1.3: the verdict band + its vocabulary
@@ -479,10 +479,15 @@ export default function Dashboard({ publicView = false } = {}) {
      calendar instead of to MOCK_DATA's hardcoded date — which had expired and rendered
      "FOMC —" for two months. `fomcSource` records which one answered: a date is only as
      good as its provenance, and the tile says so. */
+  /* v3.99.1 — ONE CLOCK. This compared against browser-LOCAL midnight while nextFomcDate()
+     resolves "today" in ET, so in any non-ET runtime (a UTC container, or a user abroad) the
+     two disagreed and the countdown could be a day out — the exact FIX-A defect (v3.49) that
+     put etYmd() in sources.js in the first place. Caught by the browser suite comparing the
+     rendered number against the active calendar entry. */
   const fomcPick=(()=>{
     const live=d.macro.fedFunds.nextFOMC;
     const lv=live?parseObsDate(live):null;
-    const t=new Date(); t.setHours(0,0,0,0);
+    const t=parseObsDate(etYmd());
     // "live" here means the field genuinely came from the market feed, not the mock
     // baseline — provenance is read directly because modeOf is declared below.
     const pv=(provenance&&provenance.nextFomcDate)||"MOCK";
@@ -492,7 +497,7 @@ export default function Dashboard({ publicView = false } = {}) {
     return (cd&&!isNaN(cd.getTime())) ? {date:cd, src:"calendar"} : {date:null, src:null};
   })();
   const fomcSource=fomcPick.src;
-  const fomcDays=(()=>{const dt=fomcPick.date;if(!dt)return null;const t=new Date();t.setHours(0,0,0,0);const days=Math.round((dt-t)/86400000);return days<0?null:days;})();
+  const fomcDays=(()=>{const dt=fomcPick.date;if(!dt)return null;const t=parseObsDate(etYmd());const days=Math.round((dt-t)/86400000);return days<0?null:days;})();
   const fomcLabel=fomcDays==null?"—":fomcDays===0?"today":`${fomcDays}d`;
   // C1 (v3.60): modeOf is now the SHARED fieldMode from evidence.js — the dashboard and the
   // EvidenceSet can never disagree about a field's freshness. Same rule, one home.

@@ -2875,6 +2875,47 @@ Jan-anchor shipped; see `snapshot.js` ~318–328), `spyMa100`, `spyMa200`, and a
   VALUATION GAP ranking (§11.1 — the ranking always renders, which is the owner's actual
   "always an output" contract, and it was never suspended). Tests: 1223 smoke (+2) + 199
   render (+1).
+- **v3.99.1 — owner-corrected FOMC dates, the odds stop lying, and the Kalshi key path.**
+  Owner confirmed the calendar and **corrected two of my asserted dates** (Nov 4 → **Oct 28**,
+  Dec 16 → **Dec 9**); Sep 16 — the date driving the live countdown — was right. Both
+  corrections are pinned BY VALUE in smoke, with the wrong ones pinned ABSENT, so a silent
+  regression to my guesses fails the build. This is the asserted-until-confirmed rule paying
+  for itself: 2 of 8 entered dates were wrong, which is exactly why the table is flagged
+  rather than trusted.
+  **The mock odds are gone.** With Kalshi rate-limited the tile still rendered
+  `Hold 84% · Cut 13% · Hike 3%` from `MOCK_DATA` — and unlike every other mock number on the
+  page, those are not LEVELS a reader can sanity-check against the world; they are
+  PROBABILITIES about a future decision that nobody can check and that read as the market's
+  actual view. The one number on that tile least verifiable was the one most likely to be
+  believed. It now reads **"odds unavailable — Kalshi feed not live · the date above stands on
+  its own"**, with the numbers structurally on the usable side of the gate (smoke proves the
+  branch is unreachable on mock/stale). The v3.1 invariant applied to a percentage.
+  **The authenticated Kalshi transport (owner priority).** The 429 is a *shared anonymous
+  bucket* on Cloudflare edge IPs, so a key is the only fix that addresses the cause — a second
+  base never could. `kalshiHeaders()` signs `timestampMs + METHOD + path` with **RSA-PSS
+  (SHA-256, salt 32)** per Kalshi's scheme and sets `KALSHI-ACCESS-KEY/SIGNATURE/TIMESTAMP`.
+  **KEY-GATED like Finnhub**: with `KALSHI_KEY_ID` + `KALSHI_PRIVATE_KEY` unset it returns
+  null and the anonymous headers run exactly as before, so the deploy is **inert until the
+  owner sets the secrets** and nothing can regress by shipping it. The auth MODE rides in
+  provenance (`auth: keyed|anonymous`) because *"still anonymous"* and *"keyed and STILL
+  limited"* are different diagnoses and implying either would be a guess.
+  **⚠ The signing path has never made a live call** — kalshi.com is 403 from this build
+  environment — so it is verified the only way it can be: smoke **generates a real RSA key,
+  runs the signer, and cryptographically VERIFIES the signature** over the exact
+  timestamp+method+path message, plus both fail-closed paths. A signature is a claim about
+  crypto; a string pin cannot prove one. Setup: `npx wrangler pages secret put KALSHI_KEY_ID`
+  and `KALSHI_PRIVATE_KEY` (the PKCS#8 PEM Kalshi issues).
+  **Two defects the tests caught while building this.** (1) The key was memoized at module
+  scope, so in a Worker isolate a **rotated secret would keep signing with the retired key**
+  — and the cache masked a bad key behind an earlier good one (my own round-trip test returned
+  the cached key for a garbage PEM instead of failing closed). Memoization removed; importKey
+  runs twice a day. (2) The countdown compared the ET-resolved meeting date against
+  **browser-LOCAL midnight**, so in any non-ET runtime the two clocks disagreed and the
+  countdown could be a day out — the exact FIX-A defect (v3.49) that put `etYmd()` in
+  sources.js. Caught by a new browser assertion that derives the expected number from the
+  calendar rather than hardcoding it, so it survives the calendar rolling forward.
+  Tests: **1584 smoke** (+9) + 248 render + **152 public-render** (+2: the countdown matched
+  to the day against the active entry, and the mock odds proven ABSENT).
 - **v3.99.0 — the Fed label defect, and taking the FOMC date off Kalshi's critical path.**
   Owner question ("is the fed rate and CPI the latest?") turned into two findings and a real
   diagnosis. **CPI is fine** — 3.5% headline / 2.8% core observed `2026-07-01` is the July

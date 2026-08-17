@@ -6852,7 +6852,15 @@ console.log("\n[65] v3.99 — Fed target range, curated FOMC calendar, Kalshi of
   ok("fomc: nextFomcDate returns the next meeting AT or after today, never a past one",
     nfd(new Date("2026-08-17T12:00:00Z")) === "2026-09-16" &&
     nfd(new Date("2026-09-16T12:00:00Z")) === "2026-09-16" &&   // decision day itself counts
-    nfd(new Date("2026-09-17T12:00:00Z")) === "2026-11-04");
+    nfd(new Date("2026-09-17T12:00:00Z")) === "2026-10-28");
+  /* v3.99.1 — OWNER-CONFIRMED calendar. My asserted Nov 4 / Dec 16 were WRONG; the owner
+     corrected them to Oct 28 / Dec 9 and confirmed Sep 16 (the date driving the live
+     countdown). Pinned by VALUE so a silent regression to my guesses fails the build. */
+  ok("fomc: the owner-corrected Q4 dates are on file — Oct 28 and Dec 9, NOT the asserted Nov 4 / Dec 16",
+    FOMC_MEETINGS.includes("2026-10-28") && FOMC_MEETINGS.includes("2026-12-09") &&
+    !FOMC_MEETINGS.includes("2026-11-04") && !FOMC_MEETINGS.includes("2026-12-16") &&
+    FOMC_MEETINGS.includes("2026-09-16") &&
+    nfd(new Date("2026-10-29T12:00:00Z")) === "2026-12-09");
   ok("fomc: past the end of the table it returns NULL — a guessed meeting date would feed a countdown AND an Engine 0 gate",
     nfd(new Date("2099-01-01T12:00:00Z")) === null);
   /* THE EXPIRY TRIPWIRE. MARKET_HOLIDAYS carries only a comment asking for an annual update;
@@ -6863,6 +6871,8 @@ console.log("\n[65] v3.99 — Fed target range, curated FOMC calendar, Kalshi of
   ok("fomc: EXPIRY TRIPWIRE — the calendar has >90 days of runway (extend FOMC_MEETINGS if RED)",
     (() => { const last = FOMC_MEETINGS[FOMC_MEETINGS.length - 1];
       return (new Date(last + "T00:00:00Z") - Date.now()) / 86400000 > 90; })());
+  ok("fomc: the countdown runs on ET, the same clock nextFomcDate() resolves 'today' with (FIX-A)",
+    /const t=parseObsDate\(etYmd\(\)\);/.test(dashSrc) && !/t\.setHours\(0,0,0,0\)/.test(dashSrc.slice(dashSrc.indexOf("const fomcPick"), dashSrc.indexOf("const fomcLabel"))));
   ok("fomc: the countdown prefers the MARKET's own strike date but falls through to the calendar",
     /pv==="LIVE"\|\|pv==="CACHED"/.test(dashSrc) && /src:"market"/.test(dashSrc) &&
     /nextFomcDate\(\)/.test(dashSrc) && /src:"calendar"/.test(dashSrc));
@@ -6887,6 +6897,41 @@ console.log("\n[65] v3.99 — Fed target range, curated FOMC calendar, Kalshi of
      to 357px. SourceBox HAD nowrap+ellipsis, but a flex item's default min-width is `auto`,
      so it took its content width and pushed instead of truncating — the ellipsis could never
      engage. The floor is the general fix; the next long endpoint cannot repeat it. */
+  // ── the odds: explicit unavailable, never the mock baseline ──
+  ok("odds: the mock 84/13/3 baseline can no longer render — the tile states it cannot see",
+    /odds unavailable — Kalshi feed not live/.test(mrSrc) &&
+    /const usable=!isIllustrative\(oMode\)&&Number\.isFinite\(o\.hold\)/.test(mrSrc));
+  ok("odds: the numbers sit on the USABLE side of the gate — unreachable on mock/stale",
+    (() => { const i = mrSrc.indexOf("const usable=!isIllustrative(oMode)");
+      const seg = mrSrc.slice(i, i + 1400);
+      return /usable\?\(<>[\s\S]*Hold \{o\.hold\}%[\s\S]*\):\([\s\S]*odds unavailable/.test(seg); })());
+  // ── Kalshi authenticated transport (key-gated, RSA-PSS) ──
+  ok("kalshi: the signed path is KEY-GATED — no secrets means the anonymous headers, unchanged",
+    /if \(!env\?\.KALSHI_KEY_ID \|\| !env\?\.KALSHI_PRIVATE_KEY\) return null;/.test(snapSrc) &&
+    /const hdrs = \{ headers: signed \|\| \{ Accept: "application\/json" \} \};/.test(snapSrc));
+  ok("kalshi: the key is NOT memoized — a module-level cache would outlive a rotated secret",
+    !/_kalshiKeyPromise/.test(snapSrc) && /NOT memoized, deliberately/.test(snapSrc));
+  ok("kalshi: auth MODE is recorded in provenance — 'still anonymous' and 'keyed and still limited' are different diagnoses",
+    /auth: authMode/.test(snapSrc) && /\(\$\{authMode\}\)/.test(snapSrc));
+  // RUN the signer against a real generated key: a signature is a claim about crypto, and a
+  // string pin cannot prove one verifies.
+  const kalshiMod = snapSrc.slice(snapSrc.indexOf("const KALSHI_SIG_ALG"), snapSrc.indexOf("async function fetchRateOdds"));
+  const kal = new Function("crypto", "atob", "btoa", "TextEncoder", kalshiMod + "; return { kalshiHeaders };")
+    (globalThis.crypto, globalThis.atob, globalThis.btoa, TextEncoder);
+  const kp = await crypto.subtle.generateKey({ name: "RSA-PSS", modulusLength: 2048,
+    publicExponent: new Uint8Array([1, 0, 1]), hash: "SHA-256" }, true, ["sign", "verify"]);
+  const pem = "-----BEGIN PRIVATE KEY-----\n" +
+    Buffer.from(await crypto.subtle.exportKey("pkcs8", kp.privateKey)).toString("base64") +
+    "\n-----END PRIVATE KEY-----";
+  const kh = await kal.kalshiHeaders({ KALSHI_KEY_ID: "kid", KALSHI_PRIVATE_KEY: pem }, "GET", "/trade-api/v2/events");
+  ok("kalshi: the RSA-PSS signature actually VERIFIES over timestamp+method+path (executed, not pinned)",
+    !!kh && await crypto.subtle.verify({ name: "RSA-PSS", saltLength: 32 }, kp.publicKey,
+      Uint8Array.from(atob(kh["KALSHI-ACCESS-SIGNATURE"]), (c) => c.charCodeAt(0)),
+      new TextEncoder().encode(kh["KALSHI-ACCESS-TIMESTAMP"] + "GET" + "/trade-api/v2/events")) &&
+    kh["KALSHI-ACCESS-KEY"] === "kid" && /^\d{13}$/.test(kh["KALSHI-ACCESS-TIMESTAMP"]));
+  ok("kalshi: a malformed key fails CLOSED to the anonymous path, never a thrown build",
+    await kal.kalshiHeaders({ KALSHI_KEY_ID: "a", KALSHI_PRIVATE_KEY: "not-a-pem" }, "GET", "/x") === null &&
+    await kal.kalshiHeaders({}, "GET", "/x") === null);
   ok("fed: SourceBox can actually shrink — nowrap+ellipsis is inert without a min-width floor",
     /minWidth:0, maxWidth:"100%"/.test(sbSrc) && /whiteSpace:"nowrap", minWidth:0/.test(sbSrc) &&
     /title=\{endpoint\}/.test(sbSrc));

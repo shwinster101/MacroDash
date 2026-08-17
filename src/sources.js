@@ -359,15 +359,19 @@ export function isMarketHoliday(dateStr) { return MARKET_HOLIDAYS.has(String(dat
    a parser and a rate limit to a value that changes eight times a year. Same call, and
    the same shape, as MARKET_HOLIDAYS above.
    Dates are the DECISION day (day 2 of each two-day meeting), ET.
-   ⚠ ASSERTED, NOT VERIFIED from this build environment — federalreserve.gov is blocked
-   here (403 at the proxy), so these were entered from the published 2026 schedule and
-   the OWNER should confirm them against federalreserve.gov/monetarypolicy/fomccalendars.htm.
+   ⚠ OWNER-CONFIRMED 2026-08-17 (the last two dates were corrected on that pass — see the
+   array). federalreserve.gov is blocked from this build environment (403 at the proxy), so
+   this table can only ever be human-verified: re-confirm each new year against
+   federalreserve.gov/monetarypolicy/fomccalendars.htm rather than trusting an assistant fill.
    ⚠ UPDATE ANNUALLY. Unlike MARKET_HOLIDAYS this does NOT quietly fail open: smoke has an
    expiry tripwire that goes RED once the table has under 90 days of runway, so the update
    is forced rather than hoped for — a rotted calendar is exactly the defect this replaces. */
 export const FOMC_MEETINGS = [
+  // ✅ OWNER-CONFIRMED 2026-08-17. My asserted Nov 4 / Dec 16 were WRONG (corrected to
+  // Oct 28 / Dec 9); Sep 16 — the date currently driving the live countdown — was right.
+  // This is exactly why the table is flagged asserted-until-confirmed rather than trusted.
   "2026-01-28", "2026-03-18", "2026-04-29", "2026-06-17",
-  "2026-07-29", "2026-09-16", "2026-11-04", "2026-12-16",
+  "2026-07-29", "2026-09-16", "2026-10-28", "2026-12-09",
 ];
 
 /* The next FOMC decision date at or after `now` (ET), or null when the table has run out.

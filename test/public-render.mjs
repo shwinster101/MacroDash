@@ -635,6 +635,25 @@ console.log("\n[public] v3.99 — Fed target range + curated FOMC countdown");
   ok("v3.99: with Kalshi absent the countdown still renders, off the published Fed calendar",
     /Next FOMC in \d+ days?/.test(macro) && /published Fed calendar/.test(macro) &&
     !/awaiting schedule/.test(macro));
+  /* v3.99.1 — re-test after the owner's Q4 corrections (Nov 4 → Oct 28, Dec 16 → Dec 9).
+     The countdown is measured against the ACTIVE meeting date, derived here rather than
+     hardcoded, so this assertion survives the calendar rolling to the next entry. */
+  ok("v3.99.1: the rendered countdown MATCHES the active FOMC date to the day (no off-by-one)",
+    await (async () => {
+      const { FOMC_MEETINGS } = await import("../src/sources.js");
+      const et = (d) => new Intl.DateTimeFormat("en-CA", { timeZone: "America/New_York" }).format(d);
+      const today = et(new Date());
+      const next = FOMC_MEETINGS.find((x) => x >= today);
+      if (!next) return false;
+      // ET on both sides — the page resolves "today" via etYmd(), so the harness must too
+      // (this assertion is what caught the page mixing ET and browser-local midnight).
+      const days = Math.round((new Date(next + "T00:00:00") - new Date(today + "T00:00:00")) / 86400000);
+      const m = macro.match(/Next FOMC in (\d+) days?/);
+      return !!m && Number(m[1]) === days;
+    })());
+  ok("v3.99.1: the mock odds baseline is GONE — the tile says it cannot see them",
+    /odds unavailable — Kalshi feed not live/.test(macro) &&
+    !/Hold 84%/.test(macro) && !/Cut 13%/.test(macro) && !/Hike 3%/.test(macro));
   const strip = await page.locator(".macro-strip").innerText();
   ok("v3.99: the strip's FOMC countdown is no longer a dash",
     /FOMC \d+d|FOMC today/.test(strip) && !/FOMC —/.test(strip));

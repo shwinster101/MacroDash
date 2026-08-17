@@ -231,7 +231,7 @@ export async function buildSnapshot(env, { scope = "all", priorLive = null } = {
     fetchSpy(env.FRED_KEY, statuses),      // SPY via FRED SP500 — Stooq blocks Cloudflare edge IPs
     fetchNdx(env.FRED_KEY, statuses),      // NASDAQ100 — the RS check's index leg (no Finnhub dependency)
     withLastGood(env, "feargreed", () => fetchFearGreed(statuses)),
-    withLastGood(env, "rateodds", () => fetchRateOdds(statuses), rateOddsStillOpen),
+    withLastGood(env, "rateodds", () => fetchRateOdds(env, statuses), rateOddsStillOpen),
     all ? withLastGood(env, "headline", fetchHeadline) : Promise.reject(new Error("skipped (critical scope)")),
   ]);
   // Phase 2.5: official Treasury par-yield fallback for the 10Y — ONLY when FRED's DGS10
@@ -1003,7 +1003,50 @@ async function fetchHeadline() {
 // (last_price_dollars, 0–1 = implied probability) into hold / cut / hike percents.
 // Wrapped in withLastGood at the call site, so a Kalshi outage (or an edge-IP block,
 // the way Stooq blocks us) serves the last good odds + STALE instead of mock.
-async function fetchRateOdds(statuses = null) {
+/* ─── KALSHI AUTHENTICATED TRANSPORT (v3.99.1) ────────────────────────────────
+   WHY: the anonymous path is rate-limited at the shared Cloudflare edge IP, not broken —
+   measured 2026-08-16 as HTTP 429 on BOTH bases, which is why the transport ladder cannot
+   help (both hostnames front the same limiter). An API key moves us off the anonymous
+   bucket entirely, which is the only fix that addresses the actual cause.
+   Kalshi signs with RSA-PSS(SHA-256) over `timestampMs + METHOD + path` (path WITHOUT the
+   query string), base64. KEY-GATED like Finnhub: with no secrets this returns null and the
+   caller uses the anonymous headers exactly as before, so the deploy is inert until the
+   owner sets them — nothing can regress by shipping this.
+   ⚠ UNVERIFIED FROM THIS BUILD ENVIRONMENT: kalshi.com is 403 at the proxy here, so the
+   signing path has never made a live call. It is written to the documented scheme and fails
+   CLOSED (any error → null → anonymous fallback, never a thrown build); the first keyed call
+   is the real check. Same posture as FEAT-TOKVOL's unverified dataset schema (v3.89). */
+const KALSHI_SIG_ALG = { name: "RSA-PSS", saltLength: 32 };
+/* NOT memoized, deliberately. A module-level cache keyed on nothing survives across requests
+   in a Worker isolate, so a ROTATED secret would keep signing with the retired key until the
+   isolate recycled — and the cache would mask a bad key behind an earlier good one. (My own
+   round-trip test caught exactly that: a garbage PEM returned the previously-cached key
+   instead of failing closed.) importKey runs twice per snapshot build, once a day. */
+async function kalshiKey(env) {
+  if (!env?.KALSHI_KEY_ID || !env?.KALSHI_PRIVATE_KEY) return null;
+  const pem = String(env.KALSHI_PRIVATE_KEY)
+    .replace(/-----BEGIN [^-]+-----|-----END [^-]+-----/g, "").replace(/\s+/g, "");
+  const raw = Uint8Array.from(atob(pem), (c) => c.charCodeAt(0));
+  return crypto.subtle.importKey("pkcs8", raw.buffer,
+    { name: "RSA-PSS", hash: "SHA-256" }, false, ["sign"]);
+}
+async function kalshiHeaders(env, method, path) {
+  try {
+    const key = await kalshiKey(env);
+    if (!key) return null;
+    const ts = String(Date.now());
+    const msg = new TextEncoder().encode(ts + method + path);
+    const sig = await crypto.subtle.sign(KALSHI_SIG_ALG, key, msg);
+    return {
+      "KALSHI-ACCESS-KEY": env.KALSHI_KEY_ID,
+      "KALSHI-ACCESS-SIGNATURE": btoa(String.fromCharCode(...new Uint8Array(sig))),
+      "KALSHI-ACCESS-TIMESTAMP": ts,
+      Accept: "application/json",
+    };
+  } catch (_e) { return null; }   // fail closed → anonymous path, never a broken build
+}
+
+async function fetchRateOdds(env, statuses = null) {
   /* ENGINE0-CONT §5.6: transport LADDER over the same API shape. The plan names
      external-api.kalshi.com as the currently-documented production base; the elections
      base is the deployed-working legacy transport, kept as the fallback because the doc
@@ -1013,7 +1056,13 @@ async function fetchRateOdds(statuses = null) {
     "https://external-api.kalshi.com/trade-api/v2",
     "https://api.elections.kalshi.com/trade-api/v2",
   ];
-  const hdrs = { headers: { Accept: "application/json" } };
+  // Signed when the owner has set the secrets, anonymous otherwise. `auth` is recorded in
+  // provenance so a future 429 can be read as "still anonymous" vs "keyed and still limited"
+  // — two very different diagnoses, and implying either one would be a guess.
+  const EV_PATH = "/trade-api/v2/events";
+  const signed = await kalshiHeaders(env, "GET", EV_PATH);
+  const hdrs = { headers: signed || { Accept: "application/json" } };
+  const authMode = signed ? "keyed" : "anonymous";
   let events = null, base = null, lastErr = null;
   for (const b of KALSHI_BASES) {
     try {
@@ -1023,7 +1072,7 @@ async function fetchRateOdds(statuses = null) {
       if (!Array.isArray(body.events)) throw Object.assign(new Error("Kalshi events: bad shape"), { error_class: "parse" });
       events = body.events; base = b;
       break;
-    } catch (e) { lastErr = e; recordStatus(statuses, "kalshi", `events @ ${new URL(b).host}`, e); }
+    } catch (e) { lastErr = e; recordStatus(statuses, "kalshi", `events @ ${new URL(b).host} (${authMode})`, e); }
   }
   if (!events) throw lastErr || new Error("Kalshi unreachable");
   const now = Date.now();
@@ -1036,7 +1085,9 @@ async function fetchRateOdds(statuses = null) {
     throw new Error("Kalshi: no upcoming FOMC event");
   }
   // 2. its buckets
-  const mr = await fetchRetry(`${base}/markets?event_ticker=${ev.event_ticker}&limit=50`, hdrs);
+  const mSigned = await kalshiHeaders(env, "GET", "/trade-api/v2/markets");
+  const mr = await fetchRetry(`${base}/markets?event_ticker=${ev.event_ticker}&limit=50`,
+    { headers: mSigned || { Accept: "application/json" } });
   const markets = (await mr.json()).markets || [];
   let hold = 0, cut = 0, hike = 0, seen = 0;
   for (const m of markets) {
@@ -1057,7 +1108,7 @@ async function fetchRateOdds(statuses = null) {
     recordStatus(statuses, "kalshi", ev.event_ticker, Object.assign(new Error("no priced buckets"), { error_class: "parse" }));
     throw new Error("Kalshi: no priced buckets");
   }
-  recordStatus(statuses, "kalshi", ev.event_ticker, true, { base: new URL(base).host, markets: markets.length, priced: seen });
+  recordStatus(statuses, "kalshi", ev.event_ticker, true, { base: new URL(base).host, auth: authMode, markets: markets.length, priced: seen });
   // Buckets are independent YES markets, so their prices don't sum to exactly 1
   // (spreads + last-trade skew). Normalize to a clean 100% while preserving the
   // relative odds, so the three displayed numbers add up.
