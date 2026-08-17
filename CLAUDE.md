@@ -2038,7 +2038,7 @@ Jan-anchor shipped; see `snapshot.js` ~318–328), `spyMa100`, `spyMa200`, and a
   unstated is the defect this file exists to prevent. Two smaller ones from the same audit, also
   filed not bundled: the ARM threshold `22` now has a second executable home in the carried-VIX
   narration, and `fetchEquities` records its group status `ok:true` one line before it throws on
-  zero quotes.
+  zero quotes *(the fetchEquities one CLOSED in v3.99.2 — see that entry)*.
   Tests: **1037 smoke** + **191 render** + **84 public-render**, plus five negative controls run
   for this entry — disabling `conservativeVote`, `degradedFallback`, the publish gate and the RS
   date-pairing each turns the suite red, and moving VIX's carry window from 2 to 3 sessions turns
@@ -2875,6 +2875,21 @@ Jan-anchor shipped; see `snapshot.js` ~318–328), `spyMa100`, `spyMa200`, and a
   VALUATION GAP ranking (§11.1 — the ranking always renders, which is the owner's actual
   "always an output" contract, and it was never suspended). Tests: 1223 smoke (+2) + 199
   render (+1).
+- **v3.99.2 — the ENGINE0-CONT filed limit on `fetchEquities`, closed.** v3.71's "honest
+  limits" section named this at full weight rather than bundling it: `fetchEquities` recorded
+  its group status `ok:true` one line before throwing on zero quotes, so `_diag.sources` read
+  `finnhub quotes ok:true` on a build whose equities fetch produced nothing — "healthy"
+  asserted by the same function about to report an empty result. The record is now EARNED:
+  at least one quote → `ok:true` with the real counts; zero quotes → the failure is RECORDED
+  (`succeeded:0`, `error_class no_observation`, the failed symbols named) *before* the throw,
+  so "all failed" and "never ran" stay different facts and neither reads as ok. The
+  `withLastGood` → mock ladder is unchanged. `fetchEquities` is exported solely for smoke
+  (the `validateBook` precedent), because the defect is an ORDERING between a record and a
+  throw — a string pin cannot prove one; the suite stubs `fetch` (still no-network) and RUNS
+  both the all-fail path and a healthy control. Negative-controlled: restoring the old
+  ordering turns exactly the 3 new all-fail assertions red.
+  Tests: **1588 smoke** (+4) + 248 render + 152 public-render + `audit:prod` clean — all four
+  gates run via `npm run gates`, browser suites in real Chromium.
 - **v3.99.1 — owner-corrected FOMC dates, the odds stop lying, and the Kalshi key path.**
   Owner confirmed the calendar and **corrected two of my asserted dates** (Nov 4 → **Oct 28**,
   Dec 16 → **Dec 9**); Sep 16 — the date driving the live countdown — was right. Both

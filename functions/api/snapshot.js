@@ -1135,7 +1135,9 @@ async function fetchRateOdds(env, statuses = null) {
 // invariant holds, nothing breaks). Prices go live; Mag 10 FUNDAMENTALS stay curated.
 // NOTE (deploy): set env.FINNHUB_KEY in Pages Settings, and verify it isn't edge-IP
 // blocked the way Stooq was (key-authed REST APIs usually pass; swap to Twelve Data if not).
-async function fetchEquities(env, statuses = null) {
+// Exported solely for smoke (the validateBook precedent): the group-status ordering below
+// is a claim about a failure path, and a string pin cannot prove one.
+export async function fetchEquities(env, statuses = null) {
   const key = env.FINNHUB_KEY;
   if (!key) throw new Error("FINNHUB_KEY not set");
   const MAG10 = ["NVDA", "GOOGL", "AAPL", "MSFT", "AVGO", "AMZN", "META", "PLTR", "TSLA"];
@@ -1158,9 +1160,19 @@ async function fetchEquities(env, statuses = null) {
       else { failed.push(batch[j]); recordStatus(statuses, "finnhub", batch[j], r.reason); }
     });
   }
+  // ENGINE0-CONT (v3.71) filed limit, closed: this group record used to be pushed
+  // unconditionally ONE LINE before the zero-quote throw, so _diag.sources read
+  // `finnhub quotes ok:true` on a build whose equities fetch produced nothing. ok is
+  // earned by at least one quote; a total failure records itself as one — "all failed"
+  // and "never ran" are different facts, and neither is "healthy".
+  if (!Object.keys(quotes).length) {
+    const err = Object.assign(new Error("equities: no quotes"), { error_class: "no_observation" });
+    recordStatus(statuses, "finnhub", "quotes", err,
+      { requested: symbols.length, succeeded: 0, failed_symbols: failed.length ? failed : undefined });
+    throw err;
+  }
   recordStatus(statuses, "finnhub", "quotes", true,
     { requested: symbols.length, succeeded: Object.keys(quotes).length, failed_symbols: failed.length ? failed : undefined });
-  if (!Object.keys(quotes).length) throw new Error("equities: no quotes");
   const asOf = new Date().toLocaleDateString("en-CA", { timeZone: "America/New_York" });
   const out = {};
   if (quotes.QQQ) {

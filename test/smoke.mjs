@@ -36,7 +36,8 @@ import { mergeOcrExtractions, onRequestPost as postStreetOcr } from "../function
 import { onRequestGet as getTickerFacts, onRequestPost as postTickerFacts, nasdaqCandlesFact, quoteFact } from "../functions/api/ticker-facts.js";
 import { onRequestPost as postTickerAnalysis, riskTierForBookEntry } from "../functions/api/ticker-analysis.js";
 import { plausible, applyBands, quorum, QUORUM_FIELDS, QUORUM_MIN, marketSession, BANDS,
-  pairRs, parseTreasuryCsv, rateOddsStillOpen, chooseTtl, publishIfNoWorse, TTL_MEDIUM, TTL_LOW } from "../functions/api/snapshot.js";
+  pairRs, parseTreasuryCsv, rateOddsStillOpen, chooseTtl, publishIfNoWorse, TTL_MEDIUM, TTL_LOW,
+  fetchEquities } from "../functions/api/snapshot.js";
 import { etYmd } from "../src/sources.js";
 // UI-OVERHAUL Slice 1 (task 1.1): tokens are a real module now — smoke IMPORTS it (the v3.60
 // convention: the actual export is tested, immune to formatting drift) instead of regexing
@@ -6935,6 +6936,40 @@ console.log("\n[65] v3.99 — Fed target range, curated FOMC calendar, Kalshi of
   ok("fed: SourceBox can actually shrink — nowrap+ellipsis is inert without a min-width floor",
     /minWidth:0, maxWidth:"100%"/.test(sbSrc) && /whiteSpace:"nowrap", minWidth:0/.test(sbSrc) &&
     /title=\{endpoint\}/.test(sbSrc));
+}
+
+// ---- 66. v3.99.2 — fetchEquities group status: ok is EARNED, never asserted before the throw
+// The ENGINE0-CONT (v3.71) entry filed this in its own "honest limits" section: the group
+// summary was recorded ok:true one line before the zero-quote throw, so _diag.sources read
+// `finnhub quotes ok:true` on a build whose equities fetch entirely failed. Run, not pinned:
+// the defect is an ORDERING between a record and a throw, which a string pin cannot prove.
+// The fetch is stubbed (this suite is no-network); fetchRetry's retry ladder is never
+// entered because the stub returns HTTP-ok bodies whose quotes fail the parse gate.
+console.log("\n[66] v3.99.2 — fetchEquities group status on the zero-quote path");
+{
+  const realFetch = globalThis.fetch;
+  try {
+    // All ten symbols return an unusable quote (c:0 fails the price>0 gate, no retry).
+    globalThis.fetch = async () => ({ ok: true, json: async () => ({ c: 0 }) });
+    const st = []; let threw = null;
+    try { await fetchEquities({ FINNHUB_KEY: "k" }, st); } catch (e) { threw = e; }
+    const group = st.filter((s) => s.item === "quotes");
+    ok("equities all-fail: still throws 'no quotes' (the withLastGood/mock ladder is unchanged)",
+      !!threw && /no quotes/.test(threw.message) && threw.error_class === "no_observation");
+    ok("equities all-fail: NO ok:true group record — _diag must never read healthy on a build that produced nothing",
+      !group.some((s) => s.ok === true));
+    ok("equities all-fail: the failure IS recorded, with counts — 'all failed' and 'never ran' are different facts",
+      group.length === 1 && group[0].ok === false && group[0].succeeded === 0 &&
+      group[0].error_class === "no_observation" &&
+      Array.isArray(group[0].failed_symbols) && group[0].failed_symbols.length === 10);
+    // Positive control: a healthy pull still earns its ok:true with the real counts.
+    globalThis.fetch = async () => ({ ok: true, json: async () => ({ c: 123.45, dp: 1.2 }) });
+    const st2 = [];
+    const out = await fetchEquities({ FINNHUB_KEY: "k" }, st2);
+    const g2 = st2.filter((s) => s.item === "quotes");
+    ok("equities control: a successful pull records ok:true with succeeded=10 and emits QQQ",
+      g2.length === 1 && g2[0].ok === true && g2[0].succeeded === 10 && out.qqqPrice === 123.45);
+  } finally { globalThis.fetch = realFetch; }
 }
 
 console.log(`\n=== SMOKE TEST: ${pass} passed, ${fail} failed ===`);
