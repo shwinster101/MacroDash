@@ -2875,6 +2875,57 @@ Jan-anchor shipped; see `snapshot.js` ~318–328), `spyMa100`, `spyMa200`, and a
   VALUATION GAP ranking (§11.1 — the ranking always renders, which is the owner's actual
   "always an output" contract, and it was never suspended). Tests: 1223 smoke (+2) + 199
   render (+1).
+- **v3.99.0 — the Fed label defect, and taking the FOMC date off Kalshi's critical path.**
+  Owner question ("is the fed rate and CPI the latest?") turned into two findings and a real
+  diagnosis. **CPI is fine** — 3.5% headline / 2.8% core observed `2026-07-01` is the July
+  print, the latest published. **The Fed number was mislabelled.** The tile led with FEDFUNDS
+  under the heading "Fed Funds Rate", which every reader takes for the policy rate — but
+  FEDFUNDS is the monthly AVERAGE of the EFFECTIVE rate: period-stamped at month start,
+  published in the first week of the following month, and structurally incapable of moving on
+  a decision day. The morning after a cut it would still print last month's average, correctly
+  badged LIVE. **`DFEDTARU`/`DFEDTARL`** — the Fed's own DAILY target-range bounds, which step
+  the moment the FOMC acts — are now the headline where live, with the effective average kept
+  and LABELLED (*"effective 3.63% · FEDFUNDS monthly avg, lags a decision"*); a dead range feed
+  falls back to the effective rate and SAYS the range is not live. They are deliberately
+  daily-cadence and NOT `DERIVED_OF: fedFunds`: inheriting the monthly series' staleness would
+  defeat the entire point.
+  **The Kalshi "outage" is a rate limit, and it was costing three things.** `?debug=1` on the
+  deployed readout: `rateOdds: "Error: HTTP 429"`, **429 on BOTH transport bases** — so the
+  ENGINE0-CONT ladder cannot help (both names front the same limiter, and unauthenticated
+  calls from shared Cloudflare edge IPs share a bucket — the Stooq lesson again). The damage
+  was disproportionate: the meeting DATE and `fed_next_meeting` (a `/readout.json` health
+  input, contributing to `can_gate:false`) rode on the same fetch as the odds, and with Kalshi
+  dark the strip fell back to **`MOCK_DATA.nextFOMC`, hardcoded `2026-06-17`, expired two
+  months earlier** — rendering `FOMC —`. Three failures from one upstream, two of which had no
+  business depending on it.
+  **`FOMC_MEETINGS` + `nextFomcDate()` in `src/sources.js`** fix that structurally: the Fed
+  publishes the schedule a year ahead and it does not change intraday, so **curating it beats
+  fetching it** — a scrape would add a network dependency, a parser and a rate limit to a value
+  that changes eight times a year. Same shape as `MARKET_HOLIDAYS`. A live Kalshi strike date
+  still WINS (it is the market's own reference for the odds beside it, so the two can never
+  describe different meetings) and the tile NAMES which answered — *"published Fed calendar"*
+  vs *"market strike date"*. Past the end of the table it returns **null**, never an
+  extrapolated date: a guessed meeting would feed both a countdown and an Engine 0 gate.
+  **On the requested backups, honestly:** Nasdaq, CNBC and Bloomberg publish no free FOMC
+  probability data (CME FedWatch is the canonical source and is a licensed JS app), so **there
+  is no drop-in backup for the ODDS** — what this release does instead is make everything
+  except the odds independent of Kalshi, so the 429 now costs one number rather than the date,
+  the countdown and a gate input. The Fed's own channels serve the two pieces that matter: the
+  published calendar (curated) and the target range (FRED, already on rails reporting `ok:75`).
+  Neither could be network-verified from this build environment — federalreserve.gov,
+  nasdaq, cnbc, bloomberg, FRED and Kalshi are all 403 at the proxy here — so the calendar
+  dates are **ASSERTED and flagged for owner confirmation**, and carry an **EXPIRY TRIPWIRE**:
+  smoke goes RED once under 90 days of runway remain, because a comment asking for an annual
+  update is exactly what rotted the value this replaces.
+  Also found by the 320px contract while wiring it: `SourceBox` had `nowrap` + ellipsis but no
+  min-width floor, so a longer endpoint string took its content width and pushed the page to
+  357px instead of truncating — the ellipsis could never engage. Fixed generally.
+  Tests: **1575 smoke** (+12: the calendar's shape/ordering/null-past-the-end, `nextFomcDate`
+  executed across the decision-day boundary, the expiry tripwire, the market-wins-then-calendar
+  fallthrough, both tile states, the daily-vs-monthly cadence split, and the SourceBox floor) +
+  248 render + **150 public-render** (+6: the target range driven live at 1280px, the effective
+  average labelled, the countdown rendering with Kalshi entirely absent, the strip's dash gone,
+  and the dead-range fallback).
 - **v3.98.4 — the Power read-through: three more surfaces that asserted a state they never
   checked.** v3.98.3 covered the hero and Drivers; this drove **Markets · Macro · AI · Data
   Health** in Chromium across three data states (full-live, degraded with a stale 10Y and a

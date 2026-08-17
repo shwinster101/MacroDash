@@ -11,18 +11,44 @@ import SourceBox, { DataModeBadge } from "../primitives/SourceBox.jsx";
 import { ILLUS_HATCH, IllustrativeChip, isIllustrative } from "../primitives/Illustrative.jsx";
 import { SAHM_TRIGGER } from "../sahm.js";
 
-const MacroRegime=({d,modeOf,asOfOf,fomcDays})=>{
+const MacroRegime=({d,modeOf,asOfOf,fomcDays,fomcSource=null})=>{
   if(!d||typeof modeOf!=="function")return <div aria-hidden="true"/>;
   return(
             <div style={{background:T.surface,border:`1px solid ${T.border}`,borderRadius:6,padding:"14px 16px"}}>
               <SectionHeader>Macro Regime</SectionHeader>
               <div style={{display:"flex",flexDirection:"column",gap:10}}>
                 {/* Fed */}
-                <div style={{display:"flex",justifyContent:"space-between",alignItems:"baseline",paddingBottom:8,borderBottom:`1px solid ${T.border}`}}>
-                  <div>
-                    <Label>Fed Funds Rate</Label>
-                    <div style={{fontFamily:T.fontMono,fontSize:22,color:T.amber,fontWeight:700}}>{d.macro.fedFunds.rate}%</div>
-                    <div style={{fontFamily:T.fontMono,fontSize:9,color:fomcDays===0?T.amber:T.textMuted}}>{fomcDays==null?"Next FOMC — awaiting schedule":fomcDays===0?"FOMC decision today":`Next FOMC in ${fomcDays} day${fomcDays===1?"":"s"}`}</div>
+                <div style={{display:"flex",justifyContent:"space-between",alignItems:"baseline",gap:8,paddingBottom:8,borderBottom:`1px solid ${T.border}`,flexWrap:"wrap"}}>
+                  <div style={{minWidth:0}}>
+                    {/* v3.99 — the label defect: this tile led with FEDFUNDS, the monthly
+                        AVERAGE of the EFFECTIVE rate, under the heading "Fed Funds Rate",
+                        which every reader takes for the policy rate. It is period-stamped at
+                        month start and cannot move on a decision day, so on the morning after
+                        a cut it would still print the old month's average. The Fed's own DAILY
+                        target range (DFEDTARU/DFEDTARL) is now the headline where it is live;
+                        the effective average keeps its place, labelled for what it is. */}
+                    {(() => {
+                      const lo=d.macro.fedFunds.targetLower, hi=d.macro.fedFunds.targetUpper;
+                      const tgtMode=modeOf('fedTargetUpper');
+                      const haveTgt=Number.isFinite(lo)&&Number.isFinite(hi)&&!isIllustrative(tgtMode);
+                      return(<>
+                        <Label>{haveTgt?"Fed Target Range":"Fed Funds (effective avg)"}</Label>
+                        <div style={{fontFamily:T.fontMono,fontSize:22,color:T.amber,fontWeight:700}}>
+                          {haveTgt?`${lo.toFixed(2)}–${hi.toFixed(2)}%`:`${d.macro.fedFunds.rate}%`}
+                        </div>
+                        <div style={{fontFamily:T.fontMono,fontSize:8,color:T.textMuted}}>
+                          {haveTgt
+                            ? `effective ${d.macro.fedFunds.rate}% · FEDFUNDS monthly avg, lags a decision`
+                            : "FEDFUNDS monthly average — lags a decision; target range not live"}
+                        </div>
+                      </>);
+                    })()}
+                    {/* The countdown's own provenance: a curated-calendar date is a different
+                        claim from the market's own strike date, and the tile says which. */}
+                    <div style={{fontFamily:T.fontMono,fontSize:9,color:fomcDays===0?T.amber:T.textMuted}}>
+                      {fomcDays==null?"Next FOMC — awaiting schedule":fomcDays===0?"FOMC decision today":`Next FOMC in ${fomcDays} day${fomcDays===1?"":"s"}`}
+                      {fomcSource&&fomcDays!=null&&<span style={{color:T.textMuted}}> · {fomcSource==="calendar"?"published Fed calendar":"market strike date"}</span>}
+                    </div>
                     {/* Next-FOMC decision odds (Kalshi prediction market) */}
                     <div style={{display:"flex",gap:6,marginTop:4,flexWrap:"wrap",alignItems:"baseline"}}>
                       <span style={{fontFamily:T.fontMono,fontSize:7,color:T.textMuted,letterSpacing:"0.08em"}}>NEXT-MTG</span>
@@ -32,7 +58,7 @@ const MacroRegime=({d,modeOf,asOfOf,fomcDays})=>{
                       <span style={{fontFamily:T.fontMono,fontSize:7,color:T.textMuted,border:`1px dashed ${T.border}`,borderRadius:2,padding:"0 3px"}}>Kalshi · {modeOf('rateOddsHold').toLowerCase()}</span>
                     </div>
                   </div>
-                  <SourceBox api="FRED" endpoint="FEDFUNDS · odds: Kalshi" mode={modeOf('fedFunds')} asOf={asOfOf('fedFunds')}/>
+                  <SourceBox api="FRED" endpoint="DFEDTARU/L target · FEDFUNDS eff · Kalshi odds" mode={modeOf('fedFunds')} asOf={asOfOf('fedFunds')}/>
                 </div>
                 {/* CPI */}
                 <div style={{paddingBottom:8,borderBottom:`1px solid ${T.border}`}}>

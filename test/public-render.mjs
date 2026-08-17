@@ -98,6 +98,8 @@ const FULL_LIVE = {
   fearGreed: 62, fearGreedAsOf: TODAY, fearGreedLabel: "Greed",
   cpiHeadline: 2.4, cpiHeadlineAsOf: daysAgo(20), cpiTrend: [3.1, 2.9, 2.8, 2.7, 2.6, 2.4],
   fedFunds: 3.63, fedFundsAsOf: daysAgo(20),
+  // v3.99: the Fed's DAILY target-range bounds — the tile's headline when live.
+  fedTargetUpper: 3.75, fedTargetUpperAsOf: TODAY, fedTargetLower: 3.50, fedTargetLowerAsOf: TODAY,
   nfci: -0.62, nfciAsOf: daysAgo(4),
   shillerPe: 31.2, shillerPeAsOf: daysAgo(20),
   // v3.84 (non-voting): the CCC junk tail + Sahm + 10y–3m, live-dated so the tiles render
@@ -611,6 +613,50 @@ console.log("\n[public] v3.98.4 — token trend withheld on mock, strip marker i
   ok("v3.98.4: the CPI box now dates itself — no LIVE badge without an observation date",
     /CPIAUCSL \+ CPILFESL/.test(macro) && /as of/i.test(macro));
   ok("v3.98.4: no page errors through the degraded read-through", errors.length === 0);
+  await page.close();
+}
+
+// ── v3.99 — the Fed tile leads with the TARGET RANGE; the countdown survives Kalshi ──
+console.log("\n[public] v3.99 — Fed target range + curated FOMC countdown");
+{
+  // No Kalshi fields at all — exactly today's production shape (HTTP 429 on both bases).
+  const { page, errors } = await open({ live: FULL_LIVE, width: 1280 });
+  await page.waitForTimeout(1300);
+  for (let i = 0; i < 14; i++) {
+    const b = page.locator('button.cg-toggle[aria-expanded="false"]').first();
+    if (await b.count() === 0) break;
+    await b.click().catch(() => {}); await page.waitForTimeout(100);
+  }
+  const macro = await page.locator('section[aria-labelledby="macro"]').innerText();
+  ok("v3.99: the tile leads with the Fed TARGET RANGE, not the lagging monthly average",
+    /Fed Target Range/i.test(macro) && /3\.50–3\.75%/.test(macro));
+  ok("v3.99: the effective average survives, LABELLED as the lagging series it is",
+    /effective 3\.63%/.test(macro) && /lags a decision/i.test(macro));
+  ok("v3.99: with Kalshi absent the countdown still renders, off the published Fed calendar",
+    /Next FOMC in \d+ days?/.test(macro) && /published Fed calendar/.test(macro) &&
+    !/awaiting schedule/.test(macro));
+  const strip = await page.locator(".macro-strip").innerText();
+  ok("v3.99: the strip's FOMC countdown is no longer a dash",
+    /FOMC \d+d|FOMC today/.test(strip) && !/FOMC —/.test(strip));
+  ok("v3.99: no page errors", errors.length === 0);
+  await page.close();
+}
+{
+  // Target range dead (FEDFUNDS still live): the tile must fall back AND say the range is dark.
+  const noTgt = { ...FULL_LIVE };
+  delete noTgt.fedTargetUpper; delete noTgt.fedTargetUpperAsOf;
+  delete noTgt.fedTargetLower; delete noTgt.fedTargetLowerAsOf;
+  const { page } = await open({ live: noTgt, width: 1280 });
+  await page.waitForTimeout(1300);
+  for (let i = 0; i < 14; i++) {
+    const b = page.locator('button.cg-toggle[aria-expanded="false"]').first();
+    if (await b.count() === 0) break;
+    await b.click().catch(() => {}); await page.waitForTimeout(100);
+  }
+  const macro = await page.locator('section[aria-labelledby="macro"]').innerText();
+  ok("v3.99: a dead target-range feed falls back to the effective rate and SAYS the range is not live",
+    /Fed Funds \(effective avg\)/i.test(macro) && /target range not live/i.test(macro) &&
+    !/3\.50–3\.75%/.test(macro));
   await page.close();
 }
 

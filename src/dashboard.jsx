@@ -5,7 +5,7 @@ import { computeFiveWhys } from "./fiveWhys.js"; // v2.5: rule-based 5 Whys ($0,
 import { NFCI_TIGHT, NFCI_LOOSE, REGIME_BAND_TABLE, REGIME_QUORUM, verdictFrom, computeRegime, flipConditions, regimeFactors, voteStyle } from "./regime.js"; // C1 (v3.60): the extracted engine; voteStyle = FEAT-NEUTRAL (v3.62)
 import { buildEvidenceSet, factorExclusions, fieldMode, FACTOR_FIELD } from "./evidence.js"; // C1 (v3.60): the typed contract
 import { LASTVALID_KEY, summarizeEvidence, compareEvidence } from "./whatChanged.js"; // C4 (v3.60)
-import { isStale, cadenceOf, parseObsDate, isMarketHoliday } from "./sources.js"; // FEAT-R3: per-tile, cadence-aware staleness + shared market calendar
+import { isStale, cadenceOf, parseObsDate, isMarketHoliday, nextFomcDate } from "./sources.js"; // FEAT-R3: per-tile, cadence-aware staleness + shared market calendar; v3.99: curated FOMC calendar
 import { computeMacroFlip, buildTtReadout, formatTtPaste } from "./ttReadout.js"; // FEAT-331/332: Macro Flip + TT paste
 import { fmt, pctColor } from "./format.js"; // task 1.3/3.1: one shared copy
 import RegimeBand, { WITHHELD_LABEL, WEN_MOON_STATES } from "./sections/RegimeBand.jsx"; // task 1.3: the verdict band + its vocabulary
@@ -85,7 +85,12 @@ const MOCK_DATA = {
     btc:{         current:109200,d1pct:+1.2, w1pct:+4.8, m1pct:+12.1,yellowBand:2.0, series:[88000,90000,92000,95000,98000,100000,104000,106000,108000,109200] },
   },
   macro:{
-    fedFunds:{ rate:3.625, nextFOMC:"2026-06-17", daysUntil:14, odds:{ hold:84, cut:13, hike:3 } }, // odds: Kalshi FOMC market — LIVE since v2.6.3 (fetchRateOdds); these are the mock baseline only
+    // v3.99: targetLower/Upper are the DAILY Fed target range (DFEDTARU/DFEDTARL) — the
+    // headline number; `rate` is FEDFUNDS, the monthly-averaged EFFECTIVE rate, which lags a
+    // decision by design. `nextFOMC` here is the mock baseline ONLY and WILL expire — the
+    // real countdown falls through to the curated FOMC_MEETINGS calendar in sources.js, which
+    // is precisely why a rotted date can no longer reach the strip.
+    fedFunds:{ rate:3.625, targetLower:3.50, targetUpper:3.75, nextFOMC:"2026-06-17", daysUntil:14, odds:{ hold:84, cut:13, hike:3 } }, // odds: Kalshi FOMC market — LIVE since v2.6.3 (fetchRateOdds); these are the mock baseline only
     cpi:{ headline:3.8, core:2.8, nextRelease:"2026-06-11", trend:[3.2,3.4,3.5,3.6,3.7,3.8] },
     pce:{ headline:3.1, core:2.9, nextRelease:"2026-06-26", trend:[2.6,2.7,2.8,2.9,3.0,3.1] }, // Fed's preferred inflation gauge (FRED PCEPI/PCEPILFE — mock until YoY wired)
     // sahm 0.13 = deliberately CLEAR (trigger is >= 0.50) — the demo abstains, never a verdict.
@@ -468,7 +473,26 @@ export default function Dashboard({ publicView = false } = {}) {
   // FEAT-SNAP-UX: a PAST nextFOMC date (stale mock/snapshot) must read as unknown (null),
   // not clamp to 0 — the old Math.max(0,…) rendered "FOMC decision today" forever once the
   // baked-in meeting date went by.
-  const fomcDays=(()=>{const nx=d.macro.fedFunds.nextFOMC;const dt=nx?parseObsDate(nx):null;if(!dt||isNaN(dt.getTime()))return d.macro.fedFunds.daysUntil;const t=new Date();t.setHours(0,0,0,0);const days=Math.round((dt-t)/86400000);return days<0?null:days;})();
+  /* v3.99: the meeting DATE no longer rides on Kalshi. A live Kalshi strike_date still wins
+     (it is the market's own reference for the odds beside it, so the two can never describe
+     different meetings), but a dead/rate-limited feed now falls through to the CURATED Fed
+     calendar instead of to MOCK_DATA's hardcoded date — which had expired and rendered
+     "FOMC —" for two months. `fomcSource` records which one answered: a date is only as
+     good as its provenance, and the tile says so. */
+  const fomcPick=(()=>{
+    const live=d.macro.fedFunds.nextFOMC;
+    const lv=live?parseObsDate(live):null;
+    const t=new Date(); t.setHours(0,0,0,0);
+    // "live" here means the field genuinely came from the market feed, not the mock
+    // baseline — provenance is read directly because modeOf is declared below.
+    const pv=(provenance&&provenance.nextFomcDate)||"MOCK";
+    if(lv&&!isNaN(lv.getTime())&&(lv-t)>=0&&(pv==="LIVE"||pv==="CACHED")) return {date:lv, src:"market"};
+    const cur=nextFomcDate();
+    const cd=cur?parseObsDate(cur):null;
+    return (cd&&!isNaN(cd.getTime())) ? {date:cd, src:"calendar"} : {date:null, src:null};
+  })();
+  const fomcSource=fomcPick.src;
+  const fomcDays=(()=>{const dt=fomcPick.date;if(!dt)return null;const t=new Date();t.setHours(0,0,0,0);const days=Math.round((dt-t)/86400000);return days<0?null:days;})();
   const fomcLabel=fomcDays==null?"—":fomcDays===0?"today":`${fomcDays}d`;
   // C1 (v3.60): modeOf is now the SHARED fieldMode from evidence.js — the dashboard and the
   // EvidenceSet can never disagree about a field's freshness. Same rule, one home.
@@ -970,7 +994,7 @@ export default function Dashboard({ publicView = false } = {}) {
 
             {/* Macro Regime grid + Top Headwinds — extracted to src/sections/
                 MacroRegime.jsx + Headwinds.jsx (tasks 5.3/5.4), presentation only. */}
-            <MacroRegime d={d} modeOf={modeOf} asOfOf={asOfOf} fomcDays={fomcDays}/>
+            <MacroRegime d={d} modeOf={modeOf} asOfOf={asOfOf} fomcDays={fomcDays} fomcSource={fomcSource}/>
             <Headwinds d={d}/>
 
 

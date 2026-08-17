@@ -27,10 +27,14 @@ export const DataModeBadge = ({ mode }) => {
   );
 };
 const SourceBox = ({ api, endpoint, asOf, mode }) => (
-  <div style={{ display:"flex", alignItems:"center", gap:5, marginTop:6, flexWrap:"wrap" }}>
+  <div style={{ display:"flex", alignItems:"center", gap:5, marginTop:6, flexWrap:"wrap", minWidth:0, maxWidth:"100%" }}>
     {mode && <DataModeBadge mode={mode}/>}
     <span style={{ background:(apiColors[api]||T.border)+"22", color:apiColors[api]||T.textMuted, border:`1px solid ${(apiColors[api]||T.border)}44`, borderRadius:3, padding:"1px 5px", fontSize:9, fontFamily:T.fontMono, flexShrink:0 }}>{api}</span>
-    <span style={{ fontFamily:T.fontMono, fontSize:8, color:T.textMuted, overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" }}>{endpoint}</span>
+    {/* v3.99: `nowrap` + ellipsis only truncates once the box is ALLOWED to shrink — without
+        a min-width floor the flex item takes its content width and pushes the page wide
+        instead (a long endpoint string broke the 320px contract). minWidth:0 lets the
+        ellipsis do the job it was always written to do. */}
+    <span title={endpoint} style={{ fontFamily:T.fontMono, fontSize:8, color:T.textMuted, overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap", minWidth:0 }}>{endpoint}</span>
     {asOf && <span style={{ fontFamily:T.fontMono, fontSize:8, color:T.textMuted, flexShrink:0 }}>{asOf}</span>}
   </div>
 );

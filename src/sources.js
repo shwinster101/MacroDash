@@ -49,6 +49,10 @@ export const SOURCES = {
   spread10y3m:        { path: "crossAsset.term.spread10y3m",   kind: "num",    displayClass: "public" },
   spread10y3mSeries:  { path: "crossAsset.term.series10y3m",   kind: "series", displayClass: "public" },
   fedFunds:       { path: "macro.fedFunds.rate",            kind: "num",    displayClass: "public" },
+  // v3.99: the Fed's own DAILY target-range bounds (DFEDTARU/DFEDTARL). Daily cadence by
+  // default — unlike FEDFUNDS these step on a decision day, which is the whole point.
+  fedTargetUpper: { path: "macro.fedFunds.targetUpper",     kind: "num",    displayClass: "public" },
+  fedTargetLower: { path: "macro.fedFunds.targetLower",     kind: "num",    displayClass: "public" },
   unemployment:   { path: "macro.unemployment.national",    kind: "num",    displayClass: "public" },
   unemploymentTrend: { path: "macro.unemployment.trend",    kind: "series", displayClass: "public" },
   lfpr:           { path: "macro.unemployment.lfpr",        kind: "num",    displayClass: "public" },
@@ -340,6 +344,41 @@ export const MARKET_HOLIDAYS = new Set([
   "2027-12-24", // Christmas observed (Dec 25 = Saturday)
 ]);
 export function isMarketHoliday(dateStr) { return MARKET_HOLIDAYS.has(String(dateStr)); }
+
+/* ─── FOMC DECISION CALENDAR (v3.99) ─────────────────────────────────────────
+   WHY THIS IS CURATED, NOT FETCHED. The FOMC countdown and `nextFomcDate` rode
+   ENTIRELY on Kalshi, so when Kalshi rate-limited the edge (measured 2026-08-16:
+   HTTP 429 on BOTH transport bases — see the ladder in snapshot.js) the dashboard
+   lost the meeting DATE as well as the odds, `fed_next_meeting` became a MISSING
+   input in /readout.json's health block, and the strip fell back to MOCK_DATA's
+   hardcoded `nextFOMC` — which had silently expired two months earlier and rendered
+   "FOMC —". Three failures from one upstream, two of which had no business
+   depending on it.
+   The Fed publishes this schedule a year ahead and it does not change intraday, so
+   fetching it is strictly worse than curating it: a scrape adds a network dependency,
+   a parser and a rate limit to a value that changes eight times a year. Same call, and
+   the same shape, as MARKET_HOLIDAYS above.
+   Dates are the DECISION day (day 2 of each two-day meeting), ET.
+   ⚠ ASSERTED, NOT VERIFIED from this build environment — federalreserve.gov is blocked
+   here (403 at the proxy), so these were entered from the published 2026 schedule and
+   the OWNER should confirm them against federalreserve.gov/monetarypolicy/fomccalendars.htm.
+   ⚠ UPDATE ANNUALLY. Unlike MARKET_HOLIDAYS this does NOT quietly fail open: smoke has an
+   expiry tripwire that goes RED once the table has under 90 days of runway, so the update
+   is forced rather than hoped for — a rotted calendar is exactly the defect this replaces. */
+export const FOMC_MEETINGS = [
+  "2026-01-28", "2026-03-18", "2026-04-29", "2026-06-17",
+  "2026-07-29", "2026-09-16", "2026-11-04", "2026-12-16",
+];
+
+/* The next FOMC decision date at or after `now` (ET), or null when the table has run out.
+   NULL IS THE HONEST ANSWER past the end of the schedule — never an extrapolated date: a
+   guessed meeting date would feed a countdown and an Engine 0 gate input, and a confidently
+   wrong date there is worse than a stated gap (the isMacroMaterial withhold rule). */
+export function nextFomcDate(now = new Date()) {
+  const today = etYmd(now);
+  for (const d of FOMC_MEETINGS) if (d >= today) return d;
+  return null;
+}
 
 // FIX-A (v3.49, VALUE_PROPOSITION_AUDIT_2026-07-31 Critical #1): the ET calendar date of an
 // instant. Every time-judge in this stack reasons in "completed ET trading sessions", so

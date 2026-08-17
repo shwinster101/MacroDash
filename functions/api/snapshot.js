@@ -70,6 +70,10 @@ export const BANDS = {
   // an error, so the band must not exclude it (the negative-WTI rule).
   spread10s30s: [-10, 10],
   fedFunds:     [0, 25],
+  // v3.99: the Fed's own daily target-range bounds. Same band as the effective rate — the
+  // 1981 peak was ~20%; wide enough to reject the impossible, not the unusual.
+  fedTargetUpper: [0, 25],
+  fedTargetLower: [0, 25],
   mortgage30:   [0, 25],
   fearGreed:    [0, 100],      // index is defined 0-100
   spyPrice:     [1, 100000],
@@ -421,7 +425,16 @@ async function fetchFred(key, statuses = null) {
     // critical head (VIX/DGS10 first at concurrency 2) is untouched; the tail only delays
     // dashboard-grade fields, never the order-gating ones.
     threeMonth:   "DGS3MO",     // 3-month bill — the short leg of the 10y–3m recession lead
-    fedFunds:     "FEDFUNDS",
+    fedFunds:     "FEDFUNDS",   // ⚠ MONTHLY AVERAGE of the EFFECTIVE rate — NOT the target
+    /* v3.99 (owner call, read-through): the tile read "FED 3.63%", which any reader takes for
+       the policy rate. FEDFUNDS is the monthly-averaged EFFECTIVE rate: it is period-stamped
+       at month start, publishes in the first week of the following month, and cannot move on
+       a decision day. DFEDTARU/DFEDTARL are the Fed's own DAILY target-range bounds — they
+       step the moment the FOMC acts — so the target range becomes the headline number and
+       the effective average is labelled for what it is. Same FRED rails, two more series
+       (21 now = the tail batch grows by 2; the VIX/DGS10 critical head is untouched). */
+    fedTargetUpper: "DFEDTARU",
+    fedTargetLower: "DFEDTARL",
     cpiHeadline:  "CPIAUCSL",   // CPI index  → YoY % below
     cpiCore:      "CPILFESL",   // core CPI index → YoY %
     pceHeadline:  "PCEPI",      // PCE index  → YoY %  (Fed's preferred gauge)

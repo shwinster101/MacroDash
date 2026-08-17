@@ -343,11 +343,16 @@ const PRIMARY_ASOF_FIELDS = [
   // threeMonthAsOf; sahm copies the UNRATE observation date (computed, not derived — it
   // carries its OWN stamped AsOf, so it is primary for the partition).
   "creditTail", "threeMonth", "spread10y3m", "sahm",
+  // v3.99: the Fed's DAILY target-range bounds — each its own FRED pull, so each carries its
+  // own observation date. They are deliberately NOT derived from fedFunds: the whole reason
+  // they exist is that FEDFUNDS (monthly, lagging) CANNOT tell you today's policy rate, so
+  // inheriting its staleness would defeat the fix.
+  "fedTargetUpper", "fedTargetLower",
   "fearGreed", "marketHeadline", "shillerPe", "tokenBlendedMtok", "rateOddsHold",
   // v3.85: the volume leg carries its own AsOf (the dataset's own latest date).
   "tokenVolDay",
 ];
-ok("deriv: PRIMARY_ASOF_FIELDS + DERIVED_OF + DERIVED_EXEMPT partition ALL 72 SOURCES keys (reconciled, not hardcoded)", (() => {
+ok("deriv: PRIMARY_ASOF_FIELDS + DERIVED_OF + DERIVED_EXEMPT partition ALL 74 SOURCES keys (reconciled, not hardcoded)", (() => {
   const keys = Object.keys(SOURCES);
   const derivedKeys = Object.keys(DERIVED_OF);
   const inPrimary = (k) => PRIMARY_ASOF_FIELDS.includes(k);
@@ -4742,7 +4747,9 @@ ok("wave9: presentation only — none of the three sections imports computation 
   }));
 ok("wave9: the call sites hand over computed props (demotion rule, chart series, MA cross, FOMC)",
   /<MarketDetail d=\{d\} modeOf=\{modeOf\} asOfOf=\{asOfOf\} demoted=\{demoted\} spyData=\{spyData\} goldenCross=\{goldenCross\}\/>/.test(dashSrc) &&
-  /<MacroRegime d=\{d\} modeOf=\{modeOf\} asOfOf=\{asOfOf\} fomcDays=\{fomcDays\}\/>/.test(dashSrc) &&
+  // v3.99: the countdown's SOURCE travels with it — a curated-calendar date is a different
+  // claim from the market's own strike date, and the tile must be able to say which.
+  /<MacroRegime d=\{d\} modeOf=\{modeOf\} asOfOf=\{asOfOf\} fomcDays=\{fomcDays\} fomcSource=\{fomcSource\}\/>/.test(dashSrc) &&
   /<Headwinds d=\{d\}\/>/.test(dashSrc));
 ok("wave9: null-safety on all three (Property 9)",
   /if\(!d\|\|typeof modeOf!=="function"\|\|!Array\.isArray\(spyData\)\)return <div aria-hidden="true"\/>;/.test(mdSrc) &&
@@ -6827,6 +6834,62 @@ console.log("\n[64] v3.98.4 — Power read-through fixes (token trend, strip mar
     /endpoint="CPIAUCSL \+ CPILFESL" mode=\{modeOf\('cpiHeadline'\)\} asOf=\{asOfOf\('cpiHeadline'\)\}/.test(mrSrc));
   ok("v3.98.4: EVERY SourceBox in the macro grid passes an asOf — no LIVE badge without a date",
     (mrSrc.match(/<SourceBox /g) || []).length === (mrSrc.match(/<SourceBox [^>]*asOf=/g) || []).length);
+}
+
+
+// ═══════════ [65] v3.99 — the Fed label + the FOMC calendar off Kalshi's critical path ═══════════
+// Measured on the live 2026-08-16 build: Kalshi returned HTTP 429 on BOTH transport bases
+// (rate-limited, not down — shared Cloudflare edge IPs), which cost the dashboard the meeting
+// DATE and the readout's fed_next_meeting input as well as the odds, and dropped the strip
+// back to MOCK_DATA's hardcoded nextFOMC — expired two months earlier, rendering "FOMC —".
+console.log("\n[65] v3.99 — Fed target range, curated FOMC calendar, Kalshi off the critical path");
+{
+  const { FOMC_MEETINGS, nextFomcDate: nfd } = await import("../src/sources.js");
+  ok("fomc: the calendar is curated, ET-dated and strictly ascending (the MARKET_HOLIDAYS shape)",
+    Array.isArray(FOMC_MEETINGS) && FOMC_MEETINGS.length >= 8 &&
+    FOMC_MEETINGS.every((d) => /^\d{4}-\d{2}-\d{2}$/.test(d)) &&
+    FOMC_MEETINGS.every((d, i) => i === 0 || d > FOMC_MEETINGS[i - 1]));
+  ok("fomc: nextFomcDate returns the next meeting AT or after today, never a past one",
+    nfd(new Date("2026-08-17T12:00:00Z")) === "2026-09-16" &&
+    nfd(new Date("2026-09-16T12:00:00Z")) === "2026-09-16" &&   // decision day itself counts
+    nfd(new Date("2026-09-17T12:00:00Z")) === "2026-11-04");
+  ok("fomc: past the end of the table it returns NULL — a guessed meeting date would feed a countdown AND an Engine 0 gate",
+    nfd(new Date("2099-01-01T12:00:00Z")) === null);
+  /* THE EXPIRY TRIPWIRE. MARKET_HOLIDAYS carries only a comment asking for an annual update;
+     this table feeds a countdown and a gate input, so the reminder is a RED TEST instead. It
+     fires 90 days before the last meeting on file — enough runway to add next year's dates
+     calmly. If this is the failure you are reading: open
+     federalreserve.gov/monetarypolicy/fomccalendars.htm and extend FOMC_MEETINGS. */
+  ok("fomc: EXPIRY TRIPWIRE — the calendar has >90 days of runway (extend FOMC_MEETINGS if RED)",
+    (() => { const last = FOMC_MEETINGS[FOMC_MEETINGS.length - 1];
+      return (new Date(last + "T00:00:00Z") - Date.now()) / 86400000 > 90; })());
+  ok("fomc: the countdown prefers the MARKET's own strike date but falls through to the calendar",
+    /pv==="LIVE"\|\|pv==="CACHED"/.test(dashSrc) && /src:"market"/.test(dashSrc) &&
+    /nextFomcDate\(\)/.test(dashSrc) && /src:"calendar"/.test(dashSrc));
+  ok("fomc: the tile NAMES which source answered — a date is only as good as its provenance",
+    /published Fed calendar/.test(mrSrc) && /market strike date/.test(mrSrc));
+  // ── the Fed label ──
+  ok("fed: the DAILY target range (DFEDTARU/DFEDTARL) is pulled, banded and mapped",
+    snapSrc.includes('fedTargetUpper: "DFEDTARU"') && snapSrc.includes('fedTargetLower: "DFEDTARL"') &&
+    /fedTargetUpper: \[0, 25\]/.test(snapSrc) &&
+    SOURCES.fedTargetUpper.path === "macro.fedFunds.targetUpper" &&
+    SOURCES.fedTargetLower.path === "macro.fedFunds.targetLower");
+  ok("fed: the target range is DAILY-cadence — inheriting FEDFUNDS's monthly staleness would defeat the fix",
+    cadenceOf("fedTargetUpper") === "daily" && cadenceOf("fedFunds") === "monthly");
+  ok("fed: the headline is the TARGET RANGE when live, and the effective average is LABELLED as lagging",
+    /Fed Target Range/.test(mrSrc) && /Fed Funds \(effective avg\)/.test(mrSrc) &&
+    /FEDFUNDS monthly avg, lags a decision/.test(mrSrc));
+  ok("fed: with no live target range it falls back to the effective rate AND says the range is not live",
+    /target range not live/.test(mrSrc) && /!isIllustrative\(tgtMode\)/.test(mrSrc));
+  ok("fed: the source box names both series rather than crediting FEDFUNDS for the range",
+    /DFEDTARU\/L target · FEDFUNDS eff/.test(mrSrc));
+  /* Found by the 320px contract while wiring this: the longer endpoint string blew the page
+     to 357px. SourceBox HAD nowrap+ellipsis, but a flex item's default min-width is `auto`,
+     so it took its content width and pushed instead of truncating — the ellipsis could never
+     engage. The floor is the general fix; the next long endpoint cannot repeat it. */
+  ok("fed: SourceBox can actually shrink — nowrap+ellipsis is inert without a min-width floor",
+    /minWidth:0, maxWidth:"100%"/.test(sbSrc) && /whiteSpace:"nowrap", minWidth:0/.test(sbSrc) &&
+    /title=\{endpoint\}/.test(sbSrc));
 }
 
 console.log(`\n=== SMOKE TEST: ${pass} passed, ${fail} failed ===`);
