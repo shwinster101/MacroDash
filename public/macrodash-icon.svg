@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 180 180" role="img" aria-labelledby="title">
+  <title id="title">MacroDash M</title>
+  <rect width="180" height="180" rx="38" fill="#050505"/>
+  <rect x="2" y="2" width="176" height="176" rx="36" fill="none" stroke="#6f6f73" stroke-width="4"/>
+  <path fill="#f5f5f7" d="M43 132V48h14l33 52 33-52h14v84h-17V78l-30 46-30-46v54H43Z"/>
+</svg>

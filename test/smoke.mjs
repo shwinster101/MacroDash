@@ -3658,6 +3658,17 @@ console.log("\n[41] v3.61 — safe-area, first-glance density, newcomer-audit fi
 // so the wordmark rendered under the Dynamic Island. The comment at index.html:5 claimed
 // safe-area handling; these pins make the claim true and keep it true.
 const indexSrc = readFileSync(new URL("../index.html", import.meta.url), "utf8");
+const manifest = JSON.parse(readFileSync(new URL("../manifest.webmanifest", import.meta.url), "utf8"));
+ok("share: document and Open Graph titles use the canonical MacroDash - Stonks copy",
+  indexSrc.includes("<title>MacroDash - Stonks</title>") &&
+  indexSrc.includes('<meta property="og:title" content="MacroDash - Stonks" />') &&
+  indexSrc.includes('<meta name="twitter:title" content="MacroDash - Stonks" />'));
+ok("share: Messages has an explicit M icon instead of the Cloudflare Pages fallback",
+  indexSrc.includes('<link rel="icon" type="image/svg+xml" href="/macrodash-icon.svg" />') &&
+  indexSrc.includes('<link rel="apple-touch-icon" href="/macrodash-icon-180.png" />') &&
+  existsSync(new URL("../public/macrodash-icon.svg", import.meta.url)) &&
+  manifest.icons.some(({src, type}) => src === "/macrodash-icon.svg" && type === "image/svg+xml") &&
+  manifest.icons.some(({src, type}) => src === "/macrodash-icon-180.png" && type === "image/png"));
 ok("glance: index.html still ships viewport-fit=cover (the env() half depends on it)",
   /viewport-fit=cover/.test(indexSrc));
 ok("glance: the header pads for the island — calc(8px + env(safe-area-inset-top))",
