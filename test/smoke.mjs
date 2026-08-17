@@ -48,34 +48,45 @@ import { fmt } from "../src/format.js"; // task 1.3: shared format helpers, test
 let pass = 0, fail = 0;
 const ok = (name, cond) => { if (cond) { pass++; console.log("  PASS  " + name); } else { fail++; console.log("  FAIL  " + name); } };
 
+/* P0 (v3.99.4, codex ambiguity review): every source lift is normalized to LF. Several lifts
+   locate their block with an LF-sensitive indexOf ("MAG_BASKET=null;\n  {" in [58]), and a
+   CRLF checkout (Windows, core.autocrlf=true) made the search return -1 — two FAILs and then
+   a TypeError that killed the suite MID-RUN, so the gate crashed on line endings before it
+   ever evaluated behavior (reproduced 2026-08-17 by CRLF-converting admin.html: the suite
+   died without printing its total). .gitattributes now pins the checkout to LF; this helper
+   is the belt to that suspender, so the suite is correct on any checkout rather than
+   dependent on a git setting. node_modules reads stay raw readFileSync — npm writes those,
+   git never converts them. */
+const readSrc = (p) => readFileSync(new URL(p, import.meta.url), "utf8").replace(/\r\n/g, "\n");
+
 // Load real MOCK_DATA from dashboard.jsx (catches sources.js <-> dashboard drift).
-const dashSrc = readFileSync(new URL("../src/dashboard.jsx", import.meta.url), "utf8");
-const regimeSrc = readFileSync(new URL("../src/regime.js", import.meta.url), "utf8"); // C1 (v3.60)
+const dashSrc = readSrc("../src/dashboard.jsx");
+const regimeSrc = readSrc("../src/regime.js"); // C1 (v3.60)
 // UI-OVERHAUL task 1.3: the verdict band moved verbatim to its own module. Pins that
 // describe the BAND read bandSrc; pins whose contract spans both surfaces (a negative
 // that must hold everywhere, a vocabulary shared across files) read uiSrc.
-const bandSrc = readFileSync(new URL("../src/sections/RegimeBand.jsx", import.meta.url), "utf8");
+const bandSrc = readSrc("../src/sections/RegimeBand.jsx");
 // task 1.4: FiveWhys + the SourceBox/SectionHeader primitives moved out too.
-const whysSrc = readFileSync(new URL("../src/sections/FiveWhys.jsx", import.meta.url), "utf8");
-const sbSrc = readFileSync(new URL("../src/primitives/SourceBox.jsx", import.meta.url), "utf8");
-const shSrc = readFileSync(new URL("../src/primitives/SectionHeader.jsx", import.meta.url), "utf8");
+const whysSrc = readSrc("../src/sections/FiveWhys.jsx");
+const sbSrc = readSrc("../src/primitives/SourceBox.jsx");
+const shSrc = readSrc("../src/primitives/SectionHeader.jsx");
 // wave 5 (tasks 3.1-3.3): MacroStrip, SignalQuality, WhatChanged moved out too.
-const stripSrc = readFileSync(new URL("../src/sections/MacroStrip.jsx", import.meta.url), "utf8");
-const sqSrc = readFileSync(new URL("../src/sections/SignalQuality.jsx", import.meta.url), "utf8");
-const wcSrc = readFileSync(new URL("../src/sections/WhatChanged.jsx", import.meta.url), "utf8");
+const stripSrc = readSrc("../src/sections/MacroStrip.jsx");
+const sqSrc = readSrc("../src/sections/SignalQuality.jsx");
+const wcSrc = readSrc("../src/sections/WhatChanged.jsx");
 // wave 9 (tasks 5.2-5.4): MarketDetail, MacroRegime, Headwinds + the DirTile primitive.
-const mdSrc = readFileSync(new URL("../src/sections/MarketDetail.jsx", import.meta.url), "utf8");
-const mrSrc = readFileSync(new URL("../src/sections/MacroRegime.jsx", import.meta.url), "utf8");
-const hwSrc = readFileSync(new URL("../src/sections/Headwinds.jsx", import.meta.url), "utf8");
-const dtSrc = readFileSync(new URL("../src/primitives/DirTile.jsx", import.meta.url), "utf8");
+const mdSrc = readSrc("../src/sections/MarketDetail.jsx");
+const mrSrc = readSrc("../src/sections/MacroRegime.jsx");
+const hwSrc = readSrc("../src/sections/Headwinds.jsx");
+const dtSrc = readSrc("../src/primitives/DirTile.jsx");
 // wave 12 (tasks 7.1-7.4): AIUnitEconomics, Alerts, DataHealth, Watchlist + aiEcon.js.
-const aiSrc = readFileSync(new URL("../src/sections/AIUnitEconomics.jsx", import.meta.url), "utf8");
-const alSrc = readFileSync(new URL("../src/sections/Alerts.jsx", import.meta.url), "utf8");
-const dhSrc = readFileSync(new URL("../src/sections/DataHealth.jsx", import.meta.url), "utf8");
-const wlSrc = readFileSync(new URL("../src/sections/Watchlist.jsx", import.meta.url), "utf8");
-const aiEconSrc = readFileSync(new URL("../src/aiEcon.js", import.meta.url), "utf8");
-const navSrc = readFileSync(new URL("../src/sections/StickyNav.jsx", import.meta.url), "utf8"); // wave 15
-const spSrc = readFileSync(new URL("../src/sections/SharedPicks.jsx", import.meta.url), "utf8"); // v3.97
+const aiSrc = readSrc("../src/sections/AIUnitEconomics.jsx");
+const alSrc = readSrc("../src/sections/Alerts.jsx");
+const dhSrc = readSrc("../src/sections/DataHealth.jsx");
+const wlSrc = readSrc("../src/sections/Watchlist.jsx");
+const aiEconSrc = readSrc("../src/aiEcon.js");
+const navSrc = readSrc("../src/sections/StickyNav.jsx"); // wave 15
+const spSrc = readSrc("../src/sections/SharedPicks.jsx"); // v3.97
 const uiSrc = dashSrc + bandSrc + whysSrc + sbSrc + shSrc + stripSrc + sqSrc + wcSrc + mdSrc + mrSrc + hwSrc + dtSrc + aiSrc + alSrc + dhSrc + wlSrc + navSrc + spSrc;
 const _s = dashSrc.indexOf("const MOCK_DATA = {");
 let _i = dashSrc.indexOf("{", _s), _d = 0, _e = -1;
@@ -222,7 +233,7 @@ ok("5 Whys FIX-E: computeRegime's own counted/totalFactors govern the denominato
 ok("DEC-31: putCall absent from SOURCES", !("putCall" in SOURCES));
 ok("DEC-31: MOCK_DATA no longer carries marketPulse.putCall", MOCK_DATA.marketPulse.putCall === undefined);
 ok("DEC-31: dashboard.jsx has zero putCall references", !dashSrc.includes("putCall"));
-const snapSrc = readFileSync(new URL("../functions/api/snapshot.js", import.meta.url), "utf8");
+const snapSrc = readSrc("../functions/api/snapshot.js");
 ok("DEC-31: fetchPutCall scraper deleted from snapshot.js", !snapSrc.includes("putCall") && !snapSrc.includes("fetchPutCall"));
 ok("5 Whys: WHY #5 reads full-signal at 5/5", computeFiveWhys(MOCK_DATA, fwRegime).whys[4].includes("full-signal"));
 // FEAT-NEWS WHY #2: only LIVE+fresh fields appear; stale/mock are named as excluded
@@ -870,7 +881,7 @@ ok("kv-pin: salt-bound (same pin, different salt, different hash)", hp1 !== hp4)
 // Same technique as the DEC-31 guards on dashboard.jsx: admin.html has no bundler or
 // test harness of its own, so the load-bearing strings are pinned here.
 console.log("\n[8c] admin.html source guards (regime pill + ET stamping + stamp flow)");
-const adminSrc = readFileSync(new URL("../public/admin.html", import.meta.url), "utf8");
+const adminSrc = readSrc("../public/admin.html");
 ok("terminal: regime pill fetches /readout.json (Engine 0 wired)", adminSrc.includes('fetch("/readout.json"'));
 ok("terminal: all five verdict states mapped explicitly",
   ["TAILWIND", "NEUTRAL", "HEADWIND", "PANIC", "INSUFFICIENT"].every((v) => adminSrc.includes(v)));
@@ -1067,7 +1078,7 @@ ok("agree: disagreement renders as WAIT with blockers named, not a blended score
   adminSrc.includes("NEXT DOLLAR: WAIT") && adminSrc.includes("disagreement is information, not a discount"));
 // v3.26 FEAT-TT-FRAMEWORK: the methodology doc is PRIVATE — KV behind the PIN, never the
 // repo, because shwinster101/MacroDash is public and this is the owner's whole system.
-const fwSrc = readFileSync(new URL("../functions/api/framework.js", import.meta.url), "utf8");
+const fwSrc = readSrc("../functions/api/framework.js");
 ok("fw: read AND write both require auth (unlike prices, this content is secret)",
   (fwSrc.match(/const auth = await authorize\(request, env\);/g) || []).length === 2);
 ok("fw: separate KV key, not crammed into the book", fwSrc.includes('const KEY = "tt:framework:v1"'));
@@ -1167,7 +1178,7 @@ ok("mult: clearing the field REMOVES the floor instead of silently keeping the o
 ok("mult: editor offered on unranked names too (owner can opt one in)",
   (adminSrc.match(/multEditor\(sym,m\)/g) || []).length >= 2);
 // v3.24 FEAT-TT-LIVEPX: rank off the current price, fall back to the stamped mark.
-const quotesSrc = readFileSync(new URL("../functions/api/quotes.js", import.meta.url), "utf8");
+const quotesSrc = readSrc("../functions/api/quotes.js");
 ok("livepx: quotes endpoint reuses the /api/tt auth gate (guards the Finnhub quota)",
   quotesSrc.includes('import { authorize } from "./tt.js"') && quotesSrc.includes("if (!auth.ok)"));
 ok("livepx: FINNHUB_KEY never leaves the Function", quotesSrc.includes("env.FINNHUB_KEY") && !adminSrc.includes("finnhub"));
@@ -1287,7 +1298,7 @@ ok("sess: board rides the same PUT as the book and is validated there",
   typeof validateBook({ book: [], cut: [], board: { circuit: {} } }) === "string");
 ok("sess: a book PUT carrying NO board still passes (older clients / curl are not broken)",
   validateBook({ book: [], cut: [] }) === null);
-const ttSrc = readFileSync(new URL("../functions/api/tt.js", import.meta.url), "utf8");
+const ttSrc = readSrc("../functions/api/tt.js");
 ok("sess: an absent board is CARRIED FORWARD, not deleted — whole-book replace must not eat session state",
   ttSrc.includes("body.board === undefined ? prev?.board : body.board"));
 // Renderers — pinned at source (admin.html is buildless).
@@ -1566,10 +1577,10 @@ ok("dd: every hinge state still funnels through the green|amber|red|unknown tall
   adminSrc.includes("function hingeTally(dd)"));
 // The harness itself: buildless HTML needs a real browser, and it must not become a
 // dependency that breaks `npm test` on a machine without one.
-const renderSrc = readFileSync(new URL("./render.mjs", import.meta.url), "utf8");
+const renderSrc = readSrc("./render.mjs");
 ok("render: committed as a separate suite, not wired into npm test",
   existsSync(new URL("./render.mjs", import.meta.url)) &&
-  JSON.parse(readFileSync(new URL("../package.json", import.meta.url), "utf8")).scripts["test:ui"] === "node test/render.mjs");
+  JSON.parse(readSrc("../package.json")).scripts["test:ui"] === "node test/render.mjs");
 ok("render: skips cleanly (exit 0) when no browser or no playwright-core is present",
   renderSrc.includes("process.exit(0)") && renderSrc.includes("RENDER TEST: SKIPPED"));
 ok("render: an explicit browser path is validated, not trusted blindly",
@@ -1582,7 +1593,7 @@ ok("render: asserts at a phone width as well as desktop",
 
 // ---- 14. audit patches (v3.31.1) -------------------------------------------
 console.log("\n[14] audit — composite parsing, mark staleness, version drift");
-const PKG = JSON.parse(readFileSync(new URL("../package.json", import.meta.url), "utf8"));
+const PKG = JSON.parse(readSrc("../package.json"));
 // The terminal had THREE versions for one artifact: <title> v1.0, brand v1.1, package.json
 // v3.31. This repo already resolved exactly this drift once ("footer string is canonical /
 // package.json is stale"). admin.html is a Vite public/ passthrough and cannot receive
@@ -1714,7 +1725,7 @@ ok("tt.js: per-sym ledgers are capped, oldest pruned first",
 
 // functions/api/ledger.js: the read path. No write handler exists here on purpose — belief
 // history is a byproduct of book edits, never a thing edited directly.
-const ledgerSrc = readFileSync(new URL("../functions/api/ledger.js", import.meta.url), "utf8");
+const ledgerSrc = readSrc("../functions/api/ledger.js");
 ok("ledger.js: PIN-gated like /api/tt — belief history is as private as the book",
   (ledgerSrc.match(/const auth = await authorize\(request, env\);/g) || []).length === 2);
 // v3.54: this pin used to read "read-only by design — no PUT/POST handler exists" and PASSED
@@ -1739,7 +1750,7 @@ ok("ledger.js: backfilled px uses ref_px only when dated near the entry, else st
 // still missing it. functions/api/positions.js gives pos its own KV document, same fix
 // shape as the ledger. Structural guards only — like ledger.js, no mock-KV handler tests.
 console.log("\n[16] functions/api/positions.js — pos split out of the book");
-const posSrc = readFileSync(new URL("../functions/api/positions.js", import.meta.url), "utf8");
+const posSrc = readSrc("../functions/api/positions.js");
 ok("positions.js: PIN-gated like /api/tt — position data is at least as sensitive as the book",
   (posSrc.match(/const auth = await authorize\(request, env\);/g) || []).length === 3);
 ok("positions.js: reuses the shared validatePos from tt.js rather than redefining the bands",
@@ -2467,7 +2478,7 @@ ok("nfci: with 5 live voters the computed rule is IDENTICAL to the old constant 
   (() => { const need = (n) => { for (let v = 0; v <= n; v++) if (v > n / 2) return v; return null; };
            return need(5) === 3 && need(6) === 4 && need(3) === 2; })());
 ok("nfci: /readout.json is UNTOUCHED — the TT terminal's order-gating math did not move",
-  !readFileSync(new URL("../src/ttReadout.js", import.meta.url), "utf8").includes("nfci"));
+  !readSrc("../src/ttReadout.js").includes("nfci"));
 
 // ---- v3.43 curated cuts (owner-approved): gold · IPO · SpaceX · Mag-10 fundamentals -------
 // The rule applied is the one already in this file's history: "SPY P/E (mock, Yahoo-dupe) cut".
@@ -3094,10 +3105,10 @@ ok("quorum: the vote excludes anything that is not LIVE/CACHED when the build is
     return REGIME_FACTOR_FIELDS.every((k) => ex.has(k)) && ex.has("valuation") && ex.size === 6; })());
 ok("quorum: a pure DEMO build is unaffected — mock IS its baseline (run: zero exclusions)",
   factorExclusions({ provenance: {}, dataAsOf: {}, liveBuild: false }).size === 0 &&
-  readFileSync(new URL("../src/useMarketData.js", import.meta.url), "utf8").includes('const liveBuild = MODE === "live";'));
+  readSrc("../src/useMarketData.js").includes('const liveBuild = MODE === "live";'));
 // mode:"MOCK" is ambiguous between demo and failed-live; the hook now says which.
 ok("quorum: the wiring point exposes build INTENT so a failed live fetch is not read as demo",
-  (() => { const src = readFileSync(new URL("../src/useMarketData.js", import.meta.url), "utf8");
+  (() => { const src = readSrc("../src/useMarketData.js");
     return (src.match(/liveBuild/g) || []).length >= 4 && src.includes("loading: liveBuild"); })());
 // LOADING is not a verdict state.
 ok("quorum: LOADING withholds the posture outright rather than computing one from mock",
@@ -3156,8 +3167,8 @@ ok("a11y: focus styling uses :focus-visible, so a mouse click never paints a rin
 ok("a11y: the page has a document heading (it had no h1–h6 at all)",
   /<h1 className="visually-hidden">/.test(dashSrc) && /\.visually-hidden\{position:absolute/.test(dashSrc));
 // HTTP semantics: GET must be safe. Both of these WROTE.
-const ledgerSrc2 = readFileSync(new URL("../functions/api/ledger.js", import.meta.url), "utf8");
-const posSrc2 = readFileSync(new URL("../functions/api/positions.js", import.meta.url), "utf8");
+const ledgerSrc2 = readSrc("../functions/api/ledger.js");
+const posSrc2 = readSrc("../functions/api/positions.js");
 // The negative must be scoped to the GET path — the POST handler legitimately calls runSeed.
 const ledgerGet = ledgerSrc2.slice(0, ledgerSrc2.indexOf("export async function onRequestPost"));
 const posGet = posSrc2.slice(0, posSrc2.indexOf("export async function onRequestPost"));
@@ -3311,7 +3322,7 @@ ok("30y: a 5.24% long bond trips the 5.2% alert; 5.10% is clear",
 ok("30y: it does NOT vote — REGIME_BAND_TABLE is untouched and the readout math did not move",
   !/thirtyYear|spread10s30s/.test(dashSrc.slice(dashSrc.indexOf("const REGIME_BAND_TABLE"),
     dashSrc.indexOf("export function verdictFrom"))) &&
-  !/thirtyYear|spread10s30s/.test(readFileSync(new URL("../src/ttReadout.js", import.meta.url), "utf8")));
+  !/thirtyYear|spread10s30s/.test(readSrc("../src/ttReadout.js")));
 
 // ---- 33. the regime reference doc stays OUT of the public repo ------------
 // It leaked no book content, but CONSOLIDATION is itself the risk: one file describing the
@@ -3463,11 +3474,11 @@ ok("e2e: a genuinely non-numeric string (a note) is not mistaken for a mistyped 
 // the same "a label outliving its data" defect the Mag-10 footer had.
 ok("e2e: no comment still claims the Kalshi odds are unwired",
   !/live Kalshi wiring TODO/.test(dashSrc) &&
-  /fetchRateOdds/.test(readFileSync(new URL("../functions/api/snapshot.js", import.meta.url), "utf8")));
+  /fetchRateOdds/.test(readSrc("../functions/api/snapshot.js")));
 
 // (5) AMBIGUITY: three files, two body caps, no stated reason reads as an oversight.
 ok("e2e: the positions store's smaller cap is documented, not left to look accidental",
-  (() => { const src = readFileSync(new URL("../functions/api/positions.js", import.meta.url), "utf8");
+  (() => { const src = readSrc("../functions/api/positions.js");
     return /Deliberately 64KB, NOT the book's 300KB/.test(src); })());
 ok("e2e: the book cap and its client pre-flight mirror still agree",
   /const MAX_BODY = 300 \* 1024;/.test(ttSrc) && /const MAX_BODY=300\*1024;/.test(adminSrc));
@@ -3497,10 +3508,10 @@ ok("A2: the duplicate lowercase wordmark hides below 360px",
   /@media\(max-width:359px\)\{\.sub-wordmark\{display:none;\}\}/.test(dashSrc));
 // A3: browser suites fail rather than skip under CI's flag; both routes are covered.
 ok("A3: both browser suites honor REQUIRE_BROWSER=1 (skip becomes a failure)",
-  /REQUIRE_BROWSER === "1"/.test(readFileSync(new URL("../test/public-render.mjs", import.meta.url), "utf8")) &&
-  /REQUIRE_BROWSER === "1"/.test(readFileSync(new URL("../test/render.mjs", import.meta.url), "utf8")));
+  /REQUIRE_BROWSER === "1"/.test(readSrc("../test/public-render.mjs")) &&
+  /REQUIRE_BROWSER === "1"/.test(readSrc("../test/render.mjs")));
 ok("A3: the public suite actually visits the public route, not only the operator one",
-  /\/\?view=public/.test(readFileSync(new URL("../test/public-render.mjs", import.meta.url), "utf8")));
+  /\/\?view=public/.test(readSrc("../test/public-render.mjs")));
 // A4: the boundary is ENFORCED by the gate, not described by a comment.
 ok("A4: MY CONVICTION and Macro Alerts are gated behind !publicView",
   /\{!publicView&&!simple&&\(<section aria-label="Operator monitors — conviction and alerts">\s*\n\s*<Watchlist /.test(dashSrc) &&   // v3.94: + the Simple gate
@@ -3509,11 +3520,11 @@ ok("A4: the public footer NAMES the omission (a cut takes its attribution with i
   /operator view carries the curated watchlist and alert monitors/.test(dashSrc));
 // A5: production dependency surface is classified and checkable in one command.
 ok("A5: audit:prod script exists (measured clean at v3.58 — all 3 advisories are dev toolchain)",
-  /"audit:prod": "npm audit --omit=dev"/.test(readFileSync(new URL("../package.json", import.meta.url), "utf8")));
+  /"audit:prod": "npm audit --omit=dev"/.test(readSrc("../package.json")));
 
 // ---- 37. v3.59 follow-ups — ERROR mode, provenance vocabulary, security ----
 console.log("\n[37] v3.59 — ERROR is not demo, fresh is not live, debug needs a token");
-const hookSrc = readFileSync(new URL("../src/useMarketData.js", import.meta.url), "utf8");
+const hookSrc = readSrc("../src/useMarketData.js");
 // B1: a failed live fetch is ERROR, and MOCK means exactly one thing — a demo build.
 ok("B1: a failed live fetch sets mode ERROR, never the demo's MOCK",
   /mode: "ERROR"/.test(hookSrc) && !/mode: "MOCK", asOf: null, provenance: \{\}, dataAsOf: \{\}, loading: false, liveBuild \}\)/.test(hookSrc));
@@ -3537,18 +3548,18 @@ ok("B2: 'derived from live data' is now STATE-derived, one derivation for both f
   /· \{srcLabel\}<\/div>/.test(bandSrc) && /· \{derivedLabel\} \(no LLM\)/.test(whysSrc) &&
   /derivedLabel=\{derivedLabel\}/.test(dashSrc));
 // B3: operational data needs a token; the public route gets a report-only CSP.
-const snapSrc2 = readFileSync(new URL("../functions/api/snapshot.js", import.meta.url), "utf8");
+const snapSrc2 = readSrc("../functions/api/snapshot.js");
 ok("B3: ?debug requires the DEBUG_TOKEN secret — fail closed both ways",
   /env\.DEBUG_TOKEN && debugParam && debugParam === env\.DEBUG_TOKEN/.test(snapSrc2) &&
   !/const debug = params\.get\("debug"\) === "1"/.test(snapSrc2));
-const mwSrc = readFileSync(new URL("../functions/_middleware.js", import.meta.url), "utf8");
+const mwSrc = readSrc("../functions/_middleware.js");
 ok("B3: report-only CSP on public routes; /admin.html and /api are deliberately exempt",
   /content-security-policy-report-only/.test(mwSrc) &&
   /cspPath !== "\/admin\.html"/.test(mwSrc) && /!cspPath\.startsWith\("\/api\/"\)/.test(mwSrc));
 ok("B3: the CSP is REPORT-ONLY (observe before enforcing), never the enforcing header yet",
   !/h\.set\("content-security-policy",/.test(mwSrc));
 // B5: AGENTS.md carries no volatile facts — the rot vector is removed, not re-fed.
-const agentsSrc = readFileSync(new URL("../AGENTS.md", import.meta.url), "utf8");
+const agentsSrc = readSrc("../AGENTS.md");
 ok("B5: AGENTS.md is a thin pointer — no version numbers, no assertion counts",
   !/v3\.\d+\.\d+/.test(agentsSrc) && !/\d{3}-assertion/.test(agentsSrc) &&
   /CLAUDE\.md wins/.test(agentsSrc) && /npm test/.test(agentsSrc) && /REQUIRE_BROWSER=1/.test(agentsSrc));
@@ -3632,7 +3643,7 @@ ok("changed: a factor RECOVERY is information too, named as such",
     const c = compareEvidence(prev, sumA);
     return c.changes.some((x) => x.kind === "vote" && /recovered/.test(x.text)); })());
 // ---- the extraction is wired, not duplicated ----
-const evidenceSrc = readFileSync(new URL("../src/evidence.js", import.meta.url), "utf8");
+const evidenceSrc = readSrc("../src/evidence.js");
 ok("C1: evidence.js WRAPS the engine — it imports regime.js, never restates a band",
   /from "\.\/regime\.js"/.test(evidenceSrc) && !/v < 18|v > 25|<= NFCI_LOOSE \?/.test(evidenceSrc));
 ok("C1: the dashboard's modeOf and exclusions ARE the shared derivations (no local copy)",
@@ -3657,8 +3668,8 @@ console.log("\n[41] v3.61 — safe-area, first-glance density, newcomer-audit fi
 // deliberately drawn BEHIND the iOS status bar — but env(safe-area-inset-*) existed nowhere,
 // so the wordmark rendered under the Dynamic Island. The comment at index.html:5 claimed
 // safe-area handling; these pins make the claim true and keep it true.
-const indexSrc = readFileSync(new URL("../index.html", import.meta.url), "utf8");
-const manifest = JSON.parse(readFileSync(new URL("../manifest.webmanifest", import.meta.url), "utf8"));
+const indexSrc = readSrc("../index.html");
+const manifest = JSON.parse(readSrc("../manifest.webmanifest"));
 ok("share: document and Open Graph titles use the canonical MacroDash - Stonks copy",
   indexSrc.includes("<title>MacroDash - Stonks</title>") &&
   indexSrc.includes('<meta property="og:title" content="MacroDash - Stonks" />') &&
@@ -3852,7 +3863,7 @@ console.log("\n[39] CI-FIX — the browser suites must not read a PRESENT browse
 // failure blocks the gate entirely. Both are the same defect: a hardcoded copy of someone
 // else's layout, drifting. These pins are the same rule the app applies to itself.
 // renderSrc is already read above (section [21]); only the public suite is new here.
-const publicSrc = readFileSync(new URL("./public-render.mjs", import.meta.url), "utf8");
+const publicSrc = readSrc("./public-render.mjs");
 for (const [label, src] of [["render.mjs", renderSrc], ["public-render.mjs", publicSrc]]) {
   ok(`${label}: consults playwright's OWN registry first (immune to the next rename)`,
     /chromium\.executablePath\(\)/.test(src));
@@ -3910,10 +3921,10 @@ console.log("\n[40] Doc drift — no volatile facts outside their one home");
 // "label outliving its data" defect the app's changelog keeps fixing INSIDE the product
 // (the Mag-10 footer, the "5-factor vote" strings, the Kalshi TODO comment). v3.59 already
 // applied the cure to AGENTS.md and pinned its shape; these pins extend it to the rest.
-const readmeSrc = readFileSync(new URL("../README.md", import.meta.url), "utf8");
-const handoffSrc = readFileSync(new URL("../HANDOFF.md", import.meta.url), "utf8");
+const readmeSrc = readSrc("../README.md");
+const handoffSrc = readSrc("../HANDOFF.md");
 const pkgVersion = JSON.parse(
-  readFileSync(new URL("../package.json", import.meta.url), "utf8")).version;
+  readSrc("../package.json")).version;
 ok("package.json still carries the version — the single source of truth",
   typeof pkgVersion === "string" && /^\d+\.\d+\.\d+$/.test(pkgVersion));
 ok("README does not restate a version number (it rots; package.json is the home)",
@@ -3923,7 +3934,7 @@ ok("README does not quote an assertion count (the suite prints its own total)",
 // The false claim actively misdirected contributors to the wrong command for many releases.
 ok("README does not claim the `test` script is missing — it exists",
   !/no `test` script/.test(readmeSrc) && /npm test/.test(readmeSrc));
-const claudeSrc = readFileSync(new URL("../CLAUDE.md", import.meta.url), "utf8");
+const claudeSrc = readSrc("../CLAUDE.md");
 ok("CLAUDE.md does not claim the `test` script is missing either",
   !/no `test` script in `package\.json`/.test(claudeSrc));
 ok("CLAUDE.md's status header no longer pins a hand-bumped version",
@@ -4530,7 +4541,7 @@ console.log("\n[48] /api/score — server-authoritative scoring endpoint");
   })());
   ok("score: deployed-caps metadata matches the REAL tt.js MAX_BODY and admin.html DD_MAX (three-way pin)",
     (() => {
-      const scoreSrc = readFileSync(new URL("../functions/api/score.js", import.meta.url), "utf8");
+      const scoreSrc = readSrc("../functions/api/score.js");
       return /dd_max: 45 \* 1024/.test(scoreSrc) && /max_body: 300 \* 1024/.test(scoreSrc) &&
         ttSrc.includes("const MAX_BODY = 300 * 1024") && adminSrc.includes("const MAX_BODY=300*1024") &&
         adminSrc.includes("const DD_MAX=45*1024");
@@ -4586,7 +4597,7 @@ console.log("\n[48] /api/score — server-authoritative scoring endpoint");
 // against dashSrc, not pinned as a hardcoded key list (the v3.41 SOURCES-reconciliation rule:
 // a hardcoded list is true only by coincidence).
 console.log("\n[45] UI-OVERHAUL task 1.1 — design tokens are a module, complete and pure");
-const tokSrc = readFileSync(new URL("../src/design-tokens.js", import.meta.url), "utf8");
+const tokSrc = readSrc("../src/design-tokens.js");
 ok("tokens: the module is pure — no React, no JSX, nothing but data",
   !/from ['"]react['"]/.test(tokSrc) && !/</.test(tokSrc.replace(/\/\/[^\n]*|\/\*[\s\S]*?\*\//g, "").replace(/<=?/g, "")) &&
   Object.keys(DT).length >= 35 && Object.keys(TOK_T).length >= 20);
@@ -4697,7 +4708,7 @@ ok("wave5: all three stay under the 300-line bound (Property 10)",
   [stripSrc, sqSrc, wcSrc].every((src) => src.split("\n").length <= 300));
 ok("wave5: pctColor joined fmt in src/format.js — no inline copy left anywhere",
   !/\nconst pctColor=/.test(dashSrc) && !/const pctColor=/.test(stripSrc) &&
-  readFileSync(new URL("../src/format.js", import.meta.url), "utf8").includes("export const pctColor="));
+  readSrc("../src/format.js").includes("export const pctColor="));
 
 // ═══════════ [49] UI-OVERHAUL task 5.1 — CollapsedGroup + Illustrative primitives ═══════════
 // The ONE disclosure idiom and the v3.1 illustrative treatment each get one home. NO
@@ -4705,8 +4716,8 @@ ok("wave5: pctColor joined fmt in src/format.js — no inline copy left anywhere
 // never placed inside a collapse) is stronger than the spec's proposed mechanism, and
 // open-by-mode stays the caller's decision via demoted()/defaultOpen.
 console.log("\n[49] UI-OVERHAUL task 5.1 — CollapsedGroup/Illustrative are primitives");
-const cgSrc = readFileSync(new URL("../src/primitives/CollapsedGroup.jsx", import.meta.url), "utf8");
-const ilSrc = readFileSync(new URL("../src/primitives/Illustrative.jsx", import.meta.url), "utf8");
+const cgSrc = readSrc("../src/primitives/CollapsedGroup.jsx");
+const ilSrc = readSrc("../src/primitives/Illustrative.jsx");
 ok("cg: one home each — no inline definitions left in the orchestrator",
   !/\nconst CollapsedGroup = /.test(dashSrc) && !/\nconst IllustrativeChip = /.test(dashSrc) &&
   !/\nconst ILLUS_HATCH = /.test(dashSrc) && !/\nconst isIllustrative = /.test(dashSrc) &&
@@ -4750,8 +4761,8 @@ ok("cg: isIllustrative keeps the v3.1 rule — MOCK and STALE suppress, everythi
 // DirTile (with its three private helpers) and FGGauge became primitives; Divider was
 // deleted (rendered nowhere). Same separation contract as every prior wave.
 console.log("\n[50] UI-OVERHAUL wave 9 — detail panels are modules; primitives have one home");
-const atomsSrc = readFileSync(new URL("../src/primitives/atoms.jsx", import.meta.url), "utf8");
-const fgSrc = readFileSync(new URL("../src/primitives/FGGauge.jsx", import.meta.url), "utf8");
+const atomsSrc = readSrc("../src/primitives/atoms.jsx");
+const fgSrc = readSrc("../src/primitives/FGGauge.jsx");
 ok("wave9: presentation only — none of the three sections imports computation or the data hook",
   [mdSrc, mrSrc, hwSrc].every((src) => {
     const code = src.replace(/\/\/[^\n]*|\/\*[\s\S]*?\*\//g, "");
@@ -4871,8 +4882,8 @@ ok("7.9: failure is SILENT — no error toast rides either handler",
 // assertion counts, no line numbers, no token values. These pins enforce that shape, so
 // the third incarnation of a stale doc cannot happen here.
 console.log("\n[54] UI-OVERHAUL wave 17 — docs are maps, not mirrors");
-const dsDoc = readFileSync(new URL("../docs/design-system.md", import.meta.url), "utf8");
-const rkDoc = readFileSync(new URL("../docs/RISKS.md", import.meta.url), "utf8");
+const dsDoc = readSrc("../docs/design-system.md");
+const rkDoc = readSrc("../docs/RISKS.md");
 ok("docs: design-system.md names the one token home and the enforcement suite",
   dsDoc.includes("src/design-tokens.js") && dsDoc.includes("npm run gates") &&
   dsDoc.includes("map, not a mirror"));
@@ -5068,7 +5079,7 @@ console.log("\n[50] FEAT-TT-DDSTORE — deepDive moves to tt:dd:v1:<SYM>");
       b.bytes > b.limit && b.limit === 45 * 1024 && !kv._store.has("tt:dd:v1:AAA");
   })());
   ok("ddstore: the per-key cap mirrors DD_MAX in admin.html (45KB, v3.70) — one number, two homes",
-    /const MAX_BODY = 45 \* 1024;/.test(readFileSync(new URL("../functions/api/deepdive.js", import.meta.url), "utf8")) &&
+    /const MAX_BODY = 45 \* 1024;/.test(readSrc("../functions/api/deepdive.js")) &&
     /const DD_MAX=45\*1024/.test(adminSrc));
 
   // ---- ?all=1: export integrity ----
@@ -5437,8 +5448,8 @@ console.log("\n[52] DDSTORE server consumers — post-migration book shape");
   ok("ddsrv: no server file reads entry.deepDive directly any more — every consumer goes " +
      "through the one choke point (ledger.js's snapshot walk is the documented exception)",
     (() => {
-      const sc = readFileSync(new URL("../functions/api/score.js", import.meta.url), "utf8");
-      const tt = readFileSync(new URL("../functions/api/tt.js", import.meta.url), "utf8");
+      const sc = readSrc("../functions/api/score.js");
+      const tt = readSrc("../functions/api/tt.js");
       // Comments are stripped first: this must measure the CODE, not prose that happens to
       // mention the old field (the vacuous-assert lesson from v3.60.1).
       const code = (t) => t.replace(/\/\*[\s\S]*?\*\//g, "").replace(/^\s*\/\/.*$/gm, "");
@@ -5529,7 +5540,7 @@ console.log("\n[53] PRE-COMMITMENT VERIFICATION — the server decides what was 
     })());
   ok("precommit: score.js builds the committed map from the STORED record, so the deployed " +
      "path always enforces it (an empty map is still a map — absent context is the exception)",
-    (() => { const sc = readFileSync(new URL("../functions/api/score.js", import.meta.url), "utf8");
+    (() => { const sc = readSrc("../functions/api/score.js");
       return /const committed = \{\};/.test(sc) &&
         /prev && prev\.underwriting_inputs && prev\.underwriting_inputs\.falsifiers/.test(sc) &&
         /nowMs: Date\.now\(\), committed,/.test(sc); })());
@@ -6182,8 +6193,8 @@ console.log("\n[58] FEAT-TT-MAG7 — deck panel, basket average, honesty gates")
   ok("v388: none of the four appears in REGIME_BAND_TABLE, the factor lists, or ttReadout",
     (() => {
       const bandSlice = regimeSrc.slice(regimeSrc.indexOf("REGIME_BAND_TABLE"), regimeSrc.indexOf("verdictFrom"));
-      const evSrc = readFileSync(new URL("../src/evidence.js", import.meta.url), "utf8");
-      const ttSrc = readFileSync(new URL("../src/ttReadout.js", import.meta.url), "utf8");
+      const evSrc = readSrc("../src/evidence.js");
+      const ttSrc = readSrc("../src/ttReadout.js");
       return ["creditTail", "sahm", "spread10y3m", "threeMonth"].every((k) =>
         !bandSlice.includes(k) && !evSrc.includes(k) && !ttSrc.includes(k));
     })());
@@ -6643,7 +6654,7 @@ ok("technicals: evidence is provider-neutral because the facts record owns candl
   deriveTechnicals(syntheticCandles, { quote: syntheticCandles.at(-1).close, target: 180 }).evidence[0] ===
     `230 sourced daily candles through ${syntheticCandles.at(-1).date}`);
 
-const ocrRouteSrc = readFileSync(new URL("../functions/api/street/ocr.js", import.meta.url), "utf8");
+const ocrRouteSrc = readSrc("../functions/api/street/ocr.js");
 ok("admin v2: screenshots are reviewed and the OCR route has no persistence binding",
   adminSrc.includes('/api/street/ocr') && adminSrc.includes('✔ CONFIRM &amp; SAVE') &&
   adminSrc.includes('v2Json("/api/street",{method:"PUT"') && !ocrRouteSrc.includes("PULSE_CACHE") &&
@@ -6673,17 +6684,17 @@ ok("admin v2: SA and TipRanks keep independent as-ofs and screenshot EPS is not 
   adminSrc.includes('id="stSaAsOf"') && adminSrc.includes('id="stTrAsOf"') &&
   adminSrc.includes('epsBasis:"provider-consensus"') && !adminSrc.includes('epsBasis:"diluted"'));
 ok("docs: the current plan names /admin.html, /readout.json, KV separation, and the two manual inputs",
-  (() => { const d = readFileSync(new URL("../ticker-terminal/TICKER_TERMINAL_LOGIC_REDESIGN_PLAN_2026-08-15.md", import.meta.url), "utf8");
+  (() => { const d = readSrc("../ticker-terminal/TICKER_TERMINAL_LOGIC_REDESIGN_PLAN_2026-08-15.md");
     return d.includes("/admin.html") && d.includes("/readout.json") && d.includes("Seeking Alpha") &&
       d.includes("TipRanks") && d.includes("tt:street:") && d.includes("tt:facts:"); })());
 ok("docs: one current README points at runtime while both obsolete GUI/spec artifacts say ARCHIVE",
-  (() => { const current = readFileSync(new URL("../ticker-terminal/README.md", import.meta.url), "utf8");
-    const spec = readFileSync(new URL("../ticker-terminal/TT_TICKER_TERMINAL.md", import.meta.url), "utf8");
-    const gui = readFileSync(new URL("../ticker-terminal/tt_terminal.html", import.meta.url), "utf8");
+  (() => { const current = readSrc("../ticker-terminal/README.md");
+    const spec = readSrc("../ticker-terminal/TT_TICKER_TERMINAL.md");
+    const gui = readSrc("../ticker-terminal/tt_terminal.html");
     return current.includes("public/admin.html") && current.includes("/readout.json") && current.includes("tt:analysis:") &&
       /^# ARCHIVE/m.test(spec) && /ARCHIVE TEMPLATE/.test(gui); })());
 ok("docs: every TT-run response must report a surfaced composite, sourced/horizon PT, and explicit BUY/WAIT/SELL call",
-  (() => { const current = readFileSync(new URL("../ticker-terminal/README.md", import.meta.url), "utf8");
+  (() => { const current = readSrc("../ticker-terminal/README.md");
     const required = ["Composite: <score>/10 (<surface>)", "PT: $<value> (<basis>, <horizon>, <source>)",
       "Call: BUY|WAIT|SELL", "UNAVAILABLE", "ELIGIBLE NEXT DOLLAR", "funding-priority row alone"];
     return required.every((term) => current.includes(term)) && required.every((term) => claudeSrc.includes(term)) &&
@@ -6751,8 +6762,8 @@ console.log("\n[62] v3.97 SHAREABLE SIMPLE — prose derivation + picks whitelis
   ok("picks: a KV fault degrades to an empty list, never a 500",
     dead.status === 200 && JSON.parse(await dead.text()).picks.length === 0);
   ok("picks: every OTHER book endpoint stays PIN-gated — picks.js is the one no-auth read, and says so",
-    !/authorize/.test(readFileSync(new URL("../functions/api/picks.js", import.meta.url), "utf8")) &&
-    /ONE ENDPOINT THAT PUBLISHES BOOK-DERIVED CONTENT WITHOUT A PIN/.test(readFileSync(new URL("../functions/api/picks.js", import.meta.url), "utf8")));
+    !/authorize/.test(readSrc("../functions/api/picks.js")) &&
+    /ONE ENDPOINT THAT PUBLISHES BOOK-DERIVED CONTENT WITHOUT A PIN/.test(readSrc("../functions/api/picks.js")));
 
   // ── the section: presentation-only, honest empty state, no dead buttons ──
   ok("picks section: presentation only — no fetch, hook, or storage in the section; the orchestrator owns the fetch",
@@ -6949,14 +6960,14 @@ console.log("\n[65] v3.99 — Fed target range, curated FOMC calendar, Kalshi of
     /title=\{endpoint\}/.test(sbSrc));
 }
 
-// ---- 66. v3.99.2 — fetchEquities group status: ok is EARNED, never asserted before the throw
+// ---- 66. v3.99.3 — fetchEquities group status: ok is EARNED, never asserted before the throw
 // The ENGINE0-CONT (v3.71) entry filed this in its own "honest limits" section: the group
 // summary was recorded ok:true one line before the zero-quote throw, so _diag.sources read
 // `finnhub quotes ok:true` on a build whose equities fetch entirely failed. Run, not pinned:
 // the defect is an ORDERING between a record and a throw, which a string pin cannot prove.
 // The fetch is stubbed (this suite is no-network); fetchRetry's retry ladder is never
 // entered because the stub returns HTTP-ok bodies whose quotes fail the parse gate.
-console.log("\n[66] v3.99.2 — fetchEquities group status on the zero-quote path");
+console.log("\n[66] v3.99.3 — fetchEquities group status on the zero-quote path");
 {
   const realFetch = globalThis.fetch;
   try {
@@ -6981,6 +6992,98 @@ console.log("\n[66] v3.99.2 — fetchEquities group status on the zero-quote pat
     ok("equities control: a successful pull records ok:true with succeeded=10 and emits QQQ",
       g2.length === 1 && g2[0].ok === true && g2[0].succeeded === 10 && out.qqqPrice === 123.45);
   } finally { globalThis.fetch = realFetch; }
+}
+
+// ---- 67. v3.99.4 — the runtime contract, reconciled not restated (codex ambiguity review)
+// The review's root-cause finding: schedules, cache versions, refresh credentials, Node
+// floors and debug policy each lived in several places that a human had to keep in sync
+// manually — and every single one had already drifted (4 crons in TOML vs 3 in SETUP.md vs
+// 2 in CLAUDE.md; REFRESH_SECRET documented where REFRESH_TOKEN was required; ?debug=1 open
+// on the one CORS-open endpoint; four different Node floors). These pins RECONCILE the
+// representations against each other — the SOURCES/DERIVED_OF and playwright
+// EXECUTABLE_PATHS convention — so the next drift is a red build, not a memory test.
+// (The review proposed a codegen'd config/runtime-contract.js; this repo's idiom is
+// reconciliation-in-smoke, and the Worker can't import across deploys anyway.)
+console.log("\n[67] v3.99.4 — runtime contract reconciliation");
+{
+  const tomlSrc = readSrc("../worker/wrangler.toml");
+  const cronSrc = readSrc("../worker/cron.js");
+  const setupSrc = readSrc("../worker/SETUP.md");
+  const refreshSrc = readSrc("../functions/api/snapshot/refresh.js");
+  const roSrc = readSrc("../functions/readout.json.js");
+  const ciSrc = readSrc("../.github/workflows/test.yml");
+  const nvmrc = readSrc("../.nvmrc").trim();
+
+  // ── cache-key version: ONE version across all four consumers ──
+  const keyVer = (src, name) => {
+    const m = src.match(/pulse:snapshot:(v\d+):/);
+    return m ? m[1] : `MISSING(${name})`;
+  };
+  const vers = new Set([keyVer(snapSrc, "snapshot"), keyVer(refreshSrc, "refresh"),
+    keyVer(roSrc, "readout"), keyVer(cronSrc, "cron")]);
+  ok("cache key: all four consumers agree on ONE pulse:snapshot version (a lone bump = split-brain cache)",
+    vers.size === 1 && ![...vers][0].startsWith("MISSING"));
+
+  // ── cron schedules: TOML ↔ cron.js dispatch, both directions ──
+  // Comments inside the array quote the DST variants ("0 13…") — strip them per line first,
+  // or the reconciliation counts documentation as configuration.
+  const tomlCronBlock = (tomlSrc.match(/crons = \[([\s\S]*?)\]/)?.[1] || "")
+    .split("\n").map((l) => l.replace(/#.*$/, "")).join("\n");
+  const tomlCrons = [...tomlCronBlock.matchAll(/"([^"]+)"/g)].map((m) => m[1]);
+  const warmCron = cronSrc.match(/SNAPSHOT_WARM_CRON = "([^"]+)"/)?.[1];
+  const prewarmCron = cronSrc.match(/SNAPSHOT_PREWARM_CRON = "([^"]+)"/)?.[1];
+  ok("crons: TOML declares exactly four triggers", tomlCrons.length === 4);
+  ok("crons: both cron.js dispatch constants exist in the TOML (an orphaned constant never fires)",
+    !!warmCron && !!prewarmCron && tomlCrons.includes(warmCron) && tomlCrons.includes(prewarmCron));
+  // Dispatch is exact-string with a LEGACY fallthrough, so any TOML cron that matches no
+  // constant runs the legacy FRED path. Exactly the two documented legacy pulls may do that.
+  const legacy = tomlCrons.filter((c) => c !== warmCron && c !== prewarmCron);
+  ok("crons: every TOML trigger is either a dispatch constant or one of the TWO documented legacy pulls " +
+     "(a third fallthrough = a silently misrouted job)",
+    legacy.length === 2 && legacy.includes("30 12 * * 1-5") && legacy.includes("0 21 * * 1-5"));
+  ok("crons: scheduled() actually compares controller.cron against both constants",
+    /controller\.cron === SNAPSHOT_PREWARM_CRON/.test(cronSrc) &&
+    /controller\.cron === SNAPSHOT_WARM_CRON/.test(cronSrc));
+  ok("crons: SETUP.md documents all FOUR (it said 'three triggers' while TOML carried four — " +
+     "and its DST block would have deleted the prewarm)",
+    /\*\*four\*\* triggers/i.test(setupSrc) &&
+    tomlCrons.every((c) => setupSrc.includes(c)) && /four\*\* crons are listed/.test(setupSrc));
+
+  // ── refresh credential: the ACTIVE name is documented where operators read ──
+  ok("refresh: SETUP.md instructs REFRESH_TOKEN for the active path, on BOTH deploys",
+    /secret put REFRESH_TOKEN/.test(setupSrc) && /pages secret put REFRESH_TOKEN/.test(setupSrc) &&
+    /REFRESH_SECRET`?\*\* — LEGACY only/.test(setupSrc));
+  ok("refresh: the documented name IS the implemented name on both ends of the wire",
+    /env\.REFRESH_TOKEN/.test(cronSrc) && /x-refresh-token/.test(cronSrc) &&
+    /env\.REFRESH_TOKEN/.test(refreshSrc) && /x-refresh-token/.test(refreshSrc));
+  ok("refresh: wrangler.toml's secret comment names both credentials with their distinct roles",
+    /REFRESH_TOKEN/.test(tomlSrc) && /LEGACY only/.test(tomlSrc));
+
+  // ── debug policy: ONE fail-closed token rule on BOTH public endpoints ──
+  ok("debug: /readout.json rides the same DEBUG_TOKEN rule as /api/snapshot — bare ?debug=1 is inert",
+    /env\.DEBUG_TOKEN && debugParam && debugParam === env\.DEBUG_TOKEN/.test(roSrc) &&
+    !/get\("debug"\) === "1"/.test(roSrc));
+  ok("debug: a readout debug response is no-store (diagnostics must not sit in a shared cache)",
+    /url\.searchParams\.get\("fresh"\) === "1" \|\| debug/.test(roSrc));
+
+  // ── Node floor: one baseline, four surfaces, reconciled numerically ──
+  const engines = PKG.engines?.node || "";
+  const ciNode = parseInt(ciSrc.match(/node-version:\s*(\d+)/)?.[1] || "0", 10);
+  ok("node: engines >=20, .nvmrc and CI at/above it, and the four-floors era is over " +
+     "(>=18/22/≥17/20 all coexisted)",
+    engines === ">=20" && parseInt(nvmrc, 10) >= 20 && ciNode >= 20 &&
+    !readSrc("../README.md").includes("Node ≥17") && !readSrc("../AGENTS.md").includes("Node ≥17"));
+
+  // ── stale claims: the docs describe the ERROR mode that shipped in v3.59 B1 ──
+  ok("docs: no surface still claims a live fetch failure is SILENT (B1 made it a visible ERROR + RETRY)",
+    !readSrc("../.env.production").includes("silently reverts") &&
+    !/falls back to\s+MOCK_DATA silently/.test(readSrc("../docs/design-system.md")) &&
+    readSrc("../.env.production").includes("mode ERROR"));
+
+  // ── the P0: LF policy is a repository invariant AND the suite is checkout-proof ──
+  ok("crlf: .gitattributes pins text checkout to LF; smoke normalizes its own source lifts (readSrc)",
+    /\* text=auto eol=lf/.test(readSrc("../.gitattributes")) &&
+    /const readSrc = \(p\) => readFileSync\(new URL\(p, import\.meta\.url\), "utf8"\)\.replace\(\/\\r\\n\/g, "\\n"\)/.test(readSrc("./smoke.mjs")));
 }
 
 console.log(`\n=== SMOKE TEST: ${pass} passed, ${fail} failed ===`);

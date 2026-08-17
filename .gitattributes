@@ -1,0 +1,14 @@
+# P0 (v3.99.4, codex ambiguity review): line-ending policy is a REPOSITORY invariant, not a
+# developer setting. A Windows checkout with core.autocrlf=true converted admin.html and the
+# suite to CRLF, and smoke's LF-sensitive source lifts ("MAG_BASKET=null;\n  {") then crashed
+# the gate mid-run — a line-ending reason, reported before any behavior was evaluated.
+# text=auto keeps git's binary detection; eol=lf pins every text file's CHECKOUT to LF on
+# every platform, which overrides autocrlf. test/smoke.mjs normalizes its own reads too
+# (readSrc), so the suite survives even a checkout that predates this file.
+* text=auto eol=lf
+
+# Binaries, stated explicitly rather than trusted to detection (the PWA icon is the one
+# binary this repo currently tracks).
+*.png binary
+*.ico binary
+*.woff2 binary

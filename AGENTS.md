@@ -22,7 +22,7 @@ npm install
 npm run dev           # Vite dev server (mock unless VITE_DATA_MODE=live in .env)
 npm run build         # → dist/ (what Pages deploys)
 
-npm test              # no-network smoke suite (pure functions + source guards; Node ≥17)
+npm test              # no-network smoke suite (pure functions + source guards; Node ≥20)
 npm run test:ui       # browser suite for /admin.html   (skips cleanly without Chromium)
 npm run test:public   # build + browser STATE suite for the public dashboard (likewise)
 npm run audit:prod    # production-scope dependency audit

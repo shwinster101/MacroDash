@@ -21,7 +21,7 @@ npm run dev           # mock data by default (no network)
 npm run build         # → dist/  (what Cloudflare Pages runs)
 npm run preview       # serve the built dist/
 
-npm test              # no-network smoke suite (pure functions + source guards; Node ≥17)
+npm test              # no-network smoke suite (pure functions + source guards; Node ≥20)
 npm run test:ui       # browser suite for /admin.html    (skips cleanly without Chromium)
 npm run test:public   # build + browser STATE suite for the public dashboard (likewise)
 npm run audit:prod    # production-scope dependency audit

@@ -61,8 +61,10 @@ tap-target and safe-area rules).
 
 ## Patterns
 
-- **Mock-first / graceful degradation** — every fetch failure falls back to
-  MOCK_DATA silently; the page never breaks on bad data.
+- **Mock-first / graceful degradation** — a failed live fetch sets mode ERROR
+  (v3.59 B1): MOCK_DATA renders underneath as ILLUSTRATIVE with a visible outage
+  line + RETRY — never silently, never dressed as live. Individual bad values
+  drop to their mock baseline. The page never breaks on bad data.
 - **The honesty invariant (v3.1)** — no number may read as live unless it is;
   directional verdicts are suppressed on mock/stale; false success claims on
   affordances are the same defect (the wave-16 clipboard rule).

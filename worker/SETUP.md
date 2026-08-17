@@ -6,23 +6,29 @@ pushing to `main` deploys the *site*, but the Worker only updates when you run `
 
 ## What this Worker does
 
-A scheduled (Cron) Worker with three triggers (`worker/wrangler.toml`):
+A scheduled (Cron) Worker with **four** triggers (`worker/wrangler.toml`). ⚠️ This table, the
+TOML `crons` array, and the dispatch constants in `cron.js` must all agree — `scheduled()`
+routes by **exact string comparison** on `controller.cron`, and any unmatched string falls
+through to the *legacy* FRED path (a silently misrouted job, not a visible failure). Smoke
+reconciles the TOML against the `cron.js` constants, so an edit to one without the other
+fails the build; this table is documentation of the same contract.
 
 | Cron (UTC) | Local time | Job |
 |---|---|---|
 | `30 12 * * 1-5` | 5:30 AM PDT | *legacy* — FRED macro pull → KV `pulse:macro:latest` |
 | `0 21 * * 1-5` | 2:00 PM PDT | *legacy* — same |
-| `0 14 * * 1-5` | **10:00 AM ET** | **active** — warms `/api/snapshot` so the day's first visitor gets instant fresh data |
+| `0 12 * * 1-5` | **8:00 AM ET** | **active** — PRE-OPEN warm of `/api/snapshot` (no-op if the day is already cached) |
+| `0 14 * * 1-5` | **10:00 AM ET** | **active** — FORCE-REFRESH of the day's snapshot via `POST /api/snapshot/refresh` (needs `REFRESH_TOKEN` — see Step 3; without it, falls back to a non-destructive GET, which is a **cache hit, not a refresh**, whenever the 8 AM warm already populated the day) |
 
 > The two *legacy* crons feed `/api/fred`, which the dashboard no longer reads (slated for
-> removal in v2.5 cleanup). They still need `FRED_KEY` until removed. The 10 AM warm only makes
+> removal in v2.5 cleanup). They still need `FRED_KEY` until removed. The 8 AM warm only makes
 > an HTTP call to `/api/snapshot` and needs **no secret**.
 
 ---
 
 ## Prerequisites
 
-- **Node ≥ 18** (Wrangler v4 requires it). This repo pins Node 22 (`.nvmrc`).
+- **Node ≥ 20** (the repo baseline — `package.json` engines; Wrangler v4 itself needs ≥18). This repo pins Node 22 (`.nvmrc`); CI runs 20.
 - A **Cloudflare account** that owns the Pages project + the `PULSE_CACHE` KV namespace.
 - Run everything from the **`worker/`** directory.
 
@@ -65,14 +71,30 @@ npx wrangler kv namespace list      # find "PULSE_CACHE" → confirm its id matc
 > *and* into Pages → Settings → Variables & Bindings → KV.
 > (Note the modern syntax is `kv namespace` with a space — the old `kv:namespace` colon form is removed.)
 
-## 3. Set the secret
+## 3. Set the secrets
 
-`FRED_KEY` is needed by the legacy FRED crons. Use the interactive prompt — **never** pass a
-secret value as a command argument:
+⚠️ **Two different refresh credentials exist and they are not interchangeable** (this guide
+previously named only `REFRESH_SECRET`, which left the active refresh path unconfigured while
+every command "succeeded" — the exact trap this section now exists to prevent):
+
+- **`REFRESH_TOKEN`** — the ACTIVE credential. Authenticates the 10 AM cron (and the manual
+  `POST /refresh` pass-through) against `POST /api/snapshot/refresh` via the
+  `x-refresh-token` header. **The same value must be set in BOTH deployments**: here
+  (`npx wrangler secret put REFRESH_TOKEN` in `worker/`) AND on the Pages project
+  (`npx wrangler pages secret put REFRESH_TOKEN`), because the Worker sends it and the Pages
+  Function checks it. Without it the 10 AM job degrades to a plain GET — and a GET after the
+  8 AM warm is a cache **hit**, so nothing refreshes. A manual `POST /refresh` response
+  saying `active_refresh: "skipped (no REFRESH_TOKEN)"` means exactly this state, even
+  though the response's `ok` is `true` (the `ok` describes the legacy write only).
+- **`REFRESH_SECRET`** — LEGACY only. Guards the Worker's own `POST /refresh` endpoint
+  (`x-refresh-secret` header). It never touches `/api/snapshot/refresh`.
+
+Use the interactive prompt — **never** pass a secret value as a command argument:
 
 ```bash
 npx wrangler secret put FRED_KEY        # paste the St. Louis FRED API key when prompted
-# optional, only if you use the manual POST /refresh warm:
+npx wrangler secret put REFRESH_TOKEN   # active snapshot refresh (ALSO set on Pages — see above)
+# optional, only if you use the legacy manual POST /refresh endpoint:
 npx wrangler secret put REFRESH_SECRET
 npx wrangler secret list                # verify
 ```
@@ -91,7 +113,7 @@ The deploy output lists the registered cron schedules. (`wrangler deploy` replac
 
 ## 5. Verify
 
-**Deploy output** — confirm all three crons are listed (`30 12…`, `0 21…`, `0 14…`).
+**Deploy output** — confirm all **four** crons are listed (`30 12…`, `0 21…`, `0 12…`, `0 14…`).
 
 **Dashboard:** Cloudflare → **Workers & Pages → Overview → `macrodash-cron` → Settings →
 Triggers → Cron Triggers**. (The "Cron Events" view keeps the 100 most recent invocations.)
@@ -101,14 +123,17 @@ Triggers → Cron Triggers**. (The "Cron Events" view keeps the 100 most recent 
 npx wrangler tail macrodash-cron        # stream invocations; Ctrl-C to stop
 ```
 
-**Test the 10 AM warm locally** (no secret needed for this branch):
+**Test the snapshot jobs locally**:
 ```bash
 npx wrangler dev
-# in another terminal — simulate the 10 AM ET trigger:
+# in another terminal — simulate the 8 AM ET pre-open warm (no secret needed):
+curl "http://localhost:8787/cdn-cgi/handler/scheduled?cron=0+12+*+*+1-5"
+# simulate the 10 AM ET force-refresh (needs REFRESH_TOKEN, or it falls back to a GET):
 curl "http://localhost:8787/cdn-cgi/handler/scheduled?cron=0+14+*+*+1-5"
 ```
-It should fetch `https://macrodash.pages.dev/api/snapshot` (warming the per-day cache).
-`?format=json` returns a JSON result; omit `?cron=` to run all handlers.
+The warm fetches `https://macrodash.pages.dev/api/snapshot` (populating the per-day cache);
+the refresh POSTs `/api/snapshot/refresh` with `x-refresh-token`. `?format=json` returns a
+JSON result; omit `?cron=` to run all handlers.
 
 ---
 
@@ -118,11 +143,19 @@ Cloudflare crons are UTC with no timezone support. The schedules are anchored to
 Daylight / Eastern Daylight** time. When the US switches to standard time (~November), bump the
 UTC hour by +1 so local times hold, then redeploy:
 
+⚠️ The DST edit is **two files, together**: the TOML schedules below AND the matching
+constants in `cron.js` (`SNAPSHOT_PREWARM_CRON`, `SNAPSHOT_WARM_CRON`) — dispatch is by
+exact string match, so editing only the TOML silently reroutes both snapshot jobs onto the
+legacy FRED path. (An earlier version of this block listed only three crons; following it
+would also have deleted the 8 AM prewarm.) Smoke's contract check goes red if the two files
+disagree.
+
 ```toml
 crons = [
   "30 13 * * 1-5",   # 5:30 AM PST
   "0 22 * * 1-5",    # 2:00 PM PST
-  "0 15 * * 1-5"     # 10:00 AM EST   ← the snapshot warm
+  "0 13 * * 1-5",    # 8:00 AM EST    ← the pre-open warm  (cron.js: SNAPSHOT_PREWARM_CRON)
+  "0 15 * * 1-5"     # 10:00 AM EST   ← the snapshot force-refresh (cron.js: SNAPSHOT_WARM_CRON)
 ]
 ```
 

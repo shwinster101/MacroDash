@@ -19,6 +19,11 @@ id = "78ad3346a8fe4757a906283c4bc81a5e"
 # Cloudflare cron has no timezone support, so this is a twice-a-year manual
 # edit. The 26h KV TTL means a one-hour drift across the DST boundary never
 # blanks the dashboard. Weekdays only (1-5): FRED macro doesn't move weekends.
+# ⚠ SYNC HAZARD (v3.99.4): cron.js dispatches by EXACT string match on controller.cron
+# (SNAPSHOT_PREWARM_CRON = "0 12…", SNAPSHOT_WARM_CRON = "0 14…"); any string here that
+# matches neither falls through to the LEGACY FRED path — a silently misrouted job, not a
+# visible failure. The DST edit is therefore TWO files together: this array AND those two
+# constants. Smoke's contract check reconciles them and goes red on drift.
 # ---------------------------------------------------------------------------
 [triggers]
 crons = [
@@ -28,6 +33,11 @@ crons = [
   "0 14 * * 1-5"     # 10:00 AM ET (EDT) — force-refresh /api/snapshot cache; EST -> "0 15 * * 1-5"
 ]
 
-# Secrets (NEVER in this file — set via CLI):
-#   npx wrangler secret put FRED_KEY        # required
-#   npx wrangler secret put REFRESH_SECRET  # optional, for manual /refresh warm
+# Secrets (NEVER in this file — set via CLI). Two refresh credentials exist and are NOT
+# interchangeable — SETUP.md §3 has the full story:
+#   npx wrangler secret put FRED_KEY        # required (legacy FRED crons)
+#   npx wrangler secret put REFRESH_TOKEN   # ACTIVE 10am force-refresh; same value must ALSO
+#                                           # be set on Pages (functions/api/snapshot/refresh.js
+#                                           # checks it). Without it the 10am job degrades to a
+#                                           # GET, which is a cache HIT after the 8am warm.
+#   npx wrangler secret put REFRESH_SECRET  # LEGACY only — guards this Worker's own POST /refresh

@@ -18,7 +18,15 @@ import { buildTtReadout } from "../src/ttReadout.js";
 export async function onRequest(context) {
   const { request, env } = context;
   const url = new URL(request.url);
-  const debug = url.searchParams.get("debug") === "1";
+  /* v3.99.4 (codex ambiguity review P1): debug rides the SAME fail-closed token rule as
+     /api/snapshot — honored only when the DEBUG_TOKEN secret is SET and ?debug=<token>
+     matches; no secret configured means no diagnostics for anyone. This endpoint is
+     CORS-OPEN, so the old bare ?debug=1 disclosed kv_key / kv_hit / snapshot _diag (source
+     statuses, latencies, upstream hosts) to any origin that knew the parameter — while the
+     docs claimed the debug policy was token-gated everywhere. B3's rule, applied to the one
+     public endpoint it missed. */
+  const debugParam = url.searchParams.get("debug");
+  const debug = !!(env.DEBUG_TOKEN && debugParam && debugParam === env.DEBUG_TOKEN);
 
   const etDate = new Date().toLocaleDateString("en-CA", { timeZone: "America/New_York" }); // YYYY-MM-DD
   // SYNC HAZARD: this key version MUST match functions/api/snapshot.js (cacheKey) AND
@@ -77,7 +85,9 @@ export async function onRequest(context) {
 
   // ?fresh=1: an explicit operator/refresh re-check must not be hidden by the 5-minute
   // shared cache (§8 HTTP-cache rule) — no-store on demand, shared caching otherwise.
-  const noStore = url.searchParams.get("fresh") === "1";
+  // A debug response is no-store too: a body carrying diagnostics must never sit in a
+  // shared cache, and the token-bearing URL should not be cached anywhere.
+  const noStore = url.searchParams.get("fresh") === "1" || debug;
   return new Response(JSON.stringify(body, null, 2), {
     headers: {
       "content-type": "application/json; charset=utf-8",

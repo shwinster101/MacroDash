@@ -80,8 +80,10 @@ cold fetch and concurrent first-visitors can't stampede FRED/Finnhub rate limits
   inline `DT` object is the de-facto source of truth. Keep token edits there.
 - **Cloudflare Pages** (static SPA) + **Pages Functions** (`/api/*` at the edge) +
   a separate **Cloudflare cron Worker** (`worker/`). **KV** (`PULSE_CACHE`) for caching.
-- **Node ≥17 required for tooling** (`src/sources.js` uses `structuredClone`). The
-  machine default may be older — the smoke test errors on Node 14.
+- **Node ≥20 required for tooling** (`package.json` engines — the ONE baseline; `.nvmrc`
+  pins 22, CI runs 20). The smoke suite needs the global WebCrypto (`crypto.subtle`,
+  Node 19+) for the Kalshi signer test, which is what retired the old "≥17" claim —
+  four surfaces used to advertise four different floors (2026-08-17 ambiguity review).
 
 ## File structure
 
@@ -182,13 +184,17 @@ dashboard.jsx  →  useMarketData(MOCK_DATA, {publicView})  →  fetch /api/snap
                      │
    overlays ONLY mapped SOURCES paths; everything else stays mock
                      │
-        badge = MOCK | LOADING | LIVE | CACHED   (shown in header + source boxes)
+        badge = MOCK | LOADING | LIVE | CACHED | ERROR   (shown in header + source boxes)
 ```
 
 - **Mock-first / graceful degradation is the core invariant.** `MOCK_DATA` in
   `dashboard.jsx` is the always-present baseline. Live values overlay only the exact
-  paths declared in `sources.js`. Any fetch/parse failure, an empty `live`, or an
-  invalid value → silent fallback to mock. **The dashboard never breaks on bad data.**
+  paths declared in `sources.js`. A whole-fetch failure on a live build → mode **`ERROR`**
+  (v3.59 B1): mock content still renders underneath, everything stays ILLUSTRATIVE, and the
+  header states the outage with a ↻ RETRY — visible, deliberately NOT silent (this line said
+  "silent fallback" for ~40 releases after B1 made it visible; 2026-08-17 review). A bad
+  *individual* value is still dropped silently to its mock baseline (bands/kind checks).
+  **The dashboard never breaks on bad data.**
 - `sources.js` `SOURCES` maps each flat snapshot field → a dotted `MOCK_DATA` path +
   a `kind` (`num` | `series` | `str`) that is validated before overlay. `setPath` clones
   (never mutates) the mock.
@@ -2875,6 +2881,63 @@ Jan-anchor shipped; see `snapshot.js` ~318–328), `spyMa100`, `spyMa200`, and a
   VALUATION GAP ranking (§11.1 — the ranking always renders, which is the owner's actual
   "always an output" contract, and it was never suspended). Tests: 1223 smoke (+2) + 199
   render (+1).
+- **v3.99.4 "THE RUNTIME CONTRACT" — the codex ambiguity review's verified findings, closed.**
+  An external review of fba2a1c found no wrong number anywhere — every finding was a CONTRACT
+  stated in several places that a human had to keep in sync, and every single one had already
+  drifted. Each was verified against source before any fix (all real; one worse than stated).
+  **P0 — the gate crashed on line endings.** Smoke's [58] lift locates its block with an
+  LF-sensitive `indexOf("MAG_BASKET=null;\n  {")`; a CRLF checkout (Windows autocrlf) made it
+  return −1 — REPRODUCED here by CRLF-converting admin.html: two FAILs then a TypeError that
+  killed the suite MID-RUN, no total printed (worse than the review's "two failed assertions").
+  Fixed twice over: `.gitattributes` (`* text=auto eol=lf`) makes LF a repository invariant
+  that overrides autocrlf, and every smoke source lift now reads through `readSrc()` (CRLF→LF
+  normalize), proven by re-running the CRLF checkout: 1590 green where it crashed.
+  **P1 — the setup guide configured the WRONG refresh secret.** `worker/SETUP.md` instructed
+  `REFRESH_SECRET` (the LEGACY `/refresh` guard) where the active 10am force-refresh needs
+  `REFRESH_TOKEN` on BOTH deploys — an operator could follow every step successfully and leave
+  the active path dead, with the manual endpoint returning `ok:true` beside
+  `active_refresh: "skipped (no REFRESH_TOKEN)"` (the `ok` describes the legacy write only).
+  And the cron story was worse than a naming slip: the TOML carries FOUR triggers, SETUP.md
+  said THREE (its DST block, followed in November, would have DELETED the 8am prewarm), and
+  this file's own deployment section still said TWO — while `scheduled()` dispatches by exact
+  string match with a legacy-FRED fallthrough, so a TOML edit without the matching `cron.js`
+  constant is a silently misrouted job, not a visible failure. All four surfaces now state the
+  same four-trigger contract, both credentials' distinct roles are documented at every home,
+  and an **environment matrix** (which deploy owns which secret, what degrades without it)
+  lands in the deployment section.
+  **P1 — `?debug=1` was open on the one CORS-open endpoint.** `/readout.json` served `kv_key`/
+  `kv_hit`/`snapshot _diag` (source statuses, latencies, upstream hosts) to any origin that
+  knew the parameter, while `/api/snapshot` required `DEBUG_TOKEN` and the docs claimed the
+  policy was universal (B3, v3.59). It now rides the identical fail-closed rule — no secret
+  configured means no diagnostics for anyone — and a debug response is `no-store` (diagnostics
+  must not sit in the 5-minute shared cache). Operator note: the deployed readout needs
+  `?debug=<token>` from now on.
+  **P2s — four Node floors and a stale silence claim.** engines `>=18` / `.nvmrc` 22 / docs
+  "≥17" / CI 20 all coexisted — and the smoke suite needs global WebCrypto (Node 19+, the
+  v3.99.1 Kalshi signer test), so the advertised floor couldn't even run the gate. One
+  baseline now: engines `>=20`, every doc updated. And three surfaces (`.env.production`,
+  `docs/design-system.md`, this file's data-flow section) still said a failed live fetch
+  "silently reverts to mock" — ~40 releases after v3.59 B1 made it a visible ERROR + RETRY;
+  the implementation was safer than its documentation, which is still a lie about the page.
+  **The structural fix is smoke [67], not the edits:** cache-key version reconciled across
+  its four consumers (snapshot/refresh/readout/cron — a lone bump is a split-brain cache) ·
+  TOML crons ↔ `cron.js` dispatch constants BOTH directions, with exactly the two documented
+  legacy pulls allowed through the fallthrough · SETUP.md's four-trigger and REFRESH_TOKEN
+  claims pinned against the implementation · the debug rule pinned on both endpoints · the
+  Node floors reconciled numerically · the stale-silence claims pinned ABSENT. (The review
+  proposed a codegen'd `config/runtime-contract.js`; this repo's idiom is reconciliation-in-
+  smoke — the SOURCES/DERIVED_OF and playwright EXECUTABLE_PATHS convention — and the Worker
+  cannot import across deploys anyway.) Negative-controlled: a lone v16 bump in readout turns
+  1 red; a constant-only cron edit turns 2 red.
+  **Deferred as owner calls, named not buried:** making CI BLOCK the Pages deploy (a
+  Cloudflare Pages setting, not repo code — the workflow's own comment already records the
+  current non-blocking policy as deliberate; recommended: block, since smoke guards
+  order-gating contracts) · a dedicated `/public` route with route-specific OG/manifest
+  metadata (collides with v3.97's owner model where Simple-at-root IS the share page) ·
+  splitting this file's changelog into a dated archive (its append-only history is the
+  documented living record; a split is real scope, not a cleanup).
+  Tests: **1604 smoke** (+14: the [67] contract section, run behaviorally with the two
+  negative controls above) + 248 render + 152 public-render + `audit:prod` clean.
 - **v3.99.3 — the ENGINE0-CONT filed limit on `fetchEquities`, closed.** *Relabelled from
   v3.99.2 at merge (2026-08-17): the STONKS UNFURL entry below shipped in parallel on `main`
   and independently claimed v3.99.2, landing first and owning the number — the documented
@@ -3404,12 +3467,31 @@ Jan-anchor shipped; see `snapshot.js` ~318–328), `spyMa100`, `spyMa200`, and a
   `permissions-policy`, etc.) and keeps `/api` same-origin (no `Access-Control-Allow-Origin`).
 
 ### Cron Worker (`worker/`, deployed separately)
-- `cd worker && npx wrangler deploy`; `npx wrangler secret put FRED_KEY`.
+- `cd worker && npx wrangler deploy`; secrets per `worker/SETUP.md` §3.
 - Binds the **same `PULSE_CACHE` KV namespace** (so its writes are visible to Pages).
-- Two weekday crons (UTC, anchored to **PDT** — see the DST note in `wrangler.toml`;
-  shift +1h for PST twice a year). Writes `pulse:macro:latest` with a 26h TTL.
-- **This is the older "stage-1" path.** The dashboard has flipped to `/api/snapshot`;
-  `/api/fred` + the cron Worker remain deployed as a fallback/safety net.
+- **Four** weekday crons (UTC — see the DST note in `wrangler.toml`; shift +1h for standard
+  time twice a year, **in TOML and cron.js together** — dispatch is exact-string): two
+  *legacy* FRED pulls (write `pulse:macro:latest`, 26h TTL), the **8am ET pre-open warm**
+  (no secret), and the **10am ET force-refresh** (`REFRESH_TOKEN`, set on BOTH the Worker
+  and Pages — without it the job degrades to a GET, a cache hit after the warm).
+  (This line said "Two weekday crons" for ~30 releases after the snapshot jobs landed —
+  the 2026-08-17 ambiguity review caught it; smoke now reconciles TOML ↔ cron.js.)
+- **The legacy pair is the older "stage-1" path.** The dashboard has flipped to
+  `/api/snapshot`; `/api/fred` + those two crons remain deployed as a fallback/safety net.
+
+### Environment matrix (which deploy owns which secret)
+| Variable | Deploy | Required? | Feature | Absent ⇒ |
+|---|---|---|---|---|
+| `FRED_KEY` | Pages + Worker | for live macro | FRED snapshot + legacy crons | macro tiles mock |
+| `FINNHUB_KEY` | Pages | optional | QQQ quotes + TT quotes/facts | equities mock |
+| `OPENROUTER_KEY` | Pages | optional | token VOLUME (Q leg, v3.89) | volume mock; price leg unaffected |
+| `KALSHI_KEY_ID` + `KALSHI_PRIVATE_KEY` | Pages | optional | keyed Kalshi transport (v3.99.1) | anonymous transport (shared 429 bucket) |
+| `REFRESH_TOKEN` | Pages + Worker (same value) | for 10am force-refresh | `POST /api/snapshot/refresh` | GET fallback = cache hit, no refresh |
+| `REFRESH_SECRET` | Worker | legacy only | Worker's own `POST /refresh` | endpoint 403s |
+| `DEBUG_TOKEN` | Pages | optional | `?debug=<token>` diagnostics on `/api/snapshot` **and** `/readout.json` | diagnostics off for everyone (fail closed) |
+| `TT_PIN` (or `ACCESS_TEAM_DOMAIN`+`ACCESS_AUD`) | Pages | for the terminal | `/api/tt` + every PIN-gated route | 503 fail closed / Access mode |
+| `SEC_USER_AGENT` | Pages | for TT facts | `data.sec.gov` fetches | SEC facts UNKNOWN → WAIT |
+| `AI` (Workers AI binding) | Pages | for TT OCR | screenshot→draft + rubric | OCR route degraded, gates UNKNOWN |
 
 ### The `VITE_DATA_MODE=live` flip
 `useMarketData.js` reads `import.meta.env.VITE_DATA_MODE` (Vite **build-time** env):
@@ -3453,7 +3535,7 @@ npm run dev        # Vite dev server (mock unless VITE_DATA_MODE=live in .env)
 npm run build      # → dist/  (what Pages runs)
 npm run preview    # serve the built dist/
 
-npm test              # no-network smoke suite (needs Node ≥17)
+npm test              # no-network smoke suite (needs Node ≥20)
 npm run test:ui       # browser render test for admin.html (skips if no Chromium)
 npm run test:public   # build + browser STATE test for the public dashboard (skips likewise)
 npm run audit:prod    # production-scope dependency audit
