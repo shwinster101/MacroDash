@@ -2875,6 +2875,13 @@ Jan-anchor shipped; see `snapshot.js` ~318–328), `spyMa100`, `spyMa200`, and a
   VALUATION GAP ranking (§11.1 — the ranking always renders, which is the owner's actual
   "always an output" contract, and it was never suspended). Tests: 1223 smoke (+2) + 199
   render (+1).
+- **v3.99.2 "STONKS UNFURL" — shared links identify themselves as MacroDash, not
+  Cloudflare Pages.** The public document, Open Graph and Twitter titles now share the exact
+  `MacroDash - Stonks` string, while an explicit favicon / Apple touch icon supplies the
+  branded `M` that Messages previously replaced with the generic Pages `P`. The manifest
+  references the same assets, and smoke pins the title and icon contract so later metadata
+  cleanup cannot silently regress the unfurl. Tests: **1586 smoke** (+2) + 248 render +
+  152 public-render + `audit:prod` clean.
 - **v3.99.1 — owner-corrected FOMC dates, the odds stop lying, and the Kalshi key path.**
   Owner confirmed the calendar and **corrected two of my asserted dates** (Nov 4 → **Oct 28**,
   Dec 16 → **Dec 9**); Sep 16 — the date driving the live countdown — was right. Both
