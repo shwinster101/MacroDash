@@ -2875,6 +2875,47 @@ Jan-anchor shipped; see `snapshot.js` ~318–328), `spyMa100`, `spyMa200`, and a
   VALUATION GAP ranking (§11.1 — the ranking always renders, which is the owner's actual
   "always an output" contract, and it was never suspended). Tests: 1223 smoke (+2) + 199
   render (+1).
+- **v3.98.3 — the Power-side audit: one exclusion reason, one vocabulary, TERMINAL promoted.**
+  Driving the Power view in Chromium against a degraded fixture (stale 10Y, dead VIX feed)
+  found six things; the first is a real defect. **(1) `regimeFactors` hardcoded the cause.**
+  Every excluded factor's display was built as `` `${val} · STALE — excluded` `` regardless of
+  WHY it was excluded, because the function receives only a Set of keys — so a factor dropped
+  for a DEAD feed (mode MOCK) read as merely old and wore the ⏱ stale clock, while the C3
+  Drivers matrix, which does see the real mode, said "not live in a live build" 300px below.
+  One page, two reasons for one factor. `regimeFactors(d, stale, reasons)` now takes an
+  optional Map key→{kind, asOf} and the two cases print DIFFERENTLY on purpose: a stale
+  factor keeps its number and is DATED ("18.4 — Elevated · too old to count (as of
+  2026-08-13)"), a dead-feed factor **drops its value entirely** ("no live reading — not
+  counted") — **(2)** because that number is the mock baseline, and a fabricated value wearing
+  a judgment word ("Elevated") inside an evidence panel is the v3.1 invariant's exact target.
+  Absent map = generic "not counted", never an invented cause. **The hero stopped re-deriving
+  its rows**: it called `regimeFactors(d,stale)` itself, which structurally cannot know the
+  cause, so the orchestrator now hands it `evidenceSet.factors` (`factorRows`) — one
+  derivation, two altitudes, the local call kept only as the extraction fallback.
+  **(3+4+5) One line, one scope word, one vocabulary.** The hero read "4/6 factors voting ·
+  excluded: 10Y · VIX" directly under a sentence calling those two "dark", while the verdict
+  sub ALSO said "4 of 6 inputs usable" — three renderings of one fact and two words for one
+  state. It is now **"4 of 6 voters counted · dark: 10Y · VIX"**, and the sub's duplicate is
+  dropped where the line below already states it (presentation only — `regime.sub` is
+  untouched for the paste block and the 5 Whys, which have no such line). **"VOTERS" resolves
+  the other ambiguity**: WHY #2 lists dark CROSS-SIGNALS (WTI and HY-IG among them), a
+  deliberately wider set than the six that vote, and nothing said so. The flip panel's
+  "Excluded from the vote (stale)" loses its unearned diagnosis for the same reason as (1).
+  **(6)** the matrix reasons join the voice rules: "stale for its cadence" → *"too old for how
+  often it updates"*, "not live in a live build" → *"no live feed right now"*.
+  **FEAT-TERMINAL-BAR (owner call: "want terminal more available given all our hard work"):**
+  the ⌁ TERMINAL link is **promoted out of the ⋯ OPS disclosure into the toolbar itself**,
+  with the amber accent treatment so it reads as the primary destination rather than another
+  utility. v3.62 demoted it as newcomer clutter — correct then, wrong now: the default route
+  is the operator's, and Simple|Power gates newcomer noise far better than a menu did. It
+  keeps its own `!publicView` gate (a visitor never sees it) and is **removed from the menu**
+  — one door to one room, pinned by an exactly-once check on the href. The TT readout copy
+  stays in OPS.
+  Tests: **1556 smoke** (+9: both exclusion causes RUN through the real engine and proven to
+  render differently, the dead-feed value-drop, the no-map generic, the end-to-end chain
+  through `buildEvidenceSet`, the flip-panel and sub fixes, the promoted-once TERMINAL) +
+  248 render + **139 public-render** (+1, four re-pinned: the scoped voters line, the card's
+  real reason, TERMINAL visible with ZERO clicks and absent from the menu, and its accent).
 - **v3.98.2 — the tightening pass: every why is 1–2 sentences, WHY #5 carries the weight,
   and Power talks retail too.** Owner review of the live v3.98.1 whys: keep the layout and
   expander, cut the parentheticals and asides, prefer "sentiment is greedy" over "the crowd

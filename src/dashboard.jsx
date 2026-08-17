@@ -785,6 +785,19 @@ export default function Dashboard({ publicView = false } = {}) {
               </button>
             ))}
           </div>
+          {/* v3.98.3 (owner call: "want terminal more available"): TERMINAL is PROMOTED out of
+              the ⋯ OPS menu into the bar itself. v3.62 demoted it as newcomer clutter — correct
+              then, wrong now: the default route is the OPERATOR's, the terminal is where the
+              work lives, and Simple|Power already gates newcomer noise far better than a menu
+              did. It keeps the !publicView gate (a visitor never sees it) and gets the accent
+              treatment so it reads as the primary destination, not another utility. */}
+          {!publicView&&(
+            <a href="/admin.html" aria-label="Open Ticker Terminal" className="hdr-act"
+              title="TT Ticker Terminal — the book, rankings and next dollar"
+              style={{fontFamily:T.fontMono,fontSize:9,fontWeight:700,background:`${T.amber}1a`,border:`1px solid ${T.amber}`,color:T.amber,padding:"5px 12px",borderRadius:4,textDecoration:"none",whiteSpace:"nowrap",letterSpacing:"0.04em"}}>
+              ⌁ TERMINAL
+            </a>
+          )}
           {/* FEAT-165: share button — stays in the bar; it is the one action a VISITOR wants. */}
           <button onClick={handleShare} aria-label="Copy dashboard link" className="hdr-act"
             style={{fontFamily:T.fontMono,fontSize:9,background:copied?"#1a3020":T.surfaceHigh,border:`1px solid ${copied?T.green:T.borderAccent}`,color:copied?T.green:T.textSecondary,padding:"5px 12px",borderRadius:4,cursor:"pointer",transition:"all 0.2s"}}>
@@ -810,12 +823,8 @@ export default function Dashboard({ publicView = false } = {}) {
                   style={{fontFamily:T.fontMono,fontSize:9,background:ttCopied?"#1a3020":T.surfaceHigh,border:`1px solid ${ttCopied?T.green:T.borderAccent}`,color:ttCopied?T.green:T.textSecondary,padding:"7px 12px",borderRadius:4,cursor:anyLive?"pointer":"not-allowed",opacity:anyLive?1:0.4,textAlign:"left"}}>
                   {ttCopied?"✓ TT COPIED":"⎘ TT readout"}
                 </button>
-                {/* FEAT-TT: link to the Access-gated Ticker Terminal admin portal */}
-                <a href="/admin.html" aria-label="Open Ticker Terminal admin" className="hdr-act"
-                  title="TT Ticker Terminal (admin — email-gated)"
-                  style={{fontFamily:T.fontMono,fontSize:9,background:T.surfaceHigh,border:`1px solid ${T.borderAccent}`,color:T.textSecondary,padding:"7px 12px",borderRadius:4,textDecoration:"none",whiteSpace:"nowrap"}}>
-                  ⌁ TERMINAL
-                </a>
+                {/* TERMINAL left this menu in v3.98.3 — it is a first-class bar button now.
+                    Keeping a second copy here would be two doors to one room. */}
               </div>
             </details>
           )}
@@ -842,7 +851,8 @@ export default function Dashboard({ publicView = false } = {}) {
           one-liner (sentence). Same buckets, one derivation (postureSummary). */}
       <RegimeBand d={d} stale={staleFactors} loading={mode==="LOADING"} liveBuild={liveBuild} srcLabel={derivedLabel}
         sentence={!simple&&!evidenceSet.withheld&&evidenceSet.summary?evidenceSet.summary.sentence:null}
-        prose={simple&&!evidenceSet.withheld&&evidenceSet.summary?evidenceSet.summary.prose:null} conf={regimeConf}/>
+        prose={simple&&!evidenceSet.withheld&&evidenceSet.summary?evidenceSet.summary.prose:null} conf={regimeConf}
+        factorRows={evidenceSet.factors}/>
 
       {/* FEAT-WHY (v3.62) sentence now renders INSIDE the hero (v3.94 DRIVERS-ONLY — one
           render site beside the verdict it explains). postureSummary stays computed and

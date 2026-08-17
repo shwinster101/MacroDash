@@ -75,7 +75,16 @@ export function buildEvidenceSet({ d, provenance, dataAsOf, mode, liveBuild, now
   // `band.vote(...)` here — correct, but a second call site for the same rule; now there is
   // one. Freshness still comes from fieldMode. An excluded factor's vote is "excluded" with
   // the reason named — "4 of 6 usable" without saying which is half a fact.
-  const rows = regimeFactors(d, exclusions);
+  // v3.98.3: hand the engine the REAL exclusion cause per factor. fieldMode already knows it;
+  // without this the display string guessed "STALE" for every exclusion, including dead feeds.
+  const reasons = new Map();
+  for (const key of exclusions) {
+    const field = FACTOR_FIELD[key];
+    const fm = fieldMode(provenance, dataAsOf, field, now);
+    reasons.set(key, { kind: fm === "STALE" ? "stale" : "nofeed",
+                       asOf: (dataAsOf && dataAsOf[field]) || null });
+  }
+  const rows = regimeFactors(d, exclusions, reasons);
   const factors = rows.map((f) => {
     const field = FACTOR_FIELD[f.key];
     const fm = fieldMode(provenance, dataAsOf, field, now);
@@ -87,9 +96,11 @@ export function buildEvidenceSet({ d, provenance, dataAsOf, mode, liveBuild, now
       mode: fm,
       asOf: (dataAsOf && dataAsOf[field]) || null,
       excluded,
+      // v3.98.3 (owner voice rules): say it the way a person would. Same two states, same
+      // gate — "stale for its cadence" / "not live in a live build" was memo-speak.
       reason: !excluded ? null
-        : fm === "STALE" ? "stale for its cadence"
-        : "not live in a live build",
+        : fm === "STALE" ? "too old for how often it updates"
+        : "no live feed right now",
     };
   });
 

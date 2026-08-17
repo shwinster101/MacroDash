@@ -272,7 +272,17 @@ export function flipConditions(d, stale=new Set()) {
    `vote` is now exactly what computeRegime counted: one derivation, many altitudes — the same
    rule the terminal's ptModelRows follows. EXCLUDED wins over the band vote, because a factor
    that is not voting has no lean to report. */
-export function regimeFactors(d, stale=new Set()) {
+/* v3.98.3 — the exclusion REASON is no longer hardcoded. This function knew only THAT a
+   factor was excluded, so it stamped every one of them "· STALE — excluded": a factor
+   excluded because its feed is DEAD (mode MOCK) read as merely old, while the C3 Drivers
+   matrix — which does see the real mode — said "not live in a live build" 300px below. One
+   page, two reasons for the same factor, and the wrong one wore the stale clock.
+   `reasons` is an optional Map key→{kind:"stale"|"nofeed", asOf}. The two cases print
+   DIFFERENTLY on purpose: a stale factor's number is a REAL observation (keep it, date it),
+   a no-feed factor's number is the mock baseline (drop it entirely — a fabricated value
+   wearing a judgment word is the v3.1 invariant's exact target). Absent map = generic
+   "not counted", never a fabricated cause. */
+export function regimeFactors(d, stale=new Set(), reasons=null) {
   const voteOf=(key)=>{
     const band=REGIME_BAND_TABLE.find((t)=>t.key===key);
     return band ? band.vote(band.read(d), d) : "neutral";
@@ -287,8 +297,14 @@ export function regimeFactors(d, stale=new Set()) {
   ].map((f)=>({ ...f, vote:voteOf(f.key) }));
   // Stale factors: the vote becomes EXCLUDED and the row says so — a factor the model refuses
   // to count must never also report a lean.
+  const excludedVal=(f)=>{
+    const r=reasons && typeof reasons.get==="function" ? reasons.get(f.key) : null;
+    if(r && r.kind==="nofeed") return "no live reading — not counted";
+    if(r && r.kind==="stale")  return `${f.val} · too old to count${r.asOf?` (as of ${r.asOf})`:""}`;
+    return `${f.val} · not counted`;
+  };
   return factors.map(f => stale.has(f.key)
-    ? { ...f, stale:true, vote:"excluded", val:`${f.val} · STALE — excluded` }
+    ? { ...f, stale:true, vote:"excluded", val:excludedVal(f) }
     : f);
 }
 

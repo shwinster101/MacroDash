@@ -37,7 +37,7 @@ export const WEN_MOON_STATES = [
 // from the same buckets as `sentence`. The orchestrator passes EXACTLY ONE of the two —
 // prose in Simple (friendlier, directional verb phrases), sentence in Power (denser is
 // correct there). Withheld postures render neither: no "why" for a call not made.
-const RegimeBand=({d,stale=new Set(),loading=false,liveBuild=false,srcLabel="derived from live data",sentence=null,conf=null,prose=null})=>{
+const RegimeBand=({d,stale=new Set(),loading=false,liveBuild=false,srcLabel="derived from live data",sentence=null,conf=null,prose=null,factorRows=null})=>{
   const [open,setOpen]=useState(false);
   // Property 9 (null-safe): no data object means nothing to compute — an empty, hidden
   // region, never a throw. The orchestrator always passes `d`; this guards extraction reuse.
@@ -45,7 +45,14 @@ const RegimeBand=({d,stale=new Set(),loading=false,liveBuild=false,srcLabel="der
   const regime=computeRegime(d,stale);
   // C1 (v3.60): the pure engine returns token KEYS; the UI owns the palette.
   regime.tint=DT[regime.tintKey]; regime.color=T[regime.colorKey];
-  const factors=regimeFactors(d,stale);
+  /* v3.98.3 — ONE derivation, two altitudes. This re-derived its own factor rows via
+     regimeFactors(d,stale), which cannot see WHY a factor was excluded, so the hero panel
+     and the C3 Drivers matrix printed different reasons for the same factor. The
+     orchestrator now hands over evidenceSet.factors (which carries the real cause); the
+     local call survives only as the extraction-reuse fallback (Property 9). */
+  const factors=(Array.isArray(factorRows)&&factorRows.length)
+    ? factorRows.map((f)=>({...f, val:f.display!==undefined?f.display:f.val}))
+    : regimeFactors(d,stale);
   // FEAT-QUORUM: LOADING is not a verdict state — during the first fetch there is no evidence
   // yet, so the posture is withheld outright rather than computed from the mock baseline.
   const withheld=loading||regime.insufficient;
@@ -73,9 +80,13 @@ const RegimeBand=({d,stale=new Set(),loading=false,liveBuild=false,srcLabel="der
                     posture ("the system lacks evidence, hold"), not the internal
                     INSUFFICIENT sentinel the engine still uses (regime.js is untouched;
                     presentation only). The literal INSUFFICIENT never reaches a reader. */}
+                {/* v3.98.3: the engine's stale-watch fallback sub ends "N of M inputs
+                    usable" — the exact fact the voters line renders 3px below. Drop it HERE
+                    (presentation only; regime.sub is untouched for the paste block and the
+                    5 Whys, where no such line exists). */}
                 {loading?"LOADING · waiting for live data before calling a posture"
                         :regime.insufficient?`${WITHHELD_LABEL} · ${regime.sub}`
-                        :`${regime.label} · ${regime.sub}`}
+                        :`${regime.label} · ${conf&&/\d+ of \d+ inputs usable$/.test(regime.sub)?regime.sub.replace(/ — \d+ of \d+ inputs usable$/,""):regime.sub}`}
               </span>
               {(loading||regime.insufficient)&&<span style={{fontFamily:T.fontMono,fontSize:T.fsS,color:T.textMuted}}>
                 {loading?"no factors voting yet"
@@ -91,9 +102,16 @@ const RegimeBand=({d,stale=new Set(),loading=false,liveBuild=false,srcLabel="der
               <div>{prose.for}</div>
               <div>{prose.against}</div>
             </div>}
+            {/* v3.98.3 — one line, one scope word, one vocabulary. It used to read
+                "4/6 factors voting · excluded: 10Y · VIX" directly under a sentence saying
+                those same two were "dark", while the verdict sub above ALSO said "4 of 6
+                inputs usable" — three renderings of one fact and two words for one state.
+                "VOTERS" is the scope word that resolves the other ambiguity: WHY #2 lists
+                dark CROSS-SIGNALS (WTI, HY-IG among them), a deliberately wider set than the
+                six that vote, and nothing said so. */}
             {conf&&!loading&&<div style={{fontFamily:T.fontMono,fontSize:9,marginTop:3,display:"flex",gap:10,flexWrap:"wrap"}}>
-              <span style={{color:regime.insufficient?T.red:conf.counted===conf.total?T.green:T.amber}}>{conf.counted}/{conf.total} factors voting</span>
-              {conf.excluded.length>0&&<span style={{color:T.amber}}>excluded: {conf.excluded.join(" · ")}</span>}
+              <span style={{color:regime.insufficient?T.red:conf.counted===conf.total?T.green:T.amber}}>{conf.counted} of {conf.total} voters counted</span>
+              {conf.excluded.length>0&&<span style={{color:T.amber}}>dark: {conf.excluded.join(" · ")}</span>}
               {conf.blind&&<span style={{color:T.red}}>⚠ crash gauge (VIX) unavailable</span>}
             </div>}
             {/* FEAT-FLIP: the audit's fourth first-screen answer — what would change the call.
@@ -174,7 +192,7 @@ const RegimeBand=({d,stale=new Set(),loading=false,liveBuild=false,srcLabel="der
             ))}
             {fc.excluded.length>0&&(
               <div style={{fontFamily:T.fontMono,fontSize:8,color:T.amber,marginTop:2}}>
-                Excluded from the vote (stale), so their thresholds are not load-bearing: {fc.excluded.map(e=>e.short).join(" · ")}
+                Dark, so their thresholds are not load-bearing: {fc.excluded.map(e=>e.short).join(" · ")}
               </div>
             )}
           </div>

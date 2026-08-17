@@ -2875,11 +2875,13 @@ ok("affordance: the alert toggles state their real limit at the weight of the co
 // v3.94 DRIVERS-ONLY: the verdict-confidence segments render in the HERO's status line
 // (one render site beside the verdict they describe); the strip keeps the census only.
 ok("confidence: the hero status line reports how many factors actually voted, from the EvidenceSet itself",
-  bandSrc.includes("{conf.counted}/{conf.total} factors voting") &&
+  bandSrc.includes("{conf.counted} of {conf.total} voters counted") &&
   dashSrc.includes("counted:evidenceSet.counted,total:evidenceSet.totalFactors") &&
   dashSrc.includes("conf={regimeConf}"));
-ok("confidence: excluded factors are NAMED on the hero — 'N of 6 usable' without saying which is half a fact",
-  bandSrc.includes("excluded: {conf.excluded.join") && bandSrc.includes("crash gauge (VIX) unavailable"));
+// v3.98.3: ONE vocabulary on this screen — the sentence directly above calls them "dark",
+// so the line does too, and "voters" scopes it against WHY #2's wider cross-signal list.
+ok("confidence: excluded factors are NAMED on the hero — 'N of 6' without saying which is half a fact",
+  bandSrc.includes("dark: {conf.excluded.join") && bandSrc.includes("crash gauge (VIX) unavailable"));
 
 // ---- 27. FEAT-ALERT-EVAL (v3.52) — the alerts evaluate, or say they cannot ----
 // Suite audit called this "interface theater" for not DELIVERING. The defect was one layer
@@ -3574,7 +3576,7 @@ ok("evidence: DEGRADED — quorate with exclusions publishes AND names the exclu
     const e = ev({ provenance: p });
     return e.state === "DEGRADED" && !e.withheld && e.counted === 5 &&
       e.excludedKeys.includes("VIX") &&
-      e.factors.find((f) => f.key === "vix").reason === "not live in a live build"; })());
+      e.factors.find((f) => f.key === "vix").reason === "no live feed right now"; })());
 ok("evidence: INSUFFICIENT below the 4-of-6 quorum — withheld with the count stated",
   (() => { const e = ev({ provenance: { tenYear: "LIVE", vix: "LIVE" },
     dataAsOf: { tenYear: "2026-08-01", vix: "2026-08-01" } });
@@ -3587,9 +3589,9 @@ ok("evidence: DEMO — a mock build keeps its posture (mock IS that baseline)",
 ok("evidence: every factor row carries vote, mode, as-of and display copy",
   ev().factors.every((f) => ["bull", "bear", "neutral", "excluded"].includes(f.vote) &&
     f.mode && f.display && f.asOf === "2026-08-01") && ev().factors.length === 6);
-ok("evidence: a STALE factor's reason says stale-for-cadence, not the live-build wording",
+ok("evidence: a STALE factor's reason says too-old-for-cadence, never the no-feed wording",
   (() => { const e = ev({ dataAsOf: { ...FRESH_ASOF, vix: "2026-01-02" } });
-    return e.factors.find((f) => f.key === "vix").reason === "stale for its cadence"; })());
+    return e.factors.find((f) => f.key === "vix").reason === "too old for how often it updates"; })());
 ok("evidence: the factor VOTE comes from the band table itself — spot-check NFCI neutral",
   (() => { const f = ev().factors.find((x) => x.key === "nfci");
     // mock NFCI is -0.42: inside the deadband, so neutral (v3.43.1's abstaining demo value)
@@ -3724,18 +3726,23 @@ ok("tt-glance: the board heading is chip-length; the coaching line lives in the 
   adminSrc.includes("<h2 style=\"margin-top:14px\">THE BOOK</h2>") &&
   adminSrc.includes("click any ticker chip to open its TT Card"));
 // F2b-3: operator tooling off the public route (the A4 pattern).
-ok("glance: the TT copy button and the FIRED/BLIND alert badges gate on !publicView",
-  // v3.62: TT and TERMINAL now live inside the ⋯ OPS disclosure, so the gate moved OUT to the
-  // <details> that wraps them — the contract ("a visitor never sees operator tooling") is
-  // measured by checking the menu is gated AND that both actions are genuinely inside it,
-  // rather than pinning the old adjacency of one button to one `!publicView`.
+ok("glance: operator tooling gates on !publicView — TT copy in the menu, TERMINAL in the bar",
+  // v3.62 put TT and TERMINAL inside the ⋯ OPS disclosure; v3.98.3 PROMOTED TERMINAL into the
+  // bar (owner call) and left the readout copy in the menu. The contract is unchanged and is
+  // still measured as a contract — every operator action sits behind a !publicView gate,
+  // wherever it renders — rather than as one adjacency.
   (() => {
     const open = dashSrc.indexOf('<details className="hdr-ops"');
     const close = dashSrc.indexOf("</details>", open);
     if (open < 0 || close < 0) return false;
     const menu = dashSrc.slice(open, close);
+    // the readout copy stays in the gated menu; TERMINAL is gone from it (one door, one room)
+    if (!menu.includes("onClick={handleTtCopy}") || menu.includes('href="/admin.html"')) return false;
+    // TERMINAL is a first-class bar action, still behind its own !publicView gate
+    const term = dashSrc.indexOf('aria-label="Open Ticker Terminal"');
     return /\{!publicView&&\(\s*\n?\s*<details className="hdr-ops"/.test(dashSrc) &&
-      menu.includes("onClick={handleTtCopy}") && menu.includes('href="/admin.html"');
+      term > 0 && /\{!publicView&&\(\s*\n?\s*<a href="\/admin\.html"/.test(dashSrc) &&
+      (dashSrc.match(/href="\/admin\.html"/g) || []).length === 1;
   })() &&
   /\{!publicView&&activeAlerts>0&&<Badge/.test(dashSrc) &&
   /\{!publicView&&activeAlerts===0&&alertBlind>0&&<Badge/.test(dashSrc));
@@ -3944,7 +3951,9 @@ ok("the row vote matches the vote computeRegime actually counted — one derivat
 ok("EXCLUDED wins over the band vote — a factor that is not counted reports no lean",
   (() => { const ex = regimeFactorRows(neutralD, new Set(["valuation"]));
     const v = ex.find((r) => r.key === "valuation");
-    return v.vote === "excluded" && v.stale === true && /STALE — excluded/.test(v.val); })());
+    // v3.98.3: with no reason map the row says "not counted" — it must NOT invent a cause.
+    return v.vote === "excluded" && v.stale === true &&
+      /· not counted$/.test(v.val) && !/STALE/.test(v.val); })());
 ok("a non-finite reading votes NEUTRAL, not a confident bearish chip",
   (() => { const bad = JSON.parse(JSON.stringify(neutralD));
     bad.marketPulse.vix.current = NaN;
@@ -4609,7 +4618,10 @@ ok("band: the module stays under the 300-line bound (Property 10)",
 // simple (the newbie pair). One derivation (postureSummary), never stacked.
 ok("band: the call site still passes the live wiring (+ v3.97: sentence/prose swap by mode)",
   /sentence=\{!simple&&!evidenceSet\.withheld&&evidenceSet\.summary\?evidenceSet\.summary\.sentence:null\}/.test(dashSrc) &&
-  /prose=\{simple&&!evidenceSet\.withheld&&evidenceSet\.summary\?evidenceSet\.summary\.prose:null\} conf=\{regimeConf\}\/>/.test(dashSrc) &&
+  /prose=\{simple&&!evidenceSet\.withheld&&evidenceSet\.summary\?evidenceSet\.summary\.prose:null\} conf=\{regimeConf\}/.test(dashSrc) &&
+  // v3.98.3: the hero renders the EvidenceSet's OWN factor rows (which carry the real
+  // exclusion cause) instead of re-deriving them — one derivation, two altitudes.
+  /factorRows=\{evidenceSet\.factors\}\/>/.test(dashSrc) &&
   /<RegimeBand d=\{d\} stale=\{staleFactors\} loading=\{mode==="LOADING"\} liveBuild=\{liveBuild\} srcLabel=\{derivedLabel\}/.test(dashSrc));
 
 // ═══════════ [47] UI-OVERHAUL task 1.4 — FiveWhys extracted, presentation only ═══════════
@@ -6735,6 +6747,57 @@ console.log("\n[62] v3.97 SHAREABLE SIMPLE — prose derivation + picks whitelis
     /\{simple&&<SharedPicks picks=\{picks\}\/>\}/.test(dashSrc) && !/publicView[^\n]*<SharedPicks/.test(dashSrc));
   ok("watchlist: the v3.97 fix reads the PROP — the d.watchlist ReferenceError is gone",
     !/d\.watchlist/.test(wlSrc) && /\(watchlist\|\|\[\]\)\.filter/.test(wlSrc));
+}
+
+
+// ═══════════ [63] v3.98.3 — the Power-side audit: one exclusion reason, one vocabulary ═══════════
+// Driving the Power view in Chromium against a degraded fixture found the hero panel and the
+// C3 Drivers matrix printing DIFFERENT reasons for the same excluded factor: regimeFactors
+// hardcoded "· STALE — excluded" for every exclusion, so a DEAD feed (mode MOCK) read as
+// merely old — and wore the stale clock — while the matrix, which sees the real mode, said
+// otherwise 300px below.
+console.log("\n[63] v3.98.3 — exclusion reasons, scoped vocabulary, TERMINAL promoted");
+{
+  const { regimeFactors: rf } = await import("../src/regime.js");
+  const D = JSON.parse(JSON.stringify(MOCK_DATA));
+  const staleOnly = new Set(["vix"]);
+  const asStale = rf(D, staleOnly, new Map([["vix", { kind: "stale", asOf: "2026-08-13" }]]));
+  const asDead  = rf(D, staleOnly, new Map([["vix", { kind: "nofeed", asOf: null }]]));
+  const noMap   = rf(D, staleOnly);
+  const vix = (rows) => rows.find((r) => r.key === "vix").val;
+  ok("v3.98.3: a STALE factor keeps its REAL observation and is dated — old is not fabricated",
+    /too old to count \(as of 2026-08-13\)/.test(vix(asStale)) &&
+    vix(asStale).startsWith(String(D.marketPulse.vix.current)));
+  ok("v3.98.3: a DEAD-feed factor drops its value entirely — a mock number must never wear a judgment",
+    vix(asDead) === "no live reading — not counted" &&
+    !new RegExp(String(D.marketPulse.vix.current)).test(vix(asDead)) &&
+    !/Elevated|Low|Spiking/.test(vix(asDead)));
+  ok("v3.98.3: the two causes render DIFFERENTLY — the defect was one string for both",
+    vix(asStale) !== vix(asDead));
+  ok("v3.98.3: with no reason map the row says 'not counted' and invents NO cause",
+    /· not counted$/.test(vix(noMap)) && !/STALE|stale|no live/.test(vix(noMap)));
+  // The whole chain: evidence.js must SUPPLY the cause it already knows.
+  const { buildEvidenceSet: bes } = await import("../src/evidence.js");
+  const today = new Date();
+  const iso = (d) => new Intl.DateTimeFormat("en-CA", { timeZone: "America/New_York" }).format(d);
+  const prov = { tenYear:"LIVE", fearGreed:"LIVE", cpiHeadline:"LIVE", nfci:"LIVE", shillerPe:"LIVE" }; // vix absent = dead feed
+  const asOf = { tenYear:iso(today), fearGreed:iso(today), cpiHeadline:iso(today), nfci:iso(today), shillerPe:iso(today) };
+  const eDead = bes({ d: D, provenance: prov, dataAsOf: asOf, mode: "LIVE", liveBuild: true, now: today });
+  ok("v3.98.3 end-to-end: a dead feed reaches the hero row as 'no live reading', never as stale",
+    eDead.factors.find((f) => f.key === "vix").display === "no live reading — not counted" &&
+    eDead.factors.find((f) => f.key === "vix").reason === "no live feed right now");
+  const eStale = bes({ d: D, provenance: { ...prov, vix:"LIVE" },
+    dataAsOf: { ...asOf, vix: "2026-01-02" }, mode: "LIVE", liveBuild: true, now: today });
+  ok("v3.98.3 end-to-end: a genuinely stale feed still says too-old, dated with its own asOf",
+    /too old to count \(as of 2026-01-02\)/.test(eStale.factors.find((f) => f.key === "vix").display));
+  ok("v3.98.3: the flip panel no longer asserts '(stale)' over an exclusion it cannot diagnose",
+    !/Excluded from the vote \(stale\)/.test(bandSrc) && /Dark, so their thresholds/.test(bandSrc));
+  ok("v3.98.3: the verdict sub's duplicate count is dropped where the voters line already states it",
+    /inputs usable\$\/\.test\(regime\.sub\)/.test(bandSrc) && /replace\(\/ — /.test(bandSrc));
+  ok("v3.98.3: TERMINAL is a bar action with the accent treatment, and exists exactly ONCE",
+    /aria-label="Open Ticker Terminal"/.test(dashSrc) &&
+    (dashSrc.match(/href="\/admin\.html"/g) || []).length === 1 &&
+    /border:`1px solid \$\{T\.amber\}`,color:T\.amber/.test(dashSrc));
 }
 
 console.log(`\n=== SMOKE TEST: ${pass} passed, ${fail} failed ===`);

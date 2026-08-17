@@ -358,7 +358,7 @@ console.log("\n[public] v3.94 — Simple default, the toggle, persistence, red f
   ok("simple: the Glance layer renders — verdict, newbie prose, confidence, freshness, key numbers",
     POSTURES.test(body) && /The bull case right now:/.test(body) &&
     /The bear case:|No clear bear case on the board/.test(body) &&
-    /factors voting/.test(body) && /SIGNAL QUALITY/i.test(body) && /SPY/.test(body));
+    /voters counted/.test(body) && /SIGNAL QUALITY/i.test(body) && /SPY/.test(body));
   ok("v3.97 simple: the prose is DIRECTIONAL, not a bare noun list — and the compact sentence is gone",
     /is (cooling|asleep|cheap)|are (greedy|falling|sane)|priced for perfection/.test(body) && !/leans? bullish;|leans? bearish;/.test(body));
   ok("v3.97 simple: no picks feed → the strip renders NOTHING, never example picks",
@@ -564,14 +564,17 @@ console.log("\n[public] v3.60 P0 slice — nav, matrix, digest, health");
   // The red facts survive the v3.61 collapse: the summary count while closed, the exclusion
   // named in the Signal Quality strip, and the ⏱ chip on the band (v3.25 rule).
   const closed = await page.locator("body").innerText();
-  ok("glance: the exclusion is visible while the matrix is closed (Signal Quality names it)",
-    /5\/6 factors voting/i.test(closed) && /excluded: VIX/i.test(closed));
+  // v3.98.3: one scoped, one-vocabulary line — "5 of 6 voters counted · dark: VIX".
+  ok("glance: the exclusion is visible while the matrix is closed (the voters line names it)",
+    /5 of 6 voters counted/i.test(closed) && /dark: VIX/i.test(closed));
   await page.locator('section[aria-labelledby="drivers"] button[aria-expanded]').click();
   await page.waitForTimeout(200);
   const drivers = await page.locator('section[aria-labelledby="drivers"]').innerText();
-  ok("C3: an excluded factor is NAMED with its reason on the card itself",
-    /EXCLUDED/.test(drivers) && /excluded — not live in a live build/.test(drivers) &&
-    /5\/6 factors usable/i.test(drivers));
+  // v3.98.3: the reason is retailed AND the card now shows the real cause — a dead feed
+  // says "no live reading", never the stale wording the hero used to hardcode.
+  ok("C3: an excluded factor is NAMED with its real reason on the card itself",
+    /EXCLUDED/.test(drivers) && /excluded — no live feed right now/.test(drivers) &&
+    /no live reading — not counted/.test(drivers) && /5\/6 factors usable/i.test(drivers));
   await page.close();
 }
 
@@ -598,13 +601,25 @@ console.log("\n[public] A4 — the public/private boundary is ENFORCED, not comm
   // innerText. Assert the stronger thing instead — the menu exists AND actually opens to reveal
   // a real link. A DOM-presence check would have passed even if the disclosure never opened.
   ok("operator route: the OPS menu is present", await page.locator("details.hdr-ops").count() === 1);
-  ok("operator route: TERMINAL link is reachable by opening the OPS menu",
+  // v3.98.3 (owner call): TERMINAL is PROMOTED out of the menu into the bar — visible with
+  // zero clicks, and gone from the disclosure so there is one door to one room.
+  ok("operator route: TERMINAL is visible in the bar with NO clicks, and no longer inside OPS",
     await (async () => {
-      await page.locator("details.hdr-ops > summary").click();
-      await page.waitForTimeout(150);
-      const link = page.locator('details.hdr-ops a[href="/admin.html"]');
-      return await link.count() === 1 && await link.isVisible();
+      const bar = page.locator('a[aria-label="Open Ticker Terminal"]');
+      return await bar.count() === 1 && await bar.isVisible() &&
+        await page.locator('details.hdr-ops a[href="/admin.html"]').count() === 0;
     })());
+  // Accent = TERMINAL's border/text share one colour and differ from the neutral SHARE
+  // button beside it, so "primary destination" is measured, not asserted in a comment.
+  ok("v3.98.3: TERMINAL carries the accent treatment, distinct from the neutral bar actions",
+    await page.evaluate(() => {
+      const t = document.querySelector('a[aria-label="Open Ticker Terminal"]');
+      const sh = document.querySelector('button[aria-label="Copy dashboard link"]');
+      if (!t || !sh) return false;
+      const a = getComputedStyle(t), b = getComputedStyle(sh);
+      return a.color === a.borderTopColor && a.color !== b.color &&
+        a.borderTopColor !== b.borderTopColor && a.fontWeight === "700";
+    }));
   ok("operator route: the TT copy button renders (v3.61 gate leaves the operator view whole)",
     await page.locator('button[aria-label="Copy TT regime readout"]').count() === 1);
   await page.close();
