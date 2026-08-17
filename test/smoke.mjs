@@ -1753,8 +1753,11 @@ console.log("\n[16] functions/api/positions.js — pos split out of the book");
 const posSrc = readSrc("../functions/api/positions.js");
 ok("positions.js: PIN-gated like /api/tt — position data is at least as sensitive as the book",
   (posSrc.match(/const auth = await authorize\(request, env\);/g) || []).length === 3);
-ok("positions.js: reuses the shared validatePos from tt.js rather than redefining the bands",
-  posSrc.includes('import { authorize, validatePos } from "./tt.js";') && !/function validatePos/.test(posSrc));
+// v3.100: the import gained validateAccount — the account record is validated by the SAME
+// shared home as pos, not a local redefinition (the pin's actual claim, restated wider).
+ok("positions.js: reuses the shared validatePos + validateAccount from tt.js rather than redefining the bands",
+  posSrc.includes('import { authorize, validatePos, validateAccount } from "./tt.js";') &&
+  !/function validatePos/.test(posSrc) && !/function validateAccount/.test(posSrc));
 ok("positions.js: PUT is MERGE-ONLY — a partial sync must never blank the names it didn't touch",
   posSrc.includes("const positions = { ...posMapFrom(stored) };") &&
   posSrc.includes('body.updates must be an object'));

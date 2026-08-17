@@ -361,6 +361,16 @@ export function validateBoard(b) {
     for (const d of b.decisions) {
       if (!d || typeof d !== "object" || typeof d.q !== "string" || !d.q) return "each decision needs a q (the question)";
       if (d.asked !== undefined && !ISO_RE.test(String(d.asked))) return "decision.asked must be YYYY-MM-DD";
+      /* FEAT-TT-ALLOC (v3.100): the funding ranking's tier-1 FORCED marking. Owner call
+         2026-08-17: until §14.8 activation, only OWNER-MARKED signals may rank a position as
+         a forced exit — this explicit boolean (plus cut-list membership), never the shadow
+         score engine's BROKEN_THESIS and never an inference from decision prose. It must be
+         literally `true` and must scope to a real sym: a forced exit that doesn't name its
+         position is a sentence, not a marking. */
+      if (d.forced_exit !== undefined) {
+        if (d.forced_exit !== true) return "decision.forced_exit must be literally true — mark it or omit it";
+        if (typeof d.sym !== "string" || !SYM_RE.test(d.sym)) return "a forced_exit decision must be scoped to a valid sym";
+      }
     }
   }
   if (b.binaries !== undefined) {
@@ -518,6 +528,53 @@ export function validatePos(p) {
       }
     }
   }
+  /* FEAT-TT-ALLOC (v3.100): tax LOTS from the broker sync. `acquired` is the load-bearing
+     field — short-term vs long-term becomes a DERIVED fact at evaluation time (>365 days),
+     never a stored label and never advice. A lot sum that disagrees with pos.sh is NAMED by
+     the consumer, not rejected here: partial lot coverage is a real broker-data state and
+     rejecting it would discard the lots that WERE measured. */
+  if (p.lots !== undefined) {
+    if (!Array.isArray(p.lots)) return "pos.lots must be an array";
+    for (const l of p.lots) {
+      if (!l || typeof l !== "object") return "each pos.lots entry must be an object";
+      if (!ISO_RE.test(String(l.acquired))) return "lot acquired must be YYYY-MM-DD — ST/LT is derived from it";
+      const s = Number(l.sh);
+      if (!isFinite(s) || s <= 0 || s > 1e9) return "lot sh must be a positive share count";
+      if (l.cb !== undefined) {
+        const c = Number(l.cb);
+        if (!isFinite(c) || c < 0 || c > 1e12) return "lot cb out of band (0..1e12)";
+      }
+    }
+  }
+  return null;
+}
+
+/* FEAT-TT-ALLOC (v3.100): the MEASURED account record — the other half of what the broker
+   sync can measure. Same epistemic class as `pos` (a fact with its own timestamp and source,
+   written by the sync, never typed) and the same banding doctrine. DELIBERATELY carries NO
+   `formula`: board.account (validated above) is the ASSERTED leverage record whose formula
+   rule exists precisely because a human computed it — this record is raw measured fields.
+   Married, never merged: the circuit still governs adds off the asserted record; this one
+   supplies the measured denominator, and a disagreement prints both.
+   `acct` is an optional identifier capped hard at 16 chars — the sync runbook mandates a
+   mask (last-4 at most); a full account number must never fit. Unknown keys pass through
+   (the validateBook rule). */
+export function validateAccount(a) {
+  if (!a || typeof a !== "object" || Array.isArray(a)) return "account must be an object";
+  if (!ISO_DT_RE.test(String(a.at || ""))) return "account.at (ISO date/time) is required — a measured fact without a time cannot be aged";
+  if (typeof a.src !== "string" || !a.src) return "account.src is required — a measured fact must name where it came from";
+  const num = (k, lo, hi, required) => {
+    if (a[k] === undefined || a[k] === null) return required ? `account.${k} is required` : null;
+    const v = Number(a[k]);
+    if (!isFinite(v)) return `account.${k} must be a number`;
+    if (v < lo || v > hi) return `account.${k} out of band (${lo}..${hi}): ${a[k]}`;
+    return null;
+  };
+  for (const e of [num("equity", 0, 1e12, true), num("cash", -1e12, 1e12, false),
+                   num("buying_power", 0, 1e12, false), num("debt", 0, 1e12, false)])
+    if (e) return e;
+  if (a.acct !== undefined && (typeof a.acct !== "string" || a.acct.length > 16))
+    return "account.acct must be a short masked identifier (<=16 chars, last-4 at most)";
   return null;
 }
 

@@ -13,18 +13,34 @@
 // asserted field left in the book — so splitting it out is also the more honest home for
 // it, not just a byte-budget dodge.
 //
-// STORAGE: KV PULSE_CACHE, key tt:pos:v1, no TTL: {asOf, positions: {sym: pos}}. One
+// STORAGE: KV PULSE_CACHE, key tt:pos:v1, no TTL: {asOf, snap, account, positions}. One
 // document, not one-key-per-sym — the whole map is small (a broker sync writes tens of
 // names, not thousands) and the terminal always wants the whole thing at boot to compute
 // caps/clusters/reconcile across the book, so one GET beats an N-symbol fan-out.
+// FEAT-TT-ALLOC (v3.100) additions:
+//   `snap`    — a server-stamped digits version label (the ticker-analysis stamp convention),
+//               regenerated on every PUT. Allocation receipts bind to it, so "the positions
+//               this recommendation was computed from" is a checkable claim. A pre-v3.100
+//               doc (snap absent) DEGRADES the allocation to WAIT — it never blocks a read.
+//   `account` — the MEASURED account record (validateAccount in tt.js): equity/cash/
+//               buying_power/debt + at/src. A SIBLING of positions, not an updates key —
+//               updates keys are SYM_RE-gated. Married-never-merged with board.account (the
+//               ASSERTED leverage record, which keeps its formula rule and still governs the
+//               circuit); this one supplies the measured denominator.
 //
 // AUTH: same PIN gate as /api/tt — position data is at least as sensitive as the book.
 // WRITE SHAPE: PUT is MERGE-ONLY ({updates: {sym: pos|null}}), never a whole-map replace —
 // a sync that only touched 6 names must never be able to silently blank the other 25.
 // {sym: null} is the explicit removal path (a name that's been fully exited).
-import { authorize, validatePos } from "./tt.js";
+import { authorize, validatePos, validateAccount } from "./tt.js";
 
 const POS_KEY = "tt:pos:v1";
+/* FEAT-TT-ALLOC (v3.100): the ONE home for position staleness. The store owns its own
+   freshness semantic — /api/allocation imports this to gate ALLOCATABLE, and admin.html
+   (buildless, cannot import) carries a byte-identical literal that smoke mirror-pins, the
+   MAX_BODY convention. A size older than this spans a session and can mislead like a stale
+   ref_px. */
+export const POS_STALE_D = 2;
 const BOOK_KEY = "tt:book:v1";               // mirrors the constant in functions/api/tt.js
 const SNAP_PREFIX = "tt:book:snap:";         // mirrors the constant in functions/api/tt.js
 const SNAP_TTL = 30 * 24 * 3600;
@@ -83,7 +99,8 @@ export async function onRequestGet({ request, env }) {
     if (!SYM_RE.test(sym)) return json({ error: "bad sym" }, 400);
     return json({ sym, pos: positions[sym] || null });
   }
-  return json({ asOf: stored?.asOf || null, positions });
+  return json({ asOf: stored?.asOf || null, snap: stored?.snap || null,
+    account: stored?.account || null, positions });
 }
 
 // Merge-only: a request only ever describes the names it touched. {sym: null} removes a
@@ -101,11 +118,16 @@ export async function onRequestPut({ request, env }) {
   let body;
   try { body = JSON.parse(raw); } catch (_e) { return json({ error: "invalid JSON" }, 400); }
 
-  const updates = body && body.updates;
-  if (!updates || typeof updates !== "object" || Array.isArray(updates))
+  /* FEAT-TT-ALLOC (v3.100): `account` rides the PUT as a SIBLING of updates (updates keys
+     are SYM_RE-gated, so it cannot live inside). Semantics copy tt.js's board carry rule:
+     ABSENT = carry the stored record forward (an older sync client must not eat it),
+     null = explicit clear, object = validate-then-replace. A PUT may be account-only. */
+  const updates = (body && body.updates) || {};
+  if (typeof updates !== "object" || Array.isArray(updates))
     return json({ error: "body.updates must be an object of {sym: pos|null}" }, 400);
+  const hasAccount = body && Object.prototype.hasOwnProperty.call(body, "account");
   const syms = Object.keys(updates);
-  if (!syms.length) return json({ error: "updates is empty" }, 400);
+  if (!syms.length && !hasAccount) return json({ error: "updates is empty" }, 400);
   for (const s of syms) {
     if (!SYM_RE.test(s)) return json({ error: "bad sym: " + s }, 400);
     const p = updates[s];
@@ -113,6 +135,10 @@ export async function onRequestPut({ request, env }) {
       const err = validatePos(p);
       if (err) return json({ error: s + ": " + err }, 400);
     }
+  }
+  if (hasAccount && body.account !== null) {
+    const err = validateAccount(body.account);
+    if (err) return json({ error: err }, 400);
   }
 
   let stored = null;
@@ -122,8 +148,13 @@ export async function onRequestPut({ request, env }) {
     if (updates[s] === null) delete positions[s];
     else positions[s] = updates[s];
   }
+  const account = hasAccount ? body.account : (stored?.account ?? null);
 
-  const next = { asOf: etDate(), positions };
+  // `snap`: digits-only server stamp (the ticker-analysis history-key convention) —
+  // regenerated on every successful PUT so allocation receipts can bind to exactly this
+  // write. A version label, not a lock: the store stays low-concurrency merge-only.
+  const next = { asOf: etDate(), snap: new Date().toISOString().replace(/[^0-9]/g, ""),
+    account, positions };
   try {
     await env.PULSE_CACHE.put(POS_KEY, JSON.stringify(next)); // no TTL — persistent
   } catch (e) {
@@ -151,7 +182,9 @@ async function runMigrate(env) {
   for (const e of embedded) positions[e.sym] = e.pos;
 
   try {
-    await env.PULSE_CACHE.put(POS_KEY, JSON.stringify({ asOf: etDate(), positions }));
+    await env.PULSE_CACHE.put(POS_KEY, JSON.stringify({ asOf: etDate(),
+      snap: new Date().toISOString().replace(/[^0-9]/g, ""),
+      account: stored?.account ?? null, positions }));
   } catch (e) {
     return json({ error: "positions store failed — book was NOT touched, safe to retry: " + (e?.message || "unknown") }, 503);
   }
