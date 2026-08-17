@@ -1200,7 +1200,7 @@ ok("livepx: each pick shows whether it used a live or stamped price",
 ok("livepx: footer counts live vs stamped rather than implying all are current",
   adminSrc.includes("live / ") && adminSrc.includes("all prices are stamped marks, not live"));
 ok("livepx: quote fetch is non-blocking and failure leaves the board unchanged",
-  adminSrc.includes("loadBook().then(()=>{loadQuotes();loadPositions();loadDeepDiveIndex();loadTickerV2();});") && adminSrc.includes("never break the board on a quote feed"));
+  adminSrc.includes("loadBook().then(()=>{loadQuotes();loadPositions();loadAllocation();loadDeepDiveIndex();loadTickerV2();});") && adminSrc.includes("never break the board on a quote feed"));
 
 // ---- 9. market calendar — holidays across the honesty stack ---------------
 // The time-judges (isStale, marketSession/etSession, looksBehind) share ONE
@@ -1513,7 +1513,7 @@ ok("pos: an absent position renders NOTHING — not a 0 or a dash that reads as 
   adminSrc.includes("absent number; a dash or a 0 here would read"));
 ok("pos: fetched from its own endpoint at boot, alongside the book and quotes",
   adminSrc.includes('const r=await fetch("/api/positions");') &&
-  adminSrc.includes("loadBook().then(()=>{loadQuotes();loadPositions();loadDeepDiveIndex();loadTickerV2();});"));
+  adminSrc.includes("loadBook().then(()=>{loadQuotes();loadPositions();loadAllocation();loadDeepDiveIndex();loadTickerV2();});"));
 ok("pos: a fetch failure leaves POSITIONS={} — every posOf() reads null, never stale data",
   adminSrc.includes("POSITIONS stays {} — posOf() reads null for everyone, never stale data"));
 ok("pos: measured marks age like everything else, undated being the worst",
@@ -2114,7 +2114,7 @@ ok("focus2: primary blocks render LAST in the chain, reading what the strips com
   adminSrc.includes("renderStance();renderBuyBlock();renderSellBlock();renderMagBlock();renderCalBlock();renderTabs();"));
 ok("refresh: the button refetches quotes+positions+regime and reports the quote-cache window honestly",
   adminSrc.includes("async function refreshRanks()") &&
-  adminSrc.includes("Promise.all([loadQuotes(),loadPositions(),loadRegime()])") &&
+  adminSrc.includes("Promise.all([loadQuotes(),loadPositions(),loadRegime(),allocReeval()])") &&
   adminSrc.includes("server caches 2 min"));
 ok("refresh: the button disables while in flight and always re-enables",
   adminSrc.includes("b.disabled=true") && adminSrc.includes("finally{if(b){b.disabled=false"));

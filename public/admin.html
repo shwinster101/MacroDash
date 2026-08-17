@@ -1133,11 +1133,28 @@ function validateSession(b){
       for(const s of f.do_not_trim)if(typeof s!=="string"||!/^[A-Z.\-]{1,8}$/.test(s))return "bad do_not_trim sym: "+JSON.stringify(s);
     }
   }
+  /* FEAT-TT-ALLOC (v3.100): the account branch, mirroring tt.js's — this validator had
+     every board section EXCEPT account, so a malformed asserted-leverage record rode the
+     unknown-key passthrough while the server rejected the same edit. Formula REQUIRED (the
+     v3.30 rule): the figure that vetoes every add must say how it was computed. */
+  if(b.account!==undefined){
+    const a=b.account;
+    if(!a||typeof a!=="object"||Array.isArray(a))return "account must be an object";
+    if(!/^\d{4}-\d{2}-\d{2}([T ]\d{2}:\d{2}(:\d{2})?(\.\d+)?Z?)?$/.test(String(a.at||"")))return "account.at (ISO date/time) is required";
+    if(typeof a.src!=="string"||!a.src)return "account.src is required";
+    if(typeof a.formula!=="string"||!a.formula)return "account.formula is required — the leverage number must say how it was computed";
+    for(const k of ["nav","debt","debt_pct_nav"])
+      if(a[k]!==undefined&&!isFinite(Number(a[k])))return "account."+k+" must be a number";
+  }
   if(b.decisions!==undefined){
     if(!Array.isArray(b.decisions))return "decisions must be an array";
     for(const d of b.decisions){
       if(!d||typeof d!=="object"||typeof d.q!=="string"||!d.q)return "each decision needs a q (the question)";
       if(d.asked!==undefined&&!/^\d{4}-\d{2}-\d{2}$/.test(String(d.asked)))return "decision.asked must be YYYY-MM-DD";
+      if(d.forced_exit!==undefined){
+        if(d.forced_exit!==true)return "decision.forced_exit must be literally true — mark it or omit it";
+        if(typeof d.sym!=="string"||!/^[A-Z.\-]{1,8}$/.test(d.sym))return "a forced_exit decision must be scoped to a valid sym";
+      }
     }
   }
   if(b.binaries!==undefined){
@@ -3608,6 +3625,67 @@ async function loadPositions(){
   finally{POS_PENDING=false;render();}
 }
 
+/* ═══════════ FEAT-TT-ALLOC (v3.100) — the server allocation receipt ═══════════ */
+/* The server (/api/allocation) re-derives the eligibility ladder and funding ranking from
+   its OWN reads of book/positions/index/quotes/readout, and persists a hash-bound receipt.
+   The client renders that receipt BESIDE its own sellRank/gateFail — married, never merged,
+   for one release: a disagreement between the two is signal, not a bug to average away.
+   Client logic is untouched; ALLOC only ever ADDS lines. null = no receipt / older deploy /
+   fetch failed — every renderer states that rather than hiding the surface. */
+let ALLOC=null;
+async function loadAllocation(){
+  try{
+    const r=await fetch("/api/allocation");
+    if(r.ok){const d=await r.json();ALLOC=(d&&d.receipt)||null;}
+    else ALLOC=null;   // 404 = no receipt yet; 401/405 = older deploy — the chip states it
+  }catch(_e){ALLOC=null;}
+  render();
+}
+async function allocReeval(){
+  try{
+    const r=await fetch("/api/allocation",{method:"POST"});
+    if(r.ok){const d=await r.json();ALLOC=(d&&d.receipt)||null;}
+  }catch(_e){/* keep the last receipt — a failed re-eval must not blank a stored one */}
+  render();
+}
+/* Two-step confirm (the v3.42 slice-4 destructive-link rule): STAGED client-side on the
+   first tap, CONFIRMED server-side on the second. Persists INTENT only — the server cannot
+   place an order and neither can this file. A 409 means the basis moved (book edit, fresh
+   sync, index rebuild): re-fetch and say so, never retry blind. */
+let ALLOC_STAGE=null;
+function allocConfirm(action,sym){
+  ALLOC_STAGE={action,sym};
+  (async()=>{
+    try{
+      const r=await fetch("/api/allocation?confirm=1",{method:"POST",
+        headers:{"content-type":"application/json"},
+        body:JSON.stringify({intent:{action,sym},result_hash:ALLOC&&ALLOC.attestation&&ALLOC.attestation.result_hash})});
+      const d=await r.json().catch(()=>({}));
+      if(r.status===409){toast("receipt stale — book/positions changed since it was computed; re-evaluated view loaded");ALLOC=(d&&d.receipt)||ALLOC;}
+      else if(r.ok){ALLOC=(d&&d.receipt)||ALLOC;toast(`intent recorded — ${action} ${sym} (intent only, no order)`);}
+      else toast("confirm failed: "+((d&&d.error)||r.status));
+    }catch(_e){toast("confirm failed — network");}
+    ALLOC_STAGE=null;render();
+  })();
+}
+function allocDoFund(){if(ALLOC&&ALLOC.eligible)allocConfirm("FUND",ALLOC.eligible.sym);}
+function allocTrunc(s){s=String(s);return s.length>56?s.slice(0,55)+"…":s;}
+/* ONE chip builder, both altitudes (the hzDeckChip rule) — the BUY block and the FUNDING
+   block must never disagree about what the server said. */
+function allocChip(){
+  if(!ALLOC)return `<span class="scope">server allocation: no receipt — ⟳ DATA+RANKS computes one (older deploys: unavailable)</span>`;
+  const age=ageDays(String(ALLOC.at).slice(0,10));
+  const stamp=`receipt ${age===0?"today":age===null?"undated":age+"d old"}`;
+  const conf=ALLOC.confirmation?` · ✓ CONFIRMED ${esc(ALLOC.confirmation.action)} ${esc(ALLOC.confirmation.sym)} ${esc(String(ALLOC.confirmation.at).slice(0,10))}`:"";
+  if(ALLOC.state==="ALLOCATABLE")
+    return `<span style="color:var(--green);font-weight:700">server: ALLOCATABLE — ${esc(ALLOC.eligible.sym)}</span> <span class="scope">${stamp}${conf}</span>`;
+  if(ALLOC.state==="BUY_ELIGIBLE")
+    return `<span style="color:var(--amber);font-weight:700">server: BUY ELIGIBLE — ${esc(ALLOC.eligible.sym)}</span> <span class="scope">· ${esc(allocTrunc(ALLOC.context_blockers[0]||"context incomplete"))} · ${stamp}${conf}</span>`;
+  if(ALLOC.state==="WAIT")
+    return `<span style="color:var(--amber)">server: WAIT — ${esc(allocTrunc((ALLOC.gate&&ALLOC.gate.reason)||"gate failed"))}</span> <span class="scope">${stamp}</span>`;
+  return `<span class="scope">server: no eligible name · ${stamp}${conf}</span>`;
+}
+
 /* ═══════════ FEAT-TT-DDSTORE (v3.75) — thesis payloads live in their own KV ═══════════ */
 /* The book document hit 99.7% of its 300KB cap on 2026-08-05 and a routine two-name TT pass
    had to be written tighter to fit; deepDive was ~80% of the weight. Payloads now live at
@@ -5193,6 +5271,14 @@ function renderSellBlock(){
   const disagree=!!(assertedFirst&&computedFirst&&assertedFirst!==computedFirst);
   if(disagree)
     h+=`<div class="none" style="color:var(--amber)">⚖ session: <b>${esc(assertedFirst)}</b> first · computed: <b>${esc(computedFirst)}</b></div>`;
+  /* FEAT-TT-ALLOC (v3.100): the THIRD reading of "what funds first" — the server receipt's.
+     Same married-never-merged rule as the session line above: three sources, disagreement
+     printed, nothing resolved by fiat. Only renders when the server actually disagrees with
+     the client's computed first (agreement would be a redundant line). */
+  const serverFirst=ALLOC&&ALLOC.funding&&ALLOC.funding.rows&&ALLOC.funding.rows[0]&&ALLOC.funding.rows[0].sym;
+  if(serverFirst&&computedFirst&&serverFirst!==computedFirst)
+    h+=`<div class="none" style="color:var(--amber)">⚖ server receipt: <b>${esc(serverFirst)}</b> first (${esc(allocTrunc(ALLOC.funding.rows[0].reason))}) · client: <b>${esc(computedFirst)}</b></div>`;
+  h+=`<div class="none">${allocChip()}</div>`;
   /* FEAT-TT-GLANCE (v3.61): methodology, the unranked tail and the tax disclaimer live ONE
      tap down. The COUNT stays on the closed summary — silent truncation reads as full
      coverage (the v3.36 rule). est-mini class, deliberately NOT `drawer`: the phone harness
@@ -5266,6 +5352,13 @@ function renderBuyBlock(){
     // altitudes, zero drift (the ptModelRows rule). Compact here; never a veto anywhere.
     (()=>{const pc=paChip(AGREE_PICK.sym);return pc?`<span style="font-weight:400"> · ${pc}</span>`:"";})()+`</div>`;
   else if(rows.length)h+=`<div class="none" style="color:var(--amber)">⏸ WAIT — no name passes every gate (reasons in DESK)</div>`;
+  /* FEAT-TT-ALLOC (v3.100): the SERVER's read of the same question, beside the client's —
+     married never merged. A split between the two lines is signal (stale receipt, drifted
+     inputs, or a real logic divergence to investigate), never averaged away. The chip also
+     carries the ALLOCATABLE→CONFIRM affordance: two-step (confirmLink), intent-only. */
+  h+=`<div class="none">${allocChip()}`+
+    (ALLOC&&ALLOC.state==="ALLOCATABLE"&&!ALLOC.confirmation
+      ?` · ${confirmLink("allocFundLink","CONFIRM FUND "+ALLOC.eligible.sym+" (intent only)","allocDoFund")}`:"")+`</div>`;
   // v3.42 slice 2: while the first quote load is still in flight an empty rank is UNKNOWN,
   // not empty — skeleton rows hold the geometry so the board doesn't shift when data lands.
   // v3.76: "nothing to rank" is only true when there is also nothing REVIEWED to fall back
@@ -5437,9 +5530,9 @@ async function refreshRanks(){
     if(refreshed&&refreshed.readout){
       applyRegime(refreshed.readout);
       toast(refreshed.message||"data refreshed");
-      await Promise.all([loadQuotes(),loadPositions()]);
+      await Promise.all([loadQuotes(),loadPositions(),allocReeval()]);
     }else{
-      await Promise.all([loadQuotes(),loadPositions(),loadRegime()]);
+      await Promise.all([loadQuotes(),loadPositions(),loadRegime(),allocReeval()]);
       toast("Ranks refreshed — quotes as of "+(LIVE_AT?String(LIVE_AT).slice(11,16)+"Z":"unknown")+" (server caches 2 min)");
     }
   }catch(_e){toast("Refresh failed — showing the last good data");}
@@ -6480,7 +6573,7 @@ if(window.innerWidth<480)search.placeholder="ticker · HELP · TIER · ADD";
    v3.24: quotes chase the book (they need BOOK populated to know which symbols to ask
    for) and are equally non-blocking — the board renders on stamped marks first, then
    upgrades to live prices if and when they arrive. */
-loadBook().then(()=>{loadQuotes();loadPositions();loadDeepDiveIndex();loadTickerV2();});
+loadBook().then(()=>{loadQuotes();loadPositions();loadAllocation();loadDeepDiveIndex();loadTickerV2();});
 loadRegime();
 </script>
 </body>
