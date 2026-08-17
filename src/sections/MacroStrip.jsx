@@ -51,9 +51,15 @@ const MacroStrip=({d,modeOf,fomcLabel,fomcDays,votingFields,badge})=>{
              only the five whose field key equals their factor key, with CAPE riding a
              separate `shillerPe`→`valuation` alias line in factorExclusions. Using it here
              would silently un-mark a CAPE tile the day one is added to a strip. */
-          const votes=vf.has(f);
+          /* v3.98.4 (Power read-through): `vf` is the STATIC six-voter set, so a factor
+             whose feed was dead still wore ▪ and its tooltip still read "Counts toward
+             today's posture" — a marker asserting a state it cannot see, the same defect
+             class the hero's hardcoded exclusion reason was. A voter that is dark today is
+             NOT counted, and now says so instead of claiming the opposite. */
+          const isVoter=vf.has(f); const votes=isVoter&&live;
           return(
-          <div key={l} title={`${t}\n(${m.toLowerCase()})${votes?"\nCounts toward today's posture.":"\nContext only — does not vote."}`} style={{flexShrink:0,minWidth:68,cursor:"help"}}>
+          <div key={l} title={`${t}\n(${m.toLowerCase()})${votes?"\nCounts toward today's posture."
+            :isVoter?"\nA voter, but dark today — not counted.":"\nContext only — does not vote."}`} style={{flexShrink:0,minWidth:68,cursor:"help"}}>
             <div style={{display:"flex",alignItems:"center",gap:3}}>
               <span style={{width:5,height:5,borderRadius:"50%",background:live?dot:"transparent",border:`1px solid ${dot}`,flexShrink:0}}/>
               <span style={{fontFamily:T.fontMono,fontSize:8,color:T.textMuted}}>{l}</span>

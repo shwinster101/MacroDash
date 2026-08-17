@@ -578,6 +578,42 @@ console.log("\n[public] v3.60 P0 slice — nav, matrix, digest, health");
   await page.close();
 }
 
+// ── v3.98.4 — the Power read-through: no surface may assert a state it never checked ──
+console.log("\n[public] v3.98.4 — token trend withheld on mock, strip marker is TODAY's vote");
+{
+  // A live build whose token feed is dead: the price card must NOT print a directional read,
+  // and the macro strip's VIX (a voter, dark today) must lose its ▪ counts-today marker.
+  const noTok = { ...FULL_LIVE }; delete noTok.vix; delete noTok.vixAsOf;
+  const { page, errors } = await open({ live: noTok, width: 1280 });
+  await page.waitForTimeout(1300);
+  for (let i = 0; i < 14; i++) {
+    const b = page.locator('button.cg-toggle[aria-expanded="false"]').first();
+    if (await b.count() === 0) break;
+    await b.click().catch(() => {}); await page.waitForTimeout(100);
+  }
+  await page.waitForTimeout(300);
+  const ai = await page.locator('section[aria-labelledby="ai"]').innerText();
+  ok("v3.98.4: with the token feed dead the card withholds its trend instead of claiming one",
+    /trend withheld — price leg not live/.test(ai) && !/% over window/.test(ai));
+  const strip = page.locator(".macro-strip");
+  ok("v3.98.4: a DARK voter loses the ▪ marker and its tooltip stops claiming it counts",
+    await strip.evaluate((el) => {
+      const item = [...el.querySelectorAll("[title]")].find((n) => /Volatility index/.test(n.getAttribute("title") || ""));
+      if (!item) return false;
+      return /not counted/.test(item.getAttribute("title")) && !item.textContent.includes("▪");
+    }));
+  ok("v3.98.4: a LIVE voter still carries ▪ and still says it counts (the marker kept its meaning)",
+    await strip.evaluate((el) => {
+      const item = [...el.querySelectorAll("[title]")].find((n) => /Fear & Greed/.test(n.getAttribute("title") || ""));
+      return !!item && /Counts toward today/.test(item.getAttribute("title")) && item.textContent.includes("▪");
+    }));
+  const macro = await page.locator('section[aria-labelledby="macro"]').innerText();
+  ok("v3.98.4: the CPI box now dates itself — no LIVE badge without an observation date",
+    /CPIAUCSL \+ CPILFESL/.test(macro) && /as of/i.test(macro));
+  ok("v3.98.4: no page errors through the degraded read-through", errors.length === 0);
+  await page.close();
+}
+
 console.log("\n[public] responsive on BOTH routes — the 320px contract (A2/A3)");
 for (const route of ["/", "/?view=public"]) {
   for (const width of [320, 390, 768, 1280]) {

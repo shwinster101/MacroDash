@@ -6800,5 +6800,34 @@ console.log("\n[63] v3.98.3 — exclusion reasons, scoped vocabulary, TERMINAL p
     /border:`1px solid \$\{T\.amber\}`,color:T\.amber/.test(dashSrc));
 }
 
+
+// ═══════════ [64] v3.98.4 — the Power read-through: three surfaces that guessed at state ═══════════
+// Driving Markets/Macro/AI/Data Health in Chromium across full-live, degraded and total-outage
+// found the same defect class the hero audit did: a string asserting a state its own code
+// never checked.
+console.log("\n[64] v3.98.4 — Power read-through fixes (token trend, strip marker, CPI date)");
+{
+  ok("v3.98.4: the token price card WITHHOLDS its directional trend when the price leg is not live",
+    /trend withheld — price leg not live/.test(aiSrc) &&
+    /drop !== null && \(isIllustrative\(mode\)/.test(aiSrc));
+  ok("v3.98.4: the '% over window' claim is now UNREACHABLE on mock/stale (the v3.1 rule)",
+    (() => { // the amber directional branch must sit on the NOT-illustrative side of the gate
+      const i = aiSrc.indexOf("drop !== null && (isIllustrative(mode)");
+      const seg = aiSrc.slice(i, i + 420);
+      return /isIllustrative\(mode\)\s*\?[\s\S]*trend withheld[\s\S]*:\s*<div[\s\S]*% over window/.test(seg); })());
+  ok("v3.98.4: the card still RENDERS the mock value — only the directional read is withheld",
+    /\$\{blended\?\.toFixed\(2\)\}/.test(aiSrc));
+  ok("v3.98.4: the strip's ▪ marker means 'counts TODAY' — a dark voter loses it",
+    /const isVoter=vf\.has\(f\); const votes=isVoter&&live;/.test(stripSrc));
+  ok("v3.98.4: a dark voter's tooltip says so, instead of claiming it counts",
+    /A voter, but dark today — not counted\./.test(stripSrc) &&
+    /Counts toward today's posture\./.test(stripSrc) &&
+    /Context only — does not vote\./.test(stripSrc));
+  ok("v3.98.4: the CPI source box finally carries its observation date (LIVE with no date is unjudgeable)",
+    /endpoint="CPIAUCSL \+ CPILFESL" mode=\{modeOf\('cpiHeadline'\)\} asOf=\{asOfOf\('cpiHeadline'\)\}/.test(mrSrc));
+  ok("v3.98.4: EVERY SourceBox in the macro grid passes an asOf — no LIVE badge without a date",
+    (mrSrc.match(/<SourceBox /g) || []).length === (mrSrc.match(/<SourceBox [^>]*asOf=/g) || []).length);
+}
+
 console.log(`\n=== SMOKE TEST: ${pass} passed, ${fail} failed ===`);
 process.exit(fail === 0 ? 0 : 1);

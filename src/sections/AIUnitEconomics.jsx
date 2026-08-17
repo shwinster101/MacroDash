@@ -135,7 +135,15 @@ const TokenomicsCard = ({ tok, mode = "MOCK", asOf, volMode = "MOCK", volAsOf })
           <div style={{ fontFamily:T.fontMono, fontSize:8, color:T.textMuted }}>BLENDED FRONTIER · 3:1 in:out</div>
           <div style={{ fontFamily:T.fontMono, fontSize:24, fontWeight:700, color:T.textPrimary }}>${blended?.toFixed(2)}<span style={{ fontSize:11, color:T.textMuted }}>/Mtok</span></div>
         </div>
-        {drop !== null && <div style={{ fontFamily:T.fontMono, fontSize:11, color:T.amber }}>▼ {drop}% over window</div>}
+        {/* v3.98.4 (Power read-through): this printed "▼ 25% over window" — a DIRECTIONAL
+            claim — off the mock trend whenever the feed was dead, while the scissors card
+            immediately below (same file, same data) correctly rendered "verdict suppressed —
+            price leg not live". One section, two answers, and the permissive one was the v3.1
+            invariant's exact target. The value itself still renders (mock content is the
+            baseline, hatched and badged MOCK); only the directional read is withheld. */}
+        {drop !== null && (isIllustrative(mode)
+          ? <div style={{ fontFamily:T.fontMono, fontSize:11, color:T.textMuted }}>trend withheld — price leg not live</div>
+          : <div style={{ fontFamily:T.fontMono, fontSize:11, color:T.amber }}>▼ {drop}% over window</div>)}
         {cheapest && <div style={{ fontFamily:T.fontMono, fontSize:9, color:T.textMuted }}>floor: {cheapest.name} ${cheapest.mtok}/Mtok</div>}
       </div>
       {models.length > 0 && (

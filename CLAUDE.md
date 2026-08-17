@@ -2875,6 +2875,40 @@ Jan-anchor shipped; see `snapshot.js` ~318–328), `spyMa100`, `spyMa200`, and a
   VALUATION GAP ranking (§11.1 — the ranking always renders, which is the owner's actual
   "always an output" contract, and it was never suspended). Tests: 1223 smoke (+2) + 199
   render (+1).
+- **v3.98.4 — the Power read-through: three more surfaces that asserted a state they never
+  checked.** v3.98.3 covered the hero and Drivers; this drove **Markets · Macro · AI · Data
+  Health** in Chromium across three data states (full-live, degraded with a stale 10Y and a
+  dead VIX/credit/token/CAPE feed, and a total 500-outage) and read the rendered text. Three
+  findings, all the same defect class — *a hardcoded claim whose own code never looked*.
+  **(1) The token-price card printed a DIRECTIONAL read off mock.** `▼ 25% over window` was
+  gated on `drop !== null` alone and never on provenance, so a dead OpenRouter feed still
+  published a falling-price claim — measured at **`▼ 35% over window` in a total outage,
+  computed entirely from `MOCK_DATA`**. The scissors card immediately below it, in the SAME
+  file off the SAME data, correctly rendered *"verdict suppressed — price leg not live"*: one
+  section, two answers, and the permissive one was the v3.1 invariant's exact target. It now
+  reads **"trend withheld — price leg not live"**; the value itself still renders (mock
+  content is the baseline, hatched and badged) — only the directional read is withheld.
+  **(2) The macro strip told a dark factor it was voting.** The `▪` marker and its tooltip
+  ("Counts toward today's posture") came from `VOTING_FIELDS` — the STATIC six-voter set — so
+  a factor whose feed was dead still wore the marker while the hero two rows down listed it as
+  excluded. The marker now means what it says: `votes = isVoter && live`, and a voter that is
+  dark today reads **"A voter, but dark today — not counted."** rather than the opposite.
+  (The provenance dot and the muted vote-colour were already correct — the *marker* was the
+  lie.) **(3) The CPI source box carried a LIVE badge with no observation date** — the one
+  box in the macro grid that omitted `asOf`, on the tile whose entire subject is the inflation
+  TREND. Now dated, and smoke pins that EVERY box in that grid passes one, so the next tile
+  cannot ship undated.
+  **Checked and NOT changed** (recorded so the next read-through does not re-litigate them):
+  the FOMC countdown is computed from `nextFOMC` rather than trusting a stored day count (a
+  fixture disagreement, not a defect); `Kalshi · live` is `modeOf(...)`, not a hardcoded
+  claim; the S&P index line rides the same `fetchSpy` pull as SPY so the two cannot diverge in
+  production; and every curated AI card was already correctly hatched, badged and verdict-
+  suppressed on mock.
+  Tests: **1563 smoke** (+7: the withheld branch proven UNREACHABLE on mock by structure, the
+  marker's new meaning, the tooltip's three states, and the grid-wide asOf sweep) + 248 render
+  + **144 public-render** (+5: the dead-feed card driven live with `% over window` proven
+  ABSENT, the dark voter losing ▪ while a live voter keeps it — both read off the real
+  tooltips — and the CPI date).
 - **v3.98.3 — the Power-side audit: one exclusion reason, one vocabulary, TERMINAL promoted.**
   Driving the Power view in Chromium against a degraded fixture (stale 10Y, dead VIX feed)
   found six things; the first is a real defect. **(1) `regimeFactors` hardcoded the cause.**
