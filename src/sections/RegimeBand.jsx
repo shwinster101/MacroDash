@@ -33,11 +33,14 @@ export const WEN_MOON_STATES = [
    SENTENCE (moved here from the standalone WHY block), and ONE status line whose red facts
    (crash gauge blind, exclusions) stay visible (v3.25). The tally, the flip line and the
    factor chips — evidence, not the answer — moved INSIDE the existing ℹ panel: one click. */
-// v3.97 SHAREABLE SIMPLE: `prose` is the newbie two-sentence pair ({for, against}) derived
-// from the same buckets as `sentence`. The orchestrator passes EXACTLY ONE of the two —
-// prose in Simple (friendlier, directional verb phrases), sentence in Power (denser is
-// correct there). Withheld postures render neither: no "why" for a call not made.
-const RegimeBand=({d,stale=new Set(),loading=false,liveBuild=false,srcLabel="derived from live data",sentence=null,conf=null,prose=null,factorRows=null})=>{
+/* v4.0 SIMPLE MODE: `plainVerdict` is the scoped plain-language verdict object
+   ({label, tone}) from evidence.js's simpleVerdict. PROP-GATED on purpose — passed only in
+   Simple, so Power keeps MOONING/HODL/DIAMOND HANDS untouched and this component has ONE
+   verdict derivation rather than a mode flag it interprets itself. Absent (null) = the
+   moon voice, which is also what the extraction-reuse fallback gets.
+   The v3.97 `prose` prop is GONE: the Simple cards now carry the per-factor detail it was
+   carrying, and rendering both would be the same fact twice. */
+const RegimeBand=({d,stale=new Set(),loading=false,liveBuild=false,srcLabel="derived from live data",sentence=null,conf=null,factorRows=null,plainVerdict=null})=>{
   const [open,setOpen]=useState(false);
   // Property 9 (null-safe): no data object means nothing to compute — an empty, hidden
   // region, never a throw. The orchestrator always passes `d`; this guards extraction reuse.
@@ -72,9 +75,20 @@ const RegimeBand=({d,stale=new Set(),loading=false,liveBuild=false,srcLabel="der
         {/* Left: label + sub */}
         <div style={{display:"flex",alignItems:"baseline",gap:12,flexWrap:"wrap",minWidth:0}}>
           <div>
-            <div style={{fontFamily:T.fontMono,fontSize:8,color:regime.color,letterSpacing:"0.14em",textTransform:"uppercase"}}>Macro Backdrop · wen moon?</div>
+            {/* The eyebrow follows the verdict below it: asking "wen moon?" over a "MACRO: BULLISH"
+                line is two vocabularies in 20px. Power keeps the voice (owner ruling); Simple
+                says what the block IS. */}
+            <div style={{fontFamily:T.fontMono,fontSize:8,color:regime.color,letterSpacing:"0.14em",textTransform:"uppercase"}}>
+              {plainVerdict?"Macro Backdrop · the call":"Macro Backdrop · wen moon?"}
+            </div>
             <div style={{display:"flex",alignItems:"baseline",gap:10,flexWrap:"wrap"}}>
-              <span style={{fontFamily:T.fontMono,fontSize:T.fsXl,fontWeight:700,color:regime.color,letterSpacing:"-0.01em"}}>{moon.label}</span>
+              {/* Simple: "MACRO: BULLISH" — the MACRO scope prefix names which engine is
+                  speaking (this six-factor BACKDROP, not the order-gating readout and not a
+                  position stance), which is what keeps HODL readable as "no edge" rather
+                  than as advice. Power: the moon voice, unchanged. */}
+              <span style={{fontFamily:T.fontMono,fontSize:T.fsXl,fontWeight:700,color:regime.color,letterSpacing:"-0.01em"}}>
+                {plainVerdict?`MACRO: ${plainVerdict.label}`:moon.label}
+              </span>
               <span style={{fontFamily:T.fontMono,fontSize:T.fsL,color:T.textSecondary}}>
                 {/* ENGINE0-CONT: the rendered label is DATA HOLD — a deterministic wait
                     posture ("the system lacks evidence, hold"), not the internal
@@ -84,9 +98,13 @@ const RegimeBand=({d,stale=new Set(),loading=false,liveBuild=false,srcLabel="der
                     usable" — the exact fact the voters line renders 3px below. Drop it HERE
                     (presentation only; regime.sub is untouched for the paste block and the
                     5 Whys, where no such line exists). */}
+                {/* v4.0 acceptance test 1 — Simple leads with EXACTLY ONE verdict. The engine
+                    label ("RISK-ON") beside the scoped one ("MACRO: BULLISH") is two names for
+                    one call, so Simple keeps only the descriptor; Power keeps both. The
+                    withheld line drops it too — DATA HOLD is already the scoped label. */}
                 {loading?"LOADING · waiting for live data before calling a posture"
-                        :regime.insufficient?`${WITHHELD_LABEL} · ${regime.sub}`
-                        :`${regime.label} · ${conf&&/\d+ of \d+ inputs usable$/.test(regime.sub)?regime.sub.replace(/ — \d+ of \d+ inputs usable$/,""):regime.sub}`}
+                        :regime.insufficient?(plainVerdict?regime.sub:`${WITHHELD_LABEL} · ${regime.sub}`)
+                        :`${plainVerdict?"":`${regime.label} · `}${conf&&/\d+ of \d+ inputs usable$/.test(regime.sub)?regime.sub.replace(/ — \d+ of \d+ inputs usable$/,""):regime.sub}`}
               </span>
               {(loading||regime.insufficient)&&<span style={{fontFamily:T.fontMono,fontSize:T.fsS,color:T.textMuted}}>
                 {loading?"no factors voting yet"
@@ -94,14 +112,6 @@ const RegimeBand=({d,stale=new Set(),loading=false,liveBuild=false,srcLabel="der
               </span>}
             </div>
             {!withheld&&sentence&&<div style={{fontFamily:T.fontMono,fontSize:T.fsM,color:T.textPrimary,lineHeight:1.5,maxWidth:"72ch",marginTop:3}}>{sentence}</div>}
-            {/* Two sentences where the compact one-liner stood — measured at 390×844 against
-                the locked 540px glance budget, so the block runs tighter (lineHeight 1.35,
-                marginTop 2) than the sentence it replaces. Font size stays fsM: shrinking the
-                newbie copy below the operator copy would defeat its purpose. */}
-            {!withheld&&prose&&<div style={{fontFamily:T.fontSans,fontSize:T.fsM,color:T.textPrimary,lineHeight:1.35,maxWidth:"72ch",marginTop:2}}>
-              <div>{prose.for}</div>
-              <div>{prose.against}</div>
-            </div>}
             {/* v3.98.3 — one line, one scope word, one vocabulary. It used to read
                 "4/6 factors voting · excluded: 10Y · VIX" directly under a sentence saying
                 those same two were "dark", while the verdict sub above ALSO said "4 of 6

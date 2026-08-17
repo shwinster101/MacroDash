@@ -189,3 +189,124 @@ export function postureSummary(factors = []) {
     ],
   };
 }
+
+/* ═══ SIMPLE MODE PROJECTIONS (v4.0) ══════════════════════════════════════════
+   Simple is an ORIENTATION LAYER: it projects the EvidenceSet the engine already
+   built and decides nothing. No thresholds, no votes, no freshness rules live here —
+   every one of those has exactly one home upstream, and a second copy in a
+   presentation projection is the drift defect this repo keeps paying for.
+   All three functions are pure and Node-importable, the postureSummary pattern. */
+
+// The scoped plain-language verdict. SCOPED on purpose: "MACRO:" says which engine is
+// speaking — this six-factor BACKDROP vote, not /readout.json's order-gating checks
+// (v3.51 named them) and not a position stance. That prefix is load-bearing, not
+// decoration: it is what keeps "HODL" readable as "the evidence has no edge" rather
+// than as advice to hold a position.
+export const SIMPLE_VERDICTS = { "RISK-ON": "BULLISH", "MIXED": "HODL", "RISK-OFF": "BEARISH" };
+export const SIMPLE_WITHHELD = "DATA HOLD";
+export function simpleVerdict(ev) {
+  if (!ev) return { label: SIMPLE_WITHHELD, tone: "muted", withheld: true };
+  // LOADING / ERROR / INSUFFICIENT are the withheld states (WITHHELD above). DEMO is
+  // deliberately NOT among them: a demo build publishes a posture by design (mock IS its
+  // baseline — the demoted()/anyLive doctrine), and the ILLUSTRATIVE treatment is what
+  // marks it. Conflating DEMO with DATA HOLD would break the demo build on purpose.
+  if (ev.withheld) return { label: SIMPLE_WITHHELD, tone: "muted", withheld: true };
+  const label = SIMPLE_VERDICTS[ev.regime && ev.regime.label];
+  if (!label) return { label: SIMPLE_WITHHELD, tone: "muted", withheld: true };
+  return { label, tone: label === "BULLISH" ? "good" : label === "BEARISH" ? "bad" : "warn", withheld: false };
+}
+
+// vote → the card's direction word. THREE directions, FOUR votes: "excluded" is not a
+// direction and never becomes one — "not counted" and "counted, no lean" are different
+// facts (the whole v3.62 lesson), so an excluded factor is dropped from selection below
+// rather than rendered as "mixed".
+export const DIRECTION_OF = { bull: "helping", bear: "hurting", neutral: "mixed" };
+
+/* Up to `max` parameter cards, projected from ev.factors.
+   - EXCLUDED factors are not eligible AT ALL. A card is a claim about a current usable
+     reading; an excluded factor has none. Nor do we pad to `max` with UNAVAILABLE
+     placeholders — that would present absence as content. Fewer cards, and the caller
+     states the shortfall.
+   - Order follows the posture (what a reader most needs to see first), then canonical
+     REGIME_BAND_TABLE order for ties. Deliberately NO numeric importance score: an
+     invented ranking would be a decision, and Simple decides nothing.
+   - `usable`/`shown` are returned so the caller can NAME the truncation — three of six
+     means half the evidence is off-screen, and silent truncation reads as full coverage
+     (the v3.65 / v3.76 rule). */
+/* The card's CURRENT VALUE. `display` is built for the Power matrix, so it carries the
+   judgment inline ("14.63 — Low (bullish)", "-0.62 SD — ≥½ SD below mean (bullish)"). On a
+   card that already has a direction chip that is the same fact twice, and the band jargon is
+   Power-grade language in a newcomer surface. This PROJECTS the measurement out of the
+   string — it never invents one: no separator and no parenthetical means the string is
+   returned whole. */
+export function metricOf(display) {
+  const t = String(display == null ? "" : display);
+  const head = t.split(" — ")[0];
+  return head.replace(/\s*\((bullish|bearish|neutral)\)\s*$/i, "").trim() || t;
+}
+
+export function simpleCards(ev, max = 3) {
+  const factors = (ev && Array.isArray(ev.factors)) ? ev.factors : [];
+  const usableRows = factors.filter((f) => !f.excluded && DIRECTION_OF[f.vote]);
+  const pick = (v) => usableRows.filter((f) => f.vote === v);   // canonical order preserved
+  const bull = pick("bull"), bear = pick("bear"), neutral = pick("neutral");
+  const posture = (ev && ev.regime && ev.regime.label) || "MIXED";
+  /* The OPPOSING side must survive the truncation. Found in the Chromium read-through: on a
+     RISK-ON day with three supports the plain "supports first, then risks" order filled all
+     three slots with HELPING cards while the sentence above them said "…but real risks are
+     still in play" — the reader saw a stated risk the cards did not show. So the last slot
+     is RESERVED for the other side whenever one exists. Same instinct as the v3.25 rule that
+     a collapse never hides a red fact: a summary that drops the counter-evidence is not a
+     summary, it is a lean. */
+  const withCounter = (lead, counter, rest) => {
+    if (!counter.length || lead.length < max) return [...lead, ...counter, ...rest];
+    return [...lead.slice(0, max - 1), counter[0], ...lead.slice(max - 1), ...counter.slice(1), ...rest];
+  };
+  let ordered;
+  if (posture === "RISK-ON")       ordered = withCounter(bull, bear, neutral);
+  else if (posture === "RISK-OFF") ordered = withCounter(bear, bull, neutral);
+  else {
+    // HODL/withheld: interleave so the reader sees BOTH sides, not one side twice.
+    ordered = [];
+    for (let i = 0; i < Math.max(bull.length, bear.length); i++) {
+      if (bull[i]) ordered.push(bull[i]);
+      if (bear[i]) ordered.push(bear[i]);
+    }
+    ordered.push(...neutral);
+  }
+  const cards = ordered.slice(0, max).map((f) => {
+    const band = REGIME_BAND_TABLE.find((t) => t.key === f.key);
+    return {
+      key: f.key, short: f.short,
+      label: (band && band.plain) || f.label,       // plain-language parameter name
+      currentValue: metricOf(f.display),
+      direction: DIRECTION_OF[f.vote],
+      why: (band && band.whyItMatters) || null,     // never fabricated if a band lacks one
+      mode: f.mode, asOf: f.asOf,
+    };
+  });
+  return { cards, usable: usableRows.length, shown: cards.length, total: factors.length };
+}
+
+/* The one Simple sentence. Same buckets as postureSummary — one derivation, so it can
+   never contradict the cards below it. Deliberately does NOT list the factors: the cards
+   do that, and saying it twice is the duplication the density passes kept cutting. */
+export function simpleSentence(ev) {
+  if (!ev || ev.withheld) return null;   // a withheld posture has no "why" — the shortfall line renders instead
+  const f = (ev.factors || []).filter((x) => !x.excluded);
+  const has = (v) => f.some((x) => x.vote === v);
+  const up = has("bull"), down = has("bear");
+  if (up && down) return "Some conditions are helping the backdrop, but real risks are still in play.";
+  if (up)         return "The conditions we track are helping the backdrop right now.";
+  if (down)       return "The conditions we track are weighing on the backdrop right now.";
+  return "Nothing we track has a clear directional edge right now.";
+}
+
+/* "What would change the call" — reads flipConditions' OWN output and derives nothing.
+   Inventing a threshold here would be a fabricated number in a decision surface. */
+export function simpleFlipLine(ev) {
+  if (!ev || ev.withheld) return "Call withheld until the required evidence is current and usable.";
+  const nearest = ev.flips && Array.isArray(ev.flips.flips) ? ev.flips.flips[0] : null;
+  if (!nearest) return "No single metric would change the call on its own.";
+  return `${nearest.copy} would move this to ${nearest.would}.`;
+}

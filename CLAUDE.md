@@ -2881,6 +2881,66 @@ Jan-anchor shipped; see `snapshot.js` ~318–328), `spyMa100`, `spyMa200`, and a
   VALUATION GAP ranking (§11.1 — the ranking always renders, which is the owner's actual
   "always an output" contract, and it was never suspended). Tests: 1223 smoke (+2) + 199
   render (+1).
+- **v4.0.0 "SIMPLE MODE" — the scoped verdict, three parameter cards, and one sentence
+  (owner plan `simplemodefinalplan.md`, reviewed then built).** Simple becomes an ORIENTATION
+  LAYER answering one question — *is the macro backdrop bullish, HODL or bearish, and which
+  current metrics explain that call* — by PROJECTING the EvidenceSet the engine already built.
+  No threshold, vote, quorum or freshness rule moved; `computeRegime`, `REGIME_BAND_TABLE`,
+  `fiveWhys`, `ttReadout` and every TT surface are untouched, and Power is unchanged.
+  **The verdict is SCOPED**: `MACRO: BULLISH|HODL|BEARISH|DATA HOLD`. `MACRO:` names which
+  engine is speaking (this six-factor BACKDROP, not `/readout.json`'s order-gating checks, and
+  not a position stance) — it is what keeps HODL readable as *"the evidence has no edge"*
+  rather than as advice to hold, so it is load-bearing, not decoration. The vocabulary is
+  CLOSED (four labels, smoke-proven) and an unknown engine label **fails closed to DATA HOLD**.
+  **DEMO is deliberately NOT DATA HOLD**: a demo build publishes by design (mock IS its
+  baseline — the `demoted()`/`anyLive` doctrine) and the ILLUSTRATIVE treatment is what marks
+  it; conflating the two would break the demo build on purpose.
+  **Three parameter cards** carry plain-language name · current metric · direction · why it
+  matters · freshness+date. Four honesty rules, each executed in smoke rather than pinned as a
+  string: an **EXCLUDED factor is never a card** (a card is a claim about a current usable
+  reading, and "not counted" is not a direction — the v3.62 lesson, so `DIRECTION_OF` has
+  three keys for four votes); **fewer usable → fewer cards, never `UNAVAILABLE` padding**,
+  because absence is not content; the **truncation is NAMED** (`showing 3 of 6 usable · 2 not
+  counted`) since silent truncation reads as full coverage (v3.65/v3.76); and `whyItMatters`
+  is **new per-band copy in `REGIME_BAND_TABLE`**, beside the rule it explains — one home per
+  band, never a card lookup table that could drift.
+  **Three defects the Chromium read-through caught that the suites could not.** (1) On a
+  RISK-ON day with three supports, "supports first, then risks" filled every slot with HELPING
+  cards while the sentence above said *"…but real risks are still in play"* — a stated risk the
+  cards hid. The last slot is now **RESERVED for the opposing side** whenever one exists (the
+  v3.25 rule that a collapse never hides a red fact, applied to a summary). (2) Cards showed
+  the Power matrix's judged string — `14.63 — Low (bullish)` — repeating the direction chip and
+  putting band jargon in a newcomer surface; `metricOf()` **projects the measurement out** and
+  never invents one (no separator, no parenthetical → the string returns whole). (3) The
+  eyebrow still asked **"wen moon?"** above a `MACRO: BULLISH` line, and `RISK-ON` rendered
+  beside it — two vocabularies and two verdicts for one call; Simple now reads
+  "Macro Backdrop · the call" and shows exactly one verdict (acceptance test 1).
+  **Scoped reversal, recorded:** the moon voice (`MOONING/HODL/DIAMOND HANDS`) leaves the
+  SIMPLE hero only — Power keeps it, and so does the strip's `TAPE` badge in both modes. That
+  reverses the v3.51/v3.61/v3.62 "moon voice stays primary" ruling for one surface, on owner
+  call, the way v3.92 recorded the always-expanded-whys reversal. The relabel is **PROP-GATED**
+  (`plainVerdict`, passed only in Simple), so Power cannot change by accident.
+  **The v3.97 prose is replaced by the cards** — same per-factor detail, with the actual
+  numbers attached. `postureSummary().prose` and the `plainBull`/`plainBear` phrases are
+  RETAINED and still tested but no longer rendered; that is stated at the pin rather than left
+  as an orphan, so a later surface can pick them back up.
+  **The glance budget is re-pinned 540 → 780 WITH the measurement** (the v3.45/v3.95 precedent,
+  never a budget quietly loosened): the cards are legitimate PRIMARY content, and at 390×844
+  the macro strip moved 536 → 747 — still inside the first screen. Measured 817 first; the
+  cards were compacted from tall cards to rows before re-pinning, which is the order those two
+  steps belong in. A **second, better pin** rides beside it: the cards — *the answer* — must
+  begin within **400px** (measured 356). A budget that watched only the raw strip would let the
+  answer drift downward while still passing.
+  Merged over the parallel v3.100.0 allocation line (both changelog entries and both smoke
+  sections kept; my section renumbered [66]→[67]). Head totals **1662 smoke · 253 render ·
+  169 public-render**.
+  Tests: **+23 smoke** ( the closed verdict vocabulary and its fail-closed path, card
+  selection RUN for all three postures incl. the counter-evidence reservation and its no-op,
+  `metricOf`, the excluded-never-a-card and no-padding rules, all four sentence branches, the
+  flip line's three states, and four boundary sweeps proving the projections import no
+  threshold) + **+17 public-render** (all four verdicts driven live, a dead
+  feed proven absent from the cards, the truncation line, Power proven to keep the moon voice
+  and get no cards, and both re-measured budgets).
 - **FEAT-TT-ALLOC (v3.100.0) "THE ALLOCATION RECEIPT" — the server-authoritative allocation
   layer, and the Robinhood sync contract that feeds it.** The 2026-08-17 allocation review's
   architecture, ratified and verified: do NOT replace TT — add a separate, recommendation-only

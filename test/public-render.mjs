@@ -357,12 +357,29 @@ console.log("\n[public] v3.94 — Simple default, the toggle, persistence, red f
   const body = await page.locator("body").innerText();
   // v3.97: in Simple the compact sentence is REPLACED by the two directional newbie
   // sentences (swap, not stack) — same buckets, friendlier words.
-  ok("simple: the Glance layer renders — verdict, newbie prose, confidence, freshness, key numbers",
-    POSTURES.test(body) && /The bull case right now:/.test(body) &&
-    /The bear case:|No clear bear case on the board/.test(body) &&
+  /* v4.0 — the Simple hierarchy: SCOPED verdict, one sentence, parameter cards, flip line.
+     The v3.97 two-sentence prose is replaced by the cards, which carry the same per-factor
+     detail with the actual numbers attached. */
+  ok("v4.0 simple: the Glance layer renders — scoped verdict, one sentence, cards, confidence, key numbers",
+    /MACRO: (BULLISH|HODL|BEARISH|DATA HOLD)/.test(body) &&
+    /(helping the backdrop|weighing on the backdrop|no clear directional edge|real risks are still in play)/i.test(body) &&
     /voters counted/.test(body) && /SIGNAL QUALITY/i.test(body) && /SPY/.test(body));
-  ok("v3.97 simple: the prose is DIRECTIONAL, not a bare noun list — and the compact sentence is gone",
-    /is (cooling|asleep|cheap)|are (greedy|falling|sane)|priced for perfection/.test(body) && !/leans? bullish;|leans? bearish;/.test(body));
+  const bandTxt = await page.locator('[aria-label="Macro backdrop verdict"]').innerText();
+  ok("v4.0 simple: EXACTLY ONE verdict — the engine label never renders beside the scoped one",
+    (() => { const t = bandTxt; return !/RISK-ON|RISK-OFF|\bMIXED\b/.test(t); })());
+  ok("v4.0 simple: the verdict is SCOPED and the moon voice is gone from the Simple hero",
+    /MACRO: /.test(body) && !/MOONING|DIAMOND HANDS|CAN'T CALL IT/.test(
+      await page.locator('[aria-label="Macro backdrop verdict"]').innerText()));
+  ok("v4.0 simple: the eyebrow is scoped too — no 'wen moon?' above a MACRO: verdict",
+    /the call/i.test(await page.locator('[aria-label="Macro backdrop verdict"]').innerText()) &&
+    !/wen moon/i.test(await page.locator('[aria-label="Macro backdrop verdict"]').innerText()));
+  ok("v4.0 simple: card values are METRICS — the matrix's inline '(bullish)' judgment is gone",
+    !/\(bullish\)|\(bearish\)/.test(await page.locator('[aria-label="Key parameters"]').innerText()));
+  ok("v4.0 simple: cards carry value + direction + why + freshness, and the truncation is NAMED",
+    /HELPING|HURTING|MIXED/.test(body) && /discount rate|violently|already priced|Fed can ease|good news|plumbing/.test(body) &&
+    /showing \d+ of \d+ usable/.test(body) && /⇄/.test(body));
+  ok("v4.0 simple: the v3.97 prose no longer renders (the cards replaced it)",
+    !/The bull case right now:/.test(body) && !/The bear case:/.test(body));
   ok("v3.97 simple: no picks feed → the strip renders NOTHING, never example picks",
     !/My S-Tier/i.test(body) && !/not investment advice/i.test(body));
   ok("simple: Layer 2/3 content is NOT in the DOM — the Power reasoning group, factor evidence, market detail, macro grid",
@@ -397,8 +414,23 @@ console.log("\n[public] v3.94 — Simple default, the toggle, persistence, red f
   // v3.95 re-pin 520 -> 540, WITH the reason (the v3.45 legitimate-content precedent, not a
   // budget quietly loosened): the owner-requested whys expander is ONE toggle row under the
   // hero sentence and measured +10px (520 -> 530). Chrome creeping back still fails the build.
-  ok("v3.95 glance budget: in Simple the key numbers begin within 540px at 390×844",
-    glance !== null && glance <= 540);
+  /* v4.0 — the budget is RE-PINNED 540 -> 780 with the measurement and the reason (the
+     v3.45/v3.95 precedent, never a budget quietly loosened). What changed is legitimate
+     PRIMARY content, not chrome: three parameter cards carrying current values, direction,
+     why-it-matters and freshness now sit between the verdict and the macro strip. Measured
+     at 390×844: 536 -> 747 (817 before the cards were compacted from tall cards to rows).
+     SPY still lands inside the 844px first screen. */
+  ok("v4.0 glance budget: in Simple the macro strip still begins within 780px at 390×844",
+    glance !== null && glance <= 780);
+  /* And the pin that now matters MORE: the ANSWER — the parameter cards — must be near the
+     top. A budget that only watched the raw strip would let the cards drift downward while
+     still passing. */
+  const cardsTop = await page.evaluate(() => {
+    const el = document.querySelector('[aria-label="Key parameters"]');
+    return el ? Math.round(el.getBoundingClientRect().top + window.scrollY) : null;
+  });
+  ok("v4.0: the parameter cards — the answer — begin within 400px at 390×844",
+    cardsTop !== null && cardsTop <= 400);
   // One tap to Power: the full view appears; the choice persists across reload.
   await page.locator("button", { hasText: "Power" }).click();
   await page.waitForTimeout(400);
@@ -676,6 +708,73 @@ console.log("\n[public] v3.99 — Fed target range + curated FOMC countdown");
   ok("v3.99: a dead target-range feed falls back to the effective rate and SAYS the range is not live",
     /Fed Funds \(effective avg\)/i.test(macro) && /target range not live/i.test(macro) &&
     !/3\.50–3\.75%/.test(macro));
+  await page.close();
+}
+
+// ── v4.0 SIMPLE MODE — the acceptance matrix: four verdicts, and the honesty rules ──
+console.log("\n[public] v4.0 — Simple verdicts, card selection, and what must NEVER render");
+{
+  // 1. BEARISH: every factor pushed to its bear band.
+  const bear = { ...FULL_LIVE, tenYearM1: 0.40, vix: 31, fearGreed: 12,
+    cpiTrend: [2.0, 2.4, 2.8, 3.1, 3.4, 3.6], shillerPe: 41, nfci: 0.55 };
+  let { page, errors } = await open({ live: bear, width: 390, power: false });
+  await page.waitForTimeout(1300);
+  let body = await page.locator("body").innerText();
+  ok("v4.0 verdict: a bear tape reads MACRO: BEARISH, and risk factors lead the cards",
+    /MACRO: BEARISH/.test(body) && /HURTING/.test(body));
+  await page.close();
+
+  // 2. BULLISH.
+  const bull = { ...FULL_LIVE, tenYearM1: -0.30, vix: 12, fearGreed: 78,
+    cpiTrend: [3.4, 3.2, 3.0, 2.8, 2.6, 2.3], shillerPe: 19, nfci: -0.90 };
+  ({ page, errors } = await open({ live: bull, width: 390, power: false }));
+  await page.waitForTimeout(1300);
+  body = await page.locator("body").innerText();
+  ok("v4.0 verdict: a bull tape reads MACRO: BULLISH with supporting factors leading",
+    /MACRO: BULLISH/.test(body) && /HELPING/.test(body) &&
+    /helping the backdrop/i.test(body));
+  await page.close();
+
+  // 3. DATA HOLD — below quorum. And the acceptance rule that matters most here: a withheld
+  //    posture explains nothing and offers no flip, but says WHY it is withheld.
+  ({ page, errors } = await open({ live: DEGRADED, width: 390, power: false }));
+  await page.waitForTimeout(1300);
+  body = await page.locator("body").innerText();
+  ok("v4.0 verdict: below quorum reads MACRO: DATA HOLD, never a thin directional call",
+    /MACRO: DATA HOLD/.test(body) && !/MACRO: (BULLISH|BEARISH|HODL)/.test(body));
+  ok("v4.0 withheld: no explanatory sentence, and the flip line states the evidence shortfall",
+    /Call withheld until the required evidence is current and usable/.test(body) &&
+    !/helping the backdrop|weighing on the backdrop/i.test(body));
+  ok("v4.0 withheld: cards still render only USABLE factors — a dead feed is never a card",
+    !/HELPING|HURTING|MIXED/.test(body) || /showing \d+ of \d+ usable/.test(body));
+  await page.close();
+
+  // 4. A dead feed must never appear as a card, and must never be padded to three.
+  const oneDead = { ...FULL_LIVE }; delete oneDead.vix; delete oneDead.vixAsOf;
+  ({ page, errors } = await open({ live: oneDead, width: 390, power: false }));
+  await page.waitForTimeout(1300);
+  body = await page.locator("body").innerText();
+  const cardsText = await page.locator('[aria-label="Key parameters"]').innerText();
+  ok("v4.0 cards: the dead-feed factor is absent from the cards entirely (not shown as 'mixed')",
+    !/volatility/i.test(cardsText));
+  ok("v4.0 cards: never padded with UNAVAILABLE placeholders — absence is not content",
+    !/UNAVAILABLE/i.test(cardsText) && /showing \d+ of \d+ usable/.test(cardsText));
+  ok("v4.0 cards: the not-counted factor is still ACKNOWLEDGED in the count line",
+    /not counted/.test(cardsText));
+  ok("v4.0: no page errors across the verdict matrix", errors.length === 0);
+  await page.close();
+}
+{
+  // 5. POWER must be untouched by all of the above.
+  const { page } = await open({ live: FULL_LIVE, width: 1280, power: true });
+  await page.waitForTimeout(1300);
+  const band = await page.locator('[aria-label="Macro backdrop verdict"]').innerText();
+  ok("v4.0 boundary: Power keeps the moon voice and never shows the scoped Simple verdict",
+    /MOONING|HODL|DIAMOND HANDS|CAN'T CALL IT/.test(band) && !/MACRO: /.test(band));
+  const body = await page.locator("body").innerText();
+  ok("v4.0 boundary: Power keeps the full analytical view and gets NO Simple cards",
+    /the reasoning/i.test(body) && /factor evidence/i.test(body) &&
+    await page.locator('[aria-label="Key parameters"]').count() === 0);
   await page.close();
 }
 

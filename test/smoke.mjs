@@ -87,7 +87,8 @@ const wlSrc = readSrc("../src/sections/Watchlist.jsx");
 const aiEconSrc = readSrc("../src/aiEcon.js");
 const navSrc = readSrc("../src/sections/StickyNav.jsx"); // wave 15
 const spSrc = readSrc("../src/sections/SharedPicks.jsx"); // v3.97
-const uiSrc = dashSrc + bandSrc + whysSrc + sbSrc + shSrc + stripSrc + sqSrc + wcSrc + mdSrc + mrSrc + hwSrc + dtSrc + aiSrc + alSrc + dhSrc + wlSrc + navSrc + spSrc;
+const spcSrc = readSrc("../src/sections/SimpleCards.jsx"); // v4.0
+const uiSrc = dashSrc + spcSrc + bandSrc + whysSrc + sbSrc + shSrc + stripSrc + sqSrc + wcSrc + mdSrc + mrSrc + hwSrc + dtSrc + aiSrc + alSrc + dhSrc + wlSrc + navSrc + spSrc;
 const _s = dashSrc.indexOf("const MOCK_DATA = {");
 let _i = dashSrc.indexOf("{", _s), _d = 0, _e = -1;
 for (; _i < dashSrc.length; _i++) { if (dashSrc[_i] === "{") _d++; else if (dashSrc[_i] === "}") { _d--; if (_d === 0) { _e = _i; break; } } }
@@ -4647,9 +4648,13 @@ ok("band: the module stays under the 300-line bound (Property 10)",
   bandSrc.split("\n").length <= 300);
 // v3.97: the hero explanation SWAPS by mode — sentence gated !simple (Power), prose gated
 // simple (the newbie pair). One derivation (postureSummary), never stacked.
-ok("band: the call site still passes the live wiring (+ v3.97: sentence/prose swap by mode)",
-  /sentence=\{!simple&&!evidenceSet\.withheld&&evidenceSet\.summary\?evidenceSet\.summary\.sentence:null\}/.test(dashSrc) &&
-  /prose=\{simple&&!evidenceSet\.withheld&&evidenceSet\.summary\?evidenceSet\.summary\.prose:null\} conf=\{regimeConf\}/.test(dashSrc) &&
+// v4.0: the hero's explanation swaps by MODE — Simple gets simpleSentence + the scoped
+// plainVerdict, Power keeps postureSummary's compact one-liner and the moon voice. The
+// v3.97 `prose` prop is gone from the render (the cards carry that detail now).
+ok("band: the call site still passes the live wiring (+ v4.0: mode-swapped sentence and plainVerdict)",
+  /sentence=\{simple\?simpleS:\(!evidenceSet\.withheld&&evidenceSet\.summary\?evidenceSet\.summary\.sentence:null\)\}/.test(dashSrc) &&
+  /plainVerdict=\{simple\?simpleV:null\} conf=\{regimeConf\}/.test(dashSrc) &&
+  !/prose=\{/.test(dashSrc) &&
   // v3.98.3: the hero renders the EvidenceSet's OWN factor rows (which carry the real
   // exclusion cause) instead of re-deriving them — one derivation, two altitudes.
   /factorRows=\{evidenceSet\.factors\}\/>/.test(dashSrc) &&
@@ -6732,9 +6737,14 @@ console.log("\n[62] v3.97 SHAREABLE SIMPLE — prose derivation + picks whitelis
     postureSummary([]).prose === null);
   ok("prose: an unknown factor key falls back to its label, never a blank",
     postureSummary([F("mystery","bull")]).prose.for.includes("mystery"));
-  ok("prose: the call site SWAPS by mode — sentence !simple, prose simple (never stacked)",
-    /sentence=\{!simple&&/.test(dashSrc) && /prose=\{simple&&/.test(dashSrc) &&
-    /!withheld&&prose&&/.test(bandSrc));
+  /* v4.0: postureSummary().prose (and the plainBull/plainBear verb phrases it reads) are
+     RETAINED and still tested, but no longer RENDERED — the Simple cards carry that
+     per-factor detail now, and rendering both would be the same fact twice. Stated here
+     rather than left ambiguous: this is a deliberate retained-unrendered projection, not an
+     orphan, and the pins below keep it from drifting if a later surface wants it back. */
+  ok("prose: still computed and correct, but no longer rendered — the cards replaced it (v4.0)",
+    !/prose=\{/.test(dashSrc) && !/prose&&/.test(bandSrc) &&
+    typeof postureSummary([F("vix", "bull")]).prose.for === "string");
 
   // ── the picks endpoint: RUN against a fake KV, whitelist proven ──
   const { projectPicks, onRequestGet: picksGet } = await import("../functions/api/picks.js");
@@ -7256,6 +7266,119 @@ console.log("\n[68] FEAT-TT-ALLOC — pure core, endpoint, and the §14.8 bar");
       (await (async () => { const r = await ep.onRequest({ request: rq("POST", "?confirm=1", { intent: { action: "FUND", sym: "AAA", amount_usd: -5 }, result_hash: "x" }), env });
         return r.status === 400; })()));
   } finally { globalThis.fetch = realFetch; }
+}
+
+// ═══════════ [67] v4.0 SIMPLE MODE — scoped verdict, parameter cards, one sentence ═══════════
+// The owner's Simple-mode plan, built as PURE PROJECTIONS of the EvidenceSet the engine
+// already produced. Nothing here decides: no threshold, vote or freshness rule lives in the
+// projection, so Simple can never disagree with Power. Every rule below is EXECUTED against
+// real EvidenceSets — a string pin cannot prove a selection rule.
+console.log("\n[67] v4.0 SIMPLE MODE — verdict mapping, card selection, sentence, flip line");
+{
+  const { simpleVerdict: sv, simpleCards: sc, simpleSentence: ss, simpleFlipLine: sf,
+          SIMPLE_VERDICTS, SIMPLE_WITHHELD, DIRECTION_OF } = await import("../src/evidence.js");
+  const { REGIME_BAND_TABLE: BT } = await import("../src/regime.js");
+
+  // whyItMatters: one home per band, and it must NOT restate the direction (plainBull/Bear own that).
+  ok("v4.0: Simple renders ONE verdict — the engine label is suppressed beside the scoped one",
+    /\$\{plainVerdict\?"":`\$\{regime\.label\} · `\}/.test(bandSrc) &&
+    /plainVerdict\?regime\.sub:`\$\{WITHHELD_LABEL\} · \$\{regime\.sub\}`/.test(bandSrc));
+  ok("v4.0: the Simple eyebrow follows its verdict — no 'wen moon?' over a MACRO: line",
+    /plainVerdict\?"Macro Backdrop · the call":"Macro Backdrop · wen moon\?"/.test(bandSrc));
+  ok("v4.0: every band carries a whyItMatters line — new copy, one home, beside the rule it explains",
+    BT.every((b) => typeof b.whyItMatters === "string" && b.whyItMatters.length > 20) &&
+    BT.every((b) => b.whyItMatters !== b.plainBull && b.whyItMatters !== b.plainBear));
+
+  // ── verdict mapping: the vocabulary is CLOSED (acceptance test 2) ──
+  const mk = (label, withheld = false) => ({ withheld, regime: { label }, factors: [], flips: null });
+  ok("v4.0 verdict: RISK-ON→BULLISH, MIXED→HODL, RISK-OFF→BEARISH",
+    sv(mk("RISK-ON")).label === "BULLISH" && sv(mk("MIXED")).label === "HODL" &&
+    sv(mk("RISK-OFF")).label === "BEARISH");
+  ok("v4.0 verdict: every withheld state → DATA HOLD, and an UNKNOWN label fails CLOSED to it",
+    sv(mk("RISK-ON", true)).label === SIMPLE_WITHHELD && sv(null).label === SIMPLE_WITHHELD &&
+    sv(mk("SOMETHING-NEW")).label === SIMPLE_WITHHELD);
+  ok("v4.0 verdict: the vocabulary is CLOSED — exactly four labels can ever render",
+    new Set([...Object.values(SIMPLE_VERDICTS), SIMPLE_WITHHELD]).size === 4 &&
+    ["BULLISH", "HODL", "BEARISH", "DATA HOLD"].every((l) =>
+      [...Object.values(SIMPLE_VERDICTS), SIMPLE_WITHHELD].includes(l)));
+
+  // ── card selection ──
+  const F = (key, vote, extra = {}) => ({ key, short: key, label: key, vote,
+    display: `${key}-val`, mode: "LIVE", asOf: "2026-08-17", excluded: false, ...extra });
+  const evOf = (label, factors) => ({ withheld: false, regime: { label }, factors, flips: { flips: [] } });
+
+  const bullSet = evOf("RISK-ON", [F("tenYear","bear"), F("vix","bull"), F("fearGreed","neutral"),
+    F("cpiHeadline","bull"), F("valuation","bear"), F("nfci","bull")]);
+  const rb = sc(bullSet);
+  /* Supports lead a bullish posture, BUT the last slot is reserved for the other side when
+     one exists — found in the Chromium read-through: three HELPING cards under a sentence
+     saying "…but real risks are still in play" showed the reader a risk the cards hid. */
+  ok("v4.0 cards: a bullish posture leads with SUPPORTS and RESERVES the last slot for a risk",
+    rb.cards.map((c) => c.key).join(",") === "vix,cpiHeadline,tenYear" &&
+    rb.cards.map((c) => c.direction).join(",") === "helping,helping,hurting" && rb.shown === 3);
+  const bearSet = evOf("RISK-OFF", bullSet.factors);
+  ok("v4.0 cards: a bearish posture mirrors it — risks lead, one support survives the cut",
+    (() => { const d = sc(bearSet).cards.map((c) => c.direction);
+      return d[0] === "hurting" && d.includes("helping"); })());
+  ok("v4.0 cards: with NO opposing factor the reservation is a no-op (never an empty slot)",
+    (() => { const only = sc(evOf("RISK-ON", [F("vix","bull"), F("nfci","bull"), F("cpiHeadline","bull"), F("tenYear","bull")]));
+      return only.shown === 3 && only.cards.every((c) => c.direction === "helping"); })());
+  ok("v4.0 cards: currentValue is the METRIC — the Power matrix's inline judgment is projected out",
+    sc(evOf("MIXED", [F("vix","bull",{display:"14.63 — Low (bullish)"})])).cards[0].currentValue === "14.63");
+  const hodlSet = evOf("MIXED", bullSet.factors);
+  ok("v4.0 cards: HODL interleaves both sides — a reader must see support AND risk, not one twice",
+    (() => { const dirs = sc(hodlSet).cards.map((c) => c.direction);
+      return dirs.includes("helping") && dirs.includes("hurting"); })());
+
+  // EXCLUDED is not a direction and is not a card (C3/C4 — the v3.62 lesson).
+  const withDead = evOf("MIXED", [F("vix","excluded",{excluded:true, mode:"MOCK", display:"no live reading — not counted"}),
+    F("cpiHeadline","bull"), F("nfci","bull")]);
+  const rd = sc(withDead);
+  ok("v4.0 cards: an EXCLUDED factor is never selected and never rendered as a direction",
+    !rd.cards.some((c) => c.key === "vix") && rd.usable === 2 && rd.shown === 2 &&
+    rd.cards.every((c) => ["helping","hurting","mixed"].includes(c.direction)));
+  ok("v4.0 cards: fewer usable → FEWER cards, never UNAVAILABLE padding (absence is not content)",
+    sc(evOf("MIXED", [F("nfci","bull")])).cards.length === 1 &&
+    sc(evOf("MIXED", [])).cards.length === 0);
+  ok("v4.0 cards: the truncation is measurable by the caller — usable/shown/total all reported",
+    rb.usable === 6 && rb.shown === 3 && rb.total === 6 && rd.total === 3);
+  ok("v4.0 cards: excluded is NOT in the direction map — three directions, four votes",
+    DIRECTION_OF.excluded === undefined && Object.keys(DIRECTION_OF).length === 3);
+  ok("v4.0 cards: content is projected, never invented — value/why come from the row and its band",
+    rb.cards[0].currentValue === "vix-val" && rb.cards[0].mode === "LIVE" &&
+    rb.cards[0].asOf === "2026-08-17" &&
+    rb.cards[0].why === BT.find((b) => b.key === "vix").whyItMatters &&
+    rb.cards[0].label === BT.find((b) => b.key === "vix").plain);
+
+  // ── sentence + flip line ──
+  ok("v4.0 sentence: four branches, and a withheld posture gets NONE (no why for an uncalled call)",
+    /helping/.test(ss(evOf("RISK-ON", [F("a","bull")]))) &&
+    /weighing/.test(ss(evOf("RISK-OFF", [F("a","bear")]))) &&
+    /real risks are still in play/.test(ss(evOf("MIXED", [F("a","bull"), F("b","bear")]))) &&
+    /Nothing we track has a clear directional edge/.test(ss(evOf("MIXED", [F("a","neutral")]))) &&
+    ss({ withheld: true }) === null);
+  ok("v4.0 sentence: does NOT list the factors — the cards do that, and twice is duplication",
+    !/tenYear|vix|nfci|volatility|inflation/.test(ss(evOf("RISK-ON", [F("vix","bull"), F("nfci","bull")]))));
+  ok("v4.0 flip: reads flipConditions' OWN output and derives no threshold",
+    sf({ withheld: false, flips: { flips: [{ copy: "VIX above 25", would: "RISK-OFF" }] } })
+      === "VIX above 25 would move this to RISK-OFF." &&
+    sf({ withheld: false, flips: { flips: [] } }) === "No single metric would change the call on its own." &&
+    sf({ withheld: true }).startsWith("Call withheld"));
+
+  // ── boundaries: Simple decides nothing; Power is untouched ──
+  ok("v4.0 boundary: the projections import no threshold and re-derive no vote",
+    (() => { const seg = evidenceSrc.slice(evidenceSrc.indexOf("SIMPLE MODE PROJECTIONS"));
+      return !/NFCI_TIGHT|NFCI_LOOSE|computeRegime\(|flipConditions\(|\.vote\(/.test(seg); })());
+  ok("v4.0 boundary: the verdict is PROP-GATED — Power passes null and keeps the moon voice",
+    /plainVerdict=\{simple\?simpleV:null\}/.test(dashSrc) &&
+    /plainVerdict\?`MACRO: \$\{plainVerdict\.label\}`:moon\.label/.test(bandSrc) &&
+    /plainVerdict=null/.test(bandSrc));
+  ok("v4.0 boundary: the cards are Simple-only and the section is presentation-only",
+    /\{simple&&<SimpleCards/.test(dashSrc) &&
+    (() => { const code = spcSrc.replace(/\/\/[^\n]*|\/\*[\s\S]*?\*\//g, "");
+      return !/useState|useEffect|localStorage|computeRegime|buildEvidenceSet|REGIME_BAND_TABLE/.test(code); })());
+  ok("v4.0 boundary: the engine is untouched — no new voter, quorum or band",
+    REGIME_BAND_TABLE.length === 6 && REGIME_QUORUM === 4);
 }
 
 console.log(`\n=== SMOKE TEST: ${pass} passed, ${fail} failed ===`);

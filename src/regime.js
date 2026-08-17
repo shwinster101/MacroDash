@@ -47,11 +47,18 @@ export const CREDIT_TAIL_STRESS = 12;
    phrases — a bare noun list misleads ("working for the market: inflation" reads as
    inflation-is-good when the factor is bullish because inflation is COOLING). They live
    HERE, beside the rule they describe, for the same reason `plain` does: one home per band,
-   no parallel copy-table to rot. */
+   no parallel copy-table to rot.
+
+   `whyItMatters` (v4.0 SIMPLE CARDS) is the newcomer-facing "why should I care about this
+   number at all" line — what the factor TRANSMITS, never which way it is pointing today
+   (plainBull/plainBear already own the direction, and duplicating it here would be two
+   copies of one fact). Same one-home-per-band rule: it lives on the band, not in a card
+   lookup table that could drift from the rule it explains. */
 export const REGIME_BAND_TABLE = [
   { key:"tenYear", short:"10Y", label:"10Y Direction",
     plain:"the 10-year yield",
     plainBull:"long-term rates are falling", plainBear:"long-term rates are climbing",
+    whyItMatters:"Long rates set the discount rate on every future dollar a company earns.",
     read:(d)=>d.crossAsset.treasury10y.m1,
     vote:(v)=> v < -0.10 ? "bull" : v > 0.15 ? "bear" : "neutral",
     flip:{ bullEdge:-0.10, bearEdge:0.15, bullSide:"below", bullInclusive:false,
@@ -59,6 +66,7 @@ export const REGIME_BAND_TABLE = [
   { key:"vix", short:"VIX", label:"VIX Level",
     plain:"volatility",
     plainBull:"volatility is asleep", plainBear:"volatility is spiking",
+    whyItMatters:"The market's own estimate of how violently prices could move from here.",
     read:(d)=>d.marketPulse.vix.current,
     vote:(v)=> v < 18 ? "bull" : v > 25 ? "bear" : "neutral",
     flip:{ bullEdge:18, bearEdge:25, bullSide:"below", bullInclusive:false,
@@ -66,6 +74,7 @@ export const REGIME_BAND_TABLE = [
   { key:"fearGreed", short:"F&G", label:"Fear & Greed",
     plain:"sentiment",
     plainBull:"sentiment is greedy", plainBear:"sentiment is fearful",
+    whyItMatters:"Crowd positioning — how much optimism is already priced into the tape.",
     read:(d)=>d.marketPulse.fearGreed.score,
     vote:(v)=> v > 55 ? "bull" : v < 30 ? "bear" : "neutral",
     // The one INVERTED factor: bullish ABOVE its edge, not below.
@@ -74,6 +83,7 @@ export const REGIME_BAND_TABLE = [
   { key:"cpiHeadline", short:"CPI", label:"CPI Trend",
     plain:"inflation",
     plainBull:"inflation is cooling", plainBear:"inflation is running hot",
+    whyItMatters:"Inflation is what decides whether the Fed can ease or has to keep squeezing.",
     read:(d)=>d.macro.cpi.trend,
     vote:(t)=> t[t.length-1] < t[t.length-2] ? "bull"
              : (t[t.length-1] - t[0] > 0.5 ? "bear" : "neutral"),
@@ -82,6 +92,7 @@ export const REGIME_BAND_TABLE = [
   { key:"valuation", short:"VAL", label:"Valuation",
     plain:"valuation",
     plainBull:"valuations are sane", plainBear:"stocks are priced for perfection",
+    whyItMatters:"How much good news is already in the price — the cushion if things disappoint.",
     read:(d)=>d.macro.shillerPe,
     vote:(c)=>{ const p = c.ath ? (c.current / c.ath) * 100 : c.pctOfAth;
                 return c.current < c.mean * 1.5 ? "bull" : (c.current > 30 || p > 90 ? "bear" : "neutral"); },
@@ -90,6 +101,7 @@ export const REGIME_BAND_TABLE = [
   { key:"nfci", short:"NFCI", label:"Fin Conditions",
     plain:"financial conditions",
     plainBull:"credit is cheap and easy", plainBear:"credit is tightening up",
+    whyItMatters:"Whether money is actually flowing through the financial plumbing, or seizing up.",
     read:(d)=>d.macro.nfci.current,
     // Asymmetric and INCLUSIVE on the bull side (<=), unlike every other factor — see the
     // NFCI_BANDS derivation at the tile. flipConditions renders "at or below" for it.

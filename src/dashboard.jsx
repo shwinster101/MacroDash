@@ -3,7 +3,7 @@ import { LineChart, Line, BarChart, Bar, Cell, AreaChart, Area, XAxis, YAxis, To
 import { useMarketData } from "./useMarketData.js"; // FEAT-204 wiring
 import { computeFiveWhys } from "./fiveWhys.js"; // v2.5: rule-based 5 Whys ($0, derived from live data)
 import { NFCI_TIGHT, NFCI_LOOSE, REGIME_BAND_TABLE, REGIME_QUORUM, verdictFrom, computeRegime, flipConditions, regimeFactors, voteStyle } from "./regime.js"; // C1 (v3.60): the extracted engine; voteStyle = FEAT-NEUTRAL (v3.62)
-import { buildEvidenceSet, factorExclusions, fieldMode, FACTOR_FIELD } from "./evidence.js"; // C1 (v3.60): the typed contract
+import { buildEvidenceSet, simpleVerdict, simpleCards, simpleSentence, simpleFlipLine, factorExclusions, fieldMode, FACTOR_FIELD } from "./evidence.js"; // C1 (v3.60): the typed contract
 import { LASTVALID_KEY, summarizeEvidence, compareEvidence } from "./whatChanged.js"; // C4 (v3.60)
 import { isStale, cadenceOf, parseObsDate, isMarketHoliday, nextFomcDate, etYmd } from "./sources.js"; // FEAT-R3: per-tile, cadence-aware staleness + shared market calendar; v3.99: curated FOMC calendar
 import { computeMacroFlip, buildTtReadout, formatTtPaste } from "./ttReadout.js"; // FEAT-331/332: Macro Flip + TT paste
@@ -23,6 +23,7 @@ import Alerts from "./sections/Alerts.jsx"; // task 7.2: evaluation stays here
 import DataHealth from "./sections/DataHealth.jsx"; // task 7.3: presentation only
 import Watchlist from "./sections/Watchlist.jsx"; // task 7.4: A4 gate stays at the call site
 import SharedPicks from "./sections/SharedPicks.jsx"; // v3.97: live S-tier strip (Simple); fetch stays here
+import SimpleCards from "./sections/SimpleCards.jsx"; // v4.0: Simple parameter cards (presentation only)
 import StickyNav from "./sections/StickyNav.jsx"; // task 9.2: viewport-tracked active state
 import MacroStrip from "./sections/MacroStrip.jsx"; // task 3.1: presentation only
 import SignalQuality from "./sections/SignalQuality.jsx"; // task 3.2: presentation only
@@ -510,6 +511,13 @@ export default function Dashboard({ publicView = false } = {}) {
      Health surfaces render IT, never their own reading of provenance. */
   const staleFactors=factorExclusions({provenance, dataAsOf, liveBuild});
   const evidenceSet=buildEvidenceSet({d, provenance, dataAsOf, mode, liveBuild});
+  /* v4.0 SIMPLE MODE — pure projections of the SAME EvidenceSet (src/evidence.js). Derived
+     here, once, and handed down: the sections stay presentation-only, and Simple can never
+     disagree with Power because neither re-derives anything. */
+  const simpleV=simpleVerdict(evidenceSet);
+  const simpleC=simpleCards(evidenceSet);
+  const simpleS=simpleSentence(evidenceSet);
+  const simpleF=simpleFlipLine(evidenceSet);
   /* ENGINE0-CONT §8: a REAL refresh, distinct from the network-error retry. The operator
      view first asks the server to REBUILD the active snapshot (POST /api/snapshot/refresh —
      authorized by the terminal's same-origin PIN session cookie when one exists; a 401/404
@@ -879,8 +887,8 @@ export default function Dashboard({ publicView = false } = {}) {
           gets the two directional newbie sentences (prose), Power keeps the compact
           one-liner (sentence). Same buckets, one derivation (postureSummary). */}
       <RegimeBand d={d} stale={staleFactors} loading={mode==="LOADING"} liveBuild={liveBuild} srcLabel={derivedLabel}
-        sentence={!simple&&!evidenceSet.withheld&&evidenceSet.summary?evidenceSet.summary.sentence:null}
-        prose={simple&&!evidenceSet.withheld&&evidenceSet.summary?evidenceSet.summary.prose:null} conf={regimeConf}
+        sentence={simple?simpleS:(!evidenceSet.withheld&&evidenceSet.summary?evidenceSet.summary.sentence:null)}
+        plainVerdict={simple?simpleV:null} conf={regimeConf}
         factorRows={evidenceSet.factors}/>
 
       {/* FEAT-WHY (v3.62) sentence now renders INSIDE the hero (v3.94 DRIVERS-ONLY — one
@@ -895,6 +903,13 @@ export default function Dashboard({ publicView = false } = {}) {
           wants the chain does not re-open it every visit. Chips, the factor tally, the flip
           line and the full evidence matrix stay Power-only — this adds the narrative, not
           the technical layer. ── */}
+      {/* v4.0 SIMPLE MODE: up to three parameter cards + the flip line, directly under the
+          verdict they explain. Excluded factors never appear (a card is a claim about a
+          current usable reading); fewer than three usable renders fewer cards, never
+          UNAVAILABLE padding; the truncation is named on the block. */}
+      {simple&&<SimpleCards cards={simpleC.cards} flipLine={simpleF}
+        usable={simpleC.usable} shown={simpleC.shown} total={simpleC.total}/>}
+
       {simple&&<FiveWhys fw={fw} derivedLabel={derivedLabel} mode={modeOf('spyPrice')} asOf={asOfOf('spyPrice')}
         label="why this posture — 5 whys"/>}
 
