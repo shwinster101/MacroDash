@@ -973,6 +973,53 @@ ok("techread: inverting the levels flips the read to BEARISH — it follows the 
 ok("techread: a BEARISH tape does NOT veto — the pick stays eligible, the read is reported beside it",
   techLive.stillEligible);
 
+// FEAT-TT-ALLOC (v3.100): the server allocation receipt driven live. Synthetic receipt only
+// (the SEED/BOARD invariant); ALLOC is a top-level global the loaders normally set, so the
+// harness sets it directly — exactly how BOARD/LIVE_PX scenarios already work.
+console.log("\n[render] FEAT-TT-ALLOC — the server receipt beside the client's read");
+const allocLive = await page.evaluate(() => {
+  const prev = ALLOC;
+  const today = new Date().toLocaleDateString("en-CA", { timeZone: "America/New_York" });
+  ALLOC = { schema: "tt-alloc-receipt-v1", at: today + "T14:00:00Z", state: "ALLOCATABLE",
+    gate: null, horizon: "2027", eligible: { sym: "AAA", y: "2027", tgt: 999, up: 20, ann: 15 },
+    why_not: [], context_blockers: [],
+    funding: { label: "FUNDING PRIORITY — not a sell recommendation",
+      rows: [{ sym: "FFF", tier: 4, reason: "session funding order #1" }], optOnly: [] },
+    inputs: { readout_as_of: today },
+    attestation: { input_hash: "a".repeat(64), basis_hash: "b".repeat(64), result_hash: "c".repeat(64) },
+    confirmation: null };
+  render();
+  const buy = document.getElementById("buyBlock").innerText;
+  const sell = document.getElementById("sellBlock").innerText;
+  const out = {
+    buyChip: /server: ALLOCATABLE — AAA/.test(buy),
+    sellChip: /server: ALLOCATABLE — AAA/.test(sell),
+    confirmLink: document.getElementById("allocFundLink") !== null,
+    confirmIntentOnly: /intent only/.test(buy),
+    disagree: /server receipt: FFF first/.test(sell) };
+  // WAIT state: the gate reason renders, no confirm affordance survives.
+  ALLOC = { ...ALLOC, state: "WAIT", eligible: null,
+    gate: { rung: "flip", reason: "Macro Flip BLIND — missing inputs" }, confirmation: null };
+  render();
+  out.waitChip = /server: WAIT — Macro Flip BLIND/.test(document.getElementById("buyBlock").innerText);
+  out.waitNoConfirm = document.getElementById("allocFundLink") === null;
+  // No receipt at all (older deploy / never evaluated): stated, never blank.
+  ALLOC = null; render();
+  out.honest = /server allocation: no receipt/.test(document.getElementById("buyBlock").innerText);
+  ALLOC = prev; render();
+  return out;
+});
+ok("alloc: the ALLOCATABLE receipt renders the SAME chip at both altitudes (one builder)",
+  allocLive.buyChip && allocLive.sellChip);
+ok("alloc: CONFIRM FUND is present, two-step, and says intent only",
+  allocLive.confirmLink && allocLive.confirmIntentOnly);
+ok("alloc: the server-vs-client funding disagreement prints — married, never merged",
+  allocLive.disagree);
+ok("alloc: WAIT renders the gate reason and withdraws the confirm affordance",
+  allocLive.waitChip && allocLive.waitNoConfirm);
+ok("alloc: no receipt is a STATED state, never a blank surface",
+  allocLive.honest);
+
 console.log("\n[render] FEAT-TT-ESTRUN — the board expression inside NEXT DOLLAR");
 const estBoard = await txt(page, "estRunBoard");
 ok("every modelled name gets a row, denominator stated",

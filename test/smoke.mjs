@@ -7089,5 +7089,174 @@ console.log("\n[67] v3.99.4 — runtime contract reconciliation");
     /const readSrc = \(p\) => readFileSync\(new URL\(p, import\.meta\.url\), "utf8"\)\.replace\(\/\\r\\n\/g, "\\n"\)/.test(readSrc("./smoke.mjs")));
 }
 
+// ---- 68. FEAT-TT-ALLOC (v3.100) — the server allocation layer ---------------------------
+// The pure core is IMPORTED and RUN (the v3.60 convention); the endpoint is driven against
+// a fake KV with a put-order log (the [48]/[61] harness); the readout fetch is monkey-
+// patched with a finally-restore ([61] precedent). The §14.8 bar and the review's
+// acceptance tests are executed, not pinned.
+console.log("\n[68] FEAT-TT-ALLOC — pure core, endpoint, and the §14.8 bar");
+{
+  const alloc = await import("../functions/lib/tt-alloc.js");
+  const NOW = new Date();
+  const TODAY = etYmd(NOW);
+  const YR = TODAY.slice(0, 4), FY = String(+YR + 1);
+  const mkIdx = (over = {}) => ({ as_of: TODAY, hinges: [{ label: "h1", state: "green" }],
+    ref_px: { px: 100, at: TODAY }, pt_model: { pe_floor_multiple: 18, share_count_M: 100 },
+    consensus: { eps: { [FY]: 10 } }, composite: { score: 8.1, raw_tier: "S" }, ...over });
+  const READOUT = { as_of: TODAY, regime: { verdict: "TAILWIND", actionability: "FULL" },
+    macro_flip: { evaluable: true, armed: false, tripped: false } };
+
+  // ── the gate ladder, rung by rung (fail closed at every altitude) ──
+  const lad = (board, readout) => alloc.allocGateLadder({ board, readout });
+  ok("alloc gate: circuit tripped vetoes FIRST — no per-name score clears deleverage-only",
+    lad({ circuit: { state: "tripped" }, regime: { asserted: "TAILWIND" } }, READOUT).rung === "circuit");
+  ok("alloc gate: no measured OR asserted regime → stance UNKNOWN (a live read is mandatory)",
+    lad({}, null).rung === "stance" && /stance UNKNOWN/.test(lad({}, null).reason));
+  ok("alloc gate: PANIC governs even when only ASSERTED (stricter governs — married never merged)",
+    /PANIC/.test(lad({ regime: { asserted: "PANIC" } }, READOUT).reason));
+  ok("alloc gate: readout absent after a ranked stance → feed veto, never default-to-clear",
+    lad({ regime: { asserted: "TAILWIND" } }, null).rung === "feed");
+  ok("alloc gate: actionability missing and non-FULL each veto (the ENGINE0-CONT rung)",
+    lad({}, { ...READOUT, regime: { verdict: "TAILWIND" } }).rung === "actionability" &&
+    /HOLD/.test(lad({}, { ...READOUT, regime: { verdict: "NEUTRAL", actionability: "HOLD", status: "DATA DEGRADED" } }).reason));
+  ok("alloc gate: Macro Flip absent / blind / tripped each veto with the reason named",
+    lad({}, { ...READOUT, macro_flip: undefined }).rung === "flip" &&
+    /BLIND|missing/i.test(lad({}, { ...READOUT, macro_flip: { evaluable: false, reason: "vix MISSING" } }).reason) &&
+    /TRIPPED/.test(lad({}, { ...READOUT, macro_flip: { evaluable: true, tripped: true } }).reason));
+  ok("alloc gate: every gate reading clean → null (the ladder can actually pass)",
+    lad({ regime: { asserted: "TAILWIND" } }, READOUT) === null);
+
+  // ── acceptance tests, executed ──
+  const BOOK = { version: "9.0", asOf: TODAY, cut: ["OLD"], book: [
+    { sym: "AAA", tier: "S", lens: "VEH", lastRun: TODAY }, { sym: "BBB", tier: "A", lens: "VEH" }],
+    board: { as_of: TODAY, regime: { asserted: "TAILWIND" },
+      decisions: [{ q: "exit now", sym: "CCC", forced_exit: true }],
+      funding: { order: [{ sym: "BBB" }], do_not_trim: ["AAA"] } } };
+  const IDX = { asOf: TODAY, entries: { AAA: mkIdx(), BBB: mkIdx({ pt_model: null, consensus: null, composite: null, hinges: [] }) } };
+  const POSDOC = { asOf: TODAY, snap: "20260817190000000",
+    account: { equity: 100000, at: TODAY + "T12:00:00Z", src: "rh" },
+    positions: {
+      AAA: { at: TODAY + "T12:00:00Z", src: "rh", sh: 10, mv: 1000, pct: 1, lots: [{ acquired: "2024-01-02", sh: 6 }, { acquired: TODAY, sh: 4 }] },
+      CCC: { at: TODAY + "T12:00:00Z", src: "rh", sh: 1, mv: 100, pct: 0.1 },
+      OLD: { at: TODAY + "T12:00:00Z", src: "rh", sh: 2, mv: 50, pct: 0.05 },
+      BIG: { at: TODAY + "T12:00:00Z", src: "rh", sh: 9, mv: 20000, pct: 21 },
+      OPT: { at: TODAY + "T12:00:00Z", src: "rh", opt: [{ k: "call", side: "long", n: 2 }] } } };
+  const ev = (over = {}) => alloc.evaluateAllocation({ book: BOOK, ddIndex: IDX, posDoc: POSDOC,
+    quotes: {}, readout: READOUT, now: NOW, ...over });
+  const R = ev();
+  ok("alloc 1: a name with NO position takes BUY eligibility — underwriting is position-independent",
+    R.eligible && R.eligible.sym === "AAA" && !("AAA" in {}) && R.state === "ALLOCATABLE");
+  ok("alloc 2: a stale positions snapshot degrades ALLOCATABLE → BUY_ELIGIBLE with the blocker NAMED",
+    (() => { const r = ev({ posDoc: { ...POSDOC, asOf: "2026-01-01" } });
+      return r.state === "BUY_ELIGIBLE" && r.context_blockers.some((b) => /snapshot .*old.*re-sync/.test(b)); })());
+  ok("alloc 2b: missing positions / missing account are each a NAMED context blocker, never inferred empty",
+    (() => { const r = ev({ posDoc: null });
+      return r.state === "BUY_ELIGIBLE" && r.context_blockers.some((b) => /sync has never run/.test(b)) &&
+        r.context_blockers.some((b) => /account unmeasured.*FLOOR/.test(b)); })());
+  ok("alloc 3: forced exits (owner decision + cut list) rank ahead of over-cap ahead of session order ahead of discretionary",
+    (() => { const t = Object.fromEntries(R.funding.rows.map((r) => [r.sym, r.tier]));
+      return t.CCC === 1 && t.OLD === 1 && t.BIG === 2 && t.AAA === 5; })());
+  ok("alloc 4: the over-cap row is identified from the MEASURED pct and says so",
+    /21% of acct equity.*broker-measured/.test(R.funding.rows.find((r) => r.sym === "BIG").reason));
+  ok("alloc 6: missing lots never become a zero-tax assumption — lots:null, not {lt:0,st:0}",
+    R.funding.rows.find((r) => r.sym === "BIG").lots === null &&
+    (() => { const a = R.funding.rows.find((r) => r.sym === "AAA").lots; return a.lt_sh === 6 && a.st_sh === 4; })());
+  ok("alloc 7: an option leg with no synced mv reads as unmeasured exposure, never zero",
+    /no synced value/.test(R.funding.optOnly.find((o) => o.sym === "OPT").note));
+  ok("alloc: do_not_trim is FLAGGED on the row, never hidden (the RANKFAIR rule)",
+    R.funding.rows.find((r) => r.sym === "AAA").dnt === true);
+  ok("alloc: a missing dd-index entry is a NAMED blocker, never a silent pass",
+    (() => { const r = alloc.evalBuyRow({ entry: { sym: "ZZZ" }, idx: null, quote: null, board: {}, horizon: null, now: NOW });
+      return r.blockers.length === 1 && /dd index unavailable/.test(r.blockers[0]); })());
+  ok("alloc D3: a red hinge is a CAUTION on the row, never a veto",
+    (() => { const r = alloc.evalBuyRow({ entry: { sym: "AAA", lastRun: TODAY }, idx: mkIdx({ hinges: [{ label: "h", state: "red" }] }),
+      quote: { px: 100 }, board: {}, horizon: null, now: NOW });
+      return !r.blockers.length && r.cautions.some((c) => /RED/.test(c)) && alloc.whyNot(r, 1) === null; })());
+  ok("alloc: the cap vetoes the pick at exactly CAP_PCT (RANKFAIR — no room is no room)",
+    (() => { const r = alloc.evalBuyRow({ entry: { sym: "AAA", lastRun: TODAY }, idx: mkIdx(), quote: { px: 100 }, board: {}, horizon: null, now: NOW });
+      return /at the 18% cap/.test(alloc.whyNot(r, 18)) && alloc.whyNot(r, 17.9) === null; })());
+  ok("alloc: the FIX-C label rides the result verbatim",
+    R.funding.label === "FUNDING PRIORITY — not a sell recommendation");
+  ok("alloc: WAIT still computes the full ranking (the v3.74.1 always-an-output contract)",
+    (() => { const r = ev({ readout: null, book: { ...BOOK, board: { ...BOOK.board, regime: undefined } } });
+      return r.state === "WAIT" && r.eligible === null && r.funding.rows.length > 0; })());
+
+  // ── §14.8 bar + no-order-tools: structural, negative-controllable ──
+  const allocLibSrc = readSrc("../functions/lib/tt-alloc.js");
+  const allocApiSrc = readSrc("../functions/api/allocation.js");
+  // The bar is about CODE, and the files' own comments legitimately NAME the bar — so the
+  // sweep strips comments first (the v3.60.1 lesson: a pin matching its own explanatory
+  // prose proves nothing, in either direction).
+  const stripComments = (s) => s.replace(/\/\*[\s\S]*?\*\//g, "").replace(/\/\/[^\n]*/g, "");
+  ok("§14.8 bar: the allocation CODE never references the score store — the shadow engine cannot feed the forced tier",
+    !/tt:score|BROKEN_THESIS/.test(stripComments(allocLibSrc)) &&
+    !/tt:score|BROKEN_THESIS/.test(stripComments(allocApiSrc)));
+  ok("no-order-tools: no broker order call exists anywhere in the terminal or functions",
+    !/place_equity_order|place_option_order/.test(adminSrc) &&
+    !/place_equity_order|place_option_order/.test(allocLibSrc + allocApiSrc + ttSrc + snapSrc));
+  ok("mirror: POS_STALE_D — the store's export and the buildless client literal agree",
+    /export const POS_STALE_D = 2;/.test(posSrc) && adminSrc.includes("const POS_STALE_D=2;"));
+  ok("mirror: CAP_PCT — the alloc core and the client literal agree",
+    /export const CAP_PCT = 18;/.test(allocLibSrc) && adminSrc.includes("const CAP_PCT=18;"));
+  ok("alloc endpoint: GET never evaluates (the v3.54 rule — a read must not spend upstream calls or write)",
+    (() => { const g = allocApiSrc.slice(allocApiSrc.indexOf("onRequestGet"), allocApiSrc.indexOf("handleConfirm"));
+      return !/evaluateAllocation|evaluate\(/.test(g); })());
+  ok("alloc endpoint: the 64KB cap states its reason (the positions.js divergent-cap convention)",
+    /Deliberately 64KB.*NOT the book's 300KB/s.test(allocApiSrc));
+  ok("alloc chip: ONE builder at both altitudes — the BUY and FUNDING blocks read the same allocChip()",
+    (adminSrc.match(/\$\{allocChip\(\)\}/g) || []).length === 2);
+
+  // ── the endpoint against a fake KV with a put-order log ──
+  const ep = await import("../functions/api/allocation.js");
+  const puts = [];
+  const store = new Map();
+  const kv = { get: async (k, t) => { const v = store.get(k); return v == null ? null : (t === "json" ? JSON.parse(v) : v); },
+    put: async (k, v) => { puts.push(k); store.set(k, String(v)); },
+    delete: async (k) => store.delete(k),
+    list: async ({ prefix, limit = 50 }) => ({ keys: [...store.keys()].filter((k) => k.startsWith(prefix)).slice(0, limit).map((name) => ({ name })), list_complete: true, cursor: null }) };
+  const env = { ACCESS_DEV_BYPASS: "1", PULSE_CACHE: kv };
+  const rq = (method, params = "", body = null) => ({ method, url: "https://x.test/api/allocation" + params,
+    headers: { get: () => null }, text: async () => (body ? JSON.stringify(body) : "") });
+  store.set("tt:book:v1", JSON.stringify(BOOK));
+  store.set("tt:dd:index:v1", JSON.stringify(IDX));
+  store.set("tt:pos:v1", JSON.stringify(POSDOC));
+  store.set("tt:quote:AAA", JSON.stringify({ px: 101, at: TODAY + "T14:00:00Z" }));
+  const realFetch = globalThis.fetch;
+  try {
+    globalThis.fetch = async () => ({ ok: true, json: async () => READOUT });
+    const g0 = await ep.onRequest({ request: rq("GET"), env });
+    ok("alloc ep: GET with no receipt → 404, and GET never writes", g0.status === 404 && puts.length === 0);
+    const p1 = await ep.onRequest({ request: rq("POST"), env });
+    const b1 = JSON.parse(await p1.text());
+    ok("alloc ep: POST evaluates → ALLOCATABLE receipt with all three hashes",
+      p1.status === 200 && b1.receipt.state === "ALLOCATABLE" &&
+      [b1.receipt.attestation.input_hash, b1.receipt.attestation.basis_hash, b1.receipt.attestation.result_hash].every((h) => /^[0-9a-f]{64}$/.test(h)));
+    ok("alloc ep: history key written BEFORE the pointer — a pointer can never exist without its immutable copy",
+      puts[0].startsWith("tt:alloc:history:") && puts[1] === "tt:alloc:v1");
+    // basis vs input: a quote tick changes the audit identity, never the confirm basis
+    store.set("tt:quote:AAA", JSON.stringify({ px: 102, at: TODAY + "T14:02:00Z" }));
+    const p2 = await ep.onRequest({ request: rq("POST"), env });
+    const b2 = JSON.parse(await p2.text());
+    ok("alloc ep: a quote tick changes input_hash but NOT basis_hash (a price move must not 409 a confirmation)",
+      b2.receipt.attestation.input_hash !== b1.receipt.attestation.input_hash &&
+      b2.receipt.attestation.basis_hash === b1.receipt.attestation.basis_hash);
+    const c1 = await ep.onRequest({ request: rq("POST", "?confirm=1", { intent: { action: "FUND", sym: "AAA" }, result_hash: b2.receipt.attestation.result_hash }), env });
+    const cb1 = JSON.parse(await c1.text());
+    ok("alloc ep: confirm persists INTENT only — server-stamped record, receipt marked, no order anywhere",
+      c1.status === 200 && cb1.stored === true && cb1.receipt.confirmation.sym === "AAA" &&
+      [...store.keys()].some((k) => k.startsWith("tt:alloc:intent:v1:")));
+    ok("alloc ep: a wrong result_hash → 409 STALE_ALLOCATION with the server's copy",
+      (await (async () => { const r = await ep.onRequest({ request: rq("POST", "?confirm=1", { intent: { action: "FUND", sym: "AAA" }, result_hash: "beef" }), env });
+        const b = JSON.parse(await r.text()); return r.status === 409 && b.error === "STALE_ALLOCATION" && !!b.receipt; })()));
+    store.set("tt:pos:v1", JSON.stringify({ ...POSDOC, snap: "20269999999999999" }));
+    ok("alloc ep: a fresh sync (new snap) between evaluate and confirm → 409 STALE_ALLOCATION (recompute first)",
+      (await (async () => { const r = await ep.onRequest({ request: rq("POST", "?confirm=1", { intent: { action: "FUND", sym: "AAA" }, result_hash: b2.receipt.attestation.result_hash }), env });
+        const b = JSON.parse(await r.text()); return r.status === 409 && /changed since/.test(b.reason); })()));
+    ok("alloc ep: an invented amount is rejected — amount_usd is owner-supplied or absent",
+      (await (async () => { const r = await ep.onRequest({ request: rq("POST", "?confirm=1", { intent: { action: "FUND", sym: "AAA", amount_usd: -5 }, result_hash: "x" }), env });
+        return r.status === 400; })()));
+  } finally { globalThis.fetch = realFetch; }
+}
+
 console.log(`\n=== SMOKE TEST: ${pass} passed, ${fail} failed ===`);
 process.exit(fail === 0 ? 0 : 1);

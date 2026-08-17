@@ -2881,6 +2881,66 @@ Jan-anchor shipped; see `snapshot.js` ~318–328), `spyMa100`, `spyMa200`, and a
   VALUATION GAP ranking (§11.1 — the ranking always renders, which is the owner's actual
   "always an output" contract, and it was never suspended). Tests: 1223 smoke (+2) + 199
   render (+1).
+- **FEAT-TT-ALLOC (v3.100.0) "THE ALLOCATION RECEIPT" — the server-authoritative allocation
+  layer, and the Robinhood sync contract that feeds it.** The 2026-08-17 allocation review's
+  architecture, ratified and verified: do NOT replace TT — add a separate, recommendation-only
+  layer answering *"if this is the best eligible buy, what should fund it, and what could
+  invalidate that?"* Verification found ~half the review already built (`sellRank`, fail-closed
+  `posOf`/`optSleeve`, hashing, the decision journal) and three real gaps, all closed here:
+  the ELIGIBLE ladder was CLIENT-ONLY (no server record ever bound "this was the eligible buy"
+  to its evidence), the positions store had no snapshot version / account / tax lots, and a
+  confirmed "fund X from Y" had no immutable record.
+  **The store** (`tt:pos:v1` → `{asOf, snap, account, positions}`): `snap` is a server digits
+  stamp per PUT (receipts bind to it); `account` is the MEASURED record (`validateAccount` —
+  equity required, NO formula: `board.account` stays the ASSERTED leverage record, married
+  never merged) riding the PUT as a SIBLING with the board-carry rule (absent=carry,
+  null=clear); `pos.lots[]` makes ST/LT a DERIVED fact (>365d at evaluation, never stored);
+  `POS_STALE_D` moves to ONE exported home with the client literal mirror-pinned.
+  **The evaluator** (`functions/lib/tt-alloc.js`, pure + smoke-RUN; `/api/allocation`
+  transport): replicates the client's circuit veto + 8-rung gateFail ladder rung-for-rung
+  (every unreadable input a NAMED veto), evaluates every book name from the dd INDEX
+  (pt_model/consensus/ref_px/hinges/composite — the v3.75 whitelist paying off: no per-tab
+  reads), and keeps TWO STATES DISTINCT: `BUY_ELIGIBLE` (position-independent — a missing
+  position NEVER blocks underwriting) vs `ALLOCATABLE` (context: positions/account freshness,
+  cap room broker-pct-preferred with the tracked floor NAMED, cluster headroom). Context
+  failures are named `context_blockers` and degrade — WAIT, never a wrong answer, never an
+  inferred zero (missing lots ≠ zero tax; an unsynced option leg ≠ no exposure). The funding
+  ranking is FIVE OWNER-LOCKED TIERS with a governing reason per row: **(1) owner-marked
+  forced exit ONLY** — `decision.forced_exit:true` (validated, literal true, sym-scoped) or
+  cut-list membership; **the shadow score engine's BROKEN_THESIS is BARRED until §14.8
+  activation** (the module receives no score data at all — the bar holds by construction,
+  comment-stripped-swept in smoke) → (2) over-cap (broker-measured pct, floor named) →
+  (3) cluster violation → (4) session funding order → (5) lowest annualised upside via the
+  SAME `src/ptModel.js` `pickRow`. `do_not_trim` flagged never hidden; FIX-C's "FUNDING
+  PRIORITY — not a sell recommendation" rides every receipt verbatim.
+  **Receipts + confirm:** history key FIRST, pointer second (the ticker-analysis order,
+  negative-controlled); THREE hashes with the distinction documented — `input_hash` (audit,
+  incl. quote stamps) vs `basis_hash` (book version · positions snap · index asOf · readout
+  day · rule version — what confirm checks, because a 2-minute quote tick must not 409 a
+  confirmation) vs `result_hash`. `POST ?confirm=1` re-derives the basis from current KV →
+  409 `STALE_ALLOCATION` on any drift → immutable intent record (450d, server-stamped).
+  **INTENT ONLY: no broker order call exists anywhere in this repo** — smoke pins
+  `place_equity_order`/`place_option_order` absent from the terminal and every function.
+  **The terminal** renders the receipt BESIDE its own read, married never merged for this
+  release: one `allocChip()` at both altitudes (BUY + FUNDING blocks — smoke pins exactly
+  two call sites), a THIRD funding-disagreement line (server vs client vs session), two-step
+  CONFIRM FUND (the v3.42 destructive-link rule) that withdraws on WAIT, a stated chip when
+  no receipt exists (older deploy = stated, never blank), and `loadAllocation`/`allocReeval`
+  on the boot/refresh chains. Client `sellRank`/`gateFail`/`why()` are UNTOUCHED. Found and
+  closed while wiring: `validateSession` had every board section EXCEPT `account` — a
+  malformed asserted-leverage record rode the client's unknown-key passthrough while the
+  server rejected the same edit.
+  **The Robinhood runbook** replaces the old deferred note (see THE ROBINHOOD SYNC RUNBOOK
+  below): chat-side MCP pulls → merge-only PUT with the PIN header; the server never talks
+  to the broker; `pct` computed chat-side as mv/equity×100 with the formula stated; a missed
+  sync degrades to WAIT via the shared `POS_STALE_D`.
+  Tests: **1639 smoke** (+35: the gate ladder rung-for-rung, the review's acceptance tests
+  1-10 EXECUTED, the §14.8 comment-stripped sweep, mirror pins, the fake-KV endpoint with a
+  put-order log, basis-vs-input proof, both 409 paths; negative-controlled twice — a
+  shadow-store reference in the forced tier and a swapped history/pointer write order each
+  turn exactly their pin red) + **253 render** (+5: the chip at both altitudes, confirm
+  intent-only, the disagreement line, WAIT withdrawing the affordance, the honest no-receipt
+  state — all driven live in Chromium) + 152 public-render + `audit:prod` clean.
 - **v3.99.4 "THE RUNTIME CONTRACT" — the codex ambiguity review's verified findings, closed.**
   An external review of fba2a1c found no wrong number anywhere — every finding was a CONTRACT
   stated in several places that a human had to keep in sync, and every single one had already
@@ -3435,10 +3495,32 @@ Jan-anchor shipped; see `snapshot.js` ~318–328), `spyMa100`, `spyMa200`, and a
   desktop/phone tests cover OCR-before-confirm, independent persistence, receipts, published-target
   comparison, position independence and HOLD invalidation. The dated implementation contract is
   `ticker-terminal/TICKER_TERMINAL_LOGIC_REDESIGN_PLAN_2026-08-15.md`.
-- **Deferred:** stored fundamentals + Robinhood sync — now unblocked by the `x-tt-pin` header
-  (v3.9): a chat-side daily review can PUT `status_flags`/`ref_px` into the deepDive payloads and
-  stamp `lastRun`. When built, store the *triage* shape (`{at, px}` → "% moved since your last TT
-  run"), not a reference block a live harness pass re-fetches anyway.
+- **THE ROBINHOOD SYNC RUNBOOK (FEAT-TT-ALLOC, v3.100 — supersedes the old "Deferred:
+  stored fundamentals + Robinhood sync" note; the x-tt-pin path it anticipated is exactly
+  how this works).** The sync is CHAT-SIDE: a TT session holding the Robinhood MCP tools
+  pulls measured facts and PUTs them merge-only to `/api/positions` with the `x-tt-pin`
+  header. The server never talks to the broker; the broker credential never enters
+  Cloudflare. A missed sync does NOTHING — `POS_STALE_D` (exported by `positions.js`, the
+  one home) degrades allocation to WAIT, never to wrong answers.
+  **Tool → field mapping:**
+  · `get_portfolio` / `get_accounts` → the `account` sibling `{equity, cash, buying_power?,
+    debt?, at, src}` (validateAccount; `acct` is a MASK, last-4 at most, hard-capped 16ch)
+  · `get_equity_positions` → `pos.{sh, mv, cb, upl_pct, at, src}`; **`pct` is computed
+    chat-side as `mv / account.equity × 100`** (the formula stated here so the number is
+    checkable — the board's asserted `account.formula` rule, applied to the sync)
+  · `get_equity_tax_lots` → `pos.lots[] {acquired, sh, cb}` — ST/LT is DERIVED at
+    evaluation (>365d), never stored, never advice
+  · `get_option_positions` (+ `get_option_quotes` for marks) → `pos.opt[] {k, side, n, exp,
+    mv (SIGNED — short legs negative), src:"sync"}`; Greeks only if the quotes API actually
+    returns them — verified at sync time, never approximated
+  · a fully exited name → `{sym: null}` (the explicit removal path).
+  **DO NOT STORE:** full account numbers, order history, open orders, watchlists, or
+  anything from the broker's recommendation surfaces — the store holds POSITION FACTS only.
+  **The allocation layer this feeds:** `/api/allocation` (PIN-gated) re-derives the
+  eligibility ladder and the 5-tier funding ranking server-side and persists hash-bound
+  receipts; owner confirmation persists INTENT only. No broker order call exists anywhere
+  in this repo — smoke pins the absence of `place_equity_order`/`place_option_order` from
+  the terminal and every function.
 
 ## Cloudflare deployment
 
