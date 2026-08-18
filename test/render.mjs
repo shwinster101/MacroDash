@@ -1505,9 +1505,20 @@ await phone.evaluate(() => { document.querySelectorAll("#boardView details[open]
 await phone.waitForTimeout(100);
 // v3.62 FEAT-TT-DECK: the two capital-allocation answers are phone focus views. The buttons
 // are the accessible contract; scroll-snap is an optional touch shortcut.
-ok("decision deck: SHARE RANKS is visible without opening MENU",
+ok("decision deck: SHARE RANKS is visible without opening the OPS disclosure",
   await phone.locator("header .hb-ranks").isVisible() &&
   !(await phone.locator("#headInfo").isVisible()));
+// v4.0.2: the loop's back half — ← MACRO permanent in the bar, zero clicks, real href;
+// and the old footnote is NOT hiding in the (closed) disclosure waiting to confuse.
+ok("v4.0.2: ← MACRO is visible with ZERO clicks and links home",
+  await phone.locator("header .hb-back").isVisible() &&
+  (await phone.locator("header .hb-back").getAttribute("href")) === "/" &&
+  await phone.locator('#headInfo a[href="/"]').count() === 0);
+ok("v4.0.2: the bar stays ONE LINE at 390px even with a long verdict in the pill",
+  await phone.evaluate(() => {
+    document.getElementById("regimePill").textContent = "HOLD · degraded — do not gate";
+    return Math.round(document.querySelector(".hbar").getBoundingClientRect().height) < 30;
+  }));
 ok("decision deck: three labelled controls exist (BUY / FUND / MAG 7, v3.84) and BUY starts selected",
   (await phone.locator('.decision-tabs [role="tab"]').count()) === 3 &&
   (await phone.locator("#decisionBuyTab").getAttribute("aria-selected")) === "true" &&

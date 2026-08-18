@@ -2881,6 +2881,30 @@ Jan-anchor shipped; see `snapshot.js` ~318–328), `spyMa100`, `spyMa200`, and a
   VALUATION GAP ranking (§11.1 — the ranking always renders, which is the owner's actual
   "always an output" contract, and it was never suspended). Tests: 1223 smoke (+2) + 199
   render (+1).
+- **v4.0.2 "THE LOOP" — the terminal header closes the circle the dashboard opened.** Owner
+  spec, built as written with one measured fix. v3.98.3 gave the dashboard a first-class amber
+  ⌁ TERMINAL button; the way BACK was still a `← DASH` footnote inside the terminal's ⋯ MENU
+  disclosure — the only exit buried one click deep, on the surface an operator bounces off
+  most. Three changes, all presentation: **(1) ← MACRO is permanent** in the header bar beside
+  SHARE RANKS, styled in the dashboard's amber treatment so the two headers read as one loop
+  (MacroDash → ⌁ TERMINAL · TT → ← MACRO), and the old footnote is REMOVED — one door to one
+  room, both directions, pinned by a zero-count on `#headInfo a[href="/"]`. **(2) The two
+  toolbars get intentional altitudes**: a quiet `DAILY OPS` label over ADD TICKER · STREET
+  INPUTS · SESSION · RELOAD, and the MANAGE toggle becomes a dashed, lower-case
+  **⛭ admin & backup** — every capability survives (PIN · AI RUBRIC · exports · restore),
+  they just stop competing at one priority. **(3) ⋯ MENU → ⋯ OPS**, the dashboard header's
+  word for the same disclosure; the one surviving "⋯ MENU" is the v3.62 comment's historical
+  note, pinned as exactly-one so a control can never say it again.
+  **The measured fix:** adding ← MACRO squeezed the bar and the MACRO-pill span **wrapped
+  internally** ("MACRO:" over the pill), growing the bar 22→41px and blowing the slice-5 fold
+  budget (BUY at y=489 vs <470). The v3.99 SourceBox lesson, applied here: `min-width:0` +
+  nowrap + ellipsis on the span, so a long verdict TRUNCATES instead of wrapping — measured
+  back to 23px with the longest pill text, budget restored with no re-pin.
+  Tests: **1666 smoke** (+2 net: the permanent-back/one-door pin, the OPS vocabulary with the
+  exactly-once historical MENU, the two-altitude toolbar pin; two MACRO-label pins re-pinned
+  on the truncation contract) + **255 render** (+2: ← MACRO visible with zero clicks and
+  linking home with the footnote proven absent, and the one-line bar driven at 390px with a
+  long verdict) + 169 public-render + `audit:prod` clean.
 - **v4.0.1 "ONE VOICE" — the owner copy pass: the prose catches up to the cards.** Owner
   verdict on the live v4.0.0 Simple view: keep the factor cards and HELPING/HURTING labels
   ("the best prose on the screen"), and bring everything else to their standard — clear,

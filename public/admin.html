@@ -9,7 +9,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
 <!-- AUDIT: kept in sync with package.json by test/smoke.mjs. admin.html is a Vite
      public/ passthrough, so it cannot receive __APP_VERSION__ — the guard is the fix. -->
-<title>TT TICKER TERMINAL v4.0.1</title>
+<title>TT TICKER TERMINAL v4.0.2</title>
 <style>
   :root{
     --bg:#05070a; --panel:#0a0f16; --panel2:#0d141d; --line:#16202c;
@@ -65,6 +65,16 @@
     letter-spacing:.06em;cursor:pointer;white-space:nowrap}
   .hb-ranks:hover{border-color:var(--green);background:#10261a}
   .hb-ranks+.hb-more{margin-left:0}
+  /* v4.0.2: the permanent way BACK. Mirrors the dashboard's ⌁ TERMINAL treatment (amber,
+     real presence) so the two headers form one loop: MacroDash → ⌁ TERMINAL · TT → ← MACRO.
+     Same weight as SHARE RANKS — "I know where I am and how to leave" is an affordance,
+     not a status-line footnote. */
+  .hb-back{margin-left:0;background:#1f1708;border:1px solid var(--amber);color:var(--amber);
+    border-radius:6px;padding:3px 9px;font-family:inherit;font-size:var(--fs-xs);
+    letter-spacing:.06em;cursor:pointer;white-space:nowrap;text-decoration:none;font-weight:700}
+  .hb-back:hover{background:#2a1f0b}
+  .tb-label{margin-top:8px;font-size:9px;color:var(--dim);letter-spacing:.14em}
+  .act.quiet{border-style:dashed;color:var(--dim);text-transform:none;letter-spacing:.04em}
   #headInfo{margin-top:8px;padding-top:8px;border-top:1px dashed var(--line)}
   #headInfo .toolbar{margin-bottom:0;margin-top:8px}
   header::before{content:"";position:absolute;inset:0;
@@ -402,7 +412,7 @@
     <!-- v3.42 slice 5: ONE row. Identity and the MACRO pill are decision state. v3.62 adds
          SHARE RANKS as the one primary output action; it used to be buried two disclosures
          deep under MENU → MANAGE and was functionally invisible on a phone. Everything else
-         is status or administration, so it stays behind ⋯ MENU.
+         is status or administration, so it stays behind the ⋯ OPS disclosure (⋯ MENU until v4.0.2).
          v3.29: labelled MACRO, not REGIME. This pill is MacroDash's MEASURED read; the
          session can assert a different one, and the TODAY stance shows which governs.
          An unqualified "REGIME:" made the header look like it contradicted the stance. -->
@@ -411,19 +421,28 @@
       <!-- The "MACRO:" label is load-bearing, not decoration: v3.29 added it because an
            unqualified pill made the header look like it contradicted the TODAY stance.
            It survives the slice-5 compaction for that reason. -->
-      <span>MACRO: <span class="pill neutral" id="regimePill">loading…</span></span>
+      <!-- v4.0.2: min-width:0 + nowrap + ellipsis — when ← MACRO squeezed the row, this span
+           WRAPPED INTERNALLY ("MACRO:" over the pill) and grew the bar 22→41px, eating the
+           fold budget. The v3.99 SourceBox lesson: nowrap without a min-width floor pushes
+           or wraps; with it, the ellipsis engages and the bar stays one line tall. -->
+      <span style="min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">MACRO: <span class="pill neutral" id="regimePill">loading…</span></span>
       <button class="hb-ranks" onclick="exportRankings()"
         aria-label="Share ticker rankings and decision logic"
         title="Share rankings, funding priority, methodology and caveats">⇧ SHARE RANKS</button>
+      <!-- v4.0.2: the back half of the loop the dashboard's ⌁ TERMINAL button opened
+           (v3.98.3). It was a status-line footnote inside the disclosure — the only way
+           back to the macro board required opening a menu. Now permanent, same weight. -->
+      <a class="hb-back" href="/" aria-label="Back to the MacroDash macro board">← MACRO</a>
       <button class="hb-more" id="headToggle" aria-expanded="false" aria-controls="headInfo"
-        onclick="toggleHeadInfo()">⋯ MENU</button>
+        onclick="toggleHeadInfo()">⋯ OPS</button>
     </div>
     <div id="headInfo" style="display:none">
-      <div class="brand">FINANCE&nbsp;BRO.AI // TT&nbsp;TICKER&nbsp;TERMINAL <small>v4.0.1 · underwriting + sourced gates</small></div>
+      <div class="brand">FINANCE&nbsp;BRO.AI // TT&nbsp;TICKER&nbsp;TERMINAL <small>v4.0.2 · underwriting + sourced gates</small></div>
       <div class="statusline">
         <span>BOOK: <b id="bookStamp">loading…</b></span>
         <span>AUTH: <b id="sessState">…</b></span>
-        <span style="margin-left:auto"><a href="/">← DASH</a></span>
+        <!-- ← DASH left this line in v4.0.2 — the way back is a permanent header button now
+             (one door to one room, the v3.98.3 TERMINAL rule in the other direction). -->
       </div>
       <!-- FEAT-TT-MOBILE (v3.11): daily actions own the toolbar; backup/recovery paths demote
            behind ⛭ BACKUP (same idiom as the dashboard's CollapsedGroup). EXPORT JSON stays
@@ -431,6 +450,10 @@
            v3.42 slice 5: the whole toolbar moved in here. Every one of these is an occasional
            action, and the command bar below already covers the frequent path (type a ticker
            and press ↵ to open its card, or to add it if it isn't in the book). -->
+      <!-- v4.0.2: the two toolbars get INTENTIONAL altitudes — a daily-ops row the operator
+           actually touches, then admin/backup at a visibly quieter level. Every capability
+           survives; they just stop competing at one priority. -->
+      <div class="tb-label">DAILY OPS</div>
       <div class="toolbar">
         <button class="act" onclick="openAdd()">+ ADD TICKER</button>
         <button class="act" onclick="openStreetImport('')">⇧ STREET INPUTS</button>
@@ -438,7 +461,7 @@
         <button class="act warn" onclick="reloadBook()">⟲ RELOAD</button>
         <!-- v3.29: PIN joins the manage row. It is a once-per-30-days action and it was the
              button that pushed this toolbar onto a second line on a phone. -->
-        <button class="act" onclick="toggleBackup()" id="backupToggle">⛭ MANAGE ▸</button>
+        <button class="act quiet" onclick="toggleBackup()" id="backupToggle">⛭ admin &amp; backup ▸</button>
       </div>
       <div class="toolbar" id="backupRow" style="display:none">
         <button class="act" onclick="openPinSetup()">🔐 PIN</button>
@@ -739,7 +762,7 @@ function stampAuthState(){
 function toggleBackup(){
   const r=document.getElementById("backupRow");const open=r.style.display!=="none";
   r.style.display=open?"none":"flex";
-  document.getElementById("backupToggle").textContent=open?"⛭ MANAGE ▸":"⛭ MANAGE ▾";
+  document.getElementById("backupToggle").textContent=open?"⛭ admin & backup ▸":"⛭ admin & backup ▾";
 }
 /* v3.42 slice 5: the header's status + action disclosure. Everything in here is status or an
    occasional action — never an answer — so it costs nothing on the first screen. */
@@ -748,7 +771,7 @@ function toggleHeadInfo(){
   const open=d.style.display==="none";
   d.style.display=open?"":"none";
   b.setAttribute("aria-expanded",String(open));
-  b.textContent=open?"⋯ CLOSE":"⋯ MENU";
+  b.textContent=open?"⋯ CLOSE":"⋯ OPS";   // v4.0.2: OPS — the dashboard header's word for the same disclosure
 }
 /* FEAT-TT-RUN: days since an ISO date, or null if absent/unparseable. Null is the
    FAIL-CLOSED signal — unlike src/sources.js isStale (which returns false = "not stale"

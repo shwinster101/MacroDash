@@ -1408,7 +1408,8 @@ ok("today: the reference sidebar collapses too — it is reference, not monitori
   !/<div class="panel"[^>]*>\s*<h2>Router/.test(adminSrc) &&
   adminSrc.includes("<summary>STANDING CONSTRAINTS</summary>"));
 ok("today: the header pill is labelled MACRO — it is the measured read, not the stance",
-  adminSrc.includes("<span>MACRO: <span class=\"pill neutral\" id=\"regimePill\"") &&
+  /MACRO: <span class="pill neutral" id="regimePill"/.test(adminSrc) &&
+  /min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">MACRO: /.test(adminSrc) &&
   adminSrc.includes("made the header look like it contradicted the stance"));
 ok("today: a closed drawer still carries its signal in the summary (the v3.25 hinge rule)",
   adminSrc.includes("function renderDrawers()") &&
@@ -2231,16 +2232,37 @@ ok("slice4: the toast is a live region — screen readers hear it without needin
 ok("slice5: the header is ONE row — identity, the MACRO pill, and a ⋯ MENU disclosure",
   adminSrc.includes('<div class="hbar">') && adminSrc.includes('class="hb-id">TT<') &&
   adminSrc.includes('id="headToggle" aria-expanded="false" aria-controls="headInfo"'));
-ok("slice5: version, BOOK/AUTH stamps, DASH and the whole action toolbar moved behind that " +
+// v4.0.2: DASH left this list — the way back is a PERMANENT header button now (← MACRO),
+// closing the loop the dashboard's ⌁ TERMINAL button opened (v3.98.3).
+ok("slice5: version, BOOK/AUTH stamps and the whole action toolbar moved behind that " +
    "disclosure — status and occasional actions, never answers",
   /id="headInfo"[\s\S]{0,1800}underwriting \+ sourced gates[\s\S]{0,900}id="bookStamp"[\s\S]{0,900}id="sessState"[\s\S]{0,1200}\+ ADD TICKER[\s\S]{0,900}id="backupRow"/.test(adminSrc));
 ok("slice5: the banners stay OUTSIDE the disclosure — an expired session or an unsaved edit " +
    "must never require opening a menu to discover",
   /id="headInfo"[\s\S]*?<\/div>\s*<!--[\s\S]*?-->\s*<div id="authBanner"/.test(adminSrc) &&
   adminSrc.indexOf('id="authBanner"')>adminSrc.indexOf('id="backupRow"'));
+ok("v4.0.2: ← MACRO is a permanent bar action with the dashboard's amber treatment — and the " +
+   "old ← DASH footnote is GONE from the disclosure (one door to one room, both directions)",
+  /<a class="hb-back" href="\/" aria-label="Back to the MacroDash macro board">← MACRO<\/a>/.test(adminSrc) &&
+  !/← DASH<\/a>/.test(adminSrc) &&
+  (adminSrc.match(/class="hb-back"/g) || []).length === 1 &&   // exactly one element (one door)
+  /\.hb-back\{[^}]*var\(--amber\)/.test(adminSrc));
+ok("v4.0.2: the disclosure speaks the dashboard's word — ⋯ OPS, flipping to ⋯ CLOSE",
+  /onclick="toggleHeadInfo\(\)">⋯ OPS</.test(adminSrc) &&
+  /b\.textContent=open\?"⋯ CLOSE":"⋯ OPS"/.test(adminSrc) &&
+  // the ONLY surviving "⋯ MENU" is the historical note in the v3.62 comment — no rendered
+  // string or code path says it (a comment may record history; a control may not).
+  (adminSrc.match(/⋯ MENU/g) || []).length === 1 && /until v4\.0\.2/.test(adminSrc));
+ok("v4.0.2: the two toolbars carry different altitudes — a DAILY OPS label, and admin & backup " +
+   "demoted to a quiet dashed toggle (every capability survives, they stop competing)",
+  /<div class="tb-label">DAILY OPS<\/div>/.test(adminSrc) &&
+  /class="act quiet" onclick="toggleBackup\(\)"/.test(adminSrc) &&
+  /⛭ admin &amp; backup ▸/.test(adminSrc) &&
+  /🔐 PIN/.test(adminSrc) && /◈ AI RUBRIC/.test(adminSrc) && /⏱ RESTORE POINTS/.test(adminSrc));
 ok("slice5: the MACRO: label survives the compaction — v3.29 added it so the pill can't be " +
    "misread as the stance, which is an honesty invariant, not decoration",
-  adminSrc.includes('<span>MACRO: <span class="pill neutral" id="regimePill"'));
+  /MACRO: <span class="pill neutral" id="regimePill"/.test(adminSrc) &&
+  /min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">MACRO: /.test(adminSrc));
 ok("slice5: toggleHeadInfo keeps aria-expanded honest",
   adminSrc.includes("function toggleHeadInfo()") &&
   adminSrc.includes('b.setAttribute("aria-expanded",String(open))'));
