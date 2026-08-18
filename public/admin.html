@@ -9,7 +9,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
 <!-- AUDIT: kept in sync with package.json by test/smoke.mjs. admin.html is a Vite
      public/ passthrough, so it cannot receive __APP_VERSION__ — the guard is the fix. -->
-<title>TT TICKER TERMINAL v4.0.2</title>
+<title>TT TICKER TERMINAL v4.0.3</title>
 <style>
   :root{
     --bg:#05070a; --panel:#0a0f16; --panel2:#0d141d; --line:#16202c;
@@ -65,7 +65,7 @@
     letter-spacing:.06em;cursor:pointer;white-space:nowrap}
   .hb-ranks:hover{border-color:var(--green);background:#10261a}
   .hb-ranks+.hb-more{margin-left:0}
-  /* v4.0.2: the permanent way BACK. Mirrors the dashboard's ⌁ TERMINAL treatment (amber,
+  /* v4.0.3: the permanent way BACK. Mirrors the dashboard's ⌁ TERMINAL treatment (amber,
      real presence) so the two headers form one loop: MacroDash → ⌁ TERMINAL · TT → ← MACRO.
      Same weight as SHARE RANKS — "I know where I am and how to leave" is an affordance,
      not a status-line footnote. */
@@ -421,7 +421,7 @@
       <!-- The "MACRO:" label is load-bearing, not decoration: v3.29 added it because an
            unqualified pill made the header look like it contradicted the TODAY stance.
            It survives the slice-5 compaction for that reason. -->
-      <!-- v4.0.2: min-width:0 + nowrap + ellipsis — when ← MACRO squeezed the row, this span
+      <!-- v4.0.3: min-width:0 + nowrap + ellipsis — when ← MACRO squeezed the row, this span
            WRAPPED INTERNALLY ("MACRO:" over the pill) and grew the bar 22→41px, eating the
            fold budget. The v3.99 SourceBox lesson: nowrap without a min-width floor pushes
            or wraps; with it, the ellipsis engages and the bar stays one line tall. -->
@@ -429,7 +429,7 @@
       <button class="hb-ranks" onclick="exportRankings()"
         aria-label="Share ticker rankings and decision logic"
         title="Share rankings, funding priority, methodology and caveats">⇧ SHARE RANKS</button>
-      <!-- v4.0.2: the back half of the loop the dashboard's ⌁ TERMINAL button opened
+      <!-- v4.0.3: the back half of the loop the dashboard's ⌁ TERMINAL button opened
            (v3.98.3). It was a status-line footnote inside the disclosure — the only way
            back to the macro board required opening a menu. Now permanent, same weight. -->
       <a class="hb-back" href="/" aria-label="Back to the MacroDash macro board">← MACRO</a>
@@ -437,11 +437,11 @@
         onclick="toggleHeadInfo()">⋯ OPS</button>
     </div>
     <div id="headInfo" style="display:none">
-      <div class="brand">FINANCE&nbsp;BRO.AI // TT&nbsp;TICKER&nbsp;TERMINAL <small>v4.0.2 · underwriting + sourced gates</small></div>
+      <div class="brand">FINANCE&nbsp;BRO.AI // TT&nbsp;TICKER&nbsp;TERMINAL <small>v4.0.3 · underwriting + sourced gates</small></div>
       <div class="statusline">
         <span>BOOK: <b id="bookStamp">loading…</b></span>
         <span>AUTH: <b id="sessState">…</b></span>
-        <!-- ← DASH left this line in v4.0.2 — the way back is a permanent header button now
+        <!-- ← DASH left this line in v4.0.3 — the way back is a permanent header button now
              (one door to one room, the v3.98.3 TERMINAL rule in the other direction). -->
       </div>
       <!-- FEAT-TT-MOBILE (v3.11): daily actions own the toolbar; backup/recovery paths demote
@@ -450,7 +450,7 @@
            v3.42 slice 5: the whole toolbar moved in here. Every one of these is an occasional
            action, and the command bar below already covers the frequent path (type a ticker
            and press ↵ to open its card, or to add it if it isn't in the book). -->
-      <!-- v4.0.2: the two toolbars get INTENTIONAL altitudes — a daily-ops row the operator
+      <!-- v4.0.3: the two toolbars get INTENTIONAL altitudes — a daily-ops row the operator
            actually touches, then admin/backup at a visibly quieter level. Every capability
            survives; they just stop competing at one priority. -->
       <div class="tb-label">DAILY OPS</div>
@@ -771,7 +771,7 @@ function toggleHeadInfo(){
   const open=d.style.display==="none";
   d.style.display=open?"":"none";
   b.setAttribute("aria-expanded",String(open));
-  b.textContent=open?"⋯ CLOSE":"⋯ OPS";   // v4.0.2: OPS — the dashboard header's word for the same disclosure
+  b.textContent=open?"⋯ CLOSE":"⋯ OPS";   // v4.0.3: OPS — the dashboard header's word for the same disclosure
 }
 /* FEAT-TT-RUN: days since an ISO date, or null if absent/unparseable. Null is the
    FAIL-CLOSED signal — unlike src/sources.js isStale (which returns false = "not stale"

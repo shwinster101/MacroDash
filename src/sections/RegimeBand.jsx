@@ -40,12 +40,20 @@ export const WEN_MOON_STATES = [
    moon voice, which is also what the extraction-reuse fallback gets.
    The v3.97 `prose` prop is GONE: the Simple cards now carry the per-factor detail it was
    carrying, and rendering both would be the same fact twice. */
-const RegimeBand=({d,stale=new Set(),loading=false,liveBuild=false,srcLabel="derived from live data",sentence=null,conf=null,factorRows=null,plainVerdict=null})=>{
+/* v4.0.3 (audit, preventive) — CANONICAL EVIDENCE. This component used to call
+   computeRegime() and flipConditions() itself, so the hero ran a SECOND derivation of the
+   verdict beside buildEvidenceSet's. It agreed today, but the two take their exclusions from
+   different arguments and would drift at exactly the boundaries that matter — freshness,
+   loading, error. v3.98.3 already canonicalized the factor ROWS (factorRows) after the hero
+   and the Drivers matrix printed different exclusion reasons; this finishes the job for the
+   regime and the flips. The local calls survive ONLY as the extraction-reuse fallback
+   (Property 9), which is why they are still imported. */
+const RegimeBand=({d,stale=new Set(),loading=false,liveBuild=false,srcLabel="derived from live data",sentence=null,conf=null,factorRows=null,plainVerdict=null,regimeIn=null,flipsIn=null})=>{
   const [open,setOpen]=useState(false);
   // Property 9 (null-safe): no data object means nothing to compute — an empty, hidden
   // region, never a throw. The orchestrator always passes `d`; this guards extraction reuse.
   if(!d)return <div aria-hidden="true"/>;
-  const regime=computeRegime(d,stale);
+  const regime=regimeIn||computeRegime(d,stale);
   // C1 (v3.60): the pure engine returns token KEYS; the UI owns the palette.
   regime.tint=DT[regime.tintKey]; regime.color=T[regime.colorKey];
   /* v3.98.3 — ONE derivation, two altitudes. This re-derived its own factor rows via
@@ -61,7 +69,7 @@ const RegimeBand=({d,stale=new Set(),loading=false,liveBuild=false,srcLabel="der
   const withheld=loading||regime.insufficient;
   // FEAT-FLIP (v3.53): what would change this call. The NEAREST load-bearing crossing rides
   // the first screen; the full set (plus abstentions and exclusions) lives one tap down.
-  const fc=flipConditions(d,stale);
+  const fc=flipsIn||flipConditions(d,stale);
   const nearest=fc.flips[0]||null;
   // FEAT-GLANCE (v3.61, newcomer audit): the neutral vote is STATED, not implicit — the old
   // "2/4 bullish · 2 votes bull / 1 bear" left a vote unaccounted for.

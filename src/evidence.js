@@ -92,6 +92,12 @@ export function buildEvidenceSet({ d, provenance, dataAsOf, mode, liveBuild, now
     return {
       key: f.key, short: f.short, label: f.label, field,
       display: f.val,
+      // v4.0.3 — the TYPED current reading, read off the same data the vote reads. This
+      // replaces parsing the Power matrix's display copy: for 10Y and CPI that string
+      // carries no number at all ("Falling ↓", "Cooling"), so a card asking "what is the
+      // current metric?" answered with a judgment. A non-finite reading yields value null
+      // and text null — never a zero, never a fabricated level.
+      metric: readMetric(d, f.key),
       vote: f.vote,
       mode: fm,
       asOf: (dataAsOf && dataAsOf[field]) || null,
@@ -233,16 +239,21 @@ export const DIRECTION_OF = { bull: "helping", bear: "hurting", neutral: "mixed"
    - `usable`/`shown` are returned so the caller can NAME the truncation — three of six
      means half the evidence is off-screen, and silent truncation reads as full coverage
      (the v3.65 / v3.76 rule). */
-/* The card's CURRENT VALUE. `display` is built for the Power matrix, so it carries the
-   judgment inline ("14.63 — Low (bullish)", "-0.62 SD — ≥½ SD below mean (bullish)"). On a
-   card that already has a direction chip that is the same fact twice, and the band jargon is
-   Power-grade language in a newcomer surface. This PROJECTS the measurement out of the
-   string — it never invents one: no separator and no parenthetical means the string is
-   returned whole. */
-export function metricOf(display) {
-  const t = String(display == null ? "" : display);
-  const head = t.split(" — ")[0];
-  return head.replace(/\s*\((bullish|bearish|neutral)\)\s*$/i, "").trim() || t;
+/* The TYPED current reading for one factor (v4.0.3). Reads the band's own `metric`
+   descriptor — declared beside the rule it measures — off the SAME data object the vote
+   reads, so the card's number and the card's direction can never describe different things.
+   FAIL-CLOSED: a missing descriptor, a throwing read or a non-finite value all yield
+   {value:null, text:null}. The card renders that as an explicit dash; it never becomes a
+   zero, a neutral, or a fabricated level (the v3.1 invariant, applied to a card). */
+export function readMetric(d, key) {
+  const band = REGIME_BAND_TABLE.find((t) => t.key === key);
+  const m = band && band.metric;
+  if (!m || typeof m.read !== "function" || !d) return { value: null, unit: null, note: null, text: null };
+  let v = null;
+  try { v = m.read(d); } catch (_e) { v = null; }
+  if (!Number.isFinite(v)) return { value: null, unit: m.unit ?? null, note: m.note ?? null, text: null };
+  const text = `${v.toFixed(m.dec ?? 2)}${m.unit || ""}${m.note ? ` ${m.note}` : ""}`;
+  return { value: v, unit: m.unit || "", note: m.note || null, dec: m.dec ?? 2, text };
 }
 
 export function simpleCards(ev, max = 3) {
@@ -279,7 +290,10 @@ export function simpleCards(ev, max = 3) {
     return {
       key: f.key, short: f.short,
       label: (band && band.plain) || f.label,       // plain-language parameter name
-      currentValue: metricOf(f.display),
+      // Typed, not parsed. A factor whose metric cannot be read shows an explicit dash —
+      // the card still names the parameter and its direction, and never invents a level.
+      currentValue: (f.metric && f.metric.text) || "—",
+      metricValue: (f.metric && f.metric.value) ?? null,
       direction: DIRECTION_OF[f.vote],
       why: (band && band.whyItMatters) || null,     // never fabricated if a band lacks one
       mode: f.mode, asOf: f.asOf,
@@ -311,10 +325,19 @@ export function simpleSentence(ev) {
   const bullLead = bullRows.length === 1
     ? cap(bullOf(bullRows[0]))
     : `${cap(listOf(bullRows.map(nounOf)))} are supportive`;
+  /* v4.0.3 — the absolute claim is QUALIFIED when coverage is partial. "Nothing we track is
+     working against the market" is a statement about ALL six factors; with one or more
+     excluded it is a statement the evidence cannot support. `scope` narrows it to what is
+     actually usable — the same distinction v3.62 drew between "not counted" and "counted,
+     no lean", carried into the sentence. Full coverage keeps the plain wording. */
+  const anyExcluded = (ev.factors || []).some((x) => x.excluded);
+  const none = anyExcluded ? "no currently usable factor" : "nothing we track";
   if (bullRows.length && bears.length) return `${bullLead}, but ${listOf(bears)}.`;
-  if (bullRows.length) return `${bullLead}, and nothing we track is working against the market right now.`;
-  if (bears.length)    return `${cap(listOf(bears))}, and nothing we track is clearly supportive right now.`;
-  return "Nothing we track has a clear lean right now.";
+  if (bullRows.length) return `${bullLead}, and ${none} is working against the market right now.`;
+  if (bears.length)    return `${cap(listOf(bears))}, and ${none} is clearly supportive right now.`;
+  return anyExcluded
+    ? "No currently usable factor has a clear lean right now."
+    : "Nothing we track has a clear lean right now.";
 }
 
 /* "What would change the call" — reads flipConditions' OWN output and derives nothing.
@@ -323,5 +346,12 @@ export function simpleFlipLine(ev) {
   if (!ev || ev.withheld) return "Call withheld until the required evidence is current and usable.";
   const nearest = ev.flips && Array.isArray(ev.flips.flips) ? ev.flips.flips[0] : null;
   if (!nearest) return "No single metric would change the call on its own.";
-  return `${nearest.copy} would move this to ${nearest.would}.`;
+  /* v4.0.3 — flipConditions returns the ENGINE's label ("RISK-OFF"); Simple never shows that
+     vocabulary anywhere else, so a leaked one here is a second name for the verdict the
+     reader is looking at. Mapped through the SAME table simpleVerdict uses; an unmapped
+     label falls through unchanged rather than being dropped or guessed at. */
+  const would = SIMPLE_VERDICTS[nearest.would]
+    ? `MACRO: ${SIMPLE_VERDICTS[nearest.would]}`
+    : nearest.would;
+  return `${nearest.copy} would move this to ${would}.`;
 }

@@ -2881,6 +2881,56 @@ Jan-anchor shipped; see `snapshot.js` ~318–328), `spyMa100`, `spyMa200`, and a
   VALUATION GAP ranking (§11.1 — the ranking always renders, which is the owner's actual
   "always an output" contract, and it was never suspended). Tests: 1223 smoke (+2) + 199
   render (+1).
+- **v4.0.3 "TYPED SIMPLE" — the audit's five Simple-mode fixes plus the preventive
+  canonicalization.** An owner-commissioned audit of v4.0.2; every claim was reproduced
+  against the live code before anything was touched, and all six were real.
+  **(1) The card metric was PARSED, not typed — and for two factors the number was never
+  there.** `metricOf()` split the Power matrix's display copy, which works for VIX/F&G/CAPE/NFCI
+  but **10Y's display is `"Falling ↓ (bullish)"` and CPI's is `"Cooling (bullish)"`** — no
+  measurement in the string at all. A newcomer asking *"what is the current metric?"* got a
+  JUDGMENT. A display string is the wrong integrity boundary: each band now declares a typed
+  **`metric:{read,unit,dec,note}`** beside the rule it measures, `readMetric()` projects it off
+  the SAME data object the vote reads, and the cards show `-0.12pp 1-mo change` · `14.63` ·
+  `65 of 100` · `3.5% YoY` · `38.2 CAPE` · `-0.62 SD vs avg`. FAIL-CLOSED: a missing
+  descriptor, a throwing read or a non-finite value yields `{value:null,text:null}` and the
+  card renders an explicit dash — never a zero, never a fabricated level. Where the vote is
+  compound (CPI's trend shape, CAPE's two-condition OR) the metric is the LEVEL a reader means
+  by that name, stated at the band rather than inferred. **`metricOf` is retired**, pinned
+  absent so the parsing boundary cannot return.
+  **(2) The sentence made an absolute claim on partial evidence.** *"…and nothing we track is
+  working against the market right now"* is a statement about ALL SIX factors; with one
+  excluded the evidence cannot support it. It now reads **"no currently usable factor"**
+  whenever anything is excluded, and keeps the plain wording at full coverage — the qualifier
+  is earned, not always-on. The same fix reaches the no-lean branch. This is the v3.62
+  "not counted" vs "counted, no lean" distinction, carried into prose.
+  **(3) Cards under DATA HOLD now say what they are.** They stay (they are real current
+  readings, and useful context) but carry **"partial evidence — not used for the call"** —
+  keep the evidence, deny the inference. Deliberately NOT in the quiet metadata line: a
+  qualifier that prevents a misreading is not metadata.
+  **(4) The flip line spoke the engine's vocabulary.** It rendered *"would move this to
+  RISK-OFF"* — a label Simple shows nowhere else, so the reader got a second name for the
+  verdict in front of them. Mapped through the SAME `SIMPLE_VERDICTS` table `simpleVerdict`
+  uses → **"MACRO: BEARISH"**; an unmapped label passes through unchanged rather than being
+  guessed at.
+  **(5) The tracked-signal census left Simple.** `SignalQuality` counts SOURCES FIELDS
+  ("16 fresh of 17 tracked") — that is NOT confidence in the six-factor verdict, and beside
+  the hero's scoped "N of 6 voters counted" it read as a second, larger, contradictory
+  number. Power keeps the full census.
+  **(6, preventive) `RegimeBand` stopped re-deriving the verdict.** It called `computeRegime()`
+  and `flipConditions()` itself, so the hero ran a SECOND derivation beside
+  `buildEvidenceSet`'s. It agreed today, but the two take their exclusions from different
+  arguments and would drift at exactly the boundaries that matter — freshness, loading, error.
+  v3.98.3 already canonicalized the factor ROWS after the hero and the Drivers matrix printed
+  different exclusion reasons for one factor; this finishes the job (`regimeIn`/`flipsIn`,
+  with the local calls surviving only as the Property-9 extraction fallback).
+  Verified by a Chromium read-through at 390px across live / degraded / DATA HOLD: every card
+  shows a real number, the qualifier appears only when earned, and the census is gone.
+  Tests: **1675 smoke** (+7 net: the typed metric run end-to-end incl. the two factors whose
+  display string carries no number, display-vs-metric disagreement proving the parse is gone,
+  the fail-closed dash, both sentence qualifier branches with the full-coverage control, the
+  withheld card label, the Power-only census, `metricOf` pinned absent, and every band
+  required to declare a metric) + 255 render + **170 public-render** (+1: the census proven
+  absent from Simple while the scoped voters line stays).
 - **v4.0.2 "THE LOOP" — the terminal header closes the circle the dashboard opened.** Owner
   spec, built as written with one measured fix. v3.98.3 gave the dashboard a first-class amber
   ⌁ TERMINAL button; the way BACK was still a `← DASH` footnote inside the terminal's ⋯ MENU

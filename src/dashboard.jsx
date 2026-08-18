@@ -889,7 +889,7 @@ export default function Dashboard({ publicView = false } = {}) {
       <RegimeBand d={d} stale={staleFactors} loading={mode==="LOADING"} liveBuild={liveBuild} srcLabel={derivedLabel}
         sentence={simple?simpleS:(!evidenceSet.withheld&&evidenceSet.summary?evidenceSet.summary.sentence:null)}
         plainVerdict={simple?simpleV:null} conf={regimeConf}
-        factorRows={evidenceSet.factors}/>
+        factorRows={evidenceSet.factors} regimeIn={evidenceSet.regime} flipsIn={evidenceSet.flips}/>
 
       {/* FEAT-WHY (v3.62) sentence now renders INSIDE the hero (v3.94 DRIVERS-ONLY — one
           render site beside the verdict it explains). postureSummary stays computed and
@@ -908,7 +908,8 @@ export default function Dashboard({ publicView = false } = {}) {
           current usable reading); fewer than three usable renders fewer cards, never
           UNAVAILABLE padding; the truncation is named on the block. */}
       {simple&&<SimpleCards cards={simpleC.cards} flipLine={simpleF}
-        usable={simpleC.usable} shown={simpleC.shown} total={simpleC.total}/>}
+        usable={simpleC.usable} shown={simpleC.shown} total={simpleC.total}
+        withheld={evidenceSet.withheld}/>}
 
       {simple&&<FiveWhys fw={fw} derivedLabel={derivedLabel} mode={modeOf('spyPrice')} asOf={asOfOf('spyPrice')}
         label="why this posture — 5 whys"/>}
@@ -928,7 +929,11 @@ export default function Dashboard({ publicView = false } = {}) {
 
       {/* ── SIGNAL QUALITY — extracted to src/sections/SignalQuality.jsx (task 3.2),
           presentation only; the SIGNAL_FIELDS census + regimeConf derivation stay here. ── */}
-      <SignalQuality sq={sq}/>
+      {/* v4.0.3: the census counts TRACKED SOURCES FIELDS ("16 fresh of 17 tracked"), which is
+          NOT confidence in the six-factor macro verdict — in Simple it read as a second,
+          larger, contradictory confidence number. The hero's "N of 6 voters counted · dark: X"
+          is the scoped one, and it stays. Power keeps the full census. */}
+      {!simple&&<SignalQuality sq={sq}/>}
 
       {/* C4 WHAT CHANGED rides inside the reasoning group above (v3.94). */}
 

@@ -360,10 +360,15 @@ console.log("\n[public] v3.94 — Simple default, the toggle, persistence, red f
   /* v4.0 — the Simple hierarchy: SCOPED verdict, one sentence, parameter cards, flip line.
      The v3.97 two-sentence prose is replaced by the cards, which carry the same per-factor
      detail with the actual numbers attached. */
-  ok("v4.0 simple: the Glance layer renders — scoped verdict, one sentence, cards, confidence, key numbers",
+  /* v4.0.3 — the tracked-signal census ("N fresh of M tracked") is POWER-ONLY now. It counts
+     SOURCES fields, not the six macro voters, so in Simple it read as a second, larger,
+     contradictory confidence number beside the scoped "N of 6 voters counted". */
+  ok("v4.0.3 simple: the Glance layer renders — scoped verdict, one sentence, cards, SCOPED confidence, key numbers",
     /MACRO: (BULLISH|HODL|BEARISH|DATA HOLD)/.test(body) &&
     /(supportive|working against|clear lean right now)/i.test(body) &&   // v4.0.1 named-factor copy
-    /voters counted/.test(body) && /SIGNAL QUALITY/i.test(body) && /SPY/.test(body));
+    /\d+ of \d+ voters counted/.test(body) && /SPY/.test(body));
+  ok("v4.0.3 simple: the tracked-signal census is GONE from Simple — one confidence number, scoped",
+    !/SIGNAL QUALITY/i.test(body) && !/of \d+ tracked/i.test(body));
   const bandTxt = await page.locator('[aria-label="Macro backdrop verdict"]').innerText();
   ok("v4.0 simple: EXACTLY ONE verdict — the engine label never renders beside the scoped one",
     (() => { const t = bandTxt; return !/RISK-ON|RISK-OFF|\bMIXED\b/.test(t); })());

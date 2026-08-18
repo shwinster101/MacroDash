@@ -2252,7 +2252,11 @@ ok("v4.0.2: the disclosure speaks the dashboard's word — ⋯ OPS, flipping to 
   /b\.textContent=open\?"⋯ CLOSE":"⋯ OPS"/.test(adminSrc) &&
   // the ONLY surviving "⋯ MENU" is the historical note in the v3.62 comment — no rendered
   // string or code path says it (a comment may record history; a control may not).
-  (adminSrc.match(/⋯ MENU/g) || []).length === 1 && /until v4\.0\.2/.test(adminSrc));
+  (adminSrc.match(/⋯ MENU/g) || []).length === 1 &&
+  // v4.0.3: this is a HISTORICAL reference — the release where MENU became OPS. It must NOT
+  // move with a version bump (a blanket sed did exactly that and this pin caught it); a
+  // version that records when something happened is data, not a stamp.
+  /⋯ MENU until v4\.0\.2/.test(adminSrc));
 ok("v4.0.2: the two toolbars carry different altitudes — a DAILY OPS label, and admin & backup " +
    "demoted to a quiet dashed toggle (every capability survives, they stop competing)",
   /<div class="tb-label">DAILY OPS<\/div>/.test(adminSrc) &&
@@ -4679,7 +4683,11 @@ ok("band: the call site still passes the live wiring (+ v4.0: mode-swapped sente
   !/prose=\{/.test(dashSrc) &&
   // v3.98.3: the hero renders the EvidenceSet's OWN factor rows (which carry the real
   // exclusion cause) instead of re-deriving them — one derivation, two altitudes.
-  /factorRows=\{evidenceSet\.factors\}\/>/.test(dashSrc) &&
+  // v4.0.3: the hero renders the CANONICAL regime and flips too — it no longer runs a second
+  // derivation beside buildEvidenceSet's (drift risk at the freshness/loading/error edges).
+  /factorRows=\{evidenceSet\.factors\} regimeIn=\{evidenceSet\.regime\} flipsIn=\{evidenceSet\.flips\}\/>/.test(dashSrc) &&
+  /const regime=regimeIn\|\|computeRegime\(d,stale\)/.test(bandSrc) &&
+  /const fc=flipsIn\|\|flipConditions\(d,stale\)/.test(bandSrc) &&
   /<RegimeBand d=\{d\} stale=\{staleFactors\} loading=\{mode==="LOADING"\} liveBuild=\{liveBuild\} srcLabel=\{derivedLabel\}/.test(dashSrc));
 
 // ═══════════ [47] UI-OVERHAUL task 1.4 — FiveWhys extracted, presentation only ═══════════
@@ -7297,7 +7305,7 @@ console.log("\n[68] FEAT-TT-ALLOC — pure core, endpoint, and the §14.8 bar");
 // real EvidenceSets — a string pin cannot prove a selection rule.
 console.log("\n[67] v4.0 SIMPLE MODE — verdict mapping, card selection, sentence, flip line");
 {
-  const { simpleVerdict: sv, simpleCards: sc, simpleSentence: ss, simpleFlipLine: sf,
+  const { simpleVerdict: sv, simpleCards: sc, simpleSentence: ss, simpleFlipLine: sf, readMetric,
           SIMPLE_VERDICTS, SIMPLE_WITHHELD, DIRECTION_OF } = await import("../src/evidence.js");
   const { REGIME_BAND_TABLE: BT } = await import("../src/regime.js");
 
@@ -7345,8 +7353,30 @@ console.log("\n[67] v4.0 SIMPLE MODE — verdict mapping, card selection, senten
   ok("v4.0 cards: with NO opposing factor the reservation is a no-op (never an empty slot)",
     (() => { const only = sc(evOf("RISK-ON", [F("vix","bull"), F("nfci","bull"), F("cpiHeadline","bull"), F("tenYear","bull")]));
       return only.shown === 3 && only.cards.every((c) => c.direction === "helping"); })());
-  ok("v4.0 cards: currentValue is the METRIC — the Power matrix's inline judgment is projected out",
-    sc(evOf("MIXED", [F("vix","bull",{display:"14.63 — Low (bullish)"})])).cards[0].currentValue === "14.63");
+  /* v4.0.3 — currentValue is TYPED, not parsed. The old contract ran metricOf() over the
+     Power matrix's display copy; for 10Y and CPI that string contains no number at all
+     ("Falling ↓", "Cooling"), so a card asking "what is the current metric?" answered with a
+     judgment. The value now comes from the band's own `metric` descriptor, read off the same
+     data the vote reads. */
+  ok("v4.0.3 cards: currentValue comes from the TYPED metric row, never parsed from display copy",
+    sc(evOf("MIXED", [F("vix","bull",{display:"14.63 — Low (bullish)",
+      metric:{value:14.63,unit:"",note:null,text:"14.63"}})])).cards[0].currentValue === "14.63" &&
+    // the display string is now irrelevant to the value — proven by making them disagree
+    sc(evOf("MIXED", [F("vix","bull",{display:"IGNORE ME (bullish)",
+      metric:{value:9.5,unit:"",note:null,text:"9.50"}})])).cards[0].currentValue === "9.50");
+  ok("v4.0.3 cards: a metric that cannot be read shows an explicit dash — never 0, never invented",
+    sc(evOf("MIXED", [F("vix","bull",{display:"14.63 — Low (bullish)",
+      metric:{value:null,unit:"",note:null,text:null}})])).cards[0].currentValue === "—" &&
+    sc(evOf("MIXED", [F("vix","bull",{display:"x"})])).cards[0].currentValue === "—");
+  /* The defect the audit named: 10Y and CPI carry NO number in their display string, so the
+     typed path is the only way a card can show their measurement. Executed end-to-end. */
+  ok("v4.0.3 cards: 10Y and CPI now show a NUMBER — the two the display string could never supply",
+    (() => { const probe = { crossAsset:{treasury10y:{m1:-0.12,current:4.68}},
+        marketPulse:{vix:{current:14.63},fearGreed:{score:65}},
+        macro:{cpi:{trend:[3.9,3.8,3.7,3.6,3.5,3.5]},shillerPe:{current:38.2,ath:44,mean:17.4},nfci:{current:-0.62}} };
+      const t = readMetric(probe, "tenYear").text, c = readMetric(probe, "cpiHeadline").text;
+      return /-0\.12pp/.test(t) && /3\.5%/.test(c) &&
+        !/Falling|Cooling|bullish/.test(t + c); })());
   const hodlSet = evOf("MIXED", bullSet.factors);
   ok("v4.0 cards: HODL interleaves both sides — a reader must see support AND risk, not one twice",
     (() => { const dirs = sc(hodlSet).cards.map((c) => c.direction);
@@ -7367,7 +7397,7 @@ console.log("\n[67] v4.0 SIMPLE MODE — verdict mapping, card selection, senten
   ok("v4.0 cards: excluded is NOT in the direction map — three directions, four votes",
     DIRECTION_OF.excluded === undefined && Object.keys(DIRECTION_OF).length === 3);
   ok("v4.0 cards: content is projected, never invented — value/why come from the row and its band",
-    rb.cards[0].currentValue === "vix-val" && rb.cards[0].mode === "LIVE" &&
+    rb.cards[0].currentValue === "—" && rb.cards[0].mode === "LIVE" &&
     rb.cards[0].asOf === "2026-08-17" &&
     rb.cards[0].why === BT.find((b) => b.key === "vix").whyItMatters &&
     rb.cards[0].label === BT.find((b) => b.key === "vix").plain);
@@ -7383,19 +7413,53 @@ console.log("\n[67] v4.0 SIMPLE MODE — verdict mapping, card selection, senten
     /supportive.*but/.test(ss(evOf("MIXED", [F("a","bull"), F("b","bear")]))) &&
     /Nothing we track has a clear lean/.test(ss(evOf("MIXED", [F("a","neutral")]))) &&
     ss({ withheld: true }) === null);
+  /* v4.0.3 — the absolute claim is QUALIFIED when coverage is partial. "Nothing we track is
+     working against the market" is a statement about ALL SIX factors; with one excluded, the
+     evidence cannot support it. The v3.62 "not counted" vs "counted, no lean" distinction,
+     carried into the sentence. */
+  ok("v4.0.3 sentence: with a factor excluded it says NO CURRENTLY USABLE FACTOR, never 'nothing we track'",
+    (() => { const partial = ss(evOf("RISK-ON", [F("vix","bull"), F("tenYear","excluded",{excluded:true})]));
+      return /no currently usable factor is working against/.test(partial) &&
+             !/nothing we track/.test(partial); })());
+  ok("v4.0.3 sentence: at FULL coverage the plain wording survives — the qualifier is earned, not always-on",
+    /nothing we track is working against/.test(ss(evOf("RISK-ON", [F("vix","bull"), F("nfci","bull")]))));
+  ok("v4.0.3 sentence: the qualifier reaches the no-lean branch too (both absolutes covered)",
+    /No currently usable factor has a clear lean/.test(ss(evOf("MIXED", [F("vix","neutral"), F("tenYear","excluded",{excluded:true})]))) &&
+    /Nothing we track has a clear lean/.test(ss(evOf("MIXED", [F("vix","neutral")]))));
   ok("v4.0.1 sentence: NAMES the factors in band vocabulary (ruling reversed by the owner copy pass)",
     (() => { const t = ss(evOf("RISK-ON", [F("vix","bull"), F("nfci","bull"), F("valuation","bear")]));
       return /[Vv]olatility/.test(t) && /financial conditions/.test(t) &&
         /priced for perfection/.test(t) && /are supportive, but/.test(t); })());
   ok("v4.0.1 sentence: a SINGLE supportive factor speaks its verb phrase (no noun-count agreement trap)",
     /Volatility is asleep/.test(ss(evOf("RISK-ON", [F("vix","bull")]))));
-  ok("v4.0 flip: reads flipConditions' OWN output and derives no threshold",
+  /* v4.0.3 — the flip line speaks SIMPLE's vocabulary. flipConditions returns the engine's
+     own label ("RISK-OFF"), which appears nowhere else in Simple, so leaking it here gave the
+     reader a second name for the verdict in front of them. Mapped through the SAME table
+     simpleVerdict uses; an unmapped label passes through rather than being guessed at. */
+  ok("v4.0.3 flip: the engine's label is mapped to Simple's scoped verdict, never leaked",
     sf({ withheld: false, flips: { flips: [{ copy: "VIX above 25", would: "RISK-OFF" }] } })
-      === "VIX above 25 would move this to RISK-OFF." &&
+      === "VIX above 25 would move this to MACRO: BEARISH." &&
+    sf({ withheld: false, flips: { flips: [{ copy: "X", would: "RISK-ON" }] } })
+      === "X would move this to MACRO: BULLISH." &&
+    sf({ withheld: false, flips: { flips: [{ copy: "X", would: "WEIRD" }] } })
+      === "X would move this to WEIRD." &&
     sf({ withheld: false, flips: { flips: [] } }) === "No single metric would change the call on its own." &&
     sf({ withheld: true }).startsWith("Call withheld"));
 
   // ── boundaries: Simple decides nothing; Power is untouched ──
+  /* v4.0.3 — under DATA HOLD the cards remain (real current readings, useful context) but
+     must not read as the verdict the page just declined to make. */
+  ok("v4.0.3 cards: a withheld verdict labels the cards 'not used for the call' — evidence kept, inference denied",
+    /partial evidence — not used for the call/.test(spcSrc) && /withheld && </.test(spcSrc) &&
+    /withheld=\{evidenceSet\.withheld\}/.test(dashSrc));
+  ok("v4.0.3: the tracked-signal census is POWER-ONLY — Simple's confidence is the scoped voters line",
+    /\{!simple&&<SignalQuality sq=\{sq\}\/>\}/.test(dashSrc));
+  ok("v4.0.3: metricOf is RETIRED — display-string parsing is no longer an integrity boundary",
+    !/export function metricOf/.test(evidenceSrc) && !/metricOf\(/.test(evidenceSrc) &&
+    /export function readMetric/.test(evidenceSrc));
+  ok("v4.0.3: every band declares a typed metric — a new band without one fails THIS test",
+    REGIME_BAND_TABLE.every((b) => b.metric && typeof b.metric.read === "function" &&
+      typeof b.metric.dec === "number" && typeof b.metric.unit === "string"));
   ok("v4.0 boundary: the projections import no threshold and re-derive no vote",
     (() => { const seg = evidenceSrc.slice(evidenceSrc.indexOf("SIMPLE MODE PROJECTIONS"));
       return !/NFCI_TIGHT|NFCI_LOOSE|computeRegime\(|flipConditions\(|\.vote\(/.test(seg); })());

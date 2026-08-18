@@ -19,7 +19,7 @@ import { ILLUS_HATCH, IllustrativeChip, isIllustrative } from "../primitives/Ill
 const TONE = { helping: T.green, hurting: T.red, mixed: T.amber };
 const WORD = { helping: "HELPING", hurting: "HURTING", mixed: "MIXED" };
 
-const SimpleCards = ({ cards, flipLine, usable = 0, shown = 0, total = 0 }) => {
+const SimpleCards = ({ cards, flipLine, usable = 0, shown = 0, total = 0, withheld = false }) => {
   // Property 9 (null-safe): nothing usable means nothing to render as a current reading.
   if (!cards || !Array.isArray(cards) || cards.length === 0) {
     return (
@@ -62,6 +62,14 @@ const SimpleCards = ({ cards, flipLine, usable = 0, shown = 0, total = 0 }) => {
           );
         })}
       </div>
+      {/* v4.0.3 — under DATA HOLD the cards STAY (they are real current readings, and useful
+          context), but they must not read as a verdict the page just declined to make. Naming
+          the relationship is the honest middle: keep the evidence, deny the inference. NOT in
+          the quiet metadata line below — a qualifier that prevents a misreading is not
+          metadata. */}
+      {withheld && <div style={{ fontFamily: T.fontMono, fontSize: 8, color: T.amber, marginTop: 5 }}>
+        partial evidence — not used for the call
+      </div>}
       {/* v4.0.1 (owner copy pass): the coverage count and the flip condition are ONE quiet
           footer line inside the cards area — metadata, not a second message competing with
           the cards. The truncation stays STATED, never implied (three of six means half the

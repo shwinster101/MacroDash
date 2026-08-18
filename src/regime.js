@@ -49,6 +49,15 @@ export const CREDIT_TAIL_STRESS = 12;
    HERE, beside the rule they describe, for the same reason `plain` does: one home per band,
    no parallel copy-table to rot.
 
+   `metric` (v4.0.3) is the TYPED current reading a Simple card shows: {read, unit, dec, note}.
+   It exists because the card's value used to be PARSED out of `val`, the Power matrix's
+   display copy — and for 10Y and CPI that string contains no number at all ("Falling ↓",
+   "Cooling"), so a card asking "what is the current metric?" answered with a judgment. A
+   display string is the wrong integrity boundary; this is a typed projection off the same
+   data the vote reads. Where the vote is on a compound quantity (CPI's trend shape, CAPE's
+   two-condition OR) the metric is the LEVEL a reader means by that name — stated at the
+   band, never inferred.
+
    `whyItMatters` (v4.0 SIMPLE CARDS) is the newcomer-facing "why should I care about this
    number at all" line — what the factor TRANSMITS, never which way it is pointing today
    (plainBull/plainBear already own the direction, and duplicating it here would be two
@@ -60,6 +69,7 @@ export const REGIME_BAND_TABLE = [
     plainBull:"long-term rates are falling", plainBear:"long-term rates are climbing",
     whyItMatters:"Long rates set the discount rate on every future dollar a company earns.",
     read:(d)=>d.crossAsset.treasury10y.m1,
+    metric:{ read:(d)=>d.crossAsset.treasury10y.m1, unit:"pp", dec:2, note:"1-mo change" },
     vote:(v)=> v < -0.10 ? "bull" : v > 0.15 ? "bear" : "neutral",
     flip:{ bullEdge:-0.10, bearEdge:0.15, bullSide:"below", bullInclusive:false,
            unit:" ppt", dec:2, name:"the 10Y monthly change" } },
@@ -68,6 +78,7 @@ export const REGIME_BAND_TABLE = [
     plainBull:"volatility is asleep", plainBear:"volatility is spiking",
     whyItMatters:"The market's own estimate of how violently prices could move from here.",
     read:(d)=>d.marketPulse.vix.current,
+    metric:{ read:(d)=>d.marketPulse.vix.current, unit:"", dec:2, note:null },
     vote:(v)=> v < 18 ? "bull" : v > 25 ? "bear" : "neutral",
     flip:{ bullEdge:18, bearEdge:25, bullSide:"below", bullInclusive:false,
            unit:"", dec:2, name:"VIX" } },
@@ -76,6 +87,7 @@ export const REGIME_BAND_TABLE = [
     plainBull:"sentiment is greedy", plainBear:"sentiment is fearful",
     whyItMatters:"Crowd positioning — how much optimism is already priced into the tape.",
     read:(d)=>d.marketPulse.fearGreed.score,
+    metric:{ read:(d)=>d.marketPulse.fearGreed.score, unit:"", dec:0, note:"of 100" },
     vote:(v)=> v > 55 ? "bull" : v < 30 ? "bear" : "neutral",
     // The one INVERTED factor: bullish ABOVE its edge, not below.
     flip:{ bullEdge:55, bearEdge:30, bullSide:"above", bullInclusive:false,
@@ -84,6 +96,10 @@ export const REGIME_BAND_TABLE = [
     plain:"inflation",
     plainBull:"inflation is cooling", plainBear:"inflation is running hot",
     whyItMatters:"Inflation is what decides whether the Fed can ease or has to keep squeezing.",
+    // The vote is on the trend SHAPE, so there is no single voted scalar — the metric is
+    // the latest PRINT, which is the number a reader means by "current CPI". The direction
+    // chip and whyItMatters carry the shape; this never implies the vote is on the level.
+    metric:{ read:(d)=>{const t=d.macro.cpi.trend;return Array.isArray(t)&&t.length?t[t.length-1]:null;}, unit:"%", dec:1, note:"YoY" },
     read:(d)=>d.macro.cpi.trend,
     vote:(t)=> t[t.length-1] < t[t.length-2] ? "bull"
              : (t[t.length-1] - t[0] > 0.5 ? "bear" : "neutral"),
@@ -93,6 +109,8 @@ export const REGIME_BAND_TABLE = [
     plain:"valuation",
     plainBull:"valuations are sane", plainBear:"stocks are priced for perfection",
     whyItMatters:"How much good news is already in the price — the cushion if things disappoint.",
+    // Compound vote (absolute CAPE OR % of ATH); the metric is the CAPE level itself.
+    metric:{ read:(d)=>d.macro.shillerPe && d.macro.shillerPe.current, unit:"", dec:1, note:"CAPE" },
     read:(d)=>d.macro.shillerPe,
     vote:(c)=>{ const p = c.ath ? (c.current / c.ath) * 100 : c.pctOfAth;
                 return c.current < c.mean * 1.5 ? "bull" : (c.current > 30 || p > 90 ? "bear" : "neutral"); },
@@ -102,6 +120,7 @@ export const REGIME_BAND_TABLE = [
     plain:"financial conditions",
     plainBull:"credit is cheap and easy", plainBear:"credit is tightening up",
     whyItMatters:"Whether money is actually flowing through the financial plumbing, or seizing up.",
+    metric:{ read:(d)=>d.macro.nfci.current, unit:"", dec:2, note:"SD vs avg" },
     read:(d)=>d.macro.nfci.current,
     // Asymmetric and INCLUSIVE on the bull side (<=), unlike every other factor — see the
     // NFCI_BANDS derivation at the tile. flipConditions renders "at or below" for it.
