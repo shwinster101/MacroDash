@@ -245,6 +245,19 @@ export const DIRECTION_OF = { bull: "helping", bear: "hurting", neutral: "mixed"
    FAIL-CLOSED: a missing descriptor, a throwing read or a non-finite value all yield
    {value:null, text:null}. The card renders that as an explicit dash; it never becomes a
    zero, a neutral, or a fabricated level (the v3.1 invariant, applied to a card). */
+function fmtMetric(part, v) {
+  const dec = part.dec ?? 2;
+  const sign = part.signed && v > 0 ? "+" : "";
+  return `${sign}${v.toFixed(dec)}${part.unit || ""}${part.note ? ` ${part.note}` : ""}`;
+}
+
+/* A band may declare an optional `context` reading that LEADS the card — the level a reader
+   means by the card's own label — with the voted quantity following. The vote is untouched:
+   `read` is still exactly what `vote()` consumes, so this changes the DISPLAY only (Codex
+   read-through, 2026-08-18: "the 10-year yield" labelling a card that showed only a monthly
+   delta). Context is additive and fails closed on its own: a non-finite context is OMITTED
+   rather than printed as a zero, and a non-finite VOTED value still yields text:null — the
+   card cannot lead with a level while the quantity behind the vote is unreadable. */
 export function readMetric(d, key) {
   const band = REGIME_BAND_TABLE.find((t) => t.key === key);
   const m = band && band.metric;
@@ -252,8 +265,15 @@ export function readMetric(d, key) {
   let v = null;
   try { v = m.read(d); } catch (_e) { v = null; }
   if (!Number.isFinite(v)) return { value: null, unit: m.unit ?? null, note: m.note ?? null, text: null };
-  const text = `${v.toFixed(m.dec ?? 2)}${m.unit || ""}${m.note ? ` ${m.note}` : ""}`;
-  return { value: v, unit: m.unit || "", note: m.note || null, dec: m.dec ?? 2, text };
+  let ctx = null;
+  if (m.context && typeof m.context.read === "function") {
+    let cv = null;
+    try { cv = m.context.read(d); } catch (_e) { cv = null; }
+    if (Number.isFinite(cv)) ctx = fmtMetric(m.context, cv);
+  }
+  const own = fmtMetric(m, v);
+  const text = ctx ? `${ctx} · ${own}` : own;
+  return { value: v, unit: m.unit || "", note: m.note || null, dec: m.dec ?? 2, context: ctx, text };
 }
 
 export function simpleCards(ev, max = 3) {

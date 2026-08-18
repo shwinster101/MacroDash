@@ -378,11 +378,19 @@ console.log("\n[public] v3.94 — Simple default, the toggle, persistence, red f
   ok("v4.0 simple: the eyebrow is scoped too — no 'wen moon?' above a MACRO: verdict",
     /the call/i.test(await page.locator('[aria-label="Macro backdrop verdict"]').innerText()) &&
     !/wen moon/i.test(await page.locator('[aria-label="Macro backdrop verdict"]').innerText()));
+  const cardsInner = await page.locator('[aria-label="Key parameters"]').innerText();
   ok("v4.0 simple: card values are METRICS — the matrix's inline '(bullish)' judgment is gone",
     !/\(bullish\)|\(bearish\)/.test(await page.locator('[aria-label="Key parameters"]').innerText()));
   ok("v4.0 simple: cards carry value + direction + why + freshness, and the truncation is NAMED",
     /HELPING|HURTING|MIXED/.test(body) && /discount rate|violently|already priced|Fed can ease|good news|plumbing/.test(body) &&
     /showing \d+ of \d+ usable/.test(body) && /⇄/.test(body));
+  /* v4.0.4 — the label-to-metric contract, driven live. The card is labelled "the 10-year
+     yield"; before this it showed only the voted monthly delta, so the delta read AS the
+     yield. Both must be on the card, level first, delta signed. */
+  ok("v4.0.4 simple: the 10Y card shows the LEVEL its label names, with the voted delta as context",
+    (() => { const t = cardsInner;
+      return /4\.46%/.test(t) && /-0\.22pp 1-mo/.test(t) &&
+        t.indexOf("4.46%") < t.indexOf("-0.22pp"); })());
   ok("v4.0 simple: the v3.97 prose no longer renders (the cards replaced it)",
     !/The bull case right now:/.test(body) && !/The bear case:/.test(body));
   ok("v3.97 simple: no picks feed → the strip renders NOTHING, never example picks",

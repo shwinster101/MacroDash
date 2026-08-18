@@ -2881,6 +2881,30 @@ Jan-anchor shipped; see `snapshot.js` ~318–328), `spyMa100`, `spyMa200`, and a
   VALUATION GAP ranking (§11.1 — the ranking always renders, which is the owner's actual
   "always an output" contract, and it was never suspended). Tests: 1223 smoke (+2) + 199
   render (+1).
+- **v4.0.4 — the label-to-metric contract: the 10Y card shows the yield it names.** A Codex
+  read-through of the shipped Simple view graded metric semantics the weakest dimension and
+  named the cause exactly: the card is LABELLED *"the 10-year yield"* and displayed
+  `-0.12pp 1-mo change` — the voted quantity, not the yield. Not an arithmetic bug; a
+  **contract** bug, and the mirror image of the tension v4.0.3 recorded when it made CPI and
+  CAPE show the LEVEL a reader means by the name (the vote there being compound). Here the
+  vote IS a single scalar, so the level and the voted delta are different numbers and the
+  label promised the one the card withheld.
+  A band's `metric` may now declare an optional **`context`** reading that LEADS the card,
+  with the voted quantity following: `4.68% · -0.12pp 1-mo`. **The vote did not move** —
+  `metric.read` is still byte-for-byte what `vote()` consumes, pinned by an assertion that
+  runs both and requires identity, so this is a DISPLAY change and nothing else. Two honesty
+  rules, each executed rather than pinned as a string: **context fails closed on its own**
+  (a non-finite level is OMITTED, never printed as a zero — the card degrades to the delta
+  alone rather than inventing a yield), and **an unreadable VOTED value still yields no text
+  at all** (a level must never stand alone on a card whose direction chip comes from a
+  quantity nobody could read). The delta is **SIGNED** now that it sits beside a level:
+  `+0.22pp` cannot be misread as a fall the way a bare `0.22pp` could. `context` is opt-in —
+  the five bands without one render byte-identically, asserted directly.
+  Tests: **1681 smoke** (+6: the composed text with `value`/`context` proven separately, the
+  vote-identity pin, the sign, both fail-closed paths, and the opt-in control) + 255 render +
+  **171 public-render** (+1: the 10Y card driven live at 390px — level and signed delta both
+  present, level FIRST). Negative-controlled twice: dropping the composition turns 2 red,
+  dropping the sign turns 2 red.
 - **v4.0.3 "TYPED SIMPLE" — the audit's five Simple-mode fixes plus the preventive
   canonicalization.** An owner-commissioned audit of v4.0.2; every claim was reproduced
   against the live code before anything was touched, and all six were real.

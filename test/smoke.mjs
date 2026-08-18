@@ -7377,6 +7377,27 @@ console.log("\n[67] v4.0 SIMPLE MODE — verdict mapping, card selection, senten
       const t = readMetric(probe, "tenYear").text, c = readMetric(probe, "cpiHeadline").text;
       return /-0\.12pp/.test(t) && /3\.5%/.test(c) &&
         !/Falling|Cooling|bullish/.test(t + c); })());
+  /* v4.0.4 — the label-to-metric contract. "the 10-year yield" labelling a card that showed
+     only a monthly delta made the delta read as the yield. The LEVEL now leads and the voted
+     quantity follows; the vote still consumes `read`, so display moved and the vote did not. */
+  ok("v4.0.4 metric: the 10Y card leads with the LEVEL its label names, delta as context",
+    (() => { const probe = { crossAsset:{treasury10y:{m1:-0.12,current:4.68}} };
+      const r = readMetric(probe, "tenYear");
+      return r.text === "4.68% · -0.12pp 1-mo" && r.value === -0.12 && r.context === "4.68%"; })());
+  ok("v4.0.4 metric: the VOTE is untouched — `read` is still exactly what vote() consumes",
+    (() => { const b = REGIME_BAND_TABLE.find((t) => t.key === "tenYear");
+      const probe = { crossAsset:{treasury10y:{m1:-0.12,current:4.68}} };
+      return b.metric.read(probe) === b.read(probe) && b.vote(b.read(probe)) === "bull"; })());
+  ok("v4.0.4 metric: a rising delta is SIGNED — +0.22pp cannot be misread as a fall",
+    readMetric({ crossAsset:{treasury10y:{m1:0.22,current:4.68}} }, "tenYear").text
+      === "4.68% · +0.22pp 1-mo");
+  ok("v4.0.4 metric: context fails closed on its own — omitted, never printed as a zero",
+    readMetric({ crossAsset:{treasury10y:{m1:0.22,current:null}} }, "tenYear").text === "+0.22pp 1-mo");
+  ok("v4.0.4 metric: an unreadable VOTED value still yields no text — a level cannot stand alone",
+    readMetric({ crossAsset:{treasury10y:{m1:null,current:4.68}} }, "tenYear").text === null);
+  ok("v4.0.4 metric: context is OPT-IN — the five bands without one are byte-identical",
+    readMetric({ marketPulse:{vix:{current:14.63}} }, "vix").text === "14.63" &&
+    readMetric({ macro:{nfci:{current:-0.62}} }, "nfci").text === "-0.62 SD vs avg");
   const hodlSet = evOf("MIXED", bullSet.factors);
   ok("v4.0 cards: HODL interleaves both sides — a reader must see support AND risk, not one twice",
     (() => { const dirs = sc(hodlSet).cards.map((c) => c.direction);

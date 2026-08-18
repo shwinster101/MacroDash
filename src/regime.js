@@ -69,7 +69,14 @@ export const REGIME_BAND_TABLE = [
     plainBull:"long-term rates are falling", plainBear:"long-term rates are climbing",
     whyItMatters:"Long rates set the discount rate on every future dollar a company earns.",
     read:(d)=>d.crossAsset.treasury10y.m1,
-    metric:{ read:(d)=>d.crossAsset.treasury10y.m1, unit:"pp", dec:2, note:"1-mo change" },
+    /* The label says "the 10-year yield", so the LEVEL leads and the voted quantity (the
+       1-month change) follows as context. Codex read-through, 2026-08-18: a card labelled
+       with a level while displaying only a delta is a label-to-metric contract bug — the
+       reader takes "-0.12pp 1-mo change" for the yield itself. `context` is the leading
+       reading; `read` stays the quantity `vote()` consumes, so the DISPLAY changed and the
+       vote did not. */
+    metric:{ read:(d)=>d.crossAsset.treasury10y.m1, unit:"pp", dec:2, note:"1-mo", signed:true,
+             context:{ read:(d)=>d.crossAsset.treasury10y.current, unit:"%", dec:2 } },
     vote:(v)=> v < -0.10 ? "bull" : v > 0.15 ? "bear" : "neutral",
     flip:{ bullEdge:-0.10, bearEdge:0.15, bullSide:"below", bullInclusive:false,
            unit:" ppt", dec:2, name:"the 10Y monthly change" } },
