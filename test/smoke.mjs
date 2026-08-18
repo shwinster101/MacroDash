@@ -3136,7 +3136,7 @@ ok("why1: the thin anchor is STATED as thin (N/3 core inputs usable)",
 ok("why1: with every core input dead it says so rather than emitting a blank anchor",
   /0\/3 core inputs usable/.test(computeFiveWhys(MOCK_DATA, fwRegime, { fresh: new Set() }).whys[0]));
 ok("why1: no live equity mark means no primary-trend claim either",
-  /No live SPY mark, so no trend read/.test(
+  /No live SPY price, so no trend read/.test(
     computeFiveWhys(MOCK_DATA, fwRegime, { fresh: new Set(["cpiHeadline"]) }).whys[0]));
 ok("why1: demo/mock mode (fresh:null) still narrates all three — mock IS the baseline there",
   /SPY \$/.test(fw.whys[0]) && /CPI /.test(fw.whys[0]) && /Fed at/.test(fw.whys[0]));
@@ -7351,14 +7351,22 @@ console.log("\n[67] v4.0 SIMPLE MODE — verdict mapping, card selection, senten
     rb.cards[0].label === BT.find((b) => b.key === "vix").plain);
 
   // ── sentence + flip line ──
-  ok("v4.0 sentence: four branches, and a withheld posture gets NONE (no why for an uncalled call)",
-    /helping/.test(ss(evOf("RISK-ON", [F("a","bull")]))) &&
-    /weighing/.test(ss(evOf("RISK-OFF", [F("a","bear")]))) &&
-    /real risks are still in play/.test(ss(evOf("MIXED", [F("a","bull"), F("b","bear")]))) &&
-    /Nothing we track has a clear directional edge/.test(ss(evOf("MIXED", [F("a","neutral")]))) &&
+  /* v4.0.1: RE-PINNED on the owner copy pass, which REVERSED v4.0.0's "never list the
+     factors" ruling — the owner's read of the live page asked for the named form
+     ("Volatility and sentiment are supportive, but…"). The four-branch structure and the
+     withheld-gets-nothing contract are unchanged; only the words moved. */
+  ok("v4.0.1 sentence: four branches, named factors, and a withheld posture gets NONE",
+    /supportive/.test(ss(evOf("RISK-ON", [F("a","bull")]))) &&
+    /clearly supportive/.test(ss(evOf("RISK-OFF", [F("a","bear")]))) &&
+    /supportive.*but/.test(ss(evOf("MIXED", [F("a","bull"), F("b","bear")]))) &&
+    /Nothing we track has a clear lean/.test(ss(evOf("MIXED", [F("a","neutral")]))) &&
     ss({ withheld: true }) === null);
-  ok("v4.0 sentence: does NOT list the factors — the cards do that, and twice is duplication",
-    !/tenYear|vix|nfci|volatility|inflation/.test(ss(evOf("RISK-ON", [F("vix","bull"), F("nfci","bull")]))));
+  ok("v4.0.1 sentence: NAMES the factors in band vocabulary (ruling reversed by the owner copy pass)",
+    (() => { const t = ss(evOf("RISK-ON", [F("vix","bull"), F("nfci","bull"), F("valuation","bear")]));
+      return /[Vv]olatility/.test(t) && /financial conditions/.test(t) &&
+        /priced for perfection/.test(t) && /are supportive, but/.test(t); })());
+  ok("v4.0.1 sentence: a SINGLE supportive factor speaks its verb phrase (no noun-count agreement trap)",
+    /Volatility is asleep/.test(ss(evOf("RISK-ON", [F("vix","bull")]))));
   ok("v4.0 flip: reads flipConditions' OWN output and derives no threshold",
     sf({ withheld: false, flips: { flips: [{ copy: "VIX above 25", would: "RISK-OFF" }] } })
       === "VIX above 25 would move this to RISK-OFF." &&

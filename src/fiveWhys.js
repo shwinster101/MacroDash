@@ -121,14 +121,16 @@ export function computeFiveWhys(data, regime = {}, opts = {}) {
   const ma200 = spy.ma200;
   const above = ma200 != null && spy.price >= ma200;
   const coreParts = [];
-  // VOICE (v3.97.2, owner rules): sharp trader talking to a trader, not a research note —
-  // no section labels ("The scoreboard:", "Net:"), natural flow, light slang. The honesty
-  // literals are untouched: "N/3 core inputs usable", the named exclusions, the
-  // reduced-signal caveat. Tone changed; structure and invariants did not.
+  // VOICE (v3.97.2 owner rules, refined v4.0.1): one voice with the Simple cards — clear,
+  // direct, lightly explanatory; short sentences, no insider phrasing. The v3.98 trader
+  // slang ("sitting pretty", "don't get cute", "elsewhere on the tape") was cut on the
+  // owner's read of the live page: the cards set the tone and the whys match it now. The
+  // honesty literals are untouched: "N/3 core inputs usable", the named exclusions,
+  // "dark — not counted" (the one-vocabulary rule, v3.98.3), the reduced-signal caveat.
   if (isLive("spyPrice")) {
     coreParts.push(
       `SPY $${spy.price} (${pct(spy.changePct)})` +
-      (ma200 != null ? (above ? `, sitting pretty above its 200-day` : `, stuck under its 200-day`) : "")
+      (ma200 != null ? (above ? `, above its 200-day average` : `, below its 200-day average`) : "")
     );
   }
   if (isLive("cpiHeadline")) coreParts.push(`CPI ${cpi.headline}%`);
@@ -137,10 +139,10 @@ export function computeFiveWhys(data, regime = {}, opts = {}) {
   if (coreParts.length) {
     whys.push(
       `${coreParts.join(", ")}. ` +
-      (coreParts.length < CORE_N ? `${coreParts.length}/${CORE_N} core inputs usable — the rest don't get a say. ` : "") +
+      (coreParts.length < CORE_N ? `${coreParts.length}/${CORE_N} core inputs usable — the rest aren't live right now. ` : "") +
       (isLive("spyPrice")
-        ? (above ? "Trend intact." : "Under the long trend — that's the primary risk flag.")
-        : "No live SPY mark, so no trend read.")
+        ? (above ? "Trend intact." : "Below the long-term trend — that's the main risk flag.")
+        : "No live SPY price, so no trend read.")
     );
   } else {
     // Every core input unavailable: say so. An empty anchor is a fact, not a blank line.
@@ -159,7 +161,7 @@ export function computeFiveWhys(data, regime = {}, opts = {}) {
     ? ["vix", "fearGreed", "tenYear", "wti", "btc", "creditSpread"].filter((k) => !fresh.has(k))
     : [];
   whys.push(
-    `Elsewhere on the tape: ${sig.length ? sig.join(", ") : "nothing else is fresh right now"}.` +
+    `Other live readings: ${sig.length ? sig.join(", ") : "nothing else is live right now"}.` +
     (excluded.length ? ` ${excluded.map((k) => FIELD_LABEL[k]).join(", ")} ${excluded.length === 1 ? "is" : "are"} dark — not counted.` : "")
   );
 
@@ -174,7 +176,7 @@ export function computeFiveWhys(data, regime = {}, opts = {}) {
     // macro tape" is a different fact from "no headline arrived", and it is the one that
     // stops an administrative story being read as the market's driver.
     whys.push(
-      `Today's top story (${hd.source}) is noise, not macro-material — it doesn't drive the call. ` +
+      `Today's top story (${hd.source}) is not macro-material, so it doesn't move the call. ` +
       `Today is data-driven, not news-driven.`
     );
   } else {
@@ -190,13 +192,13 @@ export function computeFiveWhys(data, regime = {}, opts = {}) {
   whys.push(
     `Slow-burn risks${reviewed}: ${worsening.length ? `${worsening.join(", ")} getting worse` : "nothing getting worse"}` +
     `${improving.length ? `; ${improving.join(", ")} improving` : ""}. ` +
-    `${worsening.length >= 2 ? "The structural stuff is still building." : "No fresh escalation today."}`
+    `${worsening.length >= 2 ? "More than one is building — worth watching." : "No fresh escalation today."}`
   );
 
   // WHY #5 — synthesis + honest confidence caveat
   whys.push(
     `Bottom line: still ${label} — ${sub}. ${bull}/${active} live factors leaning bullish` +
-    (active < total ? `; ${total - active} excluded as stale/dead — a reduced-signal read, so don't get cute.` : "; full-signal read.")
+    (active < total ? `; ${total - active} excluded as stale/dead — a reduced-signal read, so confidence is lower.` : "; full-signal read.")
   );
 
   return {

@@ -2881,6 +2881,41 @@ Jan-anchor shipped; see `snapshot.js` ~318–328), `spyMa100`, `spyMa200`, and a
   VALUATION GAP ranking (§11.1 — the ranking always renders, which is the owner's actual
   "always an output" contract, and it was never suspended). Tests: 1223 smoke (+2) + 199
   render (+1).
+- **v4.0.1 "ONE VOICE" — the owner copy pass: the prose catches up to the cards.** Owner
+  verdict on the live v4.0.0 Simple view: keep the factor cards and HELPING/HURTING labels
+  ("the best prose on the screen"), and bring everything else to their standard — clear,
+  direct, lightly explanatory, one voice. Three moves:
+  **(1) The sentence NAMES the factors — v4.0.0's "never list the factors" ruling is
+  REVERSED** (the owner's own target text: *"Volatility and sentiment are supportive, but
+  valuation remains stretched"*). `simpleSentence` now speaks band vocabulary — plain NOUNS
+  for the supportive list, each factor's own `plainBear` verb phrase for the risk side, all
+  from `REGIME_BAND_TABLE` (no third copy-table): *"Volatility and sentiment are supportive,
+  but stocks are priced for perfection."* A single supportive factor speaks its `plainBull`
+  PHRASE ("inflation is cooling") — "<noun> are supportive" cannot be made number-safe for
+  one item ("financial conditions is supportive"). The reversal is documented at the pin
+  (the v3.92 precedent), and the smoke pin now asserts the OPPOSITE of what it asserted in
+  v4.0.0 — deliberately, with the ruling named.
+  **(2) The 5 Whys drop the trader slang** — a partial rollback of the v3.98.1 voice pass,
+  on the owner's read-aloud test ("if it sounds like a different person wrote it, simplify"):
+  "sitting pretty above its 200-day" → "above its 200-day average" · "Elsewhere on the
+  tape:" → "Other live readings:" · "is noise, not macro-material — it doesn't drive the
+  call" → "is not macro-material, so it doesn't move the call" · "The structural stuff is
+  still building" → "More than one is building — worth watching" · "so don't get cute" →
+  "so confidence is lower". Every honesty literal survives byte-identical: "N/3 core inputs
+  usable", the named exclusions, "dark — not counted" (the v3.98.3 one-vocabulary rule —
+  "dark" stays because the hero, strip and cards all share it), "not macro-material",
+  "data-driven, not news-driven", the reduced-signal caveat, and the A1 `SPY $<px> (<pct>)`
+  shape guards.
+  **(3) The cards footer is ONE quiet line** — the "showing 3 of 6 usable" count and the ⇄
+  flip condition merge into a single subdued line inside the cards area (opacity .7),
+  metadata rather than a second message. The truncation stays STATED, never implied — only
+  its visual weight dropped.
+  Verified by the owner's own test: the full Simple output (sentence + all five whys)
+  printed and read aloud — one voice. Tests: **1663 smoke** (+0 net: the sentence pins
+  re-pinned on the named-factor copy with a new single-factor phrase check and the
+  reversal documented; the why1 pin moved to the plain copy) + 253 render + **169
+  public-render** (the Glance/verdict/withheld sentence pins re-pinned; the withheld
+  absence check now sweeps the new copy's connective forms) + `audit:prod` clean.
 - **v4.0.0 "SIMPLE MODE" — the scoped verdict, three parameter cards, and one sentence
   (owner plan `simplemodefinalplan.md`, reviewed then built).** Simple becomes an ORIENTATION
   LAYER answering one question — *is the macro backdrop bullish, HODL or bearish, and which

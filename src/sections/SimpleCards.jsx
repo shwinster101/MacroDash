@@ -62,13 +62,15 @@ const SimpleCards = ({ cards, flipLine, usable = 0, shown = 0, total = 0 }) => {
           );
         })}
       </div>
-      <div style={{ display: "flex", gap: 10, flexWrap: "wrap", marginTop: 6 }}>
-        {/* The truncation is stated, never implied: three of six means half the evidence is
-            off this screen, and a reader must not mistake the cards for the whole picture. */}
-        <span style={{ fontFamily: T.fontMono, fontSize: 8, color: T.textMuted }}>
+      {/* v4.0.1 (owner copy pass): the coverage count and the flip condition are ONE quiet
+          footer line inside the cards area — metadata, not a second message competing with
+          the cards. The truncation stays STATED, never implied (three of six means half the
+          evidence is off this screen); only its visual weight dropped. */}
+      <div style={{ marginTop: 4, opacity: 0.7 }}>
+        <span style={{ fontFamily: T.fontMono, fontSize: 8, color: T.textMuted, lineHeight: 1.5 }}>
           showing {shown} of {usable} usable{total > usable ? ` · ${total - usable} not counted` : ""}
+          {flipLine ? ` · ⇄ ${flipLine}` : ""}
         </span>
-        {flipLine && <span style={{ fontFamily: T.fontMono, fontSize: 8, color: T.textMuted }}>⇄ {flipLine}</span>}
       </div>
     </div>
   );

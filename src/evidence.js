@@ -288,18 +288,33 @@ export function simpleCards(ev, max = 3) {
   return { cards, usable: usableRows.length, shown: cards.length, total: factors.length };
 }
 
-/* The one Simple sentence. Same buckets as postureSummary — one derivation, so it can
-   never contradict the cards below it. Deliberately does NOT list the factors: the cards
-   do that, and saying it twice is the duplication the density passes kept cutting. */
+/* The one Simple sentence. Same rows as the cards — one derivation, so it can never
+   contradict them. v4.0.1 (owner copy pass, 2026-08-17) REVERSES v4.0.0's "never list the
+   factors" ruling: the owner's read of the live page asked for exactly the named form —
+   "Volatility and sentiment are supportive, but stocks are priced for perfection" — the
+   cards carry the numbers, the sentence carries the names, and that is division of labor,
+   not duplication. Vocabulary comes from REGIME_BAND_TABLE (plain nouns for the supportive
+   list, each factor's own plainBear verb phrase for the risk side) — no third copy-table.
+   A single supportive factor speaks its plainBull PHRASE ("inflation is cooling") rather
+   than "<noun> are supportive", because noun-count agreement ("financial conditions is
+   supportive") cannot be made safe for one item. */
 export function simpleSentence(ev) {
   if (!ev || ev.withheld) return null;   // a withheld posture has no "why" — the shortfall line renders instead
   const f = (ev.factors || []).filter((x) => !x.excluded);
-  const has = (v) => f.some((x) => x.vote === v);
-  const up = has("bull"), down = has("bear");
-  if (up && down) return "Some conditions are helping the backdrop, but real risks are still in play.";
-  if (up)         return "The conditions we track are helping the backdrop right now.";
-  if (down)       return "The conditions we track are weighing on the backdrop right now.";
-  return "Nothing we track has a clear directional edge right now.";
+  const bandOf = (x) => REGIME_BAND_TABLE.find((t) => t.key === x.key);
+  const nounOf = (x) => { const b = bandOf(x); return (b && b.plain) || x.label || x.key; };
+  const bullOf = (x) => { const b = bandOf(x); return (b && b.plainBull) || `${nounOf(x)} is supportive`; };
+  const bearOf = (x) => { const b = bandOf(x); return (b && b.plainBear) || `${nounOf(x)} is working against it`; };
+  const cap = (s) => (s ? s.charAt(0).toUpperCase() + s.slice(1) : s);
+  const bullRows = f.filter((x) => x.vote === "bull");
+  const bears = f.filter((x) => x.vote === "bear").map(bearOf);
+  const bullLead = bullRows.length === 1
+    ? cap(bullOf(bullRows[0]))
+    : `${cap(listOf(bullRows.map(nounOf)))} are supportive`;
+  if (bullRows.length && bears.length) return `${bullLead}, but ${listOf(bears)}.`;
+  if (bullRows.length) return `${bullLead}, and nothing we track is working against the market right now.`;
+  if (bears.length)    return `${cap(listOf(bears))}, and nothing we track is clearly supportive right now.`;
+  return "Nothing we track has a clear lean right now.";
 }
 
 /* "What would change the call" — reads flipConditions' OWN output and derives nothing.

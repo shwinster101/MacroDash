@@ -362,7 +362,7 @@ console.log("\n[public] v3.94 — Simple default, the toggle, persistence, red f
      detail with the actual numbers attached. */
   ok("v4.0 simple: the Glance layer renders — scoped verdict, one sentence, cards, confidence, key numbers",
     /MACRO: (BULLISH|HODL|BEARISH|DATA HOLD)/.test(body) &&
-    /(helping the backdrop|weighing on the backdrop|no clear directional edge|real risks are still in play)/i.test(body) &&
+    /(supportive|working against|clear lean right now)/i.test(body) &&   // v4.0.1 named-factor copy
     /voters counted/.test(body) && /SIGNAL QUALITY/i.test(body) && /SPY/.test(body));
   const bandTxt = await page.locator('[aria-label="Macro backdrop verdict"]').innerText();
   ok("v4.0 simple: EXACTLY ONE verdict — the engine label never renders beside the scoped one",
@@ -732,7 +732,7 @@ console.log("\n[public] v4.0 — Simple verdicts, card selection, and what must 
   body = await page.locator("body").innerText();
   ok("v4.0 verdict: a bull tape reads MACRO: BULLISH with supporting factors leading",
     /MACRO: BULLISH/.test(body) && /HELPING/.test(body) &&
-    /helping the backdrop/i.test(body));
+    /supportive/i.test(body));   // v4.0.1: the sentence names factors, supportive-side leading
   await page.close();
 
   // 3. DATA HOLD — below quorum. And the acceptance rule that matters most here: a withheld
@@ -744,7 +744,7 @@ console.log("\n[public] v4.0 — Simple verdicts, card selection, and what must 
     /MACRO: DATA HOLD/.test(body) && !/MACRO: (BULLISH|BEARISH|HODL)/.test(body));
   ok("v4.0 withheld: no explanatory sentence, and the flip line states the evidence shortfall",
     /Call withheld until the required evidence is current and usable/.test(body) &&
-    !/helping the backdrop|weighing on the backdrop/i.test(body));
+    !/are supportive|is working against|clearly supportive|clear lean right now/i.test(body));
   ok("v4.0 withheld: cards still render only USABLE factors — a dead feed is never a card",
     !/HELPING|HURTING|MIXED/.test(body) || /showing \d+ of \d+ usable/.test(body));
   await page.close();
