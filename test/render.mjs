@@ -996,8 +996,13 @@ ok("techread: a BEARISH tape does NOT veto — the pick stays eligible, the read
 // harness sets it directly — exactly how BOARD/LIVE_PX scenarios already work.
 console.log("\n[render] FEAT-TT-ALLOC — the server receipt beside the client's read");
 const allocLive = await page.evaluate(() => {
-  const prev = ALLOC;
+  const prev = ALLOC, prevAcct = ACCOUNT;
   const today = new Date().toLocaleDateString("en-CA", { timeZone: "America/New_York" });
+  // v4.1 Step 2: the audit's live shape — a green context state beside NEGATIVE cash and
+  // margin debt. The chip must render the measured account and the not-a-cash-claim
+  // qualifier, or the state reads as spending approval.
+  ACCOUNT = { equity: 316711.76, cash: -286817.09, buying_power: 16149.66, debt: 286817.09,
+    at: today + "T22:22:00Z", src: "rh" };
   ALLOC = { schema: "tt-alloc-receipt-v1", at: today + "T14:00:00Z", state: "ALLOCATABLE",
     gate: null, horizon: "2027", eligible: { sym: "AAA", y: "2027", tgt: 999, up: 20, ann: 15 },
     why_not: [], context_blockers: [],
@@ -1010,10 +1015,14 @@ const allocLive = await page.evaluate(() => {
   const buy = document.getElementById("buyBlock").innerText;
   const sell = document.getElementById("sellBlock").innerText;
   const out = {
-    buyChip: /server: ALLOCATABLE — AAA/.test(buy),
-    sellChip: /server: ALLOCATABLE — AAA/.test(sell),
+    // v4.1 Step 2: renamed label + permanent qualifier + measured account, both altitudes.
+    buyChip: /ALLOCATION CONTEXT READY — AAA/.test(buy) && !/server: ALLOCATABLE/.test(buy),
+    sellChip: /ALLOCATION CONTEXT READY — AAA/.test(sell),
+    qualifier: /not a cash-availability or sizing claim/.test(buy) &&
+               /not a cash-availability or sizing claim/.test(sell),
+    acctBeside: /acct: equity \$317k · cash -\$287k · BP \$16k · debt \$287k/.test(buy),
     confirmLink: document.getElementById("allocFundLink") !== null,
-    confirmIntentOnly: /intent only/.test(buy),
+    confirmIntentOnly: /RECORD FUNDING INTENT — AAA · no order/.test(buy),
     disagree: /server receipt: FFF first/.test(sell) };
   // WAIT state: the gate reason renders, no confirm affordance survives.
   ALLOC = { ...ALLOC, state: "WAIT", eligible: null,
@@ -1024,12 +1033,16 @@ const allocLive = await page.evaluate(() => {
   // No receipt at all (older deploy / never evaluated): stated, never blank.
   ALLOC = null; render();
   out.honest = /server allocation: no receipt/.test(document.getElementById("buyBlock").innerText);
-  ALLOC = prev; render();
+  ALLOC = prev; ACCOUNT = prevAcct; render();
   return out;
 });
-ok("alloc: the ALLOCATABLE receipt renders the SAME chip at both altitudes (one builder)",
+ok("alloc: the context-ready receipt renders the SAME chip at both altitudes (one builder)",
   allocLive.buyChip && allocLive.sellChip);
-ok("alloc: CONFIRM FUND is present, two-step, and says intent only",
+ok("alloc: the not-a-cash-claim qualifier rides the state at BOTH altitudes",
+  allocLive.qualifier);
+ok("alloc: the measured account (negative cash, debt) renders beside the green state",
+  allocLive.acctBeside);
+ok("alloc: RECORD FUNDING INTENT — no order is the confirm affordance, two-step",
   allocLive.confirmLink && allocLive.confirmIntentOnly);
 ok("alloc: the server-vs-client funding disagreement prints — married, never merged",
   allocLive.disagree);

@@ -332,6 +332,11 @@ export function evaluateAllocation({ book, ddIndex, posDoc, quotes, readout, now
   return {
     rule_version: ALLOC_RULE_VERSION,
     state,                       // WAIT (gate) | NONE (no eligible) | BUY_ELIGIBLE | ALLOCATABLE
+    /* v4.1 Step 2: ALLOCATABLE is an allocation-CONTEXT state — everything the recommendation
+       depends on is present and fresh. It is NOT a cash-availability or sizing approval (the
+       8/18 audit read it beside a measured cash of −$286k), and the receipt now says so in a
+       machine field so no renderer can quietly re-imply it. */
+    meaning: state === "ALLOCATABLE" ? "context_complete_not_cash_or_sizing_approval" : null,
     gate: gate || null,          // null = every gate read clean
     // FEAT-TT-CIRCUIT (v4.1): the resolved permission facts this evaluation gated on.
     permission: {

@@ -7214,6 +7214,23 @@ console.log("\n[68] FEAT-TT-ALLOC — pure core, endpoint, and the §14.8 bar");
     adminSrc.includes("mR!==undefined&&aR!==undefined&&measured!==asserted") &&
     adminSrc.includes("not a ranked regime; measured <b>"));
 
+  // ── v4.1 Step 2: ALLOCATABLE is context, never cash/sizing approval ──
+  // The 8/18 audit read a green ALLOCATABLE beside measured cash of −$286,817. The receipt
+  // now carries the semantics as a machine field, the visible label says CONTEXT READY, and
+  // the measured account renders beside any green state with the qualifier attached.
+  ok("label: the visible chip says ALLOCATION CONTEXT READY, never a bare ALLOCATABLE",
+    adminSrc.includes("ALLOCATION CONTEXT READY — ${esc(ALLOC.eligible.sym)}") &&
+    !adminSrc.includes("server: ALLOCATABLE —"));
+  ok("label: the not-a-cash-claim qualifier is permanent on the green state",
+    adminSrc.includes("not a cash-availability or sizing claim"));
+  ok("label: the confirm affordance records INTENT and says no order",
+    adminSrc.includes('"RECORD FUNDING INTENT — "+ALLOC.eligible.sym+" · no order"'));
+  ok("account: loadPositions keeps the measured account instead of discarding it",
+    adminSrc.includes("ACCOUNT=(d&&d.account&&typeof d.account===\"object\")?d.account:null;") &&
+    adminSrc.includes("function acctLine()"));
+  ok("account: an unmeasured account is a STATED state on the chip, never an inferred zero",
+    adminSrc.includes("account unmeasured — no synced broker record"));
+
   // ── acceptance tests, executed ──
   const BOOK = { version: "9.0", asOf: TODAY, cut: ["OLD"], book: [
     { sym: "AAA", tier: "S", lens: "VEH", lastRun: TODAY }, { sym: "BBB", tier: "A", lens: "VEH" }],
@@ -7246,6 +7263,11 @@ console.log("\n[68] FEAT-TT-ALLOC — pure core, endpoint, and the §14.8 bar");
       return t.CCC === 1 && t.OLD === 1 && t.BIG === 2 && t.AAA === 5; })());
   ok("alloc 4: the over-cap row is identified from the MEASURED pct and says so",
     /21% of acct equity.*broker-measured/.test(R.funding.rows.find((r) => r.sym === "BIG").reason));
+  ok("meaning: an ALLOCATABLE receipt declares context_complete_not_cash_or_sizing_approval",
+    (() => { const r = ev(); return r.state === "ALLOCATABLE" &&
+      r.meaning === "context_complete_not_cash_or_sizing_approval"; })());
+  ok("meaning: any non-ALLOCATABLE state carries meaning null — the field never over-claims",
+    ev({ posDoc: null }).meaning === null);
   ok("alloc 6: missing lots never become a zero-tax assumption — lots:null, not {lt:0,st:0}",
     R.funding.rows.find((r) => r.sym === "BIG").lots === null &&
     (() => { const a = R.funding.rows.find((r) => r.sym === "AAA").lots; return a.lt_sh === 6 && a.st_sh === 4; })());

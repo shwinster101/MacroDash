@@ -3679,12 +3679,18 @@ async function runTickerAnalysis(sym){
    positions at once, so this fetches the map, not one sym at a time. Fetch failure is
    silent by design, same as loadQuotes: the board degrades to "no positions known" (every
    posOf() reads null, chips show no weight) rather than breaking anything. */
+/* v4.1 Step 2: the measured broker account, kept — loadPositions used to DISCARD it, so the
+   only account truth on screen was the stale asserted BOARD.account, and the measured one
+   reached the operator solely as prose inside a context blocker (8/18 audit, P1). */
+let ACCOUNT=null,POS_ASOF=null,POS_SNAP=null;
 async function loadPositions(){
   try{
     const r=await fetch("/api/positions");
     if(r.ok){
       const d=await r.json();
       POSITIONS=(d&&typeof d.positions==="object"&&!Array.isArray(d.positions))?d.positions:{};
+      ACCOUNT=(d&&d.account&&typeof d.account==="object")?d.account:null;
+      POS_ASOF=(d&&d.asOf)||null;POS_SNAP=(d&&d.snap)||null;
     }
   }catch(_e){/* POSITIONS stays {} — posOf() reads null for everyone, never stale data */}
   // v3.42 slice 2: same settle-on-either-outcome rule as loadQuotes — the SELL skeletons
@@ -3739,13 +3745,24 @@ function allocDoFund(){if(ALLOC&&ALLOC.eligible)allocConfirm("FUND",ALLOC.eligib
 function allocTrunc(s){s=String(s);return s.length>56?s.slice(0,55)+"…":s;}
 /* ONE chip builder, both altitudes (the hzDeckChip rule) — the BUY block and the FUNDING
    block must never disagree about what the server said. */
+/* v4.1 Step 2: the measured account, rendered beside any green allocation state. The 8/18
+   audit's P0 semantics gap: "ALLOCATABLE" read as cash/sizing approval while the account
+   held negative cash and margin debt. The context state and the cash facts now share a line,
+   with the qualifier attached to the state itself. */
+function acctLine(){
+  if(!ACCOUNT)return `<span class="scope">account unmeasured — no synced broker record</span>`;
+  const a=ACCOUNT;
+  const n=(v)=>isFinite(Number(v))?money(Number(v)):"?";
+  return `<span class="scope">acct: equity ${n(a.equity)} · cash ${n(a.cash)} · BP ${n(a.buying_power)} · debt ${n(a.debt)} · ${esc(String(a.at||"").slice(0,10)||"undated")}</span>`;
+}
 function allocChip(){
   if(!ALLOC)return `<span class="scope">server allocation: no receipt — ⟳ DATA+RANKS computes one (older deploys: unavailable)</span>`;
   const age=ageDays(String(ALLOC.at).slice(0,10));
   const stamp=`receipt ${age===0?"today":age===null?"undated":age+"d old"}`;
-  const conf=ALLOC.confirmation?` · ✓ CONFIRMED ${esc(ALLOC.confirmation.action)} ${esc(ALLOC.confirmation.sym)} ${esc(String(ALLOC.confirmation.at).slice(0,10))}`:"";
+  const conf=ALLOC.confirmation?` · ✓ RECORDED ${esc(ALLOC.confirmation.action)} ${esc(ALLOC.confirmation.sym)} ${esc(String(ALLOC.confirmation.at).slice(0,10))} (intent only)`:"";
   if(ALLOC.state==="ALLOCATABLE")
-    return `<span style="color:var(--green);font-weight:700">server: ALLOCATABLE — ${esc(ALLOC.eligible.sym)}</span> <span class="scope">${stamp}${conf}</span>`;
+    return `<span style="color:var(--green);font-weight:700">server: ALLOCATION CONTEXT READY — ${esc(ALLOC.eligible.sym)}</span> `+
+      `<span class="scope">· not a cash-availability or sizing claim · ${stamp}${conf}</span><br>${acctLine()}`;
   if(ALLOC.state==="BUY_ELIGIBLE")
     return `<span style="color:var(--amber);font-weight:700">server: BUY ELIGIBLE — ${esc(ALLOC.eligible.sym)}</span> <span class="scope">· ${esc(allocTrunc(ALLOC.context_blockers[0]||"context incomplete"))} · ${stamp}${conf}</span>`;
   if(ALLOC.state==="WAIT")
@@ -5425,7 +5442,7 @@ function renderBuyBlock(){
      carries the ALLOCATABLE→CONFIRM affordance: two-step (confirmLink), intent-only. */
   h+=`<div class="none">${allocChip()}`+
     (ALLOC&&ALLOC.state==="ALLOCATABLE"&&!ALLOC.confirmation
-      ?` · ${confirmLink("allocFundLink","CONFIRM FUND "+ALLOC.eligible.sym+" (intent only)","allocDoFund")}`:"")+`</div>`;
+      ?` · ${confirmLink("allocFundLink","RECORD FUNDING INTENT — "+ALLOC.eligible.sym+" · no order","allocDoFund")}`:"")+`</div>`;
   // v3.42 slice 2: while the first quote load is still in flight an empty rank is UNKNOWN,
   // not empty — skeleton rows hold the geometry so the board doesn't shift when data lands.
   // v3.76: "nothing to rank" is only true when there is also nothing REVIEWED to fall back
