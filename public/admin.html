@@ -9,7 +9,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
 <!-- AUDIT: kept in sync with package.json by test/smoke.mjs. admin.html is a Vite
      public/ passthrough, so it cannot receive __APP_VERSION__ — the guard is the fix. -->
-<title>TT TICKER TERMINAL v4.0.3</title>
+<title>TT TICKER TERMINAL v4.1.0</title>
 <style>
   :root{
     --bg:#05070a; --panel:#0a0f16; --panel2:#0d141d; --line:#16202c;
@@ -86,6 +86,16 @@
   .statusline{display:flex;flex-wrap:wrap;gap:8px 18px;margin-top:8px;font-size:12px;color:var(--slate)}
   .statusline b{color:var(--fg)}
   .pill{display:inline-block;padding:1px 8px;border-radius:10px;border:1px solid var(--line);font-size:11px}
+  /* v4.1 Step 7: the pill is a real <button> now (the v3.42 stance-badge rule — a tappable
+     thing is a button, not a span with a handler). Inherit the pill look, kill UA chrome. */
+  button.pill{font:inherit;font-size:11px;cursor:pointer;background:transparent;color:inherit;text-align:left}
+  /* WHY MACRO — the evidence panel the pill toggles. display:none costs the fold nothing
+     closed (the v3.42 slice-5 budgets are pinned); open, it explains the pill it sits under. */
+  #macroEvidence{display:none;margin:4px 8px 0;padding:6px 8px;border:1px solid var(--line);border-radius:4px;font-size:10.5px;line-height:1.5;color:var(--dim)}
+  #macroEvidence b{color:var(--fg)}
+  #macroEvidence .mev-row{display:block}
+  #macroEvidence .mev-bull{color:var(--green)}
+  #macroEvidence .mev-bear{color:var(--red)}
   .pill.warn{color:var(--amber);border-color:#4a361a;background:#191206}
   .pill.head{color:var(--red);border-color:#4a1a20;background:#190a0c}
   .pill.neutral{color:var(--amber)}
@@ -425,7 +435,13 @@
            WRAPPED INTERNALLY ("MACRO:" over the pill) and grew the bar 22→41px, eating the
            fold budget. The v3.99 SourceBox lesson: nowrap without a min-width floor pushes
            or wraps; with it, the ellipsis engages and the bar stays one line tall. -->
-      <span style="min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">MACRO: <span class="pill neutral" id="regimePill">loading…</span></span>
+      <!-- v4.1 Step 7: the pill is a BUTTON toggling the WHY MACRO evidence panel. The
+           evidence lived only in a hover title — unreachable on touch, the open a11y
+           finding — while the pill asserted a verdict whose bearish votes and missing
+           inputs rendered nowhere. The pill's own text is unchanged (the date stays
+           terminal — freshness is why it is there — and the fold budgets are pinned);
+           the tally is one tap deep, behind the very claim it explains. -->
+      <span style="min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">MACRO: <button type="button" class="pill neutral" id="regimePill" aria-expanded="false" aria-controls="macroEvidence" onclick="toggleMacroEvidence()">loading…</button></span>
       <button class="hb-ranks" onclick="exportRankings()"
         aria-label="Share ticker rankings and decision logic"
         title="Share rankings, funding priority, methodology and caveats">⇧ SHARE RANKS</button>
@@ -436,8 +452,13 @@
       <button class="hb-more" id="headToggle" aria-expanded="false" aria-controls="headInfo"
         onclick="toggleHeadInfo()">⋯ OPS</button>
     </div>
+    <!-- v4.1 Step 7 (WHY MACRO): presentation only — this panel renders regime.checks /
+         bullish / bearish / confidence, all of which the readout has published since
+         ENGINE0-CONT and this page never read. No new voter, no threshold change; the
+         verdict and every gate are computed upstream and this panel changes nothing. -->
+    <div id="macroEvidence" role="region" aria-label="Why macro — readout evidence"></div>
     <div id="headInfo" style="display:none">
-      <div class="brand">FINANCE&nbsp;BRO.AI // TT&nbsp;TICKER&nbsp;TERMINAL <small>v4.0.3 · underwriting + sourced gates</small></div>
+      <div class="brand">FINANCE&nbsp;BRO.AI // TT&nbsp;TICKER&nbsp;TERMINAL <small>v4.1.0 · underwriting + sourced gates</small></div>
       <div class="statusline">
         <span>BOOK: <b id="bookStamp">loading…</b></span>
         <span>AUTH: <b id="sessState">…</b></span>
@@ -6699,6 +6720,44 @@ function applyRegime(r){
       +(reg.reason?` — ${reg.reason}`:"");
   }
   render(); // stance + every v2 receipt-current check must see the new actionability
+  renderMacroEvidence(); // v4.1 Step 7: the WHY MACRO panel tracks every applied body
+}
+/* v4.1 Step 7 — WHY MACRO. The readout has published regime.checks/bullish/bearish/
+   confidence since ENGINE0-CONT and this page read NONE of them: the pill said TAILWIND
+   while its bearish 10Y vote and missing Kalshi input rendered only in a hover title a
+   phone can never reach (the 8/18 audit). Presentation only — nothing here votes, gates,
+   or changes a threshold; withheld (honest empty, never zeros) when the readout body
+   carries no evidence detail. */
+function toggleMacroEvidence(){
+  const p=document.getElementById("macroEvidence"),b=document.getElementById("regimePill");
+  const open=p.style.display!=="block";
+  p.style.display=open?"block":"none";
+  b.setAttribute("aria-expanded",String(open));
+  if(open)renderMacroEvidence();
+}
+function renderMacroEvidence(){
+  const p=document.getElementById("macroEvidence");
+  if(!p)return;
+  const reg=REGIME&&REGIME.regime;
+  if(!reg){p.innerHTML=`<span class="mev-row">readout unavailable — no evidence to explain; tap ← MACRO for the dashboard</span>`;return;}
+  if(!Array.isArray(reg.checks)||typeof reg.bullish!=="number"){
+    // An older body has no evidence detail — say so rather than render zeros as facts.
+    p.innerHTML=`<span class="mev-row">this readout body predates evidence detail — ⟳ DATA+RANKS for a current one</span>`;return;
+  }
+  const glyph=(s)=>s==="bullish"?`<span class="mev-bull">▲</span>`
+    :s==="bearish"?`<span class="mev-bear">▼</span>`
+    :s==="neutral"?"•":"∅";
+  const rows=reg.checks.map(c=>{
+    // The 10Y row carries its LEVEL too (the check itself is the monthly-delta trend) —
+    // the level/Δ/vote/date quartet is the row the 8/18 audit read wrong from the pill.
+    const lvl=c.name==="us10y_trend"&&REGIME.us10y&&REGIME.us10y.yield!=null?` · level ${REGIME.us10y.yield}%`:"";
+    return `<span class="mev-row">${glyph(c.state)} <b>${esc(c.name)}</b> ${esc(c.state)}${lvl} — ${esc(c.reason||"")}${c.as_of?` · ${esc(String(c.as_of))}`:""}</span>`;
+  }).join("");
+  p.innerHTML=
+    `<span class="mev-row"><b>EVIDENCE:</b> <span class="mev-bull">${reg.bullish} bullish</span> · <span class="mev-bear">${reg.bearish} bearish</span> · ${reg.missing} missing — ${esc(reg.confidence||"?")} · ${esc(reg.actionability||"?")}</span>`
+    +rows
+    +(reg.reason?`<span class="mev-row">⚠ ${esc(reg.reason)}</span>`:"")
+    +`<span class="mev-row" style="opacity:.7">presentation only — the verdict and every gate are computed upstream; this panel changes nothing</span>`;
 }
 async function loadRegime(){
   const el=document.getElementById("regimePill");

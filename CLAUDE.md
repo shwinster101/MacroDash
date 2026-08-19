@@ -2881,6 +2881,69 @@ Jan-anchor shipped; see `snapshot.js` ~318–328), `spyMa100`, `spyMa200`, and a
   VALUATION GAP ranking (§11.1 — the ranking always renders, which is the owner's actual
   "always an output" contract, and it was never suspended). Tests: 1223 smoke (+2) + 199
   render (+1).
+- **v4.1.0 "PERMISSION CONTRACT" — the ambiguity-hardening sprint: what a green state may
+  claim, and what a confirmation binds to.** Basis: the owner-uploaded v4.0.3 audit
+  (validated live 2026-08-18 — every claim reproduced: `board.circuit: null` under "presumed
+  tripped" prose, `ALLOCATABLE — TSM` beside measured cash **−$286,817**, a 21:07-ET-yesterday
+  receipt reading "today", `live_px:false` rendered nowhere, TAILWIND over a bearish 10Y with
+  Kalshi missing) plus **four defects the audit missed, found in validation**: an ARMED
+  circuit invisible to the server; WAIT/NONE receipts confirmable; no confirm idempotency;
+  a "-1d old" receipt age. Seven steps, one release, per owner call.
+  **(1) FEAT-TT-CIRCUIT — the structured circuit is canonical; absence fails closed.**
+  `circuitState()` (server) / `circuitStateCli()` (buildless mirror, smoke-pinned): absent,
+  malformed, undated, future-dated, or a `clear`/`armed` older than `CIRCUIT_STALE_D=7` all
+  resolve **UNRESOLVED → ADDS SUSPENDED** — session prose is explanation, never permission;
+  `tripped` NEVER expires (the v3.40 asymmetry). The server ladder learns **armed** as a
+  caution on the eligible row (client/server permission divergence, closed); `renderCircuit`
+  stops hiding on absence; deploy state is SUSPENDED by design until the owner writes the
+  first structured circuit in ◧ SESSION (locked owner decision).
+  **(2) Label truth + the measured account.** `ALLOCATABLE` renders **ALLOCATION CONTEXT
+  READY** with a machine `meaning: context_complete_not_cash_or_sizing_approval`; the receipt
+  states `not a cash-availability or sizing claim`; `loadPositions()` stops discarding
+  `account`, so equity · cash · BP · debt render beside the state (the audit read ALLOCATABLE
+  beside −$287k cash the page never showed); confirm is **RECORD FUNDING INTENT — no order**.
+  **(3) ET receipt identity.** The receipt carries `at_et` + `business_date_et` (the `etYmd`
+  clock — the UTC date-slice defect class, third recurrence); client age is hours-based from
+  the full instant with the negative-age guard; `allocBasisLine()` renders the freshness of
+  every input the receipt bound (`ALLOC.inputs` was read nowhere).
+  **(4) Price basis disclosed.** `eligible.px/px_at/price_basis` leave the evaluator (the
+  price itself never did); `live price` / `stamped price` / `stamped price — undated` /
+  `no usable price` render on the row, the chip and the confirm affordance — `live_px:false`
+  always produces a visible qualifier.
+  **(5) The server receipt governs confirmation.** A funding disagreement names the canonical
+  (`SERVER RECEIPT GOVERNS CONFIRMATION`) with client/session readings labelled diagnostic
+  shadows — married-never-merged, now with the actionable one named; `allocConfirmWithheld()`
+  withdraws the confirm affordance on a prior-business-date/undated receipt or a stop/unknown
+  local stance. The render fixture's tripped-circuit and asserted-PANIC boards each previously
+  let a green confirm link render — both now asserted as withholds.
+  **(6) Confirmation binds to the candidate and the current world (the trust core).**
+  `handleConfirm`: FUND requires the receipt's own `eligible.sym` on an ALLOCATABLE receipt
+  (a WAIT/NONE receipt was confirmable); TRIM requires a funding-ranking row, options sleeves
+  only behind an explicit `options_sleeve:true` (legs are not shares, v3.44); second confirm →
+  **409 ALREADY_CONFIRMED** unless `supersede:true` (intents immutable — a supersede appends a
+  NEW record naming what it supersedes); basis drift NAMES the changed input; and a FUND
+  **re-fetches the readout at confirm time** — `readout_as_of` is a day key, so the whole
+  macro axis was frozen intraday — binding day, actionability, macro-flip and the full body
+  hash (`inputs.readout_hash`, deliberately NOT in basis_hash: the quote-tick rule's shape),
+  plus re-resolving the circuit from the clock (a stale-clear ages into unresolved with no
+  book edit). TRIM is exempt from the readout re-bind: the funding ranking never reads the
+  readout, and a deleverage intent must not be blocked by the stress that makes it urgent.
+  Fail closed: an unreachable readout at confirm vetoes; a legacy receipt without
+  `readout_hash` 409s toward recompute. A quote tick still moves `input_hash` only.
+  **(7) WHY MACRO — the evidence finally read.** The readout has published
+  `regime.checks/bullish/bearish/confidence` since ENGINE0-CONT and the terminal read NONE of
+  it: the pill said TAILWIND while its bearish 10Y vote and missing Kalshi lived in a hover
+  title a phone cannot reach. The pill is now a real `<button>` toggling a zero-height-closed
+  evidence panel: `EVIDENCE: N bullish · N bearish · N missing — CONFIDENCE · ACTIONABILITY`,
+  per-check rows (vote glyph · reason · as-of; the 10Y row carries its LEVEL beside the
+  delta-trend vote), the missing-input warning, and a stated `presentation only` footer —
+  no new voter, no threshold change; an older body without evidence detail SAYS so rather
+  than rendering zeros. Pill text unchanged (the terminal date and the pinned fold budgets
+  both survive).
+  Tests: **1728 smoke** (+53 over the v4.0.3 baseline, incl. the confirm battery driven
+  endpoint-level against the fake KV and the circuit boundary at the exact ET session) +
+  **264 render** (+9, incl. the withheld-confirm-link proofs and WHY MACRO driven live in
+  Chromium) + 170 public-render + `audit:prod` clean — `npm run gates`.
 - **v4.0.3 "TYPED SIMPLE" — the audit's five Simple-mode fixes plus the preventive
   canonicalization.** An owner-commissioned audit of v4.0.2; every claim was reproduced
   against the live code before anything was touched, and all six were real.

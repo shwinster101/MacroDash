@@ -1407,8 +1407,10 @@ ok("today: each drawer is ONE tap (native details, no hidden second step)",
 ok("today: the reference sidebar collapses too — it is reference, not monitoring",
   !/<div class="panel"[^>]*>\s*<h2>Router/.test(adminSrc) &&
   adminSrc.includes("<summary>STANDING CONSTRAINTS</summary>"));
+// v4.1 Step 7 re-pin: the pill became a real <button> (it toggles WHY MACRO) — the
+// load-bearing claim was always the MACRO: label + the pill, never the element tag.
 ok("today: the header pill is labelled MACRO — it is the measured read, not the stance",
-  /MACRO: <span class="pill neutral" id="regimePill"/.test(adminSrc) &&
+  /MACRO: <button type="button" class="pill neutral" id="regimePill"/.test(adminSrc) &&
   /min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">MACRO: /.test(adminSrc) &&
   adminSrc.includes("made the header look like it contradicted the stance"));
 ok("today: a closed drawer still carries its signal in the summary (the v3.25 hinge rule)",
@@ -2265,7 +2267,7 @@ ok("v4.0.2: the two toolbars carry different altitudes — a DAILY OPS label, an
   /🔐 PIN/.test(adminSrc) && /◈ AI RUBRIC/.test(adminSrc) && /⏱ RESTORE POINTS/.test(adminSrc));
 ok("slice5: the MACRO: label survives the compaction — v3.29 added it so the pill can't be " +
    "misread as the stance, which is an honesty invariant, not decoration",
-  /MACRO: <span class="pill neutral" id="regimePill"/.test(adminSrc) &&
+  /MACRO: <button type="button" class="pill neutral" id="regimePill"/.test(adminSrc) &&
   /min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">MACRO: /.test(adminSrc));
 ok("slice5: toggleHeadInfo keeps aria-expanded honest",
   adminSrc.includes("function toggleHeadInfo()") &&
@@ -7271,6 +7273,30 @@ console.log("\n[68] FEAT-TT-ALLOC — pure core, endpoint, and the §14.8 bar");
   ok("canonical: only the server candidate can expose confirmation (one affordance id, gated by the withhold)",
     (adminSrc.match(/allocFundLink/g) || []).length === 1 &&
     adminSrc.includes("const w=allocConfirmWithheld();"));
+
+  // ── v4.1 Step 7: WHY MACRO — the readout's evidence detail finally read ──
+  const mevSrc = (() => {
+    const a = adminSrc.indexOf("function toggleMacroEvidence()");
+    const b = adminSrc.indexOf("async function loadRegime()");
+    if (a < 0 || b < 0 || b < a) throw new Error("smoke: macro-evidence markers not found");
+    return adminSrc.slice(a, b);
+  })();
+  ok("mev: the pill is a real <button> wired to the panel with honest aria",
+    adminSrc.includes('id="regimePill" aria-expanded="false" aria-controls="macroEvidence"') &&
+    mevSrc.includes('b.setAttribute("aria-expanded",String(open))'));
+  ok("mev: the panel consumes checks/bullish/bearish/confidence/actionability — published since ENGINE0-CONT, read nowhere until now",
+    mevSrc.includes("Array.isArray(reg.checks)") &&
+    mevSrc.includes("reg.bullish") && mevSrc.includes("reg.bearish") &&
+    mevSrc.includes("reg.confidence") && mevSrc.includes("reg.actionability"));
+  ok("mev: an older body without evidence detail SAYS so — the honest-empty branch precedes the tally render, never zeros",
+    mevSrc.indexOf("predates evidence detail") > 0 &&
+    mevSrc.indexOf("predates evidence detail") < mevSrc.indexOf("<b>EVIDENCE:</b>"));
+  ok("mev: the 10Y row carries its LEVEL beside the delta-trend vote (the 8/18 audit's misread quartet)",
+    mevSrc.includes('c.name==="us10y_trend"') && mevSrc.includes("REGIME.us10y.yield"));
+  ok("mev: presentation only — the panel touches no gate, stance, ranking or veto, and never writes REGIME",
+    !/gateFail|whyNot|sellRank|AGREE_PICK|stance\(/.test(mevSrc) &&
+    !/REGIME\s*=/.test(mevSrc) &&
+    mevSrc.includes("presentation only"));
 
   // ── acceptance tests, executed ──
   const BOOK = { version: "9.0", asOf: TODAY, cut: ["OLD"], book: [

@@ -1486,6 +1486,42 @@ ok("slice5: the header's status + toolbar start hidden behind ⋯ MENU, and the 
   await page.evaluate(() => document.getElementById("headInfo").style.display === "none" &&
     document.getElementById("regimePill").offsetParent !== null &&
     document.getElementById("headToggle").getAttribute("aria-expanded") === "false"));
+
+// v4.1 Step 7 — WHY MACRO: the pill toggles the evidence panel (the readout's checks/
+// bullish/bearish/confidence were published and never read; the hover title is unreachable
+// on touch). The fixture readout predates evidence detail, so the FIRST open proves the
+// honest-empty branch — a message, never zeros dressed as a tally.
+ok("step7: the pill is a real button and WHY MACRO starts closed at zero height",
+  await page.evaluate(() => document.getElementById("regimePill").tagName === "BUTTON" &&
+    document.getElementById("regimePill").getAttribute("aria-expanded") === "false" &&
+    getComputedStyle(document.getElementById("macroEvidence")).display === "none"));
+await page.locator("#regimePill").click();
+ok("step7: tapping the pill opens the panel, aria follows, and an old body SAYS it predates evidence detail",
+  await page.evaluate(() => document.getElementById("regimePill").getAttribute("aria-expanded") === "true" &&
+    document.getElementById("macroEvidence").style.display === "block" &&
+    /predates evidence detail/.test(document.getElementById("macroEvidence").textContent)));
+ok("step7: a full evidence body renders the tally + per-check rows — bearish named, 10Y level, missing warned, presentation-only stated",
+  await page.evaluate(() => {
+    const keep = REGIME;
+    applyRegime({ as_of: keep.as_of, us10y: { yield: 4.31 },
+      regime: { ...keep.regime, checks: [
+        { name: "spy_vs_200d", state: "bullish", reason: "+4.1% vs 200d (bands ±3%)", as_of: "2026-08-18" },
+        { name: "us10y_trend", state: "bearish", reason: "m1 +0.17 → spiking", as_of: "2026-08-18" },
+        { name: "fed_next_meeting", state: "unavailable", reason: "Kalshi odds unavailable", as_of: null },
+      ], bullish: 1, bearish: 1, missing: 1, confidence: "HIGH", actionability: "FULL",
+      reason: "missing: fed_next_meeting" },
+      macro_flip: keep.macro_flip });
+    const t = document.getElementById("macroEvidence").innerText;
+    const good = /1 bullish/.test(t) && /1 bearish/.test(t) && /1 missing/.test(t) &&
+      /HIGH · FULL/.test(t) && /us10y_trend/.test(t) && /level 4\.31%/.test(t) &&
+      /missing: fed_next_meeting/.test(t) && /presentation only/.test(t);
+    applyRegime(keep);
+    return good;
+  }));
+await page.locator("#regimePill").click();
+ok("step7: a second tap closes WHY MACRO and aria follows — the fold budget below is measured closed",
+  await page.evaluate(() => document.getElementById("regimePill").getAttribute("aria-expanded") === "false" &&
+    document.getElementById("macroEvidence").style.display === "none"));
 await page.evaluate(() => toggleHeadInfo());
 ok("slice5: ⋯ MENU reveals BOOK/AUTH and the action toolbar, and reports aria-expanded",
   await page.evaluate(() => document.getElementById("headInfo").style.display !== "none" &&
