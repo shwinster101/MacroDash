@@ -3755,19 +3755,40 @@ function acctLine(){
   const n=(v)=>isFinite(Number(v))?money(Number(v)):"?";
   return `<span class="scope">acct: equity ${n(a.equity)} · cash ${n(a.cash)} · BP ${n(a.buying_power)} · debt ${n(a.debt)} · ${esc(String(a.at||"").slice(0,10)||"undated")}</span>`;
 }
+/* v4.1 Step 3: receipt age from the FULL timestamp, never a UTC date slice. The old
+   date-slicing the UTC instant called a 01:07Z receipt (= 21:07 ET the previous
+   business evening) "today", and printed "-1d old" when read before 12:00Z (no negative
+   guard — the defect sessChip already fixed). Hours are timezone-free; the ET business date
+   comes from the server (business_date_et via etYmd), never re-derived here. */
+function allocAgeTxt(){
+  const t=Date.parse(ALLOC&&ALLOC.at);
+  if(!isFinite(t))return "undated";
+  const h=(Date.now()-t)/3600000;
+  if(h<-0.5)return "⚠ dated in the future";
+  if(h<1)return "<1h old";
+  if(h<48)return Math.round(h)+"h old";
+  return Math.round(h/24)+"d old";
+}
+/* The freshness BASIS: the receipt's own age is not the age of the evidence it was built
+   from. ALLOC.inputs was rendered nowhere (8/18 audit) — a fresh-looking receipt could ride
+   a readout from the prior morning and positions from two days back, invisibly. */
+function allocBasisLine(){
+  const i=(ALLOC&&ALLOC.inputs)||{};
+  const d=(v)=>{const s=String(v||"").slice(0,10);return /^\d{4}-\d{2}-\d{2}$/.test(s)?s:"undated";};
+  return `<span class="scope">basis: receipt ${esc(ALLOC.at_et||d(ALLOC.at))} · readout ${d(i.readout_as_of)} · positions ${d(i.positions_asOf)} · dd-index ${d(i.dd_index_asOf)}</span>`;
+}
 function allocChip(){
   if(!ALLOC)return `<span class="scope">server allocation: no receipt — ⟳ DATA+RANKS computes one (older deploys: unavailable)</span>`;
-  const age=ageDays(String(ALLOC.at).slice(0,10));
-  const stamp=`receipt ${age===0?"today":age===null?"undated":age+"d old"}`;
+  const stamp=`receipt ${allocAgeTxt()}${ALLOC.business_date_et?` (${esc(ALLOC.business_date_et)} ET)`:""}`;
   const conf=ALLOC.confirmation?` · ✓ RECORDED ${esc(ALLOC.confirmation.action)} ${esc(ALLOC.confirmation.sym)} ${esc(String(ALLOC.confirmation.at).slice(0,10))} (intent only)`:"";
   if(ALLOC.state==="ALLOCATABLE")
     return `<span style="color:var(--green);font-weight:700">server: ALLOCATION CONTEXT READY — ${esc(ALLOC.eligible.sym)}</span> `+
-      `<span class="scope">· not a cash-availability or sizing claim · ${stamp}${conf}</span><br>${acctLine()}`;
+      `<span class="scope">· not a cash-availability or sizing claim · ${stamp}${conf}</span><br>${acctLine()}<br>${allocBasisLine()}`;
   if(ALLOC.state==="BUY_ELIGIBLE")
-    return `<span style="color:var(--amber);font-weight:700">server: BUY ELIGIBLE — ${esc(ALLOC.eligible.sym)}</span> <span class="scope">· ${esc(allocTrunc(ALLOC.context_blockers[0]||"context incomplete"))} · ${stamp}${conf}</span>`;
+    return `<span style="color:var(--amber);font-weight:700">server: BUY ELIGIBLE — ${esc(ALLOC.eligible.sym)}</span> <span class="scope">· ${esc(allocTrunc(ALLOC.context_blockers[0]||"context incomplete"))} · ${stamp}${conf}</span><br>${allocBasisLine()}`;
   if(ALLOC.state==="WAIT")
-    return `<span style="color:var(--amber)">server: WAIT — ${esc(allocTrunc((ALLOC.gate&&ALLOC.gate.reason)||"gate failed"))}</span> <span class="scope">${stamp}</span>`;
-  return `<span class="scope">server: no eligible name · ${stamp}${conf}</span>`;
+    return `<span style="color:var(--amber)">server: WAIT — ${esc(allocTrunc((ALLOC.gate&&ALLOC.gate.reason)||"gate failed"))}</span> <span class="scope">${stamp}</span><br>${allocBasisLine()}`;
+  return `<span class="scope">server: no eligible name · ${stamp}${conf}</span><br>${allocBasisLine()}`;
 }
 
 /* ═══════════ FEAT-TT-DDSTORE (v3.75) — thesis payloads live in their own KV ═══════════ */

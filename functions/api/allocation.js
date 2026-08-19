@@ -33,6 +33,7 @@
 import { authorize, crossOrigin } from "./tt.js";
 import { sha256Hex } from "../lib/tt-v2.js";
 import { evaluateAllocation, ALLOC_RULE_VERSION } from "../lib/tt-alloc.js";
+import { etYmd } from "../../src/sources.js";
 
 const CUR_KEY = "tt:alloc:v1";
 const HIST_PREFIX = "tt:alloc:history:";
@@ -107,9 +108,17 @@ async function evaluate(env, request, devReadout) {
   const input_hash = await sha256Hex({ ...basisOf(result), quotes: quoteStamps });
   const basis_hash = await sha256Hex(basisOf(result));
   const result_hash = await sha256Hex(result);
+  /* v4.1 Step 3: the receipt names its own ET identity. The client used to slice the UTC
+     instant to a date — a 01:07Z receipt (21:07 ET the prior business evening) read "today"
+     (8/18 audit, P1). at_et is human-readable ET; business_date_et is the ET calendar date
+     via the same etYmd clock every other time-judge in this stack uses. */
+  const at_et = now.toLocaleString("en-US", { timeZone: "America/New_York",
+    month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit", hour12: false }).replace(",", "") + " ET";
   return { receipt: {
     schema: "tt-alloc-receipt-v1",
     at: now.toISOString(),                      // server-stamped, never client
+    at_et,
+    business_date_et: etYmd(now),
     ...result,
     attestation: { input_hash, basis_hash, result_hash, rule_version: ALLOC_RULE_VERSION },
     confirmation: null,

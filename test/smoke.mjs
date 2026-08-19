@@ -7231,6 +7231,21 @@ console.log("\n[68] FEAT-TT-ALLOC — pure core, endpoint, and the §14.8 bar");
   ok("account: an unmeasured account is a STATED state on the chip, never an inferred zero",
     adminSrc.includes("account unmeasured — no synced broker record"));
 
+  // ── v4.1 Step 3: receipt age from the FULL timestamp; the basis line renders ──
+  ok("age: allocChip computes age in HOURS from the full instant — the UTC date slice is gone",
+    adminSrc.includes("function allocAgeTxt()") &&
+    !adminSrc.includes("ageDays(String(ALLOC.at).slice(0,10))"));
+  ok("age: a future-dated receipt is flagged, never rendered as a negative age",
+    /if\(h<-0\.5\)return "⚠ dated in the future";/.test(adminSrc));
+  ok("age: undated fails closed to 'undated', never 'today'",
+    /if\(!isFinite\(t\)\)return "undated";/.test(adminSrc));
+  ok("basis: the freshness line renders receipt/readout/positions/dd-index dates in EVERY chip state",
+    adminSrc.includes("function allocBasisLine()") &&
+    (adminSrc.match(/\$\{allocBasisLine\(\)\}/g) || []).length === 4 &&
+    adminSrc.includes("basis: receipt "));
+  ok("basis: a malformed input date reads 'undated', never a fabricated date",
+    /return \/\^\\d\{4\}-\\d\{2\}-\\d\{2\}\$\/\.test\(s\)\?s:"undated";/.test(adminSrc));
+
   // ── acceptance tests, executed ──
   const BOOK = { version: "9.0", asOf: TODAY, cut: ["OLD"], book: [
     { sym: "AAA", tier: "S", lens: "VEH", lastRun: TODAY }, { sym: "BBB", tier: "A", lens: "VEH" }],
@@ -7343,6 +7358,11 @@ console.log("\n[68] FEAT-TT-ALLOC — pure core, endpoint, and the §14.8 bar");
       [b1.receipt.attestation.input_hash, b1.receipt.attestation.basis_hash, b1.receipt.attestation.result_hash].every((h) => /^[0-9a-f]{64}$/.test(h)));
     ok("alloc ep: history key written BEFORE the pointer — a pointer can never exist without its immutable copy",
       puts[0].startsWith("tt:alloc:history:") && puts[1] === "tt:alloc:v1");
+    // v4.1 Step 3: the receipt names its own ET identity — a UTC instant sliced to a date
+    // called a 21:07-ET-yesterday receipt "today" (8/18 audit, P1).
+    ok("alloc ep: the receipt carries at_et and business_date_et from the etYmd clock",
+      /^\d{2}\/\d{2} \d{2}:\d{2} ET$/.test(b1.receipt.at_et) &&
+      b1.receipt.business_date_et === etYmd(new Date()));
     // basis vs input: a quote tick changes the audit identity, never the confirm basis
     store.set("tt:quote:AAA", JSON.stringify({ px: 102, at: TODAY + "T14:02:00Z" }));
     const p2 = await ep.onRequest({ request: rq("POST"), env });
