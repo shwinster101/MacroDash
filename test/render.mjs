@@ -1003,6 +1003,16 @@ const allocLive = await page.evaluate(() => {
   // qualifier, or the state reads as spending approval.
   ACCOUNT = { equity: 316711.76, cash: -286817.09, buying_power: 16149.66, debt: 286817.09,
     at: today + "T22:22:00Z", src: "rh" };
+  // v4.1 Step 5: the confirm affordance is withheld while the local stance reads stop —
+  // the fixture's tripped circuit exercised exactly that (a green confirm link under a
+  // tripped circuit was the two-answers defect). Clear the circuit to test the link, then
+  // restore to test the withhold.
+  const keepCirc = BOARD.circuit, keepReg = BOARD.regime;
+  BOARD.circuit = { state: "clear", as_of: today };
+  // The fixture's session also asserts PANIC — a second reason the pre-v4.1 link was a
+  // two-answers defect (green confirm under an asserted-PANIC stance). Neutralize both to
+  // test the affordance; each is restored to test its own withhold.
+  BOARD.regime = { asserted: "TAILWIND", as_of: today };
   ALLOC = { schema: "tt-alloc-receipt-v1", at: today + "T14:00:00Z", state: "ALLOCATABLE",
     gate: null, horizon: "2027", eligible: { sym: "AAA", y: "2027", tgt: 999, up: 20, ann: 15 },
     why_not: [], context_blockers: [],
@@ -1023,7 +1033,14 @@ const allocLive = await page.evaluate(() => {
     acctBeside: /acct: equity \$317k · cash -\$287k · BP \$16k · debt \$287k/.test(buy),
     confirmLink: document.getElementById("allocFundLink") !== null,
     confirmIntentOnly: /RECORD FUNDING INTENT — AAA · no order/.test(buy),
-    disagree: /server receipt: FFF first/.test(sell) };
+    disagree: /SERVER RECEIPT GOVERNS CONFIRMATION/.test(sell) && /server: FFF first/.test(sell) &&
+              /diagnostic shadows/.test(sell) };
+  // v4.1 Step 5: restore the tripped circuit — the same ALLOCATABLE receipt must now
+  // WITHHOLD the affordance because the local permission state moved against it.
+  BOARD.circuit = keepCirc; render();
+  out.withheldOnStop = document.getElementById("allocFundLink") === null &&
+    /confirmation withheld — local permission reads/.test(document.getElementById("buyBlock").innerText);
+  BOARD.circuit = { state: "clear", as_of: today }; render();
   // WAIT state: the gate reason renders, no confirm affordance survives.
   ALLOC = { ...ALLOC, state: "WAIT", eligible: null,
     gate: { rung: "flip", reason: "Macro Flip BLIND — missing inputs" }, confirmation: null };
@@ -1033,7 +1050,7 @@ const allocLive = await page.evaluate(() => {
   // No receipt at all (older deploy / never evaluated): stated, never blank.
   ALLOC = null; render();
   out.honest = /server allocation: no receipt/.test(document.getElementById("buyBlock").innerText);
-  ALLOC = prev; ACCOUNT = prevAcct; render();
+  ALLOC = prev; ACCOUNT = prevAcct; BOARD.circuit = keepCirc; BOARD.regime = keepReg; render();
   return out;
 });
 ok("alloc: the context-ready receipt renders the SAME chip at both altitudes (one builder)",
@@ -1050,6 +1067,8 @@ ok("alloc: WAIT renders the gate reason and withdraws the confirm affordance",
   allocLive.waitChip && allocLive.waitNoConfirm);
 ok("alloc: no receipt is a STATED state, never a blank surface",
   allocLive.honest);
+ok("alloc: a permission state that moved AGAINST the receipt withdraws the confirm affordance, saying why",
+  allocLive.withheldOnStop);
 
 console.log("\n[render] FEAT-TT-ESTRUN — the board expression inside NEXT DOLLAR");
 const estBoard = await txt(page, "estRunBoard");

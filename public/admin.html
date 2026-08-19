@@ -3788,6 +3788,23 @@ function allocPriceBasis(){
   if(e.live_px===false)return "stamped price";
   return "price basis unrecorded";
 }
+/* v4.1 Step 5: when does a stored receipt stop being confirmable? (a) it predates the
+   current ET business day — the world it bound to has rolled; (b) the client's own stance
+   currently reads stop/unknown — the permission state moved after the receipt was cut, and
+   a green link under a suspended stance would be the two-answers defect again. Server-side
+   binding (Step 6) re-checks all of this authoritatively at confirm time; this rule only
+   governs whether the AFFORDANCE renders at all. */
+function allocConfirmWithheld(){
+  if(!ALLOC)return "no receipt";
+  const et=new Date().toLocaleDateString("en-CA",{timeZone:"America/New_York"});
+  if(ALLOC.business_date_et&&ALLOC.business_date_et!==et)
+    return `receipt is from ${ALLOC.business_date_et}, not today — ⟳ DATA+RANKS for a current one`;
+  if(!ALLOC.business_date_et&&!isFinite(Date.parse(ALLOC.at)))return "receipt undated";
+  const stw=stance();
+  if(stw.k==="stop"||stw.k==="unknown")
+    return `local permission reads ${stw.verdict} — the receipt no longer matches the current state`;
+  return null;
+}
 function allocChip(){
   if(!ALLOC)return `<span class="scope">server allocation: no receipt — ⟳ DATA+RANKS computes one (older deploys: unavailable)</span>`;
   const stamp=`receipt ${allocAgeTxt()}${ALLOC.business_date_et?` (${esc(ALLOC.business_date_et)} ET)`:""}`;
@@ -5395,7 +5412,12 @@ function renderSellBlock(){
      the client's computed first (agreement would be a redundant line). */
   const serverFirst=ALLOC&&ALLOC.funding&&ALLOC.funding.rows&&ALLOC.funding.rows[0]&&ALLOC.funding.rows[0].sym;
   if(serverFirst&&computedFirst&&serverFirst!==computedFirst)
-    h+=`<div class="none" style="color:var(--amber)">⚖ server receipt: <b>${esc(serverFirst)}</b> first (${esc(allocTrunc(ALLOC.funding.rows[0].reason))}) · client: <b>${esc(computedFirst)}</b></div>`;
+    /* v4.1 Step 5: three readings can coexist (session order · client sellRank · server
+       receipt) and "disagreement is information" told the operator WHAT differed but never
+       WHICH answer is confirmable. The server receipt is canonical for ACTION; the client
+       and session readings stay as diagnostic shadows — married never merged for display,
+       but never presented as peer recommendations. */
+    h+=`<div class="none" style="color:var(--amber)"><b>SERVER RECEIPT GOVERNS CONFIRMATION</b> — server: <b>${esc(serverFirst)}</b> first (${esc(allocTrunc(ALLOC.funding.rows[0].reason))}) · <span class="scope">diagnostic shadows — client: ${esc(computedFirst)}${assertedFirst&&assertedFirst!==serverFirst?` · session: ${esc(assertedFirst)}`:""}</span></div>`;
   h+=`<div class="none">${allocChip()}</div>`;
   /* FEAT-TT-GLANCE (v3.61): methodology, the unranked tail and the tax disclaimer live ONE
      tap down. The COUNT stays on the closed summary — silent truncation reads as full
@@ -5474,10 +5496,16 @@ function renderBuyBlock(){
      married never merged. A split between the two lines is signal (stale receipt, drifted
      inputs, or a real logic divergence to investigate), never averaged away. The chip also
      carries the ALLOCATABLE→CONFIRM affordance: two-step (confirmLink), intent-only. */
+  /* v4.1 Step 5: only the SERVER candidate can expose confirmation, and only while the
+     receipt is current and the client's own permission read has not moved against it. A
+     receipt from a prior ET business date, or one rendered while the local stance reads
+     stop/unknown, withdraws the affordance and says why — never a silent green link. */
   h+=`<div class="none">${allocChip()}`+
-    (ALLOC&&ALLOC.state==="ALLOCATABLE"&&!ALLOC.confirmation
-      ?` · ${confirmLink("allocFundLink","RECORD FUNDING INTENT — "+ALLOC.eligible.sym+" · no order","allocDoFund")}`+
-        `<span class="scope"> · at ${esc(allocPriceBasis()||"price basis unrecorded")}</span>`:"")+`</div>`;
+    (()=>{if(!(ALLOC&&ALLOC.state==="ALLOCATABLE"&&!ALLOC.confirmation))return "";
+      const w=allocConfirmWithheld();
+      if(w)return `<span class="scope"> · confirmation withheld — ${esc(w)}</span>`;
+      return ` · ${confirmLink("allocFundLink","RECORD FUNDING INTENT — "+ALLOC.eligible.sym+" · no order","allocDoFund")}`+
+        `<span class="scope"> · at ${esc(allocPriceBasis()||"price basis unrecorded")}</span>`;})()+`</div>`;
   // v3.42 slice 2: while the first quote load is still in flight an empty rank is UNKNOWN,
   // not empty — skeleton rows hold the geometry so the board doesn't shift when data lands.
   // v3.76: "nothing to rank" is only true when there is also nothing REVIEWED to fall back

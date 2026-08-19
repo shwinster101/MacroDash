@@ -7258,6 +7258,20 @@ console.log("\n[68] FEAT-TT-ALLOC — pure core, endpoint, and the §14.8 bar");
     adminSrc.includes('pb==="live price"?"":"⚠ "') &&
     adminSrc.includes('at ${esc(allocPriceBasis()||"price basis unrecorded")}'));
 
+  // ── v4.1 Step 5: the server receipt is canonical for ACTION ──
+  ok("canonical: a funding disagreement names the governing answer, shadows labelled diagnostic",
+    adminSrc.includes("SERVER RECEIPT GOVERNS CONFIRMATION") &&
+    adminSrc.includes("diagnostic shadows — client:"));
+  ok("canonical: the confirm affordance is withheld on a prior-business-date receipt, saying so",
+    adminSrc.includes("function allocConfirmWithheld()") &&
+    adminSrc.includes("not today — ⟳ DATA+RANKS for a current one"));
+  ok("canonical: a local stance of stop/unknown withdraws the affordance — never a green link under a suspended state",
+    /if\(stw\.k==="stop"\|\|stw\.k==="unknown"\)/.test(adminSrc) &&
+    adminSrc.includes("the receipt no longer matches the current state"));
+  ok("canonical: only the server candidate can expose confirmation (one affordance id, gated by the withhold)",
+    (adminSrc.match(/allocFundLink/g) || []).length === 1 &&
+    adminSrc.includes("const w=allocConfirmWithheld();"));
+
   // ── acceptance tests, executed ──
   const BOOK = { version: "9.0", asOf: TODAY, cut: ["OLD"], book: [
     { sym: "AAA", tier: "S", lens: "VEH", lastRun: TODAY }, { sym: "BBB", tier: "A", lens: "VEH" }],
