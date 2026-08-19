@@ -972,7 +972,7 @@ ok("NVDA earnings: scenario, fundamentals, and ecosystem payloads are handled se
   adminSrc.includes("function ddScenarioSec") &&
   adminSrc.includes("function ddFundamentalsSec") &&
   adminSrc.includes("function ddEcosystemSec"));
-ok("NVDA earnings: 25x is rendered as a bull-case ceiling, not an active target",
+ok("NVDA earnings: 30x is rendered as a supercycle bull-case ceiling, not an active target",
   adminSrc.includes("bull multiple is not an active target") &&
   adminSrc.includes("isBull") &&
   adminSrc.includes("· ceiling"));
@@ -2597,11 +2597,11 @@ const nvdaEvidence = {
   ref_px: { px: 218.93 },
   valuation_scenarios: {
     as_of: "2026-08-19", forward_period: "FY2028", forward_eps: 12.83,
-    policy: "25x FY2028 P/E is the bull-case ceiling, not an active target",
+    policy: "30x FY2028 forward P/E is an owner override for the NVDA king-of-supercycle thesis, not an active target",
     cases: [
       { name: "Bear", multiple: 16, pt: 205.28 },
       { name: "Base", multiple: 20, pt: 256.60 },
-      { name: "Bull", multiple: 25, pt: 320.75 },
+      { name: "Bull", multiple: 30, pt: 384.90 },
     ],
   },
   fundamentals: {
@@ -2623,10 +2623,10 @@ const nvdaEvidence = {
 const nvdaScenarioHtml = renderNvdaEvidence.ddScenarioSec(nvdaEvidence);
 const nvdaFundamentalsHtml = renderNvdaEvidence.ddFundamentalsSec(nvdaEvidence);
 const nvdaEcosystemHtml = renderNvdaEvidence.ddEcosystemSec(nvdaEvidence);
-ok("NVDA earnings: scenario renderer prints 16x/20x/25x and $320.75",
+ok("NVDA earnings: scenario renderer prints 16x/20x/30x and $384.90",
   /16×/.test(nvdaScenarioHtml) && /20×/.test(nvdaScenarioHtml) &&
-  /25×/.test(nvdaScenarioHtml) && /\$320\.75/.test(nvdaScenarioHtml) &&
-  /ceiling/.test(nvdaScenarioHtml));
+  /30×/.test(nvdaScenarioHtml) && /\$384\.9/.test(nvdaScenarioHtml) &&
+  /ceiling/.test(nvdaScenarioHtml) && /king-of-supercycle/.test(nvdaScenarioHtml));
 ok("NVDA earnings: fundamentals renderer prints measured cash and net cash",
   /FUNDAMENTALS/.test(nvdaFundamentalsHtml) &&
   /53\.172/.test(nvdaFundamentalsHtml) && /40\.358/.test(nvdaFundamentalsHtml));
