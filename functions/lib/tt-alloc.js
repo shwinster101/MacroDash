@@ -154,6 +154,8 @@ export function evalBuyRow({ entry, idx, quote, board, horizon, now }) {
   const live = quote && isFinite(quote.px) ? quote.px : null;
   const stamp = idx.ref_px && isFinite(idx.ref_px.px) ? idx.ref_px.px : null;
   const px = live !== null ? live : stamp;
+  // v4.1 Step 4: the date under the price rides the row, so the basis can be DISCLOSED.
+  const px_at = live !== null ? ((quote && quote.at) || null) : ((idx.ref_px && idx.ref_px.at) || null);
   if (px === null) blockers.push("no usable price");
   else if (live === null) {
     const pd = ageDaysEt(idx.ref_px && idx.ref_px.at, now);
@@ -177,8 +179,19 @@ export function evalBuyRow({ entry, idx, quote, board, horizon, now }) {
   const ann = up !== null && r ? annualise(up, r.y, now) : null;
   const quality = idx.composite && (idx.composite.score ?? null) !== null
     ? { score: idx.composite.score, tier: idx.composite.raw_tier || null } : null;
-  return { sym, blockers, cautions, px, live: live !== null, tgt, y: r ? r.y : null,
+  return { sym, blockers, cautions, px, px_at, live: live !== null, tgt, y: r ? r.y : null,
     up, ann, quality, rolled: pk ? pk.rolled : null };
+}
+
+/* v4.1 Step 4: ONE price-basis vocabulary, shared by server and client (the receipt carries
+   the computed string, so the buildless client never re-derives it). The 8/18 audit found
+   eligible.live_px:false rendered NOWHERE — a green allocation state built on a stamped mark
+   disclosed nothing. A stamped mark is never relabelled live. */
+export function priceBasisOf(e) {
+  if (!e || e.px === null || e.px === undefined || !isFinite(Number(e.px))) return "no usable price";
+  const isLive = e.live === true || e.live_px === true;
+  if (isLive) return "live price";
+  return e.px_at ? "stamped price" : "stamped price — undated";
 }
 
 // The per-row veto ladder (admin why(r)), on the server row shape. null = eligible.
@@ -347,7 +360,11 @@ export function evaluateAllocation({ book, ddIndex, posDoc, quotes, readout, now
     },
     horizon,                     // computed, never asserted (D1)
     eligible: eligible ? { sym: eligible.sym, y: eligible.y, tgt: eligible.tgt, up: eligible.up,
-      ann: eligible.ann, live_px: eligible.live, cautions: eligible.cautions } : null,
+      ann: eligible.ann, live_px: eligible.live,
+      // v4.1 Step 4: the price the target was measured against, its date, and the basis —
+      // previously the price itself never left this function.
+      px: eligible.px, px_at: eligible.px_at, price_basis: priceBasisOf(eligible),
+      cautions: eligible.cautions } : null,
     why_not: whyNotTop,          // the top rows that did NOT take the line, reason each
     context_blockers,            // what separates BUY_ELIGIBLE from ALLOCATABLE, named
     funding,                     // {label: FIX-C verbatim, rows[{sym,tier,reason,...}], optOnly}

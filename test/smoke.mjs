@@ -7246,6 +7246,18 @@ console.log("\n[68] FEAT-TT-ALLOC — pure core, endpoint, and the §14.8 bar");
   ok("basis: a malformed input date reads 'undated', never a fabricated date",
     /return \/\^\\d\{4\}-\\d\{2\}-\\d\{2\}\$\/\.test\(s\)\?s:"undated";/.test(adminSrc));
 
+  // ── v4.1 Step 4: price basis — one vocabulary, disclosed wherever the eligible renders ──
+  ok("pxbasis: the four-state vocabulary is computed server-side and never relabels a stamp as live",
+    alloc.priceBasisOf({ px: 100, live: true }) === "live price" &&
+    alloc.priceBasisOf({ px: 100, live: false, px_at: TODAY }) === "stamped price" &&
+    alloc.priceBasisOf({ px: 100, live: false, px_at: null }) === "stamped price — undated" &&
+    alloc.priceBasisOf({ px: null }) === "no usable price" && alloc.priceBasisOf(null) === "no usable price");
+  ok("pxbasis: the client renders the server string, falls back on live_px for old receipts, and warns on stamped",
+    adminSrc.includes("function allocPriceBasis()") &&
+    adminSrc.includes('if(e.live_px===false)return "stamped price";') &&
+    adminSrc.includes('pb==="live price"?"":"⚠ "') &&
+    adminSrc.includes('at ${esc(allocPriceBasis()||"price basis unrecorded")}'));
+
   // ── acceptance tests, executed ──
   const BOOK = { version: "9.0", asOf: TODAY, cut: ["OLD"], book: [
     { sym: "AAA", tier: "S", lens: "VEH", lastRun: TODAY }, { sym: "BBB", tier: "A", lens: "VEH" }],
@@ -7283,6 +7295,13 @@ console.log("\n[68] FEAT-TT-ALLOC — pure core, endpoint, and the §14.8 bar");
       r.meaning === "context_complete_not_cash_or_sizing_approval"; })());
   ok("meaning: any non-ALLOCATABLE state carries meaning null — the field never over-claims",
     ev({ posDoc: null }).meaning === null);
+  ok("pxbasis: the eligible projection carries px, px_at and the computed basis string",
+    (() => { const r = ev(); return r.eligible && isFinite(r.eligible.px) &&
+      typeof r.eligible.price_basis === "string" &&
+      r.eligible.price_basis === alloc.priceBasisOf({ px: r.eligible.px, live: r.eligible.live_px, px_at: r.eligible.px_at }); })());
+  ok("pxbasis: a STAMPED eligible (no quote) declares stamped, never live",
+    (() => { const r = ev({ quotes: {} }); return r.eligible &&
+      r.eligible.live_px === false && /^stamped price/.test(r.eligible.price_basis); })());
   ok("alloc 6: missing lots never become a zero-tax assumption — lots:null, not {lt:0,st:0}",
     R.funding.rows.find((r) => r.sym === "BIG").lots === null &&
     (() => { const a = R.funding.rows.find((r) => r.sym === "AAA").lots; return a.lt_sh === 6 && a.st_sh === 4; })());

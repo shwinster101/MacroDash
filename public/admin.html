@@ -3777,15 +3777,28 @@ function allocBasisLine(){
   const d=(v)=>{const s=String(v||"").slice(0,10);return /^\d{4}-\d{2}-\d{2}$/.test(s)?s:"undated";};
   return `<span class="scope">basis: receipt ${esc(ALLOC.at_et||d(ALLOC.at))} · readout ${d(i.readout_as_of)} · positions ${d(i.positions_asOf)} · dd-index ${d(i.dd_index_asOf)}</span>`;
 }
+/* v4.1 Step 4: the price basis, disclosed wherever the eligible name renders. The server
+   computes the string (priceBasisOf in tt-alloc.js); a pre-v4.1 receipt without it falls
+   back to live_px, and a stamped mark is NEVER relabelled live. */
+function allocPriceBasis(){
+  const e=ALLOC&&ALLOC.eligible;
+  if(!e)return null;
+  if(e.price_basis)return e.price_basis;
+  if(e.live_px===true)return "live price";
+  if(e.live_px===false)return "stamped price";
+  return "price basis unrecorded";
+}
 function allocChip(){
   if(!ALLOC)return `<span class="scope">server allocation: no receipt — ⟳ DATA+RANKS computes one (older deploys: unavailable)</span>`;
   const stamp=`receipt ${allocAgeTxt()}${ALLOC.business_date_et?` (${esc(ALLOC.business_date_et)} ET)`:""}`;
+  const pb=allocPriceBasis();
+  const pbTxt=pb?` · ${pb==="live price"?"":"⚠ "}${esc(pb)}${ALLOC.eligible&&isFinite(Number(ALLOC.eligible.px))?` $${esc(ALLOC.eligible.px)}`:""}`:"";
   const conf=ALLOC.confirmation?` · ✓ RECORDED ${esc(ALLOC.confirmation.action)} ${esc(ALLOC.confirmation.sym)} ${esc(String(ALLOC.confirmation.at).slice(0,10))} (intent only)`:"";
   if(ALLOC.state==="ALLOCATABLE")
     return `<span style="color:var(--green);font-weight:700">server: ALLOCATION CONTEXT READY — ${esc(ALLOC.eligible.sym)}</span> `+
-      `<span class="scope">· not a cash-availability or sizing claim · ${stamp}${conf}</span><br>${acctLine()}<br>${allocBasisLine()}`;
+      `<span class="scope">· not a cash-availability or sizing claim${pbTxt} · ${stamp}${conf}</span><br>${acctLine()}<br>${allocBasisLine()}`;
   if(ALLOC.state==="BUY_ELIGIBLE")
-    return `<span style="color:var(--amber);font-weight:700">server: BUY ELIGIBLE — ${esc(ALLOC.eligible.sym)}</span> <span class="scope">· ${esc(allocTrunc(ALLOC.context_blockers[0]||"context incomplete"))} · ${stamp}${conf}</span><br>${allocBasisLine()}`;
+    return `<span style="color:var(--amber);font-weight:700">server: BUY ELIGIBLE — ${esc(ALLOC.eligible.sym)}</span> <span class="scope">· ${esc(allocTrunc(ALLOC.context_blockers[0]||"context incomplete"))}${pbTxt} · ${stamp}${conf}</span><br>${allocBasisLine()}`;
   if(ALLOC.state==="WAIT")
     return `<span style="color:var(--amber)">server: WAIT — ${esc(allocTrunc((ALLOC.gate&&ALLOC.gate.reason)||"gate failed"))}</span> <span class="scope">${stamp}</span><br>${allocBasisLine()}`;
   return `<span class="scope">server: no eligible name · ${stamp}${conf}</span><br>${allocBasisLine()}`;
@@ -5463,7 +5476,8 @@ function renderBuyBlock(){
      carries the ALLOCATABLE→CONFIRM affordance: two-step (confirmLink), intent-only. */
   h+=`<div class="none">${allocChip()}`+
     (ALLOC&&ALLOC.state==="ALLOCATABLE"&&!ALLOC.confirmation
-      ?` · ${confirmLink("allocFundLink","RECORD FUNDING INTENT — "+ALLOC.eligible.sym+" · no order","allocDoFund")}`:"")+`</div>`;
+      ?` · ${confirmLink("allocFundLink","RECORD FUNDING INTENT — "+ALLOC.eligible.sym+" · no order","allocDoFund")}`+
+        `<span class="scope"> · at ${esc(allocPriceBasis()||"price basis unrecorded")}</span>`:"")+`</div>`;
   // v3.42 slice 2: while the first quote load is still in flight an empty rank is UNKNOWN,
   // not empty — skeleton rows hold the geometry so the board doesn't shift when data lands.
   // v3.76: "nothing to rank" is only true when there is also nothing REVIEWED to fall back
