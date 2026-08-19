@@ -7380,8 +7380,9 @@ console.log("\n[68] FEAT-TT-ALLOC — pure core, endpoint, and the §14.8 bar");
   store.set("tt:pos:v1", JSON.stringify(POSDOC));
   store.set("tt:quote:AAA", JSON.stringify({ px: 101, at: TODAY + "T14:00:00Z" }));
   const realFetch = globalThis.fetch;
+  let LIVE_READOUT = READOUT;   // v4.1 Step 6: mutable so confirm-time re-binding can be driven
   try {
-    globalThis.fetch = async () => ({ ok: true, json: async () => READOUT });
+    globalThis.fetch = async () => ({ ok: true, json: async () => LIVE_READOUT });
     const g0 = await ep.onRequest({ request: rq("GET"), env });
     ok("alloc ep: GET with no receipt → 404, and GET never writes", g0.status === 404 && puts.length === 0);
     const p1 = await ep.onRequest({ request: rq("POST"), env });
@@ -7411,13 +7412,107 @@ console.log("\n[68] FEAT-TT-ALLOC — pure core, endpoint, and the §14.8 bar");
     ok("alloc ep: a wrong result_hash → 409 STALE_ALLOCATION with the server's copy",
       (await (async () => { const r = await ep.onRequest({ request: rq("POST", "?confirm=1", { intent: { action: "FUND", sym: "AAA" }, result_hash: "beef" }), env });
         const b = JSON.parse(await r.text()); return r.status === 409 && b.error === "STALE_ALLOCATION" && !!b.receipt; })()));
+    // v4.1 Step 6: the c1 confirm above marked the receipt — a fresh evaluate resets
+    // confirmation (per-receipt) so the snap-drift test reaches the basis check, not the
+    // idempotency rung. Same inputs → identical result_hash, so b2's hash stays valid.
+    await ep.onRequest({ request: rq("POST"), env });
     store.set("tt:pos:v1", JSON.stringify({ ...POSDOC, snap: "20269999999999999" }));
-    ok("alloc ep: a fresh sync (new snap) between evaluate and confirm → 409 STALE_ALLOCATION (recompute first)",
+    ok("alloc ep: a fresh sync (new snap) between evaluate and confirm → 409 STALE_ALLOCATION naming positions",
       (await (async () => { const r = await ep.onRequest({ request: rq("POST", "?confirm=1", { intent: { action: "FUND", sym: "AAA" }, result_hash: b2.receipt.attestation.result_hash }), env });
-        const b = JSON.parse(await r.text()); return r.status === 409 && /changed since/.test(b.reason); })()));
+        const b = JSON.parse(await r.text()); return r.status === 409 && /positions changed since/.test(b.reason); })()));
     ok("alloc ep: an invented amount is rejected — amount_usd is owner-supplied or absent",
       (await (async () => { const r = await ep.onRequest({ request: rq("POST", "?confirm=1", { intent: { action: "FUND", sym: "AAA", amount_usd: -5 }, result_hash: "x" }), env });
         return r.status === 400; })()));
+
+    // ── v4.1 Step 6: confirmation bound to the candidate + the current world ──
+    const cf = (body) => ep.onRequest({ request: rq("POST", "?confirm=1", body), env });
+    const cfB = async (body) => { const r = await cf(body); return { status: r.status, b: JSON.parse(await r.text()) }; };
+    store.set("tt:pos:v1", JSON.stringify(POSDOC));   // restore the snap
+    const p4 = await ep.onRequest({ request: rq("POST"), env });
+    const b4 = JSON.parse(await p4.text());
+    const RH = b4.receipt.attestation.result_hash;
+    ok("cfm: idempotency — the first confirm lands, a second without supersede → 409 ALREADY_CONFIRMED",
+      (await (async () => {
+        const one = await cfB({ intent: { action: "FUND", sym: "AAA" }, result_hash: RH });
+        const two = await cfB({ intent: { action: "FUND", sym: "AAA" }, result_hash: RH });
+        return one.status === 200 && two.status === 409 && two.b.error === "ALREADY_CONFIRMED" &&
+          /intents are immutable/.test(two.b.reason); })()));
+    ok("cfm: supersede:true records a NEW immutable intent naming what it supersedes — nothing is edited",
+      (await (async () => {
+        const before = [...store.keys()].filter((k) => k.startsWith("tt:alloc:intent:v1:")).length;
+        const cur0 = JSON.parse(store.get("tt:alloc:v1"));
+        const sup = await cfB({ intent: { action: "FUND", sym: "AAA" }, result_hash: RH, supersede: true });
+        const after = [...store.keys()].filter((k) => k.startsWith("tt:alloc:intent:v1:")).length;
+        return sup.status === 200 && after === before + 1 &&
+          sup.b.receipt.confirmation.supersedes === cur0.confirmation.id; })()));
+    await ep.onRequest({ request: rq("POST"), env });   // fresh unconfirmed receipt
+    ok("cfm: FUND must name the receipt's own eligible candidate — a substitute sym → 409 INTENT_MISMATCH",
+      (await (async () => { const r = await cfB({ intent: { action: "FUND", sym: "BBB" }, result_hash: RH });
+        return r.status === 409 && r.b.error === "INTENT_MISMATCH" && /eligible candidate is AAA/.test(r.b.reason); })()));
+    ok("cfm: TRIM must name a funding-ranking row — an unranked sym → 409 INTENT_MISMATCH",
+      (await (async () => { const r = await cfB({ intent: { action: "TRIM", sym: "ZZZ" }, result_hash: RH });
+        return r.status === 409 && /not in the receipt's funding ranking/.test(r.b.reason); })()));
+    ok("cfm: an options-only sleeve TRIM needs the explicit flag — legs are not shares (v3.44)",
+      (await (async () => {
+        const bare = await cfB({ intent: { action: "TRIM", sym: "OPT" }, result_hash: RH });
+        const flagged = await cfB({ intent: { action: "TRIM", sym: "OPT", options_sleeve: true }, result_hash: RH });
+        return bare.status === 409 && /options-only sleeve/.test(bare.b.reason) && flagged.status === 200; })()));
+    // The macro axis unfrozen: same day, changed readout body — each drift NAMED.
+    const freshEval = async () => { await ep.onRequest({ request: rq("POST"), env });
+      return JSON.parse(store.get("tt:alloc:v1")).attestation.result_hash; };
+    ok("cfm: actionability moved since evaluate → 409 naming the evidence axis (the intraday freeze, closed)",
+      (await (async () => { const h = await freshEval();
+        LIVE_READOUT = { ...READOUT, regime: { ...READOUT.regime, actionability: "RESTRICTED", status: "PARTIAL DATA" } };
+        const r = await cfB({ intent: { action: "FUND", sym: "AAA" }, result_hash: h });
+        LIVE_READOUT = READOUT;
+        return r.status === 409 && /actionability is now RESTRICTED/.test(r.b.reason); })()));
+    ok("cfm: the flip tripping since evaluate → 409 naming the flip — a FUND can never ride a pre-crash receipt",
+      (await (async () => { const h = await freshEval();
+        LIVE_READOUT = { ...READOUT, macro_flip: { evaluable: true, armed: true, tripped: true } };
+        const r = await cfB({ intent: { action: "FUND", sym: "AAA" }, result_hash: h });
+        LIVE_READOUT = READOUT;
+        return r.status === 409 && /Macro Flip TRIPPED since/.test(r.b.reason); })()));
+    ok("cfm: the readout day rolling since evaluate → 409 naming both days",
+      (await (async () => { const h = await freshEval();
+        LIVE_READOUT = { ...READOUT, as_of: "2099-01-01" };
+        const r = await cfB({ intent: { action: "FUND", sym: "AAA" }, result_hash: h });
+        LIVE_READOUT = READOUT;
+        return r.status === 409 && /day rolled/.test(r.b.reason); })()));
+    ok("cfm: a same-day readout REBUILD with clean semantics still 409s — the body-hash catch-all",
+      (await (async () => { const h = await freshEval();
+        LIVE_READOUT = { ...READOUT, checks: [{ extra: 1 }] };
+        const r = await cfB({ intent: { action: "FUND", sym: "AAA" }, result_hash: h });
+        LIVE_READOUT = READOUT;
+        return r.status === 409 && /rebuilt since this was evaluated/.test(r.b.reason); })()));
+    ok("cfm: readout unreachable at confirm time fails CLOSED — never a default-to-clear",
+      (await (async () => { const h = await freshEval();
+        globalThis.fetch = async () => { throw new Error("down"); };
+        const r = await cfB({ intent: { action: "FUND", sym: "AAA" }, result_hash: h });
+        globalThis.fetch = async () => ({ ok: true, json: async () => LIVE_READOUT });
+        return r.status === 409 && /unreadable at confirm time/.test(r.b.reason); })()));
+    ok("cfm: a WAIT receipt cannot take a FUND — and a TRIM on the same receipt still lands (deleverage is never blocked by the stress that makes it urgent)",
+      (await (async () => {
+        globalThis.fetch = async () => { throw new Error("down"); };   // evaluate under a dead feed → WAIT
+        await ep.onRequest({ request: rq("POST"), env });
+        const h = JSON.parse(store.get("tt:alloc:v1")).attestation.result_hash;
+        const fund = await cfB({ intent: { action: "FUND", sym: "AAA" }, result_hash: h });
+        const trim = await cfB({ intent: { action: "TRIM", sym: "CCC" }, result_hash: h });
+        globalThis.fetch = async () => ({ ok: true, json: async () => LIVE_READOUT });
+        return fund.status === 409 && fund.b.error === "INTENT_MISMATCH" && /receipt state is WAIT/.test(fund.b.reason) &&
+          trim.status === 200; })()));
+    ok("cfm: the circuit re-resolves at confirm — a trip after evaluate vetoes the FUND even with book_version unchanged",
+      (await (async () => { const h = await freshEval();
+        store.set("tt:book:v1", JSON.stringify({ ...BOOK, board: { ...BOOK.board, circuit: { state: "tripped", as_of: TODAY } } }));
+        const r = await cfB({ intent: { action: "FUND", sym: "AAA" }, result_hash: h });
+        store.set("tt:book:v1", JSON.stringify(BOOK));
+        return r.status === 409 && /circuit now reads TRIPPED/.test(r.b.reason); })()));
+    ok("cfm: a legacy receipt with no readout_hash fails toward recompute, never toward an unbound confirm",
+      (await (async () => { await freshEval();
+        const cur0 = JSON.parse(store.get("tt:alloc:v1"));
+        delete cur0.inputs.readout_hash;
+        store.set("tt:alloc:v1", JSON.stringify(cur0));
+        const r = await cfB({ intent: { action: "FUND", sym: "AAA" }, result_hash: cur0.attestation.result_hash });
+        return r.status === 409 && /predates confirm-time readout binding/.test(r.b.reason); })()));
   } finally { globalThis.fetch = realFetch; }
 }
 
