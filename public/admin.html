@@ -1208,8 +1208,15 @@ function sessSec(el,html){
 /* ── the leverage circuit ── gates every add, so it renders ABOVE the next dollar ── */
 function renderCircuit(){
   const c=BOARD.circuit;
-  if(!c||typeof c!=="object")return sessSec("circuitLine","");
-  const st=String(c.state||"").toLowerCase();
+  /* FEAT-TT-CIRCUIT (v4.1): absence used to HIDE the strip entirely, so the one state that
+     suspends every add was also the one state with no pixels. Unresolved renders loud. */
+  const csr=circuitStateCli(c);
+  if(csr.st==="unresolved")
+    return sessSec("circuitLine",
+      `<div class="lbl">Leverage circuit</div>`+
+      `<div style="color:var(--amber);font-weight:700;font-size:12px;margin-top:3px">○ CIRCUIT UNRESOLVED — adds suspended</div>`+
+      `<div class="none" style="margin-top:3px">${esc(csr.reason)}</div>`);
+  const st=csr.st;
   const col=st==="tripped"?"var(--red)":st==="armed"?"var(--amber)":"var(--green)";
   const glyph=st==="tripped"?"⛔":st==="armed"?"⚠":"●";
   let h=`<div class="lbl">Leverage circuit${c.id?` · ${esc(c.id)}`:""}</div>`+
@@ -1495,13 +1502,43 @@ function renderRollup(){
 const MOVE_PCT=5;                       // a day move worth waking someone for
 const SEEN_KEY="tt:seen:v1";
 const SEEN_MAX_D=7;                     // a baseline older than this is noise, not a diff
+/* FEAT-TT-CIRCUIT (v4.1 Step 1): the structured circuit is CANONICAL, and absence fails
+   CLOSED. The 8/18 audit's P0: board prose said "presumed tripped" while board.circuit was
+   null — and null read as not-tripped here, so the stance could show ADDS OK against the
+   session's own written intent. Absence / malformed / undated / stale clear|armed are all
+   UNRESOLVED → ADDS SUSPENDED, reason named. `tripped` NEVER expires into clear (the v3.40
+   asymmetry: stale bearishness survives, stale permission does not).
+   MIRROR of circuitState() in functions/lib/tt-alloc.js — admin is buildless, so the copy is
+   pinned by smoke (the CAP_PCT mirror convention). */
+const CIRCUIT_STALE_D=7;   // mirror of functions/lib/tt-alloc.js
+function circuitStateCli(c){
+  if(!c||typeof c!=="object"||Array.isArray(c))
+    return{st:"unresolved",age:null,reason:"no structured circuit record on the board — session prose is explanation, not permission"};
+  const st=String(c.state||"").toLowerCase();
+  if(!["clear","armed","tripped"].includes(st))
+    return{st:"unresolved",age:null,reason:`circuit state "${c.state}" is not clear|armed|tripped`};
+  const age=ageDays(String(c.as_of||"").slice(0,10));
+  if(st==="tripped")   // fail-safe direction: an old or undated trip still trips
+    return{st,age,reason:age===null?"tripped — state undated; still binding until a live pull disproves it":null};
+  if(age===null)
+    return{st:"unresolved",age,reason:`circuit ${st.toUpperCase()} is undated — an undated permission reads as unresolved, never as current`};
+  if(age<0)
+    return{st:"unresolved",age,reason:`circuit ${st.toUpperCase()} is dated in the future — cannot be judged`};
+  if(age>CIRCUIT_STALE_D)
+    return{st:"unresolved",age,reason:`circuit ${st.toUpperCase()} asserted ${age}d ago (limit ${CIRCUIT_STALE_D}d) — stale permission is not evidence of safety; re-assert it in ◧ SESSION`};
+  return{st,age,reason:null};
+}
 /* Stance: the ONE line that says whether capital may move today. The circuit outranks the
    regime because it is a portfolio fact, not a market read — no macro verdict un-trips it. */
 function stance(){
-  const st=String(BOARD.circuit&&BOARD.circuit.state).toLowerCase();
+  const cs=circuitStateCli(BOARD.circuit);
+  const st=cs.st;
   if(st==="tripped")return{k:"stop",txt:"NO NEW POSITIONS — leverage circuit tripped",
     why:(BOARD.circuit&&BOARD.circuit.rule)||"deleverage-only until a live pull disproves it",
     verdict:"NO NEW POSITIONS",quals:[{t:"circuit TRIPPED",c:"bad"}]};
+  if(st==="unresolved")return{k:"stop",txt:"ADDS SUSPENDED — circuit state unresolved",
+    why:cs.reason+" — set the structured circuit in ◧ SESSION before any add",
+    verdict:"ADDS SUSPENDED",quals:[{t:"circuit UNRESOLVED",c:"bad"}]};
   const{measured,asserted,gov,ranked,disagree,actionability,canGate,macroFlip}=governingRegime();
   if(!ranked)
     return{k:"unknown",txt:"STANCE UNKNOWN — no measured or asserted regime",
@@ -3384,7 +3421,10 @@ function governingRegime(){
   const macroFlip=REGIME&&REGIME.macro_flip;
   return{measured,asserted,gov,ar,actionability,canGate,macroFlip,
     ranked:!(mR===undefined&&aR===undefined),
-    disagree:!!(measured&&asserted&&measured!==asserted)};
+    // FEAT-TT-CIRCUIT (v4.1): a disagreement exists only between two RANKED readings. A long
+    // free-text session narrative ("DEMAND CONFIRMED…") is not the opposite of TAILWIND —
+    // comparing prose against a verdict rendered context as an engine conflict (8/18 audit).
+    disagree:!!(measured&&asserted&&mR!==undefined&&aR!==undefined&&measured!==asserted)};
 }
 function regimeModifier(){
   const{measured,asserted,gov,ar}=governingRegime();
@@ -3405,6 +3445,10 @@ function regimeModifier(){
       h+=`<div class="none" style="color:var(--amber)">⚖ session reads <b>${aShort}</b> — MacroDash unavailable, nothing measured confirms it</div>`+full;
     else if(REG_RANK[measured]===undefined)
       h+=`<div class="none" style="color:var(--amber)">⚖ session reads <b>${aShort}</b> · MacroDash returned ${esc(measured)} — unconfirmed, don't gate on the measured side</div>`+full;
+    else if(REG_RANK[asserted]===undefined)
+      // FEAT-TT-CIRCUIT (v4.1): unranked session prose is CONTEXT, never an engine
+      // disagreement — it cannot be compared against TAILWIND|NEUTRAL|HEADWIND|PANIC.
+      h+=`<div class="none">◳ session note — <b>${aShort}</b> <span class="scope">· not a ranked regime; measured <b>${esc(measured)}</b> governs alone</span></div>`+full;
     else if(asserted!==measured)
       h+=`<div class="none" style="color:var(--amber)">⚖ engines disagree — measured <b>${esc(measured)}</b> vs asserted <b>${aShort}</b> · the stricter (<b>${esc(gov)}</b>) governs; disagreement is information, not an average</div>`+full;
     else

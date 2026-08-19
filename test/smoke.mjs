@@ -7147,29 +7147,77 @@ console.log("\n[68] FEAT-TT-ALLOC — pure core, endpoint, and the §14.8 bar");
     macro_flip: { evaluable: true, armed: false, tripped: false } };
 
   // ── the gate ladder, rung by rung (fail closed at every altitude) ──
-  const lad = (board, readout) => alloc.allocGateLadder({ board, readout });
+  // FEAT-TT-CIRCUIT (v4.1): a structured circuit is now REQUIRED before the later rungs can
+  // even be reached, so every fixture past the circuit rung carries a fresh clear one.
+  const CIRC = { state: "clear", as_of: TODAY };
+  const lad = (board, readout) => alloc.allocGateLadder({ board, readout, now: NOW });
   ok("alloc gate: circuit tripped vetoes FIRST — no per-name score clears deleverage-only",
     lad({ circuit: { state: "tripped" }, regime: { asserted: "TAILWIND" } }, READOUT).rung === "circuit");
   ok("alloc gate: no measured OR asserted regime → stance UNKNOWN (a live read is mandatory)",
-    lad({}, null).rung === "stance" && /stance UNKNOWN/.test(lad({}, null).reason));
+    lad({ circuit: CIRC }, null).rung === "stance" && /stance UNKNOWN/.test(lad({ circuit: CIRC }, null).reason));
   ok("alloc gate: PANIC governs even when only ASSERTED (stricter governs — married never merged)",
-    /PANIC/.test(lad({ regime: { asserted: "PANIC" } }, READOUT).reason));
+    /PANIC/.test(lad({ circuit: CIRC, regime: { asserted: "PANIC" } }, READOUT).reason));
   ok("alloc gate: readout absent after a ranked stance → feed veto, never default-to-clear",
-    lad({ regime: { asserted: "TAILWIND" } }, null).rung === "feed");
+    lad({ circuit: CIRC, regime: { asserted: "TAILWIND" } }, null).rung === "feed");
   ok("alloc gate: actionability missing and non-FULL each veto (the ENGINE0-CONT rung)",
-    lad({}, { ...READOUT, regime: { verdict: "TAILWIND" } }).rung === "actionability" &&
-    /HOLD/.test(lad({}, { ...READOUT, regime: { verdict: "NEUTRAL", actionability: "HOLD", status: "DATA DEGRADED" } }).reason));
+    lad({ circuit: CIRC }, { ...READOUT, regime: { verdict: "TAILWIND" } }).rung === "actionability" &&
+    /HOLD/.test(lad({ circuit: CIRC }, { ...READOUT, regime: { verdict: "NEUTRAL", actionability: "HOLD", status: "DATA DEGRADED" } }).reason));
   ok("alloc gate: Macro Flip absent / blind / tripped each veto with the reason named",
-    lad({}, { ...READOUT, macro_flip: undefined }).rung === "flip" &&
-    /BLIND|missing/i.test(lad({}, { ...READOUT, macro_flip: { evaluable: false, reason: "vix MISSING" } }).reason) &&
-    /TRIPPED/.test(lad({}, { ...READOUT, macro_flip: { evaluable: true, tripped: true } }).reason));
+    lad({ circuit: CIRC }, { ...READOUT, macro_flip: undefined }).rung === "flip" &&
+    /BLIND|missing/i.test(lad({ circuit: CIRC }, { ...READOUT, macro_flip: { evaluable: false, reason: "vix MISSING" } }).reason) &&
+    /TRIPPED/.test(lad({ circuit: CIRC }, { ...READOUT, macro_flip: { evaluable: true, tripped: true } }).reason));
   ok("alloc gate: every gate reading clean → null (the ladder can actually pass)",
-    lad({ regime: { asserted: "TAILWIND" } }, READOUT) === null);
+    lad({ circuit: CIRC, regime: { asserted: "TAILWIND" } }, READOUT) === null);
+
+  // ── FEAT-TT-CIRCUIT (v4.1 Step 1): the structured circuit is canonical; absence fails closed ──
+  // The 8/18 audit's P0, executed: the live board carried "presumed tripped" PROSE beside
+  // circuit:null, and null read as not-tripped everywhere — both sides permitted allocation.
+  const cst = (c, at) => alloc.circuitState(c, at || NOW);
+  ok("circuit: ABSENT is unresolved — prose is explanation, not permission",
+    cst(undefined).st === "unresolved" && /prose is explanation, not permission/.test(cst(null).reason));
+  ok("circuit: an unknown state string is unresolved, never coerced into an enum",
+    cst({ state: "presumed tripped", as_of: TODAY }).st === "unresolved");
+  ok("circuit: undated clear is unresolved — an undated permission never reads as current",
+    cst({ state: "clear" }).st === "unresolved" && /undated/.test(cst({ state: "clear" }).reason));
+  // Fixture dates are ET-calendar arithmetic, NOT utc-now minus N days: at ET evening the
+  // two calendars differ by a day, and the boundary assert would drift (the very defect
+  // class Step 3 of this sprint fixes in allocChip).
+  const etDay = (n) => new Date(new Date(TODAY + "T12:00:00Z").getTime() + n * 86400000).toISOString().slice(0, 10);
+  ok("circuit: a future-dated record cannot be judged",
+    cst({ state: "clear", as_of: etDay(3) }).st === "unresolved");
+  ok("circuit: fresh clear resolves clear; the boundary day (exactly CIRCUIT_STALE_D) still resolves",
+    cst({ state: "clear", as_of: TODAY }).st === "clear" &&
+    cst({ state: "clear", as_of: etDay(-alloc.CIRCUIT_STALE_D) }).st === "clear");
+  ok("circuit: clear ONE DAY past the limit degrades to unresolved — stale permission is not evidence of safety",
+    (() => { const r = cst({ state: "clear", as_of: etDay(-(alloc.CIRCUIT_STALE_D + 1)) });
+      return r.st === "unresolved" && /stale permission/.test(r.reason); })());
+  ok("circuit: TRIPPED never expires into clear — a 30d-old or undated trip still trips (v3.40 asymmetry)",
+    cst({ state: "tripped", as_of: etDay(-30) }).st === "tripped" && cst({ state: "tripped" }).st === "tripped");
+  ok("alloc gate: an unresolved circuit is a NAMED circuit veto pointing at ◧ SESSION",
+    (() => { const g = lad({}, READOUT);
+      return g.rung === "circuit" && /unresolved/.test(g.reason) && /◧ SESSION/.test(g.reason); })());
+  ok("alloc gate: ARMED is a caution, never a veto — the ladder passes and the receipt carries it",
+    lad({ circuit: { state: "armed", as_of: TODAY }, regime: { asserted: "TAILWIND" } }, READOUT) === null);
+  ok("circuit mirror: CIRCUIT_STALE_D — the alloc core and the buildless client literal agree",
+    adminSrc.includes(`const CIRCUIT_STALE_D=${alloc.CIRCUIT_STALE_D};`) && alloc.CIRCUIT_STALE_D === 7);
+  ok("circuit mirror: the client resolver exists with the same unresolved vocabulary",
+    adminSrc.includes("function circuitStateCli(c)") &&
+    adminSrc.includes("session prose is explanation, not permission") &&
+    adminSrc.includes('tripped — state undated; still binding until a live pull disproves it'));
+  ok("stance: unresolved circuit is a STOP before any regime rung, pointing at ◧ SESSION",
+    /if\(st==="unresolved"\)return\{k:"stop",txt:"ADDS SUSPENDED — circuit state unresolved"/.test(adminSrc) &&
+    /set the structured circuit in ◧ SESSION before any add/.test(adminSrc));
+  ok("renderCircuit: absence renders the UNRESOLVED strip — the state that suspends adds can never be the one with no pixels",
+    adminSrc.includes("○ CIRCUIT UNRESOLVED — adds suspended") &&
+    !/if\(!c\|\|typeof c!=="object"\)return sessSec\("circuitLine",""\)/.test(adminSrc));
+  ok("prose is context: disagree requires BOTH readings ranked (a narrative is not the opposite of TAILWIND)",
+    adminSrc.includes("mR!==undefined&&aR!==undefined&&measured!==asserted") &&
+    adminSrc.includes("not a ranked regime; measured <b>"));
 
   // ── acceptance tests, executed ──
   const BOOK = { version: "9.0", asOf: TODAY, cut: ["OLD"], book: [
     { sym: "AAA", tier: "S", lens: "VEH", lastRun: TODAY }, { sym: "BBB", tier: "A", lens: "VEH" }],
-    board: { as_of: TODAY, regime: { asserted: "TAILWIND" },
+    board: { as_of: TODAY, regime: { asserted: "TAILWIND" }, circuit: { state: "clear", as_of: TODAY },
       decisions: [{ q: "exit now", sym: "CCC", forced_exit: true }],
       funding: { order: [{ sym: "BBB" }], do_not_trim: ["AAA"] } } };
   const IDX = { asOf: TODAY, entries: { AAA: mkIdx(), BBB: mkIdx({ pt_model: null, consensus: null, composite: null, hinges: [] }) } };

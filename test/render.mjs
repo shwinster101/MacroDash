@@ -748,6 +748,24 @@ ok("buy: compact block carries the veto banner and the same canonical ranked row
   /NO NEW POSITIONS/.test(buyB) && /AAA/.test(buyB) && /13\.4%\*/.test(buyB));
 const calB = await txt(page, "calBlock");
 ok("calendar block leads with today's binary", /TODAY/.test(calB) && /MACROEVT/.test(calB));
+// FEAT-TT-CIRCUIT (v4.1 Step 1): the fail-closed path, driven live. Clearing the structured
+// circuit in-page must flip the stance to ADDS SUSPENDED (not fall through to the regime
+// rungs and read ADDS OK/GATED) and render the UNRESOLVED strip instead of hiding it —
+// the 8/18 audit's live defect, where circuit:null + tripped PROSE still permitted adds.
+const unresolved = await page.evaluate(() => {
+  const keep = BOARD.circuit;
+  BOARD.circuit = null;
+  render();
+  const strip = document.getElementById("stanceStrip").innerText;
+  const circ = (document.getElementById("circuitLine") || {}).innerText || "";
+  BOARD.circuit = keep; render();
+  return { strip, circ };
+});
+ok("circuit absent → stance fails CLOSED to ADDS SUSPENDED, never through to the regime rungs",
+  /ADDS SUSPENDED/.test(unresolved.strip) && !/ADDS OK|ADDS GATED/.test(unresolved.strip));
+ok("circuit absent → the UNRESOLVED strip renders loud instead of hiding",
+  /CIRCUIT UNRESOLVED — adds suspended/i.test(unresolved.circ) &&
+  /prose is explanation, not permission/i.test(unresolved.circ));
 const strip = await txt(page, "stanceStrip");
 ok("stance strip carries the red counts while DESK is closed",
   /over cap/.test(strip) && /binaries/.test(strip));
