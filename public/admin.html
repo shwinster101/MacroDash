@@ -2711,6 +2711,7 @@ const DD_HANDLED=new Set(["ticker","name","thesis_version","updated","as_of","ti
   "pt_ladder","pt_model","pt_consensus","consensus","gates","hinges","leading_indicators","cert_probabilities","utilization_underwriting","capital",
   "dilution_grid","engine","pt_2040","kill_combination","key_dates","position","model_anchors","conditional_rules",
   "linked_exposure","status_flags","tape","watchlist_unlocks","hedges","rules","open_items","telemetry","capex_exposure","tokens_per_watt",
+  "valuation_scenarios","fundamentals","ecosystem_overlay",
   // v3.73 TT-SCORE: composite renders inside the score panel as LEGACY / UNVERIFIED — one
   // home, not the unknown-fields drawer. (falsifiers_v2_draft deliberately NOT handled:
   // staged pre-commitment content stays visible in OTHER STORED FIELDS until promoted.)
@@ -3003,7 +3004,58 @@ function ddAnswerBlock(x,dd,todayET){
   return `<div class="dd-answer">${cell("What it's worth",w)}${cell("What changes my mind",mind)}`+
     `${cell("When",when)}${cell("What I own",own)}</div>`;
 }
-/* FEAT-TT-OWNDEBT (v3.35): the option legs the broker sync measured, as a real table.
+function ddScenarioSec(dd){
+  const s=dd&&dd.valuation_scenarios;
+  if(!s||typeof s!=="object")return "";
+  const eps=Number(s.forward_eps),period=s.forward_period||"forward";
+  const cases=Array.isArray(s.cases)?s.cases:[];
+  if(!Number.isFinite(eps)||!cases.length)return "";
+  const mark=dd.ref_px&&Number.isFinite(Number(dd.ref_px.px))?Number(dd.ref_px.px):null;
+  let t=`<div class="tblx"><table class="dd-pt"><tr><th>case</th><th>fwd P/E</th><th>PT</th><th>vs mark</th><th>condition</th></tr>`;
+  cases.forEach(c=>{
+    const mult=Number(c.multiple),pt=Number.isFinite(Number(c.pt))?Number(c.pt):(Number.isFinite(mult)?eps*mult:null);
+    const up=mark!==null&&pt!==null?Math.round((pt/mark-1)*1000)/10:null;
+    const name=String(c.name||c.case||"case"),isBull=/bull/i.test(name);
+    t+=`<tr><th>${esc(name)}${isBull?` <span style="color:var(--amber)">· ceiling</span>`:""}</th>`+
+      `<td>${Number.isFinite(mult)?esc(mult)+"×":"—"}</td><td>${pt!==null?"$"+esc(Math.round(pt*100)/100):"—"}</td>`+
+      `<td style="color:${up===null?"var(--dim)":up>=0?"var(--green)":"var(--red)"}">${up===null?"—":(up>=0?"+":"")+up+"%"}</td>`+
+      `<td>${esc(c.condition||c.trigger||"")}</td></tr>`;
+  });
+  t+=`</table></div>`;
+  return `<div class="dd-sec"><div class="lbl">SCENARIO PT · canonical · ${esc(period)} EPS $${esc(eps)} · ${esc(s.as_of||s.asOf||"")}</div>${t}`+
+    `<div class="none" style="color:var(--amber);margin-top:4px">${esc(s.policy||"Scenarios are conditional; the bull multiple is not an active target until the next earnings print validates the assumptions.")}</div>`+
+    (s.source?`<div class="none" style="color:var(--dim);margin-top:3px">source: ${esc(s.source)}</div>`:"")+`</div>`;
+}
+function ddFundamentalsSec(dd){
+  const f=dd&&dd.fundamentals;
+  if(!f||typeof f!=="object")return "";
+  const i=f.income_statement||{},b=f.balance_sheet||{};
+  const rows=[
+    ["TTM revenue",i.revenue_B!=null?`$${i.revenue_B}B`:null],["Gross profit",i.gross_profit_B!=null?`$${i.gross_profit_B}B`:null],
+    ["Operating income",i.operating_income_B!=null?`$${i.operating_income_B}B`:null],["Net income",i.net_income_B!=null?`$${i.net_income_B}B`:null],
+    ["R&D",i.rd_B!=null?`$${i.rd_B}B`:null],["Gross margin",i.gross_margin_pct!=null?`${i.gross_margin_pct}%`:null],
+    ["Operating margin",i.operating_margin_pct!=null?`${i.operating_margin_pct}%`:null],["Net margin",i.net_margin_pct!=null?`${i.net_margin_pct}%`:null],
+    ["Cash + short-term investments",b.cash_st_investments_B!=null?`$${b.cash_st_investments_B}B`:null],
+    ["Current liabilities",b.current_liabilities_B!=null?`$${b.current_liabilities_B}B`:null],["Current debt",b.current_debt_B!=null?`$${b.current_debt_B}B`:null],["Long-term debt",b.long_term_debt_B!=null?`$${b.long_term_debt_B}B`:null],["Lease obligations",b.lease_obligations_B!=null?`$${b.lease_obligations_B}B`:null],
+    ["Net cash after leases",b.net_cash_after_leases_B!=null?`$${b.net_cash_after_leases_B}B`:null],["Current ratio",b.current_ratio!=null?`${b.current_ratio}×`:null]
+  ].filter(r=>r[1]!=null);
+  if(!rows.length)return "";
+  return `<div class="dd-sec"><div class="lbl">FUNDAMENTALS · measured · ${esc(f.as_of||"")}</div>`+
+    rows.map(r=>`<div class="dd-kv"><div class="k">${esc(r[0])}</div><div>${esc(r[1])}</div></div>`).join("")+`</div>`;
+}
+function ddEcosystemSec(dd){
+  const e=dd&&dd.ecosystem_overlay;
+  if(!e||typeof e!=="object"||!Array.isArray(e.names)||!e.names.length)return "";
+  let t=`<div class="tblx"><table class="dd-pt"><tr><th>name</th><th>growth model</th><th>NVDA link</th><th>circularity / funding</th><th>confidence</th></tr>`;
+  e.names.forEach(n=>{
+    const g=n.growth_model||{},growth=g.summary||n.growth_summary||"",risk=[n.circularity_risk,n.funding_risk].filter(Boolean).join(" · ");
+    t+=`<tr><th>${esc(n.symbol||n.name||"")}</th><td>${esc(growth)}</td><td>${esc(n.nvda_linkage||"")}</td><td>${esc(risk||"")}</td><td>${esc(n.confidence||g.status||"UNKNOWN")}</td></tr>`;
+  });
+  t+=`</table></div>`;
+  const details=e.names.map(n=>`<div class="dd-kv"><div class="k">${esc(n.symbol||n.name||"")}</div><div>${n.relationship?`<b>${esc(n.relationship)}</b> · `:""}${esc(n.note||n.next_event||"")}</div></div>`).join("");
+  return `<div class="dd-sec"><div class="lbl">ECOSYSTEM OVERLAY · risk-adjusted · ${esc(e.as_of||e.asOf||"")}</div>${t}${details}`+
+    (e.conclusion?`<div class="none" style="color:var(--amber);margin-top:5px">${esc(e.conclusion)}</div>`:"")+`<div class="none" style="color:var(--dim);margin-top:4px">Investment growth informs demand durability, circularity, and concentration; it is not added to NVDA’s primary PT.</div></div>`;
+} /* FEAT-TT-OWNDEBT (v3.35): the option legs the broker sync measured, as a real table.
    These were validated, stored, and rendered exactly once — a one-sentence short-call
    cover count that only appeared with a TRIPPED circuit. A LEAP book was invisible.
    Strike renders only where the sync captured it (never fabricated); DTE colors by the
@@ -3220,6 +3272,9 @@ function renderDeepDive(sym){
   h+=renderIntake(x);   // FEAT-TT-INTAKE: what still has to be fetched, beside what it blocks
   h+=ddAnswerBlock(x,dd,todayET);
   h+=ddOptSec(posOf(x));   // FEAT-TT-OWNDEBT: the legs expressing this thesis, beside it
+  h+=ddScenarioSec(dd);
+  h+=ddFundamentalsSec(dd);
+  h+=ddEcosystemSec(dd);
   // FEAT-TT-ESTRUN (v3.35): the estimate run + dual PTs, ABOVE the fold — the analyst
   // projection layer is the math under the tier claim, not a drawer to hunt for.
   h+=ddEstRunSec(x,dd);

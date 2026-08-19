@@ -962,6 +962,23 @@ ok("3q: import validates projections before overwriting the book", adminSrc.incl
 ok("consensus: the estimate-run table renders rev + EPS + analyst count", adminSrc.includes("function ddEstRunSec") && adminSrc.includes("<th>EPS</th>"));
 ok("consensus: thin coverage (<=2 analysts) dims the row", adminSrc.includes("n<=2") && adminSrc.includes("thin coverage, not a forecast"));
 ok("consensus: negative EPS renders red, positive green", adminSrc.includes('e<0?"var(--red)":"var(--green)"'));
+// FEAT-TT-NVDA-ER (2026-08-19): the earnings-ready NVDA payload has three distinct
+// evidence layers. Keep the scenario ceiling, measured statements, and ecosystem overlay
+// visible in the same deep-dive rather than letting them fall into the generic drawer.
+ok("NVDA earnings: scenario, fundamentals, and ecosystem payloads are handled sections",
+  adminSrc.includes('"valuation_scenarios"') &&
+  adminSrc.includes('"fundamentals"') &&
+  adminSrc.includes('"ecosystem_overlay"') &&
+  adminSrc.includes("function ddScenarioSec") &&
+  adminSrc.includes("function ddFundamentalsSec") &&
+  adminSrc.includes("function ddEcosystemSec"));
+ok("NVDA earnings: 25x is rendered as a bull-case ceiling, not an active target",
+  adminSrc.includes("bull multiple is not an active target") &&
+  adminSrc.includes("isBull") &&
+  adminSrc.includes("· ceiling"));
+ok("NVDA earnings: overlay explicitly denies SOTP credit",
+  adminSrc.includes("not added to NVDA’s primary PT") &&
+  adminSrc.includes("risk-adjusted"));
 // Membership, not adjacency: the earlier version pinned the literal '"pt_ladder","consensus"'
 // and broke the moment a key was inserted between them. Parse the set and check contents.
 const DD_HANDLED_SRC = (adminSrc.match(/DD_HANDLED=new Set\(\[([\s\S]*?)\]\)/) || [])[1] || "";
@@ -2569,6 +2586,53 @@ function liftFns(src, names) {
   }).join("\n");
   return out;
 }
+
+// Execute the three pure renderers against an earnings-shaped fixture. This catches a
+// syntactically valid but invisible payload field, which source-string checks alone miss.
+const renderNvdaEvidence = new Function(
+  liftFns(adminSrc, ["esc", "ddScenarioSec", "ddFundamentalsSec", "ddEcosystemSec"]) +
+  "\nreturn {ddScenarioSec,ddFundamentalsSec,ddEcosystemSec};"
+)();
+const nvdaEvidence = {
+  ref_px: { px: 218.93 },
+  valuation_scenarios: {
+    as_of: "2026-08-19", forward_period: "FY2028", forward_eps: 12.83,
+    policy: "25x FY2028 P/E is the bull-case ceiling, not an active target",
+    cases: [
+      { name: "Bear", multiple: 16, pt: 205.28 },
+      { name: "Base", multiple: 20, pt: 256.60 },
+      { name: "Bull", multiple: 25, pt: 320.75 },
+    ],
+  },
+  fundamentals: {
+    as_of: "2026-08-19",
+    income_statement: { revenue_B: 253.491, gross_profit_B: 187.952, net_income_B: 159.613 },
+    balance_sheet: { cash_st_investments_B: 53.172, current_debt_B: 1, lease_obligations_B: 4.344, net_cash_after_leases_B: 40.358, current_ratio: 3.44 },
+  },
+  ecosystem_overlay: {
+    as_of: "2026-08-19",
+    names: [
+      { symbol: "OpenAI", confidence: "PROVISIONAL", growth_model: { status: "PROVISIONAL", summary: "no public model" } },
+      { symbol: "CRWV", growth_model: { status: "STORED_MODEL", summary: "$12.89B→$80.22B" } },
+      { symbol: "NBIS", growth_model: { status: "STORED_MODEL", summary: "$3.39B→$46.82B" } },
+      { symbol: "LITE", growth_model: { status: "STORED_MODEL", summary: "$6.27B→$12.68B" } },
+      { symbol: "COHR", confidence: "PROVISIONAL", growth_model: { status: "PROVISIONAL", summary: "no stored model" } },
+    ],
+  },
+};
+const nvdaScenarioHtml = renderNvdaEvidence.ddScenarioSec(nvdaEvidence);
+const nvdaFundamentalsHtml = renderNvdaEvidence.ddFundamentalsSec(nvdaEvidence);
+const nvdaEcosystemHtml = renderNvdaEvidence.ddEcosystemSec(nvdaEvidence);
+ok("NVDA earnings: scenario renderer prints 16x/20x/25x and $320.75",
+  /16×/.test(nvdaScenarioHtml) && /20×/.test(nvdaScenarioHtml) &&
+  /25×/.test(nvdaScenarioHtml) && /\$320\.75/.test(nvdaScenarioHtml) &&
+  /ceiling/.test(nvdaScenarioHtml));
+ok("NVDA earnings: fundamentals renderer prints measured cash and net cash",
+  /FUNDAMENTALS/.test(nvdaFundamentalsHtml) &&
+  /53\.172/.test(nvdaFundamentalsHtml) && /40\.358/.test(nvdaFundamentalsHtml));
+ok("NVDA earnings: ecosystem renderer names all five investments and preserves provisional status",
+  ["OpenAI", "CRWV", "NBIS", "LITE", "COHR"].every((s) => nvdaEcosystemHtml.includes(s)) &&
+  /PROVISIONAL/.test(nvdaEcosystemHtml));
 // TT-SCORE commit 1 (v3.73): the PT chain is a real module now — smoke IMPORTS it instead of
 // lifting source text (the src/regime.js precedent, :11-12). admin.html keeps byte-identical
 // copies (buildless, cannot import); section [49] lifts THOSE and asserts identity against
