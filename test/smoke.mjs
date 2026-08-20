@@ -962,6 +962,23 @@ ok("3q: import validates projections before overwriting the book", adminSrc.incl
 ok("consensus: the estimate-run table renders rev + EPS + analyst count", adminSrc.includes("function ddEstRunSec") && adminSrc.includes("<th>EPS</th>"));
 ok("consensus: thin coverage (<=2 analysts) dims the row", adminSrc.includes("n<=2") && adminSrc.includes("thin coverage, not a forecast"));
 ok("consensus: negative EPS renders red, positive green", adminSrc.includes('e<0?"var(--red)":"var(--green)"'));
+// FEAT-TT-NVDA-ER (2026-08-19): the earnings-ready NVDA payload has three distinct
+// evidence layers. Keep the scenario ceiling, measured statements, and ecosystem overlay
+// visible in the same deep-dive rather than letting them fall into the generic drawer.
+ok("NVDA earnings: scenario, fundamentals, and ecosystem payloads are handled sections",
+  adminSrc.includes('"valuation_scenarios"') &&
+  adminSrc.includes('"fundamentals"') &&
+  adminSrc.includes('"ecosystem_overlay"') &&
+  adminSrc.includes("function ddScenarioSec") &&
+  adminSrc.includes("function ddFundamentalsSec") &&
+  adminSrc.includes("function ddEcosystemSec"));
+ok("NVDA earnings: 30x is rendered as a supercycle bull-case ceiling, not an active target",
+  adminSrc.includes("bull multiple is not an active target") &&
+  adminSrc.includes("isBull") &&
+  adminSrc.includes("· ceiling"));
+ok("NVDA earnings: overlay explicitly denies SOTP credit",
+  adminSrc.includes("not added to NVDA’s primary PT") &&
+  adminSrc.includes("risk-adjusted"));
 // Membership, not adjacency: the earlier version pinned the literal '"pt_ladder","consensus"'
 // and broke the moment a key was inserted between them. Parse the set and check contents.
 const DD_HANDLED_SRC = (adminSrc.match(/DD_HANDLED=new Set\(\[([\s\S]*?)\]\)/) || [])[1] || "";
@@ -1407,8 +1424,10 @@ ok("today: each drawer is ONE tap (native details, no hidden second step)",
 ok("today: the reference sidebar collapses too — it is reference, not monitoring",
   !/<div class="panel"[^>]*>\s*<h2>Router/.test(adminSrc) &&
   adminSrc.includes("<summary>STANDING CONSTRAINTS</summary>"));
+// v4.1 Step 7 re-pin: the pill became a real <button> (it toggles WHY MACRO) — the
+// load-bearing claim was always the MACRO: label + the pill, never the element tag.
 ok("today: the header pill is labelled MACRO — it is the measured read, not the stance",
-  /MACRO: <span class="pill neutral" id="regimePill"/.test(adminSrc) &&
+  /MACRO: <button type="button" class="pill neutral" id="regimePill"/.test(adminSrc) &&
   /min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">MACRO: /.test(adminSrc) &&
   adminSrc.includes("made the header look like it contradicted the stance"));
 ok("today: a closed drawer still carries its signal in the summary (the v3.25 hinge rule)",
@@ -2265,7 +2284,7 @@ ok("v4.0.2: the two toolbars carry different altitudes — a DAILY OPS label, an
   /🔐 PIN/.test(adminSrc) && /◈ AI RUBRIC/.test(adminSrc) && /⏱ RESTORE POINTS/.test(adminSrc));
 ok("slice5: the MACRO: label survives the compaction — v3.29 added it so the pill can't be " +
    "misread as the stance, which is an honesty invariant, not decoration",
-  /MACRO: <span class="pill neutral" id="regimePill"/.test(adminSrc) &&
+  /MACRO: <button type="button" class="pill neutral" id="regimePill"/.test(adminSrc) &&
   /min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">MACRO: /.test(adminSrc));
 ok("slice5: toggleHeadInfo keeps aria-expanded honest",
   adminSrc.includes("function toggleHeadInfo()") &&
@@ -2567,6 +2586,53 @@ function liftFns(src, names) {
   }).join("\n");
   return out;
 }
+
+// Execute the three pure renderers against an earnings-shaped fixture. This catches a
+// syntactically valid but invisible payload field, which source-string checks alone miss.
+const renderNvdaEvidence = new Function(
+  liftFns(adminSrc, ["esc", "ddScenarioSec", "ddFundamentalsSec", "ddEcosystemSec"]) +
+  "\nreturn {ddScenarioSec,ddFundamentalsSec,ddEcosystemSec};"
+)();
+const nvdaEvidence = {
+  ref_px: { px: 218.93 },
+  valuation_scenarios: {
+    as_of: "2026-08-19", forward_period: "FY2028", forward_eps: 12.83,
+    policy: "30x FY2028 forward P/E is an owner override for the NVDA king-of-supercycle thesis, not an active target",
+    cases: [
+      { name: "Bear", multiple: 16, pt: 205.28 },
+      { name: "Base", multiple: 20, pt: 256.60 },
+      { name: "Bull", multiple: 30, pt: 384.90 },
+    ],
+  },
+  fundamentals: {
+    as_of: "2026-08-19",
+    income_statement: { revenue_B: 253.491, gross_profit_B: 187.952, net_income_B: 159.613 },
+    balance_sheet: { cash_st_investments_B: 53.172, current_debt_B: 1, lease_obligations_B: 4.344, net_cash_after_leases_B: 40.358, current_ratio: 3.44 },
+  },
+  ecosystem_overlay: {
+    as_of: "2026-08-19",
+    names: [
+      { symbol: "OpenAI", confidence: "PROVISIONAL", growth_model: { status: "PROVISIONAL", summary: "no public model" } },
+      { symbol: "CRWV", growth_model: { status: "STORED_MODEL", summary: "$12.89B→$80.22B" } },
+      { symbol: "NBIS", growth_model: { status: "STORED_MODEL", summary: "$3.39B→$46.82B" } },
+      { symbol: "LITE", growth_model: { status: "STORED_MODEL", summary: "$6.27B→$12.68B" } },
+      { symbol: "COHR", confidence: "PROVISIONAL", growth_model: { status: "PROVISIONAL", summary: "no stored model" } },
+    ],
+  },
+};
+const nvdaScenarioHtml = renderNvdaEvidence.ddScenarioSec(nvdaEvidence);
+const nvdaFundamentalsHtml = renderNvdaEvidence.ddFundamentalsSec(nvdaEvidence);
+const nvdaEcosystemHtml = renderNvdaEvidence.ddEcosystemSec(nvdaEvidence);
+ok("NVDA earnings: scenario renderer prints 16x/20x/30x and $384.90",
+  /16×/.test(nvdaScenarioHtml) && /20×/.test(nvdaScenarioHtml) &&
+  /30×/.test(nvdaScenarioHtml) && /\$384\.9/.test(nvdaScenarioHtml) &&
+  /ceiling/.test(nvdaScenarioHtml) && /king-of-supercycle/.test(nvdaScenarioHtml));
+ok("NVDA earnings: fundamentals renderer prints measured cash and net cash",
+  /FUNDAMENTALS/.test(nvdaFundamentalsHtml) &&
+  /53\.172/.test(nvdaFundamentalsHtml) && /40\.358/.test(nvdaFundamentalsHtml));
+ok("NVDA earnings: ecosystem renderer names all five investments and preserves provisional status",
+  ["OpenAI", "CRWV", "NBIS", "LITE", "COHR"].every((s) => nvdaEcosystemHtml.includes(s)) &&
+  /PROVISIONAL/.test(nvdaEcosystemHtml));
 // TT-SCORE commit 1 (v3.73): the PT chain is a real module now — smoke IMPORTS it instead of
 // lifting source text (the src/regime.js precedent, :11-12). admin.html keeps byte-identical
 // copies (buildless, cannot import); section [49] lifts THOSE and asserts identity against
@@ -7147,29 +7213,159 @@ console.log("\n[68] FEAT-TT-ALLOC — pure core, endpoint, and the §14.8 bar");
     macro_flip: { evaluable: true, armed: false, tripped: false } };
 
   // ── the gate ladder, rung by rung (fail closed at every altitude) ──
-  const lad = (board, readout) => alloc.allocGateLadder({ board, readout });
+  // FEAT-TT-CIRCUIT (v4.1): a structured circuit is now REQUIRED before the later rungs can
+  // even be reached, so every fixture past the circuit rung carries a fresh clear one.
+  const CIRC = { state: "clear", as_of: TODAY };
+  const lad = (board, readout) => alloc.allocGateLadder({ board, readout, now: NOW });
   ok("alloc gate: circuit tripped vetoes FIRST — no per-name score clears deleverage-only",
     lad({ circuit: { state: "tripped" }, regime: { asserted: "TAILWIND" } }, READOUT).rung === "circuit");
   ok("alloc gate: no measured OR asserted regime → stance UNKNOWN (a live read is mandatory)",
-    lad({}, null).rung === "stance" && /stance UNKNOWN/.test(lad({}, null).reason));
+    lad({ circuit: CIRC }, null).rung === "stance" && /stance UNKNOWN/.test(lad({ circuit: CIRC }, null).reason));
   ok("alloc gate: PANIC governs even when only ASSERTED (stricter governs — married never merged)",
-    /PANIC/.test(lad({ regime: { asserted: "PANIC" } }, READOUT).reason));
+    /PANIC/.test(lad({ circuit: CIRC, regime: { asserted: "PANIC" } }, READOUT).reason));
   ok("alloc gate: readout absent after a ranked stance → feed veto, never default-to-clear",
-    lad({ regime: { asserted: "TAILWIND" } }, null).rung === "feed");
+    lad({ circuit: CIRC, regime: { asserted: "TAILWIND" } }, null).rung === "feed");
   ok("alloc gate: actionability missing and non-FULL each veto (the ENGINE0-CONT rung)",
-    lad({}, { ...READOUT, regime: { verdict: "TAILWIND" } }).rung === "actionability" &&
-    /HOLD/.test(lad({}, { ...READOUT, regime: { verdict: "NEUTRAL", actionability: "HOLD", status: "DATA DEGRADED" } }).reason));
+    lad({ circuit: CIRC }, { ...READOUT, regime: { verdict: "TAILWIND" } }).rung === "actionability" &&
+    /HOLD/.test(lad({ circuit: CIRC }, { ...READOUT, regime: { verdict: "NEUTRAL", actionability: "HOLD", status: "DATA DEGRADED" } }).reason));
   ok("alloc gate: Macro Flip absent / blind / tripped each veto with the reason named",
-    lad({}, { ...READOUT, macro_flip: undefined }).rung === "flip" &&
-    /BLIND|missing/i.test(lad({}, { ...READOUT, macro_flip: { evaluable: false, reason: "vix MISSING" } }).reason) &&
-    /TRIPPED/.test(lad({}, { ...READOUT, macro_flip: { evaluable: true, tripped: true } }).reason));
+    lad({ circuit: CIRC }, { ...READOUT, macro_flip: undefined }).rung === "flip" &&
+    /BLIND|missing/i.test(lad({ circuit: CIRC }, { ...READOUT, macro_flip: { evaluable: false, reason: "vix MISSING" } }).reason) &&
+    /TRIPPED/.test(lad({ circuit: CIRC }, { ...READOUT, macro_flip: { evaluable: true, tripped: true } }).reason));
   ok("alloc gate: every gate reading clean → null (the ladder can actually pass)",
-    lad({ regime: { asserted: "TAILWIND" } }, READOUT) === null);
+    lad({ circuit: CIRC, regime: { asserted: "TAILWIND" } }, READOUT) === null);
+
+  // ── FEAT-TT-CIRCUIT (v4.1 Step 1): the structured circuit is canonical; absence fails closed ──
+  // The 8/18 audit's P0, executed: the live board carried "presumed tripped" PROSE beside
+  // circuit:null, and null read as not-tripped everywhere — both sides permitted allocation.
+  const cst = (c, at) => alloc.circuitState(c, at || NOW);
+  ok("circuit: ABSENT is unresolved — prose is explanation, not permission",
+    cst(undefined).st === "unresolved" && /prose is explanation, not permission/.test(cst(null).reason));
+  ok("circuit: an unknown state string is unresolved, never coerced into an enum",
+    cst({ state: "presumed tripped", as_of: TODAY }).st === "unresolved");
+  ok("circuit: undated clear is unresolved — an undated permission never reads as current",
+    cst({ state: "clear" }).st === "unresolved" && /undated/.test(cst({ state: "clear" }).reason));
+  // Fixture dates are ET-calendar arithmetic, NOT utc-now minus N days: at ET evening the
+  // two calendars differ by a day, and the boundary assert would drift (the very defect
+  // class Step 3 of this sprint fixes in allocChip).
+  const etDay = (n) => new Date(new Date(TODAY + "T12:00:00Z").getTime() + n * 86400000).toISOString().slice(0, 10);
+  ok("circuit: a future-dated record cannot be judged",
+    cst({ state: "clear", as_of: etDay(3) }).st === "unresolved");
+  ok("circuit: fresh clear resolves clear; the boundary day (exactly CIRCUIT_STALE_D) still resolves",
+    cst({ state: "clear", as_of: TODAY }).st === "clear" &&
+    cst({ state: "clear", as_of: etDay(-alloc.CIRCUIT_STALE_D) }).st === "clear");
+  ok("circuit: clear ONE DAY past the limit degrades to unresolved — stale permission is not evidence of safety",
+    (() => { const r = cst({ state: "clear", as_of: etDay(-(alloc.CIRCUIT_STALE_D + 1)) });
+      return r.st === "unresolved" && /stale permission/.test(r.reason); })());
+  ok("circuit: TRIPPED never expires into clear — a 30d-old or undated trip still trips (v3.40 asymmetry)",
+    cst({ state: "tripped", as_of: etDay(-30) }).st === "tripped" && cst({ state: "tripped" }).st === "tripped");
+  ok("alloc gate: an unresolved circuit is a NAMED circuit veto pointing at ◧ SESSION",
+    (() => { const g = lad({}, READOUT);
+      return g.rung === "circuit" && /unresolved/.test(g.reason) && /◧ SESSION/.test(g.reason); })());
+  ok("alloc gate: ARMED is a caution, never a veto — the ladder passes and the receipt carries it",
+    lad({ circuit: { state: "armed", as_of: TODAY }, regime: { asserted: "TAILWIND" } }, READOUT) === null);
+  ok("circuit mirror: CIRCUIT_STALE_D — the alloc core and the buildless client literal agree",
+    adminSrc.includes(`const CIRCUIT_STALE_D=${alloc.CIRCUIT_STALE_D};`) && alloc.CIRCUIT_STALE_D === 7);
+  ok("circuit mirror: the client resolver exists with the same unresolved vocabulary",
+    adminSrc.includes("function circuitStateCli(c)") &&
+    adminSrc.includes("session prose is explanation, not permission") &&
+    adminSrc.includes('tripped — state undated; still binding until a live pull disproves it'));
+  ok("stance: unresolved circuit is a STOP before any regime rung, pointing at ◧ SESSION",
+    /if\(st==="unresolved"\)return\{k:"stop",txt:"ADDS SUSPENDED — circuit state unresolved"/.test(adminSrc) &&
+    /set the structured circuit in ◧ SESSION before any add/.test(adminSrc));
+  ok("renderCircuit: absence renders the UNRESOLVED strip — the state that suspends adds can never be the one with no pixels",
+    adminSrc.includes("○ CIRCUIT UNRESOLVED — adds suspended") &&
+    !/if\(!c\|\|typeof c!=="object"\)return sessSec\("circuitLine",""\)/.test(adminSrc));
+  ok("prose is context: disagree requires BOTH readings ranked (a narrative is not the opposite of TAILWIND)",
+    adminSrc.includes("mR!==undefined&&aR!==undefined&&measured!==asserted") &&
+    adminSrc.includes("not a ranked regime; measured <b>"));
+
+  // ── v4.1 Step 2: ALLOCATABLE is context, never cash/sizing approval ──
+  // The 8/18 audit read a green ALLOCATABLE beside measured cash of −$286,817. The receipt
+  // now carries the semantics as a machine field, the visible label says CONTEXT READY, and
+  // the measured account renders beside any green state with the qualifier attached.
+  ok("label: the visible chip says ALLOCATION CONTEXT READY, never a bare ALLOCATABLE",
+    adminSrc.includes("ALLOCATION CONTEXT READY — ${esc(ALLOC.eligible.sym)}") &&
+    !adminSrc.includes("server: ALLOCATABLE —"));
+  ok("label: the not-a-cash-claim qualifier is permanent on the green state",
+    adminSrc.includes("not a cash-availability or sizing claim"));
+  ok("label: the confirm affordance records INTENT and says no order",
+    adminSrc.includes('"RECORD FUNDING INTENT — "+ALLOC.eligible.sym+" · no order"'));
+  ok("account: loadPositions keeps the measured account instead of discarding it",
+    adminSrc.includes("ACCOUNT=(d&&d.account&&typeof d.account===\"object\")?d.account:null;") &&
+    adminSrc.includes("function acctLine()"));
+  ok("account: an unmeasured account is a STATED state on the chip, never an inferred zero",
+    adminSrc.includes("account unmeasured — no synced broker record"));
+
+  // ── v4.1 Step 3: receipt age from the FULL timestamp; the basis line renders ──
+  ok("age: allocChip computes age in HOURS from the full instant — the UTC date slice is gone",
+    adminSrc.includes("function allocAgeTxt()") &&
+    !adminSrc.includes("ageDays(String(ALLOC.at).slice(0,10))"));
+  ok("age: a future-dated receipt is flagged, never rendered as a negative age",
+    /if\(h<-0\.5\)return "⚠ dated in the future";/.test(adminSrc));
+  ok("age: undated fails closed to 'undated', never 'today'",
+    /if\(!isFinite\(t\)\)return "undated";/.test(adminSrc));
+  ok("basis: the freshness line renders receipt/readout/positions/dd-index dates in EVERY chip state",
+    adminSrc.includes("function allocBasisLine()") &&
+    (adminSrc.match(/\$\{allocBasisLine\(\)\}/g) || []).length === 4 &&
+    adminSrc.includes("basis: receipt "));
+  ok("basis: a malformed input date reads 'undated', never a fabricated date",
+    /return \/\^\\d\{4\}-\\d\{2\}-\\d\{2\}\$\/\.test\(s\)\?s:"undated";/.test(adminSrc));
+
+  // ── v4.1 Step 4: price basis — one vocabulary, disclosed wherever the eligible renders ──
+  ok("pxbasis: the four-state vocabulary is computed server-side and never relabels a stamp as live",
+    alloc.priceBasisOf({ px: 100, live: true }) === "live price" &&
+    alloc.priceBasisOf({ px: 100, live: false, px_at: TODAY }) === "stamped price" &&
+    alloc.priceBasisOf({ px: 100, live: false, px_at: null }) === "stamped price — undated" &&
+    alloc.priceBasisOf({ px: null }) === "no usable price" && alloc.priceBasisOf(null) === "no usable price");
+  ok("pxbasis: the client renders the server string, falls back on live_px for old receipts, and warns on stamped",
+    adminSrc.includes("function allocPriceBasis()") &&
+    adminSrc.includes('if(e.live_px===false)return "stamped price";') &&
+    adminSrc.includes('pb==="live price"?"":"⚠ "') &&
+    adminSrc.includes('at ${esc(allocPriceBasis()||"price basis unrecorded")}'));
+
+  // ── v4.1 Step 5: the server receipt is canonical for ACTION ──
+  ok("canonical: a funding disagreement names the governing answer, shadows labelled diagnostic",
+    adminSrc.includes("SERVER RECEIPT GOVERNS CONFIRMATION") &&
+    adminSrc.includes("diagnostic shadows — client:"));
+  ok("canonical: the confirm affordance is withheld on a prior-business-date receipt, saying so",
+    adminSrc.includes("function allocConfirmWithheld()") &&
+    adminSrc.includes("not today — ⟳ DATA+RANKS for a current one"));
+  ok("canonical: a local stance of stop/unknown withdraws the affordance — never a green link under a suspended state",
+    /if\(stw\.k==="stop"\|\|stw\.k==="unknown"\)/.test(adminSrc) &&
+    adminSrc.includes("the receipt no longer matches the current state"));
+  ok("canonical: only the server candidate can expose confirmation (one affordance id, gated by the withhold)",
+    (adminSrc.match(/allocFundLink/g) || []).length === 1 &&
+    adminSrc.includes("const w=allocConfirmWithheld();"));
+
+  // ── v4.1 Step 7: WHY MACRO — the readout's evidence detail finally read ──
+  const mevSrc = (() => {
+    const a = adminSrc.indexOf("function toggleMacroEvidence()");
+    const b = adminSrc.indexOf("async function loadRegime()");
+    if (a < 0 || b < 0 || b < a) throw new Error("smoke: macro-evidence markers not found");
+    return adminSrc.slice(a, b);
+  })();
+  ok("mev: the pill is a real <button> wired to the panel with honest aria",
+    adminSrc.includes('id="regimePill" aria-expanded="false" aria-controls="macroEvidence"') &&
+    mevSrc.includes('b.setAttribute("aria-expanded",String(open))'));
+  ok("mev: the panel consumes checks/bullish/bearish/confidence/actionability — published since ENGINE0-CONT, read nowhere until now",
+    mevSrc.includes("Array.isArray(reg.checks)") &&
+    mevSrc.includes("reg.bullish") && mevSrc.includes("reg.bearish") &&
+    mevSrc.includes("reg.confidence") && mevSrc.includes("reg.actionability"));
+  ok("mev: an older body without evidence detail SAYS so — the honest-empty branch precedes the tally render, never zeros",
+    mevSrc.indexOf("predates evidence detail") > 0 &&
+    mevSrc.indexOf("predates evidence detail") < mevSrc.indexOf("<b>EVIDENCE:</b>"));
+  ok("mev: the 10Y row carries its LEVEL beside the delta-trend vote (the 8/18 audit's misread quartet)",
+    mevSrc.includes('c.name==="us10y_trend"') && mevSrc.includes("REGIME.us10y.yield"));
+  ok("mev: presentation only — the panel touches no gate, stance, ranking or veto, and never writes REGIME",
+    !/gateFail|whyNot|sellRank|AGREE_PICK|stance\(/.test(mevSrc) &&
+    !/REGIME\s*=/.test(mevSrc) &&
+    mevSrc.includes("presentation only"));
 
   // ── acceptance tests, executed ──
   const BOOK = { version: "9.0", asOf: TODAY, cut: ["OLD"], book: [
     { sym: "AAA", tier: "S", lens: "VEH", lastRun: TODAY }, { sym: "BBB", tier: "A", lens: "VEH" }],
-    board: { as_of: TODAY, regime: { asserted: "TAILWIND" },
+    board: { as_of: TODAY, regime: { asserted: "TAILWIND" }, circuit: { state: "clear", as_of: TODAY },
       decisions: [{ q: "exit now", sym: "CCC", forced_exit: true }],
       funding: { order: [{ sym: "BBB" }], do_not_trim: ["AAA"] } } };
   const IDX = { asOf: TODAY, entries: { AAA: mkIdx(), BBB: mkIdx({ pt_model: null, consensus: null, composite: null, hinges: [] }) } };
@@ -7198,6 +7394,18 @@ console.log("\n[68] FEAT-TT-ALLOC — pure core, endpoint, and the §14.8 bar");
       return t.CCC === 1 && t.OLD === 1 && t.BIG === 2 && t.AAA === 5; })());
   ok("alloc 4: the over-cap row is identified from the MEASURED pct and says so",
     /21% of acct equity.*broker-measured/.test(R.funding.rows.find((r) => r.sym === "BIG").reason));
+  ok("meaning: an ALLOCATABLE receipt declares context_complete_not_cash_or_sizing_approval",
+    (() => { const r = ev(); return r.state === "ALLOCATABLE" &&
+      r.meaning === "context_complete_not_cash_or_sizing_approval"; })());
+  ok("meaning: any non-ALLOCATABLE state carries meaning null — the field never over-claims",
+    ev({ posDoc: null }).meaning === null);
+  ok("pxbasis: the eligible projection carries px, px_at and the computed basis string",
+    (() => { const r = ev(); return r.eligible && isFinite(r.eligible.px) &&
+      typeof r.eligible.price_basis === "string" &&
+      r.eligible.price_basis === alloc.priceBasisOf({ px: r.eligible.px, live: r.eligible.live_px, px_at: r.eligible.px_at }); })());
+  ok("pxbasis: a STAMPED eligible (no quote) declares stamped, never live",
+    (() => { const r = ev({ quotes: {} }); return r.eligible &&
+      r.eligible.live_px === false && /^stamped price/.test(r.eligible.price_basis); })());
   ok("alloc 6: missing lots never become a zero-tax assumption — lots:null, not {lt:0,st:0}",
     R.funding.rows.find((r) => r.sym === "BIG").lots === null &&
     (() => { const a = R.funding.rows.find((r) => r.sym === "AAA").lots; return a.lt_sh === 6 && a.st_sh === 4; })());
@@ -7262,8 +7470,9 @@ console.log("\n[68] FEAT-TT-ALLOC — pure core, endpoint, and the §14.8 bar");
   store.set("tt:pos:v1", JSON.stringify(POSDOC));
   store.set("tt:quote:AAA", JSON.stringify({ px: 101, at: TODAY + "T14:00:00Z" }));
   const realFetch = globalThis.fetch;
+  let LIVE_READOUT = READOUT;   // v4.1 Step 6: mutable so confirm-time re-binding can be driven
   try {
-    globalThis.fetch = async () => ({ ok: true, json: async () => READOUT });
+    globalThis.fetch = async () => ({ ok: true, json: async () => LIVE_READOUT });
     const g0 = await ep.onRequest({ request: rq("GET"), env });
     ok("alloc ep: GET with no receipt → 404, and GET never writes", g0.status === 404 && puts.length === 0);
     const p1 = await ep.onRequest({ request: rq("POST"), env });
@@ -7273,6 +7482,11 @@ console.log("\n[68] FEAT-TT-ALLOC — pure core, endpoint, and the §14.8 bar");
       [b1.receipt.attestation.input_hash, b1.receipt.attestation.basis_hash, b1.receipt.attestation.result_hash].every((h) => /^[0-9a-f]{64}$/.test(h)));
     ok("alloc ep: history key written BEFORE the pointer — a pointer can never exist without its immutable copy",
       puts[0].startsWith("tt:alloc:history:") && puts[1] === "tt:alloc:v1");
+    // v4.1 Step 3: the receipt names its own ET identity — a UTC instant sliced to a date
+    // called a 21:07-ET-yesterday receipt "today" (8/18 audit, P1).
+    ok("alloc ep: the receipt carries at_et and business_date_et from the etYmd clock",
+      /^\d{2}\/\d{2} \d{2}:\d{2} ET$/.test(b1.receipt.at_et) &&
+      b1.receipt.business_date_et === etYmd(new Date()));
     // basis vs input: a quote tick changes the audit identity, never the confirm basis
     store.set("tt:quote:AAA", JSON.stringify({ px: 102, at: TODAY + "T14:02:00Z" }));
     const p2 = await ep.onRequest({ request: rq("POST"), env });
@@ -7288,13 +7502,107 @@ console.log("\n[68] FEAT-TT-ALLOC — pure core, endpoint, and the §14.8 bar");
     ok("alloc ep: a wrong result_hash → 409 STALE_ALLOCATION with the server's copy",
       (await (async () => { const r = await ep.onRequest({ request: rq("POST", "?confirm=1", { intent: { action: "FUND", sym: "AAA" }, result_hash: "beef" }), env });
         const b = JSON.parse(await r.text()); return r.status === 409 && b.error === "STALE_ALLOCATION" && !!b.receipt; })()));
+    // v4.1 Step 6: the c1 confirm above marked the receipt — a fresh evaluate resets
+    // confirmation (per-receipt) so the snap-drift test reaches the basis check, not the
+    // idempotency rung. Same inputs → identical result_hash, so b2's hash stays valid.
+    await ep.onRequest({ request: rq("POST"), env });
     store.set("tt:pos:v1", JSON.stringify({ ...POSDOC, snap: "20269999999999999" }));
-    ok("alloc ep: a fresh sync (new snap) between evaluate and confirm → 409 STALE_ALLOCATION (recompute first)",
+    ok("alloc ep: a fresh sync (new snap) between evaluate and confirm → 409 STALE_ALLOCATION naming positions",
       (await (async () => { const r = await ep.onRequest({ request: rq("POST", "?confirm=1", { intent: { action: "FUND", sym: "AAA" }, result_hash: b2.receipt.attestation.result_hash }), env });
-        const b = JSON.parse(await r.text()); return r.status === 409 && /changed since/.test(b.reason); })()));
+        const b = JSON.parse(await r.text()); return r.status === 409 && /positions changed since/.test(b.reason); })()));
     ok("alloc ep: an invented amount is rejected — amount_usd is owner-supplied or absent",
       (await (async () => { const r = await ep.onRequest({ request: rq("POST", "?confirm=1", { intent: { action: "FUND", sym: "AAA", amount_usd: -5 }, result_hash: "x" }), env });
         return r.status === 400; })()));
+
+    // ── v4.1 Step 6: confirmation bound to the candidate + the current world ──
+    const cf = (body) => ep.onRequest({ request: rq("POST", "?confirm=1", body), env });
+    const cfB = async (body) => { const r = await cf(body); return { status: r.status, b: JSON.parse(await r.text()) }; };
+    store.set("tt:pos:v1", JSON.stringify(POSDOC));   // restore the snap
+    const p4 = await ep.onRequest({ request: rq("POST"), env });
+    const b4 = JSON.parse(await p4.text());
+    const RH = b4.receipt.attestation.result_hash;
+    ok("cfm: idempotency — the first confirm lands, a second without supersede → 409 ALREADY_CONFIRMED",
+      (await (async () => {
+        const one = await cfB({ intent: { action: "FUND", sym: "AAA" }, result_hash: RH });
+        const two = await cfB({ intent: { action: "FUND", sym: "AAA" }, result_hash: RH });
+        return one.status === 200 && two.status === 409 && two.b.error === "ALREADY_CONFIRMED" &&
+          /intents are immutable/.test(two.b.reason); })()));
+    ok("cfm: supersede:true records a NEW immutable intent naming what it supersedes — nothing is edited",
+      (await (async () => {
+        const before = [...store.keys()].filter((k) => k.startsWith("tt:alloc:intent:v1:")).length;
+        const cur0 = JSON.parse(store.get("tt:alloc:v1"));
+        const sup = await cfB({ intent: { action: "FUND", sym: "AAA" }, result_hash: RH, supersede: true });
+        const after = [...store.keys()].filter((k) => k.startsWith("tt:alloc:intent:v1:")).length;
+        return sup.status === 200 && after === before + 1 &&
+          sup.b.receipt.confirmation.supersedes === cur0.confirmation.id; })()));
+    await ep.onRequest({ request: rq("POST"), env });   // fresh unconfirmed receipt
+    ok("cfm: FUND must name the receipt's own eligible candidate — a substitute sym → 409 INTENT_MISMATCH",
+      (await (async () => { const r = await cfB({ intent: { action: "FUND", sym: "BBB" }, result_hash: RH });
+        return r.status === 409 && r.b.error === "INTENT_MISMATCH" && /eligible candidate is AAA/.test(r.b.reason); })()));
+    ok("cfm: TRIM must name a funding-ranking row — an unranked sym → 409 INTENT_MISMATCH",
+      (await (async () => { const r = await cfB({ intent: { action: "TRIM", sym: "ZZZ" }, result_hash: RH });
+        return r.status === 409 && /not in the receipt's funding ranking/.test(r.b.reason); })()));
+    ok("cfm: an options-only sleeve TRIM needs the explicit flag — legs are not shares (v3.44)",
+      (await (async () => {
+        const bare = await cfB({ intent: { action: "TRIM", sym: "OPT" }, result_hash: RH });
+        const flagged = await cfB({ intent: { action: "TRIM", sym: "OPT", options_sleeve: true }, result_hash: RH });
+        return bare.status === 409 && /options-only sleeve/.test(bare.b.reason) && flagged.status === 200; })()));
+    // The macro axis unfrozen: same day, changed readout body — each drift NAMED.
+    const freshEval = async () => { await ep.onRequest({ request: rq("POST"), env });
+      return JSON.parse(store.get("tt:alloc:v1")).attestation.result_hash; };
+    ok("cfm: actionability moved since evaluate → 409 naming the evidence axis (the intraday freeze, closed)",
+      (await (async () => { const h = await freshEval();
+        LIVE_READOUT = { ...READOUT, regime: { ...READOUT.regime, actionability: "RESTRICTED", status: "PARTIAL DATA" } };
+        const r = await cfB({ intent: { action: "FUND", sym: "AAA" }, result_hash: h });
+        LIVE_READOUT = READOUT;
+        return r.status === 409 && /actionability is now RESTRICTED/.test(r.b.reason); })()));
+    ok("cfm: the flip tripping since evaluate → 409 naming the flip — a FUND can never ride a pre-crash receipt",
+      (await (async () => { const h = await freshEval();
+        LIVE_READOUT = { ...READOUT, macro_flip: { evaluable: true, armed: true, tripped: true } };
+        const r = await cfB({ intent: { action: "FUND", sym: "AAA" }, result_hash: h });
+        LIVE_READOUT = READOUT;
+        return r.status === 409 && /Macro Flip TRIPPED since/.test(r.b.reason); })()));
+    ok("cfm: the readout day rolling since evaluate → 409 naming both days",
+      (await (async () => { const h = await freshEval();
+        LIVE_READOUT = { ...READOUT, as_of: "2099-01-01" };
+        const r = await cfB({ intent: { action: "FUND", sym: "AAA" }, result_hash: h });
+        LIVE_READOUT = READOUT;
+        return r.status === 409 && /day rolled/.test(r.b.reason); })()));
+    ok("cfm: a same-day readout REBUILD with clean semantics still 409s — the body-hash catch-all",
+      (await (async () => { const h = await freshEval();
+        LIVE_READOUT = { ...READOUT, checks: [{ extra: 1 }] };
+        const r = await cfB({ intent: { action: "FUND", sym: "AAA" }, result_hash: h });
+        LIVE_READOUT = READOUT;
+        return r.status === 409 && /rebuilt since this was evaluated/.test(r.b.reason); })()));
+    ok("cfm: readout unreachable at confirm time fails CLOSED — never a default-to-clear",
+      (await (async () => { const h = await freshEval();
+        globalThis.fetch = async () => { throw new Error("down"); };
+        const r = await cfB({ intent: { action: "FUND", sym: "AAA" }, result_hash: h });
+        globalThis.fetch = async () => ({ ok: true, json: async () => LIVE_READOUT });
+        return r.status === 409 && /unreadable at confirm time/.test(r.b.reason); })()));
+    ok("cfm: a WAIT receipt cannot take a FUND — and a TRIM on the same receipt still lands (deleverage is never blocked by the stress that makes it urgent)",
+      (await (async () => {
+        globalThis.fetch = async () => { throw new Error("down"); };   // evaluate under a dead feed → WAIT
+        await ep.onRequest({ request: rq("POST"), env });
+        const h = JSON.parse(store.get("tt:alloc:v1")).attestation.result_hash;
+        const fund = await cfB({ intent: { action: "FUND", sym: "AAA" }, result_hash: h });
+        const trim = await cfB({ intent: { action: "TRIM", sym: "CCC" }, result_hash: h });
+        globalThis.fetch = async () => ({ ok: true, json: async () => LIVE_READOUT });
+        return fund.status === 409 && fund.b.error === "INTENT_MISMATCH" && /receipt state is WAIT/.test(fund.b.reason) &&
+          trim.status === 200; })()));
+    ok("cfm: the circuit re-resolves at confirm — a trip after evaluate vetoes the FUND even with book_version unchanged",
+      (await (async () => { const h = await freshEval();
+        store.set("tt:book:v1", JSON.stringify({ ...BOOK, board: { ...BOOK.board, circuit: { state: "tripped", as_of: TODAY } } }));
+        const r = await cfB({ intent: { action: "FUND", sym: "AAA" }, result_hash: h });
+        store.set("tt:book:v1", JSON.stringify(BOOK));
+        return r.status === 409 && /circuit now reads TRIPPED/.test(r.b.reason); })()));
+    ok("cfm: a legacy receipt with no readout_hash fails toward recompute, never toward an unbound confirm",
+      (await (async () => { await freshEval();
+        const cur0 = JSON.parse(store.get("tt:alloc:v1"));
+        delete cur0.inputs.readout_hash;
+        store.set("tt:alloc:v1", JSON.stringify(cur0));
+        const r = await cfB({ intent: { action: "FUND", sym: "AAA" }, result_hash: cur0.attestation.result_hash });
+        return r.status === 409 && /predates confirm-time readout binding/.test(r.b.reason); })()));
   } finally { globalThis.fetch = realFetch; }
 }
 
@@ -7494,6 +7802,60 @@ console.log("\n[67] v4.0 SIMPLE MODE — verdict mapping, card selection, senten
       return !/useState|useEffect|localStorage|computeRegime|buildEvidenceSet|REGIME_BAND_TABLE/.test(code); })());
   ok("v4.0 boundary: the engine is untouched — no new voter, quorum or band",
     REGIME_BAND_TABLE.length === 6 && REGIME_QUORUM === 4);
+}
+
+// ---- 69. v4.1.1 — ageDays: the ET clock reaches the terminal (FIX-A, 4th recurrence) ------
+// The terminal's ageDays anchored a stamp at NOON UTC and differenced it against Date.now(),
+// mixing a calendar date with a wall clock. A date stamped "today in ET" therefore read as
+// age -1 (FUTURE) from 00:00 ET until 12:00 UTC (08:00 ET) — so circuitStateCli returned
+// "dated in the future", stance() went ADDS SUSPENDED, and 11 render assertions covering
+// FEAT-TT-ENTRY, FEAT-TT-TECHREAD, RANKFAIR's cap veto and the ALLOC confirm failed. Only
+// between midnight and 8am ET, which is exactly how it stayed invisible.
+// This is the FOURTH time this defect class has landed (v3.11 UTC run stamps, v3.35 fixture
+// dates, v3.80 the composed-lifecycle test that "passed by daylight and went red every
+// night"), so it is pinned across the HOURS, not just asserted once at whatever time CI runs.
+console.log("\n[69] ageDays — ET calendar date vs ET calendar date, at every hour");
+{
+  const lift = (n) => { const i = adminSrc.indexOf("function " + n + "(");
+    let d = 0; for (let k = adminSrc.indexOf("{", i); k < adminSrc.length; k++) {
+      if (adminSrc[k] === "{") d++; else if (adminSrc[k] === "}") { d--; if (!d) return adminSrc.slice(i, k + 1); } } };
+  const SRC = lift("ageDays");
+  // Inject a frozen clock: ageDays uses `new Date()` and Date.parse, nothing else.
+  const at = (instant) => { const R = Date;
+    function D() { return new R(instant); }
+    D.parse = (x) => R.parse(x); D.now = () => R.parse(instant);
+    return new Function("Date", SRC + "\nreturn ageDays;")(D); };
+  const ET = (inst) => new Date(inst).toLocaleDateString("en-CA", { timeZone: "America/New_York" });
+  // Four instants spanning an ET day, incl. both sides of the old noon-UTC cliff.
+  const HOURS = ["2026-08-20T04:30:00Z" /*00:30 ET*/, "2026-08-20T11:59:00Z" /*07:59 ET*/,
+                 "2026-08-20T16:00:00Z" /*12:00 ET*/, "2026-08-21T03:59:00Z" /*23:59 ET*/];
+
+  ok("ageDays: a stamp made TODAY in ET reads 0 at EVERY hour — the whole bug was that it " +
+     "read -1 before 8am ET",
+    HOURS.every((h) => at(h)(ET(h)) === 0));
+  ok("ageDays: YESTERDAY reads exactly 1 at every hour — no wall-clock term left in the math",
+    HOURS.every((h) => { const y = ET(new Date(Date.parse(h) - 86400000).toISOString());
+      return at(h)(y) === 1; }));
+  ok("ageDays: a genuinely future stamp is still NEGATIVE — the fail-closed signal every " +
+     "consumer keys on (runState 'never', circuitStateCli 'cannot be judged') survives",
+    HOURS.every((h) => { const t = ET(new Date(Date.parse(h) + 3 * 86400000).toISOString());
+      return at(h)(t) < 0; }));
+  ok("ageDays: absent/malformed still returns null, the FAIL-CLOSED signal — unchanged",
+    (() => { const f = at(HOURS[0]);
+      return f("") === null && f(null) === null && f("2026-8-1") === null
+        && f("2026-08-20T00:00:00Z") === null; })());  // strict guard deliberately kept
+  // NEGATIVE CONTROL: prove the pin would catch a revert. The old body, run at 00:30 ET.
+  ok("ageDays NEGATIVE CONTROL: the retired noon-UTC formula returns -1 for a today-stamp at " +
+     "00:30 ET — so a revert to it fails this section rather than passing quietly",
+    (() => { const inst = HOURS[0], R = Date;
+      const old = (iso) => Math.floor((R.parse(inst) - R.parse(iso + "T12:00:00Z")) / 86400000);
+      return old(ET(inst)) === -1; })());
+  ok("ageDays: the noon-UTC anchor is GONE from the source — a comment claiming it 'dodges " +
+     "timezone edge cases' must not outlive the code it described",
+    !/T12:00:00Z/.test(SRC) && /America\/New_York/.test(SRC));
+  ok("ageDays: the terminal now uses the SAME ET-calendar rule as the server time-judges " +
+     "(tt-alloc ageDaysEt / ttScore ageDaysET), so one clock governs the stack",
+    /toLocaleDateString\("en-CA",\{timeZone:"America\/New_York"\}\)/.test(SRC));
 }
 
 console.log(`\n=== SMOKE TEST: ${pass} passed, ${fail} failed ===`);

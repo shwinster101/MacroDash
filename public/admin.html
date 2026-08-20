@@ -9,7 +9,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
 <!-- AUDIT: kept in sync with package.json by test/smoke.mjs. admin.html is a Vite
      public/ passthrough, so it cannot receive __APP_VERSION__ — the guard is the fix. -->
-<title>TT TICKER TERMINAL v4.0.4</title>
+<title>TT TICKER TERMINAL v4.1.2</title>
 <style>
   :root{
     --bg:#05070a; --panel:#0a0f16; --panel2:#0d141d; --line:#16202c;
@@ -86,6 +86,16 @@
   .statusline{display:flex;flex-wrap:wrap;gap:8px 18px;margin-top:8px;font-size:12px;color:var(--slate)}
   .statusline b{color:var(--fg)}
   .pill{display:inline-block;padding:1px 8px;border-radius:10px;border:1px solid var(--line);font-size:11px}
+  /* v4.1 Step 7: the pill is a real <button> now (the v3.42 stance-badge rule — a tappable
+     thing is a button, not a span with a handler). Inherit the pill look, kill UA chrome. */
+  button.pill{font:inherit;font-size:11px;cursor:pointer;background:transparent;color:inherit;text-align:left}
+  /* WHY MACRO — the evidence panel the pill toggles. display:none costs the fold nothing
+     closed (the v3.42 slice-5 budgets are pinned); open, it explains the pill it sits under. */
+  #macroEvidence{display:none;margin:4px 8px 0;padding:6px 8px;border:1px solid var(--line);border-radius:4px;font-size:10.5px;line-height:1.5;color:var(--dim)}
+  #macroEvidence b{color:var(--fg)}
+  #macroEvidence .mev-row{display:block}
+  #macroEvidence .mev-bull{color:var(--green)}
+  #macroEvidence .mev-bear{color:var(--red)}
   .pill.warn{color:var(--amber);border-color:#4a361a;background:#191206}
   .pill.head{color:var(--red);border-color:#4a1a20;background:#190a0c}
   .pill.neutral{color:var(--amber)}
@@ -425,7 +435,13 @@
            WRAPPED INTERNALLY ("MACRO:" over the pill) and grew the bar 22→41px, eating the
            fold budget. The v3.99 SourceBox lesson: nowrap without a min-width floor pushes
            or wraps; with it, the ellipsis engages and the bar stays one line tall. -->
-      <span style="min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">MACRO: <span class="pill neutral" id="regimePill">loading…</span></span>
+      <!-- v4.1 Step 7: the pill is a BUTTON toggling the WHY MACRO evidence panel. The
+           evidence lived only in a hover title — unreachable on touch, the open a11y
+           finding — while the pill asserted a verdict whose bearish votes and missing
+           inputs rendered nowhere. The pill's own text is unchanged (the date stays
+           terminal — freshness is why it is there — and the fold budgets are pinned);
+           the tally is one tap deep, behind the very claim it explains. -->
+      <span style="min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">MACRO: <button type="button" class="pill neutral" id="regimePill" aria-expanded="false" aria-controls="macroEvidence" onclick="toggleMacroEvidence()">loading…</button></span>
       <button class="hb-ranks" onclick="exportRankings()"
         aria-label="Share ticker rankings and decision logic"
         title="Share rankings, funding priority, methodology and caveats">⇧ SHARE RANKS</button>
@@ -436,8 +452,13 @@
       <button class="hb-more" id="headToggle" aria-expanded="false" aria-controls="headInfo"
         onclick="toggleHeadInfo()">⋯ OPS</button>
     </div>
+    <!-- v4.1 Step 7 (WHY MACRO): presentation only — this panel renders regime.checks /
+         bullish / bearish / confidence, all of which the readout has published since
+         ENGINE0-CONT and this page never read. No new voter, no threshold change; the
+         verdict and every gate are computed upstream and this panel changes nothing. -->
+    <div id="macroEvidence" role="region" aria-label="Why macro — readout evidence"></div>
     <div id="headInfo" style="display:none">
-      <div class="brand">FINANCE&nbsp;BRO.AI // TT&nbsp;TICKER&nbsp;TERMINAL <small>v4.0.4 · underwriting + sourced gates</small></div>
+      <div class="brand">FINANCE&nbsp;BRO.AI // TT&nbsp;TICKER&nbsp;TERMINAL <small>v4.1.2 · underwriting + sourced gates</small></div>
       <div class="statusline">
         <span>BOOK: <b id="bookStamp">loading…</b></span>
         <span>AUTH: <b id="sessState">…</b></span>
@@ -776,11 +797,27 @@ function toggleHeadInfo(){
 /* FEAT-TT-RUN: days since an ISO date, or null if absent/unparseable. Null is the
    FAIL-CLOSED signal — unlike src/sources.js isStale (which returns false = "not stale"
    on a missing date), a missing date here must read as NEVER RUN, never as fresh. */
+/* FIX-A (v3.49) FINALLY REACHES THE TERMINAL — the fourth recurrence of this defect class.
+   The old body anchored the stamp at noon UTC and differenced it against Date.now():
+     Date.parse(iso+"T12:00:00Z") vs Date.now()
+   That mixes a CALENDAR DATE with a WALL CLOCK. A date stamped "today in ET" therefore sat
+   in the future from 00:00 ET until 12:00 UTC (08:00 ET), so ageDays returned -1 and every
+   consumer that treats a future date as invalid — circuitStateCli, runState, paRead, posAge,
+   ddAgeChip — read a freshly-stamped fact as UNRESOLVED / NEVER RUN for the first eight
+   hours of every ET day. Not a test artifact: an operator stamping a circuit or a lastRun
+   before 8am ET saw it rejected as future-dated. The comment claimed noon UTC "dodges
+   timezone edge cases"; it dodged the DST ones and created this one.
+   Now compares ET CALENDAR DATE to ET CALENDAR DATE, both anchored at 00:00Z, which is a
+   pure day difference with no wall-clock term. Mirrors functions/lib/tt-alloc.js ageDaysEt
+   and src/ttScore.js ageDaysET — the etYmd clock every other time-judge in this stack
+   already uses. The strict YYYY-MM-DD guard is UNCHANGED on purpose: callers that may hold a
+   datetime already slice it themselves (circuitStateCli, posAge), and loosening it here
+   would silently start accepting inputs those call sites deliberately reject. */
 function ageDays(iso){
   if(!iso||!/^\d{4}-\d{2}-\d{2}$/.test(iso))return null;
-  const t=Date.parse(iso+"T12:00:00Z"); // noon UTC dodges timezone edge cases
-  if(!Number.isFinite(t))return null;
-  return Math.floor((Date.now()-t)/86400000);
+  const etToday=new Date().toLocaleDateString("en-CA",{timeZone:"America/New_York"});
+  const days=Math.round((Date.parse(etToday+"T00:00:00Z")-Date.parse(iso+"T00:00:00Z"))/86400000);
+  return Number.isFinite(days)?days:null;
 }
 /* TT-run state. A future-dated lastRun (typo) also reads as never — not fresh. */
 function runState(iso){
@@ -1208,8 +1245,15 @@ function sessSec(el,html){
 /* ── the leverage circuit ── gates every add, so it renders ABOVE the next dollar ── */
 function renderCircuit(){
   const c=BOARD.circuit;
-  if(!c||typeof c!=="object")return sessSec("circuitLine","");
-  const st=String(c.state||"").toLowerCase();
+  /* FEAT-TT-CIRCUIT (v4.1): absence used to HIDE the strip entirely, so the one state that
+     suspends every add was also the one state with no pixels. Unresolved renders loud. */
+  const csr=circuitStateCli(c);
+  if(csr.st==="unresolved")
+    return sessSec("circuitLine",
+      `<div class="lbl">Leverage circuit</div>`+
+      `<div style="color:var(--amber);font-weight:700;font-size:12px;margin-top:3px">○ CIRCUIT UNRESOLVED — adds suspended</div>`+
+      `<div class="none" style="margin-top:3px">${esc(csr.reason)}</div>`);
+  const st=csr.st;
   const col=st==="tripped"?"var(--red)":st==="armed"?"var(--amber)":"var(--green)";
   const glyph=st==="tripped"?"⛔":st==="armed"?"⚠":"●";
   let h=`<div class="lbl">Leverage circuit${c.id?` · ${esc(c.id)}`:""}</div>`+
@@ -1495,13 +1539,43 @@ function renderRollup(){
 const MOVE_PCT=5;                       // a day move worth waking someone for
 const SEEN_KEY="tt:seen:v1";
 const SEEN_MAX_D=7;                     // a baseline older than this is noise, not a diff
+/* FEAT-TT-CIRCUIT (v4.1 Step 1): the structured circuit is CANONICAL, and absence fails
+   CLOSED. The 8/18 audit's P0: board prose said "presumed tripped" while board.circuit was
+   null — and null read as not-tripped here, so the stance could show ADDS OK against the
+   session's own written intent. Absence / malformed / undated / stale clear|armed are all
+   UNRESOLVED → ADDS SUSPENDED, reason named. `tripped` NEVER expires into clear (the v3.40
+   asymmetry: stale bearishness survives, stale permission does not).
+   MIRROR of circuitState() in functions/lib/tt-alloc.js — admin is buildless, so the copy is
+   pinned by smoke (the CAP_PCT mirror convention). */
+const CIRCUIT_STALE_D=7;   // mirror of functions/lib/tt-alloc.js
+function circuitStateCli(c){
+  if(!c||typeof c!=="object"||Array.isArray(c))
+    return{st:"unresolved",age:null,reason:"no structured circuit record on the board — session prose is explanation, not permission"};
+  const st=String(c.state||"").toLowerCase();
+  if(!["clear","armed","tripped"].includes(st))
+    return{st:"unresolved",age:null,reason:`circuit state "${c.state}" is not clear|armed|tripped`};
+  const age=ageDays(String(c.as_of||"").slice(0,10));
+  if(st==="tripped")   // fail-safe direction: an old or undated trip still trips
+    return{st,age,reason:age===null?"tripped — state undated; still binding until a live pull disproves it":null};
+  if(age===null)
+    return{st:"unresolved",age,reason:`circuit ${st.toUpperCase()} is undated — an undated permission reads as unresolved, never as current`};
+  if(age<0)
+    return{st:"unresolved",age,reason:`circuit ${st.toUpperCase()} is dated in the future — cannot be judged`};
+  if(age>CIRCUIT_STALE_D)
+    return{st:"unresolved",age,reason:`circuit ${st.toUpperCase()} asserted ${age}d ago (limit ${CIRCUIT_STALE_D}d) — stale permission is not evidence of safety; re-assert it in ◧ SESSION`};
+  return{st,age,reason:null};
+}
 /* Stance: the ONE line that says whether capital may move today. The circuit outranks the
    regime because it is a portfolio fact, not a market read — no macro verdict un-trips it. */
 function stance(){
-  const st=String(BOARD.circuit&&BOARD.circuit.state).toLowerCase();
+  const cs=circuitStateCli(BOARD.circuit);
+  const st=cs.st;
   if(st==="tripped")return{k:"stop",txt:"NO NEW POSITIONS — leverage circuit tripped",
     why:(BOARD.circuit&&BOARD.circuit.rule)||"deleverage-only until a live pull disproves it",
     verdict:"NO NEW POSITIONS",quals:[{t:"circuit TRIPPED",c:"bad"}]};
+  if(st==="unresolved")return{k:"stop",txt:"ADDS SUSPENDED — circuit state unresolved",
+    why:cs.reason+" — set the structured circuit in ◧ SESSION before any add",
+    verdict:"ADDS SUSPENDED",quals:[{t:"circuit UNRESOLVED",c:"bad"}]};
   const{measured,asserted,gov,ranked,disagree,actionability,canGate,macroFlip}=governingRegime();
   if(!ranked)
     return{k:"unknown",txt:"STANCE UNKNOWN — no measured or asserted regime",
@@ -2653,6 +2727,7 @@ const DD_HANDLED=new Set(["ticker","name","thesis_version","updated","as_of","ti
   "pt_ladder","pt_model","pt_consensus","consensus","gates","hinges","leading_indicators","cert_probabilities","utilization_underwriting","capital",
   "dilution_grid","engine","pt_2040","kill_combination","key_dates","position","model_anchors","conditional_rules",
   "linked_exposure","status_flags","tape","watchlist_unlocks","hedges","rules","open_items","telemetry","capex_exposure","tokens_per_watt",
+  "valuation_scenarios","fundamentals","ecosystem_overlay",
   // v3.73 TT-SCORE: composite renders inside the score panel as LEGACY / UNVERIFIED — one
   // home, not the unknown-fields drawer. (falsifiers_v2_draft deliberately NOT handled:
   // staged pre-commitment content stays visible in OTHER STORED FIELDS until promoted.)
@@ -2945,7 +3020,58 @@ function ddAnswerBlock(x,dd,todayET){
   return `<div class="dd-answer">${cell("What it's worth",w)}${cell("What changes my mind",mind)}`+
     `${cell("When",when)}${cell("What I own",own)}</div>`;
 }
-/* FEAT-TT-OWNDEBT (v3.35): the option legs the broker sync measured, as a real table.
+function ddScenarioSec(dd){
+  const s=dd&&dd.valuation_scenarios;
+  if(!s||typeof s!=="object")return "";
+  const eps=Number(s.forward_eps),period=s.forward_period||"forward";
+  const cases=Array.isArray(s.cases)?s.cases:[];
+  if(!Number.isFinite(eps)||!cases.length)return "";
+  const mark=dd.ref_px&&Number.isFinite(Number(dd.ref_px.px))?Number(dd.ref_px.px):null;
+  let t=`<div class="tblx"><table class="dd-pt"><tr><th>case</th><th>fwd P/E</th><th>PT</th><th>vs mark</th><th>condition</th></tr>`;
+  cases.forEach(c=>{
+    const mult=Number(c.multiple),pt=Number.isFinite(Number(c.pt))?Number(c.pt):(Number.isFinite(mult)?eps*mult:null);
+    const up=mark!==null&&pt!==null?Math.round((pt/mark-1)*1000)/10:null;
+    const name=String(c.name||c.case||"case"),isBull=/bull/i.test(name);
+    t+=`<tr><th>${esc(name)}${isBull?` <span style="color:var(--amber)">· ceiling</span>`:""}</th>`+
+      `<td>${Number.isFinite(mult)?esc(mult)+"×":"—"}</td><td>${pt!==null?"$"+esc(Math.round(pt*100)/100):"—"}</td>`+
+      `<td style="color:${up===null?"var(--dim)":up>=0?"var(--green)":"var(--red)"}">${up===null?"—":(up>=0?"+":"")+up+"%"}</td>`+
+      `<td>${esc(c.condition||c.trigger||"")}</td></tr>`;
+  });
+  t+=`</table></div>`;
+  return `<div class="dd-sec"><div class="lbl">SCENARIO PT · canonical · ${esc(period)} EPS $${esc(eps)} · ${esc(s.as_of||s.asOf||"")}</div>${t}`+
+    `<div class="none" style="color:var(--amber);margin-top:4px">${esc(s.policy||"Scenarios are conditional; the bull multiple is not an active target until the next earnings print validates the assumptions.")}</div>`+
+    (s.source?`<div class="none" style="color:var(--dim);margin-top:3px">source: ${esc(s.source)}</div>`:"")+`</div>`;
+}
+function ddFundamentalsSec(dd){
+  const f=dd&&dd.fundamentals;
+  if(!f||typeof f!=="object")return "";
+  const i=f.income_statement||{},b=f.balance_sheet||{};
+  const rows=[
+    ["TTM revenue",i.revenue_B!=null?`$${i.revenue_B}B`:null],["Gross profit",i.gross_profit_B!=null?`$${i.gross_profit_B}B`:null],
+    ["Operating income",i.operating_income_B!=null?`$${i.operating_income_B}B`:null],["Net income",i.net_income_B!=null?`$${i.net_income_B}B`:null],
+    ["R&D",i.rd_B!=null?`$${i.rd_B}B`:null],["Gross margin",i.gross_margin_pct!=null?`${i.gross_margin_pct}%`:null],
+    ["Operating margin",i.operating_margin_pct!=null?`${i.operating_margin_pct}%`:null],["Net margin",i.net_margin_pct!=null?`${i.net_margin_pct}%`:null],
+    ["Cash + short-term investments",b.cash_st_investments_B!=null?`$${b.cash_st_investments_B}B`:null],
+    ["Current liabilities",b.current_liabilities_B!=null?`$${b.current_liabilities_B}B`:null],["Current debt",b.current_debt_B!=null?`$${b.current_debt_B}B`:null],["Long-term debt",b.long_term_debt_B!=null?`$${b.long_term_debt_B}B`:null],["Lease obligations",b.lease_obligations_B!=null?`$${b.lease_obligations_B}B`:null],
+    ["Net cash after leases",b.net_cash_after_leases_B!=null?`$${b.net_cash_after_leases_B}B`:null],["Current ratio",b.current_ratio!=null?`${b.current_ratio}×`:null]
+  ].filter(r=>r[1]!=null);
+  if(!rows.length)return "";
+  return `<div class="dd-sec"><div class="lbl">FUNDAMENTALS · measured · ${esc(f.as_of||"")}</div>`+
+    rows.map(r=>`<div class="dd-kv"><div class="k">${esc(r[0])}</div><div>${esc(r[1])}</div></div>`).join("")+`</div>`;
+}
+function ddEcosystemSec(dd){
+  const e=dd&&dd.ecosystem_overlay;
+  if(!e||typeof e!=="object"||!Array.isArray(e.names)||!e.names.length)return "";
+  let t=`<div class="tblx"><table class="dd-pt"><tr><th>name</th><th>growth model</th><th>NVDA link</th><th>circularity / funding</th><th>confidence</th></tr>`;
+  e.names.forEach(n=>{
+    const g=n.growth_model||{},growth=g.summary||n.growth_summary||"",risk=[n.circularity_risk,n.funding_risk].filter(Boolean).join(" · ");
+    t+=`<tr><th>${esc(n.symbol||n.name||"")}</th><td>${esc(growth)}</td><td>${esc(n.nvda_linkage||"")}</td><td>${esc(risk||"")}</td><td>${esc(n.confidence||g.status||"UNKNOWN")}</td></tr>`;
+  });
+  t+=`</table></div>`;
+  const details=e.names.map(n=>`<div class="dd-kv"><div class="k">${esc(n.symbol||n.name||"")}</div><div>${n.relationship?`<b>${esc(n.relationship)}</b> · `:""}${esc(n.note||n.next_event||"")}</div></div>`).join("");
+  return `<div class="dd-sec"><div class="lbl">ECOSYSTEM OVERLAY · risk-adjusted · ${esc(e.as_of||e.asOf||"")}</div>${t}${details}`+
+    (e.conclusion?`<div class="none" style="color:var(--amber);margin-top:5px">${esc(e.conclusion)}</div>`:"")+`<div class="none" style="color:var(--dim);margin-top:4px">Investment growth informs demand durability, circularity, and concentration; it is not added to NVDA’s primary PT.</div></div>`;
+} /* FEAT-TT-OWNDEBT (v3.35): the option legs the broker sync measured, as a real table.
    These were validated, stored, and rendered exactly once — a one-sentence short-call
    cover count that only appeared with a TRIPPED circuit. A LEAP book was invisible.
    Strike renders only where the sync captured it (never fabricated); DTE colors by the
@@ -3162,6 +3288,9 @@ function renderDeepDive(sym){
   h+=renderIntake(x);   // FEAT-TT-INTAKE: what still has to be fetched, beside what it blocks
   h+=ddAnswerBlock(x,dd,todayET);
   h+=ddOptSec(posOf(x));   // FEAT-TT-OWNDEBT: the legs expressing this thesis, beside it
+  h+=ddScenarioSec(dd);
+  h+=ddFundamentalsSec(dd);
+  h+=ddEcosystemSec(dd);
   // FEAT-TT-ESTRUN (v3.35): the estimate run + dual PTs, ABOVE the fold — the analyst
   // projection layer is the math under the tier claim, not a drawer to hunt for.
   h+=ddEstRunSec(x,dd);
@@ -3384,7 +3513,10 @@ function governingRegime(){
   const macroFlip=REGIME&&REGIME.macro_flip;
   return{measured,asserted,gov,ar,actionability,canGate,macroFlip,
     ranked:!(mR===undefined&&aR===undefined),
-    disagree:!!(measured&&asserted&&measured!==asserted)};
+    // FEAT-TT-CIRCUIT (v4.1): a disagreement exists only between two RANKED readings. A long
+    // free-text session narrative ("DEMAND CONFIRMED…") is not the opposite of TAILWIND —
+    // comparing prose against a verdict rendered context as an engine conflict (8/18 audit).
+    disagree:!!(measured&&asserted&&mR!==undefined&&aR!==undefined&&measured!==asserted)};
 }
 function regimeModifier(){
   const{measured,asserted,gov,ar}=governingRegime();
@@ -3405,6 +3537,10 @@ function regimeModifier(){
       h+=`<div class="none" style="color:var(--amber)">⚖ session reads <b>${aShort}</b> — MacroDash unavailable, nothing measured confirms it</div>`+full;
     else if(REG_RANK[measured]===undefined)
       h+=`<div class="none" style="color:var(--amber)">⚖ session reads <b>${aShort}</b> · MacroDash returned ${esc(measured)} — unconfirmed, don't gate on the measured side</div>`+full;
+    else if(REG_RANK[asserted]===undefined)
+      // FEAT-TT-CIRCUIT (v4.1): unranked session prose is CONTEXT, never an engine
+      // disagreement — it cannot be compared against TAILWIND|NEUTRAL|HEADWIND|PANIC.
+      h+=`<div class="none">◳ session note — <b>${aShort}</b> <span class="scope">· not a ranked regime; measured <b>${esc(measured)}</b> governs alone</span></div>`+full;
     else if(asserted!==measured)
       h+=`<div class="none" style="color:var(--amber)">⚖ engines disagree — measured <b>${esc(measured)}</b> vs asserted <b>${aShort}</b> · the stricter (<b>${esc(gov)}</b>) governs; disagreement is information, not an average</div>`+full;
     else
@@ -3635,12 +3771,18 @@ async function runTickerAnalysis(sym){
    positions at once, so this fetches the map, not one sym at a time. Fetch failure is
    silent by design, same as loadQuotes: the board degrades to "no positions known" (every
    posOf() reads null, chips show no weight) rather than breaking anything. */
+/* v4.1 Step 2: the measured broker account, kept — loadPositions used to DISCARD it, so the
+   only account truth on screen was the stale asserted BOARD.account, and the measured one
+   reached the operator solely as prose inside a context blocker (8/18 audit, P1). */
+let ACCOUNT=null,POS_ASOF=null,POS_SNAP=null;
 async function loadPositions(){
   try{
     const r=await fetch("/api/positions");
     if(r.ok){
       const d=await r.json();
       POSITIONS=(d&&typeof d.positions==="object"&&!Array.isArray(d.positions))?d.positions:{};
+      ACCOUNT=(d&&d.account&&typeof d.account==="object")?d.account:null;
+      POS_ASOF=(d&&d.asOf)||null;POS_SNAP=(d&&d.snap)||null;
     }
   }catch(_e){/* POSITIONS stays {} — posOf() reads null for everyone, never stale data */}
   // v3.42 slice 2: same settle-on-either-outcome rule as loadQuotes — the SELL skeletons
@@ -3695,18 +3837,80 @@ function allocDoFund(){if(ALLOC&&ALLOC.eligible)allocConfirm("FUND",ALLOC.eligib
 function allocTrunc(s){s=String(s);return s.length>56?s.slice(0,55)+"…":s;}
 /* ONE chip builder, both altitudes (the hzDeckChip rule) — the BUY block and the FUNDING
    block must never disagree about what the server said. */
+/* v4.1 Step 2: the measured account, rendered beside any green allocation state. The 8/18
+   audit's P0 semantics gap: "ALLOCATABLE" read as cash/sizing approval while the account
+   held negative cash and margin debt. The context state and the cash facts now share a line,
+   with the qualifier attached to the state itself. */
+function acctLine(){
+  if(!ACCOUNT)return `<span class="scope">account unmeasured — no synced broker record</span>`;
+  const a=ACCOUNT;
+  const n=(v)=>isFinite(Number(v))?money(Number(v)):"?";
+  return `<span class="scope">acct: equity ${n(a.equity)} · cash ${n(a.cash)} · BP ${n(a.buying_power)} · debt ${n(a.debt)} · ${esc(String(a.at||"").slice(0,10)||"undated")}</span>`;
+}
+/* v4.1 Step 3: receipt age from the FULL timestamp, never a UTC date slice. The old
+   date-slicing the UTC instant called a 01:07Z receipt (= 21:07 ET the previous
+   business evening) "today", and printed "-1d old" when read before 12:00Z (no negative
+   guard — the defect sessChip already fixed). Hours are timezone-free; the ET business date
+   comes from the server (business_date_et via etYmd), never re-derived here. */
+function allocAgeTxt(){
+  const t=Date.parse(ALLOC&&ALLOC.at);
+  if(!isFinite(t))return "undated";
+  const h=(Date.now()-t)/3600000;
+  if(h<-0.5)return "⚠ dated in the future";
+  if(h<1)return "<1h old";
+  if(h<48)return Math.round(h)+"h old";
+  return Math.round(h/24)+"d old";
+}
+/* The freshness BASIS: the receipt's own age is not the age of the evidence it was built
+   from. ALLOC.inputs was rendered nowhere (8/18 audit) — a fresh-looking receipt could ride
+   a readout from the prior morning and positions from two days back, invisibly. */
+function allocBasisLine(){
+  const i=(ALLOC&&ALLOC.inputs)||{};
+  const d=(v)=>{const s=String(v||"").slice(0,10);return /^\d{4}-\d{2}-\d{2}$/.test(s)?s:"undated";};
+  return `<span class="scope">basis: receipt ${esc(ALLOC.at_et||d(ALLOC.at))} · readout ${d(i.readout_as_of)} · positions ${d(i.positions_asOf)} · dd-index ${d(i.dd_index_asOf)}</span>`;
+}
+/* v4.1 Step 4: the price basis, disclosed wherever the eligible name renders. The server
+   computes the string (priceBasisOf in tt-alloc.js); a pre-v4.1 receipt without it falls
+   back to live_px, and a stamped mark is NEVER relabelled live. */
+function allocPriceBasis(){
+  const e=ALLOC&&ALLOC.eligible;
+  if(!e)return null;
+  if(e.price_basis)return e.price_basis;
+  if(e.live_px===true)return "live price";
+  if(e.live_px===false)return "stamped price";
+  return "price basis unrecorded";
+}
+/* v4.1 Step 5: when does a stored receipt stop being confirmable? (a) it predates the
+   current ET business day — the world it bound to has rolled; (b) the client's own stance
+   currently reads stop/unknown — the permission state moved after the receipt was cut, and
+   a green link under a suspended stance would be the two-answers defect again. Server-side
+   binding (Step 6) re-checks all of this authoritatively at confirm time; this rule only
+   governs whether the AFFORDANCE renders at all. */
+function allocConfirmWithheld(){
+  if(!ALLOC)return "no receipt";
+  const et=new Date().toLocaleDateString("en-CA",{timeZone:"America/New_York"});
+  if(ALLOC.business_date_et&&ALLOC.business_date_et!==et)
+    return `receipt is from ${ALLOC.business_date_et}, not today — ⟳ DATA+RANKS for a current one`;
+  if(!ALLOC.business_date_et&&!isFinite(Date.parse(ALLOC.at)))return "receipt undated";
+  const stw=stance();
+  if(stw.k==="stop"||stw.k==="unknown")
+    return `local permission reads ${stw.verdict} — the receipt no longer matches the current state`;
+  return null;
+}
 function allocChip(){
   if(!ALLOC)return `<span class="scope">server allocation: no receipt — ⟳ DATA+RANKS computes one (older deploys: unavailable)</span>`;
-  const age=ageDays(String(ALLOC.at).slice(0,10));
-  const stamp=`receipt ${age===0?"today":age===null?"undated":age+"d old"}`;
-  const conf=ALLOC.confirmation?` · ✓ CONFIRMED ${esc(ALLOC.confirmation.action)} ${esc(ALLOC.confirmation.sym)} ${esc(String(ALLOC.confirmation.at).slice(0,10))}`:"";
+  const stamp=`receipt ${allocAgeTxt()}${ALLOC.business_date_et?` (${esc(ALLOC.business_date_et)} ET)`:""}`;
+  const pb=allocPriceBasis();
+  const pbTxt=pb?` · ${pb==="live price"?"":"⚠ "}${esc(pb)}${ALLOC.eligible&&isFinite(Number(ALLOC.eligible.px))?` $${esc(ALLOC.eligible.px)}`:""}`:"";
+  const conf=ALLOC.confirmation?` · ✓ RECORDED ${esc(ALLOC.confirmation.action)} ${esc(ALLOC.confirmation.sym)} ${esc(String(ALLOC.confirmation.at).slice(0,10))} (intent only)`:"";
   if(ALLOC.state==="ALLOCATABLE")
-    return `<span style="color:var(--green);font-weight:700">server: ALLOCATABLE — ${esc(ALLOC.eligible.sym)}</span> <span class="scope">${stamp}${conf}</span>`;
+    return `<span style="color:var(--green);font-weight:700">server: ALLOCATION CONTEXT READY — ${esc(ALLOC.eligible.sym)}</span> `+
+      `<span class="scope">· not a cash-availability or sizing claim${pbTxt} · ${stamp}${conf}</span><br>${acctLine()}<br>${allocBasisLine()}`;
   if(ALLOC.state==="BUY_ELIGIBLE")
-    return `<span style="color:var(--amber);font-weight:700">server: BUY ELIGIBLE — ${esc(ALLOC.eligible.sym)}</span> <span class="scope">· ${esc(allocTrunc(ALLOC.context_blockers[0]||"context incomplete"))} · ${stamp}${conf}</span>`;
+    return `<span style="color:var(--amber);font-weight:700">server: BUY ELIGIBLE — ${esc(ALLOC.eligible.sym)}</span> <span class="scope">· ${esc(allocTrunc(ALLOC.context_blockers[0]||"context incomplete"))}${pbTxt} · ${stamp}${conf}</span><br>${allocBasisLine()}`;
   if(ALLOC.state==="WAIT")
-    return `<span style="color:var(--amber)">server: WAIT — ${esc(allocTrunc((ALLOC.gate&&ALLOC.gate.reason)||"gate failed"))}</span> <span class="scope">${stamp}</span>`;
-  return `<span class="scope">server: no eligible name · ${stamp}${conf}</span>`;
+    return `<span style="color:var(--amber)">server: WAIT — ${esc(allocTrunc((ALLOC.gate&&ALLOC.gate.reason)||"gate failed"))}</span> <span class="scope">${stamp}</span><br>${allocBasisLine()}`;
+  return `<span class="scope">server: no eligible name · ${stamp}${conf}</span><br>${allocBasisLine()}`;
 }
 
 /* ═══════════ FEAT-TT-DDSTORE (v3.75) — thesis payloads live in their own KV ═══════════ */
@@ -5300,7 +5504,12 @@ function renderSellBlock(){
      the client's computed first (agreement would be a redundant line). */
   const serverFirst=ALLOC&&ALLOC.funding&&ALLOC.funding.rows&&ALLOC.funding.rows[0]&&ALLOC.funding.rows[0].sym;
   if(serverFirst&&computedFirst&&serverFirst!==computedFirst)
-    h+=`<div class="none" style="color:var(--amber)">⚖ server receipt: <b>${esc(serverFirst)}</b> first (${esc(allocTrunc(ALLOC.funding.rows[0].reason))}) · client: <b>${esc(computedFirst)}</b></div>`;
+    /* v4.1 Step 5: three readings can coexist (session order · client sellRank · server
+       receipt) and "disagreement is information" told the operator WHAT differed but never
+       WHICH answer is confirmable. The server receipt is canonical for ACTION; the client
+       and session readings stay as diagnostic shadows — married never merged for display,
+       but never presented as peer recommendations. */
+    h+=`<div class="none" style="color:var(--amber)"><b>SERVER RECEIPT GOVERNS CONFIRMATION</b> — server: <b>${esc(serverFirst)}</b> first (${esc(allocTrunc(ALLOC.funding.rows[0].reason))}) · <span class="scope">diagnostic shadows — client: ${esc(computedFirst)}${assertedFirst&&assertedFirst!==serverFirst?` · session: ${esc(assertedFirst)}`:""}</span></div>`;
   h+=`<div class="none">${allocChip()}</div>`;
   /* FEAT-TT-GLANCE (v3.61): methodology, the unranked tail and the tax disclaimer live ONE
      tap down. The COUNT stays on the closed summary — silent truncation reads as full
@@ -5379,9 +5588,16 @@ function renderBuyBlock(){
      married never merged. A split between the two lines is signal (stale receipt, drifted
      inputs, or a real logic divergence to investigate), never averaged away. The chip also
      carries the ALLOCATABLE→CONFIRM affordance: two-step (confirmLink), intent-only. */
+  /* v4.1 Step 5: only the SERVER candidate can expose confirmation, and only while the
+     receipt is current and the client's own permission read has not moved against it. A
+     receipt from a prior ET business date, or one rendered while the local stance reads
+     stop/unknown, withdraws the affordance and says why — never a silent green link. */
   h+=`<div class="none">${allocChip()}`+
-    (ALLOC&&ALLOC.state==="ALLOCATABLE"&&!ALLOC.confirmation
-      ?` · ${confirmLink("allocFundLink","CONFIRM FUND "+ALLOC.eligible.sym+" (intent only)","allocDoFund")}`:"")+`</div>`;
+    (()=>{if(!(ALLOC&&ALLOC.state==="ALLOCATABLE"&&!ALLOC.confirmation))return "";
+      const w=allocConfirmWithheld();
+      if(w)return `<span class="scope"> · confirmation withheld — ${esc(w)}</span>`;
+      return ` · ${confirmLink("allocFundLink","RECORD FUNDING INTENT — "+ALLOC.eligible.sym+" · no order","allocDoFund")}`+
+        `<span class="scope"> · at ${esc(allocPriceBasis()||"price basis unrecorded")}</span>`;})()+`</div>`;
   // v3.42 slice 2: while the first quote load is still in flight an empty rank is UNKNOWN,
   // not empty — skeleton rows hold the geometry so the board doesn't shift when data lands.
   // v3.76: "nothing to rank" is only true when there is also nothing REVIEWED to fall back
@@ -6575,6 +6791,44 @@ function applyRegime(r){
       +(reg.reason?` — ${reg.reason}`:"");
   }
   render(); // stance + every v2 receipt-current check must see the new actionability
+  renderMacroEvidence(); // v4.1 Step 7: the WHY MACRO panel tracks every applied body
+}
+/* v4.1 Step 7 — WHY MACRO. The readout has published regime.checks/bullish/bearish/
+   confidence since ENGINE0-CONT and this page read NONE of them: the pill said TAILWIND
+   while its bearish 10Y vote and missing Kalshi input rendered only in a hover title a
+   phone can never reach (the 8/18 audit). Presentation only — nothing here votes, gates,
+   or changes a threshold; withheld (honest empty, never zeros) when the readout body
+   carries no evidence detail. */
+function toggleMacroEvidence(){
+  const p=document.getElementById("macroEvidence"),b=document.getElementById("regimePill");
+  const open=p.style.display!=="block";
+  p.style.display=open?"block":"none";
+  b.setAttribute("aria-expanded",String(open));
+  if(open)renderMacroEvidence();
+}
+function renderMacroEvidence(){
+  const p=document.getElementById("macroEvidence");
+  if(!p)return;
+  const reg=REGIME&&REGIME.regime;
+  if(!reg){p.innerHTML=`<span class="mev-row">readout unavailable — no evidence to explain; tap ← MACRO for the dashboard</span>`;return;}
+  if(!Array.isArray(reg.checks)||typeof reg.bullish!=="number"){
+    // An older body has no evidence detail — say so rather than render zeros as facts.
+    p.innerHTML=`<span class="mev-row">this readout body predates evidence detail — ⟳ DATA+RANKS for a current one</span>`;return;
+  }
+  const glyph=(s)=>s==="bullish"?`<span class="mev-bull">▲</span>`
+    :s==="bearish"?`<span class="mev-bear">▼</span>`
+    :s==="neutral"?"•":"∅";
+  const rows=reg.checks.map(c=>{
+    // The 10Y row carries its LEVEL too (the check itself is the monthly-delta trend) —
+    // the level/Δ/vote/date quartet is the row the 8/18 audit read wrong from the pill.
+    const lvl=c.name==="us10y_trend"&&REGIME.us10y&&REGIME.us10y.yield!=null?` · level ${REGIME.us10y.yield}%`:"";
+    return `<span class="mev-row">${glyph(c.state)} <b>${esc(c.name)}</b> ${esc(c.state)}${lvl} — ${esc(c.reason||"")}${c.as_of?` · ${esc(String(c.as_of))}`:""}</span>`;
+  }).join("");
+  p.innerHTML=
+    `<span class="mev-row"><b>EVIDENCE:</b> <span class="mev-bull">${reg.bullish} bullish</span> · <span class="mev-bear">${reg.bearish} bearish</span> · ${reg.missing} missing — ${esc(reg.confidence||"?")} · ${esc(reg.actionability||"?")}</span>`
+    +rows
+    +(reg.reason?`<span class="mev-row">⚠ ${esc(reg.reason)}</span>`:"")
+    +`<span class="mev-row" style="opacity:.7">presentation only — the verdict and every gate are computed upstream; this panel changes nothing</span>`;
 }
 async function loadRegime(){
   const el=document.getElementById("regimePill");

@@ -55,13 +55,47 @@ function runStateOf(iso, now) {   // mirror of admin runState(): 30d fresh · 90
   return { k: "fresh", days: d };
 }
 
+/* ── FEAT-TT-CIRCUIT (v4.1 Step 1): the structured circuit is CANONICAL ─────────────────
+   The 8/18 ambiguity audit's P0: the live board carried "presumed tripped" PROSE while the
+   structured `board.circuit` was null — and null read as not-tripped everywhere, so both the
+   client and this ladder permitted allocation. A permission the session only narrates is not
+   a permission state. Absence, a malformed record, an undated record, and a stale
+   clear/armed record are all UNRESOLVED — fail closed, adds suspended, reason named.
+   ASYMMETRY (house doctrine, v3.40): `tripped` NEVER expires into clear — stale bearishness
+   survives; stale permission-to-add does not. `clear`/`armed` older than CIRCUIT_STALE_D
+   degrade to unresolved. Mirrored in admin.html (buildless) — the smoke mirror pin keeps the
+   two constants and the resolution rules from drifting. */
+export const CIRCUIT_STALE_D = 7;   // mirror of admin.html — a week-old "clear" is not evidence of safety
+export function circuitState(c, now) {
+  if (!c || typeof c !== "object" || Array.isArray(c))
+    return { st: "unresolved", age: null, reason: "no structured circuit record on the board — session prose is explanation, not permission" };
+  const st = String(c.state || "").toLowerCase();
+  if (!["clear", "armed", "tripped"].includes(st))
+    return { st: "unresolved", age: null, reason: `circuit state "${c.state}" is not clear|armed|tripped` };
+  const age = ageDaysEt(c.as_of, now);
+  if (st === "tripped")   // fail-safe direction: an old or undated trip still trips
+    return { st, age, reason: age === null ? "tripped — state undated; still binding until a live pull disproves it" : null };
+  if (age === null)
+    return { st: "unresolved", age, reason: `circuit ${st.toUpperCase()} is undated — an undated permission reads as unresolved, never as current` };
+  if (age < 0)
+    return { st: "unresolved", age, reason: `circuit ${st.toUpperCase()} is dated in the future — cannot be judged` };
+  if (age > CIRCUIT_STALE_D)
+    return { st: "unresolved", age, reason: `circuit ${st.toUpperCase()} asserted ${age}d ago (limit ${CIRCUIT_STALE_D}d) — stale permission is not evidence of safety; re-assert it in ◧ SESSION` };
+  return { st, age, reason: null };
+}
+
 // ── the gate ladder ──────────────────────────────────────────────────────────
 // Rung-for-rung with admin.html's circuit veto + gateFail ladder. Every unreadable input is
 // a NAMED veto — fail closed, never default to clear. Returns null when every gate reads.
-export function allocGateLadder({ board, readout }) {
+export function allocGateLadder({ board, readout, now }) {
   const b = board || {};
-  if (String(b.circuit && b.circuit.state).toLowerCase() === "tripped")
+  const cs = circuitState(b.circuit, now);
+  if (cs.st === "tripped")
     return { rung: "circuit", reason: "leverage circuit tripped — deleverage-only; no name is eligible while the circuit holds" };
+  if (cs.st === "unresolved")
+    return { rung: "circuit", reason: `ADDS SUSPENDED — circuit state unresolved: ${cs.reason}. A structured circuit record is required before any add — set it in ◧ SESSION` };
+  // `armed` is a CAUTION, not a veto (mirrors the client stance) — carried on the receipt's
+  // permission block and the eligible row's cautions by evaluateAllocation, never a gate.
   const measured = (readout && readout.regime && readout.regime.verdict) || null;
   const asserted = b.regime && typeof b.regime.asserted === "string" ? b.regime.asserted.toUpperCase() : null;
   const mR = REG_RANK[measured], aR = REG_RANK[asserted];
@@ -120,6 +154,8 @@ export function evalBuyRow({ entry, idx, quote, board, horizon, now }) {
   const live = quote && isFinite(quote.px) ? quote.px : null;
   const stamp = idx.ref_px && isFinite(idx.ref_px.px) ? idx.ref_px.px : null;
   const px = live !== null ? live : stamp;
+  // v4.1 Step 4: the date under the price rides the row, so the basis can be DISCLOSED.
+  const px_at = live !== null ? ((quote && quote.at) || null) : ((idx.ref_px && idx.ref_px.at) || null);
   if (px === null) blockers.push("no usable price");
   else if (live === null) {
     const pd = ageDaysEt(idx.ref_px && idx.ref_px.at, now);
@@ -143,8 +179,19 @@ export function evalBuyRow({ entry, idx, quote, board, horizon, now }) {
   const ann = up !== null && r ? annualise(up, r.y, now) : null;
   const quality = idx.composite && (idx.composite.score ?? null) !== null
     ? { score: idx.composite.score, tier: idx.composite.raw_tier || null } : null;
-  return { sym, blockers, cautions, px, live: live !== null, tgt, y: r ? r.y : null,
+  return { sym, blockers, cautions, px, px_at, live: live !== null, tgt, y: r ? r.y : null,
     up, ann, quality, rolled: pk ? pk.rolled : null };
+}
+
+/* v4.1 Step 4: ONE price-basis vocabulary, shared by server and client (the receipt carries
+   the computed string, so the buildless client never re-derives it). The 8/18 audit found
+   eligible.live_px:false rendered NOWHERE — a green allocation state built on a stamped mark
+   disclosed nothing. A stamped mark is never relabelled live. */
+export function priceBasisOf(e) {
+  if (!e || e.px === null || e.px === undefined || !isFinite(Number(e.px))) return "no usable price";
+  const isLive = e.live === true || e.live_px === true;
+  if (isLive) return "live price";
+  return e.px_at ? "stamped price" : "stamped price — undated";
 }
 
 // The per-row veto ladder (admin why(r)), on the server row shape. null = eligible.
@@ -232,7 +279,10 @@ export function evaluateAllocation({ book, ddIndex, posDoc, quotes, readout, now
   const entries = Array.isArray(book && book.book) ? book.book : [];
   const idxEntries = (ddIndex && ddIndex.entries) || {};
   const positions = (posDoc && typeof posDoc.positions === "object" && !Array.isArray(posDoc.positions)) ? posDoc.positions : {};
-  const gate = allocGateLadder({ board, readout });
+  const gate = allocGateLadder({ board, readout, now });
+  // FEAT-TT-CIRCUIT (v4.1): the permission facts ride the receipt explicitly, so the client
+  // renders the SAME resolution this evaluation gated on rather than re-deriving its own.
+  const cs = circuitState(board.circuit, now);
 
   // rows for every book name (the ranking is always computed — the gate withholds
   // ELIGIBILITY, never the math; the v3.74.1 "ranking always renders" contract).
@@ -281,6 +331,13 @@ export function evaluateAllocation({ book, ddIndex, posDoc, quotes, readout, now
     if (w === null && positions[eligible.sym]) context_blockers.push(`${eligible.sym} held but weight unmeasured`);
   }
 
+  // FEAT-TT-CIRCUIT (v4.1): an ARMED circuit is a caution the server previously could not
+  // see (the client downgraded stance; the ladder checked only "tripped" — a client/server
+  // permission divergence). Not a veto: one more leg down trips it, so it rides the eligible
+  // row's cautions where the sizing decision is read.
+  if (eligible && cs.st === "armed")
+    eligible.cautions = [...(eligible.cautions || []), "leverage circuit ARMED — one more leg down trips it; size accordingly"];
+
   const state = gate ? "WAIT" : !eligible ? "NONE" : context_blockers.length ? "BUY_ELIGIBLE" : "ALLOCATABLE";
   const rowsAnn = {}; rows.forEach((r) => { rowsAnn[r.sym] = r.ann; });
   const funding = fundingRanking({ book, board, positions, rowsAnn, now });
@@ -288,10 +345,26 @@ export function evaluateAllocation({ book, ddIndex, posDoc, quotes, readout, now
   return {
     rule_version: ALLOC_RULE_VERSION,
     state,                       // WAIT (gate) | NONE (no eligible) | BUY_ELIGIBLE | ALLOCATABLE
+    /* v4.1 Step 2: ALLOCATABLE is an allocation-CONTEXT state — everything the recommendation
+       depends on is present and fresh. It is NOT a cash-availability or sizing approval (the
+       8/18 audit read it beside a measured cash of −$286k), and the receipt now says so in a
+       machine field so no renderer can quietly re-imply it. */
+    meaning: state === "ALLOCATABLE" ? "context_complete_not_cash_or_sizing_approval" : null,
     gate: gate || null,          // null = every gate read clean
+    // FEAT-TT-CIRCUIT (v4.1): the resolved permission facts this evaluation gated on.
+    permission: {
+      circuit: cs.st.toUpperCase(),               // CLEAR | ARMED | TRIPPED | UNRESOLVED
+      circuit_as_of: (board.circuit && board.circuit.as_of) || null,
+      circuit_age_d: cs.age ?? null,
+      circuit_note: cs.reason || null,
+    },
     horizon,                     // computed, never asserted (D1)
     eligible: eligible ? { sym: eligible.sym, y: eligible.y, tgt: eligible.tgt, up: eligible.up,
-      ann: eligible.ann, live_px: eligible.live, cautions: eligible.cautions } : null,
+      ann: eligible.ann, live_px: eligible.live,
+      // v4.1 Step 4: the price the target was measured against, its date, and the basis —
+      // previously the price itself never left this function.
+      px: eligible.px, px_at: eligible.px_at, price_basis: priceBasisOf(eligible),
+      cautions: eligible.cautions } : null,
     why_not: whyNotTop,          // the top rows that did NOT take the line, reason each
     context_blockers,            // what separates BUY_ELIGIBLE from ALLOCATABLE, named
     funding,                     // {label: FIX-C verbatim, rows[{sym,tier,reason,...}], optOnly}

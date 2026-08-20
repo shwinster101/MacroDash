@@ -748,6 +748,24 @@ ok("buy: compact block carries the veto banner and the same canonical ranked row
   /NO NEW POSITIONS/.test(buyB) && /AAA/.test(buyB) && /13\.4%\*/.test(buyB));
 const calB = await txt(page, "calBlock");
 ok("calendar block leads with today's binary", /TODAY/.test(calB) && /MACROEVT/.test(calB));
+// FEAT-TT-CIRCUIT (v4.1 Step 1): the fail-closed path, driven live. Clearing the structured
+// circuit in-page must flip the stance to ADDS SUSPENDED (not fall through to the regime
+// rungs and read ADDS OK/GATED) and render the UNRESOLVED strip instead of hiding it —
+// the 8/18 audit's live defect, where circuit:null + tripped PROSE still permitted adds.
+const unresolved = await page.evaluate(() => {
+  const keep = BOARD.circuit;
+  BOARD.circuit = null;
+  render();
+  const strip = document.getElementById("stanceStrip").innerText;
+  const circ = (document.getElementById("circuitLine") || {}).innerText || "";
+  BOARD.circuit = keep; render();
+  return { strip, circ };
+});
+ok("circuit absent → stance fails CLOSED to ADDS SUSPENDED, never through to the regime rungs",
+  /ADDS SUSPENDED/.test(unresolved.strip) && !/ADDS OK|ADDS GATED/.test(unresolved.strip));
+ok("circuit absent → the UNRESOLVED strip renders loud instead of hiding",
+  /CIRCUIT UNRESOLVED — adds suspended/i.test(unresolved.circ) &&
+  /prose is explanation, not permission/i.test(unresolved.circ));
 const strip = await txt(page, "stanceStrip");
 ok("stance strip carries the red counts while DESK is closed",
   /over cap/.test(strip) && /binaries/.test(strip));
@@ -978,8 +996,23 @@ ok("techread: a BEARISH tape does NOT veto — the pick stays eligible, the read
 // harness sets it directly — exactly how BOARD/LIVE_PX scenarios already work.
 console.log("\n[render] FEAT-TT-ALLOC — the server receipt beside the client's read");
 const allocLive = await page.evaluate(() => {
-  const prev = ALLOC;
+  const prev = ALLOC, prevAcct = ACCOUNT;
   const today = new Date().toLocaleDateString("en-CA", { timeZone: "America/New_York" });
+  // v4.1 Step 2: the audit's live shape — a green context state beside NEGATIVE cash and
+  // margin debt. The chip must render the measured account and the not-a-cash-claim
+  // qualifier, or the state reads as spending approval.
+  ACCOUNT = { equity: 316711.76, cash: -286817.09, buying_power: 16149.66, debt: 286817.09,
+    at: today + "T22:22:00Z", src: "rh" };
+  // v4.1 Step 5: the confirm affordance is withheld while the local stance reads stop —
+  // the fixture's tripped circuit exercised exactly that (a green confirm link under a
+  // tripped circuit was the two-answers defect). Clear the circuit to test the link, then
+  // restore to test the withhold.
+  const keepCirc = BOARD.circuit, keepReg = BOARD.regime;
+  BOARD.circuit = { state: "clear", as_of: today };
+  // The fixture's session also asserts PANIC — a second reason the pre-v4.1 link was a
+  // two-answers defect (green confirm under an asserted-PANIC stance). Neutralize both to
+  // test the affordance; each is restored to test its own withhold.
+  BOARD.regime = { asserted: "TAILWIND", as_of: today };
   ALLOC = { schema: "tt-alloc-receipt-v1", at: today + "T14:00:00Z", state: "ALLOCATABLE",
     gate: null, horizon: "2027", eligible: { sym: "AAA", y: "2027", tgt: 999, up: 20, ann: 15 },
     why_not: [], context_blockers: [],
@@ -992,11 +1025,22 @@ const allocLive = await page.evaluate(() => {
   const buy = document.getElementById("buyBlock").innerText;
   const sell = document.getElementById("sellBlock").innerText;
   const out = {
-    buyChip: /server: ALLOCATABLE — AAA/.test(buy),
-    sellChip: /server: ALLOCATABLE — AAA/.test(sell),
+    // v4.1 Step 2: renamed label + permanent qualifier + measured account, both altitudes.
+    buyChip: /ALLOCATION CONTEXT READY — AAA/.test(buy) && !/server: ALLOCATABLE/.test(buy),
+    sellChip: /ALLOCATION CONTEXT READY — AAA/.test(sell),
+    qualifier: /not a cash-availability or sizing claim/.test(buy) &&
+               /not a cash-availability or sizing claim/.test(sell),
+    acctBeside: /acct: equity \$317k · cash -\$287k · BP \$16k · debt \$287k/.test(buy),
     confirmLink: document.getElementById("allocFundLink") !== null,
-    confirmIntentOnly: /intent only/.test(buy),
-    disagree: /server receipt: FFF first/.test(sell) };
+    confirmIntentOnly: /RECORD FUNDING INTENT — AAA · no order/.test(buy),
+    disagree: /SERVER RECEIPT GOVERNS CONFIRMATION/.test(sell) && /server: FFF first/.test(sell) &&
+              /diagnostic shadows/.test(sell) };
+  // v4.1 Step 5: restore the tripped circuit — the same ALLOCATABLE receipt must now
+  // WITHHOLD the affordance because the local permission state moved against it.
+  BOARD.circuit = keepCirc; render();
+  out.withheldOnStop = document.getElementById("allocFundLink") === null &&
+    /confirmation withheld — local permission reads/.test(document.getElementById("buyBlock").innerText);
+  BOARD.circuit = { state: "clear", as_of: today }; render();
   // WAIT state: the gate reason renders, no confirm affordance survives.
   ALLOC = { ...ALLOC, state: "WAIT", eligible: null,
     gate: { rung: "flip", reason: "Macro Flip BLIND — missing inputs" }, confirmation: null };
@@ -1006,12 +1050,16 @@ const allocLive = await page.evaluate(() => {
   // No receipt at all (older deploy / never evaluated): stated, never blank.
   ALLOC = null; render();
   out.honest = /server allocation: no receipt/.test(document.getElementById("buyBlock").innerText);
-  ALLOC = prev; render();
+  ALLOC = prev; ACCOUNT = prevAcct; BOARD.circuit = keepCirc; BOARD.regime = keepReg; render();
   return out;
 });
-ok("alloc: the ALLOCATABLE receipt renders the SAME chip at both altitudes (one builder)",
+ok("alloc: the context-ready receipt renders the SAME chip at both altitudes (one builder)",
   allocLive.buyChip && allocLive.sellChip);
-ok("alloc: CONFIRM FUND is present, two-step, and says intent only",
+ok("alloc: the not-a-cash-claim qualifier rides the state at BOTH altitudes",
+  allocLive.qualifier);
+ok("alloc: the measured account (negative cash, debt) renders beside the green state",
+  allocLive.acctBeside);
+ok("alloc: RECORD FUNDING INTENT — no order is the confirm affordance, two-step",
   allocLive.confirmLink && allocLive.confirmIntentOnly);
 ok("alloc: the server-vs-client funding disagreement prints — married, never merged",
   allocLive.disagree);
@@ -1019,6 +1067,8 @@ ok("alloc: WAIT renders the gate reason and withdraws the confirm affordance",
   allocLive.waitChip && allocLive.waitNoConfirm);
 ok("alloc: no receipt is a STATED state, never a blank surface",
   allocLive.honest);
+ok("alloc: a permission state that moved AGAINST the receipt withdraws the confirm affordance, saying why",
+  allocLive.withheldOnStop);
 
 console.log("\n[render] FEAT-TT-ESTRUN — the board expression inside NEXT DOLLAR");
 const estBoard = await txt(page, "estRunBoard");
@@ -1436,6 +1486,42 @@ ok("slice5: the header's status + toolbar start hidden behind ⋯ MENU, and the 
   await page.evaluate(() => document.getElementById("headInfo").style.display === "none" &&
     document.getElementById("regimePill").offsetParent !== null &&
     document.getElementById("headToggle").getAttribute("aria-expanded") === "false"));
+
+// v4.1 Step 7 — WHY MACRO: the pill toggles the evidence panel (the readout's checks/
+// bullish/bearish/confidence were published and never read; the hover title is unreachable
+// on touch). The fixture readout predates evidence detail, so the FIRST open proves the
+// honest-empty branch — a message, never zeros dressed as a tally.
+ok("step7: the pill is a real button and WHY MACRO starts closed at zero height",
+  await page.evaluate(() => document.getElementById("regimePill").tagName === "BUTTON" &&
+    document.getElementById("regimePill").getAttribute("aria-expanded") === "false" &&
+    getComputedStyle(document.getElementById("macroEvidence")).display === "none"));
+await page.locator("#regimePill").click();
+ok("step7: tapping the pill opens the panel, aria follows, and an old body SAYS it predates evidence detail",
+  await page.evaluate(() => document.getElementById("regimePill").getAttribute("aria-expanded") === "true" &&
+    document.getElementById("macroEvidence").style.display === "block" &&
+    /predates evidence detail/.test(document.getElementById("macroEvidence").textContent)));
+ok("step7: a full evidence body renders the tally + per-check rows — bearish named, 10Y level, missing warned, presentation-only stated",
+  await page.evaluate(() => {
+    const keep = REGIME;
+    applyRegime({ as_of: keep.as_of, us10y: { yield: 4.31 },
+      regime: { ...keep.regime, checks: [
+        { name: "spy_vs_200d", state: "bullish", reason: "+4.1% vs 200d (bands ±3%)", as_of: "2026-08-18" },
+        { name: "us10y_trend", state: "bearish", reason: "m1 +0.17 → spiking", as_of: "2026-08-18" },
+        { name: "fed_next_meeting", state: "unavailable", reason: "Kalshi odds unavailable", as_of: null },
+      ], bullish: 1, bearish: 1, missing: 1, confidence: "HIGH", actionability: "FULL",
+      reason: "missing: fed_next_meeting" },
+      macro_flip: keep.macro_flip });
+    const t = document.getElementById("macroEvidence").innerText;
+    const good = /1 bullish/.test(t) && /1 bearish/.test(t) && /1 missing/.test(t) &&
+      /HIGH · FULL/.test(t) && /us10y_trend/.test(t) && /level 4\.31%/.test(t) &&
+      /missing: fed_next_meeting/.test(t) && /presentation only/.test(t);
+    applyRegime(keep);
+    return good;
+  }));
+await page.locator("#regimePill").click();
+ok("step7: a second tap closes WHY MACRO and aria follows — the fold budget below is measured closed",
+  await page.evaluate(() => document.getElementById("regimePill").getAttribute("aria-expanded") === "false" &&
+    document.getElementById("macroEvidence").style.display === "none"));
 await page.evaluate(() => toggleHeadInfo());
 ok("slice5: ⋯ MENU reveals BOOK/AUTH and the action toolbar, and reports aria-expanded",
   await page.evaluate(() => document.getElementById("headInfo").style.display !== "none" &&

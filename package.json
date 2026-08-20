@@ -1,7 +1,7 @@
 {
   "name": "macrodash",
   "private": true,
-  "version": "4.0.4",
+  "version": "4.1.2",
   "type": "module",
   "engines": {
     "node": ">=20"

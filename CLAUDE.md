@@ -2881,7 +2881,13 @@ Jan-anchor shipped; see `snapshot.js` ~318–328), `spyMa100`, `spyMa200`, and a
   VALUATION GAP ranking (§11.1 — the ranking always renders, which is the owner's actual
   "always an output" contract, and it was never suspended). Tests: 1223 smoke (+2) + 199
   render (+1).
-- **v4.0.4 — the label-to-metric contract: the 10Y card shows the yield it names.** A Codex
+- **v4.1.2 — the label-to-metric contract: the 10Y card shows the yield it names.**
+  *Relabelled from v4.0.4 at merge (2026-08-20): this shipped on a branch cut from the v4.0.3
+  head while the terminal line of work landed v4.1.0/v4.1.1 on `main` — the documented
+  collision pattern (ENGINE0-CONT, FEAT-TT-SCORE, FEAT-TT-PROVISIONAL, FEAT-TOKW).
+  `package.json` is the single source of truth, so this entry takes the next true sequence
+  number rather than the branch's guess; content is otherwise as committed, with the test
+  line restated at the MERGED totals (main alone measures 1741/264/170).* A Codex
   read-through of the shipped Simple view graded metric semantics the weakest dimension and
   named the cause exactly: the card is LABELLED *"the 10-year yield"* and displayed
   `-0.12pp 1-mo change` — the voted quantity, not the yield. Not an arithmetic bug; a
@@ -2900,11 +2906,125 @@ Jan-anchor shipped; see `snapshot.js` ~318–328), `spyMa100`, `spyMa200`, and a
   quantity nobody could read). The delta is **SIGNED** now that it sits beside a level:
   `+0.22pp` cannot be misread as a fall the way a bare `0.22pp` could. `context` is opt-in —
   the five bands without one render byte-identically, asserted directly.
-  Tests: **1681 smoke** (+6: the composed text with `value`/`context` proven separately, the
-  vote-identity pin, the sign, both fail-closed paths, and the opt-in control) + 255 render +
+  Tests: **1747 smoke** (+6 over main's 1741: the composed text with `value`/`context` proven separately, the
+  vote-identity pin, the sign, both fail-closed paths, and the opt-in control) + 264 render +
   **171 public-render** (+1: the 10Y card driven live at 390px — level and signed delta both
   present, level FIRST). Negative-controlled twice: dropping the composition turns 2 red,
   dropping the sign turns 2 red.
+- **v4.1.1 — `ageDays`: the ET clock finally reaches the terminal (FIX-A, fourth recurrence).**
+  `npm run test:ui` was failing **11 assertions** — FEAT-TT-ENTRY (3), FEAT-TT-TECHREAD (4),
+  RANKFAIR's cap veto, the FEAT-TT-ALLOC confirm affordance, slice-5's permissive-stance pill,
+  and ENGINE0-CONT's "HOLD is a hard WAIT". Every one of them resolved to a single line.
+  **The defect:** `ageDays()` anchored the stamp at NOON UTC and differenced it against the raw
+  wall clock — `Math.floor((Date.now() - Date.parse(iso+"T12:00:00Z"))/86400000)` — which mixes
+  a CALENDAR DATE with an INSTANT. A date stamped "today in ET" therefore sat in the future
+  from 00:00 ET until 12:00 UTC, so `ageDays` returned **−1 for the first eight hours of every
+  ET day**. Every consumer that (correctly) treats a future date as invalid then fired:
+  `circuitStateCli` returned *"circuit CLEAR is dated in the future — cannot be judged"*,
+  `stance()` went **ADDS SUSPENDED — circuit state unresolved**, and the eligible line the
+  entry/techread/cap tests assert against never lit. The retired comment claimed noon UTC
+  *"dodges timezone edge cases"*; it dodged the DST ones and manufactured this one.
+  **This is NOT test-only.** `ageDays` is the terminal's single time-judge — `runState`,
+  `paRead`, `posAge`, `ddAgeChip` and the circuit all read it — so an operator stamping a
+  circuit or a `lastRun` before 8am ET had it rejected as future-dated, in production. The
+  fix compares **ET calendar date to ET calendar date**, both anchored at `00:00Z`, leaving no
+  wall-clock term; it mirrors `functions/lib/tt-alloc.js` `ageDaysEt` and `src/ttScore.js`
+  `ageDaysET`, whose own comment already named this as *"the etYmd clock every other
+  time-judge in this stack uses — FIX-A"*. admin.html was the one that never got it. The
+  strict `YYYY-MM-DD` guard is deliberately UNCHANGED — callers holding a datetime already
+  slice it themselves (`circuitStateCli`, `posAge`), and loosening it here would silently
+  start accepting inputs those sites reject on purpose.
+  **Fourth recurrence of one defect class**, and the changelog has the receipts: v3.11 (UTC
+  `toISOString()` run stamps rolled evening runs to tomorrow → NEVER RUN), the v3.35 fixpack
+  (render fixture dates rotting at the first midnight), v3.80 (a composed-lifecycle test
+  stamping UTC against an ET validator — *"passed by daylight and went red every night"*).
+  So smoke **[69]** pins the contract **across the hours** rather than at whatever time CI
+  happens to run: a today-stamp reads 0 at 00:30 / 07:59 / 12:00 / 23:59 ET, yesterday reads
+  exactly 1 at all four, a real future date still reads negative (the fail-closed signal
+  survives), malformed still reads null, and a **negative control** runs the retired
+  noon-UTC formula at 00:30 ET and asserts it returns −1 — so a revert fails the section
+  instead of passing quietly. Verified by reproduction: the whole suite was re-run **at 02:20
+  ET, inside the failure window**, which per v3.80's own rule is the only time the proof means
+  anything.
+  **Reported diagnosis, corrected.** The finding arrived as *"7 call sites in test/render.mjs
+  bypass the circuit with the pre-v4.1.0 `state="clear"` shortcut, which no longer works now
+  that circuits require a dated `as_of` ≤7 days"*, with a recommended test-only fix of
+  stamping `as_of` beside those overrides. The failure list was exactly right and the process
+  gap was real, but the cause was not: the fixture **already** carries `as_of: TODAY_ET`, and
+  the 7 sites mutate only `.state`, so the date was never missing — it was *future*. Probing
+  `circuitStateCli` against the real fixture returned `{st:"clear", age:0}` under an ET-vs-ET
+  clock, which is what ruled the stated cause out. The proposed fix would have re-stamped the
+  same future-dated value and left all 11 red, in the same 8-hour window that hid it.
+  Also folded in: **the two NVDA earnings-evidence commits (`cad008e`, `0911550`) shipped with
+  no changelog entry** — `admin.html` gained an earnings-evidence surface on the NVDA payload
+  and smoke gained 64 lines of cover for it, with the bull-case P/E later re-pinned to 30x.
+  Recorded here rather than left as a gap, since an undocumented feature is the same rot
+  vector this file keeps closing.
+  Tests: **1741 smoke** (+7) + **264 render** (11 restored, 0 failing) + **170 public-render**
+  + `audit:prod` clean — all four gates green, run inside the failure window.
+- **v4.1.0 "PERMISSION CONTRACT" — the ambiguity-hardening sprint: what a green state may
+  claim, and what a confirmation binds to.** Basis: the owner-uploaded v4.0.3 audit
+  (validated live 2026-08-18 — every claim reproduced: `board.circuit: null` under "presumed
+  tripped" prose, `ALLOCATABLE — TSM` beside measured cash **−$286,817**, a 21:07-ET-yesterday
+  receipt reading "today", `live_px:false` rendered nowhere, TAILWIND over a bearish 10Y with
+  Kalshi missing) plus **four defects the audit missed, found in validation**: an ARMED
+  circuit invisible to the server; WAIT/NONE receipts confirmable; no confirm idempotency;
+  a "-1d old" receipt age. Seven steps, one release, per owner call.
+  **(1) FEAT-TT-CIRCUIT — the structured circuit is canonical; absence fails closed.**
+  `circuitState()` (server) / `circuitStateCli()` (buildless mirror, smoke-pinned): absent,
+  malformed, undated, future-dated, or a `clear`/`armed` older than `CIRCUIT_STALE_D=7` all
+  resolve **UNRESOLVED → ADDS SUSPENDED** — session prose is explanation, never permission;
+  `tripped` NEVER expires (the v3.40 asymmetry). The server ladder learns **armed** as a
+  caution on the eligible row (client/server permission divergence, closed); `renderCircuit`
+  stops hiding on absence; deploy state is SUSPENDED by design until the owner writes the
+  first structured circuit in ◧ SESSION (locked owner decision).
+  **(2) Label truth + the measured account.** `ALLOCATABLE` renders **ALLOCATION CONTEXT
+  READY** with a machine `meaning: context_complete_not_cash_or_sizing_approval`; the receipt
+  states `not a cash-availability or sizing claim`; `loadPositions()` stops discarding
+  `account`, so equity · cash · BP · debt render beside the state (the audit read ALLOCATABLE
+  beside −$287k cash the page never showed); confirm is **RECORD FUNDING INTENT — no order**.
+  **(3) ET receipt identity.** The receipt carries `at_et` + `business_date_et` (the `etYmd`
+  clock — the UTC date-slice defect class, third recurrence); client age is hours-based from
+  the full instant with the negative-age guard; `allocBasisLine()` renders the freshness of
+  every input the receipt bound (`ALLOC.inputs` was read nowhere).
+  **(4) Price basis disclosed.** `eligible.px/px_at/price_basis` leave the evaluator (the
+  price itself never did); `live price` / `stamped price` / `stamped price — undated` /
+  `no usable price` render on the row, the chip and the confirm affordance — `live_px:false`
+  always produces a visible qualifier.
+  **(5) The server receipt governs confirmation.** A funding disagreement names the canonical
+  (`SERVER RECEIPT GOVERNS CONFIRMATION`) with client/session readings labelled diagnostic
+  shadows — married-never-merged, now with the actionable one named; `allocConfirmWithheld()`
+  withdraws the confirm affordance on a prior-business-date/undated receipt or a stop/unknown
+  local stance. The render fixture's tripped-circuit and asserted-PANIC boards each previously
+  let a green confirm link render — both now asserted as withholds.
+  **(6) Confirmation binds to the candidate and the current world (the trust core).**
+  `handleConfirm`: FUND requires the receipt's own `eligible.sym` on an ALLOCATABLE receipt
+  (a WAIT/NONE receipt was confirmable); TRIM requires a funding-ranking row, options sleeves
+  only behind an explicit `options_sleeve:true` (legs are not shares, v3.44); second confirm →
+  **409 ALREADY_CONFIRMED** unless `supersede:true` (intents immutable — a supersede appends a
+  NEW record naming what it supersedes); basis drift NAMES the changed input; and a FUND
+  **re-fetches the readout at confirm time** — `readout_as_of` is a day key, so the whole
+  macro axis was frozen intraday — binding day, actionability, macro-flip and the full body
+  hash (`inputs.readout_hash`, deliberately NOT in basis_hash: the quote-tick rule's shape),
+  plus re-resolving the circuit from the clock (a stale-clear ages into unresolved with no
+  book edit). TRIM is exempt from the readout re-bind: the funding ranking never reads the
+  readout, and a deleverage intent must not be blocked by the stress that makes it urgent.
+  Fail closed: an unreachable readout at confirm vetoes; a legacy receipt without
+  `readout_hash` 409s toward recompute. A quote tick still moves `input_hash` only.
+  **(7) WHY MACRO — the evidence finally read.** The readout has published
+  `regime.checks/bullish/bearish/confidence` since ENGINE0-CONT and the terminal read NONE of
+  it: the pill said TAILWIND while its bearish 10Y vote and missing Kalshi lived in a hover
+  title a phone cannot reach. The pill is now a real `<button>` toggling a zero-height-closed
+  evidence panel: `EVIDENCE: N bullish · N bearish · N missing — CONFIDENCE · ACTIONABILITY`,
+  per-check rows (vote glyph · reason · as-of; the 10Y row carries its LEVEL beside the
+  delta-trend vote), the missing-input warning, and a stated `presentation only` footer —
+  no new voter, no threshold change; an older body without evidence detail SAYS so rather
+  than rendering zeros. Pill text unchanged (the terminal date and the pinned fold budgets
+  both survive).
+  Tests: **1728 smoke** (+53 over the v4.0.3 baseline, incl. the confirm battery driven
+  endpoint-level against the fake KV and the circuit boundary at the exact ET session) +
+  **264 render** (+9, incl. the withheld-confirm-link proofs and WHY MACRO driven live in
+  Chromium) + 170 public-render + `audit:prod` clean — `npm run gates`.
 - **v4.0.3 "TYPED SIMPLE" — the audit's five Simple-mode fixes plus the preventive
   canonicalization.** An owner-commissioned audit of v4.0.2; every claim was reproduced
   against the live code before anything was touched, and all six were real.
