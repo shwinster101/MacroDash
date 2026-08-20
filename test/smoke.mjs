@@ -7783,5 +7783,59 @@ console.log("\n[67] v4.0 SIMPLE MODE — verdict mapping, card selection, senten
     REGIME_BAND_TABLE.length === 6 && REGIME_QUORUM === 4);
 }
 
+// ---- 69. v4.1.1 — ageDays: the ET clock reaches the terminal (FIX-A, 4th recurrence) ------
+// The terminal's ageDays anchored a stamp at NOON UTC and differenced it against Date.now(),
+// mixing a calendar date with a wall clock. A date stamped "today in ET" therefore read as
+// age -1 (FUTURE) from 00:00 ET until 12:00 UTC (08:00 ET) — so circuitStateCli returned
+// "dated in the future", stance() went ADDS SUSPENDED, and 11 render assertions covering
+// FEAT-TT-ENTRY, FEAT-TT-TECHREAD, RANKFAIR's cap veto and the ALLOC confirm failed. Only
+// between midnight and 8am ET, which is exactly how it stayed invisible.
+// This is the FOURTH time this defect class has landed (v3.11 UTC run stamps, v3.35 fixture
+// dates, v3.80 the composed-lifecycle test that "passed by daylight and went red every
+// night"), so it is pinned across the HOURS, not just asserted once at whatever time CI runs.
+console.log("\n[69] ageDays — ET calendar date vs ET calendar date, at every hour");
+{
+  const lift = (n) => { const i = adminSrc.indexOf("function " + n + "(");
+    let d = 0; for (let k = adminSrc.indexOf("{", i); k < adminSrc.length; k++) {
+      if (adminSrc[k] === "{") d++; else if (adminSrc[k] === "}") { d--; if (!d) return adminSrc.slice(i, k + 1); } } };
+  const SRC = lift("ageDays");
+  // Inject a frozen clock: ageDays uses `new Date()` and Date.parse, nothing else.
+  const at = (instant) => { const R = Date;
+    function D() { return new R(instant); }
+    D.parse = (x) => R.parse(x); D.now = () => R.parse(instant);
+    return new Function("Date", SRC + "\nreturn ageDays;")(D); };
+  const ET = (inst) => new Date(inst).toLocaleDateString("en-CA", { timeZone: "America/New_York" });
+  // Four instants spanning an ET day, incl. both sides of the old noon-UTC cliff.
+  const HOURS = ["2026-08-20T04:30:00Z" /*00:30 ET*/, "2026-08-20T11:59:00Z" /*07:59 ET*/,
+                 "2026-08-20T16:00:00Z" /*12:00 ET*/, "2026-08-21T03:59:00Z" /*23:59 ET*/];
+
+  ok("ageDays: a stamp made TODAY in ET reads 0 at EVERY hour — the whole bug was that it " +
+     "read -1 before 8am ET",
+    HOURS.every((h) => at(h)(ET(h)) === 0));
+  ok("ageDays: YESTERDAY reads exactly 1 at every hour — no wall-clock term left in the math",
+    HOURS.every((h) => { const y = ET(new Date(Date.parse(h) - 86400000).toISOString());
+      return at(h)(y) === 1; }));
+  ok("ageDays: a genuinely future stamp is still NEGATIVE — the fail-closed signal every " +
+     "consumer keys on (runState 'never', circuitStateCli 'cannot be judged') survives",
+    HOURS.every((h) => { const t = ET(new Date(Date.parse(h) + 3 * 86400000).toISOString());
+      return at(h)(t) < 0; }));
+  ok("ageDays: absent/malformed still returns null, the FAIL-CLOSED signal — unchanged",
+    (() => { const f = at(HOURS[0]);
+      return f("") === null && f(null) === null && f("2026-8-1") === null
+        && f("2026-08-20T00:00:00Z") === null; })());  // strict guard deliberately kept
+  // NEGATIVE CONTROL: prove the pin would catch a revert. The old body, run at 00:30 ET.
+  ok("ageDays NEGATIVE CONTROL: the retired noon-UTC formula returns -1 for a today-stamp at " +
+     "00:30 ET — so a revert to it fails this section rather than passing quietly",
+    (() => { const inst = HOURS[0], R = Date;
+      const old = (iso) => Math.floor((R.parse(inst) - R.parse(iso + "T12:00:00Z")) / 86400000);
+      return old(ET(inst)) === -1; })());
+  ok("ageDays: the noon-UTC anchor is GONE from the source — a comment claiming it 'dodges " +
+     "timezone edge cases' must not outlive the code it described",
+    !/T12:00:00Z/.test(SRC) && /America\/New_York/.test(SRC));
+  ok("ageDays: the terminal now uses the SAME ET-calendar rule as the server time-judges " +
+     "(tt-alloc ageDaysEt / ttScore ageDaysET), so one clock governs the stack",
+    /toLocaleDateString\("en-CA",\{timeZone:"America\/New_York"\}\)/.test(SRC));
+}
+
 console.log(`\n=== SMOKE TEST: ${pass} passed, ${fail} failed ===`);
 process.exit(fail === 0 ? 0 : 1);

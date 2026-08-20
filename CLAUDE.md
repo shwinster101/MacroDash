@@ -2881,6 +2881,57 @@ Jan-anchor shipped; see `snapshot.js` ~318–328), `spyMa100`, `spyMa200`, and a
   VALUATION GAP ranking (§11.1 — the ranking always renders, which is the owner's actual
   "always an output" contract, and it was never suspended). Tests: 1223 smoke (+2) + 199
   render (+1).
+- **v4.1.1 — `ageDays`: the ET clock finally reaches the terminal (FIX-A, fourth recurrence).**
+  `npm run test:ui` was failing **11 assertions** — FEAT-TT-ENTRY (3), FEAT-TT-TECHREAD (4),
+  RANKFAIR's cap veto, the FEAT-TT-ALLOC confirm affordance, slice-5's permissive-stance pill,
+  and ENGINE0-CONT's "HOLD is a hard WAIT". Every one of them resolved to a single line.
+  **The defect:** `ageDays()` anchored the stamp at NOON UTC and differenced it against the raw
+  wall clock — `Math.floor((Date.now() - Date.parse(iso+"T12:00:00Z"))/86400000)` — which mixes
+  a CALENDAR DATE with an INSTANT. A date stamped "today in ET" therefore sat in the future
+  from 00:00 ET until 12:00 UTC, so `ageDays` returned **−1 for the first eight hours of every
+  ET day**. Every consumer that (correctly) treats a future date as invalid then fired:
+  `circuitStateCli` returned *"circuit CLEAR is dated in the future — cannot be judged"*,
+  `stance()` went **ADDS SUSPENDED — circuit state unresolved**, and the eligible line the
+  entry/techread/cap tests assert against never lit. The retired comment claimed noon UTC
+  *"dodges timezone edge cases"*; it dodged the DST ones and manufactured this one.
+  **This is NOT test-only.** `ageDays` is the terminal's single time-judge — `runState`,
+  `paRead`, `posAge`, `ddAgeChip` and the circuit all read it — so an operator stamping a
+  circuit or a `lastRun` before 8am ET had it rejected as future-dated, in production. The
+  fix compares **ET calendar date to ET calendar date**, both anchored at `00:00Z`, leaving no
+  wall-clock term; it mirrors `functions/lib/tt-alloc.js` `ageDaysEt` and `src/ttScore.js`
+  `ageDaysET`, whose own comment already named this as *"the etYmd clock every other
+  time-judge in this stack uses — FIX-A"*. admin.html was the one that never got it. The
+  strict `YYYY-MM-DD` guard is deliberately UNCHANGED — callers holding a datetime already
+  slice it themselves (`circuitStateCli`, `posAge`), and loosening it here would silently
+  start accepting inputs those sites reject on purpose.
+  **Fourth recurrence of one defect class**, and the changelog has the receipts: v3.11 (UTC
+  `toISOString()` run stamps rolled evening runs to tomorrow → NEVER RUN), the v3.35 fixpack
+  (render fixture dates rotting at the first midnight), v3.80 (a composed-lifecycle test
+  stamping UTC against an ET validator — *"passed by daylight and went red every night"*).
+  So smoke **[69]** pins the contract **across the hours** rather than at whatever time CI
+  happens to run: a today-stamp reads 0 at 00:30 / 07:59 / 12:00 / 23:59 ET, yesterday reads
+  exactly 1 at all four, a real future date still reads negative (the fail-closed signal
+  survives), malformed still reads null, and a **negative control** runs the retired
+  noon-UTC formula at 00:30 ET and asserts it returns −1 — so a revert fails the section
+  instead of passing quietly. Verified by reproduction: the whole suite was re-run **at 02:20
+  ET, inside the failure window**, which per v3.80's own rule is the only time the proof means
+  anything.
+  **Reported diagnosis, corrected.** The finding arrived as *"7 call sites in test/render.mjs
+  bypass the circuit with the pre-v4.1.0 `state="clear"` shortcut, which no longer works now
+  that circuits require a dated `as_of` ≤7 days"*, with a recommended test-only fix of
+  stamping `as_of` beside those overrides. The failure list was exactly right and the process
+  gap was real, but the cause was not: the fixture **already** carries `as_of: TODAY_ET`, and
+  the 7 sites mutate only `.state`, so the date was never missing — it was *future*. Probing
+  `circuitStateCli` against the real fixture returned `{st:"clear", age:0}` under an ET-vs-ET
+  clock, which is what ruled the stated cause out. The proposed fix would have re-stamped the
+  same future-dated value and left all 11 red, in the same 8-hour window that hid it.
+  Also folded in: **the two NVDA earnings-evidence commits (`cad008e`, `0911550`) shipped with
+  no changelog entry** — `admin.html` gained an earnings-evidence surface on the NVDA payload
+  and smoke gained 64 lines of cover for it, with the bull-case P/E later re-pinned to 30x.
+  Recorded here rather than left as a gap, since an undocumented feature is the same rot
+  vector this file keeps closing.
+  Tests: **1741 smoke** (+7) + **264 render** (11 restored, 0 failing) + **170 public-render**
+  + `audit:prod` clean — all four gates green, run inside the failure window.
 - **v4.1.0 "PERMISSION CONTRACT" — the ambiguity-hardening sprint: what a green state may
   claim, and what a confirmation binds to.** Basis: the owner-uploaded v4.0.3 audit
   (validated live 2026-08-18 — every claim reproduced: `board.circuit: null` under "presumed

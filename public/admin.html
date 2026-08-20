@@ -9,7 +9,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
 <!-- AUDIT: kept in sync with package.json by test/smoke.mjs. admin.html is a Vite
      public/ passthrough, so it cannot receive __APP_VERSION__ — the guard is the fix. -->
-<title>TT TICKER TERMINAL v4.1.0</title>
+<title>TT TICKER TERMINAL v4.1.1</title>
 <style>
   :root{
     --bg:#05070a; --panel:#0a0f16; --panel2:#0d141d; --line:#16202c;
@@ -458,7 +458,7 @@
          verdict and every gate are computed upstream and this panel changes nothing. -->
     <div id="macroEvidence" role="region" aria-label="Why macro — readout evidence"></div>
     <div id="headInfo" style="display:none">
-      <div class="brand">FINANCE&nbsp;BRO.AI // TT&nbsp;TICKER&nbsp;TERMINAL <small>v4.1.0 · underwriting + sourced gates</small></div>
+      <div class="brand">FINANCE&nbsp;BRO.AI // TT&nbsp;TICKER&nbsp;TERMINAL <small>v4.1.1 · underwriting + sourced gates</small></div>
       <div class="statusline">
         <span>BOOK: <b id="bookStamp">loading…</b></span>
         <span>AUTH: <b id="sessState">…</b></span>
@@ -797,11 +797,27 @@ function toggleHeadInfo(){
 /* FEAT-TT-RUN: days since an ISO date, or null if absent/unparseable. Null is the
    FAIL-CLOSED signal — unlike src/sources.js isStale (which returns false = "not stale"
    on a missing date), a missing date here must read as NEVER RUN, never as fresh. */
+/* FIX-A (v3.49) FINALLY REACHES THE TERMINAL — the fourth recurrence of this defect class.
+   The old body anchored the stamp at noon UTC and differenced it against Date.now():
+     Date.parse(iso+"T12:00:00Z") vs Date.now()
+   That mixes a CALENDAR DATE with a WALL CLOCK. A date stamped "today in ET" therefore sat
+   in the future from 00:00 ET until 12:00 UTC (08:00 ET), so ageDays returned -1 and every
+   consumer that treats a future date as invalid — circuitStateCli, runState, paRead, posAge,
+   ddAgeChip — read a freshly-stamped fact as UNRESOLVED / NEVER RUN for the first eight
+   hours of every ET day. Not a test artifact: an operator stamping a circuit or a lastRun
+   before 8am ET saw it rejected as future-dated. The comment claimed noon UTC "dodges
+   timezone edge cases"; it dodged the DST ones and created this one.
+   Now compares ET CALENDAR DATE to ET CALENDAR DATE, both anchored at 00:00Z, which is a
+   pure day difference with no wall-clock term. Mirrors functions/lib/tt-alloc.js ageDaysEt
+   and src/ttScore.js ageDaysET — the etYmd clock every other time-judge in this stack
+   already uses. The strict YYYY-MM-DD guard is UNCHANGED on purpose: callers that may hold a
+   datetime already slice it themselves (circuitStateCli, posAge), and loosening it here
+   would silently start accepting inputs those call sites deliberately reject. */
 function ageDays(iso){
   if(!iso||!/^\d{4}-\d{2}-\d{2}$/.test(iso))return null;
-  const t=Date.parse(iso+"T12:00:00Z"); // noon UTC dodges timezone edge cases
-  if(!Number.isFinite(t))return null;
-  return Math.floor((Date.now()-t)/86400000);
+  const etToday=new Date().toLocaleDateString("en-CA",{timeZone:"America/New_York"});
+  const days=Math.round((Date.parse(etToday+"T00:00:00Z")-Date.parse(iso+"T00:00:00Z"))/86400000);
+  return Number.isFinite(days)?days:null;
 }
 /* TT-run state. A future-dated lastRun (typo) also reads as never — not fresh. */
 function runState(iso){
