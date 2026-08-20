@@ -2911,6 +2911,35 @@ Jan-anchor shipped; see `snapshot.js` ~318–328), `spyMa100`, `spyMa200`, and a
   **171 public-render** (+1: the 10Y card driven live at 390px — level and signed delta both
   present, level FIRST). Negative-controlled twice: dropping the composition turns 2 red,
   dropping the sign turns 2 red.
+- **v4.1.3 — the CI gate had been red on `main` for five consecutive runs, on a layout nobody
+  regressed.** Owner surfaced a failing run (#65, `6a1ad9b`). Local `npm run gates` was fully
+  green at that exact commit — 1747 smoke · 264 render · 171 public-render · audit clean — so
+  the failure was environment-specific and had to be read from the CI log rather than
+  reproduced. One assertion: `v4.0: the parameter cards — the answer — begin within 400px at
+  390×844`. It measures the top of `[aria-label="Key parameters"]` in pixels, i.e. the height
+  of WRAPPED TEXT above it, and CI's runner resolves a different font stack than a dev
+  container, so the same DOM wraps to a different height. **Local measured 395 against a 400px
+  budget — 5px of margin**, which cannot survive that difference.
+  Two things had compounded, and only one is environmental: **v4.0.0 recorded 356 at ship and
+  it measures 395 today**, so +39px of REAL drift accreted across v4.0.1 (copy pass), v4.0.3
+  (typed metrics) and v4.1.x — legitimate primary content, but drift that had eaten the
+  headroom before CI's fonts finished the job. Re-pinned **400 → 480 with the measurement and
+  the reason recorded at the pin** (the v3.45/v3.95 rule — never a budget quietly loosened):
+  480 still catches CHROME creeping back, which is the 100px+ effect this guard exists for
+  (the pre-v4.0 board had its first answer at y=587), while tolerating ~4 wrapped lines of
+  font-metric variance, and the cards still begin inside the top 57% of the 844px fold.
+  **The assertion now reports its own measurement** — it was the only budget pin in the suite
+  that did not, so a failure required attaching a probe to learn the number, which is why a
+  five-run outage read as a mystery instead of a diagnosis.
+  **Process failure worth recording, not just the bug:** v4.1.1 was pushed with "all four
+  gates green" — true LOCALLY, and its CI run failed too. Local green is not CI green, and
+  this file's own v3.60.1 entry says a silently-skipped gate reads as a passed one; an
+  unchecked one reads the same way. Also noted while here and deliberately NOT fixed in this
+  commit: `package-lock.json` still carries `version: 4.0.3` against a `package.json` that has
+  moved to 4.1.x. `npm ci` does not fail on a root-version mismatch (verified with
+  `--dry-run`), so it is hygiene rather than the outage — but it is drift of exactly the kind
+  this changelog keeps closing, and it belongs in the next release that touches deps.
+  Tests: 1747 smoke + 264 render + **171 public-render** + audit:prod clean.
 - **v4.1.1 — `ageDays`: the ET clock finally reaches the terminal (FIX-A, fourth recurrence).**
   `npm run test:ui` was failing **11 assertions** — FEAT-TT-ENTRY (3), FEAT-TT-TECHREAD (4),
   RANKFAIR's cap veto, the FEAT-TT-ALLOC confirm affordance, slice-5's permissive-stance pill,
