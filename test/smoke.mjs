@@ -36,7 +36,7 @@ import { mergeOcrExtractions, onRequestPost as postStreetOcr } from "../function
 import { onRequestGet as getTickerFacts, onRequestPost as postTickerFacts, nasdaqCandlesFact, quoteFact } from "../functions/api/ticker-facts.js";
 import { onRequestPost as postTickerAnalysis, riskTierForBookEntry } from "../functions/api/ticker-analysis.js";
 import { plausible, applyBands, quorum, QUORUM_FIELDS, QUORUM_MIN, marketSession, BANDS,
-  pairRs, parseTreasuryCsv, rateOddsStillOpen, chooseTtl, publishIfNoWorse, TTL_MEDIUM, TTL_LOW,
+  pairRs, parseTreasuryCsv, preferFresherRates, rateOddsStillOpen, chooseTtl, publishIfNoWorse, TTL_MEDIUM, TTL_LOW,
   fetchEquities } from "../functions/api/snapshot.js";
 import { etYmd } from "../src/sources.js";
 // UI-OVERHAUL Slice 1 (task 1.1): tokens are a real module now — smoke IMPORTS it (the v3.60
@@ -660,7 +660,7 @@ ok("pairRs: absent/non-finite leg -> null, never a fabricated 0",
   pairRs(null, SPXFIX) === null && pairRs({ ...NDXFIX, latest: NaN }, SPXFIX) === null);
 
 // Matrix F: Treasury daily par-yield CSV parse (the official upstream DGS10 republishes).
-const TCSV = 'Date,"1 Mo","10 Yr","30 Yr"\n07/15/2026,5.1,4.46,4.9\n07/14/2026,5.1,4.43,4.9\n07/11/2026,5.1,4.40,4.9';
+const TCSV = 'Date,"1 Mo","10 Yr","30 Yr"\n07/15/2026,5.1,4.46,5.02\n07/14/2026,5.1,4.43,4.97\n07/11/2026,5.1,4.40,4.95';
 ok("matrix F: Treasury CSV -> tenYear + D1 + real ISO AsOf + UST attribution", (() => {
   const t = parseTreasuryCsv(TCSV);
   return t && t.tenYear === 4.46 && t.tenYearAsOf === "2026-07-15" &&
@@ -668,6 +668,53 @@ ok("matrix F: Treasury CSV -> tenYear + D1 + real ISO AsOf + UST attribution", (
 })());
 ok("matrix F: a CSV without a 10 Yr column -> null (parse failure, never a guessed column)",
   parseTreasuryCsv('Date,"1 Mo"\n07/15/2026,5.1') === null);
+
+/* v4.1.5 — the failsafe reaches the 30Y, and fires on a LAG not just a failure.
+   Measured live 2026-08-21: FRED's DGS10/DGS30 legs SUCCEEDED with an 08-19 observation
+   while VIXCLS had already published 08-20. A failure-only trigger cannot see that. */
+ok("v4.1.5 UST: the same row yields the 30Y leg — deltas, series, and a SAME-DATE spread",
+  (() => { const t = parseTreasuryCsv(TCSV);
+    return t.thirtyYear === 5.02 && t.thirtyYearAsOf === "2026-07-15" &&
+      t.thirtyYearD1 === 0.05 && /UST/.test(t.thirtyYearSource) &&
+      t.spread10s30s === 0.56 && t.spread10s30sAsOf === "2026-07-15"; })());
+ok("v4.1.5 UST: a CSV that LOST its 30 Yr column still yields a usable 10Y (fail closed on the FIELD, not the feed)",
+  (() => { const t = parseTreasuryCsv('Date,"10 Yr"\n07/15/2026,4.46\n07/14/2026,4.43');
+    return t && t.tenYear === 4.46 && t.thirtyYear === undefined && t.spread10s30s === undefined; })());
+ok("v4.1.5 merge: a FRESHER UST observation wins BOTH legs, and the spread re-derives same-date",
+  (() => { const fred = { tenYear: 4.65, tenYearAsOf: "2026-08-19", thirtyYear: 5.19,
+      thirtyYearAsOf: "2026-08-19", spread10s30s: 0.54, spread10s30sAsOf: "2026-08-19" };
+    const r = preferFresherRates(fred, parseTreasuryCsv('Date,"10 Yr","30 Yr"\n08/20/2026,4.70,5.24\n08/19/2026,4.65,5.19'));
+    return r.tenYear === 4.7 && r.tenYearAsOf === "2026-08-20" && r.thirtyYear === 5.24 &&
+      r.spread10s30s === 0.54 && r.spread10s30sAsOf === "2026-08-20" && /UST/.test(r.tenYearSource); })());
+ok("v4.1.5 merge: a FRESHER FRED is never overwritten — the fallback cannot make the page staler",
+  (() => { const fred = { tenYear: 4.8, tenYearAsOf: "2026-08-21", thirtyYear: 5.3, thirtyYearAsOf: "2026-08-21" };
+    const r = preferFresherRates(fred, parseTreasuryCsv('Date,"10 Yr","30 Yr"\n08/20/2026,4.70,5.24'));
+    return r.tenYear === 4.8 && r.tenYearAsOf === "2026-08-21" && r.tenYearSource === undefined; })());
+ok("v4.1.5 merge: a TIE keeps FRED — a tie is not an improvement, and attribution should not churn",
+  (() => { const fred = { tenYear: 4.65, tenYearAsOf: "2026-08-20" };
+    const r = preferFresherRates(fred, parseTreasuryCsv('Date,"10 Yr"\n08/20/2026,4.70'));
+    return r.tenYear === 4.65 && r.tenYearSource === undefined; })());
+ok("v4.1.5 merge: legs from DIFFERENT dates DROP the spread — 10s30s across two sessions is fabricated (the pairRs rule)",
+  (() => { const fred = { tenYear: 4.65, tenYearAsOf: "2026-08-19", thirtyYear: 5.19,
+      thirtyYearAsOf: "2026-08-19", spread10s30s: 0.54, spread10s30sAsOf: "2026-08-19" };
+    const r = preferFresherRates(fred, parseTreasuryCsv('Date,"10 Yr"\n08/20/2026,4.70'));
+    return r.tenYearAsOf === "2026-08-20" && r.thirtyYearAsOf === "2026-08-19" &&
+      r.spread10s30s === undefined && r.spread10s30sAsOf === undefined; })());
+ok("v4.1.5 merge: no UST at all is a byte-identical passthrough (the fallback is inert when not needed)",
+  (() => { const fred = { tenYear: 4.65, tenYearAsOf: "2026-08-19", thirtyYear: 5.19,
+      thirtyYearAsOf: "2026-08-19", spread10s30s: 0.54, spread10s30sAsOf: "2026-08-19" };
+    return JSON.stringify(preferFresherRates(fred, null)) === JSON.stringify(fred); })());
+/* Source-pinned because the assembly runs inside the handler, but pinned in BOTH
+   directions: the merge must be WIRED and the old blind spread must be ABSENT. A pin that
+   only checks the new call passes while a blind `...treasury.value` sits beside it — the
+   merge would then be computed, tested, and overridden (the v3.40/v3.54 defect shape). */
+ok("v4.1.5 trigger: the fallback fires on a LAG, not only on a dead leg (the live 8/21 case)",
+  (() => { const src = readSrc("../functions/api/snapshot.js");
+    return /fredLegDead \|\| sessionsBehind\(fredTenAsOf\) >= 1/.test(src); })());
+ok("v4.1.5 wiring: the recency merge is the ONLY path into live — no blind treasury spread survives",
+  (() => { const src = readSrc("../functions/api/snapshot.js");
+    return /preferFresherRates\(fred\.status/.test(src) &&
+      !/\.\.\.\(treasury\.status === "fulfilled" \? treasury\.value : \{\}\)/.test(src); })());
 
 // Matrix G (transport half): stored Kalshi odds survive only while their event is open.
 ok("matrix G: last-good odds for a FUTURE event are servable; a PAST event's are discarded", (() => {

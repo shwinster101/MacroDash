@@ -2881,6 +2881,47 @@ Jan-anchor shipped; see `snapshot.js` ~318–328), `spyMa100`, `spyMa200`, and a
   VALUATION GAP ranking (§11.1 — the ranking always renders, which is the owner's actual
   "always an output" contract, and it was never suspended). Tests: 1223 smoke (+2) + 199
   render (+1).
+- **v4.1.5 — the rate failsafe learns the failure mode it actually meets: a publication LAG.**
+  Owner asked for a backup source for the 10Y/30Y with better recency. The answer was not a
+  new vendor: ENGINE0-CONT (v3.71) already wired the **U.S. Treasury Daily Par Yield Curve** —
+  the official upstream FRED's DGS10 *republishes* (H.15), so it is fresher-or-equal by
+  construction and the numbers are equivalent; only the attribution changes. It had two gaps,
+  both found by measuring the live feed rather than reading the code.
+  **(1) The trigger was FAILURE-ONLY.** `if (fred.status !== "fulfilled" || tenYear === undefined)`
+  fires when the DGS10 leg *dies*. Measured live 2026-08-21: the DGS10/DGS30 legs **succeeded**
+  and returned an **08-19** observation two sessions old, while `VIXCLS` had already published
+  08-20 — a per-series publication lag on FRED's side, not a fetch failure. So the fallback
+  never fired, the 10Y went dark on the dashboard (`MACRO: HODL`, 4 of 6 voters), and Engine 0
+  sat at **RESTRICTED** with the 10Y carried as HISTORICAL — one check short of the `current >= 5`
+  that yields HIGH confidence and FULL actionability. The trigger now also fires when
+  `sessionsBehind(fredTenAsOf) >= 1`, reusing the ONE session counter `isStale` already reads
+  (the ENGINE0-CONT §P.4 rule — a second copy of that weekend/holiday walk is the drift this
+  repo keeps paying for). One extra request, on exactly the days it can help.
+  **(2) The 30Y had no failsafe at all** — and it is the leg carrying the 5.2% alert. The same
+  CSV row has always contained the `30 Yr` column; `parseTreasuryCsv` simply never read it. It
+  now emits the 30Y leg with its own deltas, series and attribution. The `30 Yr` column is
+  **OPTIONAL** while `10 Yr` stays REQUIRED: a CSV that lost the column still yields a usable
+  10Y rather than nulling the whole parse — fail closed on the FIELD, not on the feed.
+  **The merge is by RECENCY, per leg — never by source precedence.** The old code spread
+  `treasury.value` over `fred.value` unconditionally, which was only safe because it fired
+  solely on a dead leg. Now that a lag also triggers it, UST can itself be the staler feed, so
+  **`preferFresherRates()`** takes the newer observation per leg and a **TIE keeps FRED** (a tie
+  is not an improvement, and attribution should not churn). The fallback can never make the
+  page staler than it already was. **And the spread is DROPPED when the two legs land on
+  different dates** — a 10s30s computed across two sessions is a fabricated number, the exact
+  defect `pairRs` exists to prevent; when both legs come from one UST row it is same-date by
+  construction.
+  **Honest limit, unchanged from v3.71:** `home.treasury.gov` is 403 at this build
+  environment's proxy, so the endpoint itself still cannot be exercised from here. The parser
+  is fail-closed and fixture-tested, the merge is pure and executed, and the first real call is
+  the true schema check — the same posture the original fallback shipped under.
+  Tests: **1765 smoke** (+10: the 30Y leg with a same-date spread, the optional-column fail-
+  closed path, and `preferFresherRates` RUN across fresher-UST / fresher-FRED / tie /
+  mixed-date-drop / inert-passthrough) + 264 render + 171 public-render. Negative-controlled in
+  BOTH halves: restoring the failure-only trigger turns the trigger pin red, and restoring the
+  blind treasury spread turns the WIRING pin red — the second pin exists because the merge
+  tests pass whether or not the merge is actually wired (the v3.40/v3.54 shape: computed,
+  tested, and then overridden at the call site).
 - **v4.1.4 — the shared horizon is never substituted (the deferred half of A3).**
   *Relabelled from v4.1.3 at merge (2026-08-20): the CI-gate fix immediately below landed on
   `main` first and owns that number — the second collision in this session's line of work,
