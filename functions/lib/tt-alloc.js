@@ -25,7 +25,7 @@ import { ptModelRows, ptRowYears, lintPtModel, pickRow, annualise } from "../../
 import { etYmd } from "../../src/sources.js";
 import { POS_STALE_D } from "../api/positions.js";
 
-export const ALLOC_RULE_VERSION = "tt-alloc-v1.0.0";
+export const ALLOC_RULE_VERSION = "tt-alloc-v1.1.0";   // v4.1.3: horizon never substituted — receipt semantics changed, so cached v1.0.0 receipts must not be reinterpreted
 export const CAP_PCT = 18;      // mirror of admin.html (hard single-position cap)
 export const PX_STALE_D = 4;    // mirror of admin.html (a stamped mark older than this misleads)
 export const REG_RANK = { TAILWIND: 0, NEUTRAL: 1, HEADWIND: 2, PANIC: 3 };
@@ -138,7 +138,7 @@ export function evalBuyRow({ entry, idx, quote, board, horizon, now }) {
   const sym = entry.sym;
   const blockers = [], cautions = [];
   if (!idx) {
-    return { sym, blockers: ["dd index unavailable — the board working set carries no entry for this name"], cautions, px: null, tgt: null, up: null, ann: null, quality: null, rolled: null };
+    return { sym, blockers: ["dd index unavailable — the board working set carries no entry for this name"], cautions, px: null, tgt: null, up: null, ann: null, quality: null, rolled: null, no_rung_at_horizon: null };
   }
   const rs = runStateOf(entry.lastRun, now);
   if (rs.k === "never") blockers.push("TT never run");
@@ -172,7 +172,17 @@ export function evalBuyRow({ entry, idx, quote, board, horizon, now }) {
   const mine = ds.filter((d) => d && d.blocking && d.sym && String(d.sym).toUpperCase() === sym);
   if (mine.length) blockers.push(`${mine.length} blocking decision${mine.length === 1 ? "" : "s"} open`);
 
-  const pk = rows.length ? (pickRow(rows, horizon || "", now) || pickRow(rows, "", now)) : null;
+  /* v4.1.3 — the horizon is never substituted. `pickRow` returns null when the shared year
+     is absent ("pinned year absent → excluded and counted, never substituted", ptModel.js),
+     and BOTH other consumers honour that: scoreP1 blocks with "no row at the shared horizon
+     — never substituted", and the terminal's own renderUpsideRank excludes the name and
+     counts it (admin.html, the ddWorth audit note). This module alone fell back to the
+     name's nearest row, so a name with a gappy estimate series was ranked on a DIFFERENT
+     year from every row it was sorted against — an apples-to-oranges sort key (the DEC-D2
+     units error) and a server receipt that silently disagreed with the client ranking for
+     the same name. The fallback is gone; the exclusion is NAMED instead. */
+  const pk = rows.length ? pickRow(rows, horizon || "", now) : null;
+  const noRung = rows.length > 0 && !pk ? (horizon || null) : null;
   const r = pk && pk.row;
   const tgt = r ? (typeof r.prem === "number" ? r.prem : (typeof r.fl === "number" ? r.fl : null)) : null;
   const up = px !== null && tgt !== null ? Math.round((tgt / px - 1) * 1000) / 10 : null;
@@ -180,7 +190,7 @@ export function evalBuyRow({ entry, idx, quote, board, horizon, now }) {
   const quality = idx.composite && (idx.composite.score ?? null) !== null
     ? { score: idx.composite.score, tier: idx.composite.raw_tier || null } : null;
   return { sym, blockers, cautions, px, px_at, live: live !== null, tgt, y: r ? r.y : null,
-    up, ann, quality, rolled: pk ? pk.rolled : null };
+    up, ann, quality, rolled: pk ? pk.rolled : null, no_rung_at_horizon: noRung };
 }
 
 /* v4.1 Step 4: ONE price-basis vocabulary, shared by server and client (the receipt carries
@@ -196,6 +206,11 @@ export function priceBasisOf(e) {
 
 // The per-row veto ladder (admin why(r)), on the server row shape. null = eligible.
 export function whyNot(row, weightPct) {
+  /* Ordered before "no gap" deliberately: a modelled name with no rung at the shared year
+     also has up === null, and reporting that as "no gap" would claim the comparison ran and
+     found no upside. It never ran. (v4.1.3) */
+  if (row.no_rung_at_horizon)
+    return `no ${row.no_rung_at_horizon} rung — excluded at the shared horizon, never substituted`;
   if (!(row.up > 0)) return "no gap";
   if (weightPct !== null && weightPct >= CAP_PCT) return `already ${weightPct}% — at the ${CAP_PCT}% cap, no room`;
   if (row.blockers.length) return `evidence: ${row.blockers.join(", ")}`;
@@ -211,7 +226,7 @@ export function whyNot(row, weightPct) {
    broker-measured pct; the tracked-book floor is NAMED as a floor when it substitutes.
    do_not_trim is FLAGGED, never hidden (the RANKFAIR rule). Options-only sleeves keep the
    v3.44 rules: signed sum, unmeasured reads as such, a net-short sleeve is an obligation. */
-export function fundingRanking({ book, board, positions, rowsAnn, now }) {
+export function fundingRanking({ book, board, positions, rowsAnn, now, noRungSyms }) {
   const b = board || {}, pos = positions || {};
   const cut = new Set(Array.isArray(book && book.cut) ? book.cut : []);
   const forcedSyms = new Map(); // sym -> reason
@@ -239,6 +254,7 @@ export function fundingRanking({ book, board, positions, rowsAnn, now }) {
   (Array.isArray(b.funding && b.funding.order) ? b.funding.order : []).forEach((r, i) => {
     if (r && r.sym) orderMarked.set(String(r.sym).toUpperCase(), { i, reason: `session funding order #${i + 1}${r.note ? ` — ${String(r.note).slice(0, 60)}` : ""}` });
   });
+  const noRung = noRungSyms instanceof Set ? noRungSyms : new Set();
   const dnt = new Set(Array.isArray(b.funding && b.funding.do_not_trim) ? b.funding.do_not_trim : []);
 
   const rows = [], optOnly = [];
@@ -262,7 +278,11 @@ export function fundingRanking({ book, board, positions, rowsAnn, now }) {
     else if (pct !== null && pct >= CAP_PCT) { tier = 2; reason = `${pct}% of acct equity — at/over the ${CAP_PCT}% cap (broker-measured)`; }
     else if (clusterOver.has(sym)) { tier = 3; reason = clusterOver.get(sym); }
     else if (orderMarked.has(sym)) { tier = 4; reason = orderMarked.get(sym).reason; }
-    else { tier = 5; reason = ann === null ? "unmodelled — no expected-return basis; listed last" : `lowest expected return funds first — ${ann}%/yr at the shared horizon`; }
+    else { tier = 5; reason = ann === null
+      ? (noRung.has(sym)
+          ? "no rung at the shared horizon — no expected-return basis at this year; listed last"
+          : "unmodelled — no expected-return basis; listed last")
+      : `lowest expected return funds first — ${ann}%/yr at the shared horizon`; }
     rows.push({ sym, tier, reason, pct, mv: isFinite(Number(p.mv)) ? Number(p.mv) : null, ann,
       dnt: dnt.has(sym), pos_age_d: ageDaysEt(p.at, now),
       lots: lots.length ? { lt_sh: lt, st_sh: st } : null });
@@ -340,7 +360,10 @@ export function evaluateAllocation({ book, ddIndex, posDoc, quotes, readout, now
 
   const state = gate ? "WAIT" : !eligible ? "NONE" : context_blockers.length ? "BUY_ELIGIBLE" : "ALLOCATABLE";
   const rowsAnn = {}; rows.forEach((r) => { rowsAnn[r.sym] = r.ann; });
-  const funding = fundingRanking({ book, board, positions, rowsAnn, now });
+  /* v3.65 rule, applied to the receipt: a silent truncation reads as full coverage, so the
+     names the shared horizon excluded are NAMED, never just counted. */
+  const noRungSyms = new Set(rows.filter((r) => r.no_rung_at_horizon).map((r) => r.sym));
+  const funding = fundingRanking({ book, board, positions, rowsAnn, now, noRungSyms });
 
   return {
     rule_version: ALLOC_RULE_VERSION,
@@ -359,6 +382,10 @@ export function evaluateAllocation({ book, ddIndex, posDoc, quotes, readout, now
       circuit_note: cs.reason || null,
     },
     horizon,                     // computed, never asserted (D1)
+    /* Modelled names carrying no rung at `horizon`. They are excluded from the ranking
+       rather than substituted onto another year (v4.1.3) — named here so the exclusion is
+       visible at receipt altitude, not merely absent from the rows. */
+    unranked_at_horizon: [...noRungSyms],
     eligible: eligible ? { sym: eligible.sym, y: eligible.y, tgt: eligible.tgt, up: eligible.up,
       ann: eligible.ann, live_px: eligible.live,
       // v4.1 Step 4: the price the target was measured against, its date, and the basis —

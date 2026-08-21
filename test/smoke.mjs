@@ -7429,6 +7429,51 @@ console.log("\n[68] FEAT-TT-ALLOC — pure core, endpoint, and the §14.8 bar");
     (() => { const r = ev({ readout: null, book: { ...BOOK, board: { ...BOOK.board, regime: undefined } } });
       return r.state === "WAIT" && r.eligible === null && r.funding.rows.length > 0; })());
 
+  /* v4.1.3 — the shared horizon is never substituted. `pickRow` refuses a missing pinned
+     year by contract; scoreP1 and the terminal's renderUpsideRank both honour it and this
+     module did not, so a name with a gappy estimate series was ranked off a DIFFERENT year
+     from the rows it was sorted against. Run behaviourally — a string pin cannot prove a
+     sort key. */
+  {
+    const FAR = String(+YR + 4);                       // estimate year → rung at YR+3
+    const farIdx = mkIdx({ consensus: { eps: { [FAR]: 10 } } });
+    const row = (idx, hz) => alloc.evalBuyRow({ entry: { sym: "FAR", lastRun: TODAY }, idx,
+      quote: { px: 100 }, board: {}, horizon: hz, now: NOW });
+    const excluded = row(farIdx, YR), control = row(mkIdx(), YR), own = row(farIdx, null);
+    ok("v4.1.3 horizon: a modelled name with no rung at the shared year is EXCLUDED, not substituted",
+      excluded.no_rung_at_horizon === YR && excluded.tgt === null &&
+      excluded.up === null && excluded.ann === null && excluded.y === null);
+    // The proof that this is a HORIZON decision and not an unmodelled name: the same payload
+    // ranks fine on its own nearest row, which is exactly what the old fallback substituted.
+    ok("v4.1.3 horizon: the excluded name IS modelled — its own nearest rung still computes (what the fallback used to serve)",
+      own.no_rung_at_horizon === null && typeof own.tgt === "number" && own.y === String(+YR + 3));
+    ok("v4.1.3 horizon: a name that HAS the shared rung is untouched (no over-correction)",
+      control.no_rung_at_horizon === null && typeof control.tgt === "number" && control.y === YR);
+    ok("v4.1.3 horizon: whyNot names the real reason — never 'no gap', which would claim the comparison ran",
+      (() => { const w = alloc.whyNot(excluded, 1);
+        return /never substituted/.test(w) && w.includes(YR) && !/no gap/.test(w); })());
+    // End-to-end: autoHorizonOf takes the MIN of each name's max year, so AAA (rung YR) sets
+    // the horizon and FAR (rung YR+3 only) falls outside it.
+    const B2 = { ...BOOK, book: [...BOOK.book, { sym: "FAR", tier: "S", lens: "VEH", lastRun: TODAY }] };
+    const I2 = { asOf: TODAY, entries: { ...IDX.entries, FAR: farIdx } };
+    const P2 = { ...POSDOC, positions: { ...POSDOC.positions, FAR: { at: TODAY + "T12:00:00Z", src: "rh", sh: 5, mv: 500, pct: 0.5 } } };
+    const r2 = alloc.evaluateAllocation({ book: B2, ddIndex: I2, posDoc: P2, quotes: { AAA: { px: 100 }, FAR: { px: 100 } },
+      readout: READOUT, now: NOW });
+    ok("v4.1.3 horizon: the receipt NAMES the excluded names, never merely omits them (the v3.65 rule)",
+      Array.isArray(r2.unranked_at_horizon) && r2.unranked_at_horizon.includes("FAR") &&
+      !r2.unranked_at_horizon.includes("AAA") && r2.horizon === YR);
+    ok("v4.1.3 horizon: the excluded name can never take the eligible line",
+      !r2.eligible || r2.eligible.sym !== "FAR");
+    ok("v4.1.3 horizon: funding says 'no rung at the shared horizon', not 'unmodelled' — it IS modelled",
+      (() => { const f = r2.funding.rows.find((x) => x.sym === "FAR");
+        return !!f && /no rung at the shared horizon/.test(f.reason) && !/unmodelled/.test(f.reason); })());
+    ok("v4.1.3 horizon: a genuinely unmodelled name still reads 'unmodelled' (the two stay distinguishable)",
+      (() => { const f = r2.funding.rows.find((x) => x.sym === "BBB");
+        return !f || !/no rung at the shared horizon/.test(f.reason); })());
+    ok("v4.1.3: the rule version moved WITH the semantics — a cached v1.0.0 receipt must not be reinterpreted",
+      alloc.ALLOC_RULE_VERSION === "tt-alloc-v1.1.0");
+  }
+
   // ── §14.8 bar + no-order-tools: structural, negative-controllable ──
   const allocLibSrc = readSrc("../functions/lib/tt-alloc.js");
   const allocApiSrc = readSrc("../functions/api/allocation.js");

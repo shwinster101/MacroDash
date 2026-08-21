@@ -2881,6 +2881,45 @@ Jan-anchor shipped; see `snapshot.js` ~318–328), `spyMa100`, `spyMa200`, and a
   VALUATION GAP ranking (§11.1 — the ranking always renders, which is the owner's actual
   "always an output" contract, and it was never suspended). Tests: 1223 smoke (+2) + 199
   render (+1).
+- **v4.1.3 — the shared horizon is never substituted (the deferred half of A3).** The v4.0.3
+  audit's allocation findings split three ways: A1 and A2 landed independently on `main` as
+  the v4.1.0 PERMISSION CONTRACT sprint, A4 was a deliberate §14.8 bar the audit mistook for
+  a bug, and **A3 turned out to rest on a premise that does not hold** — the premium
+  prerequisite the canonical rule needs is a REGISTRY gate whose state lives only in
+  `tt:score:v1:<SYM>`, the store this module is barred from reading, while the payload's own
+  `dd.gates` is the unrelated free-text four-gate framework (`admin.html` validates it as
+  *"each gate needs a name"*, a string). Two different structures, one word. The premium half
+  is therefore deferred to §14.8 activation and named rather than half-built; this ships the
+  half that needs no new data.
+  **The defect.** `pickRow` refuses a missing pinned year BY CONTRACT — *"pinned year absent →
+  excluded and counted, never substituted"* (`ptModel.js`) — and both other consumers honour
+  it: `scoreP1` blocks with *"no row at the shared horizon — never substituted"*, and the
+  terminal's own `renderUpsideRank` excludes the name and counts it (stated verbatim in the
+  `ddWorth` audit note). `tt-alloc.js` alone wrote `pickRow(rows, horizon) || pickRow(rows,
+  "")`, silently serving the name's nearest row instead. Because `autoHorizonOf` takes the
+  MINIMUM of each name's maximum year, a name with a **gappy estimate series** genuinely
+  falls outside the shared horizon — and was then ranked on a DIFFERENT year from every row
+  it was sorted against. That is the DEC-D2 units error (a rate that is not comparable to the
+  rates beside it), and it made the server receipt disagree with the client ranking for the
+  same name, with only one of them saying why.
+  **The fix is the exclusion, and then the NAMING.** Removing the fallback alone would have
+  left `whyNot` reporting **"no gap"** — its first rule fires on a null `up` — which claims
+  the comparison ran and found no upside. It never ran. So `no_rung_at_horizon` rides the row,
+  `whyNot` reports it AHEAD of the no-gap rule, the receipt carries
+  **`unranked_at_horizon: [syms]`** (the v3.65 rule: a silent truncation reads as full
+  coverage, so name them, never merely count), and the funding tier-5 reason stops calling
+  these names **"unmodelled"** — they are modelled, just not at this year, and the two states
+  stay distinguishable. `ALLOC_RULE_VERSION` moves 1.0.0 → **1.1.0**: receipt semantics
+  changed, so a cached v1.0.0 receipt must not be reinterpreted under the new rule (the
+  `tt-gates-v2.2.0` precedent). No client change — `admin.html`'s ranking already excluded
+  and named on its side; this makes the server agree with it.
+  Tests: **1756 smoke** (+9, RUN against the real module — a string pin cannot prove a sort
+  key: the exclusion, the proof it is a HORIZON decision and not an unmodelled name (the same
+  payload still computes on its own nearest rung, which is exactly what the fallback served),
+  the no-over-correction control, the `whyNot` wording, the end-to-end receipt naming, the
+  never-eligible guarantee, both funding wordings, and the version bump) + 264 render + 171
+  public-render. Negative-controlled: restoring the fallback turns exactly the four
+  behavioural assertions red and leaves the five contract/control ones green.
 - **v4.1.2 — the label-to-metric contract: the 10Y card shows the yield it names.**
   *Relabelled from v4.0.4 at merge (2026-08-20): this shipped on a branch cut from the v4.0.3
   head while the terminal line of work landed v4.1.0/v4.1.1 on `main` — the documented
