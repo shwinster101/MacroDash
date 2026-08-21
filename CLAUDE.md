@@ -2881,6 +2881,49 @@ Jan-anchor shipped; see `snapshot.js` ~318–328), `spyMa100`, `spyMa200`, and a
   VALUATION GAP ranking (§11.1 — the ranking always renders, which is the owner's actual
   "always an output" contract, and it was never suspended). Tests: 1223 smoke (+2) + 199
   render (+1).
+- **v4.1.6 — the Engine 0 adversarial sweep, and the confidence inversion it found.** Owner:
+  *"make sure it's almost always firing correctly … I don't want an incorrect or misfiring
+  engine zero because it plays a role in all of our price targets and allocations."* The ~50
+  hand-written `buildTtReadout` cases test SPECIFIC POINTS, and points cannot support "almost
+  always" — the v3.40 defect (verdict went NEUTRAL → TAILWIND when stale votes were REMOVED:
+  *"more risk-on for knowing less"*) passed every point test that existed at the time. So this
+  adds a **seeded property sweep** — 1500 generated scenarios through the real engine, values
+  placed ON and AROUND every band edge, dates at real calendar offsets (weekends matter to
+  `sessionsBehind`), asserting invariants that must hold for EVERY input: the published verdict
+  vocabulary is closed (never the internal `INSUFFICIENT`), six checks always, TAILWIND requires
+  both panic gauges usable, PANIC requires both CURRENT, FULL implies HIGH + a live circuit,
+  `<3 available` implies HOLD, a blind gauge forces HOLD, a MISSING gauge forces LOW, stale
+  bullish never stays bullish, and the engine is deterministic. Plus a **hostile-input** battery
+  (nulls, quoted numbers, junk and future dates, a zero divisor) proving it never throws — the
+  readout is CORS-open and an external terminal gates orders on it, so a 500 is worse than an
+  abstention. **`Math.random` is banned here**: the seed is printed in the assertion message so
+  any failure reproduces.
+  **THE FINDING — a real inversion in the CONFIDENCE axis.** MEDIUM required `current >= 3 &&
+  !criticalMissing && historical <= 2`, and that historical cap inverted: a HISTORICAL input is
+  a real observation one session old, strictly MORE information than a MISSING one, yet
+  DELETING it moved the count out of `historical` and could UPGRADE the grade. Minimal case
+  from the sweep: `current 3 / historical 3 / missing 0` graded **LOW → HOLD**, and removing a
+  single input (`current 3 / historical 2 / missing 1`) graded **MEDIUM → RESTRICTED**. So **a
+  feed that died completely scored better than one that merely published late** — the v3.40
+  defect class, one axis over, and it had been live since ENGINE0-CONT. Since
+  `current + historical + missing === 6`, the honest cap on non-current evidence
+  (`historical + missing <= 2`) IS **`current >= 4`**; stated that way it cannot invert, because
+  an input moving from historical to missing leaves `current` untouched.
+  **Measured one-way before shipping** — across 4000 generated scenarios the new rule made
+  **0 more permissive**, 43 more restrictive, 3957 unchanged. It only ever tightens, which is
+  why a change to order-gating math ships here rather than waiting: the safe direction is the
+  only direction it moves. Today's live readout is unaffected (`current 5` → HIGH → FULL).
+  **The sweep was then negative-controlled against ITSELF, and failed.** Disabling the
+  blind-gauge HOLD rule and the `criticalMissing` rule each left every assertion GREEN — two
+  safety mechanisms could be deleted without the suite noticing. P11/P12 were added for exactly
+  those, and all three controls now bite (restoring the inverted cap turns monotonicity red;
+  each disabled guard turns the sweep red). A property suite that cannot fail on a removed
+  guard is measuring the wrong thing.
+  **Recency-on-conflict (owner directive), audited:** the only surface where two sources supply
+  one Engine 0 field is FRED vs UST, handled by v4.1.5's `preferFresherRates`. `withLastGood`/
+  `applyFieldLastGood` fill ONLY when a field is absent and never overwrite a fresher value, so
+  that path honours the rule by construction — verified, not assumed.
+  Tests: **1768 smoke** (+3 sections) + 264 render + 171 public-render.
 - **v4.1.5 — the rate failsafe learns the failure mode it actually meets: a publication LAG.**
   Owner asked for a backup source for the 10Y/30Y with better recency. The answer was not a
   new vendor: ENGINE0-CONT (v3.71) already wired the **U.S. Treasury Daily Par Yield Curve** —

@@ -382,6 +382,140 @@ ok("deriv: govAsOf falls back to the parent's AsOf, and returns undefined with n
   govAsOf({ tenYear: 4.5, tenYearAsOf: "2026-07-01" }, "tenYearM1") === "2026-07-01"
   && govAsOf({}, "tenYearM1") === undefined);
 
+/* ═══════════ ENGINE 0 ADVERSARIAL PROPERTY SWEEP (v4.1.6) ═══════════
+   Owner: "make sure it's almost always firing correctly … I don't want an incorrect or
+   misfiring engine zero because it plays a role in all of our price targets and allocations."
+   The ~50 hand-written cases above test SPECIFIC POINTS. Points cannot support "almost
+   always" — the v3.40 defect (verdict went NEUTRAL -> TAILWIND when stale votes were
+   REMOVED: "more risk-on for knowing less") passed every point test that existed.
+   So this sweeps GENERATED scenarios through the real buildTtReadout and asserts SAFETY
+   INVARIANTS that must hold for EVERY input. Seeded LCG, never Math.random — a property
+   failure has to be reproducible from the seed printed in the message. */
+const P_SEED = 20260821;
+let _rng = P_SEED;
+const rnd = () => ((_rng = (_rng * 1103515245 + 12345) & 0x7fffffff) / 0x7fffffff);
+const pick = (a) => a[Math.floor(rnd() * a.length) % a.length];
+// Real calendar dates around TT_NOW (Wed 2026-07-15) — weekends matter to sessionsBehind.
+/* WEIGHTED toward fresh, deliberately. An unweighted pick produced 1448/1500 HOLD and only
+   20 FULL — so the sweep was exercising the degraded path almost exclusively and the three
+   most safety-critical invariants (P4/P5/P6) rode on a handful of samples. Real days are
+   mostly fresh; the generator should be too, or "almost always correct" is measured almost
+   entirely on the days the engine is already abstaining. */
+const P_DATES = [D, D, D, D, D, "2026-07-14", "2026-07-14", "2026-07-13", "2026-07-10",
+  "2026-07-09", "2026-07-06", "2026-07-01", undefined];
+// Values chosen ON and AROUND every band edge the engine uses.
+const P_VALS = {
+  spyPrice: [620, 650, 679, 700, 721, 748.1, 800, undefined],
+  vix: [11, 17.9, 18, 18.1, 22, 24.9, 25, 25.1, 30, undefined],
+  fearGreed: [5, 19, 20, 24, 25, 55, 56, 75, 76, 95, undefined],
+  qqqChangePct: [-2, -0.4, 0, 0.31, 0.9, 3, undefined],
+  tenYearM1: [-0.4, -0.11, -0.1, -0.09, 0, 0.14, 0.15, 0.16, 0.4, undefined],
+};
+const P_GROUPS = {   // coherent removal units — a field and its date must vanish together
+  spy: ["spyPrice", "spyPriceAsOf", "spyMa200", "spyChangePct"],
+  vix: ["vix", "vixAsOf", "vixWeekChg"],
+  fg:  ["fearGreed", "fearGreedAsOf", "fearGreedLabel"],
+  qqq: ["qqqChangePct", "qqqPriceAsOf"],
+  ten: ["tenYear", "tenYearAsOf", "tenYearM1"],
+  fed: ["rateOddsHold", "rateOddsCut", "rateOddsHike", "rateOddsHoldAsOf", "nextFomcDate", "fomcDays"],
+};
+const ACT_RANK = { HOLD: 0, RESTRICTED: 1, FULL: 2 };
+const CUR = (t) => t === "CURRENT" || t === "CACHED";
+const mkScenario = () => mkLive({
+  spyPrice: pick(P_VALS.spyPrice), spyPriceAsOf: pick(P_DATES),
+  vix: pick(P_VALS.vix), vixAsOf: pick(P_DATES),
+  fearGreed: pick(P_VALS.fearGreed), fearGreedAsOf: pick(P_DATES),
+  qqqChangePct: pick(P_VALS.qqqChangePct), qqqPriceAsOf: pick(P_DATES),
+  tenYearM1: pick(P_VALS.tenYearM1), tenYearAsOf: pick(P_DATES),
+  rateOddsHoldAsOf: pick(P_DATES),
+});
+const strip = (live, g) => { const c = { ...live }; for (const k of P_GROUPS[g]) delete c[k]; return c; };
+{
+  const N = 1500;
+  const fails = [];
+  const chk = (cond, label, i, live) => { if (!cond) fails.push(`${label} @scenario ${i} seed ${P_SEED}: ${JSON.stringify(live)}`); };
+  for (let i = 0; i < N; i++) {
+    const live = mkScenario();
+    let r;
+    try { r = buildTtReadout(live, { now: TT_NOW }); }
+    catch (e) { fails.push(`THREW @${i}: ${e && e.message} :: ${JSON.stringify(live)}`); continue; }
+    const by = {}; (r.regime.checks || []).forEach((c) => { by[c.name] = c; });
+    const vixT = by.vix, fgT = by.fear_greed;
+    // P1 — the published vocabulary is CLOSED. INSUFFICIENT is an internal sentinel (v3.63).
+    chk(["TAILWIND", "NEUTRAL", "HEADWIND", "PANIC"].includes(r.regime.verdict), "P1 verdict vocabulary", i, live);
+    // P2 — the contract's shape never varies with the data.
+    chk(r.regime.checks.length === 6, "P2 six checks", i, live);
+    chk(["HIGH", "MEDIUM", "LOW"].includes(r.regime.confidence), "P3 confidence vocabulary", i, live);
+    chk(["FULL", "RESTRICTED", "HOLD"].includes(r.regime.actionability), "P3 actionability vocabulary", i, live);
+    // P4 — a risk-ON call is NEVER published while a panic gauge is blind (v3.40/v3.41).
+    chk(r.regime.verdict !== "TAILWIND" || (CUR(vixT.tier) && CUR(fgT.tier)), "P4 TAILWIND requires both gauges usable", i, live);
+    // P5 — the most safety-critical override may not fire OR clear on carried data.
+    chk(r.regime.verdict !== "PANIC" || (vixT.tier === "CURRENT" && fgT.tier === "CURRENT"), "P5 PANIC requires both gauges CURRENT", i, live);
+    // P6 — FULL is the only state that gates capital; it demands the whole evidence stack.
+    chk(r.regime.actionability !== "FULL" || (r.regime.confidence === "HIGH" &&
+      r.macro_flip.evaluable === true && r.macro_flip.tripped === false), "P6 FULL implies HIGH + live circuit", i, live);
+    // P7 — below the publish floor, permission is withheld regardless of what the votes said.
+    chk(!(r.regime.available < 3) || r.regime.actionability === "HOLD", "P7 <3 available implies HOLD", i, live);
+    /* P11/P12 — added after negative-controlling the sweep against ITSELF: disabling the
+       blind-gauge HOLD rule and the criticalMissing rule each left every assertion green,
+       so two safety mechanisms could be deleted without the suite noticing. A property
+       suite that cannot fail on a removed guard is measuring the wrong thing. */
+    // P11 — a blind crash gauge withholds PERMISSION, not merely the risk-on direction.
+    chk((CUR(vixT.tier) && CUR(fgT.tier)) || r.regime.actionability === "HOLD",
+      "P11 blind panic gauge forces HOLD", i, live);
+    // P12 — a MISSING panic gauge can never underpin a MEDIUM or HIGH confidence grade.
+    chk(!(vixT.tier === "MISSING" || fgT.tier === "MISSING") || r.regime.confidence === "LOW",
+      "P12 missing panic gauge forces LOW confidence", i, live);
+    // P8 — CONSERVATIVE CARRY: a stale bullish reading must never still vote bullish.
+    for (const c of r.regime.checks)
+      chk(c.tier !== "HISTORICAL" || c.effective_vote !== "bullish", "P8 stale bullish downgraded", i, live);
+    // P9 — determinism: no hidden clock, no randomness. Same input, same answer.
+    const r2 = buildTtReadout(live, { now: TT_NOW });
+    chk(JSON.stringify(r2.regime) === JSON.stringify(r.regime), "P9 deterministic", i, live);
+  }
+  ok(`v4.1.6 Engine 0 sweep: ${N} generated scenarios satisfy every safety invariant (seed ${P_SEED})`,
+    fails.length === 0 || (console.log("   " + fails.slice(0, 3).join("\n   ")), false));
+}
+{
+  /* P10 — THE MONOTONICITY PROPERTY, and the reason this sweep exists.
+     The v3.40 bug was literally "more risk-on for knowing less": removing stale votes
+     RAISED the verdict to TAILWIND. Permission must move the other way — LOSING an input
+     can never make Engine 0 MORE willing to gate capital. Asserted over every scenario ×
+     every removable input group, against the real engine. */
+  const N = 400, fails = [];
+  for (let i = 0; i < N; i++) {
+    const live = mkScenario();
+    let base; try { base = buildTtReadout(live, { now: TT_NOW }); } catch { continue; }
+    for (const g of Object.keys(P_GROUPS)) {
+      let less; try { less = buildTtReadout(strip(live, g), { now: TT_NOW }); } catch (e) {
+        fails.push(`THREW removing ${g} @${i}: ${e && e.message}`); continue; }
+      if (ACT_RANK[less.regime.actionability] > ACT_RANK[base.regime.actionability])
+        fails.push(`removing ${g} RAISED actionability ${base.regime.actionability} -> ${less.regime.actionability} @${i} seed ${P_SEED}: ${JSON.stringify(live)}`);
+    }
+  }
+  ok(`v4.1.6 Engine 0 monotonicity: losing an input NEVER raises actionability (${N}×${Object.keys(P_GROUPS).length} removals, seed ${P_SEED})`,
+    fails.length === 0 || (console.log("   " + fails.slice(0, 3).join("\n   ")), false));
+}
+{
+  /* P11 — never throws. A misfiring Engine 0 that 500s is worse than one that abstains:
+     the readout is CORS-open and an external terminal gates orders on it. Hostile shapes. */
+  const HOSTILE = [null, undefined, {}, [], "string", 42,
+    { vix: NaN, fearGreed: Infinity, spyPrice: -0, tenYearM1: null },
+    { vix: "16.1", fearGreed: "62", spyPrice: "748", spyMa200: "700" },          // quoted numbers
+    { vixAsOf: "not-a-date", fearGreedAsOf: "2026-13-45", spyPriceAsOf: 12345 }, // junk dates
+    { vix: 16, vixAsOf: "2099-01-01" },                                          // future-dated
+    { spyMa200: 0, spyPrice: 100 },                                              // zero divisor
+  ];
+  let threw = null;
+  for (const h of HOSTILE) {
+    try { const r = buildTtReadout(h, { now: TT_NOW });
+      if (!r || !r.regime || r.regime.checks.length !== 6) threw = `bad shape for ${JSON.stringify(h)}`; }
+    catch (e) { threw = `${JSON.stringify(h)} -> ${e && e.message}`; }
+  }
+  ok("v4.1.6 Engine 0: never throws and always returns the 6-check contract, on any hostile input",
+    threw === null || (console.log("   " + threw), false));
+}
+
 // ---- F1 (v3.41 audit finding): the merge itself must inherit AsOf, not just buildTtReadout ----
 // The v3.40 fix lived ONLY inside buildTtReadout. But `handleTtCopy` (dashboard.jsx) and every
 // tile's `modeOf()` read staleness through `mergeLiveOverMock`'s `dataAsOf`, which never

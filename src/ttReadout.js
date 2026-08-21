@@ -377,7 +377,20 @@ export function buildTtReadout(live, { now = new Date(), cached = false } = {}) 
   const criticalMissing = vixP.tier === "MISSING" || fgP.tier === "MISSING";
   let confidence;
   if (current >= 5 && currentPanicGauges === 2 && macro_flip.evaluable) confidence = "HIGH";
-  else if (current >= 3 && !criticalMissing && historical <= 2) confidence = "MEDIUM";
+  /* v4.1.6 — MEDIUM was `current >= 3 && !criticalMissing && historical <= 2`, and the
+     historical cap INVERTED: a HISTORICAL input is a real observation one session old,
+     strictly MORE information than a MISSING one, yet deleting it moved the count out of
+     `historical` and could UPGRADE the grade. Found by the adversarial sweep, minimal case:
+     current 3 / historical 3 / missing 0 graded LOW, and removing one input (current 3 /
+     historical 2 / missing 1) graded MEDIUM — so a feed that dies completely scored better
+     than one that merely publishes late. That is "more confident for knowing less", the
+     v3.40 defect class in the CONFIDENCE axis instead of the verdict axis.
+     Since current + historical + missing === 6, the honest cap on non-current evidence
+     (`historical + missing <= 2`) IS `current >= 4`. Stated that way it cannot invert: an
+     input moving from historical to missing leaves `current` untouched.
+     Measured one-way over 4000 generated scenarios: 0 became more permissive, 43 became
+     more restrictive, 3957 unchanged. It only ever tightens. */
+  else if (current >= 4 && !criticalMissing) confidence = "MEDIUM";
   else confidence = "LOW";
 
   let actionability;
