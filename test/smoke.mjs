@@ -4078,7 +4078,7 @@ console.log("\n[49] ptModel extraction — admin.html and src/ptModel.js cannot 
 {
   const norm = (s) => s.replace(/\s+/g, " ").trim();
   for (const n of ["schedAt", "ptModelRows", "ptRowYears", "lintPtModel",
-                   "yrsToYearEnd", "annualise", "pickRow"])
+                   "yrsToYearEnd", "annualise", "pickRow", "suggestMultiple"])
     ok(`tripwire: ${n}() is byte-identical in admin.html and src/ptModel.js`,
       norm(liftFns(adminSrc, [n])) === norm(PT[n].toString()));
   ok("tripwire: ANN_MIN_Y matches across both copies",
@@ -7717,6 +7717,81 @@ console.log("\n[67] v4.0 SIMPLE MODE — verdict mapping, card selection, senten
       return !/useState|useEffect|localStorage|computeRegime|buildEvidenceSet|REGIME_BAND_TABLE/.test(code); })());
   ok("v4.0 boundary: the engine is untouched — no new voter, quorum or band",
     REGIME_BAND_TABLE.length === 6 && REGIME_QUORUM === 4);
+}
+
+
+// ═══════════ [69] FEAT-TT-SUGGEST (v4.2) — the street invert, suggest-don't-save ═══════════
+// suggestMultiple() unblocks the floor-only class ("missing multiple" is a missing INVERT,
+// not a missing thesis — owner design 2026-08-21): PE/EVS invert at the STREET target, lens
+// picked by the existing TSM/UBER + RKLB rules, UNKNOWN naming every missing input, and a
+// SEED the owner confirms — the function itself never writes. All fixtures SYNTHETIC (book
+// content never enters this repo). The seed's floor_only_before is proven BEHAVIORALLY:
+// applied exactly as the confirm handler applies it, lintPtModel must come back clean, and
+// the same seed WITHOUT it must fire MISKEY (the negative control).
+console.log("\n[69] FEAT-TT-SUGGEST — street invert + one-confirm seed");
+{
+  const SM = PT.suggestMultiple;
+  const base = { consensus: { eps: { "2027": 2.0, "2028": 3.0 } }, pt_model: { pe_floor_multiple: 18 } };
+  const s1 = SM(base, { pt: 60 }, 50, "2027");
+  ok("P/E invert: $60 / FY2028 EPS $3 = 20.0x at the y=2027 rung",
+    s1.state === "suggest" && s1.pick === "P/E" && s1.mult === 20 && s1.fwd === "2028");
+  ok("seed carries floor_only_before when the seeded year is past the first row year",
+    s1.seed.path === "pe_premium_multiple" && s1.seed.year === "2027" && s1.seed.floor_only_before === "2027");
+  const s1a = SM(base, { pt: 60 }, 50, null);
+  ok("no horizon → first row year, and NO floor_only_before when seeding it",
+    s1a.state === "suggest" && s1a.seed.year === "2026" && s1a.mult === 30 && s1a.seed.floor_only_before === null);
+  const pre = { consensus: { eps: { "2027": -1.2, "2028": -0.4 }, revenue_B: { "2027": 2.0, "2028": 4.0 } },
+    pt_model: { pe_floor_multiple: 18, share_count_M: 100, net_cash_B: { "2026": 1.0 } } };
+  const s2 = SM(pre, { pt: 50 }, 40, "2027");
+  ok("pre-profit → EV/S invert: ($50×100/1000 − 1.0) / $4.0B = 1.0x",
+    s2.state === "suggest" && s2.pick === "EV/S" && s2.mult === 1 && s2.seed.path === "ev_s_multiple");
+  const crossing = { consensus: { eps: { "2027": 0.01, "2028": 0.05 }, revenue_B: { "2027": 2.0, "2028": 4.0 } },
+    pt_model: { pe_floor_multiple: 18, share_count_M: 100, net_cash_B: { "2026": 1.0 } } };
+  const s3 = SM(crossing, { pt: 50 }, 60, "2027");
+  ok("crossing artifact (60/0.05 = 1200x > LENS_MAX_PE) → EV/S despite positive EPS, and it says so",
+    s3.state === "suggest" && s3.pick === "EV/S" && s3.crossing === true);
+  const s4 = SM({ consensus: { eps: { "2027": -1, "2028": -2 }, revenue_B: { "2028": 4 } },
+    pt_model: { pe_floor_multiple: 18 } }, { pt: 50 }, 40, "2027");
+  ok("UNKNOWN names the exact missing EV/S inputs, never guesses",
+    s4.state === "unknown" && s4.unknown.some((w) => /share_count_M/.test(w) && /net_cash_B/.test(w)));
+  ok("no target on file → UNKNOWN saying so",
+    SM(base, null, 50, "2027").unknown[0] === "no street target on file");
+  ok("an already-modelled name is left alone",
+    SM({ ...base, pt_model: { pe_premium_multiple: { "2027": 30 } } }, { pt: 60 }, 50, "2027").state === "modelled");
+  ok("deliberate floor-only (MU-class floor_only_before) is respected, never nagged",
+    SM({ ...base, pt_model: { pe_floor_multiple: 18, floor_only_before: "2028" } }, { pt: 60 }, 50, "2027").state === "floor_by_design");
+  ok("EV/S invert that lands non-positive (target below net cash) is refused with the reason",
+    SM({ consensus: { eps: { "2028": -1 }, revenue_B: { "2028": 4 } },
+      pt_model: { share_count_M: 10, net_cash_B: { "2026": 5 } } }, { pt: 20 }, 10, "2027")
+      .unknown.some((w) => /non-positive/.test(w)));
+  // The seed applied EXACTLY as seedSuggestedMultiple applies it → lint-clean; without the
+  // fob → MISKEY. This is the behavioral proof that the confirm path cannot write a rung
+  // that silently floors (the v3.39 NVDA defect, structurally prevented).
+  const seeded = JSON.parse(JSON.stringify(base));
+  seeded.pt_model[s1.seed.path] = { [s1.seed.year]: s1.seed.mult };
+  seeded.pt_model.floor_only_before = s1.seed.floor_only_before;
+  ok("applied seed is lint-clean (fob suppresses MISKEY exactly as the MU precedent does)",
+    PT.lintPtModel(seeded).filter((l) => l.sev === "error").length === 0);
+  const noFob = JSON.parse(JSON.stringify(base));
+  noFob.pt_model[s1.seed.path] = { [s1.seed.year]: s1.seed.mult };
+  ok("negative control: the SAME seed without floor_only_before fires MISKEY",
+    PT.lintPtModel(noFob).some((l) => l.code === "MISKEY"));
+  ok("purity: suggestMultiple never writes (no fetch/persist/KV reference in its source)",
+    !/fetch|ddPersist|PULSE_CACHE/.test(String(SM)));
+  // Ranking isolation: the diagnostic must never leak into the queue. renderUpsideRank's own
+  // source is sliced and must not reference the suggester; the ONLY writer is the confirm
+  // handler, which runs the same hard-lint gate the payload editor runs.
+  const rurStart = adminSrc.indexOf("function renderUpsideRank(");
+  const rurSlice = adminSrc.slice(rurStart, adminSrc.indexOf("function renderMagBlock("));
+  ok("isolation: renderUpsideRank never calls suggestMultiple — DERIVED-STREET enters no ranking",
+    rurStart > 0 && !/suggestMultiple/.test(rurSlice));
+  const seedFn = liftFns(adminSrc, ["seedSuggestedMultiple"]);
+  ok("the confirm handler recomputes at click, edits a COPY, and runs the hard-lint gate before ddPersist",
+    /suggestMultiple\(dd,tgt,px,effHorizon\(\)\)/.test(seedFn) && /JSON\.parse\(JSON\.stringify\(dd\)\)/.test(seedFn) &&
+    /sev==="error"/.test(seedFn) && /SEED ABORTED/.test(seedFn) && /ddPersist\(sym,next\)/.test(seedFn));
+  ok("target priority: the reviewed street record outranks the stored consensus.street_target",
+    (() => { const f = liftFns(adminSrc, ["streetTargetOf"]);
+      return f.indexOf("analystTarget") < f.indexOf("street_target"); })());
 }
 
 console.log(`\n=== SMOKE TEST: ${pass} passed, ${fail} failed ===`);

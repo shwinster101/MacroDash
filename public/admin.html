@@ -9,7 +9,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
 <!-- AUDIT: kept in sync with package.json by test/smoke.mjs. admin.html is a Vite
      public/ passthrough, so it cannot receive __APP_VERSION__ — the guard is the fix. -->
-<title>TT TICKER TERMINAL v4.1.0</title>
+<title>TT TICKER TERMINAL v4.2.0</title>
 <style>
   :root{
     --bg:#05070a; --panel:#0a0f16; --panel2:#0d141d; --line:#16202c;
@@ -458,7 +458,7 @@
          verdict and every gate are computed upstream and this panel changes nothing. -->
     <div id="macroEvidence" role="region" aria-label="Why macro — readout evidence"></div>
     <div id="headInfo" style="display:none">
-      <div class="brand">FINANCE&nbsp;BRO.AI // TT&nbsp;TICKER&nbsp;TERMINAL <small>v4.1.0 · underwriting + sourced gates</small></div>
+      <div class="brand">FINANCE&nbsp;BRO.AI // TT&nbsp;TICKER&nbsp;TERMINAL <small>v4.2.0 · underwriting + sourced gates</small></div>
       <div class="statusline">
         <span>BOOK: <b id="bookStamp">loading…</b></span>
         <span>AUTH: <b id="sessState">…</b></span>
@@ -3170,6 +3170,74 @@ function intakeChecklist(x){
     add("P4","FALS","P4 needs 3-8 pre-committed hinges; they must be on file BEFORE the next qualifying observation or that print cannot be scored against them");
   return rows;
 }
+/* FEAT-TT-SUGGEST (v4.2) — the UI half: resolve a target, show the invert, gate the write
+   behind ONE explicit confirm. Target priority is deliberate: a REVIEWED street record
+   (owner-confirmed TipRanks published average) outranks a stored assistant-sourced
+   consensus.street_target {pt, source, as_of}; with neither, the section names the gap
+   instead of inventing a number. The suggestion NEVER enters UPSIDE_ROWS or any ranking —
+   until confirmed it is DERIVED-STREET, diagnostic only, and the floor-only ranking stays
+   the honest one (smoke pins renderUpsideRank clean of any suggestMultiple reference). */
+function streetTargetOf(x){
+  const s=STREET&&STREET[x.sym],t=s&&s.analystTarget;
+  if(t&&isFinite(t.average)&&t.average>0)
+    return{pt:t.average,source:"TipRanks published avg — reviewed street record",as_of:t.asOf||s.asOf||null,kind:"street"};
+  const dd=ddOf(x),w=dd&&dd.consensus&&dd.consensus.street_target;
+  if(w&&isFinite(w.pt)&&w.pt>0)
+    return{pt:w.pt,source:w.source||"stored consensus.street_target",as_of:w.as_of||null,kind:"stored"};
+  return null;
+}
+let SEED_SUGGEST_SYM=null;
+function seedSuggestedMultipleGo(){if(SEED_SUGGEST_SYM)seedSuggestedMultiple(SEED_SUGGEST_SYM);}
+async function seedSuggestedMultiple(sym){
+  const x=find(sym);if(!x)return;
+  if(ddIsPartial(sym))await loadDeepDiveSym(sym);
+  const dd=ddOf(x);if(!dd)return;
+  if(ddIsPartial(sym))return toast("full thesis not loaded yet — reopen the tab and retry");
+  // Recompute AT CLICK TIME from current state — a suggestion rendered minutes ago may have
+  // been invalidated by a quote move, an edit, or a street-record change (the v3.6 rule that
+  // a stale render must never be what gets written).
+  const tgt=streetTargetOf(x);
+  const live=LIVE_PX[sym];
+  const px=(live&&isFinite(live.px))?live.px:(dd.ref_px&&isFinite(dd.ref_px.px)?dd.ref_px.px:null);
+  const s=suggestMultiple(dd,tgt,px,effHorizon());
+  if(!s||s.state!=="suggest")return toast("suggestion no longer computable — reopen the tab");
+  const next=JSON.parse(JSON.stringify(dd));   // COPY, never the index/in-place (v3.75 rule)
+  next.pt_model=next.pt_model||{};const m=next.pt_model;
+  m[s.seed.path]={};m[s.seed.path][s.seed.year]=s.seed.mult;
+  if(s.seed.floor_only_before)m.floor_only_before=s.seed.floor_only_before;
+  const today=new Date().toLocaleDateString("en-CA",{timeZone:"America/New_York"});
+  const line="DERIVED-STREET seed "+today+": "+s.pick+" "+s.seed.mult+"x at YE"+s.seed.year+
+    " — inverted from "+tgt.source+" target $"+tgt.pt+(tgt.as_of?" (as of "+tgt.as_of+")":"")+
+    " / FY"+s.fwd+" "+(s.pick==="P/E"?("EPS "+s.pe.eps):("revenue $"+s.evs.rev+"B · sh "+s.evs.sh+"M · nc $"+s.evs.nc+"B"))+
+    ". Owner-confirmed via the terminal seed button. NOTE: schedAt carries this single key flat"+
+    " to LATER rows, so rungs beyond YE"+s.seed.year+" are UNRATIFIED carry — revisit before relying on them.";
+  m.multiple_ruling=m.multiple_ruling?m.multiple_ruling+" || "+line:line;
+  // The MISKEY/TYPES hard gate runs BEFORE the write, exactly as the payload editor's save
+  // path does — a seed that lints red must never land.
+  const hard=lintPtModel(next).filter(l=>l.sev==="error");
+  if(hard.length)return toast("SEED ABORTED — lint "+hard.map(l=>l.code).join(", ")+" — nothing written");
+  if(await ddPersist(sym,next)){toast("SEEDED "+s.pick+" "+s.seed.mult+"x at YE"+s.seed.year+" — "+sym+" now carries a premium rung");render();}
+}
+function suggestSec(x){
+  const dd=ddOf(x);if(!dd)return "";
+  const tgt=streetTargetOf(x);
+  const live=LIVE_PX[x.sym];
+  const px=(live&&isFinite(live.px))?live.px:(dd.ref_px&&isFinite(dd.ref_px.px)?dd.ref_px.px:null);
+  const s=suggestMultiple(dd,tgt,px,effHorizon());
+  if(!s||s.state==="modelled"||s.state==="floor_by_design")return "";
+  if(s.state==="unknown")
+    return `<div class="dd-sec"><div class="lbl">SUGGESTED MULTIPLE — street invert unavailable</div>`+
+      `<div class="none">${(s.unknown||[]).map(esc).join(" · ")}`+
+      `${tgt?"":" · supply one via STREET INPUTS (reviewed TipRanks avg) or a stored consensus.street_target {pt, source, as_of}"}</div></div>`;
+  SEED_SUGGEST_SYM=x.sym;
+  const both=(s.pe&&s.evs)?` · both inverts computable: ${s.pe.mult}x P/E / ${s.evs.mult}x EV/S`:"";
+  return `<div class="dd-sec"><div class="lbl">SUGGESTED MULTIPLE — DERIVED-STREET · diagnostic only, in NO ranking until confirmed</div>`+
+    `<div class="none">street implies <b style="color:var(--green)">${s.mult}x FY${esc(s.fwd)} ${s.pick==="P/E"?"P/E":"EV/S"}</b>`+
+    ` — target $${tgt.pt} (${esc(tgt.source)}${tgt.as_of?` · ${esc(tgt.as_of)}`:""}) / FY${esc(s.fwd)} `+
+    `${s.pick==="P/E"?`EPS ${s.pe.eps}`:`revenue $${s.evs.rev}B`}${both}`+
+    `${s.crossing?` · <span style="color:var(--amber)">earnings line is a crossing artifact — sales lens picked (the RKLB rule)</span>`:""}</div>`+
+    `<div class="none">${confirmLink("seedMultLink",`CONFIRM — seed ${s.seed.path} {${s.seed.year}: ${s.seed.mult}}${s.seed.floor_only_before?` + floor_only_before ${s.seed.floor_only_before}`:""} · no auto-save`,"seedSuggestedMultipleGo")}</div></div>`;
+}
 function renderIntake(x){
   const rows=intakeChecklist(x);
   if(!rows.length)return `<div class="dd-sec"><div class="lbl" style="color:var(--green)">✔ INTAKE COMPLETE — every pillar input is on file</div></div>`;
@@ -3218,6 +3286,7 @@ function renderDeepDive(sym){
   // under DECISION READINESS. Renders only what /api/score returned; legacy governs.
   h+=ddScoreBar(x);
   h+=renderIntake(x);   // FEAT-TT-INTAKE: what still has to be fetched, beside what it blocks
+  h+=suggestSec(x);     // FEAT-TT-SUGGEST: street invert + one-confirm seed
   h+=ddAnswerBlock(x,dd,todayET);
   h+=ddOptSec(posOf(x));   // FEAT-TT-OWNDEBT: the legs expressing this thesis, beside it
   // FEAT-TT-ESTRUN (v3.35): the estimate run + dual PTs, ABOVE the fold — the analyst
@@ -3607,6 +3676,56 @@ function pickRow(rr,hz,_now){
   if(yrsToYearEnd(want.y,_now)>=ANN_MIN_Y)return{row:want,rolled:null};
   const next=rr.find(r=>yrsToYearEnd(r.y,_now)>=ANN_MIN_Y);
   return next?{row:next,rolled:want.y}:{row:want,rolled:null};
+}
+/* FEAT-TT-SUGGEST (v4.2): the street-implied multiple — an INVERT, never an invention.
+   impliedMultiple() (v3.33) solves a ROW's formula backwards at the live price; this solves
+   the same two formulas backwards at the STREET TARGET, picks the lens with the existing
+   TSM/UBER + RKLB crossing rules, and returns a SEED the owner may confirm — it never writes.
+   The v3.85 sourcing doctrine holds: the multiple is derived from a reviewed/sourced target,
+   not asserted by the assistant; UNKNOWN names every missing input rather than guessing.
+   The seed's floor_only_before mirrors the MU trough-anchor mechanics: a single-year key
+   later than the first row year would fire MISKEY without it (schedAt looks backward). */
+function suggestMultiple(dd,tgt,px,hz,_y0){
+  const m=(dd&&dd.pt_model)||{};
+  if(m.pe_premium_multiple!=null||m.ev_s_multiple!=null)return{state:"modelled"};
+  const c=(dd&&dd.consensus)||{};
+  const rev={...(c.revenue_B||{}),...(m.revenue_B||{})},eps={...(c.eps||{}),...(m.eps||{})};
+  const years=ptRowYears(dd,_y0);
+  if(!years.length)return{state:"unknown",unknown:["no consensus series at all — nothing to invert"]};
+  const y=(hz&&years.indexOf(hz)>=0)?hz:years[0];
+  const fwd=String(+y+1);
+  const fob=m.floor_only_before;
+  if(fob&&y<fob)return{state:"floor_by_design",y,fob};
+  if(!(tgt&&isFinite(tgt.pt)&&tgt.pt>0))return{state:"unknown",y,fwd,unknown:["no street target on file"]};
+  const e=eps[fwd],r=rev[fwd];
+  const sh=schedAt(m.share_count_M,y),nc=schedAt(m.net_cash_B,y);
+  const peOk=typeof e==="number"&&e>0;
+  const crossing=peOk&&isFinite(px)&&px>0&&(px/e)>LENS_MAX_PE;
+  const pe=peOk?{mult:Math.round(tgt.pt/e*10)/10,eps:e}:null;
+  const evsReady=typeof r==="number"&&r>0&&isFinite(sh)&&sh>0&&typeof nc==="number"&&isFinite(nc);
+  let evs=null;
+  if(evsReady){
+    const v=Math.round(((tgt.pt*sh/1000)-nc)/r*100)/100;
+    if(v>0)evs={mult:v,rev:r,sh,nc};
+  }
+  const pick=(peOk&&!crossing)?"P/E":(evs?"EV/S":null);
+  if(!pick){
+    const why=[];
+    if(!peOk)why.push("FY"+fwd+" EPS "+(e==null?"absent":e)+" — the earnings lens cannot engage");
+    else if(crossing)why.push("FY"+fwd+" EPS "+e+" is a crossing artifact at ~"+Math.round(px/e)+"x — the sales lens is correct (the RKLB rule)");
+    if(!evsReady){
+      const miss=[];
+      if(!(typeof r==="number"&&r>0))miss.push("revenue_B["+fwd+"]");
+      if(!(isFinite(sh)&&sh>0))miss.push("share_count_M");
+      if(!(typeof nc==="number"&&isFinite(nc)))miss.push("net_cash_B");
+      why.push("EV/S invert blocked — missing "+miss.join(", "));
+    }else if(!evs)why.push("EV/S invert yields a non-positive multiple — the target sits below net cash");
+    return{state:"unknown",y,fwd,pe,unknown:why};
+  }
+  const mult=pick==="P/E"?pe.mult:evs.mult;
+  return{state:"suggest",y,fwd,pick,mult,pe,evs,crossing:!!crossing,
+    seed:{path:pick==="P/E"?"pe_premium_multiple":"ev_s_multiple",year:y,mult,
+      floor_only_before:years[0]<y?y:null}};
 }
 /* v3.24 FEAT-TT-LIVEPX: rank off the CURRENT price, not the stamped mark. ref_px is a
    manual triage stamp; between runs a name can move 8% and still rank off yesterday. Since
