@@ -2881,6 +2881,34 @@ Jan-anchor shipped; see `snapshot.js` ~318–328), `spyMa100`, `spyMa200`, and a
   VALUATION GAP ranking (§11.1 — the ranking always renders, which is the owner's actual
   "always an output" contract, and it was never suspended). Tests: 1223 smoke (+2) + 199
   render (+1).
+- **Session log 2026-08-22 — the canonical engine runs on the live book (owner-directed;
+  KV/operator work through the existing `/api/score`, no code change).** The owner's ordering
+  ruling, verbatim in spirit: *flipping §14.8 first would blank the green line and create no
+  sample* — so run the engine on the names that already spend, THEN point the governor at the
+  cards. Executed: **12 score records now exist (was 5), five SCORED** — NBIS 8.96/S ·
+  **SNDK 7.94/A** · JOBY 6.82/B · **RKLB 6.26/B, the first FULL-actionability card** ·
+  **LITE 5.50/B, exactly on the B boundary** with its pre-committed entry-discipline hinge
+  RED (live $866.71 vs its own $680 zone top) and FY26 FCF ~zero priced in — the shadow
+  saying what the legacy 7.4 could not. All falsifier grades are mechanical reads of the
+  pre-committed bands against print facts, sourced per hinge (SNDK's fy2027_guide graded
+  GREEN **by the letter** — $44-46 Q1 guide annualizes $180 mid vs the $177 bar — while the
+  tape read the same guide as a miss; recorded, not blended). **TSM lands PROVISIONAL
+  honestly**: P4 is all-or-nothing and `n2_ramp`/`working_capital` have no post-8/05
+  qualifying observation until the October print — sourcing confirmed no interim company
+  statement exists. **NVDA registered pre-8/26** (the time-critical §6.4.1 act) but its draft
+  carries **9 hinges against the P4 8-cap** — owner to DROP one before the print (removal ≠
+  edit, the other 8 keep their commitment; merging two = a NEW commitment = post-hoc for this
+  cycle). **CRDO and MRVL registered inside their windows** (9/1 and 8/27 prints; CRDO needs
+  ≥3 falsifiers by 9/1 — it has 1; MRVL's five-day ratification margin is flagged on the
+  card). **THE SHADOW FINDING THAT GATES THE FLIP: `AI_G3_2028_BRIDGE` (EV/FY+2-rev, PASS
+  ≤4.0x / FAIL >6.0x) is neocloud-calibrated — NBIS passed at 3.22x — and structurally FAILS
+  every profitable AI name** (TSM 7.6x · LITE 7.3x · MRVL 12.3x · NVDA ~15.7x), withholding
+  the premium prerequisite so P1 scores floor-basis on exactly the names whose lens is
+  earnings. A governor flip before ruling on this would demote the profitable half of the AI
+  book for a gate-calibration reason, not an underwriting one. Board decisions updated
+  (v22.6); every card carries `_owner_todo` naming its ratifications and gaps; remaining
+  sourcing gaps are one field each (CRDO/MRVL/LITE-alt `capital_efficiency` bases). ALAB and
+  BE registration deliberately deferred — no draft exists and their windows are not imminent.
 - **v4.4.0 — `DD_MAX` 45KB → 100KB (owner call: "raise server cap to 100,000"), and the
   stale claim the raise uncovered.** Expressed in the store's KB idiom (`100*1024`) and
   rounded UP from the owner's literal 100,000 so nothing the owner sized for is rejected.
