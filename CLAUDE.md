@@ -2918,7 +2918,32 @@ Jan-anchor shipped; see `snapshot.js` ~318–328), `spyMa100`, `spyMa200`, and a
   in direct conflict), and **NBIS's stored payload is 47,635 bytes against the 46,080
   `DD_MAX`, so it is FROZEN — no edit of any kind can be saved**, including a net-negative
   one, on the book's #1 name.
-  Tests: **1812 smoke** (+27) + 264 render + 171 public-render + `audit:prod` clean.
+  **v4.3.1 (same day) — the whole-book sweep, and a false positive in the detector itself.**
+  The lint shipped and was then aimed only at the seven names already found BY HAND, which is
+  backwards; pointing it at all 39 stored payloads immediately found a defect in it. It
+  reported NVDA and HOOD as still thin AFTER their 2-analyst FY2030 EPS had been excluded and
+  their deepest rung correctly removed — because `driftSec` scoped `thinCoverage` to
+  **`ptRowYears()`, the CANDIDATE list, instead of the rows `ptModelRows()` actually EMITS**.
+  `ptRowYears` unions the revenue and eps year keys, and FY2030 REVENUE legitimately stayed
+  (5 and 3 analysts), so it kept proposing a y=2029 row the earnings lens never emits. **A
+  lint reporting resolved work as outstanding is the asserted-vs-measured defect this module
+  exists to catch, committed by the module itself** — the fourth false positive in this one
+  feature (CRM twice on capture dates, then this), and the rule that survives all four is
+  *read the OUTCOME, never the proposal*. Scoped correctly, THIN_COVERAGE goes 4 findings → 1
+  (MU's genuine conflict alone), which also CONFIRMS the NVDA/HOOD exclusions landed.
+  **What the corrected sweep actually found is bigger than staleness: 11 of 39 payloads carry
+  a composite whose basis has NO DATE** (ACHR · BA · CAT · NU · NVDA · RDDT · SOFI · SPCX ·
+  SYM · TEM · TSM), so the one asserted number with a mechanical consequence — the composite
+  gates the eligible line at `>=B` — **can never be aged at all on 28% of the book, and the
+  drift detector is permanently blind to them.** That is a provenance hole, not a stale
+  number, and it outranks the three genuinely-aged composites (BETA 18d · GRAB 19d · CELH
+  16d) it was built to find. Also surfaced: 4 of 5 HINGE_STALE hits are hinges with **no
+  `asOf` at all** sitting behind fresh captures (CRDO · TEM×2 · UBER) — NVDA's is the one
+  genuinely dated-behind case (China DC revenue, 8/03 against an 8/19 capture).
+  Tests: **1816 smoke** (+4 over v4.3.0: the regression driven through the REAL `ptRowYears`
+  and `ptModelRows` — a hand-built year list could not prove the two disagree — with a
+  control that fires when scoped to candidates, so a revert goes red, plus the call-site pin)
+  + 264 render + 171 public-render + `audit:prod` clean.
 - **FEAT-TT-SUGGEST (v4.2.0) — the street invert: suggest-don't-save multiple seeding.**
   The 2026-08-21 gap sweep found EIGHT names (UBER · SOFI · GEV · CELH · RDDT · HOOD · TEM ·
   SPCX) one field from ranking: payload, price and floor all present, no premium multiple —

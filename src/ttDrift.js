@@ -66,7 +66,19 @@ function newestCapture(dd, _now) {
    out to 2035 and none of them matter at a 2027 horizon; ALAB's 2-analyst FY2029 mattered
    because a rung priced it. Scoping is what makes this a signal instead of noise — an
    unscoped version fires 23 times on the live book, a scoped one fires only where a rung
-   depends on it. `rowYears` is the caller's ptRowYears(dd); each row y prices FY y+1. */
+   depends on it.
+
+   ⚠ `rowYears` MUST be the years of the rows ptModelRows() ACTUALLY EMITS — ptModelRows(dd)
+   .map(r=>r.y) — and NOT ptRowYears(dd). They are different sets, and the difference is
+   exactly where this fired wrong. ptRowYears is the CANDIDATE list: it unions the revenue and
+   eps year keys, so a year with revenue but no eps still proposes a row. Under the earnings
+   lens that row is never emitted. Measured on the live book: excluding NVDA's and HOOD's
+   2-analyst FY2030 EPS correctly removed their deepest rung, but their FY2030 REVENUE stayed
+   (5 and 3 analysts, legitimately), so ptRowYears kept proposing y=2029 and this lint reported
+   both names as still thin AFTER they had been fixed. A lint that reports resolved work as
+   outstanding is the asserted-vs-measured defect this whole module exists to catch, committed
+   by the module itself — the fourth false positive in this feature (CRM twice on capture
+   dates, then this). The rule that survives all four: read the OUTCOME, never the proposal. */
 function thinCoverage(dd, rowYears) {
   const c = (dd && dd.consensus) || {};
   const ac = c.analyst_counts;

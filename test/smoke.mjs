@@ -8210,6 +8210,29 @@ console.log("\n[71] FEAT-TT-DRIFT — hinge staleness, composite drift, thin cov
     D.THIN_MIN === 3 &&
     D.thinCoverage({ consensus: { analyst_counts: { eps: { "2029": 3 } } } }, ["2028"]).length === 0 &&
     D.thinCoverage({ consensus: { analyst_counts: { eps: { "2029": 2 } } } }, ["2028"]).length === 1);
+  /* REGRESSION — the caller must pass EMITTED rows, never ptRowYears. Shipped wrong on
+     2026-08-22 and caught by sweeping the live book: excluding NVDA's/HOOD's 2-analyst FY2030
+     EPS removed the deepest rung, but FY2030 REVENUE legitimately stayed, so ptRowYears kept
+     proposing y=2029 and the lint reported both names thin AFTER they were fixed. Driven
+     through the REAL ptModel functions — a hand-built year list could not prove the two
+     disagree. */
+  {
+    const excl = { ref_px: { px: 100 }, pt_model: { pe_premium_multiple: { "2026": 20 }, share_count_M: 1000 },
+      consensus: { revenue_B: { "2027": 10, "2028": 12, "2029": 14, "2030": 16 },   // revenue reaches FY2030
+                   eps: { "2027": 1, "2028": 2, "2029": 3 },                        // eps does NOT — excluded
+                   analyst_counts: { eps: { "2030": 2 } } } };
+    const cand = PT.ptRowYears(excl, "2026");
+    const emitted = (PT.ptModelRows(excl, "2026") || []).map((r) => r.y);
+    ok("THIN_COVERAGE regression: ptRowYears and the emitted rows genuinely disagree (the trap is real)",
+      cand.includes("2029") && !emitted.includes("2029"));
+    ok("THIN_COVERAGE regression: scoped to EMITTED rows, an excluded year is SILENT — fixed work never reads as outstanding",
+      D.thinCoverage(excl, emitted).length === 0);
+    ok("THIN_COVERAGE regression control: scoped to ptRowYears it fires — proving the test would catch a revert",
+      D.thinCoverage(excl, cand).length === 1);
+    ok("driftSec passes the EMITTED rows, never ptRowYears",
+      /ry=\(ptModelRows\(dd\)\|\|\[\]\)\.map\(r=>r\.y\)/.test(adminSrc) &&
+      !/ry=ptRowYears\(dd\)/.test(adminSrc));
+  }
   // COMPOSITE_STALE — the only asserted number with a mechanical consequence (>=B gates the eligible line).
   ok("COMPOSITE_STALE: evidence moving after the score is flagged as moved",
     (() => { const r = D.compositeDrift({ composite: { score: 7, basis: "scored 2026-08-18" },

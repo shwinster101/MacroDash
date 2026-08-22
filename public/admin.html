@@ -9,7 +9,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
 <!-- AUDIT: kept in sync with package.json by test/smoke.mjs. admin.html is a Vite
      public/ passthrough, so it cannot receive __APP_VERSION__ — the guard is the fix. -->
-<title>TT TICKER TERMINAL v4.3.0</title>
+<title>TT TICKER TERMINAL v4.3.1</title>
 <style>
   :root{
     --bg:#05070a; --panel:#0a0f16; --panel2:#0d141d; --line:#16202c;
@@ -458,7 +458,7 @@
          verdict and every gate are computed upstream and this panel changes nothing. -->
     <div id="macroEvidence" role="region" aria-label="Why macro — readout evidence"></div>
     <div id="headInfo" style="display:none">
-      <div class="brand">FINANCE&nbsp;BRO.AI // TT&nbsp;TICKER&nbsp;TERMINAL <small>v4.3.0 · underwriting + sourced gates</small></div>
+      <div class="brand">FINANCE&nbsp;BRO.AI // TT&nbsp;TICKER&nbsp;TERMINAL <small>v4.3.1 · underwriting + sourced gates</small></div>
       <div class="statusline">
         <span>BOOK: <b id="bookStamp">loading…</b></span>
         <span>AUTH: <b id="sessState">…</b></span>
@@ -3427,7 +3427,8 @@ function lintDrift(dd, rowYears, _now) {
    human sees it, since the whole class exists because nobody was looking. */
 function driftSec(x){
   const dd=ddOf(x);if(!dd)return "";
-  let ry=[];try{ry=ptRowYears(dd);}catch(_){}
+  /* EMITTED rows, never ptRowYears — see the contract note in src/ttDrift.js thinCoverage. */
+  let ry=[];try{ry=(ptModelRows(dd)||[]).map(r=>r.y);}catch(_){}
   const ls=lintDrift(dd,ry);
   if(!ls.length)return "";
   const ICON={THIN_COVERAGE:"◱",HINGE_STALE:"⧗",COMPOSITE_STALE:"⚖"};
