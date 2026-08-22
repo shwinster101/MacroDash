@@ -1097,10 +1097,15 @@ ok("hinge: a red hinge force-opens the section rather than hiding behind a chevr
   adminSrc.includes('${n.red?" open":""}'));
 ok("hinge: unrecognised states fall into unknown, never silently into green",
   (adminSrc.match(/\["green","amber","red"\]\.includes\(g\.state\)/g) || []).length >= 2);
-ok("dd: per-payload size cap present (45KB — 8KB v3.13, 15KB v3.63, 45KB v3.70 owner call)",
-  adminSrc.includes("DD_MAX=45*1024"));
-ok("dd: the payload cap states that the BOOK cap binds first (38 x 45KB = 1.7MB vs the 300KB MAX_BODY)",
-  /binding constraint is the BOOK/.test(adminSrc) && /1\.7MB/.test(adminSrc) && /5\.8x the book cap/.test(adminSrc));
+ok("dd: per-payload size cap present (100KB — 8KB v3.13, 15KB v3.63, 45KB v3.70, 100KB v4.4.0 owner call)",
+  adminSrc.includes("DD_MAX=100*1024"));
+/* RE-PINNED v4.4.0: the old pin held the PRE-v3.75 claim ("the BOOK cap binds first,
+   38 x 45KB = 1.7MB") in place — but DDSTORE moved payloads to their own per-symbol keys,
+   so the book cap stopped binding them entirely and the pinned comment was a year stale.
+   The pin now asserts the comment states the DDSTORE reality, not the retired arithmetic. */
+ok("dd: the payload cap comment states the DDSTORE reality — book cap no longer binds, per-symbol keys",
+  /no longer binds them AT ALL/.test(adminSrc) && /one name's growth can never squeeze another's/.test(adminSrc) &&
+  !/binding constraint is the BOOK/.test(adminSrc));
 ok("dd: past key-dates flag 'passed — re-confirm' (the FOMC lesson)", adminSrc.includes("passed — re-confirm"));
 ok("dd: rendered payload strings are HTML-escaped (esc used in the deep renderer)",
   adminSrc.includes("function esc(") && adminSrc.includes("${esc(dd.thesis_version)}"));
@@ -4804,7 +4809,7 @@ console.log("\n[48] /api/score — server-authoritative scoring endpoint");
   ok("score: GET ?book=1 returns the compact index + deployed caps recorded as metadata", await (async () => {
     const r = await score.onRequestGet({ request: mkReq("GET", { params: "?book=1", headers: { "x-tt-pin": PIN } }), env: e1 });
     const j = JSON.parse(await r.text());
-    return r.status === 200 && j.deployed_caps.dd_max === 45 * 1024 && j.deployed_caps.max_body === 300 * 1024 && j.index.AAA.route === "AI_INFRA";
+    return r.status === 200 && j.deployed_caps.dd_max === 100 * 1024 && j.deployed_caps.max_body === 300 * 1024 && j.index.AAA.route === "AI_INFRA";
   })());
   ok("decision: a stale scorecard hash is rejected (409 STALE_SCORECARD_HASH), never rewritten", await (async () => {
     const r = await score.onRequestPost({ request: mkReq("POST", { params: "?decision=1", headers: { "x-tt-pin": PIN },
@@ -4826,9 +4831,9 @@ console.log("\n[48] /api/score — server-authoritative scoring endpoint");
   ok("score: deployed-caps metadata matches the REAL tt.js MAX_BODY and admin.html DD_MAX (three-way pin)",
     (() => {
       const scoreSrc = readSrc("../functions/api/score.js");
-      return /dd_max: 45 \* 1024/.test(scoreSrc) && /max_body: 300 \* 1024/.test(scoreSrc) &&
+      return /dd_max: 100 \* 1024/.test(scoreSrc) && /max_body: 300 \* 1024/.test(scoreSrc) &&
         ttSrc.includes("const MAX_BODY = 300 * 1024") && adminSrc.includes("const MAX_BODY=300*1024") &&
-        adminSrc.includes("const DD_MAX=45*1024");
+        adminSrc.includes("const DD_MAX=100*1024");
     })());
   ok("score: zero bytes added to the book document — the handler never writes tt:book:v1", await (async () => {
     const before = e1.PULSE_CACHE._store.get("tt:book:v1");
@@ -5364,15 +5369,15 @@ console.log("\n[50] FEAT-TT-DDSTORE — deepDive moves to tt:dd:v1:<SYM>");
       env: { TT_PIN: PIN, PULSE_CACHE: mkKV3() } })).status === 400);
   ok("ddstore: oversize fails CLOSED naming key, bytes and limit — never a truncated write", await (async () => {
     const kv = mkKV3();
-    const r = await dd.onRequestPut({ request: rq("PUT", { params: "?sym=AAA", headers: AUTHED, body: { deepDive: { big: "x".repeat(60 * 1024) } } }),
+    const r = await dd.onRequestPut({ request: rq("PUT", { params: "?sym=AAA", headers: AUTHED, body: { deepDive: { big: "x".repeat(120 * 1024) } } }),
       env: { TT_PIN: PIN, PULSE_CACHE: kv } });
     const b = await r.json();
     return r.status === 400 && b.error === "oversize" && b.key === "tt:dd:v1:AAA" &&
-      b.bytes > b.limit && b.limit === 45 * 1024 && !kv._store.has("tt:dd:v1:AAA");
+      b.bytes > b.limit && b.limit === 100 * 1024 && !kv._store.has("tt:dd:v1:AAA");
   })());
-  ok("ddstore: the per-key cap mirrors DD_MAX in admin.html (45KB, v3.70) — one number, two homes",
-    /const MAX_BODY = 45 \* 1024;/.test(readSrc("../functions/api/deepdive.js")) &&
-    /const DD_MAX=45\*1024/.test(adminSrc));
+  ok("ddstore: the per-key cap mirrors DD_MAX in admin.html (100KB, v4.4.0 owner call) — one number, two homes",
+    /const MAX_BODY = 100 \* 1024;/.test(readSrc("../functions/api/deepdive.js")) &&
+    /const DD_MAX=100\*1024/.test(adminSrc));
 
   // ---- ?all=1: export integrity ----
   ok("ddstore: ?all=1 returns every stored payload IN FULL — the export path, never the board's", await (async () => {
@@ -5433,7 +5438,7 @@ console.log("\n[50] FEAT-TT-DDSTORE — deepDive moves to tt:dd:v1:<SYM>");
   // The invisible-loss rule: a skipped thesis must be NAMED, never silently dropped.
   ok("ddstore: an oversize payload is NAMED and left embedded rather than dropped", await (async () => {
     const big = bookWith(["AAA", "BBB"]);
-    big.book[1].deepDive.blob = "x".repeat(60 * 1024);
+    big.book[1].deepDive.blob = "x".repeat(120 * 1024);   // over the 100KB cap (was 60KB vs 45KB pre-v4.4.0)
     const kv = mkKV3({ "tt:book:v1": big });
     const b = await migrate(kv);
     const book = JSON.parse(kv._store.get("tt:book:v1"));

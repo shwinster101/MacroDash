@@ -2881,6 +2881,35 @@ Jan-anchor shipped; see `snapshot.js` ~318–328), `spyMa100`, `spyMa200`, and a
   VALUATION GAP ranking (§11.1 — the ranking always renders, which is the owner's actual
   "always an output" contract, and it was never suspended). Tests: 1223 smoke (+2) + 199
   render (+1).
+- **v4.4.0 — `DD_MAX` 45KB → 100KB (owner call: "raise server cap to 100,000"), and the
+  stale claim the raise uncovered.** Expressed in the store's KB idiom (`100*1024`) and
+  rounded UP from the owner's literal 100,000 so nothing the owner sized for is rejected.
+  The trigger was v4.3's live blocker: **NBIS frozen at 47,635 bytes against 46,080 — the
+  book's #1 name unable to save its own re-scored composite**, including a net-negative
+  edit. Three homes moved together, as always: `functions/api/deepdive.js` `MAX_BODY`,
+  `admin.html` `DD_MAX` (client pre-flight), `score.js` `DEPLOYED_CAPS.dd_max` (§4.1
+  implementation metadata) — the three-way smoke pin re-pinned on the new value.
+  **What the raise uncovered:** the admin comment beside `DD_MAX` still claimed *"the
+  binding constraint is the BOOK … 38 entries at 45KB would be 1.7MB, ~5.8x the book cap"*
+  and that splitting deepDive out *"remains the real fix"* — but FEAT-TT-DDSTORE (v3.75)
+  DID that split a year of releases ago, payloads live in per-symbol keys, and the book cap
+  has not bound them since. The smoke pin was pinning the RETIRED arithmetic in place — a
+  label-outlives-its-data defect enforced by the very suite that exists to catch it. Both
+  re-written: the comment states the DDSTORE reality (each name has the whole cap to
+  itself; an app-level runaway-write stop, not a KV limit), and the pin now asserts the
+  stale claim's ABSENCE. Found while re-pinning: the first draft of that negative pin
+  matched the retired phrase QUOTED in its own explanatory comment — the v3.60.1 vacuous/
+  self-matching trap, resolved by paraphrasing the quotation. The oversize fixtures moved
+  with the cap (a 60KB blob no longer exceeds it; 120KB does). **NBIS unfrozen on deploy:**
+  the 7.30 re-score (7.45 → 7.30: P 4.5→4.0 on the 8/19 $4.5B convert offering joining the
+  stack with terms pending + the financing hinge green→amber 8/20; M 9→8.5 on the −12.98%
+  offering day breaking the beat-and-new-highs read; V/G/R unchanged) saved against the
+  raised cap — closing the v4.3.1 COMPOSITE_STALE finding on the book's #1 name. Both
+  tiers are A either side of the move; no gate flipped. The board's blocking decision is
+  rewritten RESOLVED (its "from 7.10" was wrong — the stored composite parsed 7.45; the
+  re-score moves DOWN).
+  Tests: **1816 smoke** (5 cap pins re-pinned with the reason, 2 fixtures moved) + 264
+  render + 171 public-render + `audit:prod` clean.
 - **FEAT-TT-DRIFT (v4.3.0) — the asserted layer falling behind the measured layer.** Owner
   directive after a hinge sweep: build the staleness detector rather than a daily sourcing
   agent. The reason it wins is that **hinges drive almost nothing mechanical** — verified

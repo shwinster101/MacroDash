@@ -45,7 +45,7 @@ const SYM_RE = /^[A-Z][A-Z0-9.\-]{0,9}$/;
 /* §4.1: book caps are DEPLOYMENT FACTS recorded as implementation metadata, not
    methodology constants. These mirror functions/api/tt.js MAX_BODY and admin.html DD_MAX;
    smoke pins the three-way agreement, and activation fails on any mismatch. */
-const DEPLOYED_CAPS = { dd_max: 45 * 1024, max_body: 300 * 1024 };
+const DEPLOYED_CAPS = { dd_max: 100 * 1024, max_body: 300 * 1024 };
 
 const json = (body, status = 200) =>
   new Response(JSON.stringify(body), {
