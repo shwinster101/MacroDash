@@ -2881,6 +2881,44 @@ Jan-anchor shipped; see `snapshot.js` ~318–328), `spyMa100`, `spyMa200`, and a
   VALUATION GAP ranking (§11.1 — the ranking always renders, which is the owner's actual
   "always an output" contract, and it was never suspended). Tests: 1223 smoke (+2) + 199
   render (+1).
+- **FEAT-TT-DRIFT (v4.3.0) — the asserted layer falling behind the measured layer.** Owner
+  directive after a hinge sweep: build the staleness detector rather than a daily sourcing
+  agent. The reason it wins is that **hinges drive almost nothing mechanical** — verified
+  against source: `src/ttScore.js` never reads `dd.hinges` (P4 reads
+  `underwriting_inputs.falsifiers`), and in `readiness()` only ZERO hinges BLOCKS while
+  unknown and red are CAUTIONS. All seven hinges resolved by hand that day moved zero
+  rankings. What DOES have mechanical consequence is the **composite**, which is a hard
+  eligibility gate (the eligible line needs `composite >= B`) — and 7 of 17 composites
+  carried hinge evidence NEWER than the score itself. **`src/ttDrift.js`** (pure,
+  Node-importable, byte-identical `admin.html` mirror pinned by the [49] tripwire) detects
+  three instances of one pattern with **zero network calls**, every input already in the
+  payload: `HINGE_STALE` (an UNKNOWN hinge dated before its own payload's newest CAPTURE may
+  already be answered by it — META's hinge asked for a screenshot for NINE DAYS after the
+  screenshot arrived and the pt_model was built from it), `COMPOSITE_STALE` (evidence moved
+  after the score, or plain age past `COMPOSITE_MAX_D=14`), and `THIN_COVERAGE` (a consensus
+  year carried by `<THIN_MIN=3` analysts that a rung actually prices — the owner's standing
+  rule, made checkable). **Scoping is what makes THIN_COVERAGE signal instead of noise**: 23
+  unscoped hits on the live book versus 4 scoped to years a rung reaches — MU's 1-analyst
+  2033 is irrelevant at a 2027 horizon, ALAB's 2-analyst FY2029 mattered because a rung
+  priced it and retiring it moved that multiple 40x→44x. **TWO GUARDS, both required, and
+  CRM produced the same false positive twice**: `captureDates()` reads a whitelist of capture
+  fields ONLY (a `key_date` had scanned as a capture and reported a hinge 170d stale), AND
+  within them accepts only dates ≤ today (CRM's fiscal-period end `2027-01-31` then scanned
+  as a capture *inside* a whitelisted field — the whitelist alone did not fix it). Every
+  finding is `sev:"warn"` and gates nothing: MISKEY earns a hard gate by being a DEFECT,
+  being out of date is not one. Applied the same day: the `<3` exclusion on NVDA and HOOD
+  (stored under `consensus.thin_coverage_excluded`, never deleted), and six of seven drifted
+  composites re-scored — three MOVED with a specific pillar reason (GEV 6.78→7.13 as a
+  street-calibrated ladder now exists where V was scored on none; CRDO 7.45→7.23 on
+  concentration resolving RED at 87% top-4; NBIS →7.30 on the financing hinge going
+  green→amber) and four CONFIRMED unchanged with the evidence stamped, because inventing a
+  0.05 move on offsetting evidence is false precision. **Two live blockers found and NOT
+  worked around:** MU's `<3` exclusion would delete its ONLY premium rung (the 8/13
+  trough-anchor puts the premium at y=2028, priced by a 2-analyst FY2029 — two owner rulings
+  in direct conflict), and **NBIS's stored payload is 47,635 bytes against the 46,080
+  `DD_MAX`, so it is FROZEN — no edit of any kind can be saved**, including a net-negative
+  one, on the book's #1 name.
+  Tests: **1812 smoke** (+27) + 264 render + 171 public-render + `audit:prod` clean.
 - **FEAT-TT-SUGGEST (v4.2.0) — the street invert: suggest-don't-save multiple seeding.**
   The 2026-08-21 gap sweep found EIGHT names (UBER · SOFI · GEV · CELH · RDDT · HOOD · TEM ·
   SPCX) one field from ranking: payload, price and floor all present, no premium multiple —
