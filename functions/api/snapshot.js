@@ -22,7 +22,7 @@
 // inlines it). sources.js is pure ESM, no React — the ONE market-holiday table feeds
 // marketSession/looksBehind here and isStale/etSession client-side, so the two sides
 // can never disagree about which weekdays had a session.
-import { isMarketHoliday } from "../../src/sources.js";
+import { isMarketHoliday, sessionsBehind } from "../../src/sources.js";
 // FEAT-SAHM (v3.84): the Sahm math — one home (src/sahm.js), same esbuild-inline path.
 import { sahmFrom } from "../../src/sahm.js";
 
@@ -237,8 +237,18 @@ export async function buildSnapshot(env, { scope = "all", priorLive = null } = {
   // Phase 2.5: official Treasury par-yield fallback for the 10Y — ONLY when FRED's DGS10
   // leg failed. DGS10 *is* FRED's republication of this same Treasury par yield curve
   // (H.15), so the numbers are equivalent by construction; the attribution changes.
+  /* v4.1.5 — the trigger was FAILURE-ONLY, which missed the commoner failure mode.
+     Measured live 2026-08-21: FRED's DGS10/DGS30 legs SUCCEEDED and returned an 08-19
+     observation two sessions old while VIXCLS had already published 08-20 — a per-series
+     PUBLICATION LAG, not a fetch failure. The fallback never fired, the 10Y went dark on
+     the dashboard, and Engine 0 held RESTRICTED. UST is the official upstream FRED
+     republishes, so it is fresher-or-equal by construction; asking it when FRED is behind
+     costs one request on exactly the days it can help. Merge is by RECENCY per leg
+     (preferFresherRates) — the fallback can never overwrite a fresher FRED value. */
   let treasury = { status: "rejected", reason: "not needed" };
-  if (fred.status !== "fulfilled" || fred.value.tenYear === undefined) {
+  const fredTenAsOf = fred.status === "fulfilled" ? fred.value.tenYearAsOf : null;
+  const fredLegDead = fred.status !== "fulfilled" || fred.value.tenYear === undefined;
+  if (fredLegDead || sessionsBehind(fredTenAsOf) >= 1) {
     [treasury] = await Promise.allSettled([fetchTreasury10y(statuses)]);
   }
   // Phase 3 (scope "all" only): tokenomics moat + equities + CAPE — add-ons, never gating.
@@ -257,8 +267,8 @@ export async function buildSnapshot(env, { scope = "all", priorLive = null } = {
   const live = {
     lastRefresh: formatET(now),
     session:     marketSession(),
-    ...(fred.status === "fulfilled" ? fred.value : {}),
-    ...(treasury.status === "fulfilled" ? treasury.value : {}),
+    ...preferFresherRates(fred.status === "fulfilled" ? fred.value : null,
+                          treasury.status === "fulfilled" ? treasury.value : null),
     ...(spy.status === "fulfilled" ? spy.value : {}),
     ...(fearGreed.status === "fulfilled" ? fearGreed.value : {}),
     ...(rateOdds.status === "fulfilled" ? rateOdds.value : {}),
@@ -783,14 +793,22 @@ export function parseTreasuryCsv(csv) {
   const header = lines[0].split(",").map((s) => s.replace(/"/g, "").trim());
   const dateIdx = header.findIndex((h) => /^date$/i.test(h));
   const tenIdx = header.findIndex((h) => /^10\s*Yr$/i.test(h));
+  /* v4.1.5: the SAME CSV row carries the 30Y, and the 30Y is the leg with no other
+     failsafe at all — it carries the 5.2% alert. It is OPTIONAL here on purpose: a CSV
+     that has lost the column still yields a usable 10Y rather than nulling the whole
+     parse (fail closed on the field, not on the feed). The 10 Yr column stays REQUIRED —
+     that contract is unchanged. */
+  const thirtyIdx = header.findIndex((h) => /^30\s*Yr$/i.test(h));
   if (dateIdx < 0 || tenIdx < 0) return null;
   const rows = [];
   for (let i = 1; i < lines.length; i++) {
     const cells = lines[i].split(",").map((s) => s.replace(/"/g, "").trim());
     const v = parseFloat(cells[tenIdx]);
+    const t30 = thirtyIdx >= 0 ? parseFloat(cells[thirtyIdx]) : NaN;
     const dm = (cells[dateIdx] || "").match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
     if (!Number.isFinite(v) || !dm) continue;
-    rows.push({ date: `${dm[3]}-${dm[1].padStart(2, "0")}-${dm[2].padStart(2, "0")}`, v });
+    rows.push({ date: `${dm[3]}-${dm[1].padStart(2, "0")}-${dm[2].padStart(2, "0")}`, v,
+      v30: Number.isFinite(t30) ? t30 : null });
   }
   if (!rows.length) return null;
   rows.sort((a, b) => (a.date < b.date ? 1 : -1)); // newest first, like FRED desc
@@ -801,7 +819,49 @@ export function parseTreasuryCsv(csv) {
   if (mAgo) out.tenYearM1 = parseFloat((latest.v - mAgo.v).toFixed(4));
   const spark = rows.slice(0, 10).map((r2) => r2.v).reverse();
   if (spark.length) out.tenYearSeries = spark;
+  if (latest.v30 !== null) {
+    out.thirtyYear = latest.v30; out.thirtyYearAsOf = latest.date;
+    out.thirtyYearSource = "UST par yield curve";
+    if (prev && prev.v30 !== null) out.thirtyYearD1 = parseFloat((latest.v30 - prev.v30).toFixed(4));
+    if (wAgo && wAgo.v30 !== null) out.thirtyYearW1 = parseFloat((latest.v30 - wAgo.v30).toFixed(4));
+    if (mAgo && mAgo.v30 !== null) out.thirtyYearM1 = parseFloat((latest.v30 - mAgo.v30).toFixed(4));
+    const s30 = rows.slice(0, 10).filter((r2) => r2.v30 !== null).map((r2) => r2.v30).reverse();
+    if (s30.length) out.thirtyYearSeries = s30;
+    /* Both legs come from ONE row, so the spread is same-date by construction — the
+       pairRs rule (a cross-day delta dressed as a same-day read is a fabricated number). */
+    out.spread10s30s = parseFloat((latest.v30 - latest.v).toFixed(3));
+    out.spread10s30sAsOf = latest.date;
+  }
   return out;
+}
+
+/* v4.1.5 — merge FRED and UST by RECENCY, per leg, never by source precedence.
+   The old code spread the UST value over FRED unconditionally, which was safe only
+   because it fired solely when FRED had FAILED. Now that a publication LAG also triggers
+   it, UST can itself be the staler feed, so the newer observation wins and a tie keeps
+   FRED (the incumbent attribution — a tie is not an improvement).
+   THE SPREAD IS DROPPED when the two legs end up on different dates: 10s30s across two
+   sessions is a fabricated number, and it is exactly the defect pairRs exists to prevent. */
+export function preferFresherRates(fredVal, ustVal) {
+  const f = fredVal && typeof fredVal === "object" ? { ...fredVal } : {};
+  if (!ustVal || typeof ustVal !== "object") return f;
+  const newer = (a, b) => (typeof b === "string" && (typeof a !== "string" || b > a));
+  const LEGS = {
+    tenYear:    ["tenYear", "tenYearAsOf", "tenYearD1", "tenYearW1", "tenYearM1", "tenYearSeries", "tenYearSource"],
+    thirtyYear: ["thirtyYear", "thirtyYearAsOf", "thirtyYearD1", "thirtyYearW1", "thirtyYearM1", "thirtyYearSeries", "thirtyYearSource"],
+  };
+  for (const [leg, keys] of Object.entries(LEGS)) {
+    const asOfKey = leg + "AsOf";
+    if (ustVal[leg] === undefined) continue;                     // UST has nothing to offer
+    if (f[leg] !== undefined && !newer(f[asOfKey], ustVal[asOfKey])) continue;  // FRED is fresher or tied
+    for (const k of keys) { delete f[k]; if (ustVal[k] !== undefined) f[k] = ustVal[k]; }
+  }
+  const tenAt = f.tenYearAsOf, thirtyAt = f.thirtyYearAsOf;
+  if (f.tenYear !== undefined && f.thirtyYear !== undefined && tenAt && thirtyAt && tenAt === thirtyAt) {
+    f.spread10s30s = parseFloat((f.thirtyYear - f.tenYear).toFixed(3));
+    f.spread10s30sAsOf = thirtyAt;
+  } else { delete f.spread10s30s; delete f.spread10s30sAsOf; }
+  return f;
 }
 async function fetchTreasury10y(statuses = null) {
   const year = new Date().toLocaleDateString("en-CA", { timeZone: "America/New_York" }).slice(0, 4);

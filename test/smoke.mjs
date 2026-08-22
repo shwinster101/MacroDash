@@ -36,7 +36,7 @@ import { mergeOcrExtractions, onRequestPost as postStreetOcr } from "../function
 import { onRequestGet as getTickerFacts, onRequestPost as postTickerFacts, nasdaqCandlesFact, quoteFact } from "../functions/api/ticker-facts.js";
 import { onRequestPost as postTickerAnalysis, riskTierForBookEntry } from "../functions/api/ticker-analysis.js";
 import { plausible, applyBands, quorum, QUORUM_FIELDS, QUORUM_MIN, marketSession, BANDS,
-  pairRs, parseTreasuryCsv, rateOddsStillOpen, chooseTtl, publishIfNoWorse, TTL_MEDIUM, TTL_LOW,
+  pairRs, parseTreasuryCsv, preferFresherRates, rateOddsStillOpen, chooseTtl, publishIfNoWorse, TTL_MEDIUM, TTL_LOW,
   fetchEquities } from "../functions/api/snapshot.js";
 import { etYmd } from "../src/sources.js";
 // UI-OVERHAUL Slice 1 (task 1.1): tokens are a real module now — smoke IMPORTS it (the v3.60
@@ -382,6 +382,140 @@ ok("deriv: govAsOf falls back to the parent's AsOf, and returns undefined with n
   govAsOf({ tenYear: 4.5, tenYearAsOf: "2026-07-01" }, "tenYearM1") === "2026-07-01"
   && govAsOf({}, "tenYearM1") === undefined);
 
+/* ═══════════ ENGINE 0 ADVERSARIAL PROPERTY SWEEP (v4.1.6) ═══════════
+   Owner: "make sure it's almost always firing correctly … I don't want an incorrect or
+   misfiring engine zero because it plays a role in all of our price targets and allocations."
+   The ~50 hand-written cases above test SPECIFIC POINTS. Points cannot support "almost
+   always" — the v3.40 defect (verdict went NEUTRAL -> TAILWIND when stale votes were
+   REMOVED: "more risk-on for knowing less") passed every point test that existed.
+   So this sweeps GENERATED scenarios through the real buildTtReadout and asserts SAFETY
+   INVARIANTS that must hold for EVERY input. Seeded LCG, never Math.random — a property
+   failure has to be reproducible from the seed printed in the message. */
+const P_SEED = 20260821;
+let _rng = P_SEED;
+const rnd = () => ((_rng = (_rng * 1103515245 + 12345) & 0x7fffffff) / 0x7fffffff);
+const pick = (a) => a[Math.floor(rnd() * a.length) % a.length];
+// Real calendar dates around TT_NOW (Wed 2026-07-15) — weekends matter to sessionsBehind.
+/* WEIGHTED toward fresh, deliberately. An unweighted pick produced 1448/1500 HOLD and only
+   20 FULL — so the sweep was exercising the degraded path almost exclusively and the three
+   most safety-critical invariants (P4/P5/P6) rode on a handful of samples. Real days are
+   mostly fresh; the generator should be too, or "almost always correct" is measured almost
+   entirely on the days the engine is already abstaining. */
+const P_DATES = [D, D, D, D, D, "2026-07-14", "2026-07-14", "2026-07-13", "2026-07-10",
+  "2026-07-09", "2026-07-06", "2026-07-01", undefined];
+// Values chosen ON and AROUND every band edge the engine uses.
+const P_VALS = {
+  spyPrice: [620, 650, 679, 700, 721, 748.1, 800, undefined],
+  vix: [11, 17.9, 18, 18.1, 22, 24.9, 25, 25.1, 30, undefined],
+  fearGreed: [5, 19, 20, 24, 25, 55, 56, 75, 76, 95, undefined],
+  qqqChangePct: [-2, -0.4, 0, 0.31, 0.9, 3, undefined],
+  tenYearM1: [-0.4, -0.11, -0.1, -0.09, 0, 0.14, 0.15, 0.16, 0.4, undefined],
+};
+const P_GROUPS = {   // coherent removal units — a field and its date must vanish together
+  spy: ["spyPrice", "spyPriceAsOf", "spyMa200", "spyChangePct"],
+  vix: ["vix", "vixAsOf", "vixWeekChg"],
+  fg:  ["fearGreed", "fearGreedAsOf", "fearGreedLabel"],
+  qqq: ["qqqChangePct", "qqqPriceAsOf"],
+  ten: ["tenYear", "tenYearAsOf", "tenYearM1"],
+  fed: ["rateOddsHold", "rateOddsCut", "rateOddsHike", "rateOddsHoldAsOf", "nextFomcDate", "fomcDays"],
+};
+const ACT_RANK = { HOLD: 0, RESTRICTED: 1, FULL: 2 };
+const CUR = (t) => t === "CURRENT" || t === "CACHED";
+const mkScenario = () => mkLive({
+  spyPrice: pick(P_VALS.spyPrice), spyPriceAsOf: pick(P_DATES),
+  vix: pick(P_VALS.vix), vixAsOf: pick(P_DATES),
+  fearGreed: pick(P_VALS.fearGreed), fearGreedAsOf: pick(P_DATES),
+  qqqChangePct: pick(P_VALS.qqqChangePct), qqqPriceAsOf: pick(P_DATES),
+  tenYearM1: pick(P_VALS.tenYearM1), tenYearAsOf: pick(P_DATES),
+  rateOddsHoldAsOf: pick(P_DATES),
+});
+const strip = (live, g) => { const c = { ...live }; for (const k of P_GROUPS[g]) delete c[k]; return c; };
+{
+  const N = 1500;
+  const fails = [];
+  const chk = (cond, label, i, live) => { if (!cond) fails.push(`${label} @scenario ${i} seed ${P_SEED}: ${JSON.stringify(live)}`); };
+  for (let i = 0; i < N; i++) {
+    const live = mkScenario();
+    let r;
+    try { r = buildTtReadout(live, { now: TT_NOW }); }
+    catch (e) { fails.push(`THREW @${i}: ${e && e.message} :: ${JSON.stringify(live)}`); continue; }
+    const by = {}; (r.regime.checks || []).forEach((c) => { by[c.name] = c; });
+    const vixT = by.vix, fgT = by.fear_greed;
+    // P1 — the published vocabulary is CLOSED. INSUFFICIENT is an internal sentinel (v3.63).
+    chk(["TAILWIND", "NEUTRAL", "HEADWIND", "PANIC"].includes(r.regime.verdict), "P1 verdict vocabulary", i, live);
+    // P2 — the contract's shape never varies with the data.
+    chk(r.regime.checks.length === 6, "P2 six checks", i, live);
+    chk(["HIGH", "MEDIUM", "LOW"].includes(r.regime.confidence), "P3 confidence vocabulary", i, live);
+    chk(["FULL", "RESTRICTED", "HOLD"].includes(r.regime.actionability), "P3 actionability vocabulary", i, live);
+    // P4 — a risk-ON call is NEVER published while a panic gauge is blind (v3.40/v3.41).
+    chk(r.regime.verdict !== "TAILWIND" || (CUR(vixT.tier) && CUR(fgT.tier)), "P4 TAILWIND requires both gauges usable", i, live);
+    // P5 — the most safety-critical override may not fire OR clear on carried data.
+    chk(r.regime.verdict !== "PANIC" || (vixT.tier === "CURRENT" && fgT.tier === "CURRENT"), "P5 PANIC requires both gauges CURRENT", i, live);
+    // P6 — FULL is the only state that gates capital; it demands the whole evidence stack.
+    chk(r.regime.actionability !== "FULL" || (r.regime.confidence === "HIGH" &&
+      r.macro_flip.evaluable === true && r.macro_flip.tripped === false), "P6 FULL implies HIGH + live circuit", i, live);
+    // P7 — below the publish floor, permission is withheld regardless of what the votes said.
+    chk(!(r.regime.available < 3) || r.regime.actionability === "HOLD", "P7 <3 available implies HOLD", i, live);
+    /* P11/P12 — added after negative-controlling the sweep against ITSELF: disabling the
+       blind-gauge HOLD rule and the criticalMissing rule each left every assertion green,
+       so two safety mechanisms could be deleted without the suite noticing. A property
+       suite that cannot fail on a removed guard is measuring the wrong thing. */
+    // P11 — a blind crash gauge withholds PERMISSION, not merely the risk-on direction.
+    chk((CUR(vixT.tier) && CUR(fgT.tier)) || r.regime.actionability === "HOLD",
+      "P11 blind panic gauge forces HOLD", i, live);
+    // P12 — a MISSING panic gauge can never underpin a MEDIUM or HIGH confidence grade.
+    chk(!(vixT.tier === "MISSING" || fgT.tier === "MISSING") || r.regime.confidence === "LOW",
+      "P12 missing panic gauge forces LOW confidence", i, live);
+    // P8 — CONSERVATIVE CARRY: a stale bullish reading must never still vote bullish.
+    for (const c of r.regime.checks)
+      chk(c.tier !== "HISTORICAL" || c.effective_vote !== "bullish", "P8 stale bullish downgraded", i, live);
+    // P9 — determinism: no hidden clock, no randomness. Same input, same answer.
+    const r2 = buildTtReadout(live, { now: TT_NOW });
+    chk(JSON.stringify(r2.regime) === JSON.stringify(r.regime), "P9 deterministic", i, live);
+  }
+  ok(`v4.1.6 Engine 0 sweep: ${N} generated scenarios satisfy every safety invariant (seed ${P_SEED})`,
+    fails.length === 0 || (console.log("   " + fails.slice(0, 3).join("\n   ")), false));
+}
+{
+  /* P10 — THE MONOTONICITY PROPERTY, and the reason this sweep exists.
+     The v3.40 bug was literally "more risk-on for knowing less": removing stale votes
+     RAISED the verdict to TAILWIND. Permission must move the other way — LOSING an input
+     can never make Engine 0 MORE willing to gate capital. Asserted over every scenario ×
+     every removable input group, against the real engine. */
+  const N = 400, fails = [];
+  for (let i = 0; i < N; i++) {
+    const live = mkScenario();
+    let base; try { base = buildTtReadout(live, { now: TT_NOW }); } catch { continue; }
+    for (const g of Object.keys(P_GROUPS)) {
+      let less; try { less = buildTtReadout(strip(live, g), { now: TT_NOW }); } catch (e) {
+        fails.push(`THREW removing ${g} @${i}: ${e && e.message}`); continue; }
+      if (ACT_RANK[less.regime.actionability] > ACT_RANK[base.regime.actionability])
+        fails.push(`removing ${g} RAISED actionability ${base.regime.actionability} -> ${less.regime.actionability} @${i} seed ${P_SEED}: ${JSON.stringify(live)}`);
+    }
+  }
+  ok(`v4.1.6 Engine 0 monotonicity: losing an input NEVER raises actionability (${N}×${Object.keys(P_GROUPS).length} removals, seed ${P_SEED})`,
+    fails.length === 0 || (console.log("   " + fails.slice(0, 3).join("\n   ")), false));
+}
+{
+  /* P11 — never throws. A misfiring Engine 0 that 500s is worse than one that abstains:
+     the readout is CORS-open and an external terminal gates orders on it. Hostile shapes. */
+  const HOSTILE = [null, undefined, {}, [], "string", 42,
+    { vix: NaN, fearGreed: Infinity, spyPrice: -0, tenYearM1: null },
+    { vix: "16.1", fearGreed: "62", spyPrice: "748", spyMa200: "700" },          // quoted numbers
+    { vixAsOf: "not-a-date", fearGreedAsOf: "2026-13-45", spyPriceAsOf: 12345 }, // junk dates
+    { vix: 16, vixAsOf: "2099-01-01" },                                          // future-dated
+    { spyMa200: 0, spyPrice: 100 },                                              // zero divisor
+  ];
+  let threw = null;
+  for (const h of HOSTILE) {
+    try { const r = buildTtReadout(h, { now: TT_NOW });
+      if (!r || !r.regime || r.regime.checks.length !== 6) threw = `bad shape for ${JSON.stringify(h)}`; }
+    catch (e) { threw = `${JSON.stringify(h)} -> ${e && e.message}`; }
+  }
+  ok("v4.1.6 Engine 0: never throws and always returns the 6-check contract, on any hostile input",
+    threw === null || (console.log("   " + threw), false));
+}
+
 // ---- F1 (v3.41 audit finding): the merge itself must inherit AsOf, not just buildTtReadout ----
 // The v3.40 fix lived ONLY inside buildTtReadout. But `handleTtCopy` (dashboard.jsx) and every
 // tile's `modeOf()` read staleness through `mergeLiveOverMock`'s `dataAsOf`, which never
@@ -660,7 +794,7 @@ ok("pairRs: absent/non-finite leg -> null, never a fabricated 0",
   pairRs(null, SPXFIX) === null && pairRs({ ...NDXFIX, latest: NaN }, SPXFIX) === null);
 
 // Matrix F: Treasury daily par-yield CSV parse (the official upstream DGS10 republishes).
-const TCSV = 'Date,"1 Mo","10 Yr","30 Yr"\n07/15/2026,5.1,4.46,4.9\n07/14/2026,5.1,4.43,4.9\n07/11/2026,5.1,4.40,4.9';
+const TCSV = 'Date,"1 Mo","10 Yr","30 Yr"\n07/15/2026,5.1,4.46,5.02\n07/14/2026,5.1,4.43,4.97\n07/11/2026,5.1,4.40,4.95';
 ok("matrix F: Treasury CSV -> tenYear + D1 + real ISO AsOf + UST attribution", (() => {
   const t = parseTreasuryCsv(TCSV);
   return t && t.tenYear === 4.46 && t.tenYearAsOf === "2026-07-15" &&
@@ -668,6 +802,53 @@ ok("matrix F: Treasury CSV -> tenYear + D1 + real ISO AsOf + UST attribution", (
 })());
 ok("matrix F: a CSV without a 10 Yr column -> null (parse failure, never a guessed column)",
   parseTreasuryCsv('Date,"1 Mo"\n07/15/2026,5.1') === null);
+
+/* v4.1.5 — the failsafe reaches the 30Y, and fires on a LAG not just a failure.
+   Measured live 2026-08-21: FRED's DGS10/DGS30 legs SUCCEEDED with an 08-19 observation
+   while VIXCLS had already published 08-20. A failure-only trigger cannot see that. */
+ok("v4.1.5 UST: the same row yields the 30Y leg — deltas, series, and a SAME-DATE spread",
+  (() => { const t = parseTreasuryCsv(TCSV);
+    return t.thirtyYear === 5.02 && t.thirtyYearAsOf === "2026-07-15" &&
+      t.thirtyYearD1 === 0.05 && /UST/.test(t.thirtyYearSource) &&
+      t.spread10s30s === 0.56 && t.spread10s30sAsOf === "2026-07-15"; })());
+ok("v4.1.5 UST: a CSV that LOST its 30 Yr column still yields a usable 10Y (fail closed on the FIELD, not the feed)",
+  (() => { const t = parseTreasuryCsv('Date,"10 Yr"\n07/15/2026,4.46\n07/14/2026,4.43');
+    return t && t.tenYear === 4.46 && t.thirtyYear === undefined && t.spread10s30s === undefined; })());
+ok("v4.1.5 merge: a FRESHER UST observation wins BOTH legs, and the spread re-derives same-date",
+  (() => { const fred = { tenYear: 4.65, tenYearAsOf: "2026-08-19", thirtyYear: 5.19,
+      thirtyYearAsOf: "2026-08-19", spread10s30s: 0.54, spread10s30sAsOf: "2026-08-19" };
+    const r = preferFresherRates(fred, parseTreasuryCsv('Date,"10 Yr","30 Yr"\n08/20/2026,4.70,5.24\n08/19/2026,4.65,5.19'));
+    return r.tenYear === 4.7 && r.tenYearAsOf === "2026-08-20" && r.thirtyYear === 5.24 &&
+      r.spread10s30s === 0.54 && r.spread10s30sAsOf === "2026-08-20" && /UST/.test(r.tenYearSource); })());
+ok("v4.1.5 merge: a FRESHER FRED is never overwritten — the fallback cannot make the page staler",
+  (() => { const fred = { tenYear: 4.8, tenYearAsOf: "2026-08-21", thirtyYear: 5.3, thirtyYearAsOf: "2026-08-21" };
+    const r = preferFresherRates(fred, parseTreasuryCsv('Date,"10 Yr","30 Yr"\n08/20/2026,4.70,5.24'));
+    return r.tenYear === 4.8 && r.tenYearAsOf === "2026-08-21" && r.tenYearSource === undefined; })());
+ok("v4.1.5 merge: a TIE keeps FRED — a tie is not an improvement, and attribution should not churn",
+  (() => { const fred = { tenYear: 4.65, tenYearAsOf: "2026-08-20" };
+    const r = preferFresherRates(fred, parseTreasuryCsv('Date,"10 Yr"\n08/20/2026,4.70'));
+    return r.tenYear === 4.65 && r.tenYearSource === undefined; })());
+ok("v4.1.5 merge: legs from DIFFERENT dates DROP the spread — 10s30s across two sessions is fabricated (the pairRs rule)",
+  (() => { const fred = { tenYear: 4.65, tenYearAsOf: "2026-08-19", thirtyYear: 5.19,
+      thirtyYearAsOf: "2026-08-19", spread10s30s: 0.54, spread10s30sAsOf: "2026-08-19" };
+    const r = preferFresherRates(fred, parseTreasuryCsv('Date,"10 Yr"\n08/20/2026,4.70'));
+    return r.tenYearAsOf === "2026-08-20" && r.thirtyYearAsOf === "2026-08-19" &&
+      r.spread10s30s === undefined && r.spread10s30sAsOf === undefined; })());
+ok("v4.1.5 merge: no UST at all is a byte-identical passthrough (the fallback is inert when not needed)",
+  (() => { const fred = { tenYear: 4.65, tenYearAsOf: "2026-08-19", thirtyYear: 5.19,
+      thirtyYearAsOf: "2026-08-19", spread10s30s: 0.54, spread10s30sAsOf: "2026-08-19" };
+    return JSON.stringify(preferFresherRates(fred, null)) === JSON.stringify(fred); })());
+/* Source-pinned because the assembly runs inside the handler, but pinned in BOTH
+   directions: the merge must be WIRED and the old blind spread must be ABSENT. A pin that
+   only checks the new call passes while a blind `...treasury.value` sits beside it — the
+   merge would then be computed, tested, and overridden (the v3.40/v3.54 defect shape). */
+ok("v4.1.5 trigger: the fallback fires on a LAG, not only on a dead leg (the live 8/21 case)",
+  (() => { const src = readSrc("../functions/api/snapshot.js");
+    return /fredLegDead \|\| sessionsBehind\(fredTenAsOf\) >= 1/.test(src); })());
+ok("v4.1.5 wiring: the recency merge is the ONLY path into live — no blind treasury spread survives",
+  (() => { const src = readSrc("../functions/api/snapshot.js");
+    return /preferFresherRates\(fred\.status/.test(src) &&
+      !/\.\.\.\(treasury\.status === "fulfilled" \? treasury\.value : \{\}\)/.test(src); })());
 
 // Matrix G (transport half): stored Kalshi odds survive only while their event is open.
 ok("matrix G: last-good odds for a FUTURE event are servable; a PAST event's are discarded", (() => {
@@ -962,6 +1143,23 @@ ok("3q: import validates projections before overwriting the book", adminSrc.incl
 ok("consensus: the estimate-run table renders rev + EPS + analyst count", adminSrc.includes("function ddEstRunSec") && adminSrc.includes("<th>EPS</th>"));
 ok("consensus: thin coverage (<=2 analysts) dims the row", adminSrc.includes("n<=2") && adminSrc.includes("thin coverage, not a forecast"));
 ok("consensus: negative EPS renders red, positive green", adminSrc.includes('e<0?"var(--red)":"var(--green)"'));
+// FEAT-TT-NVDA-ER (2026-08-19): the earnings-ready NVDA payload has three distinct
+// evidence layers. Keep the scenario ceiling, measured statements, and ecosystem overlay
+// visible in the same deep-dive rather than letting them fall into the generic drawer.
+ok("NVDA earnings: scenario, fundamentals, and ecosystem payloads are handled sections",
+  adminSrc.includes('"valuation_scenarios"') &&
+  adminSrc.includes('"fundamentals"') &&
+  adminSrc.includes('"ecosystem_overlay"') &&
+  adminSrc.includes("function ddScenarioSec") &&
+  adminSrc.includes("function ddFundamentalsSec") &&
+  adminSrc.includes("function ddEcosystemSec"));
+ok("NVDA earnings: 30x is rendered as a supercycle bull-case ceiling, not an active target",
+  adminSrc.includes("bull multiple is not an active target") &&
+  adminSrc.includes("isBull") &&
+  adminSrc.includes("· ceiling"));
+ok("NVDA earnings: overlay explicitly denies SOTP credit",
+  adminSrc.includes("not added to NVDA’s primary PT") &&
+  adminSrc.includes("risk-adjusted"));
 // Membership, not adjacency: the earlier version pinned the literal '"pt_ladder","consensus"'
 // and broke the moment a key was inserted between them. Parse the set and check contents.
 const DD_HANDLED_SRC = (adminSrc.match(/DD_HANDLED=new Set\(\[([\s\S]*?)\]\)/) || [])[1] || "";
@@ -2569,6 +2767,53 @@ function liftFns(src, names) {
   }).join("\n");
   return out;
 }
+
+// Execute the three pure renderers against an earnings-shaped fixture. This catches a
+// syntactically valid but invisible payload field, which source-string checks alone miss.
+const renderNvdaEvidence = new Function(
+  liftFns(adminSrc, ["esc", "ddScenarioSec", "ddFundamentalsSec", "ddEcosystemSec"]) +
+  "\nreturn {ddScenarioSec,ddFundamentalsSec,ddEcosystemSec};"
+)();
+const nvdaEvidence = {
+  ref_px: { px: 218.93 },
+  valuation_scenarios: {
+    as_of: "2026-08-19", forward_period: "FY2028", forward_eps: 12.83,
+    policy: "30x FY2028 forward P/E is an owner override for the NVDA king-of-supercycle thesis, not an active target",
+    cases: [
+      { name: "Bear", multiple: 16, pt: 205.28 },
+      { name: "Base", multiple: 20, pt: 256.60 },
+      { name: "Bull", multiple: 30, pt: 384.90 },
+    ],
+  },
+  fundamentals: {
+    as_of: "2026-08-19",
+    income_statement: { revenue_B: 253.491, gross_profit_B: 187.952, net_income_B: 159.613 },
+    balance_sheet: { cash_st_investments_B: 53.172, current_debt_B: 1, lease_obligations_B: 4.344, net_cash_after_leases_B: 40.358, current_ratio: 3.44 },
+  },
+  ecosystem_overlay: {
+    as_of: "2026-08-19",
+    names: [
+      { symbol: "OpenAI", confidence: "PROVISIONAL", growth_model: { status: "PROVISIONAL", summary: "no public model" } },
+      { symbol: "CRWV", growth_model: { status: "STORED_MODEL", summary: "$12.89B→$80.22B" } },
+      { symbol: "NBIS", growth_model: { status: "STORED_MODEL", summary: "$3.39B→$46.82B" } },
+      { symbol: "LITE", growth_model: { status: "STORED_MODEL", summary: "$6.27B→$12.68B" } },
+      { symbol: "COHR", confidence: "PROVISIONAL", growth_model: { status: "PROVISIONAL", summary: "no stored model" } },
+    ],
+  },
+};
+const nvdaScenarioHtml = renderNvdaEvidence.ddScenarioSec(nvdaEvidence);
+const nvdaFundamentalsHtml = renderNvdaEvidence.ddFundamentalsSec(nvdaEvidence);
+const nvdaEcosystemHtml = renderNvdaEvidence.ddEcosystemSec(nvdaEvidence);
+ok("NVDA earnings: scenario renderer prints 16x/20x/30x and $384.90",
+  /16×/.test(nvdaScenarioHtml) && /20×/.test(nvdaScenarioHtml) &&
+  /30×/.test(nvdaScenarioHtml) && /\$384\.9/.test(nvdaScenarioHtml) &&
+  /ceiling/.test(nvdaScenarioHtml) && /king-of-supercycle/.test(nvdaScenarioHtml));
+ok("NVDA earnings: fundamentals renderer prints measured cash and net cash",
+  /FUNDAMENTALS/.test(nvdaFundamentalsHtml) &&
+  /53\.172/.test(nvdaFundamentalsHtml) && /40\.358/.test(nvdaFundamentalsHtml));
+ok("NVDA earnings: ecosystem renderer names all five investments and preserves provisional status",
+  ["OpenAI", "CRWV", "NBIS", "LITE", "COHR"].every((s) => nvdaEcosystemHtml.includes(s)) &&
+  /PROVISIONAL/.test(nvdaEcosystemHtml));
 // TT-SCORE commit 1 (v3.73): the PT chain is a real module now — smoke IMPORTS it instead of
 // lifting source text (the src/regime.js precedent, :11-12). admin.html keeps byte-identical
 // copies (buildless, cannot import); section [49] lifts THOSE and asserts identity against
@@ -7365,6 +7610,51 @@ console.log("\n[68] FEAT-TT-ALLOC — pure core, endpoint, and the §14.8 bar");
     (() => { const r = ev({ readout: null, book: { ...BOOK, board: { ...BOOK.board, regime: undefined } } });
       return r.state === "WAIT" && r.eligible === null && r.funding.rows.length > 0; })());
 
+  /* v4.1.3 — the shared horizon is never substituted. `pickRow` refuses a missing pinned
+     year by contract; scoreP1 and the terminal's renderUpsideRank both honour it and this
+     module did not, so a name with a gappy estimate series was ranked off a DIFFERENT year
+     from the rows it was sorted against. Run behaviourally — a string pin cannot prove a
+     sort key. */
+  {
+    const FAR = String(+YR + 4);                       // estimate year → rung at YR+3
+    const farIdx = mkIdx({ consensus: { eps: { [FAR]: 10 } } });
+    const row = (idx, hz) => alloc.evalBuyRow({ entry: { sym: "FAR", lastRun: TODAY }, idx,
+      quote: { px: 100 }, board: {}, horizon: hz, now: NOW });
+    const excluded = row(farIdx, YR), control = row(mkIdx(), YR), own = row(farIdx, null);
+    ok("v4.1.3 horizon: a modelled name with no rung at the shared year is EXCLUDED, not substituted",
+      excluded.no_rung_at_horizon === YR && excluded.tgt === null &&
+      excluded.up === null && excluded.ann === null && excluded.y === null);
+    // The proof that this is a HORIZON decision and not an unmodelled name: the same payload
+    // ranks fine on its own nearest row, which is exactly what the old fallback substituted.
+    ok("v4.1.3 horizon: the excluded name IS modelled — its own nearest rung still computes (what the fallback used to serve)",
+      own.no_rung_at_horizon === null && typeof own.tgt === "number" && own.y === String(+YR + 3));
+    ok("v4.1.3 horizon: a name that HAS the shared rung is untouched (no over-correction)",
+      control.no_rung_at_horizon === null && typeof control.tgt === "number" && control.y === YR);
+    ok("v4.1.3 horizon: whyNot names the real reason — never 'no gap', which would claim the comparison ran",
+      (() => { const w = alloc.whyNot(excluded, 1);
+        return /never substituted/.test(w) && w.includes(YR) && !/no gap/.test(w); })());
+    // End-to-end: autoHorizonOf takes the MIN of each name's max year, so AAA (rung YR) sets
+    // the horizon and FAR (rung YR+3 only) falls outside it.
+    const B2 = { ...BOOK, book: [...BOOK.book, { sym: "FAR", tier: "S", lens: "VEH", lastRun: TODAY }] };
+    const I2 = { asOf: TODAY, entries: { ...IDX.entries, FAR: farIdx } };
+    const P2 = { ...POSDOC, positions: { ...POSDOC.positions, FAR: { at: TODAY + "T12:00:00Z", src: "rh", sh: 5, mv: 500, pct: 0.5 } } };
+    const r2 = alloc.evaluateAllocation({ book: B2, ddIndex: I2, posDoc: P2, quotes: { AAA: { px: 100 }, FAR: { px: 100 } },
+      readout: READOUT, now: NOW });
+    ok("v4.1.3 horizon: the receipt NAMES the excluded names, never merely omits them (the v3.65 rule)",
+      Array.isArray(r2.unranked_at_horizon) && r2.unranked_at_horizon.includes("FAR") &&
+      !r2.unranked_at_horizon.includes("AAA") && r2.horizon === YR);
+    ok("v4.1.3 horizon: the excluded name can never take the eligible line",
+      !r2.eligible || r2.eligible.sym !== "FAR");
+    ok("v4.1.3 horizon: funding says 'no rung at the shared horizon', not 'unmodelled' — it IS modelled",
+      (() => { const f = r2.funding.rows.find((x) => x.sym === "FAR");
+        return !!f && /no rung at the shared horizon/.test(f.reason) && !/unmodelled/.test(f.reason); })());
+    ok("v4.1.3 horizon: a genuinely unmodelled name still reads 'unmodelled' (the two stay distinguishable)",
+      (() => { const f = r2.funding.rows.find((x) => x.sym === "BBB");
+        return !f || !/no rung at the shared horizon/.test(f.reason); })());
+    ok("v4.1.3: the rule version moved WITH the semantics — a cached v1.0.0 receipt must not be reinterpreted",
+      alloc.ALLOC_RULE_VERSION === "tt-alloc-v1.1.0");
+  }
+
   // ── §14.8 bar + no-order-tools: structural, negative-controllable ──
   const allocLibSrc = readSrc("../functions/lib/tt-alloc.js");
   const allocApiSrc = readSrc("../functions/api/allocation.js");
@@ -7621,6 +7911,27 @@ console.log("\n[67] v4.0 SIMPLE MODE — verdict mapping, card selection, senten
       const t = readMetric(probe, "tenYear").text, c = readMetric(probe, "cpiHeadline").text;
       return /-0\.12pp/.test(t) && /3\.5%/.test(c) &&
         !/Falling|Cooling|bullish/.test(t + c); })());
+  /* v4.0.4 — the label-to-metric contract. "the 10-year yield" labelling a card that showed
+     only a monthly delta made the delta read as the yield. The LEVEL now leads and the voted
+     quantity follows; the vote still consumes `read`, so display moved and the vote did not. */
+  ok("v4.0.4 metric: the 10Y card leads with the LEVEL its label names, delta as context",
+    (() => { const probe = { crossAsset:{treasury10y:{m1:-0.12,current:4.68}} };
+      const r = readMetric(probe, "tenYear");
+      return r.text === "4.68% · -0.12pp 1-mo" && r.value === -0.12 && r.context === "4.68%"; })());
+  ok("v4.0.4 metric: the VOTE is untouched — `read` is still exactly what vote() consumes",
+    (() => { const b = REGIME_BAND_TABLE.find((t) => t.key === "tenYear");
+      const probe = { crossAsset:{treasury10y:{m1:-0.12,current:4.68}} };
+      return b.metric.read(probe) === b.read(probe) && b.vote(b.read(probe)) === "bull"; })());
+  ok("v4.0.4 metric: a rising delta is SIGNED — +0.22pp cannot be misread as a fall",
+    readMetric({ crossAsset:{treasury10y:{m1:0.22,current:4.68}} }, "tenYear").text
+      === "4.68% · +0.22pp 1-mo");
+  ok("v4.0.4 metric: context fails closed on its own — omitted, never printed as a zero",
+    readMetric({ crossAsset:{treasury10y:{m1:0.22,current:null}} }, "tenYear").text === "+0.22pp 1-mo");
+  ok("v4.0.4 metric: an unreadable VOTED value still yields no text — a level cannot stand alone",
+    readMetric({ crossAsset:{treasury10y:{m1:null,current:4.68}} }, "tenYear").text === null);
+  ok("v4.0.4 metric: context is OPT-IN — the five bands without one are byte-identical",
+    readMetric({ marketPulse:{vix:{current:14.63}} }, "vix").text === "14.63" &&
+    readMetric({ macro:{nfci:{current:-0.62}} }, "nfci").text === "-0.62 SD vs avg");
   const hodlSet = evOf("MIXED", bullSet.factors);
   ok("v4.0 cards: HODL interleaves both sides — a reader must see support AND risk, not one twice",
     (() => { const dirs = sc(hodlSet).cards.map((c) => c.direction);
@@ -7719,8 +8030,60 @@ console.log("\n[67] v4.0 SIMPLE MODE — verdict mapping, card selection, senten
     REGIME_BAND_TABLE.length === 6 && REGIME_QUORUM === 4);
 }
 
+// ---- 69. v4.1.1 — ageDays: the ET clock reaches the terminal (FIX-A, 4th recurrence) ------
+// The terminal's ageDays anchored a stamp at NOON UTC and differenced it against Date.now(),
+// mixing a calendar date with a wall clock. A date stamped "today in ET" therefore read as
+// age -1 (FUTURE) from 00:00 ET until 12:00 UTC (08:00 ET) — so circuitStateCli returned
+// "dated in the future", stance() went ADDS SUSPENDED, and 11 render assertions covering
+// FEAT-TT-ENTRY, FEAT-TT-TECHREAD, RANKFAIR's cap veto and the ALLOC confirm failed. Only
+// between midnight and 8am ET, which is exactly how it stayed invisible.
+// This is the FOURTH time this defect class has landed (v3.11 UTC run stamps, v3.35 fixture
+// dates, v3.80 the composed-lifecycle test that "passed by daylight and went red every
+// night"), so it is pinned across the HOURS, not just asserted once at whatever time CI runs.
+console.log("\n[69] ageDays — ET calendar date vs ET calendar date, at every hour");
+{
+  const lift = (n) => { const i = adminSrc.indexOf("function " + n + "(");
+    let d = 0; for (let k = adminSrc.indexOf("{", i); k < adminSrc.length; k++) {
+      if (adminSrc[k] === "{") d++; else if (adminSrc[k] === "}") { d--; if (!d) return adminSrc.slice(i, k + 1); } } };
+  const SRC = lift("ageDays");
+  // Inject a frozen clock: ageDays uses `new Date()` and Date.parse, nothing else.
+  const at = (instant) => { const R = Date;
+    function D() { return new R(instant); }
+    D.parse = (x) => R.parse(x); D.now = () => R.parse(instant);
+    return new Function("Date", SRC + "\nreturn ageDays;")(D); };
+  const ET = (inst) => new Date(inst).toLocaleDateString("en-CA", { timeZone: "America/New_York" });
+  // Four instants spanning an ET day, incl. both sides of the old noon-UTC cliff.
+  const HOURS = ["2026-08-20T04:30:00Z" /*00:30 ET*/, "2026-08-20T11:59:00Z" /*07:59 ET*/,
+                 "2026-08-20T16:00:00Z" /*12:00 ET*/, "2026-08-21T03:59:00Z" /*23:59 ET*/];
 
-// ═══════════ [69] FEAT-TT-SUGGEST (v4.2) — the street invert, suggest-don't-save ═══════════
+  ok("ageDays: a stamp made TODAY in ET reads 0 at EVERY hour — the whole bug was that it " +
+     "read -1 before 8am ET",
+    HOURS.every((h) => at(h)(ET(h)) === 0));
+  ok("ageDays: YESTERDAY reads exactly 1 at every hour — no wall-clock term left in the math",
+    HOURS.every((h) => { const y = ET(new Date(Date.parse(h) - 86400000).toISOString());
+      return at(h)(y) === 1; }));
+  ok("ageDays: a genuinely future stamp is still NEGATIVE — the fail-closed signal every " +
+     "consumer keys on (runState 'never', circuitStateCli 'cannot be judged') survives",
+    HOURS.every((h) => { const t = ET(new Date(Date.parse(h) + 3 * 86400000).toISOString());
+      return at(h)(t) < 0; }));
+  ok("ageDays: absent/malformed still returns null, the FAIL-CLOSED signal — unchanged",
+    (() => { const f = at(HOURS[0]);
+      return f("") === null && f(null) === null && f("2026-8-1") === null
+        && f("2026-08-20T00:00:00Z") === null; })());  // strict guard deliberately kept
+  // NEGATIVE CONTROL: prove the pin would catch a revert. The old body, run at 00:30 ET.
+  ok("ageDays NEGATIVE CONTROL: the retired noon-UTC formula returns -1 for a today-stamp at " +
+     "00:30 ET — so a revert to it fails this section rather than passing quietly",
+    (() => { const inst = HOURS[0], R = Date;
+      const old = (iso) => Math.floor((R.parse(inst) - R.parse(iso + "T12:00:00Z")) / 86400000);
+      return old(ET(inst)) === -1; })());
+  ok("ageDays: the noon-UTC anchor is GONE from the source — a comment claiming it 'dodges " +
+     "timezone edge cases' must not outlive the code it described",
+    !/T12:00:00Z/.test(SRC) && /America\/New_York/.test(SRC));
+  ok("ageDays: the terminal now uses the SAME ET-calendar rule as the server time-judges " +
+     "(tt-alloc ageDaysEt / ttScore ageDaysET), so one clock governs the stack",
+    /toLocaleDateString\("en-CA",\{timeZone:"America\/New_York"\}\)/.test(SRC));
+
+// ═══════════ [70] FEAT-TT-SUGGEST (v4.2) — the street invert, suggest-don't-save ═══════════
 // suggestMultiple() unblocks the floor-only class ("missing multiple" is a missing INVERT,
 // not a missing thesis — owner design 2026-08-21): PE/EVS invert at the STREET target, lens
 // picked by the existing TSM/UBER + RKLB rules, UNKNOWN naming every missing input, and a
@@ -7728,7 +8091,7 @@ console.log("\n[67] v4.0 SIMPLE MODE — verdict mapping, card selection, senten
 // content never enters this repo). The seed's floor_only_before is proven BEHAVIORALLY:
 // applied exactly as the confirm handler applies it, lintPtModel must come back clean, and
 // the same seed WITHOUT it must fire MISKEY (the negative control).
-console.log("\n[69] FEAT-TT-SUGGEST — street invert + one-confirm seed");
+console.log("\n[70] FEAT-TT-SUGGEST — street invert + one-confirm seed");
 {
   const SM = PT.suggestMultiple;
   const base = { consensus: { eps: { "2027": 2.0, "2028": 3.0 } }, pt_model: { pe_floor_multiple: 18 } };
@@ -7792,6 +8155,7 @@ console.log("\n[69] FEAT-TT-SUGGEST — street invert + one-confirm seed");
   ok("target priority: the reviewed street record outranks the stored consensus.street_target",
     (() => { const f = liftFns(adminSrc, ["streetTargetOf"]);
       return f.indexOf("analystTarget") < f.indexOf("street_target"); })());
+
 }
 
 console.log(`\n=== SMOKE TEST: ${pass} passed, ${fail} failed ===`);

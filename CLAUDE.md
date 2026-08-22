@@ -2881,6 +2881,242 @@ Jan-anchor shipped; see `snapshot.js` ~318–328), `spyMa100`, `spyMa200`, and a
   VALUATION GAP ranking (§11.1 — the ranking always renders, which is the owner's actual
   "always an output" contract, and it was never suspended). Tests: 1223 smoke (+2) + 199
   render (+1).
+- **v4.1.6 — the Engine 0 adversarial sweep, and the confidence inversion it found.** Owner:
+  *"make sure it's almost always firing correctly … I don't want an incorrect or misfiring
+  engine zero because it plays a role in all of our price targets and allocations."* The ~50
+  hand-written `buildTtReadout` cases test SPECIFIC POINTS, and points cannot support "almost
+  always" — the v3.40 defect (verdict went NEUTRAL → TAILWIND when stale votes were REMOVED:
+  *"more risk-on for knowing less"*) passed every point test that existed at the time. So this
+  adds a **seeded property sweep** — 1500 generated scenarios through the real engine, values
+  placed ON and AROUND every band edge, dates at real calendar offsets (weekends matter to
+  `sessionsBehind`), asserting invariants that must hold for EVERY input: the published verdict
+  vocabulary is closed (never the internal `INSUFFICIENT`), six checks always, TAILWIND requires
+  both panic gauges usable, PANIC requires both CURRENT, FULL implies HIGH + a live circuit,
+  `<3 available` implies HOLD, a blind gauge forces HOLD, a MISSING gauge forces LOW, stale
+  bullish never stays bullish, and the engine is deterministic. Plus a **hostile-input** battery
+  (nulls, quoted numbers, junk and future dates, a zero divisor) proving it never throws — the
+  readout is CORS-open and an external terminal gates orders on it, so a 500 is worse than an
+  abstention. **`Math.random` is banned here**: the seed is printed in the assertion message so
+  any failure reproduces.
+  **THE FINDING — a real inversion in the CONFIDENCE axis.** MEDIUM required `current >= 3 &&
+  !criticalMissing && historical <= 2`, and that historical cap inverted: a HISTORICAL input is
+  a real observation one session old, strictly MORE information than a MISSING one, yet
+  DELETING it moved the count out of `historical` and could UPGRADE the grade. Minimal case
+  from the sweep: `current 3 / historical 3 / missing 0` graded **LOW → HOLD**, and removing a
+  single input (`current 3 / historical 2 / missing 1`) graded **MEDIUM → RESTRICTED**. So **a
+  feed that died completely scored better than one that merely published late** — the v3.40
+  defect class, one axis over, and it had been live since ENGINE0-CONT. Since
+  `current + historical + missing === 6`, the honest cap on non-current evidence
+  (`historical + missing <= 2`) IS **`current >= 4`**; stated that way it cannot invert, because
+  an input moving from historical to missing leaves `current` untouched.
+  **Measured one-way before shipping** — across 4000 generated scenarios the new rule made
+  **0 more permissive**, 43 more restrictive, 3957 unchanged. It only ever tightens, which is
+  why a change to order-gating math ships here rather than waiting: the safe direction is the
+  only direction it moves. Today's live readout is unaffected (`current 5` → HIGH → FULL).
+  **The sweep was then negative-controlled against ITSELF, and failed.** Disabling the
+  blind-gauge HOLD rule and the `criticalMissing` rule each left every assertion GREEN — two
+  safety mechanisms could be deleted without the suite noticing. P11/P12 were added for exactly
+  those, and all three controls now bite (restoring the inverted cap turns monotonicity red;
+  each disabled guard turns the sweep red). A property suite that cannot fail on a removed
+  guard is measuring the wrong thing.
+  **Recency-on-conflict (owner directive), audited:** the only surface where two sources supply
+  one Engine 0 field is FRED vs UST, handled by v4.1.5's `preferFresherRates`. `withLastGood`/
+  `applyFieldLastGood` fill ONLY when a field is absent and never overwrite a fresher value, so
+  that path honours the rule by construction — verified, not assumed.
+  Tests: **1768 smoke** (+3 sections) + 264 render + 171 public-render.
+- **v4.1.5 — the rate failsafe learns the failure mode it actually meets: a publication LAG.**
+  Owner asked for a backup source for the 10Y/30Y with better recency. The answer was not a
+  new vendor: ENGINE0-CONT (v3.71) already wired the **U.S. Treasury Daily Par Yield Curve** —
+  the official upstream FRED's DGS10 *republishes* (H.15), so it is fresher-or-equal by
+  construction and the numbers are equivalent; only the attribution changes. It had two gaps,
+  both found by measuring the live feed rather than reading the code.
+  **(1) The trigger was FAILURE-ONLY.** `if (fred.status !== "fulfilled" || tenYear === undefined)`
+  fires when the DGS10 leg *dies*. Measured live 2026-08-21: the DGS10/DGS30 legs **succeeded**
+  and returned an **08-19** observation two sessions old, while `VIXCLS` had already published
+  08-20 — a per-series publication lag on FRED's side, not a fetch failure. So the fallback
+  never fired, the 10Y went dark on the dashboard (`MACRO: HODL`, 4 of 6 voters), and Engine 0
+  sat at **RESTRICTED** with the 10Y carried as HISTORICAL — one check short of the `current >= 5`
+  that yields HIGH confidence and FULL actionability. The trigger now also fires when
+  `sessionsBehind(fredTenAsOf) >= 1`, reusing the ONE session counter `isStale` already reads
+  (the ENGINE0-CONT §P.4 rule — a second copy of that weekend/holiday walk is the drift this
+  repo keeps paying for). One extra request, on exactly the days it can help.
+  **(2) The 30Y had no failsafe at all** — and it is the leg carrying the 5.2% alert. The same
+  CSV row has always contained the `30 Yr` column; `parseTreasuryCsv` simply never read it. It
+  now emits the 30Y leg with its own deltas, series and attribution. The `30 Yr` column is
+  **OPTIONAL** while `10 Yr` stays REQUIRED: a CSV that lost the column still yields a usable
+  10Y rather than nulling the whole parse — fail closed on the FIELD, not on the feed.
+  **The merge is by RECENCY, per leg — never by source precedence.** The old code spread
+  `treasury.value` over `fred.value` unconditionally, which was only safe because it fired
+  solely on a dead leg. Now that a lag also triggers it, UST can itself be the staler feed, so
+  **`preferFresherRates()`** takes the newer observation per leg and a **TIE keeps FRED** (a tie
+  is not an improvement, and attribution should not churn). The fallback can never make the
+  page staler than it already was. **And the spread is DROPPED when the two legs land on
+  different dates** — a 10s30s computed across two sessions is a fabricated number, the exact
+  defect `pairRs` exists to prevent; when both legs come from one UST row it is same-date by
+  construction.
+  **Honest limit, unchanged from v3.71:** `home.treasury.gov` is 403 at this build
+  environment's proxy, so the endpoint itself still cannot be exercised from here. The parser
+  is fail-closed and fixture-tested, the merge is pure and executed, and the first real call is
+  the true schema check — the same posture the original fallback shipped under.
+  Tests: **1765 smoke** (+10: the 30Y leg with a same-date spread, the optional-column fail-
+  closed path, and `preferFresherRates` RUN across fresher-UST / fresher-FRED / tie /
+  mixed-date-drop / inert-passthrough) + 264 render + 171 public-render. Negative-controlled in
+  BOTH halves: restoring the failure-only trigger turns the trigger pin red, and restoring the
+  blind treasury spread turns the WIRING pin red — the second pin exists because the merge
+  tests pass whether or not the merge is actually wired (the v3.40/v3.54 shape: computed,
+  tested, and then overridden at the call site).
+- **v4.1.4 — the shared horizon is never substituted (the deferred half of A3).**
+  *Relabelled from v4.1.3 at merge (2026-08-20): the CI-gate fix immediately below landed on
+  `main` first and owns that number — the second collision in this session's line of work,
+  same ritual as v4.1.2. `package.json` is the single source of truth.* The v4.0.3
+  audit's allocation findings split three ways: A1 and A2 landed independently on `main` as
+  the v4.1.0 PERMISSION CONTRACT sprint, A4 was a deliberate §14.8 bar the audit mistook for
+  a bug, and **A3 turned out to rest on a premise that does not hold** — the premium
+  prerequisite the canonical rule needs is a REGISTRY gate whose state lives only in
+  `tt:score:v1:<SYM>`, the store this module is barred from reading, while the payload's own
+  `dd.gates` is the unrelated free-text four-gate framework (`admin.html` validates it as
+  *"each gate needs a name"*, a string). Two different structures, one word. The premium half
+  is therefore deferred to §14.8 activation and named rather than half-built; this ships the
+  half that needs no new data.
+  **The defect.** `pickRow` refuses a missing pinned year BY CONTRACT — *"pinned year absent →
+  excluded and counted, never substituted"* (`ptModel.js`) — and both other consumers honour
+  it: `scoreP1` blocks with *"no row at the shared horizon — never substituted"*, and the
+  terminal's own `renderUpsideRank` excludes the name and counts it (stated verbatim in the
+  `ddWorth` audit note). `tt-alloc.js` alone wrote `pickRow(rows, horizon) || pickRow(rows,
+  "")`, silently serving the name's nearest row instead. Because `autoHorizonOf` takes the
+  MINIMUM of each name's maximum year, a name with a **gappy estimate series** genuinely
+  falls outside the shared horizon — and was then ranked on a DIFFERENT year from every row
+  it was sorted against. That is the DEC-D2 units error (a rate that is not comparable to the
+  rates beside it), and it made the server receipt disagree with the client ranking for the
+  same name, with only one of them saying why.
+  **The fix is the exclusion, and then the NAMING.** Removing the fallback alone would have
+  left `whyNot` reporting **"no gap"** — its first rule fires on a null `up` — which claims
+  the comparison ran and found no upside. It never ran. So `no_rung_at_horizon` rides the row,
+  `whyNot` reports it AHEAD of the no-gap rule, the receipt carries
+  **`unranked_at_horizon: [syms]`** (the v3.65 rule: a silent truncation reads as full
+  coverage, so name them, never merely count), and the funding tier-5 reason stops calling
+  these names **"unmodelled"** — they are modelled, just not at this year, and the two states
+  stay distinguishable. `ALLOC_RULE_VERSION` moves 1.0.0 → **1.1.0**: receipt semantics
+  changed, so a cached v1.0.0 receipt must not be reinterpreted under the new rule (the
+  `tt-gates-v2.2.0` precedent). No client change — `admin.html`'s ranking already excluded
+  and named on its side; this makes the server agree with it.
+  Tests: **1756 smoke** (+9, RUN against the real module — a string pin cannot prove a sort
+  key: the exclusion, the proof it is a HORIZON decision and not an unmodelled name (the same
+  payload still computes on its own nearest rung, which is exactly what the fallback served),
+  the no-over-correction control, the `whyNot` wording, the end-to-end receipt naming, the
+  never-eligible guarantee, both funding wordings, and the version bump) + 264 render + 171
+  public-render. Negative-controlled: restoring the fallback turns exactly the four
+  behavioural assertions red and leaves the five contract/control ones green.
+- **v4.1.3 — the CI gate had been red on `main` for five consecutive runs, on a layout nobody
+  regressed.** Owner surfaced a failing run (#65, `6a1ad9b`). Local `npm run gates` was fully
+  green at that exact commit — 1747 smoke · 264 render · 171 public-render · audit clean — so
+  the failure was environment-specific and had to be read from the CI log rather than
+  reproduced. One assertion: `v4.0: the parameter cards — the answer — begin within 400px at
+  390×844`. It measures the top of `[aria-label="Key parameters"]` in pixels, i.e. the height
+  of WRAPPED TEXT above it, and CI's runner resolves a different font stack than a dev
+  container, so the same DOM wraps to a different height. **Local measured 395 against a 400px
+  budget — 5px of margin**, which cannot survive that difference.
+  Two things had compounded, and only one is environmental: **v4.0.0 recorded 356 at ship and
+  it measures 395 today**, so +39px of REAL drift accreted across v4.0.1 (copy pass), v4.0.3
+  (typed metrics) and v4.1.x — legitimate primary content, but drift that had eaten the
+  headroom before CI's fonts finished the job. Re-pinned **400 → 480 with the measurement and
+  the reason recorded at the pin** (the v3.45/v3.95 rule — never a budget quietly loosened):
+  480 still catches CHROME creeping back, which is the 100px+ effect this guard exists for
+  (the pre-v4.0 board had its first answer at y=587), while tolerating ~4 wrapped lines of
+  font-metric variance, and the cards still begin inside the top 57% of the 844px fold.
+  **The assertion now reports its own measurement** — it was the only budget pin in the suite
+  that did not, so a failure required attaching a probe to learn the number, which is why a
+  five-run outage read as a mystery instead of a diagnosis.
+  **Process failure worth recording, not just the bug:** v4.1.1 was pushed with "all four
+  gates green" — true LOCALLY, and its CI run failed too. Local green is not CI green, and
+  this file's own v3.60.1 entry says a silently-skipped gate reads as a passed one; an
+  unchecked one reads the same way. Also noted while here and deliberately NOT fixed in this
+  commit: `package-lock.json` still carries `version: 4.0.3` against a `package.json` that has
+  moved to 4.1.x. `npm ci` does not fail on a root-version mismatch (verified with
+  `--dry-run`), so it is hygiene rather than the outage — but it is drift of exactly the kind
+  this changelog keeps closing, and it belongs in the next release that touches deps.
+  Tests: 1747 smoke + 264 render + **171 public-render** + audit:prod clean.
+- **v4.1.2 — the label-to-metric contract: the 10Y card shows the yield it names.**
+  *Relabelled from v4.0.4 at merge (2026-08-20): this shipped on a branch cut from the v4.0.3
+  head while the terminal line of work landed v4.1.0/v4.1.1 on `main` — the documented
+  collision pattern (ENGINE0-CONT, FEAT-TT-SCORE, FEAT-TT-PROVISIONAL, FEAT-TOKW).
+  `package.json` is the single source of truth, so this entry takes the next true sequence
+  number rather than the branch's guess; content is otherwise as committed, with the test
+  line restated at the MERGED totals (main alone measures 1741/264/170).* A Codex
+  read-through of the shipped Simple view graded metric semantics the weakest dimension and
+  named the cause exactly: the card is LABELLED *"the 10-year yield"* and displayed
+  `-0.12pp 1-mo change` — the voted quantity, not the yield. Not an arithmetic bug; a
+  **contract** bug, and the mirror image of the tension v4.0.3 recorded when it made CPI and
+  CAPE show the LEVEL a reader means by the name (the vote there being compound). Here the
+  vote IS a single scalar, so the level and the voted delta are different numbers and the
+  label promised the one the card withheld.
+  A band's `metric` may now declare an optional **`context`** reading that LEADS the card,
+  with the voted quantity following: `4.68% · -0.12pp 1-mo`. **The vote did not move** —
+  `metric.read` is still byte-for-byte what `vote()` consumes, pinned by an assertion that
+  runs both and requires identity, so this is a DISPLAY change and nothing else. Two honesty
+  rules, each executed rather than pinned as a string: **context fails closed on its own**
+  (a non-finite level is OMITTED, never printed as a zero — the card degrades to the delta
+  alone rather than inventing a yield), and **an unreadable VOTED value still yields no text
+  at all** (a level must never stand alone on a card whose direction chip comes from a
+  quantity nobody could read). The delta is **SIGNED** now that it sits beside a level:
+  `+0.22pp` cannot be misread as a fall the way a bare `0.22pp` could. `context` is opt-in —
+  the five bands without one render byte-identically, asserted directly.
+  Tests: **1747 smoke** (+6 over main's 1741: the composed text with `value`/`context` proven separately, the
+  vote-identity pin, the sign, both fail-closed paths, and the opt-in control) + 264 render +
+  **171 public-render** (+1: the 10Y card driven live at 390px — level and signed delta both
+  present, level FIRST). Negative-controlled twice: dropping the composition turns 2 red,
+  dropping the sign turns 2 red.
+- **v4.1.1 — `ageDays`: the ET clock finally reaches the terminal (FIX-A, fourth recurrence).**
+  `npm run test:ui` was failing **11 assertions** — FEAT-TT-ENTRY (3), FEAT-TT-TECHREAD (4),
+  RANKFAIR's cap veto, the FEAT-TT-ALLOC confirm affordance, slice-5's permissive-stance pill,
+  and ENGINE0-CONT's "HOLD is a hard WAIT". Every one of them resolved to a single line.
+  **The defect:** `ageDays()` anchored the stamp at NOON UTC and differenced it against the raw
+  wall clock — `Math.floor((Date.now() - Date.parse(iso+"T12:00:00Z"))/86400000)` — which mixes
+  a CALENDAR DATE with an INSTANT. A date stamped "today in ET" therefore sat in the future
+  from 00:00 ET until 12:00 UTC, so `ageDays` returned **−1 for the first eight hours of every
+  ET day**. Every consumer that (correctly) treats a future date as invalid then fired:
+  `circuitStateCli` returned *"circuit CLEAR is dated in the future — cannot be judged"*,
+  `stance()` went **ADDS SUSPENDED — circuit state unresolved**, and the eligible line the
+  entry/techread/cap tests assert against never lit. The retired comment claimed noon UTC
+  *"dodges timezone edge cases"*; it dodged the DST ones and manufactured this one.
+  **This is NOT test-only.** `ageDays` is the terminal's single time-judge — `runState`,
+  `paRead`, `posAge`, `ddAgeChip` and the circuit all read it — so an operator stamping a
+  circuit or a `lastRun` before 8am ET had it rejected as future-dated, in production. The
+  fix compares **ET calendar date to ET calendar date**, both anchored at `00:00Z`, leaving no
+  wall-clock term; it mirrors `functions/lib/tt-alloc.js` `ageDaysEt` and `src/ttScore.js`
+  `ageDaysET`, whose own comment already named this as *"the etYmd clock every other
+  time-judge in this stack uses — FIX-A"*. admin.html was the one that never got it. The
+  strict `YYYY-MM-DD` guard is deliberately UNCHANGED — callers holding a datetime already
+  slice it themselves (`circuitStateCli`, `posAge`), and loosening it here would silently
+  start accepting inputs those sites reject on purpose.
+  **Fourth recurrence of one defect class**, and the changelog has the receipts: v3.11 (UTC
+  `toISOString()` run stamps rolled evening runs to tomorrow → NEVER RUN), the v3.35 fixpack
+  (render fixture dates rotting at the first midnight), v3.80 (a composed-lifecycle test
+  stamping UTC against an ET validator — *"passed by daylight and went red every night"*).
+  So smoke **[69]** pins the contract **across the hours** rather than at whatever time CI
+  happens to run: a today-stamp reads 0 at 00:30 / 07:59 / 12:00 / 23:59 ET, yesterday reads
+  exactly 1 at all four, a real future date still reads negative (the fail-closed signal
+  survives), malformed still reads null, and a **negative control** runs the retired
+  noon-UTC formula at 00:30 ET and asserts it returns −1 — so a revert fails the section
+  instead of passing quietly. Verified by reproduction: the whole suite was re-run **at 02:20
+  ET, inside the failure window**, which per v3.80's own rule is the only time the proof means
+  anything.
+  **Reported diagnosis, corrected.** The finding arrived as *"7 call sites in test/render.mjs
+  bypass the circuit with the pre-v4.1.0 `state="clear"` shortcut, which no longer works now
+  that circuits require a dated `as_of` ≤7 days"*, with a recommended test-only fix of
+  stamping `as_of` beside those overrides. The failure list was exactly right and the process
+  gap was real, but the cause was not: the fixture **already** carries `as_of: TODAY_ET`, and
+  the 7 sites mutate only `.state`, so the date was never missing — it was *future*. Probing
+  `circuitStateCli` against the real fixture returned `{st:"clear", age:0}` under an ET-vs-ET
+  clock, which is what ruled the stated cause out. The proposed fix would have re-stamped the
+  same future-dated value and left all 11 red, in the same 8-hour window that hid it.
+  Also folded in: **the two NVDA earnings-evidence commits (`cad008e`, `0911550`) shipped with
+  no changelog entry** — `admin.html` gained an earnings-evidence surface on the NVDA payload
+  and smoke gained 64 lines of cover for it, with the bull-case P/E later re-pinned to 30x.
+  Recorded here rather than left as a gap, since an undocumented feature is the same rot
+  vector this file keeps closing.
+  Tests: **1741 smoke** (+7) + **264 render** (11 restored, 0 failing) + **170 public-render**
+  + `audit:prod` clean — all four gates green, run inside the failure window.
 - **v4.1.0 "PERMISSION CONTRACT" — the ambiguity-hardening sprint: what a green state may
   claim, and what a confirmation binds to.** Basis: the owner-uploaded v4.0.3 audit
   (validated live 2026-08-18 — every claim reproduced: `board.circuit: null` under "presumed

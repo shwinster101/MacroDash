@@ -378,11 +378,19 @@ console.log("\n[public] v3.94 — Simple default, the toggle, persistence, red f
   ok("v4.0 simple: the eyebrow is scoped too — no 'wen moon?' above a MACRO: verdict",
     /the call/i.test(await page.locator('[aria-label="Macro backdrop verdict"]').innerText()) &&
     !/wen moon/i.test(await page.locator('[aria-label="Macro backdrop verdict"]').innerText()));
+  const cardsInner = await page.locator('[aria-label="Key parameters"]').innerText();
   ok("v4.0 simple: card values are METRICS — the matrix's inline '(bullish)' judgment is gone",
     !/\(bullish\)|\(bearish\)/.test(await page.locator('[aria-label="Key parameters"]').innerText()));
   ok("v4.0 simple: cards carry value + direction + why + freshness, and the truncation is NAMED",
     /HELPING|HURTING|MIXED/.test(body) && /discount rate|violently|already priced|Fed can ease|good news|plumbing/.test(body) &&
     /showing \d+ of \d+ usable/.test(body) && /⇄/.test(body));
+  /* v4.0.4 — the label-to-metric contract, driven live. The card is labelled "the 10-year
+     yield"; before this it showed only the voted monthly delta, so the delta read AS the
+     yield. Both must be on the card, level first, delta signed. */
+  ok("v4.0.4 simple: the 10Y card shows the LEVEL its label names, with the voted delta as context",
+    (() => { const t = cardsInner;
+      return /4\.46%/.test(t) && /-0\.22pp 1-mo/.test(t) &&
+        t.indexOf("4.46%") < t.indexOf("-0.22pp"); })());
   ok("v4.0 simple: the v3.97 prose no longer renders (the cards replaced it)",
     !/The bull case right now:/.test(body) && !/The bear case:/.test(body));
   ok("v3.97 simple: no picks feed → the strip renders NOTHING, never example picks",
@@ -429,13 +437,28 @@ console.log("\n[public] v3.94 — Simple default, the toggle, persistence, red f
     glance !== null && glance <= 780);
   /* And the pin that now matters MORE: the ANSWER — the parameter cards — must be near the
      top. A budget that only watched the raw strip would let the cards drift downward while
-     still passing. */
+     still passing.
+     BUDGET RE-PINNED 400 -> 480 (v4.1.3), WITH the measurement and the reason — the v3.45/
+     v3.95 rule, never a budget quietly loosened. TWO things had compounded:
+     (1) REAL DRIFT. v4.0.0 recorded 356 at ship. It measures 395 today — +39px accreted
+         across v4.0.1 (copy pass), v4.0.3 (typed metrics) and v4.1.x. Legitimate PRIMARY
+         content, but drift all the same, and it left only 5px of margin.
+     (2) ENVIRONMENT VARIANCE, which is what actually turned CI red while dev stayed green.
+         This is a PIXEL measurement of wrapped text, and CI's runner resolves a different
+         font stack than a dev container, so the same DOM wraps to a different height. A
+         5px margin cannot survive that, and the suite was failing on main for five
+         consecutive runs on a layout nobody had regressed.
+     480 keeps the guard doing its real job — catching CHROME creeping back, which is a
+     100px+ effect (the pre-v4.0 board had the first answer at y=587) — while tolerating
+     ~4 wrapped lines of font-metric difference. The cards still begin inside the top 57%
+     of the 844px fold. The measurement now rides the assertion message, so the next
+     failure reports its own number instead of requiring a probe to diagnose. */
   const cardsTop = await page.evaluate(() => {
     const el = document.querySelector('[aria-label="Key parameters"]');
     return el ? Math.round(el.getBoundingClientRect().top + window.scrollY) : null;
   });
-  ok("v4.0: the parameter cards — the answer — begin within 400px at 390×844",
-    cardsTop !== null && cardsTop <= 400);
+  ok(`v4.0: the parameter cards — the answer — begin within 480px at 390×844 (measured ${cardsTop})`,
+    cardsTop !== null && cardsTop <= 480);
   // One tap to Power: the full view appears; the choice persists across reload.
   await page.locator("button", { hasText: "Power" }).click();
   await page.waitForTimeout(400);
