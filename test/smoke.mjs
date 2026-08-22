@@ -2820,6 +2820,8 @@ ok("NVDA earnings: ecosystem renderer names all five investments and preserves p
 // these imports, so the lift stays as the tripwire's raw material rather than the test rig.
 const LENS_MAX_PE_SRC = /const LENS_MAX_PE=(\d+);/.exec(adminSrc);
 const PT = await import("../src/ptModel.js");
+const DRIFT = await import("../src/ttDrift.js");
+const driftSrc = readSrc("../src/ttDrift.js");
 ok("ptmodel: admin.html's LENS_MAX_PE and the module's are the same value",
   PT.LENS_MAX_PE === +LENS_MAX_PE_SRC[1]);
 
@@ -4326,6 +4328,11 @@ console.log("\n[49] ptModel extraction — admin.html and src/ptModel.js cannot 
                    "yrsToYearEnd", "annualise", "pickRow", "suggestMultiple"])
     ok(`tripwire: ${n}() is byte-identical in admin.html and src/ptModel.js`,
       norm(liftFns(adminSrc, [n])) === norm(PT[n].toString()));
+  // FEAT-TT-DRIFT (v4.3): same tripwire, same reason — admin.html keeps its own copy.
+  for (const n of ["etYmd", "captureDates", "newestCapture", "thinCoverage", "staleHinges",
+                   "compositeDrift", "lintDrift"])
+    ok(`tripwire: ${n}() is byte-identical in admin.html and src/ttDrift.js`,
+      norm(liftFns(adminSrc, [n])) === norm(DRIFT[n] ? DRIFT[n].toString() : liftFns(driftSrc, [n])));
   ok("tripwire: ANN_MIN_Y matches across both copies",
     +/const ANN_MIN_Y=([\d.]+);/.exec(adminSrc)[1] === PT.ANN_MIN_Y);
   ok("tripwire: the module is genuinely clock-injectable (Dec instant rolls, July instant holds)",
@@ -8157,6 +8164,74 @@ console.log("\n[70] FEAT-TT-SUGGEST — street invert + one-confirm seed");
     (() => { const f = liftFns(adminSrc, ["streetTargetOf"]);
       return f.indexOf("analystTarget") < f.indexOf("street_target"); })());
 
+}
+
+
+// ═══════════ [71] FEAT-TT-DRIFT (v4.3) — the asserted layer falling behind the measured ═══════════
+// Three probes over one pattern, all measured on the live book 2026-08-22: META's hinge outlived
+// its own resolution by 9 days; 7 of 17 composites carried evidence newer than the score (and the
+// composite is a HARD >=B eligibility gate); 2-analyst years priced real rungs. Zero network calls
+// — every input is already in the payload, which is why this is a lint and not a sourcing agent.
+console.log("\n[71] FEAT-TT-DRIFT — hinge staleness, composite drift, thin coverage");
+{
+  const D = DRIFT, NOW = Date.parse("2026-08-22T17:00:00Z");
+  const cap = { consensus: { source: "REAL CONSENSUS MEANS, owner capture 2026-08-13" } };
+  ok("captureDates reads the whitelist and finds a date inside capture free-text",
+    D.newestCapture(cap, NOW) === "2026-08-13");
+  // THE TWO GUARDS, both required — CRM produced this false positive twice.
+  ok("guard 1: a date outside the whitelist (a key_date) is invisible",
+    D.newestCapture({ key_dates: [{ date: "2026-08-20" }] }, NOW) === null);
+  ok("guard 2: a FUTURE date inside a whitelisted field is refused — a capture cannot be ahead of today " +
+     "(CRM's fiscal-period end 2027-01-31 scanned as a capture and reported a hinge 170d stale)",
+    D.newestCapture({ consensus: { source: "FY2027 ends 2027-01-31, captured 2026-08-14" } }, NOW) === "2026-08-14");
+  // HINGE_STALE — the META case.
+  const meta = { ...cap, hinges: [{ label: "Consensus financials", state: "unknown", asOf: "2026-08-04" }] };
+  const sh = D.staleHinges(meta, NOW);
+  ok("HINGE_STALE: an UNKNOWN hinge behind its payload's capture is flagged with the real gap",
+    sh.length === 1 && sh[0].gap === 9);
+  ok("HINGE_STALE: a GRADED hinge behind the same capture is NOT flagged — only ungraded ones",
+    D.staleHinges({ ...cap, hinges: [{ label: "x", state: "green", asOf: "2026-08-04" }] }, NOW).length === 0);
+  ok("HINGE_STALE: an UNDATED unknown hinge is flagged with a null gap, never a fabricated one",
+    (() => { const r = D.staleHinges({ ...cap, hinges: [{ label: "x", state: "unknown" }] }, NOW);
+      return r.length === 1 && r[0].gap === null; })());
+  ok("HINGE_STALE: no capture date at all → nothing to compare against, so no finding",
+    D.staleHinges({ hinges: [{ label: "x", state: "unknown" }] }, NOW).length === 0);
+  // THIN_COVERAGE — scoped to years a rung actually prices (23 unscoped hits vs 4 scoped on the live book).
+  const thin = { consensus: { analyst_counts: { eps: { "2029": 2, "2033": 1 } } } };
+  ok("THIN_COVERAGE fires for an in-reach year (row y=2028 prices FY2029)",
+    (() => { const r = D.thinCoverage(thin, ["2028"]); return r.length === 1 && r[0].year === "2029" && r[0].n === 2; })());
+  ok("THIN_COVERAGE is SILENT on out-of-reach years — MU's 1-analyst 2033 is irrelevant at a 2027 horizon",
+    D.thinCoverage(thin, ["2026"]).length === 0);
+  ok("THIN_COVERAGE accepts the flat per-year shape as well as the per-series one",
+    D.thinCoverage({ consensus: { analyst_counts: { "2029": 2 } } }, ["2028"]).length === 1);
+  ok("THIN_COVERAGE: a prose placeholder never reads as data",
+    D.thinCoverage({ consensus: { analyst_counts: "NOT CAPTURED — cropped" } }, ["2028"]).length === 0);
+  ok(`THIN_COVERAGE: the floor is the owner rule of ${D.THIN_MIN} — exactly 3 passes, 2 fires`,
+    D.THIN_MIN === 3 &&
+    D.thinCoverage({ consensus: { analyst_counts: { eps: { "2029": 3 } } } }, ["2028"]).length === 0 &&
+    D.thinCoverage({ consensus: { analyst_counts: { eps: { "2029": 2 } } } }, ["2028"]).length === 1);
+  // COMPOSITE_STALE — the only asserted number with a mechanical consequence (>=B gates the eligible line).
+  ok("COMPOSITE_STALE: evidence moving after the score is flagged as moved",
+    (() => { const r = D.compositeDrift({ composite: { score: 7, basis: "scored 2026-08-18" },
+      hinges: [{ asOf: "2026-08-22" }] }, NOW); return r && r.moved === true; })());
+  ok("COMPOSITE_STALE: a fresh score with older evidence is CLEAN — recency alone is not drift",
+    D.compositeDrift({ composite: { score: 7, basis: "scored 2026-08-20" }, hinges: [{ asOf: "2026-08-01" }] }, NOW) === null);
+  ok("COMPOSITE_STALE: age alone fires past the window, and the window is stated",
+    D.COMPOSITE_MAX_D === 14 &&
+    D.compositeDrift({ composite: { score: 7, basis: "scored 2026-08-01" } }, NOW).age === 21);
+  ok("COMPOSITE_STALE: an undated basis says it cannot be aged rather than guessing an age",
+    D.compositeDrift({ composite: { score: 7, basis: "no date here" } }, NOW).scored === null);
+  ok("COMPOSITE_STALE: no composite at all is not a drift finding",
+    D.compositeDrift({}, NOW) === null);
+  // Contract: advisory only. A hard error would block saves on payloads that are merely old.
+  ok("every drift finding is sev:warn — this lint never blocks a save (the MISKEY contrast)",
+    D.lintDrift(meta, ["2028"], NOW).every((l) => l.sev === "warn"));
+  ok("purity: lintDrift makes no network call and writes nothing",
+    !/fetch|ddPersist|PULSE_CACHE|localStorage/.test(String(D.lintDrift) + String(D.compositeDrift) + String(D.staleHinges)));
+  ok("the terminal renders drift beside the intake checklist and never gates on it",
+    /h\+=driftSec\(x\);/.test(adminSrc) &&
+    (() => { const f = liftFns(adminSrc, ["driftSec"]);
+      return /lintDrift\(dd,ry\)/.test(f) && !/gateFail|AGREE_PICK|blocker/.test(f); })());
 }
 
 console.log(`\n=== SMOKE TEST: ${pass} passed, ${fail} failed ===`);
