@@ -2881,6 +2881,40 @@ Jan-anchor shipped; see `snapshot.js` ~318–328), `spyMa100`, `spyMa200`, and a
   VALUATION GAP ranking (§11.1 — the ranking always renders, which is the owner's actual
   "always an output" contract, and it was never suspended). Tests: 1223 smoke (+2) + 199
   render (+1).
+- **FEAT-TT-SUGGEST (v4.2.0) — the street invert: suggest-don't-save multiple seeding.**
+  The 2026-08-21 gap sweep found EIGHT names (UBER · SOFI · GEV · CELH · RDDT · HOOD · TEM ·
+  SPCX) one field from ranking: payload, price and floor all present, no premium multiple —
+  so they never reach the next-dollar queue. Owner design, built as specified: *"stop treating
+  'missing multiple' as 'missing thesis' — treat it as missing INVERT."* **`suggestMultiple()`**
+  (`src/ptModel.js` + byte-identical `admin.html` mirror, the [49] tripwire extended) solves
+  the SAME two row formulas `impliedMultiple()` (v3.33) already inverts at the live price —
+  but at the STREET TARGET: P/E = target ÷ FY+1 EPS, EV/S = (target×sh − nc) ÷ FY+1 revenue.
+  The lens is picked by the existing rules, never a new one: earnings lens when FY+1 EPS > 0
+  (TSM/UBER), UNLESS the live price puts it past `LENS_MAX_PE` (the RKLB crossing rule —
+  measured live on TEM, whose FY2028 EPS $0.69 at $72 is a ~105x crossing artifact, so the
+  sales lens is correct and the function says so). **UNKNOWN names every missing input**
+  (target · share_count_M · net_cash_B · revenue) rather than guessing — the missing-invert
+  framing means the remedy is named, not implied. **The function never writes.** Until the
+  owner confirms, the rendered figure is DERIVED-STREET, diagnostic only, and the floor-only
+  ranking stays the honest one — smoke pins `renderUpsideRank` clean of any reference.
+  **Confirm is ONE explicit tap** (`confirmLink`, the two-step pattern) on the deep-dive tab
+  beside the intake checklist: it recomputes at click time (a stale render must never be what
+  gets written — the v3.6 rule), edits a COPY (v3.75), seeds the single-year schedule key plus
+  **`floor_only_before`** (the MU trough-anchor mechanics — a later-year key without it fires
+  MISKEY, and smoke proves the applied seed lint-clean with a no-fob negative control that
+  fires it), stamps a dated, sourced `multiple_ruling` line that names the **UNRATIFIED flat
+  carry** (`schedAt` carries a single key forward, so deeper rungs are explicitly marked
+  unratified rather than reading as considered), and runs the MISKEY/TYPES hard-lint gate
+  before `ddPersist`. Target priority is deliberate and pinned: a REVIEWED street record
+  (owner-confirmed TipRanks published average) outranks a stored assistant-sourced
+  `consensus.street_target {pt, source, as_of}`; with neither, the section names the gap.
+  Group-3 names (MU-class deliberate `floor_only_before`) are respected, never nagged.
+  Tests: **1785 smoke** (+17: both inverts vs hand math, the crossing pick, every UNKNOWN
+  path, fob present/absent by seed year, the seed-then-lint behavioral pair, purity, ranking
+  isolation, the confirm handler's recompute/copy/gate wiring, target priority) + 264 render +
+  171 public-render + `audit:prod` clean — `npm run gates`, all four suites in real Chromium
+  after merging main's v4.1.1–v4.1.6 (whose ageDays ET fix cured 11 render reds this branch
+  inherited by running inside the midnight-to-8am-ET window that bug occupied).
 - **v4.1.6 — the Engine 0 adversarial sweep, and the confidence inversion it found.** Owner:
   *"make sure it's almost always firing correctly … I don't want an incorrect or misfiring
   engine zero because it plays a role in all of our price targets and allocations."* The ~50
