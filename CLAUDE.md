@@ -2881,6 +2881,35 @@ Jan-anchor shipped; see `snapshot.js` ~318–328), `spyMa100`, `spyMa200`, and a
   VALUATION GAP ranking (§11.1 — the ranking always renders, which is the owner's actual
   "always an output" contract, and it was never suspended). Tests: 1223 smoke (+2) + 199
   render (+1).
+- **v5.0.1 — the PROVISIONAL veto names WHICH half of §6.4.1 is missing.** An owner-passed
+  review of the B-cap found the v5.0.0 veto string over-claiming, and a read-only census of
+  all 33 live score records proved it: `falsifiers pending — score capped at B until they're
+  committed` was FALSE for TSM (6 server-stamped hinges, committed 8/05 — what's missing is
+  observations, not commitment) and CELH (6 committed, 1 observed). "Unwritten" and
+  "committed, awaiting observations" are different owner actions — write vs wait — and one
+  string covered both with the wrong verb. **The census also settled the review's engine
+  proposal**: it suggested min-3-observed scoring in `scoreP4` (pending extras as warnings
+  instead of one unobserved hinge nulling the pillar, `ttScore.js:527-529`) *if* any name had
+  ≥3 observed hinges hostaged by pending extras — measured: **that bucket is EMPTY** (21 of 23
+  PROVISIONAL names have <3 hinges written, TSM/CELH have <3 observed), so the engine change
+  is deliberately NOT built; it becomes an owner methodology call if a filing pass ever makes
+  the bucket real. Two review claims corrected in the same pass: its "the live line still
+  reads the asserted composite" was written against the pre-v5.0.0 head (both `why(r)` and
+  `whyNot` read cards since yesterday's activation), and the cure IS two server writes
+  (`commitFingerprint` holds the first write PRECOMMITTED_PENDING; the composed-lifecycle
+  test is the proof) — stated now rather than implied away. The fix: `updateIndex` gains an
+  additive **`p4: {kind, hinges, observed}`** summary (scoreP4's own observed predicate, the
+  card's own bootstrap kind), `cardInfo` carries it at both altitudes, and both veto mirrors
+  split four ways — `falsifiers unwritten` · `N/3 written — set incomplete` (the CRDO shape) ·
+  `committed, N/M observed — awaiting qualifying observations` (the TSM shape) · `committed
+  this write — a later write scores them (§6.4.1)` — every branch still a veto, PROVISIONAL
+  still never eligible. A pre-v5.0.1 index entry (no `p4`) reads the neutral `falsifiers
+  pending`, claiming neither half. No `ALLOC_RULE_VERSION` bump: eligibility semantics are
+  unchanged, only the reason text gained precision (the FIX-C relabel precedent, not the
+  v4.1.4 one). Tests: **+7 smoke** (the four-way truth table run through the real evaluator,
+  the every-branch-vetoes sweep, the retired clause pinned ABSENT from both mirrors
+  comment-stripped, the index p4 on both endpoint fixtures incl. the composed lifecycle's
+  committed counts, the admin mirror pin).
 - **v5.0.0 "THE CARD GOVERNS" — §14.8 activation, one freshness doctrine, the KV fix, and the
   FINANCIALS mode.** The V5 system audit's ranked scope, built as one release under three owner
   rulings (2026-08-23): **flip SCORED-only** · **stay on the KV free tier and fix the cause** ·

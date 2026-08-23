@@ -9,7 +9,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
 <!-- AUDIT: kept in sync with package.json by test/smoke.mjs. admin.html is a Vite
      public/ passthrough, so it cannot receive __APP_VERSION__ — the guard is the fix. -->
-<title>TT TICKER TERMINAL v5.0.0</title>
+<title>TT TICKER TERMINAL v5.0.1</title>
 <style>
   :root{
     --bg:#05070a; --panel:#0a0f16; --panel2:#0d141d; --line:#16202c;
@@ -458,7 +458,7 @@
          verdict and every gate are computed upstream and this panel changes nothing. -->
     <div id="macroEvidence" role="region" aria-label="Why macro — readout evidence"></div>
     <div id="headInfo" style="display:none">
-      <div class="brand">FINANCE&nbsp;BRO.AI // TT&nbsp;TICKER&nbsp;TERMINAL <small>v5.0.0 · the card governs (§14.8)</small></div>
+      <div class="brand">FINANCE&nbsp;BRO.AI // TT&nbsp;TICKER&nbsp;TERMINAL <small>v5.0.1 · the card governs (§14.8)</small></div>
       <div class="statusline">
         <span>BOOK: <b id="bookStamp">loading…</b></span>
         <span>AUTH: <b id="sessState">…</b></span>
@@ -4551,8 +4551,14 @@ function cardInfo(sym){
     const scored=sc.status==="SCORED";
     const score=scored?(sc.raw_score??null):(sc.provisional?sc.provisional.score:null);
     const tier=scored?(sc.capped_tier||null):(sc.provisional?sc.provisional.tier:null);
+    /* v5.0.1: p4 counts, scoreP4's own observed predicate — the PROVISIONAL veto names
+       which half of §6.4.1 is missing (unwritten vs committed-awaiting-observation). */
+    const fals=(rec.underwriting_inputs&&Array.isArray(rec.underwriting_inputs.falsifiers))?rec.underwriting_inputs.falsifiers:[];
+    const req=fals.filter(h=>h&&!h.legacy);
+    const obs=req.filter(h=>h.defined_at&&h.qualifying_observation&&h.qualifying_observation.observed_at>h.defined_at).length;
+    const p4={kind:(sc.provisional&&sc.provisional.pending)||(sc.pillars&&sc.pillars.falsifier_health&&sc.pillars.falsifier_health.bootstrap)||null,hinges:req.length,observed:obs};
     return {score,tier,status:sc.status||null,scored,
-      mcur:sc.status!=="LEGACY_UNVERIFIED",src:"record"};}
+      mcur:sc.status!=="LEGACY_UNVERIFIED",p4,src:"record"};}
   const e=SCORE_INDEX&&SCORE_INDEX[sym];
   if(!e)return null;
   const scored=e.status==="SCORED";
@@ -4560,7 +4566,7 @@ function cardInfo(sym){
   const tier=scored?(e.capped_tier||null):(e.provisional_tier||null);
   const mcur=!!(e.methodology_version&&SCORE_INDEX_META&&
     e.methodology_version===SCORE_INDEX_META.methodology_version);
-  return {score,tier,status:e.status||null,scored,mcur,src:"index"};
+  return {score,tier,status:e.status||null,scored,mcur,p4:e.p4||null,src:"index"};
 }
 async function loadScoreSym(sym){
   if(SCORE_CACHE[sym]!==undefined||SCORE_INFLIGHT.has(sym))return;
@@ -5317,7 +5323,17 @@ function renderUpsideRank(){
            "falsifiers pending" and "unscored" are different facts, and the veto text is
            what the owner reads. Mirrors whyNot() in functions/lib/tt-alloc.js exactly. */
         if(!r.tt)return "no server card — unscored";
-        if(r.tt.status==="PROVISIONAL")return `falsifiers pending — score capped at ${r.tt.tier||"B"} until they're committed (PROVISIONAL is never eligible)`;
+        if(r.tt.status==="PROVISIONAL"){
+          /* v5.0.1: names WHICH half of §6.4.1 is missing — "unwritten" and "committed,
+             awaiting observations" are different owner actions. Mirrors whyNot() exactly. */
+          const cap=r.tt.tier||"B",tail=` — capped at ${cap} (PROVISIONAL is never eligible)`;
+          const p4=r.tt.p4;
+          if(!p4||!p4.kind)return "falsifiers pending"+tail;
+          if(p4.kind==="LEGACY_POST_HOC"||!(p4.hinges>0))return "falsifiers unwritten"+tail;
+          if(p4.hinges<3)return `falsifiers ${p4.hinges}/3 written — set incomplete`+tail;
+          if(p4.observed<p4.hinges)return `falsifiers committed, ${p4.observed}/${p4.hinges} observed — awaiting qualifying observations`+tail;
+          return "falsifiers committed this write — a later write scores them (§6.4.1)"+tail;
+        }
         if(!r.tt.scored)return `server card ${r.tt.status||"incomplete"} — blockers on the card`;
         if(!r.tt.mcur)return "card predates the current methodology — re-score to verify (§4.3)";
         if(r.tt.tier==="C"||(r.tt.score!==null&&r.tt.score<5.5))return `TT ${r.tt.score!==null?r.tt.score.toFixed(1):"C"} — quality fails`;

@@ -96,6 +96,24 @@ async function appendScoreDiff(env, sym, prev, next) {
   } catch (_e) { /* fire-and-forget by contract */ }
 }
 
+/* v5.0.1: the PROVISIONAL veto must know WHICH half of §6.4.1 is missing — "conditions
+   unwritten" and "committed, awaiting observations" are different owner actions (write vs
+   wait), and one veto string covered both with the clause "until they're committed", which
+   was FALSE for a committed set (measured live 2026-08-23: TSM carried 6 server-stamped
+   hinges and its veto read as uncommitted). Counts use scoreP4's own observed predicate;
+   kind is the card's own bootstrap state. Additive — the methodology_version precedent. */
+function p4Summary(rec) {
+  const sc = (rec && rec.scorecard) || {};
+  const all = rec && rec.underwriting_inputs && Array.isArray(rec.underwriting_inputs.falsifiers)
+    ? rec.underwriting_inputs.falsifiers : [];
+  const req = all.filter((h) => h && !h.legacy);
+  const observed = req.filter((h) => h.defined_at && h.qualifying_observation &&
+    h.qualifying_observation.observed_at > h.defined_at).length;
+  const kind = (sc.provisional && sc.provisional.pending) ||
+    (sc.pillars && sc.pillars.falsifier_health && sc.pillars.falsifier_health.bootstrap) || null;
+  return { kind, hinges: req.length, observed };
+}
+
 async function updateIndex(env, sym, rec) {
   const idx = (await kvGet(env, INDEX_KEY)) || { version: 1, entries: {} };
   const sc = rec.scorecard || {};
@@ -120,6 +138,7 @@ async function updateIndex(env, sym, rec) {
     methodology_version: sc.methodology_version ?? null,
     broken_thesis: !!((sc.pillars && sc.pillars.falsifier_health && sc.pillars.falsifier_health.broken_thesis) ||
       (sc.gate_results || []).some((g) => g.state === "FAIL" && g.effect && g.effect.kind === "BROKEN_THESIS")),
+    p4: p4Summary(rec),
   };
   await env.PULSE_CACHE.put(INDEX_KEY, JSON.stringify(idx));
 }

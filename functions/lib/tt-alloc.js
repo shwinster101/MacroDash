@@ -211,8 +211,9 @@ export function evalBuyRow({ entry, idx, quote, board, horizon, now, card }) {
     ? { score: card.raw_score ?? card.provisional_score,
         tier: card.raw_score !== null && card.raw_score !== undefined ? (card.capped_tier || null) : (card.provisional_tier || null),
         status: card.status || null,
-        methodology_current: card.methodology_current === true }
-    : (card ? { score: null, tier: null, status: card.status || null, methodology_current: card.methodology_current === true } : null);
+        methodology_current: card.methodology_current === true,
+        p4: card.p4 || null }
+    : (card ? { score: null, tier: null, status: card.status || null, methodology_current: card.methodology_current === true, p4: card.p4 || null } : null);
   return { sym, blockers, cautions, px, px_at, live: live !== null, tgt, y: r ? r.y : null,
     up, ann, quality, rolled: pk ? pk.rolled : null, no_rung_at_horizon: noRung };
 }
@@ -243,8 +244,19 @@ export function whyNot(row, weightPct) {
      an unscored one are different facts, and the veto text is what the owner reads. */
   if (!row.quality) return "no server card — unscored";
   const q = row.quality;
-  if (q.status === "PROVISIONAL")
-    return `falsifiers pending — score capped at ${q.tier || "B"} until they're committed (PROVISIONAL is never eligible)`;
+  if (q.status === "PROVISIONAL") {
+    /* v5.0.1: the veto names WHICH half of §6.4.1 is missing. The old single string said
+       "until they're committed" for every PROVISIONAL name — false for a committed set
+       awaiting observations (TSM, measured live: 6 server-stamped hinges, 0 observed).
+       "Unwritten" and "unobserved" are different owner actions; the counts say which. */
+    const cap = q.tier || "B", tail = ` — capped at ${cap} (PROVISIONAL is never eligible)`;
+    const p4 = q.p4;
+    if (!p4 || !p4.kind) return "falsifiers pending" + tail;         // pre-v5.0.1 index entry — kind unknown, claim neither half
+    if (p4.kind === "LEGACY_POST_HOC" || !(p4.hinges > 0)) return "falsifiers unwritten" + tail;
+    if (p4.hinges < 3) return `falsifiers ${p4.hinges}/3 written — set incomplete` + tail;
+    if (p4.observed < p4.hinges) return `falsifiers committed, ${p4.observed}/${p4.hinges} observed — awaiting qualifying observations` + tail;
+    return "falsifiers committed this write — a later write scores them (§6.4.1)" + tail;
+  }
   if (q.status !== "SCORED")
     return `server card ${q.status || "incomplete"} — blockers on the card`;
   if (!q.methodology_current)

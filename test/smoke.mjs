@@ -5017,7 +5017,10 @@ console.log("\n[48] /api/score — server-authoritative scoring endpoint");
     const led = JSON.parse(e5.PULSE_CACHE._store.get("tt:ledger:BBB"));
     return j.record.scorecard.raw_score === null && j.record.scorecard.provisional.tier === "B" &&
       idx2.status === "PROVISIONAL" && typeof idx2.provisional_score === "number" && idx2.provisional_tier === "B" &&
-      idx2.raw_score === null && led[0].to.status === "PROVISIONAL";
+      idx2.raw_score === null && led[0].to.status === "PROVISIONAL" &&
+      /* v5.0.1: the index carries the p4 summary — this fixture has NO falsifiers, so the
+         kind is the unwritten one and both counts are zero (never null, never invented). */
+      idx2.p4 && idx2.p4.kind === "LEGACY_POST_HOC" && idx2.p4.hinges === 0 && idx2.p4.observed === 0;
   })());
   // THE MERGE'S OWN PROOF (v3.78 reconciliation): the two v3.77s composed. Write 1 carries
   // three falsifiers with self-stamped "yesterday" dates AND complete P1-P3 — the fingerprint
@@ -5058,8 +5061,12 @@ console.log("\n[48] /api/score — server-authoritative scoring endpoint");
     if (r2.status !== 200) return false;
     const sc2 = j2.record.scorecard;
     const led2 = JSON.parse(e6.PULSE_CACHE._store.get("tt:ledger:BBB"));
+    /* v5.0.1: after write 1 the index p4 reads the COMMITTED kind with real counts — the
+       veto downstream says "committed … a later write scores them", never "unwritten". */
+    const idxP4 = JSON.parse(e6.PULSE_CACHE._store.get("tt:score:index:v1")).entries.BBB.p4;
     return sc2.status === "SCORED" && typeof sc2.raw_score === "number" &&
       sc2.pillars.falsifier_health.score === 10 &&
+      idxP4 && idxP4.hinges === 3 && idxP4.observed === 3 &&
       led2[0].to.status === "SCORED" && led2[0].from.status === "PROVISIONAL" &&
       led2[1].to.status === "PROVISIONAL";
   })());
@@ -8046,6 +8053,33 @@ console.log("\n[68] FEAT-TT-ALLOC — pure core, endpoint, and the §14.8 bar");
     (() => { const r = ev({ scoreIndex: { AAA: { status: "PROVISIONAL", raw_score: null, provisional_score: 8.4,
         provisional_tier: "B", methodology_version: TS.METHODOLOGY_VERSION, broken_thesis: false } } });
       return r.eligible === null && r.why_not.some((w) => w.sym === "AAA" && /falsifiers pending/.test(w.reason)); })());
+  /* v5.0.1: the PROVISIONAL veto names WHICH half of §6.4.1 is missing. The 2026-08-23
+     census measured the one blanket string false on live data — TSM carried 6 server-stamped
+     hinges while its veto read "until they're committed". Four states, four texts; the
+     p4-less fixture above stays on the neutral "falsifiers pending" (claims neither half). */
+  const provEv = (p4) => ev({ scoreIndex: { AAA: { status: "PROVISIONAL", raw_score: null, provisional_score: 8.4,
+    provisional_tier: "B", methodology_version: TS.METHODOLOGY_VERSION, broken_thesis: false, p4 } } });
+  const provWhy = (p4) => { const w = provEv(p4).why_not.find((x) => x.sym === "AAA"); return w ? w.reason : ""; };
+  ok("v5.0.1 veto split: zero hinges reads 'falsifiers unwritten' — the sprint case",
+    /^falsifiers unwritten/.test(provWhy({ kind: "LEGACY_POST_HOC", hinges: 0, observed: 0 })));
+  ok("v5.0.1 veto split: a partial set names its count — '1/3 written — set incomplete' (the CRDO shape)",
+    /^falsifiers 1\/3 written — set incomplete/.test(provWhy({ kind: "PRECOMMITTED_PENDING", hinges: 1, observed: 0 })));
+  ok("v5.0.1 veto split: a committed set awaiting observations says so WITH counts, and never claims it is uncommitted (the TSM shape)",
+    (() => { const t = provWhy({ kind: "PRECOMMITTED_PENDING", hinges: 6, observed: 0 });
+      return /^falsifiers committed, 0\/6 observed — awaiting qualifying observations/.test(t) && !/until they're committed|unwritten/.test(t); })());
+  ok("v5.0.1 veto split: all-observed-yet-PROVISIONAL is the first-write fingerprint state — a later write scores them",
+    /committed this write — a later write scores them \(§6\.4\.1\)/.test(provWhy({ kind: "PRECOMMITTED_PENDING", hinges: 3, observed: 3 })));
+  ok("v5.0.1 veto split: every branch stays a VETO — no p4 shape makes a PROVISIONAL card eligible",
+    [null, { kind: "LEGACY_POST_HOC", hinges: 0, observed: 0 }, { kind: "PRECOMMITTED_PENDING", hinges: 6, observed: 6 }]
+      .every((p4) => provEv(p4).eligible === null));
+  ok("v5.0.1: the retired blanket clause is gone from BOTH mirrors (code, not comments)",
+    !/until they're committed/.test(stripComments(allocLibSrc)) &&
+    !/until they're committed/.test(stripComments(adminSrc)));
+  ok("v5.0.1 mirror: admin why(r) carries the same four texts and cardInfo passes p4 at both altitudes",
+    adminSrc.includes("falsifiers unwritten") && adminSrc.includes("— set incomplete") &&
+    adminSrc.includes("observed — awaiting qualifying observations") &&
+    adminSrc.includes("committed this write — a later write scores them") &&
+    adminSrc.includes("p4:e.p4||null") && /const p4=\{kind:\(sc\.provisional&&sc\.provisional\.pending\)/.test(adminSrc));
   ok("§14.8 SCORED-only: NO card at all reads 'no server card — unscored', never a silent pass",
     (() => { const r = ev({ scoreIndex: {} });
       return r.eligible === null && r.why_not.some((w) => w.sym === "AAA" && /no server card/.test(w.reason)); })());
