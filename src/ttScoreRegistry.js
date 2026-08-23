@@ -20,7 +20,11 @@
 // kickoff and ship as the owner-ratifiable defaults; changing any boundary is a registry
 // version bump + boundary tests (§4.3), never an in-place edit.
 
-export const ROUTE_MAP_VERSION = "tt-route-v3";
+// v4 (2026-08-23): QC_G3 gained an absolute P/E ceiling. A boundary ADDITION changes what a
+// verdict of a given version means — a v3 PASS could sit at 152x forward earnings where a v4
+// PASS cannot — so it is a version bump per §4.3, not an in-place edit. Cards stamped v1/v2/v3
+// stay readable and self-identify; nothing is 409'd.
+export const ROUTE_MAP_VERSION = "tt-route-v4";
 
 /* §4.4, amended by the G3 RULING of 2026-08-22 (owner-directed). AI_INFRA splits into two
    PROFILES the way QUALITY_COMPOUNDER already splits STANDARD / INDUSTRIAL_CYCLICAL.
@@ -241,7 +245,36 @@ export const GATES = [
 
        Free to change: `peg_fy1` appeared in ZERO stored payloads and both QC score records
        (CELH, HOOD) carried this gate's input block ABSENT, so no card depends on the old
-       shape. Boundaries 1.5 / 2.5 are unchanged and still ASSERTED, not calibrated. */
+       shape. Boundaries 1.5 / 2.5 are unchanged and still ASSERTED, not calibrated.
+
+       ── ABSOLUTE-CEILING PATCH, 2026-08-23 (owner ruling, same session) ──────────────────
+       The sign patch above fixed the SIGNS and left this gate without the backstop its
+       sibling AI_G3P has carried since v4.5: `pe > 45 -> FAIL`, there so that a pathological
+       multiple fails regardless of the growth story. PEG alone cannot do that job — it is
+       scale-free by design, which is exactly why it can be cleared by an arbitrarily large
+       numerator over an arbitrarily large denominator. Surfaced while staging SPCX (SpaceX
+       common stock, mis-lensed VEH): pe_fy1 152.19 over 421.1% growth is PEG 0.36, which
+       PASSED the premium prerequisite for a name trading at 152x forward earnings.
+
+       WHY 45 AND NOT ~55. AI_G3P reads pe_fy2; this gate reads pe_fy1, which is structurally
+       HIGHER for a growing name (pe_fy1 = pe_fy2 x (1+g)), so the dimensional equivalent of
+       AI_G3P's 45 is roughly 50-55 here. 45 is therefore DELIBERATELY TIGHTER, and the reason
+       is substantive rather than an accident of which fiscal year each gate reads: the two
+       routes differ in kind. AI_INFRA/PLATFORM is the hypergrowth-platform route where a rich
+       multiple is the norm; QUALITY_COMPOUNDER is the route for durable compounders, where a
+       >45x FY+1 multiple is the exception the premise argues against. Holding QC to the
+       tighter absolute line is the point, not a rounding artefact.
+
+       MEASURED ACROSS THE LIVE BOOK BEFORE SHIPPING — zero cards re-verdict at 45, 60 or 75:
+       the highest PASSING forward P/E is RDDT at 23.47x, and the two FAILs (AAPL 32.53,
+       TSLA 166.45) already failed on PEG. So no existing card can be rejected on re-save,
+       the same bar MISKEY and the AI_G3P patch were both held to. TSLA's FAIL now arrives
+       via the ceiling rather than via PEG; the verdict is identical either way.
+
+       Ordering is load-bearing and mirrors AI_G3P: the ceiling fires BEFORE the PEG PASS
+       test, or a low PEG at 152x would return PASS first and the backstop would be dead code.
+       45 is exclusive (`> 45`), matching the sibling — 45.0 itself does not fail. ASSERTED,
+       not calibrated, like every other boundary here. */
     id: "QC_G3_VALUATION_PREREQ", route: "QUALITY_COMPOUNDER", profile: "STANDARD", premium_prerequisite: true,
     effect: { kind: "TIER_CAP", tier: "A" }, cadence_days: 30,
     inputs: { pe_fy1: "x — fwd P/E on FY+1 EPS", eps_growth_fy1_fy2_pct: "pct — FY+1→FY+2 EPS growth" },
@@ -249,6 +282,7 @@ export const GATES = [
       const pe = n(i.pe_fy1), g = n(i.eps_growth_fy1_fy2_pct);
       if (pe === null || g === null) return "UNKNOWN";
       if (pe <= 0) return "UNKNOWN";        // no P/E before profit — cannot-measure, not expensive
+      if (pe > 45) return "FAIL";           // absolute ceiling — PEG is scale-free and cannot backstop
       if (g <= 0) return "FAIL";            // not growing into the multiple
       const peg = pe / g;
       if (peg > 2.5) return "FAIL";                                   // >2.5 exclusive

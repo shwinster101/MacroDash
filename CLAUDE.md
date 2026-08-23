@@ -2881,6 +2881,40 @@ Jan-anchor shipped; see `snapshot.js` ~318–328), `spyMa100`, `spyMa200`, and a
   VALUATION GAP ranking (§11.1 — the ranking always renders, which is the owner's actual
   "always an output" contract, and it was never suspended). Tests: 1223 smoke (+2) + 199
   render (+1).
+- **v4.8.0 — the QC_G3 absolute ceiling: PEG cannot backstop a pathological multiple.** The
+  v4.7.0 patch fixed this gate's SIGNS and left it without the backstop its sibling
+  `AI_G3P_EARNINGS_BRIDGE` has carried since v4.5 — `pe > 45 -> FAIL`, there precisely so a
+  pathological multiple fails regardless of the growth story. PEG is **scale-free by
+  construction**, which is exactly why it cannot do that job: an arbitrarily large numerator
+  over an arbitrarily large denominator clears it. Surfaced while staging **SPCX** (see the
+  session log below — SpaceX common stock, mis-lensed VEH): `pe_fy1` **152.19** over **421.1%**
+  growth is PEG **0.36**, which PASSED the QC premium prerequisite at 152x forward earnings.
+  **Why 45 and not ~55.** AI_G3P reads `pe_fy2`; this gate reads `pe_fy1`, structurally higher
+  for a growing name (`pe_fy1 = pe_fy2 x (1+g)`), so the dimensional equivalent of the sibling's
+  45 is roughly 50-55 here. 45 is **deliberately tighter**, and the reason is substantive rather
+  than an artefact of which fiscal year each gate reads: **the routes differ in kind.**
+  AI_INFRA/PLATFORM is the hypergrowth-platform route where a rich multiple is the norm;
+  QUALITY_COMPOUNDER is the route for durable compounders, where a >45x FY+1 multiple is the
+  exception its own premise argues against.
+  **Measured across every live QC/STANDARD card BEFORE shipping — zero re-verdict** at 45, 60
+  or 75: the highest PASSING forward P/E is RDDT at 23.47x, and both FAILs (AAPL 32.53,
+  TSLA 166.45) already failed on PEG. No stored card can be rejected on re-save — the same bar
+  `MISKEY` and the AI_G3P patch were each held to. TSLA's FAIL now arrives via the ceiling
+  rather than via PEG; the verdict is identical either way.
+  **Ordering is load-bearing** and mirrors AI_G3P: the ceiling fires BEFORE the PEG PASS test,
+  or a low PEG at 152x returns PASS first and the backstop is dead code. 45 is exclusive
+  (`> 45`), matching the sibling. ASSERTED, not calibrated, like every boundary here.
+  `ROUTE_MAP_VERSION` -> **`tt-route-v4`** per §4.3: a boundary ADDITION changes what a verdict
+  of a given version MEANS (a v3 PASS could sit at 152x; a v4 PASS cannot). Recorded on cards,
+  never 409'd, so v1/v2/v3 cards stay readable and self-identify.
+  Found while pinning: the existing 2.5-PEG-edge assertion probed at `pe_fy1` 50/50.2, which
+  now FAILS on the ceiling before PEG is ever formed — it would have measured the ceiling while
+  claiming to measure PEG (the vacuous-assert trap, cf. v3.60.1). Re-pinned under 45 so each
+  boundary tests only itself.
+  Tests: **1848 smoke** (+5: the SPCX negative control, the ordering proof, exclusivity at
+  45/45.01/44.99, cross-gate parity, and the measured no-re-verdict sweep; 1 re-pinned with the
+  reason) + 271 render + 171 public-render + `audit:prod` clean. Negative-controlled: removing
+  the ceiling turns exactly those 4 pins red.
 - **v4.7.0 — the QC_G3 sign-cancellation patch: a premium prerequisite that passed a company
   with no earnings.** Found by a pre-flight calibration check before scoring any
   QUALITY_COMPOUNDER name — the G3 ruling's own doctrine (rule the gate BEFORE the book, or you

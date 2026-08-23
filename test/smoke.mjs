@@ -4566,7 +4566,10 @@ console.log("\n[47] route registry + normalization — every boundary at -e/boun
   ok("G3 ruling: the AI lens carries an EXPLICIT NEOCLOUD profile and AIP maps to PLATFORM on the same route",
     TSREG.routeFor("AI").route === "AI_INFRA" && TSREG.routeFor("AI").profile === "NEOCLOUD" &&
     TSREG.routeFor("AIP").route === "AI_INFRA" && TSREG.routeFor("AIP").profile === "PLATFORM" &&
-    TSREG.ROUTE_MAP_VERSION === "tt-route-v3");
+    // v3 -> v4 on 2026-08-23: QC_G3 gained an absolute P/E ceiling. A boundary ADDITION changes
+    // what a verdict of a given version MEANS (a v3 PASS could sit at 152x; a v4 PASS cannot),
+    // so §4.3 makes it a version bump rather than an in-place edit.
+    TSREG.ROUTE_MAP_VERSION === "tt-route-v4");
   /* THE TRAP: gatesFor treats `profile: null` as "every profile of this route", so a PLATFORM
      profile added WITHOUT giving AI_G3 an explicit profile would inherit the neocloud bridge
      and carry TWO premium prerequisites. Asserted in both directions so a revert goes red. */
@@ -4635,12 +4638,47 @@ console.log("\n[47] route registry + normalization — every boundary at -e/boun
        "(not growing into the multiple) — FAIL here is TIER_CAP A, a verdict about cheapness",
       qg.evaluate({ pe_fy1: 0, eps_growth_fy1_fy2_pct: 30 }) === "UNKNOWN" &&
       qg.evaluate({ pe_fy1: 20, eps_growth_fy1_fy2_pct: 0 }) === "FAIL");
-    ok("QC_G3: the 1.5 / 2.5 boundaries are unchanged and inclusive/exclusive as before",
+    /* RE-PINNED 2026-08-23 with the ceiling patch below: the 2.5 edge used to be probed at
+       pe_fy1 50 / 50.2, which now FAILS on the absolute ceiling before PEG is ever formed —
+       the pin would have been measuring the ceiling while claiming to measure PEG. Same two
+       boundaries, probed under 45 so each one tests only itself. */
+    ok("QC_G3: the 1.5 / 2.5 PEG boundaries are unchanged and inclusive/exclusive as before",
       qg.evaluate({ pe_fy1: 30, eps_growth_fy1_fy2_pct: 20 }) === "PASS" &&        // PEG 1.5 edge
       qg.evaluate({ pe_fy1: 30.2, eps_growth_fy1_fy2_pct: 20 }) === "UNKNOWN" &&   // just past 1.5
-      qg.evaluate({ pe_fy1: 50, eps_growth_fy1_fy2_pct: 20 }) === "UNKNOWN" &&     // PEG 2.5 edge
-      qg.evaluate({ pe_fy1: 50.2, eps_growth_fy1_fy2_pct: 20 }) === "FAIL" &&      // just past 2.5
+      qg.evaluate({ pe_fy1: 40, eps_growth_fy1_fy2_pct: 16 }) === "UNKNOWN" &&     // PEG 2.5 edge, pe<45
+      qg.evaluate({ pe_fy1: 40.2, eps_growth_fy1_fy2_pct: 16 }) === "FAIL" &&      // just past 2.5
       qg.evaluate({}) === "UNKNOWN");
+    /* ── QC_G3 ABSOLUTE-CEILING PATCH (2026-08-23, same session) ──────────────────────────
+       PEG is scale-free by construction, so it cannot backstop a pathological multiple: an
+       arbitrarily large numerator over an arbitrarily large denominator clears it. AI_G3P has
+       carried `pe > 45 -> FAIL` for exactly this since v4.5; QC_G3 did not. SPCX is the live
+       negative control — 152.19x forward earnings over 421.1% growth is PEG 0.36, which
+       PASSED the premium prerequisite before this patch. */
+    ok("QC_G3 negative control — SPCX (pe 152.19, g 421.1%, PEG 0.36) FAILS on the ceiling, " +
+       "where the pre-patch gate returned PASS at 152x forward earnings",
+      qg.evaluate({ pe_fy1: 152.19, eps_growth_fy1_fy2_pct: 421.1 }) === "FAIL");
+    ok("QC_G3: the ceiling fires BEFORE the PEG PASS test — ordering is load-bearing, or a low " +
+       "PEG at a pathological multiple would return PASS first and the backstop would be dead code",
+      qg.evaluate({ pe_fy1: 100, eps_growth_fy1_fy2_pct: 100 }) === "FAIL");   // PEG 1.0 — PASS without it
+    ok("QC_G3: the 45 ceiling is EXCLUSIVE, matching AI_G3P — 45.0 itself still reaches the PEG path",
+      qg.evaluate({ pe_fy1: 45, eps_growth_fy1_fy2_pct: 30 }) === "PASS" &&       // PEG 1.5 at the edge
+      qg.evaluate({ pe_fy1: 45.01, eps_growth_fy1_fy2_pct: 30 }) === "FAIL" &&    // just past
+      qg.evaluate({ pe_fy1: 44.99, eps_growth_fy1_fy2_pct: 30 }) === "PASS");
+    ok("QC_G3: BOTH premium prerequisites now carry an absolute ceiling — the asymmetry that let " +
+       "a 152x multiple through one route and not the other is closed",
+      /if \(pe > 45\) return "FAIL"/.test(String(qg.evaluate)) &&
+      /if \(pe > 45 \|\| g < 10\) return "FAIL"/.test(
+        String(TSREG.GATES.find((x) => x.id === "AI_G3P_EARNINGS_BRIDGE").evaluate)));
+    /* Measured across every QC/STANDARD card on the live book 2026-08-23 BEFORE shipping:
+       nothing re-verdicts at 45 (nor at 60 or 75). Highest PASSING forward P/E is RDDT at
+       23.47x; the two FAILs already failed on PEG. No stored card can be rejected on re-save,
+       the bar MISKEY and the AI_G3P patch were both held to. */
+    ok("QC_G3 ceiling: ZERO live QC cards re-verdict — the patch adds a backstop without " +
+       "rejecting a single existing card",
+      [[17.36, 24, "PASS"], [17.65, 13.8, "PASS"], [23.47, 28, "PASS"], [25.64, 21, "PASS"],
+       [24.52, 19.6, "PASS"], [24.92, 28.6, "PASS"], [32.53, 12.3, "FAIL"], [166.45, 43.6, "FAIL"],
+       [14.8, 9.8, "UNKNOWN"], [-908.63, -962.5, "UNKNOWN"]]
+        .every(([pe, g, want]) => qg.evaluate({ pe_fy1: pe, eps_growth_fy1_fy2_pct: g }) === want));
     /* The live QC book measured 2026-08-23 — the patch must not silently re-verdict the
        healthy names, and must still separate the four that are genuinely expensive. */
     ok("QC_G3: the measured QC book keeps its spread — NU/GRAB/SOFI/RDDT pass, AAPL/CAT/HOOD/TSLA fail",
