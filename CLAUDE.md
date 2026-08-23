@@ -2881,6 +2881,38 @@ Jan-anchor shipped; see `snapshot.js` ~318–328), `spyMa100`, `spyMa200`, and a
   VALUATION GAP ranking (§11.1 — the ranking always renders, which is the owner's actual
   "always an output" contract, and it was never suspended). Tests: 1223 smoke (+2) + 199
   render (+1).
+- **v4.7.0 — the QC_G3 sign-cancellation patch: a premium prerequisite that passed a company
+  with no earnings.** Found by a pre-flight calibration check before scoring any
+  QUALITY_COMPOUNDER name — the G3 ruling's own doctrine (rule the gate BEFORE the book, or you
+  mint dated wrong cards) applied to the next route in line. `QC_G3_VALUATION_PREREQ` was
+  **RATIO-ONLY**: it accepted a precomputed `peg_fy1` and never saw P/E or growth, so it was
+  structurally blind to the signs that produced the ratio. **Measured live on the book: TEM,
+  FY+1 EPS −$0.08 → forward P/E −908.6 on −962.5% growth → PEG +0.94 → PASS.** Two negatives
+  divided to a healthy-looking positive and the gate stamped "premium earned" on a pre-profit
+  name. Two further holes the same shape admitted: `pe +20 / g −10 → −2.0` PASSED (−2 ≤ 1.5),
+  and `pe −12 / g +20 → −0.6` PASSED. **A `peg <= 0` guard catches none of the first case** —
+  the one that was live — which is why the INPUT SHAPE had to change rather than a guard being
+  bolted on. The gate now takes `pe_fy1` and `eps_growth_fy1_fy2_pct` separately and forms the
+  ratio inside, the `AI_G3P` shape. Deliberately **not** a PREPROFIT QC profile: TEM stays
+  QC/STANDARD and the gate simply refuses to grade a ratio it cannot form.
+  **`UNKNOWN` on non-positive P/E, `FAIL` on non-positive growth** — the asymmetry is the point.
+  FAIL here is `TIER_CAP: A`, a verdict about CHEAPNESS; "no P/E before profit" is a
+  cannot-measure, and UNKNOWN already yields the floor-basis P1 that honestly represents it.
+  Non-growth, by contrast, genuinely is "not growing into the multiple" — the same call
+  AI_G3P's growth floor makes. The 1.5 / 2.5 boundaries did not move and remain ASSERTED.
+  **Free to change, verified before touching it:** `peg_fy1` appeared in **zero** stored
+  payloads and both QC score records (CELH, HOOD) carried this gate's input block **ABSENT** —
+  no card depended on the old shape, so there was nothing to migrate and no stored ratio to
+  reinterpret. `ROUTE_MAP_VERSION` → **`tt-route-v3`** per §4.3 (an input change is a version
+  bump, never an in-place edit); recorded on cards, never 409'd, so v1/v2 cards stay readable.
+  The live QC spread is unchanged by the patch where it was already honest — NU 0.44 · GRAB
+  0.70 · SOFI 0.79 · RDDT 0.84 · AMZN 0.87 PASS, AAPL 2.64 · CAT 2.76 · HOOD 2.92 · TSLA 3.82
+  FAIL — so this removed a defect without re-verdicting a single healthy name.
+  Tests: **1843 smoke** (+6: TEM pinned as the named negative control the way ALAB is for
+  AI_G3P, both other sign holes, the UNKNOWN/FAIL asymmetry, every boundary at −ε/edge/+ε, the
+  retired `peg_fy1` input proven absent, and the measured-book spread) + 271 render + 171
+  public-render + `audit:prod` clean. Negative-controlled: restoring the ratio-only shape turns
+  exactly 4 pins red, the TEM control among them.
 - **v4.6.0 "THE RANKING BRIDGE" — the truncation footer stops deep-linking and starts acting,
   and the three mis-graded cards are corrected.** Two pieces, one session.
   **(1) The G3 ruling's payoff, banked.** With the lens work landed (`AI`→`AIP` on all twelve

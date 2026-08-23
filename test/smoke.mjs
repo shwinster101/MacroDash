@@ -4566,7 +4566,7 @@ console.log("\n[47] route registry + normalization — every boundary at -e/boun
   ok("G3 ruling: the AI lens carries an EXPLICIT NEOCLOUD profile and AIP maps to PLATFORM on the same route",
     TSREG.routeFor("AI").route === "AI_INFRA" && TSREG.routeFor("AI").profile === "NEOCLOUD" &&
     TSREG.routeFor("AIP").route === "AI_INFRA" && TSREG.routeFor("AIP").profile === "PLATFORM" &&
-    TSREG.ROUTE_MAP_VERSION === "tt-route-v2");
+    TSREG.ROUTE_MAP_VERSION === "tt-route-v3");
   /* THE TRAP: gatesFor treats `profile: null` as "every profile of this route", so a PLATFORM
      profile added WITHOUT giving AI_G3 an explicit profile would inherit the neocloud bridge
      and carry TWO premium prerequisites. Asserted in both directions so a revert goes red. */
@@ -4615,6 +4615,39 @@ console.log("\n[47] route registry + normalization — every boundary at -e/boun
     const g3n = TSREG.GATES.find((g) => g.id === "AI_G3_2028_BRIDGE");
     ok("G3 ruling control: NBIS's calibration point still PASSES the untouched neocloud bridge (3.22x / 87.3%)",
       g3n.evaluate({ ev_fy2_rev_multiple: 3.22, fy1_fy2_growth_pct: 87.3, analyst_count_fy2: 12 }) === "PASS");
+
+    /* ── QC_G3 SIGN-CANCELLATION PATCH (2026-08-23) ───────────────────────────────────
+       The gate was RATIO-ONLY (a precomputed peg_fy1) and therefore blind to the signs
+       that produced the ratio. TEM is the live negative control the way ALAB is for
+       AI_G3P: FY+1 EPS −$0.08 → fwd P/E −908.6 on −962.5% growth → PEG +0.94, which the
+       old shape PASSED as the QC premium prerequisite. A `peg <= 0` guard would not have
+       caught it, which is why the INPUT SHAPE had to change rather than a guard added. */
+    const qg = TSREG.GATES.find((g) => g.id === "QC_G3_VALUATION_PREREQ");
+    ok("QC_G3: takes P/E and growth SEPARATELY and forms the ratio inside — the precomputed " +
+       "peg_fy1 input is gone, so sign cancellation cannot reach the verdict",
+      "pe_fy1" in qg.inputs && "eps_growth_fy1_fy2_pct" in qg.inputs && !("peg_fy1" in qg.inputs));
+    ok("QC_G3 negative control — TEM (pe −908.6, g −962.5%, ratio +0.94) is UNKNOWN, never PASS",
+      qg.evaluate({ pe_fy1: -908.6, eps_growth_fy1_fy2_pct: -962.5 }) === "UNKNOWN");
+    ok("QC_G3: the other two sign holes the ratio-only shape admitted are closed",
+      qg.evaluate({ pe_fy1: 20, eps_growth_fy1_fy2_pct: -10 }) === "FAIL" &&   // was PASS (−2.0 ≤ 1.5)
+      qg.evaluate({ pe_fy1: -12, eps_growth_fy1_fy2_pct: 20 }) === "UNKNOWN"); // was PASS (−0.6)
+    ok("QC_G3: no P/E before profit is UNKNOWN (cannot-measure), while non-growth is FAIL " +
+       "(not growing into the multiple) — FAIL here is TIER_CAP A, a verdict about cheapness",
+      qg.evaluate({ pe_fy1: 0, eps_growth_fy1_fy2_pct: 30 }) === "UNKNOWN" &&
+      qg.evaluate({ pe_fy1: 20, eps_growth_fy1_fy2_pct: 0 }) === "FAIL");
+    ok("QC_G3: the 1.5 / 2.5 boundaries are unchanged and inclusive/exclusive as before",
+      qg.evaluate({ pe_fy1: 30, eps_growth_fy1_fy2_pct: 20 }) === "PASS" &&        // PEG 1.5 edge
+      qg.evaluate({ pe_fy1: 30.2, eps_growth_fy1_fy2_pct: 20 }) === "UNKNOWN" &&   // just past 1.5
+      qg.evaluate({ pe_fy1: 50, eps_growth_fy1_fy2_pct: 20 }) === "UNKNOWN" &&     // PEG 2.5 edge
+      qg.evaluate({ pe_fy1: 50.2, eps_growth_fy1_fy2_pct: 20 }) === "FAIL" &&      // just past 2.5
+      qg.evaluate({}) === "UNKNOWN");
+    /* The live QC book measured 2026-08-23 — the patch must not silently re-verdict the
+       healthy names, and must still separate the four that are genuinely expensive. */
+    ok("QC_G3: the measured QC book keeps its spread — NU/GRAB/SOFI/RDDT pass, AAPL/CAT/HOOD/TSLA fail",
+      [[13.6, 30.8], [24.9, 35.7], [23.3, 29.6], [23.5, 28.0]]
+        .every(([pe, g]) => qg.evaluate({ pe_fy1: pe, eps_growth_fy1_fy2_pct: g }) === "PASS") &&
+      [[32.5, 12.3], [30.7, 11.1], [40.0, 13.7], [166.4, 43.6]]
+        .every(([pe, g]) => qg.evaluate({ pe_fy1: pe, eps_growth_fy1_fy2_pct: g }) === "FAIL"));
     /* A route the terminal cannot express is a ruling only half-landed: admin.html rejects
        any lens absent from LENS_NAME, so AIP must be assignable AND renderable there. */
     ok("G3 ruling: AIP is assignable in the terminal (LENS_NAME whitelist) and has its own colour",

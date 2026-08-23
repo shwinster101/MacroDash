@@ -20,7 +20,7 @@
 // kickoff and ship as the owner-ratifiable defaults; changing any boundary is a registry
 // version bump + boundary tests (§4.3), never an in-place edit.
 
-export const ROUTE_MAP_VERSION = "tt-route-v2";
+export const ROUTE_MAP_VERSION = "tt-route-v3";
 
 /* §4.4, amended by the G3 RULING of 2026-08-22 (owner-directed). AI_INFRA splits into two
    PROFILES the way QUALITY_COMPOUNDER already splits STANDARD / INDUSTRIAL_CYCLICAL.
@@ -218,12 +218,39 @@ export const GATES = [
     },
   },
   {
+    /* SIGN-CANCELLATION PATCH, 2026-08-23 (owner ruling). This gate used to accept a
+       PRECOMPUTED `peg_fy1` and never see P/E or growth — so a ratio formed from two negatives
+       read as a healthy positive and PASSED the premium prerequisite for a name with no
+       earnings at all. Measured live on the book before the patch:
+
+         pe        g          peg     old verdict
+         −908.6    −962.5%    +0.94   PASS   ← TEM, FY+1 EPS −$0.08
+         +20       −10%       −2.0    PASS   (−2 <= 1.5)
+         −12       +20%       −0.6    PASS
+
+       A `peg <= 0` guard catches NONE of the first case, which is the one that was live. The
+       only fix is to stop accepting the ratio: take the two inputs separately and form it
+       inside, the AI_G3P shape. Deliberately NOT a PREPROFIT QC profile — TEM stays
+       QC/STANDARD and the gate simply refuses to grade a ratio it cannot form.
+
+       UNKNOWN (not FAIL) on non-positive P/E: FAIL here is TIER_CAP A, a verdict about
+       CHEAPNESS, and "no P/E before profit" is a cannot-measure. UNKNOWN already yields
+       floor-basis P1, which is the honest outcome. `g <= 0` IS a FAIL — shrinking or still
+       negative earnings is precisely "not growing into the multiple", matching AI_G3P's
+       growth floor.
+
+       Free to change: `peg_fy1` appeared in ZERO stored payloads and both QC score records
+       (CELH, HOOD) carried this gate's input block ABSENT, so no card depends on the old
+       shape. Boundaries 1.5 / 2.5 are unchanged and still ASSERTED, not calibrated. */
     id: "QC_G3_VALUATION_PREREQ", route: "QUALITY_COMPOUNDER", profile: "STANDARD", premium_prerequisite: true,
     effect: { kind: "TIER_CAP", tier: "A" }, cadence_days: 30,
-    inputs: { peg_fy1: "x — fwd P/E ÷ FY+1→FY+2 EPS growth" },
+    inputs: { pe_fy1: "x — fwd P/E on FY+1 EPS", eps_growth_fy1_fy2_pct: "pct — FY+1→FY+2 EPS growth" },
     evaluate(i) {
-      const peg = n(i.peg_fy1);
-      if (peg === null) return "UNKNOWN";
+      const pe = n(i.pe_fy1), g = n(i.eps_growth_fy1_fy2_pct);
+      if (pe === null || g === null) return "UNKNOWN";
+      if (pe <= 0) return "UNKNOWN";        // no P/E before profit — cannot-measure, not expensive
+      if (g <= 0) return "FAIL";            // not growing into the multiple
+      const peg = pe / g;
       if (peg > 2.5) return "FAIL";                                   // >2.5 exclusive
       if (peg <= 1.5) return "PASS";                                  // ≤1.5 inclusive
       return "UNKNOWN";
