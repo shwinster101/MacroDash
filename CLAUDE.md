@@ -2881,6 +2881,21 @@ Jan-anchor shipped; see `snapshot.js` ~318–328), `spyMa100`, `spyMa200`, and a
   VALUATION GAP ranking (§11.1 — the ranking always renders, which is the owner's actual
   "always an output" contract, and it was never suspended). Tests: 1223 smoke (+2) + 199
   render (+1).
+- **Session log 2026-08-23 (post-v4.99) — the V5 system audit.** Owner-directed: an end-to-end,
+  first-principles audit of runway months, PT rungs, next dollar and technicals against the
+  purpose (*a retail investor with a watchlist wanting the scores, the next dollars and the
+  thesis*). Lives at **`ticker-terminal/V5_SYSTEM_AUDIT_2026-08-23.md`** — findings measured
+  against live KV, not read from docs. Headlines: the **WHEN leg is dark book-wide** (36/36
+  level stamps at exactly 8d against the flat 7d window — one broker session stamped them all,
+  nothing refreshes them); the **§14.8 flip precondition is now met** (NBIS SCORED 9.17/S, the
+  G3 calibration blocker resolved by v4.5–v4.8) while the eligible line still reads legacy
+  free-text composites over 28 shadow cards; PT-rung integrity measured clean (30/30
+  basis-aware) but held by freshness coincidence, not a guard; and the three freshness gaps
+  (P3 inputs never age · frozen card targets · flat PA window) are one finding — cadence-aware
+  staleness owed to every store, the dashboard's own doctrine. Proposed v5.0 scope ranked in
+  §4: governor flip first, falsifier sprint parallel (owner), freshness unification + drift
+  lints (`RUNWAY_SPLIT`, `LABEL_DRIFT`, `TARGET_STALE`) as the guards, NVDA hinge drop before
+  8/26 as the one hard deadline.
 - **v4.99.0 — pre-v5 consolidation: the branch lands on `main`, and the two engine patches
   finally BIND.** Owner call, verbatim: *"Consolidate and push our work to main as v4.99."*
   Content is v4.8.0 (the QC_G3 absolute ceiling, `tt-route-v4`) + v4.9.0 (the `SELF_FUNDING`
