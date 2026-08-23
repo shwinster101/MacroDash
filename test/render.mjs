@@ -746,6 +746,52 @@ ok("sell: a tripped circuit makes SELL the active list",
 const buyB = await txt(page, "buyBlock");
 ok("buy: compact block carries the veto banner and the same canonical ranked rows",
   /NO NEW POSITIONS/.test(buyB) && /AAA/.test(buyB) && /13\.4%\*/.test(buyB));
+/* v4.6 THE RANKING BRIDGE — the footer used to state the truncation and deep-link to DESK
+   for the rest (the v3.72 defect: a control that reports instead of acting). The remainder
+   now opens IN PANEL. Fixture has 3 ranked / 4 unranked, so the tail path is live here; the
+   ranked-overflow path is driven at runtime below, the way the circuit tests already do. */
+ok("bridge: the +N expander is est-mini, never drawer (phone harness counts open drawers)",
+  (await page.locator("#buyBlock details.est-mini").count()) === 1 &&
+  (await page.locator("#buyBlock details.drawer").count()) === 0);
+ok("bridge: the COUNT rides the closed summary — silent truncation cannot read as full coverage",
+  /\*1 more reviewed/.test(buyB));
+ok("bridge: the old DESK deep-link for NAMES is gone; only the methodology link remains",
+  !/full math, horizons/.test(buyB) && /caveats, lints & horizon pin/.test(buyB));
+{
+  const closed = await page.locator("#buyBlock").innerText();
+  await page.locator("#buyBlock details.est-mini > summary").click();
+  const opened = await page.locator("#buyBlock").innerText();
+  const hidden = await page.evaluate(() => UNRANKED_ROWS.slice(3).map(r => r.sym));
+  ok("bridge: the overflow name is absent while closed and present one tap deep",
+    hidden.length === 1 && !closed.includes(hidden[0]) && opened.includes(hidden[0]));
+  /* The invariant is "no horizontal overflow at the ACTIVE width" — this block runs at the
+     1200px desktop viewport, so pinning a literal 390 would have measured nothing. */
+  ok("bridge: expanding adds no horizontal overflow at the active viewport width",
+    await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth));
+}
+/* Ranked overflow: inject two synthetic rows so UPSIDE_ROWS exceeds the visible 5, then
+   assert the expander continues the SAME order with correct rank numbers — the rows in the
+   expander must be rank 6 and 7, not a restarted list. */
+{
+  const rk = await page.evaluate(() => {
+    const base = UPSIDE_ROWS[0];
+    const keep = UPSIDE_ROWS.slice();
+    while (UPSIDE_ROWS.length < 7)
+      UPSIDE_ROWS.push({ ...base, sym: "ZZ" + UPSIDE_ROWS.length, ann: -90 - UPSIDE_ROWS.length, upside: -90 });
+    renderBuyBlock();
+    const el = document.getElementById("buyBlock");
+    const sum = el.querySelector("details.est-mini > summary").innerText;
+    el.querySelector("details.est-mini").open = true;
+    const openTxt = el.innerText;
+    const visibleRows = el.querySelectorAll(":scope > button.fdr-row").length;
+    UPSIDE_ROWS.length = 0; UPSIDE_ROWS.push(...keep); renderBuyBlock();
+    return { sum, openTxt, visibleRows };
+  });
+  ok("bridge: with 7 ranked the summary counts the 2 hidden, and only 5 render by default",
+    /\+2 more ranked/.test(rk.sum) && rk.visibleRows <= 5 + 3);
+  ok("bridge: expander continues the SAME order — ranks #6 and #7, never a restarted list",
+    /#6/.test(rk.openTxt) && /#7/.test(rk.openTxt) && rk.openTxt.includes("ZZ5") && rk.openTxt.includes("ZZ6"));
+}
 const calB = await txt(page, "calBlock");
 ok("calendar block leads with today's binary", /TODAY/.test(calB) && /MACROEVT/.test(calB));
 // FEAT-TT-CIRCUIT (v4.1 Step 1): the fail-closed path, driven live. Clearing the structured

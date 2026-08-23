@@ -9,7 +9,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
 <!-- AUDIT: kept in sync with package.json by test/smoke.mjs. admin.html is a Vite
      public/ passthrough, so it cannot receive __APP_VERSION__ — the guard is the fix. -->
-<title>TT TICKER TERMINAL v4.5.0</title>
+<title>TT TICKER TERMINAL v4.6.0</title>
 <style>
   :root{
     --bg:#05070a; --panel:#0a0f16; --panel2:#0d141d; --line:#16202c;
@@ -458,7 +458,7 @@
          verdict and every gate are computed upstream and this panel changes nothing. -->
     <div id="macroEvidence" role="region" aria-label="Why macro — readout evidence"></div>
     <div id="headInfo" style="display:none">
-      <div class="brand">FINANCE&nbsp;BRO.AI // TT&nbsp;TICKER&nbsp;TERMINAL <small>v4.5.0 · underwriting + sourced gates</small></div>
+      <div class="brand">FINANCE&nbsp;BRO.AI // TT&nbsp;TICKER&nbsp;TERMINAL <small>v4.6.0 · underwriting + sourced gates</small></div>
       <div class="statusline">
         <span>BOOK: <b id="bookStamp">loading…</b></span>
         <span>AUTH: <b id="sessState">…</b></span>
@@ -1941,7 +1941,7 @@ function render(){
    strings are HTML-escaped (paste-imported JSON must never inject markup). */
 let TAB=(location.hash||"").replace("#","").toUpperCase()||"BOARD";
 const DD_STATES=["green","amber","red","unknown"];
-/* Per-payload cap, raised 8KB->15KB (v3.63), 45KB (v3.70), 100KB (v4.5.0 — owner call
+/* Per-payload cap, raised 8KB->15KB (v3.63), 45KB (v3.70), 100KB (v4.6.0 — owner call
    2026-08-22: "raise server cap to 100,000", expressed in the KB idiom and rounded UP so
    nothing the owner sized for is rejected; trigger: NBIS frozen at 47,635 bytes, the book's
    #1 name unable to save its own re-scored composite).
@@ -5863,18 +5863,35 @@ function renderBuyBlock(){
     ?`<div class="skel-row"></div><div class="skel-row"></div><div class="skel-row"></div>`
     :UNRANKED_ROWS.length?`<div class="none">nothing priced on %/yr yet — the reviewed names below are ranked on TT composite instead</div>`
     :`<div class="none">nothing modelled+priced yet — nothing to rank</div>`;
+  /* ONE row template per basis, so the default top-5 and the +N-more expander below cannot
+     drift apart — the ptModelRows rule applied to markup. `i` is the row's position in the
+     SAME UPSIDE_ROWS order at both altitudes, so rank 6 in the expander really is rank 6. */
   const MEDAL=["🥇","🥈","🥉","4","5"];
-  rows.forEach((r,i)=>{
+  const cats=rankCategories(UPSIDE_ROWS);
+  /* v4.6: rankCategories() has run for SHARE RANKS since v3.56 and never painted on screen.
+     Chip-length per-axis position — the "complete ranking" read without 40 rows. Rendered
+     only where the axis has more than one ranked member: "#1 of 1" is noise, not a rank. */
+  const catChip=(r)=>{
+    const bits=[];
+    const t=cats.tier[r.tier], l=cats.lens[r.lens];
+    if(t&&t.n>1&&t.map.has(r.sym))bits.push(`${esc(r.tier)} #${t.map.get(r.sym)}`);
+    if(l&&l.n>1&&l.map.has(r.sym))bits.push(`${esc(r.lens)} #${l.map.get(r.sym)}`);
+    const c=cats.overall.composite;
+    if(c&&c.map.has(r.sym))bits.push(`TT #${c.map.get(r.sym)}`);
+    return bits.length?`<span class="scope" style="opacity:.75">${bits.join(" · ")}</span>`:"";
+  };
+  const rankedRow=(r,i)=>{
     const w=r.wt;
     const wTxt=w.optOnly&&w.w===null?`<span class="scope" style="color:var(--amber)">◇ opt-only</span>`
       :w.w===null?(w.held?`<span class="scope">held · unmeasured</span>`:`<span class="scope" style="color:var(--green)">new — not held</span>`)
       :`<span style="color:${w.w>=CAP_PCT?"var(--red)":w.w>=10?"var(--amber)":"var(--slate)"};font-size:10px;font-weight:700">${w.w}%${esc(w.mark)}</span>`;
-    h+=`<button class="fdr-row" onclick="openCard('${esc(r.sym)}')">`+
-      `<span class="fdr-l"><span>${MEDAL[i]}</span>`+
+    return `<button class="fdr-row" onclick="openCard('${esc(r.sym)}')">`+
+      `<span class="fdr-l"><span>${MEDAL[i]||"#"+(i+1)}</span>`+
       `<span class="sym">${esc(r.sym)}</span><span class="lens lens-${esc(r.lens)}">${esc(r.lens)}</span>`+
       `<span class="scope">${esc(r.tier)}</span>${wTxt}</span>`+
       `<span class="fdr-p" style="color:${r.upside>=0?"var(--green)":"var(--red)"}">${r.ann!==null?`${r.ann>=0?"+":""}${r.ann}%/yr`:`${r.upside>=0?"+":""}${r.upside}%`}</span>`+
       `<span class="fdr-d"><span class="scope">${r.basket?"basket avg — see MAG 7 tab":`$${esc(r.tgt)} by ${esc(r.y)} · ${esc(r.basis)}`}</span>`+
+      catChip(r)+
       ((r.pxAge===null||r.pxAge>PX_STALE_D)?`<span class="bad2">⚠ px ${r.pxAge===null?"undated":r.pxAge+"d"}</span>`:"")+
       (r.wt.w!==null&&r.wt.w>=CAP_PCT?`<span class="bad2">no room</span>`:"")+
       /* v3.76: the payload's OWN caveat (pt_model.note) reached only the DESK list, so the two
@@ -5885,28 +5902,53 @@ function renderBuyBlock(){
       (r.caveat?`<span class="warn2" title="${esc(r.caveat)}">⚠ model note</span>`:"")+
       (r.redH?`<span class="bad2">● ${r.redH} red</span>`:"")+
       (r.rolled?`<span class="warn2">↷ ${esc(r.rolled)}→${esc(r.y)}</span>`:"")+`</span></button>`;
-  });
+  };
+  const tailRow=(r)=>`<button class="fdr-row" onclick="openCard('${esc(r.sym)}')">`+
+    `<span class="fdr-l"><span style="color:var(--amber);font-weight:700">*</span>`+
+    `<span class="sym">${esc(r.sym)}</span><span class="lens lens-${esc(r.lens)}">${esc(r.lens)}</span>`+
+    `<span class="scope">${esc(r.tier)}</span></span>`+
+    `<span class="fdr-p" style="color:var(--amber)">${r.tt&&r.tt.score!=null?"TT "+r.tt.score.toFixed(1):r.tt?"TT "+esc(r.tt.tier):"TT —"}</span>`+
+    `<span class="fdr-d"><span class="scope">${esc(r.why)}</span>`+
+    (r.redH?`<span class="bad2">● ${r.redH} red</span>`:"")+
+    (r.rs.k==="never"?`<span class="bad2">○ never run</span>`:"")+`</span></button>`;
+  rows.forEach((r,i)=>{h+=rankedRow(r,i);});
   /* FEAT-TT-ALLREVIEWED (v3.76): the reviewed names the math cannot price still reach the
      PRIMARY view — the owner's rule that every TT review factors into the next dollar, if
      only with an asterisk. Same UNRANKED_ROWS the DESK list renders (one computation), top 3
      by TT composite, each carrying the specific missing input. Deliberately BELOW the ranked
      rows and visually marked `*`: it is a different basis, not a continuation of the order. */
   if(UNRANKED_ROWS.length){
-    const tail=UNRANKED_ROWS.slice(0,3);
     h+=`<div class="none" style="margin-top:6px;color:var(--amber)">* reviewed · no %/yr yet — ranked on TT composite</div>`;
-    tail.forEach(r=>{
-      h+=`<button class="fdr-row" onclick="openCard('${esc(r.sym)}')">`+
-        `<span class="fdr-l"><span style="color:var(--amber);font-weight:700">*</span>`+
-        `<span class="sym">${esc(r.sym)}</span><span class="lens lens-${esc(r.lens)}">${esc(r.lens)}</span>`+
-        `<span class="scope">${esc(r.tier)}</span></span>`+
-        `<span class="fdr-p" style="color:var(--amber)">${r.tt&&r.tt.score!=null?"TT "+r.tt.score.toFixed(1):r.tt?"TT "+esc(r.tt.tier):"TT —"}</span>`+
-        `<span class="fdr-d"><span class="scope">${esc(r.why)}</span>`+
-        (r.redH?`<span class="bad2">● ${r.redH} red</span>`:"")+
-        (r.rs.k==="never"?`<span class="bad2">○ never run</span>`:"")+`</span></button>`;
-    });
-    if(UNRANKED_ROWS.length>3)h+=`<div class="none"><button class="linklike" onclick="openDesk('dNext')">+${UNRANKED_ROWS.length-3} more reviewed-but-unpriced ↗</button></div>`;
+    UNRANKED_ROWS.slice(0,3).forEach(r=>{h+=tailRow(r);});
   }
-  h+=`<div class="none"><button class="linklike" onclick="openDesk('dNext')">full math, horizons &amp; caveats ↗</button> · ${UPSIDE_ROWS.length} ranked of ${BOOK.length}`+
+  /* v4.6 THE RANKING BRIDGE. The footer used to admit the truncation and then DEEP-LINK to
+     DESK for the rest — the v3.72 defect exactly: a control that states a fact and makes you
+     navigate to act on it. The remaining names now open IN PANEL, same templates, same sort,
+     no second derivation (the expander reads the same UPSIDE_ROWS/UNRANKED_ROWS arrays the
+     rows above it read, sliced further along).
+
+     est-mini, NEVER `drawer` — the phone harness counts open drawers (the FEAT-TT-ESTRUN
+     precedent). The eligible line + top-5 stay the default glance and the closed state IS the
+     next-dollar focus; the COUNT rides the summary so silent truncation cannot read as full
+     coverage (v3.65/v3.76). `caveats ↗` survives as a link into DESK because METHODOLOGY
+     belongs there — names do not. Deliberately NOT a fourth deck page: MAG 7 earned a page by
+     being a different question; this is the same question uncut, and a BOOK/ALL tab would
+     compete with the default view and re-create the six-screens regression v3.38 removed.
+     sizeDecisionDeck's MutationObserver remeasures on expand, so the panel grows to the
+     budget and then scrolls inside itself. */
+  const moreRanked=Math.max(0,UPSIDE_ROWS.length-rows.length);
+  const moreTail=Math.max(0,UNRANKED_ROWS.length-3);
+  if(moreRanked||moreTail){
+    const bits=[];
+    if(moreRanked)bits.push(`+${moreRanked} more ranked`);
+    if(moreTail)bits.push(`*${moreTail} more reviewed`);
+    h+=`<details class="est-mini"><summary>${bits.join(" · ")}</summary>`+
+      UPSIDE_ROWS.slice(rows.length).map((r,i)=>rankedRow(r,rows.length+i)).join("")+
+      (moreTail?`<div class="none" style="margin-top:6px;color:var(--amber)">* reviewed · no %/yr yet — ranked on TT composite</div>`+
+        UNRANKED_ROWS.slice(3).map(tailRow).join(""):"")+
+      `</details>`;
+  }
+  h+=`<div class="none"><button class="linklike" onclick="openDesk('dNext')">caveats, lints &amp; horizon pin ↗</button> · ${UPSIDE_ROWS.length} ranked of ${BOOK.length}`+
     (UNRANKED_ROWS.length?` · ${UNRANKED_ROWS.length} reviewed but unpriced`:"")+`</div>`;
   el.innerHTML=h;
 }

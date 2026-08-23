@@ -2881,6 +2881,54 @@ Jan-anchor shipped; see `snapshot.js` ~318–328), `spyMa100`, `spyMa200`, and a
   VALUATION GAP ranking (§11.1 — the ranking always renders, which is the owner's actual
   "always an output" contract, and it was never suspended). Tests: 1223 smoke (+2) + 199
   render (+1).
+- **v4.6.0 "THE RANKING BRIDGE" — the truncation footer stops deep-linking and starts acting,
+  and the three mis-graded cards are corrected.** Two pieces, one session.
+  **(1) The G3 ruling's payoff, banked.** With the lens work landed (`AI`→`AIP` on all twelve
+  earnings-lens AI names, `MU`→`IND` — see below), LITE/CRDO/MRVL were re-scored under
+  `AI_G3P_EARNINGS_BRIDGE`. All three PASS it, and the correction is exactly what the ruling
+  predicted: **LITE 5.50/B → 7.03/A**, `basis_used` FLOOR → **PREMIUM**, target **$495 → $1,089**
+  (its own street-calibrated ladder), P1 0 → 6.11. CRDO P1 0.78 → 7.37 ($164 → $328) and MRVL
+  0 → 3.80 ($93.75 → $250); both stay UNSCORABLE but now for the RIGHT reasons (falsifier
+  bootstrap + an unsourced `capital_efficiency`), not a revenue multiple. `cap_source:
+  AI_G3_2028_BRIDGE` appears on none of them. Found while doing it: a bare re-PUT would have
+  scored UNKNOWN — the stored `route_gates` carried the NEOCLOUD gate's inputs and the PLATFORM
+  gate's fields did not exist yet, which is abstention *for want of fields, not evidence*. The
+  new inputs are computed with formulas stated; the old `AI_G3` block is **retained and labelled
+  RETAINED FOR AUDIT, NOT EVALUATED** rather than deleted, so the card records what the
+  superseded gate measured. **MU → IND, not AIP** (owner call, taken against the mechanical
+  rule): its own basis reads *"THE TROUGH IS THE ANCHOR, NOT FY+1"* with `floor_only_before
+  2028`, and G3P's PEG assumes smooth FY+1→FY+2 growth — wrong across a cyclical trough.
+  `INDC_G4_VALUATION_NORM` asks the right question instead (premium on a documented normalized
+  basis), and its own registry comment already named MU as its motivating case.
+  **(2) The bridge itself.** `renderBuyBlock`'s footer read *"full math, horizons & caveats ↗ ·
+  15 ranked of 50"* — it ADMITTED the truncation and then sent you to DESK, the v3.72 defect
+  (a control that reports a fact instead of acting on it) applied to the primary view. The
+  remainder now opens **in panel**: a closed `details.est-mini` whose summary carries
+  `+N more ranked · *M more reviewed`, expanding to the rest of `UPSIDE_ROWS` followed by the
+  rest of `UNRANKED_ROWS`. **est-mini, never `drawer`** (the phone harness counts open drawers —
+  the FEAT-TT-ESTRUN precedent). The eligible line + top-5 stay the default glance, so the
+  CLOSED state is the next-dollar focus; the count on the summary keeps silent truncation from
+  reading as full coverage (v3.65/v3.76); `caveats, lints & horizon pin ↗` survives as a DESK
+  link because **methodology belongs there and names do not**. Both row templates were inline
+  duplicates and are now **defined once** (`rankedRow`/`tailRow`) and reused at both altitudes —
+  the `ptModelRows` rule applied to markup, so rank 6 in the expander is the same row shape and
+  the same sort as rank 5 above it, never a restarted list. **Deliberately NOT a fourth deck
+  page**: MAG 7 earned a page by being a different QUESTION (the seven + MAGS); this is the same
+  question uncut, and a BOOK/ALL tab would compete with the default view and re-create the
+  six-phone-screens regression v3.38 spent a release killing — `DECK_PAGES` is pinned untouched.
+  **`rankCategories()` finally paints**: it has computed per-axis dense ranks for SHARE RANKS
+  since v3.56 and never rendered on screen; each row now carries chip-length `TIER #n · LENS #n ·
+  TT #n`, suppressed where an axis has one member ("#1 of 1" is noise, not a rank). That is the
+  complete-ranking read without forty rows.
+  Found by the new render assertion, and it was the ASSERTION that was wrong: the first cut
+  pinned `scrollWidth <= 390` in a block that runs at the **1200px** desktop viewport, so it
+  measured nothing and failed on a correct page. Re-pinned on the real invariant
+  (`scrollWidth <= window.innerWidth`), which holds at whatever width is active.
+  Tests: **1837 smoke** (+7: one-template-per-basis, est-mini-never-drawer, the no-second-
+  derivation sweep, the count-on-summary rule, the retired deep-link, DECK_PAGES still 3, and
+  the rankCategories reuse) + **271 render** (+7: the expander driven live — closed-state
+  absence then one-tap presence, and a runtime 7-row injection proving the expander continues
+  the same order at #6/#7 rather than restarting) + 171 public-render + `audit:prod` clean.
 - **v4.5.0 "THE G3 RULING" — AI_INFRA splits NEOCLOUD / PLATFORM, and the profile trap that
   would have silently undone it.** Owner call after the 8/22 engine run surfaced the finding:
   *scoring the earnings names under the current gate would mint dated, wrong cards — worse

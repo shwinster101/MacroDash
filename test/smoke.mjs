@@ -5682,6 +5682,37 @@ console.log("\n[51] FEAT-TT-ALLREVIEWED — the reviewed-but-unpriced ranking");
     /if\(!rows\.length\)\{[\s\S]{0,900}?unrankedHtml\(\)\+netCashAuditHtml\(\);\s*\n\s*return;/.test(adminSrc));
   ok("allreviewed: the BUY block stops claiming 'nothing to rank' when reviewed names are present",
     adminSrc.includes("the reviewed names below are ranked on TT composite instead"));
+
+  /* ── v4.6 THE RANKING BRIDGE — the remainder opens IN PANEL, not via a DESK deep-link ── */
+  {
+    const buy = (adminSrc.match(/function renderBuyBlock\(\)\{[\s\S]*?\n\}/) || [""])[0];
+    ok("bridge: ONE row template per basis, defined once and reused by the top-5 AND the " +
+       "expander — the ptModelRows rule applied to markup, so the two altitudes cannot drift",
+      (buy.match(/const rankedRow=/g) || []).length === 1 &&
+      (buy.match(/const tailRow=/g) || []).length === 1 &&
+      /rows\.forEach\(\(r,i\)=>\{h\+=rankedRow\(r,i\);\}\)/.test(buy) &&
+      /UPSIDE_ROWS\.slice\(rows\.length\)\.map\(\(r,i\)=>rankedRow\(r,rows\.length\+i\)\)/.test(buy));
+    ok("bridge: the expander is est-mini and NEVER drawer — the phone harness counts open drawers",
+      /<details class="est-mini"><summary>\$\{bits\.join/.test(buy) && !/class="drawer"/.test(buy));
+    ok("bridge: NO second derivation — the expander slices the same module arrays the rows above " +
+       "it read, and never calls the rank computations itself",
+      !/ptModelRows\(/.test(buy) && !/pickRow\(/.test(buy) && !/sellRank\(/.test(buy) &&
+      /UPSIDE_ROWS\.slice\(rows\.length\)/.test(buy) && /UNRANKED_ROWS\.slice\(3\)/.test(buy));
+    ok("bridge: the count rides the SUMMARY (closed), so silent truncation cannot read as full coverage",
+      /\+\$\{moreRanked\} more ranked/.test(buy) && /\*\$\{moreTail\} more reviewed/.test(buy));
+    ok("bridge: the names deep-link is RETIRED; DESK keeps methodology only (names do not live there)",
+      !/full math, horizons/.test(adminSrc) && /caveats, lints &amp; horizon pin/.test(buy));
+    /* Deliberately NOT a fourth deck page: MAG 7 earned a page by being a different question
+       (the seven + MAGS); this is the same question uncut, and a BOOK/ALL tab would compete
+       with the default view and re-create the six-screens regression v3.38 removed. */
+    ok("bridge: DECK_PAGES is untouched — the bridge is an altitude fix, not a fourth swipe",
+      /const DECK_PAGES=\[/.test(adminSrc) &&
+      (adminSrc.match(/const DECK_PAGES=\[[^\]]*\]/) || [""])[0].split(",").length === 3);
+    ok("bridge: rankCategories() finally PAINTS — the per-axis chips reuse the SHARE RANKS " +
+       "computation rather than a second one, and a single-member axis renders no rank",
+      /const cats=rankCategories\(UPSIDE_ROWS\)/.test(buy) && /const catChip=/.test(buy) &&
+      /t\.n>1/.test(buy) && /l\.n>1/.test(buy) && /catChip\(r\)/.test(buy));
+  }
   ok("allreviewed: the tail states that it is a DIFFERENT basis and that the two are never merged",
     adminSrc.includes("borrowing one would be a units error") &&
     adminSrc.includes("NOT excluded from the next dollar"));
