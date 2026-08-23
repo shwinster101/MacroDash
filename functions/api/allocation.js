@@ -5,7 +5,7 @@
 // functions/lib/tt-alloc.js (Node-importable, smoke-run); this file is transport + storage.
 //
 // AUTHORITY: the browser never submits a client-computed eligible set — every input is
-// loaded server-side (book+board, tt:pos:v1, tt:dd:index:v1, tt:quote:*, /readout.json).
+// loaded server-side (book+board, tt:pos:v1, tt:dd:index:v1, the quote batch (lib/quote-cache.js), /readout.json).
 // RECOMMENDATION-ONLY: confirmation persists INTENT, never places an order; no broker API
 // is referenced anywhere in this repo (smoke pins the absence).
 //
@@ -40,7 +40,9 @@
 import { authorize, crossOrigin } from "./tt.js";
 import { sha256Hex } from "../lib/tt-v2.js";
 import { evaluateAllocation, ALLOC_RULE_VERSION, circuitState } from "../lib/tt-alloc.js";
+import { readQuoteBatch, freshEntry } from "../lib/quote-cache.js";
 import { etYmd } from "../../src/sources.js";
+import { METHODOLOGY_VERSION } from "../../src/ttScore.js";
 
 const CUR_KEY = "tt:alloc:v1";
 const HIST_PREFIX = "tt:alloc:history:";
@@ -49,7 +51,7 @@ const INTENT_TTL = 450 * 24 * 3600;          // the decision-journal retention (
 const BOOK_KEY = "tt:book:v1";
 const POS_KEY = "tt:pos:v1";
 const DD_INDEX = "tt:dd:index:v1";
-const QUOTE_PREFIX = "tt:quote:";
+const SCORE_INDEX_KEY = "tt:score:index:v1";   // v5.0 §14.8 activation — the quality source
 /* Deliberately 64KB like positions.js, NOT the book's 300KB: a confirm body carries one
    intent and one hash; an evaluate body carries nothing at all. Anything larger is a
    malformed caller, not a legitimate request. */
@@ -81,12 +83,15 @@ async function sourceReadout(request, devFallback, env) {
 }
 
 async function loadQuotes(env, syms) {
+  // v5.0.0 (W0): ONE batch read replaces the bounded per-symbol fan-out. freshEntry keeps
+  // the 2-minute freshness contract on each entry's own stamp — a lingering old entry in
+  // a refreshed batch key must never reach a receipt as a live price.
   const out = {};
-  // Bounded fan-out, batch of 6 — the same shape the ledger's px stamp reads.
-  for (let i = 0; i < syms.length; i += 6) {
-    const batch = syms.slice(i, i + 6);
-    const got = await Promise.all(batch.map((s) => kvGet(env, QUOTE_PREFIX + s)));
-    got.forEach((q, j) => { if (q && isFinite(q.px)) out[batch[j]] = q; });
+  const batch = await readQuoteBatch(env);
+  const now = Date.now();
+  for (const s of syms) {
+    const q = freshEntry(batch.quotes[s], now);
+    if (q) out[s] = q;
   }
   return out;
 }
@@ -102,14 +107,18 @@ function basisOf(result) {
 }
 
 async function evaluate(env, request, devReadout) {
-  const [book, posDoc, ddIndex] = await Promise.all([
-    kvGet(env, BOOK_KEY), kvGet(env, POS_KEY), kvGet(env, DD_INDEX)]);
+  const [book, posDoc, ddIndex, scoreIdxDoc] = await Promise.all([
+    kvGet(env, BOOK_KEY), kvGet(env, POS_KEY), kvGet(env, DD_INDEX), kvGet(env, SCORE_INDEX_KEY)]);
   if (!book || !Array.isArray(book.book)) return { error: json({ error: "no book found — nothing to allocate against" }, 409) };
   const readout = await sourceReadout(request, devReadout, env);
   const syms = book.book.map((e) => e.sym);
   const quotes = await loadQuotes(env, syms);
   const now = new Date();
-  const result = evaluateAllocation({ book, ddIndex, posDoc, quotes, readout, now });
+  // v5.0 §14.8 ACTIVATION: the score index rides in with the CURRENT engine version, so
+  // the evaluator stamps methodology_current per card and eligibility can never rest on a
+  // card minted by a retired engine (the relabel the book=1 path was missing, closed here).
+  const result = evaluateAllocation({ book, ddIndex, posDoc, quotes, readout, now,
+    scoreIndex: (scoreIdxDoc && scoreIdxDoc.entries) || null, methodologyVersion: METHODOLOGY_VERSION });
   /* v4.1 Step 6: readout_as_of is a DAY key, so basis_hash alone froze the entire macro axis
      intraday — a readout that rebuilt (actionability moved, flip tripped) between evaluate and
      confirm passed the basis check. The receipt now records the hash of the readout BODY it

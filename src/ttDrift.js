@@ -111,10 +111,10 @@ function staleHinges(dd, _now) {
     .map((h) => ({ ...h, gap: h.asOf ? dayGap(h.asOf, cap) : null }));
 }
 
-/* The composite is a HARD eligibility gate (>=B), so it is the one asserted number whose
-   staleness has a mechanical consequence. Two independent flags: evidence moved after the
-   score, and plain age. Both warn; neither re-grades — detecting drift is automatable,
-   scoring judgment is not. */
+/* The legacy composite gated the eligible line (>=B) until §14.8 activation (v5.0); it is
+   HISTORY now — the server card governs — but a stale historical judgment still misleads a
+   reader, so the lint survives with its claim corrected. Two independent flags: evidence
+   moved after the score, and plain age. Both warn; neither re-grades. */
 function compositeDrift(dd, _now) {
   const comp = (dd && dd.composite) || {};
   if (comp.score == null) return null;
@@ -130,7 +130,59 @@ function compositeDrift(dd, _now) {
   return { scored, newestHinge, age, moved: !!moved };
 }
 
-function lintDrift(dd, rowYears, _now) {
+/* ═══ v5.0 (W2/W3) — three more instances of the same pattern, each caught BY HAND first ═══
+   TARGET_STALE: the score card freezes P1's target at computed_at while the board ranks on
+   the live rung; on 2026-08-23 all 30 cards agreed with a fresh ptModelRows run ONLY because
+   everything had been scored that day at live quotes — freshness coincidence, not a guard.
+   The stated rule this lint enforces: the receipt governs eligibility AT ITS STAMPED BASIS,
+   the live ladder governs ranking, and a gap past TARGET_DRIFT_PCT is NAMED with both
+   numbers. RUNWAY_SPLIT: the same runway fact lives in P3 and PH_G2 per card, and an
+   intra-session split (ACHR, 21.9 vs 24 — two derivations of one fact) was caught only by a
+   human re-reading the card. Mode-aware: a PROFITABLE-mode P3 has no runway field (the SYM
+   shape) and SELF_FUNDING matches only itself. LABEL_DRIFT: GEV's pt_model.basis read
+   "Floor only … No premium multiple asserted" for a DAY beside the premium the v4.2 seed
+   had added — the label-outlives-its-data defect INSIDE stored data, second instance that
+   week (CRWV's net-debt note was the first). All three sev:warn like the rest of the family. */
+const TARGET_DRIFT_PCT = 5;
+function targetDrift(card, rows) {
+  const p1 = card && card.pillars && card.pillars.owner_valuation;
+  if (!p1 || typeof p1.target !== "number" || !p1.target_year) return null;
+  const row = asArr(rows).find((r) => r && String(r.y) === String(p1.target_year));
+  const fresh = row ? (p1.basis_used === "FLOOR"
+    ? (typeof row.fl === "number" ? row.fl : null)
+    : (typeof row.prem === "number" ? row.prem : (typeof row.fl === "number" ? row.fl : null))) : null;
+  if (fresh === null) return { gone: true, y: String(p1.target_year), card_target: p1.target };
+  const pct = Math.abs(fresh / p1.target - 1) * 100;
+  if (pct <= TARGET_DRIFT_PCT) return null;
+  return { gone: false, card_target: p1.target, fresh, y: String(p1.target_year),
+    pct: Math.round(pct * 10) / 10, basis: p1.basis_used || null };
+}
+function runwaySplit(ui) {
+  const p3 = ui && ui.economic_quality && ui.economic_quality.runway_months;
+  const g2 = ui && ui.route_gates && ui.route_gates.PH_G2_RUNWAY;
+  if (!p3 || !g2 || !("runway_months" in g2)) return null;   // mode-aware: PROFITABLE P3 has no runway
+  const a = p3.value, b = g2.runway_months;
+  const num = (v) => typeof v === "number" && isFinite(v);
+  if (num(a) && num(b) && a !== b) return { a, b, kind: "numeric" };
+  const sf = (v) => v === "SELF_FUNDING";
+  if ((sf(a) && num(b)) || (num(a) && sf(b)))
+    return { a, b, kind: "sentinel" };                       // a generator with a numeric burn is a contradiction
+  return null;
+}
+function labelDrift(dd) {
+  const m = (dd && dd.pt_model) || {};
+  const premiumPresent = m.pe_premium_multiple != null || m.ev_s_multiple != null;
+  if (!premiumPresent) return null;
+  const text = String(m.basis || "") + " " + String(m.note || "");
+  if (/no premium multiple|no premium asserted/i.test(text))
+    return { phrase: "no premium multiple", fob: !!m.floor_only_before };
+  // "floor only" beside a premium is legitimate exactly when floor_only_before scopes it.
+  if (/floor[- ]only/i.test(text) && !m.floor_only_before)
+    return { phrase: "floor only", fob: false };
+  return null;
+}
+
+function lintDrift(dd, rowYears, _now, ctx) {
   const out = [];
   for (const t of thinCoverage(dd, rowYears))
     out.push({ sev: "warn", code: "THIN_COVERAGE",
@@ -141,13 +193,31 @@ function lintDrift(dd, rowYears, _now) {
       msg: `hinge "${h.label}" is UNKNOWN and dated ${h.asOf || "never"}, but this payload was captured ${h.cap}` +
         (h.gap ? ` — ${h.gap} day${h.gap === 1 ? "" : "s"} later` : "") +
         `. It may already be answered by data now in the payload (the META case). Re-read before sourcing.` });
+  if (ctx && ctx.card) {
+    const td = targetDrift(ctx.card, ctx.rows);
+    if (td) out.push({ sev: "warn", code: "TARGET_STALE",
+      msg: td.gone
+        ? `the score card's target ($${td.card_target} at YE${td.y}) no longer has a rung — the model moved from under the receipt; re-score`
+        : `the score card froze $${td.card_target} (${td.basis || "?"}, YE${td.y}) but the live ladder now computes $${td.fresh} — ${td.pct}% apart (>${TARGET_DRIFT_PCT}%). The receipt governs eligibility at its stamped basis; the ladder governs ranking; re-score to close the gap.` });
+  }
+  if (ctx && ctx.ui) {
+    const rw = runwaySplit(ctx.ui);
+    if (rw) out.push({ sev: "warn", code: "RUNWAY_SPLIT",
+      msg: rw.kind === "numeric"
+        ? `runway is stored twice and the copies disagree — P3 says ${rw.a} months, PH_G2 says ${rw.b}. One fact, two derivations (the ACHR 21.9-vs-24 case); reconcile to the better-sourced basis.`
+        : `runway contradiction — one home says SELF_FUNDING while the other carries a numeric burn (${rw.kind === "sentinel" ? `${rw.a} vs ${rw.b}` : ""}). A cash generator and a burn-down cannot both be true.` });
+  }
+  const ld = labelDrift(dd);
+  if (ld) out.push({ sev: "warn", code: "LABEL_DRIFT",
+    msg: `pt_model prose claims "${ld.phrase}" while a premium multiple is stored — the label outlived its data (the GEV case). Rewrite basis/note to describe the model that exists${ld.phrase === "floor only" ? ", or scope it with floor_only_before" : ""}.` });
   const cd = compositeDrift(dd, _now);
   if (cd) out.push({ sev: "warn", code: "COMPOSITE_STALE",
     msg: cd.scored === null ? cd.reason
-      : (cd.moved ? `composite scored ${cd.scored} but hinge evidence moved to ${cd.newestHinge} — it gates the eligible line (>=B) on judgment older than its own evidence`
-                  : `composite scored ${cd.scored}, ${cd.age}d old (>${COMPOSITE_MAX_D}d) — it gates the eligible line (>=B)`) });
+      : (cd.moved ? `legacy composite scored ${cd.scored} but hinge evidence moved to ${cd.newestHinge} — historical since §14.8, yet a judgment older than its own evidence still misleads`
+                  : `legacy composite scored ${cd.scored}, ${cd.age}d old (>${COMPOSITE_MAX_D}d) — historical since §14.8; refresh or retire it`) });
   return out;
 }
 
 export { lintDrift, thinCoverage, staleHinges, compositeDrift, captureDates, newestCapture,
-  THIN_MIN, COMPOSITE_MAX_D };
+  targetDrift, runwaySplit, labelDrift,
+  THIN_MIN, COMPOSITE_MAX_D, TARGET_DRIFT_PCT };

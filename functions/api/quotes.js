@@ -12,10 +12,15 @@
 // AUTH: same gate as /api/tt (shared authorize()), so the owner's Finnhub quota cannot be
 // spent by anonymous callers. Prices are not secret; the quota is the thing being guarded.
 import { authorize } from "./tt.js";
+// v5.0.0 (W0): the per-symbol `tt:quote:<SYM>` keys are RETIRED — one board refresh was
+// ~40 writes + ~40 TTL expirations, which is how the KV free-tier delete cap blew on
+// 2026-08-23. One merge-on-write batch key now carries the whole cache; the 2-minute
+// freshness contract is unchanged and lives on each entry's own `at` (see quote-cache.js).
+import { readQuoteBatch, writeQuoteBatch, freshEntry, QUOTE_TTL_S } from "../lib/quote-cache.js";
 
-const CACHE_PREFIX = "tt:quote:";
-const CACHE_TTL = 120;      // seconds — Finnhub free tier is 60 calls/min; a 2-min cache
-const MAX_SYMS = 40;        // keeps one board refresh well inside that budget
+// Freshness window = QUOTE_TTL_S (quote-cache.js, the one home) — Finnhub free tier is
+// 60 calls/min; the 2-min window keeps one board refresh well inside that budget.
+const MAX_SYMS = 40;
 const SYM_RE = /^[A-Z.\-]{1,8}$/;
 
 const json = (body, status = 200) =>
@@ -70,30 +75,32 @@ export async function onRequestGet({ request, env }) {
   const quotes = {};
   const misses = [];
 
-  // KV first — a board refresh on every page load must not burn the rate limit.
-  await Promise.all(syms.map(async (s) => {
-    if (!env.PULSE_CACHE) { misses.push(s); return; }
-    try {
-      const hit = await env.PULSE_CACHE.get(CACHE_PREFIX + s, "json");
-      if (hit && Number.isFinite(hit.px)) quotes[s] = hit; else misses.push(s);
-    } catch (_e) { misses.push(s); }
-  }));
+  // KV first — ONE batch read replaces N per-symbol gets. An entry is a hit only when its
+  // OWN stamp is inside the window (freshEntry): merge-on-write refreshes the key, so key
+  // presence proves nothing about entry age.
+  const cached = await readQuoteBatch(env);
+  for (const s of syms) {
+    const hit = freshEntry(cached.quotes[s], now);
+    if (hit) quotes[s] = hit; else misses.push(s);
+  }
 
   // Fetch misses in small batches — Cloudflare caps concurrent subrequests, and
   // saturating it makes queued calls time out (the same lesson snapshot.js encodes).
+  const fetched = {};
   for (let i = 0; i < misses.length; i += 5) {
     const batch = misses.slice(i, i + 5);
     const got = await Promise.all(batch.map((s) => fetchQuote(s, env.FINNHUB_KEY)));
-    await Promise.all(batch.map(async (s, j) => {
+    batch.forEach((s, j) => {
       const q = got[j];
       if (!q) return;                       // stays absent -> client uses ref_px
       const rec = { ...q, at: new Date(now).toISOString() };
       quotes[s] = rec;
-      if (env.PULSE_CACHE) {
-        try { await env.PULSE_CACHE.put(CACHE_PREFIX + s, JSON.stringify(rec), { expirationTtl: CACHE_TTL }); } catch (_e) {}
-      }
-    }));
+      fetched[s] = rec;
+    });
   }
+  // ONE write for the whole refresh (merge-on-write — a subset request cannot clobber the
+  // symbols it did not ask about). Zero fetches -> zero writes.
+  await writeQuoteBatch(env, fetched, now);
 
   return json({
     quotes,

@@ -373,9 +373,14 @@ const server = http.createServer(async (req, res) => {
   // NO_FLOOR_PREPROFIT + context premium; BBB = SCORED but DISAGREEING with the legacy
   // composite, so the methods-disagree line renders. Synthetic only, as always.
   if (url.pathname === "/api/score") {
+    // v5.0 §14.8: the board loads the index at boot. Baseline is EMPTY — every name reads
+    // "no server card", so no test passes for the wrong reason; the eligible-line recipes
+    // inject their own SCORED entry and restore it.
+    if (url.searchParams.get("book") === "1")
+      return json({ methodology_version: "tt-underwriting-v2.6.0", index: {} });
     const s = url.searchParams.get("sym");
     if (s === "AAA") return json({ sym: "AAA", record: { sym: "AAA", underwriting_inputs: {},
-      scorecard: { methodology_version: "tt-underwriting-v2.5.0", status: "UNSCORABLE", actionability: "BLOCKED",
+      scorecard: { methodology_version: "tt-underwriting-v2.6.0", status: "UNSCORABLE", actionability: "BLOCKED",
         route: "AI_INFRA", profile: null, route_mapping_version: "tt-route-v1",
         raw_score: null, raw_tier: null, capped_tier: null, input_hash: "sha256:aaaa1111",
         blockers: ["falsifier_health: AWAITING_FALSIFIERS", "owner_valuation: NO_FLOOR_PREPROFIT"],
@@ -387,7 +392,7 @@ const server = http.createServer(async (req, res) => {
           falsifier_health: { score: null, weight: 0.25, bootstrap: "PRECOMMITTED_PENDING", blockers: ["AWAITING_FALSIFIERS"] } },
         gate_results: [{ id: "AI_G3_2028_BRIDGE", state: "UNKNOWN", premium_prerequisite: true, raw_state: "DEMANDING-BUT-CREDIBLE" }] } } });
     if (s === "BBB") return json({ sym: "BBB", record: { sym: "BBB", underwriting_inputs: {},
-      scorecard: { methodology_version: "tt-underwriting-v2.5.0", status: "SCORED", actionability: "CAUTION",
+      scorecard: { methodology_version: "tt-underwriting-v2.6.0", status: "SCORED", actionability: "CAUTION",
         route: "PHYSICAL_AI", profile: null, route_mapping_version: "tt-route-v1",
         raw_score: 6.12, raw_tier: "B", capped_tier: "B", input_hash: "sha256:bbbb2222",
         blockers: [], pillars: { owner_valuation: { score: 6.5, weight: 0.25, basis_used: "FLOOR", premium_prerequisite_state: "UNKNOWN", blockers: [] },
@@ -953,10 +958,16 @@ await page.waitForTimeout(120);
 const paLive = await page.evaluate(() => {
   const a = BOOK.find((e) => e.sym === "AAA");
   const prev = { reg: BOARD.regime, circ: BOARD.circuit.state, px: LIVE_PX.AAA,
-    comp: a.deepDive.composite, pa: a.deepDive.price_action };
+    comp: a.deepDive.composite, pa: a.deepDive.price_action,
+    card: SCORE_INDEX && SCORE_INDEX.AAA };
   BOARD.regime = null; BOARD.circuit.state = "clear";
   LIVE_PX.AAA = { px: 300, chg: 0, at: prev.px.at };
-  a.deepDive.composite = { score: 8.0, basis: "synthetic", capped_tier: "A" };
+  /* v5.0 §14.8: the quality rung reads SERVER CARDS — clearing it means a SCORED index
+     entry under the current methodology, no longer a legacy composite. */
+  SCORE_INDEX = SCORE_INDEX || {};
+  SCORE_INDEX_META = SCORE_INDEX_META || { methodology_version: "tt-underwriting-v2.6.0" };
+  SCORE_INDEX.AAA = { status: "SCORED", raw_score: 8.0, raw_tier: "A", capped_tier: "A",
+    methodology_version: SCORE_INDEX_META.methodology_version, broken_thesis: false };
   const today = new Date().toLocaleDateString("en-CA", { timeZone: "America/New_York" });
   a.deepDive.price_action = { as_of: today,
     levels: { ma50: 280, ma200: 240 },
@@ -974,7 +985,7 @@ const paLive = await page.evaluate(() => {
   render();
   out.hit = /✓ AT ENTRY/.test(document.getElementById("upsideRank").innerText);
   BOARD.regime = prev.reg; BOARD.circuit.state = prev.circ; LIVE_PX.AAA = prev.px;
-  a.deepDive.composite = prev.comp;
+  if (prev.card === undefined) delete SCORE_INDEX.AAA; else SCORE_INDEX.AAA = prev.card;
   if (prev.pa === undefined) delete a.deepDive.price_action; else a.deepDive.price_action = prev.pa;
   render();
   return out;
@@ -993,10 +1004,15 @@ ok("entry: price reaching the committed level flips the chip to AT ENTRY, live",
 const techLive = await page.evaluate(() => {
   const a = BOOK.find((e) => e.sym === "AAA");
   const prev = { reg: BOARD.regime, circ: BOARD.circuit.state, px: LIVE_PX.AAA,
-    comp: a.deepDive.composite, pa: a.deepDive.price_action };
+    comp: a.deepDive.composite, pa: a.deepDive.price_action,
+    card: SCORE_INDEX && SCORE_INDEX.AAA };
   BOARD.regime = null; BOARD.circuit.state = "clear";
   LIVE_PX.AAA = { px: 300, chg: 0, at: prev.px.at };
-  a.deepDive.composite = { score: 8.0, basis: "synthetic", capped_tier: "A" };
+  // v5.0 §14.8: quality clears via a SCORED card, not a legacy composite (the entry recipe).
+  SCORE_INDEX = SCORE_INDEX || {};
+  SCORE_INDEX_META = SCORE_INDEX_META || { methodology_version: "tt-underwriting-v2.6.0" };
+  SCORE_INDEX.AAA = { status: "SCORED", raw_score: 8.0, raw_tier: "A", capped_tier: "A",
+    methodology_version: SCORE_INDEX_META.methodology_version, broken_thesis: false };
   const today = new Date().toLocaleDateString("en-CA", { timeZone: "America/New_York" });
   // px 300 vs ma50 280 (+7.1%) vs ma200 240 (+25%), cross +16.7%, range (300-200)/(320-200)=83%
   // → all four price-action factors bull → BULLISH, no withhold.
@@ -1023,7 +1039,7 @@ const techLive = await page.evaluate(() => {
   out.stillEligible = /ELIGIBLE NEXT DOLLAR — all gates passed/.test(t2)
     && (AGREE_PICK ? AGREE_PICK.sym : null) === "AAA";
   BOARD.regime = prev.reg; BOARD.circuit.state = prev.circ; LIVE_PX.AAA = prev.px;
-  a.deepDive.composite = prev.comp;
+  if (prev.card === undefined) delete SCORE_INDEX.AAA; else SCORE_INDEX.AAA = prev.card;
   if (prev.pa === undefined) delete a.deepDive.price_action; else a.deepDive.price_action = prev.pa;
   render();
   return out;
@@ -1170,8 +1186,8 @@ ok("what-changes-my-mind names the red hinge", /1 red/.test(dv) && /demand/.test
 // premium: the panel must render the NAMED states and never a placeholder score.
 await page.waitForTimeout(400);   // lazy score fetch lands and re-renders the tab
 const dvS = (await page.locator("#deepView").innerText()).replace(/\s+/g, " ");
-ok("score: the shadow panel renders between readiness and the four answers (§15 order)",
-  /TT UNDERWRITING · SHADOW/i.test(dvS) &&
+ok("score: the governing panel renders between readiness and the four answers (§15 order)",
+  /TT UNDERWRITING · GOVERNS/i.test(dvS) &&
   dvS.indexOf("DECISION READINESS") < dvS.toUpperCase().indexOf("TT UNDERWRITING") &&
   dvS.toUpperCase().indexOf("TT UNDERWRITING") < dvS.toUpperCase().indexOf("WHAT IT'S WORTH"));
 ok("score: AWAITING_FALSIFIERS and NO_FLOOR_PREPROFIT render as NAMED states, never a score",
@@ -1185,16 +1201,21 @@ ok("score: the contingent premium is labelled CONTEXT ONLY with no pillar contri
   /CONTEXT ONLY/.test(dvSO) && /contingent premium \$382/.test(dvSO));
 ok("score: a normalized legacy gate label shows its raw state for audit",
   /AI_G3_2028_BRIDGE UNKNOWN/.test(dvSO) && /was: DEMANDING-BUT-CREDIBLE/.test(dvSO));
-// BBB's stub is a COMPLETE shadow score (B) against a legacy S composite — during shadow
-// the disagreement renders as WAIT — methods disagree, and legacy keeps governing.
+// BBB's stub is a COMPLETE server card (B) against a legacy S composite. v5.0 §14.8: the
+// CARD governs — the disagreement is HISTORY inside the collapsed details, never a WAIT.
 await page.evaluate(() => switchTab("BBB"));
 await page.waitForTimeout(500);
 await page.evaluate(() => { document.querySelectorAll("#deepView details.schema").forEach((d) => { d.open = true; }); });
 const dvB = (await page.locator("#deepView").innerText()).replace(/\s+/g, " ");
-ok("score: a complete shadow score that disagrees with legacy renders WAIT — methods disagree",
-  /WAIT — methods disagree/.test(dvB) && /legacy S vs TT B/.test(dvB) && /legacy governs/i.test(dvB));
-ok("score: the legacy composite is relabelled LEGACY \/ UNVERIFIED inside the panel (one home)",
-  /LEGACY \/ UNVERIFIED/.test(dvB) && /governs the board until activation/.test(dvB));
+// RE-PINNED at v5.0 (§14.8 activation): "WAIT — methods disagree" is RETIRED — the wait
+// state existed because two live methods shared one board. The disagreement survives as
+// HISTORY beside the legacy number, and the legacy label says superseded, not governing.
+ok("score: the card GOVERNS — disagreement with legacy is stated as history, never as a WAIT",
+  !/WAIT — methods disagree/.test(dvB) &&
+  /disagreed with the governing card: legacy S vs TT B/.test(dvB) && /history, not a wait/.test(dvB));
+ok("score: the legacy composite is relabelled HISTORICAL — superseded at activation (one home)",
+  /LEGACY \(historical — superseded at §14\.8 activation/.test(dvB) &&
+  !/governs the board until activation/.test(dvB));
 await page.evaluate(() => switchTab("AAA"));
 await page.waitForTimeout(150);
 ok("what-I-own reads the measured position", /21\.4% of acct equity/.test(dv) && /30 sh/.test(dv));
@@ -2047,7 +2068,7 @@ REFRESH_FIXTURE = null;
   await p3.waitForTimeout(500);
   const desk = (await p3.locator("#upsideRank").innerText()).replace(/\s+/g, " ");
   ok("allreviewed: the DESK ranking renders the SAME tail with its full reason list",
-    /Reviewed · not rate-rankable/i.test(desk) && /ordered by TT composite/i.test(desk));
+    /Reviewed · not rate-rankable/i.test(desk) && /ordered by TT card score/i.test(desk));
   ok("allreviewed: the DESK tail count equals the board's — one computation, two altitudes",
     await p3.evaluate(() => {
       const n = UNRANKED_ROWS.length;

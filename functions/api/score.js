@@ -108,6 +108,18 @@ async function updateIndex(env, sym, rec) {
     actionability: sc.actionability ?? null, route: sc.route ?? null, profile: sc.profile ?? null,
     input_hash: sc.input_hash ?? null, computed_at: sc.computed_at ?? null,
     blockers: (sc.blockers || []).length,
+    /* v5.0 §14.8 ACTIVATION — two additive fields the flip needs at BOARD altitude:
+       methodology_version: the per-sym GET relabels a stale-methodology card
+       LEGACY_UNVERIFIED (line ~140) but the book=1 index path never could — an index entry
+       carried a capped_tier with no way to verify what engine minted it, the exact failure
+       §14.7 was written to prevent. The entry now self-identifies; the CLIENT compares it
+       to the response's top-level current version and refuses eligibility on a mismatch.
+       broken_thesis: a kill-flagged falsifier RED (P4) or a BROKEN_THESIS gate FAIL —
+       the §14.8 bar's own text deferred this signal "until activation"; the funding
+       forced tier may now read it, and only at this server-stamped altitude. */
+    methodology_version: sc.methodology_version ?? null,
+    broken_thesis: !!((sc.pillars && sc.pillars.falsifier_health && sc.pillars.falsifier_health.broken_thesis) ||
+      (sc.gate_results || []).some((g) => g.state === "FAIL" && g.effect && g.effect.kind === "BROKEN_THESIS")),
   };
   await env.PULSE_CACHE.put(INDEX_KEY, JSON.stringify(idx));
 }

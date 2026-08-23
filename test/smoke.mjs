@@ -1392,8 +1392,11 @@ ok("livepx: missing symbols are NAMED so fallbacks are never implied to be live"
   quotesSrc.includes("missing: syms.filter"));
 ok("livepx: matches snapshot.js on the wire (Accept header + timeout were load-bearing)",
   quotesSrc.includes('headers: { Accept: "application/json" }') && quotesSrc.includes("ctl.abort()"));
-ok("livepx: KV-cached and batched to respect the rate limit / subrequest cap",
-  quotesSrc.includes("CACHE_TTL = 120") && quotesSrc.includes("misses.slice(i, i + 5)"));
+/* RE-PINNED at v5.0 W0: the per-symbol cache (CACHE_TTL literal) became the one batch key
+   in lib/quote-cache.js — the invariant this pin protects (rate limit + subrequest cap
+   respected) is now KV-read-once + fetch-in-batches-of-5, measured behaviorally in [72]. */
+ok("livepx: KV-cached (one batch read) and upstream-batched to respect the rate limit / subrequest cap",
+  quotesSrc.includes("readQuoteBatch(env)") && quotesSrc.includes("misses.slice(i, i + 5)"));
 ok("livepx: board prefers a live quote and falls back to the stamped ref_px",
   adminSrc.includes("const live=LIVE_PX[x.sym];") &&
   adminSrc.includes("(live&&isFinite(live.px)&&live.px>0)?{px:live.px,at:live.at,live:true,chg:live.chg}:stamp"));
@@ -1404,7 +1407,7 @@ ok("livepx: each pick shows whether it used a live or stamped price",
 ok("livepx: footer counts live vs stamped rather than implying all are current",
   adminSrc.includes("live / ") && adminSrc.includes("all prices are stamped marks, not live"));
 ok("livepx: quote fetch is non-blocking and failure leaves the board unchanged",
-  adminSrc.includes("loadBook().then(()=>{loadQuotes();loadPositions();loadAllocation();loadDeepDiveIndex();loadTickerV2();});") && adminSrc.includes("never break the board on a quote feed"));
+  adminSrc.includes("loadBook().then(()=>{loadQuotes();loadPositions();loadAllocation();loadDeepDiveIndex();loadTickerV2();loadScoreIndex();});") && adminSrc.includes("never break the board on a quote feed"));
 
 // ---- 9. market calendar — holidays across the honesty stack ---------------
 // The time-judges (isStale, marketSession/etSession, looksBehind) share ONE
@@ -1720,7 +1723,7 @@ ok("pos: an absent position renders NOTHING — not a 0 or a dash that reads as 
   adminSrc.includes("absent number; a dash or a 0 here would read"));
 ok("pos: fetched from its own endpoint at boot, alongside the book and quotes",
   adminSrc.includes('const r=await fetch("/api/positions");') &&
-  adminSrc.includes("loadBook().then(()=>{loadQuotes();loadPositions();loadAllocation();loadDeepDiveIndex();loadTickerV2();});"));
+  adminSrc.includes("loadBook().then(()=>{loadQuotes();loadPositions();loadAllocation();loadDeepDiveIndex();loadTickerV2();loadScoreIndex();});"));
 ok("pos: a fetch failure leaves POSITIONS={} — every posOf() reads null, never stale data",
   adminSrc.includes("POSITIONS stays {} — posOf() reads null for everyone, never stale data"));
 ok("pos: measured marks age like everything else, undated being the worst",
@@ -1807,7 +1810,9 @@ const PKG = JSON.parse(readSrc("../package.json"));
 // __APP_VERSION__, so a guard is the only thing that can hold the invariant.
 ok("version: the terminal's title and brand both match package.json (no third version)",
   adminSrc.includes(`<title>TT TICKER TERMINAL v${PKG.version}</title>`) &&
-  adminSrc.includes(`<small>v${PKG.version} · underwriting + sourced gates</small>`));
+  // Tagline re-pinned at v5.0: "underwriting + sourced gates" became "the card governs
+  // (§14.8)" — the flip is the identity change the tagline exists to state.
+  adminSrc.includes(`<small>v${PKG.version} · the card governs (§14.8)</small>`));
 // ttInfo's score decides whether the NEXT DOLLAR line lights. It is parsed from prose.
 ok("composite: a decimal score is preferred over an earlier bare integer",
   adminSrc.includes("function parseComposite(v)") && adminSrc.includes("const dec=s.match(/\\d+\\.\\d+/);"));
@@ -2229,7 +2234,7 @@ ok("rankfair: an options-only position gets its OWN marker, never a misleading 0
   adminSrc.includes('const optOnly=Array.isArray(p.opt)&&p.opt.length>0&&!(Number(p.sh)>0);'));
 ok("rankfair: a name at/over the cap can NEVER be the next dollar, however wide its gap",
   adminSrc.includes("at the ${CAP_PCT}% cap, no room") &&
-  adminSrc.indexOf("if(r.wt.w!==null&&r.wt.w>=CAP_PCT)") < adminSrc.indexOf('if(!r.tt)return "unscored'));
+  adminSrc.indexOf("if(r.wt.w!==null&&r.wt.w>=CAP_PCT)") < adminSrc.indexOf('if(!r.tt)return "no server card'));
 ok("rankfair: every pick renders its held weight beside the upside",
   adminSrc.includes("r.wt") && adminSrc.includes("weights are % of TRACKED BOOK (a floor"));
 ok("rankfair: queue names with NO model are NAMED, not silently missing from the ranking",
@@ -2321,7 +2326,7 @@ ok("focus2: primary blocks render LAST in the chain, reading what the strips com
   adminSrc.includes("renderStance();renderBuyBlock();renderSellBlock();renderMagBlock();renderCalBlock();renderTabs();"));
 ok("refresh: the button refetches quotes+positions+regime and reports the quote-cache window honestly",
   adminSrc.includes("async function refreshRanks()") &&
-  adminSrc.includes("Promise.all([loadQuotes(),loadPositions(),loadRegime(),allocReeval()])") &&
+  adminSrc.includes("Promise.all([loadQuotes(),loadPositions(),loadRegime(),allocReeval(),loadScoreIndex()])") &&
   adminSrc.includes("server caches 2 min"));
 ok("refresh: the button disables while in flight and always re-enables",
   adminSrc.includes("b.disabled=true") && adminSrc.includes("finally{if(b){b.disabled=false"));
@@ -2441,7 +2446,7 @@ ok("slice5: the header is ONE row — identity, the MACRO pill, and a ⋯ MENU d
 // closing the loop the dashboard's ⌁ TERMINAL button opened (v3.98.3).
 ok("slice5: version, BOOK/AUTH stamps and the whole action toolbar moved behind that " +
    "disclosure — status and occasional actions, never answers",
-  /id="headInfo"[\s\S]{0,1800}underwriting \+ sourced gates[\s\S]{0,900}id="bookStamp"[\s\S]{0,900}id="sessState"[\s\S]{0,1200}\+ ADD TICKER[\s\S]{0,900}id="backupRow"/.test(adminSrc));
+  /id="headInfo"[\s\S]{0,1800}the card governs \(§14\.8\)[\s\S]{0,900}id="bookStamp"[\s\S]{0,900}id="sessState"[\s\S]{0,1200}\+ ADD TICKER[\s\S]{0,900}id="backupRow"/.test(adminSrc));
 ok("slice5: the banners stay OUTSIDE the disclosure — an expired session or an unsaved edit " +
    "must never require opening a menu to discover",
   /id="headInfo"[\s\S]*?<\/div>\s*<!--[\s\S]*?-->\s*<div id="authBanner"/.test(adminSrc) &&
@@ -4335,7 +4340,7 @@ console.log("\n[49] ptModel extraction — admin.html and src/ptModel.js cannot 
       norm(liftFns(adminSrc, [n])) === norm(PT[n].toString()));
   // FEAT-TT-DRIFT (v4.3): same tripwire, same reason — admin.html keeps its own copy.
   for (const n of ["etYmd", "captureDates", "newestCapture", "thinCoverage", "staleHinges",
-                   "compositeDrift", "lintDrift"])
+                   "compositeDrift", "targetDrift", "runwaySplit", "labelDrift", "lintDrift"])
     ok(`tripwire: ${n}() is byte-identical in admin.html and src/ttDrift.js`,
       norm(liftFns(adminSrc, [n])) === norm(DRIFT[n] ? DRIFT[n].toString() : liftFns(driftSrc, [n])));
   ok("tripwire: ANN_MIN_Y matches across both copies",
@@ -4489,6 +4494,79 @@ console.log("\n[46] ttScore pillars — P1..P4 contracts run behaviorally");
     path_to_profit: { state: "DATED_MILESTONES", source: { kind: "OWNER_ASSERTED" }, rationale: "r" } }, { etToday: "2026-08-05" });
   ok("P3 PREPROFIT: enums+runway anchor compose (5*.35+10*.25+7*.25+7*.15=7.05); OWNER_ASSERTED flags actionability",
     p3pre.score === 7.05 && p3pre.owner_asserted === true);
+  /* ── v5.0 (W2): P3 input aging — the SELF_FUNDING entry's named future scope, closed ──
+     freshnessOf existed since §5.3 and reached only P4 hinges; a P3 margin could sit
+     unrefreshed forever. Quarterly cadence (120d asserted): AGING = one missed quarter,
+     STALE = two. THE SCORE NEVER MOVES — only actionability degrades, through the rollup's
+     pre-existing semantics, with the aged fields NAMED. */
+  const RECAT = (value, as_of) => ({ value, as_of, source: { kind: "PRIMARY" } });
+  const p3aging = (as_of) => TS.scoreP3({ mode: "PROFITABLE_STANDARD",
+    operating_margin_pct: RECAT(20, as_of), margin_direction_pp: RECAT(0, "2026-08-01"),
+    fcf_margin_pct: RECAT(10, "2026-08-01"),
+    capital_efficiency: { metric: "ROIC", value: 15, as_of: "2026-08-01", source: { kind: "PRIMARY" } } },
+    { etToday: "2026-08-05" });
+  ok("P3 aging: the cadence is quarterly and the boundaries hold at ±1 day — 120d CURRENT, 121d AGING, 241d STALE",
+    TS.P_INPUT_CADENCE_D === 120 &&
+    p3aging("2026-04-07").freshness === "CURRENT" &&        // 120d exactly
+    p3aging("2026-04-06").freshness === "AGING" &&          // 121d
+    p3aging("2025-12-08").freshness === "AGING" &&          // 240d exactly
+    p3aging("2025-12-07").freshness === "STALE");           // 241d
+  ok("P3 aging: the SCORE is untouched — deleting a measurement for being old would recreate 'unmeasured reads as zero'",
+    p3aging("2025-12-07").score === p3aging("2026-08-01").score &&
+    typeof p3aging("2025-12-07").score === "number");
+  ok("P3 aging: the aged field is NAMED in warnings with its age and cadence, never a bare flag",
+    p3aging("2026-04-06").warnings.some((w) => /operating_margin_pct: AGING \(121d old, 120d cadence\)/.test(w)) &&
+    p3aging("2026-08-01").warnings.length === 0);
+  ok("P3 aging: freshness reaches the rollup — AGING degrades FULL to CAUTION, STALE to BLOCKED",
+    TS.actionabilityRollup({ pillarFresh: ["CURRENT"] }) === "FULL" &&
+    TS.actionabilityRollup({ pillarFresh: ["AGING"] }) === "CAUTION" &&
+    TS.actionabilityRollup({ pillarFresh: ["STALE"] }) === "BLOCKED");
+  ok("P3 aging: buildScorecard actually passes p3.freshness into the rollup — computed-but-unread is the v3.40 defect shape",
+    /pillarFresh: \[p3\.freshness\]\.filter\(Boolean\)/.test(readSrc("../src/ttScore.js")));
+  /* ── v5.0 (W4): the FINANCIALS mode — the lender/broker shape, boundaries EXECUTED ── */
+  const FIN = (over = {}) => TS.scoreP3({ mode: "FINANCIALS",
+    efficiency_ratio_pct: RECAT(55, "2026-08-01"),
+    efficiency_direction_pp: RECAT(-2, "2026-08-01"),
+    capital_efficiency: { metric: "ROE", value: 12, as_of: "2026-08-01", source: { kind: "PRIMARY" } },
+    capital_adequacy: { regime: "CET1", value: 14, min_required: 7, as_of: "2026-08-01", source: { kind: "PRIMARY" } },
+    credit_quality_trend: { state: "FLAT", as_of: "2026-08-01", source: { kind: "PRIMARY" }, rationale: "r" },
+    ...over }, { etToday: "2026-08-05" });
+  ok("FINANCIALS: the five components compose at the asserted weights (.25/.15/.20/.25/.15) — " +
+     "6*.25+7*.15+6*.20+10*.25+5*.15 = 7.00",
+    (() => { const r = FIN(); return r.score === 7 &&
+      r.components.efficiency_ratio === 6 && r.components.efficiency_direction === 7 &&
+      r.components.capital_efficiency === 6 && r.components.capital_adequacy === 10 &&
+      r.components.credit_quality === 5 && r.components.headroom_pct === 100; })());
+  ok("FINANCIALS: the efficiency anchor is INVERTED — a LOWER ratio scores HIGHER (cost over revenue)",
+    FIN({ efficiency_ratio_pct: RECAT(45, "2026-08-01") }).components.efficiency_ratio === 8 &&
+    FIN({ efficiency_ratio_pct: RECAT(75, "2026-08-01") }).components.efficiency_ratio === 2);
+  ok("FINANCIALS: capital adequacy scores HEADROOM above the named regime minimum — at-minimum is 0, not fine",
+    FIN({ capital_adequacy: { regime: "CET1", value: 7, min_required: 7, as_of: "2026-08-01", source: { kind: "PRIMARY" } } })
+      .components.capital_adequacy === 0 &&
+    FIN({ capital_adequacy: { regime: "NET_CAPITAL", value: 8.75, min_required: 7, as_of: "2026-08-01", source: { kind: "PRIMARY" } } })
+      .components.capital_adequacy === 6);   // +25% headroom
+  ok("FINANCIALS: an UN-NAMED regime refuses to score — a bare ratio with no stated requirement is a number, not adequacy",
+    (() => { const r = FIN({ capital_adequacy: { value: 14, min_required: 7, as_of: "2026-08-01", source: { kind: "PRIMARY" } } });
+      return r.score === null && r.blockers.some((b) => /regime must be NAMED/.test(b)); })() &&
+    (() => { const r = FIN({ capital_adequacy: { regime: "CET1", value: 14, as_of: "2026-08-01", source: { kind: "PRIMARY" } } });
+      return r.score === null && r.blockers.some((b) => /min_required/.test(b)); })());
+  ok("FINANCIALS: capital_efficiency accepts ROE or ROTCE (metric named) and nothing else — the scorer never chooses",
+    FIN({ capital_efficiency: { metric: "ROTCE", value: 18, as_of: "2026-08-01", source: { kind: "PRIMARY" } } })
+      .components.metric === "ROTCE" &&
+    (() => { const r = FIN({ capital_efficiency: { metric: "ROIC", value: 12, as_of: "2026-08-01", source: { kind: "PRIMARY" } } });
+      return r.score === null && r.blockers.some((b) => /ROE or ROTCE/.test(b)); })());
+  ok("FINANCIALS: credit quality is an ENUM with source+rationale — no numeric field here can see what kills a lender",
+    FIN({ credit_quality_trend: { state: "DETERIORATING", as_of: "2026-08-01", source: { kind: "PRIMARY" }, rationale: "NCOs rising" } })
+      .components.credit_quality === 0 &&
+    (() => { const r = FIN({ credit_quality_trend: { state: "FLAT", as_of: "2026-08-01", source: { kind: "PRIMARY" } } });
+      return r.score === null && r.blockers.some((b) => /source and a rationale/.test(b)); })());
+  ok("FINANCIALS: the mode error names all three modes now",
+    /PROFITABLE_STANDARD\|PREPROFIT\|FINANCIALS/.test(
+      TS.scoreP3({ mode: "WRONG" }, { etToday: "2026-08-05" }).blockers[0]));
+  ok("FINANCIALS: P3 input aging reaches the new mode too — an aged efficiency ratio is NAMED and degrades freshness",
+    (() => { const r = FIN({ efficiency_ratio_pct: RECAT(55, "2026-04-06") });
+      return r.freshness === "AGING" && r.warnings.some((w) => /efficiency_ratio_pct: AGING/.test(w)) &&
+        typeof r.score === "number"; })());
   ok("P3: a missing enum state is a blocker — UNKNOWN is never 5",
     /missing or unknown enum/.test(TS.scoreP3({ mode: "PREPROFIT", margin_direction: { state: "FLAT", source: { kind: "PRIMARY" }, rationale: "r" },
       runway_months: REC(24), path_to_profit: { state: "NONE", source: { kind: "PRIMARY" }, rationale: "r" } }, { etToday: "2026-08-05" }).blockers[0]));
@@ -4848,7 +4926,7 @@ console.log("\n[48] /api/score — server-authoritative scoring endpoint");
     pt_model: { pe_floor_multiple: 18 },
     ref_px: { px: 30, at: new Date(Date.now() - 86400000).toISOString().slice(0, 10) } };
   const env = () => ({ TT_PIN: PIN, PULSE_CACHE: mkKV2({ "tt:book:v1": seedBook, "tt:dd:v1:BBB": bbbDd }) });
-  const UI = { methodology_version: "tt-underwriting-v2.5.0", route_gates: {}, falsifiers: [] };
+  const UI = { methodology_version: "tt-underwriting-v2.6.0", route_gates: {}, falsifiers: [] };
 
   ok("score: anonymous GET fails closed (401)", await (async () => {
     const r = await score.onRequestGet({ request: mkReq("GET", { params: "?sym=AAA" }), env: env() });
@@ -5032,7 +5110,7 @@ console.log("\n[48] /api/score — server-authoritative scoring endpoint");
       cadence_days: 90, defined_at: "2026-08-04T23:30:00Z", as_of: "2026-08-05",
       source: { kind: "PRIMARY", ref: "https://example.com/" + "y".repeat(180) },
       qualifying_observation: { id: "obs" + i2, observed_at: "2026-08-05T02:00:00Z" } });
-    const maxUI = { methodology_version: "tt-underwriting-v2.5.0",
+    const maxUI = { methodology_version: "tt-underwriting-v2.6.0",
       trajectory: { mode: "PREPROFIT", preprofit_second_series: "EBITDA_CAGR", ebitda_basis: "ADJUSTED",
         ebitda_reconciliation: REC2(1), revenue: [REC2(1), REC2(2)].map((r2, i2) => ({ ...r2, fy: String(2027 + i2) })),
         ebitda: [REC2(0.1), REC2(0.5)].map((r2, i2) => ({ ...r2, fy: String(2027 + i2) })),
@@ -5721,11 +5799,14 @@ console.log("\n[51] FEAT-TT-ALLREVIEWED — the reviewed-but-unpriced ranking");
     { sym: "NOPAY",   tier: "B", lens: "AI", lastRun: "2026-08-01" },   // run stamp only
     { sym: "NEVER",   tier: "C", lens: "AI" },                          // never reviewed at all
   ];
+  /* v5.0 §14.8: the tail reads SERVER CARDS (cardInfo), so the fixture carries per-sym
+     `card` records in the cardInfo shape. Scores kept at 9.1/8.2/6.0 so the ordering pin
+     measures the same arithmetic it always did — only the SOURCE of the number moved. */
   const DD1 = {
-    RANKED:  { rows: [{ y: "2027", prem: 200 }], ref_px: PRICED, composite: { score: 7.0, tier: "A" } },
-    NOMODEL: { rows: [], ref_px: PRICED, composite: { score: 9.1, tier: "S" } },
-    NOPX:    { rows: [{ y: "2027", prem: 200 }], composite: { score: 8.2, tier: "A" } },
-    NORUNG:  { rows: [{ y: "2027", prem: 200 }], ref_px: PRICED, composite: { score: 6.0, tier: "B" } },
+    RANKED:  { rows: [{ y: "2027", prem: 200 }], ref_px: PRICED, card: { score: 7.0, tier: "A", status: "SCORED", scored: true, mcur: true } },
+    NOMODEL: { rows: [], ref_px: PRICED, card: { score: 9.1, tier: "B", status: "PROVISIONAL", scored: false, mcur: true } },
+    NOPX:    { rows: [{ y: "2027", prem: 200 }], card: { score: 8.2, tier: "B", status: "PROVISIONAL", scored: false, mcur: true } },
+    NORUNG:  { rows: [{ y: "2027", prem: 200 }], ref_px: PRICED, card: { score: 6.0, tier: "B", status: "PROVISIONAL", scored: false, mcur: true } },
     NOPAY:   null,
   };
   const TO = ["S", "A", "B", "C", "WATCH", "DEF"];
@@ -5735,7 +5816,7 @@ console.log("\n[51] FEAT-TT-ALLREVIEWED — the reviewed-but-unpriced ranking");
     const F = new Function("BOOK", "LIVE_PX", "hz", "DD", "TIER_ORDER", "RANKED",
       "let UNRANKED_ROWS=[];" +
       "const ddOf=(x)=>DD[x.sym]||null;" +
-      "const ttInfo=(dd)=>dd&&dd.composite?{score:dd.composite.score,tier:dd.composite.tier}:null;" +
+      "const cardInfo=(sym)=>{const d=DD[sym];return (d&&d.card)||null;};" +
       "const runState=(d)=>({k:d?'fresh':'never',days:null});" +
       "const readiness=()=>({verdict:'BLOCKED',blockers:[],cautions:[]});" +
       "const rankWeight=()=>({w:null,held:false,optOnly:false,mark:''});" +
@@ -5763,14 +5844,14 @@ console.log("\n[51] FEAT-TT-ALLREVIEWED — the reviewed-but-unpriced ranking");
     bySym.NOPAY.fix === "add a deep-dive payload" && bySym.NOMODEL.fix === "add a pt_model" &&
     /stamp a ref_px/.test(bySym.NOPX.fix) && /horizon to auto/.test(bySym.NORUNG.fix));
   // Ordered by the judgment that EXISTS. Borrowing a rate would be the D2 units error.
-  ok("allreviewed: the tail is ORDERED by TT composite (asserted judgment), never by a " +
-     "borrowed %/yr — 9.1 leads 8.2 leads 6.0",
+  ok("allreviewed: the tail is ORDERED by TT card score (§14.8 — the server-stamped " +
+     "composite), never by a borrowed %/yr — 9.1 leads 8.2 leads 6.0",
     out.map((r) => r.sym).slice(0, 3).join() === "NOMODEL,NOPX,NORUNG");
   ok("allreviewed: no row carries an upside/ann field at all — a rate it does not have cannot " +
      "leak into a sort or a render",
     out.every((r) => r.ann === undefined && r.upside === undefined));
-  ok("allreviewed: a reviewed name with NO composite sorts LAST but is still present — " +
-     "'reviewed, no score yet' is the state a fresh run is usually in",
+  ok("allreviewed: a reviewed name with NO card sorts LAST but is still present — " +
+     "'no server card yet' is the state a fresh run is usually in",
     out[out.length - 1].sym === "NOPAY" && out[out.length - 1].tt === null);
   ok("allreviewed: red hinges ride the tail row (v3.25 — a name demoted to the tail must not " +
      "lose its reds on the way)",
@@ -5778,7 +5859,7 @@ console.log("\n[51] FEAT-TT-ALLREVIEWED — the reviewed-but-unpriced ranking");
       const DD2 = { ...DD1, NOMODEL: { ...DD1.NOMODEL, hinges: [{ label: "funding", state: "red" }, { label: "x", state: "green" }] } };
       const F = new Function("BOOK", "LIVE_PX", "hz", "DD", "TIER_ORDER", "RANKED",
         "let UNRANKED_ROWS=[];const ddOf=(x)=>DD[x.sym]||null;" +
-        "const ttInfo=(dd)=>dd&&dd.composite?{score:dd.composite.score,tier:dd.composite.tier}:null;" +
+        "const cardInfo=(sym)=>{const d=DD[sym];return (d&&d.card)||null;};" +
         "const runState=(d)=>({k:d?'fresh':'never',days:null});const readiness=()=>({verdict:'x',blockers:[],cautions:[]});" +
         "const rankWeight=()=>({w:null,held:false,optOnly:false,mark:''});const ptModelRows=(dd)=>(dd&&dd.rows)||[];" +
         "const cands=BOOK.filter(x=>{const d=DD[x.sym];return d&&(d.rows||[]).length&&(d.ref_px&&d.ref_px.px>0);});" +
@@ -5896,7 +5977,7 @@ console.log("\n[52] DDSTORE server consumers — post-migration book shape");
     const env = envPost();
     const r = await scoreM.onRequestPut({
       request: rq("PUT", "/api/score", { params: "?sym=AAA", headers: A,
-        body: { underwriting_inputs: { methodology_version: "tt-underwriting-v2.5.0", route_gates: {}, falsifiers: [] } } }),
+        body: { underwriting_inputs: { methodology_version: "tt-underwriting-v2.6.0", route_gates: {}, falsifiers: [] } } }),
       env });
     if (r.status !== 200) return false;
     const rec = JSON.parse(env.PULSE_CACHE._store.get("tt:score:v1:AAA"));
@@ -6034,12 +6115,12 @@ console.log("\n[53] PRE-COMMITMENT VERIFICATION — the server decides what was 
         price: DD.ref_px, underwriting_inputs: { methodology_version: "tt-underwriting-v2.3.0", route_gates: {}, falsifiers: [] } });
       return c.status === "UNSCORABLE" && c.declared_methodology_version === "tt-underwriting-v2.3.0" &&
         c.blockers.some((b) => /METHODOLOGY_VERSION_MISMATCH/.test(b)) &&
-        c.methodology_version === "tt-underwriting-v2.5.0";
+        c.methodology_version === "tt-underwriting-v2.6.0";
     })());
   ok("precommit: a matching or ABSENT declared version still computes (absent = the offline call)",
     await (async () => {
       const a = await buildScorecard({ sym: "AAA", lens: "AI", nowMs: Date.now(), dd: DD, price: DD.ref_px,
-        underwriting_inputs: { methodology_version: "tt-underwriting-v2.5.0", route_gates: {}, falsifiers: [] } });
+        underwriting_inputs: { methodology_version: "tt-underwriting-v2.6.0", route_gates: {}, falsifiers: [] } });
       const b = await buildScorecard({ sym: "AAA", lens: "AI", nowMs: Date.now(), dd: DD, price: DD.ref_px,
         underwriting_inputs: { route_gates: {}, falsifiers: [] } });
       return !a.blockers.some((x) => /METHODOLOGY_VERSION_MISMATCH/.test(x)) &&
@@ -6260,9 +6341,11 @@ console.log("\n[56] FEAT-TT-ENTRY — price-action WHEN leg + subsidiaries secti
   // hit/miss rule). Stub its three externals: ddOf, LIVE_PX, ageDays (the real ageDays is
   // date-relative, so the stub pins the fail-closed contract explicitly instead).
   const paSrc = liftFns(adminSrc, ["paRead"]);
+  // v5.0 (W2): paRead reads the cadence table, so the lift injects PA_CADENCE — the same
+  // values the source declares, so the boundary pins measure the real windows.
   const mkPa = (dd, live, ageOf) =>
-    new Function("ddOf", "LIVE_PX", "ageDays", "PA_STALE_D", `${paSrc}; return paRead;`)(
-      () => dd, live, ageOf, 7);
+    new Function("ddOf", "LIVE_PX", "ageDays", "PA_CADENCE", `${paSrc}; return paRead;`)(
+      () => dd, live, ageOf, { entry: 7, indicators: 7, swings: 14, mas: 30 });
   const fresh = (iso) => (iso ? 2 : null), old = (iso) => (iso ? 30 : null);
   const DD = (pa) => ({ ref_px: { px: 100, at: "x" }, price_action: pa });
   ok("pa: pullback entry HIT at/below the level, MISS above it — and the distance is signed",
@@ -6337,6 +6420,10 @@ console.log("\n[57] FEAT-TT-TECHREAD — band table, split tally, asymmetric wit
   const L = (px, ma50, ma200, lo, hi, extra = {}) => ({
     as_of: "d", levels: { ma50, ma200, swing_lo_3m: lo, swing_hi_3m: hi }, ...extra });
   const V = (pa, px) => TR.computeTechRead(pa, px, {}).label;
+  // v5.0: a FULL fixture (every factor measurable) for the cadence pins — px 100 vs the
+  // levels below votes cleanly, so exclusions are attributable to AGE alone.
+  const FULLC = () => ({ as_of: "d", levels: { ma50: 90, ma200: 80, swing_lo_3m: 70, swing_hi_3m: 130 },
+    indicators: { rsi14: 60, macd_hist: 0.4 }, pattern: { kind: "breakout" } });
 
   // ── every band boundary EXECUTED (the DEC-33 convention) ──
   /* THE COLLINEARITY FIX (audit, v3.83). price-vs-50d, price-vs-200d and the 50/200 cross are
@@ -6511,25 +6598,68 @@ console.log("\n[57] FEAT-TT-TECHREAD — band table, split tally, asymmetric wit
     (() => {
       const lifted = liftFns(adminSrc, ["techVerdictFrom", "techInputs", "computeTechRead"]);
       const consts = /const MA_BAND_PCT=[\s\S]*?const _tpct=[^\n]*\n/.exec(adminSrc)[0];
+      // v5.0 (W2): the cadence table is part of the behavioural contract now — lift it too.
+      const cad = /const PA_CADENCE=\{[^}]*\};/.exec(adminSrc)[0];
       const table = /const TECH_BAND_TABLE=\[[\s\S]*?\n\];/.exec(adminSrc)[0];
-      const local = new Function(`${consts}${table}\n${lifted}\nreturn computeTechRead;`)();
+      const local = new Function(`${cad}\n${consts}${table}\n${lifted}\nreturn computeTechRead;`)();
+      const FULL = { as_of: "d", levels: { ma50: 120, ma200: 118, swing_lo_3m: 90, swing_hi_3m: 130 },
+        indicators: { rsi14: 60, macd_hist: 0.4 }, pattern: { kind: "breakout" } };
       const cases = [
-        [L(110, 103, 100, 80, 115), 110],
-        [L(100, 100, 100, 90, 110), 100],
-        [L(90, 120, 118, 90, 130), 90],
-        [{ as_of: "d", levels: { ma50: 120, ma200: 118, swing_lo_3m: 90, swing_hi_3m: 130 },
-           indicators: { rsi14: 60, macd_hist: 0.4 }, pattern: { kind: "breakout" } }, 100],
+        [L(110, 103, 100, 80, 115), 110, {}],
+        [L(100, 100, 100, 90, 110), 100, {}],
+        [L(90, 120, 118, 90, 130), 90, {}],
+        [FULL, 100, {}],
         [{ as_of: "d", levels: { ma50: 100, ma200: 100, swing_lo_3m: 80, swing_hi_3m: 120 },
-           indicators: { rsi14: 85, macd_hist: -0.1 }, pattern: { kind: "double_top" } }, 112],
-        [{ as_of: "d", levels: { ma200: 100 } }, 110],
-        [null, 100],
+           indicators: { rsi14: 85, macd_hist: -0.1 }, pattern: { kind: "double_top" } }, 112, {}],
+        [{ as_of: "d", levels: { ma200: 100 } }, 110, {}],
+        [null, 100, {}],
+        // v5.0 cadence identity: fresh, mid-age (fast windows expired), old (swings gone
+        // too), all-dark, and undated-fail-closed must agree across both implementations.
+        [FULL, 100, { age: 2 }],
+        [FULL, 100, { age: 10 }],
+        [FULL, 100, { age: 20 }],
+        [FULL, 100, { age: 40 }],
+        [FULL, 100, { age: null }],
       ];
-      return cases.every(([pa, px]) => {
-        const a = local(pa, px, {}), b = TR.computeTechRead(pa, px, {});
+      return cases.every(([pa, px, opts]) => {
+        const a = local(pa, px, opts), b = TR.computeTechRead(pa, px, opts);
         return a.label === b.label && a.counted === b.counted && a.bull === b.bull
-          && a.bear === b.bear && (a.downgraded === null) === (b.downgraded === null);
+          && a.bear === b.bear && (a.downgraded === null) === (b.downgraded === null)
+          && a.missing.length === b.missing.length && a.stale === b.stale;
       });
     })());
+  /* ── v5.0 (W2) cadence boundaries, EXECUTED at ±1 day (the DEC-33 convention) ─────────
+     One flat window took the whole WHEN leg dark at once (36/36 names at 8d, measured
+     2026-08-23). Each input now ages at its own rate; every window edge is run here so
+     changing one is one edit plus one red test. */
+  ok("cadence: the table is asserted in ONE shape in both homes — entry 7 · indicators 7 · swings 14 · MAs 30",
+    TR.PA_CADENCE.entry === 7 && TR.PA_CADENCE.indicators === 7 &&
+    TR.PA_CADENCE.swings === 14 && TR.PA_CADENCE.mas === 30 &&
+    adminSrc.includes("const PA_CADENCE={entry:7,indicators:7,swings:14,mas:30};"));
+  ok("cadence: indicators expire past 7d — excluded and NAMED with their window, never silently voted",
+    (() => { const at7 = TR.computeTechRead(FULLC(), 100, { age: 7 });
+      const at8 = TR.computeTechRead(FULLC(), 100, { age: 8 });
+      return at7.factors.some((f) => f.key === "rsi") &&
+        !at8.factors.some((f) => f.key === "rsi") &&
+        at8.missing.some((m) => /RSI \(stale: 8d past its 7d window\)/.test(m)); })());
+  ok("cadence: swings expire past 14d, MAs past 30d — the slow factors survive the fast ones' expiry",
+    (() => { const at14 = TR.computeTechRead(FULLC(), 100, { age: 14 });
+      const at15 = TR.computeTechRead(FULLC(), 100, { age: 15 });
+      const at30 = TR.computeTechRead(FULLC(), 100, { age: 30 });
+      const at31 = TR.computeTechRead(FULLC(), 100, { age: 31 });
+      const has = (r, k) => r.factors.some((f) => f.key === k);
+      return has(at14, "range") && !has(at15, "range") && has(at15, "trend") &&
+        has(at30, "trend") && !has(at31, "trend") && at31.counted === 0; })());
+  ok("cadence: an 8-day-old stamp reads the SLOW factors live — the exact 2026-08-23 book-wide " +
+     "dark state, now degrading honestly instead of all-or-nothing",
+    (() => { const r = TR.computeTechRead(FULLC(), 100, { age: 8 });
+      return r.factors.some((f) => f.key === "trend") && r.factors.some((f) => f.key === "range") &&
+        r.missing.length === 3 && r.label === "UNREAD" && /needs 3/.test(r.reason); })());
+  ok("cadence: undated fails closed to the FULL withhold — no window can rescue a stamp with no date",
+    (() => { const r = TR.computeTechRead(FULLC(), 100, { age: null });
+      return r.stale === true && /undated — fail closed/.test(r.reason) && r.counted === 0; })());
+  ok("cadence: the legacy global stale flag still withholds everything (back-compat callers)",
+    TR.computeTechRead(FULLC(), 100, { stale: true }).reason.includes("levels are stale"));
   ok("tech: the deep-dive section renders the RULE beside every vote (the macro-dash pattern), " +
      "names excluded inputs, and never hides the withhold",
     /function ddTechSec\(x,dd\)/.test(adminSrc)
@@ -6555,7 +6685,7 @@ console.log("\n[58] FEAT-TT-MAG7 — deck panel, basket average, honesty gates")
     const env = { MAG7_SET: new Set(["GOOGL","META","MSFT","AMZN","TSLA","NVDA","AAPL"]),
       BOOK: book, LIVE_PX: live, MAG_BASKET: null,
       runState: () => ({ k: "never" }), readiness: () => ({ blockers: ["no current model"], cautions: [] }),
-      ttInfo: () => ({ score: null, tier: null }), ddOf: () => null, rankWeight: () => ({ w: null, held: false, mark: "" }) };
+      cardInfo: () => null /* v5: the basket reads the CARD source; MAGS has no card */, ddOf: () => null, rankWeight: () => ({ w: null, held: false, mark: "" }) };
     const fn = new Function("rows", ...Object.keys(env),
       `MAG_BASKET=null;{${blk.slice(blk.indexOf("{") + 1, blk.lastIndexOf("}"))}}return {MAG_BASKET, rows};`);
     return fn(rows, ...Object.values(env));
@@ -7780,8 +7910,17 @@ console.log("\n[68] FEAT-TT-ALLOC — pure core, endpoint, and the §14.8 bar");
       OLD: { at: TODAY + "T12:00:00Z", src: "rh", sh: 2, mv: 50, pct: 0.05 },
       BIG: { at: TODAY + "T12:00:00Z", src: "rh", sh: 9, mv: 20000, pct: 21 },
       OPT: { at: TODAY + "T12:00:00Z", src: "rh", opt: [{ k: "call", side: "long", n: 2 }] } } };
+  /* v5.0 §14.8 ACTIVATION: eligibility's quality rung reads SERVER CARDS, so the fixture
+     carries a score index — AAA SCORED under the current engine (the eligible path), BBB
+     none (vetoed "no server card"). CARD_OK is the pre-stamped shape direct evalBuyRow
+     calls pass (evaluateAllocation stamps methodology_current itself via cardOf). */
+  const SIDX = { AAA: { status: "SCORED", raw_score: 7.0, raw_tier: "A", capped_tier: "A",
+    provisional_score: null, provisional_tier: null,
+    methodology_version: TS.METHODOLOGY_VERSION, broken_thesis: false } };
+  const CARD_OK = { status: "SCORED", raw_score: 7.0, capped_tier: "A", methodology_current: true };
   const ev = (over = {}) => alloc.evaluateAllocation({ book: BOOK, ddIndex: IDX, posDoc: POSDOC,
-    quotes: {}, readout: READOUT, now: NOW, ...over });
+    quotes: {}, readout: READOUT, now: NOW,
+    scoreIndex: SIDX, methodologyVersion: TS.METHODOLOGY_VERSION, ...over });
   const R = ev();
   ok("alloc 1: a name with NO position takes BUY eligibility — underwriting is position-independent",
     R.eligible && R.eligible.sym === "AAA" && !("AAA" in {}) && R.state === "ALLOCATABLE");
@@ -7821,10 +7960,10 @@ console.log("\n[68] FEAT-TT-ALLOC — pure core, endpoint, and the §14.8 bar");
       return r.blockers.length === 1 && /dd index unavailable/.test(r.blockers[0]); })());
   ok("alloc D3: a red hinge is a CAUTION on the row, never a veto",
     (() => { const r = alloc.evalBuyRow({ entry: { sym: "AAA", lastRun: TODAY }, idx: mkIdx({ hinges: [{ label: "h", state: "red" }] }),
-      quote: { px: 100 }, board: {}, horizon: null, now: NOW });
+      quote: { px: 100 }, board: {}, horizon: null, now: NOW, card: CARD_OK });
       return !r.blockers.length && r.cautions.some((c) => /RED/.test(c)) && alloc.whyNot(r, 1) === null; })());
   ok("alloc: the cap vetoes the pick at exactly CAP_PCT (RANKFAIR — no room is no room)",
-    (() => { const r = alloc.evalBuyRow({ entry: { sym: "AAA", lastRun: TODAY }, idx: mkIdx(), quote: { px: 100 }, board: {}, horizon: null, now: NOW });
+    (() => { const r = alloc.evalBuyRow({ entry: { sym: "AAA", lastRun: TODAY }, idx: mkIdx(), quote: { px: 100 }, board: {}, horizon: null, now: NOW, card: CARD_OK });
       return /at the 18% cap/.test(alloc.whyNot(r, 18)) && alloc.whyNot(r, 17.9) === null; })());
   ok("alloc: the FIX-C label rides the result verbatim",
     R.funding.label === "FUNDING PRIORITY — not a sell recommendation");
@@ -7861,7 +8000,8 @@ console.log("\n[68] FEAT-TT-ALLOC — pure core, endpoint, and the §14.8 bar");
     const I2 = { asOf: TODAY, entries: { ...IDX.entries, FAR: farIdx } };
     const P2 = { ...POSDOC, positions: { ...POSDOC.positions, FAR: { at: TODAY + "T12:00:00Z", src: "rh", sh: 5, mv: 500, pct: 0.5 } } };
     const r2 = alloc.evaluateAllocation({ book: B2, ddIndex: I2, posDoc: P2, quotes: { AAA: { px: 100 }, FAR: { px: 100 } },
-      readout: READOUT, now: NOW });
+      readout: READOUT, now: NOW,
+      scoreIndex: { ...SIDX, FAR: { ...SIDX.AAA } }, methodologyVersion: TS.METHODOLOGY_VERSION });
     ok("v4.1.3 horizon: the receipt NAMES the excluded names, never merely omits them (the v3.65 rule)",
       Array.isArray(r2.unranked_at_horizon) && r2.unranked_at_horizon.includes("FAR") &&
       !r2.unranked_at_horizon.includes("AAA") && r2.horizon === YR);
@@ -7873,8 +8013,11 @@ console.log("\n[68] FEAT-TT-ALLOC — pure core, endpoint, and the §14.8 bar");
     ok("v4.1.3 horizon: a genuinely unmodelled name still reads 'unmodelled' (the two stay distinguishable)",
       (() => { const f = r2.funding.rows.find((x) => x.sym === "BBB");
         return !f || !/no rung at the shared horizon/.test(f.reason); })());
-    ok("v4.1.3: the rule version moved WITH the semantics — a cached v1.0.0 receipt must not be reinterpreted",
-      alloc.ALLOC_RULE_VERSION === "tt-alloc-v1.1.0");
+    // Re-pinned at v5.0: the §14.8 activation changed receipt semantics on BOTH sides
+    // (quality source + broken_thesis in funding), so the version moved to 2.0.0 — the
+    // same contract this pin has always protected.
+    ok("rule version moves WITH the semantics — a cached v1.x receipt must not be reinterpreted",
+      alloc.ALLOC_RULE_VERSION === "tt-alloc-v2.0.0");
   }
 
   // ── §14.8 bar + no-order-tools: structural, negative-controllable ──
@@ -7884,9 +8027,41 @@ console.log("\n[68] FEAT-TT-ALLOC — pure core, endpoint, and the §14.8 bar");
   // sweep strips comments first (the v3.60.1 lesson: a pin matching its own explanatory
   // prose proves nothing, in either direction).
   const stripComments = (s) => s.replace(/\/\*[\s\S]*?\*\//g, "").replace(/\/\/[^\n]*/g, "");
-  ok("§14.8 bar: the allocation CODE never references the score store — the shadow engine cannot feed the forced tier",
-    !/tt:score|BROKEN_THESIS/.test(stripComments(allocLibSrc)) &&
-    !/tt:score|BROKEN_THESIS/.test(stripComments(allocApiSrc)));
+  /* THE ACTIVATION SWITCH (v5.0, owner ruling 2026-08-23). This pin used to assert the
+     INVERSE — that no tt:score reference existed in the allocation code — and its
+     replacement is deliberate, not a workaround: the §14.8 bar's own text said the score
+     engine was barred "until activation", and this is that moment. What the pin protects
+     now: the endpoint reads the score store, the PURE lib still touches no KV itself
+     (purity boundary intact — it RECEIVES the index), and the BROKEN_THESIS forced-tier
+     wiring exists in code, not just comments. */
+  ok("§14.8 ACTIVATED: the endpoint reads the score index, the lib receives it as data, and BROKEN_THESIS feeds the forced tier",
+    /tt:score:index:v1/.test(stripComments(allocApiSrc)) &&
+    /scoreIndex/.test(stripComments(allocLibSrc)) &&
+    /BROKEN_THESIS — kill-flagged falsifier RED/.test(allocLibSrc) &&
+    /brokenSyms/.test(stripComments(allocLibSrc)));
+  ok("§14.8 ACTIVATED: the pure lib still performs no I/O of its own — it receives the index, never fetches it",
+    !/PULSE_CACHE|await fetch|env\./.test(stripComments(allocLibSrc)));
+  // The activation's behavioral truth table, run against the real evaluator:
+  ok("§14.8 SCORED-only: a PROVISIONAL card ranks but is vetoed with the falsifiers-pending reason",
+    (() => { const r = ev({ scoreIndex: { AAA: { status: "PROVISIONAL", raw_score: null, provisional_score: 8.4,
+        provisional_tier: "B", methodology_version: TS.METHODOLOGY_VERSION, broken_thesis: false } } });
+      return r.eligible === null && r.why_not.some((w) => w.sym === "AAA" && /falsifiers pending/.test(w.reason)); })());
+  ok("§14.8 SCORED-only: NO card at all reads 'no server card — unscored', never a silent pass",
+    (() => { const r = ev({ scoreIndex: {} });
+      return r.eligible === null && r.why_not.some((w) => w.sym === "AAA" && /no server card/.test(w.reason)); })());
+  ok("§14.8: a SCORED card minted by a RETIRED engine cannot light the line — re-score to verify",
+    (() => { const r = ev({ scoreIndex: { AAA: { ...SIDX.AAA, methodology_version: "tt-underwriting-v0.0.1" } } });
+      return r.eligible === null && r.why_not.some((w) => w.sym === "AAA" && /predates the current methodology/.test(w.reason)); })());
+  ok("§14.8 BROKEN_THESIS: a server-stamped broken thesis forces a HELD name to funding tier 1, reason named",
+    (() => { const r = ev({ scoreIndex: { ...SIDX, BIG: { status: "SCORED", raw_score: 6, capped_tier: "B",
+        methodology_version: TS.METHODOLOGY_VERSION, broken_thesis: true } } });
+      const f = r.funding.rows.find((x) => x.sym === "BIG");
+      return f && f.tier === 1 && /BROKEN_THESIS — kill-flagged falsifier RED/.test(f.reason); })());
+  ok("§14.8 BROKEN_THESIS: an owner-marked forced exit still outranks the flag's reason (first-set wins)",
+    (() => { const r = ev({ scoreIndex: { ...SIDX, CCC: { status: "SCORED", raw_score: 6, capped_tier: "B",
+        methodology_version: TS.METHODOLOGY_VERSION, broken_thesis: true } } });
+      const f = r.funding.rows.find((x) => x.sym === "CCC");
+      return f && f.tier === 1 && /owner-marked forced exit/.test(f.reason); })());
   ok("no-order-tools: no broker order call exists anywhere in the terminal or functions",
     !/place_equity_order|place_option_order/.test(adminSrc) &&
     !/place_equity_order|place_option_order/.test(allocLibSrc + allocApiSrc + ttSrc + snapSrc));
@@ -7916,7 +8091,14 @@ console.log("\n[68] FEAT-TT-ALLOC — pure core, endpoint, and the §14.8 bar");
   store.set("tt:book:v1", JSON.stringify(BOOK));
   store.set("tt:dd:index:v1", JSON.stringify(IDX));
   store.set("tt:pos:v1", JSON.stringify(POSDOC));
-  store.set("tt:quote:AAA", JSON.stringify({ px: 101, at: TODAY + "T14:00:00Z" }));
+  // v5.0 §14.8: the endpoint reads the score index — AAA must carry a current-methodology
+  // SCORED card or nothing is eligible and every confirm test downstream loses its receipt.
+  store.set("tt:score:index:v1", JSON.stringify({ version: 1, entries: SIDX }));
+  /* v5 W0: the quote cache is one batch key; entries are judged fresh by their OWN stamp,
+     so the fixture stamps must be now-derived — a fixed clock time would rot on the wall
+     clock (the v3.35/v3.80 fixture-date lesson). */
+  const qStamp = () => new Date().toISOString();
+  store.set("tt:quote:batch:v1", JSON.stringify({ at: qStamp(), quotes: { AAA: { px: 101, at: qStamp() } } }));
   const realFetch = globalThis.fetch;
   let LIVE_READOUT = READOUT;   // v4.1 Step 6: mutable so confirm-time re-binding can be driven
   try {
@@ -7936,7 +8118,7 @@ console.log("\n[68] FEAT-TT-ALLOC — pure core, endpoint, and the §14.8 bar");
       /^\d{2}\/\d{2} \d{2}:\d{2} ET$/.test(b1.receipt.at_et) &&
       b1.receipt.business_date_et === etYmd(new Date()));
     // basis vs input: a quote tick changes the audit identity, never the confirm basis
-    store.set("tt:quote:AAA", JSON.stringify({ px: 102, at: TODAY + "T14:02:00Z" }));
+    store.set("tt:quote:batch:v1", JSON.stringify({ at: qStamp(), quotes: { AAA: { px: 102, at: qStamp() } } }));
     const p2 = await ep.onRequest({ request: rq("POST"), env });
     const b2 = JSON.parse(await p2.text());
     ok("alloc ep: a quote tick changes input_hash but NOT basis_hash (a price move must not 409 a confirmation)",
@@ -8445,10 +8627,10 @@ console.log("\n[71] FEAT-TT-DRIFT — hinge staleness, composite drift, thin cov
     ok("THIN_COVERAGE regression control: scoped to ptRowYears it fires — proving the test would catch a revert",
       D.thinCoverage(excl, cand).length === 1);
     ok("driftSec passes the EMITTED rows, never ptRowYears",
-      /ry=\(ptModelRows\(dd\)\|\|\[\]\)\.map\(r=>r\.y\)/.test(adminSrc) &&
+      /rows=ptModelRows\(dd\)\|\|\[\];ry=rows\.map\(r=>r\.y\)/.test(adminSrc) &&
       !/ry=ptRowYears\(dd\)/.test(adminSrc));
   }
-  // COMPOSITE_STALE — the only asserted number with a mechanical consequence (>=B gates the eligible line).
+  // COMPOSITE_STALE — gated the eligible line until §14.8 activation; historical now, still linted.
   ok("COMPOSITE_STALE: evidence moving after the score is flagged as moved",
     (() => { const r = D.compositeDrift({ composite: { score: 7, basis: "scored 2026-08-18" },
       hinges: [{ asOf: "2026-08-22" }] }, NOW); return r && r.moved === true; })());
@@ -8469,7 +8651,141 @@ console.log("\n[71] FEAT-TT-DRIFT — hinge staleness, composite drift, thin cov
   ok("the terminal renders drift beside the intake checklist and never gates on it",
     /h\+=driftSec\(x\);/.test(adminSrc) &&
     (() => { const f = liftFns(adminSrc, ["driftSec"]);
-      return /lintDrift\(dd,ry\)/.test(f) && !/gateFail|AGREE_PICK|blocker/.test(f); })());
+      // v5.0: the call carries ctx (card + inputs + rows) so TARGET_STALE/RUNWAY_SPLIT run
+      // at the one altitude where the full record exists; still advisory-only.
+      return /lintDrift\(dd,ry,undefined,ctx\)/.test(f) && !/gateFail|AGREE_PICK|blocker/.test(f); })());
+
+  /* ── v5.0 (W2/W3): the three new detectors, each RUN — a lint is a claim about data ── */
+  // TARGET_STALE — the frozen card target vs the live ladder. 30/30 cards agreed on
+  // 2026-08-23 only because everything was scored that day at live quotes; this is the guard
+  // that freshness coincidence was standing in for.
+  const CARD_T = (target, basis = "PREMIUM") => ({ pillars: { owner_valuation:
+    { target, target_year: "2027", basis_used: basis } } });
+  ok("TARGET_STALE: a >5% gap between the frozen card target and the live rung is NAMED with both numbers",
+    (() => { const r = D.targetDrift(CARD_T(200), [{ y: "2027", prem: 230, fl: 100 }]);
+      return r && r.card_target === 200 && r.fresh === 230 && r.pct === 15; })());
+  // Float note (the v3.83 convention): 210/200-1 computes 5.000000000000004%, so the exact
+  // edge is float-unsafe by construction — pinned clear of it on both sides instead.
+  ok("TARGET_STALE: inside 5% is silent — the receipt governs at its stamped basis, a small drift is not a finding",
+    D.targetDrift(CARD_T(200), [{ y: "2027", prem: 206, fl: 100 }]) === null &&
+    D.targetDrift(CARD_T(200), [{ y: "2027", prem: 209.8, fl: 100 }]) === null &&
+    D.targetDrift(CARD_T(200), [{ y: "2027", prem: 210.5, fl: 100 }]) !== null);
+  ok("TARGET_STALE: basis-aware — a FLOOR card compares against fl, never the premium beside it",
+    (() => { const r = D.targetDrift(CARD_T(100, "FLOOR"), [{ y: "2027", prem: 230, fl: 101 }]);
+      return r === null; })() &&
+    (() => { const r = D.targetDrift(CARD_T(100, "FLOOR"), [{ y: "2027", prem: 230, fl: 120 }]);
+      return r && r.fresh === 120; })());
+  ok("TARGET_STALE: the rung disappearing entirely reads 'gone' — the model moved from under the receipt",
+    (() => { const r = D.targetDrift(CARD_T(200), [{ y: "2028", prem: 230, fl: 100 }]);
+      return r && r.gone === true; })() &&
+    D.targetDrift({ pillars: {} }, [{ y: "2027", prem: 230 }]) === null);   // no target = nothing to drift
+  // RUNWAY_SPLIT — one fact, two homes (the ACHR 21.9-vs-24 intra-session split, caught by hand).
+  const UI_RW = (a, b) => ({ economic_quality: { runway_months: a === undefined ? undefined : { value: a } },
+    route_gates: { PH_G2_RUNWAY: b === undefined ? {} : { runway_months: b } } });
+  ok("RUNWAY_SPLIT: numeric copies that disagree are a finding naming both",
+    (() => { const r = D.runwaySplit(UI_RW(21.9, 24)); return r && r.a === 21.9 && r.b === 24; })() &&
+    D.runwaySplit(UI_RW(24, 24)) === null);
+  ok("RUNWAY_SPLIT: mode-aware — a P3 with no runway field (the SYM shape) is silent, never a false split",
+    D.runwaySplit({ economic_quality: {}, route_gates: { PH_G2_RUNWAY: { runway_months: "SELF_FUNDING" } } }) === null &&
+    D.runwaySplit(UI_RW(undefined, 24)) === null);
+  ok("RUNWAY_SPLIT: SELF_FUNDING beside a numeric burn is a CONTRADICTION — a generator and a burn-down cannot both be true",
+    (() => { const r = D.runwaySplit(UI_RW("SELF_FUNDING", 24)); return r && r.kind === "sentinel"; })() &&
+    D.runwaySplit(UI_RW("SELF_FUNDING", "SELF_FUNDING")) === null);
+  // LABEL_DRIFT — the GEV case: prose claiming floor-only beside a stored premium.
+  ok("LABEL_DRIFT: 'no premium multiple' prose beside a stored premium fires (the GEV defect, verbatim shape)",
+    (() => { const r = D.labelDrift({ pt_model: { pe_premium_multiple: { 2027: 34.9 },
+      basis: "Floor only: 18x FY+1 EPS. No premium multiple asserted." } });
+      return r && /no premium multiple/.test(r.phrase); })());
+  ok("LABEL_DRIFT: floor-only prose is LEGITIMATE when floor_only_before scopes it — the corrected GEV must not re-fire",
+    D.labelDrift({ pt_model: { pe_premium_multiple: { 2027: 34.9 }, floor_only_before: "2027",
+      basis: "the YE2026 rung is deliberately floor-only; premium engages from YE2027" } }) === null);
+  ok("LABEL_DRIFT: a genuinely floor-only model is silent — the phrase is only a lie beside a premium",
+    D.labelDrift({ pt_model: { pe_floor_multiple: 18, basis: "Floor only: 18x FY+1 EPS. No premium multiple asserted." } }) === null);
+  // Emission: all three ride lintDrift via ctx, all sev:warn (the family contract holds).
+  ok("v5 lints: lintDrift emits all three through ctx, every finding still sev:warn",
+    (() => { const dd = { pt_model: { pe_premium_multiple: { 2027: 30 }, basis: "no premium multiple asserted" } };
+      const ctx = { card: CARD_T(200), rows: [{ y: "2027", prem: 230, fl: 100 }],
+        ui: UI_RW(21.9, 24) };
+      const ls = D.lintDrift(dd, [], undefined, ctx);
+      const codes = ls.map((l) => l.code);
+      return codes.includes("TARGET_STALE") && codes.includes("RUNWAY_SPLIT") &&
+        codes.includes("LABEL_DRIFT") && ls.every((l) => l.sev === "warn"); })());
+  ok("v5 lints: an absent ctx behaves exactly as v4.3 — the new detectors are additive, never a new requirement",
+    (() => { const ls = D.lintDrift({ pt_model: { pe_floor_multiple: 18 } }, [], undefined);
+      return ls.every((l) => !["TARGET_STALE", "RUNWAY_SPLIT"].includes(l.code)); })());
+}
+
+// ═══════════ [72] v5.0 W0 — THE QUOTE BATCH: one key, merge-on-write, entry-age freshness ═══════════
+// The per-symbol tt:quote:<SYM> keys blew the KV free-tier delete cap on 2026-08-23 —
+// one whole-book refresh was ~40 writes + ~40 TTL expirations. One batch key collapses
+// that to 1 + 1 WITHOUT moving the stated 2-minute freshness contract, which now lives on
+// each entry's own `at` stamp (key presence proves nothing once merge-on-write refreshes
+// the key). Behavioral, not string-pinned: the whole feature is a claim about op counts.
+console.log("\n[72] v5.0 W0 — quote batch: op-count collapse, merge-on-write, freshness");
+{
+  const QC = await import("../functions/lib/quote-cache.js");
+  const QEP = await import("../functions/api/quotes.js");
+  const mkKv = (seed = {}) => {
+    const store = new Map(Object.entries(seed));
+    const log = { puts: [], gets: [] };
+    return { store, log, kv: {
+      get: async (k, t) => { log.gets.push(k); const v = store.get(k); return v == null ? null : (t === "json" ? JSON.parse(v) : v); },
+      put: async (k, v) => { log.puts.push(k); store.set(k, String(v)); },
+    } };
+  };
+  const rq = (syms) => ({ url: "https://x.test/api/quotes?syms=" + syms, headers: { get: () => null } });
+  const realFetch = globalThis.fetch;
+  let finnhubCalls = [];
+  globalThis.fetch = async (url) => {
+    const sym = new URL(url).searchParams.get("symbol");
+    finnhubCalls.push(sym);
+    return { ok: true, json: async () => ({ c: 100 + sym.length, dp: 1.5 }) };
+  };
+  try {
+    // COLD whole-batch refresh → exactly ONE put, the batch key — the op-count collapse itself.
+    let { store, log, kv } = mkKv();
+    let env = { ACCESS_DEV_BYPASS: "1", PULSE_CACHE: kv, FINNHUB_KEY: "k" };
+    let r = await QEP.onRequestGet({ request: rq("AAA,BBB,CCC"), env });
+    let body = JSON.parse(await r.text());
+    ok("W0: a cold 3-symbol refresh performs exactly ONE KV put — the batch key, never per-sym",
+      log.puts.length === 1 && log.puts[0] === QC.QUOTE_BATCH_KEY &&
+      Object.keys(body.quotes).length === 3);
+    // WARM within the window → zero puts, zero upstream calls; served from entry-age hits.
+    finnhubCalls = []; log.puts.length = 0;
+    r = await QEP.onRequestGet({ request: rq("AAA,BBB,CCC"), env });
+    body = JSON.parse(await r.text());
+    ok("W0: a warm refresh inside the 2-min window is ZERO puts and ZERO upstream fetches",
+      log.puts.length === 0 && finnhubCalls.length === 0 && Object.keys(body.quotes).length === 3);
+    // MERGE-ON-WRITE: a subset request must not clobber symbols it did not ask about.
+    finnhubCalls = [];
+    await QEP.onRequestGet({ request: rq("DDD"), env });
+    const merged = JSON.parse(store.get(QC.QUOTE_BATCH_KEY)).quotes;
+    ok("W0: merge-on-write — a 1-symbol request leaves the other 3 entries in the batch intact",
+      ["AAA", "BBB", "CCC", "DDD"].every((s) => merged[s] && Number.isFinite(merged[s].px)));
+    // ENTRY-AGE freshness: an old entry inside a FRESH key is a MISS, never served as live.
+    const oldAt = new Date(Date.now() - 10 * 60000).toISOString();
+    ({ store, log, kv } = mkKv({ [QC.QUOTE_BATCH_KEY]: JSON.stringify({ at: new Date().toISOString(),
+      quotes: { AAA: { px: 55, at: oldAt } } }) }));
+    env = { ACCESS_DEV_BYPASS: "1", PULSE_CACHE: kv, FINNHUB_KEY: "k" };
+    finnhubCalls = [];
+    r = await QEP.onRequestGet({ request: rq("AAA"), env });
+    body = JSON.parse(await r.text());
+    ok("W0: a 10-minute-old entry in a fresh batch key is a MISS — refetched, never served stale as live",
+      finnhubCalls.includes("AAA") && body.quotes.AAA.px !== 55);
+    ok("W0: freshEntry fails CLOSED — garbled/missing stamps and non-finite px all read null",
+      QC.freshEntry({ px: 1, at: "not-a-date" }, Date.now()) === null &&
+      QC.freshEntry({ px: NaN, at: new Date().toISOString() }, Date.now()) === null &&
+      QC.freshEntry(null, Date.now()) === null &&
+      QC.freshEntry({ px: 1, at: new Date().toISOString() }, Date.now()) !== null);
+  } finally { globalThis.fetch = realFetch; }
+  // The three consumers all resolve freshness through the ONE lib — no per-sym key remains.
+  const qsrc = readSrc("../functions/api/quotes.js"), tsrc = readSrc("../functions/api/tt.js"),
+    asrc = readSrc("../functions/api/allocation.js");
+  ok("W0: every consumer imports the one quote-cache lib and no per-symbol tt:quote concat survives",
+    [qsrc, tsrc, asrc].every((x) => /lib\/quote-cache\.js/.test(x)) &&
+    ![qsrc, tsrc, asrc].some((x) => /QUOTE_PREFIX \+|CACHE_PREFIX \+/.test(x)));
+  ok("W0: the ledger px stamp reads the batch ONCE per append and gates on freshEntry",
+    /readQuoteBatch\(env\)/.test(tsrc) && /freshEntry\(qBatch\.quotes\[sym\]/.test(tsrc));
 }
 
 console.log(`\n=== SMOKE TEST: ${pass} passed, ${fail} failed ===`);

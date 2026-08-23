@@ -2881,6 +2881,100 @@ Jan-anchor shipped; see `snapshot.js` ~318–328), `spyMa100`, `spyMa200`, and a
   VALUATION GAP ranking (§11.1 — the ranking always renders, which is the owner's actual
   "always an output" contract, and it was never suspended). Tests: 1223 smoke (+2) + 199
   render (+1).
+- **v5.0.0 "THE CARD GOVERNS" — §14.8 activation, one freshness doctrine, the KV fix, and the
+  FINANCIALS mode.** The V5 system audit's ranked scope, built as one release under three owner
+  rulings (2026-08-23): **flip SCORED-only** · **stay on the KV free tier and fix the cause** ·
+  **include the FINANCIALS P3 mode**. Five workstreams:
+  **W0 — the quote cache stops burning the KV budget.** The 1000-deletes/day free-tier cap blew
+  mid-session because `/api/quotes` wrote ONE KEY PER SYMBOL (120s TTL) and the terminal quotes
+  the whole book on every load — ~40 writes + ~40 expirations per cold refresh, ~25 refreshes =
+  the cap (whether Cloudflare bills TTL expiry as deletes is a platform semantic the repo cannot
+  settle; this was the only 1000/day-magnitude path either way, and it pressed the write cap
+  identically). **`functions/lib/quote-cache.js`** is the one home now: a single merge-on-write
+  batch key (`tt:quote:batch:v1`) collapses a cold refresh to **1 write + 1 expiry** — and the
+  stated 2-minute freshness contract DID NOT MOVE, it lives on each entry's own `at` stamp
+  (`freshEntry`, fail-closed), because merge-on-write refreshes the key and key presence would
+  otherwise prove nothing. Both other readers moved with the shape (`tt.js`'s ledger px stamp —
+  now ONE batch read per append — and `allocation.js`'s liveQuotes); smoke [72] runs the op
+  counts behaviorally (cold=1 put · warm=0 · merge preserves untouched symbols · a 10-minute-old
+  entry in a fresh key is a MISS).
+  **W1 — §14.8 ACTIVATED: the server card governs the board (SCORED-only).** The shadow period
+  ends. The eligible line's quality rung, the ranking chips, the tail sort and `rankCategories`
+  all read SERVER CARDS via **`cardInfo()`** (one resolution point — a loaded per-sym record
+  wins over the boot-time index); the board loads `GET /api/score?book=1` at boot — **the
+  endpoint that existed unused since v3.73**. Only a card with `status SCORED`, minted under
+  the CURRENT methodology, may light the line; PROVISIONAL ranks B-capped and is vetoed
+  *"falsifiers pending — score capped at B until they're committed"*; no card reads *"no server
+  card — unscored"*. The **methodology-relabel hole is closed at BOTH altitudes**: the per-sym
+  GET always relabelled a stale-methodology card LEGACY_UNVERIFIED but the `book=1` index path
+  never could — index entries now carry `methodology_version` (additive, `updateIndex`) and a
+  mismatch can rank but never light the line. **"WAIT — methods disagree" is retired** — the
+  wait existed because two live methods shared one board; disagreement is HISTORY now, stated
+  beside the legacy composite inside the collapsed details ("history, not a wait"), and the
+  legacy label reads *superseded at §14.8 activation*. **Server side, the activation switch is
+  the smoke pin itself**: [68]'s "no `tt:score` reference in alloc code" bar is deliberately
+  REPLACED by its inverse — `allocation.js` reads the score index and hands it to the pure lib
+  as data (purity intact, pinned), `evalBuyRow`/`whyNot` mirror the client's card ladder
+  rung-for-rung, and — per the old bar's own "until activation" text — **BROKEN_THESIS
+  (kill-flagged falsifier RED, server-stamped `broken_thesis` on the index) now forces funding
+  tier 1**, owner-marked reasons keeping precedence. This also silently fixed a real
+  divergence: the server used to compare an UNPARSED free-text composite (a string score like
+  "R3-A: 9.0" passed `s < 5.5` by accident); a card score is numeric by construction.
+  `ALLOC_RULE_VERSION` → **tt-alloc-v2.0.0** (receipt semantics changed on both sides — cached
+  v1.x receipts must not be reinterpreted, the v4.1.4 rule). **Deploy-day honesty:** every
+  stored card is v2.5.0-declared and the engine now reads v2.6.0 (W4), so the line reads the
+  re-score veto until tonight's re-scores land — strict §4.3, stated not smoothed.
+  **W2 — one freshness doctrine.** (a) **PA cadence**: the flat `PA_STALE_D=7` took the whole
+  WHEN leg dark at once (measured: 36/36 stamps at exactly 8d, 200-day averages included).
+  **`PA_CADENCE {entry:7 · indicators:7 · swings:14 · mas:30}`** (asserted, every boundary
+  executed at ±1d) — `paRead` judges per PATH, `computeTechRead` excludes per FACTOR with the
+  window NAMED in `missing` (a stale entry no longer takes the slow MAs dark with it; an
+  8-day-old stamp now reads trend+range live and degrades to UNREAD-with-reasons on quorum);
+  undated still fails closed to the full withhold in both homes, and the [57] cross-
+  implementation matrix gained five cadence fixtures. (b) **P3 inputs finally age**: the
+  machinery (`freshnessOf`, `actionabilityRollup`'s `pillarFresh` param) existed since §5.3
+  and reached only P4 hinges — the SELF_FUNDING entry named this as future scope; closed.
+  Quarterly cadence (`P_INPUT_CADENCE_D=120`): AGING = one missed quarter → CAUTION, STALE =
+  two → BLOCKED, **the SCORE never moves** (deleting a measurement for being old would
+  recreate "unmeasured reads as zero") and every aged field is NAMED in warnings. Measured
+  against the live book first: every stored P3 input is ≤~90d old, so nothing re-verdicts at
+  deploy. (c) **TARGET_STALE** (`ttDrift`): the card freezes P1's target at `computed_at`
+  while the board ranks live — 30/30 agreement on 2026-08-23 was a freshness COINCIDENCE, not
+  a guard. The stated rule is now enforced: *the receipt governs eligibility at its stamped
+  basis, the live ladder governs ranking*, and a >5% gap warns naming BOTH numbers
+  (basis-aware — a FLOOR card compares against `fl`, never the premium beside it).
+  **W3 — two more drift lints, both defects caught BY HAND this week.** **RUNWAY_SPLIT**: the
+  same runway fact lives in P3 and PH_G2, and an intra-session split (ACHR, 21.9 vs 24) was
+  caught only by a human re-reading the card — now mechanical, mode-aware (a PROFITABLE-mode
+  P3 has no runway field, the SYM shape; `SELF_FUNDING` beside a numeric burn is flagged as a
+  CONTRADICTION). **LABEL_DRIFT**: GEV's `basis` read "Floor only … No premium multiple
+  asserted" beside the premium the v4.2 seed had added — the label-outlives-its-data defect
+  INSIDE stored data; fires on the lie ("no premium multiple" / unscoped "floor only" beside a
+  stored premium), silent when `floor_only_before` legitimately scopes the phrase. All three
+  new lints ride `lintDrift`'s new optional `ctx` (absent = v4.3 behavior exactly), join the
+  [49] byte-identity tripwire and the ICON map, and stay `sev:"warn"` — the family contract.
+  COMPOSITE_STALE's message is corrected too: the legacy composite no longer gates anything
+  ("historical since §14.8"), a claim that would otherwise have rotted in the lint that
+  exists to catch rotted claims.
+  **W4 — FINANCIALS P3 mode** (`tt-underwriting-v2.6.0`): the shape SOFI/NU/HOOD never had —
+  a lender has no operating-income line and its operating cash flow is structurally
+  meaningless (deposit flows and originations ride inside it), so PROFITABLE_STANDARD could
+  never describe one. Five components, weights asserted for owner ratification:
+  `efficiency_ratio_pct` (.25, INVERTED anchor — cost over revenue), `efficiency_direction_pp`
+  (.15, inverted), `capital_efficiency` ROE/ROTCE (.20, metric named), **`capital_adequacy`**
+  (.25 — headroom above the NAMED regime minimum; a bare ratio with no stated requirement
+  REFUSES to score: SOFI reports CET1, NU Basel-local, HOOD broker-dealer net capital), and
+  **`credit_quality_trend`** (.15, enum with source+rationale — the thing that actually kills
+  lenders and that no numeric field can see). Input aging reaches the new mode from birth.
+  Data fill is the post-reset KV work.
+  Tests: **1901 smoke** (+34 net: [72] quote batch · the [68] activation truth table with the
+  §14.8 pin inverted · [51]/[58] re-rigged onto cards · cadence identity + boundaries ·
+  P3 aging · the three lint batteries · FINANCIALS boundaries) + **271 render** (eligible-line
+  fixtures re-primed through the extended `/api/score` stub — the board's quality gate now
+  clears via a SCORED index entry, never an injected legacy composite; the governs-panel
+  re-pins) + 171 public-render + `audit:prod` clean. **Negative-controlled four ways**:
+  disabling the SCORED-only rung, widening a cadence window, removing a lint emission, and
+  unwiring `pillarFresh` from the rollup each turn their pins red (1/3/2/1).
 - **Session log 2026-08-23 (post-v4.99) — the V5 system audit.** Owner-directed: an end-to-end,
   first-principles audit of runway months, PT rungs, next dollar and technicals against the
   purpose (*a retail investor with a watchlist wanting the scores, the next dollars and the

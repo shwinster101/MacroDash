@@ -10,11 +10,17 @@
 // PURE by construction: no KV, no fetch, no Date.now() defaults leaking hidden state — the
 // endpoint feeds it plain data. Node-importable, so smoke RUNS the truth tables.
 //
-// ⚠ §14.8 BAR (owner call 2026-08-17): the FORCED funding tier reads ONLY owner-marked
-// signals — a board decision carrying forced_exit:true, or cut-list membership. The shadow
-// score engine's BROKEN_THESIS must NOT feed it until activation; this module deliberately
-// receives no score records at all, so the bar holds by construction (smoke pins that no
-// tt:score reference exists in this file or the endpoint).
+// ⚠ §14.8 ACTIVATED (owner ruling 2026-08-23, SCORED-only policy): the shadow period is
+// over. This module now RECEIVES the server score index (still pure — the endpoint loads
+// tt:score:index:v1 and passes it in) and the quality rung of the eligibility ladder reads
+// SERVER CARDS, never the legacy free-text composite: only a card with status SCORED,
+// minted under the CURRENT methodology, may make a name eligible; a PROVISIONAL card ranks
+// (B-capped) and is vetoed with the falsifiers-pending reason; no card at all is "no server
+// card — unscored". The old bar's own text said BROKEN_THESIS was barred from the forced
+// funding tier "until activation" — this is that moment: a server-stamped broken_thesis
+// flag (kill-flagged falsifier RED, or a BROKEN_THESIS gate FAIL) now forces tier 1,
+// beside the owner-marked signals it joins. Smoke [68] pins the ACTIVATED contract — the
+// inverse of the pin that held the bar.
 //
 // ⚠ MIRRORS (admin.html is buildless and cannot import — the MAX_BODY convention, each pair
 // smoke mirror-pinned): CAP_PCT (admin L1340) · PX_STALE_D=4 (admin L1347) · REG_RANK
@@ -25,7 +31,11 @@ import { ptModelRows, ptRowYears, lintPtModel, pickRow, annualise } from "../../
 import { etYmd } from "../../src/sources.js";
 import { POS_STALE_D } from "../api/positions.js";
 
-export const ALLOC_RULE_VERSION = "tt-alloc-v1.1.0";   // v4.1.3: horizon never substituted — receipt semantics changed, so cached v1.0.0 receipts must not be reinterpreted
+// v2.0.0 (v5.0 §14.8 activation): the quality rung moved from legacy free-text composites
+// to server score cards, and broken_thesis entered the forced funding tier — receipt
+// semantics changed on BOTH sides, so cached v1.x receipts must not be reinterpreted
+// (the v4.1.4 precedent). v1.1.0 was the horizon-never-substituted change.
+export const ALLOC_RULE_VERSION = "tt-alloc-v2.0.0";
 export const CAP_PCT = 18;      // mirror of admin.html (hard single-position cap)
 export const PX_STALE_D = 4;    // mirror of admin.html (a stamped mark older than this misleads)
 export const REG_RANK = { TAILWIND: 0, NEUTRAL: 1, HEADWIND: 2, PANIC: 3 };
@@ -134,7 +144,7 @@ export function autoHorizonOf(rowsBySym) {
    server-computable from index + book + quotes; anything this altitude cannot see is NAMED
    as a blocker (a missing dd-index entry), never silently passed. Cautions do not veto —
    the client rule (aging evidence is the owner's to weigh; missing evidence is not). */
-export function evalBuyRow({ entry, idx, quote, board, horizon, now }) {
+export function evalBuyRow({ entry, idx, quote, board, horizon, now, card }) {
   const sym = entry.sym;
   const blockers = [], cautions = [];
   if (!idx) {
@@ -187,8 +197,22 @@ export function evalBuyRow({ entry, idx, quote, board, horizon, now }) {
   const tgt = r ? (typeof r.prem === "number" ? r.prem : (typeof r.fl === "number" ? r.fl : null)) : null;
   const up = px !== null && tgt !== null ? Math.round((tgt / px - 1) * 1000) / 10 : null;
   const ann = up !== null && r ? annualise(up, r.y, now) : null;
-  const quality = idx.composite && (idx.composite.score ?? null) !== null
-    ? { score: idx.composite.score, tier: idx.composite.raw_tier || null } : null;
+  /* v5.0 §14.8 ACTIVATION: quality is the SERVER CARD, never the legacy free-text
+     composite. This also closes a silent client/server divergence for free: the old code
+     took idx.composite.score RAW (unparsed — deepdive.js copies it verbatim), so a string
+     score like "R3-A: 9.0" compared `s < 5.5` as false and PASSED by accident while the
+     client parsed 9.0 out of the same text. A card score is numeric by construction.
+     `card` is the score-index entry for this sym (or null): {status, raw_score,
+     provisional_score, capped_tier, provisional_tier, methodology_version, broken_thesis}
+     plus `methodology_current` stamped by the caller. Ranking may use a provisional
+     number; ELIGIBILITY requires SCORED under the current methodology — whyNot() is
+     where that distinction is enforced. */
+  const quality = card && (card.raw_score ?? card.provisional_score) !== null && (card.raw_score ?? card.provisional_score) !== undefined
+    ? { score: card.raw_score ?? card.provisional_score,
+        tier: card.raw_score !== null && card.raw_score !== undefined ? (card.capped_tier || null) : (card.provisional_tier || null),
+        status: card.status || null,
+        methodology_current: card.methodology_current === true }
+    : (card ? { score: null, tier: null, status: card.status || null, methodology_current: card.methodology_current === true } : null);
   return { sym, blockers, cautions, px, px_at, live: live !== null, tgt, y: r ? r.y : null,
     up, ann, quality, rolled: pk ? pk.rolled : null, no_rung_at_horizon: noRung };
 }
@@ -214,9 +238,19 @@ export function whyNot(row, weightPct) {
   if (!(row.up > 0)) return "no gap";
   if (weightPct !== null && weightPct >= CAP_PCT) return `already ${weightPct}% — at the ${CAP_PCT}% cap, no room`;
   if (row.blockers.length) return `evidence: ${row.blockers.join(", ")}`;
-  if (!row.quality) return "unscored — no TT run";
-  const s = row.quality.score;
-  if ((row.quality.tier && /^C\b/.test(String(row.quality.tier))) || (s !== null && s < 5.5))
+  /* v5.0 §14.8 ACTIVATION (SCORED-only, owner ruling 2026-08-23): the quality rung reads
+     the server card. Each non-eligible state gets ITS OWN reason — a PROVISIONAL name and
+     an unscored one are different facts, and the veto text is what the owner reads. */
+  if (!row.quality) return "no server card — unscored";
+  const q = row.quality;
+  if (q.status === "PROVISIONAL")
+    return `falsifiers pending — score capped at ${q.tier || "B"} until they're committed (PROVISIONAL is never eligible)`;
+  if (q.status !== "SCORED")
+    return `server card ${q.status || "incomplete"} — blockers on the card`;
+  if (!q.methodology_current)
+    return "card predates the current methodology — re-score to verify (§4.3)";
+  const s = q.score;
+  if ((q.tier && /^C\b/.test(String(q.tier))) || (s !== null && s < 5.5))
     return `TT ${s !== null ? Number(s).toFixed(1) : "C"} — quality fails`;
   return null;
 }
@@ -226,7 +260,7 @@ export function whyNot(row, weightPct) {
    broker-measured pct; the tracked-book floor is NAMED as a floor when it substitutes.
    do_not_trim is FLAGGED, never hidden (the RANKFAIR rule). Options-only sleeves keep the
    v3.44 rules: signed sum, unmeasured reads as such, a net-short sleeve is an obligation. */
-export function fundingRanking({ book, board, positions, rowsAnn, now, noRungSyms }) {
+export function fundingRanking({ book, board, positions, rowsAnn, now, noRungSyms, brokenSyms }) {
   const b = board || {}, pos = positions || {};
   const cut = new Set(Array.isArray(book && book.cut) ? book.cut : []);
   const forcedSyms = new Map(); // sym -> reason
@@ -234,6 +268,14 @@ export function fundingRanking({ book, board, positions, rowsAnn, now, noRungSym
     if (d && d.forced_exit === true && d.sym)
       forcedSyms.set(String(d.sym).toUpperCase(), `owner-marked forced exit${d.q ? `: ${String(d.q).slice(0, 80)}` : ""}`);
   for (const s of Object.keys(pos)) if (cut.has(s)) forcedSyms.set(s, "on the cut list — exited from the book, still held");
+  /* v5.0 §14.8 ACTIVATION: a server-stamped broken thesis (kill-flagged falsifier RED, or
+     a BROKEN_THESIS gate FAIL) forces tier 1 for a HELD name — the signal the old bar
+     deferred "until activation". Server-stamped only (the index flag), never client
+     free text; owner-marked reasons take precedence when both apply (first-set wins). */
+  if (brokenSyms instanceof Set)
+    for (const s of Object.keys(pos))
+      if (brokenSyms.has(s) && !forcedSyms.has(s))
+        forcedSyms.set(s, "BROKEN_THESIS — kill-flagged falsifier RED on the server card");
 
   const clusters = Array.isArray(b.clusters) ? b.clusters : [];
   const clusterOver = new Map(); // sym -> reason
@@ -294,7 +336,7 @@ export function fundingRanking({ book, board, positions, rowsAnn, now, noRungSym
 }
 
 // ── the whole evaluation ─────────────────────────────────────────────────────
-export function evaluateAllocation({ book, ddIndex, posDoc, quotes, readout, now }) {
+export function evaluateAllocation({ book, ddIndex, posDoc, quotes, readout, now, scoreIndex, methodologyVersion }) {
   const board = (book && book.board) || {};
   const entries = Array.isArray(book && book.book) ? book.book : [];
   const idxEntries = (ddIndex && ddIndex.entries) || {};
@@ -312,9 +354,20 @@ export function evaluateAllocation({ book, ddIndex, posDoc, quotes, readout, now
     rowsBySym[e.sym] = idx ? ptModelRows(idx, etYmd(now).slice(0, 4)) : [];
   }
   const horizon = autoHorizonOf(rowsBySym);
+  /* v5.0 §14.8 ACTIVATION: the score index is the quality source. Each entry is stamped
+     methodology_current HERE — one comparison, against the engine version the caller
+     passes — so evalBuyRow and whyNot never re-derive it. An absent index (older deploy,
+     KV fault) degrades every name to "no server card", the fail-closed read. */
+  const sIdx = (scoreIndex && typeof scoreIndex === "object") ? scoreIndex : {};
+  const cardOf = (sym) => {
+    const e = sIdx[sym];
+    if (!e || typeof e !== "object") return null;
+    return { ...e, methodology_current: !!(e.methodology_version && methodologyVersion && e.methodology_version === methodologyVersion) };
+  };
   const rows = entries.map((e) => evalBuyRow({ entry: e, idx: idxEntries[e.sym],
-    quote: quotes && quotes[e.sym], board, horizon, now }))
+    quote: quotes && quotes[e.sym], board, horizon, now, card: cardOf(e.sym) }))
     .sort((a, b) => ((b.ann ?? b.up ?? -1e9) - (a.ann ?? a.up ?? -1e9)));
+  const brokenSyms = new Set(Object.keys(sIdx).filter((s2) => sIdx[s2] && sIdx[s2].broken_thesis === true));
 
   const weightOf = (sym) => {
     const p = positions[sym];
@@ -363,7 +416,7 @@ export function evaluateAllocation({ book, ddIndex, posDoc, quotes, readout, now
   /* v3.65 rule, applied to the receipt: a silent truncation reads as full coverage, so the
      names the shared horizon excluded are NAMED, never just counted. */
   const noRungSyms = new Set(rows.filter((r) => r.no_rung_at_horizon).map((r) => r.sym));
-  const funding = fundingRanking({ book, board, positions, rowsAnn, now, noRungSyms });
+  const funding = fundingRanking({ book, board, positions, rowsAnn, now, noRungSyms, brokenSyms });
 
   return {
     rule_version: ALLOC_RULE_VERSION,

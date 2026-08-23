@@ -30,7 +30,13 @@
 import { ptModelRows, lintPtModel, pickRow } from "./ptModel.js";
 import { routeFor, gatesFor, premiumPrerequisiteFor, ROUTE_MAP_VERSION } from "./ttScoreRegistry.js";
 
-export const METHODOLOGY_VERSION = "tt-underwriting-v2.5.0";
+// v2.6.0 (v5.0 W4): P3 gains the FINANCIALS mode — a lender/broker has no operating-income
+// line, its operating cash flow is structurally meaningless (deposit flows and originations
+// ride inside it), and its solvency question is CAPITAL, not cash conversion. A new mode is
+// a methodology addition per §4.3; stored v2.5.0 cards read LEGACY_UNVERIFIED until
+// re-scored — the designed consequence, and the §14.8-activated eligibility rung treats a
+// retired-methodology card as never-eligible until then.
+export const METHODOLOGY_VERSION = "tt-underwriting-v2.6.0";
 export const GATE_NORMALIZATION_VERSION = "tt-gate-normalization-v1";
 
 /* ═══════════ §5.1 piecewise — the ONE numerical map ═══════════ */
@@ -59,6 +65,16 @@ export const ANCHORS = {
   ROIC:        [[0, 2], [5, 4], [10, 6], [15, 8], [25, 10]],
   ROE:         [[0, 2], [8, 4], [12, 6], [18, 8], [25, 10]],
   RUNWAY_MO:   [[0, 0], [6, 1], [12, 3], [18, 5], [24, 7], [36, 9], [48, 10]],
+  /* v5.0 (W4) FINANCIALS — ASSERTED, not calibrated (the NFCI convention), owner to ratify.
+     EFF_RATIO is INVERTED (lower is better — it is cost over revenue): a great franchise
+     runs the 40s, average 55-65, structurally challenged 75+. EFF_DIR is likewise inverted
+     (an IMPROVING efficiency ratio is a FALLING one). CAP_HEADROOM scores the margin ABOVE
+     the named regime minimum in % of that minimum — at-the-minimum is 0, double it is 10;
+     the regime itself is named or the field refuses to score (a bare ratio with no stated
+     requirement is not capital adequacy, it is a number). */
+  EFF_RATIO:   [[35, 10], [45, 8], [55, 6], [65, 4], [75, 2], [85, 0]],
+  EFF_DIR:     [[-10, 10], [-5, 9], [-2, 7], [0, 5], [2, 2], [5, 0]],
+  CAP_HEADROOM:[[0, 0], [10, 3], [25, 6], [50, 8], [100, 10]],
 };
 export const DURATION_SCORE = (years) => (years >= 4 ? 10.0 : years === 3 ? 7.5 : years === 2 ? 5.0 : null);
 /* §6.2.4 (v2.5.0) — the YEARS_TO_CROSSOVER step table: distance from the scoring ET year to
@@ -84,6 +100,36 @@ export function freshnessOf(asOf, cadenceDays, etToday) {
   if (age <= 2 * cadenceDays) return "AGING";
   return "STALE";
 }
+/* ═══ v5.0 (W2) — P3 INPUT AGING: measured evidence outlives a quarter, then says so ═══════
+   freshnessOf() existed since §5.3 and was applied ONLY to P4 hinges — a P3 margin could sit
+   unrefreshed forever and the card never aged (the SELF_FUNDING entry named this limit
+   explicitly as future scope; this is that scope). The cadence is QUARTERLY: 120 days = a
+   fiscal quarter + reporting lag, ASSERTED not calibrated (the NFCI convention). Under
+   freshnessOf that makes AGING one missed quarter (121-240d) and STALE two (241d+).
+   THE CHANNEL IS ACTIONABILITY, NEVER THE SCORE: an aged input still computes its pillar —
+   deleting a measurement because it is old would recreate "unmeasured reads as zero" — but
+   the card's actionability degrades through the rollup's PRE-EXISTING semantics (AGING →
+   CAUTION, STALE → BLOCKED), with every aged field NAMED in the pillar's warnings.
+   Measured against the live book before shipping: every stored P3 input is stamped
+   2026-06..08 (ages ≤ ~90d), so nothing moves at deploy; the first effects appear only if
+   evidence is never refreshed — which is the point. */
+export const P_INPUT_CADENCE_D = 120;
+export function inputFreshness(recs, etToday) {
+  // recs: [name, rec][] — only records that already PASSED validateAtomic (validation owns
+  // missing/future dates; aging must not double-report them). Worst-of, with names.
+  const RANK = { CURRENT: 0, AGING: 1, STALE: 2 };
+  let worst = "CURRENT"; const notes = [];
+  for (const [name, rec] of recs) {
+    if (!rec || !/^\d{4}-\d{2}-\d{2}$/.test(String(rec.as_of || ""))) continue;
+    const f = freshnessOf(rec.as_of, P_INPUT_CADENCE_D, etToday);
+    if (f === "AGING" || f === "STALE") {
+      notes.push(`${name}: ${f} (${ageDaysET(rec.as_of, etToday)}d old, ${P_INPUT_CADENCE_D}d cadence) — measured evidence has outlived its quarter${f === "STALE" ? " twice over" : ""}`);
+      if (RANK[f] > RANK[worst]) worst = f;
+    }
+  }
+  return { worst, notes };
+}
+
 const SOURCE_KINDS = ["MARKET", "PRIMARY", "CONSENSUS", "COMPANY_GUIDANCE", "OWNER_ASSERTED"];
 export function validateAtomic(rec, { etToday, nowMs, allowOwnerAsserted = false } = {}) {
   if (!rec || typeof rec !== "object") return "missing record";
@@ -323,6 +369,9 @@ const ENUM_SCORES = {
   unit_economics: { NEGATIVE: 0, IMPROVING: 5, POSITIVE: 10 },
   margin_direction: { DETERIORATING: 0, FLAT: 5, IMPROVING: 10 },
   path_to_profit: { NONE: 0, NARRATIVE_ONLY: 3, DATED_MILESTONES: 7, FCF_POSITIVE: 10 },
+  // v5.0 (W4): credit quality is what actually kills a lender, and none of the numeric
+  // fields can see it — a qualitative trend with a source and a rationale, never a guess.
+  credit_quality_trend: { DETERIORATING: 0, FLAT: 5, IMPROVING: 10 },
 };
 function enumScore(field, rec, res, { allowOwnerAsserted = false } = {}) {
   if (!rec || typeof rec !== "object" || !(rec.state in ENUM_SCORES[field])) {
@@ -354,6 +403,10 @@ export function scoreP3(q, { etToday, nowMs } = {}) {
     const cap = piecewise(ce.value, ce.metric === "ROIC" ? ANCHORS.ROIC : ANCHORS.ROE);
     res.components = { operating_margin: round2(om), margin_direction: round2(md), fcf_margin: round2(fm), capital_efficiency: round2(cap), metric: ce.metric };
     res.score = round2(0.35 * om + 0.25 * md + 0.25 * fm + 0.15 * cap);
+    const fr = inputFreshness([["operating_margin_pct", q.operating_margin_pct],
+      ["margin_direction_pp", q.margin_direction_pp], ["fcf_margin_pct", q.fcf_margin_pct],
+      ["capital_efficiency", ce]], etToday);
+    res.freshness = fr.worst; res.warnings.push(...fr.notes);
     return res;
   }
   if (q.mode === "PREPROFIT") {
@@ -367,9 +420,63 @@ export function scoreP3(q, { etToday, nowMs } = {}) {
     if (rwRead.self_funding) res.warnings.push("runway_months: SELF_FUNDING — scored at the anchor maximum");
     res.components = { unit_economics: ue, margin_direction: md, runway_quality: round2(rw), path_to_profit: pp };
     res.score = round2(0.35 * ue + 0.25 * md + 0.25 * rw + 0.15 * pp);
+    const fr = inputFreshness([["runway_months", q.runway_months], ["unit_economics", q.unit_economics],
+      ["margin_direction", q.margin_direction], ["path_to_profit", q.path_to_profit]], etToday);
+    res.freshness = fr.worst; res.warnings.push(...fr.notes);
     return res;
   }
-  res.blockers.push("quality_mode required (PROFITABLE_STANDARD|PREPROFIT)");
+  /* ═══ v5.0 (W4) — FINANCIALS: the lender/broker shape (SOFI · NU · HOOD) ══════════════
+     PROFITABLE_STANDARD structurally cannot describe a financial: there is no operating-
+     income line (NII + fees − provisions − non-interest expense is a different statement),
+     and FCF margin is MEANINGLESS — operating cash flow carries deposit flows and loan
+     originations, so a "cash conversion" read is noise. The five components, weights
+     ASSERTED for owner ratification like every anchor table:
+       efficiency_ratio_pct     .25  the operating-margin analogue, INVERTED (cost/revenue)
+       efficiency_direction_pp  .15  YoY move in that ratio, inverted (falling = improving)
+       capital_efficiency       .20  ROE or ROTCE, metric named (reuses the ROE anchor)
+       capital_adequacy         .25  headroom above the NAMED regime minimum — the solvency
+                                     question FCF could never ask. regime + min REQUIRED:
+                                     SOFI reports CET1, NU Basel-Brazil/Mexico, HOOD
+                                     broker-dealer net capital — a bare ratio with no stated
+                                     requirement refuses to score, never defaults.
+       credit_quality_trend     .15  enum with source+rationale — the thing that kills
+                                     lenders and that no numeric field here can see. */
+  if (q.mode === "FINANCIALS") {
+    for (const f of ["efficiency_ratio_pct", "efficiency_direction_pp"]) {
+      const err = validateAtomic(q[f], { etToday, nowMs });
+      if (err) res.blockers.push(f + ": " + err);
+    }
+    const ce = q.capital_efficiency;
+    if (!ce || (ce.metric !== "ROE" && ce.metric !== "ROTCE")) res.blockers.push("capital_efficiency: FINANCIALS must declare ROE or ROTCE — the scorer never chooses");
+    else { const err = validateAtomic(ce, { etToday, nowMs }); if (err) res.blockers.push("capital_efficiency: " + err); }
+    const ca = q.capital_adequacy;
+    if (!ca || typeof ca !== "object") res.blockers.push("capital_adequacy: missing record");
+    else {
+      if (!ca.regime || typeof ca.regime !== "string") res.blockers.push("capital_adequacy: the regulatory regime must be NAMED (CET1 / Basel-local / broker-dealer net capital) — a bare ratio is not adequacy");
+      const err = validateAtomic(ca, { etToday, nowMs });
+      if (err) res.blockers.push("capital_adequacy: " + err);
+      if (!(typeof ca.min_required === "number" && isFinite(ca.min_required) && ca.min_required > 0))
+        res.blockers.push("capital_adequacy: min_required (the regime minimum) must be a positive number");
+    }
+    const cq = enumScore("credit_quality_trend", q.credit_quality_trend, res);
+    if (res.blockers.length) return res;
+    const er = piecewise(q.efficiency_ratio_pct.value, ANCHORS.EFF_RATIO);
+    const ed = piecewise(q.efficiency_direction_pp.value, ANCHORS.EFF_DIR);
+    const cap = piecewise(ce.value, ANCHORS.ROE);           // ROTCE scored on the same anchor, metric named
+    const headroom = ((ca.value - ca.min_required) / ca.min_required) * 100;
+    const cad = piecewise(headroom, ANCHORS.CAP_HEADROOM);
+    res.components = { efficiency_ratio: round2(er), efficiency_direction: round2(ed),
+      capital_efficiency: round2(cap), metric: ce.metric,
+      capital_adequacy: round2(cad), regime: ca.regime, headroom_pct: round2(headroom),
+      credit_quality: cq };
+    res.score = round2(0.25 * er + 0.15 * ed + 0.20 * cap + 0.25 * cad + 0.15 * cq);
+    const fr = inputFreshness([["efficiency_ratio_pct", q.efficiency_ratio_pct],
+      ["efficiency_direction_pp", q.efficiency_direction_pp], ["capital_efficiency", ce],
+      ["capital_adequacy", ca], ["credit_quality_trend", q.credit_quality_trend]], etToday);
+    res.freshness = fr.worst; res.warnings.push(...fr.notes);
+    return res;
+  }
+  res.blockers.push("quality_mode required (PROFITABLE_STANDARD|PREPROFIT|FINANCIALS)");
   return res;
 }
 
@@ -654,6 +761,9 @@ export async function buildScorecard({ sym, lens, underwriting_inputs, dd, price
   card.actionability = actionabilityRollup({
     anyBlocked: card.status !== "SCORED" || prec.blockers.some((b2) => b2.startsWith("BLOCKED_PENDING_INPUT")),
     anyOwnerAsserted: p3.owner_asserted === true,
+    // v5.0 (W2): P3's input freshness finally reaches the rollup that was always built to
+    // receive it — AGING → CAUTION, STALE → BLOCKED, the aged fields named in warnings.
+    pillarFresh: [p3.freshness].filter(Boolean),
   });
   card.input_hash = await inputHash({ methodology_version: METHODOLOGY_VERSION, lens, underwriting_inputs: ui,
     dd_pt_model: dd && dd.pt_model, dd_consensus: dd && dd.consensus, horizon: horizon || null });
