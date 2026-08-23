@@ -106,6 +106,50 @@ export function validateAtomic(rec, { etToday, nowMs, allowOwnerAsserted = false
   return null;
 }
 
+/* ═══════════ runway_months: the SELF_FUNDING sentinel (v4.9.0, owner-directed) ═══════════
+   FIRST PRINCIPLES. The field exists to answer ONE question — can this company fund itself to
+   the thesis? `cash / burn` is not that question, it is one IMPLEMENTATION of it, and it is
+   correct for exactly one of the three regimes the live book actually contains:
+
+     1. EQUITY-FUNDED BURN-DOWN (JOBY, ACHR, BETA, TEM) — cash / burn is exactly right.
+     2. DEBT-FUNDED OPERATOR (CRWV) — operating cash flow is POSITIVE and the entire deficit is
+        capex drawn against contracted backlog. `cash / burn` printed 2.89 months, which reads
+        as imminent failure for a business funded by design. The real constraint is capital-
+        market access. NO CODE CHANGE IS NEEDED for this case: the author may include committed
+        undrawn facilities in the numerator and state the formula, exactly as every other
+        derived figure here is authored. What is missing for CRWV is the facilities FIGURE, not
+        a field shape — recorded as such on that card rather than papered over here.
+     3. CASH GENERATOR (SYM) — no burn at all. There is no number an honest author can write,
+        so the field was left unset and the input BLOCKED the pillar. A company that generates
+        cash therefore scored WORSE than one with 60 months of runway, which inverts the very
+        thing the field measures. That is the defect, and it is the only one needing code.
+
+   `SELF_FUNDING` is the fix: an explicit sentinel scoring the anchor MAXIMUM, because unbounded
+   runway is the best attainable state and the 48-month anchor top is its honest ceiling. It is
+   the same doctrine as the NO_FLOOR_PREPROFIT / "unmeasured is not zero" rule pointed at the
+   opposite end — "cannot be expressed as a number" and "bad" are different facts.
+
+   THE ENVELOPE IS STILL ENFORCED. as_of, source.kind and the no-OWNER_ASSERTED rule all apply
+   unchanged, so the claim carries provenance like any measured value. Any OTHER string still
+   returns the ordinary numeric errors, so a typo can never reach the anchor.
+
+   HONEST LIMIT, stated rather than hidden: nothing in P3 ages, so a SELF_FUNDING claim does not
+   go stale — and a cash generator can start burning. That is a real hole, but it is the SAME
+   hole a stale runway NUMBER has (both overstate in the same direction as they age), so this
+   adds none. Aging P3 inputs generally is its own scope. */
+export const SELF_FUNDING = "SELF_FUNDING";
+export function readRunway(rec, { etToday, nowMs } = {}) {
+  if (rec && typeof rec === "object" && rec.value === SELF_FUNDING) {
+    // Same envelope as any atomic — only the numeric test is replaced.
+    const probe = validateAtomic({ ...rec, value: 0 }, { etToday, nowMs });
+    if (probe) return { err: probe, score: null, self_funding: true };
+    return { err: null, score: piecewise(ANCHORS.RUNWAY_MO[ANCHORS.RUNWAY_MO.length - 1][0], ANCHORS.RUNWAY_MO), self_funding: true };
+  }
+  const err = validateAtomic(rec, { etToday, nowMs });
+  if (err) return { err, score: null, self_funding: false };
+  return { err: null, score: piecewise(rec.value, ANCHORS.RUNWAY_MO), self_funding: false };
+}
+
 /* ═══════════ §8.1 legacy gate-vocabulary normalization ═══════════ */
 export function normalizeLegacyGateState(raw, typedResult) {
   const s = String(raw == null ? "" : raw).trim();
@@ -316,10 +360,11 @@ export function scoreP3(q, { etToday, nowMs } = {}) {
     const ue = enumScore("unit_economics", q.unit_economics, res);
     const md = enumScore("margin_direction", q.margin_direction, res);
     const pp = enumScore("path_to_profit", q.path_to_profit, res, { allowOwnerAsserted: true });
-    const rwErr = validateAtomic(q.runway_months, { etToday, nowMs });
-    if (rwErr) res.blockers.push("runway_months: " + rwErr);
+    const rwRead = readRunway(q.runway_months, { etToday, nowMs });
+    if (rwRead.err) res.blockers.push("runway_months: " + rwRead.err);
     if (res.blockers.length) return res;
-    const rw = piecewise(q.runway_months.value, ANCHORS.RUNWAY_MO);
+    const rw = rwRead.score;
+    if (rwRead.self_funding) res.warnings.push("runway_months: SELF_FUNDING — scored at the anchor maximum");
     res.components = { unit_economics: ue, margin_direction: md, runway_quality: round2(rw), path_to_profit: pp };
     res.score = round2(0.35 * ue + 0.25 * md + 0.25 * rw + 0.15 * pp);
     return res;

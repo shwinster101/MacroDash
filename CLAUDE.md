@@ -2881,6 +2881,45 @@ Jan-anchor shipped; see `snapshot.js` ~318–328), `spyMa100`, `spyMa200`, and a
   VALUATION GAP ranking (§11.1 — the ranking always renders, which is the owner's actual
   "always an output" contract, and it was never suspended). Tests: 1223 smoke (+2) + 199
   render (+1).
+- **v4.9.0 — `runway_months` resolved: the field asked one question and could only answer it for
+  one kind of company.** Two names put the defect on both ends in the same session. **CRWV**
+  printed **2.89 months** — arithmetically exact, and reading as imminent failure for a business
+  whose operating cash flow is POSITIVE and whose entire deficit is capex drawn against $104B of
+  contracted backlog. **SYM** could not produce a number at all: it GENERATES cash, so the burn
+  denominator has the wrong sign, the input was left unset, and the pillar BLOCKED — meaning the
+  strongest funding position on the book scored **worse than a name with 60 months of runway**.
+  **First principles: the field exists to answer "can this company fund itself to the thesis?"
+  and `cash / burn` is not that question — it is one IMPLEMENTATION of it**, correct for exactly
+  one of the three regimes the live book contains: an equity-funded burn-down (JOBY/ACHR/BETA/
+  TEM), a debt-funded operator (CRWV), a cash generator (SYM).
+  **Only one of the three needs code, and that is the point of the fix.** A debt-funded operator
+  needs no shape change: its author may include committed undrawn facilities in the numerator and
+  state the formula, exactly as every other derived figure here is authored — what CRWV is missing
+  is the facilities FIGURE, recorded on that card rather than papered over with a field change.
+  A cash generator, by contrast, has **no honest number to write**, which is why it is the only
+  case the engine itself must learn.
+  **`SELF_FUNDING`** is that sentinel — an explicit value scoring the anchor **maximum**, because
+  unbounded runway is the best attainable state and the 48-month anchor top is its honest ceiling.
+  Same doctrine as `NO_FLOOR_PREPROFIT` and the "unmeasured is never zero" rule pointed at the
+  opposite end: *"cannot be expressed as a number"* and *"bad"* are different facts, and the field
+  had been collapsing them. `readRunway()` keeps the **full atomic envelope** — `as_of`,
+  `source.kind` and the no-`OWNER_ASSERTED` rule all enforced exactly as for a number, so the
+  sentinel is not a provenance bypass — and **any other string still returns the ordinary numeric
+  errors**, so `"self_funding"`, `"SELFFUNDING"` or `"24"` can never reach the anchor. `PH_G2_RUNWAY`
+  accepts it as a PASS on exact match for the same reason: a cash generator could previously only
+  read UNKNOWN there, scoring identically to no information at all.
+  **Backward compatible by construction** — a numeric value takes the identical path and produces
+  the identical score, asserted directly rather than assumed. No stored card used the sentinel
+  before this release, so nothing re-verdicts.
+  **Honest limit, stated not hidden:** nothing in P3 ages, so a SELF_FUNDING claim does not go
+  stale — and a cash generator can start burning. That is a real hole, but it is the SAME hole a
+  stale runway NUMBER already has (both overstate in the same direction as they age), so this adds
+  none. Aging P3 inputs generally is its own scope.
+  Tests: **1854 smoke** (+6: the anchor maximum proven to beat every finite value, the
+  pillar-computes-instead-of-blocking proof against the exact inversion, envelope enforcement on
+  all three legs, the typo sweep, exact-match on the gate, and a backward-compatibility assert)
+  + 271 render + 171 public-render + `audit:prod` clean. Negative-controlled: disabling the
+  sentinel in either home turns exactly those 4 pins red.
 - **v4.8.0 — the QC_G3 absolute ceiling: PEG cannot backstop a pathological multiple.** The
   v4.7.0 patch fixed this gate's SIGNS and left it without the backstop its sibling
   `AI_G3P_EARNINGS_BRIDGE` has carried since v4.5 — `pe > 45 -> FAIL`, there precisely so a

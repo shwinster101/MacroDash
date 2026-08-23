@@ -168,8 +168,13 @@ export const GATES = [
   {
     id: "PH_G2_RUNWAY", route: "PHYSICAL_AI", profile: null, premium_prerequisite: false,
     effect: { kind: "BROKEN_THESIS" }, cadence_days: 90,
-    inputs: { runway_months: "months — (cash+equivalents)/trailing-4q avg burn", committed_facility: "bool" },
+    inputs: { runway_months: "months — (cash+equivalents)/trailing-4q avg burn, or the literal \"SELF_FUNDING\"", committed_facility: "bool" },
     evaluate(i) {
+      // v4.9.0: a cash GENERATOR has no burn to divide by, so it could never answer this gate
+      // and read UNKNOWN — i.e. the strongest possible funding position scored the same as no
+      // information at all. The sentinel is exact-match; any other string still falls to n()
+      // and returns UNKNOWN, so a typo cannot manufacture a PASS. See ttScore.js readRunway.
+      if (i && i.runway_months === "SELF_FUNDING") return "PASS";
       const r = n(i.runway_months);
       if (r === null) return "UNKNOWN";
       if (r < 12 && b(i.committed_facility) !== true) return "FAIL";  // <12 exclusive (12.0 passes)

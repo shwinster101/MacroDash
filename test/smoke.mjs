@@ -4493,6 +4493,44 @@ console.log("\n[46] ttScore pillars — P1..P4 contracts run behaviorally");
     /missing or unknown enum/.test(TS.scoreP3({ mode: "PREPROFIT", margin_direction: { state: "FLAT", source: { kind: "PRIMARY" }, rationale: "r" },
       runway_months: REC(24), path_to_profit: { state: "NONE", source: { kind: "PRIMARY" }, rationale: "r" } }, { etToday: "2026-08-05" }).blockers[0]));
 
+  /* ── runway_months: the SELF_FUNDING sentinel (v4.9.0) ────────────────────────────────
+     The field asks "can this fund itself to the thesis?", and cash/burn answers that for an
+     equity-funded burn-down only. A CASH GENERATOR has no burn to divide by, so the input was
+     left unset and BLOCKED the pillar — the strongest funding position on the book scored
+     worse than a name with 60 months of runway. SYM is the live case. A debt-funded operator
+     (CRWV) needs no code: its author may put committed facilities in the numerator and state
+     the formula, which is why only this end is fixed here. */
+  const SF = (over = {}) => ({ value: "SELF_FUNDING", as_of: "2026-08-01", source: { kind: "PRIMARY" }, ...over });
+  const preSF = (rw) => TS.scoreP3({ mode: "PREPROFIT",
+    unit_economics: { state: "IMPROVING", source: { kind: "PRIMARY" }, rationale: "r" },
+    margin_direction: { state: "IMPROVING", source: { kind: "PRIMARY" }, rationale: "r" },
+    runway_months: rw,
+    path_to_profit: { state: "DATED_MILESTONES", source: { kind: "PRIMARY" }, rationale: "r" } }, { etToday: "2026-08-05" });
+  ok("runway SELF_FUNDING scores the anchor MAXIMUM — unbounded runway is the best attainable " +
+     "state, and 48 months is its honest ceiling; it must beat every finite value",
+    TS.readRunway(SF(), { etToday: "2026-08-05" }).score === 10 &&
+    TS.readRunway(REC(47), { etToday: "2026-08-05" }).score < 10 &&
+    preSF(SF()).score > preSF(REC(47)).score);
+  ok("runway SELF_FUNDING: the pillar computes instead of blocking — the defect was that a cash " +
+     "generator scored WORSE than 24 months of runway by being unanswerable",
+    preSF(SF()).blockers.length === 0 && preSF(SF()).score > preSF(REC(24)).score &&
+    preSF(undefined).blockers.length > 0);
+  ok("runway SELF_FUNDING still carries the full atomic envelope — as_of and source.kind are " +
+     "enforced exactly as for a number, so the sentinel is not a provenance bypass",
+    /as_of/.test(TS.readRunway(SF({ as_of: undefined }), { etToday: "2026-08-05" }).err || "") &&
+    /source\.kind/.test(TS.readRunway(SF({ source: { kind: "GUESS" } }), { etToday: "2026-08-05" }).err || "") &&
+    /as_of after/.test(TS.readRunway(SF({ as_of: "2026-12-01" }), { etToday: "2026-08-05" }).err || ""));
+  ok("runway: ANY other string still returns the ordinary numeric errors — a typo can never " +
+     "reach the anchor, and a numeric string is still named as one",
+    TS.readRunway(SF({ value: "self_funding" }), { etToday: "2026-08-05" }).err === "value not a finite number" &&
+    TS.readRunway(SF({ value: "SELFFUNDING" }), { etToday: "2026-08-05" }).err === "value not a finite number" &&
+    /numeric string/.test(TS.readRunway(SF({ value: "24" }), { etToday: "2026-08-05" }).err || ""));
+  ok("runway: a numeric value behaves EXACTLY as before the sentinel — backward compatible",
+    TS.readRunway(REC(24), { etToday: "2026-08-05" }).score === 7 &&
+    TS.readRunway(REC(0), { etToday: "2026-08-05" }).score === 0 &&
+    TS.readRunway(REC(24), { etToday: "2026-08-05" }).self_funding === false &&
+    preSF(REC(24)).score === 7.05);
+
   const H = (over = {}) => ({ id: over.id || "h", definition: "d", green_condition: "g", amber_condition: "a", red_condition: "r",
     importance: 2, state: "GREEN", kill: false, cadence_days: 90, defined_at: "2026-08-04T23:30:00Z",
     as_of: "2026-08-05", source: { kind: "PRIMARY" },
@@ -4713,6 +4751,13 @@ console.log("\n[47] route registry + normalization — every boundary at -e/boun
   ok("PH_G2: 12.0 months passes (inclusive), 11.99 without a facility is BROKEN_THESIS-class FAIL",
     rw.evaluate({ runway_months: 12.0 }) === "PASS" && rw.evaluate({ runway_months: 11.99 }) === "FAIL" &&
     rw.evaluate({ runway_months: 11.99, committed_facility: true }) === "PASS" && rw.effect.kind === "BROKEN_THESIS");
+  ok("PH_G2 accepts SELF_FUNDING as a PASS (a cash generator could never answer this gate and " +
+     "read UNKNOWN — the strongest funding position scoring as no information); exact-match only",
+    rw.evaluate({ runway_months: "SELF_FUNDING" }) === "PASS" &&
+    rw.evaluate({ runway_months: "self_funding" }) === "UNKNOWN" &&
+    rw.evaluate({ runway_months: "SELF FUNDING" }) === "UNKNOWN" &&
+    rw.evaluate({}) === "UNKNOWN" &&
+    /SELF_FUNDING/.test(rw.inputs.runway_months));
   const g2c = TSREG.GATES.find((g) => g.id === "AI_G2_CIRCULARITY");
   ok("AI_G2: the loop alone PASSES but emits a typed CLUSTER_CONSTRAINT (sizing is WHETHER, never a tier effect)",
     g2c.evaluate({ supplier_equity_pct: 9.3, supplier_is_primary_vendor: true, top_customer_backlog_pct: 59 }) === "PASS" &&
