@@ -2881,6 +2881,24 @@ Jan-anchor shipped; see `snapshot.js` ~318–328), `spyMa100`, `spyMa200`, and a
   VALUATION GAP ranking (§11.1 — the ranking always renders, which is the owner's actual
   "always an output" contract, and it was never suspended). Tests: 1223 smoke (+2) + 199
   render (+1).
+- **v4.99.0 — pre-v5 consolidation: the branch lands on `main`, and the two engine patches
+  finally BIND.** Owner call, verbatim: *"Consolidate and push our work to main as v4.99."*
+  Content is v4.8.0 (the QC_G3 absolute ceiling, `tt-route-v4`) + v4.9.0 (the `SELF_FUNDING`
+  runway sentinel) fast-forwarded onto a `main` that already carried v4.7.0 — no code change
+  in this release beyond the version literals. **The version JUMP 4.9 -> 4.99 is deliberate
+  and owner-directed**, recorded here so no phantom v4.10-v4.98 is ever inferred (the same
+  discipline as the parallel-branch collision notes: `package.json` is the single source of
+  truth, and a number nothing explains is a number someone will later "fix").
+  **What deploying this changes, concretely:** the deployed `/api/score` engine moves
+  `tt-route-v3` -> `tt-route-v4`, so (1) the QC premium prerequisite gains its absolute P/E
+  ceiling — measured to re-verdict ZERO stored cards — and (2) `PH_G2_RUNWAY` and P3 accept
+  the `SELF_FUNDING` sentinel, so SYM's stored card (which already carries the sentinel,
+  written ahead of the deploy) flips its gate UNKNOWN -> PASS on its next re-score. Until
+  this push, both patches were repo-only and the production endpoint was still enforcing v3
+  — verified live before consolidating, not assumed.
+  Tests: the full `npm run gates` (1854 smoke + 271 render + 171 public-render +
+  `audit:prod` clean) re-run at the consolidation head before pushing — local green is not
+  CI green (the v4.1.3 lesson), so CI on `main` is the arbiter after push.
 - **v4.9.0 — `runway_months` resolved: the field asked one question and could only answer it for
   one kind of company.** Two names put the defect on both ends in the same session. **CRWV**
   printed **2.89 months** — arithmetically exact, and reading as imminent failure for a business
