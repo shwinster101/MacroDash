@@ -20,11 +20,31 @@
 // kickoff and ship as the owner-ratifiable defaults; changing any boundary is a registry
 // version bump + boundary tests (§4.3), never an in-place edit.
 
-export const ROUTE_MAP_VERSION = "tt-route-v1";
+export const ROUTE_MAP_VERSION = "tt-route-v2";
 
-// §4.4 verbatim. IND is a QUALITY_COMPOUNDER profile, not a sixth route.
+/* §4.4, amended by the G3 RULING of 2026-08-22 (owner-directed). AI_INFRA splits into two
+   PROFILES the way QUALITY_COMPOUNDER already splits STANDARD / INDUSTRIAL_CYCLICAL.
+
+   WHY. `AI_G3_2028_BRIDGE` is the AI_INFRA premium prerequisite and it is a REVENUE bridge
+   (EV / FY+2 revenue, PASS <=4.0x). That is the right question for a neocloud, which has no
+   earnings to bridge to — NBIS passes it at 3.22x and is the calibration set. It is the WRONG
+   question for a profitable platform whose own pt_model lens is P/E, and the whole AI book
+   measured it: TSM 7.6x · LITE 7.3x · MRVL 12.3x · NVDA ~15.7x all FAIL by construction, so
+   the premium is withheld, P1 scores the FLOOR and the card caps at B — the engine names
+   itself as the capper (`cap_source: AI_G3_2028_BRIDGE` on three of four). Scoring those
+   names under a revenue bridge does not measure them conservatively; it measures the wrong
+   thing and stamps a date on it.
+
+   THE TRAP THIS AVOIDS, recorded because it is not visible from the gate list: `gatesFor`
+   treats `profile: null` as "applies to EVERY profile of this route", so simply ADDING a
+   PLATFORM profile would have left AI_G3 applying to it as well — two premium prerequisites,
+   one of them the one we just ruled inapplicable. AI_G3 therefore takes an EXPLICIT
+   "NEOCLOUD" profile and the AI lens maps to that profile, which keeps NBIS's gate set
+   byte-identical. AI_G1/AI_G2 stay `profile: null` deliberately: funding and circularity are
+   asked of both kinds of AI name. */
 const LENS_ROUTES = {
-  AI:  { route: "AI_INFRA",           profile: null },
+  AI:  { route: "AI_INFRA",           profile: "NEOCLOUD" },
+  AIP: { route: "AI_INFRA",           profile: "PLATFORM" },
   PH:  { route: "PHYSICAL_AI",        profile: null },
   QC:  { route: "QUALITY_COMPOUNDER", profile: "STANDARD" },
   IND: { route: "QUALITY_COMPOUNDER", profile: "INDUSTRIAL_CYCLICAL" },
@@ -82,7 +102,9 @@ export const GATES = [
     },
   },
   {
-    id: "AI_G3_2028_BRIDGE", route: "AI_INFRA", profile: null, premium_prerequisite: true,
+    // The NEOCLOUD bridge. UNCHANGED from tt-route-v1 except for the now-explicit profile —
+    // NBIS is its calibration set and must keep passing at 3.22x/87.3%.
+    id: "AI_G3_2028_BRIDGE", route: "AI_INFRA", profile: "NEOCLOUD", premium_prerequisite: true,
     effect: { kind: "TIER_CAP", tier: "B" }, cadence_days: 90,
     inputs: { ev_fy2_rev_multiple: "x — EV / FY+2 consensus revenue", fy1_fy2_growth_pct: "pct", analyst_count_fy2: "count" },
     evaluate(i) {
@@ -90,6 +112,39 @@ export const GATES = [
       if (m === null || g === null || a === null) return "UNKNOWN";
       if (m > 6.0 || g < 20) return "FAIL";                           // >6.0 / <20 exclusive
       if (m <= 4.0 && g >= 40 && a >= 3) return "PASS";               // all inclusive
+      return "UNKNOWN";                                               // the honest middle
+    },
+  },
+  {
+    /* The PLATFORM bridge — the G3 ruling's other half. Same QUESTION as AI_G3 ("can this
+       name grow into what is being paid for it by FY+2?"), asked of the line that is
+       structurally representative for a profitable name: EARNINGS, not revenue.
+
+       WHY PEG AND NOT AN ABSOLUTE P/E. An absolute band cannot span this profile honestly —
+       measured 2026-08-22 the FY+2 P/Es run 5.8x (SNDK, cyclical) to 37.9x (MRVL) and any
+       single line lands mid-cluster on three names at once. PEG is scale-free and encodes the
+       actual claim: growth is what you bridge WITH. The absolute ceiling survives as the
+       FAIL backstop so a pathological multiple still fails regardless of a growth story, and
+       the growth floor keeps PEG from being computed off a denominator near zero — PEG is
+       meaningless at low growth, which is why <10% is a FAIL outright rather than a big ratio.
+
+       ⚠ BOUNDARIES ARE ASSERTED, NOT CALIBRATED — the NFCI/CREDIT_TAIL/CROSSOVER_SCORE
+       convention. One name in the live book separates on them (ALAB, PEG 1.33 -> UNKNOWN:
+       35.3x for 26.4% growth, the only name expensive for its own growth); TSM 0.49, NVDA
+       0.39, LITE 0.50, CRDO 0.52, MRVL 0.70, BE 0.45, SNDK 0.11 all clear. Every boundary is
+       smoke-tested, so moving one is a single edit plus a red test. */
+    id: "AI_G3P_EARNINGS_BRIDGE", route: "AI_INFRA", profile: "PLATFORM", premium_prerequisite: true,
+    effect: { kind: "TIER_CAP", tier: "B" }, cadence_days: 90,
+    inputs: { pe_fy2: "x — price / FY+2 consensus EPS", eps_growth_fy1_fy2_pct: "pct", analyst_count_fy2: "count" },
+    evaluate(i) {
+      const pe = n(i.pe_fy2), g = n(i.eps_growth_fy1_fy2_pct), a = n(i.analyst_count_fy2);
+      if (pe === null || g === null || a === null) return "UNKNOWN";
+      // No P/E before profit (the v3.17 rule): a non-positive FY+2 P/E means this name is on
+      // the wrong profile entirely, so UNKNOWN blocks rather than inventing a verdict.
+      if (pe <= 0) return "UNKNOWN";
+      if (pe > 45 || g < 10) return "FAIL";                           // >45 / <10 exclusive
+      if (pe / g > 2.0) return "FAIL";                                // >2.0 exclusive
+      if (pe / g <= 1.0 && g >= 20 && a >= 3) return "PASS";          // all inclusive
       return "UNKNOWN";                                               // the honest middle
     },
   },

@@ -4556,11 +4556,74 @@ console.log("\n[46] ttScore pillars — P1..P4 contracts run behaviorally");
 
 console.log("\n[47] route registry + normalization — every boundary at -e/boundary/+e");
 {
-  ok("routes: all six lenses map, IND is a QUALITY_COMPOUNDER profile, unknown is UNMAPPED",
+  ok("routes: all seven lenses map, IND is a QUALITY_COMPOUNDER profile, unknown is UNMAPPED",
     TSREG.routeFor("AI").route === "AI_INFRA" && TSREG.routeFor("PH").route === "PHYSICAL_AI" &&
     TSREG.routeFor("QC").profile === "STANDARD" && TSREG.routeFor("IND").route === "QUALITY_COMPOUNDER" &&
     TSREG.routeFor("IND").profile === "INDUSTRIAL_CYCLICAL" && TSREG.routeFor("VEH").route === "VEHICLE" &&
     TSREG.routeFor("SP").route === "SPECULATIVE" && TSREG.routeFor("nope").route === "UNMAPPED");
+
+  /* ── THE G3 RULING (2026-08-22) — AI_INFRA splits NEOCLOUD / PLATFORM ─────────────── */
+  ok("G3 ruling: the AI lens carries an EXPLICIT NEOCLOUD profile and AIP maps to PLATFORM on the same route",
+    TSREG.routeFor("AI").route === "AI_INFRA" && TSREG.routeFor("AI").profile === "NEOCLOUD" &&
+    TSREG.routeFor("AIP").route === "AI_INFRA" && TSREG.routeFor("AIP").profile === "PLATFORM" &&
+    TSREG.ROUTE_MAP_VERSION === "tt-route-v2");
+  /* THE TRAP: gatesFor treats `profile: null` as "every profile of this route", so a PLATFORM
+     profile added WITHOUT giving AI_G3 an explicit profile would inherit the neocloud bridge
+     and carry TWO premium prerequisites. Asserted in both directions so a revert goes red. */
+  {
+    const neo = TSREG.gatesFor("AI_INFRA", "NEOCLOUD").map((g) => g.id);
+    const plat = TSREG.gatesFor("AI_INFRA", "PLATFORM").map((g) => g.id);
+    ok("G3 ruling: NEOCLOUD keeps the revenue bridge and NEVER sees the earnings bridge",
+      neo.includes("AI_G3_2028_BRIDGE") && !neo.includes("AI_G3P_EARNINGS_BRIDGE"));
+    ok("G3 ruling: PLATFORM gets the earnings bridge and the revenue bridge does NOT follow it (the profile:null trap)",
+      plat.includes("AI_G3P_EARNINGS_BRIDGE") && !plat.includes("AI_G3_2028_BRIDGE"));
+    ok("G3 ruling: exactly ONE premium prerequisite per profile — never two, never zero",
+      TSREG.gatesFor("AI_INFRA", "NEOCLOUD").filter((g) => g.premium_prerequisite).length === 1 &&
+      TSREG.gatesFor("AI_INFRA", "PLATFORM").filter((g) => g.premium_prerequisite).length === 1 &&
+      TSREG.premiumPrerequisiteFor("AI_INFRA", "NEOCLOUD").id === "AI_G3_2028_BRIDGE" &&
+      TSREG.premiumPrerequisiteFor("AI_INFRA", "PLATFORM").id === "AI_G3P_EARNINGS_BRIDGE");
+    ok("G3 ruling: funding and circularity are asked of BOTH profiles — only the bridge splits",
+      ["AI_G1_BUILDOUT", "AI_G2_CIRCULARITY"].every((id) => neo.includes(id) && plat.includes(id)));
+  }
+  {
+    const gp = TSREG.GATES.find((g) => g.id === "AI_G3P_EARNINGS_BRIDGE");
+    ok("AI_G3P: PASS at PEG 1.0 / 20% growth / 3 analysts inclusive; just past each is UNKNOWN, not FAIL",
+      gp.evaluate({ pe_fy2: 20, eps_growth_fy1_fy2_pct: 20, analyst_count_fy2: 3 }) === "PASS" &&
+      gp.evaluate({ pe_fy2: 20.2, eps_growth_fy1_fy2_pct: 20, analyst_count_fy2: 3 }) === "UNKNOWN" &&
+      gp.evaluate({ pe_fy2: 20, eps_growth_fy1_fy2_pct: 19.99, analyst_count_fy2: 3 }) === "UNKNOWN" &&
+      gp.evaluate({ pe_fy2: 20, eps_growth_fy1_fy2_pct: 20, analyst_count_fy2: 2 }) === "UNKNOWN");
+    ok("AI_G3P: the absolute ceiling and the growth floor are the FAIL backstops (45x / 10%), exclusive",
+      gp.evaluate({ pe_fy2: 45, eps_growth_fy1_fy2_pct: 60, analyst_count_fy2: 5 }) === "PASS" &&
+      gp.evaluate({ pe_fy2: 45.01, eps_growth_fy1_fy2_pct: 60, analyst_count_fy2: 5 }) === "FAIL" &&
+      gp.evaluate({ pe_fy2: 20, eps_growth_fy1_fy2_pct: 10, analyst_count_fy2: 5 }) === "UNKNOWN" &&
+      gp.evaluate({ pe_fy2: 20, eps_growth_fy1_fy2_pct: 9.99, analyst_count_fy2: 5 }) === "FAIL");
+    ok("AI_G3P: PEG past 2.0 FAILS even under the absolute ceiling — a growth story cannot carry any multiple",
+      gp.evaluate({ pe_fy2: 40, eps_growth_fy1_fy2_pct: 20, analyst_count_fy2: 5 }) === "UNKNOWN" &&
+      gp.evaluate({ pe_fy2: 30, eps_growth_fy1_fy2_pct: 14.9, analyst_count_fy2: 5 }) === "FAIL");
+    ok("AI_G3P: no P/E before profit — a non-positive FY+2 P/E is UNKNOWN (wrong profile), never a verdict",
+      gp.evaluate({ pe_fy2: 0, eps_growth_fy1_fy2_pct: 50, analyst_count_fy2: 5 }) === "UNKNOWN" &&
+      gp.evaluate({ pe_fy2: -12, eps_growth_fy1_fy2_pct: 50, analyst_count_fy2: 5 }) === "UNKNOWN" &&
+      gp.evaluate({}) === "UNKNOWN");
+    /* The live book measured 2026-08-22 — the ruling must not silently re-fail the names it
+       exists to release, and must still separate the one that is expensive for its growth. */
+    const LIVE = { TSM: [14.9, 30.3], NVDA: [16.7, 43.2], LITE: [26.3, 52.7], CRDO: [25.3, 48.3],
+      MRVL: [37.9, 53.9], BE: [26.1, 58.1], SNDK: [5.8, 54.2] };
+    ok("AI_G3P: every measured PLATFORM name clears the earnings bridge — none is floored by a revenue multiple",
+      Object.values(LIVE).every(([pe, g]) => gp.evaluate({ pe_fy2: pe, eps_growth_fy1_fy2_pct: g, analyst_count_fy2: 5 }) === "PASS"));
+    ok("AI_G3P discriminates: ALAB (35.3x for 26.4% growth, PEG 1.33) is UNKNOWN — the gate still has teeth",
+      gp.evaluate({ pe_fy2: 35.3, eps_growth_fy1_fy2_pct: 26.4, analyst_count_fy2: 5 }) === "UNKNOWN");
+    const g3n = TSREG.GATES.find((g) => g.id === "AI_G3_2028_BRIDGE");
+    ok("G3 ruling control: NBIS's calibration point still PASSES the untouched neocloud bridge (3.22x / 87.3%)",
+      g3n.evaluate({ ev_fy2_rev_multiple: 3.22, fy1_fy2_growth_pct: 87.3, analyst_count_fy2: 12 }) === "PASS");
+    /* A route the terminal cannot express is a ruling only half-landed: admin.html rejects
+       any lens absent from LENS_NAME, so AIP must be assignable AND renderable there. */
+    ok("G3 ruling: AIP is assignable in the terminal (LENS_NAME whitelist) and has its own colour",
+      /const LENS_NAME=\{[^}]*AIP:/.test(adminSrc) && /--AIP:/.test(adminSrc) &&
+      /\.lens-AIP\{color:var\(--AIP\)\}/.test(adminSrc));
+    ok("G3 ruling: every registry lens the terminal must express is in LENS_NAME — no route is unreachable",
+      TSREG.knownLenses().every((l) => new RegExp("[{,]" + l + ":").test(
+        (adminSrc.match(/const LENS_NAME=\{[^}]*\}/) || [""])[0])));
+  }
   const g3 = TSREG.GATES.find((g) => g.id === "AI_G3_2028_BRIDGE");
   ok("AI_G3 (premium prereq): PASS at 4.0x/40%/3 analysts inclusive; UNKNOWN just past; FAIL past 6.0x or under 20%",
     g3.evaluate({ ev_fy2_rev_multiple: 4.0, fy1_fy2_growth_pct: 40, analyst_count_fy2: 3 }) === "PASS" &&

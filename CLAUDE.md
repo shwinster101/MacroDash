@@ -2881,6 +2881,60 @@ Jan-anchor shipped; see `snapshot.js` ~318–328), `spyMa100`, `spyMa200`, and a
   VALUATION GAP ranking (§11.1 — the ranking always renders, which is the owner's actual
   "always an output" contract, and it was never suspended). Tests: 1223 smoke (+2) + 199
   render (+1).
+- **v4.5.0 "THE G3 RULING" — AI_INFRA splits NEOCLOUD / PLATFORM, and the profile trap that
+  would have silently undone it.** Owner call after the 8/22 engine run surfaced the finding:
+  *scoring the earnings names under the current gate would mint dated, wrong cards — worse
+  than leaving them dark.* Verified before touching anything, and the engine names itself as
+  the capper: `AI_G3_2028_BRIDGE` is the AI_INFRA premium prerequisite and it is a REVENUE
+  bridge (EV / FY+2 revenue, PASS ≤4.0x). Correct for a neocloud with no earnings to bridge
+  to — **NBIS passes at 3.22x and is the calibration set** — and structurally wrong for a
+  profitable platform whose own `pt_model` lens is P/E. Measured across the live book: TSM
+  7.6x · LITE 7.3x · MRVL 12.3x · NVDA ~15.7x all FAIL, `premium_prerequisite_state:"FAIL"`
+  → `basis_used:"FLOOR"` → `cap_source: AI_G3_2028_BRIDGE` on three of four. **LITE's card
+  said it in its own words** — *"premium exists but prerequisite gate is FAIL — floor
+  scored"*, target **$495** (the 15x floor) against its own street-calibrated ladder's
+  $1,089, P1 = 0, composite 5.50/B. That card was minted hours earlier in this session and
+  is a mis-grade; recorded rather than quietly re-scored.
+  **The fix is a profile split, the pattern `QUALITY_COMPOUNDER` STANDARD / INDUSTRIAL_CYCLICAL
+  already proved** — and the reason it is not a one-line addition is a trap invisible from the
+  gate list: **`gatesFor` treats `profile: null` as "applies to EVERY profile of this route"**,
+  so adding a PLATFORM profile while leaving AI_G3 at `null` would have given PLATFORM names
+  **two premium prerequisites**, one of them the gate just ruled inapplicable. AI_G3 therefore
+  takes an EXPLICIT `"NEOCLOUD"` profile and the `AI` lens maps to it, which keeps NBIS's gate
+  set byte-identical; `AI_G1`/`AI_G2` stay `null` deliberately (funding and circularity are
+  asked of both kinds). `ROUTE_MAP_VERSION` → **`tt-route-v2`** per §4.3 — recorded on cards,
+  never 409'd, so stored v1 cards stay readable and self-identify.
+  **`AI_G3P_EARNINGS_BRIDGE`** asks the SAME question of the structurally representative line:
+  PASS at **PEG ≤1.0 AND growth ≥20% AND ≥3 analysts**, FAIL past **45x**, under **10% growth**,
+  or **PEG >2.0**, else the honest middle. **PEG rather than an absolute P/E** because an
+  absolute band cannot span this profile: measured FY+2 P/Es run 5.8x (SNDK) to 37.9x (MRVL)
+  and any single line lands mid-cluster on three names at once — PEG is scale-free and encodes
+  the actual claim, that growth is what you bridge *with*; the absolute ceiling survives as the
+  FAIL backstop and the growth floor keeps PEG off a near-zero denominator. **Boundaries are
+  ASSERTED, not calibrated** (the NFCI/CROSSOVER_SCORE convention) and every one is executed in
+  smoke. It still has teeth: **ALAB is the one name it holds at UNKNOWN** (35.3x for 26.4%
+  growth, PEG 1.33 — expensive for its own growth), while TSM 0.49 · NVDA 0.39 · BE 0.45 ·
+  LITE 0.50 · CRDO 0.52 · MRVL 0.70 · SNDK 0.11 all clear.
+  **The reconciliation pin found a pre-existing defect on its first run.** Asserting that every
+  registry lens is expressible in `admin.html`'s `LENS_NAME` whitelist went red on **`IND`** —
+  the INDUSTRIAL_CYCLICAL profile the registry has defined since v3.74 has **never been
+  assignable from the terminal**, and **BA already carries `lens:"IND"` in the live book** (the
+  server only length-checks, so it was accepted, while the client would reject any edit
+  touching it and rendered its chip with no colour). Both `AIP` and `IND` are now assignable
+  and rendered. A route the terminal cannot express is a ruling only half-landed.
+  **Deliberately NOT done, per the owner's ordering:** no name was re-scored and the governor
+  was not flipped. The four stale cards (LITE · TSM · CRDO · MRVL) are **inert until the flip**
+  — legacy composites govern today — and the lens reassignment they need is derived but
+  unapplied: all 8 earnings-lens AI names (NVDA · TSM · LITE · MRVL · CRDO · ALAB · SNDK · BE)
+  qualify by the mechanical rule *`pt_model` carries `pe_premium_multiple`*, owner to confirm.
+  Board decision records the ruling and that list (v22.7); two decisions describing the evening
+  of 7/29 were pruned to fit, their outcomes already held in `board.binaries`.
+  Tests: **1830 smoke** (+14: the split, the `profile:null` trap asserted in BOTH directions,
+  exactly-one-prerequisite-per-profile, every AI_G3P boundary at −ε/edge/+ε, the no-P/E-before-
+  profit path, the live-book sweep, the ALAB discrimination, NBIS's unchanged calibration point,
+  and the lens-expressibility reconciliation) + 264 render + 171 public-render + `audit:prod`
+  clean. Negative-controlled: reverting AI_G3 to `profile: null` turns exactly the two trap pins
+  red and nothing else.
 - **Session log 2026-08-22 — the canonical engine runs on the live book (owner-directed;
   KV/operator work through the existing `/api/score`, no code change).** The owner's ordering
   ruling, verbatim in spirit: *flipping §14.8 first would blank the green line and create no

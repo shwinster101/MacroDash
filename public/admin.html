@@ -9,7 +9,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
 <!-- AUDIT: kept in sync with package.json by test/smoke.mjs. admin.html is a Vite
      public/ passthrough, so it cannot receive __APP_VERSION__ — the guard is the fix. -->
-<title>TT TICKER TERMINAL v4.4.0</title>
+<title>TT TICKER TERMINAL v4.5.0</title>
 <style>
   :root{
     --bg:#05070a; --panel:#0a0f16; --panel2:#0d141d; --line:#16202c;
@@ -19,7 +19,7 @@
     --fg:#c8d6cf; --dim:#71877b; --green:#39ff9e; --greenDim:#1f7a55;
     --amber:#ffb454; --cyan:#4fd8ff; --magenta:#ff6fd8; --red:#ff5f6f;
     --slate:#8aa0b4;
-    --AI:#4fd8ff; --PH:#ff6fd8; --QC:#39ff9e; --VEH:#ffb454; --SP:#ff5f6f;
+    --AI:#4fd8ff; --AIP:#7ab8ff; --PH:#ff6fd8; --QC:#39ff9e; --IND:#b6e36a; --VEH:#ffb454; --SP:#ff5f6f;
     /* v3.42 design tokens — type scale (collapses 12 scattered px literals as code
        migrates to them) + spacing scale + focus color. Additive: existing literal
        sizes keep working; new/edited components use the tokens. */
@@ -349,7 +349,7 @@
   details.schema>summary::before{content:"▸ ";color:var(--green)}
   details.schema[open]>summary::before{content:"▾ "}
   @media(max-width:480px){button.act{padding:9px 13px}.cmd .hintk{display:none}}
-  .lens-AI{color:var(--AI)} .lens-PH{color:var(--PH)} .lens-QC{color:var(--QC)}
+  .lens-AI{color:var(--AI)} .lens-AIP{color:var(--AIP)} .lens-PH{color:var(--PH)} .lens-QC{color:var(--QC)} .lens-IND{color:var(--IND)}
   .lens-VEH{color:var(--VEH)} .lens-SP{color:var(--SP)}
   .cutrow .chip{opacity:.55;text-decoration:line-through;cursor:default}
   .cutrow .chip:hover{transform:none;border-color:var(--line);background:#0b131b}
@@ -458,7 +458,7 @@
          verdict and every gate are computed upstream and this panel changes nothing. -->
     <div id="macroEvidence" role="region" aria-label="Why macro — readout evidence"></div>
     <div id="headInfo" style="display:none">
-      <div class="brand">FINANCE&nbsp;BRO.AI // TT&nbsp;TICKER&nbsp;TERMINAL <small>v4.4.0 · underwriting + sourced gates</small></div>
+      <div class="brand">FINANCE&nbsp;BRO.AI // TT&nbsp;TICKER&nbsp;TERMINAL <small>v4.5.0 · underwriting + sourced gates</small></div>
       <div class="statusline">
         <span>BOOK: <b id="bookStamp">loading…</b></span>
         <span>AUTH: <b id="sessState">…</b></span>
@@ -668,7 +668,11 @@
 
 <script>
 /* ═══════════ SEED DATA — empty template (load your own book) ═══════════ */
-const LENS_NAME={AI:"AI Infrastructure v2",PH:"Physical AI",QC:"Quality Compounder",VEH:"Vehicle eval",SP:"Speculative"};
+/* AIP is the PLATFORM profile of AI_INFRA (G3 ruling 2026-08-22, src/ttScoreRegistry.js):
+   same route as AI, but the premium prerequisite is an EARNINGS bridge instead of the
+   neocloud revenue bridge. Listed here because a lens the terminal cannot express is a
+   ruling only half-landed — the two guards below reject any lens absent from this map. */
+const LENS_NAME={AI:"AI Infra — neocloud",AIP:"AI Infra — platform (earnings)",PH:"Physical AI",QC:"Quality Compounder",IND:"Industrial cyclical",VEH:"Vehicle eval",SP:"Speculative"};
 const TIER_ORDER=["S","A","B","DEF","WATCH"];
 const TIER_LABEL={S:"S-TIER",A:"A-TIER",B:"B-TIER",DEF:"DEFENSIVE",WATCH:"WATCHLIST"};
 
@@ -1937,7 +1941,7 @@ function render(){
    strings are HTML-escaped (paste-imported JSON must never inject markup). */
 let TAB=(location.hash||"").replace("#","").toUpperCase()||"BOARD";
 const DD_STATES=["green","amber","red","unknown"];
-/* Per-payload cap, raised 8KB->15KB (v3.63), 45KB (v3.70), 100KB (v4.4.0 — owner call
+/* Per-payload cap, raised 8KB->15KB (v3.63), 45KB (v3.70), 100KB (v4.5.0 — owner call
    2026-08-22: "raise server cap to 100,000", expressed in the KB idiom and rounded UP so
    nothing the owner sized for is rejected; trigger: NBIS frozen at 47,635 bytes, the book's
    #1 name unable to save its own re-scored composite).
