@@ -9,7 +9,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
 <!-- AUDIT: kept in sync with package.json by test/smoke.mjs. admin.html is a Vite
      public/ passthrough, so it cannot receive __APP_VERSION__ — the guard is the fix. -->
-<title>TT TICKER TERMINAL v5.0.1</title>
+<title>TT TICKER TERMINAL v5.0.2</title>
 <style>
   :root{
     --bg:#05070a; --panel:#0a0f16; --panel2:#0d141d; --line:#16202c;
@@ -52,7 +52,7 @@
      artifact is a primary workflow, not backup administration; all status and recovery
      actions remain inside #headInfo. */
   header{border:1px solid var(--line);background:linear-gradient(180deg,#0b131c,#080c12);
-    border-radius:8px;padding:8px 12px;margin-bottom:10px;position:relative;overflow:hidden}
+    border-radius:8px;padding:8px 12px;margin-bottom:8px;position:relative;overflow:hidden}
   .hbar{display:flex;align-items:center;gap:8px;min-width:0}
   .hb-id{color:var(--green);letter-spacing:1.5px;font-weight:700;font-size:var(--fs-s);
     text-shadow:0 0 14px rgba(57,255,158,.45);white-space:nowrap}
@@ -101,7 +101,7 @@
   .pill.neutral{color:var(--amber)}
   .pill.ok{color:var(--green);border-color:#1f4a33;background:#07130d}
   /* ── command bar ── */
-  .cmd{display:flex;gap:8px;align-items:center;margin:12px 0;
+  .cmd{display:flex;gap:8px;align-items:center;margin:8px 0;
     border:1px solid var(--greenDim);border-radius:8px;background:#060b0e;
     padding:8px 12px;box-shadow:0 0 22px rgba(31,122,85,.18) inset}
   .cmd .prompt{color:var(--green);font-weight:700}
@@ -111,7 +111,7 @@
   .cmd .hintk{color:var(--dim);font-size:11px}
   .layout{display:grid;grid-template-columns:1fr 320px;gap:12px}
   @media(max-width:900px){.layout{grid-template-columns:1fr}}
-  .panel{border:1px solid var(--line);border-radius:8px;background:var(--panel);padding:12px 14px}
+  .panel{border:1px solid var(--line);border-radius:8px;background:var(--panel);padding:10px 14px}
   .panel h2{margin:0 0 10px;font-size:12px;letter-spacing:2px;color:var(--dim);
     text-transform:uppercase;border-bottom:1px dashed var(--line);padding-bottom:6px}
   /* ── tier board ── */
@@ -208,7 +208,7 @@
      wrap five phone lines lives one tap deep in details.why. v3.25 rule holds: every red
      fact is a chip or badge that stays visible while the drawer is closed. */
   .stance-strip{display:block;font-size:var(--fs-s);
-    border:1px solid var(--line);border-radius:7px;background:#080d13;padding:6px 10px;margin-bottom:8px}
+    border:1px solid var(--line);border-radius:7px;background:#080d13;padding:5px 9px;margin-bottom:6px}
   .stance-strip .stance-top{display:flex;align-items:center;gap:6px 8px;flex-wrap:wrap}
   .stance-strip .stance-right{margin-left:auto;display:flex;align-items:center;gap:7px}
   /* Paddings and tracking kept tight so the verdict token and its first qualifier chip can
@@ -249,7 +249,7 @@
   .decision-deck{display:block}
   .decision-page{min-width:0}
   @media(max-width:700px){
-    .decision-tabs{display:flex;align-items:center;gap:6px;margin:2px 0 8px;padding:3px;
+    .decision-tabs{display:flex;align-items:center;gap:6px;margin:2px 0 6px;padding:2px;
       border:1px solid var(--line);border-radius:8px;background:#080d13;position:sticky;
       top:env(safe-area-inset-top);z-index:12}
     .decision-tabs button{flex:1;border:1px solid transparent;border-radius:6px;background:none;
@@ -304,7 +304,7 @@
      the old flex-wrap grid ate FIVE rows on a phone — the primary view's first screen was
      navigation, not answers. flex-shrink:0 keeps each tab whole; the active tab is
      scrolled into view by renderTabs(). */
-  .tabs{display:flex;gap:6px;margin-bottom:10px;flex-wrap:nowrap;overflow-x:auto;
+  .tabs{display:flex;gap:6px;margin-bottom:8px;flex-wrap:nowrap;overflow-x:auto;
     -webkit-overflow-scrolling:touch;scrollbar-width:thin;
     border-bottom:1px solid var(--line);padding-bottom:8px}
   .tabs .tab{border:1px solid var(--line);border-radius:6px;padding:5px 14px;cursor:pointer;
@@ -458,7 +458,7 @@
          verdict and every gate are computed upstream and this panel changes nothing. -->
     <div id="macroEvidence" role="region" aria-label="Why macro — readout evidence"></div>
     <div id="headInfo" style="display:none">
-      <div class="brand">FINANCE&nbsp;BRO.AI // TT&nbsp;TICKER&nbsp;TERMINAL <small>v5.0.1 · the card governs (§14.8)</small></div>
+      <div class="brand">FINANCE&nbsp;BRO.AI // TT&nbsp;TICKER&nbsp;TERMINAL <small>v5.0.2 · the card governs (§14.8)</small></div>
       <div class="statusline">
         <span>BOOK: <b id="bookStamp">loading…</b></span>
         <span>AUTH: <b id="sessState">…</b></span>

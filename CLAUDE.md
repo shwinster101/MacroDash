@@ -2881,6 +2881,23 @@ Jan-anchor shipped; see `snapshot.js` ~318–328), `spyMa100`, `spyMa200`, and a
   VALUATION GAP ranking (§11.1 — the ranking always renders, which is the owner's actual
   "always an output" contract, and it was never suspended). Tests: 1223 smoke (+2) + 199
   render (+1).
+- **v5.0.2 — the chrome above NEXT $ IN, measured and trimmed.** Owner feedback on a live
+  phone screenshot ("reduce empty space where able"). Measured first rather than guessed
+  (the project's own convention): a Playwright probe against the real `admin.html`, served
+  through the render harness's own stub server, at 390×844. Five stacked container margins
+  — `header` → `.cmd` → `.panel`'s top padding → `#tabBar` → `.stance-strip` → `.decision-tabs`
+  — compounded to push `#decisionDeck` (the NEXT $ IN / FUND-TRIM content) down to y=448
+  before a single number rendered. None of it was protecting a touch target: every
+  deliberate 40px/42px/44px `min-height` (stance badges, tab-strip tabs, decision-tabs
+  buttons, driver rows) lives inside the buttons themselves and was untouched. Trimmed the
+  five container margins/paddings by 2px each (`header` 10→8 · `.cmd` 12→8 · `.panel`
+  vertical padding 12→10 · `#tabBar` 10→8 · `.stance-strip` padding 6→5 + margin 8→6 ·
+  `.decision-tabs` padding 3→2 + margin 8→6) — **measured after: `#decisionDeck` at
+  y=428, −20px**, with the whole page 22px shorter. Verified by reproduction, not
+  inspection: the same probe re-run post-edit confirms the exact arithmetic (each trim's
+  effect on the next element's `top` matches its declared change, accounting for adjacent-
+  sibling margin collapse where it applies). Content-only, no version-gated contract moved
+  — `npm run gates` unchanged at 1908 smoke + 271 render + 171 public-render, audit clean.
 - **v5.0.1 — the PROVISIONAL veto names WHICH half of §6.4.1 is missing.** An owner-passed
   review of the B-cap found the v5.0.0 veto string over-claiming, and a read-only census of
   all 33 live score records proved it: `falsifiers pending — score capped at B until they're
