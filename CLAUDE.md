@@ -2881,6 +2881,41 @@ Jan-anchor shipped; see `snapshot.js` ~318–328), `spyMa100`, `spyMa200`, and a
   VALUATION GAP ranking (§11.1 — the ranking always renders, which is the owner's actual
   "always an output" contract, and it was never suspended). Tests: 1223 smoke (+2) + 199
   render (+1).
+- **v5.1.1 — the card's own actionability, finally READ at the gate.** Found live minutes
+  after the v5.1.0 deploy cleared Engine 0: TSM re-scored **SCORED 9.0/S** and immediately took
+  the ELIGIBLE NEXT DOLLAR line at +31.7%/yr — while its own card read
+  **`actionability: BLOCKED`** on `BLOCKED_PENDING_INPUT:AI_G2_CIRCULARITY`. §7's
+  `actionabilityRollup` computed that state, §11.2 `evalEligibility` has always refused
+  anything but FULL/CAUTION, and the deep-dive panel rendered it — but the ladder that
+  actually gates capital never asked. Verified by grep before the fix: **zero** reads of card
+  actionability in either `whyNot()` (server) or `why(r)` (client), and `cardInfo()` did not
+  even carry the field; the only `actionability` references were Engine 0's *regime* axis.
+  **This is the v3.71-follow-up defect shape, one layer over** — state computed, published,
+  rendered, and not read where it gates capital — and it bit on the highest-consequence
+  surface in the book. The gate it hid mattered specifically: **AI_G2 is the CIRCULARITY
+  gate** (vendor equity stake, customer concentration), the live thesis risk in an AI-infra
+  book, unevaluated on the name being proposed for the next dollar.
+  `updateIndex` now carries **`actionability`** + **`blocked_on`** (the gate ids parsed out of
+  the `BLOCKED_PENDING_INPUT:` blockers — "BLOCKED" without the gate is a state, not an
+  action), and both ladders gain a rung **ahead of the quality rung**, because an unreadable
+  gate is not a quality verdict. **CAUTION passes** and is surfaced as a row caution — aging
+  evidence is the owner's to weigh, missing evidence is not (the `readiness()` rule). An
+  **ABSENT** field passes: a pre-v5.1.1 index entry simply predates it, and failing closed
+  there would veto the whole book over a value nobody had written yet — an outage dressed as
+  a safety rule (the v5.0.1 `p4` precedent; re-scoring populates it).
+  `ALLOC_RULE_VERSION` → **`tt-alloc-v2.1.0`**: a v2.0.0 receipt could name a name eligible
+  whose card read BLOCKED, so a cached one must not be reinterpreted under this rule (the
+  v4.1.4 precedent, third application).
+  **Stated consequence, predicted before shipping and confirmed after:** TSM, LITE, SNDK and
+  JOBY all carry `BLOCKED_PENDING_INPUT`, so the green line goes dark until those gates get
+  their inputs. That is the methodology's own answer (`gatePrecedence`: "UNKNOWN blocks") — the
+  ladder had simply been overriding it.
+  Tests: **1946 smoke** (+8: the truth table RUN through the real evaluator — BLOCKED vetoes
+  and names the gate, BLOCKED-with-no-gate still vetoes, FULL passes as the control, CAUTION
+  passes AND surfaces, ABSENT passes, rung ordering asserted by source position, the admin
+  mirror on both cardInfo paths, and the version bump; 1 pre-existing pin re-pinned with the
+  reason) + 271 render + 171 public-render + `audit:prod` clean. Negative-controlled: removing
+  the rung turns exactly its two behavioural pins red.
 - **FEAT-VIX-FAILSAFE (v5.1.0) — the crash gauge gets the second source the 10Y already had.**
   Diagnosed live: at 2026-08-24 01:05 ET every Engine 0 check was CURRENT except VIX, which
   sat on Thursday 08-20 (16.01) with no Friday 08-21 observation — a ~57-hour gap on a DAILY

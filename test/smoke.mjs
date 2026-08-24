@@ -8152,11 +8152,12 @@ console.log("\n[68] FEAT-TT-ALLOC — pure core, endpoint, and the §14.8 bar");
     ok("v4.1.3 horizon: a genuinely unmodelled name still reads 'unmodelled' (the two stay distinguishable)",
       (() => { const f = r2.funding.rows.find((x) => x.sym === "BBB");
         return !f || !/no rung at the shared horizon/.test(f.reason); })());
-    // Re-pinned at v5.0: the §14.8 activation changed receipt semantics on BOTH sides
-    // (quality source + broken_thesis in funding), so the version moved to 2.0.0 — the
-    // same contract this pin has always protected.
-    ok("rule version moves WITH the semantics — a cached v1.x receipt must not be reinterpreted",
-      alloc.ALLOC_RULE_VERSION === "tt-alloc-v2.0.0");
+    // Re-pinned at v5.0 (§14.8 activation: quality source + broken_thesis in funding) and
+    // again at v5.1.1 (the card-actionability veto rung) — each moved receipt semantics, so
+    // each moved the version. The CONTRACT this pin protects is unchanged: the version must
+    // track the semantics, or a cached receipt gets reinterpreted under a rule it predates.
+    ok("rule version moves WITH the semantics — a cached older receipt must not be reinterpreted",
+      alloc.ALLOC_RULE_VERSION === "tt-alloc-v2.1.0");
   }
 
   // ── §14.8 bar + no-order-tools: structural, negative-controllable ──
@@ -8228,6 +8229,39 @@ console.log("\n[68] FEAT-TT-ALLOC — pure core, endpoint, and the §14.8 bar");
         methodology_version: TS.METHODOLOGY_VERSION, broken_thesis: true } } });
       const f = r.funding.rows.find((x) => x.sym === "CCC");
       return f && f.tier === 1 && /owner-marked forced exit/.test(f.reason); })());
+  /* v5.1.1 — THE ACTIONABILITY RUNG. Found live 2026-08-24: TSM re-scored SCORED 9.0/S and
+     took the eligible line at +31.7%/yr while its own card read actionability BLOCKED on
+     BLOCKED_PENDING_INPUT:AI_G2_CIRCULARITY. §7 computed it, §11.2 evalEligibility enforced
+     it, the deep-dive panel rendered it — and the ladder that actually gates capital never
+     read it. Same shape as the v3.71 follow-up, one layer over. */
+  const cardAct = (act, blocked_on) => ({ ...SIDX.AAA, actionability: act, blocked_on });
+  ok("v5.1.1: a SCORED card reading BLOCKED is VETOED, and the veto NAMES the unreadable gate",
+    (() => { const r = ev({ scoreIndex: { AAA: cardAct("BLOCKED", ["AI_G2_CIRCULARITY"]) } });
+      const w = r.why_not.find((x) => x.sym === "AAA");
+      return r.eligible === null && w && /card actionability BLOCKED/.test(w.reason) &&
+        /AI_G2_CIRCULARITY cannot be read/.test(w.reason); })());
+  ok("v5.1.1: BLOCKED with no named gate still vetoes — it says evidence is missing, never nothing",
+    (() => { const r = ev({ scoreIndex: { AAA: cardAct("BLOCKED", []) } });
+      const w = r.why_not.find((x) => x.sym === "AAA");
+      return r.eligible === null && /evidence missing on the card/.test(w.reason); })());
+  ok("v5.1.1: FULL passes the rung (the control — the veto is not blanket)",
+    (() => { const r = ev({ scoreIndex: { AAA: cardAct("FULL", []) } });
+      return r.eligible && r.eligible.sym === "AAA"; })());
+  ok("v5.1.1: CAUTION passes and is SURFACED as a caution — aging evidence is the owner's to weigh",
+    (() => { const r = ev({ scoreIndex: { AAA: cardAct("CAUTION", []) } });
+      return r.eligible && r.eligible.sym === "AAA" &&
+        (r.eligible.cautions || []).some((c) => /actionability CAUTION/.test(c)); })());
+  ok("v5.1.1: an ABSENT actionability passes — a pre-v5.1.1 index entry must not veto the whole book",
+    (() => { const r = ev({ scoreIndex: { AAA: { ...SIDX.AAA } } });
+      return r.eligible && r.eligible.sym === "AAA"; })());
+  ok("v5.1.1: the rung sits BEFORE the quality rung — an unreadable gate is not a quality verdict",
+    (() => { const src = readSrc("../functions/lib/tt-alloc.js");
+      return src.indexOf("card actionability BLOCKED") < src.indexOf("quality fails"); })());
+  ok("v5.1.1 mirror: admin why(r) carries the same rung and cardInfo carries the field (both paths)",
+    adminSrc.includes("card actionability BLOCKED") && adminSrc.includes("(UNKNOWN blocks, §8.1)") &&
+    adminSrc.includes("act:sc.actionability??null") && adminSrc.includes("act:e.actionability??null"));
+  ok("v5.1.1: the rule version moved WITH the semantics — a cached v2.0.0 receipt must not be reinterpreted",
+    alloc.ALLOC_RULE_VERSION === "tt-alloc-v2.1.0");
   ok("no-order-tools: no broker order call exists anywhere in the terminal or functions",
     !/place_equity_order|place_option_order/.test(adminSrc) &&
     !/place_equity_order|place_option_order/.test(allocLibSrc + allocApiSrc + ttSrc + snapSrc));

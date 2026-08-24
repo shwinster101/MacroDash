@@ -31,11 +31,13 @@ import { ptModelRows, ptRowYears, lintPtModel, pickRow, annualise } from "../../
 import { etYmd } from "../../src/sources.js";
 import { POS_STALE_D } from "../api/positions.js";
 
+// v2.1.0 (v5.1.1): a NEW VETO RUNG — the card's own actionability. A receipt minted under
+// v2.0.0 could name a name eligible whose card read BLOCKED, so a cached v2.0.0 receipt must
+// not be reinterpreted under this rule (the v4.1.4 precedent, third application).
 // v2.0.0 (v5.0 §14.8 activation): the quality rung moved from legacy free-text composites
 // to server score cards, and broken_thesis entered the forced funding tier — receipt
-// semantics changed on BOTH sides, so cached v1.x receipts must not be reinterpreted
-// (the v4.1.4 precedent). v1.1.0 was the horizon-never-substituted change.
-export const ALLOC_RULE_VERSION = "tt-alloc-v2.0.0";
+// semantics changed on BOTH sides. v1.1.0 was the horizon-never-substituted change.
+export const ALLOC_RULE_VERSION = "tt-alloc-v2.1.0";
 export const CAP_PCT = 18;      // mirror of admin.html (hard single-position cap)
 export const PX_STALE_D = 4;    // mirror of admin.html (a stamped mark older than this misleads)
 export const REG_RANK = { TAILWIND: 0, NEUTRAL: 1, HEADWIND: 2, PANIC: 3 };
@@ -207,13 +209,15 @@ export function evalBuyRow({ entry, idx, quote, board, horizon, now, card }) {
      plus `methodology_current` stamped by the caller. Ranking may use a provisional
      number; ELIGIBILITY requires SCORED under the current methodology — whyNot() is
      where that distinction is enforced. */
+  const qBase = card ? { status: card.status || null, methodology_current: card.methodology_current === true,
+    p4: card.p4 || null, actionability: card.actionability ?? null, blocked_on: card.blocked_on || [] } : null;
   const quality = card && (card.raw_score ?? card.provisional_score) !== null && (card.raw_score ?? card.provisional_score) !== undefined
-    ? { score: card.raw_score ?? card.provisional_score,
-        tier: card.raw_score !== null && card.raw_score !== undefined ? (card.capped_tier || null) : (card.provisional_tier || null),
-        status: card.status || null,
-        methodology_current: card.methodology_current === true,
-        p4: card.p4 || null }
-    : (card ? { score: null, tier: null, status: card.status || null, methodology_current: card.methodology_current === true, p4: card.p4 || null } : null);
+    ? { ...qBase, score: card.raw_score ?? card.provisional_score,
+        tier: card.raw_score !== null && card.raw_score !== undefined ? (card.capped_tier || null) : (card.provisional_tier || null) }
+    : (qBase ? { ...qBase, score: null, tier: null } : null);
+  /* CAUTION never vetoes — aging evidence is the owner's to weigh, missing evidence is not
+     (the readiness() rule). It is surfaced here so the row still says the card is aging. */
+  if (quality && quality.actionability === "CAUTION") cautions.push("card actionability CAUTION — aging evidence");
   return { sym, blockers, cautions, px, px_at, live: live !== null, tgt, y: r ? r.y : null,
     up, ann, quality, rolled: pk ? pk.rolled : null, no_rung_at_horizon: noRung };
 }
@@ -261,6 +265,20 @@ export function whyNot(row, weightPct) {
     return `server card ${q.status || "incomplete"} — blockers on the card`;
   if (!q.methodology_current)
     return "card predates the current methodology — re-score to verify (§4.3)";
+  /* v5.1.1 — THE CARD'S OWN ACTIONABILITY, read at the gate at last. §7's rollup sets
+     BLOCKED when a route gate returned UNKNOWN (gatePrecedence: "UNKNOWN blocks"), and
+     §11.2 evalEligibility has always refused anything but FULL/CAUTION — but the LIVE
+     ladder never asked, so a SCORED card whose own evidence rollup said BLOCKED could
+     light green. Same defect shape as the v3.71 follow-up, one layer over: computed,
+     published, rendered, and not READ where it gates capital.
+     CAUTION passes (surfaced as a caution above) — aging evidence is the owner's call.
+     An ABSENT field passes: a pre-v5.1.1 index entry simply predates the field, and
+     failing closed there would veto the whole book over a value nobody wrote yet — an
+     outage dressed as a safety rule. Re-scoring populates it (the v5.0.1 p4 precedent). */
+  if (q.actionability === "BLOCKED")
+    return `card actionability BLOCKED — ${q.blocked_on && q.blocked_on.length
+      ? `${q.blocked_on.join(", ")} cannot be read`
+      : "evidence missing on the card"} (UNKNOWN blocks, §8.1)`;
   const s = q.score;
   if ((q.tier && /^C\b/.test(String(q.tier))) || (s !== null && s < 5.5))
     return `TT ${s !== null ? Number(s).toFixed(1) : "C"} — quality fails`;

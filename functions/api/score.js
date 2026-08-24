@@ -139,6 +139,15 @@ async function updateIndex(env, sym, rec) {
     broken_thesis: !!((sc.pillars && sc.pillars.falsifier_health && sc.pillars.falsifier_health.broken_thesis) ||
       (sc.gate_results || []).some((g) => g.state === "FAIL" && g.effect && g.effect.kind === "BROKEN_THESIS")),
     p4: p4Summary(rec),
+    /* v5.1.1 — the card's OWN evidence rollup, at board altitude so the eligibility ladder
+       can read it. §7 already computes it and §11.2 evalEligibility already enforces it;
+       until now the live ladder simply never asked (the v3.71-follow-up defect shape:
+       computed, published, rendered, not READ at the gate). blocked_on names WHICH gate
+       could not be read, because "BLOCKED" without the gate is a state, not an action. */
+    actionability: sc.actionability ?? null,
+    blocked_on: (sc.blockers || [])
+      .filter((b) => typeof b === "string" && b.startsWith("BLOCKED_PENDING_INPUT:"))
+      .map((b) => b.slice("BLOCKED_PENDING_INPUT:".length)),
   };
   await env.PULSE_CACHE.put(INDEX_KEY, JSON.stringify(idx));
 }

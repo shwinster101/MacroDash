@@ -9,7 +9,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
 <!-- AUDIT: kept in sync with package.json by test/smoke.mjs. admin.html is a Vite
      public/ passthrough, so it cannot receive __APP_VERSION__ — the guard is the fix. -->
-<title>TT TICKER TERMINAL v5.1.0</title>
+<title>TT TICKER TERMINAL v5.1.1</title>
 <style>
   :root{
     --bg:#05070a; --panel:#0a0f16; --panel2:#0d141d; --line:#16202c;
@@ -458,7 +458,7 @@
          verdict and every gate are computed upstream and this panel changes nothing. -->
     <div id="macroEvidence" role="region" aria-label="Why macro — readout evidence"></div>
     <div id="headInfo" style="display:none">
-      <div class="brand">FINANCE&nbsp;BRO.AI // TT&nbsp;TICKER&nbsp;TERMINAL <small>v5.1.0 · the card governs (§14.8)</small></div>
+      <div class="brand">FINANCE&nbsp;BRO.AI // TT&nbsp;TICKER&nbsp;TERMINAL <small>v5.1.1 · the card governs (§14.8)</small></div>
       <div class="statusline">
         <span>BOOK: <b id="bookStamp">loading…</b></span>
         <span>AUTH: <b id="sessState">…</b></span>
@@ -4557,8 +4557,12 @@ function cardInfo(sym){
     const req=fals.filter(h=>h&&!h.legacy);
     const obs=req.filter(h=>h.defined_at&&h.qualifying_observation&&h.qualifying_observation.observed_at>h.defined_at).length;
     const p4={kind:(sc.provisional&&sc.provisional.pending)||(sc.pillars&&sc.pillars.falsifier_health&&sc.pillars.falsifier_health.bootstrap)||null,hinges:req.length,observed:obs};
+    // v5.1.1: the card's own evidence rollup + WHICH gate is unreadable, so why(r) can
+    // veto on it exactly as the server's whyNot() does.
+    const bo=(sc.blockers||[]).filter(b=>typeof b==="string"&&b.startsWith("BLOCKED_PENDING_INPUT:"))
+      .map(b=>b.slice("BLOCKED_PENDING_INPUT:".length));
     return {score,tier,status:sc.status||null,scored,
-      mcur:sc.status!=="LEGACY_UNVERIFIED",p4,src:"record"};}
+      mcur:sc.status!=="LEGACY_UNVERIFIED",p4,act:sc.actionability??null,blockedOn:bo,src:"record"};}
   const e=SCORE_INDEX&&SCORE_INDEX[sym];
   if(!e)return null;
   const scored=e.status==="SCORED";
@@ -4566,7 +4570,8 @@ function cardInfo(sym){
   const tier=scored?(e.capped_tier||null):(e.provisional_tier||null);
   const mcur=!!(e.methodology_version&&SCORE_INDEX_META&&
     e.methodology_version===SCORE_INDEX_META.methodology_version);
-  return {score,tier,status:e.status||null,scored,mcur,p4:e.p4||null,src:"index"};
+  return {score,tier,status:e.status||null,scored,mcur,p4:e.p4||null,
+    act:e.actionability??null,blockedOn:e.blocked_on||[],src:"index"};
 }
 async function loadScoreSym(sym){
   if(SCORE_CACHE[sym]!==undefined||SCORE_INFLIGHT.has(sym))return;
@@ -5336,6 +5341,15 @@ function renderUpsideRank(){
         }
         if(!r.tt.scored)return `server card ${r.tt.status||"incomplete"} — blockers on the card`;
         if(!r.tt.mcur)return "card predates the current methodology — re-score to verify (§4.3)";
+        /* v5.1.1 — the card's OWN actionability, read at the gate. §7 computes it and §11.2
+           evalEligibility always enforced it, but this ladder never asked, so a SCORED card
+           reading BLOCKED could light green (the v3.71-follow-up shape: computed, published,
+           rendered, not READ). CAUTION passes — aging evidence is yours to weigh. An ABSENT
+           field passes: a pre-v5.1.1 index entry predates it, and failing closed there would
+           veto the whole book over a value nobody wrote. Mirrors whyNot() verbatim. */
+        if(r.tt.act==="BLOCKED")return `card actionability BLOCKED — ${r.tt.blockedOn&&r.tt.blockedOn.length
+          ?`${r.tt.blockedOn.join(", ")} cannot be read`
+          :"evidence missing on the card"} (UNKNOWN blocks, §8.1)`;
         if(r.tt.tier==="C"||(r.tt.score!==null&&r.tt.score<5.5))return `TT ${r.tt.score!==null?r.tt.score.toFixed(1):"C"} — quality fails`;
         if(r.rrFail)return "R/R fails its floor";
         return null;};
