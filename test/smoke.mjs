@@ -36,7 +36,9 @@ import { mergeOcrExtractions, onRequestPost as postStreetOcr } from "../function
 import { onRequestGet as getTickerFacts, onRequestPost as postTickerFacts, nasdaqCandlesFact, quoteFact } from "../functions/api/ticker-facts.js";
 import { onRequestPost as postTickerAnalysis, riskTierForBookEntry } from "../functions/api/ticker-analysis.js";
 import { plausible, applyBands, quorum, QUORUM_FIELDS, QUORUM_MIN, marketSession, BANDS,
-  pairRs, parseTreasuryCsv, preferFresherRates, rateOddsStillOpen, chooseTtl, publishIfNoWorse, TTL_MEDIUM, TTL_LOW,
+  pairRs, parseTreasuryCsv, preferFresherRates, parseCboeVixCsv, parseCboeVixQuote,
+  pairCboeVix, preferFresherVix,
+  rateOddsStillOpen, chooseTtl, publishIfNoWorse, TTL_MEDIUM, TTL_LOW,
   fetchEquities } from "../functions/api/snapshot.js";
 import { etYmd } from "../src/sources.js";
 // UI-OVERHAUL Slice 1 (task 1.1): tokens are a real module now — smoke IMPORTS it (the v3.60
@@ -849,6 +851,136 @@ ok("v4.1.5 wiring: the recency merge is the ONLY path into live — no blind tre
   (() => { const src = readSrc("../functions/api/snapshot.js");
     return /preferFresherRates\(fred\.status/.test(src) &&
       !/\.\.\.\(treasury\.status === "fulfilled" \? treasury\.value : \{\}\)/.test(src); })());
+
+/* ═══ v5.1 — THE CBOE VIX FAILSAFE ═══════════════════════════════════════════════════
+   The crash gauge was the ONE critical input with no second source, while the less
+   safety-critical 10Y got one in v4.1.5 — and ttReadout holds HOLD on `!isCur(vix)`, so
+   that asymmetry halts the whole order-gating engine. The fixture is the REAL pair from
+   2026-08-21/08-20, and the two sources cross-check each other exactly: FRED carried
+   16.01 (08-20) while CBOE/Google show 15.13 (08-21) at -5.50% on the day, and
+   15.13/16.01 - 1 = -5.4966% -> -5.50. The numbers are equivalent by construction because
+   VIXCLS *is* FRED's republication of this CBOE series. */
+const VCSV = "DATE,OPEN,HIGH,LOW,CLOSE\n" +
+  "8/21/2026,15.50,15.80,15.00,15.13\n8/20/2026,16.10,16.40,15.90,16.01\n" +
+  "8/19/2026,16.50,16.70,16.20,16.30\n8/18/2026,16.80,17.00,16.60,16.75\n" +
+  "8/15/2026,17.10,17.30,16.90,17.02\n8/14/2026,17.50,17.70,17.20,17.40";
+ok("v5.1 CBOE: CSV -> vix level + real ISO AsOf + CBOE attribution",
+  (() => { const c = parseCboeVixCsv(VCSV);
+    return c && c.vix === 15.13 && c.vixAsOf === "2026-08-21" && /CBOE/.test(c.vixSource); })());
+ok("v5.1 CBOE: vixWeekChg uses fetchFred's OWN window — latest vs ~5 sessions back, not the 1-day",
+  (() => { const c = parseCboeVixCsv(VCSV);
+    // 15.13 vs rows[5] 17.40 = -13.05%; the 1-day would be -5.50, so this proves the window.
+    return c.vixWeekChg === -13.05; })());
+ok("v5.1 CBOE: under 6 sessions it falls back to the 1-day prior, exactly as fetchFred does",
+  (() => { const c = parseCboeVixCsv("DATE,CLOSE\n8/21/2026,15.13\n8/20/2026,16.01");
+    return c.vixWeekChg === -5.5; })());
+ok("v5.1 CBOE: the sparkline is 10 points OLDEST->NEWEST, the FRED/UST convention",
+  (() => { const c = parseCboeVixCsv(VCSV);
+    return Array.isArray(c.vixSeries) && c.vixSeries.length === 6 &&
+      c.vixSeries[0] === 17.4 && c.vixSeries[c.vixSeries.length - 1] === 15.13; })());
+ok("v5.1 CBOE: the 'VIX CLOSE' header variant is accepted (CBOE has shipped both)",
+  (() => { const c = parseCboeVixCsv("DATE,VIX CLOSE\n8/21/2026,15.13");
+    return c && c.vix === 15.13; })());
+ok("v5.1 CBOE: an ISO date column parses too — the date FORM is tolerated, the field is not optional",
+  (() => { const c = parseCboeVixCsv("DATE,CLOSE\n2026-08-21,15.13");
+    return c && c.vixAsOf === "2026-08-21"; })());
+ok("v5.1 CBOE: a CSV with no close column -> null (fail closed on the FIELD, never a guessed column)",
+  parseCboeVixCsv("DATE,OPEN,HIGH,LOW\n8/21/2026,15.5,15.8,15.0") === null);
+ok("v5.1 CBOE: non-positive and unparseable rows are dropped; an all-garbage file yields null, never 0",
+  (() => { const mixed = parseCboeVixCsv("DATE,CLOSE\n8/21/2026,15.13\n8/20/2026,0\n8/19/2026,x\nbadrow,16.0");
+    return mixed.vix === 15.13 && mixed.vixSeries.length === 1 &&
+      parseCboeVixCsv("DATE,CLOSE\n8/21/2026,0\n8/20/2026,-3") === null; })());
+/* The delayed-quote rung (owner-specified primary): tiny, keyless, same publisher. */
+const VQ = { symbol: "_VIX", timestamp: "2026-08-21T15:15:01",
+  data: { current_price: 15.13, close: 15.13, prev_day_close: 16.01, last_trade_time: "2026-08-21T15:15:01" } };
+ok("v5.1 quote: the delayed JSON yields level + ET-date + its own attribution",
+  (() => { const q = parseCboeVixQuote(VQ);
+    return q.vix === 15.13 && q.vixAsOf === "2026-08-21" && q.vixSource === "CBOE delayed"; })());
+ok("v5.1 quote: a single quote emits NO week-change and NO series — it cannot know either",
+  (() => { const q = parseCboeVixQuote(VQ);
+    return q.vixWeekChg === undefined && q.vixSeries === undefined; })());
+ok("v5.1 quote: no parseable timestamp -> null (an undated observation is not an observation)",
+  parseCboeVixQuote({ data: { close: 15.13 } }) === null);
+ok("v5.1 quote: a non-positive or absent level -> null, never a zero VIX",
+  parseCboeVixQuote({ data: { close: 0, last_trade_time: "2026-08-21T15:15:01" } }) === null &&
+  parseCboeVixQuote({ data: { last_trade_time: "2026-08-21T15:15:01" } }) === null);
+ok("v5.1 pair: SAME session -> the quote's level with the daily file's date and series",
+  (() => { const p = pairCboeVix(parseCboeVixQuote(VQ), parseCboeVixCsv(VCSV), "2026-08-24");
+    return p.vix === 15.13 && p.vixAsOf === "2026-08-21" && p.vixWeekChg === -13.05 &&
+      Array.isArray(p.vixSeries) && p.vixSource === "CBOE delayed + CBOE daily"; })());
+ok("v5.1 pair: a DATE MISMATCH never cross-stamps — the daily close wins outright (the pairRs rule)",
+  (() => { const intraday = { vix: 14.2, vixAsOf: "2026-08-24", vixSource: "CBOE delayed" };
+    const p = pairCboeVix(intraday, parseCboeVixCsv(VCSV), "2026-08-24");
+    return p.vix === 15.13 && p.vixAsOf === "2026-08-21" && p.vixSource === "CBOE daily"; })());
+ok("v5.1 pair: quote-only is usable ONLY for a completed prior session",
+  (() => { const prior = pairCboeVix(parseCboeVixQuote(VQ), null, "2026-08-24");
+    return prior && prior.vix === 15.13 && prior.vixSource === "CBOE delayed"; })());
+ok("v5.1 pair: a SAME-DAY quote with no daily file is INTRADAY — a PROXY, refused, never banded as a close",
+  pairCboeVix({ vix: 14.2, vixAsOf: "2026-08-24" }, null, "2026-08-24") === null);
+ok("v5.1 pair: nothing at all -> null (the failsafe reports no reading rather than inventing one)",
+  pairCboeVix(null, null, "2026-08-24") === null);
+ok("v5.1 attribution is never IMPLIED — a FRED-served leg says FRED VIXCLS",
+  (() => { const r = preferFresherVix({ vix: 16.01, vixAsOf: "2026-08-20" }, null);
+    return r.vixSource === "FRED VIXCLS"; })());
+ok("v5.1 attribution: every rung names itself, and the set is closed",
+  (() => { const src = readSrc("../functions/api/snapshot.js");
+    return ["CBOE delayed + CBOE daily", "CBOE daily", "CBOE delayed", "FRED VIXCLS"]
+      .every((s) => src.includes(`"${s}"`)); })());
+ok("v5.1 CBOE merge: a FRESHER CBOE observation wins — the live 8/24 case, HISTORICAL 08-20 -> CURRENT 08-21",
+  (() => { const fred = { vix: 16.01, vixAsOf: "2026-08-20", vixWeekChg: 6.8, vixSeries: [1, 2] };
+    const r = preferFresherVix(fred, parseCboeVixCsv(VCSV));
+    return r.vix === 15.13 && r.vixAsOf === "2026-08-21" && /CBOE/.test(r.vixSource); })());
+ok("v5.1 CBOE merge: the leg is replaced WHOLE — no fallback level ever pairs with the incumbent's deltas",
+  (() => { const fred = { vix: 16.01, vixAsOf: "2026-08-20", vixWeekChg: 99, vixSeries: [1, 2, 3] };
+    // A hand-built alternate carrying ONLY the level: the stale 99 must be DELETED, not kept.
+    const r = preferFresherVix(fred, { vix: 15.13, vixAsOf: "2026-08-21" });
+    return r.vix === 15.13 && r.vixWeekChg === undefined && r.vixSeries === undefined; })());
+/* These three were pinned on `vixSource === undefined` an hour before the owner required
+   attribution to be EXPLICIT for every rung ("not implied", the 10Y fallback rule). The
+   contract deliberately moved: a FRED-served leg is now LABELLED FRED VIXCLS rather than
+   left silent, so the re-pin is strictly stronger — it proves both that CBOE lost AND
+   that the winner names itself. Recorded rather than quietly relaxed. */
+ok("v5.1 CBOE merge: a FRESHER FRED is never overwritten — the failsafe cannot make the page staler",
+  (() => { const fred = { vix: 14.2, vixAsOf: "2026-08-24" };
+    const r = preferFresherVix(fred, parseCboeVixCsv(VCSV));
+    return r.vix === 14.2 && r.vixAsOf === "2026-08-24" && r.vixSource === "FRED VIXCLS"; })());
+ok("v5.1 CBOE merge: a TIE keeps FRED — a tie is not an improvement, and attribution should not churn",
+  (() => { const fred = { vix: 16.01, vixAsOf: "2026-08-21" };
+    const r = preferFresherVix(fred, parseCboeVixCsv(VCSV));
+    return r.vix === 16.01 && r.vixSource === "FRED VIXCLS"; })());
+ok("v5.1 CBOE merge: a DEAD FRED leg takes the fallback regardless of dates (the failure case, not the lag case)",
+  (() => { const r = preferFresherVix({ tenYear: 4.5 }, parseCboeVixCsv(VCSV));
+    return r.vix === 15.13 && r.tenYear === 4.5; })());
+ok("v5.1 CBOE merge: with no CBOE the VALUES are untouched — the only addition is the honest label",
+  (() => { const fred = { vix: 16.01, vixAsOf: "2026-08-20", vixWeekChg: 6.8, vixSeries: [1, 2] };
+    const r = preferFresherVix(fred, null);
+    // Every original key survives byte-identical; vixSource is the sole added key.
+    return Object.entries(fred).every(([k, v]) => JSON.stringify(r[k]) === JSON.stringify(v)) &&
+      Object.keys(r).length === Object.keys(fred).length + 1 && r.vixSource === "FRED VIXCLS"; })());
+ok("v5.1 CBOE: a decimal-shifted fallback value is still banded out — the failsafe is not a bypass",
+  (() => { const live = { vix: 1513, vixAsOf: "2026-08-21" };
+    applyBands(live); return live.vix === undefined; })());
+/* Wiring pinned in BOTH directions, the v4.1.5 rule: the merge must be the ONLY path in,
+   and the trigger must fire on a LAG (the whole point — tonight's VIX was a lag, and a
+   forced rebuild proved it was not transient). */
+ok("v5.1 trigger: the VIX failsafe fires on a LAG, not only on a dead leg",
+  (() => { const src = readSrc("../functions/api/snapshot.js");
+    return /needVix = fredVixDead \|\| sessionsBehind\(fredVixAsOf\) >= 1/.test(src); })());
+ok("v5.1 wiring: preferFresherVix is the ONLY path into live — no blind cboe spread survives",
+  (() => { const src = readSrc("../functions/api/snapshot.js");
+    return /preferFresherVix\(/.test(src) &&
+      !/\.\.\.\(cboe\.status === "fulfilled" \? cboe\.value : \{\}\)/.test(src); })());
+// Local stripper: the shared `stripComments` is defined ~7000 lines below (section [68]),
+// so referencing it here would be a temporal-dead-zone error, not a passing pin.
+const noCmt = (s) => s.replace(/\/\*[\s\S]*?\*\//g, "").replace(/\/\/[^\n]*/g, "");
+ok("v5.1: both failsafes share ONE recency rule — mergeFresherLeg, not a second copy",
+  (() => { const src = noCmt(readSrc("../functions/api/snapshot.js"));
+    return (src.match(/mergeFresherLeg\(/g) || []).length >= 4 &&   // 1 def + 2 rates + 1 vix
+      /export function preferFresherVix/.test(src); })());
+ok("v5.1: the failsafe never runs on a healthy day — both triggers are conditional",
+  (() => { const src = noCmt(readSrc("../functions/api/snapshot.js"));
+    return /if \(needTsy\) jobs\.push/.test(src) && /if \(needVix\) jobs\.push/.test(src) &&
+      /if \(jobs\.length\) await Promise\.all\(jobs\)/.test(src); })());
 
 // Matrix G (transport half): stored Kalshi odds survive only while their event is open.
 ok("matrix G: last-good odds for a FUTURE event are servable; a PAST event's are discarded", (() => {

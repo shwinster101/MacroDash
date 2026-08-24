@@ -2881,6 +2881,59 @@ Jan-anchor shipped; see `snapshot.js` ~318–328), `spyMa100`, `spyMa200`, and a
   VALUATION GAP ranking (§11.1 — the ranking always renders, which is the owner's actual
   "always an output" contract, and it was never suspended). Tests: 1223 smoke (+2) + 199
   render (+1).
+- **FEAT-VIX-FAILSAFE (v5.1.0) — the crash gauge gets the second source the 10Y already had.**
+  Diagnosed live: at 2026-08-24 01:05 ET every Engine 0 check was CURRENT except VIX, which
+  sat on Thursday 08-20 (16.01) with no Friday 08-21 observation — a ~57-hour gap on a DAILY
+  series. A forced `POST /api/snapshot/refresh` refetched upstream and still got 08-20, so it
+  was not transient. `ttReadout.js:398` holds **HOLD** on `!isCur(vix)` and the v3.40 rule
+  withholds TAILWIND whenever the panic override cannot fire, so **the entire order-gating
+  engine was halted by one lagging series** — and `available/usable` were 5/5 with `raw_verdict:
+  TAILWIND` underneath. Measured precisely: `fed_next_meeting` (Kalshi, dark) is NOT critical,
+  so it never blocked FULL; VIX was the **sole** binding constraint, one input from
+  `current` 4→5 → HIGH → FULL.
+  **The asymmetry this closes.** v4.1.5 gave the 10Y an official-upstream failsafe for exactly
+  this per-series publication lag — its own comment records the mirror-image incident (DGS10
+  two sessions behind while VIXCLS had already published). The fix was built on one side only,
+  and the side left bare was the **crash gauge**: the one input whose absence stops everything
+  had a single point of failure while a less safety-critical series had a backup.
+  **The ladder (owner-specified):** CBOE **delayed-quote JSON** for the level (~1KB, keyless)
+  + CBOE **daily history CSV** for the as-of and the derived series, fetched CONCURRENTLY —
+  one round trip, and only on a day the leg is already dead or ≥1 session behind (a healthy
+  day costs nothing). CBOE *publishes* VIX and FRED's VIXCLS is its republication, so the
+  level is equivalent by construction — the same UST↔DGS10 relationship, never a proxy.
+  **Two honesty guards, both negative-controlled.** (1) **`pairCboeVix` pairs the two rungs
+  only when they describe the SAME session** — pairing a level from session N with a date from
+  session N-1 is a fabricated observation, so on a date mismatch the DAILY FILE WINS OUTRIGHT
+  (a true close beats a fresher intraday print; the bands, sparkline and WoW window are all
+  close-calibrated). This is the `pairRs` rule, one metric over. (2) **A same-day delayed quote
+  with no daily file behind it is REFUSED** — mid-session it is an INTRADAY print, i.e. a
+  PROXY, and ENGINE0-CONT's vocabulary exists precisely so nothing silently emits one through
+  the original metric's bands. Both guards were reverted in test: each turns exactly its own
+  pin red.
+  **Attribution is never IMPLIED** (the owner's rule, and the 10Y's own gap): every rung names
+  itself — `CBOE delayed + CBOE daily` · `CBOE daily` · `CBOE delayed` · **`FRED VIXCLS`**, the
+  last added so a FRED-served leg is labelled rather than left to be inferred from silence.
+  **`mergeFresherLeg` is EXTRACTED, not copied**: "newer wins, a TIE keeps the incumbent, the
+  leg is replaced WHOLE" is one rule, and both failsafes now call it. Whole-leg replacement is
+  load-bearing — a mixed leg would pair a fallback's level with the incumbent's deltas and
+  sparkline, a series dated by neither source. The band `[1,150]` still applies to a fallback
+  value (the failsafe is not a bypass), and FRED keeps its REAL observation date, so a carried
+  value still classifies HISTORICAL honestly rather than being dressed as CURRENT.
+  **Honest limit, same posture as v3.71/v4.1.5:** `cdn.cboe.com` is 403 from this build
+  environment's proxy (as are `home.treasury.gov` and `fred.stlouisfed.org`), so the endpoints
+  could not be exercised here. Both parsers are fail-closed and fixture-tested, the pairing and
+  merge are pure and EXECUTED, and the first real call from the Pages edge is the true schema
+  check. `live.vixSource` is readable on `/api/snapshot` without a debug token, so the deployed
+  answer to *"does CBOE answer from the worker, or is it Stooq-class blocked?"* is one GET.
+  Deliberately NOT built pending that answer: the Finnhub `^VIX` and Yahoo v8 rungs — building
+  two more upstreams before knowing whether the first one answers would be speculative.
+  Tests: **1938 smoke** (+30: both parsers incl. header/date-form variants and every
+  fail-closed path, the WoW window proven to be fetchFred's own and not the 1-day, the
+  pairing truth table, the intraday refusal, whole-leg replacement, recency both directions,
+  the closed attribution set, band enforcement, and wiring pinned in both directions) + 271
+  render + 171 public-render + `audit:prod` clean. Four negative controls run: neutering the
+  merge (4 red), reverting the trigger to failure-only (1 red), and removing each pairing
+  guard (1 red apiece).
 - **v5.0.2 — the chrome above NEXT $ IN, measured and trimmed.** Owner feedback on a live
   phone screenshot ("reduce empty space where able"). Measured first rather than guessed
   (the project's own convention): a Playwright probe against the real `admin.html`, served
