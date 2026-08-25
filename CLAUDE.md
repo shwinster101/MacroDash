@@ -4604,6 +4604,20 @@ Jan-anchor shipped; see `snapshot.js` ~318–328), `spyMa100`, `spyMa200`, and a
     mv (SIGNED — short legs negative), src:"sync"}`; Greeks only if the quotes API actually
     returns them — verified at sync time, never approximated
   · a fully exited name → `{sym: null}` (the explicit removal path).
+  **STAMP IN ET, NEVER `toISOString()` (2026-08-24 sync, caught BEFORE it fired — the
+  FIX-A defect class, fifth recurrence: v3.11 run stamps, v3.35 render fixtures, v3.80 a
+  test's own fixture, v4.1.1 `ageDays` itself).** Every `at`/`asOf` this sync writes is
+  judged by ET-calendar time-judges (`ageDaysEt`, `POS_STALE_D`, `validateAccount`). A
+  sync run after ~8pm ET that stamps `new Date().toISOString()` writes TOMORROW's date —
+  the whole payload reads future-dated and fails closed, the freshest data in the store
+  rejected as invalid. Stamp the ET calendar timestamp (e.g.
+  `toLocaleDateString("en-CA",{timeZone:"America/New_York"})` + ET wall time, no `Z`).
+  **SCOPE: the ONE tradable account only (owner ruling, 2026-08-24 sync).** Positions held
+  in other accounts (e.g. SOFI, SPCX in the Long-term account) are DELIBERATELY outside the
+  store — one store, one `pct` denominator; mixing accounts would corrupt every cap check.
+  Consequence, so nobody "fixes" it: a book name held only in an unsynced account reads
+  **"new — not held"** on the board, which here means *not held in the synced account* —
+  known, accepted, and cheaper than a wrong denominator.
   **DO NOT STORE:** full account numbers, order history, open orders, watchlists, or
   anything from the broker's recommendation surfaces — the store holds POSITION FACTS only.
   **The allocation layer this feeds:** `/api/allocation` (PIN-gated) re-derives the
