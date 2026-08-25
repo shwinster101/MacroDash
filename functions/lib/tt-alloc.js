@@ -28,17 +28,23 @@
 // (admin gateFail region). POS_STALE_D is imported from the positions store, which owns it.
 
 import { ptModelRows, ptRowYears, lintPtModel, pickRow, annualise } from "../../src/ptModel.js";
+import { computeTechRead } from "../../src/techRead.js";
 import { etYmd } from "../../src/sources.js";
 import { POS_STALE_D } from "../api/positions.js";
 
-// v2.1.0 (v5.1.1): a NEW VETO RUNG — the card's own actionability. A receipt minted under
-// v2.0.0 could name a name eligible whose card read BLOCKED, so a cached v2.0.0 receipt must
-// not be reinterpreted under this rule (the v4.1.4 precedent, third application).
-// v2.0.0 (v5.0 §14.8 activation): the quality rung moved from legacy free-text composites
-// to server score cards, and broken_thesis entered the forced funding tier — receipt
-// semantics changed on BOTH sides. v1.1.0 was the horizon-never-substituted change.
-export const ALLOC_RULE_VERSION = "tt-alloc-v2.1.0";
-export const CAP_PCT = 18;      // mirror of admin.html (hard single-position cap)
+// v3.0.0 (v5.2 CAP-ASTERISK, owner ruling 2026-08-25: "I'm not adhering to the allocation
+// cap — keep it as an asterisk and rank sells by pure technicals, pt, and scores"): the
+// 18% cap DEMOTES from enforcement to annotation on BOTH ladders — the buy-side cap veto
+// (RANKFAIR v3.36) and the forced funding tier (SELLRANK v3.38) are REVERSED as documented
+// owner reversals. The funding ranking becomes MERIT, lexicographic in the owner's stated
+// axis order: tape (techRead, BEARISH first) -> lowest %/yr -> lowest TT card score —
+// never a blended unit (DEC-D2). Cluster and session-order tiers demote to flags the same
+// way. Receipt semantics changed on both sides, so the version moved (the v4.1.4 rule).
+// v2.1.0 (v5.1.1) added the card-actionability veto rung; v2.0.0 was the §14.8 activation
+// (quality rung to server cards + broken_thesis into forced funding); v1.1.0 was the
+// horizon-never-substituted change.
+export const ALLOC_RULE_VERSION = "tt-alloc-v3.0.0";
+export const CAP_PCT = 18;      // mirror of admin.html — REFERENCE cap (asterisk, not a wall, since v5.2)
 export const PX_STALE_D = 4;    // mirror of admin.html (a stamped mark older than this misleads)
 export const REG_RANK = { TAILWIND: 0, NEUTRAL: 1, HEADWIND: 2, PANIC: 3 };
 /* FIX-C (v3.49) verbatim — the funding list is where the next dollar comes FROM, never a
@@ -241,7 +247,10 @@ export function whyNot(row, weightPct) {
   if (row.no_rung_at_horizon)
     return `no ${row.no_rung_at_horizon} rung — excluded at the shared horizon, never substituted`;
   if (!(row.up > 0)) return "no gap";
-  if (weightPct !== null && weightPct >= CAP_PCT) return `already ${weightPct}% — at the ${CAP_PCT}% cap, no room`;
+  /* v5.2 CAP-ASTERISK: the cap rung is GONE — a documented owner reversal of RANKFAIR
+     (v3.36), which vetoed the pick at/over CAP_PCT. The weight still rides the row and an
+     over-cap pick carries the reference-cap caution (added in evaluateAllocation), so the
+     asterisk survives everywhere the veto used to fire — visible, never enforcing. */
   if (row.blockers.length) return `evidence: ${row.blockers.join(", ")}`;
   /* v5.0 §14.8 ACTIVATION (SCORED-only, owner ruling 2026-08-23): the quality rung reads
      the server card. Each non-eligible state gets ITS OWN reason — a PROVISIONAL name and
@@ -290,7 +299,15 @@ export function whyNot(row, weightPct) {
    broker-measured pct; the tracked-book floor is NAMED as a floor when it substitutes.
    do_not_trim is FLAGGED, never hidden (the RANKFAIR rule). Options-only sleeves keep the
    v3.44 rules: signed sum, unmeasured reads as such, a net-short sleeve is an obligation. */
-export function fundingRanking({ book, board, positions, rowsAnn, now, noRungSyms, brokenSyms }) {
+/* v5.2 CAP-ASTERISK: the five owner-locked tiers collapse to TWO. Tier 1 (owner-marked
+   forced exits, the cut list, server-stamped BROKEN_THESIS) still ranks first — those are
+   decisions already made, not rankings. Everything else is ONE merit pool, lexicographic
+   in the owner's stated axis order: tape (techRead label, BEARISH first; MIXED/UNREAD and
+   no-read all middle — an unmeasured tape is never a judgment) -> lowest %/yr -> lowest TT
+   card score, size as the final tie-break. Axes stay lexicographic, never blended, and the
+   row states all three. The old tiers 2-4 (over-cap, cluster, session order) become FLAGS —
+   informational, visible on the row, enforcing nothing (owner ruling 2026-08-25). */
+export function fundingRanking({ book, board, positions, rowsAnn, now, noRungSyms, brokenSyms, techBySym = {}, scoreBySym = {} }) {
   const b = board || {}, pos = positions || {};
   const cut = new Set(Array.isArray(book && book.cut) ? book.cut : []);
   const forcedSyms = new Map(); // sym -> reason
@@ -345,24 +362,38 @@ export function fundingRanking({ book, board, positions, rowsAnn, now, noRungSym
     const lots = Array.isArray(p.lots) ? p.lots : [];
     const lt = lots.filter((l) => (ageDaysEt(l.acquired, now) ?? 0) > 365).reduce((a, l) => a + Number(l.sh), 0);
     const st = lots.reduce((a, l) => a + Number(l.sh), 0) - lt;
+    const tech = techBySym[sym] ?? null;
+    const score = scoreBySym[sym] ?? null;
+    // BEARISH sells first; MIXED, UNREAD and no-read all sit in the middle — an unmeasured
+    // tape is never a judgment in either direction (the v3.83 rule), so it cannot outrank a
+    // measured BEARISH nor hide behind a BULLISH it never earned.
+    const techRank = tech === "BEARISH" ? 0 : tech === "BULLISH" ? 2 : 1;
+    const flags = [];
+    if (pct !== null && pct >= CAP_PCT)
+      flags.push(`⚠ ${pct}% — over the ${CAP_PCT}% reference cap (informational — owner ruling 2026-08-25)`);
+    if (clusterOver.has(sym)) flags.push(`⚠ ${clusterOver.get(sym)} (informational)`);
+    if (orderMarked.has(sym)) flags.push(`${orderMarked.get(sym).reason} — asserted, shown not enforced`);
     let tier, reason;
     if (forcedSyms.has(sym)) { tier = 1; reason = forcedSyms.get(sym); }
-    else if (pct !== null && pct >= CAP_PCT) { tier = 2; reason = `${pct}% of acct equity — at/over the ${CAP_PCT}% cap (broker-measured)`; }
-    else if (clusterOver.has(sym)) { tier = 3; reason = clusterOver.get(sym); }
-    else if (orderMarked.has(sym)) { tier = 4; reason = orderMarked.get(sym).reason; }
-    else { tier = 5; reason = ann === null
-      ? (noRung.has(sym)
-          ? "no rung at the shared horizon — no expected-return basis at this year; listed last"
-          : "unmodelled — no expected-return basis; listed last")
-      : `lowest expected return funds first — ${ann}%/yr at the shared horizon`; }
+    else {
+      tier = 2;
+      reason = `merit rank — tape ${tech ?? "UNREAD"} · ` +
+        (ann !== null ? `${ann}%/yr` : (noRung.has(sym) ? "no rung at the shared horizon" : "unmodelled — no %/yr")) +
+        ` · TT ${score !== null ? score : "no card"}`;
+    }
     rows.push({ sym, tier, reason, pct, mv: isFinite(Number(p.mv)) ? Number(p.mv) : null, ann,
+      tech, techRank, score, flags,
       dnt: dnt.has(sym), pos_age_d: ageDaysEt(p.at, now),
       lots: lots.length ? { lt_sh: lt, st_sh: st } : null });
   }
   rows.sort((a, b2) => a.tier - b2.tier
-    || (a.tier === 4 ? (orderMarked.get(a.sym).i - orderMarked.get(b2.sym).i) : 0)
-    || ((a.ann ?? 1e9) - (b2.ann ?? 1e9)) || ((b2.mv ?? 0) - (a.mv ?? 0)));
-  return { label: FUNDING_LABEL, rows, optOnly };
+    || (a.tier === 1 ? 0
+      : (a.techRank - b2.techRank
+        || ((a.ann ?? 1e9) - (b2.ann ?? 1e9))
+        || ((a.score ?? 1e9) - (b2.score ?? 1e9))))
+    || ((b2.mv ?? 0) - (a.mv ?? 0)));
+  return { label: FUNDING_LABEL, rows, optOnly,
+    basis: "merit rank (owner ruling 2026-08-25): tape (bearish first) -> lowest %/yr -> lowest TT card score; cap, cluster and session order are FLAGS, never tiers" };
 }
 
 // ── the whole evaluation ─────────────────────────────────────────────────────
@@ -432,6 +463,11 @@ export function evaluateAllocation({ book, ddIndex, posDoc, quotes, readout, now
   if (eligible) {
     const w = weightOf(eligible.sym);
     if (w === null && positions[eligible.sym]) context_blockers.push(`${eligible.sym} held but weight unmeasured`);
+    /* v5.2 CAP-ASTERISK: the veto RANKFAIR put here is gone; the asterisk it leaves behind
+       rides the pick's cautions so an over-cap add is chosen with eyes open, never silently. */
+    if (w !== null && w >= CAP_PCT)
+      eligible.cautions = [...(eligible.cautions || []),
+        `already ${w}% of acct equity — over the ${CAP_PCT}% REFERENCE cap (asterisk, not a veto — owner ruling 2026-08-25)`];
   }
 
   // FEAT-TT-CIRCUIT (v4.1): an ARMED circuit is a caution the server previously could not
@@ -446,7 +482,31 @@ export function evaluateAllocation({ book, ddIndex, posDoc, quotes, readout, now
   /* v3.65 rule, applied to the receipt: a silent truncation reads as full coverage, so the
      names the shared horizon excluded are NAMED, never just counted. */
   const noRungSyms = new Set(rows.filter((r) => r.no_rung_at_horizon).map((r) => r.sym));
-  const funding = fundingRanking({ book, board, positions, rowsAnn, now, noRungSyms, brokenSyms });
+  /* v5.2 CAP-ASTERISK: the funding merit axes, computed HERE so fundingRanking stays pure.
+     Tape: the dd-index price_action through the REAL computeTechRead — one table, so the
+     receipt's tape axis can never disagree with the name's own band read. (Owner ruling
+     2026-08-25 revises the v3.83 married-never-merged scope for THIS surface only: the
+     verdict is a lexicographic sort axis here, never a blended score — the buy sort,
+     gateFail and whyNot ladders keep the ban.) Score: the same cardOf the quality rung
+     reads — raw when SCORED, provisional otherwise; no card ranks last in its bucket. */
+  const techBySym = {}, scoreBySym = {};
+  for (const e of entries) {
+    const idx = idxEntries[e.sym];
+    const pa = idx && idx.price_action;
+    if (pa) {
+      const q2 = quotes && quotes[e.sym];
+      const px = q2 && isFinite(Number(q2.px)) ? Number(q2.px)
+        : (idx.ref_px && isFinite(Number(idx.ref_px.px)) ? Number(idx.ref_px.px) : null);
+      const t = computeTechRead(pa, px, { age: ageDaysEt(pa.as_of, now) });
+      if (t && t.label) techBySym[e.sym] = t.label;
+    }
+    const c = cardOf(e.sym);
+    if (c) {
+      const s2 = c.raw_score ?? c.provisional_score;
+      if (s2 !== null && s2 !== undefined) scoreBySym[e.sym] = s2;
+    }
+  }
+  const funding = fundingRanking({ book, board, positions, rowsAnn, now, noRungSyms, brokenSyms, techBySym, scoreBySym });
 
   return {
     rule_version: ALLOC_RULE_VERSION,

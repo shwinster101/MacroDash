@@ -30,9 +30,13 @@
 // look like a considered non-lean. "Not measured" and "measured, no lean" are different
 // facts; this repo has fixed that same defect at four other altitudes.
 //
-// ⚠ MARRIED, NEVER MERGED. This verdict must NEVER enter the ranking sort, gateFail, or
-// why(). WHAT (the valuation gap, measured) and WHEN (this) are two answers rendered side by
-// side; blending them produces one number nobody can falsify. Smoke pins both directions.
+// ⚠ MARRIED, NEVER MERGED — scope revised by owner ruling 2026-08-25 (v5.2 CAP-ASTERISK).
+// This verdict must NEVER enter the BUY ranking sort, gateFail, or why() — WHEN still never
+// gates ELIGIBILITY, and the %/yr sort stays a single measured unit. The SELL/FUNDING
+// ranking is the one deliberate exception: the owner ruled sells rank on tape → %/yr → TT
+// score, LEXICOGRAPHIC — each axis sorts in its own terms, every row states all three, so
+// no blended number exists even there. That reverses the original blanket rule for one
+// surface; smoke pins the surviving guards and the reversal both.
 
 /* Deadband around a moving average. "At the 200d" is genuinely undecided — a price 0.3%
    above its 200d is not in an uptrend, it is on the line, and a band table that calls it one

@@ -1866,8 +1866,13 @@ ok("caps: the CLUSTER total is summed — 'cluster = one position' is finally ch
   adminSrc.includes('out.push({kind:"cluster"') && adminSrc.includes("one cluster sizes as one position"));
 ok("caps: an unmeasured cluster member is NAMED and the total called a floor",
   adminSrc.includes("the total is a FLOOR") && adminSrc.includes("a cluster total that"));
-ok("caps: a breach becomes a TODAY stop — you are over the limit now, not considering it",
-  adminSrc.includes("pts over the ${CAP_PCT}% cap") && adminSrc.includes("outranks anything discretionary"));
+/* v5.2 CAP-ASTERISK (owner ruling 2026-08-25): the breach line SURVIVES but as a WARN —
+   the reference cap informs, it no longer suspends the add candidate. Both directions
+   pinned: the warn exists, the old stop severity is gone from the cap items. */
+ok("caps: a breach is a TODAY WARN, never a STOP — the cap informs, it does not suspend the add (v5.2 reversal of the v3.30 stop)",
+  adminSrc.includes("pts over the ${CAP_PCT}% reference cap (informational)") &&
+  adminSrc.includes('sev:"warn",txt:`${c.sym} is ${c.pct}% of acct equity') &&
+  !adminSrc.includes('sev:"stop",txt:`${c.sym} is ${c.pct}%'));
 ok("caps: a breach computed off a stale or undated mark says so",
   adminSrc.includes("(position mark undated)") && adminSrc.includes("marks ${c.age}d old"));
 ok("caps: a closed EXPOSURE drawer still shows a breach in its summary",
@@ -2364,9 +2369,13 @@ ok("rankfair: markers are the cap constants, not magic numbers (** at cap, * at 
 ok("rankfair: an options-only position gets its OWN marker, never a misleading 0%",
   adminSrc.includes("opt-only — weight not measurable") &&
   adminSrc.includes('const optOnly=Array.isArray(p.opt)&&p.opt.length>0&&!(Number(p.sh)>0);'));
-ok("rankfair: a name at/over the cap can NEVER be the next dollar, however wide its gap",
-  adminSrc.includes("at the ${CAP_PCT}% cap, no room") &&
-  adminSrc.indexOf("if(r.wt.w!==null&&r.wt.w>=CAP_PCT)") < adminSrc.indexOf('if(!r.tt)return "no server card'));
+/* v5.2 CAP-ASTERISK: RANKFAIR's veto is REVERSED by owner ruling 2026-08-25. The pin now
+   asserts the opposite of what it asserted from v3.36 to v5.1.1 — deliberately, with the
+   ruling named (the v4.0.1 reversal convention): the veto string is GONE from why(), and
+   the over-cap pick carries the asterisk chip on the green line instead. */
+ok("rankfair REVERSED (v5.2): the cap never vetoes the pick — the green line carries the asterisk instead",
+  !adminSrc.includes("at the ${CAP_PCT}% cap, no room") &&
+  adminSrc.includes("over the ${CAP_PCT}% reference cap (asterisk, not a veto)"));
 ok("rankfair: every pick renders its held weight beside the upside",
   adminSrc.includes("r.wt") && adminSrc.includes("weights are % of TRACKED BOOK (a floor"));
 ok("rankfair: queue names with NO model are NAMED, not silently missing from the ranking",
@@ -2377,23 +2386,43 @@ ok("rankfair: the ranking spans held AND unheld, and says which — a blank woul
 
 // ---- 19. v3.38 "Four Drivers" — FOCUS2 + SELLRANK + REFRESH ----------------
 console.log("\n[19] v3.38 — four-driver view, computed sell list, refresh button");
-ok("sellrank: forced trims (over cap) rank before every discretionary trim",
+/* v5.2: the forced cap tier is GONE (SELLRANK v3.38 reversed) — this pin previously went
+   VACUOUS (forced.sort deleted -> indexOf -1 < anything, the v3.60.1 trap) and is rewritten
+   to assert the new contract directly: no cap-routed forced bucket remains in sellRank. */
+ok("sellrank REVERSED (v5.2): no cap-forced tier remains — every measured row ranks on merit",
   adminSrc.includes("function sellRank()") &&
-  adminSrc.indexOf("forced.sort((a,b)=>b.trimPts-a.trimPts);") < adminSrc.indexOf("disc.sort((a,b)=>{"));
+  !adminSrc.includes("forced.sort((a,b)=>b.trimPts-a.trimPts);") &&
+  !/else if\(w>=CAP_PCT\)\{\s*\n\s*row\.trimPts/.test(adminSrc));
 // v3.44: the sort gained an options branch, but the RETURN-based rule is unchanged —
 // asserted behaviourally now rather than by matching the old one-line literal.
-ok("sellrank: discretionary order is LOWEST expected return first — that dollar funds the next one",
-  adminSrc.includes("return a.basis===\"return\"?a.ann-b.ann:b.mv-a.mv;") &&
-  adminSrc.includes("lowest expected return funds first") &&
-  (() => { const rows=[{basis:"return",ann:9},{basis:"return",ann:-3},{basis:"return",ann:2}];
+/* v5.2 CAP-ASTERISK: the discretionary key is now MERIT, lexicographic in the owner's
+   stated order — tape (bearish first) -> lowest %/yr -> lowest TT score — RUN here against
+   the real sort expression's own semantics: a BEARISH-tape name outranks a lower-%/yr
+   BULLISH one (tape is the first axis, per the ruling), and within one tape bucket the
+   old lowest-return rule survives; a no-rate row ranks after rated names in its bucket. */
+ok("sellrank v5.2: merit sort — tape first, then lowest %/yr, then lowest TT score (run, not pinned)",
+  adminSrc.includes("(a.techRank-b.techRank)||((a.ann??1e9)-(b.ann??1e9))||((a.score??1e9)-(b.score??1e9))") &&
+  (() => { const tr=v=>v==="BEARISH"?0:v==="BULLISH"?2:1;
+    const rows=[
+      {basis:"return",tech:"BULLISH",ann:-9,score:9,mv:1},
+      {basis:"return",tech:"BEARISH",ann:12,score:8,mv:1},
+      {basis:"return",tech:"MIXED",ann:3,score:2,mv:1},
+      {basis:"return",tech:"MIXED",ann:null,score:1,mv:1},
+      {basis:"return",tech:"MIXED",ann:3,score:7,mv:1}];
+    rows.forEach(r=>r.techRank=tr(r.tech));
     rows.sort((a,b)=>{ if(a.basis!==b.basis)return a.basis==="return"?-1:1;
-      return a.basis==="return"?a.ann-b.ann:b.mv-a.mv; });
-    return rows.map(r=>r.ann).join()==="-3,2,9"; })());
-ok("sellrank: a forced trim carries the computed dollar amount to get back to cap",
-  adminSrc.includes("row.trim$=Math.round(mv*(w-CAP_PCT)/w);") && adminSrc.includes("to cap"));
-ok("sellrank: do_not_trim is flagged, never hidden — and a cap contradiction is named",
+      if(a.basis!=="return")return b.mv-a.mv;
+      return (a.techRank-b.techRank)||((a.ann??1e9)-(b.ann??1e9))||((a.score??1e9)-(b.score??1e9))||(b.mv-a.mv); });
+    const order=rows.map(r=>`${r.tech}:${r.ann}:${r.score}`).join("|");
+    // bearish first despite +12%/yr; then mixed 3%/yr score 2 before score 7; no-rate last
+    // in its bucket; bullish last despite being the WORST return on the list.
+    return order==="BEARISH:12:8|MIXED:3:2|MIXED:3:7|MIXED:null:1|BULLISH:-9:9"; })());
+ok("sellrank v5.2: an over-cap row keeps the to-cap arithmetic as its INFORMATIONAL asterisk",
+  adminSrc.includes("trim$:w>=CAP_PCT?Math.round(mv*(w-CAP_PCT)/w):null") &&
+  adminSrc.includes("to cap (informational)"));
+ok("sellrank: do_not_trim is flagged, never hidden (the cap-contradiction line died WITH the forced tier it contradicted — v5.2)",
   adminSrc.includes("session says do-not-trim — shown, not hidden") &&
-  adminSrc.includes("cap and do-not-trim CONTRADICT"));
+  !adminSrc.includes("cap and do-not-trim CONTRADICT"));
 // v3.44 FEAT-TT-OPTMV: options-only positions now rank IN the list on realisable dollars.
 // Only genuinely-unrankable sleeves are named below it, each with its own reason.
 ok("sellrank: unmodelled names are NAMED, and an unrankable options sleeve says WHY",
@@ -2410,12 +2439,12 @@ ok("optmv: the sleeve sum is SIGNED — a short leg is a liability, so a net-sho
   adminSrc.includes("net short — closing costs"));
 ok("optmv: an options row states it was ranked on DOLLARS, not on a rate it does not own",
   adminSrc.includes("ranked on realisable dollars — a leg's return is not the underlying's"));
-ok("optmv: an options row qualifies on dollars ALONE — requiring a model would have " +
-   "re-created the very exclusion this removes",
-  adminSrc.includes("if(oo){disc.push(row);}"));
-ok("optmv: an options row bypasses the CAP tier — CAP_PCT is measured against equity mv / " +
-   "broker pct, a denominator a sleeve's value is not comparable to",
-  /if\(oo\)\{disc\.push\(row\);\}\s*\n\s*else if\(w>=CAP_PCT\)/.test(adminSrc));
+ok("optmv: an options row still qualifies on dollars ALONE and keeps its own basis in the sort (v5.2: one push, basis split intact)",
+  adminSrc.includes('optOnly:oo,basis:oo?"dollars":"return"') &&
+  adminSrc.includes('if(a.basis!=="return")return b.mv-a.mv;'));
+ok("optmv v5.2: no CAP tier exists for ANY row to bypass — the sleeve-denominator concern is moot by reversal, pinned so it cannot silently return",
+  !/else if\(w>=CAP_PCT\)\{\s*\n?\s*row\.trimPts/.test(adminSrc) &&
+  adminSrc.includes("the cap no longer routes a row to a FORCED tier"));
 ok("optmv: the server rejects a sign-contradicting leg (long with mv<0, short with mv>0)",
   (() => {
     const base = { at: "2026-07-30T14:00:00Z", src: "sync" };
@@ -4249,7 +4278,8 @@ ok("tt-deck-forced: SELL_FORCED_N is reset before sellRank() runs — an early r
     const reset = body.indexOf("SELL_FORCED_N=null;");
     const compute = body.indexOf("const s=sellRank();");
     return reset >= 0 && compute >= 0 && reset < compute &&
-      /if\(s\)SELL_FORCED_N=s\.forced\.length;/.test(body);
+      // v5.2 CAP-ASTERISK: the count is over-cap rows (informational), no longer a forced tier
+      /if\(s\)SELL_FORCED_N=s\.disc\.filter\(r=>r\.overCap\)\.length;/.test(body);
   })());
 ok("tt-deck-forced: the label reads SELL_FORCED_N directly — it recomputes neither CAP_PCT nor capChecks()",
   (() => {
@@ -4261,10 +4291,10 @@ ok("tt-deck-forced: sellRank() is still CALLED exactly twice (renderSellBlock + 
   (adminSrc.match(/=\s*sellRank\s*\(\s*\)\s*;/g) || []).length === 2 &&
   !/\bsellRank\s*\(/.test(adminSrc.slice(adminSrc.indexOf("function renderDecisionFundLabel"),
     adminSrc.indexOf("function renderSellBlock"))));
-ok("tt-deck-forced: the four states are distinct strings — pending, unmeasured, checked-clear and forced never collapse into each other",
+ok("tt-deck-forced: the four states are distinct strings — pending, unmeasured, checked-clear and over-cap never collapse into each other (label re-pinned at v5.2: ⚠cap, informational)",
   /line\("· …","var\(--dim\)"\)/.test(adminSrc) &&
   /line\("· \?","var\(--amber\)"\)/.test(adminSrc) &&
-  /line\(`· \$\{SELL_FORCED_N\} FORCED`,"var\(--red\)",true\)/.test(adminSrc) &&
+  /line\(`· \$\{SELL_FORCED_N\} ⚠cap`,"var\(--red\)",true\)/.test(adminSrc) &&
   /c\.innerHTML="";/.test(adminSrc));
 ok("tt-deck-forced: the panel never auto-opens off the forced count — no decisionGo() call reads SELL_FORCED_N",
   !/decisionGo\([^)]*\).*SELL_FORCED_N|SELL_FORCED_N[\s\S]{0,80}decisionGo\(/.test(adminSrc));
@@ -6716,9 +6746,16 @@ console.log("\n[57] FEAT-TT-TECHREAD — band table, split tally, asymmetric wit
       const why = adminSrc.slice(whyI, adminSrc.indexOf("const q=rows.filter", whyI));
       return !/tech(Of|Read|Chip)|TECH_BAND/.test(gate) && !/tech(Of|Read|Chip)|TECH_BAND/.test(why);
     })());
-  ok("tech: sellRank never reads it either — the funding order is a measured question too",
+  /* v5.2 CAP-ASTERISK — DOCUMENTED REVERSAL of this pin's old form ("sellRank never reads
+     it either"). Owner ruling 2026-08-25 makes the TAPE the funding ranking's FIRST merit
+     axis, so sellRank now MUST read techOf — the ONE resolution point, so the row and the
+     name's own band table cannot disagree. The ban survives everywhere it still applies:
+     the buy sort, gateFail and why() pins directly above are untouched, and the read is a
+     lexicographic axis, never blended into a unit (DEC-D2). */
+  ok("tech: sellRank READS techOf as the first merit axis (v5.2 owner reversal — buy sort and gates keep the ban)",
     (() => { const i = adminSrc.indexOf("function sellRank(");
-      return i > 0 && !/tech(Of|Read|Chip)/.test(adminSrc.slice(i, adminSrc.indexOf("\n}", i))); })());
+      const body = adminSrc.slice(i, adminSrc.indexOf("\n}", i));
+      return i > 0 && /techOf\(/.test(body) && /techRank/.test(body) && !/computeTechRead\(/.test(body); })());
   /* ONE resolution point for the VERDICT. Exactly three references to computeTechRead: its
      own definition, techOf (which every rendering surface goes through), and techFlips —
      which legitimately recomputes because it must simulate against the same tally it is
@@ -8070,11 +8107,32 @@ console.log("\n[68] FEAT-TT-ALLOC — pure core, endpoint, and the §14.8 bar");
     (() => { const r = ev({ posDoc: null });
       return r.state === "BUY_ELIGIBLE" && r.context_blockers.some((b) => /sync has never run/.test(b)) &&
         r.context_blockers.some((b) => /account unmeasured.*FLOOR/.test(b)); })());
-  ok("alloc 3: forced exits (owner decision + cut list) rank ahead of over-cap ahead of session order ahead of discretionary",
-    (() => { const t = Object.fromEntries(R.funding.rows.map((r) => [r.sym, r.tier]));
-      return t.CCC === 1 && t.OLD === 1 && t.BIG === 2 && t.AAA === 5; })());
-  ok("alloc 4: the over-cap row is identified from the MEASURED pct and says so",
-    /21% of acct equity.*broker-measured/.test(R.funding.rows.find((r) => r.sym === "BIG").reason));
+  /* v5.2 CAP-ASTERISK re-pin (owner ruling 2026-08-25): the five owner-locked tiers
+     collapsed to TWO — forced (owner decision + cut list) then ONE merit pool. Over-cap
+     and session order are FLAGS on merit rows now, never tiers. */
+  ok("alloc 3: forced exits (owner decision + cut list) still rank FIRST; everything else is ONE merit pool (v5.2)",
+    (() => { const rows = R.funding.rows;
+      const t = Object.fromEntries(rows.map((r) => [r.sym, r.tier]));
+      const lastForced = Math.max(...rows.map((r, i) => (r.tier === 1 ? i : -1)));
+      const firstMerit = rows.findIndex((r) => r.tier === 2);
+      return t.CCC === 1 && t.OLD === 1 && t.BIG === 2 && t.AAA === 2 &&
+        (firstMerit === -1 || lastForced < firstMerit); })());
+  ok("alloc 4: the over-cap row is identified from the MEASURED pct — as an informational FLAG on a merit row (v5.2)",
+    (() => { const b = R.funding.rows.find((r) => r.sym === "BIG");
+      return /^merit rank — tape /.test(b.reason) &&
+        b.flags.some((f) => /21% — over the 18% reference cap \(informational — owner ruling 2026-08-25\)/.test(f)); })());
+  /* v5.2: the server merit sort RUN, not pinned as a string — same fixture shape as the
+     client's (smoke [19]): BEARISH first despite the best %/yr, score breaks the tie inside
+     one tape bucket, BULLISH last despite the worst return. A neutered sort goes red HERE. */
+  ok("alloc merit: the server funding sort is RUN — tape first, then lowest %/yr, then lowest TT score (v5.2)",
+    (() => { const f = alloc.fundingRanking({ book: { cut: [] }, board: {}, positions: {
+        P1: { pct: 1, mv: 10, at: TODAY }, P2: { pct: 1, mv: 10, at: TODAY },
+        P3: { pct: 1, mv: 10, at: TODAY }, P4: { pct: 1, mv: 10, at: TODAY } },
+      rowsAnn: { P1: 12, P2: -9, P3: 3, P4: 3 }, now: NOW, noRungSyms: new Set(), brokenSyms: new Set(),
+      techBySym: { P1: "BEARISH", P2: "BULLISH" }, scoreBySym: { P3: 2, P4: 7 } });
+      return f.rows.map((r) => r.sym).join(",") === "P1,P3,P4,P2" &&
+        /^merit rank — tape BEARISH · 12%\/yr · TT no card$/.test(f.rows[0].reason) &&
+        /FLAGS, never tiers/.test(f.basis); })());
   ok("meaning: an ALLOCATABLE receipt declares context_complete_not_cash_or_sizing_approval",
     (() => { const r = ev(); return r.state === "ALLOCATABLE" &&
       r.meaning === "context_complete_not_cash_or_sizing_approval"; })());
@@ -8101,9 +8159,18 @@ console.log("\n[68] FEAT-TT-ALLOC — pure core, endpoint, and the §14.8 bar");
     (() => { const r = alloc.evalBuyRow({ entry: { sym: "AAA", lastRun: TODAY }, idx: mkIdx({ hinges: [{ label: "h", state: "red" }] }),
       quote: { px: 100 }, board: {}, horizon: null, now: NOW, card: CARD_OK });
       return !r.blockers.length && r.cautions.some((c) => /RED/.test(c)) && alloc.whyNot(r, 1) === null; })());
-  ok("alloc: the cap vetoes the pick at exactly CAP_PCT (RANKFAIR — no room is no room)",
+  /* v5.2 CAP-ASTERISK — DOCUMENTED REVERSAL of RANKFAIR v3.36's cap veto (owner ruling
+     2026-08-25: "keep it as an asterisk"). At/over CAP_PCT the pick is NO LONGER vetoed;
+     the reference-cap caution rides the eligible row instead — the asterisk is visible
+     exactly where the veto used to fire, chosen with eyes open, never silently. */
+  ok("alloc: the cap no longer vetoes — whyNot is null at 18 and 17.9 alike (v5.2 reversal of RANKFAIR)",
     (() => { const r = alloc.evalBuyRow({ entry: { sym: "AAA", lastRun: TODAY }, idx: mkIdx(), quote: { px: 100 }, board: {}, horizon: null, now: NOW, card: CARD_OK });
-      return /at the 18% cap/.test(alloc.whyNot(r, 18)) && alloc.whyNot(r, 17.9) === null; })());
+      return alloc.whyNot(r, 18) === null && alloc.whyNot(r, 17.9) === null; })());
+  ok("alloc: the over-cap pick carries the REFERENCE-cap caution and still takes the line (asterisk, not a veto)",
+    (() => { const r = ev({ posDoc: { ...POSDOC, positions: { ...POSDOC.positions,
+        AAA: { ...POSDOC.positions.AAA, pct: 21 } } } });
+      return r.eligible && r.eligible.sym === "AAA" &&
+        (r.eligible.cautions || []).some((c) => /over the 18% REFERENCE cap \(asterisk, not a veto — owner ruling 2026-08-25\)/.test(c)); })());
   ok("alloc: the FIX-C label rides the result verbatim",
     R.funding.label === "FUNDING PRIORITY — not a sell recommendation");
   ok("alloc: WAIT still computes the full ranking (the v3.74.1 always-an-output contract)",
@@ -8152,12 +8219,14 @@ console.log("\n[68] FEAT-TT-ALLOC — pure core, endpoint, and the §14.8 bar");
     ok("v4.1.3 horizon: a genuinely unmodelled name still reads 'unmodelled' (the two stay distinguishable)",
       (() => { const f = r2.funding.rows.find((x) => x.sym === "BBB");
         return !f || !/no rung at the shared horizon/.test(f.reason); })());
-    // Re-pinned at v5.0 (§14.8 activation: quality source + broken_thesis in funding) and
-    // again at v5.1.1 (the card-actionability veto rung) — each moved receipt semantics, so
-    // each moved the version. The CONTRACT this pin protects is unchanged: the version must
-    // track the semantics, or a cached receipt gets reinterpreted under a rule it predates.
+    // Re-pinned at v5.0 (§14.8 activation: quality source + broken_thesis in funding),
+    // again at v5.1.1 (the card-actionability veto rung), and again at v5.2 (CAP-ASTERISK:
+    // the cap veto and the forced cap tier REVERSED by owner ruling 2026-08-25) — each
+    // moved receipt semantics, so each moved the version. The CONTRACT this pin protects
+    // is unchanged: the version must track the semantics, or a cached receipt gets
+    // reinterpreted under a rule it predates.
     ok("rule version moves WITH the semantics — a cached older receipt must not be reinterpreted",
-      alloc.ALLOC_RULE_VERSION === "tt-alloc-v2.1.0");
+      alloc.ALLOC_RULE_VERSION === "tt-alloc-v3.0.0");
   }
 
   // ── §14.8 bar + no-order-tools: structural, negative-controllable ──
@@ -8260,8 +8329,8 @@ console.log("\n[68] FEAT-TT-ALLOC — pure core, endpoint, and the §14.8 bar");
   ok("v5.1.1 mirror: admin why(r) carries the same rung and cardInfo carries the field (both paths)",
     adminSrc.includes("card actionability BLOCKED") && adminSrc.includes("(UNKNOWN blocks, §8.1)") &&
     adminSrc.includes("act:sc.actionability??null") && adminSrc.includes("act:e.actionability??null"));
-  ok("v5.1.1: the rule version moved WITH the semantics — a cached v2.0.0 receipt must not be reinterpreted",
-    alloc.ALLOC_RULE_VERSION === "tt-alloc-v2.1.0");
+  ok("v5.1.1/v5.2: the rule version moved WITH the semantics — a cached v2.x receipt must not be reinterpreted (re-pinned at v5.2, CAP-ASTERISK)",
+    alloc.ALLOC_RULE_VERSION === "tt-alloc-v3.0.0");
   ok("no-order-tools: no broker order call exists anywhere in the terminal or functions",
     !/place_equity_order|place_option_order/.test(adminSrc) &&
     !/place_equity_order|place_option_order/.test(allocLibSrc + allocApiSrc + ttSrc + snapSrc));

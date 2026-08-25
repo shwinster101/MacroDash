@@ -483,8 +483,12 @@ console.log("\n[render] TODAY — the default view answers the daily loop");
 const today = await txt(page, "todayCard");
 ok("stance leads with the circuit veto, not the macro read", /NO NEW POSITIONS/.test(today));
 ok("today names tonight's print before anything discretionary", /MACROEVT prints today/.test(today));
-ok("a single-name cap breach is a TODAY stop", /AAA is 21\.4% of acct equity — 3\.4pts over the 18% cap/.test(today));
-ok("a cluster cap breach is a TODAY stop", /Cluster .*is 36\.4% of acct equity — 18\.4pts over the 18% cap/.test(today));
+// v5.2 CAP-ASTERISK (owner ruling 2026-08-25): cap breaches are WARN items now, not stops —
+// "reference cap (informational)", with the asterisk named in the sub. Still visible in TODAY.
+ok("a single-name cap breach is a TODAY warn — reference cap, informational (v5.2)",
+  /AAA is 21\.4% of acct equity — 3\.4pts over the 18% reference cap \(informational\)/.test(today));
+ok("a cluster cap breach is a TODAY warn — reference cap, informational (v5.2)",
+  /Cluster .*is 36\.4% of acct equity — 18\.4pts over the 18% reference cap \(informational\)/.test(today));
 ok("the deleverage line carries real size", /FFF is first to trim — 412 sh, \$30k \(4\.2% of acct equity\)/.test(today));
 // FEAT-TT-PTLINT (v3.39): only LIVE legs cover, and the strike is named rather than every short
 // call counting alike. FFF holds 3 live contracts (exp 2028) + 5 EXPIRED ones: the cover claim
@@ -718,18 +722,28 @@ console.log("\n[render] v3.38 FOUR DRIVERS — stance strip, buy, sell, calendar
 // CCC (no model) + FFF (no model) → "cannot rank"; EEE → options-only; CCC also do_not_trim.
 // Asserted funding first = FFF vs computed first = AAA → reconciliation line prints both.
 const sellB = await txt(page, "sellBlock");
-ok("sell: a cap breach is a FORCED trim with the computed dollar amount",
-  /TRIM/.test(sellB) && /AAA/.test(sellB) && /3\.4pts over the 18% cap/.test(sellB) && /\$4k to cap/.test(sellB));
+/* v5.2 CAP-ASTERISK: the ⛔ TRIM forced tier is GONE (SELLRANK v3.38 REVERSED, owner ruling
+   2026-08-25) — the over-cap row ranks on MERIT and carries the same trimPts/trim$ arithmetic
+   as an amber informational chip instead, so nothing the forced row said is lost. */
+ok("sell: a cap breach is an informational chip on a merit row — same arithmetic, no forced tier (v5.2)",
+  !/⛔ TRIM/.test(sellB) && /AAA/.test(sellB) &&
+  /3\.4pts over the 18% reference cap/.test(sellB) && /\$4k to cap \(informational\)/.test(sellB));
 // FEAT-TT-GLANCE (v3.61): the methodology sentences + the unranked tail moved into a closed
 // est-mini expander. What stays visible while closed: the rows, chip-length basis tags, the
 // unranked COUNT, and the session-disagreement chip (signal, not explanation).
 ok("glance: closed SELL shows chip-length basis tags, never the repeated sentences",
   /%\/yr model/.test(sellB) && !/lowest expected return funds first/i.test(sellB) &&
   !/ranked on realisable dollars/.test(sellB));
-ok("glance: the unranked COUNT is visible while the expander is closed (no silent truncation)",
-  /○ 2 unranked/.test(sellB) && /how this list is ranked/i.test(sellB));
-ok("glance: the disagreement chip stays visible while closed — it is signal",
-  /⚖ session: FFF first · computed: AAA/.test(sellB));
+// v5.2: no-rate share rows and measured options rows all RANK now (tape + score are still
+// axes), so this fixture has ZERO unranked and the count chip honestly disappears; the
+// methodology expander stays. No-silent-truncation is carried by the in-list "no %/yr"
+// primaries asserted below — nothing left this surface.
+ok("glance: nothing is silently missing — the expander stays, no stale unranked count renders (v5.2)",
+  !/○ \d+ unranked/.test(sellB) && /how this list is ranked/i.test(sellB));
+// v5.2: merit sort — BBB (lowest %/yr, −27.3) computes first; AAA's cap no longer forces
+// it to the head of the queue. The chip itself is unchanged signal.
+ok("glance: the disagreement chip stays visible while closed — it is signal (merit first: BBB)",
+  /⚖ session: FFF first · computed: BBB/.test(sellB));
 ok("glance: the SELL methodology expander is est-mini class, never drawer (phone harness rule)",
   (await page.locator("#sellBlock details.est-mini").count()) === 1 &&
   (await page.locator("#sellBlock details.drawer").count()) === 0);
@@ -738,14 +752,17 @@ await page.locator("#sellBlock details.est-mini > summary").click();
 const sellOpen = await txt(page, "sellBlock");
 ok("sell: discretionary source is the LOWEST expected return (BBB), stated as such",
   /BBB/.test(sellOpen) && /%\/yr model/.test(sellOpen) && /lowest expected return funds first/i.test(sellOpen));
-ok("sell: unmodelled held names are named, not silently missing",
-  /cannot rank — no model:/i.test(sellOpen) && /CCC/.test(sellOpen) && /FFF/.test(sellOpen));
+// v5.2: unmodelled held names rank IN the list (exiling them re-created the v3.44
+// exclusion one bucket over) — the primary honestly reads "no %/yr", never a borrowed rate.
+ok("sell: unmodelled held names rank IN the list with an honest no-%/yr primary (v5.2)",
+  /CCC/.test(sellB) && /FFF/.test(sellB) && (sellB.match(/no %\/yr/g) || []).length >= 2 &&
+  !/cannot rank — no model:/i.test(sellOpen));
 // v3.44: an options-only position with synced legs ranks IN the list, on realisable dollars.
 ok("sell: an options-only position ranks IN the list, on dollars, and says so",
   /EEE/.test(sellOpen) && /ranked on realisable dollars/.test(sellOpen) &&
   !/selling legs is not selling shares/.test(sellOpen));
-ok("sell: the asserted funding order is confronted with the computed one",
-  /asserts FFF first/i.test(sellOpen) && /computed says AAA/i.test(sellOpen));
+ok("sell: the asserted funding order is confronted with the computed one (merit: BBB first, v5.2)",
+  /asserts FFF first/i.test(sellOpen) && /computed says BBB/i.test(sellOpen));
 ok("sell: a tripped circuit makes SELL the active list",
   /this IS the active list/i.test(sellOpen));
 const buyB = await txt(page, "buyBlock");
@@ -878,30 +895,41 @@ ok("missing net cash produces a visible migration audit naming the retired impli
   /net-cash migration audit/i.test(upRankOpen) && /old implicit-zero target/i.test(upRankOpen) && /measured-only target/i.test(upRankOpen));
 // BBB is modelled but carries NO position — the ranking spans both universes and must say so.
 ok("an unheld name is labelled, never left blank against a held one", /new — not held/.test(upRank));
-// The load-bearing fix. The fixture circuit is TRIPPED, which short-circuits the whole
-// agree block — so clear it first, or the veto path never executes and the test passes
-// for the wrong reason. Restore both mutations before returning.
+// The fixture circuit is TRIPPED, which short-circuits the whole agree block — clear it
+// first, or the path under test never executes and the test passes for the wrong reason.
+// Restore every mutation before returning.
 const capped = await page.evaluate(() => {
   const prevState = BOARD.circuit.state, prevMv = POSITIONS.AAA.mv, prevPx = LIVE_PX.AAA;
-  // FIX-B (v3.49): the fixture's asserted PANIC regime now vetoes the whole agree block
-  // before why() ever runs — clear it too, or the cap veto is unreachable (the same
-  // passes-for-the-wrong-reason trap the circuit comment above describes).
   const prevReg = BOARD.regime;
+  const prevCard = SCORE_INDEX && SCORE_INDEX.AAA;
   BOARD.regime = null;
   BOARD.circuit.state = "clear";
-  // AAA must have a POSITIVE gap to reach the cap branch at all — why() returns "no gap"
-  // first, and the fixture prices AAA ($800) above its nearest target ($400).
   LIVE_PX.AAA = { px: 300, chg: 0, at: prevPx.at };
-  POSITIONS.AAA = { ...POSITIONS.AAA, mv: 999999 };   // ~85% of the tracked book
+  POSITIONS.AAA = { ...POSITIONS.AAA, mv: 999999 };   // far over the reference cap
+  /* v5.2: quality clears via a SCORED card (the entry-recipe pattern), so the ONLY thing
+     between AAA and the line is its weight — which no longer vetoes. */
+  SCORE_INDEX = SCORE_INDEX || {};
+  SCORE_INDEX_META = SCORE_INDEX_META || { methodology_version: "tt-underwriting-v2.6.0" };
+  SCORE_INDEX.AAA = { status: "SCORED", raw_score: 8.0, raw_tier: "A", capped_tier: "A",
+    methodology_version: SCORE_INDEX_META.methodology_version, broken_thesis: false };
   render();
   const t = document.getElementById("upsideRank").innerText;
-  const res = { over: /at the 18% cap, no room/.test(t), pick: AGREE_PICK ? AGREE_PICK.sym : null };
+  const res = { vetoGone: !/at the 18% cap, no room/.test(t),
+    pick: AGREE_PICK ? AGREE_PICK.sym : null,
+    green: /ELIGIBLE NEXT DOLLAR — all gates passed/.test(t),
+    asterisk: /over the 18% reference cap \(asterisk, not a veto\)/.test(t) };
   BOARD.circuit.state = prevState; BOARD.regime = prevReg; POSITIONS.AAA = { ...POSITIONS.AAA, mv: prevMv }; LIVE_PX.AAA = prevPx;
+  if (prevCard === undefined) delete SCORE_INDEX.AAA; else SCORE_INDEX.AAA = prevCard;
   render();
   return res;
 });
-ok("a name over the cap is vetoed from the next dollar with its reason named", capped.over);
-ok("...and is never left standing as AGREE_PICK", capped.pick !== "AAA");
+/* v5.2 CAP-ASTERISK — DOCUMENTED REVERSAL of RANKFAIR v3.36 (owner ruling 2026-08-25:
+   "keep it as an asterisk"). The over-cap name now TAKES the eligible line, carrying the
+   reference-cap chip exactly where the veto used to fire — chosen with eyes open. */
+ok("v5.2: an over-cap name is no longer vetoed — the pick stands, the green line lights",
+  capped.vetoGone && capped.pick === "AAA" && capped.green);
+ok("v5.2: the reference-cap asterisk renders ON the eligible line itself, never only in a drawer",
+  capped.asterisk);
 const gated = await page.evaluate(() => {
   const prevState = BOARD.circuit.state;
   BOARD.circuit.state = "clear";
@@ -1692,8 +1720,10 @@ const fundCountIsRed = await phone.locator("#fundTabCount > span").evaluate((el)
   return getComputedStyle(el).color === expected;
 });
 const fundTabText = await phone.locator("#decisionFundTab").textContent();
-ok('decision deck: a forced cap trim shows as a RED count on the closed FUND / TRIM tab, and never auto-opens it',
-  /^FUND \/ TRIM · [1-9]\d* FORCED$/.test(fundTabText) &&
+// v5.2: the count is over-cap rows (informational) — "N ⚠cap", still RED on the closed
+// tab (v3.25: the red fact survives the collapse) and still never auto-opens.
+ok('decision deck: an over-cap position shows as a RED ⚠cap count on the closed FUND / TRIM tab, and never auto-opens it (v5.2)',
+  /^FUND \/ TRIM · [1-9]\d* ⚠cap$/.test(fundTabText) &&
   fundCountIsRed &&
   (await phone.locator("#decisionBuyTab").getAttribute("aria-selected")) === "true" &&
   await phone.locator("#decisionFund").getAttribute("inert") !== null);
@@ -1809,11 +1839,11 @@ const tail = await phone2.evaluate(({ book, pos }) => {
   BOOK = B; POSITIONS = P; POS_PENDING = f; render();
   return { directRows, tailRows, tailSummary };
 }, { book: extraDisc, pos: extraPos });
-ok(`decision deck: exactly 5 discretionary rows show by default with 8 total; the rest are counted, not hidden (direct=${tail.directRows}, tail=${tail.tailRows}, "${tail.tailSummary}")`,
-  tail.directRows === 6 &&   // 1 forced + 5 visible discretionary
-  tail.tailRows === 3 &&     // 8 disc - 5 visible = 3 in the tail
-  /\+3 lower-priority funding sources/.test(tail.tailSummary) &&
-  /8 ranked total/.test(tail.tailSummary));
+ok(`decision deck: exactly 5 rows show by default with 11 ranked total (v5.2: no forced tier; no-rate and options rows rank too) — the rest counted, never hidden (direct=${tail.directRows}, tail=${tail.tailRows}, "${tail.tailSummary}")`,
+  tail.directRows === 5 &&   // FUNDING_VISIBLE — no forced row above the pool any more
+  tail.tailRows === 6 &&     // 11 ranked (5 base incl. AAA/CCC/FFF/EEE + 6 injected) - 5 visible
+  /\+6 lower-priority funding sources/.test(tail.tailSummary) &&
+  /11 ranked total/.test(tail.tailSummary));
 await phone2.close();
 // v3.42 slice 5 — the headline metric. Measured at 390x844 before this slice: the BUY block
 // began at y=587 of an 844px viewport, so 70% of the first screen was spent on chrome before

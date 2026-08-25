@@ -2881,6 +2881,61 @@ Jan-anchor shipped; see `snapshot.js` ~318–328), `spyMa100`, `spyMa200`, and a
   VALUATION GAP ranking (§11.1 — the ranking always renders, which is the owner's actual
   "always an output" contract, and it was never suspended). Tests: 1223 smoke (+2) + 199
   render (+1).
+- **v5.2.0 "CAP-ASTERISK" — the cap demotes to an asterisk, and the funding queue ranks on
+  MERIT (owner ruling 2026-08-25, verbatim: *"I'm not adhering to the allocation cap. Can we
+  just keep it as an asterisk and rank sells by pure technicals, pt, and scores"*).** Two
+  documented owner REVERSALS, recorded the way v3.92/v4.0.0 recorded theirs, plus one scope
+  revision — none of them silent:
+  **(1) RANKFAIR v3.36's buy-side cap veto is REVERSED.** `whyNot()` (server) and `why(r)`
+  (client) drop the cap rung entirely; an at/over-cap name can take ELIGIBLE NEXT DOLLAR.
+  The asterisk survives exactly where the veto used to fire: the eligible row carries
+  `over the 18% REFERENCE cap (asterisk, not a veto — owner ruling 2026-08-25)` as a caution
+  (server receipt) and an amber chip ON the green line itself (client) — chosen with eyes
+  open, never silently. TODAY cap items downgrade sev stop→warn with the same
+  "reference cap (informational)" copy; the sub names the asterisk and keeps the honest
+  denominator line.
+  **(2) SELLRANK v3.38's forced cap tier is REVERSED.** The five owner-locked funding tiers
+  collapse to TWO: tier 1 (owner-marked forced exits · the cut list · server-stamped
+  BROKEN_THESIS — decisions already made, not rankings) still ranks first; everything else
+  is ONE merit pool, lexicographic in the owner's stated axis order — **tape (techRead
+  label, BEARISH first; MIXED/UNREAD/no-read all middle, since an unmeasured tape is never
+  a judgment in either direction) → lowest %/yr → lowest TT card score**, size the final
+  tie-break. Axes stay lexicographic, never blended into a unit (DEC-D2). Over-cap, cluster
+  and session-order stop being tiers and become FLAGS on the row — the over-cap row keeps
+  the forced row's exact trimPts/`≈ $N to cap` arithmetic as an informational chip, so
+  nothing the old tier said is lost, it just stops enforcing. No-rate share rows and
+  measured options rows now rank IN the list (`no %/yr` / dollars-basis primaries — exiling
+  them re-created the v3.44 exclusion one bucket over); the ⛔ TRIM render block and the
+  cap-contradiction line died with the tier they described (dead code is a rot vector,
+  v3.73). The closed FUND/TRIM tab count becomes `N ⚠cap` — still red, still v3.25-visible,
+  still never auto-opens.
+  **(3) The v3.83 married-never-merged scope is REVISED for one surface.** `sellRank`
+  (client) and `fundingRanking` (server, via a `techBySym` computed in `evaluateAllocation`
+  so the pure module stays pure) now READ the techRead verdict — through `techOf()`/the real
+  `computeTechRead`, the one resolution point, so a funding row and the name's own band
+  table can never disagree. The ban survives everywhere it still applies: the BUY sort,
+  `gateFail` and `why()` remain pinned clean. The old "sellRank never reads it" smoke pin is
+  formally reversed with the ruling documented at the pin.
+  `ALLOC_RULE_VERSION` → **tt-alloc-v3.0.0** (receipt semantics changed on both sides — a
+  cached v2.x receipt must not be reinterpreted under the merit rule; the v4.1.4 precedent,
+  fourth application), and the receipt carries a `basis` string stating the merit order so
+  the persisted record explains its own sort.
+  **Found while building: a vacuous pin and a self-inflicted regression.** The old
+  "forced trims rank before every discretionary" pin went vacuous the moment `forced.sort`
+  was deleted (indexOf −1 < anything — the v3.60.1 trap) and was rewritten as explicit
+  absence assertions; and a `git checkout` used to revert a negative control DISCARDED the
+  uncommitted server edits mid-build — reconstructed from the session's own captured reads,
+  re-verified green, and the remaining controls re-run against backup copies instead.
+  Tests: **1948 smoke** (+10 net: the whyNot-null-at-18-and-17.9 flip, the asterisk-caution
+  proof, the two-tier collapse, the over-cap FLAG, the server merit sort RUN against a
+  four-name fixture — BEARISH first despite the best %/yr, score breaking the tie, BULLISH
+  last despite the worst return — the client sort's identical fixture, and the reversed
+  tech/sellRank pin) + **271 render** (10 re-pinned: TODAY warn copy, the merit sell rows
+  with the informational chip, computed-first now BBB by merit, the capped scenario flipped
+  to prove the pick STANDS with the asterisk chip on the green line, `N ⚠cap`, and the
+  5-visible/11-ranked tail). Negative-controlled three ways — restoring the cap veto (2 red),
+  dropping the tape axis server-side (1 red) and client-side (1 red) — each turning exactly
+  its own pins.
 - **v5.1.1 — the card's own actionability, finally READ at the gate.** Found live minutes
   after the v5.1.0 deploy cleared Engine 0: TSM re-scored **SCORED 9.0/S** and immediately took
   the ELIGIBLE NEXT DOLLAR line at +31.7%/yr — while its own card read

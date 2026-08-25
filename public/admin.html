@@ -9,7 +9,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
 <!-- AUDIT: kept in sync with package.json by test/smoke.mjs. admin.html is a Vite
      public/ passthrough, so it cannot receive __APP_VERSION__ — the guard is the fix. -->
-<title>TT TICKER TERMINAL v5.1.1</title>
+<title>TT TICKER TERMINAL v5.2.0</title>
 <style>
   :root{
     --bg:#05070a; --panel:#0a0f16; --panel2:#0d141d; --line:#16202c;
@@ -458,7 +458,7 @@
          verdict and every gate are computed upstream and this panel changes nothing. -->
     <div id="macroEvidence" role="region" aria-label="Why macro — readout evidence"></div>
     <div id="headInfo" style="display:none">
-      <div class="brand">FINANCE&nbsp;BRO.AI // TT&nbsp;TICKER&nbsp;TERMINAL <small>v5.1.1 · the card governs (§14.8)</small></div>
+      <div class="brand">FINANCE&nbsp;BRO.AI // TT&nbsp;TICKER&nbsp;TERMINAL <small>v5.2.0 · the card governs (§14.8)</small></div>
       <div class="statusline">
         <span>BOOK: <b id="bookStamp">loading…</b></span>
         <span>AUTH: <b id="sessState">…</b></span>
@@ -1620,14 +1620,16 @@ function todayActions(){
     out.push({sev:"stop",txt:`${e.sym} prints ${e.d===0?"today":"tomorrow"} — no new positions into it`,
       sub:e.label,go:()=>openDrawer("dCal")});
   });
-  // FEAT-TT-POS: a cap breach is a measured fact about a position you already hold, so it
-  // outranks anything discretionary — you are over the limit right now, not considering it.
+  /* FEAT-TT-POS, revised by v5.2 CAP-ASTERISK (owner ruling 2026-08-25): a cap breach is
+     still a measured fact worth a line — but it is a WARN now, never a STOP: the reference
+     cap informs, it does not suspend the add candidate. The measurement and its honest
+     denominator caveats are unchanged; only the severity moved. */
   capChecks().filter(c=>c.over>0).forEach(c=>{
     const stale=c.age===null?" (position mark undated)":c.age>POS_STALE_D?` (marks ${c.age}d old)`:"";
     out.push(c.kind==="name"
-      ?{sev:"stop",txt:`${c.sym} is ${c.pct}% of acct equity — ${c.over}pts over the ${CAP_PCT}% cap`,
-        sub:"no conviction exceptions · denominator = account equity, options excluded — a floor, not NAV"+stale,go:()=>openCard(c.sym)}
-      :{sev:"stop",txt:`Cluster "${c.label}" is ${c.pct}% of acct equity — ${c.over}pts over the ${CAP_PCT}% cap`,
+      ?{sev:"warn",txt:`${c.sym} is ${c.pct}% of acct equity — ${c.over}pts over the ${CAP_PCT}% reference cap (informational)`,
+        sub:"asterisk, not a veto (owner ruling 2026-08-25) · denominator = account equity, options excluded — a floor, not NAV"+stale,go:()=>openCard(c.sym)}
+      :{sev:"warn",txt:`Cluster "${c.label}" is ${c.pct}% of acct equity — ${c.over}pts over the ${CAP_PCT}% reference cap (informational)`,
         sub:`one cluster sizes as one position${c.missing.length?` · ${c.missing.length} member(s) unmeasured, so the real total is higher`:""}${stale}`,
         go:()=>openDrawer("dExp")});
   });
@@ -1686,7 +1688,8 @@ let AGREE_PICK=null;   // set by renderUpsideRank when both stories agree and no
 /* FEAT-TT-MAG7 (v3.84): the seven mega-caps and the basket average computed from their rows. */
 const MAG7_SET=new Set(["GOOGL","META","MSFT","AMZN","TSLA","NVDA","AAPL"]);
 let MAG_BASKET=null;   // set by renderUpsideRank when >=4 of 7 have a rate and MAGS is in the book
-// FEAT-TT-DECK follow-up (H1 2026-08-03): cardinality of sellRank().forced, stashed by
+// FEAT-TT-DECK follow-up (H1 2026-08-03; v5.2: now the OVER-CAP row count, informational —
+// the forced tier it used to count was reversed by owner ruling 2026-08-25), stashed by
 // renderSellBlock so the FUND / TRIM tab label never runs a second sellRank() pass (§P.4).
 // null means "not yet known" — either POS_PENDING, or sellRank() itself returned null
 // (nothing measured) — the two states the label must tell apart, neither of which may
@@ -5313,9 +5316,10 @@ function renderUpsideRank(){
           `<span class="scope">${esc(gateFail)} · the gap ranking above still stands as math; no name is ELIGIBLE until the gate reads</span></div>`;
       const why=r=>{
         if(!(r.upside>0))return "no gap";
-        // FEAT-TT-RANKFAIR: a name already at or over the single-name cap cannot receive the
-        // NEXT dollar no matter how wide its gap — the board was proposing full positions.
-        if(r.wt.w!==null&&r.wt.w>=CAP_PCT)return `already ${r.wt.w}% — at the ${CAP_PCT}% cap, no room`;
+        /* v5.2 CAP-ASTERISK (owner ruling 2026-08-25, REVERSING RANKFAIR v3.36): the cap no
+           longer vetoes the pick. The weight still renders (the ** mark, red at/over cap)
+           and an over-cap pick carries an explicit asterisk chip on the green line — the
+           cap is information the owner sees, never a wall the board enforces. */
         /* FIX-B, widened by FEAT-TT-READY (v3.50): eligibility cannot outrun the evidence —
            the audit found 5 fresh runs against 31 never-run while the green line still lit.
            The gate is now readiness()'s OWN blocker list rather than a second opinion about
@@ -5360,6 +5364,7 @@ function renderUpsideRank(){
           `<span style="color:var(--green);font-weight:700">🎯 ELIGIBLE NEXT DOLLAR — all gates passed:</span> `+
           `<span class="sym" style="color:var(--green);cursor:pointer" onclick="openCard('${esc(b.sym)}')">${esc(b.sym)}</span> `+
           `${b.ann!==null?`${b.ann>=0?"+":""}${b.ann}%/yr`:""} · TT ${esc(b.tt.score!==null?b.tt.score.toFixed(1):b.tt.tier)}`+
+          (b.wt&&b.wt.w!==null&&b.wt.w>=CAP_PCT?` <span style="color:var(--amber)">⚠ ${b.wt.w}% — over the ${CAP_PCT}% reference cap (asterisk, not a veto)</span>`:"")+
           `${q.length>1?` <span class="scope">(then ${q.slice(1,3).map(r=>esc(r.sym)).join(", ")})</span>`:""}`+
           // FEAT-TT-PTLINT (D3): red hinges do NOT veto — the board reports, it does not enforce
           // (the FEAT-TT-BINCAL doctrine). But the pick could previously light green with its
@@ -5709,7 +5714,19 @@ function sellRank(){
       const t=pk&&pk.row,tgt=t&&(typeof t.prem==="number"?t.prem:t.fl);
       if(typeof tgt==="number"){ann=annualise(Math.round((tgt/px-1)*1000)/10,t.y);annRolled=pk.rolled;}
     }
+    /* v5.2 CAP-ASTERISK (owner ruling 2026-08-25): the merit axes, in the order the owner
+       listed them. Tape via techOf() — the ONE resolution point, so this row and the name's
+       own band table can never disagree (v3.83's blanket ban on sellRank reading the verdict
+       is REVERSED for this surface by the same ruling; the buy sort and the gates keep it). */
+    const tr8=techOf(x);
+    const tech=tr8?tr8.label:null;
+    const ci=cardInfo(x.sym);
+    const score=ci&&ci.score!=null?ci.score:null;
     const row={sym:x.sym,tier:x.tier,lens:x.lens,w,mv,ann,annRolled,
+      tech,techRank:tech==="BEARISH"?0:tech==="BULLISH"?2:1,score,
+      overCap:w>=CAP_PCT,
+      trimPts:w>=CAP_PCT?Math.round((w-CAP_PCT)*10)/10:null,
+      trim$:w>=CAP_PCT?Math.round(mv*(w-CAP_PCT)/w):null,
       // FEAT-TT-OPTMV: an option leg is levered and decaying, so the UNDERLYING's %/yr is not
       // the leg's expected return. Options therefore rank on realisable dollars and say so,
       // rather than borrowing a rate that isn't theirs — the same units discipline as D2.
@@ -5726,23 +5743,23 @@ function sellRank(){
        CAP_PCT is a position-size rule computed against equity mv / broker pct, and a sleeve's
        value is not comparable to that denominator (the RANKFAIR rule that an options position
        gets its own marker rather than a misleading weight). */
-    if(oo){disc.push(row);}
-    else if(w>=CAP_PCT){
-      row.trimPts=Math.round((w-CAP_PCT)*10)/10;
-      row.trim$=Math.round(mv*(w-CAP_PCT)/w);
-      forced.push(row);
-    }else if(ann!==null)disc.push(row);
-    else unmod.push(row);
+    /* v5.2 CAP-ASTERISK: the cap no longer routes a row to a FORCED tier (SELLRANK v3.38,
+       REVERSED by owner ruling 2026-08-25) — over-cap rows keep their trimPts/trim$ as the
+       asterisk detail and rank on MERIT like everything else. Share rows with no rate also
+       stay IN the ranking now: they still have two axes (tape + score), and exiling them
+       re-created the v3.44 exclusion one bucket over. `unmod` stays returned (empty) so the
+       renderer contract is unchanged. */
+    disc.push(row);
   });
-  forced.sort((a,b)=>b.trimPts-a.trimPts);
-  /* ONE list (v3.44). Rows that HAVE an honest annual rate keep the original rule — lowest
-     expected return funds first. Option rows have no comparable rate, so they follow, ordered
-     by the dollars they can actually realise. Mixing the two on a single numeric key would be
-     the exact units error D2 removed; interleaving them under one heading with a stated basis
-     per row is what "all holdings are in the ranking" can honestly mean. */
+  /* Merit sort, lexicographic in the owner's stated order — tape (bearish sells first;
+     MIXED/UNREAD/no-read all middle: an unmeasured tape is never a judgment) → lowest %/yr
+     (null ranks after rated names WITHIN its tape bucket, named on the row) → lowest TT
+     card score. Options rows still follow on their own dollars basis (D2: a leg does not
+     inherit the underlying's rate, so it cannot be sorted by one). */
   disc.sort((a,b)=>{
     if(a.basis!==b.basis)return a.basis==="return"?-1:1;
-    return a.basis==="return"?a.ann-b.ann:b.mv-a.mv;
+    if(a.basis!=="return")return b.mv-a.mv;
+    return (a.techRank-b.techRank)||((a.ann??1e9)-(b.ann??1e9))||((a.score??1e9)-(b.score??1e9))||(b.mv-a.mv);
   });
   return{forced,disc,unmod,optOnly,tot};
 }
@@ -5822,8 +5839,8 @@ window.addEventListener("resize",()=>{
      POS_PENDING          → "…"        (not yet loaded — never a false zero)
      loaded, not measured → "?"  amber (sellRank() returned null — §P.2: a false clear is
                                          worse than an honest "I cannot check this")
-     loaded, forced === 0 → ""         (checked, genuinely clear)
-     loaded, forced  >  0 → "N FORCED" (red) */
+     loaded, none over cap → ""         (checked, genuinely clear)
+     loaded, N over cap    → "N ⚠cap"  (red, informational — v5.2: the cap stopped forcing) */
 function renderDecisionFundLabel(){
   const c=document.getElementById("fundTabCount");if(!c)return;
   // display:block puts the suffix on its OWN tight line: measured, a 22-char forced-count
@@ -5833,7 +5850,9 @@ function renderDecisionFundLabel(){
   const line=(txt,color,bold)=>`<span style="display:block;font-size:var(--fs-xs);line-height:1.3;color:${color}${bold?";font-weight:700":""}"> ${txt}</span>`;
   if(POS_PENDING){c.innerHTML=line("· …","var(--dim)");return;}
   if(SELL_FORCED_N===null){c.innerHTML=line("· ?","var(--amber)");return;}
-  if(SELL_FORCED_N>0){c.innerHTML=line(`· ${SELL_FORCED_N} FORCED`,"var(--red)",true);return;}
+  // v5.2 CAP-ASTERISK: the count is OVER-CAP rows (informational), no longer a forced tier —
+  // the red fact stays visible on the closed tab (v3.25) without forcing anything.
+  if(SELL_FORCED_N>0){c.innerHTML=line(`· ${SELL_FORCED_N} ⚠cap`,"var(--red)",true);return;}
   c.innerHTML="";
 }
 /* v3.68: the horizon governs every %/yr on BOTH deck panels, but its picker lived two taps
@@ -5862,7 +5881,7 @@ function renderSellBlock(){
   SELL_FORCED_N=null;
   const el=document.getElementById("sellBlock");if(!el)return;
   const s=sellRank();
-  if(s)SELL_FORCED_N=s.forced.length;
+  if(s)SELL_FORCED_N=s.disc.filter(r=>r.overCap).length;  // v5.2: over-cap count, informational
   renderDecisionFundLabel();
   if(!s||(!s.forced.length&&!s.disc.length&&!s.unmod.length&&!s.optOnly.length)){
     // v3.42 slice 2: while the positions map is still in flight "nothing measured" is
@@ -5885,18 +5904,10 @@ function renderSellBlock(){
     r.upl!==null?`<span style="color:${r.upl>=0?"var(--green)":"var(--red)"};font-size:9.5px">${r.upl>=0?"+":""}${r.upl}% unrl</span>`:""
   ].filter(Boolean).join(" ");
   let h=`<div class="lbl">FUNDING PRIORITY${tripped?` · <span style="color:var(--red)">circuit tripped — this IS the active list (deleverage-only)</span>`:` · where the next dollar comes from`}${hzDeckChip()}</div>`;
-  /* v3.42 slice 2: grid rows. A forced trim's PRIMARY is its weight (the rule already
-     broken); a discretionary source's PRIMARY is its %/yr (the reason it funds first).
-     Every phrase is verbatim from v3.41 — only the layout moved. */
-  s.forced.forEach(r=>{
-    h+=`<button class="fdr-row" onclick="openCard('${esc(r.sym)}')">`+
-      `<span class="fdr-l"><span style="color:var(--red);font-weight:700">⛔ TRIM</span>`+
-      `<span class="sym">${esc(r.sym)}</span><span class="lens lens-${esc(r.lens)}">${esc(r.lens)}</span></span>`+
-      `<span class="fdr-p" style="color:var(--red)">${r.w}%</span>`+
-      `<span class="fdr-d"><span style="color:var(--red);font-weight:700">${r.trimPts}pts over the ${CAP_PCT}% cap</span>`+
-      `<span style="color:var(--red)">≈ ${money(r.trim$)} to cap</span>${flags(r)}`+
-      (r.dnt?`<span class="bad2">⚠ cap and do-not-trim CONTRADICT — resolve, the board won't pick</span>`:"")+`</span></button>`;
-  });
+  /* v5.2 CAP-ASTERISK: the ⛔ TRIM forced block is GONE — the cap stopped forcing tiers
+     (owner ruling 2026-08-25), so `s.forced` is always empty and rendering it would be dead
+     code (the v3.73 rule). Over-cap rows rank on merit below and carry the amber asterisk
+     with the same trimPts/trim$ detail the forced row used to show. */
   const fundingRow=(r,i)=>{
     /* v3.44: one list, two honest bases. A share row's PRIMARY is its expected return (the
        reason it funds first); an options row's PRIMARY is the dollars it can actually realise,
@@ -5910,12 +5921,20 @@ function renderSellBlock(){
              :`<span class="scope">${r.w}%</span>`)+`</span>`+
       (optRow
         ?`<span class="fdr-p" style="color:var(--slate)">${money(r.mv)}</span>`
-        :`<span class="fdr-p" style="color:${r.ann>=0?"var(--green)":"var(--red)"}">${r.ann>=0?"+":""}${r.ann}%/yr <span style="font-size:10px;font-weight:400">model</span></span>`)+
+        :r.ann!==null
+          ?`<span class="fdr-p" style="color:${r.ann>=0?"var(--green)":"var(--red)"}">${r.ann>=0?"+":""}${r.ann}%/yr <span style="font-size:10px;font-weight:400">model</span></span>`
+          // v5.2: a no-rate share row now ranks (tape + score are still axes) — its primary
+          // says so honestly instead of printing a null or borrowing a unit.
+          :`<span class="fdr-p" style="color:var(--slate)">no %/yr</span>`)+
       /* FEAT-TT-GLANCE (v3.61): the ranking-basis clause was a full sentence repeated on
          EVERY row. It is a constant of the list, not a fact about the row — stated once in
          the methodology expander below; the row keeps a chip-length basis tag so the mixed
-         ordering still can't be mistaken for one key. */
-      `<span class="fdr-d"><span class="scope">${optRow?"$ realisable":"%/yr"}</span>${flags(r)}</span></button>`;
+         ordering still can't be mistaken for one key.
+         v5.2: the two other merit axes render as chips so the sort is checkable per row,
+         and an over-cap row carries the amber asterisk with the old forced-row arithmetic. */
+      `<span class="fdr-d"><span class="scope">${optRow?"$ realisable":`tape ${esc(r.tech||"UNREAD")} · TT ${r.score!=null?esc(String(r.score.toFixed?r.score.toFixed(1):r.score)):"—"}`}</span>`+
+      (r.overCap?`<span style="color:var(--amber)">⚠ ${r.trimPts}pts over the ${CAP_PCT}% reference cap · ≈ ${money(r.trim$)} to cap (informational)</span>`:"")+
+      `${flags(r)}</span></button>`;
   };
   /* v3.62: one phone screen should answer where funding starts, not reproduce the entire
      holdings ledger. Forced cap trims always remain above the fold; the first five computed
@@ -7029,14 +7048,12 @@ function buildRankingsMd(){
   // 5. Funding priority — where a dollar comes FROM. Not a sell recommendation.
   const sr=sellRank();
   m+=`## FUNDING PRIORITY\n\n_Where the next dollar comes from. NOT a sell recommendation — a name with positive upside can appear purely because another has more._\n\n`;
-  if(sr&&sr.forced.length){
-    m+=`### Forced (at/over the ${CAP_PCT}% cap — a rule already broken)\n\n`;
-    sr.forced.forEach((r,i)=>{m+=`${i+1}. **${r.sym}** — ${r.w}% · ${r.trimPts}pts over · ≈ ${money(r.trim$)} to cap${r.dnt?" · ⚠ marked do-not-trim (contradiction to resolve)":""}\n`;});
-    m+=`\n`;
-  }
+  /* v5.2 CAP-ASTERISK: the forced-cap section is GONE with the tier it printed (SELLRANK
+     v3.38 reversed) — the over-cap fact survives as an asterisk ON its merit row, so the
+     export can never lose it (v3.25). Rows are sellRank()'s own, never recomputed (v3.56). */
   if(sr&&sr.disc.length){
-    m+=`### Discretionary (lowest expected return funds first)\n\n`;
-    sr.disc.forEach((r,i)=>{m+=`${i+1}. **${r.sym}** — ${r.basis==="return"?`${pc(r.ann)}/yr`:`${money(r.mv)} realisable (options — no comparable rate)`}${r.dnt?" · do-not-trim":""}\n`;});
+    m+=`### Merit rank (tape → lowest %/yr → lowest TT score — owner ruling 2026-08-25)\n\n`;
+    sr.disc.forEach((r,i)=>{m+=`${i+1}. **${r.sym}** — ${r.basis==="return"?`tape ${r.tech||"UNREAD"} · ${r.ann!==null?`${pc(r.ann)}/yr`:"no %/yr"} · TT ${r.score!=null?r.score:"no card"}`:`${money(r.mv)} realisable (options — no comparable rate)`}${r.overCap?` · ⚠ ${r.trimPts}pts over the ${CAP_PCT}% reference cap · ≈ ${money(r.trim$)} to cap (informational)`:""}${r.dnt?" · do-not-trim":""}\n`;});
     m+=`\n`;
   }
   if(sr&&sr.unmod.length)m+=`_Held but unmodelled, so unrankable here: ${sr.unmod.map(r=>r.sym).join(", ")}._\n\n`;
