@@ -5,6 +5,20 @@ answers *"is it safe to be in the market?"* from live macro + market + sentiment
 data. Single-page React app on Cloudflare Pages, with live data assembled at the
 edge by Pages Functions and cached in KV.
 
+**v5.4.0 "Why This Call" is the evidence-integrity repair.** The former 5 Whys was an
+unclear mixture of canonical voters, context-only gauges, one RSS item, and a curated risk
+register; it did not form a causal chain. The replacement is five explicit checks generated
+from the canonical `md-call-v1` factor rows: call arithmetic → actual drivers → transmission
+mechanism → evidence quality/provenance → nearest load-bearing change. Headlines are named as
+context only and never described as the cause of the call. CPI now uses the official BLS
+not-seasonally-adjusted FRED series (`CPIAUCNS` / `CPILFENS`) so the displayed 12-month number
+matches the BLS headline release; the Fed strip leads with the daily target range rather than
+the lagging monthly FEDFUNDS average. Snapshot cache schema `v16` forces the corrected series
+through every consumer. The 10am Worker refresh returns its complete candidate readout and the
+history capture freezes that exact call, avoiding an eventually-consistent KV reread. Production
+still requires the same high-entropy `REFRESH_TOKEN` on both Pages and the Worker; the gates pin
+that requirement so the legacy `REFRESH_SECRET` can no longer masquerade as active refresh auth.
+
 **v5.3.0 "One Call" is the product-identity and accountability release.** MacroDash has one
 canonical public daily call derived from the existing public six-factor backdrop engine
 (10Y direction · VIX · Fear & Greed · CPI trend · Shiller CAPE · NFCI). Its primary human
@@ -224,7 +238,7 @@ dashboard.jsx  →  useMarketData(MOCK_DATA, {publicView})  →  fetch /api/snap
 St. Louis Fed API (`api.stlouisfed.org`), keyed by `env.FRED_KEY`. Pulls these series,
 takes the latest non-`"."` observation, and derives 1-day deltas + sparklines:
 
-`DGS10` (10Y) · `FEDFUNDS` · `CPIAUCSL` (CPI headline) · `CPILFESL` (CPI core) ·
+`DGS10` (10Y) · `FEDFUNDS` · `CPIAUCNS` (official headline CPI NSA) · `CPILFENS` (official core CPI NSA) ·
 `PCEPI` (PCE headline) · `PCEPILFE` (PCE core) · `UNRATE` · `CIVPART` (LFPR) ·
 `PSAVERT` (personal saving rate, v3.0) · `MORTGAGE30US` · `DCOILWTICO` (WTI) · `VIXCLS` (VIX) ·
 `CBBTCUSD` (BTC) · `BAMLH0A0HYM2` (HY OAS) + `BAMLC0A0CM` (IG OAS) → the derived **HY-IG credit
@@ -4763,7 +4777,7 @@ not read at runtime. Mock remains the always-present runtime fallback (graceful 
 (`VITE_PUBLIC_VIEW=true` is the analogous build flag for forcing the public view.)
 
 ### Per-day cache pattern (`snapshot.js`)
-- Cache key is **`pulse:snapshot:v15:<ET-date>`** (`<ET-date>` = today in America/New_York,
+- Cache key is **`pulse:snapshot:v16:<ET-date>`** (`<ET-date>` = today in America/New_York,
   `YYYY-MM-DD`). Bump the `v15` prefix to invalidate a poisoned day.
 - **First load each ET morning** misses → fetches fresh (FRED's prior close has settled
   overnight) → write-through. **Every load the rest of the day** hits KV → instant,

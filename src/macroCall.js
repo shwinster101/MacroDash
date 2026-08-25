@@ -37,7 +37,10 @@ export function regimeInputFromLive(live = {}) {
     crossAsset: { treasury10y: { m1: finite(live.tenYearM1) ? live.tenYearM1 : 0 } },
     marketPulse: {
       vix: { current: finite(live.vix) ? live.vix : 0 },
-      fearGreed: { score: finite(live.fearGreed) ? live.fearGreed : 0 },
+      fearGreed: {
+        score: finite(live.fearGreed) ? live.fearGreed : 0,
+        label: typeof live.fearGreedLabel === "string" ? live.fearGreedLabel : null,
+      },
     },
     macro: {
       cpi: { trend: series(live.cpiTrend) ? live.cpiTrend : [0, 0] },

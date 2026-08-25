@@ -2,20 +2,49 @@
 // Rule-based "5 Whys" generator. PURE (no React, no network, no LLM, $0): a deterministic
 // macro narrative derived from the live snapshot + the regime computeRegime() produced.
 //
-// STRUCTURE (per maintainer spec):
-//   #1  Core anchor — SPY vs 200DMA, CPI, Fed rate
-//   #2  Other LIVE data only — VIX/F&G/10Y/WTI/BTC/credit, INCLUDED ONLY IF live + fresh
-//       (mock or stale fields are skipped, never asserted as today's tape)
-//   #3  Market headline — the top dated market headline (RSS), or "none" if not fresh
-//   #4  Headwinds/tailwinds — what's worsening / improving in the tracked risks
-//   #5  Synthesis — how #1–4 combine into the verdict, with a confidence caveat
+// STRUCTURE (v5.4 accountability repair):
+//   #1  What is the call? — canonical human + machine vocabulary and exact vote arithmetic
+//   #2  What drove it? — ONLY the six canonical factor rows that actually voted
+//   #3  Why does that matter? — causal transmission for the directional factors
+//   #4  Can I trust it? — evidence quality, snapshot time, exclusions, headline as context only
+//   #5  What changes it? — nearest load-bearing threshold and actionability
 //
-// opts = { stale:Set<factorKey>, fresh:Set<fieldKey>|null }
-//   stale → regime factors excluded from the vote (cadence-aware, from the dashboard).
-//   fresh → fields whose provenance is LIVE/CACHED and not stale. null = mock/demo mode
-//           (no live filtering — show everything, since mock IS the baseline).
+// opts = { call, factors, flips, snapshotAsOf, headlineFresh }
+//   call/factors/flips are the same canonical artifacts rendered by the hero and readout.
+//   headlineFresh gates context only; headlines never vote.
 
-const pct = (v, d = 1) => `${v >= 0 ? "+" : ""}${Number(v).toFixed(d)}%`;
+const listOf = (xs) => xs.length <= 1 ? (xs[0] || "")
+  : xs.length === 2 ? `${xs[0]} and ${xs[1]}`
+  : `${xs.slice(0, -1).join(", ")}, and ${xs[xs.length - 1]}`;
+
+const PUBLIC_LABEL = { "RISK-ON": "MOONING", MIXED: "HODL", "RISK-OFF": "DIAMOND HANDS" };
+
+const WHY_IT_MATTERS = {
+  tenYear: "Long-rate direction changes the discount rate applied to future earnings",
+  vix: "VIX is the market's own near-term stress price",
+  fearGreed: "sentiment confirms risk appetite, though it overlaps price and volatility evidence",
+  cpiHeadline: "inflation direction changes how much room the Fed has to ease",
+  valuation: "valuation determines how much cushion remains if expectations disappoint",
+  nfci: "financial conditions show whether money and credit are flowing or tightening",
+};
+
+function cleanDisplay(v) {
+  return String(v || "").replace(/\s+—\s+undefined\b/g, "").trim();
+}
+
+function factorClause(f) {
+  const state = f.state || (f.vote === "bull" ? "BULLISH" : f.vote === "bear" ? "BEARISH"
+    : f.vote === "neutral" ? "NEUTRAL" : "UNAVAILABLE");
+  const display = cleanDisplay(f.display || f.val);
+  return `${f.label || f.key}: ${state}${display ? ` — ${display}` : ""}${f.as_of || f.asOf ? ` (as of ${f.as_of || f.asOf})` : ""}`;
+}
+
+function etStamp(v) {
+  const d = v ? new Date(v) : null;
+  if (!d || Number.isNaN(d.getTime())) return null;
+  return d.toLocaleString("en-US", { timeZone: "America/New_York", month: "short", day: "numeric",
+    hour: "numeric", minute: "2-digit", hour12: true }) + " ET";
+}
 
 // v3.98.2: numeric-entity decode at RENDER too — the day's KV snapshot may still carry a
 // pre-fix headline ("Fed&#x2019;s"), and a stored artifact must not print raw entities.
@@ -75,136 +104,77 @@ function sessionPrefix(session) {
   return "Midday —";
 }
 
-// Display labels for WHY #2 fields (and the "excluded" note).
-const FIELD_LABEL = {
-  vix: "VIX", fearGreed: "F&G", tenYear: "10Y", wti: "WTI",
-  btc: "BTC", creditSpread: "HY-IG", marketHeadline: "headline",
-};
-
 export function computeFiveWhys(data, regime = {}, opts = {}) {
-  const stale = opts.stale instanceof Set ? opts.stale : new Set();
-  const fresh = opts.fresh instanceof Set ? opts.fresh : null; // null = treat all as usable (mock/demo)
-  const isLive = (k) => (fresh ? fresh.has(k) : true);
+  const call = opts.call || null;
+  const factors = Array.isArray(call?.factors) ? call.factors
+    : Array.isArray(opts.factors) ? opts.factors : [];
+  const usableFactors = factors.filter((f) => !f.excluded && (f.state || f.vote));
+  const total = call?.counts?.total ?? regime.totalFactors ?? 6;
+  const active = call?.counts?.usable ?? regime.counted ?? usableFactors.length;
+  const bull = call?.counts?.bullish ?? regime.bullVotes ?? usableFactors.filter((f) => f.vote === "bull").length;
+  const bear = call?.counts?.bearish ?? regime.bearVotes ?? usableFactors.filter((f) => f.vote === "bear").length;
+  const neutral = call?.counts?.neutral ?? Math.max(0, active - bull - bear);
+  const baseLabel = regime.raw || regime.label || "MIXED";
+  const label = call?.headline || PUBLIC_LABEL[baseLabel] || (active >= 4 ? "HODL" : "CAN'T CALL IT");
+  const direction = call?.direction || (baseLabel === "RISK-ON" ? "BULLISH" : baseLabel === "RISK-OFF" ? "BEARISH" : "NEUTRAL");
+  const required = active ? Math.floor(active / 2) + 1 : 0;
 
-  const mp = data.marketPulse, ca = data.crossAsset, mac = data.macro;
-  const spy = mp.spy, vix = mp.vix, fg = mp.fearGreed;
-  const ten = ca.treasury10y, fed = mac.fedFunds, cpi = mac.cpi;
-
-  const label = regime.label || "MIXED";
-  const sub = regime.sub || "cross-signals";
-  const bull = regime.bullVotes ?? 0;
-  // FIX-E (v3.49, VALUE_PROPOSITION_AUDIT "regime denominators disagree"): the denominator
-  // comes FROM computeRegime (`counted`/`totalFactors`) — this module used to re-derive it
-  // from its own hardcoded factor list, which was still the pre-NFCI five, so the header
-  // said "3/6 bullish" while WHY #5 said "3/5 live factors" on the same page. The local
-  // list survives only as a fallback for a caller passing no regime (mock/demo), and now
-  // names all six voters (FEAT-NFCI v3.43; "valuation" is the shillerPe factor's key).
-  const total = regime.totalFactors ?? 6;
-  const active = regime.counted ??
-    ["tenYear", "vix", "fearGreed", "cpiHeadline", "valuation", "nfci"]
-      .filter((k) => !stale.has(k)).length;
-
-  // A1 (v3.58): the SPY clause freshness-gates like every other numeric claim — the headline
-  // used to assert the mock day-move even while the verdict was withheld during loading.
-  const headline =
-    `${sessionPrefix(data.session)} ${label} regime, ${bull}/${active} bullish factors` +
-    `${isLive("spyPrice") ? ` — SPY ${pct(spy.changePct)}` : ""}.`;
-
+  const headline = `${sessionPrefix(data.session)} ${label} · ${direction}; ${bull}/${active} usable factors bullish.`;
   const whys = [];
 
-  /* WHY #1 — core anchor. v3.54 (11.4.5 audit, High): this clause asserted SPY, CPI and Fed
-     values UNCONDITIONALLY while WHY #2 carefully freshness-gated its cross-signals. If CPI
-     or the Fed rate fell back to mock, the narrative still called it "today's core tape" — a
-     fabricated number in the page's own explanation of its verdict. Each of the three is now
-     gated independently, unavailable clauses are OMITTED rather than filled from mock, and
-     the count of usable core inputs is stated so a thin anchor is visible as thin. */
-  const ma200 = spy.ma200;
-  const above = ma200 != null && spy.price >= ma200;
-  const coreParts = [];
-  // VOICE (v3.97.2 owner rules, refined v4.0.1): one voice with the Simple cards — clear,
-  // direct, lightly explanatory; short sentences, no insider phrasing. The v3.98 trader
-  // slang ("sitting pretty", "don't get cute", "elsewhere on the tape") was cut on the
-  // owner's read of the live page: the cards set the tone and the whys match it now. The
-  // honesty literals are untouched: "N/3 core inputs usable", the named exclusions,
-  // "dark — not counted" (the one-vocabulary rule, v3.98.3), the reduced-signal caveat.
-  if (isLive("spyPrice")) {
-    coreParts.push(
-      `SPY $${spy.price} (${pct(spy.changePct)})` +
-      (ma200 != null ? (above ? `, above its 200-day average` : `, below its 200-day average`) : "")
-    );
-  }
-  if (isLive("cpiHeadline")) coreParts.push(`CPI ${cpi.headline}%`);
-  if (isLive("fedFunds")) coreParts.push(`Fed at ${fed.rate}%`);
-  const CORE_N = 3;
-  if (coreParts.length) {
-    whys.push(
-      `${coreParts.join(", ")}. ` +
-      (coreParts.length < CORE_N ? `${coreParts.length}/${CORE_N} core inputs usable — the rest aren't live right now. ` : "") +
-      (isLive("spyPrice")
-        ? (above ? "Trend intact." : "Below the long-term trend — that's the main risk flag.")
-        : "No live SPY price, so no trend read.")
-    );
-  } else {
-    // Every core input unavailable: say so. An empty anchor is a fact, not a blank line.
-    whys.push(`0/${CORE_N} core inputs usable — nothing live to anchor on.`);
-  }
-
-  // WHY #2 — other LIVE data only (mock/stale fields are skipped)
-  const sig = [];
-  if (isLive("vix")) sig.push(`VIX ${vix.current}`);
-  if (isLive("fearGreed")) sig.push(`F&G ${fg.score} (${fg.label})`);
-  if (isLive("tenYear")) sig.push(`10Y ${ten.current}%`);
-  if (isLive("wti") && ca.wti) sig.push(`WTI $${ca.wti.current}`);
-  if (isLive("btc") && ca.btc) sig.push(`BTC $${(ca.btc.current / 1000).toFixed(0)}K`);
-  if (isLive("creditSpread") && mac.credit) sig.push(`HY-IG ${mac.credit.spread}pp`);
-  const excluded = fresh
-    ? ["vix", "fearGreed", "tenYear", "wti", "btc", "creditSpread"].filter((k) => !fresh.has(k))
-    : [];
   whys.push(
-    `Other live readings: ${sig.length ? sig.join(", ") : "nothing else is live right now"}.` +
-    (excluded.length ? ` ${excluded.map((k) => FIELD_LABEL[k]).join(", ")} ${excluded.length === 1 ? "is" : "are"} dark — not counted.` : "")
+    `${label} — ${direction}. The model has ${bull} bullish, ${neutral} neutral, and ${bear} bearish vote${bear === 1 ? "" : "s"}` +
+    `${active < total ? ` from ${active}/${total} usable factors` : ` across all ${total} factors`}. ` +
+    `${required ? `A directional call requires a strict majority: ${required} of ${active}.` : "There is not enough usable evidence to publish a direction."}`
   );
 
-  // WHY #3 — top market headline: fresh AND macro-material (v3.51). Both gates, in that
-  // order, so the reason for an empty slot is always the honest one.
-  const hd = mp.headline;
-  const hdFresh = !!(hd && hd.text && hd.source && hd.source !== "—" && isLive("marketHeadline"));
-  if (hdFresh && isMacroMaterial(hd.text)) {
-    whys.push(`Top story (${hd.source}): “${deent(hd.text)}”`);
-  } else if (hdFresh) {
-    // The distinction is load-bearing: "we have today's top story and it is not about the
-    // macro tape" is a different fact from "no headline arrived", and it is the one that
-    // stops an administrative story being read as the market's driver.
-    whys.push(
-      `Today's top story (${hd.source}) is not macro-material, so it doesn't move the call. ` +
-      `Today is data-driven, not news-driven.`
-    );
-  } else {
-    whys.push(`No fresh market headline today — the call is data-driven, not news-driven.`);
-  }
+  const supports = usableFactors.filter((f) => (f.state || "").toUpperCase() === "BULLISH" || f.vote === "bull");
+  const risks = usableFactors.filter((f) => (f.state || "").toUpperCase() === "BEARISH" || f.vote === "bear");
+  const balances = usableFactors.filter((f) => (f.state || "").toUpperCase() === "NEUTRAL" || f.vote === "neutral");
+  const driverParts = [];
+  if (supports.length) driverParts.push(`Support: ${supports.map(factorClause).join("; ")}`);
+  if (risks.length) driverParts.push(`Risk: ${risks.map(factorClause).join("; ")}`);
+  if (balances.length) driverParts.push(`Neutral: ${balances.map(factorClause).join("; ")}`);
+  whys.push(driverParts.length ? driverParts.join(". ") + "." : "No canonical factor is usable, so no driver is being claimed.");
 
-  // WHY #4 — the tracked headwinds / tailwinds. These are a CURATED thesis register (no live
-  // feed), so we attribute the review date rather than implying it's today's tape.
-  const hw = Array.isArray(data.headwinds) ? data.headwinds : [];
-  const worsening = hw.filter((h) => h.trend === "worsening").map((h) => h.name);
-  const improving = hw.filter((h) => h.trend === "improving").map((h) => h.name);
-  const reviewed = data.headwindsAsOf ? ` (hand-curated, ${data.headwindsAsOf})` : " (hand-curated)";
+  const directional = [...supports, ...risks];
+  const mechanisms = directional.map((f) => WHY_IT_MATTERS[f.key]).filter(Boolean);
+  whys.push(mechanisms.length
+    ? `${listOf(mechanisms)}. These are transmission channels, not proof that any one factor caused today's market move.`
+    : "No factor has a directional vote, so the model is not claiming a causal market driver.");
+
+  const excluded = factors.filter((f) => f.excluded);
+  const stamp = etStamp(opts.snapshotAsOf) || data.lastRefresh || null;
+  const hd = data.marketPulse?.headline;
+  const headlineFresh = !!(hd?.text && hd?.source && hd.source !== "—" && opts.headlineFresh !== false);
+  const context = headlineFresh && isMacroMaterial(hd.text)
+    ? `Tracked context (${hd.source}): “${deent(hd.text)}”`
+    : headlineFresh
+      ? `The top ${hd.source} RSS item failed the macro-relevance filter`
+      : "No current macro headline passed the feed and relevance gates";
   whys.push(
-    `Slow-burn risks${reviewed}: ${worsening.length ? `${worsening.join(", ")} getting worse` : "nothing getting worse"}` +
-    `${improving.length ? `; ${improving.join(", ")} improving` : ""}. ` +
-    `${worsening.length >= 2 ? "More than one is building — worth watching." : "No fresh escalation today."}`
+    `Evidence confidence is ${call?.confidence || (active === total ? "HIGH" : active >= 4 ? "MEDIUM" : "LOW")}` +
+    `${stamp ? `; the snapshot was pulled ${stamp}` : ""}. ` +
+    `${excluded.length ? `${excluded.map((f) => f.label || f.key).join(", ")} ${excluded.length === 1 ? "was" : "were"} excluded.` : "No factor was excluded."} ` +
+    `${context}. Headlines are context only and never cast a vote.`
   );
 
-  // WHY #5 — synthesis + honest confidence caveat
+  const nearest = Array.isArray(opts.flips) ? opts.flips[0] : null;
+  const nextLabel = nearest ? (PUBLIC_LABEL[nearest.would] || nearest.would) : null;
+  const override = call?.override?.active ? ` The ${call.override.type} safety override is active.` : "";
+  const downgraded = call?.downgraded ? ` ${call.downgraded}.` : "";
   whys.push(
-    `Bottom line: still ${label} — ${sub}. ${bull}/${active} live factors leaning bullish` +
-    (active < total ? `; ${total - active} excluded as stale/dead — a reduced-signal read, so confidence is lower.` : "; full-signal read.")
+    (nearest
+      ? `Nearest load-bearing change: ${nearest.copy} would move the base call to ${nextLabel}.`
+      : "No single tracked threshold changes this call; it would take a combination of factor moves.") +
+    ` Actionability is ${call?.actionability || "HOLD"}.${override}${downgraded}`
   );
 
   return {
-    regime: sub ? `${label} · ${sub}` : label,
+    regime: `${label} · ${direction}`,
     headline,
     whys,
+    labels: ["WHY THIS CALL", "WHAT DROVE IT", "WHY IT MATTERS", "CAN I TRUST IT", "WHAT CHANGES IT"],
     generatedAt: new Date().toISOString(),
   };
 }

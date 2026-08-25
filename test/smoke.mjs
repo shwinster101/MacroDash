@@ -210,48 +210,54 @@ ok("every SOURCES entry has path + valid kind", Object.values(SOURCES).every((s)
 
 // ---- 3. computeFiveWhys — rule-based 5 Whys ----------------------------
 console.log("\n[3] computeFiveWhys (rule-based 5 Whys)");
-const fwRegime = { label: "RISK-ON", sub: "Disinflation + low vol", bullVotes: 4, bearVotes: 1 };
-const fw = computeFiveWhys(MOCK_DATA, fwRegime);
+const fwRegime = { label: "RISK-ON", raw:"RISK-ON", sub: "Disinflation + low vol", bullVotes: 4, bearVotes: 1, counted:6, totalFactors:6 };
+const fwFactors = [
+  {key:"tenYear",label:"10Y Direction",state:"NEUTRAL",display:"4.70% · +0.01pp 1-mo",as_of:"2026-08-24"},
+  {key:"vix",label:"VIX Level",state:"BULLISH",display:"15.85 — Low",as_of:"2026-08-24"},
+  {key:"fearGreed",label:"Fear & Greed",state:"BULLISH",display:"60 — Greed",as_of:"2026-08-25"},
+  {key:"cpiHeadline",label:"CPI Trend",state:"BULLISH",display:"3.4% YoY · cooling",as_of:"2026-07-01"},
+  {key:"valuation",label:"Valuation",state:"BEARISH",display:"41.8 CAPE",as_of:"2026-08-25"},
+  {key:"nfci",label:"Fin Conditions",state:"BULLISH",display:"-0.56 SD",as_of:"2026-08-14"},
+];
+const fwCall = {headline:"MOONING",direction:"BULLISH",confidence:"HIGH",actionability:"FULL",
+  counts:{bullish:4,neutral:1,bearish:1,usable:6,total:6},factors:fwFactors,override:{active:false}};
+const fwOpts = {call:fwCall,factors:fwFactors,snapshotAsOf:"2026-08-25T14:00:00Z",
+  headlineFresh:true,flips:[{copy:"VIX at or above 18.00",would:"MIXED"}]};
+const fw = computeFiveWhys(MOCK_DATA, fwRegime, fwOpts);
 ok("returns exactly 5 whys", Array.isArray(fw.whys) && fw.whys.length === 5);
 ok("every why is a non-empty string", fw.whys.every((w) => typeof w === "string" && w.length > 0));
-ok("headline carries the regime label", typeof fw.headline === "string" && fw.headline.includes("RISK-ON"));
+ok("headline carries the canonical human + machine call", typeof fw.headline === "string" && /MOONING · BULLISH/.test(fw.headline));
 ok("regime descriptor non-empty", typeof fw.regime === "string" && fw.regime.length > 0);
 ok("session prefix flips PRE vs CLOSE",
-  computeFiveWhys({ ...MOCK_DATA, session: "PRE" }, fwRegime).headline.startsWith("Pre-open") &&
-  computeFiveWhys({ ...MOCK_DATA, session: "CLOSE" }, fwRegime).headline.startsWith("Post-close"));
+  computeFiveWhys({ ...MOCK_DATA, session: "PRE" }, fwRegime, fwOpts).headline.startsWith("Pre-open") &&
+  computeFiveWhys({ ...MOCK_DATA, session: "CLOSE" }, fwRegime, fwOpts).headline.startsWith("Post-close"));
 ok("does not throw on MOCK_DATA with default regime", (() => { try { computeFiveWhys(MOCK_DATA); return true; } catch { return false; } })());
-// WHY #1 anchors on SPY/200DMA/CPI/Fed; WHY #5 is the synthesis
-ok("WHY #1 is the SPY/200-day/CPI/Fed core anchor (v3.97.2 voice: 200-day, no label)",
-  /SPY/.test(fw.whys[0]) && /200-day/.test(fw.whys[0]) && /CPI/.test(fw.whys[0]) && /Fed/.test(fw.whys[0]));
-ok("WHY #5 is the synthesis (verdict + factor tally)", /Bottom line:/.test(fw.whys[4]) && fw.whys[4].includes("RISK-ON"));
-ok("WHY #4 attributes headwinds as a curated register (not live tape)", /Slow-burn risks/.test(fw.whys[3]) && /curated/.test(fw.whys[3]));
-// FEAT-DQ: stale factor excluded from the vote tally (headline denominator + WHY #5 caveat)
-// FIX-E (v3.49): the denominator is the 6-voter set (FEAT-NFCI v3.43) and comes from
-// computeRegime's `counted` when provided — these pins previously froze the pre-NFCI "/5".
-const fwStale = computeFiveWhys(MOCK_DATA, fwRegime, { stale: new Set(["vix"]) });
-ok("5 Whys: denominator drops to /5 when one of the six factors is stale",
-  fwStale.headline.includes("/5") && !fwStale.headline.includes("/6"));
-ok("5 Whys: WHY #5 flags reduced-signal read when factors excluded", fwStale.whys[4].includes("excluded"));
-ok("5 Whys: default (no stale) keeps all 6 factors (NFCI votes, v3.43)", fw.headline.includes("/6"));
-ok("5 Whys FIX-E: computeRegime's own counted/totalFactors govern the denominator when present",
-  computeFiveWhys(MOCK_DATA, { ...fwRegime, counted: 4, totalFactors: 6 }).headline.includes("/4") &&
-  computeFiveWhys(MOCK_DATA, { ...fwRegime, counted: 4, totalFactors: 6 }).whys[4].includes("2 excluded"));
+ok("check 1 is exact call arithmetic, not unrelated SPY/Fed context",
+  /4 bullish, 1 neutral, and 1 bearish/.test(fw.whys[0]) && /strict majority: 4 of 6/.test(fw.whys[0]) && !/SPY|Fed at/.test(fw.whys[0]));
+ok("check 2 contains only canonical factors and their dated states",
+  fwFactors.every((f)=>fw.whys[1].includes(f.label)) && /as of 2026-08-25/.test(fw.whys[1]) && !/WTI|BTC|HY-IG/.test(fw.whys[1]));
+ok("check 3 explains transmission and disclaims single-factor causality",
+  /discount rate|near-term stress price/.test(fw.whys[2]) && /not proof/.test(fw.whys[2]));
+ok("check 4 states snapshot time, confidence, and that headlines never vote",
+  /Evidence confidence is HIGH/.test(fw.whys[3]) && /snapshot was pulled/.test(fw.whys[3]) && /never cast a vote/.test(fw.whys[3]));
+ok("check 5 names the nearest load-bearing change and actionability",
+  /VIX at or above 18\.00/.test(fw.whys[4]) && /HODL/.test(fw.whys[4]) && /Actionability is FULL/.test(fw.whys[4]));
+const fwReducedFactors=fwFactors.map((f)=>f.key==="vix"?{...f,state:null,excluded:true,reason:"too old"}:f);
+const fwReducedCall={...fwCall,confidence:"MEDIUM",counts:{bullish:3,neutral:1,bearish:1,usable:5,total:6},factors:fwReducedFactors};
+const fwReduced=computeFiveWhys(MOCK_DATA,{...fwRegime,counted:5,bullVotes:3},{...fwOpts,call:fwReducedCall,factors:fwReducedFactors});
+ok("five checks: reduced evidence changes the denominator and names the exclusion",
+  /3\/5 usable factors bullish/.test(fwReduced.headline) && /VIX Level was excluded/.test(fwReduced.whys[3]));
 // ---- DEC-31 (v3.2): Put/Call fully retired ------------------------------
 ok("DEC-31: putCall absent from SOURCES", !("putCall" in SOURCES));
 ok("DEC-31: MOCK_DATA no longer carries marketPulse.putCall", MOCK_DATA.marketPulse.putCall === undefined);
 ok("DEC-31: dashboard.jsx has zero putCall references", !dashSrc.includes("putCall"));
 const snapSrc = readSrc("../functions/api/snapshot.js");
 ok("DEC-31: fetchPutCall scraper deleted from snapshot.js", !snapSrc.includes("putCall") && !snapSrc.includes("fetchPutCall"));
-ok("5 Whys: WHY #5 reads full-signal at 5/5", computeFiveWhys(MOCK_DATA, fwRegime).whys[4].includes("full-signal"));
-// FEAT-NEWS WHY #2: only LIVE+fresh fields appear; stale/mock are named as excluded
-const fwFresh = computeFiveWhys(MOCK_DATA, fwRegime, { fresh: new Set(["fearGreed"]) });
-ok("WHY #2 includes a fresh field (F&G) and excludes a non-fresh one (VIX)",
-  fwFresh.whys[1].includes("F&G") && !fwFresh.whys[1].includes("VIX ") && /dark — not counted/.test(fwFresh.whys[1]));
-// FEAT-NEWS WHY #3: shows a live headline when fresh, falls back to "no fresh headline" otherwise
+// Headline context is explicitly non-voting whether material, irrelevant, or unavailable.
 const withHL = { ...MOCK_DATA, marketPulse: { ...MOCK_DATA.marketPulse, headline: { text: "Peace deal lifts futures", source: "MarketWatch" } } };
-ok("WHY #3 renders a fresh market headline when present",
-  computeFiveWhys(withHL, fwRegime, { fresh: new Set(["marketHeadline"]) }).whys[2].includes("Peace deal lifts futures"));
-ok("WHY #3 falls back when no fresh headline", /No fresh market headline/.test(computeFiveWhys(MOCK_DATA, fwRegime, { fresh: new Set() }).whys[2]));
+ok("headline context renders a relevant current item but never promotes it to a voter",
+  /Peace deal lifts futures/.test(computeFiveWhys(withHL, fwRegime, fwOpts).whys[3]) && /never cast a vote/.test(computeFiveWhys(withHL, fwRegime, fwOpts).whys[3]));
+ok("headline context states when no current item passes", /No current macro headline/.test(computeFiveWhys(MOCK_DATA, fwRegime, {...fwOpts,headlineFresh:false}).whys[3]));
 // ---- v3.51 (public audit): freshness is not RELEVANCE ----------------------
 // The audit caught a Fidelity death-certificate administrative story rendered as the macro
 // "Headline driver" — fresh, dated and correctly attributed, and explaining nothing about
@@ -270,14 +276,11 @@ ok("materiality: empty / missing text is never material (fails closed)",
 // fact from "no headline arrived", and only the first stops an irrelevant driver being asserted.
 const admin = { ...MOCK_DATA, marketPulse: { ...MOCK_DATA.marketPulse,
   headline: { text: "Fidelity now requires a death certificate to transfer an account", source: "MarketWatch" } } };
-const fwAdmin = computeFiveWhys(admin, fwRegime, { fresh: new Set(["marketHeadline"]) });
-ok("WHY #3: a fresh but non-macro headline is WITHHELD, and the slot says WHY it was withheld",
-  /not macro-material/.test(fwAdmin.whys[2]) &&
-  !fwAdmin.whys[2].includes("death certificate") &&
-  !/no fresh market headline/.test(fwAdmin.whys[2]));
-ok("WHY #3: the filter is ONE-WAY — a material headline still renders verbatim, never rewritten",
-  computeFiveWhys(withHL, fwRegime, { fresh: new Set(["marketHeadline"]) }).whys[2]
-    .includes("Peace deal lifts futures"));
+const fwAdmin = computeFiveWhys(admin, fwRegime, fwOpts);
+ok("headline context: a fresh but non-macro item is withheld and the reason is named",
+  /failed the macro-relevance filter/.test(fwAdmin.whys[3]) && !fwAdmin.whys[3].includes("death certificate"));
+ok("headline context: the materiality filter is one-way — accepted context stays verbatim",
+  computeFiveWhys(withHL, fwRegime, fwOpts).whys[3].includes("Peace deal lifts futures"));
 
 // ---- 4. ttReadout — TT mapping table (FEAT-330 / DEC-33; gates real orders) ----------
 console.log("\n[4] ttReadout — TT band table + verdict + macro flip (every boundary)");
@@ -2215,7 +2218,7 @@ ok("estrun: the section label carries the tier — the math renders under the ti
 /* v3.68: the PT horizon is stated where the %/yr is read. */
 /* v3.69 NARRATIVE FIRST — the public dashboard reorder. */
 ok("v3.69: the 5 Whys block renders in the overview region, before the markets section (source order)",
-  whysSrc.includes("5 whys · today") &&   // v3.93: the identity moved onto the toggle label
+  whysSrc.includes("why this call · 5 checks") &&
   dashSrc.indexOf("<FiveWhys ") > dashSrc.indexOf('id="overview"')
   && dashSrc.indexOf("<FiveWhys ") < dashSrc.indexOf('aria-labelledby="markets"'));
 /* v3.92 QUIET OVERVIEW — this pin REVERSED. v3.69/v3.61 pinned the whys always-expanded on
@@ -3576,23 +3579,14 @@ ok("quorum: the flip line is suppressed when there is no posture to flip (v3.94:
   /\{withheld&&<div/.test(bandSrc));
 ok("quorum: the hero states the withhold with the quorum named, visible while everything is closed",
   /only \$\{regime\.counted\} of \$\{regime\.totalFactors\} factors usable — \$\{regime\.quorum\} required/.test(bandSrc));
-// ---- WHY #1 freshness gate (11.4.5 audit, High) ----
-// WHY #2 freshness-gated its cross-signals; WHY #1 asserted SPY/CPI/Fed unconditionally, so a
-// mock CPI could be narrated as "today's core tape" inside the verdict's own explanation.
-const fwCore = computeFiveWhys(MOCK_DATA, fwRegime, { fresh: new Set(["spyPrice"]) });
-ok("why1: a non-live core input is OMITTED, not asserted from mock",
-  !/CPI \d/.test(fwCore.whys[0]) && !/Fed funds/.test(fwCore.whys[0]) && /SPY \$/.test(fwCore.whys[0]));
-ok("why1: the thin anchor is STATED as thin (N/3 core inputs usable)",
-  /1\/3 core inputs usable/.test(fwCore.whys[0]));
-ok("why1: with every core input dead it says so rather than emitting a blank anchor",
-  /0\/3 core inputs usable/.test(computeFiveWhys(MOCK_DATA, fwRegime, { fresh: new Set() }).whys[0]));
-ok("why1: no live equity mark means no primary-trend claim either",
-  /No live SPY price, so no trend read/.test(
-    computeFiveWhys(MOCK_DATA, fwRegime, { fresh: new Set(["cpiHeadline"]) }).whys[0]));
-ok("why1: demo/mock mode (fresh:null) still narrates all three — mock IS the baseline there",
-  /SPY \$/.test(fw.whys[0]) && /CPI /.test(fw.whys[0]) && /Fed at/.test(fw.whys[0]));
-ok("why1: the dashboard actually PASSES the core fields into the freshness set",
-  /FW_FIELDS=\[[\s\S]*?"spyPrice","cpiHeadline","fedFunds"\]/.test(dashSrc));
+// ---- Why-this-call canonical boundary ----
+// The explanation may render only the factors the canonical call already stamped. Context
+// fields can inform trust, but SPY/Fed/WTI/BTC/credit can never masquerade as voters.
+ok("why-call: dashboard passes the canonical call, factor rows, flips, and snapshot timestamp",
+  /call:dailyCall, factors:evidenceSet\.factors, flips:evidenceSet\.flips/.test(dashSrc) &&
+  /snapshotAsOf:asOf/.test(dashSrc));
+ok("why-call: the generator has no direct SPY/Fed/WTI/BTC/credit recital path",
+  !/spy\.price|fed\.rate|ca\.wti|ca\.btc|credit\.spread/.test(readSrc("../src/fiveWhys.js")));
 
 // ---- 30. 11.4.5 audit — a11y tokens, headings, and safe GET ----------------
 console.log("\n[30] 11.4.5 audit — contrast, focus, headings, HTTP semantics");
@@ -3940,21 +3934,13 @@ ok("e2e: the book cap and its client pre-flight mirror still agree",
 
 // ---- 36. v3.58 hotfix (UX re-audit fix-now) — truthfulness, 320px, boundary ----
 console.log("\n[36] v3.58 hotfix — no mock narration, 320px contract, public gate");
-// A1: freshSet keys on the build's INTENT. `anyLive` made a loading/failed live build pass
-// fresh:null — computeFiveWhys's "demo mode, narrate everything" — so the 5 Whys asserted
-// mock SPY/CPI/Fed under a withheld verdict.
+// A1: freshSet still keys on build intent for the headline-context freshness gate.
 ok("A1: freshSet derives from liveBuild, never anyLive",
   /const freshSet=liveBuild \? new Set/.test(dashSrc) && !/freshSet=anyLive/.test(dashSrc));
 ok("A1: demoted() still keys on anyLive — demotion is display, and the demo must not collapse",
   /const demoted=\(f\)=>anyLive&&isIllustrative/.test(dashSrc));
-// Behavioral: an EMPTY fresh set (live build, nothing usable) must gate the HEADLINE too.
-const fwEmpty = computeFiveWhys(MOCK_DATA, fwRegime, { fresh: new Set() });
-ok("A1: with nothing fresh the headline carries no mock SPY day-move",
-  !/— SPY/.test(fwEmpty.headline) && /bullish factors\./.test(fwEmpty.headline));
-ok("A1: with spyPrice fresh the SPY clause returns (the gate is freshness, not deletion)",
-  /— SPY/.test(computeFiveWhys(MOCK_DATA, fwRegime, { fresh: new Set(["spyPrice"]) }).headline));
-ok("A1: demo mode (fresh:null) still narrates the full headline — mock IS that baseline",
-  /— SPY/.test(computeFiveWhys(MOCK_DATA, fwRegime).headline));
+ok("A1: the canonical headline never carries a context-only SPY day move",
+  !/— SPY/.test(fw.headline) && /usable factors bullish/.test(fw.headline));
 // A2: the 320px contract — identity group may shrink, actions may wrap, wordmark yields first.
 ok("A2: header groups can shrink and wrap instead of forcing horizontal overflow",
   /alignItems:"center",gap:14,minWidth:0,flexWrap:"wrap"/.test(dashSrc) &&
@@ -5390,9 +5376,9 @@ ok("whys: presentation only — the CODE never imports or calls the computation 
   (() => { const code = whysSrc.replace(/\/\/[^\n]*|\/\*[\s\S]*?\*\//g, "");
     return !/fiveWhys\.js/.test(code) && !/computeFiveWhys/.test(code) &&
            !/useMarketData/.test(code) && !/FW_FIELDS/.test(code); })());
-ok("whys: the computation and freshness gating stay in the orchestrator (A1 contract intact)",
-  dashSrc.includes("const fw=computeFiveWhys({...d, session:etSession()}, regimeView, { stale:staleFactors, fresh:freshSet });") &&
-  /const freshSet=liveBuild \? new Set/.test(dashSrc));
+ok("whys: canonical computation and headline freshness stay in the orchestrator",
+  /const fw=computeFiveWhys\(\{\.\.\.d, session:etSession\(\)\}, regimeView, \{/.test(dashSrc) &&
+  /headlineFresh:freshSet===null\|\|freshSet\.has\("marketHeadline"\)/.test(dashSrc));
 ok("whys: a missing fw prop renders a safe empty state, never a throw (Property 9)",
   /if\(!fw\|\|!Array\.isArray\(fw\.whys\)\)return <div aria-hidden="true"\/>;/.test(whysSrc));
 ok("whys: the call site hands over narrative, state-derived label, and equity-close provenance",
@@ -5472,7 +5458,7 @@ ok("cg v3.95: a storage fault or unknown stored value falls back to defaultOpen,
     const stored = readOpen("k", false) === true && readOpen(null, false) === false;
     globalThis.localStorage = g; return faulted && unknown && stored; })());
 ok("whys v3.95: the whys are reachable in SIMPLE — one honestly-labelled expander, chain only",
-  /\{simple&&<FiveWhys fw=\{fw\}[\s\S]{0,180}label="why this posture — 5 whys"\/>\}/.test(dashSrc) &&
+  /\{simple&&<FiveWhys fw=\{fw\}[\s\S]{0,180}label="why this call · 5 checks"\/>\}/.test(dashSrc) &&
   /export const WHYS_KEY="md:exp:whys:v1";/.test(whysSrc) &&
   /persistKey=WHYS_KEY/.test(whysSrc));
 ok("whys v3.95: the technical layer stays POWER-only — chips/tally/flip live in the hero panel, matrix behind !simple",
@@ -7677,7 +7663,7 @@ console.log("\n[64] v3.98.4 — Power read-through fixes (token trend, strip mar
     /Counts toward today's posture\./.test(stripSrc) &&
     /Context only — does not vote\./.test(stripSrc));
   ok("v3.98.4: the CPI source box finally carries its observation date (LIVE with no date is unjudgeable)",
-    /endpoint="CPIAUCSL \+ CPILFESL" mode=\{modeOf\('cpiHeadline'\)\} asOf=\{asOfOf\('cpiHeadline'\)\}/.test(mrSrc));
+    /endpoint="CPIAUCNS \+ CPILFENS · official NSA YoY" mode=\{modeOf\('cpiHeadline'\)\} asOf=\{asOfOf\('cpiHeadline'\)\}/.test(mrSrc));
   ok("v3.98.4: EVERY SourceBox in the macro grid passes an asOf — no LIVE badge without a date",
     (mrSrc.match(/<SourceBox /g) || []).length === (mrSrc.match(/<SourceBox [^>]*asOf=/g) || []).length);
 }
@@ -9071,7 +9057,7 @@ console.log("\n[73] v5.3 ONE CALL — canonical vocabulary, additive API, immuta
   const live = (overrides = {}) => ({
     tenYear: 4.1, tenYearM1: -0.2, tenYearAsOf: D,
     vix: 15, vixAsOf: D,
-    fearGreed: 60, fearGreedAsOf: D,
+    fearGreed: 60, fearGreedLabel:"Greed", fearGreedAsOf: D,
     cpiHeadline: 2.4, cpiTrend: [3.0, 2.8, 2.6, 2.4], cpiHeadlineAsOf: D,
     shillerPe: 20, shillerPeAsOf: D,
     nfci: -0.6, nfciAsOf: D,
@@ -9081,6 +9067,9 @@ console.log("\n[73] v5.3 ONE CALL — canonical vocabulary, additive API, immuta
   const bull = buildMacroCall(live(), { now, effectiveDate: D });
   ok("one-call: public engine maps to MOONING / BULLISH with HIGH evidence", bull.schema === CALL_SCHEMA &&
     bull.headline === "MOONING" && bull.direction === "BULLISH" && bull.confidence === "HIGH" && bull.actionability === "FULL");
+  ok("one-call: Fear & Greed display carries its real label, never undefined",
+    /60 — Greed/.test(bull.factors.find((f)=>f.key==="fearGreed")?.display || "") &&
+    !JSON.stringify(bull).includes("undefined"));
   const mixed = buildMacroCall(live({ tenYearM1: 0, vix: 20, fearGreed: 40, cpiTrend: [2.4,2.4], shillerPe: 27, nfci: -0.2 }), { now, effectiveDate: D });
   ok("one-call: mixed engine maps to HODL / NEUTRAL", mixed.headline === "HODL" && mixed.direction === "NEUTRAL");
   const bear = buildMacroCall(live({ tenYearM1: 0.2, vix: 26, fearGreed: 20, cpiTrend: [2.0,2.6], shillerPe: 40, nfci: 0.1 }), { now, effectiveDate: D });
@@ -9119,9 +9108,14 @@ console.log("\n[73] v5.3 ONE CALL — canonical vocabulary, additive API, immuta
   await captureDailyCall({ PULSE_CACHE: failKv }, async()=>new Response("no",{status:503}), now);
   const failed = JSON.parse([...failKv._m.values()][0]);
   ok("history: a capture failure is frozen too — bad mornings cannot vanish", failed.capture_status === "FAILED" && failed.call === null && /HTTP 503/.test(failed.failure));
+  const directKv = fakeKv();
+  const direct = await captureDailyCall({PULSE_CACHE:directKv}, async()=>{throw new Error("KV reread must not happen");}, now, bull);
+  const directRecord = JSON.parse([...directKv._m.values()][0]);
+  ok("history repair: the refresh response's canonical call is frozen directly — no eventually-consistent KV reread",
+    direct.written === true && directRecord.call.headline === "MOONING" && directRecord.capture_status === "CAPTURED");
 
   const snapKv = fakeKv();
-  await snapKv.put(`pulse:snapshot:v15:${D}`, JSON.stringify({ live:live(), asOf:now.toISOString(), _diag:{} }));
+  await snapKv.put(`pulse:snapshot:v16:${D}`, JSON.stringify({ live:live(), asOf:now.toISOString(), _diag:{} }));
   const readoutRes = await getReadout({ request:new Request("https://macrodash.pages.dev/readout.json"), env:{PULSE_CACHE:snapKv} });
   const readoutBody = await readoutRes.json();
   ok("readout: md-call-v1 is additive while tt-v1 legacy regime remains present", readoutBody.schema === "tt-v1" &&
@@ -9131,6 +9125,26 @@ console.log("\n[73] v5.3 ONE CALL — canonical vocabulary, additive API, immuta
   ok("pages: history and difference stay one click away without adding a dashboard tile", /href="\/history"/.test(dashSrc) &&
     /href="\/difference"/.test(dashSrc) && appSrc.includes("<HistoryPage />") && appSrc.includes("<DifferencePage />") &&
     /will not compete on indicator count/.test(pagesSrc));
+
+  const workerSrc = readSrc("../worker/cron.js");
+  const refreshSrc = readSrc("../functions/api/snapshot/refresh.js");
+  const readoutSrc = readSrc("../functions/readout.json.js");
+  const setupSrc = readSrc("../worker/SETUP.md");
+  ok("v5.4 CPI: every active pull uses official NSA CPIAUCNS/CPILFENS, never the SA pair",
+    snapSrc.includes('cpiHeadline:  "CPIAUCNS"') && snapSrc.includes('cpiCore:      "CPILFENS"') &&
+    workerSrc.includes('series: "CPIAUCNS"') && workerSrc.includes('series: "CPILFENS"'));
+  ok("v5.4 cache: snapshot, refresh, readout, worker warm, and test fixture all agree on v16",
+    [snapSrc,refreshSrc,readoutSrc,workerSrc].every((s)=>s.includes("pulse:snapshot:v16")) &&
+    ![snapSrc,refreshSrc,readoutSrc,workerSrc].some((s)=>s.includes("pulse:snapshot:v15")));
+  ok("v5.4 refresh: scheduled history receives the exact refresh-response call",
+    /buildMacroCall\(snapshot\.live \|\| \{\}/.test(refreshSrc) &&
+    /\.\.\.readout, call \}/.test(refreshSrc) &&
+    /const refreshed = await refreshSnapshot\(env\)/.test(workerSrc) &&
+    /refreshed\?\.call \|\| null/.test(workerSrc) &&
+    /call: body\?\.published \? \(body\?\.readout\?\.call \|\| null\) : null/.test(workerSrc));
+  ok("v5.4 deploy gate: docs require REFRESH_TOKEN on both Worker and Pages and name both verification commands",
+    /wrangler secret list/.test(setupSrc) && /wrangler pages secret list --project-name macrodash/.test(setupSrc) &&
+    /REFRESH_TOKEN.*both lists/s.test(setupSrc));
 }
 
 console.log(`\n=== SMOKE TEST: ${pass} passed, ${fail} failed ===`);

@@ -192,25 +192,18 @@ console.log("\n[public] LOADING — a posture must not be computed from the mock
   // SPY/CPI/Fed as today's core tape. The narrative must carry ZERO mock numbers now.
   // v3.92 QUIET OVERVIEW: the chain is one tap deep — the regime state stays visible while
   // closed (pinned), and the anchors are read AFTER opening the expander.
-  ok("v3.92: the whys collapse by default with the regime state visible while closed",
-    !/WHY #1/.test(await page.locator("body").innerText()) &&
+  ok("v3.92: the why-this-call checks collapse by default with the regime state visible while closed",
+    !/WHAT DROVE IT/.test(await page.locator("body").innerText()) &&
     /DATA HOLD|CAN'T CALL IT|LOADING/i.test(await page.locator("body").innerText()));
   // v3.94: the whys are TWO clicks deep (reasoning group → why chain); the inner toggle is
   // matched on its unique tail — the group label also contains "5 whys".
   await page.locator("button.cg-toggle", { hasText: "the reasoning" }).click();
   await page.waitForTimeout(150);
-  await page.locator("button.cg-toggle", { hasText: "narrative & provenance" }).click();
+  await page.locator("button.cg-toggle", { hasText: "why this call" }).click();
   await page.waitForTimeout(150);
   const loadBody = await page.locator("body").innerText();
-  // v3.97.2: WHY #1 is labelless (voice rules), so the guard pins the narrated SHAPE —
-  // "SPY $<price> (<pct>)" — which only the whys emit (the macro strip breaks price onto
-  // its own line, so it can never match).
-  ok("loading A1: the 5 Whys narrates NO mock core numbers (no 'SPY $<px> (<pct>)' clause)",
-    !/SPY \$[\d.]+ \(/.test(loadBody));
-  ok("loading A1: the anchor states itself as empty — 0/3 core inputs usable",
-    /0\/3 core inputs usable/.test(loadBody));
-  ok("loading A1: the headline carries no mock SPY day-move",
-    !/bullish factors — SPY/.test(loadBody));
+  ok("loading A1: why-this-call narrates no mock context and states the evidence hold",
+    !/SPY \$[\d.]+ \(/.test(loadBody) && /not enough usable evidence/i.test(loadBody));
   ok("loading: no page errors", errors.length === 0);
   await page.close();
 }
@@ -314,13 +307,13 @@ console.log("\n[public] ERROR — a 500 falls back to mock, and mock does not vo
     /DATA HOLD|CAN'T CALL IT/i.test(band));
   await page.locator("button.cg-toggle", { hasText: "the reasoning" }).click();   // v3.94: two clicks deep
   await page.waitForTimeout(150);
-  await page.locator("button.cg-toggle", { hasText: "narrative & provenance" }).click();
+  await page.locator("button.cg-toggle", { hasText: "why this call" }).click();
   await page.waitForTimeout(150);
   const errBody = await page.locator("body").innerText();
   ok("error: the page still renders (graceful degradation holds — it never breaks)",
     errBody.length > 500);
-  ok("error A1: the 5 Whys narrates no mock numbers after a failed fetch either",
-    !/SPY \$[\d.]+ \(/.test(errBody) && /0\/3 core inputs usable/.test(errBody));
+  ok("error A1: why-this-call narrates no mock context after a failed fetch either",
+    !/SPY \$[\d.]+ \(/.test(errBody) && /not enough usable evidence/i.test(errBody));
   ok("error: no page errors", errors.length === 0);
   await page.close();
 }
@@ -403,20 +396,20 @@ console.log("\n[public] v3.94 — Simple default, the toggle, persistence, red f
     !/full market detail/i.test(body) && !/MACRO REGIME/i.test(body) && !/Data Health/i.test(body));
   // v3.95: the whys ARE reachable in Simple — one honestly-labelled expander under the
   // hero sentence, closed on a first visit, holding the chain and nothing technical.
-  ok("v3.95 simple: the whys expander is present and CLOSED — label visible, no why statements",
-    /why this posture — 5 whys/i.test(body) && !/WHY #1/.test(body));
-  await page.locator("button.cg-toggle", { hasText: "why this posture" }).click();
+  ok("v3.95 simple: the checks expander is present and CLOSED — label visible, no check statements",
+    /why this call · 5 checks/i.test(body) && !/WHAT DROVE IT/.test(body));
+  await page.locator("button.cg-toggle", { hasText: "why this call" }).click();
   await page.waitForTimeout(250);
   const whysOpen = await page.locator("body").innerText();
-  ok("v3.95 simple: one tap opens the five why statements",
-    /WHY #1/.test(whysOpen) && /WHY #5/.test(whysOpen));
+  ok("v3.95 simple: one tap opens the five accountability checks",
+    /WHY THIS CALL/.test(whysOpen) && /WHAT CHANGES IT/.test(whysOpen));
   ok("v3.95 simple: opening the whys does NOT pull the technical layer in with it",
     !/factor evidence/i.test(whysOpen) && !/full market detail/i.test(whysOpen));
   await page.reload(); await page.waitForTimeout(1200);
   ok("v3.95 simple: the open state is remembered per device across a reload",
-    /WHY #1/.test(await page.locator("body").innerText()));
+    /WHAT DROVE IT/.test(await page.locator("body").innerText()));
   // Back to closed for the glance measurement below — the budget is a first-visit claim.
-  await page.locator("button.cg-toggle", { hasText: "why this posture" }).click();
+  await page.locator("button.cg-toggle", { hasText: "why this call" }).click();
   await page.waitForTimeout(250);
   ok("simple: red facts ignore the mode — the crash-gauge warning renders in Simple",
     /crash gauge \(VIX\) unavailable/.test(body));
@@ -674,7 +667,7 @@ console.log("\n[public] v3.98.4 — token trend withheld on mock, strip marker i
     }));
   const macro = await page.locator('section[aria-labelledby="macro"]').innerText();
   ok("v3.98.4: the CPI box now dates itself — no LIVE badge without an observation date",
-    /CPIAUCSL \+ CPILFESL/.test(macro) && /as of/i.test(macro));
+    /CPIAUCNS \+ CPILFENS/.test(macro) && /as of/i.test(macro));
   ok("v3.98.4: no page errors through the degraded read-through", errors.length === 0);
   await page.close();
 }
@@ -909,11 +902,11 @@ console.log("\n[public] Slice 1 — verdict above the fold at 375px (extracted b
     /of \d+ usable/.test(await band.innerText()) && /would change this/i.test(await band.innerText()));
   await page.locator("button.cg-toggle", { hasText: "the reasoning" }).click();   // v3.94: two clicks deep
   await page.waitForTimeout(150);
-  await page.locator("button.cg-toggle", { hasText: "narrative & provenance" }).click();
+  await page.locator("button.cg-toggle", { hasText: "why this call" }).click();
   await page.waitForTimeout(150);
   const body = await page.locator("body").innerText();
-  ok("slice1 @375px: the extracted 5 Whys narrative renders one tap deep (WHY #1–#5 present)",
-    /WHY #1/.test(body) && /WHY #5/.test(body) && /5 Whys · Today/i.test(body));
+  ok("slice1 @375px: the why-this-call accountability checks render one tap deep",
+    /WHY THIS CALL/.test(body) && /WHAT CHANGES IT/.test(body) && /why this call · 5 checks/i.test(body));
   ok("slice1 @375px: no horizontal overflow",
     await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth + 1));
   ok("slice1 @375px: no page errors from the extracted modules", errors.length === 0);

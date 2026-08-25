@@ -32,7 +32,7 @@ export async function onRequest(context) {
   const etDate = new Date().toLocaleDateString("en-CA", { timeZone: "America/New_York" }); // YYYY-MM-DD
   // SYNC HAZARD: this key version MUST match functions/api/snapshot.js (cacheKey) AND
   // worker/cron.js (refreshSnapshot). No shared module spans them — grep "pulse:snapshot:v".
-  const cacheKey = `pulse:snapshot:v15:${etDate}`;
+  const cacheKey = `pulse:snapshot:v16:${etDate}`;
 
   let live = null, asOf = null, cached = false, kvHit = false, snapDiag = null;
 

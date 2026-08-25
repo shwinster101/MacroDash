@@ -20,17 +20,14 @@ import { T } from "../design-tokens.js";
 import SourceBox from "../primitives/SourceBox.jsx";
 import CollapsedGroup from "../primitives/CollapsedGroup.jsx";
 
-//        label        — the toggle's copy. v3.95 (owner call on a live Simple screenshot):
-//                       in Simple this block IS the whole explanation, so it is labelled for
-//                       what a reader is looking for ("why this posture") rather than for the
-//                       method ("5 whys · today"); Power keeps the method label, where the
-//                       group above it already says "the reasoning".
+//        label        — the toggle's copy. The same accountability label is used in Simple
+//                       and Power; only the nesting altitude differs.
 //        persistKey   — remember the open state per device, so a reader who wants the chain
 //                       does not re-open it every visit (WHYS_KEY below; both call sites
 //                       share ONE key — the same block, two altitudes, one preference).
 export const WHYS_KEY="md:exp:whys:v1";
 
-const FiveWhys=({fw,derivedLabel,mode,asOf,label="5 whys · today — narrative & provenance",persistKey=WHYS_KEY})=>{
+const FiveWhys=({fw,derivedLabel,mode,asOf,label="why this call · 5 checks",persistKey=WHYS_KEY})=>{
   // Property 9 (null-safe): nothing computed yet means nothing to narrate — an empty,
   // hidden region, never a throw and never a fabricated narrative.
   if(!fw||!Array.isArray(fw.whys))return <div aria-hidden="true"/>;
@@ -44,13 +41,10 @@ const FiveWhys=({fw,derivedLabel,mode,asOf,label="5 whys · today — narrative 
       <CollapsedGroup count={5} label={label} chip={false} persistKey={persistKey}>
         <div style={{fontFamily:T.fontMono,fontSize:9,color:T.amber,marginBottom:2}}>{fw.regime}</div>
         <div style={{fontFamily:T.fontSans,fontSize:12,color:T.textSecondary,lineHeight:1.6,fontStyle:"italic"}}>"{fw.headline}"</div>
-        {/* v3.98.2 (owner call): WHY #5 is the summary a reader actually takes away, so the
-            LAST why renders at full weight (primary color, heavier border) while the
-            evidence whys above it stay secondary — emphasis, not reordering; the chain and
-            every honesty literal are byte-identical. */}
+        {/* The final check is the actionable flip condition, so it carries the strongest weight. */}
         {fw.whys.map((w,i)=>{const last=i===fw.whys.length-1;return(
           <div key={i} style={{borderLeft:`${last?3:2}px solid ${T.amber}${last?"":"44"}`,paddingLeft:8,marginTop:8}}>
-            <div style={{fontFamily:T.fontMono,fontSize:8,color:T.amber}}>WHY #{i+1}</div>
+            <div style={{fontFamily:T.fontMono,fontSize:8,color:T.amber}}>{fw.labels?.[i]||`WHY #${i+1}`}</div>
             <div style={{fontFamily:T.fontSans,fontSize:11,color:last?T.textPrimary:T.textSecondary,fontWeight:last?600:400,lineHeight:1.5}}>{w}</div>
           </div>
         );})}

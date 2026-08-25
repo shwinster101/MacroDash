@@ -26,6 +26,8 @@ const bandOf=(k)=>REGIME_BAND_TABLE.find((b)=>b.key===k);
 const MacroStrip=({d,modeOf,fomcLabel,fomcDays,votingFields,badge})=>{
   if(!d||typeof modeOf!=="function")return <div aria-hidden="true"/>;
   const vf=votingFields||new Set();
+  const fedLo=d.macro.fedFunds.targetLower, fedHi=d.macro.fedFunds.targetUpper;
+  const fedTargetLive=Number.isFinite(fedLo)&&Number.isFinite(fedHi)&&["LIVE","CACHED"].includes(modeOf("fedTargetUpper"));
   return(
     <div style={{background:T.surfaceHigh,borderBottom:`1px solid ${T.border}`,padding:"6px 20px",overflowX:"auto",display:"flex",alignItems:"center",justifyContent:"space-between",gap:12}} className="macro-strip">
       <div style={{display:"flex",gap:20,minWidth:"max-content",flex:1}} className="macro-strip-inner">
@@ -35,7 +37,10 @@ const MacroStrip=({d,modeOf,fomcLabel,fomcDays,votingFields,badge})=>{
           {l:"VIX",  f:"vix", v:`${d.marketPulse.vix.current}`,     s:fmt.pct(d.marketPulse.vix.weekChg)+" WoW", sc:pctColor(d.marketPulse.vix.weekChg,true), t:"Volatility index — the market's fear gauge (lower = calmer)"},
           {l:"F&G",  f:"fearGreed", v:`${d.marketPulse.fearGreed.score}`, s:d.marketPulse.fearGreed.label, voteKey:"fearGreed", t:"Fear & Greed — market sentiment, 0 = fear, 100 = greed"},
           {l:"10Y",  f:"tenYear", v:`${d.crossAsset.treasury10y.current}%`, s:fmt.bps(d.crossAsset.treasury10y.d1)+" 1D", sc:pctColor(-d.crossAsset.treasury10y.d1), t:"10-year Treasury yield — the benchmark interest rate"},
-          {l:"FED",  f:"fedFunds", v:`${d.macro.fedFunds.rate}%`,        s:`FOMC ${fomcLabel}`, sc:fomcDays===0?T.amber:T.textMuted, t:"Fed funds rate — the central bank's policy rate"},
+          {l:"FED",  f:fedTargetLive?"fedTargetUpper":"fedFunds",
+           v:fedTargetLive?`${fedLo.toFixed(2)}–${fedHi.toFixed(2)}%`:`${d.macro.fedFunds.rate}% avg`,
+           s:`FOMC ${fomcLabel}`, sc:fomcDays===0?T.amber:T.textMuted,
+           t:fedTargetLive?"Federal Reserve target range — current policy setting":"FEDFUNDS monthly effective average — lags a policy decision"},
           {l:"CPI",  f:"cpiHeadline", v:`${d.macro.cpi.headline}%`,         s:`Core ${d.macro.cpi.core}%`, voteKey:"cpiHeadline", t:"Consumer Price Index — inflation, year-over-year"},
         ].map(({l,f,v,s,sc,voteKey,t})=>{
           const m=modeOf(f); const live=m==="LIVE"||m==="CACHED";

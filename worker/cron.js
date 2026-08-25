@@ -35,8 +35,8 @@ const HISTORY_PREFIX = "public:regime-history:v1:";
 export const SERIES = {
   tenYear:      { series: "DGS10",        kind: "latest", displayClass: "public",   source: "FRED DGS10" },
   fedFunds:     { series: "FEDFUNDS",     kind: "latest", displayClass: "public",   source: "FRED FEDFUNDS" },
-  cpiHeadline:  { series: "CPIAUCSL",     kind: "yoy",    displayClass: "citation", source: "FRED CPIAUCSL" },
-  cpiCore:      { series: "CPILFESL",     kind: "yoy",    displayClass: "citation", source: "FRED CPILFESL" },
+  cpiHeadline:  { series: "CPIAUCNS",     kind: "yoy",    displayClass: "citation", source: "FRED CPIAUCNS" },
+  cpiCore:      { series: "CPILFENS",     kind: "yoy",    displayClass: "citation", source: "FRED CPILFENS" },
   unemployment: { series: "UNRATE",       kind: "latest", displayClass: "public",   source: "FRED UNRATE" },
   lfpr:         { series: "CIVPART",      kind: "latest", displayClass: "public",   source: "FRED CIVPART" },
   mortgage30:   { series: "MORTGAGE30US", kind: "latest", displayClass: "public",   source: "FRED MORTGAGE30US" },
@@ -208,7 +208,10 @@ async function refreshSnapshot(env) {
         const body = await res.json().catch(() => null);
         await recordWarm(env, "refresh-10amET", true, res.status,
           body ? { published: body.published, improved: body.improved, message: body.message } : null);
-        return;
+        // Only freeze the candidate directly when it actually became the published snapshot.
+        // A rejected (worse) candidate is diagnostic; history must fall back to the retained call.
+        return { ok: true, readout: body?.readout || null,
+          call: body?.published ? (body?.readout?.call || null) : null };
       }
       console.error(`snapshot refresh: POST ${SNAPSHOT_REFRESH_URL} got HTTP ${res.status} — check REFRESH_TOKEN on both deploys / Access scope; falling back to non-destructive warm`);
     } else {
@@ -219,9 +222,11 @@ async function refreshSnapshot(env) {
     const res = await fetch(SNAPSHOT_URL, { headers: { "user-agent": "macrodash-snapshot-refresher" } });
     if (!res.ok) console.error(`snapshot refresh fallback: GET got HTTP ${res.status} — the cron is blocked at the edge (check Cloudflare Access app scope / WAF rules)`);
     await recordWarm(env, "refresh-10amET", res.ok, res.status, { fallback: "get-warm" });
+    return { ok: res.ok, readout: null, call: null, fallback: true };
   } catch (e) {
     console.error("snapshot refresh failed:", (e && e.message) || e);
     await recordWarm(env, "refresh-10amET", false, 0);
+    return { ok: false, readout: null, call: null };
   }
 }
 
@@ -229,7 +234,7 @@ async function refreshSnapshot(env) {
 // produced by Pages from the canonical public engine; the Worker only notarizes that public
 // projection. A failed capture is also a row — missing days must not disappear from the
 // scoreboard merely because the system had a bad morning.
-export async function captureDailyCall(env, fetchImpl = fetch, now = new Date()) {
+export async function captureDailyCall(env, fetchImpl = fetch, now = new Date(), refreshedCall = null) {
   const date = now.toLocaleDateString("en-CA", { timeZone: "America/New_York" });
   const key = `${HISTORY_PREFIX}${date}`;
   try {
@@ -237,15 +242,21 @@ export async function captureDailyCall(env, fetchImpl = fetch, now = new Date())
   } catch { /* continue; the write below will report any persistent KV fault */ }
 
   const capturedAt = now.toISOString();
-  let call = null;
+  let call = refreshedCall?.schema === "md-call-v1" ? refreshedCall : null;
   let failure = null;
   try {
-    const res = await fetchImpl(READOUT_URL, { headers: { "user-agent": "macrodash-history-capture" } });
-    if (!res.ok) failure = `readout HTTP ${res.status}`;
-    else {
-      const body = await res.json();
-      if (body?.call?.schema === "md-call-v1") call = body.call;
-      else failure = "canonical call missing from readout";
+    // The refresh response is the authoritative candidate. Do not immediately reread KV:
+    // Workers KV is eventually consistent, so that fetch could capture the pre-refresh call.
+    if (call) {
+      failure = null;
+    } else {
+      const res = await fetchImpl(READOUT_URL, { headers: { "user-agent": "macrodash-history-capture" } });
+      if (!res.ok) failure = `readout HTTP ${res.status}`;
+      else {
+        const body = await res.json();
+        if (body?.call?.schema === "md-call-v1") call = body.call;
+        else failure = "canonical call missing from readout";
+      }
     }
   } catch (_e) {
     failure = "readout unavailable";
@@ -276,7 +287,7 @@ async function warmSnapshot(env) {
   try {
     const etDate = new Date().toLocaleDateString("en-CA", { timeZone: "America/New_York" });
     // SYNC HAZARD: keep this key version in step with functions/api/snapshot.js.
-    const existing = await env.PULSE_CACHE.get(`pulse:snapshot:v15:${etDate}`);
+    const existing = await env.PULSE_CACHE.get(`pulse:snapshot:v16:${etDate}`);
     if (existing) return; // already warm — nothing to do
     const res = await fetch(SNAPSHOT_URL, { headers: { "user-agent": "macrodash-snapshot-prewarm" } });
     if (!res.ok) console.error(`snapshot pre-warm got HTTP ${res.status} from ${SNAPSHOT_URL} — the cron is blocked at the edge (check Cloudflare Access app scope / WAF rules); first visitor pays the cold fetch`);
@@ -299,8 +310,8 @@ export default {
     // 10am ET weekday: force-refresh the /api/snapshot per-day cache (see SNAPSHOT_WARM_CRON note).
     if (controller.cron === SNAPSHOT_WARM_CRON) {
       ctx.waitUntil((async()=>{
-        await refreshSnapshot(env);
-        const captured = await captureDailyCall(env);
+        const refreshed = await refreshSnapshot(env);
+        const captured = await captureDailyCall(env, fetch, new Date(), refreshed?.call || null);
         if (!captured.written && captured.reason !== "already captured")
           console.error("history capture failed:", captured.reason);
       })());

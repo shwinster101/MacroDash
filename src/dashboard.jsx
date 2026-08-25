@@ -592,16 +592,12 @@ export default function Dashboard({ publicView = false } = {}) {
   const sq=SIGNAL_FIELDS.reduce((a,k)=>{const m=modeOf(k);if(m==="LIVE"){a.fresh++;a.live++;}else if(m==="CACHED"){a.fresh++;a.cached++;}else if(m==="STALE")a.stale++;else a.mock++;return a;},{fresh:0,live:0,cached:0,stale:0,mock:0});
   sq.total=SIGNAL_FIELDS.length;
   const asOfOf=(k)=>{const s=dataAsOf?.[k]; if(!s)return undefined; const dt=parseObsDate(s); return !dt||isNaN(dt.getTime())?s:`as of ${dt.toLocaleDateString("en-US",{month:"short",day:"numeric"})}`;}; // FEAT-R2: "as of Jun 4" (parses ISO + legacy M/D/YYYY)
-  // 5 Whys: recomputed every render ($0, no LLM). Override the session frame with the LIVE
+  // Why-this-call: recomputed every render ($0, no LLM). Override the session frame with the LIVE
   // ET session (not the value frozen in the daily snapshot) so the narrative advances
   // pre-open → midday → post-close through the day. sessionTick re-renders it on a timer.
-  // WHY #2 must only assert LIVE+fresh data: build the `fresh` set from modeOf (LIVE/CACHED,
-  // not STALE/MOCK). In mock/demo mode pass null so the demo still shows every signal.
-  // v3.54: WHY #1's core anchor (SPY/CPI/Fed) is now freshness-gated too, so those three
-  // fields MUST be in the set the `fresh` Set is built from — otherwise isLive() would read
-  // false for them in live mode and the anchor would drop inputs that are perfectly fresh.
-  const FW_FIELDS=["vix","fearGreed","tenYear","wti","btc","creditSpread","marketHeadline",
-                   "spyPrice","cpiHeadline","fedFunds"];
+  // The six factor rows already carry their own mode/date/exclusion. Only headline context
+  // needs a separate freshness bit; it never votes and is withheld when not current.
+  const FW_FIELDS=["marketHeadline"];
   const anyLive=mode==="LIVE"||mode==="CACHED";
   // FEAT-322: live-first view only applies when the app is actually live. In mock/demo mode
   // EVERYTHING is MOCK by design (mock IS the baseline — same convention as fresh:null in
@@ -616,7 +612,10 @@ export default function Dashboard({ publicView = false } = {}) {
      clause freshness-gates out and the anchor states itself as 0/3 usable. A demo build
      still passes null — mock IS its baseline (the demoted()/anyLive doctrine, unchanged). */
   const freshSet=liveBuild ? new Set(FW_FIELDS.filter(k=>{const m=modeOf(k);return m==="LIVE"||m==="CACHED";})) : null;
-  const fw=computeFiveWhys({...d, session:etSession()}, regimeView, { stale:staleFactors, fresh:freshSet });
+  const fw=computeFiveWhys({...d, session:etSession()}, regimeView, {
+    call:dailyCall, factors:evidenceSet.factors, flips:evidenceSet.flips?.flips,
+    snapshotAsOf:asOf, headlineFresh:freshSet===null||freshSet.has("marketHeadline")
+  });
   /* B2 (v3.59): "derived from live data" was a STATIC string — it kept asserting liveness
      across cached, degraded, error and demo states. One derivation, both footers. */
   const derivedLabel=mode==="LIVE"?"derived from live data"
@@ -925,7 +924,7 @@ export default function Dashboard({ publicView = false } = {}) {
         withheld={evidenceSet.withheld}/>}
 
       {simple&&<FiveWhys fw={fw} derivedLabel={derivedLabel} mode={modeOf('spyPrice')} asOf={asOfOf('spyPrice')}
-        label="why this posture — 5 whys"/>}
+        label="why this call · 5 checks"/>}
 
       {/* ── v3.94 DRIVERS-ONLY: the REASONING group — 5 whys + what-changed under ONE
           toggle (2 clicks to any why, inside the owner's 2-3 budget). The label carries the

@@ -161,7 +161,7 @@ export async function onRequest(context) {
   const etDate = new Date().toLocaleDateString("en-CA", { timeZone: "America/New_York" }); // YYYY-MM-DD
   // SYNC HAZARD: this key version is duplicated in worker/cron.js (refreshSnapshot) and
   // functions/readout.json.js — no shared module spans them. Grep "pulse:snapshot:v" on every bump.
-  const cacheKey = `pulse:snapshot:v15:${etDate}`; // v15: real 5-session VIX WoW (was mislabeled 1-day)
+  const cacheKey = `pulse:snapshot:v16:${etDate}`; // v16: official NSA headline/core CPI series
 
   // ── 1. KV Cache check ─────────────────────────────────────────────────
   try {
@@ -465,8 +465,11 @@ async function fetchFred(key, statuses = null) {
        (21 now = the tail batch grows by 2; the VIX/DGS10 critical head is untouched). */
     fedTargetUpper: "DFEDTARU",
     fedTargetLower: "DFEDTARL",
-    cpiHeadline:  "CPIAUCSL",   // CPI index  → YoY % below
-    cpiCore:      "CPILFESL",   // core CPI index → YoY %
+    // Official BLS headline/core 12-month CPI is reported from the NOT-seasonally-adjusted
+    // indexes. The old CPIAUCSL/CPILFESL calculation was real, but could differ by a tenth
+    // from the number BLS calls headline CPI (July 2026: 3.5 derived SA vs 3.4 official NSA).
+    cpiHeadline:  "CPIAUCNS",   // CPI-U all items, NSA index → official YoY below
+    cpiCore:      "CPILFENS",   // CPI-U less food/energy, NSA index → official YoY
     pceHeadline:  "PCEPI",      // PCE index  → YoY %  (Fed's preferred gauge)
     pceCore:      "PCEPILFE",   // core PCE index → YoY %
     unemployment: "UNRATE",
