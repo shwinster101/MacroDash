@@ -6,7 +6,8 @@ import { NFCI_TIGHT, NFCI_LOOSE, REGIME_BAND_TABLE, REGIME_QUORUM, verdictFrom, 
 import { buildEvidenceSet, simpleVerdict, simpleCards, simpleSentence, simpleFlipLine, factorExclusions, fieldMode, FACTOR_FIELD } from "./evidence.js"; // C1 (v3.60): the typed contract
 import { LASTVALID_KEY, summarizeEvidence, compareEvidence } from "./whatChanged.js"; // C4 (v3.60)
 import { isStale, cadenceOf, parseObsDate, isMarketHoliday, nextFomcDate, etYmd } from "./sources.js"; // FEAT-R3: per-tile, cadence-aware staleness + shared market calendar; v3.99: curated FOMC calendar
-import { computeMacroFlip, buildTtReadout, formatTtPaste } from "./ttReadout.js"; // FEAT-331/332: Macro Flip + TT paste
+import { computeMacroFlip } from "./ttReadout.js"; // FEAT-331: Macro Flip circuit
+import { callFromEvidence, formatMacroCallPaste } from "./macroCall.js"; // v4.0 canonical daily call
 import { fmt, pctColor } from "./format.js"; // task 1.3/3.1: one shared copy
 import RegimeBand, { WITHHELD_LABEL, WEN_MOON_STATES } from "./sections/RegimeBand.jsx"; // task 1.3: the verdict band + its vocabulary
 import FiveWhys from "./sections/FiveWhys.jsx"; // task 1.4: presentation only — computeFiveWhys stays here
@@ -339,6 +340,17 @@ const MacroFlipBanner=({flip})=>{
   );
 };
 
+const PanicOverrideBanner=({call})=>(
+  <div style={{background:DT["regime-off-bg"],borderBottom:`1px solid ${T.red}55`,padding:"7px 20px",display:"flex",alignItems:"center",gap:10,flexWrap:"wrap"}}>
+    <span style={{fontFamily:T.fontMono,fontSize:11,fontWeight:700,color:T.red,letterSpacing:"0.04em"}}>
+      ⛔ PANIC OVERRIDE · {call.headline} {call.emoji} / {call.direction}
+    </span>
+    <span style={{fontFamily:T.fontMono,fontSize:9,color:T.textSecondary}}>
+      Crash circuit confirmed — new risk adds are suspended until the stress signal clears.
+    </span>
+  </div>
+);
+
 // ─── FEAT-169 · REGIME VERDICT BAND ──────────────────────────────────────
 // Extracted VERBATIM to src/sections/RegimeBand.jsx (UI-OVERHAUL task 1.3).
 
@@ -438,7 +450,7 @@ export default function Dashboard({ publicView = false } = {}) {
   const setViewMode=(m)=>{setViewModeRaw(m);try{localStorage.setItem("md:view:v1",m);}catch(_e){/* private mode */}};
   const simple=viewMode==="simple";
   const [copied,setCopied]=useState(false);
-  const [ttCopied,setTtCopied]=useState(false); // FEAT-332: "Copy TT readout" button state
+  const [ttCopied,setTtCopied]=useState(false); // v4.0: canonical daily-call copy state
   // Re-render every 10 min so the live 5-Whys session frame advances (pre-open→midday→
   // post-close) in an already-open tab without a manual reload. Pure clock tick, $0.
   const [,setSessionTick]=useState(0);
@@ -518,6 +530,22 @@ export default function Dashboard({ publicView = false } = {}) {
   const simpleC=simpleCards(evidenceSet);
   const simpleS=simpleSentence(evidenceSet);
   const simpleF=simpleFlipLine(evidenceSet);
+  // v5.3: one canonical public call. The six-factor EvidenceSet owns direction; the existing
+  // Macro Flip/PANIC circuits are safety overrides, never a second directional opinion.
+  const flipValue=(key,value)=>{const m=modeOf(key);return m==="LIVE"||m==="CACHED"?value:null;};
+  const flipState=computeMacroFlip({
+    vix:flipValue("vix",d.marketPulse.vix.current),
+    spyPrice:flipValue("spyPrice",d.marketPulse.spy.price),
+    spyMa200:flipValue("spyMa200",d.marketPulse.spy.ma200),
+  });
+  const panicInputsLive=["vix","fearGreed"].every(k=>{const m=modeOf(k);return m==="LIVE"||m==="CACHED";});
+  const panic=flipState.tripped===true||(panicInputsLive&&d.marketPulse.vix.current>25&&d.marketPulse.fearGreed.score<20);
+  const dailyCall=callFromEvidence(evidenceSet,{
+    macroFlip:flipState,
+    panic,
+    effectiveDate:etYmd(),
+  });
+  const flip=flipState.evaluable?flipState:null;
   /* ENGINE0-CONT §8: a REAL refresh, distinct from the network-error retry. The operator
      view first asks the server to REBUILD the active snapshot (POST /api/snapshot/refresh —
      authorized by the terminal's same-origin PIN session cookie when one exists; a 401/404
@@ -541,7 +569,9 @@ export default function Dashboard({ publicView = false } = {}) {
      label — the verdict band, the 5 Whys narration — reads this view, so the literal
      verdict INSUFFICIENT never reaches a reader (it reads as a system dead end; DATA HOLD
      is the deterministic wait posture the continuity plan specifies). */
-  const regimeView=regime.insufficient?{...regime,label:WITHHELD_LABEL}:regime;
+  const regimeView={...regime,
+    label:dailyCall.headline||WITHHELD_LABEL,
+    sub:dailyCall.direction||dailyCall.status};
   /* Public audit, "Confidence": Signal Quality counted TILES (13 live / 1 stale / 1 mock) and
      never answered the only question that matters about the verdict above it — is the REGIME
      safe to trust? A posture computed from 3 of 6 voters is a different claim from the same
@@ -614,11 +644,6 @@ export default function Dashboard({ publicView = false } = {}) {
   },[mode,asOf]);
   const alertBlind=alerts.filter(a=>a.active&&alertEval[a.id].state==="blind").length;
 
-  // FEAT-331: Macro Flip circuit. Render ONLY from live+fresh inputs (v3.1 honesty invariant —
-  // a fabricated circuit state is worse than none). Mock/demo/stale => flip stays null => no banner.
-  const flipLive=["spyPrice","spyMa200","vix"].every(k=>{const m=modeOf(k);return m==="LIVE"||m==="CACHED";});
-  const flip=flipLive?computeMacroFlip({vix:d.marketPulse.vix.current,spyPrice:d.marketPulse.spy.price,spyMa200:d.marketPulse.spy.ma200}):null;
-
   // FEAT-165: Share button.
   // Wave 16 (Req 7.9): the ✓ COPIED claim is CONFIRMED, never optimistic — the old handler
   // set it before the write settled, so a denied clipboard permission still flashed a green
@@ -632,23 +657,10 @@ export default function Dashboard({ publicView = false } = {}) {
      .catch(()=>{setCopied(false);});
   };
 
-  // FEAT-332: Copy TT readout — format the §1.2 paste block from LIVE/CACHED fields only, so a
-  // stale/mock field prints n/a rather than a fabricated number in an order-gating block.
+  // v4.0: copy the exact canonical call the hero and 5-Whys render. Factor provenance and
+  // dates already live in md-call-v1, so the clipboard can never recompute a second opinion.
   const handleTtCopy=()=>{
-    const flat={};
-    // Project the live tiles back to flat snapshot field names + their AsOf dates.
-    const put=(k,v,asOf)=>{const m=modeOf(k);if(m==="LIVE"||m==="CACHED"){flat[k]=v;if(dataAsOf?.[k])flat[k+"AsOf"]=dataAsOf[k];if(asOf!==undefined)flat[k]=asOf;}};
-    put("spyPrice",d.marketPulse.spy.price); put("spyMa200",d.marketPulse.spy.ma200); put("spyChangePct",d.marketPulse.spy.changePct);
-    put("vix",d.marketPulse.vix.current); put("vixWeekChg",d.marketPulse.vix.weekChg);
-    put("fearGreed",d.marketPulse.fearGreed.score); put("fearGreedLabel",d.marketPulse.fearGreed.label);
-    put("qqqChangePct",d.marketPulse.qqq.changePct);
-    put("tenYear",d.crossAsset.treasury10y.current); put("tenYearM1",d.crossAsset.treasury10y.m1);
-    put("rateOddsHold",d.macro.fedFunds.odds.hold); put("rateOddsCut",d.macro.fedFunds.odds.cut); put("rateOddsHike",d.macro.fedFunds.odds.hike);
-    put("nextFomcDate",d.macro.fedFunds.nextFOMC); put("fomcDays",d.macro.fedFunds.daysUntil);
-    // qqqChangePct/tenYearM1/etc. share AsOf with their tile's primary field where applicable.
-    if(flat.qqqChangePct!==undefined&&dataAsOf?.qqqPrice)flat.qqqPriceAsOf=dataAsOf.qqqPrice;
-    if(flat.rateOddsHold!==undefined&&dataAsOf?.rateOddsHold)flat.rateOddsHoldAsOf=dataAsOf.rateOddsHold;
-    const block=formatTtPaste(buildTtReadout(flat,{}),{generatedEt:d.lastRefresh});
+    const block=formatMacroCallPaste(dailyCall);
     // Wave 16 (Req 7.9): same confirmed-not-optimistic rule as handleShare — this block gates
     // real orders, so a false "✓ TT COPIED" over an empty clipboard is strictly worse here.
     const p=navigator.clipboard?.writeText(block);
@@ -706,8 +718,8 @@ export default function Dashboard({ publicView = false } = {}) {
       <div aria-live="polite" role="status" className="visually-hidden">
         {mode==="LOADING"?"Loading live data; posture withheld."
           :mode==="ERROR"?"Live service unavailable; posture withheld."
-          :regime.insufficient?`Data hold: only ${regime.counted} of ${regime.totalFactors} factors usable; posture withheld.`
-          :`Backdrop ${regime.label}: ${regime.counted} of ${regime.totalFactors} factors usable.`}
+          :!dailyCall.headline?`Data hold: only ${dailyCall.counts.usable} of ${dailyCall.counts.total} factors usable; posture withheld.`
+          :`MacroDash ${dailyCall.headline}, ${dailyCall.direction}: ${dailyCall.counts.usable} of ${dailyCall.counts.total} factors usable.`}
       </div>
       <style>{`
         @import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;700&family=DM+Sans:wght@400;500;600&family=Syne:wght@700;800&display=swap');
@@ -852,13 +864,11 @@ export default function Dashboard({ publicView = false } = {}) {
                 ⋯ OPS
               </summary>
               <div style={{position:"absolute",right:0,top:"calc(100% + 4px)",display:"flex",flexDirection:"column",gap:6,background:T.surface,border:`1px solid ${T.borderAccent}`,borderRadius:5,padding:8,zIndex:60,minWidth:150,boxShadow:"0 6px 18px #00000055"}}>
-                {/* FEAT-332: Copy TT readout — disabled unless live (an order-gating paste block
-                    must not ship mock numbers; a disabled button can't be trimmed the way a
-                    warning header can). */}
-                <button onClick={handleTtCopy} disabled={!anyLive} aria-label="Copy TT regime readout" className="hdr-act"
-                  title={anyLive?"Copy the TT regime readout paste block":"live data required"}
+                {/* v4.0: the clipboard exports the same canonical call as the hero/API. */}
+                <button onClick={handleTtCopy} disabled={!anyLive} aria-label="Copy MacroDash daily call" className="hdr-act"
+                  title={anyLive?"Copy the canonical MacroDash daily call":"live data required"}
                   style={{fontFamily:T.fontMono,fontSize:9,background:ttCopied?"#1a3020":T.surfaceHigh,border:`1px solid ${ttCopied?T.green:T.borderAccent}`,color:ttCopied?T.green:T.textSecondary,padding:"7px 12px",borderRadius:4,cursor:anyLive?"pointer":"not-allowed",opacity:anyLive?1:0.4,textAlign:"left"}}>
-                  {ttCopied?"✓ TT COPIED":"⎘ TT readout"}
+                  {ttCopied?"✓ CALL COPIED":"⎘ DAILY CALL"}
                 </button>
                 {/* TERMINAL left this menu in v3.98.3 — it is a first-class bar button now.
                     Keeping a second copy here would be two doors to one room. */}
@@ -868,8 +878,10 @@ export default function Dashboard({ publicView = false } = {}) {
         </div>
       </header>
 
-      {/* FEAT-331: Macro Flip circuit — above the hero when armed/tripped (live data only) */}
-      {flip&&(flip.tripped||flip.armed)&&<MacroFlipBanner flip={flip}/>}
+      {/* v4.0: a confirmed PANIC override owns this slot; otherwise show the armed circuit. */}
+      {dailyCall.override.active
+        ? <PanicOverrideBanner call={dailyCall}/>
+        : flip&&(flip.tripped||flip.armed)&&<MacroFlipBanner flip={flip}/>}
 
       {/* C2 (v3.60): section navigation — the page had one hidden h1 and no way to jump.
           Real <nav> landmark; each link targets the section's h2. Sticky in the header's place. */}
@@ -889,7 +901,8 @@ export default function Dashboard({ publicView = false } = {}) {
       <RegimeBand d={d} stale={staleFactors} loading={mode==="LOADING"} liveBuild={liveBuild} srcLabel={derivedLabel}
         sentence={simple?simpleS:(!evidenceSet.withheld&&evidenceSet.summary?evidenceSet.summary.sentence:null)}
         plainVerdict={simple?simpleV:null} conf={regimeConf}
-        factorRows={evidenceSet.factors} regimeIn={evidenceSet.regime} flipsIn={evidenceSet.flips}/>
+        factorRows={evidenceSet.factors} regimeIn={evidenceSet.regime} flipsIn={evidenceSet.flips}
+        call={dailyCall}/>
 
       {/* FEAT-WHY (v3.62) sentence now renders INSIDE the hero (v3.94 DRIVERS-ONLY — one
           render site beside the verdict it explains). postureSummary stays computed and
@@ -934,6 +947,10 @@ export default function Dashboard({ publicView = false } = {}) {
           larger, contradictory confidence number. The hero's "N of 6 voters counted · dark: X"
           is the scoped one, and it stays. Power keeps the full census. */}
       {!simple&&<SignalQuality sq={sq}/>}
+      <nav aria-label="MacroDash accountability" style={{display:"flex",gap:16,alignItems:"center",padding:"4px 20px",background:T.bg,borderBottom:`1px solid ${T.border}`,fontFamily:T.fontMono,fontSize:9}}>
+        <a href="/history" style={{color:T.amber,textDecoration:"none"}}>TRACK RECORD →</a>
+        <a href="/difference" style={{color:T.textMuted,textDecoration:"none"}}>WHY MACRODASH →</a>
+      </nav>
 
       {/* C4 WHAT CHANGED rides inside the reasoning group above (v3.94). */}
 
@@ -1069,6 +1086,7 @@ export default function Dashboard({ publicView = false } = {}) {
         {/* ── FOOTER ── */}
         <div style={{marginTop:12,display:"flex",justifyContent:"space-between",alignItems:"center",flexWrap:"wrap",gap:4}}>
           <div style={{fontFamily:T.fontMono,fontSize:8,color:T.textMuted}}>{`MacroDash v${__APP_VERSION__} · Data refreshed daily · end-of-day sources`}{publicView?" · public view — the operator view carries the curated watchlist and alert monitors":""}</div>
+          <div style={{display:"flex",gap:10,fontFamily:T.fontMono,fontSize:8}}><a href="/history" style={{color:T.textMuted}}>History</a><a href="/difference" style={{color:T.textMuted}}>Difference</a><a href="/readout.json" style={{color:T.textMuted}}>JSON</a></div>
           <div style={{fontFamily:T.fontMono,fontSize:8,color:T.textMuted}}>Not financial advice · Personal use</div>
           <div style={{fontFamily:T.fontMono,fontSize:8,color:T.textMuted}}>Live: FRED · CNN · Kalshi · OpenRouter · Finnhub · multpl · Curated: GPU $/hr · hyperscaler capex · token efficiency · Retired: CBOE Put/Call (free feed dead 2019 · v3.2) · Mag 10 fundamentals + SEC S-1 (v3.43) · Mag 10 quote strip (v3.51)</div>
         </div>

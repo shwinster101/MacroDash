@@ -46,6 +46,10 @@ import { etYmd } from "../src/sources.js";
 // hex values out of dashboard.jsx source text.
 import { DT, T as TOK_T } from "../src/design-tokens.js";
 import { fmt } from "../src/format.js"; // task 1.3: shared format helpers, tested by execution
+import { buildMacroCall, formatMacroCallPaste, CALL_SCHEMA } from "../src/macroCall.js";
+import { captureDailyCall } from "../worker/cron.js";
+import { onRequest as getHistory } from "../functions/history.json.js";
+import { onRequest as getReadout } from "../functions/readout.json.js";
 
 let pass = 0, fail = 0;
 const ok = (name, cond) => { if (cond) { pass++; console.log("  PASS  " + name); } else { fail++; console.log("  FAIL  " + name); } };
@@ -1072,7 +1076,8 @@ ok("publish: equal-quality OLDER candidate is refused and the newer stored snaps
   const stored = JSON.parse(kv._store.get("k"));
   return res.published === false && /worse/.test(res.reason) && stored.asOf === newer.asOf;
 })());
-ok("one-wiring-point intact: dashboard.jsx does not fetch readout.json", !dashSrc.includes("readout.json"));
+ok("one-wiring-point intact: dashboard.jsx may link JSON but never fetches readout.json",
+  !/fetch\(["']\/readout\.json/.test(dashSrc));
 
 // ---- 6. /api/tt validateBook — the TT book contract ---------------------
 // FEAT-TT-RUN: first behavioral coverage of functions/ in this suite. validateBook is
@@ -3418,7 +3423,7 @@ ok("a11y: verdict + confidence keep their LANDMARKS but are no longer block live
   !/aria-label="Macro backdrop verdict" aria-live/.test(bandSrc));
 ok("a11y B4: ONE concise visually-hidden status region announces state changes",
   /aria-live="polite" role="status" className="visually-hidden"/.test(dashSrc) &&
-  /Backdrop \$\{regime\.label\}: \$\{regime\.counted\} of \$\{regime\.totalFactors\} factors usable\./.test(dashSrc));
+  /MacroDash \$\{dailyCall\.headline\}, \$\{dailyCall\.direction\}: \$\{dailyCall\.counts\.usable\} of \$\{dailyCall\.counts\.total\} factors usable\./.test(dashSrc));
 ok("a11y B4: header actions carry 44px thumb targets at phone width",
   // v3.62: the TT and TERMINAL actions moved inside the ⋯ OPS disclosure, and the summary
   // itself became an action — so the count is 4 (share · OPS · TT · TERMINAL). The contract is
@@ -3562,7 +3567,7 @@ ok("quorum: the wiring point exposes build INTENT so a failed live fetch is not 
     return (src.match(/liveBuild/g) || []).length >= 4 && src.includes("loading: liveBuild"); })());
 // LOADING is not a verdict state.
 ok("quorum: LOADING withholds the posture outright rather than computing one from mock",
-  bandSrc.includes("const withheld=loading||regime.insufficient;") &&
+  bandSrc.includes('const withheld=loading||regime.insufficient||(call&&!call.headline);') &&
   dashSrc.includes('loading={mode==="LOADING"}'));
 ok("quorum: the withheld state gets its OWN moon voice, never a directional one defaulted",
   /CAN'T CALL IT/.test(bandSrc) && bandSrc.includes("withheld?WEN_MOON_STATES[3]"));
@@ -5370,7 +5375,7 @@ ok("band: the call site still passes the live wiring (+ v4.0: mode-swapped sente
   // exclusion cause) instead of re-deriving them — one derivation, two altitudes.
   // v4.0.3: the hero renders the CANONICAL regime and flips too — it no longer runs a second
   // derivation beside buildEvidenceSet's (drift risk at the freshness/loading/error edges).
-  /factorRows=\{evidenceSet\.factors\} regimeIn=\{evidenceSet\.regime\} flipsIn=\{evidenceSet\.flips\}\/>/.test(dashSrc) &&
+  /factorRows=\{evidenceSet\.factors\} regimeIn=\{evidenceSet\.regime\} flipsIn=\{evidenceSet\.flips\}\s*call=\{dailyCall\}\/>/.test(dashSrc) &&
   /const regime=regimeIn\|\|computeRegime\(d,stale\)/.test(bandSrc) &&
   /const fc=flipsIn\|\|flipConditions\(d,stale\)/.test(bandSrc) &&
   /<RegimeBand d=\{d\} stale=\{staleFactors\} loading=\{mode==="LOADING"\} liveBuild=\{liveBuild\} srcLabel=\{derivedLabel\}/.test(dashSrc));
@@ -8517,9 +8522,9 @@ console.log("\n[67] v4.0 SIMPLE MODE — verdict mapping, card selection, senten
   const { REGIME_BAND_TABLE: BT } = await import("../src/regime.js");
 
   // whyItMatters: one home per band, and it must NOT restate the direction (plainBull/Bear own that).
-  ok("v4.0: Simple renders ONE verdict — the engine label is suppressed beside the scoped one",
-    /\$\{plainVerdict\?"":`\$\{regime\.label\} · `\}/.test(bandSrc) &&
-    /plainVerdict\?regime\.sub:`\$\{WITHHELD_LABEL\} · \$\{regime\.sub\}`/.test(bandSrc));
+  ok("v5.3: Simple renders ONE primary human call with one secondary machine direction",
+    /\{callLabel\}<\/span>/.test(bandSrc) &&
+    /:`\$\{machineLabel\} · \$\{conf/.test(bandSrc));
   ok("v4.0: the Simple eyebrow follows its verdict — no 'wen moon?' over a MACRO: line",
     /plainVerdict\?"Macro Backdrop · the call":"Macro Backdrop · wen moon\?"/.test(bandSrc));
   ok("v4.0: every band carries a whyItMatters line — new copy, one home, beside the rule it explains",
@@ -8691,10 +8696,11 @@ console.log("\n[67] v4.0 SIMPLE MODE — verdict mapping, card selection, senten
   ok("v4.0 boundary: the projections import no threshold and re-derive no vote",
     (() => { const seg = evidenceSrc.slice(evidenceSrc.indexOf("SIMPLE MODE PROJECTIONS"));
       return !/NFCI_TIGHT|NFCI_LOOSE|computeRegime\(|flipConditions\(|\.vote\(/.test(seg); })());
-  ok("v4.0 boundary: the verdict is PROP-GATED — Power passes null and keeps the moon voice",
+  ok("v5.3 boundary: the canonical call owns both modes; Simple scope cannot rename it",
     /plainVerdict=\{simple\?simpleV:null\}/.test(dashSrc) &&
-    /plainVerdict\?`MACRO: \$\{plainVerdict\.label\}`:moon\.label/.test(bandSrc) &&
-    /plainVerdict=null/.test(bandSrc));
+    /call=\{dailyCall\}/.test(dashSrc) &&
+    /const callLabel=call&&call\.headline/.test(bandSrc) &&
+    /const machineLabel=call&&call\.direction/.test(bandSrc));
   ok("v4.0 boundary: the cards are Simple-only and the section is presentation-only",
     /\{simple&&<SimpleCards/.test(dashSrc) &&
     (() => { const code = spcSrc.replace(/\/\/[^\n]*|\/\*[\s\S]*?\*\//g, "");
@@ -9055,6 +9061,76 @@ console.log("\n[72] v5.0 W0 — quote batch: op-count collapse, merge-on-write, 
     ![qsrc, tsrc, asrc].some((x) => /QUOTE_PREFIX \+|CACHE_PREFIX \+/.test(x)));
   ok("W0: the ledger px stamp reads the batch ONCE per append and gates on freshEntry",
     /readQuoteBatch\(env\)/.test(tsrc) && /freshEntry\(qBatch\.quotes\[sym\]/.test(tsrc));
+}
+
+// ---- 73. v5.3 ONE CALL — identity + immutable live-forward accountability ------
+console.log("\n[73] v5.3 ONE CALL — canonical vocabulary, additive API, immutable history");
+{
+  const now = new Date("2026-08-24T16:00:00Z");
+  const D = "2026-08-24";
+  const live = (overrides = {}) => ({
+    tenYear: 4.1, tenYearM1: -0.2, tenYearAsOf: D,
+    vix: 15, vixAsOf: D,
+    fearGreed: 60, fearGreedAsOf: D,
+    cpiHeadline: 2.4, cpiTrend: [3.0, 2.8, 2.6, 2.4], cpiHeadlineAsOf: D,
+    shillerPe: 20, shillerPeAsOf: D,
+    nfci: -0.6, nfciAsOf: D,
+    spyPrice: 700, spyMa200: 650, spyPriceAsOf: D,
+    ...overrides,
+  });
+  const bull = buildMacroCall(live(), { now, effectiveDate: D });
+  ok("one-call: public engine maps to MOONING / BULLISH with HIGH evidence", bull.schema === CALL_SCHEMA &&
+    bull.headline === "MOONING" && bull.direction === "BULLISH" && bull.confidence === "HIGH" && bull.actionability === "FULL");
+  const mixed = buildMacroCall(live({ tenYearM1: 0, vix: 20, fearGreed: 40, cpiTrend: [2.4,2.4], shillerPe: 27, nfci: -0.2 }), { now, effectiveDate: D });
+  ok("one-call: mixed engine maps to HODL / NEUTRAL", mixed.headline === "HODL" && mixed.direction === "NEUTRAL");
+  const bear = buildMacroCall(live({ tenYearM1: 0.2, vix: 26, fearGreed: 20, cpiTrend: [2.0,2.6], shillerPe: 40, nfci: 0.1 }), { now, effectiveDate: D });
+  ok("one-call: risk-off engine maps to DIAMOND HANDS / BEARISH", bear.headline === "DIAMOND HANDS" && bear.direction === "BEARISH");
+  const blind = buildMacroCall(live({ spyMa200: undefined }), { now, effectiveDate: D });
+  ok("one-call: a blind crash circuit asymmetrically withholds bullishness", blind.base_direction === "BULLISH" &&
+    blind.direction === "NEUTRAL" && blind.headline === "HODL" && blind.actionability === "HOLD" && /BULLISH withheld/.test(blind.downgraded));
+  const panicCall = buildMacroCall(live({ spyPrice: 600, spyMa200: 650, vix: 26, fearGreed: 19 }), { now, effectiveDate: D });
+  ok("one-call: PANIC is a named override and forces the effective call bearish", panicCall.override.active &&
+    panicCall.override.type === "PANIC" && panicCall.direction === "BEARISH" && panicCall.actionability === "HOLD");
+  const thin = buildMacroCall(live({ vix: undefined, fearGreed: undefined, nfci: undefined }), { now, effectiveDate: D });
+  ok("one-call: below four usable factors publishes no directional claim", thin.published === false &&
+    thin.headline === null && thin.direction === null && thin.confidence === "LOW" && thin.status === "DATA HOLD");
+  const paste = formatMacroCallPaste(bull);
+  ok("one-call: clipboard leads with the identical human and machine vocabulary", /MOONING 🚀 · BULLISH/.test(paste) && /6\/6 factors usable/.test(paste));
+
+  const fakeKv = () => {
+    const m = new Map();
+    return {
+      _m:m,
+      async get(k, type){ const v=m.get(k); return type === "json" && v ? JSON.parse(v) : (v ?? null); },
+      async put(k,v){ m.set(k,v); },
+      async list({prefix,limit}){ return { keys:[...m.keys()].filter(k=>k.startsWith(prefix)).slice(0,limit).map(name=>({name})) }; },
+    };
+  };
+  const kv = fakeKv();
+  const fetchCall = async () => new Response(JSON.stringify({ call: bull }), { status: 200, headers:{"content-type":"application/json"} });
+  const first = await captureDailyCall({ PULSE_CACHE: kv }, fetchCall, now);
+  const second = await captureDailyCall({ PULSE_CACHE: kv }, async()=>{ throw new Error("must not fetch"); }, new Date("2026-08-24T18:00:00Z"));
+  ok("history: first 10am write wins and the same ET day is immutable", first.written === true && second.written === false && second.reason === "already captured" && kv._m.size === 1);
+  const histRes = await getHistory({ env:{ PULSE_CACHE:kv } });
+  const hist = await histRes.json();
+  ok("history: public endpoint returns the live-forward record and no private envelope", hist.schema === "md-history-v1" &&
+    hist.live_forward_only === true && hist.rows.length === 1 && hist.rows[0].call.headline === "MOONING" && !JSON.stringify(hist).includes("book"));
+  const failKv = fakeKv();
+  await captureDailyCall({ PULSE_CACHE: failKv }, async()=>new Response("no",{status:503}), now);
+  const failed = JSON.parse([...failKv._m.values()][0]);
+  ok("history: a capture failure is frozen too — bad mornings cannot vanish", failed.capture_status === "FAILED" && failed.call === null && /HTTP 503/.test(failed.failure));
+
+  const snapKv = fakeKv();
+  await snapKv.put(`pulse:snapshot:v15:${D}`, JSON.stringify({ live:live(), asOf:now.toISOString(), _diag:{} }));
+  const readoutRes = await getReadout({ request:new Request("https://macrodash.pages.dev/readout.json"), env:{PULSE_CACHE:snapKv} });
+  const readoutBody = await readoutRes.json();
+  ok("readout: md-call-v1 is additive while tt-v1 legacy regime remains present", readoutBody.schema === "tt-v1" &&
+    readoutBody.call.schema === "md-call-v1" && readoutBody.regime && readoutBody.compatibility.legacy.includes("tt-v1"));
+  const pagesSrc = readFileSync(new URL("../src/PublicPages.jsx", import.meta.url), "utf8");
+  const appSrc = readFileSync(new URL("../src/App.jsx", import.meta.url), "utf8");
+  ok("pages: history and difference stay one click away without adding a dashboard tile", /href="\/history"/.test(dashSrc) &&
+    /href="\/difference"/.test(dashSrc) && appSrc.includes("<HistoryPage />") && appSrc.includes("<DifferencePage />") &&
+    /will not compete on indicator count/.test(pagesSrc));
 }
 
 console.log(`\n=== SMOKE TEST: ${pass} passed, ${fail} failed ===`);

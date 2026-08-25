@@ -23,6 +23,8 @@ const SNAPSHOT_WARM_CRON = "0 14 * * 1-5"; // 10am America/New_York (EDT); EST -
 // while upstreams are quiet means humans essentially always hit a warm cache.
 const SNAPSHOT_PREWARM_CRON = "0 12 * * 1-5"; // 8am America/New_York (EDT); EST -> "0 13 * * 1-5"
 const SNAPSHOT_URL = "https://macrodash.pages.dev/api/snapshot";
+const READOUT_URL = "https://macrodash.pages.dev/readout.json?fresh=1";
+const HISTORY_PREFIX = "public:regime-history:v1:";
 
 // Metric map. `kind`: 'latest' = newest non-missing observation;
 // 'yoy' = year-over-year % computed from a monthly index series.
@@ -223,6 +225,50 @@ async function refreshSnapshot(env) {
   }
 }
 
+// v4.0 accountability: freeze the 10am ET call exactly once. The daily call itself is
+// produced by Pages from the canonical public engine; the Worker only notarizes that public
+// projection. A failed capture is also a row — missing days must not disappear from the
+// scoreboard merely because the system had a bad morning.
+export async function captureDailyCall(env, fetchImpl = fetch, now = new Date()) {
+  const date = now.toLocaleDateString("en-CA", { timeZone: "America/New_York" });
+  const key = `${HISTORY_PREFIX}${date}`;
+  try {
+    if (await env.PULSE_CACHE.get(key)) return { written: false, reason: "already captured", key };
+  } catch { /* continue; the write below will report any persistent KV fault */ }
+
+  const capturedAt = now.toISOString();
+  let call = null;
+  let failure = null;
+  try {
+    const res = await fetchImpl(READOUT_URL, { headers: { "user-agent": "macrodash-history-capture" } });
+    if (!res.ok) failure = `readout HTTP ${res.status}`;
+    else {
+      const body = await res.json();
+      if (body?.call?.schema === "md-call-v1") call = body.call;
+      else failure = "canonical call missing from readout";
+    }
+  } catch (_e) {
+    failure = "readout unavailable";
+  }
+
+  const record = {
+    schema: "md-history-record-v1",
+    date,
+    captured_at: capturedAt,
+    scheduled_for: "10:00 America/New_York",
+    capture_status: call ? "CAPTURED" : "FAILED",
+    call,
+    failure,
+    outcomes: null,
+  };
+  try {
+    await env.PULSE_CACHE.put(key, JSON.stringify(record));
+    return { written: true, key, record };
+  } catch {
+    return { written: false, reason: "KV write failed", key };
+  }
+}
+
 // Pre-open warm: populate the day's snapshot key if it isn't already there. Unlike
 // refreshSnapshot() this does NOT delete first — if a night owl already warmed the cache,
 // re-fetching would just burn upstream calls for the same data.
@@ -252,7 +298,12 @@ export default {
     }
     // 10am ET weekday: force-refresh the /api/snapshot per-day cache (see SNAPSHOT_WARM_CRON note).
     if (controller.cron === SNAPSHOT_WARM_CRON) {
-      ctx.waitUntil(refreshSnapshot(env));
+      ctx.waitUntil((async()=>{
+        await refreshSnapshot(env);
+        const captured = await captureDailyCall(env);
+        if (!captured.written && captured.reason !== "already captured")
+          console.error("history capture failed:", captured.reason);
+      })());
       return;
     }
     // Legacy stage-1 path: FRED macro -> KV pulse:macro:latest (dashboard now reads /api/snapshot).

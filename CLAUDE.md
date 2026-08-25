@@ -5,6 +5,22 @@ answers *"is it safe to be in the market?"* from live macro + market + sentiment
 data. Single-page React app on Cloudflare Pages, with live data assembled at the
 edge by Pages Functions and cached in KV.
 
+**v5.3.0 "One Call" is the product-identity and accountability release.** MacroDash has one
+canonical public daily call derived from the existing public six-factor backdrop engine
+(10Y direction · VIX · Fear & Greed · CPI trend · Shiller CAPE · NFCI). Its primary human
+vocabulary is **MOONING 🚀 / HODL 💎 / DIAMOND HANDS 🙌**; its secondary machine direction is
+**BULLISH / NEUTRAL / BEARISH**. `src/macroCall.js` is the pure projection shared by the hero,
+5 Whys, daily-call clipboard, and `/readout.json`'s additive `call` block (`md-call-v1`). The
+old `tt-v1` `regime` block remains unchanged for existing operator order-gating during the
+compatibility window; a stable contract is never silently repurposed. Public product identity
+consumes the new call. Macro Flip/PANIC is a separate safety
+override: panic forces the effective call bearish, and a blind circuit asymmetrically
+withholds a bullish call. `/history.json` + `/history` expose one immutable live-forward call
+captured by the existing 10am ET weekday cron (failures and data holds remain visible; there
+is no invented backfill). `/difference` states the product job and hierarchy in one page:
+six factors → evidence quality → market posture → explanation → actionability. **Product
+constraint: do not add homepage indicators or tiles merely to compete on indicator count.**
+
 **v3.3 "TT readout" adds a machine-readable regime API.** `/readout.json` (Pages Function
 `functions/readout.json.js`, CORS-open, `tt-v1` schema) derives an external trading-terminal
 readout from the same per-ET-day snapshot: six band checks → `TAILWIND|NEUTRAL|HEADWIND|PANIC`

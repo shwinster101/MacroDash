@@ -142,7 +142,7 @@ const browser = await chromium.launch({ executablePath: exe });
 // 320px result described the DEFAULT/OPERATOR header (with the TERMINAL link) while the file's
 // name implied the public route was covered. `route` is now explicit; scenarios name which
 // surface they prove.
-async function open({ live, status = 200, delayMs = 0, width = 1280, route = "/", power = true, picks = null }) {
+async function open({ live, status = 200, delayMs = 0, width = 1280, route = "/", power = true, picks = null, history = null }) {
   const page = await browser.newPage({ viewport: { width, height: 900 } });
   // v3.94 SIMPLE/POWER: SIMPLE is the product default; the legacy scenarios below assert the
   // full analytical view, so they seed the persisted Power preference the way a returning
@@ -163,11 +163,14 @@ async function open({ live, status = 200, delayMs = 0, width = 1280, route = "/"
   await page.route("**/api/picks*", (r) => picks
     ? r.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(picks) })
     : r.fulfill({ status: 500, body: "no picks feed" }));
+  await page.route("**/history.json*", (r) => history
+    ? r.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(history) })
+    : r.fulfill({ status: 500, body: "no history feed" }));
   await page.goto(`http://localhost:${PORT}${route}`, { waitUntil: "domcontentloaded" });
   return { page, errors };
 }
 const bandText = (page) => page.locator('[aria-label="Macro backdrop verdict"]').innerText();
-const POSTURES = /\b(RISK-ON|RISK-OFF|MIXED)\b/;
+const POSTURES = /\b(BULLISH|BEARISH|NEUTRAL)\b/;
 
 // ── 1. LOADING — the defect this suite exists for ───────────────────────────
 console.log("\n[public] LOADING — a posture must not be computed from the mock baseline");
@@ -363,8 +366,8 @@ console.log("\n[public] v3.94 — Simple default, the toggle, persistence, red f
   /* v4.0.3 — the tracked-signal census ("N fresh of M tracked") is POWER-ONLY now. It counts
      SOURCES fields, not the six macro voters, so in Simple it read as a second, larger,
      contradictory confidence number beside the scoped "N of 6 voters counted". */
-  ok("v4.0.3 simple: the Glance layer renders — scoped verdict, one sentence, cards, SCOPED confidence, key numbers",
-    /MACRO: (BULLISH|HODL|BEARISH|DATA HOLD)/.test(body) &&
+  ok("v5.3 simple: the Glance layer renders — human call, machine direction, sentence, cards, scoped confidence, key numbers",
+    /MOONING|HODL|DIAMOND HANDS|CAN'T CALL IT/.test(body) && POSTURES.test(body) &&
     /(supportive|working against|clear lean right now)/i.test(body) &&   // v4.0.1 named-factor copy
     /\d+ of \d+ voters counted/.test(body) && /SPY/.test(body));
   ok("v4.0.3 simple: the tracked-signal census is GONE from Simple — one confidence number, scoped",
@@ -372,9 +375,9 @@ console.log("\n[public] v3.94 — Simple default, the toggle, persistence, red f
   const bandTxt = await page.locator('[aria-label="Macro backdrop verdict"]').innerText();
   ok("v4.0 simple: EXACTLY ONE verdict — the engine label never renders beside the scoped one",
     (() => { const t = bandTxt; return !/RISK-ON|RISK-OFF|\bMIXED\b/.test(t); })());
-  ok("v4.0 simple: the verdict is SCOPED and the moon voice is gone from the Simple hero",
-    /MACRO: /.test(body) && !/MOONING|DIAMOND HANDS|CAN'T CALL IT/.test(
-      await page.locator('[aria-label="Macro backdrop verdict"]').innerText()));
+  ok("v5.3 simple: the moon voice is primary and the machine direction is secondary",
+    /MOONING|HODL|DIAMOND HANDS|CAN'T CALL IT/.test(bandTxt) &&
+    /BULLISH|NEUTRAL|BEARISH|DATA HOLD/.test(bandTxt) && !/MACRO: /.test(bandTxt));
   ok("v4.0 simple: the eyebrow is scoped too — no 'wen moon?' above a MACRO: verdict",
     /the call/i.test(await page.locator('[aria-label="Macro backdrop verdict"]').innerText()) &&
     !/wen moon/i.test(await page.locator('[aria-label="Macro backdrop verdict"]').innerText()));
@@ -517,7 +520,7 @@ console.log("\n[public] B1 — ERROR is not demo, and Retry actually retries");
   await page.waitForTimeout(1500);
   const body2 = await page.locator("body").innerText();
   ok("B1: Retry re-fetches and the posture appears once the service recovers",
-    /RISK-ON|RISK-OFF|MIXED/.test(body2) && !/⚠ ERROR/.test(body2));
+    POSTURES.test(body2) && /MOONING|HODL|DIAMOND HANDS/.test(body2) && !/⚠ ERROR/.test(body2));
   ok("B1: no page errors through the fail→retry→recover cycle", errors.length === 0);
   await page.close();
 }
@@ -748,8 +751,8 @@ console.log("\n[public] v4.0 — Simple verdicts, card selection, and what must 
   let { page, errors } = await open({ live: bear, width: 390, power: false });
   await page.waitForTimeout(1300);
   let body = await page.locator("body").innerText();
-  ok("v4.0 verdict: a bear tape reads MACRO: BEARISH, and risk factors lead the cards",
-    /MACRO: BEARISH/.test(body) && /HURTING/.test(body));
+  ok("v5.3 verdict: a bear tape reads DIAMOND HANDS / BEARISH, and risk factors lead the cards",
+    /DIAMOND HANDS 🙌/.test(body) && /BEARISH/.test(body) && /HURTING/.test(body));
   await page.close();
 
   // 2. BULLISH.
@@ -758,8 +761,8 @@ console.log("\n[public] v4.0 — Simple verdicts, card selection, and what must 
   ({ page, errors } = await open({ live: bull, width: 390, power: false }));
   await page.waitForTimeout(1300);
   body = await page.locator("body").innerText();
-  ok("v4.0 verdict: a bull tape reads MACRO: BULLISH with supporting factors leading",
-    /MACRO: BULLISH/.test(body) && /HELPING/.test(body) &&
+  ok("v5.3 verdict: a bull tape reads MOONING / BULLISH with supporting factors leading",
+    /MOONING 🚀/.test(body) && /BULLISH/.test(body) && /HELPING/.test(body) &&
     /supportive/i.test(body));   // v4.0.1: the sentence names factors, supportive-side leading
   await page.close();
 
@@ -768,8 +771,8 @@ console.log("\n[public] v4.0 — Simple verdicts, card selection, and what must 
   ({ page, errors } = await open({ live: DEGRADED, width: 390, power: false }));
   await page.waitForTimeout(1300);
   body = await page.locator("body").innerText();
-  ok("v4.0 verdict: below quorum reads MACRO: DATA HOLD, never a thin directional call",
-    /MACRO: DATA HOLD/.test(body) && !/MACRO: (BULLISH|BEARISH|HODL)/.test(body));
+  ok("v5.3 verdict: below quorum reads CAN'T CALL IT / DATA HOLD, never a thin directional call",
+    /CAN'T CALL IT 🌫️/.test(body) && /DATA HOLD/.test(body) && !/MOONING|DIAMOND HANDS/.test(body));
   ok("v4.0 withheld: no explanatory sentence, and the flip line states the evidence shortfall",
     /Call withheld until the required evidence is current and usable/.test(body) &&
     !/are supportive|is working against|clearly supportive|clear lean right now/i.test(body));
@@ -848,8 +851,8 @@ console.log("\n[public] A4 — the public/private boundary is ENFORCED, not comm
       return a.color === a.borderTopColor && a.color !== b.color &&
         a.borderTopColor !== b.borderTopColor && a.fontWeight === "700";
     }));
-  ok("operator route: the TT copy button renders (v3.61 gate leaves the operator view whole)",
-    await page.locator('button[aria-label="Copy TT regime readout"]').count() === 1);
+  ok("operator route: the canonical daily-call copy button renders",
+    await page.locator('button[aria-label="Copy MacroDash daily call"]').count() === 1);
   await page.close();
 }
 {
@@ -861,12 +864,12 @@ console.log("\n[public] A4 — the public/private boundary is ENFORCED, not comm
   ok("public route: TERMINAL link hidden", !/⌁ TERMINAL/.test(pub));
   ok("public route: the footer NAMES the omission (a cut takes its attribution with it)",
     /operator view carries the curated watchlist and alert monitors/.test(pub));
-  ok("public route: the verdict itself still publishes — the gate hides content, not judgment",
-    /RISK-ON|RISK-OFF|MIXED/.test(pub));
+  ok("public route: the canonical verdict still publishes — the gate hides content, not judgment",
+    /MOONING|HODL|DIAMOND HANDS/.test(pub) && /BULLISH|NEUTRAL|BEARISH/.test(pub));
   // FEAT-GLANCE (v3.61, newcomer audit #5): TT and the alert badges are operator tooling —
   // "⚡ 3 BLIND" reads as a system failure to a visitor who can't see the monitors it counts.
-  ok("public route: the TT copy button is gated out",
-    await page.locator('button[aria-label="Copy TT regime readout"]').count() === 0);
+  ok("public route: the daily-call copy button is gated out",
+    await page.locator('button[aria-label="Copy MacroDash daily call"]').count() === 0);
   ok("public route: no FIRED/BLIND alert badge leaks", !/⚡ \d+ (FIRED|BLIND)/.test(pub));
   await page.close();
 }
@@ -877,7 +880,7 @@ console.log("\n[public] A4 — the public/private boundary is ENFORCED, not comm
   // B4 (v3.59): the block regions stopped announcing; one concise status node does.
   ok("a11y: exactly one concise polite status region announces backdrop changes",
     await page.locator('[role="status"][aria-live="polite"]').count() === 1 &&
-    /Backdrop (RISK-ON|RISK-OFF|MIXED): \d of 6 factors usable\./.test(
+    /MacroDash (MOONING|HODL|DIAMOND HANDS), (BULLISH|NEUTRAL|BEARISH): \d of 6 factors usable\./.test(
       await page.locator('[role="status"][aria-live="polite"]').innerText()));
   ok("a11y: the verdict and confidence landmarks survive the live-region narrowing",
     await page.locator('[aria-label="Macro backdrop verdict"]').count() === 1 &&
@@ -1037,6 +1040,59 @@ console.log("\n[public] wave-17 fix — strip F&G color derives from the band vo
   });
   ok("fix control: a genuine greed reading (62, bull) still renders green — no over-correction",
     col === "rgb(46, 204, 113)");
+  await page.close();
+}
+
+// ── v4.0 One Call — the accountability surfaces are real routes ────────────
+console.log("\n[public] v4.0 — canonical call, history, and difference routes");
+{
+  const { page, errors } = await open({
+    live: FULL_LIVE,
+    width: 320,
+    route: "/history",
+    power: false,
+    history: {
+      schema: "md-history-v1",
+      live_forward_only: true,
+      available: true,
+      history_start: TODAY,
+      rows: [{
+        date: TODAY,
+        capture_status: "CAPTURED",
+        call: {
+          headline: "MOONING", emoji: "🚀", direction: "BULLISH",
+          confidence: "HIGH", actionability: "FULL",
+          counts: { usable: 6, total: 6 }, override: { active: false }, factors: [],
+        },
+      }],
+    },
+  });
+  await page.waitForTimeout(500);
+  const body = await page.locator("body").innerText();
+  ok("v4.0 history: direct route renders the frozen canonical call", /MOONING 🚀/.test(body) && /BULLISH/.test(body));
+  ok("v4.0 history: live-forward and immutable contract is visible", /live-forward record/i.test(body) && /immutable call/i.test(body));
+  ok("v4.0 history: no horizontal overflow at 320px", await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth + 1));
+  ok("v4.0 history: no page errors", errors.length === 0);
+  await page.close();
+}
+{
+  const { page, errors } = await open({ live: FULL_LIVE, route: "/difference", power: false, width: 320 });
+  await page.waitForTimeout(300);
+  const body = await page.locator("body").innerText();
+  ok("v4.0 difference: the positioning sentence renders", /Nowflation measures the inflation state\. MacroDash translates the entire macro state into risk posture\./.test(body));
+  ok("v4.0 difference: the five-step hierarchy renders", ["Six factors","Evidence quality","Market posture","Explanation","Actionability"].every(x => body.includes(x)));
+  ok("v4.0 difference: the indicator-count constraint is explicit", /will not compete on indicator count/i.test(body));
+  ok("v4.0 difference: no horizontal overflow at 320px", await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth + 1));
+  ok("v4.0 difference: no page errors", errors.length === 0);
+  await page.close();
+}
+{
+  const { page, errors } = await open({ live: { ...FULL_LIVE, vix: 30, fearGreed: 10, fearGreedLabel: "Extreme Fear" } });
+  await page.waitForTimeout(1300);
+  const body = await page.locator("body").innerText();
+  ok("v4.0 PANIC: the override owns the safety banner and effective call", /PANIC OVERRIDE · DIAMOND HANDS 🙌 \/ BEARISH/.test(body));
+  ok("v4.0 PANIC: no competing armed banner is shown", !/MACRO FLIP ARMED/.test(body));
+  ok("v4.0 PANIC: no page errors", errors.length === 0);
   await page.close();
 }
 

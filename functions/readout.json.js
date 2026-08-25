@@ -14,6 +14,7 @@
 // or (miss) subrequest /api/snapshot (which also write-through-warms KV). No new cron/infra.
 
 import { buildTtReadout } from "../src/ttReadout.js";
+import { buildMacroCall } from "../src/macroCall.js";
 
 export async function onRequest(context) {
   const { request, env } = context;
@@ -57,13 +58,27 @@ export async function onRequest(context) {
   // 3) buildTtReadout projects ONLY a named whitelist of fields, so KV's _diag can never leak.
   //    Empty/failed live still yields a stable shape — ENGINE0-CONT: the wait posture is
   //    NEUTRAL · LOW · HOLD · DATA DEGRADED, never the literal verdict INSUFFICIENT.
+  const generatedAt = new Date().toISOString();
   const readout = buildTtReadout(live || {}, { cached });
+  // v4.0: the public CPI/CAPE/NFCI engine is the canonical MacroDash call. The existing
+  // tt-v1 body remains byte-semantics-compatible for older Engine 0 consumers; `call` is
+  // additive, and all first-party public surfaces consume it.
+  const call = buildMacroCall(live || {}, {
+    cached,
+    effectiveDate: etDate,
+    generatedAt,
+  });
   const body = {
     schema: "tt-v1",
     as_of: asOf,
-    generated_at: new Date().toISOString(),
+    generated_at: generatedAt,
     cached,
     ...readout,
+    call,
+    compatibility: {
+      canonical: "call (md-call-v1)",
+      legacy: "regime (tt-v1 Engine 0; retained for existing operator consumers)",
+    },
   };
   // ENGINE0-CONT §6/§10: machine-consumable health — enough structured provenance for an
   // external terminal (or an LLM read tool) to EXPLAIN the state without fetching or

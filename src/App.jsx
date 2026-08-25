@@ -6,6 +6,7 @@
 // If yours is a NAMED export (e.g. `export function Dashboard()`),
 // change the import below to:  import { Dashboard } from './dashboard.jsx';
 import Dashboard from './dashboard.jsx';
+import { DifferencePage, HistoryPage } from './PublicPages.jsx';
 
 // ── Zone E public/private gate (DEC-04) ─────────────────────────────────────
 // publicView = true when the URL is opened as  ?view=public
@@ -22,5 +23,8 @@ const publicView =
   import.meta.env.VITE_PUBLIC_VIEW === 'true';
 
 export default function App() {
+  const path = window.location.pathname.replace(/\/+$/, '') || '/';
+  if (path === '/history') return <HistoryPage />;
+  if (path === '/difference') return <DifferencePage />;
   return <Dashboard publicView={publicView} />;
 }
