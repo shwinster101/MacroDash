@@ -1547,8 +1547,13 @@ ok("livepx: each pick shows whether it used a live or stamped price",
   adminSrc.includes(">live $") && adminSrc.includes(">stamped $"));
 ok("livepx: footer counts live vs stamped rather than implying all are current",
   adminSrc.includes("live / ") && adminSrc.includes("all prices are stamped marks, not live"));
-ok("livepx: quote fetch is non-blocking and failure leaves the board unchanged",
-  adminSrc.includes("loadBook().then(()=>{loadQuotes();loadPositions();loadAllocation();loadDeepDiveIndex();loadTickerV2();loadScoreIndex();});") && adminSrc.includes("never break the board on a quote feed"));
+// Re-pinned at v5.6.4: these two pinned the LITERAL `.then()` fan-out — the exact shape
+// that produced the live defect (the gate resumed only loadBook, so every secondary load
+// stayed 401'd-and-empty). The contract is BEHAVIORAL now: the book loads first, then all
+// six secondary loads, from ONE named list the PIN gate can re-enter.
+ok("livepx: quote fetch is non-blocking, runs in the resumable boot chain, and failure leaves the board unchanged",
+  adminSrc.includes("async function bootLoads(){ await loadBook(); await secondaryLoads(); }") &&
+  /async function secondaryLoads\(\)\{\s*await Promise\.all\(\[loadQuotes\(\),loadPositions\(\),loadAllocation\(\),loadDeepDiveIndex\(\),loadTickerV2\(\),loadScoreIndex\(\)\]\);/.test(adminSrc) && adminSrc.includes("never break the board on a quote feed"));
 
 // ---- 9. market calendar — holidays across the honesty stack ---------------
 // The time-judges (isStale, marketSession/etSession, looksBehind) share ONE
@@ -1862,9 +1867,28 @@ ok("pos: lives in its own store, not inside deepDive (a thesis paste must not wi
   !/deepDive\.pos|dd\.pos\b/.test(adminSrc));
 ok("pos: an absent position renders NOTHING — not a 0 or a dash that reads as not-held",
   adminSrc.includes("absent number; a dash or a 0 here would read"));
-ok("pos: fetched from its own endpoint at boot, alongside the book and quotes",
-  adminSrc.includes('const r=await fetch("/api/positions");') &&
-  adminSrc.includes("loadBook().then(()=>{loadQuotes();loadPositions();loadAllocation();loadDeepDiveIndex();loadTickerV2();loadScoreIndex();});"));
+ok("pos: fetched from its own endpoint in the boot chain, alongside the book and quotes",
+  adminSrc.includes('const r=await fetch("/api/positions");') && adminSrc.includes("async function bootLoads(){ await loadBook(); await secondaryLoads(); }") &&
+  /async function secondaryLoads\(\)\{\s*await Promise\.all\(\[loadQuotes\(\),loadPositions\(\),loadAllocation\(\),loadDeepDiveIndex\(\),loadTickerV2\(\),loadScoreIndex\(\)\]\);/.test(adminSrc));
+
+/* v5.6.4 — the boot chain must be RESUMABLE, and a failed read must never claim the store
+   is empty. Live defect 2026-08-26: after a session expiry the six secondary loads fired
+   before a session existed, each 401'd into its own silent catch, and the PIN gate resumed
+   only PIN_CB (loadBook) — so the board rendered 50 book names reading "no thesis payload
+   stored · TT —" against a server holding 39 payloads and 35 cards. */
+ok("v5.6.4 boot: the PIN gate resumes the WHOLE chain — both the default callback and loadBook's own 401 path point at bootLoads, never at loadBook alone",
+  adminSrc.includes("PIN_CB=cb||bootLoads;") &&
+  adminSrc.includes('showPinGate(bootLoads);') &&
+  !/showPinGate\(loadBook\)/.test(adminSrc) && !/PIN_CB=cb\|\|loadBook/.test(adminSrc));
+ok("v5.6.4 boot: a successful login ALWAYS retries the secondary loads, whatever the interrupted action was",
+  /const cb=PIN_CB;PIN_CB=null;if\(cb\)await cb\(\);[\s\S]{0,400}await secondaryLoads\(\);/.test(adminSrc));
+ok("v5.6.4 honesty: a FAILED payload-index fetch reads 'not read, not empty' — never 'no thesis payload stored'",
+  adminSrc.includes("let DD_FAILED=false;") &&
+  adminSrc.includes('else DD_FAILED=true;') &&
+  adminSrc.includes('(!dd&&DD_FAILED)?"payload index did not load — not read, not empty"') &&
+  adminSrc.includes('(!dd&&DD_FAILED)?"reload the terminal (⟲ RELOAD) — the store was never read"'));
+ok("v5.6.4 honesty: a null score index reads 'did not load' — never 'no server card — unscored' (a claim about a store nobody read)",
+  adminSrc.includes('SCORE_INDEX===null?"score index did not load — not read, not unscored (⟲ RELOAD)"'));
 ok("pos: a fetch failure leaves POSITIONS={} — every posOf() reads null, never stale data",
   adminSrc.includes("POSITIONS stays {} — posOf() reads null for everyone, never stale data"));
 ok("pos: measured marks age like everything else, undated being the worst",
@@ -5977,7 +6001,7 @@ console.log("\n[51] FEAT-TT-ALLREVIEWED — the reviewed-but-unpriced ranking");
   // The classifier is run with the real helpers behind the claims it makes (ptModelRows
   // presence, hinge reds, the horizon) and thin stand-ins where it makes none.
   const out = (() => {
-    const F = new Function("BOOK", "LIVE_PX", "hz", "DD", "TIER_ORDER", "RANKED",
+    const F = new Function("BOOK", "LIVE_PX", "hz", "DD", "TIER_ORDER", "RANKED", "DD_FAILED",
       "let UNRANKED_ROWS=[];" +
       "const ddOf=(x)=>DD[x.sym]||null;" +
       "const cardInfo=(sym)=>{const d=DD[sym];return (d&&d.card)||null;};" +
@@ -5989,7 +6013,9 @@ console.log("\n[51] FEAT-TT-ALLREVIEWED — the reviewed-but-unpriced ranking");
       "const candSyms=new Set(cands.map(x=>x.sym));" +
       "const rankedSyms=RANKED;" +
       seg + "\nreturn UNRANKED_ROWS;");
-    return F(BOOK1, {}, "2027", DD1, TO, new Set(["RANKED"]));
+    // v5.6.4: DD_FAILED is a real free variable of the classifier now — lifted BY VALUE
+    // (false = the index loaded and NOPAY genuinely has no payload), the LENS_MAX_PE rule.
+    return F(BOOK1, {}, "2027", DD1, TO, new Set(["RANKED"]), false);
   })();
   const bySym = Object.fromEntries(out.map((r) => [r.sym, r]));
   ok("allreviewed: an already-ranked name never appears in the tail (one name, one basis)",
@@ -6021,14 +6047,14 @@ console.log("\n[51] FEAT-TT-ALLREVIEWED — the reviewed-but-unpriced ranking");
      "lose its reds on the way)",
     (() => {
       const DD2 = { ...DD1, NOMODEL: { ...DD1.NOMODEL, hinges: [{ label: "funding", state: "red" }, { label: "x", state: "green" }] } };
-      const F = new Function("BOOK", "LIVE_PX", "hz", "DD", "TIER_ORDER", "RANKED",
+      const F = new Function("BOOK", "LIVE_PX", "hz", "DD", "TIER_ORDER", "RANKED", "DD_FAILED",
         "let UNRANKED_ROWS=[];const ddOf=(x)=>DD[x.sym]||null;" +
         "const cardInfo=(sym)=>{const d=DD[sym];return (d&&d.card)||null;};" +
         "const runState=(d)=>({k:d?'fresh':'never',days:null});const readiness=()=>({verdict:'x',blockers:[],cautions:[]});" +
         "const rankWeight=()=>({w:null,held:false,optOnly:false,mark:''});const ptModelRows=(dd)=>(dd&&dd.rows)||[];" +
         "const cands=BOOK.filter(x=>{const d=DD[x.sym];return d&&(d.rows||[]).length&&(d.ref_px&&d.ref_px.px>0);});" +
         "const candSyms=new Set(cands.map(x=>x.sym));const rankedSyms=RANKED;" + seg + "\nreturn UNRANKED_ROWS;");
-      const o = F(BOOK1, {}, "2027", DD2, TO, new Set(["RANKED"]));
+      const o = F(BOOK1, {}, "2027", DD2, TO, new Set(["RANKED"]), false);
       const n = o.find((r) => r.sym === "NOMODEL");
       return n.redH === 1 && n.redLabels.join() === "funding";
     })());

@@ -9,7 +9,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
 <!-- AUDIT: kept in sync with package.json by test/smoke.mjs. admin.html is a Vite
      public/ passthrough, so it cannot receive __APP_VERSION__ — the guard is the fix. -->
-<title>TT TICKER TERMINAL v5.6.3</title>
+<title>TT TICKER TERMINAL v5.6.4</title>
 <style>
   :root{
     --bg:#05070a; --panel:#0a0f16; --panel2:#0d141d; --line:#16202c;
@@ -458,7 +458,7 @@
          verdict and every gate are computed upstream and this panel changes nothing. -->
     <div id="macroEvidence" role="region" aria-label="Why macro — readout evidence"></div>
     <div id="headInfo" style="display:none">
-      <div class="brand">FINANCE&nbsp;BRO.AI // TT&nbsp;TICKER&nbsp;TERMINAL <small>v5.6.3 · the daily contract</small></div>
+      <div class="brand">FINANCE&nbsp;BRO.AI // TT&nbsp;TICKER&nbsp;TERMINAL <small>v5.6.4 · the daily contract</small></div>
       <div class="statusline">
         <span>BOOK: <b id="bookStamp">loading…</b></span>
         <span>AUTH: <b id="sessState">…</b></span>
@@ -847,7 +847,7 @@ async function loadBook(){
     if(data.empty){openImport();render();}
     else render();
   }catch(e){
-    if(e.pinRequired){document.getElementById("bookStamp").textContent="LOCKED — enter PIN";showPinGate(loadBook);return;}
+    if(e.pinRequired){document.getElementById("bookStamp").textContent="LOCKED — enter PIN";showPinGate(bootLoads);return;}
     document.getElementById("bookStamp").textContent="UNAVAILABLE — see banner";
     toast("Load failed: "+e.message);render();
   }
@@ -4332,6 +4332,9 @@ function allocChip(){
    payload for a pre-migration book. So every renderer keeps working through the migration
    with no per-call-site change, which is the same property posOf() gave the pos split. */
 let DD_INDEX_MAP={},DD_FULL={},DD_INFLIGHT=new Set(),DD_TRIED=new Set(),DD_PENDING=true;
+// v5.6.4: a FAILED index fetch must never render as "no thesis payload stored" — that is a
+// claim about the STORE made by code that could not read the store (the v3.54 class).
+let DD_FAILED=false;
 function ddOf(x){
   if(!x||!x.sym)return null;
   return DD_FULL[x.sym]||DD_INDEX_MAP[x.sym]||x.deepDive||null;
@@ -4519,8 +4522,9 @@ async function loadDeepDiveIndex(){
   try{
     const r=await fetch("/api/deepdive?index=1");
     if(r.ok){const d=await r.json();
-      DD_INDEX_MAP=(d&&typeof d.entries==="object"&&!Array.isArray(d.entries))?d.entries:{};}
-  }catch(_e){/* stays {} — ddOf falls back to any still-embedded payload, never stale data */}
+      DD_INDEX_MAP=(d&&typeof d.entries==="object"&&!Array.isArray(d.entries))?d.entries:{};DD_FAILED=false;}
+    else DD_FAILED=true;   // 401/5xx: the store was not read, so nothing may claim it is empty
+  }catch(_e){DD_FAILED=true;/* stays {} — ddOf falls back to any still-embedded payload, never stale data */}
   finally{DD_PENDING=false;render();}
 }
 async function loadDeepDiveSym(sym){
@@ -5115,12 +5119,14 @@ function renderUpsideRank(){
     const rr=dd?ptModelRows(dd).filter(r=>typeof r.prem==="number"||typeof r.fl==="number"):[];
     // The reason is the SPECIFIC missing input, in the order the ranking needs them, so it
     // names what to go and do — not a generic "unrankable".
-    const why=!dd?"no thesis payload stored"
+    const why=(!dd&&DD_FAILED)?"payload index did not load — not read, not empty"
+      :!dd?"no thesis payload stored"
       :!rr.length?"no pt_model target"
       :!hasPx?"no usable price (no live quote, no stamped ref_px)"
       :candSyms.has(x.sym)?`no ${hz?"year-end "+hz:"usable"} rung`
       :"model present but no rung resolved";
-    const fix=!dd?"add a deep-dive payload"
+    const fix=(!dd&&DD_FAILED)?"reload the terminal (⟲ RELOAD) — the store was never read"
+      :!dd?"add a deep-dive payload"
       :!rr.length?"add a pt_model"
       :!hasPx?"stamp a ref_px or wait for a quote"
       :"extend the estimate series, or set the horizon to auto";
@@ -5401,7 +5407,7 @@ function renderUpsideRank(){
            reads the SERVER CARD. Each non-eligible state gets ITS OWN retail-plain reason —
            "falsifiers pending" and "unscored" are different facts, and the veto text is
            what the owner reads. Mirrors whyNot() in functions/lib/tt-alloc.js exactly. */
-        if(!r.tt)return "no server card — unscored";
+        if(!r.tt)return SCORE_INDEX===null?"score index did not load — not read, not unscored (⟲ RELOAD)":"no server card — unscored";
         if(r.tt.status==="PROVISIONAL"){
           /* v5.0.1: names WHICH half of §6.4.1 is missing — "unwritten" and "committed,
              awaiting observations" are different owner actions. Mirrors whyNot() exactly. */
@@ -7299,7 +7305,7 @@ async function pinSetupSave(){
    login so unlocking resumes exactly where the 401 struck — never losing an edit. */
 let PIN_CB=null;
 function showPinGate(cb){
-  PIN_CB=cb||loadBook;
+  PIN_CB=cb||bootLoads;
   document.getElementById("pinErr").textContent="";
   document.getElementById("pinGate").classList.add("on");
   const inp=document.getElementById("pinInput");inp.value="";setTimeout(()=>inp.focus(),50);
@@ -7320,6 +7326,10 @@ async function pinSubmit(){
     if(data.failed_attempts_since_last_login>0)
       toast("⚠ "+data.failed_attempts_since_last_login+" failed PIN attempt"+(data.failed_attempts_since_last_login===1?"":"s")+" since your last login");
     const cb=PIN_CB;PIN_CB=null;if(cb)await cb();
+    /* v5.6.4: a fresh session means every load that failed FOR WANT OF ONE must be retried —
+       whatever the interrupted action was. Without this, a mid-edit login (PIN_CB=persist)
+       resumes the edit and leaves the board's data loads empty exactly as boot did. */
+    await secondaryLoads();
   }catch(e){err.textContent="Login failed: "+e.message;}
   finally{btn.disabled=false;}
 }
@@ -7454,7 +7464,18 @@ if(window.innerWidth<480)search.placeholder="ticker · HELP · TIER · ADD";
    v3.24: quotes chase the book (they need BOOK populated to know which symbols to ask
    for) and are equally non-blocking — the board renders on stamped marks first, then
    upgrades to live prices if and when they arrive. */
-loadBook().then(()=>{loadQuotes();loadPositions();loadAllocation();loadDeepDiveIndex();loadTickerV2();loadScoreIndex();});
+/* v5.6.4 — the boot chain is ONE named list, because the PIN gate has to be able to resume
+   ALL of it. The old form fanned these out from a `.then()` and the gate resumed only
+   PIN_CB (= loadBook): on any session expiry every secondary load fired BEFORE a session
+   existed, 401'd, was swallowed by its own catch, and was never retried — so the book
+   rendered while payloads, scores, positions, quotes and the receipt stayed permanently
+   empty until a manual reload. Measured live 2026-08-26: every name read "no thesis
+   payload stored · TT —" against a server holding 39 payloads and 35 cards. */
+async function secondaryLoads(){
+  await Promise.all([loadQuotes(),loadPositions(),loadAllocation(),loadDeepDiveIndex(),loadTickerV2(),loadScoreIndex()]);
+}
+async function bootLoads(){ await loadBook(); await secondaryLoads(); }
+bootLoads();
 loadRegime();
 </script>
 </body>

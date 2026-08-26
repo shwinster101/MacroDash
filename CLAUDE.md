@@ -2924,6 +2924,34 @@ Jan-anchor shipped; see `snapshot.js` ~318–328), `spyMa100`, `spyMa200`, and a
   VALUATION GAP ranking (§11.1 — the ranking always renders, which is the owner's actual
   "always an output" contract, and it was never suspended). Tests: 1223 smoke (+2) + 199
   render (+1).
+- **v5.6.4 — the boot chain becomes RESUMABLE, and a failed read stops claiming the store is
+  empty (owner screenshot, 2026-08-26 10:24 ET).** The board rendered 50 book names every one
+  of which read *"no thesis payload stored · TT —"*, with no next-dollar target, no scores and
+  no server receipt. Measured before touching anything: the server was **healthy** — book 50,
+  dd index **39 entries**, score index **35**, allocation receipt ALLOCATABLE. So the data was
+  there and the browser could not see it.
+  **The mechanism:** the boot chain was `loadBook().then(()=>{loadQuotes();loadPositions();
+  loadAllocation();loadDeepDiveIndex();loadTickerV2();loadScoreIndex();})` — a fan-out — while
+  the PIN gate resumes only `PIN_CB`, which `loadBook` sets to **itself**. On a session
+  expiry every secondary load fires BEFORE a session exists, 401s, is swallowed by its own
+  catch, and is **never retried**: entering the PIN reloads the book and nothing else, so the
+  board sits permanently half-loaded until a manual refresh. The chain is now ONE named list
+  (`bootLoads` = `loadBook` then `secondaryLoads`), both gate paths point at it, and a
+  successful login **always** re-runs `secondaryLoads()` whatever the interrupted action was —
+  so a mid-edit login (`PIN_CB=persist`) can no longer resume the edit onto an empty board.
+  **The honesty half, which is the worse defect:** *"no thesis payload stored"* is a claim
+  about the STORE, made by code that never read the store — the v3.54 class ("not counted" vs
+  "counted, no lean"), one layer over. A failed index now sets `DD_FAILED` and the row reads
+  **"payload index did not load — not read, not empty"** with *"⟲ RELOAD — the store was never
+  read"* as the fix; a null score index reads **"score index did not load — not read, not
+  unscored"** rather than *"no server card — unscored"*. Two false negatives that would have
+  sent the owner re-entering data that was already there.
+  Found while fixing: the two smoke pins guarding this chain pinned the **literal `.then()`
+  spelling** — the exact shape that caused the defect — so they would have passed through any
+  correct rewrite and failed on it; both are re-pinned on the behaviour. Two source lifts
+  needed `DD_FAILED` passed BY VALUE (the v3.47 `LENS_MAX_PE` lesson, third recurrence).
+  Tests: **2011 smoke** (+4) + 278 render, negative-controlled twice — reverting the gate to
+  `loadBook` and letting a failed index claim "not stored" each turn exactly their own pin.
 - **v5.6.3 — the gate vocabulary reaches the docs, and is RECONCILED so it cannot fork
   (owner review 2026-08-26).** The review's one code-adjacent finding, verified before
   fixing: `ticker-terminal/README.md:37` still read *"only explicit `FULL` passes"* — the
