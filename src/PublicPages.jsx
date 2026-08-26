@@ -27,6 +27,8 @@ function PageShell({ title, eyebrow, children }) {
 }
 
 const stateColor=(direction)=>direction==="BULLISH"?T.green:direction==="BEARISH"?T.red:direction==="NEUTRAL"?T.amber:T.textMuted;
+const outcomeColor=(value)=>typeof value!=="number"?T.textMuted:value>0?T.green:value<0?T.red:T.textSecondary;
+const outcomeText=(value)=>typeof value==="number"?`${value>0?"+":""}${value.toFixed(2)}%`:"PENDING";
 
 export function HistoryPage() {
   const [state,setState]=useState({loading:true,error:null,rows:[],start:null});
@@ -68,6 +70,20 @@ export function HistoryPage() {
               <summary style={{...mono,fontSize:10,color:T.textMuted,cursor:"pointer",minHeight:36,display:"flex",alignItems:"center"}}>Six-factor evidence</summary>
               <div style={{display:"grid",gap:5,paddingTop:5}}>{(c.factors||[]).map(f=><div key={f.key} style={{display:"grid",gridTemplateColumns:"minmax(100px,1fr) minmax(90px,auto)",gap:12,...mono,fontSize:9}}><span style={{color:T.textSecondary}}>{f.label}{f.as_of?` · ${f.as_of}`:""}</span><span style={{color:stateColor(f.state),textAlign:"right"}}>{f.state||"UNAVAILABLE"}</span></div>)}</div>
             </details>
+            <div aria-label={`Forward S&P 500 outcome for ${row.date}`} style={{marginTop:10,paddingTop:9,borderTop:`1px solid ${T.border}`}}>
+              <div style={{display:"flex",justifyContent:"space-between",gap:8,flexWrap:"wrap",alignItems:"baseline"}}>
+                <span style={{...mono,fontSize:9,fontWeight:700,color:T.textSecondary}}>S&amp;P 500 PRICE RETURN · SPY PROXY</span>
+                <span style={{...mono,fontSize:8,color:T.textMuted}}>{row.outcomes?`${row.outcomes.sessions_observed||0}/${row.outcomes.horizon_sessions||20} subsequent closes` : "awaiting first eligible close"}</span>
+              </div>
+              <div style={{display:"grid",gridTemplateColumns:"repeat(4,minmax(0,1fr))",gap:6,marginTop:6}}>
+                {[['1D',row.outcomes?.returns_pct?.['1d']],['5D',row.outcomes?.returns_pct?.['5d']],['20D',row.outcomes?.returns_pct?.['20d']],['MAX DD',row.outcomes?.max_drawdown_pct_20d]].map(([label,value])=><div key={label} style={{background:T.bg,border:`1px solid ${T.border}`,borderRadius:4,padding:"6px 7px",minWidth:0}}><div style={{...mono,fontSize:8,color:T.textMuted}}>{label}</div><div style={{...mono,fontSize:11,fontWeight:700,color:outcomeColor(value),marginTop:2,whiteSpace:"nowrap"}}>{outcomeText(value)}</div></div>)}
+              </div>
+              <div style={{...mono,fontSize:8,color:T.textMuted,marginTop:5,lineHeight:1.45}}>
+                {row.outcomes?.anchor
+                  ?`anchor ${row.outcomes.anchor.date} official close · max DD ${row.outcomes.max_drawdown_status==="FINAL"?"final at 20 sessions":"so far"}`
+                  :"Anchor is the first official close on or after the 10am call; empty outcomes are expected until it posts."}
+              </div>
+            </div>
           </>:<div style={{marginTop:8}}><strong style={{...mono,color:T.red}}>CAPTURE FAILED</strong><p style={{margin:"5px 0 0",color:T.textSecondary}}>{row.failure||"The scheduled call could not be recorded."}</p></div>}
         </li>;
       })}

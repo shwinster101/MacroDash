@@ -29,6 +29,7 @@ import { sahmFrom } from "../../src/sahm.js";
 // ENGINE0-CONT: the readout contract now lives in src/ttReadout.js and the snapshot layer
 // consumes it for publish decisions — THIRD functions/→src/ import, same esbuild-inline path.
 import { buildTtReadout, readoutQuality, compareQuality } from "../../src/ttReadout.js";
+import { historyKey, validFrozenCall } from "../../src/publicHistory.js";
 
 const CACHE_TTL = 48 * 60 * 60;   // 48h cleanup; the per-day cache KEY drives freshness
 const SETTLING_TTL = 60 * 60;     // short lock-in while the latest close looks not-yet-posted
@@ -142,6 +143,17 @@ export function quorum(live) {
            missing: QUORUM_FIELDS.filter((k) => !present.includes(k)) };
 }
 
+async function frozenPublicCall(env, etDate) {
+  try {
+    const record = await env.PULSE_CACHE?.get(historyKey(etDate), "json");
+    const call = validFrozenCall(record, etDate);
+    return call ? { publicCall: call, publicCallFrozen: true, publicCallCapturedAt: record.captured_at || null }
+      : { publicCall: null, publicCallFrozen: false, publicCallCapturedAt: null };
+  } catch {
+    return { publicCall: null, publicCallFrozen: false, publicCallCapturedAt: null };
+  }
+}
+
 export async function onRequest(context) {
   const { request, env } = context;
   const params = new URL(request.url).searchParams;
@@ -162,6 +174,7 @@ export async function onRequest(context) {
   // SYNC HAZARD: this key version is duplicated in worker/cron.js (refreshSnapshot) and
   // functions/readout.json.js — no shared module spans them. Grep "pulse:snapshot:v" on every bump.
   const cacheKey = `pulse:snapshot:v16:${etDate}`; // v16: official NSA headline/core CPI series
+  const callMeta = await frozenPublicCall(env, etDate);
 
   // ── 1. KV Cache check ─────────────────────────────────────────────────
   try {
@@ -184,7 +197,7 @@ export async function onRequest(context) {
           if (w) fresh._diag = { ...(fresh._diag || {}), cronLastWarm: w };
         } catch { /* diagnostic only */ }
       }
-      return json(publicize({ ...fresh, cached: true }));
+      return json(publicize({ ...fresh, ...callMeta, cached: true }));
     }
   } catch {
     // KV unavailable — skip cache, fetch fresh
@@ -212,7 +225,8 @@ export async function onRequest(context) {
   }
 
   // ── 4. Return (strip FMP/licensed fields if public view; _diag only on ?debug=1) ──
-  return json(publicize(isPublic ? { ...stripPrivate(snapshot), cached: false } : snapshot));
+  return json(publicize(isPublic ? { ...stripPrivate(snapshot), ...callMeta, cached: false }
+    : { ...snapshot, ...callMeta }));
 }
 
 // ─── ENGINE0-CONT: the candidate builder (shared by GET, POST /api/snapshot/refresh, cron) ──

@@ -51,7 +51,7 @@ export const WEN_MOON_STATES = [
 /* v5.3 ONE CALL: `call` owns the visible human headline and secondary machine direction.
    `plainVerdict` remains a Simple-mode scope signal for the eyebrow only; it can no longer
    introduce a competing public label. */
-const RegimeBand=({d,stale=new Set(),loading=false,liveBuild=false,srcLabel="derived from live data",sentence=null,conf=null,factorRows=null,plainVerdict=null,regimeIn=null,flipsIn=null,call=null})=>{
+const RegimeBand=({d,stale=new Set(),loading=false,liveBuild=false,srcLabel="derived from live data",sentence=null,conf=null,factorRows=null,plainVerdict=null,regimeIn=null,flipsIn=null,call=null,callFrozen=false,callCapturedAt=null,callDrift=null,onCopyCall=null,callCopied=false,copyDisabled=false})=>{
   const [open,setOpen]=useState(false);
   // Property 9 (null-safe): no data object means nothing to compute — an empty, hidden
   // region, never a throw. The orchestrator always passes `d`; this guards extraction reuse.
@@ -96,7 +96,7 @@ const RegimeBand=({d,stale=new Set(),loading=false,liveBuild=false,srcLabel="der
                 line is two vocabularies in 20px. Power keeps the voice (owner ruling); Simple
                 says what the block IS. */}
             <div style={{fontFamily:T.fontMono,fontSize:8,color:regime.color,letterSpacing:"0.14em",textTransform:"uppercase"}}>
-              {plainVerdict?"Macro Backdrop · the call":"Macro Backdrop · wen moon?"}
+              {callFrozen?"Macro Backdrop · 10am frozen call":plainVerdict?"Macro Backdrop · the call":"Macro Backdrop · wen moon?"}
             </div>
             <div style={{display:"flex",alignItems:"baseline",gap:10,flexWrap:"wrap"}}>
               <span style={{fontFamily:T.fontMono,fontSize:T.fsXl,fontWeight:700,color:regime.color,letterSpacing:"-0.01em"}}>{callLabel}</span>
@@ -126,6 +126,12 @@ const RegimeBand=({d,stale=new Set(),loading=false,liveBuild=false,srcLabel="der
               </span>}
             </div>
             {!withheld&&sentence&&<div style={{fontFamily:T.fontMono,fontSize:T.fsM,color:T.textPrimary,lineHeight:1.5,maxWidth:"72ch",marginTop:3}}>{sentence}</div>}
+            {callFrozen&&<div style={{fontFamily:T.fontMono,fontSize:8,color:T.textMuted,marginTop:3}}>
+              immutable public call · captured 10:00 ET{callCapturedAt?` · ${String(callCapturedAt).slice(0,10)}`:""}
+            </div>}
+            {callDrift&&<div style={{fontFamily:T.fontMono,fontSize:9,color:callDrift.direction==="BEARISH"?T.red:T.amber,marginTop:4,lineHeight:1.45}}>
+              Current evidence now reads {callDrift.headline}{callDrift.emoji?` ${callDrift.emoji}`:""} · {callDrift.direction}; the scored 10am call remains frozen above.
+            </div>}
             {/* v3.98.3 — one line, one scope word, one vocabulary. It used to read
                 "4/6 factors voting · excluded: 10Y · VIX" directly under a sentence saying
                 those same two were "dark", while the verdict sub above ALSO said "4 of 6
@@ -150,6 +156,11 @@ const RegimeBand=({d,stale=new Set(),loading=false,liveBuild=false,srcLabel="der
         </div>
         {/* Right: the ℹ toggle — the chips ride inside the panel now (v3.94: evidence, one click). */}
         <div style={{display:"flex",alignItems:"center",gap:8}}>
+          {onCopyCall&&<button onClick={onCopyCall} disabled={copyDisabled} aria-label="Copy MacroDash posture card"
+            title={copyDisabled?"live data required":callFrozen?"Copy the frozen 10am public call":"Copy the current MacroDash posture"}
+            style={{background:callCopied?"#1a3020":T.surfaceHigh,border:`1px solid ${callCopied?T.green:regime.color}66`,borderRadius:3,color:callCopied?T.green:regime.color,cursor:copyDisabled?"not-allowed":"pointer",padding:"4px 9px",minHeight:44,fontFamily:T.fontMono,fontSize:9,opacity:copyDisabled?0.45:1,whiteSpace:"nowrap"}}>
+            {callCopied?"✓ CALL COPIED":callFrozen?"⎘ COPY 10AM CALL":"⎘ COPY POSTURE"}
+          </button>}
           <button onClick={()=>setOpen(o=>!o)} aria-label="Show regime factors" aria-expanded={open}
             style={{background:"none",border:`1px solid ${regime.color}44`,borderRadius:3,color:regime.color,cursor:"pointer",padding:"4px 8px",minWidth:44,minHeight:44,fontFamily:T.fontMono,fontSize:11,flexShrink:0}}>
             {open?"▲":"ℹ"}

@@ -7,6 +7,11 @@
 // Secret:  npx wrangler secret put FRED_KEY
 // Crons defined in worker/wrangler.toml (UTC).
 
+import {
+  HISTORY_PREFIX, HISTORY_RECORD_SCHEMA, OUTCOME_SCHEMA,
+  buildForwardOutcome, historyKey, outcomeKey,
+} from "../src/publicHistory.js";
+
 const FRED_BASE = "https://api.stlouisfed.org/fred/series/observations";
 const KV_KEY = "pulse:macro:latest";
 const FETCH_TIMEOUT_MS = 8000;
@@ -24,7 +29,7 @@ const SNAPSHOT_WARM_CRON = "0 14 * * 1-5"; // 10am America/New_York (EDT); EST -
 const SNAPSHOT_PREWARM_CRON = "0 12 * * 1-5"; // 8am America/New_York (EDT); EST -> "0 13 * * 1-5"
 const SNAPSHOT_URL = "https://macrodash.pages.dev/api/snapshot";
 const READOUT_URL = "https://macrodash.pages.dev/readout.json?fresh=1";
-const HISTORY_PREFIX = "public:regime-history:v1:";
+const HISTORY_LIMIT = 400;
 
 // Metric map. `kind`: 'latest' = newest non-missing observation;
 // 'yoy' = year-over-year % computed from a monthly index series.
@@ -236,13 +241,14 @@ async function refreshSnapshot(env) {
 // scoreboard merely because the system had a bad morning.
 export async function captureDailyCall(env, fetchImpl = fetch, now = new Date(), refreshedCall = null) {
   const date = now.toLocaleDateString("en-CA", { timeZone: "America/New_York" });
-  const key = `${HISTORY_PREFIX}${date}`;
+  const key = historyKey(date);
   try {
     if (await env.PULSE_CACHE.get(key)) return { written: false, reason: "already captured", key };
   } catch { /* continue; the write below will report any persistent KV fault */ }
 
   const capturedAt = now.toISOString();
-  let call = refreshedCall?.schema === "md-call-v1" ? refreshedCall : null;
+  let call = refreshedCall?.schema === "md-call-v1" && refreshedCall.effective_date === date
+    ? refreshedCall : null;
   let failure = null;
   try {
     // The refresh response is the authoritative candidate. Do not immediately reread KV:
@@ -254,7 +260,7 @@ export async function captureDailyCall(env, fetchImpl = fetch, now = new Date(),
       if (!res.ok) failure = `readout HTTP ${res.status}`;
       else {
         const body = await res.json();
-        if (body?.call?.schema === "md-call-v1") call = body.call;
+        if (body?.call?.schema === "md-call-v1" && body.call.effective_date === date) call = body.call;
         else failure = "canonical call missing from readout";
       }
     }
@@ -263,7 +269,7 @@ export async function captureDailyCall(env, fetchImpl = fetch, now = new Date(),
   }
 
   const record = {
-    schema: "md-history-record-v1",
+    schema: HISTORY_RECORD_SCHEMA,
     date,
     captured_at: capturedAt,
     scheduled_for: "10:00 America/New_York",
@@ -278,6 +284,71 @@ export async function captureDailyCall(env, fetchImpl = fetch, now = new Date(),
   } catch {
     return { written: false, reason: "KV write failed", key };
   }
+}
+
+// v5.5 accountability: outcomes mature AFTER the immutable call, in their own KV record.
+// One FRED pull covers every still-open 1d/5d/20d window. Complete 20-session companions
+// are never rewritten; the scheduled call record above remains byte-untouched forever.
+async function fetchOutcomeSeries(apiKey, observationStart, fetchImpl = fetch) {
+  if (!apiKey) throw new Error("FRED_KEY missing for public outcomes");
+  const p = new URLSearchParams({
+    series_id: "SP500", api_key: apiKey, file_type: "json", sort_order: "asc",
+    observation_start: observationStart, limit: "1000",
+  });
+  const res = await fetchImpl(`${FRED_BASE}?${p.toString()}`, {
+    signal: typeof AbortSignal !== "undefined" && typeof AbortSignal.timeout === "function"
+      ? AbortSignal.timeout(FETCH_TIMEOUT_MS) : undefined,
+    headers: { "user-agent": "macrodash-public-outcome-ledger" },
+  });
+  if (!res.ok) throw new Error(`SP500 outcome HTTP ${res.status}`);
+  const body = await res.json();
+  if (!Array.isArray(body?.observations)) throw new Error("SP500 outcome bad shape");
+  return body.observations;
+}
+
+const outcomeMeaning = (o) => o ? JSON.stringify({
+  anchor: o.anchor, sessions_observed: o.sessions_observed, returns_pct: o.returns_pct,
+  max_drawdown_pct_20d: o.max_drawdown_pct_20d, status: o.status,
+}) : null;
+
+export async function enrichHistoryOutcomes(env, fetchImpl = fetch, now = new Date()) {
+  if (!env.PULSE_CACHE) return { ok: false, reason: "history store unavailable", updated: 0 };
+  let records = [];
+  try {
+    const listed = await env.PULSE_CACHE.list({ prefix: HISTORY_PREFIX, limit: HISTORY_LIMIT });
+    records = (await Promise.all((listed?.keys || []).map((k) => env.PULSE_CACHE.get(k.name, "json"))))
+      .filter((r) => r?.capture_status === "CAPTURED" && r?.call?.schema === "md-call-v1" && r?.date)
+      .sort((a, b) => String(a.date).localeCompare(String(b.date)));
+  } catch {
+    return { ok: false, reason: "history read failed", updated: 0 };
+  }
+  if (!records.length) return { ok: true, updated: 0, pending: 0 };
+
+  const open = [];
+  for (const record of records) {
+    let existing = null;
+    try { existing = await env.PULSE_CACHE.get(outcomeKey(record.date), "json"); } catch {}
+    const complete = existing?.schema === OUTCOME_SCHEMA && existing.call_date === record.date &&
+      existing.status === "COMPLETE";
+    if (!complete) open.push({ record, existing });
+  }
+  if (!open.length) return { ok: true, updated: 0, pending: 0 };
+
+  let observations;
+  try { observations = await fetchOutcomeSeries(env.FRED_KEY, open[0].record.date, fetchImpl); }
+  catch (e) { return { ok: false, reason: e?.message || "SP500 outcome unavailable", updated: 0, pending: open.length }; }
+
+  let updated = 0, pending = 0;
+  for (const item of open) {
+    const next = buildForwardOutcome(item.record, observations, now.toISOString());
+    if (next?.status !== "COMPLETE") pending++;
+    if (!next || outcomeMeaning(next) === outcomeMeaning(item.existing)) continue;
+    try {
+      await env.PULSE_CACHE.put(outcomeKey(item.record.date), JSON.stringify(next));
+      updated++;
+    } catch { /* one row must not prevent the other calls from maturing */ }
+  }
+  return { ok: true, updated, pending };
 }
 
 // Pre-open warm: populate the day's snapshot key if it isn't already there. Unlike
@@ -314,6 +385,8 @@ export default {
         const captured = await captureDailyCall(env, fetch, new Date(), refreshed?.call || null);
         if (!captured.written && captured.reason !== "already captured")
           console.error("history capture failed:", captured.reason);
+        const outcomes = await enrichHistoryOutcomes(env, fetch, new Date());
+        if (!outcomes.ok) console.error("history outcome enrichment failed:", outcomes.reason);
       })());
       return;
     }

@@ -29,6 +29,7 @@ const voteDirection = (vote) => vote === "bull" ? "BULLISH"
 
 const finite = (v) => typeof v === "number" && Number.isFinite(v);
 const series = (v) => Array.isArray(v) && v.length >= 2 && v.every(finite);
+const cleanDisplay = (v) => typeof v === "string" ? v.replace(/\s+—\s+(undefined|null)\b/g, "").trim() : v;
 
 // Minimal no-mock projection for the public engine. Missing values are placeholders only;
 // the provenance map below excludes them before REGIME_BAND_TABLE can read them.
@@ -139,7 +140,7 @@ export function callFromEvidence(evidence, {
     key: f.key,
     label: f.label,
     state: voteDirection(f.vote),
-    display: f.display,
+    display: cleanDisplay(f.display),
     mode: f.mode,
     as_of: f.asOf || null,
     excluded: !!f.excluded,
@@ -212,4 +213,18 @@ export function formatMacroCallPaste(call = {}) {
   }
   lines.push("Six-factor macro backdrop · end-of-day sources · not financial advice");
   return lines.join("\n");
+}
+
+// The friend-facing posture card is intentionally shorter than the operator paste above.
+// Both consume the SAME md-call-v1 object; this formatter does not recompute a vote.
+export function formatMacroShareCard(call = {}, { frozen = false } = {}) {
+  const label = call.headline ? `${call.headline}${call.emoji ? ` ${call.emoji}` : ""}` : "CAN'T CALL IT 🌫️";
+  const usable = call.counts?.usable ?? 0, total = call.counts?.total ?? 6;
+  return [
+    `MACRODASH ${frozen ? "10AM CALL" : "CURRENT POSTURE"} · ${call.effective_date || "undated"}`,
+    `${label} · ${call.direction || "DATA HOLD"}`,
+    `${call.confidence || "LOW"} confidence · ${usable}/${total} factors usable`,
+    "Track record: https://macrodash.pages.dev/history",
+    "End-of-day macro evidence · not financial advice",
+  ].join("\n");
 }

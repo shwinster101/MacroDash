@@ -40,6 +40,9 @@ export function useMarketData(mockData, opts = {}) {
     loading: liveBuild,
     liveBuild,
     lastError: null,
+    publicCall: null,
+    publicCallFrozen: false,
+    publicCallCapturedAt: null,
   });
 
   useEffect(() => {
@@ -64,7 +67,9 @@ export function useMarketData(mockData, opts = {}) {
           clearTimeout(timeoutTimer);
           if (cancelled) return;
           const merged = mergeLiveOverMock(mockData, payload, publicView);
-          setState({ data: merged.data, mode: merged.badge, asOf: merged.asOf, provenance: merged.provenance, dataAsOf: merged.dataAsOf, loading: false, liveBuild });
+          setState({ data: merged.data, mode: merged.badge, asOf: merged.asOf, provenance: merged.provenance, dataAsOf: merged.dataAsOf,
+            loading: false, liveBuild, publicCall: payload.publicCall || null,
+            publicCallFrozen: payload.publicCallFrozen === true, publicCallCapturedAt: payload.publicCallCapturedAt || null });
         })
         .catch((err) => {
           clearTimeout(timeoutTimer);
@@ -77,7 +82,7 @@ export function useMarketData(mockData, opts = {}) {
              failed" and offer Retry. MOCK now means exactly one thing: a demo build.
              This completes the liveBuild disambiguation v3.54 started. */
           setState({ data: mockData, mode: "ERROR", asOf: null, provenance: {}, dataAsOf: {}, loading: false, liveBuild,
-            lastError: (err && err.message) || String(err) });
+            lastError: (err && err.message) || String(err), publicCall: null, publicCallFrozen: false, publicCallCapturedAt: null });
           if (typeof console !== "undefined" && console.warn) {
             console.warn("[MacroDash] /api/snapshot fetch failed:", (err && err.message) || err);
           }

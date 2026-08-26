@@ -142,7 +142,8 @@ const browser = await chromium.launch({ executablePath: exe });
 // 320px result described the DEFAULT/OPERATOR header (with the TERMINAL link) while the file's
 // name implied the public route was covered. `route` is now explicit; scenarios name which
 // surface they prove.
-async function open({ live, status = 200, delayMs = 0, width = 1280, route = "/", power = true, picks = null, history = null }) {
+async function open({ live, status = 200, delayMs = 0, width = 1280, route = "/", power = true,
+  picks = null, history = null, publicCall = null, publicCallFrozen = false, publicCallCapturedAt = null }) {
   const page = await browser.newPage({ viewport: { width, height: 900 } });
   // v3.94 SIMPLE/POWER: SIMPLE is the product default; the legacy scenarios below assert the
   // full analytical view, so they seed the persisted Power preference the way a returning
@@ -156,7 +157,8 @@ async function open({ live, status = 200, delayMs = 0, width = 1280, route = "/"
     const st = typeof status === "function" ? status() : status;   // B1: flip-able stub
     if (st !== 200) return r.fulfill({ status: st, body: "upstream failure" });
     r.fulfill({ status: 200, contentType: "application/json",
-      body: JSON.stringify({ live, cached: false, asOf: new Date().toISOString() }) });
+      body: JSON.stringify({ live, cached: false, asOf: new Date().toISOString(),
+        publicCall, publicCallFrozen, publicCallCapturedAt }) });
   });
   // v3.97: /api/picks stub — pass a picks-v1 body to render the strip, omit (null) to
   // simulate the failed/absent feed (the strip must then render NOTHING, never example data).
@@ -861,9 +863,39 @@ console.log("\n[public] A4 — the public/private boundary is ENFORCED, not comm
     /MOONING|HODL|DIAMOND HANDS/.test(pub) && /BULLISH|NEUTRAL|BEARISH/.test(pub));
   // FEAT-GLANCE (v3.61, newcomer audit #5): TT and the alert badges are operator tooling —
   // "⚡ 3 BLIND" reads as a system failure to a visitor who can't see the monitors it counts.
-  ok("public route: the daily-call copy button is gated out",
+  ok("public route: the compact posture card sits by the hero while the operator paste stays gated",
+    await page.locator('button[aria-label="Copy MacroDash posture card"]').count() === 1 &&
     await page.locator('button[aria-label="Copy MacroDash daily call"]').count() === 0);
   ok("public route: no FIRED/BLIND alert badge leaks", !/⚡ \d+ (FIRED|BLIND)/.test(pub));
+  await page.close();
+}
+{
+  const frozenCall = {
+    schema:"md-call-v1", effective_date:TODAY, headline:"DIAMOND HANDS", emoji:"🙌",
+    direction:"BEARISH", confidence:"HIGH", actionability:"HOLD", status:"PUBLISHED",
+    counts:{usable:6,total:6,bull:0,bear:6,neutral:0}, factors:[], override:{active:false},
+  };
+  const { page, errors } = await open({ live:FULL_LIVE, route:"/?view=public", width:320,
+    publicCall:frozenCall, publicCallFrozen:true, publicCallCapturedAt:`${TODAY}T14:00:00.000Z` });
+  await page.waitForTimeout(1200);
+  const band = await bandText(page);
+  ok("v5.5 frozen hero: the scored 10am call wins while later evidence drift is named",
+    /10am frozen call/i.test(band) && /DIAMOND HANDS 🙌/.test(band) && /BEARISH/.test(band) &&
+    /Current evidence now reads MOONING 🚀 · BULLISH/.test(band));
+  await page.evaluate(() => {
+    window.__postureCopy = null;
+    navigator.clipboard.writeText = (value) => { window.__postureCopy = value; return Promise.resolve(); };
+  });
+  await page.locator('button[aria-label="Copy MacroDash posture card"]').click();
+  await page.waitForTimeout(150);
+  const copied = await page.evaluate(() => window.__postureCopy);
+  ok("v5.5 posture share: clipboard copies the frozen identity and public track-record link",
+    /^MACRODASH 10AM CALL/.test(copied || "") && /DIAMOND HANDS 🙌 · BEARISH/.test(copied || "") &&
+    !/MOONING/.test(copied || "") && /\/history/.test(copied || ""));
+  ok("v5.5 frozen hero: copy success is confirmed and 320px stays overflow-free",
+    /CALL COPIED/.test(await page.locator('button[aria-label="Copy MacroDash posture card"]').innerText()) &&
+    await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth + 1));
+  ok("v5.5 frozen hero: no page errors", errors.length === 0);
   await page.close();
 }
 {
@@ -1048,7 +1080,7 @@ console.log("\n[public] v4.0 — canonical call, history, and difference routes"
       schema: "md-history-v1",
       live_forward_only: true,
       available: true,
-      history_start: TODAY,
+      history_start: daysAgo(1),
       rows: [{
         date: TODAY,
         capture_status: "CAPTURED",
@@ -1057,6 +1089,21 @@ console.log("\n[public] v4.0 — canonical call, history, and difference routes"
           confidence: "HIGH", actionability: "FULL",
           counts: { usable: 6, total: 6 }, override: { active: false }, factors: [],
         },
+        outcomes: {
+          schema:"md-spy-outcome-v1", call_date:TODAY,
+          anchor:{date:TODAY,close:748.1}, sessions_observed:20, horizon_sessions:20,
+          returns_pct:{"1d":1.25,"5d":-2.5,"20d":4}, max_drawdown_pct_20d:-6.75,
+          max_drawdown_status:"FINAL", status:"COMPLETE",
+        },
+      },{
+        date: daysAgo(1),
+        capture_status: "CAPTURED",
+        call: {
+          headline: "HODL", emoji: "💎", direction: "NEUTRAL",
+          confidence: "MEDIUM", actionability: "HOLD",
+          counts: { usable: 5, total: 6 }, override: { active: false }, factors: [],
+        },
+        outcomes: null,
       }],
     },
   });
@@ -1064,6 +1111,11 @@ console.log("\n[public] v4.0 — canonical call, history, and difference routes"
   const body = await page.locator("body").innerText();
   ok("v4.0 history: direct route renders the frozen canonical call", /MOONING 🚀/.test(body) && /BULLISH/.test(body));
   ok("v4.0 history: live-forward and immutable contract is visible", /live-forward record/i.test(body) && /immutable call/i.test(body));
+  ok("v5.5 history: mature 1d/5d/20d and fixed-window max drawdown render beneath the call",
+    /\+1\.25%/.test(body) && /-2\.50%/.test(body) && /\+4\.00%/.test(body) && /-6\.75%/.test(body) &&
+    /max DD final at 20 sessions/i.test(body));
+  ok("v5.5 history: a not-yet-observed call renders pending fields without zeros",
+    /awaiting first eligible close/i.test(body) && (body.match(/PENDING/g) || []).length >= 4);
   ok("v4.0 history: no horizontal overflow at 320px", await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth + 1));
   ok("v4.0 history: no page errors", errors.length === 0);
   await page.close();

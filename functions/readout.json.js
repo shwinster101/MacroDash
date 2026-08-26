@@ -15,6 +15,7 @@
 
 import { buildTtReadout } from "../src/ttReadout.js";
 import { buildMacroCall } from "../src/macroCall.js";
+import { historyKey, validFrozenCall } from "../src/publicHistory.js";
 
 export async function onRequest(context) {
   const { request, env } = context;
@@ -63,11 +64,17 @@ export async function onRequest(context) {
   // v4.0: the public CPI/CAPE/NFCI engine is the canonical MacroDash call. The existing
   // tt-v1 body remains byte-semantics-compatible for older Engine 0 consumers; `call` is
   // additive, and all first-party public surfaces consume it.
-  const call = buildMacroCall(live || {}, {
+  const currentCall = buildMacroCall(live || {}, {
     cached,
     effectiveDate: etDate,
     generatedAt,
   });
+  let call = currentCall, callFrozen = false, callCapturedAt = null;
+  try {
+    const record = await env.PULSE_CACHE?.get(historyKey(etDate), "json");
+    const frozen = validFrozenCall(record, etDate);
+    if (frozen) { call = frozen; callFrozen = true; callCapturedAt = record.captured_at || null; }
+  } catch { /* before capture / KV fault: the current projection remains explicit below */ }
   const body = {
     schema: "tt-v1",
     as_of: asOf,
@@ -75,6 +82,8 @@ export async function onRequest(context) {
     cached,
     ...readout,
     call,
+    call_frozen: callFrozen,
+    call_captured_at: callCapturedAt,
     compatibility: {
       canonical: "call (md-call-v1)",
       legacy: "regime (tt-v1 Engine 0; retained for existing operator consumers)",

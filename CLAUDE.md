@@ -5,6 +5,19 @@ answers *"is it safe to be in the market?"* from live macro + market + sentiment
 data. Single-page React app on Cloudflare Pages, with live data assembled at the
 edge by Pages Functions and cached in KV.
 
+**v5.5.0 "Accountability + Daily Friction" scores the call instead of adding more data.**
+The scheduled Worker now maintains a separate `md-spy-outcome-v1` companion for every
+successfully frozen public call. The first official FRED `SP500` close on or after the 10am ET
+call is day zero; 1d/5d/20d are subsequent trading closes, and max drawdown runs through the
+fixed 20-session window (explicitly “so far” until complete). Outcome companions can mature,
+but the original `md-history-record-v1` call remains byte-immutable. `/history.json` joins the
+two records and `/history` renders pending or realized outcomes without invented zeros. After
+capture, `/api/snapshot`, `/readout.json`, the public hero, and clipboard share all use that
+same frozen call; later evidence may be named as drift but cannot rewrite the call being
+scored. A hero-adjacent **Copy posture** control emits a compact five-line text card with the
+public track-record link. The legacy TT `regime` remains current and unchanged during its
+compatibility window; no homepage tile, factor, series-count expansion, or TT redesign landed.
+
 **v5.4.0 "Why This Call" is the evidence-integrity repair.** The former 5 Whys was an
 unclear mixture of canonical voters, context-only gauges, one RSS item, and a curated risk
 register; it did not form a causal chain. The replacement is five explicit checks generated

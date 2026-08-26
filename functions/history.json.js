@@ -1,7 +1,8 @@
 // MacroDash v4.0 — public live-forward regime history.
 // Route: GET /history.json (CORS-open, read-only)
 
-const PREFIX = "public:regime-history:v1:";
+import { HISTORY_PREFIX, OUTCOME_SCHEMA, outcomeKey } from "../src/publicHistory.js";
+
 const MAX_ROWS = 400;
 
 export async function onRequest({ env }) {
@@ -9,9 +10,17 @@ export async function onRequest({ env }) {
   let available = true;
   try {
     if (!env.PULSE_CACHE) throw new Error("history store unavailable");
-    const listed = await env.PULSE_CACHE.list({ prefix: PREFIX, limit: MAX_ROWS });
+    const listed = await env.PULSE_CACHE.list({ prefix: HISTORY_PREFIX, limit: MAX_ROWS });
     const records = await Promise.all((listed?.keys || []).map((k) => env.PULSE_CACHE.get(k.name, "json")));
-    rows = records.filter((r) => r && r.date).sort((a, b) => String(b.date).localeCompare(String(a.date)));
+    rows = await Promise.all(records.filter((r) => r && r.date).map(async (record) => {
+      let outcome = null;
+      try {
+        const candidate = await env.PULSE_CACHE.get(outcomeKey(record.date), "json");
+        if (candidate?.schema === OUTCOME_SCHEMA && candidate.call_date === record.date) outcome = candidate;
+      } catch { /* a missing companion means pending, never a failed history feed */ }
+      return { ...record, outcomes: outcome || null };
+    }));
+    rows.sort((a, b) => String(b.date).localeCompare(String(a.date)));
   } catch (_e) {
     available = false;
   }
@@ -20,6 +29,7 @@ export async function onRequest({ env }) {
     schema: "md-history-v1",
     live_forward_only: true,
     history_start: historyStart,
+    outcomes_live_forward_only: true,
     available,
     rows,
   }, null, 2), {

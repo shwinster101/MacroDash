@@ -7,7 +7,7 @@ import { buildEvidenceSet, simpleVerdict, simpleCards, simpleSentence, simpleFli
 import { LASTVALID_KEY, summarizeEvidence, compareEvidence } from "./whatChanged.js"; // C4 (v3.60)
 import { isStale, cadenceOf, parseObsDate, isMarketHoliday, nextFomcDate, etYmd } from "./sources.js"; // FEAT-R3: per-tile, cadence-aware staleness + shared market calendar; v3.99: curated FOMC calendar
 import { computeMacroFlip } from "./ttReadout.js"; // FEAT-331: Macro Flip circuit
-import { callFromEvidence, formatMacroCallPaste } from "./macroCall.js"; // v4.0 canonical daily call
+import { callFromEvidence, formatMacroCallPaste, formatMacroShareCard } from "./macroCall.js"; // v5.5 frozen call + share card
 import { fmt, pctColor } from "./format.js"; // task 1.3/3.1: one shared copy
 import RegimeBand, { WITHHELD_LABEL, WEN_MOON_STATES } from "./sections/RegimeBand.jsx"; // task 1.3: the verdict band + its vocabulary
 import FiveWhys from "./sections/FiveWhys.jsx"; // task 1.4: presentation only — computeFiveWhys stays here
@@ -451,6 +451,7 @@ export default function Dashboard({ publicView = false } = {}) {
   const simple=viewMode==="simple";
   const [copied,setCopied]=useState(false);
   const [ttCopied,setTtCopied]=useState(false); // v4.0: canonical daily-call copy state
+  const [callShared,setCallShared]=useState(false); // v5.5: compact hero-adjacent posture card
   // Re-render every 10 min so the live 5-Whys session frame advances (pre-open→midday→
   // post-close) in an already-open tab without a manual reload. Pure clock tick, $0.
   const [,setSessionTick]=useState(0);
@@ -467,7 +468,8 @@ export default function Dashboard({ publicView = false } = {}) {
       document.getElementById("overview")?.focus();
   });
   // FEAT-204 wiring — single-point hook swap; mock stays default, operator flips live post-deploy
-  const { data: DATA, mode, asOf, provenance, dataAsOf, liveBuild, lastError, retry } = useMarketData(MOCK_DATA, { publicView });
+  const { data: DATA, mode, asOf, provenance, dataAsOf, liveBuild, lastError, retry,
+    publicCall, publicCallFrozen, publicCallCapturedAt } = useMarketData(MOCK_DATA, { publicView });
   /* v3.97 SHAREABLE SIMPLE: the live S-tier picks. Sections are presentation-only
      (smoke-enforced), so the fetch lives here. LIVE BUILDS ONLY — a demo build must never
      show a picks strip (mock conviction is the v3.1 invariant's exact target), and a fetch
@@ -540,11 +542,20 @@ export default function Dashboard({ publicView = false } = {}) {
   });
   const panicInputsLive=["vix","fearGreed"].every(k=>{const m=modeOf(k);return m==="LIVE"||m==="CACHED";});
   const panic=flipState.tripped===true||(panicInputsLive&&d.marketPulse.vix.current>25&&d.marketPulse.fearGreed.score<20);
-  const dailyCall=callFromEvidence(evidenceSet,{
+  const currentCall=callFromEvidence(evidenceSet,{
     macroFlip:flipState,
     panic,
     effectiveDate:etYmd(),
   });
+  // v5.5 accountability: after the 10am capture, every PUBLIC call surface reads the
+  // immutable history artifact. The live EvidenceSet continues to update; if it has moved
+  // far enough to produce a different posture, the hero names that drift instead of silently
+  // replacing the call whose outcomes will be scored.
+  const callFrozen=publicCallFrozen===true&&publicCall?.schema==="md-call-v1";
+  const dailyCall=callFrozen?publicCall:currentCall;
+  const callDrift=callFrozen&&currentCall.direction&&
+    (currentCall.direction!==dailyCall.direction||currentCall.headline!==dailyCall.headline)
+      ?currentCall:null;
   const flip=flipState.evaluable?flipState:null;
   /* ENGINE0-CONT §8: a REAL refresh, distinct from the network-error retry. The operator
      view first asks the server to REBUILD the active snapshot (POST /api/snapshot/refresh —
@@ -666,6 +677,14 @@ export default function Dashboard({ publicView = false } = {}) {
     if(!p){return;}
     p.then(()=>{setTtCopied(true);setTimeout(()=>setTtCopied(false),2000);})
      .catch(()=>{setTtCopied(false);});
+  };
+
+  const handleCallShare=()=>{
+    const block=formatMacroShareCard(dailyCall,{frozen:callFrozen});
+    const p=navigator.clipboard?.writeText(block);
+    if(!p)return;
+    p.then(()=>{setCallShared(true);setTimeout(()=>setCallShared(false),2000);})
+     .catch(()=>{setCallShared(false);});
   };
 
   // Alert delete with undo (FEAT-166)
@@ -898,10 +917,12 @@ export default function Dashboard({ publicView = false } = {}) {
           gets the two directional newbie sentences (prose), Power keeps the compact
           one-liner (sentence). Same buckets, one derivation (postureSummary). */}
       <RegimeBand d={d} stale={staleFactors} loading={mode==="LOADING"} liveBuild={liveBuild} srcLabel={derivedLabel}
-        sentence={simple?simpleS:(!evidenceSet.withheld&&evidenceSet.summary?evidenceSet.summary.sentence:null)}
+        sentence={callDrift?null:(simple?simpleS:(!evidenceSet.withheld&&evidenceSet.summary?evidenceSet.summary.sentence:null))}
         plainVerdict={simple?simpleV:null} conf={regimeConf}
         factorRows={evidenceSet.factors} regimeIn={evidenceSet.regime} flipsIn={evidenceSet.flips}
-        call={dailyCall}/>
+        call={dailyCall} callFrozen={callFrozen} callCapturedAt={publicCallCapturedAt}
+        callDrift={callDrift} onCopyCall={handleCallShare} callCopied={callShared}
+        copyDisabled={!anyLive&&!callFrozen}/>
 
       {/* FEAT-WHY (v3.62) sentence now renders INSIDE the hero (v3.94 DRIVERS-ONLY — one
           render site beside the verdict it explains). postureSummary stays computed and

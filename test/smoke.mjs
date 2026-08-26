@@ -39,15 +39,16 @@ import { plausible, applyBands, quorum, QUORUM_FIELDS, QUORUM_MIN, marketSession
   pairRs, parseTreasuryCsv, preferFresherRates, parseCboeVixCsv, parseCboeVixQuote,
   pairCboeVix, preferFresherVix,
   rateOddsStillOpen, chooseTtl, publishIfNoWorse, TTL_MEDIUM, TTL_LOW,
-  fetchEquities } from "../functions/api/snapshot.js";
+  fetchEquities, onRequest as getSnapshot } from "../functions/api/snapshot.js";
 import { etYmd } from "../src/sources.js";
 // UI-OVERHAUL Slice 1 (task 1.1): tokens are a real module now — smoke IMPORTS it (the v3.60
 // convention: the actual export is tested, immune to formatting drift) instead of regexing
 // hex values out of dashboard.jsx source text.
 import { DT, T as TOK_T } from "../src/design-tokens.js";
 import { fmt } from "../src/format.js"; // task 1.3: shared format helpers, tested by execution
-import { buildMacroCall, formatMacroCallPaste, CALL_SCHEMA } from "../src/macroCall.js";
-import { captureDailyCall } from "../worker/cron.js";
+import { buildMacroCall, formatMacroCallPaste, formatMacroShareCard, CALL_SCHEMA } from "../src/macroCall.js";
+import { buildForwardOutcome, normalizeSp500Observations, outcomeKey, OUTCOME_SCHEMA } from "../src/publicHistory.js";
+import { captureDailyCall, enrichHistoryOutcomes } from "../worker/cron.js";
 import { onRequest as getHistory } from "../functions/history.json.js";
 import { onRequest as getReadout } from "../functions/readout.json.js";
 
@@ -5354,14 +5355,14 @@ ok("band: the module stays under the 300-line bound (Property 10)",
 // plainVerdict, Power keeps postureSummary's compact one-liner and the moon voice. The
 // v3.97 `prose` prop is gone from the render (the cards carry that detail now).
 ok("band: the call site still passes the live wiring (+ v4.0: mode-swapped sentence and plainVerdict)",
-  /sentence=\{simple\?simpleS:\(!evidenceSet\.withheld&&evidenceSet\.summary\?evidenceSet\.summary\.sentence:null\)\}/.test(dashSrc) &&
+  /sentence=\{callDrift\?null:\(simple\?simpleS:\(!evidenceSet\.withheld&&evidenceSet\.summary\?evidenceSet\.summary\.sentence:null\)\)\}/.test(dashSrc) &&
   /plainVerdict=\{simple\?simpleV:null\} conf=\{regimeConf\}/.test(dashSrc) &&
   !/prose=\{/.test(dashSrc) &&
   // v3.98.3: the hero renders the EvidenceSet's OWN factor rows (which carry the real
   // exclusion cause) instead of re-deriving them — one derivation, two altitudes.
   // v4.0.3: the hero renders the CANONICAL regime and flips too — it no longer runs a second
   // derivation beside buildEvidenceSet's (drift risk at the freshness/loading/error edges).
-  /factorRows=\{evidenceSet\.factors\} regimeIn=\{evidenceSet\.regime\} flipsIn=\{evidenceSet\.flips\}\s*call=\{dailyCall\}\/>/.test(dashSrc) &&
+  /factorRows=\{evidenceSet\.factors\} regimeIn=\{evidenceSet\.regime\} flipsIn=\{evidenceSet\.flips\}\s*call=\{dailyCall\} callFrozen=\{callFrozen\}/.test(dashSrc) &&
   /const regime=regimeIn\|\|computeRegime\(d,stale\)/.test(bandSrc) &&
   /const fc=flipsIn\|\|flipConditions\(d,stale\)/.test(bandSrc) &&
   /<RegimeBand d=\{d\} stale=\{staleFactors\} loading=\{mode==="LOADING"\} liveBuild=\{liveBuild\} srcLabel=\{derivedLabel\}/.test(dashSrc));
@@ -9052,8 +9053,10 @@ console.log("\n[72] v5.0 W0 — quote batch: op-count collapse, merge-on-write, 
 // ---- 73. v5.3 ONE CALL — identity + immutable live-forward accountability ------
 console.log("\n[73] v5.3 ONE CALL — canonical vocabulary, additive API, immutable history");
 {
-  const now = new Date("2026-08-24T16:00:00Z");
-  const D = "2026-08-24";
+  // Endpoint tests must use today's ET cache key; a fixed date silently falls through to
+  // the network as soon as the calendar moves and stops testing the fixture at all.
+  const D = new Date().toLocaleDateString("en-CA", {timeZone:"America/New_York"});
+  const now = new Date(`${D}T16:00:00Z`);
   const live = (overrides = {}) => ({
     tenYear: 4.1, tenYearM1: -0.2, tenYearAsOf: D,
     vix: 15, vixAsOf: D,
@@ -9085,6 +9088,10 @@ console.log("\n[73] v5.3 ONE CALL — canonical vocabulary, additive API, immuta
     thin.headline === null && thin.direction === null && thin.confidence === "LOW" && thin.status === "DATA HOLD");
   const paste = formatMacroCallPaste(bull);
   ok("one-call: clipboard leads with the identical human and machine vocabulary", /MOONING 🚀 · BULLISH/.test(paste) && /6\/6 factors usable/.test(paste));
+  const share = formatMacroShareCard(bull, { frozen:true });
+  ok("share card: compact copy identifies the frozen call and links its public receipts",
+    /^MACRODASH 10AM CALL/.test(share) && /MOONING 🚀 · BULLISH/.test(share) &&
+    /macrodash\.pages\.dev\/history/.test(share) && share.split("\n").length === 5 && !share.includes("undefined"));
 
   const fakeKv = () => {
     const m = new Map();
@@ -9098,12 +9105,13 @@ console.log("\n[73] v5.3 ONE CALL — canonical vocabulary, additive API, immuta
   const kv = fakeKv();
   const fetchCall = async () => new Response(JSON.stringify({ call: bull }), { status: 200, headers:{"content-type":"application/json"} });
   const first = await captureDailyCall({ PULSE_CACHE: kv }, fetchCall, now);
-  const second = await captureDailyCall({ PULSE_CACHE: kv }, async()=>{ throw new Error("must not fetch"); }, new Date("2026-08-24T18:00:00Z"));
+  const second = await captureDailyCall({ PULSE_CACHE: kv }, async()=>{ throw new Error("must not fetch"); }, new Date(`${D}T18:00:00Z`));
   ok("history: first 10am write wins and the same ET day is immutable", first.written === true && second.written === false && second.reason === "already captured" && kv._m.size === 1);
   const histRes = await getHistory({ env:{ PULSE_CACHE:kv } });
   const hist = await histRes.json();
   ok("history: public endpoint returns the live-forward record and no private envelope", hist.schema === "md-history-v1" &&
-    hist.live_forward_only === true && hist.rows.length === 1 && hist.rows[0].call.headline === "MOONING" && !JSON.stringify(hist).includes("book"));
+    hist.live_forward_only === true && hist.outcomes_live_forward_only === true && hist.rows.length === 1 &&
+    hist.rows[0].call.headline === "MOONING" && hist.rows[0].outcomes === null && !JSON.stringify(hist).includes("book"));
   const failKv = fakeKv();
   await captureDailyCall({ PULSE_CACHE: failKv }, async()=>new Response("no",{status:503}), now);
   const failed = JSON.parse([...failKv._m.values()][0]);
@@ -9113,13 +9121,70 @@ console.log("\n[73] v5.3 ONE CALL — canonical vocabulary, additive API, immuta
   const directRecord = JSON.parse([...directKv._m.values()][0]);
   ok("history repair: the refresh response's canonical call is frozen directly — no eventually-consistent KV reread",
     direct.written === true && directRecord.call.headline === "MOONING" && directRecord.capture_status === "CAPTURED");
+  const staleKv = fakeKv();
+  const staleDate = new Date(Date.parse(`${D}T00:00:00Z`)-86400000).toISOString().slice(0,10);
+  await captureDailyCall({PULSE_CACHE:staleKv}, async()=>new Response("no",{status:503}), now,
+    {...bull,effective_date:staleDate});
+  const staleRecord = JSON.parse([...staleKv._m.values()][0]);
+  ok("history: a prior-day call can never be notarized under today's immutable key",
+    staleRecord.capture_status === "FAILED" && staleRecord.call === null);
+
+  const observationValues = [1000,1010,1020,990,980,1050,1040,900,920,940,960,980,1000,1020,1040,1060,1080,1090,1080,1095,1100];
+  const observationStart = Date.parse(`${D}T00:00:00Z`);
+  const observations = observationValues.map((value, i) => ({
+    date:new Date(observationStart + i * 86400000).toISOString().slice(0,10), value:String(value),
+  }));
+  const normalized = normalizeSp500Observations([
+    {date:D,value:"."}, {date:D,value:"999"}, ...observations, {date:"bad",value:"123"},
+  ]);
+  ok("outcomes: FRED placeholders are removed and same-date observations normalize deterministically",
+    normalized.length === 21 && normalized[0].date === D && normalized[0].close === 1000);
+  const partial = buildForwardOutcome(first.record, observations.slice(0,6), "2026-08-31T12:00:00Z");
+  ok("outcomes: 1d/5d mature independently while 20d remains honestly pending",
+    partial?.returns_pct?.["1d"] === 1 && partial?.returns_pct?.["5d"] === 5 &&
+    partial?.returns_pct?.["20d"] === null && partial.max_drawdown_pct_20d === -3.92 &&
+    partial.max_drawdown_status === "SO_FAR" && partial.status === "PENDING");
+  const complete = buildForwardOutcome(first.record, observations, "2026-09-22T12:00:00Z");
+  ok("outcomes: the fixed 20-session window finalizes return and max drawdown",
+    complete?.schema === OUTCOME_SCHEMA && complete.anchor.date === D && complete.anchor.close === 100 &&
+    complete.returns_pct["20d"] === 10 && complete.max_drawdown_pct_20d === -14.29 &&
+    complete.max_drawdown_status === "FINAL" && complete.status === "COMPLETE");
+  ok("outcomes: no eligible official close yields an explicit empty companion, never invented zeros",
+    (()=>{const x=buildForwardOutcome(first.record, [{date:new Date(observationStart-86400000).toISOString().slice(0,10),value:"990"}]);
+      return x.anchor === null && x.returns_pct["1d"] === null && x.max_drawdown_pct_20d === null && x.status === "PENDING";})());
+
+  let fredPulls = 0;
+  const outcomeFetch = async () => { fredPulls++; return new Response(JSON.stringify({ observations }), {status:200}); };
+  const enriched = await enrichHistoryOutcomes({PULSE_CACHE:kv,FRED_KEY:"test-key"}, outcomeFetch, new Date("2026-09-22T12:00:00Z"));
+  const frozenAfterOutcome = JSON.parse(kv._m.get(first.key));
+  const outcomeCompanion = JSON.parse(kv._m.get(outcomeKey(D)));
+  const noRewrite = await enrichHistoryOutcomes({PULSE_CACHE:kv,FRED_KEY:"test-key"}, outcomeFetch, new Date("2026-09-23T12:00:00Z"));
+  ok("outcomes: enrichment writes a separate companion and never mutates the frozen call record",
+    enriched.ok && enriched.updated === 1 && frozenAfterOutcome.outcomes === null &&
+    outcomeCompanion.status === "COMPLETE" && outcomeCompanion.call_date === D);
+  ok("outcomes: a complete 20-session companion is immutable and skips later market pulls",
+    noRewrite.updated === 0 && fredPulls === 1);
+  const joinedRes = await getHistory({env:{PULSE_CACHE:kv}});
+  const joined = await joinedRes.json();
+  ok("history: the endpoint joins the outcome companion beneath its frozen call",
+    joined.rows[0].outcomes.schema === OUTCOME_SCHEMA && joined.rows[0].outcomes.returns_pct["5d"] === 5);
 
   const snapKv = fakeKv();
   await snapKv.put(`pulse:snapshot:v16:${D}`, JSON.stringify({ live:live(), asOf:now.toISOString(), _diag:{} }));
+  await snapKv.put(`public:regime-history:v1:${D}`, JSON.stringify({
+    schema:"md-history-record-v1", date:D, captured_at:now.toISOString(), capture_status:"CAPTURED", call:bear,
+  }));
   const readoutRes = await getReadout({ request:new Request("https://macrodash.pages.dev/readout.json"), env:{PULSE_CACHE:snapKv} });
   const readoutBody = await readoutRes.json();
   ok("readout: md-call-v1 is additive while tt-v1 legacy regime remains present", readoutBody.schema === "tt-v1" &&
     readoutBody.call.schema === "md-call-v1" && readoutBody.regime && readoutBody.compatibility.legacy.includes("tt-v1"));
+  ok("accountability: readout keeps TT regime live but serves the same-day frozen public call",
+    readoutBody.regime.verdict === "TAILWIND" && readoutBody.call.headline === "DIAMOND HANDS" && readoutBody.call_frozen === true);
+  const snapshotRes = await getSnapshot({request:new Request("https://macrodash.pages.dev/api/snapshot?view=public"),env:{PULSE_CACHE:snapKv}});
+  const snapshotBody = await snapshotRes.json();
+  ok("accountability: /api/snapshot wires the frozen public call through the one client data path",
+    snapshotBody.publicCall?.headline === "DIAMOND HANDS" && snapshotBody.publicCallFrozen === true &&
+    snapshotBody.publicCallCapturedAt === now.toISOString());
   const pagesSrc = readFileSync(new URL("../src/PublicPages.jsx", import.meta.url), "utf8");
   const appSrc = readFileSync(new URL("../src/App.jsx", import.meta.url), "utf8");
   ok("pages: history and difference stay one click away without adding a dashboard tile", /href="\/history"/.test(dashSrc) &&
@@ -9137,8 +9202,9 @@ console.log("\n[73] v5.3 ONE CALL — canonical vocabulary, additive API, immuta
     [snapSrc,refreshSrc,readoutSrc,workerSrc].every((s)=>s.includes("pulse:snapshot:v16")) &&
     ![snapSrc,refreshSrc,readoutSrc,workerSrc].some((s)=>s.includes("pulse:snapshot:v15")));
   ok("v5.4 refresh: scheduled history receives the exact refresh-response call",
-    /buildMacroCall\(snapshot\.live \|\| \{\}/.test(refreshSrc) &&
-    /\.\.\.readout, call \}/.test(refreshSrc) &&
+    /const currentCall = buildMacroCall\(snapshot\.live \|\| \{\}/.test(refreshSrc) &&
+    /const frozen = validFrozenCall\(record, etDate\)/.test(refreshSrc) &&
+    /\.\.\.readout, call, call_frozen: callFrozen/.test(refreshSrc) &&
     /const refreshed = await refreshSnapshot\(env\)/.test(workerSrc) &&
     /refreshed\?\.call \|\| null/.test(workerSrc) &&
     /call: body\?\.published \? \(body\?\.readout\?\.call \|\| null\) : null/.test(workerSrc));

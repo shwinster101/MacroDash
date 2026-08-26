@@ -25,6 +25,7 @@
 import { authorize } from "../tt.js";
 import { buildSnapshot, publishIfNoWorse } from "../snapshot.js";
 import { buildMacroCall } from "../../../src/macroCall.js";
+import { historyKey, validFrozenCall } from "../../../src/publicHistory.js";
 
 const COOLDOWN_KEY = "pulse:refresh:cooldown";
 const COOLDOWN_SEC = 60;                 // KV minimum TTL — also a sane upstream floor
@@ -92,11 +93,17 @@ export async function onRequestPost({ request, env }) {
   // Build the canonical public projection from THIS candidate. Returning only the legacy
   // TT readout would force the Worker back onto an eventually-consistent KV reread and could
   // freeze yesterday's call even after a successful refresh.
-  const call = buildMacroCall(snapshot.live || {}, {
+  const currentCall = buildMacroCall(snapshot.live || {}, {
     cached: false,
     effectiveDate: etDate,
     generatedAt: completedAt,
   });
+  let call = currentCall, callFrozen = false, callCapturedAt = null;
+  try {
+    const record = await env.PULSE_CACHE?.get(historyKey(etDate), "json");
+    const frozen = validFrozenCall(record, etDate);
+    if (frozen) { call = frozen; callFrozen = true; callCapturedAt = record.captured_at || null; }
+  } catch { /* first 10am capture has no record yet; its candidate is the call to freeze */ }
 
   // Message ladder (§8's required alternates): say what advanced and what could not.
   const messages = [];
@@ -135,7 +142,8 @@ export async function onRequestPost({ request, env }) {
     started_at: startedAt,
     completed_at: completedAt,
     message: messages.join(" · "),
-    readout: { schema: "tt-v1", as_of: snapshot.asOf, generated_at: completedAt, cached: false, ...readout, call },
+    readout: { schema: "tt-v1", as_of: snapshot.asOf, generated_at: completedAt, cached: false,
+      ...readout, call, call_frozen: callFrozen, call_captured_at: callCapturedAt },
     // Secrets/keys never appear here; recordStatus captures class/status/latency only.
     source_status: statuses || [],
   });
