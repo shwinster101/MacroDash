@@ -39,7 +39,7 @@
 //   result_hash — the evaluation output; names the history key.
 import { authorize, crossOrigin } from "./tt.js";
 import { sha256Hex } from "../lib/tt-v2.js";
-import { evaluateAllocation, ALLOC_RULE_VERSION, circuitState } from "../lib/tt-alloc.js";
+import { evaluateAllocation, ALLOC_RULE_VERSION, circuitState, stampOutcome } from "../lib/tt-alloc.js";
 import { readQuoteBatch, freshEntry } from "../lib/quote-cache.js";
 import { etYmd } from "../../src/sources.js";
 import { METHODOLOGY_VERSION } from "../../src/ttScore.js";
@@ -47,6 +47,14 @@ import { METHODOLOGY_VERSION } from "../../src/ttScore.js";
 const CUR_KEY = "tt:alloc:v1";
 const HIST_PREFIX = "tt:alloc:history:";
 const INTENT_PREFIX = "tt:alloc:intent:v1:";
+// v5.6 THE DAILY CONTRACT: the ATTEST layer. A stamped day is the owner's explicit
+// "this ranked set, under this evidence, is the day's decision" — first-write-wins per ET
+// day (the book-snapshot rule), no TTL (the point is longevity), and outcomes attach ONLY
+// to stamped days so a passive reeval never accrues a score it was never committed to.
+const STAMP_PREFIX = "tt:alloc:stamped:";
+const OUTCOME_NOTE_PREFIX = "tt:alloc:outcome:v1:";
+const STREET_PREFIX = "tt:street:";
+const FACTS_PREFIX = "tt:facts:";
 const INTENT_TTL = 450 * 24 * 3600;          // the decision-journal retention (score.js)
 const BOOK_KEY = "tt:book:v1";
 const POS_KEY = "tt:pos:v1";
@@ -106,6 +114,25 @@ function basisOf(result) {
   };
 }
 
+/* v5.6 — the reviewed street legs for the spread. ONE list + only the current keys that
+   actually exist (the store grows only when the owner reviews a packet, so this is 1 op +
+   0..n gets, never a per-book fan-out). History keys and anything non-tt-street-v1 are
+   excluded; a failure degrades the spread to its sourced rung, never to an error. */
+async function loadStreet(env) {
+  const out = {};
+  try {
+    const l = await env.PULSE_CACHE.list({ prefix: STREET_PREFIX, limit: 200 });
+    const curKeys = (l?.keys || []).map((k) => k.name)
+      .filter((n) => !n.startsWith(STREET_PREFIX + "history:") && n.endsWith(":v1"));
+    const recs = await Promise.all(curKeys.map((n) => kvGet(env, n)));
+    curKeys.forEach((n, i) => {
+      const r = recs[i];
+      if (r && r.schema === "tt-street-v1") out[n.slice(STREET_PREFIX.length, -3)] = r;
+    });
+  } catch { /* sourced rung only */ }
+  return out;
+}
+
 async function evaluate(env, request, devReadout) {
   const [book, posDoc, ddIndex, scoreIdxDoc] = await Promise.all([
     kvGet(env, BOOK_KEY), kvGet(env, POS_KEY), kvGet(env, DD_INDEX), kvGet(env, SCORE_INDEX_KEY)]);
@@ -113,12 +140,14 @@ async function evaluate(env, request, devReadout) {
   const readout = await sourceReadout(request, devReadout, env);
   const syms = book.book.map((e) => e.sym);
   const quotes = await loadQuotes(env, syms);
+  const streetBySym = await loadStreet(env);
   const now = new Date();
   // v5.0 §14.8 ACTIVATION: the score index rides in with the CURRENT engine version, so
   // the evaluator stamps methodology_current per card and eligibility can never rest on a
   // card minted by a retired engine (the relabel the book=1 path was missing, closed here).
   const result = evaluateAllocation({ book, ddIndex, posDoc, quotes, readout, now,
-    scoreIndex: (scoreIdxDoc && scoreIdxDoc.entries) || null, methodologyVersion: METHODOLOGY_VERSION });
+    scoreIndex: (scoreIdxDoc && scoreIdxDoc.entries) || null, methodologyVersion: METHODOLOGY_VERSION,
+    streetBySym });
   /* v4.1 Step 6: readout_as_of is a DAY key, so basis_hash alone froze the entire macro axis
      intraday — a readout that rebuilt (actionability moved, flip tripped) between evaluate and
      confirm passed the basis check. The receipt now records the hash of the readout BODY it
@@ -161,9 +190,51 @@ export async function onRequestGet({ request, env }) {
       return json({ intents, cursor: l.list_complete ? null : l.cursor });
     } catch (e) { return json({ error: "list failed: " + (e?.message || "unknown") }, 503); }
   }
+  if (url.searchParams.get("stamped") === "1") {
+    /* v5.6 — the stamped history, outcomes computed AT READ (GET must stay safe, v3.54:
+       no write-on-read, no cron): returns for each stamped day's eligible pick from the
+       facts store's daily candles; allocation_changed DERIVED from the intent journal
+       (an intent on the stamped day = the list changed real allocation), with the owner's
+       ?outcome=1 note joined when present. A pick with no candle history reads a NAMED
+       reason, never a zero. */
+    try {
+      const l = await env.PULSE_CACHE.list({ prefix: STAMP_PREFIX, limit: 40 });
+      const stamps = (await Promise.all((l?.keys || []).map((k) => kvGet(env, k.name))))
+        .filter((r) => r && r.schema === "tt-alloc-stamp-v1");
+      stamps.sort((a, b) => String(b.date).localeCompare(String(a.date)));
+      const pickSyms = [...new Set(stamps.map((r) => r.receipt && r.receipt.eligible && r.receipt.eligible.sym).filter(Boolean))];
+      const factsBySym = {};
+      await Promise.all(pickSyms.map(async (s2) => { factsBySym[s2] = await kvGet(env, FACTS_PREFIX + s2); }));
+      const intents = await env.PULSE_CACHE.list({ prefix: INTENT_PREFIX, limit: 200 }).catch(() => null);
+      const intentDates = new Set((intents?.keys || []).map((k) => {
+        // key = prefix + <ISO instant> + ":" + id — the instant itself contains colons,
+        // so the id is everything after the LAST colon (caught by the [73] lifecycle test:
+        // split(":")[0] truncated the instant to its hour and derived no date at all).
+        const tail = k.name.slice(INTENT_PREFIX.length);
+        const iso = tail.slice(0, tail.lastIndexOf(":"));
+        const d = new Date(iso); return isFinite(d) ? etYmd(d) : null;
+      }).filter(Boolean));
+      const rows = await Promise.all(stamps.map(async (r) => {
+        const sym = r.receipt && r.receipt.eligible && r.receipt.eligible.sym;
+        const candles = sym && factsBySym[sym] && factsBySym[sym].fields && factsBySym[sym].fields.candles;
+        const closes = candles && Array.isArray(candles.value) ? candles.value : null;
+        const note = await kvGet(env, OUTCOME_NOTE_PREFIX + r.date);
+        return { date: r.date, attested: r.attested,
+          gate: r.receipt && r.receipt.macro_gate ? r.receipt.macro_gate.gate : null,
+          pick: sym || null,
+          outcome: sym ? (closes ? stampOutcome(r.date, closes)
+            : { anchor: null, reason: "no daily candles in the facts store for " + sym }) : null,
+          allocation_changed: note && typeof note.allocation_changed === "boolean"
+            ? note.allocation_changed : intentDates.has(r.date),
+          note: note && note.note ? note.note : null };
+      }));
+      return json({ schema: "tt-alloc-stamped-v1", outcomes_at_read: true, rows });
+    } catch (e) { return json({ error: "stamped list failed: " + (e?.message || "unknown") }, 503); }
+  }
   const cur = await kvGet(env, CUR_KEY);
-  if (!cur) return json({ error: "no allocation receipt stored — POST to evaluate", receipt: null }, 404);
-  return json({ receipt: cur });
+  const stampedToday = await kvGet(env, STAMP_PREFIX + etYmd(new Date())).then((r) => !!r).catch(() => false);
+  if (!cur) return json({ error: "no allocation receipt stored — POST to evaluate", receipt: null, stamped_today: stampedToday }, 404);
+  return json({ receipt: cur, stamped_today: stampedToday });
 }
 
 async function handleConfirm(env, request, body) {
@@ -295,6 +366,50 @@ export async function onRequestPost({ request, env }) {
   if (raw) { try { body = JSON.parse(raw); } catch (_e) { return json({ error: "invalid JSON" }, 400); } }
 
   if (url.searchParams.get("confirm") === "1") return handleConfirm(env, request, body);
+
+  if (url.searchParams.get("attest") === "1") {
+    /* v5.6 THE DAILY CONTRACT — the STAMP. Explicit, owner-initiated, never automatic:
+       marks the CURRENT receipt as the day's attested ranked set. First-write-wins per ET
+       day; a second attest 409s toward the existing stamp (immutable — the same spirit as
+       street tombstones: history is never edited). A receipt from a prior business date
+       cannot be stamped as today's decision — recompute first. */
+    const cur = await kvGet(env, CUR_KEY);
+    if (!cur) return json({ error: "no allocation receipt stored — evaluate first (⟳ DATA+RANKS)" }, 409);
+    const today = etYmd(new Date());
+    if (cur.business_date_et !== today)
+      return json({ error: "STALE_RECEIPT", reason: `the stored receipt is dated ${cur.business_date_et}, not today — re-evaluate before stamping` }, 409);
+    const key = STAMP_PREFIX + today;
+    const existing = await kvGet(env, key);
+    if (existing) return json({ error: "ALREADY_STAMPED", stamp: existing }, 409);
+    const at = new Date();
+    const stamp = { schema: "tt-alloc-stamp-v1", date: today,
+      attested: { at: at.toISOString(),
+        at_et: at.toLocaleString("en-US", { timeZone: "America/New_York",
+          month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit", hour12: false }).replace(",", "") + " ET" },
+      receipt: cur };
+    try { await env.PULSE_CACHE.put(key, JSON.stringify(stamp)); }
+    catch (e) { return json({ error: "storage write failed: " + (e?.message || "unknown") }, 503); }
+    return json({ stamped: true, stamp });
+  }
+
+  if (url.searchParams.get("outcome") === "1") {
+    /* v5.6 — the owner's outcome note for a stamped day: a yes/no allocation_changed
+       override (the derived default reads the intent journal) and a free-text note.
+       Merge-write on the note key; the stamp itself is never edited. */
+    const date = body && body.date;
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(String(date || ""))) return json({ error: "date (YYYY-MM-DD) required" }, 400);
+    const stampRec = await kvGet(env, STAMP_PREFIX + date);
+    if (!stampRec) return json({ error: "no stamped set for " + date + " — outcomes attach only to stamped days" }, 404);
+    const prev = (await kvGet(env, OUTCOME_NOTE_PREFIX + date)) || {};
+    const rec = { schema: "tt-alloc-outcome-note-v1", date,
+      allocation_changed: typeof (body && body.allocation_changed) === "boolean" ? body.allocation_changed
+        : (typeof prev.allocation_changed === "boolean" ? prev.allocation_changed : undefined),
+      note: typeof (body && body.note) === "string" ? body.note.slice(0, 500) : prev.note,
+      at: new Date().toISOString() };
+    try { await env.PULSE_CACHE.put(OUTCOME_NOTE_PREFIX + date, JSON.stringify(rec)); }
+    catch (e) { return json({ error: "storage write failed: " + (e?.message || "unknown") }, 503); }
+    return json({ stored: true, outcome: rec });
+  }
 
   const r = await evaluate(env, request, body && body.readout);
   if (r.error) return r.error;

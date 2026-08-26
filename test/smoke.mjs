@@ -1956,9 +1956,10 @@ const PKG = JSON.parse(readSrc("../package.json"));
 // __APP_VERSION__, so a guard is the only thing that can hold the invariant.
 ok("version: the terminal's title and brand both match package.json (no third version)",
   adminSrc.includes(`<title>TT TICKER TERMINAL v${PKG.version}</title>`) &&
-  // Tagline re-pinned at v5.0: "underwriting + sourced gates" became "the card governs
-  // (§14.8)" — the flip is the identity change the tagline exists to state.
-  adminSrc.includes(`<small>v${PKG.version} · the card governs (§14.8)</small>`));
+  // Tagline re-pinned at v5.0 ("the card governs (§14.8)" — the flip) and again at v5.6
+  // ("the daily contract" — the four-question surface is the product's face now; the card
+  // still governs underneath, stated in the §14.8 machinery, not the masthead).
+  adminSrc.includes(`<small>v${PKG.version} · the daily contract</small>`));
 // ttInfo's score decides whether the NEXT DOLLAR line lights. It is parsed from prose.
 ok("composite: a decimal score is preferred over an earlier bare integer",
   adminSrc.includes("function parseComposite(v)") && adminSrc.includes("const dec=s.match(/\\d+\\.\\d+/);"));
@@ -2616,7 +2617,7 @@ ok("slice5: the header is ONE row — identity, the MACRO pill, and a ⋯ MENU d
 // closing the loop the dashboard's ⌁ TERMINAL button opened (v3.98.3).
 ok("slice5: version, BOOK/AUTH stamps and the whole action toolbar moved behind that " +
    "disclosure — status and occasional actions, never answers",
-  /id="headInfo"[\s\S]{0,1800}the card governs \(§14\.8\)[\s\S]{0,900}id="bookStamp"[\s\S]{0,900}id="sessState"[\s\S]{0,1200}\+ ADD TICKER[\s\S]{0,900}id="backupRow"/.test(adminSrc));
+  /id="headInfo"[\s\S]{0,1800}the daily contract[\s\S]{0,900}id="bookStamp"[\s\S]{0,900}id="sessState"[\s\S]{0,1200}\+ ADD TICKER[\s\S]{0,900}id="backupRow"/.test(adminSrc));
 ok("slice5: the banners stay OUTSIDE the disclosure — an expired session or an unsaved edit " +
    "must never require opening a menu to discover",
   /id="headInfo"[\s\S]*?<\/div>\s*<!--[\s\S]*?-->\s*<div id="authBanner"/.test(adminSrc) &&
@@ -2662,8 +2663,10 @@ ok("slice5: a PERMISSIVE stance renders a small pill — no big token, no qualif
       !branch.includes("vbadge") && !branch.includes('details class="why"') &&
       !branch.includes("st.quals");
   })());
-ok("slice5: a RESTRICTIVE stance keeps the full treatment — token, quals and the why drawer",
-  /el\.innerHTML=`<div class="stance-top">`\+\s*`<span class="vbadge"/.test(adminSrc) &&
+// Re-pinned at v5.6 (THE DAILY CONTRACT): the GATE token now leads the strip in both
+// branches, so the vbadge follows `gateTok+` rather than sitting adjacent to the literal.
+ok("slice5: a RESTRICTIVE stance keeps the full treatment — token, quals and the why drawer (led by the v5.6 compact gate token)",
+  /el\.innerHTML=`<div class="stance-top">`\+gateTokSm\+\s*`<span class="vbadge"/.test(adminSrc) &&
   adminSrc.includes('<details class="why"><summary>why</summary>'));
 ok("slice5: the red badges are hoisted so they render in BOTH states — the v3.25 rule is that " +
    "a red fact is never hidden by a collapse",
@@ -8212,13 +8215,14 @@ console.log("\n[68] FEAT-TT-ALLOC — pure core, endpoint, and the §14.8 bar");
       (() => { const f = r2.funding.rows.find((x) => x.sym === "BBB");
         return !f || !/no rung at the shared horizon/.test(f.reason); })());
     // Re-pinned at v5.0 (§14.8 activation: quality source + broken_thesis in funding),
-    // again at v5.1.1 (the card-actionability veto rung), and again at v5.2 (CAP-ASTERISK:
-    // the cap veto and the forced cap tier REVERSED by owner ruling 2026-08-25) — each
-    // moved receipt semantics, so each moved the version. The CONTRACT this pin protects
-    // is unchanged: the version must track the semantics, or a cached receipt gets
-    // reinterpreted under a rule it predates.
+    // again at v5.1.1 (the card-actionability veto rung), again at v5.2 (CAP-ASTERISK:
+    // the cap veto and the forced cap tier REVERSED by owner ruling 2026-08-25), and again
+    // at v5.6 (THE DAILY CONTRACT: additive macro_gate/call/spread/overtake receipt
+    // fields) — each moved receipt semantics or meaning, so each moved the version. The
+    // CONTRACT this pin protects is unchanged: the version must track the semantics, or a
+    // cached receipt gets reinterpreted under a rule it predates.
     ok("rule version moves WITH the semantics — a cached older receipt must not be reinterpreted",
-      alloc.ALLOC_RULE_VERSION === "tt-alloc-v3.0.0");
+      alloc.ALLOC_RULE_VERSION === "tt-alloc-v3.1.0");
   }
 
   // ── §14.8 bar + no-order-tools: structural, negative-controllable ──
@@ -8321,8 +8325,8 @@ console.log("\n[68] FEAT-TT-ALLOC — pure core, endpoint, and the §14.8 bar");
   ok("v5.1.1 mirror: admin why(r) carries the same rung and cardInfo carries the field (both paths)",
     adminSrc.includes("card actionability BLOCKED") && adminSrc.includes("(UNKNOWN blocks, §8.1)") &&
     adminSrc.includes("act:sc.actionability??null") && adminSrc.includes("act:e.actionability??null"));
-  ok("v5.1.1/v5.2: the rule version moved WITH the semantics — a cached v2.x receipt must not be reinterpreted (re-pinned at v5.2, CAP-ASTERISK)",
-    alloc.ALLOC_RULE_VERSION === "tt-alloc-v3.0.0");
+  ok("v5.1.1/v5.2/v5.6: the rule version moved WITH the semantics — a cached older receipt must not be reinterpreted (re-pinned at v5.6, THE DAILY CONTRACT)",
+    alloc.ALLOC_RULE_VERSION === "tt-alloc-v3.1.0");
   ok("no-order-tools: no broker order call exists anywhere in the terminal or functions",
     !/place_equity_order|place_option_order/.test(adminSrc) &&
     !/place_equity_order|place_option_order/.test(allocLibSrc + allocApiSrc + ttSrc + snapSrc));
@@ -8494,6 +8498,145 @@ console.log("\n[68] FEAT-TT-ALLOC — pure core, endpoint, and the §14.8 bar");
         store.set("tt:alloc:v1", JSON.stringify(cur0));
         const r = await cfB({ intent: { action: "FUND", sym: "AAA" }, result_hash: cur0.attestation.result_hash });
         return r.status === 409 && /predates confirm-time readout binding/.test(r.b.reason); })()));
+
+    // ═══ v5.6 THE DAILY CONTRACT — gate vocabulary, spread, flip line, attest, outcomes ═══
+    console.log("\n[73] v5.6 THE DAILY CONTRACT — SEND IT/HODL/TOUCH GRASS, spread, stamp, outcomes");
+    // The gate is ONE projection of the ladder RESULT (the verdictFrom rule), run against
+    // the real allocGateLadder — never a second copy of its conditions.
+    const L6 = (board, readout) => alloc.allocGateLadder({ board, readout, now: NOW });
+    const G6b = (board, readout) => alloc.macroGateFrom(L6(board, readout), readout);
+    const CB6 = { circuit: { state: "clear", as_of: TODAY }, regime: { asserted: "TAILWIND" } };
+    const RO6 = (act, mf = { evaluable: true, tripped: false }) => ({ regime: { verdict: "TAILWIND", actionability: act }, macro_flip: mf });
+    ok("gate: FULL → SEND_IT — the ladder read clean", G6b(CB6, RO6("FULL")).gate === "SEND_IT");
+    ok("gate: RESTRICTED → HODL — the ONE looking-session state, still vetoed by the ladder it names (fail-closed untouched)",
+      G6b(CB6, RO6("RESTRICTED")).gate === "HODL" && L6(CB6, RO6("RESTRICTED")) !== null);
+    ok("gate: HOLD → TOUCH_GRASS", G6b(CB6, RO6("HOLD")).gate === "TOUCH_GRASS");
+    ok("gate: missing readout / blind flip / tripped flip / tripped circuit ALL fail closed to TOUCH_GRASS",
+      G6b(CB6, null).gate === "TOUCH_GRASS" &&
+      G6b(CB6, RO6("FULL", { evaluable: false })).gate === "TOUCH_GRASS" &&
+      G6b(CB6, RO6("FULL", { evaluable: true, tripped: true })).gate === "TOUCH_GRASS" &&
+      G6b({ ...CB6, circuit: { state: "tripped", as_of: TODAY } }, RO6("FULL")).gate === "TOUCH_GRASS");
+    ok("gate: SEND_IT exists IFF the ladder returned null — only a clean ladder can speak it",
+      alloc.macroGateFrom(null, RO6("FULL")).gate === "SEND_IT" &&
+      ["RESTRICTED", "HOLD"].every((a) => alloc.macroGateFrom(L6(CB6, RO6(a)), RO6(a)).gate !== "SEND_IT"));
+    // Client mirror, RUN over the same matrix (the [57] behavioral-identity convention).
+    const MG6 = (() => {
+      const i = adminSrc.indexOf("function macroGate(){");
+      const j = adminSrc.indexOf("\n}", i);
+      if (i < 0 || j < 0) throw new Error("smoke: macroGate markers not found");
+      return new Function("stance", "REGIME", adminSrc.slice(i, j + 2) + "\nreturn macroGate();");
+    })();
+    const stGo6 = () => ({ k: "go" }), stStop6 = () => ({ k: "stop" });
+    ok("gate mirror: client macroGate matches the server across the matrix — FULL/RESTRICTED/HOLD/blind/absent/stance-stop",
+      MG6(stGo6, RO6("FULL")).g === "SEND_IT" &&
+      MG6(stGo6, RO6("RESTRICTED")).g === "HODL" &&
+      MG6(stGo6, RO6("HOLD")).g === "TOUCH_GRASS" &&
+      MG6(stGo6, RO6("FULL", { evaluable: false })).g === "TOUCH_GRASS" &&
+      MG6(stGo6, null).g === "TOUCH_GRASS" &&
+      MG6(stStop6, RO6("FULL")).g === "TOUCH_GRASS");
+    // The frozen spread formula + the asserted deadband, executed at the exact edges.
+    ok("spread: the FROZEN formula — (belief − street) / price × 100",
+      JSON.stringify(alloc.spreadOf(570, 485, 300)) === JSON.stringify({ pct: 28.3, sign: "you_richer" }));
+    ok("spread: the ±10 deadband — aligned AT the edge, decided just beyond it, both directions",
+      alloc.SPREAD_ALIGNED_PCT === 10 &&
+      alloc.spreadOf(110, 100, 100).sign === "aligned" && alloc.spreadOf(110.2, 100, 100).sign === "you_richer" &&
+      alloc.spreadOf(90, 100, 100).sign === "aligned" && alloc.spreadOf(89.8, 100, 100).sign === "street_richer");
+    ok("spread: fail-closed — a missing leg or non-positive price yields null, never a number",
+      alloc.spreadOf(null, 100, 100) === null && alloc.spreadOf(100, 100, 0) === null);
+    ok("street leg: REVIEWED published average outranks the sourced target; sourced is the labeled fallback; neither = null",
+      (() => { const idx6 = { consensus: { street_target: { pt: 480, as_of: "2026-08-20" } } };
+        const rec6 = { analystTarget: { average: 500 } };
+        const a = alloc.streetLegOf(idx6, rec6), b = alloc.streetLegOf(idx6, null), c = alloc.streetLegOf({}, null);
+        return a.pt === 500 && a.src === "reviewed" && b.pt === 480 && b.src === "sourced" && c === null; })());
+    // stampOutcome — the day-0 anchor rule from the shipped public pattern.
+    ok("outcome: day 0 is the FIRST close ON OR AFTER the stamp date — pre-stamp movement never scores",
+      (() => { const o = alloc.stampOutcome("2026-08-22", [
+          { date: "2026-08-21", close: 100 }, { date: "2026-08-24", close: 104 }, { date: "2026-08-25", close: 106 }]);
+        return o.anchor.date === "2026-08-24" && o.returns_pct["1d"] === 1.9 &&
+          o.returns_pct["5d"] === null && o.status === "PENDING"; })());
+    ok("outcome: no close on/after the stamp reads a NAMED reason, never zeros",
+      /no close on or after/.test(alloc.stampOutcome("2026-08-22", [{ date: "2026-08-21", close: 100 }]).reason));
+    ok("outcome: drawdown is IMPORTED from publicHistory — one implementation, no local copy",
+      (() => { const src6 = readSrc("../functions/lib/tt-alloc.js");
+        return src6.includes('import { maxDrawdownPct } from "../../src/publicHistory.js"') &&
+          !/function maxDrawdownPct/.test(src6); })());
+    // Receipt end-to-end through the real evaluator.
+    ok("v5.6 receipt: macro_gate SEND_IT on the clean fixture; spread keyed by the decision set; call null-honest when absent",
+      (() => { const r = ev();
+        return r.macro_gate && r.macro_gate.gate === "SEND_IT" && r.call === null &&
+          r.spread && r.eligible && (r.eligible.sym in r.spread) &&
+          r.spread[r.eligible.sym].street === null && r.spread[r.eligible.sym].pct === null; })());
+    ok("v5.6 receipt: TODAY's md-call binds from the readout body; a stale effective_date stays null-honest",
+      (() => { const mkRo = (d) => ({ ...READOUT, call: { schema: "md-call-v1", headline: "MOONING", direction: "BULLISH", effective_date: d }, call_frozen: true });
+        const a = ev({ readout: mkRo(TODAY) }), b = ev({ readout: mkRo("2026-01-01") });
+        return a.call && a.call.headline === "MOONING" && a.call.frozen === true && b.call === null; })());
+    ok("v5.6 receipt: a reviewed street leg computes the frozen spread on the eligible row, LABELED and self-consistent",
+      (() => { const r = ev({ streetBySym: { AAA: { schema: "tt-street-v1", analystTarget: { average: 90 } } } });
+        const sp = r.eligible && r.spread[r.eligible.sym];
+        if (!sp || !sp.street || sp.street.src !== "reviewed" || typeof sp.pct !== "number") return false;
+        const expect = Math.round(((sp.belief.pt - 90) / r.eligible.px) * 1000) / 10;
+        return Math.abs(sp.pct - expect) < 1e-9; })());
+    ok("v5.6 flip line: null when only one name carries a rate; with two IDENTICAL rows #2 overtakes exactly at the current price (the annualise-inversion identity)",
+      (() => { const base = ev(); if (base.overtake !== null) return false;
+        const r = ev({ ddIndex: { asOf: TODAY, entries: { AAA: mkIdx(), BBB: mkIdx() } } });
+        if (!r.overtake) return false;
+        const lead = r.overtake.leader === "AAA" ? "AAA" : "BBB";
+        const row = r.why_not && true ? null : null;
+        const px = (r.eligible && r.eligible.sym === lead) ? r.eligible.px : null;
+        return px === null ? Math.abs(r.overtake.at_px) > 0 : Math.abs(r.overtake.at_px - px) < 0.02; })());
+    // ── the ATTEST lifecycle, driven through the real endpoint ──
+    await ep.onRequest({ request: rq("POST"), env });   // a fresh, valid TODAY receipt
+    const at1 = await ep.onRequest({ request: rq("POST", "?attest=1"), env });
+    const ab1 = JSON.parse(await at1.text());
+    ok("attest: stamps TODAY's receipt — first-write-wins pointer with ET identity",
+      at1.status === 200 && ab1.stamped === true && ab1.stamp.schema === "tt-alloc-stamp-v1" &&
+      ab1.stamp.date === etYmd(new Date()) && /ET$/.test(ab1.stamp.attested.at_et) &&
+      store.has("tt:alloc:stamped:" + etYmd(new Date())));
+    ok("attest: a second attest the same day → 409 ALREADY_STAMPED with the standing stamp — immutable, never overwritten",
+      (await (async () => { const r = await ep.onRequest({ request: rq("POST", "?attest=1"), env });
+        const b = JSON.parse(await r.text());
+        return r.status === 409 && b.error === "ALREADY_STAMPED" && b.stamp.attested.at === ab1.stamp.attested.at; })()));
+    ok("attest: the bare GET now reports stamped_today true",
+      (await (async () => { const r = await ep.onRequest({ request: rq("GET"), env });
+        return JSON.parse(await r.text()).stamped_today === true; })()));
+    ok("stamped list: outcomes AT READ — no facts stored reads a NAMED reason (never zeros), gate + pick carried, allocation_changed DERIVED from the intent journal",
+      (await (async () => { const r = await ep.onRequest({ request: rq("GET", "?stamped=1"), env });
+        const b = JSON.parse(await r.text());
+        const row = b.rows && b.rows[0];
+        return r.status === 200 && b.outcomes_at_read === true && row && row.date === etYmd(new Date()) &&
+          row.gate === "SEND_IT" && row.pick === "AAA" &&
+          row.outcome && /no daily candles/.test(row.outcome.reason) &&
+          row.allocation_changed === true; })()));   // the confirm tests above journaled intents today
+    ok("stamped list: with facts candles the outcome computes — same-day anchor, null returns, PENDING (never a fabricated same-day score)",
+      (await (async () => {
+        const d0 = etYmd(new Date());
+        store.set("tt:facts:AAA", JSON.stringify({ fields: { candles: { value: [
+          { date: "2026-01-02", close: 95 }, { date: d0, close: 101 }] } } }));
+        const r = await ep.onRequest({ request: rq("GET", "?stamped=1"), env });
+        const row = JSON.parse(await r.text()).rows[0];
+        return row.outcome && row.outcome.anchor && row.outcome.anchor.date === d0 &&
+          row.outcome.returns_pct["1d"] === null && row.outcome.status === "PENDING"; })()));
+    ok("outcome note: the owner override beats the derived allocation_changed, and attaches only to stamped days",
+      (await (async () => {
+        const bad = await ep.onRequest({ request: rq("POST", "?outcome=1", { date: "2020-01-01", allocation_changed: false }), env });
+        if (bad.status !== 404) return false;
+        const w = await ep.onRequest({ request: rq("POST", "?outcome=1", { date: etYmd(new Date()), allocation_changed: false, note: "no trade today" }), env });
+        if (w.status !== 200) return false;
+        const r = await ep.onRequest({ request: rq("GET", "?stamped=1"), env });
+        const row = JSON.parse(await r.text()).rows[0];
+        return row.allocation_changed === false && row.note === "no trade today"; })()));
+    // Client + contract pins.
+    ok("v5.6 client: the GATE token is SCOPED with the 'GATE: ' prefix at both strip branches (the HODL word-collision guard)",
+      (adminSrc.match(/GATE: \$\{mg\.label\}/g) || []).length === 2);
+    ok("v5.6 client: the stamp is a TWO-STEP confirmLink — no bare one-tap attest call site",
+      adminSrc.includes('confirmLink("allocStampLink"') && !/onclick="allocAttest\(\)"/.test(adminSrc));
+    ok("v5.6 client: spreadLine is ONE builder at TWO altitudes (DESK eligible box + compact BUY banner)",
+      (adminSrc.match(/spreadLine\((b|AGREE_PICK)\.sym\)/g) || []).length === 2);
+    ok("v5.6 client: stamped history is est-mini, lazy on open, and names its empty kind",
+      adminSrc.includes('ontoggle="if(this.open)loadStampedHistory(this)"') &&
+      adminSrc.includes("no stamped days yet — ⭑ STAMP starts the record"));
+    ok("v5.6: the tt-v1 machine contract never speaks the product vocabulary (gate words are the PRODUCT layer)",
+      !/SEND_IT|TOUCH_GRASS/.test(readSrc("../src/ttReadout.js")));
   } finally { globalThis.fetch = realFetch; }
 }
 

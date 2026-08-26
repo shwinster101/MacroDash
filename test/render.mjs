@@ -772,8 +772,10 @@ ok("buy: compact block carries the veto banner and the same canonical ranked row
    for the rest (the v3.72 defect: a control that reports instead of acting). The remainder
    now opens IN PANEL. Fixture has 3 ranked / 4 unranked, so the tail path is live here; the
    ranked-overflow path is driven at runtime below, the way the circuit tests already do. */
-ok("bridge: the +N expander is est-mini, never drawer (phone harness counts open drawers)",
-  (await page.locator("#buyBlock details.est-mini").count()) === 1 &&
+// Re-pinned at v5.6: the stamped-history drawer joins the bridge expander — TWO est-minis
+// now, still ZERO drawers (the phone harness counts open drawers, the invariant that matters).
+ok("bridge: the +N expander and the v5.6 stamped history are BOTH est-mini, never drawer",
+  (await page.locator("#buyBlock details.est-mini").count()) === 2 &&
   (await page.locator("#buyBlock details.drawer").count()) === 0);
 ok("bridge: the COUNT rides the closed summary — silent truncation cannot read as full coverage",
   /\*1 more reviewed/.test(buyB));
@@ -781,7 +783,8 @@ ok("bridge: the old DESK deep-link for NAMES is gone; only the methodology link 
   !/full math, horizons/.test(buyB) && /caveats, lints & horizon pin/.test(buyB));
 {
   const closed = await page.locator("#buyBlock").innerText();
-  await page.locator("#buyBlock details.est-mini > summary").click();
+  // v5.6: two est-minis exist now (bridge + stamped history); the bridge is FIRST in DOM.
+  await page.locator("#buyBlock details.est-mini > summary").first().click();
   const opened = await page.locator("#buyBlock").innerText();
   const hidden = await page.evaluate(() => UNRANKED_ROWS.slice(3).map(r => r.sym));
   ok("bridge: the overflow name is absent while closed and present one tap deep",
@@ -1159,6 +1162,77 @@ ok("alloc: no receipt is a STATED state, never a blank surface",
   allocLive.honest);
 ok("alloc: a permission state that moved AGAINST the receipt withdraws the confirm affordance, saying why",
   allocLive.withheldOnStop);
+
+/* v5.6 THE DAILY CONTRACT — driven live: the GATE token on both branches, the spread line
+   at both altitudes, the flip line, and the STAMP affordance's three honest states. */
+console.log("\n[render] v5.6 THE DAILY CONTRACT — gate, spread, flip line, stamp");
+ok("gate: the tripped default fixture reads GATE: TOUCH GRASS on the strip — fail-closed, chip-length, scoped",
+  /GATE: TOUCH GRASS/.test(await txt(page, "stanceStrip")));
+const daily = await page.evaluate(() => {
+  const a = BOOK.find((e) => e.sym === "AAA");
+  const prev = { alloc: ALLOC, stamped: ALLOC_STAMPED, circ: BOARD.circuit, reg: BOARD.regime,
+    px: LIVE_PX.AAA, card: SCORE_INDEX && SCORE_INDEX.AAA };
+  const today = new Date().toLocaleDateString("en-CA", { timeZone: "America/New_York" });
+  // the entry-recipe: clear gates + a SCORED card so AGREE_PICK lights and both spread
+  // altitudes render (the compact banner only exists under a pick).
+  BOARD.circuit = { state: "clear", as_of: today };
+  BOARD.regime = { asserted: "TAILWIND", as_of: today };
+  LIVE_PX.AAA = { px: 300, chg: 0, at: LIVE_PX.AAA.at };
+  SCORE_INDEX = SCORE_INDEX || {};
+  SCORE_INDEX_META = SCORE_INDEX_META || { methodology_version: "tt-underwriting-v2.6.0" };
+  SCORE_INDEX.AAA = { status: "SCORED", raw_score: 8.0, raw_tier: "A", capped_tier: "A",
+    methodology_version: SCORE_INDEX_META.methodology_version, broken_thesis: false };
+  ALLOC = { schema: "tt-alloc-receipt-v1", at: today + "T14:00:00Z", business_date_et: today,
+    state: "BUY_ELIGIBLE", gate: null, macro_gate: { gate: "SEND_IT", rung: null, reason: null },
+    eligible: { sym: "AAA", y: "2027", tgt: 400, up: 33.3, ann: 24.1 }, why_not: [],
+    context_blockers: ["no measured positions — sync has never run"],
+    spread: { AAA: { belief: { pt: 400, y: "2027" }, street: { pt: 340, src: "sourced", as_of: today },
+      pct: 20, sign: "you_richer" } },
+    overtake: { leader: "AAA", runner_up: "BBB", at_px: 352.4, note: "BBB overtakes AAA if AAA reaches $352.4 first" },
+    funding: { label: "FUNDING PRIORITY — not a sell recommendation", rows: [], optOnly: [] },
+    inputs: { readout_as_of: today },
+    attestation: { input_hash: "a".repeat(64), basis_hash: "b".repeat(64), result_hash: "c".repeat(64) },
+    confirmation: null };
+  ALLOC_STAMPED = false;
+  render();
+  const strip = document.getElementById("stanceStrip").innerText;
+  const up = document.getElementById("upsideRank").innerText;
+  const buy = document.getElementById("buyBlock").innerText;
+  const out = {
+    gateSendIt: /GATE: SEND IT/.test(strip),
+    // ONE builder, TWO altitudes: the labeled sourced leg + the frozen number on both.
+    spreadDesk: /you \$400 vs street \$340/.test(up) && /\(sourced/.test(up) && /\+20% you richer/.test(up),
+    spreadBuy: /you \$400 vs street \$340/.test(buy),
+    flipLine: /BBB overtakes AAA if AAA reaches \$352\.4 first/.test(up),
+    stampLink: document.getElementById("allocStampLink") !== null,
+    histSummary: /stamped history — the days you committed, scored/.test(buy) };
+  // stamped ✓ replaces the link — the committed state is stated, not implied.
+  ALLOC_STAMPED = true; render();
+  out.stampedTick = /⭑ stamped ✓/.test(document.getElementById("buyBlock").innerText) &&
+    document.getElementById("allocStampLink") === null;
+  // a prior-business-date receipt WITHHOLDS the stamp with the reason named.
+  ALLOC_STAMPED = false; ALLOC = { ...ALLOC, business_date_et: "2026-01-02" }; render();
+  out.stampWithheld = /stamp withheld — receipt is dated 2026-01-02/.test(document.getElementById("buyBlock").innerText) &&
+    document.getElementById("allocStampLink") === null;
+  // street-null on the receipt = STATED, never a number.
+  ALLOC = { ...ALLOC, business_date_et: (new Date().toLocaleDateString("en-CA", { timeZone: "America/New_York" })),
+    spread: { AAA: { belief: { pt: 400, y: "2027" }, street: null, pct: null, sign: null } } };
+  render();
+  out.unreviewed = /street unreviewed — no packet, no sourced target/.test(document.getElementById("upsideRank").innerText);
+  ALLOC = prev.alloc; ALLOC_STAMPED = prev.stamped; BOARD.circuit = prev.circ; BOARD.regime = prev.reg;
+  LIVE_PX.AAA = prev.px;
+  if (prev.card === undefined) delete SCORE_INDEX.AAA; else SCORE_INDEX.AAA = prev.card;
+  render();
+  return out;
+});
+ok("gate: a cleared board under FULL actionability reads GATE: SEND IT", daily.gateSendIt);
+ok("spread: one builder, two altitudes — labeled sourced leg + the frozen number on the DESK box AND the compact banner",
+  daily.spreadDesk && daily.spreadBuy);
+ok("flip line: the #2-overtakes sentence renders under the eligible line", daily.flipLine);
+ok("stamp: the two-step link renders on a today receipt; stamped ✓ replaces it; a stale receipt withholds with the date named",
+  daily.stampLink && daily.stampedTick && daily.stampWithheld);
+ok("spread: a null street leg is STATED (street unreviewed), never a number", daily.unreviewed);
+ok("stamped history rides the BUY block tail, one tap deep", daily.histSummary);
 
 console.log("\n[render] FEAT-TT-ESTRUN — the board expression inside NEXT DOLLAR");
 const estBoard = await txt(page, "estRunBoard");
@@ -1667,9 +1741,13 @@ ok(`one decision focus view + calendar reaches the book inside two phone screens
   dailySpan < 1688);
 // v3.42 READABLE DESK: the old stance strip wrapped ~5 lines of prose at 390px; the bar's
 // top row (token + chips + badges) must stay compact with the why drawer closed.
+// Re-pinned 140 -> 185 at v5.6 (THE DAILY CONTRACT): the GATE token is the contract's
+// FIRST line and earns one packing row — measured 178px on this dense restrictive fixture
+// (gate chip + verdict token + quals + 4 badges). 185 still fails on a second creep row;
+// the budget is not quietly loosened, the reason is this comment (the v3.45 rule).
 const stanceTopH = (await phone.locator("#stanceStrip .stance-top").boundingBox()).height;
-ok(`stance bar top row is compact at 390px — token and chips, never five lines of prose (${stanceTopH}px)`,
-  stanceTopH < 140);
+ok(`stance bar top row is compact at 390px — gate, token and chips, never prose soup (${stanceTopH}px)`,
+  stanceTopH < 185);
 ok("the tab strip is ONE row at 390px — it scrolls horizontally, it never wraps",
   (await phone.locator("#tabBar").boundingBox()).height < 60);
 // v3.81: the horizon defect was reachability, not visibility — measure the thumb target where

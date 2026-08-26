@@ -9,7 +9,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
 <!-- AUDIT: kept in sync with package.json by test/smoke.mjs. admin.html is a Vite
      public/ passthrough, so it cannot receive __APP_VERSION__ — the guard is the fix. -->
-<title>TT TICKER TERMINAL v5.5.0</title>
+<title>TT TICKER TERMINAL v5.6.0</title>
 <style>
   :root{
     --bg:#05070a; --panel:#0a0f16; --panel2:#0d141d; --line:#16202c;
@@ -458,7 +458,7 @@
          verdict and every gate are computed upstream and this panel changes nothing. -->
     <div id="macroEvidence" role="region" aria-label="Why macro — readout evidence"></div>
     <div id="headInfo" style="display:none">
-      <div class="brand">FINANCE&nbsp;BRO.AI // TT&nbsp;TICKER&nbsp;TERMINAL <small>v5.5.0 · the card governs (§14.8)</small></div>
+      <div class="brand">FINANCE&nbsp;BRO.AI // TT&nbsp;TICKER&nbsp;TERMINAL <small>v5.6.0 · the daily contract</small></div>
       <div class="statusline">
         <span>BOOK: <b id="bookStamp">loading…</b></span>
         <span>AUTH: <b id="sessState">…</b></span>
@@ -4136,10 +4136,13 @@ async function loadPositions(){
    Client logic is untouched; ALLOC only ever ADDS lines. null = no receipt / older deploy /
    fetch failed — every renderer states that rather than hiding the surface. */
 let ALLOC=null;
+let ALLOC_STAMPED=false;   // v5.6: is TODAY's ranked set stamped? (GET stamped_today / a 409 ALREADY_STAMPED)
 async function loadAllocation(){
   try{
     const r=await fetch("/api/allocation");
-    if(r.ok){const d=await r.json();ALLOC=(d&&d.receipt)||null;}
+    const d=await r.json().catch(()=>null);
+    ALLOC_STAMPED=!!(d&&d.stamped_today);   // v5.6: rides both the 200 and the honest 404
+    if(r.ok){ALLOC=(d&&d.receipt)||null;}
     else ALLOC=null;   // 404 = no receipt yet; 401/405 = older deploy — the chip states it
   }catch(_e){ALLOC=null;}
   render();
@@ -4234,6 +4237,73 @@ function allocConfirmWithheld(){
   if(stw.k==="stop"||stw.k==="unknown")
     return `local permission reads ${stw.verdict} — the receipt no longer matches the current state`;
   return null;
+}
+/* v5.6 THE DAILY CONTRACT — the product macro gate: three words over the SAME ladder
+   gateFail renders (SEND IT = FULL · HODL = RESTRICTED · TOUCH GRASS = everything
+   fail-closed: unknown/stop stance, unreadable feed or actionability, HOLD, absent/blind/
+   tripped flip). Mirrors functions/lib/tt-alloc.js macroGateFrom rung-for-rung (the
+   gateFail convention); smoke runs both over one fixture matrix so the mirrors cannot
+   drift. PRESENTATION ONLY — the eligibility ladder did not move: HODL is a visible,
+   still-vetoed looking session (owner ruling), and only SEND IT ever coincides with a lit
+   green line, as a CONSEQUENCE of the untouched actionability veto, not a new rule. The
+   `GATE:` prefix is load-bearing: the public call's middle is ALSO the word HODL
+   (md-call-v1), and one word carrying two verdicts on one screen is the v3.51/v3.62
+   defect — the scope word keeps them apart. */
+function macroGate(){
+  // local is deliberately NOT named stc — smoke [44] lifts gateFail by the first
+  // occurrence of that assignment spelling, and this function sits earlier in the file
+  // (naming it here, even in prose, would re-hijack the lift — the v3.60.1 trap).
+  const stq=stance();
+  const reg=REGIME&&REGIME.regime,mf=REGIME&&REGIME.macro_flip;
+  const rung=
+    stq.k==="unknown"||stq.k==="stop"?"stance"
+    :!REGIME?"feed"
+    :(!reg||!reg.actionability)?"actionability"
+    :reg.actionability!=="FULL"?"actionability"
+    :!mf?"flip":mf.evaluable===false?"flip":mf.tripped?"flip":null;
+  if(rung===null)return{g:"SEND_IT",label:"SEND IT",c:"var(--green)"};
+  const hodl=rung==="actionability"&&reg&&reg.actionability==="RESTRICTED";
+  return hodl?{g:"HODL",label:"HODL",c:"var(--amber)",rung}
+             :{g:"TOUCH_GRASS",label:"TOUCH GRASS",c:"var(--red)",rung};
+}
+/* v5.6 — belief vs street, rendered FROM the server receipt (one computation server-side;
+   this only formats — the frozen formula and the labeled street rungs live in
+   tt-alloc.js). No street leg = STATED, never a number; no receipt entry = no line. */
+function spreadLine(sym){
+  const sp=ALLOC&&ALLOC.spread&&ALLOC.spread[sym];if(!sp||!sp.belief)return "";
+  if(!sp.street)return `<div class="scope" style="margin-top:2px">⇄ you $${esc(String(sp.belief.pt))} (YE${esc(String(sp.belief.y))}) · street unreviewed — no packet, no sourced target</div>`;
+  const aligned=sp.sign==="aligned";
+  const word=sp.sign==="you_richer"?"you richer":sp.sign==="street_richer"?"street richer":"aligned";
+  return `<div style="margin-top:2px;font-size:var(--fs-xs);color:${aligned?"var(--dim)":"var(--amber)"}">`+
+    `⇄ you $${esc(String(sp.belief.pt))} vs street $${esc(String(sp.street.pt))} <span style="opacity:.8">(${esc(sp.street.src)}${sp.street.as_of?` ${esc(String(sp.street.as_of))}`:""})</span>`+
+    (sp.pct!==null?` · ${sp.pct>=0?"+":""}${sp.pct}% ${word}`:"")+`</div>`;
+}
+/* v5.6 — the STAMP action. Immutable server-side (first-write-wins per ET day, 409 after);
+   the 409 is friendly — it just means the day is already committed. */
+function allocAttest(){
+  fetch("/api/allocation?attest=1",{method:"POST",headers:{"content-type":"application/json"},body:"{}"})
+    .then(async r=>{const d=await r.json().catch(()=>({}));
+      if(r.ok&&d.stamped){ALLOC_STAMPED=true;toast("⭑ stamped — today's ranked set is the receipt outcomes will score");render();}
+      else if(r.status===409&&d.error==="ALREADY_STAMPED"){ALLOC_STAMPED=true;toast("already stamped today — the first stamp stands");render();}
+      else toast("stamp failed: "+((d&&(d.reason||d.error))||r.status));})
+    .catch(()=>toast("stamp failed — network"));
+}
+/* v5.6 — stamped history, lazy on open (the HISTORY-drawer pattern): outcomes are computed
+   server-side AT READ from the facts store's candles; empty states say which kind of empty. */
+function loadStampedHistory(det){
+  const el=document.getElementById("stampedHist");if(!el||det.dataset.loaded)return;
+  det.dataset.loaded="1";
+  el.textContent="loading stamped history…";
+  fetch("/api/allocation?stamped=1").then(async r=>{
+    const d=await r.json().catch(()=>null);
+    if(!r.ok||!d||!Array.isArray(d.rows)){el.textContent="stamped history unavailable"+(d&&d.error?` — ${d.error}`:"");return;}
+    if(!d.rows.length){el.textContent="no stamped days yet — ⭑ STAMP starts the record";return;}
+    el.innerHTML=d.rows.map(row=>{
+      const o=row.outcome;
+      const rets=o&&o.returns_pct?["1d","5d","20d"].map(k=>`${k} ${o.returns_pct[k]===null?"·":`${o.returns_pct[k]>=0?"+":""}${o.returns_pct[k]}%`}`).join(" · "):(o&&o.reason?esc(o.reason):"no pick that day");
+      return `<div style="margin:2px 0">${esc(row.date)} · GATE ${esc(row.gate||"—")} · ${row.pick?`<b>${esc(row.pick)}</b>`:"no pick"} · ${rets} · Δalloc ${row.allocation_changed?"YES":"no"}${row.note?` · ${esc(row.note)}`:""}</div>`;
+    }).join("");
+  }).catch(()=>{el.textContent="stamped history unavailable — network";});
 }
 function allocChip(){
   if(!ALLOC)return `<span class="scope">server allocation: no receipt — ⟳ DATA+RANKS computes one (older deploys: unavailable)</span>`;
@@ -5381,6 +5451,10 @@ function renderUpsideRank(){
           (()=>{const tc=techChip(b.sym);return tc?`<div style="margin-top:2px">${tc}</div>`:"";})()+
           (b.kdSoon!==null&&b.kdSoon<=BINARY_WINDOW_D?`<div style="color:var(--amber);margin-top:2px">⚠ binary ${esc(b.kdSoon)}d — advisory only; owner decides</div>`:"")+
           (b.rolled?`<div class="scope" style="margin-top:2px">↷ priced off the ${esc(b.y)} rung — the ${esc(b.rolled)} one is inside 3 months</div>`:"")+
+          // v5.6 THE DAILY CONTRACT: belief-vs-street on the line the decision is read
+          // (server-computed, one formula), and the flip line — what change reorders #1.
+          spreadLine(b.sym)+
+          (ALLOC&&ALLOC.overtake?`<div class="scope" style="margin-top:2px">⤭ ${esc(ALLOC.overtake.note)}</div>`:"")+
           `</div>`;}
       const near=rows.slice(0,4).map(r=>`${esc(r.sym)}: ${esc(why(r))}`).join(" · ");
       return `<div style="margin-top:6px;padding:5px 8px;border:1px solid var(--amber);border-radius:6px;font-size:11px">`+
@@ -6040,7 +6114,10 @@ function renderBuyBlock(){
     (AGREE_PICK.redH?`<span style="color:var(--red)"> · ⚠ ${AGREE_PICK.redH} red: ${esc(AGREE_PICK.redLabels.slice(0,2).join(" · "))}</span>`:"")+
     // FEAT-TT-ENTRY (v3.82): the same paChip as the DESK eligible line — one builder, two
     // altitudes, zero drift (the ptModelRows rule). Compact here; never a veto anywhere.
-    (()=>{const pc=paChip(AGREE_PICK.sym);return pc?`<span style="font-weight:400"> · ${pc}</span>`:"";})()+`</div>`;
+    (()=>{const pc=paChip(AGREE_PICK.sym);return pc?`<span style="font-weight:400"> · ${pc}</span>`:"";})()+`</div>`+
+    // v5.6: the same spreadLine as the DESK eligible box — one builder, two altitudes.
+    spreadLine(AGREE_PICK.sym)+
+    (ALLOC&&ALLOC.overtake?`<div class="scope">⤭ ${esc(ALLOC.overtake.note)}</div>`:"");
   else if(rows.length)h+=`<div class="none" style="color:var(--amber)">⏸ WAIT — no name passes every gate (reasons in DESK)</div>`;
   /* FEAT-TT-ALLOC (v3.100): the SERVER's read of the same question, beside the client's —
      married never merged. A split between the two lines is signal (stale receipt, drifted
@@ -6056,6 +6133,18 @@ function renderBuyBlock(){
       if(w)return `<span class="scope"> · confirmation withheld — ${esc(w)}</span>`;
       return ` · ${confirmLink("allocFundLink","RECORD FUNDING INTENT — "+ALLOC.eligible.sym+" · no order","allocDoFund")}`+
         `<span class="scope"> · at ${esc(allocPriceBasis()||"price basis unrecorded")}</span>`;})()+`</div>`;
+  /* v5.6 THE DAILY CONTRACT — the STAMP, the contract's fourth line. Two-step (the v3.42
+     destructive-link rule — a stamp is immutable, so it earns the confirm); withdrawn with
+     the reason when the receipt is not today's; "stamped ✓" states the day is committed.
+     No silent auto-stamp anywhere: receipts persist on every reeval, but only THIS action
+     admits a day to the stamped history that outcomes score. */
+  h+=(()=>{
+    if(ALLOC_STAMPED)return `<div class="none" style="color:var(--green)">⭑ stamped ✓ — today's ranked set is committed; outcomes will score it</div>`;
+    if(!ALLOC)return `<div class="none scope">⭑ stamp: no server receipt — ⟳ DATA+RANKS computes one</div>`;
+    const todayEt=new Date().toLocaleDateString("en-CA",{timeZone:"America/New_York"});
+    if(ALLOC.business_date_et!==todayEt)return `<div class="none scope">⭑ stamp withheld — receipt is dated ${esc(ALLOC.business_date_et||"undated")}, not today (⟳ DATA+RANKS)</div>`;
+    return `<div class="none">${confirmLink("allocStampLink","⭑ STAMP today's ranked set — immutable, outcomes will score it","allocAttest")}</div>`;
+  })();
   // v3.42 slice 2: while the first quote load is still in flight an empty rank is UNKNOWN,
   // not empty — skeleton rows hold the geometry so the board doesn't shift when data lands.
   // v3.76: "nothing to rank" is only true when there is also nothing REVIEWED to fall back
@@ -6152,6 +6241,9 @@ function renderBuyBlock(){
   }
   h+=`<div class="none"><button class="linklike" onclick="openDesk('dNext')">caveats, lints &amp; horizon pin ↗</button> · ${UPSIDE_ROWS.length} ranked of ${BOOK.length}`+
     (UNRANKED_ROWS.length?` · ${UNRANKED_ROWS.length} reviewed but unpriced`:"")+`</div>`;
+  // v5.6: stamped history lives at the block's TAIL — one tap deep, never above the ranked
+  // rows it scores (est-mini, never drawer — the phone harness counts open drawers).
+  h+=`<details class="est-mini" ontoggle="if(this.open)loadStampedHistory(this)"><summary><span class="scope">⭑ stamped history — the days you committed, scored</span></summary><div id="stampedHist" class="none">…</div></details>`;
   el.innerHTML=h;
 }
 /* Compact calendar block — same binaryEvents() computation the DESK calendar renders. */
@@ -6226,13 +6318,27 @@ function renderStance(){
      inside the DESK drawer, which is exactly the "one click away" the owner asked for.
      The RED BADGES render in BOTH states — the v3.25 rule is that a red fact is never hidden
      by a collapse, and those badges are the actual high-leverage content of this strip. */
+  /* v5.6 THE DAILY CONTRACT — the GATE leads the strip in BOTH stance states: the first
+     question the board answers is macro permission. Chip-length (the 390px stance budget
+     is a real guard), scoped `GATE:` (the HODL collision rule at macroGate), and a tap
+     opens the same WHY MACRO evidence panel the pill owns — no second evidence surface. */
+  const mg=macroGate();
+  /* Two sizes on purpose (the v3.61 duplication rule + the 390px stance budget): on a
+     PERMISSIVE stance the gate is the strip's one macro fact and leads full-weight — an
+     ADDS-OK board under HODL/TOUCH GRASS is exactly the combination the vocabulary exists
+     to make unmissable. On a RESTRICTIVE stance the gate is always TOUCH GRASS by
+     construction (the stance veto IS a gate rung), so a second full-size token would
+     restate the vbadge beside it — it renders compact, still first, still tappable. */
+  const gateTitle=mg.rung?esc(mg.rung)+" gate — tap for the macro evidence":"macro permission live — tap for the evidence";
+  const gateTok=`<button class="badge" style="color:${mg.c};font-weight:700" onclick="toggleMacroEvidence()" title="${gateTitle}">GATE: ${mg.label}</button>`;
+  const gateTokSm=`<button class="badge" style="color:${mg.c};font-size:var(--fs-xs)" onclick="toggleMacroEvidence()" title="${gateTitle}">GATE: ${mg.label}</button>`;
   if(st.k==="go"){
-    el.innerHTML=`<div class="stance-top">`+
+    el.innerHTML=`<div class="stance-top">`+gateTok+
       `<span class="qual" style="color:${col};font-weight:700">${esc(st.verdict||st.txt)}</span>`+
       badges+controls+`</div>`;
     return;
   }
-  el.innerHTML=`<div class="stance-top">`+
+  el.innerHTML=`<div class="stance-top">`+gateTokSm+
     `<span class="vbadge" style="color:${col}">${esc(st.verdict||st.txt)}</span>`+
     (st.quals||[]).map(q=>`<span class="qual" style="color:${QC[q.c]||"var(--dim)"}">${esc(q.t)}</span>`).join("")+
     badges+controls+`</div>`+

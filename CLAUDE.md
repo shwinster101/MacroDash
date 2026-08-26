@@ -2924,6 +2924,89 @@ Jan-anchor shipped; see `snapshot.js` ~318–328), `spyMa100`, `spyMa200`, and a
   VALUATION GAP ranking (§11.1 — the ranking always renders, which is the owner's actual
   "always an output" contract, and it was never suspended). Tests: 1223 smoke (+2) + 199
   render (+1).
+- **v5.6.0 "THE DAILY CONTRACT" — the sprint doc's four-question surface, mapped onto the
+  machinery that already existed (owner sprint doc `TT_DOUBLE_DOWN_BUILD.md`, 2026-08-26;
+  plan reviewed, corrected and approved same day).** The doc's diagnosis was right — the
+  pieces existed, the daily contract didn't force them into one surface — and its central
+  moat claim sharpened into the build's spine: the CLOSED LOOP (pre-committed belief →
+  stamped decision → measured outcome) is the one structure Robinhood/TipRanks/SA cannot
+  copy, and this release closes leg 3. Five pieces:
+  **(1) The product macro gate — SEND IT | HODL | TOUCH GRASS.** `macroGateFrom()` is ONE
+  projection of `allocGateLadder`'s own RESULT (the verdictFrom rule), so the word can never
+  disagree with the veto it names: SEND_IT = the ladder read clean; HODL = the one
+  looking-session state (actionability RESTRICTED — readable, ranking fully usable, still
+  vetoed: **fail-closed doctrine untouched, owner ruling**); TOUCH_GRASS = everything else
+  (HOLD, unreadable feed/flip, tripped/unresolved circuit). The doc's own alias table was
+  corrected against the real contract (there is no "blocked" state; RESTRICTED existed and
+  was the missing middle). The client mirror (`macroGate()`, buildless-copy convention) is
+  proven against the server over one fixture matrix, and the strip leads with the token in
+  BOTH stance branches — full-weight on a permissive board (where ADDS-OK + HODL is exactly
+  the combination that must be unmissable), compact on a restrictive one (where the vbadge
+  already says it — the v3.61 duplication rule). **The `GATE:` prefix is load-bearing**: the
+  public call's middle is ALSO the word HODL (md-call-v1), and one word carrying two verdicts
+  on one screen is the v3.51/v3.62 defect. The tt-v1 machine contract is untouched and
+  smoke-pinned free of the product vocabulary. The stance-budget pin moved 140→185 WITH the
+  measurement (178px: the gate is the contract's first line and earns one packing row).
+  **(2) The receipt extension (tt-alloc-v3.1.0, additive).** The sprint's proposed
+  `tt-rank-receipt-v1` duplicated ~80% of the existing allocation receipt and was REJECTED
+  for the extend-don't-twin path (owner ruling): `tt-alloc-receipt` gains `macro_gate`, the
+  bound public `call` (only when `effective_date` is genuinely the receipt's business date —
+  never yesterday's headline on today's receipt), per-row belief/street `spread` for the
+  decision set, and the `overtake` flip line.
+  **(3) Belief-vs-street, formula FROZEN:** `(belief − street) / live price × 100`, sign
+  buckets You richer / Street richer / Aligned on an asserted ±10 deadband
+  (`SPREAD_ALIGNED_PCT`, the NFCI convention, boundaries executed). The belief leg is the
+  row's OWN ladder target (never recomputed); the street leg follows the v4.2 target
+  priority — a REVIEWED packet's published average outranks a stored assistant-sourced
+  `consensus.street_target`, both LABELED, neither = null-honest ("street unreviewed"),
+  since the street store is measured EMPTY at ship. `spreadLine()` is one builder at two
+  altitudes (DESK eligible box + compact BUY banner). **The flip line** — "#2 overtakes #1
+  at $X" — inverts the ranking's own annualise from the leader row's (up, ann) pair
+  (yrs = ln(1+up)/ln(1+ann), no second year-end clock; §P.4), proven by the identity that
+  two identical rows cross exactly at the current price.
+  **(4) The ATTEST layer — the stamp, and outcomes that only score commitment.**
+  `POST /api/allocation?attest=1` marks TODAY's receipt as the owner's stamped ranked set:
+  first-write-wins per ET day, a second attest 409s toward the standing stamp (immutable),
+  a prior-business-date receipt refuses with the date named. Receipts still persist on
+  every reeval, but **only attested days join the stamped history that outcomes score** —
+  a passive ⟳ never accrues a score it was never committed to, and there is NO auto-stamp
+  anywhere. `GET ?stamped=1` computes outcomes AT READ (GET stays safe, v3.54 — no cron, no
+  write-on-read): day 0 = first official close ON OR AFTER the stamp date (the shipped v5.5
+  public pattern, `maxDrawdownPct` IMPORTED from publicHistory — one implementation),
+  1d/5d/20d + drawdown-so-far from the facts store's candles, a missing history a NAMED
+  reason. `allocation_changed` is DERIVED from the intent journal (an intent that day = the
+  list moved real allocation) with an explicit `?outcome=1` owner override + note. Client:
+  a two-step ⭑ STAMP link (the v3.42 destructive-link rule) under the BUY block with three
+  honest states (link / stamped ✓ / withheld-with-date), and a lazy stamped-history
+  est-mini at the block tail. This closes the outcome-evaluation deferral v3.74 filed
+  ("wait until decision events exist") — they exist now.
+  **(5) Found while building, both caught by the new tests:** the intent-date derivation
+  truncated ISO instants at their first colon (an intent key's timestamp contains colons),
+  so `allocation_changed` derived no date at all — fixed to last-colon parsing; and the
+  smoke [44] gateFail lift was hijacked twice, first by `macroGate()` reusing its anchor
+  spelling and then by my own comment NAMING the anchor spelling (the v3.60.1
+  self-matching trap, recorded verbatim in the site comment).
+  **Reconciliation note (Step 0):** v5.3.0/v5.5.0 shipped from parallel sessions with no
+  changelog entries — recorded here so no phantom versions are inferred: v5.3.0 "One Call +
+  public accountability" (md-call-v1 in `src/macroCall.js`, the `/history` + `/difference`
+  public pages, `functions/history.json.js`, the 10:00 ET `captureDailyCall` cron);
+  d8a6003 repaired Why-This-Call accountability; v5.5.0 added the public outcome layer
+  (`src/publicHistory.js`: frozen-call vs outcome keys, day-0 anchor, SPY 1d/5d/20d +
+  drawdown) — the exact pattern this release's TT outcomes mirror.
+  **Deliberately NOT in this release (owner rulings):** reverse DCF (cut — the doc's own
+  "if it can't stay thin" rule); any change to `tt-v1`, the band tables, or canonical
+  winner selection; street entering next-dollar ordering; new public surfaces.
+  Tests: **1996 smoke** (+28: the gate matrix EXECUTED against the real ladder with the
+  client mirror run over the same fixtures, SEND_IT-iff-clean, the frozen formula + exact
+  deadband edges, street-leg priority, the day-0 anchor + named-reason paths, the
+  drawdown-import pin, receipt fields end-to-end incl. the call-date binding and the
+  overtake identity, the full attest lifecycle through the real endpoint, and the
+  scoping/two-step/one-builder/tt-v1-clean client pins) + **278 render** (+7: both gate
+  states driven live, the spread at both altitudes with the labeled sourced leg, the
+  street-unreviewed statement, the flip line, and the stamp's three states) + 187
+  public-render + `audit:prod` clean. Negative-controlled four ways — collapsing HODL,
+  widening the deadband, inverting the street priority, and removing the attest 409 —
+  each turning exactly its own pins.
 - **v5.2.0 "CAP-ASTERISK" — the cap demotes to an asterisk, and the funding queue ranks on
   MERIT (owner ruling 2026-08-25, verbatim: *"I'm not adhering to the allocation cap. Can we
   just keep it as an asterisk and rank sells by pure technicals, pt, and scores"*).** Two

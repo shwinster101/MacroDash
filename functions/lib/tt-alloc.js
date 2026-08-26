@@ -31,7 +31,15 @@ import { ptModelRows, ptRowYears, lintPtModel, pickRow, annualise } from "../../
 import { computeTechRead } from "../../src/techRead.js";
 import { etYmd } from "../../src/sources.js";
 import { POS_STALE_D } from "../api/positions.js";
+import { maxDrawdownPct } from "../../src/publicHistory.js";
 
+// v3.1.0 (v5.6 THE DAILY CONTRACT, owner sprint doc 2026-08-26): ADDITIVE receipt fields —
+// the product macro gate (macro_gate: SEND_IT | HODL | TOUCH_GRASS, ONE projection of the
+// gate ladder so the word can never disagree with the veto it names), the public md-call
+// binding, per-row belief-vs-street spread on the eligible + why_not rows (formula frozen,
+// street legs LABELED reviewed/sourced per the v4.2 target priority), the #2-overtakes flip
+// line, and the endpoint's ATTEST/stamped-day + outcome layer. No existing field is
+// reinterpreted — a v3.0.0 receipt stays readable; the bump records the added meaning.
 // v3.0.0 (v5.2 CAP-ASTERISK, owner ruling 2026-08-25: "I'm not adhering to the allocation
 // cap — keep it as an asterisk and rank sells by pure technicals, pt, and scores"): the
 // 18% cap DEMOTES from enforcement to annotation on BOTH ladders — the buy-side cap veto
@@ -43,7 +51,7 @@ import { POS_STALE_D } from "../api/positions.js";
 // v2.1.0 (v5.1.1) added the card-actionability veto rung; v2.0.0 was the §14.8 activation
 // (quality rung to server cards + broken_thesis into forced funding); v1.1.0 was the
 // horizon-never-substituted change.
-export const ALLOC_RULE_VERSION = "tt-alloc-v3.0.0";
+export const ALLOC_RULE_VERSION = "tt-alloc-v3.1.0";
 export const CAP_PCT = 18;      // mirror of admin.html — REFERENCE cap (asterisk, not a wall, since v5.2)
 export const PX_STALE_D = 4;    // mirror of admin.html (a stamped mark older than this misleads)
 export const REG_RANK = { TAILWIND: 0, NEUTRAL: 1, HEADWIND: 2, PANIC: 3 };
@@ -133,6 +141,48 @@ export function allocGateLadder({ board, readout, now }) {
   if (!mf) return { rung: "flip", reason: "readout carries no Macro Flip block — the crash circuit cannot be read" };
   if (mf.evaluable === false) return { rung: "flip", reason: mf.reason || "Macro Flip BLIND — missing inputs" };
   if (mf.tripped) return { rung: "flip", reason: "Macro Flip TRIPPED — de-risk, no adds" };
+  return null;
+}
+
+/* v5.6 THE DAILY CONTRACT — the product gate: three words over the ladder above, derived
+   from its RESULT so the gate can never disagree with the veto it names (the verdictFrom
+   rule: one expression of a rule). SEND_IT = the ladder read clean (actionability FULL by
+   construction of the ladder itself). HODL = the ONE looking-session state: everything is
+   readable and the ranking fully usable, but the evidence axis said RESTRICTED — visible,
+   still vetoed (owner ruling: fail-closed doctrine untouched), named. Every other veto
+   (tripped/unresolved circuit, PANIC, unreadable feed/flip, HOLD) is TOUCH_GRASS: no clean
+   macro-dependent BUY path. Vocabulary is the owner's locked product voice (2026-08-26
+   sprint doc); the tt-v1 machine contract does not move. */
+export function macroGateFrom(gateResult, readout) {
+  if (gateResult === null) return { gate: "SEND_IT", rung: null, reason: null };
+  const hodl = gateResult.rung === "actionability" &&
+    !!(readout && readout.regime && readout.regime.actionability === "RESTRICTED");
+  return { gate: hodl ? "HODL" : "TOUCH_GRASS", rung: gateResult.rung, reason: gateResult.reason };
+}
+
+/* v5.6 — the belief-vs-street spread, FROZEN: (belief − street) / live price × 100, both
+   legs against the same price so the number is comparable across names. Sign buckets carry
+   an asserted ±SPREAD_ALIGNED_PCT deadband (the NFCI convention: asserted, boundary-
+   executed in smoke, one edit + one red test to change). */
+export const SPREAD_ALIGNED_PCT = 10;
+export function spreadOf(belief, street, px) {
+  if (![belief, street, px].every((v) => typeof v === "number" && isFinite(v)) || px <= 0) return null;
+  const pct = Math.round(((belief - street) / px) * 1000) / 10;
+  const sign = pct > SPREAD_ALIGNED_PCT ? "you_richer" : pct < -SPREAD_ALIGNED_PCT ? "street_richer" : "aligned";
+  return { pct, sign };
+}
+/* The street leg, per the v4.2 target priority: a REVIEWED packet's published TipRanks
+   average (consumed directly, never re-averaged — the v3.90 rule) outranks a stored
+   assistant-sourced consensus.street_target; both are LABELED so a sourced number can
+   never wear the reviewed rung's authority. Neither present = null, never a guess. */
+export function streetLegOf(idx, streetRec) {
+  const t = streetRec && streetRec.analystTarget;
+  const pub = t && Number(t.average);
+  if (isFinite(pub) && pub > 0)
+    return { pt: pub, src: "reviewed", as_of: (t && (t.as_of || t.asOf)) || streetRec.as_of || streetRec.asOf || null };
+  const st = idx && idx.consensus && idx.consensus.street_target;
+  const pt = st && Number(st.pt);
+  if (isFinite(pt) && pt > 0) return { pt, src: "sourced", as_of: st.as_of || null };
   return null;
 }
 
@@ -396,8 +446,30 @@ export function fundingRanking({ book, board, positions, rowsAnn, now, noRungSym
     basis: "merit rank (owner ruling 2026-08-25): tape (bearish first) -> lowest %/yr -> lowest TT card score; cap, cluster and session order are FLAGS, never tiers" };
 }
 
+/* v5.6 — outcomes for a stamped day, mirroring the shipped public pattern
+   (src/publicHistory.js buildForwardOutcome, v5.5): day 0 is the FIRST official close ON OR
+   AFTER the stamp date — a stamp made mid-session must not count pre-stamp movement as an
+   outcome — 1d/5d/20d are the next trading closes, and drawdown is explicitly "so far"
+   until session 20 (maxDrawdownPct is IMPORTED, one implementation). Closes come from the
+   facts store's daily candles; no usable history = a NAMED reason, never a zero. */
+export function stampOutcome(dateEt, closes) {
+  const rows = (Array.isArray(closes) ? closes : [])
+    .map((r) => ({ date: String(r && r.date || "").slice(0, 10), close: Number(r && r.close) }))
+    .filter((r) => /^\d{4}-\d{2}-\d{2}$/.test(r.date) && isFinite(r.close) && r.close > 0)
+    .sort((a, b) => a.date.localeCompare(b.date));
+  const i = rows.findIndex((r) => r.date >= dateEt);
+  if (i < 0) return { anchor: null, reason: "no close on or after the stamp date in the facts store" };
+  const anchor2 = rows[i], fwd = rows.slice(i + 1, i + 21);
+  const ret = (n) => fwd.length >= n ? Math.round((fwd[n - 1].close / anchor2.close - 1) * 1000) / 10 : null;
+  return { anchor: { date: anchor2.date, close: anchor2.close },
+    returns_pct: { "1d": ret(1), "5d": ret(5), "20d": ret(20) },
+    max_drawdown_pct: maxDrawdownPct([anchor2.close, ...fwd.map((r) => r.close)]),
+    max_drawdown_status: fwd.length >= 20 ? "FINAL" : "SO_FAR",
+    sessions_observed: fwd.length, status: fwd.length >= 20 ? "COMPLETE" : "PENDING" };
+}
+
 // ── the whole evaluation ─────────────────────────────────────────────────────
-export function evaluateAllocation({ book, ddIndex, posDoc, quotes, readout, now, scoreIndex, methodologyVersion }) {
+export function evaluateAllocation({ book, ddIndex, posDoc, quotes, readout, now, scoreIndex, methodologyVersion, streetBySym = {} }) {
   const board = (book && book.board) || {};
   const entries = Array.isArray(book && book.book) ? book.book : [];
   const idxEntries = (ddIndex && ddIndex.entries) || {};
@@ -508,6 +580,54 @@ export function evaluateAllocation({ book, ddIndex, posDoc, quotes, readout, now
   }
   const funding = fundingRanking({ book, board, positions, rowsAnn, now, noRungSyms, brokenSyms, techBySym, scoreBySym });
 
+  /* v5.6 THE DAILY CONTRACT — the product gate is ONE projection of the ladder result
+     computed above, and the public daily call rides the SAME readout body the gate read.
+     The call binds only when it is genuinely TODAY's (effective_date == the receipt's own
+     business date) — anything else is null-honest, never yesterday's headline wearing
+     today's receipt. */
+  const macro_gate = macroGateFrom(gate, readout);
+  const call = readout && readout.call && readout.call.schema === "md-call-v1"
+    && readout.call.effective_date === etYmd(now)
+    ? { headline: readout.call.headline || null, direction: readout.call.direction || null,
+        frozen: readout.call_frozen === true }
+    : null;
+
+  /* v5.6 — belief-vs-street spread for the decision set (the eligible pick + the top
+     why_not rows): belief = the row's OWN ladder target (never recomputed — the pickRow
+     one-computation rule), street per streetLegOf's labeled priority, formula per spreadOf.
+     A name with no street leg carries street:null — the client says "street unreviewed",
+     never a number. */
+  const spread = {};
+  const spreadSyms = [...new Set([eligible && eligible.sym, ...whyNotTop.map((w) => w.sym)].filter(Boolean))].slice(0, 9);
+  for (const s5 of spreadSyms) {
+    const r5 = rows.find((x) => x.sym === s5);
+    if (!r5 || typeof r5.tgt !== "number") continue;
+    const leg = streetLegOf(idxEntries[s5], streetBySym[s5]);
+    const sp = leg ? spreadOf(r5.tgt, leg.pt, r5.px) : null;
+    spread[s5] = { belief: { pt: r5.tgt, y: r5.y }, street: leg,
+      pct: sp ? sp.pct : null, sign: sp ? sp.sign : null };
+  }
+
+  /* v5.6 — the flip line: the price at which #1's %/yr equals #2's. yrs is recovered from
+     the leader row's OWN (up, ann) pair — ann = ((1+up/100)^(1/yrs)−1)·100, so
+     yrs = ln(1+up/100)/ln(1+ann/100) — which inverts the same annualise the ranking used
+     rather than copying the year-end clock (the §P.4 one-clock rule). Computed only when
+     both top RANKED rows carry finite rates; otherwise null, never a guess. */
+  let overtake = null;
+  const rankedTop = rows.filter((r6) => typeof r6.ann === "number" && isFinite(r6.ann)
+    && typeof r6.tgt === "number" && typeof r6.up === "number" && r6.up > -100);
+  if (rankedTop.length >= 2) {
+    const a6 = rankedTop[0], b6 = rankedTop[1];
+    const la = Math.log(1 + a6.ann / 100), lb = Math.log(1 + b6.ann / 100);
+    if (isFinite(la) && la !== 0 && isFinite(lb)) {
+      const yrs = Math.log(1 + a6.up / 100) / la;
+      const pxStar = yrs > 0 ? a6.tgt / Math.pow(1 + b6.ann / 100, yrs) : null;
+      if (pxStar !== null && isFinite(pxStar) && pxStar > 0)
+        overtake = { leader: a6.sym, runner_up: b6.sym, at_px: Math.round(pxStar * 100) / 100,
+          note: `${b6.sym} overtakes ${a6.sym} if ${a6.sym} reaches $${Math.round(pxStar * 100) / 100} first` };
+    }
+  }
+
   return {
     rule_version: ALLOC_RULE_VERSION,
     state,                       // WAIT (gate) | NONE (no eligible) | BUY_ELIGIBLE | ALLOCATABLE
@@ -517,6 +637,10 @@ export function evaluateAllocation({ book, ddIndex, posDoc, quotes, readout, now
        machine field so no renderer can quietly re-imply it. */
     meaning: state === "ALLOCATABLE" ? "context_complete_not_cash_or_sizing_approval" : null,
     gate: gate || null,          // null = every gate read clean
+    macro_gate,                  // v5.6 product gate: {gate: SEND_IT|HODL|TOUCH_GRASS, rung, reason}
+    call,                        // v5.6 today's md-call {headline, direction, frozen} or null
+    spread,                      // v5.6 belief-vs-street for the decision set, keyed by sym
+    overtake,                    // v5.6 flip line: {leader, runner_up, at_px, note} or null
     // FEAT-TT-CIRCUIT (v4.1): the resolved permission facts this evaluation gated on.
     permission: {
       circuit: cs.st.toUpperCase(),               // CLEAR | ARMED | TRIPPED | UNRESOLVED
