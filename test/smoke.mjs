@@ -8610,7 +8610,9 @@ console.log("\n[68] FEAT-TT-ALLOC — pure core, endpoint, and the §14.8 bar");
     ok("stamped list: with facts candles the outcome computes — same-day anchor, null returns, PENDING (never a fabricated same-day score)",
       (await (async () => {
         const d0 = etYmd(new Date());
-        store.set("tt:facts:AAA", JSON.stringify({ fields: { candles: { value: [
+        // the REAL key shape (ticker-facts keyFor: `tt:facts:<SYM>:v1`) — a suffix-less
+        // fixture agreed with a live suffix-less read bug once; never again.
+        store.set("tt:facts:AAA:v1", JSON.stringify({ fields: { candles: { value: [
           { date: "2026-01-02", close: 95 }, { date: d0, close: 101 }] } } }));
         const r = await ep.onRequest({ request: rq("GET", "?stamped=1"), env });
         const row = JSON.parse(await r.text()).rows[0];

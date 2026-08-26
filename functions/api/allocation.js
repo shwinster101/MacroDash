@@ -204,7 +204,9 @@ export async function onRequestGet({ request, env }) {
       stamps.sort((a, b) => String(b.date).localeCompare(String(a.date)));
       const pickSyms = [...new Set(stamps.map((r) => r.receipt && r.receipt.eligible && r.receipt.eligible.sym).filter(Boolean))];
       const factsBySym = {};
-      await Promise.all(pickSyms.map(async (s2) => { factsBySym[s2] = await kvGet(env, FACTS_PREFIX + s2); }));
+      // the facts store keys are `tt:facts:<SYM>:v1` (ticker-facts keyFor) — caught LIVE:
+      // the suffix-less read found nothing while the fixture agreed with the bug.
+      await Promise.all(pickSyms.map(async (s2) => { factsBySym[s2] = await kvGet(env, FACTS_PREFIX + s2 + ":v1"); }));
       const intents = await env.PULSE_CACHE.list({ prefix: INTENT_PREFIX, limit: 200 }).catch(() => null);
       const intentDates = new Set((intents?.keys || []).map((k) => {
         // key = prefix + <ISO instant> + ":" + id — the instant itself contains colons,
