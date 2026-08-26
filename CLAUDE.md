@@ -2924,6 +2924,28 @@ Jan-anchor shipped; see `snapshot.js` ~318–328), `spyMa100`, `spyMa200`, and a
   VALUATION GAP ranking (§11.1 — the ranking always renders, which is the owner's actual
   "always an output" contract, and it was never suspended). Tests: 1223 smoke (+2) + 199
   render (+1).
+- **v5.6.1 — the candle-continuity guard: the outcome layer's first live catch, closed the
+  night it was found.** Minutes after v5.6.0 deployed, the very first stamped outcome
+  anchored NBIS at **$7.62 — on a $277 stock.** Two defects compounded: the outcome reader
+  dropped the `:v1` suffix ticker-facts keys have always carried (and the smoke fixture
+  used the same wrong key — a fixture agreeing with the bug; both fixed, the fixture now
+  pins the real shape), and once the right key was read, the STORED series itself was
+  corrupt: the v3.98 Nasdaq multi-window merge had flattened a failed middle window into a
+  **6-month interior hole** with the tail window carrying **another instrument's prints**
+  ($104.88 → $7.78 across adjacent rows), stored as LIVE. Census across the whole facts
+  store: 36 clean, NBIS the only contamination; the 8/24 PA stamps were verified sane
+  (levels consistent with the real tape), so the tape axis was never poisoned — the blast
+  radius was one stored series and the outcome anchor it fed. **`candleSeriesFault()`**
+  (`functions/lib/tt-facts.js`) is the BANDS doctrine pointed at candles — two structural
+  tells, either one damning for a daily series claiming to be one instrument: an interior
+  calendar gap wider than any holiday run (>14d — the windows must TILE), or an
+  adjacent-close jump (>3x) no split-adjusted series produces. Enforced at BOTH ingestion
+  builders (Finnhub + Nasdaq → MISSING with the fault NAMED) **and again at the outcome
+  reader**, because merge-only last-good semantics can keep an already-stored corrupt
+  series alive as STALE — defense in depth, each layer naming what it refused. Tests:
+  **1999 smoke** (+3: both guard tells executed on the exact live corruption shape, the
+  read-side rejection through the real endpoint; 2 fixtures re-pinned to the tiling
+  contract with reasons) + 278 render + 187 public-render.
 - **v5.6.0 "THE DAILY CONTRACT" — the sprint doc's four-question surface, mapped onto the
   machinery that already existed (owner sprint doc `TT_DOUBLE_DOWN_BUILD.md`, 2026-08-26;
   plan reviewed, corrected and approved same day).** The doc's diagnosis was right — the

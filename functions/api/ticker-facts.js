@@ -3,7 +3,7 @@
 // with its original observation date and a STALE status.
 
 import { authorize, crossOrigin } from "./tt.js";
-import { extractSecFacts, filingsFromSubmissions, mergeFactsRecord } from "../lib/tt-facts.js";
+import { extractSecFacts, filingsFromSubmissions, mergeFactsRecord, candleSeriesFault } from "../lib/tt-facts.js";
 
 const KEY_PREFIX = "tt:facts:";
 const CIK_PREFIX = "tt:sec:cik:";
@@ -67,6 +67,9 @@ function candlesFact(raw, retrievedAt) {
     close: Number(raw.c?.[i]), volume: Number(raw.v?.[i]),
   })).filter((r) => r.date && [r.open, r.high, r.low, r.close].every(Number.isFinite));
   if (rows.length < 2) return missing("Finnhub", "daily candle response was empty", retrievedAt, "https://finnhub.io/");
+  // v5.6.1: continuity guard — a discontinuous series must never be stored as LIVE evidence.
+  const fault = candleSeriesFault(rows);
+  if (fault) return missing("Finnhub", "candle series failed continuity: " + fault, retrievedAt, "https://finnhub.io/");
   return {
     value: rows, status: "LIVE", provider: "Finnhub", sourceUrl: "https://finnhub.io/",
     observedAt: rows.at(-1).date, retrievedAt, resolution: "D",
@@ -91,6 +94,11 @@ export function nasdaqCandlesFact(payloads, retrievedAt) {
     .sort((a, b) => a.date.localeCompare(b.date));
   const unique = [...new Map(rows.map((r) => [r.date, r])).values()];
   if (unique.length < 2) return missing("Nasdaq", "daily historical response was empty", retrievedAt, "https://www.nasdaq.com/market-activity/stocks");
+  /* v5.6.1: the windows must TILE. Measured live (NBIS): a failed middle window left a
+     6-month hole and the tail window carried another instrument's prints — the blind
+     flatten stored it as LIVE and a stamped outcome anchored at $7.62 on a $277 stock. */
+  const fault = candleSeriesFault(unique);
+  if (fault) return missing("Nasdaq", "candle series failed continuity: " + fault, retrievedAt, "https://www.nasdaq.com/market-activity/stocks");
   return {
     value: unique, status: "LIVE", provider: "Nasdaq", sourceUrl: "https://www.nasdaq.com/market-activity/stocks",
     observedAt: unique.at(-1).date, retrievedAt, resolution: "D",

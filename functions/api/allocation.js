@@ -42,6 +42,7 @@ import { sha256Hex } from "../lib/tt-v2.js";
 import { evaluateAllocation, ALLOC_RULE_VERSION, circuitState, stampOutcome } from "../lib/tt-alloc.js";
 import { readQuoteBatch, freshEntry } from "../lib/quote-cache.js";
 import { etYmd } from "../../src/sources.js";
+import { candleSeriesFault } from "../lib/tt-facts.js";
 import { METHODOLOGY_VERSION } from "../../src/ttScore.js";
 
 const CUR_KEY = "tt:alloc:v1";
@@ -219,13 +220,19 @@ export async function onRequestGet({ request, env }) {
       const rows = await Promise.all(stamps.map(async (r) => {
         const sym = r.receipt && r.receipt.eligible && r.receipt.eligible.sym;
         const candles = sym && factsBySym[sym] && factsBySym[sym].fields && factsBySym[sym].fields.candles;
-        const closes = candles && Array.isArray(candles.value) ? candles.value : null;
+        let closes = candles && Array.isArray(candles.value) ? candles.value : null;
+        // v5.6.1 defense in depth: merge-only last-good can keep an already-stored corrupt
+        // series alive as STALE, so the reader re-checks continuity and NAMES the fault
+        // rather than anchoring an outcome on another instrument's prints.
+        const cFault = closes ? candleSeriesFault(closes) : null;
+        if (cFault) closes = null;
         const note = await kvGet(env, OUTCOME_NOTE_PREFIX + r.date);
         return { date: r.date, attested: r.attested,
           gate: r.receipt && r.receipt.macro_gate ? r.receipt.macro_gate.gate : null,
           pick: sym || null,
           outcome: sym ? (closes ? stampOutcome(r.date, closes)
-            : { anchor: null, reason: "no daily candles in the facts store for " + sym }) : null,
+            : { anchor: null, reason: cFault ? `stored candle series rejected — ${cFault}; refresh facts for ${sym}`
+                : "no daily candles in the facts store for " + sym }) : null,
           allocation_changed: note && typeof note.allocation_changed === "boolean"
             ? note.allocation_changed : intentDates.has(r.date),
           note: note && note.note ? note.note : null };

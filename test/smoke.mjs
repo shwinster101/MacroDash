@@ -7427,6 +7427,8 @@ ok("Finnhub normalization preserves the provider's quote timestamp and never sta
     return q.status === "LIVE" && q.observedAt === "2026-08-15T18:58:00.000Z" && q.retrievedAt === V2_NOW.toISOString() &&
       unknown.status === "UNKNOWN" && unknown.observedAt === null && /not substituted/.test(unknown.reason); })());
 
+/* Fixture re-pinned at v5.6.1: the old two-window shape carried a deliberate 6-month hole,
+   which the new tiling guard rightly rejects — windows must be CONTIGUOUS to merge. */
 const nasdaqFixture = [
   { data: { tradesTable: { rows: [
     { date: "08/15/2026", close: "$229.94", volume: "12,240,000", open: "$233.66", high: "$248.57", low: "$227.67" },
@@ -7434,13 +7436,30 @@ const nasdaqFixture = [
   ] } } },
   { data: { tradesTable: { rows: [
     { date: "08/14/2026", close: "$236.22", volume: "14,440,000", open: "$240.00", high: "$244.00", low: "$231.00" },
-    { date: "02/14/2026", close: "$139.74", volume: "6,000,000", open: "$141.00", high: "$143.00", low: "$138.00" },
+    { date: "08/13/2026", close: "$232.10", volume: "9,100,000", open: "$231.00", high: "$236.00", low: "$229.00" },
   ] } } },
 ];
 ok("Nasdaq fallback normalization parses attributed OHLC, sorts ascending, and de-duplicates chunk boundaries",
   (() => { const x = nasdaqCandlesFact(nasdaqFixture, V2_NOW.toISOString());
     return x.status === "LIVE" && x.provider === "Nasdaq" && x.value.length === 3 &&
-      x.value[0].date === "2026-02-14" && x.value.at(-1).close === 229.94 && x.observedAt === "2026-08-15"; })());
+      x.value[0].date === "2026-08-13" && x.value.at(-1).close === 229.94 && x.observedAt === "2026-08-15"; })());
+/* v5.6.1 — the continuity guard, EXECUTED on the exact live corruption shape (NBIS,
+   2026-08-25): a failed middle window's interior hole, and a tail window carrying another
+   instrument's prints. Either tell alone must reject the merge to MISSING with the fault
+   NAMED — a discontinuous series stored as LIVE anchored a stamped outcome at $7.62 on a
+   $277 stock the night v5.6 shipped. */
+ok("v5.6.1 guard: an interior hole (a failed window) rejects the merge — the windows must TILE",
+  (() => { const x = nasdaqCandlesFact([{ data: { tradesTable: { rows: [
+      { date: "08/15/2026", close: "$229.94", open: "$233.66", high: "$248.57", low: "$227.67" },
+      { date: "02/14/2026", close: "$139.74", open: "$141.00", high: "$143.00", low: "$138.00" },
+    ] } } }], V2_NOW.toISOString());
+    return x.status === "MISSING" && /interior gap 2026-02-14 -> 2026-08-15/.test(x.reason); })());
+ok("v5.6.1 guard: an adjacent-close discontinuity (another instrument's prints) rejects the merge, fault named",
+  (() => { const x = nasdaqCandlesFact([{ data: { tradesTable: { rows: [
+      { date: "08/19/2026", close: "$7.78", open: "$7.49", high: "$7.79", low: "$7.39" },
+      { date: "08/18/2026", close: "$104.88", open: "$106.00", high: "$108.32", low: "$102.00" },
+    ] } } }], V2_NOW.toISOString());
+    return x.status === "MISSING" && /discontinuity 2026-08-18 \$104\.88 -> 2026-08-19 \$7\.78/.test(x.reason); })());
 ok("Nasdaq fallback cannot launder empty or malformed OHLC into sourced candles",
   nasdaqCandlesFact({ data: { tradesTable: { rows: [] } } }, V2_NOW.toISOString()).status === "MISSING" &&
   nasdaqCandlesFact({ data: { tradesTable: { rows: [
@@ -8610,14 +8629,25 @@ console.log("\n[68] FEAT-TT-ALLOC — pure core, endpoint, and the §14.8 bar");
     ok("stamped list: with facts candles the outcome computes — same-day anchor, null returns, PENDING (never a fabricated same-day score)",
       (await (async () => {
         const d0 = etYmd(new Date());
+        const dPrev = etYmd(new Date(Date.now() - 86400000));
         // the REAL key shape (ticker-facts keyFor: `tt:facts:<SYM>:v1`) — a suffix-less
-        // fixture agreed with a live suffix-less read bug once; never again.
+        // fixture agreed with a live suffix-less read bug once; never again. Dates are
+        // CONTIGUOUS: the v5.6.1 continuity guard re-checks at read.
         store.set("tt:facts:AAA:v1", JSON.stringify({ fields: { candles: { value: [
-          { date: "2026-01-02", close: 95 }, { date: d0, close: 101 }] } } }));
+          { date: dPrev, close: 95 }, { date: d0, close: 101 }] } } }));
         const r = await ep.onRequest({ request: rq("GET", "?stamped=1"), env });
         const row = JSON.parse(await r.text()).rows[0];
         return row.outcome && row.outcome.anchor && row.outcome.anchor.date === d0 &&
           row.outcome.returns_pct["1d"] === null && row.outcome.status === "PENDING"; })()));
+    ok("v5.6.1: a stored-but-corrupt series is REJECTED at read too (merge-only last-good can keep one alive as STALE) — fault named, never an anchor",
+      (await (async () => {
+        const d0 = etYmd(new Date());
+        store.set("tt:facts:AAA:v1", JSON.stringify({ fields: { candles: { value: [
+          { date: "2026-02-26", close: 104.88 }, { date: d0, close: 7.62 }] } } }));
+        const r = await ep.onRequest({ request: rq("GET", "?stamped=1"), env });
+        const row = JSON.parse(await r.text()).rows[0];
+        return row.outcome && row.outcome.anchor === null &&
+          /stored candle series rejected — interior gap/.test(row.outcome.reason); })()));
     ok("outcome note: the owner override beats the derived allocation_changed, and attaches only to stamped days",
       (await (async () => {
         const bad = await ep.onRequest({ request: rq("POST", "?outcome=1", { date: "2020-01-01", allocation_changed: false }), env });
