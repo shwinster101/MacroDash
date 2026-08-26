@@ -28,7 +28,7 @@ import {
   TT_ANALYSIS_SCHEMA, TT_ENGINE_VERSION,
 } from "../functions/lib/tt-v2.js";
 import { deriveTechnicals } from "../functions/lib/tt-technicals.js";
-import { extractSecFacts, mergeFactsRecord } from "../functions/lib/tt-facts.js";
+import { extractSecFacts, mergeFactsRecord, candleSeriesFault } from "../functions/lib/tt-facts.js";
 import { streetRevision, onRequestPut as putStreetPacket, onRequestGet as getStreetPacket,
   onRequestDelete as deleteStreetPacket } from "../functions/api/street.js";
 import { onRequestGet as getFramework, onRequestPut as putFramework } from "../functions/api/framework.js";
@@ -7460,6 +7460,30 @@ ok("v5.6.1 guard: an adjacent-close discontinuity (another instrument's prints) 
       { date: "08/18/2026", close: "$104.88", open: "$106.00", high: "$108.32", low: "$102.00" },
     ] } } }], V2_NOW.toISOString());
     return x.status === "MISSING" && /discontinuity 2026-08-18 \$104\.88 -> 2026-08-19 \$7\.78/.test(x.reason); })());
+/* v5.6.2 — the QUOTE cross-check (owner call): when EVERY window returns the wrong
+   instrument the series is internally consistent — contiguous, no jump — and the first two
+   tells are structurally blind to it. The same-refresh live quote is the outside reference.
+   Same 3x constant as the adjacent tell (one doctrine); a real 30-50% print gap must PASS. */
+const junkWindows = [{ data: { tradesTable: { rows: [
+  { date: "08/19/2026", close: "$7.78", open: "$7.49", high: "$7.79", low: "$7.39" },
+  { date: "08/20/2026", close: "$7.60", open: "$7.76", high: "$7.77", low: "$7.30" },
+] } } }];
+ok("v5.6.2 quote rung: an internally-consistent wrong-instrument merge is rejected against the same-refresh quote, fault named",
+  (() => { const x = nasdaqCandlesFact(junkWindows, V2_NOW.toISOString(), 277.68);
+    return x.status === "MISSING" && /tail close \$7\.6 vs live quote \$277\.68/.test(x.reason); })());
+ok("v5.6.2 quote rung: no quote = the rung is SKIPPED (never guessed), and a near-quote tail passes",
+  nasdaqCandlesFact(junkWindows, V2_NOW.toISOString(), null).status === "LIVE" &&
+  nasdaqCandlesFact(junkWindows, V2_NOW.toISOString(), 8.1).status === "LIVE");
+ok("v5.6.2 quote rung: the 3x edge — a real print gap passes, only the impossible is rejected (exact boundary executed)",
+  candleSeriesFault([{ date: "2026-08-19", close: 100 }], 300) === null &&
+  /tail close/.test(candleSeriesFault([{ date: "2026-08-19", close: 100 }], 300.5) || "") &&
+  candleSeriesFault([{ date: "2026-08-19", close: 100 }], 145) === null &&
+  /tail close/.test(candleSeriesFault([{ date: "2026-08-19", close: 100 }], 33) || ""));
+ok("v5.6.2 wiring: the refresh derives refPx from its OWN LIVE quote and passes it to BOTH builders",
+  (() => { const src7 = readSrc("../functions/api/ticker-facts.js");
+    return src7.includes('fields.quote.status === "LIVE"') &&
+      src7.includes("candlesFact(candles.value, retrievedAt, refPx)") &&
+      src7.includes("nasdaqCandles(sym, now, retrievedAt, refPx)"); })());
 ok("Nasdaq fallback cannot launder empty or malformed OHLC into sourced candles",
   nasdaqCandlesFact({ data: { tradesTable: { rows: [] } } }, V2_NOW.toISOString()).status === "MISSING" &&
   nasdaqCandlesFact({ data: { tradesTable: { rows: [
@@ -8648,6 +8672,16 @@ console.log("\n[68] FEAT-TT-ALLOC — pure core, endpoint, and the §14.8 bar");
         const row = JSON.parse(await r.text()).rows[0];
         return row.outcome && row.outcome.anchor === null &&
           /stored candle series rejected — interior gap/.test(row.outcome.reason); })()));
+    ok("v5.6.2: an INTERNALLY-CONSISTENT wrong-instrument series is rejected at read against the live quote (the rung the other tells cannot supply)",
+      (await (async () => {
+        const d0 = etYmd(new Date());
+        const dPrev2 = etYmd(new Date(Date.now() - 86400000));
+        store.set("tt:facts:AAA:v1", JSON.stringify({ fields: { candles: { value: [
+          { date: dPrev2, close: 7.78 }, { date: d0, close: 7.62 }] } } }));
+        const r = await ep.onRequest({ request: rq("GET", "?stamped=1"), env });
+        const row = JSON.parse(await r.text()).rows[0];
+        return row.outcome && row.outcome.anchor === null &&
+          /tail close \$7\.62 vs live quote/.test(row.outcome.reason); })()));
     ok("outcome note: the owner override beats the derived allocation_changed, and attaches only to stamped days",
       (await (async () => {
         const bad = await ep.onRequest({ request: rq("POST", "?outcome=1", { date: "2020-01-01", allocation_changed: false }), env });

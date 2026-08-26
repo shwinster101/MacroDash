@@ -2924,6 +2924,19 @@ Jan-anchor shipped; see `snapshot.js` ~318–328), `spyMa100`, `spyMa200`, and a
   VALUATION GAP ranking (§11.1 — the ranking always renders, which is the owner's actual
   "always an output" contract, and it was never suspended). Tests: 1223 smoke (+2) + 199
   render (+1).
+- **v5.6.2 — the quote cross-check: the third candle rung (owner call).** The v5.6.1 tells
+  are structural — a gap or a jump INSIDE the series — and are blind to the one case where
+  EVERY window returns the wrong instrument: internally consistent, contiguous, no jump.
+  The outside reference is the **same-refresh live quote** (fetched in the same pass, same
+  symbol, currency-gated): `candleSeriesFault(rows, refPx)` rejects a merge whose tail
+  close sits **>3x** from it — the SAME constant as the adjacent tell, one doctrine, chosen
+  over the 40% first floated because a real print gap runs 30-50% and must PASS; a 3x
+  quote-vs-tail split happens only between two instruments. No quote = the rung is SKIPPED,
+  never guessed. Wired at both ingestion builders (refPx from the refresh's own LIVE quote)
+  and at the outcome reader (a fresh batch read for the pick syms). Tests: **2004 smoke**
+  (+5: the all-windows-junk rejection at ingestion AND at read, the exact 3x boundary both
+  directions, the no-quote skip, the wiring pin), negative-controlled — removing the rung
+  turns exactly its 3 pins red.
 - **v5.6.1 — the candle-continuity guard: the outcome layer's first live catch, closed the
   night it was found.** Minutes after v5.6.0 deployed, the very first stamped outcome
   anchored NBIS at **$7.62 — on a $277 stock.** Two defects compounded: the outcome reader

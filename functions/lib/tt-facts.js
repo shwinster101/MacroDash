@@ -25,7 +25,7 @@ const hasLastGoodValue = (f) => f && f.value !== null && f.value !== undefined;
    feeds (and a provider's own series is split-adjusted internally). Returns the fault
    NAMED, or null. Used at BOTH ingestion builders and again at the outcome reader, because
    merge-only last-good semantics can keep an already-stored corrupt series alive as STALE. */
-export function candleSeriesFault(rows) {
+export function candleSeriesFault(rows, refPx) {
   const r = Array.isArray(rows) ? rows : [];
   for (let i = 1; i < r.length; i++) {
     const a = r[i - 1], b = r[i];
@@ -36,6 +36,17 @@ export function candleSeriesFault(rows) {
     if (ca > 0 && cb > 0 && (cb / ca > 3 || ca / cb > 3))
       return `adjacent-close discontinuity ${a.date} $${ca} -> ${b.date} $${cb} — not one instrument's series`;
   }
+  /* v5.6.2 — the QUOTE cross-check (owner call), the rung the other two cannot supply:
+     when EVERY window returns the wrong instrument the merge is internally consistent —
+     contiguous, no jump — and only an outside reference can catch it. The same-refresh
+     live quote is that reference (fetched in the same pass, same symbol, same currency
+     gate). Same 3x constant as the adjacent tell — one doctrine: reject the impossible,
+     not the unusual. A real print gap runs 30-50%; a 3x quote-vs-tail split does not
+     happen to one instrument, only to two. No quote = the rung is SKIPPED, never guessed. */
+  const px = Number(refPx);
+  const tail = r.length ? Number(r[r.length - 1].close) : null;
+  if (px > 0 && tail > 0 && (px / tail > 3 || tail / px > 3))
+    return `tail close $${tail} vs live quote $${px} — not this instrument's series`;
   return null;
 }
 

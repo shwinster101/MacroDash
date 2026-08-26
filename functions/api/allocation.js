@@ -208,6 +208,10 @@ export async function onRequestGet({ request, env }) {
       // the facts store keys are `tt:facts:<SYM>:v1` (ticker-facts keyFor) — caught LIVE:
       // the suffix-less read found nothing while the fixture agreed with the bug.
       await Promise.all(pickSyms.map(async (s2) => { factsBySym[s2] = await kvGet(env, FACTS_PREFIX + s2 + ":v1"); }));
+      // v5.6.2: the read-side continuity check gets the quote reference too — the one rung
+      // that catches an all-windows-wrong-instrument series (internally consistent, so the
+      // gap and jump tells are blind to it). Quote unavailable = rung skipped, never guessed.
+      const outQuotes = await loadQuotes(env, pickSyms).catch(() => ({}));
       const intents = await env.PULSE_CACHE.list({ prefix: INTENT_PREFIX, limit: 200 }).catch(() => null);
       const intentDates = new Set((intents?.keys || []).map((k) => {
         // key = prefix + <ISO instant> + ":" + id — the instant itself contains colons,
@@ -224,7 +228,8 @@ export async function onRequestGet({ request, env }) {
         // v5.6.1 defense in depth: merge-only last-good can keep an already-stored corrupt
         // series alive as STALE, so the reader re-checks continuity and NAMES the fault
         // rather than anchoring an outcome on another instrument's prints.
-        const cFault = closes ? candleSeriesFault(closes) : null;
+        const q6 = sym && outQuotes[sym] && isFinite(Number(outQuotes[sym].px)) ? Number(outQuotes[sym].px) : null;
+        const cFault = closes ? candleSeriesFault(closes, q6) : null;
         if (cFault) closes = null;
         const note = await kvGet(env, OUTCOME_NOTE_PREFIX + r.date);
         return { date: r.date, attested: r.attested,
