@@ -8577,6 +8577,28 @@ console.log("\n[68] FEAT-TT-ALLOC — pure core, endpoint, and the §14.8 bar");
       MG6(stGo6, RO6("FULL", { evaluable: false })).g === "TOUCH_GRASS" &&
       MG6(stGo6, null).g === "TOUCH_GRASS" &&
       MG6(stStop6, RO6("FULL")).g === "TOUCH_GRASS");
+    /* v5.6.3 — the DOC reconciliation (owner review 2026-08-26: "README still says only
+       explicit FULL passes; docs should catch up so the two vocabularies do not fork").
+       Fixing the prose is half the cure — a doc rule nothing enforces is the rot vector this
+       repo keeps paying for (v3.59 B5, v3.60.1 §5). So the gate set is derived BEHAVIORALLY
+       from macroGateFrom over the matrix above and reconciled against the docs: adding,
+       renaming or dropping a gate state fails the build rather than silently forking. */
+    const GATE_SET = [...new Set([
+      G6b(CB6, RO6("FULL")).gate, G6b(CB6, RO6("RESTRICTED")).gate, G6b(CB6, RO6("HOLD")).gate,
+      G6b(CB6, null).gate, G6b(CB6, RO6("FULL", { evaluable: false })).gate,
+    ])];
+    const ttReadme = readSrc("../ticker-terminal/README.md");
+    ok("v5.6.3 docs: every product gate state macroGateFrom can RETURN is named in the TT README and in CLAUDE.md's locked decisions",
+      GATE_SET.length === 3 &&
+      GATE_SET.map((g) => g.replace(/_/g, " ")).every((w) => ttReadme.includes(w) && claudeSrc.includes(w)));
+    ok("v5.6.3 docs: FULL/RESTRICTED/HOLD are named as the MACHINE aliases, never as the product words",
+      /machine (vocabulary|aliases)/i.test(ttReadme) && /machine aliases/i.test(claudeSrc) &&
+      /SEND IT is the only state/i.test(ttReadme));
+    // The withdrawn claim must stay withdrawn — a retired instruction quietly reappearing is
+    // the label-outlives-its-data defect (the v3.85 retired-capture-row precedent).
+    ok("v5.6.3 docs: the retired bare claim ('only explicit FULL passes') is pinned ABSENT from the TT README",
+      !/only explicit `?FULL`? passes/.test(ttReadme));
+
     // The frozen spread formula + the asserted deadband, executed at the exact edges.
     ok("spread: the FROZEN formula — (belief − street) / price × 100",
       JSON.stringify(alloc.spreadOf(570, 485, 300)) === JSON.stringify({ pct: 28.3, sign: "you_richer" }));

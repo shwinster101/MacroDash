@@ -2924,6 +2924,25 @@ Jan-anchor shipped; see `snapshot.js` ~318–328), `spyMa100`, `spyMa200`, and a
   VALUATION GAP ranking (§11.1 — the ranking always renders, which is the owner's actual
   "always an output" contract, and it was never suspended). Tests: 1223 smoke (+2) + 199
   render (+1).
+- **v5.6.3 — the gate vocabulary reaches the docs, and is RECONCILED so it cannot fork
+  (owner review 2026-08-26).** The review's one code-adjacent finding, verified before
+  fixing: `ticker-terminal/README.md:37` still read *"only explicit `FULL` passes"* — the
+  Engine 0 machine vocabulary presented as the only vocabulary, three releases after the
+  product UI moved to SEND IT / HODL / TOUCH GRASS, and no doc outside this file named the
+  product words at all. That is the label-outliving-its-data defect at the doc altitude, and
+  the two vocabularies forking is exactly what the `GATE:` scoping rule exists to prevent one
+  layer up. Both docs now state BOTH: the README names the product gate, the alias mapping
+  (SEND IT = `FULL` · HODL = `RESTRICTED` · TOUCH GRASS = `HOLD` + every unreadable state) and
+  keeps its fail-closed sentence intact; CLAUDE.md gains **standing lock lines** in the
+  locked-decisions section (the sprint doc's §11 ask) rather than leaving the rule only in a
+  changelog entry that scrolls away.
+  **The cure is the pin, not the prose** (v3.59 B5, v3.60.1 §5: a doc rule nothing enforces is
+  the rot vector). The gate set is derived **BEHAVIORALLY** — `macroGateFrom` run over the
+  same matrix the mirror pins use — and reconciled against both docs, so adding, renaming or
+  dropping a gate state fails the build instead of silently forking the docs again; the
+  machine-alias framing is pinned, and the **withdrawn claim is pinned ABSENT** (a retired
+  instruction quietly reappearing is the v3.85 precedent). Tests: **2007 smoke** (+3),
+  negative-controlled — restoring the old README sentence turns exactly those three red.
 - **v5.6.2 — the quote cross-check: the third candle rung (owner call).** The v5.6.1 tells
   are structural — a gap or a jump INSIDE the series — and are blind to the one case where
   EVERY window returns the wrong instrument: internally consistent, contiguous, no jump.
@@ -4988,6 +5007,20 @@ Assertion counts are deliberately not quoted here; the suite prints its own tota
   explicit canonical forced-exit, kill, or over-cap trim rule. Diagnostic `ELIGIBLE`, target
   upside, or a funding-priority row alone is not a buy/sell call. Every other state, disagreement,
   missing gate, or unavailable governing surface is `WAIT`.
+### TT macro gate — the product vocabulary (locked, v5.6)
+
+- **SEND IT · HODL · TOUCH GRASS** is the product gate; **`FULL` · `RESTRICTED` · `HOLD` are the
+  Engine 0 machine aliases** and never appear as product words. ONE derivation
+  (`macroGateFrom`, a projection of the eligibility ladder's own RESULT), so the word can never
+  disagree with the veto it names.
+- **SEND IT is the only state that clears a macro-dependent add.** HODL is a visible,
+  still-vetoed looking session (`RESTRICTED`); the fail-closed doctrine is unchanged, and
+  every unreadable state resolves to TOUCH GRASS.
+- The **`GATE:` prefix is load-bearing** — the public call's middle is ALSO the word HODL
+  (`md-call-v1`), and one word carrying two verdicts on one screen is the v3.51/v3.62 defect.
+- **Rank receipts EXTEND `tt-alloc-receipt`; they are never twinned.** Outcomes score
+  **attested days only** — there is no auto-stamp anywhere.
+
 - **End every pass with**, in this order:
   - **Completed** — what got done this pass (**max 2 bullets**).
   - **Highest-leverage question** the maintainer can answer (1 bullet).
