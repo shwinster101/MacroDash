@@ -9,7 +9,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
 <!-- AUDIT: kept in sync with package.json by test/smoke.mjs. admin.html is a Vite
      public/ passthrough, so it cannot receive __APP_VERSION__ — the guard is the fix. -->
-<title>TT TICKER TERMINAL v5.6.4</title>
+<title>TT TICKER TERMINAL v5.6.5</title>
 <style>
   :root{
     --bg:#05070a; --panel:#0a0f16; --panel2:#0d141d; --line:#16202c;
@@ -458,7 +458,7 @@
          verdict and every gate are computed upstream and this panel changes nothing. -->
     <div id="macroEvidence" role="region" aria-label="Why macro — readout evidence"></div>
     <div id="headInfo" style="display:none">
-      <div class="brand">FINANCE&nbsp;BRO.AI // TT&nbsp;TICKER&nbsp;TERMINAL <small>v5.6.4 · the daily contract</small></div>
+      <div class="brand">FINANCE&nbsp;BRO.AI // TT&nbsp;TICKER&nbsp;TERMINAL <small>v5.6.5 · the daily contract</small></div>
       <div class="statusline">
         <span>BOOK: <b id="bookStamp">loading…</b></span>
         <span>AUTH: <b id="sessState">…</b></span>
@@ -4305,20 +4305,46 @@ function loadStampedHistory(det){
     }).join("");
   }).catch(()=>{el.textContent="stamped history unavailable — network";});
 }
+/* v5.6.5 (owner call 2026-08-26: "hide all the bla bla text under an expandable header
+   stating disclaimer") — the receipt's DISCLOSURES (what the state does and does not claim,
+   the measured account, the basis versions) are constants of the state, not facts about
+   today's decision, and they were renting five wrapped lines on both decision surfaces.
+   They move one tap down; the STATE and every ⚠ that gates action stay on the face.
+   est-mini, never `drawer` — the phone harness counts open drawers (the est-run precedent).
+   The v3.25 rule holds by construction: the warn count rides the CLOSED summary, so a
+   collapse can never hide that a red exists — only its prose. */
+function allocDisclose(inner,warns){
+  const n=(warns||[]).length;
+  return `<details class="est-mini"><summary><span class="scope">what this claims — basis, account, disclaimers</span>`+
+    (n?`<span style="color:var(--amber)">⚠ ${n}</span>`:"")+`</summary><div>${inner}</div></details>`;
+}
 function allocChip(){
   if(!ALLOC)return `<span class="scope">server allocation: no receipt — ⟳ DATA+RANKS computes one (older deploys: unavailable)</span>`;
   const stamp=`receipt ${allocAgeTxt()}${ALLOC.business_date_et?` (${esc(ALLOC.business_date_et)} ET)`:""}`;
   const pb=allocPriceBasis();
-  const pbTxt=pb?` · ${pb==="live price"?"":"⚠ "}${esc(pb)}${ALLOC.eligible&&isFinite(Number(ALLOC.eligible.px))?` $${esc(ALLOC.eligible.px)}`:""}`:"";
+  const pbTxt=pb?`${pb==="live price"?"":"⚠ "}${esc(pb)}${ALLOC.eligible&&isFinite(Number(ALLOC.eligible.px))?` $${esc(ALLOC.eligible.px)}`:""}`:"";
   const conf=ALLOC.confirmation?` · ✓ RECORDED ${esc(ALLOC.confirmation.action)} ${esc(ALLOC.confirmation.sym)} ${esc(String(ALLOC.confirmation.at).slice(0,10))} (intent only)`:"";
+  // The warn set is what must survive the collapse: a non-live price basis and a receipt
+  // that is not today's are the two things that stop you acting on this state.
+  const warns=[];
+  if(pb&&pb!=="live price")warns.push(pbTxt);
+  const todayEt=new Date().toLocaleDateString("en-CA",{timeZone:"America/New_York"});   // FIX-A: ET calendar, never toISOString()
+  if(ALLOC.business_date_et&&ALLOC.business_date_et!==todayEt)warns.push(`receipt dated ${esc(ALLOC.business_date_et)}, not today`);
+  const face=warns.length?` <span style="color:var(--amber);font-size:var(--fs-xs)">${warns.join(" · ")}</span>`:"";
   if(ALLOC.state==="ALLOCATABLE")
-    return `<span style="color:var(--green);font-weight:700">server: ALLOCATION CONTEXT READY — ${esc(ALLOC.eligible.sym)}</span> `+
-      `<span class="scope">· not a cash-availability or sizing claim${pbTxt} · ${stamp}${conf}</span><br>${acctLine()}<br>${allocBasisLine()}`;
+    return `<span style="color:var(--green);font-weight:700">server: ALLOCATION CONTEXT READY — ${esc(ALLOC.eligible.sym)}</span>${face}`+
+      allocDisclose(`<div class="none">not a cash-availability or sizing claim · ${stamp}${conf}</div>`+
+        `<div class="none">${acctLine()}</div><div class="none">${allocBasisLine()}</div>`,warns);
   if(ALLOC.state==="BUY_ELIGIBLE")
-    return `<span style="color:var(--amber);font-weight:700">server: BUY ELIGIBLE — ${esc(ALLOC.eligible.sym)}</span> <span class="scope">· ${esc(allocTrunc(ALLOC.context_blockers[0]||"context incomplete"))}${pbTxt} · ${stamp}${conf}</span><br>${allocBasisLine()}`;
+    return `<span style="color:var(--amber);font-weight:700">server: BUY ELIGIBLE — ${esc(ALLOC.eligible.sym)}</span> `+
+      `<span class="scope">· ${esc(allocTrunc(ALLOC.context_blockers[0]||"context incomplete"))}</span>${face}`+
+      allocDisclose(`<div class="none">not a cash-availability or sizing claim · ${stamp}${conf}</div>`+
+        `<div class="none">${allocBasisLine()}</div>`,warns);
   if(ALLOC.state==="WAIT")
-    return `<span style="color:var(--amber)">server: WAIT — ${esc(allocTrunc((ALLOC.gate&&ALLOC.gate.reason)||"gate failed"))}</span> <span class="scope">${stamp}</span><br>${allocBasisLine()}`;
-  return `<span class="scope">server: no eligible name · ${stamp}${conf}</span><br>${allocBasisLine()}`;
+    return `<span style="color:var(--amber)">server: WAIT — ${esc(allocTrunc((ALLOC.gate&&ALLOC.gate.reason)||"gate failed"))}</span>`+
+      allocDisclose(`<div class="none">${stamp}</div><div class="none">${allocBasisLine()}</div>`,warns);
+  return `<span class="scope">server: no eligible name</span>${face}`+
+    allocDisclose(`<div class="none">${stamp}${conf}</div><div class="none">${allocBasisLine()}</div>`,warns);
 }
 
 /* ═══════════ FEAT-TT-DDSTORE (v3.75) — thesis payloads live in their own KV ═══════════ */
@@ -6290,26 +6316,25 @@ function renderStance(){
      Badges are real <button>s — focusable and Enter-activatable, same look. details.why is
      deliberately NOT class="drawer": the phone harness counts open drawers, and this is
      strip chrome, not a content drawer (the est-mini precedent). */
-  const badges=
-    (breach?`<button class="badge" style="color:var(--red)" onclick="openDesk('dExp')">⚠ ${breach} over cap</button>`:"")+
-    (binToday?`<button class="badge" style="color:var(--red)" onclick="openDesk('dCal')">◆ ${binToday} binaries ≤${BINARY_WINDOW_D}d</button>`:"")+
-    // FEAT-TT-CAPEX (v3.45): a turning capex tape is a red fact — visible while everything
-    // is closed, chip-length by the slice-1 rule, one tap to the full tape.
-    /* FEAT-TT-CAPEX + FEAT-TT-CAPABILITY: ONE badge for the AI thesis, not two. A turning
-       supply tape and a falsified demand leg are two halves of the same thesis and open the
-       SAME drawer — two chips would be redundant AND would cost a wrap row against the 390px
-       stance budget (v3.42 slice 1), which is a real guard. Chip-length by that same rule:
-       it names which leg is red; the numbers live one tap away in the panel. */
-    ((()=>{const c=capabilityState();
-      const sup=!!(cxSt&&cxSt.turning),dem=!!(c&&c.impaired);
-      if(!sup&&!dem)return "";
-      // Kept SHORTER than the capex-only text it replaces: measured at 390px, a longer string
-      // tips one badge onto a new row and blows the 140px stance budget (119px -> 165px).
-      const txt=sup&&dem?`⚡ AI both legs`
-        :sup?`⚡ capex ${cxSt.downs}↓ of ${cxSt.rows.length}`
-        :`⚡ demand falsified`;
-      return `<button class="badge" style="color:var(--red)" onclick="openDesk('dCapex')">${txt}</button>`;})())+
-    (CHANGED_N.n?`<button class="badge" style="color:${CHANGED_N.stops?"var(--red)":"var(--amber)"}" onclick="openDesk('dChanged')">Δ ${CHANGED_N.n} changed${CHANGED_N.stops?` · ${CHANGED_N.stops}!`:""}</button>`:"");
+  /* v5.6.5: the badges are a LIST, not a concatenated string — the closed summary has to
+     COUNT them, and the count is what lets a collapse stay honest (v3.25: a red fact never
+     vanishes, only its detail moves). Same badges, same drawers, same copy. */
+  const badgeList=[];
+  if(breach)badgeList.push(`<button class="badge" style="color:var(--red)" onclick="openDesk('dExp')">⚠ ${breach} over cap</button>`);
+  if(binToday)badgeList.push(`<button class="badge" style="color:var(--red)" onclick="openDesk('dCal')">◆ ${binToday} binaries ≤${BINARY_WINDOW_D}d</button>`);
+  /* FEAT-TT-CAPEX + FEAT-TT-CAPABILITY: ONE badge for the AI thesis, not two. A turning
+     supply tape and a falsified demand leg are two halves of the same thesis and open the
+     SAME drawer — two chips would be redundant AND would cost a wrap row against the 390px
+     stance budget (v3.42 slice 1), which is a real guard. Chip-length by that same rule:
+     it names which leg is red; the numbers live one tap away in the panel. */
+  {const c=capabilityState(),sup=!!(cxSt&&cxSt.turning),dem=!!(c&&c.impaired);
+   if(sup||dem){
+     // Kept SHORTER than the capex-only text it replaces: measured at 390px, a longer string
+     // tips one badge onto a new row and blows the stance budget (119px -> 165px).
+     const txt=sup&&dem?`⚡ AI both legs`:sup?`⚡ capex ${cxSt.downs}↓ of ${cxSt.rows.length}`:`⚡ demand falsified`;
+     badgeList.push(`<button class="badge" style="color:var(--red)" onclick="openDesk('dCapex')">${txt}</button>`);}}
+  if(CHANGED_N.n)badgeList.push(`<button class="badge" style="color:${CHANGED_N.stops?"var(--red)":"var(--amber)"}" onclick="openDesk('dChanged')">Δ ${CHANGED_N.n} changed${CHANGED_N.stops?` · ${CHANGED_N.stops}!`:""}</button>`);
+  const badges=badgeList.join("");
   const controls=`<span class="stance-right">`+
     (LIVE_AT?`<span class="scope">quotes ${esc(String(LIVE_AT).slice(11,16))}Z</span>`:"")+
     `<button class="rfr" id="refreshRanks" onclick="refreshRanks()" title="Rebuild the macro snapshot (Engine 0), then reload quotes, positions and both ranks">⟳ DATA+RANKS</button>`+
@@ -6339,16 +6364,30 @@ function renderStance(){
   const gateTok=`<button class="badge" style="color:${mg.c};font-weight:700" onclick="toggleMacroEvidence()" title="${gateTitle}">GATE: ${mg.label}</button>`;
   const gateTokSm=`<button class="badge" style="color:${mg.c};font-size:var(--fs-xs)" onclick="toggleMacroEvidence()" title="${gateTitle}">GATE: ${mg.label}</button>`;
   if(st.k==="go"){
+    /* The PERMISSIVE branch is deliberately untouched by the v5.6.5 collapse: on an ADDS-OK
+       board the red badges are the ONLY warning present, so they stay on the face (v3.25).
+       The collapse applies where the verdict already states the restriction. */
     el.innerHTML=`<div class="stance-top">`+gateTok+
       `<span class="qual" style="color:${col};font-weight:700">${esc(st.verdict||st.txt)}</span>`+
       badges+controls+`</div>`;
     return;
   }
+  /* v5.6.5 (owner call 2026-08-26): under a RESTRICTIVE gate the strip was five wrapped rows
+     — gate, verdict, the circuit qualifier, four red badges and the quotes/controls line —
+     for a board whose whole message is already stated by the two tokens on row one. The
+     qualifiers and badges move into ONE counted expander; the count and its colour ride the
+     CLOSED summary, so the v3.25 rule holds exactly: a collapse may hide the DETAIL of a red
+     fact, never the fact that one exists. Every badge keeps its drawer deep-link. */
+  const flagN=(st.quals||[]).length+badgeList.length;
+  const anyRed=badgeList.some(b=>b.includes("var(--red)"))||(st.quals||[]).some(q=>q.c==="bad");
   el.innerHTML=`<div class="stance-top">`+gateTokSm+
     `<span class="vbadge" style="color:${col}">${esc(st.verdict||st.txt)}</span>`+
-    (st.quals||[]).map(q=>`<span class="qual" style="color:${QC[q.c]||"var(--dim)"}">${esc(q.t)}</span>`).join("")+
-    badges+controls+`</div>`+
-    `<details class="why"><summary>why</summary><div>${esc(st.txt)}${st.why?` — ${esc(st.why)}`:""}</div></details>`;
+    controls+`</div>`+
+    (flagN?`<details class="why"><summary><span style="color:${anyRed?"var(--red)":"var(--amber)"}">⚠ ${flagN} flag${flagN===1?"":"s"}</span> <span class="scope">— why, and what else is red</span></summary><div>`+
+      `<div style="margin-bottom:4px">`+
+      (st.quals||[]).map(q=>`<span class="qual" style="color:${QC[q.c]||"var(--dim)"}">${esc(q.t)}</span>`).join("")+badges+`</div>`+
+      `<div>${esc(st.txt)}${st.why?` — ${esc(st.why)}`:""}</div></div></details>`
+      :`<details class="why"><summary>why</summary><div>${esc(st.txt)}${st.why?` — ${esc(st.why)}`:""}</div></details>`);
 }
 /* Open the DESK drawer (and optionally one drawer inside it), then scroll to it. */
 function openDesk(inner){

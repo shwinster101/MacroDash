@@ -2924,6 +2924,36 @@ Jan-anchor shipped; see `snapshot.js` ~318–328), `spyMa100`, `spyMa200`, and a
   VALUATION GAP ranking (§11.1 — the ranking always renders, which is the owner's actual
   "always an output" contract, and it was never suspended). Tests: 1223 smoke (+2) + 199
   render (+1).
+- **v5.6.5 — the disclosures go one tap deep, and the v3.25 rule moves altitude rather than
+  bending (owner call 2026-08-26: *"hide all the bla bla text under an expandable header
+  stating disclaimer … same in fund/trim … same for circuit-unresolved and the binaries info
+  under the TOUCH GRASS gate"*).** Two surfaces, both measured before and after.
+  **The receipt chip**: `allocChip()` was emitting the state plus five wrapped lines — the
+  not-a-cash-claim qualifier, the receipt age, the measured account, and the four-part basis
+  line — on BOTH decision surfaces (it is one builder, so the BUY block and FUND/TRIM shared
+  the wall). Those are **constants of the state, not facts about today's decision**: they now
+  ride `allocDisclose()`, one `details.est-mini` labelled *"what this claims — basis, account,
+  disclaimers"*. What stays on the face is the STATE and only the ⚠ that gate action — a
+  non-live price basis and a receipt that is not today's — with the warn COUNT on the closed
+  summary.
+  **The stance strip**: under a restrictive gate it was five wrapped rows (gate · verdict ·
+  circuit qualifier · four red badges · controls) for a board whose whole message is the two
+  tokens on row one. The qualifiers and badges move into ONE counted expander.
+  **The v3.25 rule is not weakened — it is applied at the altitude that fits each state.** On
+  a PERMISSIVE board the badges are the only warning present, so they stay on the face,
+  untouched. On a RESTRICTIVE board the verdict token already states the restriction, so the
+  reds collapse behind a summary carrying **their count and their colour** (red if any badge
+  or qualifier is red, amber otherwise): a collapse may hide a red fact's DETAIL, never that
+  one exists. Every badge keeps its drawer deep-link, and the render suite proves both halves
+  — the count while closed, every badge verbatim one tap deep.
+  **Measured: the restrictive top row 178px → 86px**, so the budget RAISED at v5.6.0 comes
+  back down with the win — re-pinned 185 → **120** with the measurement, because a budget that
+  no longer binds is not a guard. Found while re-pinning: the summary is uppercased by CSS, so
+  `innerText` reads "⚠ 4 FLAGS" (the v3.69 text-transform lesson, third recurrence) — the pins
+  are case-insensitive, and the `details.why div` locator is scoped to the prose div now that
+  the expander nests a chip row above it.
+  Tests: **2011 smoke** + **280 render** (+2 net: the closed-state signal and the one-tap
+  verbatim reveal at both altitudes, plus the alloc face proven CLEAN of the disclaimers).
 - **v5.6.4 — the boot chain becomes RESUMABLE, and a failed read stops claiming the store is
   empty (owner screenshot, 2026-08-26 10:24 ET).** The board rendered 50 book names every one
   of which read *"no thesis payload stored · TT —"*, with no next-dollar target, no scores and

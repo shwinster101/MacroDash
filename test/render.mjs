@@ -838,8 +838,20 @@ ok("circuit absent → the UNRESOLVED strip renders loud instead of hiding",
   /CIRCUIT UNRESOLVED — adds suspended/i.test(unresolved.circ) &&
   /prose is explanation, not permission/i.test(unresolved.circ));
 const strip = await txt(page, "stanceStrip");
-ok("stance strip carries the red counts while DESK is closed",
-  /over cap/.test(strip) && /binaries/.test(strip));
+/* v5.6.5 (owner call): under a RESTRICTIVE gate the badges move behind one expander whose
+   CLOSED summary carries their COUNT and colour — the v3.25 rule at a different altitude:
+   a collapse may hide a red fact's DETAIL, never that one exists. Both halves are pinned:
+   the count while closed, and every badge verbatim one tap deep. */
+ok("stance strip SIGNALS the reds while closed — a counted, coloured flag summary",
+  // /i: innerText APPLIES text-transform:uppercase on the summary (the v3.69 lesson).
+  /⚠ \d+ flags?/i.test(strip) && /why, and what else is red/i.test(strip));
+{
+  await page.locator("#stanceStrip details.why > summary").click();
+  const open = await txt(page, "stanceStrip");
+  ok("stance strip: one tap reveals every red badge verbatim — nothing was deleted, only moved",
+    /over cap/.test(open) && /binaries/.test(open));
+  await page.locator("#stanceStrip details.why > summary").click();
+}
 ok("stance strip carries the refresh button and the quote stamp",
   (await page.locator("#refreshRanks").count()) === 1 && /quotes \d{2}:\d{2}Z/.test(strip));
 // v3.42 READABLE DESK: the verdict is a TOKEN, not a buried clause — the tripped fixture
@@ -850,9 +862,12 @@ ok("stance bar: the verdict renders as a single large token (tripped fixture →
   /NO NEW POSITIONS/.test(await page.locator("#stanceStrip .vbadge").innerText()));
 ok("stance bar: the why drawer starts closed and holds the full prose verbatim",
   (await page.locator("#stanceStrip details.why[open]").count()) === 0 &&
-  /leverage circuit tripped/i.test(await page.locator("#stanceStrip details.why div").textContent()));
-ok("stance bar: with the drawer closed the verdict + red counts are all still visible",
-  /NO NEW POSITIONS/.test(strip) && /over cap/.test(strip) && /binaries/.test(strip));
+  // v5.6.5: the expander nests a chip row + the prose, so scope to the prose div (the last).
+  /leverage circuit tripped/i.test(await page.locator("#stanceStrip details.why div").last().textContent()));
+// v5.6.5: on a RESTRICTIVE board the verdict stays on the face and the reds are SIGNALLED
+// by a counted summary (revealed verbatim one tap deep, asserted above).
+ok("stance bar: with the drawer closed the verdict and a counted red signal are both visible",
+  /NO NEW POSITIONS/.test(strip) && /⚠ \d+ flags?/i.test(strip));
 ok("stance bar: badges and controls are real buttons — keyboard-reachable",
   (await page.locator("#stanceStrip button").count()) >= 4);
 // v3.42 slice 2: driver rows are grid buttons — the primary datum sits right-aligned at
@@ -1117,13 +1132,23 @@ const allocLive = await page.evaluate(() => {
   render();
   const buy = document.getElementById("buyBlock").innerText;
   const sell = document.getElementById("sellBlock").innerText;
+  /* v5.6.5 (owner call): the receipt's disclosures — the not-a-cash-claim qualifier, the
+     measured account, the basis versions — moved one tap down behind allocDisclose so the
+     STATE leads. Open both altitudes' expanders and assert every line survived verbatim. */
+  document.querySelectorAll("#buyBlock details.est-mini, #sellBlock details.est-mini")
+    .forEach((d) => { if (/what this claims/i.test(d.querySelector("summary").textContent)) d.open = true; });
+  const buyOpen = document.getElementById("buyBlock").innerText;
+  const sellOpen = document.getElementById("sellBlock").innerText;
   const out = {
     // v4.1 Step 2: renamed label + permanent qualifier + measured account, both altitudes.
     buyChip: /ALLOCATION CONTEXT READY — AAA/.test(buy) && !/server: ALLOCATABLE/.test(buy),
     sellChip: /ALLOCATION CONTEXT READY — AAA/.test(sell),
-    qualifier: /not a cash-availability or sizing claim/.test(buy) &&
-               /not a cash-availability or sizing claim/.test(sell),
-    acctBeside: /acct: equity \$317k · cash -\$287k · BP \$16k · debt \$287k/.test(buy),
+    // the state stays on the FACE; the disclaimers are one tap deep, at BOTH altitudes
+    faceIsClean: !/not a cash-availability or sizing claim/.test(buy),
+    discloseSummary: /what this claims/i.test(buy) && /what this claims/i.test(sell),
+    qualifier: /not a cash-availability or sizing claim/.test(buyOpen) &&
+               /not a cash-availability or sizing claim/.test(sellOpen),
+    acctBeside: /acct: equity \$317k · cash -\$287k · BP \$16k · debt \$287k/.test(buyOpen),
     confirmLink: document.getElementById("allocFundLink") !== null,
     confirmIntentOnly: /RECORD FUNDING INTENT — AAA · no order/.test(buy),
     disagree: /SERVER RECEIPT GOVERNS CONFIRMATION/.test(sell) && /server: FFF first/.test(sell) &&
@@ -1148,9 +1173,11 @@ const allocLive = await page.evaluate(() => {
 });
 ok("alloc: the context-ready receipt renders the SAME chip at both altitudes (one builder)",
   allocLive.buyChip && allocLive.sellChip);
-ok("alloc: the not-a-cash-claim qualifier rides the state at BOTH altitudes",
+ok("alloc v5.6.5: the STATE leads the face and the disclaimers sit behind one expander at BOTH altitudes",
+  allocLive.faceIsClean && allocLive.discloseSummary);
+ok("alloc: the not-a-cash-claim qualifier survives verbatim one tap deep, at BOTH altitudes",
   allocLive.qualifier);
-ok("alloc: the measured account (negative cash, debt) renders beside the green state",
+ok("alloc: the measured account (negative cash, debt) survives one tap deep",
   allocLive.acctBeside);
 ok("alloc: RECORD FUNDING INTENT — no order is the confirm affordance, two-step",
   allocLive.confirmLink && allocLive.confirmIntentOnly);
@@ -1563,8 +1590,15 @@ ok("capex-ocf: the closed drawer summary carries the amber funding chip beside t
 // v3.55: the fixture now has BOTH legs red (capex turning + demand falsified), so the strip
 // carries the MERGED badge — one chip for one thesis, one drawer. The capex-only and
 // demand-only forms are pinned at source in smoke.
-ok("capex: the stance strip carries the ⚡ badge while everything is closed",
-  /⚡ AI both legs/.test(await txt(page, "stanceStrip")));
+ok("capex: the ⚡ badge is SIGNALLED while closed and reads verbatim one tap deep (v5.6.5)",
+  (await (async () => {
+    const closed = await txt(page, "stanceStrip");
+    if (!/⚠ \d+ flags?/i.test(closed)) return false;
+    await page.locator("#stanceStrip details.why > summary").click();
+    const open = await txt(page, "stanceStrip");
+    await page.locator("#stanceStrip details.why > summary").click();
+    return /⚡ AI both legs/.test(open);
+  })()));
 await page.evaluate(() => switchTab("AAA"));
 await page.waitForTimeout(250);
 await page.evaluate(() => document.querySelectorAll("#deepView details").forEach((d) => (d.open = true)));
@@ -1741,13 +1775,15 @@ ok(`one decision focus view + calendar reaches the book inside two phone screens
   dailySpan < 1688);
 // v3.42 READABLE DESK: the old stance strip wrapped ~5 lines of prose at 390px; the bar's
 // top row (token + chips + badges) must stay compact with the why drawer closed.
-// Re-pinned 140 -> 185 at v5.6 (THE DAILY CONTRACT): the GATE token is the contract's
-// FIRST line and earns one packing row — measured 178px on this dense restrictive fixture
-// (gate chip + verdict token + quals + 4 badges). 185 still fails on a second creep row;
-// the budget is not quietly loosened, the reason is this comment (the v3.45 rule).
+/* Budget history, each move measured and reasoned (the v3.45 rule — never quietly loosened):
+   140 (v3.42) -> 185 (v5.6, the GATE token earned one packing row, measured 178 on this
+   dense restrictive fixture) -> 120 (v5.6.5, TIGHTENED): the qualifiers and badges moved
+   behind one counted expander, so the top row is gate + verdict + controls and measures
+   86px. A budget that no longer binds is not a guard, so it comes back down with the win;
+   120 leaves one wrap row of headroom and still fails on a second. */
 const stanceTopH = (await phone.locator("#stanceStrip .stance-top").boundingBox()).height;
-ok(`stance bar top row is compact at 390px — gate, token and chips, never prose soup (${stanceTopH}px)`,
-  stanceTopH < 185);
+ok(`stance bar top row is compact at 390px — gate, verdict and controls, never prose soup (${stanceTopH}px)`,
+  stanceTopH < 120);
 ok("the tab strip is ONE row at 390px — it scrolls horizontally, it never wraps",
   (await phone.locator("#tabBar").boundingBox()).height < 60);
 // v3.81: the horizon defect was reachability, not visibility — measure the thumb target where

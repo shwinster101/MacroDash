@@ -2692,9 +2692,19 @@ ok("slice5: a PERMISSIVE stance renders a small pill — no big token, no qualif
 ok("slice5: a RESTRICTIVE stance keeps the full treatment — token, quals and the why drawer (led by the v5.6 compact gate token)",
   /el\.innerHTML=`<div class="stance-top">`\+gateTokSm\+\s*`<span class="vbadge"/.test(adminSrc) &&
   adminSrc.includes('<details class="why"><summary>why</summary>'));
-ok("slice5: the red badges are hoisted so they render in BOTH states — the v3.25 rule is that " +
-   "a red fact is never hidden by a collapse",
-  adminSrc.includes("const badges=") && (adminSrc.match(/badges\+controls/g)||[]).length===2);
+/* Re-pinned at v5.6.5 (owner call 2026-08-26: "hide the circuit-unresolved and binaries info
+   under the TOUCH GRASS gate"). The v3.25 rule is UNCHANGED and still enforced, just at a
+   different altitude: on the PERMISSIVE board the badges are the only warning present, so
+   they stay on the face; on a RESTRICTIVE board — where the verdict token already states the
+   restriction — they move behind an expander whose CLOSED summary carries their COUNT and
+   their colour. A collapse may hide a red fact's detail; it may never hide that one exists. */
+ok("slice5/v5.6.5: the permissive board keeps its red badges on the face, and the restrictive " +
+   "collapse still SIGNALS them — counted and coloured on the closed summary",
+  adminSrc.includes("const badges=badgeList.join(\"\");") &&
+  (adminSrc.match(/badges\+controls/g)||[]).length===1 &&
+  /const flagN=\(st\.quals\|\|\[\]\)\.length\+badgeList\.length;/.test(adminSrc) &&
+  /⚠ \$\{flagN\} flag/.test(adminSrc) &&
+  adminSrc.includes('anyRed?"var(--red)":"var(--amber)"'));
 
 // ═══════════ [24] FEAT-TT-CAPEX (v3.45) — the hyperscaler capex tape ═══════════
 // Every AI-infra beneficiary's revenue estimate is implicitly a bet on the hyperscaler capex
