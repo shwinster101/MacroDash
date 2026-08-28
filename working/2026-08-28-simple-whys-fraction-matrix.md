@@ -1,7 +1,11 @@
 # 2026-08-28 — Simple mode + expanded Five Whys: fraction/count vocabulary matrix
 
-No code changed by this document. Matrix only, per the review request that produced it —
-every string on public Simple mode and the one-tap-deep expanded Five Whys that contains a
+**Status: SHIPPED — see "Outcomes" at the foot of this file, which is the current record.**
+The matrix below is the ORIGINAL survey, kept verbatim as the pre-implementation snapshot so
+the corrections it earned stay legible as corrections. Where the survey and the Outcomes
+section disagree, the Outcomes section is right.
+
+Every string on public Simple mode and the one-tap-deep expanded Five Whys that contains a
 fraction or the words "usable" / "voters" / "counted" / "bullish vote", checked against the
 hero confidence line as the reader's anchor point.
 
@@ -84,3 +88,70 @@ since they qualify a claim rather than report a count).
 anchors and the A1 shape guards), and #4/#2 are pinned in public-render — every replacement
 above means re-pinning those on the new copy, per the house rule that pins move with the
 behavior they describe, never the other way around.
+
+---
+
+# Outcomes — 2026-08-28
+
+Two commits on `claude/macrodash-type-scale-leftovers-a2u29u`, copy-only throughout: no band,
+quorum, engine, count-derivation, TT or type-scale change, and `regime.js` untouched.
+
+- **`ebe804d`** — rows 2, 3, 4, 5, 11, 12, 13, 16, 17.
+- **`7148d08`** — the delta: the Drivers expander label and the clipboard payloads.
+
+Gates at each commit: 2033/2034 smoke + 306 render + 193 public-render, real Chromium under
+`REQUIRE_BROWSER=1`, `audit:prod` clean. Every change negative-controlled; the controls and
+the counts they turn red are recorded in the commit messages.
+
+## Canonical forms now in force on the public surface
+
+| Quantity | Form |
+|---|---|
+| coverage | `{N} of {total} voters counted` |
+| bullish tally | `{bull} of the {counted} counted voters lean bullish` |
+| Simple card cap | `{shown} cards from the {usable} voters counted` — labelled as CARDS |
+| exclusions | `· {N} dark` |
+
+No slash fraction, and "usable" never sits on a fraction.
+
+## Corrections this pass earned — the survey was wrong three times
+
+1. **Row 3's rationale does not hold.** The survey claimed `Cross-signals — N of M inputs
+   usable` renders on DATA HOLD beside rows 1 and 2. It cannot: `computeRegime` guards that
+   rewrite behind `!insufficient`, so the withheld branch never produces it. The shared
+   `subText` strip shipped anyway as defensive symmetry, and is a **no-op today**. The string
+   still reaches a reader in one real case — `conf` absent, which happens only under
+   extraction-reuse — and that was left alone deliberately: the tail is the only coverage
+   information on screen when there is no voters line.
+2. **"0/3 core inputs usable" does not exist.** The survey inherited it from a stale comment
+   at `FiveWhys.jsx:12`. No code emits it and no pin anchors it — the v5.3 One Call rewrite of
+   WHY #1 retired the phrase. The real LOADING/ERROR anchor is `not enough usable evidence to
+   publish a direction` (row 14, untouched). Comment corrected.
+3. **The "clipboard paste block" was mislabeled.** `dashboard.jsx`'s
+   `…: 5 of 6 factors usable.` is the **aria-live status region**, not a clipboard payload.
+   The real clipboard is two builders in `macroCall.js` — `formatMacroCallPaste` and
+   `formatMacroShareCard` — both carrying the slash form, neither originally flagged. All
+   three were fixed: the aria-live region is the screen-reader rendering of the hero's own
+   claim, so leaving it would have made the announcement disagree with the line it announces.
+
+## Pins
+
+17 moved onto the new copy (11 smoke, 6 public-render), 3 added for tails that had no guard
+(rows 11 and 17, and the two-clipboard-payloads agreement).
+
+Two pin defects surfaced while moving them, both worth remembering:
+
+- The row-3 pin is **comment-stripped**. `bandSrc` still carries a superseded copy of the old
+  inline expression inside a block comment, so raw-text matching would have passed vacuously
+  with the live strip deleted — the v3.60.1 self-matching trap.
+- The added clipboard pin initially referenced `share` above its declaration. That is a TDZ
+  `ReferenceError` which killed the suite mid-run rather than passing quietly — loud, but it
+  is the shape that would pass quietly if the reference were inside a lazy branch.
+
+## Still outside the canonical form — deliberately
+
+| Site | String | Why it stands |
+|---|---|---|
+| `whatChanged.js:39` | `Evidence base 4 → 5 of 6 factors usable` | Out of the scopes given; public-facing, one-line fix available |
+| `regime.js:217` | `Cross-signals — N of M inputs usable` | Owner ruled `regime.js` off-limits; reaches a reader only when `conf` is absent |
+| Row 14 | `not enough usable evidence to publish a direction` | Owner ruled it untouched; it is the LOADING/ERROR anchor three suites read |

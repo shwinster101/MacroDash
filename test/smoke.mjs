@@ -4511,6 +4511,33 @@ ok("HANDOFF.md declares itself a dated ARCHIVE, so it cannot read as current sta
   /ARCHIVE/.test(handoffSrc) && /NOT current state/i.test(handoffSrc) &&
   /`CLAUDE\.md` is canonical/i.test(handoffSrc));
 
+/* 2026-08-28 — the working-notes convention. A survey that lives only in chat scrollback is
+   unsearchable from a fresh session, does not survive a context summary, and cannot be diffed
+   against the code it describes; one left as a pre-implementation snapshot then becomes a
+   confident, STALE claim about the product — the label-outlives-its-data defect this whole
+   block exists to catch, filed one level up. The rule is in CLAUDE.md's per-pass protocol so
+   it loads every session; these pins stop it being silently dropped, and stop `working/`
+   turning into a product surface. */
+ok("working notes: the per-pass protocol carries the branch-record rule and the update-on-land rule",
+  // Whitespace-collapsed: these are prose in a hard-wrapped markdown file, so a phrase can
+  // straddle a line break. Matching the raw text would fail on a reflow that changed nothing.
+  (() => { const doc = claudeSrc.replace(/\s+/g, " ");
+    return /Findings live on the BRANCH, not in the chat/.test(doc) &&
+           /UPDATED WHEN THE WORK LANDS, in the same pass/.test(doc) &&
+           /recorded as a correction rather than silently edited away/.test(doc); })());
+ok("working notes: `working/` is NOTES — no product surface may import it",
+  (() => { const hits = [], seen = [];
+    /* Paths resolve against import.meta.url, exactly as readSrc does — a bare "../src" would
+       resolve against cwd instead and this pin would pass by scanning nothing. `seen` is the
+       vacuity guard: it must actually have read the product tree. */
+    const walk = (rel) => { let ents; try { ents = readdirSync(new URL(rel, import.meta.url), { withFileTypes:true }); } catch { return; }
+      for (const e of ents) { const f = `${rel}${e.name}`;
+        if (e.isDirectory()) walk(`${f}/`);
+        else if (/\.(jsx?|mjs|html)$/.test(e.name)) { seen.push(f);
+          if (/["'`][^"'`]*\bworking\//.test(readSrc(f))) hits.push(f); } } };
+    ["../src/", "../functions/", "../public/"].forEach(walk);
+    return seen.length > 20 && hits.length === 0; })());
+
 // ─────────────────────────────────────────────────────────────────────────────
 console.log("\n[42] FEAT-NEUTRAL — a neutral factor must never render as bearish");
 // WHY THIS SECTION EXISTS: regimeFactors() predated REGIME_BAND_TABLE and was never migrated,
