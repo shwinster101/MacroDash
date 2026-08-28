@@ -9,7 +9,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
 <!-- AUDIT: kept in sync with package.json by test/smoke.mjs. admin.html is a Vite
      public/ passthrough, so it cannot receive __APP_VERSION__ — the guard is the fix. -->
-<title>TT TICKER TERMINAL v5.7.1</title>
+<title>TT TICKER TERMINAL v5.7.2</title>
 <style>
   :root{
     --bg:#05070a; --panel:#0a0f16; --panel2:#0d141d; --line:#16202c;
@@ -161,6 +161,9 @@
   .tdy-lbl{font-size:9px;letter-spacing:.16em;color:var(--dim);text-transform:uppercase;margin:10px 0 5px}
   .tdy-act{border-left:3px solid var(--line);padding:5px 0 5px 9px;margin-bottom:5px;font-size:12px}
   .tdy-act:hover{background:#0a1119}
+  /* v5.7.2: the headline is the decision — it carries the sev colour and must read at a
+     glance above its (now truncated) note. The note itself stays at .tdy-why's small size. */
+  .tdy-head{font-size:var(--fs-m);font-weight:600;line-height:1.35}
   details.drawer{border:1px solid var(--line);border-radius:7px;background:#080d13;margin-top:7px}
   details.drawer>summary{cursor:pointer;list-style:none;padding:8px 12px;font-size:var(--fs-s);
     letter-spacing:.12em;color:var(--dim);text-transform:uppercase;user-select:none}
@@ -263,7 +266,12 @@
   .glance-action{border:1px solid var(--line);border-radius:6px;background:#080d13;color:var(--dim);
     font:inherit;font-size:var(--fs-xs);padding:5px 8px;cursor:pointer;white-space:nowrap}
   .glance-action.primary{border-color:var(--greenDim);color:var(--green);background:#0c1a13}
-  .glance-action.warn{border-color:#4a361a;color:var(--amber);background:#191206}
+  /* v5.7.2: .warn is the RED-FACT chip (TRIM · N cap — names over the reference cap). It sat
+     at --fs-xs, the same weight as `DESK ▾` and the quote stamp, i.e. a standing breach
+     rendered as chrome. It now reads a step larger and bolder with a real thumb target —
+     the v3.25 rule applied to SIZE, not just presence. */
+  .glance-action.warn{border-color:var(--amber);color:var(--amber);background:#191206;
+    font-size:var(--fs-s);font-weight:700;padding:7px 11px;min-height:34px}
   .glance-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px;margin-bottom:9px}
   .glance-tile{min-width:0;border:1px solid var(--line);border-radius:8px;background:#080d13;
     padding:10px 11px;min-height:108px}
@@ -277,7 +285,11 @@
     gap:6px;align-items:center;width:100%;border:0;border-bottom:1px dashed #101a24;
     background:none;color:var(--fg);font:inherit;font-size:var(--fs-s);text-align:left;
     padding:8px 0;cursor:pointer}
-  .glance-row:last-child{border-bottom:0}.glance-row .sym{font-weight:800}.glance-row .rate{text-align:right}
+  .glance-row:last-child{border-bottom:0}.glance-row .rate{text-align:right}
+  /* v5.7.2: the TICKER is the row's identity — the thing you scan for — and it inherited the
+     row's small size, so it read no louder than the reason text beside it. Sized explicitly
+     one step up here and at ≤700px (where the row drops to 11px). */
+  .glance-row .sym{font-weight:800;font-size:var(--fs-m);letter-spacing:.02em}
   .glance-row .reason{color:var(--slate);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
   .glance-tail-label,.glance-foot{padding:7px 0 5px;color:var(--amber);font-size:var(--fs-xs)}
   .glance-foot{border-top:1px dashed #101a24;color:var(--dim)}
@@ -291,7 +303,8 @@
   #commandBar{margin:0 0 8px}.fund-back{margin-right:auto}
   @media(max-width:700px){
     .glance-grid{grid-template-columns:1fr}.glance-tile{min-height:88px}
-    .glance-row{grid-template-columns:20px minmax(50px,.6fr) 28px minmax(66px,.8fr) minmax(62px,1.2fr);font-size:11px}
+    .glance-row{grid-template-columns:20px minmax(54px,.6fr) 28px minmax(66px,.8fr) minmax(62px,1.2fr);font-size:11px}
+    .glance-row .sym{font-size:var(--fs-l)}   /* v5.7.2: the ticker leads on a phone too */
     .glance-head h1{width:100%}.tt-mode{top:env(safe-area-inset-top)}
   }
   /* v3.42 READABLE DESK slice 2: driver rows are a two-line GRID inside a real <button> —
@@ -481,7 +494,7 @@
          verdict and every gate are computed upstream and this panel changes nothing. -->
     <div id="macroEvidence" role="region" aria-label="Why macro — readout evidence"></div>
     <div id="headInfo" style="display:none">
-      <div class="brand">FINANCE&nbsp;BRO.AI // TT&nbsp;TICKER&nbsp;TERMINAL <small>v5.7.1 · the daily contract</small></div>
+      <div class="brand">FINANCE&nbsp;BRO.AI // TT&nbsp;TICKER&nbsp;TERMINAL <small>v5.7.2 · the daily contract</small></div>
       <div class="statusline">
         <span>BOOK: <b id="bookStamp">loading…</b></span>
         <span>AUTH: <b id="sessState">…</b></span>
@@ -1606,6 +1619,11 @@ function renderRollup(){
 const MOVE_PCT=5;                       // a day move worth waking someone for
 const SEEN_KEY="tt:seen:v1";
 const SEEN_MAX_D=7;                     // a baseline older than this is noise, not a diff
+/* v5.7.2: TODAY sub-lines are unbounded owner/board free text. Past this the note is
+   truncated in place and carried VERBATIM one tap deep (v3.66) — ~2 phone lines, chosen so
+   the ordinary cap/answer notes (which run 90-140 chars) still read whole while a research
+   note like the 8/27 Jackson Hole item stops eating the list below it. */
+const TDY_SUB_CAP=140;
 /* FEAT-TT-CIRCUIT (v4.1 Step 1): the structured circuit is CANONICAL, and absence fails
    CLOSED. The 8/18 audit's P0: board prose said "presumed tripped" while board.circuit was
    null — and null read as not-tripped here, so the stance could show ADDS OK against the
@@ -1776,15 +1794,31 @@ function renderToday(){
       (s.why?`<div class="tdy-why">${esc(s.why)}</div>`:"")+`</div></details>`:"")+`</div>`;
   const acts=todayActions();
   h+=`<div class="tdy-lbl">Today${acts.length>1?` · ${acts.length} items`:""}</div>`;
+  /* v5.7.2 — the sub-line is chip-length in place, verbatim one tap deep (the v3.66 QUIET
+     BOARD rule, which TODAY never got). `a.sub` is unbounded owner/board free text: the
+     8/27 FOMC item alone rendered ~15 lines of Jackson-Hole research above the four items
+     below it, so the LIST stopped being scannable. The headline (a.txt) is never truncated
+     — it carries the decision and the sev color, so v3.25 holds while this is closed. */
   h+=acts.map((a,i)=>{
     const c={stop:"var(--red)",warn:"var(--amber)",go:"var(--green)",none:"var(--dim)"}[a.sev];
+    const sub=a.sub?String(a.sub):"";
+    const long=sub.length>TDY_SUB_CAP;
     return `<div class="tdy-act" data-i="${i}" style="border-left-color:${c}">`+
-      `<div style="color:${a.sev==="none"?"var(--fg)":c}">${esc(a.txt)}</div>`+
-      (a.sub?`<div class="tdy-why">${esc(a.sub)}</div>`:"")+`</div>`;
+      `<div class="tdy-head" style="color:${a.sev==="none"?"var(--fg)":c}">${esc(a.txt)}</div>`+
+      (sub?(long
+        ?`<div class="tdy-why">${esc(sub.slice(0,TDY_SUB_CAP).trim())}…</div>`+
+          `<details class="est-mini" data-nogo="1"><summary><span class="scope">full note</span></summary>`+
+          `<div class="tdy-why">${esc(sub)}</div></details>`
+        :`<div class="tdy-why">${esc(sub)}</div>`):"")+`</div>`;
   }).join("");
   el.innerHTML=h;
   [...el.querySelectorAll(".tdy-act")].forEach(n=>{
-    const a=acts[+n.dataset.i];if(a&&a.go){n.style.cursor="pointer";n.onclick=a.go;}
+    const a=acts[+n.dataset.i];
+    if(a&&a.go){n.style.cursor="pointer";
+      /* v5.7.2: a row with a `go` is clickable, and the note expander lives INSIDE it — so a
+         tap on "full note" would navigate away instead of expanding. Reading the note must
+         never be a navigation. */
+      n.onclick=(e)=>{if(e.target.closest("details"))return;a.go();};}
   });
 }
 /* ── WHAT CHANGED: the diff, against a baseline the user controls ────────────────────

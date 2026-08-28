@@ -5,6 +5,36 @@ answers *"is it safe to be in the market?"* from live macro + market + sentiment
 data. Single-page React app on Cloudflare Pages, with live data assembled at the
 edge by Pages Functions and cached in KV.
 
+**v5.7.2 — the NEXT $ glance stops shouting in small type (owner, on the live 8/27 board:
+"come on this is too much text. I think trim is too small? And the tickers are small too?").**
+Three fixes, all density/typography, no logic moved.
+**The TODAY wall.** `renderToday` rendered `a.sub` unbounded, and `sub` is owner/board free
+text — the 8/27 FOMC item alone put ~15 lines of Jackson Hole research above the four items
+below it, so the LIST stopped being a list. The v3.66 QUIET BOARD rule finally reaches TODAY:
+the note truncates at `TDY_SUB_CAP=140` in place with the full text VERBATIM one tap deep,
+while the HEADLINE — which carries the decision and its severity colour — is never truncated
+(v3.25 holds while closed). 140 is chosen so the ordinary cap/answer notes (90-140 chars,
+e.g. the "asterisk, not a veto · denominator = account equity" line) still read whole and
+only the wall collapses. The headline also gains its own size (`--fs-m`, 600) so it reads
+above its note rather than level with it. **Reading the note is not a navigation:** a TODAY
+row carrying a `go()` would have navigated on a tap meant for the expander, so the handler
+ignores clicks inside the `<details>`.
+**The TRIM chip was chrome-sized.** `TRIM · N cap` names the positions standing over the
+reference cap and sat at `--fs-xs` — the same weight as `DESK ▾` and the quote stamp. It now
+reads a step larger, bolder, full-amber border, with a ≥34px thumb target: the v3.25 rule
+applied to SIZE, not just presence.
+**The ticker was the smallest thing in its own row.** `.glance-row .sym` inherited the row's
+size (11px on a phone) with only `font-weight:800` to distinguish it, so the identity you
+scan for read no louder than the reason text beside it — `--fs-m`, and `--fs-l` at ≤700px.
+Tests: 2030 smoke + **306 render** (+6: the truncation driven with a deliberately long
+fixture label — the old short one never exercised the path — the headline-never-truncated
+and ordinary-note-whole controls, a REAL tap on the expander proving it does not navigate,
+and BOTH sizes MEASURED at 390px via getComputedStyle rather than asserted from CSS text)
++ 192 public-render. Negative-controlled three ways: removing the click guard, and reverting
+each size change, each turn exactly their own pins red. One assertion was caught vacuous
+while being written (it pinned a regex against a string the test itself supplied) and
+rewritten to drive the real behaviour — the v3.60.1 self-matching trap, again.
+
 **v5.7.1 — the arrival race fixed, and the card becomes readable (owner screenshots,
 2026-08-27: "Joby is empty somehow? Come on? Nbis is so wordy and difficult to read").**
 Two defects, one mine and one structural, plus the card redesign the second one demanded.

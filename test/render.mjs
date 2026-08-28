@@ -213,7 +213,13 @@ const BOARD = {
   ],
   // "prints today" only means today if the fixture says today — the original hardcoded
   // date killed two asserts the first midnight after it was written.
-  binaries: [{ date: TODAY_ET, scope: "MACROEVT", label: "a print that is not a book ticker" }],
+  /* v5.7.2: the label is DELIBERATELY long — `sub:e.label` in todayActions is unbounded
+     owner text, and the live 8/27 FOMC item rendered ~15 lines of research above the four
+     items under it. A short fixture label never exercised the truncation. */
+  binaries: [{ date: TODAY_ET, scope: "MACROEVT",
+    label: "a print that is not a book ticker — and then a very long standing note that keeps "
+      + "going well past any sensible glance length, the way a real macro research item does, "
+      + "so that the truncation path is actually driven by this suite instead of assumed" }],
 };
 
 // FEAT-TT-LEDGER (v3.32) fixture: AAA carries per-name history (a tier flip + a hinge
@@ -486,6 +492,35 @@ ok("stance leads with the circuit veto, not the macro read", /NO NEW POSITIONS/.
 ok("today names tonight's print before anything discretionary", /MACROEVT prints today/.test(today));
 // v5.2 CAP-ASTERISK (owner ruling 2026-08-25): cap breaches are WARN items now, not stops —
 // "reference cap (informational)", with the asterisk named in the sub. Still visible in TODAY.
+/* ── v5.7.2 — TODAY sub-lines are chip-length in place, verbatim one tap deep ──
+   Owner, on the live 8/27 board: "come on this is too much text". The FOMC item's note ran
+   ~15 lines above the four items below it. `txt()` reads innerText, so a closed <details>
+   is genuinely absent from it — that is what makes the closed-state assertion real. */
+{
+  const vis = await txt(page, "todayCard");
+  const all = await page.locator("#todayCard").textContent();
+  ok("v5.7.2 today: a long note is TRUNCATED in place — the list stays scannable",
+    /so that the truncation path is actually driven/.test(all) &&
+    !/so that the truncation path is actually driven/.test(vis) && /full note/.test(vis));
+  ok("v5.7.2 today: the HEADLINE is never truncated — it carries the decision and its colour (v3.25)",
+    /MACROEVT prints today/.test(vis));
+  ok("v5.7.2 today: an ordinary-length note still reads WHOLE — only the wall collapses",
+    /a floor, not NAV/.test(vis));
+  /* A REAL tap on the expander: the row carries a go() (this item opens the calendar
+     drawer), so an unguarded click would navigate instead of expanding. Asserted by
+     driving the click and checking BOTH that it expanded and that the drawer it would
+     have opened stayed shut. (The first draft of this pinned a regex against a string
+     this test itself supplied — vacuous, and caught before it shipped.) */
+  ok("v5.7.2 today: reading the note is not a navigation — the expander is guarded from the row's go()",
+    await page.evaluate(() => {
+      const cal = document.getElementById("dCal");
+      const wasOpen = !!(cal && cal.open);
+      const d = document.querySelector("#todayCard .tdy-act details");
+      if (!d || d.open) return false;
+      d.querySelector("summary").click();
+      return d.open && !!(cal && cal.open) === wasOpen;
+    }));
+}
 ok("a single-name cap breach is a TODAY warn — reference cap, informational (v5.2)",
   /AAA is 21\.4% of acct equity — 3\.4pts over the 18% reference cap \(informational\)/.test(today));
 ok("a cluster cap breach is a TODAY warn — reference cap, informational (v5.2)",
@@ -1846,6 +1881,26 @@ ok("altitude: first-surface tile lines obey the 12-word budget",
     .every(x=>x.textContent.trim().split(/\s+/).filter(Boolean).length<=12)));
 ok("altitude: exact canonical gate state survives beneath the playful alias",
   /TOUCH GRASS/.test(await phone.locator("#gateTile").innerText()) && /NO NEW POSITIONS/.test(await phone.locator("#gateTile").innerText()));
+/* v5.7.2 — owner on the live board: "trim is too small? And the tickers are small too?"
+   Both were reading at the same weight as chrome. MEASURED at 390px, not asserted from CSS
+   text: the TRIM chip is a standing breach (v3.25 applied to SIZE), and the ticker is the
+   row's identity — the thing you scan for. */
+ok("v5.7.2 phone: the TRIM red-fact chip outsizes the neutral command chips beside it",
+  await phone.evaluate(() => {
+    const t = document.getElementById("trimChip");
+    const neutral = document.getElementById("refreshRanks");
+    if (!t || t.hidden || !neutral) return false;
+    const px = (n) => parseFloat(getComputedStyle(n).fontSize);
+    return px(t) > px(neutral) && t.getBoundingClientRect().height >= 32;
+  }));
+ok("v5.7.2 phone: the ticker reads LARGER than the reason text sharing its row",
+  await phone.evaluate(() => {
+    const row = document.querySelector("#nextView .glance-row");
+    const sym = row && row.querySelector(".sym"), reason = row && row.querySelector(".reason");
+    if (!sym || !reason) return false;
+    const px = (n) => parseFloat(getComputedStyle(n).fontSize);
+    return px(sym) >= px(reason) + 2;
+  }));
 ok("altitude: SHARE sits beside the NEXT $ hero, outside closed OPS",
   await phone.locator("#nextView .glance-action.primary").isVisible() && !(await phone.locator("#headInfo").isVisible()));
 // v4.0.2: the loop's back half — ← MACRO permanent in the bar, zero clicks, real href;
