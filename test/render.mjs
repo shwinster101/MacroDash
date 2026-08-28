@@ -1298,6 +1298,34 @@ await page.waitForTimeout(120);
 const dv = (await page.locator("#deepView").innerText()).replace(/\s+/g, " ");
 ok("the four answers render above the corpus",
   /WHAT IT'S WORTH/i.test(dv) && /WHAT CHANGES MY MIND/i.test(dv) && /WHEN/i.test(dv) && /WHAT I OWN/i.test(dv));
+/* v5.6.6 (owner call): the tab opens with the EXECUTIVE SUMMARY — thesis, then the near and
+   far targets — above the four answers and the corpus. Driven live, including the search
+   keystroke that now routes here instead of to the edit card. */
+ok("v5.6.6: the exec summary leads the tab with short- and long-term targets, above the four answers",
+  /EXECUTIVE SUMMARY/i.test(dv) && /SHORT TERM/i.test(dv) && /LONG TERM/i.test(dv) &&
+  dv.indexOf("EXECUTIVE SUMMARY") < dv.indexOf("WHAT IT'S WORTH"));
+ok("v5.6.6: an absent thesis is NAMED on the tab, never inferred from the tier",
+  /no thesis line stored/i.test(dv));
+{
+  // The real keystroke: type a book name into the search bar and press Enter.
+  await page.evaluate(() => switchTab("BOARD"));
+  await page.waitForTimeout(120);
+  await page.locator("#search").fill("bbb");
+  await page.keyboard.press("Enter");
+  await page.waitForTimeout(300);
+  const opened = await page.evaluate(() => ({
+    deep: document.getElementById("deepView").style.display !== "none",
+    tab: typeof TAB !== "undefined" ? TAB : null,
+    modal: document.getElementById("overlay").classList.contains("on"),
+    text: document.getElementById("deepView").innerText.replace(/\s+/g, " "),
+  }));
+  ok("v5.6.6 search: Enter on an in-book name opens its DEEP DIVE — not the edit card modal",
+    opened.deep && opened.tab === "BBB" && !opened.modal && /EXECUTIVE SUMMARY/i.test(opened.text));
+  ok("v5.6.6 search: the edit card stays one tap away from the tab (OPEN TT CARD)",
+    /OPEN TT CARD/i.test(opened.text));
+  await page.evaluate(() => switchTab("AAA"));
+  await page.waitForTimeout(200);
+}
 // FEAT-TT-READY (v3.50): the consolidated statement sits ABOVE the four answers, and the
 // red facts survive the consolidation (v3.25) — AAA carries a RED hinge, which must be
 // named on the bar as a caution while never blocking (D3: the board reports, not enforces).

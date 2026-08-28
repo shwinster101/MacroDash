@@ -9,7 +9,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
 <!-- AUDIT: kept in sync with package.json by test/smoke.mjs. admin.html is a Vite
      public/ passthrough, so it cannot receive __APP_VERSION__ — the guard is the fix. -->
-<title>TT TICKER TERMINAL v5.6.5</title>
+<title>TT TICKER TERMINAL v5.6.6</title>
 <style>
   :root{
     --bg:#05070a; --panel:#0a0f16; --panel2:#0d141d; --line:#16202c;
@@ -189,6 +189,10 @@
   details.est-mini>div{padding:2px 10px 8px}
   /* FEAT-TT-DDFOCUS (v3.31): the four answers a name's tab exists to give */
   .dd-answer{display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin:12px 0 6px}
+  /* v5.6.6: the executive summary — same visual language as the four answers below it. */
+  .dd-exec{margin:8px 0 4px;padding:8px 10px;border:1px solid var(--greenDim);border-radius:6px;background:#050a0d}
+  .dd-exec .dd-ek{font-size:var(--fs-xs);color:var(--greenDim);letter-spacing:1.5px;margin-bottom:4px}
+  .dd-exec .dd-thesis{font-size:var(--fs-s);line-height:1.5;color:var(--fg);margin-bottom:6px}
   @media(max-width:700px){.dd-answer{grid-template-columns:repeat(2,1fr)}}
   .dd-a{border:1px solid var(--line);border-radius:7px;background:#080d13;padding:8px 10px;min-width:0}
   .dd-ak{font-size:8.5px;letter-spacing:.14em;color:var(--dim);text-transform:uppercase}
@@ -458,7 +462,7 @@
          verdict and every gate are computed upstream and this panel changes nothing. -->
     <div id="macroEvidence" role="region" aria-label="Why macro — readout evidence"></div>
     <div id="headInfo" style="display:none">
-      <div class="brand">FINANCE&nbsp;BRO.AI // TT&nbsp;TICKER&nbsp;TERMINAL <small>v5.6.5 · the daily contract</small></div>
+      <div class="brand">FINANCE&nbsp;BRO.AI // TT&nbsp;TICKER&nbsp;TERMINAL <small>v5.6.6 · the daily contract</small></div>
       <div class="statusline">
         <span>BOOK: <b id="bookStamp">loading…</b></span>
         <span>AUTH: <b id="sessState">…</b></span>
@@ -2996,6 +3000,64 @@ function readyBar(x){
      `<div class="none" style="color:var(--green);margin-top:3px">every clock current — the evidence behind this name is complete</div>`)+
     `</div>`;
 }
+/* ═══════════ v5.6.6 — THE EXECUTIVE SUMMARY (owner call 2026-08-26) ═══════════
+   Enter on an in-book name now opens THIS tab, so the tab has to open with the answer a
+   reader actually arrives for: the thesis in words, then the near and the far target,
+   before any maintenance surface or the corpus.
+   ⚠ ONE COMPUTATION: both targets come from the SAME ptModelRows() the board ranks on, so
+   this block can never quote a number the ladder below it disagrees with (the ptModelRows
+   rule). The near rung is the earliest year-end the model prices; the far rung is the
+   deepest. Neither is a 12-month target invented to fill a slot — each states its own year.
+   ⚠ THE THESIS IS NEVER INVENTED. Measured across the live book: only 2 of 39 payloads
+   carry a `thesis` string, 3 carry `verdict.read`, and NBIS carries `valuation_note`. An
+   absent thesis is NAMED, with what would fill it — the tier is not a thesis, and inferring
+   one from the lens would be exactly the fabrication this file forbids everywhere else. */
+function ddThesisLine(dd){
+  const str=(v)=>typeof v==="string"&&v.trim()?v.trim():null;
+  const t=str(dd.thesis);                     if(t)return{txt:t,src:"thesis",at:null};
+  const v=dd.verdict&&typeof dd.verdict==="object"?str(dd.verdict.read):null;
+  if(v)return{txt:v,src:"verdict",at:str(dd.verdict.as_of)};
+  const vn=str(dd.valuation_note);            if(vn)return{txt:vn,src:"valuation_note",at:null};
+  return null;
+}
+function ddExec(x,dd){
+  const th=ddThesisLine(dd);
+  const CAP=260;
+  const thesis=th
+    ?`<div class="dd-thesis">${esc(th.txt.length>CAP?th.txt.slice(0,CAP)+"…":th.txt)}`+
+      `<span class="scope"> · ${esc(th.src)}${th.at?` ${esc(th.at)}`:""}</span>`+
+      (th.txt.length>CAP?`<details class="est-mini"><summary><span class="scope">full thesis</span></summary><div>${esc(th.txt)}</div></details>`:"")+`</div>`
+    :`<div class="dd-thesis" style="color:var(--amber)">no thesis line stored — the gates, hinges and ladder below are what this book actually asserts about ${esc(x.sym)}`+
+      `<span class="scope"> · add one as \`thesis\` on the payload</span></div>`;
+  // Both targets off ONE row set, with the same price rule ddWorth uses (live, else stamp).
+  const rr=ptModelRows(dd).filter(r=>typeof r.prem==="number"||typeof r.fl==="number");
+  const live=LIVE_PX[x.sym],stamp=dd.ref_px;
+  const px=(live&&isFinite(live.px))?live.px:(stamp&&isFinite(stamp.px)?stamp.px:null);
+  const cellOf=(row,longRun)=>{
+    if(!row)return{txt:`<span style="color:var(--dim)">—</span>`,sub:"no rung"};
+    const onFloor=typeof row.prem!=="number";
+    const tgt=onFloor?row.fl:row.prem;
+    if(!isFinite(Number(tgt)))return{txt:`<span style="color:var(--dim)">${esc(String(tgt))}</span>`,sub:`YE${esc(row.y)} · no P/E before profit`};
+    if(px===null)return{txt:`$${esc(tgt)}`,sub:`YE${esc(row.y)} · ${onFloor?"floor":"premium"} · no price to compare against`};
+    const up=Math.round((tgt/px-1)*1000)/10;
+    const ann=longRun?annualise(up,row.y):null;
+    return{txt:`$${esc(tgt)} <span style="color:${up>=0?"var(--green)":"var(--red)"};font-size:var(--fs-s)">${up>=0?"+":""}${up}%</span>`,
+      sub:`YE${esc(row.y)} · ${onFloor?"floor":"premium"}${ann!==null?` · ${ann>=0?"+":""}${ann}%/yr`:""}${live?"":" · vs stamped mark"}`};
+  };
+  const cell=(k,v)=>`<div class="dd-a"><div class="dd-ak">${k}</div><div class="dd-av">${v.txt}</div><div class="dd-as">${v.sub}</div></div>`;
+  let targets;
+  if(!rr.length){
+    targets=`<div class="dd-thesis" style="color:var(--dim)">no model — nothing here computes a target`+
+      `${dd.pt_model&&dd.pt_model.note?`<span class="scope"> · ${esc(allocTrunc(dd.pt_model.note))}</span>`:""}</div>`;
+  }else if(rr.length===1){
+    // One rung is ONE fact — printing it twice as "near" and "long" would manufacture a
+    // second data point out of the same number.
+    targets=`<div class="dd-answer">${cell("Target (single rung)",cellOf(rr[0],true))}</div>`;
+  }else{
+    targets=`<div class="dd-answer">${cell("Short term",cellOf(rr[0],false))}${cell("Long term",cellOf(rr[rr.length-1],true))}</div>`;
+  }
+  return `<div class="dd-exec"><div class="dd-ek">EXECUTIVE SUMMARY</div>${thesis}${targets}</div>`;
+}
 function ddAnswerBlock(x,dd,todayET){
   const w=ddWorth(dd,x.sym);
   const n=hingeTally(dd),total=n.green+n.amber+n.red+n.unknown;
@@ -3568,6 +3630,7 @@ function renderDeepDive(sym){
   // FEAT-TT-READY (v3.50): the meta-answer, above the four. Every clock this tab used to
   // scatter across ~20 sections, consolidated into one verdict the reader can act on.
   h+=readyBar(x);
+  h+=ddExec(x,dd);   // v5.6.6: thesis + near/far targets, before any maintenance surface
   // v3.73 TT-SCORE: the server scorecard, SHADOW mode — §15 puts TT UNDERWRITING directly
   // under DECISION READINESS. Renders only what /api/score returned; legacy governs.
   h+=ddScoreBar(x);
@@ -6964,7 +7027,10 @@ search.addEventListener("keydown",e=>{
     // straight into ADD prefilled, with the router gate + TT prompt in front of you.
     const sym=up.replace(/^TT:\s*/,"").trim();
     const x=find(sym);
-    if(x){openCard(x.sym);search.value="";}
+    /* v5.6.6 (owner call 2026-08-26): Enter opens the DEEP DIVE, not the edit card. Analysis
+       is what you arrive for at 10am; editing is the rarer act — and the tab carries an
+       OPEN TT CARD button, so the edit path is one tap away rather than lost. */
+    if(x){switchTab(x.sym);search.value="";search.blur();}
     else if(/^[A-Z.\-]{1,8}$/.test(sym)){
       openAdd(sym);search.value="";
       toast(sym+" not in book — route & tier it (or copy the TT prompt to run the harness)");
@@ -6979,7 +7045,7 @@ function showHelp(){
   document.getElementById("cTitle").textContent="TT TERMINAL — HELP";
   document.getElementById("cBody").innerHTML=`
     <ul class="tight" style="font-size:12.5px">
-      <li>Type a <b>ticker</b> + ↵ — <b>in the book</b> → opens its card to update · <b>not in the book</b> → opens ADD prefilled with the router gate.</li>
+      <li>Type a <b>ticker</b> + ↵ — <b>in the book</b> → opens its <b>deep dive</b> (executive summary: thesis, short- and long-term target, then the corpus; <b>OPEN TT CARD</b> there to edit) · <b>not in the book</b> → opens ADD prefilled with the router gate.</li>
       <li>Inside a card you can change <b>tier</b>, <b>lens/route</b>, <b>FP flag</b>, <b>note</b>, then SAVE (saves to the server immediately).</li>
       <li>Composite / technical / R-R lines are <b>filled by a live TT run</b> — click "COPY 'TT: X' PROMPT" and paste into chat, then record the routed lens + tier here.</li>
       <li>Removing a name moves it to the <b>CUT</b> row. Edits persist in KV — no export needed.</li>

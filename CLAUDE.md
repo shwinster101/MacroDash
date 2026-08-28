@@ -2924,6 +2924,44 @@ Jan-anchor shipped; see `snapshot.js` ~318–328), `spyMa100`, `spyMa200`, and a
   VALUATION GAP ranking (§11.1 — the ranking always renders, which is the owner's actual
   "always an output" contract, and it was never suspended). Tests: 1223 smoke (+2) + 199
   render (+1).
+- **v5.6.6 — the search bar routes to ANALYSIS, and the deep dive opens with an EXECUTIVE
+  SUMMARY (owner call 2026-08-26: *"it should enter deep dive with executive summary of
+  thesis, short term and long term price target then deeper dive"*).** The `TT:>` bar was a
+  router into the two EDIT surfaces — Enter on an in-book name opened its card (tier/lens/
+  note), not the analysis tab — so the fastest keystroke landed on the rarest act. Enter now
+  opens the **deep dive**; the card stays one tap away via the tab's existing OPEN TT CARD
+  button, so no path was removed, and the HELP copy moved WITH the behaviour (an instruction
+  outliving its data is the defect this file keeps closing).
+  **`ddExec()` leads the tab**, directly under the readiness gate: the thesis in words, then
+  **SHORT TERM** (the earliest year-end the model prices) and **LONG TERM** (the deepest
+  rung, with its annualised rate). Both come from the SAME `ptModelRows()` the board ranks
+  on — the ptModelRows rule — so the summary can never quote a number the ladder below it
+  disagrees with, and each states its own year rather than inventing a 12-month target to
+  fill a slot. A single-rung model prints ONE cell (`Target (single rung)`): one rung is one
+  fact, and printing it twice as a near and a far target would manufacture a second data
+  point out of the same number. No model says so and carries the payload's own note.
+  **The thesis is never invented.** Measured across the live book first: only **2 of 39**
+  payloads carry a `thesis` string, 3 carry `verdict.read` (an object), and NBIS carries
+  `valuation_note` — so `ddThesisLine()` resolves those three shapes by priority, NAMES which
+  field it came from and its date, and when none exists says *"no thesis line stored — the
+  gates, hinges and ladder below are what this book actually asserts"* with the field that
+  would fill it. Inferring a thesis from the tier or the lens would be exactly the
+  fabrication this renderer forbids everywhere else — and the absence is itself information:
+  34 of 39 names have no thesis line.
+  Found while testing: the `n/m` branch in the target cell is **unreachable** — the numeric
+  row filter (inherited from `ddWorth`) drops a rung whose only value is that sentinel — so
+  the pin asserts the EXCLUSION that actually holds rather than dressing a defensive guard as
+  reachable behaviour (the vacuous-assert rule). Also re-pinned: the deep-dive ordering pin
+  measured a fixed 400-character window between `readyBar` and `ddAnswerBlock` and tipped
+  over on the first legitimate insertion — it now asserts the ORDER itself, which is what
+  "readiness leads" actually means.
+  Tests: **2018 smoke** (+7: `ddExec`/`ddThesisLine` lifted and RUN — near/far from one row
+  set, the single-rung case, no-model, floor labelling, the n/m exclusion, all three thesis
+  shapes by priority and the named absence; plus the search route and the HELP-copy sweep) +
+  **284 render** (+4: the exec summary driven live above the four answers, the named absence,
+  and a REAL search keystroke proving Enter lands on the deep dive with no card modal open).
+  Negative-controlled twice — reverting the search route and unwiring `ddExec` each turn
+  exactly their own pin.
 - **v5.6.5 — the disclosures go one tap deep, and the v3.25 rule moves altitude rather than
   bending (owner call 2026-08-26: *"hide all the bla bla text under an expandable header
   stating disclaimer … same in fund/trim … same for circuit-unresolved and the binaries info

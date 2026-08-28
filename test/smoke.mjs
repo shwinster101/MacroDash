@@ -3335,12 +3335,70 @@ ok("ready: every clock appears in the statement — an OK clock is STATED, not i
   rLine.parts.some((p) => p.sev === "ok") && rLine.line.split("; ").length >= 4);
 // Rendering: the consolidator reaches both per-ticker decision surfaces, and the bar keeps
 // every red fact visible (v3.25 — a summary is only honest if the red things survive it).
-ok("ready: the bar renders on the deep-dive tab ABOVE the four answers",
-  // v3.73: the shadow TT UNDERWRITING bar sits between them (§15 order: readiness →
-  // underwriting → answers) — the invariant is readiness FIRST, answers after, nothing else.
-  /h\+=readyBar\(x\);[\s\S]{0,400}h\+=ddAnswerBlock/.test(adminSrc) &&
-  adminSrc.indexOf("h+=readyBar(x);") < adminSrc.indexOf("h+=ddScoreBar(x);") &&
-  adminSrc.indexOf("h+=ddScoreBar(x);") < adminSrc.indexOf("h+=ddAnswerBlock(x,dd,todayET);"));
+/* v3.73 order: readiness → underwriting → answers. v5.6.6 inserts the EXECUTIVE SUMMARY
+   directly under the readiness gate (owner call: the tab must open with the thesis and the
+   near/far targets). Re-pinned on the ORDER itself rather than a fixed character window —
+   the window was brittle by construction and tipped over on the first legitimate insertion,
+   which is not what "readiness leads" means. */
+/* ═══ v5.6.6 — the search bar routes to ANALYSIS, and the tab opens with the answer ═══ */
+ok("v5.6.6 search: an in-book name opens the DEEP DIVE, not the edit card — and the card stays one tap away on the tab",
+  adminSrc.includes("if(x){switchTab(x.sym);search.value=\"\";search.blur();}") &&
+  !/if\(x\)\{openCard\(x\.sym\);search\.value=""/.test(adminSrc) &&
+  adminSrc.includes(`<button class="act" onclick="openCard('${"$"}{esc(x.sym)}')">OPEN TT CARD</button>`));
+ok("v5.6.6 search: the HELP copy moved WITH the behaviour — no instruction outliving its data",
+  /in the book<\/b> → opens its <b>deep dive<\/b>/.test(adminSrc) &&
+  !/in the book<\/b> → opens its card to update/.test(adminSrc));
+/* The exec summary is RUN, not string-pinned: it makes three claims (near rung, far rung,
+   thesis provenance) and a string pin cannot prove any of them. */
+{
+  const EX = (() => {
+    const i = adminSrc.indexOf("function ddThesisLine(dd){");
+    const j = adminSrc.indexOf("function ddAnswerBlock(x,dd,todayET){");
+    if (i < 0 || j < 0 || j < i) throw new Error("smoke: ddExec markers not found");
+    return new Function("ptModelRows", "LIVE_PX", "annualise", "esc", "allocTrunc",
+      adminSrc.slice(i, j) + "\nreturn {ddExec, ddThesisLine};");
+  })();
+  const esc0 = (v) => String(v);
+  const ann0 = (up, y) => Math.round(up / (Number(y) - 2025));
+  const mk = (rows) => EX((dd) => dd.rows || [], { AAA: { px: 100 } }, ann0, esc0, esc0);
+  const run = (dd, rows) => mk().ddExec({ sym: "AAA" }, { ...dd, rows });
+  ok("v5.6.6 exec: near and far come from the SAME row set — earliest year-end is short term, deepest is long term",
+    (() => { const h = run({}, [{ y: "2026", prem: 120 }, { y: "2027", prem: 150 }, { y: "2029", prem: 300 }]);
+      return /Short term/.test(h) && /Long term/.test(h) &&
+        h.indexOf("$120") < h.indexOf("$300") && /\+20%/.test(h) && /\+200%/.test(h) &&
+        /YE2026/.test(h) && /YE2029/.test(h) && !/YE2027/.test(h); })());
+  ok("v5.6.6 exec: ONE rung is ONE fact — it is never printed twice as a near and a far target",
+    (() => { const h = run({}, [{ y: "2027", prem: 150 }]);
+      return /Target \(single rung\)/.test(h) && !/Short term/.test(h) && !/Long term/.test(h); })());
+  ok("v5.6.6 exec: no model says so and carries the payload's own note — never a fabricated target",
+    (() => { const h = run({ pt_model: { note: "floor only by owner decision" } }, []);
+      return /no model — nothing here computes a target/.test(h) && /floor only by owner decision/.test(h) &&
+        !/\$/.test(h.replace(/dd-[a-z]+/g, "")); })());
+  /* The basis is LABELLED, and a rung carrying only the `n/m` sentinel (negative EPS — no
+     P/E before profit, v3.17) is EXCLUDED by the same numeric filter ddWorth uses, so it can
+     never be printed as a target. cellOf keeps a non-finite guard behind that filter, which
+     is defensive rather than reachable — asserting it as reachable would be a vacuous test,
+     so what is pinned here is the exclusion that actually holds. */
+  ok("v5.6.6 exec: the basis is LABELLED, and an n/m-only rung is EXCLUDED rather than printed as a target",
+    (() => { const a = run({}, [{ y: "2026", fl: 90 }, { y: "2028", fl: 110 }]);
+      const b = run({}, [{ y: "2026", prem: 100 }, { y: "2028", fl: "n/m" }]);
+      return /floor/.test(a) && !/premium/.test(a) &&
+        /Target \(single rung\)/.test(b) && /premium/.test(b) && !/n\/m/.test(b) && !/YE2028/.test(b); })());
+  ok("v5.6.6 exec: the thesis is NEVER invented — stored prose wins by priority, and an absent one is NAMED with the fix",
+    (() => { const L = mk().ddThesisLine;
+      const t = L({ thesis: "the thesis", verdict: { read: "v", as_of: "2026-08-01" } });
+      const v = L({ verdict: { read: "the verdict read", as_of: "2026-08-01" } });
+      const n = L({ valuation_note: "the note" });
+      const none = L({ tier: "S", lens: "AI", composite: "9.1" });
+      const h = run({}, [{ y: "2027", prem: 150 }]);
+      return t.src === "thesis" && v.src === "verdict" && v.at === "2026-08-01" &&
+        n.src === "valuation_note" && none === null &&
+        /no thesis line stored/.test(h) && /add one as/.test(h); })());
+}
+ok("ready: readiness leads the deep-dive tab, then the exec summary, the score bar, and the four answers",
+  ["h+=readyBar(x);", "h+=ddExec(x,dd);", "h+=ddScoreBar(x);", "h+=ddAnswerBlock(x,dd,todayET);"]
+    .map((m) => adminSrc.indexOf(m))
+    .every((v, i, a) => v > 0 && (i === 0 || a[i - 1] < v)));
 ok("ready: and on the card — the only per-ticker surface a WATCH name with no tab ever gets",
   adminSrc.includes('<div class="k">READINESS</div>') && adminSrc.includes("let html=v2CardHtml(x.sym)+rdyRow+measured+"));
 ok("ready: blockers stay visible as chips on the bar, never collapsed into the verdict alone",
