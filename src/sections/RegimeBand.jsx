@@ -81,6 +81,15 @@ const RegimeBand=({d,stale=new Set(),loading=false,liveBuild=false,srcLabel="der
   // FEAT-GLANCE (v3.61, newcomer audit): the neutral vote is STATED, not implicit — the old
   // "2/4 bullish · 2 votes bull / 1 bear" left a vote unaccounted for.
   const neutralVotes=Math.max(0,regime.counted-regime.bullVotes-regime.bearVotes);
+  /* 8/28 vocabulary matrix, row 3 — ONE strip, BOTH branches. The engine's MIXED fallback
+     sub ends "N of M inputs usable" (regime.js untouched: the paste block and the 5 Whys
+     still want the full sub). The voters line 3px below already states that coverage in the
+     canonical vocabulary, so the tail here is the same number in a second wording. The strip
+     ran on the directional branch only; the withheld branch now shares it, so a sub carrying
+     a fraction can never reach a reader through the DATA HOLD path either. */
+  const subText=conf&&/\d+ of \d+ inputs usable$/.test(regime.sub)
+    ? regime.sub.replace(/ — \d+ of \d+ inputs usable$/,"")
+    : regime.sub;
   // "wen moon?" — map the regime verdict to our moon ratings: RISK-ON→MOONING, MIXED→HODL, RISK-OFF→DIAMOND HANDS
   const moon=withheld?WEN_MOON_STATES[3]:WEN_MOON_STATES[{ "RISK-ON":0, "MIXED":1, "RISK-OFF":2 }[regime.label] ?? 1];
   const callLabel=call&&call.headline?`${call.headline}${call.emoji?` ${call.emoji}`:""}`:moon.label;
@@ -117,12 +126,12 @@ const RegimeBand=({d,stale=new Set(),loading=false,liveBuild=false,srcLabel="der
                         /* superseded by the canonical call projection:
                         :`${plainVerdict?"":`${regime.label} · `}${conf&&/\d+ of \d+ inputs usable$/.test(regime.sub)?regime.sub.replace(/ — \d+ of \d+ inputs usable$/,""):regime.sub}`}
                         */
-                        :regime.insufficient?`${WITHHELD_LABEL} · ${regime.sub}`
-                        :`${machineLabel} · ${conf&&/\d+ of \d+ inputs usable$/.test(regime.sub)?regime.sub.replace(/ — \d+ of \d+ inputs usable$/,""):regime.sub}`}
+                        :regime.insufficient?`${WITHHELD_LABEL} · ${subText}`
+                        :`${machineLabel} · ${subText}`}
               </span>
               {(loading||regime.insufficient)&&<span style={{fontFamily:T.fontMono,fontSize:T.fsS,color:T.textMuted}}>
                 {loading?"no factors voting yet"
-                        :`only ${regime.counted} of ${regime.totalFactors} factors usable — ${regime.quorum} required`}
+                        :`only ${regime.counted} of ${regime.totalFactors} voters counted — ${regime.quorum} needed to call it`}
               </span>}
             </div>
             {!withheld&&sentence&&<div style={{fontFamily:T.fontMono,fontSize:T.fsM,color:T.textPrimary,lineHeight:1.5,maxWidth:"72ch",marginTop:3}}>{sentence}</div>}
@@ -181,7 +190,7 @@ const RegimeBand=({d,stale=new Set(),loading=false,liveBuild=false,srcLabel="der
               </span>
             );})}
             <span style={{fontFamily:T.fontMono,fontSize:T.fsS,color:T.textMuted}}>
-              {`${regime.bullVotes} bull · ${neutralVotes} neutral · ${regime.bearVotes} bear — ${regime.counted} of ${regime.totalFactors} usable`}
+              {`${regime.bullVotes} bull · ${neutralVotes} neutral · ${regime.bearVotes} bear — ${regime.counted} of ${regime.totalFactors} voters counted`}
             </span>
           </div>
           {!withheld&&<div style={{gridColumn:"1/-1",fontFamily:T.fontMono,fontSize:T.fsS,color:T.textSecondary}}>
@@ -209,7 +218,7 @@ const RegimeBand=({d,stale=new Set(),loading=false,liveBuild=false,srcLabel="der
             <div style={{fontFamily:T.fontMono,fontSize:8,color:T.textMuted,letterSpacing:"0.1em",marginBottom:3}}>WHAT WOULD CHANGE THIS VERDICT</div>
             {fc.flips.length===0&&(
               <div style={{fontFamily:T.fontMono,fontSize:9,color:T.textSecondary}}>
-                No single factor crossing changes the call — at {fc.bullVotes} bull / {fc.bearVotes} bear of {fc.counted} voting,
+                No single factor crossing changes the call — with {fc.bullVotes} bull and {fc.bearVotes} bear among the {fc.counted} counted,
                 it would take two factors moving together.
               </div>
             )}

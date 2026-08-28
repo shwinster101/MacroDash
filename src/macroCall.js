@@ -202,7 +202,7 @@ export function formatMacroCallPaste(call = {}) {
   const lines = [
     `MACRODASH DAILY CALL · ${call.effective_date || "undated"} · macrodash.pages.dev`,
     `${label} · ${call.direction || "DATA HOLD"}`,
-    `EVIDENCE ${call.confidence || "LOW"} · actionability ${call.actionability || "HOLD"} · ${call.counts?.usable ?? 0}/${call.counts?.total ?? 6} factors usable`,
+    `EVIDENCE ${call.confidence || "LOW"} · actionability ${call.actionability || "HOLD"} · ${call.counts?.usable ?? 0} of ${call.counts?.total ?? 6} voters counted`,
   ];
   if (call.override?.active) lines.push(`OVERRIDE ${call.override.type} · crash circuit tripped`);
   else if (call.override?.macro_flip?.armed) lines.push("MACRO FLIP ARMED");
@@ -223,7 +223,7 @@ export function formatMacroShareCard(call = {}, { frozen = false } = {}) {
   return [
     `MACRODASH ${frozen ? "10AM CALL" : "CURRENT POSTURE"} · ${call.effective_date || "undated"}`,
     `${label} · ${call.direction || "DATA HOLD"}`,
-    `${call.confidence || "LOW"} confidence · ${usable}/${total} factors usable`,
+    `${call.confidence || "LOW"} confidence · ${usable} of ${total} voters counted`,
     "Track record: https://macrodash.pages.dev/history",
     "End-of-day macro evidence · not financial advice",
   ].join("\n");

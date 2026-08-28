@@ -5294,6 +5294,19 @@ Assertion counts are deliberately not quoted here; the suite prints its own tota
 ### Working rhythm (per-pass protocol)
 
 - **Before every pass**, review what has materially changed since the last response.
+- **Findings live on the BRANCH, not in the chat.** Any survey, audit, matrix or read-through
+  that a later pass would want gets a dated file in **`working/`** (`working/<YYYY-MM-DD>-<slug>.md`)
+  and is committed. Chat scrollback is not a record: it is unsearchable from a fresh session,
+  it does not survive a context summary, and it cannot be diffed against the code it describes.
+- **The finding file is UPDATED WHEN THE WORK LANDS, in the same pass** — never left as the
+  pre-implementation snapshot. Append an **Outcomes** section carrying the commit SHAs, the
+  gate totals, what shipped, what was deliberately left, and — load-bearing — **every place
+  the original survey turned out to be WRONG, recorded as a correction rather than silently
+  edited away.** A survey that only ever describes the plan becomes a confident, stale claim
+  about the code: the exact label-outlives-its-data defect this changelog keeps closing, filed
+  one level up. Keep the original text and let the correction stand beside it.
+- **`working/` is notes, never a product surface.** Nothing in `src/`, `public/` or
+  `functions/` may import it, and it must never be the home of a fact the code needs.
 - **After every TT run**, end with one compact line per requested ticker in this shape:
   **`SYM — Composite: <score>/10 (<surface>) · PT: $<value> (<basis>, <horizon>, <source>) ·
   Call: BUY|WAIT|SELL — <governing reason>`**. A missing score or target prints `UNAVAILABLE`

@@ -118,7 +118,10 @@ export function buildEvidenceSet({ d, provenance, dataAsOf, mode, liveBuild, now
     quorum: REGIME_QUORUM,
     counted: regime.counted,
     totalFactors: regime.totalFactors,
-    freshSummary: `${regime.counted}/${regime.totalFactors} factors usable`,
+    /* 8/28 vocabulary pass: coverage takes the canonical hero form. This read
+       "5/6 factors usable" on the Drivers expander label — a slash fraction and a second
+       scope noun for the number the hero states as "5 of 6 voters counted". */
+    freshSummary: `${regime.counted} of ${regime.totalFactors} voters counted`,
     excludedKeys: factors.filter((f) => f.excluded).map((f) => f.short),
     summary: postureSummary(factors),
   };
