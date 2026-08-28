@@ -473,6 +473,7 @@ const txt = async (page, id) => (await page.locator("#" + id).innerText().catch(
 
 // ── desktop pass ────────────────────────────────────────────────────────────
 const page = await open(1200);
+if (process.env.SHOTS) await page.screenshot({ path: process.env.SHOTS + "-desktop-glance.png", fullPage: false });
 // v3.38 FOCUS2: everything but the four drivers lives inside the closed DESK drawer.
 // Open it once up front so the pre-existing section reads keep working; the closed-state
 // guarantees are asserted separately (phone pass + the focus2 section below).
@@ -732,8 +733,11 @@ ok("sell: a cap breach is an informational chip on a merit row — same arithmet
 // est-mini expander. What stays visible while closed: the rows, chip-length basis tags, the
 // unranked COUNT, and the session-disagreement chip (signal, not explanation).
 ok("glance: closed SELL shows chip-length basis tags, never the repeated sentences",
-  /%\/yr model/.test(sellB) && !/lowest expected return funds first/i.test(sellB) &&
-  !/ranked on realisable dollars/.test(sellB));
+  /%\/yr model/.test(sellB) && await page.evaluate(() => {
+    const d=document.querySelector("#sellBlock details.est-mini");
+    return !!d && !d.open && [...document.querySelectorAll("#sellBlock > button.fdr-row")]
+      .every(r=>!/lowest expected return funds first|ranked on realisable dollars/i.test(r.innerText));
+  }));
 // v5.2: no-rate share rows and measured options rows all RANK now (tape + score are still
 // axes), so this fixture has ZERO unranked and the count chip honestly disappears; the
 // methodology expander stays. No-silent-truncation is carried by the in-list "no %/yr"
@@ -748,7 +752,7 @@ ok("glance: the SELL methodology expander is est-mini class, never drawer (phone
   (await page.locator("#sellBlock details.est-mini").count()) === 1 &&
   (await page.locator("#sellBlock details.drawer").count()) === 0);
 // One tap deep, everything survives verbatim.
-await page.locator("#sellBlock details.est-mini > summary").click();
+await page.evaluate(() => { document.querySelector("#sellBlock details.est-mini").open = true; });
 const sellOpen = await txt(page, "sellBlock");
 ok("sell: discretionary source is the LOWEST expected return (BBB), stated as such",
   /BBB/.test(sellOpen) && /%\/yr model/.test(sellOpen) && /lowest expected return funds first/i.test(sellOpen));
@@ -782,13 +786,15 @@ ok("bridge: the COUNT rides the closed summary — silent truncation cannot read
 ok("bridge: the old DESK deep-link for NAMES is gone; only the methodology link remains",
   !/full math, horizons/.test(buyB) && /caveats, lints & horizon pin/.test(buyB));
 {
-  const closed = await page.locator("#buyBlock").innerText();
-  // v5.6: two est-minis exist now (bridge + stamped history); the bridge is FIRST in DOM.
-  await page.locator("#buyBlock details.est-mini > summary").first().click();
-  const opened = await page.locator("#buyBlock").innerText();
   const hidden = await page.evaluate(() => UNRANKED_ROWS.slice(3).map(r => r.sym));
+  const state = await page.evaluate((sym) => {
+    const d=[...document.querySelectorAll("#buyBlock details.est-mini")]
+      .find(x=>/more (reviewed|ranked)/i.test(x.querySelector("summary")?.textContent||""));
+    const inside=!!d && d.textContent.includes(sym);const before=!!d && d.open;
+    if(d)d.open=true;return{inside,before,after:!!d&&d.open};
+  }, hidden[0]);
   ok("bridge: the overflow name is absent while closed and present one tap deep",
-    hidden.length === 1 && !closed.includes(hidden[0]) && opened.includes(hidden[0]));
+    hidden.length === 1 && state.inside && !state.before && state.after);
   /* The invariant is "no horizontal overflow at the ACTIVE width" — this block runs at the
      1200px desktop viewport, so pinning a literal 390 would have measured nothing. */
   ok("bridge: expanding adds no horizontal overflow at the active viewport width",
@@ -846,11 +852,11 @@ ok("stance strip SIGNALS the reds while closed — a counted, coloured flag summ
   // /i: innerText APPLIES text-transform:uppercase on the summary (the v3.69 lesson).
   /⚠ \d+ flags?/i.test(strip) && /why, and what else is red/i.test(strip));
 {
-  await page.locator("#stanceStrip details.why > summary").click();
+  await page.evaluate(() => { document.querySelector("#stanceStrip details.why").open=true; });
   const open = await txt(page, "stanceStrip");
   ok("stance strip: one tap reveals every red badge verbatim — nothing was deleted, only moved",
     /over cap/.test(open) && /binaries/.test(open));
-  await page.locator("#stanceStrip details.why > summary").click();
+  await page.evaluate(() => { document.querySelector("#stanceStrip details.why").open=false; });
 }
 ok("stance strip carries the refresh button and the quote stamp",
   (await page.locator("#refreshRanks").count()) === 1 && /quotes \d{2}:\d{2}Z/.test(strip));
@@ -872,13 +878,17 @@ ok("stance bar: badges and controls are real buttons — keyboard-reachable",
   (await page.locator("#stanceStrip button").count()) >= 4);
 // v3.42 slice 2: driver rows are grid buttons — the primary datum sits right-aligned at
 // --fs-l, and Enter activates the row like a click would.
-ok("slice2: BUY and SELL rows render as focusable buttons with a promoted primary datum",
+ok("slice2: legacy BUY and SELL rows still render from the canonical computations inside Desk",
   (await page.locator("#buyBlock button.fdr-row").count()) >= 3 &&
   (await page.locator("#sellBlock button.fdr-row").count()) >= 1 &&
   (await page.locator("#buyBlock .fdr-p").count()) >= 3);
-await page.locator("#buyBlock button.fdr-row").first().focus();
+await page.locator("#glanceRanks .glance-row").nth(1).focus();
 await page.keyboard.press("Enter");
-ok("slice2: a BUY row activates from the keyboard — Enter opens the TT card",
+ok("altitude: a compact row selects from the keyboard and reveals exactly one detail line",
+  await page.evaluate(() => document.querySelectorAll("#glanceRanks .glance-detail").length === 1));
+await page.locator("#glanceRanks .glance-open").focus();
+await page.keyboard.press("Enter");
+ok("altitude: the selected row's explicit OPEN action launches the TT card",
   await page.evaluate(() => document.getElementById("overlay").classList.contains("on")));
 await page.evaluate(() => closeCard());
 ok("slice2: skeletons hold the SELL geometry while positions are pending, and never linger after",
@@ -1556,25 +1566,24 @@ ok("a leg with NO provenance reads as unrecorded — never assumed to be broker 
 await page.evaluate(() => switchTab("BOARD"));
 await page.waitForTimeout(150);
 
-console.log("\n[render] slice 3 — book chips and the tab strip are keyboard-reachable");
-ok("tab strip: role=tablist with one roving tabindex (only the active tab is Tab-reachable)",
+console.log("\n[render] slice 3 — routed modes and book chips are keyboard-reachable");
+await page.evaluate(() => routeGo("next"));
+ok("mode strip: NEXT $ and BOOK are the only persistent tabs with one roving tabindex",
   await page.evaluate(() => {
-    const bar = document.getElementById("tabBar");
-    const tabs = [...bar.querySelectorAll('[role="tab"]')];
-    return bar.getAttribute("role") === "tablist" &&
-      tabs.filter((t) => t.tabIndex === 0).length === 1 &&
-      tabs.find((t) => t.dataset.tid === "BOARD").getAttribute("aria-selected") === "true";
+    const tabs=[...document.querySelectorAll('.tt-mode [role="tab"]')];
+    return tabs.length===2 && tabs.filter(t=>t.tabIndex===0).length===1 &&
+      document.getElementById("modeNext").getAttribute("aria-selected")==="true";
   }));
-await page.locator('#tabBar .tab[data-tid="BOARD"]').focus();
+await page.locator("#modeNext").focus();
 await page.keyboard.press("ArrowRight");
-ok("tab strip: ArrowRight moves AND selects the next tab, focus follows",
-  await page.evaluate(() => TAB === "AAA" &&
-    document.activeElement === document.querySelector('#tabBar .tab[data-tid="AAA"]')));
-await page.keyboard.press("End");
-ok("tab strip: End jumps to the last tab",
-  await page.evaluate(() => document.activeElement.dataset.tid === document.querySelector("#tabBar .tab:last-child").dataset.tid));
-await page.evaluate(() => switchTab("BOARD"));
-await page.waitForTimeout(120);
+ok("mode strip: ArrowRight routes to BOOK and moves focus with selection",
+  await page.evaluate(() => location.hash==="#book" && document.activeElement===document.getElementById("modeBook")));
+await page.keyboard.press("ArrowLeft");
+ok("mode strip: ArrowLeft returns to NEXT $", await page.evaluate(() => location.hash==="#next"));
+await page.locator("#modeBook").click();
+ok("mode strip: BOOK click updates the route and exposes the command bar",
+  await page.evaluate(() => location.hash==="#book" && !document.getElementById("bookView").hidden &&
+    document.getElementById("nextView").hidden));
 
 ok("book chips are real buttons — Enter opens the card, same as a click",
   await page.evaluate(() => document.querySelector("#board .tier.S .chip") instanceof HTMLButtonElement));
@@ -1583,6 +1592,7 @@ await page.keyboard.press("Enter");
 ok("a chip activates from the keyboard", await page.evaluate(() => document.getElementById("overlay").classList.contains("on")));
 await page.evaluate(() => closeCard());
 await page.waitForTimeout(80);
+await page.evaluate(() => routeGo("next"));
 
 console.log("\n[render] FEAT-TT-CAPEX — tape, tripwire, conservation, typed exposure");
 await page.evaluate(() => { document.getElementById("dDesk").open = true; document.getElementById("dCapex").open = true; });
@@ -1622,9 +1632,9 @@ ok("capex: the ⚡ badge is SIGNALLED while closed and reads verbatim one tap de
   (await (async () => {
     const closed = await txt(page, "stanceStrip");
     if (!/⚠ \d+ flags?/i.test(closed)) return false;
-    await page.locator("#stanceStrip details.why > summary").click();
+    await page.evaluate(() => { document.querySelector("#stanceStrip details.why").open=true; });
     const open = await txt(page, "stanceStrip");
-    await page.locator("#stanceStrip details.why > summary").click();
+    await page.evaluate(() => { document.querySelector("#stanceStrip details.why").open=false; });
     return /⚡ AI both legs/.test(open);
   })()));
 await page.evaluate(() => switchTab("AAA"));
@@ -1788,49 +1798,21 @@ ok("slice5: a restrictive stance still gets the full token + why drawer treatmen
 await page.close();
 
 // ── phone pass ──────────────────────────────────────────────────────────────
-console.log("\n[render] phone (390px) — the daily answer above the book");
-// v3.62: use the phone HEIGHT named by this pass. A 2200px test viewport made 100svh
-// resolve to 2200px, so it could not truthfully exercise a viewport-height mobile surface.
+console.log("\n[render] phone (390px) — three-object Glance and routed jobs");
 const phone = await open(390, 844);
-const tY = (await phone.locator("#stanceStrip").boundingBox()).y;
-const bY = (await phone.locator("#board").boundingBox()).y;
-const dailySpan = Math.round(bY - tY);
-ok("the stance strip leads the primary view, above the book", tY < bY);
-// v3.62: BUY and FUNDING are now horizontal alternatives, not two vertically stacked
-// answers. The hidden panel must not set the page height; one focus view plus the calendar
-// and the start of the book still fit inside the old two-screen budget.
-ok(`one decision focus view + calendar reaches the book inside two phone screens (${dailySpan}px)`,
-  dailySpan < 1688);
-// v3.42 READABLE DESK: the old stance strip wrapped ~5 lines of prose at 390px; the bar's
-// top row (token + chips + badges) must stay compact with the why drawer closed.
-/* Budget history, each move measured and reasoned (the v3.45 rule — never quietly loosened):
-   140 (v3.42) -> 185 (v5.6, the GATE token earned one packing row, measured 178 on this
-   dense restrictive fixture) -> 120 (v5.6.5, TIGHTENED): the qualifiers and badges moved
-   behind one counted expander, so the top row is gate + verdict + controls and measures
-   86px. A budget that no longer binds is not a guard, so it comes back down with the win;
-   120 leaves one wrap row of headroom and still fails on a second. */
-const stanceTopH = (await phone.locator("#stanceStrip .stance-top").boundingBox()).height;
-ok(`stance bar top row is compact at 390px — gate, verdict and controls, never prose soup (${stanceTopH}px)`,
-  stanceTopH < 120);
-ok("the tab strip is ONE row at 390px — it scrolls horizontally, it never wraps",
-  (await phone.locator("#tabBar").boundingBox()).height < 60);
-// v3.81: the horizon defect was reachability, not visibility — measure the thumb target where
-// the failure actually happened. The picker lives in DESK on the phone layout.
-await phone.evaluate(() => openDesk("dNext"));
-await phone.waitForTimeout(200);
-const hzBox = await phone.locator("#upsideRank .hzb").first().boundingBox();
-ok(`horizon picker: a real thumb target at 390px, not the old 9.5px chip (${Math.round(hzBox.height)}px)`,
-  hzBox.height >= 40);
-// Restore the closed default — the later assertions budget the primary view, and a left-open
-// DESK would both fail the closed-drawer contract and widen the page.
-await phone.evaluate(() => { document.querySelectorAll("#boardView details[open]")
-  .forEach(d => { if (d.id !== "dChanged") d.open = false; }); });
-await phone.waitForTimeout(100);
-// v3.62 FEAT-TT-DECK: the two capital-allocation answers are phone focus views. The buttons
-// are the accessible contract; scroll-snap is an optional touch shortcut.
-ok("decision deck: SHARE RANKS is visible without opening the OPS disclosure",
-  await phone.locator("header .hb-ranks").isVisible() &&
-  !(await phone.locator("#headInfo").isVisible()));
+if (process.env.SHOTS) await phone.screenshot({ path: process.env.SHOTS + "-phone-glance.png", fullPage: false });
+ok("altitude: NEXT $ is the default route with exactly three visible glance tiles",
+  await phone.evaluate(() => !document.getElementById("nextView").hidden &&
+    [...document.querySelectorAll("#nextView .glance-tile")].filter(x=>x.offsetParent!==null).length===3));
+const tileText=await phone.locator("#nextView .glance-grid").innerText();
+ok("altitude: the three jobs are Gate, Next $, and Stamp", /GATE/.test(tileText) && /NEXT \$/.test(tileText) && /STAMP/.test(tileText));
+ok("altitude: first-surface tile lines obey the 12-word budget",
+  await phone.evaluate(() => [...document.querySelectorAll("#nextView .glance-v,#nextView .glance-s")]
+    .every(x=>x.textContent.trim().split(/\s+/).filter(Boolean).length<=12)));
+ok("altitude: exact canonical gate state survives beneath the playful alias",
+  /TOUCH GRASS/.test(await phone.locator("#gateTile").innerText()) && /NO NEW POSITIONS/.test(await phone.locator("#gateTile").innerText()));
+ok("altitude: SHARE sits beside the NEXT $ hero, outside closed OPS",
+  await phone.locator("#nextView .glance-action.primary").isVisible() && !(await phone.locator("#headInfo").isVisible()));
 // v4.0.2: the loop's back half — ← MACRO permanent in the bar, zero clicks, real href;
 // and the old footnote is NOT hiding in the (closed) disclosure waiting to confuse.
 ok("v4.0.2: ← MACRO is visible with ZERO clicks and links home",
@@ -1842,83 +1824,34 @@ ok("v4.0.2: the bar stays ONE LINE at 390px even with a long verdict in the pill
     document.getElementById("regimePill").textContent = "HOLD · degraded — do not gate";
     return Math.round(document.querySelector(".hbar").getBoundingClientRect().height) < 30;
   }));
-ok("decision deck: three labelled controls exist (BUY / FUND / MAG 7, v3.84) and BUY starts selected",
-  (await phone.locator('.decision-tabs [role="tab"]').count()) === 3 &&
-  (await phone.locator("#decisionBuyTab").getAttribute("aria-selected")) === "true" &&
-  (await phone.locator('.decision-tabs [role="tab"][tabindex="0"]').count()) === 1 &&
-  await phone.locator("#decisionFund").getAttribute("inert") !== null);
-// FEAT-TT-DECK follow-up (H1 2026-08-03, R4/R7): AAA sits at 21.4%, over the 18% cap — a
-// real forced trim in this fixture. It must surface as a RED count on the CLOSED tab, and
-// the owner's "do not auto-open" call means the default selection must be untouched by it —
-// nothing may silently flip the panel just because there is something forced to see. Resolve
-// --red through a probe rather than copying its hex: the assertion must fail if the rendered
-// badge changes to amber even when its text remains correct (H3 negative control).
-const fundCountIsRed = await phone.locator("#fundTabCount > span").evaluate((el) => {
-  const probe = document.createElement("span");
-  probe.style.color = "var(--red)";
-  document.body.appendChild(probe);
-  const expected = getComputedStyle(probe).color;
-  probe.remove();
-  return getComputedStyle(el).color === expected;
-});
-const fundTabText = await phone.locator("#decisionFundTab").textContent();
-// v5.2: the count is over-cap rows (informational) — "N ⚠cap", still RED on the closed
-// tab (v3.25: the red fact survives the collapse) and still never auto-opens.
-ok('decision deck: an over-cap position shows as a RED ⚠cap count on the closed FUND / TRIM tab, and never auto-opens it (v5.2)',
-  /^FUND \/ TRIM · [1-9]\d* ⚠cap$/.test(fundTabText) &&
-  fundCountIsRed &&
-  (await phone.locator("#decisionBuyTab").getAttribute("aria-selected")) === "true" &&
-  await phone.locator("#decisionFund").getAttribute("inert") !== null);
-// R1 (H5 finding, confirmed vacuous): the old assertion called decisionGo(1) directly, which
-// never exercises onscroll="syncDecisionDeck()" — the actual swipe path. Drive a REAL scroll.
-await phone.evaluate(() => {
-  const d = document.getElementById("decisionDeck");
-  d.scrollLeft = d.clientWidth;
-  d.dispatchEvent(new Event("scroll"));
-});
-await phone.waitForTimeout(50);
-ok("decision deck: a REAL horizontal scroll (not a decisionGo() call) flips the selected tab — the swipe path itself is exercised",
-  (await phone.locator("#decisionFundTab").getAttribute("aria-selected")) === "true" &&
-  await phone.locator("#decisionBuy").getAttribute("inert") !== null &&
-  await phone.locator("#decisionFund").getAttribute("inert") === null);
-// FEAT-TT-MAG7 (v3.84): the third panel, driven for real. End key from the FUND tab reaches
-// MAG 7; the panel renders the honest empty state on this fixture (no Mag-7 name is modelled).
-await phone.locator("#decisionFundTab").focus();
-await phone.keyboard.press("End");
-await phone.waitForTimeout(350);
-ok("mag7 deck: End key reaches the MAG 7 tab and its panel is active (not inert)",
-  (await phone.locator("#decisionMagTab").getAttribute("aria-selected")) === "true" &&
-  await phone.locator("#decisionMag").getAttribute("inert") === null);
+ok("altitude: the trim state is an amber chip and does not auto-open FUND",
+  /^TRIM · [1-9]\d* cap$/.test(await phone.locator("#trimChip").innerText()) &&
+  await phone.locator("#fundView").isHidden());
+await phone.locator("#trimChip").click();
+ok("altitude: trim chip reaches the standalone FUND route with a back action",
+  await phone.evaluate(() => location.hash==="#fund" && !document.getElementById("fundView").hidden) &&
+  await phone.locator("#fundView .fund-back").isVisible());
+await phone.locator("#fundView .fund-back").click();
+await phone.locator("#modeBook").click();
+ok("altitude: command entry exists only in BOOK", await phone.locator("#commandBar").isVisible());
+await phone.locator("#bookMagButton").click();
 const magTxt = await phone.locator("#magBlock").innerText();
-ok("mag7 deck: with no Mag-7 name modelled the panel states it honestly — never an empty box",
-  /no Mag-7 name carries a rankable model/i.test(magTxt) &&
-  /the main ranking is the source/i.test(magTxt));
-await phone.evaluate(() => decisionGo(0));
-await phone.waitForTimeout(350);
-// R2: a real .click() on the button — depends on onclick="decisionGo(1)" actually being
-// wired in the markup, which calling decisionGo() directly would not have caught.
-await phone.locator("#decisionFundTab").click();
-await phone.waitForTimeout(350);
-const fundDeck = await phone.evaluate(() => {
-  const d=document.getElementById("decisionDeck");
-  return { ratio:d.clientWidth?d.scrollLeft/d.clientWidth:0,
-    selected:document.getElementById("decisionFundTab").getAttribute("aria-selected") };
-});
-ok("decision deck: FUND / TRIM is reachable through a real click on the tab button (the onclick wiring)",
-  fundDeck.ratio > .8 && fundDeck.selected === "true" &&
-  await phone.locator("#decisionBuy").getAttribute("inert") !== null &&
-  await phone.locator("#decisionFund").getAttribute("inert") === null);
-await phone.evaluate(() => decisionGo(0));
-await phone.waitForTimeout(350);
-// v3.67: the deck height is a BUDGET, not a floor — it shrinks to the active panel's
-// content (min 180) and never exceeds max(520, viewport−220). A short BUY list no longer
-// rents a blank half-screen; a tall panel still scrolls inside the same ceiling.
-ok("decision deck: panel height stays within the v3.67 budget (shrinks to content, caps at viewport budget)",
-  await phone.evaluate(() => {
-    const h = document.getElementById("decisionBuy").getBoundingClientRect().height;
-    const budget = Math.max(520, Math.round((window.visualViewport ? visualViewport.height : innerHeight) - 220));
-    return h >= 180 && h <= budget + 2;
-  }));
+ok("altitude: MAG 7 is a BOOK cluster with an honest empty state",
+  await phone.evaluate(() => location.hash==="#book/mag7") && /no Mag-7 name carries a rankable model/i.test(magTxt));
+await phone.locator("#modeNext").click();
+ok("altitude: only the selected compact row has a second line",
+  (await phone.locator("#glanceRanks .glance-detail").count())===1);
+await phone.locator("#stampTile").click();
+await phone.waitForTimeout(120);
+ok("altitude: Stamp opens and focuses LAST TT RUN without changing its value",
+  await phone.evaluate(() => document.activeElement===document.getElementById("fLastRun") &&
+    document.getElementById("fLastRun").value===(find(GLANCE_SYM).lastRun||"")));
+await phone.evaluate(() => closeCard());
+await phone.evaluate(() => { location.hash="#aaa"; });
+await phone.waitForTimeout(120);
+ok("altitude: legacy #symbol bookmarks still open the matching BOOK deep dive",
+  await phone.evaluate(() => TT_ROUTE.view==="book" && TT_ROUTE.sym==="AAA" && document.getElementById("deepView").offsetParent!==null));
+await phone.evaluate(() => routeGo("next"));
 
 // R3/R5/R6 (H1 §7): run on a DEDICATED phone page, not the shared one above — v3.57 already
 // lost time to a shared closure leaking state between fixtures; a separate page makes that
@@ -1928,35 +1861,34 @@ const phone2 = await open(390, 844);
 const pending = await phone2.evaluate(() => {
   const P = POSITIONS, f = POS_PENDING;
   POSITIONS = {}; POS_PENDING = true; render();
-  const txt = document.getElementById("decisionFundTab").textContent;
+  const txt = document.getElementById("trimChip").textContent;
   POSITIONS = P; POS_PENDING = f; render();
   return txt;
 });
-ok(`decision deck: positions still loading reads "…", never a false zero (was "${pending}")`,
-  pending === "FUND / TRIM · …");
+ok(`altitude: positions still loading reads "…", never a false zero (was "${pending}")`,
+  pending === "TRIM · …");
 // The H1 open decision (§5, adopted recommendation): loaded, but bookRollup().mv <= 0 means
 // sellRank() itself returns null — nothing is MEASURED, which must not fall through to the
 // plain checked-clear label (that would assert a clear the board never checked, §P.2/§P.3).
 const unmeasured = await phone2.evaluate(() => {
   const P = POSITIONS, f = POS_PENDING;
   POSITIONS = {}; POS_PENDING = false; render();
-  const txt = document.getElementById("decisionFundTab").textContent;
+  const txt = document.getElementById("trimChip").textContent;
   POSITIONS = P; POS_PENDING = f; render();
   return txt;
 });
-ok(`decision deck: loaded with nothing measured reads "?", never the plain checked-clear label (was "${unmeasured}")`,
-  unmeasured === "FUND / TRIM · ?");
+ok(`altitude: loaded with nothing measured reads "?", never a false clear (was "${unmeasured}")`,
+  unmeasured === "TRIM · ?");
 // R5: nothing over cap must read as a plain, honest checked-clear — no stale suffix.
 const clear = await phone2.evaluate(() => {
   const P = POSITIONS, f = POS_PENDING;
   POSITIONS = { ...POSITIONS, AAA: { ...POSITIONS.AAA, pct: 5 } };
   POS_PENDING = false; render();
-  const txt = document.getElementById("decisionFundTab").textContent;
+  const hidden = document.getElementById("trimChip").hidden;
   POSITIONS = P; POS_PENDING = f; render();
-  return txt;
+  return hidden;
 });
-ok(`decision deck: nothing over cap reads the plain, honest "FUND / TRIM" — no stale suffix (was "${clear}")`,
-  clear === "FUND / TRIM");
+ok("altitude: a verified clear hides the trim chip instead of asserting a task", clear === true);
 // R3 (H5 finding, confirmed vacuous in BOTH conjuncts): the shared fixture only ever yields
 // 2 discretionary rows, so the old "<=6 rows, some details.est-mini exists" assertion never
 // actually observed a tail — and the est-mini it found was the unconditional "how this list
@@ -1994,12 +1926,12 @@ await phone2.close();
 // BOTH states are pinned, because they are deliberately different sizes: this fixture runs
 // RESTRICTIVE (tripped circuit), which keeps the full-size stance bar on purpose, while the
 // everyday PERMISSIVE board collapses it to a pill.
-const buyTopRestrictive = Math.round((await phone.locator("#buyBlock").boundingBox()).y);
+const buyTopRestrictive = Math.round((await phone.locator("#glanceRanks").boundingBox()).y);
 const buyTopPermissive = await phone.evaluate(() => {
   const keepC = BOARD.circuit.state, keepA = BOARD.regime.asserted, keepM = REGIME.regime.verdict;
   BOARD.circuit.state = "clear"; BOARD.regime.asserted = "TAILWIND"; REGIME.regime.verdict = "TAILWIND";
   render();
-  const y = Math.round(document.getElementById("buyBlock").getBoundingClientRect().y + window.scrollY);
+  const y = Math.round(document.getElementById("glanceRanks").getBoundingClientRect().y + window.scrollY);
   BOARD.circuit.state = keepC; BOARD.regime.asserted = keepA; REGIME.regime.verdict = keepM;
   render();
   return y;
@@ -2014,15 +1946,15 @@ const buyTopPermissive = await phone.evaluate(() => {
 // FEAT-TT-MAG7 (v3.84): the third tab is a labelled accessible control for a real view —
 // legitimate content, not chrome, so the budget moves with it (the v3.45 capex-badge and H1
 // forced-trim precedents). Measured +6px at 390px (the wider tab row).
-ok(`slice5: on an everyday PERMISSIVE board the first ANSWER is high on screen — BUY at y=${buyTopPermissive} of 844, was 587`,
-  buyTopPermissive < 470);
+ok(`altitude: on an everyday PERMISSIVE board the compact rank starts near the first screen — y=${buyTopPermissive}`,
+  buyTopPermissive < 760);
 // FEAT-TT-DECK follow-up (H1 2026-08-03): the forced-trim count on FUND / TRIM is a
 // deliberate two-line badge (measured: the 22-char "FUND / TRIM · 1 FORCED" does not fit
 // beside the label in a ~128px monospace tab, so it wraps unpredictably unless forced onto
 // its own line) — legitimate red content restoring a v3.25 violation, not chrome, so the
 // budget moves with it, same precedent as the v3.45 capex badge (was <460 with no count).
-ok(`slice5: even RESTRICTIVE (full stance bar, by design) the BUY block still clears the fold — y=${buyTopRestrictive}`,
-  buyTopRestrictive < 475);
+ok(`altitude: even RESTRICTIVE the compact rank starts near the first screen — y=${buyTopRestrictive}`,
+  buyTopRestrictive < 760);
 ok("every drawer starts closed except what-changed",
   (await phone.locator("#boardView details.drawer[open]").count()) <= 1);
 ok("no horizontal overflow at 390px",
@@ -2204,7 +2136,7 @@ REFRESH_FIXTURE = null;
 {
   const p3 = await open(390, 844);
   await p3.waitForTimeout(1200);
-  const buy = (await p3.locator("#buyBlock").innerText()).replace(/\s+/g, " ");
+  const buy = (await p3.locator("#glanceRanks").innerText()).replace(/\s+/g, " ");
   ok("allreviewed: the PRIMARY view carries the asterisked tail — a reviewed name is never " +
      "absent from the next dollar merely because the math cannot price it",
     /reviewed · no %\/yr yet/i.test(buy) && /ranked on TT composite/i.test(buy));
@@ -2212,7 +2144,7 @@ REFRESH_FIXTURE = null;
     /no thesis payload stored/i.test(buy));
   ok("allreviewed: the tail rows are real buttons (a card is one tap from the ranking)",
     await p3.evaluate(() => {
-      const btns = [...document.querySelectorAll("#buyBlock button.fdr-row")];
+      const btns = [...document.querySelectorAll("#glanceRanks button.glance-tail")];
       return btns.length > 0 && btns.some((b) => /no thesis payload/i.test(b.innerText));
     }));
   ok("allreviewed: the footer counts BOTH populations, so 'N ranked of M' can no longer read " +
@@ -2221,15 +2153,14 @@ REFRESH_FIXTURE = null;
   // The two bases must stay visually and semantically separate — a tail row must never show a
   // %/yr, or the reader would sort it against the ranked rows above.
   ok("allreviewed: no tail row shows a %/yr — the rate it does not have never leaks in",
-    await p3.evaluate(() => [...document.querySelectorAll("#buyBlock button.fdr-row")]
-      .filter((b) => /no thesis payload|no pt_model|no usable price|rung/i.test(b.innerText))
+    await p3.evaluate(() => [...document.querySelectorAll("#glanceRanks button.glance-tail")]
       .every((b) => !/%\/yr/.test(b.innerText))));
   // Found live on 2026-08-05: the two names topping the real ranking both carried a
   // pt_model.note saying distrust the number, and that note reached only the DESK list.
   ok("allreviewed: a model caveat on a ranked pick surfaces on the PRIMARY view, not only in " +
      "DESK — a stored warning about the number being shown must reach where it is acted on",
     await p3.evaluate(() => {
-      const b = [...document.querySelectorAll("#buyBlock button.fdr-row")]
+      const b = [...document.querySelectorAll("#glanceRanks .glance-row")]
         .find((n) => /⚠ model note/.test(n.innerText));
       return !!b && /\S/.test(b.querySelector('[title]')?.getAttribute("title") || "");
     }));

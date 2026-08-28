@@ -9,7 +9,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
 <!-- AUDIT: kept in sync with package.json by test/smoke.mjs. admin.html is a Vite
      public/ passthrough, so it cannot receive __APP_VERSION__ — the guard is the fix. -->
-<title>TT TICKER TERMINAL v5.6.9</title>
+<title>TT TICKER TERMINAL v5.7.0</title>
 <style>
   :root{
     --bg:#05070a; --panel:#0a0f16; --panel2:#0d141d; --line:#16202c;
@@ -246,31 +246,53 @@
     .chip{min-height:40px}          /* v3.42 slice 3: thumb-sized book chips */
   }
   .fdr{margin-bottom:8px}
-  /* v3.62 DECISION DECK: the two daily capital-allocation answers become focus views on a
-     phone. Buttons keep the views discoverable and keyboard reachable; horizontal scroll
-     snap adds the optional swipe. Desktop preserves the familiar stacked layout. */
-  .decision-tabs{display:none}
-  .decision-deck{display:block}
-  .decision-page{min-width:0}
+  /* FEAT-TT-ALTITUDE (v5.6): one job per surface. The old phone-only decision carousel
+     made three unrelated jobs peers and left the desktop as a wall of first-class text.
+     The route shell below is shared at every width; only its tile geometry changes. */
+  .tt-mode{display:flex;gap:6px;align-items:center;margin-bottom:10px;padding:3px;
+    border:1px solid var(--line);border-radius:8px;background:#080d13;position:sticky;
+    top:env(safe-area-inset-top);z-index:12}
+  .tt-mode button{flex:1;min-height:40px;border:1px solid transparent;border-radius:6px;
+    background:none;color:var(--dim);font:inherit;font-size:var(--fs-s);letter-spacing:.1em;
+    cursor:pointer}
+  .tt-mode button[aria-selected="true"]{color:var(--green);border-color:var(--greenDim);
+    background:#0c1a13;font-weight:700}
+  .tt-view[hidden]{display:none!important}
+  .glance-head{display:flex;align-items:center;gap:7px;flex-wrap:wrap;margin-bottom:9px}
+  .glance-head h1{margin:0;margin-right:auto;font-size:var(--fs-l);letter-spacing:.13em;color:var(--fg)}
+  .glance-action{border:1px solid var(--line);border-radius:6px;background:#080d13;color:var(--dim);
+    font:inherit;font-size:var(--fs-xs);padding:5px 8px;cursor:pointer;white-space:nowrap}
+  .glance-action.primary{border-color:var(--greenDim);color:var(--green);background:#0c1a13}
+  .glance-action.warn{border-color:#4a361a;color:var(--amber);background:#191206}
+  .glance-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px;margin-bottom:9px}
+  .glance-tile{min-width:0;border:1px solid var(--line);border-radius:8px;background:#080d13;
+    padding:10px 11px;min-height:108px}
+  button.glance-tile{width:100%;color:inherit;font:inherit;text-align:left;cursor:pointer}
+  .glance-k{font-size:9px;letter-spacing:.16em;color:var(--dim);text-transform:uppercase}
+  .glance-v{font-size:var(--fs-xl);font-weight:800;letter-spacing:.02em;margin-top:5px;
+    overflow-wrap:anywhere}
+  .glance-s{font-size:var(--fs-xs);color:var(--slate);margin-top:4px;line-height:1.4}
+  .glance-ranks{border:1px solid var(--line);border-radius:8px;background:#080d13;padding:4px 10px}
+  .glance-row{display:grid;grid-template-columns:24px minmax(55px,.65fr) 34px minmax(70px,.8fr) minmax(72px,1.4fr);
+    gap:6px;align-items:center;width:100%;border:0;border-bottom:1px dashed #101a24;
+    background:none;color:var(--fg);font:inherit;font-size:var(--fs-s);text-align:left;
+    padding:8px 0;cursor:pointer}
+  .glance-row:last-child{border-bottom:0}.glance-row .sym{font-weight:800}.glance-row .rate{text-align:right}
+  .glance-row .reason{color:var(--slate);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .glance-tail-label,.glance-foot{padding:7px 0 5px;color:var(--amber);font-size:var(--fs-xs)}
+  .glance-foot{border-top:1px dashed #101a24;color:var(--dim)}
+  .glance-detail{grid-column:2/-1;display:flex;align-items:center;gap:7px;flex-wrap:wrap;
+    color:var(--slate);font-size:var(--fs-xs);padding-top:2px}
+  .glance-open{margin-left:auto;border:1px solid var(--greenDim);border-radius:5px;background:#0c1a13;
+    color:var(--green);font:inherit;font-size:9px;padding:3px 7px;cursor:pointer}
+  .book-switch{display:flex;gap:6px;margin:8px 0}.book-switch button{border:1px solid var(--line);
+    border-radius:6px;background:#080d13;color:var(--dim);font:inherit;font-size:var(--fs-xs);
+    padding:6px 10px;cursor:pointer}.book-switch button.on{color:var(--cyan);border-color:var(--cyan)}
+  #commandBar{margin:0 0 8px}.fund-back{margin-right:auto}
   @media(max-width:700px){
-    .decision-tabs{display:flex;align-items:center;gap:6px;margin:2px 0 6px;padding:2px;
-      border:1px solid var(--line);border-radius:8px;background:#080d13;position:sticky;
-      top:env(safe-area-inset-top);z-index:12}
-    .decision-tabs button{flex:1;border:1px solid transparent;border-radius:6px;background:none;
-      color:var(--dim);font:inherit;font-size:var(--fs-s);letter-spacing:.08em;padding:8px 6px;
-      cursor:pointer;min-height:42px}
-    .decision-tabs button[aria-selected="true"]{color:var(--green);border-color:var(--greenDim);
-      background:#0c1a13;font-weight:700}
-    .decision-tabs .swipe-hint{font-size:var(--fs-xs);color:var(--dim);padding:0 5px;white-space:nowrap}
-    .decision-deck{display:flex;overflow-x:auto;overflow-y:hidden;scroll-snap-type:x mandatory;
-      overscroll-behavior-x:contain;-webkit-overflow-scrolling:touch;scrollbar-width:none;
-      margin:0 -14px 8px;height:520px;height:max(520px,calc(100svh - 220px))}
-    .decision-deck::-webkit-scrollbar{display:none}
-    /* v3.67: position:relative so sizeDecisionDeck() can read child offsetTop page-relative. */
-    .decision-page{flex:0 0 100%;height:100%;min-height:0;overflow-y:auto;position:relative;
-      overscroll-behavior-y:contain;scroll-snap-align:start;scroll-snap-stop:always;
-      padding:0 14px 12px}
-    .decision-page>.nd{margin-bottom:0}
+    .glance-grid{grid-template-columns:1fr}.glance-tile{min-height:88px}
+    .glance-row{grid-template-columns:20px minmax(50px,.6fr) 28px minmax(66px,.8fr) minmax(62px,1.2fr);font-size:11px}
+    .glance-head h1{width:100%}.tt-mode{top:env(safe-area-inset-top)}
   }
   /* v3.42 READABLE DESK slice 2: driver rows are a two-line GRID inside a real <button> —
      line 1 = identity (left) + the primary datum right-aligned at --fs-l; line 2 = detail +
@@ -446,9 +468,6 @@
            terminal — freshness is why it is there — and the fold budgets are pinned);
            the tally is one tap deep, behind the very claim it explains. -->
       <span style="min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">MACRO: <button type="button" class="pill neutral" id="regimePill" aria-expanded="false" aria-controls="macroEvidence" onclick="toggleMacroEvidence()">loading…</button></span>
-      <button class="hb-ranks" onclick="exportRankings()"
-        aria-label="Share ticker rankings and decision logic"
-        title="Share rankings, funding priority, methodology and caveats">⇧ SHARE RANKS</button>
       <!-- v4.0.3: the back half of the loop the dashboard's ⌁ TERMINAL button opened
            (v3.98.3). It was a status-line footnote inside the disclosure — the only way
            back to the macro board required opening a menu. Now permanent, same weight. -->
@@ -462,7 +481,7 @@
          verdict and every gate are computed upstream and this panel changes nothing. -->
     <div id="macroEvidence" role="region" aria-label="Why macro — readout evidence"></div>
     <div id="headInfo" style="display:none">
-      <div class="brand">FINANCE&nbsp;BRO.AI // TT&nbsp;TICKER&nbsp;TERMINAL <small>v5.6.9 · the daily contract</small></div>
+      <div class="brand">FINANCE&nbsp;BRO.AI // TT&nbsp;TICKER&nbsp;TERMINAL <small>v5.7.0 · the daily contract</small></div>
       <div class="statusline">
         <span>BOOK: <b id="bookStamp">loading…</b></span>
         <span>AUTH: <b id="sessState">…</b></span>
@@ -506,56 +525,68 @@
     <div id="saveBanner" style="display:none;margin-top:8px;color:var(--red);font-size:12px"></div>
   </header>
 
-  <div class="cmd">
-    <span class="prompt">TT:&gt;</span>
-    <input id="search" autocomplete="off" spellcheck="false"
-      placeholder="search a ticker (e.g. NVDA, TSLA, AAPL) — or type HELP / TIER / ADD"/>
-    <span class="hintk">↵ open card · ESC close</span>
-  </div>
-
   <div class="layout">
     <div class="panel">
-      <div class="tabs" id="tabBar" style="display:none"></div>
+      <nav class="tt-mode" role="tablist" aria-label="Ticker Terminal modes">
+        <button id="modeNext" role="tab" aria-selected="true" aria-controls="nextView"
+          onclick="routeGo('next')" onkeydown="modeKey(event,'next')">NEXT $</button>
+        <button id="modeBook" role="tab" aria-selected="false" aria-controls="bookView"
+          onclick="routeGo('book')" onkeydown="modeKey(event,'book')">BOOK</button>
+      </nav>
+      <div class="tabs" id="tabBar" style="display:none" aria-hidden="true"></div>
       <div id="boardView">
-        <!-- FEAT-TT-FOCUS2 (v3.38): the primary view is FOUR DRIVERS and one thin stance
-             line — next dollar in, next dollar out, the binary calendar, the tier list.
-             Everything else lives one click away inside the DESK drawer below. The v3.25
-             rule survives via the strip: it carries every red count while DESK is closed. -->
-        <div class="stance-strip" id="stanceStrip" style="display:none"></div>
-        <div class="decision-tabs" role="tablist" aria-label="Daily capital allocation views">
-          <button id="decisionBuyTab" role="tab" aria-selected="true" aria-controls="decisionBuy"
-            onclick="decisionGo(0)" onkeydown="decisionKey(event,0)">NEXT $ IN</button>
-          <button id="decisionFundTab" role="tab" aria-selected="false" aria-controls="decisionFund" tabindex="-1"
-            onclick="decisionGo(1)" onkeydown="decisionKey(event,1)">FUND / TRIM<span id="fundTabCount"></span></button>
-          <!-- FEAT-TT-MAG7 (v3.84): the mega-cap sleeve gets its own panel AFTER fund/trim —
-               owner call ("separate swipe tab after next dollar out"). It renders the SAME
-               UPSIDE_ROWS the main ranking computed (one computation, two altitudes), filtered
-               to the seven; it never re-derives a rate. -->
-          <button id="decisionMagTab" role="tab" aria-selected="false" aria-controls="decisionMag" tabindex="-1"
-            onclick="decisionGo(2)" onkeydown="decisionKey(event,2)">MAG 7</button>
-          <span class="swipe-hint" aria-hidden="true">swipe ↔</span>
-        </div>
-        <div class="decision-deck" id="decisionDeck" aria-label="Next dollar decisions"
-          onscroll="syncDecisionDeck()">
-          <section class="decision-page" id="decisionBuy" role="tabpanel"
-            aria-labelledby="decisionBuyTab">
-            <div class="nd fdr" id="buyBlock" style="display:none"></div>
-          </section>
-          <section class="decision-page" id="decisionFund" role="tabpanel"
-            aria-labelledby="decisionFundTab">
-            <div class="nd fdr" id="sellBlock" style="display:none"></div>
-          </section>
-          <section class="decision-page" id="decisionMag" role="tabpanel"
-            aria-labelledby="decisionMagTab">
-            <div class="nd fdr" id="magBlock"></div>
-          </section>
-        </div>
-        <div class="nd fdr" id="calBlock" style="display:none"></div>
+        <!-- FEAT-TT-ALTITUDE (v5.6): default Glance is three objects. Every value below
+             reads an existing computation; the full legacy renderers remain in DESK. -->
+        <section class="tt-view" id="nextView" role="tabpanel" aria-labelledby="modeNext">
+          <div class="glance-head">
+            <h1>NEXT $</h1>
+            <button class="glance-action warn" id="trimChip" onclick="routeGo('fund')" hidden></button>
+            <button class="glance-action" id="flagsChip" onclick="openDesk()" hidden></button>
+            <span class="glance-action" id="quoteChip" hidden></span>
+            <button class="glance-action" id="refreshRanks" onclick="refreshRanks()"
+              title="Refresh macro snapshot, quotes, positions and ranks">⟳ REFRESH</button>
+            <button class="glance-action primary" onclick="exportRankings()"
+              aria-label="Share ticker rankings and decision logic">⇧ SHARE</button>
+            <button class="glance-action" onclick="openDesk()">DESK ▾</button>
+          </div>
+          <div class="glance-grid">
+            <article class="glance-tile" id="gateTile"></article>
+            <article class="glance-tile" id="nextTile"></article>
+            <button type="button" class="glance-tile" id="stampTile"></button>
+          </div>
+          <div class="glance-ranks" id="glanceRanks" aria-label="Next dollar ranking"></div>
+        </section>
 
-        <!-- FEAT-TT-GLANCE (v3.61): chip-length heading; the coaching line moved to the
-             HOW THIS BOARD WORKS aside — onboarding prose, not board state. -->
-        <h2 style="margin-top:14px">THE BOOK</h2>
-        <div id="board"></div>
+        <section class="tt-view" id="fundView" hidden>
+          <div class="glance-head">
+            <button class="glance-action fund-back" onclick="routeGo('next')">← NEXT $</button>
+            <h1>FUND / TRIM</h1>
+            <button class="glance-action" onclick="openDesk('dExp')">DESK ▾</button>
+          </div>
+          <div class="nd fdr" id="sellBlock" style="display:none"></div>
+        </section>
+
+        <section class="tt-view" id="bookView" role="tabpanel" aria-labelledby="modeBook" hidden>
+          <div class="cmd" id="commandBar">
+            <span class="prompt">TT:&gt;</span>
+            <input id="search" autocomplete="off" spellcheck="false"
+              placeholder="search a ticker — or type HELP / TIER / ADD"/>
+            <span class="hintk">↵ open</span>
+          </div>
+          <div class="book-switch" role="group" aria-label="Book view">
+            <button id="bookAllButton" class="on" onclick="bookGo('all')">ALL</button>
+            <button id="bookMagButton" onclick="bookGo('mag7')">MAG 7</button>
+          </div>
+          <div id="bookAll"><h2 style="margin-top:10px">THE BOOK</h2><div id="board"></div></div>
+          <div id="bookMag" hidden><div class="nd fdr" id="magBlock"></div></div>
+          <div id="deepView" style="display:none"></div>
+        </section>
+
+        <!-- Legacy compact renderers retained only where Glance supersedes their output. -->
+        <div id="legacyCompact" hidden>
+          <div class="stance-strip" id="stanceStrip"></div>
+          <div class="nd fdr" id="calBlock"></div>
+        </div>
 
         <!-- DESK: the full detail — every pre-v3.38 strip, unchanged, one click deep.
              Their renderers and ids are untouched; only their home moved. -->
@@ -568,6 +599,9 @@
           <div id="changedPanel"></div></details>
 
         <details class="drawer" id="dNext"><summary id="sNext">NEXT DOLLAR &amp; UPSIDE</summary>
+          <!-- The immutable daily allocation contract and stamped history remain available
+               in the power layer; Glance's Stamp tile opens run attestation, never mutates. -->
+          <div class="nd fdr" id="buyBlock"></div>
           <div class="nd" id="nextDollar"></div>
           <div class="nd" id="upsideRank" style="margin-top:8px"></div>
           <div class="nd" id="streetEligibility" style="margin-top:8px"></div>
@@ -593,7 +627,6 @@
         <div class="cov" id="coverage" style="margin-top:10px"></div>
         </details>
       </div>
-      <div id="deepView" style="display:none"></div>
     </div>
 
     <aside>
@@ -1707,7 +1740,7 @@ let AGREE_PICK=null;   // set by renderUpsideRank when both stories agree and no
 /* FEAT-TT-MAG7 (v3.84): the seven mega-caps and the basket average computed from their rows. */
 const MAG7_SET=new Set(["GOOGL","META","MSFT","AMZN","TSLA","NVDA","AAPL"]);
 let MAG_BASKET=null;   // set by renderUpsideRank when >=4 of 7 have a rate and MAGS is in the book
-// FEAT-TT-DECK follow-up (H1 2026-08-03; v5.2: now the OVER-CAP row count, informational —
+// FEAT-TT-ALTITUDE (v5.6; v5.2 semantics: OVER-CAP row count remains informational —
 // the forced tier it used to count was reversed by owner ruling 2026-08-25), stashed by
 // renderSellBlock so the FUND / TRIM tab label never runs a second sellRank() pass (§P.4).
 // null means "not yet known" — either POS_PENDING, or sellRank() itself returned null
@@ -1951,7 +1984,7 @@ function render(){
   renderToday();renderChanged();renderDrawers();renderScorecard();
   // FEAT-TT-FOCUS2 (v3.38): the four-driver primary blocks render LAST — they read what
   // the strips above computed (UPSIDE_ROWS, AGREE_PICK, CHANGED_N), never recompute it.
-  renderStance();renderBuyBlock();renderSellBlock();renderMagBlock();renderCalBlock();renderTabs();
+  renderStance();renderBuyBlock();renderSellBlock();renderMagBlock();renderCalBlock();renderGlance();renderTabs();
 }
 
 /* ═══════════ DEEP-DIVE TABS (FEAT-TT-DD v3.12) ═══════════ */
@@ -1961,18 +1994,23 @@ function render(){
    Payloads are SELF-ATTESTED standing-model state (thesis, not live data): every render
    carries the updated-age chip, past key-dates flag "passed — re-confirm", and all
    strings are HTML-escaped (paste-imported JSON must never inject markup). */
-let TAB=(location.hash||"").replace("#","").toUpperCase()||"BOARD";
-/* v5.6.9 ARRIVAL FOCUS — the terminal end of the FEAT-DOCK loop. A dock chip sends you to
-   `#SYM`, but the tab strip only exists for names with a stored payload: renderTabs resets
-   TAB to BOARD when the hash names a sym with no dd entry, which is SAFE (no broken tab) and
-   SILENT (the name you tapped just vanished). So the dock's promise — "tap SYM, work it" —
-   was only true for modelled names.
-   ARRIVED remembers what the hash asked for so the arrival can be honoured after the book
-   lands: a payload opens its tab (unchanged), a book name with no payload opens its CARD —
-   which v3.50 already calls "the only surface a WATCH name with no tab ever gets" — and a
-   symbol that is not in the book at all SAYS so rather than dumping you on the board with no
-   explanation. Fires ONCE per load; a manual tab switch afterwards must never re-trigger it. */
-let ARRIVED=(location.hash||"").replace("#","").toUpperCase()||"";
+function parseTtRoute(){
+  const raw=decodeURIComponent((location.hash||"").replace(/^#/,""));
+  if(!raw||raw.toLowerCase()==="next")return{view:"next",sub:"all",sym:null};
+  const bits=raw.split("/").filter(Boolean),head=(bits[0]||"").toLowerCase();
+  if(head==="fund")return{view:"fund",sub:"all",sym:null};
+  if(head==="book"){
+    const tail=(bits[1]||"").toUpperCase();
+    return{view:"book",sub:tail==="MAG7"?"mag7":"all",sym:tail&&tail!=="MAG7"?tail:null};
+  }
+  // Backward compatibility: pre-v5.6 deep-dive bookmarks were simply #nvda.
+  return{view:"book",sub:"all",sym:raw.toUpperCase()};
+}
+let TT_ROUTE=parseTtRoute();
+let TAB=TT_ROUTE.sym||"BOARD";
+/* v5.6.9 ARRIVAL FOCUS — preserve the requested ticker independently of TAB. A deep-dive
+   route opens its thesis; a book name without a payload opens its card after data loads. */
+let ARRIVED=TT_ROUTE.sym||"";
 let ARRIVAL_DONE=false;
 const DD_STATES=["green","amber","red","unknown"];
 /* Per-payload cap, raised 8KB->15KB (v3.63), 45KB (v3.70), 100KB (v4.7.0 — owner call
@@ -2081,20 +2119,10 @@ function projLine(p){
 function renderTabs(){
   const bar=document.getElementById("tabBar");
   const dds=ddEntries();
-  if(!dds.length){bar.style.display="none";if(TAB!=="BOARD"){TAB="BOARD";}showTab();return;}
-  if(TAB!=="BOARD"&&!dds.some(x=>x.sym===TAB))TAB="BOARD"; // payload removed → fall back
-  bar.style.display="flex";
-  bar.setAttribute("role","tablist");
-  const tabEl=(id,label)=>{
-    const on=TAB===id;
-    return `<span class="tab${on?" on":""}" role="tab" aria-selected="${on}" `+
-      `tabindex="${on?"0":"-1"}" data-tid="${esc(id)}" onclick="switchTab('${id}')">${esc(label)}</span>`;
-  };
-  bar.innerHTML=tabEl("BOARD","BOARD")+dds.map(x=>tabEl(x.sym,x.sym)).join("");
-  // v3.42: the strip is one scrollable row now — keep the active tab in view without
-  // touching vertical scroll (block:"nearest" so a render can never yank the page).
-  const on=bar.querySelector(".tab.on");
-  if(on&&on.scrollIntoView)try{on.scrollIntoView({block:"nearest",inline:"nearest"});}catch(_e){}
+  // v5.6: the many-name tab rail no longer competes with the page mode. Deep dives remain
+  // addressable via BOOK routes and old #SYM bookmarks; this node stays for compatibility.
+  bar.style.display="none";bar.innerHTML="";
+  if(TAB!=="BOARD"&&!dds.some(x=>x.sym===TAB))TAB="BOARD";
   showTab();
 }
 document.getElementById("tabBar").addEventListener("keydown",e=>{
@@ -2113,16 +2141,54 @@ document.getElementById("tabBar").addEventListener("keydown",e=>{
   document.querySelector(`#tabBar .tab[data-tid="${CSS.escape(tabs[next].dataset.tid)}"]`)?.focus();
 });
 function switchTab(t){
-  TAB=t;
-  try{history.replaceState(null,"",t==="BOARD"?"#":"#"+t.toLowerCase());}catch(_e){}
-  renderTabs();
+  if(t==="BOARD")routeGo("book");else routeGo("book",t);
 }
 function showTab(){
-  document.getElementById("boardView").style.display=TAB==="BOARD"?"":"none";
-  const dv=document.getElementById("deepView");
-  dv.style.display=TAB==="BOARD"?"none":"";
-  if(TAB!=="BOARD")renderDeepDive(TAB);
+  applyRoute();
 }
+function routeHash(view,sym,sub){
+  if(view==="next")return "#next";
+  if(view==="fund")return "#fund";
+  if(sym)return "#book/"+encodeURIComponent(String(sym).toLowerCase());
+  return sub==="mag7"?"#book/mag7":"#book";
+}
+function routeGo(view,sym=null,replace=false){
+  const sub="all";
+  TT_ROUTE={view,sub,sym:sym?String(sym).toUpperCase():null};TAB=TT_ROUTE.sym||"BOARD";
+  const h=routeHash(view,TT_ROUTE.sym,sub);
+  try{history[replace?"replaceState":"pushState"](null,"",h);}catch(_e){location.hash=h;}
+  applyRoute();
+}
+function bookGo(sub){
+  TT_ROUTE={view:"book",sub:sub==="mag7"?"mag7":"all",sym:null};TAB="BOARD";
+  try{history.pushState(null,"",routeHash("book",null,TT_ROUTE.sub));}catch(_e){}
+  applyRoute();
+}
+function modeKey(e,view){
+  if(!["ArrowLeft","ArrowRight","Home","End"].includes(e.key))return;
+  e.preventDefault();
+  const next=e.key==="ArrowRight"||e.key==="End"?"book":"next";
+  routeGo(next);document.getElementById(next==="book"?"modeBook":"modeNext").focus();
+}
+function applyRoute(){
+  const n=document.getElementById("nextView"),f=document.getElementById("fundView"),b=document.getElementById("bookView");
+  if(!n||!f||!b)return;
+  n.hidden=TT_ROUTE.view!=="next";f.hidden=TT_ROUTE.view!=="fund";b.hidden=TT_ROUTE.view!=="book";
+  const mn=document.getElementById("modeNext"),mb=document.getElementById("modeBook");
+  const nextOn=TT_ROUTE.view==="next";
+  mn.setAttribute("aria-selected",String(nextOn));mn.tabIndex=TT_ROUTE.view==="book"?-1:0;
+  mb.setAttribute("aria-selected",String(TT_ROUTE.view==="book"));mb.tabIndex=TT_ROUTE.view==="book"?0:-1;
+  const all=document.getElementById("bookAll"),mag=document.getElementById("bookMag"),deep=document.getElementById("deepView");
+  const hasDeep=TT_ROUTE.view==="book"&&TT_ROUTE.sym&&ddEntries().some(x=>x.sym===TT_ROUTE.sym);
+  all.hidden=TT_ROUTE.view!=="book"||!!hasDeep||TT_ROUTE.sub==="mag7";
+  mag.hidden=TT_ROUTE.view!=="book"||!!hasDeep||TT_ROUTE.sub!=="mag7";
+  deep.style.display=hasDeep?"":"none";
+  document.getElementById("bookAllButton").classList.toggle("on",TT_ROUTE.sub!=="mag7"&&!hasDeep);
+  document.getElementById("bookMagButton").classList.toggle("on",TT_ROUTE.sub==="mag7"&&!hasDeep);
+  if(hasDeep){TAB=TT_ROUTE.sym;renderDeepDive(TAB);}
+}
+window.addEventListener("hashchange",()=>{TT_ROUTE=parseTtRoute();TAB=TT_ROUTE.sym||"BOARD";applyRoute();});
+window.addEventListener("popstate",()=>{TT_ROUTE=parseTtRoute();TAB=TT_ROUTE.sym||"BOARD";applyRoute();});
 function ddAgeChip(updated){
   const d=ageDays(updated);
   if(d===null||d<0)return `<span class="pill head">no valid update date</span>`;
@@ -5965,106 +6031,14 @@ function sellRank(){
   });
   return{forced,disc,unmod,optOnly,tot};
 }
-/* v3.62 DECISION DECK — optional swipe, never swipe-only. The segmented buttons are the
-   durable interaction and carry keyboard semantics; scrolling the deck merely keeps their
-   selected state in sync with a touch gesture. The computation stays in renderBuyBlock /
-   renderSellBlock — this is presentation only. */
-/* FEAT-TT-MAG7 (v3.84): the deck was hardcoded binary at six separate sites — a third panel
-   meant either six copy-paste branches (the drift defect this repo keeps paying for) or ONE
-   page list every site derives from. Tab ids are PAGE_ID+"Tab" by construction. */
-const DECK_PAGES=["decisionBuy","decisionFund","decisionMag"];
-function setDecisionTab(i){
-  const tabs=DECK_PAGES.map(id=>document.getElementById(id+"Tab"));
-  tabs.forEach((t,n)=>{if(t){t.setAttribute("aria-selected",n===i?"true":"false");t.tabIndex=n===i?0:-1;}});
-  const panels=DECK_PAGES.map(id=>document.getElementById(id));
-  const compact=window.matchMedia&&window.matchMedia("(max-width: 700px)").matches;
-  panels.forEach((p,n)=>{if(p){
-    p.setAttribute("aria-hidden",compact&&n!==i?"true":"false");
-    p.toggleAttribute("inert",compact&&n!==i);
-  }});
-  sizeDecisionDeck();
-}
-/* v3.67: the deck height is a BUDGET, not a floor. The CSS fixed height
-   (max(520px, 100svh−220px)) exists so the HIDDEN panel can never lengthen the page (v3.62) —
-   but it also held a ~620px viewport open under a ~300px BUY list, renting a blank half-screen
-   on the primary view (owner screenshot, 2026-08-03). The height is now measured from the
-   ACTIVE panel's content and capped at that same budget: the hidden panel still cannot
-   lengthen the page (only the active panel is ever measured), and a panel taller than the
-   budget still scrolls its own overflow exactly as before. The CSS height stays as the no-JS
-   fallback, so a script failure degrades to v3.62 behaviour, never to a broken layout. */
-function sizeDecisionDeck(){
-  const deck=document.getElementById("decisionDeck");if(!deck)return;
-  if(!window.matchMedia||!matchMedia("(max-width: 700px)").matches){deck.style.height="";return;}
-  const tabs=DECK_PAGES.map(id=>document.getElementById(id+"Tab"));
-  const active=Math.max(0,tabs.findIndex(t=>t&&t.getAttribute("aria-selected")==="true"));
-  const page=document.getElementById(DECK_PAGES[active]);
-  const last=page&&page.lastElementChild;
-  if(!last){deck.style.height="";return;}
-  const budget=Math.max(520,Math.round((window.visualViewport?visualViewport.height:innerHeight)-220));
-  const need=last.offsetTop+last.offsetHeight+14;   // page is position:relative; +bottom pad
-  deck.style.height=Math.max(180,Math.min(need,budget))+"px";
-}
-// Content lands async (quotes, positions, regime each re-fire their renderer), so re-measure
-// on any DOM change inside the deck — debounced, one measurement per settle.
-(()=>{const d=document.getElementById("decisionDeck");
-  if(d&&window.MutationObserver)new MutationObserver(()=>{
-    clearTimeout(sizeDecisionDeck._t);sizeDecisionDeck._t=setTimeout(sizeDecisionDeck,60);
-  }).observe(d,{childList:true,subtree:true});})();
-function decisionGo(i,focus=false){
-  const deck=document.getElementById("decisionDeck");if(!deck)return;
-  const n=Math.max(0,Math.min(DECK_PAGES.length-1,i|0));setDecisionTab(n);
-  const reduce=window.matchMedia&&window.matchMedia("(prefers-reduced-motion: reduce)").matches;
-  deck.scrollTo({left:n*deck.clientWidth,behavior:reduce?"auto":"smooth"});
-  if(focus){const t=document.getElementById(DECK_PAGES[n]+"Tab");if(t)t.focus();}
-}
-function decisionKey(e,i){
-  if(!["ArrowLeft","ArrowRight","Home","End"].includes(e.key))return;
-  e.preventDefault();
-  const last=DECK_PAGES.length-1;
-  const n=e.key==="Home"?0:e.key==="End"?last:e.key==="ArrowLeft"?Math.max(0,i-1):Math.min(last,i+1);
-  decisionGo(n,true);
-}
-function syncDecisionDeck(){
-  const deck=document.getElementById("decisionDeck");if(!deck||!deck.clientWidth)return;
-  setDecisionTab(Math.max(0,Math.min(DECK_PAGES.length-1,Math.round(deck.scrollLeft/deck.clientWidth))));
-}
-setDecisionTab(0);
-window.addEventListener("resize",()=>{
-  const tabs=DECK_PAGES.map(id=>document.getElementById(id+"Tab"));
-  setDecisionTab(Math.max(0,tabs.findIndex(t=>t&&t.getAttribute("aria-selected")==="true")));
-});
-/* FEAT-TT-DECK follow-up (H1 2026-08-03): the deck (v3.62) turned FUND / TRIM into a hidden,
-   inert panel on phones — a forced cap trim (a rule already broken) could sit invisible on
-   the default view, a v3.25 violation. This restores the red fact to the CLOSED tab without
-   auto-opening the panel (owner call: a count, never a forced switch) and without touching
-   cap math, ranking order or selection. Four states, owner-specified:
-     POS_PENDING          → "…"        (not yet loaded — never a false zero)
-     loaded, not measured → "?"  amber (sellRank() returned null — §P.2: a false clear is
-                                         worse than an honest "I cannot check this")
-     loaded, none over cap → ""         (checked, genuinely clear)
-     loaded, N over cap    → "N ⚠cap"  (red, informational — v5.2: the cap stopped forcing) */
-function renderDecisionFundLabel(){
-  const c=document.getElementById("fundTabCount");if(!c)return;
-  // display:block puts the suffix on its OWN tight line: measured, a 22-char forced-count
-  // phrase does not fit beside "FUND / TRIM" in a ~128px monospace tab at fs-s and wraps
-  // unpredictably mid-phrase. A deliberate two-line badge (fs-xs) reads better than that,
-  // and the fold budgets below (test/render.mjs) are measured against this shape.
-  const line=(txt,color,bold)=>`<span style="display:block;font-size:var(--fs-xs);line-height:1.3;color:${color}${bold?";font-weight:700":""}"> ${txt}</span>`;
-  if(POS_PENDING){c.innerHTML=line("· …","var(--dim)");return;}
-  if(SELL_FORCED_N===null){c.innerHTML=line("· ?","var(--amber)");return;}
-  // v5.2 CAP-ASTERISK: the count is OVER-CAP rows (informational), no longer a forced tier —
-  // the red fact stays visible on the closed tab (v3.25) without forcing anything.
-  if(SELL_FORCED_N>0){c.innerHTML=line(`· ${SELL_FORCED_N} ⚠cap`,"var(--red)",true);return;}
-  c.innerHTML="";
-}
-/* v3.68: the horizon governs every %/yr on BOTH deck panels, but its picker lived two taps
+/* v3.68: the horizon governs every %/yr on the full ranking surfaces, but its picker lived two taps
    deep in DESK — the owner had to be told where "auto" was. One shared chip states the year
    in force and whether it is auto or pinned, AT the altitude the numbers are read.
    v3.72: tapping it used to only DEEP-LINK to the full picker — the owner hit the exact
    failure this was meant to prevent (a stale YE2030 pin silently dropping 35 of 41 names)
    and still had to leave the widget to clear it. AUTO and NEAREST — the two safe, computed
    modes, and the fix for a stale pin — are now ONE TAP right here, calling setHorizon()
-   directly so the deck panels re-render in place with no navigation. Pinning a SPECIFIC
+   directly so the ranking surfaces re-render in place with no navigation. Pinning a SPECIFIC
    year is deliberately still one tap deeper (opens the full picker): the dangerous action
    should take a slightly more deliberate path than the two recommended ones. ONE builder
    feeding all three call sites, so the decks can never disagree about the year their %/yr
@@ -6084,7 +6058,6 @@ function renderSellBlock(){
   const el=document.getElementById("sellBlock");if(!el)return;
   const s=sellRank();
   if(s)SELL_FORCED_N=s.disc.filter(r=>r.overCap).length;  // v5.2: over-cap count, informational
-  renderDecisionFundLabel();
   if(!s||(!s.forced.length&&!s.disc.length&&!s.unmod.length&&!s.optOnly.length)){
     // v3.42 slice 2: while the positions map is still in flight "nothing measured" is
     // UNKNOWN — hold the geometry with skeletons instead of hiding, so the block doesn't
@@ -6350,11 +6323,9 @@ function renderBuyBlock(){
      precedent). The eligible line + top-5 stay the default glance and the closed state IS the
      next-dollar focus; the COUNT rides the summary so silent truncation cannot read as full
      coverage (v3.65/v3.76). `caveats ↗` survives as a link into DESK because METHODOLOGY
-     belongs there — names do not. Deliberately NOT a fourth deck page: MAG 7 earned a page by
-     being a different question; this is the same question uncut, and a BOOK/ALL tab would
-     compete with the default view and re-create the six-screens regression v3.38 removed.
-     sizeDecisionDeck's MutationObserver remeasures on expand, so the panel grows to the
-     budget and then scrolls inside itself. */
+     belongs there — names do not. MAG 7 is now a BOOK cluster; the uncut ranking remains
+     the same NEXT $ question and therefore stays one level down in DESK.
+     The full legacy list now lives in DESK, so expanding it follows normal document flow. */
   const moreRanked=Math.max(0,UPSIDE_ROWS.length-rows.length);
   const moreTail=Math.max(0,UNRANKED_ROWS.length-3);
   if(moreRanked||moreTail){
@@ -6433,7 +6404,7 @@ function renderStance(){
   const badges=badgeList.join("");
   const controls=`<span class="stance-right">`+
     (LIVE_AT?`<span class="scope">quotes ${esc(String(LIVE_AT).slice(11,16))}Z</span>`:"")+
-    `<button class="rfr" id="refreshRanks" onclick="refreshRanks()" title="Rebuild the macro snapshot (Engine 0), then reload quotes, positions and both ranks">⟳ DATA+RANKS</button>`+
+    `<button class="rfr" id="refreshRanksLegacy" onclick="refreshRanks()" title="Rebuild the macro snapshot (Engine 0), then reload quotes, positions and both ranks">⟳ DATA+RANKS</button>`+
     `<button class="badge u-dim" onclick="openDesk()">DESK ▾</button></span>`;
   /* v3.42 slice 5 — the stance is ASYMMETRIC, because its two states are not equally worth
      your attention. "ADDS OK" is the PERMISSIVE DEFAULT: it says nothing is stopping you,
@@ -6484,6 +6455,99 @@ function renderStance(){
       (st.quals||[]).map(q=>`<span class="qual" style="color:${QC[q.c]||"var(--dim)"}">${esc(q.t)}</span>`).join("")+badges+`</div>`+
       `<div>${esc(st.txt)}${st.why?` — ${esc(st.why)}`:""}</div></div></details>`
       :`<details class="why"><summary>why</summary><div>${esc(st.txt)}${st.why?` — ${esc(st.why)}`:""}</div></details>`);
+}
+/* FEAT-TT-ALTITUDE (v5.6): three glance objects, all reading computations above. This is
+   presentation only: it never votes, sorts, stamps, saves, or promotes a candidate. */
+let GLANCE_SYM=null;
+function shortWords(v,n=6){const w=String(v||"").trim().split(/\s+/).filter(Boolean);return w.length>n?w.slice(0,n).join(" ")+"…":w.join(" ");}
+function glanceReason(r){
+  if(AGREE_PICK&&AGREE_PICK.sym===r.sym)return "all gates passed";
+  if(r.wt&&r.wt.w!==null&&r.wt.w>=CAP_PCT)return "no room";
+  if(!(r.upside>0))return "no gap";
+  if(r.rdy&&r.rdy.blockers&&r.rdy.blockers.length)return String(r.rdy.blockers[0]);
+  if(!r.tt)return "unscored";
+  if(r.tt.status==="PROVISIONAL")return "falsifiers pending";
+  if(r.tt.act==="BLOCKED")return "evidence blocked";
+  if(r.tt.tier==="C"||(r.tt.score!==null&&r.tt.score<5.5))return "quality fails";
+  if(r.rrFail)return "R/R fails";
+  return "wait";
+}
+function glanceSelected(){
+  const rows=UPSIDE_ROWS.slice(0,5);
+  let r=rows.find(x=>x.sym===GLANCE_SYM)||(AGREE_PICK&&rows.find(x=>x.sym===AGREE_PICK.sym))||rows[0]||null;
+  GLANCE_SYM=r?r.sym:null;return r;
+}
+function selectGlance(sym){GLANCE_SYM=sym;renderGlance();}
+function glanceSelectKey(e,sym){if(e.target!==e.currentTarget)return;if(e.key==="Enter"||e.key===" "){e.preventDefault();selectGlance(sym);}}
+function openAttestation(sym){
+  openCard(sym);
+  requestAnimationFrame(()=>requestAnimationFrame(()=>{
+    const input=document.getElementById("fLastRun");if(!input)return;
+    input.scrollIntoView({behavior:"smooth",block:"center"});input.focus({preventScroll:true});
+  }));
+}
+function renderGlance(){
+  const gate=document.getElementById("gateTile");if(!gate)return;
+  const st=stance(),alias=st.k==="go"?"SEND IT":st.k==="caution"?"HODL":"TOUCH GRASS";
+  const col={go:"var(--green)",caution:"var(--amber)",stop:"var(--red)",unknown:"var(--slate)"}[st.k]||"var(--slate)";
+  gate.innerHTML=`<div class="glance-k">GATE</div><div class="glance-v" style="color:${col}">${alias}</div>`+
+    `<div class="glance-s">${esc(st.verdict||st.txt)}</div>`;
+
+  const selected=glanceSelected(),next=document.getElementById("nextTile"),stamp=document.getElementById("stampTile");
+  if(selected){
+    const reason=shortWords(glanceReason(selected));
+    next.innerHTML=`<div class="glance-k">NEXT $</div><div class="glance-v">${esc(selected.sym)}</div>`+
+      `<div class="glance-s">${selected.ann===null?"no rate":`${selected.ann>=0?"+":""}${selected.ann}%/yr`} · ${esc(reason)}</div>`;
+    const rs=selected.rs||runState((find(selected.sym)||{}).lastRun);
+    const label=rs.k==="never"?"NOT ATTESTED":rs.k==="head"?"RE-RUN":rs.k==="stale"?"STALE":"ATTESTED";
+    const scol=rs.k==="fresh"?"var(--green)":rs.k==="stale"?"var(--amber)":"var(--red)";
+    stamp.disabled=false;stamp.onclick=()=>openAttestation(selected.sym);
+    stamp.innerHTML=`<div class="glance-k">STAMP · ${esc(selected.sym)}</div><div class="glance-v" style="color:${scol}">${label}</div>`+
+      `<div class="glance-s">${rs.days===null?"never run":`${rs.days}d old`} · open attestation</div>`;
+  }else{
+    next.innerHTML=`<div class="glance-k">NEXT $</div><div class="glance-v">NONE</div><div class="glance-s">nothing rankable</div>`;
+    stamp.disabled=true;stamp.onclick=null;stamp.innerHTML=`<div class="glance-k">STAMP</div><div class="glance-v">—</div><div class="glance-s">select a ranked name</div>`;
+  }
+
+  const trim=document.getElementById("trimChip");
+  if(POS_PENDING){trim.hidden=false;trim.textContent="TRIM · …";}
+  else if(SELL_FORCED_N===null){trim.hidden=false;trim.textContent="TRIM · ?";}
+  else if(SELL_FORCED_N>0){trim.hidden=false;trim.textContent=`TRIM · ${SELL_FORCED_N} cap`;}
+  else trim.hidden=true;
+  const cx=capexState(),cp=capabilityState();
+  const flags=binaryEvents().filter(e=>e.inWindow).length+(cx&&cx.turning?1:0)+(cp&&cp.impaired?1:0)+(CHANGED_N.n||0);
+  const fc=document.getElementById("flagsChip");fc.hidden=!flags;fc.textContent=`FLAGS · ${flags}`;
+  fc.classList.toggle("warn",!!flags);
+  const qc=document.getElementById("quoteChip");qc.hidden=!LIVE_AT;
+  if(LIVE_AT)qc.textContent=`quotes ${esc(String(LIVE_AT).slice(11,16))}Z`;
+
+  const rank=document.getElementById("glanceRanks"),rows=UPSIDE_ROWS.slice(0,5);
+  if(!rows.length&&!UNRANKED_ROWS.length){rank.innerHTML=`<div class="glance-s" style="padding:8px">${QUOTES_PENDING?"loading ranks…":"nothing modelled and priced"}</div>`;return;}
+  const rankedHtml=rows.map((r,i)=>{
+    const on=selected&&selected.sym===r.sym,reason=shortWords(glanceReason(r));
+    const street=STREET[r.sym]&&STREET[r.sym].analystTarget&&STREET[r.sym].analystTarget.average;
+    const compare=typeof street==="number"&&isFinite(street)?(r.tgt>street?"you richer":r.tgt<street?"street richer":"aligned with street"):r.basis;
+    const stale=(r.pxAge===null||r.pxAge>PX_STALE_D)?` · px ${r.pxAge===null?"?":r.pxAge+"d"}`:"";
+    const priceLine=typeof r.tgt==="number"&&isFinite(r.tgt)&&typeof r.px==="number"&&isFinite(r.px)
+      ?`$${esc(r.tgt)} vs $${esc(r.px)} · ${esc(compare)}`:"basket average";
+    return `<div class="glance-row" role="button" tabindex="0" aria-expanded="${on}" onclick="selectGlance('${esc(r.sym)}')" onkeydown="glanceSelectKey(event,'${esc(r.sym)}')">`+
+      `<span>${i+1}</span><span class="sym">${esc(r.sym)}</span><span>${esc(r.tier)}</span>`+
+      `<span class="rate">${r.ann===null?"—":`${r.ann>=0?"+":""}${r.ann}%/yr`}</span><span class="reason">${esc(reason)}`+
+      (r.caveat?` · <span class="warn2" title="${esc(r.caveat)}">⚠ model note</span>`:"")+`</span>`+
+      (on?`<span class="glance-detail">${priceLine}${esc(stale)}`+
+        `<button type="button" class="glance-open" onclick="event.stopPropagation();openCard('${esc(r.sym)}')">OPEN</button></span>`:"")+`</div>`;
+  }).join("");
+  /* The reviewed-but-unpriced population is a second basis, never merged into the %/yr
+     order. It remains on the primary surface as a compact tail because review must not
+     disappear merely because the valuation model is incomplete. */
+  const tailHtml=UNRANKED_ROWS.length
+    ?`<div class="glance-tail-label">* reviewed · no %/yr yet — ranked on TT composite</div>`+
+      UNRANKED_ROWS.slice(0,3).map(r=>`<button type="button" class="glance-row glance-tail" onclick="openCard('${esc(r.sym)}')" title="${esc(r.why)} — ${esc(r.fix)}">`+
+        `<span style="color:var(--amber)">*</span><span class="sym">${esc(r.sym)}</span><span>${esc(r.tier)}</span>`+
+        `<span class="rate">—</span><span class="reason">${esc(r.why)}</span></button>`).join("")
+    :"";
+  rank.innerHTML=rankedHtml+tailHtml+`<div class="glance-foot">${UPSIDE_ROWS.length} ranked of ${BOOK.length}`+
+    (UNRANKED_ROWS.length?` · ${UNRANKED_ROWS.length} reviewed but unpriced`:"")+`</div>`;
 }
 /* Open the DESK drawer (and optionally one drawer inside it), then scroll to it. */
 function openDesk(inner){

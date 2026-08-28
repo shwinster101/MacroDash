@@ -5,6 +5,19 @@ answers *"is it safe to be in the market?"* from live macro + market + sentiment
 data. Single-page React app on Cloudflare Pages, with live data assembled at the
 edge by Pages Functions and cached in KV.
 
+**v5.7.0 "TT Altitude" makes the terminal a glance product before it becomes a desk.**
+`/admin.html` now defaults to a three-object NEXT $ surface: the existing capital gate with
+an informal alias plus its exact canonical verdict, one selected next-dollar candidate, and
+that name's run-attestation state. The Stamp tile opens and focuses the existing `LAST TT RUN`
+control but never stamps or saves by itself. The comparable top-five rank is one line per name
+with detail on selection; full methodology, receipts, model notes, calendar, and diagnostics
+remain in DESK and still read the same computations. NEXT $ and BOOK are the only persistent
+modes, cap state is an amber `TRIM · N cap` chip linking to a standalone FUND route, and MAG 7
+is a BOOK cluster rather than a competing capital-allocation page. Additive hash routes
+(`#next`, `#fund`, `#book`, `#book/mag7`, `#book/<symbol>`) support back/forward navigation
+while legacy `#symbol` deep links remain valid. No API, KV schema, ranking, gate, receipt, or
+attestation semantics changed; the public macro dashboard remains frozen.
+
 **v5.5.0 "Accountability + Daily Friction" scores the call instead of adding more data.**
 The scheduled Worker now maintains a separate `md-spy-outcome-v1` companion for every
 successfully frozen public call. The first official FRED `SP500` close on or after the 10am ET

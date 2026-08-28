@@ -1744,12 +1744,12 @@ ok("sess: session state starts EMPTY in the bundle — content lives in KV, neve
 console.log("\n[11] FEAT-TT-TODAY — stance · actions · what changed");
 // v3.38 FOCUS2: the STANCE STRIP leads the primary view; the TODAY card detail lives
 // inside DESK. The strip must render before the buy block, and the buy block before the book.
-ok("focus2: the stance strip leads, then buy, sell, calendar, then the book",
-  adminSrc.indexOf('id="stanceStrip"') < adminSrc.indexOf('id="buyBlock"') &&
-  adminSrc.indexOf('id="buyBlock"') < adminSrc.indexOf('id="sellBlock"') &&
-  adminSrc.indexOf('id="sellBlock"') < adminSrc.indexOf('id="calBlock"') &&
-  adminSrc.indexOf('id="calBlock"') < adminSrc.indexOf('id="board"') &&
-  adminSrc.indexOf('id="board"') < adminSrc.indexOf('id="dDesk"'));
+ok("altitude: Glance leads with three tiles; FUND and BOOK are separate destinations before DESK",
+  adminSrc.indexOf('id="gateTile"') < adminSrc.indexOf('id="nextTile"') &&
+  adminSrc.indexOf('id="nextTile"') < adminSrc.indexOf('id="stampTile"') &&
+  adminSrc.indexOf('id="stampTile"') < adminSrc.indexOf('id="fundView"') &&
+  adminSrc.indexOf('id="fundView"') < adminSrc.indexOf('id="bookView"') &&
+  adminSrc.indexOf('id="bookView"') < adminSrc.indexOf('id="dDesk"'));
 ok("today: every demoted strip keeps its element — nothing was deleted, only collapsed",
   ["nextDollar", "upsideRank", "clusterLine", "fundingLine", "binaryCal", "decisionsLine", "circuitLine"]
     .every((id) => adminSrc.includes(`id="${id}"`)));
@@ -2324,22 +2324,12 @@ ok("hz-picker: 40px thumb targets at <=480px — the defect was reachability, no
 ok("hz-picker: the warning carries its own fix — one tap to auto, no navigation",
   /NEAREST is distorting the order/.test(adminSrc)
   && /onclick="setHorizon\('\$\{HZ_AUTO\}'\)"[^>]*>switch to auto</.test(adminSrc));
-/* v3.67: the deck height is a budget, not a floor. */
-ok("deck: sizeDecisionDeck measures ONLY the active panel — the hidden ones still cannot lengthen the page (v3.84: active derived from DECK_PAGES, not a binary ternary)",
-  /function sizeDecisionDeck\(\)/.test(adminSrc)
-  && /const active=Math\.max\(0,tabs\.findIndex\(t=>t&&t\.getAttribute\("aria-selected"\)==="true"\)\);/.test(adminSrc)
-  && /const page=document\.getElementById\(DECK_PAGES\[active\]\);/.test(adminSrc));
-ok("deck: measured height is capped at the SAME budget the CSS names (520 / viewport−220) — over-budget panels still scroll",
-  /Math\.max\(520,Math\.round\(\(window\.visualViewport\?visualViewport\.height:innerHeight\)-220\)\)/.test(adminSrc)
-  && /Math\.min\(need,budget\)/.test(adminSrc));
-ok("deck: the CSS fixed height SURVIVES as the no-JS fallback, and desktop clears the inline override",
-  adminSrc.includes("height:max(520px,calc(100svh - 220px))")
-  && /matchMedia\("\(max-width: 700px\)"\)\.matches\)\{deck\.style\.height="";return;\}/.test(adminSrc));
-ok("deck: async content lands re-measure via a debounced MutationObserver, and every tab switch re-sizes",
-  /new MutationObserver[\s\S]{0,120}sizeDecisionDeck/.test(adminSrc)
-  && /toggleAttribute\("inert",compact&&n!==i\);\s*\}\}\);\s*sizeDecisionDeck\(\);/.test(adminSrc));
-ok("deck: .decision-page is position:relative so child offsetTop measures page-relative",
-  /\.decision-page\{flex:0 0 100%;height:100%;min-height:0;overflow-y:auto;position:relative;/.test(adminSrc));
+ok("altitude: the routed shell has no fixed viewport-height carousel or hidden horizontal page budget",
+  !/decisionDeck|sizeDecisionDeck|scroll-snap-type:x mandatory/.test(adminSrc) &&
+  /\.tt-view\[hidden\]\{display:none!important\}/.test(adminSrc));
+ok("altitude: tile geometry changes at 700px while the information hierarchy stays identical",
+  /\.glance-grid\{display:grid;grid-template-columns:repeat\(3,minmax\(0,1fr\)\)/.test(adminSrc) &&
+  /@media\(max-width:700px\)[\s\S]{0,120}\.glance-grid\{grid-template-columns:1fr\}/.test(adminSrc));
 /* v3.66 QUIET BOARD: every free-text blob on a decision surface is chip-length in place and
    verbatim one tap deep. Machine reds (runState flags, lints, sev=stop changes, dropped-name
    warnings) stay visible while everything around them collapses — the v3.25 rule. */
@@ -2518,7 +2508,7 @@ ok("focus2: the stance strip carries the red counts a closed DESK would otherwis
   adminSrc.includes("over cap</button>") && adminSrc.includes('onclick="openDesk(') &&
   adminSrc.includes("function renderStance()"));
 ok("focus2: primary blocks render LAST in the chain, reading what the strips computed",
-  adminSrc.includes("renderStance();renderBuyBlock();renderSellBlock();renderMagBlock();renderCalBlock();renderTabs();"));
+  adminSrc.includes("renderStance();renderBuyBlock();renderSellBlock();renderMagBlock();renderCalBlock();renderGlance();renderTabs();"));
 ok("refresh: the button refetches quotes+positions+regime and reports the quote-cache window honestly",
   adminSrc.includes("async function refreshRanks()") &&
   adminSrc.includes("Promise.all([loadQuotes(),loadPositions(),loadRegime(),allocReeval(),loadScoreIndex()])") &&
@@ -2588,13 +2578,15 @@ ok("slice3: tier chips are real <button type=button> — keyboard-reachable via 
   adminSrc.includes('c.type="button";'));
 ok("slice3: the CUT row (non-interactive) is deliberately left as a <div> — nothing to click",
   adminSrc.includes('CUT.forEach(s=>{const c=document.createElement("div");'));
-ok("slice3: the tab strip is a real ARIA tablist — role, aria-selected, roving tabindex",
-  adminSrc.includes('bar.setAttribute("role","tablist")') &&
-  adminSrc.includes('role="tab" aria-selected="${on}"') &&
-  adminSrc.includes('tabindex="${on?"0":"-1"}"'));
-ok("slice3: arrow/Home/End keys move AND select (native tablist behavior), wrapping at the ends",
-  adminSrc.includes('next=(i+1)%tabs.length') && adminSrc.includes('next=(i-1+tabs.length)%tabs.length') &&
-  adminSrc.includes('e.key==="Home"') && adminSrc.includes('e.key==="End"'));
+ok("slice3: the mode strip is a real ARIA tablist with routed NEXT $ and BOOK controls",
+  /class="tt-mode" role="tablist"/.test(adminSrc) &&
+  /id="modeNext" role="tab" aria-selected="true"/.test(adminSrc) &&
+  /id="modeBook" role="tab" aria-selected="false"/.test(adminSrc) &&
+  /mn\.tabIndex=TT_ROUTE\.view==="book"\?-1:0/.test(adminSrc) && /mb\.tabIndex=TT_ROUTE\.view==="book"\?0:-1/.test(adminSrc));
+ok("slice3: arrow/Home/End keys move and select the routed modes",
+  /function modeKey\(e,view\)/.test(adminSrc) &&
+  /\["ArrowLeft","ArrowRight","Home","End"\]/.test(adminSrc) &&
+  /routeGo\(next\);document\.getElementById/.test(adminSrc));
 ok("slice3: drawer/schema summaries migrated onto the shared type scale, not a stray literal",
   adminSrc.includes("details.drawer>summary{cursor:pointer;list-style:none;padding:8px 12px;font-size:var(--fs-s);") &&
   adminSrc.includes("details.schema>summary{cursor:pointer;list-style:none;color:var(--dim);font-size:var(--fs-s);"));
@@ -4297,7 +4289,7 @@ ok("tt-glance: the SELL expander is est-mini and the methodology is stated ONCE,
 ok("tt-glance: the unranked count rides the closed summary — no silent truncation",
   /\(unrankedN\?`<span style="color:var\(--amber\)">○ \$\{unrankedN\} unranked<\/span>`:""\)/.test(adminSrc));
 ok("tt-glance: the board heading is chip-length; the coaching line lives in the aside",
-  adminSrc.includes("<h2 style=\"margin-top:14px\">THE BOOK</h2>") &&
+  adminSrc.includes("<h2 style=\"margin-top:10px\">THE BOOK</h2>") &&
   adminSrc.includes("click any ticker chip to open its TT Card"));
 // F2b-3: operator tooling off the public route (the A4 pattern).
 ok("glance: operator tooling gates on !publicView — TT copy in the menu, TERMINAL in the bar",
@@ -4331,43 +4323,31 @@ ok("the OPS menu does not swallow the alert badges — a red fact stays visible 
   })());
 
 // ─────────────────────────────────────────────────────────────────────────────
-console.log("\n[42] FEAT-TT-DECK — mobile decision views and the shareable ranking artifact");
-ok("tt-deck: SHARE RANKS is a first-row action, not buried under MENU → MANAGE",
-  /<div class="hbar">[\s\S]*class="hb-ranks" onclick="exportRankings\(\)"[\s\S]*class="hb-more"/.test(adminSrc) &&
+console.log("\n[42] FEAT-TT-ALTITUDE — routed jobs and the shareable ranking artifact");
+ok("tt-altitude: SHARE sits beside NEXT $, not in global chrome or OPS",
+  /<section class="tt-view" id="nextView"[\s\S]*onclick="exportRankings\(\)"[\s\S]*<\/section>/.test(adminSrc) &&
   (adminSrc.match(/onclick="exportRankings\(\)"/g) || []).length === 1);
-ok("tt-deck: the promoted action names the decision logic carried by the export",
-  /aria-label="Share ticker rankings and decision logic"/.test(adminSrc) &&
-  /Share rankings, funding priority, methodology and caveats/.test(adminSrc));
-ok("tt-deck: BUY and FUND are two labelled tab panels — swipe is optional, never the only control",
-  /role="tablist" aria-label="Daily capital allocation views"/.test(adminSrc) &&
-  /id="decisionBuy" role="tabpanel"/.test(adminSrc) &&
-  /id="decisionFund" role="tabpanel"/.test(adminSrc) &&
-  /onclick="decisionGo\(0\)"/.test(adminSrc) && /onclick="decisionGo\(1\)"/.test(adminSrc));
-ok("tt-deck: phone layout uses horizontal scroll snap and a viewport-height focus panel",
-  /scroll-snap-type:x mandatory/.test(adminSrc) &&
-  /scroll-snap-align:start/.test(adminSrc) &&
-  /height:max\(520px,calc\(100svh - 220px\)\)/.test(adminSrc));
-ok("tt-deck: keyboard arrows switch the same two views and reduced motion is respected",
-  /function decisionKey\(e,i\)/.test(adminSrc) &&
-  /prefers-reduced-motion: reduce/.test(adminSrc) &&
-  /setDecisionTab\(Math\.max/.test(adminSrc) &&
-  /toggleAttribute\("inert",compact&&n!==i\)/.test(adminSrc));
+ok("tt-altitude: the promoted action names the decision logic carried by the export",
+  /aria-label="Share ticker rankings and decision logic"/.test(adminSrc));
+ok("tt-altitude: NEXT $ and BOOK are persistent modes; FUND is reached from its state chip",
+  /aria-label="Ticker Terminal modes"/.test(adminSrc) &&
+  /id="modeNext"[\s\S]*onclick="routeGo\('next'\)"/.test(adminSrc) &&
+  /id="modeBook"[\s\S]*onclick="routeGo\('book'\)"/.test(adminSrc) &&
+  /id="trimChip" onclick="routeGo\('fund'\)"/.test(adminSrc));
+ok("tt-altitude: the retired decision carousel is gone, not merely hidden",
+  !/decisionBuyTab|decisionFundTab|decisionMagTab|decisionDeck|DECK_PAGES/.test(adminSrc));
+ok("tt-altitude: routed modes retain keyboard navigation and browser history",
+  /function modeKey\(e,view\)/.test(adminSrc) && /history\[replace\?"replaceState":"pushState"\]/.test(adminSrc) &&
+  /addEventListener\("popstate"/.test(adminSrc) && /addEventListener\("hashchange"/.test(adminSrc));
 ok("tt-deck: forced trims stay visible; only the lower-priority funding tail collapses",
   adminSrc.indexOf("s.forced.forEach") < adminSrc.indexOf("const FUNDING_VISIBLE=5") &&
   /\+\$\{s\.disc\.length-FUNDING_VISIBLE\} lower-priority funding sources/.test(adminSrc));
-ok("tt-deck: the second view is honestly FUND / TRIM, never a fabricated HOLD recommendation",
-  adminSrc.includes('>FUND / TRIM<span id="fundTabCount"></span></button>') &&
+ok("tt-altitude: the route is honestly FUND / TRIM, never a fabricated HOLD recommendation",
+  adminSrc.includes('<h1>FUND / TRIM</h1>') &&
   !/NEXT DOLLAR[^<]{0,20}HOLD/.test(adminSrc));
 
 // ─────────────────────────────────────────────────────────────────────────────
-console.log("\n[43] FEAT-TT-DECK follow-up — the forced-trim count, H1 2026-08-03");
-// H5 (fresh session) found the deck hid a forced cap trim — a rule already broken — behind
-// an inert panel with nothing on the closed tab naming it, a v3.25 violation. H1 planned the
-// fix as a red count on FUND / TRIM, never an auto-open (owner call). These pin the SOURCE
-// contract; test/render.mjs proves the four label states and the real-scroll/click paths
-// behaviorally (R1-R7 in the H1 plan, harness/H1-tt-deck-forced-count-2026-08-03.md).
-ok("tt-deck-forced: the tab carries a dedicated count span, not a full-button text overwrite",
-  /<span id="fundTabCount"><\/span>/.test(adminSrc));
+console.log("\n[43] FEAT-TT-ALTITUDE — trim state remains visible without becoming a persistent mode");
 ok("tt-deck-forced: SELL_FORCED_N is reset before sellRank() runs — an early return can never leave yesterday's count (the AGREE_PICK precedent)",
   (() => {
     const body = adminSrc.match(/function renderSellBlock\(\)\{([\s\S]*?)\n\}/)?.[1] || "";
@@ -4377,28 +4357,13 @@ ok("tt-deck-forced: SELL_FORCED_N is reset before sellRank() runs — an early r
       // v5.2 CAP-ASTERISK: the count is over-cap rows (informational), no longer a forced tier
       /if\(s\)SELL_FORCED_N=s\.disc\.filter\(r=>r\.overCap\)\.length;/.test(body);
   })());
-ok("tt-deck-forced: the label reads SELL_FORCED_N directly — it recomputes neither CAP_PCT nor capChecks()",
-  (() => {
-    const m = adminSrc.match(/function renderDecisionFundLabel\(\)\{[\s\S]*?\n\}/);
-    return !!m && m[0].includes("SELL_FORCED_N") &&
-      !m[0].includes("CAP_PCT") && !m[0].includes("capChecks(");
-  })());
-ok("tt-deck-forced: sellRank() is still CALLED exactly twice (renderSellBlock + the rankings export) — the tab adds no third pass",
-  (adminSrc.match(/=\s*sellRank\s*\(\s*\)\s*;/g) || []).length === 2 &&
-  !/\bsellRank\s*\(/.test(adminSrc.slice(adminSrc.indexOf("function renderDecisionFundLabel"),
-    adminSrc.indexOf("function renderSellBlock"))));
-ok("tt-deck-forced: the four states are distinct strings — pending, unmeasured, checked-clear and over-cap never collapse into each other (label re-pinned at v5.2: ⚠cap, informational)",
-  /line\("· …","var\(--dim\)"\)/.test(adminSrc) &&
-  /line\("· \?","var\(--amber\)"\)/.test(adminSrc) &&
-  /line\(`· \$\{SELL_FORCED_N\} ⚠cap`,"var\(--red\)",true\)/.test(adminSrc) &&
-  /c\.innerHTML="";/.test(adminSrc));
-ok("tt-deck-forced: the panel never auto-opens off the forced count — no decisionGo() call reads SELL_FORCED_N",
-  !/decisionGo\([^)]*\).*SELL_FORCED_N|SELL_FORCED_N[\s\S]{0,80}decisionGo\(/.test(adminSrc));
-// v3.67: sizeDecisionDeck() is the 6th home — it MUST mirror the deck media query (same as
-// setDecisionTab already does) or the height override would apply on the stacked desktop
-// layout. The deferral still holds: no new breakpoint VALUE, one more reader of the same one.
-ok("tt-deck-forced: the 700px breakpoint deferral (H1 §3) holds — exactly 6 homes, all the same value",
-  (adminSrc.match(/700px/g) || []).length === 6);
+ok("tt-altitude: the trim chip reads the already-computed count and routes to FUND without recomputing",
+  /const trim=document\.getElementById\("trimChip"\)/.test(adminSrc) &&
+  /trim\.textContent=`TRIM · \$\{SELL_FORCED_N\} cap`/.test(adminSrc) &&
+  /id="trimChip" onclick="routeGo\('fund'\)"/.test(adminSrc));
+ok("tt-altitude: route state has distinct pending, unknown, cap and verified-clear trim states",
+  /trim\.textContent="TRIM · …"/.test(adminSrc) && /trim\.textContent="TRIM · \?"/.test(adminSrc) &&
+  /trim\.textContent=`TRIM · \$\{SELL_FORCED_N\} cap`/.test(adminSrc) && /else trim\.hidden=true/.test(adminSrc));
 
 // ─────────────────────────────────────────────────────────────────────────────
 console.log("\n[39] CI-FIX — the browser suites must not read a PRESENT browser as absent");
@@ -6166,12 +6131,8 @@ console.log("\n[51] FEAT-TT-ALLREVIEWED — the reviewed-but-unpriced ranking");
       /\+\$\{moreRanked\} more ranked/.test(buy) && /\*\$\{moreTail\} more reviewed/.test(buy));
     ok("bridge: the names deep-link is RETIRED; DESK keeps methodology only (names do not live there)",
       !/full math, horizons/.test(adminSrc) && /caveats, lints &amp; horizon pin/.test(buy));
-    /* Deliberately NOT a fourth deck page: MAG 7 earned a page by being a different question
-       (the seven + MAGS); this is the same question uncut, and a BOOK/ALL tab would compete
-       with the default view and re-create the six-screens regression v3.38 removed. */
-    ok("bridge: DECK_PAGES is untouched — the bridge is an altitude fix, not a fourth swipe",
-      /const DECK_PAGES=\[/.test(adminSrc) &&
-      (adminSrc.match(/const DECK_PAGES=\[[^\]]*\]/) || [""])[0].split(",").length === 3);
+    ok("bridge: the full ranking stays in DESK; no BOOK/ALL ranking fork was introduced",
+      /id="dNext"/.test(adminSrc) && !/bookAll[\s\S]{0,300}renderBuyBlock/.test(adminSrc));
     ok("bridge: rankCategories() finally PAINTS — the per-axis chips reuse the SHARE RANKS " +
        "computation rather than a second one, and a single-member axis renders no rank",
       /const cats=rankCategories\(UPSIDE_ROWS\)/.test(buy) && /const catChip=/.test(buy) &&
@@ -7001,15 +6962,13 @@ console.log("\n[58] FEAT-TT-MAG7 — deck panel, basket average, honesty gates")
   ok("mag7: unranked members and the below-threshold basket state are NAMED in the panel",
     /no rate at this horizon: \$\{un\.map\(esc\)\.join/.test(adminSrc)
     && /basket line renders when ≥4 of 7 members carry a rate/.test(adminSrc));
-  ok("mag7: the deck is a PAGE LIST, not six binary ternaries — all five nav sites derive from DECK_PAGES",
-    /const DECK_PAGES=\["decisionBuy","decisionFund","decisionMag"\];/.test(adminSrc)
-    && (adminSrc.match(/DECK_PAGES/g) || []).length >= 8
-    && !/i>0\?1:0/.test(adminSrc)
-    && !/Math\.min\(1,Math\.round\(deck\.scrollLeft/.test(adminSrc));
-  ok("mag7: the third tab + panel exist with the tablist contract (tab id = page id + 'Tab')",
-    /id="decisionMagTab" role="tab"[^>]*aria-controls="decisionMag"/.test(adminSrc)
-    && /id="decisionMag" role="tabpanel"/.test(adminSrc)
-    && /decisionKey\(event,2\)/.test(adminSrc));
+  ok("mag7: its BOOK route is explicit and no retired carousel navigation survives",
+    /return sub==="mag7"\?"#book\/mag7":"#book"/.test(adminSrc)
+    && !/decisionMag|DECK_PAGES|syncDecisionDeck/.test(adminSrc));
+  ok("mag7: the cluster is a BOOK subview, never a NEXT $ peer",
+    /id="bookMagButton" onclick="bookGo\('mag7'\)"/.test(adminSrc)
+    && /id="bookMag" hidden><div class="nd fdr" id="magBlock"/.test(adminSrc)
+    && adminSrc.indexOf('id="magBlock"') > adminSrc.indexOf('id="bookView"'));
   ok("mag7: basket row cannot print a null target — all three row templates branch on r.basket",
     (adminSrc.match(/r\.basket\?/g) || []).length >= 3);
 }
@@ -7763,9 +7722,10 @@ console.log("\n[62] v3.97 SHAREABLE SIMPLE — prose derivation + picks whitelis
     // scoped to the VARIABLES, not the module path — computeMacroFlip legitimately still
     // imports from ttReadout.js, and a sweep that catches the import proves nothing.
     !/const ttReadout|const ttFlat|ttReadout\.regime/.test(dashSrc.replace(/\/\*[\s\S]*?\*\//g, "")));
-  ok("dock: navigation reuses TT's EXISTING hash route — no new router invented",
+  ok("dock: legacy #sym links survive inside the routed BOOK mode",
     /admin\.html#\$\{String\(sym\)\.toLowerCase\(\)\}/.test(dashSrc) &&
-    /let TAB=\(location\.hash\|\|""\)/.test(adminSrc));
+    /Backward compatibility: pre-v5\.6 deep-dive bookmarks/.test(adminSrc) &&
+    /return\{view:"book",sub:"all",sym:raw\.toUpperCase\(\)\}/.test(adminSrc));
   /* v5.6.9 — the two ends of the loop, closed. */
   ok("v5.6.9 macro: share_note is RETIRED from the public projection — a stored note no longer publishes",
     (() => { const src = readSrc("../functions/api/picks.js");
@@ -7774,8 +7734,8 @@ console.log("\n[62] v3.97 SHAREABLE SIMPLE — prose derivation + picks whitelis
   ok("v5.6.9 macro: the projection still emits ONLY sym+tier — the whitelist did not widen",
     (() => { const src = readSrc("../functions/api/picks.js");
       return /picks\.push\(\{ sym, tier: "S" \}\);/.test(src); })());
-  ok("v5.6.9 terminal: arrival focus fires ONCE, after the book lands, and only for a real arrival",
-    /let ARRIVED=\(location\.hash\|\|""\)/.test(adminSrc) &&
+  ok("v5.7.0 terminal: arrival focus fires ONCE, after the book lands, and only for a routed symbol",
+    /let ARRIVED=TT_ROUTE\.sym\|\|""/.test(adminSrc) &&
     /if\(ARRIVAL_DONE\)return;/.test(adminSrc) &&
     /else \{render\(\);honourArrival\(\);\}/.test(adminSrc));
   ok("v5.6.9 terminal: a name whose TAB opened is never given a stacked card, and an unknown sym is NAMED",
