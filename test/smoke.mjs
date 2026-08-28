@@ -1552,7 +1552,7 @@ ok("livepx: footer counts live vs stamped rather than implying all are current",
 // stayed 401'd-and-empty). The contract is BEHAVIORAL now: the book loads first, then all
 // six secondary loads, from ONE named list the PIN gate can re-enter.
 ok("livepx: quote fetch is non-blocking, runs in the resumable boot chain, and failure leaves the board unchanged",
-  adminSrc.includes("async function bootLoads(){ await loadBook(); await secondaryLoads(); }") &&
+  adminSrc.includes("async function bootLoads(){ await loadBook(); await secondaryLoads(); honourArrival(); }") &&
   /async function secondaryLoads\(\)\{\s*await Promise\.all\(\[loadQuotes\(\),loadPositions\(\),loadAllocation\(\),loadDeepDiveIndex\(\),loadTickerV2\(\),loadScoreIndex\(\)\]\);/.test(adminSrc) && adminSrc.includes("never break the board on a quote feed"));
 
 // ---- 9. market calendar — holidays across the honesty stack ---------------
@@ -1868,7 +1868,7 @@ ok("pos: lives in its own store, not inside deepDive (a thesis paste must not wi
 ok("pos: an absent position renders NOTHING — not a 0 or a dash that reads as not-held",
   adminSrc.includes("absent number; a dash or a 0 here would read"));
 ok("pos: fetched from its own endpoint in the boot chain, alongside the book and quotes",
-  adminSrc.includes('const r=await fetch("/api/positions");') && adminSrc.includes("async function bootLoads(){ await loadBook(); await secondaryLoads(); }") &&
+  adminSrc.includes('const r=await fetch("/api/positions");') && adminSrc.includes("async function bootLoads(){ await loadBook(); await secondaryLoads(); honourArrival(); }") &&
   /async function secondaryLoads\(\)\{\s*await Promise\.all\(\[loadQuotes\(\),loadPositions\(\),loadAllocation\(\),loadDeepDiveIndex\(\),loadTickerV2\(\),loadScoreIndex\(\)\]\);/.test(adminSrc));
 
 /* v5.6.4 — the boot chain must be RESUMABLE, and a failed read must never claim the store
@@ -1887,6 +1887,11 @@ ok("v5.6.4 honesty: a FAILED payload-index fetch reads 'not read, not empty' —
   adminSrc.includes('else DD_FAILED=true;') &&
   adminSrc.includes('(!dd&&DD_FAILED)?"payload index did not load — not read, not empty"') &&
   adminSrc.includes('(!dd&&DD_FAILED)?"reload the terminal (⟲ RELOAD) — the store was never read"'));
+ok("v5.7.1 honesty: readiness() carries the three-state claim too — loading and failed are 'not read, not empty', never 'no thesis payload' (the JOBY card, 2026-08-27)",
+  adminSrc.includes('if(!dd&&DD_PENDING)add("block","payload index still loading — not read, not empty");') &&
+  adminSrc.includes('else if(!dd&&DD_FAILED)add("block","payload index did not load — not read, not empty");') &&
+  adminSrc.includes('else if(!dd)add("block","no thesis payload");') &&
+  adminSrc.includes('(!dd&&DD_PENDING)?"payload index still loading — not read, not empty"'));
 ok("v5.6.4 honesty: a null score index reads 'did not load' — never 'no server card — unscored' (a claim about a store nobody read)",
   adminSrc.includes('SCORE_INDEX===null?"score index did not load — not read, not unscored (⟲ RELOAD)"'));
 ok("pos: a fetch failure leaves POSITIONS={} — every posOf() reads null, never stale data",
@@ -3400,8 +3405,35 @@ ok("ready: readiness leads the deep-dive tab, then the exec summary, the score b
   ["h+=readyBar(x);", "h+=ddExec(x,dd);", "h+=ddScoreBar(x);", "h+=ddAnswerBlock(x,dd,todayET);"]
     .map((m) => adminSrc.indexOf(m))
     .every((v, i, a) => v > 0 && (i === 0 || a[i - 1] < v)));
+/* Re-pinned at v5.7.1: the card reordered — the executive summary now LEADS (owner spec:
+   thesis → targets → colored gates are the primary), with gates second and readiness
+   third; MEASURED moved inside the ✎ EDIT window. The readiness bar itself is unchanged. */
 ok("ready: and on the card — the only per-ticker surface a WATCH name with no tab ever gets",
-  adminSrc.includes('<div class="k">READINESS</div>') && adminSrc.includes("let html=v2CardHtml(x.sym)+rdyRow+measured+"));
+  adminSrc.includes('<div class="k">READINESS</div>') && adminSrc.includes("let html=exec+v2CardHtml(x.sym)+rdyRow;"));
+/* ── v5.7.1 — the readable card: builder-level pins (the render suite drives the DOM) ── */
+ok("v5.7.1 card: ONE executive-summary builder at two altitudes — the card calls the tab's own ddExec",
+  adminSrc.includes("const exec=dd?ddExec(x,dd)") &&
+  /h\+=ddExec\(x,dd\);/.test(adminSrc));
+ok("v5.7.1 card: an absent payload states its three honest states — loading, failed, none (never a guess)",
+  adminSrc.includes('DD_PENDING?"payload index still loading — not read, not empty"') &&
+  adminSrc.includes('no thesis payload stored — the readiness row below says what is missing'));
+ok("v5.7.1 gates: chips carry glyph + color from ONE map, and the reasons ride the chip title verbatim",
+  adminSrc.includes('const gcol=(st)=>st==="PASS"?"var(--green)":st==="FAIL"?"var(--red)":"var(--amber)";') &&
+  adminSrc.includes('st==="PASS"?"✓":st==="FAIL"?"✗":"?"') &&
+  /title="\$\{esc\(g\.reason\|\|""\)\}"/.test(adminSrc));
+ok("v5.7.1 gates: the verbatim sentence rows SURVIVE inside the window — moved, never deleted (v3.66)",
+  adminSrc.includes("gate details — every reason verbatim") &&
+  adminSrc.includes('`<b style="color:${gcol(g.status)}">${esc(g.status)}</b> · ${esc(String(g.id||"").replace(/_/g," "))} — ${esc(g.reason||"")}</div>`'));
+ok("v5.7.1 gates: the stale-receipt warning stays ON THE FACE — it gates action and is never collapsed",
+  (() => { const i = adminSrc.indexOf("receipt predates current macro readout");
+    const j = adminSrc.indexOf("gate details — every reason verbatim");
+    return i >= 0 && j > i; })());
+ok("v5.7.1 card: every editor id lives inside the ✎ EDIT window and the attestation path opens it",
+  (() => { const i = adminSrc.indexOf('✎ EDIT — tier · lens · routing · run stamp · note');
+    if (i < 0) return false;
+    const seg = adminSrc.slice(i, adminSrc.indexOf("</details>", i));
+    return ["fTier","fLens","fFp","fLastRun","fNote"].every((id) => seg.includes(id)) &&
+      adminSrc.includes('const det=input.closest("details");if(det)det.open=true;'); })());
 ok("ready: blockers stay visible as chips on the bar, never collapsed into the verdict alone",
   adminSrc.includes("⛔ not actionable until:") && adminSrc.includes('p.sev==="block"?"head"'));
 // v2.4.0 PROVISIONAL: the shadow head leads with the capped bootstrap diagnostic and states
@@ -6043,7 +6075,7 @@ console.log("\n[51] FEAT-TT-ALLREVIEWED — the reviewed-but-unpriced ranking");
   // The classifier is run with the real helpers behind the claims it makes (ptModelRows
   // presence, hinge reds, the horizon) and thin stand-ins where it makes none.
   const out = (() => {
-    const F = new Function("BOOK", "LIVE_PX", "hz", "DD", "TIER_ORDER", "RANKED", "DD_FAILED",
+    const F = new Function("BOOK", "LIVE_PX", "hz", "DD", "TIER_ORDER", "RANKED", "DD_FAILED", "DD_PENDING",
       "let UNRANKED_ROWS=[];" +
       "const ddOf=(x)=>DD[x.sym]||null;" +
       "const cardInfo=(sym)=>{const d=DD[sym];return (d&&d.card)||null;};" +
@@ -6057,7 +6089,9 @@ console.log("\n[51] FEAT-TT-ALLREVIEWED — the reviewed-but-unpriced ranking");
       seg + "\nreturn UNRANKED_ROWS;");
     // v5.6.4: DD_FAILED is a real free variable of the classifier now — lifted BY VALUE
     // (false = the index loaded and NOPAY genuinely has no payload), the LENS_MAX_PE rule.
-    return F(BOOK1, {}, "2027", DD1, TO, new Set(["RANKED"]), false);
+    // v5.7.1: DD_PENDING joined DD_FAILED as a free variable — lifted BY VALUE like it
+    // (false = the index has loaded), the same v3.47 LENS_MAX_PE rule, now a 4th recurrence.
+    return F(BOOK1, {}, "2027", DD1, TO, new Set(["RANKED"]), false, false);
   })();
   const bySym = Object.fromEntries(out.map((r) => [r.sym, r]));
   ok("allreviewed: an already-ranked name never appears in the tail (one name, one basis)",
@@ -6089,14 +6123,14 @@ console.log("\n[51] FEAT-TT-ALLREVIEWED — the reviewed-but-unpriced ranking");
      "lose its reds on the way)",
     (() => {
       const DD2 = { ...DD1, NOMODEL: { ...DD1.NOMODEL, hinges: [{ label: "funding", state: "red" }, { label: "x", state: "green" }] } };
-      const F = new Function("BOOK", "LIVE_PX", "hz", "DD", "TIER_ORDER", "RANKED", "DD_FAILED",
+      const F = new Function("BOOK", "LIVE_PX", "hz", "DD", "TIER_ORDER", "RANKED", "DD_FAILED", "DD_PENDING",
         "let UNRANKED_ROWS=[];const ddOf=(x)=>DD[x.sym]||null;" +
         "const cardInfo=(sym)=>{const d=DD[sym];return (d&&d.card)||null;};" +
         "const runState=(d)=>({k:d?'fresh':'never',days:null});const readiness=()=>({verdict:'x',blockers:[],cautions:[]});" +
         "const rankWeight=()=>({w:null,held:false,optOnly:false,mark:''});const ptModelRows=(dd)=>(dd&&dd.rows)||[];" +
         "const cands=BOOK.filter(x=>{const d=DD[x.sym];return d&&(d.rows||[]).length&&(d.ref_px&&d.ref_px.px>0);});" +
         "const candSyms=new Set(cands.map(x=>x.sym));const rankedSyms=RANKED;" + seg + "\nreturn UNRANKED_ROWS;");
-      const o = F(BOOK1, {}, "2027", DD2, TO, new Set(["RANKED"]), false);
+      const o = F(BOOK1, {}, "2027", DD2, TO, new Set(["RANKED"]), false, false);
       const n = o.find((r) => r.sym === "NOMODEL");
       return n.redH === 1 && n.redLabels.join() === "funding";
     })());
@@ -7734,14 +7768,26 @@ console.log("\n[62] v3.97 SHAREABLE SIMPLE — prose derivation + picks whitelis
   ok("v5.6.9 macro: the projection still emits ONLY sym+tier — the whitelist did not widen",
     (() => { const src = readSrc("../functions/api/picks.js");
       return /picks\.push\(\{ sym, tier: "S" \}\);/.test(src); })());
-  ok("v5.7.0 terminal: arrival focus fires ONCE, after the book lands, and only for a routed symbol",
+  /* Re-pinned at v5.7.1 — BOTH prior pins here asserted the RACY spellings the fix removes.
+     The old call site (`else {render();honourArrival();}` inside loadBook) ran before
+     loadDeepDiveIndex, so a store-held payload read as absent and the card opened with a
+     FALSE "no thesis payload yet" (JOBY, live, 2026-08-27); and `if(TAB===sym)return;` was
+     never evidence the tab opened — renderTabs had legitimately reset TAB to BOARD while
+     the index was still empty. The new contract: honourArrival runs at the END of
+     bootLoads (post-index), resolves AFFIRMATIVELY via ddOf, and the old spellings are
+     pinned ABSENT so the race cannot quietly return. */
+  ok("v5.7.1 terminal: arrival focus fires ONCE, AFTER the dd index has landed — never from inside loadBook",
     /let ARRIVED=TT_ROUTE\.sym\|\|""/.test(adminSrc) &&
     /if\(ARRIVAL_DONE\)return;/.test(adminSrc) &&
-    /else \{render\(\);honourArrival\(\);\}/.test(adminSrc));
-  ok("v5.6.9 terminal: a name whose TAB opened is never given a stacked card, and an unknown sym is NAMED",
-    /if\(TAB===sym\)return;/.test(adminSrc) &&
+    /await secondaryLoads\(\); honourArrival\(\);/.test(adminSrc) &&
+    !/else \{render\(\);honourArrival\(\);\}/.test(adminSrc));
+  ok("v5.7.1 terminal: the arrival resolves AFFIRMATIVELY — payload opens the thesis, no payload opens the card, unknown is NAMED",
+    /if\(ddOf\(x\)\)\{switchTab\(sym\);return;\}/.test(adminSrc) &&
+    !/if\(TAB===sym\)return;/.test(adminSrc) &&
     /is not in the book — showing the board/.test(adminSrc) &&
     /has no thesis payload yet — opened its card/.test(adminSrc));
+  ok("v5.7.1 terminal: an EMPTY book consumes the arrival — a card must not stack over the import modal",
+    /if\(data\.empty\)\{ARRIVAL_DONE=true;openImport\(\);render\(\);\}/.test(adminSrc));
   ok("dock: the dead SharedPicks component is DELETED, not left orphaned (dead code is a rot vector)",
     !existsSync(new URL("../src/sections/SharedPicks.jsx", import.meta.url)) &&
     !/SharedPicks/.test(dashSrc.replace(/\/\*[\s\S]*?\*\//g, "")));

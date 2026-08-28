@@ -9,7 +9,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
 <!-- AUDIT: kept in sync with package.json by test/smoke.mjs. admin.html is a Vite
      public/ passthrough, so it cannot receive __APP_VERSION__ — the guard is the fix. -->
-<title>TT TICKER TERMINAL v5.7.0</title>
+<title>TT TICKER TERMINAL v5.7.1</title>
 <style>
   :root{
     --bg:#05070a; --panel:#0a0f16; --panel2:#0d141d; --line:#16202c;
@@ -481,7 +481,7 @@
          verdict and every gate are computed upstream and this panel changes nothing. -->
     <div id="macroEvidence" role="region" aria-label="Why macro — readout evidence"></div>
     <div id="headInfo" style="display:none">
-      <div class="brand">FINANCE&nbsp;BRO.AI // TT&nbsp;TICKER&nbsp;TERMINAL <small>v5.7.0 · the daily contract</small></div>
+      <div class="brand">FINANCE&nbsp;BRO.AI // TT&nbsp;TICKER&nbsp;TERMINAL <small>v5.7.1 · the daily contract</small></div>
       <div class="statusline">
         <span>BOOK: <b id="bookStamp">loading…</b></span>
         <span>AUTH: <b id="sessState">…</b></span>
@@ -881,26 +881,37 @@ async function loadBook(){
   try{
     const data=await api("GET");
     applyServer(data);
-    if(data.empty){openImport();render();}
-    else {render();honourArrival();}
+    /* v5.7.1: honourArrival left this success path. It judged the DD store BEFORE
+       loadDeepDiveIndex had run, so a store-held payload read as absent — the card opened
+       with a FALSE "no thesis payload yet" over a name whose thesis was one fetch away
+       (the v5.6.4 "not read is not not-there" defect, reintroduced by v5.6.9 itself and
+       caught live on JOBY 2026-08-27). It now runs at the END of bootLoads, after the
+       index has landed. An EMPTY book consumes the arrival: there is nothing to focus and
+       the import modal is already open — a card must not stack over it. */
+    if(data.empty){ARRIVAL_DONE=true;openImport();render();}
+    else render();
   }catch(e){
     if(e.pinRequired){document.getElementById("bookStamp").textContent="LOCKED — enter PIN";showPinGate(bootLoads);return;}
     document.getElementById("bookStamp").textContent="UNAVAILABLE — see banner";
     toast("Load failed: "+e.message);render();
   }
 }
-/* v5.6.9 — see ARRIVED above. Runs after the book is in memory (so it survives the PIN
-   gate: the v5.6.4 boot chain re-runs loadBook on login). Deliberately does NOT open a card
-   for a name whose tab DID open — that would stack a modal over the thesis the reader asked
-   for. Silent when nothing arrived, so a plain visit to /admin.html is untouched. */
+/* v5.6.9, rebuilt in v5.7.1 — see ARRIVED above. Runs at the END of bootLoads, after the
+   DD index has landed, so it judges a FULLY-LOADED store (the v5.6.9 version ran inside
+   loadBook, before loadDeepDiveIndex, and misread every store-held payload as absent).
+   The resolution is AFFIRMATIVE, not an early-return on TAB: during boot renderTabs
+   legitimately reset TAB to BOARD while the index was empty, so "TAB===sym" was never
+   evidence the tab opened — the arrival now RE-ASSERTS the route once the store can
+   answer. Fires once per load; silent when nothing arrived; survives the PIN gate (the
+   v5.6.4 boot chain re-runs bootLoads on login). */
 function honourArrival(){
   if(ARRIVAL_DONE)return;
   ARRIVAL_DONE=true;
   const sym=ARRIVED;
   if(!sym||sym==="BOARD")return;
-  if(TAB===sym)return;                       // the payload tab opened — nothing to rescue
   const x=find(sym);
   if(!x){toast(sym+" is not in the book — showing the board");return;}
+  if(ddOf(x)){switchTab(sym);return;}        // payload exists NOW — open the thesis, no card stacked over it
   openCard(sym);
   toast(sym+" has no thesis payload yet — opened its card");
 }
@@ -3003,7 +3014,15 @@ function readiness(x){
   else add("ok",`TT run ${rs.days}d ago`);
 
   // 2. Thesis payload + its self-attested update date.
-  if(!dd)add("block","no thesis payload");
+  /* v5.7.1: "no thesis payload" is a claim about the STORE, and during boot (or after a
+     failed index fetch) the store was never READ — the v5.6.4 lesson, which the ranking
+     table already applied and this row did not (caught live on JOBY's card 2026-08-27,
+     BLOCKED "no thesis payload" against a server holding its full thesis). All three
+     states remain BLOCKERS — unread evidence cannot be acted on — only the CLAIM is now
+     honest about which fact it asserts. */
+  if(!dd&&DD_PENDING)add("block","payload index still loading — not read, not empty");
+  else if(!dd&&DD_FAILED)add("block","payload index did not load — not read, not empty");
+  else if(!dd)add("block","no thesis payload");
   else{
     const td=ageDays(ddDate(dd));
     if(td===null||td<0)add("block","thesis undated");
@@ -5307,7 +5326,8 @@ function renderUpsideRank(){
     const rr=dd?ptModelRows(dd).filter(r=>typeof r.prem==="number"||typeof r.fl==="number"):[];
     // The reason is the SPECIFIC missing input, in the order the ranking needs them, so it
     // names what to go and do — not a generic "unrankable".
-    const why=(!dd&&DD_FAILED)?"payload index did not load — not read, not empty"
+    const why=(!dd&&DD_PENDING)?"payload index still loading — not read, not empty"
+      :(!dd&&DD_FAILED)?"payload index did not load — not read, not empty"
       :!dd?"no thesis payload stored"
       :!rr.length?"no pt_model target"
       :!hasPx?"no usable price (no live quote, no stamped ref_px)"
@@ -6483,6 +6503,9 @@ function openAttestation(sym){
   openCard(sym);
   requestAnimationFrame(()=>requestAnimationFrame(()=>{
     const input=document.getElementById("fLastRun");if(!input)return;
+    // v5.7.1: the run stamp lives inside the ✎ EDIT window now — a focus into a CLOSED
+    // <details> scrolls nowhere, so the attestation path opens its ancestor first.
+    const det=input.closest("details");if(det)det.open=true;
     input.scrollIntoView({behavior:"smooth",block:"center"});input.focus({preventScroll:true});
   }));
 }
@@ -6743,8 +6766,20 @@ function v2CardHtml(sym){
   const gaps=r&&r.metrics&&r.metrics.gaps;
   const gates=r&&Array.isArray(r.gates)?r.gates:[];
   const advisories=r&&Array.isArray(r.advisories)?r.advisories:[];
-  const gateHtml=gates.map(g=>`<div class="gate-item" style="border-left-color:${g.status==="PASS"?"var(--green)":g.status==="FAIL"?"var(--red)":"var(--amber)"}">`+
-    `<b style="color:${g.status==="PASS"?"var(--green)":g.status==="FAIL"?"var(--red)":"var(--amber)"}">${esc(g.status)}</b> · ${esc(String(g.id||"").replace(/_/g," "))} — ${esc(g.reason||"")}</div>`).join("");
+  /* v5.7.1 — the gates are COLOR-CODED CHIPS on the face; the full-sentence reasons live
+     one tap deep, verbatim (owner spec: "gates color coded are the primary — deep dive and
+     additional can be behind a window"; the NBIS card rendered ~8 sentence rows before the
+     reader reached tier). v3.25 holds: every FAIL/UNKNOWN chip is VISIBLE while the
+     details are closed — only its PROSE collapses (the v3.66 rule: chip-length in place,
+     verbatim one tap deep). */
+  const gcol=(st)=>st==="PASS"?"var(--green)":st==="FAIL"?"var(--red)":"var(--amber)";
+  const gglyph=(st)=>st==="PASS"?"✓":st==="FAIL"?"✗":"?";
+  const chip=(g,col)=>`<span class="pill" style="color:${col};border-color:currentColor" title="${esc(g.reason||"")}">${gglyph(g.status)} ${esc(String(g.id||"").replace(/_/g," "))}</span>`;
+  const chipRow=[...gates.map(g=>chip(g,gcol(g.status))),...advisories.map(g=>chip(g,"var(--amber)"))].join(" ");
+  const nBad=gates.filter(g=>g.status!=="PASS").length+advisories.length;
+  // The sentence rows survive UNCHANGED inside the window — verbatim, never paraphrased.
+  const gateHtml=gates.map(g=>`<div class="gate-item" style="border-left-color:${gcol(g.status)}">`+
+    `<b style="color:${gcol(g.status)}">${esc(g.status)}</b> · ${esc(String(g.id||"").replace(/_/g," "))} — ${esc(g.reason||"")}</div>`).join("");
   const advisoryHtml=advisories.map(g=>`<div class="gate-item" style="border-left-color:var(--amber)">`+
     `<b style="color:var(--amber)">${esc(g.status)}</b> · ${esc(String(g.id||"").replace(/_/g," "))} — ${esc(g.reason||"")}</div>`).join("");
   const current=r&&v2ReceiptCurrent(r);
@@ -6756,18 +6791,30 @@ function v2CardHtml(sym){
     ?` · <span style="color:${analystN<=2?"var(--amber)":"var(--slate)"}">${analystN} analyst${analystN===1?"":"s"}${analystN<=2?" · thin coverage":""}</span>`
     :` · <span style="color:var(--amber)">analyst count unknown</span>`;
   const cites=qual&&Array.isArray(qual.citations)?qual.citations.map((u,i)=>`<a href="${esc(u)}" target="_blank" rel="noopener">source ${i+1}</a>`).join(" · "):"";
+  /* ON THE FACE: verdict pill · stale-receipt warning (it gates action, never collapsed) ·
+     the colored chip row · ONE street line. ONE TAP DEEP: every reason verbatim, the scope
+     disclaimer, the rubric, warnings and the void link. */
   return `<div class="row"><div class="k">TICKER GATES</div><div class="v">`+
     `<span class="pill ${cls}" style="font-weight:700">${status}</span>`+
     (!current&&r?` <span class="pill warn">receipt predates current macro readout</span>`:"")+
-    `<div style="margin-top:5px">${s?`TipRanks avg <b>$${esc(s.analystTarget.average)}</b>${analystTell}`:"street missing"}`+
-    `${gaps&&isFinite(gaps.averagePct)?` · <span style="color:${gaps.averagePct>=15?"var(--green)":"var(--red)"}">${gaps.averagePct>=0?"+":""}${Math.round(gaps.averagePct*10)/10}% vs sourced quote</span>`:""}`+
-    `${q&&isFinite(q.value)?` · quote $${esc(q.value)} (${esc(q.status)})`:""}</div>`+
-    `<div class="scope">12-month published average · position/exposure not assessed`+
-    `${nc&&isFinite(nc.value)?` · SEC net cash $${Math.round(nc.value*100)/100}B`:nc?` · net cash ${esc(nc.status)}`:""}</div>`+
-    (gateHtml?`<div class="gate-list">${gateHtml}${advisoryHtml}</div>`:`<div class="none">confirmed inputs saved; run gates to refresh facts and compute a receipt</div>`)+
-    (qual?`<div class="none">cited rubric ${qual.score!=null?qual.score+"/10":"UNKNOWN"}${cites?` · ${cites}`:""}</div>`:"")+
-    (r&&Array.isArray(r.warnings)&&r.warnings.length?`<div class="none" style="color:var(--amber)">⚠ ${r.warnings.map(esc).join(" · ")}</div>`:"")+
-    (s?`<div class="none"><button class="linklike" style="color:var(--red)" onclick="voidStreetPacket('${esc(sym)}')">void reviewed packet</button></div>`:"")+`</div></div>`;
+    (chipRow?`<div style="margin-top:5px;display:flex;gap:4px;flex-wrap:wrap">${chipRow}</div>`:"")+
+    `<div class="scope" style="margin-top:4px">${s?`TipRanks avg <b>$${esc(s.analystTarget.average)}</b>${analystTell}`:"street missing"}`+
+    `${gaps&&isFinite(gaps.averagePct)?` · <span style="color:${gaps.averagePct>=15?"var(--green)":"var(--red)"}">${gaps.averagePct>=0?"+":""}${Math.round(gaps.averagePct*10)/10}% vs quote</span>`:""}`+
+    `${q&&isFinite(q.value)?` · quote $${esc(q.value)}`:""}</div>`+
+    (gateHtml
+      ?`<details class="est-mini"><summary><span class="scope">gate details — every reason verbatim</span>`+
+        `${nBad?`<span style="color:var(--amber)"> ⚠ ${nBad} not passing</span>`:""}</summary><div>`+
+        `<div class="gate-list">${gateHtml}${advisoryHtml}</div>`+
+        `<div class="scope">12-month published average · position/exposure not assessed`+
+        `${nc&&isFinite(nc.value)?` · SEC net cash $${Math.round(nc.value*100)/100}B`:nc?` · net cash ${esc(nc.status)}`:""}`+
+        `${q&&isFinite(q.value)?` · quote status ${esc(q.status)}`:""}</div>`+
+        (qual?`<div class="none">cited rubric ${qual.score!=null?qual.score+"/10":"UNKNOWN"}${cites?` · ${cites}`:""}</div>`:"")+
+        (r&&Array.isArray(r.warnings)&&r.warnings.length?`<div class="none" style="color:var(--amber)">⚠ ${r.warnings.map(esc).join(" · ")}</div>`:"")+
+        (s?`<div class="none"><button class="linklike" style="color:var(--red)" onclick="voidStreetPacket('${esc(sym)}')">void reviewed packet</button></div>`:"")+
+        `</div></details>`
+      :`<div class="none">confirmed inputs saved; run gates to refresh facts and compute a receipt</div>`+
+       (s?`<div class="none"><button class="linklike" style="color:var(--red)" onclick="voidStreetPacket('${esc(sym)}')">void reviewed packet</button></div>`:""))+
+    `</div></div>`;
 }
 
 async function openAiRubric(){
@@ -6920,13 +6967,13 @@ async function voidStreetPacket(sym){
 function openCard(sym){
   const x=find(sym);if(!x)return;
   CURRENT=x.sym;
-  document.getElementById("cTitle").textContent=x.sym+"  ·  "+LENS_NAME[x.lens];
+  document.getElementById("cTitle").textContent=x.sym+"  ·  "+LENS_NAME[x.lens]+"  ·  "+(TIER_LABEL[x.tier]||x.tier);
   const body=document.getElementById("cBody");
   const tierOpts=TIER_ORDER.map(t=>`<option value="${t}" ${t===x.tier?"selected":""}>${TIER_LABEL[t]}</option>`).join("");
   const lensOpts=Object.keys(LENS_NAME).map(l=>`<option value="${l}" ${l===x.lens?"selected":""}>[${l}] ${LENS_NAME[l]}</option>`).join("");
   // v3.35 fixpack: the chip's title= tooltip carried live px, size, cost and P/L — data a
   // phone can never reach. The card is the tap surface, so the measured facts render here,
-  // read-only, above the editable rows. Absent facts render nothing (never a 0 or a dash).
+  // read-only. Absent facts render nothing (never a 0 or a dash).
   const q=LIVE_PX[x.sym],pp=posOf(x);
   const measured=(q||pp)?`<div class="row"><div class="k">MEASURED</div><div class="v" style="font-size:11.5px">`+
     [q&&isFinite(q.px)?`$${q.px}${isFinite(q.chg)?` (${q.chg>=0?"+":""}${q.chg}% today)`:""}`:null,
@@ -6937,10 +6984,35 @@ function openCard(sym){
          isFinite(Number(pp.upl_pct))?`<span style="color:${pp.upl_pct>=0?"var(--green)":"var(--red)"}">${pp.upl_pct>=0?"+":""}${pp.upl_pct}% unrl</span>`:null,
          pp.src?`src ${esc(pp.src)}`:null].filter(Boolean).join(" · ")+" · "+posChip(pp):null
     ].filter(Boolean).join("<br>")+`</div></div>`:"";
+  /* v5.7.1 — the card leads with the ANSWER (owner spec 2026-08-27: "simple thesis one or
+     two sentence, price target ladder, and gates color coded are the primary — deep dive
+     and additional can be behind a window", for the everyday investor AND the new one).
+     The executive summary is ddExec — the SAME builder the deep-dive tab renders, one
+     computation at two altitudes (the ptModelRows rule), so the card can never quote a
+     thesis or a target the tab disagrees with. With no payload the absence is stated in
+     the three honest states (loading / failed / none), never guessed. */
+  const dd=ddOf(x);
+  const exec=dd?ddExec(x,dd)
+    :`<div class="dd-exec"><div class="dd-ek">EXECUTIVE SUMMARY</div><div class="dd-thesis" style="color:var(--${DD_PENDING||DD_FAILED?"amber":"dim"})">${
+      DD_PENDING?"payload index still loading — not read, not empty"
+      :DD_FAILED?"payload index did not load — not read, not empty (⟲ RELOAD)"
+      :"no thesis payload stored — the readiness row below says what is missing"}</div></div>`;
   // FEAT-TT-READY (v3.50): the card is the other per-ticker decision surface (and the only
-  // one a WATCH name with no deepDive tab ever gets), so the consolidated statement leads here too.
+  // one a WATCH name with no deepDive tab ever gets), so the consolidated statement stays.
   const rdyRow=`<div class="row"><div class="k">READINESS</div><div class="v">${readyBar(x)}</div></div>`;
-  let html=v2CardHtml(x.sym)+rdyRow+measured+`
+  let html=exec+v2CardHtml(x.sym)+rdyRow;
+  /* v5.7.1 — every EDITOR moved behind ONE ✎ EDIT window (owner AskUserQuestion call: all
+     edits collapsed; TIER reads in the card header). Markup is VERBATIM — ids and handlers
+     unchanged, so saveCard()/stampRunToday() wiring is untouched; only the altitude moved
+     (the v3.66/v5.6.5 pattern: nothing deleted). The red run-state facts stay visible while
+     this is closed — readiness above already carries "TT never run"/"TT run Nd old" as
+     chips (v3.25 satisfied one row up, not inside the collapse). */
+  const rs=runState(x.lastRun);
+  const rsPill=rs.k==="never"?'<span class="pill head">NEVER RUN</span>'
+    :rs.k==="head"?`<span class="pill head">${rs.days}d — re-run</span>`
+    :rs.k==="stale"?`<span class="pill warn">${rs.days}d old</span>`
+    :`<span class="pill">${rs.days}d — fresh</span>`;
+  html+=`<details class="schema"><summary>✎ EDIT — tier · lens · routing · run stamp · note</summary>`+measured+`
     <div class="row"><div class="k">TIER</div><div class="v"><select id="fTier">${tierOpts}</select></div></div>
     <div class="row"><div class="k">LENS / ROUTE</div><div class="v"><select id="fLens">${lensOpts}</select></div></div>
     <div class="row"><div class="k">FP ROUTING</div><div class="v"><select id="fFp">
@@ -6948,11 +7020,6 @@ function openCard(sym){
         <option value="true" ${x.fp?"selected":""}>yes — first-principles call (veto if wrong)</option></select></div></div>`;
   // FEAT-TT-RUN: when the harness last actually ran on this name. type=date gives a
   // native mobile picker AND structurally guarantees ISO, so no garbage reaches ageDays.
-  const rs=runState(x.lastRun);
-  const rsPill=rs.k==="never"?'<span class="pill head">NEVER RUN</span>'
-    :rs.k==="head"?`<span class="pill head">${rs.days}d — re-run</span>`
-    :rs.k==="stale"?`<span class="pill warn">${rs.days}d old</span>`
-    :`<span class="pill">${rs.days}d — fresh</span>`;
   html+=`<div class="row"><div class="k">LAST TT RUN</div><div class="v"
     style="display:flex;gap:6px;align-items:center;flex-wrap:wrap">
     <input id="fLastRun" type="date" value="${x.lastRun||""}" style="width:auto"/>
@@ -6960,6 +7027,7 @@ function openCard(sym){
   if(x.tier==="WATCH")
     html+=`<div class="row"><div class="k">QUEUE RANK</div><div class="v"><input id="fRank" value="${x.rank||"—"}"/></div></div>`;
   html+=`<div class="row"><div class="k">BOOK NOTE</div><div class="v"><textarea id="fNote">${x.note||""}</textarea></div></div>`;
+  html+=`</details>`;
 
   // FEAT-TT-3Q: the three questions every name should have written answers to.
   const p=x.projection||{},pr=p.rev_3yr||{},pm=p.margins||{},pmu=p.multiple||{};
@@ -7676,7 +7744,11 @@ if(window.innerWidth<480)search.placeholder="ticker · HELP · TIER · ADD";
 async function secondaryLoads(){
   await Promise.all([loadQuotes(),loadPositions(),loadAllocation(),loadDeepDiveIndex(),loadTickerV2(),loadScoreIndex()]);
 }
-async function bootLoads(){ await loadBook(); await secondaryLoads(); }
+/* v5.7.1: honourArrival runs HERE, after secondaryLoads — the arrival can only be judged
+   once loadDeepDiveIndex has answered whether the routed name has a payload. Inside
+   loadBook it fired against an unread store and opened false "no payload" cards (JOBY,
+   2026-08-27). The PIN gate resumes through bootLoads, so a login still lands here. */
+async function bootLoads(){ await loadBook(); await secondaryLoads(); honourArrival(); }
 bootLoads();
 loadRegime();
 </script>

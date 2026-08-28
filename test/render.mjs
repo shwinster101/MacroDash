@@ -637,6 +637,41 @@ ok("ready: the card leads with a DECISION READINESS verdict, not eight scattered
 ok("ready: canonical readiness stays distinct while the ticker-gates block renders the attested chain and binary advisory",
   /DECISION READINESS/.test(cardBody) && /TICKER GATES/.test(cardBody) && /macro/.test(cardBody) &&
   /street gap/.test(cardBody) && /reward risk/.test(cardBody) && /binary/.test(cardBody));
+
+/* ── v5.7.1 — the card leads with the ANSWER (owner spec: thesis → targets → colored
+   gates are the primary; deep dive and additional behind a window). innerText respects
+   closed <details>, textContent does not — the closed-state assertions use innerText. */
+ok("v5.7.1 card: EXECUTIVE SUMMARY leads, then gates, then readiness — the answer before the receipts",
+  (() => { const a = cardBody.indexOf("EXECUTIVE SUMMARY"), b = cardBody.indexOf("TICKER GATES"),
+    c = cardBody.indexOf("DECISION READINESS");
+    return a >= 0 && b > a && c > b; })());
+ok("v5.7.1 card: the targets are ddExec's own cells — SHORT TERM and LONG TERM on the CARD (one builder, two altitudes)",
+  /Short term/i.test(cardBody) && /Long term/i.test(cardBody));
+ok("v5.7.1 card: an absent thesis is NAMED on the card, never invented (the fixture stores none)",
+  /no thesis line stored/i.test(cardBody));
+const cardVisible = await page.locator("#cBody").innerText();
+ok("v5.7.1 card: gate CHIPS are visible while the reasons window is CLOSED — the colored chip IS the red fact (v3.25)",
+  /✓ macro/.test(cardVisible) && /✓ street gap/.test(cardVisible) &&
+  !/Engine 0 permits full evaluation/.test(cardVisible));
+ok("v5.7.1 card: the verbatim reasons are ONE TAP DEEP, not deleted (v3.66)",
+  /gate details — every reason verbatim/.test(cardVisible) &&
+  /Engine 0 permits full evaluation/.test(cardBody));
+ok("v5.7.1 card: every editor sits behind the ✎ EDIT window, closed by default, wiring intact",
+  /✎ EDIT/.test(cardVisible) && !/FP ROUTING/.test(cardVisible) &&
+  (await page.evaluate(() => {
+    const t = document.getElementById("fTier"), d = t && t.closest("details");
+    return !!t && !!d && !d.open;                    // in DOM (saveCard reads it), not open
+  })));
+await page.evaluate(() => closeCard());
+await page.waitForTimeout(80);
+
+// The FAIL chip case: BBB's receipt fails street_gap — its chip must read ✗ while closed.
+await page.evaluate(() => openCard("BBB"));
+await page.waitForTimeout(120);
+const bbbVisible = await page.locator("#cBody").innerText();
+ok("v5.7.1 card: a FAILING gate is a visible ✗ chip while the window is closed, with the not-passing count on the summary",
+  /✗ street gap/.test(bbbVisible) && /not passing/.test(bbbVisible) &&
+  !/only 6\.7% above the sourced quote/.test(bbbVisible));
 await page.evaluate(() => closeCard());
 await page.waitForTimeout(80);
 
@@ -2181,15 +2216,29 @@ REFRESH_FIXTURE = null;
   await p3.close();
 }
 
-/* ── v5.6.9 ARRIVAL FOCUS — the terminal end of the FEAT-DOCK loop ──────────
-   A dock chip lands on /admin.html#SYM. Before this, only a name with a stored payload got
-   focused; everything else silently fell back to BOARD, so the dock's promise ("tap SYM,
-   work it") was half-true. Driven live at all three arrival shapes. */
-console.log("\n[render] v5.6.9 — arrival focus: a dock chip focuses the name it named");
+/* ── v5.6.9 ARRIVAL FOCUS, rebuilt v5.7.1 — the terminal end of the FEAT-DOCK loop ──
+   A dock chip lands on /admin.html#SYM. The v5.6.9 build judged the DD store from inside
+   loadBook — BEFORE loadDeepDiveIndex — so every STORE-held payload read as absent and the
+   card opened with a false "no thesis payload yet" (JOBY, live, 2026-08-27). The v5.6.9
+   test used #aaa, whose payload is EMBEDDED in the book (pre-migration shape), so the
+   store-loaded path was never exercised — the exact blindness that let the race ship.
+   The payload case is therefore #JJJ, the STORE-ONLY fixture name: its payload exists
+   nowhere but the DD store, so this test goes red under any arrival that runs before the
+   index lands. #aaa stays as the legacy embedded-shape control. */
+console.log("\n[render] v5.7.1 — arrival focus: judged AFTER the store is read");
 {
-  // (1) a name WITH a payload: its tab opens, and no card is stacked over the thesis.
+  // (1) THE RACE, AS A TEST: a store-only payload name must open its TAB, not a false card.
+  const p0 = await open(1200, 2200, "#jjj");
+  ok("arrival: a STORE-ONLY payload name opens its TAB — the store was read before judging",
+    (await p0.evaluate(() => TAB)) === "JJJ" &&
+    (await p0.locator("#overlay.on").count()) === 0);
+  ok("arrival: no false 'no thesis payload' toast for a name whose thesis is in the store",
+    !/no thesis payload/i.test(await p0.locator("#toast").innerText().catch(() => "")));
+  await p0.close();
+
+  // (2) legacy control: an EMBEDDED payload name still opens its tab, no card stacked.
   const p1 = await open(1200, 2200, "#aaa");
-  ok("arrival: a payload name opens its TAB (unchanged behaviour)",
+  ok("arrival: a book-embedded payload name opens its TAB (legacy shape control)",
     (await p1.evaluate(() => TAB)) === "AAA");
   ok("arrival: no card is stacked over the thesis the reader asked for",
     (await p1.locator("#overlay.on").count()) === 0);

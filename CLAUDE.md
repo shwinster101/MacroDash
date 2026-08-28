@@ -5,6 +5,51 @@ answers *"is it safe to be in the market?"* from live macro + market + sentiment
 data. Single-page React app on Cloudflare Pages, with live data assembled at the
 edge by Pages Functions and cached in KV.
 
+**v5.7.1 — the arrival race fixed, and the card becomes readable (owner screenshots,
+2026-08-27: "Joby is empty somehow? Come on? Nbis is so wordy and difficult to read").**
+Two defects, one mine and one structural, plus the card redesign the second one demanded.
+**(1) THE ARRIVAL RACE — a v5.6.9 bug, mine.** Tapping JOBY on the dock opened its card
+reading "no thesis payload yet" while the DD store held its full thesis. `honourArrival()`
+ran inside `loadBook()`'s success path — BEFORE `loadDeepDiveIndex()` in `secondaryLoads()` —
+so it judged an UNREAD store and misread every store-held payload as absent (the v5.6.4
+"not read is not not-there" class, reintroduced one release after it was named). The render
+suite missed it because its payload-name fixture (#aaa) embeds the payload IN the book, the
+pre-migration shape — populated the instant loadBook returns, which production is not.
+Fixed: honourArrival runs at the END of `bootLoads()`, after the index has landed, and
+resolves AFFIRMATIVELY (`ddOf(x)` → open the thesis tab · book name without payload → card +
+honest toast · unknown sym → named) — the old `TAB===sym` early-return was never evidence
+the tab opened, since renderTabs legitimately resets TAB to BOARD while the index is empty.
+An empty book consumes the arrival (nothing to focus; the import modal must not be stacked
+over). The race is now A TEST: the payload arrival case moved to **#jjj, the store-only
+fixture name**, which goes red under any arrival that fires before the index lands.
+**(1b) `readiness()` stops lying during boot.** Its "no thesis payload" blocker never
+consulted `DD_PENDING`/`DD_FAILED` — the JOBY screenshot's BLOCKED row was a claim about a
+store nobody had read. Three honest states now (still loading / did not load / genuinely
+none), ALL still blockers — fail closed on unread evidence; only the CLAIM changed. The
+ranking-table sibling gains the missing `DD_PENDING` arm too. Found while wiring: the [51]
+smoke lift needed `DD_PENDING` passed BY VALUE — the v3.47 free-variable lesson, 4th time.
+**(2) THE READABLE CARD** (owner spec: *"simple thesis one or two sentence, price target
+ladder, and gates color coded are the primary — deep dive and additional can be behind a
+window"*, for the everyday investor and the new one alike). The card now leads with the
+ANSWER: **executive summary first** — `ddExec(x,dd)`, the SAME builder the deep-dive tab
+renders, one computation at two altitudes, so the card can never quote a thesis or target
+the tab disagrees with; an absent payload states its three honest states, never a guess.
+**Gates became colored chips**: ✓ green / ✗ red / ? amber per gate with the id as the label,
+every non-PASS chip VISIBLE while collapsed (v3.25 — the chip IS the red fact), the
+full-sentence reasons VERBATIM one tap deep with the not-passing count on the summary
+(v3.66), the stale-receipt warning staying on the face because it gates action. The NBIS
+wall (~8 sentence rows before tier) is one chip row. **Every editor moved behind ONE
+✎ EDIT window** (owner call via AskUserQuestion: all edits collapsed; TIER reads in the
+card header) — markup verbatim, ids and save wiring untouched, MEASURED inside too; the
+v5.7.0 Stamp tile's attestation path opens the window before focusing `fLastRun` (a focus
+into a closed `<details>` scrolls nowhere — caught by the existing altitude test).
+Tests: **2030 smoke** (+6 card/gates pins, +3 arrival/honesty pins re-pinned on the new
+contract, 2 boot-chain literals re-pinned) + **300 render** (+7 card assertions driven
+live incl. the closed-state chip proofs via innerText, +2 the #jjj race-as-a-test) + 192
+public-render. Negative-controlled three ways: the racy call site restored turns exactly
+the two #jjj assertions red; the readiness branch collapsed turns its pin red; the reasons
+inlined back onto the face turns the three chip assertions red.
+
 **v5.7.0 "TT Altitude" makes the terminal a glance product before it becomes a desk.**
 `/admin.html` now defaults to a three-object NEXT $ surface: the existing capital gate with
 an informal alias plus its exact canonical verdict, one selected next-dollar candidate, and
