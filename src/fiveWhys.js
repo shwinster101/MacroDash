@@ -98,6 +98,11 @@ export function isMacroMaterial(text) {
   return MACRO_TERMS.some((k) => t.includes(k));
 }
 
+/* 8/28 clock matrix A13: the prefix is the NARRATION's clock. Narrating a FROZEN 10am call,
+   an evening reader met "Post-close —" leading its explanation: the time of reading stamped
+   onto a call made hours earlier. When the chain explains the frozen artifact it says so;
+   the live session prefix is for the unfrozen read only. Freeze mechanics untouched — this
+   reads the flag the server already sets. */
 function sessionPrefix(session) {
   if (session === "PRE") return "Pre-open setup —";
   if (session === "CLOSE") return "Post-close —";
@@ -124,7 +129,8 @@ export function computeFiveWhys(data, regime = {}, opts = {}) {
      silently switched from voters-counted to bullish-voters. On a full-coverage day the reader
      met "6 of 6 voters counted" above and "3/6 usable factors bullish" here and concluded half
      the book had gone dark. A tally now says it is a tally, and never wears a slash. */
-  const headline = `${sessionPrefix(data.session)} ${label} · ${direction}; ${bull} of the ${active} counted voters lean bullish.`;
+  const prefix = opts.callFrozen ? "10am call —" : sessionPrefix(data.session);
+  const headline = `${prefix} ${label} · ${direction}; ${bull} of the ${active} counted voters lean bullish.`;
   const whys = [];
 
   whys.push(

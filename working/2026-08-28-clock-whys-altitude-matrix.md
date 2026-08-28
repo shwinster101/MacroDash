@@ -183,3 +183,59 @@ Chromium under `REQUIRE_BROWSER=1`, `audit:prod` clean.
 - **A12** (`CACHED` badge adjacency) — pre-existing vocabulary, noted only.
 - **The operational check**: whether today's 10am capture actually landed (the unfrozen
   face at 11:04 ET) — a KV/cron question, not a copy one; still open.
+
+---
+
+# Outcomes — second pass (spec completion)
+
+The first pass (`dd417d1`) shipped A1, A4, A6, A8, A9, A10 and a first cut of B. This pass
+closes the spec's remaining items. Copy/props only throughout; freeze mechanics, history,
+readout, TT and the `regime.js` engine untouched. Gates: **2048 smoke + 306 render + 196
+public-render**, real Chromium under `REQUIRE_BROWSER=1`, `audit:prod` clean.
+
+## Added this pass
+
+- **A13 — the whys prefix follows the CALL's clock when frozen.** `computeFiveWhys` takes
+  `opts.callFrozen` and emits `10am call —` instead of `Pre-open setup / Midday /
+  Post-close —`. The unfrozen chain keeps the live session prefix, pinned as a
+  no-over-correction control. The dashboard passes the flag the server already set.
+- **B refinements** — the first pass put the FULL flip on the closed label. Now:
+  - the closed label carries a **chip-length** flip (`FLIP_CHIP_MAX = 40`, ellipsised),
+  - the **verbatim** line renders inside the expander at the tail of the chain (v3.66:
+    chip-length in place, verbatim one tap deep),
+  - a **WITHHELD** posture advertises no flip — the label is **bare**, and the withheld
+    sentence travels inside with the flip's slot rather than being stranded.
+  - The chip rides the `label` prop, so there is still **no second element outside the
+    CollapsedGroup** — pinned by source position in both directions.
+
+## Corrections this pass earned
+
+1. **The first pass's withheld handling was wrong against the spec.** `simpleFlipLine`
+   returns the withheld sentence, which is truthy, so the closed label read
+   `… — ⇄ Call withheld until the required evidence is current and usable.` — a ⇄ chip
+   advertising a crossing on a call that was withheld. Fixed to a bare label.
+2. **Node cannot import JSX**, so `flipChipOf`/`FLIP_CHIP_MAX` are LIFTED from source and
+   RUN, not imported. The slice starts at the CONSTANT, not the arrow — `flipChipOf` closes
+   over `FLIP_CHIP_MAX`, and a slice starting after it leaves a free variable the fixtures
+   would have short-circuited past (the v3.85 / v3.47 lesson, again).
+3. **The ≤60px closed-budget pin still passes** — with a 40-char chip it has more headroom
+   than the first pass's full tail, which already passed. The survey's predicted truncation
+   requirement was right in principle and unnecessary in fact; the chip is the spec's ask,
+   not a budget rescue.
+4. **The chip-is-a-real-prefix property is now browser-verified**: the suite reads the
+   closed chip, strips the ellipsis, opens the expander and asserts the full line contains
+   it — so a truncated read genuinely continues where it left off.
+
+## Negative controls (all restored green after)
+
+- Frozen prefix reverted to the live session clock → the A13 pin red.
+- Truncation disabled (full text on the label) → the chip-length pin red.
+- Chip advertised on a withheld posture → 3 red (2 smoke, 1 browser-driven).
+
+## Still open
+
+- **A11 / A12** (ℹ-panel `srcLabel` naming data freshness beside a frozen call; the
+  `CACHED` badge adjacency) — noted in the survey, not in the spec, untouched.
+- **The operational check**: whether the 10:00 ET capture actually landed today. The
+  unfrozen face at 11:04 ET is either a dead cron or a rejected record — a KV/cron
+  question this copy pass cannot answer and deliberately does not mask.

@@ -10,7 +10,7 @@ import { computeMacroFlip } from "./ttReadout.js"; // FEAT-331: Macro Flip circu
 import { callFromEvidence, formatMacroCallPaste, formatMacroShareCard } from "./macroCall.js"; // v5.5 frozen call + share card
 import { fmt, pctColor } from "./format.js"; // task 1.3/3.1: one shared copy
 import RegimeBand, { WITHHELD_LABEL, WEN_MOON_STATES } from "./sections/RegimeBand.jsx"; // task 1.3: the verdict band + its vocabulary
-import FiveWhys from "./sections/FiveWhys.jsx"; // task 1.4: presentation only — computeFiveWhys stays here
+import FiveWhys, { flipChipOf } from "./sections/FiveWhys.jsx"; // task 1.4: presentation only — computeFiveWhys stays here
 import SourceBox, { DataModeBadge } from "./primitives/SourceBox.jsx"; // task 1.4
 import SectionHeader from "./primitives/SectionHeader.jsx"; // task 1.4
 import CollapsedGroup from "./primitives/CollapsedGroup.jsx"; // task 5.1
@@ -625,7 +625,10 @@ export default function Dashboard({ publicView = false } = {}) {
   const freshSet=liveBuild ? new Set(FW_FIELDS.filter(k=>{const m=modeOf(k);return m==="LIVE"||m==="CACHED";})) : null;
   const fw=computeFiveWhys({...d, session:etSession()}, regimeView, {
     call:dailyCall, factors:evidenceSet.factors, flips:evidenceSet.flips?.flips,
-    snapshotAsOf:asOf, headlineFresh:freshSet===null||freshSet.has("marketHeadline")
+    snapshotAsOf:asOf, headlineFresh:freshSet===null||freshSet.has("marketHeadline"),
+    // 8/28 A13: narrating the frozen artifact, the prefix follows the CALL's clock, not the
+    // reader's. Presentation only — the flag is the one the server already set.
+    callFrozen
   });
   /* B2 (v3.59): "derived from live data" was a STATIC string — it kept asserting liveness
      across cached, degraded, error and demo states. One derivation, both footers. */
@@ -959,13 +962,15 @@ export default function Dashboard({ publicView = false } = {}) {
         usable={simpleC.usable} shown={simpleC.shown} total={simpleC.total}
         withheld={evidenceSet.withheld}/>}
 
+      {/* 8/28 Whys altitude: the closed line carries the flip — the fifth check IS "what
+          changes it", so it is this block's honest one-line summary. MOVED from the
+          SimpleCards footer, never duplicated (v3.61 one-home rule). Chip-length in place,
+          verbatim one tap deep (v3.66). A WITHHELD posture advertises no flip — the label
+          stays bare and the withheld sentence travels inside with the flip's slot, so the
+          fact still lands without a closed row claiming a crossing that does not exist.
+          Verdict words already pass through SIMPLE_VERDICTS inside simpleFlipLine (v4.0.3). */}
       {simple&&<FiveWhys fw={fw} derivedLabel={derivedLabel} mode={modeOf('spyPrice')} asOf={asOfOf('spyPrice')}
-        label={/* 8/28 Whys altitude: the closed line carries the flip — the fifth check IS
-                "what changes it", so it is this block's honest one-line summary. MOVED from the
-                SimpleCards footer, never duplicated (v3.61 one-home rule); the withheld
-                sentence travels with it (simpleFlipLine returns it when withheld); verdict
-                words already pass through SIMPLE_VERDICTS inside simpleFlipLine (v4.0.3). */
-               simpleF?`why this call · 5 checks — ⇄ ${simpleF}`:"why this call · 5 checks"}/>}
+        flipChip={evidenceSet.withheld?null:flipChipOf(simpleF)} flipLine={simpleF}/>}
 
       {/* ── v3.94 DRIVERS-ONLY: the REASONING group — 5 whys + what-changed under ONE
           toggle (2 clicks to any why, inside the owner's 2-3 budget). The label carries the

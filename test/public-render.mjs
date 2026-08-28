@@ -393,9 +393,22 @@ console.log("\n[public] v3.94 — Simple default, the toggle, persistence, red f
   ok("v4.0 simple: cards carry value + direction + why + freshness, and the truncation is NAMED",
     /HELPING|HURTING|MIXED/.test(body) && /discount rate|violently|already priced|Fed can ease|good news|plumbing/.test(body) &&
     /\d+ cards from the \d+ voters counted/.test(body) &&
-    // 8/28: the flip's ONE home is the whys' closed label — present there, absent from cards.
+    // 8/28: the flip's ONE home is the whys — chip on the closed label, absent from cards.
     /⇄/.test(await page.locator("button.cg-toggle", { hasText: "why this call" }).innerText()) &&
     !/⇄/.test(await page.locator('[aria-label="Key parameters"]').innerText()));
+  /* 8/28: chip-length in place, VERBATIM one tap deep (v3.66) — the chip must be a genuine
+     prefix of the full line, so a truncated read continues where it left off. */
+  {
+    const chipTxt = await page.locator("button.cg-toggle", { hasText: "why this call" }).innerText();
+    await page.locator("button.cg-toggle", { hasText: "why this call" }).click();
+    await page.waitForTimeout(200);
+    const openTxt = await page.locator("body").innerText();
+    const chip = (chipTxt.split("⇄")[1] || "").replace(/…\s*$/, "").trim().toLowerCase();
+    ok("8/28: the closed chip is a real prefix of the flip rendered verbatim inside",
+      chip.length > 0 && openTxt.toLowerCase().includes(chip));
+    await page.locator("button.cg-toggle", { hasText: "why this call" }).click();
+    await page.waitForTimeout(150);
+  }
   /* v4.0.4 — the label-to-metric contract, driven live. The card is labelled "the 10-year
      yield"; before this it showed only the voted monthly delta, so the delta read AS the
      yield. Both must be on the card, level first, delta signed. */
@@ -826,11 +839,21 @@ console.log("\n[public] v4.0 — Simple verdicts, card selection, and what must 
   body = await page.locator("body").innerText();
   ok("v5.3 verdict: below quorum reads CAN'T CALL IT / DATA HOLD, never a thin directional call",
     /CAN'T CALL IT 🌫️/.test(body) && /DATA HOLD/.test(body) && !/MOONING|DIAMOND HANDS/.test(body));
-  ok("v4.0 withheld: no explanatory sentence, and the flip line states the evidence shortfall",
-    // /i since 8/28: the sentence moved into the whys' closed toggle, whose CSS uppercases —
-    // and Chromium innerText APPLIES text-transform (the v3.69 lesson, fourth recurrence).
-    /Call withheld until the required evidence is current and usable/i.test(body) &&
-    !/are supportive|is working against|clearly supportive|clear lean right now/i.test(body));
+  /* 8/28 Whys altitude: a WITHHELD posture advertises no flip — the closed label is BARE
+     (no ⇄ chip claiming a crossing that does not exist) and the withheld sentence travels
+     INSIDE with the flip's slot. So the closed body must NOT carry it, and one tap must. */
+  const whysToggleTxt = await page.locator("button.cg-toggle", { hasText: "why this call" }).innerText();
+  ok("8/28 withheld: the closed whys label is bare — no flip chip on a call that was withheld",
+    !/⇄/.test(whysToggleTxt) && /why this call · 5 checks/i.test(whysToggleTxt) &&
+    !/Call withheld until/i.test(body));
+  await page.locator("button.cg-toggle", { hasText: "why this call" }).click();
+  await page.waitForTimeout(200);
+  const withheldOpen = await page.locator("body").innerText();
+  ok("v4.0 withheld: no explanatory sentence, and the withheld sentence states the shortfall one tap deep",
+    /Call withheld until the required evidence is current and usable/i.test(withheldOpen) &&
+    !/are supportive|is working against|clearly supportive|clear lean right now/i.test(withheldOpen));
+  await page.locator("button.cg-toggle", { hasText: "why this call" }).click();
+  await page.waitForTimeout(150);
   ok("v4.0 withheld: cards still render only USABLE factors — a dead feed is never a card",
     !/HELPING|HURTING|MIXED/.test(body) || /\d+ cards from the \d+ voters counted/.test(body));
   await page.close();
