@@ -5611,7 +5611,10 @@ ok("cg v3.95: a storage fault or unknown stored value falls back to defaultOpen,
     const stored = readOpen("k", false) === true && readOpen(null, false) === false;
     globalThis.localStorage = g; return faulted && unknown && stored; })());
 ok("whys v3.95: the whys are reachable in SIMPLE — one honestly-labelled expander, chain only",
-  /\{simple&&<FiveWhys fw=\{fw\}[\s\S]{0,180}label="why this call · 5 checks"\/>\}/.test(dashSrc) &&
+  /* 8/28 Whys altitude: the Simple label is COMPUTED — bare when no flip line exists,
+     otherwise "why this call · 5 checks — ⇄ {flip}". The prefix stays verbatim (six
+     hasText locators match on it). */
+  /\{simple&&<FiveWhys fw=\{fw\}[\s\S]{0,600}why this call · 5 checks — ⇄ \$\{simpleF\}[\s\S]{0,80}"why this call · 5 checks"\}\/>\}/.test(dashSrc) &&
   /export const WHYS_KEY="md:exp:whys:v1";/.test(whysSrc) &&
   /persistKey=WHYS_KEY/.test(whysSrc));
 ok("whys v3.95: the technical layer stays POWER-only — chips/tally/flip live in the hero panel, matrix behind !simple",
@@ -7803,7 +7806,9 @@ console.log("\n[62] v3.97 SHAREABLE SIMPLE — prose derivation + picks whitelis
      never disagree with the call the page is making. */
   ok("dock: ONE call — the gate reads the same dailyCall the hero renders and the clipboard formats",
     /const dailyCall=callFrozen\?publicCall:currentCall;/.test(dashSrc) &&
-    /formatMacroCallPaste\(dailyCall\)/.test(dashSrc) &&
+    // 8/28 A10 re-anchor: the call gained the frozen flag; the CLAIM (one dailyCall object
+    // for hero, clipboard and gate) is unchanged.
+    /formatMacroCallPaste\(dailyCall,\{frozen:callFrozen\}\)/.test(dashSrc) &&
     // scoped to the VARIABLES, not the module path — computeMacroFlip legitimately still
     // imports from ttReadout.js, and a sweep that catches the import proves nothing.
     !/const ttReadout|const ttFlat|ttReadout\.regime/.test(dashSrc.replace(/\/\*[\s\S]*?\*\//g, "")));
@@ -8968,8 +8973,21 @@ console.log("\n[67] v4.0 SIMPLE MODE — verdict mapping, card selection, senten
   ok("v5.3: Simple renders ONE primary human call with one secondary machine direction",
     /\{callLabel\}<\/span>/.test(bandSrc) &&
     /:`\$\{machineLabel\} · \$\{subText\}`/.test(bandSrc));
-  ok("v4.0: the Simple eyebrow follows its verdict — no 'wen moon?' over a MACRO: line",
-    /plainVerdict\?"Macro Backdrop · the call":"Macro Backdrop · wen moon\?"/.test(bandSrc));
+  /* 8/28 clock matrix A4: the unfrozen Simple eyebrow read "· the call" — the product's
+     official-call identity (v5.3) worn by a live recomputation. "call" is now reserved for
+     callFrozen; the unfrozen word is "live read". Power's voice untouched. */
+  ok("v4.0/8-28: the Simple eyebrow is scoped and never wears the official-call name unfrozen",
+    /plainVerdict\?"Macro Backdrop · live read":"Macro Backdrop · wen moon\?"/.test(bandSrc) &&
+    /callFrozen\?"Macro Backdrop · 10am frozen call"/.test(bandSrc) &&
+    !/"Macro Backdrop · the call"/.test(bandSrc));
+  ok("8/28 A6: the unfrozen face carries the frozen caption's counterpart, liveBuild-gated, both clock branches",
+    /liveBuild&&!callFrozen&&!withheld&&/.test(bandSrc) &&
+    bandSrc.includes("live read — today's official call freezes at 10:00 ET") &&
+    bandSrc.includes("live read — today's 10am record not loaded"));
+  ok("8/28 A8: the unfrozen copy button names what it copies — and what it is not",
+    bandSrc.includes('"⎘ COPY LIVE READ"') && bandSrc.includes('"⎘ COPY 10AM CALL"') &&
+    bandSrc.includes("Copy the current live read — not the 10am call") &&
+    !bandSrc.includes("COPY POSTURE"));
   ok("v4.0: every band carries a whyItMatters line — new copy, one home, beside the rule it explains",
     BT.every((b) => typeof b.whyItMatters === "string" && b.whyItMatters.length > 20) &&
     BT.every((b) => b.whyItMatters !== b.plainBull && b.whyItMatters !== b.plainBear));
@@ -9144,6 +9162,16 @@ console.log("\n[67] v4.0 SIMPLE MODE — verdict mapping, card selection, senten
     /call=\{dailyCall\}/.test(dashSrc) &&
     /const callLabel=call&&call\.headline/.test(bandSrc) &&
     /const machineLabel=call&&call\.direction/.test(bandSrc));
+  /* 8/28 Whys altitude — the flip has ONE home in Simple: the whys' closed label. The
+     SimpleCards footer slot (its home v4.0→8/28) is gone, prop included — dead code is a
+     rot vector (v3.73). Power's flip home (the ℹ panel) is untouched. */
+  ok("8/28: the flip left the cards — no flipLine prop, no ⇄ in SimpleCards",
+    !/flipLine/.test(spcSrc) && !spcSrc.includes("⇄"));
+  ok("8/28: the Simple whys label carries the flip; the withheld sentence rides the same slot",
+    /why this call · 5 checks — ⇄ \$\{simpleF\}/.test(dashSrc) &&
+    /^Call withheld until/.test(sf({ withheld: true })));
+  ok("8/28 A1: the header stamp binds its timestamp to the DATA, not the call",
+    dashSrc.includes("`${d.session} · data pulled ${d.lastRefresh}`"));
   ok("v4.0 boundary: the cards are Simple-only and the section is presentation-only",
     /\{simple&&<SimpleCards/.test(dashSrc) &&
     (() => { const code = spcSrc.replace(/\/\/[^\n]*|\/\*[\s\S]*?\*\//g, "");
@@ -9543,6 +9571,16 @@ console.log("\n[73] v5.3 ONE CALL — canonical vocabulary, additive API, immuta
   ok("one-call: below four usable factors publishes no directional claim", thin.published === false &&
     thin.headline === null && thin.direction === null && thin.confidence === "LOW" && thin.status === "DATA HOLD");
   const paste = formatMacroCallPaste(bull);
+  /* 8/28 clock matrix A10: ONE word pair, both builders — 10AM CALL (frozen) / LIVE READ
+     (unfrozen). The paste stamped "DAILY CALL" on both states while the share card had
+     split since v5.5; the retired banner is pinned ABSENT. */
+  ok("8/28 A10: the paste header splits frozen/live with the share card's exact pair",
+    /^MACRODASH LIVE READ · /.test(paste) &&
+    /^MACRODASH 10AM CALL · /.test(formatMacroCallPaste(bull, { frozen: true })) &&
+    !/DAILY CALL/.test(paste) && !/DAILY CALL/.test(formatMacroCallPaste(bull, { frozen: true })));
+  ok("8/28 A9: the unfrozen share card says LIVE READ, and neither builder says CURRENT POSTURE",
+    /^MACRODASH LIVE READ · /.test(formatMacroShareCard(bull, { frozen: false })) &&
+    !/CURRENT POSTURE/.test(formatMacroShareCard(bull, { frozen: false })));
   ok("one-call: clipboard leads with the identical human and machine vocabulary",
     /MOONING 🚀 · BULLISH/.test(paste) && /6 of 6 voters counted/.test(paste));
   const share = formatMacroShareCard(bull, { frozen:true });

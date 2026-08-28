@@ -1,8 +1,7 @@
 # 2026-08-28 — Sprint survey: the clock, and the Five Whys altitude
 
-**Status: SURVEY — no code changed by this pass.** Matrix + proposals only, per the sprint
-brief ("clock + Whys altitude"). When implementation lands, append an Outcomes section per
-the per-pass protocol; corrections to this survey go there, never edited in silently.
+**Status: SHIPPED — see "Outcomes" at the foot of this file, which is the current record.**
+The matrix below is the original survey, kept verbatim; corrections stand in Outcomes.
 
 Scope rules carried from the brief: propose copy only; do NOT change when the freeze
 happens; the five paragraphs stay inside the expander.
@@ -122,3 +121,65 @@ Rules riding it:
 one derivation" property already holds (`evidence.js`); only the RENDER home moves.
 `CollapsedGroup` needs no change if the flip rides `label`; `persistKey` behavior is
 untouched.
+
+---
+
+# Outcomes — 2026-08-28 (same day, second commit on the restarted branch)
+
+Implemented the four owner-confirmed defects — A4/A6 (unfrozen face), A1 (mixed clock),
+A10 (paste split), B (Whys closed line) — copy/props only; freeze mechanics, engine, bands
+and `regime.js` untouched. Gates: **2043 smoke + 306 render + 194 public-render**, real
+Chromium under `REQUIRE_BROWSER=1`, `audit:prod` clean.
+
+## What shipped
+
+- **A4** — unfrozen Simple eyebrow: `Macro Backdrop · live read` (was `· the call`).
+  Frozen and Power branches byte-identical. Vocabulary rule now in force: **"call" appears
+  on a face only when `callFrozen` is true**; the unfrozen word is "live read", everywhere.
+- **A6** — the frozen caption's missing counterpart, on the unfrozen face:
+  `live read — today's official call freezes at 10:00 ET` (pre-10am ET, client clock) /
+  `live read — today's 10am record not loaded` (post-10am, record absent). liveBuild-gated
+  (a demo never claims a live read); suppressed on withheld/loading (no read to disclaim).
+- **A8** (rode A4's vocabulary): `⎘ COPY LIVE READ`, title "Copy the current live read —
+  not the 10am call". Frozen button untouched.
+- **A1** — header stamp: `{session} · data pulled {lastRefresh}` — three words bind the
+  frozen timestamp to the DATA, dissolving the fake clock.
+- **A10 + A9** — `formatMacroCallPaste` takes `{frozen}` and both builders share ONE pair:
+  `MACRODASH 10AM CALL` / `MACRODASH LIVE READ`. `DAILY CALL` and `CURRENT POSTURE` retired,
+  pinned absent. The dashboard passes `callFrozen` (the dock's one-`dailyCall` pin
+  re-anchored on the new spelling, claim unchanged).
+- **B** — the Simple Whys closed label carries the flip:
+  `▸ +5 why this call · 5 checks — ⇄ NFCI above -0.50 SD would move this to MACRO: HODL.`
+  MOVED from the SimpleCards footer (prop and render deleted — dead code is a rot vector);
+  the withheld sentence travels in the same slot; Power's flip home (ℹ panel) untouched;
+  the five paragraphs byte-identical inside.
+
+## Corrections / findings the implementation earned
+
+1. **The ≤60px closed-Whys budget pin PASSED with the full flip tail** — the survey
+   predicted a wrap would break it and prescribed truncation. Measured instead: no
+   truncation shipped, no budget re-pin needed. The survey's "will fail as written" was
+   wrong.
+2. **The v3.69 uppercase-innerText trap, fourth recurrence** — the withheld sentence moved
+   into the toggle, whose CSS uppercases; the case-sensitive public-render pin missed it.
+   Fixed with `/i` on the pin (the established house answer), reason recorded at the pin.
+3. **The survey's NC plan for B was aimed at the wrong layer** — re-adding `flipLine` at
+   the call site is inert once the component drops the prop (no second home appears, and no
+   pin fires, correctly). The control that proves the pin is re-adding the RENDER inside
+   SimpleCards — run, bites.
+4. `public-render:220`'s semi-vacuous alternation tightened to `/6 of 6 voters counted/`
+   as flagged.
+
+## Negative controls (all restored green after)
+
+- Eyebrow back to "the call" → the A4 pin red (1).
+- Paste header back to unsplit `DAILY CALL` → the A10 pin red (1).
+- Flip render restored inside SimpleCards → the one-home pin red (1).
+
+## Deliberately left
+
+- **A13** (five-whys session prefix stamping narration time onto a frozen call's chain) —
+  not in the owner's confirmed list; open.
+- **A12** (`CACHED` badge adjacency) — pre-existing vocabulary, noted only.
+- **The operational check**: whether today's 10am capture actually landed (the unfrozen
+  face at 11:04 ET) — a KV/cron question, not a copy one; still open.

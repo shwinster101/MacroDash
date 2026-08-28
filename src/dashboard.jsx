@@ -680,7 +680,9 @@ export default function Dashboard({ publicView = false } = {}) {
   // v4.0: copy the exact canonical call the hero and 5-Whys render. Factor provenance and
   // dates already live in md-call-v1, so the clipboard can never recompute a second opinion.
   const handleTtCopy=()=>{
-    const block=formatMacroCallPaste(dailyCall);
+    // 8/28 clock matrix A10: the paste header splits frozen/live exactly as the share
+    // card does — one word pair, two builders (the clipboard-agreement rule).
+    const block=formatMacroCallPaste(dailyCall,{frozen:callFrozen});
     // Wave 16 (Req 7.9): same confirmed-not-optimistic rule as handleShare — this block gates
     // real orders, so a false "✓ TT COPIED" over an empty clipboard is strictly worse here.
     const p=navigator.clipboard?.writeText(block);
@@ -820,7 +822,10 @@ export default function Dashboard({ publicView = false } = {}) {
           <div style={{display:"flex",alignItems:"center",gap:5,flexWrap:"wrap"}}>
             <div style={{width:6,height:6,borderRadius:"50%",background:anyLive?T.amber:T.textMuted,boxShadow:anyLive?`0 0 5px ${T.amber}`:"none"}} className="pulse-anim"/>
             <span style={{fontFamily:T.fontMono,fontSize:9,color:mode==="ERROR"?T.red:T.textSecondary}}>
-              {anyLive?`${d.session} · ${d.lastRefresh}`
+              {/* 8/28 clock matrix A1: a mixed clock — session is live per request, lastRefresh is
+                  the frozen snapshot-build instant. Unlabelled, "OPEN · 02:40 ET" read as the
+                  CALL's time (or a broken clock). Three words bind the timestamp to the data. */}
+              {anyLive?`${d.session} · data pulled ${d.lastRefresh}`
                 :mode==="LOADING"?"fetching live data…"
                 :mode==="ERROR"?"live service unavailable — numbers below are illustrative"
                 :"demo baseline — not live"}
@@ -950,12 +955,17 @@ export default function Dashboard({ publicView = false } = {}) {
           verdict they explain. Excluded factors never appear (a card is a claim about a
           current usable reading); fewer than three usable renders fewer cards, never
           UNAVAILABLE padding; the truncation is named on the block. */}
-      {simple&&<SimpleCards cards={simpleC.cards} flipLine={simpleF}
+      {simple&&<SimpleCards cards={simpleC.cards}
         usable={simpleC.usable} shown={simpleC.shown} total={simpleC.total}
         withheld={evidenceSet.withheld}/>}
 
       {simple&&<FiveWhys fw={fw} derivedLabel={derivedLabel} mode={modeOf('spyPrice')} asOf={asOfOf('spyPrice')}
-        label="why this call · 5 checks"/>}
+        label={/* 8/28 Whys altitude: the closed line carries the flip — the fifth check IS
+                "what changes it", so it is this block's honest one-line summary. MOVED from the
+                SimpleCards footer, never duplicated (v3.61 one-home rule); the withheld
+                sentence travels with it (simpleFlipLine returns it when withheld); verdict
+                words already pass through SIMPLE_VERDICTS inside simpleFlipLine (v4.0.3). */
+               simpleF?`why this call · 5 checks — ⇄ ${simpleF}`:"why this call · 5 checks"}/>}
 
       {/* ── v3.94 DRIVERS-ONLY: the REASONING group — 5 whys + what-changed under ONE
           toggle (2 clicks to any why, inside the owner's 2-3 budget). The label carries the

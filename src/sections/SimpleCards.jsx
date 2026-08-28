@@ -1,8 +1,9 @@
 // ─── SIMPLE PARAMETER CARDS (v4.0) ──────────────────────────────────────────
-// The Simple-mode orientation layer: up to three plain-language parameter cards plus the
-// "what would change the call" line. PRESENTATION ONLY — simpleCards/simpleFlipLine are
-// pure projections in src/evidence.js and every threshold, vote and freshness rule stays
-// upstream in regime.js. This file decides nothing.
+// The Simple-mode orientation layer: up to three plain-language parameter cards.
+// (The "what would change the call" flip line moved to the Five Whys' closed label on the
+// 8/28 altitude pass — one home; it lived here from v4.0 to then.)
+// PRESENTATION ONLY — simpleCards is a pure projection in src/evidence.js and every
+// threshold, vote and freshness rule stays upstream in regime.js. This file decides nothing.
 //
 // Honesty rules this component enforces at render:
 //   · An EXCLUDED factor never reaches here (simpleCards drops it) — a card is a claim
@@ -21,7 +22,7 @@ import { ILLUS_HATCH, IllustrativeChip, isIllustrative } from "../primitives/Ill
 const TONE = { helping: T.green, hurting: T.red, mixed: T.amber };
 const WORD = { helping: "HELPING", hurting: "HURTING", mixed: "MIXED" };
 
-const SimpleCards = ({ cards, flipLine, usable = 0, shown = 0, total = 0, withheld = false }) => {
+const SimpleCards = ({ cards, usable = 0, shown = 0, total = 0, withheld = false }) => {
   // Property 9 (null-safe): nothing usable means nothing to render as a current reading.
   if (!cards || !Array.isArray(cards) || cards.length === 0) {
     return (
@@ -72,14 +73,13 @@ const SimpleCards = ({ cards, flipLine, usable = 0, shown = 0, total = 0, withhe
       {withheld && <div style={{ fontFamily: T.fontMono, fontSize: 8, color: T.amber, marginTop: 5 }}>
         partial evidence — not used for the call
       </div>}
-      {/* v4.0.1 (owner copy pass): the coverage count and the flip condition are ONE quiet
-          footer line inside the cards area — metadata, not a second message competing with
-          the cards. The truncation stays STATED, never implied (three of six means half the
-          evidence is off this screen); only its visual weight dropped. */}
+      {/* v4.0.1 (owner copy pass): the coverage count is ONE quiet footer line inside the
+          cards area — metadata, not a second message competing with the cards. The truncation
+          stays STATED, never implied; only its visual weight dropped. (The flip that shared
+          this line moved to the whys' closed label, 8/28.) */}
       <div style={{ marginTop: 4, opacity: 0.7 }}>
         <span style={{ fontFamily: T.fontMono, fontSize: 8, color: T.textMuted, lineHeight: 1.5 }}>
           {shown} cards from the {usable} voters counted{total > usable ? ` · ${total - usable} dark` : ""}
-          {flipLine ? ` · ⇄ ${flipLine}` : ""}
         </span>
       </div>
     </div>
