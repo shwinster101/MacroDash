@@ -3384,6 +3384,15 @@ ok("v5.6.6 search: the HELP copy moved WITH the behaviour — no instruction out
       const b = run({}, [{ y: "2026", prem: 100 }, { y: "2028", fl: "n/m" }]);
       return /floor/.test(a) && !/premium/.test(a) &&
         /Target \(single rung\)/.test(b) && /premium/.test(b) && !/n\/m/.test(b) && !/YE2028/.test(b); })());
+  ok("v5.6.7 exec: a SYNTHESIZED thesis is marked as such and never reads as an owner assertion",
+    (() => { const L = mk().ddThesisLine;
+      const syn = L({ thesis: "assistant line", thesis_src: "synthesized 2026-08-27", thesis_at: "2026-08-27" });
+      const own = L({ thesis: "owner line" });
+      if (!(syn.synth === true && syn.src === "synthesized 2026-08-27" && own.synth === false && own.src === "thesis")) return false;
+      const h = run({ thesis: "assistant line", thesis_src: "synthesized 2026-08-27" }, [{ y: "2027", prem: 150 }]);
+      const h2 = run({ thesis: "owner line" }, [{ y: "2027", prem: 150 }]);
+      // the synthesized one carries the amber owner-to-confirm marker; the owner's does not
+      return /owner to confirm/.test(h) && /var\(--amber\)/.test(h) && !/owner to confirm/.test(h2); })());
   ok("v5.6.6 exec: the thesis is NEVER invented — stored prose wins by priority, and an absent one is NAMED with the fix",
     (() => { const L = mk().ddThesisLine;
       const t = L({ thesis: "the thesis", verdict: { read: "v", as_of: "2026-08-01" } });

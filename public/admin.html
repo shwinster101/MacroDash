@@ -9,7 +9,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
 <!-- AUDIT: kept in sync with package.json by test/smoke.mjs. admin.html is a Vite
      public/ passthrough, so it cannot receive __APP_VERSION__ — the guard is the fix. -->
-<title>TT TICKER TERMINAL v5.6.6</title>
+<title>TT TICKER TERMINAL v5.6.7</title>
 <style>
   :root{
     --bg:#05070a; --panel:#0a0f16; --panel2:#0d141d; --line:#16202c;
@@ -462,7 +462,7 @@
          verdict and every gate are computed upstream and this panel changes nothing. -->
     <div id="macroEvidence" role="region" aria-label="Why macro — readout evidence"></div>
     <div id="headInfo" style="display:none">
-      <div class="brand">FINANCE&nbsp;BRO.AI // TT&nbsp;TICKER&nbsp;TERMINAL <small>v5.6.6 · the daily contract</small></div>
+      <div class="brand">FINANCE&nbsp;BRO.AI // TT&nbsp;TICKER&nbsp;TERMINAL <small>v5.6.7 · the daily contract</small></div>
       <div class="statusline">
         <span>BOOK: <b id="bookStamp">loading…</b></span>
         <span>AUTH: <b id="sessState">…</b></span>
@@ -3014,7 +3014,13 @@ function readyBar(x){
    one from the lens would be exactly the fabrication this file forbids everywhere else. */
 function ddThesisLine(dd){
   const str=(v)=>typeof v==="string"&&v.trim()?v.trim():null;
-  const t=str(dd.thesis);                     if(t)return{txt:t,src:"thesis",at:null};
+  /* v5.6.7: a SYNTHESIZED thesis is assistant-written from the payload's own stored fields
+     (gates, hinges, pt_model basis, capital) at the owner's request — useful, but it is NOT
+     an owner assertion and must never render as one. `thesis_src` carries that provenance
+     and the chip goes amber with "owner to confirm". Absent the marker, a stored `thesis`
+     reads as owner-authored, which is what it has always meant. */
+  const t=str(dd.thesis);
+  if(t)return{txt:t,src:str(dd.thesis_src)||"thesis",at:str(dd.thesis_at),synth:/synth/i.test(str(dd.thesis_src)||"")};
   const v=dd.verdict&&typeof dd.verdict==="object"?str(dd.verdict.read):null;
   if(v)return{txt:v,src:"verdict",at:str(dd.verdict.as_of)};
   const vn=str(dd.valuation_note);            if(vn)return{txt:vn,src:"valuation_note",at:null};
@@ -3025,7 +3031,7 @@ function ddExec(x,dd){
   const CAP=260;
   const thesis=th
     ?`<div class="dd-thesis">${esc(th.txt.length>CAP?th.txt.slice(0,CAP)+"…":th.txt)}`+
-      `<span class="scope"> · ${esc(th.src)}${th.at?` ${esc(th.at)}`:""}</span>`+
+      `<span class="${th.synth?"":"scope"}"${th.synth?' style="color:var(--amber);font-size:var(--fs-xs)"':""}> · ${esc(th.src)}${th.at?` ${esc(th.at)}`:""}${th.synth?" — owner to confirm":""}</span>`+
       (th.txt.length>CAP?`<details class="est-mini"><summary><span class="scope">full thesis</span></summary><div>${esc(th.txt)}</div></details>`:"")+`</div>`
     :`<div class="dd-thesis" style="color:var(--amber)">no thesis line stored — the gates, hinges and ladder below are what this book actually asserts about ${esc(x.sym)}`+
       `<span class="scope"> · add one as \`thesis\` on the payload</span></div>`;

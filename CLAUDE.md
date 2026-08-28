@@ -2924,6 +2924,39 @@ Jan-anchor shipped; see `snapshot.js` ~318–328), `spyMa100`, `spyMa200`, and a
   VALUATION GAP ranking (§11.1 — the ranking always renders, which is the owner's actual
   "always an output" contract, and it was never suspended). Tests: 1223 smoke (+2) + 199
   render (+1).
+- **v5.6.7 — synthesized theses are MARKED, never mistaken for the owner's (owner call
+  2026-08-27: *"auto synthesize theses and re-assert the circuit"*).** v5.6.6 measured that 34
+  of 39 payloads carried no thesis line; the owner asked for them to be generated. A generated
+  line is useful and is NOT an owner assertion, so `thesis_src`/`thesis_at` carry that
+  provenance and `ddExec` renders a synthesized line with an amber **"synthesized <date> —
+  owner to confirm"** chip instead of the neutral field name. Absent the marker a stored
+  `thesis` still reads as owner-authored, which is what it has always meant.
+  **KV-side (no repo content): 37 theses written, every clause traceable to a stored field.**
+  The first draft of the synthesizer led with the payload's own prose and the preview killed
+  it: for most names `pt_model.multiple_ruling` is PROCESS METADATA (*"FINALIZED per owner
+  delegation"*, *"ASSISTANT-SET — OWNER TO CONFIRM"*), which as a thesis lead reads as *"the
+  thesis is: we finalized the multiple."* The shipped shape leads with what is actually known
+  — tier + lens + the model's own basis and its rationale — then gates (N/M PASS), then the
+  live risk from red/amber hinge labels, and only then owner prose where it is genuinely
+  thesis-shaped (`verdict.read`, labelled *"Latest read"*). Nothing invents business
+  narrative. Two shapes found while writing and handled fail-closed: `gates` is an OBJECT on
+  some payloads (BA) rather than an array, and ACHR's `0/4 PASS` is real (its statuses are
+  UNEVIDENCED/FLAG/PARTIAL), not a parse artifact.
+  **The circuit re-assert, and a FIX-A error I committed and the guard caught.** Re-asserted
+  ARMED on today's post-NVDA pull — NAV $277,496 · gross $573,410 · debt $295,914 (106.6% of
+  NAV) · BP $889 → **2.07x**, deteriorated from the 8/18 assertion (2.00x, 99.7%, BP $11,071
+  on 8/26) — on the owner's standing 8/18 ruling that TRIPPED requires a margin call or
+  forced liquidation. The first write stamped `2026-08-28` from the UTC-side date while the
+  server's ET clock read 8/27, so `circuitState` returned **"dated in the future — cannot be
+  judged" → UNRESOLVED**: the exact FIX-A trap the sync runbook warns about, committed by the
+  assistant and caught by the fail-closed guard rather than by a human. Restamped from the
+  server's own `business_date_et`; the gate moved **TOUCH GRASS → SEND IT** with NBIS eligible
+  at +103.7%/yr. Also measured: `board` sits at **16,036 of its 16,384-byte cap** with
+  `decisions` alone 9,019 bytes — the same growing-thing-inside-a-fixed-cap pattern already
+  split three times (pos v3.34, ledger v3.32, deepDive v3.75), named here, not fixed.
+  Tests: **2019 smoke** (+1: the synthesized-vs-owner provenance RUN — the marker sets
+  `synth`, the amber owner-to-confirm chip renders, and an owner-authored line does not get
+  it) + 284 render + 187 public-render.
 - **v5.6.6 — the search bar routes to ANALYSIS, and the deep dive opens with an EXECUTIVE
   SUMMARY (owner call 2026-08-26: *"it should enter deep dive with executive summary of
   thesis, short term and long term price target then deeper dive"*).** The `TT:>` bar was a
