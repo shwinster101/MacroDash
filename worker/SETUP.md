@@ -15,10 +15,10 @@ fails the build; this table is documentation of the same contract.
 
 | Cron (UTC) | Local time | Job |
 |---|---|---|
-| `30 12 * * 1-5` | 5:30 AM PDT | *legacy* — FRED macro pull → KV `pulse:macro:latest` |
-| `0 21 * * 1-5` | 2:00 PM PDT | *legacy* — same |
-| `0 12 * * 1-5` | **8:00 AM ET** | **active** — PRE-OPEN warm of `/api/snapshot` (no-op if the day is already cached) |
-| `0 14 * * 1-5` | **10:00 AM ET** | **active** — FORCE-REFRESH of the day's snapshot via `POST /api/snapshot/refresh` (needs `REFRESH_TOKEN` — see Step 3; without it, falls back to a non-destructive GET, which is a **cache hit, not a refresh**, whenever the 8 AM warm already populated the day) |
+| `30 12 * * MON-FRI` | 5:30 AM PDT | *legacy* — FRED macro pull → KV `pulse:macro:latest` |
+| `0 21 * * MON-FRI` | 2:00 PM PDT | *legacy* — same |
+| `0 12 * * MON-FRI` | **8:00 AM ET** | **active** — PRE-OPEN warm of `/api/snapshot` (no-op if the day is already cached) |
+| `0 14 * * MON-FRI` | **10:00 AM ET** | **active** — FORCE-REFRESH of the day's snapshot via `POST /api/snapshot/refresh` (needs `REFRESH_TOKEN` — see Step 3; without it, falls back to a non-destructive GET, which is a **cache hit, not a refresh**, whenever the 8 AM warm already populated the day) |
 
 > The two *legacy* crons feed `/api/fred`, which the dashboard no longer reads (slated for
 > removal in v2.5 cleanup). They still need `FRED_KEY` until removed. The 8 AM warm only makes
@@ -136,9 +136,9 @@ npx wrangler tail macrodash-cron        # stream invocations; Ctrl-C to stop
 ```bash
 npx wrangler dev
 # in another terminal — simulate the 8 AM ET pre-open warm (no secret needed):
-curl "http://localhost:8787/cdn-cgi/handler/scheduled?cron=0+12+*+*+1-5"
+curl "http://localhost:8787/cdn-cgi/handler/scheduled?cron=0+12+*+*+MON-FRI"
 # simulate the 10 AM ET force-refresh (needs REFRESH_TOKEN, or it falls back to a GET):
-curl "http://localhost:8787/cdn-cgi/handler/scheduled?cron=0+14+*+*+1-5"
+curl "http://localhost:8787/cdn-cgi/handler/scheduled?cron=0+14+*+*+MON-FRI"
 ```
 The warm fetches `https://macrodash.pages.dev/api/snapshot` (populating the per-day cache);
 the refresh POSTs `/api/snapshot/refresh` with `x-refresh-token`. `?format=json` returns a
@@ -161,10 +161,10 @@ disagree.
 
 ```toml
 crons = [
-  "30 13 * * 1-5",   # 5:30 AM PST
-  "0 22 * * 1-5",    # 2:00 PM PST
-  "0 13 * * 1-5",    # 8:00 AM EST    ← the pre-open warm  (cron.js: SNAPSHOT_PREWARM_CRON)
-  "0 15 * * 1-5"     # 10:00 AM EST   ← the snapshot force-refresh (cron.js: SNAPSHOT_WARM_CRON)
+  "30 13 * * MON-FRI",   # 5:30 AM PST
+  "0 22 * * MON-FRI",    # 2:00 PM PST
+  "0 13 * * MON-FRI",    # 8:00 AM EST    ← the pre-open warm  (cron.js: SNAPSHOT_PREWARM_CRON)
+  "0 15 * * MON-FRI"     # 10:00 AM EST   ← the snapshot force-refresh (cron.js: SNAPSHOT_WARM_CRON)
 ]
 ```
 

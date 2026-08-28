@@ -20,13 +20,13 @@ const FETCH_TIMEOUT_MS = 8000;
 // (per-ET-day cache; first load wins for the day). FRED publishes the prior close with a
 // lag, so an early first-load can lock in stale data all day. This cron busts the day's
 // cache key then re-fetches, pulling FRED's freshest each weekday at 10am ET.
-const SNAPSHOT_WARM_CRON = "0 14 * * 1-5"; // 10am America/New_York (EDT); EST -> "0 15 * * 1-5"
+const SNAPSHOT_WARM_CRON = "0 14 * * MON-FRI"; // 10am America/New_York (EDT); EST -> "0 15 * * MON-FRI"
 // FEAT-SNAP-SAFE: pre-open warm. Without it the day's cache is built by whoever visits
 // first — paying the full cold-fetch latency, and if several people land together there
 // is no single-flight, so N visitors issue N x ~32 upstream calls straight into FRED's and
 // Finnhub's rate limits. A degraded pull then risks being locked in for the day. Warming
 // while upstreams are quiet means humans essentially always hit a warm cache.
-const SNAPSHOT_PREWARM_CRON = "0 12 * * 1-5"; // 8am America/New_York (EDT); EST -> "0 13 * * 1-5"
+const SNAPSHOT_PREWARM_CRON = "0 12 * * MON-FRI"; // 8am America/New_York (EDT); EST -> "0 13 * * MON-FRI"
 const SNAPSHOT_URL = "https://macrodash.pages.dev/api/snapshot";
 const READOUT_URL = "https://macrodash.pages.dev/readout.json?fresh=1";
 const HISTORY_LIMIT = 400;
