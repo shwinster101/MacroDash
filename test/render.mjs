@@ -454,7 +454,7 @@ const ok = (name, cond) => { console.log((cond ? "  PASS  " : "  FAIL  ") + name
 const browser = await chromium.launch({ executablePath: exe });
 const errors = [];
 
-async function open(width, height=2200) {
+async function open(width, height=2200, hash="") {
   const page = await browser.newPage({ viewport: { width, height } });
   page.on("pageerror", (e) => errors.push(`[${width}px] pageerror: ${e.message}`));
   page.on("console", (m) => {
@@ -465,7 +465,7 @@ async function open(width, height=2200) {
     if (/Failed to load resource/.test(m.text()) && /\/api\/snapshot\/refresh/.test(m.location()?.url || "")) return;
     errors.push(`[${width}px] console: ${m.text()}`);
   });
-  await page.goto(`http://127.0.0.1:${PORT}/admin.html`);
+  await page.goto(`http://127.0.0.1:${PORT}/admin.html${hash}`);
   await page.waitForTimeout(1200);
   return page;
 }
@@ -2248,6 +2248,44 @@ REFRESH_FIXTURE = null;
       return n > 0 && deskN === n;
     }));
   await p3.close();
+}
+
+/* ── v5.6.9 ARRIVAL FOCUS — the terminal end of the FEAT-DOCK loop ──────────
+   A dock chip lands on /admin.html#SYM. Before this, only a name with a stored payload got
+   focused; everything else silently fell back to BOARD, so the dock's promise ("tap SYM,
+   work it") was half-true. Driven live at all three arrival shapes. */
+console.log("\n[render] v5.6.9 — arrival focus: a dock chip focuses the name it named");
+{
+  // (1) a name WITH a payload: its tab opens, and no card is stacked over the thesis.
+  const p1 = await open(1200, 2200, "#aaa");
+  ok("arrival: a payload name opens its TAB (unchanged behaviour)",
+    (await p1.evaluate(() => TAB)) === "AAA");
+  ok("arrival: no card is stacked over the thesis the reader asked for",
+    (await p1.locator("#overlay.on").count()) === 0);
+  await p1.close();
+
+  // (2) a book name with NO payload: the card is the only surface it has (v3.50), so open it.
+  const p2 = await open(1200, 2200, "#ddd");
+  ok("arrival: a book name with no payload opens its CARD instead of silently landing on BOARD",
+    (await p2.locator("#overlay.on").count()) === 1 &&
+    /DDD/.test(await p2.locator("#cTitle").innerText()));
+  ok("arrival: and it SAYS why the tab did not open",
+    /no thesis payload yet/i.test(await p2.locator("#toast").innerText().catch(() => "")));
+  await p2.close();
+
+  // (3) a symbol that is not in the book at all: say so, never a blank board.
+  const p3 = await open(1200, 2200, "#zzz");
+  ok("arrival: a symbol absent from the book is NAMED, not silently swallowed",
+    /not in the book/i.test(await p3.locator("#toast").innerText().catch(() => "")) &&
+    (await p3.locator("#overlay.on").count()) === 0);
+  await p3.close();
+
+  // (4) a plain visit is untouched — the focus must not fire when nothing arrived.
+  const p4 = await open(1200);
+  ok("arrival: a plain /admin.html visit opens no card and shows no arrival toast",
+    (await p4.locator("#overlay.on").count()) === 0 &&
+    !/no thesis payload|not in the book/i.test(await p4.locator("#toast").innerText().catch(() => "")));
+  await p4.close();
 }
 
 await browser.close();

@@ -9,7 +9,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
 <!-- AUDIT: kept in sync with package.json by test/smoke.mjs. admin.html is a Vite
      public/ passthrough, so it cannot receive __APP_VERSION__ — the guard is the fix. -->
-<title>TT TICKER TERMINAL v5.6.8</title>
+<title>TT TICKER TERMINAL v5.6.9</title>
 <style>
   :root{
     --bg:#05070a; --panel:#0a0f16; --panel2:#0d141d; --line:#16202c;
@@ -462,7 +462,7 @@
          verdict and every gate are computed upstream and this panel changes nothing. -->
     <div id="macroEvidence" role="region" aria-label="Why macro — readout evidence"></div>
     <div id="headInfo" style="display:none">
-      <div class="brand">FINANCE&nbsp;BRO.AI // TT&nbsp;TICKER&nbsp;TERMINAL <small>v5.6.8 · the daily contract</small></div>
+      <div class="brand">FINANCE&nbsp;BRO.AI // TT&nbsp;TICKER&nbsp;TERMINAL <small>v5.6.9 · the daily contract</small></div>
       <div class="statusline">
         <span>BOOK: <b id="bookStamp">loading…</b></span>
         <span>AUTH: <b id="sessState">…</b></span>
@@ -849,12 +849,27 @@ async function loadBook(){
     const data=await api("GET");
     applyServer(data);
     if(data.empty){openImport();render();}
-    else render();
+    else {render();honourArrival();}
   }catch(e){
     if(e.pinRequired){document.getElementById("bookStamp").textContent="LOCKED — enter PIN";showPinGate(bootLoads);return;}
     document.getElementById("bookStamp").textContent="UNAVAILABLE — see banner";
     toast("Load failed: "+e.message);render();
   }
+}
+/* v5.6.9 — see ARRIVED above. Runs after the book is in memory (so it survives the PIN
+   gate: the v5.6.4 boot chain re-runs loadBook on login). Deliberately does NOT open a card
+   for a name whose tab DID open — that would stack a modal over the thesis the reader asked
+   for. Silent when nothing arrived, so a plain visit to /admin.html is untouched. */
+function honourArrival(){
+  if(ARRIVAL_DONE)return;
+  ARRIVAL_DONE=true;
+  const sym=ARRIVED;
+  if(!sym||sym==="BOARD")return;
+  if(TAB===sym)return;                       // the payload tab opened — nothing to rescue
+  const x=find(sym);
+  if(!x){toast(sym+" is not in the book — showing the board");return;}
+  openCard(sym);
+  toast(sym+" has no thesis payload yet — opened its card");
 }
 /* FEAT-TT-RUN: DIRTY tracks an edit that exists ONLY on screen. The old catch here
    re-GET the server copy and overwrote BOOK — silently destroying the user's work.
@@ -1947,6 +1962,18 @@ function render(){
    carries the updated-age chip, past key-dates flag "passed — re-confirm", and all
    strings are HTML-escaped (paste-imported JSON must never inject markup). */
 let TAB=(location.hash||"").replace("#","").toUpperCase()||"BOARD";
+/* v5.6.9 ARRIVAL FOCUS — the terminal end of the FEAT-DOCK loop. A dock chip sends you to
+   `#SYM`, but the tab strip only exists for names with a stored payload: renderTabs resets
+   TAB to BOARD when the hash names a sym with no dd entry, which is SAFE (no broken tab) and
+   SILENT (the name you tapped just vanished). So the dock's promise — "tap SYM, work it" —
+   was only true for modelled names.
+   ARRIVED remembers what the hash asked for so the arrival can be honoured after the book
+   lands: a payload opens its tab (unchanged), a book name with no payload opens its CARD —
+   which v3.50 already calls "the only surface a WATCH name with no tab ever gets" — and a
+   symbol that is not in the book at all SAYS so rather than dumping you on the board with no
+   explanation. Fires ONCE per load; a manual tab switch afterwards must never re-trigger it. */
+let ARRIVED=(location.hash||"").replace("#","").toUpperCase()||"";
+let ARRIVAL_DONE=false;
 const DD_STATES=["green","amber","red","unknown"];
 /* Per-payload cap, raised 8KB->15KB (v3.63), 45KB (v3.70), 100KB (v4.7.0 — owner call
    2026-08-22: "raise server cap to 100,000", expressed in the KB idiom and rounded UP so

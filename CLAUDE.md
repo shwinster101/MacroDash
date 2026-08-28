@@ -2924,6 +2924,35 @@ Jan-anchor shipped; see `snapshot.js` ~318–328), `spyMa100`, `spyMa200`, and a
   VALUATION GAP ranking (§11.1 — the ranking always renders, which is the owner's actual
   "always an output" contract, and it was never suspended). Tests: 1223 smoke (+2) + 199
   render (+1).
+- **v5.6.9 — both ends of the dock loop, closed.** FEAT-DOCK opened a door; this finishes the
+  frame at each end.
+  **MACRO — `share_note` retired.** It was the one field the v5.6.8 entry named as an orphan:
+  authored for the v3.97 public share strip, and the dock that replaced that strip carries the
+  bare symbol by design, so nothing consumed it. Measured before removing it — **0 of the 9
+  live S-tier entries carried one**, so no owner-authored text was destroyed. A `share_note`
+  still stored on an entry is simply not published, which also narrows what the one PIN-free
+  route here can emit (the safe direction for a public endpoint). The v3.97 assertion that
+  pinned the note's *publication* is **reversed on its ABSENCE** rather than deleted — a
+  retired field quietly reappearing in a public projection is the label-outlives-its-data
+  defect with an exposure consequence.
+  **TERMINAL — arrival focus.** The dock's promise is *"tap SYM, work it"*, and it was only
+  half-true: `renderTabs` resets `TAB` to BOARD when the hash names a symbol with no stored
+  payload. Safe (no broken tab) and **silent** — the name you tapped just vanished. `ARRIVED`
+  now remembers what the hash asked for, and after the book lands `honourArrival()` resolves
+  the three real cases: a payload opens its tab (**unchanged** — and it deliberately does NOT
+  stack a card over the thesis the reader asked for), a book name with no payload opens its
+  **CARD** — which v3.50 already calls *"the only surface a WATCH name with no tab ever gets"*
+  — and a symbol absent from the book **says so** instead of dumping you on the board with no
+  explanation. Fires ONCE per load (a later manual tab switch cannot re-trigger it), runs after
+  the book is in memory so it survives the PIN gate (the v5.6.4 boot chain re-runs `loadBook`
+  on login), and is silent when nothing arrived — a plain `/admin.html` visit is untouched.
+  Tests: **2029 smoke** (+4: the retirement proven on a payload that CARRIES a note, the
+  unwidened whitelist, fire-once/after-book wiring, and the never-stack + name-the-unknown
+  rules; 2 v3.97 pins reversed with the reason recorded) + **290 render** (+6: all three
+  arrival shapes driven live with a real hash — the harness `open()` gained an optional hash
+  argument — plus the plain-visit control) + 192 public-render. Negative-controlled: unwiring
+  `honourArrival` turns exactly the three arrival assertions red and leaves the payload-tab
+  and plain-visit controls green.
 - **FEAT-DOCK (v5.6.8) — the bottom strip becomes a DOOR INTO TERMINAL, not a mini-watchlist.**
   *Relabelled from v4.1.7 at merge (2026-08-21): main advanced 34 commits to v5.6.7 while this
   was in flight — the documented collision pattern, third time this session. `package.json` is

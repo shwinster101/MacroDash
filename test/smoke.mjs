@@ -7707,9 +7707,14 @@ console.log("\n[62] v3.97 SHAREABLE SIMPLE — prose derivation + picks whitelis
   ok("picks: WHITELIST projection — nothing book-shaped leaks (rank/comp/dots/deepDive/pos/lastRun)",
     (() => { const j = JSON.stringify(out);
       return !/PRIVATE|pt_model|secret trigger|R3-A|lastRun|"pos"|"dots"/.test(j) &&
-        out.picks.every((p) => Object.keys(p).every((k) => ["sym","tier","note"].includes(k))); })());
-  ok("picks: share_note trims and truncates at 140, never silently dropped",
-    out.picks[0].note === "the one-liner" && out.picks[1].note.length === 140);
+        out.picks.every((p) => Object.keys(p).every((k) => ["sym","tier"].includes(k))); })());
+  /* REVERSED at v5.6.9: this pinned that a stored share_note was PUBLISHED (trimmed to 140).
+     The field was retired with the v3.97 share strip it served, so the assertion is re-pinned
+     on its ABSENCE — a retired field quietly reappearing in a public projection is exactly
+     the label-outlives-its-data defect, and it would widen this endpoint's exposure. */
+  ok("picks: a stored share_note is NOT published — the field is retired, not merely unused",
+    out.picks.every((p) => p.note === undefined) &&
+    out.picks.every((p) => Object.keys(p).join(",") === "sym,tier"));
   ok("picks: a missing or malformed book yields {picks:[]}, never a throw",
     projectPicks(null).picks.length === 0 && projectPicks({ book: "not-an-array" }).picks.length === 0);
   const res = await picksGet({ env: { PULSE_CACHE: { get: async () => book } } });
@@ -7761,6 +7766,22 @@ console.log("\n[62] v3.97 SHAREABLE SIMPLE — prose derivation + picks whitelis
   ok("dock: navigation reuses TT's EXISTING hash route — no new router invented",
     /admin\.html#\$\{String\(sym\)\.toLowerCase\(\)\}/.test(dashSrc) &&
     /let TAB=\(location\.hash\|\|""\)/.test(adminSrc));
+  /* v5.6.9 — the two ends of the loop, closed. */
+  ok("v5.6.9 macro: share_note is RETIRED from the public projection — a stored note no longer publishes",
+    (() => { const src = readSrc("../functions/api/picks.js");
+      return !/share_note/.test(src.replace(/\/\/[^\n]*|\/\*[\s\S]*?\*\//g, "")) &&
+        !/NOTE_MAX/.test(src) && /RETIRED in v5\.6\.9/.test(src); })());
+  ok("v5.6.9 macro: the projection still emits ONLY sym+tier — the whitelist did not widen",
+    (() => { const src = readSrc("../functions/api/picks.js");
+      return /picks\.push\(\{ sym, tier: "S" \}\);/.test(src); })());
+  ok("v5.6.9 terminal: arrival focus fires ONCE, after the book lands, and only for a real arrival",
+    /let ARRIVED=\(location\.hash\|\|""\)/.test(adminSrc) &&
+    /if\(ARRIVAL_DONE\)return;/.test(adminSrc) &&
+    /else \{render\(\);honourArrival\(\);\}/.test(adminSrc));
+  ok("v5.6.9 terminal: a name whose TAB opened is never given a stacked card, and an unknown sym is NAMED",
+    /if\(TAB===sym\)return;/.test(adminSrc) &&
+    /is not in the book — showing the board/.test(adminSrc) &&
+    /has no thesis payload yet — opened its card/.test(adminSrc));
   ok("dock: the dead SharedPicks component is DELETED, not left orphaned (dead code is a rot vector)",
     !existsSync(new URL("../src/sections/SharedPicks.jsx", import.meta.url)) &&
     !/SharedPicks/.test(dashSrc.replace(/\/\*[\s\S]*?\*\//g, "")));
