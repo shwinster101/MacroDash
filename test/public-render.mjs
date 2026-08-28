@@ -586,13 +586,13 @@ console.log("\n[public] v3.60 P0 slice — nav, matrix, digest, health");
   // the icon-first six-factor view; the summary line stays visible while closed.
   const driversClosed = await page.locator('section[aria-labelledby="drivers"]').innerText();
   ok("glance: the matrix starts collapsed — summary visible, no full cards",
-    /factors usable/i.test(driversClosed) && /factor evidence/i.test(driversClosed) &&
+    /\d+ of \d+ voters counted/i.test(driversClosed) && /factor evidence/i.test(driversClosed) &&
     !/as of \d{4}-\d{2}-\d{2}/.test(driversClosed));
   await page.locator('section[aria-labelledby="drivers"] button[aria-expanded]').click();
   await page.waitForTimeout(200);
   const drivers = await page.locator('section[aria-labelledby="drivers"]').innerText();
   ok("C3: the Evidence Matrix renders six factor cards with votes (one tap deep)",
-    (drivers.match(/BULL|BEAR|NEUTRAL/g) || []).length >= 6 && /6\/6 factors usable/i.test(drivers));
+    (drivers.match(/BULL|BEAR|NEUTRAL/g) || []).length >= 6 && /6 of 6 voters counted/i.test(drivers));
   ok("C3: each card carries freshness and an as-of date",
     /LIVE/.test(drivers) && /as of \d{4}-\d{2}-\d{2}/.test(drivers));
   await page.locator("button.cg-toggle", { hasText: "the reasoning" }).click();   // v3.94: WC rides the group
@@ -680,7 +680,7 @@ console.log("\n[public] v3.60 P0 slice — nav, matrix, digest, health");
   // says "no live reading", never the stale wording the hero used to hardcode.
   ok("C3: an excluded factor is NAMED with its real reason on the card itself",
     /EXCLUDED/.test(drivers) && /excluded — no live feed right now/.test(drivers) &&
-    /no live reading — not counted/.test(drivers) && /5\/6 factors usable/i.test(drivers));
+    /no live reading — not counted/.test(drivers) && /5 of 6 voters counted/i.test(drivers));
   await page.close();
 }
 
@@ -956,7 +956,7 @@ console.log("\n[public] A4 — the public/private boundary is ENFORCED, not comm
   // B4 (v3.59): the block regions stopped announcing; one concise status node does.
   ok("a11y: exactly one concise polite status region announces backdrop changes",
     await page.locator('[role="status"][aria-live="polite"]').count() === 1 &&
-    /MacroDash (MOONING|HODL|DIAMOND HANDS), (BULLISH|NEUTRAL|BEARISH): \d of 6 factors usable\./.test(
+    /MacroDash (MOONING|HODL|DIAMOND HANDS), (BULLISH|NEUTRAL|BEARISH): \d of 6 voters counted\./.test(
       await page.locator('[role="status"][aria-live="polite"]').innerText()));
   ok("a11y: the verdict and confidence landmarks survive the live-region narrowing",
     await page.locator('[aria-label="Macro backdrop verdict"]').count() === 1 &&

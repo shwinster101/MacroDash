@@ -746,8 +746,8 @@ export default function Dashboard({ publicView = false } = {}) {
       <div aria-live="polite" role="status" className="visually-hidden">
         {mode==="LOADING"?"Loading live data; posture withheld."
           :mode==="ERROR"?"Live service unavailable; posture withheld."
-          :!dailyCall.headline?`Data hold: only ${dailyCall.counts.usable} of ${dailyCall.counts.total} factors usable; posture withheld.`
-          :`MacroDash ${dailyCall.headline}, ${dailyCall.direction}: ${dailyCall.counts.usable} of ${dailyCall.counts.total} factors usable.`}
+          :!dailyCall.headline?`Data hold: only ${dailyCall.counts.usable} of ${dailyCall.counts.total} voters counted; posture withheld.`
+          :`MacroDash ${dailyCall.headline}, ${dailyCall.direction}: ${dailyCall.counts.usable} of ${dailyCall.counts.total} voters counted.`}
       </div>
       <style>{`
         @import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;700&family=DM+Sans:wght@400;500;600&family=Syne:wght@700;800&display=swap');

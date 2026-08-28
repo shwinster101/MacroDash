@@ -3567,7 +3567,7 @@ ok("a11y: verdict + confidence keep their LANDMARKS but are no longer block live
   !/aria-label="Macro backdrop verdict" aria-live/.test(bandSrc));
 ok("a11y B4: ONE concise visually-hidden status region announces state changes",
   /aria-live="polite" role="status" className="visually-hidden"/.test(dashSrc) &&
-  /MacroDash \$\{dailyCall\.headline\}, \$\{dailyCall\.direction\}: \$\{dailyCall\.counts\.usable\} of \$\{dailyCall\.counts\.total\} factors usable\./.test(dashSrc));
+  /MacroDash \$\{dailyCall\.headline\}, \$\{dailyCall\.direction\}: \$\{dailyCall\.counts\.usable\} of \$\{dailyCall\.counts\.total\} voters counted\./.test(dashSrc));
 ok("a11y B4: header actions carry 44px thumb targets at phone width",
   // v3.62: the TT and TERMINAL actions moved inside the ⋯ OPS disclosure, and the summary
   // itself became an action — so the count is 4 (share · OPS · TT · TERMINAL). The contract is
@@ -4189,7 +4189,8 @@ ok("evidence: INSUFFICIENT below the 4-of-6 quorum — withheld with the count s
   (() => { const e = ev({ provenance: { tenYear: "LIVE", vix: "LIVE" },
     dataAsOf: { tenYear: "2026-08-01", vix: "2026-08-01" } });
     return e.state === "INSUFFICIENT" && e.withheld && e.counted === 2 &&
-      e.freshSummary === "2/6 factors usable"; })());
+      // 8/28 vocabulary pass: the Drivers label states coverage in the hero's own words.
+      e.freshSummary === "2 of 6 voters counted"; })());
 ok("evidence: DEMO — a mock build keeps its posture (mock IS that baseline)",
   (() => { const e = ev({ mode: "MOCK", liveBuild: false, provenance: {}, dataAsOf: {} });
     return e.state === "DEMO" && !e.withheld && e.counted === 6; })());
@@ -9515,11 +9516,18 @@ console.log("\n[73] v5.3 ONE CALL — canonical vocabulary, additive API, immuta
   ok("one-call: below four usable factors publishes no directional claim", thin.published === false &&
     thin.headline === null && thin.direction === null && thin.confidence === "LOW" && thin.status === "DATA HOLD");
   const paste = formatMacroCallPaste(bull);
-  ok("one-call: clipboard leads with the identical human and machine vocabulary", /MOONING 🚀 · BULLISH/.test(paste) && /6\/6 factors usable/.test(paste));
+  ok("one-call: clipboard leads with the identical human and machine vocabulary",
+    /MOONING 🚀 · BULLISH/.test(paste) && /6 of 6 voters counted/.test(paste));
   const share = formatMacroShareCard(bull, { frozen:true });
   ok("share card: compact copy identifies the frozen call and links its public receipts",
     /^MACRODASH 10AM CALL/.test(share) && /MOONING 🚀 · BULLISH/.test(share) &&
     /macrodash\.pages\.dev\/history/.test(share) && share.split("\n").length === 5 && !share.includes("undefined"));
+  // 8/28 vocabulary pass: BOTH clipboard builders consume the same md-call-v1 object, so they
+  // state coverage in the hero's form — and neither may reintroduce a slash fraction.
+  ok("8/28: both clipboard payloads state coverage as the hero does, with no slash fraction",
+    /6 of 6 voters counted/.test(share) &&
+    !/factors usable/.test(paste) && !/factors usable/.test(share) &&
+    !/\d+\/\d+/.test(paste) && !/\d+\/\d+/.test(share));
 
   const fakeKv = () => {
     const m = new Map();
