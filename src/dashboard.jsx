@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useRef } from "react"; // Fragment left with MarketDetail (wave 9)
+import { useState, useEffect, useCallback, useMemo, useRef } from "react"; // Fragment left with MarketDetail (wave 9)
 import { LineChart, Line, BarChart, Bar, Cell, AreaChart, Area, XAxis, YAxis, Tooltip, ResponsiveContainer, ReferenceLine } from "recharts";
 import { useMarketData } from "./useMarketData.js"; // FEAT-204 wiring
 import { computeFiveWhys } from "./fiveWhys.js"; // v2.5: rule-based 5 Whys ($0, derived from live data)
@@ -22,7 +22,7 @@ import AIUnitEconomics from "./sections/AIUnitEconomics.jsx"; // task 7.1: prese
 import Alerts from "./sections/Alerts.jsx"; // task 7.2: evaluation stays here
 import DataHealth from "./sections/DataHealth.jsx"; // task 7.3: presentation only
 import Watchlist from "./sections/Watchlist.jsx"; // task 7.4: A4 gate stays at the call site
-import SharedPicks from "./sections/SharedPicks.jsx"; // v3.97: live S-tier strip (Simple); fetch stays here
+import TerminalDock from "./sections/TerminalDock.jsx"; // v4.1.7: the dock (Simple); fetch + nav stay here
 import SimpleCards from "./sections/SimpleCards.jsx"; // v4.0: Simple parameter cards (presentation only)
 import StickyNav from "./sections/StickyNav.jsx"; // task 9.2: viewport-tracked active state
 import MacroStrip from "./sections/MacroStrip.jsx"; // task 3.1: presentation only
@@ -632,9 +632,12 @@ export default function Dashboard({ publicView = false } = {}) {
      .catch(()=>{setCopied(false);});
   };
 
-  // FEAT-332: Copy TT readout — format the §1.2 paste block from LIVE/CACHED fields only, so a
-  // stale/mock field prints n/a rather than a fabricated number in an order-gating block.
-  const handleTtCopy=()=>{
+  /* v4.1.7 — the flat projection is extracted to a memo because TWO consumers now read it:
+     the FEAT-332 paste block and the Terminal dock's gate token. Computing it twice would
+     let the gate a chip sits under disagree with the block the same page copies — the
+     ptModelRows rule (one computation, many altitudes). Behaviour is byte-identical; only
+     the home moved. */
+  const ttFlat=useMemo(()=>{
     const flat={};
     // Project the live tiles back to flat snapshot field names + their AsOf dates.
     const put=(k,v,asOf)=>{const m=modeOf(k);if(m==="LIVE"||m==="CACHED"){flat[k]=v;if(dataAsOf?.[k])flat[k+"AsOf"]=dataAsOf[k];if(asOf!==undefined)flat[k]=asOf;}};
@@ -648,7 +651,26 @@ export default function Dashboard({ publicView = false } = {}) {
     // qqqChangePct/tenYearM1/etc. share AsOf with their tile's primary field where applicable.
     if(flat.qqqChangePct!==undefined&&dataAsOf?.qqqPrice)flat.qqqPriceAsOf=dataAsOf.qqqPrice;
     if(flat.rateOddsHold!==undefined&&dataAsOf?.rateOddsHold)flat.rateOddsHoldAsOf=dataAsOf.rateOddsHold;
-    const block=formatTtPaste(buildTtReadout(flat,{}),{generatedEt:d.lastRefresh});
+    return flat;
+  },[d,dataAsOf,modeOf]);
+  /* The dock's gate reads THIS readout — the same one the paste block formats. `regime` is
+     absent on a build with nothing live, and the dock fails closed to NO READ there. */
+  const ttReadout=useMemo(()=>buildTtReadout(ttFlat,{}),[ttFlat]);
+
+  /* v4.1.7 — the dock's navigation. Uses TT's EXISTING focus route and invents no router:
+     admin.html reads `TAB` straight off location.hash at load (`#nbis` -> the NBIS deep-dive
+     tab). A symbol with no stored payload is safe — renderTabs falls back to BOARD when the
+     hash names a sym with no dd entry ("payload removed -> fall back"), so a chip can never
+     strand the reader on a broken tab. */
+  const openTerminal=(sym)=>{
+    if(!sym)return;
+    window.location.href=`/admin.html#${String(sym).toLowerCase()}`;
+  };
+
+  // FEAT-332: Copy TT readout — format the §1.2 paste block from LIVE/CACHED fields only, so a
+  // stale/mock field prints n/a rather than a fabricated number in an order-gating block.
+  const handleTtCopy=()=>{
+    const block=formatTtPaste(ttReadout,{generatedEt:d.lastRefresh});
     // Wave 16 (Req 7.9): same confirmed-not-optimistic rule as handleShare — this block gates
     // real orders, so a false "✓ TT COPIED" over an empty clipboard is strictly worse here.
     const p=navigator.clipboard?.writeText(block);
@@ -1033,12 +1055,19 @@ export default function Dashboard({ publicView = false } = {}) {
       <AIUnitEconomics d={d} modeOf={modeOf} asOfOf={asOfOf}/>
       </section>}
 
-      {/* ── v3.97 SHAREABLE SIMPLE: the live S-tier picks strip, Simple only, bottom of the
-          page. Renders on BOTH routes — the owner opted into public exposure at the
-          /api/picks endpoint itself, and hiding the strip on ?view=public while the JSON is
-          world-readable would be theater. The A4 gate on the operator Watchlist below is
-          untouched. Renders NOTHING without live-fetched data (never example picks). ── */}
-      {simple&&<SharedPicks picks={picks}/>}
+      {/* ── v4.1.7 TERMINAL DOCK — replaces the v3.97 SharedPicks strip. Owner: the bottom row
+          is a DOOR INTO TERMINAL, not a mini-watchlist, so the chips became real buttons that
+          focus a symbol in TT. Operator-only; publicView renders nothing.
+          ⚠ That gate is CLEANLINESS, NOT privacy, and v3.97 chose the other way for exactly
+          this reason: /api/picks is still world-readable by design and the bare URL still
+          serves the operator view (the dashboard has no auth), so hiding the dock makes the
+          shared link clean and makes nothing private. Owner call 2026-08-21 — the reversal is
+          deliberate and the endpoint is deliberately unchanged.
+          The nav lives HERE, not in the section (presentation-only contract), and the section
+          renders NOTHING without live-fetched data (never example conviction). ── */}
+      {simple&&<TerminalDock publicView={publicView} picks={picks}
+        gate={ttReadout&&ttReadout.regime?ttReadout.regime.actionability:null}
+        onOpenTerminal={openTerminal}/>}
 
       {/* v3.69: operator monitors + health + footer share the bottom padded container the old
           command-center wrapper used to provide. */}

@@ -86,9 +86,9 @@ const dhSrc = readSrc("../src/sections/DataHealth.jsx");
 const wlSrc = readSrc("../src/sections/Watchlist.jsx");
 const aiEconSrc = readSrc("../src/aiEcon.js");
 const navSrc = readSrc("../src/sections/StickyNav.jsx"); // wave 15
-const spSrc = readSrc("../src/sections/SharedPicks.jsx"); // v3.97
+const tdSrc = readSrc("../src/sections/TerminalDock.jsx"); // v4.1.7 (replaced SharedPicks)
 const spcSrc = readSrc("../src/sections/SimpleCards.jsx"); // v4.0
-const uiSrc = dashSrc + spcSrc + bandSrc + whysSrc + sbSrc + shSrc + stripSrc + sqSrc + wcSrc + mdSrc + mrSrc + hwSrc + dtSrc + aiSrc + alSrc + dhSrc + wlSrc + navSrc + spSrc;
+const uiSrc = dashSrc + spcSrc + bandSrc + whysSrc + sbSrc + shSrc + stripSrc + sqSrc + wcSrc + mdSrc + mrSrc + hwSrc + dtSrc + aiSrc + alSrc + dhSrc + wlSrc + navSrc + tdSrc;
 const _s = dashSrc.indexOf("const MOCK_DATA = {");
 let _i = dashSrc.indexOf("{", _s), _d = 0, _e = -1;
 for (; _i < dashSrc.length; _i++) { if (dashSrc[_i] === "{") _d++; else if (dashSrc[_i] === "}") { _d--; if (_d === 0) { _e = _i; break; } } }
@@ -7055,16 +7055,40 @@ console.log("\n[62] v3.97 SHAREABLE SIMPLE — prose derivation + picks whitelis
     !/authorize/.test(readSrc("../functions/api/picks.js")) &&
     /ONE ENDPOINT THAT PUBLISHES BOOK-DERIVED CONTENT WITHOUT A PIN/.test(readSrc("../functions/api/picks.js")));
 
-  // ── the section: presentation-only, honest empty state, no dead buttons ──
-  ok("picks section: presentation only — no fetch, hook, or storage in the section; the orchestrator owns the fetch",
-    (() => { const code = spSrc.replace(/\/\/[^\n]*|\/\*[\s\S]*?\*\//g, "");
-      return !/fetch\(|useEffect|useState|localStorage/.test(code) &&
+  /* ── v4.1.7 TERMINAL DOCK — the section replacing SharedPicks. Owner: the bottom row is a
+     DOOR INTO TERMINAL, not a mini-watchlist. Two v3.97 rules REVERSE here, deliberately:
+     the chips become buttons (they finally do something), and the strip is publicView-gated
+     (cleanliness, explicitly NOT privacy — /api/picks is unchanged and still public). ── */
+  ok("dock: presentation only — no fetch, hook, storage or navigation in the section",
+    (() => { const code = tdSrc.replace(/\/\/[^\n]*|\/\*[\s\S]*?\*\//g, "");
+      return !/fetch\(|useEffect|useState|localStorage|window\.location/.test(code) &&
         /fetch\("\/api\/picks"\)/.test(dashSrc) && /if\(!liveBuild\)return;/.test(dashSrc); })());
-  ok("picks section: renders NOTHING without live-fetched data, and its chips are divs, never buttons",
-    /if\(!picks\|\|!Array\.isArray\(picks\.picks\)\|\|picks\.picks\.length===0\)return null;/.test(spSrc) &&
-    !/<button/.test(spSrc) && /not investment advice/.test(spSrc));
-  ok("picks section: Simple-only at the call site, and NOT publicView-gated (exposure was decided at the endpoint)",
-    /\{simple&&<SharedPicks picks=\{picks\}\/>\}/.test(dashSrc) && !/publicView[^\n]*<SharedPicks/.test(dashSrc));
+  ok("dock: renders NOTHING on the public route, and nothing without live-fetched data",
+    /if \(publicView\) return null;/.test(tdSrc) &&
+    /picks\.picks\.length === 0\) return null;/.test(tdSrc));
+  ok("dock: chips are real BUTTONS now — the v3.97 div rule reverses because they finally have a job",
+    /<button/.test(tdSrc) && /onOpenTerminal\(p\.sym\)/.test(tdSrc) &&
+    /aria-label=\{`Open \$\{p\.sym\} in Ticker Terminal`\}/.test(tdSrc));
+  ok("dock: NO quotes, P&L or scores on a chip — the chip is a door, its label is the symbol",
+    !/price|pct|quote|upl|score|composite|tier/i.test(
+      tdSrc.slice(tdSrc.indexOf("picks.picks.map"), tdSrc.indexOf("picks.picks.map") + 600)));
+  ok("dock: the gate FAILS CLOSED — an unknown actionability reads NO READ, never a permissive default",
+    (() => { const m = tdSrc.match(/GATE_VOICE\[actionability\] \|\| \{ word: "([^"]+)"/);
+      return !!m && m[1] === "NO READ" && /FULL:\s*\{ word: "SEND IT"/.test(tdSrc) &&
+        /HOLD:\s*\{ word: "HANDS OFF"/.test(tdSrc); })());
+  ok("dock: the gate's SOURCE is Engine 0 actionability, and the machine token stays reachable",
+    /Engine 0 actionability: \$\{gate \|\| "unavailable"\}/.test(tdSrc) &&
+    /ttReadout&&ttReadout\.regime\?ttReadout\.regime\.actionability:null/.test(dashSrc));
+  ok("dock: ONE readout — the gate and the FEAT-332 paste block read the same buildTtReadout",
+    (dashSrc.match(/buildTtReadout\(/g) || []).length === 1 &&
+    /const ttReadout=useMemo\(\(\)=>buildTtReadout\(ttFlat,\{\}\)/.test(dashSrc) &&
+    /formatTtPaste\(ttReadout,/.test(dashSrc));
+  ok("dock: navigation reuses TT's EXISTING hash route — no new router invented",
+    /admin\.html#\$\{String\(sym\)\.toLowerCase\(\)\}/.test(dashSrc) &&
+    /let TAB=\(location\.hash\|\|""\)/.test(adminSrc));
+  ok("dock: the dead SharedPicks component is DELETED, not left orphaned (dead code is a rot vector)",
+    !existsSync(new URL("../src/sections/SharedPicks.jsx", import.meta.url)) &&
+    !/SharedPicks/.test(dashSrc.replace(/\/\*[\s\S]*?\*\//g, "")));
   ok("watchlist: the v3.97 fix reads the PROP — the d.watchlist ReferenceError is gone",
     !/d\.watchlist/.test(wlSrc) && /\(watchlist\|\|\[\]\)\.filter/.test(wlSrc));
 }

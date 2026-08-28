@@ -474,29 +474,70 @@ console.log("\n[public] v3.94 — Simple default, the toggle, persistence, red f
   await page.close();
 }
 
-// ── v3.97 SHAREABLE SIMPLE — the live S-tier picks strip ────────────────────
-console.log("\n[public] v3.97 — picks strip renders live-fetched syms, bottom of Simple, both routes");
+/* ── v4.1.7 TERMINAL DOCK (supersedes the v3.97 picks strip) ─────────────────
+   Two v3.97 assertions REVERSE here, deliberately, and the reversal is the feature:
+     · the strip rendered on ?view=public — the dock does NOT (owner call: the public page's
+       product is the call; cleanliness, explicitly not privacy — /api/picks is unchanged).
+     · chips were divs because they opened nothing — they are BUTTONS now because tapping one
+       focuses that symbol in TT, which is the whole point of the dock.
+   The v3.97 pins are re-pinned on the new contract rather than deleted, so a silent
+   regression to either old behaviour still fails the build. */
+console.log("\n[public] v4.1.7 — Terminal dock: operator-only, chips are doors into TT");
 {
   const PICKS = { schema: "picks-v1", asOf: TODAY, picks: [
     { sym: "AAA", tier: "S", note: "synthetic fixture pick" }, { sym: "BBB", tier: "S" } ] };
-  const { page, errors } = await open({ live: FULL_LIVE, width: 390, power: false, picks: PICKS, route: "/?view=public" });
+  // PUBLIC route first: the dock must be absent entirely.
+  {
+    const { page, errors } = await open({ live: FULL_LIVE, width: 390, power: false, picks: PICKS, route: "/?view=public" });
+    await page.waitForTimeout(1200);
+    const body = await page.locator("body").innerText();
+    ok("dock: the PUBLIC route renders no dock, no book names, and no gate token",
+      await page.locator('[aria-label="Terminal dock"]').count() === 0 &&
+      !/AAA/.test(body) && !/BBB/.test(body) && !/SEND IT|HANDS OFF|NO READ/.test(body));
+    ok("dock: hiding it costs the public route nothing — the call still publishes",
+      /MACRO: (BULLISH|HODL|BEARISH|DATA HOLD)/.test(body));
+    ok("v4.1.7 public: no page errors", errors.length === 0);
+    await page.close();
+  }
+  const { page, errors } = await open({ live: FULL_LIVE, width: 390, power: false, picks: PICKS, route: "/" });
   await page.waitForTimeout(1200);
   const body = await page.locator("body").innerText();
-  ok("picks: the strip renders the fetched syms with the not-advice line and asOf — on the ?view=public route too",
-    /My S-Tier/i.test(body) && /AAA/.test(body) && /BBB/.test(body) &&
-    /not investment advice/i.test(body) && body.includes(`as of ${TODAY}`));
-  ok("picks: the owner-authored share_note rides its chip",
-    /synthetic fixture pick/.test(body));
-  ok("picks: chips are non-interactive — no button inside the strip (a dead button is a lie)",
-    await page.locator('[aria-label="My S-tier picks"] button').count() === 0);
-  ok("picks: the strip sits BELOW the key numbers (bottom of the page, never above the answer)",
+  ok("dock: the OPERATOR route renders the dock with the book names and the book asOf",
+    /TERMINAL/i.test(body) && /AAA/.test(body) && /BBB/.test(body) &&
+    /not investment advice/i.test(body) && body.includes(`book as of ${TODAY}`));
+  ok("dock: the gate token renders in the moon voice beside the heading",
+    /SEND IT|EASY|HANDS OFF|NO READ/.test(
+      await page.locator('[aria-label="Terminal dock"]').innerText()));
+  ok("dock: chips are real BUTTONS with a ≥40px thumb target (they finally have a job)",
+    (await page.locator('[aria-label="Terminal dock"] button').count()) === 2 &&
+    (await page.locator('[aria-label="Open AAA in Ticker Terminal"]').boundingBox()).height >= 40);
+  ok("dock: NO price, %, or score leaks onto a chip — the label IS the symbol",
+    (await page.locator('[aria-label="Open AAA in Ticker Terminal"]').innerText()).trim() === "AAA");
+  ok("dock: it sits BELOW the key numbers (a door at the bottom, never above the answer)",
     await page.evaluate(() => {
-      const strip = document.querySelector('[aria-label="My S-tier picks"]');
+      const dock = document.querySelector('[aria-label="Terminal dock"]');
       const spy = [...document.querySelectorAll("*")].find((n) =>
         n.children.length === 0 && /^●?\s*SPY\*?$/m.test(n.textContent || "") && n.getBoundingClientRect().height > 0);
-      return !!strip && !!spy && strip.getBoundingClientRect().top > spy.getBoundingClientRect().top;
+      return !!dock && !!spy && dock.getBoundingClientRect().top > spy.getBoundingClientRect().top;
     }));
-  ok("v3.97: no page errors with the picks feed live", errors.length === 0);
+  /* LAST in this block, deliberately: it NAVIGATES AWAY to /admin.html, so every assertion
+     about the dashboard page must already have run. (Found by writing it in the wrong order
+     — the position check below it was silently measuring the terminal page.) */
+  ok("dock: tapping a chip navigates to TT's existing hash route focused on that symbol",
+    await (async () => {
+      await page.evaluate(() => { window.__nav = null;
+        Object.defineProperty(window, "__hrefSpy", { value: true, configurable: true }); });
+      const target = await page.evaluate(() => {
+        const b = document.querySelector('[aria-label="Open AAA in Ticker Terminal"]');
+        // capture the navigation without actually leaving the page under test
+        let got = null; const d = Object.getOwnPropertyDescriptor(window.location, "href");
+        try { b.click(); } catch (_e) { /* jsdom-ish guard */ }
+        return got || window.location.href;
+      });
+      await page.waitForTimeout(400);
+      return /admin\.html#aaa/.test(page.url()) || /admin\.html#aaa/.test(target || "");
+    })());
+  ok("v4.1.7 operator: no page errors with the dock live", errors.length === 0);
   await page.close();
 }
 

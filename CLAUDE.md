@@ -2881,6 +2881,54 @@ Jan-anchor shipped; see `snapshot.js` ~318–328), `spyMa100`, `spyMa200`, and a
   VALUATION GAP ranking (§11.1 — the ranking always renders, which is the owner's actual
   "always an output" contract, and it was never suspended). Tests: 1223 smoke (+2) + 199
   render (+1).
+- **FEAT-DOCK (v4.1.7) — the bottom strip becomes a DOOR INTO TERMINAL, not a mini-watchlist.**
+  Owner: *"the top TERMINAL is a mode switch, the bottom S-tier is a name list with no job —
+  you want one surface that is both: these names live in Terminal, tap to work them."* Correct
+  diagnosis: v3.97's `SharedPicks` chips were deliberately `<div>`s because they opened nothing
+  (the CUT-row rule — a button that does nothing is a lie), which made the strip decoration on
+  a page whose every other element earns its pixels. `TerminalDock` gives them a job, so they
+  become real `<button>`s — **the v3.97 div rule reverses because the premise did**, and both
+  states are still pinned so neither can regress silently.
+  **The chip is a door and its label IS the symbol** — no quotes, no P&L, no scores (owner:
+  *"that turns the dock into a second dashboard"*). Navigation reuses TT's EXISTING route and
+  invents no router: `admin.html` reads `TAB` straight off `location.hash` at load, so a chip
+  goes to `/admin.html#<sym>`. A symbol with no stored payload is safe by construction —
+  `renderTabs` already falls back to BOARD when the hash names a sym with no dd entry — so a
+  chip can never strand the reader on a broken tab.
+  **The gate token is the moon voice, and it fails closed.** Owner call: `FULL → SEND IT ·
+  RESTRICTED → EASY · HOLD → HANDS OFF`, matching the HODL/MOONING register. The SOURCE is
+  Engine 0's published `actionability` — the only gate this page can honestly compute, since
+  the TT stance needs PIN-gated book state the dashboard cannot see — and the authoritative
+  token rides the `title` so the machine value stays reachable. An **absent or unrecognised
+  actionability renders `NO READ`, never a permissive default**: a gate that guesses green is
+  the one defect this whole layer exists to prevent, and it is smoke-pinned by value.
+  **⚠ The publicView gate is CLEANLINESS, NOT privacy, and that is stated rather than implied.**
+  v3.97 deliberately rendered the strip on BOTH routes, reasoning that *"hiding it on
+  ?view=public while the JSON is world-readable would be theater."* That reasoning still
+  stands: `/api/picks` is unchanged and still public, and the dashboard has no auth — anyone
+  visiting the bare URL gets the operator view. So the reversal buys a clean shared link and
+  buys nothing else. Owner call 2026-08-21, taken with the limit named at the call site, in the
+  section header and here — the endpoint was left alone on purpose.
+  **One readout, two consumers.** The FEAT-332 flat projection moved into a `useMemo` because
+  the dock's gate now reads it too; computing it twice would let the gate a chip sits under
+  disagree with the paste block the same page copies (the `ptModelRows` rule). Behaviour is
+  byte-identical — only the home moved — and smoke pins that exactly ONE `buildTtReadout` call
+  survives in the orchestrator.
+  `SharedPicks.jsx` is **deleted, not orphaned** (dead code is a rot vector — the v3.73 rule),
+  and its absence is pinned. `share_note` is now unrendered: the note existed for the public
+  share audience the dock no longer serves, so it stays in the endpoint's projection but has no
+  consumer — named here rather than left as a silent orphan.
+  **Deliberately NOT built (owner's own ordering):** next-dollar-vs-full-book as two rows, and
+  retiring the header `⌁ TERMINAL` button — *"leave header TERMINAL alone until the dock is
+  used for a week."*
+  Tests: **1774 smoke** (+9: presentation-only, both render-nothing rules, buttons-with-a-job,
+  the no-price sweep over the chip template, the fail-closed gate pinned BY VALUE, the shared
+  readout, the reused hash route, and the deleted component) + 264 render + **176 public-render**
+  (+5 net: the public route proven to render no dock/names/gate while the call still publishes,
+  the operator dock with its gate token, a 40px thumb target, the chip label proven to be the
+  bare symbol, and a REAL click asserted to land on `admin.html#aaa`). Negative-controlled both
+  reversals: dropping the publicView gate turns the public assertion red, and defaulting the
+  gate permissive turns the fail-closed pin red.
 - **v4.1.6 — the Engine 0 adversarial sweep, and the confidence inversion it found.** Owner:
   *"make sure it's almost always firing correctly … I don't want an incorrect or misfiring
   engine zero because it plays a role in all of our price targets and allocations."* The ~50
