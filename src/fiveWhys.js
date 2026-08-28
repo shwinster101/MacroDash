@@ -119,13 +119,21 @@ export function computeFiveWhys(data, regime = {}, opts = {}) {
   const direction = call?.direction || (baseLabel === "RISK-ON" ? "BULLISH" : baseLabel === "RISK-OFF" ? "BEARISH" : "NEUTRAL");
   const required = active ? Math.floor(active / 2) + 1 : 0;
 
-  const headline = `${sessionPrefix(data.session)} ${label} · ${direction}; ${bull}/${active} usable factors bullish.`;
+  /* 8/28 vocabulary matrix, row 11. This read "{bull}/{active} usable factors bullish" — the
+     same N/M shape and the same word "usable" as the hero's coverage line, with the numerator
+     silently switched from voters-counted to bullish-voters. On a full-coverage day the reader
+     met "6 of 6 voters counted" above and "3/6 usable factors bullish" here and concluded half
+     the book had gone dark. A tally now says it is a tally, and never wears a slash. */
+  const headline = `${sessionPrefix(data.session)} ${label} · ${direction}; ${bull} of the ${active} counted voters lean bullish.`;
   const whys = [];
 
   whys.push(
-    `${label} — ${direction}. The model has ${bull} bullish, ${neutral} neutral, and ${bear} bearish vote${bear === 1 ? "" : "s"}` +
-    `${active < total ? ` from ${active}/${total} usable factors` : ` across all ${total} factors`}. ` +
-    `${required ? `A directional call requires a strict majority: ${required} of ${active}.` : "There is not enough usable evidence to publish a direction."}`
+    /* Rows 12-13: coverage takes the canonical "N of M voters counted" form (it was the
+       hero's own fact wearing a slash), and the majority RULE stops looking like a third
+       tally — "3 of 5" sat between two counts and read as one. */
+    `${label} — ${direction}. The model has ${bull} bullish, ${neutral} neutral, and ${bear} bearish` +
+    `${active < total ? ` — ${active} of ${total} voters counted` : ` — all ${total} voters counted`}. ` +
+    `${required ? `A directional call needs a strict majority of the counted voters — at least ${required} here.` : "There is not enough usable evidence to publish a direction."}`
   );
 
   const supports = usableFactors.filter((f) => (f.state || "").toUpperCase() === "BULLISH" || f.vote === "bull");

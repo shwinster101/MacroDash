@@ -233,8 +233,16 @@ ok("session prefix flips PRE vs CLOSE",
   computeFiveWhys({ ...MOCK_DATA, session: "PRE" }, fwRegime, fwOpts).headline.startsWith("Pre-open") &&
   computeFiveWhys({ ...MOCK_DATA, session: "CLOSE" }, fwRegime, fwOpts).headline.startsWith("Post-close"));
 ok("does not throw on MOCK_DATA with default regime", (() => { try { computeFiveWhys(MOCK_DATA); return true; } catch { return false; } })());
+// 8/28 vocabulary matrix rows 12-13: coverage takes the canonical "N of M voters counted"
+// form and the majority RULE stops reading as a third tally. Pinned on the new copy, and the
+// retired slash/"strict majority: N of M" forms are pinned ABSENT so they cannot creep back.
 ok("check 1 is exact call arithmetic, not unrelated SPY/Fed context",
-  /4 bullish, 1 neutral, and 1 bearish/.test(fw.whys[0]) && /strict majority: 4 of 6/.test(fw.whys[0]) && !/SPY|Fed at/.test(fw.whys[0]));
+  /4 bullish, 1 neutral, and 1 bearish/.test(fw.whys[0]) &&
+  /all 6 voters counted/.test(fw.whys[0]) &&
+  /strict majority of the counted voters — at least 4 here/.test(fw.whys[0]) &&
+  !/SPY|Fed at/.test(fw.whys[0]));
+ok("row 12-13: WHY #1 carries no slash fraction and never calls a fraction 'usable'",
+  !/\d+\/\d+/.test(fw.whys[0]) && !/\d+ of \d+ usable|usable factors/.test(fw.whys[0]));
 ok("check 2 contains only canonical factors and their dated states",
   fwFactors.every((f)=>fw.whys[1].includes(f.label)) && /as of 2026-08-25/.test(fw.whys[1]) && !/WTI|BTC|HY-IG/.test(fw.whys[1]));
 ok("check 3 explains transmission and disclaims single-factor causality",
@@ -247,7 +255,11 @@ const fwReducedFactors=fwFactors.map((f)=>f.key==="vix"?{...f,state:null,exclude
 const fwReducedCall={...fwCall,confidence:"MEDIUM",counts:{bullish:3,neutral:1,bearish:1,usable:5,total:6},factors:fwReducedFactors};
 const fwReduced=computeFiveWhys(MOCK_DATA,{...fwRegime,counted:5,bullVotes:3},{...fwOpts,call:fwReducedCall,factors:fwReducedFactors});
 ok("five checks: reduced evidence changes the denominator and names the exclusion",
-  /3\/5 usable factors bullish/.test(fwReduced.headline) && /VIX Level was excluded/.test(fwReduced.whys[3]));
+  /3 of the 5 counted voters lean bullish/.test(fwReduced.headline) && /VIX Level was excluded/.test(fwReduced.whys[3]));
+// Row 11: the tally shape is now unmistakably a tally — no slash, no "usable" on a fraction.
+ok("row 11: the reduced headline names a bullish TALLY, never a coverage fraction",
+  !/\d+\/\d+/.test(fwReduced.headline) && !/usable factors bullish/.test(fwReduced.headline) &&
+  /5 counted voters/.test(fwReduced.headline));
 // ---- DEC-31 (v3.2): Put/Call fully retired ------------------------------
 ok("DEC-31: putCall absent from SOURCES", !("putCall" in SOURCES));
 ok("DEC-31: MOCK_DATA no longer carries marketPulse.putCall", MOCK_DATA.marketPulse.putCall === undefined);
@@ -3657,6 +3669,11 @@ ok("flip render: the verdict band carries the nearest crossing without opening a
 ok("flip render: the no-single-flip case is stated in BOTH the band and the panel",
   /no single factor crossing flips this verdict — it would take two/.test(bandSrc) &&
   /No single factor crossing changes the call/.test(bandSrc));
+// 8/28 matrix row 17: "at 3 bull / 1 bear of 5 voting" used the slash as a separator two lines
+// under fractions that use it as division. Now prose, and pinned so it stays prose.
+ok("row 17: the no-flip tally reads as prose, with no slash to misread as a fraction",
+  /with \{fc\.bullVotes\} bull and \{fc\.bearVotes\} bear among the \{fc\.counted\} counted/.test(bandSrc) &&
+  !/\{fc\.bullVotes\} bull \/ \{fc\.bearVotes\} bear/.test(bandSrc));
 ok("flip render: the panel names abstentions and stale exclusions, never silently dropping them",
   bandSrc.includes("no single threshold — ") &&
   bandSrc.includes("their thresholds are not load-bearing"));
@@ -3707,7 +3724,10 @@ ok("quorum: the flip line is suppressed when there is no posture to flip (v3.94:
   /\{!withheld&&<div[^>]*>\s*\n?\s*<span style=\{\{color:T\.textMuted\}\}>⇄ would change this: <\/span>/.test(bandSrc) &&
   /\{withheld&&<div/.test(bandSrc));
 ok("quorum: the hero states the withhold with the quorum named, visible while everything is closed",
-  /only \$\{regime\.counted\} of \$\{regime\.totalFactors\} factors usable — \$\{regime\.quorum\} required/.test(bandSrc));
+  // 8/28 matrix row 2: canonical coverage vocabulary — it said "factors usable" directly
+  // beside a voters line stating the identical number.
+  /only \$\{regime\.counted\} of \$\{regime\.totalFactors\} voters counted — \$\{regime\.quorum\} needed to call it/.test(bandSrc) &&
+  !/factors usable — \$\{regime\.quorum\}/.test(bandSrc));
 // ---- Why-this-call canonical boundary ----
 // The explanation may render only the factors the canonical call already stamped. Context
 // fields can inform trust, but SPY/Fed/WTI/BTC/credit can never masquerade as voters.
@@ -4069,7 +4089,8 @@ ok("A1: freshSet derives from liveBuild, never anyLive",
 ok("A1: demoted() still keys on anyLive — demotion is display, and the demo must not collapse",
   /const demoted=\(f\)=>anyLive&&isIllustrative/.test(dashSrc));
 ok("A1: the canonical headline never carries a context-only SPY day move",
-  !/— SPY/.test(fw.headline) && /usable factors bullish/.test(fw.headline));
+  // Re-anchored on the row-11 copy; the old "usable factors bullish" phrase is retired.
+  !/— SPY/.test(fw.headline) && /counted voters lean bullish/.test(fw.headline));
 // A2: the 320px contract — identity group may shrink, actions may wrap, wordmark yields first.
 ok("A2: header groups can shrink and wrap instead of forcing horizontal overflow",
   /alignItems:"center",gap:14,minWidth:0,flexWrap:"wrap"/.test(dashSrc) &&
@@ -4300,8 +4321,10 @@ ok("glance: MIXED with VIX excluded and NO load-bearing flip states the evidence
     const r = regimeCompute(d, new Set(["vix"]));
     return r.label === "MIXED" && r.sub === "Cross-signals — 5 of 6 inputs usable"; })());
 // F2b-2: the neutral vote is stated, not implicit.
-ok("glance: the vote line accounts for every counted vote — bull · neutral · bear of usable",
-  /\$\{regime\.bullVotes\} bull · \$\{neutralVotes\} neutral · \$\{regime\.bearVotes\} bear — \$\{regime\.counted\} of \$\{regime\.totalFactors\} usable/.test(bandSrc));
+ok("glance: the vote line accounts for every counted vote — bull · neutral · bear, then coverage",
+  // 8/28 matrix row 16: the tail is the same coverage fact as the voters line 40px above, so
+  // it now uses the same words rather than a second ("usable").
+  /\$\{regime\.bullVotes\} bull · \$\{neutralVotes\} neutral · \$\{regime\.bearVotes\} bear — \$\{regime\.counted\} of \$\{regime\.totalFactors\} voters counted/.test(bandSrc));
 // F3a: the terminal gets the same treatment — inside the installed PWA shell admin.html
 // renders fullscreen too, and it had ZERO safe-area handling.
 ok("tt-glance: admin viewport gains viewport-fit=cover",
@@ -7838,8 +7861,18 @@ console.log("\n[63] v3.98.3 — exclusion reasons, scoped vocabulary, TERMINAL p
     /too old to count \(as of 2026-01-02\)/.test(eStale.factors.find((f) => f.key === "vix").display));
   ok("v3.98.3: the flip panel no longer asserts '(stale)' over an exclusion it cannot diagnose",
     !/Excluded from the vote \(stale\)/.test(bandSrc) && /Dark, so their thresholds/.test(bandSrc));
-  ok("v3.98.3: the verdict sub's duplicate count is dropped where the voters line already states it",
-    /inputs usable\$\/\.test\(regime\.sub\)/.test(bandSrc) && /replace\(\/ — /.test(bandSrc));
+  /* 8/28 matrix row 3 — the strip now serves BOTH branches through one `subText`, so the
+     withheld path cannot render a fraction the voters line already states. Measured on
+     COMMENT-STRIPPED source: bandSrc still carries a superseded copy of the old inline
+     expression inside a block comment, so testing the raw text would pass vacuously with the
+     live strip deleted (the v3.60.1 self-matching trap). */
+  ok("row 3: ONE conf-strip serves both the directional and the withheld branch (comment-stripped)",
+    (() => { const code = bandSrc.replace(/\/\/[^\n]*|\/\*[\s\S]*?\*\//g, "");
+      return /inputs usable\$\/\.test\(regime\.sub\)/.test(code) && /replace\(\/ — /.test(code) &&
+             /const subText=conf&&/.test(code) &&
+             /\$\{WITHHELD_LABEL\} · \$\{subText\}/.test(code) &&
+             /\$\{machineLabel\} · \$\{subText\}/.test(code) &&
+             !/\$\{machineLabel\} · \$\{conf&&/.test(code); })());
   ok("v3.98.3: TERMINAL is a bar action with the accent treatment, and exists exactly ONCE",
     /aria-label="Open Ticker Terminal"/.test(dashSrc) &&
     (dashSrc.match(/href="\/admin\.html"/g) || []).length === 1 &&
@@ -8900,9 +8933,13 @@ console.log("\n[67] v4.0 SIMPLE MODE — verdict mapping, card selection, senten
   const { REGIME_BAND_TABLE: BT } = await import("../src/regime.js");
 
   // whyItMatters: one home per band, and it must NOT restate the direction (plainBull/Bear own that).
+  // 8/28 matrix row 3 re-anchored this: the secondary direction used to be spelled with the
+  // conf-strip inline (`${machineLabel} · ${conf&&…}`); the strip is now the shared `subText`
+  // so the withheld branch gets it too. The CLAIM here is unchanged — one primary human call,
+  // one secondary machine direction.
   ok("v5.3: Simple renders ONE primary human call with one secondary machine direction",
     /\{callLabel\}<\/span>/.test(bandSrc) &&
-    /:`\$\{machineLabel\} · \$\{conf/.test(bandSrc));
+    /:`\$\{machineLabel\} · \$\{subText\}`/.test(bandSrc));
   ok("v4.0: the Simple eyebrow follows its verdict — no 'wen moon?' over a MACRO: line",
     /plainVerdict\?"Macro Backdrop · the call":"Macro Backdrop · wen moon\?"/.test(bandSrc));
   ok("v4.0: every band carries a whyItMatters line — new copy, one home, beside the rule it explains",

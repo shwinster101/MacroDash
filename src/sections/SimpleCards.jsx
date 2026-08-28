@@ -9,8 +9,10 @@
 //     about a current usable reading, and there is none.
 //   · Fewer than `max` usable factors renders FEWER CARDS, never UNAVAILABLE padding:
 //     absence is not content.
-//   · The truncation is NAMED ("showing 3 of 6 usable") — silent truncation reads as full
-//     coverage (the v3.65/v3.76 rule).
+//   · The truncation is NAMED ("3 cards from the 6 voters counted") — silent truncation
+//     reads as full coverage (the v3.65/v3.76 rule). The 3 is a LAYOUT cap, so it is
+//     labelled as cards: read as a fraction it looked like coverage and collided with the
+//     hero's "N of 6 voters counted" (8/28 vocabulary matrix, row 4).
 //   · Every card states its own freshness + observation date; a mock/stale reading carries
 //     the standard ILLUSTRATIVE treatment (a demo build publishes by design — v3.54).
 import { T } from "../design-tokens.js";
@@ -25,7 +27,7 @@ const SimpleCards = ({ cards, flipLine, usable = 0, shown = 0, total = 0, withhe
     return (
       <div role="region" aria-label="Key parameters" style={{ padding: "8px 20px", background: T.bg, borderBottom: `1px solid ${T.border}` }}>
         <div style={{ fontFamily: T.fontMono, fontSize: 9, color: T.textMuted }}>
-          No current usable readings to show — see the evidence detail in Power mode.
+          No voter is currently counted, so there is no reading to show — evidence detail is in Power mode.
         </div>
       </div>
     );
@@ -76,7 +78,7 @@ const SimpleCards = ({ cards, flipLine, usable = 0, shown = 0, total = 0, withhe
           evidence is off this screen); only its visual weight dropped. */}
       <div style={{ marginTop: 4, opacity: 0.7 }}>
         <span style={{ fontFamily: T.fontMono, fontSize: 8, color: T.textMuted, lineHeight: 1.5 }}>
-          showing {shown} of {usable} usable{total > usable ? ` · ${total - usable} not counted` : ""}
+          {shown} cards from the {usable} voters counted{total > usable ? ` · ${total - usable} dark` : ""}
           {flipLine ? ` · ⇄ ${flipLine}` : ""}
         </span>
       </div>

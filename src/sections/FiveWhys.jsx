@@ -8,8 +8,11 @@
 // behind the house CollapsedGroup. The v3.25 rule holds — the regime state line (the
 // one red/amber fact this block carries) stays OUTSIDE the collapse, visible while
 // closed; the chain, headline and provenance are verbatim one tap deep. The
-// public-render suite opens the expander before reading the LOADING/ERROR anchors
-// ("0/3 core inputs usable") and pins the closed summary separately.
+// public-render suite opens the expander before reading the LOADING/ERROR anchor
+// ("not enough usable evidence to publish a direction") and pins the closed summary
+// separately. That anchor USED to read "0/3 core inputs usable"; the v5.3 One Call
+// rewrite of WHY #1 retired the phrase and this comment kept naming it — corrected on
+// the 8/28 vocabulary pass, which found no code or pin emitting it anywhere.
 //
 // Props: fw           — computeFiveWhys() output ({regime, headline, whys[]})
 //        derivedLabel — the state-derived footer (B2 v3.59: one derivation, both footers)

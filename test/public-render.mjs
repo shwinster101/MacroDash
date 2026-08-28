@@ -285,7 +285,9 @@ console.log("\n[public] DEGRADED — below-quorum evidence yields DATA HOLD");
   ok("degraded: the literal verdict token INSUFFICIENT appears nowhere on the page",
     !/INSUFFICIENT/.test(body));
   ok("degraded: the band names how much evidence is missing",
-    /only 3 of 6 factors usable/i.test(band) && /4 required/i.test(band));
+    // 8/28 matrix row 2 — canonical coverage vocabulary, driven live.
+    /only 3 of 6 voters counted/i.test(band) && /4 needed to call it/i.test(band) &&
+    !/factors usable/i.test(band));
   ok("degraded: the confidence strip states the withhold too",
     /POSTURE WITHHELD/i.test(body));
   ok("degraded: it explains that the mock baseline is deliberately NOT voting",
@@ -381,7 +383,7 @@ console.log("\n[public] v3.94 — Simple default, the toggle, persistence, red f
     !/\(bullish\)|\(bearish\)/.test(await page.locator('[aria-label="Key parameters"]').innerText()));
   ok("v4.0 simple: cards carry value + direction + why + freshness, and the truncation is NAMED",
     /HELPING|HURTING|MIXED/.test(body) && /discount rate|violently|already priced|Fed can ease|good news|plumbing/.test(body) &&
-    /showing \d+ of \d+ usable/.test(body) && /⇄/.test(body));
+    /\d+ cards from the \d+ voters counted/.test(body) && /⇄/.test(body));
   /* v4.0.4 — the label-to-metric contract, driven live. The card is labelled "the 10-year
      yield"; before this it showed only the voted monthly delta, so the delta read AS the
      yield. Both must be on the card, level first, delta signed. */
@@ -816,7 +818,7 @@ console.log("\n[public] v4.0 — Simple verdicts, card selection, and what must 
     /Call withheld until the required evidence is current and usable/.test(body) &&
     !/are supportive|is working against|clearly supportive|clear lean right now/i.test(body));
   ok("v4.0 withheld: cards still render only USABLE factors — a dead feed is never a card",
-    !/HELPING|HURTING|MIXED/.test(body) || /showing \d+ of \d+ usable/.test(body));
+    !/HELPING|HURTING|MIXED/.test(body) || /\d+ cards from the \d+ voters counted/.test(body));
   await page.close();
 
   // 4. A dead feed must never appear as a card, and must never be padded to three.
@@ -828,9 +830,14 @@ console.log("\n[public] v4.0 — Simple verdicts, card selection, and what must 
   ok("v4.0 cards: the dead-feed factor is absent from the cards entirely (not shown as 'mixed')",
     !/volatility/i.test(cardsText));
   ok("v4.0 cards: never padded with UNAVAILABLE placeholders — absence is not content",
-    !/UNAVAILABLE/i.test(cardsText) && /showing \d+ of \d+ usable/.test(cardsText));
-  ok("v4.0 cards: the not-counted factor is still ACKNOWLEDGED in the count line",
-    /not counted/.test(cardsText));
+    !/UNAVAILABLE/i.test(cardsText) && /\d+ cards from the \d+ voters counted/.test(cardsText));
+  /* 8/28 matrix row 4: "showing 3 of 5 usable · 1 not counted" read as a coverage fraction
+     under a hero saying "5 of 6" — neither number matched, and the 3 is a LAYOUT cap. The 3
+     is now labelled as cards and the exclusion uses the hero's own word, "dark". */
+  ok("v4.0 cards: the excluded factor is still ACKNOWLEDGED in the count line",
+    /\d+ dark/.test(cardsText));
+  ok("row 4: the layout cap is labelled as CARDS, never as a coverage fraction",
+    /cards from the/.test(cardsText) && !/showing \d+ of \d+ usable/.test(cardsText));
   ok("v4.0: no page errors across the verdict matrix", errors.length === 0);
   await page.close();
 }
@@ -974,8 +981,11 @@ console.log("\n[public] Slice 1 — verdict above the fold at 375px (extracted b
     box !== null && box.y + box.height <= 600);
   await page.locator('button[aria-label="Show regime factors"]').click();   // v3.94: evidence panel
   await page.waitForTimeout(150);
+  // 8/28 matrix row 16: the tally's coverage tail took the canonical vocabulary ("N of M
+  // voters counted"), so it no longer says "usable" where the line above it says "counted".
   ok("slice1 @375px: the confidence tally and flip sentence ride one tap deep in the band's evidence panel",
-    /of \d+ usable/.test(await band.innerText()) && /would change this/i.test(await band.innerText()));
+    /\d+ bull · \d+ neutral · \d+ bear — \d+ of \d+ voters counted/.test(await band.innerText()) &&
+    /would change this/i.test(await band.innerText()));
   await page.locator("button.cg-toggle", { hasText: "the reasoning" }).click();   // v3.94: two clicks deep
   await page.waitForTimeout(150);
   await page.locator("button.cg-toggle", { hasText: "why this call" }).click();
