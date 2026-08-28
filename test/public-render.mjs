@@ -217,7 +217,10 @@ console.log("\n[public] LIVE — a full snapshot publishes a posture");
   await page.waitForTimeout(1200);
   const band = await bandText(page);
   ok("live: a posture IS published when the evidence supports one", POSTURES.test(band));
-  ok("live: all six factors vote", /6\/6 factors voting|6 bullish|of 6/i.test(await page.locator("body").innerText()));
+  // 8/28 pin hygiene (survey flag): two of the old alternates ("6/6 factors voting",
+  // "6 bullish") were chain-interior text that never rendered closed — the pin passed via
+  // the hero's "of 6" by accident. Tightened to the line that actually carries the claim.
+  ok("live: all six factors vote", /6 of 6 voters counted/i.test(await page.locator("body").innerText()));
   await page.locator('button[aria-label="Show regime factors"]').click();
   await page.waitForTimeout(150);
   ok("live: the flip line returns once there is a posture to flip (v3.94: inside the ℹ evidence panel)",
@@ -375,15 +378,37 @@ console.log("\n[public] v3.94 — Simple default, the toggle, persistence, red f
   ok("v5.3 simple: the moon voice is primary and the machine direction is secondary",
     /MOONING|HODL|DIAMOND HANDS|CAN'T CALL IT/.test(bandTxt) &&
     /BULLISH|NEUTRAL|BEARISH|DATA HOLD/.test(bandTxt) && !/MACRO: /.test(bandTxt));
-  ok("v4.0 simple: the eyebrow is scoped too — no 'wen moon?' above a MACRO: verdict",
-    /the call/i.test(await page.locator('[aria-label="Macro backdrop verdict"]').innerText()) &&
+  // 8/28 A4/A6: the unfrozen Simple face says "live read", never "the call", and carries
+  // the counterpart caption — either clock branch, since suite runs at arbitrary ET hours.
+  ok("v4.0/8-28 simple: the unfrozen eyebrow reads 'live read', never the official-call name",
+    /live read/i.test(await page.locator('[aria-label="Macro backdrop verdict"]').innerText()) &&
+    !/· the call/i.test(await page.locator('[aria-label="Macro backdrop verdict"]').innerText()) &&
     !/wen moon/i.test(await page.locator('[aria-label="Macro backdrop verdict"]').innerText()));
+  ok("8/28 A6: the unfrozen counterpart caption renders, phrased by the client clock",
+    /live read — today's (official call freezes at 10:00 ET|10am record not loaded)/.test(
+      await page.locator('[aria-label="Macro backdrop verdict"]').innerText()));
   const cardsInner = await page.locator('[aria-label="Key parameters"]').innerText();
   ok("v4.0 simple: card values are METRICS — the matrix's inline '(bullish)' judgment is gone",
     !/\(bullish\)|\(bearish\)/.test(await page.locator('[aria-label="Key parameters"]').innerText()));
   ok("v4.0 simple: cards carry value + direction + why + freshness, and the truncation is NAMED",
     /HELPING|HURTING|MIXED/.test(body) && /discount rate|violently|already priced|Fed can ease|good news|plumbing/.test(body) &&
-    /\d+ cards from the \d+ voters counted/.test(body) && /⇄/.test(body));
+    /\d+ cards from the \d+ voters counted/.test(body) &&
+    // 8/28: the flip's ONE home is the whys — chip on the closed label, absent from cards.
+    /⇄/.test(await page.locator("button.cg-toggle", { hasText: "why this call" }).innerText()) &&
+    !/⇄/.test(await page.locator('[aria-label="Key parameters"]').innerText()));
+  /* 8/28: chip-length in place, VERBATIM one tap deep (v3.66) — the chip must be a genuine
+     prefix of the full line, so a truncated read continues where it left off. */
+  {
+    const chipTxt = await page.locator("button.cg-toggle", { hasText: "why this call" }).innerText();
+    await page.locator("button.cg-toggle", { hasText: "why this call" }).click();
+    await page.waitForTimeout(200);
+    const openTxt = await page.locator("body").innerText();
+    const chip = (chipTxt.split("⇄")[1] || "").replace(/…\s*$/, "").trim().toLowerCase();
+    ok("8/28: the closed chip is a real prefix of the flip rendered verbatim inside",
+      chip.length > 0 && openTxt.toLowerCase().includes(chip));
+    await page.locator("button.cg-toggle", { hasText: "why this call" }).click();
+    await page.waitForTimeout(150);
+  }
   /* v4.0.4 — the label-to-metric contract, driven live. The card is labelled "the 10-year
      yield"; before this it showed only the voted monthly delta, so the delta read AS the
      yield. Both must be on the card, level first, delta signed. */
@@ -814,9 +839,21 @@ console.log("\n[public] v4.0 — Simple verdicts, card selection, and what must 
   body = await page.locator("body").innerText();
   ok("v5.3 verdict: below quorum reads CAN'T CALL IT / DATA HOLD, never a thin directional call",
     /CAN'T CALL IT 🌫️/.test(body) && /DATA HOLD/.test(body) && !/MOONING|DIAMOND HANDS/.test(body));
-  ok("v4.0 withheld: no explanatory sentence, and the flip line states the evidence shortfall",
-    /Call withheld until the required evidence is current and usable/.test(body) &&
-    !/are supportive|is working against|clearly supportive|clear lean right now/i.test(body));
+  /* 8/28 Whys altitude: a WITHHELD posture advertises no flip — the closed label is BARE
+     (no ⇄ chip claiming a crossing that does not exist) and the withheld sentence travels
+     INSIDE with the flip's slot. So the closed body must NOT carry it, and one tap must. */
+  const whysToggleTxt = await page.locator("button.cg-toggle", { hasText: "why this call" }).innerText();
+  ok("8/28 withheld: the closed whys label is bare — no flip chip on a call that was withheld",
+    !/⇄/.test(whysToggleTxt) && /why this call · 5 checks/i.test(whysToggleTxt) &&
+    !/Call withheld until/i.test(body));
+  await page.locator("button.cg-toggle", { hasText: "why this call" }).click();
+  await page.waitForTimeout(200);
+  const withheldOpen = await page.locator("body").innerText();
+  ok("v4.0 withheld: no explanatory sentence, and the withheld sentence states the shortfall one tap deep",
+    /Call withheld until the required evidence is current and usable/i.test(withheldOpen) &&
+    !/are supportive|is working against|clearly supportive|clear lean right now/i.test(withheldOpen));
+  await page.locator("button.cg-toggle", { hasText: "why this call" }).click();
+  await page.waitForTimeout(150);
   ok("v4.0 withheld: cards still render only USABLE factors — a dead feed is never a card",
     !/HELPING|HURTING|MIXED/.test(body) || /\d+ cards from the \d+ voters counted/.test(body));
   await page.close();

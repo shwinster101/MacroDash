@@ -105,7 +105,7 @@ const RegimeBand=({d,stale=new Set(),loading=false,liveBuild=false,srcLabel="der
                 line is two vocabularies in 20px. Power keeps the voice (owner ruling); Simple
                 says what the block IS. */}
             <div style={{fontFamily:T.fontMono,fontSize:8,color:regime.color,letterSpacing:"0.14em",textTransform:"uppercase"}}>
-              {callFrozen?"Macro Backdrop · 10am frozen call":plainVerdict?"Macro Backdrop · the call":"Macro Backdrop · wen moon?"}
+              {callFrozen?"Macro Backdrop · 10am frozen call":plainVerdict?"Macro Backdrop · live read":"Macro Backdrop · wen moon?"}
             </div>
             <div style={{display:"flex",alignItems:"baseline",gap:10,flexWrap:"wrap"}}>
               <span style={{fontFamily:T.fontMono,fontSize:T.fsXl,fontWeight:700,color:regime.color,letterSpacing:"-0.01em"}}>{callLabel}</span>
@@ -138,6 +138,17 @@ const RegimeBand=({d,stale=new Set(),loading=false,liveBuild=false,srcLabel="der
             {callFrozen&&<div style={{fontFamily:T.fontMono,fontSize:8,color:T.textMuted,marginTop:3}}>
               immutable public call · captured 10:00 ET{callCapturedAt?` · ${String(callCapturedAt).slice(0,10)}`:""}
             </div>}
+            {/* 8/28 clock matrix A6 — the frozen caption's missing counterpart. The unfrozen
+                face said nothing, so post-10am a live recomputation wore the product's
+                official-call identity by silence. Phrased from the CLIENT clock (before/after
+                10:00 ET is a render-time fact — freeze mechanics untouched); liveBuild-gated
+                so a demo baseline never claims a live read; withheld/loading suppressed —
+                there is no read to disclaim. */}
+            {liveBuild&&!callFrozen&&!withheld&&<div style={{fontFamily:T.fontMono,fontSize:8,color:T.textMuted,marginTop:3}}>
+              {(Number(new Date().toLocaleString("en-US",{timeZone:"America/New_York",hour:"numeric",hour12:false}))%24)<10
+                ?"live read — today's official call freezes at 10:00 ET"
+                :"live read — today's 10am record not loaded"}
+            </div>}
             {callDrift&&<div style={{fontFamily:T.fontMono,fontSize:9,color:callDrift.direction==="BEARISH"?T.red:T.amber,marginTop:4,lineHeight:1.45}}>
               Current evidence now reads {callDrift.headline}{callDrift.emoji?` ${callDrift.emoji}`:""} · {callDrift.direction}; the scored 10am call remains frozen above.
             </div>}
@@ -166,9 +177,9 @@ const RegimeBand=({d,stale=new Set(),loading=false,liveBuild=false,srcLabel="der
         {/* Right: the ℹ toggle — the chips ride inside the panel now (v3.94: evidence, one click). */}
         <div style={{display:"flex",alignItems:"center",gap:8}}>
           {onCopyCall&&<button onClick={onCopyCall} disabled={copyDisabled} aria-label="Copy MacroDash posture card"
-            title={copyDisabled?"live data required":callFrozen?"Copy the frozen 10am public call":"Copy the current MacroDash posture"}
+            title={copyDisabled?"live data required":callFrozen?"Copy the frozen 10am public call":"Copy the current live read — not the 10am call"}
             style={{background:callCopied?"#1a3020":T.surfaceHigh,border:`1px solid ${callCopied?T.green:regime.color}66`,borderRadius:3,color:callCopied?T.green:regime.color,cursor:copyDisabled?"not-allowed":"pointer",padding:"4px 9px",minHeight:44,fontFamily:T.fontMono,fontSize:9,opacity:copyDisabled?0.45:1,whiteSpace:"nowrap"}}>
-            {callCopied?"✓ CALL COPIED":callFrozen?"⎘ COPY 10AM CALL":"⎘ COPY POSTURE"}
+            {callCopied?"✓ CALL COPIED":callFrozen?"⎘ COPY 10AM CALL":"⎘ COPY LIVE READ"}
           </button>}
           <button onClick={()=>setOpen(o=>!o)} aria-label="Show regime factors" aria-expanded={open}
             style={{background:"none",border:`1px solid ${regime.color}44`,borderRadius:3,color:regime.color,cursor:"pointer",padding:"4px 8px",minWidth:44,minHeight:44,fontFamily:T.fontMono,fontSize:11,flexShrink:0}}>

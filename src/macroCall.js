@@ -197,10 +197,14 @@ export function buildMacroCall(live = {}, opts = {}) {
   });
 }
 
-export function formatMacroCallPaste(call = {}) {
+/* 8/28 clock matrix A10: the operator paste stamped "DAILY CALL" on frozen and unfrozen
+   postures alike — the strongest official-call claim on the weakest evidence of being it,
+   while the share-card sibling below had split since v5.5. Both builders now use ONE word
+   pair: 10AM CALL (frozen artifact) / LIVE READ (current recomputation). */
+export function formatMacroCallPaste(call = {}, { frozen = false } = {}) {
   const label = call.headline ? `${call.headline}${call.emoji ? ` ${call.emoji}` : ""}` : "CAN'T CALL IT 🌫️";
   const lines = [
-    `MACRODASH DAILY CALL · ${call.effective_date || "undated"} · macrodash.pages.dev`,
+    `MACRODASH ${frozen ? "10AM CALL" : "LIVE READ"} · ${call.effective_date || "undated"} · macrodash.pages.dev`,
     `${label} · ${call.direction || "DATA HOLD"}`,
     `EVIDENCE ${call.confidence || "LOW"} · actionability ${call.actionability || "HOLD"} · ${call.counts?.usable ?? 0} of ${call.counts?.total ?? 6} voters counted`,
   ];
@@ -221,7 +225,7 @@ export function formatMacroShareCard(call = {}, { frozen = false } = {}) {
   const label = call.headline ? `${call.headline}${call.emoji ? ` ${call.emoji}` : ""}` : "CAN'T CALL IT 🌫️";
   const usable = call.counts?.usable ?? 0, total = call.counts?.total ?? 6;
   return [
-    `MACRODASH ${frozen ? "10AM CALL" : "CURRENT POSTURE"} · ${call.effective_date || "undated"}`,
+    `MACRODASH ${frozen ? "10AM CALL" : "LIVE READ"} · ${call.effective_date || "undated"}`,
     `${label} · ${call.direction || "DATA HOLD"}`,
     `${call.confidence || "LOW"} confidence · ${usable} of ${total} voters counted`,
     "Track record: https://macrodash.pages.dev/history",
