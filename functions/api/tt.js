@@ -1,3 +1,5 @@
+import { readQuoteBatch, freshEntry } from "../lib/quote-cache.js";
+
 /* FEAT-TT-DDSTORE (v3.75) follow-up: the thesis half of the belief ledger, extracted so the
    TWO write paths that can now change a payload share ONE implementation.
    Why this had to move: before v3.75 a deepDive change arrived inside the whole-book PUT, so
@@ -72,7 +74,8 @@ const SNAP_TTL = 30 * 24 * 3600;           // 30 days of daily restore points
 const LEDGER_PREFIX = "tt:ledger:";        // FEAT-TT-LEDGER: per-sym belief history
 const LEDGER_INDEX_KEY = "tt:ledger:index";
 const LEDGER_CAP = 500;                    // entries per sym; oldest pruned first
-const QUOTE_PREFIX = "tt:quote:";          // mirrors CACHE_PREFIX in functions/api/quotes.js
+// v5.0.0 (W0): quote cache is ONE batch key now (lib/quote-cache.js) — the per-symbol
+// tt:quote:<SYM> keys are retired; appendLedger reads the batch once per call.
 const TIERS = ["S", "A", "B", "DEF", "WATCH"];
 const SYM_RE = /^[A-Z.\-]{1,8}$/;
 // FEAT-TT-POSSTORE (v3.34) follow-up: raised 64KB -> 200KB. This was always an arbitrary
@@ -852,12 +855,15 @@ export async function appendLedger(env, entries) {
   const today = etDate();
   const bySym = new Map();
   for (const e of entries) { if (!bySym.has(e.sym)) bySym.set(e.sym, []); bySym.get(e.sym).push(e); }
+  // ONE batch read for every sym in this append (v5 W0). freshEntry keeps the old
+  // semantics exactly: the per-key TTL used to guarantee <=120s, now the entry's own
+  // stamp does. A stale/absent quote stamps px:null — honest best-effort, never fabricated.
+  const qBatch = await readQuoteBatch(env);
+  const qNow = Date.now();
   await Promise.all([...bySym.entries()].map(async ([sym, syms]) => {
     let px = null;
-    try {
-      const q = await env.PULSE_CACHE.get(QUOTE_PREFIX + sym, "json");
-      if (q && isFinite(q.px)) px = q.px;
-    } catch (_e) {}
+    const q = freshEntry(qBatch.quotes[sym], qNow);
+    if (q) px = q.px;
     const stamped = syms.map((e) => ({ ...e, px }));
     let cur = [];
     try { cur = (await env.PULSE_CACHE.get(LEDGER_PREFIX + sym, "json")) || []; } catch (_e) {}

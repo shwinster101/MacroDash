@@ -59,7 +59,7 @@ export const SOURCES = {
   savings:        { path: "macro.savings.rate",             kind: "num",    displayClass: "public" },
   savingsTrend:   { path: "macro.savings.trend",            kind: "series", displayClass: "public" },
   mortgage30:     { path: "macro.mortgage.national",        kind: "num",    displayClass: "public" },
-  // INFLATION (FEAT-R10 — FRED index → YoY %; CPIAUCSL/CPILFESL + PCEPI/PCEPILFE)
+  // INFLATION — official BLS headline/core CPI uses NSA CPIAUCNS/CPILFENS; PCE remains SA.
   cpiHeadline:    { path: "macro.cpi.headline",             kind: "num",    displayClass: "public" },
   cpiCore:        { path: "macro.cpi.core",                 kind: "num",    displayClass: "public" },
   cpiTrend:       { path: "macro.cpi.trend",                kind: "series", displayClass: "public" },

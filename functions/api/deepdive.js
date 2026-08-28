@@ -6,7 +6,7 @@
 // ledger in v3.32, each because a growing thing was riding inside a single fixed-size PUT.
 // `deepDive` is by far the largest such thing and the fastest-growing: consensus tables,
 // pt_model schedules, hinges, gates, projections, capex/tokens blocks and pre-committed
-// falsifier drafts, per name. DD_MAX went 8KB → 15KB (v3.63) → 45KB (v3.70) and MAX_BODY
+// falsifier drafts, per name. DD_MAX went 8KB → 15KB (v3.63) → 45KB (v3.70) → 100KB (v4.4.0) and MAX_BODY
 // 64KB → 200KB (v3.34) → 300KB (v3.70) chasing it; v3.70's own note said plainly that
 // raising the cap "is a stopgap, not the fix" and that this split "is the permanent answer
 // and remains deliberately deferred." On 2026-08-05 the book reached 306,425 of 307,200
@@ -38,11 +38,15 @@ const SNAP_PREFIX = "tt:book:snap:";         // mirrors the constant in function
 const SNAP_TTL = 30 * 24 * 3600;
 const SYM_RE = /^[A-Z.\-]{1,8}$/;
 
-/* Mirrors DD_MAX in public/admin.html (45KB, v3.70). Stated rather than implied: this store
-   holds ONE thesis payload per key, so the per-payload cap IS the per-key cap — the two
-   numbers coincide here, unlike the book where DD_MAX and MAX_BODY were different limits on
-   nested things. A payload larger than this is a runaway write, not a richer thesis. */
-const MAX_BODY = 45 * 1024;
+/* Mirrors DD_MAX in public/admin.html (100KB, v4.4.0 — owner call 2026-08-22: "raise server
+   cap to 100,000", expressed in the store's KB idiom and rounded UP so nothing the owner
+   sized for is rejected; the trigger was NBIS FROZEN at 47,635 bytes against the old 46,080,
+   the book's #1 name unable to save its own re-scored composite). Stated rather than
+   implied: this store holds ONE thesis payload per key, so the per-payload cap IS the
+   per-key cap — the two numbers coincide here, unlike the book where DD_MAX and MAX_BODY
+   were different limits on nested things. A payload larger than this is a runaway write,
+   not a richer thesis; the cap is an app-level stop, not a KV limit (KV values go to 25MB). */
+const MAX_BODY = 100 * 1024;
 
 const json = (body, status = 200) =>
   new Response(JSON.stringify(body), {

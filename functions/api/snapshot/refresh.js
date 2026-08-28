@@ -3,7 +3,7 @@
 //
 // WHY: the admin "⟳ RANKS" button only re-GET /readout.json, which rereads the same
 // per-day KV value; the cron Worker's POST /refresh wrote the LEGACY pulse:macro:latest
-// key. Neither could actually rebuild the active pulse:snapshot:v15:<ET-date> document.
+// key. Neither could actually rebuild the active pulse:snapshot:v16:<ET-date> document.
 // This endpoint builds a fresh candidate WITHOUT deleting the current snapshot (KV is
 // eventually consistent — delete-then-refetch was a self-inflicted race), publishes it
 // only if it is no worse (publishIfNoWorse, §7.2), and returns the candidate's readout
@@ -24,6 +24,8 @@
 
 import { authorize } from "../tt.js";
 import { buildSnapshot, publishIfNoWorse } from "../snapshot.js";
+import { buildMacroCall } from "../../../src/macroCall.js";
+import { historyKey, validFrozenCall } from "../../../src/publicHistory.js";
 
 const COOLDOWN_KEY = "pulse:refresh:cooldown";
 const COOLDOWN_SEC = 60;                 // KV minimum TTL — also a sane upstream floor
@@ -78,7 +80,7 @@ export async function onRequestPost({ request, env }) {
   const attemptId = `${startedAt}-${Math.random().toString(36).slice(2, 8)}`;
   const etDate = new Date().toLocaleDateString("en-CA", { timeZone: "America/New_York" });
   // SYNC HAZARD: key version must match functions/api/snapshot.js / readout.json.js / worker/cron.js.
-  const cacheKey = `pulse:snapshot:v15:${etDate}`;
+  const cacheKey = `pulse:snapshot:v16:${etDate}`;
 
   // Read the CURRENT snapshot first — it is the critical-scope carry source, the
   // "no newer observation" baseline, and it is NEVER deleted before the rebuild.
@@ -87,6 +89,21 @@ export async function onRequestPost({ request, env }) {
 
   const { snapshot, readout, statuses } = await buildSnapshot(env, { scope, priorLive: prior?.live ?? null });
   const pub = await publishIfNoWorse(env, cacheKey, snapshot, readout);
+  const completedAt = new Date().toISOString();
+  // Build the canonical public projection from THIS candidate. Returning only the legacy
+  // TT readout would force the Worker back onto an eventually-consistent KV reread and could
+  // freeze yesterday's call even after a successful refresh.
+  const currentCall = buildMacroCall(snapshot.live || {}, {
+    cached: false,
+    effectiveDate: etDate,
+    generatedAt: completedAt,
+  });
+  let call = currentCall, callFrozen = false, callCapturedAt = null;
+  try {
+    const record = await env.PULSE_CACHE?.get(historyKey(etDate), "json");
+    const frozen = validFrozenCall(record, etDate);
+    if (frozen) { call = frozen; callFrozen = true; callCapturedAt = record.captured_at || null; }
+  } catch { /* first 10am capture has no record yet; its candidate is the call to freeze */ }
 
   // Message ladder (§8's required alternates): say what advanced and what could not.
   const messages = [];
@@ -123,9 +140,10 @@ export async function onRequestPost({ request, env }) {
     improved: pub.improved,
     attempt_id: attemptId,
     started_at: startedAt,
-    completed_at: new Date().toISOString(),
+    completed_at: completedAt,
     message: messages.join(" · "),
-    readout: { schema: "tt-v1", as_of: snapshot.asOf, generated_at: new Date().toISOString(), cached: false, ...readout },
+    readout: { schema: "tt-v1", as_of: snapshot.asOf, generated_at: completedAt, cached: false,
+      ...readout, call, call_frozen: callFrozen, call_captured_at: callCapturedAt },
     // Secrets/keys never appear here; recordStatus captures class/status/latency only.
     source_status: statuses || [],
   });

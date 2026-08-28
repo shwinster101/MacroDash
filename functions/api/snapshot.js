@@ -22,13 +22,14 @@
 // inlines it). sources.js is pure ESM, no React — the ONE market-holiday table feeds
 // marketSession/looksBehind here and isStale/etSession client-side, so the two sides
 // can never disagree about which weekdays had a session.
-import { isMarketHoliday, sessionsBehind } from "../../src/sources.js";
+import { isMarketHoliday, sessionsBehind, etYmd } from "../../src/sources.js";
 // FEAT-SAHM (v3.84): the Sahm math — one home (src/sahm.js), same esbuild-inline path.
 import { sahmFrom } from "../../src/sahm.js";
 
 // ENGINE0-CONT: the readout contract now lives in src/ttReadout.js and the snapshot layer
 // consumes it for publish decisions — THIRD functions/→src/ import, same esbuild-inline path.
 import { buildTtReadout, readoutQuality, compareQuality } from "../../src/ttReadout.js";
+import { historyKey, validFrozenCall } from "../../src/publicHistory.js";
 
 const CACHE_TTL = 48 * 60 * 60;   // 48h cleanup; the per-day cache KEY drives freshness
 const SETTLING_TTL = 60 * 60;     // short lock-in while the latest close looks not-yet-posted
@@ -142,6 +143,17 @@ export function quorum(live) {
            missing: QUORUM_FIELDS.filter((k) => !present.includes(k)) };
 }
 
+async function frozenPublicCall(env, etDate) {
+  try {
+    const record = await env.PULSE_CACHE?.get(historyKey(etDate), "json");
+    const call = validFrozenCall(record, etDate);
+    return call ? { publicCall: call, publicCallFrozen: true, publicCallCapturedAt: record.captured_at || null }
+      : { publicCall: null, publicCallFrozen: false, publicCallCapturedAt: null };
+  } catch {
+    return { publicCall: null, publicCallFrozen: false, publicCallCapturedAt: null };
+  }
+}
+
 export async function onRequest(context) {
   const { request, env } = context;
   const params = new URL(request.url).searchParams;
@@ -161,7 +173,8 @@ export async function onRequest(context) {
   const etDate = new Date().toLocaleDateString("en-CA", { timeZone: "America/New_York" }); // YYYY-MM-DD
   // SYNC HAZARD: this key version is duplicated in worker/cron.js (refreshSnapshot) and
   // functions/readout.json.js — no shared module spans them. Grep "pulse:snapshot:v" on every bump.
-  const cacheKey = `pulse:snapshot:v15:${etDate}`; // v15: real 5-session VIX WoW (was mislabeled 1-day)
+  const cacheKey = `pulse:snapshot:v16:${etDate}`; // v16: official NSA headline/core CPI series
+  const callMeta = await frozenPublicCall(env, etDate);
 
   // ── 1. KV Cache check ─────────────────────────────────────────────────
   try {
@@ -184,7 +197,7 @@ export async function onRequest(context) {
           if (w) fresh._diag = { ...(fresh._diag || {}), cronLastWarm: w };
         } catch { /* diagnostic only */ }
       }
-      return json(publicize({ ...fresh, cached: true }));
+      return json(publicize({ ...fresh, ...callMeta, cached: true }));
     }
   } catch {
     // KV unavailable — skip cache, fetch fresh
@@ -212,7 +225,8 @@ export async function onRequest(context) {
   }
 
   // ── 4. Return (strip FMP/licensed fields if public view; _diag only on ?debug=1) ──
-  return json(publicize(isPublic ? { ...stripPrivate(snapshot), cached: false } : snapshot));
+  return json(publicize(isPublic ? { ...stripPrivate(snapshot), ...callMeta, cached: false }
+    : { ...snapshot, ...callMeta }));
 }
 
 // ─── ENGINE0-CONT: the candidate builder (shared by GET, POST /api/snapshot/refresh, cron) ──
@@ -245,12 +259,26 @@ export async function buildSnapshot(env, { scope = "all", priorLive = null } = {
      republishes, so it is fresher-or-equal by construction; asking it when FRED is behind
      costs one request on exactly the days it can help. Merge is by RECENCY per leg
      (preferFresherRates) — the fallback can never overwrite a fresher FRED value. */
+  /* v5.1 — the CBOE VIX failsafe rides the SAME phase and the SAME trigger shape, because
+     it is the same defect one series over (see the fetchCboeVix header). Both fire only
+     when their own leg is dead or behind, and they run CONCURRENTLY — on a healthy day
+     neither runs and this phase costs nothing. The "not needed" sentinel is preserved as a
+     STRING so the _diag line keeps distinguishing "never asked" from "asked and failed";
+     an Error object there would render as a failure the build never had. */
   let treasury = { status: "rejected", reason: "not needed" };
+  let cboe = { status: "rejected", reason: "not needed" };
   const fredTenAsOf = fred.status === "fulfilled" ? fred.value.tenYearAsOf : null;
   const fredLegDead = fred.status !== "fulfilled" || fred.value.tenYear === undefined;
-  if (fredLegDead || sessionsBehind(fredTenAsOf) >= 1) {
-    [treasury] = await Promise.allSettled([fetchTreasury10y(statuses)]);
-  }
+  const fredVixAsOf = fred.status === "fulfilled" ? fred.value.vixAsOf : null;
+  const fredVixDead = fred.status !== "fulfilled" || fred.value.vix === undefined;
+  const needTsy = fredLegDead || sessionsBehind(fredTenAsOf) >= 1;
+  const needVix = fredVixDead || sessionsBehind(fredVixAsOf) >= 1;
+  const settle = (p, set) => p.then((v) => set({ status: "fulfilled", value: v }),
+                                    (e) => set({ status: "rejected", reason: e }));
+  const jobs = [];
+  if (needTsy) jobs.push(settle(fetchTreasury10y(statuses), (s) => { treasury = s; }));
+  if (needVix) jobs.push(settle(fetchCboeVix(statuses), (s) => { cboe = s; }));
+  if (jobs.length) await Promise.all(jobs);
   // Phase 3 (scope "all" only): tokenomics moat + equities + CAPE — add-ons, never gating.
   // FEAT-TOKVOL (v3.85): the volume leg rides here too — the destructure and the
   // critical-scope skipped() arm move TOGETHER (positional).
@@ -267,8 +295,13 @@ export async function buildSnapshot(env, { scope = "all", priorLive = null } = {
   const live = {
     lastRefresh: formatET(now),
     session:     marketSession(),
-    ...preferFresherRates(fred.status === "fulfilled" ? fred.value : null,
-                          treasury.status === "fulfilled" ? treasury.value : null),
+    // Composed, not nested by accident: rates merge first, then the VIX leg merges into
+    // the result. Each touches only its own keys, so the order is immaterial — stated
+    // because a reader should not have to prove that to themselves.
+    ...preferFresherVix(
+      preferFresherRates(fred.status === "fulfilled" ? fred.value : null,
+                         treasury.status === "fulfilled" ? treasury.value : null),
+      cboe.status === "fulfilled" ? cboe.value : null),
     ...(spy.status === "fulfilled" ? spy.value : {}),
     ...(fearGreed.status === "fulfilled" ? fearGreed.value : {}),
     ...(rateOdds.status === "fulfilled" ? rateOdds.value : {}),
@@ -314,6 +347,7 @@ export async function buildSnapshot(env, { scope = "all", priorLive = null } = {
     spy: okOf(spy),
     ndx: okOf(ndx),
     treasury: treasury.reason === "not needed" ? "not needed" : okOf(treasury),
+    cboe: cboe.reason === "not needed" ? "not needed" : okOf(cboe),
     fearGreed: okOf(fearGreed),
     rateOdds: okOf(rateOdds),
     headline: okOf(headline),
@@ -445,8 +479,11 @@ async function fetchFred(key, statuses = null) {
        (21 now = the tail batch grows by 2; the VIX/DGS10 critical head is untouched). */
     fedTargetUpper: "DFEDTARU",
     fedTargetLower: "DFEDTARL",
-    cpiHeadline:  "CPIAUCSL",   // CPI index  → YoY % below
-    cpiCore:      "CPILFESL",   // core CPI index → YoY %
+    // Official BLS headline/core 12-month CPI is reported from the NOT-seasonally-adjusted
+    // indexes. The old CPIAUCSL/CPILFESL calculation was real, but could differ by a tenth
+    // from the number BLS calls headline CPI (July 2026: 3.5 derived SA vs 3.4 official NSA).
+    cpiHeadline:  "CPIAUCNS",   // CPI-U all items, NSA index → official YoY below
+    cpiCore:      "CPILFENS",   // CPI-U less food/energy, NSA index → official YoY
     pceHeadline:  "PCEPI",      // PCE index  → YoY %  (Fed's preferred gauge)
     pceCore:      "PCEPILFE",   // core PCE index → YoY %
     unemployment: "UNRATE",
@@ -835,6 +872,23 @@ export function parseTreasuryCsv(csv) {
   return out;
 }
 
+/* v5.1 — THE PER-LEG RECENCY MERGE, shared by BOTH failsafes (rates and VIX). Extracted
+   rather than copied: "the newer observation wins, a TIE keeps the incumbent, and the leg
+   is replaced WHOLE" is ONE rule, and a second copy of a rule is precisely the drift
+   defect this changelog keeps paying for (the v3.49 denominator, the v3.62 band literals).
+   WHOLE-leg replacement is load-bearing: a mixed leg would pair a fallback's level with
+   the incumbent's deltas and sparkline — a fabricated series, dated by neither source.
+   Returns true when the alternate won, so callers can key attribution off it. */
+function mergeFresherLeg(target, alt, leg, keys) {
+  const asOfKey = leg + "AsOf";
+  if (!alt || alt[leg] === undefined) return false;              // nothing on offer
+  const newer = typeof alt[asOfKey] === "string" &&
+    (typeof target[asOfKey] !== "string" || alt[asOfKey] > target[asOfKey]);
+  if (target[leg] !== undefined && !newer) return false;         // incumbent fresher or tied
+  for (const k of keys) { delete target[k]; if (alt[k] !== undefined) target[k] = alt[k]; }
+  return true;
+}
+
 /* v4.1.5 — merge FRED and UST by RECENCY, per leg, never by source precedence.
    The old code spread the UST value over FRED unconditionally, which was safe only
    because it fired solely when FRED had FAILED. Now that a publication LAG also triggers
@@ -845,17 +899,10 @@ export function parseTreasuryCsv(csv) {
 export function preferFresherRates(fredVal, ustVal) {
   const f = fredVal && typeof fredVal === "object" ? { ...fredVal } : {};
   if (!ustVal || typeof ustVal !== "object") return f;
-  const newer = (a, b) => (typeof b === "string" && (typeof a !== "string" || b > a));
-  const LEGS = {
-    tenYear:    ["tenYear", "tenYearAsOf", "tenYearD1", "tenYearW1", "tenYearM1", "tenYearSeries", "tenYearSource"],
-    thirtyYear: ["thirtyYear", "thirtyYearAsOf", "thirtyYearD1", "thirtyYearW1", "thirtyYearM1", "thirtyYearSeries", "thirtyYearSource"],
-  };
-  for (const [leg, keys] of Object.entries(LEGS)) {
-    const asOfKey = leg + "AsOf";
-    if (ustVal[leg] === undefined) continue;                     // UST has nothing to offer
-    if (f[leg] !== undefined && !newer(f[asOfKey], ustVal[asOfKey])) continue;  // FRED is fresher or tied
-    for (const k of keys) { delete f[k]; if (ustVal[k] !== undefined) f[k] = ustVal[k]; }
-  }
+  mergeFresherLeg(f, ustVal, "tenYear",
+    ["tenYear", "tenYearAsOf", "tenYearD1", "tenYearW1", "tenYearM1", "tenYearSeries", "tenYearSource"]);
+  mergeFresherLeg(f, ustVal, "thirtyYear",
+    ["thirtyYear", "thirtyYearAsOf", "thirtyYearD1", "thirtyYearW1", "thirtyYearM1", "thirtyYearSeries", "thirtyYearSource"]);
   const tenAt = f.tenYearAsOf, thirtyAt = f.thirtyYearAsOf;
   if (f.tenYear !== undefined && f.thirtyYear !== undefined && tenAt && thirtyAt && tenAt === thirtyAt) {
     f.spread10s30s = parseFloat((f.thirtyYear - f.tenYear).toFixed(3));
@@ -877,6 +924,138 @@ async function fetchTreasury10y(statuses = null) {
     throw new Error("Treasury CSV parse failed");
   }
   recordStatus(statuses, "treasury", "daily_treasury_yield_curve", true, { attempts: r._attempts, latency_ms: r._latencyMs, observed_at: out.tenYearAsOf });
+  return out;
+}
+
+// ─── CBOE VIX failsafe (v5.1) ─────────────────────────────────────────────
+/* THE ASYMMETRY THIS CLOSES. v4.1.5 gave the 10Y an official-upstream failsafe because
+   FRED has PER-SERIES publication lag — and the comment at Phase 2.5 records the exact
+   incident: DGS10 sat two sessions behind while VIXCLS had already published. On
+   2026-08-24 01:05 ET the mirror image was live: every other check CURRENT while VIXCLS
+   still had no Friday 08-21 observation, a ~57-hour gap on a daily series. A forced
+   rebuild refetched and still got 08-20, so it was not a transient.
+   The cost of that asymmetry is not symmetric. VIX is the CRASH GAUGE: ttReadout's
+   actionability rule holds HOLD on `!isCur(vix)`, and the v3.40 rule withholds TAILWIND
+   whenever the panic override cannot fire. So the ONE input whose absence halts the whole
+   order-gating engine was the one critical input with no second source, while a less
+   safety-critical series had one. Same failure mode, fix built on one side only.
+   CBOE *publishes* VIX; FRED's VIXCLS is its republication — the same UST↔DGS10
+   relationship, so the level is equivalent by construction and only attribution changes.
+   Never a proxy, never an interpolation: a real close, carrying its real observation date,
+   so a served fallback still classifies CURRENT/HISTORICAL honestly downstream. */
+export function parseCboeVixCsv(csv) {
+  const lines = String(csv || "").trim().split(/\r?\n/);
+  if (lines.length < 2) return null;
+  const header = lines[0].split(",").map((s) => s.replace(/"/g, "").trim());
+  const dateIdx = header.findIndex((h) => /^date$/i.test(h));
+  // CBOE has shipped both "CLOSE" and "VIX CLOSE" over the years; accept either, and
+  // require it — a file whose close column vanished yields NO reading rather than a
+  // guess at which column meant what (fail closed on the FIELD, the parseTreasuryCsv rule).
+  const closeIdx = header.findIndex((h) => /^(vix[\s_]*)?close$/i.test(h));
+  if (dateIdx < 0 || closeIdx < 0) return null;
+  const rows = [];
+  for (let i = 1; i < lines.length; i++) {
+    const cells = lines[i].split(",").map((s) => s.replace(/"/g, "").trim());
+    const v = parseFloat(cells[closeIdx]);
+    if (!Number.isFinite(v) || v <= 0) continue;        // VIX is strictly positive
+    const raw = cells[dateIdx] || "";
+    const dm = raw.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
+    const date = dm ? `${dm[3]}-${dm[1].padStart(2, "0")}-${dm[2].padStart(2, "0")}`
+      : (/^\d{4}-\d{2}-\d{2}$/.test(raw) ? raw : null);
+    if (!date) continue;
+    rows.push({ date, v });
+  }
+  if (!rows.length) return null;
+  rows.sort((a, b) => (a.date < b.date ? 1 : -1));      // newest first, like FRED desc
+  const latest = rows[0], prev = rows[1], wAgo = rows[5];
+  const out = { vix: latest.v, vixAsOf: latest.date, vixSource: "CBOE daily" };
+  /* vixWeekChg semantics are fetchFred's, VERBATIM: latest vs ~5 sessions back, falling
+     back to the 1-day prior only when the 5-session point is absent. The tile labels it
+     "WoW", and a fallback that quietly redefined the window would make the same label
+     mean two different things depending on which source served it. */
+  const base = (wAgo && wAgo.v > 0) ? wAgo.v : (prev && prev.v > 0 ? prev.v : NaN);
+  if (Number.isFinite(base) && base > 0) out.vixWeekChg = parseFloat((((latest.v - base) / base) * 100).toFixed(2));
+  const spark = rows.slice(0, 10).map((r2) => r2.v).reverse();   // oldest→newest, like FRED
+  if (spark.length) out.vixSeries = spark;
+  return out;
+}
+
+/* The delayed-quote JSON — ~1KB against the history file's ~400KB, same publisher, no key.
+   It carries a LEVEL and a trade timestamp, and nothing else this leg needs: a single quote
+   cannot yield a week-over-week window or a sparkline, so it emits neither rather than
+   redefining what the tile's "WoW" label means depending on who served it.
+   CBOE stamps these in Chicago time; only the DATE component is read, and a 15:15 CT close
+   is the same calendar day in ET, so the conversion cannot move the date. */
+export function parseCboeVixQuote(json) {
+  const j = json && typeof json === "object" ? json : null;
+  if (!j) return null;
+  const d = j.data && typeof j.data === "object" ? j.data : j;
+  const raw = [d.close, d.current_price, d.last, d.price]
+    .find((v) => Number.isFinite(Number(v)) && Number(v) > 0);
+  if (raw === undefined) return null;
+  const m = String(d.last_trade_time || d.timestamp || j.timestamp || "").match(/^(\d{4}-\d{2}-\d{2})/);
+  if (!m) return null;                                   // no parseable date → no observation
+  return { vix: Number(raw), vixAsOf: m[1], vixSource: "CBOE delayed" };
+}
+
+/* "JSON for the level, CSV for as_of" — but ONLY when both describe the SAME session.
+   The daily file's newest row is unambiguously the last completed session's close, so it
+   owns the DATE and the derived series; the quote is the fresher read of that same close.
+   Pairing a level from session N with a date from session N-1 would be a fabricated
+   observation — the pairRs rule, one metric over — so on a date mismatch the DAILY FILE
+   WINS OUTRIGHT: a true close beats a fresher intraday print, because the bands, the
+   sparkline and the WoW window are all close-calibrated.
+   A quote with no daily file behind it is usable only when its own date is ALREADY a
+   completed prior session. A same-day delayed quote is an INTRADAY print, i.e. a PROXY,
+   and this vocabulary forbids a proxy from passing through the original metric's bands
+   (ENGINE0-CONT: PROXY exists as a word precisely because nothing may silently emit it). */
+export function pairCboeVix(quote, daily, todayEt) {
+  if (daily && quote && quote.vixAsOf === daily.vixAsOf)
+    return { ...daily, vix: quote.vix, vixSource: "CBOE delayed + CBOE daily" };
+  if (daily) return { ...daily };                        // already stamped "CBOE daily"
+  if (quote && typeof todayEt === "string" && quote.vixAsOf < todayEt) return { ...quote };
+  return null;                                           // intraday-only → no usable close
+}
+
+/* Merge by RECENCY, the same doctrine as preferFresherRates and through the same shared
+   helper — CBOE can itself be the staler feed (a rebuild before CBOE posts), so the newer
+   observation wins and a tie keeps FRED. The failsafe can never make the page staler.
+   ATTRIBUTION IS NEVER IMPLIED: whichever source ends up owning the leg says so, including
+   FRED — an unlabelled number would leave the reader inferring provenance from silence. */
+export function preferFresherVix(fredVal, cboeVal) {
+  const f = fredVal && typeof fredVal === "object" ? { ...fredVal } : {};
+  if (cboeVal && typeof cboeVal === "object")
+    mergeFresherLeg(f, cboeVal, "vix", ["vix", "vixAsOf", "vixWeekChg", "vixSeries", "vixSource"]);
+  if (f.vix !== undefined && !f.vixSource) f.vixSource = "FRED VIXCLS";
+  return f;
+}
+
+async function fetchCboeVix(statuses = null) {
+  const QURL = "https://cdn.cboe.com/api/global/delayed_quotes/quotes/_VIX.json";
+  const CURL = "https://cdn.cboe.com/api/global/us_indices/daily_prices/VIX_History.csv";
+  const get = async (item, url, accept, parse) => {
+    let r, body;
+    try {
+      r = await fetchRetry(url, { headers: { Accept: accept } }, 2, 9000);
+      body = accept.includes("json") ? await r.json() : await r.text();
+    } catch (e) { recordStatus(statuses, "cboe", item, e); throw e; }
+    const out = parse(body);
+    if (!out) {
+      recordStatus(statuses, "cboe", item, Object.assign(new Error("parse failed"), { error_class: "parse" }));
+      throw new Error(`CBOE ${item} parse failed`);
+    }
+    recordStatus(statuses, "cboe", item, true, { attempts: r._attempts, latency_ms: r._latencyMs, observed_at: out.vixAsOf });
+    return out;
+  };
+  // Concurrent: two requests, ONE round trip of latency, and only on a day the leg is
+  // already dead or behind. Either rung failing still leaves the other usable.
+  const [q, c] = await Promise.allSettled([
+    get("delayed_quote", QURL, "application/json,*/*", parseCboeVixQuote),
+    get("VIX_History", CURL, "text/csv,*/*", parseCboeVixCsv),
+  ]);
+  const out = pairCboeVix(q.status === "fulfilled" ? q.value : null,
+                          c.status === "fulfilled" ? c.value : null, etYmd());
+  if (!out) throw new Error("CBOE: no usable close (daily file unavailable; quote is intraday)");
   return out;
 }
 

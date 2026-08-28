@@ -86,6 +86,15 @@ every command "succeeded" — the exact trap this section now exists to prevent)
   8 AM warm is a cache **hit**, so nothing refreshes. A manual `POST /refresh` response
   saying `active_refresh: "skipped (no REFRESH_TOKEN)"` means exactly this state, even
   though the response's `ok` is `true` (the `ok` describes the legacy write only).
+- **Deployment gate:** `npm test` checks that the Worker returns the refresh response's
+  canonical call directly into history capture. Before a production deploy, also run
+  `npx wrangler secret list` and `npx wrangler pages secret list --project-name macrodash`;
+  `REFRESH_TOKEN` must appear in both lists. Secret values are never printed.
+- **Forward-outcome ledger:** the same 10 AM job uses `FRED_KEY` to update separate
+  `public:regime-outcome:v1:*` companions for every open frozen call. It measures the next
+  1/5/20 official S&P 500 closes (the dashboard's documented SPY proxy) and fixed-window max
+  drawdown. Deploying Pages alone exposes the join/UI but does not start enrichment; deploy
+  this Worker too whenever the outcome contract changes.
 - **`REFRESH_SECRET`** — LEGACY only. Guards the Worker's own `POST /refresh` endpoint
   (`x-refresh-secret` header). It never touches `/api/snapshot/refresh`.
 

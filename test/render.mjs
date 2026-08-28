@@ -373,9 +373,14 @@ const server = http.createServer(async (req, res) => {
   // NO_FLOOR_PREPROFIT + context premium; BBB = SCORED but DISAGREEING with the legacy
   // composite, so the methods-disagree line renders. Synthetic only, as always.
   if (url.pathname === "/api/score") {
+    // v5.0 §14.8: the board loads the index at boot. Baseline is EMPTY — every name reads
+    // "no server card", so no test passes for the wrong reason; the eligible-line recipes
+    // inject their own SCORED entry and restore it.
+    if (url.searchParams.get("book") === "1")
+      return json({ methodology_version: "tt-underwriting-v2.6.0", index: {} });
     const s = url.searchParams.get("sym");
     if (s === "AAA") return json({ sym: "AAA", record: { sym: "AAA", underwriting_inputs: {},
-      scorecard: { methodology_version: "tt-underwriting-v2.5.0", status: "UNSCORABLE", actionability: "BLOCKED",
+      scorecard: { methodology_version: "tt-underwriting-v2.6.0", status: "UNSCORABLE", actionability: "BLOCKED",
         route: "AI_INFRA", profile: null, route_mapping_version: "tt-route-v1",
         raw_score: null, raw_tier: null, capped_tier: null, input_hash: "sha256:aaaa1111",
         blockers: ["falsifier_health: AWAITING_FALSIFIERS", "owner_valuation: NO_FLOOR_PREPROFIT"],
@@ -387,7 +392,7 @@ const server = http.createServer(async (req, res) => {
           falsifier_health: { score: null, weight: 0.25, bootstrap: "PRECOMMITTED_PENDING", blockers: ["AWAITING_FALSIFIERS"] } },
         gate_results: [{ id: "AI_G3_2028_BRIDGE", state: "UNKNOWN", premium_prerequisite: true, raw_state: "DEMANDING-BUT-CREDIBLE" }] } } });
     if (s === "BBB") return json({ sym: "BBB", record: { sym: "BBB", underwriting_inputs: {},
-      scorecard: { methodology_version: "tt-underwriting-v2.5.0", status: "SCORED", actionability: "CAUTION",
+      scorecard: { methodology_version: "tt-underwriting-v2.6.0", status: "SCORED", actionability: "CAUTION",
         route: "PHYSICAL_AI", profile: null, route_mapping_version: "tt-route-v1",
         raw_score: 6.12, raw_tier: "B", capped_tier: "B", input_hash: "sha256:bbbb2222",
         blockers: [], pillars: { owner_valuation: { score: 6.5, weight: 0.25, basis_used: "FLOOR", premium_prerequisite_state: "UNKNOWN", blockers: [] },
@@ -478,8 +483,12 @@ console.log("\n[render] TODAY — the default view answers the daily loop");
 const today = await txt(page, "todayCard");
 ok("stance leads with the circuit veto, not the macro read", /NO NEW POSITIONS/.test(today));
 ok("today names tonight's print before anything discretionary", /MACROEVT prints today/.test(today));
-ok("a single-name cap breach is a TODAY stop", /AAA is 21\.4% of acct equity — 3\.4pts over the 18% cap/.test(today));
-ok("a cluster cap breach is a TODAY stop", /Cluster .*is 36\.4% of acct equity — 18\.4pts over the 18% cap/.test(today));
+// v5.2 CAP-ASTERISK (owner ruling 2026-08-25): cap breaches are WARN items now, not stops —
+// "reference cap (informational)", with the asterisk named in the sub. Still visible in TODAY.
+ok("a single-name cap breach is a TODAY warn — reference cap, informational (v5.2)",
+  /AAA is 21\.4% of acct equity — 3\.4pts over the 18% reference cap \(informational\)/.test(today));
+ok("a cluster cap breach is a TODAY warn — reference cap, informational (v5.2)",
+  /Cluster .*is 36\.4% of acct equity — 18\.4pts over the 18% reference cap \(informational\)/.test(today));
 ok("the deleverage line carries real size", /FFF is first to trim — 412 sh, \$30k \(4\.2% of acct equity\)/.test(today));
 // FEAT-TT-PTLINT (v3.39): only LIVE legs cover, and the strike is named rather than every short
 // call counting alike. FFF holds 3 live contracts (exp 2028) + 5 EXPIRED ones: the cover claim
@@ -713,18 +722,28 @@ console.log("\n[render] v3.38 FOUR DRIVERS — stance strip, buy, sell, calendar
 // CCC (no model) + FFF (no model) → "cannot rank"; EEE → options-only; CCC also do_not_trim.
 // Asserted funding first = FFF vs computed first = AAA → reconciliation line prints both.
 const sellB = await txt(page, "sellBlock");
-ok("sell: a cap breach is a FORCED trim with the computed dollar amount",
-  /TRIM/.test(sellB) && /AAA/.test(sellB) && /3\.4pts over the 18% cap/.test(sellB) && /\$4k to cap/.test(sellB));
+/* v5.2 CAP-ASTERISK: the ⛔ TRIM forced tier is GONE (SELLRANK v3.38 REVERSED, owner ruling
+   2026-08-25) — the over-cap row ranks on MERIT and carries the same trimPts/trim$ arithmetic
+   as an amber informational chip instead, so nothing the forced row said is lost. */
+ok("sell: a cap breach is an informational chip on a merit row — same arithmetic, no forced tier (v5.2)",
+  !/⛔ TRIM/.test(sellB) && /AAA/.test(sellB) &&
+  /3\.4pts over the 18% reference cap/.test(sellB) && /\$4k to cap \(informational\)/.test(sellB));
 // FEAT-TT-GLANCE (v3.61): the methodology sentences + the unranked tail moved into a closed
 // est-mini expander. What stays visible while closed: the rows, chip-length basis tags, the
 // unranked COUNT, and the session-disagreement chip (signal, not explanation).
 ok("glance: closed SELL shows chip-length basis tags, never the repeated sentences",
   /%\/yr model/.test(sellB) && !/lowest expected return funds first/i.test(sellB) &&
   !/ranked on realisable dollars/.test(sellB));
-ok("glance: the unranked COUNT is visible while the expander is closed (no silent truncation)",
-  /○ 2 unranked/.test(sellB) && /how this list is ranked/i.test(sellB));
-ok("glance: the disagreement chip stays visible while closed — it is signal",
-  /⚖ session: FFF first · computed: AAA/.test(sellB));
+// v5.2: no-rate share rows and measured options rows all RANK now (tape + score are still
+// axes), so this fixture has ZERO unranked and the count chip honestly disappears; the
+// methodology expander stays. No-silent-truncation is carried by the in-list "no %/yr"
+// primaries asserted below — nothing left this surface.
+ok("glance: nothing is silently missing — the expander stays, no stale unranked count renders (v5.2)",
+  !/○ \d+ unranked/.test(sellB) && /how this list is ranked/i.test(sellB));
+// v5.2: merit sort — BBB (lowest %/yr, −27.3) computes first; AAA's cap no longer forces
+// it to the head of the queue. The chip itself is unchanged signal.
+ok("glance: the disagreement chip stays visible while closed — it is signal (merit first: BBB)",
+  /⚖ session: FFF first · computed: BBB/.test(sellB));
 ok("glance: the SELL methodology expander is est-mini class, never drawer (phone harness rule)",
   (await page.locator("#sellBlock details.est-mini").count()) === 1 &&
   (await page.locator("#sellBlock details.drawer").count()) === 0);
@@ -733,19 +752,71 @@ await page.locator("#sellBlock details.est-mini > summary").click();
 const sellOpen = await txt(page, "sellBlock");
 ok("sell: discretionary source is the LOWEST expected return (BBB), stated as such",
   /BBB/.test(sellOpen) && /%\/yr model/.test(sellOpen) && /lowest expected return funds first/i.test(sellOpen));
-ok("sell: unmodelled held names are named, not silently missing",
-  /cannot rank — no model:/i.test(sellOpen) && /CCC/.test(sellOpen) && /FFF/.test(sellOpen));
+// v5.2: unmodelled held names rank IN the list (exiling them re-created the v3.44
+// exclusion one bucket over) — the primary honestly reads "no %/yr", never a borrowed rate.
+ok("sell: unmodelled held names rank IN the list with an honest no-%/yr primary (v5.2)",
+  /CCC/.test(sellB) && /FFF/.test(sellB) && (sellB.match(/no %\/yr/g) || []).length >= 2 &&
+  !/cannot rank — no model:/i.test(sellOpen));
 // v3.44: an options-only position with synced legs ranks IN the list, on realisable dollars.
 ok("sell: an options-only position ranks IN the list, on dollars, and says so",
   /EEE/.test(sellOpen) && /ranked on realisable dollars/.test(sellOpen) &&
   !/selling legs is not selling shares/.test(sellOpen));
-ok("sell: the asserted funding order is confronted with the computed one",
-  /asserts FFF first/i.test(sellOpen) && /computed says AAA/i.test(sellOpen));
+ok("sell: the asserted funding order is confronted with the computed one (merit: BBB first, v5.2)",
+  /asserts FFF first/i.test(sellOpen) && /computed says BBB/i.test(sellOpen));
 ok("sell: a tripped circuit makes SELL the active list",
   /this IS the active list/i.test(sellOpen));
 const buyB = await txt(page, "buyBlock");
 ok("buy: compact block carries the veto banner and the same canonical ranked rows",
   /NO NEW POSITIONS/.test(buyB) && /AAA/.test(buyB) && /13\.4%\*/.test(buyB));
+/* v4.6 THE RANKING BRIDGE — the footer used to state the truncation and deep-link to DESK
+   for the rest (the v3.72 defect: a control that reports instead of acting). The remainder
+   now opens IN PANEL. Fixture has 3 ranked / 4 unranked, so the tail path is live here; the
+   ranked-overflow path is driven at runtime below, the way the circuit tests already do. */
+// Re-pinned at v5.6: the stamped-history drawer joins the bridge expander — TWO est-minis
+// now, still ZERO drawers (the phone harness counts open drawers, the invariant that matters).
+ok("bridge: the +N expander and the v5.6 stamped history are BOTH est-mini, never drawer",
+  (await page.locator("#buyBlock details.est-mini").count()) === 2 &&
+  (await page.locator("#buyBlock details.drawer").count()) === 0);
+ok("bridge: the COUNT rides the closed summary — silent truncation cannot read as full coverage",
+  /\*1 more reviewed/.test(buyB));
+ok("bridge: the old DESK deep-link for NAMES is gone; only the methodology link remains",
+  !/full math, horizons/.test(buyB) && /caveats, lints & horizon pin/.test(buyB));
+{
+  const closed = await page.locator("#buyBlock").innerText();
+  // v5.6: two est-minis exist now (bridge + stamped history); the bridge is FIRST in DOM.
+  await page.locator("#buyBlock details.est-mini > summary").first().click();
+  const opened = await page.locator("#buyBlock").innerText();
+  const hidden = await page.evaluate(() => UNRANKED_ROWS.slice(3).map(r => r.sym));
+  ok("bridge: the overflow name is absent while closed and present one tap deep",
+    hidden.length === 1 && !closed.includes(hidden[0]) && opened.includes(hidden[0]));
+  /* The invariant is "no horizontal overflow at the ACTIVE width" — this block runs at the
+     1200px desktop viewport, so pinning a literal 390 would have measured nothing. */
+  ok("bridge: expanding adds no horizontal overflow at the active viewport width",
+    await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth));
+}
+/* Ranked overflow: inject two synthetic rows so UPSIDE_ROWS exceeds the visible 5, then
+   assert the expander continues the SAME order with correct rank numbers — the rows in the
+   expander must be rank 6 and 7, not a restarted list. */
+{
+  const rk = await page.evaluate(() => {
+    const base = UPSIDE_ROWS[0];
+    const keep = UPSIDE_ROWS.slice();
+    while (UPSIDE_ROWS.length < 7)
+      UPSIDE_ROWS.push({ ...base, sym: "ZZ" + UPSIDE_ROWS.length, ann: -90 - UPSIDE_ROWS.length, upside: -90 });
+    renderBuyBlock();
+    const el = document.getElementById("buyBlock");
+    const sum = el.querySelector("details.est-mini > summary").innerText;
+    el.querySelector("details.est-mini").open = true;
+    const openTxt = el.innerText;
+    const visibleRows = el.querySelectorAll(":scope > button.fdr-row").length;
+    UPSIDE_ROWS.length = 0; UPSIDE_ROWS.push(...keep); renderBuyBlock();
+    return { sum, openTxt, visibleRows };
+  });
+  ok("bridge: with 7 ranked the summary counts the 2 hidden, and only 5 render by default",
+    /\+2 more ranked/.test(rk.sum) && rk.visibleRows <= 5 + 3);
+  ok("bridge: expander continues the SAME order — ranks #6 and #7, never a restarted list",
+    /#6/.test(rk.openTxt) && /#7/.test(rk.openTxt) && rk.openTxt.includes("ZZ5") && rk.openTxt.includes("ZZ6"));
+}
 const calB = await txt(page, "calBlock");
 ok("calendar block leads with today's binary", /TODAY/.test(calB) && /MACROEVT/.test(calB));
 // FEAT-TT-CIRCUIT (v4.1 Step 1): the fail-closed path, driven live. Clearing the structured
@@ -767,8 +838,20 @@ ok("circuit absent → the UNRESOLVED strip renders loud instead of hiding",
   /CIRCUIT UNRESOLVED — adds suspended/i.test(unresolved.circ) &&
   /prose is explanation, not permission/i.test(unresolved.circ));
 const strip = await txt(page, "stanceStrip");
-ok("stance strip carries the red counts while DESK is closed",
-  /over cap/.test(strip) && /binaries/.test(strip));
+/* v5.6.5 (owner call): under a RESTRICTIVE gate the badges move behind one expander whose
+   CLOSED summary carries their COUNT and colour — the v3.25 rule at a different altitude:
+   a collapse may hide a red fact's DETAIL, never that one exists. Both halves are pinned:
+   the count while closed, and every badge verbatim one tap deep. */
+ok("stance strip SIGNALS the reds while closed — a counted, coloured flag summary",
+  // /i: innerText APPLIES text-transform:uppercase on the summary (the v3.69 lesson).
+  /⚠ \d+ flags?/i.test(strip) && /why, and what else is red/i.test(strip));
+{
+  await page.locator("#stanceStrip details.why > summary").click();
+  const open = await txt(page, "stanceStrip");
+  ok("stance strip: one tap reveals every red badge verbatim — nothing was deleted, only moved",
+    /over cap/.test(open) && /binaries/.test(open));
+  await page.locator("#stanceStrip details.why > summary").click();
+}
 ok("stance strip carries the refresh button and the quote stamp",
   (await page.locator("#refreshRanks").count()) === 1 && /quotes \d{2}:\d{2}Z/.test(strip));
 // v3.42 READABLE DESK: the verdict is a TOKEN, not a buried clause — the tripped fixture
@@ -779,9 +862,12 @@ ok("stance bar: the verdict renders as a single large token (tripped fixture →
   /NO NEW POSITIONS/.test(await page.locator("#stanceStrip .vbadge").innerText()));
 ok("stance bar: the why drawer starts closed and holds the full prose verbatim",
   (await page.locator("#stanceStrip details.why[open]").count()) === 0 &&
-  /leverage circuit tripped/i.test(await page.locator("#stanceStrip details.why div").textContent()));
-ok("stance bar: with the drawer closed the verdict + red counts are all still visible",
-  /NO NEW POSITIONS/.test(strip) && /over cap/.test(strip) && /binaries/.test(strip));
+  // v5.6.5: the expander nests a chip row + the prose, so scope to the prose div (the last).
+  /leverage circuit tripped/i.test(await page.locator("#stanceStrip details.why div").last().textContent()));
+// v5.6.5: on a RESTRICTIVE board the verdict stays on the face and the reds are SIGNALLED
+// by a counted summary (revealed verbatim one tap deep, asserted above).
+ok("stance bar: with the drawer closed the verdict and a counted red signal are both visible",
+  /NO NEW POSITIONS/.test(strip) && /⚠ \d+ flags?/i.test(strip));
 ok("stance bar: badges and controls are real buttons — keyboard-reachable",
   (await page.locator("#stanceStrip button").count()) >= 4);
 // v3.42 slice 2: driver rows are grid buttons — the primary datum sits right-aligned at
@@ -827,30 +913,41 @@ ok("missing net cash produces a visible migration audit naming the retired impli
   /net-cash migration audit/i.test(upRankOpen) && /old implicit-zero target/i.test(upRankOpen) && /measured-only target/i.test(upRankOpen));
 // BBB is modelled but carries NO position — the ranking spans both universes and must say so.
 ok("an unheld name is labelled, never left blank against a held one", /new — not held/.test(upRank));
-// The load-bearing fix. The fixture circuit is TRIPPED, which short-circuits the whole
-// agree block — so clear it first, or the veto path never executes and the test passes
-// for the wrong reason. Restore both mutations before returning.
+// The fixture circuit is TRIPPED, which short-circuits the whole agree block — clear it
+// first, or the path under test never executes and the test passes for the wrong reason.
+// Restore every mutation before returning.
 const capped = await page.evaluate(() => {
   const prevState = BOARD.circuit.state, prevMv = POSITIONS.AAA.mv, prevPx = LIVE_PX.AAA;
-  // FIX-B (v3.49): the fixture's asserted PANIC regime now vetoes the whole agree block
-  // before why() ever runs — clear it too, or the cap veto is unreachable (the same
-  // passes-for-the-wrong-reason trap the circuit comment above describes).
   const prevReg = BOARD.regime;
+  const prevCard = SCORE_INDEX && SCORE_INDEX.AAA;
   BOARD.regime = null;
   BOARD.circuit.state = "clear";
-  // AAA must have a POSITIVE gap to reach the cap branch at all — why() returns "no gap"
-  // first, and the fixture prices AAA ($800) above its nearest target ($400).
   LIVE_PX.AAA = { px: 300, chg: 0, at: prevPx.at };
-  POSITIONS.AAA = { ...POSITIONS.AAA, mv: 999999 };   // ~85% of the tracked book
+  POSITIONS.AAA = { ...POSITIONS.AAA, mv: 999999 };   // far over the reference cap
+  /* v5.2: quality clears via a SCORED card (the entry-recipe pattern), so the ONLY thing
+     between AAA and the line is its weight — which no longer vetoes. */
+  SCORE_INDEX = SCORE_INDEX || {};
+  SCORE_INDEX_META = SCORE_INDEX_META || { methodology_version: "tt-underwriting-v2.6.0" };
+  SCORE_INDEX.AAA = { status: "SCORED", raw_score: 8.0, raw_tier: "A", capped_tier: "A",
+    methodology_version: SCORE_INDEX_META.methodology_version, broken_thesis: false };
   render();
   const t = document.getElementById("upsideRank").innerText;
-  const res = { over: /at the 18% cap, no room/.test(t), pick: AGREE_PICK ? AGREE_PICK.sym : null };
+  const res = { vetoGone: !/at the 18% cap, no room/.test(t),
+    pick: AGREE_PICK ? AGREE_PICK.sym : null,
+    green: /ELIGIBLE NEXT DOLLAR — all gates passed/.test(t),
+    asterisk: /over the 18% reference cap \(asterisk, not a veto\)/.test(t) };
   BOARD.circuit.state = prevState; BOARD.regime = prevReg; POSITIONS.AAA = { ...POSITIONS.AAA, mv: prevMv }; LIVE_PX.AAA = prevPx;
+  if (prevCard === undefined) delete SCORE_INDEX.AAA; else SCORE_INDEX.AAA = prevCard;
   render();
   return res;
 });
-ok("a name over the cap is vetoed from the next dollar with its reason named", capped.over);
-ok("...and is never left standing as AGREE_PICK", capped.pick !== "AAA");
+/* v5.2 CAP-ASTERISK — DOCUMENTED REVERSAL of RANKFAIR v3.36 (owner ruling 2026-08-25:
+   "keep it as an asterisk"). The over-cap name now TAKES the eligible line, carrying the
+   reference-cap chip exactly where the veto used to fire — chosen with eyes open. */
+ok("v5.2: an over-cap name is no longer vetoed — the pick stands, the green line lights",
+  capped.vetoGone && capped.pick === "AAA" && capped.green);
+ok("v5.2: the reference-cap asterisk renders ON the eligible line itself, never only in a drawer",
+  capped.asterisk);
 const gated = await page.evaluate(() => {
   const prevState = BOARD.circuit.state;
   BOARD.circuit.state = "clear";
@@ -907,10 +1004,16 @@ await page.waitForTimeout(120);
 const paLive = await page.evaluate(() => {
   const a = BOOK.find((e) => e.sym === "AAA");
   const prev = { reg: BOARD.regime, circ: BOARD.circuit.state, px: LIVE_PX.AAA,
-    comp: a.deepDive.composite, pa: a.deepDive.price_action };
+    comp: a.deepDive.composite, pa: a.deepDive.price_action,
+    card: SCORE_INDEX && SCORE_INDEX.AAA };
   BOARD.regime = null; BOARD.circuit.state = "clear";
   LIVE_PX.AAA = { px: 300, chg: 0, at: prev.px.at };
-  a.deepDive.composite = { score: 8.0, basis: "synthetic", capped_tier: "A" };
+  /* v5.0 §14.8: the quality rung reads SERVER CARDS — clearing it means a SCORED index
+     entry under the current methodology, no longer a legacy composite. */
+  SCORE_INDEX = SCORE_INDEX || {};
+  SCORE_INDEX_META = SCORE_INDEX_META || { methodology_version: "tt-underwriting-v2.6.0" };
+  SCORE_INDEX.AAA = { status: "SCORED", raw_score: 8.0, raw_tier: "A", capped_tier: "A",
+    methodology_version: SCORE_INDEX_META.methodology_version, broken_thesis: false };
   const today = new Date().toLocaleDateString("en-CA", { timeZone: "America/New_York" });
   a.deepDive.price_action = { as_of: today,
     levels: { ma50: 280, ma200: 240 },
@@ -928,7 +1031,7 @@ const paLive = await page.evaluate(() => {
   render();
   out.hit = /✓ AT ENTRY/.test(document.getElementById("upsideRank").innerText);
   BOARD.regime = prev.reg; BOARD.circuit.state = prev.circ; LIVE_PX.AAA = prev.px;
-  a.deepDive.composite = prev.comp;
+  if (prev.card === undefined) delete SCORE_INDEX.AAA; else SCORE_INDEX.AAA = prev.card;
   if (prev.pa === undefined) delete a.deepDive.price_action; else a.deepDive.price_action = prev.pa;
   render();
   return out;
@@ -947,10 +1050,15 @@ ok("entry: price reaching the committed level flips the chip to AT ENTRY, live",
 const techLive = await page.evaluate(() => {
   const a = BOOK.find((e) => e.sym === "AAA");
   const prev = { reg: BOARD.regime, circ: BOARD.circuit.state, px: LIVE_PX.AAA,
-    comp: a.deepDive.composite, pa: a.deepDive.price_action };
+    comp: a.deepDive.composite, pa: a.deepDive.price_action,
+    card: SCORE_INDEX && SCORE_INDEX.AAA };
   BOARD.regime = null; BOARD.circuit.state = "clear";
   LIVE_PX.AAA = { px: 300, chg: 0, at: prev.px.at };
-  a.deepDive.composite = { score: 8.0, basis: "synthetic", capped_tier: "A" };
+  // v5.0 §14.8: quality clears via a SCORED card, not a legacy composite (the entry recipe).
+  SCORE_INDEX = SCORE_INDEX || {};
+  SCORE_INDEX_META = SCORE_INDEX_META || { methodology_version: "tt-underwriting-v2.6.0" };
+  SCORE_INDEX.AAA = { status: "SCORED", raw_score: 8.0, raw_tier: "A", capped_tier: "A",
+    methodology_version: SCORE_INDEX_META.methodology_version, broken_thesis: false };
   const today = new Date().toLocaleDateString("en-CA", { timeZone: "America/New_York" });
   // px 300 vs ma50 280 (+7.1%) vs ma200 240 (+25%), cross +16.7%, range (300-200)/(320-200)=83%
   // → all four price-action factors bull → BULLISH, no withhold.
@@ -977,7 +1085,7 @@ const techLive = await page.evaluate(() => {
   out.stillEligible = /ELIGIBLE NEXT DOLLAR — all gates passed/.test(t2)
     && (AGREE_PICK ? AGREE_PICK.sym : null) === "AAA";
   BOARD.regime = prev.reg; BOARD.circuit.state = prev.circ; LIVE_PX.AAA = prev.px;
-  a.deepDive.composite = prev.comp;
+  if (prev.card === undefined) delete SCORE_INDEX.AAA; else SCORE_INDEX.AAA = prev.card;
   if (prev.pa === undefined) delete a.deepDive.price_action; else a.deepDive.price_action = prev.pa;
   render();
   return out;
@@ -1024,13 +1132,23 @@ const allocLive = await page.evaluate(() => {
   render();
   const buy = document.getElementById("buyBlock").innerText;
   const sell = document.getElementById("sellBlock").innerText;
+  /* v5.6.5 (owner call): the receipt's disclosures — the not-a-cash-claim qualifier, the
+     measured account, the basis versions — moved one tap down behind allocDisclose so the
+     STATE leads. Open both altitudes' expanders and assert every line survived verbatim. */
+  document.querySelectorAll("#buyBlock details.est-mini, #sellBlock details.est-mini")
+    .forEach((d) => { if (/what this claims/i.test(d.querySelector("summary").textContent)) d.open = true; });
+  const buyOpen = document.getElementById("buyBlock").innerText;
+  const sellOpen = document.getElementById("sellBlock").innerText;
   const out = {
     // v4.1 Step 2: renamed label + permanent qualifier + measured account, both altitudes.
     buyChip: /ALLOCATION CONTEXT READY — AAA/.test(buy) && !/server: ALLOCATABLE/.test(buy),
     sellChip: /ALLOCATION CONTEXT READY — AAA/.test(sell),
-    qualifier: /not a cash-availability or sizing claim/.test(buy) &&
-               /not a cash-availability or sizing claim/.test(sell),
-    acctBeside: /acct: equity \$317k · cash -\$287k · BP \$16k · debt \$287k/.test(buy),
+    // the state stays on the FACE; the disclaimers are one tap deep, at BOTH altitudes
+    faceIsClean: !/not a cash-availability or sizing claim/.test(buy),
+    discloseSummary: /what this claims/i.test(buy) && /what this claims/i.test(sell),
+    qualifier: /not a cash-availability or sizing claim/.test(buyOpen) &&
+               /not a cash-availability or sizing claim/.test(sellOpen),
+    acctBeside: /acct: equity \$317k · cash -\$287k · BP \$16k · debt \$287k/.test(buyOpen),
     confirmLink: document.getElementById("allocFundLink") !== null,
     confirmIntentOnly: /RECORD FUNDING INTENT — AAA · no order/.test(buy),
     disagree: /SERVER RECEIPT GOVERNS CONFIRMATION/.test(sell) && /server: FFF first/.test(sell) &&
@@ -1055,9 +1173,11 @@ const allocLive = await page.evaluate(() => {
 });
 ok("alloc: the context-ready receipt renders the SAME chip at both altitudes (one builder)",
   allocLive.buyChip && allocLive.sellChip);
-ok("alloc: the not-a-cash-claim qualifier rides the state at BOTH altitudes",
+ok("alloc v5.6.5: the STATE leads the face and the disclaimers sit behind one expander at BOTH altitudes",
+  allocLive.faceIsClean && allocLive.discloseSummary);
+ok("alloc: the not-a-cash-claim qualifier survives verbatim one tap deep, at BOTH altitudes",
   allocLive.qualifier);
-ok("alloc: the measured account (negative cash, debt) renders beside the green state",
+ok("alloc: the measured account (negative cash, debt) survives one tap deep",
   allocLive.acctBeside);
 ok("alloc: RECORD FUNDING INTENT — no order is the confirm affordance, two-step",
   allocLive.confirmLink && allocLive.confirmIntentOnly);
@@ -1069,6 +1189,77 @@ ok("alloc: no receipt is a STATED state, never a blank surface",
   allocLive.honest);
 ok("alloc: a permission state that moved AGAINST the receipt withdraws the confirm affordance, saying why",
   allocLive.withheldOnStop);
+
+/* v5.6 THE DAILY CONTRACT — driven live: the GATE token on both branches, the spread line
+   at both altitudes, the flip line, and the STAMP affordance's three honest states. */
+console.log("\n[render] v5.6 THE DAILY CONTRACT — gate, spread, flip line, stamp");
+ok("gate: the tripped default fixture reads GATE: TOUCH GRASS on the strip — fail-closed, chip-length, scoped",
+  /GATE: TOUCH GRASS/.test(await txt(page, "stanceStrip")));
+const daily = await page.evaluate(() => {
+  const a = BOOK.find((e) => e.sym === "AAA");
+  const prev = { alloc: ALLOC, stamped: ALLOC_STAMPED, circ: BOARD.circuit, reg: BOARD.regime,
+    px: LIVE_PX.AAA, card: SCORE_INDEX && SCORE_INDEX.AAA };
+  const today = new Date().toLocaleDateString("en-CA", { timeZone: "America/New_York" });
+  // the entry-recipe: clear gates + a SCORED card so AGREE_PICK lights and both spread
+  // altitudes render (the compact banner only exists under a pick).
+  BOARD.circuit = { state: "clear", as_of: today };
+  BOARD.regime = { asserted: "TAILWIND", as_of: today };
+  LIVE_PX.AAA = { px: 300, chg: 0, at: LIVE_PX.AAA.at };
+  SCORE_INDEX = SCORE_INDEX || {};
+  SCORE_INDEX_META = SCORE_INDEX_META || { methodology_version: "tt-underwriting-v2.6.0" };
+  SCORE_INDEX.AAA = { status: "SCORED", raw_score: 8.0, raw_tier: "A", capped_tier: "A",
+    methodology_version: SCORE_INDEX_META.methodology_version, broken_thesis: false };
+  ALLOC = { schema: "tt-alloc-receipt-v1", at: today + "T14:00:00Z", business_date_et: today,
+    state: "BUY_ELIGIBLE", gate: null, macro_gate: { gate: "SEND_IT", rung: null, reason: null },
+    eligible: { sym: "AAA", y: "2027", tgt: 400, up: 33.3, ann: 24.1 }, why_not: [],
+    context_blockers: ["no measured positions — sync has never run"],
+    spread: { AAA: { belief: { pt: 400, y: "2027" }, street: { pt: 340, src: "sourced", as_of: today },
+      pct: 20, sign: "you_richer" } },
+    overtake: { leader: "AAA", runner_up: "BBB", at_px: 352.4, note: "BBB overtakes AAA if AAA reaches $352.4 first" },
+    funding: { label: "FUNDING PRIORITY — not a sell recommendation", rows: [], optOnly: [] },
+    inputs: { readout_as_of: today },
+    attestation: { input_hash: "a".repeat(64), basis_hash: "b".repeat(64), result_hash: "c".repeat(64) },
+    confirmation: null };
+  ALLOC_STAMPED = false;
+  render();
+  const strip = document.getElementById("stanceStrip").innerText;
+  const up = document.getElementById("upsideRank").innerText;
+  const buy = document.getElementById("buyBlock").innerText;
+  const out = {
+    gateSendIt: /GATE: SEND IT/.test(strip),
+    // ONE builder, TWO altitudes: the labeled sourced leg + the frozen number on both.
+    spreadDesk: /you \$400 vs street \$340/.test(up) && /\(sourced/.test(up) && /\+20% you richer/.test(up),
+    spreadBuy: /you \$400 vs street \$340/.test(buy),
+    flipLine: /BBB overtakes AAA if AAA reaches \$352\.4 first/.test(up),
+    stampLink: document.getElementById("allocStampLink") !== null,
+    histSummary: /stamped history — the days you committed, scored/.test(buy) };
+  // stamped ✓ replaces the link — the committed state is stated, not implied.
+  ALLOC_STAMPED = true; render();
+  out.stampedTick = /⭑ stamped ✓/.test(document.getElementById("buyBlock").innerText) &&
+    document.getElementById("allocStampLink") === null;
+  // a prior-business-date receipt WITHHOLDS the stamp with the reason named.
+  ALLOC_STAMPED = false; ALLOC = { ...ALLOC, business_date_et: "2026-01-02" }; render();
+  out.stampWithheld = /stamp withheld — receipt is dated 2026-01-02/.test(document.getElementById("buyBlock").innerText) &&
+    document.getElementById("allocStampLink") === null;
+  // street-null on the receipt = STATED, never a number.
+  ALLOC = { ...ALLOC, business_date_et: (new Date().toLocaleDateString("en-CA", { timeZone: "America/New_York" })),
+    spread: { AAA: { belief: { pt: 400, y: "2027" }, street: null, pct: null, sign: null } } };
+  render();
+  out.unreviewed = /street unreviewed — no packet, no sourced target/.test(document.getElementById("upsideRank").innerText);
+  ALLOC = prev.alloc; ALLOC_STAMPED = prev.stamped; BOARD.circuit = prev.circ; BOARD.regime = prev.reg;
+  LIVE_PX.AAA = prev.px;
+  if (prev.card === undefined) delete SCORE_INDEX.AAA; else SCORE_INDEX.AAA = prev.card;
+  render();
+  return out;
+});
+ok("gate: a cleared board under FULL actionability reads GATE: SEND IT", daily.gateSendIt);
+ok("spread: one builder, two altitudes — labeled sourced leg + the frozen number on the DESK box AND the compact banner",
+  daily.spreadDesk && daily.spreadBuy);
+ok("flip line: the #2-overtakes sentence renders under the eligible line", daily.flipLine);
+ok("stamp: the two-step link renders on a today receipt; stamped ✓ replaces it; a stale receipt withholds with the date named",
+  daily.stampLink && daily.stampedTick && daily.stampWithheld);
+ok("spread: a null street leg is STATED (street unreviewed), never a number", daily.unreviewed);
+ok("stamped history rides the BUY block tail, one tap deep", daily.histSummary);
 
 console.log("\n[render] FEAT-TT-ESTRUN — the board expression inside NEXT DOLLAR");
 const estBoard = await txt(page, "estRunBoard");
@@ -1107,6 +1298,34 @@ await page.waitForTimeout(120);
 const dv = (await page.locator("#deepView").innerText()).replace(/\s+/g, " ");
 ok("the four answers render above the corpus",
   /WHAT IT'S WORTH/i.test(dv) && /WHAT CHANGES MY MIND/i.test(dv) && /WHEN/i.test(dv) && /WHAT I OWN/i.test(dv));
+/* v5.6.6 (owner call): the tab opens with the EXECUTIVE SUMMARY — thesis, then the near and
+   far targets — above the four answers and the corpus. Driven live, including the search
+   keystroke that now routes here instead of to the edit card. */
+ok("v5.6.6: the exec summary leads the tab with short- and long-term targets, above the four answers",
+  /EXECUTIVE SUMMARY/i.test(dv) && /SHORT TERM/i.test(dv) && /LONG TERM/i.test(dv) &&
+  dv.indexOf("EXECUTIVE SUMMARY") < dv.indexOf("WHAT IT'S WORTH"));
+ok("v5.6.6: an absent thesis is NAMED on the tab, never inferred from the tier",
+  /no thesis line stored/i.test(dv));
+{
+  // The real keystroke: type a book name into the search bar and press Enter.
+  await page.evaluate(() => switchTab("BOARD"));
+  await page.waitForTimeout(120);
+  await page.locator("#search").fill("bbb");
+  await page.keyboard.press("Enter");
+  await page.waitForTimeout(300);
+  const opened = await page.evaluate(() => ({
+    deep: document.getElementById("deepView").style.display !== "none",
+    tab: typeof TAB !== "undefined" ? TAB : null,
+    modal: document.getElementById("overlay").classList.contains("on"),
+    text: document.getElementById("deepView").innerText.replace(/\s+/g, " "),
+  }));
+  ok("v5.6.6 search: Enter on an in-book name opens its DEEP DIVE — not the edit card modal",
+    opened.deep && opened.tab === "BBB" && !opened.modal && /EXECUTIVE SUMMARY/i.test(opened.text));
+  ok("v5.6.6 search: the edit card stays one tap away from the tab (OPEN TT CARD)",
+    /OPEN TT CARD/i.test(opened.text));
+  await page.evaluate(() => switchTab("AAA"));
+  await page.waitForTimeout(200);
+}
 // FEAT-TT-READY (v3.50): the consolidated statement sits ABOVE the four answers, and the
 // red facts survive the consolidation (v3.25) — AAA carries a RED hinge, which must be
 // named on the bar as a caution while never blocking (D3: the board reports, not enforces).
@@ -1124,8 +1343,8 @@ ok("what-changes-my-mind names the red hinge", /1 red/.test(dv) && /demand/.test
 // premium: the panel must render the NAMED states and never a placeholder score.
 await page.waitForTimeout(400);   // lazy score fetch lands and re-renders the tab
 const dvS = (await page.locator("#deepView").innerText()).replace(/\s+/g, " ");
-ok("score: the shadow panel renders between readiness and the four answers (§15 order)",
-  /TT UNDERWRITING · SHADOW/i.test(dvS) &&
+ok("score: the governing panel renders between readiness and the four answers (§15 order)",
+  /TT UNDERWRITING · GOVERNS/i.test(dvS) &&
   dvS.indexOf("DECISION READINESS") < dvS.toUpperCase().indexOf("TT UNDERWRITING") &&
   dvS.toUpperCase().indexOf("TT UNDERWRITING") < dvS.toUpperCase().indexOf("WHAT IT'S WORTH"));
 ok("score: AWAITING_FALSIFIERS and NO_FLOOR_PREPROFIT render as NAMED states, never a score",
@@ -1139,16 +1358,21 @@ ok("score: the contingent premium is labelled CONTEXT ONLY with no pillar contri
   /CONTEXT ONLY/.test(dvSO) && /contingent premium \$382/.test(dvSO));
 ok("score: a normalized legacy gate label shows its raw state for audit",
   /AI_G3_2028_BRIDGE UNKNOWN/.test(dvSO) && /was: DEMANDING-BUT-CREDIBLE/.test(dvSO));
-// BBB's stub is a COMPLETE shadow score (B) against a legacy S composite — during shadow
-// the disagreement renders as WAIT — methods disagree, and legacy keeps governing.
+// BBB's stub is a COMPLETE server card (B) against a legacy S composite. v5.0 §14.8: the
+// CARD governs — the disagreement is HISTORY inside the collapsed details, never a WAIT.
 await page.evaluate(() => switchTab("BBB"));
 await page.waitForTimeout(500);
 await page.evaluate(() => { document.querySelectorAll("#deepView details.schema").forEach((d) => { d.open = true; }); });
 const dvB = (await page.locator("#deepView").innerText()).replace(/\s+/g, " ");
-ok("score: a complete shadow score that disagrees with legacy renders WAIT — methods disagree",
-  /WAIT — methods disagree/.test(dvB) && /legacy S vs TT B/.test(dvB) && /legacy governs/i.test(dvB));
-ok("score: the legacy composite is relabelled LEGACY \/ UNVERIFIED inside the panel (one home)",
-  /LEGACY \/ UNVERIFIED/.test(dvB) && /governs the board until activation/.test(dvB));
+// RE-PINNED at v5.0 (§14.8 activation): "WAIT — methods disagree" is RETIRED — the wait
+// state existed because two live methods shared one board. The disagreement survives as
+// HISTORY beside the legacy number, and the legacy label says superseded, not governing.
+ok("score: the card GOVERNS — disagreement with legacy is stated as history, never as a WAIT",
+  !/WAIT — methods disagree/.test(dvB) &&
+  /disagreed with the governing card: legacy S vs TT B/.test(dvB) && /history, not a wait/.test(dvB));
+ok("score: the legacy composite is relabelled HISTORICAL — superseded at activation (one home)",
+  /LEGACY \(historical — superseded at §14\.8 activation/.test(dvB) &&
+  !/governs the board until activation/.test(dvB));
 await page.evaluate(() => switchTab("AAA"));
 await page.waitForTimeout(150);
 ok("what-I-own reads the measured position", /21\.4% of acct equity/.test(dv) && /30 sh/.test(dv));
@@ -1394,8 +1618,15 @@ ok("capex-ocf: the closed drawer summary carries the amber funding chip beside t
 // v3.55: the fixture now has BOTH legs red (capex turning + demand falsified), so the strip
 // carries the MERGED badge — one chip for one thesis, one drawer. The capex-only and
 // demand-only forms are pinned at source in smoke.
-ok("capex: the stance strip carries the ⚡ badge while everything is closed",
-  /⚡ AI both legs/.test(await txt(page, "stanceStrip")));
+ok("capex: the ⚡ badge is SIGNALLED while closed and reads verbatim one tap deep (v5.6.5)",
+  (await (async () => {
+    const closed = await txt(page, "stanceStrip");
+    if (!/⚠ \d+ flags?/i.test(closed)) return false;
+    await page.locator("#stanceStrip details.why > summary").click();
+    const open = await txt(page, "stanceStrip");
+    await page.locator("#stanceStrip details.why > summary").click();
+    return /⚡ AI both legs/.test(open);
+  })()));
 await page.evaluate(() => switchTab("AAA"));
 await page.waitForTimeout(250);
 await page.evaluate(() => document.querySelectorAll("#deepView details").forEach((d) => (d.open = true)));
@@ -1572,9 +1803,15 @@ ok(`one decision focus view + calendar reaches the book inside two phone screens
   dailySpan < 1688);
 // v3.42 READABLE DESK: the old stance strip wrapped ~5 lines of prose at 390px; the bar's
 // top row (token + chips + badges) must stay compact with the why drawer closed.
+/* Budget history, each move measured and reasoned (the v3.45 rule — never quietly loosened):
+   140 (v3.42) -> 185 (v5.6, the GATE token earned one packing row, measured 178 on this
+   dense restrictive fixture) -> 120 (v5.6.5, TIGHTENED): the qualifiers and badges moved
+   behind one counted expander, so the top row is gate + verdict + controls and measures
+   86px. A budget that no longer binds is not a guard, so it comes back down with the win;
+   120 leaves one wrap row of headroom and still fails on a second. */
 const stanceTopH = (await phone.locator("#stanceStrip .stance-top").boundingBox()).height;
-ok(`stance bar top row is compact at 390px — token and chips, never five lines of prose (${stanceTopH}px)`,
-  stanceTopH < 140);
+ok(`stance bar top row is compact at 390px — gate, verdict and controls, never prose soup (${stanceTopH}px)`,
+  stanceTopH < 120);
 ok("the tab strip is ONE row at 390px — it scrolls horizontally, it never wraps",
   (await phone.locator("#tabBar").boundingBox()).height < 60);
 // v3.81: the horizon defect was reachability, not visibility — measure the thumb target where
@@ -1625,8 +1862,10 @@ const fundCountIsRed = await phone.locator("#fundTabCount > span").evaluate((el)
   return getComputedStyle(el).color === expected;
 });
 const fundTabText = await phone.locator("#decisionFundTab").textContent();
-ok('decision deck: a forced cap trim shows as a RED count on the closed FUND / TRIM tab, and never auto-opens it',
-  /^FUND \/ TRIM · [1-9]\d* FORCED$/.test(fundTabText) &&
+// v5.2: the count is over-cap rows (informational) — "N ⚠cap", still RED on the closed
+// tab (v3.25: the red fact survives the collapse) and still never auto-opens.
+ok('decision deck: an over-cap position shows as a RED ⚠cap count on the closed FUND / TRIM tab, and never auto-opens it (v5.2)',
+  /^FUND \/ TRIM · [1-9]\d* ⚠cap$/.test(fundTabText) &&
   fundCountIsRed &&
   (await phone.locator("#decisionBuyTab").getAttribute("aria-selected")) === "true" &&
   await phone.locator("#decisionFund").getAttribute("inert") !== null);
@@ -1742,11 +1981,11 @@ const tail = await phone2.evaluate(({ book, pos }) => {
   BOOK = B; POSITIONS = P; POS_PENDING = f; render();
   return { directRows, tailRows, tailSummary };
 }, { book: extraDisc, pos: extraPos });
-ok(`decision deck: exactly 5 discretionary rows show by default with 8 total; the rest are counted, not hidden (direct=${tail.directRows}, tail=${tail.tailRows}, "${tail.tailSummary}")`,
-  tail.directRows === 6 &&   // 1 forced + 5 visible discretionary
-  tail.tailRows === 3 &&     // 8 disc - 5 visible = 3 in the tail
-  /\+3 lower-priority funding sources/.test(tail.tailSummary) &&
-  /8 ranked total/.test(tail.tailSummary));
+ok(`decision deck: exactly 5 rows show by default with 11 ranked total (v5.2: no forced tier; no-rate and options rows rank too) — the rest counted, never hidden (direct=${tail.directRows}, tail=${tail.tailRows}, "${tail.tailSummary}")`,
+  tail.directRows === 5 &&   // FUNDING_VISIBLE — no forced row above the pool any more
+  tail.tailRows === 6 &&     // 11 ranked (5 base incl. AAA/CCC/FFF/EEE + 6 injected) - 5 visible
+  /\+6 lower-priority funding sources/.test(tail.tailSummary) &&
+  /11 ranked total/.test(tail.tailSummary));
 await phone2.close();
 // v3.42 slice 5 — the headline metric. Measured at 390x844 before this slice: the BUY block
 // began at y=587 of an 844px viewport, so 70% of the first screen was spent on chrome before
@@ -2001,7 +2240,7 @@ REFRESH_FIXTURE = null;
   await p3.waitForTimeout(500);
   const desk = (await p3.locator("#upsideRank").innerText()).replace(/\s+/g, " ");
   ok("allreviewed: the DESK ranking renders the SAME tail with its full reason list",
-    /Reviewed · not rate-rankable/i.test(desk) && /ordered by TT composite/i.test(desk));
+    /Reviewed · not rate-rankable/i.test(desk) && /ordered by TT card score/i.test(desk));
   ok("allreviewed: the DESK tail count equals the board's — one computation, two altitudes",
     await p3.evaluate(() => {
       const n = UNRANKED_ROWS.length;

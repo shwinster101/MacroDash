@@ -20,11 +20,35 @@
 // kickoff and ship as the owner-ratifiable defaults; changing any boundary is a registry
 // version bump + boundary tests (§4.3), never an in-place edit.
 
-export const ROUTE_MAP_VERSION = "tt-route-v1";
+// v4 (2026-08-23): QC_G3 gained an absolute P/E ceiling. A boundary ADDITION changes what a
+// verdict of a given version means — a v3 PASS could sit at 152x forward earnings where a v4
+// PASS cannot — so it is a version bump per §4.3, not an in-place edit. Cards stamped v1/v2/v3
+// stay readable and self-identify; nothing is 409'd.
+export const ROUTE_MAP_VERSION = "tt-route-v4";
 
-// §4.4 verbatim. IND is a QUALITY_COMPOUNDER profile, not a sixth route.
+/* §4.4, amended by the G3 RULING of 2026-08-22 (owner-directed). AI_INFRA splits into two
+   PROFILES the way QUALITY_COMPOUNDER already splits STANDARD / INDUSTRIAL_CYCLICAL.
+
+   WHY. `AI_G3_2028_BRIDGE` is the AI_INFRA premium prerequisite and it is a REVENUE bridge
+   (EV / FY+2 revenue, PASS <=4.0x). That is the right question for a neocloud, which has no
+   earnings to bridge to — NBIS passes it at 3.22x and is the calibration set. It is the WRONG
+   question for a profitable platform whose own pt_model lens is P/E, and the whole AI book
+   measured it: TSM 7.6x · LITE 7.3x · MRVL 12.3x · NVDA ~15.7x all FAIL by construction, so
+   the premium is withheld, P1 scores the FLOOR and the card caps at B — the engine names
+   itself as the capper (`cap_source: AI_G3_2028_BRIDGE` on three of four). Scoring those
+   names under a revenue bridge does not measure them conservatively; it measures the wrong
+   thing and stamps a date on it.
+
+   THE TRAP THIS AVOIDS, recorded because it is not visible from the gate list: `gatesFor`
+   treats `profile: null` as "applies to EVERY profile of this route", so simply ADDING a
+   PLATFORM profile would have left AI_G3 applying to it as well — two premium prerequisites,
+   one of them the one we just ruled inapplicable. AI_G3 therefore takes an EXPLICIT
+   "NEOCLOUD" profile and the AI lens maps to that profile, which keeps NBIS's gate set
+   byte-identical. AI_G1/AI_G2 stay `profile: null` deliberately: funding and circularity are
+   asked of both kinds of AI name. */
 const LENS_ROUTES = {
-  AI:  { route: "AI_INFRA",           profile: null },
+  AI:  { route: "AI_INFRA",           profile: "NEOCLOUD" },
+  AIP: { route: "AI_INFRA",           profile: "PLATFORM" },
   PH:  { route: "PHYSICAL_AI",        profile: null },
   QC:  { route: "QUALITY_COMPOUNDER", profile: "STANDARD" },
   IND: { route: "QUALITY_COMPOUNDER", profile: "INDUSTRIAL_CYCLICAL" },
@@ -82,7 +106,9 @@ export const GATES = [
     },
   },
   {
-    id: "AI_G3_2028_BRIDGE", route: "AI_INFRA", profile: null, premium_prerequisite: true,
+    // The NEOCLOUD bridge. UNCHANGED from tt-route-v1 except for the now-explicit profile —
+    // NBIS is its calibration set and must keep passing at 3.22x/87.3%.
+    id: "AI_G3_2028_BRIDGE", route: "AI_INFRA", profile: "NEOCLOUD", premium_prerequisite: true,
     effect: { kind: "TIER_CAP", tier: "B" }, cadence_days: 90,
     inputs: { ev_fy2_rev_multiple: "x — EV / FY+2 consensus revenue", fy1_fy2_growth_pct: "pct", analyst_count_fy2: "count" },
     evaluate(i) {
@@ -90,6 +116,39 @@ export const GATES = [
       if (m === null || g === null || a === null) return "UNKNOWN";
       if (m > 6.0 || g < 20) return "FAIL";                           // >6.0 / <20 exclusive
       if (m <= 4.0 && g >= 40 && a >= 3) return "PASS";               // all inclusive
+      return "UNKNOWN";                                               // the honest middle
+    },
+  },
+  {
+    /* The PLATFORM bridge — the G3 ruling's other half. Same QUESTION as AI_G3 ("can this
+       name grow into what is being paid for it by FY+2?"), asked of the line that is
+       structurally representative for a profitable name: EARNINGS, not revenue.
+
+       WHY PEG AND NOT AN ABSOLUTE P/E. An absolute band cannot span this profile honestly —
+       measured 2026-08-22 the FY+2 P/Es run 5.8x (SNDK, cyclical) to 37.9x (MRVL) and any
+       single line lands mid-cluster on three names at once. PEG is scale-free and encodes the
+       actual claim: growth is what you bridge WITH. The absolute ceiling survives as the
+       FAIL backstop so a pathological multiple still fails regardless of a growth story, and
+       the growth floor keeps PEG from being computed off a denominator near zero — PEG is
+       meaningless at low growth, which is why <10% is a FAIL outright rather than a big ratio.
+
+       ⚠ BOUNDARIES ARE ASSERTED, NOT CALIBRATED — the NFCI/CREDIT_TAIL/CROSSOVER_SCORE
+       convention. One name in the live book separates on them (ALAB, PEG 1.33 -> UNKNOWN:
+       35.3x for 26.4% growth, the only name expensive for its own growth); TSM 0.49, NVDA
+       0.39, LITE 0.50, CRDO 0.52, MRVL 0.70, BE 0.45, SNDK 0.11 all clear. Every boundary is
+       smoke-tested, so moving one is a single edit plus a red test. */
+    id: "AI_G3P_EARNINGS_BRIDGE", route: "AI_INFRA", profile: "PLATFORM", premium_prerequisite: true,
+    effect: { kind: "TIER_CAP", tier: "B" }, cadence_days: 90,
+    inputs: { pe_fy2: "x — price / FY+2 consensus EPS", eps_growth_fy1_fy2_pct: "pct", analyst_count_fy2: "count" },
+    evaluate(i) {
+      const pe = n(i.pe_fy2), g = n(i.eps_growth_fy1_fy2_pct), a = n(i.analyst_count_fy2);
+      if (pe === null || g === null || a === null) return "UNKNOWN";
+      // No P/E before profit (the v3.17 rule): a non-positive FY+2 P/E means this name is on
+      // the wrong profile entirely, so UNKNOWN blocks rather than inventing a verdict.
+      if (pe <= 0) return "UNKNOWN";
+      if (pe > 45 || g < 10) return "FAIL";                           // >45 / <10 exclusive
+      if (pe / g > 2.0) return "FAIL";                                // >2.0 exclusive
+      if (pe / g <= 1.0 && g >= 20 && a >= 3) return "PASS";          // all inclusive
       return "UNKNOWN";                                               // the honest middle
     },
   },
@@ -109,8 +168,13 @@ export const GATES = [
   {
     id: "PH_G2_RUNWAY", route: "PHYSICAL_AI", profile: null, premium_prerequisite: false,
     effect: { kind: "BROKEN_THESIS" }, cadence_days: 90,
-    inputs: { runway_months: "months — (cash+equivalents)/trailing-4q avg burn", committed_facility: "bool" },
+    inputs: { runway_months: "months — (cash+equivalents)/trailing-4q avg burn, or the literal \"SELF_FUNDING\"", committed_facility: "bool" },
     evaluate(i) {
+      // v4.9.0: a cash GENERATOR has no burn to divide by, so it could never answer this gate
+      // and read UNKNOWN — i.e. the strongest possible funding position scored the same as no
+      // information at all. The sentinel is exact-match; any other string still falls to n()
+      // and returns UNKNOWN, so a typo cannot manufacture a PASS. See ttScore.js readRunway.
+      if (i && i.runway_months === "SELF_FUNDING") return "PASS";
       const r = n(i.runway_months);
       if (r === null) return "UNKNOWN";
       if (r < 12 && b(i.committed_facility) !== true) return "FAIL";  // <12 exclusive (12.0 passes)
@@ -163,12 +227,69 @@ export const GATES = [
     },
   },
   {
+    /* SIGN-CANCELLATION PATCH, 2026-08-23 (owner ruling). This gate used to accept a
+       PRECOMPUTED `peg_fy1` and never see P/E or growth — so a ratio formed from two negatives
+       read as a healthy positive and PASSED the premium prerequisite for a name with no
+       earnings at all. Measured live on the book before the patch:
+
+         pe        g          peg     old verdict
+         −908.6    −962.5%    +0.94   PASS   ← TEM, FY+1 EPS −$0.08
+         +20       −10%       −2.0    PASS   (−2 <= 1.5)
+         −12       +20%       −0.6    PASS
+
+       A `peg <= 0` guard catches NONE of the first case, which is the one that was live. The
+       only fix is to stop accepting the ratio: take the two inputs separately and form it
+       inside, the AI_G3P shape. Deliberately NOT a PREPROFIT QC profile — TEM stays
+       QC/STANDARD and the gate simply refuses to grade a ratio it cannot form.
+
+       UNKNOWN (not FAIL) on non-positive P/E: FAIL here is TIER_CAP A, a verdict about
+       CHEAPNESS, and "no P/E before profit" is a cannot-measure. UNKNOWN already yields
+       floor-basis P1, which is the honest outcome. `g <= 0` IS a FAIL — shrinking or still
+       negative earnings is precisely "not growing into the multiple", matching AI_G3P's
+       growth floor.
+
+       Free to change: `peg_fy1` appeared in ZERO stored payloads and both QC score records
+       (CELH, HOOD) carried this gate's input block ABSENT, so no card depends on the old
+       shape. Boundaries 1.5 / 2.5 are unchanged and still ASSERTED, not calibrated.
+
+       ── ABSOLUTE-CEILING PATCH, 2026-08-23 (owner ruling, same session) ──────────────────
+       The sign patch above fixed the SIGNS and left this gate without the backstop its
+       sibling AI_G3P has carried since v4.5: `pe > 45 -> FAIL`, there so that a pathological
+       multiple fails regardless of the growth story. PEG alone cannot do that job — it is
+       scale-free by design, which is exactly why it can be cleared by an arbitrarily large
+       numerator over an arbitrarily large denominator. Surfaced while staging SPCX (SpaceX
+       common stock, mis-lensed VEH): pe_fy1 152.19 over 421.1% growth is PEG 0.36, which
+       PASSED the premium prerequisite for a name trading at 152x forward earnings.
+
+       WHY 45 AND NOT ~55. AI_G3P reads pe_fy2; this gate reads pe_fy1, which is structurally
+       HIGHER for a growing name (pe_fy1 = pe_fy2 x (1+g)), so the dimensional equivalent of
+       AI_G3P's 45 is roughly 50-55 here. 45 is therefore DELIBERATELY TIGHTER, and the reason
+       is substantive rather than an accident of which fiscal year each gate reads: the two
+       routes differ in kind. AI_INFRA/PLATFORM is the hypergrowth-platform route where a rich
+       multiple is the norm; QUALITY_COMPOUNDER is the route for durable compounders, where a
+       >45x FY+1 multiple is the exception the premise argues against. Holding QC to the
+       tighter absolute line is the point, not a rounding artefact.
+
+       MEASURED ACROSS THE LIVE BOOK BEFORE SHIPPING — zero cards re-verdict at 45, 60 or 75:
+       the highest PASSING forward P/E is RDDT at 23.47x, and the two FAILs (AAPL 32.53,
+       TSLA 166.45) already failed on PEG. So no existing card can be rejected on re-save,
+       the same bar MISKEY and the AI_G3P patch were both held to. TSLA's FAIL now arrives
+       via the ceiling rather than via PEG; the verdict is identical either way.
+
+       Ordering is load-bearing and mirrors AI_G3P: the ceiling fires BEFORE the PEG PASS
+       test, or a low PEG at 152x would return PASS first and the backstop would be dead code.
+       45 is exclusive (`> 45`), matching the sibling — 45.0 itself does not fail. ASSERTED,
+       not calibrated, like every other boundary here. */
     id: "QC_G3_VALUATION_PREREQ", route: "QUALITY_COMPOUNDER", profile: "STANDARD", premium_prerequisite: true,
     effect: { kind: "TIER_CAP", tier: "A" }, cadence_days: 30,
-    inputs: { peg_fy1: "x — fwd P/E ÷ FY+1→FY+2 EPS growth" },
+    inputs: { pe_fy1: "x — fwd P/E on FY+1 EPS", eps_growth_fy1_fy2_pct: "pct — FY+1→FY+2 EPS growth" },
     evaluate(i) {
-      const peg = n(i.peg_fy1);
-      if (peg === null) return "UNKNOWN";
+      const pe = n(i.pe_fy1), g = n(i.eps_growth_fy1_fy2_pct);
+      if (pe === null || g === null) return "UNKNOWN";
+      if (pe <= 0) return "UNKNOWN";        // no P/E before profit — cannot-measure, not expensive
+      if (pe > 45) return "FAIL";           // absolute ceiling — PEG is scale-free and cannot backstop
+      if (g <= 0) return "FAIL";            // not growing into the multiple
+      const peg = pe / g;
       if (peg > 2.5) return "FAIL";                                   // >2.5 exclusive
       if (peg <= 1.5) return "PASS";                                  // ≤1.5 inclusive
       return "UNKNOWN";

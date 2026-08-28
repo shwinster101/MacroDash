@@ -45,7 +45,7 @@ const SYM_RE = /^[A-Z][A-Z0-9.\-]{0,9}$/;
 /* §4.1: book caps are DEPLOYMENT FACTS recorded as implementation metadata, not
    methodology constants. These mirror functions/api/tt.js MAX_BODY and admin.html DD_MAX;
    smoke pins the three-way agreement, and activation fails on any mismatch. */
-const DEPLOYED_CAPS = { dd_max: 45 * 1024, max_body: 300 * 1024 };
+const DEPLOYED_CAPS = { dd_max: 100 * 1024, max_body: 300 * 1024 };
 
 const json = (body, status = 200) =>
   new Response(JSON.stringify(body), {
@@ -96,6 +96,24 @@ async function appendScoreDiff(env, sym, prev, next) {
   } catch (_e) { /* fire-and-forget by contract */ }
 }
 
+/* v5.0.1: the PROVISIONAL veto must know WHICH half of §6.4.1 is missing — "conditions
+   unwritten" and "committed, awaiting observations" are different owner actions (write vs
+   wait), and one veto string covered both with the clause "until they're committed", which
+   was FALSE for a committed set (measured live 2026-08-23: TSM carried 6 server-stamped
+   hinges and its veto read as uncommitted). Counts use scoreP4's own observed predicate;
+   kind is the card's own bootstrap state. Additive — the methodology_version precedent. */
+function p4Summary(rec) {
+  const sc = (rec && rec.scorecard) || {};
+  const all = rec && rec.underwriting_inputs && Array.isArray(rec.underwriting_inputs.falsifiers)
+    ? rec.underwriting_inputs.falsifiers : [];
+  const req = all.filter((h) => h && !h.legacy);
+  const observed = req.filter((h) => h.defined_at && h.qualifying_observation &&
+    h.qualifying_observation.observed_at > h.defined_at).length;
+  const kind = (sc.provisional && sc.provisional.pending) ||
+    (sc.pillars && sc.pillars.falsifier_health && sc.pillars.falsifier_health.bootstrap) || null;
+  return { kind, hinges: req.length, observed };
+}
+
 async function updateIndex(env, sym, rec) {
   const idx = (await kvGet(env, INDEX_KEY)) || { version: 1, entries: {} };
   const sc = rec.scorecard || {};
@@ -108,6 +126,28 @@ async function updateIndex(env, sym, rec) {
     actionability: sc.actionability ?? null, route: sc.route ?? null, profile: sc.profile ?? null,
     input_hash: sc.input_hash ?? null, computed_at: sc.computed_at ?? null,
     blockers: (sc.blockers || []).length,
+    /* v5.0 §14.8 ACTIVATION — two additive fields the flip needs at BOARD altitude:
+       methodology_version: the per-sym GET relabels a stale-methodology card
+       LEGACY_UNVERIFIED (line ~140) but the book=1 index path never could — an index entry
+       carried a capped_tier with no way to verify what engine minted it, the exact failure
+       §14.7 was written to prevent. The entry now self-identifies; the CLIENT compares it
+       to the response's top-level current version and refuses eligibility on a mismatch.
+       broken_thesis: a kill-flagged falsifier RED (P4) or a BROKEN_THESIS gate FAIL —
+       the §14.8 bar's own text deferred this signal "until activation"; the funding
+       forced tier may now read it, and only at this server-stamped altitude. */
+    methodology_version: sc.methodology_version ?? null,
+    broken_thesis: !!((sc.pillars && sc.pillars.falsifier_health && sc.pillars.falsifier_health.broken_thesis) ||
+      (sc.gate_results || []).some((g) => g.state === "FAIL" && g.effect && g.effect.kind === "BROKEN_THESIS")),
+    p4: p4Summary(rec),
+    /* v5.1.1 — the card's OWN evidence rollup, at board altitude so the eligibility ladder
+       can read it. §7 already computes it and §11.2 evalEligibility already enforces it;
+       until now the live ladder simply never asked (the v3.71-follow-up defect shape:
+       computed, published, rendered, not READ at the gate). blocked_on names WHICH gate
+       could not be read, because "BLOCKED" without the gate is a state, not an action. */
+    actionability: sc.actionability ?? null,
+    blocked_on: (sc.blockers || [])
+      .filter((b) => typeof b === "string" && b.startsWith("BLOCKED_PENDING_INPUT:"))
+      .map((b) => b.slice("BLOCKED_PENDING_INPUT:".length)),
   };
   await env.PULSE_CACHE.put(INDEX_KEY, JSON.stringify(idx));
 }

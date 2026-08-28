@@ -5,6 +5,49 @@ answers *"is it safe to be in the market?"* from live macro + market + sentiment
 data. Single-page React app on Cloudflare Pages, with live data assembled at the
 edge by Pages Functions and cached in KV.
 
+**v5.5.0 "Accountability + Daily Friction" scores the call instead of adding more data.**
+The scheduled Worker now maintains a separate `md-spy-outcome-v1` companion for every
+successfully frozen public call. The first official FRED `SP500` close on or after the 10am ET
+call is day zero; 1d/5d/20d are subsequent trading closes, and max drawdown runs through the
+fixed 20-session window (explicitly “so far” until complete). Outcome companions can mature,
+but the original `md-history-record-v1` call remains byte-immutable. `/history.json` joins the
+two records and `/history` renders pending or realized outcomes without invented zeros. After
+capture, `/api/snapshot`, `/readout.json`, the public hero, and clipboard share all use that
+same frozen call; later evidence may be named as drift but cannot rewrite the call being
+scored. A hero-adjacent **Copy posture** control emits a compact five-line text card with the
+public track-record link. The legacy TT `regime` remains current and unchanged during its
+compatibility window; no homepage tile, factor, series-count expansion, or TT redesign landed.
+
+**v5.4.0 "Why This Call" is the evidence-integrity repair.** The former 5 Whys was an
+unclear mixture of canonical voters, context-only gauges, one RSS item, and a curated risk
+register; it did not form a causal chain. The replacement is five explicit checks generated
+from the canonical `md-call-v1` factor rows: call arithmetic → actual drivers → transmission
+mechanism → evidence quality/provenance → nearest load-bearing change. Headlines are named as
+context only and never described as the cause of the call. CPI now uses the official BLS
+not-seasonally-adjusted FRED series (`CPIAUCNS` / `CPILFENS`) so the displayed 12-month number
+matches the BLS headline release; the Fed strip leads with the daily target range rather than
+the lagging monthly FEDFUNDS average. Snapshot cache schema `v16` forces the corrected series
+through every consumer. The 10am Worker refresh returns its complete candidate readout and the
+history capture freezes that exact call, avoiding an eventually-consistent KV reread. Production
+still requires the same high-entropy `REFRESH_TOKEN` on both Pages and the Worker; the gates pin
+that requirement so the legacy `REFRESH_SECRET` can no longer masquerade as active refresh auth.
+
+**v5.3.0 "One Call" is the product-identity and accountability release.** MacroDash has one
+canonical public daily call derived from the existing public six-factor backdrop engine
+(10Y direction · VIX · Fear & Greed · CPI trend · Shiller CAPE · NFCI). Its primary human
+vocabulary is **MOONING 🚀 / HODL 💎 / DIAMOND HANDS 🙌**; its secondary machine direction is
+**BULLISH / NEUTRAL / BEARISH**. `src/macroCall.js` is the pure projection shared by the hero,
+5 Whys, daily-call clipboard, and `/readout.json`'s additive `call` block (`md-call-v1`). The
+old `tt-v1` `regime` block remains unchanged for existing operator order-gating during the
+compatibility window; a stable contract is never silently repurposed. Public product identity
+consumes the new call. Macro Flip/PANIC is a separate safety
+override: panic forces the effective call bearish, and a blind circuit asymmetrically
+withholds a bullish call. `/history.json` + `/history` expose one immutable live-forward call
+captured by the existing 10am ET weekday cron (failures and data holds remain visible; there
+is no invented backfill). `/difference` states the product job and hierarchy in one page:
+six factors → evidence quality → market posture → explanation → actionability. **Product
+constraint: do not add homepage indicators or tiles merely to compete on indicator count.**
+
 **v3.3 "TT readout" adds a machine-readable regime API.** `/readout.json` (Pages Function
 `functions/readout.json.js`, CORS-open, `tt-v1` schema) derives an external trading-terminal
 readout from the same per-ET-day snapshot: six band checks → `TAILWIND|NEUTRAL|HEADWIND|PANIC`
@@ -208,7 +251,7 @@ dashboard.jsx  →  useMarketData(MOCK_DATA, {publicView})  →  fetch /api/snap
 St. Louis Fed API (`api.stlouisfed.org`), keyed by `env.FRED_KEY`. Pulls these series,
 takes the latest non-`"."` observation, and derives 1-day deltas + sparklines:
 
-`DGS10` (10Y) · `FEDFUNDS` · `CPIAUCSL` (CPI headline) · `CPILFESL` (CPI core) ·
+`DGS10` (10Y) · `FEDFUNDS` · `CPIAUCNS` (official headline CPI NSA) · `CPILFENS` (official core CPI NSA) ·
 `PCEPI` (PCE headline) · `PCEPILFE` (PCE core) · `UNRATE` · `CIVPART` (LFPR) ·
 `PSAVERT` (personal saving rate, v3.0) · `MORTGAGE30US` · `DCOILWTICO` (WTI) · `VIXCLS` (VIX) ·
 `CBBTCUSD` (BTC) · `BAMLH0A0HYM2` (HY OAS) + `BAMLC0A0CM` (IG OAS) → the derived **HY-IG credit
@@ -2881,8 +2924,11 @@ Jan-anchor shipped; see `snapshot.js` ~318–328), `spyMa100`, `spyMa200`, and a
   VALUATION GAP ranking (§11.1 — the ranking always renders, which is the owner's actual
   "always an output" contract, and it was never suspended). Tests: 1223 smoke (+2) + 199
   render (+1).
-- **FEAT-DOCK (v4.1.7) — the bottom strip becomes a DOOR INTO TERMINAL, not a mini-watchlist.**
-  Owner: *"the top TERMINAL is a mode switch, the bottom S-tier is a name list with no job —
+- **FEAT-DOCK (v5.6.8) — the bottom strip becomes a DOOR INTO TERMINAL, not a mini-watchlist.**
+  *Relabelled from v4.1.7 at merge (2026-08-21): main advanced 34 commits to v5.6.7 while this
+  was in flight — the documented collision pattern, third time this session. `package.json` is
+  the single source of truth. The merge also took main's canonical `dailyCall` path over this
+  branch's `buildTtReadout` memo (see the gate note below).* Owner: *"the top TERMINAL is a mode switch, the bottom S-tier is a name list with no job —
   you want one surface that is both: these names live in Terminal, tap to work them."* Correct
   diagnosis: v3.97's `SharedPicks` chips were deliberately `<div>`s because they opened nothing
   (the CUT-row rule — a button that does nothing is a lie), which made the strip decoration on
@@ -2897,9 +2943,11 @@ Jan-anchor shipped; see `snapshot.js` ~318–328), `spyMa100`, `spyMa200`, and a
   chip can never strand the reader on a broken tab.
   **The gate token is the moon voice, and it fails closed.** Owner call: `FULL → SEND IT ·
   RESTRICTED → EASY · HOLD → HANDS OFF`, matching the HODL/MOONING register. The SOURCE is
-  Engine 0's published `actionability` — the only gate this page can honestly compute, since
-  the TT stance needs PIN-gated book state the dashboard cannot see — and the authoritative
-  token rides the `title` so the machine value stays reachable. An **absent or unrecognised
+  **`dailyCall.actionability`** — the canonical md-call-v1 object main's v5.x line introduced,
+  which the hero and the paste block already read and which respects the 10am freeze. (This
+  branch originally derived it from its own `buildTtReadout` memo; main's object supersedes
+  that and is strictly better — one call, one actionability, no second derivation.) The
+  authoritative token rides the `title` so the machine value stays reachable. An **absent or unrecognised
   actionability renders `NO READ`, never a permissive default**: a gate that guesses green is
   the one defect this whole layer exists to prevent, and it is smoke-pinned by value.
   **⚠ The publicView gate is CLEANLINESS, NOT privacy, and that is stated rather than implied.**
@@ -2909,11 +2957,9 @@ Jan-anchor shipped; see `snapshot.js` ~318–328), `spyMa100`, `spyMa200`, and a
   visiting the bare URL gets the operator view. So the reversal buys a clean shared link and
   buys nothing else. Owner call 2026-08-21, taken with the limit named at the call site, in the
   section header and here — the endpoint was left alone on purpose.
-  **One readout, two consumers.** The FEAT-332 flat projection moved into a `useMemo` because
-  the dock's gate now reads it too; computing it twice would let the gate a chip sits under
-  disagree with the paste block the same page copies (the `ptModelRows` rule). Behaviour is
-  byte-identical — only the home moved — and smoke pins that exactly ONE `buildTtReadout` call
-  survives in the orchestrator.
+  **One call, two consumers.** The gate reads the SAME `dailyCall` the hero renders and the
+  clipboard formats, so the gate a chip sits under can never disagree with the call the page is
+  making (the `ptModelRows` rule). No second derivation exists.
   `SharedPicks.jsx` is **deleted, not orphaned** (dead code is a rot vector — the v3.73 rule),
   and its absence is pinned. `share_note` is now unrendered: the note existed for the public
   share audience the dock no longer serves, so it stays in the endpoint's projection but has no
@@ -2929,6 +2975,949 @@ Jan-anchor shipped; see `snapshot.js` ~318–328), `spyMa100`, `spyMa200`, and a
   bare symbol, and a REAL click asserted to land on `admin.html#aaa`). Negative-controlled both
   reversals: dropping the publicView gate turns the public assertion red, and defaulting the
   gate permissive turns the fail-closed pin red.
+- **v5.6.7 — synthesized theses are MARKED, never mistaken for the owner's (owner call
+  2026-08-27: *"auto synthesize theses and re-assert the circuit"*).** v5.6.6 measured that 34
+  of 39 payloads carried no thesis line; the owner asked for them to be generated. A generated
+  line is useful and is NOT an owner assertion, so `thesis_src`/`thesis_at` carry that
+  provenance and `ddExec` renders a synthesized line with an amber **"synthesized <date> —
+  owner to confirm"** chip instead of the neutral field name. Absent the marker a stored
+  `thesis` still reads as owner-authored, which is what it has always meant.
+  **KV-side (no repo content): 37 theses written, every clause traceable to a stored field.**
+  The first draft of the synthesizer led with the payload's own prose and the preview killed
+  it: for most names `pt_model.multiple_ruling` is PROCESS METADATA (*"FINALIZED per owner
+  delegation"*, *"ASSISTANT-SET — OWNER TO CONFIRM"*), which as a thesis lead reads as *"the
+  thesis is: we finalized the multiple."* The shipped shape leads with what is actually known
+  — tier + lens + the model's own basis and its rationale — then gates (N/M PASS), then the
+  live risk from red/amber hinge labels, and only then owner prose where it is genuinely
+  thesis-shaped (`verdict.read`, labelled *"Latest read"*). Nothing invents business
+  narrative. Two shapes found while writing and handled fail-closed: `gates` is an OBJECT on
+  some payloads (BA) rather than an array, and ACHR's `0/4 PASS` is real (its statuses are
+  UNEVIDENCED/FLAG/PARTIAL), not a parse artifact.
+  **The circuit re-assert, and a FIX-A error I committed and the guard caught.** Re-asserted
+  ARMED on today's post-NVDA pull — NAV $277,496 · gross $573,410 · debt $295,914 (106.6% of
+  NAV) · BP $889 → **2.07x**, deteriorated from the 8/18 assertion (2.00x, 99.7%, BP $11,071
+  on 8/26) — on the owner's standing 8/18 ruling that TRIPPED requires a margin call or
+  forced liquidation. The first write stamped `2026-08-28` from the UTC-side date while the
+  server's ET clock read 8/27, so `circuitState` returned **"dated in the future — cannot be
+  judged" → UNRESOLVED**: the exact FIX-A trap the sync runbook warns about, committed by the
+  assistant and caught by the fail-closed guard rather than by a human. Restamped from the
+  server's own `business_date_et`; the gate moved **TOUCH GRASS → SEND IT** with NBIS eligible
+  at +103.7%/yr. Also measured: `board` sits at **16,036 of its 16,384-byte cap** with
+  `decisions` alone 9,019 bytes — the same growing-thing-inside-a-fixed-cap pattern already
+  split three times (pos v3.34, ledger v3.32, deepDive v3.75), named here, not fixed.
+  Tests: **2019 smoke** (+1: the synthesized-vs-owner provenance RUN — the marker sets
+  `synth`, the amber owner-to-confirm chip renders, and an owner-authored line does not get
+  it) + 284 render + 187 public-render.
+- **v5.6.6 — the search bar routes to ANALYSIS, and the deep dive opens with an EXECUTIVE
+  SUMMARY (owner call 2026-08-26: *"it should enter deep dive with executive summary of
+  thesis, short term and long term price target then deeper dive"*).** The `TT:>` bar was a
+  router into the two EDIT surfaces — Enter on an in-book name opened its card (tier/lens/
+  note), not the analysis tab — so the fastest keystroke landed on the rarest act. Enter now
+  opens the **deep dive**; the card stays one tap away via the tab's existing OPEN TT CARD
+  button, so no path was removed, and the HELP copy moved WITH the behaviour (an instruction
+  outliving its data is the defect this file keeps closing).
+  **`ddExec()` leads the tab**, directly under the readiness gate: the thesis in words, then
+  **SHORT TERM** (the earliest year-end the model prices) and **LONG TERM** (the deepest
+  rung, with its annualised rate). Both come from the SAME `ptModelRows()` the board ranks
+  on — the ptModelRows rule — so the summary can never quote a number the ladder below it
+  disagrees with, and each states its own year rather than inventing a 12-month target to
+  fill a slot. A single-rung model prints ONE cell (`Target (single rung)`): one rung is one
+  fact, and printing it twice as a near and a far target would manufacture a second data
+  point out of the same number. No model says so and carries the payload's own note.
+  **The thesis is never invented.** Measured across the live book first: only **2 of 39**
+  payloads carry a `thesis` string, 3 carry `verdict.read` (an object), and NBIS carries
+  `valuation_note` — so `ddThesisLine()` resolves those three shapes by priority, NAMES which
+  field it came from and its date, and when none exists says *"no thesis line stored — the
+  gates, hinges and ladder below are what this book actually asserts"* with the field that
+  would fill it. Inferring a thesis from the tier or the lens would be exactly the
+  fabrication this renderer forbids everywhere else — and the absence is itself information:
+  34 of 39 names have no thesis line.
+  Found while testing: the `n/m` branch in the target cell is **unreachable** — the numeric
+  row filter (inherited from `ddWorth`) drops a rung whose only value is that sentinel — so
+  the pin asserts the EXCLUSION that actually holds rather than dressing a defensive guard as
+  reachable behaviour (the vacuous-assert rule). Also re-pinned: the deep-dive ordering pin
+  measured a fixed 400-character window between `readyBar` and `ddAnswerBlock` and tipped
+  over on the first legitimate insertion — it now asserts the ORDER itself, which is what
+  "readiness leads" actually means.
+  Tests: **2018 smoke** (+7: `ddExec`/`ddThesisLine` lifted and RUN — near/far from one row
+  set, the single-rung case, no-model, floor labelling, the n/m exclusion, all three thesis
+  shapes by priority and the named absence; plus the search route and the HELP-copy sweep) +
+  **284 render** (+4: the exec summary driven live above the four answers, the named absence,
+  and a REAL search keystroke proving Enter lands on the deep dive with no card modal open).
+  Negative-controlled twice — reverting the search route and unwiring `ddExec` each turn
+  exactly their own pin.
+- **v5.6.5 — the disclosures go one tap deep, and the v3.25 rule moves altitude rather than
+  bending (owner call 2026-08-26: *"hide all the bla bla text under an expandable header
+  stating disclaimer … same in fund/trim … same for circuit-unresolved and the binaries info
+  under the TOUCH GRASS gate"*).** Two surfaces, both measured before and after.
+  **The receipt chip**: `allocChip()` was emitting the state plus five wrapped lines — the
+  not-a-cash-claim qualifier, the receipt age, the measured account, and the four-part basis
+  line — on BOTH decision surfaces (it is one builder, so the BUY block and FUND/TRIM shared
+  the wall). Those are **constants of the state, not facts about today's decision**: they now
+  ride `allocDisclose()`, one `details.est-mini` labelled *"what this claims — basis, account,
+  disclaimers"*. What stays on the face is the STATE and only the ⚠ that gate action — a
+  non-live price basis and a receipt that is not today's — with the warn COUNT on the closed
+  summary.
+  **The stance strip**: under a restrictive gate it was five wrapped rows (gate · verdict ·
+  circuit qualifier · four red badges · controls) for a board whose whole message is the two
+  tokens on row one. The qualifiers and badges move into ONE counted expander.
+  **The v3.25 rule is not weakened — it is applied at the altitude that fits each state.** On
+  a PERMISSIVE board the badges are the only warning present, so they stay on the face,
+  untouched. On a RESTRICTIVE board the verdict token already states the restriction, so the
+  reds collapse behind a summary carrying **their count and their colour** (red if any badge
+  or qualifier is red, amber otherwise): a collapse may hide a red fact's DETAIL, never that
+  one exists. Every badge keeps its drawer deep-link, and the render suite proves both halves
+  — the count while closed, every badge verbatim one tap deep.
+  **Measured: the restrictive top row 178px → 86px**, so the budget RAISED at v5.6.0 comes
+  back down with the win — re-pinned 185 → **120** with the measurement, because a budget that
+  no longer binds is not a guard. Found while re-pinning: the summary is uppercased by CSS, so
+  `innerText` reads "⚠ 4 FLAGS" (the v3.69 text-transform lesson, third recurrence) — the pins
+  are case-insensitive, and the `details.why div` locator is scoped to the prose div now that
+  the expander nests a chip row above it.
+  Tests: **2011 smoke** + **280 render** (+2 net: the closed-state signal and the one-tap
+  verbatim reveal at both altitudes, plus the alloc face proven CLEAN of the disclaimers).
+- **v5.6.4 — the boot chain becomes RESUMABLE, and a failed read stops claiming the store is
+  empty (owner screenshot, 2026-08-26 10:24 ET).** The board rendered 50 book names every one
+  of which read *"no thesis payload stored · TT —"*, with no next-dollar target, no scores and
+  no server receipt. Measured before touching anything: the server was **healthy** — book 50,
+  dd index **39 entries**, score index **35**, allocation receipt ALLOCATABLE. So the data was
+  there and the browser could not see it.
+  **The mechanism:** the boot chain was `loadBook().then(()=>{loadQuotes();loadPositions();
+  loadAllocation();loadDeepDiveIndex();loadTickerV2();loadScoreIndex();})` — a fan-out — while
+  the PIN gate resumes only `PIN_CB`, which `loadBook` sets to **itself**. On a session
+  expiry every secondary load fires BEFORE a session exists, 401s, is swallowed by its own
+  catch, and is **never retried**: entering the PIN reloads the book and nothing else, so the
+  board sits permanently half-loaded until a manual refresh. The chain is now ONE named list
+  (`bootLoads` = `loadBook` then `secondaryLoads`), both gate paths point at it, and a
+  successful login **always** re-runs `secondaryLoads()` whatever the interrupted action was —
+  so a mid-edit login (`PIN_CB=persist`) can no longer resume the edit onto an empty board.
+  **The honesty half, which is the worse defect:** *"no thesis payload stored"* is a claim
+  about the STORE, made by code that never read the store — the v3.54 class ("not counted" vs
+  "counted, no lean"), one layer over. A failed index now sets `DD_FAILED` and the row reads
+  **"payload index did not load — not read, not empty"** with *"⟲ RELOAD — the store was never
+  read"* as the fix; a null score index reads **"score index did not load — not read, not
+  unscored"** rather than *"no server card — unscored"*. Two false negatives that would have
+  sent the owner re-entering data that was already there.
+  Found while fixing: the two smoke pins guarding this chain pinned the **literal `.then()`
+  spelling** — the exact shape that caused the defect — so they would have passed through any
+  correct rewrite and failed on it; both are re-pinned on the behaviour. Two source lifts
+  needed `DD_FAILED` passed BY VALUE (the v3.47 `LENS_MAX_PE` lesson, third recurrence).
+  Tests: **2011 smoke** (+4) + 278 render, negative-controlled twice — reverting the gate to
+  `loadBook` and letting a failed index claim "not stored" each turn exactly their own pin.
+- **v5.6.3 — the gate vocabulary reaches the docs, and is RECONCILED so it cannot fork
+  (owner review 2026-08-26).** The review's one code-adjacent finding, verified before
+  fixing: `ticker-terminal/README.md:37` still read *"only explicit `FULL` passes"* — the
+  Engine 0 machine vocabulary presented as the only vocabulary, three releases after the
+  product UI moved to SEND IT / HODL / TOUCH GRASS, and no doc outside this file named the
+  product words at all. That is the label-outliving-its-data defect at the doc altitude, and
+  the two vocabularies forking is exactly what the `GATE:` scoping rule exists to prevent one
+  layer up. Both docs now state BOTH: the README names the product gate, the alias mapping
+  (SEND IT = `FULL` · HODL = `RESTRICTED` · TOUCH GRASS = `HOLD` + every unreadable state) and
+  keeps its fail-closed sentence intact; CLAUDE.md gains **standing lock lines** in the
+  locked-decisions section (the sprint doc's §11 ask) rather than leaving the rule only in a
+  changelog entry that scrolls away.
+  **The cure is the pin, not the prose** (v3.59 B5, v3.60.1 §5: a doc rule nothing enforces is
+  the rot vector). The gate set is derived **BEHAVIORALLY** — `macroGateFrom` run over the
+  same matrix the mirror pins use — and reconciled against both docs, so adding, renaming or
+  dropping a gate state fails the build instead of silently forking the docs again; the
+  machine-alias framing is pinned, and the **withdrawn claim is pinned ABSENT** (a retired
+  instruction quietly reappearing is the v3.85 precedent). Tests: **2007 smoke** (+3),
+  negative-controlled — restoring the old README sentence turns exactly those three red.
+- **v5.6.2 — the quote cross-check: the third candle rung (owner call).** The v5.6.1 tells
+  are structural — a gap or a jump INSIDE the series — and are blind to the one case where
+  EVERY window returns the wrong instrument: internally consistent, contiguous, no jump.
+  The outside reference is the **same-refresh live quote** (fetched in the same pass, same
+  symbol, currency-gated): `candleSeriesFault(rows, refPx)` rejects a merge whose tail
+  close sits **>3x** from it — the SAME constant as the adjacent tell, one doctrine, chosen
+  over the 40% first floated because a real print gap runs 30-50% and must PASS; a 3x
+  quote-vs-tail split happens only between two instruments. No quote = the rung is SKIPPED,
+  never guessed. Wired at both ingestion builders (refPx from the refresh's own LIVE quote)
+  and at the outcome reader (a fresh batch read for the pick syms). Tests: **2004 smoke**
+  (+5: the all-windows-junk rejection at ingestion AND at read, the exact 3x boundary both
+  directions, the no-quote skip, the wiring pin), negative-controlled — removing the rung
+  turns exactly its 3 pins red.
+- **v5.6.1 — the candle-continuity guard: the outcome layer's first live catch, closed the
+  night it was found.** Minutes after v5.6.0 deployed, the very first stamped outcome
+  anchored NBIS at **$7.62 — on a $277 stock.** Two defects compounded: the outcome reader
+  dropped the `:v1` suffix ticker-facts keys have always carried (and the smoke fixture
+  used the same wrong key — a fixture agreeing with the bug; both fixed, the fixture now
+  pins the real shape), and once the right key was read, the STORED series itself was
+  corrupt: the v3.98 Nasdaq multi-window merge had flattened a failed middle window into a
+  **6-month interior hole** with the tail window carrying **another instrument's prints**
+  ($104.88 → $7.78 across adjacent rows), stored as LIVE. Census across the whole facts
+  store: 36 clean, NBIS the only contamination; the 8/24 PA stamps were verified sane
+  (levels consistent with the real tape), so the tape axis was never poisoned — the blast
+  radius was one stored series and the outcome anchor it fed. **`candleSeriesFault()`**
+  (`functions/lib/tt-facts.js`) is the BANDS doctrine pointed at candles — two structural
+  tells, either one damning for a daily series claiming to be one instrument: an interior
+  calendar gap wider than any holiday run (>14d — the windows must TILE), or an
+  adjacent-close jump (>3x) no split-adjusted series produces. Enforced at BOTH ingestion
+  builders (Finnhub + Nasdaq → MISSING with the fault NAMED) **and again at the outcome
+  reader**, because merge-only last-good semantics can keep an already-stored corrupt
+  series alive as STALE — defense in depth, each layer naming what it refused. Tests:
+  **1999 smoke** (+3: both guard tells executed on the exact live corruption shape, the
+  read-side rejection through the real endpoint; 2 fixtures re-pinned to the tiling
+  contract with reasons) + 278 render + 187 public-render.
+- **v5.6.0 "THE DAILY CONTRACT" — the sprint doc's four-question surface, mapped onto the
+  machinery that already existed (owner sprint doc `TT_DOUBLE_DOWN_BUILD.md`, 2026-08-26;
+  plan reviewed, corrected and approved same day).** The doc's diagnosis was right — the
+  pieces existed, the daily contract didn't force them into one surface — and its central
+  moat claim sharpened into the build's spine: the CLOSED LOOP (pre-committed belief →
+  stamped decision → measured outcome) is the one structure Robinhood/TipRanks/SA cannot
+  copy, and this release closes leg 3. Five pieces:
+  **(1) The product macro gate — SEND IT | HODL | TOUCH GRASS.** `macroGateFrom()` is ONE
+  projection of `allocGateLadder`'s own RESULT (the verdictFrom rule), so the word can never
+  disagree with the veto it names: SEND_IT = the ladder read clean; HODL = the one
+  looking-session state (actionability RESTRICTED — readable, ranking fully usable, still
+  vetoed: **fail-closed doctrine untouched, owner ruling**); TOUCH_GRASS = everything else
+  (HOLD, unreadable feed/flip, tripped/unresolved circuit). The doc's own alias table was
+  corrected against the real contract (there is no "blocked" state; RESTRICTED existed and
+  was the missing middle). The client mirror (`macroGate()`, buildless-copy convention) is
+  proven against the server over one fixture matrix, and the strip leads with the token in
+  BOTH stance branches — full-weight on a permissive board (where ADDS-OK + HODL is exactly
+  the combination that must be unmissable), compact on a restrictive one (where the vbadge
+  already says it — the v3.61 duplication rule). **The `GATE:` prefix is load-bearing**: the
+  public call's middle is ALSO the word HODL (md-call-v1), and one word carrying two verdicts
+  on one screen is the v3.51/v3.62 defect. The tt-v1 machine contract is untouched and
+  smoke-pinned free of the product vocabulary. The stance-budget pin moved 140→185 WITH the
+  measurement (178px: the gate is the contract's first line and earns one packing row).
+  **(2) The receipt extension (tt-alloc-v3.1.0, additive).** The sprint's proposed
+  `tt-rank-receipt-v1` duplicated ~80% of the existing allocation receipt and was REJECTED
+  for the extend-don't-twin path (owner ruling): `tt-alloc-receipt` gains `macro_gate`, the
+  bound public `call` (only when `effective_date` is genuinely the receipt's business date —
+  never yesterday's headline on today's receipt), per-row belief/street `spread` for the
+  decision set, and the `overtake` flip line.
+  **(3) Belief-vs-street, formula FROZEN:** `(belief − street) / live price × 100`, sign
+  buckets You richer / Street richer / Aligned on an asserted ±10 deadband
+  (`SPREAD_ALIGNED_PCT`, the NFCI convention, boundaries executed). The belief leg is the
+  row's OWN ladder target (never recomputed); the street leg follows the v4.2 target
+  priority — a REVIEWED packet's published average outranks a stored assistant-sourced
+  `consensus.street_target`, both LABELED, neither = null-honest ("street unreviewed"),
+  since the street store is measured EMPTY at ship. `spreadLine()` is one builder at two
+  altitudes (DESK eligible box + compact BUY banner). **The flip line** — "#2 overtakes #1
+  at $X" — inverts the ranking's own annualise from the leader row's (up, ann) pair
+  (yrs = ln(1+up)/ln(1+ann), no second year-end clock; §P.4), proven by the identity that
+  two identical rows cross exactly at the current price.
+  **(4) The ATTEST layer — the stamp, and outcomes that only score commitment.**
+  `POST /api/allocation?attest=1` marks TODAY's receipt as the owner's stamped ranked set:
+  first-write-wins per ET day, a second attest 409s toward the standing stamp (immutable),
+  a prior-business-date receipt refuses with the date named. Receipts still persist on
+  every reeval, but **only attested days join the stamped history that outcomes score** —
+  a passive ⟳ never accrues a score it was never committed to, and there is NO auto-stamp
+  anywhere. `GET ?stamped=1` computes outcomes AT READ (GET stays safe, v3.54 — no cron, no
+  write-on-read): day 0 = first official close ON OR AFTER the stamp date (the shipped v5.5
+  public pattern, `maxDrawdownPct` IMPORTED from publicHistory — one implementation),
+  1d/5d/20d + drawdown-so-far from the facts store's candles, a missing history a NAMED
+  reason. `allocation_changed` is DERIVED from the intent journal (an intent that day = the
+  list moved real allocation) with an explicit `?outcome=1` owner override + note. Client:
+  a two-step ⭑ STAMP link (the v3.42 destructive-link rule) under the BUY block with three
+  honest states (link / stamped ✓ / withheld-with-date), and a lazy stamped-history
+  est-mini at the block tail. This closes the outcome-evaluation deferral v3.74 filed
+  ("wait until decision events exist") — they exist now.
+  **(5) Found while building, both caught by the new tests:** the intent-date derivation
+  truncated ISO instants at their first colon (an intent key's timestamp contains colons),
+  so `allocation_changed` derived no date at all — fixed to last-colon parsing; and the
+  smoke [44] gateFail lift was hijacked twice, first by `macroGate()` reusing its anchor
+  spelling and then by my own comment NAMING the anchor spelling (the v3.60.1
+  self-matching trap, recorded verbatim in the site comment).
+  **Reconciliation note (Step 0):** v5.3.0/v5.5.0 shipped from parallel sessions with no
+  changelog entries — recorded here so no phantom versions are inferred: v5.3.0 "One Call +
+  public accountability" (md-call-v1 in `src/macroCall.js`, the `/history` + `/difference`
+  public pages, `functions/history.json.js`, the 10:00 ET `captureDailyCall` cron);
+  d8a6003 repaired Why-This-Call accountability; v5.5.0 added the public outcome layer
+  (`src/publicHistory.js`: frozen-call vs outcome keys, day-0 anchor, SPY 1d/5d/20d +
+  drawdown) — the exact pattern this release's TT outcomes mirror.
+  **Deliberately NOT in this release (owner rulings):** reverse DCF (cut — the doc's own
+  "if it can't stay thin" rule); any change to `tt-v1`, the band tables, or canonical
+  winner selection; street entering next-dollar ordering; new public surfaces.
+  Tests: **1996 smoke** (+28: the gate matrix EXECUTED against the real ladder with the
+  client mirror run over the same fixtures, SEND_IT-iff-clean, the frozen formula + exact
+  deadband edges, street-leg priority, the day-0 anchor + named-reason paths, the
+  drawdown-import pin, receipt fields end-to-end incl. the call-date binding and the
+  overtake identity, the full attest lifecycle through the real endpoint, and the
+  scoping/two-step/one-builder/tt-v1-clean client pins) + **278 render** (+7: both gate
+  states driven live, the spread at both altitudes with the labeled sourced leg, the
+  street-unreviewed statement, the flip line, and the stamp's three states) + 187
+  public-render + `audit:prod` clean. Negative-controlled four ways — collapsing HODL,
+  widening the deadband, inverting the street priority, and removing the attest 409 —
+  each turning exactly its own pins.
+- **v5.2.0 "CAP-ASTERISK" — the cap demotes to an asterisk, and the funding queue ranks on
+  MERIT (owner ruling 2026-08-25, verbatim: *"I'm not adhering to the allocation cap. Can we
+  just keep it as an asterisk and rank sells by pure technicals, pt, and scores"*).** Two
+  documented owner REVERSALS, recorded the way v3.92/v4.0.0 recorded theirs, plus one scope
+  revision — none of them silent:
+  **(1) RANKFAIR v3.36's buy-side cap veto is REVERSED.** `whyNot()` (server) and `why(r)`
+  (client) drop the cap rung entirely; an at/over-cap name can take ELIGIBLE NEXT DOLLAR.
+  The asterisk survives exactly where the veto used to fire: the eligible row carries
+  `over the 18% REFERENCE cap (asterisk, not a veto — owner ruling 2026-08-25)` as a caution
+  (server receipt) and an amber chip ON the green line itself (client) — chosen with eyes
+  open, never silently. TODAY cap items downgrade sev stop→warn with the same
+  "reference cap (informational)" copy; the sub names the asterisk and keeps the honest
+  denominator line.
+  **(2) SELLRANK v3.38's forced cap tier is REVERSED.** The five owner-locked funding tiers
+  collapse to TWO: tier 1 (owner-marked forced exits · the cut list · server-stamped
+  BROKEN_THESIS — decisions already made, not rankings) still ranks first; everything else
+  is ONE merit pool, lexicographic in the owner's stated axis order — **tape (techRead
+  label, BEARISH first; MIXED/UNREAD/no-read all middle, since an unmeasured tape is never
+  a judgment in either direction) → lowest %/yr → lowest TT card score**, size the final
+  tie-break. Axes stay lexicographic, never blended into a unit (DEC-D2). Over-cap, cluster
+  and session-order stop being tiers and become FLAGS on the row — the over-cap row keeps
+  the forced row's exact trimPts/`≈ $N to cap` arithmetic as an informational chip, so
+  nothing the old tier said is lost, it just stops enforcing. No-rate share rows and
+  measured options rows now rank IN the list (`no %/yr` / dollars-basis primaries — exiling
+  them re-created the v3.44 exclusion one bucket over); the ⛔ TRIM render block and the
+  cap-contradiction line died with the tier they described (dead code is a rot vector,
+  v3.73). The closed FUND/TRIM tab count becomes `N ⚠cap` — still red, still v3.25-visible,
+  still never auto-opens.
+  **(3) The v3.83 married-never-merged scope is REVISED for one surface.** `sellRank`
+  (client) and `fundingRanking` (server, via a `techBySym` computed in `evaluateAllocation`
+  so the pure module stays pure) now READ the techRead verdict — through `techOf()`/the real
+  `computeTechRead`, the one resolution point, so a funding row and the name's own band
+  table can never disagree. The ban survives everywhere it still applies: the BUY sort,
+  `gateFail` and `why()` remain pinned clean. The old "sellRank never reads it" smoke pin is
+  formally reversed with the ruling documented at the pin.
+  `ALLOC_RULE_VERSION` → **tt-alloc-v3.0.0** (receipt semantics changed on both sides — a
+  cached v2.x receipt must not be reinterpreted under the merit rule; the v4.1.4 precedent,
+  fourth application), and the receipt carries a `basis` string stating the merit order so
+  the persisted record explains its own sort.
+  **Found while building: a vacuous pin and a self-inflicted regression.** The old
+  "forced trims rank before every discretionary" pin went vacuous the moment `forced.sort`
+  was deleted (indexOf −1 < anything — the v3.60.1 trap) and was rewritten as explicit
+  absence assertions; and a `git checkout` used to revert a negative control DISCARDED the
+  uncommitted server edits mid-build — reconstructed from the session's own captured reads,
+  re-verified green, and the remaining controls re-run against backup copies instead.
+  Tests: **1948 smoke** (+10 net: the whyNot-null-at-18-and-17.9 flip, the asterisk-caution
+  proof, the two-tier collapse, the over-cap FLAG, the server merit sort RUN against a
+  four-name fixture — BEARISH first despite the best %/yr, score breaking the tie, BULLISH
+  last despite the worst return — the client sort's identical fixture, and the reversed
+  tech/sellRank pin) + **271 render** (10 re-pinned: TODAY warn copy, the merit sell rows
+  with the informational chip, computed-first now BBB by merit, the capped scenario flipped
+  to prove the pick STANDS with the asterisk chip on the green line, `N ⚠cap`, and the
+  5-visible/11-ranked tail). Negative-controlled three ways — restoring the cap veto (2 red),
+  dropping the tape axis server-side (1 red) and client-side (1 red) — each turning exactly
+  its own pins.
+- **v5.1.1 — the card's own actionability, finally READ at the gate.** Found live minutes
+  after the v5.1.0 deploy cleared Engine 0: TSM re-scored **SCORED 9.0/S** and immediately took
+  the ELIGIBLE NEXT DOLLAR line at +31.7%/yr — while its own card read
+  **`actionability: BLOCKED`** on `BLOCKED_PENDING_INPUT:AI_G2_CIRCULARITY`. §7's
+  `actionabilityRollup` computed that state, §11.2 `evalEligibility` has always refused
+  anything but FULL/CAUTION, and the deep-dive panel rendered it — but the ladder that
+  actually gates capital never asked. Verified by grep before the fix: **zero** reads of card
+  actionability in either `whyNot()` (server) or `why(r)` (client), and `cardInfo()` did not
+  even carry the field; the only `actionability` references were Engine 0's *regime* axis.
+  **This is the v3.71-follow-up defect shape, one layer over** — state computed, published,
+  rendered, and not read where it gates capital — and it bit on the highest-consequence
+  surface in the book. The gate it hid mattered specifically: **AI_G2 is the CIRCULARITY
+  gate** (vendor equity stake, customer concentration), the live thesis risk in an AI-infra
+  book, unevaluated on the name being proposed for the next dollar.
+  `updateIndex` now carries **`actionability`** + **`blocked_on`** (the gate ids parsed out of
+  the `BLOCKED_PENDING_INPUT:` blockers — "BLOCKED" without the gate is a state, not an
+  action), and both ladders gain a rung **ahead of the quality rung**, because an unreadable
+  gate is not a quality verdict. **CAUTION passes** and is surfaced as a row caution — aging
+  evidence is the owner's to weigh, missing evidence is not (the `readiness()` rule). An
+  **ABSENT** field passes: a pre-v5.1.1 index entry simply predates it, and failing closed
+  there would veto the whole book over a value nobody had written yet — an outage dressed as
+  a safety rule (the v5.0.1 `p4` precedent; re-scoring populates it).
+  `ALLOC_RULE_VERSION` → **`tt-alloc-v2.1.0`**: a v2.0.0 receipt could name a name eligible
+  whose card read BLOCKED, so a cached one must not be reinterpreted under this rule (the
+  v4.1.4 precedent, third application).
+  **Stated consequence, predicted before shipping and confirmed after:** TSM, LITE, SNDK and
+  JOBY all carry `BLOCKED_PENDING_INPUT`, so the green line goes dark until those gates get
+  their inputs. That is the methodology's own answer (`gatePrecedence`: "UNKNOWN blocks") — the
+  ladder had simply been overriding it.
+  Tests: **1946 smoke** (+8: the truth table RUN through the real evaluator — BLOCKED vetoes
+  and names the gate, BLOCKED-with-no-gate still vetoes, FULL passes as the control, CAUTION
+  passes AND surfaces, ABSENT passes, rung ordering asserted by source position, the admin
+  mirror on both cardInfo paths, and the version bump; 1 pre-existing pin re-pinned with the
+  reason) + 271 render + 171 public-render + `audit:prod` clean. Negative-controlled: removing
+  the rung turns exactly its two behavioural pins red.
+- **FEAT-VIX-FAILSAFE (v5.1.0) — the crash gauge gets the second source the 10Y already had.**
+  Diagnosed live: at 2026-08-24 01:05 ET every Engine 0 check was CURRENT except VIX, which
+  sat on Thursday 08-20 (16.01) with no Friday 08-21 observation — a ~57-hour gap on a DAILY
+  series. A forced `POST /api/snapshot/refresh` refetched upstream and still got 08-20, so it
+  was not transient. `ttReadout.js:398` holds **HOLD** on `!isCur(vix)` and the v3.40 rule
+  withholds TAILWIND whenever the panic override cannot fire, so **the entire order-gating
+  engine was halted by one lagging series** — and `available/usable` were 5/5 with `raw_verdict:
+  TAILWIND` underneath. Measured precisely: `fed_next_meeting` (Kalshi, dark) is NOT critical,
+  so it never blocked FULL; VIX was the **sole** binding constraint, one input from
+  `current` 4→5 → HIGH → FULL.
+  **The asymmetry this closes.** v4.1.5 gave the 10Y an official-upstream failsafe for exactly
+  this per-series publication lag — its own comment records the mirror-image incident (DGS10
+  two sessions behind while VIXCLS had already published). The fix was built on one side only,
+  and the side left bare was the **crash gauge**: the one input whose absence stops everything
+  had a single point of failure while a less safety-critical series had a backup.
+  **The ladder (owner-specified):** CBOE **delayed-quote JSON** for the level (~1KB, keyless)
+  + CBOE **daily history CSV** for the as-of and the derived series, fetched CONCURRENTLY —
+  one round trip, and only on a day the leg is already dead or ≥1 session behind (a healthy
+  day costs nothing). CBOE *publishes* VIX and FRED's VIXCLS is its republication, so the
+  level is equivalent by construction — the same UST↔DGS10 relationship, never a proxy.
+  **Two honesty guards, both negative-controlled.** (1) **`pairCboeVix` pairs the two rungs
+  only when they describe the SAME session** — pairing a level from session N with a date from
+  session N-1 is a fabricated observation, so on a date mismatch the DAILY FILE WINS OUTRIGHT
+  (a true close beats a fresher intraday print; the bands, sparkline and WoW window are all
+  close-calibrated). This is the `pairRs` rule, one metric over. (2) **A same-day delayed quote
+  with no daily file behind it is REFUSED** — mid-session it is an INTRADAY print, i.e. a
+  PROXY, and ENGINE0-CONT's vocabulary exists precisely so nothing silently emits one through
+  the original metric's bands. Both guards were reverted in test: each turns exactly its own
+  pin red.
+  **Attribution is never IMPLIED** (the owner's rule, and the 10Y's own gap): every rung names
+  itself — `CBOE delayed + CBOE daily` · `CBOE daily` · `CBOE delayed` · **`FRED VIXCLS`**, the
+  last added so a FRED-served leg is labelled rather than left to be inferred from silence.
+  **`mergeFresherLeg` is EXTRACTED, not copied**: "newer wins, a TIE keeps the incumbent, the
+  leg is replaced WHOLE" is one rule, and both failsafes now call it. Whole-leg replacement is
+  load-bearing — a mixed leg would pair a fallback's level with the incumbent's deltas and
+  sparkline, a series dated by neither source. The band `[1,150]` still applies to a fallback
+  value (the failsafe is not a bypass), and FRED keeps its REAL observation date, so a carried
+  value still classifies HISTORICAL honestly rather than being dressed as CURRENT.
+  **Honest limit, same posture as v3.71/v4.1.5:** `cdn.cboe.com` is 403 from this build
+  environment's proxy (as are `home.treasury.gov` and `fred.stlouisfed.org`), so the endpoints
+  could not be exercised here. Both parsers are fail-closed and fixture-tested, the pairing and
+  merge are pure and EXECUTED, and the first real call from the Pages edge is the true schema
+  check. `live.vixSource` is readable on `/api/snapshot` without a debug token, so the deployed
+  answer to *"does CBOE answer from the worker, or is it Stooq-class blocked?"* is one GET.
+  Deliberately NOT built pending that answer: the Finnhub `^VIX` and Yahoo v8 rungs — building
+  two more upstreams before knowing whether the first one answers would be speculative.
+  Tests: **1938 smoke** (+30: both parsers incl. header/date-form variants and every
+  fail-closed path, the WoW window proven to be fetchFred's own and not the 1-day, the
+  pairing truth table, the intraday refusal, whole-leg replacement, recency both directions,
+  the closed attribution set, band enforcement, and wiring pinned in both directions) + 271
+  render + 171 public-render + `audit:prod` clean. Four negative controls run: neutering the
+  merge (4 red), reverting the trigger to failure-only (1 red), and removing each pairing
+  guard (1 red apiece).
+- **v5.0.2 — the chrome above NEXT $ IN, measured and trimmed.** Owner feedback on a live
+  phone screenshot ("reduce empty space where able"). Measured first rather than guessed
+  (the project's own convention): a Playwright probe against the real `admin.html`, served
+  through the render harness's own stub server, at 390×844. Five stacked container margins
+  — `header` → `.cmd` → `.panel`'s top padding → `#tabBar` → `.stance-strip` → `.decision-tabs`
+  — compounded to push `#decisionDeck` (the NEXT $ IN / FUND-TRIM content) down to y=448
+  before a single number rendered. None of it was protecting a touch target: every
+  deliberate 40px/42px/44px `min-height` (stance badges, tab-strip tabs, decision-tabs
+  buttons, driver rows) lives inside the buttons themselves and was untouched. Trimmed the
+  five container margins/paddings by 2px each (`header` 10→8 · `.cmd` 12→8 · `.panel`
+  vertical padding 12→10 · `#tabBar` 10→8 · `.stance-strip` padding 6→5 + margin 8→6 ·
+  `.decision-tabs` padding 3→2 + margin 8→6) — **measured after: `#decisionDeck` at
+  y=428, −20px**, with the whole page 22px shorter. Verified by reproduction, not
+  inspection: the same probe re-run post-edit confirms the exact arithmetic (each trim's
+  effect on the next element's `top` matches its declared change, accounting for adjacent-
+  sibling margin collapse where it applies). Content-only, no version-gated contract moved
+  — `npm run gates` unchanged at 1908 smoke + 271 render + 171 public-render, audit clean.
+- **v5.0.1 — the PROVISIONAL veto names WHICH half of §6.4.1 is missing.** An owner-passed
+  review of the B-cap found the v5.0.0 veto string over-claiming, and a read-only census of
+  all 33 live score records proved it: `falsifiers pending — score capped at B until they're
+  committed` was FALSE for TSM (6 server-stamped hinges, committed 8/05 — what's missing is
+  observations, not commitment) and CELH (6 committed, 1 observed). "Unwritten" and
+  "committed, awaiting observations" are different owner actions — write vs wait — and one
+  string covered both with the wrong verb. **The census also settled the review's engine
+  proposal**: it suggested min-3-observed scoring in `scoreP4` (pending extras as warnings
+  instead of one unobserved hinge nulling the pillar, `ttScore.js:527-529`) *if* any name had
+  ≥3 observed hinges hostaged by pending extras — measured: **that bucket is EMPTY** (21 of 23
+  PROVISIONAL names have <3 hinges written, TSM/CELH have <3 observed), so the engine change
+  is deliberately NOT built; it becomes an owner methodology call if a filing pass ever makes
+  the bucket real. Two review claims corrected in the same pass: its "the live line still
+  reads the asserted composite" was written against the pre-v5.0.0 head (both `why(r)` and
+  `whyNot` read cards since yesterday's activation), and the cure IS two server writes
+  (`commitFingerprint` holds the first write PRECOMMITTED_PENDING; the composed-lifecycle
+  test is the proof) — stated now rather than implied away. The fix: `updateIndex` gains an
+  additive **`p4: {kind, hinges, observed}`** summary (scoreP4's own observed predicate, the
+  card's own bootstrap kind), `cardInfo` carries it at both altitudes, and both veto mirrors
+  split four ways — `falsifiers unwritten` · `N/3 written — set incomplete` (the CRDO shape) ·
+  `committed, N/M observed — awaiting qualifying observations` (the TSM shape) · `committed
+  this write — a later write scores them (§6.4.1)` — every branch still a veto, PROVISIONAL
+  still never eligible. A pre-v5.0.1 index entry (no `p4`) reads the neutral `falsifiers
+  pending`, claiming neither half. No `ALLOC_RULE_VERSION` bump: eligibility semantics are
+  unchanged, only the reason text gained precision (the FIX-C relabel precedent, not the
+  v4.1.4 one). Tests: **+7 smoke** (the four-way truth table run through the real evaluator,
+  the every-branch-vetoes sweep, the retired clause pinned ABSENT from both mirrors
+  comment-stripped, the index p4 on both endpoint fixtures incl. the composed lifecycle's
+  committed counts, the admin mirror pin).
+- **v5.0.0 "THE CARD GOVERNS" — §14.8 activation, one freshness doctrine, the KV fix, and the
+  FINANCIALS mode.** The V5 system audit's ranked scope, built as one release under three owner
+  rulings (2026-08-23): **flip SCORED-only** · **stay on the KV free tier and fix the cause** ·
+  **include the FINANCIALS P3 mode**. Five workstreams:
+  **W0 — the quote cache stops burning the KV budget.** The 1000-deletes/day free-tier cap blew
+  mid-session because `/api/quotes` wrote ONE KEY PER SYMBOL (120s TTL) and the terminal quotes
+  the whole book on every load — ~40 writes + ~40 expirations per cold refresh, ~25 refreshes =
+  the cap (whether Cloudflare bills TTL expiry as deletes is a platform semantic the repo cannot
+  settle; this was the only 1000/day-magnitude path either way, and it pressed the write cap
+  identically). **`functions/lib/quote-cache.js`** is the one home now: a single merge-on-write
+  batch key (`tt:quote:batch:v1`) collapses a cold refresh to **1 write + 1 expiry** — and the
+  stated 2-minute freshness contract DID NOT MOVE, it lives on each entry's own `at` stamp
+  (`freshEntry`, fail-closed), because merge-on-write refreshes the key and key presence would
+  otherwise prove nothing. Both other readers moved with the shape (`tt.js`'s ledger px stamp —
+  now ONE batch read per append — and `allocation.js`'s liveQuotes); smoke [72] runs the op
+  counts behaviorally (cold=1 put · warm=0 · merge preserves untouched symbols · a 10-minute-old
+  entry in a fresh key is a MISS).
+  **W1 — §14.8 ACTIVATED: the server card governs the board (SCORED-only).** The shadow period
+  ends. The eligible line's quality rung, the ranking chips, the tail sort and `rankCategories`
+  all read SERVER CARDS via **`cardInfo()`** (one resolution point — a loaded per-sym record
+  wins over the boot-time index); the board loads `GET /api/score?book=1` at boot — **the
+  endpoint that existed unused since v3.73**. Only a card with `status SCORED`, minted under
+  the CURRENT methodology, may light the line; PROVISIONAL ranks B-capped and is vetoed
+  *"falsifiers pending — score capped at B until they're committed"*; no card reads *"no server
+  card — unscored"*. The **methodology-relabel hole is closed at BOTH altitudes**: the per-sym
+  GET always relabelled a stale-methodology card LEGACY_UNVERIFIED but the `book=1` index path
+  never could — index entries now carry `methodology_version` (additive, `updateIndex`) and a
+  mismatch can rank but never light the line. **"WAIT — methods disagree" is retired** — the
+  wait existed because two live methods shared one board; disagreement is HISTORY now, stated
+  beside the legacy composite inside the collapsed details ("history, not a wait"), and the
+  legacy label reads *superseded at §14.8 activation*. **Server side, the activation switch is
+  the smoke pin itself**: [68]'s "no `tt:score` reference in alloc code" bar is deliberately
+  REPLACED by its inverse — `allocation.js` reads the score index and hands it to the pure lib
+  as data (purity intact, pinned), `evalBuyRow`/`whyNot` mirror the client's card ladder
+  rung-for-rung, and — per the old bar's own "until activation" text — **BROKEN_THESIS
+  (kill-flagged falsifier RED, server-stamped `broken_thesis` on the index) now forces funding
+  tier 1**, owner-marked reasons keeping precedence. This also silently fixed a real
+  divergence: the server used to compare an UNPARSED free-text composite (a string score like
+  "R3-A: 9.0" passed `s < 5.5` by accident); a card score is numeric by construction.
+  `ALLOC_RULE_VERSION` → **tt-alloc-v2.0.0** (receipt semantics changed on both sides — cached
+  v1.x receipts must not be reinterpreted, the v4.1.4 rule). **Deploy-day honesty:** every
+  stored card is v2.5.0-declared and the engine now reads v2.6.0 (W4), so the line reads the
+  re-score veto until tonight's re-scores land — strict §4.3, stated not smoothed.
+  **W2 — one freshness doctrine.** (a) **PA cadence**: the flat `PA_STALE_D=7` took the whole
+  WHEN leg dark at once (measured: 36/36 stamps at exactly 8d, 200-day averages included).
+  **`PA_CADENCE {entry:7 · indicators:7 · swings:14 · mas:30}`** (asserted, every boundary
+  executed at ±1d) — `paRead` judges per PATH, `computeTechRead` excludes per FACTOR with the
+  window NAMED in `missing` (a stale entry no longer takes the slow MAs dark with it; an
+  8-day-old stamp now reads trend+range live and degrades to UNREAD-with-reasons on quorum);
+  undated still fails closed to the full withhold in both homes, and the [57] cross-
+  implementation matrix gained five cadence fixtures. (b) **P3 inputs finally age**: the
+  machinery (`freshnessOf`, `actionabilityRollup`'s `pillarFresh` param) existed since §5.3
+  and reached only P4 hinges — the SELF_FUNDING entry named this as future scope; closed.
+  Quarterly cadence (`P_INPUT_CADENCE_D=120`): AGING = one missed quarter → CAUTION, STALE =
+  two → BLOCKED, **the SCORE never moves** (deleting a measurement for being old would
+  recreate "unmeasured reads as zero") and every aged field is NAMED in warnings. Measured
+  against the live book first: every stored P3 input is ≤~90d old, so nothing re-verdicts at
+  deploy. (c) **TARGET_STALE** (`ttDrift`): the card freezes P1's target at `computed_at`
+  while the board ranks live — 30/30 agreement on 2026-08-23 was a freshness COINCIDENCE, not
+  a guard. The stated rule is now enforced: *the receipt governs eligibility at its stamped
+  basis, the live ladder governs ranking*, and a >5% gap warns naming BOTH numbers
+  (basis-aware — a FLOOR card compares against `fl`, never the premium beside it).
+  **W3 — two more drift lints, both defects caught BY HAND this week.** **RUNWAY_SPLIT**: the
+  same runway fact lives in P3 and PH_G2, and an intra-session split (ACHR, 21.9 vs 24) was
+  caught only by a human re-reading the card — now mechanical, mode-aware (a PROFITABLE-mode
+  P3 has no runway field, the SYM shape; `SELF_FUNDING` beside a numeric burn is flagged as a
+  CONTRADICTION). **LABEL_DRIFT**: GEV's `basis` read "Floor only … No premium multiple
+  asserted" beside the premium the v4.2 seed had added — the label-outlives-its-data defect
+  INSIDE stored data; fires on the lie ("no premium multiple" / unscoped "floor only" beside a
+  stored premium), silent when `floor_only_before` legitimately scopes the phrase. All three
+  new lints ride `lintDrift`'s new optional `ctx` (absent = v4.3 behavior exactly), join the
+  [49] byte-identity tripwire and the ICON map, and stay `sev:"warn"` — the family contract.
+  COMPOSITE_STALE's message is corrected too: the legacy composite no longer gates anything
+  ("historical since §14.8"), a claim that would otherwise have rotted in the lint that
+  exists to catch rotted claims.
+  **W4 — FINANCIALS P3 mode** (`tt-underwriting-v2.6.0`): the shape SOFI/NU/HOOD never had —
+  a lender has no operating-income line and its operating cash flow is structurally
+  meaningless (deposit flows and originations ride inside it), so PROFITABLE_STANDARD could
+  never describe one. Five components, weights asserted for owner ratification:
+  `efficiency_ratio_pct` (.25, INVERTED anchor — cost over revenue), `efficiency_direction_pp`
+  (.15, inverted), `capital_efficiency` ROE/ROTCE (.20, metric named), **`capital_adequacy`**
+  (.25 — headroom above the NAMED regime minimum; a bare ratio with no stated requirement
+  REFUSES to score: SOFI reports CET1, NU Basel-local, HOOD broker-dealer net capital), and
+  **`credit_quality_trend`** (.15, enum with source+rationale — the thing that actually kills
+  lenders and that no numeric field can see). Input aging reaches the new mode from birth.
+  Data fill is the post-reset KV work.
+  Tests: **1901 smoke** (+34 net: [72] quote batch · the [68] activation truth table with the
+  §14.8 pin inverted · [51]/[58] re-rigged onto cards · cadence identity + boundaries ·
+  P3 aging · the three lint batteries · FINANCIALS boundaries) + **271 render** (eligible-line
+  fixtures re-primed through the extended `/api/score` stub — the board's quality gate now
+  clears via a SCORED index entry, never an injected legacy composite; the governs-panel
+  re-pins) + 171 public-render + `audit:prod` clean. **Negative-controlled four ways**:
+  disabling the SCORED-only rung, widening a cadence window, removing a lint emission, and
+  unwiring `pillarFresh` from the rollup each turn their pins red (1/3/2/1).
+- **Session log 2026-08-23 (post-v4.99) — the V5 system audit.** Owner-directed: an end-to-end,
+  first-principles audit of runway months, PT rungs, next dollar and technicals against the
+  purpose (*a retail investor with a watchlist wanting the scores, the next dollars and the
+  thesis*). Lives at **`ticker-terminal/V5_SYSTEM_AUDIT_2026-08-23.md`** — findings measured
+  against live KV, not read from docs. Headlines: the **WHEN leg is dark book-wide** (36/36
+  level stamps at exactly 8d against the flat 7d window — one broker session stamped them all,
+  nothing refreshes them); the **§14.8 flip precondition is now met** (NBIS SCORED 9.17/S, the
+  G3 calibration blocker resolved by v4.5–v4.8) while the eligible line still reads legacy
+  free-text composites over 28 shadow cards; PT-rung integrity measured clean (30/30
+  basis-aware) but held by freshness coincidence, not a guard; and the three freshness gaps
+  (P3 inputs never age · frozen card targets · flat PA window) are one finding — cadence-aware
+  staleness owed to every store, the dashboard's own doctrine. Proposed v5.0 scope ranked in
+  §4: governor flip first, falsifier sprint parallel (owner), freshness unification + drift
+  lints (`RUNWAY_SPLIT`, `LABEL_DRIFT`, `TARGET_STALE`) as the guards, NVDA hinge drop before
+  8/26 as the one hard deadline.
+- **v4.99.0 — pre-v5 consolidation: the branch lands on `main`, and the two engine patches
+  finally BIND.** Owner call, verbatim: *"Consolidate and push our work to main as v4.99."*
+  Content is v4.8.0 (the QC_G3 absolute ceiling, `tt-route-v4`) + v4.9.0 (the `SELF_FUNDING`
+  runway sentinel) fast-forwarded onto a `main` that already carried v4.7.0 — no code change
+  in this release beyond the version literals. **The version JUMP 4.9 -> 4.99 is deliberate
+  and owner-directed**, recorded here so no phantom v4.10-v4.98 is ever inferred (the same
+  discipline as the parallel-branch collision notes: `package.json` is the single source of
+  truth, and a number nothing explains is a number someone will later "fix").
+  **What deploying this changes, concretely:** the deployed `/api/score` engine moves
+  `tt-route-v3` -> `tt-route-v4`, so (1) the QC premium prerequisite gains its absolute P/E
+  ceiling — measured to re-verdict ZERO stored cards — and (2) `PH_G2_RUNWAY` and P3 accept
+  the `SELF_FUNDING` sentinel, so SYM's stored card (which already carries the sentinel,
+  written ahead of the deploy) flips its gate UNKNOWN -> PASS on its next re-score. Until
+  this push, both patches were repo-only and the production endpoint was still enforcing v3
+  — verified live before consolidating, not assumed.
+  Tests: the full `npm run gates` (1854 smoke + 271 render + 171 public-render +
+  `audit:prod` clean) re-run at the consolidation head before pushing — local green is not
+  CI green (the v4.1.3 lesson), so CI on `main` is the arbiter after push.
+- **v4.9.0 — `runway_months` resolved: the field asked one question and could only answer it for
+  one kind of company.** Two names put the defect on both ends in the same session. **CRWV**
+  printed **2.89 months** — arithmetically exact, and reading as imminent failure for a business
+  whose operating cash flow is POSITIVE and whose entire deficit is capex drawn against $104B of
+  contracted backlog. **SYM** could not produce a number at all: it GENERATES cash, so the burn
+  denominator has the wrong sign, the input was left unset, and the pillar BLOCKED — meaning the
+  strongest funding position on the book scored **worse than a name with 60 months of runway**.
+  **First principles: the field exists to answer "can this company fund itself to the thesis?"
+  and `cash / burn` is not that question — it is one IMPLEMENTATION of it**, correct for exactly
+  one of the three regimes the live book contains: an equity-funded burn-down (JOBY/ACHR/BETA/
+  TEM), a debt-funded operator (CRWV), a cash generator (SYM).
+  **Only one of the three needs code, and that is the point of the fix.** A debt-funded operator
+  needs no shape change: its author may include committed undrawn facilities in the numerator and
+  state the formula, exactly as every other derived figure here is authored — what CRWV is missing
+  is the facilities FIGURE, recorded on that card rather than papered over with a field change.
+  A cash generator, by contrast, has **no honest number to write**, which is why it is the only
+  case the engine itself must learn.
+  **`SELF_FUNDING`** is that sentinel — an explicit value scoring the anchor **maximum**, because
+  unbounded runway is the best attainable state and the 48-month anchor top is its honest ceiling.
+  Same doctrine as `NO_FLOOR_PREPROFIT` and the "unmeasured is never zero" rule pointed at the
+  opposite end: *"cannot be expressed as a number"* and *"bad"* are different facts, and the field
+  had been collapsing them. `readRunway()` keeps the **full atomic envelope** — `as_of`,
+  `source.kind` and the no-`OWNER_ASSERTED` rule all enforced exactly as for a number, so the
+  sentinel is not a provenance bypass — and **any other string still returns the ordinary numeric
+  errors**, so `"self_funding"`, `"SELFFUNDING"` or `"24"` can never reach the anchor. `PH_G2_RUNWAY`
+  accepts it as a PASS on exact match for the same reason: a cash generator could previously only
+  read UNKNOWN there, scoring identically to no information at all.
+  **Backward compatible by construction** — a numeric value takes the identical path and produces
+  the identical score, asserted directly rather than assumed. No stored card used the sentinel
+  before this release, so nothing re-verdicts.
+  **Honest limit, stated not hidden:** nothing in P3 ages, so a SELF_FUNDING claim does not go
+  stale — and a cash generator can start burning. That is a real hole, but it is the SAME hole a
+  stale runway NUMBER already has (both overstate in the same direction as they age), so this adds
+  none. Aging P3 inputs generally is its own scope.
+  Tests: **1854 smoke** (+6: the anchor maximum proven to beat every finite value, the
+  pillar-computes-instead-of-blocking proof against the exact inversion, envelope enforcement on
+  all three legs, the typo sweep, exact-match on the gate, and a backward-compatibility assert)
+  + 271 render + 171 public-render + `audit:prod` clean. Negative-controlled: disabling the
+  sentinel in either home turns exactly those 4 pins red.
+- **v4.8.0 — the QC_G3 absolute ceiling: PEG cannot backstop a pathological multiple.** The
+  v4.7.0 patch fixed this gate's SIGNS and left it without the backstop its sibling
+  `AI_G3P_EARNINGS_BRIDGE` has carried since v4.5 — `pe > 45 -> FAIL`, there precisely so a
+  pathological multiple fails regardless of the growth story. PEG is **scale-free by
+  construction**, which is exactly why it cannot do that job: an arbitrarily large numerator
+  over an arbitrarily large denominator clears it. Surfaced while staging **SPCX** (see the
+  session log below — SpaceX common stock, mis-lensed VEH): `pe_fy1` **152.19** over **421.1%**
+  growth is PEG **0.36**, which PASSED the QC premium prerequisite at 152x forward earnings.
+  **Why 45 and not ~55.** AI_G3P reads `pe_fy2`; this gate reads `pe_fy1`, structurally higher
+  for a growing name (`pe_fy1 = pe_fy2 x (1+g)`), so the dimensional equivalent of the sibling's
+  45 is roughly 50-55 here. 45 is **deliberately tighter**, and the reason is substantive rather
+  than an artefact of which fiscal year each gate reads: **the routes differ in kind.**
+  AI_INFRA/PLATFORM is the hypergrowth-platform route where a rich multiple is the norm;
+  QUALITY_COMPOUNDER is the route for durable compounders, where a >45x FY+1 multiple is the
+  exception its own premise argues against.
+  **Measured across every live QC/STANDARD card BEFORE shipping — zero re-verdict** at 45, 60
+  or 75: the highest PASSING forward P/E is RDDT at 23.47x, and both FAILs (AAPL 32.53,
+  TSLA 166.45) already failed on PEG. No stored card can be rejected on re-save — the same bar
+  `MISKEY` and the AI_G3P patch were each held to. TSLA's FAIL now arrives via the ceiling
+  rather than via PEG; the verdict is identical either way.
+  **Ordering is load-bearing** and mirrors AI_G3P: the ceiling fires BEFORE the PEG PASS test,
+  or a low PEG at 152x returns PASS first and the backstop is dead code. 45 is exclusive
+  (`> 45`), matching the sibling. ASSERTED, not calibrated, like every boundary here.
+  `ROUTE_MAP_VERSION` -> **`tt-route-v4`** per §4.3: a boundary ADDITION changes what a verdict
+  of a given version MEANS (a v3 PASS could sit at 152x; a v4 PASS cannot). Recorded on cards,
+  never 409'd, so v1/v2/v3 cards stay readable and self-identify.
+  Found while pinning: the existing 2.5-PEG-edge assertion probed at `pe_fy1` 50/50.2, which
+  now FAILS on the ceiling before PEG is ever formed — it would have measured the ceiling while
+  claiming to measure PEG (the vacuous-assert trap, cf. v3.60.1). Re-pinned under 45 so each
+  boundary tests only itself.
+  Tests: **1848 smoke** (+5: the SPCX negative control, the ordering proof, exclusivity at
+  45/45.01/44.99, cross-gate parity, and the measured no-re-verdict sweep; 1 re-pinned with the
+  reason) + 271 render + 171 public-render + `audit:prod` clean. Negative-controlled: removing
+  the ceiling turns exactly those 4 pins red.
+- **v4.7.0 — the QC_G3 sign-cancellation patch: a premium prerequisite that passed a company
+  with no earnings.** Found by a pre-flight calibration check before scoring any
+  QUALITY_COMPOUNDER name — the G3 ruling's own doctrine (rule the gate BEFORE the book, or you
+  mint dated wrong cards) applied to the next route in line. `QC_G3_VALUATION_PREREQ` was
+  **RATIO-ONLY**: it accepted a precomputed `peg_fy1` and never saw P/E or growth, so it was
+  structurally blind to the signs that produced the ratio. **Measured live on the book: TEM,
+  FY+1 EPS −$0.08 → forward P/E −908.6 on −962.5% growth → PEG +0.94 → PASS.** Two negatives
+  divided to a healthy-looking positive and the gate stamped "premium earned" on a pre-profit
+  name. Two further holes the same shape admitted: `pe +20 / g −10 → −2.0` PASSED (−2 ≤ 1.5),
+  and `pe −12 / g +20 → −0.6` PASSED. **A `peg <= 0` guard catches none of the first case** —
+  the one that was live — which is why the INPUT SHAPE had to change rather than a guard being
+  bolted on. The gate now takes `pe_fy1` and `eps_growth_fy1_fy2_pct` separately and forms the
+  ratio inside, the `AI_G3P` shape. Deliberately **not** a PREPROFIT QC profile: TEM stays
+  QC/STANDARD and the gate simply refuses to grade a ratio it cannot form.
+  **`UNKNOWN` on non-positive P/E, `FAIL` on non-positive growth** — the asymmetry is the point.
+  FAIL here is `TIER_CAP: A`, a verdict about CHEAPNESS; "no P/E before profit" is a
+  cannot-measure, and UNKNOWN already yields the floor-basis P1 that honestly represents it.
+  Non-growth, by contrast, genuinely is "not growing into the multiple" — the same call
+  AI_G3P's growth floor makes. The 1.5 / 2.5 boundaries did not move and remain ASSERTED.
+  **Free to change, verified before touching it:** `peg_fy1` appeared in **zero** stored
+  payloads and both QC score records (CELH, HOOD) carried this gate's input block **ABSENT** —
+  no card depended on the old shape, so there was nothing to migrate and no stored ratio to
+  reinterpret. `ROUTE_MAP_VERSION` → **`tt-route-v3`** per §4.3 (an input change is a version
+  bump, never an in-place edit); recorded on cards, never 409'd, so v1/v2 cards stay readable.
+  The live QC spread is unchanged by the patch where it was already honest — NU 0.44 · GRAB
+  0.70 · SOFI 0.79 · RDDT 0.84 · AMZN 0.87 PASS, AAPL 2.64 · CAT 2.76 · HOOD 2.92 · TSLA 3.82
+  FAIL — so this removed a defect without re-verdicting a single healthy name.
+  Tests: **1843 smoke** (+6: TEM pinned as the named negative control the way ALAB is for
+  AI_G3P, both other sign holes, the UNKNOWN/FAIL asymmetry, every boundary at −ε/edge/+ε, the
+  retired `peg_fy1` input proven absent, and the measured-book spread) + 271 render + 171
+  public-render + `audit:prod` clean. Negative-controlled: restoring the ratio-only shape turns
+  exactly 4 pins red, the TEM control among them.
+- **v4.6.0 "THE RANKING BRIDGE" — the truncation footer stops deep-linking and starts acting,
+  and the three mis-graded cards are corrected.** Two pieces, one session.
+  **(1) The G3 ruling's payoff, banked.** With the lens work landed (`AI`→`AIP` on all twelve
+  earnings-lens AI names, `MU`→`IND` — see below), LITE/CRDO/MRVL were re-scored under
+  `AI_G3P_EARNINGS_BRIDGE`. All three PASS it, and the correction is exactly what the ruling
+  predicted: **LITE 5.50/B → 7.03/A**, `basis_used` FLOOR → **PREMIUM**, target **$495 → $1,089**
+  (its own street-calibrated ladder), P1 0 → 6.11. CRDO P1 0.78 → 7.37 ($164 → $328) and MRVL
+  0 → 3.80 ($93.75 → $250); both stay UNSCORABLE but now for the RIGHT reasons (falsifier
+  bootstrap + an unsourced `capital_efficiency`), not a revenue multiple. `cap_source:
+  AI_G3_2028_BRIDGE` appears on none of them. Found while doing it: a bare re-PUT would have
+  scored UNKNOWN — the stored `route_gates` carried the NEOCLOUD gate's inputs and the PLATFORM
+  gate's fields did not exist yet, which is abstention *for want of fields, not evidence*. The
+  new inputs are computed with formulas stated; the old `AI_G3` block is **retained and labelled
+  RETAINED FOR AUDIT, NOT EVALUATED** rather than deleted, so the card records what the
+  superseded gate measured. **MU → IND, not AIP** (owner call, taken against the mechanical
+  rule): its own basis reads *"THE TROUGH IS THE ANCHOR, NOT FY+1"* with `floor_only_before
+  2028`, and G3P's PEG assumes smooth FY+1→FY+2 growth — wrong across a cyclical trough.
+  `INDC_G4_VALUATION_NORM` asks the right question instead (premium on a documented normalized
+  basis), and its own registry comment already named MU as its motivating case.
+  **(2) The bridge itself.** `renderBuyBlock`'s footer read *"full math, horizons & caveats ↗ ·
+  15 ranked of 50"* — it ADMITTED the truncation and then sent you to DESK, the v3.72 defect
+  (a control that reports a fact instead of acting on it) applied to the primary view. The
+  remainder now opens **in panel**: a closed `details.est-mini` whose summary carries
+  `+N more ranked · *M more reviewed`, expanding to the rest of `UPSIDE_ROWS` followed by the
+  rest of `UNRANKED_ROWS`. **est-mini, never `drawer`** (the phone harness counts open drawers —
+  the FEAT-TT-ESTRUN precedent). The eligible line + top-5 stay the default glance, so the
+  CLOSED state is the next-dollar focus; the count on the summary keeps silent truncation from
+  reading as full coverage (v3.65/v3.76); `caveats, lints & horizon pin ↗` survives as a DESK
+  link because **methodology belongs there and names do not**. Both row templates were inline
+  duplicates and are now **defined once** (`rankedRow`/`tailRow`) and reused at both altitudes —
+  the `ptModelRows` rule applied to markup, so rank 6 in the expander is the same row shape and
+  the same sort as rank 5 above it, never a restarted list. **Deliberately NOT a fourth deck
+  page**: MAG 7 earned a page by being a different QUESTION (the seven + MAGS); this is the same
+  question uncut, and a BOOK/ALL tab would compete with the default view and re-create the
+  six-phone-screens regression v3.38 spent a release killing — `DECK_PAGES` is pinned untouched.
+  **`rankCategories()` finally paints**: it has computed per-axis dense ranks for SHARE RANKS
+  since v3.56 and never rendered on screen; each row now carries chip-length `TIER #n · LENS #n ·
+  TT #n`, suppressed where an axis has one member ("#1 of 1" is noise, not a rank). That is the
+  complete-ranking read without forty rows.
+  Found by the new render assertion, and it was the ASSERTION that was wrong: the first cut
+  pinned `scrollWidth <= 390` in a block that runs at the **1200px** desktop viewport, so it
+  measured nothing and failed on a correct page. Re-pinned on the real invariant
+  (`scrollWidth <= window.innerWidth`), which holds at whatever width is active.
+  Tests: **1837 smoke** (+7: one-template-per-basis, est-mini-never-drawer, the no-second-
+  derivation sweep, the count-on-summary rule, the retired deep-link, DECK_PAGES still 3, and
+  the rankCategories reuse) + **271 render** (+7: the expander driven live — closed-state
+  absence then one-tap presence, and a runtime 7-row injection proving the expander continues
+  the same order at #6/#7 rather than restarting) + 171 public-render + `audit:prod` clean.
+- **v4.5.0 "THE G3 RULING" — AI_INFRA splits NEOCLOUD / PLATFORM, and the profile trap that
+  would have silently undone it.** Owner call after the 8/22 engine run surfaced the finding:
+  *scoring the earnings names under the current gate would mint dated, wrong cards — worse
+  than leaving them dark.* Verified before touching anything, and the engine names itself as
+  the capper: `AI_G3_2028_BRIDGE` is the AI_INFRA premium prerequisite and it is a REVENUE
+  bridge (EV / FY+2 revenue, PASS ≤4.0x). Correct for a neocloud with no earnings to bridge
+  to — **NBIS passes at 3.22x and is the calibration set** — and structurally wrong for a
+  profitable platform whose own `pt_model` lens is P/E. Measured across the live book: TSM
+  7.6x · LITE 7.3x · MRVL 12.3x · NVDA ~15.7x all FAIL, `premium_prerequisite_state:"FAIL"`
+  → `basis_used:"FLOOR"` → `cap_source: AI_G3_2028_BRIDGE` on three of four. **LITE's card
+  said it in its own words** — *"premium exists but prerequisite gate is FAIL — floor
+  scored"*, target **$495** (the 15x floor) against its own street-calibrated ladder's
+  $1,089, P1 = 0, composite 5.50/B. That card was minted hours earlier in this session and
+  is a mis-grade; recorded rather than quietly re-scored.
+  **The fix is a profile split, the pattern `QUALITY_COMPOUNDER` STANDARD / INDUSTRIAL_CYCLICAL
+  already proved** — and the reason it is not a one-line addition is a trap invisible from the
+  gate list: **`gatesFor` treats `profile: null` as "applies to EVERY profile of this route"**,
+  so adding a PLATFORM profile while leaving AI_G3 at `null` would have given PLATFORM names
+  **two premium prerequisites**, one of them the gate just ruled inapplicable. AI_G3 therefore
+  takes an EXPLICIT `"NEOCLOUD"` profile and the `AI` lens maps to it, which keeps NBIS's gate
+  set byte-identical; `AI_G1`/`AI_G2` stay `null` deliberately (funding and circularity are
+  asked of both kinds). `ROUTE_MAP_VERSION` → **`tt-route-v2`** per §4.3 — recorded on cards,
+  never 409'd, so stored v1 cards stay readable and self-identify.
+  **`AI_G3P_EARNINGS_BRIDGE`** asks the SAME question of the structurally representative line:
+  PASS at **PEG ≤1.0 AND growth ≥20% AND ≥3 analysts**, FAIL past **45x**, under **10% growth**,
+  or **PEG >2.0**, else the honest middle. **PEG rather than an absolute P/E** because an
+  absolute band cannot span this profile: measured FY+2 P/Es run 5.8x (SNDK) to 37.9x (MRVL)
+  and any single line lands mid-cluster on three names at once — PEG is scale-free and encodes
+  the actual claim, that growth is what you bridge *with*; the absolute ceiling survives as the
+  FAIL backstop and the growth floor keeps PEG off a near-zero denominator. **Boundaries are
+  ASSERTED, not calibrated** (the NFCI/CROSSOVER_SCORE convention) and every one is executed in
+  smoke. It still has teeth: **ALAB is the one name it holds at UNKNOWN** (35.3x for 26.4%
+  growth, PEG 1.33 — expensive for its own growth), while TSM 0.49 · NVDA 0.39 · BE 0.45 ·
+  LITE 0.50 · CRDO 0.52 · MRVL 0.70 · SNDK 0.11 all clear.
+  **The reconciliation pin found a pre-existing defect on its first run.** Asserting that every
+  registry lens is expressible in `admin.html`'s `LENS_NAME` whitelist went red on **`IND`** —
+  the INDUSTRIAL_CYCLICAL profile the registry has defined since v3.74 has **never been
+  assignable from the terminal**, and **BA already carries `lens:"IND"` in the live book** (the
+  server only length-checks, so it was accepted, while the client would reject any edit
+  touching it and rendered its chip with no colour). Both `AIP` and `IND` are now assignable
+  and rendered. A route the terminal cannot express is a ruling only half-landed.
+  **Deliberately NOT done, per the owner's ordering:** no name was re-scored and the governor
+  was not flipped. The four stale cards (LITE · TSM · CRDO · MRVL) are **inert until the flip**
+  — legacy composites govern today — and the lens reassignment they need is derived but
+  unapplied: all 8 earnings-lens AI names (NVDA · TSM · LITE · MRVL · CRDO · ALAB · SNDK · BE)
+  qualify by the mechanical rule *`pt_model` carries `pe_premium_multiple`*, owner to confirm.
+  Board decision records the ruling and that list (v22.7); two decisions describing the evening
+  of 7/29 were pruned to fit, their outcomes already held in `board.binaries`.
+  Tests: **1830 smoke** (+14: the split, the `profile:null` trap asserted in BOTH directions,
+  exactly-one-prerequisite-per-profile, every AI_G3P boundary at −ε/edge/+ε, the no-P/E-before-
+  profit path, the live-book sweep, the ALAB discrimination, NBIS's unchanged calibration point,
+  and the lens-expressibility reconciliation) + 264 render + 171 public-render + `audit:prod`
+  clean. Negative-controlled: reverting AI_G3 to `profile: null` turns exactly the two trap pins
+  red and nothing else.
+- **Session log 2026-08-22 — the canonical engine runs on the live book (owner-directed;
+  KV/operator work through the existing `/api/score`, no code change).** The owner's ordering
+  ruling, verbatim in spirit: *flipping §14.8 first would blank the green line and create no
+  sample* — so run the engine on the names that already spend, THEN point the governor at the
+  cards. Executed: **12 score records now exist (was 5), five SCORED** — NBIS 8.96/S ·
+  **SNDK 7.94/A** · JOBY 6.82/B · **RKLB 6.26/B, the first FULL-actionability card** ·
+  **LITE 5.50/B, exactly on the B boundary** with its pre-committed entry-discipline hinge
+  RED (live $866.71 vs its own $680 zone top) and FY26 FCF ~zero priced in — the shadow
+  saying what the legacy 7.4 could not. All falsifier grades are mechanical reads of the
+  pre-committed bands against print facts, sourced per hinge (SNDK's fy2027_guide graded
+  GREEN **by the letter** — $44-46 Q1 guide annualizes $180 mid vs the $177 bar — while the
+  tape read the same guide as a miss; recorded, not blended). **TSM lands PROVISIONAL
+  honestly**: P4 is all-or-nothing and `n2_ramp`/`working_capital` have no post-8/05
+  qualifying observation until the October print — sourcing confirmed no interim company
+  statement exists. **NVDA registered pre-8/26** (the time-critical §6.4.1 act) but its draft
+  carries **9 hinges against the P4 8-cap** — owner to DROP one before the print (removal ≠
+  edit, the other 8 keep their commitment; merging two = a NEW commitment = post-hoc for this
+  cycle). **CRDO and MRVL registered inside their windows** (9/1 and 8/27 prints; CRDO needs
+  ≥3 falsifiers by 9/1 — it has 1; MRVL's five-day ratification margin is flagged on the
+  card). **THE SHADOW FINDING THAT GATES THE FLIP: `AI_G3_2028_BRIDGE` (EV/FY+2-rev, PASS
+  ≤4.0x / FAIL >6.0x) is neocloud-calibrated — NBIS passed at 3.22x — and structurally FAILS
+  every profitable AI name** (TSM 7.6x · LITE 7.3x · MRVL 12.3x · NVDA ~15.7x), withholding
+  the premium prerequisite so P1 scores floor-basis on exactly the names whose lens is
+  earnings. A governor flip before ruling on this would demote the profitable half of the AI
+  book for a gate-calibration reason, not an underwriting one. Board decisions updated
+  (v22.6); every card carries `_owner_todo` naming its ratifications and gaps; remaining
+  sourcing gaps are one field each (CRDO/MRVL/LITE-alt `capital_efficiency` bases). ALAB and
+  BE registration deliberately deferred — no draft exists and their windows are not imminent.
+- **v4.4.0 — `DD_MAX` 45KB → 100KB (owner call: "raise server cap to 100,000"), and the
+  stale claim the raise uncovered.** Expressed in the store's KB idiom (`100*1024`) and
+  rounded UP from the owner's literal 100,000 so nothing the owner sized for is rejected.
+  The trigger was v4.3's live blocker: **NBIS frozen at 47,635 bytes against 46,080 — the
+  book's #1 name unable to save its own re-scored composite**, including a net-negative
+  edit. Three homes moved together, as always: `functions/api/deepdive.js` `MAX_BODY`,
+  `admin.html` `DD_MAX` (client pre-flight), `score.js` `DEPLOYED_CAPS.dd_max` (§4.1
+  implementation metadata) — the three-way smoke pin re-pinned on the new value.
+  **What the raise uncovered:** the admin comment beside `DD_MAX` still claimed *"the
+  binding constraint is the BOOK … 38 entries at 45KB would be 1.7MB, ~5.8x the book cap"*
+  and that splitting deepDive out *"remains the real fix"* — but FEAT-TT-DDSTORE (v3.75)
+  DID that split a year of releases ago, payloads live in per-symbol keys, and the book cap
+  has not bound them since. The smoke pin was pinning the RETIRED arithmetic in place — a
+  label-outlives-its-data defect enforced by the very suite that exists to catch it. Both
+  re-written: the comment states the DDSTORE reality (each name has the whole cap to
+  itself; an app-level runaway-write stop, not a KV limit), and the pin now asserts the
+  stale claim's ABSENCE. Found while re-pinning: the first draft of that negative pin
+  matched the retired phrase QUOTED in its own explanatory comment — the v3.60.1 vacuous/
+  self-matching trap, resolved by paraphrasing the quotation. The oversize fixtures moved
+  with the cap (a 60KB blob no longer exceeds it; 120KB does). **NBIS unfrozen on deploy:**
+  the 7.30 re-score (7.45 → 7.30: P 4.5→4.0 on the 8/19 $4.5B convert offering joining the
+  stack with terms pending + the financing hinge green→amber 8/20; M 9→8.5 on the −12.98%
+  offering day breaking the beat-and-new-highs read; V/G/R unchanged) saved against the
+  raised cap — closing the v4.3.1 COMPOSITE_STALE finding on the book's #1 name. Both
+  tiers are A either side of the move; no gate flipped. The board's blocking decision is
+  rewritten RESOLVED (its "from 7.10" was wrong — the stored composite parsed 7.45; the
+  re-score moves DOWN).
+  Tests: **1816 smoke** (5 cap pins re-pinned with the reason, 2 fixtures moved) + 264
+  render + 171 public-render + `audit:prod` clean.
+- **FEAT-TT-DRIFT (v4.3.0) — the asserted layer falling behind the measured layer.** Owner
+  directive after a hinge sweep: build the staleness detector rather than a daily sourcing
+  agent. The reason it wins is that **hinges drive almost nothing mechanical** — verified
+  against source: `src/ttScore.js` never reads `dd.hinges` (P4 reads
+  `underwriting_inputs.falsifiers`), and in `readiness()` only ZERO hinges BLOCKS while
+  unknown and red are CAUTIONS. All seven hinges resolved by hand that day moved zero
+  rankings. What DOES have mechanical consequence is the **composite**, which is a hard
+  eligibility gate (the eligible line needs `composite >= B`) — and 7 of 17 composites
+  carried hinge evidence NEWER than the score itself. **`src/ttDrift.js`** (pure,
+  Node-importable, byte-identical `admin.html` mirror pinned by the [49] tripwire) detects
+  three instances of one pattern with **zero network calls**, every input already in the
+  payload: `HINGE_STALE` (an UNKNOWN hinge dated before its own payload's newest CAPTURE may
+  already be answered by it — META's hinge asked for a screenshot for NINE DAYS after the
+  screenshot arrived and the pt_model was built from it), `COMPOSITE_STALE` (evidence moved
+  after the score, or plain age past `COMPOSITE_MAX_D=14`), and `THIN_COVERAGE` (a consensus
+  year carried by `<THIN_MIN=3` analysts that a rung actually prices — the owner's standing
+  rule, made checkable). **Scoping is what makes THIN_COVERAGE signal instead of noise**: 23
+  unscoped hits on the live book versus 4 scoped to years a rung reaches — MU's 1-analyst
+  2033 is irrelevant at a 2027 horizon, ALAB's 2-analyst FY2029 mattered because a rung
+  priced it and retiring it moved that multiple 40x→44x. **TWO GUARDS, both required, and
+  CRM produced the same false positive twice**: `captureDates()` reads a whitelist of capture
+  fields ONLY (a `key_date` had scanned as a capture and reported a hinge 170d stale), AND
+  within them accepts only dates ≤ today (CRM's fiscal-period end `2027-01-31` then scanned
+  as a capture *inside* a whitelisted field — the whitelist alone did not fix it). Every
+  finding is `sev:"warn"` and gates nothing: MISKEY earns a hard gate by being a DEFECT,
+  being out of date is not one. Applied the same day: the `<3` exclusion on NVDA and HOOD
+  (stored under `consensus.thin_coverage_excluded`, never deleted), and six of seven drifted
+  composites re-scored — three MOVED with a specific pillar reason (GEV 6.78→7.13 as a
+  street-calibrated ladder now exists where V was scored on none; CRDO 7.45→7.23 on
+  concentration resolving RED at 87% top-4; NBIS →7.30 on the financing hinge going
+  green→amber) and four CONFIRMED unchanged with the evidence stamped, because inventing a
+  0.05 move on offsetting evidence is false precision. **Two live blockers found and NOT
+  worked around:** MU's `<3` exclusion would delete its ONLY premium rung (the 8/13
+  trough-anchor puts the premium at y=2028, priced by a 2-analyst FY2029 — two owner rulings
+  in direct conflict), and **NBIS's stored payload is 47,635 bytes against the 46,080
+  `DD_MAX`, so it is FROZEN — no edit of any kind can be saved**, including a net-negative
+  one, on the book's #1 name.
+  **v4.3.1 (same day) — the whole-book sweep, and a false positive in the detector itself.**
+  The lint shipped and was then aimed only at the seven names already found BY HAND, which is
+  backwards; pointing it at all 39 stored payloads immediately found a defect in it. It
+  reported NVDA and HOOD as still thin AFTER their 2-analyst FY2030 EPS had been excluded and
+  their deepest rung correctly removed — because `driftSec` scoped `thinCoverage` to
+  **`ptRowYears()`, the CANDIDATE list, instead of the rows `ptModelRows()` actually EMITS**.
+  `ptRowYears` unions the revenue and eps year keys, and FY2030 REVENUE legitimately stayed
+  (5 and 3 analysts), so it kept proposing a y=2029 row the earnings lens never emits. **A
+  lint reporting resolved work as outstanding is the asserted-vs-measured defect this module
+  exists to catch, committed by the module itself** — the fourth false positive in this one
+  feature (CRM twice on capture dates, then this), and the rule that survives all four is
+  *read the OUTCOME, never the proposal*. Scoped correctly, THIN_COVERAGE goes 4 findings → 1
+  (MU's genuine conflict alone), which also CONFIRMS the NVDA/HOOD exclusions landed.
+  **What the corrected sweep actually found is bigger than staleness: 11 of 39 payloads carry
+  a composite whose basis has NO DATE** (ACHR · BA · CAT · NU · NVDA · RDDT · SOFI · SPCX ·
+  SYM · TEM · TSM), so the one asserted number with a mechanical consequence — the composite
+  gates the eligible line at `>=B` — **can never be aged at all on 28% of the book, and the
+  drift detector is permanently blind to them.** That is a provenance hole, not a stale
+  number, and it outranks the three genuinely-aged composites (BETA 18d · GRAB 19d · CELH
+  16d) it was built to find. Also surfaced: 4 of 5 HINGE_STALE hits are hinges with **no
+  `asOf` at all** sitting behind fresh captures (CRDO · TEM×2 · UBER) — NVDA's is the one
+  genuinely dated-behind case (China DC revenue, 8/03 against an 8/19 capture).
+  Tests: **1816 smoke** (+4 over v4.3.0: the regression driven through the REAL `ptRowYears`
+  and `ptModelRows` — a hand-built year list could not prove the two disagree — with a
+  control that fires when scoped to candidates, so a revert goes red, plus the call-site pin)
+  + 264 render + 171 public-render + `audit:prod` clean.
+- **FEAT-TT-SUGGEST (v4.2.0) — the street invert: suggest-don't-save multiple seeding.**
+  The 2026-08-21 gap sweep found EIGHT names (UBER · SOFI · GEV · CELH · RDDT · HOOD · TEM ·
+  SPCX) one field from ranking: payload, price and floor all present, no premium multiple —
+  so they never reach the next-dollar queue. Owner design, built as specified: *"stop treating
+  'missing multiple' as 'missing thesis' — treat it as missing INVERT."* **`suggestMultiple()`**
+  (`src/ptModel.js` + byte-identical `admin.html` mirror, the [49] tripwire extended) solves
+  the SAME two row formulas `impliedMultiple()` (v3.33) already inverts at the live price —
+  but at the STREET TARGET: P/E = target ÷ FY+1 EPS, EV/S = (target×sh − nc) ÷ FY+1 revenue.
+  The lens is picked by the existing rules, never a new one: earnings lens when FY+1 EPS > 0
+  (TSM/UBER), UNLESS the live price puts it past `LENS_MAX_PE` (the RKLB crossing rule —
+  measured live on TEM, whose FY2028 EPS $0.69 at $72 is a ~105x crossing artifact, so the
+  sales lens is correct and the function says so). **UNKNOWN names every missing input**
+  (target · share_count_M · net_cash_B · revenue) rather than guessing — the missing-invert
+  framing means the remedy is named, not implied. **The function never writes.** Until the
+  owner confirms, the rendered figure is DERIVED-STREET, diagnostic only, and the floor-only
+  ranking stays the honest one — smoke pins `renderUpsideRank` clean of any reference.
+  **Confirm is ONE explicit tap** (`confirmLink`, the two-step pattern) on the deep-dive tab
+  beside the intake checklist: it recomputes at click time (a stale render must never be what
+  gets written — the v3.6 rule), edits a COPY (v3.75), seeds the single-year schedule key plus
+  **`floor_only_before`** (the MU trough-anchor mechanics — a later-year key without it fires
+  MISKEY, and smoke proves the applied seed lint-clean with a no-fob negative control that
+  fires it), stamps a dated, sourced `multiple_ruling` line that names the **UNRATIFIED flat
+  carry** (`schedAt` carries a single key forward, so deeper rungs are explicitly marked
+  unratified rather than reading as considered), and runs the MISKEY/TYPES hard-lint gate
+  before `ddPersist`. Target priority is deliberate and pinned: a REVIEWED street record
+  (owner-confirmed TipRanks published average) outranks a stored assistant-sourced
+  `consensus.street_target {pt, source, as_of}`; with neither, the section names the gap.
+  Group-3 names (MU-class deliberate `floor_only_before`) are respected, never nagged.
+  Tests: **1785 smoke** (+17: both inverts vs hand math, the crossing pick, every UNKNOWN
+  path, fob present/absent by seed year, the seed-then-lint behavioral pair, purity, ranking
+  isolation, the confirm handler's recompute/copy/gate wiring, target priority) + 264 render +
+  171 public-render + `audit:prod` clean — `npm run gates`, all four suites in real Chromium
+  after merging main's v4.1.1–v4.1.6 (whose ageDays ET fix cured 11 render reds this branch
+  inherited by running inside the midnight-to-8am-ET window that bug occupied).
 - **v4.1.6 — the Engine 0 adversarial sweep, and the confidence inversion it found.** Owner:
   *"make sure it's almost always firing correctly … I don't want an incorrect or misfiring
   engine zero because it plays a role in all of our price targets and allocations."* The ~50
@@ -4030,6 +5019,20 @@ Jan-anchor shipped; see `snapshot.js` ~318–328), `spyMa100`, `spyMa200`, and a
     mv (SIGNED — short legs negative), src:"sync"}`; Greeks only if the quotes API actually
     returns them — verified at sync time, never approximated
   · a fully exited name → `{sym: null}` (the explicit removal path).
+  **STAMP IN ET, NEVER `toISOString()` (2026-08-24 sync, caught BEFORE it fired — the
+  FIX-A defect class, fifth recurrence: v3.11 run stamps, v3.35 render fixtures, v3.80 a
+  test's own fixture, v4.1.1 `ageDays` itself).** Every `at`/`asOf` this sync writes is
+  judged by ET-calendar time-judges (`ageDaysEt`, `POS_STALE_D`, `validateAccount`). A
+  sync run after ~8pm ET that stamps `new Date().toISOString()` writes TOMORROW's date —
+  the whole payload reads future-dated and fails closed, the freshest data in the store
+  rejected as invalid. Stamp the ET calendar timestamp (e.g.
+  `toLocaleDateString("en-CA",{timeZone:"America/New_York"})` + ET wall time, no `Z`).
+  **SCOPE: the ONE tradable account only (owner ruling, 2026-08-24 sync).** Positions held
+  in other accounts (e.g. SOFI, SPCX in the Long-term account) are DELIBERATELY outside the
+  store — one store, one `pct` denominator; mixing accounts would corrupt every cap check.
+  Consequence, so nobody "fixes" it: a book name held only in an unsynced account reads
+  **"new — not held"** on the board, which here means *not held in the synced account* —
+  known, accepted, and cheaper than a wrong denominator.
   **DO NOT STORE:** full account numbers, order history, open orders, watchlists, or
   anything from the broker's recommendation surfaces — the store holds POSITION FACTS only.
   **The allocation layer this feeds:** `/api/allocation` (PIN-gated) re-derives the
@@ -4104,7 +5107,7 @@ not read at runtime. Mock remains the always-present runtime fallback (graceful 
 (`VITE_PUBLIC_VIEW=true` is the analogous build flag for forcing the public view.)
 
 ### Per-day cache pattern (`snapshot.js`)
-- Cache key is **`pulse:snapshot:v15:<ET-date>`** (`<ET-date>` = today in America/New_York,
+- Cache key is **`pulse:snapshot:v16:<ET-date>`** (`<ET-date>` = today in America/New_York,
   `YYYY-MM-DD`). Bump the `v15` prefix to invalidate a poisoned day.
 - **First load each ET morning** misses → fetches fresh (FRED's prior close has settled
   overnight) → write-through. **Every load the rest of the day** hits KV → instant,
@@ -4184,6 +5187,20 @@ Assertion counts are deliberately not quoted here; the suite prints its own tota
   explicit canonical forced-exit, kill, or over-cap trim rule. Diagnostic `ELIGIBLE`, target
   upside, or a funding-priority row alone is not a buy/sell call. Every other state, disagreement,
   missing gate, or unavailable governing surface is `WAIT`.
+### TT macro gate — the product vocabulary (locked, v5.6)
+
+- **SEND IT · HODL · TOUCH GRASS** is the product gate; **`FULL` · `RESTRICTED` · `HOLD` are the
+  Engine 0 machine aliases** and never appear as product words. ONE derivation
+  (`macroGateFrom`, a projection of the eligibility ladder's own RESULT), so the word can never
+  disagree with the veto it names.
+- **SEND IT is the only state that clears a macro-dependent add.** HODL is a visible,
+  still-vetoed looking session (`RESTRICTED`); the fail-closed doctrine is unchanged, and
+  every unreadable state resolves to TOUCH GRASS.
+- The **`GATE:` prefix is load-bearing** — the public call's middle is ALSO the word HODL
+  (`md-call-v1`), and one word carrying two verdicts on one screen is the v3.51/v3.62 defect.
+- **Rank receipts EXTEND `tt-alloc-receipt`; they are never twinned.** Outcomes score
+  **attested days only** — there is no auto-stamp anywhere.
+
 - **End every pass with**, in this order:
   - **Completed** — what got done this pass (**max 2 bullets**).
   - **Highest-leverage question** the maintainer can answer (1 bullet).

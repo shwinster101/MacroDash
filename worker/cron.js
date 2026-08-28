@@ -7,6 +7,11 @@
 // Secret:  npx wrangler secret put FRED_KEY
 // Crons defined in worker/wrangler.toml (UTC).
 
+import {
+  HISTORY_PREFIX, HISTORY_RECORD_SCHEMA, OUTCOME_SCHEMA,
+  buildForwardOutcome, historyKey, outcomeKey,
+} from "../src/publicHistory.js";
+
 const FRED_BASE = "https://api.stlouisfed.org/fred/series/observations";
 const KV_KEY = "pulse:macro:latest";
 const FETCH_TIMEOUT_MS = 8000;
@@ -23,6 +28,8 @@ const SNAPSHOT_WARM_CRON = "0 14 * * 1-5"; // 10am America/New_York (EDT); EST -
 // while upstreams are quiet means humans essentially always hit a warm cache.
 const SNAPSHOT_PREWARM_CRON = "0 12 * * 1-5"; // 8am America/New_York (EDT); EST -> "0 13 * * 1-5"
 const SNAPSHOT_URL = "https://macrodash.pages.dev/api/snapshot";
+const READOUT_URL = "https://macrodash.pages.dev/readout.json?fresh=1";
+const HISTORY_LIMIT = 400;
 
 // Metric map. `kind`: 'latest' = newest non-missing observation;
 // 'yoy' = year-over-year % computed from a monthly index series.
@@ -33,8 +40,8 @@ const SNAPSHOT_URL = "https://macrodash.pages.dev/api/snapshot";
 export const SERIES = {
   tenYear:      { series: "DGS10",        kind: "latest", displayClass: "public",   source: "FRED DGS10" },
   fedFunds:     { series: "FEDFUNDS",     kind: "latest", displayClass: "public",   source: "FRED FEDFUNDS" },
-  cpiHeadline:  { series: "CPIAUCSL",     kind: "yoy",    displayClass: "citation", source: "FRED CPIAUCSL" },
-  cpiCore:      { series: "CPILFESL",     kind: "yoy",    displayClass: "citation", source: "FRED CPILFESL" },
+  cpiHeadline:  { series: "CPIAUCNS",     kind: "yoy",    displayClass: "citation", source: "FRED CPIAUCNS" },
+  cpiCore:      { series: "CPILFENS",     kind: "yoy",    displayClass: "citation", source: "FRED CPILFENS" },
   unemployment: { series: "UNRATE",       kind: "latest", displayClass: "public",   source: "FRED UNRATE" },
   lfpr:         { series: "CIVPART",      kind: "latest", displayClass: "public",   source: "FRED CIVPART" },
   mortgage30:   { series: "MORTGAGE30US", kind: "latest", displayClass: "public",   source: "FRED MORTGAGE30US" },
@@ -206,7 +213,10 @@ async function refreshSnapshot(env) {
         const body = await res.json().catch(() => null);
         await recordWarm(env, "refresh-10amET", true, res.status,
           body ? { published: body.published, improved: body.improved, message: body.message } : null);
-        return;
+        // Only freeze the candidate directly when it actually became the published snapshot.
+        // A rejected (worse) candidate is diagnostic; history must fall back to the retained call.
+        return { ok: true, readout: body?.readout || null,
+          call: body?.published ? (body?.readout?.call || null) : null };
       }
       console.error(`snapshot refresh: POST ${SNAPSHOT_REFRESH_URL} got HTTP ${res.status} — check REFRESH_TOKEN on both deploys / Access scope; falling back to non-destructive warm`);
     } else {
@@ -217,10 +227,128 @@ async function refreshSnapshot(env) {
     const res = await fetch(SNAPSHOT_URL, { headers: { "user-agent": "macrodash-snapshot-refresher" } });
     if (!res.ok) console.error(`snapshot refresh fallback: GET got HTTP ${res.status} — the cron is blocked at the edge (check Cloudflare Access app scope / WAF rules)`);
     await recordWarm(env, "refresh-10amET", res.ok, res.status, { fallback: "get-warm" });
+    return { ok: res.ok, readout: null, call: null, fallback: true };
   } catch (e) {
     console.error("snapshot refresh failed:", (e && e.message) || e);
     await recordWarm(env, "refresh-10amET", false, 0);
+    return { ok: false, readout: null, call: null };
   }
+}
+
+// v4.0 accountability: freeze the 10am ET call exactly once. The daily call itself is
+// produced by Pages from the canonical public engine; the Worker only notarizes that public
+// projection. A failed capture is also a row — missing days must not disappear from the
+// scoreboard merely because the system had a bad morning.
+export async function captureDailyCall(env, fetchImpl = fetch, now = new Date(), refreshedCall = null) {
+  const date = now.toLocaleDateString("en-CA", { timeZone: "America/New_York" });
+  const key = historyKey(date);
+  try {
+    if (await env.PULSE_CACHE.get(key)) return { written: false, reason: "already captured", key };
+  } catch { /* continue; the write below will report any persistent KV fault */ }
+
+  const capturedAt = now.toISOString();
+  let call = refreshedCall?.schema === "md-call-v1" && refreshedCall.effective_date === date
+    ? refreshedCall : null;
+  let failure = null;
+  try {
+    // The refresh response is the authoritative candidate. Do not immediately reread KV:
+    // Workers KV is eventually consistent, so that fetch could capture the pre-refresh call.
+    if (call) {
+      failure = null;
+    } else {
+      const res = await fetchImpl(READOUT_URL, { headers: { "user-agent": "macrodash-history-capture" } });
+      if (!res.ok) failure = `readout HTTP ${res.status}`;
+      else {
+        const body = await res.json();
+        if (body?.call?.schema === "md-call-v1" && body.call.effective_date === date) call = body.call;
+        else failure = "canonical call missing from readout";
+      }
+    }
+  } catch (_e) {
+    failure = "readout unavailable";
+  }
+
+  const record = {
+    schema: HISTORY_RECORD_SCHEMA,
+    date,
+    captured_at: capturedAt,
+    scheduled_for: "10:00 America/New_York",
+    capture_status: call ? "CAPTURED" : "FAILED",
+    call,
+    failure,
+    outcomes: null,
+  };
+  try {
+    await env.PULSE_CACHE.put(key, JSON.stringify(record));
+    return { written: true, key, record };
+  } catch {
+    return { written: false, reason: "KV write failed", key };
+  }
+}
+
+// v5.5 accountability: outcomes mature AFTER the immutable call, in their own KV record.
+// One FRED pull covers every still-open 1d/5d/20d window. Complete 20-session companions
+// are never rewritten; the scheduled call record above remains byte-untouched forever.
+async function fetchOutcomeSeries(apiKey, observationStart, fetchImpl = fetch) {
+  if (!apiKey) throw new Error("FRED_KEY missing for public outcomes");
+  const p = new URLSearchParams({
+    series_id: "SP500", api_key: apiKey, file_type: "json", sort_order: "asc",
+    observation_start: observationStart, limit: "1000",
+  });
+  const res = await fetchImpl(`${FRED_BASE}?${p.toString()}`, {
+    signal: typeof AbortSignal !== "undefined" && typeof AbortSignal.timeout === "function"
+      ? AbortSignal.timeout(FETCH_TIMEOUT_MS) : undefined,
+    headers: { "user-agent": "macrodash-public-outcome-ledger" },
+  });
+  if (!res.ok) throw new Error(`SP500 outcome HTTP ${res.status}`);
+  const body = await res.json();
+  if (!Array.isArray(body?.observations)) throw new Error("SP500 outcome bad shape");
+  return body.observations;
+}
+
+const outcomeMeaning = (o) => o ? JSON.stringify({
+  anchor: o.anchor, sessions_observed: o.sessions_observed, returns_pct: o.returns_pct,
+  max_drawdown_pct_20d: o.max_drawdown_pct_20d, status: o.status,
+}) : null;
+
+export async function enrichHistoryOutcomes(env, fetchImpl = fetch, now = new Date()) {
+  if (!env.PULSE_CACHE) return { ok: false, reason: "history store unavailable", updated: 0 };
+  let records = [];
+  try {
+    const listed = await env.PULSE_CACHE.list({ prefix: HISTORY_PREFIX, limit: HISTORY_LIMIT });
+    records = (await Promise.all((listed?.keys || []).map((k) => env.PULSE_CACHE.get(k.name, "json"))))
+      .filter((r) => r?.capture_status === "CAPTURED" && r?.call?.schema === "md-call-v1" && r?.date)
+      .sort((a, b) => String(a.date).localeCompare(String(b.date)));
+  } catch {
+    return { ok: false, reason: "history read failed", updated: 0 };
+  }
+  if (!records.length) return { ok: true, updated: 0, pending: 0 };
+
+  const open = [];
+  for (const record of records) {
+    let existing = null;
+    try { existing = await env.PULSE_CACHE.get(outcomeKey(record.date), "json"); } catch {}
+    const complete = existing?.schema === OUTCOME_SCHEMA && existing.call_date === record.date &&
+      existing.status === "COMPLETE";
+    if (!complete) open.push({ record, existing });
+  }
+  if (!open.length) return { ok: true, updated: 0, pending: 0 };
+
+  let observations;
+  try { observations = await fetchOutcomeSeries(env.FRED_KEY, open[0].record.date, fetchImpl); }
+  catch (e) { return { ok: false, reason: e?.message || "SP500 outcome unavailable", updated: 0, pending: open.length }; }
+
+  let updated = 0, pending = 0;
+  for (const item of open) {
+    const next = buildForwardOutcome(item.record, observations, now.toISOString());
+    if (next?.status !== "COMPLETE") pending++;
+    if (!next || outcomeMeaning(next) === outcomeMeaning(item.existing)) continue;
+    try {
+      await env.PULSE_CACHE.put(outcomeKey(item.record.date), JSON.stringify(next));
+      updated++;
+    } catch { /* one row must not prevent the other calls from maturing */ }
+  }
+  return { ok: true, updated, pending };
 }
 
 // Pre-open warm: populate the day's snapshot key if it isn't already there. Unlike
@@ -230,7 +358,7 @@ async function warmSnapshot(env) {
   try {
     const etDate = new Date().toLocaleDateString("en-CA", { timeZone: "America/New_York" });
     // SYNC HAZARD: keep this key version in step with functions/api/snapshot.js.
-    const existing = await env.PULSE_CACHE.get(`pulse:snapshot:v15:${etDate}`);
+    const existing = await env.PULSE_CACHE.get(`pulse:snapshot:v16:${etDate}`);
     if (existing) return; // already warm — nothing to do
     const res = await fetch(SNAPSHOT_URL, { headers: { "user-agent": "macrodash-snapshot-prewarm" } });
     if (!res.ok) console.error(`snapshot pre-warm got HTTP ${res.status} from ${SNAPSHOT_URL} — the cron is blocked at the edge (check Cloudflare Access app scope / WAF rules); first visitor pays the cold fetch`);
@@ -252,7 +380,14 @@ export default {
     }
     // 10am ET weekday: force-refresh the /api/snapshot per-day cache (see SNAPSHOT_WARM_CRON note).
     if (controller.cron === SNAPSHOT_WARM_CRON) {
-      ctx.waitUntil(refreshSnapshot(env));
+      ctx.waitUntil((async()=>{
+        const refreshed = await refreshSnapshot(env);
+        const captured = await captureDailyCall(env, fetch, new Date(), refreshed?.call || null);
+        if (!captured.written && captured.reason !== "already captured")
+          console.error("history capture failed:", captured.reason);
+        const outcomes = await enrichHistoryOutcomes(env, fetch, new Date());
+        if (!outcomes.ok) console.error("history outcome enrichment failed:", outcomes.reason);
+      })());
       return;
     }
     // Legacy stage-1 path: FRED macro -> KV pulse:macro:latest (dashboard now reads /api/snapshot).

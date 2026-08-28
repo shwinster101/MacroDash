@@ -30,9 +30,13 @@
 // look like a considered non-lean. "Not measured" and "measured, no lean" are different
 // facts; this repo has fixed that same defect at four other altitudes.
 //
-// ⚠ MARRIED, NEVER MERGED. This verdict must NEVER enter the ranking sort, gateFail, or
-// why(). WHAT (the valuation gap, measured) and WHEN (this) are two answers rendered side by
-// side; blending them produces one number nobody can falsify. Smoke pins both directions.
+// ⚠ MARRIED, NEVER MERGED — scope revised by owner ruling 2026-08-25 (v5.2 CAP-ASTERISK).
+// This verdict must NEVER enter the BUY ranking sort, gateFail, or why() — WHEN still never
+// gates ELIGIBILITY, and the %/yr sort stays a single measured unit. The SELL/FUNDING
+// ranking is the one deliberate exception: the owner ruled sells rank on tape → %/yr → TT
+// score, LEXICOGRAPHIC — each axis sorts in its own terms, every row states all three, so
+// no blended number exists even there. That reverses the original blanket rule for one
+// surface; smoke pins the surviving guards and the reversal both.
 
 /* Deadband around a moving average. "At the 200d" is genuinely undecided — a price 0.3%
    above its 200d is not in an uptrend, it is on the line, and a band table that calls it one
@@ -76,7 +80,7 @@ export const TECH_BAND_TABLE = [
      three comparisons are now COMPONENTS of a single alignment score (−3…+3) and the factor
      votes once — 2-of-3 aligned carries it, which is the same call the three votes would
      have made, without the fake corroboration. */
-  { key: "trend", short: "TRND", label: "Trend alignment", kind: "price_action",
+  { key: "trend", short: "TRND", label: "Trend alignment", kind: "price_action", win: "mas",
     plain: "the trend",
     read: (t) => {
       if (!(Number.isFinite(t.px) && Number.isFinite(t.ma50) && Number.isFinite(t.ma200)
@@ -90,7 +94,7 @@ export const TECH_BAND_TABLE = [
     flip: { bullEdge: 2, bearEdge: -2, bullSide: "above", bullInclusive: true,
             unit: " of 3", dec: 0, name: "trend alignment" } },
 
-  { key: "range", short: "RNG", label: "Position in 3-mo range", kind: "price_action",
+  { key: "range", short: "RNG", label: "Position in 3-mo range", kind: "price_action", win: "swings",
     plain: "where price sits in its recent range",
     read: (t) => (Number.isFinite(t.px) && Number.isFinite(t.lo) && Number.isFinite(t.hi)
       && t.hi > t.lo ? ((t.px - t.lo) / (t.hi - t.lo)) * 100 : undefined),
@@ -98,7 +102,7 @@ export const TECH_BAND_TABLE = [
     flip: { bullEdge: RANGE_HI, bearEdge: RANGE_LO, bullSide: "above", bullInclusive: false,
             unit: "% of range", dec: 0, name: "position in the 3-month range" } },
 
-  { key: "rsi", short: "RSI", label: "RSI(14)", kind: "indicator",
+  { key: "rsi", short: "RSI", label: "RSI(14)", kind: "indicator", win: "indicators",
     plain: "momentum",
     read: (t) => (Number.isFinite(t.rsi14) ? t.rsi14 : undefined),
     /* TWO-SIDED on purpose, and this is the one band worth defending explicitly. In a
@@ -110,14 +114,14 @@ export const TECH_BAND_TABLE = [
     flip: null,
     flipWhy: "votes on a TWO-SIDED band — bullish between 55 and 80, bearish below 45 OR above 80 (exhaustion) — so no single crossing defines the flip" },
 
-  { key: "macd", short: "MACD", label: "MACD histogram", kind: "indicator",
+  { key: "macd", short: "MACD", label: "MACD histogram", kind: "indicator", win: "indicators",
     plain: "the momentum trend",
     read: (t) => (Number.isFinite(t.macd_hist) ? t.macd_hist : undefined),
     vote: (v) => v > 0 ? "bull" : v < 0 ? "bear" : "neutral",
     flip: { bullEdge: 0, bearEdge: 0, bullSide: "above", bullInclusive: false,
             unit: "", dec: 2, name: "the MACD histogram" } },
 
-  { key: "pattern", short: "PAT", label: "Chart pattern", kind: "pattern",
+  { key: "pattern", short: "PAT", label: "Chart pattern", kind: "pattern", win: "indicators",
     plain: "the chart pattern",
     read: (t) => (typeof t.pattern === "string" && t.pattern ? t.pattern : undefined),
     vote: (v) => PATTERN_BULL.includes(v) ? "bull"
@@ -126,6 +130,20 @@ export const TECH_BAND_TABLE = [
     flip: null,
     flipWhy: "is categorical — a named chart formation, not a level, so there is no distance to an edge" },
 ];
+
+/* ═══ v5.0 (W2) — CADENCE-AWARE STALENESS: each input declares how fast it ages ═══════════
+   One flat 7-day window (PA_STALE_D) took the entire WHEN leg dark at once — measured
+   2026-08-23: all 36 stamped names hit 8 days together and every read was withheld,
+   including distances against 200-day averages that barely move in a week. Inputs age at
+   different rates, so each factor declares its window (the dashboard's cadenceOf doctrine
+   pointed at price): a pre-print ENTRY is arguably invalid the morning after a print (7d,
+   the original number, unchanged); INDICATORS are fast-moving (7d); a 63-day SWING level
+   ages moderately (14d); a long MOVING AVERAGE ages slowly (30d). ASSERTED, not calibrated
+   — every boundary is smoke-tested, so changing one is one edit plus one red test.
+   UNDATED still fails closed to stale EVERYWHERE: no window can rescue a stamp that never
+   says when it was taken. A factor excluded for staleness is NAMED in `missing` with its
+   window, so an aged read degrades toward UNREAD-with-reasons, never toward a silent vote. */
+export const PA_CADENCE = { entry: 7, indicators: 7, swings: 14, mas: 30 };
 
 /* Quorum. THREE of five. The collinearity fix above cost two voters, and the quorum moves
    with it honestly rather than being held at a number the table can no longer support: a
@@ -173,9 +191,13 @@ export function techInputs(pa, px) {
  *
  * @param pa   the stored price_action block (may be null/partial)
  * @param px   the live or stamped price
- * @param opts {stale:boolean} — levels past PA_STALE_D. A stale read is WITHHELD entirely
- *             rather than voted, matching the dashboard's cadence-aware exclusion: an
- *             8-day-old 200-day average is not a fact about today's tape.
+ * @param opts {age?:number|null, stale?:boolean}
+ *             age  — the stamp's age in days (v5.0, cadence-aware): each factor is judged
+ *                    against ITS OWN window (PA_CADENCE via the factor's `win`), stale
+ *                    factors excluded and NAMED rather than the whole read withheld.
+ *                    age:null = the block is UNDATED — fail closed, everything withheld.
+ *             stale — the pre-v5 global withhold, kept for callers that judged staleness
+ *                     themselves; when true the whole read is withheld as before.
  */
 export function computeTechRead(pa, px, opts = {}) {
   const base = { label: "UNREAD", factors: [], bull: 0, bear: 0, counted: 0,
@@ -186,6 +208,12 @@ export function computeTechRead(pa, px, opts = {}) {
     return { ...base, reason: "no price_action block stored" };
   if (opts.stale)
     return { ...base, reason: "levels are stale — a technical read off aged levels is not a fact about today's tape" };
+  // v5.0: an explicitly UNDATED stamp (age passed as null) fails closed to the full
+  // withhold — no window can rescue a stamp that never says when it was taken.
+  if ("age" in opts && opts.age === null)
+    return { ...base, stale: true,
+      reason: "levels are undated — fail closed: a stamp with no date has no window to live in" };
+  const age = typeof opts.age === "number" && isFinite(opts.age) ? opts.age : null;
 
   const t = techInputs(pa, px);
   const factors = [], missing = [];
@@ -194,6 +222,11 @@ export function computeTechRead(pa, px, opts = {}) {
     indicator: { bull: 0, bear: 0, counted: 0 }, pattern: { bull: 0, bear: 0, counted: 0 } };
 
   for (const f of TECH_BAND_TABLE) {
+    // v5.0 cadence gate: a factor whose inputs have outlived THEIR window is excluded and
+    // NAMED — never silently voted, and never allowed to take the fresher factors with it.
+    if (age !== null && f.win && age > PA_CADENCE[f.win]) {
+      missing.push(`${f.short} (stale: ${age}d past its ${PA_CADENCE[f.win]}d window)`); continue;
+    }
     const v = f.read(t);
     if (v === undefined) { missing.push(f.short); continue; }
     const vote = f.vote(v);

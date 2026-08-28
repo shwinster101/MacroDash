@@ -14,6 +14,42 @@ const goodStatus = (s) => ["LIVE", "CACHED"].includes(String(s || "").toUpperCas
 const goodFact = (f) => f && f.value !== null && f.value !== undefined && goodStatus(f.status);
 const hasLastGoodValue = (f) => f && f.value !== null && f.value !== undefined;
 
+/* v5.6.1 — series continuity, the BANDS doctrine pointed at candles. Found LIVE the night
+   v5.6 shipped: a Nasdaq multi-window merge for NBIS carried a 6-month interior hole (a
+   failed middle window) and a tail window from ANOTHER INSTRUMENT ($104.88 -> $7.78 across
+   adjacent rows) — stored as LIVE, it anchored a stamped outcome at $7.62 on a $277 stock.
+   Two structural tells, either one damning for a DAILY series that claims to be ONE
+   instrument: an interior calendar gap wider than any holiday run, or an adjacent-close
+   jump no split-adjusted series produces. Reject the impossible, not the unusual — a
+   3x day-over-day move on real prints is beyond any single-session repricing this store
+   feeds (and a provider's own series is split-adjusted internally). Returns the fault
+   NAMED, or null. Used at BOTH ingestion builders and again at the outcome reader, because
+   merge-only last-good semantics can keep an already-stored corrupt series alive as STALE. */
+export function candleSeriesFault(rows, refPx) {
+  const r = Array.isArray(rows) ? rows : [];
+  for (let i = 1; i < r.length; i++) {
+    const a = r[i - 1], b = r[i];
+    if (!a || !b || !a.date || !b.date) continue;
+    const gapDays = (new Date(b.date + "T00:00:00Z") - new Date(a.date + "T00:00:00Z")) / 86400000;
+    if (gapDays > 14) return `interior gap ${a.date} -> ${b.date} (${Math.round(gapDays)}d) — a window failed; the merge is not one series`;
+    const ca = Number(a.close), cb = Number(b.close);
+    if (ca > 0 && cb > 0 && (cb / ca > 3 || ca / cb > 3))
+      return `adjacent-close discontinuity ${a.date} $${ca} -> ${b.date} $${cb} — not one instrument's series`;
+  }
+  /* v5.6.2 — the QUOTE cross-check (owner call), the rung the other two cannot supply:
+     when EVERY window returns the wrong instrument the merge is internally consistent —
+     contiguous, no jump — and only an outside reference can catch it. The same-refresh
+     live quote is that reference (fetched in the same pass, same symbol, same currency
+     gate). Same 3x constant as the adjacent tell — one doctrine: reject the impossible,
+     not the unusual. A real print gap runs 30-50%; a 3x quote-vs-tail split does not
+     happen to one instrument, only to two. No quote = the rung is SKIPPED, never guessed. */
+  const px = Number(refPx);
+  const tail = r.length ? Number(r[r.length - 1].close) : null;
+  if (px > 0 && tail > 0 && (px / tail > 3 || tail / px > 3))
+    return `tail close $${tail} vs live quote $${px} — not this instrument's series`;
+  return null;
+}
+
 export function mergeFactsRecord(previous, incoming, now = new Date()) {
   const prior = previous?.fields || {};
   const next = incoming?.fields || {};

@@ -28,7 +28,7 @@ import {
   TT_ANALYSIS_SCHEMA, TT_ENGINE_VERSION,
 } from "../functions/lib/tt-v2.js";
 import { deriveTechnicals } from "../functions/lib/tt-technicals.js";
-import { extractSecFacts, mergeFactsRecord } from "../functions/lib/tt-facts.js";
+import { extractSecFacts, mergeFactsRecord, candleSeriesFault } from "../functions/lib/tt-facts.js";
 import { streetRevision, onRequestPut as putStreetPacket, onRequestGet as getStreetPacket,
   onRequestDelete as deleteStreetPacket } from "../functions/api/street.js";
 import { onRequestGet as getFramework, onRequestPut as putFramework } from "../functions/api/framework.js";
@@ -36,14 +36,21 @@ import { mergeOcrExtractions, onRequestPost as postStreetOcr } from "../function
 import { onRequestGet as getTickerFacts, onRequestPost as postTickerFacts, nasdaqCandlesFact, quoteFact } from "../functions/api/ticker-facts.js";
 import { onRequestPost as postTickerAnalysis, riskTierForBookEntry } from "../functions/api/ticker-analysis.js";
 import { plausible, applyBands, quorum, QUORUM_FIELDS, QUORUM_MIN, marketSession, BANDS,
-  pairRs, parseTreasuryCsv, preferFresherRates, rateOddsStillOpen, chooseTtl, publishIfNoWorse, TTL_MEDIUM, TTL_LOW,
-  fetchEquities } from "../functions/api/snapshot.js";
+  pairRs, parseTreasuryCsv, preferFresherRates, parseCboeVixCsv, parseCboeVixQuote,
+  pairCboeVix, preferFresherVix,
+  rateOddsStillOpen, chooseTtl, publishIfNoWorse, TTL_MEDIUM, TTL_LOW,
+  fetchEquities, onRequest as getSnapshot } from "../functions/api/snapshot.js";
 import { etYmd } from "../src/sources.js";
 // UI-OVERHAUL Slice 1 (task 1.1): tokens are a real module now — smoke IMPORTS it (the v3.60
 // convention: the actual export is tested, immune to formatting drift) instead of regexing
 // hex values out of dashboard.jsx source text.
 import { DT, T as TOK_T } from "../src/design-tokens.js";
 import { fmt } from "../src/format.js"; // task 1.3: shared format helpers, tested by execution
+import { buildMacroCall, formatMacroCallPaste, formatMacroShareCard, CALL_SCHEMA } from "../src/macroCall.js";
+import { buildForwardOutcome, normalizeSp500Observations, outcomeKey, OUTCOME_SCHEMA } from "../src/publicHistory.js";
+import { captureDailyCall, enrichHistoryOutcomes } from "../worker/cron.js";
+import { onRequest as getHistory } from "../functions/history.json.js";
+import { onRequest as getReadout } from "../functions/readout.json.js";
 
 let pass = 0, fail = 0;
 const ok = (name, cond) => { if (cond) { pass++; console.log("  PASS  " + name); } else { fail++; console.log("  FAIL  " + name); } };
@@ -204,48 +211,54 @@ ok("every SOURCES entry has path + valid kind", Object.values(SOURCES).every((s)
 
 // ---- 3. computeFiveWhys — rule-based 5 Whys ----------------------------
 console.log("\n[3] computeFiveWhys (rule-based 5 Whys)");
-const fwRegime = { label: "RISK-ON", sub: "Disinflation + low vol", bullVotes: 4, bearVotes: 1 };
-const fw = computeFiveWhys(MOCK_DATA, fwRegime);
+const fwRegime = { label: "RISK-ON", raw:"RISK-ON", sub: "Disinflation + low vol", bullVotes: 4, bearVotes: 1, counted:6, totalFactors:6 };
+const fwFactors = [
+  {key:"tenYear",label:"10Y Direction",state:"NEUTRAL",display:"4.70% · +0.01pp 1-mo",as_of:"2026-08-24"},
+  {key:"vix",label:"VIX Level",state:"BULLISH",display:"15.85 — Low",as_of:"2026-08-24"},
+  {key:"fearGreed",label:"Fear & Greed",state:"BULLISH",display:"60 — Greed",as_of:"2026-08-25"},
+  {key:"cpiHeadline",label:"CPI Trend",state:"BULLISH",display:"3.4% YoY · cooling",as_of:"2026-07-01"},
+  {key:"valuation",label:"Valuation",state:"BEARISH",display:"41.8 CAPE",as_of:"2026-08-25"},
+  {key:"nfci",label:"Fin Conditions",state:"BULLISH",display:"-0.56 SD",as_of:"2026-08-14"},
+];
+const fwCall = {headline:"MOONING",direction:"BULLISH",confidence:"HIGH",actionability:"FULL",
+  counts:{bullish:4,neutral:1,bearish:1,usable:6,total:6},factors:fwFactors,override:{active:false}};
+const fwOpts = {call:fwCall,factors:fwFactors,snapshotAsOf:"2026-08-25T14:00:00Z",
+  headlineFresh:true,flips:[{copy:"VIX at or above 18.00",would:"MIXED"}]};
+const fw = computeFiveWhys(MOCK_DATA, fwRegime, fwOpts);
 ok("returns exactly 5 whys", Array.isArray(fw.whys) && fw.whys.length === 5);
 ok("every why is a non-empty string", fw.whys.every((w) => typeof w === "string" && w.length > 0));
-ok("headline carries the regime label", typeof fw.headline === "string" && fw.headline.includes("RISK-ON"));
+ok("headline carries the canonical human + machine call", typeof fw.headline === "string" && /MOONING · BULLISH/.test(fw.headline));
 ok("regime descriptor non-empty", typeof fw.regime === "string" && fw.regime.length > 0);
 ok("session prefix flips PRE vs CLOSE",
-  computeFiveWhys({ ...MOCK_DATA, session: "PRE" }, fwRegime).headline.startsWith("Pre-open") &&
-  computeFiveWhys({ ...MOCK_DATA, session: "CLOSE" }, fwRegime).headline.startsWith("Post-close"));
+  computeFiveWhys({ ...MOCK_DATA, session: "PRE" }, fwRegime, fwOpts).headline.startsWith("Pre-open") &&
+  computeFiveWhys({ ...MOCK_DATA, session: "CLOSE" }, fwRegime, fwOpts).headline.startsWith("Post-close"));
 ok("does not throw on MOCK_DATA with default regime", (() => { try { computeFiveWhys(MOCK_DATA); return true; } catch { return false; } })());
-// WHY #1 anchors on SPY/200DMA/CPI/Fed; WHY #5 is the synthesis
-ok("WHY #1 is the SPY/200-day/CPI/Fed core anchor (v3.97.2 voice: 200-day, no label)",
-  /SPY/.test(fw.whys[0]) && /200-day/.test(fw.whys[0]) && /CPI/.test(fw.whys[0]) && /Fed/.test(fw.whys[0]));
-ok("WHY #5 is the synthesis (verdict + factor tally)", /Bottom line:/.test(fw.whys[4]) && fw.whys[4].includes("RISK-ON"));
-ok("WHY #4 attributes headwinds as a curated register (not live tape)", /Slow-burn risks/.test(fw.whys[3]) && /curated/.test(fw.whys[3]));
-// FEAT-DQ: stale factor excluded from the vote tally (headline denominator + WHY #5 caveat)
-// FIX-E (v3.49): the denominator is the 6-voter set (FEAT-NFCI v3.43) and comes from
-// computeRegime's `counted` when provided — these pins previously froze the pre-NFCI "/5".
-const fwStale = computeFiveWhys(MOCK_DATA, fwRegime, { stale: new Set(["vix"]) });
-ok("5 Whys: denominator drops to /5 when one of the six factors is stale",
-  fwStale.headline.includes("/5") && !fwStale.headline.includes("/6"));
-ok("5 Whys: WHY #5 flags reduced-signal read when factors excluded", fwStale.whys[4].includes("excluded"));
-ok("5 Whys: default (no stale) keeps all 6 factors (NFCI votes, v3.43)", fw.headline.includes("/6"));
-ok("5 Whys FIX-E: computeRegime's own counted/totalFactors govern the denominator when present",
-  computeFiveWhys(MOCK_DATA, { ...fwRegime, counted: 4, totalFactors: 6 }).headline.includes("/4") &&
-  computeFiveWhys(MOCK_DATA, { ...fwRegime, counted: 4, totalFactors: 6 }).whys[4].includes("2 excluded"));
+ok("check 1 is exact call arithmetic, not unrelated SPY/Fed context",
+  /4 bullish, 1 neutral, and 1 bearish/.test(fw.whys[0]) && /strict majority: 4 of 6/.test(fw.whys[0]) && !/SPY|Fed at/.test(fw.whys[0]));
+ok("check 2 contains only canonical factors and their dated states",
+  fwFactors.every((f)=>fw.whys[1].includes(f.label)) && /as of 2026-08-25/.test(fw.whys[1]) && !/WTI|BTC|HY-IG/.test(fw.whys[1]));
+ok("check 3 explains transmission and disclaims single-factor causality",
+  /discount rate|near-term stress price/.test(fw.whys[2]) && /not proof/.test(fw.whys[2]));
+ok("check 4 states snapshot time, confidence, and that headlines never vote",
+  /Evidence confidence is HIGH/.test(fw.whys[3]) && /snapshot was pulled/.test(fw.whys[3]) && /never cast a vote/.test(fw.whys[3]));
+ok("check 5 names the nearest load-bearing change and actionability",
+  /VIX at or above 18\.00/.test(fw.whys[4]) && /HODL/.test(fw.whys[4]) && /Actionability is FULL/.test(fw.whys[4]));
+const fwReducedFactors=fwFactors.map((f)=>f.key==="vix"?{...f,state:null,excluded:true,reason:"too old"}:f);
+const fwReducedCall={...fwCall,confidence:"MEDIUM",counts:{bullish:3,neutral:1,bearish:1,usable:5,total:6},factors:fwReducedFactors};
+const fwReduced=computeFiveWhys(MOCK_DATA,{...fwRegime,counted:5,bullVotes:3},{...fwOpts,call:fwReducedCall,factors:fwReducedFactors});
+ok("five checks: reduced evidence changes the denominator and names the exclusion",
+  /3\/5 usable factors bullish/.test(fwReduced.headline) && /VIX Level was excluded/.test(fwReduced.whys[3]));
 // ---- DEC-31 (v3.2): Put/Call fully retired ------------------------------
 ok("DEC-31: putCall absent from SOURCES", !("putCall" in SOURCES));
 ok("DEC-31: MOCK_DATA no longer carries marketPulse.putCall", MOCK_DATA.marketPulse.putCall === undefined);
 ok("DEC-31: dashboard.jsx has zero putCall references", !dashSrc.includes("putCall"));
 const snapSrc = readSrc("../functions/api/snapshot.js");
 ok("DEC-31: fetchPutCall scraper deleted from snapshot.js", !snapSrc.includes("putCall") && !snapSrc.includes("fetchPutCall"));
-ok("5 Whys: WHY #5 reads full-signal at 5/5", computeFiveWhys(MOCK_DATA, fwRegime).whys[4].includes("full-signal"));
-// FEAT-NEWS WHY #2: only LIVE+fresh fields appear; stale/mock are named as excluded
-const fwFresh = computeFiveWhys(MOCK_DATA, fwRegime, { fresh: new Set(["fearGreed"]) });
-ok("WHY #2 includes a fresh field (F&G) and excludes a non-fresh one (VIX)",
-  fwFresh.whys[1].includes("F&G") && !fwFresh.whys[1].includes("VIX ") && /dark — not counted/.test(fwFresh.whys[1]));
-// FEAT-NEWS WHY #3: shows a live headline when fresh, falls back to "no fresh headline" otherwise
+// Headline context is explicitly non-voting whether material, irrelevant, or unavailable.
 const withHL = { ...MOCK_DATA, marketPulse: { ...MOCK_DATA.marketPulse, headline: { text: "Peace deal lifts futures", source: "MarketWatch" } } };
-ok("WHY #3 renders a fresh market headline when present",
-  computeFiveWhys(withHL, fwRegime, { fresh: new Set(["marketHeadline"]) }).whys[2].includes("Peace deal lifts futures"));
-ok("WHY #3 falls back when no fresh headline", /No fresh market headline/.test(computeFiveWhys(MOCK_DATA, fwRegime, { fresh: new Set() }).whys[2]));
+ok("headline context renders a relevant current item but never promotes it to a voter",
+  /Peace deal lifts futures/.test(computeFiveWhys(withHL, fwRegime, fwOpts).whys[3]) && /never cast a vote/.test(computeFiveWhys(withHL, fwRegime, fwOpts).whys[3]));
+ok("headline context states when no current item passes", /No current macro headline/.test(computeFiveWhys(MOCK_DATA, fwRegime, {...fwOpts,headlineFresh:false}).whys[3]));
 // ---- v3.51 (public audit): freshness is not RELEVANCE ----------------------
 // The audit caught a Fidelity death-certificate administrative story rendered as the macro
 // "Headline driver" — fresh, dated and correctly attributed, and explaining nothing about
@@ -264,14 +277,11 @@ ok("materiality: empty / missing text is never material (fails closed)",
 // fact from "no headline arrived", and only the first stops an irrelevant driver being asserted.
 const admin = { ...MOCK_DATA, marketPulse: { ...MOCK_DATA.marketPulse,
   headline: { text: "Fidelity now requires a death certificate to transfer an account", source: "MarketWatch" } } };
-const fwAdmin = computeFiveWhys(admin, fwRegime, { fresh: new Set(["marketHeadline"]) });
-ok("WHY #3: a fresh but non-macro headline is WITHHELD, and the slot says WHY it was withheld",
-  /not macro-material/.test(fwAdmin.whys[2]) &&
-  !fwAdmin.whys[2].includes("death certificate") &&
-  !/no fresh market headline/.test(fwAdmin.whys[2]));
-ok("WHY #3: the filter is ONE-WAY — a material headline still renders verbatim, never rewritten",
-  computeFiveWhys(withHL, fwRegime, { fresh: new Set(["marketHeadline"]) }).whys[2]
-    .includes("Peace deal lifts futures"));
+const fwAdmin = computeFiveWhys(admin, fwRegime, fwOpts);
+ok("headline context: a fresh but non-macro item is withheld and the reason is named",
+  /failed the macro-relevance filter/.test(fwAdmin.whys[3]) && !fwAdmin.whys[3].includes("death certificate"));
+ok("headline context: the materiality filter is one-way — accepted context stays verbatim",
+  computeFiveWhys(withHL, fwRegime, fwOpts).whys[3].includes("Peace deal lifts futures"));
 
 // ---- 4. ttReadout — TT mapping table (FEAT-330 / DEC-33; gates real orders) ----------
 console.log("\n[4] ttReadout — TT band table + verdict + macro flip (every boundary)");
@@ -850,6 +860,136 @@ ok("v4.1.5 wiring: the recency merge is the ONLY path into live — no blind tre
     return /preferFresherRates\(fred\.status/.test(src) &&
       !/\.\.\.\(treasury\.status === "fulfilled" \? treasury\.value : \{\}\)/.test(src); })());
 
+/* ═══ v5.1 — THE CBOE VIX FAILSAFE ═══════════════════════════════════════════════════
+   The crash gauge was the ONE critical input with no second source, while the less
+   safety-critical 10Y got one in v4.1.5 — and ttReadout holds HOLD on `!isCur(vix)`, so
+   that asymmetry halts the whole order-gating engine. The fixture is the REAL pair from
+   2026-08-21/08-20, and the two sources cross-check each other exactly: FRED carried
+   16.01 (08-20) while CBOE/Google show 15.13 (08-21) at -5.50% on the day, and
+   15.13/16.01 - 1 = -5.4966% -> -5.50. The numbers are equivalent by construction because
+   VIXCLS *is* FRED's republication of this CBOE series. */
+const VCSV = "DATE,OPEN,HIGH,LOW,CLOSE\n" +
+  "8/21/2026,15.50,15.80,15.00,15.13\n8/20/2026,16.10,16.40,15.90,16.01\n" +
+  "8/19/2026,16.50,16.70,16.20,16.30\n8/18/2026,16.80,17.00,16.60,16.75\n" +
+  "8/15/2026,17.10,17.30,16.90,17.02\n8/14/2026,17.50,17.70,17.20,17.40";
+ok("v5.1 CBOE: CSV -> vix level + real ISO AsOf + CBOE attribution",
+  (() => { const c = parseCboeVixCsv(VCSV);
+    return c && c.vix === 15.13 && c.vixAsOf === "2026-08-21" && /CBOE/.test(c.vixSource); })());
+ok("v5.1 CBOE: vixWeekChg uses fetchFred's OWN window — latest vs ~5 sessions back, not the 1-day",
+  (() => { const c = parseCboeVixCsv(VCSV);
+    // 15.13 vs rows[5] 17.40 = -13.05%; the 1-day would be -5.50, so this proves the window.
+    return c.vixWeekChg === -13.05; })());
+ok("v5.1 CBOE: under 6 sessions it falls back to the 1-day prior, exactly as fetchFred does",
+  (() => { const c = parseCboeVixCsv("DATE,CLOSE\n8/21/2026,15.13\n8/20/2026,16.01");
+    return c.vixWeekChg === -5.5; })());
+ok("v5.1 CBOE: the sparkline is 10 points OLDEST->NEWEST, the FRED/UST convention",
+  (() => { const c = parseCboeVixCsv(VCSV);
+    return Array.isArray(c.vixSeries) && c.vixSeries.length === 6 &&
+      c.vixSeries[0] === 17.4 && c.vixSeries[c.vixSeries.length - 1] === 15.13; })());
+ok("v5.1 CBOE: the 'VIX CLOSE' header variant is accepted (CBOE has shipped both)",
+  (() => { const c = parseCboeVixCsv("DATE,VIX CLOSE\n8/21/2026,15.13");
+    return c && c.vix === 15.13; })());
+ok("v5.1 CBOE: an ISO date column parses too — the date FORM is tolerated, the field is not optional",
+  (() => { const c = parseCboeVixCsv("DATE,CLOSE\n2026-08-21,15.13");
+    return c && c.vixAsOf === "2026-08-21"; })());
+ok("v5.1 CBOE: a CSV with no close column -> null (fail closed on the FIELD, never a guessed column)",
+  parseCboeVixCsv("DATE,OPEN,HIGH,LOW\n8/21/2026,15.5,15.8,15.0") === null);
+ok("v5.1 CBOE: non-positive and unparseable rows are dropped; an all-garbage file yields null, never 0",
+  (() => { const mixed = parseCboeVixCsv("DATE,CLOSE\n8/21/2026,15.13\n8/20/2026,0\n8/19/2026,x\nbadrow,16.0");
+    return mixed.vix === 15.13 && mixed.vixSeries.length === 1 &&
+      parseCboeVixCsv("DATE,CLOSE\n8/21/2026,0\n8/20/2026,-3") === null; })());
+/* The delayed-quote rung (owner-specified primary): tiny, keyless, same publisher. */
+const VQ = { symbol: "_VIX", timestamp: "2026-08-21T15:15:01",
+  data: { current_price: 15.13, close: 15.13, prev_day_close: 16.01, last_trade_time: "2026-08-21T15:15:01" } };
+ok("v5.1 quote: the delayed JSON yields level + ET-date + its own attribution",
+  (() => { const q = parseCboeVixQuote(VQ);
+    return q.vix === 15.13 && q.vixAsOf === "2026-08-21" && q.vixSource === "CBOE delayed"; })());
+ok("v5.1 quote: a single quote emits NO week-change and NO series — it cannot know either",
+  (() => { const q = parseCboeVixQuote(VQ);
+    return q.vixWeekChg === undefined && q.vixSeries === undefined; })());
+ok("v5.1 quote: no parseable timestamp -> null (an undated observation is not an observation)",
+  parseCboeVixQuote({ data: { close: 15.13 } }) === null);
+ok("v5.1 quote: a non-positive or absent level -> null, never a zero VIX",
+  parseCboeVixQuote({ data: { close: 0, last_trade_time: "2026-08-21T15:15:01" } }) === null &&
+  parseCboeVixQuote({ data: { last_trade_time: "2026-08-21T15:15:01" } }) === null);
+ok("v5.1 pair: SAME session -> the quote's level with the daily file's date and series",
+  (() => { const p = pairCboeVix(parseCboeVixQuote(VQ), parseCboeVixCsv(VCSV), "2026-08-24");
+    return p.vix === 15.13 && p.vixAsOf === "2026-08-21" && p.vixWeekChg === -13.05 &&
+      Array.isArray(p.vixSeries) && p.vixSource === "CBOE delayed + CBOE daily"; })());
+ok("v5.1 pair: a DATE MISMATCH never cross-stamps — the daily close wins outright (the pairRs rule)",
+  (() => { const intraday = { vix: 14.2, vixAsOf: "2026-08-24", vixSource: "CBOE delayed" };
+    const p = pairCboeVix(intraday, parseCboeVixCsv(VCSV), "2026-08-24");
+    return p.vix === 15.13 && p.vixAsOf === "2026-08-21" && p.vixSource === "CBOE daily"; })());
+ok("v5.1 pair: quote-only is usable ONLY for a completed prior session",
+  (() => { const prior = pairCboeVix(parseCboeVixQuote(VQ), null, "2026-08-24");
+    return prior && prior.vix === 15.13 && prior.vixSource === "CBOE delayed"; })());
+ok("v5.1 pair: a SAME-DAY quote with no daily file is INTRADAY — a PROXY, refused, never banded as a close",
+  pairCboeVix({ vix: 14.2, vixAsOf: "2026-08-24" }, null, "2026-08-24") === null);
+ok("v5.1 pair: nothing at all -> null (the failsafe reports no reading rather than inventing one)",
+  pairCboeVix(null, null, "2026-08-24") === null);
+ok("v5.1 attribution is never IMPLIED — a FRED-served leg says FRED VIXCLS",
+  (() => { const r = preferFresherVix({ vix: 16.01, vixAsOf: "2026-08-20" }, null);
+    return r.vixSource === "FRED VIXCLS"; })());
+ok("v5.1 attribution: every rung names itself, and the set is closed",
+  (() => { const src = readSrc("../functions/api/snapshot.js");
+    return ["CBOE delayed + CBOE daily", "CBOE daily", "CBOE delayed", "FRED VIXCLS"]
+      .every((s) => src.includes(`"${s}"`)); })());
+ok("v5.1 CBOE merge: a FRESHER CBOE observation wins — the live 8/24 case, HISTORICAL 08-20 -> CURRENT 08-21",
+  (() => { const fred = { vix: 16.01, vixAsOf: "2026-08-20", vixWeekChg: 6.8, vixSeries: [1, 2] };
+    const r = preferFresherVix(fred, parseCboeVixCsv(VCSV));
+    return r.vix === 15.13 && r.vixAsOf === "2026-08-21" && /CBOE/.test(r.vixSource); })());
+ok("v5.1 CBOE merge: the leg is replaced WHOLE — no fallback level ever pairs with the incumbent's deltas",
+  (() => { const fred = { vix: 16.01, vixAsOf: "2026-08-20", vixWeekChg: 99, vixSeries: [1, 2, 3] };
+    // A hand-built alternate carrying ONLY the level: the stale 99 must be DELETED, not kept.
+    const r = preferFresherVix(fred, { vix: 15.13, vixAsOf: "2026-08-21" });
+    return r.vix === 15.13 && r.vixWeekChg === undefined && r.vixSeries === undefined; })());
+/* These three were pinned on `vixSource === undefined` an hour before the owner required
+   attribution to be EXPLICIT for every rung ("not implied", the 10Y fallback rule). The
+   contract deliberately moved: a FRED-served leg is now LABELLED FRED VIXCLS rather than
+   left silent, so the re-pin is strictly stronger — it proves both that CBOE lost AND
+   that the winner names itself. Recorded rather than quietly relaxed. */
+ok("v5.1 CBOE merge: a FRESHER FRED is never overwritten — the failsafe cannot make the page staler",
+  (() => { const fred = { vix: 14.2, vixAsOf: "2026-08-24" };
+    const r = preferFresherVix(fred, parseCboeVixCsv(VCSV));
+    return r.vix === 14.2 && r.vixAsOf === "2026-08-24" && r.vixSource === "FRED VIXCLS"; })());
+ok("v5.1 CBOE merge: a TIE keeps FRED — a tie is not an improvement, and attribution should not churn",
+  (() => { const fred = { vix: 16.01, vixAsOf: "2026-08-21" };
+    const r = preferFresherVix(fred, parseCboeVixCsv(VCSV));
+    return r.vix === 16.01 && r.vixSource === "FRED VIXCLS"; })());
+ok("v5.1 CBOE merge: a DEAD FRED leg takes the fallback regardless of dates (the failure case, not the lag case)",
+  (() => { const r = preferFresherVix({ tenYear: 4.5 }, parseCboeVixCsv(VCSV));
+    return r.vix === 15.13 && r.tenYear === 4.5; })());
+ok("v5.1 CBOE merge: with no CBOE the VALUES are untouched — the only addition is the honest label",
+  (() => { const fred = { vix: 16.01, vixAsOf: "2026-08-20", vixWeekChg: 6.8, vixSeries: [1, 2] };
+    const r = preferFresherVix(fred, null);
+    // Every original key survives byte-identical; vixSource is the sole added key.
+    return Object.entries(fred).every(([k, v]) => JSON.stringify(r[k]) === JSON.stringify(v)) &&
+      Object.keys(r).length === Object.keys(fred).length + 1 && r.vixSource === "FRED VIXCLS"; })());
+ok("v5.1 CBOE: a decimal-shifted fallback value is still banded out — the failsafe is not a bypass",
+  (() => { const live = { vix: 1513, vixAsOf: "2026-08-21" };
+    applyBands(live); return live.vix === undefined; })());
+/* Wiring pinned in BOTH directions, the v4.1.5 rule: the merge must be the ONLY path in,
+   and the trigger must fire on a LAG (the whole point — tonight's VIX was a lag, and a
+   forced rebuild proved it was not transient). */
+ok("v5.1 trigger: the VIX failsafe fires on a LAG, not only on a dead leg",
+  (() => { const src = readSrc("../functions/api/snapshot.js");
+    return /needVix = fredVixDead \|\| sessionsBehind\(fredVixAsOf\) >= 1/.test(src); })());
+ok("v5.1 wiring: preferFresherVix is the ONLY path into live — no blind cboe spread survives",
+  (() => { const src = readSrc("../functions/api/snapshot.js");
+    return /preferFresherVix\(/.test(src) &&
+      !/\.\.\.\(cboe\.status === "fulfilled" \? cboe\.value : \{\}\)/.test(src); })());
+// Local stripper: the shared `stripComments` is defined ~7000 lines below (section [68]),
+// so referencing it here would be a temporal-dead-zone error, not a passing pin.
+const noCmt = (s) => s.replace(/\/\*[\s\S]*?\*\//g, "").replace(/\/\/[^\n]*/g, "");
+ok("v5.1: both failsafes share ONE recency rule — mergeFresherLeg, not a second copy",
+  (() => { const src = noCmt(readSrc("../functions/api/snapshot.js"));
+    return (src.match(/mergeFresherLeg\(/g) || []).length >= 4 &&   // 1 def + 2 rates + 1 vix
+      /export function preferFresherVix/.test(src); })());
+ok("v5.1: the failsafe never runs on a healthy day — both triggers are conditional",
+  (() => { const src = noCmt(readSrc("../functions/api/snapshot.js"));
+    return /if \(needTsy\) jobs\.push/.test(src) && /if \(needVix\) jobs\.push/.test(src) &&
+      /if \(jobs\.length\) await Promise\.all\(jobs\)/.test(src); })());
+
 // Matrix G (transport half): stored Kalshi odds survive only while their event is open.
 ok("matrix G: last-good odds for a FUTURE event are servable; a PAST event's are discarded", (() => {
   const today = etYmd(new Date());
@@ -940,7 +1080,8 @@ ok("publish: equal-quality OLDER candidate is refused and the newer stored snaps
   const stored = JSON.parse(kv._store.get("k"));
   return res.published === false && /worse/.test(res.reason) && stored.asOf === newer.asOf;
 })());
-ok("one-wiring-point intact: dashboard.jsx does not fetch readout.json", !dashSrc.includes("readout.json"));
+ok("one-wiring-point intact: dashboard.jsx may link JSON but never fetches readout.json",
+  !/fetch\(["']\/readout\.json/.test(dashSrc));
 
 // ---- 6. /api/tt validateBook — the TT book contract ---------------------
 // FEAT-TT-RUN: first behavioral coverage of functions/ in this suite. validateBook is
@@ -1097,10 +1238,15 @@ ok("hinge: a red hinge force-opens the section rather than hiding behind a chevr
   adminSrc.includes('${n.red?" open":""}'));
 ok("hinge: unrecognised states fall into unknown, never silently into green",
   (adminSrc.match(/\["green","amber","red"\]\.includes\(g\.state\)/g) || []).length >= 2);
-ok("dd: per-payload size cap present (45KB — 8KB v3.13, 15KB v3.63, 45KB v3.70 owner call)",
-  adminSrc.includes("DD_MAX=45*1024"));
-ok("dd: the payload cap states that the BOOK cap binds first (38 x 45KB = 1.7MB vs the 300KB MAX_BODY)",
-  /binding constraint is the BOOK/.test(adminSrc) && /1\.7MB/.test(adminSrc) && /5\.8x the book cap/.test(adminSrc));
+ok("dd: per-payload size cap present (100KB — 8KB v3.13, 15KB v3.63, 45KB v3.70, 100KB v4.4.0 owner call)",
+  adminSrc.includes("DD_MAX=100*1024"));
+/* RE-PINNED v4.4.0: the old pin held the PRE-v3.75 claim ("the BOOK cap binds first,
+   38 x 45KB = 1.7MB") in place — but DDSTORE moved payloads to their own per-symbol keys,
+   so the book cap stopped binding them entirely and the pinned comment was a year stale.
+   The pin now asserts the comment states the DDSTORE reality, not the retired arithmetic. */
+ok("dd: the payload cap comment states the DDSTORE reality — book cap no longer binds, per-symbol keys",
+  /no longer binds them AT ALL/.test(adminSrc) && /one name's growth can never squeeze another's/.test(adminSrc) &&
+  !/binding constraint is the BOOK/.test(adminSrc));
 ok("dd: past key-dates flag 'passed — re-confirm' (the FOMC lesson)", adminSrc.includes("passed — re-confirm"));
 ok("dd: rendered payload strings are HTML-escaped (esc used in the deep renderer)",
   adminSrc.includes("function esc(") && adminSrc.includes("${esc(dd.thesis_version)}"));
@@ -1387,8 +1533,11 @@ ok("livepx: missing symbols are NAMED so fallbacks are never implied to be live"
   quotesSrc.includes("missing: syms.filter"));
 ok("livepx: matches snapshot.js on the wire (Accept header + timeout were load-bearing)",
   quotesSrc.includes('headers: { Accept: "application/json" }') && quotesSrc.includes("ctl.abort()"));
-ok("livepx: KV-cached and batched to respect the rate limit / subrequest cap",
-  quotesSrc.includes("CACHE_TTL = 120") && quotesSrc.includes("misses.slice(i, i + 5)"));
+/* RE-PINNED at v5.0 W0: the per-symbol cache (CACHE_TTL literal) became the one batch key
+   in lib/quote-cache.js — the invariant this pin protects (rate limit + subrequest cap
+   respected) is now KV-read-once + fetch-in-batches-of-5, measured behaviorally in [72]. */
+ok("livepx: KV-cached (one batch read) and upstream-batched to respect the rate limit / subrequest cap",
+  quotesSrc.includes("readQuoteBatch(env)") && quotesSrc.includes("misses.slice(i, i + 5)"));
 ok("livepx: board prefers a live quote and falls back to the stamped ref_px",
   adminSrc.includes("const live=LIVE_PX[x.sym];") &&
   adminSrc.includes("(live&&isFinite(live.px)&&live.px>0)?{px:live.px,at:live.at,live:true,chg:live.chg}:stamp"));
@@ -1398,8 +1547,13 @@ ok("livepx: each pick shows whether it used a live or stamped price",
   adminSrc.includes(">live $") && adminSrc.includes(">stamped $"));
 ok("livepx: footer counts live vs stamped rather than implying all are current",
   adminSrc.includes("live / ") && adminSrc.includes("all prices are stamped marks, not live"));
-ok("livepx: quote fetch is non-blocking and failure leaves the board unchanged",
-  adminSrc.includes("loadBook().then(()=>{loadQuotes();loadPositions();loadAllocation();loadDeepDiveIndex();loadTickerV2();});") && adminSrc.includes("never break the board on a quote feed"));
+// Re-pinned at v5.6.4: these two pinned the LITERAL `.then()` fan-out — the exact shape
+// that produced the live defect (the gate resumed only loadBook, so every secondary load
+// stayed 401'd-and-empty). The contract is BEHAVIORAL now: the book loads first, then all
+// six secondary loads, from ONE named list the PIN gate can re-enter.
+ok("livepx: quote fetch is non-blocking, runs in the resumable boot chain, and failure leaves the board unchanged",
+  adminSrc.includes("async function bootLoads(){ await loadBook(); await secondaryLoads(); }") &&
+  /async function secondaryLoads\(\)\{\s*await Promise\.all\(\[loadQuotes\(\),loadPositions\(\),loadAllocation\(\),loadDeepDiveIndex\(\),loadTickerV2\(\),loadScoreIndex\(\)\]\);/.test(adminSrc) && adminSrc.includes("never break the board on a quote feed"));
 
 // ---- 9. market calendar — holidays across the honesty stack ---------------
 // The time-judges (isStale, marketSession/etSession, looksBehind) share ONE
@@ -1713,9 +1867,28 @@ ok("pos: lives in its own store, not inside deepDive (a thesis paste must not wi
   !/deepDive\.pos|dd\.pos\b/.test(adminSrc));
 ok("pos: an absent position renders NOTHING — not a 0 or a dash that reads as not-held",
   adminSrc.includes("absent number; a dash or a 0 here would read"));
-ok("pos: fetched from its own endpoint at boot, alongside the book and quotes",
-  adminSrc.includes('const r=await fetch("/api/positions");') &&
-  adminSrc.includes("loadBook().then(()=>{loadQuotes();loadPositions();loadAllocation();loadDeepDiveIndex();loadTickerV2();});"));
+ok("pos: fetched from its own endpoint in the boot chain, alongside the book and quotes",
+  adminSrc.includes('const r=await fetch("/api/positions");') && adminSrc.includes("async function bootLoads(){ await loadBook(); await secondaryLoads(); }") &&
+  /async function secondaryLoads\(\)\{\s*await Promise\.all\(\[loadQuotes\(\),loadPositions\(\),loadAllocation\(\),loadDeepDiveIndex\(\),loadTickerV2\(\),loadScoreIndex\(\)\]\);/.test(adminSrc));
+
+/* v5.6.4 — the boot chain must be RESUMABLE, and a failed read must never claim the store
+   is empty. Live defect 2026-08-26: after a session expiry the six secondary loads fired
+   before a session existed, each 401'd into its own silent catch, and the PIN gate resumed
+   only PIN_CB (loadBook) — so the board rendered 50 book names reading "no thesis payload
+   stored · TT —" against a server holding 39 payloads and 35 cards. */
+ok("v5.6.4 boot: the PIN gate resumes the WHOLE chain — both the default callback and loadBook's own 401 path point at bootLoads, never at loadBook alone",
+  adminSrc.includes("PIN_CB=cb||bootLoads;") &&
+  adminSrc.includes('showPinGate(bootLoads);') &&
+  !/showPinGate\(loadBook\)/.test(adminSrc) && !/PIN_CB=cb\|\|loadBook/.test(adminSrc));
+ok("v5.6.4 boot: a successful login ALWAYS retries the secondary loads, whatever the interrupted action was",
+  /const cb=PIN_CB;PIN_CB=null;if\(cb\)await cb\(\);[\s\S]{0,400}await secondaryLoads\(\);/.test(adminSrc));
+ok("v5.6.4 honesty: a FAILED payload-index fetch reads 'not read, not empty' — never 'no thesis payload stored'",
+  adminSrc.includes("let DD_FAILED=false;") &&
+  adminSrc.includes('else DD_FAILED=true;') &&
+  adminSrc.includes('(!dd&&DD_FAILED)?"payload index did not load — not read, not empty"') &&
+  adminSrc.includes('(!dd&&DD_FAILED)?"reload the terminal (⟲ RELOAD) — the store was never read"'));
+ok("v5.6.4 honesty: a null score index reads 'did not load' — never 'no server card — unscored' (a claim about a store nobody read)",
+  adminSrc.includes('SCORE_INDEX===null?"score index did not load — not read, not unscored (⟲ RELOAD)"'));
 ok("pos: a fetch failure leaves POSITIONS={} — every posOf() reads null, never stale data",
   adminSrc.includes("POSITIONS stays {} — posOf() reads null for everyone, never stale data"));
 ok("pos: measured marks age like everything else, undated being the worst",
@@ -1726,8 +1899,13 @@ ok("caps: the CLUSTER total is summed — 'cluster = one position' is finally ch
   adminSrc.includes('out.push({kind:"cluster"') && adminSrc.includes("one cluster sizes as one position"));
 ok("caps: an unmeasured cluster member is NAMED and the total called a floor",
   adminSrc.includes("the total is a FLOOR") && adminSrc.includes("a cluster total that"));
-ok("caps: a breach becomes a TODAY stop — you are over the limit now, not considering it",
-  adminSrc.includes("pts over the ${CAP_PCT}% cap") && adminSrc.includes("outranks anything discretionary"));
+/* v5.2 CAP-ASTERISK (owner ruling 2026-08-25): the breach line SURVIVES but as a WARN —
+   the reference cap informs, it no longer suspends the add candidate. Both directions
+   pinned: the warn exists, the old stop severity is gone from the cap items. */
+ok("caps: a breach is a TODAY WARN, never a STOP — the cap informs, it does not suspend the add (v5.2 reversal of the v3.30 stop)",
+  adminSrc.includes("pts over the ${CAP_PCT}% reference cap (informational)") &&
+  adminSrc.includes('sev:"warn",txt:`${c.sym} is ${c.pct}% of acct equity') &&
+  !adminSrc.includes('sev:"stop",txt:`${c.sym} is ${c.pct}%'));
 ok("caps: a breach computed off a stale or undated mark says so",
   adminSrc.includes("(position mark undated)") && adminSrc.includes("marks ${c.age}d old"));
 ok("caps: a closed EXPOSURE drawer still shows a breach in its summary",
@@ -1802,7 +1980,10 @@ const PKG = JSON.parse(readSrc("../package.json"));
 // __APP_VERSION__, so a guard is the only thing that can hold the invariant.
 ok("version: the terminal's title and brand both match package.json (no third version)",
   adminSrc.includes(`<title>TT TICKER TERMINAL v${PKG.version}</title>`) &&
-  adminSrc.includes(`<small>v${PKG.version} · underwriting + sourced gates</small>`));
+  // Tagline re-pinned at v5.0 ("the card governs (§14.8)" — the flip) and again at v5.6
+  // ("the daily contract" — the four-question surface is the product's face now; the card
+  // still governs underneath, stated in the §14.8 machinery, not the masthead).
+  adminSrc.includes(`<small>v${PKG.version} · the daily contract</small>`));
 // ttInfo's score decides whether the NEXT DOLLAR line lights. It is parsed from prose.
 ok("composite: a decimal score is preferred over an earlier bare integer",
   adminSrc.includes("function parseComposite(v)") && adminSrc.includes("const dec=s.match(/\\d+\\.\\d+/);"));
@@ -2063,7 +2244,7 @@ ok("estrun: the section label carries the tier — the math renders under the ti
 /* v3.68: the PT horizon is stated where the %/yr is read. */
 /* v3.69 NARRATIVE FIRST — the public dashboard reorder. */
 ok("v3.69: the 5 Whys block renders in the overview region, before the markets section (source order)",
-  whysSrc.includes("5 whys · today") &&   // v3.93: the identity moved onto the toggle label
+  whysSrc.includes("why this call · 5 checks") &&
   dashSrc.indexOf("<FiveWhys ") > dashSrc.indexOf('id="overview"')
   && dashSrc.indexOf("<FiveWhys ") < dashSrc.indexOf('aria-labelledby="markets"'));
 /* v3.92 QUIET OVERVIEW — this pin REVERSED. v3.69/v3.61 pinned the whys always-expanded on
@@ -2222,9 +2403,13 @@ ok("rankfair: markers are the cap constants, not magic numbers (** at cap, * at 
 ok("rankfair: an options-only position gets its OWN marker, never a misleading 0%",
   adminSrc.includes("opt-only — weight not measurable") &&
   adminSrc.includes('const optOnly=Array.isArray(p.opt)&&p.opt.length>0&&!(Number(p.sh)>0);'));
-ok("rankfair: a name at/over the cap can NEVER be the next dollar, however wide its gap",
-  adminSrc.includes("at the ${CAP_PCT}% cap, no room") &&
-  adminSrc.indexOf("if(r.wt.w!==null&&r.wt.w>=CAP_PCT)") < adminSrc.indexOf('if(!r.tt)return "unscored'));
+/* v5.2 CAP-ASTERISK: RANKFAIR's veto is REVERSED by owner ruling 2026-08-25. The pin now
+   asserts the opposite of what it asserted from v3.36 to v5.1.1 — deliberately, with the
+   ruling named (the v4.0.1 reversal convention): the veto string is GONE from why(), and
+   the over-cap pick carries the asterisk chip on the green line instead. */
+ok("rankfair REVERSED (v5.2): the cap never vetoes the pick — the green line carries the asterisk instead",
+  !adminSrc.includes("at the ${CAP_PCT}% cap, no room") &&
+  adminSrc.includes("over the ${CAP_PCT}% reference cap (asterisk, not a veto)"));
 ok("rankfair: every pick renders its held weight beside the upside",
   adminSrc.includes("r.wt") && adminSrc.includes("weights are % of TRACKED BOOK (a floor"));
 ok("rankfair: queue names with NO model are NAMED, not silently missing from the ranking",
@@ -2235,23 +2420,43 @@ ok("rankfair: the ranking spans held AND unheld, and says which — a blank woul
 
 // ---- 19. v3.38 "Four Drivers" — FOCUS2 + SELLRANK + REFRESH ----------------
 console.log("\n[19] v3.38 — four-driver view, computed sell list, refresh button");
-ok("sellrank: forced trims (over cap) rank before every discretionary trim",
+/* v5.2: the forced cap tier is GONE (SELLRANK v3.38 reversed) — this pin previously went
+   VACUOUS (forced.sort deleted -> indexOf -1 < anything, the v3.60.1 trap) and is rewritten
+   to assert the new contract directly: no cap-routed forced bucket remains in sellRank. */
+ok("sellrank REVERSED (v5.2): no cap-forced tier remains — every measured row ranks on merit",
   adminSrc.includes("function sellRank()") &&
-  adminSrc.indexOf("forced.sort((a,b)=>b.trimPts-a.trimPts);") < adminSrc.indexOf("disc.sort((a,b)=>{"));
+  !adminSrc.includes("forced.sort((a,b)=>b.trimPts-a.trimPts);") &&
+  !/else if\(w>=CAP_PCT\)\{\s*\n\s*row\.trimPts/.test(adminSrc));
 // v3.44: the sort gained an options branch, but the RETURN-based rule is unchanged —
 // asserted behaviourally now rather than by matching the old one-line literal.
-ok("sellrank: discretionary order is LOWEST expected return first — that dollar funds the next one",
-  adminSrc.includes("return a.basis===\"return\"?a.ann-b.ann:b.mv-a.mv;") &&
-  adminSrc.includes("lowest expected return funds first") &&
-  (() => { const rows=[{basis:"return",ann:9},{basis:"return",ann:-3},{basis:"return",ann:2}];
+/* v5.2 CAP-ASTERISK: the discretionary key is now MERIT, lexicographic in the owner's
+   stated order — tape (bearish first) -> lowest %/yr -> lowest TT score — RUN here against
+   the real sort expression's own semantics: a BEARISH-tape name outranks a lower-%/yr
+   BULLISH one (tape is the first axis, per the ruling), and within one tape bucket the
+   old lowest-return rule survives; a no-rate row ranks after rated names in its bucket. */
+ok("sellrank v5.2: merit sort — tape first, then lowest %/yr, then lowest TT score (run, not pinned)",
+  adminSrc.includes("(a.techRank-b.techRank)||((a.ann??1e9)-(b.ann??1e9))||((a.score??1e9)-(b.score??1e9))") &&
+  (() => { const tr=v=>v==="BEARISH"?0:v==="BULLISH"?2:1;
+    const rows=[
+      {basis:"return",tech:"BULLISH",ann:-9,score:9,mv:1},
+      {basis:"return",tech:"BEARISH",ann:12,score:8,mv:1},
+      {basis:"return",tech:"MIXED",ann:3,score:2,mv:1},
+      {basis:"return",tech:"MIXED",ann:null,score:1,mv:1},
+      {basis:"return",tech:"MIXED",ann:3,score:7,mv:1}];
+    rows.forEach(r=>r.techRank=tr(r.tech));
     rows.sort((a,b)=>{ if(a.basis!==b.basis)return a.basis==="return"?-1:1;
-      return a.basis==="return"?a.ann-b.ann:b.mv-a.mv; });
-    return rows.map(r=>r.ann).join()==="-3,2,9"; })());
-ok("sellrank: a forced trim carries the computed dollar amount to get back to cap",
-  adminSrc.includes("row.trim$=Math.round(mv*(w-CAP_PCT)/w);") && adminSrc.includes("to cap"));
-ok("sellrank: do_not_trim is flagged, never hidden — and a cap contradiction is named",
+      if(a.basis!=="return")return b.mv-a.mv;
+      return (a.techRank-b.techRank)||((a.ann??1e9)-(b.ann??1e9))||((a.score??1e9)-(b.score??1e9))||(b.mv-a.mv); });
+    const order=rows.map(r=>`${r.tech}:${r.ann}:${r.score}`).join("|");
+    // bearish first despite +12%/yr; then mixed 3%/yr score 2 before score 7; no-rate last
+    // in its bucket; bullish last despite being the WORST return on the list.
+    return order==="BEARISH:12:8|MIXED:3:2|MIXED:3:7|MIXED:null:1|BULLISH:-9:9"; })());
+ok("sellrank v5.2: an over-cap row keeps the to-cap arithmetic as its INFORMATIONAL asterisk",
+  adminSrc.includes("trim$:w>=CAP_PCT?Math.round(mv*(w-CAP_PCT)/w):null") &&
+  adminSrc.includes("to cap (informational)"));
+ok("sellrank: do_not_trim is flagged, never hidden (the cap-contradiction line died WITH the forced tier it contradicted — v5.2)",
   adminSrc.includes("session says do-not-trim — shown, not hidden") &&
-  adminSrc.includes("cap and do-not-trim CONTRADICT"));
+  !adminSrc.includes("cap and do-not-trim CONTRADICT"));
 // v3.44 FEAT-TT-OPTMV: options-only positions now rank IN the list on realisable dollars.
 // Only genuinely-unrankable sleeves are named below it, each with its own reason.
 ok("sellrank: unmodelled names are NAMED, and an unrankable options sleeve says WHY",
@@ -2268,12 +2473,12 @@ ok("optmv: the sleeve sum is SIGNED — a short leg is a liability, so a net-sho
   adminSrc.includes("net short — closing costs"));
 ok("optmv: an options row states it was ranked on DOLLARS, not on a rate it does not own",
   adminSrc.includes("ranked on realisable dollars — a leg's return is not the underlying's"));
-ok("optmv: an options row qualifies on dollars ALONE — requiring a model would have " +
-   "re-created the very exclusion this removes",
-  adminSrc.includes("if(oo){disc.push(row);}"));
-ok("optmv: an options row bypasses the CAP tier — CAP_PCT is measured against equity mv / " +
-   "broker pct, a denominator a sleeve's value is not comparable to",
-  /if\(oo\)\{disc\.push\(row\);\}\s*\n\s*else if\(w>=CAP_PCT\)/.test(adminSrc));
+ok("optmv: an options row still qualifies on dollars ALONE and keeps its own basis in the sort (v5.2: one push, basis split intact)",
+  adminSrc.includes('optOnly:oo,basis:oo?"dollars":"return"') &&
+  adminSrc.includes('if(a.basis!=="return")return b.mv-a.mv;'));
+ok("optmv v5.2: no CAP tier exists for ANY row to bypass — the sleeve-denominator concern is moot by reversal, pinned so it cannot silently return",
+  !/else if\(w>=CAP_PCT\)\{\s*\n?\s*row\.trimPts/.test(adminSrc) &&
+  adminSrc.includes("the cap no longer routes a row to a FORCED tier"));
 ok("optmv: the server rejects a sign-contradicting leg (long with mv<0, short with mv>0)",
   (() => {
     const base = { at: "2026-07-30T14:00:00Z", src: "sync" };
@@ -2316,7 +2521,7 @@ ok("focus2: primary blocks render LAST in the chain, reading what the strips com
   adminSrc.includes("renderStance();renderBuyBlock();renderSellBlock();renderMagBlock();renderCalBlock();renderTabs();"));
 ok("refresh: the button refetches quotes+positions+regime and reports the quote-cache window honestly",
   adminSrc.includes("async function refreshRanks()") &&
-  adminSrc.includes("Promise.all([loadQuotes(),loadPositions(),loadRegime(),allocReeval()])") &&
+  adminSrc.includes("Promise.all([loadQuotes(),loadPositions(),loadRegime(),allocReeval(),loadScoreIndex()])") &&
   adminSrc.includes("server caches 2 min"));
 ok("refresh: the button disables while in flight and always re-enables",
   adminSrc.includes("b.disabled=true") && adminSrc.includes("finally{if(b){b.disabled=false"));
@@ -2436,7 +2641,7 @@ ok("slice5: the header is ONE row — identity, the MACRO pill, and a ⋯ MENU d
 // closing the loop the dashboard's ⌁ TERMINAL button opened (v3.98.3).
 ok("slice5: version, BOOK/AUTH stamps and the whole action toolbar moved behind that " +
    "disclosure — status and occasional actions, never answers",
-  /id="headInfo"[\s\S]{0,1800}underwriting \+ sourced gates[\s\S]{0,900}id="bookStamp"[\s\S]{0,900}id="sessState"[\s\S]{0,1200}\+ ADD TICKER[\s\S]{0,900}id="backupRow"/.test(adminSrc));
+  /id="headInfo"[\s\S]{0,1800}the daily contract[\s\S]{0,900}id="bookStamp"[\s\S]{0,900}id="sessState"[\s\S]{0,1200}\+ ADD TICKER[\s\S]{0,900}id="backupRow"/.test(adminSrc));
 ok("slice5: the banners stay OUTSIDE the disclosure — an expired session or an unsaved edit " +
    "must never require opening a menu to discover",
   /id="headInfo"[\s\S]*?<\/div>\s*<!--[\s\S]*?-->\s*<div id="authBanner"/.test(adminSrc) &&
@@ -2482,12 +2687,24 @@ ok("slice5: a PERMISSIVE stance renders a small pill — no big token, no qualif
       !branch.includes("vbadge") && !branch.includes('details class="why"') &&
       !branch.includes("st.quals");
   })());
-ok("slice5: a RESTRICTIVE stance keeps the full treatment — token, quals and the why drawer",
-  /el\.innerHTML=`<div class="stance-top">`\+\s*`<span class="vbadge"/.test(adminSrc) &&
+// Re-pinned at v5.6 (THE DAILY CONTRACT): the GATE token now leads the strip in both
+// branches, so the vbadge follows `gateTok+` rather than sitting adjacent to the literal.
+ok("slice5: a RESTRICTIVE stance keeps the full treatment — token, quals and the why drawer (led by the v5.6 compact gate token)",
+  /el\.innerHTML=`<div class="stance-top">`\+gateTokSm\+\s*`<span class="vbadge"/.test(adminSrc) &&
   adminSrc.includes('<details class="why"><summary>why</summary>'));
-ok("slice5: the red badges are hoisted so they render in BOTH states — the v3.25 rule is that " +
-   "a red fact is never hidden by a collapse",
-  adminSrc.includes("const badges=") && (adminSrc.match(/badges\+controls/g)||[]).length===2);
+/* Re-pinned at v5.6.5 (owner call 2026-08-26: "hide the circuit-unresolved and binaries info
+   under the TOUCH GRASS gate"). The v3.25 rule is UNCHANGED and still enforced, just at a
+   different altitude: on the PERMISSIVE board the badges are the only warning present, so
+   they stay on the face; on a RESTRICTIVE board — where the verdict token already states the
+   restriction — they move behind an expander whose CLOSED summary carries their COUNT and
+   their colour. A collapse may hide a red fact's detail; it may never hide that one exists. */
+ok("slice5/v5.6.5: the permissive board keeps its red badges on the face, and the restrictive " +
+   "collapse still SIGNALS them — counted and coloured on the closed summary",
+  adminSrc.includes("const badges=badgeList.join(\"\");") &&
+  (adminSrc.match(/badges\+controls/g)||[]).length===1 &&
+  /const flagN=\(st\.quals\|\|\[\]\)\.length\+badgeList\.length;/.test(adminSrc) &&
+  /⚠ \$\{flagN\} flag/.test(adminSrc) &&
+  adminSrc.includes('anyRed?"var(--red)":"var(--amber)"'));
 
 // ═══════════ [24] FEAT-TT-CAPEX (v3.45) — the hyperscaler capex tape ═══════════
 // Every AI-infra beneficiary's revenue estimate is implicitly a bet on the hyperscaler capex
@@ -2820,6 +3037,8 @@ ok("NVDA earnings: ecosystem renderer names all five investments and preserves p
 // these imports, so the lift stays as the tripwire's raw material rather than the test rig.
 const LENS_MAX_PE_SRC = /const LENS_MAX_PE=(\d+);/.exec(adminSrc);
 const PT = await import("../src/ptModel.js");
+const DRIFT = await import("../src/ttDrift.js");
+const driftSrc = readSrc("../src/ttDrift.js");
 ok("ptmodel: admin.html's LENS_MAX_PE and the module's are the same value",
   PT.LENS_MAX_PE === +LENS_MAX_PE_SRC[1]);
 
@@ -3116,12 +3335,79 @@ ok("ready: every clock appears in the statement — an OK clock is STATED, not i
   rLine.parts.some((p) => p.sev === "ok") && rLine.line.split("; ").length >= 4);
 // Rendering: the consolidator reaches both per-ticker decision surfaces, and the bar keeps
 // every red fact visible (v3.25 — a summary is only honest if the red things survive it).
-ok("ready: the bar renders on the deep-dive tab ABOVE the four answers",
-  // v3.73: the shadow TT UNDERWRITING bar sits between them (§15 order: readiness →
-  // underwriting → answers) — the invariant is readiness FIRST, answers after, nothing else.
-  /h\+=readyBar\(x\);[\s\S]{0,400}h\+=ddAnswerBlock/.test(adminSrc) &&
-  adminSrc.indexOf("h+=readyBar(x);") < adminSrc.indexOf("h+=ddScoreBar(x);") &&
-  adminSrc.indexOf("h+=ddScoreBar(x);") < adminSrc.indexOf("h+=ddAnswerBlock(x,dd,todayET);"));
+/* v3.73 order: readiness → underwriting → answers. v5.6.6 inserts the EXECUTIVE SUMMARY
+   directly under the readiness gate (owner call: the tab must open with the thesis and the
+   near/far targets). Re-pinned on the ORDER itself rather than a fixed character window —
+   the window was brittle by construction and tipped over on the first legitimate insertion,
+   which is not what "readiness leads" means. */
+/* ═══ v5.6.6 — the search bar routes to ANALYSIS, and the tab opens with the answer ═══ */
+ok("v5.6.6 search: an in-book name opens the DEEP DIVE, not the edit card — and the card stays one tap away on the tab",
+  adminSrc.includes("if(x){switchTab(x.sym);search.value=\"\";search.blur();}") &&
+  !/if\(x\)\{openCard\(x\.sym\);search\.value=""/.test(adminSrc) &&
+  adminSrc.includes(`<button class="act" onclick="openCard('${"$"}{esc(x.sym)}')">OPEN TT CARD</button>`));
+ok("v5.6.6 search: the HELP copy moved WITH the behaviour — no instruction outliving its data",
+  /in the book<\/b> → opens its <b>deep dive<\/b>/.test(adminSrc) &&
+  !/in the book<\/b> → opens its card to update/.test(adminSrc));
+/* The exec summary is RUN, not string-pinned: it makes three claims (near rung, far rung,
+   thesis provenance) and a string pin cannot prove any of them. */
+{
+  const EX = (() => {
+    const i = adminSrc.indexOf("function ddThesisLine(dd){");
+    const j = adminSrc.indexOf("function ddAnswerBlock(x,dd,todayET){");
+    if (i < 0 || j < 0 || j < i) throw new Error("smoke: ddExec markers not found");
+    return new Function("ptModelRows", "LIVE_PX", "annualise", "esc", "allocTrunc",
+      adminSrc.slice(i, j) + "\nreturn {ddExec, ddThesisLine};");
+  })();
+  const esc0 = (v) => String(v);
+  const ann0 = (up, y) => Math.round(up / (Number(y) - 2025));
+  const mk = (rows) => EX((dd) => dd.rows || [], { AAA: { px: 100 } }, ann0, esc0, esc0);
+  const run = (dd, rows) => mk().ddExec({ sym: "AAA" }, { ...dd, rows });
+  ok("v5.6.6 exec: near and far come from the SAME row set — earliest year-end is short term, deepest is long term",
+    (() => { const h = run({}, [{ y: "2026", prem: 120 }, { y: "2027", prem: 150 }, { y: "2029", prem: 300 }]);
+      return /Short term/.test(h) && /Long term/.test(h) &&
+        h.indexOf("$120") < h.indexOf("$300") && /\+20%/.test(h) && /\+200%/.test(h) &&
+        /YE2026/.test(h) && /YE2029/.test(h) && !/YE2027/.test(h); })());
+  ok("v5.6.6 exec: ONE rung is ONE fact — it is never printed twice as a near and a far target",
+    (() => { const h = run({}, [{ y: "2027", prem: 150 }]);
+      return /Target \(single rung\)/.test(h) && !/Short term/.test(h) && !/Long term/.test(h); })());
+  ok("v5.6.6 exec: no model says so and carries the payload's own note — never a fabricated target",
+    (() => { const h = run({ pt_model: { note: "floor only by owner decision" } }, []);
+      return /no model — nothing here computes a target/.test(h) && /floor only by owner decision/.test(h) &&
+        !/\$/.test(h.replace(/dd-[a-z]+/g, "")); })());
+  /* The basis is LABELLED, and a rung carrying only the `n/m` sentinel (negative EPS — no
+     P/E before profit, v3.17) is EXCLUDED by the same numeric filter ddWorth uses, so it can
+     never be printed as a target. cellOf keeps a non-finite guard behind that filter, which
+     is defensive rather than reachable — asserting it as reachable would be a vacuous test,
+     so what is pinned here is the exclusion that actually holds. */
+  ok("v5.6.6 exec: the basis is LABELLED, and an n/m-only rung is EXCLUDED rather than printed as a target",
+    (() => { const a = run({}, [{ y: "2026", fl: 90 }, { y: "2028", fl: 110 }]);
+      const b = run({}, [{ y: "2026", prem: 100 }, { y: "2028", fl: "n/m" }]);
+      return /floor/.test(a) && !/premium/.test(a) &&
+        /Target \(single rung\)/.test(b) && /premium/.test(b) && !/n\/m/.test(b) && !/YE2028/.test(b); })());
+  ok("v5.6.7 exec: a SYNTHESIZED thesis is marked as such and never reads as an owner assertion",
+    (() => { const L = mk().ddThesisLine;
+      const syn = L({ thesis: "assistant line", thesis_src: "synthesized 2026-08-27", thesis_at: "2026-08-27" });
+      const own = L({ thesis: "owner line" });
+      if (!(syn.synth === true && syn.src === "synthesized 2026-08-27" && own.synth === false && own.src === "thesis")) return false;
+      const h = run({ thesis: "assistant line", thesis_src: "synthesized 2026-08-27" }, [{ y: "2027", prem: 150 }]);
+      const h2 = run({ thesis: "owner line" }, [{ y: "2027", prem: 150 }]);
+      // the synthesized one carries the amber owner-to-confirm marker; the owner's does not
+      return /owner to confirm/.test(h) && /var\(--amber\)/.test(h) && !/owner to confirm/.test(h2); })());
+  ok("v5.6.6 exec: the thesis is NEVER invented — stored prose wins by priority, and an absent one is NAMED with the fix",
+    (() => { const L = mk().ddThesisLine;
+      const t = L({ thesis: "the thesis", verdict: { read: "v", as_of: "2026-08-01" } });
+      const v = L({ verdict: { read: "the verdict read", as_of: "2026-08-01" } });
+      const n = L({ valuation_note: "the note" });
+      const none = L({ tier: "S", lens: "AI", composite: "9.1" });
+      const h = run({}, [{ y: "2027", prem: 150 }]);
+      return t.src === "thesis" && v.src === "verdict" && v.at === "2026-08-01" &&
+        n.src === "valuation_note" && none === null &&
+        /no thesis line stored/.test(h) && /add one as/.test(h); })());
+}
+ok("ready: readiness leads the deep-dive tab, then the exec summary, the score bar, and the four answers",
+  ["h+=readyBar(x);", "h+=ddExec(x,dd);", "h+=ddScoreBar(x);", "h+=ddAnswerBlock(x,dd,todayET);"]
+    .map((m) => adminSrc.indexOf(m))
+    .every((v, i, a) => v > 0 && (i === 0 || a[i - 1] < v)));
 ok("ready: and on the card — the only per-ticker surface a WATCH name with no tab ever gets",
   adminSrc.includes('<div class="k">READINESS</div>') && adminSrc.includes("let html=v2CardHtml(x.sym)+rdyRow+measured+"));
 ok("ready: blockers stay visible as chips on the bar, never collapsed into the verdict alone",
@@ -3245,7 +3531,7 @@ ok("a11y: verdict + confidence keep their LANDMARKS but are no longer block live
   !/aria-label="Macro backdrop verdict" aria-live/.test(bandSrc));
 ok("a11y B4: ONE concise visually-hidden status region announces state changes",
   /aria-live="polite" role="status" className="visually-hidden"/.test(dashSrc) &&
-  /Backdrop \$\{regime\.label\}: \$\{regime\.counted\} of \$\{regime\.totalFactors\} factors usable\./.test(dashSrc));
+  /MacroDash \$\{dailyCall\.headline\}, \$\{dailyCall\.direction\}: \$\{dailyCall\.counts\.usable\} of \$\{dailyCall\.counts\.total\} factors usable\./.test(dashSrc));
 ok("a11y B4: header actions carry 44px thumb targets at phone width",
   // v3.62: the TT and TERMINAL actions moved inside the ⋯ OPS disclosure, and the summary
   // itself became an action — so the count is 4 (share · OPS · TT · TERMINAL). The contract is
@@ -3389,7 +3675,7 @@ ok("quorum: the wiring point exposes build INTENT so a failed live fetch is not 
     return (src.match(/liveBuild/g) || []).length >= 4 && src.includes("loading: liveBuild"); })());
 // LOADING is not a verdict state.
 ok("quorum: LOADING withholds the posture outright rather than computing one from mock",
-  bandSrc.includes("const withheld=loading||regime.insufficient;") &&
+  bandSrc.includes('const withheld=loading||regime.insufficient||(call&&!call.headline);') &&
   dashSrc.includes('loading={mode==="LOADING"}'));
 ok("quorum: the withheld state gets its OWN moon voice, never a directional one defaulted",
   /CAN'T CALL IT/.test(bandSrc) && bandSrc.includes("withheld?WEN_MOON_STATES[3]"));
@@ -3398,23 +3684,14 @@ ok("quorum: the flip line is suppressed when there is no posture to flip (v3.94:
   /\{withheld&&<div/.test(bandSrc));
 ok("quorum: the hero states the withhold with the quorum named, visible while everything is closed",
   /only \$\{regime\.counted\} of \$\{regime\.totalFactors\} factors usable — \$\{regime\.quorum\} required/.test(bandSrc));
-// ---- WHY #1 freshness gate (11.4.5 audit, High) ----
-// WHY #2 freshness-gated its cross-signals; WHY #1 asserted SPY/CPI/Fed unconditionally, so a
-// mock CPI could be narrated as "today's core tape" inside the verdict's own explanation.
-const fwCore = computeFiveWhys(MOCK_DATA, fwRegime, { fresh: new Set(["spyPrice"]) });
-ok("why1: a non-live core input is OMITTED, not asserted from mock",
-  !/CPI \d/.test(fwCore.whys[0]) && !/Fed funds/.test(fwCore.whys[0]) && /SPY \$/.test(fwCore.whys[0]));
-ok("why1: the thin anchor is STATED as thin (N/3 core inputs usable)",
-  /1\/3 core inputs usable/.test(fwCore.whys[0]));
-ok("why1: with every core input dead it says so rather than emitting a blank anchor",
-  /0\/3 core inputs usable/.test(computeFiveWhys(MOCK_DATA, fwRegime, { fresh: new Set() }).whys[0]));
-ok("why1: no live equity mark means no primary-trend claim either",
-  /No live SPY price, so no trend read/.test(
-    computeFiveWhys(MOCK_DATA, fwRegime, { fresh: new Set(["cpiHeadline"]) }).whys[0]));
-ok("why1: demo/mock mode (fresh:null) still narrates all three — mock IS the baseline there",
-  /SPY \$/.test(fw.whys[0]) && /CPI /.test(fw.whys[0]) && /Fed at/.test(fw.whys[0]));
-ok("why1: the dashboard actually PASSES the core fields into the freshness set",
-  /FW_FIELDS=\[[\s\S]*?"spyPrice","cpiHeadline","fedFunds"\]/.test(dashSrc));
+// ---- Why-this-call canonical boundary ----
+// The explanation may render only the factors the canonical call already stamped. Context
+// fields can inform trust, but SPY/Fed/WTI/BTC/credit can never masquerade as voters.
+ok("why-call: dashboard passes the canonical call, factor rows, flips, and snapshot timestamp",
+  /call:dailyCall, factors:evidenceSet\.factors, flips:evidenceSet\.flips/.test(dashSrc) &&
+  /snapshotAsOf:asOf/.test(dashSrc));
+ok("why-call: the generator has no direct SPY/Fed/WTI/BTC/credit recital path",
+  !/spy\.price|fed\.rate|ca\.wti|ca\.btc|credit\.spread/.test(readSrc("../src/fiveWhys.js")));
 
 // ---- 30. 11.4.5 audit — a11y tokens, headings, and safe GET ----------------
 console.log("\n[30] 11.4.5 audit — contrast, focus, headings, HTTP semantics");
@@ -3762,21 +4039,13 @@ ok("e2e: the book cap and its client pre-flight mirror still agree",
 
 // ---- 36. v3.58 hotfix (UX re-audit fix-now) — truthfulness, 320px, boundary ----
 console.log("\n[36] v3.58 hotfix — no mock narration, 320px contract, public gate");
-// A1: freshSet keys on the build's INTENT. `anyLive` made a loading/failed live build pass
-// fresh:null — computeFiveWhys's "demo mode, narrate everything" — so the 5 Whys asserted
-// mock SPY/CPI/Fed under a withheld verdict.
+// A1: freshSet still keys on build intent for the headline-context freshness gate.
 ok("A1: freshSet derives from liveBuild, never anyLive",
   /const freshSet=liveBuild \? new Set/.test(dashSrc) && !/freshSet=anyLive/.test(dashSrc));
 ok("A1: demoted() still keys on anyLive — demotion is display, and the demo must not collapse",
   /const demoted=\(f\)=>anyLive&&isIllustrative/.test(dashSrc));
-// Behavioral: an EMPTY fresh set (live build, nothing usable) must gate the HEADLINE too.
-const fwEmpty = computeFiveWhys(MOCK_DATA, fwRegime, { fresh: new Set() });
-ok("A1: with nothing fresh the headline carries no mock SPY day-move",
-  !/— SPY/.test(fwEmpty.headline) && /bullish factors\./.test(fwEmpty.headline));
-ok("A1: with spyPrice fresh the SPY clause returns (the gate is freshness, not deletion)",
-  /— SPY/.test(computeFiveWhys(MOCK_DATA, fwRegime, { fresh: new Set(["spyPrice"]) }).headline));
-ok("A1: demo mode (fresh:null) still narrates the full headline — mock IS that baseline",
-  /— SPY/.test(computeFiveWhys(MOCK_DATA, fwRegime).headline));
+ok("A1: the canonical headline never carries a context-only SPY day move",
+  !/— SPY/.test(fw.headline) && /usable factors bullish/.test(fw.headline));
 // A2: the 320px contract — identity group may shrink, actions may wrap, wordmark yields first.
 ok("A2: header groups can shrink and wrap instead of forcing horizontal overflow",
   /alignItems:"center",gap:14,minWidth:0,flexWrap:"wrap"/.test(dashSrc) &&
@@ -4105,7 +4374,8 @@ ok("tt-deck-forced: SELL_FORCED_N is reset before sellRank() runs — an early r
     const reset = body.indexOf("SELL_FORCED_N=null;");
     const compute = body.indexOf("const s=sellRank();");
     return reset >= 0 && compute >= 0 && reset < compute &&
-      /if\(s\)SELL_FORCED_N=s\.forced\.length;/.test(body);
+      // v5.2 CAP-ASTERISK: the count is over-cap rows (informational), no longer a forced tier
+      /if\(s\)SELL_FORCED_N=s\.disc\.filter\(r=>r\.overCap\)\.length;/.test(body);
   })());
 ok("tt-deck-forced: the label reads SELL_FORCED_N directly — it recomputes neither CAP_PCT nor capChecks()",
   (() => {
@@ -4117,10 +4387,10 @@ ok("tt-deck-forced: sellRank() is still CALLED exactly twice (renderSellBlock + 
   (adminSrc.match(/=\s*sellRank\s*\(\s*\)\s*;/g) || []).length === 2 &&
   !/\bsellRank\s*\(/.test(adminSrc.slice(adminSrc.indexOf("function renderDecisionFundLabel"),
     adminSrc.indexOf("function renderSellBlock"))));
-ok("tt-deck-forced: the four states are distinct strings — pending, unmeasured, checked-clear and forced never collapse into each other",
+ok("tt-deck-forced: the four states are distinct strings — pending, unmeasured, checked-clear and over-cap never collapse into each other (label re-pinned at v5.2: ⚠cap, informational)",
   /line\("· …","var\(--dim\)"\)/.test(adminSrc) &&
   /line\("· \?","var\(--amber\)"\)/.test(adminSrc) &&
-  /line\(`· \$\{SELL_FORCED_N\} FORCED`,"var\(--red\)",true\)/.test(adminSrc) &&
+  /line\(`· \$\{SELL_FORCED_N\} ⚠cap`,"var\(--red\)",true\)/.test(adminSrc) &&
   /c\.innerHTML="";/.test(adminSrc));
 ok("tt-deck-forced: the panel never auto-opens off the forced count — no decisionGo() call reads SELL_FORCED_N",
   !/decisionGo\([^)]*\).*SELL_FORCED_N|SELL_FORCED_N[\s\S]{0,80}decisionGo\(/.test(adminSrc));
@@ -4323,9 +4593,14 @@ console.log("\n[49] ptModel extraction — admin.html and src/ptModel.js cannot 
 {
   const norm = (s) => s.replace(/\s+/g, " ").trim();
   for (const n of ["schedAt", "ptModelRows", "ptRowYears", "lintPtModel",
-                   "yrsToYearEnd", "annualise", "pickRow"])
+                   "yrsToYearEnd", "annualise", "pickRow", "suggestMultiple"])
     ok(`tripwire: ${n}() is byte-identical in admin.html and src/ptModel.js`,
       norm(liftFns(adminSrc, [n])) === norm(PT[n].toString()));
+  // FEAT-TT-DRIFT (v4.3): same tripwire, same reason — admin.html keeps its own copy.
+  for (const n of ["etYmd", "captureDates", "newestCapture", "thinCoverage", "staleHinges",
+                   "compositeDrift", "targetDrift", "runwaySplit", "labelDrift", "lintDrift"])
+    ok(`tripwire: ${n}() is byte-identical in admin.html and src/ttDrift.js`,
+      norm(liftFns(adminSrc, [n])) === norm(DRIFT[n] ? DRIFT[n].toString() : liftFns(driftSrc, [n])));
   ok("tripwire: ANN_MIN_Y matches across both copies",
     +/const ANN_MIN_Y=([\d.]+);/.exec(adminSrc)[1] === PT.ANN_MIN_Y);
   ok("tripwire: the module is genuinely clock-injectable (Dec instant rolls, July instant holds)",
@@ -4477,9 +4752,120 @@ console.log("\n[46] ttScore pillars — P1..P4 contracts run behaviorally");
     path_to_profit: { state: "DATED_MILESTONES", source: { kind: "OWNER_ASSERTED" }, rationale: "r" } }, { etToday: "2026-08-05" });
   ok("P3 PREPROFIT: enums+runway anchor compose (5*.35+10*.25+7*.25+7*.15=7.05); OWNER_ASSERTED flags actionability",
     p3pre.score === 7.05 && p3pre.owner_asserted === true);
+  /* ── v5.0 (W2): P3 input aging — the SELF_FUNDING entry's named future scope, closed ──
+     freshnessOf existed since §5.3 and reached only P4 hinges; a P3 margin could sit
+     unrefreshed forever. Quarterly cadence (120d asserted): AGING = one missed quarter,
+     STALE = two. THE SCORE NEVER MOVES — only actionability degrades, through the rollup's
+     pre-existing semantics, with the aged fields NAMED. */
+  const RECAT = (value, as_of) => ({ value, as_of, source: { kind: "PRIMARY" } });
+  const p3aging = (as_of) => TS.scoreP3({ mode: "PROFITABLE_STANDARD",
+    operating_margin_pct: RECAT(20, as_of), margin_direction_pp: RECAT(0, "2026-08-01"),
+    fcf_margin_pct: RECAT(10, "2026-08-01"),
+    capital_efficiency: { metric: "ROIC", value: 15, as_of: "2026-08-01", source: { kind: "PRIMARY" } } },
+    { etToday: "2026-08-05" });
+  ok("P3 aging: the cadence is quarterly and the boundaries hold at ±1 day — 120d CURRENT, 121d AGING, 241d STALE",
+    TS.P_INPUT_CADENCE_D === 120 &&
+    p3aging("2026-04-07").freshness === "CURRENT" &&        // 120d exactly
+    p3aging("2026-04-06").freshness === "AGING" &&          // 121d
+    p3aging("2025-12-08").freshness === "AGING" &&          // 240d exactly
+    p3aging("2025-12-07").freshness === "STALE");           // 241d
+  ok("P3 aging: the SCORE is untouched — deleting a measurement for being old would recreate 'unmeasured reads as zero'",
+    p3aging("2025-12-07").score === p3aging("2026-08-01").score &&
+    typeof p3aging("2025-12-07").score === "number");
+  ok("P3 aging: the aged field is NAMED in warnings with its age and cadence, never a bare flag",
+    p3aging("2026-04-06").warnings.some((w) => /operating_margin_pct: AGING \(121d old, 120d cadence\)/.test(w)) &&
+    p3aging("2026-08-01").warnings.length === 0);
+  ok("P3 aging: freshness reaches the rollup — AGING degrades FULL to CAUTION, STALE to BLOCKED",
+    TS.actionabilityRollup({ pillarFresh: ["CURRENT"] }) === "FULL" &&
+    TS.actionabilityRollup({ pillarFresh: ["AGING"] }) === "CAUTION" &&
+    TS.actionabilityRollup({ pillarFresh: ["STALE"] }) === "BLOCKED");
+  ok("P3 aging: buildScorecard actually passes p3.freshness into the rollup — computed-but-unread is the v3.40 defect shape",
+    /pillarFresh: \[p3\.freshness\]\.filter\(Boolean\)/.test(readSrc("../src/ttScore.js")));
+  /* ── v5.0 (W4): the FINANCIALS mode — the lender/broker shape, boundaries EXECUTED ── */
+  const FIN = (over = {}) => TS.scoreP3({ mode: "FINANCIALS",
+    efficiency_ratio_pct: RECAT(55, "2026-08-01"),
+    efficiency_direction_pp: RECAT(-2, "2026-08-01"),
+    capital_efficiency: { metric: "ROE", value: 12, as_of: "2026-08-01", source: { kind: "PRIMARY" } },
+    capital_adequacy: { regime: "CET1", value: 14, min_required: 7, as_of: "2026-08-01", source: { kind: "PRIMARY" } },
+    credit_quality_trend: { state: "FLAT", as_of: "2026-08-01", source: { kind: "PRIMARY" }, rationale: "r" },
+    ...over }, { etToday: "2026-08-05" });
+  ok("FINANCIALS: the five components compose at the asserted weights (.25/.15/.20/.25/.15) — " +
+     "6*.25+7*.15+6*.20+10*.25+5*.15 = 7.00",
+    (() => { const r = FIN(); return r.score === 7 &&
+      r.components.efficiency_ratio === 6 && r.components.efficiency_direction === 7 &&
+      r.components.capital_efficiency === 6 && r.components.capital_adequacy === 10 &&
+      r.components.credit_quality === 5 && r.components.headroom_pct === 100; })());
+  ok("FINANCIALS: the efficiency anchor is INVERTED — a LOWER ratio scores HIGHER (cost over revenue)",
+    FIN({ efficiency_ratio_pct: RECAT(45, "2026-08-01") }).components.efficiency_ratio === 8 &&
+    FIN({ efficiency_ratio_pct: RECAT(75, "2026-08-01") }).components.efficiency_ratio === 2);
+  ok("FINANCIALS: capital adequacy scores HEADROOM above the named regime minimum — at-minimum is 0, not fine",
+    FIN({ capital_adequacy: { regime: "CET1", value: 7, min_required: 7, as_of: "2026-08-01", source: { kind: "PRIMARY" } } })
+      .components.capital_adequacy === 0 &&
+    FIN({ capital_adequacy: { regime: "NET_CAPITAL", value: 8.75, min_required: 7, as_of: "2026-08-01", source: { kind: "PRIMARY" } } })
+      .components.capital_adequacy === 6);   // +25% headroom
+  ok("FINANCIALS: an UN-NAMED regime refuses to score — a bare ratio with no stated requirement is a number, not adequacy",
+    (() => { const r = FIN({ capital_adequacy: { value: 14, min_required: 7, as_of: "2026-08-01", source: { kind: "PRIMARY" } } });
+      return r.score === null && r.blockers.some((b) => /regime must be NAMED/.test(b)); })() &&
+    (() => { const r = FIN({ capital_adequacy: { regime: "CET1", value: 14, as_of: "2026-08-01", source: { kind: "PRIMARY" } } });
+      return r.score === null && r.blockers.some((b) => /min_required/.test(b)); })());
+  ok("FINANCIALS: capital_efficiency accepts ROE or ROTCE (metric named) and nothing else — the scorer never chooses",
+    FIN({ capital_efficiency: { metric: "ROTCE", value: 18, as_of: "2026-08-01", source: { kind: "PRIMARY" } } })
+      .components.metric === "ROTCE" &&
+    (() => { const r = FIN({ capital_efficiency: { metric: "ROIC", value: 12, as_of: "2026-08-01", source: { kind: "PRIMARY" } } });
+      return r.score === null && r.blockers.some((b) => /ROE or ROTCE/.test(b)); })());
+  ok("FINANCIALS: credit quality is an ENUM with source+rationale — no numeric field here can see what kills a lender",
+    FIN({ credit_quality_trend: { state: "DETERIORATING", as_of: "2026-08-01", source: { kind: "PRIMARY" }, rationale: "NCOs rising" } })
+      .components.credit_quality === 0 &&
+    (() => { const r = FIN({ credit_quality_trend: { state: "FLAT", as_of: "2026-08-01", source: { kind: "PRIMARY" } } });
+      return r.score === null && r.blockers.some((b) => /source and a rationale/.test(b)); })());
+  ok("FINANCIALS: the mode error names all three modes now",
+    /PROFITABLE_STANDARD\|PREPROFIT\|FINANCIALS/.test(
+      TS.scoreP3({ mode: "WRONG" }, { etToday: "2026-08-05" }).blockers[0]));
+  ok("FINANCIALS: P3 input aging reaches the new mode too — an aged efficiency ratio is NAMED and degrades freshness",
+    (() => { const r = FIN({ efficiency_ratio_pct: RECAT(55, "2026-04-06") });
+      return r.freshness === "AGING" && r.warnings.some((w) => /efficiency_ratio_pct: AGING/.test(w)) &&
+        typeof r.score === "number"; })());
   ok("P3: a missing enum state is a blocker — UNKNOWN is never 5",
     /missing or unknown enum/.test(TS.scoreP3({ mode: "PREPROFIT", margin_direction: { state: "FLAT", source: { kind: "PRIMARY" }, rationale: "r" },
       runway_months: REC(24), path_to_profit: { state: "NONE", source: { kind: "PRIMARY" }, rationale: "r" } }, { etToday: "2026-08-05" }).blockers[0]));
+
+  /* ── runway_months: the SELF_FUNDING sentinel (v4.9.0) ────────────────────────────────
+     The field asks "can this fund itself to the thesis?", and cash/burn answers that for an
+     equity-funded burn-down only. A CASH GENERATOR has no burn to divide by, so the input was
+     left unset and BLOCKED the pillar — the strongest funding position on the book scored
+     worse than a name with 60 months of runway. SYM is the live case. A debt-funded operator
+     (CRWV) needs no code: its author may put committed facilities in the numerator and state
+     the formula, which is why only this end is fixed here. */
+  const SF = (over = {}) => ({ value: "SELF_FUNDING", as_of: "2026-08-01", source: { kind: "PRIMARY" }, ...over });
+  const preSF = (rw) => TS.scoreP3({ mode: "PREPROFIT",
+    unit_economics: { state: "IMPROVING", source: { kind: "PRIMARY" }, rationale: "r" },
+    margin_direction: { state: "IMPROVING", source: { kind: "PRIMARY" }, rationale: "r" },
+    runway_months: rw,
+    path_to_profit: { state: "DATED_MILESTONES", source: { kind: "PRIMARY" }, rationale: "r" } }, { etToday: "2026-08-05" });
+  ok("runway SELF_FUNDING scores the anchor MAXIMUM — unbounded runway is the best attainable " +
+     "state, and 48 months is its honest ceiling; it must beat every finite value",
+    TS.readRunway(SF(), { etToday: "2026-08-05" }).score === 10 &&
+    TS.readRunway(REC(47), { etToday: "2026-08-05" }).score < 10 &&
+    preSF(SF()).score > preSF(REC(47)).score);
+  ok("runway SELF_FUNDING: the pillar computes instead of blocking — the defect was that a cash " +
+     "generator scored WORSE than 24 months of runway by being unanswerable",
+    preSF(SF()).blockers.length === 0 && preSF(SF()).score > preSF(REC(24)).score &&
+    preSF(undefined).blockers.length > 0);
+  ok("runway SELF_FUNDING still carries the full atomic envelope — as_of and source.kind are " +
+     "enforced exactly as for a number, so the sentinel is not a provenance bypass",
+    /as_of/.test(TS.readRunway(SF({ as_of: undefined }), { etToday: "2026-08-05" }).err || "") &&
+    /source\.kind/.test(TS.readRunway(SF({ source: { kind: "GUESS" } }), { etToday: "2026-08-05" }).err || "") &&
+    /as_of after/.test(TS.readRunway(SF({ as_of: "2026-12-01" }), { etToday: "2026-08-05" }).err || ""));
+  ok("runway: ANY other string still returns the ordinary numeric errors — a typo can never " +
+     "reach the anchor, and a numeric string is still named as one",
+    TS.readRunway(SF({ value: "self_funding" }), { etToday: "2026-08-05" }).err === "value not a finite number" &&
+    TS.readRunway(SF({ value: "SELFFUNDING" }), { etToday: "2026-08-05" }).err === "value not a finite number" &&
+    /numeric string/.test(TS.readRunway(SF({ value: "24" }), { etToday: "2026-08-05" }).err || ""));
+  ok("runway: a numeric value behaves EXACTLY as before the sentinel — backward compatible",
+    TS.readRunway(REC(24), { etToday: "2026-08-05" }).score === 7 &&
+    TS.readRunway(REC(0), { etToday: "2026-08-05" }).score === 0 &&
+    TS.readRunway(REC(24), { etToday: "2026-08-05" }).self_funding === false &&
+    preSF(REC(24)).score === 7.05);
 
   const H = (over = {}) => ({ id: over.id || "h", definition: "d", green_condition: "g", amber_condition: "a", red_condition: "r",
     importance: 2, state: "GREEN", kill: false, cadence_days: 90, defined_at: "2026-08-04T23:30:00Z",
@@ -4544,11 +4930,145 @@ console.log("\n[46] ttScore pillars — P1..P4 contracts run behaviorally");
 
 console.log("\n[47] route registry + normalization — every boundary at -e/boundary/+e");
 {
-  ok("routes: all six lenses map, IND is a QUALITY_COMPOUNDER profile, unknown is UNMAPPED",
+  ok("routes: all seven lenses map, IND is a QUALITY_COMPOUNDER profile, unknown is UNMAPPED",
     TSREG.routeFor("AI").route === "AI_INFRA" && TSREG.routeFor("PH").route === "PHYSICAL_AI" &&
     TSREG.routeFor("QC").profile === "STANDARD" && TSREG.routeFor("IND").route === "QUALITY_COMPOUNDER" &&
     TSREG.routeFor("IND").profile === "INDUSTRIAL_CYCLICAL" && TSREG.routeFor("VEH").route === "VEHICLE" &&
     TSREG.routeFor("SP").route === "SPECULATIVE" && TSREG.routeFor("nope").route === "UNMAPPED");
+
+  /* ── THE G3 RULING (2026-08-22) — AI_INFRA splits NEOCLOUD / PLATFORM ─────────────── */
+  ok("G3 ruling: the AI lens carries an EXPLICIT NEOCLOUD profile and AIP maps to PLATFORM on the same route",
+    TSREG.routeFor("AI").route === "AI_INFRA" && TSREG.routeFor("AI").profile === "NEOCLOUD" &&
+    TSREG.routeFor("AIP").route === "AI_INFRA" && TSREG.routeFor("AIP").profile === "PLATFORM" &&
+    // v3 -> v4 on 2026-08-23: QC_G3 gained an absolute P/E ceiling. A boundary ADDITION changes
+    // what a verdict of a given version MEANS (a v3 PASS could sit at 152x; a v4 PASS cannot),
+    // so §4.3 makes it a version bump rather than an in-place edit.
+    TSREG.ROUTE_MAP_VERSION === "tt-route-v4");
+  /* THE TRAP: gatesFor treats `profile: null` as "every profile of this route", so a PLATFORM
+     profile added WITHOUT giving AI_G3 an explicit profile would inherit the neocloud bridge
+     and carry TWO premium prerequisites. Asserted in both directions so a revert goes red. */
+  {
+    const neo = TSREG.gatesFor("AI_INFRA", "NEOCLOUD").map((g) => g.id);
+    const plat = TSREG.gatesFor("AI_INFRA", "PLATFORM").map((g) => g.id);
+    ok("G3 ruling: NEOCLOUD keeps the revenue bridge and NEVER sees the earnings bridge",
+      neo.includes("AI_G3_2028_BRIDGE") && !neo.includes("AI_G3P_EARNINGS_BRIDGE"));
+    ok("G3 ruling: PLATFORM gets the earnings bridge and the revenue bridge does NOT follow it (the profile:null trap)",
+      plat.includes("AI_G3P_EARNINGS_BRIDGE") && !plat.includes("AI_G3_2028_BRIDGE"));
+    ok("G3 ruling: exactly ONE premium prerequisite per profile — never two, never zero",
+      TSREG.gatesFor("AI_INFRA", "NEOCLOUD").filter((g) => g.premium_prerequisite).length === 1 &&
+      TSREG.gatesFor("AI_INFRA", "PLATFORM").filter((g) => g.premium_prerequisite).length === 1 &&
+      TSREG.premiumPrerequisiteFor("AI_INFRA", "NEOCLOUD").id === "AI_G3_2028_BRIDGE" &&
+      TSREG.premiumPrerequisiteFor("AI_INFRA", "PLATFORM").id === "AI_G3P_EARNINGS_BRIDGE");
+    ok("G3 ruling: funding and circularity are asked of BOTH profiles — only the bridge splits",
+      ["AI_G1_BUILDOUT", "AI_G2_CIRCULARITY"].every((id) => neo.includes(id) && plat.includes(id)));
+  }
+  {
+    const gp = TSREG.GATES.find((g) => g.id === "AI_G3P_EARNINGS_BRIDGE");
+    ok("AI_G3P: PASS at PEG 1.0 / 20% growth / 3 analysts inclusive; just past each is UNKNOWN, not FAIL",
+      gp.evaluate({ pe_fy2: 20, eps_growth_fy1_fy2_pct: 20, analyst_count_fy2: 3 }) === "PASS" &&
+      gp.evaluate({ pe_fy2: 20.2, eps_growth_fy1_fy2_pct: 20, analyst_count_fy2: 3 }) === "UNKNOWN" &&
+      gp.evaluate({ pe_fy2: 20, eps_growth_fy1_fy2_pct: 19.99, analyst_count_fy2: 3 }) === "UNKNOWN" &&
+      gp.evaluate({ pe_fy2: 20, eps_growth_fy1_fy2_pct: 20, analyst_count_fy2: 2 }) === "UNKNOWN");
+    ok("AI_G3P: the absolute ceiling and the growth floor are the FAIL backstops (45x / 10%), exclusive",
+      gp.evaluate({ pe_fy2: 45, eps_growth_fy1_fy2_pct: 60, analyst_count_fy2: 5 }) === "PASS" &&
+      gp.evaluate({ pe_fy2: 45.01, eps_growth_fy1_fy2_pct: 60, analyst_count_fy2: 5 }) === "FAIL" &&
+      gp.evaluate({ pe_fy2: 20, eps_growth_fy1_fy2_pct: 10, analyst_count_fy2: 5 }) === "UNKNOWN" &&
+      gp.evaluate({ pe_fy2: 20, eps_growth_fy1_fy2_pct: 9.99, analyst_count_fy2: 5 }) === "FAIL");
+    ok("AI_G3P: PEG past 2.0 FAILS even under the absolute ceiling — a growth story cannot carry any multiple",
+      gp.evaluate({ pe_fy2: 40, eps_growth_fy1_fy2_pct: 20, analyst_count_fy2: 5 }) === "UNKNOWN" &&
+      gp.evaluate({ pe_fy2: 30, eps_growth_fy1_fy2_pct: 14.9, analyst_count_fy2: 5 }) === "FAIL");
+    ok("AI_G3P: no P/E before profit — a non-positive FY+2 P/E is UNKNOWN (wrong profile), never a verdict",
+      gp.evaluate({ pe_fy2: 0, eps_growth_fy1_fy2_pct: 50, analyst_count_fy2: 5 }) === "UNKNOWN" &&
+      gp.evaluate({ pe_fy2: -12, eps_growth_fy1_fy2_pct: 50, analyst_count_fy2: 5 }) === "UNKNOWN" &&
+      gp.evaluate({}) === "UNKNOWN");
+    /* The live book measured 2026-08-22 — the ruling must not silently re-fail the names it
+       exists to release, and must still separate the one that is expensive for its growth. */
+    const LIVE = { TSM: [14.9, 30.3], NVDA: [16.7, 43.2], LITE: [26.3, 52.7], CRDO: [25.3, 48.3],
+      MRVL: [37.9, 53.9], BE: [26.1, 58.1], SNDK: [5.8, 54.2] };
+    ok("AI_G3P: every measured PLATFORM name clears the earnings bridge — none is floored by a revenue multiple",
+      Object.values(LIVE).every(([pe, g]) => gp.evaluate({ pe_fy2: pe, eps_growth_fy1_fy2_pct: g, analyst_count_fy2: 5 }) === "PASS"));
+    ok("AI_G3P discriminates: ALAB (35.3x for 26.4% growth, PEG 1.33) is UNKNOWN — the gate still has teeth",
+      gp.evaluate({ pe_fy2: 35.3, eps_growth_fy1_fy2_pct: 26.4, analyst_count_fy2: 5 }) === "UNKNOWN");
+    const g3n = TSREG.GATES.find((g) => g.id === "AI_G3_2028_BRIDGE");
+    ok("G3 ruling control: NBIS's calibration point still PASSES the untouched neocloud bridge (3.22x / 87.3%)",
+      g3n.evaluate({ ev_fy2_rev_multiple: 3.22, fy1_fy2_growth_pct: 87.3, analyst_count_fy2: 12 }) === "PASS");
+
+    /* ── QC_G3 SIGN-CANCELLATION PATCH (2026-08-23) ───────────────────────────────────
+       The gate was RATIO-ONLY (a precomputed peg_fy1) and therefore blind to the signs
+       that produced the ratio. TEM is the live negative control the way ALAB is for
+       AI_G3P: FY+1 EPS −$0.08 → fwd P/E −908.6 on −962.5% growth → PEG +0.94, which the
+       old shape PASSED as the QC premium prerequisite. A `peg <= 0` guard would not have
+       caught it, which is why the INPUT SHAPE had to change rather than a guard added. */
+    const qg = TSREG.GATES.find((g) => g.id === "QC_G3_VALUATION_PREREQ");
+    ok("QC_G3: takes P/E and growth SEPARATELY and forms the ratio inside — the precomputed " +
+       "peg_fy1 input is gone, so sign cancellation cannot reach the verdict",
+      "pe_fy1" in qg.inputs && "eps_growth_fy1_fy2_pct" in qg.inputs && !("peg_fy1" in qg.inputs));
+    ok("QC_G3 negative control — TEM (pe −908.6, g −962.5%, ratio +0.94) is UNKNOWN, never PASS",
+      qg.evaluate({ pe_fy1: -908.6, eps_growth_fy1_fy2_pct: -962.5 }) === "UNKNOWN");
+    ok("QC_G3: the other two sign holes the ratio-only shape admitted are closed",
+      qg.evaluate({ pe_fy1: 20, eps_growth_fy1_fy2_pct: -10 }) === "FAIL" &&   // was PASS (−2.0 ≤ 1.5)
+      qg.evaluate({ pe_fy1: -12, eps_growth_fy1_fy2_pct: 20 }) === "UNKNOWN"); // was PASS (−0.6)
+    ok("QC_G3: no P/E before profit is UNKNOWN (cannot-measure), while non-growth is FAIL " +
+       "(not growing into the multiple) — FAIL here is TIER_CAP A, a verdict about cheapness",
+      qg.evaluate({ pe_fy1: 0, eps_growth_fy1_fy2_pct: 30 }) === "UNKNOWN" &&
+      qg.evaluate({ pe_fy1: 20, eps_growth_fy1_fy2_pct: 0 }) === "FAIL");
+    /* RE-PINNED 2026-08-23 with the ceiling patch below: the 2.5 edge used to be probed at
+       pe_fy1 50 / 50.2, which now FAILS on the absolute ceiling before PEG is ever formed —
+       the pin would have been measuring the ceiling while claiming to measure PEG. Same two
+       boundaries, probed under 45 so each one tests only itself. */
+    ok("QC_G3: the 1.5 / 2.5 PEG boundaries are unchanged and inclusive/exclusive as before",
+      qg.evaluate({ pe_fy1: 30, eps_growth_fy1_fy2_pct: 20 }) === "PASS" &&        // PEG 1.5 edge
+      qg.evaluate({ pe_fy1: 30.2, eps_growth_fy1_fy2_pct: 20 }) === "UNKNOWN" &&   // just past 1.5
+      qg.evaluate({ pe_fy1: 40, eps_growth_fy1_fy2_pct: 16 }) === "UNKNOWN" &&     // PEG 2.5 edge, pe<45
+      qg.evaluate({ pe_fy1: 40.2, eps_growth_fy1_fy2_pct: 16 }) === "FAIL" &&      // just past 2.5
+      qg.evaluate({}) === "UNKNOWN");
+    /* ── QC_G3 ABSOLUTE-CEILING PATCH (2026-08-23, same session) ──────────────────────────
+       PEG is scale-free by construction, so it cannot backstop a pathological multiple: an
+       arbitrarily large numerator over an arbitrarily large denominator clears it. AI_G3P has
+       carried `pe > 45 -> FAIL` for exactly this since v4.5; QC_G3 did not. SPCX is the live
+       negative control — 152.19x forward earnings over 421.1% growth is PEG 0.36, which
+       PASSED the premium prerequisite before this patch. */
+    ok("QC_G3 negative control — SPCX (pe 152.19, g 421.1%, PEG 0.36) FAILS on the ceiling, " +
+       "where the pre-patch gate returned PASS at 152x forward earnings",
+      qg.evaluate({ pe_fy1: 152.19, eps_growth_fy1_fy2_pct: 421.1 }) === "FAIL");
+    ok("QC_G3: the ceiling fires BEFORE the PEG PASS test — ordering is load-bearing, or a low " +
+       "PEG at a pathological multiple would return PASS first and the backstop would be dead code",
+      qg.evaluate({ pe_fy1: 100, eps_growth_fy1_fy2_pct: 100 }) === "FAIL");   // PEG 1.0 — PASS without it
+    ok("QC_G3: the 45 ceiling is EXCLUSIVE, matching AI_G3P — 45.0 itself still reaches the PEG path",
+      qg.evaluate({ pe_fy1: 45, eps_growth_fy1_fy2_pct: 30 }) === "PASS" &&       // PEG 1.5 at the edge
+      qg.evaluate({ pe_fy1: 45.01, eps_growth_fy1_fy2_pct: 30 }) === "FAIL" &&    // just past
+      qg.evaluate({ pe_fy1: 44.99, eps_growth_fy1_fy2_pct: 30 }) === "PASS");
+    ok("QC_G3: BOTH premium prerequisites now carry an absolute ceiling — the asymmetry that let " +
+       "a 152x multiple through one route and not the other is closed",
+      /if \(pe > 45\) return "FAIL"/.test(String(qg.evaluate)) &&
+      /if \(pe > 45 \|\| g < 10\) return "FAIL"/.test(
+        String(TSREG.GATES.find((x) => x.id === "AI_G3P_EARNINGS_BRIDGE").evaluate)));
+    /* Measured across every QC/STANDARD card on the live book 2026-08-23 BEFORE shipping:
+       nothing re-verdicts at 45 (nor at 60 or 75). Highest PASSING forward P/E is RDDT at
+       23.47x; the two FAILs already failed on PEG. No stored card can be rejected on re-save,
+       the bar MISKEY and the AI_G3P patch were both held to. */
+    ok("QC_G3 ceiling: ZERO live QC cards re-verdict — the patch adds a backstop without " +
+       "rejecting a single existing card",
+      [[17.36, 24, "PASS"], [17.65, 13.8, "PASS"], [23.47, 28, "PASS"], [25.64, 21, "PASS"],
+       [24.52, 19.6, "PASS"], [24.92, 28.6, "PASS"], [32.53, 12.3, "FAIL"], [166.45, 43.6, "FAIL"],
+       [14.8, 9.8, "UNKNOWN"], [-908.63, -962.5, "UNKNOWN"]]
+        .every(([pe, g, want]) => qg.evaluate({ pe_fy1: pe, eps_growth_fy1_fy2_pct: g }) === want));
+    /* The live QC book measured 2026-08-23 — the patch must not silently re-verdict the
+       healthy names, and must still separate the four that are genuinely expensive. */
+    ok("QC_G3: the measured QC book keeps its spread — NU/GRAB/SOFI/RDDT pass, AAPL/CAT/HOOD/TSLA fail",
+      [[13.6, 30.8], [24.9, 35.7], [23.3, 29.6], [23.5, 28.0]]
+        .every(([pe, g]) => qg.evaluate({ pe_fy1: pe, eps_growth_fy1_fy2_pct: g }) === "PASS") &&
+      [[32.5, 12.3], [30.7, 11.1], [40.0, 13.7], [166.4, 43.6]]
+        .every(([pe, g]) => qg.evaluate({ pe_fy1: pe, eps_growth_fy1_fy2_pct: g }) === "FAIL"));
+    /* A route the terminal cannot express is a ruling only half-landed: admin.html rejects
+       any lens absent from LENS_NAME, so AIP must be assignable AND renderable there. */
+    ok("G3 ruling: AIP is assignable in the terminal (LENS_NAME whitelist) and has its own colour",
+      /const LENS_NAME=\{[^}]*AIP:/.test(adminSrc) && /--AIP:/.test(adminSrc) &&
+      /\.lens-AIP\{color:var\(--AIP\)\}/.test(adminSrc));
+    ok("G3 ruling: every registry lens the terminal must express is in LENS_NAME — no route is unreachable",
+      TSREG.knownLenses().every((l) => new RegExp("[{,]" + l + ":").test(
+        (adminSrc.match(/const LENS_NAME=\{[^}]*\}/) || [""])[0])));
+  }
   const g3 = TSREG.GATES.find((g) => g.id === "AI_G3_2028_BRIDGE");
   ok("AI_G3 (premium prereq): PASS at 4.0x/40%/3 analysts inclusive; UNKNOWN just past; FAIL past 6.0x or under 20%",
     g3.evaluate({ ev_fy2_rev_multiple: 4.0, fy1_fy2_growth_pct: 40, analyst_count_fy2: 3 }) === "PASS" &&
@@ -4567,6 +5087,13 @@ console.log("\n[47] route registry + normalization — every boundary at -e/boun
   ok("PH_G2: 12.0 months passes (inclusive), 11.99 without a facility is BROKEN_THESIS-class FAIL",
     rw.evaluate({ runway_months: 12.0 }) === "PASS" && rw.evaluate({ runway_months: 11.99 }) === "FAIL" &&
     rw.evaluate({ runway_months: 11.99, committed_facility: true }) === "PASS" && rw.effect.kind === "BROKEN_THESIS");
+  ok("PH_G2 accepts SELF_FUNDING as a PASS (a cash generator could never answer this gate and " +
+     "read UNKNOWN — the strongest funding position scoring as no information); exact-match only",
+    rw.evaluate({ runway_months: "SELF_FUNDING" }) === "PASS" &&
+    rw.evaluate({ runway_months: "self_funding" }) === "UNKNOWN" &&
+    rw.evaluate({ runway_months: "SELF FUNDING" }) === "UNKNOWN" &&
+    rw.evaluate({}) === "UNKNOWN" &&
+    /SELF_FUNDING/.test(rw.inputs.runway_months));
   const g2c = TSREG.GATES.find((g) => g.id === "AI_G2_CIRCULARITY");
   ok("AI_G2: the loop alone PASSES but emits a typed CLUSTER_CONSTRAINT (sizing is WHETHER, never a tier effect)",
     g2c.evaluate({ supplier_equity_pct: 9.3, supplier_is_primary_vendor: true, top_customer_backlog_pct: 59 }) === "PASS" &&
@@ -4657,7 +5184,7 @@ console.log("\n[48] /api/score — server-authoritative scoring endpoint");
     pt_model: { pe_floor_multiple: 18 },
     ref_px: { px: 30, at: new Date(Date.now() - 86400000).toISOString().slice(0, 10) } };
   const env = () => ({ TT_PIN: PIN, PULSE_CACHE: mkKV2({ "tt:book:v1": seedBook, "tt:dd:v1:BBB": bbbDd }) });
-  const UI = { methodology_version: "tt-underwriting-v2.5.0", route_gates: {}, falsifiers: [] };
+  const UI = { methodology_version: "tt-underwriting-v2.6.0", route_gates: {}, falsifiers: [] };
 
   ok("score: anonymous GET fails closed (401)", await (async () => {
     const r = await score.onRequestGet({ request: mkReq("GET", { params: "?sym=AAA" }), env: env() });
@@ -4748,7 +5275,10 @@ console.log("\n[48] /api/score — server-authoritative scoring endpoint");
     const led = JSON.parse(e5.PULSE_CACHE._store.get("tt:ledger:BBB"));
     return j.record.scorecard.raw_score === null && j.record.scorecard.provisional.tier === "B" &&
       idx2.status === "PROVISIONAL" && typeof idx2.provisional_score === "number" && idx2.provisional_tier === "B" &&
-      idx2.raw_score === null && led[0].to.status === "PROVISIONAL";
+      idx2.raw_score === null && led[0].to.status === "PROVISIONAL" &&
+      /* v5.0.1: the index carries the p4 summary — this fixture has NO falsifiers, so the
+         kind is the unwritten one and both counts are zero (never null, never invented). */
+      idx2.p4 && idx2.p4.kind === "LEGACY_POST_HOC" && idx2.p4.hinges === 0 && idx2.p4.observed === 0;
   })());
   // THE MERGE'S OWN PROOF (v3.78 reconciliation): the two v3.77s composed. Write 1 carries
   // three falsifiers with self-stamped "yesterday" dates AND complete P1-P3 — the fingerprint
@@ -4789,15 +5319,19 @@ console.log("\n[48] /api/score — server-authoritative scoring endpoint");
     if (r2.status !== 200) return false;
     const sc2 = j2.record.scorecard;
     const led2 = JSON.parse(e6.PULSE_CACHE._store.get("tt:ledger:BBB"));
+    /* v5.0.1: after write 1 the index p4 reads the COMMITTED kind with real counts — the
+       veto downstream says "committed … a later write scores them", never "unwritten". */
+    const idxP4 = JSON.parse(e6.PULSE_CACHE._store.get("tt:score:index:v1")).entries.BBB.p4;
     return sc2.status === "SCORED" && typeof sc2.raw_score === "number" &&
       sc2.pillars.falsifier_health.score === 10 &&
+      idxP4 && idxP4.hinges === 3 && idxP4.observed === 3 &&
       led2[0].to.status === "SCORED" && led2[0].from.status === "PROVISIONAL" &&
       led2[1].to.status === "PROVISIONAL";
   })());
   ok("score: GET ?book=1 returns the compact index + deployed caps recorded as metadata", await (async () => {
     const r = await score.onRequestGet({ request: mkReq("GET", { params: "?book=1", headers: { "x-tt-pin": PIN } }), env: e1 });
     const j = JSON.parse(await r.text());
-    return r.status === 200 && j.deployed_caps.dd_max === 45 * 1024 && j.deployed_caps.max_body === 300 * 1024 && j.index.AAA.route === "AI_INFRA";
+    return r.status === 200 && j.deployed_caps.dd_max === 100 * 1024 && j.deployed_caps.max_body === 300 * 1024 && j.index.AAA.route === "AI_INFRA";
   })());
   ok("decision: a stale scorecard hash is rejected (409 STALE_SCORECARD_HASH), never rewritten", await (async () => {
     const r = await score.onRequestPost({ request: mkReq("POST", { params: "?decision=1", headers: { "x-tt-pin": PIN },
@@ -4819,9 +5353,9 @@ console.log("\n[48] /api/score — server-authoritative scoring endpoint");
   ok("score: deployed-caps metadata matches the REAL tt.js MAX_BODY and admin.html DD_MAX (three-way pin)",
     (() => {
       const scoreSrc = readSrc("../functions/api/score.js");
-      return /dd_max: 45 \* 1024/.test(scoreSrc) && /max_body: 300 \* 1024/.test(scoreSrc) &&
+      return /dd_max: 100 \* 1024/.test(scoreSrc) && /max_body: 300 \* 1024/.test(scoreSrc) &&
         ttSrc.includes("const MAX_BODY = 300 * 1024") && adminSrc.includes("const MAX_BODY=300*1024") &&
-        adminSrc.includes("const DD_MAX=45*1024");
+        adminSrc.includes("const DD_MAX=100*1024");
     })());
   ok("score: zero bytes added to the book document — the handler never writes tt:book:v1", await (async () => {
     const before = e1.PULSE_CACHE._store.get("tt:book:v1");
@@ -4841,7 +5375,7 @@ console.log("\n[48] /api/score — server-authoritative scoring endpoint");
       cadence_days: 90, defined_at: "2026-08-04T23:30:00Z", as_of: "2026-08-05",
       source: { kind: "PRIMARY", ref: "https://example.com/" + "y".repeat(180) },
       qualifying_observation: { id: "obs" + i2, observed_at: "2026-08-05T02:00:00Z" } });
-    const maxUI = { methodology_version: "tt-underwriting-v2.5.0",
+    const maxUI = { methodology_version: "tt-underwriting-v2.6.0",
       trajectory: { mode: "PREPROFIT", preprofit_second_series: "EBITDA_CAGR", ebitda_basis: "ADJUSTED",
         ebitda_reconciliation: REC2(1), revenue: [REC2(1), REC2(2)].map((r2, i2) => ({ ...r2, fy: String(2027 + i2) })),
         ebitda: [REC2(0.1), REC2(0.5)].map((r2, i2) => ({ ...r2, fy: String(2027 + i2) })),
@@ -4925,14 +5459,14 @@ ok("band: the module stays under the 300-line bound (Property 10)",
 // plainVerdict, Power keeps postureSummary's compact one-liner and the moon voice. The
 // v3.97 `prose` prop is gone from the render (the cards carry that detail now).
 ok("band: the call site still passes the live wiring (+ v4.0: mode-swapped sentence and plainVerdict)",
-  /sentence=\{simple\?simpleS:\(!evidenceSet\.withheld&&evidenceSet\.summary\?evidenceSet\.summary\.sentence:null\)\}/.test(dashSrc) &&
+  /sentence=\{callDrift\?null:\(simple\?simpleS:\(!evidenceSet\.withheld&&evidenceSet\.summary\?evidenceSet\.summary\.sentence:null\)\)\}/.test(dashSrc) &&
   /plainVerdict=\{simple\?simpleV:null\} conf=\{regimeConf\}/.test(dashSrc) &&
   !/prose=\{/.test(dashSrc) &&
   // v3.98.3: the hero renders the EvidenceSet's OWN factor rows (which carry the real
   // exclusion cause) instead of re-deriving them — one derivation, two altitudes.
   // v4.0.3: the hero renders the CANONICAL regime and flips too — it no longer runs a second
   // derivation beside buildEvidenceSet's (drift risk at the freshness/loading/error edges).
-  /factorRows=\{evidenceSet\.factors\} regimeIn=\{evidenceSet\.regime\} flipsIn=\{evidenceSet\.flips\}\/>/.test(dashSrc) &&
+  /factorRows=\{evidenceSet\.factors\} regimeIn=\{evidenceSet\.regime\} flipsIn=\{evidenceSet\.flips\}\s*call=\{dailyCall\} callFrozen=\{callFrozen\}/.test(dashSrc) &&
   /const regime=regimeIn\|\|computeRegime\(d,stale\)/.test(bandSrc) &&
   /const fc=flipsIn\|\|flipConditions\(d,stale\)/.test(bandSrc) &&
   /<RegimeBand d=\{d\} stale=\{staleFactors\} loading=\{mode==="LOADING"\} liveBuild=\{liveBuild\} srcLabel=\{derivedLabel\}/.test(dashSrc));
@@ -4947,9 +5481,9 @@ ok("whys: presentation only — the CODE never imports or calls the computation 
   (() => { const code = whysSrc.replace(/\/\/[^\n]*|\/\*[\s\S]*?\*\//g, "");
     return !/fiveWhys\.js/.test(code) && !/computeFiveWhys/.test(code) &&
            !/useMarketData/.test(code) && !/FW_FIELDS/.test(code); })());
-ok("whys: the computation and freshness gating stay in the orchestrator (A1 contract intact)",
-  dashSrc.includes("const fw=computeFiveWhys({...d, session:etSession()}, regimeView, { stale:staleFactors, fresh:freshSet });") &&
-  /const freshSet=liveBuild \? new Set/.test(dashSrc));
+ok("whys: canonical computation and headline freshness stay in the orchestrator",
+  /const fw=computeFiveWhys\(\{\.\.\.d, session:etSession\(\)\}, regimeView, \{/.test(dashSrc) &&
+  /headlineFresh:freshSet===null\|\|freshSet\.has\("marketHeadline"\)/.test(dashSrc));
 ok("whys: a missing fw prop renders a safe empty state, never a throw (Property 9)",
   /if\(!fw\|\|!Array\.isArray\(fw\.whys\)\)return <div aria-hidden="true"\/>;/.test(whysSrc));
 ok("whys: the call site hands over narrative, state-derived label, and equity-close provenance",
@@ -5029,7 +5563,7 @@ ok("cg v3.95: a storage fault or unknown stored value falls back to defaultOpen,
     const stored = readOpen("k", false) === true && readOpen(null, false) === false;
     globalThis.localStorage = g; return faulted && unknown && stored; })());
 ok("whys v3.95: the whys are reachable in SIMPLE — one honestly-labelled expander, chain only",
-  /\{simple&&<FiveWhys fw=\{fw\}[\s\S]{0,180}label="why this posture — 5 whys"\/>\}/.test(dashSrc) &&
+  /\{simple&&<FiveWhys fw=\{fw\}[\s\S]{0,180}label="why this call · 5 checks"\/>\}/.test(dashSrc) &&
   /export const WHYS_KEY="md:exp:whys:v1";/.test(whysSrc) &&
   /persistKey=WHYS_KEY/.test(whysSrc));
 ok("whys v3.95: the technical layer stays POWER-only — chips/tally/flip live in the hero panel, matrix behind !simple",
@@ -5357,15 +5891,15 @@ console.log("\n[50] FEAT-TT-DDSTORE — deepDive moves to tt:dd:v1:<SYM>");
       env: { TT_PIN: PIN, PULSE_CACHE: mkKV3() } })).status === 400);
   ok("ddstore: oversize fails CLOSED naming key, bytes and limit — never a truncated write", await (async () => {
     const kv = mkKV3();
-    const r = await dd.onRequestPut({ request: rq("PUT", { params: "?sym=AAA", headers: AUTHED, body: { deepDive: { big: "x".repeat(60 * 1024) } } }),
+    const r = await dd.onRequestPut({ request: rq("PUT", { params: "?sym=AAA", headers: AUTHED, body: { deepDive: { big: "x".repeat(120 * 1024) } } }),
       env: { TT_PIN: PIN, PULSE_CACHE: kv } });
     const b = await r.json();
     return r.status === 400 && b.error === "oversize" && b.key === "tt:dd:v1:AAA" &&
-      b.bytes > b.limit && b.limit === 45 * 1024 && !kv._store.has("tt:dd:v1:AAA");
+      b.bytes > b.limit && b.limit === 100 * 1024 && !kv._store.has("tt:dd:v1:AAA");
   })());
-  ok("ddstore: the per-key cap mirrors DD_MAX in admin.html (45KB, v3.70) — one number, two homes",
-    /const MAX_BODY = 45 \* 1024;/.test(readSrc("../functions/api/deepdive.js")) &&
-    /const DD_MAX=45\*1024/.test(adminSrc));
+  ok("ddstore: the per-key cap mirrors DD_MAX in admin.html (100KB, v4.4.0 owner call) — one number, two homes",
+    /const MAX_BODY = 100 \* 1024;/.test(readSrc("../functions/api/deepdive.js")) &&
+    /const DD_MAX=100\*1024/.test(adminSrc));
 
   // ---- ?all=1: export integrity ----
   ok("ddstore: ?all=1 returns every stored payload IN FULL — the export path, never the board's", await (async () => {
@@ -5426,7 +5960,7 @@ console.log("\n[50] FEAT-TT-DDSTORE — deepDive moves to tt:dd:v1:<SYM>");
   // The invisible-loss rule: a skipped thesis must be NAMED, never silently dropped.
   ok("ddstore: an oversize payload is NAMED and left embedded rather than dropped", await (async () => {
     const big = bookWith(["AAA", "BBB"]);
-    big.book[1].deepDive.blob = "x".repeat(60 * 1024);
+    big.book[1].deepDive.blob = "x".repeat(120 * 1024);   // over the 100KB cap (was 60KB vs 45KB pre-v4.4.0)
     const kv = mkKV3({ "tt:book:v1": big });
     const b = await migrate(kv);
     const book = JSON.parse(kv._store.get("tt:book:v1"));
@@ -5530,21 +6064,24 @@ console.log("\n[51] FEAT-TT-ALLREVIEWED — the reviewed-but-unpriced ranking");
     { sym: "NOPAY",   tier: "B", lens: "AI", lastRun: "2026-08-01" },   // run stamp only
     { sym: "NEVER",   tier: "C", lens: "AI" },                          // never reviewed at all
   ];
+  /* v5.0 §14.8: the tail reads SERVER CARDS (cardInfo), so the fixture carries per-sym
+     `card` records in the cardInfo shape. Scores kept at 9.1/8.2/6.0 so the ordering pin
+     measures the same arithmetic it always did — only the SOURCE of the number moved. */
   const DD1 = {
-    RANKED:  { rows: [{ y: "2027", prem: 200 }], ref_px: PRICED, composite: { score: 7.0, tier: "A" } },
-    NOMODEL: { rows: [], ref_px: PRICED, composite: { score: 9.1, tier: "S" } },
-    NOPX:    { rows: [{ y: "2027", prem: 200 }], composite: { score: 8.2, tier: "A" } },
-    NORUNG:  { rows: [{ y: "2027", prem: 200 }], ref_px: PRICED, composite: { score: 6.0, tier: "B" } },
+    RANKED:  { rows: [{ y: "2027", prem: 200 }], ref_px: PRICED, card: { score: 7.0, tier: "A", status: "SCORED", scored: true, mcur: true } },
+    NOMODEL: { rows: [], ref_px: PRICED, card: { score: 9.1, tier: "B", status: "PROVISIONAL", scored: false, mcur: true } },
+    NOPX:    { rows: [{ y: "2027", prem: 200 }], card: { score: 8.2, tier: "B", status: "PROVISIONAL", scored: false, mcur: true } },
+    NORUNG:  { rows: [{ y: "2027", prem: 200 }], ref_px: PRICED, card: { score: 6.0, tier: "B", status: "PROVISIONAL", scored: false, mcur: true } },
     NOPAY:   null,
   };
   const TO = ["S", "A", "B", "C", "WATCH", "DEF"];
   // The classifier is run with the real helpers behind the claims it makes (ptModelRows
   // presence, hinge reds, the horizon) and thin stand-ins where it makes none.
   const out = (() => {
-    const F = new Function("BOOK", "LIVE_PX", "hz", "DD", "TIER_ORDER", "RANKED",
+    const F = new Function("BOOK", "LIVE_PX", "hz", "DD", "TIER_ORDER", "RANKED", "DD_FAILED",
       "let UNRANKED_ROWS=[];" +
       "const ddOf=(x)=>DD[x.sym]||null;" +
-      "const ttInfo=(dd)=>dd&&dd.composite?{score:dd.composite.score,tier:dd.composite.tier}:null;" +
+      "const cardInfo=(sym)=>{const d=DD[sym];return (d&&d.card)||null;};" +
       "const runState=(d)=>({k:d?'fresh':'never',days:null});" +
       "const readiness=()=>({verdict:'BLOCKED',blockers:[],cautions:[]});" +
       "const rankWeight=()=>({w:null,held:false,optOnly:false,mark:''});" +
@@ -5553,7 +6090,9 @@ console.log("\n[51] FEAT-TT-ALLREVIEWED — the reviewed-but-unpriced ranking");
       "const candSyms=new Set(cands.map(x=>x.sym));" +
       "const rankedSyms=RANKED;" +
       seg + "\nreturn UNRANKED_ROWS;");
-    return F(BOOK1, {}, "2027", DD1, TO, new Set(["RANKED"]));
+    // v5.6.4: DD_FAILED is a real free variable of the classifier now — lifted BY VALUE
+    // (false = the index loaded and NOPAY genuinely has no payload), the LENS_MAX_PE rule.
+    return F(BOOK1, {}, "2027", DD1, TO, new Set(["RANKED"]), false);
   })();
   const bySym = Object.fromEntries(out.map((r) => [r.sym, r]));
   ok("allreviewed: an already-ranked name never appears in the tail (one name, one basis)",
@@ -5572,27 +6111,27 @@ console.log("\n[51] FEAT-TT-ALLREVIEWED — the reviewed-but-unpriced ranking");
     bySym.NOPAY.fix === "add a deep-dive payload" && bySym.NOMODEL.fix === "add a pt_model" &&
     /stamp a ref_px/.test(bySym.NOPX.fix) && /horizon to auto/.test(bySym.NORUNG.fix));
   // Ordered by the judgment that EXISTS. Borrowing a rate would be the D2 units error.
-  ok("allreviewed: the tail is ORDERED by TT composite (asserted judgment), never by a " +
-     "borrowed %/yr — 9.1 leads 8.2 leads 6.0",
+  ok("allreviewed: the tail is ORDERED by TT card score (§14.8 — the server-stamped " +
+     "composite), never by a borrowed %/yr — 9.1 leads 8.2 leads 6.0",
     out.map((r) => r.sym).slice(0, 3).join() === "NOMODEL,NOPX,NORUNG");
   ok("allreviewed: no row carries an upside/ann field at all — a rate it does not have cannot " +
      "leak into a sort or a render",
     out.every((r) => r.ann === undefined && r.upside === undefined));
-  ok("allreviewed: a reviewed name with NO composite sorts LAST but is still present — " +
-     "'reviewed, no score yet' is the state a fresh run is usually in",
+  ok("allreviewed: a reviewed name with NO card sorts LAST but is still present — " +
+     "'no server card yet' is the state a fresh run is usually in",
     out[out.length - 1].sym === "NOPAY" && out[out.length - 1].tt === null);
   ok("allreviewed: red hinges ride the tail row (v3.25 — a name demoted to the tail must not " +
      "lose its reds on the way)",
     (() => {
       const DD2 = { ...DD1, NOMODEL: { ...DD1.NOMODEL, hinges: [{ label: "funding", state: "red" }, { label: "x", state: "green" }] } };
-      const F = new Function("BOOK", "LIVE_PX", "hz", "DD", "TIER_ORDER", "RANKED",
+      const F = new Function("BOOK", "LIVE_PX", "hz", "DD", "TIER_ORDER", "RANKED", "DD_FAILED",
         "let UNRANKED_ROWS=[];const ddOf=(x)=>DD[x.sym]||null;" +
-        "const ttInfo=(dd)=>dd&&dd.composite?{score:dd.composite.score,tier:dd.composite.tier}:null;" +
+        "const cardInfo=(sym)=>{const d=DD[sym];return (d&&d.card)||null;};" +
         "const runState=(d)=>({k:d?'fresh':'never',days:null});const readiness=()=>({verdict:'x',blockers:[],cautions:[]});" +
         "const rankWeight=()=>({w:null,held:false,optOnly:false,mark:''});const ptModelRows=(dd)=>(dd&&dd.rows)||[];" +
         "const cands=BOOK.filter(x=>{const d=DD[x.sym];return d&&(d.rows||[]).length&&(d.ref_px&&d.ref_px.px>0);});" +
         "const candSyms=new Set(cands.map(x=>x.sym));const rankedSyms=RANKED;" + seg + "\nreturn UNRANKED_ROWS;");
-      const o = F(BOOK1, {}, "2027", DD2, TO, new Set(["RANKED"]));
+      const o = F(BOOK1, {}, "2027", DD2, TO, new Set(["RANKED"]), false);
       const n = o.find((r) => r.sym === "NOMODEL");
       return n.redH === 1 && n.redLabels.join() === "funding";
     })());
@@ -5607,6 +6146,37 @@ console.log("\n[51] FEAT-TT-ALLREVIEWED — the reviewed-but-unpriced ranking");
     /if\(!rows\.length\)\{[\s\S]{0,900}?unrankedHtml\(\)\+netCashAuditHtml\(\);\s*\n\s*return;/.test(adminSrc));
   ok("allreviewed: the BUY block stops claiming 'nothing to rank' when reviewed names are present",
     adminSrc.includes("the reviewed names below are ranked on TT composite instead"));
+
+  /* ── v4.6 THE RANKING BRIDGE — the remainder opens IN PANEL, not via a DESK deep-link ── */
+  {
+    const buy = (adminSrc.match(/function renderBuyBlock\(\)\{[\s\S]*?\n\}/) || [""])[0];
+    ok("bridge: ONE row template per basis, defined once and reused by the top-5 AND the " +
+       "expander — the ptModelRows rule applied to markup, so the two altitudes cannot drift",
+      (buy.match(/const rankedRow=/g) || []).length === 1 &&
+      (buy.match(/const tailRow=/g) || []).length === 1 &&
+      /rows\.forEach\(\(r,i\)=>\{h\+=rankedRow\(r,i\);\}\)/.test(buy) &&
+      /UPSIDE_ROWS\.slice\(rows\.length\)\.map\(\(r,i\)=>rankedRow\(r,rows\.length\+i\)\)/.test(buy));
+    ok("bridge: the expander is est-mini and NEVER drawer — the phone harness counts open drawers",
+      /<details class="est-mini"><summary>\$\{bits\.join/.test(buy) && !/class="drawer"/.test(buy));
+    ok("bridge: NO second derivation — the expander slices the same module arrays the rows above " +
+       "it read, and never calls the rank computations itself",
+      !/ptModelRows\(/.test(buy) && !/pickRow\(/.test(buy) && !/sellRank\(/.test(buy) &&
+      /UPSIDE_ROWS\.slice\(rows\.length\)/.test(buy) && /UNRANKED_ROWS\.slice\(3\)/.test(buy));
+    ok("bridge: the count rides the SUMMARY (closed), so silent truncation cannot read as full coverage",
+      /\+\$\{moreRanked\} more ranked/.test(buy) && /\*\$\{moreTail\} more reviewed/.test(buy));
+    ok("bridge: the names deep-link is RETIRED; DESK keeps methodology only (names do not live there)",
+      !/full math, horizons/.test(adminSrc) && /caveats, lints &amp; horizon pin/.test(buy));
+    /* Deliberately NOT a fourth deck page: MAG 7 earned a page by being a different question
+       (the seven + MAGS); this is the same question uncut, and a BOOK/ALL tab would compete
+       with the default view and re-create the six-screens regression v3.38 removed. */
+    ok("bridge: DECK_PAGES is untouched — the bridge is an altitude fix, not a fourth swipe",
+      /const DECK_PAGES=\[/.test(adminSrc) &&
+      (adminSrc.match(/const DECK_PAGES=\[[^\]]*\]/) || [""])[0].split(",").length === 3);
+    ok("bridge: rankCategories() finally PAINTS — the per-axis chips reuse the SHARE RANKS " +
+       "computation rather than a second one, and a single-member axis renders no rank",
+      /const cats=rankCategories\(UPSIDE_ROWS\)/.test(buy) && /const catChip=/.test(buy) &&
+      /t\.n>1/.test(buy) && /l\.n>1/.test(buy) && /catChip\(r\)/.test(buy));
+  }
   ok("allreviewed: the tail states that it is a DIFFERENT basis and that the two are never merged",
     adminSrc.includes("borrowing one would be a units error") &&
     adminSrc.includes("NOT excluded from the next dollar"));
@@ -5674,7 +6244,7 @@ console.log("\n[52] DDSTORE server consumers — post-migration book shape");
     const env = envPost();
     const r = await scoreM.onRequestPut({
       request: rq("PUT", "/api/score", { params: "?sym=AAA", headers: A,
-        body: { underwriting_inputs: { methodology_version: "tt-underwriting-v2.5.0", route_gates: {}, falsifiers: [] } } }),
+        body: { underwriting_inputs: { methodology_version: "tt-underwriting-v2.6.0", route_gates: {}, falsifiers: [] } } }),
       env });
     if (r.status !== 200) return false;
     const rec = JSON.parse(env.PULSE_CACHE._store.get("tt:score:v1:AAA"));
@@ -5812,12 +6382,12 @@ console.log("\n[53] PRE-COMMITMENT VERIFICATION — the server decides what was 
         price: DD.ref_px, underwriting_inputs: { methodology_version: "tt-underwriting-v2.3.0", route_gates: {}, falsifiers: [] } });
       return c.status === "UNSCORABLE" && c.declared_methodology_version === "tt-underwriting-v2.3.0" &&
         c.blockers.some((b) => /METHODOLOGY_VERSION_MISMATCH/.test(b)) &&
-        c.methodology_version === "tt-underwriting-v2.5.0";
+        c.methodology_version === "tt-underwriting-v2.6.0";
     })());
   ok("precommit: a matching or ABSENT declared version still computes (absent = the offline call)",
     await (async () => {
       const a = await buildScorecard({ sym: "AAA", lens: "AI", nowMs: Date.now(), dd: DD, price: DD.ref_px,
-        underwriting_inputs: { methodology_version: "tt-underwriting-v2.5.0", route_gates: {}, falsifiers: [] } });
+        underwriting_inputs: { methodology_version: "tt-underwriting-v2.6.0", route_gates: {}, falsifiers: [] } });
       const b = await buildScorecard({ sym: "AAA", lens: "AI", nowMs: Date.now(), dd: DD, price: DD.ref_px,
         underwriting_inputs: { route_gates: {}, falsifiers: [] } });
       return !a.blockers.some((x) => /METHODOLOGY_VERSION_MISMATCH/.test(x)) &&
@@ -6038,9 +6608,11 @@ console.log("\n[56] FEAT-TT-ENTRY — price-action WHEN leg + subsidiaries secti
   // hit/miss rule). Stub its three externals: ddOf, LIVE_PX, ageDays (the real ageDays is
   // date-relative, so the stub pins the fail-closed contract explicitly instead).
   const paSrc = liftFns(adminSrc, ["paRead"]);
+  // v5.0 (W2): paRead reads the cadence table, so the lift injects PA_CADENCE — the same
+  // values the source declares, so the boundary pins measure the real windows.
   const mkPa = (dd, live, ageOf) =>
-    new Function("ddOf", "LIVE_PX", "ageDays", "PA_STALE_D", `${paSrc}; return paRead;`)(
-      () => dd, live, ageOf, 7);
+    new Function("ddOf", "LIVE_PX", "ageDays", "PA_CADENCE", `${paSrc}; return paRead;`)(
+      () => dd, live, ageOf, { entry: 7, indicators: 7, swings: 14, mas: 30 });
   const fresh = (iso) => (iso ? 2 : null), old = (iso) => (iso ? 30 : null);
   const DD = (pa) => ({ ref_px: { px: 100, at: "x" }, price_action: pa });
   ok("pa: pullback entry HIT at/below the level, MISS above it — and the distance is signed",
@@ -6115,6 +6687,10 @@ console.log("\n[57] FEAT-TT-TECHREAD — band table, split tally, asymmetric wit
   const L = (px, ma50, ma200, lo, hi, extra = {}) => ({
     as_of: "d", levels: { ma50, ma200, swing_lo_3m: lo, swing_hi_3m: hi }, ...extra });
   const V = (pa, px) => TR.computeTechRead(pa, px, {}).label;
+  // v5.0: a FULL fixture (every factor measurable) for the cadence pins — px 100 vs the
+  // levels below votes cleanly, so exclusions are attributable to AGE alone.
+  const FULLC = () => ({ as_of: "d", levels: { ma50: 90, ma200: 80, swing_lo_3m: 70, swing_hi_3m: 130 },
+    indicators: { rsi14: 60, macd_hist: 0.4 }, pattern: { kind: "breakout" } });
 
   // ── every band boundary EXECUTED (the DEC-33 convention) ──
   /* THE COLLINEARITY FIX (audit, v3.83). price-vs-50d, price-vs-200d and the 50/200 cross are
@@ -6268,9 +6844,16 @@ console.log("\n[57] FEAT-TT-TECHREAD — band table, split tally, asymmetric wit
       const why = adminSrc.slice(whyI, adminSrc.indexOf("const q=rows.filter", whyI));
       return !/tech(Of|Read|Chip)|TECH_BAND/.test(gate) && !/tech(Of|Read|Chip)|TECH_BAND/.test(why);
     })());
-  ok("tech: sellRank never reads it either — the funding order is a measured question too",
+  /* v5.2 CAP-ASTERISK — DOCUMENTED REVERSAL of this pin's old form ("sellRank never reads
+     it either"). Owner ruling 2026-08-25 makes the TAPE the funding ranking's FIRST merit
+     axis, so sellRank now MUST read techOf — the ONE resolution point, so the row and the
+     name's own band table cannot disagree. The ban survives everywhere it still applies:
+     the buy sort, gateFail and why() pins directly above are untouched, and the read is a
+     lexicographic axis, never blended into a unit (DEC-D2). */
+  ok("tech: sellRank READS techOf as the first merit axis (v5.2 owner reversal — buy sort and gates keep the ban)",
     (() => { const i = adminSrc.indexOf("function sellRank(");
-      return i > 0 && !/tech(Of|Read|Chip)/.test(adminSrc.slice(i, adminSrc.indexOf("\n}", i))); })());
+      const body = adminSrc.slice(i, adminSrc.indexOf("\n}", i));
+      return i > 0 && /techOf\(/.test(body) && /techRank/.test(body) && !/computeTechRead\(/.test(body); })());
   /* ONE resolution point for the VERDICT. Exactly three references to computeTechRead: its
      own definition, techOf (which every rendering surface goes through), and techFlips —
      which legitimately recomputes because it must simulate against the same tally it is
@@ -6289,25 +6872,68 @@ console.log("\n[57] FEAT-TT-TECHREAD — band table, split tally, asymmetric wit
     (() => {
       const lifted = liftFns(adminSrc, ["techVerdictFrom", "techInputs", "computeTechRead"]);
       const consts = /const MA_BAND_PCT=[\s\S]*?const _tpct=[^\n]*\n/.exec(adminSrc)[0];
+      // v5.0 (W2): the cadence table is part of the behavioural contract now — lift it too.
+      const cad = /const PA_CADENCE=\{[^}]*\};/.exec(adminSrc)[0];
       const table = /const TECH_BAND_TABLE=\[[\s\S]*?\n\];/.exec(adminSrc)[0];
-      const local = new Function(`${consts}${table}\n${lifted}\nreturn computeTechRead;`)();
+      const local = new Function(`${cad}\n${consts}${table}\n${lifted}\nreturn computeTechRead;`)();
+      const FULL = { as_of: "d", levels: { ma50: 120, ma200: 118, swing_lo_3m: 90, swing_hi_3m: 130 },
+        indicators: { rsi14: 60, macd_hist: 0.4 }, pattern: { kind: "breakout" } };
       const cases = [
-        [L(110, 103, 100, 80, 115), 110],
-        [L(100, 100, 100, 90, 110), 100],
-        [L(90, 120, 118, 90, 130), 90],
-        [{ as_of: "d", levels: { ma50: 120, ma200: 118, swing_lo_3m: 90, swing_hi_3m: 130 },
-           indicators: { rsi14: 60, macd_hist: 0.4 }, pattern: { kind: "breakout" } }, 100],
+        [L(110, 103, 100, 80, 115), 110, {}],
+        [L(100, 100, 100, 90, 110), 100, {}],
+        [L(90, 120, 118, 90, 130), 90, {}],
+        [FULL, 100, {}],
         [{ as_of: "d", levels: { ma50: 100, ma200: 100, swing_lo_3m: 80, swing_hi_3m: 120 },
-           indicators: { rsi14: 85, macd_hist: -0.1 }, pattern: { kind: "double_top" } }, 112],
-        [{ as_of: "d", levels: { ma200: 100 } }, 110],
-        [null, 100],
+           indicators: { rsi14: 85, macd_hist: -0.1 }, pattern: { kind: "double_top" } }, 112, {}],
+        [{ as_of: "d", levels: { ma200: 100 } }, 110, {}],
+        [null, 100, {}],
+        // v5.0 cadence identity: fresh, mid-age (fast windows expired), old (swings gone
+        // too), all-dark, and undated-fail-closed must agree across both implementations.
+        [FULL, 100, { age: 2 }],
+        [FULL, 100, { age: 10 }],
+        [FULL, 100, { age: 20 }],
+        [FULL, 100, { age: 40 }],
+        [FULL, 100, { age: null }],
       ];
-      return cases.every(([pa, px]) => {
-        const a = local(pa, px, {}), b = TR.computeTechRead(pa, px, {});
+      return cases.every(([pa, px, opts]) => {
+        const a = local(pa, px, opts), b = TR.computeTechRead(pa, px, opts);
         return a.label === b.label && a.counted === b.counted && a.bull === b.bull
-          && a.bear === b.bear && (a.downgraded === null) === (b.downgraded === null);
+          && a.bear === b.bear && (a.downgraded === null) === (b.downgraded === null)
+          && a.missing.length === b.missing.length && a.stale === b.stale;
       });
     })());
+  /* ── v5.0 (W2) cadence boundaries, EXECUTED at ±1 day (the DEC-33 convention) ─────────
+     One flat window took the whole WHEN leg dark at once (36/36 names at 8d, measured
+     2026-08-23). Each input now ages at its own rate; every window edge is run here so
+     changing one is one edit plus one red test. */
+  ok("cadence: the table is asserted in ONE shape in both homes — entry 7 · indicators 7 · swings 14 · MAs 30",
+    TR.PA_CADENCE.entry === 7 && TR.PA_CADENCE.indicators === 7 &&
+    TR.PA_CADENCE.swings === 14 && TR.PA_CADENCE.mas === 30 &&
+    adminSrc.includes("const PA_CADENCE={entry:7,indicators:7,swings:14,mas:30};"));
+  ok("cadence: indicators expire past 7d — excluded and NAMED with their window, never silently voted",
+    (() => { const at7 = TR.computeTechRead(FULLC(), 100, { age: 7 });
+      const at8 = TR.computeTechRead(FULLC(), 100, { age: 8 });
+      return at7.factors.some((f) => f.key === "rsi") &&
+        !at8.factors.some((f) => f.key === "rsi") &&
+        at8.missing.some((m) => /RSI \(stale: 8d past its 7d window\)/.test(m)); })());
+  ok("cadence: swings expire past 14d, MAs past 30d — the slow factors survive the fast ones' expiry",
+    (() => { const at14 = TR.computeTechRead(FULLC(), 100, { age: 14 });
+      const at15 = TR.computeTechRead(FULLC(), 100, { age: 15 });
+      const at30 = TR.computeTechRead(FULLC(), 100, { age: 30 });
+      const at31 = TR.computeTechRead(FULLC(), 100, { age: 31 });
+      const has = (r, k) => r.factors.some((f) => f.key === k);
+      return has(at14, "range") && !has(at15, "range") && has(at15, "trend") &&
+        has(at30, "trend") && !has(at31, "trend") && at31.counted === 0; })());
+  ok("cadence: an 8-day-old stamp reads the SLOW factors live — the exact 2026-08-23 book-wide " +
+     "dark state, now degrading honestly instead of all-or-nothing",
+    (() => { const r = TR.computeTechRead(FULLC(), 100, { age: 8 });
+      return r.factors.some((f) => f.key === "trend") && r.factors.some((f) => f.key === "range") &&
+        r.missing.length === 3 && r.label === "UNREAD" && /needs 3/.test(r.reason); })());
+  ok("cadence: undated fails closed to the FULL withhold — no window can rescue a stamp with no date",
+    (() => { const r = TR.computeTechRead(FULLC(), 100, { age: null });
+      return r.stale === true && /undated — fail closed/.test(r.reason) && r.counted === 0; })());
+  ok("cadence: the legacy global stale flag still withholds everything (back-compat callers)",
+    TR.computeTechRead(FULLC(), 100, { stale: true }).reason.includes("levels are stale"));
   ok("tech: the deep-dive section renders the RULE beside every vote (the macro-dash pattern), " +
      "names excluded inputs, and never hides the withhold",
     /function ddTechSec\(x,dd\)/.test(adminSrc)
@@ -6333,7 +6959,7 @@ console.log("\n[58] FEAT-TT-MAG7 — deck panel, basket average, honesty gates")
     const env = { MAG7_SET: new Set(["GOOGL","META","MSFT","AMZN","TSLA","NVDA","AAPL"]),
       BOOK: book, LIVE_PX: live, MAG_BASKET: null,
       runState: () => ({ k: "never" }), readiness: () => ({ blockers: ["no current model"], cautions: [] }),
-      ttInfo: () => ({ score: null, tier: null }), ddOf: () => null, rankWeight: () => ({ w: null, held: false, mark: "" }) };
+      cardInfo: () => null /* v5: the basket reads the CARD source; MAGS has no card */, ddOf: () => null, rankWeight: () => ({ w: null, held: false, mark: "" }) };
     const fn = new Function("rows", ...Object.keys(env),
       `MAG_BASKET=null;{${blk.slice(blk.indexOf("{") + 1, blk.lastIndexOf("}"))}}return {MAG_BASKET, rows};`);
     return fn(rows, ...Object.values(env));
@@ -6904,6 +7530,8 @@ ok("Finnhub normalization preserves the provider's quote timestamp and never sta
     return q.status === "LIVE" && q.observedAt === "2026-08-15T18:58:00.000Z" && q.retrievedAt === V2_NOW.toISOString() &&
       unknown.status === "UNKNOWN" && unknown.observedAt === null && /not substituted/.test(unknown.reason); })());
 
+/* Fixture re-pinned at v5.6.1: the old two-window shape carried a deliberate 6-month hole,
+   which the new tiling guard rightly rejects — windows must be CONTIGUOUS to merge. */
 const nasdaqFixture = [
   { data: { tradesTable: { rows: [
     { date: "08/15/2026", close: "$229.94", volume: "12,240,000", open: "$233.66", high: "$248.57", low: "$227.67" },
@@ -6911,13 +7539,54 @@ const nasdaqFixture = [
   ] } } },
   { data: { tradesTable: { rows: [
     { date: "08/14/2026", close: "$236.22", volume: "14,440,000", open: "$240.00", high: "$244.00", low: "$231.00" },
-    { date: "02/14/2026", close: "$139.74", volume: "6,000,000", open: "$141.00", high: "$143.00", low: "$138.00" },
+    { date: "08/13/2026", close: "$232.10", volume: "9,100,000", open: "$231.00", high: "$236.00", low: "$229.00" },
   ] } } },
 ];
 ok("Nasdaq fallback normalization parses attributed OHLC, sorts ascending, and de-duplicates chunk boundaries",
   (() => { const x = nasdaqCandlesFact(nasdaqFixture, V2_NOW.toISOString());
     return x.status === "LIVE" && x.provider === "Nasdaq" && x.value.length === 3 &&
-      x.value[0].date === "2026-02-14" && x.value.at(-1).close === 229.94 && x.observedAt === "2026-08-15"; })());
+      x.value[0].date === "2026-08-13" && x.value.at(-1).close === 229.94 && x.observedAt === "2026-08-15"; })());
+/* v5.6.1 — the continuity guard, EXECUTED on the exact live corruption shape (NBIS,
+   2026-08-25): a failed middle window's interior hole, and a tail window carrying another
+   instrument's prints. Either tell alone must reject the merge to MISSING with the fault
+   NAMED — a discontinuous series stored as LIVE anchored a stamped outcome at $7.62 on a
+   $277 stock the night v5.6 shipped. */
+ok("v5.6.1 guard: an interior hole (a failed window) rejects the merge — the windows must TILE",
+  (() => { const x = nasdaqCandlesFact([{ data: { tradesTable: { rows: [
+      { date: "08/15/2026", close: "$229.94", open: "$233.66", high: "$248.57", low: "$227.67" },
+      { date: "02/14/2026", close: "$139.74", open: "$141.00", high: "$143.00", low: "$138.00" },
+    ] } } }], V2_NOW.toISOString());
+    return x.status === "MISSING" && /interior gap 2026-02-14 -> 2026-08-15/.test(x.reason); })());
+ok("v5.6.1 guard: an adjacent-close discontinuity (another instrument's prints) rejects the merge, fault named",
+  (() => { const x = nasdaqCandlesFact([{ data: { tradesTable: { rows: [
+      { date: "08/19/2026", close: "$7.78", open: "$7.49", high: "$7.79", low: "$7.39" },
+      { date: "08/18/2026", close: "$104.88", open: "$106.00", high: "$108.32", low: "$102.00" },
+    ] } } }], V2_NOW.toISOString());
+    return x.status === "MISSING" && /discontinuity 2026-08-18 \$104\.88 -> 2026-08-19 \$7\.78/.test(x.reason); })());
+/* v5.6.2 — the QUOTE cross-check (owner call): when EVERY window returns the wrong
+   instrument the series is internally consistent — contiguous, no jump — and the first two
+   tells are structurally blind to it. The same-refresh live quote is the outside reference.
+   Same 3x constant as the adjacent tell (one doctrine); a real 30-50% print gap must PASS. */
+const junkWindows = [{ data: { tradesTable: { rows: [
+  { date: "08/19/2026", close: "$7.78", open: "$7.49", high: "$7.79", low: "$7.39" },
+  { date: "08/20/2026", close: "$7.60", open: "$7.76", high: "$7.77", low: "$7.30" },
+] } } }];
+ok("v5.6.2 quote rung: an internally-consistent wrong-instrument merge is rejected against the same-refresh quote, fault named",
+  (() => { const x = nasdaqCandlesFact(junkWindows, V2_NOW.toISOString(), 277.68);
+    return x.status === "MISSING" && /tail close \$7\.6 vs live quote \$277\.68/.test(x.reason); })());
+ok("v5.6.2 quote rung: no quote = the rung is SKIPPED (never guessed), and a near-quote tail passes",
+  nasdaqCandlesFact(junkWindows, V2_NOW.toISOString(), null).status === "LIVE" &&
+  nasdaqCandlesFact(junkWindows, V2_NOW.toISOString(), 8.1).status === "LIVE");
+ok("v5.6.2 quote rung: the 3x edge — a real print gap passes, only the impossible is rejected (exact boundary executed)",
+  candleSeriesFault([{ date: "2026-08-19", close: 100 }], 300) === null &&
+  /tail close/.test(candleSeriesFault([{ date: "2026-08-19", close: 100 }], 300.5) || "") &&
+  candleSeriesFault([{ date: "2026-08-19", close: 100 }], 145) === null &&
+  /tail close/.test(candleSeriesFault([{ date: "2026-08-19", close: 100 }], 33) || ""));
+ok("v5.6.2 wiring: the refresh derives refPx from its OWN LIVE quote and passes it to BOTH builders",
+  (() => { const src7 = readSrc("../functions/api/ticker-facts.js");
+    return src7.includes('fields.quote.status === "LIVE"') &&
+      src7.includes("candlesFact(candles.value, retrievedAt, refPx)") &&
+      src7.includes("nasdaqCandles(sym, now, retrievedAt, refPx)"); })());
 ok("Nasdaq fallback cannot launder empty or malformed OHLC into sourced candles",
   nasdaqCandlesFact({ data: { tradesTable: { rows: [] } } }, V2_NOW.toISOString()).status === "MISSING" &&
   nasdaqCandlesFact({ data: { tradesTable: { rows: [
@@ -7076,13 +7745,19 @@ console.log("\n[62] v3.97 SHAREABLE SIMPLE — prose derivation + picks whitelis
     (() => { const m = tdSrc.match(/GATE_VOICE\[actionability\] \|\| \{ word: "([^"]+)"/);
       return !!m && m[1] === "NO READ" && /FULL:\s*\{ word: "SEND IT"/.test(tdSrc) &&
         /HOLD:\s*\{ word: "HANDS OFF"/.test(tdSrc); })());
-  ok("dock: the gate's SOURCE is Engine 0 actionability, and the machine token stays reachable",
+  ok("dock: the gate's SOURCE is a published actionability, and the machine token stays reachable",
     /Engine 0 actionability: \$\{gate \|\| "unavailable"\}/.test(tdSrc) &&
-    /ttReadout&&ttReadout\.regime\?ttReadout\.regime\.actionability:null/.test(dashSrc));
-  ok("dock: ONE readout — the gate and the FEAT-332 paste block read the same buildTtReadout",
-    (dashSrc.match(/buildTtReadout\(/g) || []).length === 1 &&
-    /const ttReadout=useMemo\(\(\)=>buildTtReadout\(ttFlat,\{\}\)/.test(dashSrc) &&
-    /formatTtPaste\(ttReadout,/.test(dashSrc));
+    /gate=\{dailyCall\?dailyCall\.actionability:null\}/.test(dashSrc));
+  /* Re-pinned at the v5.6.8 merge: this branch derived the gate from its own buildTtReadout
+     memo; main's canonical md-call-v1 `dailyCall` supersedes it and is strictly better — the
+     hero, the clipboard and the gate now read ONE object, so the gate a chip sits under can
+     never disagree with the call the page is making. */
+  ok("dock: ONE call — the gate reads the same dailyCall the hero renders and the clipboard formats",
+    /const dailyCall=callFrozen\?publicCall:currentCall;/.test(dashSrc) &&
+    /formatMacroCallPaste\(dailyCall\)/.test(dashSrc) &&
+    // scoped to the VARIABLES, not the module path — computeMacroFlip legitimately still
+    // imports from ttReadout.js, and a sweep that catches the import proves nothing.
+    !/const ttReadout|const ttFlat|ttReadout\.regime/.test(dashSrc.replace(/\/\*[\s\S]*?\*\//g, "")));
   ok("dock: navigation reuses TT's EXISTING hash route — no new router invented",
     /admin\.html#\$\{String\(sym\)\.toLowerCase\(\)\}/.test(dashSrc) &&
     /let TAB=\(location\.hash\|\|""\)/.test(adminSrc));
@@ -7168,7 +7843,7 @@ console.log("\n[64] v3.98.4 — Power read-through fixes (token trend, strip mar
     /Counts toward today's posture\./.test(stripSrc) &&
     /Context only — does not vote\./.test(stripSrc));
   ok("v3.98.4: the CPI source box finally carries its observation date (LIVE with no date is unjudgeable)",
-    /endpoint="CPIAUCSL \+ CPILFESL" mode=\{modeOf\('cpiHeadline'\)\} asOf=\{asOfOf\('cpiHeadline'\)\}/.test(mrSrc));
+    /endpoint="CPIAUCNS \+ CPILFENS · official NSA YoY" mode=\{modeOf\('cpiHeadline'\)\} asOf=\{asOfOf\('cpiHeadline'\)\}/.test(mrSrc));
   ok("v3.98.4: EVERY SourceBox in the macro grid passes an asOf — no LIVE badge without a date",
     (mrSrc.match(/<SourceBox /g) || []).length === (mrSrc.match(/<SourceBox [^>]*asOf=/g) || []).length);
 }
@@ -7582,8 +8257,17 @@ console.log("\n[68] FEAT-TT-ALLOC — pure core, endpoint, and the §14.8 bar");
       OLD: { at: TODAY + "T12:00:00Z", src: "rh", sh: 2, mv: 50, pct: 0.05 },
       BIG: { at: TODAY + "T12:00:00Z", src: "rh", sh: 9, mv: 20000, pct: 21 },
       OPT: { at: TODAY + "T12:00:00Z", src: "rh", opt: [{ k: "call", side: "long", n: 2 }] } } };
+  /* v5.0 §14.8 ACTIVATION: eligibility's quality rung reads SERVER CARDS, so the fixture
+     carries a score index — AAA SCORED under the current engine (the eligible path), BBB
+     none (vetoed "no server card"). CARD_OK is the pre-stamped shape direct evalBuyRow
+     calls pass (evaluateAllocation stamps methodology_current itself via cardOf). */
+  const SIDX = { AAA: { status: "SCORED", raw_score: 7.0, raw_tier: "A", capped_tier: "A",
+    provisional_score: null, provisional_tier: null,
+    methodology_version: TS.METHODOLOGY_VERSION, broken_thesis: false } };
+  const CARD_OK = { status: "SCORED", raw_score: 7.0, capped_tier: "A", methodology_current: true };
   const ev = (over = {}) => alloc.evaluateAllocation({ book: BOOK, ddIndex: IDX, posDoc: POSDOC,
-    quotes: {}, readout: READOUT, now: NOW, ...over });
+    quotes: {}, readout: READOUT, now: NOW,
+    scoreIndex: SIDX, methodologyVersion: TS.METHODOLOGY_VERSION, ...over });
   const R = ev();
   ok("alloc 1: a name with NO position takes BUY eligibility — underwriting is position-independent",
     R.eligible && R.eligible.sym === "AAA" && !("AAA" in {}) && R.state === "ALLOCATABLE");
@@ -7594,11 +8278,32 @@ console.log("\n[68] FEAT-TT-ALLOC — pure core, endpoint, and the §14.8 bar");
     (() => { const r = ev({ posDoc: null });
       return r.state === "BUY_ELIGIBLE" && r.context_blockers.some((b) => /sync has never run/.test(b)) &&
         r.context_blockers.some((b) => /account unmeasured.*FLOOR/.test(b)); })());
-  ok("alloc 3: forced exits (owner decision + cut list) rank ahead of over-cap ahead of session order ahead of discretionary",
-    (() => { const t = Object.fromEntries(R.funding.rows.map((r) => [r.sym, r.tier]));
-      return t.CCC === 1 && t.OLD === 1 && t.BIG === 2 && t.AAA === 5; })());
-  ok("alloc 4: the over-cap row is identified from the MEASURED pct and says so",
-    /21% of acct equity.*broker-measured/.test(R.funding.rows.find((r) => r.sym === "BIG").reason));
+  /* v5.2 CAP-ASTERISK re-pin (owner ruling 2026-08-25): the five owner-locked tiers
+     collapsed to TWO — forced (owner decision + cut list) then ONE merit pool. Over-cap
+     and session order are FLAGS on merit rows now, never tiers. */
+  ok("alloc 3: forced exits (owner decision + cut list) still rank FIRST; everything else is ONE merit pool (v5.2)",
+    (() => { const rows = R.funding.rows;
+      const t = Object.fromEntries(rows.map((r) => [r.sym, r.tier]));
+      const lastForced = Math.max(...rows.map((r, i) => (r.tier === 1 ? i : -1)));
+      const firstMerit = rows.findIndex((r) => r.tier === 2);
+      return t.CCC === 1 && t.OLD === 1 && t.BIG === 2 && t.AAA === 2 &&
+        (firstMerit === -1 || lastForced < firstMerit); })());
+  ok("alloc 4: the over-cap row is identified from the MEASURED pct — as an informational FLAG on a merit row (v5.2)",
+    (() => { const b = R.funding.rows.find((r) => r.sym === "BIG");
+      return /^merit rank — tape /.test(b.reason) &&
+        b.flags.some((f) => /21% — over the 18% reference cap \(informational — owner ruling 2026-08-25\)/.test(f)); })());
+  /* v5.2: the server merit sort RUN, not pinned as a string — same fixture shape as the
+     client's (smoke [19]): BEARISH first despite the best %/yr, score breaks the tie inside
+     one tape bucket, BULLISH last despite the worst return. A neutered sort goes red HERE. */
+  ok("alloc merit: the server funding sort is RUN — tape first, then lowest %/yr, then lowest TT score (v5.2)",
+    (() => { const f = alloc.fundingRanking({ book: { cut: [] }, board: {}, positions: {
+        P1: { pct: 1, mv: 10, at: TODAY }, P2: { pct: 1, mv: 10, at: TODAY },
+        P3: { pct: 1, mv: 10, at: TODAY }, P4: { pct: 1, mv: 10, at: TODAY } },
+      rowsAnn: { P1: 12, P2: -9, P3: 3, P4: 3 }, now: NOW, noRungSyms: new Set(), brokenSyms: new Set(),
+      techBySym: { P1: "BEARISH", P2: "BULLISH" }, scoreBySym: { P3: 2, P4: 7 } });
+      return f.rows.map((r) => r.sym).join(",") === "P1,P3,P4,P2" &&
+        /^merit rank — tape BEARISH · 12%\/yr · TT no card$/.test(f.rows[0].reason) &&
+        /FLAGS, never tiers/.test(f.basis); })());
   ok("meaning: an ALLOCATABLE receipt declares context_complete_not_cash_or_sizing_approval",
     (() => { const r = ev(); return r.state === "ALLOCATABLE" &&
       r.meaning === "context_complete_not_cash_or_sizing_approval"; })());
@@ -7623,11 +8328,20 @@ console.log("\n[68] FEAT-TT-ALLOC — pure core, endpoint, and the §14.8 bar");
       return r.blockers.length === 1 && /dd index unavailable/.test(r.blockers[0]); })());
   ok("alloc D3: a red hinge is a CAUTION on the row, never a veto",
     (() => { const r = alloc.evalBuyRow({ entry: { sym: "AAA", lastRun: TODAY }, idx: mkIdx({ hinges: [{ label: "h", state: "red" }] }),
-      quote: { px: 100 }, board: {}, horizon: null, now: NOW });
+      quote: { px: 100 }, board: {}, horizon: null, now: NOW, card: CARD_OK });
       return !r.blockers.length && r.cautions.some((c) => /RED/.test(c)) && alloc.whyNot(r, 1) === null; })());
-  ok("alloc: the cap vetoes the pick at exactly CAP_PCT (RANKFAIR — no room is no room)",
-    (() => { const r = alloc.evalBuyRow({ entry: { sym: "AAA", lastRun: TODAY }, idx: mkIdx(), quote: { px: 100 }, board: {}, horizon: null, now: NOW });
-      return /at the 18% cap/.test(alloc.whyNot(r, 18)) && alloc.whyNot(r, 17.9) === null; })());
+  /* v5.2 CAP-ASTERISK — DOCUMENTED REVERSAL of RANKFAIR v3.36's cap veto (owner ruling
+     2026-08-25: "keep it as an asterisk"). At/over CAP_PCT the pick is NO LONGER vetoed;
+     the reference-cap caution rides the eligible row instead — the asterisk is visible
+     exactly where the veto used to fire, chosen with eyes open, never silently. */
+  ok("alloc: the cap no longer vetoes — whyNot is null at 18 and 17.9 alike (v5.2 reversal of RANKFAIR)",
+    (() => { const r = alloc.evalBuyRow({ entry: { sym: "AAA", lastRun: TODAY }, idx: mkIdx(), quote: { px: 100 }, board: {}, horizon: null, now: NOW, card: CARD_OK });
+      return alloc.whyNot(r, 18) === null && alloc.whyNot(r, 17.9) === null; })());
+  ok("alloc: the over-cap pick carries the REFERENCE-cap caution and still takes the line (asterisk, not a veto)",
+    (() => { const r = ev({ posDoc: { ...POSDOC, positions: { ...POSDOC.positions,
+        AAA: { ...POSDOC.positions.AAA, pct: 21 } } } });
+      return r.eligible && r.eligible.sym === "AAA" &&
+        (r.eligible.cautions || []).some((c) => /over the 18% REFERENCE cap \(asterisk, not a veto — owner ruling 2026-08-25\)/.test(c)); })());
   ok("alloc: the FIX-C label rides the result verbatim",
     R.funding.label === "FUNDING PRIORITY — not a sell recommendation");
   ok("alloc: WAIT still computes the full ranking (the v3.74.1 always-an-output contract)",
@@ -7663,7 +8377,8 @@ console.log("\n[68] FEAT-TT-ALLOC — pure core, endpoint, and the §14.8 bar");
     const I2 = { asOf: TODAY, entries: { ...IDX.entries, FAR: farIdx } };
     const P2 = { ...POSDOC, positions: { ...POSDOC.positions, FAR: { at: TODAY + "T12:00:00Z", src: "rh", sh: 5, mv: 500, pct: 0.5 } } };
     const r2 = alloc.evaluateAllocation({ book: B2, ddIndex: I2, posDoc: P2, quotes: { AAA: { px: 100 }, FAR: { px: 100 } },
-      readout: READOUT, now: NOW });
+      readout: READOUT, now: NOW,
+      scoreIndex: { ...SIDX, FAR: { ...SIDX.AAA } }, methodologyVersion: TS.METHODOLOGY_VERSION });
     ok("v4.1.3 horizon: the receipt NAMES the excluded names, never merely omits them (the v3.65 rule)",
       Array.isArray(r2.unranked_at_horizon) && r2.unranked_at_horizon.includes("FAR") &&
       !r2.unranked_at_horizon.includes("AAA") && r2.horizon === YR);
@@ -7675,8 +8390,15 @@ console.log("\n[68] FEAT-TT-ALLOC — pure core, endpoint, and the §14.8 bar");
     ok("v4.1.3 horizon: a genuinely unmodelled name still reads 'unmodelled' (the two stay distinguishable)",
       (() => { const f = r2.funding.rows.find((x) => x.sym === "BBB");
         return !f || !/no rung at the shared horizon/.test(f.reason); })());
-    ok("v4.1.3: the rule version moved WITH the semantics — a cached v1.0.0 receipt must not be reinterpreted",
-      alloc.ALLOC_RULE_VERSION === "tt-alloc-v1.1.0");
+    // Re-pinned at v5.0 (§14.8 activation: quality source + broken_thesis in funding),
+    // again at v5.1.1 (the card-actionability veto rung), again at v5.2 (CAP-ASTERISK:
+    // the cap veto and the forced cap tier REVERSED by owner ruling 2026-08-25), and again
+    // at v5.6 (THE DAILY CONTRACT: additive macro_gate/call/spread/overtake receipt
+    // fields) — each moved receipt semantics or meaning, so each moved the version. The
+    // CONTRACT this pin protects is unchanged: the version must track the semantics, or a
+    // cached receipt gets reinterpreted under a rule it predates.
+    ok("rule version moves WITH the semantics — a cached older receipt must not be reinterpreted",
+      alloc.ALLOC_RULE_VERSION === "tt-alloc-v3.1.0");
   }
 
   // ── §14.8 bar + no-order-tools: structural, negative-controllable ──
@@ -7686,9 +8408,101 @@ console.log("\n[68] FEAT-TT-ALLOC — pure core, endpoint, and the §14.8 bar");
   // sweep strips comments first (the v3.60.1 lesson: a pin matching its own explanatory
   // prose proves nothing, in either direction).
   const stripComments = (s) => s.replace(/\/\*[\s\S]*?\*\//g, "").replace(/\/\/[^\n]*/g, "");
-  ok("§14.8 bar: the allocation CODE never references the score store — the shadow engine cannot feed the forced tier",
-    !/tt:score|BROKEN_THESIS/.test(stripComments(allocLibSrc)) &&
-    !/tt:score|BROKEN_THESIS/.test(stripComments(allocApiSrc)));
+  /* THE ACTIVATION SWITCH (v5.0, owner ruling 2026-08-23). This pin used to assert the
+     INVERSE — that no tt:score reference existed in the allocation code — and its
+     replacement is deliberate, not a workaround: the §14.8 bar's own text said the score
+     engine was barred "until activation", and this is that moment. What the pin protects
+     now: the endpoint reads the score store, the PURE lib still touches no KV itself
+     (purity boundary intact — it RECEIVES the index), and the BROKEN_THESIS forced-tier
+     wiring exists in code, not just comments. */
+  ok("§14.8 ACTIVATED: the endpoint reads the score index, the lib receives it as data, and BROKEN_THESIS feeds the forced tier",
+    /tt:score:index:v1/.test(stripComments(allocApiSrc)) &&
+    /scoreIndex/.test(stripComments(allocLibSrc)) &&
+    /BROKEN_THESIS — kill-flagged falsifier RED/.test(allocLibSrc) &&
+    /brokenSyms/.test(stripComments(allocLibSrc)));
+  ok("§14.8 ACTIVATED: the pure lib still performs no I/O of its own — it receives the index, never fetches it",
+    !/PULSE_CACHE|await fetch|env\./.test(stripComments(allocLibSrc)));
+  // The activation's behavioral truth table, run against the real evaluator:
+  ok("§14.8 SCORED-only: a PROVISIONAL card ranks but is vetoed with the falsifiers-pending reason",
+    (() => { const r = ev({ scoreIndex: { AAA: { status: "PROVISIONAL", raw_score: null, provisional_score: 8.4,
+        provisional_tier: "B", methodology_version: TS.METHODOLOGY_VERSION, broken_thesis: false } } });
+      return r.eligible === null && r.why_not.some((w) => w.sym === "AAA" && /falsifiers pending/.test(w.reason)); })());
+  /* v5.0.1: the PROVISIONAL veto names WHICH half of §6.4.1 is missing. The 2026-08-23
+     census measured the one blanket string false on live data — TSM carried 6 server-stamped
+     hinges while its veto read "until they're committed". Four states, four texts; the
+     p4-less fixture above stays on the neutral "falsifiers pending" (claims neither half). */
+  const provEv = (p4) => ev({ scoreIndex: { AAA: { status: "PROVISIONAL", raw_score: null, provisional_score: 8.4,
+    provisional_tier: "B", methodology_version: TS.METHODOLOGY_VERSION, broken_thesis: false, p4 } } });
+  const provWhy = (p4) => { const w = provEv(p4).why_not.find((x) => x.sym === "AAA"); return w ? w.reason : ""; };
+  ok("v5.0.1 veto split: zero hinges reads 'falsifiers unwritten' — the sprint case",
+    /^falsifiers unwritten/.test(provWhy({ kind: "LEGACY_POST_HOC", hinges: 0, observed: 0 })));
+  ok("v5.0.1 veto split: a partial set names its count — '1/3 written — set incomplete' (the CRDO shape)",
+    /^falsifiers 1\/3 written — set incomplete/.test(provWhy({ kind: "PRECOMMITTED_PENDING", hinges: 1, observed: 0 })));
+  ok("v5.0.1 veto split: a committed set awaiting observations says so WITH counts, and never claims it is uncommitted (the TSM shape)",
+    (() => { const t = provWhy({ kind: "PRECOMMITTED_PENDING", hinges: 6, observed: 0 });
+      return /^falsifiers committed, 0\/6 observed — awaiting qualifying observations/.test(t) && !/until they're committed|unwritten/.test(t); })());
+  ok("v5.0.1 veto split: all-observed-yet-PROVISIONAL is the first-write fingerprint state — a later write scores them",
+    /committed this write — a later write scores them \(§6\.4\.1\)/.test(provWhy({ kind: "PRECOMMITTED_PENDING", hinges: 3, observed: 3 })));
+  ok("v5.0.1 veto split: every branch stays a VETO — no p4 shape makes a PROVISIONAL card eligible",
+    [null, { kind: "LEGACY_POST_HOC", hinges: 0, observed: 0 }, { kind: "PRECOMMITTED_PENDING", hinges: 6, observed: 6 }]
+      .every((p4) => provEv(p4).eligible === null));
+  ok("v5.0.1: the retired blanket clause is gone from BOTH mirrors (code, not comments)",
+    !/until they're committed/.test(stripComments(allocLibSrc)) &&
+    !/until they're committed/.test(stripComments(adminSrc)));
+  ok("v5.0.1 mirror: admin why(r) carries the same four texts and cardInfo passes p4 at both altitudes",
+    adminSrc.includes("falsifiers unwritten") && adminSrc.includes("— set incomplete") &&
+    adminSrc.includes("observed — awaiting qualifying observations") &&
+    adminSrc.includes("committed this write — a later write scores them") &&
+    adminSrc.includes("p4:e.p4||null") && /const p4=\{kind:\(sc\.provisional&&sc\.provisional\.pending\)/.test(adminSrc));
+  ok("§14.8 SCORED-only: NO card at all reads 'no server card — unscored', never a silent pass",
+    (() => { const r = ev({ scoreIndex: {} });
+      return r.eligible === null && r.why_not.some((w) => w.sym === "AAA" && /no server card/.test(w.reason)); })());
+  ok("§14.8: a SCORED card minted by a RETIRED engine cannot light the line — re-score to verify",
+    (() => { const r = ev({ scoreIndex: { AAA: { ...SIDX.AAA, methodology_version: "tt-underwriting-v0.0.1" } } });
+      return r.eligible === null && r.why_not.some((w) => w.sym === "AAA" && /predates the current methodology/.test(w.reason)); })());
+  ok("§14.8 BROKEN_THESIS: a server-stamped broken thesis forces a HELD name to funding tier 1, reason named",
+    (() => { const r = ev({ scoreIndex: { ...SIDX, BIG: { status: "SCORED", raw_score: 6, capped_tier: "B",
+        methodology_version: TS.METHODOLOGY_VERSION, broken_thesis: true } } });
+      const f = r.funding.rows.find((x) => x.sym === "BIG");
+      return f && f.tier === 1 && /BROKEN_THESIS — kill-flagged falsifier RED/.test(f.reason); })());
+  ok("§14.8 BROKEN_THESIS: an owner-marked forced exit still outranks the flag's reason (first-set wins)",
+    (() => { const r = ev({ scoreIndex: { ...SIDX, CCC: { status: "SCORED", raw_score: 6, capped_tier: "B",
+        methodology_version: TS.METHODOLOGY_VERSION, broken_thesis: true } } });
+      const f = r.funding.rows.find((x) => x.sym === "CCC");
+      return f && f.tier === 1 && /owner-marked forced exit/.test(f.reason); })());
+  /* v5.1.1 — THE ACTIONABILITY RUNG. Found live 2026-08-24: TSM re-scored SCORED 9.0/S and
+     took the eligible line at +31.7%/yr while its own card read actionability BLOCKED on
+     BLOCKED_PENDING_INPUT:AI_G2_CIRCULARITY. §7 computed it, §11.2 evalEligibility enforced
+     it, the deep-dive panel rendered it — and the ladder that actually gates capital never
+     read it. Same shape as the v3.71 follow-up, one layer over. */
+  const cardAct = (act, blocked_on) => ({ ...SIDX.AAA, actionability: act, blocked_on });
+  ok("v5.1.1: a SCORED card reading BLOCKED is VETOED, and the veto NAMES the unreadable gate",
+    (() => { const r = ev({ scoreIndex: { AAA: cardAct("BLOCKED", ["AI_G2_CIRCULARITY"]) } });
+      const w = r.why_not.find((x) => x.sym === "AAA");
+      return r.eligible === null && w && /card actionability BLOCKED/.test(w.reason) &&
+        /AI_G2_CIRCULARITY cannot be read/.test(w.reason); })());
+  ok("v5.1.1: BLOCKED with no named gate still vetoes — it says evidence is missing, never nothing",
+    (() => { const r = ev({ scoreIndex: { AAA: cardAct("BLOCKED", []) } });
+      const w = r.why_not.find((x) => x.sym === "AAA");
+      return r.eligible === null && /evidence missing on the card/.test(w.reason); })());
+  ok("v5.1.1: FULL passes the rung (the control — the veto is not blanket)",
+    (() => { const r = ev({ scoreIndex: { AAA: cardAct("FULL", []) } });
+      return r.eligible && r.eligible.sym === "AAA"; })());
+  ok("v5.1.1: CAUTION passes and is SURFACED as a caution — aging evidence is the owner's to weigh",
+    (() => { const r = ev({ scoreIndex: { AAA: cardAct("CAUTION", []) } });
+      return r.eligible && r.eligible.sym === "AAA" &&
+        (r.eligible.cautions || []).some((c) => /actionability CAUTION/.test(c)); })());
+  ok("v5.1.1: an ABSENT actionability passes — a pre-v5.1.1 index entry must not veto the whole book",
+    (() => { const r = ev({ scoreIndex: { AAA: { ...SIDX.AAA } } });
+      return r.eligible && r.eligible.sym === "AAA"; })());
+  ok("v5.1.1: the rung sits BEFORE the quality rung — an unreadable gate is not a quality verdict",
+    (() => { const src = readSrc("../functions/lib/tt-alloc.js");
+      return src.indexOf("card actionability BLOCKED") < src.indexOf("quality fails"); })());
+  ok("v5.1.1 mirror: admin why(r) carries the same rung and cardInfo carries the field (both paths)",
+    adminSrc.includes("card actionability BLOCKED") && adminSrc.includes("(UNKNOWN blocks, §8.1)") &&
+    adminSrc.includes("act:sc.actionability??null") && adminSrc.includes("act:e.actionability??null"));
+  ok("v5.1.1/v5.2/v5.6: the rule version moved WITH the semantics — a cached older receipt must not be reinterpreted (re-pinned at v5.6, THE DAILY CONTRACT)",
+    alloc.ALLOC_RULE_VERSION === "tt-alloc-v3.1.0");
   ok("no-order-tools: no broker order call exists anywhere in the terminal or functions",
     !/place_equity_order|place_option_order/.test(adminSrc) &&
     !/place_equity_order|place_option_order/.test(allocLibSrc + allocApiSrc + ttSrc + snapSrc));
@@ -7718,7 +8532,14 @@ console.log("\n[68] FEAT-TT-ALLOC — pure core, endpoint, and the §14.8 bar");
   store.set("tt:book:v1", JSON.stringify(BOOK));
   store.set("tt:dd:index:v1", JSON.stringify(IDX));
   store.set("tt:pos:v1", JSON.stringify(POSDOC));
-  store.set("tt:quote:AAA", JSON.stringify({ px: 101, at: TODAY + "T14:00:00Z" }));
+  // v5.0 §14.8: the endpoint reads the score index — AAA must carry a current-methodology
+  // SCORED card or nothing is eligible and every confirm test downstream loses its receipt.
+  store.set("tt:score:index:v1", JSON.stringify({ version: 1, entries: SIDX }));
+  /* v5 W0: the quote cache is one batch key; entries are judged fresh by their OWN stamp,
+     so the fixture stamps must be now-derived — a fixed clock time would rot on the wall
+     clock (the v3.35/v3.80 fixture-date lesson). */
+  const qStamp = () => new Date().toISOString();
+  store.set("tt:quote:batch:v1", JSON.stringify({ at: qStamp(), quotes: { AAA: { px: 101, at: qStamp() } } }));
   const realFetch = globalThis.fetch;
   let LIVE_READOUT = READOUT;   // v4.1 Step 6: mutable so confirm-time re-binding can be driven
   try {
@@ -7738,7 +8559,7 @@ console.log("\n[68] FEAT-TT-ALLOC — pure core, endpoint, and the §14.8 bar");
       /^\d{2}\/\d{2} \d{2}:\d{2} ET$/.test(b1.receipt.at_et) &&
       b1.receipt.business_date_et === etYmd(new Date()));
     // basis vs input: a quote tick changes the audit identity, never the confirm basis
-    store.set("tt:quote:AAA", JSON.stringify({ px: 102, at: TODAY + "T14:02:00Z" }));
+    store.set("tt:quote:batch:v1", JSON.stringify({ at: qStamp(), quotes: { AAA: { px: 102, at: qStamp() } } }));
     const p2 = await ep.onRequest({ request: rq("POST"), env });
     const b2 = JSON.parse(await p2.text());
     ok("alloc ep: a quote tick changes input_hash but NOT basis_hash (a price move must not 409 a confirmation)",
@@ -7853,6 +8674,190 @@ console.log("\n[68] FEAT-TT-ALLOC — pure core, endpoint, and the §14.8 bar");
         store.set("tt:alloc:v1", JSON.stringify(cur0));
         const r = await cfB({ intent: { action: "FUND", sym: "AAA" }, result_hash: cur0.attestation.result_hash });
         return r.status === 409 && /predates confirm-time readout binding/.test(r.b.reason); })()));
+
+    // ═══ v5.6 THE DAILY CONTRACT — gate vocabulary, spread, flip line, attest, outcomes ═══
+    console.log("\n[73] v5.6 THE DAILY CONTRACT — SEND IT/HODL/TOUCH GRASS, spread, stamp, outcomes");
+    // The gate is ONE projection of the ladder RESULT (the verdictFrom rule), run against
+    // the real allocGateLadder — never a second copy of its conditions.
+    const L6 = (board, readout) => alloc.allocGateLadder({ board, readout, now: NOW });
+    const G6b = (board, readout) => alloc.macroGateFrom(L6(board, readout), readout);
+    const CB6 = { circuit: { state: "clear", as_of: TODAY }, regime: { asserted: "TAILWIND" } };
+    const RO6 = (act, mf = { evaluable: true, tripped: false }) => ({ regime: { verdict: "TAILWIND", actionability: act }, macro_flip: mf });
+    ok("gate: FULL → SEND_IT — the ladder read clean", G6b(CB6, RO6("FULL")).gate === "SEND_IT");
+    ok("gate: RESTRICTED → HODL — the ONE looking-session state, still vetoed by the ladder it names (fail-closed untouched)",
+      G6b(CB6, RO6("RESTRICTED")).gate === "HODL" && L6(CB6, RO6("RESTRICTED")) !== null);
+    ok("gate: HOLD → TOUCH_GRASS", G6b(CB6, RO6("HOLD")).gate === "TOUCH_GRASS");
+    ok("gate: missing readout / blind flip / tripped flip / tripped circuit ALL fail closed to TOUCH_GRASS",
+      G6b(CB6, null).gate === "TOUCH_GRASS" &&
+      G6b(CB6, RO6("FULL", { evaluable: false })).gate === "TOUCH_GRASS" &&
+      G6b(CB6, RO6("FULL", { evaluable: true, tripped: true })).gate === "TOUCH_GRASS" &&
+      G6b({ ...CB6, circuit: { state: "tripped", as_of: TODAY } }, RO6("FULL")).gate === "TOUCH_GRASS");
+    ok("gate: SEND_IT exists IFF the ladder returned null — only a clean ladder can speak it",
+      alloc.macroGateFrom(null, RO6("FULL")).gate === "SEND_IT" &&
+      ["RESTRICTED", "HOLD"].every((a) => alloc.macroGateFrom(L6(CB6, RO6(a)), RO6(a)).gate !== "SEND_IT"));
+    // Client mirror, RUN over the same matrix (the [57] behavioral-identity convention).
+    const MG6 = (() => {
+      const i = adminSrc.indexOf("function macroGate(){");
+      const j = adminSrc.indexOf("\n}", i);
+      if (i < 0 || j < 0) throw new Error("smoke: macroGate markers not found");
+      return new Function("stance", "REGIME", adminSrc.slice(i, j + 2) + "\nreturn macroGate();");
+    })();
+    const stGo6 = () => ({ k: "go" }), stStop6 = () => ({ k: "stop" });
+    ok("gate mirror: client macroGate matches the server across the matrix — FULL/RESTRICTED/HOLD/blind/absent/stance-stop",
+      MG6(stGo6, RO6("FULL")).g === "SEND_IT" &&
+      MG6(stGo6, RO6("RESTRICTED")).g === "HODL" &&
+      MG6(stGo6, RO6("HOLD")).g === "TOUCH_GRASS" &&
+      MG6(stGo6, RO6("FULL", { evaluable: false })).g === "TOUCH_GRASS" &&
+      MG6(stGo6, null).g === "TOUCH_GRASS" &&
+      MG6(stStop6, RO6("FULL")).g === "TOUCH_GRASS");
+    /* v5.6.3 — the DOC reconciliation (owner review 2026-08-26: "README still says only
+       explicit FULL passes; docs should catch up so the two vocabularies do not fork").
+       Fixing the prose is half the cure — a doc rule nothing enforces is the rot vector this
+       repo keeps paying for (v3.59 B5, v3.60.1 §5). So the gate set is derived BEHAVIORALLY
+       from macroGateFrom over the matrix above and reconciled against the docs: adding,
+       renaming or dropping a gate state fails the build rather than silently forking. */
+    const GATE_SET = [...new Set([
+      G6b(CB6, RO6("FULL")).gate, G6b(CB6, RO6("RESTRICTED")).gate, G6b(CB6, RO6("HOLD")).gate,
+      G6b(CB6, null).gate, G6b(CB6, RO6("FULL", { evaluable: false })).gate,
+    ])];
+    const ttReadme = readSrc("../ticker-terminal/README.md");
+    ok("v5.6.3 docs: every product gate state macroGateFrom can RETURN is named in the TT README and in CLAUDE.md's locked decisions",
+      GATE_SET.length === 3 &&
+      GATE_SET.map((g) => g.replace(/_/g, " ")).every((w) => ttReadme.includes(w) && claudeSrc.includes(w)));
+    ok("v5.6.3 docs: FULL/RESTRICTED/HOLD are named as the MACHINE aliases, never as the product words",
+      /machine (vocabulary|aliases)/i.test(ttReadme) && /machine aliases/i.test(claudeSrc) &&
+      /SEND IT is the only state/i.test(ttReadme));
+    // The withdrawn claim must stay withdrawn — a retired instruction quietly reappearing is
+    // the label-outlives-its-data defect (the v3.85 retired-capture-row precedent).
+    ok("v5.6.3 docs: the retired bare claim ('only explicit FULL passes') is pinned ABSENT from the TT README",
+      !/only explicit `?FULL`? passes/.test(ttReadme));
+
+    // The frozen spread formula + the asserted deadband, executed at the exact edges.
+    ok("spread: the FROZEN formula — (belief − street) / price × 100",
+      JSON.stringify(alloc.spreadOf(570, 485, 300)) === JSON.stringify({ pct: 28.3, sign: "you_richer" }));
+    ok("spread: the ±10 deadband — aligned AT the edge, decided just beyond it, both directions",
+      alloc.SPREAD_ALIGNED_PCT === 10 &&
+      alloc.spreadOf(110, 100, 100).sign === "aligned" && alloc.spreadOf(110.2, 100, 100).sign === "you_richer" &&
+      alloc.spreadOf(90, 100, 100).sign === "aligned" && alloc.spreadOf(89.8, 100, 100).sign === "street_richer");
+    ok("spread: fail-closed — a missing leg or non-positive price yields null, never a number",
+      alloc.spreadOf(null, 100, 100) === null && alloc.spreadOf(100, 100, 0) === null);
+    ok("street leg: REVIEWED published average outranks the sourced target; sourced is the labeled fallback; neither = null",
+      (() => { const idx6 = { consensus: { street_target: { pt: 480, as_of: "2026-08-20" } } };
+        const rec6 = { analystTarget: { average: 500 } };
+        const a = alloc.streetLegOf(idx6, rec6), b = alloc.streetLegOf(idx6, null), c = alloc.streetLegOf({}, null);
+        return a.pt === 500 && a.src === "reviewed" && b.pt === 480 && b.src === "sourced" && c === null; })());
+    // stampOutcome — the day-0 anchor rule from the shipped public pattern.
+    ok("outcome: day 0 is the FIRST close ON OR AFTER the stamp date — pre-stamp movement never scores",
+      (() => { const o = alloc.stampOutcome("2026-08-22", [
+          { date: "2026-08-21", close: 100 }, { date: "2026-08-24", close: 104 }, { date: "2026-08-25", close: 106 }]);
+        return o.anchor.date === "2026-08-24" && o.returns_pct["1d"] === 1.9 &&
+          o.returns_pct["5d"] === null && o.status === "PENDING"; })());
+    ok("outcome: no close on/after the stamp reads a NAMED reason, never zeros",
+      /no close on or after/.test(alloc.stampOutcome("2026-08-22", [{ date: "2026-08-21", close: 100 }]).reason));
+    ok("outcome: drawdown is IMPORTED from publicHistory — one implementation, no local copy",
+      (() => { const src6 = readSrc("../functions/lib/tt-alloc.js");
+        return src6.includes('import { maxDrawdownPct } from "../../src/publicHistory.js"') &&
+          !/function maxDrawdownPct/.test(src6); })());
+    // Receipt end-to-end through the real evaluator.
+    ok("v5.6 receipt: macro_gate SEND_IT on the clean fixture; spread keyed by the decision set; call null-honest when absent",
+      (() => { const r = ev();
+        return r.macro_gate && r.macro_gate.gate === "SEND_IT" && r.call === null &&
+          r.spread && r.eligible && (r.eligible.sym in r.spread) &&
+          r.spread[r.eligible.sym].street === null && r.spread[r.eligible.sym].pct === null; })());
+    ok("v5.6 receipt: TODAY's md-call binds from the readout body; a stale effective_date stays null-honest",
+      (() => { const mkRo = (d) => ({ ...READOUT, call: { schema: "md-call-v1", headline: "MOONING", direction: "BULLISH", effective_date: d }, call_frozen: true });
+        const a = ev({ readout: mkRo(TODAY) }), b = ev({ readout: mkRo("2026-01-01") });
+        return a.call && a.call.headline === "MOONING" && a.call.frozen === true && b.call === null; })());
+    ok("v5.6 receipt: a reviewed street leg computes the frozen spread on the eligible row, LABELED and self-consistent",
+      (() => { const r = ev({ streetBySym: { AAA: { schema: "tt-street-v1", analystTarget: { average: 90 } } } });
+        const sp = r.eligible && r.spread[r.eligible.sym];
+        if (!sp || !sp.street || sp.street.src !== "reviewed" || typeof sp.pct !== "number") return false;
+        const expect = Math.round(((sp.belief.pt - 90) / r.eligible.px) * 1000) / 10;
+        return Math.abs(sp.pct - expect) < 1e-9; })());
+    ok("v5.6 flip line: null when only one name carries a rate; with two IDENTICAL rows #2 overtakes exactly at the current price (the annualise-inversion identity)",
+      (() => { const base = ev(); if (base.overtake !== null) return false;
+        const r = ev({ ddIndex: { asOf: TODAY, entries: { AAA: mkIdx(), BBB: mkIdx() } } });
+        if (!r.overtake) return false;
+        const lead = r.overtake.leader === "AAA" ? "AAA" : "BBB";
+        const row = r.why_not && true ? null : null;
+        const px = (r.eligible && r.eligible.sym === lead) ? r.eligible.px : null;
+        return px === null ? Math.abs(r.overtake.at_px) > 0 : Math.abs(r.overtake.at_px - px) < 0.02; })());
+    // ── the ATTEST lifecycle, driven through the real endpoint ──
+    await ep.onRequest({ request: rq("POST"), env });   // a fresh, valid TODAY receipt
+    const at1 = await ep.onRequest({ request: rq("POST", "?attest=1"), env });
+    const ab1 = JSON.parse(await at1.text());
+    ok("attest: stamps TODAY's receipt — first-write-wins pointer with ET identity",
+      at1.status === 200 && ab1.stamped === true && ab1.stamp.schema === "tt-alloc-stamp-v1" &&
+      ab1.stamp.date === etYmd(new Date()) && /ET$/.test(ab1.stamp.attested.at_et) &&
+      store.has("tt:alloc:stamped:" + etYmd(new Date())));
+    ok("attest: a second attest the same day → 409 ALREADY_STAMPED with the standing stamp — immutable, never overwritten",
+      (await (async () => { const r = await ep.onRequest({ request: rq("POST", "?attest=1"), env });
+        const b = JSON.parse(await r.text());
+        return r.status === 409 && b.error === "ALREADY_STAMPED" && b.stamp.attested.at === ab1.stamp.attested.at; })()));
+    ok("attest: the bare GET now reports stamped_today true",
+      (await (async () => { const r = await ep.onRequest({ request: rq("GET"), env });
+        return JSON.parse(await r.text()).stamped_today === true; })()));
+    ok("stamped list: outcomes AT READ — no facts stored reads a NAMED reason (never zeros), gate + pick carried, allocation_changed DERIVED from the intent journal",
+      (await (async () => { const r = await ep.onRequest({ request: rq("GET", "?stamped=1"), env });
+        const b = JSON.parse(await r.text());
+        const row = b.rows && b.rows[0];
+        return r.status === 200 && b.outcomes_at_read === true && row && row.date === etYmd(new Date()) &&
+          row.gate === "SEND_IT" && row.pick === "AAA" &&
+          row.outcome && /no daily candles/.test(row.outcome.reason) &&
+          row.allocation_changed === true; })()));   // the confirm tests above journaled intents today
+    ok("stamped list: with facts candles the outcome computes — same-day anchor, null returns, PENDING (never a fabricated same-day score)",
+      (await (async () => {
+        const d0 = etYmd(new Date());
+        const dPrev = etYmd(new Date(Date.now() - 86400000));
+        // the REAL key shape (ticker-facts keyFor: `tt:facts:<SYM>:v1`) — a suffix-less
+        // fixture agreed with a live suffix-less read bug once; never again. Dates are
+        // CONTIGUOUS: the v5.6.1 continuity guard re-checks at read.
+        store.set("tt:facts:AAA:v1", JSON.stringify({ fields: { candles: { value: [
+          { date: dPrev, close: 95 }, { date: d0, close: 101 }] } } }));
+        const r = await ep.onRequest({ request: rq("GET", "?stamped=1"), env });
+        const row = JSON.parse(await r.text()).rows[0];
+        return row.outcome && row.outcome.anchor && row.outcome.anchor.date === d0 &&
+          row.outcome.returns_pct["1d"] === null && row.outcome.status === "PENDING"; })()));
+    ok("v5.6.1: a stored-but-corrupt series is REJECTED at read too (merge-only last-good can keep one alive as STALE) — fault named, never an anchor",
+      (await (async () => {
+        const d0 = etYmd(new Date());
+        store.set("tt:facts:AAA:v1", JSON.stringify({ fields: { candles: { value: [
+          { date: "2026-02-26", close: 104.88 }, { date: d0, close: 7.62 }] } } }));
+        const r = await ep.onRequest({ request: rq("GET", "?stamped=1"), env });
+        const row = JSON.parse(await r.text()).rows[0];
+        return row.outcome && row.outcome.anchor === null &&
+          /stored candle series rejected — interior gap/.test(row.outcome.reason); })()));
+    ok("v5.6.2: an INTERNALLY-CONSISTENT wrong-instrument series is rejected at read against the live quote (the rung the other tells cannot supply)",
+      (await (async () => {
+        const d0 = etYmd(new Date());
+        const dPrev2 = etYmd(new Date(Date.now() - 86400000));
+        store.set("tt:facts:AAA:v1", JSON.stringify({ fields: { candles: { value: [
+          { date: dPrev2, close: 7.78 }, { date: d0, close: 7.62 }] } } }));
+        const r = await ep.onRequest({ request: rq("GET", "?stamped=1"), env });
+        const row = JSON.parse(await r.text()).rows[0];
+        return row.outcome && row.outcome.anchor === null &&
+          /tail close \$7\.62 vs live quote/.test(row.outcome.reason); })()));
+    ok("outcome note: the owner override beats the derived allocation_changed, and attaches only to stamped days",
+      (await (async () => {
+        const bad = await ep.onRequest({ request: rq("POST", "?outcome=1", { date: "2020-01-01", allocation_changed: false }), env });
+        if (bad.status !== 404) return false;
+        const w = await ep.onRequest({ request: rq("POST", "?outcome=1", { date: etYmd(new Date()), allocation_changed: false, note: "no trade today" }), env });
+        if (w.status !== 200) return false;
+        const r = await ep.onRequest({ request: rq("GET", "?stamped=1"), env });
+        const row = JSON.parse(await r.text()).rows[0];
+        return row.allocation_changed === false && row.note === "no trade today"; })()));
+    // Client + contract pins.
+    ok("v5.6 client: the GATE token is SCOPED with the 'GATE: ' prefix at both strip branches (the HODL word-collision guard)",
+      (adminSrc.match(/GATE: \$\{mg\.label\}/g) || []).length === 2);
+    ok("v5.6 client: the stamp is a TWO-STEP confirmLink — no bare one-tap attest call site",
+      adminSrc.includes('confirmLink("allocStampLink"') && !/onclick="allocAttest\(\)"/.test(adminSrc));
+    ok("v5.6 client: spreadLine is ONE builder at TWO altitudes (DESK eligible box + compact BUY banner)",
+      (adminSrc.match(/spreadLine\((b|AGREE_PICK)\.sym\)/g) || []).length === 2);
+    ok("v5.6 client: stamped history is est-mini, lazy on open, and names its empty kind",
+      adminSrc.includes('ontoggle="if(this.open)loadStampedHistory(this)"') &&
+      adminSrc.includes("no stamped days yet — ⭑ STAMP starts the record"));
+    ok("v5.6: the tt-v1 machine contract never speaks the product vocabulary (gate words are the PRODUCT layer)",
+      !/SEND_IT|TOUCH_GRASS/.test(readSrc("../src/ttReadout.js")));
   } finally { globalThis.fetch = realFetch; }
 }
 
@@ -7868,9 +8873,9 @@ console.log("\n[67] v4.0 SIMPLE MODE — verdict mapping, card selection, senten
   const { REGIME_BAND_TABLE: BT } = await import("../src/regime.js");
 
   // whyItMatters: one home per band, and it must NOT restate the direction (plainBull/Bear own that).
-  ok("v4.0: Simple renders ONE verdict — the engine label is suppressed beside the scoped one",
-    /\$\{plainVerdict\?"":`\$\{regime\.label\} · `\}/.test(bandSrc) &&
-    /plainVerdict\?regime\.sub:`\$\{WITHHELD_LABEL\} · \$\{regime\.sub\}`/.test(bandSrc));
+  ok("v5.3: Simple renders ONE primary human call with one secondary machine direction",
+    /\{callLabel\}<\/span>/.test(bandSrc) &&
+    /:`\$\{machineLabel\} · \$\{conf/.test(bandSrc));
   ok("v4.0: the Simple eyebrow follows its verdict — no 'wen moon?' over a MACRO: line",
     /plainVerdict\?"Macro Backdrop · the call":"Macro Backdrop · wen moon\?"/.test(bandSrc));
   ok("v4.0: every band carries a whyItMatters line — new copy, one home, beside the rule it explains",
@@ -8042,10 +9047,11 @@ console.log("\n[67] v4.0 SIMPLE MODE — verdict mapping, card selection, senten
   ok("v4.0 boundary: the projections import no threshold and re-derive no vote",
     (() => { const seg = evidenceSrc.slice(evidenceSrc.indexOf("SIMPLE MODE PROJECTIONS"));
       return !/NFCI_TIGHT|NFCI_LOOSE|computeRegime\(|flipConditions\(|\.vote\(/.test(seg); })());
-  ok("v4.0 boundary: the verdict is PROP-GATED — Power passes null and keeps the moon voice",
+  ok("v5.3 boundary: the canonical call owns both modes; Simple scope cannot rename it",
     /plainVerdict=\{simple\?simpleV:null\}/.test(dashSrc) &&
-    /plainVerdict\?`MACRO: \$\{plainVerdict\.label\}`:moon\.label/.test(bandSrc) &&
-    /plainVerdict=null/.test(bandSrc));
+    /call=\{dailyCall\}/.test(dashSrc) &&
+    /const callLabel=call&&call\.headline/.test(bandSrc) &&
+    /const machineLabel=call&&call\.direction/.test(bandSrc));
   ok("v4.0 boundary: the cards are Simple-only and the section is presentation-only",
     /\{simple&&<SimpleCards/.test(dashSrc) &&
     (() => { const code = spcSrc.replace(/\/\/[^\n]*|\/\*[\s\S]*?\*\//g, "");
@@ -8106,6 +9112,469 @@ console.log("\n[69] ageDays — ET calendar date vs ET calendar date, at every h
   ok("ageDays: the terminal now uses the SAME ET-calendar rule as the server time-judges " +
      "(tt-alloc ageDaysEt / ttScore ageDaysET), so one clock governs the stack",
     /toLocaleDateString\("en-CA",\{timeZone:"America\/New_York"\}\)/.test(SRC));
+}
+
+// ═══════════ [70] FEAT-TT-SUGGEST (v4.2) — the street invert, suggest-don't-save ═══════════
+// suggestMultiple() unblocks the floor-only class ("missing multiple" is a missing INVERT,
+// not a missing thesis — owner design 2026-08-21): PE/EVS invert at the STREET target, lens
+// picked by the existing TSM/UBER + RKLB rules, UNKNOWN naming every missing input, and a
+// SEED the owner confirms — the function itself never writes. All fixtures SYNTHETIC (book
+// content never enters this repo). The seed's floor_only_before is proven BEHAVIORALLY:
+// applied exactly as the confirm handler applies it, lintPtModel must come back clean, and
+// the same seed WITHOUT it must fire MISKEY (the negative control).
+console.log("\n[70] FEAT-TT-SUGGEST — street invert + one-confirm seed");
+{
+  const SM = PT.suggestMultiple;
+  const base = { consensus: { eps: { "2027": 2.0, "2028": 3.0 } }, pt_model: { pe_floor_multiple: 18 } };
+  const s1 = SM(base, { pt: 60 }, 50, "2027");
+  ok("P/E invert: $60 / FY2028 EPS $3 = 20.0x at the y=2027 rung",
+    s1.state === "suggest" && s1.pick === "P/E" && s1.mult === 20 && s1.fwd === "2028");
+  ok("seed carries floor_only_before when the seeded year is past the first row year",
+    s1.seed.path === "pe_premium_multiple" && s1.seed.year === "2027" && s1.seed.floor_only_before === "2027");
+  const s1a = SM(base, { pt: 60 }, 50, null);
+  ok("no horizon → first row year, and NO floor_only_before when seeding it",
+    s1a.state === "suggest" && s1a.seed.year === "2026" && s1a.mult === 30 && s1a.seed.floor_only_before === null);
+  const pre = { consensus: { eps: { "2027": -1.2, "2028": -0.4 }, revenue_B: { "2027": 2.0, "2028": 4.0 } },
+    pt_model: { pe_floor_multiple: 18, share_count_M: 100, net_cash_B: { "2026": 1.0 } } };
+  const s2 = SM(pre, { pt: 50 }, 40, "2027");
+  ok("pre-profit → EV/S invert: ($50×100/1000 − 1.0) / $4.0B = 1.0x",
+    s2.state === "suggest" && s2.pick === "EV/S" && s2.mult === 1 && s2.seed.path === "ev_s_multiple");
+  const crossing = { consensus: { eps: { "2027": 0.01, "2028": 0.05 }, revenue_B: { "2027": 2.0, "2028": 4.0 } },
+    pt_model: { pe_floor_multiple: 18, share_count_M: 100, net_cash_B: { "2026": 1.0 } } };
+  const s3 = SM(crossing, { pt: 50 }, 60, "2027");
+  ok("crossing artifact (60/0.05 = 1200x > LENS_MAX_PE) → EV/S despite positive EPS, and it says so",
+    s3.state === "suggest" && s3.pick === "EV/S" && s3.crossing === true);
+  const s4 = SM({ consensus: { eps: { "2027": -1, "2028": -2 }, revenue_B: { "2028": 4 } },
+    pt_model: { pe_floor_multiple: 18 } }, { pt: 50 }, 40, "2027");
+  ok("UNKNOWN names the exact missing EV/S inputs, never guesses",
+    s4.state === "unknown" && s4.unknown.some((w) => /share_count_M/.test(w) && /net_cash_B/.test(w)));
+  ok("no target on file → UNKNOWN saying so",
+    SM(base, null, 50, "2027").unknown[0] === "no street target on file");
+  ok("an already-modelled name is left alone",
+    SM({ ...base, pt_model: { pe_premium_multiple: { "2027": 30 } } }, { pt: 60 }, 50, "2027").state === "modelled");
+  ok("deliberate floor-only (MU-class floor_only_before) is respected, never nagged",
+    SM({ ...base, pt_model: { pe_floor_multiple: 18, floor_only_before: "2028" } }, { pt: 60 }, 50, "2027").state === "floor_by_design");
+  ok("EV/S invert that lands non-positive (target below net cash) is refused with the reason",
+    SM({ consensus: { eps: { "2028": -1 }, revenue_B: { "2028": 4 } },
+      pt_model: { share_count_M: 10, net_cash_B: { "2026": 5 } } }, { pt: 20 }, 10, "2027")
+      .unknown.some((w) => /non-positive/.test(w)));
+  // The seed applied EXACTLY as seedSuggestedMultiple applies it → lint-clean; without the
+  // fob → MISKEY. This is the behavioral proof that the confirm path cannot write a rung
+  // that silently floors (the v3.39 NVDA defect, structurally prevented).
+  const seeded = JSON.parse(JSON.stringify(base));
+  seeded.pt_model[s1.seed.path] = { [s1.seed.year]: s1.seed.mult };
+  seeded.pt_model.floor_only_before = s1.seed.floor_only_before;
+  ok("applied seed is lint-clean (fob suppresses MISKEY exactly as the MU precedent does)",
+    PT.lintPtModel(seeded).filter((l) => l.sev === "error").length === 0);
+  const noFob = JSON.parse(JSON.stringify(base));
+  noFob.pt_model[s1.seed.path] = { [s1.seed.year]: s1.seed.mult };
+  ok("negative control: the SAME seed without floor_only_before fires MISKEY",
+    PT.lintPtModel(noFob).some((l) => l.code === "MISKEY"));
+  ok("purity: suggestMultiple never writes (no fetch/persist/KV reference in its source)",
+    !/fetch|ddPersist|PULSE_CACHE/.test(String(SM)));
+  // Ranking isolation: the diagnostic must never leak into the queue. renderUpsideRank's own
+  // source is sliced and must not reference the suggester; the ONLY writer is the confirm
+  // handler, which runs the same hard-lint gate the payload editor runs.
+  const rurStart = adminSrc.indexOf("function renderUpsideRank(");
+  const rurSlice = adminSrc.slice(rurStart, adminSrc.indexOf("function renderMagBlock("));
+  ok("isolation: renderUpsideRank never calls suggestMultiple — DERIVED-STREET enters no ranking",
+    rurStart > 0 && !/suggestMultiple/.test(rurSlice));
+  const seedFn = liftFns(adminSrc, ["seedSuggestedMultiple"]);
+  ok("the confirm handler recomputes at click, edits a COPY, and runs the hard-lint gate before ddPersist",
+    /suggestMultiple\(dd,tgt,px,effHorizon\(\)\)/.test(seedFn) && /JSON\.parse\(JSON\.stringify\(dd\)\)/.test(seedFn) &&
+    /sev==="error"/.test(seedFn) && /SEED ABORTED/.test(seedFn) && /ddPersist\(sym,next\)/.test(seedFn));
+  ok("target priority: the reviewed street record outranks the stored consensus.street_target",
+    (() => { const f = liftFns(adminSrc, ["streetTargetOf"]);
+      return f.indexOf("analystTarget") < f.indexOf("street_target"); })());
+
+}
+
+
+// ═══════════ [71] FEAT-TT-DRIFT (v4.3) — the asserted layer falling behind the measured ═══════════
+// Three probes over one pattern, all measured on the live book 2026-08-22: META's hinge outlived
+// its own resolution by 9 days; 7 of 17 composites carried evidence newer than the score (and the
+// composite is a HARD >=B eligibility gate); 2-analyst years priced real rungs. Zero network calls
+// — every input is already in the payload, which is why this is a lint and not a sourcing agent.
+console.log("\n[71] FEAT-TT-DRIFT — hinge staleness, composite drift, thin coverage");
+{
+  const D = DRIFT, NOW = Date.parse("2026-08-22T17:00:00Z");
+  const cap = { consensus: { source: "REAL CONSENSUS MEANS, owner capture 2026-08-13" } };
+  ok("captureDates reads the whitelist and finds a date inside capture free-text",
+    D.newestCapture(cap, NOW) === "2026-08-13");
+  // THE TWO GUARDS, both required — CRM produced this false positive twice.
+  ok("guard 1: a date outside the whitelist (a key_date) is invisible",
+    D.newestCapture({ key_dates: [{ date: "2026-08-20" }] }, NOW) === null);
+  ok("guard 2: a FUTURE date inside a whitelisted field is refused — a capture cannot be ahead of today " +
+     "(CRM's fiscal-period end 2027-01-31 scanned as a capture and reported a hinge 170d stale)",
+    D.newestCapture({ consensus: { source: "FY2027 ends 2027-01-31, captured 2026-08-14" } }, NOW) === "2026-08-14");
+  // HINGE_STALE — the META case.
+  const meta = { ...cap, hinges: [{ label: "Consensus financials", state: "unknown", asOf: "2026-08-04" }] };
+  const sh = D.staleHinges(meta, NOW);
+  ok("HINGE_STALE: an UNKNOWN hinge behind its payload's capture is flagged with the real gap",
+    sh.length === 1 && sh[0].gap === 9);
+  ok("HINGE_STALE: a GRADED hinge behind the same capture is NOT flagged — only ungraded ones",
+    D.staleHinges({ ...cap, hinges: [{ label: "x", state: "green", asOf: "2026-08-04" }] }, NOW).length === 0);
+  ok("HINGE_STALE: an UNDATED unknown hinge is flagged with a null gap, never a fabricated one",
+    (() => { const r = D.staleHinges({ ...cap, hinges: [{ label: "x", state: "unknown" }] }, NOW);
+      return r.length === 1 && r[0].gap === null; })());
+  ok("HINGE_STALE: no capture date at all → nothing to compare against, so no finding",
+    D.staleHinges({ hinges: [{ label: "x", state: "unknown" }] }, NOW).length === 0);
+  // THIN_COVERAGE — scoped to years a rung actually prices (23 unscoped hits vs 4 scoped on the live book).
+  const thin = { consensus: { analyst_counts: { eps: { "2029": 2, "2033": 1 } } } };
+  ok("THIN_COVERAGE fires for an in-reach year (row y=2028 prices FY2029)",
+    (() => { const r = D.thinCoverage(thin, ["2028"]); return r.length === 1 && r[0].year === "2029" && r[0].n === 2; })());
+  ok("THIN_COVERAGE is SILENT on out-of-reach years — MU's 1-analyst 2033 is irrelevant at a 2027 horizon",
+    D.thinCoverage(thin, ["2026"]).length === 0);
+  ok("THIN_COVERAGE accepts the flat per-year shape as well as the per-series one",
+    D.thinCoverage({ consensus: { analyst_counts: { "2029": 2 } } }, ["2028"]).length === 1);
+  ok("THIN_COVERAGE: a prose placeholder never reads as data",
+    D.thinCoverage({ consensus: { analyst_counts: "NOT CAPTURED — cropped" } }, ["2028"]).length === 0);
+  ok(`THIN_COVERAGE: the floor is the owner rule of ${D.THIN_MIN} — exactly 3 passes, 2 fires`,
+    D.THIN_MIN === 3 &&
+    D.thinCoverage({ consensus: { analyst_counts: { eps: { "2029": 3 } } } }, ["2028"]).length === 0 &&
+    D.thinCoverage({ consensus: { analyst_counts: { eps: { "2029": 2 } } } }, ["2028"]).length === 1);
+  /* REGRESSION — the caller must pass EMITTED rows, never ptRowYears. Shipped wrong on
+     2026-08-22 and caught by sweeping the live book: excluding NVDA's/HOOD's 2-analyst FY2030
+     EPS removed the deepest rung, but FY2030 REVENUE legitimately stayed, so ptRowYears kept
+     proposing y=2029 and the lint reported both names thin AFTER they were fixed. Driven
+     through the REAL ptModel functions — a hand-built year list could not prove the two
+     disagree. */
+  {
+    const excl = { ref_px: { px: 100 }, pt_model: { pe_premium_multiple: { "2026": 20 }, share_count_M: 1000 },
+      consensus: { revenue_B: { "2027": 10, "2028": 12, "2029": 14, "2030": 16 },   // revenue reaches FY2030
+                   eps: { "2027": 1, "2028": 2, "2029": 3 },                        // eps does NOT — excluded
+                   analyst_counts: { eps: { "2030": 2 } } } };
+    const cand = PT.ptRowYears(excl, "2026");
+    const emitted = (PT.ptModelRows(excl, "2026") || []).map((r) => r.y);
+    ok("THIN_COVERAGE regression: ptRowYears and the emitted rows genuinely disagree (the trap is real)",
+      cand.includes("2029") && !emitted.includes("2029"));
+    ok("THIN_COVERAGE regression: scoped to EMITTED rows, an excluded year is SILENT — fixed work never reads as outstanding",
+      D.thinCoverage(excl, emitted).length === 0);
+    ok("THIN_COVERAGE regression control: scoped to ptRowYears it fires — proving the test would catch a revert",
+      D.thinCoverage(excl, cand).length === 1);
+    ok("driftSec passes the EMITTED rows, never ptRowYears",
+      /rows=ptModelRows\(dd\)\|\|\[\];ry=rows\.map\(r=>r\.y\)/.test(adminSrc) &&
+      !/ry=ptRowYears\(dd\)/.test(adminSrc));
+  }
+  // COMPOSITE_STALE — gated the eligible line until §14.8 activation; historical now, still linted.
+  ok("COMPOSITE_STALE: evidence moving after the score is flagged as moved",
+    (() => { const r = D.compositeDrift({ composite: { score: 7, basis: "scored 2026-08-18" },
+      hinges: [{ asOf: "2026-08-22" }] }, NOW); return r && r.moved === true; })());
+  ok("COMPOSITE_STALE: a fresh score with older evidence is CLEAN — recency alone is not drift",
+    D.compositeDrift({ composite: { score: 7, basis: "scored 2026-08-20" }, hinges: [{ asOf: "2026-08-01" }] }, NOW) === null);
+  ok("COMPOSITE_STALE: age alone fires past the window, and the window is stated",
+    D.COMPOSITE_MAX_D === 14 &&
+    D.compositeDrift({ composite: { score: 7, basis: "scored 2026-08-01" } }, NOW).age === 21);
+  ok("COMPOSITE_STALE: an undated basis says it cannot be aged rather than guessing an age",
+    D.compositeDrift({ composite: { score: 7, basis: "no date here" } }, NOW).scored === null);
+  ok("COMPOSITE_STALE: no composite at all is not a drift finding",
+    D.compositeDrift({}, NOW) === null);
+  // Contract: advisory only. A hard error would block saves on payloads that are merely old.
+  ok("every drift finding is sev:warn — this lint never blocks a save (the MISKEY contrast)",
+    D.lintDrift(meta, ["2028"], NOW).every((l) => l.sev === "warn"));
+  ok("purity: lintDrift makes no network call and writes nothing",
+    !/fetch|ddPersist|PULSE_CACHE|localStorage/.test(String(D.lintDrift) + String(D.compositeDrift) + String(D.staleHinges)));
+  ok("the terminal renders drift beside the intake checklist and never gates on it",
+    /h\+=driftSec\(x\);/.test(adminSrc) &&
+    (() => { const f = liftFns(adminSrc, ["driftSec"]);
+      // v5.0: the call carries ctx (card + inputs + rows) so TARGET_STALE/RUNWAY_SPLIT run
+      // at the one altitude where the full record exists; still advisory-only.
+      return /lintDrift\(dd,ry,undefined,ctx\)/.test(f) && !/gateFail|AGREE_PICK|blocker/.test(f); })());
+
+  /* ── v5.0 (W2/W3): the three new detectors, each RUN — a lint is a claim about data ── */
+  // TARGET_STALE — the frozen card target vs the live ladder. 30/30 cards agreed on
+  // 2026-08-23 only because everything was scored that day at live quotes; this is the guard
+  // that freshness coincidence was standing in for.
+  const CARD_T = (target, basis = "PREMIUM") => ({ pillars: { owner_valuation:
+    { target, target_year: "2027", basis_used: basis } } });
+  ok("TARGET_STALE: a >5% gap between the frozen card target and the live rung is NAMED with both numbers",
+    (() => { const r = D.targetDrift(CARD_T(200), [{ y: "2027", prem: 230, fl: 100 }]);
+      return r && r.card_target === 200 && r.fresh === 230 && r.pct === 15; })());
+  // Float note (the v3.83 convention): 210/200-1 computes 5.000000000000004%, so the exact
+  // edge is float-unsafe by construction — pinned clear of it on both sides instead.
+  ok("TARGET_STALE: inside 5% is silent — the receipt governs at its stamped basis, a small drift is not a finding",
+    D.targetDrift(CARD_T(200), [{ y: "2027", prem: 206, fl: 100 }]) === null &&
+    D.targetDrift(CARD_T(200), [{ y: "2027", prem: 209.8, fl: 100 }]) === null &&
+    D.targetDrift(CARD_T(200), [{ y: "2027", prem: 210.5, fl: 100 }]) !== null);
+  ok("TARGET_STALE: basis-aware — a FLOOR card compares against fl, never the premium beside it",
+    (() => { const r = D.targetDrift(CARD_T(100, "FLOOR"), [{ y: "2027", prem: 230, fl: 101 }]);
+      return r === null; })() &&
+    (() => { const r = D.targetDrift(CARD_T(100, "FLOOR"), [{ y: "2027", prem: 230, fl: 120 }]);
+      return r && r.fresh === 120; })());
+  ok("TARGET_STALE: the rung disappearing entirely reads 'gone' — the model moved from under the receipt",
+    (() => { const r = D.targetDrift(CARD_T(200), [{ y: "2028", prem: 230, fl: 100 }]);
+      return r && r.gone === true; })() &&
+    D.targetDrift({ pillars: {} }, [{ y: "2027", prem: 230 }]) === null);   // no target = nothing to drift
+  // RUNWAY_SPLIT — one fact, two homes (the ACHR 21.9-vs-24 intra-session split, caught by hand).
+  const UI_RW = (a, b) => ({ economic_quality: { runway_months: a === undefined ? undefined : { value: a } },
+    route_gates: { PH_G2_RUNWAY: b === undefined ? {} : { runway_months: b } } });
+  ok("RUNWAY_SPLIT: numeric copies that disagree are a finding naming both",
+    (() => { const r = D.runwaySplit(UI_RW(21.9, 24)); return r && r.a === 21.9 && r.b === 24; })() &&
+    D.runwaySplit(UI_RW(24, 24)) === null);
+  ok("RUNWAY_SPLIT: mode-aware — a P3 with no runway field (the SYM shape) is silent, never a false split",
+    D.runwaySplit({ economic_quality: {}, route_gates: { PH_G2_RUNWAY: { runway_months: "SELF_FUNDING" } } }) === null &&
+    D.runwaySplit(UI_RW(undefined, 24)) === null);
+  ok("RUNWAY_SPLIT: SELF_FUNDING beside a numeric burn is a CONTRADICTION — a generator and a burn-down cannot both be true",
+    (() => { const r = D.runwaySplit(UI_RW("SELF_FUNDING", 24)); return r && r.kind === "sentinel"; })() &&
+    D.runwaySplit(UI_RW("SELF_FUNDING", "SELF_FUNDING")) === null);
+  // LABEL_DRIFT — the GEV case: prose claiming floor-only beside a stored premium.
+  ok("LABEL_DRIFT: 'no premium multiple' prose beside a stored premium fires (the GEV defect, verbatim shape)",
+    (() => { const r = D.labelDrift({ pt_model: { pe_premium_multiple: { 2027: 34.9 },
+      basis: "Floor only: 18x FY+1 EPS. No premium multiple asserted." } });
+      return r && /no premium multiple/.test(r.phrase); })());
+  ok("LABEL_DRIFT: floor-only prose is LEGITIMATE when floor_only_before scopes it — the corrected GEV must not re-fire",
+    D.labelDrift({ pt_model: { pe_premium_multiple: { 2027: 34.9 }, floor_only_before: "2027",
+      basis: "the YE2026 rung is deliberately floor-only; premium engages from YE2027" } }) === null);
+  ok("LABEL_DRIFT: a genuinely floor-only model is silent — the phrase is only a lie beside a premium",
+    D.labelDrift({ pt_model: { pe_floor_multiple: 18, basis: "Floor only: 18x FY+1 EPS. No premium multiple asserted." } }) === null);
+  // Emission: all three ride lintDrift via ctx, all sev:warn (the family contract holds).
+  ok("v5 lints: lintDrift emits all three through ctx, every finding still sev:warn",
+    (() => { const dd = { pt_model: { pe_premium_multiple: { 2027: 30 }, basis: "no premium multiple asserted" } };
+      const ctx = { card: CARD_T(200), rows: [{ y: "2027", prem: 230, fl: 100 }],
+        ui: UI_RW(21.9, 24) };
+      const ls = D.lintDrift(dd, [], undefined, ctx);
+      const codes = ls.map((l) => l.code);
+      return codes.includes("TARGET_STALE") && codes.includes("RUNWAY_SPLIT") &&
+        codes.includes("LABEL_DRIFT") && ls.every((l) => l.sev === "warn"); })());
+  ok("v5 lints: an absent ctx behaves exactly as v4.3 — the new detectors are additive, never a new requirement",
+    (() => { const ls = D.lintDrift({ pt_model: { pe_floor_multiple: 18 } }, [], undefined);
+      return ls.every((l) => !["TARGET_STALE", "RUNWAY_SPLIT"].includes(l.code)); })());
+}
+
+// ═══════════ [72] v5.0 W0 — THE QUOTE BATCH: one key, merge-on-write, entry-age freshness ═══════════
+// The per-symbol tt:quote:<SYM> keys blew the KV free-tier delete cap on 2026-08-23 —
+// one whole-book refresh was ~40 writes + ~40 TTL expirations. One batch key collapses
+// that to 1 + 1 WITHOUT moving the stated 2-minute freshness contract, which now lives on
+// each entry's own `at` stamp (key presence proves nothing once merge-on-write refreshes
+// the key). Behavioral, not string-pinned: the whole feature is a claim about op counts.
+console.log("\n[72] v5.0 W0 — quote batch: op-count collapse, merge-on-write, freshness");
+{
+  const QC = await import("../functions/lib/quote-cache.js");
+  const QEP = await import("../functions/api/quotes.js");
+  const mkKv = (seed = {}) => {
+    const store = new Map(Object.entries(seed));
+    const log = { puts: [], gets: [] };
+    return { store, log, kv: {
+      get: async (k, t) => { log.gets.push(k); const v = store.get(k); return v == null ? null : (t === "json" ? JSON.parse(v) : v); },
+      put: async (k, v) => { log.puts.push(k); store.set(k, String(v)); },
+    } };
+  };
+  const rq = (syms) => ({ url: "https://x.test/api/quotes?syms=" + syms, headers: { get: () => null } });
+  const realFetch = globalThis.fetch;
+  let finnhubCalls = [];
+  globalThis.fetch = async (url) => {
+    const sym = new URL(url).searchParams.get("symbol");
+    finnhubCalls.push(sym);
+    return { ok: true, json: async () => ({ c: 100 + sym.length, dp: 1.5 }) };
+  };
+  try {
+    // COLD whole-batch refresh → exactly ONE put, the batch key — the op-count collapse itself.
+    let { store, log, kv } = mkKv();
+    let env = { ACCESS_DEV_BYPASS: "1", PULSE_CACHE: kv, FINNHUB_KEY: "k" };
+    let r = await QEP.onRequestGet({ request: rq("AAA,BBB,CCC"), env });
+    let body = JSON.parse(await r.text());
+    ok("W0: a cold 3-symbol refresh performs exactly ONE KV put — the batch key, never per-sym",
+      log.puts.length === 1 && log.puts[0] === QC.QUOTE_BATCH_KEY &&
+      Object.keys(body.quotes).length === 3);
+    // WARM within the window → zero puts, zero upstream calls; served from entry-age hits.
+    finnhubCalls = []; log.puts.length = 0;
+    r = await QEP.onRequestGet({ request: rq("AAA,BBB,CCC"), env });
+    body = JSON.parse(await r.text());
+    ok("W0: a warm refresh inside the 2-min window is ZERO puts and ZERO upstream fetches",
+      log.puts.length === 0 && finnhubCalls.length === 0 && Object.keys(body.quotes).length === 3);
+    // MERGE-ON-WRITE: a subset request must not clobber symbols it did not ask about.
+    finnhubCalls = [];
+    await QEP.onRequestGet({ request: rq("DDD"), env });
+    const merged = JSON.parse(store.get(QC.QUOTE_BATCH_KEY)).quotes;
+    ok("W0: merge-on-write — a 1-symbol request leaves the other 3 entries in the batch intact",
+      ["AAA", "BBB", "CCC", "DDD"].every((s) => merged[s] && Number.isFinite(merged[s].px)));
+    // ENTRY-AGE freshness: an old entry inside a FRESH key is a MISS, never served as live.
+    const oldAt = new Date(Date.now() - 10 * 60000).toISOString();
+    ({ store, log, kv } = mkKv({ [QC.QUOTE_BATCH_KEY]: JSON.stringify({ at: new Date().toISOString(),
+      quotes: { AAA: { px: 55, at: oldAt } } }) }));
+    env = { ACCESS_DEV_BYPASS: "1", PULSE_CACHE: kv, FINNHUB_KEY: "k" };
+    finnhubCalls = [];
+    r = await QEP.onRequestGet({ request: rq("AAA"), env });
+    body = JSON.parse(await r.text());
+    ok("W0: a 10-minute-old entry in a fresh batch key is a MISS — refetched, never served stale as live",
+      finnhubCalls.includes("AAA") && body.quotes.AAA.px !== 55);
+    ok("W0: freshEntry fails CLOSED — garbled/missing stamps and non-finite px all read null",
+      QC.freshEntry({ px: 1, at: "not-a-date" }, Date.now()) === null &&
+      QC.freshEntry({ px: NaN, at: new Date().toISOString() }, Date.now()) === null &&
+      QC.freshEntry(null, Date.now()) === null &&
+      QC.freshEntry({ px: 1, at: new Date().toISOString() }, Date.now()) !== null);
+  } finally { globalThis.fetch = realFetch; }
+  // The three consumers all resolve freshness through the ONE lib — no per-sym key remains.
+  const qsrc = readSrc("../functions/api/quotes.js"), tsrc = readSrc("../functions/api/tt.js"),
+    asrc = readSrc("../functions/api/allocation.js");
+  ok("W0: every consumer imports the one quote-cache lib and no per-symbol tt:quote concat survives",
+    [qsrc, tsrc, asrc].every((x) => /lib\/quote-cache\.js/.test(x)) &&
+    ![qsrc, tsrc, asrc].some((x) => /QUOTE_PREFIX \+|CACHE_PREFIX \+/.test(x)));
+  ok("W0: the ledger px stamp reads the batch ONCE per append and gates on freshEntry",
+    /readQuoteBatch\(env\)/.test(tsrc) && /freshEntry\(qBatch\.quotes\[sym\]/.test(tsrc));
+}
+
+// ---- 73. v5.3 ONE CALL — identity + immutable live-forward accountability ------
+console.log("\n[73] v5.3 ONE CALL — canonical vocabulary, additive API, immutable history");
+{
+  // Endpoint tests must use today's ET cache key; a fixed date silently falls through to
+  // the network as soon as the calendar moves and stops testing the fixture at all.
+  const D = new Date().toLocaleDateString("en-CA", {timeZone:"America/New_York"});
+  const now = new Date(`${D}T16:00:00Z`);
+  const live = (overrides = {}) => ({
+    tenYear: 4.1, tenYearM1: -0.2, tenYearAsOf: D,
+    vix: 15, vixAsOf: D,
+    fearGreed: 60, fearGreedLabel:"Greed", fearGreedAsOf: D,
+    cpiHeadline: 2.4, cpiTrend: [3.0, 2.8, 2.6, 2.4], cpiHeadlineAsOf: D,
+    shillerPe: 20, shillerPeAsOf: D,
+    nfci: -0.6, nfciAsOf: D,
+    spyPrice: 700, spyMa200: 650, spyPriceAsOf: D,
+    ...overrides,
+  });
+  const bull = buildMacroCall(live(), { now, effectiveDate: D });
+  ok("one-call: public engine maps to MOONING / BULLISH with HIGH evidence", bull.schema === CALL_SCHEMA &&
+    bull.headline === "MOONING" && bull.direction === "BULLISH" && bull.confidence === "HIGH" && bull.actionability === "FULL");
+  ok("one-call: Fear & Greed display carries its real label, never undefined",
+    /60 — Greed/.test(bull.factors.find((f)=>f.key==="fearGreed")?.display || "") &&
+    !JSON.stringify(bull).includes("undefined"));
+  const mixed = buildMacroCall(live({ tenYearM1: 0, vix: 20, fearGreed: 40, cpiTrend: [2.4,2.4], shillerPe: 27, nfci: -0.2 }), { now, effectiveDate: D });
+  ok("one-call: mixed engine maps to HODL / NEUTRAL", mixed.headline === "HODL" && mixed.direction === "NEUTRAL");
+  const bear = buildMacroCall(live({ tenYearM1: 0.2, vix: 26, fearGreed: 20, cpiTrend: [2.0,2.6], shillerPe: 40, nfci: 0.1 }), { now, effectiveDate: D });
+  ok("one-call: risk-off engine maps to DIAMOND HANDS / BEARISH", bear.headline === "DIAMOND HANDS" && bear.direction === "BEARISH");
+  const blind = buildMacroCall(live({ spyMa200: undefined }), { now, effectiveDate: D });
+  ok("one-call: a blind crash circuit asymmetrically withholds bullishness", blind.base_direction === "BULLISH" &&
+    blind.direction === "NEUTRAL" && blind.headline === "HODL" && blind.actionability === "HOLD" && /BULLISH withheld/.test(blind.downgraded));
+  const panicCall = buildMacroCall(live({ spyPrice: 600, spyMa200: 650, vix: 26, fearGreed: 19 }), { now, effectiveDate: D });
+  ok("one-call: PANIC is a named override and forces the effective call bearish", panicCall.override.active &&
+    panicCall.override.type === "PANIC" && panicCall.direction === "BEARISH" && panicCall.actionability === "HOLD");
+  const thin = buildMacroCall(live({ vix: undefined, fearGreed: undefined, nfci: undefined }), { now, effectiveDate: D });
+  ok("one-call: below four usable factors publishes no directional claim", thin.published === false &&
+    thin.headline === null && thin.direction === null && thin.confidence === "LOW" && thin.status === "DATA HOLD");
+  const paste = formatMacroCallPaste(bull);
+  ok("one-call: clipboard leads with the identical human and machine vocabulary", /MOONING 🚀 · BULLISH/.test(paste) && /6\/6 factors usable/.test(paste));
+  const share = formatMacroShareCard(bull, { frozen:true });
+  ok("share card: compact copy identifies the frozen call and links its public receipts",
+    /^MACRODASH 10AM CALL/.test(share) && /MOONING 🚀 · BULLISH/.test(share) &&
+    /macrodash\.pages\.dev\/history/.test(share) && share.split("\n").length === 5 && !share.includes("undefined"));
+
+  const fakeKv = () => {
+    const m = new Map();
+    return {
+      _m:m,
+      async get(k, type){ const v=m.get(k); return type === "json" && v ? JSON.parse(v) : (v ?? null); },
+      async put(k,v){ m.set(k,v); },
+      async list({prefix,limit}){ return { keys:[...m.keys()].filter(k=>k.startsWith(prefix)).slice(0,limit).map(name=>({name})) }; },
+    };
+  };
+  const kv = fakeKv();
+  const fetchCall = async () => new Response(JSON.stringify({ call: bull }), { status: 200, headers:{"content-type":"application/json"} });
+  const first = await captureDailyCall({ PULSE_CACHE: kv }, fetchCall, now);
+  const second = await captureDailyCall({ PULSE_CACHE: kv }, async()=>{ throw new Error("must not fetch"); }, new Date(`${D}T18:00:00Z`));
+  ok("history: first 10am write wins and the same ET day is immutable", first.written === true && second.written === false && second.reason === "already captured" && kv._m.size === 1);
+  const histRes = await getHistory({ env:{ PULSE_CACHE:kv } });
+  const hist = await histRes.json();
+  ok("history: public endpoint returns the live-forward record and no private envelope", hist.schema === "md-history-v1" &&
+    hist.live_forward_only === true && hist.outcomes_live_forward_only === true && hist.rows.length === 1 &&
+    hist.rows[0].call.headline === "MOONING" && hist.rows[0].outcomes === null && !JSON.stringify(hist).includes("book"));
+  const failKv = fakeKv();
+  await captureDailyCall({ PULSE_CACHE: failKv }, async()=>new Response("no",{status:503}), now);
+  const failed = JSON.parse([...failKv._m.values()][0]);
+  ok("history: a capture failure is frozen too — bad mornings cannot vanish", failed.capture_status === "FAILED" && failed.call === null && /HTTP 503/.test(failed.failure));
+  const directKv = fakeKv();
+  const direct = await captureDailyCall({PULSE_CACHE:directKv}, async()=>{throw new Error("KV reread must not happen");}, now, bull);
+  const directRecord = JSON.parse([...directKv._m.values()][0]);
+  ok("history repair: the refresh response's canonical call is frozen directly — no eventually-consistent KV reread",
+    direct.written === true && directRecord.call.headline === "MOONING" && directRecord.capture_status === "CAPTURED");
+  const staleKv = fakeKv();
+  const staleDate = new Date(Date.parse(`${D}T00:00:00Z`)-86400000).toISOString().slice(0,10);
+  await captureDailyCall({PULSE_CACHE:staleKv}, async()=>new Response("no",{status:503}), now,
+    {...bull,effective_date:staleDate});
+  const staleRecord = JSON.parse([...staleKv._m.values()][0]);
+  ok("history: a prior-day call can never be notarized under today's immutable key",
+    staleRecord.capture_status === "FAILED" && staleRecord.call === null);
+
+  const observationValues = [1000,1010,1020,990,980,1050,1040,900,920,940,960,980,1000,1020,1040,1060,1080,1090,1080,1095,1100];
+  const observationStart = Date.parse(`${D}T00:00:00Z`);
+  const observations = observationValues.map((value, i) => ({
+    date:new Date(observationStart + i * 86400000).toISOString().slice(0,10), value:String(value),
+  }));
+  const normalized = normalizeSp500Observations([
+    {date:D,value:"."}, {date:D,value:"999"}, ...observations, {date:"bad",value:"123"},
+  ]);
+  ok("outcomes: FRED placeholders are removed and same-date observations normalize deterministically",
+    normalized.length === 21 && normalized[0].date === D && normalized[0].close === 1000);
+  const partial = buildForwardOutcome(first.record, observations.slice(0,6), "2026-08-31T12:00:00Z");
+  ok("outcomes: 1d/5d mature independently while 20d remains honestly pending",
+    partial?.returns_pct?.["1d"] === 1 && partial?.returns_pct?.["5d"] === 5 &&
+    partial?.returns_pct?.["20d"] === null && partial.max_drawdown_pct_20d === -3.92 &&
+    partial.max_drawdown_status === "SO_FAR" && partial.status === "PENDING");
+  const complete = buildForwardOutcome(first.record, observations, "2026-09-22T12:00:00Z");
+  ok("outcomes: the fixed 20-session window finalizes return and max drawdown",
+    complete?.schema === OUTCOME_SCHEMA && complete.anchor.date === D && complete.anchor.close === 100 &&
+    complete.returns_pct["20d"] === 10 && complete.max_drawdown_pct_20d === -14.29 &&
+    complete.max_drawdown_status === "FINAL" && complete.status === "COMPLETE");
+  ok("outcomes: no eligible official close yields an explicit empty companion, never invented zeros",
+    (()=>{const x=buildForwardOutcome(first.record, [{date:new Date(observationStart-86400000).toISOString().slice(0,10),value:"990"}]);
+      return x.anchor === null && x.returns_pct["1d"] === null && x.max_drawdown_pct_20d === null && x.status === "PENDING";})());
+
+  let fredPulls = 0;
+  const outcomeFetch = async () => { fredPulls++; return new Response(JSON.stringify({ observations }), {status:200}); };
+  const enriched = await enrichHistoryOutcomes({PULSE_CACHE:kv,FRED_KEY:"test-key"}, outcomeFetch, new Date("2026-09-22T12:00:00Z"));
+  const frozenAfterOutcome = JSON.parse(kv._m.get(first.key));
+  const outcomeCompanion = JSON.parse(kv._m.get(outcomeKey(D)));
+  const noRewrite = await enrichHistoryOutcomes({PULSE_CACHE:kv,FRED_KEY:"test-key"}, outcomeFetch, new Date("2026-09-23T12:00:00Z"));
+  ok("outcomes: enrichment writes a separate companion and never mutates the frozen call record",
+    enriched.ok && enriched.updated === 1 && frozenAfterOutcome.outcomes === null &&
+    outcomeCompanion.status === "COMPLETE" && outcomeCompanion.call_date === D);
+  ok("outcomes: a complete 20-session companion is immutable and skips later market pulls",
+    noRewrite.updated === 0 && fredPulls === 1);
+  const joinedRes = await getHistory({env:{PULSE_CACHE:kv}});
+  const joined = await joinedRes.json();
+  ok("history: the endpoint joins the outcome companion beneath its frozen call",
+    joined.rows[0].outcomes.schema === OUTCOME_SCHEMA && joined.rows[0].outcomes.returns_pct["5d"] === 5);
+
+  const snapKv = fakeKv();
+  await snapKv.put(`pulse:snapshot:v16:${D}`, JSON.stringify({ live:live(), asOf:now.toISOString(), _diag:{} }));
+  await snapKv.put(`public:regime-history:v1:${D}`, JSON.stringify({
+    schema:"md-history-record-v1", date:D, captured_at:now.toISOString(), capture_status:"CAPTURED", call:bear,
+  }));
+  const readoutRes = await getReadout({ request:new Request("https://macrodash.pages.dev/readout.json"), env:{PULSE_CACHE:snapKv} });
+  const readoutBody = await readoutRes.json();
+  ok("readout: md-call-v1 is additive while tt-v1 legacy regime remains present", readoutBody.schema === "tt-v1" &&
+    readoutBody.call.schema === "md-call-v1" && readoutBody.regime && readoutBody.compatibility.legacy.includes("tt-v1"));
+  ok("accountability: readout keeps TT regime live but serves the same-day frozen public call",
+    readoutBody.regime.verdict === "TAILWIND" && readoutBody.call.headline === "DIAMOND HANDS" && readoutBody.call_frozen === true);
+  const snapshotRes = await getSnapshot({request:new Request("https://macrodash.pages.dev/api/snapshot?view=public"),env:{PULSE_CACHE:snapKv}});
+  const snapshotBody = await snapshotRes.json();
+  ok("accountability: /api/snapshot wires the frozen public call through the one client data path",
+    snapshotBody.publicCall?.headline === "DIAMOND HANDS" && snapshotBody.publicCallFrozen === true &&
+    snapshotBody.publicCallCapturedAt === now.toISOString());
+  const pagesSrc = readFileSync(new URL("../src/PublicPages.jsx", import.meta.url), "utf8");
+  const appSrc = readFileSync(new URL("../src/App.jsx", import.meta.url), "utf8");
+  ok("pages: history and difference stay one click away without adding a dashboard tile", /href="\/history"/.test(dashSrc) &&
+    /href="\/difference"/.test(dashSrc) && appSrc.includes("<HistoryPage />") && appSrc.includes("<DifferencePage />") &&
+    /will not compete on indicator count/.test(pagesSrc));
+
+  const workerSrc = readSrc("../worker/cron.js");
+  const refreshSrc = readSrc("../functions/api/snapshot/refresh.js");
+  const readoutSrc = readSrc("../functions/readout.json.js");
+  const setupSrc = readSrc("../worker/SETUP.md");
+  ok("v5.4 CPI: every active pull uses official NSA CPIAUCNS/CPILFENS, never the SA pair",
+    snapSrc.includes('cpiHeadline:  "CPIAUCNS"') && snapSrc.includes('cpiCore:      "CPILFENS"') &&
+    workerSrc.includes('series: "CPIAUCNS"') && workerSrc.includes('series: "CPILFENS"'));
+  ok("v5.4 cache: snapshot, refresh, readout, worker warm, and test fixture all agree on v16",
+    [snapSrc,refreshSrc,readoutSrc,workerSrc].every((s)=>s.includes("pulse:snapshot:v16")) &&
+    ![snapSrc,refreshSrc,readoutSrc,workerSrc].some((s)=>s.includes("pulse:snapshot:v15")));
+  ok("v5.4 refresh: scheduled history receives the exact refresh-response call",
+    /const currentCall = buildMacroCall\(snapshot\.live \|\| \{\}/.test(refreshSrc) &&
+    /const frozen = validFrozenCall\(record, etDate\)/.test(refreshSrc) &&
+    /\.\.\.readout, call, call_frozen: callFrozen/.test(refreshSrc) &&
+    /const refreshed = await refreshSnapshot\(env\)/.test(workerSrc) &&
+    /refreshed\?\.call \|\| null/.test(workerSrc) &&
+    /call: body\?\.published \? \(body\?\.readout\?\.call \|\| null\) : null/.test(workerSrc));
+  ok("v5.4 deploy gate: docs require REFRESH_TOKEN on both Worker and Pages and name both verification commands",
+    /wrangler secret list/.test(setupSrc) && /wrangler pages secret list --project-name macrodash/.test(setupSrc) &&
+    /REFRESH_TOKEN.*both lists/s.test(setupSrc));
 }
 
 console.log(`\n=== SMOKE TEST: ${pass} passed, ${fail} failed ===`);

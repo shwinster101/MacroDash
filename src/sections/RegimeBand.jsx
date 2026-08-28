@@ -48,7 +48,10 @@ export const WEN_MOON_STATES = [
    and the Drivers matrix printed different exclusion reasons; this finishes the job for the
    regime and the flips. The local calls survive ONLY as the extraction-reuse fallback
    (Property 9), which is why they are still imported. */
-const RegimeBand=({d,stale=new Set(),loading=false,liveBuild=false,srcLabel="derived from live data",sentence=null,conf=null,factorRows=null,plainVerdict=null,regimeIn=null,flipsIn=null})=>{
+/* v5.3 ONE CALL: `call` owns the visible human headline and secondary machine direction.
+   `plainVerdict` remains a Simple-mode scope signal for the eyebrow only; it can no longer
+   introduce a competing public label. */
+const RegimeBand=({d,stale=new Set(),loading=false,liveBuild=false,srcLabel="derived from live data",sentence=null,conf=null,factorRows=null,plainVerdict=null,regimeIn=null,flipsIn=null,call=null,callFrozen=false,callCapturedAt=null,callDrift=null,onCopyCall=null,callCopied=false,copyDisabled=false})=>{
   const [open,setOpen]=useState(false);
   // Property 9 (null-safe): no data object means nothing to compute — an empty, hidden
   // region, never a throw. The orchestrator always passes `d`; this guards extraction reuse.
@@ -56,6 +59,10 @@ const RegimeBand=({d,stale=new Set(),loading=false,liveBuild=false,srcLabel="der
   const regime=regimeIn||computeRegime(d,stale);
   // C1 (v3.60): the pure engine returns token KEYS; the UI owns the palette.
   regime.tint=DT[regime.tintKey]; regime.color=T[regime.colorKey];
+  if(call&&call.direction){
+    regime.color=call.direction==="BULLISH"?T.green:call.direction==="BEARISH"?T.red:T.amber;
+    regime.tint=call.direction==="BULLISH"?DT["regime-on-bg"]:call.direction==="BEARISH"?DT["regime-off-bg"]:DT["regime-mix-bg"];
+  }
   /* v3.98.3 — ONE derivation, two altitudes. This re-derived its own factor rows via
      regimeFactors(d,stale), which cannot see WHY a factor was excluded, so the hero panel
      and the C3 Drivers matrix printed different reasons for the same factor. The
@@ -66,7 +73,7 @@ const RegimeBand=({d,stale=new Set(),loading=false,liveBuild=false,srcLabel="der
     : regimeFactors(d,stale);
   // FEAT-QUORUM: LOADING is not a verdict state — during the first fetch there is no evidence
   // yet, so the posture is withheld outright rather than computed from the mock baseline.
-  const withheld=loading||regime.insufficient;
+  const withheld=loading||regime.insufficient||(call&&!call.headline);
   // FEAT-FLIP (v3.53): what would change this call. The NEAREST load-bearing crossing rides
   // the first screen; the full set (plus abstentions and exclusions) lives one tap down.
   const fc=flipsIn||flipConditions(d,stale);
@@ -76,6 +83,8 @@ const RegimeBand=({d,stale=new Set(),loading=false,liveBuild=false,srcLabel="der
   const neutralVotes=Math.max(0,regime.counted-regime.bullVotes-regime.bearVotes);
   // "wen moon?" — map the regime verdict to our moon ratings: RISK-ON→MOONING, MIXED→HODL, RISK-OFF→DIAMOND HANDS
   const moon=withheld?WEN_MOON_STATES[3]:WEN_MOON_STATES[{ "RISK-ON":0, "MIXED":1, "RISK-OFF":2 }[regime.label] ?? 1];
+  const callLabel=call&&call.headline?`${call.headline}${call.emoji?` ${call.emoji}`:""}`:moon.label;
+  const machineLabel=call&&call.direction?call.direction:regime.label;
   return(
     <div role="region" aria-label="Macro backdrop verdict"
       style={{background:regime.tint,borderBottom:`1px solid ${regime.color}33`,borderTop:`1px solid ${regime.color}22`,padding:"10px 20px",position:"relative"}}>
@@ -87,16 +96,10 @@ const RegimeBand=({d,stale=new Set(),loading=false,liveBuild=false,srcLabel="der
                 line is two vocabularies in 20px. Power keeps the voice (owner ruling); Simple
                 says what the block IS. */}
             <div style={{fontFamily:T.fontMono,fontSize:8,color:regime.color,letterSpacing:"0.14em",textTransform:"uppercase"}}>
-              {plainVerdict?"Macro Backdrop · the call":"Macro Backdrop · wen moon?"}
+              {callFrozen?"Macro Backdrop · 10am frozen call":plainVerdict?"Macro Backdrop · the call":"Macro Backdrop · wen moon?"}
             </div>
             <div style={{display:"flex",alignItems:"baseline",gap:10,flexWrap:"wrap"}}>
-              {/* Simple: "MACRO: BULLISH" — the MACRO scope prefix names which engine is
-                  speaking (this six-factor BACKDROP, not the order-gating readout and not a
-                  position stance), which is what keeps HODL readable as "no edge" rather
-                  than as advice. Power: the moon voice, unchanged. */}
-              <span style={{fontFamily:T.fontMono,fontSize:T.fsXl,fontWeight:700,color:regime.color,letterSpacing:"-0.01em"}}>
-                {plainVerdict?`MACRO: ${plainVerdict.label}`:moon.label}
-              </span>
+              <span style={{fontFamily:T.fontMono,fontSize:T.fsXl,fontWeight:700,color:regime.color,letterSpacing:"-0.01em"}}>{callLabel}</span>
               <span style={{fontFamily:T.fontMono,fontSize:T.fsL,color:T.textSecondary}}>
                 {/* ENGINE0-CONT: the rendered label is DATA HOLD — a deterministic wait
                     posture ("the system lacks evidence, hold"), not the internal
@@ -111,8 +114,11 @@ const RegimeBand=({d,stale=new Set(),loading=false,liveBuild=false,srcLabel="der
                     one call, so Simple keeps only the descriptor; Power keeps both. The
                     withheld line drops it too — DATA HOLD is already the scoped label. */}
                 {loading?"LOADING · waiting for live data before calling a posture"
-                        :regime.insufficient?(plainVerdict?regime.sub:`${WITHHELD_LABEL} · ${regime.sub}`)
+                        /* superseded by the canonical call projection:
                         :`${plainVerdict?"":`${regime.label} · `}${conf&&/\d+ of \d+ inputs usable$/.test(regime.sub)?regime.sub.replace(/ — \d+ of \d+ inputs usable$/,""):regime.sub}`}
+                        */
+                        :regime.insufficient?`${WITHHELD_LABEL} · ${regime.sub}`
+                        :`${machineLabel} · ${conf&&/\d+ of \d+ inputs usable$/.test(regime.sub)?regime.sub.replace(/ — \d+ of \d+ inputs usable$/,""):regime.sub}`}
               </span>
               {(loading||regime.insufficient)&&<span style={{fontFamily:T.fontMono,fontSize:T.fsS,color:T.textMuted}}>
                 {loading?"no factors voting yet"
@@ -120,6 +126,12 @@ const RegimeBand=({d,stale=new Set(),loading=false,liveBuild=false,srcLabel="der
               </span>}
             </div>
             {!withheld&&sentence&&<div style={{fontFamily:T.fontMono,fontSize:T.fsM,color:T.textPrimary,lineHeight:1.5,maxWidth:"72ch",marginTop:3}}>{sentence}</div>}
+            {callFrozen&&<div style={{fontFamily:T.fontMono,fontSize:8,color:T.textMuted,marginTop:3}}>
+              immutable public call · captured 10:00 ET{callCapturedAt?` · ${String(callCapturedAt).slice(0,10)}`:""}
+            </div>}
+            {callDrift&&<div style={{fontFamily:T.fontMono,fontSize:9,color:callDrift.direction==="BEARISH"?T.red:T.amber,marginTop:4,lineHeight:1.45}}>
+              Current evidence now reads {callDrift.headline}{callDrift.emoji?` ${callDrift.emoji}`:""} · {callDrift.direction}; the scored 10am call remains frozen above.
+            </div>}
             {/* v3.98.3 — one line, one scope word, one vocabulary. It used to read
                 "4/6 factors voting · excluded: 10Y · VIX" directly under a sentence saying
                 those same two were "dark", while the verdict sub above ALSO said "4 of 6
@@ -144,6 +156,11 @@ const RegimeBand=({d,stale=new Set(),loading=false,liveBuild=false,srcLabel="der
         </div>
         {/* Right: the ℹ toggle — the chips ride inside the panel now (v3.94: evidence, one click). */}
         <div style={{display:"flex",alignItems:"center",gap:8}}>
+          {onCopyCall&&<button onClick={onCopyCall} disabled={copyDisabled} aria-label="Copy MacroDash posture card"
+            title={copyDisabled?"live data required":callFrozen?"Copy the frozen 10am public call":"Copy the current MacroDash posture"}
+            style={{background:callCopied?"#1a3020":T.surfaceHigh,border:`1px solid ${callCopied?T.green:regime.color}66`,borderRadius:3,color:callCopied?T.green:regime.color,cursor:copyDisabled?"not-allowed":"pointer",padding:"4px 9px",minHeight:44,fontFamily:T.fontMono,fontSize:9,opacity:copyDisabled?0.45:1,whiteSpace:"nowrap"}}>
+            {callCopied?"✓ CALL COPIED":callFrozen?"⎘ COPY 10AM CALL":"⎘ COPY POSTURE"}
+          </button>}
           <button onClick={()=>setOpen(o=>!o)} aria-label="Show regime factors" aria-expanded={open}
             style={{background:"none",border:`1px solid ${regime.color}44`,borderRadius:3,color:regime.color,cursor:"pointer",padding:"4px 8px",minWidth:44,minHeight:44,fontFamily:T.fontMono,fontSize:11,flexShrink:0}}>
             {open?"▲":"ℹ"}

@@ -3,7 +3,7 @@
 // with its original observation date and a STALE status.
 
 import { authorize, crossOrigin } from "./tt.js";
-import { extractSecFacts, filingsFromSubmissions, mergeFactsRecord } from "../lib/tt-facts.js";
+import { extractSecFacts, filingsFromSubmissions, mergeFactsRecord, candleSeriesFault } from "../lib/tt-facts.js";
 
 const KEY_PREFIX = "tt:facts:";
 const CIK_PREFIX = "tt:sec:cik:";
@@ -60,13 +60,16 @@ export function quoteFact(raw, profile, retrievedAt) {
   };
 }
 
-function candlesFact(raw, retrievedAt) {
+function candlesFact(raw, retrievedAt, refPx) {
   if (!raw || raw.s !== "ok" || !Array.isArray(raw.t)) return missing("Finnhub", raw?.s || "premium daily candles unavailable", retrievedAt, "https://finnhub.io/");
   const rows = raw.t.map((t, i) => ({
     date: dateFromUnix(t), open: Number(raw.o?.[i]), high: Number(raw.h?.[i]), low: Number(raw.l?.[i]),
     close: Number(raw.c?.[i]), volume: Number(raw.v?.[i]),
   })).filter((r) => r.date && [r.open, r.high, r.low, r.close].every(Number.isFinite));
   if (rows.length < 2) return missing("Finnhub", "daily candle response was empty", retrievedAt, "https://finnhub.io/");
+  // v5.6.1: continuity guard — a discontinuous series must never be stored as LIVE evidence.
+  const fault = candleSeriesFault(rows, refPx);
+  if (fault) return missing("Finnhub", "candle series failed continuity: " + fault, retrievedAt, "https://finnhub.io/");
   return {
     value: rows, status: "LIVE", provider: "Finnhub", sourceUrl: "https://finnhub.io/",
     observedAt: rows.at(-1).date, retrievedAt, resolution: "D",
@@ -79,7 +82,7 @@ const isoFromNasdaqDate = (value) => {
   return m ? `${m[3]}-${m[1]}-${m[2]}` : null;
 };
 
-export function nasdaqCandlesFact(payloads, retrievedAt) {
+export function nasdaqCandlesFact(payloads, retrievedAt, refPx) {
   const rows = (Array.isArray(payloads) ? payloads : [payloads]).flatMap((raw) =>
     Array.isArray(raw?.data?.tradesTable?.rows) ? raw.data.tradesTable.rows : [])
     .map((r) => ({
@@ -91,13 +94,18 @@ export function nasdaqCandlesFact(payloads, retrievedAt) {
     .sort((a, b) => a.date.localeCompare(b.date));
   const unique = [...new Map(rows.map((r) => [r.date, r])).values()];
   if (unique.length < 2) return missing("Nasdaq", "daily historical response was empty", retrievedAt, "https://www.nasdaq.com/market-activity/stocks");
+  /* v5.6.1: the windows must TILE. Measured live (NBIS): a failed middle window left a
+     6-month hole and the tail window carried another instrument's prints — the blind
+     flatten stored it as LIVE and a stamped outcome anchored at $7.62 on a $277 stock. */
+  const fault = candleSeriesFault(unique, refPx);
+  if (fault) return missing("Nasdaq", "candle series failed continuity: " + fault, retrievedAt, "https://www.nasdaq.com/market-activity/stocks");
   return {
     value: unique, status: "LIVE", provider: "Nasdaq", sourceUrl: "https://www.nasdaq.com/market-activity/stocks",
     observedAt: unique.at(-1).date, retrievedAt, resolution: "D",
   };
 }
 
-async function nasdaqCandles(sym, now, retrievedAt) {
+async function nasdaqCandles(sym, now, retrievedAt, refPx) {
   // Nasdaq truncates broad requests. Three bounded, non-overlapping windows provide
   // enough sourced sessions for the 200-day moving average without weakening the gate.
   const windows = [];
@@ -117,7 +125,7 @@ async function nasdaqCandles(sym, now, retrievedAt) {
   )));
   const payloads = results.filter((x) => x.status === "fulfilled").map((x) => x.value);
   if (!payloads.length) throw results.find((x) => x.status === "rejected")?.reason || new Error("Nasdaq history unavailable");
-  return nasdaqCandlesFact(payloads, retrievedAt);
+  return nasdaqCandlesFact(payloads, retrievedAt, refPx);
 }
 
 function earningsFact(raw, today, retrievedAt) {
@@ -217,10 +225,14 @@ export async function refreshTickerFacts(sym, env, now = new Date()) {
       sourceUrl: "https://finnhub.io/", observedAt: today, retrievedAt,
     };
   } else fields.profile = missing("Finnhub", profile.reason?.message || "profile unavailable", retrievedAt, "https://finnhub.io/");
-  fields.candles = candles.status === "fulfilled" ? candlesFact(candles.value, retrievedAt)
+  // v5.6.2: the same-refresh LIVE quote is the candle cross-check reference — same pass,
+  // same symbol; a non-LIVE/non-USD quote skips the rung rather than guessing.
+  const refPx = fields.quote && fields.quote.status === "LIVE" && Number(fields.quote.value) > 0
+    ? Number(fields.quote.value) : null;
+  fields.candles = candles.status === "fulfilled" ? candlesFact(candles.value, retrievedAt, refPx)
     : missing("Finnhub", candles.reason?.message || "daily candles unavailable", retrievedAt, "https://finnhub.io/");
   if (fields.candles.status === "MISSING") {
-    try { fields.candles = await nasdaqCandles(sym, now, retrievedAt); }
+    try { fields.candles = await nasdaqCandles(sym, now, retrievedAt, refPx); }
     catch (e) {
       fields.candles.reason = `${fields.candles.reason}; Nasdaq fallback unavailable: ${e?.message || "unknown"}`;
     }

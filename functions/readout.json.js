@@ -14,6 +14,8 @@
 // or (miss) subrequest /api/snapshot (which also write-through-warms KV). No new cron/infra.
 
 import { buildTtReadout } from "../src/ttReadout.js";
+import { buildMacroCall } from "../src/macroCall.js";
+import { historyKey, validFrozenCall } from "../src/publicHistory.js";
 
 export async function onRequest(context) {
   const { request, env } = context;
@@ -31,7 +33,7 @@ export async function onRequest(context) {
   const etDate = new Date().toLocaleDateString("en-CA", { timeZone: "America/New_York" }); // YYYY-MM-DD
   // SYNC HAZARD: this key version MUST match functions/api/snapshot.js (cacheKey) AND
   // worker/cron.js (refreshSnapshot). No shared module spans them — grep "pulse:snapshot:v".
-  const cacheKey = `pulse:snapshot:v15:${etDate}`;
+  const cacheKey = `pulse:snapshot:v16:${etDate}`;
 
   let live = null, asOf = null, cached = false, kvHit = false, snapDiag = null;
 
@@ -57,13 +59,35 @@ export async function onRequest(context) {
   // 3) buildTtReadout projects ONLY a named whitelist of fields, so KV's _diag can never leak.
   //    Empty/failed live still yields a stable shape — ENGINE0-CONT: the wait posture is
   //    NEUTRAL · LOW · HOLD · DATA DEGRADED, never the literal verdict INSUFFICIENT.
+  const generatedAt = new Date().toISOString();
   const readout = buildTtReadout(live || {}, { cached });
+  // v4.0: the public CPI/CAPE/NFCI engine is the canonical MacroDash call. The existing
+  // tt-v1 body remains byte-semantics-compatible for older Engine 0 consumers; `call` is
+  // additive, and all first-party public surfaces consume it.
+  const currentCall = buildMacroCall(live || {}, {
+    cached,
+    effectiveDate: etDate,
+    generatedAt,
+  });
+  let call = currentCall, callFrozen = false, callCapturedAt = null;
+  try {
+    const record = await env.PULSE_CACHE?.get(historyKey(etDate), "json");
+    const frozen = validFrozenCall(record, etDate);
+    if (frozen) { call = frozen; callFrozen = true; callCapturedAt = record.captured_at || null; }
+  } catch { /* before capture / KV fault: the current projection remains explicit below */ }
   const body = {
     schema: "tt-v1",
     as_of: asOf,
-    generated_at: new Date().toISOString(),
+    generated_at: generatedAt,
     cached,
     ...readout,
+    call,
+    call_frozen: callFrozen,
+    call_captured_at: callCapturedAt,
+    compatibility: {
+      canonical: "call (md-call-v1)",
+      legacy: "regime (tt-v1 Engine 0; retained for existing operator consumers)",
+    },
   };
   // ENGINE0-CONT §6/§10: machine-consumable health — enough structured provenance for an
   // external terminal (or an LLM read tool) to EXPLAIN the state without fetching or

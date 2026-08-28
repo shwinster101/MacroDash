@@ -33,9 +33,16 @@ decisions.
 
 The separation is bidirectional: street receipts cannot enter canonical `readiness()`, mutate or
 reorder the canonical valuation rows, or select the canonical Next Dollar pick. The street panel
-keeps book order and selects no winner. Missing Engine 0 actionability fails closed everywhere;
-only explicit `FULL` passes. Intraday quotes use a 15-minute limit, while closed sessions use the
-most recent completed-session close until the next open.
+keeps book order and selects no winner. Missing Engine 0 actionability fails closed everywhere.
+
+The **product gate vocabulary is SEND IT · HODL · TOUCH GRASS** (v5.6), one projection of the
+eligibility ladder's own result so the word can never disagree with the veto it names.
+**SEND IT is the only state that clears a macro-dependent add** and maps to Engine 0 `FULL`;
+**HODL** maps to `RESTRICTED` — readable, the ranking fully usable, still vetoed; **TOUCH GRASS**
+covers `HOLD` and every unreadable state (absent readout, blind or tripped Macro Flip, tripped or
+unresolved circuit). `FULL` / `RESTRICTED` / `HOLD` remain the machine vocabulary of the `tt-v1`
+readout and are never the product words. Intraday quotes use a 15-minute limit, while closed
+sessions use the most recent completed-session close until the next open.
 
 ## TT-run response contract
 

@@ -92,7 +92,7 @@ const MacroRegime=({d,modeOf,asOfOf,fomcDays,fomcSource=null})=>{
                   <div style={{height:36}}><ResponsiveContainer width="100%" height="100%"><LineChart data={d.macro.cpi.trend.map((v,i)=>({v,i}))}><Line type="monotone" dataKey="v" stroke={T.red} dot={false} strokeWidth={1.5}/><ReferenceLine y={2.0} stroke={T.green} strokeDasharray="3 2" strokeWidth={1}/></LineChart></ResponsiveContainer></div>
                   {/* v3.98.4: asOf was omitted here alone — a LIVE badge with no observation date, on the
                       tile whose whole point is the inflation TREND. Every sibling box passes one. */}
-                  <SourceBox api="FRED" endpoint="CPIAUCSL + CPILFESL" mode={modeOf('cpiHeadline')} asOf={asOfOf('cpiHeadline')}/>
+                  <SourceBox api="FRED" endpoint="CPIAUCNS + CPILFENS · official NSA YoY" mode={modeOf('cpiHeadline')} asOf={asOfOf('cpiHeadline')}/>
                 </div>
                 {/* Labor + household savings (+ Sahm, v3.84 — wraps at phone widths: five
                     cells no longer fit one 320px row, and an overflowing row is a suite red) */}

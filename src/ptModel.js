@@ -164,5 +164,56 @@ function pickRow(rr,hz,_now){
   return next?{row:next,rolled:want.y}:{row:want,rolled:null};
 }
 
+/* FEAT-TT-SUGGEST (v4.2): the street-implied multiple — an INVERT, never an invention.
+   impliedMultiple() (v3.33) solves a ROW's formula backwards at the live price; this solves
+   the same two formulas backwards at the STREET TARGET, picks the lens with the existing
+   TSM/UBER + RKLB crossing rules, and returns a SEED the owner may confirm — it never writes.
+   The v3.85 sourcing doctrine holds: the multiple is derived from a reviewed/sourced target,
+   not asserted by the assistant; UNKNOWN names every missing input rather than guessing.
+   The seed's floor_only_before mirrors the MU trough-anchor mechanics: a single-year key
+   later than the first row year would fire MISKEY without it (schedAt looks backward). */
+function suggestMultiple(dd,tgt,px,hz,_y0){
+  const m=(dd&&dd.pt_model)||{};
+  if(m.pe_premium_multiple!=null||m.ev_s_multiple!=null)return{state:"modelled"};
+  const c=(dd&&dd.consensus)||{};
+  const rev={...(c.revenue_B||{}),...(m.revenue_B||{})},eps={...(c.eps||{}),...(m.eps||{})};
+  const years=ptRowYears(dd,_y0);
+  if(!years.length)return{state:"unknown",unknown:["no consensus series at all — nothing to invert"]};
+  const y=(hz&&years.indexOf(hz)>=0)?hz:years[0];
+  const fwd=String(+y+1);
+  const fob=m.floor_only_before;
+  if(fob&&y<fob)return{state:"floor_by_design",y,fob};
+  if(!(tgt&&isFinite(tgt.pt)&&tgt.pt>0))return{state:"unknown",y,fwd,unknown:["no street target on file"]};
+  const e=eps[fwd],r=rev[fwd];
+  const sh=schedAt(m.share_count_M,y),nc=schedAt(m.net_cash_B,y);
+  const peOk=typeof e==="number"&&e>0;
+  const crossing=peOk&&isFinite(px)&&px>0&&(px/e)>LENS_MAX_PE;
+  const pe=peOk?{mult:Math.round(tgt.pt/e*10)/10,eps:e}:null;
+  const evsReady=typeof r==="number"&&r>0&&isFinite(sh)&&sh>0&&typeof nc==="number"&&isFinite(nc);
+  let evs=null;
+  if(evsReady){
+    const v=Math.round(((tgt.pt*sh/1000)-nc)/r*100)/100;
+    if(v>0)evs={mult:v,rev:r,sh,nc};
+  }
+  const pick=(peOk&&!crossing)?"P/E":(evs?"EV/S":null);
+  if(!pick){
+    const why=[];
+    if(!peOk)why.push("FY"+fwd+" EPS "+(e==null?"absent":e)+" — the earnings lens cannot engage");
+    else if(crossing)why.push("FY"+fwd+" EPS "+e+" is a crossing artifact at ~"+Math.round(px/e)+"x — the sales lens is correct (the RKLB rule)");
+    if(!evsReady){
+      const miss=[];
+      if(!(typeof r==="number"&&r>0))miss.push("revenue_B["+fwd+"]");
+      if(!(isFinite(sh)&&sh>0))miss.push("share_count_M");
+      if(!(typeof nc==="number"&&isFinite(nc)))miss.push("net_cash_B");
+      why.push("EV/S invert blocked — missing "+miss.join(", "));
+    }else if(!evs)why.push("EV/S invert yields a non-positive multiple — the target sits below net cash");
+    return{state:"unknown",y,fwd,pe,unknown:why};
+  }
+  const mult=pick==="P/E"?pe.mult:evs.mult;
+  return{state:"suggest",y,fwd,pick,mult,pe,evs,crossing:!!crossing,
+    seed:{path:pick==="P/E"?"pe_premium_multiple":"ev_s_multiple",year:y,mult,
+      floor_only_before:years[0]<y?y:null}};
+}
+
 export { schedAt, ptModelRows, ptRowYears, lintPtModel, yrsToYearEnd, annualise, pickRow,
-  LENS_MAX_PE, ANN_MIN_Y };
+  suggestMultiple, LENS_MAX_PE, ANN_MIN_Y };
