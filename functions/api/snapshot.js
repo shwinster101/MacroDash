@@ -108,6 +108,9 @@ export const BANDS = {
   // ~+3.3 (2008-10) and its record low ~-1.0, so ±5 rejects the impossible (a decimal shift,
   // a parse fault) without rejecting the unusual — the same rule that keeps negative WTI.
   nfci:         [-5, 5],
+  // FEAT-NFCILEV (8/28): the leverage SUBINDEX shares NFCI's z-score construction (mean 0,
+  // SD 1), so it shares NFCI's band verbatim — reject the impossible, not the unusual.
+  nfciLeverage: [-5, 5],
 };
 // True when v is absent (nothing to judge) or inside its band. Unbanded fields pass.
 export function plausible(key, v) {
@@ -476,7 +479,7 @@ async function fetchFred(key, statuses = null) {
        a decision day. DFEDTARU/DFEDTARL are the Fed's own DAILY target-range bounds — they
        step the moment the FOMC acts — so the target range becomes the headline number and
        the effective average is labelled for what it is. Same FRED rails, two more series
-       (21 now = the tail batch grows by 2; the VIX/DGS10 critical head is untouched). */
+       (22 now, after the 8/28 NFCILEVERAGE context add; the VIX/DGS10 critical head is untouched). */
     fedTargetUpper: "DFEDTARU",
     fedTargetLower: "DFEDTARL",
     // Official BLS headline/core 12-month CPI is reported from the NOT-seasonally-adjusted
@@ -509,6 +512,14 @@ async function fetchFred(key, statuses = null) {
     // that restates this dashboard's own thesis question ("is it safe to be in the market?")
     // as a number, and it is effectively absent from retail finance sites.
     nfci:         "NFCI",
+    /* FEAT-NFCILEV (8/28 disposition note): the Chicago
+       Fed's LEVERAGE subindex of NFCI — the dimension its own research says tends to LEAD
+       the composite ahead of crises (1929 margin debt, 2008 financial-system leverage were
+       leverage builds the blended index muted until the unwind). CONTEXT ONLY: no vote, no
+       band verdict, no readout change — the NFCI arrival rule (v3.43) is the upgrade path
+       if it ever earns one. Weekly like its parent; emits only the level + its own AsOf
+       through the generic path (no derived keys, so no DERIVED_OF row). */
+    nfciLeverage: "NFCILEVERAGE",
   };
   // FEAT-R10: these arrive as a price INDEX; the dashboard wants year-over-year %.
   // We pull enough monthly history to derive YoY (latest vs 12 months prior) plus a

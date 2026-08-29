@@ -1,6 +1,6 @@
 # 2026-08-28 — NFCILEVERAGE disposition: the leverage gauge the board doesn't isolate
 
-**Status: SURVEY + owner thesis — no code changed by this pass.** Disposition of the
+**Status: SHIPPED — see Outcomes at the foot; the survey above is the pre-implementation record.** Disposition of the
 "can we already fetch FRED NFCILEVERAGE?" question, plus the motivation the owner stated
 after it. When implementation lands, append an Outcomes section per the per-pass protocol.
 
@@ -81,3 +81,59 @@ The original disposition was delivered chat-only, violating the working-notes co
 this branch itself added pins for on 8/28 ("findings live on the BRANCH, not in the
 chat"). The owner caught it ("was the disposition written to the branch?"). This file is
 the correction — written the same day, with the miss recorded rather than papered over.
+
+---
+
+# Outcomes — 2026-08-28 (implemented same day, plus one extra render home)
+
+Shipped per the smallest-add plan, with the owner's addition of a second render home: the
+open Five Whys footer. Gates: **2053 smoke + 306 render + 198 public-render**, real
+Chromium under `REQUIRE_BROWSER=1`, `audit:prod` clean.
+
+## What shipped
+
+- `functions/api/snapshot.js` — `nfciLeverage: "NFCILEVERAGE"` in the series map, BANDS
+  `[-5, 5]` (NFCI's verbatim), the `(21 now …)` batch comment moved to 22 with the count.
+  Generic emission only: `nfciLeverage` + `nfciLeverageAsOf`, no derived keys.
+- `src/sources.js` — `macro.nfci.leverage` (num, public, own AsOf) + weekly cadence. It
+  joined the smoke partition's `PRIMARY_ASOF_FIELDS` (74 → 75 keys) — its own FRED pull,
+  never derived from parent nfci: a fresher parent must not launder a stale subindex.
+- `dashboard.jsx` — mock `leverage: -0.31` under `macro.nfci`; ONE `levCtx` derivation
+  (value · asOf · live, where live = LIVE/CACHED and finite) passed to BOTH FiveWhys call
+  sites — sections stay presentation-only.
+- **Render home 1** — NFCI tile sub-line `leverage subindex −0.55`: number only, no
+  TIGHT/LOOSE word, suppressed on mock/stale like the tile's own verdict.
+- **Render home 2** — open-whys footer: `Leverage subindex −0.55 as of {date} · context,
+  not a vote` when live; `Leverage subindex not loaded` on mock/stale/error/loading. NOT a
+  sixth check, NOT in `evidenceSet.factors` — the factor-only smoke pin stayed green
+  untouched, which is the structural proof the chain never absorbed it.
+- **Untouched, verified by pin:** `REGIME_BAND_TABLE`, `computeRegime`/`evidence.js`,
+  `/readout.json` (`ttReadout.js` swept), `SIGNAL_FIELDS`, `DAILY`, the worker.
+
+## Corrections / catches this pass earned
+
+1. **The working-notes guard caught its own author on day two.** The snapshot.js comment
+   cited this note's `working/` path; the "no product surface may reference working/" pin
+   (added 8/28) went red. The pin is right — the citation became a date tag. First real
+   catch for that guard.
+2. Two smoke draft errors caught by the run, not review: `sourcesSrc` never existed
+   (sources.js is IMPORTED in smoke, so the pin now runs against the real `SOURCES` /
+   `cadenceOf` / `DERIVED_OF` objects — stronger than a source-text regex), and
+   `evidenceSrc` sat in TDZ below the new section (direct `readSrc`).
+3. Two pre-existing call-site pins re-anchored for the `leverage={levCtx}` prop (claims
+   unchanged).
+
+## Negative controls (restored green after)
+
+- Footer gate removed (`leverage.live&&` dropped) → 2 red, one of them the BROWSER-driven
+  loading-scenario pin — i.e. the mock −0.31 literally rendered as a live-looking number,
+  which is the exact defect the gate exists to stop.
+- Series entry removed → the wiring pin red.
+
+## Still open
+
+- The upgrade path (a vote) stays owner-gated per the NFCI precedent: observe real values
+  first, band in the index's own unit, explicit call. Nothing here moved the majority math.
+- First live fetch is the real schema check — FRED is 403 from this build environment, so
+  NFCILEVERAGE's first observation lands on deploy, on the existing per-field last-good
+  rails either way.

@@ -386,8 +386,12 @@ const PRIMARY_ASOF_FIELDS = [
   "fearGreed", "marketHeadline", "shillerPe", "tokenBlendedMtok", "rateOddsHold",
   // v3.85: the volume leg carries its own AsOf (the dataset's own latest date).
   "tokenVolDay",
+  // FEAT-NFCILEV (8/28): the leverage subindex is its own FRED pull with its own
+  // observation date — primary, never derived from its parent nfci (a fresher parent must
+  // not launder a stale subindex, nor the reverse).
+  "nfciLeverage",
 ];
-ok("deriv: PRIMARY_ASOF_FIELDS + DERIVED_OF + DERIVED_EXEMPT partition ALL 74 SOURCES keys (reconciled, not hardcoded)", (() => {
+ok("deriv: PRIMARY_ASOF_FIELDS + DERIVED_OF + DERIVED_EXEMPT partition ALL 75 SOURCES keys (reconciled, not hardcoded)", (() => {
   const keys = Object.keys(SOURCES);
   const derivedKeys = Object.keys(DERIVED_OF);
   const inPrimary = (k) => PRIMARY_ASOF_FIELDS.includes(k);
@@ -2850,6 +2854,34 @@ ok("30y: thirtyYear IS in the DAILY set — idx[5]/idx[21] really are ~1wk/~1mo 
   /const DAILY = new Set\(\[[^\]]*"thirtyYear"[^\]]*\]\)/.test(snapSrc));
 ok("nfci: W1 is derived from the prior observation, which on a weekly series really is a week",
   snapSrc.includes("out.nfciW1 = parseFloat((latest - prev).toFixed(3))"));
+/* FEAT-NFCILEV (8/28, working/2026-08-28-nfci-leverage-disposition.md) — the leverage
+   SUBINDEX, context only. Leverage drove 1929 and 2008 and the composite NFCI dilutes it;
+   the subindex is isolated as a stated number that votes NOWHERE. */
+ok("nfciLeverage: the series is wired with NFCI's band verbatim, and stays out of DAILY",
+  /nfciLeverage:\s+"NFCILEVERAGE"/.test(snapSrc) &&
+  /nfciLeverage:\s*\[-5,\s*5\]/.test(snapSrc) &&
+  (() => { const m = /const DAILY = new Set\(\[([^\]]*)\]\)/.exec(snapSrc);
+    return m && !/nfciLeverage/.test(m[1]); })());
+ok("nfciLeverage: mapped with its OWN AsOf — weekly cadence, no DERIVED_OF row, not in the census",
+  // sources.js is IMPORTED, so these run against the real objects, not source text.
+  SOURCES.nfciLeverage?.path === "macro.nfci.leverage" &&
+  SOURCES.nfciLeverage?.kind === "num" &&
+  cadenceOf("nfciLeverage") === "weekly" &&
+  !("nfciLeverage" in DERIVED_OF_SRC) &&
+  !/nfciLeverage/.test(/const SIGNAL_FIELDS=\[[^\]]*\]/.exec(dashSrc)?.[0] || "x"));
+ok("nfciLeverage: it votes NOWHERE — absent from the band table, the evidence contract, and the readout",
+  !/nfciLeverage/i.test(regimeSrc) && !/nfciLeverage/i.test(readSrc("../src/evidence.js")) &&
+  !/nfciLeverage/i.test(readSrc("../src/ttReadout.js")));
+ok("nfciLeverage tile sub-line: number only, suppressed on mock/stale — no verdict word",
+  mdSrc.includes("leverage subindex {lv>0?\"+\":\"\"}{lv.toFixed(2)}") &&
+  /!isIllustrative\(modeOf\('nfciLeverage'\)\)&&Number\.isFinite\(lv\)/.test(mdSrc) &&
+  !/leverage[\s\S]{0,200}?(TIGHT|LOOSE)/.test(mdSrc.slice(mdSrc.indexOf("leverage subindex"))));
+ok("nfciLeverage whys footer: context-labelled when live, 'not loaded' otherwise — never a mock number",
+  whysSrc.includes("· context, not a vote") &&
+  whysSrc.includes("Leverage subindex not loaded") &&
+  /leverage\.live&&Number\.isFinite\(leverage\.v\)/.test(whysSrc) &&
+  /const m=modeOf\('nfciLeverage'\);return\(m==="LIVE"\|\|m==="CACHED"\)/.test(dashSrc) &&
+  (dashSrc.match(/leverage=\{levCtx\}/g) || []).length === 2);
 ok("nfci: a plausibility band exists and is WIDE — ±5 against a record high of ~+3.3 (2008), " +
    "rejecting the impossible without rejecting the unusual",
   (() => { const b = BANDS.nfci; return Array.isArray(b) && b[0] === -5 && b[1] === 5 &&
@@ -5545,7 +5577,8 @@ ok("whys: canonical computation and headline freshness stay in the orchestrator"
 ok("whys: a missing fw prop renders a safe empty state, never a throw (Property 9)",
   /if\(!fw\|\|!Array\.isArray\(fw\.whys\)\)return <div aria-hidden="true"\/>;/.test(whysSrc));
 ok("whys: the call site hands over narrative, state-derived label, and equity-close provenance",
-  /<FiveWhys fw=\{fw\} derivedLabel=\{derivedLabel\} mode=\{modeOf\('spyPrice'\)\} asOf=\{asOfOf\('spyPrice'\)\}\/>/.test(dashSrc));
+  // 8/28 FEAT-NFCILEV re-anchor: the Power call site gained the leverage context prop.
+  /<FiveWhys fw=\{fw\} derivedLabel=\{derivedLabel\} mode=\{modeOf\('spyPrice'\)\} asOf=\{asOfOf\('spyPrice'\)\} leverage=\{levCtx\}\/>/.test(dashSrc));
 ok("whys: module stays under the 300-line bound (Property 10); primitives under 100",
   whysSrc.split("\n").length <= 300 && sbSrc.split("\n").length <= 100 && shSrc.split("\n").length <= 100);
 ok("primitives: SourceBox/DataModeBadge/SectionHeader have ONE home each — no inline copies left",
@@ -5624,7 +5657,7 @@ ok("whys v3.95: the whys are reachable in SIMPLE — one honestly-labelled expan
   /* 8/28 Whys altitude: the label PREFIX stays the component default (six hasText locators
      match on it); the flip rides flipChip (closed, chip-length) + flipLine (verbatim,
      inside). A withheld posture passes no chip — the closed label stays bare. */
-  /\{simple&&<FiveWhys fw=\{fw\}[\s\S]{0,240}flipChip=\{evidenceSet\.withheld\?null:flipChipOf\(simpleF\)\} flipLine=\{simpleF\}\/>\}/.test(dashSrc) &&
+  /\{simple&&<FiveWhys fw=\{fw\}[\s\S]{0,240}flipChip=\{evidenceSet\.withheld\?null:flipChipOf\(simpleF\)\} flipLine=\{simpleF\} leverage=\{levCtx\}\/>\}/.test(dashSrc) &&
   /label="why this call · 5 checks"/.test(whysSrc) &&
   /export const WHYS_KEY="md:exp:whys:v1";/.test(whysSrc) &&
   /persistKey=WHYS_KEY/.test(whysSrc));
