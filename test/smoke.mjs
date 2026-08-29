@@ -8179,7 +8179,19 @@ console.log("\n[67] v3.99.4 — runtime contract reconciliation");
   const legacy = tomlCrons.filter((c) => c !== warmCron && c !== prewarmCron);
   ok("crons: every TOML trigger is either a dispatch constant or one of the TWO documented legacy pulls " +
      "(a third fallthrough = a silently misrouted job)",
-    legacy.length === 2 && legacy.includes("30 12 * * 1-5") && legacy.includes("0 21 * * 1-5"));
+    legacy.length === 2 && legacy.includes("30 12 * * MON-FRI") && legacy.includes("0 21 * * MON-FRI"));
+  /* 2026-08-28: every trigger read `* * 1-5` and the Cloudflare dashboard treated 1-5 as
+     Sun-Thu, so FRIDAY never fired — the 10am freeze silently did not run and the day ended
+     with no history row at all (Tue/Wed/Thu captured; Friday absent = exactly that window).
+     Numeric day-of-week is off-by-one between cron implementations; MON-FRI is unambiguous.
+     Pinned in BOTH directions across every surface an operator copies from, because the
+     regression here is silent — a wrong DOW does not fail a deploy, it just skips a day. */
+  const dowSurfaces = { "wrangler.toml": tomlSrc, "cron.js": cronSrc, "SETUP.md": setupSrc };
+  ok("crons: the DOW field is NAMED everywhere — wrangler.toml carries `0 14 * * MON-FRI` and no `* * 1-5` survives",
+    /"0 14 \* \* MON-FRI"/.test(tomlSrc) &&
+    Object.values(dowSurfaces).every((s) => !/\* \* 1-5/.test(s) && !/\*\+\*\+1-5/.test(s)));
+  ok("crons: every TOML trigger names its weekdays (a numeric DOW is the 2026-08-28 Friday miss)",
+    tomlCrons.length > 0 && tomlCrons.every((c) => /\* MON-FRI$/.test(c)));
   ok("crons: scheduled() actually compares controller.cron against both constants",
     /controller\.cron === SNAPSHOT_PREWARM_CRON/.test(cronSrc) &&
     /controller\.cron === SNAPSHOT_WARM_CRON/.test(cronSrc));

@@ -11,26 +11,33 @@ id = "78ad3346a8fe4757a906283c4bc81a5e"
 # ---------------------------------------------------------------------------
 # Cron Triggers run on UTC. Values below are anchored to PACIFIC DAYLIGHT
 # TIME (PDT, UTC-7), correct from ~Mar to ~Nov.
-#   5:30 AM PDT = 12:30 UTC  -> "30 12 * * 1-5"
-#   2:00 PM PDT = 21:00 UTC  -> "0 21 * * 1-5"
+#   5:30 AM PDT = 12:30 UTC  -> "30 12 * * MON-FRI"
+#   2:00 PM PDT = 21:00 UTC  -> "0 21 * * MON-FRI"
 # WHEN PACIFIC SWITCHES TO STANDARD TIME (PST, UTC-8, ~Nov to ~Mar), shift
 # both by +1h to keep 5:30 AM / 2:00 PM local:
-#   "30 13 * * 1-5"  and  "0 22 * * 1-5"
+#   "30 13 * * MON-FRI"  and  "0 22 * * MON-FRI"
 # Cloudflare cron has no timezone support, so this is a twice-a-year manual
 # edit. The 26h KV TTL means a one-hour drift across the DST boundary never
-# blanks the dashboard. Weekdays only (1-5): FRED macro doesn't move weekends.
+# blanks the dashboard. Weekdays only (MON-FRI): FRED macro doesn't move weekends.
 # ⚠ SYNC HAZARD (v3.99.4): cron.js dispatches by EXACT string match on controller.cron
 # (SNAPSHOT_PREWARM_CRON = "0 12…", SNAPSHOT_WARM_CRON = "0 14…"); any string here that
 # matches neither falls through to the LEGACY FRED path — a silently misrouted job, not a
 # visible failure. The DST edit is therefore TWO files together: this array AND those two
 # constants. Smoke's contract check reconciles them and goes red on drift.
+# ⚠ DAY-OF-WEEK IS NAMED, NOT NUMERIC (2026-08-28). These read "1-5" and the Cloudflare
+# dashboard treated 1-5 as Sun-Thu, so FRIDAY never fired: the 10am ET job silently did not
+# run on Fri 2026-08-28 and the day ended with no frozen call and no history row at all.
+# Tue 8/25, Wed 8/26 and Thu 8/27 captured normally, which is exactly the Sun-Thu window.
+# Numeric day-of-week is off-by-one between cron implementations; MON-FRI is unambiguous in
+# every one of them. Do NOT "simplify" these back to numbers. Verify after every deploy in
+# Triggers -> Cron Triggers: each "Next run" must be a MONDAY, never a Sunday.
 # ---------------------------------------------------------------------------
 [triggers]
 crons = [
-  "30 12 * * 1-5",   # 5:30 AM PDT — legacy FRED macro pull (pulse:macro:latest)
-  "0 21 * * 1-5",    # 2:00 PM PDT — legacy FRED macro pull
-  "0 12 * * 1-5",    # 8:00 AM ET (EDT) — PRE-OPEN warm of /api/snapshot; EST -> "0 13 * * 1-5"
-  "0 14 * * 1-5"     # 10:00 AM ET (EDT) — force-refresh /api/snapshot cache; EST -> "0 15 * * 1-5"
+  "30 12 * * MON-FRI",   # 5:30 AM PDT — legacy FRED macro pull (pulse:macro:latest)
+  "0 21 * * MON-FRI",    # 2:00 PM PDT — legacy FRED macro pull
+  "0 12 * * MON-FRI",    # 8:00 AM ET (EDT) — PRE-OPEN warm of /api/snapshot; EST -> "0 13 * * MON-FRI"
+  "0 14 * * MON-FRI"     # 10:00 AM ET (EDT) — force-refresh /api/snapshot cache; EST -> "0 15 * * MON-FRI"
 ]
 
 # Secrets (NEVER in this file — set via CLI). Two refresh credentials exist and are NOT
