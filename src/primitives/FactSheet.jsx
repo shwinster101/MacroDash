@@ -104,6 +104,24 @@ export const ExplainerBody = ({ explain }) => {
   const q = explain.quote;
   return (
     <div>
+      {/* v5.9: an optional lead line — the one-sentence "why should I care about this at
+          all" the card used to carry on its face. It moved in here when the beginner read
+          found the cards were four lines of prose each. */}
+      {explain.lead && <div style={{ fontFamily: T.fontSans, fontSize: T.fsS,
+        color: T.textSecondary, lineHeight: 1.45, marginTop: 6 }}>{explain.lead}</div>}
+      {/* v5.9: a sheet may carry free-form SECTIONS instead of the factor shape — the verdict
+          explainer answers "what does HODL mean" and "what is bullish", which are not
+          "what moves it" and "normal level". Same renderer, so both kinds of sheet look and
+          behave identically and there is one dialog in the product, not two. */}
+      {Array.isArray(explain.sections) && explain.sections.map((s, i) => (
+        <Section key={i} label={s.label}>
+          {Array.isArray(s.bullets)
+            ? <ul style={{ margin: 0, paddingLeft: 16 }}>
+                {s.bullets.map((b, j) => <li key={j} style={{ marginBottom: 3 }}>{b}</li>)}
+              </ul>
+            : s.text}
+        </Section>
+      ))}
       {Array.isArray(explain.what) && explain.what.length > 0 && (
         <Section label="what it is">
           <ul style={{ margin: 0, paddingLeft: 16 }}>
@@ -112,6 +130,9 @@ export const ExplainerBody = ({ explain }) => {
         </Section>
       )}
       {explain.drivers && <Section label="what moves it">{explain.drivers}</Section>}
+      {/* v5.9: the full sentence-form ruler, which used to sit on the card face and wrapped
+          to three lines there for two of the six bands. The card keeps the chip. */}
+      {explain.bands && <Section label="how MacroDash reads it">{explain.bands}</Section>}
       {explain.baseline && <Section label="normal / neutral level">{explain.baseline}</Section>}
       {explain.macro && <Section label="why it matters to the macro picture">{explain.macro}</Section>}
       {q && q.text && q.who && (

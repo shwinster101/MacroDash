@@ -403,12 +403,19 @@ console.log("\n[public] v3.94 — Simple default, the toggle, persistence, red f
      show; the 10Y card is the one proven present here (its level + delta are pinned two
      assertions below), so its ruler is what this altitude measures. The three cards the
      owner named — vix / valuation / cpiHeadline — are pinned on the MIXED tape in 3b. */
-  ok("8/29 ruler: cards carry the band's own edges, restated — one muted line per card",
-    /1-mo change below −0\.10 ppt · hurt: above \+0\.15 ppt/.test(cardsInner));
+  /* v5.9: the FACE carries the chip — the full sentence-form ruler wrapped to three lines on
+     a 390px card for two of the six bands, which is most of what the beginner read flagged.
+     The chip is derived from the band's own flip edges, so it cannot drift from the vote. */
+  ok("v5.9 ruler: cards carry the CHIP form of their own edges — no prose on the face",
+    /help <−0\.1 · hurt >0\.15/.test(cardsInner) &&
+    !/1-mo change below/.test(cardsInner));
   ok("8/29 ruler: an EXCLUDED factor is not a card, so it contributes no ruler",
-    !/help below 18/.test(cardsInner));
-  ok("v4.0 simple: cards carry value + direction + why + freshness, and the truncation is NAMED",
-    /HELPING|HURTING|MIXED/.test(body) && /discount rate|violently|already priced|Fed can ease|good news|plumbing/.test(body) &&
+    !/help <18/.test(cardsInner));
+  /* v5.9: the why-it-matters SENTENCE left the face for the sheet (the card was four lines,
+     three times over). Value, direction, freshness and the named truncation stay — those are
+     facts, not prose, and the v3.1 provenance invariant is not a density trade. */
+  ok("v5.9 simple: cards carry value + direction + freshness, and the truncation is NAMED",
+    /HELPING|HURTING|MIXED/.test(body) && !/discount rate on every future dollar/.test(body) &&
     /\d+ cards from the \d+ voters counted/.test(body) &&
     // 8/28: the flip's ONE home is the whys — chip on the closed label, absent from cards.
     /⇄/.test(await page.locator("button.cg-toggle", { hasText: "why this call" }).innerText()) &&
@@ -476,6 +483,38 @@ console.log("\n[public] v3.94 — Simple default, the toggle, persistence, red f
   await page.waitForTimeout(250);
   ok("simple: red facts ignore the mode — the crash-gauge warning renders in Simple",
     /crash gauge \(VIX\) unavailable/.test(body));
+  /* v5.9 — the verdict explains its own vocabulary. The owner's beginner read: "new folks
+     likely have no context on hodl mooning or diamond hands". Driven, not string-pinned. */
+  {
+    const vbtn = page.locator('[aria-label="Macro backdrop verdict"] button[aria-haspopup="dialog"]').first();
+    ok("v5.9 verdict: the big word is a button that announces it opens an explainer",
+      await vbtn.count() === 1 && /what does this mean/i.test(await vbtn.textContent()));
+    await vbtn.click();
+    await page.waitForTimeout(250);
+    const vsheet = await page.locator('[role="dialog"]').innerText();
+    ok("v5.9 verdict: the sheet names all four calls and both machine words",
+      /MOONING/.test(vsheet) && /HODL/.test(vsheet) && /DIAMOND HANDS/.test(vsheet) &&
+      /CAN'T CALL IT/.test(vsheet) && /BULLISH/.test(vsheet) && /BEARISH/.test(vsheet));
+    ok("v5.9 verdict: it says plainly what this is not — a backdrop read, not advice",
+      /not a view on any one stock/.test(vsheet) && /not advice/.test(vsheet));
+    await page.keyboard.press("Escape");
+    await page.waitForTimeout(200);
+    ok("v5.9 verdict: Escape closes it and focus returns to the verdict",
+      await page.locator('[role="dialog"]').count() === 0 &&
+      await page.evaluate(() => !!document.activeElement &&
+        document.activeElement.getAttribute("aria-haspopup") === "dialog"));
+  }
+  /* The chrome that left the beginner's first screen. The alert badge is the interesting one:
+     it is NOT a v3.25 reversal — the section it counts is Power-only, so in Simple it was an
+     orphan count with a dead deep link. Power keeps all of it, proven right below. */
+  ok("v5.9 chrome: Simple sheds the operator words — no duplicate wordmark, no OPS, no alert count",
+    // NOTE: the FIRED/BLIND half is not provable on this fixture — no alert fires or blinds
+    // on it, which the negative control for this fix confirmed (restoring the Simple badge
+    // left this suite green). The gate itself is pinned in smoke, where it can be measured.
+    !/⋯ OPS/.test(body) &&
+    // by CLASS, not by text: `text=macrodash` is a case-insensitive substring match and
+    // would happily match the wordmark itself, passing vacuously forever.
+    (await page.locator(".sub-wordmark").count()) === 0);
   ok("simple: the toggle is present, labelled honestly, Simple pressed",
     await page.locator('button[aria-pressed="true"]', { hasText: "Simple" }).count() === 1);
   const glance = await page.evaluate(() => {
@@ -504,8 +543,16 @@ console.log("\n[public] v3.94 — Simple default, the toggle, persistence, red f
      defends — while leaving ~32px for the CI font-metric variance that turned v4.1.3 red on
      a layout nobody had regressed. Chrome creeping back is a 100px+ effect and still fails.
      The assertion reports its own measurement so a failure is a diagnosis, not a mystery. */
-  ok(`v4.0 glance budget: in Simple the macro strip still begins within 820px at 390×844 (measured ${glance})`,
-    glance !== null && glance <= 820);
+  /* BUDGET TIGHTENED 820 -> 660 (v5.9) with the measurement — the honest direction after a
+     density pass, and the only way the win is defended. A beginner read of the live page
+     ("way too much going on, too many words at first glance") moved the card's why-sentence
+     and full ruler into the explainer sheet, shrank the ruler to a chip, dropped the hero's
+     count sub in Simple, and took the duplicate wordmark, the provenance chip, the alert
+     badges and the OPS menu out of the beginner's first screen. Measured at 375px AND 390px:
+     the macro strip begins at 610 (was 791), and the visible words above the fold went 290 ->
+     208. 660 keeps ~50px for the CI font-metric variance that turned v4.1.3 red. */
+  ok(`v5.9 glance budget: in Simple the macro strip begins within 660px at 390×844 (measured ${glance})`,
+    glance !== null && glance <= 660);
   /* And the pin that now matters MORE: the ANSWER — the parameter cards — must be near the
      top. A budget that only watched the raw strip would let the cards drift downward while
      still passing.
@@ -528,10 +575,24 @@ console.log("\n[public] v3.94 — Simple default, the toggle, persistence, red f
     const el = document.querySelector('[aria-label="Key parameters"]');
     return el ? Math.round(el.getBoundingClientRect().top + window.scrollY) : null;
   });
-  ok(`v4.0: the parameter cards — the answer — begin within 480px at 390×844 (measured ${cardsTop})`,
-    cardsTop !== null && cardsTop <= 480);
+  /* TIGHTENED 480 -> 420 (v5.9) with the measurement: the beginner pass took the duplicate
+     wordmark, the provenance chip, the alert badges and the OPS menu out of Simple's header
+     and dropped the hero's count sub, so the cards now begin at 332 (was 409). 420 keeps the
+     ~90px of font-metric headroom the v4.1.3 lesson says a budget needs. */
+  ok(`v5.9: the parameter cards — the answer — begin within 420px at 390×844 (measured ${cardsTop})`,
+    cardsTop !== null && cardsTop <= 420);
   // One tap to Power: the full view appears; the choice persists across reload.
   await page.locator("button", { hasText: "Power" }).click();
+  await page.waitForTimeout(400);
+  /* The CONTRAST that keeps the Simple-chrome assertion above from passing vacuously: the
+     same fixture, one tap over, must actually SHOW what Simple dropped. A pin that only
+     asserts an absence proves nothing if the thing was never going to render (the v3.60.1
+     trap — and the negative control for this fix found exactly that on the alert badge). */
+  {
+    const pbody = await page.locator("body").innerText();
+    ok("v5.9 chrome contrast: Power shows what Simple sheds — the wordmark echo and the OPS menu",
+      (await page.locator(".sub-wordmark").count()) === 1 && /⋯ OPS/.test(pbody));
+  }
   await page.waitForTimeout(400);
   const powerBody = await page.locator("body").innerText();
   ok("power: one tap reveals the Explain/Dig layers",
@@ -921,18 +982,24 @@ console.log("\n[public] v4.0 — Simple verdicts, card selection, and what must 
   const { page, errors } = await open({ live: MIXED_LIVE, width: 390, power: false });
   await page.waitForTimeout(1300);
   const band = await bandText(page);
-  ok("8/29 ruler: MIXED hero names the disagreement from the votes cast",
-    /volatility and inflation help, prices do not/.test(band));
+  /* v5.9: in Simple the hero's tally sub is dropped — it restated in counts what the plain
+     sentence says in words, and of the two the sentence is the one a newcomer can use. The
+     derived sub itself is unchanged and still renders in Power (pinned in smoke); what this
+     asserts is that Simple's ONE explanation names the same disagreement. */
+  ok("v5.9: Simple names the disagreement in the SENTENCE, with no count sub beside it",
+    /are supportive, but stocks are priced for perfection/.test(band) &&
+    !/help, prices do not/.test(band) && !/\d+ help, \d+ does not/.test(band));
   ok("8/29 ruler: the canned watch-VIX gloss is gone from a tape where VIX is helping",
     !/watch VIX/i.test(band) && !/Cross-signals/.test(band));
   const cards = await page.locator('[aria-label="Key parameters"]').innerText();
-  ok("8/29 ruler: the valuation card's ruler shows the derived 26.1 edge beside the rich CAPE",
-    /CAPE below 26\.1/.test(cards) && /above 30 or >90% of ATH 44\.19/.test(cards));
+  ok("v5.9 ruler: the valuation card's CHIP carries the derived 26.1 edge beside the rich CAPE",
+    /help <26\.1 · hurt >30/.test(cards) && !/1\.5× long-run mean/.test(cards));
   /* The owner's three named cards, measured on the tape they were read from: the ruler is a
      projection of REGIME_BAND_TABLE.ruler, so this proves the pass-through end to end rather
      than a string that happens to live in the bundle. */
-  ok("8/29 ruler: all three cards on the owner's tape carry their own edges",
-    /below 18/.test(cards) && /above 30/.test(cards) && /cooler than prior/.test(cards));
+  ok("v5.9 ruler: all three cards on the owner's tape carry their own edges, chip-length",
+    /help <18 · hurt >25/.test(cards) && /help <26\.1/.test(cards) &&
+    /cooler than last print/.test(cards));
   ok("8/29 ruler: no page errors on the MIXED tape", errors.length === 0);
 
   /* ── v5.8 THE EXPLAINER SHEET, driven ────────────────────────────────────────────────

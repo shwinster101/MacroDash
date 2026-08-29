@@ -55,6 +55,52 @@ export const CAPE_ATH  = 44.19;
    move one line down, never out of reach. */
 export const MIXED_SUB_MAX = 60;
 
+/* v5.9 (beginner read, 2026-08-29: "new folks likely have no context on hodl mooning or
+   diamond hands"). The verdict is the one word on the page everybody sees, and for a reader
+   who has never met the vocabulary it is decoration. Tapping it now explains itself.
+   It lives HERE because this module already owns the verdict vocabulary and says so in its
+   header — one copy of the words, one copy of what they mean, beside each other. The three
+   states are described by WHAT THE EVIDENCE DID, never as advice: this page reads a backdrop,
+   it does not tell anyone to buy or sell, and that is the last section for a reason. */
+export const VERDICT_EXPLAIN = {
+  full: "What this call means",
+  lead: "MacroDash checks six macro readings every day and reports whether the backdrop is friendly to taking risk. The big word is that answer in one breath.",
+  sections: [
+    { label: "the four calls", bullets: [
+      "MOONING 🚀 — most of what we track points the same way, toward risk-taking. The machine word is BULLISH.",
+      "HODL 💎 — the readings disagree, or they cancel out. NEUTRAL: no clear edge either way.",
+      "DIAMOND HANDS 🙌 — most of them point the other way, toward caution. The machine word is BEARISH.",
+      "CAN'T CALL IT 🌫️ — too little live data to say anything honest, so nothing is claimed.",
+    ] },
+    { label: "bullish, neutral, bearish", bullets: [
+      "Bullish means conditions have historically been friendly to owning risky things — cheap money, calm markets, cooling inflation.",
+      "Bearish means the opposite: the conditions that usually come with drawdowns are showing up.",
+      "Neutral means the evidence genuinely does not lean. That is a real answer, not a missing one.",
+    ] },
+    { label: "what this is not", text: "It is a read on the whole market's backdrop, not a view on any one stock, and it is not advice. A friendly backdrop is not a promise, and an unfriendly one is not a forecast — they are the odds you are playing, not the outcome." },
+  ],
+};
+
+/* v5.9 (beginner read: "too many words at first glance") — the CHIP form of a band's ruler.
+   The full sentence-form `ruler` is right, and at phone width two of the six wrap to three
+   lines on the card, which is most of what the read was reacting to. So the full form moves
+   into the explainer sheet and the CARD carries this: the same two edges, no prose.
+   For the four scalar bands it is DERIVED from the band's own `flip`, so it cannot drift from
+   the vote — the same reconciliation the full ruler is held to, except here the numbers are
+   not restated at all. The two compound bands (CPI's trend shape, CAPE's two-condition OR)
+   have no single crossing to render, so they carry an authored `rulerShort` — which is the
+   same reason `flip` is null for them and the same reason nothing invents a crossing. */
+const edgeText = (v, dec) => String(Number(Number(v).toFixed(dec))).replace("-", "−");
+export function rulerChip(band) {
+  if (!band) return null;
+  if (!band.flip) return band.rulerShort || null;
+  const { bullEdge, bearEdge, bullSide, bullInclusive, dec } = band.flip;
+  const below = bullSide === "below";
+  const bull = `${below ? (bullInclusive ? "≤" : "<") : (bullInclusive ? "≥" : ">")}${edgeText(bullEdge, dec)}`;
+  const bear = `${below ? ">" : "<"}${edgeText(bearEdge, dec)}`;
+  return `help ${bull} · hurt ${bear}`;
+}
+
 /* ═══ REGIME BAND TABLE (FEAT-FLIP, v3.53) — ONE table, two altitudes ═══════════════════
    computeRegime() VOTES from this table; flipConditions() measures DISTANCE to the same
    edges. Before this the bands were inline literals inside computeRegime, so any "what would
@@ -190,6 +236,7 @@ export const REGIME_BAND_TABLE = [
        explainer sheet's baseline. Shorter on the card as a side effect, which is the
        direction the owner asked the primary view to move anyway. */
     ruler:"help: latest YoY cooler than prior print · hurt: series up >0.5 pt from start",
+    rulerShort:"help: cooler than last print · hurt: drifting up",
     vote:(t)=> t[t.length-1] < t[t.length-2] ? "bull"
              : (t[t.length-1] - t[0] > 0.5 ? "bear" : "neutral"),
     flip:null,
@@ -216,6 +263,7 @@ export const REGIME_BAND_TABLE = [
     metric:{ read:(d)=>d.macro.shillerPe && d.macro.shillerPe.current, unit:"", dec:1, note:"CAPE" },
     read:(d)=>d.macro.shillerPe,
     ruler:`help: CAPE below ${(CAPE_MEAN*1.5).toFixed(1)} (1.5× long-run mean ${CAPE_MEAN}) · hurt: CAPE above 30 or >90% of ATH ${CAPE_ATH}`,
+    rulerShort:`help <${(CAPE_MEAN*1.5).toFixed(1)} · hurt >30`,
     vote:(c)=>{ const p = c.ath ? (c.current / c.ath) * 100 : c.pctOfAth;
                 return c.current < c.mean * 1.5 ? "bull" : (c.current > 30 || p > 90 ? "bear" : "neutral"); },
     flip:null,

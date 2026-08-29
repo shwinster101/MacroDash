@@ -10,8 +10,9 @@
 // reader; FEAT-QUORUM: the withheld state has its own honest moon voice).
 import { useState } from "react";
 import { DT, T } from "../design-tokens.js";
-import { computeRegime, regimeFactors, flipConditions, voteStyle } from "../regime.js";
+import { computeRegime, regimeFactors, flipConditions, voteStyle, VERDICT_EXPLAIN } from "../regime.js";
 import { fmt } from "../format.js";
+import { Explainable } from "../primitives/FactSheet.jsx";
 
 // ENGINE0-CONT: the ONE rendered label for a withheld posture (the engine's internal
 // INSUFFICIENT sentinel never reaches a reader). Shared by the verdict band, the 5 Whys
@@ -27,6 +28,7 @@ export const WEN_MOON_STATES = [
   // own honest state instead of borrowing a directional one.
   { label: "CAN'T CALL IT 🌫️", color: T.textMuted, glow: T.textMuted },
 ];
+
 
 /* v3.94 DRIVERS-ONLY (owner call: "audit the key drivers and only show those — everything
    else 2-3 clicks away"): the hero's visible surface is the VERDICT, the plain-language
@@ -108,7 +110,19 @@ const RegimeBand=({d,stale=new Set(),loading=false,liveBuild=false,srcLabel="der
               {callFrozen?"Macro Backdrop · 10am frozen call":plainVerdict?"Macro Backdrop · live read":"Macro Backdrop · wen moon?"}
             </div>
             <div style={{display:"flex",alignItems:"baseline",gap:10,flexWrap:"wrap"}}>
-              <span style={{fontFamily:T.fontMono,fontSize:T.fsXl,fontWeight:700,color:regime.color,letterSpacing:"-0.01em"}}>{callLabel}</span>
+              {/* v5.9: in Simple the verdict TOKEN is the tap target for its own vocabulary
+                  (Explainable owns the state and the dialog). Power keeps the plain span —
+                  an operator who reads MOONING every morning does not need it explained, and
+                  the moon voice there is a locked owner ruling. */}
+              {plainVerdict
+                ? <Explainable explain={VERDICT_EXPLAIN} title={VERDICT_EXPLAIN.full}
+                    eyebrow={`${callLabel} · ${machineLabel}`}
+                    style={{background:"none",border:"none",padding:0,width:"auto",display:"inline-block"}}>
+                    <span style={{fontFamily:T.fontMono,fontSize:T.fsXl,fontWeight:700,color:regime.color,letterSpacing:"-0.01em"}}>{callLabel}</span>
+                    <span aria-hidden="true" style={{fontFamily:T.fontMono,fontSize:9,color:regime.color,verticalAlign:"super",marginLeft:4}}>ⓘ</span>
+                    <span className="visually-hidden"> — what does this mean? Opens an explainer.</span>
+                  </Explainable>
+                : <span style={{fontFamily:T.fontMono,fontSize:T.fsXl,fontWeight:700,color:regime.color,letterSpacing:"-0.01em"}}>{callLabel}</span>}
               <span style={{fontFamily:T.fontMono,fontSize:T.fsL,color:T.textSecondary}}>
                 {/* ENGINE0-CONT: the rendered label is DATA HOLD — a deterministic wait
                     posture ("the system lacks evidence, hold"), not the internal
@@ -122,12 +136,18 @@ const RegimeBand=({d,stale=new Set(),loading=false,liveBuild=false,srcLabel="der
                     label ("RISK-ON") beside the scoped one ("MACRO: BULLISH") is two names for
                     one call, so Simple keeps only the descriptor; Power keeps both. The
                     withheld line drops it too — DATA HOLD is already the scoped label. */}
+                {/* v5.9 (beginner read): in Simple the sub is DROPPED. It restates, in
+                    counts, exactly what the plain sentence one line below says in words —
+                    "NEUTRAL · 3 help, 1 does not" over "Volatility, inflation and financial
+                    conditions are supportive, but stocks are priced for perfection." Two
+                    lines for one fact is precisely the density the read flagged, and of the
+                    two the sentence is the one a newcomer can use. Power keeps both. */}
                 {loading?"LOADING · waiting for live data before calling a posture"
                         /* superseded by the canonical call projection:
                         :`${plainVerdict?"":`${regime.label} · `}${conf&&/\d+ of \d+ inputs usable$/.test(regime.sub)?regime.sub.replace(/ — \d+ of \d+ inputs usable$/,""):regime.sub}`}
                         */
-                        :regime.insufficient?`${WITHHELD_LABEL} · ${subText}`
-                        :`${machineLabel} · ${subText}`}
+                        :regime.insufficient?`${WITHHELD_LABEL}${plainVerdict?"":` · ${subText}`}`
+                        :`${machineLabel}${plainVerdict?"":` · ${subText}`}`}
               </span>
               {(loading||regime.insufficient)&&<span style={{fontFamily:T.fontMono,fontSize:T.fsS,color:T.textMuted}}>
                 {loading?"no factors voting yet"
@@ -179,7 +199,13 @@ const RegimeBand=({d,stale=new Set(),loading=false,liveBuild=false,srcLabel="der
           {onCopyCall&&<button onClick={onCopyCall} disabled={copyDisabled} aria-label="Copy MacroDash posture card"
             title={copyDisabled?"live data required":callFrozen?"Copy the frozen 10am public call":"Copy the current live read — not the 10am call"}
             style={{background:callCopied?"#1a3020":T.surfaceHigh,border:`1px solid ${callCopied?T.green:regime.color}66`,borderRadius:3,color:callCopied?T.green:regime.color,cursor:copyDisabled?"not-allowed":"pointer",padding:"4px 9px",minHeight:44,fontFamily:T.fontMono,fontSize:9,opacity:copyDisabled?0.45:1,whiteSpace:"nowrap"}}>
-            {callCopied?"✓ CALL COPIED":callFrozen?"⎘ COPY 10AM CALL":"⎘ COPY LIVE READ"}
+            {/* v5.9: icon-only in Simple. The action survives — losing a shipped feature from
+                the DEFAULT view would be the worse trade — but "⎘ COPY LIVE READ" is three
+                words of operator vocabulary sitting beside the answer, and the aria-label and
+                tooltip already carry the full sentence for anyone who needs it. */}
+            {plainVerdict
+              ? (callCopied?"✓":"⎘")
+              : (callCopied?"✓ CALL COPIED":callFrozen?"⎘ COPY 10AM CALL":"⎘ COPY LIVE READ")}
           </button>}
           <button onClick={()=>setOpen(o=>!o)} aria-label="Show regime factors" aria-expanded={open}
             style={{background:"none",border:`1px solid ${regime.color}44`,borderRadius:3,color:regime.color,cursor:"pointer",padding:"4px 8px",minWidth:44,minHeight:44,fontFamily:T.fontMono,fontSize:11,flexShrink:0}}>

@@ -823,7 +823,11 @@ export default function Dashboard({ publicView = false } = {}) {
           <div className="wordmark" style={{fontFamily:T.fontDisplay,fontSize:20,fontWeight:800,color:T.amber,letterSpacing:"-0.02em"}}>MacroDash</div>
           {/* FEAT-165: friendly sub-headline */}
           {/* FINDING-1: orientation line now visible on mobile (was hide-mobile) */}
-          <div className="sub-wordmark" style={{fontFamily:T.fontSans,fontSize:10,color:T.textMuted}}>macrodash</div>
+          {/* v5.9: the lowercase echo is Power's. It repeats the wordmark 4px to its right,
+              which is the cheapest word on the page to cut and the first one a beginner reads
+              twice. (A2 already hid it below 360px for the same reason — this extends the
+              same judgment to the mode, not just the width.) */}
+          {!simple&&<div className="sub-wordmark" style={{fontFamily:T.fontSans,fontSize:10,color:T.textMuted}}>macrodash</div>}
           {/* FEAT-SNAP-UX: the session · timestamp line renders ONLY from live data. The mock
               baseline's hardcoded lastRefresh next to a pulsing dot read as "the site last
               refreshed <months-old date>" — a timestamp is exactly the kind of number the
@@ -856,15 +860,25 @@ export default function Dashboard({ publicView = false } = {}) {
           </div>
         </div>
         <div style={{display:"flex",alignItems:"center",gap:8,flexWrap:"wrap",minWidth:0}}>
-          <DataModeBadge mode={mode}/>
+          {/* v5.9 (beginner read): the provenance CHIP is Power's. In Simple the status line
+              directly above already stamps the pull time and "end-of-day, not real-time", and
+              every card carries its own freshness, so a second CACHED token is a third saying
+              of one fact. It stays in Simple on ERROR — an outage is a red fact and the v3.25
+              rule is not a density trade. */}
+          {(!simple||mode==="ERROR")&&<DataModeBadge mode={mode}/>}
           {/* FEAT-GLANCE (v3.61, newcomer audit): the alert badges are operator tooling — the
               Macro Alerts section itself is !publicView (A4), and "⚡ 3 BLIND" reads as a system
               failure to a visitor who can't see the monitors it describes. Same gate.
               v3.62: these stay OUTSIDE the ⋯ OPS menu. A FIRED alert is a red fact and the v3.25
               rule holds board-wide — a collapse must never hide one. Only the always-available
               actions below move behind the disclosure. */}
-          {!publicView&&activeAlerts>0&&<Badge label={`⚡ ${activeAlerts} FIRED`} color={T.red}/>}
-          {!publicView&&activeAlerts===0&&alertBlind>0&&<Badge label={`⚡ ${alertBlind} BLIND`} color={T.amber}/>}
+          {/* v5.9: ALSO Power-only, and this is a defect fix rather than a density cut. The
+              Macro Alerts section is `!publicView&&!simple`, so in Simple the badge counted
+              monitors the reader could not reach and its deep link led nowhere — an orphan.
+              v3.25 says a collapse must never hide a red fact; it does not require a count of
+              a section that is not on the page. In Power both are unchanged. */}
+          {!simple&&!publicView&&activeAlerts>0&&<Badge label={`⚡ ${activeAlerts} FIRED`} color={T.red}/>}
+          {!simple&&!publicView&&activeAlerts===0&&alertBlind>0&&<Badge label={`⚡ ${alertBlind} BLIND`} color={T.amber}/>}
           {/* v3.94: the Simple|Power toggle — persistent, remembered per device. */}
           <div role="group" aria-label="View mode" style={{display:"flex",border:`1px solid ${T.borderAccent}`,borderRadius:4,overflow:"hidden"}}>
             {["simple","power"].map(m=>(
@@ -899,7 +913,10 @@ export default function Dashboard({ publicView = false } = {}) {
               Owner call: the default route stays the operator view, so this reduces the clutter
               without moving anyone's daily surface. Native <details> — no new state, keyboard
               and screen-reader behaviour for free. */}
-          {!publicView&&(
+          {/* v5.9: the OPS menu is Power's. Its only entry is the operator clipboard export;
+              in Simple the hero's own copy control covers the reader who wants to share the
+              call, so the menu was a word with no job on the beginner's screen. */}
+          {!simple&&!publicView&&(
             <details className="hdr-ops" style={{position:"relative"}}>
               <summary aria-label="Operator actions" className="hdr-act"
                 style={{fontFamily:T.fontMono,fontSize:9,background:T.surfaceHigh,border:`1px solid ${T.borderAccent}`,color:T.textSecondary,padding:"5px 12px",borderRadius:4,cursor:"pointer",listStyle:"none",whiteSpace:"nowrap"}}>
