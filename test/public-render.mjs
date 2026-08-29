@@ -397,6 +397,16 @@ console.log("\n[public] v3.94 — Simple default, the toggle, persistence, red f
   const cardsInner = await page.locator('[aria-label="Key parameters"]').innerText();
   ok("v4.0 simple: card values are METRICS — the matrix's inline '(bullish)' judgment is gone",
     !/\(bullish\)|\(bearish\)/.test(await page.locator('[aria-label="Key parameters"]').innerText()));
+  /* FEAT-NEWCOMER-RULER (8/29): each card carries the band's own edges, restated — one
+     muted line under whyItMatters. VIX is DELETED in this scenario (it is the crash-gauge
+     degraded fixture), so the excluded factor is correctly not a card and has no ruler to
+     show; the 10Y card is the one proven present here (its level + delta are pinned two
+     assertions below), so its ruler is what this altitude measures. The three cards the
+     owner named — vix / valuation / cpiHeadline — are pinned on the MIXED tape in 3b. */
+  ok("8/29 ruler: cards carry the band's own edges, restated — one muted line per card",
+    /1-mo change below −0\.10 ppt · hurt: above \+0\.15 ppt/.test(cardsInner));
+  ok("8/29 ruler: an EXCLUDED factor is not a card, so it contributes no ruler",
+    !/help below 18/.test(cardsInner));
   ok("v4.0 simple: cards carry value + direction + why + freshness, and the truncation is NAMED",
     /HELPING|HURTING|MIXED/.test(body) && /discount rate|violently|already priced|Fed can ease|good news|plumbing/.test(body) &&
     /\d+ cards from the \d+ voters counted/.test(body) &&
@@ -482,8 +492,20 @@ console.log("\n[public] v3.94 — Simple default, the toggle, persistence, red f
      why-it-matters and freshness now sit between the verdict and the macro strip. Measured
      at 390×844: 536 -> 747 (817 before the cards were compacted from tall cards to rows).
      SPY still lands inside the 844px first screen. */
-  ok("v4.0 glance budget: in Simple the macro strip still begins within 780px at 390×844",
-    glance !== null && glance <= 780);
+  /* BUDGET RE-PINNED 780 -> 820 (FEAT-NEWCOMER-RULER, 8/29) WITH the measurement and the
+     reason — the v3.45/v3.95/v4.1.3 rule, never a budget quietly loosened. What changed is
+     again legitimate PRIMARY content, not chrome: every card now carries the band's own
+     edges, which is the whole point of the ticket (a newcomer had no ruler for the number
+     above it). Measured at 390×844: 747 -> 794 with the first cut, 788 after the ruler line
+     was compacted (marginTop 2 -> 1, lineHeight 1.4 -> 1.3) — the compaction came first,
+     the re-pin second. The owner's copy is locked and two of the six rulers legitimately
+     wrap to a second line at phone width, so the remaining cost is real content, not slack.
+     820 keeps SPY inside the 844px first screen — the hard ceiling this guard actually
+     defends — while leaving ~32px for the CI font-metric variance that turned v4.1.3 red on
+     a layout nobody had regressed. Chrome creeping back is a 100px+ effect and still fails.
+     The assertion reports its own measurement so a failure is a diagnosis, not a mystery. */
+  ok(`v4.0 glance budget: in Simple the macro strip still begins within 820px at 390×844 (measured ${glance})`,
+    glance !== null && glance <= 820);
   /* And the pin that now matters MORE: the ANSWER — the parameter cards — must be near the
      top. A budget that only watched the raw strip would let the cards drift downward while
      still passing.
@@ -882,7 +904,40 @@ console.log("\n[public] v4.0 — Simple verdicts, card selection, and what must 
     !/HELPING|HURTING|MIXED/.test(body) || /\d+ cards from the \d+ voters counted/.test(body));
   await page.close();
 
-  // 4. A dead feed must never appear as a card, and must never be padded to three.
+  // 3b. FEAT-NEWCOMER-RULER (8/29): the MIXED sub is DERIVED — today's tape shape (sleepy
+  //     vol + cooling inflation vs rich CAPE) names the disagreement instead of the canned
+  //     "watch VIX" pointing at a gauge that voted HELPING. This fixture also reproduces the
+  //     owner's exact prod card set (vix · valuation · cpiHeadline), which is where the three
+  //     named ruler substrings are measured.
+  {
+  const MIXED_LIVE = { ...FULL_LIVE,
+    vix: 14.43,                              // bull — asleep
+    fearGreed: 54, fearGreedLabel: "Neutral",// neutral
+    tenYearM1: 0.02,                         // neutral
+    cpiHeadline: 3.5, cpiTrend: [3.6, 3.6, 3.6, 3.6, 3.6, 3.5],  // bull — cooling
+    shillerPe: 42.2,                         // bear — rich CAPE
+    nfci: -0.42,                             // neutral
+  };
+  const { page, errors } = await open({ live: MIXED_LIVE, width: 390, power: false });
+  await page.waitForTimeout(1300);
+  const band = await bandText(page);
+  ok("8/29 ruler: MIXED hero names the disagreement from the votes cast",
+    /volatility and inflation help, prices do not/.test(band));
+  ok("8/29 ruler: the canned watch-VIX gloss is gone from a tape where VIX is helping",
+    !/watch VIX/i.test(band) && !/Cross-signals/.test(band));
+  const cards = await page.locator('[aria-label="Key parameters"]').innerText();
+  ok("8/29 ruler: the valuation card's ruler shows the derived 26.1 edge beside the rich CAPE",
+    /CAPE below 26\.1/.test(cards) && /above 30 or >90% of ATH 44\.19/.test(cards));
+  /* The owner's three named cards, measured on the tape they were read from: the ruler is a
+     projection of REGIME_BAND_TABLE.ruler, so this proves the pass-through end to end rather
+     than a string that happens to live in the bundle. */
+  ok("8/29 ruler: all three cards on the owner's tape carry their own edges",
+    /below 18/.test(cards) && /above 30/.test(cards) && /cooler than prior/.test(cards));
+  ok("8/29 ruler: no page errors on the MIXED tape", errors.length === 0);
+  await page.close();
+  }
+
+// 4. A dead feed must never appear as a card, and must never be padded to three.
   const oneDead = { ...FULL_LIVE }; delete oneDead.vix; delete oneDead.vixAsOf;
   ({ page, errors } = await open({ live: oneDead, width: 390, power: false }));
   await page.waitForTimeout(1300);

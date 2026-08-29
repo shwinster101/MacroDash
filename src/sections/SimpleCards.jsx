@@ -61,6 +61,10 @@ const SimpleCards = ({ cards, usable = 0, shown = 0, total = 0, withheld = false
                 </span>
                 {illus && <IllustrativeChip label="ILLUSTRATIVE" />}
               </div>
+              {/* FEAT-NEWCOMER-RULER (8/29): the ruler for the number above — the band's own
+                  edges restated (projection off REGIME_BAND_TABLE.ruler, one home). One line,
+                  muted, under whyItMatters; renders nothing when a band declares none. */}
+              {c.ruler && <div style={{ fontFamily: T.fontMono, fontSize: 8, color: T.textMuted, marginTop: 1, lineHeight: 1.3 }}>{c.ruler}</div>}
             </div>
           );
         })}
