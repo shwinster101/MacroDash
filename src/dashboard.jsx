@@ -630,12 +630,6 @@ export default function Dashboard({ publicView = false } = {}) {
     // reader's. Presentation only — the flag is the one the server already set.
     callFrozen
   });
-  /* FEAT-NFCILEV (8/28): the leverage-subindex CONTEXT line for the open whys footer —
-     computed ONCE here (sections stay presentation-only). `live` collapses mock/stale/
-     error/loading into "not loaded": asOf alone cannot carry that judgment. */
-  const levV=d.macro.nfci.leverage;
-  const levCtx={v:levV, asOf:asOfOf('nfciLeverage'),
-    live:(()=>{const m=modeOf('nfciLeverage');return(m==="LIVE"||m==="CACHED")&&Number.isFinite(levV);})()};
   /* B2 (v3.59): "derived from live data" was a STATIC string — it kept asserting liveness
      across cached, degraded, error and demo states. One derivation, both footers. */
   const derivedLabel=mode==="LIVE"?"derived from live data"
@@ -976,7 +970,7 @@ export default function Dashboard({ publicView = false } = {}) {
           fact still lands without a closed row claiming a crossing that does not exist.
           Verdict words already pass through SIMPLE_VERDICTS inside simpleFlipLine (v4.0.3). */}
       {simple&&<FiveWhys fw={fw} derivedLabel={derivedLabel} mode={modeOf('spyPrice')} asOf={asOfOf('spyPrice')}
-        flipChip={evidenceSet.withheld?null:flipChipOf(simpleF)} flipLine={simpleF} leverage={levCtx}/>}
+        flipChip={evidenceSet.withheld?null:flipChipOf(simpleF)} flipLine={simpleF}/>}
 
       {/* ── v3.94 DRIVERS-ONLY: the REASONING group — 5 whys + what-changed under ONE
           toggle (2 clicks to any why, inside the owner's 2-3 budget). The label carries the
@@ -986,7 +980,7 @@ export default function Dashboard({ publicView = false } = {}) {
       {!simple&&<div style={{padding:"2px 20px",background:T.bg,borderBottom:`1px solid ${T.border}`}}>
         <CollapsedGroup chip={false} count={5+(changed&&changed.changes?changed.changes.length:0)}
           label={`the reasoning — 5 whys · what changed${changed&&changed.changes&&changed.changes.length?` (${changed.changes.length} new)`:""}`}>
-          <FiveWhys fw={fw} derivedLabel={derivedLabel} mode={modeOf('spyPrice')} asOf={asOfOf('spyPrice')} leverage={levCtx}/>
+          <FiveWhys fw={fw} derivedLabel={derivedLabel} mode={modeOf('spyPrice')} asOf={asOfOf('spyPrice')}/>
           <WhatChanged changed={changed}/>
         </CollapsedGroup>
       </div>}

@@ -43,17 +43,16 @@ export const flipChipOf=(s)=>{
   return t.length<=FLIP_CHIP_MAX?t:`${t.slice(0,FLIP_CHIP_MAX-1).trimEnd()}…`;
 };
 
-/*      leverage     — FEAT-NFCILEV (8/28): {v, asOf, live} for the CONTEXT footer inside
-                       the OPEN expander, or null (extraction fallback renders nothing).
-                       Deliberately NOT a sixth check and NOT in evidenceSet.factors — the
-                       chain narrates only the six band-table voters (smoke-pinned); this is
-                       one labelled context line below them, and it says so in its own text.
+/*      (The FEAT-NFCILEV leverage footer lived here briefly on 8/28 and MOVED to the macro
+        strip: a leading crash indicator buried one tap deep in the explanation layer could
+        not do the job it was added for. Its remaining homes are the strip tile (glance) and
+        the NFCI tile sub-line (detail, where the parent/subindex relation is legible).)
         flipChip     — chip-length flip for the CLOSED label, or null. Null on a withheld
                        posture: there is no flip to advertise, so the label stays BARE.
         flipLine     — the SAME text verbatim, rendered inside as the last check's tail. On
                        a withheld posture this is the withheld sentence — it travels with the
                        flip to the one home rather than being stranded on the cards. */
-const FiveWhys=({fw,derivedLabel,mode,asOf,label="why this call · 5 checks",flipChip=null,flipLine=null,leverage=null,persistKey=WHYS_KEY})=>{
+const FiveWhys=({fw,derivedLabel,mode,asOf,label="why this call · 5 checks",flipChip=null,flipLine=null,persistKey=WHYS_KEY})=>{
   // Property 9 (null-safe): nothing computed yet means nothing to narrate — an empty,
   // hidden region, never a throw and never a fabricated narrative.
   if(!fw||!Array.isArray(fw.whys))return <div aria-hidden="true"/>;
@@ -79,14 +78,6 @@ const FiveWhys=({fw,derivedLabel,mode,asOf,label="why this call · 5 checks",fli
             slot carries the withheld sentence instead — the fact still lands, it just stops
             renting a line on the cards above. */}
         {flipLine&&<div style={{fontFamily:T.fontMono,fontSize:T.fsS,color:T.textSecondary,marginTop:6,lineHeight:1.5}}>⇄ {flipLine}</div>}
-        {/* FEAT-NFCILEV: context, stated as context. "not loaded" covers mock, stale,
-            error and loading alike — a mock subindex number in the explanation layer would
-            be a live-looking number where trust is decided (the A1 rule). */}
-        {leverage&&<div style={{fontFamily:T.fontMono,fontSize:T.fsS,color:T.textMuted,marginTop:6}}>
-          {leverage.live&&Number.isFinite(leverage.v)
-            ?`Leverage subindex ${leverage.v>0?"+":""}${leverage.v.toFixed(2)}${leverage.asOf?` ${leverage.asOf}`:""} · context, not a vote`
-            :"Leverage subindex not loaded"}
-        </div>}
         <div style={{fontFamily:T.fontMono,fontSize:8,color:T.textMuted,marginTop:8}}>Rule-based · {derivedLabel} (no LLM)</div>
         <SourceBox api="Rule-based" endpoint="6-factor regime · stale inputs excluded" mode={mode} asOf={asOf}/>
       </CollapsedGroup>

@@ -209,10 +209,10 @@ console.log("\n[public] LOADING — a posture must not be computed from the mock
   const loadBody = await page.locator("body").innerText();
   ok("loading A1: why-this-call narrates no mock context and states the evidence hold",
     !/SPY \$[\d.]+ \(/.test(loadBody) && /not enough usable evidence/i.test(loadBody));
-  /* FEAT-NFCILEV (8/28): with no live field the footer says NOT LOADED — the mock -0.31
-     must never render as a live-looking subindex in the explanation layer. */
-  ok("8/28 nfciLeverage: mock shows no live-looking number — the footer reads 'not loaded'",
-    /Leverage subindex not loaded/.test(loadBody) && !/Leverage subindex [+-]?\d/.test(loadBody));
+  /* FEAT-NFCILEV (8/29): the footer retired to the strip, so the explanation layer must
+     carry NO leverage claim in any state — the strip's provenance dot is the tell. */
+  ok("8/29 nfciLeverage: the whys carry no leverage claim during LOADING either",
+    !/Leverage subindex/i.test(loadBody));
   ok("loading: no page errors", errors.length === 0);
   await page.close();
 }
@@ -439,11 +439,23 @@ console.log("\n[public] v3.94 — Simple default, the toggle, persistence, red f
   const whysOpen = await page.locator("body").innerText();
   ok("v3.95 simple: one tap opens the five accountability checks",
     /WHY THIS CALL/.test(whysOpen) && /WHAT CHANGES IT/.test(whysOpen));
-  /* FEAT-NFCILEV (8/28): the leverage subindex is CONTEXT in the open footer — labelled as
-     such, dated, never a sixth check (the factor-only smoke pin stays the guard). Closed,
-     the label carries no subindex number: the footer lives inside the expander only. */
-  ok("8/28 nfciLeverage: the open whys carry the labelled context footer with the live value",
-    /Leverage subindex -0\.55[\s\S]{0,40}· context, not a vote/.test(whysOpen));
+  /* FEAT-NFCILEV (8/29): the subindex MOVED to the macro strip — zero-tap, and out of the
+     whys entirely (the chain narrates only the six voters). Driven live: the tile is on the
+     strip, the whys never mention it, and it wears no voter marker. */
+  {
+    const strip = await page.locator(".macro-strip").innerText();
+    ok("8/29 nfciLeverage: the LEV tile renders on the macro strip at glance altitude",
+      /LEV/.test(strip) && /-0\.55/.test(strip) && /0 = avg/.test(strip));
+    ok("8/29 nfciLeverage: it is NOT in the whys chain — the explanation layer stays six voters",
+      !/Leverage subindex/i.test(whysOpen) && !/context, not a vote/i.test(whysOpen));
+    const marked = await page.evaluate(() => {
+      const tiles = [...document.querySelectorAll(".macro-strip-inner > div")];
+      const lev = tiles.find(t => /^LEV\b/m.test(t.innerText.trim()));
+      return lev ? { txt: lev.innerText, title: lev.getAttribute("title") || "" } : null;
+    });
+    ok("8/29 nfciLeverage: the tile carries NO voter marker and says 'Context only — does not vote'",
+      !!marked && !marked.txt.includes("\u25aa") && /Context only — does not vote/.test(marked.title));
+  }
   ok("v3.95 simple: opening the whys does NOT pull the technical layer in with it",
     !/factor evidence/i.test(whysOpen) && !/full market detail/i.test(whysOpen));
   await page.reload(); await page.waitForTimeout(1200);
