@@ -137,3 +137,52 @@ Chromium under `REQUIRE_BROWSER=1`, `audit:prod` clean.
 - First live fetch is the real schema check — FRED is 403 from this build environment, so
   NFCILEVERAGE's first observation lands on deploy, on the existing per-field last-good
   rails either way.
+
+---
+
+# Outcomes — 2026-08-29 (owner relocation: strip in, whys footer out)
+
+Owner, on the live Simple screen: *"I feel like it would go perfectly next to CPI below F&G
+— is that the idea?"* It was **not** — and the owner's placement is better than mine. The
+8/28 build put leverage in a Power-mode collapse and a one-tap-deep whys footer, so on the
+Simple screen a **leading crash indicator was invisible**. That cannot do the job it was
+added for.
+
+**The relocation:** the whys footer is RETIRED; a `LEV` tile joins the macro strip. Two
+homes remain, at two genuine altitudes — **strip = glance**, **NFCI tile sub-line =
+detail** (the only place the parent/subindex relation is legible). Gates: **2056 smoke +
+306 render + 200 public-render**, real Chromium under `REQUIRE_BROWSER=1`, audit clean.
+
+## Why the strip is structurally right (not just more visible)
+
+The strip was **already built to carry non-voting context tiles.** SPY*, QQQ and FED are
+context-only today: `votingFields` is derived from `FACTOR_FIELD`'s values, so a field that
+is not a factor gets **no ▪ marker** and the tooltip *"Context only — does not vote"*
+**by construction** (v3.62/v3.98.4). `nfciLeverage` is not a factor, so the honest label
+required no special case — and a smoke pin now asserts that derivation rather than the
+label text, so the day someone makes it a voter the marker follows automatically.
+
+It also fills the strip's ragged 8th slot: the phone grid is `repeat(4,1fr)` with 7 tiles,
+so row 2 col 4 was empty — the tile costs zero vertical space.
+
+## The one convention difference, stated
+
+The strip's honesty mechanism is the **provenance dot + "(mock)" tooltip**, applied
+uniformly to all 8 tiles — it does NOT blank a value on mock the way the NFCI tile sub-line
+and the retired footer did. Following the strip's own convention was chosen over inventing
+a per-tile exception: a single tile rendering "—" inside a 4-col grid of numbers reads as
+broken, and an inconsistent honesty rule *within one component* is worse than a uniform one.
+The tile does render `—` for a genuinely non-finite value (pinned), which is the different
+case: absent data, not stale data.
+
+## Negative controls (restored green after)
+
+- LEV tile removed from the strip → 4 red (2 smoke, 2 browser-driven).
+- Whys footer re-added → the retired-footer pin red.
+
+## Acceptance (real built bundle, Chromium — the branch preview host is egress-blocked here)
+
+LEV on the strip with `-0.55` and `0 = avg` · no ▪ marker · tooltip *"Context only — does
+not vote"* · **no** leverage claim anywhere in the whys, live or loading · mock path marks
+itself `(mock)` in the tooltip · Power NFCI sub-line still `leverage subindex -0.55` with no
+verdict word · hero **6 of 6 voters counted** in both modes, never 7 of 7.
