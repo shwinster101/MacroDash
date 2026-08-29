@@ -13,7 +13,7 @@ import { computeFiveWhys, isMacroMaterial } from "../src/fiveWhys.js";
 import { NFCI_TIGHT as REG_NFCI_TIGHT, NFCI_LOOSE as REG_NFCI_LOOSE, REGIME_BAND_TABLE,
   REGIME_QUORUM, verdictFrom, computeRegime as regimeCompute, flipConditions as regimeFlips,
   regimeFactors as regimeFactorRows, voteStyle, MIXED_SUB_MAX,
-  CAPE_MEAN, CAPE_ATH } from "../src/regime.js";
+  CAPE_MEAN, CAPE_ATH, rulerChip, VERDICT_EXPLAIN } from "../src/regime.js";
 import { REGIME_FACTOR_FIELDS, FACTOR_FIELD, fieldMode, factorExclusions, buildEvidenceSet } from "../src/evidence.js";
 import { LASTVALID_KEY, summarizeEvidence, compareEvidence } from "../src/whatChanged.js";
 import {
@@ -4495,12 +4495,23 @@ ok("glance: operator tooling gates on !publicView — TT copy in the menu, TERMI
     if (!menu.includes("onClick={handleTtCopy}") || menu.includes('href="/admin.html"')) return false;
     // TERMINAL is a first-class bar action, still behind its own !publicView gate
     const term = dashSrc.indexOf('aria-label="Open Ticker Terminal"');
-    return /\{!publicView&&\(\s*\n?\s*<details className="hdr-ops"/.test(dashSrc) &&
+    // v5.9: the menu is ALSO Simple-gated — its one entry is an operator export, and the
+    // beginner read found it renting a word on the first screen with no job there. The
+    // !publicView contract this pin exists for is unchanged and still measured.
+    return /\{!simple&&!publicView&&\(\s*\n?\s*<details className="hdr-ops"/.test(dashSrc) &&
       term > 0 && /\{!publicView&&\(\s*\n?\s*<a href="\/admin\.html"/.test(dashSrc) &&
       (dashSrc.match(/href="\/admin\.html"/g) || []).length === 1;
   })() &&
-  /\{!publicView&&activeAlerts>0&&<Badge/.test(dashSrc) &&
-  /\{!publicView&&activeAlerts===0&&alertBlind>0&&<Badge/.test(dashSrc));
+  /\{!simple&&!publicView&&activeAlerts>0&&<Badge/.test(dashSrc) &&
+  /\{!simple&&!publicView&&activeAlerts===0&&alertBlind>0&&<Badge/.test(dashSrc));
+/* v5.9 — the badges gain a SIMPLE gate, and this is a defect fix rather than a density cut,
+   which is why it does not weaken v3.25. The Macro Alerts section is `!publicView&&!simple`,
+   so in Simple the badge counted monitors the reader could not reach and its deep link led
+   nowhere. The rule is that a collapse never hides a red fact; it does not require a count of
+   a section that is not on the page. Power is unchanged, and pinned above. */
+ok("v5.9: the alert badges follow the section they summarize — Power only, never an orphan count",
+  /\{!simple&&!publicView&&activeAlerts/.test(dashSrc) &&
+  /\{!publicView&&!simple&&\(<section aria-label="Operator monitors/.test(dashSrc));
 // v3.62: a FIRED/BLIND badge is a red fact — the v3.25 rule (a collapse never hides one) means
 // the alert badges must stay OUTSIDE the disclosure even though they are also operator-only.
 ok("the OPS menu does not swallow the alert badges — a red fact stays visible while closed",
@@ -8037,9 +8048,17 @@ console.log("\n[63] v3.98.3 — exclusion reasons, scoped vocabulary, TERMINAL p
     (() => { const code = bandSrc.replace(/\/\/[^\n]*|\/\*[\s\S]*?\*\//g, "");
       return /inputs usable\$\/\.test\(regime\.sub\)/.test(code) && /replace\(\/ — /.test(code) &&
              /const subText=conf&&/.test(code) &&
-             /\$\{WITHHELD_LABEL\} · \$\{subText\}/.test(code) &&
-             /\$\{machineLabel\} · \$\{subText\}/.test(code) &&
+             /\$\{WITHHELD_LABEL\}\$\{plainVerdict\?"":` · \$\{subText\}`\}/.test(code) &&
+             /\$\{machineLabel\}\$\{plainVerdict\?"":` · \$\{subText\}`\}/.test(code) &&
              !/\$\{machineLabel\} · \$\{conf&&/.test(code); })());
+  /* v5.9 (beginner read: "too many words at first glance"). In SIMPLE the sub is dropped
+     entirely — it restated in counts ("3 help, 1 does not") exactly what the plain sentence
+     one line below says in words, and of the two the sentence is the one a newcomer can use.
+     Power keeps both. Pinned in both directions so neither mode can drift into the other. */
+  ok("v5.9: the sub is Power-only — Simple leads with the verdict and the sentence, not a tally",
+    (() => { const code = bandSrc.replace(/\/\/[^\n]*|\/\*[\s\S]*?\*\//g, "");
+      return /plainVerdict\?"":` · \$\{subText\}`/.test(code) &&
+        !/`\$\{machineLabel\} · \$\{subText\}`/.test(code); })());
   ok("v3.98.3: TERMINAL is a bar action with the accent treatment, and exists exactly ONCE",
     /aria-label="Open Ticker Terminal"/.test(dashSrc) &&
     (dashSrc.match(/href="\/admin\.html"/g) || []).length === 1 &&
@@ -9130,7 +9149,8 @@ console.log("\n[67] v4.0 SIMPLE MODE — verdict mapping, card selection, senten
   // one secondary machine direction.
   ok("v5.3: Simple renders ONE primary human call with one secondary machine direction",
     /\{callLabel\}<\/span>/.test(bandSrc) &&
-    /:`\$\{machineLabel\} · \$\{subText\}`/.test(bandSrc));
+    // v5.9: the machine direction still renders; the tally sub behind it is Power-only.
+    /:`\$\{machineLabel\}\$\{plainVerdict\?"":` · \$\{subText\}`\}`/.test(bandSrc));
   /* 8/28 clock matrix A4: the unfrozen Simple eyebrow read "· the call" — the product's
      official-call identity (v5.3) worn by a live recomputation. "call" is now reserved for
      callFrozen; the unfrozen word is "live read". Power's voice untouched. */
@@ -9340,7 +9360,11 @@ console.log("\n[67] v4.0 SIMPLE MODE — verdict mapping, card selection, senten
     (() => { const cards = sc({ regime:{ label:"RISK-ON" }, factors:[{ key:"vix", short:"VIX",
         vote:"bull", excluded:false, mode:"LIVE", metric:{ text:"14.43", value:14.43 } }] }).cards;
       return cards.length === 1 && cards[0].ruler === "help below 18 · mid 18–25 · hurt above 25"; })() &&
-    /\{c\.ruler && <div/.test(spcSrc) && /c\.ruler.*textMuted|textMuted.*\{c\.ruler\}/s.test(spcSrc));
+    // v5.9: the FACE carries the chip and the SHEET carries the full sentence-form ruler —
+    // two of the six wrapped to three lines on a 390px card, which is most of what the
+    // beginner read was reacting to. Both homes pinned, so neither can quietly vanish.
+    /\{c\.rulerChip && <span/.test(spcSrc) && /bands: c\.ruler/.test(spcSrc) &&
+    /explain\.bands && <Section label="how MacroDash reads it">/.test(fsSrc));
   ok("ruler: the vote() functions, flip edges and quorum are byte-untouched by this feature",
     REGIME_BAND_TABLE.length === 6 && REGIME_QUORUM === 4 &&
     REGIME_BAND_TABLE.find((b)=>b.key==="vix").vote(17.9) === "bull" &&
@@ -9440,7 +9464,7 @@ console.log("\n[67] v4.0 SIMPLE MODE — verdict mapping, card selection, senten
      authors explainer copy nor renders the sheet body itself. */
   ok("explain: the sheet lives in a primitive — the section only hands it the projected copy",
     /import \{ Explainable \} from "\.\.\/primitives\/FactSheet\.jsx"/.test(spcSrc) &&
-    /<Explainable[\s\S]{0,400}explain=\{c\.explain\}/.test(spcSrc) &&
+    /<Explainable[\s\S]{0,400}explain=\{c\.explain \?/.test(spcSrc) &&
     !/what it is|what moves it|normal \/ neutral/.test(spcSrc));
   ok("explain: a band with no explainer degrades to a plain div — a button that opens nothing is a lie",
     /if \(!explain\) return <div/.test(fsSrc));
@@ -9456,6 +9480,59 @@ console.log("\n[67] v4.0 SIMPLE MODE — verdict mapping, card selection, senten
   ok("explain: the card and the sheet's ✕ both get real thumb targets on a phone",
     /\.simple-card\{min-height:44px;\}/.test(dashSrc) &&
     /@media\(max-width:480px\)\{\.fs-close\{min-height:44px;min-width:44px;\}\}/.test(dashSrc));
+  /* ── v5.9 FIRST GLANCE ───────────────────────────────────────────────────────────────
+     A beginner read of the live page (2026-08-29): "there's way too much going on, too many
+     words at first glance… new folks likely have no context on hodl mooning or diamond
+     hands." Three answers, all Simple-only: the verdict explains its own vocabulary, the
+     card's ruler shrinks to a chip with the prose one tap deep, and the operator chrome
+     leaves the beginner's first screen. Power is untouched, and pinned that way. */
+  ok("v5.9 chip: the four scalar bands derive their chip from flip — never a third copy of an edge",
+    (() => { const E = REGIME_BAND_TABLE.filter((b) => b.flip);
+      return E.length === 4 && E.every((b) => {
+        const c = rulerChip(b); if (typeof c !== "string") return false;
+        const { bullEdge, bearEdge, dec } = b.flip;
+        const shown = (n) => [String(Number(Number(n).toFixed(dec))).replace("-", "−")];
+        return /^help [<>≤≥]/.test(c) && c.includes("· hurt") &&
+          shown(bullEdge).some((x) => c.includes(x)) && shown(bearEdge).some((x) => c.includes(x)) &&
+          c.length <= 32;   // chip-length: it shares one line with the freshness stamp
+      }); })());
+  ok("v5.9 chip: the two COMPOUND bands carry an authored short form — nothing invents a crossing",
+    (() => { const cpi = REGIME_BAND_TABLE.find((b) => b.key === "cpiHeadline");
+      const val = REGIME_BAND_TABLE.find((b) => b.key === "valuation");
+      return cpi.flip === null && val.flip === null &&
+        rulerChip(cpi) === cpi.rulerShort && rulerChip(val) === val.rulerShort &&
+        /cooler than last print/.test(rulerChip(cpi)) &&
+        // the CAPE edge is still DERIVED — one home, even in the chip
+        rulerChip(val).includes((CAPE_MEAN * 1.5).toFixed(1)); })());
+  ok("v5.9 chip: a band with neither a flip nor a short form yields null, never a guess",
+    rulerChip({ key: "x" }) === null && rulerChip(null) === null);
+  /* The verdict vocabulary explains itself. It lives in regime.js beside the engine whose
+     four states it describes — the same one-home rule as the band explainers, and the reason
+     it is not a second copy-table in the component that happens to render it. */
+  ok("v5.9 verdict: the explainer names all four calls, both machine words, and refuses to be advice",
+    (() => { const v = VERDICT_EXPLAIN, all = JSON.stringify(v);
+      return v && typeof v.full === "string" && typeof v.lead === "string" &&
+        Array.isArray(v.sections) && v.sections.length === 3 &&
+        ["MOONING", "HODL", "DIAMOND HANDS", "CAN'T CALL IT"].every((k) => all.includes(k)) &&
+        ["BULLISH", "BEARISH", "NEUTRAL"].every((k) => all.includes(k)) &&
+        /not advice/.test(all) && /not a view on any one stock/.test(all); })());
+  ok("v5.9 verdict: the token is tappable in SIMPLE only — Power's moon voice is untouched",
+    /plainVerdict\s*\n?\s*\? <Explainable explain=\{VERDICT_EXPLAIN\}/.test(bandSrc) &&
+    /: <span style=\{\{fontFamily:T\.fontMono,fontSize:T\.fsXl/.test(bandSrc) &&
+    /import \{ VERDICT_EXPLAIN \}|VERDICT_EXPLAIN \} from "\.\.\/regime\.js"/.test(bandSrc));
+  ok("v5.9 chrome: the beginner's first screen sheds the operator words, and Power keeps them",
+    // the duplicate lowercase wordmark, the provenance chip (except on ERROR), the alert
+    // badges and the OPS menu are all Power's now; each is pinned at its own gate.
+    /\{!simple&&<div className="sub-wordmark"/.test(dashSrc) &&
+    /\{\(!simple\|\|mode==="ERROR"\)&&<DataModeBadge/.test(dashSrc) &&
+    /\{!simple&&!publicView&&activeAlerts>0/.test(dashSrc) &&
+    /\{!simple&&!publicView&&\(\s*\n?\s*<details className="hdr-ops"/.test(dashSrc));
+  ok("v5.9 chrome: an ERROR still shows its badge in Simple — a red fact is not a density trade",
+    /\(!simple\|\|mode==="ERROR"\)/.test(dashSrc));
+  ok("v5.9: the copy control keeps its job in Simple but loses its three words",
+    (() => { const code = bandSrc.replace(/\/\/[^\n]*|\/\*[\s\S]*?\*\//g, "");
+      return /plainVerdict\s*\n?\s*\? \(callCopied\?"✓":"⎘"\)/.test(code) &&
+        /aria-label="Copy MacroDash posture card"/.test(code); })());
   ok("v4.0 boundary: the projections import no threshold and re-derive no vote",
     (() => { const seg = evidenceSrc.slice(evidenceSrc.indexOf("SIMPLE MODE PROJECTIONS"));
       return !/NFCI_TIGHT|NFCI_LOOSE|computeRegime\(|flipConditions\(|\.vote\(/.test(seg); })());

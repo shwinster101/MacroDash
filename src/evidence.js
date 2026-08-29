@@ -21,7 +21,7 @@ import { isStale, cadenceOf } from "./sources.js";
 // REGIME_BAND_TABLE is read here ONLY for each factor's plain-English name (`plain`), which
 // postureSummary needs. The VOTE is no longer re-derived from it: since FEAT-NEUTRAL (v3.62)
 // regimeFactors carries the vote it already derived, so a threshold has one consumer, not two.
-import { REGIME_BAND_TABLE, REGIME_QUORUM, computeRegime, flipConditions, regimeFactors } from "./regime.js";
+import { REGIME_BAND_TABLE, REGIME_QUORUM, rulerChip, computeRegime, flipConditions, regimeFactors } from "./regime.js";
 
 // The six regime voters by SOURCES field key (the staleness vocabulary), plus the one
 // factor-key alias: the valuation factor's field is shillerPe. Moved here from dashboard.jsx
@@ -323,6 +323,10 @@ export function simpleCards(ev, max = 3) {
       // ruler for the number above. Lives on REGIME_BAND_TABLE beside the rule it describes
       // (the plain/whyItMatters/metric doctrine) — this is a pass-through, never a copy.
       ruler: (band && band.ruler) || null,
+      // v5.9: the chip-length form for the card face; the full `ruler` above rides into the
+      // explainer sheet. Derived in regime.js from the band's own flip where one exists, so
+      // the card's edges cannot drift from the vote.
+      rulerChip: rulerChip(band),
       // v5.8: the newcomer explainer behind the card — full name, what it is, what moves it,
       // where "normal" sits, and the transmission to the macro picture. Pass-through only,
       // same rule as `ruler`: the copy lives on the band beside the rule it describes.

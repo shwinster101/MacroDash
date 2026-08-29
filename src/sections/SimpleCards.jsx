@@ -52,7 +52,9 @@ const SimpleCards = ({ cards, usable = 0, shown = 0, total = 0, withheld = false
              word, one computation — so the tile is self-contained without being a second
              opinion. */
           return (
-            <Explainable key={c.key} explain={c.explain} title={c.explain ? c.explain.full : c.label}
+            <Explainable key={c.key}
+              explain={c.explain ? { ...c.explain, lead: c.why || null, bands: c.ruler || null } : c.explain}
+              title={c.explain ? c.explain.full : c.label}
               eyebrow={`${c.label} · ${c.currentValue}${WORD[c.direction] ? ` · ${WORD[c.direction]}` : ""}`}
               className="simple-card"
               style={{ background: T.surface, border: `1px solid ${T.border}`,
@@ -77,17 +79,20 @@ const SimpleCards = ({ cards, usable = 0, shown = 0, total = 0, withheld = false
                     aria-label replacing it, which would hide the reading and the direction. */}
                 {c.explain && <span className="visually-hidden"> — what is this? Opens an explainer.</span>}
               </div>
+              {/* v5.9 (beginner read: "too many words at first glance"). The card was FOUR
+                  lines — identity, a why-it-matters sentence, freshness, and the ruler — three
+                  times over, and the sentence is the one a reader can get one tap deep now
+                  that the sheet exists. So the sentence moves INTO the sheet (as its lead),
+                  and freshness rides the ruler's line rather than renting its own.
+                  Provenance stays ON THE FACE either way — the v3.1 invariant is that a
+                  number never reads as live unless it is, and that is a fact, not prose. */}
               <div style={{ display: "flex", alignItems: "baseline", gap: 5, flexWrap: "wrap", marginTop: 1 }}>
-                {c.why && <span style={{ fontFamily: T.fontSans, fontSize: T.fsS, color: T.textSecondary, lineHeight: 1.3 }}>{c.why}</span>}
                 <span style={{ fontFamily: T.fontMono, fontSize: 8, color: illus ? T.textMuted : T.green, flexShrink: 0 }}>
                   {illus ? "not live" : c.mode.toLowerCase()}{c.asOf ? ` · ${c.asOf}` : ""}
                 </span>
                 {illus && <IllustrativeChip label="ILLUSTRATIVE" />}
+                {c.rulerChip && <span style={{ fontFamily: T.fontMono, fontSize: 8, color: T.textMuted, lineHeight: 1.3, minWidth: 0 }}>· {c.rulerChip}</span>}
               </div>
-              {/* FEAT-NEWCOMER-RULER (8/29): the ruler for the number above — the band's own
-                  edges restated (projection off REGIME_BAND_TABLE.ruler, one home). One line,
-                  muted, under whyItMatters; renders nothing when a band declares none. */}
-              {c.ruler && <div style={{ fontFamily: T.fontMono, fontSize: 8, color: T.textMuted, marginTop: 1, lineHeight: 1.3 }}>{c.ruler}</div>}
               {/* v5.8: the affordance is stated, not implied — a card that opens something
                   should say so, or the tap is a secret. */}
             </Explainable>

@@ -5,6 +5,53 @@ answers *"is it safe to be in the market?"* from live macro + market + sentiment
 data. Single-page React app on Cloudflare Pages, with live data assembled at the
 edge by Pages Functions and cached in KV.
 
+**v5.9.0 "FIRST GLANCE" — the beginner read: fewer words on the first screen, and the verdict
+explains its own vocabulary.** A first-time reader with no market background, on the live v5.8
+page: *"there's way too much going on, too many words at first glance… new folks likely have no
+context on hodl mooning or diamond hands. Each word needs to be high leverage."* Everything here
+is SIMPLE-ONLY — Power is byte-unchanged and pinned that way — and no vote, band, flip edge,
+quorum, cron, worker or TT contract moved.
+**Measured before and after, at 375px AND 390px:** the macro strip begins at **610** (was 791),
+the cards at **332** (was 409), and the visible words above the fold went **290 → 208**. Both
+fold budgets TIGHTEN with the measurement recorded — 820 → 660 and 480 → 420 — because a
+density pass that does not move its own guards has not defended anything.
+**(1) The verdict explains itself.** The one word everybody sees was, to this reader,
+decoration. It is now a real button opening the v5.8 sheet: all four calls in plain words
+(MOONING/HODL/DIAMOND HANDS/CAN'T CALL IT) mapped to BULLISH/NEUTRAL/BEARISH, what those three
+machine words actually mean, and — the section that earns its place — *what this is not*: a read
+on the whole market's backdrop, not a view on any one stock, and not advice. `VERDICT_EXPLAIN`
+lives in `regime.js` beside the engine whose four states it describes (the same one-home rule as
+the band explainers; it also keeps `RegimeBand` under its 300-line Property-10 bound).
+**(2) The card sheds its prose.** It was FOUR lines — identity, a why-it-matters sentence,
+freshness, and the full sentence-form ruler that wrapped to three lines for two of the six bands
+at phone width. The sentence moves INTO the sheet as its lead, the full ruler follows it as
+*"how MacroDash reads it"*, and the face keeps a CHIP: `help <18 · hurt >25`. **The chip is
+DERIVED from the band's own `flip` edges** for the four scalar bands — not a third copy of a
+threshold — and the two compound bands carry an authored short form, the same reason `flip` is
+null for them and nothing invents a crossing. Freshness stays ON the face beside it: the v3.1
+provenance invariant is a fact, not prose, and not a density trade. This answers the question
+v5.8 left open ("maybe instead of full descriptions right in the primary view?") — the beginner
+read settled it.
+**(3) The hero drops its duplicate.** In Simple the tally sub is gone: `NEUTRAL · 3 help, 1 does
+not` sat directly above *"Volatility, inflation and financial conditions are supportive, but
+stocks are priced for perfection"* — the same fact twice, and only one of the two is usable by a
+newcomer. Power keeps both, so v5.8's derived sub is untouched where it is read. The copy control
+keeps its job and loses its three words (icon-only in Simple; the aria-label and tooltip carry
+the sentence).
+**(4) The operator chrome leaves the beginner's first screen** — the duplicate lowercase
+wordmark, the provenance chip, the ⋯ OPS menu and the alert badges are all Power's now. **The
+alert badge is a defect fix, not a v3.25 reversal**: the Macro Alerts section is already
+`!publicView&&!simple`, so in Simple the badge counted monitors the reader could not reach and
+its deep link led nowhere. The provenance chip still renders in Simple on **ERROR** — an outage
+is a red fact and stays.
+Tests: **2091 smoke + 306 render + 227 public-render**, `audit:prod` clean. The verdict sheet is
+DRIVEN: tap → four calls → both machine words → the not-advice section → Escape returns focus to
+the verdict. Negative-controlled: hardcoding a chip instead of deriving it turns its pin red, and
+restoring the Simple alert badge turns two red. The second control also exposed a **vacuous half**
+in one of my own new browser pins — the fixture fires no alert, so the absence proved nothing;
+the assertion now states that limit and a Power CONTRAST pin was added so the shed-chrome claim
+cannot pass by never rendering (the v3.60.1 trap, third catch this week).
+
 **v5.8.0 "NEWCOMER RULER + FACT SHEET" — the hero stops pointing at the wrong gauge, and every
 parameter explains itself one tap deep.** Two owner tickets, one release, copy/projection only:
 no vote, band, flip edge, quorum, panic, cron, worker, history or TT change.
