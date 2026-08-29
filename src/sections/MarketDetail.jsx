@@ -169,6 +169,15 @@ const MarketDetail=({d,modeOf,asOfOf,demoted,spyData,goldenCross})=>{
                     <div style={{fontFamily:T.fontMono,fontSize:9,color:T.textMuted}}>
                       {w==null?"—":`${w>0?"▲ +":w<0?"▼ ":"→ "}${Math.abs(w).toFixed(2)} WoW`} · 0 = avg
                     </div>
+                    {/* FEAT-NFCILEV (8/28): the leverage SUBINDEX — the early-warning
+                        dimension the composite dilutes (1929/2008 were leverage builds).
+                        NUMBER ONLY, no TIGHT/LOOSE word (a directional call off a context
+                        field is the v3.1 target), and suppressed on mock/stale like the
+                        tile's own verdict — a mock subindex must not read as a live one. */}
+                    {(()=>{const lv=d.macro.nfci.leverage;
+                      return !isIllustrative(modeOf('nfciLeverage'))&&Number.isFinite(lv)
+                        ?<div style={{fontFamily:T.fontMono,fontSize:9,color:T.textMuted}}>leverage subindex {lv>0?"+":""}{lv.toFixed(2)}</div>
+                        :null;})()}
                     <div style={{height:28,marginTop:6}}><ResponsiveContainer width="100%" height="100%"><LineChart data={d.macro.nfci.series.map((val,i)=>({v:val,i}))}><Line type="monotone" dataKey="v" stroke={nIllus?T.textMuted:bandCol} dot={false} strokeWidth={1.5}/></LineChart></ResponsiveContainer></div>
                     <SourceBox api="FRED" endpoint="NFCI · Chicago Fed" mode={nMode} asOf={asOfOf('nfci')}/>
                   </div>
