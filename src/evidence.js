@@ -319,6 +319,10 @@ export function simpleCards(ev, max = 3) {
       metricValue: (f.metric && f.metric.value) ?? null,
       direction: DIRECTION_OF[f.vote],
       why: (band && band.whyItMatters) || null,     // never fabricated if a band lacks one
+      // FEAT-NEWCOMER-RULER (8/29): the band's own edges, restated for a reader with no
+      // ruler for the number above. Lives on REGIME_BAND_TABLE beside the rule it describes
+      // (the plain/whyItMatters/metric doctrine) — this is a pass-through, never a copy.
+      ruler: (band && band.ruler) || null,
       mode: f.mode, asOf: f.asOf,
     };
   });

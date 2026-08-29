@@ -29,6 +29,32 @@ export const NFCI_LOOSE = -0.5;   // ≥ half an SD below the mean → genuinely
 export const CREDIT_TAIL_CALM   = 7;
 export const CREDIT_TAIL_STRESS = 12;
 
+// FEAT-NEWCOMER-RULER (8/29): the CAPE reference constants move HERE from macroCall.js —
+// the band-constants home, beside NFCI_TIGHT/NFCI_LOOSE — so the valuation ruler below can
+// derive "26.1" from CAPE_MEAN * 1.5 instead of minting a second literal (regime.js is
+// deliberately import-free, and macroCall sits downstream via evidence.js, so the import
+// runs the other way). macroCall.js imports them back; the vote itself is UNTOUCHED — it
+// still reads the runtime c.mean the evidence carries, which macroCall stamps from this
+// same constant.
+export const CAPE_MEAN = 17.4;
+export const CAPE_ATH  = 44.19;
+
+/* FEAT-NEWCOMER-RULER (8/29): the mobile budget for the derived MIXED sub. The ticket set
+   the target as "~48 chars"; MEASURED at 375px (its own acceptance width) the sub renders as
+   13px mono in a 335px box and fits ~32 characters per line INCLUDING its "NEUTRAL · "
+   prefix. Rendered line counts, measured at BOTH phone widths by driving the real bundle:
+   44 · 54 · 55 · 60 chars all wrap to TWO lines at 375px and 390px — the height today's
+   44-char tape already occupies — while 67 is three at 375 and 79 is three at both. The
+   budget is therefore stated in the unit that actually binds (rendered lines) at the
+   character count that expresses it on the NARROWER phone: 60 = the last sub that still
+   fits two lines at 375px. A char cap is a proxy for a wrap, so it is deliberately set at
+   the measured boundary rather than at the ticket's round "~48", which measurement showed
+   to be the same two lines and would have degraded ordinary 2-vs-1 tapes for nothing. Past
+   the budget the sub states the SPLIT rather than naming six factors across four lines of
+   hero — and the fully named sentence renders directly beneath it either way, so the names
+   move one line down, never out of reach. */
+export const MIXED_SUB_MAX = 60;
+
 /* ═══ REGIME BAND TABLE (FEAT-FLIP, v3.53) — ONE table, two altitudes ═══════════════════
    computeRegime() VOTES from this table; flipConditions() measures DISTANCE to the same
    edges. Before this the bands were inline literals inside computeRegime, so any "what would
@@ -77,6 +103,7 @@ export const REGIME_BAND_TABLE = [
        vote did not. */
     metric:{ read:(d)=>d.crossAsset.treasury10y.m1, unit:"pp", dec:2, note:"1-mo", signed:true,
              context:{ read:(d)=>d.crossAsset.treasury10y.current, unit:"%", dec:2 } },
+    ruler:"help: 1-mo change below −0.10 ppt · hurt: above +0.15 ppt",
     vote:(v)=> v < -0.10 ? "bull" : v > 0.15 ? "bear" : "neutral",
     flip:{ bullEdge:-0.10, bearEdge:0.15, bullSide:"below", bullInclusive:false,
            unit:" ppt", dec:2, name:"the 10Y monthly change" } },
@@ -86,6 +113,7 @@ export const REGIME_BAND_TABLE = [
     whyItMatters:"The market's own estimate of how violently prices could move from here.",
     read:(d)=>d.marketPulse.vix.current,
     metric:{ read:(d)=>d.marketPulse.vix.current, unit:"", dec:2, note:null },
+    ruler:"help below 18 · mid 18–25 · hurt above 25",
     vote:(v)=> v < 18 ? "bull" : v > 25 ? "bear" : "neutral",
     flip:{ bullEdge:18, bearEdge:25, bullSide:"below", bullInclusive:false,
            unit:"", dec:2, name:"VIX" } },
@@ -95,6 +123,7 @@ export const REGIME_BAND_TABLE = [
     whyItMatters:"Crowd positioning — how much optimism is already priced into the tape.",
     read:(d)=>d.marketPulse.fearGreed.score,
     metric:{ read:(d)=>d.marketPulse.fearGreed.score, unit:"", dec:0, note:"of 100" },
+    ruler:"help above 55 · mid 30–55 · hurt below 30",
     vote:(v)=> v > 55 ? "bull" : v < 30 ? "bear" : "neutral",
     // The one INVERTED factor: bullish ABOVE its edge, not below.
     flip:{ bullEdge:55, bearEdge:30, bullSide:"above", bullInclusive:false,
@@ -108,6 +137,7 @@ export const REGIME_BAND_TABLE = [
     // chip and whyItMatters carry the shape; this never implies the vote is on the level.
     metric:{ read:(d)=>{const t=d.macro.cpi.trend;return Array.isArray(t)&&t.length?t[t.length-1]:null;}, unit:"%", dec:1, note:"YoY" },
     read:(d)=>d.macro.cpi.trend,
+    ruler:"help: latest YoY cooler than prior print · hurt: series up >0.5 pt from start · Fed target 2% is context, not the vote",
     vote:(t)=> t[t.length-1] < t[t.length-2] ? "bull"
              : (t[t.length-1] - t[0] > 0.5 ? "bear" : "neutral"),
     flip:null,
@@ -119,6 +149,7 @@ export const REGIME_BAND_TABLE = [
     // Compound vote (absolute CAPE OR % of ATH); the metric is the CAPE level itself.
     metric:{ read:(d)=>d.macro.shillerPe && d.macro.shillerPe.current, unit:"", dec:1, note:"CAPE" },
     read:(d)=>d.macro.shillerPe,
+    ruler:`help: CAPE below ${(CAPE_MEAN*1.5).toFixed(1)} (1.5× long-run mean ${CAPE_MEAN}) · hurt: CAPE above 30 or >90% of ATH ${CAPE_ATH}`,
     vote:(c)=>{ const p = c.ath ? (c.current / c.ath) * 100 : c.pctOfAth;
                 return c.current < c.mean * 1.5 ? "bull" : (c.current > 30 || p > 90 ? "bear" : "neutral"); },
     flip:null,
@@ -131,6 +162,7 @@ export const REGIME_BAND_TABLE = [
     read:(d)=>d.macro.nfci.current,
     // Asymmetric and INCLUSIVE on the bull side (<=), unlike every other factor — see the
     // NFCI_BANDS derivation at the tile. flipConditions renders "at or below" for it.
+    ruler:"help at or below −0.5 SD · mid −0.5 to 0 · hurt above 0 (0 = 1971– mean)",
     vote:(v)=> v <= NFCI_LOOSE ? "bull" : v > NFCI_TIGHT ? "bear" : "neutral",
     flip:{ bullEdge:NFCI_LOOSE, bearEdge:NFCI_TIGHT, bullSide:"below", bullInclusive:true,
            unit:" SD", dec:2, name:"NFCI" } },
@@ -185,11 +217,15 @@ export function computeRegime(d, stale=new Set()) {
   let bullVotes=0, bearVotes=0, counted=0;
   // `counted` = factors that actually voted (available, whatever way they leaned). It drives
   // the strict majority in verdictFrom rather than a hardcoded number.
+  // FEAT-NEWCOMER-RULER (8/29): the KEYS are collected beside the counts so the MIXED sub
+  // below can name the disagreement from the votes actually cast — same loop, no re-vote.
+  const bullKeys=[], bearKeys=[];
   REGIME_BAND_TABLE.forEach((f)=>{
     if(stale.has(f.key)) return;
     counted++;
     const v=f.vote(f.read(d), d);
-    if(v==="bull") bullVotes++; else if(v==="bear") bearVotes++;
+    if(v==="bull"){ bullVotes++; bullKeys.push(f.key); }
+    else if(v==="bear"){ bearVotes++; bearKeys.push(f.key); }
   });
   /* Below quorum the page states that it cannot call it, rather than calling it from
      whatever survived. `raw` records what the majority WOULD have said — never silent about
@@ -215,6 +251,47 @@ export function computeRegime(d, stale=new Set()) {
     const nearest=flipConditions(d, stale).flips[0];
     sub=nearest ? `Cross-signals — watch ${nearest.short}`
                 : `Cross-signals — ${counted} of ${REGIME_BAND_TABLE.length} inputs usable`;
+  }
+  /* FEAT-NEWCOMER-RULER (8/29) — the MIXED sub is DERIVED, not canned. The static
+     "Cross-signals — watch VIX" rendered on every mixed tape regardless of what actually
+     disagreed: on 2026-08-29 VIX was already asleep (<18, a HELPING vote) while the real
+     split was sleepy vol + cooling inflation vs a rich CAPE — and the sub told a newcomer
+     to watch the one gauge that was fine. When both sides are present the sub names them
+     from the band table's own `plain` nouns (valuation → "prices" is the ONE allowed alias,
+     this sub only — a noun list needs a short word for the bear side's most common member).
+     One-sided mixes (all-bull or all-bear with neutrals holding the majority off) keep the
+     v3.61 nearest-flip fallback: there is no disagreement to name, so the honest line is
+     still "what would change this". The VIX-excluded path above is UNCHANGED. */
+  else if(!insufficient && label==="MIXED"){
+    if(bullKeys.length && bearKeys.length){
+      const noun=(k)=>{ if(k==="valuation") return "prices";
+        const b=REGIME_BAND_TABLE.find((x)=>x.key===k); return (b && b.plain) || k; };
+      const list=(xs)=> xs.length<=1 ? (xs[0]||"")
+        : xs.length===2 ? `${xs[0]} and ${xs[1]}`
+        : `${xs.slice(0,-1).join(", ")} and ${xs[xs.length-1]}`;
+      // Verb agreement: a single mass noun takes helps/does not ("volatility helps");
+      // multi-noun lists and the plural-agreeing nouns take help/do not ("prices do not",
+      // "financial conditions do not"). Caught by the fixture battery on the first run —
+      // the flat "do not" printed "volatility do not".
+      const PLURAL=new Set(["prices","financial conditions"]);
+      const plural=(ns)=> ns.length>1 || PLURAL.has(ns[0]);
+      const bn=bullKeys.map(noun), rn=bearKeys.map(noun);
+      const named=`${list(bn)} ${plural(bn)?"help":"helps"}, ${list(rn)} ${plural(rn)?"do":"does"} not`;
+      /* MOBILE BUDGET, measured rather than guessed (390/375px, the owner's phone): the sub
+         renders at 13px mono in a 335px box and fits ~32 characters per line INCLUDING the
+         "NEUTRAL · " prefix, so the ticket's ~48-char target is two lines — which is what
+         today's 44-char tape occupies. A 3-3 split would name six factors at ~98 characters,
+         four lines of hero, and duplicate the full sentence rendered directly beneath it.
+         Past the budget the sub states the SPLIT instead: still derived from the same votes,
+         still never pointing at the wrong gauge, and the names are one line further down
+         rather than one tap (the v3.66 chip-length rule, with a shorter journey). */
+      sub = named.length<=MIXED_SUB_MAX ? named
+        : `${bn.length} ${bn.length===1?"helps":"help"}, ${rn.length} ${rn.length===1?"does":"do"} not`;
+    } else {
+      const nearest=flipConditions(d, stale).flips[0];
+      sub=nearest ? `Cross-signals — watch ${nearest.short}`
+                  : `Cross-signals — ${counted} of ${REGIME_BAND_TABLE.length} inputs usable`;
+    }
   }
   return { label, sub, tintKey:m.tintKey, colorKey:m.colorKey,
     bullVotes, bearVotes, counted, totalFactors:REGIME_BAND_TABLE.length,

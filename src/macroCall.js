@@ -14,8 +14,11 @@ import { computeMacroFlip } from "./ttReadout.js";
 import { govAsOf } from "./sources.js";
 
 export const CALL_SCHEMA = "md-call-v1";
-export const CAPE_MEAN = 17.4;
-export const CAPE_ATH = 44.19;
+// FEAT-NEWCOMER-RULER (8/29): the constants moved to regime.js (the band-constants home,
+// so the valuation ruler derives 26.1 from CAPE_MEAN with no second literal). Re-exported
+// here so this module's public surface is unchanged.
+import { CAPE_MEAN, CAPE_ATH } from "./regime.js";
+export { CAPE_MEAN, CAPE_ATH };
 
 export const CALL_VOCABULARY = Object.freeze({
   "RISK-ON":  { headline: "MOONING",       emoji: "🚀", direction: "BULLISH" },

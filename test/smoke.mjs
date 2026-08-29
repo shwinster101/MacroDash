@@ -12,7 +12,7 @@ import { computeFiveWhys, isMacroMaterial } from "../src/fiveWhys.js";
 // source text, which is stronger (the actual code runs) and immune to formatting drift.
 import { NFCI_TIGHT as REG_NFCI_TIGHT, NFCI_LOOSE as REG_NFCI_LOOSE, REGIME_BAND_TABLE,
   REGIME_QUORUM, verdictFrom, computeRegime as regimeCompute, flipConditions as regimeFlips,
-  regimeFactors as regimeFactorRows, voteStyle } from "../src/regime.js";
+  regimeFactors as regimeFactorRows, voteStyle, MIXED_SUB_MAX } from "../src/regime.js";
 import { REGIME_FACTOR_FIELDS, FACTOR_FIELD, fieldMode, factorExclusions, buildEvidenceSet } from "../src/evidence.js";
 import { LASTVALID_KEY, summarizeEvidence, compareEvidence } from "../src/whatChanged.js";
 import {
@@ -4364,8 +4364,76 @@ const subFix = (fg, cpiLast) => ({
   macro: { cpi: { trend: [3.2, 3.1, 3.0, 2.9, 2.8, cpiLast] },
     shillerPe: { current: 24, mean: 17.6, ath: 44.19 }, nfci: { current: -0.42 } },
 });
-ok("glance: MIXED with VIX voting keeps the canonical 'watch VIX' sub",
-  regimeCompute(subFix(42, 2.9), new Set()).sub === "Cross-signals — watch VIX");
+/* FEAT-NEWCOMER-RULER (8/29) — this pin REVERSED. It blessed the canned "watch VIX" on
+   every mixed tape, which is the ticket's named bug: on 2026-08-29 VIX was already asleep
+   (<18, HELPING) and the real split was vol+inflation vs a rich CAPE — the sub told a
+   newcomer to watch the one gauge that was fine. The MIXED sub is now DERIVED from the
+   votes cast: both sides present → named disagreement; one-sided → the v3.61 nearest-flip
+   fallback (there is no disagreement to name). subFix(42,2.9) is 3 bull / 0 bear, so it
+   takes the fallback. */
+ok("ruler: one-sided MIXED keeps the nearest-flip fallback, and it is never the canned watch-VIX",
+  (() => { const r = regimeCompute(subFix(42, 2.9), new Set());
+    return r.label === "MIXED" && /^Cross-signals — watch (10Y|VIX|F&G|NFCI)$/.test(r.sub); })());
+ok("ruler: today's tape shape — vol+inflation bull, CAPE bear — names the disagreement",
+  (() => { // vix 14.43 bull · cpi cooling bull · CAPE 42.2 bear · 10Y/F&G/NFCI neutral = MIXED 2v1
+    const d = { crossAsset: { treasury10y: { m1: 0.02 } },
+      marketPulse: { vix: { current: 14.43 }, fearGreed: { score: 54 } },
+      macro: { cpi: { trend: [3.6, 3.6, 3.6, 3.6, 3.6, 3.5] },
+        shillerPe: { current: 42.2, mean: 17.4, ath: 44.19 }, nfci: { current: -0.42 } } };
+    const r = regimeCompute(d, new Set());
+    return r.label === "MIXED" &&
+      r.sub === "volatility and inflation help, prices do not"; })());
+ok("ruler: the derived sub uses band.plain nouns with 'prices' as the ONE valuation alias",
+  (() => { // 10Y bull vs vix bear → both nouns come from the table, singular agreement
+    const d = { crossAsset: { treasury10y: { m1: -0.2 } },
+      marketPulse: { vix: { current: 27 }, fearGreed: { score: 45 } },
+      macro: { cpi: { trend: [3.0, 3.0, 3.0, 3.0, 3.0, 3.0] },
+        shillerPe: { current: 24, mean: 17.4, ath: 44.19 }, nfci: { current: -0.42 } } };
+    const r = regimeCompute(d, new Set());
+    return r.label === "MIXED" &&
+      r.sub === "the 10-year yield and prices help, volatility does not"; })());
+/* The mobile budget, RUN rather than asserted from the constant's value: a 3-1 split names
+   six words of factor across three lines of hero and duplicates the sentence directly under
+   it, so past MIXED_SUB_MAX the sub states the split instead. Still derived from the same
+   votes, still never pointing at a gauge that is fine — only the names move one line down. */
+ok("ruler: an over-budget disagreement degrades to the SPLIT, never to a gloss or a truncation",
+  (() => { // 10Y+NFCI+F&G bull, vix bear → the named form is 78 chars, over the budget
+    const d = { crossAsset: { treasury10y: { m1: -0.2 } },
+      marketPulse: { vix: { current: 27 }, fearGreed: { score: 60 } },
+      macro: { cpi: { trend: [3.0, 3.0, 3.0, 3.0, 3.0, 3.0] },
+        shillerPe: { current: 27, mean: 17.4, ath: 44.19 }, nfci: { current: -0.6 } } };
+    const r = regimeCompute(d, new Set());
+    const named = "the 10-year yield, sentiment and financial conditions help, volatility does not";
+    return r.label === "MIXED" && named.length > MIXED_SUB_MAX &&
+      r.sub === "3 help, 1 does not" && r.sub.length <= MIXED_SUB_MAX &&
+      !/Cross-signals|watch|…/.test(r.sub); })());
+/* The budget is a MEASURED two-line height, not a round number: at 375px (the ticket's
+   acceptance width) 44/54/55/60-char subs all wrap to two lines and 67 wraps to three, so
+   every ordinary named disagreement stays named and only the multi-factor walls degrade. */
+ok("ruler: the budget is the measured two-line height — ordinary named tapes all fit under it",
+  MIXED_SUB_MAX === 60 &&
+  ["volatility and inflation help, prices do not",                    // today, 44
+   "the 10-year yield and prices help, volatility does not",          // 54
+   "volatility and prices help, financial conditions do not",         // 55
+  ].every((s) => s.length <= MIXED_SUB_MAX) &&
+  "the 10-year yield, sentiment and financial conditions help, volatility does not".length > MIXED_SUB_MAX);
+ok("ruler: verb agreement — a lone plural-agreeing hurt noun still takes 'do not'",
+  (() => { // nfci bear alone → "financial conditions do not"; and one bull helper → "helps"
+    const d = { crossAsset: { treasury10y: { m1: 0.02 } },
+      marketPulse: { vix: { current: 14 }, fearGreed: { score: 54 } },
+      macro: { cpi: { trend: [3.0, 3.0, 3.0, 3.0, 3.0, 3.0] },
+        shillerPe: { current: 24, mean: 17.4, ath: 44.19 }, nfci: { current: 0.4 } } };
+    const r = regimeCompute(d, new Set());
+    return r.label === "MIXED" &&
+      r.sub === "volatility and prices help, financial conditions do not"; })());
+ok("ruler: forbidden vocabulary never reaches a derived MIXED sub",
+  (() => { const d = { crossAsset: { treasury10y: { m1: 0.02 } },
+      marketPulse: { vix: { current: 14.43 }, fearGreed: { score: 54 } },
+      macro: { cpi: { trend: [3.6, 3.6, 3.6, 3.6, 3.6, 3.5] },
+        shillerPe: { current: 42.2, mean: 17.4, ath: 44.19 }, nfci: { current: -0.42 } } };
+    const r = regimeCompute(d, new Set());
+    return !/Cross-signals/.test(r.sub) && !/watch/i.test(r.sub) &&
+      !/RISK-ON|RISK-OFF|MIXED/.test(r.sub); })());
 ok("glance: MIXED with VIX excluded re-derives the watch from the NEAREST load-bearing flip",
   (() => { const r = regimeCompute(subFix(50, 2.9), new Set(["vix"]));
     return r.label === "MIXED" && !r.sub.includes("VIX") && /watch (NFCI|F&G|10Y)/.test(r.sub); })());
@@ -9223,6 +9291,61 @@ console.log("\n[67] v4.0 SIMPLE MODE — verdict mapping, card selection, senten
   ok("v4.0.3: every band declares a typed metric — a new band without one fails THIS test",
     REGIME_BAND_TABLE.every((b) => b.metric && typeof b.metric.read === "function" &&
       typeof b.metric.dec === "number" && typeof b.metric.unit === "string"));
+  /* FEAT-NEWCOMER-RULER (8/29): every band restates its own edges for a reader with no
+     ruler for the number — locked copy, living on the band beside the rule it describes
+     (the plain/whyItMatters/metric doctrine). The valuation 26.1 is DERIVED from
+     CAPE_MEAN*1.5, never a second literal — pinned in both directions. */
+  ok("ruler: every band declares one, and the six locked copies are exact",
+    REGIME_BAND_TABLE.every((b) => typeof b.ruler === "string" && b.ruler.length > 10) &&
+    REGIME_BAND_TABLE.find((b)=>b.key==="tenYear").ruler === "help: 1-mo change below −0.10 ppt · hurt: above +0.15 ppt" &&
+    REGIME_BAND_TABLE.find((b)=>b.key==="vix").ruler === "help below 18 · mid 18–25 · hurt above 25" &&
+    REGIME_BAND_TABLE.find((b)=>b.key==="fearGreed").ruler === "help above 55 · mid 30–55 · hurt below 30" &&
+    REGIME_BAND_TABLE.find((b)=>b.key==="cpiHeadline").ruler === "help: latest YoY cooler than prior print · hurt: series up >0.5 pt from start · Fed target 2% is context, not the vote" &&
+    REGIME_BAND_TABLE.find((b)=>b.key==="valuation").ruler === "help: CAPE below 26.1 (1.5× long-run mean 17.4) · hurt: CAPE above 30 or >90% of ATH 44.19" &&
+    REGIME_BAND_TABLE.find((b)=>b.key==="nfci").ruler === "help at or below −0.5 SD · mid −0.5 to 0 · hurt above 0 (0 = 1971– mean)");
+  ok("ruler: 26.1 has ONE derivation — the source carries no 26.1 literal, and macroCall re-imports the constant",
+    !/26\.1/.test(regimeSrc.replace(/\/\/[^\n]*|\/\*[\s\S]*?\*\//g, "")) &&
+    /CAPE_MEAN\*1\.5/.test(regimeSrc.replace(/\s/g,"")) &&
+    /import \{ CAPE_MEAN, CAPE_ATH \} from "\.\/regime\.js"/.test(readSrc("../src/macroCall.js")));
+  ok("ruler: the card projection passes the band's ruler through, and the card renders it muted",
+    (() => { const cards = sc({ regime:{ label:"RISK-ON" }, factors:[{ key:"vix", short:"VIX",
+        vote:"bull", excluded:false, mode:"LIVE", metric:{ text:"14.43", value:14.43 } }] }).cards;
+      return cards.length === 1 && cards[0].ruler === "help below 18 · mid 18–25 · hurt above 25"; })() &&
+    /\{c\.ruler && <div/.test(spcSrc) && /c\.ruler.*textMuted|textMuted.*\{c\.ruler\}/s.test(spcSrc));
+  ok("ruler: the vote() functions, flip edges and quorum are byte-untouched by this feature",
+    REGIME_BAND_TABLE.length === 6 && REGIME_QUORUM === 4 &&
+    REGIME_BAND_TABLE.find((b)=>b.key==="vix").vote(17.9) === "bull" &&
+    REGIME_BAND_TABLE.find((b)=>b.key==="vix").vote(25.01) === "bear" &&
+    REGIME_BAND_TABLE.find((b)=>b.key==="nfci").vote(-0.5) === "bull");
+  /* The chain that makes the ruler a GUARD instead of a caption, and the negative control
+     the ticket asked for: vote() → flip → ruler must all name the SAME two numbers, and the
+     reconciliation is derived from the table at runtime rather than restated here (the
+     SOURCES/DERIVED_OF and playwright EXECUTABLE_PATHS convention). Move an edge in vote()
+     alone and the vote↔flip half goes red; move it in flip alone and the ruler half does;
+     move it in both and the locked-copy pin above does. There is no way to change a scalar
+     band's edge and leave a stale ruler behind. Deliberately NOT wired by templating the
+     ruler off flip.bullEdge: that would have put a third expression of the edge inside a
+     table that gates the public verdict, and locked decision 1 keeps vote() byte-untouched.
+     CPI and valuation are compound votes with flip:null — their locked literals are pinned
+     above, which is the whole reason rule 3 forbids inventing a crossing for them. */
+  ok("ruler: the four scalar bands reconcile vote() ↔ flip edges ↔ the ruler's own numbers",
+    (() => { const E = 0.001;
+      const shown = (n, dec) => [String(Math.abs(n)), Math.abs(n).toFixed(dec)];
+      return REGIME_BAND_TABLE.filter((b) => b.flip).length === 4 &&
+        REGIME_BAND_TABLE.filter((b) => b.flip).every((b) => {
+          const { bullEdge, bearEdge, bullSide, bullInclusive, dec } = b.flip;
+          const below = bullSide === "below";
+          // Fail, never THROW, on a band with no ruler: a predicate that crashes kills the
+          // whole run and prints no total — the v3.99.4 P0 shape, and the missing-ruler
+          // negative control reproduced it here before this guard.
+          if (typeof b.ruler !== "string") return false;
+          const voteOk = b.vote(below ? bullEdge - E : bullEdge + E) === "bull" &&
+            (b.vote(bullEdge) === "bull") === !!bullInclusive &&
+            b.vote(below ? bearEdge + E : bearEdge - E) === "bear" &&
+            b.vote(bearEdge) !== "bear";
+          const has = (n) => shown(n, dec).some((s) => b.ruler.includes(s));
+          return voteOk && has(bullEdge) && has(bearEdge);
+        }); })());
   ok("v4.0 boundary: the projections import no threshold and re-derive no vote",
     (() => { const seg = evidenceSrc.slice(evidenceSrc.indexOf("SIMPLE MODE PROJECTIONS"));
       return !/NFCI_TIGHT|NFCI_LOOSE|computeRegime\(|flipConditions\(|\.vote\(/.test(seg); })());
