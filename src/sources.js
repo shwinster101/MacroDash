@@ -86,6 +86,9 @@ export const SOURCES = {
   // is the signal: positive = tighter than average, negative = looser.
   nfci:               { path: "macro.nfci.current",       kind: "num",    displayClass: "public" },
   nfciW1:             { path: "macro.nfci.w1",            kind: "num",    displayClass: "public" },
+  // FEAT-NFCILEV (8/28): the leverage subindex — CONTEXT ONLY, never a voter. Own AsOf
+  // (generic fetchFred emission), so it is NOT in DERIVED_OF.
+  nfciLeverage:       { path: "macro.nfci.leverage",      kind: "num",    displayClass: "public" },
   nfciSeries:         { path: "macro.nfci.series",        kind: "series", displayClass: "public" },
   creditSpread:       { path: "macro.credit.spread",      kind: "num",    displayClass: "public" },
   creditSpreadD1:     { path: "macro.credit.spreadD1",    kind: "num",    displayClass: "public" },
@@ -197,6 +200,7 @@ const CADENCE = {
   // weekly (Chicago Fed NFCI — released Wednesday for the week ending the prior Friday;
   // nfciW1/nfciSeries inherit this through the DERIVED_OF parent fallback in cadenceOf)
   nfci: "weekly",
+  nfciLeverage: "weekly",   // FEAT-NFCILEV: same release cadence as its parent index
   // weekly (LLM token prices reprice on model launches, not daily)
   tokenBlendedMtok: "weekly", tokenTrend: "weekly", tokenModelsJson: "weekly",
   // FEAT-TOKVOL (v3.85): same weekly read as the price leg — the tokenDemand window math

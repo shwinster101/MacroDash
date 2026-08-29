@@ -108,7 +108,7 @@ const MOCK_DATA = {
     // FEAT-NFCI (v3.43): Chicago Fed National Financial Conditions Index (weekly).
     // Standardized so ZERO is the historical average: positive = tighter than average,
     // negative = looser. The post-GFC era has generally run negative (loose).
-    nfci:{ current:-0.42, w1:+0.03,
+    nfci:{ current:-0.42, w1:+0.03, leverage:-0.31,  // leverage subindex — context only (8/28)
            series:[-0.55,-0.53,-0.50,-0.49,-0.47,-0.46,-0.45,-0.44,-0.45,-0.42] },
     housing:{ peoria:218400 },
     shillerPe:{ current:42.78, mean:17.4, median:16.1, ath:44.19, pctOfAth:96.8 },
@@ -630,6 +630,12 @@ export default function Dashboard({ publicView = false } = {}) {
     // reader's. Presentation only — the flag is the one the server already set.
     callFrozen
   });
+  /* FEAT-NFCILEV (8/28): the leverage-subindex CONTEXT line for the open whys footer —
+     computed ONCE here (sections stay presentation-only). `live` collapses mock/stale/
+     error/loading into "not loaded": asOf alone cannot carry that judgment. */
+  const levV=d.macro.nfci.leverage;
+  const levCtx={v:levV, asOf:asOfOf('nfciLeverage'),
+    live:(()=>{const m=modeOf('nfciLeverage');return(m==="LIVE"||m==="CACHED")&&Number.isFinite(levV);})()};
   /* B2 (v3.59): "derived from live data" was a STATIC string — it kept asserting liveness
      across cached, degraded, error and demo states. One derivation, both footers. */
   const derivedLabel=mode==="LIVE"?"derived from live data"
@@ -970,7 +976,7 @@ export default function Dashboard({ publicView = false } = {}) {
           fact still lands without a closed row claiming a crossing that does not exist.
           Verdict words already pass through SIMPLE_VERDICTS inside simpleFlipLine (v4.0.3). */}
       {simple&&<FiveWhys fw={fw} derivedLabel={derivedLabel} mode={modeOf('spyPrice')} asOf={asOfOf('spyPrice')}
-        flipChip={evidenceSet.withheld?null:flipChipOf(simpleF)} flipLine={simpleF}/>}
+        flipChip={evidenceSet.withheld?null:flipChipOf(simpleF)} flipLine={simpleF} leverage={levCtx}/>}
 
       {/* ── v3.94 DRIVERS-ONLY: the REASONING group — 5 whys + what-changed under ONE
           toggle (2 clicks to any why, inside the owner's 2-3 budget). The label carries the
@@ -980,7 +986,7 @@ export default function Dashboard({ publicView = false } = {}) {
       {!simple&&<div style={{padding:"2px 20px",background:T.bg,borderBottom:`1px solid ${T.border}`}}>
         <CollapsedGroup chip={false} count={5+(changed&&changed.changes?changed.changes.length:0)}
           label={`the reasoning — 5 whys · what changed${changed&&changed.changes&&changed.changes.length?` (${changed.changes.length} new)`:""}`}>
-          <FiveWhys fw={fw} derivedLabel={derivedLabel} mode={modeOf('spyPrice')} asOf={asOfOf('spyPrice')}/>
+          <FiveWhys fw={fw} derivedLabel={derivedLabel} mode={modeOf('spyPrice')} asOf={asOfOf('spyPrice')} leverage={levCtx}/>
           <WhatChanged changed={changed}/>
         </CollapsedGroup>
       </div>}

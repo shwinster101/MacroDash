@@ -101,6 +101,9 @@ const FULL_LIVE = {
   // v3.99: the Fed's DAILY target-range bounds — the tile's headline when live.
   fedTargetUpper: 3.75, fedTargetUpperAsOf: TODAY, fedTargetLower: 3.50, fedTargetLowerAsOf: TODAY,
   nfci: -0.62, nfciAsOf: daysAgo(4),
+  // FEAT-NFCILEV (8/28): the leverage subindex — context only, live-dated so the whys
+  // footer and the tile sub-line render their live states in this harness.
+  nfciLeverage: -0.55, nfciLeverageAsOf: daysAgo(4),
   shillerPe: 31.2, shillerPeAsOf: daysAgo(20),
   // v3.84 (non-voting): the CCC junk tail + Sahm + 10y–3m, live-dated so the tiles render
   // their judged states rather than ILLUSTRATIVE in this harness.
@@ -206,6 +209,10 @@ console.log("\n[public] LOADING — a posture must not be computed from the mock
   const loadBody = await page.locator("body").innerText();
   ok("loading A1: why-this-call narrates no mock context and states the evidence hold",
     !/SPY \$[\d.]+ \(/.test(loadBody) && /not enough usable evidence/i.test(loadBody));
+  /* FEAT-NFCILEV (8/28): with no live field the footer says NOT LOADED — the mock -0.31
+     must never render as a live-looking subindex in the explanation layer. */
+  ok("8/28 nfciLeverage: mock shows no live-looking number — the footer reads 'not loaded'",
+    /Leverage subindex not loaded/.test(loadBody) && !/Leverage subindex [+-]?\d/.test(loadBody));
   ok("loading: no page errors", errors.length === 0);
   await page.close();
 }
@@ -432,6 +439,11 @@ console.log("\n[public] v3.94 — Simple default, the toggle, persistence, red f
   const whysOpen = await page.locator("body").innerText();
   ok("v3.95 simple: one tap opens the five accountability checks",
     /WHY THIS CALL/.test(whysOpen) && /WHAT CHANGES IT/.test(whysOpen));
+  /* FEAT-NFCILEV (8/28): the leverage subindex is CONTEXT in the open footer — labelled as
+     such, dated, never a sixth check (the factor-only smoke pin stays the guard). Closed,
+     the label carries no subindex number: the footer lives inside the expander only. */
+  ok("8/28 nfciLeverage: the open whys carry the labelled context footer with the live value",
+    /Leverage subindex -0\.55[\s\S]{0,40}· context, not a vote/.test(whysOpen));
   ok("v3.95 simple: opening the whys does NOT pull the technical layer in with it",
     !/factor evidence/i.test(whysOpen) && !/full market detail/i.test(whysOpen));
   await page.reload(); await page.waitForTimeout(1200);
