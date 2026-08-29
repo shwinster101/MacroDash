@@ -19,13 +19,19 @@ const listOf = (xs) => xs.length <= 1 ? (xs[0] || "")
 
 const PUBLIC_LABEL = { "RISK-ON": "MOONING", MIXED: "HODL", "RISK-OFF": "DIAMOND HANDS" };
 
+/* v5.8 (owner: "sound more macro defined"): WHY #3 is the transmission layer, so each clause
+   now names the CHANNEL in the macro vocabulary that channel actually has — discount rate and
+   duration, the price of protection, the policy path, the earnings cushion, the credit channel
+   — instead of a general gesture at importance. Deliberately still clause-length: these are
+   joined into one sentence, and three long clauses would turn the most explanatory why into a
+   wall (the v4.0.1 voice pass: short sentences, one voice, no lecture). */
 const WHY_IT_MATTERS = {
-  tenYear: "Long-rate direction changes the discount rate applied to future earnings",
-  vix: "VIX is the market's own near-term stress price",
-  fearGreed: "sentiment confirms risk appetite, though it overlaps price and volatility evidence",
-  cpiHeadline: "inflation direction changes how much room the Fed has to ease",
-  valuation: "valuation determines how much cushion remains if expectations disappoint",
-  nfci: "financial conditions show whether money and credit are flowing or tightening",
+  tenYear: "the 10-year yield is the discount rate sitting under every long-duration asset",
+  vix: "VIX is the 30-day price of protection, and risk limits tighten as it rises",
+  fearGreed: "sentiment shows how much optimism is already in the price, confirming risk appetite rather than causing it",
+  cpiHeadline: "inflation's direction sets how much room the Fed has to cut",
+  valuation: "a high CAPE means less cushion if the next decade of earnings disappoints",
+  nfci: "financial conditions are the credit channel itself — whether money is reaching borrowers or the plumbing is tightening",
 };
 
 function cleanDisplay(v) {

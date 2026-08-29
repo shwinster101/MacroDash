@@ -5,6 +5,69 @@ answers *"is it safe to be in the market?"* from live macro + market + sentiment
 data. Single-page React app on Cloudflare Pages, with live data assembled at the
 edge by Pages Functions and cached in KV.
 
+**v5.8.0 "NEWCOMER RULER + FACT SHEET" — the hero stops pointing at the wrong gauge, and every
+parameter explains itself one tap deep.** Two owner tickets, one release, copy/projection only:
+no vote, band, flip edge, quorum, panic, cron, worker, history or TT change.
+**(1) The MIXED sub is DERIVED, not canned.** Owner's read of prod on 2026-08-29 — `HODL ·
+NEUTRAL · "Cross-signals — watch VIX"` with **VIX at 14.43, a HELPING vote**. `REGIME_META.MIXED`
+carried a STATIC sub and `computeRegime`'s only override (v3.61) fired when VIX was *excluded*,
+so every mixed tape carrying a live VIX told a newcomer to watch the one gauge that was fine.
+`computeRegime` already counts the votes; it now keeps the KEYS as it counts and names the
+disagreement from the band table's own `plain` nouns — *"volatility and inflation help, prices
+do not"* (`valuation → "prices"` is the ONE alias, this sub only). One-sided mixes keep the
+v3.61 nearest-flip fallback — there is no disagreement to name — and the VIX-excluded path is
+byte-unchanged. **`MIXED_SUB_MAX = 60` is a MEASURED two-line height**, not a round number:
+driving the real bundle at 375px and 390px, 44/54/55/60-char subs all render two lines and 67
+renders three, so a wider split states the count (`3 help, 1 does not`) instead of naming six
+factors across four lines. The ticket's "~48" measured as the *same* two lines and would have
+degraded ordinary 2-vs-1 tapes for nothing.
+**(2) `ruler` on every band** — the current edges restated, one muted line on the Simple card,
+living beside the rule they describe (the `plain`/`whyItMatters`/`metric` doctrine).
+`CAPE_MEAN`/`CAPE_ATH` MOVE from `macroCall.js` into `regime.js` so the valuation ruler derives
+26.1 from `CAPE_MEAN * 1.5` rather than minting a second literal. The guard is what makes it a
+ruler and not a caption: smoke reconciles **`vote()` ↔ `flip` edges ↔ the ruler's own numbers**
+for the four scalar bands, derived from the table at runtime (the SOURCES/DERIVED_OF
+convention) — move an edge in one home and the other two go red. CPI and valuation are compound
+votes with `flip:null`, so their literals are pinned instead, which is the same reason the
+rules forbid inventing a crossing for them.
+**(3) THE FACT SHEET (owner: "clicking each context parameter brings a pop-up tile").** Tapping
+a card opens `src/primitives/FactSheet.jsx` — full spelled-out name, a 3-bullet *what it is*,
+*what moves it*, *normal / neutral level*, *why it matters to the macro picture*, and a
+verified quote where one exists. The WAI-ARIA dialog contract in full: labelled + `aria-modal`,
+Escape, backdrop and ✕, a trapped Tab, and **focus RESTORED to the card that opened it**. The
+open state and the dialog live in the PRIMITIVE — `src/sections/*` stay presentation-only (the
+v3.73 boundary, pinned) — and a band with no explainer degrades to a plain `<div>`, because a
+button that opens nothing is a lie. The affordance is a ⓘ on the row that already exists plus a
+visually-hidden sentence: measured, a separate "WHAT IS THIS? →" line cost 33px across three
+cards and broke the glance budget, for a second way of saying the same thing.
+**Three research corrections, each of which was live copy.** The explainer copy was sourced
+before it was written, and it found: **the Fed's 2% target is on PCE, not CPI** (FOMC Statement
+on Longer-Run Goals, 2012) — the 8/29 locked ruler's tail *"Fed target 2% is context"* read as
+a 2% CPI target and is REMOVED, with the correct statement and the PCE distinction moved into
+the sheet and the withdrawn claim pinned ABSENT (the v3.85 retired-instruction rule); **VIX's
+30 line is market convention, not a Cboe-published threshold**, and the sheet says so; and
+**"price is what you pay, value is what you get" is Graham's**, quoted by Buffett — shipping it
+as Buffett's would be a fabricated provenance, the same defect class as a fabricated number, so
+the attribution is pinned. Quotes render ONLY with an attribution; bands with no verified quote
+(10Y's "gravity" line has a contested venue and wording) carry `null`, not a paraphrase.
+**(4) The 5 Whys sound like macro** (owner): WHY #3's transmission clauses now name the CHANNEL
+each factor runs through — discount rate and duration, the 30-day price of protection, the
+policy path, the earnings cushion, the credit channel — still clause-length, because three long
+ones would turn the most explanatory why into a wall.
+Budgets re-pinned WITH their measurements and reasons (the v3.45/v3.95/v4.1.3 rule, never
+quietly loosened): the glance budget 780 → **820** at 390×844 (measured 747 → 794 → **788**
+after compacting the ruler line, then **791** with the ⓘ; 820 keeps SPY inside the 844px first
+screen while leaving headroom for the CI font variance that turned v4.1.3 red), and the
+assertion now reports its own measurement.
+Tests: **2081 smoke + 306 render + 221 public-render**, `audit:prod` clean, real Chromium under
+`REQUIRE_BROWSER=1`. The sheet is DRIVEN, not string-pinned: tap → labelled dialog → four
+sections → Escape returns focus to the card → ✕ → backdrop, with no page errors. Negative
+controls: a moved vote edge with a stale ruler (4 red), a removed ruler (3 red), the derived
+clause disabled (4 red), a misattributed quote (1 red), a removed explainer (4 red), a dropped
+focus restore (1 browser red). Two of those controls found a defect in the PINS themselves —
+predicates that CRASHED the run instead of failing it, printing no total (the v3.99.4 P0 shape);
+both are guarded now, because a suite that dies mid-run reads as a suite that never ran.
+
 **v5.7.2 — the NEXT $ glance stops shouting in small type (owner, on the live 8/27 board:
 "come on this is too much text. I think trim is too small? And the tickers are small too?").**
 Three fixes, all density/typography, no logic moved.

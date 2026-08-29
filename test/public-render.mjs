@@ -934,6 +934,63 @@ console.log("\n[public] v4.0 — Simple verdicts, card selection, and what must 
   ok("8/29 ruler: all three cards on the owner's tape carry their own edges",
     /below 18/.test(cards) && /above 30/.test(cards) && /cooler than prior/.test(cards));
   ok("8/29 ruler: no page errors on the MIXED tape", errors.length === 0);
+
+  /* ── v5.8 THE EXPLAINER SHEET, driven ────────────────────────────────────────────────
+     Owner ask: tapping a parameter card opens a tile explaining what the thing IS. The
+     copy is pinned in smoke; what only a browser can prove is that the tap opens it, that
+     the dialog is a real labelled dialog, and that a keyboard user can get back out to the
+     card they came from. This runs on the owner's own tape, so the card under test is the
+     one they were looking at. */
+  const valCard = page.locator('[aria-label="Key parameters"] button', { hasText: "VALUATION" }).first();
+  ok("v5.8 sheet: the card is a real button that announces it opens a dialog",
+    await valCard.getAttribute("aria-haspopup") === "dialog" &&
+    /what is this/i.test(await valCard.textContent()));
+  ok("v5.8 sheet: nothing is open until it is tapped", await page.locator('[role="dialog"]').count() === 0);
+  await valCard.click();
+  await page.waitForTimeout(250);
+  const dlg = page.locator('[role="dialog"]');
+  ok("v5.8 sheet: the tap opens ONE labelled, modal dialog named for the full spelled-out factor",
+    await dlg.count() === 1 && await dlg.getAttribute("aria-modal") === "true" &&
+    /Cyclically Adjusted Price-to-Earnings ratio \(Shiller CAPE\)/.test(await dlg.innerText()));
+  const sheet = await dlg.innerText();
+  ok("v5.8 sheet: it answers the four things the owner asked for, in order",
+    /what it is/i.test(sheet) && /what moves it/i.test(sheet) &&
+    /normal \/ neutral level/i.test(sheet) && /why it matters to the macro picture/i.test(sheet) &&
+    sheet.indexOf("WHAT IT IS") < sheet.indexOf("WHAT MOVES IT"));
+  ok("v5.8 sheet: exactly three bullets under 'what it is' — the highest-leverage summary, not an essay",
+    await dlg.locator("ul li").count() === 3);
+  /* The research pass found this is the most misattributed line in investing copy. It is
+     Graham's, quoted by Buffett — and shipping it as Buffett's would be a fabricated
+     provenance, the same defect class as a fabricated number. */
+  ok("v5.8 sheet: the quote carries its REAL attribution — Graham, quoted by Buffett",
+    /Price is what you pay/.test(sheet) && /Benjamin Graham/.test(sheet) &&
+    /quoted by Warren Buffett/.test(sheet));
+  ok("v5.8 sheet: the CAPE baselines are BOTH stated — the 1881 mean and the post-1990 median",
+    /17\.4/.test(sheet) && /44\.19/.test(sheet) && /post-1990 median/.test(sheet));
+  ok("v5.8 sheet: focus moves into the sheet on open, onto the way out",
+    await page.evaluate(() => document.activeElement && document.activeElement.hasAttribute("data-fs-close")));
+  await page.keyboard.press("Tab"); await page.keyboard.press("Tab");
+  ok("v5.8 sheet: Tab is trapped inside the dialog — a keyboard user cannot fall out behind it",
+    await page.evaluate(() => !!document.activeElement.closest('[role="dialog"]')));
+  ok("v5.8 sheet: no horizontal overflow at 390px with the sheet open",
+    await page.evaluate(() => document.documentElement.scrollWidth) <= 390);
+  await page.keyboard.press("Escape");
+  await page.waitForTimeout(200);
+  ok("v5.8 sheet: Escape closes it AND returns focus to the card that opened it — not the top of the page",
+    await page.locator('[role="dialog"]').count() === 0 &&
+    await page.evaluate(() => { const a = document.activeElement;
+      return !!a && a.tagName === "BUTTON" && /VALUATION/i.test(a.innerText || ""); }));
+  await valCard.click();
+  await page.waitForTimeout(200);
+  await page.locator("[data-fs-close]").click();
+  await page.waitForTimeout(200);
+  ok("v5.8 sheet: the ✕ closes it", await page.locator('[role="dialog"]').count() === 0);
+  await valCard.click();
+  await page.waitForTimeout(200);
+  await page.mouse.click(195, 60);   // the backdrop, well above the sheet
+  await page.waitForTimeout(200);
+  ok("v5.8 sheet: tapping the backdrop closes it", await page.locator('[role="dialog"]').count() === 0);
+  ok("v5.8 sheet: no page errors across open, trap, and all three ways out", errors.length === 0);
   await page.close();
   }
 
