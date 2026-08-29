@@ -323,6 +323,10 @@ export function simpleCards(ev, max = 3) {
       // ruler for the number above. Lives on REGIME_BAND_TABLE beside the rule it describes
       // (the plain/whyItMatters/metric doctrine) — this is a pass-through, never a copy.
       ruler: (band && band.ruler) || null,
+      // v5.8: the newcomer explainer behind the card — full name, what it is, what moves it,
+      // where "normal" sits, and the transmission to the macro picture. Pass-through only,
+      // same rule as `ruler`: the copy lives on the band beside the rule it describes.
+      explain: (band && band.explain) || null,
       mode: f.mode, asOf: f.asOf,
     };
   });

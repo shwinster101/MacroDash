@@ -94,6 +94,17 @@ export const REGIME_BAND_TABLE = [
     plain:"the 10-year yield",
     plainBull:"long-term rates are falling", plainBear:"long-term rates are climbing",
     whyItMatters:"Long rates set the discount rate on every future dollar a company earns.",
+    explain:{ full:"10-Year U.S. Treasury Yield",
+      what:[
+        "What it costs the U.S. government to borrow for ten years — the benchmark “risk-free” long rate that everything else is priced against.",
+        "Mortgages, corporate bonds and companies' hurdle rates for new projects all move off it, so it reaches the real economy, not just screens.",
+        "It breaks into three parts: where the market thinks the Fed will go, expected inflation, and a term premium for carrying ten years of risk.",
+      ],
+      drivers:"The expected Fed path, expected inflation, and the term premium — plus plain supply and demand at Treasury auctions, which can move it 10–20 basis points in a single session.",
+      baseline:"There is no single “normal” level, and anyone quoting one is averaging across regimes that no longer exist. It has mostly traded between roughly 1.5% and 5% over the past two decades, against a record 15.68% in October 1981 and a record low 0.55% in August 2020. MacroDash votes on the 1-month CHANGE rather than the level, because the repricing is what moves markets.",
+      macro:"It is the discount rate sitting under every future dollar of earnings. When it rises, cash flows further out are worth less today and the most growth-heavy stocks fall hardest; when it falls, that weight lifts.",
+      quote:{ text:"The value of every business — the value of a farm, an apartment house or any other economic asset — is 100% sensitive to interest rates.",
+        who:"Warren Buffett", where:"Berkshire annual meeting remarks, reported by CNBC, 2023" } },
     read:(d)=>d.crossAsset.treasury10y.m1,
     /* The label says "the 10-year yield", so the LEVEL leads and the voted quantity (the
        1-month change) follows as context. Codex read-through, 2026-08-18: a card labelled
@@ -111,6 +122,17 @@ export const REGIME_BAND_TABLE = [
     plain:"volatility",
     plainBull:"volatility is asleep", plainBear:"volatility is spiking",
     whyItMatters:"The market's own estimate of how violently prices could move from here.",
+    explain:{ full:"Cboe Volatility Index (VIX)",
+      what:[
+        "The options market's estimate of how much the S&P 500 will move over the next 30 days.",
+        "It is computed from the prices of S&P 500 options, so it is the cost of insurance — not a survey of opinion or a record of past moves.",
+        "A reading of 20 implies roughly 20% annualised movement, a little over 1% on an average day.",
+      ],
+      drivers:"The prices of S&P 500 puts and calls. Demand for downside protection pushes it up; a calm tape and cheap hedges bring it down.",
+      baseline:"Its long-run average is roughly 20 (sources differ between about 19 and 22 depending on the start date). Below about 15 is calm. Above 30 is a level markets have historically treated as fear — that is market convention, not a threshold Cboe publishes. MacroDash's own bands are the ones printed on the card.",
+      macro:"Volatility is a price, and it is a cost. When it spikes, hedging gets expensive, volatility-targeting strategies mechanically sell into the move, liquidity thins and credit spreads usually widen alongside. Because it comes from option prices it moves before the economic data confirms anything.",
+      quote:{ text:"…short-term market forecasts are poison and should be kept locked up in a safe place, away from children and also from grown-ups who behave in the market like children.",
+        who:"Warren Buffett", where:"Berkshire Hathaway shareholder letter, 1992" } },
     read:(d)=>d.marketPulse.vix.current,
     metric:{ read:(d)=>d.marketPulse.vix.current, unit:"", dec:2, note:null },
     ruler:"help below 18 · mid 18–25 · hurt above 25",
@@ -121,6 +143,17 @@ export const REGIME_BAND_TABLE = [
     plain:"sentiment",
     plainBull:"sentiment is greedy", plainBear:"sentiment is fearful",
     whyItMatters:"Crowd positioning — how much optimism is already priced into the tape.",
+    explain:{ full:"CNN Business Fear and Greed Index",
+      what:[
+        "A 0-to-100 score of whether investors are acting scared or greedy right now.",
+        "It blends seven signals equally: market momentum, price strength, breadth, put/call volume, volatility, safe-haven demand and junk-bond demand.",
+        "Each input is scored against its own recent average, which is why the index can read fearful on a day the market rises.",
+      ],
+      drivers:"Any of the seven components pulling away from its own norm — most often momentum against the 125-day average, the put/call ratio, and the high-yield-versus-investment-grade spread.",
+      baseline:"50 is the midpoint by construction. CNN's published bands run extreme fear 0–24, fear 25–44, neutral 45–55, greed 56–75, extreme greed 76–100; the edges have shifted slightly over the years, so treat them as bands rather than lines.",
+      macro:"It is a positioning read, not a cause. Extreme greed means the marginal buyer is largely spent and the tape is fragile to bad news; extreme fear means forced selling may be close to exhausted. One of its seven inputs IS volatility, so it partly overlaps the VIX card — worth knowing before you count them as two independent votes.",
+      quote:{ text:"Be fearful when others are greedy, and be greedy when others are fearful.",
+        who:"Warren Buffett", where:"“Buy American. I Am.”, New York Times, October 2008" } },
     read:(d)=>d.marketPulse.fearGreed.score,
     metric:{ read:(d)=>d.marketPulse.fearGreed.score, unit:"", dec:0, note:"of 100" },
     ruler:"help above 55 · mid 30–55 · hurt below 30",
@@ -132,12 +165,31 @@ export const REGIME_BAND_TABLE = [
     plain:"inflation",
     plainBull:"inflation is cooling", plainBear:"inflation is running hot",
     whyItMatters:"Inflation is what decides whether the Fed can ease or has to keep squeezing.",
+    explain:{ full:"Consumer Price Index (CPI), year over year",
+      what:[
+        "The average change in the prices urban consumers pay for a fixed basket of goods and services, published monthly by the Bureau of Labor Statistics.",
+        "The year-over-year percent change is what people mean by “the inflation rate”.",
+        "Shelter is the single largest weight and it lags real market rents by construction, which is why CPI turns slowly.",
+      ],
+      drivers:"Shelter, food and energy, and the split between goods (supply chains and the dollar) and services (wages). Food and energy are the volatile pair, which is why “core” CPI strips them out.",
+      baseline:"The Fed's 2% target is on PCE — a related index that usually reads a little below CPI — not on CPI itself, which is the most commonly repeated error about this number. MacroDash does not vote on the level at all: it votes on the SHAPE of the trend, so a print cooler than the one before it helps, and a series drifting more than half a point above where it started hurts.",
+      macro:"Inflation sets the policy path. Hot prints push the Fed higher for longer, which lifts the discount rate on every future cash flow; they also squeeze real margins wherever a company cannot pass the cost through.",
+      quote:{ text:"Inflation acts as a gigantic corporate tapeworm. That tapeworm preemptively consumes its requisite daily diet of investment dollars regardless of the health of the host organism.",
+        who:"Warren Buffett", where:"Berkshire Hathaway shareholder letter, 1981" } },
     // The vote is on the trend SHAPE, so there is no single voted scalar — the metric is
     // the latest PRINT, which is the number a reader means by "current CPI". The direction
     // chip and whyItMatters carry the shape; this never implies the vote is on the level.
     metric:{ read:(d)=>{const t=d.macro.cpi.trend;return Array.isArray(t)&&t.length?t[t.length-1]:null;}, unit:"%", dec:1, note:"YoY" },
     read:(d)=>d.macro.cpi.trend,
-    ruler:"help: latest YoY cooler than prior print · hurt: series up >0.5 pt from start · Fed target 2% is context, not the vote",
+    /* v5.8 CORRECTION to the 8/29 locked copy. The ruler ended "· Fed target 2% is context,
+       not the vote", which reads as a 2% CPI target — and the Fed's 2% target is on PCE, a
+       different index that usually runs a little below CPI (FOMC Statement on Longer-Run
+       Goals, 2012). That is the most commonly repeated error about this number, and a
+       dashboard that exists to refuse fabricated facts cannot print one in its own ruler.
+       The clause is REMOVED here and stated correctly, with the PCE distinction, in the
+       explainer sheet's baseline. Shorter on the card as a side effect, which is the
+       direction the owner asked the primary view to move anyway. */
+    ruler:"help: latest YoY cooler than prior print · hurt: series up >0.5 pt from start",
     vote:(t)=> t[t.length-1] < t[t.length-2] ? "bull"
              : (t[t.length-1] - t[0] > 0.5 ? "bear" : "neutral"),
     flip:null,
@@ -146,6 +198,20 @@ export const REGIME_BAND_TABLE = [
     plain:"valuation",
     plainBull:"valuations are sane", plainBear:"stocks are priced for perfection",
     whyItMatters:"How much good news is already in the price — the cushion if things disappoint.",
+    explain:{ full:"Cyclically Adjusted Price-to-Earnings ratio (Shiller CAPE)",
+      what:[
+        "The S&P 500's price divided by its average inflation-adjusted earnings over the past ten years.",
+        "The ten-year average is the whole point: one boom or bust year cannot distort it the way it distorts an ordinary P/E.",
+        "Built by Robert Shiller and John Campbell in 1988, and the reason it carries Shiller's name.",
+      ],
+      drivers:"In the short run, almost entirely the index price. The denominator moves slowly — a recession year rolling OUT of the ten-year window lowers CAPE on its own, with no price change at all.",
+      // The three numbers here are the SAME constants the vote and the ruler read
+      // (CAPE_MEAN, CAPE_ATH, and 1.5x the mean) — never retyped, or the explainer could
+      // one day describe a help line the model no longer uses.
+      baseline:`Its long-run mean since 1881 is about ${CAPE_MEAN} and its all-time high is ${CAPE_ATH}, set in December 1999. The post-1990 median is closer to 25, and which of those is the fair comparison is a live argument — index composition and accounting are not 1881's. MacroDash uses 1.5x the long-run mean, ${(CAPE_MEAN*1.5).toFixed(1)}, as its help line, and 30 or 90% of the all-time high as the hurt line.`,
+      macro:"CAPE says nothing about the next month and is not a timing tool. What it says is how much of the next decade's earnings you are already paying for: historically, high starting valuations have gone with weaker ten-year returns, and they leave less cushion when expectations slip.",
+      quote:{ text:"Price is what you pay; value is what you get.",
+        who:"Benjamin Graham", where:"quoted by Warren Buffett, Berkshire Hathaway shareholder letter, 2008" } },
     // Compound vote (absolute CAPE OR % of ATH); the metric is the CAPE level itself.
     metric:{ read:(d)=>d.macro.shillerPe && d.macro.shillerPe.current, unit:"", dec:1, note:"CAPE" },
     read:(d)=>d.macro.shillerPe,
@@ -158,6 +224,16 @@ export const REGIME_BAND_TABLE = [
     plain:"financial conditions",
     plainBull:"credit is cheap and easy", plainBear:"credit is tightening up",
     whyItMatters:"Whether money is actually flowing through the financial plumbing, or seizing up.",
+    explain:{ full:"Chicago Fed National Financial Conditions Index (NFCI)",
+      what:[
+        "One weekly number for how easily money, credit and risk are flowing through the U.S. financial system.",
+        "It combines 105 measures across money markets, debt and equity markets, and both the traditional and the shadow banking systems.",
+        "It is a z-score: zero is the 1971-onward average by construction, and one point is one standard deviation.",
+      ],
+      drivers:"Funding costs and spreads in money markets, how freely credit is being extended, leverage in the system, and volatility in debt and equity markets. The Chicago Fed publishes risk, credit and leverage subindexes, so any move can be taken apart.",
+      baseline:"Zero is average by construction — positive is tighter than average, negative is looser. Since 2008 the index has run persistently BELOW zero, so a band drawn symmetrically around the mean would read “loose” almost every week. MacroDash therefore sets its help line half a standard deviation below the mean instead: an asserted choice, stated rather than buried.",
+      macro:"It measures the plumbing rather than the price. Credit spreads tell you what risk costs; NFCI tells you how tight the pipes carrying it have become — funding stress usually shows up here before it shows up in the growth data.",
+      quote:null },
     metric:{ read:(d)=>d.macro.nfci.current, unit:"", dec:2, note:"SD vs avg" },
     read:(d)=>d.macro.nfci.current,
     // Asymmetric and INCLUSIVE on the bull side (<=), unlike every other factor — see the

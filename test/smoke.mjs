@@ -12,7 +12,8 @@ import { computeFiveWhys, isMacroMaterial } from "../src/fiveWhys.js";
 // source text, which is stronger (the actual code runs) and immune to formatting drift.
 import { NFCI_TIGHT as REG_NFCI_TIGHT, NFCI_LOOSE as REG_NFCI_LOOSE, REGIME_BAND_TABLE,
   REGIME_QUORUM, verdictFrom, computeRegime as regimeCompute, flipConditions as regimeFlips,
-  regimeFactors as regimeFactorRows, voteStyle, MIXED_SUB_MAX } from "../src/regime.js";
+  regimeFactors as regimeFactorRows, voteStyle, MIXED_SUB_MAX,
+  CAPE_MEAN, CAPE_ATH } from "../src/regime.js";
 import { REGIME_FACTOR_FIELDS, FACTOR_FIELD, fieldMode, factorExclusions, buildEvidenceSet } from "../src/evidence.js";
 import { LASTVALID_KEY, summarizeEvidence, compareEvidence } from "../src/whatChanged.js";
 import {
@@ -95,6 +96,7 @@ const aiEconSrc = readSrc("../src/aiEcon.js");
 const navSrc = readSrc("../src/sections/StickyNav.jsx"); // wave 15
 const tdSrc = readSrc("../src/sections/TerminalDock.jsx"); // v4.1.7 (replaced SharedPicks)
 const spcSrc = readSrc("../src/sections/SimpleCards.jsx"); // v4.0
+const fsSrc  = readSrc("../src/primitives/FactSheet.jsx"); // v5.8 — the explainer sheet
 const uiSrc = dashSrc + spcSrc + bandSrc + whysSrc + sbSrc + shSrc + stripSrc + sqSrc + wcSrc + mdSrc + mrSrc + hwSrc + dtSrc + aiSrc + alSrc + dhSrc + wlSrc + navSrc + tdSrc;
 const _s = dashSrc.indexOf("const MOCK_DATA = {");
 let _i = dashSrc.indexOf("{", _s), _d = 0, _e = -1;
@@ -245,8 +247,15 @@ ok("row 12-13: WHY #1 carries no slash fraction and never calls a fraction 'usab
   !/\d+\/\d+/.test(fw.whys[0]) && !/\d+ of \d+ usable|usable factors/.test(fw.whys[0]));
 ok("check 2 contains only canonical factors and their dated states",
   fwFactors.every((f)=>fw.whys[1].includes(f.label)) && /as of 2026-08-25/.test(fw.whys[1]) && !/WTI|BTC|HY-IG/.test(fw.whys[1]));
-ok("check 3 explains transmission and disclaims single-factor causality",
-  /discount rate|near-term stress price/.test(fw.whys[2]) && /not proof/.test(fw.whys[2]));
+/* v5.8 (owner: the whys should "sound more macro defined") — re-pinned on the sharpened
+   transmission vocabulary. The clause now names the CHANNEL each factor actually runs
+   through; the disclaimer that these are channels and not proof of causation is unchanged,
+   because that is the honesty half of the check. Pinned as "names a real channel", derived
+   from the map itself rather than one hand-copied phrase, so the next copy pass cannot
+   quietly leave WHY #3 gesturing at importance with no mechanism in it. */
+ok("check 3 explains transmission in macro terms and disclaims single-factor causality",
+  /discount rate|price of protection|room the Fed has|cushion|credit channel|already in the price/.test(fw.whys[2]) &&
+  /not proof/.test(fw.whys[2]));
 ok("check 4 states snapshot time, confidence, and that headlines never vote",
   /Evidence confidence is HIGH/.test(fw.whys[3]) && /snapshot was pulled/.test(fw.whys[3]) && /never cast a vote/.test(fw.whys[3]));
 ok("check 5 names the nearest load-bearing change and actionability",
@@ -9312,7 +9321,15 @@ console.log("\n[67] v4.0 SIMPLE MODE — verdict mapping, card selection, senten
     REGIME_BAND_TABLE.find((b)=>b.key==="tenYear").ruler === "help: 1-mo change below −0.10 ppt · hurt: above +0.15 ppt" &&
     REGIME_BAND_TABLE.find((b)=>b.key==="vix").ruler === "help below 18 · mid 18–25 · hurt above 25" &&
     REGIME_BAND_TABLE.find((b)=>b.key==="fearGreed").ruler === "help above 55 · mid 30–55 · hurt below 30" &&
-    REGIME_BAND_TABLE.find((b)=>b.key==="cpiHeadline").ruler === "help: latest YoY cooler than prior print · hurt: series up >0.5 pt from start · Fed target 2% is context, not the vote" &&
+    /* v5.8: the CPI ruler's "· Fed target 2% is context, not the vote" tail is REMOVED and
+       the pin moves with it. The Fed's 2% target is on PCE, not CPI (FOMC Statement on
+       Longer-Run Goals, 2012) — the clause read as a 2% CPI target, which is the single most
+       repeated error about this series, and a page built to refuse fabricated facts cannot
+       print one in its own ruler. The correct statement, WITH the PCE distinction, now lives
+       in the explainer sheet; the withdrawn claim is pinned ABSENT below so it cannot
+       quietly return (the v3.85 retired-instruction rule). */
+    REGIME_BAND_TABLE.find((b)=>b.key==="cpiHeadline").ruler === "help: latest YoY cooler than prior print · hurt: series up >0.5 pt from start" &&
+    !REGIME_BAND_TABLE.some((b)=>/Fed target 2%/.test(b.ruler)) &&
     REGIME_BAND_TABLE.find((b)=>b.key==="valuation").ruler === "help: CAPE below 26.1 (1.5× long-run mean 17.4) · hurt: CAPE above 30 or >90% of ATH 44.19" &&
     REGIME_BAND_TABLE.find((b)=>b.key==="nfci").ruler === "help at or below −0.5 SD · mid −0.5 to 0 · hurt above 0 (0 = 1971– mean)");
   ok("ruler: 26.1 has ONE derivation — the source carries no 26.1 literal, and macroCall re-imports the constant",
@@ -9358,6 +9375,87 @@ console.log("\n[67] v4.0 SIMPLE MODE — verdict mapping, card selection, senten
           const has = (n) => shown(n, dec).some((s) => b.ruler.includes(s));
           return voteOk && has(bullEdge) && has(bearEdge);
         }); })());
+  /* ── v5.8 THE EXPLAINER SHEET ────────────────────────────────────────────────────────
+     Owner ask: tapping a parameter card opens a tile with the highest-leverage 3-bullet
+     summary of what the thing IS (full spellings, for a reader who has never seen "F&G"),
+     what moves it, where normal sits, and what it means to the macro picture. Same
+     one-home-per-band doctrine as `plain`/`whyItMatters`/`ruler`: the copy lives on the
+     band, the card projects it, the section renders it and decides nothing. */
+  ok("explain: every band carries a complete explainer — full name, exactly 3 bullets, drivers, baseline, macro",
+    REGIME_BAND_TABLE.every((b) => b.explain && typeof b.explain.full === "string" &&
+      b.explain.full.length > 8 && Array.isArray(b.explain.what) && b.explain.what.length === 3 &&
+      b.explain.what.every((s) => typeof s === "string" && s.length > 20) &&
+      ["drivers", "baseline", "macro"].every((k) => typeof b.explain[k] === "string" && b.explain[k].length > 40)));
+  /* Every accessor below goes through exOf, which returns {} for a band with no explainer:
+     a predicate that THROWS kills the whole run and prints no total (the v3.99.4 P0 shape),
+     and the missing-explainer negative control reproduced exactly that before this guard.
+     A missing explainer must FAIL these pins, not silence the suite. */
+  const exOf = (k) => (REGIME_BAND_TABLE.find((b) => b.key === k) || {}).explain || {};
+  ok("explain: the full names are SPELLED OUT — a newcomer never meets an unexpanded acronym",
+    (() => { const f = (k) => exOf(k).full || "";
+      return /Cboe Volatility Index/.test(f("vix")) && /Fear and Greed/.test(f("fearGreed")) &&
+        /Cyclically Adjusted Price-to-Earnings/.test(f("valuation")) &&
+        /Consumer Price Index/.test(f("cpiHeadline")) &&
+        /10-Year U\.S\. Treasury Yield/.test(f("tenYear")) &&
+        /National Financial Conditions Index/.test(f("nfci")); })());
+  /* The single most-repeated error about CPI, and the reason the ruler's old tail was
+     retired: the FOMC's 2% target is on PCE, not CPI. The explainer must SAY that, and no
+     surface may claim a 2% CPI target. Pinned as a fact, not as a phrasing. */
+  ok("explain: CPI states that the Fed's 2% target is on PCE, and no band claims a 2% CPI target",
+    /2% target is on PCE/.test(exOf("cpiHeadline").baseline || "") &&
+    !REGIME_BAND_TABLE.some((b) => /2% (CPI )?target/.test(b.ruler || "")));
+  /* Two research findings that must survive a later copy pass, because both are places
+     where the widely-repeated version is wrong: VIX's 30 line is market CONVENTION and not
+     a Cboe-published threshold, and NFCI's post-2008 skew is why our band is asymmetric. */
+  ok("explain: VIX names the 30 line as convention, never as an official Cboe threshold",
+    (() => { const e = exOf("vix");
+      return /market convention, not a threshold Cboe publishes/.test(e.baseline || "") &&
+        /roughly 20/.test(e.baseline || ""); })());
+  ok("explain: NFCI states zero-by-construction AND why the band is asymmetric",
+    (() => { const e = exOf("nfci");
+      return /Zero is average by construction/.test(e.baseline || "") &&
+        /persistently BELOW zero/.test(e.baseline || "") && /asserted choice/.test(e.baseline || ""); })());
+  ok("explain: CAPE presents BOTH baselines — the 1881 mean and the post-1990 median — as a live argument",
+    (() => { const b = exOf("valuation").baseline || "";
+      return b.includes(String(CAPE_MEAN)) && b.includes(String(CAPE_ATH)) &&
+        /post-1990 median/.test(b) && /live argument/.test(b); })());
+  /* A quote in an evidence surface is a citation: it renders only with an attribution, and
+     the attribution has to be the RIGHT one. "Price is what you pay; value is what you get"
+     is Graham, quoted by Buffett — the most common misattribution in investing copy, and
+     shipping it as Buffett's would be exactly the fabricated-provenance defect this page
+     refuses everywhere else. A band with no verified quote carries null, not a paraphrase. */
+  ok("explain: every stored quote is attributed, and the Graham line is credited to Graham",
+    REGIME_BAND_TABLE.every((b) => { const q = b.explain && b.explain.quote;
+      return q === null || (q && q.text && q.who && q.where); }) &&
+    (exOf("valuation").quote || {}).who === "Benjamin Graham" &&
+    /quoted by Warren Buffett/.test((exOf("valuation").quote || {}).where || "") &&
+    exOf("nfci").quote === null);
+  ok("explain: the card projection passes the band's explainer through untouched",
+    (() => { const cards = sc({ regime:{ label:"RISK-ON" }, factors:[{ key:"vix", short:"VIX",
+        vote:"bull", excluded:false, mode:"LIVE", metric:{ text:"14.43", value:14.43 } }] }).cards;
+      return cards.length === 1 && !!cards[0].explain &&
+        cards[0].explain === exOf("vix"); })());
+  /* The section stays presentation-only (the v3.73 boundary pin above enforces the hooks
+     half): the open state and the dialog both live in the primitive, and the section neither
+     authors explainer copy nor renders the sheet body itself. */
+  ok("explain: the sheet lives in a primitive — the section only hands it the projected copy",
+    /import \{ Explainable \} from "\.\.\/primitives\/FactSheet\.jsx"/.test(spcSrc) &&
+    /<Explainable[\s\S]{0,400}explain=\{c\.explain\}/.test(spcSrc) &&
+    !/what it is|what moves it|normal \/ neutral/.test(spcSrc));
+  ok("explain: a band with no explainer degrades to a plain div — a button that opens nothing is a lie",
+    /if \(!explain\) return <div/.test(fsSrc));
+  /* The WAI-ARIA dialog contract, pinned at the source and DRIVEN in the browser suite:
+     labelled dialog, Escape, focus in on open and RESTORED on close, a real ✕ with a name,
+     a trapped Tab, and the body scroll lock an iOS sheet needs. */
+  ok("explain: the sheet implements the dialog pattern — labelled, escapable, focus-restoring, trapped",
+    /role="dialog"/.test(fsSrc) && /aria-modal="true"/.test(fsSrc) &&
+    /aria-labelledby="factsheet-title"/.test(fsSrc) &&
+    /e\.key === "Escape"/.test(fsSrc) && /e\.key !== "Tab"/.test(fsSrc) &&
+    /restoreRef\.current/.test(fsSrc) && /document\.body\.style\.overflow = "hidden"/.test(fsSrc) &&
+    /aria-label=\{`Close \$\{title\}`\}/.test(fsSrc));
+  ok("explain: the card and the sheet's ✕ both get real thumb targets on a phone",
+    /\.simple-card\{min-height:44px;\}/.test(dashSrc) &&
+    /@media\(max-width:480px\)\{\.fs-close\{min-height:44px;min-width:44px;\}\}/.test(dashSrc));
   ok("v4.0 boundary: the projections import no threshold and re-derive no vote",
     (() => { const seg = evidenceSrc.slice(evidenceSrc.indexOf("SIMPLE MODE PROJECTIONS"));
       return !/NFCI_TIGHT|NFCI_LOOSE|computeRegime\(|flipConditions\(|\.vote\(/.test(seg); })());

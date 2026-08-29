@@ -789,6 +789,12 @@ export default function Dashboard({ publicView = false } = {}) {
         }
         /* B4 (v3.59): WCAG target size — header actions get real thumb targets on phones. */
         @media(max-width:480px){.hdr-act{min-height:44px;min-width:44px;display:inline-flex;align-items:center;justify-content:center;}}
+        /* v5.8: the parameter card is the tap target for its explainer sheet, and the sheet's
+           ✕ is the way out — both get real thumb targets on a phone (Req 6.3). The card is
+           already tall enough at every width; the rule is stated so a later compaction cannot
+           shrink it below the floor without failing the pin. */
+        .simple-card{min-height:44px;}
+        @media(max-width:480px){.fs-close{min-height:44px;min-width:44px;}}
         /* v3.62: the ⋯ OPS disclosure. The default triangle marker is suppressed so the summary
            reads as the button it is; it keeps native keyboard/AT behaviour either way. */
         .hdr-ops>summary::-webkit-details-marker{display:none;}

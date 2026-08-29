@@ -18,6 +18,7 @@
 //     the standard ILLUSTRATIVE treatment (a demo build publishes by design — v3.54).
 import { T } from "../design-tokens.js";
 import { ILLUS_HATCH, IllustrativeChip, isIllustrative } from "../primitives/Illustrative.jsx";
+import { Explainable } from "../primitives/FactSheet.jsx";
 
 const TONE = { helping: T.green, hurting: T.red, mixed: T.amber };
 const WORD = { helping: "HELPING", hurting: "HURTING", mixed: "MIXED" };
@@ -42,8 +43,19 @@ const SimpleCards = ({ cards, usable = 0, shown = 0, total = 0, withheld = false
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(260px,1fr))", gap: 6 }}>
         {cards.map((c) => {
           const illus = isIllustrative(c.mode);
+          /* v5.8: the WHOLE card is the tap target for its explainer — the owner's ask is
+             "clicking on each context parameter", not hunting a small affordance on a phone.
+             Explainable owns the open state and the dialog (sections stay presentation-only,
+             the v3.73 boundary) and degrades to a plain div for a band with no explainer,
+             because a button that opens nothing is a lie (the CUT-row rule, v3.97).
+             The sheet's eyebrow restates this card's OWN reading — same value, same direction
+             word, one computation — so the tile is self-contained without being a second
+             opinion. */
           return (
-            <div key={c.key} style={{ background: T.surface, border: `1px solid ${T.border}`,
+            <Explainable key={c.key} explain={c.explain} title={c.explain ? c.explain.full : c.label}
+              eyebrow={`${c.label} · ${c.currentValue}${WORD[c.direction] ? ` · ${WORD[c.direction]}` : ""}`}
+              className="simple-card"
+              style={{ background: T.surface, border: `1px solid ${T.border}`,
               borderRadius: 5, padding: "5px 8px", minWidth: 0, ...(illus ? ILLUS_HATCH : {}) }}>
               {/* Line 1: parameter · current value · direction — the three facts a reader
                   scans. Line 2: why it matters + freshness, at small weight. */}
@@ -53,6 +65,17 @@ const SimpleCards = ({ cards, usable = 0, shown = 0, total = 0, withheld = false
                 <span style={{ fontFamily: T.fontMono, fontSize: T.fsM, color: T.textPrimary, minWidth: 0 }}>{c.currentValue}</span>
                 <span style={{ fontFamily: T.fontMono, fontSize: 8, fontWeight: 700, marginLeft: "auto",
                   color: TONE[c.direction] || T.textMuted, flexShrink: 0 }}>{WORD[c.direction] || "—"}</span>
+                {/* v5.8: the affordance is STATED, not implied — a card that opens something
+                    has to say so or the tap is a secret. It rides the row that already
+                    exists: measured at 390×844, a separate "WHAT IS THIS? →" line cost 33px
+                    across three cards and pushed the macro strip past its pinned budget,
+                    which is a real cost for a second way of saying the same thing. */}
+                {c.explain && <span aria-hidden="true" title="What is this?"
+                  style={{ fontFamily: T.fontMono, fontSize: 9, color: T.amber, flexShrink: 0 }}>ⓘ</span>}
+                {/* The glyph is decorative, so the promise is spelled out for a screen
+                    reader instead — as an addition to the card's own text, never as an
+                    aria-label replacing it, which would hide the reading and the direction. */}
+                {c.explain && <span className="visually-hidden"> — what is this? Opens an explainer.</span>}
               </div>
               <div style={{ display: "flex", alignItems: "baseline", gap: 5, flexWrap: "wrap", marginTop: 1 }}>
                 {c.why && <span style={{ fontFamily: T.fontSans, fontSize: T.fsS, color: T.textSecondary, lineHeight: 1.3 }}>{c.why}</span>}
@@ -65,7 +88,9 @@ const SimpleCards = ({ cards, usable = 0, shown = 0, total = 0, withheld = false
                   edges restated (projection off REGIME_BAND_TABLE.ruler, one home). One line,
                   muted, under whyItMatters; renders nothing when a band declares none. */}
               {c.ruler && <div style={{ fontFamily: T.fontMono, fontSize: 8, color: T.textMuted, marginTop: 1, lineHeight: 1.3 }}>{c.ruler}</div>}
-            </div>
+              {/* v5.8: the affordance is stated, not implied — a card that opens something
+                  should say so, or the tap is a secret. */}
+            </Explainable>
           );
         })}
       </div>
