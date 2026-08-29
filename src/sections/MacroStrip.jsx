@@ -42,6 +42,21 @@ const MacroStrip=({d,modeOf,fomcLabel,fomcDays,votingFields,badge})=>{
            s:`FOMC ${fomcLabel}`, sc:fomcDays===0?T.amber:T.textMuted,
            t:fedTargetLive?"Federal Reserve target range — current policy setting":"FEDFUNDS monthly effective average — lags a policy decision"},
           {l:"CPI",  f:"cpiHeadline", v:`${d.macro.cpi.headline}%`,         s:`Core ${d.macro.cpi.core}%`, voteKey:"cpiHeadline", t:"Consumer Price Index — inflation, year-over-year"},
+          /* FEAT-NFCILEV (8/29): the Chicago Fed's LEVERAGE subindex of NFCI — the dimension
+             its own research says tends to LEAD the composite ahead of crises (1929 margin
+             debt, 2008 dealer/household leverage were builds the blended index muted until
+             the unwind). It sits HERE, at glance altitude, because a leading crash indicator
+             buried one tap deep cannot do the job it was added for — and it fills the strip's
+             ragged 8th slot (4-col phone grid, 7 tiles) rather than lengthening the page.
+             CONTEXT ONLY: `nfciLeverage` is absent from the voter set, so the ▪ marker and the
+             "Counts toward today's posture" tooltip are withheld BY CONSTRUCTION and the tile
+             self-labels "Context only — does not vote" (v3.62/v3.98.4). Sub-line is the
+             NFCI tile's own reference-point convention — a fact, never a TIGHT/LOOSE verdict.
+             Provenance rides the dot + "(mock)" tooltip, uniformly with the other 7 tiles. */
+          {l:"LEV",  f:"nfciLeverage",
+           v:Number.isFinite(d.macro.nfci.leverage)?`${d.macro.nfci.leverage>0?"+":""}${d.macro.nfci.leverage.toFixed(2)}`:"—",
+           s:"0 = avg", sc:T.textMuted,
+           t:"NFCI leverage subindex — debt and equity leverage in the financial system (margin debt, dealer balance sheets). Standardized so 0 = the 1971– average; higher = more levered. Context only: it does not vote."},
         ].map(({l,f,v,s,sc,voteKey,t})=>{
           const m=modeOf(f); const live=m==="LIVE"||m==="CACHED";
           // Vote-derived sub-line color: the band table is the ONE expression of the

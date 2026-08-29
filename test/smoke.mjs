@@ -2876,12 +2876,26 @@ ok("nfciLeverage tile sub-line: number only, suppressed on mock/stale — no ver
   mdSrc.includes("leverage subindex {lv>0?\"+\":\"\"}{lv.toFixed(2)}") &&
   /!isIllustrative\(modeOf\('nfciLeverage'\)\)&&Number\.isFinite\(lv\)/.test(mdSrc) &&
   !/leverage[\s\S]{0,200}?(TIGHT|LOOSE)/.test(mdSrc.slice(mdSrc.indexOf("leverage subindex"))));
-ok("nfciLeverage whys footer: context-labelled when live, 'not loaded' otherwise — never a mock number",
-  whysSrc.includes("· context, not a vote") &&
-  whysSrc.includes("Leverage subindex not loaded") &&
-  /leverage\.live&&Number\.isFinite\(leverage\.v\)/.test(whysSrc) &&
-  /const m=modeOf\('nfciLeverage'\);return\(m==="LIVE"\|\|m==="CACHED"\)/.test(dashSrc) &&
-  (dashSrc.match(/leverage=\{levCtx\}/g) || []).length === 2);
+/* 8/29: the footer MOVED to the macro strip — a leading crash indicator one tap deep in the
+   explanation layer could not do its job. Two homes remain: the strip tile (glance) and the
+   NFCI tile sub-line (detail). The retired footer is pinned ABSENT in both files. */
+ok("nfciLeverage: the whys footer is RETIRED — no leverage prop, no context line, no levCtx",
+  !/leverage/i.test(whysSrc.replace(/\/\*[\s\S]*?\*\//g, "")) &&
+  !/Leverage subindex not loaded/.test(whysSrc) &&
+  !/levCtx/.test(dashSrc));
+ok("nfciLeverage: the strip carries a LEV tile keyed on the field, with a reference-point sub-line",
+  /\{l:"LEV",\s+f:"nfciLeverage"/.test(stripSrc) &&
+  /s:"0 = avg"/.test(stripSrc) &&
+  /d\.macro\.nfci\.leverage\.toFixed\(2\)/.test(stripSrc));
+ok("nfciLeverage strip tile: NO verdict word, and a non-finite value renders a dash, never 0.00",
+  (() => { const i = stripSrc.indexOf('{l:"LEV"'); const seg = stripSrc.slice(i, i + 700);
+    return !/TIGHT|LOOSE|BULLISH|BEARISH/.test(seg) && /Number\.isFinite\(d\.macro\.nfci\.leverage\)/.test(seg) && /:"—"/.test(seg); })());
+ok("nfciLeverage strip tile: context-only BY CONSTRUCTION — absent from the voter set, so ▪ cannot render",
+  // votingFields is derived from FACTOR_FIELD's values; nfciLeverage is not a factor, so the
+  // marker and the "Counts toward today's posture" tooltip are withheld without a special case.
+  !Object.values(FACTOR_FIELD).includes("nfciLeverage") &&
+  /const isVoter=vf\.has\(f\); const votes=isVoter&&live;/.test(stripSrc) &&
+  /Context only — does not vote\./.test(stripSrc));
 ok("nfci: a plausibility band exists and is WIDE — ±5 against a record high of ~+3.3 (2008), " +
    "rejecting the impossible without rejecting the unusual",
   (() => { const b = BANDS.nfci; return Array.isArray(b) && b[0] === -5 && b[1] === 5 &&
@@ -5577,8 +5591,7 @@ ok("whys: canonical computation and headline freshness stay in the orchestrator"
 ok("whys: a missing fw prop renders a safe empty state, never a throw (Property 9)",
   /if\(!fw\|\|!Array\.isArray\(fw\.whys\)\)return <div aria-hidden="true"\/>;/.test(whysSrc));
 ok("whys: the call site hands over narrative, state-derived label, and equity-close provenance",
-  // 8/28 FEAT-NFCILEV re-anchor: the Power call site gained the leverage context prop.
-  /<FiveWhys fw=\{fw\} derivedLabel=\{derivedLabel\} mode=\{modeOf\('spyPrice'\)\} asOf=\{asOfOf\('spyPrice'\)\} leverage=\{levCtx\}\/>/.test(dashSrc));
+  /<FiveWhys fw=\{fw\} derivedLabel=\{derivedLabel\} mode=\{modeOf\('spyPrice'\)\} asOf=\{asOfOf\('spyPrice'\)\}\/>/.test(dashSrc));
 ok("whys: module stays under the 300-line bound (Property 10); primitives under 100",
   whysSrc.split("\n").length <= 300 && sbSrc.split("\n").length <= 100 && shSrc.split("\n").length <= 100);
 ok("primitives: SourceBox/DataModeBadge/SectionHeader have ONE home each — no inline copies left",
@@ -5657,7 +5670,7 @@ ok("whys v3.95: the whys are reachable in SIMPLE — one honestly-labelled expan
   /* 8/28 Whys altitude: the label PREFIX stays the component default (six hasText locators
      match on it); the flip rides flipChip (closed, chip-length) + flipLine (verbatim,
      inside). A withheld posture passes no chip — the closed label stays bare. */
-  /\{simple&&<FiveWhys fw=\{fw\}[\s\S]{0,240}flipChip=\{evidenceSet\.withheld\?null:flipChipOf\(simpleF\)\} flipLine=\{simpleF\} leverage=\{levCtx\}\/>\}/.test(dashSrc) &&
+  /\{simple&&<FiveWhys fw=\{fw\}[\s\S]{0,240}flipChip=\{evidenceSet\.withheld\?null:flipChipOf\(simpleF\)\} flipLine=\{simpleF\}\/>\}/.test(dashSrc) &&
   /label="why this call · 5 checks"/.test(whysSrc) &&
   /export const WHYS_KEY="md:exp:whys:v1";/.test(whysSrc) &&
   /persistKey=WHYS_KEY/.test(whysSrc));
