@@ -9356,15 +9356,16 @@ console.log("\n[67] v4.0 SIMPLE MODE — verdict mapping, card selection, senten
     !/26\.1/.test(regimeSrc.replace(/\/\/[^\n]*|\/\*[\s\S]*?\*\//g, "")) &&
     /CAPE_MEAN\*1\.5/.test(regimeSrc.replace(/\s/g,"")) &&
     /import \{ CAPE_MEAN, CAPE_ATH \} from "\.\/regime\.js"/.test(readSrc("../src/macroCall.js")));
-  ok("ruler: the card projection passes the band's ruler through, and the card renders it muted",
+  /* v5.9.1: the full sentence-form ruler is no longer fed to the sheet at all (the 3-bullets
+     directive retired the "how MacroDash reads it" section) — the FACE chip is the only
+     rendered home for a band's edges now. `band.ruler` itself survives as source data
+     (still reconciled to vote()/flip below) in case it is wanted elsewhere later. */
+  ok("ruler: the card projection still carries the band's ruler as source data (unrendered)",
     (() => { const cards = sc({ regime:{ label:"RISK-ON" }, factors:[{ key:"vix", short:"VIX",
         vote:"bull", excluded:false, mode:"LIVE", metric:{ text:"14.43", value:14.43 } }] }).cards;
       return cards.length === 1 && cards[0].ruler === "help below 18 · mid 18–25 · hurt above 25"; })() &&
-    // v5.9: the FACE carries the chip and the SHEET carries the full sentence-form ruler —
-    // two of the six wrapped to three lines on a 390px card, which is most of what the
-    // beginner read was reacting to. Both homes pinned, so neither can quietly vanish.
-    /\{c\.rulerChip && <span/.test(spcSrc) && /bands: c\.ruler/.test(spcSrc) &&
-    /explain\.bands && <Section label="how MacroDash reads it">/.test(fsSrc));
+    /\{c\.rulerChip && <span/.test(spcSrc) &&
+    !/explain=\{c\.explain \? \{ \.\.\.c\.explain, lead:/.test(spcSrc));
   ok("ruler: the vote() functions, flip edges and quorum are byte-untouched by this feature",
     REGIME_BAND_TABLE.length === 6 && REGIME_QUORUM === 4 &&
     REGIME_BAND_TABLE.find((b)=>b.key==="vix").vote(17.9) === "bull" &&
@@ -9405,11 +9406,16 @@ console.log("\n[67] v4.0 SIMPLE MODE — verdict mapping, card selection, senten
      what moves it, where normal sits, and what it means to the macro picture. Same
      one-home-per-band doctrine as `plain`/`whyItMatters`/`ruler`: the copy lives on the
      band, the card projects it, the section renders it and decides nothing. */
-  ok("explain: every band carries a complete explainer — full name, exactly 3 bullets, drivers, baseline, macro",
+  /* v5.9.1 — owner correction: "I meant 3 bullets total. The tile descriptions too large."
+     The sheet contract shrinks to exactly {full, what:[3]} — no drivers/baseline/macro/quote
+     sections, and no free-form `sections` shape either (VERDICT_EXPLAIN moved to the same
+     contract below). */
+  ok("explain: every band carries a complete explainer — full name, EXACTLY 3 bullets, nothing else",
     REGIME_BAND_TABLE.every((b) => b.explain && typeof b.explain.full === "string" &&
       b.explain.full.length > 8 && Array.isArray(b.explain.what) && b.explain.what.length === 3 &&
       b.explain.what.every((s) => typeof s === "string" && s.length > 20) &&
-      ["drivers", "baseline", "macro"].every((k) => typeof b.explain[k] === "string" && b.explain[k].length > 40)));
+      !("drivers" in b.explain) && !("baseline" in b.explain) && !("macro" in b.explain) &&
+      !("quote" in b.explain) && !("lead" in b.explain) && !("sections" in b.explain)));
   /* Every accessor below goes through exOf, which returns {} for a band with no explainer:
      a predicate that THROWS kills the whole run and prints no total (the v3.99.4 P0 shape),
      and the missing-explainer negative control reproduced exactly that before this guard.
@@ -9422,38 +9428,27 @@ console.log("\n[67] v4.0 SIMPLE MODE — verdict mapping, card selection, senten
         /Consumer Price Index/.test(f("cpiHeadline")) &&
         /10-Year U\.S\. Treasury Yield/.test(f("tenYear")) &&
         /National Financial Conditions Index/.test(f("nfci")); })());
-  /* The single most-repeated error about CPI, and the reason the ruler's old tail was
-     retired: the FOMC's 2% target is on PCE, not CPI. The explainer must SAY that, and no
-     surface may claim a 2% CPI target. Pinned as a fact, not as a phrasing. */
-  ok("explain: CPI states that the Fed's 2% target is on PCE, and no band claims a 2% CPI target",
-    /2% target is on PCE/.test(exOf("cpiHeadline").baseline || "") &&
-    !REGIME_BAND_TABLE.some((b) => /2% (CPI )?target/.test(b.ruler || "")));
-  /* Two research findings that must survive a later copy pass, because both are places
-     where the widely-repeated version is wrong: VIX's 30 line is market CONVENTION and not
-     a Cboe-published threshold, and NFCI's post-2008 skew is why our band is asymmetric. */
-  ok("explain: VIX names the 30 line as convention, never as an official Cboe threshold",
-    (() => { const e = exOf("vix");
-      return /market convention, not a threshold Cboe publishes/.test(e.baseline || "") &&
-        /roughly 20/.test(e.baseline || ""); })());
-  ok("explain: NFCI states zero-by-construction AND why the band is asymmetric",
-    (() => { const e = exOf("nfci");
-      return /Zero is average by construction/.test(e.baseline || "") &&
-        /persistently BELOW zero/.test(e.baseline || "") && /asserted choice/.test(e.baseline || ""); })());
-  ok("explain: CAPE presents BOTH baselines — the 1881 mean and the post-1990 median — as a live argument",
-    (() => { const b = exOf("valuation").baseline || "";
-      return b.includes(String(CAPE_MEAN)) && b.includes(String(CAPE_ATH)) &&
-        /post-1990 median/.test(b) && /live argument/.test(b); })());
-  /* A quote in an evidence surface is a citation: it renders only with an attribution, and
-     the attribution has to be the RIGHT one. "Price is what you pay; value is what you get"
-     is Graham, quoted by Buffett — the most common misattribution in investing copy, and
-     shipping it as Buffett's would be exactly the fabricated-provenance defect this page
-     refuses everywhere else. A band with no verified quote carries null, not a paraphrase. */
-  ok("explain: every stored quote is attributed, and the Graham line is credited to Graham",
-    REGIME_BAND_TABLE.every((b) => { const q = b.explain && b.explain.quote;
-      return q === null || (q && q.text && q.who && q.where); }) &&
-    (exOf("valuation").quote || {}).who === "Benjamin Graham" &&
-    /quoted by Warren Buffett/.test((exOf("valuation").quote || {}).where || "") &&
-    exOf("nfci").quote === null);
+  /* The three research findings folded INTO the bullets (not a separate section any more):
+     the single most-repeated CPI error (2% is a PCE target, not CPI's), VIX's 30 line being
+     market convention rather than an official Cboe threshold, and NFCI's asymmetric band
+     because conditions have run persistently below zero since 2008. Each fact still has to
+     survive a later copy pass — pinned against the bullet text, wherever it now lives. */
+  ok("explain: CPI's bullets state the PCE correction, and no band claims a 2% CPI target",
+    (() => { const w = exOf("cpiHeadline").what || [];
+      return w.some((b) => /2% target is on PCE, not CPI/.test(b)) &&
+        !REGIME_BAND_TABLE.some((b) => /2% (CPI )?target/.test(b.ruler || "")); })());
+  ok("explain: VIX's bullets name the 30 line as convention, never an official Cboe threshold",
+    (() => { const w = exOf("vix").what || [];
+      return w.some((b) => /market convention/.test(b) && /not an official Cboe/.test(b)) &&
+        w.some((b) => /roughly 20/.test(b)); })());
+  ok("explain: NFCI's bullets state zero-by-construction and the post-2008 skew",
+    (() => { const w = exOf("nfci").what || [];
+      return w.some((b) => /Zero is average by construction/.test(b)) &&
+        w.some((b) => /persistently below zero since 2008/.test(b)); })());
+  ok("explain: CAPE's bullets carry BOTH baselines — the 1881 mean and the post-1990 median",
+    (() => { const w = (exOf("valuation").what || []).join(" ");
+      return w.includes(String(CAPE_MEAN)) && w.includes(String(CAPE_ATH)) &&
+        /post-1990 median/.test(w); })());
   ok("explain: the card projection passes the band's explainer through untouched",
     (() => { const cards = sc({ regime:{ label:"RISK-ON" }, factors:[{ key:"vix", short:"VIX",
         vote:"bull", excluded:false, mode:"LIVE", metric:{ text:"14.43", value:14.43 } }] }).cards;
@@ -9464,8 +9459,23 @@ console.log("\n[67] v4.0 SIMPLE MODE — verdict mapping, card selection, senten
      authors explainer copy nor renders the sheet body itself. */
   ok("explain: the sheet lives in a primitive — the section only hands it the projected copy",
     /import \{ Explainable \} from "\.\.\/primitives\/FactSheet\.jsx"/.test(spcSrc) &&
-    /<Explainable[\s\S]{0,400}explain=\{c\.explain \?/.test(spcSrc) &&
+    /<Explainable[\s\S]{0,200}explain=\{c\.explain\}/.test(spcSrc) &&
     !/what it is|what moves it|normal \/ neutral/.test(spcSrc));
+  /* v5.9.1 — the SHEET renderer is now one shape, one path: no free-form sections, no quote
+     block, no lead/drivers/baseline/macro. VERDICT_EXPLAIN moved onto the SAME {full,what:[3]}
+     contract every band explainer uses, which is what makes this pin possible at all. */
+  ok("explain: ExplainerBody has exactly one render path — 3 bullets, nothing else",
+    (() => { const code = fsSrc.replace(/\/\/[^\n]*|\/\*[\s\S]*?\*\//g, "");
+      return /if \(!explain \|\| !Array\.isArray\(explain\.what\) \|\| !explain\.what\.length\) return null;/.test(code) &&
+        !/const Section|explain\.drivers|explain\.baseline|explain\.macro|explain\.quote|sections\.map|explain\.lead|explain\.bands/.test(code); })());
+  ok("explain: VERDICT_EXPLAIN carries exactly 3 bullets, the same shape as every band",
+    typeof VERDICT_EXPLAIN.full === "string" &&
+    Array.isArray(VERDICT_EXPLAIN.what) && VERDICT_EXPLAIN.what.length === 3 &&
+    !("sections" in VERDICT_EXPLAIN) && !("lead" in VERDICT_EXPLAIN) &&
+    (() => { const all = VERDICT_EXPLAIN.what.join(" ");
+      return ["MOONING", "HODL", "DIAMOND HANDS", "CAN'T CALL IT",
+        "BULLISH", "NEUTRAL", "BEARISH"].every((k) => all.includes(k)) &&
+        /not a view on any one stock/.test(all) && /not advice/.test(all); })());
   ok("explain: a band with no explainer degrades to a plain div — a button that opens nothing is a lie",
     /if \(!explain\) return <div/.test(fsSrc));
   /* The WAI-ARIA dialog contract, pinned at the source and DRIVEN in the browser suite:
@@ -9508,14 +9518,8 @@ console.log("\n[67] v4.0 SIMPLE MODE — verdict mapping, card selection, senten
     rulerChip({ key: "x" }) === null && rulerChip(null) === null);
   /* The verdict vocabulary explains itself. It lives in regime.js beside the engine whose
      four states it describes — the same one-home rule as the band explainers, and the reason
-     it is not a second copy-table in the component that happens to render it. */
-  ok("v5.9 verdict: the explainer names all four calls, both machine words, and refuses to be advice",
-    (() => { const v = VERDICT_EXPLAIN, all = JSON.stringify(v);
-      return v && typeof v.full === "string" && typeof v.lead === "string" &&
-        Array.isArray(v.sections) && v.sections.length === 3 &&
-        ["MOONING", "HODL", "DIAMOND HANDS", "CAN'T CALL IT"].every((k) => all.includes(k)) &&
-        ["BULLISH", "BEARISH", "NEUTRAL"].every((k) => all.includes(k)) &&
-        /not advice/.test(all) && /not a view on any one stock/.test(all); })());
+     it is not a second copy-table in the component that happens to render it. (The full
+     content check moved to the v5.9.1 pin above, on the shrunk {full,what:[3]} contract.) */
   ok("v5.9 verdict: the token is tappable in SIMPLE only — Power's moon voice is untouched",
     /plainVerdict\s*\n?\s*\? <Explainable explain=\{VERDICT_EXPLAIN\}/.test(bandSrc) &&
     /: <span style=\{\{fontFamily:T\.fontMono,fontSize:T\.fsXl/.test(bandSrc) &&

@@ -7,11 +7,10 @@
 // beside the rule it describes (the plain/whyItMatters/ruler doctrine). Opening a sheet is
 // a render concern, exactly like CollapsedGroup's open state.
 //
-// WHY A MODAL AND NOT A DISCLOSURE: the six explainers are ~10 lines each. Inline, they
-// would push the macro strip past the fold (the glance budget the public suite pins) and
-// bury the answer under the teaching material. The v3.66 rule — chip-length in place,
-// verbatim one tap deep — with the "one tap deep" being an overlay because the card row
-// itself is the thing the reader is scanning.
+// WHY A MODAL AND NOT A DISCLOSURE: even at 3 bullets, inline would push the macro strip
+// past the fold (the glance budget the public suite pins) and bury the answer under the
+// teaching material. The v3.66 rule — chip-length in place, verbatim one tap deep — with
+// the "one tap deep" being an overlay because the card row itself is what the reader scans.
 //
 // A11Y, the WAI-ARIA APG dialog pattern (the same contract admin.html's overlay got in
 // v3.42 slice 4, ported to React):
@@ -86,65 +85,21 @@ const FactSheet = ({ title, eyebrow, onClose, children }) => {
   );
 };
 
-/* The explainer BODY. Generic over the shape it is handed — it renders what is there and
-   nothing else: a section with no stored copy does not render a heading over an empty box
-   (absence is not content, the v4.0 card rule), and the quote renders only when it carries an
-   attribution, because an unattributed aphorism in an evidence surface is a fabricated
-   citation exactly as a made-up number is a fabricated fact. */
-const Section = ({ label, children }) => (
-  <div style={{ marginTop: 10 }}>
-    <div style={{ fontFamily: T.fontMono, fontSize: 8, color: T.textMuted,
-      letterSpacing: "0.12em", textTransform: "uppercase", marginBottom: 3 }}>{label}</div>
-    <div style={{ fontFamily: T.fontSans, fontSize: T.fsS, color: T.textSecondary, lineHeight: 1.45 }}>{children}</div>
-  </div>
-);
-
+/* v5.9.1 (owner: "I meant 3 bullets total. The tile descriptions too large") — ONE shape for
+   every explainer in the product: `{full, what: [exactly 3 bullets]}`. The v5.9 draft had a
+   lead sentence plus four more prose sections plus a quote; "3 bullets" meant the whole tile,
+   not "3 bullets under one of several headings". This is deliberately the ONLY render path
+   now — no Section headers, no quote block, no free-form sections shape. A tile with no `what`
+   renders nothing (absence is not content, the v4.0 card rule), and MORE than 3 items is not
+   pinned as an error here — smoke enforces exactly 3 at the data layer, which is the one home
+   for that rule. */
 export const ExplainerBody = ({ explain }) => {
-  if (!explain) return null;
-  const q = explain.quote;
+  if (!explain || !Array.isArray(explain.what) || !explain.what.length) return null;
   return (
-    <div>
-      {/* v5.9: an optional lead line — the one-sentence "why should I care about this at
-          all" the card used to carry on its face. It moved in here when the beginner read
-          found the cards were four lines of prose each. */}
-      {explain.lead && <div style={{ fontFamily: T.fontSans, fontSize: T.fsS,
-        color: T.textSecondary, lineHeight: 1.45, marginTop: 6 }}>{explain.lead}</div>}
-      {/* v5.9: a sheet may carry free-form SECTIONS instead of the factor shape — the verdict
-          explainer answers "what does HODL mean" and "what is bullish", which are not
-          "what moves it" and "normal level". Same renderer, so both kinds of sheet look and
-          behave identically and there is one dialog in the product, not two. */}
-      {Array.isArray(explain.sections) && explain.sections.map((s, i) => (
-        <Section key={i} label={s.label}>
-          {Array.isArray(s.bullets)
-            ? <ul style={{ margin: 0, paddingLeft: 16 }}>
-                {s.bullets.map((b, j) => <li key={j} style={{ marginBottom: 3 }}>{b}</li>)}
-              </ul>
-            : s.text}
-        </Section>
-      ))}
-      {Array.isArray(explain.what) && explain.what.length > 0 && (
-        <Section label="what it is">
-          <ul style={{ margin: 0, paddingLeft: 16 }}>
-            {explain.what.map((b, i) => <li key={i} style={{ marginBottom: 3 }}>{b}</li>)}
-          </ul>
-        </Section>
-      )}
-      {explain.drivers && <Section label="what moves it">{explain.drivers}</Section>}
-      {/* v5.9: the full sentence-form ruler, which used to sit on the card face and wrapped
-          to three lines there for two of the six bands. The card keeps the chip. */}
-      {explain.bands && <Section label="how MacroDash reads it">{explain.bands}</Section>}
-      {explain.baseline && <Section label="normal / neutral level">{explain.baseline}</Section>}
-      {explain.macro && <Section label="why it matters to the macro picture">{explain.macro}</Section>}
-      {q && q.text && q.who && (
-        <div style={{ marginTop: 12, paddingTop: 8, borderTop: `1px solid ${T.border}` }}>
-          <div style={{ fontFamily: T.fontSans, fontSize: T.fsS, color: T.textSecondary,
-            fontStyle: "italic", lineHeight: 1.45 }}>“{q.text}”</div>
-          <div style={{ fontFamily: T.fontMono, fontSize: 8, color: T.textMuted, marginTop: 3 }}>
-            — {q.who}{q.where ? `, ${q.where}` : ""}
-          </div>
-        </div>
-      )}
-    </div>
+    <ul style={{ margin: "6px 0 0", paddingLeft: 18, fontFamily: T.fontSans, fontSize: T.fsS,
+      color: T.textSecondary, lineHeight: 1.5 }}>
+      {explain.what.map((b, i) => <li key={i} style={{ marginBottom: 6 }}>{b}</li>)}
+    </ul>
   );
 };
 

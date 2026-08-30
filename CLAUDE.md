@@ -5,6 +5,27 @@ answers *"is it safe to be in the market?"* from live macro + market + sentiment
 data. Single-page React app on Cloudflare Pages, with live data assembled at the
 edge by Pages Functions and cached in KV.
 
+**v5.9.1 — "I meant 3 bullets total. The tile descriptions too large" (owner, on the live
+v5.9.0 sheet).** The explainer sheet shipped as a lead sentence plus FOUR more sections —
+"what it is" (3 bullets), "what moves it", "normal / neutral level", "why it matters to the
+macro picture" — plus a Buffett/Graham quote block. That is not 3 bullets, whatever the
+original ticket's wording implied when it asked for a 3-bullet summary "plus" three more
+things. Every explainer in the product — the six band tiles and the verdict tile — now shares
+ONE contract: `{full, what: [exactly 3 bullets]}`. Nothing here is new content: each bullet
+folds what used to be a whole section into one sentence, and the research corrections (the
+Fed's 2% target is on PCE not CPI, VIX's 30 line is market convention not a Cboe threshold,
+CAPE's two competing baselines) survive INSIDE the bullets rather than as separate paragraphs.
+**The quote block is cut**, not shrunk — a citation with its own attribution line does not fit
+inside "3 bullets total", and the Graham/Buffett misattribution research was never asked for by
+the original ticket; it can come back as a compact fourth line if wanted. `ExplainerBody` in
+`FactSheet.jsx` collapses to a single render path — no Section headers, no free-form `sections`
+shape, no quote — which also deletes the two-shape complexity `VERDICT_EXPLAIN` needed before
+(it now uses the identical `{full, what:[3]}` contract as every band). Measured: the valuation
+sheet went from a scrolling multi-section essay to **235px**, three bullets, done.
+Tests: **2091 smoke + 306 render + 225 public-render**, `audit:prod` clean. Negative-controlled:
+a 4th bullet on a band explainer turns its pin red; restoring a reference to the retired
+`explain.drivers` field turns the structural "one render path" pin red.
+
 **v5.9.0 "FIRST GLANCE" — the beginner read: fewer words on the first screen, and the verdict
 explains its own vocabulary.** A first-time reader with no market background, on the live v5.8
 page: *"there's way too much going on, too many words at first glance… new folks likely have no

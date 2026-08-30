@@ -53,7 +53,7 @@ const SimpleCards = ({ cards, usable = 0, shown = 0, total = 0, withheld = false
              opinion. */
           return (
             <Explainable key={c.key}
-              explain={c.explain ? { ...c.explain, lead: c.why || null, bands: c.ruler || null } : c.explain}
+              explain={c.explain}
               title={c.explain ? c.explain.full : c.label}
               eyebrow={`${c.label} · ${c.currentValue}${WORD[c.direction] ? ` · ${WORD[c.direction]}` : ""}`}
               className="simple-card"
