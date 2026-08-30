@@ -1020,18 +1020,14 @@ console.log("\n[public] v4.0 — Simple verdicts, card selection, and what must 
     await dlg.count() === 1 && await dlg.getAttribute("aria-modal") === "true" &&
     /Cyclically Adjusted Price-to-Earnings ratio \(Shiller CAPE\)/.test(await dlg.innerText()));
   const sheet = await dlg.innerText();
-  ok("v5.8 sheet: it answers the four things the owner asked for, in order",
-    /what it is/i.test(sheet) && /what moves it/i.test(sheet) &&
-    /normal \/ neutral level/i.test(sheet) && /why it matters to the macro picture/i.test(sheet) &&
-    sheet.indexOf("WHAT IT IS") < sheet.indexOf("WHAT MOVES IT"));
-  ok("v5.8 sheet: exactly three bullets under 'what it is' — the highest-leverage summary, not an essay",
-    await dlg.locator("ul li").count() === 3);
-  /* The research pass found this is the most misattributed line in investing copy. It is
-     Graham's, quoted by Buffett — and shipping it as Buffett's would be a fabricated
-     provenance, the same defect class as a fabricated number. */
-  ok("v5.8 sheet: the quote carries its REAL attribution — Graham, quoted by Buffett",
-    /Price is what you pay/.test(sheet) && /Benjamin Graham/.test(sheet) &&
-    /quoted by Warren Buffett/.test(sheet));
+  /* v5.9.1 (owner: "I meant 3 bullets total. The tile descriptions too large") — the sheet
+     is now EXACTLY 3 bullets and nothing else: no section headers, no quote block. The
+     misattributed-quote research (Graham, not Buffett) is still real; it just no longer
+     renders as a citation block on a tile that has to stay to 3 lines. */
+  ok("v5.9.1 sheet: EXACTLY 3 bullets, no section headers, no quote block",
+    await dlg.locator("ul li").count() === 3 &&
+    !/WHAT MOVES IT|NORMAL \/ NEUTRAL LEVEL|WHY IT MATTERS TO THE MACRO PICTURE/i.test(sheet) &&
+    !/Price is what you pay/.test(sheet) && !/Benjamin Graham/.test(sheet));
   ok("v5.8 sheet: the CAPE baselines are BOTH stated — the 1881 mean and the post-1990 median",
     /17\.4/.test(sheet) && /44\.19/.test(sheet) && /post-1990 median/.test(sheet));
   ok("v5.8 sheet: focus moves into the sheet on open, onto the way out",
