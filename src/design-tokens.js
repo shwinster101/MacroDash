@@ -61,6 +61,12 @@ export const DT = {
   "fs-s":           10,   // secondary detail
   "fs-m":           11,   // provenance + factor chips — the load-bearing minimum
   "fs-l":           13,   // sub-headlines
+  // v5.9.2 (owner: "much larger font, it's too small for a user to read" — the explainer
+  // sheet): the scale jumped 13 -> 22 with nothing between headline weight and body text,
+  // so the sheet's teaching prose — the thing a beginner is there to READ — sat at fs-s
+  // (10px). fs-body is the reading size for prose in a surface whose whole job is being
+  // read, distinct from fs-l's sub-headline role and fs-xl's hero weight.
+  "fs-body":        16,
   "fs-xl":          22,   // the verdict itself
 };
 
@@ -73,5 +79,5 @@ export const T = {
   blue:"#3498db", purple:"#9b59b6",
   textPrimary:DT["text-primary"], textSecondary:DT["text-secondary"], textMuted:DT["text-muted"],
   fontMono:DT["font-mono"], fontSans:DT["font-sans"], fontDisplay:DT["font-display"],
-  fsXs:DT["fs-xs"], fsS:DT["fs-s"], fsM:DT["fs-m"], fsL:DT["fs-l"], fsXl:DT["fs-xl"],
+  fsXs:DT["fs-xs"], fsS:DT["fs-s"], fsM:DT["fs-m"], fsL:DT["fs-l"], fsBody:DT["fs-body"], fsXl:DT["fs-xl"],
 };

@@ -9468,6 +9468,19 @@ console.log("\n[67] v4.0 SIMPLE MODE — verdict mapping, card selection, senten
     (() => { const code = fsSrc.replace(/\/\/[^\n]*|\/\*[\s\S]*?\*\//g, "");
       return /if \(!explain \|\| !Array\.isArray\(explain\.what\) \|\| !explain\.what\.length\) return null;/.test(code) &&
         !/const Section|explain\.drivers|explain\.baseline|explain\.macro|explain\.quote|sections\.map|explain\.lead|explain\.bands/.test(code); })());
+  /* v5.9.2 (owner: "make the popup more visible in the middle of the screen and also the
+     much larger font? It's too small for a user to read"). Source-level guard: the backdrop
+     centers rather than bottom-anchors, and the title/bullets read at the LARGER tokens
+     (fsXl 22px / fsBody 16px, both real design tokens — not one-off literals), never the old
+     fsM/fsS pair. The browser suite proves the rendered pixels; this proves the intent
+     cannot silently regress back to the small, bottom-anchored shape. */
+  ok("v5.9.2: the sheet backdrop is CENTERED, and the title/body use the larger fsXl/fsBody tokens",
+    /alignItems: "center"/.test(fsSrc) && !/alignItems: "flex-end"/.test(fsSrc) &&
+    /fontSize: T\.fsXl,[\s\S]{0,80}fontWeight: 700/.test(fsSrc) &&
+    /fontSize: T\.fsBody/.test(fsSrc) &&
+    !/fontSize: T\.fsM,\s*\n?\s*fontWeight: 700/.test(fsSrc));
+  ok("v5.9.2: fsBody is a real token (16px) between the sub-headline and hero sizes, not a literal",
+    TOK_T.fsBody === 16 && TOK_T.fsL < TOK_T.fsBody && TOK_T.fsBody < TOK_T.fsXl);
   ok("explain: VERDICT_EXPLAIN carries exactly 3 bullets, the same shape as every band",
     typeof VERDICT_EXPLAIN.full === "string" &&
     Array.isArray(VERDICT_EXPLAIN.what) && VERDICT_EXPLAIN.what.length === 3 &&
