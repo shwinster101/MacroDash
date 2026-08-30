@@ -5,6 +5,32 @@ answers *"is it safe to be in the market?"* from live macro + market + sentiment
 data. Single-page React app on Cloudflare Pages, with live data assembled at the
 edge by Pages Functions and cached in KV.
 
+**v5.9.2 — the sheet moves to the middle of the screen and reads at a real size (owner, on
+the live v5.9.1 sheet: "make the pop up more visible in the middle of the screen and also the
+much larger font? It's too small for a user to read").** Two fixes, both measured:
+**(1) CENTERED, not bottom-anchored.** The v5.8 shape used a phone-bottom-sheet convention
+(`alignItems:"flex-end"`) — right for a long scrolling document, wrong for a short 3-bullet
+tile, where it read as a strip glued to the thumb rather than the thing the reader was asked
+to look at. `alignItems:"center"` now; measured, the dialog's own vertical center lands within
+10px of the viewport's center on both the verdict sheet and a card sheet.
+**(2) A real reading size.** The type scale jumped `fs-l` (13px) straight to `fs-xl` (22px)
+with nothing between headline weight and body text, so the sheet's teaching prose — the thing
+a beginner is there to read — sat at `fs-s`, 10px. A new token, **`fs-body` = 16px**, fills the
+gap as the reading size for prose surfaces (distinct from `fs-l`'s sub-headline role and
+`fs-xl`'s hero weight — a real design-tokens.js entry, not a one-off literal in the component).
+The sheet title now renders at `fs-xl` (the same weight as the verdict itself) and the three
+bullets at `fs-body`, up from 11px/10px.
+**Vote-count check (same conversation): no bug found.** Owner asked whether F&G and NFCI were
+being counted, reading the tiny `•` neutral glyph as looking like "excluded." Traced against
+the live tape: F&G at 54 is neutral (its band is `>55` bull / `<30` bear), NFCI at −0.57 is
+bullish (`≤−0.5`) — both exactly as shown, both inside the tally's "6 of 6 voters counted."
+`⏱` (amber) is the actual excluded glyph and did not appear anywhere in the screenshot. No
+code change; the confusion was legibility (the same 8–9px chip row this release didn't touch),
+not a counting defect.
+Tests: **2093 smoke + 306 render + 227 public-render**, `audit:prod` clean. Negative-controlled:
+reverting to `flex-end` turns the centering pin red at both altitudes; reverting the title to
+the old token turns the font-size pin red at both altitudes.
+
 **v5.9.1 — "I meant 3 bullets total. The tile descriptions too large" (owner, on the live
 v5.9.0 sheet).** The explainer sheet shipped as a lead sentence plus FOUR more sections —
 "what it is" (3 bullets), "what moves it", "normal / neutral level", "why it matters to the

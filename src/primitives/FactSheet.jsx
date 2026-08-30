@@ -58,26 +58,34 @@ const FactSheet = ({ title, eyebrow, onClose, children }) => {
     };
   }, [onClose]);
   return (
+    /* v5.9.2 (owner: "make the popup more visible in the middle of the screen"). The v5.8
+       shape anchored to the BOTTOM edge (a phone bottom-sheet convention) — correct for a
+       long scrolling document, wrong for a short 3-bullet tile, where it read as a strip
+       glued to the thumb rather than the thing the reader was asked to look at. Centered,
+       it reads as the focal point it is meant to be. */
     <div onClick={onClose} style={{ position: "fixed", inset: 0, zIndex: 90,
-      background: "rgba(4,8,14,0.78)", display: "flex", alignItems: "flex-end",
-      justifyContent: "center", padding: "16px 10px calc(10px + env(safe-area-inset-bottom))" }}>
+      background: "rgba(4,8,14,0.82)", display: "flex", alignItems: "center",
+      justifyContent: "center", padding: "16px" }}>
       {/* Stop the backdrop handler at the sheet: a click inside must never dismiss it. */}
       <div ref={boxRef} onClick={(e) => e.stopPropagation()} role="dialog" aria-modal="true"
         aria-labelledby="factsheet-title" className="factsheet"
-        style={{ background: T.surface, border: `1px solid ${T.border}`, borderRadius: 10,
-          width: "100%", maxWidth: 520, maxHeight: "82vh", overflowY: "auto",
-          padding: "12px 14px 16px", boxShadow: "0 10px 40px rgba(0,0,0,0.5)" }}>
-        <div style={{ display: "flex", alignItems: "flex-start", gap: 10, marginBottom: 8 }}>
+        style={{ background: T.surface, border: `1px solid ${T.border}`, borderRadius: 12,
+          width: "100%", maxWidth: 480, maxHeight: "82vh", overflowY: "auto",
+          padding: "18px 20px 22px", boxShadow: "0 12px 48px rgba(0,0,0,0.6)" }}>
+        <div style={{ display: "flex", alignItems: "flex-start", gap: 10, marginBottom: 12 }}>
           <div style={{ minWidth: 0 }}>
-            {eyebrow && <div style={{ fontFamily: T.fontMono, fontSize: 8, color: T.textMuted,
-              letterSpacing: "0.12em", textTransform: "uppercase" }}>{eyebrow}</div>}
-            <h3 id="factsheet-title" style={{ margin: "2px 0 0", fontFamily: T.fontMono,
-              fontSize: T.fsM, fontWeight: 700, color: T.textPrimary, letterSpacing: "0.02em" }}>{title}</h3>
+            {eyebrow && <div style={{ fontFamily: T.fontMono, fontSize: T.fsS, color: T.textMuted,
+              letterSpacing: "0.1em", textTransform: "uppercase" }}>{eyebrow}</div>}
+            {/* Title at fsXl — the same weight as the verdict itself. This tile exists to be
+               READ, so its heading gets read-from-across-the-room size, not a caption size. */}
+            <h3 id="factsheet-title" style={{ margin: "4px 0 0", fontFamily: T.fontMono,
+              fontSize: T.fsXl, fontWeight: 700, color: T.textPrimary, letterSpacing: "0.01em",
+              lineHeight: 1.25 }}>{title}</h3>
           </div>
           <button data-fs-close onClick={onClose} aria-label={`Close ${title}`} className="fs-close"
             style={{ marginLeft: "auto", flexShrink: 0, background: "none", cursor: "pointer",
-              border: `1px solid ${T.border}`, borderRadius: 6, color: T.textSecondary,
-              fontFamily: T.fontMono, fontSize: T.fsM, lineHeight: 1, padding: "6px 9px" }}>✕</button>
+              border: `1px solid ${T.border}`, borderRadius: 8, color: T.textSecondary,
+              fontFamily: T.fontMono, fontSize: T.fsL, lineHeight: 1, padding: "8px 11px" }}>✕</button>
         </div>
         {children}
       </div>
@@ -95,10 +103,12 @@ const FactSheet = ({ title, eyebrow, onClose, children }) => {
    for that rule. */
 export const ExplainerBody = ({ explain }) => {
   if (!explain || !Array.isArray(explain.what) || !explain.what.length) return null;
+  // v5.9.2: fsBody (16px) — the reading size, not the caption size. The 3-bullet cut bought
+  // room specifically so this could be legible without pushing the sheet off-screen.
   return (
-    <ul style={{ margin: "6px 0 0", paddingLeft: 18, fontFamily: T.fontSans, fontSize: T.fsS,
-      color: T.textSecondary, lineHeight: 1.5 }}>
-      {explain.what.map((b, i) => <li key={i} style={{ marginBottom: 6 }}>{b}</li>)}
+    <ul style={{ margin: "6px 0 0", paddingLeft: 20, fontFamily: T.fontSans, fontSize: T.fsBody,
+      color: T.textPrimary, lineHeight: 1.6 }}>
+      {explain.what.map((b, i) => <li key={i} style={{ marginBottom: 10 }}>{b}</li>)}
     </ul>
   );
 };

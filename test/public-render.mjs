@@ -1037,6 +1037,17 @@ console.log("\n[public] v4.0 — Simple verdicts, card selection, and what must 
     await page.evaluate(() => !!document.activeElement.closest('[role="dialog"]')));
   ok("v5.8 sheet: no horizontal overflow at 390px with the sheet open",
     await page.evaluate(() => document.documentElement.scrollWidth) <= 390);
+  /* v5.9.2 (owner: "make the pop up more visible in the middle of the screen and also the
+     much larger font? It's too small for a user to read"). Measured, not asserted: the
+     dialog's own vertical center must land within a few px of the VIEWPORT's center (the
+     v5.8 shape was bottom-anchored, so this would have failed hard before), and the title
+     and bullets must render at the new fsXl/fsBody sizes rather than the old fsM/fsS ones. */
+  ok("v5.9.2 sheet: the dialog is CENTERED in the viewport, not glued to the bottom edge",
+    await page.evaluate(() => { const r = document.querySelector('[role="dialog"]').getBoundingClientRect();
+      return Math.abs((r.top + r.bottom) / 2 - window.innerHeight / 2) <= 10; }));
+  ok("v5.9.2 sheet: the title and bullets render at the LARGER sizes (22px / 16px), not the old ones",
+    await page.locator("#factsheet-title").evaluate((n) => getComputedStyle(n).fontSize) === "22px" &&
+    await dlg.locator("ul li").first().evaluate((n) => getComputedStyle(n).fontSize) === "16px");
   await page.keyboard.press("Escape");
   await page.waitForTimeout(200);
   ok("v5.8 sheet: Escape closes it AND returns focus to the card that opened it — not the top of the page",
