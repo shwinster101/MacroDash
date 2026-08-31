@@ -65,3 +65,14 @@ nothing was actually broken.
 
 Valuation sheet: dialog vertical center 422px vs viewport center 422px (390×844). Title
 `getComputedStyle` font-size: 22px. Bullet font-size: 16px. Screenshot attached to the PR.
+
+## Outcomes
+
+Landed as **v5.9.2**, PR #21, squash-merged to `main` as `f71e2b3`.
+
+- Gate at merge: **2093 smoke · 306 render · 227 public-render**, `audit:prod` clean, real
+  Chromium.
+- Both fixes shipped as measured; `fs-body` = 16px is a real `design-tokens.js` entry, not a
+  literal in the component.
+- The vote-count half produced **no code change**, which is itself the outcome: the count was
+  correct. The `•` legibility question it raised was deliberately not bundled and is still open.
