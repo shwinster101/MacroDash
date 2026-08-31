@@ -260,6 +260,16 @@ export function compareQuality(a, b) { // >0: a better · 0: equal · <0: a wors
 // ─── Verdict aggregation ─────────────────────────────────────────────────────────────────
 // Plurality of bullish vs bearish among AVAILABLE checks (neutral counts only toward available).
 // <3 available -> INSUFFICIENT (a 1–2-input verdict must never gate an order). Tie -> NEUTRAL.
+// v5.97.4 RULING — the floor stays an ABSOLUTE 3 as the check count grows (it was 3-of-6 and
+// is now 3-of-7). This is deliberate, not the count trap the confidence arms closed: those
+// encoded a FRACTION ("at most one dark") and silently loosened when the count moved; this
+// literal encodes an absolute-observations claim — one or two readings are never enough to
+// PUBLISH a direction, and three real observations are still three. The safety load is not
+// carried here anyway: at exactly 3 available, `current` cannot reach `checks.length - 2`,
+// so confidence is LOW and actionability is HOLD — the direction publishes as information
+// while the axis that gates capital fails closed. That consequence is EXECUTED in smoke, so
+// if a future change ever lets a 3-available day gate capital, the pin goes red before the
+// board does.
 // PANIC is applied by buildTtReadout (it needs the raw vix/F&G values), overriding everything.
 export function aggregateVerdict(checks) {
   let available = 0, bullish = 0, bearish = 0;

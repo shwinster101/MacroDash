@@ -9,7 +9,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
 <!-- AUDIT: kept in sync with package.json by test/smoke.mjs. admin.html is a Vite
      public/ passthrough, so it cannot receive __APP_VERSION__ — the guard is the fix. -->
-<title>TT TICKER TERMINAL v5.97.3</title>
+<title>TT TICKER TERMINAL v5.97.4</title>
 <style>
   :root{
     --bg:#05070a; --panel:#0a0f16; --panel2:#0d141d; --line:#16202c;
@@ -209,32 +209,8 @@
   .rollup{display:flex;align-items:center;gap:10px;flex-wrap:wrap;font-size:10.5px;color:var(--dim);
     letter-spacing:.04em;border:1px solid var(--line);border-radius:7px;background:#080d13;
     padding:7px 11px;margin-bottom:8px}
-  /* FEAT-TT-FOCUS2 (v3.38): the four-driver primary view.
-     v3.42 READABLE DESK: the stance strip is now a STANCE BAR — the verdict is a large
-     token (.vbadge), qualifiers are small chips (.qual), and the full prose that used to
-     wrap five phone lines lives one tap deep in details.why. v3.25 rule holds: every red
-     fact is a chip or badge that stays visible while the drawer is closed. */
-  .stance-strip{display:block;font-size:var(--fs-s);
-    border:1px solid var(--line);border-radius:7px;background:#080d13;padding:5px 9px;margin-bottom:6px}
-  .stance-strip .stance-top{display:flex;align-items:center;gap:6px 8px;flex-wrap:wrap}
-  .stance-strip .stance-right{margin-left:auto;display:flex;align-items:center;gap:7px}
-  /* Paddings and tracking kept tight so the verdict token and its first qualifier chip can
-     SHARE a row at 390px — the packing is the point; loose chrome re-creates the wrap soup. */
-  .vbadge{font-size:var(--fs-l);font-weight:700;letter-spacing:.02em;padding:2px 8px;
-    border-radius:6px;border:1px solid currentColor;white-space:nowrap}
-  .qual{font-size:var(--fs-xs);border:1px solid var(--line);border-radius:8px;padding:0 6px;
-    white-space:nowrap}
-  /* badges are real BUTTONS now (focusable, Enter-activatable) — reset to look like the
-     spans they replace. */
-  .stance-strip button.badge{background:none;border:none;padding:2px;font-family:inherit;
-    font-size:9.5px;font-weight:700;letter-spacing:.04em;cursor:pointer}
-  .stance-strip details.why{margin-top:5px;border-top:1px dashed var(--line)}
-  .stance-strip details.why>summary{cursor:pointer;list-style:none;font-size:var(--fs-xs);
-    color:var(--dim);letter-spacing:.12em;text-transform:uppercase;padding:4px 0;user-select:none}
-  .stance-strip details.why>summary::-webkit-details-marker{display:none}
-  .stance-strip details.why>summary::before{content:"▸ ";color:var(--greenDim)}
-  .stance-strip details.why[open]>summary::before{content:"▾ "}
-  .stance-strip details.why>div{font-size:var(--fs-s);color:var(--slate);padding:2px 0 6px;line-height:1.55}
+  /* v5.97.4: the .stance-strip / .vbadge / .qual CSS family died with the legacy compact
+     block it styled (see the excision note at the old markup site). */
   /* v3.42: semantic color utilities — retire repeated inline style="color:var(--…)". */
   .u-dim{color:var(--dim)} .u-warn{color:var(--amber)} .u-bad{color:var(--red)} .u-ok{color:var(--green)}
   /* v3.42: link-styled real button — replaces <span onclick> / <a href="javascript:"> for
@@ -243,8 +219,7 @@
     font-family:inherit;font-size:inherit;padding:0;letter-spacing:inherit}
   /* v3.42: thumb-sized interactive rows on phones */
   @media(max-width:480px){
-    .stance-strip button.badge,.tabs .tab{min-height:40px;display:inline-flex;align-items:center}
-    .stance-strip details.why>summary{min-height:32px;display:flex;align-items:center}
+    .tabs .tab{min-height:40px;display:inline-flex;align-items:center}
     .fdr .fdr-row{min-height:44px}  /* v3.42 slice 2: thumb-sized driver rows */
     .chip{min-height:40px}          /* v3.42 slice 3: thumb-sized book chips */
   }
@@ -335,9 +310,6 @@
   }
   @keyframes skelp{from{opacity:.45}to{opacity:1}}
   .fdr .lbl{margin-bottom:4px}
-  button.rfr{background:#0c1a13;border:1px solid var(--greenDim);color:var(--green);border-radius:6px;
-    padding:2px 10px;font-family:inherit;font-size:10px;letter-spacing:.08em;cursor:pointer}
-  button.rfr:disabled{opacity:.5;cursor:wait}
   /* FEAT-TT-DD (v3.12): deep-dive tabs — BOARD + one per entry carrying a payload.
      v3.42 READABLE DESK: ONE horizontally scrollable row, never a wrap. With 19 payloads
      the old flex-wrap grid ate FIVE rows on a phone — the primary view's first screen was
@@ -494,7 +466,7 @@
          verdict and every gate are computed upstream and this panel changes nothing. -->
     <div id="macroEvidence" role="region" aria-label="Why macro — readout evidence"></div>
     <div id="headInfo" style="display:none">
-      <div class="brand">FINANCE&nbsp;BRO.AI // TT&nbsp;TICKER&nbsp;TERMINAL <small>v5.97.3 · the daily contract</small></div>
+      <div class="brand">FINANCE&nbsp;BRO.AI // TT&nbsp;TICKER&nbsp;TERMINAL <small>v5.97.4 · the daily contract</small></div>
       <div class="statusline">
         <span>BOOK: <b id="bookStamp">loading…</b></span>
         <span>AUTH: <b id="sessState">…</b></span>
@@ -595,12 +567,14 @@
           <div id="deepView" style="display:none"></div>
         </section>
 
-        <!-- Legacy compact renderers retained only where Glance supersedes their output. -->
-        <div id="legacyCompact" hidden>
-          <div class="stance-strip" id="stanceStrip"></div>
-          <div class="nd fdr" id="calBlock"></div>
-        </div>
-
+        <!-- v5.97.4: the legacy compact block (#legacyCompact > #stanceStrip + #calBlock) is
+             EXCISED, not merely hidden. It sat here `hidden` since v5.7.0 with nothing ever
+             un-hiding it, while renderStance()/renderCalBlock() kept writing invisible DOM on
+             every render — the v3.73 "dead code is a rot vector" rule, and it already bit once
+             (the v5.97.3 REFRESH-label bug came from its dormant button sharing a handler).
+             Every red fact it carried has a LIVE home: verdict + stance -> the glance GATE
+             tile; over-cap -> #trimChip; binaries/capex/changed -> #flagsChip + DESK drawers;
+             quote stamp -> #quoteChip; calendar -> the DESK #dCal drawer. -->
         <!-- DESK: the full detail — every pre-v3.38 strip, unchanged, one click deep.
              Their renderers and ids are untouched; only their home moved. -->
         <details class="drawer" id="dDesk"><summary id="sDesk">DESK</summary>
@@ -2029,7 +2003,7 @@ function render(){
   renderToday();renderChanged();renderDrawers();renderScorecard();
   // FEAT-TT-FOCUS2 (v3.38): the four-driver primary blocks render LAST — they read what
   // the strips above computed (UPSIDE_ROWS, AGREE_PICK, CHANGED_N), never recompute it.
-  renderStance();renderBuyBlock();renderSellBlock();renderMagBlock();renderCalBlock();renderGlance();renderTabs();
+  renderBuyBlock();renderSellBlock();renderMagBlock();renderGlance();renderTabs();
 }
 
 /* ═══════════ DEEP-DIVE TABS (FEAT-TT-DD v3.12) ═══════════ */
@@ -6399,117 +6373,20 @@ function renderBuyBlock(){
   h+=`<details class="est-mini" ontoggle="if(this.open)loadStampedHistory(this)"><summary><span class="scope">⭑ stamped history — the days you committed, scored</span></summary><div id="stampedHist" class="none">…</div></details>`;
   el.innerHTML=h;
 }
-/* Compact calendar block — same binaryEvents() computation the DESK calendar renders. */
-function renderCalBlock(){
-  const el=document.getElementById("calBlock");if(!el)return;
-  const ev=binaryEvents();
-  if(!ev.length){el.style.display="none";el.innerHTML="";return;}
-  el.style.display="";
-  let h=`<div class="lbl">BINARY CALENDAR · ${ev.filter(e=>e.inWindow).length} inside ${BINARY_WINDOW_D}d</div>`;
-  // v3.42 slice 2: an event with a book entry is an actionable BUTTON (opens the card);
-  // one without stays a <div> — a button that does nothing is a lie. Same grid either way:
-  // the countdown is the PRIMARY (it's the decision input), the label is the detail line.
-  ev.slice(0,6).forEach(e=>{
-    const act=!!find(e.sym);
-    const tag=act?"button":"div";
-    h+=`<${tag} class="fdr-row"${act?` onclick="openCard('${esc(e.sym)}')"`:""}>`+
-      `<span class="fdr-l"><span class="sym">${esc(e.sym)}</span></span>`+
-      `<span class="fdr-p" style="color:${e.inWindow?"var(--red)":"var(--dim)"}">${e.d===0?"TODAY":"in "+e.d+"d"}</span>`+
-      `<span class="fdr-d"><span class="scope">${esc(String(e.label).slice(0,72))}${String(e.label).length>72?"…":""}</span></span></${tag}>`;
-  });
-  if(ev.length>6)h+=`<div class="none"><button class="linklike" onclick="openDesk('dCal')">+${ev.length-6} more ↗</button></div>`;
-  el.innerHTML=h;
-}
-/* The thin stance line: every red count the closed DESK would otherwise hide. */
-function renderStance(){
-  const el=document.getElementById("stanceStrip");if(!el)return;
-  el.style.display="";
-  const st=stance();
-  /* v3.42: "caution" now maps to amber. The old map keyed "warn", a k stance() never
-     returns, so every caution stance (HEADWIND, armed circuit) silently rendered SLATE —
-     the color of "unknown" on the one line that gates adds. */
-  const col={stop:"var(--red)",caution:"var(--amber)",go:"var(--green)",unknown:"var(--slate)"}[st.k]||"var(--slate)";
-  const QC={bad:"var(--red)",warn:"var(--amber)",ok:"var(--green)",dim:"var(--dim)"};
-  const breach=capChecks().filter(c=>c.over>0).length;
-  const binToday=binaryEvents().filter(e=>e.inWindow).length;
-  const cxSt=capexState();
-  /* v3.42 READABLE DESK: verdict as a TOKEN, qualifiers as chips, full prose one tap deep.
-     Badges are real <button>s — focusable and Enter-activatable, same look. details.why is
-     deliberately NOT class="drawer": the phone harness counts open drawers, and this is
-     strip chrome, not a content drawer (the est-mini precedent). */
-  /* v5.6.5: the badges are a LIST, not a concatenated string — the closed summary has to
-     COUNT them, and the count is what lets a collapse stay honest (v3.25: a red fact never
-     vanishes, only its detail moves). Same badges, same drawers, same copy. */
-  const badgeList=[];
-  if(breach)badgeList.push(`<button class="badge" style="color:var(--red)" onclick="openDesk('dExp')">⚠ ${breach} over cap</button>`);
-  if(binToday)badgeList.push(`<button class="badge" style="color:var(--red)" onclick="openDesk('dCal')">◆ ${binToday} binaries ≤${BINARY_WINDOW_D}d</button>`);
-  /* FEAT-TT-CAPEX + FEAT-TT-CAPABILITY: ONE badge for the AI thesis, not two. A turning
-     supply tape and a falsified demand leg are two halves of the same thesis and open the
-     SAME drawer — two chips would be redundant AND would cost a wrap row against the 390px
-     stance budget (v3.42 slice 1), which is a real guard. Chip-length by that same rule:
-     it names which leg is red; the numbers live one tap away in the panel. */
-  {const c=capabilityState(),sup=!!(cxSt&&cxSt.turning),dem=!!(c&&c.impaired);
-   if(sup||dem){
-     // Kept SHORTER than the capex-only text it replaces: measured at 390px, a longer string
-     // tips one badge onto a new row and blows the stance budget (119px -> 165px).
-     const txt=sup&&dem?`⚡ AI both legs`:sup?`⚡ capex ${cxSt.downs}↓ of ${cxSt.rows.length}`:`⚡ demand falsified`;
-     badgeList.push(`<button class="badge" style="color:var(--red)" onclick="openDesk('dCapex')">${txt}</button>`);}}
-  if(CHANGED_N.n)badgeList.push(`<button class="badge" style="color:${CHANGED_N.stops?"var(--red)":"var(--amber)"}" onclick="openDesk('dChanged')">Δ ${CHANGED_N.n} changed${CHANGED_N.stops?` · ${CHANGED_N.stops}!`:""}</button>`);
-  const badges=badgeList.join("");
-  const controls=`<span class="stance-right">`+
-    (LIVE_AT?`<span class="scope">quotes ${esc(String(LIVE_AT).slice(11,16))}Z</span>`:"")+
-    `<button class="rfr" id="refreshRanksLegacy" onclick="refreshRanks(this)" title="Rebuild the macro snapshot (Engine 0), then reload quotes, positions and both ranks">⟳ DATA+RANKS</button>`+
-    `<button class="badge u-dim" onclick="openDesk()">DESK ▾</button></span>`;
-  /* v3.42 slice 5 — the stance is ASYMMETRIC, because its two states are not equally worth
-     your attention. "ADDS OK" is the PERMISSIVE DEFAULT: it says nothing is stopping you,
-     which is the normal condition and the lowest-leverage sentence on the board. It gets a
-     small pill and nothing else. A RESTRICTIVE stance (circuit tripped / PANIC / HEADWIND /
-     UNKNOWN) is the one that must be unmissable, and keeps the full treatment — big verdict
-     token, qualifier chips, and the why drawer.
-     Nothing is lost in the permissive case: renderToday() renders `txt` AND `why` in full
-     inside the DESK drawer, which is exactly the "one click away" the owner asked for.
-     The RED BADGES render in BOTH states — the v3.25 rule is that a red fact is never hidden
-     by a collapse, and those badges are the actual high-leverage content of this strip. */
-  /* v5.6 THE DAILY CONTRACT — the GATE leads the strip in BOTH stance states: the first
-     question the board answers is macro permission. Chip-length (the 390px stance budget
-     is a real guard), scoped `GATE:` (the HODL collision rule at macroGate), and a tap
-     opens the same WHY MACRO evidence panel the pill owns — no second evidence surface. */
-  const mg=macroGate();
-  /* Two sizes on purpose (the v3.61 duplication rule + the 390px stance budget): on a
-     PERMISSIVE stance the gate is the strip's one macro fact and leads full-weight — an
-     ADDS-OK board under HODL/TOUCH GRASS is exactly the combination the vocabulary exists
-     to make unmissable. On a RESTRICTIVE stance the gate is always TOUCH GRASS by
-     construction (the stance veto IS a gate rung), so a second full-size token would
-     restate the vbadge beside it — it renders compact, still first, still tappable. */
-  const gateTitle=mg.rung?esc(mg.rung)+" gate — tap for the macro evidence":"macro permission live — tap for the evidence";
-  const gateTok=`<button class="badge" style="color:${mg.c};font-weight:700" onclick="toggleMacroEvidence()" title="${gateTitle}">GATE: ${mg.label}</button>`;
-  const gateTokSm=`<button class="badge" style="color:${mg.c};font-size:var(--fs-xs)" onclick="toggleMacroEvidence()" title="${gateTitle}">GATE: ${mg.label}</button>`;
-  if(st.k==="go"){
-    /* The PERMISSIVE branch is deliberately untouched by the v5.6.5 collapse: on an ADDS-OK
-       board the red badges are the ONLY warning present, so they stay on the face (v3.25).
-       The collapse applies where the verdict already states the restriction. */
-    el.innerHTML=`<div class="stance-top">`+gateTok+
-      `<span class="qual" style="color:${col};font-weight:700">${esc(st.verdict||st.txt)}</span>`+
-      badges+controls+`</div>`;
-    return;
-  }
-  /* v5.6.5 (owner call 2026-08-26): under a RESTRICTIVE gate the strip was five wrapped rows
-     — gate, verdict, the circuit qualifier, four red badges and the quotes/controls line —
-     for a board whose whole message is already stated by the two tokens on row one. The
-     qualifiers and badges move into ONE counted expander; the count and its colour ride the
-     CLOSED summary, so the v3.25 rule holds exactly: a collapse may hide the DETAIL of a red
-     fact, never the fact that one exists. Every badge keeps its drawer deep-link. */
-  const flagN=(st.quals||[]).length+badgeList.length;
-  const anyRed=badgeList.some(b=>b.includes("var(--red)"))||(st.quals||[]).some(q=>q.c==="bad");
-  el.innerHTML=`<div class="stance-top">`+gateTokSm+
-    `<span class="vbadge" style="color:${col}">${esc(st.verdict||st.txt)}</span>`+
-    controls+`</div>`+
-    (flagN?`<details class="why"><summary><span style="color:${anyRed?"var(--red)":"var(--amber)"}">⚠ ${flagN} flag${flagN===1?"":"s"}</span> <span class="scope">— why, and what else is red</span></summary><div>`+
-      `<div style="margin-bottom:4px">`+
-      (st.quals||[]).map(q=>`<span class="qual" style="color:${QC[q.c]||"var(--dim)"}">${esc(q.t)}</span>`).join("")+badges+`</div>`+
-      `<div>${esc(st.txt)}${st.why?` — ${esc(st.why)}`:""}</div></div></details>`
-      :`<details class="why"><summary>why</summary><div>${esc(st.txt)}${st.why?` — ${esc(st.why)}`:""}</div></details>`);
-}
+/* v5.97.4 EXCISION — renderCalBlock() and renderStance() are GONE, with the markup they
+   wrote into (#calBlock, #stanceStrip inside the permanently-hidden #legacyCompact). Both ran
+   on every render and were invisible since v5.7.0. What each carried, and where it lives now:
+     · the stance verdict/prose  -> the glance GATE tile (renderGlance: stance().verdict||txt)
+       and, in full, renderToday()'s DESK box (v3.66 split, unchanged)
+     · the v3.25 red badges      -> #trimChip (over-cap) and #flagsChip (binaries + capex +
+       demand + changed), each a real button deep-linking into FUND / DESK
+     · the compact calendar      -> the DESK #dCal drawer (same binaryEvents() computation)
+     · the GATE token            -> the glance tile's GATE key + word
+   stance() itself is UNTOUCHED (five live consumers). macroGate() — the v5.6.0 client mirror
+   of the server ladder — lost its only RENDERER here; it stays as the smoke-pinned mirror
+   contract, and the fact that the glance tile derives its word from stance().k instead of
+   macroGate() is a SECOND derivation of the locked product vocabulary, filed in the 8/31
+   button-audit notes as an owner call, deliberately not changed in a cleanup. */
 /* FEAT-TT-ALTITUDE (v5.6): three glance objects, all reading computations above. This is
    presentation only: it never votes, sorts, stamps, saves, or promotes a candidate. */
 let GLANCE_SYM=null;
@@ -6621,17 +6498,14 @@ function openDesk(inner){
    an unreachable endpoint degrade to the old read-only reload — stated, never silent.
    HONESTY: /api/quotes serves a 2-minute KV cache — a second tap inside that window
    returns the same marks, and the stamp beside the button says when they were taken.
-   9/1 fix: this used to hardcode `getElementById("refreshRanks")` AND hardcode
+   v5.97.3 fix: this used to hardcode `getElementById("refreshRanks")` AND hardcode
    "⟳ DATA+RANKS" as the resting label on cleanup — so the real "⟳ REFRESH" button silently
-   kept the wrong label after every tap, which is the bug that was reported. A second onclick
-   site exists (#refreshRanksLegacy, "⟳ DATA+RANKS") but its markup sits inside
-   <div id="legacyCompact" hidden>, which nothing un-hides — so in practice only one button
-   was ever affected. Fixed generally rather than special-cased to that one button: `btn`
-   defaults to the glance-action element (existing tests call refreshRanks() with no
-   argument) but each onclick passes `this`, and the resting label is READ from the button's
-   own text before the spinner overwrites it — never a second hardcoded copy — so whichever
-   element is passed always returns to ITS OWN label, including the dormant one if
-   `legacyCompact` is ever un-hidden again. */
+   kept the wrong label after every tap. (The label belonged to a second onclick site inside
+   the permanently-hidden legacy block, EXCISED in v5.97.4 — this is now the ONLY caller.)
+   Kept general anyway: `btn` defaults to the glance-action element (existing tests call
+   refreshRanks() with no argument), the onclick passes `this`, and the resting label is READ
+   from the button's own text before the spinner overwrites it — never a hardcoded copy — so
+   any future second caller gets its own label back by construction. */
 async function refreshRanks(btn){
   const b=btn||document.getElementById("refreshRanks");
   const restLabel=b?b.textContent:"⟳ REFRESH";

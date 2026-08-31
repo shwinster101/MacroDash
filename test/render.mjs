@@ -893,59 +893,66 @@ ok("bridge: the old DESK deep-link for NAMES is gone; only the methodology link 
   ok("bridge: expander continues the SAME order — ranks #6 and #7, never a restarted list",
     /#6/.test(rk.openTxt) && /#7/.test(rk.openTxt) && rk.openTxt.includes("ZZ5") && rk.openTxt.includes("ZZ6"));
 }
-const calB = await txt(page, "calBlock");
-ok("calendar block leads with today's binary", /TODAY/.test(calB) && /MACROEVT/.test(calB));
+/* v5.97.4 EXCISION: #calBlock and #stanceStrip died with the permanently-hidden
+   #legacyCompact — nothing ever un-hid that div (no assignment to legacyCompact.hidden
+   exists), so no user could ever read either surface, and the dormancy already bit once
+   (the v5.97.3 REFRESH-label bug came from its dormant second caller). Every contract those
+   pins measured is RE-PINNED here at its LIVE home rather than deleted:
+     · calendar          -> the DESK #dCal drawer (same binaryEvents() computation)
+     · stance verdict    -> the glance GATE tile (renderGlance)
+     · stance prose      -> renderToday()'s DESK stance box (v3.66 split, unchanged)
+     · red badges        -> #trimChip / #flagsChip header buttons (counts visible closed)
+     · refresh + stamp   -> #refreshRanks / #quoteChip in the same header row.
+   textContent (not innerText) where an ancestor may be collapsed — the v3.69 lesson. */
+const calSum = await page.evaluate(() =>
+  (document.querySelector("#dCal > summary") || {}).textContent.replace(/\s+/g, " "));
+ok("calendar: the DESK drawer summary names today's binary and the in-window count while CLOSED (v3.25)",
+  /CALENDAR ·/.test(calSum) && /inside \d+d/.test(calSum) && /next MACROEVT today/.test(calSum));
+ok("calendar: the drawer body leads with today's binary — same computation, live home",
+  await page.evaluate(() => { const t = document.getElementById("binaryCal").textContent;
+    return /TODAY/.test(t) && /MACROEVT/.test(t); }));
 // FEAT-TT-CIRCUIT (v4.1 Step 1): the fail-closed path, driven live. Clearing the structured
 // circuit in-page must flip the stance to ADDS SUSPENDED (not fall through to the regime
 // rungs and read ADDS OK/GATED) and render the UNRESOLVED strip instead of hiding it —
 // the 8/18 audit's live defect, where circuit:null + tripped PROSE still permitted adds.
+// v5.97.4: the verdict's home is now the glance GATE tile; #circuitLine is unchanged.
 const unresolved = await page.evaluate(() => {
   const keep = BOARD.circuit;
   BOARD.circuit = null;
   render();
-  const strip = document.getElementById("stanceStrip").innerText;
+  const gate = document.getElementById("gateTile").textContent;
   const circ = (document.getElementById("circuitLine") || {}).innerText || "";
   BOARD.circuit = keep; render();
-  return { strip, circ };
+  return { gate, circ };
 });
-ok("circuit absent → stance fails CLOSED to ADDS SUSPENDED, never through to the regime rungs",
-  /ADDS SUSPENDED/.test(unresolved.strip) && !/ADDS OK|ADDS GATED/.test(unresolved.strip));
+ok("circuit absent → stance fails CLOSED to ADDS SUSPENDED on the GATE tile, never through to the regime rungs",
+  /ADDS SUSPENDED/.test(unresolved.gate) && !/ADDS OK|ADDS GATED/.test(unresolved.gate) &&
+  /TOUCH GRASS/.test(unresolved.gate));
 ok("circuit absent → the UNRESOLVED strip renders loud instead of hiding",
   /CIRCUIT UNRESOLVED — adds suspended/i.test(unresolved.circ) &&
   /prose is explanation, not permission/i.test(unresolved.circ));
-const strip = await txt(page, "stanceStrip");
-/* v5.6.5 (owner call): under a RESTRICTIVE gate the badges move behind one expander whose
-   CLOSED summary carries their COUNT and colour — the v3.25 rule at a different altitude:
-   a collapse may hide a red fact's DETAIL, never that one exists. Both halves are pinned:
-   the count while closed, and every badge verbatim one tap deep. */
-ok("stance strip SIGNALS the reds while closed — a counted, coloured flag summary",
-  // /i: innerText APPLIES text-transform:uppercase on the summary (the v3.69 lesson).
-  /⚠ \d+ flags?/i.test(strip) && /why, and what else is red/i.test(strip));
-{
-  await page.evaluate(() => { document.querySelector("#stanceStrip details.why").open=true; });
-  const open = await txt(page, "stanceStrip");
-  ok("stance strip: one tap reveals every red badge verbatim — nothing was deleted, only moved",
-    /over cap/.test(open) && /binaries/.test(open));
-  await page.evaluate(() => { document.querySelector("#stanceStrip details.why").open=false; });
-}
-ok("stance strip carries the refresh button and the quote stamp",
-  (await page.locator("#refreshRanks").count()) === 1 && /quotes \d{2}:\d{2}Z/.test(strip));
-// v3.42 READABLE DESK: the verdict is a TOKEN, not a buried clause — the tripped fixture
-// makes it deterministic. The prose moved one tap deep; a closed why-drawer must still show
-// every red fact via the token/chips/badges (v3.25 rule at strip altitude).
-ok("stance bar: the verdict renders as a single large token (tripped fixture → NO NEW POSITIONS)",
-  (await page.locator("#stanceStrip .vbadge").count()) === 1 &&
-  /NO NEW POSITIONS/.test(await page.locator("#stanceStrip .vbadge").innerText()));
-ok("stance bar: the why drawer starts closed and holds the full prose verbatim",
-  (await page.locator("#stanceStrip details.why[open]").count()) === 0 &&
-  // v5.6.5: the expander nests a chip row + the prose, so scope to the prose div (the last).
-  /leverage circuit tripped/i.test(await page.locator("#stanceStrip details.why div").last().textContent()));
-// v5.6.5: on a RESTRICTIVE board the verdict stays on the face and the reds are SIGNALLED
-// by a counted summary (revealed verbatim one tap deep, asserted above).
-ok("stance bar: with the drawer closed the verdict and a counted red signal are both visible",
-  /NO NEW POSITIONS/.test(strip) && /⚠ \d+ flags?/i.test(strip));
-ok("stance bar: badges and controls are real buttons — keyboard-reachable",
-  (await page.locator("#stanceStrip button").count()) >= 4);
+// The tripped fixture makes the verdict deterministic at both surviving altitudes: the GATE
+// tile carries the token + the alias, and the DESK stance box carries the prose verbatim.
+const gateTxt = await page.evaluate(() => document.getElementById("gateTile").textContent);
+ok("gate tile: tripped fixture → TOUCH GRASS with the stance verdict beside it (v3.25: red visible closed)",
+  /GATE/.test(gateTxt) && /TOUCH GRASS/.test(gateTxt) && /NO NEW POSITIONS/.test(gateTxt));
+ok("desk stance box: the full prose survives the excision — head visible, why one tap deep",
+  /NO NEW POSITIONS — leverage circuit tripped/i.test(await txt(page, "todayCard")));
+// v5.97.4 successors: the header chips carry the red counts the strip's badges used to.
+const chips = await page.evaluate(() => ({
+  trim: document.getElementById("trimChip").textContent,
+  trimHidden: document.getElementById("trimChip").hidden,
+  flags: document.getElementById("flagsChip").textContent,
+  flagsHidden: document.getElementById("flagsChip").hidden,
+  flagsWarn: document.getElementById("flagsChip").classList.contains("warn"),
+  quote: document.getElementById("quoteChip").textContent,
+}));
+ok("header chips: over-cap count rides #trimChip, visible while everything else is closed",
+  !chips.trimHidden && /TRIM · \d+ cap/.test(chips.trim));
+ok("header chips: #flagsChip aggregates binaries+capex+demand+changed, amber, and deep-links to DESK",
+  !chips.flagsHidden && /FLAGS · \d+/.test(chips.flags) && chips.flagsWarn);
+ok("header chips: the refresh button and the quote stamp survive in the same row",
+  (await page.locator("#refreshRanks").count()) === 1 && /quotes \d{2}:\d{2}Z/.test(chips.quote));
 // v3.42 slice 2: driver rows are grid buttons — the primary datum sits right-aligned at
 // --fs-l, and Enter activates the row like a click would.
 ok("slice2: legacy BUY and SELL rows still render from the canonical computations inside Desk",
@@ -1273,17 +1280,27 @@ ok("alloc: a permission state that moved AGAINST the receipt withdraws the confi
 /* v5.6 THE DAILY CONTRACT — driven live: the GATE token on both branches, the spread line
    at both altitudes, the flip line, and the STAMP affordance's three honest states. */
 console.log("\n[render] v5.6 THE DAILY CONTRACT — gate, spread, flip line, stamp");
-ok("gate: the tripped default fixture reads GATE: TOUCH GRASS on the strip — fail-closed, chip-length, scoped",
-  /GATE: TOUCH GRASS/.test(await txt(page, "stanceStrip")));
+// v5.97.4: the strip's `GATE: <word>` branches died with #legacyCompact; the scoped word's
+// live home is the glance GATE tile (the GATE key adjacent to the alias — same collision guard).
+ok("gate: the tripped default fixture reads TOUCH GRASS on the GATE tile — fail-closed, scoped by the tile key",
+  await page.evaluate(() => { const t = document.getElementById("gateTile").textContent;
+    return /GATE/.test(t) && /TOUCH GRASS/.test(t); }));
 const daily = await page.evaluate(() => {
   const a = BOOK.find((e) => e.sym === "AAA");
   const prev = { alloc: ALLOC, stamped: ALLOC_STAMPED, circ: BOARD.circuit, reg: BOARD.regime,
-    px: LIVE_PX.AAA, card: SCORE_INDEX && SCORE_INDEX.AAA };
+    px: LIVE_PX.AAA, card: SCORE_INDEX && SCORE_INDEX.AAA, meas: REGIME.regime.verdict };
   const today = new Date().toLocaleDateString("en-CA", { timeZone: "America/New_York" });
   // the entry-recipe: clear gates + a SCORED card so AGREE_PICK lights and both spread
   // altitudes render (the compact banner only exists under a pick).
+  // v5.97.4: the MEASURED verdict must clear too — the fixture's HEADWIND kept stance() at
+  // ADDS GATED, and the GATE tile speaks stance (its alias derives from stance().k, not
+  // macroGate()'s ladder — the second-derivation divergence filed in the 8/31 button audit:
+  // under measured-HEADWIND + FULL the ladder says SEND IT while the tile says HODL). The
+  // old strip pin passed only because macroGate ignores the HEADWIND caution; a genuinely
+  // cleared board tests the same claim honestly at the surviving surface.
   BOARD.circuit = { state: "clear", as_of: today };
   BOARD.regime = { asserted: "TAILWIND", as_of: today };
+  REGIME.regime.verdict = "TAILWIND";
   LIVE_PX.AAA = { px: 300, chg: 0, at: LIVE_PX.AAA.at };
   SCORE_INDEX = SCORE_INDEX || {};
   SCORE_INDEX_META = SCORE_INDEX_META || { methodology_version: "tt-underwriting-v2.6.0" };
@@ -1302,11 +1319,11 @@ const daily = await page.evaluate(() => {
     confirmation: null };
   ALLOC_STAMPED = false;
   render();
-  const strip = document.getElementById("stanceStrip").innerText;
+  const gate = document.getElementById("gateTile").textContent;  // v5.97.4: the strip is gone
   const up = document.getElementById("upsideRank").innerText;
   const buy = document.getElementById("buyBlock").innerText;
   const out = {
-    gateSendIt: /GATE: SEND IT/.test(strip),
+    gateSendIt: /SEND IT/.test(gate),
     // ONE builder, TWO altitudes: the labeled sourced leg + the frozen number on both.
     spreadDesk: /you \$400 vs street \$340/.test(up) && /\(sourced/.test(up) && /\+20% you richer/.test(up),
     spreadBuy: /you \$400 vs street \$340/.test(buy),
@@ -1327,12 +1344,12 @@ const daily = await page.evaluate(() => {
   render();
   out.unreviewed = /street unreviewed — no packet, no sourced target/.test(document.getElementById("upsideRank").innerText);
   ALLOC = prev.alloc; ALLOC_STAMPED = prev.stamped; BOARD.circuit = prev.circ; BOARD.regime = prev.reg;
-  LIVE_PX.AAA = prev.px;
+  LIVE_PX.AAA = prev.px; REGIME.regime.verdict = prev.meas;
   if (prev.card === undefined) delete SCORE_INDEX.AAA; else SCORE_INDEX.AAA = prev.card;
   render();
   return out;
 });
-ok("gate: a cleared board under FULL actionability reads GATE: SEND IT", daily.gateSendIt);
+ok("gate: a cleared board under FULL actionability reads SEND IT on the GATE tile", daily.gateSendIt);
 ok("spread: one builder, two altitudes — labeled sourced leg + the frozen number on the DESK box AND the compact banner",
   daily.spreadDesk && daily.spreadBuy);
 ok("flip line: the #2-overtakes sentence renders under the eligible line", daily.flipLine);
@@ -1695,18 +1712,17 @@ ok("capex-ocf: per-row ratios render (8/6 = 1.33) and the unmeasured row is NAME
   /funding unmeasured \(no ocf_B\): HYPC/.test(cxPanel));
 ok("capex-ocf: the closed drawer summary carries the amber funding chip beside the red count",
   /debt-funded 2\/2/i.test(await txt(page, "sCapex")));
-// v3.55: the fixture now has BOTH legs red (capex turning + demand falsified), so the strip
-// carries the MERGED badge — one chip for one thesis, one drawer. The capex-only and
-// demand-only forms are pinned at source in smoke.
-ok("capex: the ⚡ badge is SIGNALLED while closed and reads verbatim one tap deep (v5.6.5)",
-  (await (async () => {
-    const closed = await txt(page, "stanceStrip");
-    if (!/⚠ \d+ flags?/i.test(closed)) return false;
-    await page.evaluate(() => { document.querySelector("#stanceStrip details.why").open=true; });
-    const open = await txt(page, "stanceStrip");
-    await page.evaluate(() => { document.querySelector("#stanceStrip details.why").open=false; });
-    return /⚡ AI both legs/.test(open);
-  })()));
+// v3.55 → v5.97.4: the strip's merged ⚡ badge died with the hidden #legacyCompact. Both red
+// legs (capex turning + demand impaired) now each count into the header #flagsChip
+// aggregation — the closed-state signal — and the verbatim reading lives in the DESK capex
+// drawer, whose summary and body are pinned above (sCapex / cxPanel). Same v3.25 rule,
+// surviving surface.
+ok("capex: both red legs are SIGNALLED while closed — each counts into the header FLAGS chip",
+  await page.evaluate(() => {
+    const fc = document.getElementById("flagsChip");
+    const m = /FLAGS · (\d+)/.exec(fc.textContent);
+    return !fc.hidden && !!m && Number(m[1]) >= 2;
+  }));
 await page.evaluate(() => switchTab("AAA"));
 await page.waitForTimeout(250);
 await page.evaluate(() => document.querySelectorAll("#deepView details").forEach((d) => (d.open = true)));
@@ -1840,30 +1856,30 @@ ok("slice5: ⋯ MENU reveals BOOK/AUTH and the action toolbar, and reports aria-
     document.getElementById("backupToggle").offsetParent !== null &&
     document.getElementById("headToggle").getAttribute("aria-expanded") === "true"));
 await page.evaluate(() => toggleHeadInfo());
-// The asymmetry, driven live: flip the fixture from its tripped/PANIC state to a fully
-// permissive one and confirm the strip collapses to a pill while the red badges survive.
+/* v5.97.4 RETIRED (with the reason recorded): the slice5 permissive/restrictive ASYMMETRY —
+   small pill vs full token + why drawer — was a property of renderStance(), excised with the
+   permanently-hidden #legacyCompact; no user could ever see either branch. What SURVIVES of
+   the claim is its v3.25 half: a permissive board must still show its red facts. Driven at
+   the surviving surfaces — the GATE tile flips to the permissive read while the header red
+   chips stay put. */
 const perm = await page.evaluate(() => {
   const keepC = BOARD.circuit.state, keepA = BOARD.regime.asserted, keepM = REGIME.regime.verdict;
   BOARD.circuit.state = "clear"; BOARD.regime.asserted = "TAILWIND"; REGIME.regime.verdict = "TAILWIND";
   render();
-  const el = document.getElementById("stanceStrip");
   const res = {
-    txt: el.innerText, vbadge: el.querySelectorAll(".vbadge").length,
-    why: el.querySelectorAll("details.why").length,
-    pill: (el.querySelector(".qual") || {}).textContent || "",
-    h: Math.round(el.querySelector(".stance-top").getBoundingClientRect().height),
+    gate: document.getElementById("gateTile").textContent,
+    trimHidden: document.getElementById("trimChip").hidden,
+    trim: document.getElementById("trimChip").textContent,
+    flagsHidden: document.getElementById("flagsChip").hidden,
   };
   BOARD.circuit.state = keepC; BOARD.regime.asserted = keepA; REGIME.regime.verdict = keepM;
   render();
   return res;
 });
-ok(`slice5: a permissive stance collapses to a small pill — no token, no why drawer (${perm.h}px)`,
-  perm.vbadge === 0 && perm.why === 0 && /ADDS OK/.test(perm.pill) && perm.h < 90);
-ok("slice5: ...but its red badges still render — a collapse never hides a red fact",
-  /over cap/.test(perm.txt) && /binaries/.test(perm.txt));
-ok("slice5: a restrictive stance still gets the full token + why drawer treatment",
-  (await page.locator("#stanceStrip .vbadge").count()) === 1 &&
-  (await page.locator("#stanceStrip details.why").count()) === 1);
+ok("slice5: a fully permissive board reads SEND IT · ADDS OK on the GATE tile",
+  /SEND IT/.test(perm.gate) && /ADDS OK/.test(perm.gate));
+ok("slice5: ...but its red chips still render — a permissive gate never hides a red fact (v3.25)",
+  !perm.trimHidden && /TRIM · \d+ cap/.test(perm.trim) && !perm.flagsHidden);
 
 await page.close();
 
@@ -2169,14 +2185,13 @@ ok("refresh-failure: 'retained the prior snapshot' is reported, never silent",
   /retained the prior snapshot/.test(await holdPage.locator("#toast").innerText()));
 
 /* 9/1 — REAL click on the button a user can actually reach, not evaluate()-with-no-argument.
-   #refreshRanksLegacy ("⟳ DATA+RANKS") is markup inside <div id="legacyCompact" hidden> that
-   NOTHING in this file ever un-hides — confirmed by grep before writing this: no assignment
-   to `legacyCompact.hidden` exists anywhere. So the "two buttons fight over one spinner" shape
-   the source suggested can never be a user-visible symptom today; only #refreshRanks is real.
-   The bug a user could actually hit was narrower: the shared handler's cleanup hardcoded
-   "⟳ DATA+RANKS" onto whichever element `b` pointed at, and since a real click only ever
-   resolves `b` to #refreshRanks, its resting label silently became the WRONG string — which
-   is exactly what was reported. */
+   The bug a user could hit (v5.97.3): the shared handler's cleanup hardcoded "⟳ DATA+RANKS"
+   onto whichever element `b` pointed at, so the one real button's resting label silently
+   became the WRONG string after every refresh — which is exactly what was reported.
+   v5.97.4 then EXCISED the dormant second caller entirely: #legacyCompact (with
+   #refreshRanksLegacy, #stanceStrip and #calBlock inside it) was permanently-hidden dead
+   markup nothing ever un-hid, and its dormancy is what planted that label in the first
+   place. The absence is pinned below; #refreshRanks is the only caller left. */
 REFRESH_FIXTURE = { ok: true, published: true, improved: true,
   message: "Engine 0 recovered to 6 current check(s) (HIGH confidence, FULL)",
   readout: { as_of: `${TODAY_ET}T15:00:00Z`,
@@ -2190,17 +2205,14 @@ await holdPage.waitForTimeout(600);
 ok("refresh (real click): settles back to ITS OWN resting label, '⟳ REFRESH' — not the retired hardcode",
   (await holdPage.locator("#refreshRanks").innerText()).trim() === "⟳ REFRESH");
 
-/* The dormant `refreshRanksLegacy` path is still exercised — not by a click (a real user
-   cannot reach it), but by invoking the shared handler on it directly, so the per-button
-   fix is proven correct even for the unreachable element rather than merely assumed. If
-   #legacyCompact is ever un-hidden again, this is what keeps the button from immediately
-   inheriting #refreshRanks's resting label. */
-await holdPage.evaluate(() => refreshRanks(document.getElementById("refreshRanksLegacy")));
-await holdPage.waitForTimeout(600);
-ok("refresh (dormant legacy element, invoked directly): restores ITS OWN label, '⟳ DATA+RANKS'",
-  (await holdPage.evaluate(() => document.getElementById("refreshRanksLegacy").textContent)).trim() === "⟳ DATA+RANKS");
-ok("refresh (dormant legacy element, invoked directly): does NOT touch the real button's label",
-  (await holdPage.locator("#refreshRanks").innerText()).trim() === "⟳ REFRESH");
+/* v5.97.4: the dormant-element half of the v5.97.3 proof is RETIRED WITH ITS SUBJECT —
+   #refreshRanksLegacy no longer exists to invoke. What replaces it is the excision proof:
+   none of the dead markup survives in the live DOM, so the label-planting caller can never
+   silently return. The per-button fix itself stays proven by the real-click pins above. */
+ok("excision: #legacyCompact and everything inside it is GONE from the live DOM",
+  await holdPage.evaluate(() =>
+    ["legacyCompact", "refreshRanksLegacy", "stanceStrip", "calBlock"]
+      .every((id) => document.getElementById(id) === null)));
 
 await holdPage.close();
 REFRESH_FIXTURE = null;

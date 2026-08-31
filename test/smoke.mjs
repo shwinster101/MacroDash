@@ -517,6 +517,24 @@ ok("v5.97 curve: ONE-WAY — adding this voter can never move the verdict toward
     }
     return true; })());
 
+/* v5.97.4 — THE FLOOR RULING, EXECUTED. `available < 3` stays an ABSOLUTE literal as the
+   check count grows (3-of-6 became 3-of-7): it encodes "one or two readings never publish a
+   direction", not a fraction — the FRACTIONS live in the confidence arms and are derived
+   from checks.length. The ruling's stated consequence is proven here rather than asserted
+   in the comment alone: at EXACTLY 3 available the direction publishes as information, but
+   `current` cannot reach checks.length-2, so the evidence axis reads LOW · HOLD · DATA
+   DEGRADED and the thinner floor can never gate an order on its own. (The 2-available
+   withhold is pinned separately below — this is the other side of the same boundary.) */
+ok("v5.97.4 floor: at EXACTLY 3 available the direction PUBLISHES — three real observations are three",
+  (() => { const r = buildTtReadout(mkLive({
+      qqqChangePct: undefined,                                                   // RS dark
+      tenYearM1: undefined,                                                      // 10Y trend dark
+      rateOddsHold: undefined, rateOddsCut: undefined, rateOddsHike: undefined,  // rate path dark
+    }), { now: TT_NOW });                                                        // 30Y absent by default
+    return r.regime.available === 3 && r.regime.verdict === "TAILWIND"
+      && r.regime.confidence === "LOW" && r.regime.actionability === "HOLD"
+      && r.regime.status === "DATA DEGRADED"; })());
+
 // ---- FEAT-DASH-DERIV (v3.40): a derived field inherits its parent's staleness -------------
 // isStale() fails OPEN on a missing date (correct for a dated field — nothing to judge), but
 // snapshot.js emits vixWeekChg / tenYearM1 / spyChangePct / qqqChangePct with NO AsOf of their
@@ -1071,6 +1089,14 @@ ok("8/31 RS63: banded — a decimal shift is rejected, a violent quarter is not"
   (() => { const b = BANDS.ndxSpxRs63;
     return Array.isArray(b) && plausible("ndxSpxRs63", -38) && plausible("ndxSpxRs63", 40)
       && !plausible("ndxSpxRs63", 1240); })());
+/* v5.97.4 — the found-not-fixed item from FEAT-ENGINE0-STATS, closed: the 1-day ndxSpxRs had
+   NEVER had a plausibility band (found while banding rs63). A 1-day RS gap runs well under
+   ±5pp on real tapes; ±25 rejects the impossible (a decimal shift, a mispaired pct) without
+   rejecting a crash-day divergence. */
+ok("v5.97.4 RS 1d: banded at last — a violent session passes, a decimal shift does not",
+  (() => { const b = BANDS.ndxSpxRs;
+    return Array.isArray(b) && plausible("ndxSpxRs", -8.2) && plausible("ndxSpxRs", 12)
+      && !plausible("ndxSpxRs", 124) && !plausible("ndxSpxRs", -124); })());
 
 // Matrix F: Treasury daily par-yield CSV parse (the official upstream DGS10 republishes).
 const TCSV = 'Date,"1 Mo","10 Yr","30 Yr"\n07/15/2026,5.1,4.46,5.02\n07/14/2026,5.1,4.43,4.97\n07/11/2026,5.1,4.40,4.95';
@@ -2777,30 +2803,38 @@ ok("v396: the street diagnostic preserves book order and cannot become a second 
     const src = adminSrc.slice(a, b);
     return !/\.sort\s*\(/.test(src) && /BOOK\.forEach\(x=>/.test(src);
   })());
-// v3.42: the badges became real <button>s (focusable, Enter-activatable) — same red counts.
-ok("focus2: the stance strip carries the red counts a closed DESK would otherwise hide",
-  adminSrc.includes("over cap</button>") && adminSrc.includes('onclick="openDesk(') &&
-  adminSrc.includes("function renderStance()"));
+/* v5.97.4 EXCISION — renderStance() and renderCalBlock() are GONE, with the hidden
+   #legacyCompact block they wrote into. Both ran on every render and were invisible since
+   v5.7.0 (nothing ever un-hid the div), and the dormancy already bit once — the v5.97.3
+   REFRESH-label bug came from the dormant button sharing a handler. Pinned ABSENT so a
+   revert cannot land silently, and the v3.25 red facts are pinned at their LIVE homes:
+   the header glance chips, whose closed state carries every count the strip used to. */
+ok("v5.97.4 excision: the legacy stance/calendar renderers and their markup are ABSENT",
+  !adminSrc.includes("function renderStance()") && !adminSrc.includes("function renderCalBlock()") &&
+  !/id="legacyCompact"/.test(adminSrc) && !/id="stanceStrip"/.test(adminSrc) &&
+  !/id="calBlock"/.test(adminSrc) && !/id="refreshRanksLegacy"/.test(adminSrc) &&
+  !/\.stance-strip\{/.test(adminSrc) && !/\.vbadge\{/.test(adminSrc));
+ok("v5.97.4 successors: the header chips carry the red counts a closed DESK would otherwise hide",
+  adminSrc.includes("trim.textContent=`TRIM · ${SELL_FORCED_N} cap`") &&
+  adminSrc.includes("fc.textContent=`FLAGS · ${flags}`") &&
+  // the FLAGS count aggregates every signal the old badges carried: binaries in window,
+  // a turning capex tape, a tripped demand falsifier, and the what-changed count.
+  adminSrc.includes("const flags=binaryEvents().filter(e=>e.inWindow).length+(cx&&cx.turning?1:0)+(cp&&cp.impaired?1:0)+(CHANGED_N.n||0);"));
 ok("focus2: primary blocks render LAST in the chain, reading what the strips computed",
-  adminSrc.includes("renderStance();renderBuyBlock();renderSellBlock();renderMagBlock();renderCalBlock();renderGlance();renderTabs();"));
+  adminSrc.includes("renderBuyBlock();renderSellBlock();renderMagBlock();renderGlance();renderTabs();"));
 ok("refresh: the button refetches quotes+positions+regime and reports the quote-cache window honestly",
   adminSrc.includes("async function refreshRanks(btn)") &&
   adminSrc.includes("Promise.all([loadQuotes(),loadPositions(),loadRegime(),allocReeval(),loadScoreIndex()])") &&
   adminSrc.includes("server caches 2 min"));
 ok("refresh: the button disables while in flight and always re-enables",
   adminSrc.includes("b.disabled=true") && adminSrc.includes("finally{if(b){b.disabled=false"));
-/* 9/1 — Two elements' onclick call refreshRanks(): the real, reachable "⟳ REFRESH" button
-   and #refreshRanksLegacy ("⟳ DATA+RANKS"), which lives inside <div id="legacyCompact"
-   hidden> — dead markup nothing in this file ever un-hides (checked: no assignment to
-   legacyCompact.hidden exists anywhere). So the practical symptom was narrower than "two
-   buttons fight over one spinner": the shared handler hardcoded getElementById("refreshRanks")
-   and then hardcoded "⟳ DATA+RANKS" as the resting label on cleanup, so the ONE reachable
-   button silently kept the WRONG label after every refresh. Fixed generally — by resting
-   label read from whichever element the caller passes — so the dormant legacy element would
-   also behave correctly if #legacyCompact is ever un-hidden again. */
-ok("refresh: BOTH buttons pass `this`, so the handler operates on the one actually clicked",
+/* v5.97.3: the shared handler used to hardcode "⟳ DATA+RANKS" (a dormant second caller's
+   label) onto the one real button's cleanup. v5.97.4 then EXCISED that dormant caller with
+   the legacy block, so this is now the handler's only onclick site — the per-button
+   generality stays because it is the correct shape, not because a second caller needs it. */
+ok("refresh: the one real button passes `this`, and no legacy caller remains",
   /id="refreshRanks" onclick="refreshRanks\(this\)"/.test(adminSrc) &&
-  /id="refreshRanksLegacy" onclick="refreshRanks\(this\)"/.test(adminSrc));
+  !adminSrc.includes("refreshRanksLegacy"));
 ok("refresh: the resting label is READ from the clicked button, never a hardcoded second copy",
   adminSrc.includes('const restLabel=b?b.textContent:"⟳ REFRESH"') &&
   adminSrc.includes("finally{if(b){b.disabled=false;b.textContent=restLabel;}render();}") &&
@@ -2820,17 +2854,12 @@ ok("stance: every stance() branch carries a structured verdict token beside the 
    'verdict:"ADDS GATED"', 'verdict:"ADDS OK"'].every((s) => adminSrc.includes(s)));
 ok("stance: the long free-text asserted regime is TRUNCATED on the chip, verbatim in the drawer",
   adminSrc.includes("s.length>26?s.slice(0,25)") && adminSrc.includes("stricter governs)"));
-ok("stance: the full prose lives one tap deep in details.why — NOT class=drawer (the phone " +
-   "harness counts open drawers; strip chrome must not register as one)",
-  (() => {
-    const s = adminSrc.indexOf("function renderStance()");
-    const body = adminSrc.slice(s, adminSrc.indexOf("\n}", s));
-    return body.includes('<details class="why"><summary>why</summary>') && !body.includes('<details class="drawer"');
-  })());
-ok("stance: the caution→amber map bug is fixed (k:'caution' used to fall through to slate)",
+/* v5.97.4: the details.why and .vbadge pins RETIRED with the renderer they measured —
+   renderStance and its markup are excised (pinned absent above). stance() and its prose
+   contracts are untouched and still pinned; the caution→amber map now anchors on
+   renderGlance's colour map, which carries the same fix for the same reason. */
+ok("stance: the caution→amber map bug stays fixed at its surviving home (renderGlance's map)",
   adminSrc.includes('caution:"var(--amber)"'));
-ok("stance: the verdict token renders at --fs-l via .vbadge (readable at arm's length)",
-  adminSrc.includes(".vbadge{font-size:var(--fs-l)") && adminSrc.includes('class="vbadge"'));
 ok("tabs: ONE scrollable row, never a five-row wrap (flex-wrap:nowrap + overflow-x:auto + " +
    "flex-shrink:0 per tab)",
   /\.tabs\{[^}]*flex-wrap:nowrap[^}]*overflow-x:auto/.test(adminSrc) &&
@@ -2853,8 +2882,14 @@ ok("slice2: BUY/SELL rows are real <button class=fdr-row> — focusable, Enter o
   /\.fdr \.fdr-row\{display:grid/.test(adminSrc));
 ok("slice2: the primary datum is promoted to --fs-l on its own grid column (.fdr-p)",
   adminSrc.includes(".fdr .fdr-p{font-size:var(--fs-l)") && adminSrc.includes('class="fdr-p"'));
-ok("slice2: a calendar event WITHOUT a book entry stays a <div> — a button that does nothing is a lie",
-  adminSrc.includes('const act=!!find(e.sym);') && adminSrc.includes('const tag=act?"button":"div";'));
+// RE-PINNED v5.97.4: the compact calendar block (renderCalBlock, and its act/tag literals) was
+// excised with #legacyCompact — permanently-hidden dead markup, the v3.73 rot-vector rule. The
+// dead-click contract SURVIVES at the live calendar surface: renderBinaryCal only wires onclick
+// when the tab actually exists (same "a button that does nothing is a lie" rule, DESK altitude).
+ok("slice2: a calendar event without an openable tab gets NO onclick — the dead-click guard lives at renderBinaryCal",
+  adminSrc.includes("const tabbable=!e.board||!!(find(e.sym)&&ddOf(find(e.sym)));") &&
+  /class="pick"\$\{tabbable\?` onclick="switchTab\('\$\{esc\(e\.sym\)\}'\)"`:""\}/.test(adminSrc) &&
+  !adminSrc.includes('const tag=act?"button":"div";'));
 ok("slice2: skeletons render only while the FIRST load is pending, and settle on success AND failure",
   adminSrc.includes("let QUOTES_PENDING=true,POS_PENDING=true;") &&
   adminSrc.includes("finally{POS_PENDING=false;render();}") &&
@@ -2960,36 +2995,22 @@ ok("slice5: the MACRO: label survives the compaction — v3.29 added it so the p
 ok("slice5: toggleHeadInfo keeps aria-expanded honest",
   adminSrc.includes("function toggleHeadInfo()") &&
   adminSrc.includes('b.setAttribute("aria-expanded",String(open))'));
-// The asymmetry is the point: "ADDS OK" is the permissive default and the lowest-leverage
-// sentence on the board; a restrictive stance is the one that must be unmissable.
-ok("slice5: a PERMISSIVE stance renders a small pill — no big token, no qualifier chips, no " +
-   "why drawer (renderToday() still shows txt AND why in full, one tap away inside DESK)",
-  (() => {
-    const i = adminSrc.indexOf('if(st.k==="go"){');
-    if (i < 0) return false;
-    const branch = adminSrc.slice(i, adminSrc.indexOf("return;", i));  // the permissive branch ONLY
-    return branch.includes('class="qual"') && branch.includes("badges+controls") &&
-      !branch.includes("vbadge") && !branch.includes('details class="why"') &&
-      !branch.includes("st.quals");
-  })());
-// Re-pinned at v5.6 (THE DAILY CONTRACT): the GATE token now leads the strip in both
-// branches, so the vbadge follows `gateTok+` rather than sitting adjacent to the literal.
-ok("slice5: a RESTRICTIVE stance keeps the full treatment — token, quals and the why drawer (led by the v5.6 compact gate token)",
-  /el\.innerHTML=`<div class="stance-top">`\+gateTokSm\+\s*`<span class="vbadge"/.test(adminSrc) &&
-  adminSrc.includes('<details class="why"><summary>why</summary>'));
-/* Re-pinned at v5.6.5 (owner call 2026-08-26: "hide the circuit-unresolved and binaries info
-   under the TOUCH GRASS gate"). The v3.25 rule is UNCHANGED and still enforced, just at a
-   different altitude: on the PERMISSIVE board the badges are the only warning present, so
-   they stay on the face; on a RESTRICTIVE board — where the verdict token already states the
-   restriction — they move behind an expander whose CLOSED summary carries their COUNT and
-   their colour. A collapse may hide a red fact's detail; it may never hide that one exists. */
-ok("slice5/v5.6.5: the permissive board keeps its red badges on the face, and the restrictive " +
-   "collapse still SIGNALS them — counted and coloured on the closed summary",
-  adminSrc.includes("const badges=badgeList.join(\"\");") &&
-  (adminSrc.match(/badges\+controls/g)||[]).length===1 &&
-  /const flagN=\(st\.quals\|\|\[\]\)\.length\+badgeList\.length;/.test(adminSrc) &&
-  /⚠ \$\{flagN\} flag/.test(adminSrc) &&
-  adminSrc.includes('anyRed?"var(--red)":"var(--amber)"'));
+/* v5.97.4: the slice5 / v5.6 / v5.6.5 renderStance-STRUCTURE pins (permissive pill branch,
+   restrictive token + gateTokSm + why drawer, the flagN counted collapse) are RETIRED with
+   the renderer — every one measured markup that is now excised, invisible to users since
+   v5.7.0. The CONTRACTS they served live on and stay pinned: stance()'s verdict/prose
+   (above), macroGateFrom↔macroGate mirror matrix ([44]/[68]), and the v3.25 rule at its
+   live altitude — the successor pins here anchor the glance GATE tile and header chips. */
+ok("v5.6→glance: the GATE tile leads with the product word and carries the stance verdict as its sub",
+  adminSrc.includes('const st=stance(),alias=st.k==="go"?"SEND IT":st.k==="caution"?"HODL":"TOUCH GRASS"') &&
+  adminSrc.includes('<div class="glance-k">GATE</div>') &&
+  adminSrc.includes("${esc(st.verdict||st.txt)}"));
+ok("v5.6→glance: macroGate() survives as the pinned server mirror — its renderer died, the contract did not",
+  adminSrc.includes("function macroGate()") &&
+  // the glance tile's stance()-derived alias vs macroGate() is a SECOND derivation of the
+  // locked vocabulary — filed in the 8/31 button audit (working/), deliberately not changed
+  // in a cleanup; this pin keeps the mirror alive until that owner call lands.
+  adminSrc.includes('return{g:"SEND_IT",label:"SEND IT",c:"var(--green)"}'));
 
 // ═══════════ [24] FEAT-TT-CAPEX (v3.45) — the hyperscaler capex tape ═══════════
 // Every AI-infra beneficiary's revenue estimate is implicitly a bet on the hyperscaler capex
@@ -3058,8 +3079,9 @@ ok("capex: BREACH when the book implies more capex-funded revenue than the pool 
     const L = cxLift(small, CX_BOOK).lint;
     return L.breach === true && L.impliedB === 22 && L.pctOfPool === 122;
   })());
-ok("capex: a turning tape is a RED BADGE on the stance strip — visible while everything is closed",
-  adminSrc.includes("openDesk('dCapex')") && adminSrc.includes("⚡ capex ${cxSt.downs}↓ of ${cxSt.rows.length}"));
+ok("capex: a turning tape still reaches the CLOSED glance surface — one count in FLAGS (v5.97.4: " +
+   "the stance ⚡ badge died with the hidden strip; the aggregation is the surviving signal)",
+  adminSrc.includes("(cx&&cx.turning?1:0)") && adminSrc.includes('fc.classList.toggle("warn",!!flags)'));
 ok("capex: the tape renders as its own DESK drawer whose closed summary carries the signal",
   adminSrc.includes('id="dCapex"') && adminSrc.includes('setDrawer("dCapex","sCapex"') &&
   adminSrc.includes("function renderCapex()"));
@@ -3091,9 +3113,13 @@ ok("capex-ocf: the amber banner, per-row ratio chip, unmeasured naming and drawe
   adminSrc.includes("⚠ DEBT-FUNDED BUILDOUT") && adminSrc.includes("capex/OCF ${ra.toFixed(2)}") &&
   adminSrc.includes("unmeasured never counts toward the funding tell") &&
   adminSrc.includes("⚠ debt-funded ${st.overOcf}/${st.ocfMeasured}"));
-ok("capex-ocf: the funding tell is AMBER and never a stance badge — the strip literal is byte-identical",
-  adminSrc.includes("⚡ capex ${cxSt.downs}↓ of ${cxSt.rows.length}") &&
-  !/debtFunded[\s\S]{0,400}renderStance|renderStance[\s\S]{0,2000}debtFunded/.test(adminSrc));
+ok("capex-ocf: the funding tell never reaches a glance-altitude badge — amber lives one tap deep " +
+   "(v5.97.4: the stance strip is gone, so the guard moves to the surviving glance aggregation)",
+  // debtFunded must not join the FLAGS count or any header chip — the owner call was
+  // red-only facts at glance altitude, amber one tap deep (the sCapex drawer chip).
+  !/const flags=[^;]*debtFunded/.test(adminSrc) &&
+  !/trim\.textContent[^;]*debtFunded/.test(adminSrc) &&
+  adminSrc.includes("⚠ debt-funded ${st.overOcf}/${st.ocfMeasured}"));
 ok("capex-ocf: the curated dashboard card mirrors the ratio inline with real OCF and never a 0 for unmeasured",
   /ocfB:\s*\d/.test(aiEconSrc) && aiSrc.includes("capex/OCF ${ratio(r).toFixed(2)}") &&
   aiSrc.includes('"OCF unmeasured"') && aiSrc.includes("debt-funded buildout"));
@@ -4169,11 +4195,9 @@ ok("capability: NOTHING extrapolates — no power/exp projection of a future cap
   (() => { const i = adminSrc.indexOf("function capabilityState()");
     const seg = adminSrc.slice(i, adminSrc.indexOf("function capexExposure", i));
     return !/Math\.pow|\*\*|Math\.exp/.test(seg); })());
-ok("capability: the tripped falsifier reaches the stance strip — red survives every collapse",
-  /⚡ demand falsified/.test(adminSrc) && /demand falsifier tripped/.test(adminSrc));
-ok("capability: supply and demand share ONE badge — same thesis, same drawer, one chip",
-  /⚡ AI both legs/.test(adminSrc) &&
-  (adminSrc.match(/onclick="openDesk\('dCapex'\)">\$\{txt\}/g) || []).length === 1);
+ok("capability: the tripped falsifier still reaches the CLOSED glance surface — one count in FLAGS " +
+   "(v5.97.4: the ⚡ badges died with the hidden strip; impaired joins the same aggregation)",
+  adminSrc.includes("(cp&&cp.impaired?1:0)"));
 ok("capability: an absent block SAYS the demand leg is unmeasured rather than implying health",
   /Demand leg unmeasured/.test(adminSrc));
 ok("capability: threshold_basis is optional but must be real text when present",
@@ -9415,8 +9439,13 @@ console.log("\n[68] FEAT-TT-ALLOC — pure core, endpoint, and the §14.8 bar");
         const row = JSON.parse(await r.text()).rows[0];
         return row.allocation_changed === false && row.note === "no trade today"; })()));
     // Client + contract pins.
-    ok("v5.6 client: the GATE token is SCOPED with the 'GATE: ' prefix at both strip branches (the HODL word-collision guard)",
-      (adminSrc.match(/GATE: \$\{mg\.label\}/g) || []).length === 2);
+    // RE-PINNED v5.97.4: both `GATE: ${mg.label}` strip branches were excised with the
+    // permanently-hidden #legacyCompact (renderStance's only home). The HODL word-collision
+    // guard SURVIVES at the live surface: the glance tile scopes the word with an adjacent
+    // GATE key (`glance-k">GATE` beside the alias in glance-v) — same rule, tile grammar.
+    ok("v5.6 client: the GATE word is SCOPED by the glance tile's GATE key (the HODL word-collision guard, post-excision home)",
+      /glance-k">GATE<\/div><div class="glance-v"[^`]*\$\{alias\}/.test(adminSrc) &&
+      !/GATE: \$\{mg\.label\}/.test(adminSrc));
     ok("v5.6 client: the stamp is a TWO-STEP confirmLink — no bare one-tap attest call site",
       adminSrc.includes('confirmLink("allocStampLink"') && !/onclick="allocAttest\(\)"/.test(adminSrc));
     ok("v5.6 client: spreadLine is ONE builder at TWO altitudes (DESK eligible box + compact BUY banner)",
