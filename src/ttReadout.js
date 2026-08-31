@@ -102,6 +102,68 @@ export function tenYearBurst(series, latest) {
   return { pp: parseFloat((newest - tail[0]).toFixed(4)), sessions: TEN_BURST_SESSIONS };
 }
 
+/* ─── v5.97: THE LONG END BECOMES A CHECK ──────────────────────────────────────────────────
+   Owner call. Until now Engine 0 looked at the belly (`us10y_trend`) and nowhere else on the
+   curve, while the book it gates is long-duration — and on the 2026-08-31 tape the 30Y sat at
+   5.22, above its own alert line, entirely unseen by the readout.
+
+   WHY THIS IS NOT "the 10Y check again with a 3 in front". A 30Y monthly delta beside a 10Y
+   monthly delta would be COLLINEAR — a parallel shift would cast two votes for one fact, which
+   is exactly the defect FEAT-TT-TECHREAD (v3.83) found when `price vs 50d`, `price vs 200d`
+   and their alignment turned one observation into three votes. So this check reads what the
+   10Y check structurally CANNOT: the SHAPE of the curve and the long end's own speed. A
+   parallel shift moves the 10Y check and leaves this one flat, by construction.
+
+   WHY IT NEVER VOTES BULLISH. Adding a voter changes the majority math of a contract that
+   gates real orders — the reason NFCI (v3.43) and the 30Y itself (v3.55) both arrived as
+   non-voters. A bearish-only check makes that safe BY CONSTRUCTION: it can only move the
+   verdict TAILWIND→NEUTRAL→HEADWIND, never toward risk-on, so the worst case of being wrong
+   is excess caution. It is also the honest read — a calm long end is the ordinary backdrop,
+   not a buy signal (the NFCI v3.43.1 asymmetry, whose whole finding was that a factor which
+   always votes one way biases a tally instead of informing it).
+
+   WHY THERE IS NO LEVEL ARM, though the level is what prompted this. A high-but-stable long
+   end is priced in; the damage is the repricing. A level arm would also vote bearish every day
+   the 30Y sat above its line — a permanently-one-way voter, which is the exact flaw v3.43.1
+   removed from NFCI. The level is carried as EVIDENCE on the check's reason instead, so the
+   number the owner is watching is visible without being a vote (v3.55's "a stated REFERENCE
+   level, never a verdict").
+
+   EVERY EDGE IS DERIVED, NOTHING IS FITTED — FRED is unreachable from this build environment,
+   so a fitted band would be an assertion wearing a measurement's clothes:
+     · widening  — the spread's MONTHLY change against `bandTenYear`'s own +0.15 spiking edge.
+                   Same unit (pp), same window (~21 sessions): "the curve steepened in a month
+                   by as much as the 10Y band calls a spiking move."
+     · burst     — the long end's own 3-session move against TEN_BURST_PP, the term v5.10.0
+                   already derived. A long-end burst while the belly is calm IS a term-premium
+                   event, and it is invisible to every other check.
+     · inverted  — 10s30s below zero. Structural, not asserted: zero is the definition of
+                   inversion, the same way zero is NFCI's mean by construction.
+   Reconciled behaviourally in smoke against `bandTenYear` and `TEN_BURST_PP`, so moving either
+   edge moves this check with it and a silent divergence fails the build.
+
+   MEASURED, not merely argued: across 7835 comparable generated scenarios (PANIC excluded,
+   since the override outranks the tally), adding this voter made the verdict MORE RISK-ON in
+   ZERO of them, more cautious in 1617, and left 6218 unchanged. On the live 2026-08-31 tape it
+   votes NEUTRAL — 30Y 5.22 with the curve FLATTENING -0.04 over the month and a 3-session
+   +0.05 — so it changes nothing the day it ships, which is what you want from a new voter in
+   an order-gating contract: inert on the current tape, and biting only on the condition it was
+   built for. */
+export const CURVE_WIDEN_PP = 0.15;   // === bandTenYear's spiking edge; reconciled in smoke
+/* PURE. Bearish-only by construction: there is no branch that returns "bullish". Fails closed —
+   with nothing measurable it returns null (the check reads unavailable) rather than "neutral",
+   because "the long end is fine" and "I cannot see the long end" are different claims. */
+export function band30yCurve({ spread, spreadM1Chg, burstPp } = {}) {
+  const num = (v) => (typeof v === "number" && isFinite(v) ? v : null);
+  const s = num(spread), d = num(spreadM1Chg), b = num(burstPp);
+  if (s === null && d === null && b === null) return null;
+  const flags = [];
+  if (s !== null && s < 0) flags.push("inverted");
+  if (d !== null && d > CURVE_WIDEN_PP) flags.push("widening");
+  if (b !== null && b >= TEN_BURST_PP) flags.push("burst");
+  return { vote: flags.length ? "bearish" : "neutral", flags };
+}
+
 // Kalshi NEXT-MEETING odds (not "by December"). cut>50 bullish · hike>50 bearish · else neutral.
 export function bandFedOdds({ hold, cut, hike } = {}) {
   const anyLive = [hold, cut, hike].some((x) => typeof x === "number" && isFinite(x));
@@ -155,6 +217,8 @@ export const CARRY_SESSIONS = {
   qqq_spy_rs: 3,       // a 1-day RS print; stale RS is weak evidence quickly
   us10y_trend: 5,      // a monthly-delta trend; tolerates a longer publisher lag
   fed_next_meeting: 5, // AND only while the referenced FOMC event is still open
+  // v5.97: same publisher and the same monthly-delta tolerance as the belly, so the same window.
+  us30y_curve: 5,
 };
 
 // The panic gauges — the two inputs the PANIC override and the TAILWIND withhold key on.
@@ -358,6 +422,31 @@ export function buildTtReadout(live, { now = new Date(), cached = false } = {}) 
     burst_pp: tenBurst ? tenBurst.pp : null, burst_sessions: tenBurst ? tenBurst.sessions : null,
     burst_fired: tenBurstFired, as_of: asOf("tenYear"), tier: m1P.tier };
 
+  /* v5.97 — THE LONG END. Three evidence points, each with its OWN freshness story resolved
+     through the same tier machinery as every other check.
+     SAME-DATE SAFETY: the monthly curve change is `thirtyYearM1 - tenYearM1`, and after
+     v4.1.5's per-leg recency merge the two legs can legitimately come from DIFFERENT sources
+     (FRED vs the UST par curve). snapshot.js already DROPS `spread10s30s` when the legs land on
+     different dates, so gating the change arm on the spread being present inherits that
+     guarantee rather than re-deriving it — a curve change computed across two sessions would
+     be a fabricated observation (the `pairRs` rule again). */
+  const spreadP = point("us30y_curve", "spread10s30s");
+  const thirtyP = point("us30y_curve", "thirtyYear");
+  const thirtyM1P = point("us30y_curve", "thirtyYearM1");
+  const curveTier = worstTier(spreadP, thirtyP);
+  const spreadVal = spreadP.tier === "MISSING" ? null : spreadP.value;
+  // Only when BOTH monthly deltas are usable AND the spread exists (its same-date guarantee).
+  const spreadM1Chg = spreadVal !== null && thirtyM1P.tier !== "MISSING" && m1P.tier !== "MISSING"
+    ? parseFloat((thirtyM1P.value - m1P.value).toFixed(4)) : null;
+  const thirtyBurst = tenYearBurst(L.thirtyYearSeries, thirtyP.tier === "MISSING" ? null : thirtyP.value);
+  const curve = band30yCurve({ spread: spreadVal, spreadM1Chg, burstPp: thirtyBurst ? thirtyBurst.pp : null });
+  const us30y = {
+    yield: thirtyP.tier === "MISSING" ? null : thirtyP.value,
+    spread_10s30s: spreadVal, spread_m1_chg: spreadM1Chg,
+    burst_pp: thirtyBurst ? thirtyBurst.pp : null, burst_sessions: thirtyBurst ? thirtyBurst.sessions : null,
+    flags: curve ? curve.flags : [], as_of: asOf("spread10s30s"), tier: curve == null ? "MISSING" : curveTier,
+  };
+
   // Fed odds: HISTORICAL carry is additionally gated on the referenced FOMC event still
   // being OPEN — odds from a decided meeting must never carry into the next one (§5.6).
   let holdP = point("fed_next_meeting", "rateOddsHold");
@@ -418,6 +507,17 @@ export function buildTtReadout(live, { now = new Date(), cached = false } = {}) 
     mkCheck("fed_next_meeting", fedTier, fedState, fed_odds ? hold : null,
       fed_odds == null ? (eventClosed ? "Kalshi odds for a closed FOMC event — discarded, never carried forward" : "Kalshi odds unavailable") : `hold ${hold} / cut ${cut} / hike ${hike} (next meeting)`,
       fed_odds ? holdP : null),
+    /* v5.97 — APPENDED, not inserted: indices 0-5 stay exactly where every existing consumer
+       and pin expects them. The reason line carries the LEVEL as evidence (the thing the owner
+       is watching) beside the three things that actually vote. */
+    mkCheck("us30y_curve", us30y.tier, curve ? curve.vote : null, spreadVal,
+      curve == null ? "30Y and 10s30s unavailable"
+        : `30Y ${us30y.yield == null ? "n/a" : `${us30y.yield}%`} \u00b7 10s30s ${spreadVal == null ? "n/a" : `${spreadVal > 0 ? "+" : ""}${spreadVal}pp`}`
+          + (spreadM1Chg == null ? "" : ` \u00b7 curve ${spreadM1Chg > 0 ? "+" : ""}${spreadM1Chg}pp 1-mo`)
+          + (us30y.burst_pp == null ? "" : ` \u00b7 ${us30y.burst_sessions}-session ${us30y.burst_pp > 0 ? "+" : ""}${us30y.burst_pp}pp`)
+          + (curve.flags.length ? ` \u2014 ${curve.flags.join(" + ")}, so this votes bearish`
+                                : " \u2014 long end not repricing (level alone does not vote)"),
+      curve == null ? null : { asOf: spreadP.asOf, sessions: spreadP.sessions, tier: us30y.tier }),
   ];
 
   const agg = aggregateVerdict(checks);
@@ -495,8 +595,18 @@ export function buildTtReadout(live, { now = new Date(), cached = false } = {}) 
      inert until KALSHI_KEY_ID / KALSHI_PRIVATE_KEY are set. That is the point: the gauge's
      absence now costs something a maintainer can see. */
   const ratePathBlind = fedTier === "MISSING" || fedTier === "HISTORICAL";
+  /* v5.97 — THE COUNT TRAP A NEW CHECK OPENS, closed before the 30Y landed rather than after.
+     `current >= 5` was written against SIX checks, where it means "at most one may be dark".
+     Against SEVEN the identical literal means "at most TWO may be dark" — so adding a voter
+     would have SILENTLY LOOSENED the strongest claim this engine makes, while looking like a
+     pure addition. That is precisely the DEC-31 defect (a 6th factor against a hardcoded `3`
+     re-creating the bug DEC-31 had just removed), and the cure is the same one: state the RULE
+     and derive the number, so the next check to arrive cannot move it by accident.
+     `checks.length - 1` is the rule the literal encoded; at six checks it evaluates to 5 and is
+     byte-equivalent to what shipped, so this line changes nothing on its own. */
+  const maxDark = checks.length - 1;
   let confidence;
-  if (current >= 5 && currentPanicGauges === 2 && !ratePathBlind && macro_flip.evaluable) confidence = "HIGH";
+  if (current >= maxDark && currentPanicGauges === 2 && !ratePathBlind && macro_flip.evaluable) confidence = "HIGH";
   /* v4.1.6 — MEDIUM was `current >= 3 && !criticalMissing && historical <= 2`, and the
      historical cap INVERTED: a HISTORICAL input is a real observation one session old,
      strictly MORE information than a MISSING one, yet deleting it moved the count out of
@@ -510,7 +620,13 @@ export function buildTtReadout(live, { now = new Date(), cached = false } = {}) 
      input moving from historical to missing leaves `current` untouched.
      Measured one-way over 4000 generated scenarios: 0 became more permissive, 43 became
      more restrictive, 3957 unchanged. It only ever tightens. */
-  else if (current >= 4 && !criticalMissing) confidence = "MEDIUM";
+  /* v5.97 — the SAME trap, second instance, and the comment above is what exposes it: it
+     derives `current >= 4` from "non-current <= 2" GIVEN SIX CHECKS. Against seven the same
+     literal permits THREE non-current inputs, so a new check would have loosened MEDIUM too —
+     and MEDIUM vs LOW is the line between RESTRICTED and HOLD, i.e. between a readable board
+     and a stopped one. Derived from the same arithmetic the comment states: at six checks
+     `6 - 2` is 4 and nothing moves. */
+  else if (current >= checks.length - 2 && !criticalMissing) confidence = "MEDIUM";
   else confidence = "LOW";
 
   let actionability;
@@ -528,7 +644,7 @@ export function buildTtReadout(live, { now = new Date(), cached = false } = {}) 
   if (!isCur(fgP)) reasonParts.push("current Fear & Greed unavailable");
 
   return {
-    spy, vix, fear_greed, qqq_spy_rs, us10y, fed_odds,
+    spy, vix, fear_greed, qqq_spy_rs, us10y, fed_odds, us30y,
     regime: {
       verdict, checks,
       available: agg.available, usable: agg.available, bullish: agg.bullish, bearish: agg.bearish,
@@ -584,6 +700,15 @@ export function formatTtPaste(readout, { generatedEt } = {}) {
   const tenBurstTxt = ten.burst_pp == null ? ""
     : ` · ${ten.burst_sessions}d ${ten.burst_pp > 0 ? "+" : ""}${ten.burst_pp}${ten.burst_fired ? " ⚠ BURST" : ""}`;
   lines.push(`10Y TREND    ${cell(na(ten.trend))}(${na(ten.yield, "%")}${ten.m1_delta == null ? "" : ` · m1 ${ten.m1_delta > 0 ? "+" : ""}${ten.m1_delta}`}${tenBurstTxt})`);
+  /* v5.97: the long end gets its own line. The LEVEL prints — it is what prompted the check —
+     but the vote comes from the three repricing arms, and the flags name which of them fired. */
+  const thirty = r.us30y;
+  if (thirty) {
+    const fl = Array.isArray(thirty.flags) && thirty.flags.length ? ` \u26a0 ${thirty.flags.join(" + ")}` : "";
+    const sp = thirty.spread_10s30s;
+    const ch = thirty.spread_m1_chg;
+    lines.push(`30Y CURVE    ${cell(na(thirty.yield, "%"))}(10s30s ${sp == null ? "n/a" : `${sp > 0 ? "+" : ""}${sp}pp`}${ch == null ? "" : ` \u00b7 curve ${ch > 0 ? "+" : ""}${ch} 1-mo`}${fl})`);
+  }
   lines.push(`FED NEXT     ${fed ? `hold ${fed.hold} / cut ${fed.cut} / hike ${fed.hike}` : "n/a"}${fed && fed.next_meeting ? `  (${fed.next_meeting}${fed.days_out != null ? ` · ${fed.days_out}d` : ""})` : ""}`);
   lines.push("-".repeat(56));
   lines.push(`REGIME       ${cell(na(reg.verdict))}(${reg.bullish ?? 0} bull / ${reg.bearish ?? 0} bear · ${reg.available ?? 0} checks)`);

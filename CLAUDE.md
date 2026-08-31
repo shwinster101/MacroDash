@@ -5,6 +5,66 @@ answers *"is it safe to be in the market?"* from live macro + market + sentiment
 data. Single-page React app on Cloudflare Pages, with live data assembled at the
 edge by Pages Functions and cached in KV.
 
+**FEAT-30Y-CHECK (v5.97.0) — the long end becomes an Engine 0 voter, and the count trap a
+seventh check opens is closed BEFORE it lands (owner call).** Engine 0 looked at the belly
+(`us10y_trend`) and nowhere else on the curve while the book it gates is long-duration; on the
+2026-08-31 tape the 30Y sat at **5.22, above its own alert line, entirely unseen by the
+readout** (named as found-not-fixed one release earlier — this closes it).
+**THE COUNT TRAP, closed first.** `current >= 5` for HIGH was written against SIX checks, where
+it means *at most one may be dark*. Against SEVEN the identical literal means *at most TWO* — so
+adding a voter would have **silently LOOSENED the strongest claim this engine makes** while
+looking like a pure addition. That is the DEC-31 defect exactly (a 6th factor against a
+hardcoded `3` re-creating the bug DEC-31 had just removed). The MEDIUM arm carried the same trap
+and its own v4.1.6 comment is what exposed it — it derives `current >= 4` from *"non-current
+<= 2 GIVEN SIX CHECKS"*, and MEDIUM-vs-LOW is the line between RESTRICTED and HOLD. Both are now
+**derived from `checks.length`**, so at six checks they evaluate to the shipped literals and
+change nothing on their own (proved: the suite stayed green, and the v5.10.0 one-way sweep
+re-ran identically at 0/53/5947).
+**WHY THIS IS NOT "the 10Y check with a 3 in front".** A 30Y monthly delta beside a 10Y monthly
+delta is **COLLINEAR** — a parallel shift would cast two votes for one fact, the v3.83
+FEAT-TT-TECHREAD defect where `price vs 50d`, `price vs 200d` and their alignment turned one
+observation into three votes. `us30y_curve` reads what the 10Y check structurally CANNOT: the
+SHAPE of the curve and the long end's own speed. Pinned in both directions — a parallel shift
+moves the belly and leaves this check flat; a long-end breakout while the belly is calm votes
+bearish and nothing else sees it.
+**BEARISH-ONLY, which is what makes a 7th voter SAFE.** Adding a voter changes the majority math
+of a contract that gates real orders — the reason NFCI (v3.43) and the 30Y itself (v3.55) both
+arrived as non-voters. A check that cannot vote bullish can only move the verdict
+TAILWIND→NEUTRAL→HEADWIND, so the worst case of being wrong is excess caution. **Measured**
+across 7835 comparable generated scenarios: **0 more risk-on, 1617 more cautious, 6218
+unchanged.** It is also the honest read — a calm long end is the ordinary backdrop, not a buy
+signal (the NFCI v3.43.1 asymmetry).
+**NO LEVEL ARM, though the level is what prompted the ticket.** A high-but-stable long end is
+priced in; the damage is the repricing. A level arm would also vote bearish every day the 30Y
+sat above its line — a **permanently one-way voter, the exact flaw v3.43.1 removed from NFCI**.
+The level rides the check's reason as EVIDENCE instead (v3.55's *"a stated REFERENCE level,
+never a verdict"*), so the number the owner is watching is visible without voting.
+**EVERY EDGE DERIVED, NOTHING FITTED** (FRED is unreachable here, so a fitted band would be an
+assertion wearing a measurement's clothes): **widening** = the spread's monthly change against
+`bandTenYear`'s own +0.15 spiking edge (same unit, same window); **burst** = the long end's own
+3-session move against `TEN_BURST_PP`, the v5.10.0 term reused; **inverted** = 10s30s below
+zero, structural like NFCI's mean-at-zero. Reconciled behaviourally in smoke, so moving either
+parent edge moves this check with it.
+**Same-date safety inherited, not re-derived:** the curve change is `thirtyYearM1 - tenYearM1`,
+and after v4.1.5's per-leg recency merge the two legs can come from DIFFERENT sources — so the
+arm is gated on `spread10s30s` being present, which snapshot.js already drops on a date
+mismatch (the `pairRs` rule). **APPENDED at index 6**, so every existing consumer and pin that
+indexes `checks[0..5]` is untouched. Carry window 5, same publisher and tolerance as the belly.
+**On the live tape it votes NEUTRAL** — 5.22 with the curve FLATTENING −0.04 over the month and
+a 3-session +0.05 — so it changes nothing the day it ships, which is what a new voter in an
+order-gating contract should do: inert on the current tape, biting only on what it was built
+for. **The PUBLIC six-factor backdrop is deliberately untouched**: `REGIME_BAND_TABLE` still has
+no 30Y, the v3.55 arrival pin SPLITS rather than being deleted, and its surviving half is now
+what keeps the two engines from quietly merging (the v5.9.5 sheet copy depends on it).
+Tests: **2136 smoke + 306 render + 229 public-render**, `audit:prod` clean, real Chromium.
+Negative-controlled FIVE ways — adding a level arm, loosening the widening edge to a value that
+would fire on the live tape, collapsing the design to the collinear one, introducing a bullish
+arm, and removing the same-date gate — each turning exactly its own pins (3/2/4/1/1). One pin
+failed against correct code and the PIN was wrong, recorded rather than quietly fixed: a fixture
+named for the live tape set only the 30Y leg and left `mkLive`'s default 10Y in place, so it
+computed −0.02 while claiming to reproduce a tape that read −0.04. Second fixture this session
+to silently not reproduce what its name claimed.
+
 **FEAT-ENGINE0-STATS (v5.10.0) — the strip shows the voter, and three Engine 0 statistics stop
 being the wrong statistic for the exposure.** One owner directive plus three findings from an
 owner review, every one REPRODUCED against the live `/readout.json` and `/api/snapshot` before

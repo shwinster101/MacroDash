@@ -1,0 +1,124 @@
+# 2026-08-31 — v5.97.0: the long end becomes an Engine 0 voter
+
+**Status: SHIPPED same pass.** Owner call, closing the gap v5.10.0 named as found-not-fixed:
+*"the 30Y is at 5.22, above its own alert level, and Engine 0 does not check the long end at
+all — for a long-duration book that is the exposure."*
+
+This is the highest-risk change this file has taken: **a 7th voter in a contract that gates
+real orders.** Three things had to be true before it was safe to ship, and each is a section
+below.
+
+## 1. The count trap — closed BEFORE the check landed, not after
+
+`current >= 5` for HIGH confidence was written against SIX checks, where it means *at most one
+may be dark*. Against SEVEN the identical literal means *at most TWO*. So adding a voter would
+have **silently loosened the strongest claim this engine makes**, while looking like a pure
+addition.
+
+That is the DEC-31 defect verbatim — a 6th factor against a hardcoded `3` re-creating the bug
+DEC-31 had just removed. And it had a second instance: the MEDIUM arm's own v4.1.6 comment is
+what exposed it, because it *derives* `current >= 4` from "non-current ≤ 2 **given six
+checks**". MEDIUM-vs-LOW is the line between RESTRICTED and HOLD.
+
+Both are now derived from `checks.length`. At six checks they evaluate to the shipped literals,
+so the change is inert on its own — proved two ways: the suite stayed green with no re-pinning,
+and the v5.10.0 one-way sweep re-ran identically (0 / 53 / 5947).
+
+**This is the part I would have got wrong by doing the obvious thing first.** Writing the check
+and then running the suite would have shipped a loosening that no existing pin measures.
+
+## 2. Not collinear — which is the whole reason it earns a vote
+
+A 30Y monthly delta beside a 10Y monthly delta is **collinear**: a parallel shift casts two
+votes for one fact. That is exactly the v3.83 FEAT-TT-TECHREAD defect, where `price vs 50d`,
+`price vs 200d` and their alignment turned one observation into three votes and inflated the
+tally the reader trusts most.
+
+So `us30y_curve` reads what the 10Y check structurally cannot — the **shape** of the curve and
+the long end's **own speed**:
+
+| Arm | Fires on | Derived from |
+|---|---|---|
+| `widening` | spread's monthly change > +0.15 | `bandTenYear`'s own spiking edge (same unit, same window) |
+| `burst` | 30Y 3-session move ≥ +0.15 | `TEN_BURST_PP`, the v5.10.0 term reused |
+| `inverted` | 10s30s < 0 | structural — zero *is* inversion, like NFCI's mean-at-zero |
+
+Pinned in **both** directions: a parallel shift moves the belly and leaves this check flat; a
+long-end breakout while the belly is calm votes bearish and nothing else sees it.
+
+## 3. Bearish-only — which is what makes a 7th voter safe at all
+
+Adding a voter changes majority math. A check that **cannot vote bullish** can only move the
+verdict TAILWIND → NEUTRAL → HEADWIND, so the worst case of being wrong is excess caution. That
+converts "this needs its own plan and approval" into a change that is safe by construction.
+
+Measured, not argued: **7835 comparable generated scenarios — 0 more risk-on, 1617 more
+cautious, 6218 unchanged.**
+
+It is also the honest read. A calm long end is the ordinary backdrop, not a buy signal — the
+NFCI v3.43.1 asymmetry, whose finding was that a factor which always votes one way *biases* a
+tally rather than informing it.
+
+## Why there is no level arm, though the level is what prompted the ticket
+
+This is the one place I did not build what was literally asked for, and the reason matters.
+
+A high-but-**stable** long end is priced in; the damage is the repricing. Worse, a level arm
+would vote bearish every day the 30Y sat above its line — a **permanently one-way voter, the
+exact flaw v3.43.1 removed from NFCI**, and it would degrade the tally rather than sharpen it.
+
+So the level rides the check's reason as **evidence** (v3.55's *"a stated REFERENCE level, never
+a verdict"*), and the repricing votes. The number the owner is watching is visible on every
+surface without being a vote — pinned with a 6.5% fixture that still reads neutral.
+
+## What it does on the live tape: nothing
+
+30Y 5.22 · 10s30s +0.49 · curve **flattening −0.04** over the month · 3-session +0.05 → all
+three arms quiet → **NEUTRAL**.
+
+That is the right outcome for a new voter in an order-gating contract: **inert on the tape it
+shipped on, biting only on the condition it was built for.** A check tuned to make its own
+prompting tape red is a fit, and it is pinned as a control that this one is not.
+
+## Scope held
+
+- **The PUBLIC six-factor backdrop is untouched.** `REGIME_BAND_TABLE` still has no 30Y. The
+  v3.55 arrival pin **splits** rather than being deleted: its ttReadout half inverts by owner
+  call, and its public half survives — and is now what keeps the two engines from quietly
+  merging. The v5.9.5 sheet copy depends on that half.
+- **Appended at index 6**, so every consumer and pin indexing `checks[0..5]` is untouched.
+- **Same-date safety inherited, not re-derived**: the curve change is
+  `thirtyYearM1 − tenYearM1`, and after v4.1.5's per-leg recency merge the legs can come from
+  different sources — so the arm gates on `spread10s30s` being present, which snapshot.js
+  already drops on a date mismatch.
+
+## Tests
+
+**2136 smoke · 306 render · 229 public-render**, `audit:prod` clean, real Chromium.
+
+| Negative control | Result |
+|---|---|
+| Add a level arm | 3 red |
+| Loosen the widening edge to 0.02 (a fit that fires on the live tape) | 2 red |
+| Collapse to the collinear design (vote on the 30Y m1) | 4 red |
+| Introduce a bullish arm | 1 red |
+| Remove the same-date gate on the curve change | 1 red |
+
+**A pin failed against correct code and the pin was wrong**, recorded rather than quietly fixed:
+a fixture named for the live tape set only the 30Y leg and left `mkLive`'s default 10Y in place,
+so it computed −0.02 while claiming to reproduce a tape that read −0.04. **Second fixture this
+session to silently not reproduce what its name claimed** (the first passed `undefined` into a
+defaulted parameter). Both were caught by the pin failing, not by review — the pattern worth
+naming is that a fixture built by *overriding some fields of a shared default* will quietly
+inherit the rest, and a derived quantity spanning two of those fields is where it shows.
+
+## Still open
+
+- **Kalshi.** Unchanged from v5.10.0: FULL stays unreachable until `KALSHI_KEY_ID` /
+  `KALSHI_PRIVATE_KEY` are set. The 7th check does not change that — `ratePathBlind` still
+  withholds HIGH, so today reads MEDIUM · RESTRICTED · PARTIAL DATA.
+- **`ndxSpxRs` still has no plausibility band** (carried from v5.10.0).
+- **The INSUFFICIENT floor stays absolute at 3** while the check count moved to 7. It is a claim
+  about how many real observations a published direction needs, and 3 observations is still 3 —
+  but it is now 3-of-7 rather than 3-of-6, and the evidence axis (not this floor) is what
+  actually gates capital. Named rather than changed.

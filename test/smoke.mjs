@@ -20,7 +20,7 @@ import {
   bandSpyVs200d, bandVix, bandFearGreed, bandRs, bandTenYear, bandFedOdds,
   aggregateVerdict, computeMacroFlip, buildTtReadout, formatTtPaste, DERIVED_OF,
   conservativeVote, CARRY_SESSIONS, readoutQuality, compareQuality,
-  tenYearBurst, TEN_BURST_PP, TEN_BURST_SESSIONS, rsVote,
+  tenYearBurst, TEN_BURST_PP, TEN_BURST_SESSIONS, rsVote, band30yCurve, CURVE_WIDEN_PP,
 } from "../src/ttReadout.js";
 import { sessionsBehind } from "../src/sources.js";
 import { validateBook, validateBoard, validatePos, conflictCheck, authMode, lockoutState, recordFailure, parseCookie, hashPin, LOCK_TIERS, diffForLedger } from "../functions/api/tt.js";
@@ -332,7 +332,14 @@ const mkLive = (o = {}) => ({
 });
 const rBull = buildTtReadout(mkLive(), { now: TT_NOW });
 ok("readout: schema-body has the 9 stable top-level keys", ["spy", "vix", "fear_greed", "qqq_spy_rs", "us10y", "fed_odds", "regime", "macro_flip", "attribution"].every((k) => k in rBull));
-ok("readout: regime.checks is ALWAYS length 6", rBull.regime.checks.length === 6);
+/* v5.97: SEVEN — us30y_curve appended. The count is asserted in ONE place and every other
+   site derives from it, so the next check to arrive moves one literal instead of four. */
+const TT_CHECK_COUNT = 7;
+ok("v5.97: regime.checks is ALWAYS length 7 — us30y_curve APPENDED, so indices 0-5 never moved",
+  rBull.regime.checks.length === TT_CHECK_COUNT
+  && rBull.regime.checks[6].name === "us30y_curve"
+  && rBull.regime.checks.map((c) => c.name).slice(0, 6).join() ===
+     "spy_vs_200d,vix,fear_greed,qqq_spy_rs,us10y_trend,fed_next_meeting");
 ok("readout: spy pct computed (+6.87% > 3) -> bullish check", rBull.spy.pct_vs_200d === 6.87 && rBull.regime.checks[0].state === "bullish");
 ok("readout: qqq_spy_rs leading (0.9-0.41=+0.49 > 0.3) + basis 1d", rBull.qqq_spy_rs.state === "leading" && rBull.qqq_spy_rs.basis === "1d");
 /* 8/31 — THIS PIN REVERSES on the RS leg. It asserted 3 bullish votes because a 1d RS print
@@ -429,6 +436,86 @@ ok("8/31 burst: the weekly window the obvious fix would have used catches NOTHIN
 ok("8/31 burst: it prints on the human surface — the paste block carries the burst beside the month",
   (() => { const t = formatTtPaste(buildTtReadout(burstLive(0.2), { now: TT_NOW }));
     return /m1 \+0\.03/.test(t) && /3d \+0\.2/.test(t) && /BURST/.test(t); })());
+
+/* ── v5.97: THE LONG END AS A CHECK ─────────────────────────────────────────────────────────
+   Owner call, and the highest-risk change in this file's history: a 7th voter in a contract
+   that gates real orders. Every pin RUNS the engine. */
+const curveLive = (o = {}) => mkLive({ thirtyYear: 5.22, thirtyYearAsOf: D, thirtyYearM1: 0.01,
+  spread10s30s: 0.49, spread10s30sAsOf: D, ...o });
+ok("v5.97 curve: EVERY edge is derived from a band that already existed — none is newly asserted",
+  // Reconciled behaviourally, not restated: the widening edge IS bandTenYear's spiking edge,
+  // and the burst edge IS the v5.10.0 term. Move either and this check moves with it.
+  CURVE_WIDEN_PP === TEN_BURST_PP &&
+  bandTenYear(CURVE_WIDEN_PP + 0.001) === "spiking" && bandTenYear(CURVE_WIDEN_PP) !== "spiking");
+ok("v5.97 curve: BEARISH-ONLY by construction — no input of any shape returns a bullish vote",
+  (() => { for (const spread of [-3, -0.01, 0, 0.5, 4])
+      for (const d of [-2, -0.16, 0, 0.16, 2])
+        for (const b of [-1, 0, 0.15, 1]) {
+          const r = band30yCurve({ spread, spreadM1Chg: d, burstPp: b });
+          if (r && r.vote === "bullish") return false;
+        }
+    return true; })());
+ok("v5.97 curve: boundaries — widening fires ABOVE the edge, inversion BELOW zero, burst AT the edge",
+  band30yCurve({ spreadM1Chg: 0.151 }).vote === "bearish" &&
+  band30yCurve({ spreadM1Chg: 0.15 }).vote === "neutral" &&
+  band30yCurve({ spread: -0.01 }).vote === "bearish" &&
+  band30yCurve({ spread: 0 }).vote === "neutral" &&
+  band30yCurve({ burstPp: 0.15 }).vote === "bearish" &&
+  band30yCurve({ burstPp: 0.149 }).vote === "neutral");
+ok("v5.97 curve: fails CLOSED — nothing measurable is `unavailable`, never a comfortable neutral",
+  band30yCurve({}) === null && band30yCurve({ spread: null, spreadM1Chg: NaN, burstPp: undefined }) === null &&
+  (() => { const r = buildTtReadout(mkLive(), { now: TT_NOW });  // no 30Y fields at all
+    return r.regime.checks[6].state === "unavailable" && r.us30y.tier === "MISSING"; })());
+ok("v5.97 curve: NOT COLLINEAR with the 10Y — a PARALLEL shift moves the belly and leaves the curve flat",
+  // The whole reason this is not "the 10Y check with a 3 in front" (the v3.83 defect).
+  (() => { const par = buildTtReadout(curveLive({ tenYearM1: 0.3, thirtyYearM1: 0.3,
+      tenYear: 4.46, thirtyYear: 5.22, spread10s30s: 0.49 }), { now: TT_NOW });
+    return par.regime.checks[4].state === "bearish"      // belly says spiking
+      && par.regime.checks[6].state === "neutral"        // curve unchanged -> no second vote
+      && par.us30y.spread_m1_chg === 0; })());
+ok("v5.97 curve: a LONG-END breakout while the belly is calm votes bearish — the case only this check sees",
+  (() => { const r = buildTtReadout(curveLive({ tenYearM1: 0.02, thirtyYearM1: 0.25 }), { now: TT_NOW });
+    return r.regime.checks[4].state === "neutral" && r.regime.checks[6].state === "bearish"
+      && r.us30y.flags.includes("widening") && /votes bearish/.test(r.regime.checks[6].reason); })());
+ok("v5.97 curve: an INVERTED 10s30s votes bearish, and the flag names it",
+  (() => { const r = buildTtReadout(curveLive({ spread10s30s: -0.12 }), { now: TT_NOW });
+    return r.regime.checks[6].state === "bearish" && r.us30y.flags.includes("inverted"); })());
+ok("v5.97 curve: the LEVEL alone never votes — an elevated-but-flat long end reads neutral and says so",
+  // The owner's own prompt was the 5.22 level; a level arm would make this a permanently
+  // one-way voter (the NFCI v3.43.1 flaw), so the level is EVIDENCE and the repricing votes.
+  (() => { const r = buildTtReadout(curveLive({ thirtyYear: 6.5 }), { now: TT_NOW });
+    return r.regime.checks[6].state === "neutral" && /6\.5%/.test(r.regime.checks[6].reason)
+      && /level alone does not vote/.test(r.regime.checks[6].reason); })());
+ok("v5.97 curve: the monthly change needs the SPREAD present — it inherits snapshot's same-date guarantee",
+  // thirtyYearM1 - tenYearM1 across two differently-dated legs would be a fabricated
+  // observation; snapshot.js drops spread10s30s on a date mismatch, so gate on it.
+  (() => { const r = buildTtReadout(mkLive({ thirtyYear: 5.22, thirtyYearAsOf: D, thirtyYearM1: 0.25, tenYearM1: 0.02 }), { now: TT_NOW });
+    return r.us30y.spread_m1_chg === null && !r.us30y.flags.includes("widening"); })());
+ok("v5.97 curve: on the LIVE 2026-08-31 tape it votes NEUTRAL — not built to make its own prompt red",
+  // BOTH legs must come from the real body: the curve change is thirtyYearM1 MINUS tenYearM1,
+  // and an earlier draft of this pin set only the 30Y leg, leaving mkLive's default 10Y in
+  // place — so it computed -0.02 while claiming to reproduce a tape that read -0.04. A fixture
+  // named for a real tape has to carry all of it.
+  (() => { const r = buildTtReadout(curveLive({ tenYear: 4.73, tenYearM1: 0.05, thirtyYearM1: 0.01,
+      thirtyYearSeries: [5.31, 5.28, 5.19, 5.23, 5.27, 5.23, 5.17, 5.18, 5.19, 5.22] }), { now: TT_NOW });
+    return r.us30y.spread_m1_chg === -0.04 && r.us30y.burst_pp === 0.05
+      && r.us30y.flags.length === 0 && r.regime.checks[6].state === "neutral"
+      // ...and the elevated LEVEL is still on the reason, unvoted.
+      && /5\.22%/.test(r.regime.checks[6].reason); })());
+ok("v5.97 curve: it prints on the human surface with its level and its curve reading",
+  (() => { const t = formatTtPaste(buildTtReadout(curveLive({ spread10s30s: -0.12 }), { now: TT_NOW }));
+    return /30Y CURVE/.test(t) && /5\.22%/.test(t) && /inverted/.test(t); })());
+ok("v5.97 curve: ONE-WAY — adding this voter can never move the verdict toward risk-on",
+  (() => { // the same tape with and without the 30Y fields; the verdict may only get more cautious
+    const RANK = { HEADWIND: 0, NEUTRAL: 1, TAILWIND: 2 };
+    for (const o of [{}, { spread10s30s: -0.2 }, { thirtyYearM1: 0.4 }, { spread10s30s: 2.5 },
+                     { thirtyYearM1: -0.5 }, { spread10s30s: 0.1, thirtyYearM1: 0.01 }]) {
+      const without = buildTtReadout(mkLive(), { now: TT_NOW }).regime;
+      const withCurve = buildTtReadout(curveLive(o), { now: TT_NOW }).regime;
+      if (withCurve.verdict === "PANIC" || without.verdict === "PANIC") continue;
+      if (RANK[withCurve.verdict] > RANK[without.verdict]) return false;  // never MORE risk-on
+    }
+    return true; })());
 
 // ---- FEAT-DASH-DERIV (v3.40): a derived field inherits its parent's staleness -------------
 // isStale() fails OPEN on a missing date (correct for a dated field — nothing to judge), but
@@ -567,7 +654,7 @@ const strip = (live, g) => { const c = { ...live }; for (const k of P_GROUPS[g])
     // P1 — the published vocabulary is CLOSED. INSUFFICIENT is an internal sentinel (v3.63).
     chk(["TAILWIND", "NEUTRAL", "HEADWIND", "PANIC"].includes(r.regime.verdict), "P1 verdict vocabulary", i, live);
     // P2 — the contract's shape never varies with the data.
-    chk(r.regime.checks.length === 6, "P2 six checks", i, live);
+    chk(r.regime.checks.length === TT_CHECK_COUNT, "P2 check count", i, live);
     chk(["HIGH", "MEDIUM", "LOW"].includes(r.regime.confidence), "P3 confidence vocabulary", i, live);
     chk(["FULL", "RESTRICTED", "HOLD"].includes(r.regime.actionability), "P3 actionability vocabulary", i, live);
     // P4 — a risk-ON call is NEVER published while a panic gauge is blind (v3.40/v3.41).
@@ -632,10 +719,10 @@ const strip = (live, g) => { const c = { ...live }; for (const k of P_GROUPS[g])
   let threw = null;
   for (const h of HOSTILE) {
     try { const r = buildTtReadout(h, { now: TT_NOW });
-      if (!r || !r.regime || r.regime.checks.length !== 6) threw = `bad shape for ${JSON.stringify(h)}`; }
+      if (!r || !r.regime || r.regime.checks.length !== TT_CHECK_COUNT) threw = `bad shape for ${JSON.stringify(h)}`; }
     catch (e) { threw = `${JSON.stringify(h)} -> ${e && e.message}`; }
   }
-  ok("v4.1.6 Engine 0: never throws and always returns the 6-check contract, on any hostile input",
+  ok("v4.1.6 Engine 0: never throws and always returns the full check contract, on any hostile input",
     threw === null || (console.log("   " + threw), false));
 }
 
@@ -825,7 +912,7 @@ ok("matrix A: production shape (SPY+F&G current · VIX missing · RS missing · 
   }, { now: TT_NOW });
   return r.regime.verdict === "NEUTRAL" && r.regime.confidence === "LOW" &&
     r.regime.actionability === "HOLD" && r.regime.status === "DATA DEGRADED" &&
-    r.regime.current === 2 && r.regime.historical === 1 && r.regime.missing === 3 &&
+    r.regime.current === 2 && r.regime.historical === 1 && r.regime.missing === 4 &&
     /current VIX unavailable/.test(r.regime.reason);
 })());
 
@@ -4139,11 +4226,18 @@ ok("30y: a 5.24% long bond trips the 5.2% alert; 5.10% is clear",
     { crossAsset: { treasury30y: { current: 5.24 } } }, () => "LIVE").state === "triggered" &&
   evalAlert({ metric: "treasury30y", condition: "above", value: 5.2, active: true },
     { crossAsset: { treasury30y: { current: 5.10 } } }, () => "LIVE").state === "clear");
-// Arrival rule: NFCI's precedent — a new series does not vote on day one.
-ok("30y: it does NOT vote — REGIME_BAND_TABLE is untouched and the readout math did not move",
+/* v5.97 — THIS PIN SPLITS, and only half of it reverses. It was the v3.55 arrival rule: a new
+   series does not vote on day one, in EITHER engine. On owner call the 30Y now votes in Engine
+   0 — so the ttReadout half inverts — while the PUBLIC six-factor backdrop is deliberately
+   untouched. That half is not a leftover: it is now the thing that keeps the two engines from
+   quietly merging, and the v5.9.5 sheet copy describing the public 10Y vote depends on it. */
+ok("v5.97: the 30Y does NOT vote in the PUBLIC backdrop — REGIME_BAND_TABLE is still untouched",
   !/thirtyYear|spread10s30s/.test(dashSrc.slice(dashSrc.indexOf("const REGIME_BAND_TABLE"),
-    dashSrc.indexOf("export function verdictFrom"))) &&
-  !/thirtyYear|spread10s30s/.test(readSrc("../src/ttReadout.js")));
+    dashSrc.indexOf("export function verdictFrom"))));
+ok("v5.97: the 30Y DOES vote in Engine 0 — the v3.55 arrival rule, lifted by owner call",
+  (() => { const src = readSrc("../src/ttReadout.js");
+    return /thirtyYear/.test(src) && /spread10s30s/.test(src)
+      && typeof band30yCurve === "function"; })());
 
 // ---- 33. the regime reference doc stays OUT of the public repo ------------
 // It leaked no book content, but CONSOLIDATION is itself the risk: one file describing the
