@@ -1,7 +1,7 @@
 {
   "name": "macrodash",
   "private": true,
-  "version": "5.9.2",
+  "version": "5.9.5",
   "type": "module",
   "engines": {
     "node": ">=20"

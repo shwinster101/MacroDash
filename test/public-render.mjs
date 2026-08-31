@@ -1028,8 +1028,13 @@ console.log("\n[public] v4.0 — Simple verdicts, card selection, and what must 
     await dlg.locator("ul li").count() === 3 &&
     !/WHAT MOVES IT|NORMAL \/ NEUTRAL LEVEL|WHY IT MATTERS TO THE MACRO PICTURE/i.test(sheet) &&
     !/Price is what you pay/.test(sheet) && !/Benjamin Graham/.test(sheet));
-  ok("v5.8 sheet: the CAPE baselines are BOTH stated — the 1881 mean and the post-1990 median",
-    /17\.4/.test(sheet) && /44\.19/.test(sheet) && /post-1990 median/.test(sheet));
+  /* v5.9.5 (FEAT-SIMPLE-SHEET-PLAIN v2): the sheet PLACES today's reading rather than
+     describing the instrument. The post-1990-median clause is retired with the rest of the
+     instrument-mechanics vocabulary; what has to survive is the pair of anchors a reader
+     puts the chip between (the old average and the 1999 peak) plus our own hurt edge. */
+  ok("v5.9.5 sheet: CAPE places the reading — old average, 1999 peak, and our hurt edge",
+    /17\.4/.test(sheet) && /44\.19/.test(sheet) && /90%/.test(sheet) &&
+    !/post-1990 median/.test(sheet));
   ok("v5.8 sheet: focus moves into the sheet on open, onto the way out",
     await page.evaluate(() => document.activeElement && document.activeElement.hasAttribute("data-fs-close")));
   await page.keyboard.press("Tab"); await page.keyboard.press("Tab");
