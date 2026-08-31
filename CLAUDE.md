@@ -5,6 +5,38 @@ answers *"is it safe to be in the market?"* from live macro + market + sentiment
 data. Single-page React app on Cloudflare Pages, with live data assembled at the
 edge by Pages Functions and cached in KV.
 
+**v5.97.1 — the unset SEC identity stops reading as a fact about the company (owner report).**
+`SEC_USER_AGENT` is unset on the Pages deployment, so `/api/ticker-facts` returns MISSING for
+`netCashB` / `dilutedSharesB` / `secFilings` on **every** name — which is why filed-source net
+debt and book equity are derived instead. **Setting the secret is an owner action** (this build
+environment holds no Cloudflare credentials): `npx wrangler pages secret put SEC_USER_AGENT`,
+value = a descriptive application + contact string, which SEC's fair-access policy REQUIRES
+(e.g. `MacroDash TT <owner-email>`); a generic or absent UA is what gets an IP throttled or
+blocked by `data.sec.gov`, so this is not decoration.
+**The code defect the report exposed, which is ours and is fixed here.** `secBundle` was
+already honest at the FIELD level — it stores the two causes as different strings,
+`"SEC_USER_AGENT is not configured"` (the system could never look) and `"no recent 10-Q/10-K
+filing returned"` (it looked; the company had nothing). But `qualitativeRubric` read
+`fields.secFilings.value`, saw `null`, **discarded the stored reason** and emitted one
+company-shaped sentence — *"no primary filing citation is available"* — which flows straight
+into the receipt's blockers via `gate("qualitative", "UNKNOWN", qualitative?.reason)`. So the
+blocker sent the operator after the TICKER (does it file? is the CIK mapping wrong?) when the
+cause was an unset deployment secret. That is the v5.6.4 / v3.52 / ENGINE0-CONT rule — *"I could
+not look" and "there was nothing to find" are different facts* — broken in the one place in
+this path that had no coverage at all. The field's own reason is now carried through, the
+original clause preserved so nothing matching it breaks, and an ABSENT field record names no
+cause rather than inventing one.
+**Zero tests existed for either path**, which is why it shipped; `qualitativeRubric` is exported
+solely for smoke (the `validateBook` precedent) and both causes are RUN, with a pin that they
+stay DIFFERENT strings at source — carrying a reason through faithfully would otherwise just
+propagate an ambiguity. Negative-controlled: restoring the swallow turns exactly 2 red.
+**Found while writing those pins, and worth more than the fix:** the new section was appended
+after `process.exit()` at the end of `smoke.mjs` and **ran zero assertions while reporting
+green** — the total was identical before and after (2136 → 2136), which is the only reason it
+was caught. A suite that silently skips a section reads exactly like a suite that passed it
+(the v3.58 A3 lesson, one altitude down).
+Tests: **2142 smoke + 306 render + 229 public-render**, `audit:prod` clean.
+
 **FEAT-30Y-CHECK (v5.97.0) — the long end becomes an Engine 0 voter, and the count trap a
 seventh check opens is closed BEFORE it lands (owner call).** Engine 0 looked at the belly
 (`us10y_trend`) and nowhere else on the curve while the book it gates is long-duration; on the

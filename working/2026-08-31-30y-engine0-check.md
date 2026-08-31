@@ -122,3 +122,80 @@ inherit the rest, and a derived quantity spanning two of those fields is where i
   about how many real observations a published direction needs, and 3 observations is still 3 —
   but it is now 3-of-7 rather than 3-of-6, and the evidence axis (not this floor) is what
   actually gates capital. Named rather than changed.
+
+---
+
+# Addendum — v5.97.1: the unset SEC identity (owner report, same day)
+
+> SEC_USER_AGENT is unset on the Pages deployment … without it /api/ticker-facts returns
+> MISSING for netCashB/dilutedSharesB/secFilings on every name — that's why TE's net debt and
+> book equity are derived rather than filed-source.
+
+**The report is accurate**, verified against the code path: `secBundle` short-circuits on
+`!env.SEC_USER_AGENT` and returns all three fields as MISSING. The CLAUDE.md env matrix entry
+is also accurate.
+
+**The config fix is an owner action** — this build environment holds no Cloudflare credentials,
+and the available Cloudflare MCP tools cover D1/KV/R2/Workers, not Pages env vars:
+
+```
+npx wrangler pages secret put SEC_USER_AGENT
+# value: a descriptive application + contact string, e.g. "MacroDash TT <owner-email>"
+```
+
+The contact string is not decoration: SEC's fair-access policy requires it, and a generic or
+absent UA is what gets an IP throttled or blocked by `data.sec.gov`.
+
+## The code defect the report exposed — ours, and fixed here
+
+`secBundle` was already honest at the FIELD level. It stores two genuinely different causes as
+two different strings:
+
+| Cause | Stored reason |
+|---|---|
+| The system could never look | `SEC_USER_AGENT is not configured` |
+| It looked; the company had nothing | `no recent 10-Q/10-K filing returned` |
+
+`qualitativeRubric` read `fields.secFilings.value`, saw `null`, **discarded the stored reason**,
+and emitted one company-shaped sentence: *"no primary filing citation is available."* That
+sentence flows into the receipt's blockers via
+`gate("qualitative", "UNKNOWN", qualitative?.reason)` — so the blocker sent the operator after
+the **ticker** (does it file? is the CIK mapping wrong?) when the cause was an unset deployment
+secret. Which is exactly the hand-diagnosis the report describes having to do.
+
+This is the v5.6.4 / v3.52 / ENGINE0-CONT rule — *"I could not look" and "there was nothing to
+find" are different facts* — broken in the one place in this path with **zero coverage**.
+
+Blast radius checked and bounded: no gate reads `netCashB`/`dilutedSharesB` directly (they only
+populate the AI prompt's `evidence.measured`, and the early return fires before the prompt is
+built), so the misattribution was confined to the filings → qualitative gate.
+
+## The finding that outranks the fix
+
+The new smoke section was appended **after `process.exit()`** at the end of `smoke.mjs` and
+**ran zero assertions while reporting green**. The only tell was the total being identical
+before and after (2136 → 2136).
+
+A suite that silently skips a section reads exactly like a suite that passed it — the v3.58 A3
+lesson ("a silently-skipped gate reads as a passed one") one altitude down, inside the file
+rather than at the runner. Worth remembering that appending to `smoke.mjs` is unsafe by
+default; the section has to land above the summary.
+
+## Tests
+
+**2142 smoke · 306 render · 229 public-render**, `audit:prod` clean.
+
+| Negative control | Result |
+|---|---|
+| Restore the swallow (drop the carried reason) | 2 red |
+
+Pinned: both causes RUN through the real function, the two proven to read differently, an absent
+field record naming no cause, the original clause surviving in every branch, the two causes
+proven DIFFERENT at source (carrying an ambiguous reason faithfully would propagate ambiguity,
+not fact), and the env matrix still naming the variable.
+
+## Still open after this
+
+- **The secret itself.** Until it is set, the three fields stay MISSING — the fix makes the
+  cause legible, it does not supply the data. Filed-source net debt and book equity remain
+  derived until then.

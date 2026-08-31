@@ -36,7 +36,7 @@ import { streetRevision, onRequestPut as putStreetPacket, onRequestGet as getStr
 import { onRequestGet as getFramework, onRequestPut as putFramework } from "../functions/api/framework.js";
 import { mergeOcrExtractions, onRequestPost as postStreetOcr } from "../functions/api/street/ocr.js";
 import { onRequestGet as getTickerFacts, onRequestPost as postTickerFacts, nasdaqCandlesFact, quoteFact } from "../functions/api/ticker-facts.js";
-import { onRequestPost as postTickerAnalysis, riskTierForBookEntry } from "../functions/api/ticker-analysis.js";
+import { onRequestPost as postTickerAnalysis, riskTierForBookEntry, qualitativeRubric } from "../functions/api/ticker-analysis.js";
 import { plausible, applyBands, quorum, QUORUM_FIELDS, QUORUM_MIN, marketSession, BANDS,
   pairRs, RS_63_SESSIONS, parseTreasuryCsv, preferFresherRates, parseCboeVixCsv, parseCboeVixQuote,
   pairCboeVix, preferFresherVix,
@@ -10417,5 +10417,50 @@ console.log("\n[73] v5.3 ONE CALL — canonical vocabulary, additive API, immuta
     /REFRESH_TOKEN.*both lists/s.test(setupSrc));
 }
 
+/* ── 8/31: SEC IDENTITY — "I could not look" vs "there was nothing to find" ─────────────────
+   Owner report: SEC_USER_AGENT is unset on the Pages deployment, so /api/ticker-facts returns
+   MISSING for netCashB/dilutedSharesB/secFilings on every name. `secBundle` was already honest
+   at the FIELD level — it stores the cause verbatim — but `qualitativeRubric` discarded it and
+   emitted one company-shaped sentence, which flows into the receipt's blockers. That sent the
+   operator after the ticker when the cause was an unset secret. There was ZERO coverage of
+   either path, which is why it shipped. Both are RUN, not string-pinned. */
+console.log("\n[74] 8/31 SEC identity — the unset-secret cause survives to the blocker");
+{
+  const env = { AI: { run: async () => ({}) } };
+  const framework = { aiRubric: { text: "rubric" } };
+  const factsWith = (secFilings) => ({ fields: { secFilings } });
+  const MISSING = (reason) => ({ value: null, status: "MISSING", provider: "SEC", reason });
+
+  const unset = await qualitativeRubric("AAA", factsWith(MISSING("SEC_USER_AGENT is not configured")), framework, env);
+  ok("8/31 SEC: an unset SEC_USER_AGENT NAMES itself in the qualitative blocker",
+    unset.status === "UNKNOWN" && /SEC_USER_AGENT is not configured/.test(unset.reason));
+
+  const none = await qualitativeRubric("AAA", factsWith(MISSING("no recent 10-Q/10-K filing returned")), framework, env);
+  ok("8/31 SEC: a company with genuinely no filings reads DIFFERENTLY — the two causes never collapse",
+    /no recent 10-Q\/10-K filing returned/.test(none.reason) &&
+    !/SEC_USER_AGENT/.test(none.reason) && none.reason !== unset.reason);
+
+  ok("8/31 SEC: an ABSENT field record names no cause rather than inventing one",
+    (await qualitativeRubric("AAA", { fields: {} }, framework, env)).reason
+      === "no primary filing citation is available");
+
+  ok("8/31 SEC: the original clause survives in every branch, so nothing matching it breaks",
+    [unset, none].every((r) => /no primary filing citation is available/.test(r.reason)));
+
+  // The two causes must be distinct AT SOURCE too — if secBundle ever emitted one string for
+  // both, carrying it through would faithfully propagate an ambiguity instead of a fact.
+  const factsSrc = readSrc("../functions/api/ticker-facts.js");
+  ok("8/31 SEC: secBundle stores the two causes as DIFFERENT strings at source",
+    /SEC_USER_AGENT is not configured/.test(factsSrc) &&
+    /no recent 10-Q\/10-K filing returned/.test(factsSrc));
+
+  // The env matrix is the operator's map to this failure; it must keep naming the variable.
+  const claude = readSrc("../CLAUDE.md");
+  ok("8/31 SEC: the env matrix still names SEC_USER_AGENT, its deploy and its degraded state",
+    /\|\s*`SEC_USER_AGENT`\s*\|\s*Pages\s*\|/.test(claude));
+}
+
 console.log(`\n=== SMOKE TEST: ${pass} passed, ${fail} failed ===`);
 process.exit(fail === 0 ? 0 : 1);
+
+
