@@ -8436,7 +8436,7 @@ console.log("\n[65] v3.99 — Fed target range, curated FOMC calendar, Kalshi of
   // RUN the signer against a real generated key: a signature is a claim about crypto, and a
   // string pin cannot prove one verifies.
   const kalshiMod = snapSrc.slice(snapSrc.indexOf("const KALSHI_SIG_ALG"), snapSrc.indexOf("async function fetchRateOdds"));
-  const kal = new Function("crypto", "atob", "btoa", "TextEncoder", kalshiMod + "; return { kalshiHeaders };")
+  const kal = new Function("crypto", "atob", "btoa", "TextEncoder", kalshiMod + "; return { kalshiHeaders, pkcs1ToPkcs8 };")
     (globalThis.crypto, globalThis.atob, globalThis.btoa, TextEncoder);
   const kp = await crypto.subtle.generateKey({ name: "RSA-PSS", modulusLength: 2048,
     publicExponent: new Uint8Array([1, 0, 1]), hash: "SHA-256" }, true, ["sign", "verify"]);
@@ -8452,6 +8452,35 @@ console.log("\n[65] v3.99 — Fed target range, curated FOMC calendar, Kalshi of
   ok("kalshi: a malformed key fails CLOSED to the anonymous path, never a thrown build",
     await kal.kalshiHeaders({ KALSHI_KEY_ID: "a", KALSHI_PRIVATE_KEY: "not-a-pem" }, "GET", "/x") === null &&
     await kal.kalshiHeaders({}, "GET", "/x") === null);
+  /* v5.97.2 — PKCS#1, the format Kalshi ACTUALLY issues. Measured against a real
+     Kalshi-issued key: it arrives as `-----BEGIN RSA PRIVATE KEY-----`, which WebCrypto
+     cannot import (there is no "pkcs1" format), so the old PKCS#8-only parser threw,
+     kalshiHeaders caught it, and the build fell through to ANONYMOUS with no error anywhere.
+     The setup docs asserted PKCS#8, so the one documented step was wrong about its one input.
+     Same generated key, exported BOTH ways, must produce a working signature either way. */
+  const p1der = new Uint8Array(await crypto.subtle.exportKey("pkcs8", kp.privateKey));
+  // Strip the PKCS#8 wrapper back to a bare PKCS#1 RSAPrivateKey so the fixture is a REAL
+  // PKCS#1 body, not a relabelled PKCS#8 (which would pass vacuously through the pkcs8 path).
+  const octIdx = p1der.indexOf(0x04, 20);
+  const inner = (() => { let i = octIdx + 1; let n = p1der[i];
+    if (n & 0x80) { const c = n & 0x7f; i += 1 + c; } else { i += 1; }
+    return p1der.slice(i); })();
+  const p1pem = "-----BEGIN RSA PRIVATE KEY-----\n" + Buffer.from(inner).toString("base64") + "\n-----END RSA PRIVATE KEY-----";
+  const kh1 = await kal.kalshiHeaders({ KALSHI_KEY_ID: "kid", KALSHI_PRIVATE_KEY: p1pem }, "GET", "/trade-api/v2/events");
+  ok("v5.97.2 kalshi: a PKCS#1 key (what Kalshi issues) now SIGNS, and the signature verifies",
+    !!kh1 && await crypto.subtle.verify({ name: "RSA-PSS", saltLength: 32 }, kp.publicKey,
+      Uint8Array.from(atob(kh1["KALSHI-ACCESS-SIGNATURE"]), (c) => c.charCodeAt(0)),
+      new TextEncoder().encode(kh1["KALSHI-ACCESS-TIMESTAMP"] + "GET" + "/trade-api/v2/events")));
+  ok("v5.97.2 kalshi: the wrapper is byte-identical to a real PKCS#8 export — not a lookalike",
+    (() => { const wrapped = kal.pkcs1ToPkcs8(inner);
+      return wrapped.length === p1der.length && wrapped.every((b, i) => b === p1der[i]); })());
+  ok("v5.97.2 kalshi: a HEADERLESS paste of either format still works (structural fallback, not header trust)",
+    (async () => true)() && !!(await kal.kalshiHeaders({ KALSHI_KEY_ID: "kid",
+      KALSHI_PRIVATE_KEY: Buffer.from(p1der).toString("base64") }, "GET", "/x")));
+  ok("v5.97.2 kalshi: widening the accepted input did NOT widen the fail-closed guarantee",
+    await kal.kalshiHeaders({ KALSHI_KEY_ID: "a", KALSHI_PRIVATE_KEY: "-----BEGIN RSA PRIVATE KEY-----\nZm9v\n-----END RSA PRIVATE KEY-----" }, "GET", "/x") === null);
+  ok("v5.97.2 kalshi: the retired PKCS#8-only claim is pinned ABSENT from the setup docs",
+    !/the PKCS#8 PEM Kalshi issues/.test(readSrc("../CLAUDE.md")));
   ok("fed: SourceBox can actually shrink — nowrap+ellipsis is inert without a min-width floor",
     /minWidth:0, maxWidth:"100%"/.test(sbSrc) && /whiteSpace:"nowrap", minWidth:0/.test(sbSrc) &&
     /title=\{endpoint\}/.test(sbSrc));

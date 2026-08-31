@@ -1315,13 +1315,44 @@ const KALSHI_SIG_ALG = { name: "RSA-PSS", saltLength: 32 };
    isolate recycled — and the cache would mask a bad key behind an earlier good one. (My own
    round-trip test caught exactly that: a garbage PEM returned the previously-cached key
    instead of failing closed.) importKey runs twice per snapshot build, once a day. */
+/* v5.97.2 — ACCEPT THE FORMAT KALSHI ACTUALLY ISSUES. This parser was PKCS#8-only, and the
+   header comment above claimed Kalshi hands out PKCS#8. MEASURED against a real Kalshi-issued
+   key (owner-supplied, 2026-08-31): it is **PKCS#1** — `-----BEGIN RSA PRIVATE KEY-----`.
+   WebCrypto's importKey has no "pkcs1" format, so the old code threw, `kalshiHeaders` caught
+   it, and the build fell through to the ANONYMOUS path — silently, with no error anywhere and
+   `fed_odds` still null. So the one documented setup step was wrong about the one input it
+   describes, and getting it wrong cost a silent failure rather than a message.
+   PKCS#8 is just PKCS#1 in a wrapper, so the conversion is pure DER assembly and needs no
+   dependency: SEQUENCE { INTEGER 0, AlgorithmIdentifier(rsaEncryption), OCTET STRING <pkcs1> }.
+   Verified byte-identical to `openssl pkcs8 -topk8 -nocrypt` on the real key.
+   Both formats now work, and a headerless paste of either still works, because the fallback
+   is structural (try pkcs8, then wrap) rather than a trust of the header text. */
+const DER_LEN = (n) => {
+  if (n < 0x80) return [n];
+  const out = []; let v = n;
+  while (v > 0) { out.unshift(v & 0xff); v >>= 8; }
+  return [0x80 | out.length, ...out];
+};
+// AlgorithmIdentifier for rsaEncryption (OID 1.2.840.113549.1.1.1) with NULL params.
+const RSA_ALG_ID = [0x30, 0x0d, 0x06, 0x09, 0x2a, 0x86, 0x48, 0x86, 0xf7, 0x0d, 0x01, 0x01, 0x01, 0x05, 0x00];
+function pkcs1ToPkcs8(p1) {
+  const oct = [0x04, ...DER_LEN(p1.length), ...p1];
+  const body = [0x02, 0x01, 0x00, ...RSA_ALG_ID, ...oct];
+  return Uint8Array.from([0x30, ...DER_LEN(body.length), ...body]);
+}
 async function kalshiKey(env) {
   if (!env?.KALSHI_KEY_ID || !env?.KALSHI_PRIVATE_KEY) return null;
-  const pem = String(env.KALSHI_PRIVATE_KEY)
-    .replace(/-----BEGIN [^-]+-----|-----END [^-]+-----/g, "").replace(/\s+/g, "");
+  const text = String(env.KALSHI_PRIVATE_KEY);
+  const looksPkcs1 = /BEGIN\s+RSA\s+PRIVATE\s+KEY/i.test(text);
+  const pem = text.replace(/-----BEGIN [^-]+-----|-----END [^-]+-----/g, "").replace(/\s+/g, "");
   const raw = Uint8Array.from(atob(pem), (c) => c.charCodeAt(0));
-  return crypto.subtle.importKey("pkcs8", raw.buffer,
+  const imp = (buf) => crypto.subtle.importKey("pkcs8", buf,
     { name: "RSA-PSS", hash: "SHA-256" }, false, ["sign"]);
+  if (looksPkcs1) return imp(pkcs1ToPkcs8(raw).buffer);
+  // No header to go on (a headerless paste): try PKCS#8, then the PKCS#1 wrapper. A genuinely
+  // malformed key still fails both and returns null upstream — this widens the accepted input,
+  // never the fail-closed guarantee.
+  try { return await imp(raw.buffer); } catch (_e) { return imp(pkcs1ToPkcs8(raw).buffer); }
 }
 async function kalshiHeaders(env, method, path) {
   try {

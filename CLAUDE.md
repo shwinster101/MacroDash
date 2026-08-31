@@ -5,6 +5,35 @@ answers *"is it safe to be in the market?"* from live macro + market + sentiment
 data. Single-page React app on Cloudflare Pages, with live data assembled at the
 edge by Pages Functions and cached in KV.
 
+**v5.97.2 — the Kalshi parser accepts the format Kalshi actually issues.** The owner supplied a
+real Kalshi-issued private key to finish the v3.99.1 setup, and it is **PKCS#1**
+(`-----BEGIN RSA PRIVATE KEY-----`) — not the PKCS#8 the setup line had claimed for two
+releases. WebCrypto has no `"pkcs1"` import format, so `kalshiKey` threw, `kalshiHeaders`
+caught it, and the build fell through to the ANONYMOUS path **silently**: no error anywhere,
+`fed_odds` still null, and the operator left to guess. So the one documented setup step was
+wrong about its one input, and being wrong about it cost a silent failure rather than a message
+— the same defect class as the SEC blocker one release earlier, on the other side of the same
+sentence.
+**PKCS#8 is just PKCS#1 in a wrapper**, so the fix is pure DER assembly and needs no dependency:
+`SEQUENCE { INTEGER 0, AlgorithmIdentifier(rsaEncryption), OCTET STRING <pkcs1> }`. Verified
+**byte-identical** to `openssl pkcs8 -topk8 -nocrypt` on the real key, and against a
+WebCrypto-exported PKCS#8 in smoke. Both formats now import, and a **headerless paste of either**
+works too, because the fallback is STRUCTURAL (try pkcs8, then wrap) rather than a trust of the
+header text. Widening the accepted input did not widen the fail-closed guarantee — a genuinely
+malformed key still fails both paths and returns null to the anonymous fallback, pinned.
+**The stale claim is pinned ABSENT** (the v3.85 retired-instruction rule): the setup line now
+says *paste the key file exactly as issued* and records what was measured, so the next rotation
+cannot re-introduce a conversion step that was never needed.
+**Two of my own test defects, recorded rather than quietly fixed.** (1) The lifted signer module
+is loaded with `new Function`, so adding `export` to the new helper turned the whole section
+into a **crash** rather than a failure — no total printed, the v3.99.4 P0 shape; the keyword
+bought nothing (nothing imports it) and was dropped. (2) The first negative control **did not
+bite**: it disabled only the header branch, and the structural fallback still caught the
+PKCS#1 key — the implementation was more robust than the control's model of it. A control that
+passes because the code is better than you assumed proves nothing; re-run against the TRUE
+PKCS#8-only original, it turns exactly its own pin red.
+Tests: **2147 smoke + 306 render + 229 public-render**, `audit:prod` clean.
+
 **v5.97.1 — the unset SEC identity stops reading as a fact about the company (owner report).**
 `SEC_USER_AGENT` is unset on the Pages deployment, so `/api/ticker-facts` returns MISSING for
 `netCashB` / `dilutedSharesB` / `secFilings` on **every** name — which is why filed-source net
@@ -5034,7 +5063,10 @@ Jan-anchor shipped; see `snapshot.js` ~318–328), `spyMa100`, `spyMa200`, and a
   runs the signer, and cryptographically VERIFIES the signature** over the exact
   timestamp+method+path message, plus both fail-closed paths. A signature is a claim about
   crypto; a string pin cannot prove one. Setup: `npx wrangler pages secret put KALSHI_KEY_ID`
-  and `KALSHI_PRIVATE_KEY` (the PKCS#8 PEM Kalshi issues).
+  and `KALSHI_PRIVATE_KEY` — **paste Kalshi's key file exactly as issued**. Measured
+  2026-08-31 against a real Kalshi-issued key: it is **PKCS#1** (`BEGIN RSA PRIVATE KEY`),
+  not the PKCS#8 this line claimed for two releases; v5.97.2 accepts both (and a headerless
+  paste of either), so no conversion step is required.
   **Two defects the tests caught while building this.** (1) The key was memoized at module
   scope, so in a Worker isolate a **rotated secret would keep signing with the retired key**
   — and the cache masked a bad key behind an earlier good one (my own round-trip test returned
