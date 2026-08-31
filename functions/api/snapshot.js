@@ -113,10 +113,16 @@ export const BANDS = {
   nfciLeverage: [-5, 5],
   /* 8/31: the quarter-long NASDAQ100-vs-SP500 relative move, in pp. The widest real quarters
      (2000, 2020) ran roughly +/-40pp, so +/-100 rejects a decimal shift or a parse fault
-     without rejecting a genuinely violent quarter. NOTE, found not fixed: the 1-day
-     `ndxSpxRs` has NO band at all and never has — a separate gap on an order-gating field,
-     named rather than silently widened into this change. */
+     without rejecting a genuinely violent quarter. */
   ndxSpxRs63:   [-100, 100],
+  /* v5.97.4 — the gap the line above NAMED, closed: the 1-day RS never had a band, on the
+     one derived field that casts an Engine 0 vote. Sizing: even 1987-scale dislocations put
+     the one-DAY index spread in low single digits of pp, and the widest dot-com prints ran
+     under ~10pp — so +/-25 rejects the impossible (a decimal-shifted close, a mis-scaled
+     pct) without rejecting a violent day (the negative-WTI rule). A band-dropped value
+     falls to the ndx_spx_rs last-good group with its REAL date, so it degrades to a dated
+     HISTORICAL read downstream, never a silent hole. */
+  ndxSpxRs:     [-25, 25],
 };
 // True when v is absent (nothing to judge) or inside its band. Unbanded fields pass.
 export function plausible(key, v) {

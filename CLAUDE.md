@@ -5,6 +5,42 @@ answers *"is it safe to be in the market?"* from live macro + market + sentiment
 data. Single-page React app on Cloudflare Pages, with live data assembled at the
 edge by Pages Functions and cached in KV.
 
+**v5.97.4 — the two filed minors closed, and the three-surface button audit (owner: "fix those
+two open minors… don't fix, but check and audit every button").** Two fixes and one
+findings-only audit, split exactly as instructed.
+**(1) `#legacyCompact` EXCISED** — the dead markup v5.97.3 named rather than removed:
+`renderStance()`, `renderCalBlock()`, `#stanceStrip`, `#calBlock` and `#refreshRanksLegacy`
+are gone. Verified before cutting that every fact they carried has a live home (the glance
+GATE tile + `renderToday()`'s DESK box for the stance; `#trimChip`/`#flagsChip` for the v3.25
+red counts; the DESK `#dCal` drawer for the calendar — same `binaryEvents()` computation;
+`#refreshRanks`/`#quoteChip` for refresh + stamp). `stance()` keeps its five consumers;
+`macroGate()` lost its only renderer and survives as the smoke-pinned server-mirror contract.
+Every pin that measured a dead surface was RE-POINTED to its successor with the reversal
+documented, never deleted — and the re-pinned daily-contract fixture immediately caught the
+audit's headline finding live: under measured-HEADWIND + FULL actionability the ladder says
+SEND IT while the GATE tile (which aliases `stance().k`, a SECOND derivation of the locked
+vocabulary) says HODL. Filed, not fixed — the divergence is one-way cautious, but the tile's
+HODL does not mean RESTRICTED, the exact word-two-verdicts defect the `GATE:` rule exists for.
+**(2) `ndxSpxRs` banded (`[-25, 25]`)** — the v5.10.0 found-not-fixed item; a decimal shift
+is rejected, a crash-day divergence is not. **And the `available < 3` floor is RULED absolute**
+rather than re-derived at seven checks: it encodes "one or two readings never publish a
+direction" (an observations claim), unlike the confidence FRACTIONS the count-trap closure
+derived from `checks.length`. The ruling's consequence is now EXECUTED, not asserted: at
+exactly 3 available the direction publishes and the evidence axis reads LOW · HOLD · DATA
+DEGRADED, so the floor alone can never gate an order.
+**The audit** (check-only, per instruction — findings and method in the 8/31 working note):
+zero page errors on all five probe runs; Simple's 19 controls are high-leverage throughout;
+ranked findings are the GATE-tile second derivation above > Power's Macro Alerts section
+being **20 of 47 visible buttons operating unpersisted `useState` state** (every toggle/delete
+resets on reload; per-alert aria labels and the undo toast are correct) > five surviving
+span-onclick `openCard` sites in DESK strips (keyboard-unreachable — the v3.42 conversion
+never reached that altitude) > the hzDeckChip inline `auto`/`nearest` measuring **27×10px at
+390px** (the v3.81 reachability fix never reached the sibling control v3.72 added).
+Tests: **2149 smoke + 307 render + 229 public-render**, `audit:prod` clean, real Chromium.
+Render 310→307 is retirements-with-successors, each documented at its pin.
+Negative-controlled three ways — restoring a dead-markup fragment, removing the RS band, and
+raising the floor to 4 — each turning exactly its own pins (2/1/2).
+
 **v5.97.3 — the terminal's REFRESH button stops relabeling itself wrong (owner report).** Tapping
 `⟳ REFRESH` in the header worked — it correctly rebuilt the snapshot — but afterward the button
 permanently read `⟳ DATA+RANKS`. `refreshRanks()`'s cleanup hardcoded that string onto whichever
