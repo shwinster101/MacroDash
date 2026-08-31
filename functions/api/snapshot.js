@@ -111,6 +111,12 @@ export const BANDS = {
   // FEAT-NFCILEV (8/28): the leverage SUBINDEX shares NFCI's z-score construction (mean 0,
   // SD 1), so it shares NFCI's band verbatim — reject the impossible, not the unusual.
   nfciLeverage: [-5, 5],
+  /* 8/31: the quarter-long NASDAQ100-vs-SP500 relative move, in pp. The widest real quarters
+     (2000, 2020) ran roughly +/-40pp, so +/-100 rejects a decimal shift or a parse fault
+     without rejecting a genuinely violent quarter. NOTE, found not fixed: the 1-day
+     `ndxSpxRs` has NO band at all and never has — a separate gap on an order-gating field,
+     named rather than silently widened into this change. */
+  ndxSpxRs63:   [-100, 100],
 };
 // True when v is absent (nothing to judge) or inside its band. Unbanded fields pass.
 export function plausible(key, v) {
@@ -320,7 +326,14 @@ export async function buildSnapshot(env, { scope = "all", priorLive = null } = {
   // cross-day delta dressed as a 1-day read.
   const rs = pairRs(ndx.status === "fulfilled" ? ndx.value : null,
                     spy.status === "fulfilled" ? spy.value._spx1d : null);
-  if (rs) { live.ndxSpxRs = rs.rs; live.ndxSpxRsAsOf = rs.asOf; live.ndx1dPct = rs.ndx1d; live.spx1dPct = rs.spx1d; }
+  if (rs) {
+    live.ndxSpxRs = rs.rs; live.ndxSpxRsAsOf = rs.asOf; live.ndx1dPct = rs.ndx1d; live.spx1dPct = rs.spx1d;
+    // Its OWN AsOf, not the 1d one's: the two share a latest date today, but a field that
+    // borrows another's date is the derivative hole DERIVED_OF exists to close.
+    if (rs.rs63 !== undefined) {
+      live.ndxSpxRs63 = rs.rs63; live.ndxSpxRs63AsOf = rs.asOf; live.ndxSpxRs63Back = rs.back_date;
+    }
+  }
   delete live._spx1d; // internal pairing payload — never cached or served
 
   // FEAT-SNAP-SAFE: drop implausible values BEFORE anything renders or caches them.
@@ -790,18 +803,31 @@ async function fetchSpy(key, statuses = null) {
     ...(ma200 !== null ? { spyMa200: ma200 } : {}),
     // ENGINE0-CONT §5.3: internal pairing payload for the NASDAQ100/SP500 relative-strength
     // derivation — stripped from `live` before caching/serving (see buildSnapshot).
-    _spx1d: { latest, prev, latestDate: validObs[0]?.date ?? null, prevDate: validObs[1]?.date ?? null },
+    _spx1d: { latest, prev, latestDate: validObs[0]?.date ?? null, prevDate: validObs[1]?.date ?? null,
+      // 8/31: the same 63-session-back point for the quarter-long RS ratio. This pull is
+      // already 265 deep, so the window costs nothing here.
+      back: validObs[RS_63_SESSIONS] ? parseFloat(validObs[RS_63_SESSIONS].value) : undefined,
+      backDate: validObs[RS_63_SESSIONS]?.date },
   };
 }
 
+/* 8/31: the RS decay window, in trading sessions. ~63 sessions is a calendar quarter — the
+   horizon over which a QQQ-beta book's relative strength either persists or erodes. Named
+   here so the two fetchers and pairRs cannot drift to different windows. */
+export const RS_63_SESSIONS = 63;
+
 // ─── NASDAQ100 fetcher (ENGINE0-CONT §5.3) ────────────────────────────────
 // The RS check's index leg — FRED NASDAQ100 daily closes, replacing the order-gating
-// dependency on Finnhub's QQQ quote (Finnhub stays for display-only marks). 8 obs is
-// plenty for a latest/prior pair across holidays.
+// dependency on Finnhub's QQQ quote (Finnhub stays for display-only marks).
+// 8/31: the pull deepens 8 -> 70 observations. 8 was "plenty for a latest/prior pair", and a
+// latest/prior pair is exactly the problem — a one-session index spread against a +/-0.3pp
+// deadband is noise, and the structurally meaningful number for a QQQ-beta book is how the
+// ratio has DECAYED over a quarter. 70 covers ~63 trading sessions plus holiday slack. One
+// request either way; the cost is response size, not a new upstream.
 async function fetchNdx(key, statuses = null) {
   if (!key) throw new Error("FRED_KEY not set");
   const url = `https://api.stlouisfed.org/fred/series/observations`
-    + `?series_id=NASDAQ100&api_key=${key}&limit=8&sort_order=desc&file_type=json`;
+    + `?series_id=NASDAQ100&api_key=${key}&limit=70&sort_order=desc&file_type=json`;
   let r, d;
   try {
     r = await fetchRetry(url, {}, 2, 9000);
@@ -813,8 +839,13 @@ async function fetchNdx(key, statuses = null) {
     throw new Error("NASDAQ100 no data");
   }
   recordStatus(statuses, "fred", "NASDAQ100", true, { attempts: r._attempts, latency_ms: r._latencyMs, observed_at: validObs[0].date });
+  // RS_63_SESSIONS back, when the window is actually there. Absent (undefined) rather than
+  // guessed when the series is short — a quarter-long ratio built from half a quarter is a
+  // different statistic wearing the same name.
+  const back = validObs[RS_63_SESSIONS];
   return { latest: parseFloat(validObs[0].value), prev: parseFloat(validObs[1].value),
-           latestDate: validObs[0].date, prevDate: validObs[1].date };
+           latestDate: validObs[0].date, prevDate: validObs[1].date,
+           back: back ? parseFloat(back.value) : undefined, backDate: back ? back.date : undefined };
 }
 
 // PURE (exported for smoke): same-date pairing of the two index legs. Both the latest AND
@@ -827,7 +858,19 @@ export function pairRs(ndx, spx) {
   if (!ndx.latestDate || ndx.latestDate !== spx.latestDate || !ndx.prevDate || ndx.prevDate !== spx.prevDate) return null;
   const p = (a, b) => parseFloat((((a - b) / b) * 100).toFixed(2));
   const ndx1d = p(ndx.latest, ndx.prev), spx1d = p(spx.latest, spx.prev);
-  return { rs: parseFloat((ndx1d - spx1d).toFixed(2)), ndx1d, spx1d, asOf: ndx.latestDate };
+  /* 8/31 — THE QUARTER-LONG LEG. Same same-date discipline as the 1-day pair, applied to the
+     63-sessions-back point: both legs' back-dates must match, or the "decay" would be measured
+     across two different start dates and would not be a ratio change at all. It is OPTIONAL —
+     a short series yields the 1d pair alone rather than nulling the whole RS block (fail
+     closed on the FIELD, not the feed — the v4.1.5 30Y-column rule). */
+  const out = { rs: parseFloat((ndx1d - spx1d).toFixed(2)), ndx1d, spx1d, asOf: ndx.latestDate };
+  const backs = [ndx.back, spx.back];
+  if (backs.every((v) => Number.isFinite(v) && v > 0) && ndx.backDate && ndx.backDate === spx.backDate) {
+    const ndx63 = p(ndx.latest, ndx.back), spx63 = p(spx.latest, spx.back);
+    out.rs63 = parseFloat((ndx63 - spx63).toFixed(2));
+    out.ndx63 = ndx63; out.spx63 = spx63; out.back_date = ndx.backDate;
+  }
+  return out;
 }
 
 // ─── Treasury 10Y fallback (ENGINE0-CONT §5.4) ────────────────────────────
@@ -1126,7 +1169,7 @@ const FIELD_LG_GROUPS = {
   vix:        ["vix", "vixAsOf", "vixWeekChg", "vixSeries"],
   tenyear:    ["tenYear", "tenYearAsOf", "tenYearD1", "tenYearW1", "tenYearM1", "tenYearSeries", "tenYearSource"],
   spy:        ["spyPrice", "spyPriceAsOf", "spyChangePct", "spyYtd", "spySeries", "spyMa100", "spyMa200", "spxIndex", "spxIndexAsOf", "spxPrevClose"],
-  ndx_spx_rs: ["ndxSpxRs", "ndxSpxRsAsOf", "ndx1dPct", "spx1dPct"],
+  ndx_spx_rs: ["ndxSpxRs", "ndxSpxRsAsOf", "ndx1dPct", "spx1dPct", "ndxSpxRs63", "ndxSpxRs63AsOf", "ndxSpxRs63Back"],
 };
 const FIELD_LG_PRIMARY = { vix: "vix", tenyear: "tenYear", spy: "spyPrice", ndx_spx_rs: "ndxSpxRs" };
 async function applyFieldLastGood(env, live) {

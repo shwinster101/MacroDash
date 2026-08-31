@@ -9,7 +9,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
 <!-- AUDIT: kept in sync with package.json by test/smoke.mjs. admin.html is a Vite
      public/ passthrough, so it cannot receive __APP_VERSION__ — the guard is the fix. -->
-<title>TT TICKER TERMINAL v5.9.5</title>
+<title>TT TICKER TERMINAL v5.97.1</title>
 <style>
   :root{
     --bg:#05070a; --panel:#0a0f16; --panel2:#0d141d; --line:#16202c;
@@ -494,7 +494,7 @@
          verdict and every gate are computed upstream and this panel changes nothing. -->
     <div id="macroEvidence" role="region" aria-label="Why macro — readout evidence"></div>
     <div id="headInfo" style="display:none">
-      <div class="brand">FINANCE&nbsp;BRO.AI // TT&nbsp;TICKER&nbsp;TERMINAL <small>v5.9.5 · the daily contract</small></div>
+      <div class="brand">FINANCE&nbsp;BRO.AI // TT&nbsp;TICKER&nbsp;TERMINAL <small>v5.97.1 · the daily contract</small></div>
       <div class="statusline">
         <span>BOOK: <b id="bookStamp">loading…</b></span>
         <span>AUTH: <b id="sessState">…</b></span>
@@ -7746,6 +7746,10 @@ function renderMacroEvidence(){
     `<span class="mev-row"><b>EVIDENCE:</b> <span class="mev-bull">${reg.bullish} bullish</span> · <span class="mev-bear">${reg.bearish} bearish</span> · ${reg.missing} missing — ${esc(reg.confidence||"?")} · ${esc(reg.actionability||"?")}</span>`
     +rows
     +(reg.reason?`<span class="mev-row">⚠ ${esc(reg.reason)}</span>`:"")
+    /* 8/31: the rate-path confidence withhold reads HERE too. `reg.reason` only ever names
+       WHICH check is missing ("missing: fed_next_meeting"); it never says that the absence
+       cost a confidence grade. A withhold visible only in the JSON is the v3.41 defect. */
+    +(reg.confidence_withheld?`<span class="mev-row" style="color:var(--amber)">⚠ ${esc(reg.confidence_withheld)}</span>`:"")
     +`<span class="mev-row" style="opacity:.7">presentation only — the verdict and every gate are computed upstream; this panel changes nothing</span>`;
 }
 async function loadRegime(){

@@ -20,6 +20,7 @@ import {
   bandSpyVs200d, bandVix, bandFearGreed, bandRs, bandTenYear, bandFedOdds,
   aggregateVerdict, computeMacroFlip, buildTtReadout, formatTtPaste, DERIVED_OF,
   conservativeVote, CARRY_SESSIONS, readoutQuality, compareQuality,
+  tenYearBurst, TEN_BURST_PP, TEN_BURST_SESSIONS, rsVote, band30yCurve, CURVE_WIDEN_PP,
 } from "../src/ttReadout.js";
 import { sessionsBehind } from "../src/sources.js";
 import { validateBook, validateBoard, validatePos, conflictCheck, authMode, lockoutState, recordFailure, parseCookie, hashPin, LOCK_TIERS, diffForLedger } from "../functions/api/tt.js";
@@ -35,9 +36,9 @@ import { streetRevision, onRequestPut as putStreetPacket, onRequestGet as getStr
 import { onRequestGet as getFramework, onRequestPut as putFramework } from "../functions/api/framework.js";
 import { mergeOcrExtractions, onRequestPost as postStreetOcr } from "../functions/api/street/ocr.js";
 import { onRequestGet as getTickerFacts, onRequestPost as postTickerFacts, nasdaqCandlesFact, quoteFact } from "../functions/api/ticker-facts.js";
-import { onRequestPost as postTickerAnalysis, riskTierForBookEntry } from "../functions/api/ticker-analysis.js";
+import { onRequestPost as postTickerAnalysis, riskTierForBookEntry, qualitativeRubric } from "../functions/api/ticker-analysis.js";
 import { plausible, applyBands, quorum, QUORUM_FIELDS, QUORUM_MIN, marketSession, BANDS,
-  pairRs, parseTreasuryCsv, preferFresherRates, parseCboeVixCsv, parseCboeVixQuote,
+  pairRs, RS_63_SESSIONS, parseTreasuryCsv, preferFresherRates, parseCboeVixCsv, parseCboeVixQuote,
   pairCboeVix, preferFresherVix,
   rateOddsStillOpen, chooseTtl, publishIfNoWorse, TTL_MEDIUM, TTL_LOW,
   fetchEquities, onRequest as getSnapshot } from "../functions/api/snapshot.js";
@@ -331,16 +332,190 @@ const mkLive = (o = {}) => ({
 });
 const rBull = buildTtReadout(mkLive(), { now: TT_NOW });
 ok("readout: schema-body has the 9 stable top-level keys", ["spy", "vix", "fear_greed", "qqq_spy_rs", "us10y", "fed_odds", "regime", "macro_flip", "attribution"].every((k) => k in rBull));
-ok("readout: regime.checks is ALWAYS length 6", rBull.regime.checks.length === 6);
+/* v5.97: SEVEN — us30y_curve appended. The count is asserted in ONE place and every other
+   site derives from it, so the next check to arrive moves one literal instead of four. */
+const TT_CHECK_COUNT = 7;
+ok("v5.97: regime.checks is ALWAYS length 7 — us30y_curve APPENDED, so indices 0-5 never moved",
+  rBull.regime.checks.length === TT_CHECK_COUNT
+  && rBull.regime.checks[6].name === "us30y_curve"
+  && rBull.regime.checks.map((c) => c.name).slice(0, 6).join() ===
+     "spy_vs_200d,vix,fear_greed,qqq_spy_rs,us10y_trend,fed_next_meeting");
 ok("readout: spy pct computed (+6.87% > 3) -> bullish check", rBull.spy.pct_vs_200d === 6.87 && rBull.regime.checks[0].state === "bullish");
 ok("readout: qqq_spy_rs leading (0.9-0.41=+0.49 > 0.3) + basis 1d", rBull.qqq_spy_rs.state === "leading" && rBull.qqq_spy_rs.basis === "1d");
-ok("readout: bullish-majority -> TAILWIND (SPY+VIX+RS bull, F&G/10Y/Fed neutral)", rBull.regime.verdict === "TAILWIND" && rBull.regime.bullish === 3 && rBull.regime.bearish === 0);
+/* 8/31 — THIS PIN REVERSES on the RS leg. It asserted 3 bullish votes because a 1d RS print
+   of +0.49pp cast one. A single session is not relative strength (see rsVote): the state is
+   still measured and still published as `leading`, but the bullish VOTE is withheld, so the
+   same tape is 2 bull / 0 bear and still TAILWIND. Both halves pinned — the count moved, the
+   verdict did not, and the measured state is untouched. */
+ok("8/31: bullish-majority -> TAILWIND on 2 bull (SPY+VIX); RS still MEASURES leading but does not vote it",
+  rBull.regime.verdict === "TAILWIND" && rBull.regime.bullish === 2 && rBull.regime.bearish === 0
+  && rBull.qqq_spy_rs.state === "leading" && rBull.regime.checks[3].state === "neutral"
+  && /one session is not relative strength/.test(rBull.regime.checks[3].reason));
+ok("8/31 RS: a BEARISH 1d print survives — the withhold is asymmetric, exactly like conservativeVote",
+  (() => { const r = buildTtReadout(mkLive({ qqqChangePct: -0.5, spyChangePct: 0.41 }), { now: TT_NOW });
+    return r.qqq_spy_rs.state === "breaking_down" && r.regime.checks[3].state === "bearish"; })());
+ok("8/31 RS: ONE-WAY — withholding a bull vote can only move the verdict away from risk-on",
+  (() => { // same tape, RS the only bull: TAILWIND would have been 1-0; now it is a 0-0 NEUTRAL.
+    const r = buildTtReadout(mkLive({ spyPrice: 700, vix: 20, fearGreed: 62, tenYearM1: 0.03, rateOddsHold: 98 }), { now: TT_NOW });
+    return r.qqq_spy_rs.state === "leading" && r.regime.bullish === 0 && r.regime.verdict === "NEUTRAL"
+      && r.regime.available === 6; })());  // available is UNTOUCHED — a neutral check still counts
+ok("8/31 RS: rsVote is pure and only ever downgrades the bullish case",
+  rsVote("leading", "1d") === "neutral" && rsVote("breaking_down", "1d") === "bearish"
+  && rsVote("inline", "1d") === "neutral" && rsVote(null, "1d") === null
+  // a longer basis is NOT withheld — the rule is about the window, not about RS
+  && rsVote("leading", "63d") === "bullish");
 ok("readout: spyMa200 absent -> spy check unavailable, sma200 null (never fabricated)", (() => { const r = buildTtReadout(mkLive({ spyMa200: undefined }), { now: TT_NOW }); return r.spy.sma200 === null && r.regime.checks[0].state === "unavailable"; })());
 ok("readout: HEADWIND when bearish-majority", (() => { const r = buildTtReadout(mkLive({ spyPrice: 650, vix: 26, tenYearM1: 0.2 }), { now: TT_NOW }); return r.regime.verdict === "HEADWIND"; })());
 ok("readout: NEUTRAL on a 1-1 tie among available checks", (() => { const r = buildTtReadout(mkLive({ spyPrice: 700, vix: 26, tenYearM1: -0.2, fearGreed: 62, qqqChangePct: 0.41, rateOddsHold: 98 }), { now: TT_NOW }); return r.regime.bullish === 1 && r.regime.bearish === 1 && r.regime.verdict === "NEUTRAL"; })());
 ok("readout: PANIC (vix 25.1 + F&G 19) overrides a bullish tape", (() => { const r = buildTtReadout(mkLive({ vix: 25.1, fearGreed: 19 }), { now: TT_NOW }); return r.regime.verdict === "PANIC" && r.regime.panic_inputs.panic === true; })());
 ok("readout: boundary vix 25 + F&G 19 is NOT panic", buildTtReadout(mkLive({ vix: 25, fearGreed: 19 }), { now: TT_NOW }).regime.panic_inputs.panic === false);
 ok("readout: boundary vix 26 + F&G 20 is NOT panic", buildTtReadout(mkLive({ vix: 26, fearGreed: 20 }), { now: TT_NOW }).regime.panic_inputs.panic === false);
+
+/* ── 8/31: THE 10Y BURST TERM ───────────────────────────────────────────────────────────
+   The check read a ~21-session magnitude, so it could not tell drift from a repricing.
+   Every pin here runs the REAL band and the REAL engine: a threshold is a claim about
+   numbers, and a string pin cannot prove one. `bandTenYear` itself is UNTOUCHED — the burst
+   is a separate term, and these pins prove the published `trend` still means the month. */
+// A 3-session hawkish burst of a month's size fires; the SAME move dovish does nothing.
+const burstLive = (pp, m1 = 0.03) => {
+  const base = 4.46 - pp; // oldest→newest, 4 points so the 3-session lookback is exact
+  return mkLive({ tenYearM1: m1, tenYear: 4.46, tenYearSeries: [base, base, base, 4.46] });
+};
+ok("8/31 burst: the threshold is DERIVED from bandTenYear's own spiking edge, not a new constant",
+  // Reconciled behaviourally against the band rather than restated: TEN_BURST_PP is exactly
+  // the magnitude the month-band already calls spiking, so moving one moves both.
+  TEN_BURST_SESSIONS === 3 && bandTenYear(TEN_BURST_PP + 0.001) === "spiking" && bandTenYear(TEN_BURST_PP) !== "spiking");
+ok("8/31 burst: a month's move inside 3 sessions votes BEARISH even though the month reads rangebound",
+  (() => { const r = buildTtReadout(burstLive(0.2), { now: TT_NOW });
+    const c = r.regime.checks[4];
+    return r.us10y.trend === "rangebound" && r.us10y.burst_fired === true && c.state === "bearish"
+      && /rangebound/.test(c.reason) && /3 sessions/.test(c.reason); })());
+ok("8/31 burst: the published `trend` still reports the MONTH verbatim — the statistic did not change meaning",
+  buildTtReadout(burstLive(0.2), { now: TT_NOW }).us10y.trend === "rangebound");
+ok("8/31 burst: boundary — the VOTE flips AT the edge, not below it",
+  // Asserts the vote, not just the flag: a control that disabled only the vote wiring turned
+  // a flag-only boundary pin green, which would have made this read as covered when it wasn't.
+  (() => { const at = buildTtReadout(burstLive(0.15), { now: TT_NOW });
+    const below = buildTtReadout(burstLive(0.149), { now: TT_NOW });
+    return at.us10y.burst_fired === true && at.regime.checks[4].state === "bearish"
+      && below.us10y.burst_fired === false && below.regime.checks[4].state === "neutral"; })());
+ok("8/31 burst: ASYMMETRIC — a dovish burst of the same size does NOTHING (thin evidence never buys risk-on)",
+  (() => { const r = buildTtReadout(burstLive(-0.3), { now: TT_NOW });
+    return r.us10y.burst_fired === false && r.regime.checks[4].state === "neutral"; })());
+ok("8/31 burst: ONE-WAY — it can sharpen a neutral month to bearish, and can never soften a bearish one",
+  (() => { const spiking = buildTtReadout(mkLive({ tenYearM1: 0.3, tenYear: 4.46, tenYearSeries: [4.9, 4.8, 4.7, 4.46] }), { now: TT_NOW });
+    // A DOVISH 3-session run under a spiking month: the check must stay bearish.
+    return spiking.us10y.trend === "spiking" && spiking.regime.checks[4].state === "bearish"; })());
+ok("8/31 burst: it never resurrects a MISSING check — the majority math gets no side door",
+  // NOT written as burstLive(0.2, undefined): `m1` is a DEFAULTED parameter, so passing
+  // undefined restores 0.03 and the fixture quietly stops testing a missing m1. Caught by
+  // this pin failing against correct code — the field is overridden explicitly instead.
+  (() => { const r = buildTtReadout({ ...burstLive(0.2), tenYearM1: undefined }, { now: TT_NOW });
+    return r.regime.checks[4].tier === "MISSING" && r.regime.checks[4].state === "unavailable"
+      && r.us10y.burst_pp === 0.2 && r.us10y.burst_fired === false; })());
+ok("8/31 burst: fails closed on a short series, a non-finite point, or a series/level mismatch",
+  tenYearBurst([4.4, 4.5], 4.5) === null &&
+  tenYearBurst([4.4, null, 4.5, 4.6], 4.6) === null &&
+  // newest point disagrees with the published level -> two different legs -> refuse to compute
+  tenYearBurst([4.4, 4.4, 4.4, 4.6], 4.46) === null &&
+  tenYearBurst([4.4, 4.4, 4.4, 4.6], 4.6).pp === 0.2);
+ok("8/31 burst: NOT FITTED — the live 2026-08-31 tape (+0.09 over 3 sessions) does NOT fire it",
+  // The tape that motivated the term is the control: a threshold tuned to make its own
+  // motivating case fire would be a fit, not a rule. Real series and real level from that body.
+  (() => { const r = buildTtReadout(mkLive({ tenYear: 4.73, tenYearM1: 0.05,
+      tenYearSeries: [4.72, 4.71, 4.65, 4.69, 4.74, 4.7, 4.64, 4.66, 4.67, 4.73] }), { now: TT_NOW });
+    return r.us10y.burst_pp === 0.09 && r.us10y.burst_fired === false && r.regime.checks[4].state === "neutral"
+      // ...and it is still REPORTED, so the reader sees the month and the burst disagree in scale.
+      && /3-session \+0\.09pp/.test(r.regime.checks[4].reason); })());
+ok("8/31 burst: the weekly window the obvious fix would have used catches NOTHING on that tape",
+  // Recorded because it is the correction that changed the design: tenYearW1 on the live body
+  // was -0.01, i.e. flatter and marginally MORE dovish than the month it was meant to sharpen.
+  (() => { const r = buildTtReadout(mkLive({ tenYear: 4.73, tenYearM1: 0.05, tenYearW1: -0.01,
+      tenYearSeries: [4.72, 4.71, 4.65, 4.69, 4.74, 4.7, 4.64, 4.66, 4.67, 4.73] }), { now: TT_NOW });
+    return r.us10y.burst_pp > 0 && r.us10y.burst_pp > Math.abs(-0.01); })());
+ok("8/31 burst: it prints on the human surface — the paste block carries the burst beside the month",
+  (() => { const t = formatTtPaste(buildTtReadout(burstLive(0.2), { now: TT_NOW }));
+    return /m1 \+0\.03/.test(t) && /3d \+0\.2/.test(t) && /BURST/.test(t); })());
+
+/* ── v5.97: THE LONG END AS A CHECK ─────────────────────────────────────────────────────────
+   Owner call, and the highest-risk change in this file's history: a 7th voter in a contract
+   that gates real orders. Every pin RUNS the engine. */
+const curveLive = (o = {}) => mkLive({ thirtyYear: 5.22, thirtyYearAsOf: D, thirtyYearM1: 0.01,
+  spread10s30s: 0.49, spread10s30sAsOf: D, ...o });
+ok("v5.97 curve: EVERY edge is derived from a band that already existed — none is newly asserted",
+  // Reconciled behaviourally, not restated: the widening edge IS bandTenYear's spiking edge,
+  // and the burst edge IS the v5.10.0 term. Move either and this check moves with it.
+  CURVE_WIDEN_PP === TEN_BURST_PP &&
+  bandTenYear(CURVE_WIDEN_PP + 0.001) === "spiking" && bandTenYear(CURVE_WIDEN_PP) !== "spiking");
+ok("v5.97 curve: BEARISH-ONLY by construction — no input of any shape returns a bullish vote",
+  (() => { for (const spread of [-3, -0.01, 0, 0.5, 4])
+      for (const d of [-2, -0.16, 0, 0.16, 2])
+        for (const b of [-1, 0, 0.15, 1]) {
+          const r = band30yCurve({ spread, spreadM1Chg: d, burstPp: b });
+          if (r && r.vote === "bullish") return false;
+        }
+    return true; })());
+ok("v5.97 curve: boundaries — widening fires ABOVE the edge, inversion BELOW zero, burst AT the edge",
+  band30yCurve({ spreadM1Chg: 0.151 }).vote === "bearish" &&
+  band30yCurve({ spreadM1Chg: 0.15 }).vote === "neutral" &&
+  band30yCurve({ spread: -0.01 }).vote === "bearish" &&
+  band30yCurve({ spread: 0 }).vote === "neutral" &&
+  band30yCurve({ burstPp: 0.15 }).vote === "bearish" &&
+  band30yCurve({ burstPp: 0.149 }).vote === "neutral");
+ok("v5.97 curve: fails CLOSED — nothing measurable is `unavailable`, never a comfortable neutral",
+  band30yCurve({}) === null && band30yCurve({ spread: null, spreadM1Chg: NaN, burstPp: undefined }) === null &&
+  (() => { const r = buildTtReadout(mkLive(), { now: TT_NOW });  // no 30Y fields at all
+    return r.regime.checks[6].state === "unavailable" && r.us30y.tier === "MISSING"; })());
+ok("v5.97 curve: NOT COLLINEAR with the 10Y — a PARALLEL shift moves the belly and leaves the curve flat",
+  // The whole reason this is not "the 10Y check with a 3 in front" (the v3.83 defect).
+  (() => { const par = buildTtReadout(curveLive({ tenYearM1: 0.3, thirtyYearM1: 0.3,
+      tenYear: 4.46, thirtyYear: 5.22, spread10s30s: 0.49 }), { now: TT_NOW });
+    return par.regime.checks[4].state === "bearish"      // belly says spiking
+      && par.regime.checks[6].state === "neutral"        // curve unchanged -> no second vote
+      && par.us30y.spread_m1_chg === 0; })());
+ok("v5.97 curve: a LONG-END breakout while the belly is calm votes bearish — the case only this check sees",
+  (() => { const r = buildTtReadout(curveLive({ tenYearM1: 0.02, thirtyYearM1: 0.25 }), { now: TT_NOW });
+    return r.regime.checks[4].state === "neutral" && r.regime.checks[6].state === "bearish"
+      && r.us30y.flags.includes("widening") && /votes bearish/.test(r.regime.checks[6].reason); })());
+ok("v5.97 curve: an INVERTED 10s30s votes bearish, and the flag names it",
+  (() => { const r = buildTtReadout(curveLive({ spread10s30s: -0.12 }), { now: TT_NOW });
+    return r.regime.checks[6].state === "bearish" && r.us30y.flags.includes("inverted"); })());
+ok("v5.97 curve: the LEVEL alone never votes — an elevated-but-flat long end reads neutral and says so",
+  // The owner's own prompt was the 5.22 level; a level arm would make this a permanently
+  // one-way voter (the NFCI v3.43.1 flaw), so the level is EVIDENCE and the repricing votes.
+  (() => { const r = buildTtReadout(curveLive({ thirtyYear: 6.5 }), { now: TT_NOW });
+    return r.regime.checks[6].state === "neutral" && /6\.5%/.test(r.regime.checks[6].reason)
+      && /level alone does not vote/.test(r.regime.checks[6].reason); })());
+ok("v5.97 curve: the monthly change needs the SPREAD present — it inherits snapshot's same-date guarantee",
+  // thirtyYearM1 - tenYearM1 across two differently-dated legs would be a fabricated
+  // observation; snapshot.js drops spread10s30s on a date mismatch, so gate on it.
+  (() => { const r = buildTtReadout(mkLive({ thirtyYear: 5.22, thirtyYearAsOf: D, thirtyYearM1: 0.25, tenYearM1: 0.02 }), { now: TT_NOW });
+    return r.us30y.spread_m1_chg === null && !r.us30y.flags.includes("widening"); })());
+ok("v5.97 curve: on the LIVE 2026-08-31 tape it votes NEUTRAL — not built to make its own prompt red",
+  // BOTH legs must come from the real body: the curve change is thirtyYearM1 MINUS tenYearM1,
+  // and an earlier draft of this pin set only the 30Y leg, leaving mkLive's default 10Y in
+  // place — so it computed -0.02 while claiming to reproduce a tape that read -0.04. A fixture
+  // named for a real tape has to carry all of it.
+  (() => { const r = buildTtReadout(curveLive({ tenYear: 4.73, tenYearM1: 0.05, thirtyYearM1: 0.01,
+      thirtyYearSeries: [5.31, 5.28, 5.19, 5.23, 5.27, 5.23, 5.17, 5.18, 5.19, 5.22] }), { now: TT_NOW });
+    return r.us30y.spread_m1_chg === -0.04 && r.us30y.burst_pp === 0.05
+      && r.us30y.flags.length === 0 && r.regime.checks[6].state === "neutral"
+      // ...and the elevated LEVEL is still on the reason, unvoted.
+      && /5\.22%/.test(r.regime.checks[6].reason); })());
+ok("v5.97 curve: it prints on the human surface with its level and its curve reading",
+  (() => { const t = formatTtPaste(buildTtReadout(curveLive({ spread10s30s: -0.12 }), { now: TT_NOW }));
+    return /30Y CURVE/.test(t) && /5\.22%/.test(t) && /inverted/.test(t); })());
+ok("v5.97 curve: ONE-WAY — adding this voter can never move the verdict toward risk-on",
+  (() => { // the same tape with and without the 30Y fields; the verdict may only get more cautious
+    const RANK = { HEADWIND: 0, NEUTRAL: 1, TAILWIND: 2 };
+    for (const o of [{}, { spread10s30s: -0.2 }, { thirtyYearM1: 0.4 }, { spread10s30s: 2.5 },
+                     { thirtyYearM1: -0.5 }, { spread10s30s: 0.1, thirtyYearM1: 0.01 }]) {
+      const without = buildTtReadout(mkLive(), { now: TT_NOW }).regime;
+      const withCurve = buildTtReadout(curveLive(o), { now: TT_NOW }).regime;
+      if (withCurve.verdict === "PANIC" || without.verdict === "PANIC") continue;
+      if (RANK[withCurve.verdict] > RANK[without.verdict]) return false;  // never MORE risk-on
+    }
+    return true; })());
 
 // ---- FEAT-DASH-DERIV (v3.40): a derived field inherits its parent's staleness -------------
 // isStale() fails OPEN on a missing date (correct for a dated field — nothing to judge), but
@@ -479,7 +654,7 @@ const strip = (live, g) => { const c = { ...live }; for (const k of P_GROUPS[g])
     // P1 — the published vocabulary is CLOSED. INSUFFICIENT is an internal sentinel (v3.63).
     chk(["TAILWIND", "NEUTRAL", "HEADWIND", "PANIC"].includes(r.regime.verdict), "P1 verdict vocabulary", i, live);
     // P2 — the contract's shape never varies with the data.
-    chk(r.regime.checks.length === 6, "P2 six checks", i, live);
+    chk(r.regime.checks.length === TT_CHECK_COUNT, "P2 check count", i, live);
     chk(["HIGH", "MEDIUM", "LOW"].includes(r.regime.confidence), "P3 confidence vocabulary", i, live);
     chk(["FULL", "RESTRICTED", "HOLD"].includes(r.regime.actionability), "P3 actionability vocabulary", i, live);
     // P4 — a risk-ON call is NEVER published while a panic gauge is blind (v3.40/v3.41).
@@ -544,10 +719,10 @@ const strip = (live, g) => { const c = { ...live }; for (const k of P_GROUPS[g])
   let threw = null;
   for (const h of HOSTILE) {
     try { const r = buildTtReadout(h, { now: TT_NOW });
-      if (!r || !r.regime || r.regime.checks.length !== 6) threw = `bad shape for ${JSON.stringify(h)}`; }
+      if (!r || !r.regime || r.regime.checks.length !== TT_CHECK_COUNT) threw = `bad shape for ${JSON.stringify(h)}`; }
     catch (e) { threw = `${JSON.stringify(h)} -> ${e && e.message}`; }
   }
-  ok("v4.1.6 Engine 0: never throws and always returns the 6-check contract, on any hostile input",
+  ok("v4.1.6 Engine 0: never throws and always returns the full check contract, on any hostile input",
     threw === null || (console.log("   " + threw), false));
 }
 
@@ -737,7 +912,7 @@ ok("matrix A: production shape (SPY+F&G current · VIX missing · RS missing · 
   }, { now: TT_NOW });
   return r.regime.verdict === "NEUTRAL" && r.regime.confidence === "LOW" &&
     r.regime.actionability === "HOLD" && r.regime.status === "DATA DEGRADED" &&
-    r.regime.current === 2 && r.regime.historical === 1 && r.regime.missing === 3 &&
+    r.regime.current === 2 && r.regime.historical === 1 && r.regime.missing === 4 &&
     /current VIX unavailable/.test(r.regime.reason);
 })());
 
@@ -752,9 +927,35 @@ ok("axis: all-current healthy day -> HIGH confidence, FULL actionability, status
   const r = rBull.regime;
   return r.confidence === "HIGH" && r.actionability === "FULL" && r.status === "OK" && r.current === 6 && r.historical === 0;
 })());
-ok("axis: Kalshi missing alone -> still HIGH (5 current, both gauges current), and the miss is NAMED in reason", (() => {
+/* 8/31 — THIS PIN REVERSES, and it is worth saying why it existed. It pinned the FAIL-OPEN:
+   a dark rate-path gauge cost nothing, so the engine published HIGH on five checks. Measured
+   live on the 2026-08-31 body, that is exactly what shipped — HIGH / FULL / OK with
+   fed_odds:null — and the five survivors are structurally blind to a hawkish repricing (SPY is
+   trend, VIX/F&G are vol and sentiment, RS is one session, and the 10Y votes on a ~21-session
+   delta that smooths a burst away). The assertion is now its own inverse: the grade drops, the
+   withhold is NAMED on its own axis, and the check is still named in `reason`. */
+ok("8/31: Kalshi dark WITHHOLDS HIGH — the rate-path fail-open, closed (this pin is the old one, inverted)", (() => {
   const r = buildTtReadout(mkLive({ rateOddsHold: undefined, rateOddsCut: undefined, rateOddsHike: undefined }), { now: TT_NOW }).regime;
-  return r.confidence === "HIGH" && /missing: fed_next_meeting/.test(r.reason);
+  return r.confidence === "MEDIUM" && r.actionability === "RESTRICTED" && r.status === "PARTIAL DATA"
+    && /missing: fed_next_meeting/.test(r.reason)
+    && /HIGH withheld/.test(r.confidence_withheld || "") && /rate-path/.test(r.confidence_withheld || "");
+})());
+ok("8/31: a CARRIED (historical) rate-path print also withholds HIGH — carried is not current", (() => {
+  // The carry window is 5 sessions, so these odds are HISTORICAL, not MISSING: the check still
+  // votes, but it is no longer a current reading of the policy path, and HIGH must not stand on it.
+  const r = buildTtReadout(mkLive({ rateOddsHoldAsOf: "2026-07-13", rateOddsCutAsOf: "2026-07-13", rateOddsHikeAsOf: "2026-07-13" }), { now: TT_NOW }).regime;
+  return r.confidence !== "HIGH" && /carried, not current/.test(r.confidence_withheld || "");
+})());
+ok("8/31: the withhold rides its OWN axis — `downgraded` (the verdict record) is untouched by it", (() => {
+  const r = buildTtReadout(mkLive({ rateOddsHold: undefined, rateOddsCut: undefined, rateOddsHike: undefined }), { now: TT_NOW }).regime;
+  // ENGINE0-CONT separated verdict-axis from evidence-axis; a confidence reason must not leak
+  // into the verdict-axis field, and a healthy day must carry neither.
+  const healthy = rBull.regime;
+  return r.downgraded === null && healthy.confidence_withheld === null && healthy.confidence === "HIGH";
+})());
+ok("8/31: the withhold is not silent on the human surface — the paste block prints it", (() => {
+  const r = buildTtReadout(mkLive({ rateOddsHold: undefined, rateOddsCut: undefined, rateOddsHike: undefined }), { now: TT_NOW });
+  return /HIGH withheld/.test(formatTtPaste(r));
 })());
 
 // Matrix G (pure half): odds for a CLOSED event are discarded, never carried.
@@ -827,6 +1028,49 @@ ok("matrix E: PRIOR-date mismatch also refuses (both legs of the delta must pair
   pairRs({ ...NDXFIX, prevDate: "2026-07-13" }, SPXFIX) === null);
 ok("pairRs: absent/non-finite leg -> null, never a fabricated 0",
   pairRs(null, SPXFIX) === null && pairRs({ ...NDXFIX, latest: NaN }, SPXFIX) === null);
+
+/* 8/31 — THE QUARTER-LONG RS LEG. Measured and published; deliberately NOT a voter (the
+   NFCI/30Y arrival rule). Every pin runs the real pairRs. */
+const NDX63 = { ...NDXFIX, back: 20000, backDate: "2026-04-15" };
+const SPX63 = { ...SPXFIX, back: 7000, backDate: "2026-04-15" };
+ok("8/31 RS63: matched back-dates -> decay = ndx63 - spx63, with its own start date",
+  (() => { const r = pairRs(NDX63, SPX63);
+    // NDX +15.00% vs SPX +6.87% over the window -> +8.13pp of relative strength
+    return r && r.rs63 === parseFloat((r.ndx63 - r.spx63).toFixed(2)) && r.rs63 === 8.13
+      && r.back_date === "2026-04-15"; })());
+ok("8/31 RS63: BACK-date mismatch refuses the quarter but KEEPS the 1d pair (fail closed on the field, not the feed)",
+  (() => { const r = pairRs({ ...NDX63, backDate: "2026-04-14" }, SPX63);
+    return r && r.rs === parseFloat((r.ndx1d - r.spx1d).toFixed(2)) && r.rs63 === undefined; })());
+ok("8/31 RS63: a short series yields the 1d pair alone — a partial quarter is never called a quarter",
+  (() => { const r = pairRs(NDXFIX, SPXFIX); return r && r.rs != null && r.rs63 === undefined; })());
+ok("8/31 RS63: the window is ONE named constant, so the two fetchers and pairRs cannot drift apart",
+  RS_63_SESSIONS === 63 &&
+  (() => { const src = readSrc("../functions/api/snapshot.js").replace(/\/\*[\s\S]*?\*\//g, "");
+    // both fetchers index by the constant, never by a literal 63
+    return (src.match(/validObs\[RS_63_SESSIONS\]/g) || []).length >= 2 && !/validObs\[63\]/.test(src); })());
+ok("8/31 RS63: it is published as EVIDENCE and casts NO vote — available/bullish/bearish are untouched",
+  (() => { const withDecay = buildTtReadout(mkLive({ ndxSpxRs: 0.49, ndxSpxRsAsOf: D, ndxSpxRs63: -12.4, ndxSpxRs63AsOf: D, ndxSpxRs63Back: "2026-04-30" }), { now: TT_NOW });
+    const without = buildTtReadout(mkLive({ ndxSpxRs: 0.49, ndxSpxRsAsOf: D }), { now: TT_NOW });
+    return withDecay.qqq_spy_rs.decay_63d === -12.4 && withDecay.qqq_spy_rs.decay_votes === false
+      && withDecay.qqq_spy_rs.decay_since === "2026-04-30"
+      // a deeply NEGATIVE decay must move nothing — that is what non-voting means
+      && withDecay.regime.available === without.regime.available
+      && withDecay.regime.bullish === without.regime.bullish
+      && withDecay.regime.bearish === without.regime.bearish
+      && withDecay.regime.verdict === without.regime.verdict
+      && withDecay.regime.checks[3].state === without.regime.checks[3].state; })());
+ok("8/31 RS63: it prints on the human surface, LABELLED non-voting",
+  (() => { const t = formatTtPaste(buildTtReadout(mkLive({ ndxSpxRs: 0.49, ndxSpxRsAsOf: D, ndxSpxRs63: -12.4, ndxSpxRs63AsOf: D, ndxSpxRs63Back: "2026-04-30" }), { now: TT_NOW }));
+    return /QQQ RS 63d/.test(t) && /-12\.4pp/.test(t) && /does not vote/.test(t); })());
+ok("8/31 RS63: the whole leg travels together in last-good — a restore cannot pair a live 1d with a vanished quarter",
+  (() => { const src = readSrc("../functions/api/snapshot.js");
+    const m = /ndx_spx_rs:\s*\[([^\]]*)\]/.exec(src);
+    return m && ["ndxSpxRs", "ndxSpxRsAsOf", "ndxSpxRs63", "ndxSpxRs63AsOf", "ndxSpxRs63Back"]
+      .every((k) => m[1].includes(`"${k}"`)); })());
+ok("8/31 RS63: banded — a decimal shift is rejected, a violent quarter is not",
+  (() => { const b = BANDS.ndxSpxRs63;
+    return Array.isArray(b) && plausible("ndxSpxRs63", -38) && plausible("ndxSpxRs63", 40)
+      && !plausible("ndxSpxRs63", 1240); })());
 
 // Matrix F: Treasury daily par-yield CSV parse (the official upstream DGS10 republishes).
 const TCSV = 'Date,"1 Mo","10 Yr","30 Yr"\n07/15/2026,5.1,4.46,5.02\n07/14/2026,5.1,4.43,4.97\n07/11/2026,5.1,4.40,4.95';
@@ -2892,16 +3136,27 @@ ok("nfciLeverage: the whys footer is RETIRED — no leverage prop, no context li
   !/leverage/i.test(whysSrc.replace(/\/\*[\s\S]*?\*\//g, "")) &&
   !/Leverage subindex not loaded/.test(whysSrc) &&
   !/levCtx/.test(dashSrc));
-ok("nfciLeverage: the strip carries a LEV tile keyed on the field, with a reference-point sub-line",
-  /\{l:"LEV",\s+f:"nfciLeverage"/.test(stripSrc) &&
+/* OWNER SWAP (8/31) — these three pins REVERSE. The 8th strip slot held LEV from 8/29; it
+   now holds the NFCI COMPOSITE. The reason is a voter/glance mismatch: NFCI has voted in the
+   six-factor backdrop since v3.43 and was the ONE voter with no glance presence, while the
+   slot beside it was rented to a field that votes nowhere. Pinned in BOTH directions so
+   neither the swap nor a revert passes quietly. LEV is not deleted — it keeps the NFCI
+   tile's leverage-subindex line (pinned above), and every nfciLeverage contract below this
+   block (own AsOf, weekly cadence, votes nowhere) is UNCHANGED and still enforced. */
+ok("8/31 swap: the strip's 8th slot carries the NFCI composite, with the reference-point sub-line",
+  /\{l:"NFCI",\s+f:"nfci"/.test(stripSrc) &&
   /s:"0 = avg"/.test(stripSrc) &&
-  /d\.macro\.nfci\.leverage\.toFixed\(2\)/.test(stripSrc));
-ok("nfciLeverage strip tile: NO verdict word, and a non-finite value renders a dash, never 0.00",
-  (() => { const i = stripSrc.indexOf('{l:"LEV"'); const seg = stripSrc.slice(i, i + 700);
-    return !/TIGHT|LOOSE|BULLISH|BEARISH/.test(seg) && /Number\.isFinite\(d\.macro\.nfci\.leverage\)/.test(seg) && /:"—"/.test(seg); })());
-ok("nfciLeverage strip tile: context-only BY CONSTRUCTION — absent from the voter set, so ▪ cannot render",
-  // votingFields is derived from FACTOR_FIELD's values; nfciLeverage is not a factor, so the
-  // marker and the "Counts toward today's posture" tooltip are withheld without a special case.
+  /d\.macro\.nfci\.current\.toFixed\(2\)/.test(stripSrc));
+ok("8/31 swap: LEV is GONE from the strip — pinned ABSENT, so a revert cannot land silently",
+  !/\{l:"LEV"/.test(stripSrc) && !/nfciLeverage/.test(stripSrc.replace(/\/\*[\s\S]*?\*\//g, "")));
+ok("8/31 swap: NFCI strip tile — no verdict word, and a non-finite value renders a dash, never 0.00",
+  (() => { const i = stripSrc.indexOf('{l:"NFCI"'); const seg = stripSrc.slice(i, i + 700);
+    return !/TIGHT|LOOSE|BULLISH|BEARISH/.test(seg) && /Number\.isFinite\(d\.macro\.nfci\.current\)/.test(seg) && /:"—"/.test(seg); })());
+ok("8/31 swap: NFCI wears the voter marker BY CONSTRUCTION — the inverse of the LEV pin it replaces",
+  // The marker is derived from FACTOR_FIELD's values, so this needs no special case: nfci IS
+  // a factor field, nfciLeverage is not. Both halves pinned — the promotion and the fact that
+  // the demoted field still could not have voted.
+  Object.values(FACTOR_FIELD).includes("nfci") &&
   !Object.values(FACTOR_FIELD).includes("nfciLeverage") &&
   /const isVoter=vf\.has\(f\); const votes=isVoter&&live;/.test(stripSrc) &&
   /Context only — does not vote\./.test(stripSrc));
@@ -3971,11 +4226,18 @@ ok("30y: a 5.24% long bond trips the 5.2% alert; 5.10% is clear",
     { crossAsset: { treasury30y: { current: 5.24 } } }, () => "LIVE").state === "triggered" &&
   evalAlert({ metric: "treasury30y", condition: "above", value: 5.2, active: true },
     { crossAsset: { treasury30y: { current: 5.10 } } }, () => "LIVE").state === "clear");
-// Arrival rule: NFCI's precedent — a new series does not vote on day one.
-ok("30y: it does NOT vote — REGIME_BAND_TABLE is untouched and the readout math did not move",
+/* v5.97 — THIS PIN SPLITS, and only half of it reverses. It was the v3.55 arrival rule: a new
+   series does not vote on day one, in EITHER engine. On owner call the 30Y now votes in Engine
+   0 — so the ttReadout half inverts — while the PUBLIC six-factor backdrop is deliberately
+   untouched. That half is not a leftover: it is now the thing that keeps the two engines from
+   quietly merging, and the v5.9.5 sheet copy describing the public 10Y vote depends on it. */
+ok("v5.97: the 30Y does NOT vote in the PUBLIC backdrop — REGIME_BAND_TABLE is still untouched",
   !/thirtyYear|spread10s30s/.test(dashSrc.slice(dashSrc.indexOf("const REGIME_BAND_TABLE"),
-    dashSrc.indexOf("export function verdictFrom"))) &&
-  !/thirtyYear|spread10s30s/.test(readSrc("../src/ttReadout.js")));
+    dashSrc.indexOf("export function verdictFrom"))));
+ok("v5.97: the 30Y DOES vote in Engine 0 — the v3.55 arrival rule, lifted by owner call",
+  (() => { const src = readSrc("../src/ttReadout.js");
+    return /thirtyYear/.test(src) && /spread10s30s/.test(src)
+      && typeof band30yCurve === "function"; })());
 
 // ---- 33. the regime reference doc stays OUT of the public repo ------------
 // It leaked no book content, but CONSOLIDATION is itself the risk: one file describing the
@@ -10155,5 +10417,50 @@ console.log("\n[73] v5.3 ONE CALL — canonical vocabulary, additive API, immuta
     /REFRESH_TOKEN.*both lists/s.test(setupSrc));
 }
 
+/* ── 8/31: SEC IDENTITY — "I could not look" vs "there was nothing to find" ─────────────────
+   Owner report: SEC_USER_AGENT is unset on the Pages deployment, so /api/ticker-facts returns
+   MISSING for netCashB/dilutedSharesB/secFilings on every name. `secBundle` was already honest
+   at the FIELD level — it stores the cause verbatim — but `qualitativeRubric` discarded it and
+   emitted one company-shaped sentence, which flows into the receipt's blockers. That sent the
+   operator after the ticker when the cause was an unset secret. There was ZERO coverage of
+   either path, which is why it shipped. Both are RUN, not string-pinned. */
+console.log("\n[74] 8/31 SEC identity — the unset-secret cause survives to the blocker");
+{
+  const env = { AI: { run: async () => ({}) } };
+  const framework = { aiRubric: { text: "rubric" } };
+  const factsWith = (secFilings) => ({ fields: { secFilings } });
+  const MISSING = (reason) => ({ value: null, status: "MISSING", provider: "SEC", reason });
+
+  const unset = await qualitativeRubric("AAA", factsWith(MISSING("SEC_USER_AGENT is not configured")), framework, env);
+  ok("8/31 SEC: an unset SEC_USER_AGENT NAMES itself in the qualitative blocker",
+    unset.status === "UNKNOWN" && /SEC_USER_AGENT is not configured/.test(unset.reason));
+
+  const none = await qualitativeRubric("AAA", factsWith(MISSING("no recent 10-Q/10-K filing returned")), framework, env);
+  ok("8/31 SEC: a company with genuinely no filings reads DIFFERENTLY — the two causes never collapse",
+    /no recent 10-Q\/10-K filing returned/.test(none.reason) &&
+    !/SEC_USER_AGENT/.test(none.reason) && none.reason !== unset.reason);
+
+  ok("8/31 SEC: an ABSENT field record names no cause rather than inventing one",
+    (await qualitativeRubric("AAA", { fields: {} }, framework, env)).reason
+      === "no primary filing citation is available");
+
+  ok("8/31 SEC: the original clause survives in every branch, so nothing matching it breaks",
+    [unset, none].every((r) => /no primary filing citation is available/.test(r.reason)));
+
+  // The two causes must be distinct AT SOURCE too — if secBundle ever emitted one string for
+  // both, carrying it through would faithfully propagate an ambiguity instead of a fact.
+  const factsSrc = readSrc("../functions/api/ticker-facts.js");
+  ok("8/31 SEC: secBundle stores the two causes as DIFFERENT strings at source",
+    /SEC_USER_AGENT is not configured/.test(factsSrc) &&
+    /no recent 10-Q\/10-K filing returned/.test(factsSrc));
+
+  // The env matrix is the operator's map to this failure; it must keep naming the variable.
+  const claude = readSrc("../CLAUDE.md");
+  ok("8/31 SEC: the env matrix still names SEC_USER_AGENT, its deploy and its degraded state",
+    /\|\s*`SEC_USER_AGENT`\s*\|\s*Pages\s*\|/.test(claude));
+}
+
 console.log(`\n=== SMOKE TEST: ${pass} passed, ${fail} failed ===`);
 process.exit(fail === 0 ? 0 : 1);
+
+

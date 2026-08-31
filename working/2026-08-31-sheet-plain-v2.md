@@ -92,3 +92,35 @@ from the module alone.
 5.9.2 → **5.9.5**, owner-set. The v1 copy pass this corrects never landed on `main`, so 5.9.3
 and 5.9.4 do not exist. Recorded as a deliberate jump (the v4.99 precedent) so a later reader
 does not hunt for phantom releases.
+
+## Outcomes
+
+Landed as **v5.9.5**, PR #22, squash-merged to `main` as `67b7712`.
+
+- Gate at merge: **2097 smoke · 306 render · 227 public-render**, `audit:prod` clean, real
+  Chromium under `REQUIRE_BROWSER=1`. CI green on `main` — both the `test` job and the
+  Cloudflare Pages check. Local green is not CI green (the v4.1.3 lesson), so the run is the
+  arbiter, not this container.
+- Copy-only in `src/regime.js`. No vote, flip, ruler, MIXED-sub, cron or other sheet moved, and
+  the three titles are byte-identical to what shipped in v5.8.
+- Nothing in the ticket was left undone.
+
+### The scoping limit, named so it is not mistaken for coverage
+
+The ban sweep is scoped to the three rewritten keys, so it says nothing about the other three
+explainers — `fearGreed`, `cpiHeadline`, `nfci` — which still carry v5.9.1 bodies written in the
+instrument-teaching voice this pass retired. That is not a hypothetical: **`cpiHeadline`'s third
+bullet contains a banned stem verbatim** ("lifting the discount rate on every future dollar"),
+and it passes only because the sweep does not look there. `nfci`'s "It measures the plumbing,
+not the price" and `fearGreed`'s "positioning read, not a cause" are the same register.
+
+Two honest readings, both available:
+
+- The three rewritten sheets are the ones a newcomer opens first (VIX · CAPE · 10Y), so the
+  pass targeted where it pays. Half the product now speaks in one voice and half in another.
+- Widening the sweep to all six today would fail the build on copy nobody has ruled on. The
+  ban list is scoped to bodies the owner has approved in the new voice; extending it is a copy
+  decision, not a test decision.
+
+Owner call. If the answer is "make all six match", it is one more copy pass of the same shape
+and the sweep widens with it.

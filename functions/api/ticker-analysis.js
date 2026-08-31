@@ -47,17 +47,37 @@ function modelJson(value) {
   }
 }
 
-async function qualitativeRubric(sym, facts, framework, env) {
+// Exported SOLELY for smoke (the validateBook precedent): the early-return reasons below
+// flow into receipt blockers, and a string pin cannot prove which cause they name.
+export async function qualitativeRubric(sym, facts, framework, env) {
   if (!env.AI || typeof env.AI.run !== "function")
     return { status: "UNKNOWN", score: null, reason: "Workers AI binding is unavailable", citations: [] };
   if (!framework?.aiRubric?.text)
     return { status: "UNKNOWN", score: null, reason: "an approved AI-safe rubric is unavailable", citations: [] };
-  const filings = facts?.fields?.secFilings?.value;
+  /* 8/31 — CARRY THE FIELD'S OWN REASON. `secBundle` already distinguishes two completely
+     different causes and stores each verbatim: "SEC_USER_AGENT is not configured" (the system
+     was never able to look) and "no recent 10-Q/10-K filing returned" (it looked, the company
+     had nothing). Both arrive here as a MISSING field with `value: null`, and this function
+     used to discard the reason and emit one sentence — "no primary filing citation is
+     available" — which is a claim about the COMPANY. That sentence flows straight into the
+     receipt's blockers via gate("qualitative", "UNKNOWN", qualitative?.reason), so an operator
+     reading the blocker went looking at the ticker (does it file? is the CIK mapping wrong?)
+     when the actual cause was an unset Pages secret. "I could not look" and "there was nothing
+     to find" are different facts — the v5.6.4 / v3.52 / ENGINE0-CONT rule, and the one place
+     in this path it was not being honoured. MEASURED on the live deployment: SEC_USER_AGENT is
+     unset, so every name reported the company-shaped sentence. */
+  const filingsField = facts?.fields?.secFilings;
+  const filings = filingsField?.value;
   const news = facts?.fields?.companyNews?.value;
   const primary = Array.isArray(filings) ? filings.slice(0, 4) : [];
   const media = Array.isArray(news) ? news.slice(0, 12) : [];
-  if (!primary.length)
-    return { status: "UNKNOWN", score: null, reason: "no primary filing citation is available", citations: [] };
+  if (!primary.length) {
+    // The original clause is preserved so nothing matching it breaks; the cause is appended.
+    // An absent field record (an older stored facts doc) names no cause rather than guessing.
+    const why = filingsField && filingsField.status === "MISSING" && filingsField.reason
+      ? ` — ${filingsField.reason}` : "";
+    return { status: "UNKNOWN", score: null, reason: `no primary filing citation is available${why}`, citations: [] };
+  }
   const allowed = new Set([...primary.map((x) => x.url), ...media.map((x) => x.url)].filter(Boolean));
   const evidence = {
     symbol: sym,

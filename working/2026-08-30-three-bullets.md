@@ -89,3 +89,19 @@ machine words, and the not-advice line, all in 3 bullets.
   vote/flip reconciliation pins still exercise `ruler`. If nothing ever re-surfaces them, that's
   a legitimate future cleanup, not something to guess at now.
 - The compact quote re-add, if wanted (see above).
+
+## Outcomes
+
+Landed as **v5.9.1**, PR #20, squash-merged to `main` as `d806158`.
+
+- Gate at merge: **2091 smoke · 306 render · 225 public-render**, `audit:prod` clean, real
+  Chromium under `REQUIRE_BROWSER=1`.
+- Shipped as written: `ExplainerBody` collapsed to a single render path, `{full, what:[3]}`
+  became the one contract for every band and for `VERDICT_EXPLAIN`, the quote block was cut.
+- **Correction to the "Still open" item above, recorded rather than edited away.** It predicted
+  `band.ruler` would go permanently unrendered. Half wrong: `rulerChip()` — derived from the
+  same `flip` edges — renders on the Simple card face (`SimpleCards.jsx:94`), so the ruler DATA
+  is load-bearing and the vote↔flip↔chip reconciliation still has teeth. What is genuinely
+  unrendered is narrower: `evidence.js` projects the full sentence-form `ruler` and
+  `whyItMatters` onto the card object (lines 321/325) and **no section reads either**. Two
+  orphaned projections, not an orphaned rule.
