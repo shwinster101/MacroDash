@@ -9,7 +9,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
 <!-- AUDIT: kept in sync with package.json by test/smoke.mjs. admin.html is a Vite
      public/ passthrough, so it cannot receive __APP_VERSION__ — the guard is the fix. -->
-<title>TT TICKER TERMINAL v5.97.2</title>
+<title>TT TICKER TERMINAL v5.97.3</title>
 <style>
   :root{
     --bg:#05070a; --panel:#0a0f16; --panel2:#0d141d; --line:#16202c;
@@ -494,7 +494,7 @@
          verdict and every gate are computed upstream and this panel changes nothing. -->
     <div id="macroEvidence" role="region" aria-label="Why macro — readout evidence"></div>
     <div id="headInfo" style="display:none">
-      <div class="brand">FINANCE&nbsp;BRO.AI // TT&nbsp;TICKER&nbsp;TERMINAL <small>v5.97.2 · the daily contract</small></div>
+      <div class="brand">FINANCE&nbsp;BRO.AI // TT&nbsp;TICKER&nbsp;TERMINAL <small>v5.97.3 · the daily contract</small></div>
       <div class="statusline">
         <span>BOOK: <b id="bookStamp">loading…</b></span>
         <span>AUTH: <b id="sessState">…</b></span>
@@ -556,7 +556,7 @@
             <button class="glance-action warn" id="trimChip" onclick="routeGo('fund')" hidden></button>
             <button class="glance-action" id="flagsChip" onclick="openDesk()" hidden></button>
             <span class="glance-action" id="quoteChip" hidden></span>
-            <button class="glance-action" id="refreshRanks" onclick="refreshRanks()"
+            <button class="glance-action" id="refreshRanks" onclick="refreshRanks(this)"
               title="Refresh macro snapshot, quotes, positions and ranks">⟳ REFRESH</button>
             <button class="glance-action primary" onclick="exportRankings()"
               aria-label="Share ticker rankings and decision logic">⇧ SHARE</button>
@@ -6458,7 +6458,7 @@ function renderStance(){
   const badges=badgeList.join("");
   const controls=`<span class="stance-right">`+
     (LIVE_AT?`<span class="scope">quotes ${esc(String(LIVE_AT).slice(11,16))}Z</span>`:"")+
-    `<button class="rfr" id="refreshRanksLegacy" onclick="refreshRanks()" title="Rebuild the macro snapshot (Engine 0), then reload quotes, positions and both ranks">⟳ DATA+RANKS</button>`+
+    `<button class="rfr" id="refreshRanksLegacy" onclick="refreshRanks(this)" title="Rebuild the macro snapshot (Engine 0), then reload quotes, positions and both ranks">⟳ DATA+RANKS</button>`+
     `<button class="badge u-dim" onclick="openDesk()">DESK ▾</button></span>`;
   /* v3.42 slice 5 — the stance is ASYMMETRIC, because its two states are not equally worth
      your attention. "ADDS OK" is the PERMISSIVE DEFAULT: it says nothing is stopping you,
@@ -6620,9 +6620,21 @@ function openDesk(inner){
    Failure ladder is honest: 429 = cooling down; 401/404/405 (older deploy / no session) or
    an unreachable endpoint degrade to the old read-only reload — stated, never silent.
    HONESTY: /api/quotes serves a 2-minute KV cache — a second tap inside that window
-   returns the same marks, and the stamp beside the button says when they were taken. */
-async function refreshRanks(){
-  const b=document.getElementById("refreshRanks");
+   returns the same marks, and the stamp beside the button says when they were taken.
+   9/1 fix: this used to hardcode `getElementById("refreshRanks")` AND hardcode
+   "⟳ DATA+RANKS" as the resting label on cleanup — so the real "⟳ REFRESH" button silently
+   kept the wrong label after every tap, which is the bug that was reported. A second onclick
+   site exists (#refreshRanksLegacy, "⟳ DATA+RANKS") but its markup sits inside
+   <div id="legacyCompact" hidden>, which nothing un-hides — so in practice only one button
+   was ever affected. Fixed generally rather than special-cased to that one button: `btn`
+   defaults to the glance-action element (existing tests call refreshRanks() with no
+   argument) but each onclick passes `this`, and the resting label is READ from the button's
+   own text before the spinner overwrites it — never a second hardcoded copy — so whichever
+   element is passed always returns to ITS OWN label, including the dormant one if
+   `legacyCompact` is ever un-hidden again. */
+async function refreshRanks(btn){
+  const b=btn||document.getElementById("refreshRanks");
+  const restLabel=b?b.textContent:"⟳ REFRESH";
   if(b){b.disabled=true;b.textContent="⟳ …";}
   try{
     let refreshed=null;
@@ -6643,7 +6655,7 @@ async function refreshRanks(){
       toast("Ranks refreshed — quotes as of "+(LIVE_AT?String(LIVE_AT).slice(11,16)+"Z":"unknown")+" (server caches 2 min)");
     }
   }catch(_e){toast("Refresh failed — showing the last good data");}
-  finally{if(b){b.disabled=false;b.textContent="⟳ DATA+RANKS";}render();}
+  finally{if(b){b.disabled=false;b.textContent=restLabel;}render();}
 }
 
 /* v3.26 FEAT-TT-BINCAL: the binary calendar. Earnings dates lived inside individual

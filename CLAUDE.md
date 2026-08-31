@@ -5,6 +5,38 @@ answers *"is it safe to be in the market?"* from live macro + market + sentiment
 data. Single-page React app on Cloudflare Pages, with live data assembled at the
 edge by Pages Functions and cached in KV.
 
+**v5.97.3 — the terminal's REFRESH button stops relabeling itself wrong (owner report).** Tapping
+`⟳ REFRESH` in the header worked — it correctly rebuilt the snapshot — but afterward the button
+permanently read `⟳ DATA+RANKS`. `refreshRanks()`'s cleanup hardcoded that string onto whichever
+element it found, so the one real, reachable button silently inherited a label that belonged to
+a different one.
+**The investigation initially overstated the bug**, and the correction is worth recording. A
+second `onclick="refreshRanks()"` site exists — `#refreshRanksLegacy`, styled `⟳ DATA+RANKS` —
+and the first pass reasoned that the two elements were fighting over one hardcoded
+`getElementById` lookup, so a DESK tap would leave *that* button inert while a different,
+possibly off-screen button silently spun. **Checked before shipping that framing: it was
+wrong.** `#refreshRanksLegacy` lives inside `<div id="legacyCompact" hidden>`, and grep across
+the file confirms nothing ever un-hides it — no assignment to `legacyCompact.hidden` exists
+anywhere. It is dead markup; no user has ever been able to click it. The real, narrower bug was
+that the single reachable button's resting label was simply wrong after every refresh — which
+is exactly what was reported.
+**Fixed generally rather than special-cased to the one live button**, so the dormant element
+would also behave correctly if `legacyCompact` is ever un-hidden again: `refreshRanks(btn)` now
+reads its resting label from `btn.textContent` before the spinner overwrites it, and restores
+that same string in `finally` — never a second hardcoded copy of either label. Both `onclick`
+sites now pass `this`; the no-argument call existing tests use still defaults to the
+glance-action element.
+**The render suite was corrected alongside the claim.** Its first draft tried to `.click()` the
+hidden legacy button and failed on "element is not visible" — the test asserting a click a real
+user cannot make. It now drives a REAL click on the reachable button (proving the reported bug
+and its fix in Chromium) and exercises the dormant element by invoking the shared handler on it
+directly, which proves the fix generalizes without pretending it is clickable.
+**Dead code, named rather than removed here**: `#legacyCompact` and everything inside it
+(`renderStance`'s target, `#calBlock`) run on every render and are permanently invisible — the
+v3.73 "dead code is a rot vector" rule, filed rather than pulled in a button-label fix.
+Tests: **2150 smoke + 310 render + 229 public-render**, `audit:prod` clean, real Chromium.
+Negative-controlled: reverting to the hardcoded label turns exactly the real-click pin red.
+
 **v5.97.2 — the Kalshi parser accepts the format Kalshi actually issues.** The owner supplied a
 real Kalshi-issued private key to finish the v3.99.1 setup, and it is **PKCS#1**
 (`-----BEGIN RSA PRIVATE KEY-----`) — not the PKCS#8 the setup line had claimed for two
