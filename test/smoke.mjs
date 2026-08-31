@@ -9437,18 +9437,50 @@ console.log("\n[67] v4.0 SIMPLE MODE — verdict mapping, card selection, senten
     (() => { const w = exOf("cpiHeadline").what || [];
       return w.some((b) => /2% target is on PCE, not CPI/.test(b)) &&
         !REGIME_BAND_TABLE.some((b) => /2% (CPI )?target/.test(b.ruler || "")); })());
-  ok("explain: VIX's bullets name the 30 line as convention, never an official Cboe threshold",
-    (() => { const w = exOf("vix").what || [];
-      return w.some((b) => /market convention/.test(b) && /not an official Cboe/.test(b)) &&
-        w.some((b) => /roughly 20/.test(b)); })());
+  /* v5.9.5 FEAT-SIMPLE-SHEET-PLAIN v2 — the VIX sheet now PLACES the reading instead of
+     describing the instrument. The v5.9.1 copy taught what VIX is made of ("the options
+     market's estimate", "not a survey of opinion"); this teaches whether today's chip is
+     high or low. TWO-RULER RULE: history/convention (teens calm · ~20 typical · 30 a scare)
+     and MacroDash's own vote (below 18 helps, above 25 hurts) share a bullet only because
+     BOTH are named — collapsing 20/30 into 18/25 would present our band as the world's. */
+  ok("explain: the VIX sheet places a reading against BOTH rulers — convention and our vote",
+    (() => { const w = (exOf("vix").what || [])[1] || "";
+      return ["18", "25", "20", "30"].every((n) => w.includes(n)) &&
+        /MacroDash/.test(w); })());
   ok("explain: NFCI's bullets state zero-by-construction and the post-2008 skew",
     (() => { const w = exOf("nfci").what || [];
       return w.some((b) => /Zero is average by construction/.test(b)) &&
         w.some((b) => /persistently below zero since 2008/.test(b)); })());
-  ok("explain: CAPE's bullets carry BOTH baselines — the 1881 mean and the post-1990 median",
-    (() => { const w = (exOf("valuation").what || []).join(" ");
+  /* v5.9.5: CAPE's second bullet places the reading between the old average and the 1999
+     peak, then names our own hurt edges. Both numbers are INTERPOLATED from the constants
+     the vote reads — pinned by value here and by template form below, so the sheet can never
+     describe a level the model no longer uses. */
+  ok("explain: the CAPE sheet places a reading between the old average and the 1999 peak",
+    (() => { const w = (exOf("valuation").what || [])[1] || "";
       return w.includes(String(CAPE_MEAN)) && w.includes(String(CAPE_ATH)) &&
-        /post-1990 median/.test(w); })());
+        /MacroDash/.test(w) && /90%/.test(w); })());
+  ok("explain: those CAPE numbers are INTERPOLATED from the constants, never retyped",
+    /1999 peak \$\{CAPE_ATH\}/.test(regimeSrc) && /Old average about \$\{CAPE_MEAN\}/.test(regimeSrc));
+  /* v5.9.5: the 10Y sheet's whole job is saying WHY a small positive change reads MIXED and
+     not a crisis — so it must state that the level is not what votes, and name the two edges
+     that are. */
+  ok("explain: the 10Y sheet says the LEVEL does not vote, and names the change edges",
+    (() => { const w = (exOf("tenYear").what || [])[1] || "";
+      return /does not vote on the level/.test(w) && w.includes("0.10") && w.includes("0.15"); })());
+  /* The ban list from the ticket: instrument-mechanics vocabulary that taught the gauge
+     instead of placing the number. Scoped to what[] ONLY — the TITLES are locked official
+     names and "Cyclically Adjusted..." legitimately contains a banned stem. */
+  ok("explain: the retired instrument-mechanics vocabulary is absent from all three sheets",
+    (() => { const BAN = ["term premium", "discount rate", "options market", "risk-limit",
+        "cyclically", "not a survey", "not an official cboe line", "post-1990 median",
+        "live argument", "fed's expected path"];
+      return ["vix", "valuation", "tenYear"].every((k) => {
+        const w = (exOf(k).what || []).join(" ").toLowerCase();
+        return BAN.every((b) => !w.includes(b)); }); })());
+  ok("explain: the three official TITLES are unchanged by the plain-language pass",
+    exOf("vix").full === "Cboe Volatility Index (VIX)" &&
+    exOf("valuation").full === "Cyclically Adjusted Price-to-Earnings ratio (Shiller CAPE)" &&
+    exOf("tenYear").full === "10-Year U.S. Treasury Yield");
   ok("explain: the card projection passes the band's explainer through untouched",
     (() => { const cards = sc({ regime:{ label:"RISK-ON" }, factors:[{ key:"vix", short:"VIX",
         vote:"bull", excluded:false, mode:"LIVE", metric:{ text:"14.43", value:14.43 } }] }).cards;

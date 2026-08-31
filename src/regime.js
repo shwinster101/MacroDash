@@ -138,9 +138,9 @@ export const REGIME_BAND_TABLE = [
     whyItMatters:"Long rates set the discount rate on every future dollar a company earns.",
     explain:{ full:"10-Year U.S. Treasury Yield",
       what:[
-        "What it costs the U.S. government to borrow for ten years — the benchmark rate everything else is priced against, moved by the Fed's expected path, expected inflation, and a term premium.",
-        "There's no single “normal” level; it's mostly traded 1.5%–5% over the past two decades. MacroDash votes on the 1-month CHANGE, not the level.",
-        "It's the discount rate under every future dollar of earnings — when it rises, the most growth-heavy stocks fall hardest.",
+        "The going rate to lend to the U.S. government for ten years. Other rates in the economy follow it.",
+        "There is no single right level. Lately it has lived between about 1.5% and 5%. MacroDash does not vote on the level. It votes on the one-month change: help below −0.10 points, hurt above +0.15.",
+        "When this yield climbs, stocks — especially expensive growth names — have to compete with a safer paycheck from bonds.",
       ] },
     read:(d)=>d.crossAsset.treasury10y.m1,
     /* The label says "the 10-year yield", so the LEVEL leads and the voted quantity (the
@@ -161,9 +161,9 @@ export const REGIME_BAND_TABLE = [
     whyItMatters:"The market's own estimate of how violently prices could move from here.",
     explain:{ full:"Cboe Volatility Index (VIX)",
       what:[
-        "The options market's estimate of how much the S&P 500 will move over the next 30 days — the cost of insurance, not a survey of opinion.",
-        "Long-run average is roughly 20. Above 30 is market convention for “fear” — not an official Cboe line.",
-        "When it spikes, hedging gets expensive and risk-limit strategies mechanically sell into the move — it moves before the economic data confirms anything.",
+        "How jumpy traders expect the stock market to be over the next month.",
+        "The teens are calm. About 20 is a long-run typical day. 30 is a scare. MacroDash: below 18 helps, above 25 hurts.",
+        "When this jumps, selling often starts the same day — it moves before the news does.",
       ] },
     read:(d)=>d.marketPulse.vix.current,
     metric:{ read:(d)=>d.marketPulse.vix.current, unit:"", dec:2, note:null },
@@ -226,9 +226,9 @@ export const REGIME_BAND_TABLE = [
       // CAPE_ATH) — never retyped, or the explainer could one day describe a level the model
       // no longer uses.
       what:[
-        "The S&P 500's price divided by its average inflation-adjusted earnings over the past ten years, so one boom or bust year can't distort it.",
-        `Long-run mean is about ${CAPE_MEAN}, all-time high ${CAPE_ATH} (Dec 1999); the post-1990 median (~25) is a live argument about what's normal now.`,
-        "It says nothing about next month — high starting valuations have historically meant weaker ten-year returns and less cushion if expectations slip.",
+        "How expensive the whole stock market is versus a decade of company profits. Higher means more good news is already in the price.",
+        `Old average about ${CAPE_MEAN}. 1999 peak ${CAPE_ATH}. MacroDash marks this hurting above 30, or above 90% of that peak.`,
+        "Useless for next week. Useful for how much room is left if earnings or the mood slip.",
       ] },
     // Compound vote (absolute CAPE OR % of ATH); the metric is the CAPE level itself.
     metric:{ read:(d)=>d.macro.shillerPe && d.macro.shillerPe.current, unit:"", dec:1, note:"CAPE" },

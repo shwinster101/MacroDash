@@ -5,6 +5,42 @@ answers *"is it safe to be in the market?"* from live macro + market + sentiment
 data. Single-page React app on Cloudflare Pages, with live data assembled at the
 edge by Pages Functions and cached in KV.
 
+**FEAT-SIMPLE-SHEET-PLAIN v2 (v5.9.5) — the sheet stops teaching the instrument and starts
+placing TODAY's number.** Owner correction to a v1 copy pass: *"Are you sure that's the highest
+leverage language? Better, but we can do better. Full actual name is high leverage as title."*
+The v5.9.1 bullets explained what each gauge is MADE OF — "the options market's estimate", "the
+discount rate under every future dollar", "not a survey of opinion" — which teaches the
+instrument and leaves a beginner still unable to say whether 14.43 is high or low. The three
+sheets a newcomer actually opens (VIX · CAPE · 10Y) are rewritten to one beat order:
+**(1) what the metric is · (2) where a reading sits vs history AND vs our vote · (3) what
+usually happens in markets when it moves.**
+**The TITLES are untouched** — "Cboe Volatility Index (VIX)", "Cyclically Adjusted
+Price-to-Earnings ratio (Shiller CAPE)", "10-Year U.S. Treasury Yield" — because the full
+official name IS the high-leverage thing at the top (owner ruling). Plain language belongs in
+the body, not in the identity.
+**THE TWO-RULER RULE, now a pin.** History/convention and the MacroDash vote may share a bullet
+only if BOTH are named: VIX reads *"The teens are calm. About 20 is a long-run typical day. 30
+is a scare. MacroDash: below 18 helps, above 25 hurts."* Collapsing 20/30 into 18/25 would
+present our own band as the world's — a negative control does exactly that and turns the pin
+red. CAPE places the reading between the old average and the 1999 peak (both INTERPOLATED from
+`CAPE_MEAN`/`CAPE_ATH`, never retyped — its own pin, its own control) before naming our hurt
+edge. The 10Y bullet exists to answer the owner's third acceptance case — why **+0.05 reads
+MIXED and not a crisis** — by saying outright that the LEVEL does not vote and naming the two
+change edges that do.
+**A ban list is pinned ABSENT** from the three `what[]` arrays (term premium · discount rate ·
+options market · risk-limit · "not a survey" · "not an official Cboe line" · post-1990 median ·
+live argument · Fed's expected path) — the retired instrument-mechanics vocabulary, scoped to
+the bodies only, since the CAPE title legitimately contains a banned stem.
+**Version note: 5.9.2 → 5.9.5 is an owner-set number, not a gap to be filled.** The v1 copy pass
+this corrects never landed on `main`; 5.9.3/5.9.4 do not exist and are not phantom releases
+(the v4.99 precedent — a jump is recorded, never quietly renumbered).
+Tests: **2097 smoke + 306 render + 227 public-render**, `audit:prod` clean, real Chromium.
+Acceptance DRIVEN, all three cases: the VIX sheet names the teens as calm beside both rulers,
+the CAPE sheet gives 17.4 and 44.19 with our 30/90%-of-peak edge, and the 10Y sheet — surfaced
+on a tape where it reaches the 3-card cap — reads `+0.05PP 1-MO · MIXED` above a body that
+explains precisely why. Negative-controlled three ways: collapsing the two rulers, retyping the
+CAPE constants, and reintroducing one banned stem each turn exactly their own pin red.
+
 **v5.9.2 — the sheet moves to the middle of the screen and reads at a real size (owner, on
 the live v5.9.1 sheet: "make the pop up more visible in the middle of the screen and also the
 much larger font? It's too small for a user to read").** Two fixes, both measured:
