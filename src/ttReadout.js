@@ -66,6 +66,42 @@ export function bandTenYear(m1) {
   return "rangebound";
 }
 
+/* 8/31 — THE 10Y BURST TERM. `bandTenYear` reads a ~21-session delta, and a delta is a
+   MAGNITUDE over a window: it cannot distinguish "drifted 5bp over a month" from "did
+   nothing for three weeks, then repriced". Measured on the live 2026-08-31 body, that is
+   the tape it was on — m1 +0.05 published as `rangebound` (a neutral vote) over a 3-session
+   move of +0.09, with the 30Y at 5.22, above its own alert level.
+   WHY THE WINDOW IS 3 SESSIONS AND NOT A WEEK. The obvious fix — read the weekly delta —
+   would have caught NOTHING: `tenYearW1` on that same body was **-0.01**, i.e. flatter and
+   marginally more dovish than the month. A repricing that starts mid-week is invisible to a
+   5-session window for most of its life. The burst is measured over the shortest window that
+   is still more than one print.
+   WHY THE THRESHOLD IS NOT FITTED. It is the SAME +0.15 `bandTenYear` already calls spiking
+   over a month — the claim is "a month's worth of hawkish move arrived inside three
+   sessions", which is a statement about SPEED using the band's own definition of size. No
+   new economic constant is asserted, and it is deliberately NOT tuned to fire on the tape
+   that motivated it: today's +0.09 does NOT trip it. A threshold chosen to make its own
+   motivating case fire is a fit, not a rule.
+   ASYMMETRIC, exactly like the v3.40 TAILWIND withhold: a hawkish burst can move this check
+   toward BEARISH from any prior state, and a dovish burst does NOTHING. A short window is
+   thin evidence, and thin evidence may add caution but must never manufacture a risk-on
+   read. */
+export const TEN_BURST_SESSIONS = 3;
+export const TEN_BURST_PP = 0.15;
+/* PURE. `series` is oldest→newest (both the FRED and the UST-fallback paths build it that
+   way). Fails closed on anything it cannot stand behind: too few points, a non-finite value,
+   or a series whose newest point disagrees with the published level — which would mean the
+   level and the series came from different legs, and a burst computed across two sources is
+   a fabricated observation (the `pairRs` rule, one metric over). */
+export function tenYearBurst(series, latest) {
+  if (!Array.isArray(series) || series.length < TEN_BURST_SESSIONS + 1) return null;
+  const tail = series.slice(-(TEN_BURST_SESSIONS + 1));
+  if (!tail.every((v) => typeof v === "number" && isFinite(v))) return null;
+  const newest = tail[tail.length - 1];
+  if (typeof latest === "number" && isFinite(latest) && Math.abs(newest - latest) > 0.005) return null;
+  return { pp: parseFloat((newest - tail[0]).toFixed(4)), sessions: TEN_BURST_SESSIONS };
+}
+
 // Kalshi NEXT-MEETING odds (not "by December"). cut>50 bullish · hike>50 bearish · else neutral.
 export function bandFedOdds({ hold, cut, hike } = {}) {
   const anyLive = [hold, cut, hike].some((x) => typeof x === "number" && isFinite(x));
@@ -76,6 +112,23 @@ export function bandFedOdds({ hold, cut, hike } = {}) {
 }
 
 const RS_TO_STATE = { leading: "bullish", inline: "neutral", breaking_down: "bearish" };
+/* 8/31 — A SINGLE SESSION IS NOT RELATIVE STRENGTH. `bandRs` reads a one-day index spread
+   against a ±0.3pp deadband, and one session of ±0.3pp is inside ordinary noise: the state
+   flip-flops week to week, and on the live 2026-08-31 body this check was the ONLY bearish
+   vote in the readout, so the published TAILWIND rested on one session's spread.
+   The fix is the file's own asymmetry, not a new idea — `conservativeVote` already says stale
+   bullishness is not evidence of safety while stale bearishness is a caution worth carrying.
+   Thin evidence gets the same treatment as stale evidence: a 1d print may NOT cast a BULLISH
+   vote, and a bearish 1d print survives, flagged.
+   ONE-WAY: removing a bullish vote can only move the verdict TAILWIND→NEUTRAL or
+   NEUTRAL→HEADWIND, never toward risk-on, and `available` is untouched because a neutral
+   check still counts as available (so the <3-usable rule cannot be tripped by this).
+   The measured STATE is unchanged and still published — `leading` still reads `leading`. Only
+   the vote it casts is withheld, exactly as the 10Y burst leaves `trend` reporting the month. */
+export function rsVote(rsState, basis) {
+  const v = rsState ? RS_TO_STATE[rsState] : null;
+  return basis === "1d" && v === "bullish" ? "neutral" : v;
+}
 const TREND_TO_STATE = { falling: "bullish", rangebound: "neutral", spiking: "bearish" };
 
 // ─── ENGINE0-CONT: evidence tiers + historical carry policy ──────────────────────────────
@@ -260,6 +313,23 @@ export function buildTtReadout(live, { now = new Date(), cached = false } = {}) 
       qqq_1d: typeof L.ndx1dPct === "number" && isFinite(L.ndx1dPct) ? L.ndx1dPct : null,
       spy_1d: typeof L.spx1dPct === "number" && isFinite(L.spx1dPct) ? L.spx1dPct : null,
       as_of: govDate("ndxSpxRs"), tier: rsTier };
+    /* 8/31 — THE QUARTER-LONG DECAY, MEASURED AND PUBLISHED, DELIBERATELY NOT VOTING.
+       The 1-day spread is the noise this check has always read; the number that actually
+       describes a QQQ-beta book is how the NASDAQ100/SP500 ratio has moved over a quarter,
+       and until now nothing measured it (the index pull was 8 observations deep — enough for
+       a latest/prior pair and nothing else).
+       It arrives under the SAME rule NFCI (v3.43) and the 30Y (v3.55) arrived under: a new
+       voter changes the majority math for a contract that gates real orders, and any band
+       would be ASSERTED rather than calibrated (FRED is unreachable from this build
+       environment, so a decay threshold could not be fitted to history). So it publishes as
+       evidence, carries its own start date, and casts no vote. Promoting it is an owner call
+       once real values have been observed. */
+    const rs63P = point("qqq_spy_rs", "ndxSpxRs63");
+    if (rs63P.tier !== "MISSING") {
+      qqq_spy_rs.decay_63d = round2(rs63P.value);
+      qqq_spy_rs.decay_since = typeof L.ndxSpxRs63Back === "string" ? L.ndxSpxRs63Back : null;
+      qqq_spy_rs.decay_votes = false;
+    }
   } else {
     const qP = point("qqq_spy_rs", "qqqChangePct");
     const sP = point("qqq_spy_rs", "spyChangePct");
@@ -274,7 +344,19 @@ export function buildTtReadout(live, { now = new Date(), cached = false } = {}) 
   const m1P = point("us10y_trend", "tenYearM1");
   const m1 = m1P.value;
   const tenYieldP = point("us10y_trend", "tenYear");
-  const us10y = { yield: tenYieldP.tier === "MISSING" ? null : tenYieldP.value, trend: bandTenYear(m1), m1_delta: m1, as_of: asOf("tenYear"), tier: m1P.tier };
+  /* `trend` keeps reporting the m1 band VERBATIM — the published statistic must not start
+     meaning something else. The burst rides beside it as its own field, and only the CHECK's
+     vote combines the two, with its reason naming both numbers. */
+  const tenTrend = bandTenYear(m1);
+  const tenBurst = tenYearBurst(L.tenYearSeries, tenYieldP.tier === "MISSING" ? null : tenYieldP.value);
+  /* The burst may only sharpen a check that is ALREADY available. It never resurrects a
+     missing one: doing that would let a field with its own freshness story change `available`,
+     and the majority math is not a place for a side door. */
+  const tenBurstFired = m1P.tier !== "MISSING" && tenBurst != null
+    && tenBurst.pp >= TEN_BURST_PP && tenTrend !== "spiking";
+  const us10y = { yield: tenYieldP.tier === "MISSING" ? null : tenYieldP.value, trend: tenTrend, m1_delta: m1,
+    burst_pp: tenBurst ? tenBurst.pp : null, burst_sessions: tenBurst ? tenBurst.sessions : null,
+    burst_fired: tenBurstFired, as_of: asOf("tenYear"), tier: m1P.tier };
 
   // Fed odds: HISTORICAL carry is additionally gated on the referenced FOMC event still
   // being OPEN — odds from a decided meeting must never carry into the next one (§5.6).
@@ -306,8 +388,10 @@ export function buildTtReadout(live, { now = new Date(), cached = false } = {}) 
       as_of: p ? p.asOf : null, age_sessions: p ? p.sessions : null,
       reason: reason + (p ? carried(p) : "") };
   };
-  const rsState = qqq_spy_rs ? RS_TO_STATE[qqq_spy_rs.state] : null;
-  const trendState = us10y.trend ? TREND_TO_STATE[us10y.trend] : null;
+  const rsState = qqq_spy_rs ? rsVote(qqq_spy_rs.state, qqq_spy_rs.basis) : null;
+  // A fired burst votes bearish from whatever the month said — the asymmetry is the point:
+  // it can only ever move this check toward caution, never toward a risk-on read.
+  const trendState = tenBurstFired ? "bearish" : us10y.trend ? TREND_TO_STATE[us10y.trend] : null;
   const fedState = fed_odds ? bandFedOdds({ hold, cut, hike }) : null;
   const checks = [
     mkCheck("spy_vs_200d", spy.tier, bandSpyVs200d(pctVs200d), pctVs200d,
@@ -318,10 +402,19 @@ export function buildTtReadout(live, { now = new Date(), cached = false } = {}) 
     mkCheck("fear_greed", fgP.tier, bandFearGreed(fgP.value), fgP.value,
       fgP.value == null ? "F&G unavailable" : `F&G ${fgP.value} (bull 25–55 · bear <20 / >75)`, fgP),
     mkCheck("qqq_spy_rs", rsTier, rsState, rsDelta,
-      qqq_spy_rs == null ? "NASDAQ100/SP500 (or QQQ/SPY) 1d change unavailable" : `${qqq_spy_rs.pair} ${rsDelta > 0 ? "+" : ""}${rsDelta}pp (1d basis, ±0.3pp)`,
+      qqq_spy_rs == null ? "NASDAQ100/SP500 (or QQQ/SPY) 1d change unavailable"
+        : `${qqq_spy_rs.pair} ${rsDelta > 0 ? "+" : ""}${rsDelta}pp (1d basis, \u00b10.3pp)`
+          // Never silent: if the measured state was leading and the vote is not bullish, the
+          // withhold is the reason the check reads neutral, and the reader must be told.
+          + (qqq_spy_rs.state === "leading" ? " \u2014 leading, but one session is not relative strength, so it does not vote bullish" : ""),
       qqq_spy_rs ? { asOf: qqq_spy_rs.as_of, sessions: ndxP.tier !== "MISSING" ? ndxP.sessions : null, tier: rsTier } : null),
     mkCheck("us10y_trend", m1P.tier, trendState, m1,
-      m1 == null ? "10Y monthly delta unavailable" : `m1 ${m1 > 0 ? "+" : ""}${m1} → ${us10y.trend}`, m1P),
+      m1 == null ? "10Y monthly delta unavailable"
+        : tenBurstFired
+          // Both numbers, always — a reader must be able to see that the month and the burst
+          // disagree, and which one carried the vote.
+          ? `m1 ${m1 > 0 ? "+" : ""}${m1} → ${us10y.trend}, but +${tenBurst.pp}pp in ${tenBurst.sessions} sessions — a month's move at speed, so this votes bearish`
+          : `m1 ${m1 > 0 ? "+" : ""}${m1} → ${us10y.trend}${tenBurst ? ` · ${tenBurst.sessions}-session ${tenBurst.pp > 0 ? "+" : ""}${tenBurst.pp}pp` : ""}`, m1P),
     mkCheck("fed_next_meeting", fedTier, fedState, fed_odds ? hold : null,
       fed_odds == null ? (eventClosed ? "Kalshi odds for a closed FOMC event — discarded, never carried forward" : "Kalshi odds unavailable") : `hold ${hold} / cut ${cut} / hike ${hike} (next meeting)`,
       fed_odds ? holdP : null),
@@ -375,8 +468,35 @@ export function buildTtReadout(live, { now = new Date(), cached = false } = {}) 
 
   // ── Confidence (data quality) and actionability (may the verdict gate capital) ────────
   const criticalMissing = vixP.tier === "MISSING" || fgP.tier === "MISSING";
+  /* 8/31 — THE RATE-PATH FAIL-OPEN. Measured on the live 2026-08-31 body: `fed_odds` was
+     null, `fed_next_meeting` was MISSING, and this engine published
+     HIGH · FULL · OK · downgraded:null. A dark gauge cost exactly nothing.
+     Why that is not survivable HERE specifically: of the six checks, `fed_next_meeting` is
+     the ONLY one that measures the POLICY PATH. When it goes dark nothing substitutes for
+     it — SPY is trend, VIX and F&G are equity vol and sentiment, RS is a one-session index
+     spread, and the 10Y check votes on a ~21-session delta that smooths a short repricing
+     away (the same tape carried m1 +0.05 = "rangebound" over a 3-session +0.09 burst). So
+     the five survivors are STRUCTURALLY BLIND to hawkish repricing, and the engine was
+     grading that blindness HIGH.
+     The shape is the file's own, not a new idea: HIGH already names specific gauges rather
+     than counting (`currentPanicGauges === 2` — both crash gauges must be current). This
+     adds the third structurally-unsubstitutable gauge to that named set. With six checks,
+     `current >= 5` plus three named-current gauges still tolerates ONE of {spy, rs, 10y}
+     lagging — the count rule is unchanged, only the named set grew.
+     ONE-WAY BY CONSTRUCTION: it is a conjunct on the HIGH arm, and the MEDIUM/LOW arms are
+     byte-identical and read unchanged inputs — so the only reachable difference is a grade
+     that WAS HIGH and no longer is. No input can reach a better grade by going dark (the
+     v4.1.6 monotonicity property), and the withhold is recorded, never silent. Measured
+     anyway rather than argued: over 6000 seeded scenarios, 0 became more permissive, 53
+     became more restrictive, 5947 were unchanged.
+     STATED CONSEQUENCE: Kalshi has been rate-limited since v3.99, so on today's tape this
+     publishes MEDIUM · RESTRICTED · PARTIAL DATA rather than HIGH · FULL · OK, and FULL
+     stays unreachable until the feed is restored — the keyed transport built in v3.99.1 is
+     inert until KALSHI_KEY_ID / KALSHI_PRIVATE_KEY are set. That is the point: the gauge's
+     absence now costs something a maintainer can see. */
+  const ratePathBlind = fedTier === "MISSING" || fedTier === "HISTORICAL";
   let confidence;
-  if (current >= 5 && currentPanicGauges === 2 && macro_flip.evaluable) confidence = "HIGH";
+  if (current >= 5 && currentPanicGauges === 2 && !ratePathBlind && macro_flip.evaluable) confidence = "HIGH";
   /* v4.1.6 — MEDIUM was `current >= 3 && !criticalMissing && historical <= 2`, and the
      historical cap INVERTED: a HISTORICAL input is a real observation one session old,
      strictly MORE information than a MISSING one, yet deleting it moved the count out of
@@ -422,6 +542,14 @@ export function buildTtReadout(live, { now = new Date(), cached = false } = {}) 
       downgraded: downgraded
         ? `TAILWIND withheld — ${blindGauges.join(" and ")} unavailable, so the PANIC override cannot fire; a risk-on call needs the risk gauge`
         : null,
+      /* 8/31 — the confidence withhold gets its OWN field rather than joining `downgraded`.
+         ENGINE0-CONT spent a release separating the two axes (verdict = which way,
+         confidence/actionability = what the evidence supports); folding an evidence reason
+         into the verdict-axis record would blur exactly that. Null when nothing was withheld,
+         so a consumer can tell "graded HIGH" from "would have graded HIGH". */
+      confidence_withheld: ratePathBlind && current >= 5 && currentPanicGauges === 2 && macro_flip.evaluable
+        ? `HIGH withheld — the rate-path gauge (Kalshi FOMC odds) is ${fedTier === "HISTORICAL" ? "carried, not current" : "unavailable"}; no other check measures the policy path, so a hawkish repricing would be invisible`
+        : null,
     },
     macro_flip,
     attribution: ["FRED (SP500/10 proxy · VIXCLS · DGS10 · NASDAQ100)", "CNN Fear & Greed", "Kalshi KXFEDDECISION"],
@@ -444,7 +572,18 @@ export function formatTtPaste(readout, { generatedEt } = {}) {
   lines.push(`VIX          ${cell(na(vix.value))}(${vix.week_chg == null ? "wk n/a" : `wk ${vix.week_chg > 0 ? "+" : ""}${vix.week_chg}%`}${vix.as_of ? ` · as of ${vix.as_of}` : ""})`);
   lines.push(`F&G          ${cell(`${na(fg.value)}${fg.label ? ` ${fg.label}` : ""}`)}(${fg.as_of ? `as of ${fg.as_of}` : "n/a"})`);
   lines.push(`QQQ RS 1d    ${cell(na(rs && rs.state))}(${rs ? `QQQ ${rs.qqq_1d > 0 ? "+" : ""}${rs.qqq_1d}% vs SPY ${rs.spy_1d > 0 ? "+" : ""}${rs.spy_1d}%` : "n/a"})`);
-  lines.push(`10Y TREND    ${cell(na(ten.trend))}(${na(ten.yield, "%")}${ten.m1_delta == null ? "" : ` · m1 ${ten.m1_delta > 0 ? "+" : ""}${ten.m1_delta}`})`);
+  // 8/31: the quarter-long ratio prints as its own line, LABELLED non-voting. The 1d line
+  // above is what votes; showing the two without saying which is which would invite exactly
+  // the misreading this pair exists to remove.
+  if (rs && rs.decay_63d != null) {
+    lines.push(`QQQ RS 63d   ${cell(`${rs.decay_63d > 0 ? "+" : ""}${rs.decay_63d}pp`)}(since ${na(rs.decay_since)} \u00b7 context only, does not vote)`);
+  }
+  // 8/31: the burst prints beside the month whenever it is measurable — the whole defect was
+  // a month-sized statistic hiding a three-session move, and a human surface that shows only
+  // the month reproduces it one layer up.
+  const tenBurstTxt = ten.burst_pp == null ? ""
+    : ` · ${ten.burst_sessions}d ${ten.burst_pp > 0 ? "+" : ""}${ten.burst_pp}${ten.burst_fired ? " ⚠ BURST" : ""}`;
+  lines.push(`10Y TREND    ${cell(na(ten.trend))}(${na(ten.yield, "%")}${ten.m1_delta == null ? "" : ` · m1 ${ten.m1_delta > 0 ? "+" : ""}${ten.m1_delta}`}${tenBurstTxt})`);
   lines.push(`FED NEXT     ${fed ? `hold ${fed.hold} / cut ${fed.cut} / hike ${fed.hike}` : "n/a"}${fed && fed.next_meeting ? `  (${fed.next_meeting}${fed.days_out != null ? ` · ${fed.days_out}d` : ""})` : ""}`);
   lines.push("-".repeat(56));
   lines.push(`REGIME       ${cell(na(reg.verdict))}(${reg.bullish ?? 0} bull / ${reg.bearish ?? 0} bear · ${reg.available ?? 0} checks)`);
@@ -457,6 +596,9 @@ export function formatTtPaste(readout, { generatedEt } = {}) {
   // FEAT-DERIV-OWN (v3.41): a withheld TAILWIND must say so on the ONE surface a human reads —
   // silent here would mean the maintainer never learns the safer verdict cost them nothing.
   if (reg.downgraded) lines.push(`  ⚠ ${reg.downgraded}`);
+  // 8/31: same rule for the CONFIDENCE axis — a withheld HIGH that only the JSON knows about
+  // is the v3.41 defect (state computed and published, and silent where a human reads it).
+  if (reg.confidence_withheld) lines.push(`  ⚠ ${reg.confidence_withheld}`);
   // A blind circuit (evaluable:false) must read as "cannot see", never as the healthy "not
   // armed" it used to collapse into. `hasFlip` distinguishes a genuinely absent macro_flip
   // (readout too old / field missing) from one that ran and came back blind. A carried-VIX

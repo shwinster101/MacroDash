@@ -42,21 +42,27 @@ const MacroStrip=({d,modeOf,fomcLabel,fomcDays,votingFields,badge})=>{
            s:`FOMC ${fomcLabel}`, sc:fomcDays===0?T.amber:T.textMuted,
            t:fedTargetLive?"Federal Reserve target range — current policy setting":"FEDFUNDS monthly effective average — lags a policy decision"},
           {l:"CPI",  f:"cpiHeadline", v:`${d.macro.cpi.headline}%`,         s:`Core ${d.macro.cpi.core}%`, voteKey:"cpiHeadline", t:"Consumer Price Index — inflation, year-over-year"},
-          /* FEAT-NFCILEV (8/29): the Chicago Fed's LEVERAGE subindex of NFCI — the dimension
-             its own research says tends to LEAD the composite ahead of crises (1929 margin
-             debt, 2008 dealer/household leverage were builds the blended index muted until
-             the unwind). It sits HERE, at glance altitude, because a leading crash indicator
-             buried one tap deep cannot do the job it was added for — and it fills the strip's
-             ragged 8th slot (4-col phone grid, 7 tiles) rather than lengthening the page.
-             CONTEXT ONLY: `nfciLeverage` is absent from the voter set, so the ▪ marker and the
-             "Counts toward today's posture" tooltip are withheld BY CONSTRUCTION and the tile
-             self-labels "Context only — does not vote" (v3.62/v3.98.4). Sub-line is the
-             NFCI tile's own reference-point convention — a fact, never a TIGHT/LOOSE verdict.
-             Provenance rides the dot + "(mock)" tooltip, uniformly with the other 7 tiles. */
-          {l:"LEV",  f:"nfciLeverage",
-           v:Number.isFinite(d.macro.nfci.leverage)?`${d.macro.nfci.leverage>0?"+":""}${d.macro.nfci.leverage.toFixed(2)}`:"—",
-           s:"0 = avg", sc:T.textMuted,
-           t:"NFCI leverage subindex — debt and equity leverage in the financial system (margin debt, dealer balance sheets). Standardized so 0 = the 1971– average; higher = more levered. Context only: it does not vote."},
+          /* OWNER SWAP (8/31), reversing the FEAT-NFCILEV tile that held this slot since 8/29:
+             the 8th slot goes to the NFCI COMPOSITE, not its leverage subindex.
+             The reason is the voter/glance mismatch the 6-vs-8 study named: NFCI has VOTED in
+             the six-factor backdrop since v3.43, and it was the one voter with ZERO glance
+             presence — while the slot beside it was rented to a context-only field that votes
+             nowhere. A strip whose job is "the market summary" was showing the non-voter and
+             hiding the voter.
+             It VOTES, so — unlike the tile it replaces — the ▪ marker and the "Counts toward
+             today's posture" tooltip now render BY CONSTRUCTION (`nfci` is in FACTOR_FIELD's
+             values, hence in VOTING_FIELDS), and `voteKey` gives the sub-line the band table's
+             own vote colour, muted when the field is not live (v3.1).
+             The sub-line stays the reference point, never the TIGHT/LOOSE word: a bare z-score
+             is unreadable without it (v3.43), and the word is a directional call whose text —
+             not just its colour — must be suppressed off a dead feed.
+             NOTHING IS DELETED: `nfciLeverage` keeps its home on the NFCI tile in MarketDetail
+             (the leverage-subindex line), so this is a promotion of the voter to glance and a
+             demotion of the context field to the tile it already had, not a cut. */
+          {l:"NFCI", f:"nfci",
+           v:Number.isFinite(d.macro.nfci.current)?`${d.macro.nfci.current>0?"+":""}${d.macro.nfci.current.toFixed(2)}`:"—",
+           s:"0 = avg", voteKey:"nfci",
+           t:"Chicago Fed National Financial Conditions Index — how easily money and credit are flowing through the financial system, from 105 measures. Standardized so 0 = the 1971– average; positive is tighter than average, negative is looser."},
         ].map(({l,f,v,s,sc,voteKey,t})=>{
           const m=modeOf(f); const live=m==="LIVE"||m==="CACHED";
           // Vote-derived sub-line color: the band table is the ONE expression of the

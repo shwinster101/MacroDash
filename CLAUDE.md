@@ -5,6 +5,80 @@ answers *"is it safe to be in the market?"* from live macro + market + sentiment
 data. Single-page React app on Cloudflare Pages, with live data assembled at the
 edge by Pages Functions and cached in KV.
 
+**FEAT-ENGINE0-STATS (v5.10.0) — the strip shows the voter, and three Engine 0 statistics stop
+being the wrong statistic for the exposure.** One owner directive plus three findings from an
+owner review, every one REPRODUCED against the live `/readout.json` and `/api/snapshot` before
+anything was touched (production is reachable from this build environment, which an earlier
+session had recorded as blocked).
+**(1) LEV -> NFCI on the macro strip (owner directive).** The 8th slot held `nfciLeverage` since
+8/29 — a field that votes nowhere — while **NFCI, a voter since v3.43, had ZERO glance
+presence**. The strip is the market summary; it was showing the non-voter and hiding the voter.
+NFCI gains the voting marker and the vote-derived sub colour BY CONSTRUCTION (`nfci` is in
+`FACTOR_FIELD`'s values — no special case), and the sub-line stays `0 = avg`: a bare z-score is
+unreadable without its reference point (v3.43), and TIGHT/LOOSE is a directional word whose TEXT
+must be suppressed off a dead feed. **Not a deletion** — LEV keeps the NFCI tile's
+leverage-subindex line in MarketDetail, proven by a driven pin rather than assumed.
+**(2) THE RATE-PATH FAIL-OPEN, CLOSED.** Measured live: `fed_odds` null, `fed_next_meeting`
+MISSING, and the engine published **HIGH · FULL · OK · `downgraded:null`** — a dark gauge cost
+exactly nothing. Of the six checks it is the ONLY one that measures the policy path; the five
+survivors are structurally blind to hawkish repricing (SPY is trend, VIX/F&G are vol and
+sentiment, RS is one session, the 10Y smooths a burst away), so the engine was grading that
+blindness HIGH. The shape is the file's own — HIGH already NAMES gauges rather than counting
+(`currentPanicGauges === 2`) — so the rate-path gauge joins that named set; `current >= 5` is
+unchanged, only the named set grew, and one of {spy, rs, 10y} may still lag. **One-way twice
+over**: structurally (a conjunct on the HIGH arm, MEDIUM/LOW arms byte-identical) and measured
+— 6000 seeded scenarios, **0 more permissive, 53 more restrictive, 5947 unchanged**. The
+withhold rides its OWN field (`confidence_withheld`), never `downgraded`: ENGINE0-CONT spent a
+release separating the verdict axis from the evidence axis, and it renders on both human
+surfaces (paste block + the terminal's WHY MACRO panel), because a machine-only honesty field is
+the v3.41 defect. **STATED CONSEQUENCE: Kalshi has been rate-limited since v3.99, so this
+publishes MEDIUM · RESTRICTED · PARTIAL DATA today and FULL is unreachable until the feed is
+restored** — the keyed transport built in v3.99.1 is inert until `KALSHI_KEY_ID` /
+`KALSHI_PRIVATE_KEY` are set. The absence now costs something a maintainer can see.
+**(3) THE 10Y BURST TERM — and the correction that changed the fix.** The review's mechanism was
+right about the SHAPE and the obvious remedy was wrong. Measured on the same body: the 3-session
+move is **+0.09**, and **`tenYearW1` is −0.01** — flatter and marginally MORE dovish than the
+month it was meant to sharpen. Reading the weekly delta would have caught NOTHING. So the burst
+is 3 sessions, off `tenYearSeries` (no new fetch), and **the threshold is DERIVED, not fitted**:
+the SAME +0.15 `bandTenYear` already calls `spiking` over a month, i.e. "a month's move arrived
+in three sessions" — speed, using the band's own definition of size — reconciled against
+`bandTenYear` behaviourally in smoke so moving one moves both. **Deliberately NOT tuned to its
+own motivating case: today's +0.09 does NOT fire it, and that is a pinned control** (a threshold
+chosen to make its prompting tape fire is a fit, not a rule); the burst is still REPORTED when
+it does not fire, so a reader sees month and burst disagree in scale. ASYMMETRIC (v3.40): a
+dovish burst does nothing. `bandTenYear` is untouched and the published `trend` still reports
+the month verbatim — the statistic did not change meaning.
+**(4) RS — the 1-day vote, and the quarter that was never measured.** One session against a
+±0.3pp deadband is noise, and on this tape it was the readout's ONLY dissent. `rsVote` applies
+the file's own `conservativeVote` asymmetry to THIN evidence instead of stale evidence: **a 1d
+print may not vote bullish; a bearish 1d survives, flagged**, with the withhold NAMED in the
+check's reason. The measured state is unchanged and still published — `leading` still reads
+`leading`. One-way: removing a bull vote can only move the verdict away from risk-on, and
+`available` is untouched. Separately, the NASDAQ100 pull was **8 observations deep** — enough
+for a latest/prior pair and nothing else — so the quarter-long ratio genuinely was not measured;
+deepened to 70, both legs carry a 63-back point, and `pairRs` computes `rs63` under the SAME
+same-date discipline (both back-dates must match), OPTIONAL so a short series still yields the
+1d pair (fail closed on the FIELD, not the feed). **It does NOT vote** — the rule NFCI (v3.43)
+and the 30Y (v3.55) both arrived under: a new voter moves majority math for a contract that
+gates real orders, and any band would be asserted rather than calibrated (FRED is 403 here —
+probed, still true). Promotion is an owner call once real values are observed.
+**`tt-v1` is unchanged and correct.** Every new field is additive, and `readout.json.js` re-maps
+through `buildTtReadout` on EVERY request from the cached snapshot (verified), so deployed code
+always governs the semantics and there is no cached-body-with-stale-semantics window — the same
+place ENGINE0-CONT and v4.1.6 landed when they changed grade semantics inside `tt-v1`.
+**Found, named, NOT bundled:** the **30Y sits at 5.22, above its own alert level**, with 10s30s
+at +0.49, and **Engine 0 does not check the long end at all** — for a long-duration book that is
+the sharper gap, and it is a new voter, so it is its own ruling; and the 1-day `ndxSpxRs` has
+**never had a plausibility band**, found while banding `ndxSpxRs63`.
+Tests: **2123 smoke + 306 render + 229 public-render**, `audit:prod` clean, real Chromium.
+Negative-controlled EIGHT ways — reverting the strip, removing the rate-path conjunct, disabling
+the burst vote, tuning the burst threshold so the live tape would fire, removing the burst
+asymmetry, removing the RS bull withhold, removing the RS63 date pairing, and letting the decay
+vote — each turning exactly its own pins. Two test defects caught and recorded rather than
+quietly fixed: a fixture that passed `undefined` into a DEFAULTED parameter and so stopped
+testing the missing-input case it was named for, and a boundary pin that asserted a FLAG where
+the claim was about a VOTE (a control turned it green; it now asserts the vote).
+
 **FEAT-SIMPLE-SHEET-PLAIN v2 (v5.9.5) — the sheet stops teaching the instrument and starts
 placing TODAY's number.** Owner correction to a v1 copy pass: *"Are you sure that's the highest
 leverage language? Better, but we can do better. Full actual name is high leverage as title."*

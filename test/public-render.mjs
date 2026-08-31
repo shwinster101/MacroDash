@@ -456,22 +456,29 @@ console.log("\n[public] v3.94 — Simple default, the toggle, persistence, red f
   const whysOpen = await page.locator("body").innerText();
   ok("v3.95 simple: one tap opens the five accountability checks",
     /WHY THIS CALL/.test(whysOpen) && /WHAT CHANGES IT/.test(whysOpen));
-  /* FEAT-NFCILEV (8/29): the subindex MOVED to the macro strip — zero-tap, and out of the
-     whys entirely (the chain narrates only the six voters). Driven live: the tile is on the
-     strip, the whys never mention it, and it wears no voter marker. */
+  /* OWNER SWAP (8/31) — REVERSES two of the three 8/29 FEAT-NFCILEV pins. The premise
+     reversed, so the assertions do: the strip's 8th slot now carries the NFCI COMPOSITE,
+     which VOTES, so it must wear the \u25aa marker and claim the posture — the exact opposite
+     of what LEV was pinned to do. Pinned in BOTH directions (NFCI present with its marker,
+     LEV absent from the strip) so neither the swap nor a revert can pass quietly. The
+     demotion is NOT a deletion — the leverage subindex keeps its home on the NFCI tile inside
+     the market-detail expander, driven by its own pin further down rather than assumed. */
   {
     const strip = await page.locator(".macro-strip").innerText();
-    ok("8/29 nfciLeverage: the LEV tile renders on the macro strip at glance altitude",
-      /LEV/.test(strip) && /-0\.55/.test(strip) && /0 = avg/.test(strip));
-    ok("8/29 nfciLeverage: it is NOT in the whys chain — the explanation layer stays six voters",
+    ok("8/31 swap: the NFCI composite renders on the macro strip at glance altitude",
+      /NFCI/.test(strip) && /-0\.62/.test(strip) && /0 = avg/.test(strip));
+    ok("8/31 swap: LEV is GONE from the strip - the slot went to the voter, not the context field",
+      !/\bLEV\b/.test(strip) && !/-0\.55/.test(strip));
+    ok("8/29 nfciLeverage: it is NOT in the whys chain - the explanation layer stays six voters",
       !/Leverage subindex/i.test(whysOpen) && !/context, not a vote/i.test(whysOpen));
     const marked = await page.evaluate(() => {
       const tiles = [...document.querySelectorAll(".macro-strip-inner > div")];
-      const lev = tiles.find(t => /^LEV\b/m.test(t.innerText.trim()));
-      return lev ? { txt: lev.innerText, title: lev.getAttribute("title") || "" } : null;
+      const t = tiles.find((n) => /^NFCI\b/m.test(n.innerText.trim()));
+      return t ? { txt: t.innerText, title: t.getAttribute("title") || "" } : null;
     });
-    ok("8/29 nfciLeverage: the tile carries NO voter marker and says 'Context only — does not vote'",
-      !!marked && !marked.txt.includes("\u25aa") && /Context only — does not vote/.test(marked.title));
+    ok("8/31 swap: the NFCI tile DOES carry the voter marker and claims the posture (the LEV pin, inverted)",
+      !!marked && marked.txt.includes("\u25aa") && /Counts toward today's posture/.test(marked.title)
+      && !/Context only/.test(marked.title));
   }
   ok("v3.95 simple: opening the whys does NOT pull the technical layer in with it",
     !/factor evidence/i.test(whysOpen) && !/full market detail/i.test(whysOpen));
@@ -778,6 +785,12 @@ console.log("\n[public] v3.60 P0 slice — nav, matrix, digest, health");
     /funds the AI buildout/i.test(mktsOpen) && /BAMLH0A3HYC/i.test(mktsOpen));
   ok("v3.84: the 10Y tile states the 10y–3m spread as a fact (+0.41pp, not INVERTED here)",
     /10y–3m \+0\.41pp/.test(mktsOpen) && !/10y–3m \+0\.41pp — INVERTED/.test(mktsOpen));
+  /* OWNER SWAP (8/31): the strip pin above asserts LEV is GONE from glance altitude. That is
+     only honest if the subindex still renders SOMEWHERE — a swap that silently deletes a
+     measured field is a cut wearing a promotion's clothes. Driven, not assumed: with market
+     detail open, the NFCI tile carries its leverage-subindex line with the fixture's value. */
+  ok("8/31 swap: the leverage subindex survives the strip swap on the NFCI tile one tap deep",
+    /leverage subindex -0\.55/i.test(await page.locator("body").innerText()));
   // v3.84: the Sahm cell (macro section, always visible) — CLEAR with the distance stated.
   const macTxt = await page.locator('section[aria-labelledby="macro"]').innerText();
   ok("v3.84: the Sahm cell renders CLEAR with distance-to-trigger on live data",
