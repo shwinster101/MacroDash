@@ -199,3 +199,76 @@ not fact), and the env matrix still naming the variable.
 - **The secret itself.** Until it is set, the three fields stay MISSING — the fix makes the
   cause legible, it does not supply the data. Filed-source net debt and book equity remain
   derived until then.
+
+---
+
+# Addendum 2 — v5.97.2: Kalshi issues PKCS#1, and our parser refused it
+
+The owner sent a real Kalshi-issued private key to finish the v3.99.1 setup, asking for the
+conversion steps because "Kalshi doesn't have anything but the thing I sent".
+
+**That question had a better answer than the one asked for.** The key is **PKCS#1**
+(`-----BEGIN RSA PRIVATE KEY-----`). WebCrypto has no `"pkcs1"` import format, so the shipped
+parser threw, `kalshiHeaders` caught it, and the build fell through to the ANONYMOUS path —
+silently. No error, `fed_odds` still null, nothing to diagnose from.
+
+So the setup documentation asserted PKCS#8 while the provider issues PKCS#1: **the one
+documented step was wrong about its one input**, and being wrong about it cost a silent failure
+rather than a message. That is the same defect shape as the SEC blocker one release earlier —
+a claim about the world standing where a claim about our own configuration belonged.
+
+Asking the owner to run `openssl` on a phone would have been solving our bug with their labour.
+
+## The fix
+
+PKCS#8 is PKCS#1 in a wrapper, so no dependency is needed:
+
+```
+SEQUENCE { INTEGER 0, AlgorithmIdentifier(rsaEncryption), OCTET STRING <pkcs1 body> }
+```
+
+Verified **byte-identical** to `openssl pkcs8 -topk8 -nocrypt` on the real key, and in smoke
+against a WebCrypto-exported PKCS#8.
+
+Accepted now: PKCS#1 with header, PKCS#8 with header, and a **headerless paste of either** —
+the fallback is structural (try pkcs8, then wrap), not a trust of the header text. Widening the
+accepted input did **not** widen the fail-closed guarantee: a malformed key still fails both
+paths and returns null to the anonymous fallback, pinned.
+
+## Two of my own test defects, both recorded rather than quietly fixed
+
+**1. A crash, not a failure.** The lifted signer module is loaded with `new Function`, so adding
+`export` to the new helper made the whole section throw `SyntaxError` — no total printed, the
+v3.99.4 P0 shape. The keyword bought nothing (nothing imports it) and was dropped.
+
+**2. A negative control that did not bite.** The first control disabled only the `looksPkcs1`
+branch — and the suite stayed green, because the *structural fallback* still caught the PKCS#1
+key. The implementation was more robust than the control's model of it.
+
+That is a subtler trap than a vacuous assertion: the control ran, the code was correct, and the
+green result still meant nothing about the pin. Re-run against the TRUE PKCS#8-only original it
+turns exactly its own pin red. **A control has to disable the behaviour, not one of the paths
+that implements it** — which is only knowable by reading the implementation rather than the
+diff.
+
+## Security note
+
+The key arrived in a chat transcript, so it should be treated as compromised and rotated —
+independent of this fix. Converted copies and the derived public key were wiped from the
+container; the original upload is outside my control. Rotation is cheap here because the key
+was never installed anywhere.
+
+## Still open
+
+- **The secrets themselves.** `KALSHI_KEY_ID` was never supplied (only the private key), so
+  even with credentials the pair was incomplete. Both still need setting, and the Cloudflare
+  dashboard does it from a phone — no laptop required.
+- **End-to-end acceptance by Kalshi remains unproven.** The signature is now verified
+  cryptographically against a real issued key, but this container cannot reach either Kalshi
+  base (`000` on both), so whether their endpoint *accepts* it is still first-call knowledge.
+  `?debug=<token>` records `auth: keyed|anonymous`, which separates "the key didn't load" from
+  "Kalshi rejected it".
+
+## Tests
+
+**2147 smoke · 306 render · 229 public-render**, `audit:prod` clean.
