@@ -189,12 +189,74 @@ survive to exercise it.**
 - Backlog YoY (settles `INDC_G2`).
 - Whether consensus EPS embeds the G2 financing dilution.
 
+## 8. Registered — what landed in KV (owner call, same session)
+
+Owner: *"Yeah add TE I'm curious given its decline to a buyable level, less than 10x 2028 with
+seemingly low execution risk."* Registered with the execution-risk premise flagged rather than
+smoothed — §3.1 and §3.2 are exactly the part of that premise the evidence does not support.
+
+| Write | Result |
+|---|---|
+| `POST /api/ticker-facts {symbol:"TE"}` | facts stored — **252 Nasdaq daily sessions LIVE**, profile, nextEarnings 2026-11-12. SEC fields (`netCashB`, `dilutedSharesB`, `secFilings`) returned **MISSING: SEC_USER_AGENT is not configured** on the deployment. Finnhub quote returned HTTP 429. |
+| `PUT /api/deepdive?sym=TE` | payload written, 15,492 B of 100 KB. **`lintPtModel` clean — zero findings**, proven locally against the real `src/ptModel.js` before the write. |
+| `PUT /api/tt` `If-Match: 24.2` | book **24.2 → 24.3**, 50 → 51 names. `board` carried forward intact (9 sections). |
+| `POST /api/allocation` | receipt refreshed 2026-08-27 → **2026-08-31**, read `book_version 24.3`. |
+
+**Entry:** `tier WATCH · lens IND · lastRun 2026-08-31 · 5 dots`. WATCH and IND both follow the
+BA/CAT precedent for a first-pass industrial with an unresolved balance sheet.
+
+**Ladder, floor-only** (premium withheld — `INDC_G4` UNKNOWN, the BE precedent):
+
+| Rung | Target | vs $4.365 | Annualised |
+|---|---|---|---|
+| YE2027 (FY2028 EPS $0.44 @ 10x) | **$4.40** | +0.8% | **+0.6%/yr** |
+| YE2028 (FY2029 EPS $0.64 @ 10x) | $6.40 | +46.6% | +17.8%/yr |
+| YE2029 (FY2030 EPS $0.58 @ 10x) | $5.80 | +32.9% | +8.9%/yr |
+
+YE2029 falling *below* YE2028 is not an error — it is consensus FY2030 EPS declining 8.66% on the
+45X step-down, carried faithfully into the ladder.
+
+**The YE2026 rung is deliberately dropped, and the exclusion is named in `pt_model.note`.** It
+would compute 10 × FY2027 EPS $0.05 = **$0.50** — arithmetically correct, economically
+meaningless (the earnings lens evaluated at the zero crossing), and at a `nearest` horizon it
+annualises to ≈ **−99.9%/yr**: a fabricated-looking rate driving a real sort. A `pt_model.eps`
+override sets FY2027 to `null` so the row drops; **consensus still records the true $0.05**. This
+is the "a name with no rate is EXCLUDED, never sorted as if it were 0" rule applied to a year
+rather than a name. Verified at every horizon afterwards: 2027/2028/2029 pick cleanly, 2026 and
+2030 return *excluded and counted, never substituted*.
+
+**Price action, measured (v3.82 — assistant-stamped from broker candles, never owner-typed):**
+ma50 6.164 · ma100 6.598 · ma200 6.492 · 3m swing 3.495–12.49. **Alignment −3**, the maximally
+bearish reading: below all three averages *and* ma50 under ma200. Live is −29.2% vs ma50, −32.8%
+vs ma200, −65.1% off the 3-month high, +24.9% above the 3-month low, with **no support structure
+between here and $3.495**. The v5.6.1 continuity guard was run and is clean. This is the WHEN leg
+and it never vetoes — but it is the direct answer to "declined to a buyable level": the tape has
+not based, and the decline is a give-back of a 10x (the stock was $1.16 twelve months ago), not a
+quality name de-rating.
+
+**Canonical position after registration:** ELIGIBLE NEXT DOLLAR still names **NBIS** (YE2027 $570,
++105.3%/yr). TE ranks but near the bottom — its horizon rung is +0.6%/yr — and it carries no
+server score card, so the quality rung vetoes it regardless. `why_not` is empty in the receipt
+because the evaluator stops once a winner exists; TE is simply not the winner and, being unheld,
+is not a funding source either.
+
+**Deliberately NOT done:** `/api/score` was not run. Without `underwriting_inputs` every gate
+reads UNKNOWN and the card returns UNSCORABLE with ~11 blockers (the HOOD shape) — a record that
+restates gaps already named here. It becomes useful the moment the owner supplies falsifiers and
+the six `GLOBAL_*` assertions.
+
+**Noticed while writing, unrelated to TE:** the receipt reports `positions snapshot 7d old` and
+`account record 7d old` (stale past 2d), and the leverage circuit is **ARMED** as of 2026-08-27.
+A Robinhood sync is due.
+
 ## Outcomes
 
-- **No code changed.** No repo surface is wrong; TE simply has no record. This note is the
-  deliverable.
-- **Nothing written to KV.** Registering a book entry requires a lens and tier ruling (owner
-  judgement), and authoring falsifiers myself would defeat the control they exist to be.
+- **No code changed.** No repo surface is wrong; TE simply had no record. This note plus the KV
+  writes in §8 are the deliverable.
+- **KV writes are listed in §8 and were made only after the owner asked for the name to be
+  added.** Falsifiers were still **not** authored — §6.4.1 pre-commitment is a control against
+  post-hoc rationalisation, and an assistant writing the owner's falsifiers defeats it. The lens
+  is recorded as PROVISIONAL in both the entry note and `status_flags`.
 - **Corrections to my own first pass, recorded rather than edited away:**
   1. I initially computed net debt at **$624.3M** by adding the July convert to debt while
      leaving cash at the 6/30 figure — the same double-count TipRanks makes. A financing raise is
@@ -203,5 +265,17 @@ survive to exercise it.**
   2. I first reached for the AI_INFRA harness on the strength of the headline. The harness's own
      guardrail refuses it, and the `AI_G3P` PEG of 0.014 would have manufactured a PASS from a
      zero-crossing. Re-routed to `IND`.
+  3. My first draft of the payload left the YE2026 rung in and explained it in prose. Running the
+     real `pickRow` showed it is selected at a `nearest` horizon and annualises to ≈ −99.9%/yr —
+     a prose caveat does not stop a number entering a sort. Dropped and named instead.
 - **Robinhood `get_financials` returns FREYR-era rows only** (2021-2023, all `revenue: null`) —
   it has not picked up the post-rename entity. Do not trust that endpoint for TE.
+- **Two source disagreements left standing rather than reconciled away:** Finnhub reports 279.07M
+  shares against Robinhood's 294.53M (different vintages; 294.53M used throughout, and the ~5%
+  gap is itself a reminder the share count is moving), and the next-earnings date reads
+  2026-11-12 from Finnhub against 11.11.26 from TipRanks. Neither changes a conclusion; both are
+  recorded in the payload.
+- **Deployment gap surfaced by this run: `SEC_USER_AGENT` is unset on Pages.** CLAUDE.md's own
+  environment matrix lists it as required for TT facts, and without it `/api/ticker-facts`
+  returns MISSING for `netCashB`, `dilutedSharesB` and `secFilings` on **every** name, not just
+  TE. That is why net debt and book equity here are derived rather than filed-source measured.
