@@ -2784,11 +2784,30 @@ ok("focus2: the stance strip carries the red counts a closed DESK would otherwis
 ok("focus2: primary blocks render LAST in the chain, reading what the strips computed",
   adminSrc.includes("renderStance();renderBuyBlock();renderSellBlock();renderMagBlock();renderCalBlock();renderGlance();renderTabs();"));
 ok("refresh: the button refetches quotes+positions+regime and reports the quote-cache window honestly",
-  adminSrc.includes("async function refreshRanks()") &&
+  adminSrc.includes("async function refreshRanks(btn)") &&
   adminSrc.includes("Promise.all([loadQuotes(),loadPositions(),loadRegime(),allocReeval(),loadScoreIndex()])") &&
   adminSrc.includes("server caches 2 min"));
 ok("refresh: the button disables while in flight and always re-enables",
   adminSrc.includes("b.disabled=true") && adminSrc.includes("finally{if(b){b.disabled=false"));
+/* 9/1 — Two elements' onclick call refreshRanks(): the real, reachable "⟳ REFRESH" button
+   and #refreshRanksLegacy ("⟳ DATA+RANKS"), which lives inside <div id="legacyCompact"
+   hidden> — dead markup nothing in this file ever un-hides (checked: no assignment to
+   legacyCompact.hidden exists anywhere). So the practical symptom was narrower than "two
+   buttons fight over one spinner": the shared handler hardcoded getElementById("refreshRanks")
+   and then hardcoded "⟳ DATA+RANKS" as the resting label on cleanup, so the ONE reachable
+   button silently kept the WRONG label after every refresh. Fixed generally — by resting
+   label read from whichever element the caller passes — so the dormant legacy element would
+   also behave correctly if #legacyCompact is ever un-hidden again. */
+ok("refresh: BOTH buttons pass `this`, so the handler operates on the one actually clicked",
+  /id="refreshRanks" onclick="refreshRanks\(this\)"/.test(adminSrc) &&
+  /id="refreshRanksLegacy" onclick="refreshRanks\(this\)"/.test(adminSrc));
+ok("refresh: the resting label is READ from the clicked button, never a hardcoded second copy",
+  adminSrc.includes('const restLabel=b?b.textContent:"⟳ REFRESH"') &&
+  adminSrc.includes("finally{if(b){b.disabled=false;b.textContent=restLabel;}render();}") &&
+  // the retired hardcode is gone, not just shadowed by the new line
+  !/textContent="⟳ DATA\+RANKS";\}render\(\)/.test(adminSrc));
+ok("refresh: called with no argument still defaults to the glance-action button (existing test call sites)",
+  adminSrc.includes('const b=btn||document.getElementById("refreshRanks")'));
 
 // ═══════════ v3.42 READABLE DESK (slice 1) — the first phone screen ═══════════
 // The owner's screenshot circled the stance strip: five wrapped lines of uppercase prose with

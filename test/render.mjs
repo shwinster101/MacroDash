@@ -2167,6 +2167,41 @@ await holdPage.evaluate(() => refreshRanks());
 await holdPage.waitForTimeout(600);
 ok("refresh-failure: 'retained the prior snapshot' is reported, never silent",
   /retained the prior snapshot/.test(await holdPage.locator("#toast").innerText()));
+
+/* 9/1 — REAL click on the button a user can actually reach, not evaluate()-with-no-argument.
+   #refreshRanksLegacy ("⟳ DATA+RANKS") is markup inside <div id="legacyCompact" hidden> that
+   NOTHING in this file ever un-hides — confirmed by grep before writing this: no assignment
+   to `legacyCompact.hidden` exists anywhere. So the "two buttons fight over one spinner" shape
+   the source suggested can never be a user-visible symptom today; only #refreshRanks is real.
+   The bug a user could actually hit was narrower: the shared handler's cleanup hardcoded
+   "⟳ DATA+RANKS" onto whichever element `b` pointed at, and since a real click only ever
+   resolves `b` to #refreshRanks, its resting label silently became the WRONG string — which
+   is exactly what was reported. */
+REFRESH_FIXTURE = { ok: true, published: true, improved: true,
+  message: "Engine 0 recovered to 6 current check(s) (HIGH confidence, FULL)",
+  readout: { as_of: `${TODAY_ET}T15:00:00Z`,
+    regime: { verdict: "TAILWIND", confidence: "HIGH", actionability: "FULL", status: "OK", current: 6, historical: 0, missing: 0 },
+    spy: { as_of: TODAY_ET }, vix: { as_of: TODAY_ET }, fear_greed: { as_of: TODAY_ET }, us10y: { as_of: TODAY_ET },
+    macro_flip: { armed: false, tripped: false, evaluable: true, state: "CLEAR", reason: null } } };
+await holdPage.locator("#refreshRanks").click();
+ok("refresh (real click): the clicked button shows the spinner mid-flight",
+  await holdPage.evaluate(() => document.getElementById("refreshRanks").disabled === true));
+await holdPage.waitForTimeout(600);
+ok("refresh (real click): settles back to ITS OWN resting label, '⟳ REFRESH' — not the retired hardcode",
+  (await holdPage.locator("#refreshRanks").innerText()).trim() === "⟳ REFRESH");
+
+/* The dormant `refreshRanksLegacy` path is still exercised — not by a click (a real user
+   cannot reach it), but by invoking the shared handler on it directly, so the per-button
+   fix is proven correct even for the unreachable element rather than merely assumed. If
+   #legacyCompact is ever un-hidden again, this is what keeps the button from immediately
+   inheriting #refreshRanks's resting label. */
+await holdPage.evaluate(() => refreshRanks(document.getElementById("refreshRanksLegacy")));
+await holdPage.waitForTimeout(600);
+ok("refresh (dormant legacy element, invoked directly): restores ITS OWN label, '⟳ DATA+RANKS'",
+  (await holdPage.evaluate(() => document.getElementById("refreshRanksLegacy").textContent)).trim() === "⟳ DATA+RANKS");
+ok("refresh (dormant legacy element, invoked directly): does NOT touch the real button's label",
+  (await holdPage.locator("#refreshRanks").innerText()).trim() === "⟳ REFRESH");
+
 await holdPage.close();
 REFRESH_FIXTURE = null;
 
