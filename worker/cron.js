@@ -179,12 +179,29 @@ function authorized(request, env) {
 // Record each warm/refresh outcome in KV so /api/snapshot?debug=1 can surface cron health
 // from a browser (_diag.cronLastWarm) — a silently edge-blocked warm previously looked
 // identical to no cron at all, and only `wrangler tail` at the right moment could tell.
+// v6.0 T2: EVERY run of EVERY job writes this, no-op branches included ("already warm",
+// "already captured") — a heartbeat with gaps cannot tell a skipped run from a dead cron.
 async function recordWarm(env, job, ok, status, extra = null) {
   try {
     await env.PULSE_CACHE.put("pulse:cron:lastwarm",
       JSON.stringify({ at: new Date().toISOString(), job, ok, status, ...(extra || {}) }),
       { expirationTtl: 7 * 24 * 3600 });
   } catch { /* diagnostic only — never blocks the warm itself */ }
+}
+
+// v6.0 T2: the freeze can miss ONCE and recover — a single transient KV fault at 10:00 must
+// not cost the day's immutable row. Bounded, short: the scheduled invocation has a hard
+// lifetime and a heartbeat write still follows. Exported solely for smoke.
+export async function putWithRetry(kv, key, value, opts = undefined, attempts = 3, sleepMs = 500) {
+  let lastErr;
+  for (let i = 0; i < attempts; i++) {
+    try { return await kv.put(key, value, opts); }
+    catch (e) {
+      lastErr = e;
+      if (i < attempts - 1) await new Promise((r) => setTimeout(r, sleepMs * (i + 1)));
+    }
+  }
+  throw lastErr;
 }
 
 // ENGINE0-CONT: force-refresh the /api/snapshot per-day cache through the AUTHENTICATED
@@ -211,11 +228,11 @@ async function refreshSnapshot(env) {
       });
       if (res.ok) {
         const body = await res.json().catch(() => null);
-        await recordWarm(env, "refresh-10amET", true, res.status,
-          body ? { published: body.published, improved: body.improved, message: body.message } : null);
+        const warmExtra = body ? { published: body.published, improved: body.improved, message: body.message } : null;
+        await recordWarm(env, "refresh-10amET", true, res.status, warmExtra);
         // Only freeze the candidate directly when it actually became the published snapshot.
         // A rejected (worse) candidate is diagnostic; history must fall back to the retained call.
-        return { ok: true, readout: body?.readout || null,
+        return { ok: true, status: res.status, warmExtra, readout: body?.readout || null,
           call: body?.published ? (body?.readout?.call || null) : null };
       }
       console.error(`snapshot refresh: POST ${SNAPSHOT_REFRESH_URL} got HTTP ${res.status} — check REFRESH_TOKEN on both deploys / Access scope; falling back to non-destructive warm`);
@@ -227,11 +244,11 @@ async function refreshSnapshot(env) {
     const res = await fetch(SNAPSHOT_URL, { headers: { "user-agent": "macrodash-snapshot-refresher" } });
     if (!res.ok) console.error(`snapshot refresh fallback: GET got HTTP ${res.status} — the cron is blocked at the edge (check Cloudflare Access app scope / WAF rules)`);
     await recordWarm(env, "refresh-10amET", res.ok, res.status, { fallback: "get-warm" });
-    return { ok: res.ok, readout: null, call: null, fallback: true };
+    return { ok: res.ok, status: res.status, warmExtra: { fallback: "get-warm" }, readout: null, call: null, fallback: true };
   } catch (e) {
     console.error("snapshot refresh failed:", (e && e.message) || e);
     await recordWarm(env, "refresh-10amET", false, 0);
-    return { ok: false, readout: null, call: null };
+    return { ok: false, status: 0, warmExtra: null, readout: null, call: null };
   }
 }
 
@@ -279,7 +296,8 @@ export async function captureDailyCall(env, fetchImpl = fetch, now = new Date(),
     outcomes: null,
   };
   try {
-    await env.PULSE_CACHE.put(key, JSON.stringify(record));
+    // v6.0 T2: retried — one transient KV fault must not vacate the day's immutable row.
+    await putWithRetry(env.PULSE_CACHE, key, JSON.stringify(record));
     return { written: true, key, record };
   } catch {
     return { written: false, reason: "KV write failed", key };
@@ -354,12 +372,18 @@ export async function enrichHistoryOutcomes(env, fetchImpl = fetch, now = new Da
 // Pre-open warm: populate the day's snapshot key if it isn't already there. Unlike
 // refreshSnapshot() this does NOT delete first — if a night owl already warmed the cache,
 // re-fetching would just burn upstream calls for the same data.
-async function warmSnapshot(env) {
+// Exported solely for smoke (the validateBook precedent).
+export async function warmSnapshot(env) {
   try {
     const etDate = new Date().toLocaleDateString("en-CA", { timeZone: "America/New_York" });
     // SYNC HAZARD: keep this key version in step with functions/api/snapshot.js.
     const existing = await env.PULSE_CACHE.get(`pulse:snapshot:v16:${etDate}`);
-    if (existing) return; // already warm — nothing to do
+    if (existing) {
+      // v6.0 T2: "already warm" is a RUN, not a silence — without this write, a skipped
+      // 8am no-op and a cron that never fired read identically in the heartbeat.
+      await recordWarm(env, "prewarm-8amET", true, null, { already_warm: true });
+      return;
+    }
     const res = await fetch(SNAPSHOT_URL, { headers: { "user-agent": "macrodash-snapshot-prewarm" } });
     if (!res.ok) console.error(`snapshot pre-warm got HTTP ${res.status} from ${SNAPSHOT_URL} — the cron is blocked at the edge (check Cloudflare Access app scope / WAF rules); first visitor pays the cold fetch`);
     await recordWarm(env, "prewarm-8amET", res.ok, res.status);
@@ -387,6 +411,20 @@ export default {
           console.error("history capture failed:", captured.reason);
         const outcomes = await enrichHistoryOutcomes(env, fetch, new Date());
         if (!outcomes.ok) console.error("history outcome enrichment failed:", outcomes.reason);
+        /* v6.0 T2: the SURVIVING heartbeat for a 10am run carries EVERY leg. refreshSnapshot
+           writes its own record mid-path (crash insurance), but that record said nothing
+           about the freeze — a run whose refresh succeeded and whose freeze silently failed
+           left a heartbeat that read healthy. This final write repeats the refresh summary
+           and adds the freeze + outcome legs; "already captured" is a real state, recorded
+           as itself, never dressed as a write or hidden as silence. */
+        await recordWarm(env, "refresh-10amET", refreshed.ok, refreshed.status ?? null, {
+          ...(refreshed.warmExtra || {}),
+          freeze: captured.written ? "written"
+            : captured.reason === "already captured" ? "already captured"
+            : `FAILED: ${captured.reason}`,
+          outcomes: outcomes.ok ? { updated: outcomes.updated, pending: outcomes.pending }
+            : { failed: outcomes.reason },
+        });
       })());
       return;
     }

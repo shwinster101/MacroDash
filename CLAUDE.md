@@ -5,6 +5,62 @@ answers *"is it safe to be in the market?"* from live macro + market + sentiment
 data. Single-page React app on Cloudflare Pages, with live data assembled at the
 edge by Pages Functions and cached in KV.
 
+**v6.0.0 "CLOSE THE LOOP" — one GATE derivation, a freeze that can miss once and recover, the
+Monday feed hole closed, and the release cut (owner sprint, four tickets in order, nothing else
+entered the bump).** Two engines, named once so no reader has to reconstruct it: the **public
+6-factor backdrop** (`src/regime.js` — 10Y · VIX · F&G · CPI · CAPE · NFCI, the hero's call and
+the frozen 10am md-call-v1) and **Engine 0's seven order-gating checks** (`src/ttReadout.js` —
+`/readout.json`, the terminal's permission axis). They are different engines with different
+jobs, married never merged; every ticket below touches exactly one of them and says which.
+**T1 — ONE GATE.** The glance GATE tile reads `macroGate()` and nothing else; the retired
+`stance().k` alias is pinned ABSENT. The audit's finding turned out DEEPER than filed: client
+`macroGate()` itself read the collapsed `stance().k`, and `stance()` folds every non-FULL
+actionability into `k:"stop"` first — so the client could NEVER say HODL on the one state HODL
+exists for (Engine 0 RESTRICTED; server receipt HODL, client TOUCH GRASS), and the old mirror
+matrix hid it by stubbing `stance().k` with values the live page never produces. `macroGate()`
+is now rung-for-rung on the server ladder's own primitives (circuit → stance → feed →
+actionability → flip), the matrix drives those primitives, and both owner fixtures are pinned
+live: measured-HEADWIND + FULL reads **SEND IT** on the tile (the alias said HODL) with DESK
+keeping ADDS GATED beside it, and RESTRICTED reads **HODL** — on that tile, HODL now means
+RESTRICTED and nothing else.
+**T2 — the freeze can miss once and recover.** `putWithRetry` (3 attempts, backoff) under the
+10am history freeze — one transient KV fault no longer costs the day's immutable row — and
+`pulse:cron:lastwarm` is written on EVERY run of every job: the 8am "already warm" no-op now
+records itself (it used to be indistinguishable from a dead cron), and the 10am run's surviving
+heartbeat carries ALL THREE legs (refresh · freeze · outcomes) — a run whose refresh succeeded
+while its freeze silently failed used to leave a healthy-looking record. "Already captured" is
+recorded as itself. No schedule change; nothing invents an observation. First behavioral test
+of `scheduled()` ships with it.
+**T3 — why Monday lost CPI + NFCI.** Measured on the live frozen 2026-08-31 row: `cpiHeadline`
+and `nfci` read MOCK with no asOf while the Engine 0 criticals stayed LIVE — `FIELD_LG_GROUPS`
+(ENGINE0-CONT §7.1) covered ONLY the four criticals, so a failed FRED tail batch dropped the
+public backdrop's two FRED voters straight to mock and the 10:02 freeze notarized a 4/6 call;
+a later same-day rebuild recovered the live fields, but the frozen row is immutable and stays.
+CPI and NFCI (plus cpiCore/nfciLeverage as their OWN groups, so a live voter never blocks a
+dead sibling's restore) now ride per-field last-good with their REAL observation dates, so
+cadence-aware staleness still governs the vote — restored on the 10am refresh, never a quiet
+4/6 PARTIAL from a feed with no safety net. The 8/31 outage shape is RUN in smoke against the
+real `applyFieldLastGood`; a restore is still banded; voter coverage is reconciled, not
+asserted.
+**T4 — the release cut.** The Power alerts PERSIST (`md:alerts:v1`, the md:view key family):
+stored as an OVERLAY on `DEFAULT_ALERTS` — per-id active flags + deleted ids, never the array,
+so an alert a later release ADDS still appears (the v3.55 arrival problem in reverse); garbage
+falls back to defaults; toggle + delete driven through a REAL reload in public-render. **PR #10
+closed, its live fix carried forward**: verified still live on main before acting — the BLIND
+badge rendered only at `activeAlerts===0`, so "1 fired · 3 blind" printed as a confident
+`⚡ 1 FIRED` (the v3.52 false clear at a nonzero numerator); one badge now carries both counts,
+red when anything fired, amber when only blind, nothing when neither. The month-stale branch
+itself was unmergeable (base ~60 releases back, backward version bump, ancient smoke edits);
+HARNESS.md stays recoverable on its branch. **The Simple surface is FROZEN** — sheets, rulers
+and subs move on a defect, not a vibe. **Out of v6, by owner ruling**: new factors, LEV as a
+voter, backfilling 8/28, more explainer prose, DST automation, and the audit's T2/T3/S2
+findings (span-onclick DESK rows, hzDeckChip tap targets, footer link sizes — filed, not
+built).
+Tests: **2168 smoke + 309 render + 234 public-render**, `audit:prod` clean, real Chromium.
+Negative-controlled seven ways — the alias restored (2 smoke + 3 render), the freeze retry
+reverted, the final heartbeat dropped, the last-good groups removed (3), the persistence write
+dropped, the two-badge render restored (4) — each turning exactly its own pins.
+
 **v5.97.4 — the two filed minors closed, and the three-surface button audit (owner: "fix those
 two open minors… don't fix, but check and audit every button").** Two fixes and one
 findings-only audit, split exactly as instructed.

@@ -145,3 +145,43 @@ noted for completeness.
 T1 (vocabulary integrity on the one word everybody sees) > P1 (43% of Power's buttons,
 one-session state) > T2 (keyboard reachability at the DESK altitude) > T3 (one tap target)
 > S2/P2 (notes).
+
+---
+
+## Outcomes — v6.0.0 "CLOSE THE LOOP" (owner sprint, 9/1; built same session)
+
+The owner re-scoped the build to four tickets: T1 · a freeze that can miss once and recover ·
+the Monday CPI/NFCI trace · the release cut (alerts persist, PR #10, 6.0.0). **T2/T3/S2 above
+are explicitly OUT of v6 by owner ruling** — filed here, not built. Simple is frozen.
+
+**Shipped (commit on the v6.0.0 release):**
+- **T1 built** — the GATE tile reads `macroGate()`; the alias is pinned ABSENT; the
+  HEADWIND+FULL and RESTRICTED fixtures are driven live (SEND IT and HODL respectively).
+- **Freeze recovery** — `putWithRetry` under the history freeze; `pulse:cron:lastwarm`
+  written on every run including "already warm" and "already captured"; the 10am heartbeat
+  carries refresh + freeze + outcomes. First behavioral test of `scheduled()`.
+- **The Monday trace** — root cause: `FIELD_LG_GROUPS` covered only the four Engine 0
+  criticals; CPI and NFCI (the public backdrop's FRED voters) had NO per-field last-good, so
+  the failed 8/31 tail batch dropped them to MOCK and the freeze notarized 4/6. Fixed by
+  extending the groups (cpi · cpi_core · nfci · nfci_lev), dates riding along so cadence
+  staleness still governs. The frozen 8/31 row stays as captured — immutable by design.
+- **Release cut** — alerts persist as an overlay at `md:alerts:v1`; PR #10 closed with its
+  live FIRED/BLIND false-clear fix carried forward and credited; version 6.0.0; one
+  release block in CLAUDE.md naming the two engines.
+
+**Corrections to this note's own survey, recorded rather than edited away:**
+1. **T1 was UNDERSTATED.** The note framed the divergence as the tile's alias vs
+   `macroGate()`. Reviewing before building found the deeper half: client `macroGate()`
+   itself read the collapsed `stance().k`, so it could never return HODL on a real
+   RESTRICTED day (server receipt HODL, client TOUCH GRASS) — and the smoke mirror matrix
+   hid it by stubbing `stance` with `()=>({k:"go"})`, an input the live page never supplies.
+   The fix therefore rebuilt `macroGate()` on the ladder's primitives, not just the tile.
+2. **P1's count was wrong.** "Ten ON/OFF toggles + ten ✕ deletes" — the live section has
+   NINE monitors, so 18 of 47 visible buttons (38%), not 20 (43%). The conclusion stood;
+   the arithmetic did not.
+3. The daily-contract render fixture's measured-HEADWIND turned out to be the exact
+   owner-named divergence fixture; the v5.97.4 workaround (clearing the measured verdict)
+   was reverted when T1 landed and the fixture now proves the fix.
+
+Gates at the v6.0.0 head: **2168 smoke · 309 render · 234 public-render · audit clean**.
+Seven negative controls, each turning exactly its own pins.

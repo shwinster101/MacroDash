@@ -422,6 +422,29 @@ const DEFAULT_ALERTS=[
   {id:8,label:"CCC Tail Above 12pp",metric:"credittail",condition:"above",value:12,unit:"pp",active:false},
   {id:9,label:"10y–3m Inverts",metric:"term10y3m",condition:"below",value:0,unit:"pp",active:false},
 ];
+/* v6.0 T4 — the alerts PERSIST (owner ticket: the manage buttons must not be one-session
+   toys). Stored as an OVERLAY on DEFAULT_ALERTS at md:alerts:v1 — per-id active flags plus
+   deleted ids — never as the array itself: storing the array would silently drop every
+   alert a later release ADDS (the v3.55 arrival problem in reverse). An unknown stored id
+   is ignored; garbage or a wrong version falls back to the defaults (the md:view rule).
+   Pure and module-level solely so smoke can lift and RUN them (evalAlert precedent). */
+const ALERT_PREFS_KEY="md:alerts:v1";
+function applyAlertPrefs(defaults,prefs){
+  if(!prefs||typeof prefs!=="object"||prefs.v!==1)return defaults;
+  const active=prefs.active&&typeof prefs.active==="object"?prefs.active:{};
+  const deleted=Array.isArray(prefs.deleted)?prefs.deleted:[];
+  return defaults.filter(a=>!deleted.includes(a.id))
+    .map(a=>typeof active[a.id]==="boolean"?{...a,active:active[a.id]}:a);
+}
+function alertPrefsOf(defaults,current){
+  const ids=new Set(current.map(a=>a.id));
+  const active={};
+  for(const a of current){
+    const d=defaults.find(x=>x.id===a.id);
+    if(d&&d.active!==a.active)active[a.id]=a.active;
+  }
+  return{v:1,active,deleted:defaults.filter(d=>!ids.has(d.id)).map(d=>d.id)};
+}
 
 // ─── MAIN DASHBOARD (FEAT-161: Command Center spatial layout) ─────────────
 // publicView prop (from App.jsx ?view=public / VITE_PUBLIC_VIEW) is now consumed.
@@ -436,7 +459,15 @@ const VOTING_FIELDS=new Set(Object.values(FACTOR_FIELD));
 // (Req 3.7); a click still wins instantly via the hash. Hamburger form at ≤320px.
 
 export default function Dashboard({ publicView = false } = {}) {
-  const [alerts,setAlerts]=useState(DEFAULT_ALERTS);
+  // v6.0 T4: lazy-init from the stored overlay; every change writes the overlay back.
+  const [alerts,setAlerts]=useState(()=>{
+    try{return applyAlertPrefs(DEFAULT_ALERTS,JSON.parse(localStorage.getItem(ALERT_PREFS_KEY)||"null"));}
+    catch(_e){return DEFAULT_ALERTS;}
+  });
+  useEffect(()=>{
+    try{localStorage.setItem(ALERT_PREFS_KEY,JSON.stringify(alertPrefsOf(DEFAULT_ALERTS,alerts)));}
+    catch(_e){/* storage may be denied — the session still works, it just forgets */}
+  },[alerts]);
   /* v3.94 SIMPLE/POWER (owner directive — three-layer progressive disclosure): SIMPLE is the
      default and shows the Glance layer only — the verdict + sentence + confidence, the data-
      freshness line, and the key market numbers. POWER is the full analytical view. Persisted
@@ -877,8 +908,15 @@ export default function Dashboard({ publicView = false } = {}) {
               monitors the reader could not reach and its deep link led nowhere — an orphan.
               v3.25 says a collapse must never hide a red fact; it does not require a count of
               a section that is not on the page. In Power both are unchanged. */}
-          {!simple&&!publicView&&activeAlerts>0&&<Badge label={`⚡ ${activeAlerts} FIRED`} color={T.red}/>}
-          {!simple&&!publicView&&activeAlerts===0&&alertBlind>0&&<Badge label={`⚡ ${alertBlind} BLIND`} color={T.amber}/>}
+          {/* v6.0 (PR #10's live fix, carried forward at its close): both counts ride ONE
+              badge. The BLIND tell used to render only at activeAlerts===0, so "1 fired ·
+              3 blind" printed as a confident "⚡ 1 FIRED" alone — the v3.52 false clear,
+              surviving at a nonzero numerator. Red when anything fired (a trip outranks a
+              blind gauge), amber when only blind, NOTHING when neither — a genuine clear
+              says nothing rather than asserting one. */}
+          {!simple&&!publicView&&(activeAlerts>0||alertBlind>0)&&
+            <Badge label={`⚡ ${[activeAlerts>0?`${activeAlerts} FIRED`:null,alertBlind>0?`${alertBlind} BLIND`:null].filter(Boolean).join(" · ")}`}
+              color={activeAlerts>0?T.red:T.amber}/>}
           {/* v3.94: the Simple|Power toggle — persistent, remembered per device. */}
           <div role="group" aria-label="View mode" style={{display:"flex",border:`1px solid ${T.borderAccent}`,borderRadius:4,overflow:"hidden"}}>
             {["simple","power"].map(m=>(

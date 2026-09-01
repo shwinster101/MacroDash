@@ -1460,6 +1460,36 @@ console.log("\n[public] v4.0 — canonical call, history, and difference routes"
   await page.close();
 }
 
+/* ── v6.0 T4 — the alerts persist, and PR #10's false clear is closed, DRIVEN ─────────────
+   vix:30 fires the VIX Spike monitor while the 30Y monitor (active, no thirtyYear in the
+   fixture) is blind — the exact fired-AND-blind state the old two-badge render collapsed
+   into a confident "⚡ 1 FIRED". Then the persistence loop: toggle + delete, RELOAD, and
+   the state survives; garbage in the store falls back to the defaults. */
+console.log("\n[public] v6.0 — merged FIRED·BLIND badge + alert persistence across reload");
+{
+  const { page, errors } = await open({ live: { ...FULL_LIVE, vix: 30 } });
+  await page.waitForTimeout(1300);
+  ok("v6.0 badge: fired AND blind ride ONE red badge — the blind tell survives a nonzero fired count",
+    /⚡ 1 FIRED · \d+ BLIND/.test(await page.locator("body").innerText()));
+  await page.locator('button[aria-label="Toggle alert CPI > 4%"]').click();     // OFF -> ON
+  await page.locator('button[aria-label="Delete alert 10s30s Inverts"]').click();
+  await page.waitForTimeout(200);
+  await page.reload({ waitUntil: "domcontentloaded" });
+  await page.waitForTimeout(1300);
+  ok("v6.0 persist: a toggle SURVIVES a reload — the manage buttons stopped being one-session toys",
+    (await page.locator('button[aria-label="Toggle alert CPI > 4%"]').innerText()).trim() === "ON");
+  ok("v6.0 persist: a delete survives the same reload",
+    (await page.locator('button[aria-label="Toggle alert 10s30s Inverts"]').count()) === 0);
+  await page.evaluate(() => localStorage.setItem("md:alerts:v1", "{not json"));
+  await page.reload({ waitUntil: "domcontentloaded" });
+  await page.waitForTimeout(1300);
+  ok("v6.0 persist: garbage in the store falls back to the DEFAULTS — every monitor returns",
+    (await page.locator('button[aria-label^="Toggle alert"]').count()) === 9 &&
+    (await page.locator('button[aria-label="Toggle alert CPI > 4%"]').innerText()).trim() === "OFF");
+  ok("v6.0 alerts: no page errors through the whole loop", errors.length === 0);
+  await page.close();
+}
+
 await browser.close();
 srv.close();
 console.log(`\n=== PUBLIC RENDER TEST: ${pass} passed, ${fail} failed ===`);

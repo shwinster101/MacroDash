@@ -1288,19 +1288,17 @@ ok("gate: the tripped default fixture reads TOUCH GRASS on the GATE tile — fai
 const daily = await page.evaluate(() => {
   const a = BOOK.find((e) => e.sym === "AAA");
   const prev = { alloc: ALLOC, stamped: ALLOC_STAMPED, circ: BOARD.circuit, reg: BOARD.regime,
-    px: LIVE_PX.AAA, card: SCORE_INDEX && SCORE_INDEX.AAA, meas: REGIME.regime.verdict };
+    px: LIVE_PX.AAA, card: SCORE_INDEX && SCORE_INDEX.AAA };
   const today = new Date().toLocaleDateString("en-CA", { timeZone: "America/New_York" });
   // the entry-recipe: clear gates + a SCORED card so AGREE_PICK lights and both spread
   // altitudes render (the compact banner only exists under a pick).
-  // v5.97.4: the MEASURED verdict must clear too — the fixture's HEADWIND kept stance() at
-  // ADDS GATED, and the GATE tile speaks stance (its alias derives from stance().k, not
-  // macroGate()'s ladder — the second-derivation divergence filed in the 8/31 button audit:
-  // under measured-HEADWIND + FULL the ladder says SEND IT while the tile says HODL). The
-  // old strip pin passed only because macroGate ignores the HEADWIND caution; a genuinely
-  // cleared board tests the same claim honestly at the surviving surface.
+  // v6.0 T1: the MEASURED verdict deliberately stays the fixture's HEADWIND — this IS the
+  // owner-named divergence fixture (measured-HEADWIND + FULL actionability), where the
+  // retired stance().k alias printed HODL against the ladder's SEND IT. The tile now reads
+  // macroGate() — ONE derivation — so this fixture must print SEND IT while the DESK stance
+  // box still reads ADDS GATED (both truths visible, married never merged).
   BOARD.circuit = { state: "clear", as_of: today };
   BOARD.regime = { asserted: "TAILWIND", as_of: today };
-  REGIME.regime.verdict = "TAILWIND";
   LIVE_PX.AAA = { px: 300, chg: 0, at: LIVE_PX.AAA.at };
   SCORE_INDEX = SCORE_INDEX || {};
   SCORE_INDEX_META = SCORE_INDEX_META || { methodology_version: "tt-underwriting-v2.6.0" };
@@ -1343,13 +1341,29 @@ const daily = await page.evaluate(() => {
     spread: { AAA: { belief: { pt: 400, y: "2027" }, street: null, pct: null, sign: null } } };
   render();
   out.unreviewed = /street unreviewed — no packet, no sourced target/.test(document.getElementById("upsideRank").innerText);
+  // v6.0 T1 — the two owner-named gate fixtures, driven at the tile before restore:
+  // (a) measured-HEADWIND + FULL (the board as configured above) → SEND IT, never the
+  //     retired alias's HODL, while the DESK stance box keeps ADDS GATED;
+  out.gateHeadwindFull = /SEND IT/.test(document.getElementById("gateTile").textContent) &&
+    /ADDS GATED/i.test(document.getElementById("todayCard").innerText);
+  // (b) Engine 0 RESTRICTED → HODL on the tile — the ONE looking-session state, which the
+  //     alias (and the old stance().k-fed macroGate) could never speak: stance() folds
+  //     RESTRICTED into k:"stop" before any alias could see it.
+  const keepAct = REGIME.regime.actionability;
+  REGIME.regime.actionability = "RESTRICTED"; render();
+  out.gateRestrictedHodl = /HODL/.test(document.getElementById("gateTile").textContent);
+  REGIME.regime.actionability = keepAct;
   ALLOC = prev.alloc; ALLOC_STAMPED = prev.stamped; BOARD.circuit = prev.circ; BOARD.regime = prev.reg;
-  LIVE_PX.AAA = prev.px; REGIME.regime.verdict = prev.meas;
+  LIVE_PX.AAA = prev.px;
   if (prev.card === undefined) delete SCORE_INDEX.AAA; else SCORE_INDEX.AAA = prev.card;
   render();
   return out;
 });
 ok("gate: a cleared board under FULL actionability reads SEND IT on the GATE tile", daily.gateSendIt);
+ok("v6.0 T1: measured-HEADWIND + FULL reads SEND IT on the tile (the retired alias said HODL) while DESK keeps ADDS GATED",
+  daily.gateHeadwindFull);
+ok("v6.0 T1: Engine 0 RESTRICTED reads HODL on the tile — the looking-session state the alias could never speak",
+  daily.gateRestrictedHodl);
 ok("spread: one builder, two altitudes — labeled sourced leg + the frozen number on the DESK box AND the compact banner",
   daily.spreadDesk && daily.spreadBuy);
 ok("flip line: the #2-overtakes sentence renders under the eligible line", daily.flipLine);
