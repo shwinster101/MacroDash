@@ -1161,8 +1161,9 @@ export function rateOddsStillOpen(lg, now = new Date()) {
   return d >= now.toLocaleDateString("en-CA", { timeZone: "America/New_York" });
 }
 
-// ENGINE0-CONT §7.1: per-FIELD last-good for the FRED-sourced Engine 0 criticals (the
-// scrapers already ride withLastGood above). Grouped by source pull so a value never
+// ENGINE0-CONT §7.1: per-FIELD last-good for the FRED-sourced Engine 0 criticals AND — as
+// of v6.0 T3 — the public backdrop's FRED voters (the scrapers already ride withLastGood
+// above). Grouped by source pull so a value never
 // travels without its observation date and derivatives; each group's PRIMARY key decides
 // presence. The group PRIMARY is band-checked on the way back in, so an implausible stored
 // vix/tenYear/spyPrice/ndxSpxRs stays dropped. KNOWN GAP, stated rather than implied away:
@@ -1171,14 +1172,31 @@ export function rateOddsStillOpen(lg, now = new Date()) {
 // written before a band was tightened) is served unbanded. Closing it means either banding
 // the whole restored group or moving applyBands() after this call; deliberately deferred,
 // because reordering the band pass touches every field, not just the restored ones.
+/* v6.0 T3 (owner ticket: "why Monday lost CPI + NFCI"): the group set covered ONLY the four
+   Engine 0 criticals — the PUBLIC backdrop's two FRED-sourced voters had no per-field
+   last-good at all, so when their tail batch failed on the 2026-08-31 10:02 build they fell
+   straight to MOCK and the freeze notarized a 4/6 call (a later rebuild recovered the live
+   fields; the frozen row is immutable). CPI and NFCI now ride the same rails: their REAL
+   observation dates travel with them, so cadence-aware staleness still governs the vote —
+   a monthly CPI carried a day is fresh; one carried past its cadence is excluded and NAMED
+   downstream, never quietly counted. cpiCore and nfciLeverage (context, non-voting) get
+   their OWN groups rather than riding a voter's, so a live voter with a dead sibling never
+   blocks the sibling's restore. */
 const FIELD_LG_GROUPS = {
   vix:        ["vix", "vixAsOf", "vixWeekChg", "vixSeries"],
   tenyear:    ["tenYear", "tenYearAsOf", "tenYearD1", "tenYearW1", "tenYearM1", "tenYearSeries", "tenYearSource"],
   spy:        ["spyPrice", "spyPriceAsOf", "spyChangePct", "spyYtd", "spySeries", "spyMa100", "spyMa200", "spxIndex", "spxIndexAsOf", "spxPrevClose"],
   ndx_spx_rs: ["ndxSpxRs", "ndxSpxRsAsOf", "ndx1dPct", "spx1dPct", "ndxSpxRs63", "ndxSpxRs63AsOf", "ndxSpxRs63Back"],
+  cpi:        ["cpiHeadline", "cpiHeadlineAsOf", "cpiTrend"],
+  cpi_core:   ["cpiCore", "cpiCoreAsOf"],
+  nfci:       ["nfci", "nfciAsOf", "nfciW1", "nfciSeries"],
+  nfci_lev:   ["nfciLeverage", "nfciLeverageAsOf"],
 };
-const FIELD_LG_PRIMARY = { vix: "vix", tenyear: "tenYear", spy: "spyPrice", ndx_spx_rs: "ndxSpxRs" };
-async function applyFieldLastGood(env, live) {
+const FIELD_LG_PRIMARY = { vix: "vix", tenyear: "tenYear", spy: "spyPrice", ndx_spx_rs: "ndxSpxRs",
+  cpi: "cpiHeadline", cpi_core: "cpiCore", nfci: "nfci", nfci_lev: "nfciLeverage" };
+// Exported solely for smoke (the validateBook precedent) — the 8/31 outage shape is a claim
+// about a RESTORE, and a string pin cannot prove one.
+export async function applyFieldLastGood(env, live) {
   for (const [group, keys] of Object.entries(FIELD_LG_GROUPS)) {
     const primary = FIELD_LG_PRIMARY[group];
     if (live[primary] !== undefined) {

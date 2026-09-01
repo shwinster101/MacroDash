@@ -41,7 +41,7 @@ import { plausible, applyBands, quorum, QUORUM_FIELDS, QUORUM_MIN, marketSession
   pairRs, RS_63_SESSIONS, parseTreasuryCsv, preferFresherRates, parseCboeVixCsv, parseCboeVixQuote,
   pairCboeVix, preferFresherVix,
   rateOddsStillOpen, chooseTtl, publishIfNoWorse, TTL_MEDIUM, TTL_LOW,
-  fetchEquities, onRequest as getSnapshot } from "../functions/api/snapshot.js";
+  fetchEquities, applyFieldLastGood, onRequest as getSnapshot } from "../functions/api/snapshot.js";
 import { etYmd } from "../src/sources.js";
 // UI-OVERHAUL Slice 1 (task 1.1): tokens are a real module now — smoke IMPORTS it (the v3.60
 // convention: the actual export is tested, immune to formatting drift) instead of regexing
@@ -50,7 +50,7 @@ import { DT, T as TOK_T } from "../src/design-tokens.js";
 import { fmt } from "../src/format.js"; // task 1.3: shared format helpers, tested by execution
 import { buildMacroCall, formatMacroCallPaste, formatMacroShareCard, CALL_SCHEMA } from "../src/macroCall.js";
 import { buildForwardOutcome, normalizeSp500Observations, outcomeKey, OUTCOME_SCHEMA } from "../src/publicHistory.js";
-import { captureDailyCall, enrichHistoryOutcomes } from "../worker/cron.js";
+import cronWorker, { captureDailyCall, enrichHistoryOutcomes, putWithRetry, warmSnapshot } from "../worker/cron.js";
 import { onRequest as getHistory } from "../functions/history.json.js";
 import { onRequest as getReadout } from "../functions/readout.json.js";
 
@@ -1097,6 +1097,50 @@ ok("v5.97.4 RS 1d: banded at last — a violent session passes, a decimal shift 
   (() => { const b = BANDS.ndxSpxRs;
     return Array.isArray(b) && plausible("ndxSpxRs", -8.2) && plausible("ndxSpxRs", 12)
       && !plausible("ndxSpxRs", 124) && !plausible("ndxSpxRs", -124); })());
+
+/* ── v6.0 T3 — "why Monday lost CPI + NFCI": the public voters join per-field last-good ──
+   Measured live on the frozen 2026-08-31 row: cpiHeadline and nfci read MOCK with no asOf
+   while the four Engine 0 criticals stayed LIVE — FIELD_LG_GROUPS covered only the
+   criticals, so a failed FRED tail batch dropped the public backdrop's two FRED voters
+   straight to mock and the 10:02 freeze notarized a 4/6 call. The outage shape is RUN
+   here against the real applyFieldLastGood, not string-pinned. */
+const lgEnv = (stored) => {
+  const puts = {};
+  return { puts, env: { PULSE_CACHE: {
+    get: async (k, t) => (k in stored ? (t === "json" ? stored[k] : JSON.stringify(stored[k])) : null),
+    put: async (k, v) => { puts[k] = JSON.parse(v); },
+  } } };
+};
+ok("T3: the 8/31 shape RESTORES — a failed CPI/NFCI batch serves the last official observation with its REAL date",
+  (await (async () => {
+    const { env } = lgEnv({
+      "pulse:source:lastgood:cpi":  { schema: 1, fields: { cpiHeadline: 3.5, cpiHeadlineAsOf: "2026-07-01", cpiTrend: [2.9, 3.5, 4.1, 4.5, 3.9, 3.5] } },
+      "pulse:source:lastgood:nfci": { schema: 1, fields: { nfci: -0.566, nfciAsOf: "2026-08-21", nfciW1: -0.005, nfciSeries: [-0.5, -0.55] } },
+    });
+    const live = { vix: 16.1, vixAsOf: "2026-08-28", tenYear: 4.4, tenYearAsOf: "2026-08-28", spyPrice: 748, ndxSpxRs: 0.4 };
+    await applyFieldLastGood(env, live);
+    return live.cpiHeadline === 3.5 && live.cpiHeadlineAsOf === "2026-07-01"
+      && live.nfci === -0.566 && live.nfciAsOf === "2026-08-21" && live.nfciW1 === -0.005; })()));
+ok("T3: a healthy pull STORES the two voters' groups for the next outage, dates riding along",
+  (await (async () => {
+    const { env, puts } = lgEnv({});
+    await applyFieldLastGood(env, { vix: 16, tenYear: 4.4, spyPrice: 748, ndxSpxRs: 0.4,
+      cpiHeadline: 3.5, cpiHeadlineAsOf: "2026-07-01", nfci: -0.57, nfciAsOf: "2026-08-21",
+      cpiCore: 2.8, cpiCoreAsOf: "2026-07-01", nfciLeverage: 0.12, nfciLeverageAsOf: "2026-08-21" });
+    return puts["pulse:source:lastgood:cpi"]?.fields.cpiHeadlineAsOf === "2026-07-01"
+      && puts["pulse:source:lastgood:nfci"]?.fields.nfciAsOf === "2026-08-21"
+      && puts["pulse:source:lastgood:cpi_core"]?.fields.cpiCore === 2.8
+      && puts["pulse:source:lastgood:nfci_lev"]?.fields.nfciLeverage === 0.12; })()));
+ok("T3: a restore is still BANDED — an implausible stored primary stays dropped (the failsafe is not a bypass)",
+  (await (async () => {
+    const { env } = lgEnv({ "pulse:source:lastgood:nfci": { schema: 1, fields: { nfci: 40, nfciAsOf: "2026-08-21" } } });
+    const live = {};
+    await applyFieldLastGood(env, live);
+    return live.nfci === undefined; })()));
+ok("T3: every FRED-sourced PUBLIC voter is covered by a last-good group — reconciled, not asserted",
+  (() => { const src = readSrc("../functions/api/snapshot.js");
+    const m = /const FIELD_LG_GROUPS = \{([\s\S]*?)\n\};/.exec(src);
+    return m && ["\"tenYear\"", "\"vix\"", "\"cpiHeadline\"", "\"nfci\""].every((f) => m[1].includes(f)); })());
 
 // Matrix F: Treasury daily par-yield CSV parse (the official upstream DGS10 republishes).
 const TCSV = 'Date,"1 Mo","10 Yr","30 Yr"\n07/15/2026,5.1,4.46,5.02\n07/14/2026,5.1,4.43,4.97\n07/11/2026,5.1,4.40,4.95';
@@ -3001,15 +3045,19 @@ ok("slice5: toggleHeadInfo keeps aria-expanded honest",
    v5.7.0. The CONTRACTS they served live on and stay pinned: stance()'s verdict/prose
    (above), macroGateFrom↔macroGate mirror matrix ([44]/[68]), and the v3.25 rule at its
    live altitude — the successor pins here anchor the glance GATE tile and header chips. */
-ok("v5.6→glance: the GATE tile leads with the product word and carries the stance verdict as its sub",
-  adminSrc.includes('const st=stance(),alias=st.k==="go"?"SEND IT":st.k==="caution"?"HODL":"TOUCH GRASS"') &&
-  adminSrc.includes('<div class="glance-k">GATE</div>') &&
+/* v5.98 RE-PIN (audit finding T1, built): the tile's stance().k ALIAS is retired — it was a
+   SECOND derivation of the locked vocabulary and diverged from the ladder (HODL under
+   measured-HEADWIND + FULL where the ladder says SEND IT). The GATE word is now macroGate()'s
+   own label — ONE derivation — with the stance verdict surviving as the tile's sub-line
+   (gate = Engine 0 permission, stance = the portfolio read; married, never merged). */
+ok("v5.98 glance: the GATE tile reads macroGate() — one derivation of the product word, stance as the sub",
+  adminSrc.includes("const st=stance(),mg=macroGate();") &&
+  /glance-k">GATE<\/div><div class="glance-v"[^`]*\$\{mg\.label\}/.test(adminSrc) &&
   adminSrc.includes("${esc(st.verdict||st.txt)}"));
-ok("v5.6→glance: macroGate() survives as the pinned server mirror — its renderer died, the contract did not",
+ok("v5.98 glance: the retired stance-alias derivation is ABSENT — no second home for the locked words",
+  !/st\.k==="go"\?"SEND IT"/.test(adminSrc));
+ok("v5.6→glance: macroGate() is rendered AND stays the pinned server mirror",
   adminSrc.includes("function macroGate()") &&
-  // the glance tile's stance()-derived alias vs macroGate() is a SECOND derivation of the
-  // locked vocabulary — filed in the 8/31 button audit (working/), deliberately not changed
-  // in a cleanup; this pin keeps the mirror alive until that owner call lands.
   adminSrc.includes('return{g:"SEND_IT",label:"SEND IT",c:"var(--green)"}'));
 
 // ═══════════ [24] FEAT-TT-CAPEX (v3.45) — the hyperscaler capex tape ═══════════
@@ -3907,8 +3955,56 @@ ok("alert: a metric with no wiring is BLIND, never assumed clear",
   evalAlert({ metric: "nope", condition: "above", value: 1, active: true }, {}, allLive).state === "blind");
 ok("alert: a non-finite live value is BLIND (a missing number is not a passing test)",
   evalAlert(aVix, { marketPulse: { vix: { current: null } } }, allLive).state === "blind");
-ok("alert: the header reports BLIND separately — '0 FIRED' with dead inputs is a false clear",
-  dashSrc.includes("alertBlind") && dashSrc.includes("BLIND`} color={T.amber}"));
+/* v6.0 (PR #10's live fix, carried forward at its close): "separately" used to mean two
+   MUTUALLY-EXCLUSIVE badges — BLIND rendered only at activeAlerts===0, so "1 fired · 3
+   blind" printed as a confident "⚡ 1 FIRED" alone: the v3.52 false clear surviving at a
+   nonzero numerator. One badge now carries both counts whenever either is nonzero. */
+ok("alert: BLIND is reported whenever a monitor is blind — even BESIDE a fired count (PR #10's false clear, closed)",
+  dashSrc.includes("(activeAlerts>0||alertBlind>0)&&") &&
+  dashSrc.includes('alertBlind>0?`${alertBlind} BLIND`:null') &&
+  !dashSrc.includes("activeAlerts===0&&alertBlind>0"));
+ok("alert: the merged badge is red when anything FIRED (a trip outranks a blind gauge), amber when only blind",
+  dashSrc.includes("color={activeAlerts>0?T.red:T.amber}"));
+
+/* ── v6.0 T4 — the alerts PERSIST: overlay on DEFAULT_ALERTS, never the array itself ──
+   The 8/31 button audit measured the Macro Alerts section as the largest button
+   concentration on Power, all of it operating one-session useState. The overlay design is
+   the load-bearing choice and is RUN here: storing the array would silently drop every
+   alert a later release ADDS (the v3.55 arrival problem in reverse). */
+const alertPrefsLifted = (() => {
+  const i = dashSrc.indexOf("const ALERT_PREFS_KEY=");
+  const j = dashSrc.indexOf("\n}", dashSrc.indexOf("function alertPrefsOf"));
+  if (i < 0 || j < 0) throw new Error("smoke: alert-prefs markers not found");
+  return new Function(dashSrc.slice(i, j + 2) + "\nreturn {applyAlertPrefs, alertPrefsOf, ALERT_PREFS_KEY};")();
+})();
+{
+  const { applyAlertPrefs, alertPrefsOf, ALERT_PREFS_KEY } = alertPrefsLifted;
+  const DEFS = [
+    { id: 1, label: "A", active: true }, { id: 2, label: "B", active: false },
+    { id: 3, label: "C", active: true },
+  ];
+  ok("alerts persist: key rides the md:* family", ALERT_PREFS_KEY === "md:alerts:v1");
+  ok("alerts persist: a toggle and a delete ROUND-TRIP through the overlay",
+    (() => { const cur = [{ ...DEFS[0], active: false }, DEFS[2]];      // 1 toggled off, 2 deleted
+      const back = applyAlertPrefs(DEFS, alertPrefsOf(DEFS, cur));
+      return back.length === 2 && back[0].id === 1 && back[0].active === false
+        && back[1].id === 3 && back[1].active === true; })());
+  ok("alerts persist: an alert a LATER release adds SURVIVES stored prefs — the overlay never drops an arrival",
+    (() => { const stored = alertPrefsOf(DEFS, [DEFS[2]]);              // old release: 1+2 deleted
+      const grown = [...DEFS, { id: 4, label: "NEW", active: true }];
+      const back = applyAlertPrefs(grown, stored);
+      return back.some((a) => a.id === 4 && a.active === true) && back.length === 2; })());
+  ok("alerts persist: garbage, a wrong version, and null all fall back to the DEFAULTS (the md:view rule)",
+    applyAlertPrefs(DEFS, "junk") === DEFS && applyAlertPrefs(DEFS, { v: 2 }) === DEFS &&
+    applyAlertPrefs(DEFS, null) === DEFS);
+  ok("alerts persist: an UNKNOWN stored id is ignored — it can neither delete nor toggle anything real",
+    (() => { const back = applyAlertPrefs(DEFS, { v: 1, active: { 99: false }, deleted: [98] });
+      return back.length === 3 && back.every((a, i) => a.active === DEFS[i].active); })());
+  ok("alerts persist: wiring — lazy init reads the overlay, every change writes it back",
+    dashSrc.includes("useState(()=>{") &&
+    dashSrc.includes("applyAlertPrefs(DEFAULT_ALERTS,JSON.parse(localStorage.getItem(ALERT_PREFS_KEY)") &&
+    dashSrc.includes("localStorage.setItem(ALERT_PREFS_KEY,JSON.stringify(alertPrefsOf(DEFAULT_ALERTS,alerts)))"));
+}
 ok("alert: the section states it evaluates HERE and delivers nothing",
   /Evaluated live on THIS page only — no push, email or SMS is sent/.test(alSrc));
 // ---- a11y (suite audit #2): landmarks + live regions on the public page ----
@@ -4807,15 +4903,15 @@ ok("glance: operator tooling gates on !publicView — TT copy in the menu, TERMI
       term > 0 && /\{!publicView&&\(\s*\n?\s*<a href="\/admin\.html"/.test(dashSrc) &&
       (dashSrc.match(/href="\/admin\.html"/g) || []).length === 1;
   })() &&
-  /\{!simple&&!publicView&&activeAlerts>0&&<Badge/.test(dashSrc) &&
-  /\{!simple&&!publicView&&activeAlerts===0&&alertBlind>0&&<Badge/.test(dashSrc));
+  // v6.0: the two badges merged into one (PR #10's fix) — same gates, one render site.
+  /\{!simple&&!publicView&&\(activeAlerts>0\|\|alertBlind>0\)&&/.test(dashSrc));
 /* v5.9 — the badges gain a SIMPLE gate, and this is a defect fix rather than a density cut,
    which is why it does not weaken v3.25. The Macro Alerts section is `!publicView&&!simple`,
    so in Simple the badge counted monitors the reader could not reach and its deep link led
    nowhere. The rule is that a collapse never hides a red fact; it does not require a count of
    a section that is not on the page. Power is unchanged, and pinned above. */
 ok("v5.9: the alert badges follow the section they summarize — Power only, never an orphan count",
-  /\{!simple&&!publicView&&activeAlerts/.test(dashSrc) &&
+  /\{!simple&&!publicView&&\(?activeAlerts/.test(dashSrc) &&
   /\{!publicView&&!simple&&\(<section aria-label="Operator monitors/.test(dashSrc));
 // v3.62: a FIRED/BLIND badge is a red fact — the v3.25 rule (a collapse never hides one) means
 // the alert badges must stay OUTSIDE the disclosure even though they are also operator-only.
@@ -9287,21 +9383,42 @@ console.log("\n[68] FEAT-TT-ALLOC — pure core, endpoint, and the §14.8 bar");
     ok("gate: SEND_IT exists IFF the ladder returned null — only a clean ladder can speak it",
       alloc.macroGateFrom(null, RO6("FULL")).gate === "SEND_IT" &&
       ["RESTRICTED", "HOLD"].every((a) => alloc.macroGateFrom(L6(CB6, RO6(a)), RO6(a)).gate !== "SEND_IT"));
-    // Client mirror, RUN over the same matrix (the [57] behavioral-identity convention).
+    /* Client mirror, RUN over the same matrix (the [57] behavioral-identity convention).
+       v5.98 RE-RIGGED (audit finding T1): the old lift stubbed stance().k — an input the
+       live page never produces on a RESTRICTED day, since stance() folds every non-FULL
+       actionability into k:"stop" BEFORE macroGate ran. That stub proved the rung ladder
+       while hiding the composition defect (server HODL, client TOUCH_GRASS on the exact
+       state HODL exists for). macroGate now reads the ladder's own PRIMITIVES (circuit →
+       governing regime → feed → actionability → flip), so the lift injects those — the
+       same states the real page supplies — and drives BOTH mirrors over one matrix. */
     const MG6 = (() => {
       const i = adminSrc.indexOf("function macroGate(){");
       const j = adminSrc.indexOf("\n}", i);
       if (i < 0 || j < 0) throw new Error("smoke: macroGate markers not found");
-      return new Function("stance", "REGIME", adminSrc.slice(i, j + 2) + "\nreturn macroGate();");
+      return new Function("circuitStateCli", "governingRegime", "REGIME", "BOARD",
+        adminSrc.slice(i, j + 2) + "\nreturn macroGate();");
     })();
-    const stGo6 = () => ({ k: "go" }), stStop6 = () => ({ k: "stop" });
-    ok("gate mirror: client macroGate matches the server across the matrix — FULL/RESTRICTED/HOLD/blind/absent/stance-stop",
-      MG6(stGo6, RO6("FULL")).g === "SEND_IT" &&
-      MG6(stGo6, RO6("RESTRICTED")).g === "HODL" &&
-      MG6(stGo6, RO6("HOLD")).g === "TOUCH_GRASS" &&
-      MG6(stGo6, RO6("FULL", { evaluable: false })).g === "TOUCH_GRASS" &&
-      MG6(stGo6, null).g === "TOUCH_GRASS" &&
-      MG6(stStop6, RO6("FULL")).g === "TOUCH_GRASS");
+    // Primitive fixtures: a resolved circuit, a ranked TAILWIND read, and the readout under test.
+    const cCLR6 = () => ({ st: "clear", age: 0 }), cTRP6 = () => ({ st: "tripped", age: 0 });
+    const grOf6 = (ro, gov = "TAILWIND", ranked = true) => () => ({ ranked, gov,
+      actionability: (ro && ro.regime && ro.regime.actionability) || null,
+      macroFlip: ro && ro.macro_flip });
+    const MGrun6 = (ro, { circuit = cCLR6, gov = "TAILWIND", ranked = true } = {}) =>
+      MG6(circuit, grOf6(ro, gov, ranked), ro, { circuit: {} });
+    ok("gate mirror: client macroGate matches the server across the matrix — FULL/RESTRICTED/HOLD/blind/absent/PANIC/unranked/tripped-circuit",
+      MGrun6(RO6("FULL")).g === "SEND_IT" &&
+      MGrun6(RO6("RESTRICTED")).g === "HODL" &&              // the state the old alias could never speak
+      MGrun6(RO6("HOLD")).g === "TOUCH_GRASS" &&
+      MGrun6(RO6("FULL", { evaluable: false })).g === "TOUCH_GRASS" &&
+      MGrun6(null).g === "TOUCH_GRASS" &&
+      MGrun6(RO6("FULL"), { gov: "PANIC" }).g === "TOUCH_GRASS" &&
+      MGrun6(RO6("FULL"), { ranked: false, gov: null }).g === "TOUCH_GRASS" &&
+      MGrun6(RO6("FULL"), { circuit: cTRP6 }).g === "TOUCH_GRASS");
+    ok("gate mirror: HODL requires the actionability rung EXACTLY — measured-HEADWIND under FULL is SEND_IT on BOTH sides (the retired alias said HODL there)",
+      MGrun6(RO6("FULL"), { gov: "HEADWIND" }).g === "SEND_IT" &&
+      alloc.macroGateFrom(L6(CB6, { regime: { verdict: "HEADWIND", actionability: "FULL" },
+        macro_flip: { evaluable: true, tripped: false } }),
+        { regime: { verdict: "HEADWIND", actionability: "FULL" } }).gate === "SEND_IT");
     /* v5.6.3 — the DOC reconciliation (owner review 2026-08-26: "README still says only
        explicit FULL passes; docs should catch up so the two vocabularies do not fork").
        Fixing the prose is half the cure — a doc rule nothing enforces is the rot vector this
@@ -9444,7 +9561,8 @@ console.log("\n[68] FEAT-TT-ALLOC — pure core, endpoint, and the §14.8 bar");
     // guard SURVIVES at the live surface: the glance tile scopes the word with an adjacent
     // GATE key (`glance-k">GATE` beside the alias in glance-v) — same rule, tile grammar.
     ok("v5.6 client: the GATE word is SCOPED by the glance tile's GATE key (the HODL word-collision guard, post-excision home)",
-      /glance-k">GATE<\/div><div class="glance-v"[^`]*\$\{alias\}/.test(adminSrc) &&
+      // v6.0 T1: the word is macroGate()'s label now — the scoping contract is unchanged.
+      /glance-k">GATE<\/div><div class="glance-v"[^`]*\$\{mg\.label\}/.test(adminSrc) &&
       !/GATE: \$\{mg\.label\}/.test(adminSrc));
     ok("v5.6 client: the stamp is a TWO-STEP confirmLink — no bare one-tap attest call site",
       adminSrc.includes('confirmLink("allocStampLink"') && !/onclick="allocAttest\(\)"/.test(adminSrc));
@@ -9913,7 +10031,7 @@ console.log("\n[67] v4.0 SIMPLE MODE — verdict mapping, card selection, senten
     // badges and the OPS menu are all Power's now; each is pinned at its own gate.
     /\{!simple&&<div className="sub-wordmark"/.test(dashSrc) &&
     /\{\(!simple\|\|mode==="ERROR"\)&&<DataModeBadge/.test(dashSrc) &&
-    /\{!simple&&!publicView&&activeAlerts>0/.test(dashSrc) &&
+    /\{!simple&&!publicView&&\(activeAlerts>0\|\|alertBlind>0\)/.test(dashSrc) &&
     /\{!simple&&!publicView&&\(\s*\n?\s*<details className="hdr-ops"/.test(dashSrc));
   ok("v5.9 chrome: an ERROR still shows its badge in Simple — a red fact is not a density trade",
     /\(!simple\|\|mode==="ERROR"\)/.test(dashSrc));
@@ -10409,6 +10527,65 @@ console.log("\n[73] v5.3 ONE CALL — canonical vocabulary, additive API, immuta
   const staleRecord = JSON.parse([...staleKv._m.values()][0]);
   ok("history: a prior-day call can never be notarized under today's immutable key",
     staleRecord.capture_status === "FAILED" && staleRecord.call === null);
+
+  /* ── v6.0 T2 — the freeze can miss ONCE and recover, and the heartbeat has no gaps ──
+     Owner ticket, verbatim: "10am path: retry put + always write pulse:cron:lastwarm
+     (including 'already warm'). No Friday invention. No schedule change." The crons are
+     untouched (reconciled by [67]); everything here is retry + visibility. */
+  const flakyKv = (failures) => {                       // fakeKv whose put fails N times
+    const kv2 = fakeKv(); let n = 0;
+    const realPut = kv2.put.bind(kv2);
+    kv2.attempts = 0;
+    kv2.put = async (k, v, o) => { kv2.attempts++; if (n++ < failures) throw new Error("kv transient"); return realPut(k, v, o); };
+    return kv2;
+  };
+  ok("T2 retry: putWithRetry survives two transient faults and lands the value on the third try",
+    (await (async () => { const kv2 = flakyKv(2);
+      await putWithRetry(kv2, "k", "v", undefined, 3, 1);
+      return kv2.attempts === 3 && kv2._m.get("k") === "v"; })()));
+  ok("T2 retry: a PERSISTENT fault still throws — retry is recovery, never a swallow",
+    (await (async () => { const kv2 = flakyKv(9);
+      try { await putWithRetry(kv2, "k", "v", undefined, 3, 1); return false; }
+      catch { return kv2.attempts === 3 && !kv2._m.has("k"); } })()));
+  ok("T2 freeze: one transient KV fault at 10:00 no longer costs the day's immutable row",
+    (await (async () => { const kv2 = flakyKv(1);
+      const r = await captureDailyCall({ PULSE_CACHE: kv2 }, fetchCall, now);
+      return r.written === true && kv2._m.size === 1; })()));
+  ok("T2 heartbeat: an 'already warm' 8am run WRITES the heartbeat and fetches nothing — a no-op is a run, not a silence",
+    (await (async () => { const kv2 = fakeKv();
+      const etDate = new Date().toLocaleDateString("en-CA", { timeZone: "America/New_York" });
+      await kv2.put(`pulse:snapshot:v16:${etDate}`, "{}");
+      const realFetch = globalThis.fetch;
+      globalThis.fetch = async () => { throw new Error("already-warm must not fetch"); };
+      try { await warmSnapshot({ PULSE_CACHE: kv2 }); } finally { globalThis.fetch = realFetch; }
+      const hb = JSON.parse(kv2._m.get("pulse:cron:lastwarm") || "null");
+      return hb && hb.job === "prewarm-8amET" && hb.ok === true && hb.already_warm === true; })()));
+  // The 10am scheduled path, end to end against stubs (first behavioral run of scheduled()):
+  // the SURVIVING heartbeat must carry the refresh, the freeze AND the outcome legs — a run
+  // whose refresh succeeded but whose freeze failed used to leave a healthy-looking record.
+  const run10am = async (kv2) => {
+    const realFetch = globalThis.fetch, realErr = console.error;
+    console.error = () => {};                          // the no-REFRESH_TOKEN path narrates; keep the run quiet
+    globalThis.fetch = async (url) => /readout\.json/.test(String(url))
+      ? new Response(JSON.stringify({ call: bull }), { status: 200, headers: { "content-type": "application/json" } })
+      : new Response("{}", { status: 200, headers: { "content-type": "application/json" } });
+    const waits = [];
+    try {
+      await cronWorker.scheduled({ cron: "0 14 * * MON-FRI" }, { PULSE_CACHE: kv2 }, { waitUntil: (p) => waits.push(p) });
+      await Promise.all(waits);
+    } finally { globalThis.fetch = realFetch; console.error = realErr; }
+    return JSON.parse(kv2._m.get("pulse:cron:lastwarm") || "null");
+  };
+  ok("T2 heartbeat: the 10am run's surviving record carries ALL THREE legs — refresh, freeze, outcomes",
+    (await (async () => { const kv2 = fakeKv();
+      const hb = await run10am(kv2);
+      return hb && hb.job === "refresh-10amET" && hb.ok === true && hb.freeze === "written"
+        && hb.outcomes && typeof hb.outcomes === "object"; })()));
+  ok("T2 heartbeat: a second 10am run records freeze 'already captured' — the no-op state as itself, never dressed as a write",
+    (await (async () => { const kv2 = fakeKv();
+      await run10am(kv2);
+      const hb = await run10am(kv2);
+      return hb && hb.freeze === "already captured"; })()));
 
   const observationValues = [1000,1010,1020,990,980,1050,1040,900,920,940,960,980,1000,1020,1040,1060,1080,1090,1080,1095,1100];
   const observationStart = Date.parse(`${D}T00:00:00Z`);

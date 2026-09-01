@@ -9,7 +9,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
 <!-- AUDIT: kept in sync with package.json by test/smoke.mjs. admin.html is a Vite
      public/ passthrough, so it cannot receive __APP_VERSION__ — the guard is the fix. -->
-<title>TT TICKER TERMINAL v5.97.4</title>
+<title>TT TICKER TERMINAL v6.0.0</title>
 <style>
   :root{
     --bg:#05070a; --panel:#0a0f16; --panel2:#0d141d; --line:#16202c;
@@ -466,7 +466,7 @@
          verdict and every gate are computed upstream and this panel changes nothing. -->
     <div id="macroEvidence" role="region" aria-label="Why macro — readout evidence"></div>
     <div id="headInfo" style="display:none">
-      <div class="brand">FINANCE&nbsp;BRO.AI // TT&nbsp;TICKER&nbsp;TERMINAL <small>v5.97.4 · the daily contract</small></div>
+      <div class="brand">FINANCE&nbsp;BRO.AI // TT&nbsp;TICKER&nbsp;TERMINAL <small>v6.0.0 · the daily contract</small></div>
       <div class="statusline">
         <span>BOOK: <b id="bookStamp">loading…</b></span>
         <span>AUTH: <b id="sessState">…</b></span>
@@ -4439,19 +4439,28 @@ function allocConfirmWithheld(){
    (md-call-v1), and one word carrying two verdicts on one screen is the v3.51/v3.62
    defect — the scope word keeps them apart. */
 function macroGate(){
-  // local is deliberately NOT named stc — smoke [44] lifts gateFail by the first
+  // Locals are deliberately NOT named stc — smoke [44] lifts gateFail by the first
   // occurrence of that assignment spelling, and this function sits earlier in the file
   // (naming it here, even in prose, would re-hijack the lift — the v3.60.1 trap).
-  const stq=stance();
-  const reg=REGIME&&REGIME.regime,mf=REGIME&&REGIME.macro_flip;
+  /* v5.98 (8/31 button audit, finding T1): rung-for-rung on the SAME PRIMITIVES the server
+     ladder reads — circuit → stance → feed → actionability → flip — NEVER on the collapsed
+     stance().k it used to read. stance() folds every non-FULL actionability into k:"stop"
+     before this function could see it, so the client could not say HODL on the one state
+     HODL exists for (Engine 0 RESTRICTED): the server receipt read HODL while this read
+     TOUCH GRASS. The old mirror matrix hid that by stubbing stance().k with values the
+     live page never produces on a RESTRICTED day; the matrix now drives the primitives. */
+  const cs=circuitStateCli(BOARD&&BOARD.circuit);
+  if(cs.st==="tripped"||cs.st==="unresolved")
+    return{g:"TOUCH_GRASS",label:"TOUCH GRASS",c:"var(--red)",rung:"circuit"};
+  const gr=governingRegime();
   const rung=
-    stq.k==="unknown"||stq.k==="stop"?"stance"
+    !gr.ranked||gr.gov==="PANIC"?"stance"
     :!REGIME?"feed"
-    :(!reg||!reg.actionability)?"actionability"
-    :reg.actionability!=="FULL"?"actionability"
-    :!mf?"flip":mf.evaluable===false?"flip":mf.tripped?"flip":null;
+    :!gr.actionability?"actionability"
+    :gr.actionability!=="FULL"?"actionability"
+    :!gr.macroFlip?"flip":gr.macroFlip.evaluable===false?"flip":gr.macroFlip.tripped?"flip":null;
   if(rung===null)return{g:"SEND_IT",label:"SEND IT",c:"var(--green)"};
-  const hodl=rung==="actionability"&&reg&&reg.actionability==="RESTRICTED";
+  const hodl=rung==="actionability"&&gr.actionability==="RESTRICTED";
   return hodl?{g:"HODL",label:"HODL",c:"var(--amber)",rung}
              :{g:"TOUCH_GRASS",label:"TOUCH GRASS",c:"var(--red)",rung};
 }
@@ -6383,10 +6392,10 @@ function renderBuyBlock(){
      · the compact calendar      -> the DESK #dCal drawer (same binaryEvents() computation)
      · the GATE token            -> the glance tile's GATE key + word
    stance() itself is UNTOUCHED (five live consumers). macroGate() — the v5.6.0 client mirror
-   of the server ladder — lost its only RENDERER here; it stays as the smoke-pinned mirror
-   contract, and the fact that the glance tile derives its word from stance().k instead of
-   macroGate() is a SECOND derivation of the locked product vocabulary, filed in the 8/31
-   button-audit notes as an owner call, deliberately not changed in a cleanup. */
+   of the server ladder — lost its only renderer here and immediately gained its real one:
+   v5.98 (the 8/31 audit's finding T1, built) points the glance tile's GATE word at it, so
+   the retired stance().k alias — a SECOND derivation of the locked product vocabulary — is
+   gone and the word on the tile is the ladder's own projection. */
 /* FEAT-TT-ALTITUDE (v5.6): three glance objects, all reading computations above. This is
    presentation only: it never votes, sorts, stamps, saves, or promotes a candidate. */
 let GLANCE_SYM=null;
@@ -6422,9 +6431,13 @@ function openAttestation(sym){
 }
 function renderGlance(){
   const gate=document.getElementById("gateTile");if(!gate)return;
-  const st=stance(),alias=st.k==="go"?"SEND IT":st.k==="caution"?"HODL":"TOUCH GRASS";
-  const col={go:"var(--green)",caution:"var(--amber)",stop:"var(--red)",unknown:"var(--slate)"}[st.k]||"var(--slate)";
-  gate.innerHTML=`<div class="glance-k">GATE</div><div class="glance-v" style="color:${col}">${alias}</div>`+
+  /* v5.98 (audit finding T1, built): the GATE word is macroGate()'s — ONE derivation of the
+     locked vocabulary, the ladder's own projection — never a stance().k alias (the retired
+     second derivation said HODL under measured-HEADWIND + FULL where the ladder says
+     SEND IT). The stance verdict stays as the tile's sub-line: the gate is Engine 0
+     permission, the stance is the portfolio read — married, never merged, both visible. */
+  const st=stance(),mg=macroGate();
+  gate.innerHTML=`<div class="glance-k">GATE</div><div class="glance-v" style="color:${mg.c}">${mg.label}</div>`+
     `<div class="glance-s">${esc(st.verdict||st.txt)}</div>`;
 
   const selected=glanceSelected(),next=document.getElementById("nextTile"),stamp=document.getElementById("stampTile");
