@@ -96,6 +96,10 @@ const RegimeBand=({d,stale=new Set(),loading=false,liveBuild=false,srcLabel="der
   const moon=withheld?WEN_MOON_STATES[3]:WEN_MOON_STATES[{ "RISK-ON":0, "MIXED":1, "RISK-OFF":2 }[regime.label] ?? 1];
   const callLabel=call&&call.headline?`${call.headline}${call.emoji?` ${call.emoji}`:""}`:moon.label;
   const machineLabel=call&&call.direction?call.direction:regime.label;
+  // 8/28 A6 — phrased from the CLIENT clock (before/after 10:00 ET is a render-time fact).
+  const liveReadCaption=(Number(new Date().toLocaleString("en-US",{timeZone:"America/New_York",hour:"numeric",hour12:false}))%24)<10
+    ?"live read — today's official call freezes at 10:00 ET":"live read — today's 10am record not loaded";
+  const frozenCaption=`immutable public call · captured 10:00 ET${callCapturedAt?` · ${String(callCapturedAt).slice(0,10)}`:""}`; const windowCaption=callFrozen?frozenCaption:(liveBuild&&!withheld?liveReadCaption:null); // v6.0.1: Simple's ℹ-window copy
   return(
     <div role="region" aria-label="Macro backdrop verdict"
       style={{background:regime.tint,borderBottom:`1px solid ${regime.color}33`,borderTop:`1px solid ${regime.color}22`,padding:"10px 20px",position:"relative"}}>
@@ -155,7 +159,8 @@ const RegimeBand=({d,stale=new Set(),loading=false,liveBuild=false,srcLabel="der
               </span>}
             </div>
             {!withheld&&sentence&&<div style={{fontFamily:T.fontMono,fontSize:T.fsM,color:T.textPrimary,lineHeight:1.5,maxWidth:"72ch",marginTop:3}}>{sentence}</div>}
-            {callFrozen&&<div style={{fontFamily:T.fontMono,fontSize:8,color:T.textMuted,marginTop:3}}>
+            {/* v6.0.1 (owner: "immutable public call can be forgone… keep some text under windows"): in Simple the eyebrow already says frozen/live, so both captions ride the ℹ window instead. */}
+            {callFrozen&&!plainVerdict&&<div style={{fontFamily:T.fontMono,fontSize:8,color:T.textMuted,marginTop:3}}>
               immutable public call · captured 10:00 ET{callCapturedAt?` · ${String(callCapturedAt).slice(0,10)}`:""}
             </div>}
             {/* 8/28 clock matrix A6 — the frozen caption's missing counterpart. The unfrozen
@@ -164,10 +169,8 @@ const RegimeBand=({d,stale=new Set(),loading=false,liveBuild=false,srcLabel="der
                 10:00 ET is a render-time fact — freeze mechanics untouched); liveBuild-gated
                 so a demo baseline never claims a live read; withheld/loading suppressed —
                 there is no read to disclaim. */}
-            {liveBuild&&!callFrozen&&!withheld&&<div style={{fontFamily:T.fontMono,fontSize:8,color:T.textMuted,marginTop:3}}>
-              {(Number(new Date().toLocaleString("en-US",{timeZone:"America/New_York",hour:"numeric",hour12:false}))%24)<10
-                ?"live read — today's official call freezes at 10:00 ET"
-                :"live read — today's 10am record not loaded"}
+            {liveBuild&&!callFrozen&&!withheld&&!plainVerdict&&<div style={{fontFamily:T.fontMono,fontSize:8,color:T.textMuted,marginTop:3}}>
+              {liveReadCaption}
             </div>}
             {callDrift&&<div style={{fontFamily:T.fontMono,fontSize:9,color:callDrift.direction==="BEARISH"?T.red:T.amber,marginTop:4,lineHeight:1.45}}>
               Current evidence now reads {callDrift.headline}{callDrift.emoji?` ${callDrift.emoji}`:""} · {callDrift.direction}; the scored 10am call remains frozen above.
@@ -179,7 +182,12 @@ const RegimeBand=({d,stale=new Set(),loading=false,liveBuild=false,srcLabel="der
                 "VOTERS" is the scope word that resolves the other ambiguity: WHY #2 lists
                 dark CROSS-SIGNALS (WTI, HY-IG among them), a deliberately wider set than the
                 six that vote, and nothing said so. */}
-            {conf&&!loading&&<div style={{fontFamily:T.fontMono,fontSize:9,marginTop:3,display:"flex",gap:10,flexWrap:"wrap"}}>
+            {conf&&!loading&&<div style={{fontFamily:T.fontMono,fontSize:9,marginTop:3,display:"flex",gap:10,flexWrap:"wrap",alignItems:"center"}}>
+              {/* v6.0.1 SHAPE BEFORE TEXT: one dot per voter (filled counted · hollow amber dark) ahead of the sentence. */}
+              <span aria-hidden="true" className="voter-dots" style={{display:"inline-flex",gap:2,alignItems:"center"}}>
+                {Array.from({length:conf.total},(_,i)=>{const on=i<conf.counted;return(
+                  <span key={i} style={{width:6,height:6,borderRadius:"50%",background:on?T.green:"transparent",border:`1px solid ${on?T.green:T.amber}`}}/>);})}
+              </span>
               <span style={{color:regime.insufficient?T.red:conf.counted===conf.total?T.green:T.amber}}>{conf.counted} of {conf.total} voters counted</span>
               {conf.excluded.length>0&&<span style={{color:T.amber}}>dark: {conf.excluded.join(" · ")}</span>}
               {conf.blind&&<span style={{color:T.red}}>⚠ crash gauge (VIX) unavailable</span>}
@@ -198,7 +206,8 @@ const RegimeBand=({d,stale=new Set(),loading=false,liveBuild=false,srcLabel="der
         <div style={{display:"flex",alignItems:"center",gap:8}}>
           {onCopyCall&&<button onClick={onCopyCall} disabled={copyDisabled} aria-label="Copy MacroDash posture card"
             title={copyDisabled?"live data required":callFrozen?"Copy the frozen 10am public call":"Copy the current live read — not the 10am call"}
-            style={{background:callCopied?"#1a3020":T.surfaceHigh,border:`1px solid ${callCopied?T.green:regime.color}66`,borderRadius:3,color:callCopied?T.green:regime.color,cursor:copyDisabled?"not-allowed":"pointer",padding:"4px 9px",minHeight:44,fontFamily:T.fontMono,fontSize:9,opacity:copyDisabled?0.45:1,whiteSpace:"nowrap"}}>
+            style={{background:callCopied?"#1a3020":T.surfaceHigh,border:`1px solid ${callCopied?T.green:regime.color}66`,borderRadius:3,color:callCopied?T.green:regime.color,cursor:copyDisabled?"not-allowed":"pointer",padding:"4px 9px",minHeight:44,minWidth:plainVerdict?44:undefined,fontFamily:T.fontMono, /* v6.0.1: fsL glyph in Simple — a 9px speck in a 44px box was invisible */
+              fontSize:plainVerdict?T.fsL:9,opacity:copyDisabled?0.45:1,whiteSpace:"nowrap"}}>
             {/* v5.9: icon-only in Simple. The action survives — losing a shipped feature from
                 the DEFAULT view would be the worse trade — but "⎘ COPY LIVE READ" is three
                 words of operator vocabulary sitting beside the answer, and the aria-label and
@@ -208,7 +217,7 @@ const RegimeBand=({d,stale=new Set(),loading=false,liveBuild=false,srcLabel="der
               : (callCopied?"✓ CALL COPIED":callFrozen?"⎘ COPY 10AM CALL":"⎘ COPY LIVE READ")}
           </button>}
           <button onClick={()=>setOpen(o=>!o)} aria-label="Show regime factors" aria-expanded={open}
-            style={{background:"none",border:`1px solid ${regime.color}44`,borderRadius:3,color:regime.color,cursor:"pointer",padding:"4px 8px",minWidth:44,minHeight:44,fontFamily:T.fontMono,fontSize:11,flexShrink:0}}>
+            style={{background:"none",border:`1px solid ${regime.color}44`,borderRadius:3,color:regime.color,cursor:"pointer",padding:"4px 8px",minWidth:44,minHeight:44,fontFamily:T.fontMono,fontSize:T.fsL,flexShrink:0}}>
             {open?"▲":"ℹ"}
           </button>
         </div>
@@ -216,6 +225,8 @@ const RegimeBand=({d,stale=new Set(),loading=false,liveBuild=false,srcLabel="der
       {/* Expandable plain-language breakdown */}
       {open&&(
         <div style={{marginTop:10,borderTop:`1px solid ${T.border}`,paddingTop:8,display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(220px,1fr))",gap:"4px 18px"}}>
+          {/* v6.0.1: Simple's home for the clock caption (Power has it on the face). */}
+          {plainVerdict&&windowCaption&&<div className="call-caption" style={{gridColumn:"1/-1",fontFamily:T.fontMono,fontSize:T.fsS,color:T.textMuted}}>{windowCaption}</div>}
           {/* v3.94: the chips + tally + nearest flip — formerly first-screen, now the panel head.
               FEAT-NEUTRAL (v3.62) holds: chips render the REAL 4-state vote via voteStyle. */}
           <div style={{gridColumn:"1/-1",display:"flex",gap:5,flexWrap:"wrap",alignItems:"center"}}>

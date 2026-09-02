@@ -10714,6 +10714,75 @@ console.log("\n[74] 8/31 SEC identity — the unset-secret cause survives to the
     /\|\s*`SEC_USER_AGENT`\s*\|\s*Pages\s*\|/.test(claude));
 }
 
+// ---- 75. v6.0.1 — the public-view UX review: shape before text, toggle clarity, captions
+// under the window ---------------------------------------------------------------------------
+// Owner review of the live Simple + Power screenshots (2026-09-02): (1) "colors or shapes as
+// indicators before text is used — e.g. green valuation if live/cached", (2) "Simple vs Power
+// is hard to tell", (3) "immutable public call can be forgone… keep some text under windows so
+// it is aesthetically simpler for simple users, and accessible for power users". Presentation
+// only: no vote, band, quorum, freeze or copy changed. The browser suite DRIVES each of these;
+// the pins here hold the SHAPE of the fix so a later density pass cannot quietly revert it.
+console.log("\n[75] v6.0.1 — shape before text · toggle clarity · captions under the ℹ window");
+{
+  const code = (s) => s.replace(/\/\/[^\n]*|\/\*[\s\S]*?\*\//g, "");
+  const spc = code(spcSrc), band = code(bandSrc), dash = code(dashSrc);
+  // (1a) The card's direction glyph is the SAME shape the hero chips and Drivers matrix use —
+  //      one vocabulary, read once. Reconciled against voteStyle, not retyped here.
+  ok("v6.0.1 shape: the card glyphs ARE voteStyle's glyphs (▲ bull · ▼ bear · • neutral) — one vocabulary",
+    /GLYPH = \{ helping: "([^"]+)", hurting: "([^"]+)", mixed: "([^"]+)" \}/.test(spc) &&
+    (() => { const m = spc.match(/GLYPH = \{ helping: "([^"]+)", hurting: "([^"]+)", mixed: "([^"]+)" \}/);
+      return m[1] === voteStyle("bull").glyph && m[2] === voteStyle("bear").glyph && m[3] === voteStyle("neutral").glyph; })());
+  ok("v6.0.1 shape: the glyph is rendered BEFORE the label on the card row, and the card wears a direction bar",
+    (() => { const g = spc.indexOf('className="simple-card-glyph"'), l = spc.indexOf("{c.label}</span>");
+      return g > 0 && l > g && /borderLeft: `3px solid \$\{tone\}`/.test(spc); })());
+  // (1b) Freshness: a live/cached reading is a FILLED GREEN DOT (the strip's own dot since
+  //      v3.62), stale amber, mock hollow — and the WORD leaves the face for the title +
+  //      a visually-hidden span. The rule is pinned by value, not by colour name.
+  ok("v6.0.1 fresh: live/cached → filled green, stale → amber, mock → hollow muted; the word survives for a11y only",
+    /const live = !illus && \(mode === "LIVE" \|\| mode === "CACHED"\)/.test(spc) &&
+    /const color = live \? T\.green : mode === "STALE" \? T\.amber : T\.textMuted/.test(spc) &&
+    /className="simple-card-fresh" title=\{fresh\.word\} aria-hidden="true"/.test(spc) &&
+    /<span className="visually-hidden">\{fresh\.word\}<\/span>/.test(spc) &&
+    !/\{illus \? "not live" : c\.mode\.toLowerCase\(\)\}/.test(spc));
+  // (1c) The voters line leads with one dot per voter on BOTH altitudes (hero + cards footer),
+  //      derived from the same counts the sentence prints — never a hardcoded six.
+  ok("v6.0.1 shape: the voter dots are derived from conf.total/counted in the hero and total/usable on the cards",
+    /Array\.from\(\{length:conf\.total\},\(_,i\)=>\{const on=i<conf\.counted;/.test(band) &&
+    /Array\.from\(\{ length: total \}, \(_, i\) => \{\s*const counted = i < usable;/.test(spc) &&
+    (band.match(/className="voter-dots"/g) || []).length === 1 &&
+    (spc.match(/className="voter-dots"/g) || []).length === 1);
+  // (2) The toggle: ONE table drives both halves; the pressed half is FILLED amber with dark
+  //     text; each half carries a shape and states what it shows in its accessible name.
+  ok("v6.0.1 toggle: one VIEW_MODES table, both words intact, a shape per mode, and what each mode shows",
+    /\{id:"simple",glyph:"○",word:"Simple",tells:"[^"]+"\}/.test(dash) &&
+    /\{id:"power", glyph:"◉",word:"Power", tells:"[^"]+"\}/.test(dash) &&
+    /aria-label=\{`\$\{word\} view — \$\{tells\}`\}/.test(dash) &&
+    /title=\{`\$\{word\} view — \$\{tells\}`\}/.test(dash));
+  ok("v6.0.1 toggle: the pressed half is FILLED brand amber with dark text — not a one-shade-lighter surface",
+    /background:on\?T\.amber:"transparent"/.test(dash) && /color:on\?T\.bg:T\.textSecondary/.test(dash) &&
+    !/background:viewMode===m\?T\.surfaceHigh/.test(dash) && /aria-pressed=\{on\}/.test(dash));
+  // (3) The captions: Simple's FACE keeps the eyebrow only; the frozen/live-read caption
+  //     rides inside the ℹ window; Power keeps both on the face. The A6 copy is unchanged.
+  ok("v6.0.1 captions: both clock captions are Power-face-only, and Simple gets ONE window home for them",
+    /\{callFrozen&&!plainVerdict&&<div/.test(band) &&
+    /liveBuild&&!callFrozen&&!withheld&&!plainVerdict&&<div/.test(band) &&
+    /const windowCaption=callFrozen\?frozenCaption:\(liveBuild&&!withheld\?liveReadCaption:null\)/.test(band) &&
+    /\{plainVerdict&&windowCaption&&<div className="call-caption"/.test(band) &&
+    (band.match(/className="call-caption"/g) || []).length === 1);
+  ok("v6.0.1 captions: the copy itself did not move — 'immutable public call · captured 10:00 ET' and both A6 clock branches survive",
+    /immutable public call · captured 10:00 ET/.test(band) &&
+    band.includes("live read — today's official call freezes at 10:00 ET") &&
+    band.includes("live read — today's 10am record not loaded"));
+  // (4) The icon-only hero buttons earn their 44px box: the glyph is fsL in Simple.
+  ok("v6.0.1 hero: the icon-only ⎘ and ℹ buttons render their glyph at fsL, not a 9px speck in a 44px box",
+    /fontSize:plainVerdict\?T\.fsL:9/.test(band) &&
+    /minWidth:44,minHeight:44,fontFamily:T\.fontMono,fontSize:T\.fsL/.test(band));
+  // Boundary: the section stays presentation-only and the engine is untouched.
+  ok("v6.0.1 boundary: SimpleCards is still presentation-only and no band/quorum moved",
+    !/useState|useEffect|localStorage|computeRegime|buildEvidenceSet/.test(spc) &&
+    REGIME_BAND_TABLE.length === 6 && REGIME_QUORUM === 4);
+}
+
 console.log(`\n=== SMOKE TEST: ${pass} passed, ${fail} failed ===`);
 process.exit(fail === 0 ? 0 : 1);
 

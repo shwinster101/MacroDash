@@ -5,6 +5,41 @@ answers *"is it safe to be in the market?"* from live macro + market + sentiment
 data. Single-page React app on Cloudflare Pages, with live data assembled at the
 edge by Pages Functions and cached in KV.
 
+**v6.0.1 — the public-view UX review: shape before text, a toggle you can tell apart, and the
+clock captions one tap deep in Simple (owner, on the live 9/1 Simple + Power screenshots).**
+Three directives, all PRESENTATION — no vote, band, quorum, freeze, copy or TT contract moved, and
+the Simple glance budgets (cards ≤420 · strip ≤660 at 390×844) were measured before and after
+(337 / 602) rather than re-pinned. **(1) "Colors or shapes as indicators before text."** Each
+Simple card now LEADS with the direction glyph — the SAME `▲ ▼ •` the hero chips and the Drivers
+matrix already resolve through `voteStyle`, reconciled in smoke rather than retyped — and wears
+a 3px direction bar; the freshness WORD ("cached", in green) became the macro strip's own
+provenance DOT (filled green live/cached · amber stale · hollow mock), with the word surviving
+on the title and a visually-hidden span so nothing a screen reader heard is lost. The "N of 6
+voters counted" line on both altitudes (hero + cards footer) leads with one dot per voter,
+filled for counted and hollow amber for dark, derived from the same counts the sentence prints.
+The direction WORD stays at the row's end — the shape leads, the word confirms. **(2) "Simple vs
+Power is hard to tell."** The pressed half was a one-shade-lighter surface behind bold text.
+It is now FILLED brand amber with dark text (the ⌁ TERMINAL treatment for "this is the one"),
+each half leads with a shape (`○ Simple` · `◉ Power`), and each states what it SHOWS in its
+tooltip and accessible name — so the mode is legible before the label and the consequence
+before the tap. One `VIEW_MODES` table drives both halves; both words are byte-unchanged and
+`aria-pressed` still carries the state. **(3) "Immutable public call can be forgone… keep some
+text under windows."** In Simple the eyebrow already reads `10AM FROZEN CALL` / `LIVE READ`, so
+the two clock captions beneath it (the frozen "immutable public call · captured 10:00 ET · date"
+and the 8/28 A6 "live read — …" counterpart) restated the eyebrow in a second, smaller line.
+Both leave the Simple FACE and ride inside the ℹ window, one tap, where the date and exact
+clock still live; **Power keeps both on the face** — an operator reads the capture date every
+morning. The A6 copy is byte-unchanged and its public-render pin is RE-PINNED on the new
+altitude (absent while closed, present once opened) with the reason at the pin. Also: the
+icon-only ⎘ and ℹ hero buttons rendered a 9px glyph inside a 44px box — a speck on the owner's
+phone — and now render at fsL in Simple. **Findings NOT built, filed here:** the Power hero
+still says the disagreement twice (`NEUTRAL · volatility and financial conditions help, prices
+do not` directly over the sentence that says the same thing) — a locked owner ruling from
+v5.9, left alone; the closed whys label wraps to two lines at 390px; the dock chips carry no
+gate colour of their own. Tests: **2178 smoke + 309 render + 249 public-render**, `audit:prod`
+clean, real Chromium. Negative-controlled: reverting the toggle fill, the card glyph order, and
+the caption gate each turn exactly their own pins.
+
 **v6.0.0 "CLOSE THE LOOP" — one GATE derivation, a freeze that can miss once and recover, the
 Monday feed hole closed, and the release cut (owner sprint, four tickets in order, nothing else
 entered the bump).** Two engines, named once so no reader has to reconstruct it: the **public

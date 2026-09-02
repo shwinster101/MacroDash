@@ -22,6 +22,25 @@ import { Explainable } from "../primitives/FactSheet.jsx";
 
 const TONE = { helping: T.green, hurting: T.red, mixed: T.amber };
 const WORD = { helping: "HELPING", hurting: "HURTING", mixed: "MIXED" };
+/* v6.0.1 SHAPE BEFORE TEXT (owner UX review of the public view: "colors or shapes as
+   indicators before text is used"). The direction gets a GLYPH ahead of the label — the SAME
+   three glyphs the hero chips and the Drivers matrix already use (voteStyle: ▲ bull · ▼ bear ·
+   • neutral), so a reader who learns the shape once reads it everywhere — and the card wears
+   a 3px direction bar on its left edge. The word HELPING/HURTING survives at the end of the
+   row (it is what a screen reader and the pins read); it just stops being the FIRST thing a
+   sighted reader has to parse. */
+const GLYPH = { helping: "▲", hurting: "▼", mixed: "•" };
+/* Freshness the same way: the macro strip has carried a provenance DOT since v3.62 (filled
+   green = live/cached · amber = stale · hollow = mock). The card used to spell the same fact
+   as the WORD "cached" in green; the dot is now the indicator and the word rides its title
+   and a visually-hidden span, so nothing a screen reader heard is lost. ONE vocabulary
+   across the strip and the cards — the second half of the owner's ask ("green valuation if
+   live/cached"): a live or cached reading is a filled green dot, never a word. */
+export const freshDot = (mode, illus) => {
+  const live = !illus && (mode === "LIVE" || mode === "CACHED");
+  const color = live ? T.green : mode === "STALE" ? T.amber : T.textMuted;
+  return { live, color, word: illus ? "not live" : String(mode || "").toLowerCase() };
+};
 
 const SimpleCards = ({ cards, usable = 0, shown = 0, total = 0, withheld = false }) => {
   // Property 9 (null-safe): nothing usable means nothing to render as a current reading.
@@ -43,6 +62,8 @@ const SimpleCards = ({ cards, usable = 0, shown = 0, total = 0, withheld = false
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(260px,1fr))", gap: 6 }}>
         {cards.map((c) => {
           const illus = isIllustrative(c.mode);
+          const tone = TONE[c.direction] || T.textMuted;
+          const fresh = freshDot(c.mode, illus);
           /* v5.8: the WHOLE card is the tap target for its explainer — the owner's ask is
              "clicking on each context parameter", not hunting a small affordance on a phone.
              Explainable owns the open state and the dialog (sections stay presentation-only,
@@ -57,11 +78,13 @@ const SimpleCards = ({ cards, usable = 0, shown = 0, total = 0, withheld = false
               title={c.explain ? c.explain.full : c.label}
               eyebrow={`${c.label} · ${c.currentValue}${WORD[c.direction] ? ` · ${WORD[c.direction]}` : ""}`}
               className="simple-card"
-              style={{ background: T.surface, border: `1px solid ${T.border}`,
+              style={{ background: T.surface, border: `1px solid ${T.border}`, borderLeft: `3px solid ${tone}`,
               borderRadius: 5, padding: "5px 8px", minWidth: 0, ...(illus ? ILLUS_HATCH : {}) }}>
-              {/* Line 1: parameter · current value · direction — the three facts a reader
-                  scans. Line 2: why it matters + freshness, at small weight. */}
+              {/* Line 1: direction glyph · parameter · current value · direction word — the
+                  shape leads, the word confirms. Line 2: freshness dot + date + ruler chip. */}
               <div style={{ display: "flex", alignItems: "baseline", gap: 6, flexWrap: "wrap" }}>
+                <span aria-hidden="true" className="simple-card-glyph" style={{ fontFamily: T.fontMono, fontSize: T.fsM, fontWeight: 700,
+                  color: tone, flexShrink: 0, lineHeight: 1 }}>{GLYPH[c.direction] || "•"}</span>
                 <span style={{ fontFamily: T.fontMono, fontSize: 8, color: T.textMuted,
                   letterSpacing: "0.08em", textTransform: "uppercase", flexShrink: 0 }}>{c.label}</span>
                 <span style={{ fontFamily: T.fontMono, fontSize: T.fsM, color: T.textPrimary, minWidth: 0 }}>{c.currentValue}</span>
@@ -86,10 +109,14 @@ const SimpleCards = ({ cards, usable = 0, shown = 0, total = 0, withheld = false
                   and freshness rides the ruler's line rather than renting its own.
                   Provenance stays ON THE FACE either way — the v3.1 invariant is that a
                   number never reads as live unless it is, and that is a fact, not prose. */}
-              <div style={{ display: "flex", alignItems: "baseline", gap: 5, flexWrap: "wrap", marginTop: 1 }}>
-                <span style={{ fontFamily: T.fontMono, fontSize: 8, color: illus ? T.textMuted : T.green, flexShrink: 0 }}>
-                  {illus ? "not live" : c.mode.toLowerCase()}{c.asOf ? ` · ${c.asOf}` : ""}
-                </span>
+              <div style={{ display: "flex", alignItems: "center", gap: 5, flexWrap: "wrap", marginTop: 1 }}>
+                {/* v6.0.1: the freshness DOT (the strip's own vocabulary) replaces the word on
+                    the face; the word survives on the title and for screen readers. */}
+                <span className="simple-card-fresh" title={fresh.word} aria-hidden="true"
+                  style={{ width: 6, height: 6, borderRadius: "50%", flexShrink: 0, display: "inline-block",
+                    background: fresh.live ? fresh.color : "transparent", border: `1px solid ${fresh.color}` }}/>
+                <span className="visually-hidden">{fresh.word}</span>
+                {c.asOf && <span style={{ fontFamily: T.fontMono, fontSize: 8, color: fresh.live ? fresh.color : T.textMuted, flexShrink: 0 }}>{c.asOf}</span>}
                 {illus && <IllustrativeChip label="ILLUSTRATIVE" />}
                 {c.rulerChip && <span style={{ fontFamily: T.fontMono, fontSize: 8, color: T.textMuted, lineHeight: 1.3, minWidth: 0 }}>· {c.rulerChip}</span>}
               </div>
@@ -111,7 +138,18 @@ const SimpleCards = ({ cards, usable = 0, shown = 0, total = 0, withheld = false
           cards area — metadata, not a second message competing with the cards. The truncation
           stays STATED, never implied; only its visual weight dropped. (The flip that shared
           this line moved to the whys' closed label, 8/28.) */}
-      <div style={{ marginTop: 4, opacity: 0.7 }}>
+      {/* v6.0.1: the coverage count leads with the SHAPE — one dot per voter, filled for the
+          ones counted, hollow amber for the dark — then the words. Same fact, read at a
+          glance first and in text second. The dots are decorative for a screen reader; the
+          sentence is what it hears. */}
+      <div style={{ marginTop: 4, opacity: 0.7, display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
+        {total > 0 && <span aria-hidden="true" className="voter-dots" style={{ display: "inline-flex", gap: 2 }}>
+          {Array.from({ length: total }, (_, i) => {
+            const counted = i < usable;
+            return <span key={i} style={{ width: 5, height: 5, borderRadius: "50%",
+              background: counted ? T.green : "transparent", border: `1px solid ${counted ? T.green : T.amber}` }}/>;
+          })}
+        </span>}
         <span style={{ fontFamily: T.fontMono, fontSize: 8, color: T.textMuted, lineHeight: 1.5 }}>
           {shown} cards from the {usable} voters counted{total > usable ? ` · ${total - usable} dark` : ""}
         </span>

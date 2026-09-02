@@ -391,9 +391,23 @@ console.log("\n[public] v3.94 — Simple default, the toggle, persistence, red f
     /live read/i.test(await page.locator('[aria-label="Macro backdrop verdict"]').innerText()) &&
     !/· the call/i.test(await page.locator('[aria-label="Macro backdrop verdict"]').innerText()) &&
     !/wen moon/i.test(await page.locator('[aria-label="Macro backdrop verdict"]').innerText()));
-  ok("8/28 A6: the unfrozen counterpart caption renders, phrased by the client clock",
-    /live read — today's (official call freezes at 10:00 ET|10am record not loaded)/.test(
-      await page.locator('[aria-label="Macro backdrop verdict"]').innerText()));
+  /* RE-PINNED (v6.0.1, owner UX review): in Simple the A6 caption leaves the FACE — the
+     eyebrow already says "live read" 12px above it — and rides inside the ℹ window, one tap.
+     The claim is unchanged (the unfrozen state states it is not the call, phrased by the
+     client clock); only its altitude moved. Power keeps it on the face, pinned in the v6.0.1
+     block below. Both halves asserted: absent while closed, present once opened. */
+  {
+    const faceTxt = await page.locator('[aria-label="Macro backdrop verdict"]').innerText();
+    ok("v6.0.1 A6 in Simple: the caption is OFF the face (the eyebrow already says 'live read')",
+      !/live read — today's/.test(faceTxt) && /live read/i.test(faceTxt));
+    await page.locator('button[aria-label="Show regime factors"]').click();
+    await page.waitForTimeout(150);
+    ok("8/28 A6: the unfrozen counterpart caption renders one tap deep, phrased by the client clock",
+      /live read — today's (official call freezes at 10:00 ET|10am record not loaded)/.test(
+        await page.locator('[aria-label="Macro backdrop verdict"] .call-caption').innerText()));
+    await page.locator('button[aria-label="Show regime factors"]').click();
+    await page.waitForTimeout(150);
+  }
   const cardsInner = await page.locator('[aria-label="Key parameters"]').innerText();
   ok("v4.0 simple: card values are METRICS — the matrix's inline '(bullish)' judgment is gone",
     !/\(bullish\)|\(bearish\)/.test(await page.locator('[aria-label="Key parameters"]').innerText()));
@@ -1487,6 +1501,104 @@ console.log("\n[public] v6.0 — merged FIRED·BLIND badge + alert persistence a
     (await page.locator('button[aria-label^="Toggle alert"]').count()) === 9 &&
     (await page.locator('button[aria-label="Toggle alert CPI > 4%"]').innerText()).trim() === "OFF");
   ok("v6.0 alerts: no page errors through the whole loop", errors.length === 0);
+  await page.close();
+}
+
+// ── v6.0.1 — the public-view UX review: shape before text, toggle clarity, captions under the
+// ℹ window (owner, on the live 9/1 Simple + Power screenshots). Driven on a frozen HODL tape
+// with one dark voter so every indicator has both states to show. ──────────────────────────
+console.log("\n[public] v6.0.1 — shape before text · Simple|Power clarity · captions one tap deep");
+{
+  const frozenHodl = { schema:"md-call-v1", effective_date:TODAY, headline:"HODL", emoji:"💎",
+    direction:"NEUTRAL", confidence:"HIGH", actionability:"RESTRICTED", status:"PUBLISHED",
+    counts:{usable:5,total:6,bull:2,bear:1,neutral:2}, factors:[], override:{active:false} };
+  const oneDark = { ...FULL_LIVE }; delete oneDark.cpiHeadline; delete oneDark.cpiHeadlineAsOf; delete oneDark.cpiTrend;   // dead CPI feed → the one dark voter
+  const { page, errors } = await open({ live: oneDark, width: 390, power: false,
+    publicCall: frozenHodl, publicCallFrozen: true, publicCallCapturedAt: `${TODAY}T14:00:00.000Z` });
+  await page.waitForTimeout(1300);
+  const rgb = (hex) => { const n = parseInt(hex.slice(1), 16); return `rgb(${n >> 16}, ${(n >> 8) & 255}, ${n & 255})`; };
+  const GREEN = rgb("#2ecc71"), AMBER = rgb("#f0a500");
+  /* (1) SHAPE BEFORE TEXT on the cards. The direction glyph is the FIRST child of the card's
+     first row and carries the direction colour; the freshness is a filled green DOT for a
+     cached reading; the word "cached" is no longer VISIBLE on the face (it survives for a
+     screen reader in a visually-hidden span — measured by cloning the card and stripping
+     those spans before reading its text). */
+  const cards = await page.evaluate(() => [...document.querySelectorAll(".simple-card")].map((c) => {
+    const row = c.firstElementChild; const first = row && row.firstElementChild;
+    const clone = c.cloneNode(true); clone.querySelectorAll(".visually-hidden").forEach((n) => n.remove());
+    const dot = c.querySelector(".simple-card-fresh");
+    return { glyph: first ? first.textContent : null, glyphClass: first ? first.className : null,
+      glyphColor: first ? getComputedStyle(first).color : null, bar: getComputedStyle(c).borderLeftWidth,
+      barColor: getComputedStyle(c).borderLeftColor, visible: clone.textContent, hidden: c.textContent,
+      dotBg: dot ? getComputedStyle(dot).backgroundColor : null, dotTitle: dot ? dot.getAttribute("title") : null };
+  }));
+  ok("v6.0.1 cards: every card LEADS with a direction glyph (▲/▼/•) that is the first thing in the row",
+    cards.length === 3 && cards.every((c) => c.glyphClass === "simple-card-glyph" && /^[▲▼•]$/.test(c.glyph)));
+  ok("v6.0.1 cards: the glyph and the 3px left bar carry the direction colour (green helping, red hurting)",
+    cards.every((c) => c.bar === "3px" && c.barColor === c.glyphColor) &&
+    cards.some((c) => c.glyph === "▲" && c.glyphColor === GREEN) &&
+    cards.some((c) => c.glyph === "▼" && c.glyphColor === rgb("#e74c3c")));
+  // The harness serves `cached:false`, so the mode here is LIVE; the rule is one filled green
+  // dot for EITHER live or cached, the word on the title + a11y span only (never on the face).
+  ok("v6.0.1 cards: a live/cached reading is a FILLED GREEN DOT — the word left the face and stays for a11y",
+    cards.every((c) => c.dotBg === GREEN && /^(live|cached)$/.test(c.dotTitle)) &&
+    // Plain substring on the hidden text: the a11y span abuts the date ("live2026-…"), so \b never fires there.
+    cards.every((c) => !/live|cached/.test(c.visible) && /live|cached/.test(c.hidden)));
+  ok("v6.0.1 cards: the direction WORD still confirms the shape at the row's end (HELPING/HURTING survive)",
+    cards.every((c) => /HELPING|HURTING|MIXED/.test(c.visible)));
+  /* (1b) The voters line on both altitudes leads with one dot per voter: six dots, five filled
+     green, one hollow amber — the SAME count the sentence prints. */
+  const dots = await page.evaluate(() => [...document.querySelectorAll(".voter-dots")].map((n) => ({
+    total: n.children.length,
+    filled: [...n.children].filter((d) => getComputedStyle(d).backgroundColor !== "rgba(0, 0, 0, 0)").length,
+    hollowAmber: [...n.children].filter((d) => getComputedStyle(d).backgroundColor === "rgba(0, 0, 0, 0)" && getComputedStyle(d).borderColor === "rgb(240, 165, 0)").length })));
+  ok("v6.0.1 dots: hero + cards footer each lead with 6 voter dots — 5 filled green, 1 hollow amber for the dark voter",
+    dots.length === 2 && dots.every((d) => d.total === 6 && d.filled === 5 && d.hollowAmber === 1) &&
+    /5 of 6 voters counted/.test(await bandText(page)));
+  /* (2) The toggle: the pressed half is FILLED brand amber; the other is transparent; each
+     names what it shows; a shape leads each word. */
+  const tog = await page.evaluate(() => [...document.querySelectorAll('[role="group"][aria-label="View mode"] button')].map((b) => ({
+    txt: b.innerText.trim(), pressed: b.getAttribute("aria-pressed"), bg: getComputedStyle(b).backgroundColor,
+    color: getComputedStyle(b).color, label: b.getAttribute("aria-label"), title: b.getAttribute("title") })));
+  ok("v6.0.1 toggle: Simple is pressed and FILLED amber with dark text; Power is transparent — legible at a glance",
+    tog.length === 2 && tog[0].pressed === "true" && tog[0].bg === AMBER && tog[0].color === rgb("#08090b") &&
+    tog[1].pressed === "false" && tog[1].bg === "rgba(0, 0, 0, 0)");
+  ok("v6.0.1 toggle: each half leads with a shape and states what the mode SHOWS in its name and tooltip",
+    /^○\s*Simple$/.test(tog[0].txt) && /^◉\s*Power$/.test(tog[1].txt) &&
+    /^Simple view — the call/.test(tog[0].label) && /^Power view — every section/.test(tog[1].label) &&
+    tog[0].title === tog[0].label && tog[1].title === tog[1].label);
+  /* (3) Captions under the window in Simple: the face carries the eyebrow ("10am frozen call")
+     and NOT the 'immutable public call' line; the ℹ window carries it with the date. */
+  const face = await bandText(page);
+  ok("v6.0.1 captions (Simple): the face keeps the eyebrow and sheds the 'immutable public call' line",
+    /10am frozen call/i.test(face) && !/immutable public call/.test(face));
+  ok("v6.0.1 hero: the icon-only ⎘ and ℹ buttons render their glyph at 13px, not 9px",
+    await page.locator('button[aria-label="Copy MacroDash posture card"]').evaluate((n) => getComputedStyle(n).fontSize) === "13px" &&
+    await page.locator('button[aria-label="Show regime factors"]').evaluate((n) => getComputedStyle(n).fontSize) === "13px");
+  await page.locator('button[aria-label="Show regime factors"]').click();
+  await page.waitForTimeout(200);
+  const cap = await page.locator('[aria-label="Macro backdrop verdict"] .call-caption').innerText();
+  ok("v6.0.1 captions (Simple): ONE tap opens the window, and the caption is there with the capture date",
+    new RegExp(`^immutable public call · captured 10:00 ET · ${TODAY}$`).test(cap.trim()));
+  await page.locator('button[aria-label="Show regime factors"]').click();   // close the window FIRST
+  await page.waitForTimeout(150);
+  // The budgets this pass must not spend: the strip and the cards stay where v5.9 put them.
+  const [glance, cardsTop] = await page.evaluate(() => {
+    const el = [...document.querySelectorAll("*")].find((n) => n.children.length === 0 && /^●?\s*SPY\*?$/m.test(n.textContent || "") && n.getBoundingClientRect().height > 0);
+    const k = document.querySelector('[aria-label="Key parameters"]');
+    return [el ? Math.round(el.getBoundingClientRect().top + scrollY) : null, k ? Math.round(k.getBoundingClientRect().top + scrollY) : null]; });
+  ok(`v6.0.1 budgets: the cards begin within 420px and the strip within 660px with the window closed (measured ${cardsTop} / ${glance})`,
+    cardsTop !== null && cardsTop <= 420 && glance !== null && glance <= 660);
+  ok("v6.0.1: no page errors through the Simple pass", errors.length === 0);
+  // POWER contrast on the same tape: the caption stays ON the face, the pressed half is Power.
+  await page.locator("button", { hasText: "Power" }).click();
+  await page.waitForTimeout(500);
+  const pface = await bandText(page);
+  ok("v6.0.1 captions (Power): the 'immutable public call' line stays on the face — accessible without a tap",
+    new RegExp(`immutable public call · captured 10:00 ET · ${TODAY}`).test(pface) &&
+    (await page.locator('[aria-label="Macro backdrop verdict"] .call-caption').count()) === 0);
+  ok("v6.0.1 toggle (Power): the fill follows the choice — Power is now the amber half",
+    (await page.locator('button[aria-pressed="true"]').evaluate((n) => [n.innerText.replace(/\s+/g, " ").trim(), getComputedStyle(n).backgroundColor].join("|"))) === `◉ Power|${AMBER}`);
   await page.close();
 }
 
