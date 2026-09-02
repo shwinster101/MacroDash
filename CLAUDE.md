@@ -5,6 +5,32 @@ answers *"is it safe to be in the market?"* from live macro + market + sentiment
 data. Single-page React app on Cloudflare Pages, with live data assembled at the
 edge by Pages Functions and cached in KV.
 
+**v6.0.2 — the footer goes under a dropdown, and every parameter block is ruled word / icon /
+colour (owner, same review: "that very bottom blurb can go too. Under a dropdown. Next, review
+each data parameter block and what's key if needing a word or just an icon or color").** The
+rule the audit applied, in order: colour or shape first; a WORD only where the shape is
+ambiguous or the fact IS a word (a date, a source's own zone label, a unit); prose one tap deep.
+The full per-block table lives in `working/2026-09-02-public-view-ux.md` (pass 2). Two changes
+came out of it, both presentation. **(1) The footer.** Four 8px lines of attribution now ride
+ONE closed `CollapsedGroup` in both modes (the house idiom, chip-free — provenance is not
+curated content); the closed row carries the two facts a collapse may not hide, the version and
+"not financial advice", and the refresh cadence, the History/Difference/JSON links, the
+public-route omission note and the Live/Curated/Retired record are verbatim one tap deep — the
+retirement RECORD (CBOE, Mag 10) is kept, never deleted, the v3.43/v3.51 rule. The A4 public
+pin is re-pinned to open the group first. **(2) The strip's ▪ voter marker wears its VOTE.** It
+was a constant amber square: a voting tile said "I vote" and never WHICH WAY — and for VIX and
+the 10Y that was the only place the vote could have shown, since their sub-lines colour a
+different window (WoW / 1D delta) than the monthly-change band that actually votes. The marker
+now resolves `bandOf(f) → vote → voteStyle` (green bull · red bear · secondary neutral), the
+same map the cards and hero chips paint, so a voter's direction reads as colour before any word
+and cannot disagree across the three altitudes; the vote WORD rides the tooltip. The glyph and
+the v3.98.4 "counts today" gate are unchanged. **Ruled and kept, with the reason:** the card's
+HELPING/HURTING word — `▲` beside VOLATILITY reads as "vol is up" when the shape encodes the
+VOTE, so the word is the disambiguator, not decoration; F&G's `Fear` (CNN's own zone label, the
+only thing that makes 45 readable); NFCI's `0 = avg` ruler (v3.43); the FOMC date. Filed: `avg`
+on the FED tile is jargon explained only on hover. Tests: **2183 smoke + 309 render + 253
+public-render**, `audit:prod` clean; Simple budgets re-measured 337 / 602 (unchanged).
+
 **v6.0.1 — the public-view UX review: shape before text, a toggle you can tell apart, and the
 clock captions one tap deep in Simple (owner, on the live 9/1 Simple + Power screenshots).**
 Three directives, all PRESENTATION — no vote, band, quorum, freeze, copy or TT contract moved, and

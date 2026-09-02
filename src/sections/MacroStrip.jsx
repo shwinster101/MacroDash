@@ -83,13 +83,22 @@ const MacroStrip=({d,modeOf,fomcLabel,fomcDays,votingFields,badge})=>{
              class the hero's hardcoded exclusion reason was. A voter that is dark today is
              NOT counted, and now says so instead of claiming the opposite. */
           const isVoter=vf.has(f); const votes=isVoter&&live;
+          /* v6.0.2 (owner: "what's key — a word, or just an icon or colour"): the ▪ voter marker
+             was a CONSTANT amber square, so a voting tile said "I vote" and never WHICH WAY —
+             VIX and 10Y carried a delta-coloured sub while their actual vote (a monthly-change
+             band) was nowhere on the strip. The marker now wears the vote's own colour through
+             the ONE voteStyle map (green bull · red bear · secondary neutral), so every voter's
+             direction reads as colour before any word, and agrees with the card and the hero
+             chip for the same factor. Glyph unchanged (the "counts today" contract, v3.98.4);
+             the vote WORD rides the title so a reader can confirm what the colour means. */
+          const vb=votes?bandOf(f):null; const vs=vb?voteStyle(vb.vote(vb.read(d))):null;
           return(
-          <div key={l} title={`${t}\n(${m.toLowerCase()})${votes?"\nCounts toward today's posture."
+          <div key={l} title={`${t}\n(${m.toLowerCase()})${votes?`\nCounts toward today's posture — votes ${vs.word}.`
             :isVoter?"\nA voter, but dark today — not counted.":"\nContext only — does not vote."}`} style={{flexShrink:0,minWidth:68,cursor:"help"}}>
             <div style={{display:"flex",alignItems:"center",gap:3}}>
               <span style={{width:5,height:5,borderRadius:"50%",background:live?dot:"transparent",border:`1px solid ${dot}`,flexShrink:0}}/>
               <span style={{fontFamily:T.fontMono,fontSize:8,color:T.textMuted}}>{l}</span>
-              {votes&&<span aria-hidden="true" title="counts toward today's posture" style={{fontFamily:T.fontMono,fontSize:7,color:T.amber,letterSpacing:"0.05em"}}>▪</span>}
+              {votes&&<span aria-hidden="true" className="strip-vote" title={`counts toward today's posture — votes ${vs.word}`} style={{fontFamily:T.fontMono,fontSize:8,fontWeight:700,color:T[vs.colorKey],letterSpacing:"0.05em"}}>▪</span>}
             </div>
             <div style={{fontFamily:T.fontMono,fontSize:13,color:T.textPrimary,fontWeight:700,lineHeight:1.1}}>{v}</div>
             <div style={{fontFamily:T.fontMono,fontSize:9,color:sc}}>{s}</div>

@@ -1187,8 +1187,17 @@ console.log("\n[public] A4 — the public/private boundary is ENFORCED, not comm
   ok("public route: MY CONVICTION is gated out", !/MY CONVICTION/.test(pub));
   ok("public route: Macro Alerts are gated out", !/Macro Alerts/i.test(pub));
   ok("public route: TERMINAL link hidden", !/⌁ TERMINAL/.test(pub));
-  ok("public route: the footer NAMES the omission (a cut takes its attribution with it)",
-    /operator view carries the curated watchlist and alert monitors/.test(pub));
+  /* v6.0.2: the footer rides ONE closed disclosure (owner: "that very bottom blurb can go too.
+     Under a dropdown"), so the omission note is read after opening it. The closed row must
+     still carry the two facts a collapse may not hide: the version and "not financial advice". */
+  ok("v6.0.2 footer: closed by default, the toggle row carries the version and the not-advice fact",
+    !/operator view carries the curated watchlist/.test(pub) &&
+    /about this page — v\d+\.\d+\.\d+ · sources · not financial advice/i.test(pub));
+  await page.locator(".site-footer button.cg-toggle").click();
+  await page.waitForTimeout(150);
+  ok("public route: the footer NAMES the omission (a cut takes its attribution with it) — one tap deep",
+    /operator view carries the curated watchlist and alert monitors/.test(await page.locator(".site-footer").innerText()) &&
+    /Retired: CBOE Put\/Call/.test(await page.locator(".site-footer").innerText()));
   ok("public route: the canonical verdict still publishes — the gate hides content, not judgment",
     /MOONING|HODL|DIAMOND HANDS/.test(pub) && /BULLISH|NEUTRAL|BEARISH/.test(pub));
   // FEAT-GLANCE (v3.61, newcomer audit #5): TT and the alert badges are operator tooling —
@@ -1589,6 +1598,23 @@ console.log("\n[public] v6.0.1 — shape before text · Simple|Power clarity · 
     return [el ? Math.round(el.getBoundingClientRect().top + scrollY) : null, k ? Math.round(k.getBoundingClientRect().top + scrollY) : null]; });
   ok(`v6.0.1 budgets: the cards begin within 420px and the strip within 660px with the window closed (measured ${cardsTop} / ${glance})`,
     cardsTop !== null && cardsTop <= 420 && glance !== null && glance <= 660);
+  /* v6.0.2: every voting tile's ▪ wears its VOTE colour (this tape is all-bull → all green),
+     and it is the same colour its vote-coloured sub-line wears where one exists (F&G, NFCI). */
+  const marks = await page.evaluate(() => [...document.querySelectorAll(".macro-strip-inner > div")].map((tile) => {
+    const m = tile.querySelector(".strip-vote"); const sub = tile.lastElementChild;
+    return { l: tile.innerText.split("\n")[0].replace("▪", "").trim(), mark: m ? getComputedStyle(m).color : null,
+      sub: sub ? getComputedStyle(sub).color : null, title: tile.getAttribute("title") }; }));
+  ok("v6.0.2 strip: the 5 live voters carry a GREEN ▪ on the bull tape, non-voters carry none, and the title names the vote",
+    marks.filter((t) => t.mark).length === 4 &&   // VIX · F&G · 10Y · NFCI (CPI is the dark one)
+    marks.filter((t) => t.mark).every((t) => t.mark === GREEN && /votes BULL/.test(t.title)) &&
+    marks.filter((t) => /^(SPY|QQQ|FED|CPI)/.test(t.l)).every((t) => !t.mark));
+  ok("v6.0.2 strip: where the sub-line is vote-coloured (F&G, NFCI) the marker and the sub agree",
+    marks.filter((t) => /^(F&G|NFCI)/.test(t.l)).every((t) => t.mark === t.sub));
+  /* v6.0.2: the footer is one closed disclosure; the version + not-advice fact survive on the row. */
+  ok("v6.0.2 footer (Simple): closed, one row, version + not-advice visible, attribution one tap deep",
+    !/Retired: CBOE Put\/Call/.test(await page.locator("body").innerText()) &&
+    /about this page — v\d+\.\d+\.\d+ · sources · not financial advice/i.test(await page.locator(".site-footer").innerText()) &&
+    (await page.locator(".site-footer button.cg-toggle").boundingBox()).height >= 44);
   ok("v6.0.1: no page errors through the Simple pass", errors.length === 0);
   // POWER contrast on the same tape: the caption stays ON the face, the pressed half is Power.
   await page.locator("button", { hasText: "Power" }).click();

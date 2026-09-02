@@ -8487,7 +8487,9 @@ console.log("\n[64] v3.98.4 — Power read-through fixes (token trend, strip mar
     /const isVoter=vf\.has\(f\); const votes=isVoter&&live;/.test(stripSrc));
   ok("v3.98.4: a dark voter's tooltip says so, instead of claiming it counts",
     /A voter, but dark today — not counted\./.test(stripSrc) &&
-    /Counts toward today's posture\./.test(stripSrc) &&
+    // v6.0.2: the counting tooltip now also NAMES the vote ("— votes BULL."); the claim
+    // this pin makes — three distinct states, the dark one never claiming to count — holds.
+    /Counts toward today's posture — votes \$\{vs\.word\}\./.test(stripSrc) &&
     /Context only — does not vote\./.test(stripSrc));
   ok("v3.98.4: the CPI source box finally carries its observation date (LIVE with no date is unjudgeable)",
     /endpoint="CPIAUCNS \+ CPILFENS · official NSA YoY" mode=\{modeOf\('cpiHeadline'\)\} asOf=\{asOfOf\('cpiHeadline'\)\}/.test(mrSrc));
@@ -10781,6 +10783,40 @@ console.log("\n[75] v6.0.1 — shape before text · toggle clarity · captions u
   ok("v6.0.1 boundary: SimpleCards is still presentation-only and no band/quorum moved",
     !/useState|useEffect|localStorage|computeRegime|buildEvidenceSet/.test(spc) &&
     REGIME_BAND_TABLE.length === 6 && REGIME_QUORUM === 4);
+}
+
+// ---- 76. v6.0.2 — the footer under a dropdown, and the strip's voter marker wears its vote ----
+// Owner, same review: "that very bottom blurb can go too. Under a dropdown", then "review each
+// data parameter block and what's key if needing a word or just an icon or color indicator".
+console.log("\n[76] v6.0.2 — footer one tap deep · the ▪ marker carries the vote's colour");
+{
+  const code = (s) => s.replace(/\/\/[^\n]*|\/\*[\s\S]*?\*\//g, "");
+  const dash = code(dashSrc), strip = code(readSrc("../src/sections/MacroStrip.jsx"));
+  // The footer rides ONE CollapsedGroup; the closed row carries version + not-advice; every
+  // attribution line — the retirement RECORD included — is still in the source, verbatim.
+  ok("v6.0.2 footer: one closed CollapsedGroup, chip-free, whose label carries the version and 'not financial advice'",
+    /<div className="site-footer"[^>]*>\s*<CollapsedGroup count=\{3\} chip=\{false\} label=\{`about this page — v\$\{__APP_VERSION__\} · sources · not financial advice`\}>/.test(dash) &&
+    (dash.match(/className="site-footer"/g) || []).length === 1);
+  ok("v6.0.2 footer: the attribution + retirement record survive inside, verbatim (a cut keeps its attribution)",
+    /Retired: CBOE Put\/Call \(free feed dead 2019 · v3\.2\) · Mag 10 fundamentals \+ SEC S-1 \(v3\.43\) · Mag 10 quote strip \(v3\.51\)/.test(dash) &&
+    /operator view carries the curated watchlist and alert monitors/.test(dash) &&
+    /Not financial advice · Personal use/.test(dash) &&
+    (() => { const a = dash.indexOf('className="site-footer"'), b = dash.indexOf("</CollapsedGroup>", a);
+      return a > 0 && b > a && dash.slice(a, b).includes("Retired: CBOE Put/Call"); })());
+  // The strip marker: colour from the ONE voteStyle map, resolved through the band table's own
+  // vote — never a constant. Glyph and the "counts today" gate are unchanged (v3.98.4 pin holds).
+  ok("v6.0.2 strip: the ▪ marker resolves its colour through bandOf → vote → voteStyle, never a constant amber",
+    /const vb=votes\?bandOf\(f\):null; const vs=vb\?voteStyle\(vb\.vote\(vb\.read\(d\)\)\):null;/.test(strip) &&
+    /className="strip-vote"[^>]*color:T\[vs\.colorKey\]/.test(strip) &&
+    !/fontSize:7,color:T\.amber,letterSpacing:"0\.05em"\}\}>▪/.test(strip) &&
+    /const isVoter=vf\.has\(f\); const votes=isVoter&&live;/.test(strip));
+  ok("v6.0.2 strip: the vote WORD rides the tooltip so the colour can be confirmed, on both the tile and the marker",
+    /Counts toward today's posture — votes \$\{vs\.word\}\./.test(strip) &&
+    /title=\{`counts toward today's posture — votes \$\{vs\.word\}`\}/.test(strip));
+  // Behavioural: the colour a voter's marker would wear is the colour its card/hero chip wears.
+  const bull = voteStyle("bull"), bear = voteStyle("bear");
+  ok("v6.0.2 strip: bull → green, bear → red — the same two keys the cards and hero chips paint",
+    bull.colorKey === "green" && bear.colorKey === "red" && voteStyle("neutral").colorKey === "textSecondary");
 }
 
 console.log(`\n=== SMOKE TEST: ${pass} passed, ${fail} failed ===`);

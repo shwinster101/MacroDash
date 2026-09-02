@@ -56,3 +56,42 @@ screenshots are in the session scratchpad (not committed — the assertions are 
   cadence tolerates that gap. The fixture now DELETES the CPI fields (the dead-feed shape the
   suite already uses for VIX), which is what actually produces the dark voter.
 - Deliberately not built: items 6–8 (filed), and no change to the strip, dock or footer text.
+
+## Pass 2 (same day) — "the bottom blurb under a dropdown", and the per-block indicator audit
+
+Owner: *"That very bottom blurb can go too. Under a dropdown. Next, review each data parameter
+block and what's key if needing a word or just an icon or color indicator."*
+
+Rule applied, in this order: **colour/shape first; a word only where the shape is ambiguous or
+the fact IS a word (a date, a label the source publishes, a unit); prose only one tap deep.**
+
+| Block | Elements today | What is KEY | Indicator ruling | Change |
+|---|---|---|---|---|
+| Header status | ● dot · `CLOSE` · `data pulled <stamp>` · `end-of-day, not real-time` | session + freshness | dot (colour) + the session WORD (a state name); the stamp is a fact | none |
+| Simple\|Power | `○ Simple` / `◉ Power` | which one is live | filled amber = colour; shape per mode; tooltip = word | done v6.0.1 |
+| Hero verdict | `HODL 💎` · `NEUTRAL` · sentence · voter dots + count · ⎘ ℹ | the call | word+emoji+tint (the call IS a word); machine word secondary (v5.3 lock) | none |
+| Card (×3) | `▲` bar · label · value · `HELPING` · ⓘ · ● date · ruler chip | direction of the VOTE | shape+bar+colour lead. **The word stays**: `▲` beside VOLATILITY reads as "vol is up" — the shape encodes the vote, not the metric's direction, so HELPING/HURTING is the disambiguator, not decoration | none (v6.0.1) |
+| Cards footer | dots · `3 cards from the 6 voters counted` | coverage | dots first; sentence is the a11y form | done v6.0.1 |
+| Whys label | `+5 WHY THIS CALL · 5 CHECKS — ⇄ <flip chip>` | that a why exists; the nearest flip | word — a flip is a sentence; chip is a pinned prefix of the verbatim line | none; wraps 2 lines at 390px (filed) |
+| Strip SPY/QQQ | value · `±%` | the day move | colour on the delta (arithmetic fact) | none |
+| Strip VIX / 10Y | value · `-5.9% WoW` / `+2bps 1D` · ▪ | the VOTE (a monthly-change band) — which the tile never showed; the sub is a different window | **▪ now wears the vote colour** (green/red/neutral) via the one voteStyle map; the sub keeps its delta colour (a fact, not a verdict) | **built** |
+| Strip F&G | `45` · `Fear` · ▪ | sentiment zone | the WORD is CNN's own zone label and the only thing that makes 45 readable — keep; sub colour = vote (v3.73) and the ▪ now matches it | ▪ colour |
+| Strip FED | `3.63% avg` · `FOMC 15d` | the next meeting | a date is a word — keep; `avg` is jargon explained only on hover (filed) | none |
+| Strip CPI | `3.8%` · `Core 2.8%` · ▪ | trend direction | colour on the sub (vote); the second number is context | ▪ colour |
+| Strip NFCI | `-0.57` · `0 = avg` · ▪ | tight/loose vs the mean | colour = vote; `0 = avg` is the RULER a z-score needs (v3.43 ruling) — keep | ▪ colour |
+| Dock | `GATE EASY` · symbol chips · asOf line | the gate; the names | gate = word+colour (the product vocabulary); chips = the symbol IS the word (owner ruling v5.6.8) | none |
+| Footer | 4 lines of attribution + links | version · not-advice | the two facts ride the closed row; everything else one tap deep | **built** |
+
+Not changed on purpose: the F&G word, the NFCI ruler, the FOMC date, the HELPING word (see the
+card row above — a shape that means "vote up" on a metric that went down needs its word).
+
+### Outcomes — pass 2, v6.0.2 (built same session)
+
+- Shipped: the footer under one closed `CollapsedGroup` (`.site-footer`, both modes; version +
+  not-advice on the closed row); the strip's `▪` marker coloured by `bandOf → vote → voteStyle`
+  with the vote word on both tooltips. `MacroStrip.jsx`, `dashboard.jsx`.
+- Re-pinned WITH reasons: the A4 public footer pin (open the group first; the closed row must
+  carry version + not-advice), and the v3.98.4 tooltip pin (the counting branch now names the
+  vote — three distinct states still hold).
+- Measured at 390×844 Simple, window closed: cards **337**, strip **602** — identical to pass 1.
+- Gates: **2183 smoke · 309 render · 253 public-render · audit clean** (+5 smoke [76], +4 public).

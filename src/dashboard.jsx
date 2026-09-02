@@ -1213,12 +1213,23 @@ export default function Dashboard({ publicView = false } = {}) {
         {!simple&&<DataHealth signalFields={SIGNAL_FIELDS} modeOf={modeOf} dataAsOf={dataAsOf}
           mode={mode} lastError={lastError} retry={retry}/>}
 
-        {/* ── FOOTER ── */}
-        <div style={{marginTop:12,display:"flex",justifyContent:"space-between",alignItems:"center",flexWrap:"wrap",gap:4}}>
-          <div style={{fontFamily:T.fontMono,fontSize:8,color:T.textMuted}}>{`MacroDash v${__APP_VERSION__} · Data refreshed daily · end-of-day sources`}{publicView?" · public view — the operator view carries the curated watchlist and alert monitors":""}</div>
-          <div style={{display:"flex",gap:10,fontFamily:T.fontMono,fontSize:8}}><a href="/history" style={{color:T.textMuted}}>History</a><a href="/difference" style={{color:T.textMuted}}>Difference</a><a href="/readout.json" style={{color:T.textMuted}}>JSON</a></div>
-          <div style={{fontFamily:T.fontMono,fontSize:8,color:T.textMuted}}>Not financial advice · Personal use</div>
-          <div style={{fontFamily:T.fontMono,fontSize:8,color:T.textMuted}}>Live: FRED · CNN · Kalshi · OpenRouter · Finnhub · multpl · Curated: GPU $/hr · hyperscaler capex · token efficiency · Retired: CBOE Put/Call (free feed dead 2019 · v3.2) · Mag 10 fundamentals + SEC S-1 (v3.43) · Mag 10 quote strip (v3.51)</div>
+        {/* ── FOOTER ── v6.0.2 (owner: "that very bottom blurb can go too. Under a dropdown"):
+            the four attribution lines ride ONE closed CollapsedGroup in both modes — the house
+            disclosure idiom (44px toggle), chip-free because this is provenance, not curated
+            content. The closed row carries the two facts that must survive a collapse: the
+            version and "not financial advice". Everything else — the refresh cadence, the
+            History/Difference/JSON links, the public-route omission note, and the Live/Curated/
+            Retired attribution (which RECORDS the CBOE/Mag-10 retirements, never deleted — the
+            v3.43/v3.51 rule) — is verbatim one tap deep. */}
+        <div className="site-footer" style={{marginTop:12}}>
+          <CollapsedGroup count={3} chip={false} label={`about this page — v${__APP_VERSION__} · sources · not financial advice`}>
+            <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",flexWrap:"wrap",gap:4}}>
+              <div style={{fontFamily:T.fontMono,fontSize:8,color:T.textMuted}}>{`MacroDash v${__APP_VERSION__} · Data refreshed daily · end-of-day sources`}{publicView?" · public view — the operator view carries the curated watchlist and alert monitors":""}</div>
+              <div style={{display:"flex",gap:10,fontFamily:T.fontMono,fontSize:8}}><a href="/history" style={{color:T.textMuted}}>History</a><a href="/difference" style={{color:T.textMuted}}>Difference</a><a href="/readout.json" style={{color:T.textMuted}}>JSON</a></div>
+              <div style={{fontFamily:T.fontMono,fontSize:8,color:T.textMuted}}>Not financial advice · Personal use</div>
+              <div style={{fontFamily:T.fontMono,fontSize:8,color:T.textMuted}}>Live: FRED · CNN · Kalshi · OpenRouter · Finnhub · multpl · Curated: GPU $/hr · hyperscaler capex · token efficiency · Retired: CBOE Put/Call (free feed dead 2019 · v3.2) · Mag 10 fundamentals + SEC S-1 (v3.43) · Mag 10 quote strip (v3.51)</div>
+            </div>
+          </CollapsedGroup>
         </div>
       </div>
     </div>
