@@ -480,6 +480,13 @@ export default function Dashboard({ publicView = false } = {}) {
   });
   const setViewMode=(m)=>{setViewModeRaw(m);try{localStorage.setItem("md:view:v1",m);}catch(_e){/* private mode */}};
   const simple=viewMode==="simple";
+  /* v6.0.1: the toggle's ONE table — id, the shape that leads its label, the word, and what
+     the mode shows (rides the tooltip + accessible name, so "which one am I in, and what does
+     the other one do" is answered before the tap). Both words stay exactly "Simple"/"Power". */
+  const VIEW_MODES=[
+    {id:"simple",glyph:"○",word:"Simple",tells:"the call, three cards and the whys"},
+    {id:"power", glyph:"◉",word:"Power", tells:"every section, factor evidence and tiles"},
+  ];
   const [copied,setCopied]=useState(false);
   const [ttCopied,setTtCopied]=useState(false); // v4.0: canonical daily-call copy state
   const [callShared,setCallShared]=useState(false); // v5.5: compact hero-adjacent posture card
@@ -918,15 +925,25 @@ export default function Dashboard({ publicView = false } = {}) {
             <Badge label={`⚡ ${[activeAlerts>0?`${activeAlerts} FIRED`:null,alertBlind>0?`${alertBlind} BLIND`:null].filter(Boolean).join(" · ")}`}
               color={activeAlerts>0?T.red:T.amber}/>}
           {/* v3.94: the Simple|Power toggle — persistent, remembered per device. */}
+          {/* v6.0.1 (owner UX review: "Simple vs power is hard to tell, ensure clarity with each
+              button"). The old pressed state was a one-shade-lighter surface behind bold text —
+              indistinguishable from the unpressed half at a glance on a phone. The SELECTED half
+              is now FILLED in the brand amber with dark text (the same fill the ⌁ TERMINAL button
+              uses for "this is the one"), each half carries a shape (○ the lean view · ◉ the full
+              view) ahead of its word, and each half states in its tooltip and accessible name
+              what the mode SHOWS — so the choice is legible before the label is read, and the
+              consequence is legible before the tap. aria-pressed is unchanged. */}
           <div role="group" aria-label="View mode" style={{display:"flex",border:`1px solid ${T.borderAccent}`,borderRadius:4,overflow:"hidden"}}>
-            {["simple","power"].map(m=>(
-              <button key={m} onClick={()=>setViewMode(m)} aria-pressed={viewMode===m} className="hdr-act"
+            {VIEW_MODES.map(({id,glyph,word,tells})=>{const on=viewMode===id;return(
+              <button key={id} onClick={()=>setViewMode(id)} aria-pressed={on} className="hdr-act"
+                title={`${word} view — ${tells}`} aria-label={`${word} view — ${tells}`}
                 style={{fontFamily:T.fontMono,fontSize:9,padding:"5px 10px",cursor:"pointer",border:"none",
-                        background:viewMode===m?T.surfaceHigh:"transparent",
-                        color:viewMode===m?T.textPrimary:T.textMuted,fontWeight:viewMode===m?700:400}}>
-                {m==="simple"?"Simple":"Power"}
+                        display:"inline-flex",alignItems:"center",gap:5,letterSpacing:"0.04em",
+                        background:on?T.amber:"transparent",
+                        color:on?T.bg:T.textSecondary,fontWeight:on?700:400}}>
+                <span aria-hidden="true" style={{fontSize:10,lineHeight:1}}>{glyph}</span>{word}
               </button>
-            ))}
+            );})}
           </div>
           {/* v3.98.3 (owner call: "want terminal more available"): TERMINAL is PROMOTED out of
               the ⋯ OPS menu into the bar itself. v3.62 demoted it as newcomer clutter — correct
@@ -1196,12 +1213,23 @@ export default function Dashboard({ publicView = false } = {}) {
         {!simple&&<DataHealth signalFields={SIGNAL_FIELDS} modeOf={modeOf} dataAsOf={dataAsOf}
           mode={mode} lastError={lastError} retry={retry}/>}
 
-        {/* ── FOOTER ── */}
-        <div style={{marginTop:12,display:"flex",justifyContent:"space-between",alignItems:"center",flexWrap:"wrap",gap:4}}>
-          <div style={{fontFamily:T.fontMono,fontSize:8,color:T.textMuted}}>{`MacroDash v${__APP_VERSION__} · Data refreshed daily · end-of-day sources`}{publicView?" · public view — the operator view carries the curated watchlist and alert monitors":""}</div>
-          <div style={{display:"flex",gap:10,fontFamily:T.fontMono,fontSize:8}}><a href="/history" style={{color:T.textMuted}}>History</a><a href="/difference" style={{color:T.textMuted}}>Difference</a><a href="/readout.json" style={{color:T.textMuted}}>JSON</a></div>
-          <div style={{fontFamily:T.fontMono,fontSize:8,color:T.textMuted}}>Not financial advice · Personal use</div>
-          <div style={{fontFamily:T.fontMono,fontSize:8,color:T.textMuted}}>Live: FRED · CNN · Kalshi · OpenRouter · Finnhub · multpl · Curated: GPU $/hr · hyperscaler capex · token efficiency · Retired: CBOE Put/Call (free feed dead 2019 · v3.2) · Mag 10 fundamentals + SEC S-1 (v3.43) · Mag 10 quote strip (v3.51)</div>
+        {/* ── FOOTER ── v6.0.2 (owner: "that very bottom blurb can go too. Under a dropdown"):
+            the four attribution lines ride ONE closed CollapsedGroup in both modes — the house
+            disclosure idiom (44px toggle), chip-free because this is provenance, not curated
+            content. The closed row carries the two facts that must survive a collapse: the
+            version and "not financial advice". Everything else — the refresh cadence, the
+            History/Difference/JSON links, the public-route omission note, and the Live/Curated/
+            Retired attribution (which RECORDS the CBOE/Mag-10 retirements, never deleted — the
+            v3.43/v3.51 rule) — is verbatim one tap deep. */}
+        <div className="site-footer" style={{marginTop:12}}>
+          <CollapsedGroup count={3} chip={false} label={`about this page — v${__APP_VERSION__} · sources · not financial advice`}>
+            <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",flexWrap:"wrap",gap:4}}>
+              <div style={{fontFamily:T.fontMono,fontSize:8,color:T.textMuted}}>{`MacroDash v${__APP_VERSION__} · Data refreshed daily · end-of-day sources`}{publicView?" · public view — the operator view carries the curated watchlist and alert monitors":""}</div>
+              <div style={{display:"flex",gap:10,fontFamily:T.fontMono,fontSize:8}}><a href="/history" style={{color:T.textMuted}}>History</a><a href="/difference" style={{color:T.textMuted}}>Difference</a><a href="/readout.json" style={{color:T.textMuted}}>JSON</a></div>
+              <div style={{fontFamily:T.fontMono,fontSize:8,color:T.textMuted}}>Not financial advice · Personal use</div>
+              <div style={{fontFamily:T.fontMono,fontSize:8,color:T.textMuted}}>Live: FRED · CNN · Kalshi · OpenRouter · Finnhub · multpl · Curated: GPU $/hr · hyperscaler capex · token efficiency · Retired: CBOE Put/Call (free feed dead 2019 · v3.2) · Mag 10 fundamentals + SEC S-1 (v3.43) · Mag 10 quote strip (v3.51)</div>
+            </div>
+          </CollapsedGroup>
         </div>
       </div>
     </div>
