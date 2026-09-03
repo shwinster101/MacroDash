@@ -8,6 +8,8 @@ import { existsSync, readdirSync } from "node:fs";
 import { readFileSync } from "node:fs";
 import { mergeLiveOverMock, SOURCES, isStale, cadenceOf, parseObsDate, isMarketHoliday, MARKET_HOLIDAYS, DERIVED_OF as DERIVED_OF_SRC, DERIVED_EXEMPT, govAsOf } from "../src/sources.js";
 import { computeFiveWhys, isMacroMaterial } from "../src/fiveWhys.js";
+import { HEADLINE_CATEGORIES, MACRO_TERMS, categoryOf, rankHeadlines, scoreHeadline,
+  isNearDuplicate, parseTopHeadlines, RECENCY_MAX_H } from "../src/headlines.js"; // v6.1.0
 // C1 (v3.60): the regime engine is a real module now — smoke IMPORTS it instead of lifting
 // source text, which is stronger (the actual code runs) and immune to formatting drift.
 import { NFCI_TIGHT as REG_NFCI_TIGHT, NFCI_LOOSE as REG_NFCI_LOOSE, REGIME_BAND_TABLE,
@@ -41,7 +43,8 @@ import { plausible, applyBands, quorum, QUORUM_FIELDS, QUORUM_MIN, marketSession
   pairRs, RS_63_SESSIONS, parseTreasuryCsv, preferFresherRates, parseCboeVixCsv, parseCboeVixQuote,
   pairCboeVix, preferFresherVix,
   rateOddsStillOpen, chooseTtl, publishIfNoWorse, TTL_MEDIUM, TTL_LOW,
-  fetchEquities, applyFieldLastGood, onRequest as getSnapshot } from "../functions/api/snapshot.js";
+  fetchEquities, applyFieldLastGood, fetchHeadlines, parseRssItems,
+  onRequest as getSnapshot } from "../functions/api/snapshot.js";
 import { etYmd } from "../src/sources.js";
 // UI-OVERHAUL Slice 1 (task 1.1): tokens are a real module now — smoke IMPORTS it (the v3.60
 // convention: the actual export is tested, immune to formatting drift) instead of regexing
@@ -593,7 +596,7 @@ const PRIMARY_ASOF_FIELDS = [
   // not launder a stale subindex, nor the reverse).
   "nfciLeverage",
 ];
-ok("deriv: PRIMARY_ASOF_FIELDS + DERIVED_OF + DERIVED_EXEMPT partition ALL 75 SOURCES keys (reconciled, not hardcoded)", (() => {
+ok("deriv: PRIMARY_ASOF_FIELDS + DERIVED_OF + DERIVED_EXEMPT partition ALL 76 SOURCES keys (reconciled, not hardcoded)", (() => {
   const keys = Object.keys(SOURCES);
   const derivedKeys = Object.keys(DERIVED_OF);
   const inPrimary = (k) => PRIMARY_ASOF_FIELDS.includes(k);
@@ -10817,6 +10820,167 @@ console.log("\n[76] v6.0.2 — footer one tap deep · the ▪ marker carries the
   const bull = voteStyle("bull"), bear = voteStyle("bear");
   ok("v6.0.2 strip: bull → green, bear → red — the same two keys the cards and hero chips paint",
     bull.colorKey === "green" && bear.colorKey === "red" && voteStyle("neutral").colorKey === "textSecondary");
+}
+
+// ═══════════ [77] v6.1.0 — the ranked headline layer: allowlist FIRST, then order ═══════════
+// The 2026-09-02 10:02 build went headline-dark on a heavy news day with ZERO diagnostics
+// (plain fetch, first <item> only, no recordStatus). v6.1.0 reads every item from four wire
+// feeds, gates them through the v3.51 ONE-WAY allowlist, and ORDERS the survivors with a
+// curated category table — $0, no LLM. Everything below is RUN: a ranking is a claim about
+// order, and a string pin cannot prove one. (Sits ABOVE the summary line — the v5.97.1 trap.)
+console.log("\n[77] v6.1.0 ranked headlines — one table, order, dedupe, diagnostics, WHY #3");
+{
+  const NOW75 = new Date("2026-09-02T22:00:00Z");
+  const T75 = NOW75.getTime();
+  const hAgo = (h) => new Date(T75 - h * 3600000).toISOString();
+  // The v3.51 allowlist VERBATIM as it shipped before the table existed. A dropped, altered
+  // or hand-copied term goes red here; the table must DERIVE the flat list.
+  const V351_TERMS = [
+    "fed", "fomc", "powell", "rate cut", "rate hike", "central bank", "ecb", "boj", "monetary",
+    "quantitative", "basis point", "bps", "tightening", "easing",
+    "inflation", "cpi", "pce", "deflation", "price index", "wage growth",
+    "gdp", "recession", "jobs report", "payroll", "unemployment", "jobless", "labor market",
+    "consumer spending", "retail sales", "manufacturing", "ism", "pmi",
+    "treasury", "yield", "bond", "credit spread", "default", "downgrade", "debt ceiling",
+    "dollar", "currency",
+    "stocks", "equities", "s&p", "nasdaq", "dow", "selloff", "sell-off", "rally", "correction",
+    "bear market", "bull market", "volatility", "vix", "risk-off", "risk off", "drawdown",
+    "futures", "index", "benchmark",
+    "oil", "crude", "opec", "energy prices", "gold",
+    "tariff", "trade war", "sanctions", "war", "shutdown", "banking crisis", "bank failure",
+    "contagion", "sovereign", "stimulus",
+    "peace", "ceasefire", "truce",
+  ];
+  ok("[77] one table: MACRO_TERMS is DERIVED from HEADLINE_CATEGORIES and carries the v3.51 allowlist verbatim (78 terms, no duplicates)",
+    JSON.stringify([...MACRO_TERMS].sort()) === JSON.stringify([...V351_TERMS].sort()) &&
+    MACRO_TERMS.length === HEADLINE_CATEGORIES.flatMap((c) => c.terms).length &&
+    new Set(MACRO_TERMS).size === MACRO_TERMS.length);
+  ok("[77] one table: the derivation is in SOURCE and no literal term list survives in fiveWhys.js",
+    (() => { const hs = readSrc("../src/headlines.js"), fw = readSrc("../src/fiveWhys.js");
+      return /MACRO_TERMS = Object\.freeze\(HEADLINE_CATEGORIES\.flatMap\(\(c\) => c\.terms\)\)/.test(hs) &&
+        !/"rate hike"/.test(fw) && /export \{ isMacroMaterial \}/.test(fw); })());
+  ok("[77] doctrine: the allowlist is never scored and the score can never admit — stated at the table's home",
+    (() => { const hs = readSrc("../src/headlines.js");
+      return /allowlist decision is ONE-WAY and is never scored/.test(hs) && /can never admit/.test(hs) && /never cast a vote/.test(hs); })());
+  ok("[77] weights: descending, 100-spaced, and recency (≤72) can NEVER flip a category — a 71h-old policy item beats a brand-new energy item",
+    (() => { const w = HEADLINE_CATEGORIES.map((c) => c.weight);
+      return w.every((x, i) => i === 0 || x <= w[i - 1]) && RECENCY_MAX_H < 100 &&
+        scoreHeadline("Fed holds rates steady", T75 - 71 * 3600000, T75) > scoreHeadline("Oil surges on OPEC cut", T75, T75); })());
+  ok("[77] categoryOf takes the MAX category, never a sum — and a non-material title has none",
+    categoryOf("Fed cuts as oil surges").key === "policy" && categoryOf("Oil surges as stocks rally").key === "market_wide" &&
+    categoryOf("How to pick a financial advisor") === null);
+  const items75 = [
+    { title: "Best credit cards for travel in 2026", source: "MW", pubDate: hAgo(0.5) },              // NEWEST, non-material
+    { title: "Oil surges on OPEC cut", source: "CNBC", pubDate: hAgo(1) },                            // energy
+    { title: "Stocks sell off as volatility jumps", source: "MW", pubDate: hAgo(2) },                 // market_wide
+    { title: "Fed holds rates steady as Powell signals patience", source: "MW", pubDate: hAgo(30) },  // policy, older
+    { title: "Fed holds rates steady, Powell signals patience", source: "WSJ", pubDate: hAgo(3) },    // near-dup, newer
+    { title: "CPI cools to 2.4%", source: "CNBC", pubDate: hAgo(5) },                                 // inflation
+    { title: "Treasury yields spike", source: "WSJ", pubDate: hAgo(4) },                              // rates_credit
+    { title: "Payrolls miss badly", source: "MW", pubDate: hAgo(96) },                                // growth, 4 DAYS old
+    { title: "Peace deal lifts futures", source: "CNBC", pubDate: new Date(T75 + 2 * 86400000).toISOString() }, // 2d FUTURE
+  ];
+  const r75 = rankHeadlines(items75, NOW75);
+  ok("[77] rank: allowlist FIRST (the newest item never ranks), category before recency, the near-duplicate collapses to ONE",
+    r75.length === 3 && r75[0].title === "Fed holds rates steady, Powell signals patience" && r75[0].source === "WSJ" &&
+    r75[1].title === "CPI cools to 2.4%" && r75[2].title === "Treasury yields spike" && r75[0].rank === 1 && r75[2].rank === 3);
+  ok("[77] rank: the score never leaves the ranker — the emitted shape carries no number",
+    r75.every((h) => !("score" in h)) && JSON.stringify(Object.keys(r75[0])) === JSON.stringify(["rank", "title", "source", "as_of", "category"]));
+  ok("[77] rank: uncapped, the 4-day-old and the 2-day-future items are still dropped, the non-material never enters, and the order is the category order",
+    (() => { const all = rankHeadlines(items75, NOW75, { limit: 9 });
+      return all.length === 5 && all.map((h) => h.category).join() === "policy,inflation,rates_credit,market_wide,energy" &&
+        !all.some((h) => /Payrolls|Peace|credit cards/.test(h.title)); })());
+  ok("[77] rank: two DIFFERENT Fed stories both survive — collapse is near-duplication, not topic",
+    rankHeadlines([{ title: "Fed holds rates steady", source: "A", pubDate: hAgo(1) },
+      { title: "Fed's Waller says rate cuts may come sooner", source: "B", pubDate: hAgo(2) }], NOW75).length === 2 &&
+    isNearDuplicate("Fed holds rates steady as Powell signals patience", "Fed holds rates steady, Powell signals patience") &&
+    !isNearDuplicate("Fed holds rates steady", "Fed's Waller says rate cuts may come sooner"));
+  ok("[77] rank: deterministic — two runs over the same input agree byte-for-byte; empty / null / all-non-material give []",
+    JSON.stringify(rankHeadlines(items75, NOW75)) === JSON.stringify(rankHeadlines([...items75], NOW75)) &&
+    rankHeadlines([], NOW75).length === 0 && rankHeadlines(null, NOW75).length === 0 &&
+    rankHeadlines([{ title: "Best credit cards for travel in 2026", source: "MW", pubDate: hAgo(1) }], NOW75).length === 0);
+  ok("[77] parseTopHeadlines: garbage → [], and a stored list is RE-GATED — the Fidelity false positive can never ride a KV artifact onto the page",
+    parseTopHeadlines("{not json").length === 0 && parseTopHeadlines("[]").length === 0 && parseTopHeadlines(null).length === 0 &&
+    (() => { const p = parseTopHeadlines(JSON.stringify([{ title: "Fed holds rates steady", source: "MW" },
+        { title: "Fidelity now requires a death certificate to transfer an account", source: "MW" },
+        { title: "no source" }, { title: "CPI cools to 2.4%", source: "CNBC", as_of: "2026-09-02" }]));
+      return p.length === 2 && p[1].title === "CPI cools to 2.4%" && p[1].rank === 2 && p[1].as_of === "2026-09-02"; })());
+  // The parser reads EVERY item, attributed forms included, decodes entities, drops undated.
+  const RSS75 = `<?xml version="1.0"?><rss><channel><title>feed</title>
+    <item><title><![CDATA[Fed&#x2019;s Powell signals patience]]></title><pubDate>${new Date(T75 - 3600000).toUTCString()}</pubDate></item>
+    <item rdf:about="x"><title>CPI cools to 2.4%</title><pubDate>${new Date(T75 - 7200000).toUTCString()}</pubDate></item>
+    <item><title>Undated item</title></item>
+    <item><title>Best credit cards for travel</title><pubDate>${new Date(T75 - 1800000).toUTCString()}</pubDate></item>
+    </channel></rss>`;
+  ok("[77] parseRssItems: every <item> (attributed forms too), CDATA + hex entities decoded, the undated one dropped",
+    (() => { const p = parseRssItems(RSS75);
+      return p.length === 3 && p[0].title === "Fed’s Powell signals patience" && p[1].title === "CPI cools to 2.4%" &&
+        Number.isFinite(p[0].pubMs) && !p.some((x) => /Undated/.test(x.title)); })());
+  // fetchHeadlines, RUN against a stubbed fetch — the diagnosis the 9/2 blank never had.
+  const runFetch = async (route) => {
+    const realFetch = globalThis.fetch;
+    globalThis.fetch = async (url) => route(String(url));
+    const statuses = [];
+    try { const out = await fetchHeadlines(statuses, NOW75); return { out, statuses }; }
+    catch (e) { return { err: e, statuses }; }
+    finally { globalThis.fetch = realFetch; }
+  };
+  const rssOf = (titles) => `<rss><channel>${titles.map((t) => `<item><title>${t}</title><pubDate>${new Date(T75 - 3600000).toUTCString()}</pubDate></item>`).join("")}</channel></rss>`;
+  const okRes = (body) => new Response(body, { status: 200 });
+  const mixed = await runFetch((u) => /mw_topstories/.test(u) ? new Response("down", { status: 500 })
+    : /100003114/.test(u) ? okRes(rssOf(["Treasury yields spike", "Best credit cards for travel"]))
+    : /RSSMarketsMain/.test(u) ? Promise.reject(new TypeError("fetch failed"))
+    : okRes(rssOf(["How to pick a financial advisor"])));
+  ok("[77] fetchHeadlines: each feed is a status row — a 500, a network fault and two OK feeds are three DIFFERENT records",
+    (() => { const s = mixed.statuses;
+      const mw = s.find((x) => x.source === "rss" && x.item === "MarketWatch"), wsj = s.find((x) => x.item === "WSJ Markets");
+      const cnbc = s.find((x) => x.item === "CNBC");
+      return mw && mw.ok === false && mw.http_status === 500 && wsj && wsj.ok === false && wsj.error_class === "network" &&
+        cnbc && cnbc.ok === true && cnbc.items === 2; })());
+  ok("[77] fetchHeadlines: ONE group record states the pipeline — feeds_ok / candidates / material / ranked — and rank #1 rides marketHeadline",
+    (() => { const g = mixed.statuses.find((x) => x.item === "ranked");
+      return g && g.ok === true && g.feeds_ok === 2 && g.candidates === 3 && g.material === 1 && g.ranked === 1 &&
+        mixed.out.marketHeadline === "Treasury yields spike" && mixed.out.marketHeadlineSource === "CNBC" &&
+        mixed.out.marketHeadlineAsOf === "2026-09-02" &&
+        JSON.parse(mixed.out.marketHeadlinesJson)[0].title === "Treasury yields spike" &&
+        !/score/.test(mixed.out.marketHeadlinesJson); })());
+  const dark = await runFetch(() => new Response("down", { status: 503 }));
+  ok("[77] fetchHeadlines: ALL feeds failing throws AND leaves a group record naming it — the 9/2 blank now has a diagnosis",
+    dark.err && /no fresh headline/.test(dark.err.message) &&
+    (() => { const g = dark.statuses.find((x) => x.item === "ranked"); return g && g.ok === false && g.feeds_ok === 0 && g.error_class === "network"; })());
+  const noise = await runFetch(() => okRes(rssOf(["How to pick a financial advisor", "Best credit cards for travel"])));
+  ok("[77] fetchHeadlines: feeds UP but nothing material is a different diagnosis (no_observation), never dressed as a network fault",
+    noise.err && (() => { const g = noise.statuses.find((x) => x.item === "ranked");
+      return g && g.ok === false && g.feeds_ok === 4 && g.candidates === 8 && g.material === 0 && g.error_class === "no_observation"; })());
+  ok("[77] wiring: the Phase-2 call site hands the collector in, and fetchHeadlines never uses a bare fetch",
+    (() => { const src = readSrc("../functions/api/snapshot.js");
+      const i = src.indexOf("export async function fetchHeadlines"), j = src.indexOf("\n}", i);
+      const body = src.slice(i, j);
+      return src.includes('withLastGood(env, "headline", () => fetchHeadlines(statuses))') &&
+        /fetchRetry\(/.test(body) && !/\bfetch\(/.test(body) && !src.includes("async function fetchHeadline()"); })());
+  ok("[77] SOURCES: marketHeadlinesJson is mapped, DERIVED from marketHeadline, public, and inherits the daily cadence (no CADENCE entry)",
+    SOURCES.marketHeadlinesJson && SOURCES.marketHeadlinesJson.path === "marketPulse.headline.topJson" &&
+    SOURCES.marketHeadlinesJson.kind === "str" && DERIVED_OF.marketHeadlinesJson === "marketHeadline" &&
+    !/marketHeadlinesJson/.test((readSrc("../src/sources.js").match(/const CADENCE = \{([\s\S]*?)\};/) || ["", ""])[1]) &&
+    MOCK_DATA.marketPulse.headline.topJson === "[]");
+  // WHY #3 renders the top-3 under the SAME gate the rank-1 passes, each re-checked material.
+  const top3 = JSON.stringify([{ title: "Fed holds rates steady", source: "MarketWatch" },
+    { title: "CPI cools to 2.4%", source: "CNBC" }, { title: "Treasury yields spike", source: "WSJ Markets" }]);
+  const withTop = (topJson, text = "Fed holds rates steady") => ({ ...MOCK_DATA, marketPulse: { ...MOCK_DATA.marketPulse,
+    headline: { text, source: "MarketWatch", topJson } } });
+  ok("[77] WHY #3: rank-1 verbatim, then items 2-3 verbatim with their sources — and the non-voting clause survives",
+    (() => { const w = computeFiveWhys(withTop(top3), fwRegime, fwOpts).whys[3];
+      return /Tracked context \(MarketWatch\): “Fed holds rates steady”/.test(w) && / · also “CPI cools to 2\.4%” \(CNBC\) · “Treasury yields spike” \(WSJ Markets\)/.test(w) &&
+        /never cast a vote/.test(w); })());
+  ok("[77] WHY #3: a stored list carrying the Fidelity false positive at rank 2 never prints it; garbage topJson degrades to rank-1 only",
+    (() => { const bad = JSON.stringify([{ title: "Fed holds rates steady", source: "MarketWatch" },
+        { title: "Fidelity now requires a death certificate to transfer an account", source: "MarketWatch" }]);
+      const w1 = computeFiveWhys(withTop(bad), fwRegime, fwOpts).whys[3];
+      const w2 = computeFiveWhys(withTop("{junk"), fwRegime, fwOpts).whys[3];
+      return !/death certificate/.test(w1) && !/also/.test(w1) && /“Fed holds rates steady”/.test(w2) && !/also/.test(w2); })());
+  ok("[77] WHY #3: a non-material rank-1 withholds the WHOLE slot — items 2-3 cannot rescue it (one gate, one way)",
+    (() => { const w = computeFiveWhys(withTop(top3, "Fidelity now requires a death certificate to transfer an account"), fwRegime, fwOpts).whys[3];
+      return /failed the macro-relevance filter/.test(w) && !/also/.test(w) && !/CPI cools/.test(w); })());
 }
 
 console.log(`\n=== SMOKE TEST: ${pass} passed, ${fail} failed ===`);

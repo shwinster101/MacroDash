@@ -71,7 +71,7 @@ const MOCK_DATA = {
     fearGreed:{ score:58, label:"Greed", prevWeek:44 },
     // DEC-31 (v3.2): Put/Call field removed — CBOE killed the free feed in 2019; retirement noted in footer.
     // FEAT-NEWS: top market headline — live overlay from RSS (marketHeadline/Source); mock is the fallback.
-    headline:{ text:"No live headline feed", source:"—" },
+    headline:{ text:"No live headline feed", source:"—", topJson:"[]" },
   },
   crossAsset:{
     treasury10y:{ current:4.32, d1:+0.08, w1:+0.12, m1:-0.15, yellowBand:0.10, series:[4.52,4.48,4.41,4.35,4.29,4.22,4.18,4.24,4.28,4.32] },

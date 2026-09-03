@@ -5,6 +5,47 @@ answers *"is it safe to be in the market?"* from live macro + market + sentiment
 data. Single-page React app on Cloudflare Pages, with live data assembled at the
 edge by Pages Functions and cached in KV.
 
+**v6.1.0 "RANKED HEADLINES" — the news slot stops reading the first item of one feed, and starts
+finding the highest-leverage macro headlines ($0, no LLM).** Owner question after the 9/2 tape
+("how much of this was actually noted in our system… searching for the real highest leverage
+headlines"), and the pull that answered it: the 10:02 ET build had gone headline-dark on a heavy
+news day with ZERO diagnostics — `fetchHeadline` was a plain `fetch` (no retry, no
+`recordStatus`), read the FIRST `<item>` of one feed, and its 7-day last-good had expired.
+**The one table.** `src/headlines.js` (pure, Node-importable — the third `functions/`→`src/`
+import) holds `HEADLINE_CATEGORIES`: the v3.51 allowlist VERBATIM (78 terms, pinned against the
+literal list), now grouped as DATA rather than comments, with an ASSERTED weight per category in
+the owner's selected order — policy 7 · inflation 6 · rates/credit 5 · market-wide 4 ·
+growth/labor 3 · energy 2 · systemic 1 · resolution 1 (one edit + one red pin to retune).
+`MACRO_TERMS` is DERIVED from it and `isMacroMaterial` moved with it (re-exported from
+`fiveWhys.js` so every consumer and pin is untouched) — the allowlist is behaviourally
+byte-identical, proven by the existing positives, the Fidelity false positive and the fail-closed
+pins all passing unchanged.
+**The doctrine, restated for a RANKER.** v3.51's "never rewritten, never scored" was written about
+ONE item's withhold decision. `rankHeadlines()` keeps it exactly: the allowlist is ONE-WAY and is
+applied FIRST; the score (`weight × 100 + recency ≤ 72`) only ORDERS survivors — it can never admit
+one, it never leaves the ranker as a number, and a multi-category title takes the MAX weight
+(a sum would reward keyword stuffing). Near-duplicates (two wires, one story — token Jaccard ≥ 0.6
+or an identical 8-token lead) collapse to the higher-ranked one; two DIFFERENT Fed stories both
+survive. The order of operations is the contract and is pinned in both directions.
+**The fetch is instrumented.** Four wire feeds (MarketWatch top, CNBC top, WSJ Markets, CNBC
+Economy — URLs are unpinned config; a feed that 403s at the edge is dropped, the Stooq lesson),
+EVERY `<item>` parsed (attributed forms included), two feeds at a time under the ~6-connection cap,
+through `fetchRetry` + per-feed `recordStatus`, plus ONE group record (`rss/ranked` — feeds_ok ·
+candidates · material · ranked) so "all feeds failed", "40 candidates, none material" and "ranked
+3" are three DIFFERENT diagnoses in `_diag.sources`. Rank #1 still rides `marketHeadline`; the
+top-3 ride the new `marketHeadlinesJson` (the `mag10PricesJson` precedent; DERIVED_OF
+`marketHeadline`; daily cadence inherited and documented). WHY #3 renders rank-1 verbatim, then
+"also …" for items 2-3 — under the SAME gate rank-1 passes, each RE-CHECKED material by
+`parseTopHeadlines`, so a stored KV artifact can never put a non-macro title in the slot, and a
+non-material rank-1 still withholds the whole slot (one gate, one way).
+Tests: **2204 smoke** (+21 over v6.0.2, smoke section [77]; all RUN — the verbatim-list reconciliation, weight monotonicity and
+the recency-never-flips proof, MAX-not-sum, the full ranking fixture uncapped, dedupe both ways,
+determinism, the re-gated parse, and `fetchHeadlines` driven against a stubbed fetch through
+three failure shapes) + 309 render + 253 public-render, `audit:prod` clean. Negative-controlled
+four ways — the gate removed, two weights overlapped, a bare `fetch`, a hand-copied term list —
+each turning exactly its own family of pins. Second half of the same owner ask, the 6pm CLOSE
+READ, is the next release (v6.2.0); the plan and its exploration are in the 9/2 working note.
+
 **v6.0.2 — the footer goes under a dropdown, and every parameter block is ruled word / icon /
 colour (owner, same review: "that very bottom blurb can go too. Under a dropdown. Next, review
 each data parameter block and what's key if needing a word or just an icon or color").** The
@@ -941,11 +982,15 @@ Jan-anchor shipped; see `snapshot.js` ~318–328), `spyMa100`, `spyMa200`, and a
   API (`api.elections.kalshi.com`, no auth/key). Takes the nearest open `KXFEDDECISION`
   event and aggregates its mutually-exclusive buckets (H0=hold · C25/C26=cut ·
   H25/H26=hike) by last traded price → normalized hold/cut/hike % + FOMC days-out.
-- **Top market headline** (`fetchHeadline`, FEAT-NEWS, v2.9.0): the one non-FRED, non-market
-  *news* source. Top item from a market RSS feed (Dow Jones/MarketWatch `mw_topstories`;
-  CNBC fallback). DATE-VERIFIED: parses the item `pubDate` and only accepts a headline ≤~3
-  days old, emitting its real ET date so `isStale` guards it. Feeds **WHY #3** of the 5 Whys.
-  Source + date are attributed (no automated claim-fact-checking; reputable wire + date gate).
+- **Top market headlines** (`fetchHeadlines`, FEAT-NEWS v2.9.0 → RANKED v6.1.0): the one
+  non-FRED, non-market *news* source. EVERY item from four wire RSS feeds (MarketWatch top ·
+  CNBC top · WSJ Markets · CNBC Economy — unpinned config), gated by the v3.51 ONE-WAY
+  materiality allowlist FIRST and then ORDERED by `src/headlines.js` (curated category
+  weights + recency, near-duplicates collapsed; $0, no LLM). DATE-VERIFIED: each item's
+  `pubDate` must be ≤~3 days old, emitting its real ET date so `isStale` guards it. Rank #1
+  rides `marketHeadline`, the top-3 ride `marketHeadlinesJson`; both feed **WHY #3**. Every
+  feed and the ranking itself are `recordStatus` rows in `_diag.sources`. Source + date are
+  attributed (no automated claim-fact-checking; reputable wire + date gate).
 - **AI token economics — the moat** (`fetchTokenomics`, v3.0): OpenRouter's **public** models
   API (`openrouter.ai/api/v1/models`, no key — like Kalshi). Blends a frontier-model basket
   into a median **$/Mtok** (3:1 in:out), tracks the cheapest-frontier floor, and accrues a
