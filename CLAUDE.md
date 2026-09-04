@@ -5,6 +5,89 @@ answers *"is it safe to be in the market?"* from live macro + market + sentiment
 data. Single-page React app on Cloudflare Pages, with live data assembled at the
 edge by Pages Functions and cached in KV.
 
+**v6.2.0 "THE CLOSE READ" — a second run at 6pm ET that is labeled, subordinate and UNSCORED;
+the 10am call stays THE call (owner question 9/2: "should we increase to 2x per day? second at
+4:30 ET?").** The exploration answered the literal question NO: at 4:30 FRED still holds
+yesterday's SPY/10Y/30Y/VIX, and "yesterday" counts as **0 sessions behind** by design, so both
+same-day failsafes stay OFF, `pairCboeVix` refuses a same-day quote as an intraday proxy, SPY has
+no second source, and four of the six voters would be byte-identical to the 10am freeze. A second
+SCORED call also collides structurally — the history key is a bare ET date, first-write-wins;
+`refresh.js` hands any later cron the MORNING's frozen call; the outcome anchor would score a
+close the call already saw. So (owner rulings, five): a **CLOSE READ at 18:00**, unscored; the
+same six-factor engine; **both modes render ONE labeled line** in the drift slot (its designed
+successor — no new Simple element, the freeze untouched); **`/readout.json` untouched** (no
+`close_read` sibling, so the tt-v1 body and every receipt hash never change at 18:00).
+**The clock, as a function.** `expectedObsDate(now)` (`src/sources.js`) answers a DIFFERENT
+question from `sessionsBehind` — "should today's close be published by now?" — today on a session
+day at/after **16:15 ET** (`CLOSE_PUBLISHED_ET`, asserted, boundary-pinned), else the prior
+session (weekends and `MARKET_HOLIDAYS` walked). `failsafeDue({dead, asOf, now, edition})` is
+now the ONE trigger for both same-day failsafes: the day edition is the two old predicates
+verbatim in behaviour (RUN in smoke, incl. the live 8/21 case), and only `edition:"close"` adds
+the clock question — the day key's evening behaviour is unchanged by construction.
+**The build.** `buildSnapshot(env, {edition:"close", now})` → `POST /api/snapshot/refresh` with
+`edition:"close"` builds the candidate with **NO `publishIfNoWorse`** (the day key is the basis
+every open receipt hashed and the basis the scored call was projected from), parks it under a
+48h side key, and returns `close_read` with `published:false` stated. `src/closeRead.js`
+(pure): `buildCloseRead` → **md-close-read-v1**, whose `read` is a REAL md-call-v1 from
+`buildMacroCall` — the edition lives ONLY in the envelope, so `validFrozenCall`,
+`captureDailyCall` and the tt-alloc binding cannot see it (pinned: the read's JSON contains no
+"close"); `classifyLegs` splits the daily legs into **same-day vs prior-or-undated** (an undated
+leg cannot claim same-day); a display-only **Finnhub SPY last print** (`fetchSpyClose`) is
+accepted ONLY when its trade timestamp lands on `expectedObsDate` (a mis-dated print is REFUSED,
+never relabelled — the `pairCboeVix` rule), is banded, is NOT in `SOURCES`, never reaches the day
+edition and no merge helper names it (`mergeFresherLeg` replaces a leg WHOLE and would blind the
+crash circuit); labelled "last print (display-only)" because whether `c` after 16:00 is the
+regular session's last trade or extended-hours is UNVERIFIED here — night-1 measurement.
+**The record.** Its own key family, `public:close-read:v1:<date>` (`CLOSE_READ_RECORD_SCHEMA`,
+`validCloseRead` serves a FAILED capture as itself), joined INTO the day's row by
+`/history.json` as `close_read` (the outcome-companion precedent; row count = scored calls) with
+`close_reads_orphaned` naming a read that has no 10am row — never a manufactured row, so an
+absent 10am row still means the 10am branch never ran (the Friday-miss diagnostic property,
+RUN as a control). `enrichHistoryOutcomes` over a KV holding only close records updates nothing.
+**The Worker.** `SNAPSHOT_CLOSE_CRON = "0 22 * * MON-FRI"` (EST → `"0 23"`) — a FIFTH trigger;
+⚠ its summer string is byte-identical to SETUP.md's documented WINTER legacy string, so smoke
+now pins **five DISTINCT** TOML strings and a five-distinct DST block, all three constants
+dispatched, and the collision NAMED in three homes. `refreshSnapshot(env,{edition,job})` has **no
+GET fallback** for the close edition (a GET cannot build one and would be a cache hit dressed as
+a run) — it records FAILED naming the token; one bounded retry on the 60s cooldown.
+`captureCloseRead` mirrors `captureDailyCall` and never touches `historyKey`. `recordWarm` now
+writes a **per-job key** (`pulse:cron:lastwarm:<job>`) beside the summary, so the 10am record's
+freeze + outcomes legs survive the 6pm run (RUN: 10am then close, the 10am per-job record
+intact); `_diag.cronJobs` reads them beside `cronLastWarm`.
+**The surfaces.** `useMarketData` carries `publicCloseRead`; `closeReadLine` (ONE builder)
+feeds the hero: `6pm close read: MOONING 🚀 · BULLISH — the scored 10am call remains frozen
+above` (or `— unscored; no 10am call was frozen today`), coloured only when it DISAGREES with the
+frozen call, muted when it agrees; the v5.5 live-drift line survives as the fallback with no
+read; a FAILED capture renders nothing on the hero (history carries it). The sentence is now
+suppressed only when a subordinate read on screen DISAGREES with the primary call (re-pinned).
+**Three call editions**: `CALL_EDITIONS = 10AM CALL · CLOSE READ · LIVE READ`; both clipboard
+builders take `{edition}`, an UNKNOWN edition falls to **LIVE READ** — the weakest claim, even
+beside `frozen:true`; the share card stays exactly five lines (CLOSE READ swaps line 5 to the
+unscored disclaimer); **"⎘ DAILY CALL" is retired** (ambiguous once two daily artifacts exist)
+→ `⎘ ${callEdition}` plus a `⎘ CLOSE READ` export that renders only once captured. `/history`
+prints the read inside the row with its same-day legs and ET clock, or `CAPTURE FAILED — reason`.
+Simple budgets re-measured WITH the line (cards ≤420 · strip ≤660 at 390×844 — printed, not
+loosened). **Owner action to make it fire:** `cd worker && npx wrangler deploy` (Pages alone
+ships the surfaces; the cron is the Worker's) — then the Triggers panel must show FIVE crons,
+every "Next run" a weekday. **Measure, don't assume, on night 1:** `legs_same_day` (expect
+10Y/30Y via UST; VIX only if CBOE's daily file carries today's row by 18:00, else honestly T-1),
+and the Finnhub SPY leg against the next morning's FRED `spyPrice` — if it reflects
+extended-hours trades, DROP the leg, never relabel it "close".
+Tests: **2240 smoke** (+36, section [78]: the clock at every boundary, the ONE predicate on both
+editions, the SPY leg accepted/refused/config/no-observation, leg classification, the envelope
+vs the read, the record validator and the two key families never crossing, the hero line, all
+three editions, the close-edition endpoint leaving the DAY KEY ABSENT, capture first-write-wins
+and four FAILED shapes, the scheduled close arm end-to-end with the Friday-miss control, the
+per-job heartbeat surviving, the no-token path, history join + orphans, outcomes untouched,
+snapshot/readout emission; [67] re-pinned to five distinct + the DST block) + 309 render +
+**269 public-render** (+16: the line in Power, Simple and the public route; muted-when-agreeing
+vs coloured; the drift fallback; FAILED renders nothing; OPS editions + a real CLOSE READ copy;
+the Simple budgets measured with the line; /history rows). Negative-controlled eight ways —
+the 16:15 boundary moved, the edition gate dropped, the close arm routed through
+`captureDailyCall`, the per-job heartbeat dropped, the close branch publishing the day key, an
+unknown edition mapped to 10AM CALL, a duplicated `0 22` in the TOML, and `pairCboeVix`
+accepting a same-day quote — each turning exactly its own family of pins.
+
 **v6.1.0 "RANKED HEADLINES" — the news slot stops reading the first item of one feed, and starts
 finding the highest-leverage macro headlines ($0, no LLM).** Owner question after the 9/2 tape
 ("how much of this was actually noted in our system… searching for the real highest leverage
@@ -5808,8 +5891,10 @@ Jan-anchor shipped; see `snapshot.js` ~318–328), `spyMa100`, `spyMa200`, and a
 ### Cron Worker (`worker/`, deployed separately)
 - `cd worker && npx wrangler deploy`; secrets per `worker/SETUP.md` §3.
 - Binds the **same `PULSE_CACHE` KV namespace** (so its writes are visible to Pages).
-- **Four** weekday crons (UTC — see the DST note in `wrangler.toml`; shift +1h for standard
-  time twice a year, **in TOML and cron.js together** — dispatch is exact-string): two
+- **Five** weekday crons (UTC — see the DST note in `wrangler.toml`; shift +1h for standard
+  time twice a year, **in TOML and cron.js together** — dispatch is exact-string; v6.2 added
+  the **6pm ET close read** `"0 22 * * MON-FRI"`, whose summer string collides with the winter
+  legacy string — smoke pins five DISTINCT entries): two
   *legacy* FRED pulls (write `pulse:macro:latest`, 26h TTL), the **8am ET pre-open warm**
   (no secret), and the **10am ET force-refresh** (`REFRESH_TOKEN`, set on BOTH the Worker
   and Pages — without it the job degrades to a GET, a cache hit after the warm).
@@ -5822,10 +5907,10 @@ Jan-anchor shipped; see `snapshot.js` ~318–328), `spyMa100`, `spyMa200`, and a
 | Variable | Deploy | Required? | Feature | Absent ⇒ |
 |---|---|---|---|---|
 | `FRED_KEY` | Pages + Worker | for live macro | FRED snapshot + legacy crons | macro tiles mock |
-| `FINNHUB_KEY` | Pages | optional | QQQ quotes + TT quotes/facts | equities mock |
+| `FINNHUB_KEY` | Pages | optional | QQQ quotes + TT quotes/facts + the 6pm SPY last-print leg (display-only, v6.2) | equities mock; the close read's SPY leg absent |
 | `OPENROUTER_KEY` | Pages | optional | token VOLUME (Q leg, v3.89) | volume mock; price leg unaffected |
 | `KALSHI_KEY_ID` + `KALSHI_PRIVATE_KEY` | Pages | optional | keyed Kalshi transport (v3.99.1) | anonymous transport (shared 429 bucket) |
-| `REFRESH_TOKEN` | Pages + Worker (same value) | for 10am force-refresh | `POST /api/snapshot/refresh` | GET fallback = cache hit, no refresh |
+| `REFRESH_TOKEN` | Pages + Worker (same value) | for the 10am force-refresh AND the 6pm close read | `POST /api/snapshot/refresh` (both editions) | 10am: GET fallback = cache hit, no refresh · 6pm: a FAILED close-read record naming the token (no GET fallback) |
 | `REFRESH_SECRET` | Worker | legacy only | Worker's own `POST /refresh` | endpoint 403s |
 | `DEBUG_TOKEN` | Pages | optional | `?debug=<token>` diagnostics on `/api/snapshot` **and** `/readout.json` | diagnostics off for everyone (fail closed) |
 | `TT_PIN` (or `ACCESS_TEAM_DOMAIN`+`ACCESS_AUD`) | Pages | for the terminal | `/api/tt` + every PIN-gated route | 503 fail closed / Access mode |

@@ -76,4 +76,31 @@ cannot identify).
 
 ## Outcomes — PR2 v6.2.0 "THE CLOSE READ"
 
-_(pending — appended when it lands)_
+- **Built as planned, with these deltas from the plan text:** smoke section is **[78]** (not
+  [76] — v6.0.1/v6.0.2 took [75]/[76] on main, PR1 took [77]); the SPY leg is labelled
+  **"last print (display-only)"** rather than "close", because whether Finnhub's `c` after
+  16:00 is the regular-session last trade is unverified from this sandbox — the weaker true
+  label until night 1 measures it; `closeReadLine` returns a `label` + `frozen`/`differs` and
+  the hero composes the sentence; `_diag.cronJobs` reads the three per-job heartbeat keys.
+- **Files:** `src/sources.js` (`CLOSE_PUBLISHED_ET` · `isSessionDay` · `etClock` ·
+  `expectedObsDate`), `src/closeRead.js` (new), `src/publicHistory.js` (the close-read key
+  family + `validCloseRead`), `src/macroCall.js` (`CALL_EDITIONS` · `callEdition` · both
+  formatters take `{edition}`), `functions/api/snapshot.js` (`failsafeDue` · `buildSnapshot`
+  edition/now · `fetchSpyClose` · `publicCallMeta` · `cronDiag`/`CRON_JOBS` · `BANDS.spyClose`),
+  `functions/api/snapshot/refresh.js` (the close branch, `appendAttempt`),
+  `functions/history.json.js` (join + orphans), `worker/cron.js` (`SNAPSHOT_CLOSE_CRON` ·
+  per-job `recordWarm` · `refreshSnapshot({edition,job})` · `captureCloseRead` · the arm),
+  `worker/wrangler.toml` + `worker/SETUP.md` (five, the collision), `src/useMarketData.js`,
+  `src/dashboard.jsx`, `src/sections/RegimeBand.jsx` (298 lines — two comment blocks trimmed
+  to stay under the 300 bound), `src/PublicPages.jsx`.
+- **Gates:** 2240 smoke (+36) · 309 render · 269 public-render (+16) · audit clean. Eight
+  negative controls, each turning only its own family (recorded in the release block).
+- **Unverified until the Worker deploys (owner action, `cd worker && npx wrangler deploy`):**
+  which legs actually read same-day at 18:00 (`legs_same_day` on the first record), whether
+  CBOE's daily file carries today's row by 18:00, and the Finnhub SPY print vs the next
+  morning's FRED proxy. Pages alone ships the surfaces and the endpoint; the cron is the
+  Worker's, and until it deploys the hero simply keeps rendering the v5.5 drift line.
+- **Correction to the survey:** none of the exploration facts turned out wrong; one design
+  detail did — the plan had `closeReadLine → {headline, emoji, direction, differs}` and the
+  hero composing from those; the shipped builder also carries `label`, `frozen` and
+  `legs_same_day` so the /history line and the hero read the same object.

@@ -22,14 +22,14 @@
 // inlines it). sources.js is pure ESM, no React — the ONE market-holiday table feeds
 // marketSession/looksBehind here and isStale/etSession client-side, so the two sides
 // can never disagree about which weekdays had a session.
-import { isMarketHoliday, sessionsBehind, etYmd } from "../../src/sources.js";
+import { isMarketHoliday, sessionsBehind, etYmd, expectedObsDate } from "../../src/sources.js";
 // FEAT-SAHM (v3.84): the Sahm math — one home (src/sahm.js), same esbuild-inline path.
 import { sahmFrom } from "../../src/sahm.js";
 
 // ENGINE0-CONT: the readout contract now lives in src/ttReadout.js and the snapshot layer
 // consumes it for publish decisions — THIRD functions/→src/ import, same esbuild-inline path.
 import { buildTtReadout, readoutQuality, compareQuality } from "../../src/ttReadout.js";
-import { historyKey, validFrozenCall } from "../../src/publicHistory.js";
+import { historyKey, validFrozenCall, closeReadKey, validCloseRead } from "../../src/publicHistory.js";
 // v6.1.0: the ranked headline layer — allowlist first, then order (src/headlines.js header).
 import { rankHeadlines, isMacroMaterial } from "../../src/headlines.js";
 
@@ -80,6 +80,7 @@ export const BANDS = {
   mortgage30:   [0, 25],
   fearGreed:    [0, 100],      // index is defined 0-100
   spyPrice:     [1, 100000],
+  spyClose:     [1, 100000],   // v6.2: the display-only Finnhub SPY leg — the failsafe is not a bypass
   spxIndex:     [1, 1000000],
   qqqPrice:     [1, 100000],
   wti:          [-100, 1000],  // NEGATIVE IS REAL: WTI settled -$37.63 on 2020-04-20
@@ -160,15 +161,36 @@ export function quorum(live) {
            missing: QUORUM_FIELDS.filter((k) => !present.includes(k)) };
 }
 
-async function frozenPublicCall(env, etDate) {
+/* v6.2: ONE meta reader for both serve paths — the frozen 10am call (unchanged) plus the
+   6pm CLOSE READ record from its own key family (validCloseRead serves a FAILED capture
+   as itself, so the client can tell "no read tonight" from "no read yet"). Each fails to
+   null on its own; a KV fault on one never blanks the other. */
+async function publicCallMeta(env, etDate) {
+  const meta = { publicCall: null, publicCallFrozen: false, publicCallCapturedAt: null, publicCloseRead: null };
   try {
     const record = await env.PULSE_CACHE?.get(historyKey(etDate), "json");
     const call = validFrozenCall(record, etDate);
-    return call ? { publicCall: call, publicCallFrozen: true, publicCallCapturedAt: record.captured_at || null }
-      : { publicCall: null, publicCallFrozen: false, publicCallCapturedAt: null };
-  } catch {
-    return { publicCall: null, publicCallFrozen: false, publicCallCapturedAt: null };
+    if (call) { meta.publicCall = call; meta.publicCallFrozen = true; meta.publicCallCapturedAt = record.captured_at || null; }
+  } catch { /* fail to null */ }
+  try {
+    const cr = await env.PULSE_CACHE?.get(closeReadKey(etDate), "json");
+    meta.publicCloseRead = validCloseRead(cr, etDate);
+  } catch { /* fail to null */ }
+  return meta;
+}
+/* v6.2: cron health for ?debug — the summary key (pulse:cron:lastwarm, every run of every
+   job) PLUS the per-job keys the Worker writes beside it, so the 10am record's freeze and
+   outcome legs are still readable after the 6pm run overwrote the summary. */
+export const CRON_JOBS = Object.freeze(["prewarm-8amET", "refresh-10amET", "close-6pmET"]);
+async function cronDiag(env) {
+  const out = {};
+  try { const w = await env.PULSE_CACHE?.get("pulse:cron:lastwarm", "json"); if (w) out.cronLastWarm = w; } catch { /* diagnostic only */ }
+  const jobs = {};
+  for (const job of CRON_JOBS) {
+    try { const w = await env.PULSE_CACHE?.get(`pulse:cron:lastwarm:${job}`, "json"); if (w) jobs[job] = w; } catch { /* diagnostic only */ }
   }
+  if (Object.keys(jobs).length) out.cronJobs = jobs;
+  return out;
 }
 
 export async function onRequest(context) {
@@ -191,7 +213,7 @@ export async function onRequest(context) {
   // SYNC HAZARD: this key version is duplicated in worker/cron.js (refreshSnapshot) and
   // functions/readout.json.js — no shared module spans them. Grep "pulse:snapshot:v" on every bump.
   const cacheKey = `pulse:snapshot:v16:${etDate}`; // v16: official NSA headline/core CPI series
-  const callMeta = await frozenPublicCall(env, etDate);
+  const callMeta = await publicCallMeta(env, etDate);
 
   // ── 1. KV Cache check ─────────────────────────────────────────────────
   try {
@@ -208,12 +230,7 @@ export async function onRequest(context) {
       // ?debug=1: attach the cron Worker's last warm/refresh outcome (pulse:cron:lastwarm)
       // so a silently-blocked 8am/10am warm is visible from a browser, not only wrangler tail.
       // Read fresh here — the copy frozen in the day's cached _diag would mask a later failure.
-      if (debug) {
-        try {
-          const w = await env.PULSE_CACHE?.get("pulse:cron:lastwarm", "json");
-          if (w) fresh._diag = { ...(fresh._diag || {}), cronLastWarm: w };
-        } catch { /* diagnostic only */ }
-      }
+      if (debug) fresh._diag = { ...(fresh._diag || {}), ...(await cronDiag(env)) };
       return json(publicize({ ...fresh, ...callMeta, cached: true }));
     }
   } catch {
@@ -234,12 +251,7 @@ export async function onRequest(context) {
 
   // ?debug=1: attach cron warm health AFTER the cache write, so the marker is always read
   // fresh at serve time and never frozen into the day's cached _diag.
-  if (debug) {
-    try {
-      const w = await env.PULSE_CACHE?.get("pulse:cron:lastwarm", "json");
-      if (w) snapshot._diag.cronLastWarm = w;
-    } catch { /* diagnostic only */ }
-  }
+  if (debug) Object.assign(snapshot._diag, await cronDiag(env));
 
   // ── 4. Return (strip FMP/licensed fields if public view; _diag only on ?debug=1) ──
   return json(publicize(isPublic ? { ...stripPrivate(snapshot), ...callMeta, cached: false }
@@ -252,8 +264,30 @@ export async function onRequest(context) {
 //                    NASDAQ100, F&G, Kalshi); non-gating feeds (headline, tokenomics,
 //                    equities, CAPE) are FILLED FROM priorLive so an operator recovering
 //                    Engine 0 never waits on — or loses — the add-ons.
-export async function buildSnapshot(env, { scope = "all", priorLive = null } = {}) {
+/* v6.2 — ONE trigger predicate for both same-day failsafes (UST for the 10Y/30Y, CBOE for
+   VIX). Day edition: dead, or sessionsBehind ≥ 1 — exactly the two lines it replaced,
+   byte-equivalent in behaviour. Close edition: ALSO when the leg's date is older than the
+   observation the clock says should exist (expectedObsDate) — a T-1 print at 18:00 is one
+   session behind for the close read's question and 0 for the morning's, and sessionsBehind
+   can only ever answer the second. Edition-gated so the day key's evening behaviour is
+   unchanged (generalizing is a separate ruling). Exported for smoke — a predicate is a
+   claim about a boundary. */
+export function failsafeDue({ dead = false, asOf = null, now = new Date(), edition = "day" } = {}) {
+  if (dead) return true;
+  const behind = sessionsBehind(asOf, now);
+  if (behind != null && behind >= 1) return true;
+  if (edition !== "close") return false;
+  return !asOf || String(asOf) < expectedObsDate(now);
+}
+
+// edition "day"   — the per-ET-day snapshot every consumer reads (the default; unchanged).
+// edition "close" — the 6pm CLOSE READ candidate (v6.2): same phases, time-aware failsafes,
+//                   plus the display-only Finnhub SPY leg. NEVER published to the day key —
+//                   refresh.js stores it under its own side key; readout.json never reads it.
+export async function buildSnapshot(env, { scope = "all", priorLive = null, edition = "day", now: nowIn = null } = {}) {
   const all = scope !== "critical";
+  const close = edition === "close";
+  const nowDate = nowIn ? new Date(nowIn) : new Date();
   const statuses = []; // per-upstream-item status records (§9) — protected diagnostics
   // Phase 1: FRED macro alone (critical series first at low concurrency inside fetchFred).
   const [fred] = await Promise.allSettled([fetchFred(env.FRED_KEY, statuses)]);
@@ -288,8 +322,10 @@ export async function buildSnapshot(env, { scope = "all", priorLive = null } = {
   const fredLegDead = fred.status !== "fulfilled" || fred.value.tenYear === undefined;
   const fredVixAsOf = fred.status === "fulfilled" ? fred.value.vixAsOf : null;
   const fredVixDead = fred.status !== "fulfilled" || fred.value.vix === undefined;
-  const needTsy = fredLegDead || sessionsBehind(fredTenAsOf) >= 1;
-  const needVix = fredVixDead || sessionsBehind(fredVixAsOf) >= 1;
+  // v6.2: one predicate (failsafeDue) — the day edition is the two old lines verbatim in
+  // behaviour; the close edition also asks whether TODAY's close should exist by now.
+  const needTsy = failsafeDue({ dead: fredLegDead, asOf: fredTenAsOf, now: nowDate, edition });
+  const needVix = failsafeDue({ dead: fredVixDead, asOf: fredVixAsOf, now: nowDate, edition });
   const settle = (p, set) => p.then((v) => set({ status: "fulfilled", value: v }),
                                     (e) => set({ status: "rejected", reason: e }));
   const jobs = [];
@@ -300,12 +336,16 @@ export async function buildSnapshot(env, { scope = "all", priorLive = null } = {
   // FEAT-TOKVOL (v3.85): the volume leg rides here too — the destructure and the
   // critical-scope skipped() arm move TOGETHER (positional).
   const skipped = () => Promise.reject(new Error("skipped (critical scope)"));
-  const [tokenomics, tokenVol, equities, shiller] = await Promise.allSettled(all ? [
+  // v6.2: the display-only SPY leg rides Phase 3 on the CLOSE edition only. Deliberately
+  // NOT on withLastGood — a leg whose whole contract is "dated today" must never be served
+  // from a stored yesterday; a miss is a miss.
+  const [tokenomics, tokenVol, equities, shiller, spyClose] = await Promise.allSettled(all ? [
     withLastGood(env, "tokenomics", () => fetchTokenomics(env)),
     withLastGood(env, "tokenvol", () => fetchTokenVolume(env, statuses)),
     withLastGood(env, "equities", () => fetchEquities(env, statuses)),
     withLastGood(env, "shiller", fetchShiller), // CAPE for the regime's valuation vote
-  ] : [skipped(), skipped(), skipped(), skipped()]);
+    close ? fetchSpyClose(env, statuses, nowDate) : Promise.reject(new Error("not needed (day edition)")),
+  ] : [skipped(), skipped(), skipped(), skipped(), skipped()]);
 
   // ── Assemble live overlay (only fields with a valid value; mock covers the rest) ──
   const now = new Date().toISOString();
@@ -327,6 +367,7 @@ export async function buildSnapshot(env, { scope = "all", priorLive = null } = {
     ...(tokenVol.status === "fulfilled" ? tokenVol.value : {}),
     ...(equities.status === "fulfilled" ? equities.value : {}),
     ...(shiller.status === "fulfilled" ? shiller.value : {}),
+    ...(spyClose.status === "fulfilled" ? spyClose.value : {}),   // close edition only; never in SOURCES
   };
 
   // NASDAQ100 vs SP500 1-day relative strength — SAME-DATE-PAIRED (§5.3): a mismatched
@@ -366,6 +407,7 @@ export async function buildSnapshot(env, { scope = "all", priorLive = null } = {
     hasFredKey: !!env.FRED_KEY,
     hasKV: !!env.PULSE_CACHE,
     scope,
+    edition,
     bandDropped: droppedByBand.length ? droppedByBand : "none",
     fred: okOf(fred, fred.status === "fulfilled" ? `:${Object.keys(fred.value).length}` : ""),
     spy: okOf(spy),
@@ -379,6 +421,7 @@ export async function buildSnapshot(env, { scope = "all", priorLive = null } = {
     tokenVol: okOf(tokenVol),
     equities: okOf(equities, equities.status === "fulfilled" ? `:${Object.keys(equities.value).length}` : ""),
     shiller: okOf(shiller),
+    spyClose: close ? okOf(spyClose) : "not needed (day edition)",
     // §9: per-upstream-item detail (http status / error class / attempts / latency) —
     // debug-token-gated like the rest of _diag; never in the public body.
     sources: statuses,
@@ -1555,6 +1598,50 @@ export async function fetchEquities(env, statuses = null) {
   }
   const mag = MAG10.filter((s) => quotes[s]).map((s) => ({ ticker: s, price: quotes[s].price, chgPct: quotes[s].chgPct }));
   if (mag.length) { out.mag10PricesJson = JSON.stringify(mag); out.mag10PricesJsonAsOf = asOf; }
+  return out;
+}
+
+/* v6.2 — the DISPLAY-ONLY SPY leg for the 6pm close read. FRED's SP500 (the SPY proxy the
+   whole stack reads) posts today's close overnight, so at 18:00 the proxy is still T-1;
+   Finnhub quotes SPY itself and its last print after the cash close is the freshest number
+   available. THREE rules, each load-bearing:
+   (1) NEVER MERGED into the spy* fields and never in SOURCES — mergeFresherLeg replaces a
+       leg WHOLE (deleting spyMa200/spySeries), so a merge would blind the crash circuit; the
+       Macro Flip keeps running on the FRED proxy pair and the close read's basis says so.
+   (2) ACCEPTED ONLY when Finnhub's trade timestamp falls on expectedObsDate(now) — a print
+       from any other date is not today's close, and a mis-dated print is REFUSED rather than
+       relabelled (the pairCboeVix rule, one leg over).
+   (3) LABELLED "last print", not "close": whether `c` after 16:00 is the regular session's
+       last trade or an extended-hours print is UNVERIFIED from this build environment (the
+       night-1 measurement in the working note) — a weak, true label until measured, and a
+       leg that is droppable without touching any vote. */
+export async function fetchSpyClose(env, statuses = null, now = new Date()) {
+  const key = env.FINNHUB_KEY;
+  if (!key) throw Object.assign(new Error("FINNHUB_KEY not set"), { error_class: "config" });
+  const expected = expectedObsDate(now);
+  let q;
+  try {
+    const r = await fetchRetry(`https://finnhub.io/api/v1/quote?symbol=SPY&token=${key}`,
+      { headers: { Accept: "application/json" } }, 2, 9000);
+    q = await r.json();
+  } catch (e) { recordStatus(statuses, "finnhub", "SPY_close", e); throw e; }
+  const price = parseFloat(q?.c), prev = parseFloat(q?.pc), t = Number(q?.t);
+  const tradeDate = Number.isFinite(t) && t > 0 ? etYmd(new Date(t * 1000)) : null;
+  if (!Number.isFinite(price) || price <= 0 || !tradeDate) {
+    const err = Object.assign(new Error("SPY: no dated quote"), { error_class: "no_observation" });
+    recordStatus(statuses, "finnhub", "SPY_close", err);
+    throw err;
+  }
+  if (tradeDate !== expected) {
+    const err = Object.assign(new Error(`SPY last print dated ${tradeDate}, expected ${expected} — refused, never relabelled`),
+      { error_class: "no_observation" });
+    recordStatus(statuses, "finnhub", "SPY_close", err, { trade_date: tradeDate, expected });
+    throw err;
+  }
+  recordStatus(statuses, "finnhub", "SPY_close", true, { observed_at: tradeDate });
+  const out = { spyClose: parseFloat(price.toFixed(2)), spyCloseAsOf: tradeDate,
+    spyCloseSource: "Finnhub SPY last print (display-only)" };
+  if (Number.isFinite(prev) && prev > 0) out.spyClosePrev = parseFloat(prev.toFixed(2));
   return out;
 }
 

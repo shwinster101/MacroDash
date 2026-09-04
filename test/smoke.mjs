@@ -44,16 +44,19 @@ import { plausible, applyBands, quorum, QUORUM_FIELDS, QUORUM_MIN, marketSession
   pairCboeVix, preferFresherVix,
   rateOddsStillOpen, chooseTtl, publishIfNoWorse, TTL_MEDIUM, TTL_LOW,
   fetchEquities, applyFieldLastGood, fetchHeadlines, parseRssItems,
+  failsafeDue, fetchSpyClose, CRON_JOBS,
   onRequest as getSnapshot } from "../functions/api/snapshot.js";
-import { etYmd } from "../src/sources.js";
+import { etYmd, expectedObsDate, isSessionDay, CLOSE_PUBLISHED_ET } from "../src/sources.js";
+import { CLOSE_LEGS, classifyLegs, buildCloseRead, closeReadLine } from "../src/closeRead.js"; // v6.2
 // UI-OVERHAUL Slice 1 (task 1.1): tokens are a real module now — smoke IMPORTS it (the v3.60
 // convention: the actual export is tested, immune to formatting drift) instead of regexing
 // hex values out of dashboard.jsx source text.
 import { DT, T as TOK_T } from "../src/design-tokens.js";
 import { fmt } from "../src/format.js"; // task 1.3: shared format helpers, tested by execution
-import { buildMacroCall, formatMacroCallPaste, formatMacroShareCard, CALL_SCHEMA } from "../src/macroCall.js";
-import { buildForwardOutcome, normalizeSp500Observations, outcomeKey, OUTCOME_SCHEMA } from "../src/publicHistory.js";
-import cronWorker, { captureDailyCall, enrichHistoryOutcomes, putWithRetry, warmSnapshot } from "../worker/cron.js";
+import { buildMacroCall, formatMacroCallPaste, formatMacroShareCard, CALL_SCHEMA, CALL_EDITIONS, callEdition } from "../src/macroCall.js";
+import { buildForwardOutcome, normalizeSp500Observations, outcomeKey, OUTCOME_SCHEMA,
+  CLOSE_READ_PREFIX, CLOSE_READ_SCHEMA, CLOSE_READ_RECORD_SCHEMA, closeReadKey, validCloseRead, validFrozenCall as validFrozenCallPH } from "../src/publicHistory.js";
+import cronWorker, { captureDailyCall, enrichHistoryOutcomes, putWithRetry, warmSnapshot, captureCloseRead } from "../worker/cron.js";
 import { onRequest as getHistory } from "../functions/history.json.js";
 import { onRequest as getReadout } from "../functions/readout.json.js";
 
@@ -1194,9 +1197,17 @@ ok("v4.1.5 merge: no UST at all is a byte-identical passthrough (the fallback is
    directions: the merge must be WIRED and the old blind spread must be ABSENT. A pin that
    only checks the new call passes while a blind `...treasury.value` sits beside it — the
    merge would then be computed, tested, and overridden (the v3.40/v3.54 defect shape). */
+/* v6.2 re-pin: the two inline predicates became ONE exported predicate (failsafeDue) so the
+   close edition could add its clock question; the day edition is proven byte-equivalent
+   in BEHAVIOUR below (the live 8/21 case RUN, and a same-day/undated day-edition control),
+   and the wiring pin now asserts the call carries the edition rather than the old literal. */
 ok("v4.1.5 trigger: the fallback fires on a LAG, not only on a dead leg (the live 8/21 case)",
   (() => { const src = readSrc("../functions/api/snapshot.js");
-    return /fredLegDead \|\| sessionsBehind\(fredTenAsOf\) >= 1/.test(src); })());
+    return /needTsy = failsafeDue\(\{ dead: fredLegDead, asOf: fredTenAsOf, now: nowDate, edition \}\)/.test(src) &&
+      failsafeDue({ dead: false, asOf: "2026-08-19", now: new Date("2026-08-21T14:00:00Z"), edition: "day" }) === true &&   // 08-20 missed
+      failsafeDue({ dead: true,  asOf: null,         now: new Date("2026-08-21T14:00:00Z"), edition: "day" }) === true &&
+      failsafeDue({ dead: false, asOf: "2026-08-20", now: new Date("2026-08-21T14:00:00Z"), edition: "day" }) === false &&  // T-1 = 0 behind
+      failsafeDue({ dead: false, asOf: null,         now: new Date("2026-08-21T14:00:00Z"), edition: "day" }) === false; })());  // undated leg present: unchanged
 ok("v4.1.5 wiring: the recency merge is the ONLY path into live — no blind treasury spread survives",
   (() => { const src = readSrc("../functions/api/snapshot.js");
     return /preferFresherRates\(fred\.status/.test(src) &&
@@ -1314,8 +1325,8 @@ ok("v5.1 CBOE: a decimal-shifted fallback value is still banded out — the fail
    and the trigger must fire on a LAG (the whole point — tonight's VIX was a lag, and a
    forced rebuild proved it was not transient). */
 ok("v5.1 trigger: the VIX failsafe fires on a LAG, not only on a dead leg",
-  (() => { const src = readSrc("../functions/api/snapshot.js");
-    return /needVix = fredVixDead \|\| sessionsBehind\(fredVixAsOf\) >= 1/.test(src); })());
+  (() => { const src = readSrc("../functions/api/snapshot.js");   // v6.2: through the ONE predicate (see the v4.1.5 re-pin)
+    return /needVix = failsafeDue\(\{ dead: fredVixDead, asOf: fredVixAsOf, now: nowDate, edition \}\)/.test(src); })());
 ok("v5.1 wiring: preferFresherVix is the ONLY path into live — no blind cboe spread survives",
   (() => { const src = readSrc("../functions/api/snapshot.js");
     return /preferFresherVix\(/.test(src) &&
@@ -4030,7 +4041,9 @@ ok("a11y B4: header actions carry 44px thumb targets at phone width",
   /\.hdr-act\{min-height:44px;min-width:44px/.test(dashSrc) &&
   // v3.94: +1 source site — the Simple|Power toggle (ONE mapped element rendering two
   // buttons at runtime) carries the same thumb-target class.
-  (dashSrc.match(/className="hdr-act"/g) || []).length === 5);
+  // v6.2: +1 — the ⎘ CLOSE READ clipboard button inside OPS (rendered only once a close
+  // read is captured) keeps the class like its ⎘ 10AM CALL / LIVE READ sibling.
+  (dashSrc.match(/className="hdr-act"/g) || []).length === 6);
 ok("a11y B4: sparklines are decorative (aria-hidden); the SPY chart has a TEXT equivalent",
   /\{spark&&<div aria-hidden="true"/.test(dtSrc) &&
   /its 200-day average of/.test(mdSrc));
@@ -6054,8 +6067,11 @@ ok("band: the module stays under the 300-line bound (Property 10)",
 // v4.0: the hero's explanation swaps by MODE — Simple gets simpleSentence + the scoped
 // plainVerdict, Power keeps postureSummary's compact one-liner and the moon voice. The
 // v3.97 `prose` prop is gone from the render (the cards carry that detail now).
+// v6.2 re-pin: the sentence is suppressed only when a SUBORDINATE read on screen disagrees
+// with the primary call — the live drift (as before) OR a captured close read that differs;
+// an agreeing close read leaves the sentence in place (closeReadNote?.differs).
 ok("band: the call site still passes the live wiring (+ v4.0: mode-swapped sentence and plainVerdict)",
-  /sentence=\{callDrift\?null:\(simple\?simpleS:\(!evidenceSet\.withheld&&evidenceSet\.summary\?evidenceSet\.summary\.sentence:null\)\)\}/.test(dashSrc) &&
+  /sentence=\{\(callDrift\|\|closeReadNote\?\.differs\)\?null:\(simple\?simpleS:\(!evidenceSet\.withheld&&evidenceSet\.summary\?evidenceSet\.summary\.sentence:null\)\)\}/.test(dashSrc) &&
   /plainVerdict=\{simple\?simpleV:null\} conf=\{regimeConf\}/.test(dashSrc) &&
   !/prose=\{/.test(dashSrc) &&
   // v3.98.3: the hero renders the EvidenceSet's OWN factor rows (which carry the real
@@ -7733,8 +7749,9 @@ console.log("\n[58] FEAT-TT-MAG7 — deck panel, basket average, honesty gates")
     /unrecognized response shape/.test(snapSrc) && /no usable token totals/.test(snapSrc) &&
     /latestDate/.test(snapSrc));   // several days in a response must never sum into one "day"
   ok("tokvol: the Phase-3 destructure and the critical-scope skipped() arm moved TOGETHER",
-    /\[tokenomics, tokenVol, equities, shiller\] = await Promise\.allSettled/.test(snapSrc) &&
-    /\[skipped\(\), skipped\(\), skipped\(\), skipped\(\)\]/.test(snapSrc));
+    // v6.2: a fifth positional slot — the close edition's display-only SPY leg — and a fifth skipped() arm.
+    /\[tokenomics, tokenVol, equities, shiller, spyClose\] = await Promise\.allSettled/.test(snapSrc) &&
+    /\[skipped\(\), skipped\(\), skipped\(\), skipped\(\), skipped\(\)\]/.test(snapSrc));
   // tokenDemand RUN — a string pin cannot prove window math.
   ok("tokvol: P×Q composes in WINDOW terms — −25% px × +40% vol = +5.0% over the same 11w span",
     (() => {
@@ -8702,12 +8719,19 @@ console.log("\n[67] v3.99.4 — runtime contract reconciliation");
   const tomlCrons = [...tomlCronBlock.matchAll(/"([^"]+)"/g)].map((m) => m[1]);
   const warmCron = cronSrc.match(/SNAPSHOT_WARM_CRON = "([^"]+)"/)?.[1];
   const prewarmCron = cronSrc.match(/SNAPSHOT_PREWARM_CRON = "([^"]+)"/)?.[1];
-  ok("crons: TOML declares exactly four triggers", tomlCrons.length === 4);
-  ok("crons: both cron.js dispatch constants exist in the TOML (an orphaned constant never fires)",
-    !!warmCron && !!prewarmCron && tomlCrons.includes(warmCron) && tomlCrons.includes(prewarmCron));
+  const closeCron = cronSrc.match(/SNAPSHOT_CLOSE_CRON = "([^"]+)"/)?.[1];   // v6.2
+  /* v6.2: FIVE, and DISTINCT — the summer close-read string ("0 22") is byte-identical to the
+     documented WINTER legacy string, so a half-done November edit could carry a duplicate
+     that dispatches the legacy fire into the close arm. A Set catches that shape. */
+  ok("crons: TOML declares exactly five DISTINCT triggers", tomlCrons.length === 5 && new Set(tomlCrons).size === 5);
+  ok("crons: all three cron.js dispatch constants exist in the TOML (an orphaned constant never fires)",
+    !!warmCron && !!prewarmCron && !!closeCron && [warmCron, prewarmCron, closeCron].every((c) => tomlCrons.includes(c)));
+  ok("crons: the close constant carries its EST variant and the collision warning beside it",
+    /SNAPSHOT_CLOSE_CRON = "0 22 \* \* MON-FRI"; \/\/ 6pm America\/New_York \(EDT\); EST -> "0 23 \* \* MON-FRI"/.test(cronSrc) &&
+    /COLLISION/.test(cronSrc));
   // Dispatch is exact-string with a LEGACY fallthrough, so any TOML cron that matches no
   // constant runs the legacy FRED path. Exactly the two documented legacy pulls may do that.
-  const legacy = tomlCrons.filter((c) => c !== warmCron && c !== prewarmCron);
+  const legacy = tomlCrons.filter((c) => c !== warmCron && c !== prewarmCron && c !== closeCron);
   ok("crons: every TOML trigger is either a dispatch constant or one of the TWO documented legacy pulls " +
      "(a third fallthrough = a silently misrouted job)",
     legacy.length === 2 && legacy.includes("30 12 * * MON-FRI") && legacy.includes("0 21 * * MON-FRI"));
@@ -8723,13 +8747,22 @@ console.log("\n[67] v3.99.4 — runtime contract reconciliation");
     Object.values(dowSurfaces).every((s) => !/\* \* 1-5/.test(s) && !/\*\+\*\+1-5/.test(s)));
   ok("crons: every TOML trigger names its weekdays (a numeric DOW is the 2026-08-28 Friday miss)",
     tomlCrons.length > 0 && tomlCrons.every((c) => /\* MON-FRI$/.test(c)));
-  ok("crons: scheduled() actually compares controller.cron against both constants",
+  ok("crons: scheduled() actually compares controller.cron against all three constants",
     /controller\.cron === SNAPSHOT_PREWARM_CRON/.test(cronSrc) &&
-    /controller\.cron === SNAPSHOT_WARM_CRON/.test(cronSrc));
-  ok("crons: SETUP.md documents all FOUR (it said 'three triggers' while TOML carried four — " +
+    /controller\.cron === SNAPSHOT_WARM_CRON/.test(cronSrc) &&
+    /controller\.cron === SNAPSHOT_CLOSE_CRON/.test(cronSrc));
+  ok("crons: SETUP.md documents all FIVE (it said 'three triggers' while TOML carried four — " +
      "and its DST block would have deleted the prewarm)",
-    /\*\*four\*\* triggers/i.test(setupSrc) &&
-    tomlCrons.every((c) => setupSrc.includes(c)) && /four\*\* crons are listed/.test(setupSrc));
+    /\*\*five\*\* triggers/i.test(setupSrc) &&
+    tomlCrons.every((c) => setupSrc.includes(c)) && /five\*\* crons are listed/.test(setupSrc));
+  // v6.2: the DST block is the one operators copy in November — five strings, distinct, with
+  // the close read's WINTER string ("0 23") present and the collision NAMED beside the "0 22"
+  // that is the legacy pull's winter slot.
+  const dstBlock = (setupSrc.match(/crons = \[([\s\S]*?)\]/)?.[1] || "").split("\n").map((l) => l.replace(/#.*$/, "")).join("\n");
+  const dstCrons = [...dstBlock.matchAll(/"([^"]+)"/g)].map((m) => m[1]);
+  ok("crons: SETUP.md's DST block carries five DISTINCT winter strings incl. \"0 23 * * MON-FRI\", and names the collision",
+    dstCrons.length === 5 && new Set(dstCrons).size === 5 && dstCrons.includes("0 23 * * MON-FRI") &&
+    dstCrons.includes("0 22 * * MON-FRI") && /collision/i.test(setupSrc) && dstCrons.every((c) => /\* MON-FRI$/.test(c)));
 
   // ── refresh credential: the ACTIVE name is documented where operators read ──
   ok("refresh: SETUP.md instructs REFRESH_TOKEN for the active path, on BOTH deploys",
@@ -10670,7 +10703,8 @@ console.log("\n[73] v5.3 ONE CALL — canonical vocabulary, additive API, immuta
     /\.\.\.readout, call, call_frozen: callFrozen/.test(refreshSrc) &&
     /const refreshed = await refreshSnapshot\(env\)/.test(workerSrc) &&
     /refreshed\?\.call \|\| null/.test(workerSrc) &&
-    /call: body\?\.published \? \(body\?\.readout\?\.call \|\| null\) : null/.test(workerSrc));
+    // v6.2: the day path is unchanged in meaning; the close edition explicitly never yields a `call`.
+    /call: !close && body\?\.published \? \(body\?\.readout\?\.call \|\| null\) : null/.test(workerSrc));
   ok("v5.4 deploy gate: docs require REFRESH_TOKEN on both Worker and Pages and name both verification commands",
     /wrangler secret list/.test(setupSrc) && /wrangler pages secret list --project-name macrodash/.test(setupSrc) &&
     /REFRESH_TOKEN.*both lists/s.test(setupSrc));
@@ -10981,6 +11015,237 @@ console.log("\n[77] v6.1.0 ranked headlines — one table, order, dedupe, diagno
   ok("[77] WHY #3: a non-material rank-1 withholds the WHOLE slot — items 2-3 cannot rescue it (one gate, one way)",
     (() => { const w = computeFiveWhys(withTop(top3, "Fidelity now requires a death certificate to transfer an account"), fwRegime, fwOpts).whys[3];
       return /failed the macro-relevance filter/.test(w) && !/also/.test(w) && !/CPI cools/.test(w); })());
+}
+
+// ═══════════ [78] v6.2.0 — the 6pm CLOSE READ: clock, failsafes, record, cron, surfaces ═══════
+// Owner rulings 2026-09-02: a labeled, SUBORDINATE, UNSCORED read at 18:00 ET; the 10am call
+// stays THE call; /readout.json untouched; both modes render ONE labeled line in the drift
+// slot. Everything structural below is RUN — a clock boundary, a capture rule and a key
+// family are claims a string pin cannot prove. (Sits ABOVE the summary line — the v5.97.1 trap.)
+console.log("\n[78] v6.2.0 the 6pm CLOSE READ — expectedObsDate · failsafeDue · record · cron · surfaces");
+{
+  const at = (s) => new Date(s);
+  // ── the clock: which observation date SHOULD exist by now ──
+  ok("[78] expectedObsDate: Wed 16:14 ET → Tue; Wed 16:15 ET → Wed (CLOSE_PUBLISHED_ET is the boundary, inclusive)",
+    expectedObsDate(at("2026-09-02T20:14:00Z")) === "2026-09-01" && expectedObsDate(at("2026-09-02T20:15:00Z")) === "2026-09-02" &&
+    CLOSE_PUBLISHED_ET.hour === 16 && CLOSE_PUBLISHED_ET.minute === 15);
+  ok("[78] expectedObsDate: Sat noon → Fri; Labor Day 18:00 → the Friday before; Tue 09:00 → Mon (never today before the close)",
+    expectedObsDate(at("2026-09-05T16:00:00Z")) === "2026-09-04" && expectedObsDate(at("2026-09-07T22:00:00Z")) === "2026-09-04" &&
+    expectedObsDate(at("2026-09-01T13:00:00Z")) === "2026-08-31" && isSessionDay("2026-09-07") === false && isSessionDay("2026-09-08") === true &&
+    isSessionDay("2026-09-06") === false && isSessionDay("garbage") === false);
+  // ── ONE predicate, two questions ──
+  const n = at("2026-09-02T22:00:00Z");   // Wed 18:00 ET
+  ok("[78] failsafeDue: T-1 at 18:00 is NOT due on the day edition (status quo) but IS due on the close edition",
+    failsafeDue({ asOf: "2026-09-01", now: n, edition: "day" }) === false && failsafeDue({ asOf: "2026-09-01", now: n, edition: "close" }) === true);
+  ok("[78] failsafeDue: a same-day leg is due on neither edition; an undated leg is due on close only; dead is due everywhere",
+    failsafeDue({ asOf: "2026-09-02", now: n, edition: "close" }) === false && failsafeDue({ asOf: "2026-09-02", now: n, edition: "day" }) === false &&
+    failsafeDue({ asOf: null, now: n, edition: "close" }) === true && failsafeDue({ asOf: null, now: n, edition: "day" }) === false &&
+    failsafeDue({ dead: true, asOf: "2026-09-02", now: n, edition: "day" }) === true);
+  ok("[78] failsafeDue: before 16:15 the close edition does not chase a close that cannot exist yet",
+    failsafeDue({ asOf: "2026-09-01", now: at("2026-09-02T19:00:00Z"), edition: "close" }) === false);
+  ok("[78] pairCboeVix survives the edition: a same-day delayed quote with only a T-1 daily file yields the T-1 close, never the intraday print",
+    (() => { const r = pairCboeVix({ vix: 15, vixAsOf: "2026-09-02", vixSource: "CBOE delayed" }, { vix: 14, vixAsOf: "2026-09-01", vixSource: "CBOE daily" }, "2026-09-02");
+      return r.vix === 14 && r.vixAsOf === "2026-09-01" && pairCboeVix({ vix: 15, vixAsOf: "2026-09-02", vixSource: "CBOE delayed" }, null, "2026-09-02") === null; })());
+  // ── the display-only SPY leg: dated today or refused ──
+  const withFetch = async (impl, fn) => { const real = globalThis.fetch; globalThis.fetch = impl; try { return await fn(); } finally { globalThis.fetch = real; } };
+  const quote = (q) => async () => new Response(JSON.stringify(q), { status: 200, headers: { "content-type": "application/json" } });
+  const T_WED = Math.floor(Date.parse("2026-09-02T20:05:00Z") / 1000), T_TUE = Math.floor(Date.parse("2026-09-01T20:05:00Z") / 1000);
+  ok("[78] fetchSpyClose: a print stamped on expectedObsDate is accepted, labelled as a LAST PRINT (display-only), never merged into spy*",
+    await withFetch(quote({ c: 645.2, pc: 640.1, t: T_WED }), async () => { const st = [];
+      const out = await fetchSpyClose({ FINNHUB_KEY: "k" }, st, n);
+      return out.spyClose === 645.2 && out.spyClosePrev === 640.1 && out.spyCloseAsOf === "2026-09-02" && /last print/.test(out.spyCloseSource) &&
+        /display-only/.test(out.spyCloseSource) && out.spyPrice === undefined && st.some((s) => s.source === "finnhub" && s.item === "SPY_close" && s.ok); }));
+  ok("[78] fetchSpyClose: a print dated any OTHER day is REFUSED with both dates named — never relabelled as today's close",
+    await withFetch(quote({ c: 645.2, pc: 640.1, t: T_TUE }), async () => { const st = [];
+      try { await fetchSpyClose({ FINNHUB_KEY: "k" }, st, n); return false; }
+      catch (e) { return /refused, never relabelled/.test(e.message) && e.error_class === "no_observation" &&
+        st.some((s) => s.item === "SPY_close" && !s.ok && s.trade_date === "2026-09-01" && s.expected === "2026-09-02"); } }));
+  ok("[78] fetchSpyClose: no key is a CONFIG fault, an undated/zero quote is no_observation — neither is a number",
+    await (async () => { let a = null, b = null;
+      try { await fetchSpyClose({}, null, n); } catch (e) { a = e; }
+      await withFetch(quote({ c: 0, t: T_WED }), async () => { try { await fetchSpyClose({ FINNHUB_KEY: "k" }, null, n); } catch (e) { b = e; } });
+      return a?.error_class === "config" && b?.error_class === "no_observation"; })());
+  ok("[78] SPY leg isolation: spyClose is banded, is NOT in SOURCES, never reaches the day edition, and no merge helper names it",
+    Array.isArray(BANDS.spyClose) && !("spyClose" in SOURCES) && !/spyClose/.test(dashSrc) &&
+    /close \? fetchSpyClose\(env, statuses, nowDate\) : Promise\.reject\(new Error\("not needed \(day edition\)"\)\)/.test(readSrc("../functions/api/snapshot.js")) &&
+    !/mergeFresherLeg\([^)]*spyClose/.test(readSrc("../functions/api/snapshot.js")) && !/withLastGood\([^)]*spyClose/i.test(readSrc("../functions/api/snapshot.js")));
+  // ── the payload: a REAL md-call-v1 inside an envelope that alone carries the edition ──
+  const D = etYmd(new Date());
+  // The VIX leg is dated the PRIOR session (a T-1 close is 0 sessions behind, so it still
+  // VOTES — a stale-dated leg would be excluded and the crash circuit would withhold BULLISH,
+  // which is a different fact from "prior-session leg").
+  const Dprev = expectedObsDate(new Date(`${D}T13:00:00Z`));
+  const live78 = (o = {}) => ({ tenYear: 4.2, tenYearM1: -0.1, tenYearAsOf: D, tenYearSource: "UST daily par yield curve",
+    vix: 14, vixAsOf: Dprev, fearGreed: 60, fearGreedAsOf: D, cpiHeadline: 3.1, cpiTrend: [3.4, 3.1], cpiHeadlineAsOf: D,
+    shillerPe: 24, shillerPeAsOf: D, nfci: -0.6, nfciAsOf: D, spyPrice: 640, spyPriceAsOf: D, spyMa200: 600,
+    spyClose: 645.2, spyCloseAsOf: D, spyCloseSource: "Finnhub SPY last print (display-only)",
+    marketHeadlinesJson: JSON.stringify([{ title: "Fed holds rates steady", source: "CNBC", as_of: D, category: "policy" },
+      { title: "Fidelity now requires a death certificate to transfer an account", source: "MarketWatch", as_of: D, category: null }]), ...o });
+  const cls = classifyLegs(live78(), D);
+  ok("[78] classifyLegs: daily legs split by DATE — same-day vs prior-or-undated — and monthly/weekly legs land in neither array",
+    JSON.stringify(cls.legs_same_day) === JSON.stringify(["tenYear", "fearGreed", "spyPrice", "spyClose"]) &&
+    JSON.stringify(cls.legs_prior) === JSON.stringify(["vix"]) &&
+    cls.legs.some((l) => l.key === "cpiHeadline" && l.same_day === null) && cls.legs.some((l) => l.key === "nfci" && l.same_day === null) &&
+    cls.legs.find((l) => l.key === "tenYear").source === "UST daily par yield curve" && cls.legs.find((l) => l.key === "vix").source === "FRED VIXCLS" &&
+    cls.legs.find((l) => l.key === "spyClose").display_only === true &&
+    JSON.stringify(classifyLegs(live78({ fearGreedAsOf: undefined }), D).legs_prior) === JSON.stringify(["vix", "fearGreed"]));   // undated → cannot claim same-day
+  const frozenNeutral = { schema: "md-call-v1", effective_date: D, headline: "HODL", emoji: "💎", direction: "NEUTRAL" };
+  const cr = buildCloseRead({ live: live78(), date: D, generatedAt: `${D}T22:00:05.000Z`, frozenCall: frozenNeutral, now: new Date(`${D}T22:00:00Z`) });
+  ok("[78] buildCloseRead: the envelope is md-close-read-v1 and UNSCORED; the read inside is a real md-call-v1 that carries NO edition axis",
+    cr.schema === CLOSE_READ_SCHEMA && cr.scored === false && cr.edition === "close" && cr.date === D &&
+    cr.read.schema === "md-call-v1" && cr.read.effective_date === D && !/close/i.test(JSON.stringify(cr.read)) &&
+    cr.read.headline === "MOONING" && cr.read.direction === "BULLISH");
+  ok("[78] buildCloseRead: drift is measured against the SAME frozen call (direction AND headline); no frozen call → null, never a fabricated 'unchanged'",
+    cr.drift_vs_call.changed === true && cr.drift_vs_call.from.headline === "HODL" && cr.drift_vs_call.to.headline === "MOONING" &&
+    buildCloseRead({ live: live78(), date: D, frozenCall: null }).drift_vs_call === null &&
+    buildCloseRead({ live: live78(), date: D, frozenCall: { ...frozenNeutral, effective_date: "2026-01-02" } }).drift_vs_call === null &&
+    buildCloseRead({ live: live78(), date: D, frozenCall: { ...frozenNeutral, headline: "MOONING", emoji: "🚀", direction: "BULLISH" } }).drift_vs_call.changed === false);
+  ok("[78] buildCloseRead: headlines are RE-GATED (the Fidelity false positive never rides), the SPY leg is display-only, and the basis names the FRED proxy for the flip",
+    cr.headlines.length === 1 && cr.headlines[0].title === "Fed holds rates steady" && cr.spy_close.display_only === true && cr.spy_close.price === 645.2 &&
+    /FRED SP500\/10 proxy/.test(cr.basis.spy_flip) && /never merged/.test(cr.basis.spy_flip) && /untouched/.test(cr.basis.day_key));
+  // ── the record and its validator ──
+  const rec = (over = {}) => ({ schema: CLOSE_READ_RECORD_SCHEMA, date: D, captured_at: `${D}T22:00:06.000Z`, scheduled_for: "18:00 America/New_York",
+    capture_status: "CAPTURED", close_read: cr, failure: null, ...over });
+  ok("[78] validCloseRead: a CAPTURED record needs a same-date md-close-read-v1 inside; a FAILED record is served as itself; wrong date / wrong schema / garbage → null",
+    validCloseRead(rec(), D) === rec || !!validCloseRead(rec(), D) && validCloseRead(rec(), D).date === D &&
+    validCloseRead(rec({ capture_status: "FAILED", close_read: null, failure: "refresh HTTP 503" }), D)?.capture_status === "FAILED" &&
+    validCloseRead(rec(), "2026-01-02") === null && validCloseRead(rec({ schema: "md-history-record-v1" }), D) === null &&
+    validCloseRead(rec({ close_read: { ...cr, date: "2026-01-02" } }), D) === null && validCloseRead(null, D) === null && validCloseRead("x", D) === null);
+  ok("[78] the two key families never cross: validFrozenCall refuses a close-read record, closeReadKey is its own prefix, and the schemas differ",
+    validFrozenCallPH(rec(), D) === null && closeReadKey(D) === `${CLOSE_READ_PREFIX}${D}` && CLOSE_READ_PREFIX !== "public:regime-history:v1:" &&
+    CLOSE_READ_SCHEMA !== "md-call-v1" && CLOSE_READ_RECORD_SCHEMA !== "md-history-record-v1");
+  // ── the ONE line the hero renders ──
+  const line = closeReadLine(rec(), frozenNeutral, D);
+  ok("[78] closeReadLine: CAPTURED + a differing frozen call → differs; the label is the moon voice + machine word; same-day legs ride along",
+    line && line.differs === true && line.frozen === true && line.label === "MOONING 🚀 · BULLISH" && line.direction === "BULLISH" &&
+    JSON.stringify(line.legs_same_day) === JSON.stringify(cr.legs_same_day));
+  ok("[78] closeReadLine: an agreeing frozen call → differs:false; no frozen call → frozen:false; FAILED, wrong day, or garbage → null (history carries the failure)",
+    closeReadLine(rec(), { ...frozenNeutral, headline: "MOONING", emoji: "🚀", direction: "BULLISH" }, D).differs === false &&
+    closeReadLine(rec(), null, D).frozen === false && closeReadLine(rec(), null, D).differs === false &&
+    closeReadLine(rec({ capture_status: "FAILED", close_read: null, failure: "x" }), frozenNeutral, D) === null &&
+    closeReadLine(rec(), frozenNeutral, "2026-01-02") === null && closeReadLine({ schema: "junk" }, frozenNeutral, D) === null && closeReadLine(null, null, D) === null);
+  // ── the editions ──
+  const bull78 = cr.read;
+  const paste = (o) => formatMacroCallPaste(bull78, o), share = (o) => formatMacroShareCard(bull78, o);
+  ok("[78] editions: CLOSE READ leads the paste and states UNSCORED; {frozen:true} still reads 10AM CALL; an UNKNOWN edition falls to LIVE READ even beside frozen:true (the weakest claim)",
+    /^MACRODASH CLOSE READ · /.test(paste({ edition: "CLOSE READ" })) && /UNSCORED · 6pm close read/.test(paste({ edition: "CLOSE READ" })) &&
+    /^MACRODASH 10AM CALL · /.test(paste({ frozen: true })) && /^MACRODASH LIVE READ · /.test(paste({ edition: "BOGUS" })) &&
+    /^MACRODASH LIVE READ · /.test(paste({ edition: "BOGUS", frozen: true })) && /^MACRODASH LIVE READ · /.test(paste({})) &&
+    callEdition({ edition: "10AM CALL" }) === "10AM CALL" && JSON.stringify(CALL_EDITIONS) === JSON.stringify(["10AM CALL", "CLOSE READ", "LIVE READ"]));
+  ok("[78] editions: the share card is exactly FIVE lines in all three editions, and only CLOSE READ swaps line 5 to the unscored disclaimer",
+    [{ edition: "CLOSE READ" }, { frozen: true }, {}].every((o) => share(o).split("\n").length === 5) &&
+    /^Unscored close read · not financial advice$/.test(share({ edition: "CLOSE READ" }).split("\n")[4]) &&
+    /^End-of-day macro evidence/.test(share({ frozen: true }).split("\n")[4]) && !/UNSCORED|Unscored/.test(paste({ frozen: true })));
+  ok("[78] surfaces: 'DAILY CALL' is retired from the dashboard, the OPS label IS the edition, and the CLOSE READ export renders only once captured",
+    !/⎘ DAILY CALL/.test(dashSrc) && /\$\{callEdition\(\{frozen:callFrozen\}\)\}/.test(dashSrc) &&
+    /publicCloseRead\?\.capture_status==="CAPTURED"&&<button onClick=\{handleCloseReadCopy\} aria-label="Copy MacroDash close read"/.test(dashSrc) &&
+    /formatMacroCallPaste\(cr,\{edition:"CLOSE READ"\}\)/.test(dashSrc));
+  ok("[78] surfaces: the hero takes closeRead from ONE builder (closeReadLine) and renders it in the drift slot with the scope words, keeping the live-drift fallback",
+    /const closeReadNote=closeReadLine\(publicCloseRead,dailyCall,etYmd\(\)\)/.test(dashSrc) && /closeRead=\{closeReadNote\}/.test(dashSrc) &&
+    /6pm close read: \{closeRead\.label\} — \{closeRead\.frozen\?"the scored 10am call remains frozen above":"unscored; no 10am call was frozen today"\}/.test(bandSrc) &&
+    /: callDrift&&<div/.test(bandSrc) && bandSrc.split("\n").length <= 300);
+  ok("[78] surfaces: useMarketData carries publicCloseRead on every branch (initial, success, error) — the one wiring point",
+    (readSrc("../src/useMarketData.js").match(/publicCloseRead/g) || []).length >= 3 && /publicCloseRead: payload\.publicCloseRead \|\| null/.test(readSrc("../src/useMarketData.js")));
+  ok("[78] readout.json is UNTOUCHED — no close-read key, schema or field anywhere in its source (owner ruling 5)",
+    !/close_read|closeRead|CLOSE_READ|publicCloseRead/.test(readSrc("../functions/readout.json.js")));
+  // ── the endpoints and the cron, against a fake KV ──
+  const kv78 = () => { const m = new Map(); return { _m: m,
+    async get(k, type) { const v = m.get(k); return type === "json" && v ? JSON.parse(v) : (v ?? null); },
+    async put(k, v) { m.set(k, v); },
+    async list({ prefix, limit }) { return { keys: [...m.keys()].filter((k) => k.startsWith(prefix)).slice(0, limit).map((name) => ({ name })) }; } }; };
+  const quiet = async (fn) => { const e = console.error; console.error = () => {}; try { return await fn(); } finally { console.error = e; } };
+  const notFound = async () => new Response("no", { status: 404 });   // 404 is non-retryable: every upstream fails FAST
+  ok("[78] refresh(close): builds the close edition, stores ONLY its side key, returns the read with published:false — the DAY KEY STAYS ABSENT",
+    await withFetch(notFound, () => quiet(async () => {
+      const kv = kv78();
+      const req = { method: "POST", url: "https://macrodash.pages.dev/api/snapshot/refresh",
+        headers: { get: (k) => ({ "x-refresh-token": "t" })[k.toLowerCase()] ?? null }, json: async () => ({ scope: "all", edition: "close" }) };
+      const r = await refreshPost({ request: req, env: { REFRESH_TOKEN: "t", PULSE_CACHE: kv } });
+      const b = await r.json();
+      const keys = [...kv._m.keys()];
+      return r.status === 200 && b.ok === true && b.edition === "close" && b.published === false && b.close_read?.schema === CLOSE_READ_SCHEMA &&
+        b.close_read.date === D && b.close_read.read?.schema === "md-call-v1" && b.readout === undefined &&
+        keys.some((k) => k.startsWith("pulse:snapshot:close:v1:")) && !keys.some((k) => k.startsWith("pulse:snapshot:v16:")); })));
+  ok("[78] refresh(day): the request shape without `edition` is the day edition — the close branch cannot be entered by accident",
+    /if \(body && body\.edition === "close"\) edition = "close"/.test(readSrc("../functions/api/snapshot/refresh.js")) &&
+    /if \(edition === "close"\) \{/.test(readSrc("../functions/api/snapshot/refresh.js")) &&
+    !/publishIfNoWorse\(env, sideKey/.test(readSrc("../functions/api/snapshot/refresh.js")));
+  const nowD = new Date(`${D}T22:00:00Z`);
+  const refreshedOk = { ok: true, status: 200, warmExtra: { edition: "close" }, close_read: cr };
+  ok("[78] captureCloseRead: first write wins under the close-read key, a second run is 'already captured', and the history key is NEVER written",
+    await (async () => { const kv = kv78();
+      const a = await captureCloseRead({ PULSE_CACHE: kv }, nowD, refreshedOk);
+      const b = await captureCloseRead({ PULSE_CACHE: kv }, nowD, { ok: true, close_read: { ...cr, read: { ...cr.read, headline: "HODL" } } });
+      const stored = JSON.parse(kv._m.get(closeReadKey(D)));
+      return a.written === true && b.written === false && b.reason === "already captured" && stored.capture_status === "CAPTURED" &&
+        stored.close_read.read.headline === "MOONING" && kv._m.size === 1 && ![...kv._m.keys()].some((k) => k.startsWith("public:regime-history:v1:")); })());
+  ok("[78] captureCloseRead: a stale-dated read, a schema mismatch, an absent read and a refresh failure are FAILED records with the reason — never notarized",
+    await (async () => {
+      const run = async (refreshed) => { const kv = kv78(); await captureCloseRead({ PULSE_CACHE: kv }, nowD, refreshed); return JSON.parse(kv._m.get(closeReadKey(D))); };
+      const stale = await run({ ok: true, close_read: { ...cr, date: "2026-01-02" } });
+      const wrong = await run({ ok: true, close_read: { ...cr, schema: "md-call-v1" } });
+      const none = await run({ ok: true, close_read: null });
+      const failed = await run({ ok: false, failure: "no REFRESH_TOKEN — a GET cannot build a close edition", close_read: null });
+      return [stale, wrong, none, failed].every((r) => r.capture_status === "FAILED" && r.close_read === null && r.schema === CLOSE_READ_RECORD_SCHEMA) &&
+        /dated 2026-01-02/.test(stale.failure) && /schema mismatch/.test(wrong.failure) && /no close read/.test(none.failure) && /REFRESH_TOKEN/.test(failed.failure); })());
+  // The scheduled close arm, end to end: refresh(close) → capture → per-job heartbeat, and
+  // the 10am record's legs SURVIVE it (the summary key is clobbered by design).
+  const runCron = (kv, cron, fetchImpl) => quiet(() => withFetch(fetchImpl, async () => {
+    const waits = [];
+    await cronWorker.scheduled({ cron }, { PULSE_CACHE: kv, REFRESH_TOKEN: "t" }, { waitUntil: (p) => waits.push(p) });
+    await Promise.all(waits); }));
+  const closeFetch = async (url, opts) => /\/api\/snapshot\/refresh/.test(String(url)) && opts?.method === "POST"
+    ? new Response(JSON.stringify({ ok: true, edition: JSON.parse(opts.body).edition, published: false, close_read: JSON.parse(opts.body).edition === "close" ? cr : null,
+        readout: { call: bull78 } }), { status: 200, headers: { "content-type": "application/json" } })
+    : new Response(JSON.stringify({ call: bull78 }), { status: 200, headers: { "content-type": "application/json" } });
+  ok("[78] scheduled(0 22): the close arm writes the close-read record + pulse:cron:lastwarm:close-6pmET, posts edition:'close', and writes NO history row (the Friday-miss control)",
+    await (async () => { const kv = kv78();
+      await runCron(kv, "0 22 * * MON-FRI", closeFetch);
+      const hb = JSON.parse(kv._m.get("pulse:cron:lastwarm:close-6pmET") || "null"), sum = JSON.parse(kv._m.get("pulse:cron:lastwarm") || "null");
+      const stored = JSON.parse(kv._m.get(closeReadKey(D)) || "null");
+      return hb && hb.job === "close-6pmET" && hb.ok === true && hb.edition === "close" && hb.close_read === "written" &&
+        JSON.stringify(hb.legs_same_day) === JSON.stringify(cr.legs_same_day) && sum && sum.job === "close-6pmET" &&
+        stored?.capture_status === "CAPTURED" && stored.close_read.read.headline === "MOONING" &&
+        ![...kv._m.keys()].some((k) => k.startsWith("public:regime-history:v1:")) && ![...kv._m.keys()].some((k) => k.startsWith("public:regime-outcome:v1:")); })());
+  ok("[78] heartbeat: after a 10am run then a close run, the 10am PER-JOB record still carries freeze + outcomes while the summary shows the close job",
+    await (async () => { const kv = kv78();
+      await runCron(kv, "0 14 * * MON-FRI", closeFetch);
+      await runCron(kv, "0 22 * * MON-FRI", closeFetch);
+      const ten = JSON.parse(kv._m.get("pulse:cron:lastwarm:refresh-10amET") || "null"), sum = JSON.parse(kv._m.get("pulse:cron:lastwarm") || "null");
+      return ten && ten.job === "refresh-10amET" && ten.freeze === "written" && ten.outcomes && sum.job === "close-6pmET" &&
+        CRON_JOBS.includes("close-6pmET") && CRON_JOBS.includes("refresh-10amET") && CRON_JOBS.includes("prewarm-8amET"); })());
+  ok("[78] scheduled(0 22) without REFRESH_TOKEN: no GET fallback — the record is FAILED naming the token, the heartbeat says so, and nothing is dressed as a run",
+    await (async () => { const kv = kv78();
+      await quiet(() => withFetch(async () => { throw new Error("must not GET"); }, async () => {
+        const waits = []; await cronWorker.scheduled({ cron: "0 22 * * MON-FRI" }, { PULSE_CACHE: kv }, { waitUntil: (p) => waits.push(p) }); await Promise.all(waits); }));
+      const stored = JSON.parse(kv._m.get(closeReadKey(D)) || "null"), hb = JSON.parse(kv._m.get("pulse:cron:lastwarm:close-6pmET") || "null");
+      return stored?.capture_status === "FAILED" && /REFRESH_TOKEN/.test(stored.failure) && hb && hb.ok === false && /FAILED: .*REFRESH_TOKEN/.test(hb.close_read); })());
+  // ── the public endpoints ──
+  ok("[78] history.json: the close read JOINS the day's row (row count unchanged), a close read with no 10am row is an ORPHAN by date, never a manufactured row",
+    await (async () => { const kv = kv78();
+      const Dm1 = "2026-01-02";
+      await kv.put(`public:regime-history:v1:${D}`, JSON.stringify({ schema: "md-history-record-v1", date: D, captured_at: `${D}T14:00:00Z`, capture_status: "CAPTURED", call: frozenNeutral, failure: null, outcomes: null }));
+      await kv.put(closeReadKey(D), JSON.stringify(rec()));
+      await kv.put(closeReadKey(Dm1), JSON.stringify(rec({ date: Dm1, close_read: { ...cr, date: Dm1 } })));
+      const h = await (await getHistory({ env: { PULSE_CACHE: kv } })).json();
+      return h.rows.length === 1 && h.rows[0].close_read?.schema === CLOSE_READ_RECORD_SCHEMA && h.rows[0].close_read.close_read.read.headline === "MOONING" &&
+        h.close_reads_unscored === true && JSON.stringify(h.close_reads_orphaned) === JSON.stringify([Dm1]) && h.rows[0].call.headline === "HODL"; })());
+  ok("[78] outcomes: enrichHistoryOutcomes over a KV holding ONLY close-read records updates nothing — a close read is never scored",
+    await (async () => { const kv = kv78(); await kv.put(closeReadKey(D), JSON.stringify(rec()));
+      const r = await enrichHistoryOutcomes({ PULSE_CACHE: kv, FRED_KEY: "k" }, async () => { throw new Error("must not pull"); }, nowD);
+      return r.ok === true && r.updated === 0 && kv._m.size === 1; })());
+  ok("[78] /api/snapshot emits publicCloseRead beside the frozen call on BOTH serve paths; /readout.json emits nothing of it",
+    await withFetch(notFound, () => quiet(async () => { const kv = kv78();
+      await kv.put(`pulse:snapshot:v16:${D}`, JSON.stringify({ live: live78(), asOf: nowD.toISOString(), _diag: {} }));
+      await kv.put(`public:regime-history:v1:${D}`, JSON.stringify({ schema: "md-history-record-v1", date: D, captured_at: `${D}T14:00:00Z`, capture_status: "CAPTURED", call: frozenNeutral }));
+      await kv.put(closeReadKey(D), JSON.stringify(rec()));
+      const cached = await (await getSnapshot({ request: new Request("https://macrodash.pages.dev/api/snapshot?view=public"), env: { PULSE_CACHE: kv } })).json();
+      const ro = await (await getReadout({ request: new Request("https://macrodash.pages.dev/readout.json"), env: { PULSE_CACHE: kv } })).json();
+      const kv2 = kv78(); await kv2.put(closeReadKey(D), JSON.stringify(rec()));
+      const built = await (await getSnapshot({ request: new Request("https://macrodash.pages.dev/api/snapshot"), env: { PULSE_CACHE: kv2 } })).json();
+      return cached.publicCloseRead?.schema === CLOSE_READ_RECORD_SCHEMA && cached.publicCallFrozen === true && cached.publicCall.headline === "HODL" &&
+        built.publicCloseRead?.schema === CLOSE_READ_RECORD_SCHEMA && built.cached === false &&
+        !("close_read" in ro) && !JSON.stringify(ro).includes("close_read") && ro.schema === "tt-v1"; })));
 }
 
 console.log(`\n=== SMOKE TEST: ${pass} passed, ${fail} failed ===`);

@@ -459,3 +459,40 @@ export function sessionsBehind(dateStr, now = new Date()) {
   }
   return missed;
 }
+
+/* ─── v6.2 CLOSE READ: which observation date a same-day feed SHOULD carry ───────────
+   sessionsBehind() answers "how many sessions has this feed MISSED" and, by design, counts
+   today as 0 whatever the clock says — its callers are morning builds where today's close
+   cannot exist yet. The 6pm close read asks a DIFFERENT question: "should today's close be
+   published by now?" — and a prior-close print at 18:00 is one session behind for THAT
+   question while still 0 for the first. Two questions, two functions, ONE calendar walk
+   (isSessionDay is the same weekday+holiday test sessionsBehind runs inline).
+   CLOSE_PUBLISHED_ET is ASSERTED: the cash close is 16:00 ET and the official prints
+   (UST par curve, CBOE daily file, Finnhub last) land minutes later; 16:15 leaves the
+   publishers their few minutes and is boundary-pinned in smoke so moving it is one edit +
+   one red test. Before 16:15 on a session day the expected observation is the PRIOR
+   session's — a build at 09:00 Tuesday expects Monday, never Tuesday. */
+export const CLOSE_PUBLISHED_ET = Object.freeze({ hour: 16, minute: 15 });
+const localYmd = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+export function isSessionDay(ymd) {
+  const d = parseObsDate(ymd);
+  if (!d || isNaN(d.getTime())) return false;
+  const dow = d.getDay();
+  return dow !== 0 && dow !== 6 && !isMarketHoliday(localYmd(d));
+}
+export function etClock(now = new Date()) {
+  const parts = new Intl.DateTimeFormat("en-US", { timeZone: "America/New_York", hour: "2-digit", minute: "2-digit", hourCycle: "h23" })
+    .formatToParts(now);
+  const get = (t) => Number(parts.find((p) => p.type === t)?.value);
+  return { hour: get("hour"), minute: get("minute") };
+}
+export function expectedObsDate(now = new Date()) {
+  const today = etYmd(now);
+  const { hour, minute } = etClock(now);
+  const pastClose = hour > CLOSE_PUBLISHED_ET.hour ||
+    (hour === CLOSE_PUBLISHED_ET.hour && minute >= CLOSE_PUBLISHED_ET.minute);
+  if (isSessionDay(today) && pastClose) return today;
+  const cur = parseObsDate(today);
+  do { cur.setDate(cur.getDate() - 1); } while (!isSessionDay(localYmd(cur)));
+  return localYmd(cur);
+}

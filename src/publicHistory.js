@@ -13,6 +13,26 @@ export const OUTCOME_HORIZON = 20;
 export const historyKey = (date) => `${HISTORY_PREFIX}${date}`;
 export const outcomeKey = (date) => `${OUTCOME_PREFIX}${date}`;
 
+/* v6.2 — the 6pm CLOSE READ is a THIRD key family, deliberately not a second history row.
+   The history key is a bare ET date and first-write-wins, so a second scored artifact under
+   it would either be refused or would notarize the morning's call twice; the outcome anchor
+   scores the first close ON OR AFTER the call date, which the close read has already seen.
+   So: its own prefix, its own record schema, joined INTO the day's row by history.json (the
+   outcome-companion precedent) and never counted as a row. A FAILED capture is still a
+   record — a bad evening must not vanish any more than a bad morning does. */
+export const CLOSE_READ_PREFIX = "public:close-read:v1:";
+export const CLOSE_READ_SCHEMA = "md-close-read-v1";               // the payload (built by src/closeRead.js)
+export const CLOSE_READ_RECORD_SCHEMA = "md-close-read-record-v1"; // the Worker's captured envelope
+export const closeReadKey = (date) => `${CLOSE_READ_PREFIX}${date}`;
+export function validCloseRead(record, date = null) {
+  const ymd = /^\d{4}-\d{2}-\d{2}$/;
+  if (record?.schema !== CLOSE_READ_RECORD_SCHEMA || !ymd.test(String(record.date || ""))) return null;
+  if (date && record.date !== date) return null;
+  if (record.capture_status === "FAILED") return record;
+  return record.capture_status === "CAPTURED" && record.close_read?.schema === CLOSE_READ_SCHEMA &&
+    record.close_read.date === record.date ? record : null;
+}
+
 const finite = (v) => typeof v === "number" && Number.isFinite(v);
 const round2 = (v) => Math.round(v * 100) / 100;
 const returnPct = (from, to) => finite(from) && from > 0 && finite(to)

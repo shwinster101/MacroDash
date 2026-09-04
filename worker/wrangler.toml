@@ -20,10 +20,15 @@ id = "78ad3346a8fe4757a906283c4bc81a5e"
 # edit. The 26h KV TTL means a one-hour drift across the DST boundary never
 # blanks the dashboard. Weekdays only (MON-FRI): FRED macro doesn't move weekends.
 # ⚠ SYNC HAZARD (v3.99.4): cron.js dispatches by EXACT string match on controller.cron
-# (SNAPSHOT_PREWARM_CRON = "0 12…", SNAPSHOT_WARM_CRON = "0 14…"); any string here that
-# matches neither falls through to the LEGACY FRED path — a silently misrouted job, not a
-# visible failure. The DST edit is therefore TWO files together: this array AND those two
-# constants. Smoke's contract check reconciles them and goes red on drift.
+# (SNAPSHOT_PREWARM_CRON = "0 12…", SNAPSHOT_WARM_CRON = "0 14…", SNAPSHOT_CLOSE_CRON =
+# "0 22…"); any string here that matches none of them falls through to the LEGACY FRED path
+# — a silently misrouted job, not a visible failure. The DST edit is therefore TWO files
+# together: this array AND those THREE constants. Smoke's contract check reconciles them and
+# goes red on drift.
+# ⚠ COLLISION (v6.2): the summer close-read string "0 22 * * MON-FRI" is BYTE-IDENTICAL to
+# the WINTER string of the 2pm-PST legacy pull. Every entry here must stay DISTINCT (smoke
+# pins five distinct strings); in November move the legacy pull to "0 22" ONLY together with
+# moving the close read to "0 23" (and its constant in cron.js).
 # ⚠ DAY-OF-WEEK IS NAMED, NOT NUMERIC (2026-08-28). These read "1-5" and the Cloudflare
 # dashboard treated 1-5 as Sun-Thu, so FRIDAY never fired: the 10am ET job silently did not
 # run on Fri 2026-08-28 and the day ended with no frozen call and no history row at all.
@@ -37,7 +42,8 @@ crons = [
   "30 12 * * MON-FRI",   # 5:30 AM PDT — legacy FRED macro pull (pulse:macro:latest)
   "0 21 * * MON-FRI",    # 2:00 PM PDT — legacy FRED macro pull
   "0 12 * * MON-FRI",    # 8:00 AM ET (EDT) — PRE-OPEN warm of /api/snapshot; EST -> "0 13 * * MON-FRI"
-  "0 14 * * MON-FRI"     # 10:00 AM ET (EDT) — force-refresh /api/snapshot cache; EST -> "0 15 * * MON-FRI"
+  "0 14 * * MON-FRI",    # 10:00 AM ET (EDT) — force-refresh /api/snapshot cache; EST -> "0 15 * * MON-FRI"
+  "0 22 * * MON-FRI"     # 6:00 PM ET (EDT) — UNSCORED close read (v6.2); EST -> "0 23 * * MON-FRI"
 ]
 
 # Secrets (NEVER in this file — set via CLI). Two refresh credentials exist and are NOT

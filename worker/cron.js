@@ -9,6 +9,7 @@
 
 import {
   HISTORY_PREFIX, HISTORY_RECORD_SCHEMA, OUTCOME_SCHEMA,
+  CLOSE_READ_SCHEMA, CLOSE_READ_RECORD_SCHEMA, closeReadKey,
   buildForwardOutcome, historyKey, outcomeKey,
 } from "../src/publicHistory.js";
 
@@ -27,6 +28,15 @@ const SNAPSHOT_WARM_CRON = "0 14 * * MON-FRI"; // 10am America/New_York (EDT); E
 // Finnhub's rate limits. A degraded pull then risks being locked in for the day. Warming
 // while upstreams are quiet means humans essentially always hit a warm cache.
 const SNAPSHOT_PREWARM_CRON = "0 12 * * MON-FRI"; // 8am America/New_York (EDT); EST -> "0 13 * * MON-FRI"
+/* v6.2 — the 6pm ET CLOSE READ: an UNSCORED, labeled read of the same six-factor engine after
+   the same-day legs have landed. Refresh(close) → captureCloseRead → heartbeat. It never
+   touches the history key (the 10am's alone) and never runs outcome enrichment.
+   ⚠ COLLISION: the summer string below is BYTE-IDENTICAL to SETUP.md's documented WINTER
+   string for the 2pm-PST legacy pull. Dispatch is exact-string, so a November edit that moves
+   the legacy pull to "0 22" WITHOUT moving this constant to "0 23" would route the legacy fire
+   into the close arm at 5pm ET and silently drop the legacy pull. The DST edit is THREE
+   constants + the TOML together; smoke pins five DISTINCT strings so a duplicate cannot ship. */
+const SNAPSHOT_CLOSE_CRON = "0 22 * * MON-FRI"; // 6pm America/New_York (EDT); EST -> "0 23 * * MON-FRI"
 const SNAPSHOT_URL = "https://macrodash.pages.dev/api/snapshot";
 const READOUT_URL = "https://macrodash.pages.dev/readout.json?fresh=1";
 const HISTORY_LIMIT = 400;
@@ -181,12 +191,15 @@ function authorized(request, env) {
 // identical to no cron at all, and only `wrangler tail` at the right moment could tell.
 // v6.0 T2: EVERY run of EVERY job writes this, no-op branches included ("already warm",
 // "already captured") — a heartbeat with gaps cannot tell a skipped run from a dead cron.
+// v6.2: TWO writes per run — a PER-JOB key (pulse:cron:lastwarm:<job>) and the summary key.
+// The summary is clobbered by the next job by design; with three jobs a day, the 10am
+// record's freeze + outcome legs would otherwise vanish at 18:00. Per-job first — it is the
+// record that must survive; each write guarded on its own, never blocking the job itself.
 async function recordWarm(env, job, ok, status, extra = null) {
-  try {
-    await env.PULSE_CACHE.put("pulse:cron:lastwarm",
-      JSON.stringify({ at: new Date().toISOString(), job, ok, status, ...(extra || {}) }),
-      { expirationTtl: 7 * 24 * 3600 });
-  } catch { /* diagnostic only — never blocks the warm itself */ }
+  const value = JSON.stringify({ at: new Date().toISOString(), job, ok, status, ...(extra || {}) });
+  const opts = { expirationTtl: 7 * 24 * 3600 };
+  try { await env.PULSE_CACHE.put(`pulse:cron:lastwarm:${job}`, value, opts); } catch { /* diagnostic only */ }
+  try { await env.PULSE_CACHE.put("pulse:cron:lastwarm", value, opts); } catch { /* diagnostic only */ }
 }
 
 // v6.0 T2: the freeze can miss ONCE and recover — a single transient KV fault at 10:00 must
@@ -214,41 +227,93 @@ export async function putWithRetry(kv, key, value, opts = undefined, attempts = 
 // secret — no token configured means the endpoint path is skipped (fail closed) and the
 // cron degrades to a NON-DESTRUCTIVE GET (which only fills a missing day, never deletes).
 const SNAPSHOT_REFRESH_URL = "https://macrodash.pages.dev/api/snapshot/refresh";
-async function refreshSnapshot(env) {
+/* v6.2: `edition` selects the day refresh (default, byte-equivalent to before) or the 6pm
+   CLOSE edition. The close edition has NO GET fallback — a GET cannot build a close edition
+   and after the 8am warm it is a cache HIT, so "fell back" would mean "did nothing and read
+   as a run"; it returns ok:false with the failure named instead. One bounded retry on the
+   endpoint's 60s cooldown (an operator tap at 17:59 must not cost the evening's read). */
+async function refreshSnapshot(env, { edition = "day", job = "refresh-10amET" } = {}) {
+  const close = edition === "close";
+  const closeFail = (status, failure) => ({ ok: false, status, warmExtra: { edition: "close", failure },
+    readout: null, call: null, close_read: null, failure });
   try {
     if (env.REFRESH_TOKEN) {
-      const res = await fetch(SNAPSHOT_REFRESH_URL, {
+      const post = () => fetch(SNAPSHOT_REFRESH_URL, {
         method: "POST",
         headers: {
           "content-type": "application/json",
           "user-agent": "macrodash-snapshot-refresher",
           "x-refresh-token": env.REFRESH_TOKEN,
         },
-        body: JSON.stringify({ scope: "all", reason: "cron" }),
+        body: JSON.stringify({ scope: "all", reason: close ? "cron-close" : "cron", edition }),
       });
+      let res = await post();
+      if (close && res.status === 429) { await new Promise((r) => setTimeout(r, 61_000)); res = await post(); }
       if (res.ok) {
         const body = await res.json().catch(() => null);
-        const warmExtra = body ? { published: body.published, improved: body.improved, message: body.message } : null;
-        await recordWarm(env, "refresh-10amET", true, res.status, warmExtra);
+        const warmExtra = body ? { published: body.published, improved: body.improved, message: body.message,
+          ...(close ? { edition: "close" } : {}) } : null;
+        await recordWarm(env, job, true, res.status, warmExtra);
         // Only freeze the candidate directly when it actually became the published snapshot.
         // A rejected (worse) candidate is diagnostic; history must fall back to the retained call.
         return { ok: true, status: res.status, warmExtra, readout: body?.readout || null,
-          call: body?.published ? (body?.readout?.call || null) : null };
+          call: !close && body?.published ? (body?.readout?.call || null) : null,
+          close_read: close ? (body?.close_read || null) : null };
       }
-      console.error(`snapshot refresh: POST ${SNAPSHOT_REFRESH_URL} got HTTP ${res.status} — check REFRESH_TOKEN on both deploys / Access scope; falling back to non-destructive warm`);
+      console.error(`snapshot refresh: POST ${SNAPSHOT_REFRESH_URL} got HTTP ${res.status} — check REFRESH_TOKEN on both deploys / Access scope${close ? "" : "; falling back to non-destructive warm"}`);
+      if (close) { const f = closeFail(res.status, `refresh HTTP ${res.status}`); await recordWarm(env, job, false, res.status, f.warmExtra); return f; }
     } else {
-      console.error("snapshot refresh: no REFRESH_TOKEN secret — cannot use the authenticated refresh endpoint; falling back to non-destructive warm");
+      console.error(`snapshot refresh: no REFRESH_TOKEN secret — cannot use the authenticated refresh endpoint${close ? " (a GET cannot build a close edition)" : "; falling back to non-destructive warm"}`);
+      if (close) { const f = closeFail(null, "no REFRESH_TOKEN — a GET cannot build a close edition"); await recordWarm(env, job, false, null, f.warmExtra); return f; }
     }
-    // Fallback: a plain GET. On a cache MISS it builds and (no-worse) publishes; on a hit
-    // it is a no-op. It can never delete or downgrade the stored day.
+    // Fallback (DAY edition only): a plain GET. On a cache MISS it builds and (no-worse)
+    // publishes; on a hit it is a no-op. It can never delete or downgrade the stored day.
     const res = await fetch(SNAPSHOT_URL, { headers: { "user-agent": "macrodash-snapshot-refresher" } });
     if (!res.ok) console.error(`snapshot refresh fallback: GET got HTTP ${res.status} — the cron is blocked at the edge (check Cloudflare Access app scope / WAF rules)`);
-    await recordWarm(env, "refresh-10amET", res.ok, res.status, { fallback: "get-warm" });
+    await recordWarm(env, job, res.ok, res.status, { fallback: "get-warm" });
     return { ok: res.ok, status: res.status, warmExtra: { fallback: "get-warm" }, readout: null, call: null, fallback: true };
   } catch (e) {
     console.error("snapshot refresh failed:", (e && e.message) || e);
-    await recordWarm(env, "refresh-10amET", false, 0);
-    return { ok: false, status: 0, warmExtra: null, readout: null, call: null };
+    const failure = String((e && e.message) || e);
+    await recordWarm(env, job, false, 0, close ? { edition: "close", failure } : null);
+    return close ? closeFail(0, failure) : { ok: false, status: 0, warmExtra: null, readout: null, call: null };
+  }
+}
+
+/* v6.2 — capture the 6pm CLOSE READ exactly once per ET day, under its OWN key family.
+   Mirrors captureDailyCall (first-write-wins, a FAILED capture is a record, putWithRetry)
+   and deliberately NEVER touches historyKey: an absent 10am row must keep meaning "the 10am
+   branch never ran" (the Friday-miss diagnostic), so a close read with no 10am row surfaces
+   as an orphan in history.json, never as a manufactured row. The payload is accepted only
+   when it is a same-day md-close-read-v1 — a stale or mis-dated read is a FAILED capture
+   with the reason, never notarized under today's key (the captureDailyCall rule). */
+export async function captureCloseRead(env, now = new Date(), refreshed = null) {
+  const date = now.toLocaleDateString("en-CA", { timeZone: "America/New_York" });
+  const key = closeReadKey(date);
+  try {
+    if (await env.PULSE_CACHE.get(key)) return { written: false, reason: "already captured", key };
+  } catch { /* continue; the write below will report any persistent KV fault */ }
+  const payload = refreshed?.close_read;
+  const closeRead = payload?.schema === CLOSE_READ_SCHEMA && payload.date === date ? payload : null;
+  const failure = closeRead ? null
+    : refreshed?.failure ? refreshed.failure
+    : !payload ? "no close read in the refresh response"
+    : payload.schema !== CLOSE_READ_SCHEMA ? "close read schema mismatch"
+    : `close read dated ${payload.date}, not ${date}`;
+  const record = {
+    schema: CLOSE_READ_RECORD_SCHEMA,
+    date,
+    captured_at: now.toISOString(),
+    scheduled_for: "18:00 America/New_York",
+    capture_status: closeRead ? "CAPTURED" : "FAILED",
+    close_read: closeRead,
+    failure,
+  };
+  try {
+    await putWithRetry(env.PULSE_CACHE, key, JSON.stringify(record));
+    return { written: true, key, record };
+  } catch {
+    return { written: false, reason: "KV write failed", key };
   }
 }
 
@@ -424,6 +489,26 @@ export default {
             : `FAILED: ${captured.reason}`,
           outcomes: outcomes.ok ? { updated: outcomes.updated, pending: outcomes.pending }
             : { failed: outcomes.reason },
+        });
+      })());
+      return;
+    }
+    // 6pm ET weekday (v6.2): the UNSCORED close read — refresh(close) → capture → heartbeat.
+    // No captureDailyCall (the history key is the 10am's alone) and no enrichHistoryOutcomes
+    // (FRED SP500 for today is not posted at 18:00; outcomes stay a 10am concern).
+    if (controller.cron === SNAPSHOT_CLOSE_CRON) {
+      ctx.waitUntil((async () => {
+        const refreshed = await refreshSnapshot(env, { edition: "close", job: "close-6pmET" });
+        const captured = await captureCloseRead(env, new Date(), refreshed);
+        if (!captured.written && captured.reason !== "already captured")
+          console.error("close read capture failed:", captured.reason);
+        await recordWarm(env, "close-6pmET", refreshed.ok, refreshed.status ?? null, {
+          ...(refreshed.warmExtra || {}),
+          edition: "close",
+          close_read: captured.written
+            ? (captured.record.capture_status === "CAPTURED" ? "written" : `FAILED: ${captured.record.failure}`)
+            : captured.reason === "already captured" ? "already captured" : `FAILED: ${captured.reason}`,
+          legs_same_day: refreshed.close_read?.legs_same_day ?? null,
         });
       })());
       return;
