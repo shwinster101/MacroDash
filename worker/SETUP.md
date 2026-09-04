@@ -6,7 +6,7 @@ pushing to `main` deploys the *site*, but the Worker only updates when you run `
 
 ## What this Worker does
 
-A scheduled (Cron) Worker with **four** triggers (`worker/wrangler.toml`). ⚠️ This table, the
+A scheduled (Cron) Worker with **five** triggers (`worker/wrangler.toml`). ⚠️ This table, the
 TOML `crons` array, and the dispatch constants in `cron.js` must all agree — `scheduled()`
 routes by **exact string comparison** on `controller.cron`, and any unmatched string falls
 through to the *legacy* FRED path (a silently misrouted job, not a visible failure). Smoke
@@ -19,10 +19,20 @@ fails the build; this table is documentation of the same contract.
 | `0 21 * * MON-FRI` | 2:00 PM PDT | *legacy* — same |
 | `0 12 * * MON-FRI` | **8:00 AM ET** | **active** — PRE-OPEN warm of `/api/snapshot` (no-op if the day is already cached) |
 | `0 14 * * MON-FRI` | **10:00 AM ET** | **active** — FORCE-REFRESH of the day's snapshot via `POST /api/snapshot/refresh` (needs `REFRESH_TOKEN` — see Step 3; without it, falls back to a non-destructive GET, which is a **cache hit, not a refresh**, whenever the 8 AM warm already populated the day) |
+| `0 22 * * MON-FRI` | **6:00 PM ET** | **active** (v6.2) — the UNSCORED **close read**: `POST /api/snapshot/refresh` with `edition:"close"` (needs `REFRESH_TOKEN`; there is **no GET fallback** — a GET cannot build a close edition, so without the token the job records a FAILED read rather than pretending) |
 
 > The two *legacy* crons feed `/api/fred`, which the dashboard no longer reads (slated for
 > removal in v2.5 cleanup). They still need `FRED_KEY` until removed. The 8 AM warm only makes
 > an HTTP call to `/api/snapshot` and needs **no secret**.
+
+> **What the 6pm job is, and is not (v6.2).** It builds a *close edition* of the snapshot with
+> time-aware failsafes (UST for the 10Y/30Y, CBOE for VIX, a display-only Finnhub SPY print),
+> runs the SAME six-factor engine over it, and freezes the result under its own key
+> (`public:close-read:v1:<date>`) — first write wins, a failed capture is a record too. It
+> does **not** rebuild the day's snapshot key (every open receipt hashed that basis), does
+> **not** write a history row (the 10am call is the only scored call), does **not** run
+> outcome enrichment, and never enters `/readout.json`. The dashboard renders it as one
+> labeled line under the frozen call; `/history.json` joins it into the day's row.
 
 ---
 
@@ -122,7 +132,9 @@ The deploy output lists the registered cron schedules. (`wrangler deploy` replac
 
 ## 5. Verify
 
-**Deploy output** — confirm all **four** crons are listed (`30 12…`, `0 21…`, `0 12…`, `0 14…`).
+**Deploy output** — confirm all **five** crons are listed (`30 12…`, `0 21…`, `0 12…`, `0 14…`, `0 22…`).
+Then, in Triggers → Cron Triggers, every "Next run" must be a **weekday** (Mon–Fri) — the
+2026-08-28 Friday miss was a numeric day-of-week that a dashboard read as Sun–Thu.
 
 **Dashboard:** Cloudflare → **Workers & Pages → Overview → `macrodash-cron` → Settings →
 Triggers → Cron Triggers**. (The "Cron Events" view keeps the 100 most recent invocations.)
@@ -139,6 +151,8 @@ npx wrangler dev
 curl "http://localhost:8787/cdn-cgi/handler/scheduled?cron=0+12+*+*+MON-FRI"
 # simulate the 10 AM ET force-refresh (needs REFRESH_TOKEN, or it falls back to a GET):
 curl "http://localhost:8787/cdn-cgi/handler/scheduled?cron=0+14+*+*+MON-FRI"
+# simulate the 6 PM ET close read (needs REFRESH_TOKEN; no GET fallback — records FAILED without it):
+curl "http://localhost:8787/cdn-cgi/handler/scheduled?cron=0+22+*+*+MON-FRI"
 ```
 The warm fetches `https://macrodash.pages.dev/api/snapshot` (populating the per-day cache);
 the refresh POSTs `/api/snapshot/refresh` with `x-refresh-token`. `?format=json` returns a
@@ -153,18 +167,24 @@ Daylight / Eastern Daylight** time. When the US switches to standard time (~Nove
 UTC hour by +1 so local times hold, then redeploy:
 
 ⚠️ The DST edit is **two files, together**: the TOML schedules below AND the matching
-constants in `cron.js` (`SNAPSHOT_PREWARM_CRON`, `SNAPSHOT_WARM_CRON`) — dispatch is by
-exact string match, so editing only the TOML silently reroutes both snapshot jobs onto the
-legacy FRED path. (An earlier version of this block listed only three crons; following it
-would also have deleted the 8 AM prewarm.) Smoke's contract check goes red if the two files
-disagree.
+constants in `cron.js` (`SNAPSHOT_PREWARM_CRON`, `SNAPSHOT_WARM_CRON`, `SNAPSHOT_CLOSE_CRON`)
+— dispatch is by exact string match, so editing only the TOML silently reroutes the snapshot
+jobs onto the legacy FRED path. (An earlier version of this block listed only three crons;
+following it would also have deleted the 8 AM prewarm.) Smoke's contract check goes red if
+the two files disagree.
+
+⚠️ **The collision (v6.2):** the summer close-read string `0 22 * * MON-FRI` is the SAME
+string as the winter legacy 2 PM PST pull below. Move the legacy pull to `0 22` **only in the
+same edit** that moves the close read to `0 23` (TOML and `SNAPSHOT_CLOSE_CRON` together);
+all five strings must stay distinct, and smoke pins that.
 
 ```toml
 crons = [
   "30 13 * * MON-FRI",   # 5:30 AM PST
-  "0 22 * * MON-FRI",    # 2:00 PM PST
+  "0 22 * * MON-FRI",    # 2:00 PM PST   (legacy — this is the close read's SUMMER string; see the collision note)
   "0 13 * * MON-FRI",    # 8:00 AM EST    ← the pre-open warm  (cron.js: SNAPSHOT_PREWARM_CRON)
-  "0 15 * * MON-FRI"     # 10:00 AM EST   ← the snapshot force-refresh (cron.js: SNAPSHOT_WARM_CRON)
+  "0 15 * * MON-FRI",    # 10:00 AM EST   ← the snapshot force-refresh (cron.js: SNAPSHOT_WARM_CRON)
+  "0 23 * * MON-FRI"     # 6:00 PM EST    ← the close read (cron.js: SNAPSHOT_CLOSE_CRON)
 ]
 ```
 

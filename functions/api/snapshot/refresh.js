@@ -26,6 +26,7 @@ import { authorize } from "../tt.js";
 import { buildSnapshot, publishIfNoWorse } from "../snapshot.js";
 import { buildMacroCall } from "../../../src/macroCall.js";
 import { historyKey, validFrozenCall } from "../../../src/publicHistory.js";
+import { buildCloseRead } from "../../../src/closeRead.js";
 
 const COOLDOWN_KEY = "pulse:refresh:cooldown";
 const COOLDOWN_SEC = 60;                 // KV minimum TTL — also a sane upstream floor
@@ -43,6 +44,17 @@ function crossOrigin(request) {
   const origin = request.headers.get("Origin");
   if (!origin) return false;
   try { return new URL(origin).host !== new URL(request.url).host; } catch (_e) { return true; }
+}
+
+// §9: ONE rolling attempt log for both editions (v6.2) — diagnostic, never blocks a build.
+async function appendAttempt(env, entry) {
+  try {
+    let log = [];
+    try { const prev = await env.PULSE_CACHE?.get(ATTEMPTS_KEY, "json"); if (Array.isArray(prev)) log = prev; } catch {}
+    log.push(entry);
+    if (log.length > ATTEMPTS_CAP) log = log.slice(-ATTEMPTS_CAP);
+    await env.PULSE_CACHE?.put(ATTEMPTS_KEY, JSON.stringify(log), { expirationTtl: 30 * 24 * 3600 });
+  } catch { /* diagnostic only */ }
 }
 
 export async function onRequestGet() {
@@ -69,11 +81,12 @@ export async function onRequestPost({ request, env }) {
     await env.PULSE_CACHE?.put(COOLDOWN_KEY, "1", { expirationTtl: COOLDOWN_SEC });
   } catch { /* KV unavailable — proceed; the build itself will degrade honestly */ }
 
-  let scope = "critical", reason = "operator";
+  let scope = "critical", reason = "operator", edition = "day";
   try {
     const body = await request.json();
     if (body && body.scope === "all") scope = "all";
     if (body && typeof body.reason === "string") reason = body.reason.slice(0, 32);
+    if (body && body.edition === "close") edition = "close";   // v6.2: anything else is the day edition
   } catch { /* empty body — defaults stand */ }
 
   const startedAt = new Date().toISOString();
@@ -81,6 +94,42 @@ export async function onRequestPost({ request, env }) {
   const etDate = new Date().toLocaleDateString("en-CA", { timeZone: "America/New_York" });
   // SYNC HAZARD: key version must match functions/api/snapshot.js / readout.json.js / worker/cron.js.
   const cacheKey = `pulse:snapshot:v16:${etDate}`;
+
+  /* v6.2 — the CLOSE edition (the 6pm cron). The SAME builder with time-aware failsafes and
+     the display-only SPY leg — and NO publishIfNoWorse: the day key is never rebuilt by the
+     6pm run. It is the basis every open receipt hashed and the basis the scored call was
+     projected from; same-day legs must not leak, unlabeled, into Engine 0 or the hero's live
+     evidence. The candidate lives under its OWN side key (48h, diagnostic — nothing reads it
+     for a decision, readout.json ignores it) and the close read rides the response body with
+     `published:false` stated, so no caller can mistake the read for a republish. */
+  if (edition === "close") {
+    const now = new Date();
+    const { snapshot, statuses } = await buildSnapshot(env, { scope: "all", priorLive: null, edition: "close", now });
+    const completedAt = new Date().toISOString();
+    let frozenCall = null;
+    try { frozenCall = validFrozenCall(await env.PULSE_CACHE?.get(historyKey(etDate), "json"), etDate); }
+    catch { /* a day with no 10am row is a real state, stated in the read */ }
+    const closeRead = buildCloseRead({ live: snapshot.live || {}, date: etDate, generatedAt: completedAt, frozenCall, now });
+    const sideKey = `pulse:snapshot:close:v1:${etDate}`;
+    try { await env.PULSE_CACHE?.put(sideKey, JSON.stringify(snapshot), { expirationTtl: 48 * 3600 }); }
+    catch { /* diagnostic side key only */ }
+    await appendAttempt(env, { at: startedAt, attempt_id: attemptId, reason, scope: "all", edition: "close",
+      published: false, improved: false, direction: closeRead.read.direction, headline: closeRead.read.headline,
+      legs_same_day: closeRead.legs_same_day,
+      failures: (statuses || []).filter((s) => !s.ok).map((s) => `${s.source}:${s.item}:${s.error_class}`) });
+    return json({
+      ok: true,
+      edition: "close",
+      published: false,
+      attempt_id: attemptId,
+      started_at: startedAt,
+      completed_at: completedAt,
+      message: `close read built (unscored) · day key untouched · same-day legs: ${closeRead.legs_same_day.join(", ") || "none"}` +
+        (frozenCall ? "" : " · no 10am call frozen today"),
+      close_read: closeRead,
+      source_status: statuses || [],
+    });
+  }
 
   // Read the CURRENT snapshot first — it is the critical-scope carry source, the
   // "no newer observation" baseline, and it is NEVER deleted before the rebuild.
@@ -121,16 +170,10 @@ export async function onRequestPost({ request, env }) {
   if ((statuses || []).some((s) => /no upcoming FOMC event/.test(String(s.message || "")))) messages.push("Kalshi returned no open KXFEDDECISION event");
 
   // §9: persist a rolling attempt log — never overwrite the only evidence of the prior failure.
-  try {
-    let log = [];
-    try { const prev = await env.PULSE_CACHE?.get(ATTEMPTS_KEY, "json"); if (Array.isArray(prev)) log = prev; } catch {}
-    log.push({ at: startedAt, attempt_id: attemptId, reason, scope, published: pub.published, improved: pub.improved,
-      verdict: readout.regime.verdict, confidence: readout.regime.confidence, actionability: readout.regime.actionability,
-      current: readout.regime.current, historical: readout.regime.historical, missing: readout.regime.missing,
-      failures: (statuses || []).filter((s) => !s.ok).map((s) => `${s.source}:${s.item}:${s.error_class}`) });
-    if (log.length > ATTEMPTS_CAP) log = log.slice(-ATTEMPTS_CAP);
-    await env.PULSE_CACHE?.put(ATTEMPTS_KEY, JSON.stringify(log), { expirationTtl: 30 * 24 * 3600 });
-  } catch { /* diagnostic only */ }
+  await appendAttempt(env, { at: startedAt, attempt_id: attemptId, reason, scope, edition, published: pub.published, improved: pub.improved,
+    verdict: readout.regime.verdict, confidence: readout.regime.confidence, actionability: readout.regime.actionability,
+    current: readout.regime.current, historical: readout.regime.historical, missing: readout.regime.missing,
+    failures: (statuses || []).filter((s) => !s.ok).map((s) => `${s.source}:${s.item}:${s.error_class}`) });
 
   // The COMPLETE deterministic readout rides the response — the caller renders THIS, and
   // never rereads KV assuming global write visibility (KV is eventually consistent).

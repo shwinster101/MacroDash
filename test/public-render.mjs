@@ -146,7 +146,8 @@ const browser = await chromium.launch({ executablePath: exe });
 // name implied the public route was covered. `route` is now explicit; scenarios name which
 // surface they prove.
 async function open({ live, status = 200, delayMs = 0, width = 1280, route = "/", power = true,
-  picks = null, history = null, publicCall = null, publicCallFrozen = false, publicCallCapturedAt = null }) {
+  picks = null, history = null, publicCall = null, publicCallFrozen = false, publicCallCapturedAt = null,
+  publicCloseRead = null }) {   // v6.2: the 6pm close-read record (envelope), null = no read tonight
   const page = await browser.newPage({ viewport: { width, height: 900 } });
   // v3.94 SIMPLE/POWER: SIMPLE is the product default; the legacy scenarios below assert the
   // full analytical view, so they seed the persisted Power preference the way a returning
@@ -161,7 +162,7 @@ async function open({ live, status = 200, delayMs = 0, width = 1280, route = "/"
     if (st !== 200) return r.fulfill({ status: st, body: "upstream failure" });
     r.fulfill({ status: 200, contentType: "application/json",
       body: JSON.stringify({ live, cached: false, asOf: new Date().toISOString(),
-        publicCall, publicCallFrozen, publicCallCapturedAt }) });
+        publicCall, publicCallFrozen, publicCallCapturedAt, publicCloseRead }) });
   });
   // v3.97: /api/picks stub — pass a picks-v1 body to render the strip, omit (null) to
   // simulate the failed/absent feed (the strip must then render NOTHING, never example data).
@@ -1626,6 +1627,120 @@ console.log("\n[public] v6.0.1 — shape before text · Simple|Power clarity · 
   ok("v6.0.1 toggle (Power): the fill follows the choice — Power is now the amber half",
     (await page.locator('button[aria-pressed="true"]').evaluate((n) => [n.innerText.replace(/\s+/g, " ").trim(), getComputedStyle(n).backgroundColor].join("|"))) === `◉ Power|${AMBER}`);
   await page.close();
+}
+
+// ── v6.2 — the 6pm CLOSE READ on the hero (both modes), in OPS, and on /history ──────────
+console.log("\n[public] v6.2 — the 6pm close read: one labeled line, both modes, unscored on /history");
+{
+  const readMoon = { schema: "md-call-v1", effective_date: TODAY, headline: "MOONING", emoji: "🚀", direction: "BULLISH",
+    confidence: "HIGH", actionability: "FULL", status: "OK", counts: { usable: 6, total: 6, bullish: 6, neutral: 0, bearish: 0, unavailable: 0 },
+    factors: [], override: { active: false, macro_flip: { evaluable: true, armed: false, tripped: false } }, downgraded: null };
+  const frozenHodl = { schema: "md-call-v1", effective_date: TODAY, headline: "HODL", emoji: "💎", direction: "NEUTRAL",
+    confidence: "MEDIUM", actionability: "RESTRICTED", status: "PARTIAL DATA", counts: { usable: 5, total: 6 }, factors: [], override: { active: false } };
+  const frozenMoon = { ...readMoon };
+  const closeRec = (read, over = {}) => ({ schema: "md-close-read-record-v1", date: TODAY, captured_at: `${TODAY}T22:00:06.000Z`,
+    scheduled_for: "18:00 America/New_York", capture_status: "CAPTURED", failure: null,
+    close_read: { schema: "md-close-read-v1", date: TODAY, generated_at: `${TODAY}T22:00:05.000Z`, edition: "close", scored: false, read,
+      legs: [], legs_same_day: ["tenYear", "fearGreed"], legs_prior: ["vix", "spyPrice"], spy_close: null, basis: {}, headlines: [], drift_vs_call: null }, ...over });
+  const frozenAt = `${TODAY}T14:00:00.000Z`;
+  const LINE = /6pm close read: MOONING 🚀 · BULLISH — the scored 10am call remains frozen above/;
+  let colorDiffers = null;
+  // A. Power: a frozen HODL beside a captured MOONING close read — the read owns the drift slot.
+  {
+    const { page, errors } = await open({ live: FULL_LIVE, publicCall: frozenHodl, publicCallFrozen: true, publicCallCapturedAt: frozenAt, publicCloseRead: closeRec(readMoon) });
+    await page.waitForTimeout(1200);
+    const band = await bandText(page);
+    ok("v6.2 hero (Power): the captured close read renders as ONE labeled line with the scope words, under the frozen HODL",
+      LINE.test(band) && /HODL 💎/.test(band) && /10am frozen call/i.test(band));
+    ok("v6.2 hero: the close read OWNS the drift slot — the live 'Current evidence now reads' line does not also render",
+      !/Current evidence now reads/.test(band) && (await page.locator('[aria-label="Macro backdrop verdict"] .close-read').count()) === 1);
+    colorDiffers = await page.locator('[aria-label="Macro backdrop verdict"] .close-read').evaluate((n) => getComputedStyle(n).color);
+    // OPS: the retired DAILY CALL label is gone, the label IS the edition, and CLOSE READ has its own export.
+    await page.locator("details.hdr-ops summary").click();
+    await page.waitForTimeout(150);
+    ok("v6.2 OPS: '⎘ DAILY CALL' is retired — the operator export reads the edition it will paste (10AM CALL on a frozen day)",
+      !/DAILY CALL/.test(await page.locator("body").innerText()) &&
+      /⎘ 10AM CALL/.test(await page.locator('button[aria-label="Copy MacroDash daily call"]').innerText()));
+    await page.evaluate(() => { window.__closeCopy = null; navigator.clipboard.writeText = (v) => { window.__closeCopy = v; return Promise.resolve(); }; });
+    const closeBtn = page.locator('button[aria-label="Copy MacroDash close read"]');
+    ok("v6.2 OPS: a captured close read gets its own ⎘ CLOSE READ export", await closeBtn.count() === 1 && /⎘ CLOSE READ/.test(await closeBtn.innerText()));
+    await closeBtn.click();
+    await page.waitForTimeout(150);
+    const copied = await page.evaluate(() => window.__closeCopy);
+    ok("v6.2 OPS: the export carries the CLOSE READ edition and says UNSCORED — never the 10am's label on the evening's read",
+      /^MACRODASH CLOSE READ · /.test(copied || "") && /UNSCORED/.test(copied || "") && /MOONING 🚀 · BULLISH/.test(copied || "") &&
+      /CLOSE READ COPIED/.test(await closeBtn.innerText()));
+    ok("v6.2 hero (Power): no page errors", errors.length === 0);
+    await page.close();
+  }
+  // B. Power: an AGREEING close read is muted, not coloured — and the drift fallback survives when there is no read.
+  {
+    const { page } = await open({ live: FULL_LIVE, publicCall: frozenMoon, publicCallFrozen: true, publicCallCapturedAt: frozenAt, publicCloseRead: closeRec(readMoon) });
+    await page.waitForTimeout(1200);
+    const agreeColor = await page.locator('[aria-label="Macro backdrop verdict"] .close-read').evaluate((n) => getComputedStyle(n).color);
+    ok("v6.2 hero: an agreeing close read still renders the line, MUTED — a different colour from the disagreeing one",
+      LINE.test(await bandText(page)) && agreeColor !== colorDiffers);
+    await page.close();
+    const { page: p2 } = await open({ live: FULL_LIVE, publicCall: frozenHodl, publicCallFrozen: true, publicCallCapturedAt: frozenAt, publicCloseRead: null });
+    await p2.waitForTimeout(1200);
+    const b2 = await bandText(p2);
+    ok("v6.2 hero: with NO close read the v5.5 live-drift line renders exactly as before (the fallback survives)",
+      /Current evidence now reads MOONING 🚀 · BULLISH/.test(b2) && !/6pm close read/.test(b2) &&
+      (await p2.locator('button[aria-label="Copy MacroDash close read"]').count()) === 0);
+    await p2.close();
+    const { page: p3 } = await open({ live: FULL_LIVE, publicCall: frozenHodl, publicCallFrozen: true, publicCallCapturedAt: frozenAt,
+      publicCloseRead: closeRec(null, { capture_status: "FAILED", close_read: null, failure: "refresh HTTP 503" }) });
+    await p3.waitForTimeout(1200);
+    ok("v6.2 hero: a FAILED capture renders NO close-read line (history carries it) and no export button",
+      (await p3.locator('[aria-label="Macro backdrop verdict"] .close-read').count()) === 0 &&
+      (await p3.locator('button[aria-label="Copy MacroDash close read"]').count()) === 0);
+    await p3.close();
+  }
+  // C. Simple at 390: the SAME line (owner: both modes), inside the frozen budgets — measured, printed.
+  {
+    const { page, errors } = await open({ live: FULL_LIVE, width: 390, power: false, publicCall: frozenHodl, publicCallFrozen: true, publicCallCapturedAt: frozenAt, publicCloseRead: closeRec(readMoon) });
+    await page.setViewportSize({ width: 390, height: 844 });
+    await page.waitForTimeout(1200);
+    ok("v6.2 hero (Simple): the close read line renders in Simple too — one labeled line, no new Simple element",
+      LINE.test(await bandText(page)) && (await page.locator('[aria-label="Macro backdrop verdict"] .close-read').count()) === 1 &&
+      (await page.locator('button[aria-pressed="true"]', { hasText: "Simple" }).count()) === 1);
+    const [glance, cardsTop] = await page.evaluate(() => {
+      const el = [...document.querySelectorAll("*")].find((n) => n.children.length === 0 && /^●?\s*SPY\*?$/m.test(n.textContent || "") && n.getBoundingClientRect().height > 0);
+      const k = document.querySelector('[aria-label="Key parameters"]');
+      return [el ? Math.round(el.getBoundingClientRect().top + scrollY) : null, k ? Math.round(k.getBoundingClientRect().top + scrollY) : null]; });
+    ok(`v6.2 budgets: WITH a close read the cards still begin within 420px and the strip within 660px at 390×844 (measured ${cardsTop} / ${glance})`,
+      cardsTop !== null && cardsTop <= 420 && glance !== null && glance <= 660);
+    ok("v6.2 hero (Simple): 390px stays overflow-free with the line", await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth + 1) && errors.length === 0);
+    await page.close();
+  }
+  // D. The public route shows it too — it is public content, not operator chrome.
+  {
+    const { page } = await open({ live: FULL_LIVE, route: "/?view=public", width: 320, publicCall: frozenHodl, publicCallFrozen: true, publicCallCapturedAt: frozenAt, publicCloseRead: closeRec(readMoon) });
+    await page.waitForTimeout(1200);
+    ok("v6.2 hero (public route): the close read line renders for a visitor; no OPS export leaks",
+      LINE.test(await bandText(page)) && (await page.locator('button[aria-label="Copy MacroDash close read"]').count()) === 0 &&
+      await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth + 1));
+    await page.close();
+  }
+  // E. /history: the read rides INSIDE the day's row (row count = scored calls), a failed one says so.
+  {
+    const row = (date, call, close_read) => ({ date, capture_status: "CAPTURED", call, outcomes: null, close_read });
+    const { page, errors } = await open({ live: FULL_LIVE, width: 320, route: "/history", power: false, history: {
+      schema: "md-history-v1", live_forward_only: true, available: true, history_start: daysAgo(1), close_reads_unscored: true, close_reads_orphaned: [],
+      rows: [row(TODAY, frozenHodl, closeRec(readMoon)),
+             row(daysAgo(1), frozenMoon, closeRec(null, { date: daysAgo(1), capture_status: "FAILED", close_read: null, failure: "refresh HTTP 503" }))] } });
+    await page.waitForTimeout(500);
+    const body = await page.locator("body").innerText();
+    ok("v6.2 history: the close read renders inside the day's row — labeled, unscored, with its same-day legs and ET clock",
+      /6pm close read: MOONING 🚀 · BULLISH · unscored · same-day legs: 10Y · F&G · 18:00 ET/.test(body));
+    ok("v6.2 history: a FAILED capture is stated in its row, and the row count is still the number of scored calls",
+      /6pm close read: CAPTURE FAILED — refresh HTTP 503/.test(body) &&
+      (await page.locator('ol[aria-label="Daily MacroDash calls"] > li').count()) === 2 &&
+      /unscored 6pm ET close read/.test(body));
+    ok("v6.2 history: no horizontal overflow at 320px, no page errors",
+      await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth + 1) && errors.length === 0);
+    await page.close();
+  }
 }
 
 await browser.close();

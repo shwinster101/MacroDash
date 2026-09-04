@@ -7,7 +7,8 @@ import { buildEvidenceSet, simpleVerdict, simpleCards, simpleSentence, simpleFli
 import { LASTVALID_KEY, summarizeEvidence, compareEvidence } from "./whatChanged.js"; // C4 (v3.60)
 import { isStale, cadenceOf, parseObsDate, isMarketHoliday, nextFomcDate, etYmd } from "./sources.js"; // FEAT-R3: per-tile, cadence-aware staleness + shared market calendar; v3.99: curated FOMC calendar
 import { computeMacroFlip } from "./ttReadout.js"; // FEAT-331: Macro Flip circuit
-import { callFromEvidence, formatMacroCallPaste, formatMacroShareCard } from "./macroCall.js"; // v5.5 frozen call + share card
+import { callFromEvidence, formatMacroCallPaste, formatMacroShareCard, callEdition } from "./macroCall.js"; // v5.5 frozen call + share card
+import { closeReadLine } from "./closeRead.js"; // v6.2: the 6pm close read — ONE line builder, the ptModelRows rule
 import { fmt, pctColor } from "./format.js"; // task 1.3/3.1: one shared copy
 import RegimeBand, { WITHHELD_LABEL, WEN_MOON_STATES } from "./sections/RegimeBand.jsx"; // task 1.3: the verdict band + its vocabulary
 import FiveWhys, { flipChipOf } from "./sections/FiveWhys.jsx"; // task 1.4: presentation only — computeFiveWhys stays here
@@ -507,7 +508,7 @@ export default function Dashboard({ publicView = false } = {}) {
   });
   // FEAT-204 wiring — single-point hook swap; mock stays default, operator flips live post-deploy
   const { data: DATA, mode, asOf, provenance, dataAsOf, liveBuild, lastError, retry,
-    publicCall, publicCallFrozen, publicCallCapturedAt } = useMarketData(MOCK_DATA, { publicView });
+    publicCall, publicCallFrozen, publicCallCapturedAt, publicCloseRead } = useMarketData(MOCK_DATA, { publicView });
   /* v3.97 SHAREABLE SIMPLE: the live S-tier picks. Sections are presentation-only
      (smoke-enforced), so the fetch lives here. LIVE BUILDS ONLY — a demo build must never
      show a picks strip (mock conviction is the v3.1 invariant's exact target), and a fetch
@@ -594,6 +595,11 @@ export default function Dashboard({ publicView = false } = {}) {
   const callDrift=callFrozen&&currentCall.direction&&
     (currentCall.direction!==dailyCall.direction||currentCall.headline!==dailyCall.headline)
       ?currentCall:null;
+  /* v6.2: the 6pm CLOSE READ — a captured, UNSCORED record beside the frozen call. ONE
+     builder (closeReadLine) feeds the hero's slot; `differs` is measured against the SAME
+     dailyCall the hero shows, never a recomputation. Null before 18:00, on a FAILED capture
+     (history carries that), and on any day the record is not today's. */
+  const closeReadNote=closeReadLine(publicCloseRead,dailyCall,etYmd());
   const flip=flipState.evaluable?flipState:null;
   /* ENGINE0-CONT §8: a REAL refresh, distinct from the network-error retry. The operator
      view first asks the server to REBUILD the active snapshot (POST /api/snapshot/refresh —
@@ -738,6 +744,18 @@ export default function Dashboard({ publicView = false } = {}) {
     if(!p)return;
     p.then(()=>{setCallShared(true);setTimeout(()=>setCallShared(false),2000);})
      .catch(()=>{setCallShared(false);});
+  };
+  // v6.2: the close read's own clipboard export — the CLOSE READ edition, never the 10am's
+  // label on the evening's read (the A10 one-word-pair rule, extended to three editions).
+  const [closeCopied,setCloseCopied]=useState(false);
+  const handleCloseReadCopy=()=>{
+    const cr=publicCloseRead?.capture_status==="CAPTURED"?publicCloseRead.close_read?.read:null;
+    if(!cr)return;
+    const block=formatMacroCallPaste(cr,{edition:"CLOSE READ"});
+    const p=navigator.clipboard?.writeText(block);
+    if(!p)return;
+    p.then(()=>{setCloseCopied(true);setTimeout(()=>setCloseCopied(false),2000);})
+     .catch(()=>{setCloseCopied(false);});
   };
 
   // Alert delete with undo (FEAT-166)
@@ -982,8 +1000,15 @@ export default function Dashboard({ publicView = false } = {}) {
                 <button onClick={handleTtCopy} disabled={!anyLive} aria-label="Copy MacroDash daily call" className="hdr-act"
                   title={anyLive?"Copy the canonical MacroDash daily call":"live data required"}
                   style={{fontFamily:T.fontMono,fontSize:9,background:ttCopied?"#1a3020":T.surfaceHigh,border:`1px solid ${ttCopied?T.green:T.borderAccent}`,color:ttCopied?T.green:T.textSecondary,padding:"7px 12px",borderRadius:4,cursor:anyLive?"pointer":"not-allowed",opacity:anyLive?1:0.4,textAlign:"left"}}>
-                  {ttCopied?"✓ CALL COPIED":"⎘ DAILY CALL"}
+                  {/* v6.2: "DAILY CALL" retired — ambiguous once two daily artifacts exist. The
+                      label IS the edition the paste will carry (callEdition: 10AM CALL / LIVE READ). */}
+                  {ttCopied?"✓ CALL COPIED":`⎘ ${callEdition({frozen:callFrozen})}`}
                 </button>
+                {publicCloseRead?.capture_status==="CAPTURED"&&<button onClick={handleCloseReadCopy} aria-label="Copy MacroDash close read" className="hdr-act"
+                  title="Copy tonight's unscored 6pm close read — not the 10am call"
+                  style={{fontFamily:T.fontMono,fontSize:9,background:closeCopied?"#1a3020":T.surfaceHigh,border:`1px solid ${closeCopied?T.green:T.borderAccent}`,color:closeCopied?T.green:T.textSecondary,padding:"7px 12px",borderRadius:4,cursor:"pointer",textAlign:"left"}}>
+                  {closeCopied?"✓ CLOSE READ COPIED":"⎘ CLOSE READ"}
+                </button>}
                 {/* TERMINAL left this menu in v3.98.3 — it is a first-class bar button now.
                     Keeping a second copy here would be two doors to one room. */}
               </div>
@@ -1013,11 +1038,14 @@ export default function Dashboard({ publicView = false } = {}) {
           gets the two directional newbie sentences (prose), Power keeps the compact
           one-liner (sentence). Same buckets, one derivation (postureSummary). */}
       <RegimeBand d={d} stale={staleFactors} loading={mode==="LOADING"} liveBuild={liveBuild} srcLabel={derivedLabel}
-        sentence={callDrift?null:(simple?simpleS:(!evidenceSet.withheld&&evidenceSet.summary?evidenceSet.summary.sentence:null))}
+        /* v6.2: the sentence describes the CURRENT evidence; it is suppressed only when a
+           SUBORDINATE read on screen (live drift, or a captured close read) DISAGREES with the
+           primary call — an agreeing close read leaves it in place. */
+        sentence={(callDrift||closeReadNote?.differs)?null:(simple?simpleS:(!evidenceSet.withheld&&evidenceSet.summary?evidenceSet.summary.sentence:null))}
         plainVerdict={simple?simpleV:null} conf={regimeConf}
         factorRows={evidenceSet.factors} regimeIn={evidenceSet.regime} flipsIn={evidenceSet.flips}
         call={dailyCall} callFrozen={callFrozen} callCapturedAt={publicCallCapturedAt}
-        callDrift={callDrift} onCopyCall={handleCallShare} callCopied={callShared}
+        callDrift={callDrift} closeRead={closeReadNote} onCopyCall={handleCallShare} callCopied={callShared}
         copyDisabled={!anyLive&&!callFrozen}/>
 
       {/* FEAT-WHY (v3.62) sentence now renders INSIDE the hero (v3.94 DRIVERS-ONLY — one

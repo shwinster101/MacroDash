@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { T } from "./design-tokens.js";
+import { CLOSE_LEGS } from "./closeRead.js"; // v6.2: leg labels for the close-read line, from the ONE leg table
 
 const mono={fontFamily:T.fontMono};
 
@@ -27,6 +28,10 @@ function PageShell({ title, eyebrow, children }) {
 }
 
 const stateColor=(direction)=>direction==="BULLISH"?T.green:direction==="BEARISH"?T.red:direction==="NEUTRAL"?T.amber:T.textMuted;
+// v6.2: the close read's capture clock, in ET (the only clock this stack judges by).
+const etClockLabel=(iso)=>{const d=iso?new Date(iso):null;if(!d||isNaN(d.getTime()))return "time unknown";
+  return `${d.toLocaleTimeString("en-US",{timeZone:"America/New_York",hour:"2-digit",minute:"2-digit",hourCycle:"h23"})} ET`;};
+const legLabel=(k)=>CLOSE_LEGS.find((l)=>l.key===k)?.label||k;
 const outcomeColor=(value)=>typeof value!=="number"?T.textMuted:value>0?T.green:value<0?T.red:T.textSecondary;
 const outcomeText=(value)=>typeof value==="number"?`${value>0?"+":""}${value.toFixed(2)}%`:"PENDING";
 
@@ -41,7 +46,7 @@ export function HistoryPage() {
     return()=>{dead=true;};
   },[]);
   return <PageShell eyebrow="Accountability" title="The call, frozen daily.">
-    <p style={{maxWidth:700,lineHeight:1.65,color:T.textSecondary,margin:"0 0 26px"}}>This is a live-forward record, captured once at 10:00am ET each market weekday. There is no reconstructed backfill. Withheld calls and system failures stay visible.</p>
+    <p style={{maxWidth:700,lineHeight:1.65,color:T.textSecondary,margin:"0 0 26px"}}>This is a live-forward record, captured once at 10:00am ET each market weekday. There is no reconstructed backfill. Withheld calls and system failures stay visible. A separate, unscored 6pm ET close read is noted beneath each call where one was captured — context, never the scored call.</p>
     {state.loading&&<p style={{...mono,color:T.textMuted}}>Loading live history…</p>}
     {state.error&&<p role="alert" style={{...mono,color:T.red}}>{state.error}</p>}
     {!state.loading&&!state.error&&!state.rows.length&&<div style={{border:`1px solid ${T.borderAccent}`,borderRadius:6,padding:20,background:T.surface}}>
@@ -85,6 +90,17 @@ export function HistoryPage() {
               </div>
             </div>
           </>:<div style={{marginTop:8}}><strong style={{...mono,color:T.red}}>CAPTURE FAILED</strong><p style={{margin:"5px 0 0",color:T.textSecondary}}>{row.failure||"The scheduled call could not be recorded."}</p></div>}
+          {/* v6.2: the 6pm close read rides INSIDE the day's row — one line, unscored, never a
+              second row (the row count is the number of scored calls). A failed capture is
+              stated as itself; an absent one renders nothing. */}
+          {row.close_read&&(()=>{const cr=row.close_read;const r=cr.capture_status==="CAPTURED"?cr.close_read?.read:null;
+            return <div aria-label={`6pm close read for ${row.date}`} style={{marginTop:9,paddingTop:8,borderTop:`1px dashed ${T.border}`,...mono,fontSize:9,color:T.textSecondary,lineHeight:1.5}}>
+              <span style={{color:T.textMuted}}>6pm close read: </span>
+              {r
+                ?<><span style={{color:stateColor(r.direction)}}>{r.headline||"CAN'T CALL IT"} {r.emoji||"🌫️"} · {r.direction||"DATA HOLD"}</span>
+                  <span style={{color:T.textMuted}}> · unscored · same-day legs: {(cr.close_read.legs_same_day||[]).map(legLabel).join(" · ")||"none"} · {etClockLabel(cr.captured_at)}</span></>
+                :<><span style={{color:T.red}}>CAPTURE FAILED</span><span style={{color:T.textMuted}}> — {cr.failure||"the scheduled read could not be recorded"}</span></>}
+            </div>;})()}
         </li>;
       })}
     </ol>}
@@ -100,7 +116,7 @@ export function DifferencePage() {
     <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(240px,1fr))",gap:12,marginTop:30}}>
       <section style={{background:T.surface,border:`1px solid ${T.border}`,borderRadius:6,padding:18}}><h2 style={{...mono,fontSize:12,color:T.green,margin:"0 0 8px"}}>THE JOB</h2><p style={{margin:0,lineHeight:1.6,color:T.textSecondary}}>Answer whether the macro backdrop supports taking market risk today, and show exactly which evidence earned that answer.</p></section>
       <section style={{background:T.surface,border:`1px solid ${T.border}`,borderRadius:6,padding:18}}><h2 style={{...mono,fontSize:12,color:T.amber,margin:"0 0 8px"}}>THE CONSTRAINT</h2><p style={{margin:0,lineHeight:1.6,color:T.textSecondary}}>We will not compete on indicator count. More tiles are not more judgment. Inputs that are mock, stale, or missing do not get a vote.</p></section>
-      <section style={{background:T.surface,border:`1px solid ${T.border}`,borderRadius:6,padding:18}}><h2 style={{...mono,fontSize:12,color:T.red,margin:"0 0 8px"}}>THE RECEIPT</h2><p style={{margin:0,lineHeight:1.6,color:T.textSecondary}}>Every 10am ET call is frozen in the <a href="/history" style={{color:T.textPrimary}}>public history</a>, including data holds and capture failures.</p></section>
+      <section style={{background:T.surface,border:`1px solid ${T.border}`,borderRadius:6,padding:18}}><h2 style={{...mono,fontSize:12,color:T.red,margin:"0 0 8px"}}>THE RECEIPT</h2><p style={{margin:0,lineHeight:1.6,color:T.textSecondary}}>Every 10am ET call is frozen in the <a href="/history" style={{color:T.textPrimary}}>public history</a>, including data holds and capture failures. The 6pm close read beside each row is unscored context — the same engine, later in the day, never the call being scored.</p></section>
     </div>
   </PageShell>;
 }

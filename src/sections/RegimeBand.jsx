@@ -53,7 +53,7 @@ export const WEN_MOON_STATES = [
 /* v5.3 ONE CALL: `call` owns the visible human headline and secondary machine direction.
    `plainVerdict` remains a Simple-mode scope signal for the eyebrow only; it can no longer
    introduce a competing public label. */
-const RegimeBand=({d,stale=new Set(),loading=false,liveBuild=false,srcLabel="derived from live data",sentence=null,conf=null,factorRows=null,plainVerdict=null,regimeIn=null,flipsIn=null,call=null,callFrozen=false,callCapturedAt=null,callDrift=null,onCopyCall=null,callCopied=false,copyDisabled=false})=>{
+const RegimeBand=({d,stale=new Set(),loading=false,liveBuild=false,srcLabel="derived from live data",sentence=null,conf=null,factorRows=null,plainVerdict=null,regimeIn=null,flipsIn=null,call=null,callFrozen=false,callCapturedAt=null,callDrift=null,closeRead=null,onCopyCall=null,callCopied=false,copyDisabled=false})=>{
   const [open,setOpen]=useState(false);
   // Property 9 (null-safe): no data object means nothing to compute — an empty, hidden
   // region, never a throw. The orchestrator always passes `d`; this guards extraction reuse.
@@ -140,16 +140,9 @@ const RegimeBand=({d,stale=new Set(),loading=false,liveBuild=false,srcLabel="der
                     label ("RISK-ON") beside the scoped one ("MACRO: BULLISH") is two names for
                     one call, so Simple keeps only the descriptor; Power keeps both. The
                     withheld line drops it too — DATA HOLD is already the scoped label. */}
-                {/* v5.9 (beginner read): in Simple the sub is DROPPED. It restates, in
-                    counts, exactly what the plain sentence one line below says in words —
-                    "NEUTRAL · 3 help, 1 does not" over "Volatility, inflation and financial
-                    conditions are supportive, but stocks are priced for perfection." Two
-                    lines for one fact is precisely the density the read flagged, and of the
-                    two the sentence is the one a newcomer can use. Power keeps both. */}
+                {/* v5.9 (beginner read): in Simple the sub is DROPPED — it restates in counts
+                    what the plain sentence below says in words. Power keeps both. */}
                 {loading?"LOADING · waiting for live data before calling a posture"
-                        /* superseded by the canonical call projection:
-                        :`${plainVerdict?"":`${regime.label} · `}${conf&&/\d+ of \d+ inputs usable$/.test(regime.sub)?regime.sub.replace(/ — \d+ of \d+ inputs usable$/,""):regime.sub}`}
-                        */
                         :regime.insufficient?`${WITHHELD_LABEL}${plainVerdict?"":` · ${subText}`}`
                         :`${machineLabel}${plainVerdict?"":` · ${subText}`}`}
               </span>
@@ -172,7 +165,14 @@ const RegimeBand=({d,stale=new Set(),loading=false,liveBuild=false,srcLabel="der
             {liveBuild&&!callFrozen&&!withheld&&!plainVerdict&&<div style={{fontFamily:T.fontMono,fontSize:8,color:T.textMuted,marginTop:3}}>
               {liveReadCaption}
             </div>}
-            {callDrift&&<div style={{fontFamily:T.fontMono,fontSize:9,color:callDrift.direction==="BEARISH"?T.red:T.amber,marginTop:4,lineHeight:1.45}}>
+            {/* v6.2: once captured, the 6pm CLOSE READ owns this slot (the drift line's designed
+                successor — owner ruling 9/2, both modes, ONE labeled line); the scope words are
+                load-bearing, since the same engine now speaks twice a day. Muted when it agrees. */}
+            {closeRead
+              ? <div className="close-read" style={{fontFamily:T.fontMono,fontSize:9,color:closeRead.differs?(closeRead.direction==="BEARISH"?T.red:T.amber):T.textMuted,marginTop:4,lineHeight:1.45}}>
+                  6pm close read: {closeRead.label} — {closeRead.frozen?"the scored 10am call remains frozen above":"unscored; no 10am call was frozen today"}
+                </div>
+              : callDrift&&<div style={{fontFamily:T.fontMono,fontSize:9,color:callDrift.direction==="BEARISH"?T.red:T.amber,marginTop:4,lineHeight:1.45}}>
               Current evidence now reads {callDrift.headline}{callDrift.emoji?` ${callDrift.emoji}`:""} · {callDrift.direction}; the scored 10am call remains frozen above.
             </div>}
             {/* v3.98.3 — one line, one scope word, one vocabulary. It used to read

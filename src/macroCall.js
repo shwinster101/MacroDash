@@ -203,14 +203,26 @@ export function buildMacroCall(live = {}, opts = {}) {
 /* 8/28 clock matrix A10: the operator paste stamped "DAILY CALL" on frozen and unfrozen
    postures alike — the strongest official-call claim on the weakest evidence of being it,
    while the share-card sibling below had split since v5.5. Both builders now use ONE word
-   pair: 10AM CALL (frozen artifact) / LIVE READ (current recomputation). */
-export function formatMacroCallPaste(call = {}, { frozen = false } = {}) {
+   pair: 10AM CALL (frozen artifact) / LIVE READ (current recomputation).
+   v6.2 — a THIRD edition, CLOSE READ, for the 6pm unscored record. The edition is an
+   ENVELOPE word: md-call-v1 itself never carries an edition axis (validFrozenCall,
+   captureDailyCall and the tt-alloc binding cannot see it), so both builders take it as an
+   option. `frozen` keeps its meaning as the 10AM CALL shorthand; an UNKNOWN edition falls
+   to LIVE READ — the weakest claim, never the official one (fail closed on the label). */
+export const CALL_EDITIONS = Object.freeze(["10AM CALL", "CLOSE READ", "LIVE READ"]);
+export function callEdition({ edition = null, frozen = false } = {}) {
+  if (edition == null) return frozen ? "10AM CALL" : "LIVE READ";
+  return CALL_EDITIONS.includes(edition) ? edition : "LIVE READ";
+}
+export function formatMacroCallPaste(call = {}, { frozen = false, edition = null } = {}) {
+  const ed = callEdition({ edition, frozen });
   const label = call.headline ? `${call.headline}${call.emoji ? ` ${call.emoji}` : ""}` : "CAN'T CALL IT 🌫️";
   const lines = [
-    `MACRODASH ${frozen ? "10AM CALL" : "LIVE READ"} · ${call.effective_date || "undated"} · macrodash.pages.dev`,
+    `MACRODASH ${ed} · ${call.effective_date || "undated"} · macrodash.pages.dev`,
     `${label} · ${call.direction || "DATA HOLD"}`,
     `EVIDENCE ${call.confidence || "LOW"} · actionability ${call.actionability || "HOLD"} · ${call.counts?.usable ?? 0} of ${call.counts?.total ?? 6} voters counted`,
   ];
+  if (ed === "CLOSE READ") lines.push("UNSCORED · 6pm close read — the 10am call is the scored one");
   if (call.override?.active) lines.push(`OVERRIDE ${call.override.type} · crash circuit tripped`);
   else if (call.override?.macro_flip?.armed) lines.push("MACRO FLIP ARMED");
   else if (call.override?.macro_flip?.evaluable === false) lines.push("MACRO FLIP BLIND");
@@ -224,14 +236,17 @@ export function formatMacroCallPaste(call = {}, { frozen = false } = {}) {
 
 // The friend-facing posture card is intentionally shorter than the operator paste above.
 // Both consume the SAME md-call-v1 object; this formatter does not recompute a vote.
-export function formatMacroShareCard(call = {}, { frozen = false } = {}) {
+// Always exactly FIVE lines: the CLOSE READ edition swaps line 5 rather than adding one.
+export function formatMacroShareCard(call = {}, { frozen = false, edition = null } = {}) {
+  const ed = callEdition({ edition, frozen });
   const label = call.headline ? `${call.headline}${call.emoji ? ` ${call.emoji}` : ""}` : "CAN'T CALL IT 🌫️";
   const usable = call.counts?.usable ?? 0, total = call.counts?.total ?? 6;
   return [
-    `MACRODASH ${frozen ? "10AM CALL" : "LIVE READ"} · ${call.effective_date || "undated"}`,
+    `MACRODASH ${ed} · ${call.effective_date || "undated"}`,
     `${label} · ${call.direction || "DATA HOLD"}`,
     `${call.confidence || "LOW"} confidence · ${usable} of ${total} voters counted`,
     "Track record: https://macrodash.pages.dev/history",
-    "End-of-day macro evidence · not financial advice",
+    ed === "CLOSE READ" ? "Unscored close read · not financial advice"
+      : "End-of-day macro evidence · not financial advice",
   ].join("\n");
 }
