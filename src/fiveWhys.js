@@ -74,35 +74,12 @@ const deent = (t) => String(t || "")
    as the market's driver costs the credibility of the whole explanation layer.
    ⚠ Curated, like MARKET_HOLIDAYS: a genuinely new macro vocabulary (a novel crisis word)
    needs an entry here, and until it gets one the slot abstains rather than guessing. */
-const MACRO_TERMS = [
-  // policy / central bank
-  "fed", "fomc", "powell", "rate cut", "rate hike", "central bank", "ecb", "boj", "monetary",
-  "quantitative", "basis point", "bps", "tightening", "easing",
-  // inflation / prices
-  "inflation", "cpi", "pce", "deflation", "price index", "wage growth",
-  // growth / labor
-  "gdp", "recession", "jobs report", "payroll", "unemployment", "jobless", "labor market",
-  "consumer spending", "retail sales", "manufacturing", "ism", "pmi",
-  // rates / credit / currency
-  "treasury", "yield", "bond", "credit spread", "default", "downgrade", "debt ceiling",
-  "dollar", "currency",
-  // market-wide risk (not a single company's tape)
-  "stocks", "equities", "s&p", "nasdaq", "dow", "selloff", "sell-off", "rally", "correction",
-  "bear market", "bull market", "volatility", "vix", "risk-off", "risk off", "drawdown",
-  "futures", "index", "benchmark",
-  // commodities / energy
-  "oil", "crude", "opec", "energy prices", "gold",
-  // systemic / geopolitical shocks that transmit to the macro tape
-  "tariff", "trade war", "sanctions", "war", "shutdown", "banking crisis", "bank failure",
-  "contagion", "sovereign", "stimulus",
-  // the RESOLUTION of a geopolitical shock moves the tape as much as its onset
-  "peace", "ceasefire", "truce",
-];
-export function isMacroMaterial(text) {
-  const t = String(text || "").toLowerCase();
-  if (!t) return false;
-  return MACRO_TERMS.some((k) => t.includes(k));
-}
+/* v6.1.0: the allowlist MOVED to src/headlines.js — the ranked headline layer and this gate
+   share ONE table (categories as data, terms verbatim), and isMacroMaterial is re-exported
+   from here because every consumer (and smoke) imports it from this module. The doctrine
+   above stays the doctrine; the ranker restates it for ORDER at the table's home. */
+import { isMacroMaterial, parseTopHeadlines } from "./headlines.js";
+export { isMacroMaterial };
 
 /* 8/28 clock matrix A13: the prefix is the NARRATION's clock. Narrating a FROZEN 10am call,
    an evening reader met "Post-close —" leading its explanation: the time of reading stamped
@@ -167,8 +144,16 @@ export function computeFiveWhys(data, regime = {}, opts = {}) {
   const stamp = etStamp(opts.snapshotAsOf) || data.lastRefresh || null;
   const hd = data.marketPulse?.headline;
   const headlineFresh = !!(hd?.text && hd?.source && hd.source !== "—" && opts.headlineFresh !== false);
+  /* v6.1.0: the ranked top-3 rides beside the rank-1 item. Items 2-3 render ONLY under the
+     same gate the rank-1 passes (fresh AND material), and each is re-checked material by
+     parseTopHeadlines — a stored KV artifact from before the ranker, or a garbled one, can
+     never put a non-macro title in this slot. Rank-1 IS hd.text, so it is skipped here. */
+  const also = headlineFresh && isMacroMaterial(hd.text)
+    ? parseTopHeadlines(hd.topJson).filter((h) => h.title !== hd.text).slice(0, 2)
+    : [];
   const context = headlineFresh && isMacroMaterial(hd.text)
-    ? `Tracked context (${hd.source}): “${deent(hd.text)}”`
+    ? `Tracked context (${hd.source}): “${deent(hd.text)}”` +
+      (also.length ? ` · also ${also.map((h) => `“${deent(h.title)}” (${h.source})`).join(" · ")}` : "")
     : headlineFresh
       ? `The top ${hd.source} RSS item failed the macro-relevance filter`
       : "No current macro headline passed the feed and relevance gates";

@@ -30,6 +30,8 @@ import { sahmFrom } from "../../src/sahm.js";
 // consumes it for publish decisions — THIRD functions/→src/ import, same esbuild-inline path.
 import { buildTtReadout, readoutQuality, compareQuality } from "../../src/ttReadout.js";
 import { historyKey, validFrozenCall } from "../../src/publicHistory.js";
+// v6.1.0: the ranked headline layer — allowlist first, then order (src/headlines.js header).
+import { rankHeadlines, isMacroMaterial } from "../../src/headlines.js";
 
 const CACHE_TTL = 48 * 60 * 60;   // 48h cleanup; the per-day cache KEY drives freshness
 const SETTLING_TTL = 60 * 60;     // short lock-in while the latest close looks not-yet-posted
@@ -261,7 +263,7 @@ export async function buildSnapshot(env, { scope = "all", priorLive = null } = {
     fetchNdx(env.FRED_KEY, statuses),      // NASDAQ100 — the RS check's index leg (no Finnhub dependency)
     withLastGood(env, "feargreed", () => fetchFearGreed(statuses)),
     withLastGood(env, "rateodds", () => fetchRateOdds(env, statuses), rateOddsStillOpen),
-    all ? withLastGood(env, "headline", fetchHeadline) : Promise.reject(new Error("skipped (critical scope)")),
+    all ? withLastGood(env, "headline", () => fetchHeadlines(statuses)) : Promise.reject(new Error("skipped (critical scope)")),
   ]);
   // Phase 2.5: official Treasury par-yield fallback for the 10Y — ONLY when FRED's DGS10
   // leg failed. DGS10 *is* FRED's republication of this same Treasury par yield curve
@@ -1257,59 +1259,82 @@ async function fetchFearGreed(statuses = null) {
 // DEC-31 (v3.2): the CBOE P/C scraper was deleted — the CSV froze at Oct 2019 (feed
 // retired), so it could only ever serve a relic the dashboard immediately STALE-excluded.
 
-// ─── Top market headline (FEAT-NEWS) ──────────────────────────────────────────
-// Breaks the FRED-only stance to answer "did a headline move direction today?". Pulls the
-// TOP item from a market-focused RSS feed (Dow Jones / MarketWatch top-stories; CNBC top
-// news as fallback). DATE-VERIFIED: we parse the item's pubDate and only accept a headline
-// published within the last ~3 days, emitting its real ET date so isStale() flags anything
-// older — we never present a stale headline as today's. Wrapped in withLastGood at the call
-// site. We do not (cannot) verify the CLAIM's truth; we attribute the source + date so it's
-// auditable, and rely on a reputable wire (Dow Jones/CNBC) for credibility.
-async function fetchHeadline() {
-  const feeds = [
-    { url: "https://feeds.content.dowjones.io/public/rss/mw_topstories", source: "MarketWatch" },
-    { url: "https://www.cnbc.com/id/100003114/device/rss/rss.html",      source: "CNBC" },
-  ];
-  const decode = (s) => s
-    .replace(/<!\[CDATA\[|\]\]>/g, "")
-    .replace(/<[^>]+>/g, "")
-    // v3.98.2: NUMERIC entities, hex + decimal — the live MarketWatch feed shipped
-    // "Fed&#x2019;s" and the named-only list below let it through to the page verbatim.
-    .replace(/&#x([0-9a-f]+);/gi, (_m, h) => String.fromCodePoint(parseInt(h, 16)))
-    .replace(/&#(\d+);/g, (_m, d) => String.fromCodePoint(Number(d)))
-    .replace(/&amp;/g, "&").replace(/&#39;|&apos;/g, "'").replace(/&quot;/g, '"')
-    .replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&#8217;|&rsquo;/g, "’")
-    .replace(/&#8216;|&lsquo;/g, "‘").replace(/&#8211;|&ndash;/g, "–")
-    .trim();
-
-  for (const { url, source } of feeds) {
-    try {
-      const r = await fetch(url, {
-        headers: {
-          "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
-          "Accept": "application/rss+xml, application/xml, text/xml, */*",
-        },
-        signal: AbortSignal.timeout(9000),
-      });
-      if (!r.ok) continue;
-      const xml = await r.text();
-      const item = xml.match(/<item>([\s\S]*?)<\/item>/i);
-      if (!item) continue;
-      const titleM = item[1].match(/<title>([\s\S]*?)<\/title>/i);
-      const pubM   = item[1].match(/<pubDate>([\s\S]*?)<\/pubDate>/i);
-      if (!titleM || !pubM) continue;
-      const title = decode(titleM[1]);
-      const pub = new Date(pubM[1].trim());
-      if (!title || isNaN(pub.getTime())) continue;
-      // Date-accuracy gate: accept only a recently-published headline (last ~3 days; allow a
-      // little clock skew into the future). Anything older is stale → skip to the next feed.
-      const ageDays = (Date.now() - pub.getTime()) / 86400000;
-      if (ageDays > 3 || ageDays < -1) continue;
-      const asOf = pub.toLocaleDateString("en-CA", { timeZone: "America/New_York" }); // YYYY-MM-DD ET
-      return { marketHeadline: title, marketHeadlineSource: source, marketHeadlineAsOf: asOf };
-    } catch { /* try next feed */ }
+// ─── Top market headlines (FEAT-NEWS → v6.1.0 RANKED) ─────────────────────────
+// Breaks the FRED-only stance to answer "did a headline move direction today?". v2.9.0 pulled
+// the FIRST item of one feed with a plain fetch — no retry, no status record — which is how
+// the 2026-09-02 build went headline-dark on a heavy news day with ZERO diagnostics. v6.1.0
+// reads EVERY item from a small set of wire feeds (two at a time, under the ~6-connection
+// cap), instruments each feed through fetchRetry + recordStatus, and hands the candidates to
+// src/headlines.js — the ONE-WAY allowlist first, then a curated category score to ORDER the
+// survivors (never to admit one). DATE-VERIFIED as before: only items published within ~3
+// days, emitting each item's real ET date so isStale() governs it. We do not (cannot) verify
+// a CLAIM's truth; we attribute source + date so it is auditable, and rely on reputable wires.
+// Feed URLs are UNPINNED config — a feed that 403s at the Cloudflare edge is dropped, not
+// worked around (the Stooq lesson). Rank #1 still rides `marketHeadline`, so every consumer
+// of the single-item contract is untouched; the top-3 ride `marketHeadlinesJson`.
+const HEADLINE_FEEDS = [
+  { url: "https://feeds.content.dowjones.io/public/rss/mw_topstories", source: "MarketWatch" },
+  { url: "https://www.cnbc.com/id/100003114/device/rss/rss.html",      source: "CNBC" },
+  { url: "https://feeds.a.dj.com/rss/RSSMarketsMain.xml",              source: "WSJ Markets" },
+  { url: "https://www.cnbc.com/id/20910258/device/rss/rss.html",       source: "CNBC Economy" },
+];
+const decodeRss = (s) => String(s || "")
+  .replace(/<!\[CDATA\[|\]\]>/g, "")
+  .replace(/<[^>]+>/g, "")
+  // v3.98.2: NUMERIC entities, hex + decimal — the live MarketWatch feed shipped
+  // "Fed&#x2019;s" and the named-only list below let it through to the page verbatim.
+  .replace(/&#x([0-9a-f]+);/gi, (_m, h) => String.fromCodePoint(parseInt(h, 16)))
+  .replace(/&#(\d+);/g, (_m, d) => String.fromCodePoint(Number(d)))
+  .replace(/&amp;/g, "&").replace(/&#39;|&apos;/g, "'").replace(/&quot;/g, '"')
+  .replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&#8217;|&rsquo;/g, "’")
+  .replace(/&#8216;|&lsquo;/g, "‘").replace(/&#8211;|&ndash;/g, "–")
+  .trim();
+// Every <item> (attributed forms included), not the first — exported solely for smoke.
+export function parseRssItems(xml) {
+  const out = [];
+  for (const m of String(xml || "").matchAll(/<item(?:\s[^>]*)?>([\s\S]*?)<\/item>/gi)) {
+    const titleM = m[1].match(/<title>([\s\S]*?)<\/title>/i);
+    const pubM   = m[1].match(/<pubDate>([\s\S]*?)<\/pubDate>/i);
+    if (!titleM || !pubM) continue;
+    const title = decodeRss(titleM[1]);
+    const pubMs = Date.parse(pubM[1].trim());
+    if (!title || !Number.isFinite(pubMs)) continue;
+    out.push({ title, pubMs });
   }
-  throw new Error("no fresh headline");
+  return out;
+}
+export async function fetchHeadlines(statuses = null, now = new Date()) {
+  const headers = {
+    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
+    "Accept": "application/rss+xml, application/xml, text/xml, */*",
+  };
+  const items = [];
+  let feedsOk = 0;
+  const one = async (feed, feedIndex) => {
+    try {
+      const r = await fetchRetry(feed.url, { headers }, 2, 6000);
+      const parsed = parseRssItems(await r.text());
+      feedsOk++;
+      recordStatus(statuses, "rss", feed.source, true, { items: parsed.length, latency_ms: r._latencyMs ?? null });
+      parsed.forEach((it, itemIndex) => items.push({ ...it, source: feed.source, feedIndex, itemIndex }));
+    } catch (e) { recordStatus(statuses, "rss", feed.source, e); }
+  };
+  for (let i = 0; i < HEADLINE_FEEDS.length; i += 2)
+    await Promise.all(HEADLINE_FEEDS.slice(i, i + 2).map((f, j) => one(f, i + j)));
+  const ranked = rankHeadlines(items, now);
+  const material = items.filter((it) => isMacroMaterial(it.title)).length;
+  // ONE group record so "all feeds failed", "40 candidates, none material" and "ranked 3"
+  // are three DIFFERENT diagnoses in _diag.sources — the 9/2 blank had none.
+  const summary = { feeds_ok: feedsOk, feeds: HEADLINE_FEEDS.length, candidates: items.length, material, ranked: ranked.length };
+  if (!ranked.length) {
+    recordStatus(statuses, "rss", "ranked", Object.assign(new Error(feedsOk ? "no material headline" : "all feeds failed"),
+      { error_class: feedsOk ? "no_observation" : "network" }), summary);
+    throw new Error("no fresh headline");
+  }
+  recordStatus(statuses, "rss", "ranked", true, summary);
+  const top = ranked[0];
+  return { marketHeadline: top.title, marketHeadlineSource: top.source, marketHeadlineAsOf: top.as_of,
+    marketHeadlinesJson: JSON.stringify(ranked) };
 }
 
 // ─── Kalshi FOMC rate-decision odds (FEAT-R9) ────────────────────────────────

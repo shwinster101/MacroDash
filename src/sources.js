@@ -107,6 +107,11 @@ export const SOURCES = {
   // TOP MARKET HEADLINE (FEAT-NEWS — non-FRED RSS; date-verified, staleness via asOf)
   marketHeadline:       { path: "marketPulse.headline.text",   kind: "str", displayClass: "public" },
   marketHeadlineSource: { path: "marketPulse.headline.source", kind: "str", displayClass: "public" },
+  // v6.1.0: the ranked top-3 as a JSON string (the mag10PricesJson precedent) — rank #1 IS
+  // marketHeadline, so every existing consumer and pin is untouched. Cadence stays DAILY
+  // (inherited): a Monday item reads STALE two sessions later, which is the honest read of
+  // a news slot — documented here rather than special-cased.
+  marketHeadlinesJson:  { path: "marketPulse.headline.topJson", kind: "str", displayClass: "public" },
   // VALUATION (Shiller CAPE — multpl.com scrape; the regime's valuation vote, monthly cadence)
   shillerPe:      { path: "macro.shillerPe.current",       kind: "num",    displayClass: "public" },
   // AI TOKEN ECONOMICS (the moat — OpenRouter public models API; price side of AI unit economics)
@@ -168,8 +173,8 @@ export const DERIVED_OF = {
   cpiTrend: "cpiHeadline", pceTrend: "pceHeadline",
   // sentiment (CNN F&G — fearGreed is the primary pull)
   fearGreedLabel: "fearGreed",
-  // headline (RSS — marketHeadline is the primary pull)
-  marketHeadlineSource: "marketHeadline",
+  // headline (RSS — marketHeadline is the primary pull; v6.1.0 the ranked list rides its date)
+  marketHeadlineSource: "marketHeadline", marketHeadlinesJson: "marketHeadline",
   // AI token economics (OpenRouter — tokenBlendedMtok is the primary pull)
   tokenTrend: "tokenBlendedMtok", tokenModelsJson: "tokenBlendedMtok",
   // FEAT-TOKVOL (v3.85): tokenVolDay carries its own AsOf; only its trend derives from it.
