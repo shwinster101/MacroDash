@@ -1387,7 +1387,8 @@ console.log("\n[public] wave-17 fix — strip F&G color derives from the band vo
   const col = await page.evaluate(() => {
     const cell = [...document.querySelectorAll(".macro-strip-inner > div")]
       .find((el) => /F&G/.test(el.textContent));
-    return getComputedStyle(cell.lastElementChild).color;
+    // v6.3: the tile's last child is the sheet button now; the sub-line carries its own class.
+    return getComputedStyle(cell.querySelector(".strip-sub")).color;
   });
   ok("fix: a NEUTRAL F&G (45) renders the neutral grey on the strip, not bearish red",
     col === "rgb(136, 146, 164)");
@@ -1404,7 +1405,7 @@ console.log("\n[public] wave-17 fix — strip F&G color derives from the band vo
   const col = await page.evaluate(() => {
     const cell = [...document.querySelectorAll(".macro-strip-inner > div")]
       .find((el) => /F&G/.test(el.textContent));
-    return getComputedStyle(cell.lastElementChild).color;
+    return getComputedStyle(cell.querySelector(".strip-sub")).color;   // v6.3: by class (see above)
   });
   ok("fix control: a genuine greed reading (62, bull) still renders green — no over-correction",
     col === "rgb(46, 204, 113)");
@@ -1602,7 +1603,7 @@ console.log("\n[public] v6.0.1 — shape before text · Simple|Power clarity · 
   /* v6.0.2: every voting tile's ▪ wears its VOTE colour (this tape is all-bull → all green),
      and it is the same colour its vote-coloured sub-line wears where one exists (F&G, NFCI). */
   const marks = await page.evaluate(() => [...document.querySelectorAll(".macro-strip-inner > div")].map((tile) => {
-    const m = tile.querySelector(".strip-vote"); const sub = tile.lastElementChild;
+    const m = tile.querySelector(".strip-vote"); const sub = tile.querySelector(".strip-sub");   // v6.3: by class — the last child is the sheet button
     return { l: tile.innerText.split("\n")[0].replace("▪", "").trim(), mark: m ? getComputedStyle(m).color : null,
       sub: sub ? getComputedStyle(sub).color : null, title: tile.getAttribute("title") }; }));
   ok("v6.0.2 strip: the 5 live voters carry a GREEN ▪ on the bull tape, non-voters carry none, and the title names the vote",
@@ -1741,6 +1742,103 @@ console.log("\n[public] v6.2 — the 6pm close read: one labeled line, both mode
       await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth + 1) && errors.length === 0);
     await page.close();
   }
+}
+
+// ── v6.3 — eight sheets: every macro-strip tile opens its explainer, DRIVEN ──────────────
+console.log("\n[public] v6.3 — eight sheets on the macro strip (Power, Simple, a dark voter)");
+{
+  const { page, errors } = await open({ live: FULL_LIVE });
+  await page.waitForTimeout(1200);
+  const tiles = page.locator(".macro-strip-inner > div");
+  const trigger = (i) => tiles.nth(i).locator('button[aria-haspopup="dialog"]');
+  ok("v6.3 strip: all EIGHT tiles carry a dialog trigger, and nothing is open until one is tapped",
+    (await page.locator('.macro-strip-inner button[aria-haspopup="dialog"]').count()) === 8 &&
+    (await page.locator('[role="dialog"]').count()) === 0);
+  // SPY* — a context tile with the new copy.
+  await trigger(0).click();
+  await page.waitForTimeout(250);
+  const dlg = page.locator('[role="dialog"]');
+  const spyBody = await dlg.innerText();
+  ok("v6.3 SPY* sheet: the official name as the title, exactly 3 bullets, the proxy stated, and the eyebrow carrying the tile's OWN reading + CONTEXT ONLY",
+    /S&P 500 Index/.test(await page.locator("#factsheet-title").innerText()) && (await dlg.locator("li").count()) === 3 &&
+    /SPY\* · \$748\.1 · CONTEXT ONLY/i.test(spyBody) && /÷ 10 from FRED/.test(spyBody) && /six-factor vote does not read/.test(spyBody));
+  await page.keyboard.press("Escape");
+  await page.waitForTimeout(200);
+  ok("v6.3 SPY* sheet: Escape closes it and focus lands back on the SPY tile",
+    (await page.locator('[role="dialog"]').count()) === 0 &&
+    await page.evaluate(() => !!document.activeElement && document.activeElement.getAttribute("aria-haspopup") === "dialog" && /SPY\*/.test(document.activeElement.innerText)));
+  // VIX — a voter tile: the SAME sheet the Simple card opens (one home, proven on the wire).
+  await trigger(2).click();
+  await page.waitForTimeout(250);
+  const vixBody = await dlg.innerText();
+  ok("v6.3 VIX sheet: the band's own sheet — same title as the card's, the band's own bullet, and the eyebrow says VOTES BULL",
+    (await page.locator("#factsheet-title").innerText()) === "Cboe Volatility Index (VIX)" &&
+    /The teens are calm/.test(vixBody) && /VIX · 16\.1 · VOTES BULL/i.test(vixBody));
+  await page.keyboard.press("Escape");
+  await page.waitForTimeout(200);
+  // FED — the target range is live in this fixture.
+  await trigger(5).click();
+  await page.waitForTimeout(250);
+  const fedBody = await dlg.innerText();
+  ok("v6.3 FED sheet: the target range's official name, the tile's own range reading, and both readings named in the body",
+    /Federal Funds Rate Target Range/.test(await page.locator("#factsheet-title").innerText()) &&
+    /FED · 3\.50–3\.75% · CONTEXT ONLY/i.test(fedBody) && /effective average/.test(fedBody) && /lags a decision/.test(fedBody));
+  await page.locator("button.fs-close").click();
+  await page.waitForTimeout(200);
+  // NFCI — the 8th tile, a voter reading bull on this tape.
+  await trigger(7).click();
+  await page.waitForTimeout(250);
+  ok("v6.3 NFCI sheet: the 8th tile opens the NFCI band's sheet with its vote in the eyebrow",
+    /Chicago Fed National Financial Conditions Index/.test(await page.locator("#factsheet-title").innerText()) &&
+    /NFCI · -0\.62 · VOTES BULL/i.test(await dlg.innerText()));
+  await page.keyboard.press("Escape");
+  await page.waitForTimeout(200);
+  ok("v6.3 strip (Power): the hover tooltips survive beside the sheets — three vote states, verbatim",
+    /Context only — does not vote\./.test(await tiles.nth(0).getAttribute("title")) &&
+    /Counts toward today's posture — votes BULL\./.test(await tiles.nth(2).getAttribute("title")));
+  ok("v6.3 strip (Power): no page errors through four sheets", errors.length === 0);
+  await page.close();
+}
+{
+  // A DARK voter: the eyebrow must say so, never claim a vote.
+  const { page } = await open({ live: DEGRADED });
+  await page.waitForTimeout(1200);
+  await page.locator(".macro-strip-inner > div").nth(7).locator('button[aria-haspopup="dialog"]').click();
+  await page.waitForTimeout(250);
+  ok("v6.3 sheet: a voter that is DARK today opens its sheet with 'dark today' in the eyebrow — the sheet never implies a vote",
+    /NFCI · .* · DARK TODAY/i.test(await page.locator('[role="dialog"]').innerText()) &&
+    !/VOTES/i.test(await page.locator('[role="dialog"]').innerText()));
+  await page.keyboard.press("Escape");
+  await page.close();
+}
+{
+  // Simple at 390×844: the same eight triggers, a real phone thumb target, the budgets held.
+  const { page, errors } = await open({ live: FULL_LIVE, width: 390, power: false });
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.waitForTimeout(1200);
+  ok("v6.3 strip (Simple): all eight tiles are sheet triggers and each wears the ⓘ affordance",
+    (await page.locator('.macro-strip-inner button[aria-haspopup="dialog"]').count()) === 8 &&
+    ((await page.locator(".macro-strip-inner").innerText()).match(/ⓘ/g) || []).length === 8);
+  const heights = await page.evaluate(() => [...document.querySelectorAll(".macro-strip-inner .strip-tile")].map((b) => Math.round(b.getBoundingClientRect().height)));
+  ok(`v6.3 strip (Simple): every tile button is a ≥44px thumb target at 390px (measured ${Math.min(...heights)}–${Math.max(...heights)})`,
+    heights.length === 8 && heights.every((h) => h >= 44));
+  await page.locator(".macro-strip-inner > div").nth(4).locator('button[aria-haspopup="dialog"]').click();   // 10Y
+  await page.waitForTimeout(250);
+  ok("v6.3 sheet (Simple): the 10Y tile opens the 10Y band's sheet, centred and inside the phone viewport",
+    (await page.locator("#factsheet-title").innerText()) === "10-Year U.S. Treasury Yield" &&
+    await page.evaluate(() => { const r = document.querySelector('[role="dialog"]').getBoundingClientRect();
+      return r.top >= 0 && r.bottom <= window.innerHeight && r.left >= 0 && r.right <= window.innerWidth; }));
+  await page.keyboard.press("Escape");
+  await page.waitForTimeout(200);
+  const [glance, cardsTop] = await page.evaluate(() => {
+    const el = [...document.querySelectorAll("*")].find((n) => n.children.length === 0 && /^●?\s*SPY\*?$/m.test(n.textContent || "") && n.getBoundingClientRect().height > 0);
+    const k = document.querySelector('[aria-label="Key parameters"]');
+    return [el ? Math.round(el.getBoundingClientRect().top + scrollY) : null, k ? Math.round(k.getBoundingClientRect().top + scrollY) : null]; });
+  ok(`v6.3 budgets: with eight sheet triggers the cards still begin within 420px and the strip within 660px at 390×844 (measured ${cardsTop} / ${glance})`,
+    cardsTop !== null && cardsTop <= 420 && glance !== null && glance <= 660);
+  ok("v6.3 strip (Simple): 390px stays overflow-free, no page errors",
+    await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth + 1) && errors.length === 0);
+  await page.close();
 }
 
 await browser.close();
