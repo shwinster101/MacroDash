@@ -5,6 +5,48 @@ answers *"is it safe to be in the market?"* from live macro + market + sentiment
 data. Single-page React app on Cloudflare Pages, with live data assembled at the
 edge by Pages Functions and cached in KV.
 
+**v6.3.0 "EIGHT SHEETS" — every macro-strip tile opens its explainer, the way the VIX card
+does (owner, on the live VIX sheet 9/5: "publish the descriptor popups for the 8 parameters").**
+Five of the eight tiles — VIX · F&G · 10Y · CPI · NFCI — ARE band factors whose copy has lived
+on `REGIME_BAND_TABLE` since v5.8, beside the rule it describes; the other three — SPY* · QQQ ·
+FED — vote nowhere, had no sheet anywhere, and carried only a hover `title`, which is exactly the
+v3.73 audit finding *"hover-only strip explanations unreachable on touch"*, open since the
+extraction. **One resolver, two homes, no copies.** `src/stripExplain.js` (pure, Node-importable)
+resolves a strip FIELD to its explainer: a band factor hands over the band's OWN object — pinned
+by **identity**, not equality, so the card's sheet and the strip's sheet for one factor are the
+same object by construction — and the three context tiles read a single `CONTEXT_EXPLAIN` table
+keyed by field. The FED tile has TWO field identities (the target range when live, the FEDFUNDS
+monthly average when that feed is dark — the strip flips `f` by liveness); both keys resolve to
+ONE sheet, pinned by identity. Same contract as every explainer in the product, `{full, what:
+[exactly 3]}`, in the v5.9.5 beat order — and **beat 2 of a context sheet is load-bearing**: each
+must SAY the six-factor vote does not read it and call itself context, or a tile wearing the same
+sheet shape as a voter would imply a vote it never casts (the pin caught the QQQ draft missing
+the word). The SPY sheet states the proxy (÷ 10 from FRED, not the ETF's quote) AND the one
+circuit the price does feed (200-day + VIX 25 forces the call bearish); the FED sheet names both
+readings the tile can show and the lagging average; the QQQ sheet names Finnhub and Engine 0's
+same-day relative-strength check. Titles are spelled-out official names (owner rule, v5.9.5).
+**The strip.** The tile's outer div keeps its layout, classes and hover title (a mouse still gets
+the three verbatim vote states); its whole face is now an `Explainable` button (the v5.8 card
+rule — the tap target is the parameter, not an affordance to hunt), with the same amber ⓘ the
+cards wear and the screen-reader promise beside the tile's own text. The sheet's eyebrow restates
+THIS tile's reading and vote state in the strip's own vocabulary — `VIX · 16.1 · votes BULL`,
+`SPY* · $748.1 · context only`, `NFCI · … · dark today` — so a context tile can never wear a
+voter's words. The section stays presentation-only (the resolver is a lookup, the sheet and its
+open state live in the primitive). A 44px phone thumb target joins the cards and the ✕ (measured
+44 on all eight at 390px). The sub-line gained `.strip-sub` and the three browser pins that read
+the tile's LAST CHILD were re-pointed to it with the reason — the last child is the button now.
+Simple budgets re-measured WITH the triggers: cards 337 · strip 607 (was 602; +5 from the
+button's box, inside the 660 guard — printed, never loosened).
+Tests: **2258 smoke** (+18, section [79]: shape for all eight, band identity ×5, the FED
+two-keys-one-sheet identity, null for unknown, the context table's exact key set, the beat-2
+rule, the three copy facts, spelled-out titles, module purity, and the strip wiring) + 309 render
++ **283 public-render** (+14: SPY/VIX/FED/NFCI sheets driven in Power with Escape-restores-focus,
+a DARK voter's eyebrow, the eight ⓘ and eight 44px targets in Simple, the 10Y sheet centred in a
+390×844 viewport, the budgets measured, 320-class overflow). Negative-controlled three ways —
+the band object copied instead of handed over (identity pin), the ⓘ dropped (affordance pin),
+the 44px rule removed (thumb-target pin) — each turning exactly its own pin; the beat-2 pin
+proved itself on the QQQ draft before any control was run.
+
 **v6.2.0 "THE CLOSE READ" — a second run at 6pm ET that is labeled, subordinate and UNSCORED;
 the 10am call stays THE call (owner question 9/2: "should we increase to 2x per day? second at
 4:30 ET?").** The exploration answered the literal question NO: at 4:30 FRED still holds

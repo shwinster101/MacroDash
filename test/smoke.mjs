@@ -48,6 +48,7 @@ import { plausible, applyBands, quorum, QUORUM_FIELDS, QUORUM_MIN, marketSession
   onRequest as getSnapshot } from "../functions/api/snapshot.js";
 import { etYmd, expectedObsDate, isSessionDay, CLOSE_PUBLISHED_ET } from "../src/sources.js";
 import { CLOSE_LEGS, classifyLegs, buildCloseRead, closeReadLine } from "../src/closeRead.js"; // v6.2
+import { CONTEXT_EXPLAIN, stripExplainFor } from "../src/stripExplain.js"; // v6.3
 // UI-OVERHAUL Slice 1 (task 1.1): tokens are a real module now — smoke IMPORTS it (the v3.60
 // convention: the actual export is tested, immune to formatting drift) instead of regexing
 // hex values out of dashboard.jsx source text.
@@ -11246,6 +11247,73 @@ console.log("\n[78] v6.2.0 the 6pm CLOSE READ — expectedObsDate · failsafeDue
       return cached.publicCloseRead?.schema === CLOSE_READ_RECORD_SCHEMA && cached.publicCallFrozen === true && cached.publicCall.headline === "HODL" &&
         built.publicCloseRead?.schema === CLOSE_READ_RECORD_SCHEMA && built.cached === false &&
         !("close_read" in ro) && !JSON.stringify(ro).includes("close_read") && ro.schema === "tt-v1"; })));
+}
+
+// ═══════════ [79] v6.3.0 — eight sheets: every macro-strip tile opens its explainer ═════════
+// Owner (2026-09-05, on the live VIX sheet): "publish the descriptor popups for the 8
+// parameters". Five tiles ARE band factors and must hand over the band's OWN explainer object
+// (one home — identity, not equality); SPY* · QQQ · FED are context tiles with new copy in one
+// table. Also closes the v3.73 audit finding "hover-only strip explanations unreachable on
+// touch". Everything about copy shape and identity is RUN through the real resolver.
+console.log("\n[79] v6.3.0 eight sheets — one resolver, band identity, context copy, the strip wiring");
+{
+  const STRIP_FIELDS = ["spyPrice", "qqqPrice", "vix", "fearGreed", "tenYear", "fedTargetUpper", "cpiHeadline", "nfci"];
+  const shapeOk = (e) => e && typeof e.full === "string" && e.full.length > 8 && Array.isArray(e.what) && e.what.length === 3 &&
+    e.what.every((s) => typeof s === "string" && s.length > 20) && Object.keys(e).every((k) => k === "full" || k === "what");
+  ok("[79] every one of the eight strip fields resolves to a complete explainer — full name, EXACTLY 3 bullets, nothing else",
+    STRIP_FIELDS.every((f) => shapeOk(stripExplainFor(f))));
+  ok("[79] the five voter tiles resolve to the band's OWN explainer object — identity, never a copy (one home)",
+    ["vix", "fearGreed", "tenYear", "cpiHeadline", "nfci"].every((k) =>
+      stripExplainFor(k) === REGIME_BAND_TABLE.find((b) => b.key === k).explain));
+  ok("[79] the FED tile's two field identities (target range live · FEDFUNDS average dark) resolve to ONE sheet by identity",
+    stripExplainFor("fedTargetUpper") === stripExplainFor("fedFunds") && stripExplainFor("fedFunds") === CONTEXT_EXPLAIN.fedTargetUpper &&
+    /Target Range/.test(stripExplainFor("fedFunds").full));
+  ok("[79] an unknown or malformed field resolves to null (Explainable then degrades to a plain div — a button that opens nothing is a lie)",
+    stripExplainFor("bogus") === null && stripExplainFor("") === null && stripExplainFor(null) === null && stripExplainFor(42) === null);
+  ok("[79] the context table is exactly SPY · QQQ · FED (two keys) — a band factor never gets a second copy here",
+    JSON.stringify(Object.keys(CONTEXT_EXPLAIN).sort()) === JSON.stringify(["fedFunds", "fedTargetUpper", "qqqPrice", "spyPrice"]) &&
+    !("vix" in CONTEXT_EXPLAIN) && !("tenYear" in CONTEXT_EXPLAIN) && !("nfci" in CONTEXT_EXPLAIN) && !("cpiHeadline" in CONTEXT_EXPLAIN) && !("fearGreed" in CONTEXT_EXPLAIN));
+  // Beat 2 for a context tile is load-bearing: the sheet must SAY the six-factor vote does not
+  // read it, or a tile wearing the same sheet shape as a voter would imply a vote it never casts.
+  ok("[79] every context sheet states in its second bullet that the six-factor vote does not read it — context, never an implied vote",
+    ["spyPrice", "qqqPrice", "fedTargetUpper"].every((f) => /six-factor vote does not read/.test(CONTEXT_EXPLAIN[f].what[1]) && /context/.test(CONTEXT_EXPLAIN[f].what[1])));
+  ok("[79] the SPY sheet is honest about the proxy (÷ 10 from FRED, not the ETF's quote) and names the crash circuit it DOES feed (200-day + VIX 25)",
+    /÷ 10 from FRED/.test(CONTEXT_EXPLAIN.spyPrice.what[0]) && /not the ETF's own quote/.test(CONTEXT_EXPLAIN.spyPrice.what[0]) &&
+    /200-day average/.test(CONTEXT_EXPLAIN.spyPrice.what[1]) && /VIX above 25/.test(CONTEXT_EXPLAIN.spyPrice.what[1]) && /crash circuit/.test(CONTEXT_EXPLAIN.spyPrice.what[1]));
+  ok("[79] the QQQ sheet names its source (Finnhub), its read against SPY, and Engine 0's same-day relative-strength check",
+    /Finnhub/.test(CONTEXT_EXPLAIN.qqqPrice.what[0]) && /against SPY/.test(CONTEXT_EXPLAIN.qqqPrice.what[1]) &&
+    /relative-strength check/.test(CONTEXT_EXPLAIN.qqqPrice.what[1]) && /same day/.test(CONTEXT_EXPLAIN.qqqPrice.what[1]));
+  ok("[79] the FED sheet names BOTH readings the tile can show (the target range, and the lagging monthly effective average) and the FOMC countdown",
+    /target range/i.test(CONTEXT_EXPLAIN.fedTargetUpper.what[0]) && /effective average/.test(CONTEXT_EXPLAIN.fedTargetUpper.what[0]) &&
+    /lags a decision/.test(CONTEXT_EXPLAIN.fedTargetUpper.what[0]) && /next FOMC decision/.test(CONTEXT_EXPLAIN.fedTargetUpper.what[1]));
+  ok("[79] context titles are spelled-out official names, never a bare ticker or acronym",
+    /S&P 500 Index/.test(CONTEXT_EXPLAIN.spyPrice.full) && /Invesco QQQ Trust/.test(CONTEXT_EXPLAIN.qqqPrice.full) && /Nasdaq-100/.test(CONTEXT_EXPLAIN.qqqPrice.full) &&
+    /Federal Funds Rate Target Range/.test(CONTEXT_EXPLAIN.fedTargetUpper.full) && /FOMC/.test(CONTEXT_EXPLAIN.fedTargetUpper.full));
+  ok("[79] the resolver module is pure — no React, no fetch, no storage; the band table is its only import",
+    (() => { const src = noCmt(readSrc("../src/stripExplain.js"));
+      return !/from "react"|fetch\(|localStorage|useState|useEffect/.test(src) && /import \{ REGIME_BAND_TABLE \} from "\.\/regime\.js"/.test(src) &&
+        (src.match(/^import /gm) || []).length === 1; })());
+  // ── the strip wiring (source-pinned; the browser suite DRIVES the taps) ──
+  const strip = readSrc("../src/sections/MacroStrip.jsx");
+  ok("[79] strip: every tile's face is wrapped in Explainable with the RESOLVED explainer, the full name as the title, and the tile's own reading + vote state as the eyebrow",
+    /const ex=stripExplainFor\(f\);/.test(strip) &&
+    /<Explainable explain=\{ex\} title=\{ex\?ex\.full:l\}/.test(strip) &&
+    /eyebrow=\{`\$\{l\} · \$\{v\}\$\{votes\?` · votes \$\{vs\.word\}`:isVoter\?" · dark today":" · context only"\}`\}/.test(strip) &&
+    /import \{ Explainable \} from "\.\.\/primitives\/FactSheet\.jsx";/.test(strip) && /import \{ stripExplainFor \} from "\.\.\/stripExplain\.js";/.test(strip));
+  ok("[79] strip: the button is a reset face (no box of its own) inside the tile div that keeps the hover title, the classes and the layout",
+    /className="strip-tile" style=\{\{background:"none",border:"none",padding:0,margin:0\}\}/.test(strip) &&
+    /<div key=\{l\} title=\{`\$\{t\}\\n\(\$\{m\.toLowerCase\(\)\}\)/.test(strip) && /style=\{\{flexShrink:0,minWidth:68,cursor:"help"\}\}>\s*<Explainable/.test(strip));
+  ok("[79] strip: the affordance is stated — the amber ⓘ and the screen-reader promise ride the label row only when a sheet exists",
+    /\{ex&&<span aria-hidden="true" title="What is this\?"[^>]*>ⓘ<\/span>\}/.test(strip) &&
+    /\{ex&&<span className="visually-hidden"> — what is this\? Opens an explainer\.<\/span>\}/.test(strip));
+  ok("[79] strip: the sub-line carries its own class (the browser suite reads its colour by class now that the tile's last child is the button)",
+    /<div className="strip-sub" style=\{\{fontFamily:T\.fontMono,fontSize:9,color:sc\}\}>\{s\}<\/div>/.test(strip));
+  ok("[79] strip: presentation only — the section still imports no computation, hook or storage, and stays under the 300-line bound",
+    !/useMarketData|computeRegime|buildEvidenceSet|summarizeEvidence|compareEvidence|localStorage/.test(noCmt(strip)) && strip.split("\n").length <= 300);
+  ok("[79] strip: the phone thumb target — every tile button gets the same 44px floor the cards and the ✕ get",
+    /@media\(max-width:480px\)\{\.strip-tile\{min-height:44px;\}\}/.test(dashSrc));
+  ok("[79] the tooltips are untouched — a mouse still gets the three vote states verbatim (v3.98.4 / v6.0.2)",
+    /Counts toward today's posture — votes \$\{vs\.word\}\./.test(strip) && /A voter, but dark today — not counted\./.test(strip) && /Context only — does not vote\./.test(strip));
 }
 
 console.log(`\n=== SMOKE TEST: ${pass} passed, ${fail} failed ===`);

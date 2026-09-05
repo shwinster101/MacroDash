@@ -851,6 +851,9 @@ export default function Dashboard({ publicView = false } = {}) {
            shrink it below the floor without failing the pin. */
         .simple-card{min-height:44px;}
         @media(max-width:480px){.fs-close{min-height:44px;min-width:44px;}}
+        /* v6.3: every strip tile is a sheet trigger now — the same phone thumb target the cards
+           and the sheet's ✕ get (v3.42 slice 1, v5.8), measured rather than assumed. */
+        @media(max-width:480px){.strip-tile{min-height:44px;}}
         /* v3.62: the ⋯ OPS disclosure. The default triangle marker is suppressed so the summary
            reads as the button it is; it keeps native keyboard/AT behaviour either way. */
         .hdr-ops>summary::-webkit-details-marker{display:none;}

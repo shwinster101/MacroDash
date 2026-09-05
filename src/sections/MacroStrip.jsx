@@ -20,6 +20,13 @@
 import { T } from "../design-tokens.js";
 import { REGIME_BAND_TABLE, voteStyle } from "../regime.js";
 import { fmt, pctColor } from "../format.js";
+/* v6.3 (owner: "publish the descriptor popups for the 8 parameters"): every tile opens the
+   SAME 3-bullet sheet the Simple cards open. The copy is resolved by src/stripExplain.js —
+   a band factor's tile hands over the band's OWN explainer object (one home, never a copy),
+   the three context tiles get theirs from the one context table. The sheet and its open
+   state live in the primitive (sections stay presentation-only, the v3.73 boundary). */
+import { Explainable } from "../primitives/FactSheet.jsx";
+import { stripExplainFor } from "../stripExplain.js";
 
 const bandOf=(k)=>REGIME_BAND_TABLE.find((b)=>b.key===k);
 
@@ -92,16 +99,31 @@ const MacroStrip=({d,modeOf,fomcLabel,fomcDays,votingFields,badge})=>{
              chip for the same factor. Glyph unchanged (the "counts today" contract, v3.98.4);
              the vote WORD rides the title so a reader can confirm what the colour means. */
           const vb=votes?bandOf(f):null; const vs=vb?voteStyle(vb.vote(vb.read(d))):null;
+          /* v6.3: the tile's WHOLE face is the tap target (the v5.8 card rule — "clicking on
+             each context parameter", not hunting an affordance on a phone). The outer div keeps
+             the layout, the classes and the hover title (a mouse still gets the tooltip); the
+             button inside it is the phone's path to the same fact, one tap deep. The sheet's
+             eyebrow restates THIS tile's own reading and its vote state in the strip's own
+             vocabulary, so a context tile can never wear a voter's words. */
+          const ex=stripExplainFor(f);
           return(
           <div key={l} title={`${t}\n(${m.toLowerCase()})${votes?`\nCounts toward today's posture — votes ${vs.word}.`
             :isVoter?"\nA voter, but dark today — not counted.":"\nContext only — does not vote."}`} style={{flexShrink:0,minWidth:68,cursor:"help"}}>
-            <div style={{display:"flex",alignItems:"center",gap:3}}>
-              <span style={{width:5,height:5,borderRadius:"50%",background:live?dot:"transparent",border:`1px solid ${dot}`,flexShrink:0}}/>
-              <span style={{fontFamily:T.fontMono,fontSize:8,color:T.textMuted}}>{l}</span>
-              {votes&&<span aria-hidden="true" className="strip-vote" title={`counts toward today's posture — votes ${vs.word}`} style={{fontFamily:T.fontMono,fontSize:8,fontWeight:700,color:T[vs.colorKey],letterSpacing:"0.05em"}}>▪</span>}
-            </div>
-            <div style={{fontFamily:T.fontMono,fontSize:13,color:T.textPrimary,fontWeight:700,lineHeight:1.1}}>{v}</div>
-            <div style={{fontFamily:T.fontMono,fontSize:9,color:sc}}>{s}</div>
+            <Explainable explain={ex} title={ex?ex.full:l}
+              eyebrow={`${l} · ${v}${votes?` · votes ${vs.word}`:isVoter?" · dark today":" · context only"}`}
+              className="strip-tile" style={{background:"none",border:"none",padding:0,margin:0}}>
+              <div style={{display:"flex",alignItems:"center",gap:3}}>
+                <span style={{width:5,height:5,borderRadius:"50%",background:live?dot:"transparent",border:`1px solid ${dot}`,flexShrink:0}}/>
+                <span style={{fontFamily:T.fontMono,fontSize:8,color:T.textMuted}}>{l}</span>
+                {votes&&<span aria-hidden="true" className="strip-vote" title={`counts toward today's posture — votes ${vs.word}`} style={{fontFamily:T.fontMono,fontSize:8,fontWeight:700,color:T[vs.colorKey],letterSpacing:"0.05em"}}>▪</span>}
+                {/* The affordance is stated, not implied (v5.8): the same amber ⓘ the cards wear,
+                    and the promise spelled out for a screen reader beside the tile's own text. */}
+                {ex&&<span aria-hidden="true" title="What is this?" style={{fontFamily:T.fontMono,fontSize:8,color:T.amber,flexShrink:0}}>ⓘ</span>}
+                {ex&&<span className="visually-hidden"> — what is this? Opens an explainer.</span>}
+              </div>
+              <div style={{fontFamily:T.fontMono,fontSize:13,color:T.textPrimary,fontWeight:700,lineHeight:1.1}}>{v}</div>
+              <div className="strip-sub" style={{fontFamily:T.fontMono,fontSize:9,color:sc}}>{s}</div>
+            </Explainable>
           </div>
           );
         })}
