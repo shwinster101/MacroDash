@@ -5,6 +5,35 @@ answers *"is it safe to be in the market?"* from live macro + market + sentiment
 data. Single-page React app on Cloudflare Pages, with live data assembled at the
 edge by Pages Functions and cached in KV.
 
+**v6.3.1 — a scheduled audit's own tripwire fired, and got the fix it was built for.** A
+2026-09-10 routine review (CLAUDE.md's own "review all files… audit the 5 Whys… what's
+missing" pass) ran `npm test` and hit the FIRST red gate the v3.99.0 FOMC calendar's expiry
+tripwire has ever thrown: `FOMC_MEETINGS`'s last entry, `2026-12-09`, sat exactly 90 days from
+that day — the table doing exactly what it was built to do, forcing a human/assistant pass
+instead of quietly serving a stale countdown or an Engine 0 `fed_next_meeting` MISSING once it
+ran out. **federalreserve.gov is still blocked at this build environment's proxy** (the
+v3.99/v4.1.5 403, unchanged), so the eight 2027 decision-day dates were pulled via web search
+of the Fed's own "tentative meeting schedule for 2027" press release
+(`monetary20250905a.htm`, announced 2025-09-05) rather than a direct fetch — the same posture
+as the 2026 table's original fill: **ASSERTED, not owner-confirmed**, flagged at the array with
+the source named, carrying the doctrine forward rather than quietly upgrading its own
+confidence. `MARKET_HOLIDAYS` already runs through 2027 and needed nothing. Two of the three
+`package.json`-version homes moved together as always (`public/admin.html`'s title + brand
+string); no third exists.
+**Everything else the pass touched checked out clean, so nothing else changed.** `src/fiveWhys.js`
+matches its own documented contract exactly — the five-check v5.4.0 architecture (call
+arithmetic → drivers → transmission → evidence trust → nearest threshold), fed from
+`evidenceSet.factors`/`flips` off the canonical `dailyCall`, gated by `liveBuild` (A1) not
+`anyLive`, with the materiality allowlist imported from `src/headlines.js` (v6.1.0) rather than
+a second copy. The six voters resolve through the one `REGIME_BAND_TABLE`/`FACTOR_FIELD` map
+(10Y·VIX·F&G·CPI·CAPE·NFCI) with the CPI series (`CPIAUCNS`/`CPILFENS`) and Fed strip
+(`DFEDTARU`/`DFEDTARL` over the lagging `FEDFUNDS` average) exactly as v5.4.0/v3.99.0 describe.
+This branch was already bit-identical to `origin/main` — no drift to reconcile. Full findings,
+the problem-statement/key-driver review and the ranked backlog live at
+`working/2026-09-10-scheduled-audit.md`.
+Tests: **2258 smoke** (the tripwire itself, now green) + 309 render + 283 public-render,
+`audit:prod` clean — `npm run gates`, all four, after this session's first `npm install` here.
+
 **v6.3.0 "EIGHT SHEETS" — every macro-strip tile opens its explainer, the way the VIX card
 does (owner, on the live VIX sheet 9/5: "publish the descriptor popups for the 8 parameters").**
 Five of the eight tiles — VIX · F&G · 10Y · CPI · NFCI — ARE band factors whose copy has lived
