@@ -154,9 +154,61 @@ count and net cash now stale) · Call: WAIT — canonical ELIGIBLE NEXT DOLLAR l
 read; independently, the falsifier set is <3 committed and the 9/1 window is closed, so the
 card cannot be SCORED before 11/30 under §6.4.1.**
 
-## Outcomes
-- No repo code changed; no KV write (no PIN). This note is the deliverable; the owner applies
-  §2.1–2.2 through the terminal (⊕ falsifiers on the CRDO tab, ✎ EDIT for the capital block),
-  or a PIN-holding session applies them via `/api/deepdive` + `/api/score`.
-- Corrections to record once the 9/1 transcript is readable: which of §1 items 1, 2, 5 were in
-  fact said on the call (the baseline used here is press coverage, not the transcript).
+## Outcomes (same day — the owner supplied the PIN mid-pass; the store was then READ)
+
+**The survey above was WRONG about the stored state, and the corrections stand beside it:**
+- **Falsifiers: three graded at the 9/1 print, not one written.** A 2026-08-24 owner-directed
+  sprint committed `revenue_guide_q1fy27` and `gross_margin_q1fy27` beside the 8/18
+  `customer_concentration_q1fy27`; a 9/4 session graded them GREEN · GREEN · AMBER. §2.1's
+  "1 of 3 written, window closed" was the 8/22 state, three sessions stale.
+- **The card is SCORED 8.32 / A, actionability FULL** (`tt-underwriting-v2.6.0`, 9/4): P1 7.44
+  PREMIUM (target **$328**, YE2027, +30.5%/yr at the stale $230.57 price basis), P2 8.85, P3
+  8.66, P4 8.33. Not PROVISIONAL. AI_G3P PASS (25.3x FY-Apr2028 EPS $9.12 on +48% growth).
+  Composite 7.6 (V8.5 G9 P7 M3.5 R7, 9/4), not 7.23.
+- **The G2 concentration gate is owner-overridden (8/18) and the hinge is AMBER** off the call's
+  33/28/13/10 disclosure (top-3 74%, top-4 84%).
+- **Stored consensus already covers what §2.3 asked the owner to capture**: FY-Apr 2027–2031
+  revenue 2.46/3.69/4.80/5.79 and EPS 6.15/9.12/11.29/12.58/14.72 (SA, 7/27, refreshed 8/18);
+  street target mean $288.50 (12 post-print rows, 9/2). The 9/1 guide reproduces FY27 EPS
+  bottom-up ($6.18 vs $6.15) — the hinge note already says so.
+- **The H2-ramp gap §2.1 fills IS already named on the card**: hinge "H2 optical ramp /
+  inventory conversion" is UNKNOWN with `next_observation: Q2-FY2027 print` and the explicit
+  line "needs an owner-authored pre-committed falsifier before the Q2 print." So the seven
+  drafts stand, re-scoped: they are the 11/30 commitment the card itself asks for.
+
+**What the read ADDED that the transcript could not:**
+- **A concentration DISCREPANCY.** The 10-Q XBRL tags Customer A at **43%** of Q1 revenue
+  (`ConcentrationRiskPercentage1`, SalesRevenueNet, 2026-05-03→08-01) and Customer B at 28%;
+  the stored hinge and falsifier grade record the call relay as **33%** / 28% / 13% / 10%. If
+  the filing's 43% is right, top-3 = 84% and the falsifier's RED clause (">80%") is MET, not
+  AMBER — a grade may be wrong. Only two ≥10% customers are tagged in the quarter, which also
+  disagrees with "four" on the call. Needs the primary transcript or the 10-Q text (both
+  egress-blocked here) before anyone re-grades. Filed as the highest-priority check.
+- **Stale measured inputs on the card:** `capital.cash_B 1.44 / net_cash_B 1.4` predates the
+  Dust close (cash + ST investments $764M at 8/1); `AI_G1_BUILDOUT` note "$1.4B cash";
+  `price_action` stamped 8/24 (all three MAs are now ABOVE price, the stored ma50 241.5 is 18
+  points off); P1 price basis 8/23 $230.57 vs $163 live — TARGET_STALE will fire.
+- **The canonical call today is WAIT, and CRDO is not the reason.** `/api/allocation`
+  (tt-alloc-v3.1.0, 9/12): state WAIT, macro gate **TOUCH_GRASS on the circuit rung** —
+  "circuit ARMED asserted 16d ago (limit 7d)" — plus context blockers "positions snapshot 19d
+  old" and "account record 19d old". `eligible: null`. Re-assert the circuit in ◧ SESSION and
+  re-sync positions; then the ladder can evaluate CRDO at all.
+
+**Corrected TT line (2026-09-12):**
+**CRDO — Composite: 8.32/10 A (canonical `/api/score` card, SCORED, FULL; legacy asserted 7.6) ·
+PT: $328 (owner model, premium 36x FY-Apr2028 EPS $9.12, YE2027 rung; street 12-mo mean $288.50,
+labelled separately) · Call: WAIT — the allocation ladder vetoes on an unresolved circuit
+(ARMED, 16d stale) before it reaches any name; secondary, the concentration grade needs the
+43%-vs-33% discrepancy resolved.**
+
+**Trade-off the owner decides, stated not assumed:** registering the seven 11/30 falsifiers on
+the SCORE record makes them PRECOMMITTED_PENDING, and one pending required hinge nulls P4 —
+the card would read PROVISIONAL (B-cap, never eligible) from the write until the 11/30
+observation. That is §6.4.1 working as designed and it is what the 8/24 sprint accepted for
+the 9/1 print. This pass therefore writes the drafts to the PAYLOAD (`falsifiers_v2_draft`,
+which the engine does not read) plus the measured capital/price facts, and leaves the score
+record's registration to the owner.
+
+- Store writes this pass: see the "Store write" section appended below once landed.
+- Still to record once the 9/1 transcript is readable: which of §1 items 1, 2, 5 were in fact
+  said on the call, and the 43%/33% resolution.
