@@ -381,6 +381,17 @@ export const FOMC_MEETINGS = [
   // This is exactly why the table is flagged asserted-until-confirmed rather than trusted.
   "2026-01-28", "2026-03-18", "2026-04-29", "2026-06-17",
   "2026-07-29", "2026-09-16", "2026-10-28", "2026-12-09",
+  // ⚠ ASSERTED, NOT OWNER-CONFIRMED (added 2026-09-10 — the expiry tripwire went RED with
+  // the table's last date, 2026-12-09, exactly 90 days from "today"). Decision-day (day 2)
+  // dates for the Fed's own "tentative meeting schedule for 2027" press release
+  // (federalreserve.gov/newsevents/pressreleases/monetary20250905a.htm, announced 2025-09-05),
+  // sourced via web search because federalreserve.gov is still blocked at this build
+  // environment's proxy (the same 403 v3.99/v4.1.5 recorded) — so, per that doctrine, this
+  // half of the table is a fill pending the same owner re-confirmation the 2026 dates got,
+  // NOT a verified fetch. Re-check against the calendar page before trusting a countdown or
+  // an Engine 0 fed_next_meeting read built past 2026-12-09.
+  "2027-01-27", "2027-03-17", "2027-04-28", "2027-06-09",
+  "2027-07-28", "2027-09-15", "2027-10-27", "2027-12-08",
 ];
 
 /* The next FOMC decision date at or after `now` (ET), or null when the table has run out.
