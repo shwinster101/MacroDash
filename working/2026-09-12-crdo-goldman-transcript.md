@@ -212,3 +212,25 @@ record's registration to the owner.
 - Store writes this pass: see the "Store write" section appended below once landed.
 - Still to record once the 9/1 transcript is readable: which of §1 items 1, 2, 5 were in fact
   said on the call, and the 43%/33% resolution.
+
+## Store write — 2026-09-12 (PUT /api/deepdive?sym=CRDO, 40,835 bytes of 102,400; read back and verified)
+Written to the PAYLOAD only; the score record, multiples (40/36/29/25/25), floor 18x, consensus,
+composite and gates are byte-untouched.
+- `ref_px` → $162.95 @ 2026-09-11 (official close) with the post-print path in the note.
+- `pt_model.capital` → cash $0.764B / net cash $0.76B @ 2026-08-01 (10-Q), EV $29.87B, Dust
+  $770M cash + 0.8M shares + contingent; the 8/18 $1.44B block kept as `prior_2026_08_18`.
+  `net_cash_B` 1.4 → 0.76 with the filing as basis. `total_debt_M` left null (no LongTermDebt
+  concept tagged), not asserted 0.
+- `share_count_note` added (diluted 194.4M, SBC + earn-out dilution path); `share_count_M` 196
+  unchanged — not a rung input on the earnings lens.
+- `price_action` → 9/11 levels (ma50 223.10 · ma100 219.64 · ma200 175.89 · swing 160.44 /
+  308.67; RSI 33.2, ATR 16.38) so the WHEN leg reads on current cadence; no owner `entry`
+  committed.
+- `hinges`: concentration note carries the 43%-vs-33% discrepancy (state unchanged AMBER);
+  the H2-ramp hinge note carries the Goldman 11/20/30% shape and points at the drafts.
+- `key_dates`: 2026-11-30 Q2 print (tentative) added. OCP left undated (no date asserted).
+- `falsifiers_v2_draft`: seven 11/30 drafts appended (payload-only; registration is the
+  owner's call because it nulls P4 until the observation).
+- `open_items`: the ten transcript findings, the quality flags (SBC 18% of rev, OCF 38%
+  conversion, AR 85% in two names), and the re-armed est-up/px-down pattern.
+NOT written: anything to `/api/score`, `/api/tt`, `/api/positions`, or the board circuit.
