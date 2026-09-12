@@ -381,6 +381,18 @@ export const FOMC_MEETINGS = [
   // This is exactly why the table is flagged asserted-until-confirmed rather than trusted.
   "2026-01-28", "2026-03-18", "2026-04-29", "2026-06-17",
   "2026-07-29", "2026-09-16", "2026-10-28", "2026-12-09",
+  // ⚠ ASSERTED, NOT owner-confirmed — 2026-09-12, expiry-tripwire fix. federalreserve.gov is
+  // blocked from this build environment's egress proxy (the standing limitation this file's
+  // header already documents for FRED/UST/CBOE/Kalshi), so these come from web search against
+  // the Fed's own 2025-09-05 "tentative meeting schedule for 2027" release, cross-checked
+  // against two independent secondary calendars, NOT fetched from the primary source. Same
+  // asserted-until-confirmed posture as the 2026 row above, which had 2 of 8 dates wrong on
+  // first entry — owner should re-verify against fomccalendars.htm before trusting these for
+  // an order-gating read. Second (decision) day of each two-day meeting, matching the format
+  // above: Jan 26-27 · Mar 16-17 · Apr 27-28 · Jun 8-9 · Jul 27-28 · Sep 14-15 · Oct 26-27 ·
+  // Dec 7-8.
+  "2027-01-27", "2027-03-17", "2027-04-28", "2027-06-09",
+  "2027-07-28", "2027-09-15", "2027-10-27", "2027-12-08",
 ];
 
 /* The next FOMC decision date at or after `now` (ET), or null when the table has run out.
