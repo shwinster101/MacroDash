@@ -12,6 +12,7 @@
 import { buildEvidenceSet, fieldMode } from "./evidence.js";
 import { computeMacroFlip } from "./ttReadout.js";
 import { govAsOf } from "./sources.js";
+import { publicEditionLabel } from "./publicCopy.js";
 
 export const CALL_SCHEMA = "md-call-v1";
 // FEAT-NEWCOMER-RULER (8/29): the constants moved to regime.js (the band-constants home,
@@ -216,13 +217,14 @@ export function callEdition({ edition = null, frozen = false } = {}) {
 }
 export function formatMacroCallPaste(call = {}, { frozen = false, edition = null } = {}) {
   const ed = callEdition({ edition, frozen });
+  const publicEd = publicEditionLabel(ed);
   const label = call.headline ? `${call.headline}${call.emoji ? ` ${call.emoji}` : ""}` : "CAN'T CALL IT 🌫️";
   const lines = [
-    `MACRODASH ${ed} · ${call.effective_date || "undated"} · macrodash.pages.dev`,
+    `MACRODASH ${publicEd} · ${call.effective_date || "undated"} · macrodash.pages.dev`,
     `${label} · ${call.direction || "DATA HOLD"}`,
-    `EVIDENCE ${call.confidence || "LOW"} · actionability ${call.actionability || "HOLD"} · ${call.counts?.usable ?? 0} of ${call.counts?.total ?? 6} voters counted`,
+    `EVIDENCE ${call.confidence || "LOW"} · actionability ${call.actionability || "HOLD"} · ${call.counts?.usable ?? 0} of ${call.counts?.total ?? 6} signals counted`,
   ];
-  if (ed === "CLOSE READ") lines.push("UNSCORED · 6pm close read — the 10am call is the scored one");
+  if (ed === "CLOSE READ") lines.push("UNSCORED · 6pm evening update — the 10am call is the scored one");
   if (call.override?.active) lines.push(`OVERRIDE ${call.override.type} · crash circuit tripped`);
   else if (call.override?.macro_flip?.armed) lines.push("MACRO FLIP ARMED");
   else if (call.override?.macro_flip?.evaluable === false) lines.push("MACRO FLIP BLIND");
@@ -230,7 +232,7 @@ export function formatMacroCallPaste(call = {}, { frozen = false, edition = null
   for (const f of call.factors || []) {
     lines.push(`${String(f.key).padEnd(12)} ${f.state || "UNAVAILABLE"}${f.as_of ? ` · as of ${f.as_of}` : ""}${f.reason ? ` · ${f.reason}` : ""}`);
   }
-  lines.push("Six-factor macro backdrop · end-of-day sources · not financial advice");
+  lines.push("Six-signal macro backdrop · end-of-day sources · not financial advice");
   return lines.join("\n");
 }
 
@@ -239,14 +241,15 @@ export function formatMacroCallPaste(call = {}, { frozen = false, edition = null
 // Always exactly FIVE lines: the CLOSE READ edition swaps line 5 rather than adding one.
 export function formatMacroShareCard(call = {}, { frozen = false, edition = null } = {}) {
   const ed = callEdition({ edition, frozen });
+  const publicEd = publicEditionLabel(ed);
   const label = call.headline ? `${call.headline}${call.emoji ? ` ${call.emoji}` : ""}` : "CAN'T CALL IT 🌫️";
   const usable = call.counts?.usable ?? 0, total = call.counts?.total ?? 6;
   return [
-    `MACRODASH ${ed} · ${call.effective_date || "undated"}`,
+    `MACRODASH ${publicEd} · ${call.effective_date || "undated"}`,
     `${label} · ${call.direction || "DATA HOLD"}`,
-    `${call.confidence || "LOW"} confidence · ${usable} of ${total} voters counted`,
+    `${call.confidence || "LOW"} confidence · ${usable} of ${total} signals counted`,
     "Track record: https://macrodash.pages.dev/history",
-    ed === "CLOSE READ" ? "Unscored close read · not financial advice"
+    ed === "CLOSE READ" ? "Unscored evening update · not financial advice"
       : "End-of-day macro evidence · not financial advice",
   ].join("\n");
 }

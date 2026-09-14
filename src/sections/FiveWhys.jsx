@@ -79,7 +79,7 @@ const FiveWhys=({fw,derivedLabel,mode,asOf,label="why this call · 5 checks",fli
             renting a line on the cards above. */}
         {flipLine&&<div style={{fontFamily:T.fontMono,fontSize:T.fsS,color:T.textSecondary,marginTop:6,lineHeight:1.5}}>⇄ {flipLine}</div>}
         <div style={{fontFamily:T.fontMono,fontSize:8,color:T.textMuted,marginTop:8}}>Rule-based · {derivedLabel} (no LLM)</div>
-        <SourceBox api="Rule-based" endpoint="6-factor regime · stale inputs excluded" mode={mode} asOf={asOf}/>
+        <SourceBox api="Rule-based" endpoint="6-signal model · stale inputs excluded" mode={mode} asOf={asOf}/>
       </CollapsedGroup>
     </div>
   );

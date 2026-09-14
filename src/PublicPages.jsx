@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { T } from "./design-tokens.js";
 import { CLOSE_LEGS } from "./closeRead.js"; // v6.2: leg labels for the close-read line, from the ONE leg table
+import { simpleCallLabel } from "./publicCopy.js";
 
 const mono={fontFamily:T.fontMono};
 
@@ -34,6 +35,7 @@ const etClockLabel=(iso)=>{const d=iso?new Date(iso):null;if(!d||isNaN(d.getTime
 const legLabel=(k)=>CLOSE_LEGS.find((l)=>l.key===k)?.label||k;
 const outcomeColor=(value)=>typeof value!=="number"?T.textMuted:value>0?T.green:value<0?T.red:T.textSecondary;
 const outcomeText=(value)=>typeof value==="number"?`${value>0?"+":""}${value.toFixed(2)}%`:"PENDING";
+const signalStateLabel=(state)=>({BULLISH:"HELPING",NEUTRAL:"MIXED",BEARISH:"HURTING"}[state]||"UNAVAILABLE");
 
 export function HistoryPage() {
   const [state,setState]=useState({loading:true,error:null,rows:[],start:null});
@@ -46,7 +48,7 @@ export function HistoryPage() {
     return()=>{dead=true;};
   },[]);
   return <PageShell eyebrow="Accountability" title="The call, frozen daily.">
-    <p style={{maxWidth:700,lineHeight:1.65,color:T.textSecondary,margin:"0 0 26px"}}>This is a live-forward record, captured once at 10:00am ET each market weekday. There is no reconstructed backfill. Withheld calls and system failures stay visible. A separate, unscored 6pm ET close read is noted beneath each call where one was captured — context, never the scored call.</p>
+    <p style={{maxWidth:700,lineHeight:1.65,color:T.textSecondary,margin:"0 0 26px"}}>This is a live-forward record, captured once at 10:00am ET each market weekday. There is no reconstructed backfill. Withheld calls and system failures stay visible. A separate, unscored 6pm ET evening update appears in each call's details when captured — context, never the scored call.</p>
     {state.loading&&<p style={{...mono,color:T.textMuted}}>Loading live history…</p>}
     {state.error&&<p role="alert" style={{...mono,color:T.red}}>{state.error}</p>}
     {!state.loading&&!state.error&&!state.rows.length&&<div style={{border:`1px solid ${T.borderAccent}`,borderRadius:6,padding:20,background:T.surface}}>
@@ -57,50 +59,42 @@ export function HistoryPage() {
       {state.rows.map((row)=>{
         const c=row.call;
         const color=stateColor(c?.direction);
+        const update=row.close_read;
+        const updateRead=update?.capture_status==="CAPTURED"?update.close_read?.read:null;
+        const outcomes=[["1D",row.outcomes?.returns_pct?.["1d"]],["5D",row.outcomes?.returns_pct?.["5d"]],["20D",row.outcomes?.returns_pct?.["20d"]],["MAX DD",row.outcomes?.max_drawdown_pct_20d]];
         return <li key={row.date} style={{background:T.surface,border:`1px solid ${row.capture_status==="FAILED"?T.red+"66":T.border}`,borderRadius:6,padding:"14px 16px"}}>
           <div style={{display:"flex",justifyContent:"space-between",gap:12,alignItems:"baseline",flexWrap:"wrap"}}>
             <time dateTime={row.date} style={{...mono,fontSize:11,color:T.textSecondary}}>{row.date}</time>
-            <span style={{...mono,fontSize:9,color:T.textMuted}}>10:00 ET · immutable call</span>
+            {c&&<strong style={{...mono,fontSize:18,color}}>{simpleCallLabel(c)}</strong>}
           </div>
           {c?<>
-            <div style={{display:"flex",gap:12,alignItems:"baseline",flexWrap:"wrap",marginTop:8}}>
-              <strong style={{...mono,fontSize:22,color}}>{c.headline||"CAN'T CALL IT"} {c.emoji||"🌫️"}</strong>
-              <span style={{...mono,fontSize:13,color}}>{c.direction||"DATA HOLD"}</span>
-              {c.override?.active&&<span style={{...mono,fontSize:10,color:T.red,border:`1px solid ${T.red}`,padding:"2px 6px",borderRadius:3}}>PANIC OVERRIDE</span>}
-            </div>
-            <div style={{display:"flex",gap:14,flexWrap:"wrap",marginTop:7,...mono,fontSize:10,color:T.textSecondary}}>
-              <span>confidence {c.confidence}</span><span>actionability {c.actionability}</span><span>{c.counts?.usable??0}/{c.counts?.total??6} factors</span>
-            </div>
-            <details style={{marginTop:10}}>
-              <summary style={{...mono,fontSize:10,color:T.textMuted,cursor:"pointer",minHeight:36,display:"flex",alignItems:"center"}}>Six-factor evidence</summary>
-              <div style={{display:"grid",gap:5,paddingTop:5}}>{(c.factors||[]).map(f=><div key={f.key} style={{display:"grid",gridTemplateColumns:"minmax(100px,1fr) minmax(90px,auto)",gap:12,...mono,fontSize:9}}><span style={{color:T.textSecondary}}>{f.label}{f.as_of?` · ${f.as_of}`:""}</span><span style={{color:stateColor(f.state),textAlign:"right"}}>{f.state||"UNAVAILABLE"}</span></div>)}</div>
-            </details>
             <div aria-label={`Forward S&P 500 outcome for ${row.date}`} style={{marginTop:10,paddingTop:9,borderTop:`1px solid ${T.border}`}}>
-              <div style={{display:"flex",justifyContent:"space-between",gap:8,flexWrap:"wrap",alignItems:"baseline"}}>
-                <span style={{...mono,fontSize:9,fontWeight:700,color:T.textSecondary}}>S&amp;P 500 PRICE RETURN · SPY PROXY</span>
-                <span style={{...mono,fontSize:8,color:T.textMuted}}>{row.outcomes?`${row.outcomes.sessions_observed||0}/${row.outcomes.horizon_sessions||20} subsequent closes` : "awaiting first eligible close"}</span>
-              </div>
               <div style={{display:"grid",gridTemplateColumns:"repeat(4,minmax(0,1fr))",gap:6,marginTop:6}}>
-                {[['1D',row.outcomes?.returns_pct?.['1d']],['5D',row.outcomes?.returns_pct?.['5d']],['20D',row.outcomes?.returns_pct?.['20d']],['MAX DD',row.outcomes?.max_drawdown_pct_20d]].map(([label,value])=><div key={label} style={{background:T.bg,border:`1px solid ${T.border}`,borderRadius:4,padding:"6px 7px",minWidth:0}}><div style={{...mono,fontSize:8,color:T.textMuted}}>{label}</div><div style={{...mono,fontSize:11,fontWeight:700,color:outcomeColor(value),marginTop:2,whiteSpace:"nowrap"}}>{outcomeText(value)}</div></div>)}
-              </div>
-              <div style={{...mono,fontSize:8,color:T.textMuted,marginTop:5,lineHeight:1.45}}>
-                {row.outcomes?.anchor
-                  ?`anchor ${row.outcomes.anchor.date} official close · max DD ${row.outcomes.max_drawdown_status==="FINAL"?"final at 20 sessions":"so far"}`
-                  :"Anchor is the first official close on or after the 10am call; empty outcomes are expected until it posts."}
+                {outcomes.map(([label,value])=><div key={label} style={{background:T.bg,border:`1px solid ${T.border}`,borderRadius:4,padding:"6px 7px",minWidth:0}}><div style={{...mono,fontSize:8,color:T.textMuted}}>{label}</div><div style={{...mono,fontSize:11,fontWeight:700,color:outcomeColor(value),marginTop:2,whiteSpace:"nowrap"}}>{outcomeText(value)}</div></div>)}
               </div>
             </div>
+            <details className="history-detail" style={{marginTop:8}}>
+              <summary style={{...mono,fontSize:9,color:T.textMuted,cursor:"pointer",minHeight:36,display:"flex",alignItems:"center"}}>Call details · {c.counts?.usable??0} of {c.counts?.total??6} signals</summary>
+              <div style={{display:"flex",gap:12,flexWrap:"wrap",padding:"3px 0 8px",...mono,fontSize:9,color:T.textSecondary}}>
+                <span>10:00 ET · immutable</span><span>confidence {c.confidence}</span><span>actionability {c.actionability}</span>
+                {c.override?.active&&<span style={{color:T.red}}>PANIC OVERRIDE</span>}
+              </div>
+              <div style={{display:"grid",gap:5,paddingTop:5,borderTop:`1px solid ${T.border}`}}>{(c.factors||[]).map(f=><div key={f.key} style={{display:"grid",gridTemplateColumns:"minmax(100px,1fr) minmax(90px,auto)",gap:12,...mono,fontSize:9}}><span style={{color:T.textSecondary}}>{f.label}{f.as_of?` · ${f.as_of}`:""}</span><span style={{color:stateColor(f.state),textAlign:"right"}}>{signalStateLabel(f.state)}</span></div>)}</div>
+              <div style={{...mono,fontSize:8,color:T.textMuted,marginTop:8,lineHeight:1.45}}>
+                {row.outcomes?.anchor
+                  ?`S&P 500 anchor ${row.outcomes.anchor.date} official close · ${row.outcomes.sessions_observed||0}/${row.outcomes.horizon_sessions||20} subsequent closes · max drawdown ${row.outcomes.max_drawdown_status==="FINAL"?"final at 20 sessions":"so far"}`
+                  :"The outcome anchor is the first official close on or after the 10am call; pending values are expected until it posts."}
+              </div>
+              {updateRead&&<div aria-label={`6pm evening update for ${row.date}`} style={{marginTop:9,paddingTop:8,borderTop:`1px dashed ${T.border}`,...mono,fontSize:9,color:T.textSecondary,lineHeight:1.5}}>
+                <span style={{color:T.textMuted}}>6pm evening update: </span>
+                <span style={{color:stateColor(updateRead.direction)}}>{simpleCallLabel(updateRead)}</span>
+                <span style={{color:T.textMuted}}> · unscored · same-day signals: {(update.close_read.legs_same_day||[]).map(legLabel).join(" · ")||"none"} · {etClockLabel(update.captured_at)}</span>
+              </div>}
+            </details>
           </>:<div style={{marginTop:8}}><strong style={{...mono,color:T.red}}>CAPTURE FAILED</strong><p style={{margin:"5px 0 0",color:T.textSecondary}}>{row.failure||"The scheduled call could not be recorded."}</p></div>}
-          {/* v6.2: the 6pm close read rides INSIDE the day's row — one line, unscored, never a
-              second row (the row count is the number of scored calls). A failed capture is
-              stated as itself; an absent one renders nothing. */}
-          {row.close_read&&(()=>{const cr=row.close_read;const r=cr.capture_status==="CAPTURED"?cr.close_read?.read:null;
-            return <div aria-label={`6pm close read for ${row.date}`} style={{marginTop:9,paddingTop:8,borderTop:`1px dashed ${T.border}`,...mono,fontSize:9,color:T.textSecondary,lineHeight:1.5}}>
-              <span style={{color:T.textMuted}}>6pm close read: </span>
-              {r
-                ?<><span style={{color:stateColor(r.direction)}}>{r.headline||"CAN'T CALL IT"} {r.emoji||"🌫️"} · {r.direction||"DATA HOLD"}</span>
-                  <span style={{color:T.textMuted}}> · unscored · same-day legs: {(cr.close_read.legs_same_day||[]).map(legLabel).join(" · ")||"none"} · {etClockLabel(cr.captured_at)}</span></>
-                :<><span style={{color:T.red}}>CAPTURE FAILED</span><span style={{color:T.textMuted}}> — {cr.failure||"the scheduled read could not be recorded"}</span></>}
-            </div>;})()}
+          {update&&update.capture_status==="FAILED"&&<div aria-label={`6pm evening update for ${row.date}`} style={{marginTop:9,paddingTop:8,borderTop:`1px dashed ${T.border}`,...mono,fontSize:9,lineHeight:1.5}}>
+            <span style={{color:T.textMuted}}>6pm evening update: </span><span style={{color:T.red}}>CAPTURE FAILED</span><span style={{color:T.textMuted}}> — {update.failure||"the scheduled update could not be recorded"}</span>
+          </div>}
         </li>;
       })}
     </ol>}
@@ -109,14 +103,14 @@ export function HistoryPage() {
 
 export function DifferencePage() {
   useEffect(()=>{document.title="Why MacroDash Is Different";},[]);
-  const steps=["Six factors","Evidence quality","Market posture","Explanation","Actionability"];
+  const steps=["Six signals","Evidence quality","Market posture","Explanation","Actionability"];
   return <PageShell eyebrow="Why MacroDash" title="Macro state, compressed into a posture.">
     <p style={{fontSize:20,lineHeight:1.55,maxWidth:820,margin:"0 0 28px"}}><a href="https://nowflation.com/" style={{color:T.textPrimary}}>Nowflation</a> measures the inflation state. MacroDash translates the entire macro state into risk posture.</p>
     <div className="md-flow" aria-label="MacroDash decision hierarchy" style={{margin:"28px 0"}}>{steps.map((s,i)=><div key={s} style={{display:"flex",alignItems:"center",gap:8}}><div style={{flex:1,minHeight:82,display:"flex",alignItems:"center",justifyContent:"center",textAlign:"center",padding:12,background:T.surface,border:`1px solid ${i===2?T.amber:T.border}`,borderRadius:5,...mono,fontSize:11,color:i===2?T.amber:T.textSecondary}}>{s}</div>{i<steps.length-1&&<span className="md-flow-arrow" aria-hidden="true" style={{color:T.textMuted}}>→</span>}</div>)}</div>
     <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(240px,1fr))",gap:12,marginTop:30}}>
       <section style={{background:T.surface,border:`1px solid ${T.border}`,borderRadius:6,padding:18}}><h2 style={{...mono,fontSize:12,color:T.green,margin:"0 0 8px"}}>THE JOB</h2><p style={{margin:0,lineHeight:1.6,color:T.textSecondary}}>Answer whether the macro backdrop supports taking market risk today, and show exactly which evidence earned that answer.</p></section>
-      <section style={{background:T.surface,border:`1px solid ${T.border}`,borderRadius:6,padding:18}}><h2 style={{...mono,fontSize:12,color:T.amber,margin:"0 0 8px"}}>THE CONSTRAINT</h2><p style={{margin:0,lineHeight:1.6,color:T.textSecondary}}>We will not compete on indicator count. More tiles are not more judgment. Inputs that are mock, stale, or missing do not get a vote.</p></section>
-      <section style={{background:T.surface,border:`1px solid ${T.border}`,borderRadius:6,padding:18}}><h2 style={{...mono,fontSize:12,color:T.red,margin:"0 0 8px"}}>THE RECEIPT</h2><p style={{margin:0,lineHeight:1.6,color:T.textSecondary}}>Every 10am ET call is frozen in the <a href="/history" style={{color:T.textPrimary}}>public history</a>, including data holds and capture failures. The 6pm close read beside each row is unscored context — the same engine, later in the day, never the call being scored.</p></section>
+      <section style={{background:T.surface,border:`1px solid ${T.border}`,borderRadius:6,padding:18}}><h2 style={{...mono,fontSize:12,color:T.amber,margin:"0 0 8px"}}>THE CONSTRAINT</h2><p style={{margin:0,lineHeight:1.6,color:T.textSecondary}}>We will not compete on indicator count. More tiles are not more judgment. Inputs that are mock, stale, or missing do not affect the call.</p></section>
+      <section style={{background:T.surface,border:`1px solid ${T.border}`,borderRadius:6,padding:18}}><h2 style={{...mono,fontSize:12,color:T.red,margin:"0 0 8px"}}>THE RECEIPT</h2><p style={{margin:0,lineHeight:1.6,color:T.textSecondary}}>Every 10am ET call is frozen in the <a href="/history" style={{color:T.textPrimary}}>public history</a>, including data holds and capture failures. The 6pm evening update in each row's details is unscored context — the same engine, later in the day, never the call being scored.</p></section>
     </div>
   </PageShell>;
 }

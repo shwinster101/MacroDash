@@ -5,6 +5,38 @@ answers *"is it safe to be in the market?"* from live macro + market + sentiment
 data. Single-page React app on Cloudflare Pages, with live data assembled at the
 edge by Pages Functions and cached in KV.
 
+**v6.4.0 "ONE CALL, TWO VOICES" — the public Simple view now has one plain answer, while
+the personality moves to Degen mode (owner review 2026-09-13).** This is a copy and
+progressive-disclosure release, not an engine change: no band, threshold, vote, source,
+freeze rule, stored record or Worker path moved. `src/publicCopy.js` is the pure presentation
+boundary. Simple maps the canonical call to **Bullish / Hold / Bearish** (and **Not enough
+data** when withheld), removes the adjacent machine-direction label, and uses the same plain
+mapping in its drift line, panic override, 5 Whys and `/history`. The old `power` storage id
+stays compatible, but every reader-facing toggle now says **Degen**; that view deliberately
+keeps **MOONING / HODL / DIAMOND HANDS** plus BULLISH / NEUTRAL / BEARISH, and a dismissible
+first-entry note says that trading slang and the full technical dashboard live there. Paste
+exports keep the Degen vocabulary as requested.
+
+**One market clock.** The header now says `Before markets open`, `Markets open`, or `Markets
+closed`, followed by the market observation date instead of stacking CLOSE, pull time and
+cache terminology. Weekends and full market holidays add **no new call today**, keep the
+latest posture visible, and label it as the latest market read rather than manufacturing an
+empty or new daily call. The old SPY day-move moon badge is absent from Simple; Degen scopes it
+as **TODAY SPY · UP / FLAT / DOWN** (or LAST SPY off-session), explicitly separate from the
+macro call. Reader-facing **CLOSE READ** becomes **evening update** everywhere, including both
+clipboard formats and History, while `CLOSE READ`, `md-close-read-v1`, KV keys, API envelopes,
+cron behavior and the unscored contract remain byte-compatible internally.
+
+**Less console on first look.** Public copy now says **signals / unavailable** instead of
+voters / dark; the footer drops the operator-view aside; `/history` leads with date, plain
+verdict and the four outcome fields, with evidence, confidence, immutable clock and a captured
+evening update inside one disclosure per successful row. Capture failures remain visible on
+the face. The eight existing FactSheets, HELPING/HURTING cards, collapsed footer, accountability
+links and `MacroDash - Stonks` share title stay. `/readout.json`'s TAILWIND relationship remains
+the explicitly out-of-sprint product decision.
+Tests: **2268 smoke + 309 render + 288 public-render**, `audit:prod` clean, all browser
+suites driven in real Chrome.
+
 **v6.3.1 — a scheduled audit's own tripwire fired, and got the fix it was built for.** A
 2026-09-10 routine review (CLAUDE.md's own "review all files… audit the 5 Whys… what's
 missing" pass) ran `npm test` and hit the FIRST red gate the v3.99.0 FOMC calendar's expiry

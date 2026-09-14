@@ -21,8 +21,8 @@ import { REGIME_BAND_TABLE } from "./regime.js";
 const FED_EXPLAIN = Object.freeze({
   full: "Federal Funds Rate Target Range (FOMC)",
   what: [
-    "The interest rate the Federal Reserve sets for overnight lending between banks — the floor every other rate in the economy is built on. Shown as the FOMC's current target range; if that feed is dark, the monthly effective average, which lags a decision.",
-    "Higher is tighter money, lower is easier. MacroDash's six-factor vote does not read the level — the 10-year yield and financial conditions carry the rate story — so this is context, with the countdown to the next FOMC decision beside it.",
+    "The interest rate the Federal Reserve sets for overnight lending between banks — the floor every other rate in the economy is built on. Shown as the FOMC's current target range; if that feed is unavailable, the monthly effective average, which lags a decision.",
+    "Higher is tighter money, lower is easier. MacroDash's six-signal model does not read the level — the 10-year yield and financial conditions carry the rate story — so this is context, with the countdown to the next FOMC decision beside it.",
     "Markets move on the path more than the level: a surprise cut or hike, or a change in what the Fed signals next, reprices stocks and bonds the same afternoon.",
   ],
 });
@@ -32,7 +32,7 @@ export const CONTEXT_EXPLAIN = Object.freeze({
     full: "S&P 500 Index (the SPY proxy)",
     what: [
       "The 500 largest U.S. companies in one number — the broadest scoreboard for “the market”. The star means this is the S&P 500 index ÷ 10 from FRED: it tracks the SPY ETF closely but is not the ETF's own quote.",
-      "There is no right level; the trend is what matters. MacroDash's six-factor vote does not read the price, so this is context — but the crash circuit does: SPY below its 200-day average with the VIX above 25 forces the call bearish.",
+      "There is no right level; the trend is what matters. MacroDash's six-signal model does not read the price, so this is context — but the crash circuit does: SPY below its 200-day average with the VIX above 25 forces the call bearish.",
       "A ±1% day is ordinary and a ±3% day is a headline. When the price crosses its 200-day average, trend followers on both sides tend to act, so moves can accelerate.",
     ],
   }),
@@ -40,7 +40,7 @@ export const CONTEXT_EXPLAIN = Object.freeze({
     full: "Invesco QQQ Trust (Nasdaq-100 ETF)",
     what: [
       "The 100 largest non-financial Nasdaq stocks in one ticker — heavily big tech, so it is the growth and AI side of the market. A live Finnhub quote, unlike the SPY proxy beside it.",
-      "Read it against SPY: QQQ leading means risk appetite is on; QQQ lagging while SPY holds means money is rotating out of growth. MacroDash's six-factor vote does not read it, so this is context — Engine 0's relative-strength check compares the Nasdaq-100 to the S&P 500 on the same day.",
+      "Read it against SPY: QQQ leading means risk appetite is on; QQQ lagging while SPY holds means money is rotating out of growth. MacroDash's six-signal model does not read it, so this is context — Engine 0's relative-strength check compares the Nasdaq-100 to the S&P 500 on the same day.",
       "Concentrated and growth-heavy, it usually moves further than SPY in both directions — first to fly, first to fall.",
     ],
   }),

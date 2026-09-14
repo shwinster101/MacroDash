@@ -48,7 +48,7 @@ const SimpleCards = ({ cards, usable = 0, shown = 0, total = 0, withheld = false
     return (
       <div role="region" aria-label="Key parameters" style={{ padding: "8px 20px", background: T.bg, borderBottom: `1px solid ${T.border}` }}>
         <div style={{ fontFamily: T.fontMono, fontSize: 9, color: T.textMuted }}>
-          No voter is currently counted, so there is no reading to show — evidence detail is in Power mode.
+          No signal is currently counted, so there is no reading to show — evidence detail is in Degen mode.
         </div>
       </div>
     );
@@ -143,7 +143,7 @@ const SimpleCards = ({ cards, usable = 0, shown = 0, total = 0, withheld = false
           glance first and in text second. The dots are decorative for a screen reader; the
           sentence is what it hears. */}
       <div style={{ marginTop: 4, opacity: 0.7, display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
-        {total > 0 && <span aria-hidden="true" className="voter-dots" style={{ display: "inline-flex", gap: 2 }}>
+        {total > 0 && <span aria-hidden="true" className="signal-dots" style={{ display: "inline-flex", gap: 2 }}>
           {Array.from({ length: total }, (_, i) => {
             const counted = i < usable;
             return <span key={i} style={{ width: 5, height: 5, borderRadius: "50%",
@@ -151,7 +151,7 @@ const SimpleCards = ({ cards, usable = 0, shown = 0, total = 0, withheld = false
           })}
         </span>}
         <span style={{ fontFamily: T.fontMono, fontSize: 8, color: T.textMuted, lineHeight: 1.5 }}>
-          {shown} cards from the {usable} voters counted{total > usable ? ` · ${total - usable} dark` : ""}
+          {shown} cards from the {usable} signals counted{total > usable ? ` · ${total - usable} unavailable` : ""}
         </span>
       </div>
     </div>
