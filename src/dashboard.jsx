@@ -26,6 +26,7 @@ import DataHealth from "./sections/DataHealth.jsx"; // task 7.3: presentation on
 import Watchlist from "./sections/Watchlist.jsx"; // task 7.4: A4 gate stays at the call site
 import TerminalDock from "./sections/TerminalDock.jsx"; // v4.1.7: the dock (Simple); fetch + nav stay here
 import SimpleCards from "./sections/SimpleCards.jsx"; // v4.0: Simple parameter cards (presentation only)
+import StockSpotlight from "./sections/StockSpotlight.jsx"; // v6.5.0: the NBIS × Established-growth widget (presentation only; fetch stays here)
 import StickyNav from "./sections/StickyNav.jsx"; // task 9.2: viewport-tracked active state
 import MacroStrip from "./sections/MacroStrip.jsx"; // task 3.1: presentation only
 import SignalQuality from "./sections/SignalQuality.jsx"; // task 3.2: presentation only
@@ -498,6 +499,17 @@ export default function Dashboard({ publicView = false } = {}) {
     if(!liveBuild)return;
     let dead=false;
     fetch("/api/picks").then(r=>r.ok?r.json():null).then(j=>{if(!dead)setPicks(j);}).catch(()=>{/* strip renders nothing */});
+    return ()=>{dead=true;};
+  },[liveBuild]);
+  /* v6.5.0 STOCK SPOTLIGHT: the public educational widget's model. LIVE BUILDS ONLY, and the
+     section renders nothing unless the feed reports enabled:true with a model — the feature
+     ships behind SPOTLIGHT_ENABLED on Pages, so a default deploy shows no widget at all.
+     Nothing here is book-shaped: /api/stock-spotlight reads only its own spotlight:* keys. */
+  const [spotlight,setSpotlight]=useState(null);
+  useEffect(()=>{
+    if(!liveBuild)return;
+    let dead=false;
+    fetch("/api/stock-spotlight").then(r=>r.ok?r.json():null).then(j=>{if(!dead)setSpotlight(j);}).catch(()=>{/* the widget renders nothing */});
     return ()=>{dead=true;};
   },[liveBuild]);
   const d=DATA;
@@ -1154,6 +1166,12 @@ export default function Dashboard({ publicView = false } = {}) {
           the stylesheet above; v3.25: always visible while market detail collapses). ── */}
       <MacroStrip d={d} modeOf={modeOf} fomcLabel={fomcLabel} fomcDays={fomcDays}
         votingFields={VOTING_FIELDS} badge={simple?null:<SpyTapeBadge spyChangePct={d.marketPulse.spy.changePct} mode={modeOf("spyPrice")} noSessionDay={marketClock.noSession}/>}/>
+
+      {/* ── v6.5.0 STOCK SPOTLIGHT — immediately below the macro-number strip in BOTH modes,
+          so the macro verdict stays the first answer and this is the first company-level
+          one. Presentation-only section; the model arrives projected from the server, the
+          fetch lives above. Renders nothing unless the feed is enabled with a model. ── */}
+      <StockSpotlight spotlight={spotlight} simple={simple}/>
 
 
       {/* FEAT-162: Session Delta Bar — Alerts Δ first (conditional: hidden when nothing actionable) */}

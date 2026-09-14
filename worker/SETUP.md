@@ -19,7 +19,7 @@ fails the build; this table is documentation of the same contract.
 | `0 21 * * MON-FRI` | 2:00 PM PDT | *legacy* — same |
 | `0 12 * * MON-FRI` | **8:00 AM ET** | **active** — PRE-OPEN warm of `/api/snapshot` (no-op if the day is already cached) |
 | `0 14 * * MON-FRI` | **10:00 AM ET** | **active** — FORCE-REFRESH of the day's snapshot via `POST /api/snapshot/refresh` (needs `REFRESH_TOKEN` — see Step 3; without it, falls back to a non-destructive GET, which is a **cache hit, not a refresh**, whenever the 8 AM warm already populated the day) |
-| `0 22 * * MON-FRI` | **6:00 PM ET** | **active** (v6.2) — the UNSCORED **close read**: `POST /api/snapshot/refresh` with `edition:"close"` (needs `REFRESH_TOKEN`; there is **no GET fallback** — a GET cannot build a close edition, so without the token the job records a FAILED read rather than pretending) |
+| `0 22 * * MON-FRI` | **6:00 PM ET** | **active** (v6.2) — the UNSCORED **close read**: `POST /api/snapshot/refresh` with `edition:"close"` (needs `REFRESH_TOKEN`; there is **no GET fallback** — a GET cannot build a close edition, so without the token the job records a FAILED read rather than pretending). **v6.5.0:** the same invocation then runs an ISOLATED Stock Spotlight leg (`POST /api/stock-spotlight/refresh`, same token, its own `spotlight-6pmET` heartbeat) that can never interrupt the close read |
 
 > The two *legacy* crons feed `/api/fred`, which the dashboard no longer reads (slated for
 > removal in v2.5 cleanup). They still need `FRED_KEY` until removed. The 8 AM warm only makes

@@ -21,11 +21,11 @@ const missing = (provider, reason, retrievedAt, sourceUrl = null) => ({
   value: null, status: "MISSING", provider, reason, retrievedAt, ...(sourceUrl ? { sourceUrl } : {}),
 });
 
-async function getJson(url, { headers = {}, timeout = 9000 } = {}) {
+async function getJson(url, { headers = {}, timeout = 9000 } = {}, fetchImpl = fetch) {
   const ctl = new AbortController();
   const timer = setTimeout(() => ctl.abort(), timeout);
   try {
-    const r = await fetch(url, { headers: { Accept: "application/json", ...headers }, signal: ctl.signal });
+    const r = await fetchImpl(url, { headers: { Accept: "application/json", ...headers }, signal: ctl.signal });
     if (!r.ok) throw new Error(`HTTP ${r.status}`);
     return await r.json();
   } finally { clearTimeout(timer); }
@@ -105,7 +105,9 @@ export function nasdaqCandlesFact(payloads, retrievedAt, refPx) {
   };
 }
 
-async function nasdaqCandles(sym, now, retrievedAt, refPx) {
+// v6.5.0: exported for the Stock Spotlight refresh (the keyless price-return rung of its
+// series ladder); `fetchImpl` lets smoke drive it with no network. Behaviour unchanged.
+export async function nasdaqCandles(sym, now, retrievedAt, refPx, fetchImpl = fetch) {
   // Nasdaq truncates broad requests. Three bounded, non-overlapping windows provide
   // enough sourced sessions for the 200-day moving average without weakening the gate.
   const windows = [];
@@ -121,14 +123,14 @@ async function nasdaqCandles(sym, now, retrievedAt, refPx) {
   };
   const results = await Promise.allSettled(windows.map(({ start, end: to }) => getJson(
     `https://api.nasdaq.com/api/quote/${encodeURIComponent(sym)}/historical?assetclass=stocks&fromdate=${start}&todate=${to}&limit=5000`,
-    { headers, timeout: 12000 },
+    { headers, timeout: 12000 }, fetchImpl,
   )));
   const payloads = results.filter((x) => x.status === "fulfilled").map((x) => x.value);
   if (!payloads.length) throw results.find((x) => x.status === "rejected")?.reason || new Error("Nasdaq history unavailable");
   return nasdaqCandlesFact(payloads, retrievedAt, refPx);
 }
 
-function earningsFact(raw, today, retrievedAt) {
+export function earningsFact(raw, today, retrievedAt) {
   const rows = Array.isArray(raw?.earningsCalendar) ? raw.earningsCalendar : [];
   const next = rows.filter((x) => /^\d{4}-\d{2}-\d{2}$/.test(String(x?.date || "")) && x.date >= today)
     .sort((a, b) => a.date.localeCompare(b.date))[0];
@@ -149,16 +151,16 @@ function newsFact(raw, retrievedAt) {
   } : missing("Finnhub company news", "no recent company news returned", retrievedAt, "https://finnhub.io/");
 }
 
-async function cikForSymbol(sym, env, secHeaders) {
+export async function cikForSymbol(sym, env, secHeaders, fetchImpl = fetch, cachePrefix = CIK_PREFIX) {
   try {
-    const hit = await env.PULSE_CACHE.get(CIK_PREFIX + sym, "json");
+    const hit = await env.PULSE_CACHE.get(cachePrefix + sym, "json");
     if (hit?.cik) return hit;
   } catch (_e) {}
-  const data = await getJson("https://www.sec.gov/files/company_tickers.json", { headers: secHeaders, timeout: 12000 });
+  const data = await getJson("https://www.sec.gov/files/company_tickers.json", { headers: secHeaders, timeout: 12000 }, fetchImpl);
   const row = Object.values(data || {}).find((x) => String(x?.ticker || "").toUpperCase() === sym);
   if (!row?.cik_str) return null;
   const hit = { cik: String(row.cik_str).padStart(10, "0"), title: row.title || null };
-  try { await env.PULSE_CACHE.put(CIK_PREFIX + sym, JSON.stringify(hit), { expirationTtl: 30 * DAY }); } catch (_e) {}
+  try { await env.PULSE_CACHE.put(cachePrefix + sym, JSON.stringify(hit), { expirationTtl: 30 * DAY }); } catch (_e) {}
   return hit;
 }
 
@@ -182,7 +184,7 @@ async function secBundle(sym, env, retrievedAt) {
   const filings = filingsFromSubmissions(submissions, identity.cik);
   fields.secFilings = filings.length ? {
     value: filings, status: "LIVE", provider: "SEC", sourceUrl, observedAt: filings[0].filed, retrievedAt,
-  } : missing("SEC", "no recent 10-Q/10-K filing returned", retrievedAt, sourceUrl);
+  } : missing("SEC", "no recent 10-Q/10-K/20-F/6-K filing returned", retrievedAt, sourceUrl);
   fields.companyIdentity = {
     value: { cik: identity.cik, name: facts?.entityName || identity.title }, status: "LIVE", provider: "SEC",
     sourceUrl, observedAt: retrievedAt.slice(0, 10), retrievedAt,

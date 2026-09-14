@@ -195,10 +195,13 @@ function authorized(request, env) {
 // The summary is clobbered by the next job by design; with three jobs a day, the 10am
 // record's freeze + outcome legs would otherwise vanish at 18:00. Per-job first — it is the
 // record that must survive; each write guarded on its own, never blocking the job itself.
-async function recordWarm(env, job, ok, status, extra = null) {
+// v6.5.0: `summary:false` writes ONLY the per-job key — for a sub-leg (the spotlight) that
+// rides another job's invocation, whose summary record must stay that job's (the [78] pin).
+async function recordWarm(env, job, ok, status, extra = null, { summary = true } = {}) {
   const value = JSON.stringify({ at: new Date().toISOString(), job, ok, status, ...(extra || {}) });
   const opts = { expirationTtl: 7 * 24 * 3600 };
   try { await env.PULSE_CACHE.put(`pulse:cron:lastwarm:${job}`, value, opts); } catch { /* diagnostic only */ }
+  if (!summary) return;
   try { await env.PULSE_CACHE.put("pulse:cron:lastwarm", value, opts); } catch { /* diagnostic only */ }
 }
 
@@ -227,6 +230,36 @@ export async function putWithRetry(kv, key, value, opts = undefined, attempts = 
 // secret — no token configured means the endpoint path is skipped (fail closed) and the
 // cron degrades to a NON-DESTRUCTIVE GET (which only fills a missing day, never deletes).
 const SNAPSHOT_REFRESH_URL = "https://macrodash.pages.dev/api/snapshot/refresh";
+/* v6.5.0 STOCK SPOTLIGHT: the widget's evening refresh rides the 6pm invocation as an
+   ISOLATED leg — it runs after the close read has completed and recorded, inside its own
+   try/catch, and writes its own per-job heartbeat, so a spotlight failure can never
+   interrupt or mask the macro evening update. Same credential as the snapshot refresh
+   (x-refresh-token); without one the leg records "skipped" rather than silently doing
+   nothing. The endpoint itself advances the weekly comparison on the first successful
+   refresh of a new ET week (functions/api/stock-spotlight/refresh.js). */
+const SPOTLIGHT_REFRESH_URL = "https://macrodash.pages.dev/api/stock-spotlight/refresh";
+export async function refreshSpotlight(env, fetchImpl = fetch) {
+  const job = "spotlight-6pmET";
+  try {
+    if (!env.REFRESH_TOKEN) {
+      await recordWarm(env, job, false, null, { skipped: "no REFRESH_TOKEN — the spotlight refresh is authenticated only" }, { summary: false });
+      return { ok: false, skipped: true };
+    }
+    const res = await fetchImpl(SPOTLIGHT_REFRESH_URL, {
+      method: "POST",
+      headers: { "content-type": "application/json", "user-agent": "macrodash-spotlight-refresher", "x-refresh-token": env.REFRESH_TOKEN },
+      body: JSON.stringify({ reason: "cron-6pm" }),
+    });
+    const body = await res.json().catch(() => null);
+    const extra = body ? { pair: body.pair || null, failures: Array.isArray(body.failures) ? body.failures.length : null } : null;
+    await recordWarm(env, job, res.ok && !!body?.ok, res.status, extra, { summary: false });
+    return { ok: res.ok && !!body?.ok, status: res.status, body };
+  } catch (e) {
+    console.error("spotlight refresh failed:", (e && e.message) || e);
+    await recordWarm(env, job, false, 0, { failure: String((e && e.message) || e) }, { summary: false });
+    return { ok: false, status: 0 };
+  }
+}
 /* v6.2: `edition` selects the day refresh (default, byte-equivalent to before) or the 6pm
    CLOSE edition. The close edition has NO GET fallback — a GET cannot build a close edition
    and after the 8am warm it is a cache HIT, so "fell back" would mean "did nothing and read
@@ -510,6 +543,8 @@ export default {
             : captured.reason === "already captured" ? "already captured" : `FAILED: ${captured.reason}`,
           legs_same_day: refreshed.close_read?.legs_same_day ?? null,
         });
+        // v6.5.0: the Stock Spotlight leg — last, isolated, its own heartbeat (see refreshSpotlight).
+        try { await refreshSpotlight(env); } catch (e) { console.error("spotlight leg failed:", (e && e.message) || e); }
       })());
       return;
     }

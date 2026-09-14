@@ -147,7 +147,8 @@ const browser = await chromium.launch({ executablePath: exe });
 // surface they prove.
 async function open({ live, status = 200, delayMs = 0, width = 1280, route = "/", power = true,
   picks = null, history = null, publicCall = null, publicCallFrozen = false, publicCallCapturedAt = null,
-  publicCloseRead = null }) {   // v6.2: the 6pm close-read record (envelope), null = no read tonight
+  publicCloseRead = null,   // v6.2: the 6pm close-read record (envelope), null = no read tonight
+  spotlight = null }) {     // v6.5: a /api/stock-spotlight body; null = the feed is down (the widget must render nothing)
   const page = await browser.newPage({ viewport: { width, height: 900 } });
   // Simple is the product default; legacy analytical scenarios seed the persisted internal
   // `power` preference and dismiss the first-entry Degen notice like a returning user.
@@ -172,6 +173,9 @@ async function open({ live, status = 200, delayMs = 0, width = 1280, route = "/"
   await page.route("**/api/picks*", (r) => picks
     ? r.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(picks) })
     : r.fulfill({ status: 500, body: "no picks feed" }));
+  await page.route("**/api/stock-spotlight*", (r) => spotlight
+    ? r.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(spotlight) })
+    : r.fulfill({ status: 500, body: "no spotlight feed" }));
   await page.route("**/history.json*", (r) => history
     ? r.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(history) })
     : r.fulfill({ status: 500, body: "no history feed" }));
@@ -410,7 +414,10 @@ console.log("\n[public] v3.94 — Simple default, the toggle, persistence, red f
     await page.locator('button[aria-label="Show regime factors"]').click();
     await page.waitForTimeout(150);
     ok("v6.4 clock: the unfrozen counterpart caption renders one tap deep",
-      /(Latest market read · no new call is scheduled today|Live market read · today's official call (freezes at 10:00 ET|is unavailable))/.test(
+      /* v6.5: the pre-10am-ET caption ("today's 10am call is scheduled") was missing from this regex,
+         so the pin went red only when the suite ran between midnight and 10am ET — found by running
+         the gate at 01:52 ET. All three captions liveReadCaption() can emit are accepted. */
+      /(Latest market read · no new call is scheduled today|Live market read · today's (official|10am) call (freezes at 10:00 ET|is unavailable|is scheduled))/.test(
         await page.locator('[aria-label="Macro backdrop verdict"] .call-caption').innerText()));
     await page.locator('button[aria-label="Show regime factors"]').click();
     await page.waitForTimeout(150);
@@ -1873,6 +1880,133 @@ console.log("\n[public] v6.3 — eight sheets on the macro strip (Power, Simple,
   ok("v6.3 strip (Simple): 390px stays overflow-free, no page errors",
     await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth + 1) && errors.length === 0);
   await page.close();
+}
+
+// ── v6.5.0 STOCK SPOTLIGHT — both modes, the always-visible fields, the chart, unavailable/stale
+//    states, and the disabled/absent feed. Fixture: test/spotlight-fixture.mjs (synthetic,
+//    built through the REAL model builder so the widget consumes the real contract shape). ──
+console.log("\n[public] v6.5 — STOCK SPOTLIGHT: Simple + Degen, always-visible cap/YTD/chart, unavailable, disabled");
+{
+  const { makeSpotlightFixture } = await import("./spotlight-fixture.mjs");
+  const fx = makeSpotlightFixture();
+  const feed = { schema: "md-spotlight-v1", enabled: true, model: fx.projected };
+  const region = (page) => page.locator('[aria-label="Stock Spotlight"]');
+  const stripGeom = (page) => page.evaluate(() => { const s = document.querySelector(".macro-strip"), r = document.querySelector('[aria-label="Stock Spotlight"]');
+    return { stripBottom: s ? Math.round(s.getBoundingClientRect().bottom + scrollY) : null, regionTop: r ? Math.round(r.getBoundingClientRect().top + scrollY) : null }; });
+  // 1. Feature flag off, and a dead feed: NOTHING renders, in either mode.
+  { const { page, errors } = await open({ live: FULL_LIVE, width: 390, power: false, spotlight: { schema: "md-spotlight-v1", enabled: false, reason: "feature flag off" } });
+    await page.waitForTimeout(1200);
+    ok("v6.5 flag off (Simple): no Stock Spotlight region renders", (await region(page).count()) === 0 && errors.length === 0);
+    await page.close(); }
+  { const { page, errors } = await open({ live: FULL_LIVE, width: 1280, power: true, spotlight: null });
+    await page.waitForTimeout(1200);
+    ok("v6.5 dead feed (Degen): no region renders — never example companies", (await region(page).count()) === 0 && errors.length === 0);
+    await page.close(); }
+  // 2. SIMPLE at 390px — the compact profiles.
+  let simpleFace = null;
+  { const { page, errors } = await open({ live: FULL_LIVE, width: 390, power: false, spotlight: feed });
+    await page.waitForTimeout(1600);
+    const r = region(page);
+    const text = await r.innerText();
+    const g = await stripGeom(page);
+    ok(`v6.5 Simple: the widget sits directly BELOW the macro strip (strip bottom ${g.stripBottom} → region top ${g.regionTop})`,
+      g.stripBottom !== null && g.regionTop !== null && g.regionTop >= g.stripBottom - 1 && g.regionTop - g.stripBottom < 16);
+    ok("v6.5 Simple: both company names and tickers, the comparison label and the week", /Nebius Group/.test(text) && /NBIS/.test(text) && /Microsoft/.test(text) && /MSFT/.test(text) && /Established growth/.test(text) && /week of 2026-09-14/.test(text));
+    ok("v6.5 Simple: MARKET CAP for both with observation dates, visible with NO click", /\$70\.1B/.test(text) && /\$3\.41T/.test(text) && (text.match(/as of \d{4}-\d{2}-\d{2}/g) || []).length >= 2);
+    ok("v6.5 Simple: YTD TOTAL RETURN for both with through-dates — one basis, and no price-return caveat because no price return is shown",
+      (text.match(/YTD TOTAL RETURN/gi) || []).length === 2 && !/PRICE RETURN/i.test(text) && (text.match(/through \d{4}-\d{2}-\d{2}/g) || []).length >= 2);
+    ok("v6.5 Simple (review): each company carries a one-line 'what it does' under its name",
+      /rents out AI computing capacity/.test(text) && /Sells software and cloud computing/.test(text));
+    ok("v6.5 Simple: the shared YTD chart draws two distinguishable lines, a zero reference line and a ticker legend",
+      (await r.locator(".recharts-line").count()) === 2 && (await r.locator(".recharts-reference-line").count()) === 1 && /YTD COMPARISON/.test(text) && /from 2025-12-31/.test(text));
+    ok("v6.5 Simple (review): revenue growth, operating margin and free cash flow rows with their periods, and a TWO-SENTENCE summary per company — the full business/stock/watch-next treatment is NOT on the face",
+      /REVENUE GROWTH/i.test(text) && /OPERATING MARGIN/i.test(text) && /FREE CASH FLOW/i.test(text) && /quarter to \d{4}-\d{2}-\d{2}/.test(text) &&
+      /Revenue grew 26\.7% year over year and operating margin widened to 46\.1%\. The market pays 12\.5× trailing revenue \(33\.4× earnings\); the price is above its 200-day average\./.test(text) &&
+      !/BUSINESS ·/.test(text) && !/WATCH NEXT ·/.test(text) && (await r.locator('[aria-label="Full assessment"]').count()) === 0);
+    ok("v6.5 Simple (review): the learning moment renders ABOVE the chart, right after the two compact profiles; the worked example and the analysis stay one tap deep",
+      /LEARNING MOMENT/.test(text) && /run-rate/i.test(text) && !/Worked example/.test(text) && (await r.locator('[aria-label$="supporting analysis"]').count()) === 0 &&
+      /explore the numbers/i.test(text) && await page.evaluate(() => { const l = document.querySelector('[aria-label="Learning moment"]'), c = document.querySelector('[aria-label="Year-to-date comparison chart"]');
+        return l && c && l.getBoundingClientRect().top < c.getBoundingClientRect().top; }));
+    await r.locator("button.cg-toggle").first().click();
+    await page.waitForTimeout(300);
+    const opened = await r.innerText();
+    ok("v6.5 Simple: 'explore the numbers' opens the FULL three-question assessment and the supporting analysis for BOTH companies, the worked example and dated sources",
+      (await r.locator('[aria-label="Full assessment"]').count()) === 2 && /BUSINESS ·/.test(opened) && /WATCH NEXT ·/.test(opened) &&
+      (await r.locator('[aria-label$="supporting analysis"]').count()) === 2 && /Worked example/.test(opened) && /CALCULATION INPUTS/.test(opened) && /sec\.gov/.test(opened) && /YTD method/.test(opened));
+    ok("v6.5 Simple: no rating words on the face", !/\b(cheap|safe|buy|sell|undervalued|overvalued)\b/i.test(opened));
+    const [glance, cardsTop] = await page.evaluate(() => {
+      const el = [...document.querySelectorAll("*")].find((n) => n.children.length === 0 && /^●?\s*SPY\*?$/m.test(n.textContent || "") && n.getBoundingClientRect().height > 0);
+      const k = document.querySelector('[aria-label="Key parameters"]');
+      return [el ? Math.round(el.getBoundingClientRect().top + scrollY) : null, k ? Math.round(k.getBoundingClientRect().top + scrollY) : null]; });
+    ok(`v6.5 budgets: the macro first screen is untouched — cards within 420px and the strip within 660px at 390×844 (measured ${cardsTop} / ${glance})`,
+      cardsTop !== null && cardsTop <= 420 && glance !== null && glance <= 660);
+    ok("v6.5 Simple: 390px stays overflow-free with the chart in place, no page errors",
+      await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth + 1) && errors.length === 0);
+    // The full three-question text lives one tap deep in Simple (`opened`), on the face in Degen.
+    simpleFace = { caps: text.match(/\$\d+\.\d+[TB]/g), ytd: text.match(/[+−]\d+\.\d\d%/g), business: (opened.match(/BUSINESS · [^\n]+/g) || []) };
+    await page.close(); }
+  // 3. DEGEN at 1280px — the analysis is visible; only the sources collapse; IDENTICAL values.
+  { const { page, errors } = await open({ live: FULL_LIVE, width: 1280, power: true, spotlight: feed });
+    await page.waitForTimeout(1600);
+    const r = region(page);
+    const text = await r.innerText();
+    ok("v6.5 Degen: the supporting analysis (cash, debt, cap ÷ TTM revenue, P/E, shares, price trend, run-rate, inputs) is visible with NO click, plus the worked example",
+      (await r.locator('[aria-label$="supporting analysis"]').count()) === 2 && /CAP ÷ TTM REVENUE/i.test(text) && /TRAILING P\/E/i.test(text) && /PRICE TREND/i.test(text) &&
+      /RUN-RATE VS TTM/i.test(text) && /CALCULATION INPUTS/.test(text) && /Worked example/.test(text) && /33\.4×/.test(text));
+    ok("v6.5 Degen: NBIS's negative trailing earnings read 'no P/E' — never a negative multiple", /trailing earnings are negative — no P\/E/.test(text) && !/-\d+\.\d×/.test(text));
+    ok("v6.5 Degen: sources are the one collapsed disclosure; opening it lists dated sec.gov citations",
+      (await r.locator('[aria-label="Sources and calculations"]').count()) === 0 && await (async () => {
+        await r.locator("button.cg-toggle").first().click(); await page.waitForTimeout(250);
+        const t = await r.innerText(); return (await r.locator('[aria-label="Sources and calculations"]').count()) === 1 && /sec\.gov/.test(t) && /filed \d{4}-\d{2}-\d{2}/.test(t); })());
+    const degenFace = { caps: text.match(/\$\d+\.\d+[TB]/g), ytd: text.match(/[+−]\d+\.\d\d%/g), business: (text.match(/BUSINESS · [^\n]+/g) || []) };
+    ok("v6.5 both modes: IDENTICAL market caps, YTD values and assessments (one model, two altitudes)",
+      simpleFace && JSON.stringify(simpleFace.caps.slice(0, 2)) === JSON.stringify(degenFace.caps.slice(0, 2)) &&
+      JSON.stringify(simpleFace.ytd.slice(0, 2)) === JSON.stringify(degenFace.ytd.slice(0, 2)) && JSON.stringify(simpleFace.business) === JSON.stringify(degenFace.business));
+    ok("v6.5 Degen: no page errors", errors.length === 0);
+    await page.close(); }
+  // 4. UNAVAILABLE + STALE — a missing cap, a missing anchor series, a 12-day-old tape.
+  { const bad = makeSpotlightFixture({ stale: true, capMissing: true, anchorSeriesMissing: true });
+    const { page, errors } = await open({ live: FULL_LIVE, width: 390, power: false, spotlight: { schema: "md-spotlight-v1", enabled: true, model: bad.projected } });
+    await page.waitForTimeout(1600);
+    const r = region(page);
+    const text = await r.innerText();
+    ok("v6.5 unavailable: a missing market cap reads 'Unavailable — <reason>', never a number or zero, while the other company's cap still shows",
+      /Unavailable — profile carries no market capitalization/.test(text) && /\$3\.41T/.test(text) && !/\$0/.test(text));
+    ok("v6.5 unavailable: the missing anchor series is NAMED and the comparison line still plots alone",
+      /NBIS series unavailable/.test(text) && (await r.locator(".recharts-line").count()) === 1 && /Unavailable — return series unavailable/.test(text));
+    ok("v6.5 stale: market data 12 days behind wears STALE and the price-trend clause is suppressed on the face, not graded",
+      /STALE/.test(text) && /price trend is not assessed on a stale tape/.test(text) && !/above its 200-day/.test(text));
+    ok("v6.5 unavailable: the scheduled pair stays visible with the lesson, and the face stays overflow-free",
+      /Established growth/.test(text) && /LEARNING MOMENT/.test(text) && await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth + 1) && errors.length === 0);
+    await page.close(); }
+  // 4b. PRICE RETURN ONLY on the anchor (review #1): the leg is WITHHELD, never plotted against total return.
+  { const po = makeSpotlightFixture({ anchorPriceOnly: true });
+    const { page, errors } = await open({ live: FULL_LIVE, width: 390, power: false, spotlight: { schema: "md-spotlight-v1", enabled: true, model: po.projected } });
+    await page.waitForTimeout(1600);
+    const r = region(page);
+    const text = await r.innerText();
+    ok("v6.5 review #1: a price-return-only leg reads Unavailable naming the rule, the chart draws ONLY the verified total-return line, and no price-return figure appears anywhere",
+      /no verified total-return series — price return is not a substitute/.test(text) && /on file: price return/.test(text) && (await r.locator(".recharts-line").count()) === 1 &&
+      !/\+88\.10%/.test(text) && /MSFT \+\d+\.\d\d%/.test(text) && /NBIS series unavailable/.test(text) && errors.length === 0);
+    await page.close(); }
+  // 4c. YEAR ROLLOVER at serve (review #3): a Dec 31 model served on Jan 1.
+  { const { freshenSpotlight, projectSpotlight } = await import("../functions/lib/spotlight.js");
+    const dec = makeSpotlightFixture({ now: new Date("2025-12-31T23:30:00Z") });
+    const jan = projectSpotlight(freshenSpotlight(dec.model, new Date("2026-01-01T15:00:00Z")));
+    const { page, errors } = await open({ live: FULL_LIVE, width: 390, power: false, spotlight: { schema: "md-spotlight-v1", enabled: true, model: jan } });
+    await page.waitForTimeout(1600);
+    const r = region(page);
+    const text = await r.innerText();
+    ok("v6.5 review #3: served in the new year, both YTD fields read 'awaiting first trading close', no line is drawn, and last year's figures are gone",
+      (text.match(/awaiting first trading close/gi) || []).length === 2 && /Awaiting the first 2026 trading close/.test(text) && (await r.locator(".recharts-line").count()) === 0 &&
+      !/\+\d+\.\d\d%\s*through/.test(text) && /\$3\.41T/.test(text) && errors.length === 0);
+    await page.close(); }
+  // 5. 320px — the narrowest contract.
+  { const { page, errors } = await open({ live: FULL_LIVE, width: 320, power: false, spotlight: feed });
+    await page.waitForTimeout(1600);
+    ok("v6.5 320px: the widget renders with two lines and no horizontal overflow",
+      (await region(page).locator(".recharts-line").count()) === 2 && await page.evaluate(() => document.documentElement.scrollWidth <= 320 + 1) && errors.length === 0);
+    await page.close(); }
 }
 
 await browser.close();
