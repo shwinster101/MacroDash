@@ -5,6 +5,12 @@ answers *"is it safe to be in the market?"* from live macro + market + sentiment
 data. Single-page React app on Cloudflare Pages, with live data assembled at the
 edge by Pages Functions and cached in KV.
 
+**v6.5.2 — the half-year line wins its merge.** Filing the NBIS issuer record live lit everything
+except free cash flow: the record's OCF/capex are six-month-only, so the field carried no
+`observedAt` (it was keyed on the latest QUARTER) and lost the per-concept merge to the SEC's older
+annual row. A field is now dated by its newest period of any length, and a half-year-only line
+is LIVE. Live after the fix: NBIS FCF −$3,626.2M (half-year to 2026-06-30). Tests: 2331 smoke.
+
 **v6.5.1 — the Simple flash card, short names, and a 6-K filer's first honest TTM (owner
 density review + the NBIS Q2 6-K, 2026-09-14).** Live the night before, the widget worked and
 was "way too dense and verbose" on a phone: Simple was rendering the Degen research card on

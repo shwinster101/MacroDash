@@ -11560,6 +11560,15 @@ console.log("\n[81] v6.5.0 STOCK SPOTLIGHT — calculations, endpoints, cron leg
       void r;
       return m.fcf.basis === "half" && m.fcf.period === "half-year to 2026-06-30" && Math.abs(m.fcf.value - (-3626.2e6)) < 1 && m.revenueGrowth.pct === 454 &&
         m.valuation.capToTtmRevenue === 45 && /from half-year periods/.test(m.valuation.ttmRevenuePeriod) && m.runRate.gapPct === 71.9; })());
+  ok("[81] merge (v6.5.2): a half-year-only cash-flow line from an issuer record is DATED by its newest half and wins the per-concept merge over an older SEC annual row — found live: NBIS FCF stayed null after the record was filed",
+    (() => { const rec = { schema: S.SPOTLIGHT_ISSUER_SCHEMA, symbol: "NBIS", periods: [
+        { start: "2026-01-01", end: "2026-06-30", ocf: 4504.1e6, capex: 8130.3e6, currency: "USD", source: { form: "6-K", url: "https://www.sec.gov/Archives/y", filed: "2026-08-12" } } ] };
+      const sec = S.extractSpotlightFundamentals({ facts: { "us-gaap": {
+        NetCashProvidedByUsedInOperatingActivities: { units: { USD: [{ start: "2025-01-01", end: "2025-12-31", val: 384.8e6, form: "20-F", filed: "2026-04-30" }] } },
+        PaymentsToAcquirePropertyPlantAndEquipment: { units: { USD: [{ start: "2025-01-01", end: "2025-12-31", val: 4066e6, form: "20-F", filed: "2026-04-30" }] } } } } });
+      const merged = S.mergeFundamentals(sec, S.issuerFundamentals(rec));
+      const m = S.deriveMetrics({ fundamentals: merged, marketCap: { usd: 61e9 }, series: null, today: "2026-09-14" });
+      return merged.ocf.provider === "issuer report" && merged.ocf.observedAt === "2026-06-30" && m.fcf.basis === "half" && Math.abs(m.fcf.value + 3626.2e6) < 1; })());
   ok("[81] lessons: seven, keyed 1:1 to the rotation, each with a title, a body, and an example FUNCTION; MSFT's worked example prints both run-rates from the fixture",
     S.SPOTLIGHT_ROTATION.every((k) => S.LESSONS[k] && S.LESSONS[k].title && S.LESSONS[k].body.length > 80 && typeof S.LESSONS[k].example === "function") &&
     /NBIS: \$582M × 4 = \$2\.3B run-rate vs \$1\.3B reported TTM \(\+75\.8%\)\. MSFT: \$76\.0B × 4/.test(fx.model.lesson.example) && fx.model.lesson.exampleUnavailable === null);
