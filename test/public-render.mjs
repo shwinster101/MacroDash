@@ -1912,15 +1912,18 @@ console.log("\n[public] v6.5 — STOCK SPOTLIGHT: Simple + Degen, always-visible
     ok(`v6.5 Simple: the widget sits directly BELOW the macro strip (strip bottom ${g.stripBottom} → region top ${g.regionTop})`,
       g.stripBottom !== null && g.regionTop !== null && g.regionTop >= g.stripBottom - 1 && g.regionTop - g.stripBottom < 16);
     ok("v6.5 Simple: both company names and tickers, the comparison label and the week", /Nebius Group/.test(text) && /NBIS/.test(text) && /Microsoft/.test(text) && /MSFT/.test(text) && /Established growth/.test(text) && /week of 2026-09-14/.test(text));
-    ok("v6.5 Simple: MARKET CAP for both with observation dates, visible with NO click", /\$70\.1B/.test(text) && /\$3\.41T/.test(text) && (text.match(/as of \d{4}-\d{2}-\d{2}/g) || []).length >= 2);
-    ok("v6.5 Simple: YTD TOTAL RETURN for both with through-dates — one basis, and no price-return caveat because no price return is shown",
-      (text.match(/YTD TOTAL RETURN/gi) || []).length === 2 && !/PRICE RETURN/i.test(text) && (text.match(/through \d{4}-\d{2}-\d{2}/g) || []).length >= 2);
-    ok("v6.5 Simple (review): each company carries a one-line 'what it does' under its name",
-      /rents out AI computing capacity/.test(text) && /Sells software and cloud computing/.test(text));
+    ok("v6.5 Simple: MARKET CAP NUMBERS for both, visible with NO click — and (density review) NO `as of` date crumbs on the face",
+      /\$70\.1B/.test(text) && /\$3\.41T/.test(text) && !/as of \d{4}-\d{2}-\d{2}/.test(text));
+    ok("v6.5 Simple: YTD TOTAL RETURN numbers for both — no `through` crumbs on the face, no price-return caveat",
+      (text.match(/YTD TOTAL RETURN/gi) || []).length === 2 && !/PRICE RETURN/i.test(text) &&
+      // scoped to the profile cards: the chart's own "from … · through …" legend is the chart's date and stays
+      !/through \d{4}-\d{2}-\d{2}/.test((await r.locator('[aria-label$=" profile"]').allInnerTexts()).join("\n")) && (text.match(/[+−]\d+\.\d\d%/g) || []).length >= 2);
+    ok("v6.5 Simple (density review): NO blurb on the face; the dates and the blurb live one tap deep",
+      !/rents out AI computing capacity/.test(text) && !/Sells software and cloud computing/.test(text));
     ok("v6.5 Simple: the shared YTD chart draws two distinguishable lines, a zero reference line and a ticker legend",
       (await r.locator(".recharts-line").count()) === 2 && (await r.locator(".recharts-reference-line").count()) === 1 && /YTD COMPARISON/.test(text) && /from 2025-12-31/.test(text));
-    ok("v6.5 Simple (review): revenue growth, operating margin and free cash flow rows with their periods, and a TWO-SENTENCE summary per company — the full business/stock/watch-next treatment is NOT on the face",
-      /REVENUE GROWTH/i.test(text) && /OPERATING MARGIN/i.test(text) && /FREE CASH FLOW/i.test(text) && /quarter to \d{4}-\d{2}-\d{2}/.test(text) &&
+    ok("v6.5 Simple (review): revenue growth, operating margin and free cash flow rows WITHOUT period crumbs, and a TWO-SENTENCE summary per company — the full business/stock/watch-next treatment is NOT on the face",
+      /REVENUE GROWTH/i.test(text) && /OPERATING MARGIN/i.test(text) && /FREE CASH FLOW/i.test(text) && !/quarter to \d{4}-\d{2}-\d{2}/.test(text) && !/fiscal year to/.test(text) &&
       /Revenue grew 26\.7% year over year and operating margin widened to 46\.1%\. The market pays 12\.5× trailing revenue \(33\.4× earnings\); the price is above its 200-day average\./.test(text) &&
       !/BUSINESS ·/.test(text) && !/WATCH NEXT ·/.test(text) && (await r.locator('[aria-label="Full assessment"]').count()) === 0);
     ok("v6.5 Simple (review): the learning moment renders ABOVE the chart, right after the two compact profiles; the worked example and the analysis stay one tap deep",
@@ -1930,7 +1933,9 @@ console.log("\n[public] v6.5 — STOCK SPOTLIGHT: Simple + Degen, always-visible
     await r.locator("button.cg-toggle").first().click();
     await page.waitForTimeout(300);
     const opened = await r.innerText();
-    ok("v6.5 Simple: 'explore the numbers' opens the FULL three-question assessment and the supporting analysis for BOTH companies, the worked example and dated sources",
+    ok("v6.5 Simple: 'explore the numbers' opens the dates & blurbs, the FULL three-question assessment and the supporting analysis for BOTH companies, the worked example and dated sources",
+      (await r.locator('[aria-label$="data notes"]').count()) === 2 && /as of \d{4}-\d{2}-\d{2}/.test(opened) && /YTD through \d{4}-\d{2}-\d{2}/.test(opened) && /rents out AI computing capacity/.test(opened) &&
+      /explore the numbers/i.test(text) && !/explore the numbers — /i.test(text) &&
       (await r.locator('[aria-label="Full assessment"]').count()) === 2 && /BUSINESS ·/.test(opened) && /WATCH NEXT ·/.test(opened) &&
       (await r.locator('[aria-label$="supporting analysis"]').count()) === 2 && /Worked example/.test(opened) && /CALCULATION INPUTS/.test(opened) && /sec\.gov/.test(opened) && /YTD method/.test(opened));
     ok("v6.5 Simple: no rating words on the face", !/\b(cheap|safe|buy|sell|undervalued|overvalued)\b/i.test(opened));
@@ -1950,6 +1955,8 @@ console.log("\n[public] v6.5 — STOCK SPOTLIGHT: Simple + Degen, always-visible
     await page.waitForTimeout(1600);
     const r = region(page);
     const text = await r.innerText();
+    ok("v6.5 Degen (density review): the blurb, the `as of`/`through` dates and the period crumbs stay ON the face — Degen is the 10-K",
+      /rents out AI computing capacity/.test(text) && /as of \d{4}-\d{2}-\d{2}/.test(text) && /through \d{4}-\d{2}-\d{2}/.test(text) && /quarter to \d{4}-\d{2}-\d{2}/.test(text));
     ok("v6.5 Degen: the supporting analysis (cash, debt, cap ÷ TTM revenue, P/E, shares, price trend, run-rate, inputs) is visible with NO click, plus the worked example",
       (await r.locator('[aria-label$="supporting analysis"]').count()) === 2 && /CAP ÷ TTM REVENUE/i.test(text) && /TRAILING P\/E/i.test(text) && /PRICE TREND/i.test(text) &&
       /RUN-RATE VS TTM/i.test(text) && /CALCULATION INPUTS/.test(text) && /Worked example/.test(text) && /33\.4×/.test(text));
@@ -1970,10 +1977,14 @@ console.log("\n[public] v6.5 — STOCK SPOTLIGHT: Simple + Degen, always-visible
     await page.waitForTimeout(1600);
     const r = region(page);
     const text = await r.innerText();
-    ok("v6.5 unavailable: a missing market cap reads 'Unavailable — <reason>', never a number or zero, while the other company's cap still shows",
-      /Unavailable — profile carries no market capitalization/.test(text) && /\$3\.41T/.test(text) && !/\$0/.test(text));
-    ok("v6.5 unavailable: the missing anchor series is NAMED and the comparison line still plots alone",
-      /NBIS series unavailable/.test(text) && (await r.locator(".recharts-line").count()) === 1 && /Unavailable — return series unavailable/.test(text));
+    ok("v6.5 unavailable (Simple face): a missing market cap reads the WORD Unavailable with a chip-length cause, never a number, zero, or the filing essay — while the other company's cap still shows",
+      /Unavailable · no market cap/.test(text) && !/Unavailable — profile carries no market capitalization/.test(text) && /\$3\.41T/.test(text) && !/\$0/.test(text));
+    ok("v6.5 unavailable: the missing anchor series is NAMED on the chart and the comparison line still plots alone",
+      /NBIS series unavailable/.test(text) && (await r.locator(".recharts-line").count()) === 1 && /Unavailable(?! —)/.test(text));
+    ok("v6.5 unavailable (density review): the FULL reasons survive — in the element title on the face, and verbatim one tap deep",
+      (await r.locator('[title="profile carries no market capitalization"]').count()) >= 1 && await (async () => {
+        await r.locator("button.cg-toggle").first().click(); await page.waitForTimeout(250); const o = await r.innerText();
+        return /Unavailable — market cap: profile carries no market capitalization/.test(o) && /Unavailable — YTD: return series unavailable/.test(o); })());
     ok("v6.5 stale: market data 12 days behind wears STALE and the price-trend clause is suppressed on the face, not graded",
       /STALE/.test(text) && /price trend is not assessed on a stale tape/.test(text) && !/above its 200-day/.test(text));
     ok("v6.5 unavailable: the scheduled pair stays visible with the lesson, and the face stays overflow-free",

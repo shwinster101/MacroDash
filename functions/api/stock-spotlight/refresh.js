@@ -237,7 +237,9 @@ export function companyFromRecord(sym, record, issuerRecord, now) {
   const price = seriesOf(f.priceSeries, "price series unavailable");
   // The trend read may use the price series, or the verified series when that is all there is.
   const trendSeries = price.rows ? price : totalReturn.rows ? totalReturn : null;
-  const name = f.issuerName?.value || fundamentals.issuerName || f.profile?.value?.name || COMPANY_NAMES[sym] || sym;
+  // Short, authored name first (owner call 2026-09-14: "MICROSOFT CORPORATION" is the legal
+  // name, not the label); the SEC/profile names are the fallback for a symbol outside the table.
+  const name = COMPANY_NAMES[sym] || f.issuerName?.value || fundamentals.issuerName || f.profile?.value?.name || sym;
   const company = buildCompany({ symbol: sym, name, facts: f, fundamentals, series: trendSeries, today: etYmd(now), now });
   return { company, series: totalReturn };
 }

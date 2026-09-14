@@ -11473,6 +11473,20 @@ console.log("\n[81] v6.5.0 STOCK SPOTLIGHT — calculations, endpoints, cron leg
         q("2024-07-01", "2025-06-30", 40, "2025-08-15", "10-K"), q("2024-07-01", "2025-03-31", 27)];
       const dq = S.discreteQuarters(rows);
       return dq.map((x) => `${x.end}:${x.val}${x.derived ? "d" : ""}`).join(" ") === "2025-06-30:13d 2025-09-30:10 2025-12-31:12d 2026-03-31:14d 2026-06-30:16d"; })());
+  ok("[81] periods (v6.5.1, the 6-K shape): TAIL subtraction derives Q1 = H1 − Q2 and HEAD subtraction derives H2 = FY − H1; TTM then CHAINS half + quarter + quarter back to twelve months, so a foreign issuer's H1/Q2/FY figures yield an honest TTM — the NBIS filing's own numbers reconcile to 1,355.1",
+    (() => { const r = (s, e, v) => ({ start: s, end: e, val: v, form: "6-K", filed: "2026-08-12" });
+      const rows = [r("2025-01-01", "2025-12-31", 529.8), r("2025-01-01", "2025-06-30", 156.0), r("2025-04-01", "2025-06-30", 105.1), r("2026-01-01", "2026-06-30", 981.3), r("2026-04-01", "2026-06-30", 582.3)];
+      const ps = S.discretePeriods(rows); const q1 = ps.find((p) => p.start === "2026-01-01" && p.end === "2026-03-31"), h2 = ps.find((p) => p.start === "2025-07-01" && p.end === "2025-12-31");
+      const t = S.ttmFrom(ps);
+      return q1 && q1.kind === "Q" && q1.derived && Math.abs(q1.val - 399.0) < 1e-9 && h2 && h2.kind === "H" && Math.abs(h2.val - 373.8) < 1e-9 &&
+        Math.abs(t.value - 1355.1) < 1e-9 && t.halves === 1 && t.periods.join("|") === "half to 2025-12-31|quarter to 2026-03-31|quarter to 2026-06-30" &&
+        S.discreteQuarters(rows).map((q) => q.end).join(",") === "2025-03-31,2025-06-30,2026-03-31,2026-06-30"; })());
+  ok("[81] periods (v6.5.1): two tiling HALVES make a TTM (six-month-only cash flows), a direct quarter beats a derived one for the same span, and overlapping periods are refused",
+    (() => { const r = (s, e, v) => ({ start: s, end: e, val: v, form: "6-K", filed: "2026-08-12" });
+      const ocf = S.ttmFrom(S.discretePeriods([r("2025-01-01", "2025-12-31", 384.8), r("2025-01-01", "2025-06-30", -352.0), r("2026-01-01", "2026-06-30", 4504.1)]));
+      const both = S.discretePeriods([r("2026-01-01", "2026-06-30", 100), r("2026-04-01", "2026-06-30", 60), r("2026-01-01", "2026-03-31", 41)]);
+      const direct = both.find((p) => p.end === "2026-03-31");
+      return Math.abs(ocf.value - 5240.9) < 1e-6 && ocf.halves === 2 && direct && direct.derived === false && direct.val === 41; })());
   ok("[81] periods: TTM sums four TILING quarters; a hole between them yields unavailable with the gap named, never a sum across it",
     (() => { const good = S.ttmFrom(S.discreteQuarters([q("2025-07-01", "2025-09-30", 10), q("2025-10-01", "2025-12-31", 12), q("2026-01-01", "2026-03-31", 14), q("2026-04-01", "2026-06-30", 16)]));
       const holed = S.ttmFrom(S.discreteQuarters([q("2025-04-01", "2025-06-30", 9), q("2025-10-01", "2025-12-31", 12), q("2026-01-01", "2026-03-31", 14), q("2026-04-01", "2026-06-30", 16)]));
@@ -11534,6 +11548,18 @@ console.log("\n[81] v6.5.0 STOCK SPOTLIGHT — calculations, endpoints, cron leg
   ok("[81] assessment: when the expected session close is MISSING the price-trend clause is suppressed and says so — a stale tape never grades a trend",
     (() => { const a = S.assessCompany({ symbol: "MSFT", metrics: ms.metrics, nextEarnings: null, freshness: { market: { stale: true } } });
       return a.priceTrendSuppressed === true && /Price trend not assessed — the latest expected session close is missing/.test(a.stock) && !/above its 200-day/.test(a.stock) && /not on the calendar feed/.test(a.watchNext); })());
+  ok("[81] metrics (v6.5.1): FCF falls back to the latest HALF-YEAR when the filer reports six-month cash flows only, labelled as such, and the run-rate compares to the chained TTM",
+    (() => { const r = (s, e, v) => ({ start: s, end: e, val: v, form: "6-K", filed: "2026-08-12" });
+      const rec = { schema: S.SPOTLIGHT_ISSUER_SCHEMA, symbol: "NBIS", periods: [
+        { start: "2025-01-01", end: "2025-12-31", revenue: 529.8e6, ocf: 384.8e6, capex: 4066e6, currency: "USD", source: { form: "20-F", url: "https://www.sec.gov/Archives/x", filed: "2026-04-30" } },
+        { start: "2025-01-01", end: "2025-06-30", revenue: 156e6, ocf: -352e6, capex: 1054.5e6, currency: "USD", source: { form: "6-K", url: "https://www.sec.gov/Archives/y", filed: "2026-08-12" } },
+        { start: "2025-04-01", end: "2025-06-30", revenue: 105.1e6, currency: "USD", source: { form: "6-K", url: "https://www.sec.gov/Archives/y", filed: "2026-08-12" } },
+        { start: "2026-01-01", end: "2026-06-30", revenue: 981.3e6, ocf: 4504.1e6, capex: 8130.3e6, currency: "USD", source: { form: "6-K", url: "https://www.sec.gov/Archives/y", filed: "2026-08-12" } },
+        { start: "2026-04-01", end: "2026-06-30", revenue: 582.3e6, currency: "USD", source: { form: "6-K", url: "https://www.sec.gov/Archives/y", filed: "2026-08-12" } } ] };
+      const f = S.issuerFundamentals(rec); const m = S.deriveMetrics({ fundamentals: f, marketCap: { usd: 61e9 }, series: null, today: "2026-09-14" });
+      void r;
+      return m.fcf.basis === "half" && m.fcf.period === "half-year to 2026-06-30" && Math.abs(m.fcf.value - (-3626.2e6)) < 1 && m.revenueGrowth.pct === 454 &&
+        m.valuation.capToTtmRevenue === 45 && /from half-year periods/.test(m.valuation.ttmRevenuePeriod) && m.runRate.gapPct === 71.9; })());
   ok("[81] lessons: seven, keyed 1:1 to the rotation, each with a title, a body, and an example FUNCTION; MSFT's worked example prints both run-rates from the fixture",
     S.SPOTLIGHT_ROTATION.every((k) => S.LESSONS[k] && S.LESSONS[k].title && S.LESSONS[k].body.length > 80 && typeof S.LESSONS[k].example === "function") &&
     /NBIS: \$582M × 4 = \$2\.3B run-rate vs \$1\.3B reported TTM \(\+75\.8%\)\. MSFT: \$76\.0B × 4/.test(fx.model.lesson.example) && fx.model.lesson.exampleUnavailable === null);
@@ -11629,9 +11655,10 @@ console.log("\n[81] v6.5.0 STOCK SPOTLIGHT — calculations, endpoints, cron leg
     return new Response("no", { status: 404 });
   };
   const envR = (kv, extra = {}) => ({ PULSE_CACHE: kv, FINNHUB_KEY: "k", SEC_USER_AGENT: "macrodash test@example.com", TIINGO_KEY: "t", REFRESH_TOKEN: "rt", ...extra });
-  ok("[81] refresh: end-to-end against stubbed providers — the pair is stored, facts land under spotlight:facts:v1:<SYM> for anchor + comparison + NEXT, the rotation persists with the week key, and NO tt: key is touched",
+  ok("[81] refresh: end-to-end against stubbed providers — the pair is stored, facts land under spotlight:facts:v1:<SYM> for anchor + comparison + NEXT, the rotation persists with the week key, NO tt: key is touched, and the SHORT authored name wins over the SEC legal name (owner call 2026-09-14)",
     await (async () => { const kv = kvS();
       const out = await R.runSpotlightRefresh(envR(kv), { now: NOW, fetchImpl: stubFetch() });
+      if (JSON.parse(kv._m.get("spotlight:model:v1")).companies.MSFT.name !== "Microsoft") return false;
       const model = JSON.parse(kv._m.get("spotlight:model:v1")), rot = JSON.parse(kv._m.get("spotlight:rotation:v1") || "null");
       return out.ok === true && out.dataOk === true && out.pair.comparison === "MSFT" && out.pair.next === "AAPL" && model.pair.weekKey === "2026-09-14" && rot.index === 0 && rot.weekKey === "2026-09-14" &&
         ["NBIS", "MSFT", "AAPL"].every((s) => kv._m.has(`spotlight:facts:v1:${s}`)) && !kv.puts.some((k) => k.startsWith("tt:")) &&
@@ -11754,6 +11781,9 @@ console.log("\n[81] v6.5.0 STOCK SPOTLIGHT — calculations, endpoints, cron leg
 
   // ── the section and its wiring ──
   const ssSrc = readSrc("../src/sections/StockSpotlight.jsx");
+  // The chip map is pure and exported; Node cannot import JSX, so lift the SHORT_REASON table + shortReason by source.
+  const ssMod = (() => { const start = ssSrc.indexOf("const SHORT_REASON = ["); const end = ssSrc.indexOf("\n", ssSrc.indexOf("export const shortReason"));
+    return new Function(ssSrc.slice(start, end).replace("export const shortReason", "const shortReason") + "\nreturn { shortReason };")(); })();
   const ssCode = ssSrc.replace(/\/\/[^\n]*|\/\*[\s\S]*?\*\//g, "");
   ok("[81] section: presentation-only — no hook, storage, fetch or computation import; the fetch lives in the orchestrator, gated on liveBuild, and renders directly below the macro strip in BOTH modes",
     !/useState|useEffect|localStorage|fetch\(|useMarketData|computeRegime|buildEvidenceSet|ptModelRows/.test(ssCode) &&
@@ -11764,9 +11794,13 @@ console.log("\n[81] v6.5.0 STOCK SPOTLIGHT — calculations, endpoints, cron leg
     /if \(!spotlight \|\| !spotlight\.enabled \|\| !spotlight\.model/.test(ssCode) &&
     (() => { const cg = ssCode.slice(ssCode.indexOf("simple ? ("), ssCode.lastIndexOf("</CollapsedGroup>"));
       return !/Market cap|<Chart/.test(cg) && /<Row label="Market cap" big/.test(ssCode) && /<Chart tracker=\{m\.tracker\}/.test(ssCode) && /<Unavail reason=/.test(ssCode); })());
-  ok("[81] section (review): Simple's face carries the blurb and the TWO-SENTENCE summary; the full business/stock/watch-next treatment lives in Degen's face and one tap deep in Simple; in Simple the learning moment renders BEFORE the chart",
-    /\{c\.blurb && <div/.test(ssCode) && /\(c\.assessment\.summary \|\| \[\]\)\.slice\(0, 2\)\.join\(" "\)/.test(ssCode) &&
-    /simple\s*\?[\s\S]{0,200}summary[\s\S]{0,300}: <FullAssessment a=\{c\.assessment\} \/>/.test(ssCode) &&
+  ok("[81] section (density review 2026-09-14): Simple's face has NO blurb, NO row date crumbs and compact Unavailable (word + chip, full reason in the title); the summary prints only when both sentences carry numbers; Degen keeps the blurb and dated rows; in Simple the learning moment renders BEFORE the chart",
+    /\{!simple && c\.blurb && <div/.test(ssCode) && /compact=\{simple\}/.test(ssCode) && /title=\{reason \|\| undefined\}/.test(ssCode) &&
+    /summaryIsNumeric\(c\.assessment\.summary\)/.test(ssCode) && /is unavailable\|unavailable —/.test(ssCode) &&
+    /label="explore the numbers"/.test(ssCode) && /<DataNotes key=\{c\.symbol\}/.test(ssCode) &&
+    (() => { const { shortReason } = ssMod; return shortReason("only annual revenue is on file (fiscal year to 2025-12-31); no quarterly period could be derived") === "annual filing only" &&
+      shortReason("profile carries no market capitalization") === "no market cap" && shortReason("no verified total-return series — price return is not a substitute") === "not total return" && shortReason("something new") === null; })() &&
+    /simple\s*\?[\s\S]{0,400}: <FullAssessment a=\{c\.assessment\} \/>/.test(ssCode) &&
     (() => { const cg = ssCode.slice(ssCode.indexOf("simple ? ("), ssCode.lastIndexOf("</CollapsedGroup>")); return /<FullAssessment a=\{c\.assessment\} \/>/.test(cg); })() &&
     ssCode.indexOf("{simple && lesson && <Lesson") < ssCode.indexOf("<Chart tracker={m.tracker}") && ssCode.indexOf("<Chart tracker={m.tracker}") < ssCode.indexOf("{!simple && lesson && <Lesson") &&
     /awaiting first trading close/.test(ssCode) && /tracker\.yearRollover/.test(ssCode));

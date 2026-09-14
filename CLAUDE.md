@@ -5,6 +5,33 @@ answers *"is it safe to be in the market?"* from live macro + market + sentiment
 data. Single-page React app on Cloudflare Pages, with live data assembled at the
 edge by Pages Functions and cached in KV.
 
+**v6.5.1 — the Simple flash card, short names, and a 6-K filer's first honest TTM (owner
+density review + the NBIS Q2 6-K, 2026-09-14).** Live the night before, the widget worked and
+was "way too dense and verbose" on a phone: Simple was rendering the Degen research card on
+first paint (blurb, `as of`/`through` crumbs, the full *"only annual revenue is on file
+(fiscal year to 2025-12-31); no quarterly period could be derived"* essay under REVENUE GROWTH,
+then a two-sentence summary that restated the same gap). The density review's mode contract is
+now the render rule: **Simple is the flash card, Degen is the 10-K.** Simple's face per company
+is name + ticker, the market cap NUMBER, the YTD NUMBER, three fundamental rows and the
+two-sentence summary ONLY when both sentences carry real numbers — no blurb, no date crumbs, and
+a missing figure is the WORD *Unavailable* plus a chip-length cause (`annual filing only` ·
+`not in filings` · `no market cap` · `not total return` · `no full year` …) with the full reason
+in the element title and verbatim in *explore the numbers*, which now also opens with a
+per-company DATES & DATA NOTES block (blurb, cap as-of, YTD through, the reported period, every
+full reason). The model's long reasons are untouched — the chip map is presentation only, and an
+unmatched reason falls back to the bare word. Degen keeps the blurb, the dated rows, the full
+reasons, the three questions and the analysis open. **Short names win** (`Nebius Group`,
+`Microsoft` — the SEC legal name was taking the label). **The 6-K shape, derived exactly:**
+a foreign issuer reports three-month and six-month columns and no Q1 row, and only six-month
+cash flows, so `discretePeriods` now derives by TAIL subtraction (Q1 = H1 − Q2) as well as head
+(H2 = FY − H1), and `ttmFrom` CHAINS tiling quarters and halves back to twelve months (a quarter
+preferred at each step; a hole still refuses). Free cash flow falls back to the latest half-year,
+labelled as such, when no quarter exists. Verified against Nebius's own Q2-2026 6-K: TTM revenue
+$1,355.1M (FY2025 529.8 − H1-25 156.0 + H1-26 981.3), +454% growth as the filing prints it, H1
+FCF −$3,626.2M. The NBIS issuer record itself (FY2025 20-F + the Q2 6-K periods, each with its
+sec.gov Archives URL) is filed through `PUT /api/stock-spotlight/issuer` by the operator — it is
+KV content and never enters the repo. Tests: 2330 smoke (+3) + 309 render + 316 public-render (+2).
+
 **v6.5.0 "STOCK SPOTLIGHT" — one educational widget, NBIS beside a rotating Mag Seven name,
 built behind a DISABLED feature flag (owner plan `docs/plans/stock-spotlight.md`, 2026-09-13; the
 plan travels with the branch).** The widget answers *"what do this business's latest results and
