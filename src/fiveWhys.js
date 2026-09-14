@@ -18,6 +18,7 @@ const listOf = (xs) => xs.length <= 1 ? (xs[0] || "")
   : `${xs.slice(0, -1).join(", ")}, and ${xs[xs.length - 1]}`;
 
 const PUBLIC_LABEL = { "RISK-ON": "MOONING", MIXED: "HODL", "RISK-OFF": "DIAMOND HANDS" };
+import { SIMPLE_WITHHELD_LABEL, simpleCallLabel } from "./publicCopy.js";
 
 /* v5.8 (owner: "sound more macro defined"): WHY #3 is the transmission layer, so each clause
    now names the CHANNEL in the macro vocabulary that channel actually has — discount rate and
@@ -38,11 +39,12 @@ function cleanDisplay(v) {
   return String(v || "").replace(/\s+—\s+undefined\b/g, "").trim();
 }
 
-function factorClause(f) {
+function factorClause(f, plain = false) {
   const state = f.state || (f.vote === "bull" ? "BULLISH" : f.vote === "bear" ? "BEARISH"
     : f.vote === "neutral" ? "NEUTRAL" : "UNAVAILABLE");
+  const word = plain ? ({ BULLISH: "HELPING", BEARISH: "HURTING", NEUTRAL: "MIXED" }[state] || state) : state;
   const display = cleanDisplay(f.display || f.val);
-  return `${f.label || f.key}: ${state}${display ? ` — ${display}` : ""}${f.as_of || f.asOf ? ` (as of ${f.as_of || f.asOf})` : ""}`;
+  return `${f.label || f.key}: ${word}${display ? ` — ${display}` : ""}${f.as_of || f.asOf ? ` (as of ${f.as_of || f.asOf})` : ""}`;
 }
 
 function etStamp(v) {
@@ -93,6 +95,7 @@ function sessionPrefix(session) {
 }
 
 export function computeFiveWhys(data, regime = {}, opts = {}) {
+  const plain = opts.vocabulary === "simple";
   const call = opts.call || null;
   const factors = Array.isArray(call?.factors) ? call.factors
     : Array.isArray(opts.factors) ? opts.factors : [];
@@ -103,8 +106,10 @@ export function computeFiveWhys(data, regime = {}, opts = {}) {
   const bear = call?.counts?.bearish ?? regime.bearVotes ?? usableFactors.filter((f) => f.vote === "bear").length;
   const neutral = call?.counts?.neutral ?? Math.max(0, active - bull - bear);
   const baseLabel = regime.raw || regime.label || "MIXED";
-  const label = call?.headline || PUBLIC_LABEL[baseLabel] || (active >= 4 ? "HODL" : "CAN'T CALL IT");
   const direction = call?.direction || (baseLabel === "RISK-ON" ? "BULLISH" : baseLabel === "RISK-OFF" ? "BEARISH" : "NEUTRAL");
+  const label = plain
+    ? (call?.direction ? simpleCallLabel(call) : active >= 4 ? simpleCallLabel(direction) : SIMPLE_WITHHELD_LABEL)
+    : call?.headline || PUBLIC_LABEL[baseLabel] || (active >= 4 ? "HODL" : "CAN'T CALL IT");
   const required = active ? Math.floor(active / 2) + 1 : 0;
 
   /* 8/28 vocabulary matrix, row 11. This read "{bull}/{active} usable factors bullish" — the
@@ -113,32 +118,34 @@ export function computeFiveWhys(data, regime = {}, opts = {}) {
      met "6 of 6 voters counted" above and "3/6 usable factors bullish" here and concluded half
      the book had gone dark. A tally now says it is a tally, and never wears a slash. */
   const prefix = opts.callFrozen ? "10am call —" : sessionPrefix(data.session);
-  const headline = `${prefix} ${label} · ${direction}; ${bull} of the ${active} counted voters lean bullish.`;
+  const headline = plain
+    ? `${prefix} ${label}; ${bull} of the ${active} counted signals are helping.`
+    : `${prefix} ${label} · ${direction}; ${bull} of the ${active} counted signals lean bullish.`;
   const whys = [];
 
   whys.push(
     /* Rows 12-13: coverage takes the canonical "N of M voters counted" form (it was the
        hero's own fact wearing a slash), and the majority RULE stops looking like a third
        tally — "3 of 5" sat between two counts and read as one. */
-    `${label} — ${direction}. The model has ${bull} bullish, ${neutral} neutral, and ${bear} bearish` +
-    `${active < total ? ` — ${active} of ${total} voters counted` : ` — all ${total} voters counted`}. ` +
-    `${required ? `A directional call needs a strict majority of the counted voters — at least ${required} here.` : "There is not enough usable evidence to publish a direction."}`
+    `${plain ? label : `${label} — ${direction}`}. The model has ${bull} ${plain ? "helping" : "bullish"}, ${neutral} ${plain ? "mixed" : "neutral"}, and ${bear} ${plain ? "hurting" : "bearish"}` +
+    `${active < total ? ` — ${active} of ${total} signals counted` : ` — all ${total} signals counted`}. ` +
+    `${required ? `A directional call needs a strict majority of the counted signals — at least ${required} here.` : "There is not enough usable evidence to publish a direction."}`
   );
 
   const supports = usableFactors.filter((f) => (f.state || "").toUpperCase() === "BULLISH" || f.vote === "bull");
   const risks = usableFactors.filter((f) => (f.state || "").toUpperCase() === "BEARISH" || f.vote === "bear");
   const balances = usableFactors.filter((f) => (f.state || "").toUpperCase() === "NEUTRAL" || f.vote === "neutral");
   const driverParts = [];
-  if (supports.length) driverParts.push(`Support: ${supports.map(factorClause).join("; ")}`);
-  if (risks.length) driverParts.push(`Risk: ${risks.map(factorClause).join("; ")}`);
-  if (balances.length) driverParts.push(`Neutral: ${balances.map(factorClause).join("; ")}`);
+  if (supports.length) driverParts.push(`Support: ${supports.map((f) => factorClause(f, plain)).join("; ")}`);
+  if (risks.length) driverParts.push(`Risk: ${risks.map((f) => factorClause(f, plain)).join("; ")}`);
+  if (balances.length) driverParts.push(`Neutral: ${balances.map((f) => factorClause(f, plain)).join("; ")}`);
   whys.push(driverParts.length ? driverParts.join(". ") + "." : "No canonical factor is usable, so no driver is being claimed.");
 
   const directional = [...supports, ...risks];
   const mechanisms = directional.map((f) => WHY_IT_MATTERS[f.key]).filter(Boolean);
   whys.push(mechanisms.length
     ? `${listOf(mechanisms)}. These are transmission channels, not proof that any one factor caused today's market move.`
-    : "No factor has a directional vote, so the model is not claiming a causal market driver.");
+    : "No factor has a directional signal, so the model is not claiming a causal market driver.");
 
   const excluded = factors.filter((f) => f.excluded);
   const stamp = etStamp(opts.snapshotAsOf) || data.lastRefresh || null;
@@ -161,11 +168,12 @@ export function computeFiveWhys(data, regime = {}, opts = {}) {
     `Evidence confidence is ${call?.confidence || (active === total ? "HIGH" : active >= 4 ? "MEDIUM" : "LOW")}` +
     `${stamp ? `; the snapshot was pulled ${stamp}` : ""}. ` +
     `${excluded.length ? `${excluded.map((f) => f.label || f.key).join(", ")} ${excluded.length === 1 ? "was" : "were"} excluded.` : "No factor was excluded."} ` +
-    `${context}. Headlines are context only and never cast a vote.`
+    `${context}. Headlines are context only and never affect the call.`
   );
 
   const nearest = Array.isArray(opts.flips) ? opts.flips[0] : null;
-  const nextLabel = nearest ? (PUBLIC_LABEL[nearest.would] || nearest.would) : null;
+  const nextDirection = nearest?.would === "RISK-ON" ? "BULLISH" : nearest?.would === "RISK-OFF" ? "BEARISH" : nearest?.would === "MIXED" ? "NEUTRAL" : null;
+  const nextLabel = nearest ? (plain && nextDirection ? simpleCallLabel(nextDirection) : PUBLIC_LABEL[nearest.would] || nearest.would) : null;
   const override = call?.override?.active ? ` The ${call.override.type} safety override is active.` : "";
   const downgraded = call?.downgraded ? ` ${call.downgraded}.` : "";
   whys.push(
@@ -176,7 +184,7 @@ export function computeFiveWhys(data, regime = {}, opts = {}) {
   );
 
   return {
-    regime: `${label} · ${direction}`,
+    regime: plain ? label : `${label} · ${direction}`,
     headline,
     whys,
     labels: ["WHY THIS CALL", "WHAT DROVE IT", "WHY IT MATTERS", "CAN I TRUST IT", "WHAT CHANGES IT"],

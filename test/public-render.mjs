@@ -149,11 +149,14 @@ async function open({ live, status = 200, delayMs = 0, width = 1280, route = "/"
   picks = null, history = null, publicCall = null, publicCallFrozen = false, publicCallCapturedAt = null,
   publicCloseRead = null }) {   // v6.2: the 6pm close-read record (envelope), null = no read tonight
   const page = await browser.newPage({ viewport: { width, height: 900 } });
-  // v3.94 SIMPLE/POWER: SIMPLE is the product default; the legacy scenarios below assert the
-  // full analytical view, so they seed the persisted Power preference the way a returning
-  // power user's device would carry it. Simple-mode scenarios pass power: false (nothing
+  // Simple is the product default; legacy analytical scenarios seed the persisted internal
+  // `power` preference and dismiss the first-entry Degen notice like a returning user.
+  // Simple-mode scenarios pass power: false (nothing
   // stored — the true first-visit state).
-  if (power) await page.addInitScript(() => { try { localStorage.setItem("md:view:v1", "power"); } catch (_e) {} });
+  if (power) await page.addInitScript(() => { try {
+    localStorage.setItem("md:view:v1", "power");
+    localStorage.setItem("md:degen-notice:v1", "dismissed");
+  } catch (_e) {} });
   const errors = [];
   page.on("pageerror", (e) => errors.push(String(e)));
   await page.route("**/api/snapshot*", async (r) => {
@@ -191,7 +194,7 @@ console.log("\n[public] LOADING — a posture must not be computed from the mock
     /waiting for live data before calling a posture/i.test(band));
   ok("loading: the moon voice reads CAN'T CALL IT, not a defaulted directional state",
     /CAN'T CALL IT/i.test(band) && !/MOONING|HODL|DIAMOND HANDS/i.test(band));
-  ok("loading: no factors are claimed to be voting", /no factors voting yet/i.test(band));
+  ok("loading: no signals are claimed to be counted", /no signals counted yet/i.test(band));
   ok("loading: the flip line is suppressed — there is no posture to flip",
     !/would change this/i.test(band));
   // A1 (v3.58, re-audit HIGH): the verdict said CAN'T CALL IT while the 5 Whys narrated mock
@@ -228,7 +231,7 @@ console.log("\n[public] LIVE — a full snapshot publishes a posture");
   // 8/28 pin hygiene (survey flag): two of the old alternates ("6/6 factors voting",
   // "6 bullish") were chain-interior text that never rendered closed — the pin passed via
   // the hero's "of 6" by accident. Tightened to the line that actually carries the claim.
-  ok("live: all six factors vote", /6 of 6 voters counted/i.test(await page.locator("body").innerText()));
+  ok("live: all six signals count", /6 of 6 signals counted/i.test(await page.locator("body").innerText()));
   await page.locator('button[aria-label="Show regime factors"]').click();
   await page.waitForTimeout(150);
   ok("live: the flip line returns once there is a posture to flip (v3.94: inside the ℹ evidence panel)",
@@ -297,7 +300,7 @@ console.log("\n[public] DEGRADED — below-quorum evidence yields DATA HOLD");
     !/INSUFFICIENT/.test(body));
   ok("degraded: the band names how much evidence is missing",
     // 8/28 matrix row 2 — canonical coverage vocabulary, driven live.
-    /only 3 of 6 voters counted/i.test(band) && /4 needed to call it/i.test(band) &&
+    /only 3 of 6 signals counted/i.test(band) && /4 needed to call it/i.test(band) &&
     !/factors usable/i.test(band));
   ok("degraded: the confidence strip states the withhold too",
     /POSTURE WITHHELD/i.test(body));
@@ -374,22 +377,24 @@ console.log("\n[public] v3.94 — Simple default, the toggle, persistence, red f
   /* v4.0.3 — the tracked-signal census ("N fresh of M tracked") is POWER-ONLY now. It counts
      SOURCES fields, not the six macro voters, so in Simple it read as a second, larger,
      contradictory confidence number beside the scoped "N of 6 voters counted". */
-  ok("v5.3 simple: the Glance layer renders — human call, machine direction, sentence, cards, scoped confidence, key numbers",
-    /MOONING|HODL|DIAMOND HANDS|CAN'T CALL IT/.test(body) && POSTURES.test(body) &&
+  ok("v6.4 simple: the Glance layer renders — one plain call, sentence, cards, scoped confidence, key numbers",
+    /Bullish|Hold|Bearish|Not enough data/.test(body) &&
     /(supportive|working against|clear lean right now)/i.test(body) &&   // v4.0.1 named-factor copy
-    /\d+ of \d+ voters counted/.test(body) && /SPY/.test(body));
+    /\d+ of \d+ signals counted/.test(body) && /SPY/.test(body));
   ok("v4.0.3 simple: the tracked-signal census is GONE from Simple — one confidence number, scoped",
     !/SIGNAL QUALITY/i.test(body) && !/of \d+ tracked/i.test(body));
   const bandTxt = await page.locator('[aria-label="Macro backdrop verdict"]').innerText();
   ok("v4.0 simple: EXACTLY ONE verdict — the engine label never renders beside the scoped one",
     (() => { const t = bandTxt; return !/RISK-ON|RISK-OFF|\bMIXED\b/.test(t); })());
-  ok("v5.3 simple: the moon voice is primary and the machine direction is secondary",
-    /MOONING|HODL|DIAMOND HANDS|CAN'T CALL IT/.test(bandTxt) &&
-    /BULLISH|NEUTRAL|BEARISH|DATA HOLD/.test(bandTxt) && !/MACRO: /.test(bandTxt));
+  ok("v6.4 simple: the plain verdict is the only call vocabulary on the face",
+    /Bullish|Hold|Bearish|Not enough data/.test(bandTxt) &&
+    !/MOONING|HODL|DIAMOND HANDS|CAN'T CALL IT|\bBULLISH\b|\bNEUTRAL\b|\bBEARISH\b|DATA HOLD/.test(bandTxt));
+  ok("v6.4 tape: Simple hides the separate SPY-day badge",
+    !/(TODAY|LAST) SPY\s+(UP|FLAT|DOWN)/.test(body));
   // 8/28 A4/A6: the unfrozen Simple face says "live read", never "the call", and carries
   // the counterpart caption — either clock branch, since suite runs at arbitrary ET hours.
-  ok("v4.0/8-28 simple: the unfrozen eyebrow reads 'live read', never the official-call name",
-    /live read/i.test(await page.locator('[aria-label="Macro backdrop verdict"]').innerText()) &&
+  ok("v6.4 simple: the unfrozen eyebrow names a live or latest market read, never the official-call name",
+    /(live|latest) market read/i.test(await page.locator('[aria-label="Macro backdrop verdict"]').innerText()) &&
     !/· the call/i.test(await page.locator('[aria-label="Macro backdrop verdict"]').innerText()) &&
     !/wen moon/i.test(await page.locator('[aria-label="Macro backdrop verdict"]').innerText()));
   /* RE-PINNED (v6.0.1, owner UX review): in Simple the A6 caption leaves the FACE — the
@@ -399,12 +404,13 @@ console.log("\n[public] v3.94 — Simple default, the toggle, persistence, red f
      block below. Both halves asserted: absent while closed, present once opened. */
   {
     const faceTxt = await page.locator('[aria-label="Macro backdrop verdict"]').innerText();
-    ok("v6.0.1 A6 in Simple: the caption is OFF the face (the eyebrow already says 'live read')",
-      !/live read — today's/.test(faceTxt) && /live read/i.test(faceTxt));
+    ok("v6.4 clock in Simple: the detailed caption is off the face",
+      (await page.locator('[aria-label="Macro backdrop verdict"] .call-caption').count()) === 0 &&
+      /(live|latest) market read/i.test(faceTxt));
     await page.locator('button[aria-label="Show regime factors"]').click();
     await page.waitForTimeout(150);
-    ok("8/28 A6: the unfrozen counterpart caption renders one tap deep, phrased by the client clock",
-      /live read — today's (official call freezes at 10:00 ET|10am record not loaded)/.test(
+    ok("v6.4 clock: the unfrozen counterpart caption renders one tap deep",
+      /(Latest market read · no new call is scheduled today|Live market read · today's official call (freezes at 10:00 ET|is unavailable))/.test(
         await page.locator('[aria-label="Macro backdrop verdict"] .call-caption').innerText()));
     await page.locator('button[aria-label="Show regime factors"]').click();
     await page.waitForTimeout(150);
@@ -431,7 +437,7 @@ console.log("\n[public] v3.94 — Simple default, the toggle, persistence, red f
      facts, not prose, and the v3.1 provenance invariant is not a density trade. */
   ok("v5.9 simple: cards carry value + direction + freshness, and the truncation is NAMED",
     /HELPING|HURTING|MIXED/.test(body) && !/discount rate on every future dollar/.test(body) &&
-    /\d+ cards from the \d+ voters counted/.test(body) &&
+    /\d+ cards from the \d+ signals counted/.test(body) &&
     // 8/28: the flip's ONE home is the whys — chip on the closed label, absent from cards.
     /⇄/.test(await page.locator("button.cg-toggle", { hasText: "why this call" }).innerText()) &&
     !/⇄/.test(await page.locator('[aria-label="Key parameters"]').innerText()));
@@ -459,7 +465,7 @@ console.log("\n[public] v3.94 — Simple default, the toggle, persistence, red f
     !/The bull case right now:/.test(body) && !/The bear case:/.test(body));
   ok("v3.97 simple: no picks feed → the strip renders NOTHING, never example picks",
     !/My S-Tier/i.test(body) && !/not investment advice/i.test(body));
-  ok("simple: Layer 2/3 content is NOT in the DOM — the Power reasoning group, factor evidence, market detail, macro grid",
+  ok("simple: Layer 2/3 content is NOT in the DOM — the Degen reasoning group, factor evidence, market detail, macro grid",
     !/the reasoning/i.test(body) && !/factor evidence/i.test(body) &&
     !/full market detail/i.test(body) && !/MACRO REGIME/i.test(body) && !/Data Health/i.test(body));
   // v3.95: the whys ARE reachable in Simple — one honestly-labelled expander under the
@@ -491,8 +497,8 @@ console.log("\n[public] v3.94 — Simple default, the toggle, persistence, red f
       const t = tiles.find((n) => /^NFCI\b/m.test(n.innerText.trim()));
       return t ? { txt: t.innerText, title: t.getAttribute("title") || "" } : null;
     });
-    ok("8/31 swap: the NFCI tile DOES carry the voter marker and claims the posture (the LEV pin, inverted)",
-      !!marked && marked.txt.includes("\u25aa") && /Counts toward today's posture/.test(marked.title)
+    ok("8/31 swap: the NFCI tile DOES carry the signal marker and claims the posture (the LEV pin, inverted)",
+      !!marked && marked.txt.includes("\u25aa") && /Counts toward today's posture — signal is/.test(marked.title)
       && !/Context only/.test(marked.title));
   }
   ok("v3.95 simple: opening the whys does NOT pull the technical layer in with it",
@@ -514,9 +520,9 @@ console.log("\n[public] v3.94 — Simple default, the toggle, persistence, red f
     await vbtn.click();
     await page.waitForTimeout(250);
     const vsheet = await page.locator('[role="dialog"]').innerText();
-    ok("v5.9 verdict: the sheet names all four calls and both machine words",
-      /MOONING/.test(vsheet) && /HODL/.test(vsheet) && /DIAMOND HANDS/.test(vsheet) &&
-      /CAN'T CALL IT/.test(vsheet) && /BULLISH/.test(vsheet) && /BEARISH/.test(vsheet));
+    ok("v6.4 verdict: the Simple sheet names all four plain calls without Degen slang",
+      /Bullish/.test(vsheet) && /Hold/.test(vsheet) && /Bearish/.test(vsheet) &&
+      /Not enough data/.test(vsheet) && !/MOONING|HODL|DIAMOND HANDS|CAN'T CALL IT/.test(vsheet));
     ok("v5.9 verdict: it says plainly what this is not — a backdrop read, not advice",
       /not a view on any one stock/.test(vsheet) && /not advice/.test(vsheet));
     await page.keyboard.press("Escape");
@@ -603,8 +609,13 @@ console.log("\n[public] v3.94 — Simple default, the toggle, persistence, red f
      ~90px of font-metric headroom the v4.1.3 lesson says a budget needs. */
   ok(`v5.9: the parameter cards — the answer — begin within 420px at 390×844 (measured ${cardsTop})`,
     cardsTop !== null && cardsTop <= 420);
-  // One tap to Power: the full view appears; the choice persists across reload.
-  await page.locator("button", { hasText: "Power" }).click();
+  // One tap to Degen: acknowledge the audience notice, then the full view appears and persists.
+  await page.locator("button", { hasText: "Degen" }).click();
+  await page.waitForTimeout(150);
+  ok("v6.4 Degen: first entry gives a soft audience warning",
+    /Degen uses trading slang and shows the full technical dashboard/.test(await page.locator('[role="note"]').innerText()) &&
+    (await page.locator('[role="note"] button', { hasText: "Back to Simple" }).count()) === 1);
+  await page.locator('[role="note"] button', { hasText: "Dismiss" }).click();
   await page.waitForTimeout(400);
   /* The CONTRAST that keeps the Simple-chrome assertion above from passing vacuously: the
      same fixture, one tap over, must actually SHOW what Simple dropped. A pin that only
@@ -612,18 +623,23 @@ console.log("\n[public] v3.94 — Simple default, the toggle, persistence, red f
      trap — and the negative control for this fix found exactly that on the alert badge). */
   {
     const pbody = await page.locator("body").innerText();
-    ok("v5.9 chrome contrast: Power shows what Simple sheds — the wordmark echo and the OPS menu",
+    ok("v5.9 chrome contrast: Degen shows what Simple sheds — the wordmark echo and the OPS menu",
       (await page.locator(".sub-wordmark").count()) === 1 && /⋯ OPS/.test(pbody));
+    const tape = await page.locator(".spy-tape-mobile").textContent();
+    ok("v6.4 tape: Degen labels SPY's session move without borrowing moon vocabulary",
+      /(TODAY|LAST) SPY\s*FLAT/.test(tape || "") &&
+      !/(MOONING|HODL|DIAMOND HANDS)/.test(tape || ""));
   }
   await page.waitForTimeout(400);
   const powerBody = await page.locator("body").innerText();
-  ok("power: one tap reveals the Explain/Dig layers",
+  ok("degen: one tap reveals the Explain/Dig layers",
     /the reasoning/i.test(powerBody) && /factor evidence/i.test(powerBody) && /full market detail/i.test(powerBody));
-  ok("v3.97 power: the compact sentence returns and the newbie prose leaves (swap, not stack)",
+  ok("v3.97 degen: the compact sentence returns and the newbie prose leaves (swap, not stack)",
     /leans? (bullish|bearish)/.test(powerBody) && !/The bull case right now:/.test(powerBody));
   await page.reload(); await page.waitForTimeout(1200);
-  ok("power: the choice is remembered per device across a reload",
-    /the reasoning/i.test(await page.locator("body").innerText()));
+  ok("degen: the choice and dismissed notice are remembered per device across a reload",
+    /the reasoning/i.test(await page.locator("body").innerText()) &&
+    (await page.locator('[role="note"]').count()) === 0);
   ok("v3.94: no page errors through both modes", errors.length === 0);
   await page.close();
 }
@@ -651,8 +667,9 @@ console.log("\n[public] v5.6.8 — Terminal dock: operator-only, chips are doors
     /* Re-pinned at the v5.6.8 merge on main's CALL_VOCABULARY — the v5.x "one call" line
        replaced the MACRO:<direction> string this originally matched. The INTENT is unchanged
        and is the point of the assertion: gating the dock must hide CONTENT, never judgment. */
-    ok("dock: hiding it costs the public route nothing — the call still publishes",
-      /MOONING|HODL|DIAMOND HANDS|CAN'T CALL IT/.test(body));
+    ok("dock: hiding it costs the public route nothing — the plain call still publishes",
+      /Bullish|Hold|Bearish|Not enough data/.test(body) &&
+      !/MOONING|HODL|DIAMOND HANDS|CAN'T CALL IT/.test(body));
     ok("v4.1.7 public: no page errors", errors.length === 0);
     await page.close();
   }
@@ -740,13 +757,13 @@ console.log("\n[public] v3.60 P0 slice — nav, matrix, digest, health");
   // the icon-first six-factor view; the summary line stays visible while closed.
   const driversClosed = await page.locator('section[aria-labelledby="drivers"]').innerText();
   ok("glance: the matrix starts collapsed — summary visible, no full cards",
-    /\d+ of \d+ voters counted/i.test(driversClosed) && /factor evidence/i.test(driversClosed) &&
+    /\d+ of \d+ signals counted/i.test(driversClosed) && /factor evidence/i.test(driversClosed) &&
     !/as of \d{4}-\d{2}-\d{2}/.test(driversClosed));
   await page.locator('section[aria-labelledby="drivers"] button[aria-expanded]').click();
   await page.waitForTimeout(200);
   const drivers = await page.locator('section[aria-labelledby="drivers"]').innerText();
   ok("C3: the Evidence Matrix renders six factor cards with votes (one tap deep)",
-    (drivers.match(/BULL|BEAR|NEUTRAL/g) || []).length >= 6 && /6 of 6 voters counted/i.test(drivers));
+    (drivers.match(/BULL|BEAR|NEUTRAL/g) || []).length >= 6 && /6 of 6 signals counted/i.test(drivers));
   ok("C3: each card carries freshness and an as-of date",
     /LIVE/.test(drivers) && /as of \d{4}-\d{2}-\d{2}/.test(drivers));
   await page.locator("button.cg-toggle", { hasText: "the reasoning" }).click();   // v3.94: WC rides the group
@@ -830,9 +847,9 @@ console.log("\n[public] v3.60 P0 slice — nav, matrix, digest, health");
   // The red facts survive the v3.61 collapse: the summary count while closed, the exclusion
   // named in the Signal Quality strip, and the ⏱ chip on the band (v3.25 rule).
   const closed = await page.locator("body").innerText();
-  // v3.98.3: one scoped, one-vocabulary line — "5 of 6 voters counted · dark: VIX".
-  ok("glance: the exclusion is visible while the matrix is closed (the voters line names it)",
-    /5 of 6 voters counted/i.test(closed) && /dark: VIX/i.test(closed));
+  // v6.4: one scoped, one-vocabulary line — "5 of 6 signals counted · unavailable: VIX".
+  ok("glance: the exclusion is visible while the matrix is closed (the signals line names it)",
+    /5 of 6 signals counted/i.test(closed) && /unavailable: VIX/i.test(closed));
   await page.locator('section[aria-labelledby="drivers"] button[aria-expanded]').click();
   await page.waitForTimeout(200);
   const drivers = await page.locator('section[aria-labelledby="drivers"]').innerText();
@@ -840,7 +857,7 @@ console.log("\n[public] v3.60 P0 slice — nav, matrix, digest, health");
   // says "no live reading", never the stale wording the hero used to hardcode.
   ok("C3: an excluded factor is NAMED with its real reason on the card itself",
     /EXCLUDED/.test(drivers) && /excluded — no live feed right now/.test(drivers) &&
-    /no live reading — not counted/.test(drivers) && /5 of 6 voters counted/i.test(drivers));
+    /no live reading — not counted/.test(drivers) && /5 of 6 signals counted/i.test(drivers));
   await page.close();
 }
 
@@ -952,8 +969,8 @@ console.log("\n[public] v4.0 — Simple verdicts, card selection, and what must 
   let { page, errors } = await open({ live: bear, width: 390, power: false });
   await page.waitForTimeout(1300);
   let body = await page.locator("body").innerText();
-  ok("v5.3 verdict: a bear tape reads DIAMOND HANDS / BEARISH, and risk factors lead the cards",
-    /DIAMOND HANDS 🙌/.test(body) && /BEARISH/.test(body) && /HURTING/.test(body));
+  ok("v6.4 Simple verdict: a bear tape reads Bearish, and risk factors lead the cards",
+    /Bearish/.test(body) && /HURTING/.test(body) && !/DIAMOND HANDS|\bBEARISH\b/.test(body));
   await page.close();
 
   // 2. BULLISH.
@@ -962,18 +979,18 @@ console.log("\n[public] v4.0 — Simple verdicts, card selection, and what must 
   ({ page, errors } = await open({ live: bull, width: 390, power: false }));
   await page.waitForTimeout(1300);
   body = await page.locator("body").innerText();
-  ok("v5.3 verdict: a bull tape reads MOONING / BULLISH with supporting factors leading",
-    /MOONING 🚀/.test(body) && /BULLISH/.test(body) && /HELPING/.test(body) &&
+  ok("v6.4 Simple verdict: a bull tape reads Bullish with supporting factors leading",
+    /Bullish/.test(body) && /HELPING/.test(body) && !/MOONING|\bBULLISH\b/.test(body) &&
     /supportive/i.test(body));   // v4.0.1: the sentence names factors, supportive-side leading
   await page.close();
 
-  // 3. DATA HOLD — below quorum. And the acceptance rule that matters most here: a withheld
+  // 3. NOT ENOUGH DATA — below quorum. And the acceptance rule that matters most here: a withheld
   //    posture explains nothing and offers no flip, but says WHY it is withheld.
   ({ page, errors } = await open({ live: DEGRADED, width: 390, power: false }));
   await page.waitForTimeout(1300);
   body = await page.locator("body").innerText();
-  ok("v5.3 verdict: below quorum reads CAN'T CALL IT / DATA HOLD, never a thin directional call",
-    /CAN'T CALL IT 🌫️/.test(body) && /DATA HOLD/.test(body) && !/MOONING|DIAMOND HANDS/.test(body));
+  ok("v6.4 Simple verdict: below quorum reads Not enough data, never a thin directional call",
+    /Not enough data/.test(body) && !/CAN'T CALL IT|DATA HOLD|MOONING|DIAMOND HANDS/.test(body));
   /* 8/28 Whys altitude: a WITHHELD posture advertises no flip — the closed label is BARE
      (no ⇄ chip claiming a crossing that does not exist) and the withheld sentence travels
      INSIDE with the flip's slot. So the closed body must NOT carry it, and one tap must. */
@@ -990,7 +1007,7 @@ console.log("\n[public] v4.0 — Simple verdicts, card selection, and what must 
   await page.locator("button.cg-toggle", { hasText: "why this call" }).click();
   await page.waitForTimeout(150);
   ok("v4.0 withheld: cards still render only USABLE factors — a dead feed is never a card",
-    !/HELPING|HURTING|MIXED/.test(body) || /\d+ cards from the \d+ voters counted/.test(body));
+    !/HELPING|HURTING|MIXED/.test(body) || /\d+ cards from the \d+ signals counted/.test(body));
   await page.close();
 
   // 3b. FEAT-NEWCOMER-RULER (8/29): the MIXED sub is DERIVED — today's tape shape (sleepy
@@ -1109,27 +1126,26 @@ console.log("\n[public] v4.0 — Simple verdicts, card selection, and what must 
   const cardsText = await page.locator('[aria-label="Key parameters"]').innerText();
   ok("v4.0 cards: the dead-feed factor is absent from the cards entirely (not shown as 'mixed')",
     !/volatility/i.test(cardsText));
-  ok("v4.0 cards: never padded with UNAVAILABLE placeholders — absence is not content",
-    !/UNAVAILABLE/i.test(cardsText) && /\d+ cards from the \d+ voters counted/.test(cardsText));
-  /* 8/28 matrix row 4: "showing 3 of 5 usable · 1 not counted" read as a coverage fraction
-     under a hero saying "5 of 6" — neither number matched, and the 3 is a LAYOUT cap. The 3
-     is now labelled as cards and the exclusion uses the hero's own word, "dark". */
+  ok("v6.4 cards: never padded with unavailable placeholders — absence is only acknowledged in the footer",
+    (await page.locator(".simple-card", { hasText: /unavailable/i }).count()) === 0 &&
+    /\d+ cards from the \d+ signals counted · \d+ unavailable/.test(cardsText));
+  /* The layout count stays distinct from coverage, and exclusions use the same public word. */
   ok("v4.0 cards: the excluded factor is still ACKNOWLEDGED in the count line",
-    /\d+ dark/.test(cardsText));
+    /\d+ unavailable/.test(cardsText));
   ok("row 4: the layout cap is labelled as CARDS, never as a coverage fraction",
     /cards from the/.test(cardsText) && !/showing \d+ of \d+ usable/.test(cardsText));
   ok("v4.0: no page errors across the verdict matrix", errors.length === 0);
   await page.close();
 }
 {
-  // 5. POWER must be untouched by all of the above.
+  // 5. Degen retains the personality and analytical surface.
   const { page } = await open({ live: FULL_LIVE, width: 1280, power: true });
   await page.waitForTimeout(1300);
   const band = await page.locator('[aria-label="Macro backdrop verdict"]').innerText();
-  ok("v4.0 boundary: Power keeps the moon voice and never shows the scoped Simple verdict",
+  ok("v6.4 boundary: Degen keeps the moon voice and never shows the scoped Simple verdict",
     /MOONING|HODL|DIAMOND HANDS|CAN'T CALL IT/.test(band) && !/MACRO: /.test(band));
   const body = await page.locator("body").innerText();
-  ok("v4.0 boundary: Power keeps the full analytical view and gets NO Simple cards",
+  ok("v6.4 boundary: Degen keeps the full analytical view and gets NO Simple cards",
     /the reasoning/i.test(body) && /factor evidence/i.test(body) &&
     await page.locator('[aria-label="Key parameters"]').count() === 0);
   await page.close();
@@ -1196,8 +1212,8 @@ console.log("\n[public] A4 — the public/private boundary is ENFORCED, not comm
     /about this page — v\d+\.\d+\.\d+ · sources · not financial advice/i.test(pub));
   await page.locator(".site-footer button.cg-toggle").click();
   await page.waitForTimeout(150);
-  ok("public route: the footer NAMES the omission (a cut takes its attribution with it) — one tap deep",
-    /operator view carries the curated watchlist and alert monitors/.test(await page.locator(".site-footer").innerText()) &&
+  ok("v6.4 public footer: operator-view promotional sentence stays removed when opened",
+    !/operator view carries the curated watchlist and alert monitors/.test(await page.locator(".site-footer").innerText()) &&
     /Retired: CBOE Put\/Call/.test(await page.locator(".site-footer").innerText()));
   ok("public route: the canonical verdict still publishes — the gate hides content, not judgment",
     /MOONING|HODL|DIAMOND HANDS/.test(pub) && /BULLISH|NEUTRAL|BEARISH/.test(pub));
@@ -1220,7 +1236,7 @@ console.log("\n[public] A4 — the public/private boundary is ENFORCED, not comm
   await page.waitForTimeout(1200);
   const band = await bandText(page);
   ok("v5.5 frozen hero: the scored 10am call wins while later evidence drift is named",
-    /10am frozen call/i.test(band) && /DIAMOND HANDS 🙌/.test(band) && /BEARISH/.test(band) &&
+    /10am call · frozen/i.test(band) && /DIAMOND HANDS 🙌/.test(band) && /BEARISH/.test(band) &&
     /Current evidence now reads MOONING 🚀 · BULLISH/.test(band));
   await page.evaluate(() => {
     window.__postureCopy = null;
@@ -1245,7 +1261,7 @@ console.log("\n[public] A4 — the public/private boundary is ENFORCED, not comm
   // B4 (v3.59): the block regions stopped announcing; one concise status node does.
   ok("a11y: exactly one concise polite status region announces backdrop changes",
     await page.locator('[role="status"][aria-live="polite"]').count() === 1 &&
-    /MacroDash (MOONING|HODL|DIAMOND HANDS), (BULLISH|NEUTRAL|BEARISH): \d of 6 voters counted\./.test(
+    /MacroDash (MOONING|HODL|DIAMOND HANDS), (BULLISH|NEUTRAL|BEARISH): \d of 6 signals counted\./.test(
       await page.locator('[role="status"][aria-live="polite"]').innerText()));
   ok("a11y: the verdict and confidence landmarks survive the live-region narrowing",
     await page.locator('[aria-label="Macro backdrop verdict"]').count() === 1 &&
@@ -1273,7 +1289,7 @@ console.log("\n[public] Slice 1 — verdict above the fold at 375px (extracted b
   // 8/28 matrix row 16: the tally's coverage tail took the canonical vocabulary ("N of M
   // voters counted"), so it no longer says "usable" where the line above it says "counted".
   ok("slice1 @375px: the confidence tally and flip sentence ride one tap deep in the band's evidence panel",
-    /\d+ bull · \d+ neutral · \d+ bear — \d+ of \d+ voters counted/.test(await band.innerText()) &&
+    /\d+ bull · \d+ neutral · \d+ bear — \d+ of \d+ signals counted/.test(await band.innerText()) &&
     /would change this/i.test(await band.innerText()));
   await page.locator("button.cg-toggle", { hasText: "the reasoning" }).click();   // v3.94: two clicks deep
   await page.waitForTimeout(150);
@@ -1453,13 +1469,23 @@ console.log("\n[public] v4.0 — canonical call, history, and difference routes"
   });
   await page.waitForTimeout(500);
   const body = await page.locator("body").innerText();
-  ok("v4.0 history: direct route renders the frozen canonical call", /MOONING 🚀/.test(body) && /BULLISH/.test(body));
-  ok("v4.0 history: live-forward and immutable contract is visible", /live-forward record/i.test(body) && /immutable call/i.test(body));
-  ok("v5.5 history: mature 1d/5d/20d and fixed-window max drawdown render beneath the call",
-    /\+1\.25%/.test(body) && /-2\.50%/.test(body) && /\+4\.00%/.test(body) && /-6\.75%/.test(body) &&
-    /max DD final at 20 sessions/i.test(body));
+  ok("v6.4 history: direct route renders plain frozen verdicts, never Degen slang",
+    /Bullish/.test(body) && /Hold/.test(body) && !/MOONING|HODL|\bBULLISH\b|\bNEUTRAL\b/.test(body));
+  ok("v6.4 history: live-forward contract is visible and call detail is collapsed",
+    /live-forward record/i.test(body) && !/10:00 ET · immutable/.test(body));
+  ok("v6.4 history: mature 1d/5d/20d and fixed-window max drawdown stay on the thin face",
+    /\+1\.25%/.test(body) && /-2\.50%/.test(body) && /\+4\.00%/.test(body) && /-6\.75%/.test(body));
+  await page.locator("details.history-detail").first().locator("summary").click();
+  await page.waitForTimeout(150);
+  const detail = await page.locator("body").innerText();
+  ok("v6.4 history: immutable clock and outcome provenance are one tap deep",
+    /10:00 ET · immutable/.test(detail) && /max drawdown final at 20 sessions/i.test(detail));
+  await page.locator("details.history-detail").nth(1).locator("summary").click();
+  await page.waitForTimeout(100);
+  const pendingDetail = await page.locator("body").innerText();
   ok("v5.5 history: a not-yet-observed call renders pending fields without zeros",
-    /awaiting first eligible close/i.test(body) && (body.match(/PENDING/g) || []).length >= 4);
+    /outcome anchor is the first official close/i.test(pendingDetail) &&
+    (pendingDetail.match(/PENDING/g) || []).length >= 4 && !/0\.00%/.test(pendingDetail));
   ok("v4.0 history: no horizontal overflow at 320px", await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth + 1));
   ok("v4.0 history: no page errors", errors.length === 0);
   await page.close();
@@ -1469,7 +1495,7 @@ console.log("\n[public] v4.0 — canonical call, history, and difference routes"
   await page.waitForTimeout(300);
   const body = await page.locator("body").innerText();
   ok("v4.0 difference: the positioning sentence renders", /Nowflation measures the inflation state\. MacroDash translates the entire macro state into risk posture\./.test(body));
-  ok("v4.0 difference: the five-step hierarchy renders", ["Six factors","Evidence quality","Market posture","Explanation","Actionability"].every(x => body.includes(x)));
+  ok("v6.4 difference: the five-step hierarchy renders", ["Six signals","Evidence quality","Market posture","Explanation","Actionability"].every(x => body.includes(x)));
   ok("v4.0 difference: the indicator-count constraint is explicit", /will not compete on indicator count/i.test(body));
   ok("v4.0 difference: no horizontal overflow at 320px", await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth + 1));
   ok("v4.0 difference: no page errors", errors.length === 0);
@@ -1516,14 +1542,14 @@ console.log("\n[public] v6.0 — merged FIRED·BLIND badge + alert persistence a
 }
 
 // ── v6.0.1 — the public-view UX review: shape before text, toggle clarity, captions under the
-// ℹ window (owner, on the live 9/1 Simple + Power screenshots). Driven on a frozen HODL tape
-// with one dark voter so every indicator has both states to show. ──────────────────────────
-console.log("\n[public] v6.0.1 — shape before text · Simple|Power clarity · captions one tap deep");
+// ℹ window (owner, on the live 9/1 Simple + Degen screenshots). Driven on a frozen HODL tape
+// with one unavailable signal so every indicator has both states to show. ─────────────────
+console.log("\n[public] v6.0.1/v6.4 — shape before text · Simple|Degen clarity · captions one tap deep");
 {
   const frozenHodl = { schema:"md-call-v1", effective_date:TODAY, headline:"HODL", emoji:"💎",
     direction:"NEUTRAL", confidence:"HIGH", actionability:"RESTRICTED", status:"PUBLISHED",
     counts:{usable:5,total:6,bull:2,bear:1,neutral:2}, factors:[], override:{active:false} };
-  const oneDark = { ...FULL_LIVE }; delete oneDark.cpiHeadline; delete oneDark.cpiHeadlineAsOf; delete oneDark.cpiTrend;   // dead CPI feed → the one dark voter
+  const oneDark = { ...FULL_LIVE }; delete oneDark.cpiHeadline; delete oneDark.cpiHeadlineAsOf; delete oneDark.cpiTrend;
   const { page, errors } = await open({ live: oneDark, width: 390, power: false,
     publicCall: frozenHodl, publicCallFrozen: true, publicCallCapturedAt: `${TODAY}T14:00:00.000Z` });
   await page.waitForTimeout(1300);
@@ -1557,32 +1583,32 @@ console.log("\n[public] v6.0.1 — shape before text · Simple|Power clarity · 
     cards.every((c) => !/live|cached/.test(c.visible) && /live|cached/.test(c.hidden)));
   ok("v6.0.1 cards: the direction WORD still confirms the shape at the row's end (HELPING/HURTING survive)",
     cards.every((c) => /HELPING|HURTING|MIXED/.test(c.visible)));
-  /* (1b) The voters line on both altitudes leads with one dot per voter: six dots, five filled
+  /* (1b) The signals line on both altitudes leads with one dot per signal: six dots, five filled
      green, one hollow amber — the SAME count the sentence prints. */
-  const dots = await page.evaluate(() => [...document.querySelectorAll(".voter-dots")].map((n) => ({
+  const dots = await page.evaluate(() => [...document.querySelectorAll(".signal-dots")].map((n) => ({
     total: n.children.length,
     filled: [...n.children].filter((d) => getComputedStyle(d).backgroundColor !== "rgba(0, 0, 0, 0)").length,
     hollowAmber: [...n.children].filter((d) => getComputedStyle(d).backgroundColor === "rgba(0, 0, 0, 0)" && getComputedStyle(d).borderColor === "rgb(240, 165, 0)").length })));
-  ok("v6.0.1 dots: hero + cards footer each lead with 6 voter dots — 5 filled green, 1 hollow amber for the dark voter",
+  ok("v6.4 dots: hero + cards footer each lead with 6 signal dots — 5 filled green, 1 hollow amber for the unavailable signal",
     dots.length === 2 && dots.every((d) => d.total === 6 && d.filled === 5 && d.hollowAmber === 1) &&
-    /5 of 6 voters counted/.test(await bandText(page)));
+    /5 of 6 signals counted/.test(await bandText(page)));
   /* (2) The toggle: the pressed half is FILLED brand amber; the other is transparent; each
      names what it shows; a shape leads each word. */
   const tog = await page.evaluate(() => [...document.querySelectorAll('[role="group"][aria-label="View mode"] button')].map((b) => ({
     txt: b.innerText.trim(), pressed: b.getAttribute("aria-pressed"), bg: getComputedStyle(b).backgroundColor,
     color: getComputedStyle(b).color, label: b.getAttribute("aria-label"), title: b.getAttribute("title") })));
-  ok("v6.0.1 toggle: Simple is pressed and FILLED amber with dark text; Power is transparent — legible at a glance",
+  ok("v6.4 toggle: Simple is pressed and FILLED amber with dark text; Degen is transparent — legible at a glance",
     tog.length === 2 && tog[0].pressed === "true" && tog[0].bg === AMBER && tog[0].color === rgb("#08090b") &&
     tog[1].pressed === "false" && tog[1].bg === "rgba(0, 0, 0, 0)");
   ok("v6.0.1 toggle: each half leads with a shape and states what the mode SHOWS in its name and tooltip",
-    /^○\s*Simple$/.test(tog[0].txt) && /^◉\s*Power$/.test(tog[1].txt) &&
-    /^Simple view — the call/.test(tog[0].label) && /^Power view — every section/.test(tog[1].label) &&
+    /^○\s*Simple$/.test(tog[0].txt) && /^◉\s*Degen$/.test(tog[1].txt) &&
+    /^Simple view — the call/.test(tog[0].label) && /^Degen view — the moon call/.test(tog[1].label) &&
     tog[0].title === tog[0].label && tog[1].title === tog[1].label);
-  /* (3) Captions under the window in Simple: the face carries the eyebrow ("10am frozen call")
-     and NOT the 'immutable public call' line; the ℹ window carries it with the date. */
+  /* (3) Captions under the window in Simple: the face names the frozen call and the ℹ window
+     carries the capture clock and date. */
   const face = await bandText(page);
   ok("v6.0.1 captions (Simple): the face keeps the eyebrow and sheds the 'immutable public call' line",
-    /10am frozen call/i.test(face) && !/immutable public call/.test(face));
+    /10am call · frozen/i.test(face) && !/frozen 10am call · captured/.test(face));
   ok("v6.0.1 hero: the icon-only ⎘ and ℹ buttons render their glyph at 13px, not 9px",
     await page.locator('button[aria-label="Copy MacroDash posture card"]').evaluate((n) => getComputedStyle(n).fontSize) === "13px" &&
     await page.locator('button[aria-label="Show regime factors"]').evaluate((n) => getComputedStyle(n).fontSize) === "13px");
@@ -1590,7 +1616,7 @@ console.log("\n[public] v6.0.1 — shape before text · Simple|Power clarity · 
   await page.waitForTimeout(200);
   const cap = await page.locator('[aria-label="Macro backdrop verdict"] .call-caption').innerText();
   ok("v6.0.1 captions (Simple): ONE tap opens the window, and the caption is there with the capture date",
-    new RegExp(`^immutable public call · captured 10:00 ET · ${TODAY}$`).test(cap.trim()));
+    new RegExp(`^frozen 10am call · captured 10:00 ET · ${TODAY}$`).test(cap.trim()));
   await page.locator('button[aria-label="Show regime factors"]').click();   // close the window FIRST
   await page.waitForTimeout(150);
   // The budgets this pass must not spend: the strip and the cards stay where v5.9 put them.
@@ -1608,7 +1634,7 @@ console.log("\n[public] v6.0.1 — shape before text · Simple|Power clarity · 
       sub: sub ? getComputedStyle(sub).color : null, title: tile.getAttribute("title") }; }));
   ok("v6.0.2 strip: the 5 live voters carry a GREEN ▪ on the bull tape, non-voters carry none, and the title names the vote",
     marks.filter((t) => t.mark).length === 4 &&   // VIX · F&G · 10Y · NFCI (CPI is the dark one)
-    marks.filter((t) => t.mark).every((t) => t.mark === GREEN && /votes BULL/.test(t.title)) &&
+    marks.filter((t) => t.mark).every((t) => t.mark === GREEN && /signal is BULL/.test(t.title)) &&
     marks.filter((t) => /^(SPY|QQQ|FED|CPI)/.test(t.l)).every((t) => !t.mark));
   ok("v6.0.2 strip: where the sub-line is vote-coloured (F&G, NFCI) the marker and the sub agree",
     marks.filter((t) => /^(F&G|NFCI)/.test(t.l)).every((t) => t.mark === t.sub));
@@ -1618,20 +1644,20 @@ console.log("\n[public] v6.0.1 — shape before text · Simple|Power clarity · 
     /about this page — v\d+\.\d+\.\d+ · sources · not financial advice/i.test(await page.locator(".site-footer").innerText()) &&
     (await page.locator(".site-footer button.cg-toggle").boundingBox()).height >= 44);
   ok("v6.0.1: no page errors through the Simple pass", errors.length === 0);
-  // POWER contrast on the same tape: the caption stays ON the face, the pressed half is Power.
-  await page.locator("button", { hasText: "Power" }).click();
+  // Degen contrast on the same tape: the caption stays ON the face, the pressed half is Degen.
+  await page.locator("button", { hasText: "Degen" }).click();
   await page.waitForTimeout(500);
   const pface = await bandText(page);
-  ok("v6.0.1 captions (Power): the 'immutable public call' line stays on the face — accessible without a tap",
-    new RegExp(`immutable public call · captured 10:00 ET · ${TODAY}`).test(pface) &&
+  ok("v6.4 captions (Degen): the frozen-call line stays on the face — accessible without a tap",
+    new RegExp(`frozen 10am call · captured 10:00 ET · ${TODAY}`).test(pface) &&
     (await page.locator('[aria-label="Macro backdrop verdict"] .call-caption').count()) === 0);
-  ok("v6.0.1 toggle (Power): the fill follows the choice — Power is now the amber half",
-    (await page.locator('button[aria-pressed="true"]').evaluate((n) => [n.innerText.replace(/\s+/g, " ").trim(), getComputedStyle(n).backgroundColor].join("|"))) === `◉ Power|${AMBER}`);
+  ok("v6.4 toggle (Degen): the fill follows the choice — Degen is now the amber half",
+    (await page.locator('button[aria-pressed="true"]').evaluate((n) => [n.innerText.replace(/\s+/g, " ").trim(), getComputedStyle(n).backgroundColor].join("|"))) === `◉ Degen|${AMBER}`);
   await page.close();
 }
 
-// ── v6.2 — the 6pm CLOSE READ on the hero (both modes), in OPS, and on /history ──────────
-console.log("\n[public] v6.2 — the 6pm close read: one labeled line, both modes, unscored on /history");
+// ── v6.2/v6.4 — the 6pm evening update on the hero, in OPS, and on /history ──────────────
+console.log("\n[public] v6.2/v6.4 — the 6pm evening update: one line, both modes, unscored on /history");
 {
   const readMoon = { schema: "md-call-v1", effective_date: TODAY, headline: "MOONING", emoji: "🚀", direction: "BULLISH",
     confidence: "HIGH", actionability: "FULL", status: "OK", counts: { usable: 6, total: 6, bullish: 6, neutral: 0, bearish: 0, unavailable: 0 },
@@ -1644,33 +1670,34 @@ console.log("\n[public] v6.2 — the 6pm close read: one labeled line, both mode
     close_read: { schema: "md-close-read-v1", date: TODAY, generated_at: `${TODAY}T22:00:05.000Z`, edition: "close", scored: false, read,
       legs: [], legs_same_day: ["tenYear", "fearGreed"], legs_prior: ["vix", "spyPrice"], spy_close: null, basis: {}, headlines: [], drift_vs_call: null }, ...over });
   const frozenAt = `${TODAY}T14:00:00.000Z`;
-  const LINE = /6pm close read: MOONING 🚀 · BULLISH — the scored 10am call remains frozen above/;
+  const DEGEN_LINE = /Evening update \(6pm ET\): MOONING 🚀 · BULLISH — unscored; the 10am call remains frozen above/;
+  const SIMPLE_LINE = /Evening update \(6pm ET\): Bullish — unscored; the 10am call remains frozen above/;
   let colorDiffers = null;
   // A. Power: a frozen HODL beside a captured MOONING close read — the read owns the drift slot.
   {
     const { page, errors } = await open({ live: FULL_LIVE, publicCall: frozenHodl, publicCallFrozen: true, publicCallCapturedAt: frozenAt, publicCloseRead: closeRec(readMoon) });
     await page.waitForTimeout(1200);
     const band = await bandText(page);
-    ok("v6.2 hero (Power): the captured close read renders as ONE labeled line with the scope words, under the frozen HODL",
-      LINE.test(band) && /HODL 💎/.test(band) && /10am frozen call/i.test(band));
-    ok("v6.2 hero: the close read OWNS the drift slot — the live 'Current evidence now reads' line does not also render",
+    ok("v6.4 hero (Degen): the captured evening update renders as one scoped line under the frozen HODL",
+      DEGEN_LINE.test(band) && /HODL 💎/.test(band) && /10am call · frozen/i.test(band));
+    ok("v6.4 hero: the evening update owns the drift slot",
       !/Current evidence now reads/.test(band) && (await page.locator('[aria-label="Macro backdrop verdict"] .close-read').count()) === 1);
     colorDiffers = await page.locator('[aria-label="Macro backdrop verdict"] .close-read').evaluate((n) => getComputedStyle(n).color);
-    // OPS: the retired DAILY CALL label is gone, the label IS the edition, and CLOSE READ has its own export.
+    // OPS: the compatibility token remains internal while the reader sees EVENING UPDATE.
     await page.locator("details.hdr-ops summary").click();
     await page.waitForTimeout(150);
     ok("v6.2 OPS: '⎘ DAILY CALL' is retired — the operator export reads the edition it will paste (10AM CALL on a frozen day)",
       !/DAILY CALL/.test(await page.locator("body").innerText()) &&
       /⎘ 10AM CALL/.test(await page.locator('button[aria-label="Copy MacroDash daily call"]').innerText()));
     await page.evaluate(() => { window.__closeCopy = null; navigator.clipboard.writeText = (v) => { window.__closeCopy = v; return Promise.resolve(); }; });
-    const closeBtn = page.locator('button[aria-label="Copy MacroDash close read"]');
-    ok("v6.2 OPS: a captured close read gets its own ⎘ CLOSE READ export", await closeBtn.count() === 1 && /⎘ CLOSE READ/.test(await closeBtn.innerText()));
+    const closeBtn = page.locator('button[aria-label="Copy MacroDash evening update"]');
+    ok("v6.4 OPS: a captured update gets its own ⎘ EVENING UPDATE export", await closeBtn.count() === 1 && /⎘ EVENING UPDATE/.test(await closeBtn.innerText()));
     await closeBtn.click();
     await page.waitForTimeout(150);
     const copied = await page.evaluate(() => window.__closeCopy);
-    ok("v6.2 OPS: the export carries the CLOSE READ edition and says UNSCORED — never the 10am's label on the evening's read",
-      /^MACRODASH CLOSE READ · /.test(copied || "") && /UNSCORED/.test(copied || "") && /MOONING 🚀 · BULLISH/.test(copied || "") &&
-      /CLOSE READ COPIED/.test(await closeBtn.innerText()));
+    ok("v6.4 OPS: the export carries the public EVENING UPDATE edition and says UNSCORED",
+      /^MACRODASH EVENING UPDATE · /.test(copied || "") && /UNSCORED/.test(copied || "") && /MOONING 🚀 · BULLISH/.test(copied || "") &&
+      /EVENING UPDATE COPIED/.test(await closeBtn.innerText()));
     ok("v6.2 hero (Power): no page errors", errors.length === 0);
     await page.close();
   }
@@ -1680,21 +1707,21 @@ console.log("\n[public] v6.2 — the 6pm close read: one labeled line, both mode
     await page.waitForTimeout(1200);
     const agreeColor = await page.locator('[aria-label="Macro backdrop verdict"] .close-read').evaluate((n) => getComputedStyle(n).color);
     ok("v6.2 hero: an agreeing close read still renders the line, MUTED — a different colour from the disagreeing one",
-      LINE.test(await bandText(page)) && agreeColor !== colorDiffers);
+      DEGEN_LINE.test(await bandText(page)) && agreeColor !== colorDiffers);
     await page.close();
     const { page: p2 } = await open({ live: FULL_LIVE, publicCall: frozenHodl, publicCallFrozen: true, publicCallCapturedAt: frozenAt, publicCloseRead: null });
     await p2.waitForTimeout(1200);
     const b2 = await bandText(p2);
     ok("v6.2 hero: with NO close read the v5.5 live-drift line renders exactly as before (the fallback survives)",
-      /Current evidence now reads MOONING 🚀 · BULLISH/.test(b2) && !/6pm close read/.test(b2) &&
-      (await p2.locator('button[aria-label="Copy MacroDash close read"]').count()) === 0);
+      /Current evidence now reads MOONING 🚀 · BULLISH/.test(b2) && !/Evening update/.test(b2) &&
+      (await p2.locator('button[aria-label="Copy MacroDash evening update"]').count()) === 0);
     await p2.close();
     const { page: p3 } = await open({ live: FULL_LIVE, publicCall: frozenHodl, publicCallFrozen: true, publicCallCapturedAt: frozenAt,
       publicCloseRead: closeRec(null, { capture_status: "FAILED", close_read: null, failure: "refresh HTTP 503" }) });
     await p3.waitForTimeout(1200);
     ok("v6.2 hero: a FAILED capture renders NO close-read line (history carries it) and no export button",
       (await p3.locator('[aria-label="Macro backdrop verdict"] .close-read').count()) === 0 &&
-      (await p3.locator('button[aria-label="Copy MacroDash close read"]').count()) === 0);
+      (await p3.locator('button[aria-label="Copy MacroDash evening update"]').count()) === 0);
     await p3.close();
   }
   // C. Simple at 390: the SAME line (owner: both modes), inside the frozen budgets — measured, printed.
@@ -1702,8 +1729,9 @@ console.log("\n[public] v6.2 — the 6pm close read: one labeled line, both mode
     const { page, errors } = await open({ live: FULL_LIVE, width: 390, power: false, publicCall: frozenHodl, publicCallFrozen: true, publicCallCapturedAt: frozenAt, publicCloseRead: closeRec(readMoon) });
     await page.setViewportSize({ width: 390, height: 844 });
     await page.waitForTimeout(1200);
-    ok("v6.2 hero (Simple): the close read line renders in Simple too — one labeled line, no new Simple element",
-      LINE.test(await bandText(page)) && (await page.locator('[aria-label="Macro backdrop verdict"] .close-read').count()) === 1 &&
+    ok("v6.4 hero (Simple): the evening update uses the plain verdict vocabulary",
+      SIMPLE_LINE.test(await bandText(page)) && !/MOONING|BULLISH/.test(await bandText(page)) &&
+      (await page.locator('[aria-label="Macro backdrop verdict"] .close-read').count()) === 1 &&
       (await page.locator('button[aria-pressed="true"]', { hasText: "Simple" }).count()) === 1);
     const [glance, cardsTop] = await page.evaluate(() => {
       const el = [...document.querySelectorAll("*")].find((n) => n.children.length === 0 && /^●?\s*SPY\*?$/m.test(n.textContent || "") && n.getBoundingClientRect().height > 0);
@@ -1718,8 +1746,8 @@ console.log("\n[public] v6.2 — the 6pm close read: one labeled line, both mode
   {
     const { page } = await open({ live: FULL_LIVE, route: "/?view=public", width: 320, publicCall: frozenHodl, publicCallFrozen: true, publicCallCapturedAt: frozenAt, publicCloseRead: closeRec(readMoon) });
     await page.waitForTimeout(1200);
-    ok("v6.2 hero (public route): the close read line renders for a visitor; no OPS export leaks",
-      LINE.test(await bandText(page)) && (await page.locator('button[aria-label="Copy MacroDash close read"]').count()) === 0 &&
+    ok("v6.4 hero (public route): the evening update renders for a visitor; no OPS export leaks",
+      DEGEN_LINE.test(await bandText(page)) && (await page.locator('button[aria-label="Copy MacroDash evening update"]').count()) === 0 &&
       await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth + 1));
     await page.close();
   }
@@ -1731,13 +1759,19 @@ console.log("\n[public] v6.2 — the 6pm close read: one labeled line, both mode
       rows: [row(TODAY, frozenHodl, closeRec(readMoon)),
              row(daysAgo(1), frozenMoon, closeRec(null, { date: daysAgo(1), capture_status: "FAILED", close_read: null, failure: "refresh HTTP 503" }))] } });
     await page.waitForTimeout(500);
+    const face = await page.locator("body").innerText();
+    ok("v6.4 history: the thin face uses plain verdicts and keeps update detail collapsed",
+      /Hold/.test(face) && /Bullish/.test(face) && !/MOONING|HODL/.test(face) &&
+      !/6pm evening update: Bullish/.test(face));
+    await page.locator("details.history-detail").first().locator("summary").click();
+    await page.waitForTimeout(150);
     const body = await page.locator("body").innerText();
-    ok("v6.2 history: the close read renders inside the day's row — labeled, unscored, with its same-day legs and ET clock",
-      /6pm close read: MOONING 🚀 · BULLISH · unscored · same-day legs: 10Y · F&G · 18:00 ET/.test(body));
-    ok("v6.2 history: a FAILED capture is stated in its row, and the row count is still the number of scored calls",
-      /6pm close read: CAPTURE FAILED — refresh HTTP 503/.test(body) &&
+    ok("v6.4 history: the evening update renders inside details — plain, unscored, with same-day signals and ET clock",
+      /6pm evening update: Bullish · unscored · same-day signals: 10Y · F&G · 18:00 ET/.test(body));
+    ok("v6.4 history: a FAILED update is stated in its row, and the row count is still the number of scored calls",
+      /6pm evening update: CAPTURE FAILED — refresh HTTP 503/.test(body) &&
       (await page.locator('ol[aria-label="Daily MacroDash calls"] > li').count()) === 2 &&
-      /unscored 6pm ET close read/.test(body));
+      /unscored 6pm ET evening update/.test(body));
     ok("v6.2 history: no horizontal overflow at 320px, no page errors",
       await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth + 1) && errors.length === 0);
     await page.close();
@@ -1761,7 +1795,7 @@ console.log("\n[public] v6.3 — eight sheets on the macro strip (Power, Simple,
   const spyBody = await dlg.innerText();
   ok("v6.3 SPY* sheet: the official name as the title, exactly 3 bullets, the proxy stated, and the eyebrow carrying the tile's OWN reading + CONTEXT ONLY",
     /S&P 500 Index/.test(await page.locator("#factsheet-title").innerText()) && (await dlg.locator("li").count()) === 3 &&
-    /SPY\* · \$748\.1 · CONTEXT ONLY/i.test(spyBody) && /÷ 10 from FRED/.test(spyBody) && /six-factor vote does not read/.test(spyBody));
+    /SPY\* · \$748\.1 · CONTEXT ONLY/i.test(spyBody) && /÷ 10 from FRED/.test(spyBody) && /six-signal model does not read/.test(spyBody));
   await page.keyboard.press("Escape");
   await page.waitForTimeout(200);
   ok("v6.3 SPY* sheet: Escape closes it and focus lands back on the SPY tile",
@@ -1771,9 +1805,9 @@ console.log("\n[public] v6.3 — eight sheets on the macro strip (Power, Simple,
   await trigger(2).click();
   await page.waitForTimeout(250);
   const vixBody = await dlg.innerText();
-  ok("v6.3 VIX sheet: the band's own sheet — same title as the card's, the band's own bullet, and the eyebrow says VOTES BULL",
+  ok("v6.4 VIX sheet: the band's own sheet — same title as the card's, the band's own bullet, and the eyebrow says SIGNAL BULL",
     (await page.locator("#factsheet-title").innerText()) === "Cboe Volatility Index (VIX)" &&
-    /The teens are calm/.test(vixBody) && /VIX · 16\.1 · VOTES BULL/i.test(vixBody));
+    /The teens are calm/.test(vixBody) && /VIX · 16\.1 · SIGNAL BULL/i.test(vixBody));
   await page.keyboard.press("Escape");
   await page.waitForTimeout(200);
   // FED — the target range is live in this fixture.
@@ -1788,26 +1822,26 @@ console.log("\n[public] v6.3 — eight sheets on the macro strip (Power, Simple,
   // NFCI — the 8th tile, a voter reading bull on this tape.
   await trigger(7).click();
   await page.waitForTimeout(250);
-  ok("v6.3 NFCI sheet: the 8th tile opens the NFCI band's sheet with its vote in the eyebrow",
+  ok("v6.4 NFCI sheet: the 8th tile opens the NFCI band's sheet with its signal state in the eyebrow",
     /Chicago Fed National Financial Conditions Index/.test(await page.locator("#factsheet-title").innerText()) &&
-    /NFCI · -0\.62 · VOTES BULL/i.test(await dlg.innerText()));
+    /NFCI · -0\.62 · SIGNAL BULL/i.test(await dlg.innerText()));
   await page.keyboard.press("Escape");
   await page.waitForTimeout(200);
   ok("v6.3 strip (Power): the hover tooltips survive beside the sheets — three vote states, verbatim",
-    /Context only — does not vote\./.test(await tiles.nth(0).getAttribute("title")) &&
-    /Counts toward today's posture — votes BULL\./.test(await tiles.nth(2).getAttribute("title")));
+    /Context only — does not affect the call\./.test(await tiles.nth(0).getAttribute("title")) &&
+    /Counts toward today's posture — signal is BULL\./.test(await tiles.nth(2).getAttribute("title")));
   ok("v6.3 strip (Power): no page errors through four sheets", errors.length === 0);
   await page.close();
 }
 {
-  // A DARK voter: the eyebrow must say so, never claim a vote.
+  // An unavailable signal: the eyebrow must say so, never claim a state.
   const { page } = await open({ live: DEGRADED });
   await page.waitForTimeout(1200);
   await page.locator(".macro-strip-inner > div").nth(7).locator('button[aria-haspopup="dialog"]').click();
   await page.waitForTimeout(250);
-  ok("v6.3 sheet: a voter that is DARK today opens its sheet with 'dark today' in the eyebrow — the sheet never implies a vote",
-    /NFCI · .* · DARK TODAY/i.test(await page.locator('[role="dialog"]').innerText()) &&
-    !/VOTES/i.test(await page.locator('[role="dialog"]').innerText()));
+  ok("v6.4 sheet: an unavailable signal opens its sheet with 'unavailable today' in the eyebrow",
+    /NFCI · .* · UNAVAILABLE TODAY/i.test(await page.locator('[role="dialog"]').innerText()) &&
+    !/SIGNAL (BULL|BEAR|NEUTRAL)/i.test(await page.locator('[role="dialog"]').innerText()));
   await page.keyboard.press("Escape");
   await page.close();
 }

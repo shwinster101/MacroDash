@@ -107,15 +107,15 @@ const MacroStrip=({d,modeOf,fomcLabel,fomcDays,votingFields,badge})=>{
              vocabulary, so a context tile can never wear a voter's words. */
           const ex=stripExplainFor(f);
           return(
-          <div key={l} title={`${t}\n(${m.toLowerCase()})${votes?`\nCounts toward today's posture — votes ${vs.word}.`
-            :isVoter?"\nA voter, but dark today — not counted.":"\nContext only — does not vote."}`} style={{flexShrink:0,minWidth:68,cursor:"help"}}>
+          <div key={l} title={`${t}\n(${m.toLowerCase()})${votes?`\nCounts toward today's posture — signal is ${vs.word}.`
+            :isVoter?"\nA signal, but unavailable today — not counted.":"\nContext only — does not affect the call."}`} style={{flexShrink:0,minWidth:68,cursor:"help"}}>
             <Explainable explain={ex} title={ex?ex.full:l}
-              eyebrow={`${l} · ${v}${votes?` · votes ${vs.word}`:isVoter?" · dark today":" · context only"}`}
+              eyebrow={`${l} · ${v}${votes?` · signal ${vs.word}`:isVoter?" · unavailable today":" · context only"}`}
               className="strip-tile" style={{background:"none",border:"none",padding:0,margin:0}}>
               <div style={{display:"flex",alignItems:"center",gap:3}}>
                 <span style={{width:5,height:5,borderRadius:"50%",background:live?dot:"transparent",border:`1px solid ${dot}`,flexShrink:0}}/>
                 <span style={{fontFamily:T.fontMono,fontSize:8,color:T.textMuted}}>{l}</span>
-                {votes&&<span aria-hidden="true" className="strip-vote" title={`counts toward today's posture — votes ${vs.word}`} style={{fontFamily:T.fontMono,fontSize:8,fontWeight:700,color:T[vs.colorKey],letterSpacing:"0.05em"}}>▪</span>}
+                {votes&&<span aria-hidden="true" className="strip-vote" title={`counts toward today's posture — signal is ${vs.word}`} style={{fontFamily:T.fontMono,fontSize:8,fontWeight:700,color:T[vs.colorKey],letterSpacing:"0.05em"}}>▪</span>}
                 {/* The affordance is stated, not implied (v5.8): the same amber ⓘ the cards wear,
                     and the promise spelled out for a screen reader beside the tile's own text. */}
                 {ex&&<span aria-hidden="true" title="What is this?" style={{fontFamily:T.fontMono,fontSize:8,color:T.amber,flexShrink:0}}>ⓘ</span>}
@@ -128,10 +128,8 @@ const MacroStrip=({d,modeOf,fomcLabel,fomcDays,votingFields,badge})=>{
           );
         })}
       </div>
-      {/* WEN MOON METER — mood badge based on SPY daily change. Hidden ≤640px by the
-          .wen-moon-mobile rule (which IS in use — the old comment called it "unused", a
-          label-outliving-its-data defect caught by the wave-17 audit). */}
-      {badge&&<div className="wen-moon-mobile">{badge}</div>}
+      {/* Degen-only SPY session badge. It stays off the compact phone strip. */}
+      {badge&&<div className="spy-tape-mobile">{badge}</div>}
     </div>
   );
 };

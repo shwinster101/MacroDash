@@ -1,16 +1,10 @@
 // ─── FEAT-169 · REGIME VERDICT BAND (UI-OVERHAUL Slice 1, task 1.3) ──────────
-// Extracted VERBATIM from dashboard.jsx: the friend-readable headline ("wen moon?") —
-// first signal seen on mobile (above the command grid) and prominent on desktop. Soft
-// regime tint per AS2-01. Reuses computeRegime + regimeFactors. Behavior-identical to
-// the inline predecessor; the ONLY addition is the null-guard (spec Property 9: a
-// missing required prop renders a safe empty state, never a throw).
-// This module also owns the verdict VOCABULARY (WITHHELD_LABEL + WEN_MOON_STATES) —
-// shared with the orchestrator's WenMoonBadge and regimeView, imported from here so
-// there is exactly one copy (ENGINE0-CONT: the literal INSUFFICIENT never reaches a
-// reader; FEAT-QUORUM: the withheld state has its own honest moon voice).
+// The friend-readable hero; presentation only. Engine rules stay in regime.js.
 import { useState } from "react";
 import { DT, T } from "../design-tokens.js";
-import { computeRegime, regimeFactors, flipConditions, voteStyle, VERDICT_EXPLAIN } from "../regime.js";
+import { computeRegime, regimeFactors, flipConditions, voteStyle } from "../regime.js";
+import { SIMPLE_VERDICT_EXPLAIN } from "../evidence.js";
+import { simpleCallLabel } from "../publicCopy.js";
 import { fmt } from "../format.js";
 import { Explainable } from "../primitives/FactSheet.jsx";
 
@@ -53,7 +47,7 @@ export const WEN_MOON_STATES = [
 /* v5.3 ONE CALL: `call` owns the visible human headline and secondary machine direction.
    `plainVerdict` remains a Simple-mode scope signal for the eyebrow only; it can no longer
    introduce a competing public label. */
-const RegimeBand=({d,stale=new Set(),loading=false,liveBuild=false,srcLabel="derived from live data",sentence=null,conf=null,factorRows=null,plainVerdict=null,regimeIn=null,flipsIn=null,call=null,callFrozen=false,callCapturedAt=null,callDrift=null,closeRead=null,onCopyCall=null,callCopied=false,copyDisabled=false})=>{
+const RegimeBand=({d,stale=new Set(),loading=false,liveBuild=false,srcLabel="derived from live data",sentence=null,conf=null,factorRows=null,plainVerdict=null,regimeIn=null,flipsIn=null,call=null,callFrozen=false,callCapturedAt=null,callDrift=null,closeRead=null,readCaption=null,noSessionDay=false,onCopyCall=null,callCopied=false,copyDisabled=false})=>{
   const [open,setOpen]=useState(false);
   // Property 9 (null-safe): no data object means nothing to compute — an empty, hidden
   // region, never a throw. The orchestrator always passes `d`; this guards extraction reuse.
@@ -94,12 +88,13 @@ const RegimeBand=({d,stale=new Set(),loading=false,liveBuild=false,srcLabel="der
     : regime.sub;
   // "wen moon?" — map the regime verdict to our moon ratings: RISK-ON→MOONING, MIXED→HODL, RISK-OFF→DIAMOND HANDS
   const moon=withheld?WEN_MOON_STATES[3]:WEN_MOON_STATES[{ "RISK-ON":0, "MIXED":1, "RISK-OFF":2 }[regime.label] ?? 1];
-  const callLabel=call&&call.headline?`${call.headline}${call.emoji?` ${call.emoji}`:""}`:moon.label;
+  const degenLabel=call&&call.headline?`${call.headline}${call.emoji?` ${call.emoji}`:""}`:moon.label;
   const machineLabel=call&&call.direction?call.direction:regime.label;
-  // 8/28 A6 — phrased from the CLIENT clock (before/after 10:00 ET is a render-time fact).
-  const liveReadCaption=(Number(new Date().toLocaleString("en-US",{timeZone:"America/New_York",hour:"numeric",hour12:false}))%24)<10
-    ?"live read — today's official call freezes at 10:00 ET":"live read — today's 10am record not loaded";
-  const frozenCaption=`immutable public call · captured 10:00 ET${callCapturedAt?` · ${String(callCapturedAt).slice(0,10)}`:""}`; const windowCaption=callFrozen?frozenCaption:(liveBuild&&!withheld?liveReadCaption:null); // v6.0.1: Simple's ℹ-window copy
+  const displayLabel=plainVerdict
+    ? (call&&call.direction?simpleCallLabel(call):plainVerdict.label)
+    : degenLabel;
+  const frozenCaption=`frozen 10am call · captured 10:00 ET${callCapturedAt?` · ${String(callCapturedAt).slice(0,10)}`:""}`;
+  const windowCaption=callFrozen?frozenCaption:readCaption;
   return(
     <div role="region" aria-label="Macro backdrop verdict"
       style={{background:regime.tint,borderBottom:`1px solid ${regime.color}33`,borderTop:`1px solid ${regime.color}22`,padding:"10px 20px",position:"relative"}}>
@@ -111,7 +106,9 @@ const RegimeBand=({d,stale=new Set(),loading=false,liveBuild=false,srcLabel="der
                 line is two vocabularies in 20px. Power keeps the voice (owner ruling); Simple
                 says what the block IS. */}
             <div style={{fontFamily:T.fontMono,fontSize:8,color:regime.color,letterSpacing:"0.14em",textTransform:"uppercase"}}>
-              {callFrozen?"Macro Backdrop · 10am frozen call":plainVerdict?"Macro Backdrop · live read":"Macro Backdrop · wen moon?"}
+              {plainVerdict
+                ? callFrozen?"Macro Backdrop · 10am call · frozen":noSessionDay?"Macro Backdrop · latest market read":"Macro Backdrop · live market read"
+                : callFrozen?"Macro Backdrop · 10am call · frozen":"Macro Backdrop · wen moon?"}
             </div>
             <div style={{display:"flex",alignItems:"baseline",gap:10,flexWrap:"wrap"}}>
               {/* v5.9: in Simple the verdict TOKEN is the tap target for its own vocabulary
@@ -119,15 +116,15 @@ const RegimeBand=({d,stale=new Set(),loading=false,liveBuild=false,srcLabel="der
                   an operator who reads MOONING every morning does not need it explained, and
                   the moon voice there is a locked owner ruling. */}
               {plainVerdict
-                ? <Explainable explain={VERDICT_EXPLAIN} title={VERDICT_EXPLAIN.full}
-                    eyebrow={`${callLabel} · ${machineLabel}`}
+                ? <Explainable explain={SIMPLE_VERDICT_EXPLAIN} title={SIMPLE_VERDICT_EXPLAIN.full}
+                    eyebrow={displayLabel}
                     style={{background:"none",border:"none",padding:0,width:"auto",display:"inline-block"}}>
-                    <span style={{fontFamily:T.fontMono,fontSize:T.fsXl,fontWeight:700,color:regime.color,letterSpacing:"-0.01em"}}>{callLabel}</span>
+                    <span style={{fontFamily:T.fontMono,fontSize:T.fsXl,fontWeight:700,color:regime.color,letterSpacing:"-0.01em"}}>{displayLabel}</span>
                     <span aria-hidden="true" style={{fontFamily:T.fontMono,fontSize:9,color:regime.color,verticalAlign:"super",marginLeft:4}}>ⓘ</span>
                     <span className="visually-hidden"> — what does this mean? Opens an explainer.</span>
                   </Explainable>
-                : <span style={{fontFamily:T.fontMono,fontSize:T.fsXl,fontWeight:700,color:regime.color,letterSpacing:"-0.01em"}}>{callLabel}</span>}
-              <span style={{fontFamily:T.fontMono,fontSize:T.fsL,color:T.textSecondary}}>
+                : <span style={{fontFamily:T.fontMono,fontSize:T.fsXl,fontWeight:700,color:regime.color,letterSpacing:"-0.01em"}}>{displayLabel}</span>}
+              {!plainVerdict&&<span style={{fontFamily:T.fontMono,fontSize:T.fsL,color:T.textSecondary}}>
                 {/* ENGINE0-CONT: the rendered label is DATA HOLD — a deterministic wait
                     posture ("the system lacks evidence, hold"), not the internal
                     INSUFFICIENT sentinel the engine still uses (regime.js is untouched;
@@ -143,18 +140,18 @@ const RegimeBand=({d,stale=new Set(),loading=false,liveBuild=false,srcLabel="der
                 {/* v5.9 (beginner read): in Simple the sub is DROPPED — it restates in counts
                     what the plain sentence below says in words. Power keeps both. */}
                 {loading?"LOADING · waiting for live data before calling a posture"
-                        :regime.insufficient?`${WITHHELD_LABEL}${plainVerdict?"":` · ${subText}`}`
-                        :`${machineLabel}${plainVerdict?"":` · ${subText}`}`}
-              </span>
+                        :regime.insufficient?`${WITHHELD_LABEL} · ${subText}`
+                        :`${machineLabel} · ${subText}`}
+              </span>}
               {(loading||regime.insufficient)&&<span style={{fontFamily:T.fontMono,fontSize:T.fsS,color:T.textMuted}}>
-                {loading?"no factors voting yet"
-                        :`only ${regime.counted} of ${regime.totalFactors} voters counted — ${regime.quorum} needed to call it`}
+                {loading?"no signals counted yet"
+                        :`only ${regime.counted} of ${regime.totalFactors} signals counted — ${regime.quorum} needed to call it`}
               </span>}
             </div>
             {!withheld&&sentence&&<div style={{fontFamily:T.fontMono,fontSize:T.fsM,color:T.textPrimary,lineHeight:1.5,maxWidth:"72ch",marginTop:3}}>{sentence}</div>}
             {/* v6.0.1 (owner: "immutable public call can be forgone… keep some text under windows"): in Simple the eyebrow already says frozen/live, so both captions ride the ℹ window instead. */}
             {callFrozen&&!plainVerdict&&<div style={{fontFamily:T.fontMono,fontSize:8,color:T.textMuted,marginTop:3}}>
-              immutable public call · captured 10:00 ET{callCapturedAt?` · ${String(callCapturedAt).slice(0,10)}`:""}
+              frozen 10am call · captured 10:00 ET{callCapturedAt?` · ${String(callCapturedAt).slice(0,10)}`:""}
             </div>}
             {/* 8/28 clock matrix A6 — the frozen caption's missing counterpart. The unfrozen
                 face said nothing, so post-10am a live recomputation wore the product's
@@ -162,18 +159,18 @@ const RegimeBand=({d,stale=new Set(),loading=false,liveBuild=false,srcLabel="der
                 10:00 ET is a render-time fact — freeze mechanics untouched); liveBuild-gated
                 so a demo baseline never claims a live read; withheld/loading suppressed —
                 there is no read to disclaim. */}
-            {liveBuild&&!callFrozen&&!withheld&&!plainVerdict&&<div style={{fontFamily:T.fontMono,fontSize:8,color:T.textMuted,marginTop:3}}>
-              {liveReadCaption}
+            {readCaption&&!plainVerdict&&<div style={{fontFamily:T.fontMono,fontSize:8,color:T.textMuted,marginTop:3}}>
+              {readCaption}
             </div>}
             {/* v6.2: once captured, the 6pm CLOSE READ owns this slot (the drift line's designed
                 successor — owner ruling 9/2, both modes, ONE labeled line); the scope words are
                 load-bearing, since the same engine now speaks twice a day. Muted when it agrees. */}
             {closeRead
               ? <div className="close-read" style={{fontFamily:T.fontMono,fontSize:9,color:closeRead.differs?(closeRead.direction==="BEARISH"?T.red:T.amber):T.textMuted,marginTop:4,lineHeight:1.45}}>
-                  6pm close read: {closeRead.label} — {closeRead.frozen?"the scored 10am call remains frozen above":"unscored; no 10am call was frozen today"}
+                  Evening update (6pm ET): {plainVerdict?simpleCallLabel(closeRead.direction):closeRead.label} — {closeRead.frozen?"unscored; the 10am call remains frozen above":"unscored; no 10am call was scheduled today"}
                 </div>
               : callDrift&&<div style={{fontFamily:T.fontMono,fontSize:9,color:callDrift.direction==="BEARISH"?T.red:T.amber,marginTop:4,lineHeight:1.45}}>
-              Current evidence now reads {callDrift.headline}{callDrift.emoji?` ${callDrift.emoji}`:""} · {callDrift.direction}; the scored 10am call remains frozen above.
+              Current evidence now reads {plainVerdict?simpleCallLabel(callDrift):<>{callDrift.headline}{callDrift.emoji?` ${callDrift.emoji}`:""} · {callDrift.direction}</>}; the scored 10am call remains frozen above.
             </div>}
             {/* v3.98.3 — one line, one scope word, one vocabulary. It used to read
                 "4/6 factors voting · excluded: 10Y · VIX" directly under a sentence saying
@@ -184,12 +181,12 @@ const RegimeBand=({d,stale=new Set(),loading=false,liveBuild=false,srcLabel="der
                 six that vote, and nothing said so. */}
             {conf&&!loading&&<div style={{fontFamily:T.fontMono,fontSize:9,marginTop:3,display:"flex",gap:10,flexWrap:"wrap",alignItems:"center"}}>
               {/* v6.0.1 SHAPE BEFORE TEXT: one dot per voter (filled counted · hollow amber dark) ahead of the sentence. */}
-              <span aria-hidden="true" className="voter-dots" style={{display:"inline-flex",gap:2,alignItems:"center"}}>
+              <span aria-hidden="true" className="signal-dots" style={{display:"inline-flex",gap:2,alignItems:"center"}}>
                 {Array.from({length:conf.total},(_,i)=>{const on=i<conf.counted;return(
                   <span key={i} style={{width:6,height:6,borderRadius:"50%",background:on?T.green:"transparent",border:`1px solid ${on?T.green:T.amber}`}}/>);})}
               </span>
-              <span style={{color:regime.insufficient?T.red:conf.counted===conf.total?T.green:T.amber}}>{conf.counted} of {conf.total} voters counted</span>
-              {conf.excluded.length>0&&<span style={{color:T.amber}}>dark: {conf.excluded.join(" · ")}</span>}
+              <span style={{color:regime.insufficient?T.red:conf.counted===conf.total?T.green:T.amber}}>{conf.counted} of {conf.total} signals counted</span>
+              {conf.excluded.length>0&&<span style={{color:T.amber}}>unavailable: {conf.excluded.join(" · ")}</span>}
               {conf.blind&&<span style={{color:T.red}}>⚠ crash gauge (VIX) unavailable</span>}
             </div>}
             {/* FEAT-FLIP: the audit's fourth first-screen answer — what would change the call.
@@ -238,7 +235,7 @@ const RegimeBand=({d,stale=new Set(),loading=false,liveBuild=false,srcLabel="der
               </span>
             );})}
             <span style={{fontFamily:T.fontMono,fontSize:T.fsS,color:T.textMuted}}>
-              {`${regime.bullVotes} bull · ${neutralVotes} neutral · ${regime.bearVotes} bear — ${regime.counted} of ${regime.totalFactors} voters counted`}
+              {`${regime.bullVotes} bull · ${neutralVotes} neutral · ${regime.bearVotes} bear — ${regime.counted} of ${regime.totalFactors} signals counted`}
             </span>
           </div>
           {!withheld&&<div style={{gridColumn:"1/-1",fontFamily:T.fontMono,fontSize:T.fsS,color:T.textSecondary}}>
@@ -284,11 +281,11 @@ const RegimeBand=({d,stale=new Set(),loading=false,liveBuild=false,srcLabel="der
             ))}
             {fc.excluded.length>0&&(
               <div style={{fontFamily:T.fontMono,fontSize:8,color:T.amber,marginTop:2}}>
-                Dark, so their thresholds are not load-bearing: {fc.excluded.map(e=>e.short).join(" · ")}
+                Unavailable, so their thresholds are not load-bearing: {fc.excluded.map(e=>e.short).join(" · ")}
               </div>
             )}
           </div>
-          <div style={{fontFamily:T.fontMono,fontSize:8,color:T.textMuted,gridColumn:"1/-1"}}>Rule-based 6-factor vote · stale/dead inputs auto-excluded · {srcLabel}</div>
+          <div style={{fontFamily:T.fontMono,fontSize:8,color:T.textMuted,gridColumn:"1/-1"}}>Rule-based 6-signal model · stale/unavailable inputs auto-excluded · {srcLabel}</div>
         </div>
       )}
     </div>

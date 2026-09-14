@@ -5,12 +5,12 @@ import { computeFiveWhys } from "./fiveWhys.js"; // v2.5: rule-based 5 Whys ($0,
 import { NFCI_TIGHT, NFCI_LOOSE, REGIME_BAND_TABLE, REGIME_QUORUM, verdictFrom, computeRegime, flipConditions, regimeFactors, voteStyle } from "./regime.js"; // C1 (v3.60): the extracted engine; voteStyle = FEAT-NEUTRAL (v3.62)
 import { buildEvidenceSet, simpleVerdict, simpleCards, simpleSentence, simpleFlipLine, factorExclusions, fieldMode, FACTOR_FIELD } from "./evidence.js"; // C1 (v3.60): the typed contract
 import { LASTVALID_KEY, summarizeEvidence, compareEvidence } from "./whatChanged.js"; // C4 (v3.60)
-import { isStale, cadenceOf, parseObsDate, isMarketHoliday, nextFomcDate, etYmd } from "./sources.js"; // FEAT-R3: per-tile, cadence-aware staleness + shared market calendar; v3.99: curated FOMC calendar
+import { isStale, cadenceOf, parseObsDate, nextFomcDate, etYmd } from "./sources.js"; // FEAT-R3: per-tile, cadence-aware staleness + shared market calendar; v3.99: curated FOMC calendar
 import { computeMacroFlip } from "./ttReadout.js"; // FEAT-331: Macro Flip circuit
 import { callFromEvidence, formatMacroCallPaste, formatMacroShareCard, callEdition } from "./macroCall.js"; // v5.5 frozen call + share card
 import { closeReadLine } from "./closeRead.js"; // v6.2: the 6pm close read — ONE line builder, the ptModelRows rule
 import { fmt, pctColor } from "./format.js"; // task 1.3/3.1: one shared copy
-import RegimeBand, { WITHHELD_LABEL, WEN_MOON_STATES } from "./sections/RegimeBand.jsx"; // task 1.3: the verdict band + its vocabulary
+import RegimeBand, { WITHHELD_LABEL } from "./sections/RegimeBand.jsx"; // task 1.3: the verdict band + its vocabulary
 import FiveWhys, { flipChipOf } from "./sections/FiveWhys.jsx"; // task 1.4: presentation only — computeFiveWhys stays here
 import SourceBox, { DataModeBadge } from "./primitives/SourceBox.jsx"; // task 1.4
 import SectionHeader from "./primitives/SectionHeader.jsx"; // task 1.4
@@ -30,6 +30,7 @@ import StickyNav from "./sections/StickyNav.jsx"; // task 9.2: viewport-tracked 
 import MacroStrip from "./sections/MacroStrip.jsx"; // task 3.1: presentation only
 import SignalQuality from "./sections/SignalQuality.jsx"; // task 3.2: presentation only
 import WhatChanged from "./sections/WhatChanged.jsx"; // task 3.3: presentation only
+import { liveReadCaption, publicMarketClock, publicMarketClockLine, simpleCallLabel, spyMoveDirection } from "./publicCopy.js";
 
 // ─── DESIGN TOKENS ──────────────────────────────────────────────────────────
 // UI-OVERHAUL Slice 1 (task 1.1): tokens live in src/design-tokens.js — the ONE
@@ -42,12 +43,6 @@ import WhatChanged from "./sections/WhatChanged.jsx"; // task 3.3: presentation 
 import { DT, T } from "./design-tokens.js";
 if (!DT || !Object.keys(DT).length)
   console.warn("design-tokens module could not be resolved — token lookups will render unstyled");
-
-// ─── WEN MOON METER THRESHOLDS (configurable) ─────────────────────────────
-// SPY daily change % thresholds for the mood badge on the Macro Strip
-const WEN_MOON_UP = 0.5;    // above this → MOONING
-const WEN_MOON_DOWN = -0.5; // below this → DIAMOND HANDS
-
 
 // GPU_PRICING / TOKEN_EFFICIENCY / tokenScissors / HYPERSCALER_CAPEX moved to
 // src/aiEcon.js (wave 12). LAUNCH_COST + EVTOL_CERT are DELETED, not moved — their
@@ -165,15 +160,8 @@ const MOCK_DATA = {
 // "Midday —" and after 4pm "Post-close —", instead of the value frozen into the daily
 // snapshot at fetch time. Pure/$0 — no LLM, no network.
 function etSession(now = new Date()) {
-  // No-session days (mirrors marketSession in snapshot.js — SAME shared table, so the
-  // header and the 5-Whys can never disagree with the edge): weekends + market holidays.
-  const dow = now.toLocaleDateString("en-US", { weekday: "short", timeZone: "America/New_York" });
-  const etDate = now.toLocaleDateString("en-CA", { timeZone: "America/New_York" });
-  if (dow === "Sat" || dow === "Sun" || isMarketHoliday(etDate)) return "CLOSE";
-  const hour = parseInt(now.toLocaleString("en-US", { hour: "numeric", hour12: false, timeZone: "America/New_York" }), 10);
-  if (hour >= 9 && hour < 16) return "OPEN";
-  if (hour >= 16) return "CLOSE";
-  return "PRE";
+  const state = publicMarketClock(now).state;
+  return state === "PRE" ? "PRE" : state === "OPEN" ? "OPEN" : "CLOSE";
 }
 
 
@@ -236,53 +224,34 @@ const UndoToast=({toasts, dismiss})=>{
 
 // DirTile extracted to src/primitives/DirTile.jsx (wave 9).
 
-// ─── WEN MOON METER (mood badge for Macro Strip) ─────────────────────────
-// WITHHELD_LABEL + WEN_MOON_STATES moved WITH the verdict band to
-// src/sections/RegimeBand.jsx (task 1.3) — the verdict's vocabulary lives in the
-// verdict's home, imported here so there is exactly one copy.
-function wenMoonState(spyChangePct) {
-  const pct = typeof spyChangePct === "number" && isFinite(spyChangePct) ? spyChangePct : 0;
-  if (pct > WEN_MOON_UP)   return WEN_MOON_STATES[0]; // MOONING
-  if (pct < WEN_MOON_DOWN) return WEN_MOON_STATES[2]; // DIAMOND HANDS
-  return WEN_MOON_STATES[1]; // HODL
-}
-const IS_DEV = !(typeof import.meta !== "undefined" && import.meta.env && import.meta.env.VITE_DATA_MODE === "live");
-const WenMoonBadge = ({ spyChangePct }) => {
-  const [demoIdx, setDemoIdx] = useState(null); // null = use real data
-  const s = demoIdx !== null ? WEN_MOON_STATES[demoIdx] : wenMoonState(spyChangePct);
-  const handleClick = IS_DEV ? () => {
-    setDemoIdx(prev => prev === null ? 0 : (prev + 1) % WEN_MOON_STATES.length);
-  } : undefined;
+// Degen-only SPY session move. It keeps the old ±0.5% arithmetic but no longer borrows
+// the macro call's moon vocabulary; an unavailable observation renders nothing, never FLAT.
+const SpyTapeBadge = ({ spyChangePct, mode, noSessionDay = false }) => {
+  // A stale observation is still the last completed session's tape, so name it LAST rather
+  // than hiding it on weekends. MOCK remains suppressed: illustrative data is not a tape.
+  if (mode !== "LIVE" && mode !== "CACHED" && mode !== "STALE") return null;
+  const direction = spyMoveDirection(spyChangePct);
+  if (!direction) return null;
+  const lastSession = noSessionDay || mode === "STALE";
+  const color = direction === "UP" ? T.green : direction === "DOWN" ? T.red : T.amber;
   return (
     <div
-      onClick={handleClick}
-      title={IS_DEV ? "Click to cycle mood (dev only)"
-                    : "Today's tape — SPY's move so far today. Not the macro backdrop verdict, which is the six-factor call at the top of the page."}
+      title={`${lastSession ? "Last session's" : "Today's"} SPY move — market tape only, not the macro backdrop call.`}
       style={{
         display:"flex", alignItems:"center", gap:6, flexShrink:0,
-        background: s.color + "18",
-        border: `1px solid ${s.color}55`,
+        background: color + "18",
+        border: `1px solid ${color}55`,
         borderRadius: 20,
         padding: "4px 12px",
-        boxShadow: `0 0 8px ${s.glow}33`,
-        cursor: IS_DEV ? "pointer" : "default",
+        boxShadow: `0 0 8px ${color}33`,
+        cursor: "default",
         userSelect: "none",
         transition: "all 0.2s",
       }}>
-      {/* FEAT-TAPE (v3.62): this badge and the hero verdict emit the SAME three words
-          (MOONING / HODL / DIAMOND HANDS) from the shared WEN_MOON_STATES, but from
-          unrelated inputs — this one is SPY's daily move (±0.5%), the hero is the six-factor
-          regime. They can therefore disagree on one screen (hero HODL, badge MOONING) and
-          nothing said which question each answered. The hero already labels itself "Macro
-          Backdrop"; this one now names its own scope. The vibe is untouched (owner call) —
-          only the ambiguity is removed. */}
-      <div style={{ fontFamily:T.fontMono, fontSize:7, color:T.textMuted, letterSpacing:"0.1em", whiteSpace:"nowrap" }}>TAPE</div>
-      <div style={{ fontFamily:T.fontMono, fontSize:10, fontWeight:700, color:s.color, whiteSpace:"nowrap", letterSpacing:"0.04em" }}>
-        {s.label}
+      <div style={{ fontFamily:T.fontMono, fontSize:7, color:T.textMuted, letterSpacing:"0.1em", whiteSpace:"nowrap" }}>{lastSession?"LAST SPY":"TODAY SPY"}</div>
+      <div style={{ fontFamily:T.fontMono, fontSize:10, fontWeight:700, color, whiteSpace:"nowrap", letterSpacing:"0.04em" }}>
+        {direction}
       </div>
-      {IS_DEV && demoIdx !== null && (
-        <div style={{ fontFamily:T.fontMono, fontSize:7, color:T.textMuted, whiteSpace:"nowrap" }}>DEMO</div>
-      )}
     </div>
   );
 };
@@ -341,10 +310,10 @@ const MacroFlipBanner=({flip})=>{
   );
 };
 
-const PanicOverrideBanner=({call})=>(
+const PanicOverrideBanner=({call,simple=false})=>(
   <div style={{background:DT["regime-off-bg"],borderBottom:`1px solid ${T.red}55`,padding:"7px 20px",display:"flex",alignItems:"center",gap:10,flexWrap:"wrap"}}>
     <span style={{fontFamily:T.fontMono,fontSize:11,fontWeight:700,color:T.red,letterSpacing:"0.04em"}}>
-      ⛔ PANIC OVERRIDE · {call.headline} {call.emoji} / {call.direction}
+      ⛔ PANIC OVERRIDE · {simple?simpleCallLabel(call):<>{call.headline} {call.emoji} / {call.direction}</>}
     </span>
     <span style={{fontFamily:T.fontMono,fontSize:9,color:T.textSecondary}}>
       Crash circuit confirmed — new risk adds are suspended until the stress signal clears.
@@ -454,6 +423,7 @@ function alertPrefsOf(defaults,current){
 // pattern below is wired and ready for when private content is added.
 // Every SOURCES field that casts a regime vote (all six, CAPE's shillerPe alias included).
 const VOTING_FIELDS=new Set(Object.values(FACTOR_FIELD));
+const DEGEN_NOTICE_KEY="md:degen-notice:v1";
 
 // SectionNav extracted to src/sections/StickyNav.jsx (wave 15, task 9.2) — the v3.62
 // hash-only active state is SUPERSEDED by IntersectionObserver viewport tracking
@@ -469,9 +439,9 @@ export default function Dashboard({ publicView = false } = {}) {
     try{localStorage.setItem(ALERT_PREFS_KEY,JSON.stringify(alertPrefsOf(DEFAULT_ALERTS,alerts)));}
     catch(_e){/* storage may be denied — the session still works, it just forgets */}
   },[alerts]);
-  /* v3.94 SIMPLE/POWER (owner directive — three-layer progressive disclosure): SIMPLE is the
+  /* v3.94 SIMPLE/DEGEN (owner directive — three-layer progressive disclosure): SIMPLE is the
      default and shows the Glance layer only — the verdict + sentence + confidence, the data-
-     freshness line, and the key market numbers. POWER is the full analytical view. Persisted
+     freshness line, and the key market numbers. DEGEN is the full analytical view. Persisted
      per device (the localStorage precedent of md:lastvalid/tt:hz); an unknown stored value
      falls back to SIMPLE — the safe default is the readable one. Red facts ignore the mode:
      the ERROR banner, the FIRED/BLIND badges and the hero's crash-gauge warning render in
@@ -483,18 +453,28 @@ export default function Dashboard({ publicView = false } = {}) {
   const simple=viewMode==="simple";
   /* v6.0.1: the toggle's ONE table — id, the shape that leads its label, the word, and what
      the mode shows (rides the tooltip + accessible name, so "which one am I in, and what does
-     the other one do" is answered before the tap). Both words stay exactly "Simple"/"Power". */
+     the other one do" is answered before the tap). The compatibility id remains `power`; only
+     the reader-facing name becomes Degen. */
   const VIEW_MODES=[
     {id:"simple",glyph:"○",word:"Simple",tells:"the call, three cards and the whys"},
-    {id:"power", glyph:"◉",word:"Power", tells:"every section, factor evidence and tiles"},
+    {id:"power", glyph:"◉",word:"Degen", tells:"the moon call, every section, signal evidence and tiles"},
   ];
+  const [degenNoticeDismissed,setDegenNoticeDismissed]=useState(()=>{
+    try{return localStorage.getItem(DEGEN_NOTICE_KEY)==="dismissed";}catch(_e){return false;}
+  });
+  const dismissDegenNotice=()=>{
+    setDegenNoticeDismissed(true);
+    try{localStorage.setItem(DEGEN_NOTICE_KEY,"dismissed");}catch(_e){/* private mode */}
+  };
   const [copied,setCopied]=useState(false);
   const [ttCopied,setTtCopied]=useState(false); // v4.0: canonical daily-call copy state
   const [callShared,setCallShared]=useState(false); // v5.5: compact hero-adjacent posture card
   // Re-render every 10 min so the live 5-Whys session frame advances (pre-open→midday→
   // post-close) in an already-open tab without a manual reload. Pure clock tick, $0.
-  const [,setSessionTick]=useState(0);
+  const [sessionTick,setSessionTick]=useState(0);
   useEffect(()=>{const id=setInterval(()=>setSessionTick(t=>t+1),10*60*1000);return ()=>clearInterval(id);},[]);
+  const renderNow=useMemo(()=>new Date(),[sessionTick]);
+  const marketClock=publicMarketClock(renderNow);
   const { toasts, show:showToast, dismiss } = useUndoToast();
   // 9.3 (Req 8.9): when the FIRST fetch resolves (LOADING -> LIVE/CACHED/ERROR), move
   // keyboard focus to the verdict region so a screen reader hears the settled posture
@@ -654,6 +634,14 @@ export default function Dashboard({ publicView = false } = {}) {
   // needs a separate freshness bit; it never votes and is withheld when not current.
   const FW_FIELDS=["marketHeadline"];
   const anyLive=mode==="LIVE"||mode==="CACHED";
+  const marketClockCopy=publicMarketClockLine({
+    now:renderNow,
+    marketAsOf:dataAsOf?.spyPrice,
+    snapshotAsOf:asOf,
+  });
+  const currentReadCaption=anyLive?liveReadCaption({
+    now:renderNow,callFrozen,liveBuild,withheld:evidenceSet.withheld,
+  }):null;
   // FEAT-322: live-first view only applies when the app is actually live. In mock/demo mode
   // EVERYTHING is MOCK by design (mock IS the baseline — same convention as fresh:null in
   // fiveWhys), so nothing provenance-dependent collapses there.
@@ -667,17 +655,18 @@ export default function Dashboard({ publicView = false } = {}) {
      clause freshness-gates out and the anchor states itself as 0/3 usable. A demo build
      still passes null — mock IS its baseline (the demoted()/anyLive doctrine, unchanged). */
   const freshSet=liveBuild ? new Set(FW_FIELDS.filter(k=>{const m=modeOf(k);return m==="LIVE"||m==="CACHED";})) : null;
-  const fw=computeFiveWhys({...d, session:etSession()}, regimeView, {
+  const fw=computeFiveWhys({...d, session:etSession(renderNow)}, regimeView, {
     call:dailyCall, factors:evidenceSet.factors, flips:evidenceSet.flips?.flips,
     snapshotAsOf:asOf, headlineFresh:freshSet===null||freshSet.has("marketHeadline"),
     // 8/28 A13: narrating the frozen artifact, the prefix follows the CALL's clock, not the
     // reader's. Presentation only — the flag is the one the server already set.
-    callFrozen
+    callFrozen,
+    vocabulary:simple?"simple":"degen",
   });
   /* B2 (v3.59): "derived from live data" was a STATIC string — it kept asserting liveness
      across cached, degraded, error and demo states. One derivation, both footers. */
   const derivedLabel=mode==="LIVE"?"derived from live data"
-    :mode==="CACHED"?"derived from today's cached snapshot"
+    :mode==="CACHED"?"derived from a cached snapshot"
     :liveBuild?"live data unavailable — nothing derived":"illustrative demo — not live";
   // FEAT-ALERT-EVAL: evaluated from live data every render (see evalAlert). `alertBlind` is
   // reported separately — a header that says "0 FIRED" while every input is dead would be the
@@ -807,8 +796,9 @@ export default function Dashboard({ publicView = false } = {}) {
       <div aria-live="polite" role="status" className="visually-hidden">
         {mode==="LOADING"?"Loading live data; posture withheld."
           :mode==="ERROR"?"Live service unavailable; posture withheld."
-          :!dailyCall.headline?`Data hold: only ${dailyCall.counts.usable} of ${dailyCall.counts.total} voters counted; posture withheld.`
-          :`MacroDash ${dailyCall.headline}, ${dailyCall.direction}: ${dailyCall.counts.usable} of ${dailyCall.counts.total} voters counted.`}
+          :!dailyCall.headline?`Not enough data: only ${dailyCall.counts.usable} of ${dailyCall.counts.total} signals counted; posture withheld.`
+          :simple?`MacroDash ${simpleCallLabel(dailyCall)}: ${dailyCall.counts.usable} of ${dailyCall.counts.total} signals counted.`
+          :`MacroDash ${dailyCall.headline}, ${dailyCall.direction}: ${dailyCall.counts.usable} of ${dailyCall.counts.total} signals counted.`}
       </div>
       <style>{`
         @import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;700&family=DM+Sans:wght@400;500;600&family=Syne:wght@700;800&display=swap');
@@ -824,7 +814,7 @@ export default function Dashboard({ publicView = false } = {}) {
           .dir-tiles{flex-wrap:wrap!important;}
           /* .hide-mobile rule DELETED (wave 17 audit): zero consumers since FINDING-1. */
           /* IPO strip stays a horizontal swipeable row on mobile (not 3 stacked cards) */
-          .wen-moon-mobile{display:none!important;}
+          .spy-tape-mobile{display:none!important;}
         }
         @media(prefers-reduced-motion:reduce){.pulse-anim{animation:none!important;}}
         /* A2 (v3.58): 320px contract — the duplicate wordmark is the first thing to go. */
@@ -897,7 +887,7 @@ export default function Dashboard({ publicView = false } = {}) {
               {/* 8/28 clock matrix A1: a mixed clock — session is live per request, lastRefresh is
                   the frozen snapshot-build instant. Unlabelled, "OPEN · 02:40 ET" read as the
                   CALL's time (or a broken clock). Three words bind the timestamp to the data. */}
-              {anyLive?`${d.session} · data pulled ${d.lastRefresh}`
+              {anyLive?marketClockCopy
                 :mode==="LOADING"?"fetching live data…"
                 :mode==="ERROR"?"live service unavailable — numbers below are illustrative"
                 :"demo baseline — not live"}
@@ -914,8 +904,6 @@ export default function Dashboard({ publicView = false } = {}) {
                 style={{fontFamily:T.fontMono,fontSize:9,background:T.surfaceHigh,border:`1px solid ${T.amber}66`,color:T.amber,padding:"2px 8px",borderRadius:3,cursor:"pointer"}}>
                 {publicView?"↻ CHECK AGAIN":"↻ REFRESH DATA"}
               </button>}
-            {/* FINDING-4: set novice expectations — these are end-of-day, not real-time */}
-            {anyLive&&<span style={{fontFamily:T.fontMono,fontSize:8,color:T.textMuted}}>· end-of-day, not real-time</span>}
           </div>
         </div>
         <div style={{display:"flex",alignItems:"center",gap:8,flexWrap:"wrap",minWidth:0}}>
@@ -1007,10 +995,10 @@ export default function Dashboard({ publicView = false } = {}) {
                       label IS the edition the paste will carry (callEdition: 10AM CALL / LIVE READ). */}
                   {ttCopied?"✓ CALL COPIED":`⎘ ${callEdition({frozen:callFrozen})}`}
                 </button>
-                {publicCloseRead?.capture_status==="CAPTURED"&&<button onClick={handleCloseReadCopy} aria-label="Copy MacroDash close read" className="hdr-act"
-                  title="Copy tonight's unscored 6pm close read — not the 10am call"
+                {publicCloseRead?.capture_status==="CAPTURED"&&<button onClick={handleCloseReadCopy} aria-label="Copy MacroDash evening update" className="hdr-act"
+                  title="Copy tonight's unscored 6pm evening update — not the 10am call"
                   style={{fontFamily:T.fontMono,fontSize:9,background:closeCopied?"#1a3020":T.surfaceHigh,border:`1px solid ${closeCopied?T.green:T.borderAccent}`,color:closeCopied?T.green:T.textSecondary,padding:"7px 12px",borderRadius:4,cursor:"pointer",textAlign:"left"}}>
-                  {closeCopied?"✓ CLOSE READ COPIED":"⎘ CLOSE READ"}
+                  {closeCopied?"✓ EVENING UPDATE COPIED":"⎘ EVENING UPDATE"}
                 </button>}
                 {/* TERMINAL left this menu in v3.98.3 — it is a first-class bar button now.
                     Keeping a second copy here would be two doors to one room. */}
@@ -1020,9 +1008,18 @@ export default function Dashboard({ publicView = false } = {}) {
         </div>
       </header>
 
+      {!simple&&!degenNoticeDismissed&&<div role="note" aria-label="Degen view introduction"
+        style={{background:T.surfaceHigh,borderBottom:`1px solid ${T.amber}44`,padding:"7px 20px",display:"flex",alignItems:"center",gap:10,flexWrap:"wrap"}}>
+        <span style={{fontFamily:T.fontMono,fontSize:9,color:T.textSecondary,flex:"1 1 280px"}}>Degen uses trading slang and shows the full technical dashboard. Simple keeps it to the plain call and key signals.</span>
+        <button onClick={()=>setViewMode("simple")} className="hdr-act"
+          style={{fontFamily:T.fontMono,fontSize:9,background:T.amber,color:T.bg,border:"none",borderRadius:3,padding:"5px 9px",cursor:"pointer",fontWeight:700}}>BACK TO SIMPLE</button>
+        <button onClick={dismissDegenNotice} aria-label="Dismiss Degen introduction" className="hdr-act"
+          style={{fontFamily:T.fontMono,fontSize:9,background:"transparent",color:T.textMuted,border:`1px solid ${T.borderAccent}`,borderRadius:3,padding:"5px 9px",cursor:"pointer"}}>DISMISS</button>
+      </div>}
+
       {/* v4.0: a confirmed PANIC override owns this slot; otherwise show the armed circuit. */}
       {dailyCall.override.active
-        ? <PanicOverrideBanner call={dailyCall}/>
+        ? <PanicOverrideBanner call={dailyCall} simple={simple}/>
         : flip&&(flip.tripped||flip.armed)&&<MacroFlipBanner flip={flip}/>}
 
       {/* C2 (v3.60): section navigation — the page had one hidden h1 and no way to jump.
@@ -1048,7 +1045,8 @@ export default function Dashboard({ publicView = false } = {}) {
         plainVerdict={simple?simpleV:null} conf={regimeConf}
         factorRows={evidenceSet.factors} regimeIn={evidenceSet.regime} flipsIn={evidenceSet.flips}
         call={dailyCall} callFrozen={callFrozen} callCapturedAt={publicCallCapturedAt}
-        callDrift={callDrift} closeRead={closeReadNote} onCopyCall={handleCallShare} callCopied={callShared}
+        callDrift={callDrift} closeRead={closeReadNote} readCaption={currentReadCaption} noSessionDay={marketClock.noSession}
+        onCopyCall={handleCallShare} callCopied={callShared}
         copyDisabled={!anyLive&&!callFrozen}/>
 
       {/* FEAT-WHY (v3.62) sentence now renders INSIDE the hero (v3.94 DRIVERS-ONLY — one
@@ -1112,7 +1110,7 @@ export default function Dashboard({ publicView = false } = {}) {
           contract, never its own reading: value · vote · freshness · as-of · exclusion
           reason per factor. Cards wrap on phones, rows on desktop (flex-wrap). ── */}
       {!simple&&<section aria-labelledby="drivers" style={{padding:"10px 20px",borderBottom:`1px solid ${T.border}`}}>
-        <h2 id="drivers" className="visually-hidden">Drivers — the six factors and their votes</h2>
+        <h2 id="drivers" className="visually-hidden">Drivers — the six signals behind the call</h2>
         {/* v3.62 eyebrow, folded into the toggle row itself (v3.93 QUIET-2 — two rows were
             saying one thing). The count summary stays visible while closed (v3.25). */}
         {/* FEAT-GLANCE (v3.61): the six full cards collapse — the band's chip row above is
@@ -1155,7 +1153,7 @@ export default function Dashboard({ publicView = false } = {}) {
           presentation only (FEAT-170 4-col mobile reflow rides the .macro-strip rules in
           the stylesheet above; v3.25: always visible while market detail collapses). ── */}
       <MacroStrip d={d} modeOf={modeOf} fomcLabel={fomcLabel} fomcDays={fomcDays}
-        votingFields={VOTING_FIELDS} badge={<WenMoonBadge spyChangePct={d.marketPulse.spy.changePct}/>}/>
+        votingFields={VOTING_FIELDS} badge={simple?null:<SpyTapeBadge spyChangePct={d.marketPulse.spy.changePct} mode={modeOf("spyPrice")} noSessionDay={marketClock.noSession}/>}/>
 
 
       {/* FEAT-162: Session Delta Bar — Alerts Δ first (conditional: hidden when nothing actionable) */}
@@ -1255,7 +1253,7 @@ export default function Dashboard({ publicView = false } = {}) {
         <div className="site-footer" style={{marginTop:12}}>
           <CollapsedGroup count={3} chip={false} label={`about this page — v${__APP_VERSION__} · sources · not financial advice`}>
             <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",flexWrap:"wrap",gap:4}}>
-              <div style={{fontFamily:T.fontMono,fontSize:8,color:T.textMuted}}>{`MacroDash v${__APP_VERSION__} · Data refreshed daily · end-of-day sources`}{publicView?" · public view — the operator view carries the curated watchlist and alert monitors":""}</div>
+              <div style={{fontFamily:T.fontMono,fontSize:8,color:T.textMuted}}>{`MacroDash v${__APP_VERSION__} · Data refreshed daily · end-of-day sources`}</div>
               <div style={{display:"flex",gap:10,fontFamily:T.fontMono,fontSize:8}}><a href="/history" style={{color:T.textMuted}}>History</a><a href="/difference" style={{color:T.textMuted}}>Difference</a><a href="/readout.json" style={{color:T.textMuted}}>JSON</a></div>
               <div style={{fontFamily:T.fontMono,fontSize:8,color:T.textMuted}}>Not financial advice · Personal use</div>
               <div style={{fontFamily:T.fontMono,fontSize:8,color:T.textMuted}}>Live: FRED · CNN · Kalshi · OpenRouter · Finnhub · multpl · Curated: GPU $/hr · hyperscaler capex · token efficiency · Retired: CBOE Put/Call (free feed dead 2019 · v3.2) · Mag 10 fundamentals + SEC S-1 (v3.43) · Mag 10 quote strip (v3.51)</div>

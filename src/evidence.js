@@ -22,6 +22,7 @@ import { isStale, cadenceOf } from "./sources.js";
 // postureSummary needs. The VOTE is no longer re-derived from it: since FEAT-NEUTRAL (v3.62)
 // regimeFactors carries the vote it already derived, so a threshold has one consumer, not two.
 import { REGIME_BAND_TABLE, REGIME_QUORUM, rulerChip, computeRegime, flipConditions, regimeFactors } from "./regime.js";
+import { SIMPLE_DIRECTION_LABELS, SIMPLE_WITHHELD_LABEL } from "./publicCopy.js";
 
 // The six regime voters by SOURCES field key (the staleness vocabulary), plus the one
 // factor-key alias: the valuation factor's field is shillerPe. Moved here from dashboard.jsx
@@ -121,7 +122,7 @@ export function buildEvidenceSet({ d, provenance, dataAsOf, mode, liveBuild, now
     /* 8/28 vocabulary pass: coverage takes the canonical hero form. This read
        "5/6 factors usable" on the Drivers expander label — a slash fraction and a second
        scope noun for the number the hero states as "5 of 6 voters counted". */
-    freshSummary: `${regime.counted} of ${regime.totalFactors} voters counted`,
+    freshSummary: `${regime.counted} of ${regime.totalFactors} signals counted`,
     excludedKeys: factors.filter((f) => f.excluded).map((f) => f.short),
     summary: postureSummary(factors),
   };
@@ -162,7 +163,7 @@ export function postureSummary(factors = []) {
   if (buckets.supports.length)  parts.push(`${listOf(names("supports"))} lean${buckets.supports.length === 1 ? "s" : ""} bullish`);
   if (buckets.addsRisk.length)  parts.push(`${listOf(names("addsRisk"))} lean${buckets.addsRisk.length === 1 ? "s" : ""} bearish`);
   if (buckets.neutral.length)   parts.push(`${listOf(names("neutral"))} ${buckets.neutral.length === 1 ? "is" : "are"} neutral`);
-  if (buckets.unavailable.length) parts.push(`${listOf(names("unavailable"))} ${buckets.unavailable.length === 1 ? "is" : "are"} dark`);
+  if (buckets.unavailable.length) parts.push(`${listOf(names("unavailable"))} ${buckets.unavailable.length === 1 ? "is" : "are"} unavailable`);
   // No usable evidence at all is a real state (LOADING, or a live build with a dead feed) and
   // must read as an absence, not as a balanced picture.
   const sentence = parts.length
@@ -211,8 +212,20 @@ export function postureSummary(factors = []) {
 // (v3.51 named them) and not a position stance. That prefix is load-bearing, not
 // decoration: it is what keeps "HODL" readable as "the evidence has no edge" rather
 // than as advice to hold a position.
-export const SIMPLE_VERDICTS = { "RISK-ON": "BULLISH", "MIXED": "HODL", "RISK-OFF": "BEARISH" };
-export const SIMPLE_WITHHELD = "DATA HOLD";
+export const SIMPLE_VERDICTS = {
+  "RISK-ON": SIMPLE_DIRECTION_LABELS.BULLISH,
+  "MIXED": SIMPLE_DIRECTION_LABELS.NEUTRAL,
+  "RISK-OFF": SIMPLE_DIRECTION_LABELS.BEARISH,
+};
+export const SIMPLE_WITHHELD = SIMPLE_WITHHELD_LABEL;
+export const SIMPLE_VERDICT_EXPLAIN = Object.freeze({
+  full: "What this call means",
+  what: [
+    "Bullish means the backdrop supports taking market risk; Hold means the evidence has no clear lean; Bearish means the backdrop is working against risk.",
+    "Not enough data is different from Hold: it means too few current signals are available to make the call.",
+    "This is a read on the whole market's backdrop, not a view on any one stock, and it is not advice.",
+  ],
+});
 export function simpleVerdict(ev) {
   if (!ev) return { label: SIMPLE_WITHHELD, tone: "muted", withheld: true };
   // LOADING / ERROR / INSUFFICIENT are the withheld states (WITHHELD above). DEMO is
@@ -222,7 +235,7 @@ export function simpleVerdict(ev) {
   if (ev.withheld) return { label: SIMPLE_WITHHELD, tone: "muted", withheld: true };
   const label = SIMPLE_VERDICTS[ev.regime && ev.regime.label];
   if (!label) return { label: SIMPLE_WITHHELD, tone: "muted", withheld: true };
-  return { label, tone: label === "BULLISH" ? "good" : label === "BEARISH" ? "bad" : "warn", withheld: false };
+  return { label, tone: label === "Bullish" ? "good" : label === "Bearish" ? "bad" : "warn", withheld: false };
 }
 
 // vote → the card's direction word. THREE directions, FOUR votes: "excluded" is not a
@@ -385,8 +398,6 @@ export function simpleFlipLine(ev) {
      vocabulary anywhere else, so a leaked one here is a second name for the verdict the
      reader is looking at. Mapped through the SAME table simpleVerdict uses; an unmapped
      label falls through unchanged rather than being dropped or guessed at. */
-  const would = SIMPLE_VERDICTS[nearest.would]
-    ? `MACRO: ${SIMPLE_VERDICTS[nearest.would]}`
-    : nearest.would;
+  const would = SIMPLE_VERDICTS[nearest.would] || nearest.would;
   return `${nearest.copy} would move this to ${would}.`;
 }
