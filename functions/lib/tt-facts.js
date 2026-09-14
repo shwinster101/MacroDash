@@ -79,9 +79,21 @@ export function mergeFactsRecord(previous, incoming, now = new Date()) {
   };
 }
 
+/* v6.5.0 (Stock Spotlight step 1 — "repair filing coverage"): the extractor accepted ONLY
+   10-Q/10-K under us-gaap, so a foreign private issuer's 20-F annual and 6-K interim reports
+   (Nebius) were invisible even when XBRL-tagged, and IFRS taxonomies were never consulted.
+   Forms and taxonomies widen here; the TAG lists stay per-caller, so a us-gaap-only concept
+   simply finds nothing under ifrs-full rather than reading a different line item. */
+export const SEC_FORM_RE = /^(?:10-Q|10-K|20-F|6-K|40-F)(?:\/A)?$/;
+const SEC_TAXONOMIES = ["us-gaap", "ifrs-full"];
 function observations(companyfacts, tag, unit) {
-  const xs = companyfacts?.facts?.["us-gaap"]?.[tag]?.units?.[unit];
-  return Array.isArray(xs) ? xs.filter((x) => finite(x?.val) && /^10-(?:Q|K)(?:\/A)?$/.test(String(x?.form || "")) && /^\d{4}-\d{2}-\d{2}$/.test(String(x?.end || ""))) : [];
+  const out = [];
+  for (const tax of SEC_TAXONOMIES) {
+    const xs = companyfacts?.facts?.[tax]?.[tag]?.units?.[unit];
+    if (!Array.isArray(xs)) continue;
+    for (const x of xs) if (finite(x?.val) && SEC_FORM_RE.test(String(x?.form || "")) && /^\d{4}-\d{2}-\d{2}$/.test(String(x?.end || ""))) out.push(x);
+  }
+  return out;
 }
 
 function durationDays(x) {
@@ -154,7 +166,7 @@ export function filingsFromSubmissions(submissions, cik) {
   const out = [];
   for (let i = 0; i < n; i++) {
     const form = recent.form?.[i];
-    if (!/^10-(?:Q|K)(?:\/A)?$/.test(String(form || ""))) continue;
+    if (!SEC_FORM_RE.test(String(form || ""))) continue;   // v6.5.0: 20-F/6-K/40-F join 10-Q/10-K
     const accn = String(recent.accessionNumber[i] || "");
     const primary = String(recent.primaryDocument?.[i] || "");
     if (!/^\d{10}-\d{2}-\d{6}$/.test(accn) || !primary) continue;

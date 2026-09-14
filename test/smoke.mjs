@@ -10735,9 +10735,9 @@ console.log("\n[74] 8/31 SEC identity — the unset-secret cause survives to the
   ok("8/31 SEC: an unset SEC_USER_AGENT NAMES itself in the qualitative blocker",
     unset.status === "UNKNOWN" && /SEC_USER_AGENT is not configured/.test(unset.reason));
 
-  const none = await qualitativeRubric("AAA", factsWith(MISSING("no recent 10-Q/10-K filing returned")), framework, env);
+  const none = await qualitativeRubric("AAA", factsWith(MISSING("no recent 10-Q/10-K/20-F/6-K filing returned")), framework, env);
   ok("8/31 SEC: a company with genuinely no filings reads DIFFERENTLY — the two causes never collapse",
-    /no recent 10-Q\/10-K filing returned/.test(none.reason) &&
+    /no recent 10-Q\/10-K\/20-F\/6-K filing returned/.test(none.reason) &&
     !/SEC_USER_AGENT/.test(none.reason) && none.reason !== unset.reason);
 
   ok("8/31 SEC: an ABSENT field record names no cause rather than inventing one",
@@ -10752,7 +10752,7 @@ console.log("\n[74] 8/31 SEC identity — the unset-secret cause survives to the
   const factsSrc = readSrc("../functions/api/ticker-facts.js");
   ok("8/31 SEC: secBundle stores the two causes as DIFFERENT strings at source",
     /SEC_USER_AGENT is not configured/.test(factsSrc) &&
-    /no recent 10-Q\/10-K filing returned/.test(factsSrc));
+    /no recent 10-Q\/10-K\/20-F\/6-K filing returned/.test(factsSrc));   // v6.5.0: the message names the widened form set
 
   // The env matrix is the operator's map to this failure; it must keep naming the variable.
   const claude = readSrc("../CLAUDE.md");
@@ -11362,6 +11362,344 @@ console.log("\n[80] v6.4.0 public copy — plain verdict, market clock, scoped t
   ok("[80] Simple hides the SPY tape; Degen scopes it, and the Stonks share title remains",
     /badge=\{simple\?null:<SpyTapeBadge/.test(dashSrc) && /TODAY SPY/.test(dashSrc) &&
     /MacroDash - Stonks/.test(index));
+}
+
+// ═══════════ [81] v6.5.0 STOCK SPOTLIGHT — rotation, YTD tracker, market cap, fundamentals,
+// assessments, lessons, freshness, the public projection, both endpoints, the cron leg ═══════
+// docs/plans/stock-spotlight.md is the spec. Every calculation here is EXECUTED against the
+// real module (the DEC-33 convention); string pins cover only what has no behavior (wiring).
+console.log("\n[81] v6.5.0 STOCK SPOTLIGHT — calculations, endpoints, cron leg, and the public boundary");
+{
+  const S = await import("../functions/lib/spotlight.js");
+  const FX = await import("./spotlight-fixture.mjs");
+  const { onRequestGet: spotGet, spotlightEnabled } = await import("../functions/api/stock-spotlight.js");
+  const R = await import("../functions/api/stock-spotlight/refresh.js");
+  const I = await import("../functions/api/stock-spotlight/issuer.js");
+  const { SEC_FORM_RE, filingsFromSubmissions: filingsOf } = await import("../functions/lib/tt-facts.js");
+  const { refreshSpotlight: cronSpotlight } = await import("../worker/cron.js");
+  const NOW = new Date("2026-09-16T22:05:00Z");   // Wed 18:05 ET
+  const TODAY = etYmd(NOW);
+  const kvS = () => { const m = new Map(); const puts = []; return { _m: m, puts,
+    async get(k, type) { const v = m.get(k); return type === "json" && v ? JSON.parse(v) : (v ?? null); },
+    async put(k, v) { puts.push(k); m.set(k, v); }, async delete(k) { m.delete(k); } }; };
+
+  // ── rotation ──
+  ok("[81] rotation: seven names in the plan's order, Microsoft first, labelled Established growth",
+    S.SPOTLIGHT_ROTATION.join(",") === "MSFT,AAPL,AMZN,GOOGL,META,NVDA,TSLA" && S.SPOTLIGHT_ANCHOR === "NBIS" && S.SPOTLIGHT_COMPARISON_LABEL === "Established growth");
+  ok("[81] rotation: the ET week is keyed by its MONDAY (Sun 9/13 → 9/07; Mon 9/14 → 9/14; Sat 9/19 → 9/14)",
+    S.etWeekKey("2026-09-13") === "2026-09-07" && S.etWeekKey("2026-09-14") === "2026-09-14" && S.etWeekKey("2026-09-19") === "2026-09-14" && S.etWeekKey("junk") === null);
+  ok("[81] rotation: no record → MSFT; same week → unchanged; a new week → the next name; TSLA wraps to MSFT",
+    (() => { const a = S.nextRotation(null, "2026-09-14"), b = S.nextRotation({ index: 2, weekKey: "2026-09-14" }, "2026-09-14"),
+      c = S.nextRotation({ index: 2, weekKey: "2026-09-07" }, "2026-09-14"), d = S.nextRotation({ index: 6, weekKey: "2026-09-07" }, "2026-09-14");
+      return a.index === 0 && a.first && !a.advanced && b.index === 2 && !b.advanced && c.index === 3 && c.advanced && d.index === 0 && d.advanced &&
+        S.comparisonAt(3) === "GOOGL" && S.comparisonAt(7) === "MSFT"; })());
+
+  // ── YTD return + tracker ──
+  const flat = (from, to, v) => FX.closes(from, to, { start: v, drift: 0, seed: 1 }).map((r) => ({ ...r, value: v }));
+  ok("[81] YTD: the baseline is the FINAL close of the previous calendar year, the figure is 100×(v/base−1), through = the last point",
+    (() => { const rows = [{ date: "2025-12-30", value: 90 }, { date: "2025-12-31", value: 100 }, { date: "2026-01-02", value: 110 }, { date: "2026-01-05", value: 99 }];
+      const y = S.ytdReturn(rows, "2026-01-06");
+      return y.baseline.date === "2025-12-31" && y.baseline.value === 100 && y.pct === -1 && y.through === "2026-01-05" && y.points.length === 2 && y.points[0].pct === 10; })());
+  ok("[81] YTD: before the first trading close of a new year the figure is 'awaiting', never 0; with no prior-year close it is unavailable and says so",
+    (() => { const y = S.ytdReturn([{ date: "2025-12-31", value: 100 }], "2026-01-01");
+      const z = S.ytdReturn([{ date: "2026-02-02", value: 100 }], "2026-02-03");
+      return y.awaiting === true && y.pct === undefined && /awaits the first 2026/.test(y.unavailable) && /no prior-year close/.test(z.unavailable); })());
+  ok("[81] YTD: dividends change the answer — a total-return (adjusted) twin of the same closes reads higher, and each leg carries its own basis LABEL",
+    (() => { const px = [{ date: "2025-12-31", value: 100 }, { date: "2026-03-02", value: 100 }];
+      const adj = [{ date: "2025-12-31", value: 100 }, { date: "2026-03-02", value: 101.5 }];   // a 1.5% distribution reinvested
+      const t = S.buildTracker({ symbol: "A", basis: "price_return", rows: px }, { symbol: "B", basis: "total_return", rows: adj }, "2026-03-03");
+      return t.legs.A.pct === 0 && t.legs.B.pct === 1.5 && t.legs.A.label === "YTD price return" && t.legs.B.label === "YTD total return" &&
+        /dividends NOT included/.test(t.legs.A.basisNote) && /includes dividends/.test(t.legs.B.basisNote); })());
+  ok("[81] tracker: both lines start at 0% on the same baseline date, the endpoint is the LATEST COMMON date, and the visible YTD is read AT that endpoint (never each leg's own last point)",
+    (() => { const a = [{ date: "2025-12-31", value: 10 }, { date: "2026-01-02", value: 11 }, { date: "2026-01-05", value: 12 }, { date: "2026-01-06", value: 13 }];
+      const b = [{ date: "2025-12-31", value: 100 }, { date: "2026-01-02", value: 90 }, { date: "2026-01-05", value: 80 }];
+      const t = S.buildTracker({ symbol: "A", basis: "price_return", rows: a }, { symbol: "B", basis: "price_return", rows: b }, "2026-01-07");
+      return t.baselineDate === "2025-12-31" && t.through === "2026-01-05" && t.legs.A.pct === 20 && t.legs.B.pct === -20 &&
+        t.points.length === 2 && t.points[1].A === 20 && t.points[1].B === -20 && !t.points.some((p) => p.date > "2026-01-05"); })());
+  ok("[81] tracker: a missing observation is a GAP (null in the point), never interpolated or fabricated",
+    (() => { const a = [{ date: "2025-12-31", value: 10 }, { date: "2026-01-02", value: 11 }, { date: "2026-01-05", value: 12 }, { date: "2026-01-06", value: 13 }];
+      const b = [{ date: "2025-12-31", value: 100 }, { date: "2026-01-02", value: 90 }, { date: "2026-01-06", value: 80 }];   // 01-05 missing
+      const t = S.buildTracker({ symbol: "A", basis: "price_return", rows: a }, { symbol: "B", basis: "price_return", rows: b }, "2026-01-07");
+      const gap = t.points.find((p) => p.date === "2026-01-05");
+      return t.through === "2026-01-06" && gap && gap.A === 20 && gap.B === null; })());
+  ok("[81] tracker: one series unavailable → the other still plots and the missing one is NAMED; both unavailable → the tracker's own unavailable state",
+    (() => { const a = [{ date: "2025-12-31", value: 10 }, { date: "2026-01-02", value: 11 }];
+      const one = S.buildTracker({ symbol: "A", basis: "price_return", rows: a }, { symbol: "B", rows: null, unavailable: "Nasdaq 429" }, "2026-01-03");
+      const none = S.buildTracker({ symbol: "A", rows: null, unavailable: "x" }, { symbol: "B", rows: null, unavailable: "y" }, "2026-01-03");
+      return one.points.length === 1 && one.legs.A.pct === 10 && /B series unavailable — Nasdaq 429/.test(one.partial) && one.unavailable === null &&
+        /comparison tracker unavailable/.test(none.unavailable) && none.points.length === 0; })());
+  ok("[81] tracker: a non-USD series is not converted, and a year rollover resets the baseline (Dec 31 becomes the new anchor)",
+    (() => { const eur = S.buildTracker({ symbol: "A", basis: "price_return", rows: [{ date: "2025-12-31", value: 1 }], currency: "EUR" }, { symbol: "B", rows: null }, "2026-01-05");
+      const rows = [{ date: "2025-12-31", value: 100 }, { date: "2026-06-30", value: 150 }, { date: "2026-12-31", value: 200 }, { date: "2027-01-04", value: 210 }];
+      return /quoted in EUR/.test(eur.legs.A.unavailable) && S.ytdReturn(rows, "2026-12-31").pct === 100 && S.ytdReturn(rows, "2027-01-05").pct === 5 && S.ytdReturn(rows, "2027-01-05").baseline.date === "2026-12-31"; })());
+
+  // ── market cap ──
+  ok("[81] cap: a dated provider-reported cap in USD MILLIONS is preferred and displayed in T/B; the unit is honoured, not assumed",
+    (() => { const r = S.resolveMarketCap({ reported: { value: 3_410_000, unit: "USD M", observedAt: "2026-09-12", provider: "Finnhub" } });
+      return r.usd === 3.41e12 && r.display === "$3.41T" && r.method === "provider-reported" && r.observedAt === "2026-09-12" &&
+        S.resolveMarketCap({ reported: { value: 70.1, unit: "USD B", observedAt: "2026-09-12" } }).display === "$70.1B"; })());
+  ok("[81] cap: derived = dated price × ACTUAL shares outstanding, and differing input dates are NAMED in the note",
+    (() => { const r = S.resolveMarketCap({ price: { value: 200, currency: "USD", observedAt: "2026-09-12", provider: "Finnhub" }, shares: { value: 250e6, observedAt: "2026-08-20", kind: "outstanding", provider: "SEC" } });
+      return r.usd === 50e9 && r.method === "derived" && /price 2026-09-12 × shares outstanding 2026-08-20/.test(r.note) && /23d apart/.test(r.note); })());
+  ok("[81] cap: a diluted WEIGHTED-AVERAGE share count is REJECTED as a substitute for shares outstanding; a non-USD quote is not converted; nothing → unavailable with a reason",
+    (() => { const w = S.resolveMarketCap({ price: { value: 200, currency: "USD", observedAt: "2026-09-12" }, shares: { value: 250e6, observedAt: "2026-08-20", kind: "diluted_weighted_average" } });
+      const eur = S.resolveMarketCap({ price: { value: 200, currency: "EUR", observedAt: "2026-09-12" }, shares: { value: 250e6, observedAt: "2026-08-20", kind: "outstanding" } });
+      const none = S.resolveMarketCap({});
+      return w.value === null && /weighted-average/.test(w.unavailable) && eur.value === null && /EUR/.test(eur.unavailable) && none.value === null && /no dated market cap/.test(none.unavailable); })());
+  ok("[81] cap: enterprise value is never a substitute — the word does not appear in the lib's cap path, and a cap with no date is not accepted",
+    !/enterprise ?value/i.test(readSrc("../functions/lib/spotlight.js").replace(/\/\/[^\n]*|\/\*[\s\S]*?\*\//g, "")) &&
+    S.resolveMarketCap({ reported: { value: 100, unit: "USD M" } }).value === null);
+
+  // ── fundamentals: periods, TTM, restatements, forms ──
+  const q = (s, e, v, filed = "2026-08-01", form = "10-Q") => ({ start: s, end: e, val: v, filed, form });
+  ok("[81] periods: discrete quarters are DERIVED from cumulative YTD facts (Q2 = H1 − Q1, Q4 = FY − 9M) with a direct quarter beating a derived one",
+    (() => { const rows = [q("2025-07-01", "2025-09-30", 10), q("2025-07-01", "2025-12-31", 22), q("2025-07-01", "2026-03-31", 36), q("2025-07-01", "2026-06-30", 52, "2026-08-15", "10-K"),
+        q("2024-07-01", "2025-06-30", 40, "2025-08-15", "10-K"), q("2024-07-01", "2025-03-31", 27)];
+      const dq = S.discreteQuarters(rows);
+      return dq.map((x) => `${x.end}:${x.val}${x.derived ? "d" : ""}`).join(" ") === "2025-06-30:13d 2025-09-30:10 2025-12-31:12d 2026-03-31:14d 2026-06-30:16d"; })());
+  ok("[81] periods: TTM sums four TILING quarters; a hole between them yields unavailable with the gap named, never a sum across it",
+    (() => { const good = S.ttmFrom(S.discreteQuarters([q("2025-07-01", "2025-09-30", 10), q("2025-10-01", "2025-12-31", 12), q("2026-01-01", "2026-03-31", 14), q("2026-04-01", "2026-06-30", 16)]));
+      const holed = S.ttmFrom(S.discreteQuarters([q("2025-04-01", "2025-06-30", 9), q("2025-10-01", "2025-12-31", 12), q("2026-01-01", "2026-03-31", 14), q("2026-04-01", "2026-06-30", 16)]));
+      const few = S.ttmFrom(S.discreteQuarters([q("2026-04-01", "2026-06-30", 16)]));
+      return good.value === 52 && good.end === "2026-06-30" && holed.value === null && /do not tile/.test(holed.unavailable) && /only 1 of the 4/.test(few.unavailable); })());
+  ok("[81] periods: a RESTATEMENT (same period, later filing) supersedes the original; the comparable quarter is the one ending ~a year earlier",
+    (() => { const cf = { facts: { "us-gaap": { Revenues: { units: { USD: [
+        { start: "2025-04-01", end: "2025-06-30", val: 100, form: "10-Q", filed: "2025-07-30" },
+        { start: "2025-04-01", end: "2025-06-30", val: 105, form: "10-Q/A", filed: "2025-09-01" },
+        { start: "2026-04-01", end: "2026-06-30", val: 150, form: "10-Q", filed: "2026-07-30" } ] } } } } };
+      const f = S.extractSpotlightFundamentals(cf, { retrievedAt: NOW.toISOString() });
+      return f.revenue.quarter.value === 150 && f.revenue.priorYearQuarter.value === 105 && f.revenue.priorYearQuarter.end === "2025-06-30"; })());
+  ok("[81] forms: 20-F, 6-K and 40-F (and their amendments) are accepted alongside 10-Q/10-K; 8-K and S-1 are not — in BOTH the spotlight lib and the Terminal's tt-facts",
+    ["10-Q", "10-K", "20-F", "6-K", "40-F", "10-Q/A", "20-F/A"].every((f) => S.SPOTLIGHT_FORMS.test(f) && SEC_FORM_RE.test(f)) &&
+    ["8-K", "S-1", "DEF 14A", ""].every((f) => !S.SPOTLIGHT_FORMS.test(f) && !SEC_FORM_RE.test(f)));
+  ok("[81] forms: an IFRS filer's 6-K/20-F facts under ifrs-full resolve to the same concepts (Revenue → revenue, ProfitLossFromOperatingActivities → operating income)",
+    (() => { const fx = FX.makeSpotlightFixture({ now: NOW });
+      const n = fx.model.companies.NBIS.metrics;
+      return n.revenueGrowth.pct === 454.3 && n.operatingMargin.pct === -6.9 && fx.model.companies.NBIS.freshness.fundamentals.form === "6-K"; })());
+  ok("[81] forms: filingsFromSubmissions now lists a 20-F and a 6-K (the Terminal's citation list no longer hides a foreign issuer's reports)",
+    (() => { const subs = { filings: { recent: { accessionNumber: ["0001104659-26-052948", "0001104659-26-060000", "0001104659-26-070000"], form: ["20-F", "6-K", "8-K"],
+        primaryDocument: ["a.htm", "b.htm", "c.htm"], filingDate: ["2026-04-10", "2026-08-12", "2026-08-13"], reportDate: ["2025-12-31", "2026-06-30", "2026-08-13"] } } };
+      const out = filingsOf(subs, "0001513845");
+      return out.length === 2 && out[0].form === "20-F" && out[1].form === "6-K" && /edgar\/data\/1513845\//.test(out[0].url); })());
+  ok("[81] fundamentals: a non-USD concept is reported as unconverted, never scaled; a missing concept says where it looked",
+    (() => { const cf = { facts: { "ifrs-full": { Revenue: { units: { EUR: [{ start: "2026-04-01", end: "2026-06-30", val: 1, form: "6-K", filed: "2026-08-01" }] } } } } };
+      const f = S.extractSpotlightFundamentals(cf);
+      return /reported in EUR; not converted/.test(f.revenue.unavailable) && f.revenue.status === "MISSING" && /not found in the issuer's structured filings/.test(f.ocf.unavailable); })());
+
+  // ── derived metrics + assessments ──
+  const fx = FX.makeSpotlightFixture({ now: NOW });
+  const nb = fx.model.companies.NBIS, ms = fx.model.companies.MSFT;
+  ok("[81] metrics: revenue growth compares the SAME quarter a year earlier; operating margin uses same-period income and revenue; FCF = OCF − capex on one period",
+    ms.metrics.revenueGrowth.pct === 26.7 && /vs a year|quarter to/.test(ms.metrics.revenueGrowth.priorPeriod) &&
+    ms.metrics.operatingMargin.pct === 46.1 && ms.metrics.operatingMargin.priorPct === 45 &&
+    ms.metrics.fcf.value === 18e9 && ms.metrics.fcf.basis === "quarter" && nb.metrics.fcf.value === -2.14e9);
+  ok("[81] metrics: cap ÷ TTM revenue is the common valuation axis; trailing P/E appears ONLY with positive TTM earnings (NBIS: negative → 'no P/E', not a negative multiple)",
+    ms.metrics.valuation.capToTtmRevenue === 12.5 && ms.metrics.valuation.trailingPe === 33.4 &&
+    nb.metrics.valuation.capToTtmRevenue === 52.9 && nb.metrics.valuation.trailingPe === null && /negative — no P\/E/.test(nb.metrics.valuation.peNote));
+  ok("[81] metrics: the run-rate is stated BESIDE the reported TTM with the gap (NBIS's ×4 run-rate runs far ahead of its reported year — the MSFT lesson's point)",
+    nb.metrics.runRate.annualized === 582e6 * 4 && nb.metrics.runRate.ttm === 1.324e9 && nb.metrics.runRate.gapPct === 75.8 && ms.metrics.runRate.gapPct === 11.4);
+  ok("[81] metrics: missing debt reads 'absent is not zero', never 0; the 200-day average needs 200 closes or says so",
+    (() => { const cf = FX.companyFacts({ quarterEnds: fx.qe, debt: null });
+      const f = S.extractSpotlightFundamentals(cf);
+      const m = S.deriveMetrics({ fundamentals: f, marketCap: { usd: 1e12 }, series: { rows: fx.msftRows.slice(-30), basis: "price_return" }, today: TODAY });
+      return m.debt.value === null && /absent is not zero/.test(m.debt.unavailable) && m.trend.ma200 === null && /200 needed/.test(m.trend.unavailable) && m.trend.px !== null; })());
+  ok("[81] assessment: DETERMINISTIC — the same inputs produce byte-identical sentences; the three questions are answered in order (business · stock · watch next)",
+    (() => { const a = S.assessCompany({ symbol: "MSFT", metrics: ms.metrics, nextEarnings: ms.nextEarnings, freshness: { market: { stale: false } } });
+      const b = S.assessCompany({ symbol: "MSFT", metrics: ms.metrics, nextEarnings: ms.nextEarnings, freshness: { market: { stale: false } } });
+      return a.business === b.business && a.stock === b.stock && a.watchNext === b.watchNext &&
+        /^Revenue grew 26\.7% versus the same quarter a year earlier/.test(a.business) && /widened from 45\.0% to 46\.1%/.test(a.business) &&
+        /^The market pays 12\.5× trailing-twelve-month revenue and 33\.4× trailing earnings\./.test(a.stock) && /above its 200-day average/.test(a.stock) &&
+        /^Next scheduled report: \d{4}-\d{2}-\d{2}\. Check whether revenue growth and operating margin hold/.test(a.watchNext); })());
+  ok("[81] assessment: no rating vocabulary anywhere in the templates or the seven lessons — cheap/safe/quality/buy/sell/undervalued never appear",
+    (() => { const texts = [nb.assessment, ms.assessment].flatMap((a) => [a.business, a.stock, a.watchNext]).concat(Object.values(S.LESSONS).flatMap((l) => [l.title, l.body]));
+      const libSrc = readSrc("../functions/lib/spotlight.js").replace(/\/\/[^\n]*|\/\*[\s\S]*?\*\//g, "");
+      return texts.every((t) => !/\b(cheap|safe|quality|buy|sell|undervalued|overvalued|bullish|bearish|rating)\b/i.test(t)) &&
+        !/\b(cheap|undervalued|overvalued)\b/i.test(libSrc); })());
+  ok("[81] assessment: when the expected session close is MISSING the price-trend clause is suppressed and says so — a stale tape never grades a trend",
+    (() => { const a = S.assessCompany({ symbol: "MSFT", metrics: ms.metrics, nextEarnings: null, freshness: { market: { stale: true } } });
+      return a.priceTrendSuppressed === true && /Price trend not assessed — the latest expected session close is missing/.test(a.stock) && !/above its 200-day/.test(a.stock) && /not on the calendar feed/.test(a.watchNext); })());
+  ok("[81] lessons: seven, keyed 1:1 to the rotation, each with a title, a body, and an example FUNCTION; MSFT's worked example prints both run-rates from the fixture",
+    S.SPOTLIGHT_ROTATION.every((k) => S.LESSONS[k] && S.LESSONS[k].title && S.LESSONS[k].body.length > 80 && typeof S.LESSONS[k].example === "function") &&
+    /NBIS: \$582M × 4 = \$2\.3B run-rate vs \$1\.3B reported TTM \(\+75\.8%\)\. MSFT: \$76\.0B × 4/.test(fx.model.lesson.example) && fx.model.lesson.exampleUnavailable === null);
+  ok("[81] lessons: with the supporting figures missing for either company the worked example is UNAVAILABLE and named — the conceptual lesson stays, no numbers are invented",
+    (() => { const stripped = { ...ms, metrics: { ...ms.metrics, runRate: null } };
+      const m = S.buildSpotlightModel({ anchor: nb, comparison: stripped, rotation: { index: 0, weekKey: "2026-09-14" }, tracker: fx.model.tracker, now: NOW });
+      const goog = S.buildSpotlightModel({ anchor: nb, comparison: ms, rotation: { index: 3, weekKey: "2026-09-14" }, tracker: fx.model.tracker, now: NOW });
+      return m.lesson.example === null && /worked example unavailable/.test(m.lesson.exampleUnavailable) && m.lesson.body === S.LESSONS.MSFT.body &&
+        goog.lesson.key === "GOOGL" && goog.pair.comparison === "GOOGL" && goog.pair.nextComparison === "META" &&
+        /NBIS: TTM free cash flow is .* not meaningful when it is not positive/.test(goog.lesson.example); })());
+
+  // ── freshness recomputed at serve ──
+  ok("[81] freshness: a stored model is re-judged from its observation dates at serve time — 12 days old reads STALE (sessions named), today reads fresh",
+    (() => { const old = FX.makeSpotlightFixture({ now: NOW, stale: true });
+      const served = S.freshenSpotlight(old.model, NOW), fresh = S.freshenSpotlight(fx.model, NOW);
+      return served.companies.NBIS.freshness.market.stale === true && served.companies.NBIS.freshness.series.stale === true && /completed sessions? missing/.test(served.companies.NBIS.freshness.series.reason) &&
+        served.companies.NBIS.assessment.priceTrendSuppressed === true && fresh.companies.NBIS.freshness.market.stale === false && fresh.companies.NBIS.assessment.priceTrendSuppressed === false &&
+        served.servedAt === NOW.toISOString(); })());
+
+  // ── the public boundary ──
+  ok("[81] projection: a WHITELIST — book-shaped fields injected into a model never reach the public shape",
+    (() => { const dirty = JSON.parse(JSON.stringify(fx.model));
+      dirty.companies.NBIS.tier = "S"; dirty.companies.NBIS.pt_model = { x: 1 }; dirty.companies.NBIS.pos = { sh: 100 }; dirty.companies.NBIS.metrics.composite = 9;
+      dirty.companies.NBIS.assessment.secret = "PRIVATE"; dirty.tracker.legs.NBIS.rows = fx.nbisRows; dirty.thesis = "PRIVATE"; dirty.diagnostics.failures.push({ item: "x", reason: "PRIVATE-REASON", token: "SECRET" });
+      const j = JSON.stringify(S.projectSpotlight(dirty));
+      return !/"tier"|pt_model|"pos"|composite|"secret"|"thesis"|"rows"|SECRET/.test(j) && /PRIVATE-REASON/.test(j) === true && Object.keys(S.projectSpotlight(dirty).companies.NBIS.metrics).every((k) => k !== "composite"); })());
+  ok("[81] boundary: no spotlight module references a Terminal key (tt:) or the book/positions/score stores, and the public GET imports no authorize",
+    (() => { const files = ["../functions/lib/spotlight.js", "../functions/api/stock-spotlight.js", "../functions/api/stock-spotlight/refresh.js", "../src/sections/StockSpotlight.jsx", "./spotlight-fixture.mjs"];
+      return files.every((f) => !/tt:|book:v1|tt_book|positions:v1|score:v1/.test(readSrc(f).replace(/\/\/[^\n]*|\/\*[\s\S]*?\*\//g, ""))) &&
+        !/authorize/.test(readSrc("../functions/api/stock-spotlight.js")) && /authorize/.test(readSrc("../functions/api/stock-spotlight/refresh.js")) && /authorize/.test(readSrc("../functions/api/stock-spotlight/issuer.js")); })());
+
+  // ── the public GET ──
+  ok("[81] flag: SHIPS DISABLED — only the literal \"1\" enables; \"true\", \"yes\" and absence do not",
+    spotlightEnabled({}) === false && spotlightEnabled({ SPOTLIGHT_ENABLED: "true" }) === false && spotlightEnabled({ SPOTLIGHT_ENABLED: "yes" }) === false && spotlightEnabled({ SPOTLIGHT_ENABLED: "1" }) === true);
+  ok("[81] GET: flag off → enabled:false (cached); flag on with no model → model:null with the reason; flag on with a model → the projected, freshened model at 5 minutes",
+    await (async () => { const kv = kvS();
+      const off = await spotGet({ env: { PULSE_CACHE: kv } }); const offB = await off.json();
+      const empty = await spotGet({ env: { PULSE_CACHE: kv, SPOTLIGHT_ENABLED: "1" } }); const emptyB = await empty.json();
+      kv._m.set("spotlight:model:v1", JSON.stringify(fx.model));
+      const on = await spotGet({ env: { PULSE_CACHE: kv, SPOTLIGHT_ENABLED: "1" } }); const onB = await on.json();
+      return offB.enabled === false && off.headers.get("cache-control") === "public, max-age=300" &&
+        emptyB.enabled === true && emptyB.model === null && /evening refresh has not run/.test(emptyB.reason) && empty.headers.get("cache-control") === "public, max-age=60" &&
+        onB.enabled === true && onB.model.pair.comparison === "MSFT" && onB.model.servedAt && onB.model.companies.NBIS.marketCap.display === "$70.1B" && on.headers.get("cache-control") === "public, max-age=300"; })());
+  ok("[81] GET: a public read NEVER writes KV and NEVER calls a provider; a KV fault degrades to 200, not a 500",
+    await (async () => { const kv = kvS(); kv._m.set("spotlight:model:v1", JSON.stringify(fx.model));
+      let fetched = 0; const real = globalThis.fetch; globalThis.fetch = async () => { fetched++; return new Response("x"); };
+      try { await spotGet({ env: { PULSE_CACHE: kv, SPOTLIGHT_ENABLED: "1" } }); } finally { globalThis.fetch = real; }
+      const dead = await spotGet({ env: { PULSE_CACHE: { get: async () => { throw new Error("kv down"); } }, SPOTLIGHT_ENABLED: "1" } });
+      return kv.puts.length === 0 && fetched === 0 && dead.status === 200 && (await dead.json()).model === null; })());
+
+  // ── the refresh (POST) — auth, rotation persistence, provider ladder, cooldown ──
+  const unix = Math.floor(Date.parse(`${TODAY}T20:00:00Z`) / 1000);
+  const cf = { MSFT: FX.companyFacts({ quarterEnds: fx.qe, entityName: "MICROSOFT CORP" }), NBIS: FX.companyFacts({ quarterEnds: fx.qe, form: "6-K", taxonomy: "ifrs-full", entityName: "Nebius Group N.V.", revenueQ: [105e6, 147e6, 245e6, 350e6, 582e6] }), AAPL: FX.companyFacts({ quarterEnds: fx.qe, entityName: "Apple Inc." }) };
+  const nasdaqRows = (rows) => ({ data: { tradesTable: { rows: rows.map((r) => ({ date: `${r.date.slice(5, 7)}/${r.date.slice(8, 10)}/${r.date.slice(0, 4)}`, open: `$${r.value}`, high: `$${(r.value * 1.01).toFixed(2)}`, low: `$${(r.value * 0.99).toFixed(2)}`, close: `$${r.value}`, volume: "1,000" })) } } });
+  const symOf = (u) => (String(u).match(/symbol=([A-Z]+)/) || String(u).match(/\/quote\/([A-Z]+)\//) || String(u).match(/tiingo\/daily\/([A-Z]+)\//) || [])[1];
+  const stubFetch = ({ tiingo = true, candles = false } = {}) => async (url) => {
+    const u = String(url); const sym = symOf(u);
+    const j = (b, status = 200) => new Response(JSON.stringify(b), { status, headers: { "content-type": "application/json" } });
+    if (/finnhub.*\/quote\?/.test(u)) return j({ c: sym === "MSFT" ? 483.34 : sym === "NBIS" ? 49.62 : 230, t: unix, dp: 0.4 });
+    if (/profile2/.test(u)) return j({ name: sym === "NBIS" ? "Nebius Group N.V." : `${sym} Corp`, currency: "USD", marketCapitalization: sym === "MSFT" ? 3_410_000 : sym === "NBIS" ? 70_100 : 3_400_000, shareOutstanding: sym === "MSFT" ? 7430 : 250 });
+    if (/calendar\/earnings/.test(u)) return j({ earningsCalendar: [{ date: "2026-10-28", symbol: sym }] });
+    if (/stock\/candle/.test(u)) return candles ? j({ s: "ok", t: fx.msftRows.map((r) => Math.floor(Date.parse(`${r.date}T20:00:00Z`) / 1000)), c: fx.msftRows.map((r) => r.value) }) : j({ s: "no_data" });
+    if (/company_tickers/.test(u)) return j({ 0: { cik_str: 789019, ticker: "MSFT", title: "MICROSOFT CORP" }, 1: { cik_str: 1513845, ticker: "NBIS", title: "Nebius Group N.V." }, 2: { cik_str: 320193, ticker: "AAPL", title: "Apple Inc." } });
+    if (/companyfacts\/CIK0000789019/.test(u)) return j(cf.MSFT); if (/companyfacts\/CIK0001513845/.test(u)) return j(cf.NBIS); if (/companyfacts\/CIK0000320193/.test(u)) return j(cf.AAPL);
+    if (/tiingo/.test(u)) return tiingo ? j((sym === "NBIS" ? fx.nbisRows : fx.msftRows).map((r) => ({ date: `${r.date}T00:00:00.000Z`, close: r.value, adjClose: r.value * 1.01 }))) : j({ detail: "no" }, 404);
+    if (/nasdaq\.com/.test(u)) return j(nasdaqRows(sym === "NBIS" ? fx.nbisRows : fx.msftRows));
+    return new Response("no", { status: 404 });
+  };
+  const envR = (kv, extra = {}) => ({ PULSE_CACHE: kv, FINNHUB_KEY: "k", SEC_USER_AGENT: "macrodash test@example.com", TIINGO_KEY: "t", REFRESH_TOKEN: "rt", ...extra });
+  ok("[81] refresh: end-to-end against stubbed providers — the pair is stored, facts land under spotlight:facts:v1:<SYM> for anchor + comparison + NEXT, the rotation persists with the week key, and NO tt: key is touched",
+    await (async () => { const kv = kvS();
+      const out = await R.runSpotlightRefresh(envR(kv), { now: NOW, fetchImpl: stubFetch() });
+      const model = JSON.parse(kv._m.get("spotlight:model:v1")), rot = JSON.parse(kv._m.get("spotlight:rotation:v1"));
+      return out.ok === true && out.pair.comparison === "MSFT" && out.pair.next === "AAPL" && model.pair.weekKey === "2026-09-14" && rot.index === 0 && rot.weekKey === "2026-09-14" &&
+        ["NBIS", "MSFT", "AAPL"].every((s) => kv._m.has(`spotlight:facts:v1:${s}`)) && !kv.puts.some((k) => k.startsWith("tt:")) &&
+        model.companies.MSFT.marketCap.display === "$3.41T" && model.companies.MSFT.marketCap.method === "provider-reported" && model.companies.NBIS.marketCap.display === "$70.1B"; })());
+  ok("[81] refresh: the series ladder — Finnhub adjusted candles when entitled (total return), else Tiingo adjClose (total return), else Nasdaq closes LABELLED price return; the basis rides the leg",
+    await (async () => {
+      const run = async (opts) => { const kv = kvS(); await R.runSpotlightRefresh(envR(kv, opts.env || {}), { now: NOW, fetchImpl: stubFetch(opts) }); return JSON.parse(kv._m.get("spotlight:model:v1")).tracker.legs.MSFT; };
+      const a = await run({ candles: true }), b = await run({ tiingo: true }), c = await run({ tiingo: false }), d = await run({ tiingo: false, env: { TIINGO_KEY: "" } });
+      return a.basis === "total_return" && /Finnhub \(adjusted/.test(a.provider) && b.basis === "total_return" && /Tiingo/.test(b.provider) &&
+        c.basis === "price_return" && /Nasdaq/.test(c.provider) && c.label === "YTD price return" && d.basis === "price_return"; })());
+  ok("[81] refresh: same week → not advanced; a later week → advanced to AAPL; a FAILED model store → not advanced (the week retries without moving)",
+    await (async () => { const kv = kvS();
+      await R.runSpotlightRefresh(envR(kv), { now: NOW, fetchImpl: stubFetch() });
+      const again = await R.runSpotlightRefresh(envR(kv), { now: new Date(NOW.getTime() + 86400000), fetchImpl: stubFetch() });
+      const next = await R.runSpotlightRefresh(envR(kv), { now: new Date(NOW.getTime() + 7 * 86400000), fetchImpl: stubFetch() });
+      const rot = JSON.parse(kv._m.get("spotlight:rotation:v1"));
+      const kvBad = kvS(); const put = kvBad.put; kvBad.put = async (k, v) => { if (k === "spotlight:model:v1") throw new Error("kv full"); return put.call(kvBad, k, v); };
+      const failed = await R.runSpotlightRefresh(envR(kvBad), { now: NOW, fetchImpl: stubFetch() });
+      return again.pair.advanced === false && again.pair.comparison === "MSFT" && next.pair.advanced === true && next.pair.comparison === "AAPL" && next.pair.next === "AMZN" && rot.index === 1 &&
+        failed.ok === false && !kvBad._m.has("spotlight:rotation:v1") && failed.failures.some((f) => f.item === "model-store"); })());
+  ok("[81] refresh: every provider dark → the model STILL builds and stores with every field Unavailable-with-reason (the widget can render the scheduled pair), and the failures are listed",
+    await (async () => { const kv = kvS();
+      const out = await R.runSpotlightRefresh(envR(kv, { FINNHUB_KEY: "", SEC_USER_AGENT: "", TIINGO_KEY: "" }), { now: NOW, fetchImpl: async () => new Response("no", { status: 404 }) });
+      const m = JSON.parse(kv._m.get("spotlight:model:v1"));
+      return out.ok === true && out.failures.length >= 6 && m.companies.NBIS.marketCap.value === null && /FINNHUB_KEY/.test(m.companies.NBIS.marketCap.unavailable) &&
+        /SEC_USER_AGENT/.test(m.companies.NBIS.metrics.revenueGrowth.unavailable) && m.tracker.unavailable && m.lesson.example === null; })());
+  ok("[81] refresh: a provider outage after a good pull retains last-good facts marked STALE with their original dates (the tt-facts merge rule, reused not copied)",
+    await (async () => { const kv = kvS();
+      await R.runSpotlightRefresh(envR(kv), { now: NOW, fetchImpl: stubFetch() });
+      await R.runSpotlightRefresh(envR(kv), { now: new Date(NOW.getTime() + 86400000), fetchImpl: async () => new Response("no", { status: 404 }) });
+      const rec = JSON.parse(kv._m.get("spotlight:facts:v1:MSFT"));
+      return rec.fields.marketCap.status === "STALE" && rec.fields.marketCap.value === 3_410_000 && rec.fields.marketCap.observedAt === TODAY && /reused|merge/i.test(readSrc("../functions/api/stock-spotlight/refresh.js")) &&
+        /import \{ mergeFactsRecord, candleSeriesFault \} from "\.\.\/\.\.\/lib\/tt-facts\.js"/.test(readSrc("../functions/api/stock-spotlight/refresh.js")); })());
+  ok("[81] refresh POST: GET → 405; anonymous POST → 401; the cron token → 200 with the pair; a second POST inside the cooldown → 429",
+    await (async () => { const kv = kvS();
+      const mk = (headers, method = "POST") => ({ method, url: "https://macrodash.pages.dev/api/stock-spotlight/refresh", headers: { get: (k) => headers[k.toLowerCase()] ?? null }, json: async () => ({}), text: async () => "{}" });
+      const real = globalThis.fetch; globalThis.fetch = stubFetch();
+      try {
+        const g = await R.onRequestGet();
+        const anon = await R.onRequestPost({ request: mk({}), env: envR(kv, { TT_PIN: "123456" }) });
+        const t = await R.onRequestPost({ request: mk({ "x-refresh-token": "rt" }), env: envR(kv) }); const tb = await t.json();
+        const cd = await R.onRequestPost({ request: mk({ "x-refresh-token": "rt" }), env: envR(kv) });
+        return g.status === 405 && anon.status === 401 && t.status === 200 && tb.ok === true && tb.pair.comparison === "MSFT" && cd.status === 429;
+      } finally { globalThis.fetch = real; } })());
+
+  // ── issuer-report records ──
+  const period = (over = {}) => ({ start: "2026-04-01", end: "2026-06-30", revenue: 582e6, operatingIncome: -40e6, ocf: 60e6, capex: 2200e6, currency: "USD",
+    source: { form: "6-K", url: "https://www.sec.gov/Archives/edgar/data/1513845/000110465926070000/ex99.htm", filed: "2026-08-12" }, ...over });
+  ok("[81] issuer record: validated — sec.gov source + form required, USD only, quarter/half/9M/year sizes only, negative capex rejected, at most 12 periods",
+    S.validateIssuerReport({ schema: S.SPOTLIGHT_ISSUER_SCHEMA, symbol: "NBIS", periods: [period()] }).ok === true &&
+    !S.validateIssuerReport({ schema: S.SPOTLIGHT_ISSUER_SCHEMA, symbol: "NBIS", periods: [period({ source: { form: "6-K", url: "https://example.com/x" } })] }).ok &&
+    !S.validateIssuerReport({ schema: S.SPOTLIGHT_ISSUER_SCHEMA, symbol: "NBIS", periods: [period({ currency: "EUR" })] }).ok &&
+    !S.validateIssuerReport({ schema: S.SPOTLIGHT_ISSUER_SCHEMA, symbol: "NBIS", periods: [period({ end: "2026-04-20" })] }).ok &&
+    !S.validateIssuerReport({ schema: S.SPOTLIGHT_ISSUER_SCHEMA, symbol: "NBIS", periods: [period({ capex: -5 })] }).ok &&
+    !S.validateIssuerReport({ schema: "x", symbol: "NBIS", periods: [period()] }).ok &&
+    !S.validateIssuerReport({ schema: S.SPOTLIGHT_ISSUER_SCHEMA, symbol: "NBIS", periods: Array.from({ length: 13 }, () => period()) }).ok);
+  ok("[81] issuer record: feeds the SAME metric layer — the NBIS 6-K quarter yields run-rate vs reported with the sec.gov citation, and the merge keeps the NEWER quarter per concept",
+    (() => { const rec = { schema: S.SPOTLIGHT_ISSUER_SCHEMA, symbol: "NBIS", periods: [
+        period({ start: "2025-07-01", end: "2025-09-30", revenue: 147e6 }), period({ start: "2025-10-01", end: "2025-12-31", revenue: 245e6 }),
+        period({ start: "2026-01-01", end: "2026-03-31", revenue: 350e6 }), period() ] };
+      const f = S.issuerFundamentals(rec, { retrievedAt: NOW.toISOString() });
+      const m = S.deriveMetrics({ fundamentals: f, marketCap: { usd: 70.1e9 }, series: null, today: TODAY });
+      const older = S.extractSpotlightFundamentals(FX.companyFacts({ quarterEnds: FX.quarterEnds("2025-12-01"), form: "6-K", taxonomy: "ifrs-full" }));
+      const merged = S.mergeFundamentals(older, f);
+      return m.runRate.annualized === 582e6 * 4 && m.valuation.ttmRevenue === 1.324e9 && /sec\.gov\/Archives/.test(f.revenue.sourceUrl) &&
+        merged.revenue.provider === "issuer report" && merged.revenue.quarter.end === "2026-06-30" && merged.cash.provider === "SEC"; })());
+  ok("[81] issuer endpoint: PIN-gated on both verbs; a valid PUT stores under spotlight:issuer:v1:<SYM>; an invalid one is 400 with the reason; GET returns the record",
+    await (async () => { const kv = kvS();
+      const rec = { schema: S.SPOTLIGHT_ISSUER_SCHEMA, symbol: "nbis", periods: [period()] };
+      const put = (body, env) => I.onRequestPut({ request: new Request("https://fixture.test/api/stock-spotlight/issuer", { method: "PUT", body: JSON.stringify(body) }), env });
+      const unauth = await put({ record: rec }, { PULSE_CACHE: kv, TT_PIN: "123456" });
+      const good = await put({ record: rec }, { PULSE_CACHE: kv, ACCESS_DEV_BYPASS: "1" });
+      const bad = await put({ record: { ...rec, periods: [period({ capex: -1 })] } }, { PULSE_CACHE: kv, ACCESS_DEV_BYPASS: "1" });
+      const got = await I.onRequestGet({ request: new Request("https://fixture.test/api/stock-spotlight/issuer?sym=NBIS"), env: { PULSE_CACHE: kv, ACCESS_DEV_BYPASS: "1" } });
+      return unauth.status === 401 && good.status === 200 && kv._m.has("spotlight:issuer:v1:NBIS") && bad.status === 400 && /capex/.test((await bad.json()).error) && (await got.json()).record.symbol === "NBIS"; })());
+
+  // ── the cron leg ──
+  ok("[81] cron: the spotlight leg writes ONLY its per-job heartbeat (the close job's summary record survives), records skipped without a token, and never throws",
+    await (async () => { const kv = kvS();
+      const skipped = await cronSpotlight({ PULSE_CACHE: kv }, async () => { throw new Error("must not fetch"); });
+      const ran = await cronSpotlight({ PULSE_CACHE: kv, REFRESH_TOKEN: "rt" }, async (url, opts) => /stock-spotlight\/refresh/.test(String(url)) && opts.headers["x-refresh-token"] === "rt"
+        ? new Response(JSON.stringify({ ok: true, pair: { comparison: "MSFT" }, failures: [] }), { status: 200 }) : new Response("no", { status: 500 }));
+      const quietErr = console.error; console.error = () => {};
+      const threw = await cronSpotlight({ PULSE_CACHE: kv, REFRESH_TOKEN: "rt" }, async () => { throw new Error("edge blocked"); });
+      console.error = quietErr;
+      const hb = JSON.parse(kv._m.get("pulse:cron:lastwarm:spotlight-6pmET"));
+      return skipped.skipped === true && ran.ok === true && threw.ok === false && hb.job === "spotlight-6pmET" && /edge blocked/.test(hb.failure) && !kv._m.has("pulse:cron:lastwarm"); })());
+  ok("[81] cron: the leg runs INSIDE the 6pm close arm, AFTER the close heartbeat, wrapped in its own try/catch; CRON_JOBS lists it so ?debug surfaces it",
+    (() => { const src = readSrc("../worker/cron.js");
+      const arm = src.slice(src.indexOf("controller.cron === SNAPSHOT_CLOSE_CRON"), src.indexOf("Legacy stage-1 path"));
+      return /await recordWarm\(env, "close-6pmET"[\s\S]*try \{ await refreshSpotlight\(env\); \} catch/.test(arm) && CRON_JOBS.includes("spotlight-6pmET") &&
+        /\{ summary: false \}/.test(src) && /SPOTLIGHT_REFRESH_URL = "https:\/\/macrodash\.pages\.dev\/api\/stock-spotlight\/refresh"/.test(src); })());
+
+  // ── the section and its wiring ──
+  const ssSrc = readSrc("../src/sections/StockSpotlight.jsx");
+  const ssCode = ssSrc.replace(/\/\/[^\n]*|\/\*[\s\S]*?\*\//g, "");
+  ok("[81] section: presentation-only — no hook, storage, fetch or computation import; the fetch lives in the orchestrator, gated on liveBuild, and renders directly below the macro strip in BOTH modes",
+    !/useState|useEffect|localStorage|fetch\(|useMarketData|computeRegime|buildEvidenceSet|ptModelRows/.test(ssCode) &&
+    /if\(!liveBuild\)return;\n    let dead=false;\n    fetch\("\/api\/stock-spotlight"\)/.test(dashSrc) &&
+    /votingFields=\{VOTING_FIELDS\}[^\n]*\n\n[\s\S]{0,700}<StockSpotlight spotlight=\{spotlight\} simple=\{simple\}\/>/.test(dashSrc) &&
+    !/\{simple&&<StockSpotlight|\{!simple&&<StockSpotlight/.test(dashSrc));
+  ok("[81] section: renders NOTHING without an enabled feed + model; market cap, YTD and the chart live in the always-visible Profile/Chart, never inside the CollapsedGroup",
+    /if \(!spotlight \|\| !spotlight\.enabled \|\| !spotlight\.model/.test(ssCode) &&
+    (() => { const cg = ssCode.slice(ssCode.indexOf("simple ? ("), ssCode.lastIndexOf("</CollapsedGroup>"));
+      return !/Market cap|<Chart/.test(cg) && /<Row label="Market cap" big/.test(ssCode) && /<Chart tracker=\{m\.tracker\}/.test(ssCode) && /<Unavail reason=/.test(ssCode); })());
+  ok("[81] section: the chart draws a labelled zero line, distinguishable lines (solid vs dashed), leaves gaps un-connected, and offers a keyboard-reachable value table",
+    /<ReferenceLine y=\{0\}[^>]*label=\{\{ value: "0%"/.test(ssCode) && /dash: "5 3"/.test(ssCode) && /connectNulls=\{false\}/.test(ssCode) && /<details/.test(ssCode) && /<table/.test(ssCode));
+  ok("[81] docs: the plan travels with the implementation, and the env matrix names SPOTLIGHT_ENABLED and TIINGO_KEY with their deploy and degraded state",
+    existsSync(new URL("../docs/plans/stock-spotlight.md", import.meta.url)) &&
+    /\|\s*`SPOTLIGHT_ENABLED`\s*\|\s*Pages\s*\|/.test(readSrc("../CLAUDE.md")) && /\|\s*`TIINGO_KEY`\s*\|\s*Pages\s*\|/.test(readSrc("../CLAUDE.md")));
 }
 
 console.log(`\n=== SMOKE TEST: ${pass} passed, ${fail} failed ===`);

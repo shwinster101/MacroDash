@@ -181,7 +181,7 @@ async function publicCallMeta(env, etDate) {
 /* v6.2: cron health for ?debug — the summary key (pulse:cron:lastwarm, every run of every
    job) PLUS the per-job keys the Worker writes beside it, so the 10am record's freeze and
    outcome legs are still readable after the 6pm run overwrote the summary. */
-export const CRON_JOBS = Object.freeze(["prewarm-8amET", "refresh-10amET", "close-6pmET"]);
+export const CRON_JOBS = Object.freeze(["prewarm-8amET", "refresh-10amET", "close-6pmET", "spotlight-6pmET"]); // v6.5.0: the spotlight leg records its own heartbeat
 async function cronDiag(env) {
   const out = {};
   try { const w = await env.PULSE_CACHE?.get("pulse:cron:lastwarm", "json"); if (w) out.cronLastWarm = w; } catch { /* diagnostic only */ }

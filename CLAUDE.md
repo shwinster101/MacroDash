@@ -5,6 +5,65 @@ answers *"is it safe to be in the market?"* from live macro + market + sentiment
 data. Single-page React app on Cloudflare Pages, with live data assembled at the
 edge by Pages Functions and cached in KV.
 
+**v6.5.0 "STOCK SPOTLIGHT" — one educational widget, NBIS beside a rotating Mag Seven name,
+built behind a DISABLED feature flag (owner plan `docs/plans/stock-spotlight.md`, 2026-09-13; the
+plan travels with the branch).** The widget answers *"what do this business's latest results and
+its stock's current price tell me?"* in BOTH modes, immediately below the macro-number strip, so
+the macro verdict stays the first answer. **Always visible, never behind a disclosure:** company
+name + ticker, **market capitalization with its observation date**, **YTD return with its
+through-date and its BASIS label**, and a shared YTD comparison chart (two distinguishable lines
+from 0% at the same prior-year baseline, a labelled zero line, a legend, gaps left as gaps, and a
+keyboard-reachable value table). Simple shows compact profiles, revenue growth / operating margin /
+free cash flow, a deterministic assessment (business · stock · watch next) and ONE shared learning
+moment, with *explore the numbers* one tap deep; Degen shows the supporting analysis (cash, debt,
+cap ÷ TTM revenue, trailing P/E, shares, price vs 50/200-day, run-rate vs reported TTM, the
+calculation inputs, the worked example) and collapses only the dated source citations.
+**The pure core is `functions/lib/spotlight.js`** (Node-importable, no React, no KV): the ET-week
+rotation keyed by Monday (MSFT → AAPL → AMZN → GOOGL → META → NVDA → TSLA, advanced on the FIRST
+SUCCESSFUL refresh of a new week — a failed refresh never moves the pair); YTD = 100 × (adjusted
+value ÷ the final close of the previous calendar year − 1) with the visible figure read AT the
+chart's common endpoint so the number and the line agree by construction; market cap that prefers
+a dated provider figure and derives only from a dated price × ACTUAL shares outstanding (a diluted
+weighted-average count is REFUSED, a non-USD quote is not converted, enterprise value is never a
+substitute); SEC fundamentals normalized into DISCRETE QUARTERS from cumulative XBRL facts (Q4 =
+FY − 9M, a later filing supersedes a restated period), TTM only from four TILING quarters, the
+comparable quarter a year earlier, FCF = OCF − capex on ONE period, P/E only on positive TTM
+earnings; seven authored lessons whose worked example prints ONLY when both companies carry the
+supporting figures (else "worked example unavailable", the conceptual lesson kept); and a
+WHITELIST projection. Assessments are templates over measured changes — smoke sweeps them and the
+lessons for cheap/safe/quality/buy/sell/rating vocabulary.
+**Honesty rules carried in, each executed in smoke:** missing data reads *Unavailable — reason*
+(never zero); a price-return series is shown AS *YTD price return* with the dividend caveat stated,
+never silently as total return (the series ladder is Finnhub adjusted candles → Tiingo adjClose →
+Nasdaq closes, and the basis rides the leg); freshness is RECOMPUTED at serve from observation
+dates (a stored LIVE flag is not trusted) and a missing expected session suppresses the price-trend
+clause; missing debt reads *absent is not zero*; a 20-F/6-K filer under `ifrs-full` resolves to the
+same concepts — **the Terminal's `tt-facts` extractor widened from 10-Q/10-K to 20-F/6-K/40-F
+and ifrs-full in the same change** (the plan's "repair filing coverage"). Where interim results are
+not XBRL-tagged (Nebius's 6-K press releases) an operator-curated, sec.gov-sourced **issuer-report
+record** (`PUT /api/stock-spotlight/issuer`, PIN-gated, validated) feeds the SAME metric layer; the
+repo ships none (the SEED/BOARD rule).
+**Surfaces:** `GET /api/stock-spotlight` (public, 5-min cache) serves the stored model only when
+`SPOTLIGHT_ENABLED === "1"` — anything else returns `enabled:false` and the section renders
+nothing; a public read never writes KV and never calls a provider, and it reads only `spotlight:*`
+keys (the CIK lookup cache included), never `tt:*`. `POST /api/stock-spotlight/refresh` is the one
+writer (x-refresh-token or the PIN gate, 60s cooldown), pulling the anchor, the active comparison
+AND the next one, merge-only last-good via `mergeFactsRecord` (reused, not copied). The **6pm
+cron gains an isolated spotlight leg** after the close read has completed and recorded, in its
+own try/catch, writing ONLY its per-job heartbeat (`spotlight-6pmET`, listed in `CRON_JOBS`) so
+the close job's summary record survives and a spotlight failure cannot interrupt the macro
+evening update. **Production activation** still requires approved public-display coverage for
+market caps, prices and derived total returns (plan §5) — the flag is the switch, not a default.
+Tests: **2319 smoke** (+44, section [81]: every calculation RUN — rotation, YTD/dividends/gaps/
+year rollover, cap units and the weighted-average refusal, derived quarters/TTM/restatements,
+IFRS forms, the assessments' determinism and vocabulary sweep, freshness, the whitelist, both
+endpoints against a fake KV with stubbed providers incl. the series ladder and the failed-store
+no-advance rule, the issuer record, the cron leg) + 309 render + **311 public-render** (+23: the
+disabled and dead feeds render nothing, Simple at 390 with the always-visible fields and the chart,
+one-tap explore, Degen with the analysis visible and sources collapsed, IDENTICAL values across
+modes, unavailable/stale states, 320px, and the macro first-screen budgets unchanged) +
+`audit:prod` clean.
+
 **v6.4.0 "ONE CALL, TWO VOICES" — the public Simple view now has one plain answer, while
 the personality moves to Degen mode (owner review 2026-09-13).** This is a copy and
 progressive-disclosure release, not an engine change: no band, threshold, vote, source,
@@ -1060,6 +1119,9 @@ src/
                         live sets may become the baseline) + compareEvidence (posture flips,
                         confidence moves, factor drop-outs/recoveries; "baseline set" ≠
                         "no change"). localStorage key md:lastvalid:v1.
+  sections/StockSpotlight.jsx  v6.5.0: the NBIS × Established-growth widget, presentation only
+                        (the model arrives projected from /api/stock-spotlight; fetch in the
+                        orchestrator). Renders nothing without an enabled feed + model.
   ttReadout.js          Pure TT regime/Macro-Flip mapping (DEC-33 band table).
                         Imported by dashboard.jsx, functions/readout.json.js
                         (first functions→src import), and smoke. React-free.
@@ -1073,6 +1135,15 @@ functions/              Cloudflare Pages Functions (run at the edge, same origin
                         esbuild-inline path readout.json.js proved.
   api/fred.js           Legacy/fallback. Reads ONLY the cron-written KV key
                         (pulse:macro:latest); has NO key, makes NO upstream calls.
+  api/stock-spotlight.js        PUBLIC GET of the Stock Spotlight model (v6.5.0); flag-gated on
+                        SPOTLIGHT_ENABLED, reads only spotlight:* keys, never refreshes.
+  api/stock-spotlight/refresh.js  The ONE writer (x-refresh-token or PIN): provider ladder,
+                        rotation advance on the first successful refresh of an ET week.
+  api/stock-spotlight/issuer.js   PIN-gated issuer-report records for issuers whose interim
+                        results are not XBRL-tagged (validated, sec.gov-sourced).
+  lib/spotlight.js      The pure spotlight core: rotation, YTD tracker, market cap, SEC
+                        period normalization (discrete quarters/TTM), metrics, assessments,
+                        the seven lessons, freshness, the whitelist projection. Smoke-RUN.
   api/deepdive.js       Thesis payloads, ONE KEY PER SYMBOL (tt:dd:v1:<SYM>) + a small
                         board index (tt:dd:index:v1). PIN-gated like /api/tt. The book
                         document no longer carries deepDive at all (v3.75).
@@ -6017,7 +6088,9 @@ Jan-anchor shipped; see `snapshot.js` ~318–328), `spyMa100`, `spyMa200`, and a
 | `REFRESH_SECRET` | Worker | legacy only | Worker's own `POST /refresh` | endpoint 403s |
 | `DEBUG_TOKEN` | Pages | optional | `?debug=<token>` diagnostics on `/api/snapshot` **and** `/readout.json` | diagnostics off for everyone (fail closed) |
 | `TT_PIN` (or `ACCESS_TEAM_DOMAIN`+`ACCESS_AUD`) | Pages | for the terminal | `/api/tt` + every PIN-gated route | 503 fail closed / Access mode |
-| `SEC_USER_AGENT` | Pages | for TT facts | `data.sec.gov` fetches | SEC facts UNKNOWN → WAIT |
+| `SEC_USER_AGENT` | Pages | for TT facts + the spotlight's fundamentals | `data.sec.gov` fetches | SEC facts UNKNOWN → WAIT; spotlight fundamentals Unavailable naming the variable |
+| `SPOTLIGHT_ENABLED` | Pages | **off by default** | `GET /api/stock-spotlight` serves a model only when the value is exactly `1` (v6.5.0) | the endpoint returns `enabled:false` and the Stock Spotlight section renders nothing |
+| `TIINGO_KEY` | Pages | optional | the spotlight's dividend-adjusted (total-return) series when Finnhub candles are not entitled (v6.5.0) | the ladder falls to Nasdaq closes, shown and LABELLED as YTD price return |
 | `AI` (Workers AI binding) | Pages | for TT OCR | screenshot→draft + rubric | OCR route degraded, gates UNKNOWN |
 
 ### The `VITE_DATA_MODE=live` flip
