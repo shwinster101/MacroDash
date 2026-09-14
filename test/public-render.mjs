@@ -409,8 +409,15 @@ console.log("\n[public] v3.94 — Simple default, the toggle, persistence, red f
       /(live|latest) market read/i.test(faceTxt));
     await page.locator('button[aria-label="Show regime factors"]').click();
     await page.waitForTimeout(150);
+    /* RE-PINNED (2026-09-14 scheduled audit): this regex still carried the pre-v6.4.0
+       phrasing ("official call ... freezes at 10:00 ET") from the 8/28 planning note,
+       left behind when publicCopy.js's liveReadCaption() shipped the simplified wording
+       ("today's 10am call is scheduled/is unavailable") in the same v6.4.0 commit —
+       test/smoke.mjs's own liveReadCaption pin (`/10am call is scheduled/`) already
+       matches the shipped source; only this suite's regex had drifted. Re-pinned on the
+       actual shipped copy rather than the superseded draft phrasing. */
     ok("v6.4 clock: the unfrozen counterpart caption renders one tap deep",
-      /(Latest market read · no new call is scheduled today|Live market read · today's official call (freezes at 10:00 ET|is unavailable))/.test(
+      /(Latest market read · no new call is scheduled today|Live market read · today's 10am call is (scheduled|unavailable))/.test(
         await page.locator('[aria-label="Macro backdrop verdict"] .call-caption').innerText()));
     await page.locator('button[aria-label="Show regime factors"]').click();
     await page.waitForTimeout(150);
