@@ -150,6 +150,23 @@ Microsoft with market caps, year-to-date total returns, the chart and the learni
 - **January:** the chart resets to 0% at the prior-year close and reads "awaiting first trading
   close" until the first session of the new year is in.
 
+## 4b. Nebius quarterly figures (the issuer record)
+
+Nebius files its quarterly results as 6-K press releases that the SEC's structured data does
+not carry, so its revenue, margin and cash-flow rows read "Unavailable — annual filing only"
+until an **issuer record** is filed. That is a one-time PUT (repeat each quarter with the new
+6-K): the reported figures with the sec.gov URL of the filing they came from. The v6.5.1 record
+for the Q2-2026 6-K + FY2025 20-F is in the session's `nbis-issuer-record.json`; to file it,
+with your Terminal PIN:
+
+```bash
+curl -s -X PUT https://macrodash.pages.dev/api/stock-spotlight/issuer -H "x-tt-pin: PASTE_PIN_HERE" -H "content-type: application/json" --data @nbis-issuer-record.json
+```
+
+Then run the refresh POST from step 5 (or wait for 6pm ET). The record is validated on write
+(sec.gov source required, USD only, period lengths checked, negative capex rejected); a 400
+names the offending field.
+
 ## 5. Turning it off again
 
 Delete `SPOTLIGHT_ENABLED` (or set it to `0`) and redeploy. The stored model stays in KV, so

@@ -288,35 +288,73 @@ export function secFacts(companyfacts, concept) {
    facts. A direct ~90-day fact IS a quarter. A cumulative fact minus the cumulative fact with
    the SAME start ending one quarter earlier is a derived quarter (Q4 = FY − 9M, Q2 = H1 − Q1).
    Direct beats derived for the same end date. Nothing is derived across different starts. */
+/* DISCRETE PERIODS — quarters AND half-years, direct or derived, keyed by (start,end).
+   Two derivations, both exact arithmetic on the filer's own figures, never estimates:
+     · HEAD subtraction: a cumulative period minus a shorter period with the SAME START gives
+       the tail (Q4 = FY − 9M, H2 = FY − H1, Q2 = H1 − Q1).
+     · TAIL subtraction (v6.5.1, the foreign-issuer shape): a cumulative period minus a direct
+       period with the SAME END gives the head (Q1 = H1 − Q2). A 6-K reports the three-month
+       AND six-month columns but no Q1 row, so without this the first quarter of every year
+       was unreachable for a 6-K filer.
+   A direct row always beats a derived one for the same span; only quarter- and half-length
+   remainders are kept (a derived 9-month stub is not a period the widget ever prints). */
+export function discretePeriods(rows) {
+  const xs = (rows || []).filter((r) => r && isYmd(r.start) && isYmd(r.end) && finite(r.val));
+  const span = (r) => daysBetween(r.start, r.end);
+  const kindOf = (d) => inBand(d, Q) ? "Q" : inBand(d, H) ? "H" : null;
+  const out = new Map();
+  const put = (r) => { const k = `${r.start}|${r.end}`; if (!out.has(k) || (out.get(k).derived && !r.derived)) out.set(k, r); };
+  for (const r of xs) { const kind = kindOf(span(r)); if (kind) put({ start: r.start, end: r.end, val: r.val, kind, derived: false, filed: r.filed, form: r.form, accn: r.accn, tag: r.tag }); }
+  const cumul = xs.filter((r) => { const d = span(r); return inBand(d, H) || inBand(d, N9) || inBand(d, FY); });
+  for (const c of cumul) {
+    for (const p of xs) {
+      if (p === c || p.end > c.end || p.start < c.start) continue;
+      let start = null, end = null;
+      if (p.start === c.start && p.end < c.end) { start = addDays(p.end, 1); end = c.end; }          // head subtraction → tail
+      else if (p.end === c.end && p.start > c.start) { start = c.start; end = addDays(p.start, -1); }  // tail subtraction → head
+      else continue;
+      const kind = kindOf(daysBetween(start, end));
+      if (!kind) continue;
+      put({ start, end, val: c.val - p.val, kind, derived: true, filed: c.filed, form: c.form, accn: c.accn, tag: c.tag, from: [`${c.start}→${c.end}`, `${p.start}→${p.end}`] });
+    }
+  }
+  return [...out.values()].sort((a, b) => a.end.localeCompare(b.end) || a.start.localeCompare(b.start));
+}
 export function discreteQuarters(rows) {
-  const xs = (rows || []).filter((r) => r && isYmd(r.start) && isYmd(r.end));
-  const byEnd = new Map();
-  for (const r of xs) {
-    const d = daysBetween(r.start, r.end);
-    if (inBand(d, Q)) byEnd.set(r.end, { start: r.start, end: r.end, val: r.val, derived: false, filed: r.filed, form: r.form, accn: r.accn, tag: r.tag });
-  }
-  for (const c of xs) {
-    const dc = daysBetween(c.start, c.end);
-    if (!(inBand(dc, H) || inBand(dc, N9) || inBand(dc, FY))) continue;
-    if (byEnd.has(c.end)) continue;
-    const prior = xs.filter((p) => p.start === c.start && p.end < c.end && inBand(daysBetween(p.end, c.end), Q))
-      .sort((a, b) => b.end.localeCompare(a.end))[0];
-    if (!prior) continue;
-    byEnd.set(c.end, { start: addDays(prior.end, 1), end: c.end, val: c.val - prior.val, derived: true,
-      filed: c.filed, form: c.form, accn: c.accn, tag: c.tag, from: [`${c.start}→${c.end}`, `${prior.start}→${prior.end}`] });
-  }
-  return [...byEnd.values()].sort((a, b) => a.end.localeCompare(b.end));
+  return discretePeriods(rows).filter((p) => p.kind === "Q").map(({ kind, ...q }) => q);
 }
 
-const contiguous = (qs) => qs.every((q, i) => i === 0 || inBand(daysBetween(qs[i - 1].end, q.end), Q));
-
-/* TTM = the sum of the four most recent discrete quarters, which must TILE. Four quarters
-   with a hole between them are not a year; that reads unavailable with the hole named. */
-export function ttmFrom(quarters) {
-  const qs = (quarters || []).slice(-4);
-  if (qs.length < 4) return unavailable(`only ${qs.length} of the 4 quarters needed for a trailing twelve months are on file`);
-  if (!contiguous(qs)) return unavailable(`the last four reported quarters do not tile (${qs.map((q) => q.end).join(", ")}) — no TTM summed across a gap`);
-  return { value: qs.reduce((s, q) => s + q.val, 0), start: qs[0].start, end: qs[3].end, quarters: qs.map((q) => q.end), derived: qs.some((q) => q.derived) };
+/* TTM = a CHAIN of tiling periods (quarters, or halves where a filer reports only six-month
+   cash flows) walking back from the latest period end until exactly ~12 months are covered.
+   A quarter is preferred at each step; a half is used only where no quarter ends there. A
+   chain that cannot reach 12 months without a hole reads unavailable with the hole named —
+   nothing is ever summed across a gap. `quarters` may be the output of discreteQuarters
+   (legacy callers) or discretePeriods. */
+export function ttmFrom(periods) {
+  const ps = (periods || []).map((p) => ({ ...p, kind: p.kind || (inBand(daysBetween(p.start, p.end), H) ? "H" : "Q") }));
+  if (!ps.length) return unavailable("only 0 of the 4 quarters needed for a trailing twelve months are on file");
+  const latestEnd = ps.map((p) => p.end).sort().pop();
+  const chain = [];
+  let cursor = latestEnd, covered = 0;
+  while (covered < 350) {
+    const atCursor = ps.filter((p) => p.end === cursor);
+    const pick = atCursor.find((p) => p.kind === "Q") || atCursor.find((p) => p.kind === "H");
+    if (!pick) break;
+    chain.unshift(pick);
+    covered += daysBetween(pick.start, pick.end) + 1;
+    cursor = addDays(pick.start, -1);
+  }
+  if (covered < 350) {
+    const qs = ps.filter((p) => p.kind === "Q");
+    const have = chain.map((p) => `${p.kind}→${p.end}`).join(", ");
+    if (chain.length && chain.length < ps.length && ps.some((p) => p.end < chain[0].start))
+      return unavailable(`the reported periods do not tile back to twelve months (${have}${have ? "; " : ""}gap before ${chain[0]?.start || latestEnd}) — no TTM summed across a gap`);
+    return unavailable(`only ${qs.length} of the 4 quarters needed for a trailing twelve months are on file${chain.length > qs.length ? ` (${chain.length} tiling periods cover ${Math.round(covered / 30)} months)` : ""}`);
+  }
+  if (covered > 380) return unavailable(`the tiling periods overshoot twelve months (${Math.round(covered)} days) — periods overlap`);
+  return { value: chain.reduce((s, p) => s + p.val, 0), start: chain[0].start, end: chain[chain.length - 1].end,
+    quarters: chain.map((p) => p.end), periods: chain.map((p) => `${p.kind === "H" ? "half" : "quarter"} to ${p.end}`),
+    derived: chain.some((p) => p.derived), halves: chain.filter((p) => p.kind === "H").length };
 }
 
 /* The comparable quarter a year earlier: the discrete quarter ending 350–380 days before. */
@@ -333,15 +371,16 @@ function durationField(companyfacts, concept, { retrievedAt, sourceUrl }) {
   if (!rows.length) return { ...unavailable(currency && currency !== unit ? `${concept} is reported in ${currency}; not converted` : `${concept} not found in the issuer's structured filings (10-Q/10-K/20-F/6-K)`), status: "MISSING", provider: "SEC", sourceUrl, retrievedAt };
   const quarters = discreteQuarters(rows);
   const latest = quarters[quarters.length - 1] || null;
-  const ttm = ttmFrom(quarters);
+  const ttm = ttmFrom(discretePeriods(rows));
   const annual = rows.filter((r) => inBand(daysBetween(r.start, r.end), FY)).sort((a, b) => b.end.localeCompare(a.end))[0] || null;
   return {
     value: latest ? latest.val : null, status: latest ? "LIVE" : "MISSING", provider: "SEC", sourceUrl, retrievedAt,
     observedAt: latest ? latest.end : (annual ? annual.end : null),
     quarter: latest ? { value: latest.val, start: latest.start, end: latest.end, derived: latest.derived, form: latest.form, filed: latest.filed, accn: latest.accn, tag: latest.tag, label: periodLabel(latest) } : null,
     priorYearQuarter: (() => { const p = priorYearQuarter(quarters, latest); return p ? { value: p.val, end: p.end, derived: p.derived, label: periodLabel(p) } : null; })(),
-    ttm: ttm.value === null ? ttm : { ...ttm, label: `TTM to ${ttm.end}` },
+    ttm: ttm.value === null ? ttm : { ...ttm, label: `TTM to ${ttm.end}${ttm.halves ? " (from half-year periods)" : ""}` },
     annual: annual ? { value: annual.val, start: annual.start, end: annual.end, form: annual.form, filed: annual.filed, label: `fiscal year to ${annual.end}` } : null,
+    half: (() => { const hs = discretePeriods(rows).filter((p) => p.kind === "H"); const h = hs[hs.length - 1]; return h ? { value: h.val, start: h.start, end: h.end, derived: h.derived, label: `${h.derived ? "derived half-year" : "half-year"} to ${h.end}` } : null; })(),
     ...(latest ? {} : { unavailable: annual ? `only annual ${concept} is on file (fiscal year to ${annual.end}); no quarterly period could be derived` : `no usable ${concept} period on file` }),
     currency: "USD",
   };
@@ -410,13 +449,14 @@ export function issuerFundamentals(record, { retrievedAt = new Date().toISOStrin
     if (!rows.length) { f[concept] = { ...unavailable(`${concept} not in the issuer-report record`), status: "MISSING", provider: "issuer report", sourceUrl: url, retrievedAt }; continue; }
     const quarters = discreteQuarters(rows);
     const latest = quarters[quarters.length - 1] || null;
-    const ttm = ttmFrom(quarters);
+    const ttm = ttmFrom(discretePeriods(rows));
     const p = priorYearQuarter(quarters, latest);
     f[concept] = { value: latest ? latest.val : null, status: latest ? "LIVE" : "MISSING", provider: "issuer report", sourceUrl: url, retrievedAt,
       observedAt: latest ? latest.end : null,
       quarter: latest ? { value: latest.val, start: latest.start, end: latest.end, derived: latest.derived, form: latest.form, filed: latest.filed, label: periodLabel(latest) } : null,
       priorYearQuarter: p ? { value: p.val, end: p.end, derived: p.derived, label: periodLabel(p) } : null,
-      ttm: ttm.value === null ? ttm : { ...ttm, label: `TTM to ${ttm.end}` }, annual: null, currency: "USD",
+      half: (() => { const hs = discretePeriods(rows).filter((x) => x.kind === "H"); const h = hs[hs.length - 1]; return h ? { value: h.val, start: h.start, end: h.end, derived: h.derived, label: `${h.derived ? "derived half-year" : "half-year"} to ${h.end}` } : null; })(),
+      ttm: ttm.value === null ? ttm : { ...ttm, label: `TTM to ${ttm.end}${ttm.halves ? " (from half-year periods)" : ""}` }, annual: null, currency: "USD",
       ...(latest ? {} : { unavailable: `no quarterly ${concept} period in the issuer-report record` }) };
   }
   for (const concept of ["cash", "debt", "sharesOutstanding"]) {
@@ -463,7 +503,10 @@ export function deriveMetrics({ fundamentals: f, marketCap, series, today }) {
     : { pct: null, unavailable: !oq ? (f?.operatingIncome?.unavailable || "no reported operating income") : !rq ? "no reported revenue for the same quarter" : `operating income (to ${oq.end}) and revenue (to ${rq.end}) are not the same period` };
   // Free cash flow = OCF − capex, SAME period (quarter, else TTM).
   const cq = q(f?.ocf), xq = q(f?.capex), ct = ttmOf(f?.ocf), xt = ttmOf(f?.capex);
+  const ch = f?.ocf?.half || null, xh = f?.capex?.half || null;
   if (cq && xq && cq.end === xq.end) m.fcf = { value: cq.value - xq.value, ocf: cq.value, capex: xq.value, period: cq.label, basis: "quarter", unavailable: null };
+  // A 6-K filer reports six-month cash flows only: the half-year is the honest period, named as such.
+  else if (ch && xh && ch.end === xh.end && ch.start === xh.start) m.fcf = { value: ch.value - xh.value, ocf: ch.value, capex: xh.value, period: ch.label, basis: "half", unavailable: null };
   else if (ct && xt && ct.end === xt.end) m.fcf = { value: ct.value - xt.value, ocf: ct.value, capex: xt.value, period: ct.label, basis: "ttm", unavailable: null };
   else m.fcf = { value: null, unavailable: !cq && !ct ? (f?.ocf?.unavailable || "no operating cash flow on file") : !xq && !xt ? (f?.capex?.unavailable || "no capital expenditure on file") : "operating cash flow and capex are not on file for the same period" };
   m.fcfTtm = ct && xt && ct.end === xt.end ? { value: ct.value - xt.value, period: ct.label } : null;
