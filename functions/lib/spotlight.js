@@ -373,9 +373,13 @@ function durationField(companyfacts, concept, { retrievedAt, sourceUrl }) {
   const latest = quarters[quarters.length - 1] || null;
   const ttm = ttmFrom(discretePeriods(rows));
   const annual = rows.filter((r) => inBand(daysBetween(r.start, r.end), FY)).sort((a, b) => b.end.localeCompare(a.end))[0] || null;
+  // v6.5.2: the newest PERIOD of any length dates the field — a half-year-only cash-flow line
+  // (the 6-K shape) must not lose the per-concept merge to an older annual row for want of a date.
+  const halves = discretePeriods(rows).filter((p) => p.kind === "H");
+  const newestEnd = [latest?.end, halves[halves.length - 1]?.end, annual?.end].filter(Boolean).sort().pop() || null;
   return {
-    value: latest ? latest.val : null, status: latest ? "LIVE" : "MISSING", provider: "SEC", sourceUrl, retrievedAt,
-    observedAt: latest ? latest.end : (annual ? annual.end : null),
+    value: latest ? latest.val : null, status: latest || halves.length ? "LIVE" : "MISSING", provider: "SEC", sourceUrl, retrievedAt,
+    observedAt: newestEnd,
     quarter: latest ? { value: latest.val, start: latest.start, end: latest.end, derived: latest.derived, form: latest.form, filed: latest.filed, accn: latest.accn, tag: latest.tag, label: periodLabel(latest) } : null,
     priorYearQuarter: (() => { const p = priorYearQuarter(quarters, latest); return p ? { value: p.val, end: p.end, derived: p.derived, label: periodLabel(p) } : null; })(),
     ttm: ttm.value === null ? ttm : { ...ttm, label: `TTM to ${ttm.end}${ttm.halves ? " (from half-year periods)" : ""}` },
@@ -451,8 +455,9 @@ export function issuerFundamentals(record, { retrievedAt = new Date().toISOStrin
     const latest = quarters[quarters.length - 1] || null;
     const ttm = ttmFrom(discretePeriods(rows));
     const p = priorYearQuarter(quarters, latest);
-    f[concept] = { value: latest ? latest.val : null, status: latest ? "LIVE" : "MISSING", provider: "issuer report", sourceUrl: url, retrievedAt,
-      observedAt: latest ? latest.end : null,
+    const halvesI = discretePeriods(rows).filter((x) => x.kind === "H");
+    f[concept] = { value: latest ? latest.val : null, status: latest || halvesI.length ? "LIVE" : "MISSING", provider: "issuer report", sourceUrl: url, retrievedAt,
+      observedAt: [latest?.end, halvesI[halvesI.length - 1]?.end].filter(Boolean).sort().pop() || null,
       quarter: latest ? { value: latest.val, start: latest.start, end: latest.end, derived: latest.derived, form: latest.form, filed: latest.filed, label: periodLabel(latest) } : null,
       priorYearQuarter: p ? { value: p.val, end: p.end, derived: p.derived, label: periodLabel(p) } : null,
       half: (() => { const hs = discretePeriods(rows).filter((x) => x.kind === "H"); const h = hs[hs.length - 1]; return h ? { value: h.val, start: h.start, end: h.end, derived: h.derived, label: `${h.derived ? "derived half-year" : "half-year"} to ${h.end}` } : null; })(),
