@@ -63,10 +63,12 @@ export function quarterEnds(today) {
   return ends;
 }
 
-export function makeSpotlightFixture({ now = new Date(), stale = false, anchorSeriesMissing = false, capMissing = false } = {}) {
+export function makeSpotlightFixture({ now = new Date(), stale = false, anchorSeriesMissing = false, capMissing = false, anchorPriceOnly = false } = {}) {
   const today = etYmd(now);
   const year = today.slice(0, 4);
   const lastObs = stale ? addDays(today, -12) : today;
+  // Start well before the prior year-end so the ACTUAL final trading close of last year is
+  // in the series (the baseline the tracker requires; November 15 leaves a month of margin).
   const from = `${Number(year) - 1}-11-15`;
   const nbisRows = closes(from, lastObs, { start: 24, drift: 0.004, seed: 7 });
   const msftRows = closes(from, lastObs, { start: 420, drift: 0.0008, seed: 3 });
@@ -89,8 +91,12 @@ export function makeSpotlightFixture({ now = new Date(), stale = false, anchorSe
   });
   // The real refresh hands the tracker a series fact WITH its symbol even when the rows are
   // missing (companyFromRecord), so the missing leg can be NAMED; the fixture mirrors that.
-  const nbisSeries = anchorSeriesMissing ? { symbol: "NBIS", rows: null, unavailable: "return series unavailable" } : { symbol: "NBIS", basis: "price_return", provider: "Nasdaq daily history (closes — dividends not included)", sourceUrl: "https://www.nasdaq.com/market-activity/stocks", rows: nbisRows, currency: "USD" };
-  const msftSeries = { symbol: "MSFT", basis: "total_return", provider: "Tiingo (adjClose — split- and dividend-adjusted)", sourceUrl: "https://www.tiingo.com/", rows: msftRows, currency: "USD" };
+  // Both legs are VERIFIED total return by default (the only basis the tracker draws);
+  // anchorPriceOnly puts a price-return series on NBIS to exercise the withheld leg.
+  const nbisSeries = anchorSeriesMissing ? { symbol: "NBIS", rows: null, unavailable: "return series unavailable" }
+    : anchorPriceOnly ? { symbol: "NBIS", basis: "price_return", verified: false, provider: "Nasdaq daily history (closes — dividends not included)", sourceUrl: "https://www.nasdaq.com/market-activity/stocks", rows: nbisRows, currency: "USD" }
+    : { symbol: "NBIS", basis: "total_return", verified: true, provider: "Tiingo (adjClose — split- and dividend-adjusted, verified)", sourceUrl: "https://www.tiingo.com/", rows: nbisRows, currency: "USD" };
+  const msftSeries = { symbol: "MSFT", basis: "total_return", verified: true, provider: "Tiingo (adjClose — split- and dividend-adjusted, verified)", sourceUrl: "https://www.tiingo.com/", rows: msftRows, currency: "USD" };
   const nbis = buildCompany({ symbol: "NBIS", name: "Nebius Group", facts: facts("NBIS", nbisRows[nbisRows.length - 1].value, 70_100, 250, capMissing), fundamentals: nbisFacts, series: nbisSeries.rows ? nbisSeries : null, today, now });
   const msft = buildCompany({ symbol: "MSFT", name: "Microsoft", facts: facts("MSFT", msftRows[msftRows.length - 1].value, 3_410_000, 7430, false), fundamentals: msftFacts, series: msftSeries, today, now });
   const tracker = buildTracker(nbisSeries, msftSeries, today);

@@ -11403,33 +11403,49 @@ console.log("\n[81] v6.5.0 STOCK SPOTLIGHT — calculations, endpoints, cron leg
   ok("[81] YTD: before the first trading close of a new year the figure is 'awaiting', never 0; with no prior-year close it is unavailable and says so",
     (() => { const y = S.ytdReturn([{ date: "2025-12-31", value: 100 }], "2026-01-01");
       const z = S.ytdReturn([{ date: "2026-02-02", value: 100 }], "2026-02-03");
-      return y.awaiting === true && y.pct === undefined && /awaits the first 2026/.test(y.unavailable) && /no prior-year close/.test(z.unavailable); })());
-  ok("[81] YTD: dividends change the answer — a total-return (adjusted) twin of the same closes reads higher, and each leg carries its own basis LABEL",
-    (() => { const px = [{ date: "2025-12-31", value: 100 }, { date: "2026-03-02", value: 100 }];
-      const adj = [{ date: "2025-12-31", value: 100 }, { date: "2026-03-02", value: 101.5 }];   // a 1.5% distribution reinvested
-      const t = S.buildTracker({ symbol: "A", basis: "price_return", rows: px }, { symbol: "B", basis: "total_return", rows: adj }, "2026-03-03");
-      return t.legs.A.pct === 0 && t.legs.B.pct === 1.5 && t.legs.A.label === "YTD price return" && t.legs.B.label === "YTD total return" &&
-        /dividends NOT included/.test(t.legs.A.basisNote) && /includes dividends/.test(t.legs.B.basisNote); })());
+      return y.awaiting === true && y.pct === undefined && /awaits the first 2026/.test(y.unavailable) && /lacks the final 2025 trading close \(2025-12-31\)/.test(z.unavailable); })());
+  ok("[81] YTD (review #2): the baseline must be the ACTUAL final trading close of the preceding year — an August row followed by January data is UNAVAILABLE naming the missing date, never +100% off August; a Dec 30 row is not Dec 31",
+    (() => { const aug = S.ytdReturn([{ date: "2025-08-15", value: 50 }, { date: "2026-01-05", value: 100 }], "2026-01-06");
+      const dec30 = S.ytdReturn([{ date: "2025-12-30", value: 50 }, { date: "2026-01-05", value: 100 }], "2026-01-06");
+      return aug.pct === undefined && /lacks the final 2025 trading close \(2025-12-31\) — last prior-year row is 2025-08-15; baseline not substituted/.test(aug.unavailable) &&
+        dec30.pct === undefined && /last prior-year row is 2025-12-30/.test(dec30.unavailable); })());
+  ok("[81] YTD (review #2): yearEndSession walks back over weekends and holidays to the real final session, and both legs share it",
+    S.yearEndSession("2026") === "2025-12-31" && S.yearEndSession("2024") === "2023-12-29" && S.yearEndSession("2023") === "2022-12-30" && S.yearEndSession("x") === null &&
+    (() => { const rows = (v) => [{ date: "2023-12-29", value: v }, { date: "2024-01-02", value: v * 1.1 }];
+      const t = S.buildTracker({ symbol: "A", basis: "total_return", verified: true, rows: rows(10) }, { symbol: "B", basis: "total_return", verified: true, rows: rows(50) }, "2024-01-03");
+      return t.baselineDate === "2023-12-29" && t.baselineMismatch === null && t.legs.A.baseline.date === "2023-12-29" && t.legs.B.baseline.date === "2023-12-29" && t.year === "2024"; })());
+  ok("[81] YTD: dividends change the answer — a distribution reinvested reads higher on the adjusted series, and the leg is labelled total return",
+    (() => { const adj = [{ date: "2025-12-31", value: 100 }, { date: "2026-03-02", value: 101.5 }];   // a 1.5% distribution reinvested
+      const flat = [{ date: "2025-12-31", value: 100 }, { date: "2026-03-02", value: 100 }];
+      const t = S.buildTracker({ symbol: "A", basis: "total_return", verified: true, rows: flat }, { symbol: "B", basis: "total_return", verified: true, rows: adj }, "2026-03-03");
+      return t.legs.A.pct === 0 && t.legs.B.pct === 1.5 && t.legs.B.label === "YTD total return" && /includes dividends/.test(t.legs.B.basisNote); })());
+  ok("[81] tracker (review #1): a PRICE-RETURN leg is WITHHELD, never plotted against a total-return leg — and an unverified 'total_return' claim is withheld too, each with the reason named",
+    (() => { const rows = [{ date: "2025-12-31", value: 100 }, { date: "2026-03-02", value: 110 }];
+      const mixed = S.buildTracker({ symbol: "A", basis: "price_return", verified: false, rows }, { symbol: "B", basis: "total_return", verified: true, rows }, "2026-03-03");
+      const unver = S.buildTracker({ symbol: "A", basis: "total_return", rows }, { symbol: "B", basis: "total_return", verified: true, rows }, "2026-03-03");
+      return mixed.legs.A.pct === null && mixed.legs.A.points.length === 0 && mixed.legs.A.unavailable.startsWith(S.TOTAL_RETURN_REQUIRED) && /on file: price return/.test(mixed.legs.A.unavailable) &&
+        mixed.legs.B.pct === 10 && mixed.points.length === 1 && /A series unavailable/.test(mixed.partial) &&
+        unver.legs.A.pct === null && /adjustment not verified/.test(unver.legs.A.unavailable) && /total return only/.test(mixed.method); })());
   ok("[81] tracker: both lines start at 0% on the same baseline date, the endpoint is the LATEST COMMON date, and the visible YTD is read AT that endpoint (never each leg's own last point)",
     (() => { const a = [{ date: "2025-12-31", value: 10 }, { date: "2026-01-02", value: 11 }, { date: "2026-01-05", value: 12 }, { date: "2026-01-06", value: 13 }];
       const b = [{ date: "2025-12-31", value: 100 }, { date: "2026-01-02", value: 90 }, { date: "2026-01-05", value: 80 }];
-      const t = S.buildTracker({ symbol: "A", basis: "price_return", rows: a }, { symbol: "B", basis: "price_return", rows: b }, "2026-01-07");
+      const t = S.buildTracker({ symbol: "A", basis: "total_return", verified: true, rows: a }, { symbol: "B", basis: "total_return", verified: true, rows: b }, "2026-01-07");
       return t.baselineDate === "2025-12-31" && t.through === "2026-01-05" && t.legs.A.pct === 20 && t.legs.B.pct === -20 &&
         t.points.length === 2 && t.points[1].A === 20 && t.points[1].B === -20 && !t.points.some((p) => p.date > "2026-01-05"); })());
   ok("[81] tracker: a missing observation is a GAP (null in the point), never interpolated or fabricated",
     (() => { const a = [{ date: "2025-12-31", value: 10 }, { date: "2026-01-02", value: 11 }, { date: "2026-01-05", value: 12 }, { date: "2026-01-06", value: 13 }];
       const b = [{ date: "2025-12-31", value: 100 }, { date: "2026-01-02", value: 90 }, { date: "2026-01-06", value: 80 }];   // 01-05 missing
-      const t = S.buildTracker({ symbol: "A", basis: "price_return", rows: a }, { symbol: "B", basis: "price_return", rows: b }, "2026-01-07");
+      const t = S.buildTracker({ symbol: "A", basis: "total_return", verified: true, rows: a }, { symbol: "B", basis: "total_return", verified: true, rows: b }, "2026-01-07");
       const gap = t.points.find((p) => p.date === "2026-01-05");
       return t.through === "2026-01-06" && gap && gap.A === 20 && gap.B === null; })());
   ok("[81] tracker: one series unavailable → the other still plots and the missing one is NAMED; both unavailable → the tracker's own unavailable state",
     (() => { const a = [{ date: "2025-12-31", value: 10 }, { date: "2026-01-02", value: 11 }];
-      const one = S.buildTracker({ symbol: "A", basis: "price_return", rows: a }, { symbol: "B", rows: null, unavailable: "Nasdaq 429" }, "2026-01-03");
+      const one = S.buildTracker({ symbol: "A", basis: "total_return", verified: true, rows: a }, { symbol: "B", rows: null, unavailable: "Nasdaq 429" }, "2026-01-03");
       const none = S.buildTracker({ symbol: "A", rows: null, unavailable: "x" }, { symbol: "B", rows: null, unavailable: "y" }, "2026-01-03");
       return one.points.length === 1 && one.legs.A.pct === 10 && /B series unavailable — Nasdaq 429/.test(one.partial) && one.unavailable === null &&
         /comparison tracker unavailable/.test(none.unavailable) && none.points.length === 0; })());
   ok("[81] tracker: a non-USD series is not converted, and a year rollover resets the baseline (Dec 31 becomes the new anchor)",
-    (() => { const eur = S.buildTracker({ symbol: "A", basis: "price_return", rows: [{ date: "2025-12-31", value: 1 }], currency: "EUR" }, { symbol: "B", rows: null }, "2026-01-05");
+    (() => { const eur = S.buildTracker({ symbol: "A", basis: "total_return", verified: true, rows: [{ date: "2025-12-31", value: 1 }], currency: "EUR" }, { symbol: "B", rows: null }, "2026-01-05");
       const rows = [{ date: "2025-12-31", value: 100 }, { date: "2026-06-30", value: 150 }, { date: "2026-12-31", value: 200 }, { date: "2027-01-04", value: 210 }];
       return /quoted in EUR/.test(eur.legs.A.unavailable) && S.ytdReturn(rows, "2026-12-31").pct === 100 && S.ytdReturn(rows, "2027-01-05").pct === 5 && S.ytdReturn(rows, "2027-01-05").baseline.date === "2026-12-31"; })());
 
@@ -11536,6 +11552,20 @@ console.log("\n[81] v6.5.0 STOCK SPOTLIGHT — calculations, endpoints, cron leg
       return served.companies.NBIS.freshness.market.stale === true && served.companies.NBIS.freshness.series.stale === true && /completed sessions? missing/.test(served.companies.NBIS.freshness.series.reason) &&
         served.companies.NBIS.assessment.priceTrendSuppressed === true && fresh.companies.NBIS.freshness.market.stale === false && fresh.companies.NBIS.assessment.priceTrendSuppressed === false &&
         served.servedAt === NOW.toISOString(); })());
+  ok("[81] freshness (review #3): a Dec 31 model served on Jan 1 does NOT keep last year's YTD — every leg resets to 'awaiting the first trading close', the line is withdrawn, and the new baseline date is named",
+    (() => { const dec = FX.makeSpotlightFixture({ now: new Date("2025-12-31T23:30:00Z") });
+      const jan = S.projectSpotlight(S.freshenSpotlight(dec.model, new Date("2026-01-01T15:00:00Z")));
+      const same = S.projectSpotlight(S.freshenSpotlight(dec.model, new Date("2025-12-31T23:59:00Z")));
+      return dec.model.tracker.year === "2025" && jan.tracker.yearRollover === true && jan.tracker.year === "2026" && jan.tracker.points.length === 0 && jan.tracker.baselineDate === "2025-12-31" &&
+        ["NBIS", "MSFT"].every((s) => jan.tracker.legs[s].awaiting === true && jan.tracker.legs[s].pct === null && /awaits the first 2026 trading close/.test(jan.tracker.legs[s].unavailable)) &&
+        /awaits the first 2026 trading close/.test(jan.tracker.unavailable) && same.tracker.yearRollover === false && same.tracker.points.length > 0; })());
+  ok("[81] face (review): every company carries a one-line blurb of what it does, and the assessment's SUMMARY is exactly two sentences that compress the full clauses",
+    ["NBIS", ...S.SPOTLIGHT_ROTATION].every((s) => typeof S.COMPANY_BLURBS[s] === "string" && S.COMPANY_BLURBS[s].length > 40) && fx.model.companies.NBIS.blurb === S.COMPANY_BLURBS.NBIS &&
+    (() => { const a = fx.model.companies.MSFT.assessment;
+      return a.summary.length === 2 && a.summary.every((x) => /^[A-Z].*\.$/.test(x) && (x.match(/\. /g) || []).length === 0) &&
+        a.summary[0] === "Revenue grew 26.7% year over year and operating margin widened to 46.1%." &&
+        a.summary[1] === "The market pays 12.5× trailing revenue (33.4× earnings); the price is above its 200-day average." &&
+        S.projectSpotlight(fx.model).companies.MSFT.assessment.summary.length === 2 && S.projectSpotlight(fx.model).companies.MSFT.blurb === S.COMPANY_BLURBS.MSFT; })());
 
   // ── the public boundary ──
   ok("[81] projection: a WHITELIST — book-shaped fields injected into a model never reach the public shape",
@@ -11572,6 +11602,18 @@ console.log("\n[81] v6.5.0 STOCK SPOTLIGHT — calculations, endpoints, cron leg
   const unix = Math.floor(Date.parse(`${TODAY}T20:00:00Z`) / 1000);
   const cf = { MSFT: FX.companyFacts({ quarterEnds: fx.qe, entityName: "MICROSOFT CORP" }), NBIS: FX.companyFacts({ quarterEnds: fx.qe, form: "6-K", taxonomy: "ifrs-full", entityName: "Nebius Group N.V.", revenueQ: [105e6, 147e6, 245e6, 350e6, 582e6] }), AAPL: FX.companyFacts({ quarterEnds: fx.qe, entityName: "Apple Inc." }) };
   const nasdaqRows = (rows) => ({ data: { tradesTable: { rows: rows.map((r) => ({ date: `${r.date.slice(5, 7)}/${r.date.slice(8, 10)}/${r.date.slice(0, 4)}`, open: `$${r.value}`, high: `$${(r.value * 1.01).toFixed(2)}`, low: `$${(r.value * 0.99).toFixed(2)}`, close: `$${r.value}`, volume: "1,000" })) } } });
+  /* A Tiingo-shaped response whose adjClose is the CONTINUOUS path (`value`) and whose raw
+     close carries the corporate actions: a dividend halfway (adjClose/close steps 0.99 → 1)
+     and, optionally, a 4-for-1 split at `split` (raw close ×4 before it, splitFactor 4 on the
+     split row). The adjustment factor is non-decreasing and 1 at the end — the signature
+     verifyAdjustedSeries checks. `noEvidence` drops the splitFactor; `broken` makes the
+     latest adjClose ≠ close (an unadjusted-to-present series). */
+  const tiingoRows = (rows, { split = null, noEvidence = false, broken = false } = {}) => {
+    const n = rows.length, divIdx = Math.floor(n / 2), splitIdx = split ? rows.findIndex((r) => r.date >= split) : -1;
+    return rows.map((r, i) => { const raw = r.value * (splitIdx >= 0 && i < splitIdx ? 4 : 1) * (i < divIdx ? 1 / 0.99 : 1);
+      return { date: `${r.date}T00:00:00.000Z`, close: Number(raw.toFixed(4)), adjClose: broken && i === n - 1 ? r.value * 1.01 : r.value,
+        divCash: i === divIdx ? 0.5 : 0, splitFactor: !noEvidence && i === splitIdx ? 4 : 1 }; });
+  };
   const symOf = (u) => (String(u).match(/symbol=([A-Z]+)/) || String(u).match(/\/quote\/([A-Z]+)\//) || String(u).match(/tiingo\/daily\/([A-Z]+)\//) || [])[1];
   const stubFetch = ({ tiingo = true, candles = false } = {}) => async (url) => {
     const u = String(url); const sym = symOf(u);
@@ -11582,7 +11624,7 @@ console.log("\n[81] v6.5.0 STOCK SPOTLIGHT — calculations, endpoints, cron leg
     if (/stock\/candle/.test(u)) return candles ? j({ s: "ok", t: fx.msftRows.map((r) => Math.floor(Date.parse(`${r.date}T20:00:00Z`) / 1000)), c: fx.msftRows.map((r) => r.value) }) : j({ s: "no_data" });
     if (/company_tickers/.test(u)) return j({ 0: { cik_str: 789019, ticker: "MSFT", title: "MICROSOFT CORP" }, 1: { cik_str: 1513845, ticker: "NBIS", title: "Nebius Group N.V." }, 2: { cik_str: 320193, ticker: "AAPL", title: "Apple Inc." } });
     if (/companyfacts\/CIK0000789019/.test(u)) return j(cf.MSFT); if (/companyfacts\/CIK0001513845/.test(u)) return j(cf.NBIS); if (/companyfacts\/CIK0000320193/.test(u)) return j(cf.AAPL);
-    if (/tiingo/.test(u)) return tiingo ? j((sym === "NBIS" ? fx.nbisRows : fx.msftRows).map((r) => ({ date: `${r.date}T00:00:00.000Z`, close: r.value, adjClose: r.value * 1.01 }))) : j({ detail: "no" }, 404);
+    if (/tiingo/.test(u)) return tiingo ? j(tiingoRows(sym === "NBIS" ? fx.nbisRows : fx.msftRows)) : j({ detail: "no" }, 404);
     if (/nasdaq\.com/.test(u)) return j(nasdaqRows(sym === "NBIS" ? fx.nbisRows : fx.msftRows));
     return new Response("no", { status: 404 });
   };
@@ -11590,16 +11632,31 @@ console.log("\n[81] v6.5.0 STOCK SPOTLIGHT — calculations, endpoints, cron leg
   ok("[81] refresh: end-to-end against stubbed providers — the pair is stored, facts land under spotlight:facts:v1:<SYM> for anchor + comparison + NEXT, the rotation persists with the week key, and NO tt: key is touched",
     await (async () => { const kv = kvS();
       const out = await R.runSpotlightRefresh(envR(kv), { now: NOW, fetchImpl: stubFetch() });
-      const model = JSON.parse(kv._m.get("spotlight:model:v1")), rot = JSON.parse(kv._m.get("spotlight:rotation:v1"));
-      return out.ok === true && out.pair.comparison === "MSFT" && out.pair.next === "AAPL" && model.pair.weekKey === "2026-09-14" && rot.index === 0 && rot.weekKey === "2026-09-14" &&
+      const model = JSON.parse(kv._m.get("spotlight:model:v1")), rot = JSON.parse(kv._m.get("spotlight:rotation:v1") || "null");
+      return out.ok === true && out.dataOk === true && out.pair.comparison === "MSFT" && out.pair.next === "AAPL" && model.pair.weekKey === "2026-09-14" && rot.index === 0 && rot.weekKey === "2026-09-14" &&
         ["NBIS", "MSFT", "AAPL"].every((s) => kv._m.has(`spotlight:facts:v1:${s}`)) && !kv.puts.some((k) => k.startsWith("tt:")) &&
-        model.companies.MSFT.marketCap.display === "$3.41T" && model.companies.MSFT.marketCap.method === "provider-reported" && model.companies.NBIS.marketCap.display === "$70.1B"; })());
-  ok("[81] refresh: the series ladder — Finnhub adjusted candles when entitled (total return), else Tiingo adjClose (total return), else Nasdaq closes LABELLED price return; the basis rides the leg",
+        model.companies.MSFT.marketCap.display === "$3.41T" && model.companies.MSFT.marketCap.method === "provider-reported" && model.companies.NBIS.marketCap.display === "$70.1B" &&
+        model.tracker.legs.MSFT.basis === "total_return" && typeof model.tracker.legs.MSFT.pct === "number" && /verified/.test(model.tracker.legs.MSFT.provider); })());
+  ok("[81] refresh (review #1): TWO series facts — the tracker leg comes ONLY from verified Tiingo total return; Finnhub candles (split-adjusted) and Nasdaq closes feed the price trend as PRICE return and are never promoted; without a total-return source the leg is withheld and the trend still reads",
     await (async () => {
-      const run = async (opts) => { const kv = kvS(); await R.runSpotlightRefresh(envR(kv, opts.env || {}), { now: NOW, fetchImpl: stubFetch(opts) }); return JSON.parse(kv._m.get("spotlight:model:v1")).tracker.legs.MSFT; };
-      const a = await run({ candles: true }), b = await run({ tiingo: true }), c = await run({ tiingo: false }), d = await run({ tiingo: false, env: { TIINGO_KEY: "" } });
-      return a.basis === "total_return" && /Finnhub \(adjusted/.test(a.provider) && b.basis === "total_return" && /Tiingo/.test(b.provider) &&
-        c.basis === "price_return" && /Nasdaq/.test(c.provider) && c.label === "YTD price return" && d.basis === "price_return"; })());
+      const run = async (opts) => { const kv = kvS(); await R.runSpotlightRefresh(envR(kv, opts.env || {}), { now: NOW, fetchImpl: stubFetch(opts) });
+        const m = JSON.parse(kv._m.get("spotlight:model:v1")); const rec = JSON.parse(kv._m.get("spotlight:facts:v1:MSFT")).fields; return { leg: m.tracker.legs.MSFT, trend: m.companies.MSFT.metrics.trend, rec }; };
+      const a = await run({ candles: true }), c = await run({ tiingo: false }), d = await run({ tiingo: false, env: { TIINGO_KEY: "" } });
+      return a.leg.basis === "total_return" && /Tiingo/.test(a.leg.provider) && a.rec.priceSeries.basis === "price_return" && /Finnhub/.test(a.rec.priceSeries.provider) && /split-adjusted — dividends not included/.test(a.rec.priceSeries.provider) &&
+        c.leg.pct === null && /HTTP 404/.test(c.leg.unavailable) && c.rec.totalReturnSeries.status === "MISSING" && typeof c.trend.px === "number" && /Nasdaq/.test(c.rec.priceSeries.provider) &&
+        d.leg.pct === null && /TIINGO_KEY not configured/.test(d.rec.totalReturnSeries.reason) && d.rec.totalReturnSeries.status === "MISSING"; })());
+  ok("[81] refresh (review #5): a valid 4-for-1 split with a continuous adjusted series is ACCEPTED (continuity is judged on adjClose; the raw jump is explained by splitFactor), while a raw jump with NO corporate-action evidence, a falling adjustment factor, or a series not adjusted to the present is REJECTED with the reason",
+    (() => { const rows = fx.msftRows.slice(-120); const splitDate = rows[60].date; const RA = "2026-09-16T22:05:00.000Z";
+      const okSplit = R.tiingoSeries(tiingoRows(rows, { split: splitDate }), RA, rows[rows.length - 1].value);
+      const noEv = R.tiingoSeries(tiingoRows(rows, { split: splitDate, noEvidence: true }), RA, rows[rows.length - 1].value);
+      const broken = R.tiingoSeries(tiingoRows(rows, { broken: true }), RA, rows[rows.length - 1].value);
+      const falling = R.tiingoSeries(tiingoRows(rows).map((r, i) => i === 10 ? { ...r, adjClose: r.adjClose * 1.2 } : r), RA, rows[rows.length - 1].value);
+      const plain = R.tiingoSeries(tiingoRows(rows), RA, rows[rows.length - 1].value);
+      return okSplit.status === "LIVE" && okSplit.verified === true && okSplit.basis === "total_return" && okSplit.value.length === rows.length &&
+        noEv.status === "MISSING" && /no matching corporate-action evidence/.test(noEv.reason) &&
+        broken.status === "MISSING" && /not adjusted to the present/.test(broken.reason) &&
+        falling.status === "MISSING" && /adjustment factor falls/.test(falling.reason) && plain.status === "LIVE" &&
+        R.verifyAdjustedSeries([{ date: "2026-01-02", value: 1, close: 1 }]).ok === false; })());
   ok("[81] refresh: same week → not advanced; a later week → advanced to AAPL; a FAILED model store → not advanced (the week retries without moving)",
     await (async () => { const kv = kvS();
       await R.runSpotlightRefresh(envR(kv), { now: NOW, fetchImpl: stubFetch() });
@@ -11610,12 +11667,24 @@ console.log("\n[81] v6.5.0 STOCK SPOTLIGHT — calculations, endpoints, cron leg
       const failed = await R.runSpotlightRefresh(envR(kvBad), { now: NOW, fetchImpl: stubFetch() });
       return again.pair.advanced === false && again.pair.comparison === "MSFT" && next.pair.advanced === true && next.pair.comparison === "AAPL" && next.pair.next === "AMZN" && rot.index === 1 &&
         failed.ok === false && !kvBad._m.has("spotlight:rotation:v1") && failed.failures.some((f) => f.item === "model-store"); })());
-  ok("[81] refresh: every provider dark → the model STILL builds and stores with every field Unavailable-with-reason (the widget can render the scheduled pair), and the failures are listed",
+  ok("[81] refresh (review #4): every provider dark on a FIRST run → ok:false with the data reasons, the scheduled pair is still stored with every field Unavailable-with-reason (nothing better exists to show), and the rotation is NOT persisted",
     await (async () => { const kv = kvS();
       const out = await R.runSpotlightRefresh(envR(kv, { FINNHUB_KEY: "", SEC_USER_AGENT: "", TIINGO_KEY: "" }), { now: NOW, fetchImpl: async () => new Response("no", { status: 404 }) });
       const m = JSON.parse(kv._m.get("spotlight:model:v1"));
-      return out.ok === true && out.failures.length >= 6 && m.companies.NBIS.marketCap.value === null && /FINNHUB_KEY/.test(m.companies.NBIS.marketCap.unavailable) &&
+      return out.ok === false && out.dataOk === false && out.stored === true && out.dataReasons.some((r) => /NBIS: market cap unavailable/.test(r)) && out.dataReasons.some((r) => /total-return leg unavailable/.test(r)) &&
+        !kv._m.has("spotlight:rotation:v1") && out.failures.length >= 6 && m.companies.NBIS.marketCap.value === null && /FINNHUB_KEY/.test(m.companies.NBIS.marketCap.unavailable) &&
         /SEC_USER_AGENT/.test(m.companies.NBIS.metrics.revenueGrowth.unavailable) && m.tracker.unavailable && m.lesson.example === null; })());
+  ok("[81] refresh (review #4): a NEW week whose providers are dark keeps the PREVIOUS pair on display — the stored model is byte-unchanged, the rotation stays on MSFT, ok:false names the hold — and the next successful refresh advances exactly once",
+    await (async () => { const kv = kvS();
+      const first = await R.runSpotlightRefresh(envR(kv), { now: NOW, fetchImpl: stubFetch() });
+      const before = kv._m.get("spotlight:model:v1"), rotBefore = kv._m.get("spotlight:rotation:v1");
+      const dark = await R.runSpotlightRefresh(envR(kv, { FINNHUB_KEY: "", SEC_USER_AGENT: "", TIINGO_KEY: "" }), { now: new Date(NOW.getTime() + 7 * 86400000), fetchImpl: async () => new Response("no", { status: 404 }) });
+      const held = kv._m.get("spotlight:model:v1") === before && kv._m.get("spotlight:rotation:v1") === rotBefore;
+      const recovered = await R.runSpotlightRefresh(envR(kv), { now: new Date(NOW.getTime() + 8 * 86400000), fetchImpl: stubFetch() });
+      return first.ok === true && dark.ok === false && dark.stored === false && dark.pair.comparison === "MSFT" && dark.pair.candidate === "AAPL" && dark.pair.advanced === false &&
+        dark.failures.some((f) => f.item === "pair-held" && /previous pair MSFT kept/.test(f.reason)) && held && dark.dataReasons.some((r) => /not refreshed this run/.test(r)) &&
+        recovered.ok === true && recovered.pair.comparison === "AAPL" && recovered.pair.advanced === true && JSON.parse(kv._m.get("spotlight:rotation:v1")).index === 1 &&
+        /refreshSucceeded/.test(readSrc("../functions/api/stock-spotlight/refresh.js")); })());
   ok("[81] refresh: a provider outage after a good pull retains last-good facts marked STALE with their original dates (the tt-facts merge rule, reused not copied)",
     await (async () => { const kv = kvS();
       await R.runSpotlightRefresh(envR(kv), { now: NOW, fetchImpl: stubFetch() });
@@ -11695,6 +11764,12 @@ console.log("\n[81] v6.5.0 STOCK SPOTLIGHT — calculations, endpoints, cron leg
     /if \(!spotlight \|\| !spotlight\.enabled \|\| !spotlight\.model/.test(ssCode) &&
     (() => { const cg = ssCode.slice(ssCode.indexOf("simple ? ("), ssCode.lastIndexOf("</CollapsedGroup>"));
       return !/Market cap|<Chart/.test(cg) && /<Row label="Market cap" big/.test(ssCode) && /<Chart tracker=\{m\.tracker\}/.test(ssCode) && /<Unavail reason=/.test(ssCode); })());
+  ok("[81] section (review): Simple's face carries the blurb and the TWO-SENTENCE summary; the full business/stock/watch-next treatment lives in Degen's face and one tap deep in Simple; in Simple the learning moment renders BEFORE the chart",
+    /\{c\.blurb && <div/.test(ssCode) && /\(c\.assessment\.summary \|\| \[\]\)\.slice\(0, 2\)\.join\(" "\)/.test(ssCode) &&
+    /simple\s*\?[\s\S]{0,200}summary[\s\S]{0,300}: <FullAssessment a=\{c\.assessment\} \/>/.test(ssCode) &&
+    (() => { const cg = ssCode.slice(ssCode.indexOf("simple ? ("), ssCode.lastIndexOf("</CollapsedGroup>")); return /<FullAssessment a=\{c\.assessment\} \/>/.test(cg); })() &&
+    ssCode.indexOf("{simple && lesson && <Lesson") < ssCode.indexOf("<Chart tracker={m.tracker}") && ssCode.indexOf("<Chart tracker={m.tracker}") < ssCode.indexOf("{!simple && lesson && <Lesson") &&
+    /awaiting first trading close/.test(ssCode) && /tracker\.yearRollover/.test(ssCode));
   ok("[81] section: the chart draws a labelled zero line, distinguishable lines (solid vs dashed), leaves gaps un-connected, and offers a keyboard-reachable value table",
     /<ReferenceLine y=\{0\}[^>]*label=\{\{ value: "0%"/.test(ssCode) && /dash: "5 3"/.test(ssCode) && /connectNulls=\{false\}/.test(ssCode) && /<details/.test(ssCode) && /<table/.test(ssCode));
   ok("[81] docs: the plan travels with the implementation, and the env matrix names SPOTLIGHT_ENABLED and TIINGO_KEY with their deploy and degraded state",

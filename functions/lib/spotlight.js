@@ -21,7 +21,7 @@
 //     smoke sweeps the module for `tt:` key references to keep it that way.
 
 import { sma } from "./tt-technicals.js";
-import { sessionsBehind, etYmd } from "../../src/sources.js";
+import { sessionsBehind, etYmd, isSessionDay } from "../../src/sources.js";
 
 export const SPOTLIGHT_SCHEMA = "md-spotlight-v1";
 export const SPOTLIGHT_ISSUER_SCHEMA = "md-spotlight-issuer-v1";
@@ -33,6 +33,18 @@ export const SPOTLIGHT_COMPARISON_LABEL = "Established growth";
 export const COMPANY_NAMES = Object.freeze({
   NBIS: "Nebius Group", MSFT: "Microsoft", AAPL: "Apple", AMZN: "Amazon", GOOGL: "Alphabet",
   META: "Meta Platforms", NVDA: "NVIDIA", TSLA: "Tesla",
+});
+/* One authored line per company on what the business does — the plan's "planned one-line
+   explanation". Descriptive only; no judgment words. */
+export const COMPANY_BLURBS = Object.freeze({
+  NBIS: "Builds and rents out AI computing capacity — data centers full of GPUs that other companies pay to use.",
+  MSFT: "Sells software and cloud computing to businesses (Windows, Office, Azure) plus gaming and LinkedIn.",
+  AAPL: "Designs and sells the iPhone, Mac and other devices, plus the services that run on them.",
+  AMZN: "Runs the largest online store and the largest cloud-computing business (AWS), plus advertising.",
+  GOOGL: "Runs Google Search, YouTube and Android, earning mostly from advertising, plus Google Cloud.",
+  META: "Runs Facebook, Instagram and WhatsApp, earning almost entirely from advertising.",
+  NVDA: "Designs the chips (GPUs) that power AI data centers and gaming PCs.",
+  TSLA: "Makes electric vehicles and energy storage, and is building driver-assistance software.",
 });
 export const SPOTLIGHT_KEYS = Object.freeze({
   model: "spotlight:model:v1",
@@ -96,21 +108,35 @@ export function nextRotation(stored, weekKey) {
 export const comparisonAt = (index) => SPOTLIGHT_ROTATION[((index % SPOTLIGHT_ROTATION.length) + SPOTLIGHT_ROTATION.length) % SPOTLIGHT_ROTATION.length];
 
 // ─── YTD total return + the comparison tracker ─────────────────────────────────────
-/* rows: ascending [{date, value}] of a provider series whose BASIS the caller declares —
-   "total_return" (adjusted for splits AND distributions) or "price_return" (unadjusted for
-   dividends). The math is identical; the label is not, and the label travels with the number.
-   Baseline = the final trading close of the previous calendar year (the last row dated before
-   Jan 1). YTD % = 100 × (value / baseline − 1). Before the first close of a new year the
-   figure is explicitly "awaiting the first close", never 0. */
+/* The FINAL trading session of the calendar year before `year` — the one baseline date both
+   stocks must share (walks back from Dec 31 over weekends and market holidays). */
+export function yearEndSession(year) {
+  const y = Number(year);
+  if (!Number.isInteger(y)) return null;
+  let d = `${y - 1}-12-31`;
+  for (let i = 0; i < 10 && !isSessionDay(d); i++) d = addDays(d, -1);
+  return isSessionDay(d) ? d : null;
+}
+
+/* rows: ascending [{date, value}] of a provider series whose BASIS the caller declares.
+   Baseline = the ACTUAL final trading close of the previous calendar year — the row dated
+   exactly yearEndSession(year). A series whose last prior-year row is any other date (review
+   #2: an August observation followed by January data read +100% "YTD" off August) is
+   UNAVAILABLE with the missing date named; the baseline is never substituted. YTD % =
+   100 × (value / baseline − 1). Before the first close of a new year the figure is explicitly
+   "awaiting the first close", never 0. */
 export function ytdReturn(rows, today) {
   const xs = (Array.isArray(rows) ? rows : []).filter((r) => r && isYmd(r.date) && finite(r.value) && r.value > 0)
     .sort((a, b) => a.date.localeCompare(b.date));
   if (!isYmd(today)) return { unavailable: "no business date to anchor the year" };
   const year = today.slice(0, 4);
   const jan1 = `${year}-01-01`;
-  const prior = xs.filter((r) => r.date < jan1);
-  if (!prior.length) return { unavailable: `no prior-year close in the series to anchor ${year} YTD` };
-  const baseline = prior[prior.length - 1];
+  const baseDate = yearEndSession(year);
+  const baseline = xs.find((r) => r.date === baseDate);
+  if (!baseline) {
+    const lastPrior = xs.filter((r) => r.date < jan1).pop();
+    return { unavailable: `series lacks the final ${Number(year) - 1} trading close (${baseDate})${lastPrior ? ` — last prior-year row is ${lastPrior.date}` : ""}; baseline not substituted` };
+  }
   const cur = xs.filter((r) => r.date >= jan1 && r.date <= today);
   if (!cur.length) return { baseline: { date: baseline.date, value: baseline.value }, points: [],
     awaiting: true, unavailable: `YTD awaits the first ${year} trading close` };
@@ -122,8 +148,9 @@ export function ytdReturn(rows, today) {
 const BASIS_LABEL = { total_return: "YTD total return", price_return: "YTD price return" };
 const BASIS_NOTE = {
   total_return: "includes dividends · adjusted for splits and distributions",
-  price_return: "dividends NOT included — no adjusted total-return series was available; shown as price return, never substituted",
+  price_return: "dividends NOT included",
 };
+export const TOTAL_RETURN_REQUIRED = "no verified total-return series — price return is not a substitute for total return, so the leg is withheld";
 
 /* seriesX: { symbol, basis, provider, rows, currency, sourceUrl } or null. Both stocks plot
    as cumulative % from 0 at their own baseline (the same date for two US-listed names, and
@@ -132,12 +159,17 @@ const BASIS_NOTE = {
    agree by construction. A missing observation is a null (a gap), never interpolated. */
 export function buildTracker(seriesA, seriesB, today) {
   const leg = (s) => {
-    if (!s || !Array.isArray(s.rows)) return { symbol: s?.symbol || null, basis: null, provider: s?.provider || null,
+    if (!s || !Array.isArray(s.rows)) return { symbol: s?.symbol || null, basis: null, provider: s?.provider || null, pct: null, through: null, baseline: null, awaiting: false,
       unavailable: s?.unavailable || "return series unavailable", points: [] };
     if (s.currency && s.currency !== "USD") return { symbol: s.symbol, basis: s.basis, provider: s.provider,
       unavailable: `series quoted in ${s.currency}; not converted`, points: [] };
+    /* Review #1: the comparison is total return against total return, or it is not drawn. A
+       price-return series is never a substitute (the two are not equivalent, and the plan
+       agreed on total return for both); the leg is WITHHELD with the reason named. */
+    if (s.basis !== "total_return" || s.verified !== true) return { symbol: s.symbol, basis: s.basis || null, provider: s.provider || null, pct: null, through: null, baseline: null, awaiting: false,
+      unavailable: TOTAL_RETURN_REQUIRED + (s.basis ? ` (on file: ${s.basis === "price_return" ? "price return" : "total return"}${s.verified !== true ? ", adjustment not verified" : ""})` : ""), points: [] };
     const y = ytdReturn(s.rows, today);
-    return { symbol: s.symbol, basis: s.basis === "total_return" ? "total_return" : "price_return",
+    return { symbol: s.symbol, basis: "total_return",
       provider: s.provider || null, sourceUrl: s.sourceUrl || null,
       baseline: y.baseline || null, points: y.points || [], through: y.through || null, pct: finite(y.pct) ? y.pct : null,
       awaiting: !!y.awaiting, unavailable: y.unavailable || null };
@@ -165,15 +197,18 @@ export function buildTracker(seriesA, seriesB, today) {
     through = l.through;
     points = l.points.map((p) => ({ date: p.date, [l.symbol]: p.pct }));
   }
-  const baselineDate = a.baseline?.date || b.baseline?.date || null;
+  const baselineDate = a.baseline?.date || b.baseline?.date || yearEndSession(String(today).slice(0, 4));
+  // Both legs anchor on yearEndSession(year) by construction; a mismatch can no longer occur,
+  // but the field stays in the contract (and is asserted null) so a regression is visible.
   const baselineMismatch = a.baseline && b.baseline && a.baseline.date !== b.baseline.date
     ? `baselines differ: ${a.symbol} ${a.baseline.date} · ${b.symbol} ${b.baseline.date}` : null;
   return {
+    year: String(today).slice(0, 4),
     baselineDate, baselineMismatch, through, points,
     legs: { [a.symbol || "A"]: a, [b.symbol || "B"]: b },
     unavailable: !aOk && !bOk ? `comparison tracker unavailable — ${a.symbol || "anchor"}: ${a.unavailable}; ${b.symbol || "comparison"}: ${b.unavailable}` : null,
     partial: (aOk !== bOk) ? `${aOk ? b.symbol : a.symbol} series unavailable — ${aOk ? b.unavailable : a.unavailable}` : null,
-    method: "100 × (adjusted value ÷ final close of the previous calendar year − 1), both lines from 0% at the same baseline date, endpoint = latest common valid trading date",
+    method: "total return only (split- and dividend-adjusted, verified): 100 × (adjusted value ÷ the final trading close of the previous calendar year − 1), both lines from 0% at that same date, endpoint = latest common valid trading date",
   };
 }
 
@@ -490,6 +525,16 @@ export function assessCompany({ symbol, metrics: m, nextEarnings, freshness }) {
   // 3. Watch next — which reported metric or announced event could change this?
   const next = nextEarnings && isYmd(nextEarnings.value) ? `Next scheduled report: ${nextEarnings.value}.` : "Next report date is not on the calendar feed.";
   const watchNext = `${next} Check whether revenue growth and operating margin hold versus ${finite(rg.pct) ? `${fmtPct(rg.pct)}` : "this quarter's growth"}${finite(om.pct) ? ` and ${om.pct.toFixed(1)}%` : ""}.`;
+  /* The two-sentence face (review: Simple was too dense): one business sentence, one stock
+     sentence, each a compression of the full clause above — never a different claim. */
+  const s1 = finite(rg.pct)
+    ? `Revenue ${pctWord(rg.pct, "grew", "fell")} ${Math.abs(rg.pct).toFixed(1)}% year over year` + (finite(om.pct) && finite(om.priorPct) ? ` and operating margin ${om.deltaPts > 0.05 ? "widened" : om.deltaPts < -0.05 ? "narrowed" : "held"} to ${om.pct.toFixed(1)}%.` : finite(om.pct) ? ` at a ${om.pct.toFixed(1)}% operating margin.` : ".")
+    : `Revenue growth is unavailable — ${rg.unavailable}.`;
+  const s2 = finite(val.capToTtmRevenue)
+    ? `The market pays ${val.capToTtmRevenue.toFixed(1)}× trailing revenue` + (finite(val.trailingPe) ? ` (${val.trailingPe.toFixed(1)}× earnings)` : "") +
+      (suppressed ? "; the price trend is not assessed on a stale tape." : finite(tr.px) && tr.above200 !== null ? `; the price is ${tr.above200 ? "above" : "below"} its 200-day average.` : ".")
+    : `Valuation multiple is unavailable — ${val.unavailable}.`;
+  const summary = [s1, s2];
   const inputs = [];
   if (finite(rg.pct)) inputs.push(`revenue ${fmtMoney(rg.latest)} (${rg.period}) vs ${fmtMoney(rg.prior)} (${rg.priorPeriod}) → ${fmtPct(rg.pct)}`);
   if (finite(om.pct)) inputs.push(`operating income ${fmtMoney(om.operatingIncome)} ÷ revenue → ${om.pct.toFixed(1)}%${finite(om.priorPct) ? ` (prior year ${om.priorPct.toFixed(1)}%)` : ""}`);
@@ -497,7 +542,7 @@ export function assessCompany({ symbol, metrics: m, nextEarnings, freshness }) {
   if (finite(val.capToTtmRevenue)) inputs.push(`market cap ÷ TTM revenue ${fmtMoney(val.ttmRevenue)} (${val.ttmRevenuePeriod}) → ${val.capToTtmRevenue.toFixed(1)}×`);
   if (finite(val.trailingPe)) inputs.push(`market cap ÷ TTM net income ${fmtMoney(val.ttmNetIncome)} → ${val.trailingPe.toFixed(1)}×`);
   if (finite(tr.px) && finite(tr.ma200)) inputs.push(`close $${tr.px} on ${tr.asOf} vs 50-day $${tr.ma50 ?? "n/a"} · 200-day $${tr.ma200}`);
-  return { symbol, business, stock, watchNext, priceTrendSuppressed: suppressed, inputs };
+  return { symbol, summary, business, stock, watchNext, priceTrendSuppressed: suppressed, inputs };
 }
 
 // ─── the seven lessons ─────────────────────────────────────────────────────────────
@@ -563,7 +608,21 @@ export function marketFreshness(observedAt, now = new Date()) {
 }
 export function freshenSpotlight(model, now = new Date()) {
   if (!model || model.schema !== SPOTLIGHT_SCHEMA) return model;
-  const out = { ...model, servedAt: now.toISOString(), businessDateServed: etYmd(now), companies: {} };
+  const servedDate = etYmd(now);
+  const out = { ...model, servedAt: now.toISOString(), businessDateServed: servedDate, companies: {} };
+  /* Review #3: a December model served in January must not keep showing last year's YTD as
+     if it were this year's. The served ET year is compared with the tracker's year; on a
+     rollover every leg is reset to "awaiting the first trading close" and the line is
+     withdrawn, until a refresh with a new-year observation replaces the model. */
+  const t = model.tracker;
+  const trackerYear = t?.year || (t?.baselineDate ? String(Number(t.baselineDate.slice(0, 4)) + 1) : null);
+  if (t && trackerYear && servedDate.slice(0, 4) > trackerYear) {
+    const legs = {};
+    for (const [sym, l] of Object.entries(t.legs || {})) legs[sym] = { ...l, pct: null, through: null, points: [], awaiting: true,
+      baseline: null, unavailable: `YTD awaits the first ${servedDate.slice(0, 4)} trading close (stored series ends ${l.through || "—"})` };
+    out.tracker = { ...t, year: servedDate.slice(0, 4), yearRollover: true, baselineDate: yearEndSession(servedDate.slice(0, 4)), through: null, points: [], legs, partial: null,
+      unavailable: `YTD awaits the first ${servedDate.slice(0, 4)} trading close — the stored ${trackerYear} series is last year's` };
+  }
   for (const [sym, c] of Object.entries(model.companies || {})) {
     const market = marketFreshness(c.marketCap?.observedAt || null, now);
     const trackerLeg = model.tracker?.legs?.[sym];
@@ -599,10 +658,34 @@ export function buildCompany({ symbol, name, facts, fundamentals, series, today,
   cite("market cap", facts?.marketCap || facts?.quote); cite("revenue", fundamentals?.revenue); cite("operating income", fundamentals?.operatingIncome);
   cite("operating cash flow", fundamentals?.ocf); cite("capital expenditure", fundamentals?.capex); cite("cash", fundamentals?.cash); cite("debt", fundamentals?.debt);
   cite("shares outstanding", fundamentals?.sharesOutstanding); cite("price series", series); cite("earnings calendar", facts?.nextEarnings);
-  const company = { symbol, name: name || COMPANY_NAMES[symbol] || symbol, currency: "USD", marketCap, metrics, nextEarnings,
+  const company = { symbol, name: name || COMPANY_NAMES[symbol] || symbol, blurb: COMPANY_BLURBS[symbol] || null, currency: "USD", marketCap, metrics, nextEarnings,
     freshness: { market: marketFreshness(marketCap.observedAt, now), fundamentals: fundamentalsFreshness }, sources };
   company.assessment = assessCompany({ symbol, metrics, nextEarnings, freshness: { market: marketFreshness(series?.rows?.length ? series.rows[series.rows.length - 1].date : null, now) } });
   return company;
+}
+
+/* Review #4: "success" is a DATA condition, not a KV write. A refresh counts as successful
+   only when, for BOTH companies, a market cap is on file and the total-return leg either has
+   a figure or is honestly awaiting the year's first close. Anything less keeps the previous
+   pair — the rotation is never advanced onto a name the widget cannot show. */
+/* `freshStatus` (optional): per symbol, the status of the market cap and total-return
+   series as returned by THIS run's providers — before the last-good merge. A pair prepared
+   last week and carried as STALE is not a successful refresh, so it must not advance the
+   rotation on a night every provider was dark. */
+export function refreshSucceeded(model, freshStatus = null) {
+  if (!model || !model.pair) return { ok: false, reasons: ["no model"] };
+  const reasons = [];
+  for (const sym of [model.pair.anchor, model.pair.comparison]) {
+    const c = model.companies?.[sym], leg = model.tracker?.legs?.[sym];
+    if (!c || !finite(c.marketCap?.usd)) reasons.push(`${sym}: market cap unavailable`);
+    if (!leg || (!finite(leg.pct) && !leg.awaiting)) reasons.push(`${sym}: total-return leg unavailable`);
+    const fs = freshStatus && freshStatus[sym];
+    if (fs) {
+      if (fs.marketCap !== "LIVE") reasons.push(`${sym}: market cap not refreshed this run (${fs.marketCap || "absent"})`);
+      if (fs.totalReturn !== "LIVE") reasons.push(`${sym}: total-return series not refreshed this run (${fs.totalReturn || "absent"})`);
+    }
+  }
+  return { ok: reasons.length === 0, reasons };
 }
 
 export function buildSpotlightModel({ anchor, comparison, rotation, tracker, now = new Date(), failures = [] }) {
@@ -632,12 +715,12 @@ export function projectSpotlight(model) {
     const metrics = {};
     for (const k of PUBLIC_METRIC_KEYS) if (c.metrics && c.metrics[k] !== undefined) metrics[k] = c.metrics[k];
     companies[sym] = {
-      symbol: c.symbol, name: c.name, currency: c.currency,
+      symbol: c.symbol, name: c.name, blurb: c.blurb || null, currency: c.currency,
       marketCap: c.marketCap ? { usd: c.marketCap.usd ?? null, display: c.marketCap.display ?? null, observedAt: c.marketCap.observedAt ?? null, method: c.marketCap.method ?? null, provider: c.marketCap.provider ?? null, note: c.marketCap.note ?? null, unavailable: c.marketCap.unavailable ?? null } : null,
       metrics,
       nextEarnings: c.nextEarnings ? { value: c.nextEarnings.value, provider: c.nextEarnings.provider } : null,
       freshness: c.freshness || null,
-      assessment: c.assessment ? { business: c.assessment.business, stock: c.assessment.stock, watchNext: c.assessment.watchNext, priceTrendSuppressed: !!c.assessment.priceTrendSuppressed, inputs: c.assessment.inputs || [] } : null,
+      assessment: c.assessment ? { summary: Array.isArray(c.assessment.summary) ? c.assessment.summary.slice(0, 2) : [], business: c.assessment.business, stock: c.assessment.stock, watchNext: c.assessment.watchNext, priceTrendSuppressed: !!c.assessment.priceTrendSuppressed, inputs: c.assessment.inputs || [] } : null,
       sources: Array.isArray(c.sources) ? c.sources.map((s) => ({ label: s.label, provider: s.provider, url: s.url, observedAt: s.observedAt, form: s.form, filed: s.filed })) : [],
     };
   }
@@ -649,7 +732,7 @@ export function projectSpotlight(model) {
     schema: model.schema, generatedAt: model.generatedAt, businessDate: model.businessDate,
     servedAt: model.servedAt || null, businessDateServed: model.businessDateServed || null,
     pair: model.pair, companies,
-    tracker: t ? { baselineDate: t.baselineDate, baselineMismatch: t.baselineMismatch, through: t.through, points: t.points || [], legs, unavailable: t.unavailable, partial: t.partial, method: t.method } : null,
+    tracker: t ? { year: t.year || null, yearRollover: !!t.yearRollover, baselineDate: t.baselineDate, baselineMismatch: t.baselineMismatch, through: t.through, points: t.points || [], legs, unavailable: t.unavailable, partial: t.partial, method: t.method } : null,
     lesson: model.lesson, disclaimer: model.disclaimer,
     diagnostics: { failures: (model.diagnostics?.failures || []).map((f) => ({ symbol: f.symbol || null, item: f.item || null, reason: String(f.reason || "").slice(0, 200) })) },
   };

@@ -414,7 +414,10 @@ console.log("\n[public] v3.94 — Simple default, the toggle, persistence, red f
     await page.locator('button[aria-label="Show regime factors"]').click();
     await page.waitForTimeout(150);
     ok("v6.4 clock: the unfrozen counterpart caption renders one tap deep",
-      /(Latest market read · no new call is scheduled today|Live market read · today's official call (freezes at 10:00 ET|is unavailable))/.test(
+      /* v6.5: the pre-10am-ET caption ("today's 10am call is scheduled") was missing from this regex,
+         so the pin went red only when the suite ran between midnight and 10am ET — found by running
+         the gate at 01:52 ET. All three captions liveReadCaption() can emit are accepted. */
+      /(Latest market read · no new call is scheduled today|Live market read · today's (official|10am) call (freezes at 10:00 ET|is unavailable|is scheduled))/.test(
         await page.locator('[aria-label="Macro backdrop verdict"] .call-caption').innerText()));
     await page.locator('button[aria-label="Show regime factors"]').click();
     await page.waitForTimeout(150);
@@ -1910,20 +1913,25 @@ console.log("\n[public] v6.5 — STOCK SPOTLIGHT: Simple + Degen, always-visible
       g.stripBottom !== null && g.regionTop !== null && g.regionTop >= g.stripBottom - 1 && g.regionTop - g.stripBottom < 16);
     ok("v6.5 Simple: both company names and tickers, the comparison label and the week", /Nebius Group/.test(text) && /NBIS/.test(text) && /Microsoft/.test(text) && /MSFT/.test(text) && /Established growth/.test(text) && /week of 2026-09-14/.test(text));
     ok("v6.5 Simple: MARKET CAP for both with observation dates, visible with NO click", /\$70\.1B/.test(text) && /\$3\.41T/.test(text) && (text.match(/as of \d{4}-\d{2}-\d{2}/g) || []).length >= 2);
-    ok("v6.5 Simple: YTD carries its BASIS label and through-date (NBIS price return, MSFT total return), with the dividend caveat on the price-return leg",
-      /YTD PRICE RETURN/i.test(text) && /YTD TOTAL RETURN/i.test(text) && (text.match(/through \d{4}-\d{2}-\d{2}/g) || []).length >= 2 && /dividends NOT included/.test(text));
+    ok("v6.5 Simple: YTD TOTAL RETURN for both with through-dates — one basis, and no price-return caveat because no price return is shown",
+      (text.match(/YTD TOTAL RETURN/gi) || []).length === 2 && !/PRICE RETURN/i.test(text) && (text.match(/through \d{4}-\d{2}-\d{2}/g) || []).length >= 2);
+    ok("v6.5 Simple (review): each company carries a one-line 'what it does' under its name",
+      /rents out AI computing capacity/.test(text) && /Sells software and cloud computing/.test(text));
     ok("v6.5 Simple: the shared YTD chart draws two distinguishable lines, a zero reference line and a ticker legend",
       (await r.locator(".recharts-line").count()) === 2 && (await r.locator(".recharts-reference-line").count()) === 1 && /YTD COMPARISON/.test(text) && /from 2025-12-31/.test(text));
-    ok("v6.5 Simple: revenue growth, operating margin and free cash flow rows with their periods; the assessment answers business · stock · watch next",
+    ok("v6.5 Simple (review): revenue growth, operating margin and free cash flow rows with their periods, and a TWO-SENTENCE summary per company — the full business/stock/watch-next treatment is NOT on the face",
       /REVENUE GROWTH/i.test(text) && /OPERATING MARGIN/i.test(text) && /FREE CASH FLOW/i.test(text) && /quarter to \d{4}-\d{2}-\d{2}/.test(text) &&
-      /BUSINESS ·/.test(text) && /Revenue grew/.test(text) && /STOCK ·/.test(text) && /The market pays/.test(text) && /WATCH NEXT ·/.test(text));
-    ok("v6.5 Simple: one shared learning moment; the worked example and the supporting analysis stay one tap deep",
+      /Revenue grew 26\.7% year over year and operating margin widened to 46\.1%\. The market pays 12\.5× trailing revenue \(33\.4× earnings\); the price is above its 200-day average\./.test(text) &&
+      !/BUSINESS ·/.test(text) && !/WATCH NEXT ·/.test(text) && (await r.locator('[aria-label="Full assessment"]').count()) === 0);
+    ok("v6.5 Simple (review): the learning moment renders ABOVE the chart, right after the two compact profiles; the worked example and the analysis stay one tap deep",
       /LEARNING MOMENT/.test(text) && /run-rate/i.test(text) && !/Worked example/.test(text) && (await r.locator('[aria-label$="supporting analysis"]').count()) === 0 &&
-      /explore the numbers/i.test(text));
+      /explore the numbers/i.test(text) && await page.evaluate(() => { const l = document.querySelector('[aria-label="Learning moment"]'), c = document.querySelector('[aria-label="Year-to-date comparison chart"]');
+        return l && c && l.getBoundingClientRect().top < c.getBoundingClientRect().top; }));
     await r.locator("button.cg-toggle").first().click();
     await page.waitForTimeout(300);
     const opened = await r.innerText();
-    ok("v6.5 Simple: 'explore the numbers' opens the supporting analysis for BOTH companies, the worked example and dated sources",
+    ok("v6.5 Simple: 'explore the numbers' opens the FULL three-question assessment and the supporting analysis for BOTH companies, the worked example and dated sources",
+      (await r.locator('[aria-label="Full assessment"]').count()) === 2 && /BUSINESS ·/.test(opened) && /WATCH NEXT ·/.test(opened) &&
       (await r.locator('[aria-label$="supporting analysis"]').count()) === 2 && /Worked example/.test(opened) && /CALCULATION INPUTS/.test(opened) && /sec\.gov/.test(opened) && /YTD method/.test(opened));
     ok("v6.5 Simple: no rating words on the face", !/\b(cheap|safe|buy|sell|undervalued|overvalued)\b/i.test(opened));
     const [glance, cardsTop] = await page.evaluate(() => {
@@ -1934,7 +1942,8 @@ console.log("\n[public] v6.5 — STOCK SPOTLIGHT: Simple + Degen, always-visible
       cardsTop !== null && cardsTop <= 420 && glance !== null && glance <= 660);
     ok("v6.5 Simple: 390px stays overflow-free with the chart in place, no page errors",
       await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth + 1) && errors.length === 0);
-    simpleFace = { caps: text.match(/\$\d+\.\d+[TB]/g), ytd: text.match(/[+−]\d+\.\d\d%/g), business: (text.match(/BUSINESS · [^\n]+/g) || []) };
+    // The full three-question text lives one tap deep in Simple (`opened`), on the face in Degen.
+    simpleFace = { caps: text.match(/\$\d+\.\d+[TB]/g), ytd: text.match(/[+−]\d+\.\d\d%/g), business: (opened.match(/BUSINESS · [^\n]+/g) || []) };
     await page.close(); }
   // 3. DEGEN at 1280px — the analysis is visible; only the sources collapse; IDENTICAL values.
   { const { page, errors } = await open({ live: FULL_LIVE, width: 1280, power: true, spotlight: feed });
@@ -1965,10 +1974,32 @@ console.log("\n[public] v6.5 — STOCK SPOTLIGHT: Simple + Degen, always-visible
       /Unavailable — profile carries no market capitalization/.test(text) && /\$3\.41T/.test(text) && !/\$0/.test(text));
     ok("v6.5 unavailable: the missing anchor series is NAMED and the comparison line still plots alone",
       /NBIS series unavailable/.test(text) && (await r.locator(".recharts-line").count()) === 1 && /Unavailable — return series unavailable/.test(text));
-    ok("v6.5 stale: market data 12 days behind wears STALE and the price-trend clause is suppressed, not graded",
-      /STALE/.test(text) && /Price trend not assessed — the latest expected session close is missing/.test(text) && !/above its 200-day/.test(text));
+    ok("v6.5 stale: market data 12 days behind wears STALE and the price-trend clause is suppressed on the face, not graded",
+      /STALE/.test(text) && /price trend is not assessed on a stale tape/.test(text) && !/above its 200-day/.test(text));
     ok("v6.5 unavailable: the scheduled pair stays visible with the lesson, and the face stays overflow-free",
       /Established growth/.test(text) && /LEARNING MOMENT/.test(text) && await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth + 1) && errors.length === 0);
+    await page.close(); }
+  // 4b. PRICE RETURN ONLY on the anchor (review #1): the leg is WITHHELD, never plotted against total return.
+  { const po = makeSpotlightFixture({ anchorPriceOnly: true });
+    const { page, errors } = await open({ live: FULL_LIVE, width: 390, power: false, spotlight: { schema: "md-spotlight-v1", enabled: true, model: po.projected } });
+    await page.waitForTimeout(1600);
+    const r = region(page);
+    const text = await r.innerText();
+    ok("v6.5 review #1: a price-return-only leg reads Unavailable naming the rule, the chart draws ONLY the verified total-return line, and no price-return figure appears anywhere",
+      /no verified total-return series — price return is not a substitute/.test(text) && /on file: price return/.test(text) && (await r.locator(".recharts-line").count()) === 1 &&
+      !/\+88\.10%/.test(text) && /MSFT \+\d+\.\d\d%/.test(text) && /NBIS series unavailable/.test(text) && errors.length === 0);
+    await page.close(); }
+  // 4c. YEAR ROLLOVER at serve (review #3): a Dec 31 model served on Jan 1.
+  { const { freshenSpotlight, projectSpotlight } = await import("../functions/lib/spotlight.js");
+    const dec = makeSpotlightFixture({ now: new Date("2025-12-31T23:30:00Z") });
+    const jan = projectSpotlight(freshenSpotlight(dec.model, new Date("2026-01-01T15:00:00Z")));
+    const { page, errors } = await open({ live: FULL_LIVE, width: 390, power: false, spotlight: { schema: "md-spotlight-v1", enabled: true, model: jan } });
+    await page.waitForTimeout(1600);
+    const r = region(page);
+    const text = await r.innerText();
+    ok("v6.5 review #3: served in the new year, both YTD fields read 'awaiting first trading close', no line is drawn, and last year's figures are gone",
+      (text.match(/awaiting first trading close/gi) || []).length === 2 && /Awaiting the first 2026 trading close/.test(text) && (await r.locator(".recharts-line").count()) === 0 &&
+      !/\+\d+\.\d\d%\s*through/.test(text) && /\$3\.41T/.test(text) && errors.length === 0);
     await page.close(); }
   // 5. 320px — the narrowest contract.
   { const { page, errors } = await open({ live: FULL_LIVE, width: 320, power: false, spotlight: feed });

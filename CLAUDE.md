@@ -11,18 +11,29 @@ plan travels with the branch).** The widget answers *"what do this business's la
 its stock's current price tell me?"* in BOTH modes, immediately below the macro-number strip, so
 the macro verdict stays the first answer. **Always visible, never behind a disclosure:** company
 name + ticker, **market capitalization with its observation date**, **YTD return with its
-through-date and its BASIS label**, and a shared YTD comparison chart (two distinguishable lines
+through-date**, and a shared YTD comparison chart (two distinguishable lines
 from 0% at the same prior-year baseline, a labelled zero line, a legend, gaps left as gaps, and a
-keyboard-reachable value table). Simple shows compact profiles, revenue growth / operating margin /
-free cash flow, a deterministic assessment (business · stock · watch next) and ONE shared learning
-moment, with *explore the numbers* one tap deep; Degen shows the supporting analysis (cash, debt,
+keyboard-reachable value table). Simple shows compact profiles — a one-line *what the company
+does*, revenue growth / operating margin / free cash flow, a TWO-SENTENCE summary — then ONE
+shared learning moment, then the chart, with the full three-question assessment (business ·
+stock · watch next) and the analysis one tap deep under *explore the numbers* (owner review
+2026-09-13: Simple must feel like a learning moment, not two research cards); Degen shows the
+full assessment and the supporting analysis (cash, debt,
 cap ÷ TTM revenue, trailing P/E, shares, price vs 50/200-day, run-rate vs reported TTM, the
 calculation inputs, the worked example) and collapses only the dated source citations.
 **The pure core is `functions/lib/spotlight.js`** (Node-importable, no React, no KV): the ET-week
 rotation keyed by Monday (MSFT → AAPL → AMZN → GOOGL → META → NVDA → TSLA, advanced on the FIRST
-SUCCESSFUL refresh of a new week — a failed refresh never moves the pair); YTD = 100 × (adjusted
-value ÷ the final close of the previous calendar year − 1) with the visible figure read AT the
-chart's common endpoint so the number and the line agree by construction; market cap that prefers
+SUCCESSFUL refresh of a new week, where success is a DATA condition — both companies' market cap
+and total-return series refreshed LIVE in that run — never a KV write; a night every provider is
+dark keeps the previous pair on display and the rotation untouched, the week retrying without
+moving); YTD = 100 × (adjusted value ÷ the ACTUAL final trading close of the previous calendar
+year − 1) — the baseline row must be dated exactly `yearEndSession(year)` (holiday-aware), shared
+by both stocks, and a series lacking it is unavailable with the missing date named rather than
+anchored on whatever prior-year row it has (an August row followed by January data must never read
++100% "YTD"); the visible figure is read AT the chart's common endpoint so the number and the line
+agree by construction; a December model served in January detects the year change and resets
+both legs to *awaiting the first trading close* rather than carrying last year's returns; market
+cap that prefers
 a dated provider figure and derives only from a dated price × ACTUAL shares outstanding (a diluted
 weighted-average count is REFUSED, a non-USD quote is not converted, enterprise value is never a
 substitute); SEC fundamentals normalized into DISCRETE QUARTERS from cumulative XBRL facts (Q4 =
@@ -33,9 +44,16 @@ supporting figures (else "worked example unavailable", the conceptual lesson kep
 WHITELIST projection. Assessments are templates over measured changes — smoke sweeps them and the
 lessons for cheap/safe/quality/buy/sell/rating vocabulary.
 **Honesty rules carried in, each executed in smoke:** missing data reads *Unavailable — reason*
-(never zero); a price-return series is shown AS *YTD price return* with the dividend caveat stated,
-never silently as total return (the series ladder is Finnhub adjusted candles → Tiingo adjClose →
-Nasdaq closes, and the basis rides the leg); freshness is RECOMPUTED at serve from observation
+(never zero); **the tracker draws total return against total return or not at all** — a leg is
+plotted only from a VERIFIED total-return series (Tiingo adjClose, whose split-and-dividend
+adjustment is CHECKED structurally: the adjClose/close factor must be non-decreasing and 1 at the
+latest row, continuity is judged on the adjusted series so a valid 4-for-1 split passes, and a raw
+jump is accepted only with the provider's own splitFactor evidence on that row), while Finnhub
+candles (`adjusted=true` is split adjustment only) and Nasdaq closes are stored as a SEPARATE
+price series for the 50/200-day trend and can never be promoted — a price-return leg is WITHHELD
+with the rule named, never substituted, labelled or otherwise (the first review round found the
+prior build plotting NBIS price return against Microsoft total return; that comparison was not
+equivalent, and it is now structurally impossible); freshness is RECOMPUTED at serve from observation
 dates (a stored LIVE flag is not trusted) and a missing expected session suppresses the price-trend
 clause; missing debt reads *absent is not zero*; a 20-F/6-K filer under `ifrs-full` resolves to the
 same concepts — **the Terminal's `tt-facts` extractor widened from 10-Q/10-K to 20-F/6-K/40-F
@@ -54,15 +72,24 @@ own try/catch, writing ONLY its per-job heartbeat (`spotlight-6pmET`, listed in 
 the close job's summary record survives and a spotlight failure cannot interrupt the macro
 evening update. **Production activation** still requires approved public-display coverage for
 market caps, prices and derived total returns (plan §5) — the flag is the switch, not a default.
-Tests: **2319 smoke** (+44, section [81]: every calculation RUN — rotation, YTD/dividends/gaps/
-year rollover, cap units and the weighted-average refusal, derived quarters/TTM/restatements,
-IFRS forms, the assessments' determinism and vocabulary sweep, freshness, the whitelist, both
-endpoints against a fake KV with stubbed providers incl. the series ladder and the failed-store
-no-advance rule, the issuer record, the cron leg) + 309 render + **311 public-render** (+23: the
-disabled and dead feeds render nothing, Simple at 390 with the always-visible fields and the chart,
-one-tap explore, Degen with the analysis visible and sources collapsed, IDENTICAL values across
-modes, unavailable/stale states, 320px, and the macro first-screen budgets unchanged) +
-`audit:prod` clean.
+**Review round (2026-09-13, five correctness reproductions, all now pinned):** mixed return
+bases in the tracker; an August-anchored "+100% YTD"; last year's YTD surviving into January; a
+dark-provider night advancing the rotation; a valid split rejected by raw-price continuity. Each
+fix above names its item. Also found by running the gate at 01:52 ET: the v6.4 clock pin's regex
+never carried the pre-10am *"today's 10am call is scheduled"* caption, so it was red only between
+midnight and 10am ET — the three captions `liveReadCaption` can emit are now all accepted.
+Tests: **2327 smoke** (+52, section [81]: every calculation RUN — rotation, the year-end baseline
+and its refusals, YTD/dividends/gaps/year rollover at serve, the total-return-only tracker and the
+withheld price leg, the Tiingo verification incl. the accepted 4-for-1 split and the three
+rejections, cap units and the weighted-average refusal, derived quarters/TTM/restatements, IFRS
+forms, the assessments' determinism, two-sentence summaries and vocabulary sweep, blurbs, the
+whitelist, both endpoints against a fake KV with stubbed providers incl. the two-series ladder,
+the data-success rule with the held pair, the failed-store no-advance rule, the issuer record, the
+cron leg) + 309 render + **314 public-render** (+26: the disabled and dead feeds render nothing,
+Simple at 390 with the always-visible fields, the two-sentence face, the lesson above the chart,
+one-tap explore with the full assessment, Degen with the analysis visible and sources collapsed,
+IDENTICAL values across modes, the withheld price-return leg, the January rollover, unavailable/
+stale states, 320px, and the macro first-screen budgets unchanged) + `audit:prod` clean.
 
 **v6.4.0 "ONE CALL, TWO VOICES" — the public Simple view now has one plain answer, while
 the personality moves to Degen mode (owner review 2026-09-13).** This is a copy and
@@ -6090,7 +6117,7 @@ Jan-anchor shipped; see `snapshot.js` ~318–328), `spyMa100`, `spyMa200`, and a
 | `TT_PIN` (or `ACCESS_TEAM_DOMAIN`+`ACCESS_AUD`) | Pages | for the terminal | `/api/tt` + every PIN-gated route | 503 fail closed / Access mode |
 | `SEC_USER_AGENT` | Pages | for TT facts + the spotlight's fundamentals | `data.sec.gov` fetches | SEC facts UNKNOWN → WAIT; spotlight fundamentals Unavailable naming the variable |
 | `SPOTLIGHT_ENABLED` | Pages | **off by default** | `GET /api/stock-spotlight` serves a model only when the value is exactly `1` (v6.5.0) | the endpoint returns `enabled:false` and the Stock Spotlight section renders nothing |
-| `TIINGO_KEY` | Pages | optional | the spotlight's dividend-adjusted (total-return) series when Finnhub candles are not entitled (v6.5.0) | the ladder falls to Nasdaq closes, shown and LABELLED as YTD price return |
+| `TIINGO_KEY` | Pages | for the spotlight tracker | the spotlight's VERIFIED total-return series (Tiingo adjClose, v6.5.0) — the only source the YTD tracker draws | both YTD legs read Unavailable (no verified total-return series) and no line is drawn; the price trend still reads from Finnhub/Nasdaq closes |
 | `AI` (Workers AI binding) | Pages | for TT OCR | screenshot→draft + rubric | OCR route degraded, gates UNKNOWN |
 
 ### The `VITE_DATA_MODE=live` flip

@@ -13,9 +13,14 @@
 //   · Company name + ticker, MARKET CAP (with its observation date), YTD return (with its
 //     through-date and its BASIS label) and the shared YTD chart are ALWAYS visible in both
 //     modes — never behind a disclosure. Missing = "Unavailable" + the reason, never 0.
-//   · Simple: compact profiles + a two-sentence assessment + one shared learning moment,
-//     with "explore the numbers" one tap deep. Degen: the analysis is visible and only the
-//     source disclosures collapse.
+//   · Simple: compact profiles (what the company does, cap, YTD, three fundamentals, a
+//     TWO-SENTENCE summary) then the learning moment, then the chart, with the full
+//     business/stock/watch-next treatment, the analysis and the sources one tap deep under
+//     "explore the numbers" (review 2026-09-13: Simple must feel like a learning moment, not
+//     two research cards). Degen: the full treatment and the analysis are visible and only
+//     the source disclosures collapse.
+//   · The tracker draws ONLY verified total-return legs; a withheld leg reads Unavailable
+//     with its reason, and a new year before its first close reads "awaiting".
 //   · No verdict badges, no rating words: the assessment text is the model's deterministic
 //     template and is rendered verbatim.
 import { LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer, ReferenceLine } from "recharts";
@@ -64,15 +69,16 @@ const Profile = ({ c, leg, simple }) => {
         <span style={{ fontFamily: T.fontSans, fontSize: T.fsL, fontWeight: 700, color: T.textPrimary }}>{c.name}</span>
         <span style={{ fontFamily: T.fontMono, fontSize: T.fsM, color: T.amber }}>{c.symbol}</span>
       </div>
+      {c.blurb && <div style={{ fontFamily: T.fontSans, fontSize: T.fsS, color: T.textSecondary, lineHeight: 1.35, marginBottom: 3 }}>{c.blurb}</div>}
       {/* Always visible, both modes: market cap with its date; YTD with its through-date + basis. */}
       <Row label="Market cap" big value={cap.display} unavailable={cap.unavailable}
         sub={cap.observedAt ? <>as of {cap.observedAt}{cap.method === "derived" ? " · derived" : ""}<Stale f={c.freshness && c.freshness.market} /></> : null} />
-      <Row label={leg && leg.label ? leg.label : "YTD return"} big
-        value={leg && typeof leg.pct === "number" ? pct(leg.pct, 2) : null}
-        unavailable={leg ? (leg.unavailable || (typeof leg.pct !== "number" ? "no common trading date yet" : null)) : "return series unavailable"}
-        sub={leg && leg.through ? <>through {leg.through}<Stale f={c.freshness && c.freshness.series} /></> : null} />
-      {leg && leg.basis === "price_return" && typeof leg.pct === "number" &&
-        <div style={{ fontFamily: T.fontSans, fontSize: T.fsS, color: T.amber, marginTop: 1 }}>price return — {leg.basisNote}</div>}
+      {leg && leg.awaiting
+        ? <Row label="YTD total return" big value="awaiting first trading close" sub={leg.unavailable || null} />
+        : <Row label="YTD total return" big
+            value={leg && typeof leg.pct === "number" ? pct(leg.pct, 2) : null}
+            unavailable={leg ? (leg.unavailable || (typeof leg.pct !== "number" ? "no common trading date yet" : null)) : "return series unavailable"}
+            sub={leg && leg.through ? <>through {leg.through}<Stale f={c.freshness && c.freshness.series} /></> : null} />}
       <div style={{ borderTop: `1px solid ${T.border}`, margin: "6px 0 4px" }} />
       <Row label="Revenue growth" value={pct(rg.pct)} unavailable={rg.unavailable} sub={rg.period ? `${rg.period} vs a year earlier` : null} />
       <Row label="Operating margin" value={typeof om.pct === "number" ? `${om.pct.toFixed(1)}%` : null} unavailable={om.unavailable}
@@ -82,16 +88,22 @@ const Profile = ({ c, leg, simple }) => {
         <div style={{ fontFamily: T.fontMono, fontSize: 8, color: T.textMuted, marginTop: 2 }}>
           {c.freshness.fundamentals.label}{c.freshness.fundamentals.period ? ` · ${c.freshness.fundamentals.period}` : ""}{c.freshness.fundamentals.form ? ` · ${c.freshness.fundamentals.form}` : ""}
         </div>}
-      {c.assessment && (
-        <div style={{ marginTop: 6, fontFamily: T.fontSans, fontSize: simple ? T.fsM : T.fsS, color: T.textPrimary, lineHeight: 1.45 }}>
-          <div><span style={{ color: T.textMuted, fontFamily: T.fontMono, fontSize: T.fsXs }}>BUSINESS · </span>{c.assessment.business}</div>
-          <div style={{ marginTop: 3 }}><span style={{ color: T.textMuted, fontFamily: T.fontMono, fontSize: T.fsXs }}>STOCK · </span>{c.assessment.stock}</div>
-          <div style={{ marginTop: 3, color: T.textSecondary }}><span style={{ color: T.textMuted, fontFamily: T.fontMono, fontSize: T.fsXs }}>WATCH NEXT · </span>{c.assessment.watchNext}</div>
-        </div>
-      )}
+      {c.assessment && (simple
+        ? <div style={{ marginTop: 6, fontFamily: T.fontSans, fontSize: T.fsM, color: T.textPrimary, lineHeight: 1.45 }}>
+            {(c.assessment.summary || []).slice(0, 2).join(" ")}
+          </div>
+        : <FullAssessment a={c.assessment} />)}
     </div>
   );
 };
+/* The three questions in full — on the Degen face, and one tap deep in Simple. */
+const FullAssessment = ({ a }) => (
+  <div style={{ marginTop: 6, fontFamily: T.fontSans, fontSize: T.fsS, color: T.textPrimary, lineHeight: 1.45 }} role="group" aria-label="Full assessment">
+    <div><span style={{ color: T.textMuted, fontFamily: T.fontMono, fontSize: T.fsXs }}>BUSINESS · </span>{a.business}</div>
+    <div style={{ marginTop: 3 }}><span style={{ color: T.textMuted, fontFamily: T.fontMono, fontSize: T.fsXs }}>STOCK · </span>{a.stock}</div>
+    <div style={{ marginTop: 3, color: T.textSecondary }}><span style={{ color: T.textMuted, fontFamily: T.fontMono, fontSize: T.fsXs }}>WATCH NEXT · </span>{a.watchNext}</div>
+  </div>
+);
 
 const Detail = ({ c }) => {
   const m = c.metrics || {};
@@ -139,6 +151,8 @@ const Sources = ({ companies, tracker }) => (
 
 const Chart = ({ tracker, syms }) => {
   if (!tracker) return null;
+  if (tracker.yearRollover)
+    return <div style={{ padding: "6px 0", fontFamily: T.fontMono, fontSize: T.fsM, color: T.textSecondary }}>Awaiting the first {tracker.year} trading close — both lines restart at 0% from {tracker.baselineDate}.</div>;
   if (tracker.unavailable || !tracker.points || tracker.points.length === 0)
     return <div style={{ padding: "6px 0" }}><Unavail reason={tracker.unavailable || "no chart points yet"} /></div>;
   const legs = tracker.legs || {};
@@ -193,6 +207,16 @@ const Chart = ({ tracker, syms }) => {
   );
 };
 
+const Lesson = ({ lesson, simple }) => (
+  <div style={{ marginTop: 8, borderLeft: `2px solid ${T.amber}`, padding: "4px 10px" }} role="group" aria-label="Learning moment">
+    <div style={{ fontFamily: T.fontMono, fontSize: T.fsXs, color: T.amber, letterSpacing: "0.1em" }}>LEARNING MOMENT · {lesson.title}</div>
+    <div style={{ fontFamily: T.fontSans, fontSize: simple ? T.fsM : T.fsS, color: T.textPrimary, lineHeight: 1.45, marginTop: 2 }}>{lesson.body}</div>
+    {!simple && (lesson.example
+      ? <div style={{ fontFamily: T.fontMono, fontSize: T.fsXs, color: T.textSecondary, marginTop: 4, lineHeight: 1.5 }}>Worked example — {lesson.example}</div>
+      : <div style={{ fontFamily: T.fontMono, fontSize: T.fsXs, color: T.amber, marginTop: 4 }}>{lesson.exampleUnavailable}</div>)}
+  </div>
+);
+
 const StockSpotlight = ({ spotlight, simple }) => {
   if (!spotlight || !spotlight.enabled || !spotlight.model || !spotlight.model.pair) return null;
   const m = spotlight.model;
@@ -213,22 +237,25 @@ const StockSpotlight = ({ spotlight, simple }) => {
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(260px,1fr))", gap: 8 }}>
         {companies.map((c) => <Profile key={c.symbol} c={c} leg={legs[c.symbol]} simple={simple} />)}
       </div>
+      {/* Simple: the learning moment comes BEFORE the chart, right after the two compact
+          profiles — the widget is a lesson first (review 2026-09-13). Degen keeps chart → lesson. */}
+      {simple && lesson && <Lesson lesson={lesson} simple />}
       <div style={{ marginTop: 8, background: T.surface, border: `1px solid ${T.border}`, borderRadius: 6, padding: "8px 12px", minWidth: 0 }} role="group" aria-label="Year-to-date comparison chart">
-        <div style={{ fontFamily: T.fontMono, fontSize: T.fsXs, color: T.textMuted, letterSpacing: "0.1em", marginBottom: 2 }}>YTD COMPARISON · cumulative return from 0% at the prior-year close</div>
+        <div style={{ fontFamily: T.fontMono, fontSize: T.fsXs, color: T.textMuted, letterSpacing: "0.1em", marginBottom: 2 }}>YTD COMPARISON · total return from 0% at the prior-year close</div>
         <Chart tracker={m.tracker} syms={syms} />
       </div>
-      {lesson && (
-        <div style={{ marginTop: 8, borderLeft: `2px solid ${T.amber}`, padding: "4px 10px" }} role="group" aria-label="Learning moment">
-          <div style={{ fontFamily: T.fontMono, fontSize: T.fsXs, color: T.amber, letterSpacing: "0.1em" }}>LEARNING MOMENT · {lesson.title}</div>
-          <div style={{ fontFamily: T.fontSans, fontSize: simple ? T.fsM : T.fsS, color: T.textPrimary, lineHeight: 1.45, marginTop: 2 }}>{lesson.body}</div>
-          {!simple && (lesson.example
-            ? <div style={{ fontFamily: T.fontMono, fontSize: T.fsXs, color: T.textSecondary, marginTop: 4, lineHeight: 1.5 }}>Worked example — {lesson.example}</div>
-            : <div style={{ fontFamily: T.fontMono, fontSize: T.fsXs, color: T.amber, marginTop: 4 }}>{lesson.exampleUnavailable}</div>)}
-        </div>
-      )}
+      {!simple && lesson && <Lesson lesson={lesson} simple={false} />}
       {simple ? (
-        <CollapsedGroup count={companies.length * 6} label="explore the numbers — cash, debt, valuation, price trend, inputs & sources" chip={false}>
+        <CollapsedGroup count={companies.length * 7} label="explore the numbers — full assessment, cash, debt, valuation, price trend, inputs & sources" chip={false}>
           <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(260px,1fr))", gap: 8, marginTop: 4 }}>
+            {companies.map((c) => (
+              <div key={c.symbol} style={{ minWidth: 0 }}>
+                <div style={{ fontFamily: T.fontMono, fontSize: T.fsXs, color: T.amber, letterSpacing: "0.1em" }}>{c.symbol} · THE THREE QUESTIONS</div>
+                {c.assessment && <FullAssessment a={c.assessment} />}
+              </div>
+            ))}
+          </div>
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(260px,1fr))", gap: 8, marginTop: 8 }}>
             {companies.map((c) => <Detail key={c.symbol} c={c} />)}
           </div>
           {lesson && (lesson.example
