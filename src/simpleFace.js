@@ -6,7 +6,7 @@
 // this module.
 export const HOLD_REASON_MAX = 18;
 export const FACE_NOUN = Object.freeze({
-  vix: "Vol",
+  vix: "Volatility",
   nfci: "credit",
   tenYear: "Rates",
   valuation: "prices",

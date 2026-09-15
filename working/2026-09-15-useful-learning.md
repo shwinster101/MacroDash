@@ -84,3 +84,14 @@ boundary.
 
 Implementation commit: `98de09f8b573d1c1c21b125e118ae545d674bfba`. This follow-up
 records the verified outcome and commit reference only; product code is unchanged.
+
+## Screenshot follow-up
+
+The owner requested the full word “Volatility” in the Simple hero; `FACE_NOUN.vix`
+now spells it out and the existing copy assertions require the full word. Stock
+Spotlight profiles remain noninteractive summaries; Learning moment and Explore
+are the current controls. No company-card tap behavior was added in response to
+the question about existing behavior.
+
+Follow-up validation: all 2,356 smoke assertions pass, including the full word and
+the unchanged 18-word hero budget. This is a copy-only correction to the open PR.

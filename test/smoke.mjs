@@ -11860,11 +11860,11 @@ console.log("\n[82] Simple FACE/TAP/FOLD remainder — registry, ≤18-word reas
   ok("T1 holdReason: withheld is null; mixed names helping as fine and hurting as the drag; always ≤18 words",
     holdReason(null) === null && holdReason({ withheld: true }) === null &&
     /fine/.test(mixed) && /drag/.test(mixed) && words(mixed).length <= HOLD_REASON_MAX &&
-    words(allBull).length <= HOLD_REASON_MAX && /Vol/.test(mixed) && /Rates/.test(mixed));
+    words(allBull).length <= HOLD_REASON_MAX && /Volatility/.test(mixed) && /Rates/.test(mixed));
   ok("Simple reason: a lone plural driver still agrees with its verb",
     holdReason({ factors: [row("tenYear", "bear")] }) === "Rates are the drag." &&
     holdReason({ factors: [row("valuation", "bear")] }) === "Prices are the drag." &&
-    holdReason({ factors: [row("vix", "bull")] }) === "Vol is fine.");
+    holdReason({ factors: [row("vix", "bull")] }) === "Volatility is fine.");
   ok("T1 cardFace / sheetLead: glyph+label+value+tone only; sheetLead is the why sentence",
     JSON.stringify(cardFace({ direction: "helping", label: "volatility", currentValue: "15.84", why: "fear gauge" })) === JSON.stringify({ glyph: FACE_GLYPH.helping, label: "volatility", value: "15.84", tone: "helping" }) &&
     sheetLead({ why: "fear gauge" }) === "fear gauge" && sheetLead({}) === null);
