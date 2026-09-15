@@ -66,7 +66,7 @@ const Unavail = ({ reason, compact = false }) => (
 );
 const Row = ({ label, value, sub, unavailable, big = false, compact = false }) => (
   <div style={{ display: "flex", alignItems: "baseline", gap: 6, flexWrap: "wrap", minWidth: 0, padding: "2px 0" }}>
-    <span style={{ fontFamily: T.fontMono, fontSize: T.fsXs, color: T.textMuted, letterSpacing: "0.08em", textTransform: "uppercase", flexShrink: 0, minWidth: 92 }}>{label}</span>
+    <span style={{ fontFamily: T.fontMono, fontSize: T.fsXs, color: T.textMuted, letterSpacing: "0.04em", textTransform: "uppercase", flexShrink: 0, minWidth: 92 }}>{label}</span>
     {value != null && !unavailable
       ? <span title={compact && typeof sub === "string" ? sub : undefined} style={{ fontFamily: T.fontMono, fontSize: big ? T.fsL : T.fsM, fontWeight: big ? 700 : 500, color: T.textPrimary, minWidth: 0 }}>{value}</span>
       : <Unavail reason={unavailable} compact={compact} />}
@@ -97,7 +97,7 @@ const Profile = ({ c, leg, simple }) => {
           <span style={{ fontFamily: T.fontMono, fontSize: T.fsM, color: T.amber }}>{face.symbol}</span>
           {face.stale && <Stale f={{ stale: true }} />}
         </div>
-        <Row label="YTD" big compact
+        <Row label="YTD return" big compact
           value={face.ytd.value}
           unavailable={face.ytd.unavailable} />
         <Row label={face.stat.label} compact
@@ -157,7 +157,8 @@ const DataNotes = ({ c, leg }) => {
       <div>{cap.display ? `market cap ${cap.display}` : "market cap: unavailable"}{cap.observedAt ? ` as of ${cap.observedAt}${cap.method === "derived" ? " (derived)" : ""}` : cap.display ? "" : ""}
         {leg && leg.through ? ` · YTD through ${leg.through}` : ""}
         {c.freshness && c.freshness.fundamentals && c.freshness.fundamentals.period ? ` · ${c.freshness.fundamentals.label} ${c.freshness.fundamentals.period}${c.freshness.fundamentals.form ? ` (${c.freshness.fundamentals.form})` : ""}` : ""}</div>
-      <div>operating margin {typeof om.pct === "number" ? `${om.pct.toFixed(1)}%` : "unavailable"} · free cash flow {money(fcf.value) || "unavailable"}{rg.period ? ` · ${rg.period}` : ""}</div>
+      <div>operating margin {typeof om.pct === "number" ? `${om.pct.toFixed(1)}%` : "unavailable"}{om.period ? ` · ${om.period}` : ""}</div>
+      <div>free cash flow {money(fcf.value) || "unavailable"}{fcf.period ? ` · ${fcf.period}` : ""}</div>
       {c.assessment && summaryIsNumeric(c.assessment.summary) && <div style={{ fontFamily: T.fontSans, color: T.textPrimary }}>{c.assessment.summary.join(" ")}</div>}
       {gaps.map((g, i) => <div key={i} style={{ color: T.amber }}>Unavailable — {g}</div>)}
     </div>
@@ -280,10 +281,13 @@ const Lesson = ({ lesson, simple }) => {
   const inner = (
     <div style={{ marginTop: simple ? 0 : 8, borderLeft: `2px solid ${T.amber}`, padding: "4px 10px" }} role="group" aria-label="Learning moment">
       <div style={{ fontFamily: T.fontMono, fontSize: T.fsXs, color: T.amber, letterSpacing: "0.1em" }}>{simple ? body.title : <>LEARNING MOMENT · {body.title}</>}</div>
-      <div style={{ fontFamily: T.fontSans, fontSize: simple ? T.fsM : T.fsS, color: T.textPrimary, lineHeight: 1.45, marginTop: 2 }}>{body.body}</div>
-      {!simple && (body.example
-        ? <div style={{ fontFamily: T.fontMono, fontSize: T.fsXs, color: T.textSecondary, marginTop: 4, lineHeight: 1.5 }}>Worked example — {body.example}</div>
-        : <div style={{ fontFamily: T.fontMono, fontSize: T.fsXs, color: T.amber, marginTop: 4 }}>{body.exampleUnavailable}</div>)}
+      <div style={{ fontFamily: T.fontSans, fontSize: simple ? T.fsL : T.fsS, color: T.textPrimary, lineHeight: 1.45, marginTop: 2 }}>{body.body}</div>
+      {body.example
+        ? <div aria-label="Worked example" style={{ fontFamily: T.fontSans, fontSize: T.fsL, color: T.textPrimary, marginTop: 6, lineHeight: 1.5 }}>
+            {body.exampleLines.map((line, i) => <div key={i}>{line}</div>)}
+          </div>
+        : <div style={{ fontFamily: T.fontSans, fontSize: T.fsL, color: T.amber, marginTop: 4 }}>{body.exampleUnavailable}</div>}
+      {body.limitation && <div style={{ fontFamily: T.fontSans, fontSize: T.fsL, color: T.textSecondary, marginTop: 6, lineHeight: 1.5 }}>{body.limitation}</div>}
     </div>
   );
   if (simple) {
@@ -340,9 +344,6 @@ const StockSpotlight = ({ spotlight, simple }) => {
           <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(260px,1fr))", gap: 8, marginTop: 8 }}>
             {companies.map((c) => <Detail key={c.symbol} c={c} />)}
           </div>
-          {lesson && (lesson.example
-            ? <div style={{ fontFamily: T.fontMono, fontSize: T.fsXs, color: T.textSecondary, marginTop: 6, lineHeight: 1.5 }}>Worked example — {lesson.example}</div>
-            : <div style={{ fontFamily: T.fontMono, fontSize: T.fsXs, color: T.amber, marginTop: 6 }}>{lesson.exampleUnavailable}</div>)}
           <div style={{ marginTop: 6 }}><Sources companies={companies} tracker={m.tracker} /></div>
         </CollapsedGroup>
       ) : (

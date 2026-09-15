@@ -5,6 +5,21 @@ answers *"is it safe to be in the market?"* from live macro + market + sentiment
 data. Single-page React app on Cloudflare Pages, with live data assembled at the
 edge by Pages Functions and cached in KV.
 
+**v6.5.5 — useful learning behind the compact face.** Simple's closed layout stays intact;
+Learning moment now contains the concept, two individually dated company example lines, and
+a limitation (90-word fixture budget). Explore retains calculations/citations but no duplicate
+lesson. Each data-note metric carries its OWN reporting period (the half-year FCF cannot inherit
+a quarterly revenue date). Seven authored lessons now reject incomplete examples: AAPL is
+explicitly unavailable until comparable share/per-share inputs exist; META requires matching
+period bounds; cash-flow and run-rate examples require every operand. Public GET rebuilds the
+lesson from stored metrics, so cached prose cannot outlive the guards. Old META records without
+period bounds stay unavailable until the next ordinary refresh. Ordinary metric explainers keep
+three bullets within 75 words, short titles plus full formal metadata, and separate date/rule
+metadata. `Revenue growth` and `YTD return` replace ambiguous face shorthand. Dashboard share
+links explicitly select `?view=public` and omit operator/debug parameters. No call/gate thresholds,
+provider, rotation policy or private decision interface changed. Follow-up carousel/research work
+and the human comprehension pilot remain staged in `working/2026-09-15-useful-learning.md`.
+
 **v6.5.4 — Simple altitude (type + real estate).** Presentation-only, Simple only. Hold
 is `fs-xxl` 28; the so-what sentence is sans `fs-body` 16; the three cards read at 16/11
 instead of 11/8; fold promises sit at `fs-l` 13. The wrapping 44×44 copy+ℹ pair is gone —

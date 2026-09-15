@@ -30,7 +30,7 @@ import { T } from "../design-tokens.js";
 
 const FOCUSABLE = 'button,[href],input,select,textarea,[tabindex]:not([tabindex="-1"])';
 
-const FactSheet = ({ title, eyebrow, onClose, children }) => {
+const FactSheet = ({ title, formalName, eyebrow, onClose, children }) => {
   const boxRef = useRef(null);
   const restoreRef = useRef(null);
   useEffect(() => {
@@ -81,6 +81,7 @@ const FactSheet = ({ title, eyebrow, onClose, children }) => {
             <h3 id="factsheet-title" style={{ margin: "4px 0 0", fontFamily: T.fontMono,
               fontSize: T.fsXl, fontWeight: 700, color: T.textPrimary, letterSpacing: "0.01em",
               lineHeight: 1.25 }}>{title}</h3>
+            {formalName && <div style={{ fontFamily: T.fontSans, fontSize: T.fsM, color: T.textMuted, marginTop: 4 }}>{formalName}</div>}
           </div>
           <button data-fs-close onClick={onClose} aria-label={`Close ${title}`} className="fs-close"
             style={{ marginLeft: "auto", flexShrink: 0, background: "none", cursor: "pointer",
@@ -106,10 +107,13 @@ export const ExplainerBody = ({ explain }) => {
   // v5.9.2: fsBody (16px) — the reading size, not the caption size. The 3-bullet cut bought
   // room specifically so this could be legible without pushing the sheet off-screen.
   return (
+    <>
     <ul style={{ margin: "6px 0 0", paddingLeft: 20, fontFamily: T.fontSans, fontSize: T.fsBody,
       color: T.textPrimary, lineHeight: 1.6 }}>
       {explain.what.map((b, i) => <li key={i} style={{ marginBottom: 10 }}>{b}</li>)}
     </ul>
+    {explain.metadata && <div style={{ fontFamily: T.fontSans, fontSize: T.fsM, color: T.textSecondary, lineHeight: 1.5 }}>{explain.metadata}</div>}
+    </>
   );
 };
 
@@ -127,7 +131,7 @@ export const Explainable = ({ explain, title, eyebrow, className, style, childre
         {children}
       </button>
       {open && (
-        <FactSheet title={title} eyebrow={eyebrow} onClose={() => setOpen(false)}>
+        <FactSheet title={explain.shortTitle || title} formalName={explain.shortTitle ? explain.full : null} eyebrow={eyebrow} onClose={() => setOpen(false)}>
           <ExplainerBody explain={explain} />
         </FactSheet>
       )}
