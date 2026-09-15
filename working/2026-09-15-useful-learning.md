@@ -81,3 +81,6 @@ metric period bounds are additive. Old cached lessons are regenerated on read; M
 examples missing period bounds are unavailable until the regular refresh. Share links
 explicitly use the public audience; this is an audience choice, not an authentication
 boundary.
+
+Implementation commit: `98de09f8b573d1c1c21b125e118ae545d674bfba`. This follow-up
+records the verified outcome and commit reference only; product code is unchanged.
