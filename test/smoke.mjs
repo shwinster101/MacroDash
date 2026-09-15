@@ -57,6 +57,8 @@ import { fmt } from "../src/format.js"; // task 1.3: shared format helpers, test
 import { buildMacroCall, formatMacroCallPaste, formatMacroShareCard, CALL_SCHEMA, CALL_EDITIONS, callEdition } from "../src/macroCall.js";
 import { simpleCallLabel, publicMarketClock, publicMarketClockLine, liveReadCaption,
   spyMoveDirection, publicEditionLabel, simpleHoldExplain, eveningUpdateLine } from "../src/publicCopy.js";
+import { HOLD_REASON_MAX, FACE_GLYPH, holdReason, cardFace, sheetLead, spotlightFace,
+  chartTitle, lessonTitle, LESSON_FOLD_LABEL, WHYS_FOLD_LABEL, ABOUT_FOLD_LABEL, EXPLORE_FOLD_LABEL } from "../src/simpleFace.js";
 import { buildForwardOutcome, normalizeSp500Observations, outcomeKey, OUTCOME_SCHEMA,
   CLOSE_READ_PREFIX, CLOSE_READ_SCHEMA, CLOSE_READ_RECORD_SCHEMA, closeReadKey, validCloseRead, validFrozenCall as validFrozenCallPH } from "../src/publicHistory.js";
 import cronWorker, { captureDailyCall, enrichHistoryOutcomes, putWithRetry, warmSnapshot, captureCloseRead } from "../worker/cron.js";
@@ -10781,12 +10783,11 @@ console.log("\n[75] v6.0.1 — shape before text · toggle clarity · captions u
   const spc = code(spcSrc), band = code(bandSrc), dash = code(dashSrc);
   // (1a) The card's direction glyph is the SAME shape the hero chips and Drivers matrix use —
   //      one vocabulary, read once. Reconciled against voteStyle, not retyped here.
-  ok("v6.0.1 shape: the card glyphs ARE voteStyle's glyphs (▲ bull · ▼ bear · • neutral) — one vocabulary",
-    /GLYPH = \{ helping: "([^"]+)", hurting: "([^"]+)", mixed: "([^"]+)" \}/.test(spc) &&
-    (() => { const m = spc.match(/GLYPH = \{ helping: "([^"]+)", hurting: "([^"]+)", mixed: "([^"]+)" \}/);
-      return m[1] === voteStyle("bull").glyph && m[2] === voteStyle("bear").glyph && m[3] === voteStyle("neutral").glyph; })());
+  ok("v6.0.1 / T1 shape: the card glyphs ARE voteStyle's glyphs (▲ bull · ▼ bear · • neutral) — one vocabulary, via simpleFace",
+    FACE_GLYPH.helping === voteStyle("bull").glyph && FACE_GLYPH.hurting === voteStyle("bear").glyph && FACE_GLYPH.mixed === voteStyle("neutral").glyph &&
+    /cardFace\(c\)/.test(spc));
   ok("v6.0.1 shape: the glyph is rendered BEFORE the label on the card row, and the card wears a direction bar",
-    (() => { const g = spc.indexOf('className="simple-card-glyph"'), l = spc.indexOf("{c.label}</span>");
+    (() => { const g = spc.indexOf('className="simple-card-glyph"'), l = spc.indexOf("{face.label}</span>");
       return g > 0 && l > g && /borderLeft: `3px solid \$\{tone\}`/.test(spc); })());
   // (1b) Freshness: a live/cached reading is a FILLED GREEN DOT (the strip's own dot since
   //      v3.62), stale amber, mock hollow — and the WORD leaves the face for the title +
@@ -10846,8 +10847,8 @@ console.log("\n[76] v6.0.2 — footer one tap deep · the ▪ marker carries the
   const dash = code(dashSrc), strip = code(readSrc("../src/sections/MacroStrip.jsx"));
   // The footer rides ONE CollapsedGroup; the closed row carries version + not-advice; every
   // attribution line — the retirement RECORD included — is still in the source, verbatim.
-  ok("v6.0.2 footer: one closed CollapsedGroup, chip-free, whose label carries the version and 'not financial advice'",
-    /<div className="site-footer"[^>]*>\s*<CollapsedGroup count=\{3\} chip=\{false\} label=\{`about this page — v\$\{__APP_VERSION__\} · sources · not financial advice`\}>/.test(dash) &&
+  ok("v6.0.2 footer: one closed CollapsedGroup, chip-free; Degen keeps version + not-advice, Simple uses the T5 promise",
+    /<div className="site-footer"[^>]*>\s*<CollapsedGroup count=\{3\} chip=\{false\} promise=\{simple\} label=\{simple\?ABOUT_FOLD_LABEL:`about this page — v\$\{__APP_VERSION__\} · sources · not financial advice`\}>/.test(dash) &&
     (dash.match(/className="site-footer"/g) || []).length === 1);
   ok("v6.0.2 footer: the attribution + retirement record survive inside, verbatim (a cut keeps its attribution)",
     /Retired: CBOE Put\/Call \(free feed dead 2019 · v3\.2\) · Mag 10 fundamentals \+ SEC S-1 \(v3\.43\) · Mag 10 quote strip \(v3\.51\)/.test(dash) &&
@@ -11828,14 +11829,14 @@ console.log("\n[81] v6.5.0 STOCK SPOTLIGHT — calculations, endpoints, cron leg
     /if\(!liveBuild\)return;\n    let dead=false;\n    fetch\("\/api\/stock-spotlight"\)/.test(dashSrc) &&
     /votingFields=\{VOTING_FIELDS\}[^\n]*\n\n[\s\S]{0,700}<StockSpotlight spotlight=\{spotlight\} simple=\{simple\}\/>/.test(dashSrc) &&
     !/\{simple&&<StockSpotlight|\{!simple&&<StockSpotlight/.test(dashSrc));
-  ok("[81] section: renders NOTHING without an enabled feed + model; market cap, YTD and the chart live in the always-visible Profile/Chart, never inside the CollapsedGroup",
+  ok("[81] section: renders NOTHING without an enabled feed + model; YTD and the chart live on the Simple face, market cap rides Explore (T4) and Degen Profile",
     /if \(!spotlight \|\| !spotlight\.enabled \|\| !spotlight\.model/.test(ssCode) &&
     (() => { const cg = ssCode.slice(ssCode.indexOf("simple ? ("), ssCode.lastIndexOf("</CollapsedGroup>"));
-      return !/Market cap|<Chart/.test(cg) && /<Row label="Market cap" big/.test(ssCode) && /<Chart tracker=\{m\.tracker\}/.test(ssCode) && /<Unavail reason=/.test(ssCode); })());
-  ok("[81] section (density review 2026-09-14): Simple's face has NO blurb, NO row date crumbs and compact Unavailable (word + chip, full reason in the title); the summary prints only when both sentences carry numbers; Degen keeps the blurb and dated rows; in Simple the learning moment renders BEFORE the chart",
-    /\{!simple && c\.blurb && <div/.test(ssCode) && /compact=\{simple\}/.test(ssCode) && /title=\{reason \|\| undefined\}/.test(ssCode) &&
+      return !/<Chart/.test(cg) && /spotlightFace\(c, leg\)/.test(ssCode) && /<Row label="Market cap" big/.test(ssCode) && /<Chart tracker=\{m\.tracker\}/.test(ssCode) && /<Unavail reason=/.test(ssCode); })());
+  ok("[81] section (T4 Simple face): name + YTD + one quality stat; market cap, multiples and the lesson body are NOT on the Simple face; Degen keeps the 10-K; learning moment is a closed CollapsedGroup",
+    /\{!simple && c\.blurb && <div/.test(ssCode) && /title=\{reason \|\| undefined\}/.test(ssCode) &&
     /summaryIsNumeric\(c\.assessment\.summary\)/.test(ssCode) && /is unavailable\|unavailable —/.test(ssCode) &&
-    /label="explore the numbers"/.test(ssCode) && /<DataNotes key=\{c\.symbol\}/.test(ssCode) &&
+    /label=\{EXPLORE_FOLD_LABEL\}/.test(ssCode) && /<DataNotes key=\{c\.symbol\}/.test(ssCode) &&
     (() => { const { shortReason } = ssMod; return shortReason("only annual revenue is on file (fiscal year to 2025-12-31); no quarterly period could be derived") === "annual filing only" &&
       shortReason("profile carries no market capitalization") === "no market cap" && shortReason("no verified total-return series — price return is not a substitute") === "not total return" && shortReason("something new") === null; })() &&
     /simple\s*\?[\s\S]{0,400}: <FullAssessment a=\{c\.assessment\} \/>/.test(ssCode) &&
@@ -11847,6 +11848,38 @@ console.log("\n[81] v6.5.0 STOCK SPOTLIGHT — calculations, endpoints, cron leg
   ok("[81] docs: the plan travels with the implementation, and the env matrix names SPOTLIGHT_ENABLED and TIINGO_KEY with their deploy and degraded state",
     existsSync(new URL("../docs/plans/stock-spotlight.md", import.meta.url)) &&
     /\|\s*`SPOTLIGHT_ENABLED`\s*\|\s*Pages\s*\|/.test(readSrc("../CLAUDE.md")) && /\|\s*`TIINGO_KEY`\s*\|\s*Pages\s*\|/.test(readSrc("../CLAUDE.md")));
+}
+
+// ═══════════ [82] T1/T4/T5 — Simple FACE / TAP / FOLD remainder ═══════════
+console.log("\n[82] Simple FACE/TAP/FOLD remainder — registry, ≤18-word reason, promise labels");
+{
+  const ssFaceSrc = readSrc("../src/sections/StockSpotlight.jsx");
+  const words = (s) => String(s || "").trim().split(/\s+/).filter(Boolean);
+  const row = (key, vote) => ({ key, vote, excluded: false, short: key });
+  const mixed = holdReason({ withheld: false, factors: [row("vix", "bull"), row("nfci", "bull"), row("tenYear", "bear"), row("valuation", "bear")] });
+  const allBull = holdReason({ withheld: false, factors: [row("vix", "bull"), row("nfci", "bull"), row("tenYear", "bull"), row("valuation", "bull"), row("fearGreed", "bull"), row("cpiHeadline", "bull")] });
+  ok("T1 holdReason: withheld is null; mixed names helping as fine and hurting as the drag; always ≤18 words",
+    holdReason(null) === null && holdReason({ withheld: true }) === null &&
+    /fine/.test(mixed) && /drag/.test(mixed) && words(mixed).length <= HOLD_REASON_MAX &&
+    words(allBull).length <= HOLD_REASON_MAX && /Vol/.test(mixed) && /Rates/.test(mixed));
+  ok("T1 cardFace / sheetLead: glyph+label+value+tone only; sheetLead is the why sentence",
+    JSON.stringify(cardFace({ direction: "helping", label: "volatility", currentValue: "15.84", why: "fear gauge" })) === JSON.stringify({ glyph: FACE_GLYPH.helping, label: "volatility", value: "15.84", tone: "helping" }) &&
+    sheetLead({ why: "fear gauge" }) === "fear gauge" && sheetLead({}) === null);
+  ok("T1 spotlightFace: YTD + one quality stat; chartTitle is ticker vs ticker YTD; lesson fold is a 2-word promise",
+    (() => { const f = spotlightFace({ name: "Nebius Group", symbol: "NBIS", metrics: { revenueGrowth: { pct: 454 } } }, { pct: 154.2 });
+      return f.symbol === "NBIS" && f.ytd.value === "+154.20%" && f.stat.label === "Rev" && f.stat.value === "+454.0%"; })() &&
+    chartTitle({ anchor: "NBIS", comparison: "MSFT" }) === "NBIS vs MSFT YTD" &&
+    lessonTitle({}) === LESSON_FOLD_LABEL && LESSON_FOLD_LABEL === "Learning moment" &&
+    WHYS_FOLD_LABEL === "Why this call" && ABOUT_FOLD_LABEL === "About this page" && EXPLORE_FOLD_LABEL === "Explore the numbers");
+  ok("T5: Simple Why-this-call is a promise label (no flip essay on the closed row); flipLine still inside; CollapsedGroup grows a promise prop",
+    /label=\{WHYS_FOLD_LABEL\} promise/.test(dashSrc) &&
+    /promise\?label:\(flipChip\?`\$\{label\} — ⇄ \$\{flipChip\}`:label\)/.test(whysSrc) &&
+    /\{flipLine&&<div[^>]*>⇄ \{flipLine\}<\/div>\}/.test(whysSrc) &&
+    /promise = false/.test(cgSrc) && /promise \? "▸" : `▸ \+\$\{count\}`/.test(cgSrc));
+  ok("T4: Simple spotlight Profile is spotlightFace; Learning moment is a closed CollapsedGroup; Explore uses the promise label",
+    /spotlightFace\(c, leg\)/.test(ssFaceSrc) &&
+    /label=\{lessonTitle\(lesson\)\}/.test(ssFaceSrc) && /persistKey="md:exp:spotlight-lesson:v1"/.test(ssFaceSrc) &&
+    /label=\{EXPLORE_FOLD_LABEL\}/.test(ssFaceSrc) && /promise persistKey/.test(ssFaceSrc));
 }
 
 console.log(`\n=== SMOKE TEST: ${pass} passed, ${fail} failed ===`);

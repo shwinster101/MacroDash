@@ -149,3 +149,15 @@ That is the entire first screen.
 ## Acceptance
 
 Review on a 390px screenshot only. If you need to scroll past the three cards to get the call, the face failed.
+
+## Outcomes (2026-09-15)
+
+| Ticket | Result |
+|---|---|
+| T0 Inventory | Walked Simple at 390px against the placement matrix. No new face string without a row. |
+| T1 `simpleFace.js` | Registry shipped. `holdReason` ≤18 words. `cardFace` / `sheetLead` / `spotlightFace` / `lessonTitle` / `chartTitle`. Degen does not import it. |
+| T2 Hold block | Shipped earlier on this branch (`33074eb`). Clock / FROZEN / 6-of-6 live in Hold ⓘ. Crash-gauge stays on the face. |
+| T3 Cards | Shipped earlier on this branch. Date + ruler in the sheet; coverage dots in Why-this-call. |
+| T4 Spotlight + lesson | Simple face = name + YTD + one quality stat. Cap / multiples / summary / lesson body → Explore / Learning moment (defaultClosed, persistKey allowed). Chart title `NBIS vs MSFT YTD`. |
+| T5 Closed-label pass | `▸ Why this call` / `About this page` / `Explore the numbers` / `Learning moment`. Flip chip left the closed Why-this-call row; `flipLine` still inside. Degen keeps `▸ +N LABEL`. |
+| T6 Tests | Simple at 390px: no `/help </`, `/hurt >/`, `/run-rate/`, `/trailing revenue/`, `/FROZEN/`, `/unscored/` on the face. Hold + HELPING/HURTING. Tap card → as-of + ruler. Learning moment starts collapsed. Degen still dense. |

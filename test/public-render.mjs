@@ -383,7 +383,7 @@ console.log("\n[public] v3.94 — Simple default, the toggle, persistence, red f
      contradictory confidence number beside the scoped "N of 6 voters counted". */
   ok("T2/T3 simple: the Glance layer renders — one plain call, sentence, cards, key numbers; coverage is one tap deep",
     /Bullish|Hold|Bearish|Not enough data/.test(body) &&
-    /(supportive|working against|clear lean right now)/i.test(body) &&   // v4.0.1 named-factor copy
+    /(fine|drag|clear lean right now)/i.test(body) &&   // T1: holdReason, not the lecture sentence
     /HELPING|HURTING|MIXED/.test(body) && /SPY/.test(body) &&
     !/\d+ of \d+ signals counted/.test(await page.locator('[aria-label="Macro backdrop verdict"]').innerText()) &&
     !/\d+ cards from the \d+ signals counted/.test(await page.locator('[aria-label="Key parameters"]').innerText()));
@@ -450,19 +450,17 @@ console.log("\n[public] v3.94 — Simple default, the toggle, persistence, red f
   ok("T3 simple: cards carry value + direction; truncation and date/ruler left the face",
     /HELPING|HURTING|MIXED/.test(body) && !/discount rate on every future dollar/.test(body) &&
     !/\d+ cards from the \d+ signals counted/.test(await page.locator('[aria-label="Key parameters"]').innerText()) &&
-    // 8/28: the flip's ONE home is the whys — chip on the closed label, absent from cards.
-    /⇄/.test(await page.locator("button.cg-toggle", { hasText: "why this call" }).innerText()) &&
+    // T5: closed Why-this-call is the 2–4 word promise; flip chip left the closed row.
+    /Why this call/.test(await page.locator("button.cg-toggle", { hasText: "why this call" }).innerText()) &&
+    !/⇄/.test(await page.locator("button.cg-toggle", { hasText: "why this call" }).innerText()) &&
     !/⇄/.test(await page.locator('[aria-label="Key parameters"]').innerText()));
-  /* 8/28: chip-length in place, VERBATIM one tap deep (v3.66) — the chip must be a genuine
-     prefix of the full line, so a truncated read continues where it left off. */
+  /* T5: the flip still rides verbatim inside (v3.66), just not on the closed label. */
   {
-    const chipTxt = await page.locator("button.cg-toggle", { hasText: "why this call" }).innerText();
     await page.locator("button.cg-toggle", { hasText: "why this call" }).click();
     await page.waitForTimeout(200);
     const openTxt = await page.locator("body").innerText();
-    const chip = (chipTxt.split("⇄")[1] || "").replace(/…\s*$/, "").trim().toLowerCase();
-    ok("8/28: the closed chip is a real prefix of the flip rendered verbatim inside",
-      chip.length > 0 && openTxt.toLowerCase().includes(chip));
+    ok("T5: the flip line still rides verbatim inside Why-this-call",
+      /⇄/.test(openTxt));
     ok("T3: coverage dots live inside Why-this-call, not under the cards",
       /\d+ of \d+ signals counted/.test(openTxt) &&
       (await page.locator('[aria-label="Key parameters"] .signal-dots').count()) === 0 &&
@@ -487,7 +485,7 @@ console.log("\n[public] v3.94 — Simple default, the toggle, persistence, red f
   // v3.95: the whys ARE reachable in Simple — one honestly-labelled expander under the
   // hero sentence, closed on a first visit, holding the chain and nothing technical.
   ok("v3.95 simple: the checks expander is present and CLOSED — label visible, no check statements",
-    /why this call · 5 checks/i.test(body) && !/WHAT DROVE IT/.test(body));
+    /Why this call/.test(body) && !/WHAT DROVE IT/.test(body));
   await page.locator("button.cg-toggle", { hasText: "why this call" }).click();
   await page.waitForTimeout(250);
   const whysOpen = await page.locator("body").innerText();
@@ -997,7 +995,7 @@ console.log("\n[public] v4.0 — Simple verdicts, card selection, and what must 
   body = await page.locator("body").innerText();
   ok("v6.4 Simple verdict: a bull tape reads Bullish with supporting factors leading",
     /Bullish/.test(body) && /HELPING/.test(body) && !/MOONING|\bBULLISH\b/.test(body) &&
-    /supportive/i.test(body));   // v4.0.1: the sentence names factors, supportive-side leading
+    /fine/i.test(body));   // T1: holdReason, helping names "are fine"
   await page.close();
 
   // 3. NOT ENOUGH DATA — below quorum. And the acceptance rule that matters most here: a withheld
@@ -1012,7 +1010,7 @@ console.log("\n[public] v4.0 — Simple verdicts, card selection, and what must 
      INSIDE with the flip's slot. So the closed body must NOT carry it, and one tap must. */
   const whysToggleTxt = await page.locator("button.cg-toggle", { hasText: "why this call" }).innerText();
   ok("8/28 withheld: the closed whys label is bare — no flip chip on a call that was withheld",
-    !/⇄/.test(whysToggleTxt) && /why this call · 5 checks/i.test(whysToggleTxt) &&
+    !/⇄/.test(whysToggleTxt) && /Why this call/.test(whysToggleTxt) &&
     !/Call withheld until/i.test(body));
   await page.locator("button.cg-toggle", { hasText: "why this call" }).click();
   await page.waitForTimeout(200);
@@ -1048,7 +1046,7 @@ console.log("\n[public] v4.0 — Simple verdicts, card selection, and what must 
      derived sub itself is unchanged and still renders in Power (pinned in smoke); what this
      asserts is that Simple's ONE explanation names the same disagreement. */
   ok("v5.9: Simple names the disagreement in the SENTENCE, with no count sub beside it",
-    /are supportive, but stocks are priced for perfection/.test(band) &&
+    /fine/.test(band) && /drag/.test(band) &&
     !/help, prices do not/.test(band) && !/\d+ help, \d+ does not/.test(band));
   ok("8/29 ruler: the canned watch-VIX gloss is gone from a tape where VIX is helping",
     !/watch VIX/i.test(band) && !/Cross-signals/.test(band));
@@ -1663,9 +1661,10 @@ console.log("\n[public] v6.0.1/v6.4 — shape before text · Simple|Degen clarit
   ok("v6.0.2 strip: where the sub-line is vote-coloured (F&G, NFCI) the marker and the sub agree",
     marks.filter((t) => /^(F&G|NFCI)/.test(t.l)).every((t) => t.mark === t.sub));
   /* v6.0.2: the footer is one closed disclosure; the version + not-advice fact survive on the row. */
-  ok("v6.0.2 footer (Simple): closed, one row, version + not-advice visible, attribution one tap deep",
+  ok("T5 footer (Simple): closed promise is About this page; version + not-advice one tap deep",
     !/Retired: CBOE Put\/Call/.test(await page.locator("body").innerText()) &&
-    /about this page — v\d+\.\d+\.\d+ · sources · not financial advice/i.test(await page.locator(".site-footer").innerText()) &&
+    /About this page/.test(await page.locator(".site-footer").innerText()) &&
+    !/not financial advice/i.test(await page.locator(".site-footer button.cg-toggle").innerText()) &&
     (await page.locator(".site-footer button.cg-toggle").boundingBox()).height >= 44);
   ok("v6.0.1: no page errors through the Simple pass", errors.length === 0);
   // Degen contrast on the same tape: the caption stays ON the face, the pressed half is Degen.
@@ -1936,31 +1935,41 @@ console.log("\n[public] v6.5 — STOCK SPOTLIGHT: Simple + Degen, always-visible
     const g = await stripGeom(page);
     ok(`v6.5 Simple: the widget sits directly BELOW the macro strip (strip bottom ${g.stripBottom} → region top ${g.regionTop})`,
       g.stripBottom !== null && g.regionTop !== null && g.regionTop >= g.stripBottom - 1 && g.regionTop - g.stripBottom < 16);
-    ok("v6.5 Simple: both company names and tickers, the comparison label and the week", /Nebius Group/.test(text) && /NBIS/.test(text) && /Microsoft/.test(text) && /MSFT/.test(text) && /Established growth/.test(text) && /week of 2026-09-14/.test(text));
-    ok("v6.5 Simple: MARKET CAP NUMBERS for both, visible with NO click — and (density review) NO `as of` date crumbs on the face",
-      /\$70\.1B/.test(text) && /\$3\.41T/.test(text) && !/as of \d{4}-\d{2}-\d{2}/.test(text));
-    ok("v6.5 Simple: YTD TOTAL RETURN numbers for both — no `through` crumbs on the face, no price-return caveat",
-      (text.match(/YTD TOTAL RETURN/gi) || []).length === 2 && !/PRICE RETURN/i.test(text) &&
-      // scoped to the profile cards: the chart's own "from … · through …" legend is the chart's date and stays
-      !/through \d{4}-\d{2}-\d{2}/.test((await r.locator('[aria-label$=" profile"]').allInnerTexts()).join("\n")) && (text.match(/[+−]\d+\.\d\d%/g) || []).length >= 2);
+    ok("v6.5 Simple: both company names and tickers and the comparison label (week is Degen-only)",
+      /Nebius Group/.test(text) && /NBIS/.test(text) && /Microsoft/.test(text) && /MSFT/.test(text) && /Established growth/.test(text) && !/week of/.test(text));
+    ok("T4 Simple face: name + YTD + one quality stat; market cap, multiples and the summary are NOT on the face",
+      (text.match(/[+−]\d+\.\d\d%/g) || []).length >= 2 &&
+      !/\$70\.1B/.test(text) && !/\$3\.41T/.test(text) && !/MARKET CAP/i.test(text) &&
+      !/as of \d{4}-\d{2}-\d{2}/.test(text) && !/REVENUE GROWTH/i.test(text) &&
+      !/OPERATING MARGIN/i.test(text) && !/FREE CASH FLOW/i.test(text) &&
+      !/trailing revenue/i.test(text) && !/12\.5×/.test(text) &&
+      !/BUSINESS ·/.test(text) && !/WATCH NEXT ·/.test(text) &&
+      (await r.locator('[aria-label="Full assessment"]').count()) === 0);
+    ok("v6.5 Simple: YTD numbers for both — no `through` crumbs on the face, no price-return caveat",
+      (await r.locator('[aria-label$=" profile"]', { hasText: "YTD" }).count()) === 2 && !/PRICE RETURN/i.test(text) &&
+      !/through \d{4}-\d{2}-\d{2}/.test((await r.locator('[aria-label$=" profile"]').allInnerTexts()).join("\n")));
     ok("v6.5 Simple (density review): NO blurb on the face; the dates and the blurb live one tap deep",
       !/rents out AI computing capacity/.test(text) && !/Sells software and cloud computing/.test(text));
-    ok("v6.5 Simple: the shared YTD chart draws two distinguishable lines, a zero reference line and a ticker legend",
-      (await r.locator(".recharts-line").count()) === 2 && (await r.locator(".recharts-reference-line").count()) === 1 && /YTD COMPARISON/.test(text) && /from 2025-12-31/.test(text));
-    ok("v6.5 Simple (review): revenue growth, operating margin and free cash flow rows WITHOUT period crumbs, and a TWO-SENTENCE summary per company — the full business/stock/watch-next treatment is NOT on the face",
-      /REVENUE GROWTH/i.test(text) && /OPERATING MARGIN/i.test(text) && /FREE CASH FLOW/i.test(text) && !/quarter to \d{4}-\d{2}-\d{2}/.test(text) && !/fiscal year to/.test(text) &&
-      /Revenue grew 26\.7% year over year and operating margin widened to 46\.1%\. The market pays 12\.5× trailing revenue \(33\.4× earnings\); the price is above its 200-day average\./.test(text) &&
-      !/BUSINESS ·/.test(text) && !/WATCH NEXT ·/.test(text) && (await r.locator('[aria-label="Full assessment"]').count()) === 0);
-    ok("v6.5 Simple (review): the learning moment renders ABOVE the chart, right after the two compact profiles; the worked example and the analysis stay one tap deep",
-      /LEARNING MOMENT/.test(text) && /run-rate/i.test(text) && !/Worked example/.test(text) && (await r.locator('[aria-label$="supporting analysis"]').count()) === 0 &&
-      /explore the numbers/i.test(text) && await page.evaluate(() => { const l = document.querySelector('[aria-label="Learning moment"]'), c = document.querySelector('[aria-label="Year-to-date comparison chart"]');
-        return l && c && l.getBoundingClientRect().top < c.getBoundingClientRect().top; }));
-    await r.locator("button.cg-toggle").first().click();
+    ok("T4 Simple chart: title is ticker vs ticker YTD; two lines, a zero reference; no from-through essay",
+      (await r.locator(".recharts-line").count()) === 2 && (await r.locator(".recharts-reference-line").count()) === 1 &&
+      /NBIS vs MSFT YTD/.test(text) && !/YTD COMPARISON/.test(text) && !/from 2025-12-31/.test(text));
+    ok("T6 Learning moment starts collapsed — promise label, no run-rate body, no LEARNING MOMENT essay",
+      /Learning moment/.test(text) && !/LEARNING MOMENT/.test(text) && !/run-rate/i.test(text) &&
+      (await r.locator('[aria-label="Learning moment"]').count()) === 0 &&
+      /Explore the numbers/.test(text) && (await r.locator('[aria-label$="supporting analysis"]').count()) === 0 &&
+      await page.evaluate(() => {
+        const toggles = [...document.querySelectorAll('[aria-label="Stock Spotlight"] button.cg-toggle')];
+        const lesson = toggles.find((b) => /Learning moment/.test(b.innerText));
+        const chart = document.querySelector('[aria-label="Year-to-date comparison chart"]');
+        return lesson && chart && lesson.getBoundingClientRect().top < chart.getBoundingClientRect().top;
+      }));
+    await r.locator("button.cg-toggle", { hasText: "Explore the numbers" }).click();
     await page.waitForTimeout(300);
     const opened = await r.innerText();
-    ok("v6.5 Simple: 'explore the numbers' opens the dates & blurbs, the FULL three-question assessment and the supporting analysis for BOTH companies, the worked example and dated sources",
+    ok("T4 Simple: 'Explore the numbers' opens the dates & blurbs, market caps, the FULL three-question assessment and the supporting analysis for BOTH companies, the worked example and dated sources",
       (await r.locator('[aria-label$="data notes"]').count()) === 2 && /as of \d{4}-\d{2}-\d{2}/.test(opened) && /YTD through \d{4}-\d{2}-\d{2}/.test(opened) && /rents out AI computing capacity/.test(opened) &&
-      /explore the numbers/i.test(text) && !/explore the numbers — /i.test(text) &&
+      /\$70\.1B/.test(opened) && /\$3\.41T/.test(opened) &&
+      /Explore the numbers/.test(text) && !/Explore the numbers — /.test(text) &&
       (await r.locator('[aria-label="Full assessment"]').count()) === 2 && /BUSINESS ·/.test(opened) && /WATCH NEXT ·/.test(opened) &&
       (await r.locator('[aria-label$="supporting analysis"]').count()) === 2 && /Worked example/.test(opened) && /CALCULATION INPUTS/.test(opened) && /sec\.gov/.test(opened) && /YTD method/.test(opened));
     ok("v6.5 Simple: no rating words on the face", !/\b(cheap|safe|buy|sell|undervalued|overvalued)\b/i.test(opened));
@@ -1973,7 +1982,7 @@ console.log("\n[public] v6.5 — STOCK SPOTLIGHT: Simple + Degen, always-visible
     ok("v6.5 Simple: 390px stays overflow-free with the chart in place, no page errors",
       await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth + 1) && errors.length === 0);
     // The full three-question text lives one tap deep in Simple (`opened`), on the face in Degen.
-    simpleFace = { caps: text.match(/\$\d+\.\d+[TB]/g), ytd: text.match(/[+−]\d+\.\d\d%/g), business: (opened.match(/BUSINESS · [^\n]+/g) || []) };
+    simpleFace = { caps: opened.match(/\$\d+\.\d+[TB]/g), ytd: text.match(/[+−]\d+\.\d\d%/g), business: (opened.match(/BUSINESS · [^\n]+/g) || []) };
     await page.close(); }
   // 3. DEGEN at 1280px — the analysis is visible; only the sources collapse; IDENTICAL values.
   { const { page, errors } = await open({ live: FULL_LIVE, width: 1280, power: true, spotlight: feed });
@@ -2002,18 +2011,22 @@ console.log("\n[public] v6.5 — STOCK SPOTLIGHT: Simple + Degen, always-visible
     await page.waitForTimeout(1600);
     const r = region(page);
     const text = await r.innerText();
-    ok("v6.5 unavailable (Simple face): a missing market cap reads the WORD Unavailable with a chip-length cause, never a number, zero, or the filing essay — while the other company's cap still shows",
-      /Unavailable · no market cap/.test(text) && !/Unavailable — profile carries no market capitalization/.test(text) && /\$3\.41T/.test(text) && !/\$0/.test(text));
+    ok("T4 unavailable (Simple face): a missing market cap is NOT on the face (it rides Explore); the other company still shows YTD; never a zero",
+      !/Unavailable · no market cap/.test(text) && !/Unavailable — profile carries no market capitalization/.test(text) &&
+      !/\$3\.41T/.test(text) && !/\$0/.test(text) && /Unavailable/.test(text));
     ok("v6.5 unavailable: the missing anchor series is NAMED on the chart and the comparison line still plots alone",
       /NBIS series unavailable/.test(text) && (await r.locator(".recharts-line").count()) === 1 && /Unavailable(?! —)/.test(text));
-    ok("v6.5 unavailable (density review): the FULL reasons survive — in the element title on the face, and verbatim one tap deep",
-      (await r.locator('[title="profile carries no market capitalization"]').count()) >= 1 && await (async () => {
-        await r.locator("button.cg-toggle").first().click(); await page.waitForTimeout(250); const o = await r.innerText();
-        return /Unavailable — market cap: profile carries no market capitalization/.test(o) && /Unavailable — YTD: return series unavailable/.test(o); })());
-    ok("v6.5 stale: market data 12 days behind wears STALE and the price-trend clause is suppressed on the face, not graded",
-      /STALE/.test(text) && /price trend is not assessed on a stale tape/.test(text) && !/above its 200-day/.test(text));
-    ok("v6.5 unavailable: the scheduled pair stays visible with the lesson, and the face stays overflow-free",
-      /Established growth/.test(text) && /LEARNING MOMENT/.test(text) && await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth + 1) && errors.length === 0);
+    ok("T4 unavailable: the FULL reasons survive verbatim one tap deep in Explore",
+      await (async () => {
+        await r.locator("button.cg-toggle", { hasText: "Explore the numbers" }).click(); await page.waitForTimeout(250); const o = await r.innerText();
+        return /Unavailable — market cap: profile carries no market capitalization/.test(o) && /Unavailable — YTD: return series unavailable/.test(o) && /\$3\.41T/.test(o); })());
+    ok("v6.5 stale: market data 12 days behind wears STALE; the price-trend clause is suppressed, not graded (one tap deep)",
+      /STALE/.test(text) && await (async () => {
+        const o = await r.innerText();
+        return /price trend is not assessed on a stale tape/.test(o) && !/above its 200-day/.test(text); })());
+    ok("T4/T6 unavailable: the scheduled pair stays visible with a collapsed Learning moment, and the face stays overflow-free",
+      /Established growth/.test(text) && /Learning moment/.test(text) && !/LEARNING MOMENT/.test(text) &&
+      await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth + 1) && errors.length === 0);
     await page.close(); }
   // 4b. PRICE RETURN ONLY on the anchor (review #1): the leg is WITHHELD, never plotted against total return.
   { const po = makeSpotlightFixture({ anchorPriceOnly: true });
@@ -2033,9 +2046,9 @@ console.log("\n[public] v6.5 — STOCK SPOTLIGHT: Simple + Degen, always-visible
     await page.waitForTimeout(1600);
     const r = region(page);
     const text = await r.innerText();
-    ok("v6.5 review #3: served in the new year, both YTD fields read 'awaiting first trading close', no line is drawn, and last year's figures are gone",
-      (text.match(/awaiting first trading close/gi) || []).length === 2 && /Awaiting the first 2026 trading close/.test(text) && (await r.locator(".recharts-line").count()) === 0 &&
-      !/\+\d+\.\d\d%\s*through/.test(text) && /\$3\.41T/.test(text) && errors.length === 0);
+    ok("T4 review #3: served in the new year, both Simple YTD fields read awaiting, no line is drawn, and last year's figures are gone",
+      (text.match(/awaiting first close/gi) || []).length >= 2 && /Awaiting the first 2026 trading close/.test(text) && (await r.locator(".recharts-line").count()) === 0 &&
+      !/\+\d+\.\d\d%/.test(text) && !/\$3\.41T/.test(text) && errors.length === 0);
     await page.close(); }
   // 5. 320px — the narrowest contract.
   { const { page, errors } = await open({ live: FULL_LIVE, width: 320, power: false, spotlight: feed });
@@ -2045,22 +2058,34 @@ console.log("\n[public] v6.5 — STOCK SPOTLIGHT: Simple + Degen, always-visible
     await page.close(); }
 }
 
-// ── T2/T3 of the Simple FACE/TAP/FOLD sprint (working/2026-09-14-simple-face-tap-fold.md)
-console.log("\n[public] T2/T3 — Simple face sheds clock, rulers, coverage; Degen stays dense");
+// ── T2–T6 of the Simple FACE/TAP/FOLD sprint (working/2026-09-14-simple-face-tap-fold.md)
+console.log("\n[public] T2–T6 — Simple face sheds clock, rulers, coverage, lesson, multiples; Degen stays dense");
 {
+  const { makeSpotlightFixture } = await import("./spotlight-fixture.mjs");
+  const fx = makeSpotlightFixture();
+  const feed = { schema: "md-spotlight-v1", enabled: true, model: fx.projected };
   const frozenHodl = { schema:"md-call-v1", effective_date:TODAY, headline:"HODL", emoji:"💎",
     direction:"NEUTRAL", confidence:"HIGH", actionability:"RESTRICTED", status:"PUBLISHED",
     counts:{usable:6,total:6,bull:2,bear:1,neutral:3}, factors:[], override:{active:false} };
   const { page, errors } = await open({ live: FULL_LIVE, width: 390, power: false,
-    publicCall: frozenHodl, publicCallFrozen: true, publicCallCapturedAt: `${TODAY}T14:00:00.000Z` });
+    publicCall: frozenHodl, publicCallFrozen: true, publicCallCapturedAt: `${TODAY}T14:00:00.000Z`,
+    spotlight: feed });
   await page.setViewportSize({ width: 390, height: 844 });
   await page.waitForTimeout(1300);
   const face = await bandText(page);
   const cards = await page.locator('[aria-label="Key parameters"]').innerText();
+  const body = await page.locator("body").innerText();
   ok("T6 Simple face: Hold + HELPING/HURTING, no FROZEN/unscored/help</hurt>",
     /Hold/.test(face) && /HELPING|HURTING/.test(cards) &&
     !/FROZEN/i.test(face) && !/unscored/i.test(face) &&
     !/help </.test(cards) && !/hurt >/.test(cards));
+  ok("T5 Simple: closed Why-this-call is the promise — no ⇄, no +N, no ALLCAPS essay",
+    /Why this call/.test(await page.locator("button.cg-toggle", { hasText: "why this call" }).innerText()) &&
+    !/⇄/.test(await page.locator("button.cg-toggle", { hasText: "why this call" }).innerText()) &&
+    !/\+\d/.test(await page.locator("button.cg-toggle", { hasText: "why this call" }).innerText()));
+  ok("T6 Simple face: no run-rate, no trailing revenue; Learning moment starts collapsed",
+    /Learning moment/.test(body) && (await page.locator('[aria-label="Learning moment"]').count()) === 0 &&
+    !/run-rate/i.test(body) && !/trailing revenue/i.test(body) && !/LEARNING MOMENT/.test(body));
   await page.locator(".simple-hold").click();
   await page.waitForTimeout(200);
   const holdSheet = await page.locator('[role="dialog"]').innerText();
@@ -2084,13 +2109,23 @@ console.log("\n[public] T2/T3 — Simple face sheds clock, rulers, coverage; Deg
   await page.locator("button", { hasText: "Degen" }).click();
   await page.waitForTimeout(400);
   const degen = await bandText(page);
+  const degenBody = await page.locator("body").innerText();
   ok("T6 Degen stays dense: frozen eyebrow, capture clock, 6-of-6 on the face",
     /10am call · frozen/i.test(degen) &&
     /frozen 10am call · captured 10:00 ET/.test(degen) &&
     /\d+ of \d+ signals counted/.test(degen));
-  ok("T2/T3: no page errors", errors.length === 0);
+  ok("T6 Degen stays dense: run-rate, LEARNING MOMENT body and market cap stay on the face",
+    /run-rate/i.test(degenBody) && /LEARNING MOMENT/.test(degenBody) &&
+    /\$70\.1B/.test(degenBody) && /MARKET CAP/i.test(degenBody));
+  ok("T2–T6: no page errors", errors.length === 0);
   await page.close();
 }
+
+await browser.close();
+srv.close();
+console.log(`\n=== PUBLIC RENDER TEST: ${pass} passed, ${fail} failed ===`);
+process.exit(fail ? 1 : 0);
+
 
 await browser.close();
 srv.close();

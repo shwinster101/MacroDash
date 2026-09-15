@@ -27,7 +27,9 @@ const readOpen = (key, fallback) => {
   } catch (_e) { return fallback; }
 };
 
-const CollapsedGroup = ({ count, label, chip = true, defaultOpen = false, persistKey = null, children }) => {
+// T5: `promise` is the Simple closed-label contract — a 2–4 word promise, no +N
+// count, no forced ALLCAPS. Degen keeps the operator `▸ +N LABEL` form.
+const CollapsedGroup = ({ count, label, chip = true, defaultOpen = false, persistKey = null, promise = false, children }) => {
   const [open, setOpen] = useState(() => readOpen(persistKey, defaultOpen));
   const toggle = () => setOpen(o => {
     const next = !o;
@@ -41,9 +43,10 @@ const CollapsedGroup = ({ count, label, chip = true, defaultOpen = false, persis
       <button onClick={toggle} aria-expanded={open} className="cg-toggle"
         style={{ width:"100%", display:"flex", alignItems:"center", gap:8, padding:"6px 0",
                  background:"none", border:"none", cursor:"pointer", textAlign:"left" }}>
-        <span style={{ fontFamily:T.fontMono, fontSize:8, color:T.textMuted,
-                       letterSpacing:"0.12em", textTransform:"uppercase" }}>
-          {open ? "▾ hide" : `▸ +${count}`} {label}
+        <span style={{ fontFamily:T.fontMono, fontSize: promise ? 11 : 8, color:T.textMuted,
+                       letterSpacing: promise ? "0.04em" : "0.12em",
+                       textTransform: promise ? "none" : "uppercase" }}>
+          {open ? (promise ? "▾ Hide" : "▾ hide") : (promise ? "▸" : `▸ +${count}`)} {label}
         </span>
         {chip && <IllustrativeChip label="ILLUSTRATIVE" />}
       </button>

@@ -16,10 +16,10 @@
 import { T } from "../design-tokens.js";
 import { ILLUS_HATCH, isIllustrative } from "../primitives/Illustrative.jsx";
 import { Explainable } from "../primitives/FactSheet.jsx";
+import { cardFace, sheetLead } from "../simpleFace.js";
 
 const TONE = { helping: T.green, hurting: T.red, mixed: T.amber };
 const WORD = { helping: "HELPING", hurting: "HURTING", mixed: "MIXED" };
-const GLYPH = { helping: "▲", hurting: "▼", mixed: "•" };
 export const freshDot = (mode, illus) => {
   const live = !illus && (mode === "LIVE" || mode === "CACHED");
   const color = live ? T.green : mode === "STALE" ? T.amber : T.textMuted;
@@ -29,9 +29,11 @@ export const freshDot = (mode, illus) => {
 const sheetOf = (c) => {
   if (!c.explain || !Array.isArray(c.explain.what)) return c.explain;
   const illus = isIllustrative(c.mode);
+  const lead = sheetLead(c);
+  const beat2 = lead && c.explain.what[1] !== lead ? `${c.explain.what[1]} ${lead}` : c.explain.what[1];
   const tail = [c.explain.what[2], c.asOf && `As of ${c.asOf}.`, c.rulerChip && `Rule: ${c.rulerChip}.`, illus && "This reading is illustrative, not live."]
     .filter(Boolean).join(" ");
-  return { full: c.explain.full, what: [c.explain.what[0], c.explain.what[1], tail] };
+  return { full: c.explain.full, what: [c.explain.what[0], beat2, tail] };
 };
 
 const SimpleCards = ({ cards, usable = 0, shown = 0, total = 0, withheld = false }) => {
@@ -50,24 +52,25 @@ const SimpleCards = ({ cards, usable = 0, shown = 0, total = 0, withheld = false
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(260px,1fr))", gap: 6 }}>
         {cards.map((c) => {
           const illus = isIllustrative(c.mode);
-          const tone = TONE[c.direction] || T.textMuted;
+          const face = cardFace(c);
+          const tone = TONE[face.tone] || T.textMuted;
           const fresh = freshDot(c.mode, illus);
           return (
             <Explainable key={c.key}
               explain={sheetOf(c)}
-              title={c.explain ? c.explain.full : c.label}
-              eyebrow={`${c.label} · ${c.currentValue}${WORD[c.direction] ? ` · ${WORD[c.direction]}` : ""}`}
+              title={c.explain ? c.explain.full : face.label}
+              eyebrow={`${face.label} · ${face.value}${WORD[face.tone] ? ` · ${WORD[face.tone]}` : ""}`}
               className="simple-card"
               style={{ background: T.surface, border: `1px solid ${T.border}`, borderLeft: `3px solid ${tone}`,
               borderRadius: 5, padding: "5px 8px", minWidth: 0, ...(illus ? ILLUS_HATCH : {}) }}>
               <div style={{ display: "flex", alignItems: "baseline", gap: 6, flexWrap: "wrap" }}>
                 <span aria-hidden="true" className="simple-card-glyph" style={{ fontFamily: T.fontMono, fontSize: T.fsM, fontWeight: 700,
-                  color: tone, flexShrink: 0, lineHeight: 1 }}>{GLYPH[c.direction] || "•"}</span>
+                  color: tone, flexShrink: 0, lineHeight: 1 }}>{face.glyph}</span>
                 <span style={{ fontFamily: T.fontMono, fontSize: 8, color: T.textMuted,
-                  letterSpacing: "0.08em", textTransform: "uppercase", flexShrink: 0 }}>{c.label}</span>
-                <span style={{ fontFamily: T.fontMono, fontSize: T.fsM, color: T.textPrimary, minWidth: 0 }}>{c.currentValue}</span>
+                  letterSpacing: "0.08em", textTransform: "uppercase", flexShrink: 0 }}>{face.label}</span>
+                <span style={{ fontFamily: T.fontMono, fontSize: T.fsM, color: T.textPrimary, minWidth: 0 }}>{face.value}</span>
                 <span style={{ fontFamily: T.fontMono, fontSize: 8, fontWeight: 700, marginLeft: "auto",
-                  color: TONE[c.direction] || T.textMuted, flexShrink: 0 }}>{WORD[c.direction] || "—"}</span>
+                  color: TONE[face.tone] || T.textMuted, flexShrink: 0 }}>{WORD[face.tone] || "—"}</span>
                 {c.explain && <span aria-hidden="true" title="What is this?"
                   style={{ fontFamily: T.fontMono, fontSize: 9, color: T.amber, flexShrink: 0 }}>ⓘ</span>}
                 {c.explain && <span className="visually-hidden"> — what is this? Opens an explainer.</span>}

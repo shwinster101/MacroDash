@@ -3,7 +3,8 @@ import { LineChart, Line, BarChart, Bar, Cell, AreaChart, Area, XAxis, YAxis, To
 import { useMarketData } from "./useMarketData.js"; // FEAT-204 wiring
 import { computeFiveWhys } from "./fiveWhys.js"; // v2.5: rule-based 5 Whys ($0, derived from live data)
 import { NFCI_TIGHT, NFCI_LOOSE, REGIME_BAND_TABLE, REGIME_QUORUM, verdictFrom, computeRegime, flipConditions, regimeFactors, voteStyle } from "./regime.js"; // C1 (v3.60): the extracted engine; voteStyle = FEAT-NEUTRAL (v3.62)
-import { buildEvidenceSet, simpleVerdict, simpleCards, simpleSentence, simpleFlipLine, factorExclusions, fieldMode, FACTOR_FIELD } from "./evidence.js"; // C1 (v3.60): the typed contract
+import { buildEvidenceSet, simpleVerdict, simpleCards, simpleFlipLine, factorExclusions, fieldMode, FACTOR_FIELD } from "./evidence.js"; // C1 (v3.60): the typed contract
+import { holdReason, WHYS_FOLD_LABEL, ABOUT_FOLD_LABEL } from "./simpleFace.js"; // T1: Simple FACE registry
 import { LASTVALID_KEY, summarizeEvidence, compareEvidence } from "./whatChanged.js"; // C4 (v3.60)
 import { isStale, cadenceOf, parseObsDate, nextFomcDate, etYmd } from "./sources.js"; // FEAT-R3: per-tile, cadence-aware staleness + shared market calendar; v3.99: curated FOMC calendar
 import { computeMacroFlip } from "./ttReadout.js"; // FEAT-331: Macro Flip circuit
@@ -561,7 +562,7 @@ export default function Dashboard({ publicView = false } = {}) {
      disagree with Power because neither re-derives anything. */
   const simpleV=simpleVerdict(evidenceSet);
   const simpleC=simpleCards(evidenceSet);
-  const simpleS=simpleSentence(evidenceSet);
+  const simpleS=holdReason(evidenceSet);
   const simpleF=simpleFlipLine(evidenceSet);
   // v5.3: one canonical public call. The six-factor EvidenceSet owns direction; the existing
   // Macro Flip/PANIC circuits are safety overrides, never a second directional opinion.
@@ -1089,6 +1090,7 @@ export default function Dashboard({ publicView = false } = {}) {
           fact still lands without a closed row claiming a crossing that does not exist.
           Verdict words already pass through SIMPLE_VERDICTS inside simpleFlipLine (v4.0.3). */}
       {simple&&<FiveWhys fw={fw} derivedLabel={derivedLabel} mode={modeOf('spyPrice')} asOf={asOfOf('spyPrice')}
+        label={WHYS_FOLD_LABEL} promise
         flipChip={evidenceSet.withheld?null:flipChipOf(simpleF)} flipLine={simpleF} coverage={regimeConf}/>}
 
       {/* ── v3.94 DRIVERS-ONLY: the REASONING group — 5 whys + what-changed under ONE
@@ -1269,7 +1271,7 @@ export default function Dashboard({ publicView = false } = {}) {
             Retired attribution (which RECORDS the CBOE/Mag-10 retirements, never deleted — the
             v3.43/v3.51 rule) — is verbatim one tap deep. */}
         <div className="site-footer" style={{marginTop:12}}>
-          <CollapsedGroup count={3} chip={false} label={`about this page — v${__APP_VERSION__} · sources · not financial advice`}>
+          <CollapsedGroup count={3} chip={false} promise={simple} label={simple?ABOUT_FOLD_LABEL:`about this page — v${__APP_VERSION__} · sources · not financial advice`}>
             <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",flexWrap:"wrap",gap:4}}>
               <div style={{fontFamily:T.fontMono,fontSize:8,color:T.textMuted}}>{`MacroDash v${__APP_VERSION__} · Data refreshed daily · end-of-day sources`}</div>
               <div style={{display:"flex",gap:10,fontFamily:T.fontMono,fontSize:8}}><a href="/history" style={{color:T.textMuted}}>History</a><a href="/difference" style={{color:T.textMuted}}>Difference</a><a href="/readout.json" style={{color:T.textMuted}}>JSON</a></div>

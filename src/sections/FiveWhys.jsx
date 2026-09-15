@@ -49,10 +49,12 @@ export const flipChipOf=(s)=>{
         the NFCI tile sub-line (detail, where the parent/subindex relation is legible).)
         flipChip     — chip-length flip for the CLOSED label, or null. Null on a withheld
                        posture: there is no flip to advertise, so the label stays BARE.
+                       T5 (Simple promise): the closed label is the 2–4 word promise; the
+                       chip is not mounted on Simple — the verbatim flipLine still rides inside.
         flipLine     — the SAME text verbatim, rendered inside as the last check's tail. On
                        a withheld posture this is the withheld sentence — it travels with the
                        flip to the one home rather than being stranded on the cards. */
-const FiveWhys=({fw,derivedLabel,mode,asOf,label="why this call · 5 checks",flipChip=null,flipLine=null,persistKey=WHYS_KEY,coverage=null})=>{
+const FiveWhys=({fw,derivedLabel,mode,asOf,label="why this call · 5 checks",flipChip=null,flipLine=null,persistKey=WHYS_KEY,coverage=null,promise=false})=>{
   // Property 9 (null-safe): nothing computed yet means nothing to narrate — an empty,
   // hidden region, never a throw and never a fabricated narrative.
   if(!fw||!Array.isArray(fw.whys))return <div aria-hidden="true"/>;
@@ -63,7 +65,7 @@ const FiveWhys=({fw,derivedLabel,mode,asOf,label="why this call · 5 checks",fli
           from the closed view — the regime state is a byte-for-byte duplicate of the hero
           verdict 100px above, so v3.25 is satisfied by the hero itself; the line rides
           INSIDE the collapse so the chain still opens with its own anchor. */}
-      <CollapsedGroup count={5} label={flipChip?`${label} — ⇄ ${flipChip}`:label} chip={false} persistKey={persistKey}>
+      <CollapsedGroup count={5} label={promise?label:(flipChip?`${label} — ⇄ ${flipChip}`:label)} chip={false} persistKey={persistKey} promise={promise}>
         <div style={{fontFamily:T.fontMono,fontSize:9,color:T.amber,marginBottom:2}}>{fw.regime}</div>
         <div style={{fontFamily:T.fontSans,fontSize:12,color:T.textSecondary,lineHeight:1.6,fontStyle:"italic"}}>"{fw.headline}"</div>
         {/* The final check is the actionable flip condition, so it carries the strongest weight. */}
