@@ -161,3 +161,7 @@ Review on a 390px screenshot only. If you need to scroll past the three cards to
 | T4 Spotlight + lesson | Simple face = name + YTD + one quality stat. Cap / multiples / summary / lesson body → Explore / Learning moment (defaultClosed, persistKey allowed). Chart title `NBIS vs MSFT YTD`. |
 | T5 Closed-label pass | `▸ Why this call` / `About this page` / `Explore the numbers` / `Learning moment`. Flip chip left the closed Why-this-call row; `flipLine` still inside. Degen keeps `▸ +N LABEL`. |
 | T6 Tests | Simple at 390px: no `/help </`, `/hurt >/`, `/run-rate/`, `/trailing revenue/`, `/FROZEN/`, `/unscored/` on the face. Hold + HELPING/HURTING. Tap card → as-of + ruler. Learning moment starts collapsed. Degen still dense. |
+| T7 Type | Simple Hold `fs-xxl` 28. Sentence sans `fs-body` 16. Cards value 16 / label 11 / HELPING 11. Fold promises `fs-l` 13. Degen type untouched. |
+| T8 One-block hero | Simple ℹ gone (Hold ⓘ is the clock). Copy inline on the Hold row, icon-only, 44px. |
+| T9 One-row header | Wordmark + Simple\|Degen. Terminal + Share are Degen's. Clock stacked under the wordmark. |
+| T10 Track Record | Face nav is Degen-only. About fold carries Track record / Why MacroDash / Share this page. |

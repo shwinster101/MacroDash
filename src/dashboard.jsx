@@ -878,10 +878,12 @@ export default function Dashboard({ publicView = false } = {}) {
           black-translucent since v1 (the page is deliberately drawn BEHIND the iOS status
           bar), but env(safe-area-inset-*) was never added, so the wordmark rendered under
           the Dynamic Island. env() resolves to 0 everywhere else — no visual change. */}
-      <header style={{background:T.surface,borderBottom:`1px solid ${T.border}`,padding:"calc(8px + env(safe-area-inset-top)) 20px 8px",display:"flex",justifyContent:"space-between",alignItems:"center",gap:8,flexWrap:"wrap"}}>
+      <header className={simple?"hdr hdr-simple":"hdr"} style={{background:T.surface,borderBottom:`1px solid ${T.border}`,padding:"calc(8px + env(safe-area-inset-top)) 20px 8px",display:"flex",justifyContent:"space-between",alignItems:simple?"flex-start":"center",gap:8,flexWrap:simple?"nowrap":"wrap"}}>
         {/* A2 (v3.58): minWidth:0 lets the identity group shrink inside the flex row instead of
-            forcing overflow; the sub-wordmark hides below 360px (it duplicates the brand). */}
-        <div style={{display:"flex",alignItems:"center",gap:14,minWidth:0,flexWrap:"wrap"}}>
+            forcing overflow; the sub-wordmark hides below 360px (it duplicates the brand).
+            T9: Simple stacks the clock under the wordmark so the action row is Wordmark +
+            Simple|Degen only — Terminal and Share are Degen's. */}
+        <div style={{display:"flex",alignItems:simple?"flex-start":"center",gap:simple?2:14,minWidth:0,flexWrap:simple?"nowrap":"wrap",flexDirection:simple?"column":"row",flex:simple?"1 1 auto":undefined}}>
           <div className="wordmark" style={{fontFamily:T.fontDisplay,fontSize:20,fontWeight:800,color:T.amber,letterSpacing:"-0.02em"}}>MacroDash</div>
           {/* FEAT-165: friendly sub-headline */}
           {/* FINDING-1: orientation line now visible on mobile (was hide-mobile) */}
@@ -894,9 +896,9 @@ export default function Dashboard({ publicView = false } = {}) {
               baseline's hardcoded lastRefresh next to a pulsing dot read as "the site last
               refreshed <months-old date>" — a timestamp is exactly the kind of number the
               v3.1 honesty invariant says must never look live when it isn't. */}
-          <div style={{display:"flex",alignItems:"center",gap:5,flexWrap:"wrap"}}>
+          <div style={{display:"flex",alignItems:"center",gap:5,flexWrap:simple?"nowrap":"wrap",minWidth:0,maxWidth:"100%"}}>
             <div style={{width:6,height:6,borderRadius:"50%",background:anyLive?T.amber:T.textMuted,boxShadow:anyLive?`0 0 5px ${T.amber}`:"none"}} className="pulse-anim"/>
-            <span style={{fontFamily:T.fontMono,fontSize:9,color:mode==="ERROR"?T.red:T.textSecondary}}>
+            <span style={{fontFamily:T.fontMono,fontSize:9,color:mode==="ERROR"?T.red:T.textSecondary,whiteSpace:simple?"nowrap":undefined,overflow:simple?"hidden":undefined,textOverflow:simple?"ellipsis":undefined}}>
               {/* 8/28 clock matrix A1: a mixed clock — session is live per request, lastRefresh is
                   the frozen snapshot-build instant. Unlabelled, "OPEN · 02:40 ET" read as the
                   CALL's time (or a broken clock). Three words bind the timestamp to the data. */}
@@ -919,7 +921,7 @@ export default function Dashboard({ publicView = false } = {}) {
               </button>}
           </div>
         </div>
-        <div style={{display:"flex",alignItems:"center",gap:8,flexWrap:"wrap",minWidth:0}}>
+        <div style={{display:"flex",alignItems:"center",gap:8,flexWrap:simple?"nowrap":"wrap",minWidth:0,flexShrink:simple?0:undefined}}>
           {/* v5.9 (beginner read): the provenance CHIP is Power's. In Simple the status line
               directly above already stamps the pull time and "end-of-day, not real-time", and
               every card carries its own freshness, so a second CACHED token is a third saying
@@ -973,7 +975,7 @@ export default function Dashboard({ publicView = false } = {}) {
               work lives, and Simple|Power already gates newcomer noise far better than a menu
               did. It keeps the !publicView gate (a visitor never sees it) and gets the accent
               treatment so it reads as the primary destination, not another utility. */}
-          {!publicView&&(
+          {!simple&&!publicView&&(
             <a href="/admin.html" aria-label="Open Ticker Terminal" className="hdr-act"
               title="TT Ticker Terminal — the book, rankings and next dollar"
               style={{fontFamily:T.fontMono,fontSize:9,fontWeight:700,background:`${T.amber}1a`,border:`1px solid ${T.amber}`,color:T.amber,padding:"5px 12px",borderRadius:4,textDecoration:"none",whiteSpace:"nowrap",letterSpacing:"0.04em"}}>
@@ -981,10 +983,10 @@ export default function Dashboard({ publicView = false } = {}) {
             </a>
           )}
           {/* FEAT-165: share button — stays in the bar; it is the one action a VISITOR wants. */}
-          <button onClick={handleShare} aria-label="Copy dashboard link" className="hdr-act"
+          {!simple&&<button onClick={handleShare} aria-label="Copy dashboard link" className="hdr-act"
             style={{fontFamily:T.fontMono,fontSize:9,background:copied?"#1a3020":T.surfaceHigh,border:`1px solid ${copied?T.green:T.borderAccent}`,color:copied?T.green:T.textSecondary,padding:"5px 12px",borderRadius:4,cursor:"pointer",transition:"all 0.2s"}}>
             {copied?"✓ COPIED":"⤴ SHARE"}
-          </button>
+          </button>}
           {/* v3.62 (newcomer audit, "default route still shows TT and TERMINAL"): the operator
               ACTIONS consolidate behind one ⋯ OPS disclosure — the admin.html header pattern.
               Owner call: the default route stays the operator view, so this reduces the clutter
@@ -1113,10 +1115,10 @@ export default function Dashboard({ publicView = false } = {}) {
           larger, contradictory confidence number. The hero's "N of 6 voters counted · dark: X"
           is the scoped one, and it stays. Power keeps the full census. */}
       {!simple&&<SignalQuality sq={sq}/>}
-      <nav aria-label="MacroDash accountability" style={{display:"flex",gap:16,alignItems:"center",padding:"4px 20px",background:T.bg,borderBottom:`1px solid ${T.border}`,fontFamily:T.fontMono,fontSize:9}}>
+      {!simple&&<nav aria-label="MacroDash accountability" style={{display:"flex",gap:16,alignItems:"center",padding:"4px 20px",background:T.bg,borderBottom:`1px solid ${T.border}`,fontFamily:T.fontMono,fontSize:9}}>
         <a href="/history" style={{color:T.amber,textDecoration:"none"}}>TRACK RECORD →</a>
         <a href="/difference" style={{color:T.textMuted,textDecoration:"none"}}>WHY MACRODASH →</a>
-      </nav>
+      </nav>}
 
       {/* C4 WHAT CHANGED rides inside the reasoning group above (v3.94). */}
 
@@ -1274,7 +1276,15 @@ export default function Dashboard({ publicView = false } = {}) {
           <CollapsedGroup count={3} chip={false} promise={simple} label={simple?ABOUT_FOLD_LABEL:`about this page — v${__APP_VERSION__} · sources · not financial advice`}>
             <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",flexWrap:"wrap",gap:4}}>
               <div style={{fontFamily:T.fontMono,fontSize:8,color:T.textMuted}}>{`MacroDash v${__APP_VERSION__} · Data refreshed daily · end-of-day sources`}</div>
-              <div style={{display:"flex",gap:10,fontFamily:T.fontMono,fontSize:8}}><a href="/history" style={{color:T.textMuted}}>History</a><a href="/difference" style={{color:T.textMuted}}>Difference</a><a href="/readout.json" style={{color:T.textMuted}}>JSON</a></div>
+              <div style={{display:"flex",gap:10,fontFamily:T.fontMono,fontSize:simple?T.fsM:8,flexWrap:"wrap",alignItems:"center"}}>
+                <a href="/history" style={{color:simple?T.amber:T.textMuted}}>{simple?"Track record":"History"}</a>
+                <a href="/difference" style={{color:T.textMuted}}>{simple?"Why MacroDash":"Difference"}</a>
+                <a href="/readout.json" style={{color:T.textMuted}}>JSON</a>
+                {simple&&<button onClick={handleShare} aria-label="Copy dashboard link"
+                  style={{fontFamily:T.fontMono,fontSize:T.fsM,background:"none",border:"none",padding:0,color:copied?T.green:T.textMuted,cursor:"pointer"}}>
+                  {copied?"Copied":"Share this page"}
+                </button>}
+              </div>
               <div style={{fontFamily:T.fontMono,fontSize:8,color:T.textMuted}}>Not financial advice · Personal use</div>
               <div style={{fontFamily:T.fontMono,fontSize:8,color:T.textMuted}}>Live: FRED · CNN · Kalshi · OpenRouter · Finnhub · multpl · Curated: GPU $/hr · hyperscaler capex · token efficiency · Retired: CBOE Put/Call (free feed dead 2019 · v3.2) · Mag 10 fundamentals + SEC S-1 (v3.43) · Mag 10 quote strip (v3.51)</div>
             </div>

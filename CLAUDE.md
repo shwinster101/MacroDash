@@ -5,6 +5,15 @@ answers *"is it safe to be in the market?"* from live macro + market + sentiment
 data. Single-page React app on Cloudflare Pages, with live data assembled at the
 edge by Pages Functions and cached in KV.
 
+**v6.5.4 — Simple altitude (type + real estate).** Presentation-only, Simple only. Hold
+is `fs-xxl` 28; the so-what sentence is sans `fs-body` 16; the three cards read at 16/11
+instead of 11/8; fold promises sit at `fs-l` 13. The wrapping 44×44 copy+ℹ pair is gone —
+copy sits on the Hold row, and Hold ⓘ already carries the clock (the second ℹ is Degen's
+evidence panel). The header is one action row: wordmark + Simple|Degen; Terminal and Share
+are Degen's (Share lives in About on Simple). Track Record / Why MacroDash left the face
+for the About fold. Degen, call logic, strip 44px thumbs, and Spotlight math are untouched.
+Tests: 2347 smoke + 309 render + 331 public-render.
+
 **v6.5.3 — Simple FACE / TAP / FOLD remainder (T1/T4/T5/T6).** Presentation-only. A new
 `src/simpleFace.js` registry owns Simple face copy: `holdReason` (≤18 words: helping names
 "are fine", hurting names "are the drag"), `cardFace` / `sheetLead`, `spotlightFace` (YTD +

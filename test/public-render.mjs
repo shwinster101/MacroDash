@@ -387,6 +387,13 @@ console.log("\n[public] v3.94 — Simple default, the toggle, persistence, red f
     /HELPING|HURTING|MIXED/.test(body) && /SPY/.test(body) &&
     !/\d+ of \d+ signals counted/.test(await page.locator('[aria-label="Macro backdrop verdict"]').innerText()) &&
     !/\d+ cards from the \d+ signals counted/.test(await page.locator('[aria-label="Key parameters"]').innerText()));
+  const sentencePx = await page.evaluate(() => {
+    const band = document.querySelector('[aria-label="Macro backdrop verdict"]');
+    const el = [...band.querySelectorAll("div")].find((n) => n.childElementCount === 0 && /(fine|drag|clear lean)/i.test(n.textContent || ""));
+    return el ? getComputedStyle(el).fontSize : null;
+  });
+  ok(`T7 sentence (Simple): the so-what line is 16px sans, not an 11px caption (measured ${sentencePx})`,
+    sentencePx === "16px");
   ok("v4.0.3 simple: the tracked-signal census is GONE from Simple — one confidence number, scoped",
     !/SIGNAL QUALITY/i.test(body) && !/of \d+ tracked/i.test(body));
   const bandTxt = await page.locator('[aria-label="Macro backdrop verdict"]').innerText();
@@ -415,16 +422,17 @@ console.log("\n[public] v3.94 — Simple default, the toggle, persistence, red f
     ok("T2 clock in Simple: the detailed caption is off the face",
       (await page.locator('[aria-label="Macro backdrop verdict"] .call-caption').count()) === 0 &&
       !/(live|latest) market read/i.test(faceTxt) &&
-      !/frozen 10am call · captured/.test(faceTxt));
-    await page.locator('button[aria-label="Show regime factors"]').click();
+      !/frozen 10am call · captured/.test(faceTxt) &&
+      (await page.locator('button[aria-label="Show regime factors"]').count()) === 0);
+    await page.locator(".simple-hold").click();
     await page.waitForTimeout(150);
-    ok("v6.4 clock: the unfrozen counterpart caption renders one tap deep",
+    ok("v6.4 clock: the unfrozen counterpart caption renders one tap deep in Hold ⓘ",
       /* v6.5: the pre-10am-ET caption ("today's 10am call is scheduled") was missing from this regex,
          so the pin went red only when the suite ran between midnight and 10am ET — found by running
          the gate at 01:52 ET. All three captions liveReadCaption() can emit are accepted. */
-      /(Latest market read · no new call is scheduled today|Live market read · today's (official|10am) call (freezes at 10:00 ET|is unavailable|is scheduled))/.test(
-        await page.locator('[aria-label="Macro backdrop verdict"] .call-caption').innerText()));
-    await page.locator('button[aria-label="Show regime factors"]').click();
+      /(Latest market read · no new call is scheduled today|Live market read · today's (official|10am) call (freezes at 10:00 ET|is unavailable|is scheduled)|This is a live market read, not the 10am call)/.test(
+        await page.locator('[role="dialog"]').innerText()));
+    await page.keyboard.press("Escape");
     await page.waitForTimeout(150);
   }
   const cardsInner = await page.locator('[aria-label="Key parameters"]').innerText();
@@ -1631,15 +1639,15 @@ console.log("\n[public] v6.0.1/v6.4 — shape before text · Simple|Degen clarit
   ok("T2 captions (Simple): the face sheds the frozen eyebrow; capture clock is one tap deep",
     !/10am call · frozen/i.test(face) && !/frozen 10am call · captured/.test(face) &&
     /Hold/.test(face));
-  ok("v6.0.1 hero: the icon-only ⎘ and ℹ buttons render their glyph at 13px, not 9px",
-    await page.locator('button[aria-label="Copy MacroDash posture card"]').evaluate((n) => getComputedStyle(n).fontSize) === "13px" &&
-    await page.locator('button[aria-label="Show regime factors"]').evaluate((n) => getComputedStyle(n).fontSize) === "13px");
-  await page.locator('button[aria-label="Show regime factors"]').click();
+  ok("T8 hero: Simple has no ℹ — copy is 13px on the Hold row; Hold ⓘ is the clock",
+    (await page.locator('button[aria-label="Show regime factors"]').count()) === 0 &&
+    await page.locator('button[aria-label="Copy MacroDash posture card"]').evaluate((n) => getComputedStyle(n).fontSize) === "13px");
+  await page.locator(".simple-hold").click();
   await page.waitForTimeout(200);
-  const cap = await page.locator('[aria-label="Macro backdrop verdict"] .call-caption').innerText();
-  ok("v6.0.1 captions (Simple): ONE tap opens the window, and the caption is there with the capture date",
-    new RegExp(`^frozen 10am call · captured 10:00 ET · ${TODAY}$`).test(cap.trim()));
-  await page.locator('button[aria-label="Show regime factors"]').click();   // close the window FIRST
+  const cap = await page.locator('[role="dialog"]').innerText();
+  ok("T8 captions (Simple): ONE tap on Hold opens the sheet, and the caption is there with the capture date",
+    new RegExp(`frozen 10am call · captured 10:00 ET · ${TODAY}`).test(cap));
+  await page.keyboard.press("Escape");
   await page.waitForTimeout(150);
   // The budgets this pass must not spend: the strip and the cards stay where v5.9 put them.
   const [glance, cardsTop] = await page.evaluate(() => {
@@ -1666,6 +1674,38 @@ console.log("\n[public] v6.0.1/v6.4 — shape before text · Simple|Degen clarit
     /About this page/.test(await page.locator(".site-footer").innerText()) &&
     !/not financial advice/i.test(await page.locator(".site-footer button.cg-toggle").innerText()) &&
     (await page.locator(".site-footer button.cg-toggle").boundingBox()).height >= 44);
+  ok("T10 face (Simple): Track Record / Why MacroDash left the first screen",
+    (await page.locator('nav[aria-label="MacroDash accountability"]').count()) === 0 &&
+    !/TRACK RECORD/.test(await page.locator("body").innerText()) &&
+    !/WHY MACRODASH/.test(await page.locator("body").innerText()));
+  await page.locator(".site-footer button.cg-toggle").click();
+  await page.waitForTimeout(150);
+  ok("T10 About (Simple): Track record, Why MacroDash, and Share this page live one tap deep",
+    /Track record/.test(await page.locator(".site-footer").innerText()) &&
+    /Why MacroDash/.test(await page.locator(".site-footer").innerText()) &&
+    /Share this page/.test(await page.locator(".site-footer").innerText()));
+  await page.locator(".site-footer button.cg-toggle").click();
+  await page.waitForTimeout(150);
+  const typePx = await page.evaluate(() => {
+    const hold = document.querySelector(".simple-hold");
+    const holdSpan = hold && [...hold.querySelectorAll("span")].find((n) => n.childElementCount === 0 && !n.classList.contains("visually-hidden") && (n.textContent || "").trim().length > 1);
+    const card = document.querySelector(".simple-card");
+    const value = card && [...card.querySelectorAll("span")].find((n) => getComputedStyle(n).fontWeight === "600");
+    const label = card && [...card.querySelectorAll("span")].find((n) => !n.classList.contains("simple-card-glyph") && !n.classList.contains("visually-hidden") && getComputedStyle(n).fontWeight !== "600" && getComputedStyle(n).fontWeight !== "700" && (n.textContent || "").trim().length > 1);
+    return {
+      hold: holdSpan ? getComputedStyle(holdSpan).fontSize : null,
+      card: value ? getComputedStyle(value).fontSize : null,
+      label: label ? getComputedStyle(label).fontSize : null,
+      holdText: holdSpan ? holdSpan.textContent.trim() : null,
+      cardText: value ? value.textContent.trim() : null,
+    };
+  });
+  ok(`T7 type (Simple): Hold is 28px, card values 16px, labels 11px (measured hold=${typePx.hold} value=${typePx.card} label=${typePx.label} «${typePx.holdText}» «${typePx.cardText}»)`,
+    typePx.hold === "28px" && typePx.card === "16px" && typePx.label === "11px");
+  ok("T9 header (Simple): Wordmark + Simple|Degen — Terminal and Share are not wrapping peers",
+    (await page.locator('a[aria-label="Open Ticker Terminal"]').count()) === 0 &&
+    (await page.locator("header button[aria-label='Copy dashboard link']").count()) === 0 &&
+    (await page.locator("header .hdr-simple, header.hdr-simple").count()) >= 1);
   ok("v6.0.1: no page errors through the Simple pass", errors.length === 0);
   // Degen contrast on the same tape: the caption stays ON the face, the pressed half is Degen.
   await page.locator("button", { hasText: "Degen" }).click();

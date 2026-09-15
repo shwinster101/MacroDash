@@ -4581,9 +4581,10 @@ ok("A1: the canonical headline never carries a context-only SPY day move",
   // Re-anchored on the row-11 copy; the old "usable factors bullish" phrase is retired.
   !/— SPY/.test(fw.headline) && /counted signals lean bullish/.test(fw.headline));
 // A2: the 320px contract — identity group may shrink, actions may wrap, wordmark yields first.
-ok("A2: header groups can shrink and wrap instead of forcing horizontal overflow",
-  /alignItems:"center",gap:14,minWidth:0,flexWrap:"wrap"/.test(dashSrc) &&
-  /alignItems:"center",gap:8,flexWrap:"wrap",minWidth:0/.test(dashSrc));
+ok("A2: header groups can shrink; Simple nowraps the action row, Degen still wraps",
+  /minWidth:0/.test(dashSrc) &&
+  /flexWrap:simple\?"nowrap":"wrap"/.test(dashSrc) &&
+  /flexDirection:simple\?"column":"row"/.test(dashSrc));
 ok("A2: the duplicate lowercase wordmark hides below 360px",
   /@media\(max-width:359px\)\{\.sub-wordmark\{display:none;\}\}/.test(dashSrc));
 // A3: browser suites fail rather than skip under CI's flag; both routes are covered.
@@ -4732,7 +4733,7 @@ ok("C1: the dashboard's modeOf and exclusions ARE the shared derivations (no loc
   dashSrc.includes("const staleFactors=factorExclusions({provenance, dataAsOf, liveBuild});") &&
   !dashSrc.includes('const unusable=(k)=>'));
 ok("C2: a real <header> landmark, a Sections <nav>, and the six-anchor h2 outline exist",
-  /<header style=/.test(dashSrc) && /<nav aria-label="Sections"/.test(navSrc) &&
+  /<header className=/.test(dashSrc) && /<nav aria-label="Sections"/.test(navSrc) &&
   ["overview", "drivers", "markets", "macro"].every((id) =>
     dashSrc.includes(`id="${id}"`)) && aiSrc.includes('id="ai"') && dhSrc.includes('id="health"'));
 ok("C3: the Drivers matrix renders the CONTRACT (evidenceSet.factors), not its own reading",
@@ -4923,7 +4924,7 @@ ok("glance: operator tooling gates on !publicView — TT copy in the menu, TERMI
     // beginner read found it renting a word on the first screen with no job there. The
     // !publicView contract this pin exists for is unchanged and still measured.
     return /\{!simple&&!publicView&&\(\s*\n?\s*<details className="hdr-ops"/.test(dashSrc) &&
-      term > 0 && /\{!publicView&&\(\s*\n?\s*<a href="\/admin\.html"/.test(dashSrc) &&
+      term > 0 && /\{!simple&&!publicView&&\(\s*\n?\s*<a href="\/admin\.html"/.test(dashSrc) &&
       (dashSrc.match(/href="\/admin\.html"/g) || []).length === 1;
   })() &&
   // v6.0: the two badges merged into one (PR #10's fix) — same gates, one render site.
@@ -6045,8 +6046,8 @@ ok("tokens: the DYNAMIC keys — every tintKey/colorKey regime.js can emit resol
       tints.every((k) => DT[k] !== undefined) && colors.every((k) => TOK_T[k] !== undefined); })());
 ok("tokens: voteStyle's four states all resolve to real T colors (the two-altitude map cannot dangle)",
   ["bull", "bear", "neutral", "excluded"].every((v) => TOK_T[voteStyle(v).colorKey] !== undefined));
-ok("tokens: the type scale is numeric and ordered (fs-xs < fs-s < fs-m < fs-l < fs-xl)",
-  (() => { const s = ["fs-xs", "fs-s", "fs-m", "fs-l", "fs-xl"].map((k) => DT[k]);
+ok("tokens: the type scale is numeric and ordered (fs-xs < fs-s < fs-m < fs-l < fs-body < fs-xl < fs-xxl)",
+  (() => { const s = ["fs-xs", "fs-s", "fs-m", "fs-l", "fs-body", "fs-xl", "fs-xxl"].map((k) => DT[k]);
     return s.every((n) => typeof n === "number") && s.every((n, i) => i === 0 || n > s[i - 1]); })());
 ok("tokens: T aliases stay derived from DT, never a second literal (spot-check the load-bearing ones)",
   TOK_T.bg === DT["bg"] && TOK_T.textMuted === DT["text-muted"] && TOK_T.fontMono === DT["font-mono"] &&
@@ -9663,10 +9664,10 @@ console.log("\n[67] v4.0 SIMPLE MODE — verdict mapping, card selection, senten
   ok("T2: Simple keeps the red crash-gauge warning on the face — a red fact never folds",
     /\{plainVerdict&&conf&&conf\.blind&&!loading&&<div/.test(bandSrc) &&
     /⚠ crash gauge \(VIX\) unavailable/.test(bandSrc));
-  ok("v6.4 clock: the orchestrator supplies one read caption; Degen shows it on-face and Simple one tap deep",
+  ok("v6.4 clock: Degen shows the read caption on-face; Simple clock is Hold ⓘ (simpleHoldExplain beat 2)",
     /readCaption&&!plainVerdict&&<div/.test(bandSrc) &&
-    /const windowCaption=callFrozen\?frozenCaption:readCaption/.test(bandSrc) &&
-    /\{plainVerdict&&windowCaption&&<div className="call-caption"/.test(bandSrc));
+    /simpleHoldExplain\(\{callFrozen,callCapturedAt,readCaption/.test(bandSrc) &&
+    !/className="call-caption"/.test(bandSrc));
   ok("8/28 A8: the unfrozen copy button names what it copies — and what it is not",
     bandSrc.includes('"⎘ COPY LIVE READ"') && bandSrc.includes('"⎘ COPY 10AM CALL"') &&
     bandSrc.includes("Copy the current live read — not the 10am call") &&
@@ -10018,7 +10019,8 @@ console.log("\n[67] v4.0 SIMPLE MODE — verdict mapping, card selection, senten
     /fontSize: T\.fsBody/.test(fsSrc) &&
     !/fontSize: T\.fsM,\s*\n?\s*fontWeight: 700/.test(fsSrc));
   ok("v5.9.2: fsBody is a real token (16px) between the sub-headline and hero sizes, not a literal",
-    TOK_T.fsBody === 16 && TOK_T.fsL < TOK_T.fsBody && TOK_T.fsBody < TOK_T.fsXl);
+    TOK_T.fsBody === 16 && TOK_T.fsL < TOK_T.fsBody && TOK_T.fsBody < TOK_T.fsXl &&
+    TOK_T.fsXxl === 28 && TOK_T.fsXl < TOK_T.fsXxl);
   ok("explain: VERDICT_EXPLAIN carries exactly 3 bullets, the same shape as every band",
     typeof VERDICT_EXPLAIN.full === "string" &&
     Array.isArray(VERDICT_EXPLAIN.what) && VERDICT_EXPLAIN.what.length === 3 &&
@@ -10821,12 +10823,11 @@ console.log("\n[75] v6.0.1 — shape before text · toggle clarity · captions u
     !/background:viewMode===m\?T\.surfaceHigh/.test(dash) && /aria-pressed=\{on\}/.test(dash));
   // (3) The captions: Simple's FACE keeps the eyebrow only; the frozen/live-read caption
   //     rides inside the ℹ window; Power keeps both on the face. The A6 copy is unchanged.
-  ok("v6.4 captions: the shared clock caption is Degen-face-only, and Simple gets ONE window home",
+  ok("v6.4 captions: the shared clock caption is Degen-face-only; Simple clock lives in Hold ⓘ, not a second ℹ window",
     /\{callFrozen&&!plainVerdict&&<div/.test(band) &&
     /\{readCaption&&!plainVerdict&&<div/.test(band) &&
-    /const windowCaption=callFrozen\?frozenCaption:readCaption/.test(band) &&
-    /\{plainVerdict&&windowCaption&&<div className="call-caption"/.test(band) &&
-    (band.match(/className="call-caption"/g) || []).length === 1);
+    /simpleHoldExplain\(\{callFrozen,callCapturedAt,readCaption/.test(bandSrc) &&
+    !/className="call-caption"/.test(band));
   ok("v6.4 captions: the frozen clock is concise and the live/weekend branches live in publicCopy",
     /frozen 10am call · captured 10:00 ET/.test(band) &&
     /liveReadCaption/.test(dash) && /noSessionDay=\{marketClock\.noSession\}/.test(dash));
@@ -11882,6 +11883,41 @@ console.log("\n[82] Simple FACE/TAP/FOLD remainder — registry, ≤18-word reas
     /spotlightFace\(c, leg\)/.test(ssFaceSrc) &&
     /label=\{lessonTitle\(lesson\)\}/.test(ssFaceSrc) && /persistKey="md:exp:spotlight-lesson:v1"/.test(ssFaceSrc) &&
     /label=\{EXPLORE_FOLD_LABEL\}/.test(ssFaceSrc) && /promise persistKey/.test(ssFaceSrc));
+}
+
+// ═══════════ [83] T7–T10 — Simple altitude: type, one-block hero, one-row header, Track Record ═══════════
+console.log("\n[83] Simple altitude — fs-xxl Hold, fs-body sentence, one-block hero, one-row header, Track Record in About");
+{
+  const band = bandSrc.replace(/\/\/[^\n]*|\/\*[\s\S]*?\*\//g, "");
+  const dash = dashSrc.replace(/\/\/[^\n]*|\/\*[\s\S]*?\*\//g, "");
+  const spc = spcSrc.replace(/\/\/[^\n]*|\/\*[\s\S]*?\*\//g, "");
+  ok("T7: Simple Hold is fs-xxl 28; Degen moon voice stays fs-xl 22",
+    /fontSize:T\.fsXxl/.test(band) && TOK_T.fsXxl === 28 &&
+    /: <span style=\{\{fontFamily:T\.fontMono,fontSize:T\.fsXl/.test(bandSrc));
+  ok("T7: Simple sentence is sans fs-body; Degen sentence stays mono fs-m",
+    /fontFamily:plainVerdict\?T\.fontSans:T\.fontMono/.test(band) &&
+    /fontSize:plainVerdict\?T\.fsBody:T\.fsM/.test(band));
+  ok("T7: Simple cards read at body size — value fs-body, label/HELPING fs-m, sans",
+    /fontSize: T\.fsBody, fontWeight: 600/.test(spc) &&
+    /fontFamily: T\.fontSans, fontSize: T\.fsM/.test(spc) &&
+    /fontFamily: T\.fontSans, fontSize: T\.fsBody/.test(spc));
+  ok("T7: Simple fold promises render at fs-l, not a 8px operator chip",
+    /fontSize: promise \? T\.fsL : 8/.test(cgSrc));
+  ok("T8: Simple ℹ is gone — Hold ⓘ is the clock; copy stays icon-only on the Hold row",
+    /\{!plainVerdict&&<div/.test(band) && /aria-label="Show regime factors"/.test(band) &&
+    /\{plainVerdict&&copyControl\}/.test(band) &&
+    /plainVerdict\s*\n?\s*\? \(callCopied\?"✓":"⎘"\)/.test(band) &&
+    /\{open&&!plainVerdict&&\(/.test(band));
+  ok("T9: Simple header is one action row — Terminal and Share are Degen's",
+    /className=\{simple\?"hdr hdr-simple":"hdr"\}/.test(dash) &&
+    /flexWrap:simple\?"nowrap":"wrap"/.test(dash) &&
+    /\{!simple&&!publicView&&\(\s*\n?\s*<a href="\/admin\.html"/.test(dash) &&
+    /\{!simple&&<button onClick=\{handleShare\}/.test(dash));
+  ok("T10: Track Record / Why MacroDash left the Simple face for the About fold",
+    /\{!simple&&<nav aria-label="MacroDash accountability"/.test(dash) &&
+    /\{simple\?"Track record":"History"\}/.test(dash) &&
+    /\{simple\?"Why MacroDash":"Difference"\}/.test(dash) &&
+    /Share this page/.test(dash));
 }
 
 console.log(`\n=== SMOKE TEST: ${pass} passed, ${fail} failed ===`);

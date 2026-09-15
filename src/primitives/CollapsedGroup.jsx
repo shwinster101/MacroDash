@@ -43,7 +43,7 @@ const CollapsedGroup = ({ count, label, chip = true, defaultOpen = false, persis
       <button onClick={toggle} aria-expanded={open} className="cg-toggle"
         style={{ width:"100%", display:"flex", alignItems:"center", gap:8, padding:"6px 0",
                  background:"none", border:"none", cursor:"pointer", textAlign:"left" }}>
-        <span style={{ fontFamily:T.fontMono, fontSize: promise ? 11 : 8, color:T.textMuted,
+        <span style={{ fontFamily:T.fontMono, fontSize: promise ? T.fsL : 8, color:T.textMuted,
                        letterSpacing: promise ? "0.04em" : "0.12em",
                        textTransform: promise ? "none" : "uppercase" }}>
           {open ? (promise ? "▾ Hide" : "▾ hide") : (promise ? "▸" : `▸ +${count}`)} {label}
