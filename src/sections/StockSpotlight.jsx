@@ -10,18 +10,13 @@
 // Rules this component enforces at render:
 //   · Renders NOTHING without an enabled feed and a model (a feature flag off, a failed
 //     fetch or a demo build must never show example companies).
-//   · Company name + ticker, MARKET CAP (with its observation date), YTD return (with its
-//     through-date and its BASIS label) and the shared YTD chart are ALWAYS visible in both
+//   · Company name + ticker, YTD return and the shared YTD chart are ALWAYS visible in both
 //     modes — never behind a disclosure. Missing = "Unavailable" + the reason, never 0.
-//   · Simple is the FLASH CARD, Degen is the 10-K (density review 2026-09-14). Simple's first
-//     paint per company is: name + ticker, market cap NUMBER, YTD NUMBER, three fundamental
-//     rows, and the two-sentence summary ONLY when both sentences carry real numbers — no
-//     blurb, no `as of`/`through`/fiscal-year crumbs, and a missing figure is the WORD
-//     Unavailable plus a chip-length cause (the full reason rides the title and the explore
-//     block, never the face — "don't narrate the gap twice"). Then the learning moment, then
-//     the chart, then one disclosure: "explore the numbers". Degen keeps the blurb, the dated
-//     rows, the full Unavailable reasons, the three questions and the analysis open, the
-//     lesson after the chart with its worked example, and collapses only the sources.
+//   · T4 (2026-09-14 FACE/TAP/FOLD): Simple later-overrides the v6.5.0 "market cap always
+//     visible" rule. Simple's first paint per company is name + ticker + YTD + ONE quality
+//     stat (Rev, else Margin, else FCF). Market cap, multiples, the two-sentence summary and
+//     the lesson BODY ride Explore / Learning moment. Degen keeps the 10-K: blurb, dated cap,
+//     YTD with through-date, three fundamental rows, full assessment, analysis open.
 //   · The tracker draws ONLY verified total-return legs; a withheld leg reads Unavailable
 //     with its reason, and a new year before its first close reads "awaiting".
 //   · No verdict badges, no rating words: the assessment text is the model's deterministic
@@ -29,6 +24,7 @@
 import { LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer, ReferenceLine } from "recharts";
 import { T } from "../design-tokens.js";
 import CollapsedGroup from "../primitives/CollapsedGroup.jsx";
+import { spotlightFace, lessonTitle, lessonBody, chartTitle, EXPLORE_FOLD_LABEL } from "../simpleFace.js";
 
 const LINE = { anchor: { stroke: T.amber, dash: null }, comparison: { stroke: T.blue, dash: "5 3" } };
 const money = (v) => {
@@ -90,6 +86,26 @@ const Profile = ({ c, leg, simple }) => {
   const m = c.metrics || {};
   const rg = m.revenueGrowth || {}, om = m.operatingMargin || {}, fcf = m.fcf || {};
   const cap = c.marketCap || {};
+  if (simple) {
+    const face = spotlightFace(c, leg);
+    if (!face) return null;
+    return (
+      <div style={{ background: T.surface, border: `1px solid ${T.border}`, borderRadius: 6, padding: "10px 12px", minWidth: 0 }}
+        role="group" aria-label={`${c.name} (${c.symbol}) profile`}>
+        <div style={{ display: "flex", alignItems: "baseline", gap: 8, flexWrap: "wrap" }}>
+          <span style={{ fontFamily: T.fontSans, fontSize: T.fsL, fontWeight: 700, color: T.textPrimary }}>{face.name}</span>
+          <span style={{ fontFamily: T.fontMono, fontSize: T.fsM, color: T.amber }}>{face.symbol}</span>
+          {face.stale && <Stale f={{ stale: true }} />}
+        </div>
+        <Row label="YTD" big compact
+          value={face.ytd.value}
+          unavailable={face.ytd.unavailable} />
+        <Row label={face.stat.label} compact
+          value={face.stat.value}
+          unavailable={face.stat.unavailable} />
+      </div>
+    );
+  }
   return (
     <div style={{ background: T.surface, border: `1px solid ${T.border}`, borderRadius: 6, padding: "10px 12px", minWidth: 0 }}
       role="group" aria-label={`${c.name} (${c.symbol}) profile`}>
@@ -130,6 +146,7 @@ const Profile = ({ c, leg, simple }) => {
 /* Simple's explore block: the dates and full reasons the flash card withheld, per company. */
 const DataNotes = ({ c, leg }) => {
   const m = c.metrics || {}, cap = c.marketCap || {};
+  const rg = m.revenueGrowth || {}, om = m.operatingMargin || {}, fcf = m.fcf || {};
   const gaps = [["revenue growth", m.revenueGrowth], ["operating margin", m.operatingMargin], ["free cash flow", m.fcf], ["valuation", m.valuation], ["market cap", cap]]
     .filter(([, x]) => x && x.unavailable).map(([k, x]) => `${k}: ${x.unavailable}`);
   if (leg && leg.unavailable) gaps.push(`YTD: ${leg.unavailable}`);
@@ -137,9 +154,11 @@ const DataNotes = ({ c, leg }) => {
     <div style={{ fontFamily: T.fontMono, fontSize: T.fsXs, color: T.textSecondary, lineHeight: 1.5 }} role="group" aria-label={`${c.symbol} data notes`}>
       <div style={{ color: T.amber, letterSpacing: "0.1em" }}>{c.symbol} · DATES & DATA NOTES</div>
       {c.blurb && <div style={{ fontFamily: T.fontSans, color: T.textSecondary }}>{c.blurb}</div>}
-      <div>{cap.observedAt ? `market cap as of ${cap.observedAt}${cap.method === "derived" ? " (derived)" : ""}` : "market cap: no observation date"}
+      <div>{cap.display ? `market cap ${cap.display}` : "market cap: unavailable"}{cap.observedAt ? ` as of ${cap.observedAt}${cap.method === "derived" ? " (derived)" : ""}` : cap.display ? "" : ""}
         {leg && leg.through ? ` · YTD through ${leg.through}` : ""}
         {c.freshness && c.freshness.fundamentals && c.freshness.fundamentals.period ? ` · ${c.freshness.fundamentals.label} ${c.freshness.fundamentals.period}${c.freshness.fundamentals.form ? ` (${c.freshness.fundamentals.form})` : ""}` : ""}</div>
+      <div>operating margin {typeof om.pct === "number" ? `${om.pct.toFixed(1)}%` : "unavailable"} · free cash flow {money(fcf.value) || "unavailable"}{rg.period ? ` · ${rg.period}` : ""}</div>
+      {c.assessment && summaryIsNumeric(c.assessment.summary) && <div style={{ fontFamily: T.fontSans, color: T.textPrimary }}>{c.assessment.summary.join(" ")}</div>}
       {gaps.map((g, i) => <div key={i} style={{ color: T.amber }}>Unavailable — {g}</div>)}
     </div>
   );
@@ -197,7 +216,7 @@ const Sources = ({ companies, tracker }) => (
   </div>
 );
 
-const Chart = ({ tracker, syms }) => {
+const Chart = ({ tracker, syms, simple }) => {
   if (!tracker) return null;
   if (tracker.yearRollover)
     return <div style={{ padding: "6px 0", fontFamily: T.fontMono, fontSize: T.fsM, color: T.textSecondary }}>Awaiting the first {tracker.year} trading close — both lines restart at 0% from {tracker.baselineDate}.</div>;
@@ -219,7 +238,7 @@ const Chart = ({ tracker, syms }) => {
             </span>
           );
         })}
-        <span style={{ fontFamily: T.fontMono, fontSize: 8, color: T.textMuted }}>from {tracker.baselineDate} · through {tracker.through}</span>
+        {!simple && <span style={{ fontFamily: T.fontMono, fontSize: 8, color: T.textMuted }}>from {tracker.baselineDate} · through {tracker.through}</span>}
       </div>
       {tracker.partial && <div style={{ fontFamily: T.fontSans, fontSize: T.fsS, color: T.amber }}>{tracker.partial}</div>}
       <div aria-hidden="true" style={{ height: 160, minWidth: 0 }}>
@@ -239,7 +258,7 @@ const Chart = ({ tracker, syms }) => {
         </ResponsiveContainer>
       </div>
       {/* Accessible inspection: the same points, as a table, keyboard- and reader-reachable. */}
-      <details style={{ marginTop: 2 }}>
+      {!simple && <details style={{ marginTop: 2 }}>
         <summary style={{ fontFamily: T.fontMono, fontSize: 8, color: T.textMuted, cursor: "pointer", letterSpacing: "0.08em" }}>▸ INSPECT CHART VALUES (date · YTD %)</summary>
         <div style={{ overflowX: "auto" }}>
           <table style={{ borderCollapse: "collapse", fontFamily: T.fontMono, fontSize: T.fsXs, color: T.textSecondary, marginTop: 4 }}>
@@ -250,20 +269,32 @@ const Chart = ({ tracker, syms }) => {
             ))}</tbody>
           </table>
         </div>
-      </details>
+      </details>}
     </div>
   );
 };
 
-const Lesson = ({ lesson, simple }) => (
-  <div style={{ marginTop: 8, borderLeft: `2px solid ${T.amber}`, padding: "4px 10px" }} role="group" aria-label="Learning moment">
-    <div style={{ fontFamily: T.fontMono, fontSize: T.fsXs, color: T.amber, letterSpacing: "0.1em" }}>LEARNING MOMENT · {lesson.title}</div>
-    <div style={{ fontFamily: T.fontSans, fontSize: simple ? T.fsM : T.fsS, color: T.textPrimary, lineHeight: 1.45, marginTop: 2 }}>{lesson.body}</div>
-    {!simple && (lesson.example
-      ? <div style={{ fontFamily: T.fontMono, fontSize: T.fsXs, color: T.textSecondary, marginTop: 4, lineHeight: 1.5 }}>Worked example — {lesson.example}</div>
-      : <div style={{ fontFamily: T.fontMono, fontSize: T.fsXs, color: T.amber, marginTop: 4 }}>{lesson.exampleUnavailable}</div>)}
-  </div>
-);
+const Lesson = ({ lesson, simple }) => {
+  const body = lessonBody(lesson);
+  if (!body) return null;
+  const inner = (
+    <div style={{ marginTop: simple ? 0 : 8, borderLeft: `2px solid ${T.amber}`, padding: "4px 10px" }} role="group" aria-label="Learning moment">
+      <div style={{ fontFamily: T.fontMono, fontSize: T.fsXs, color: T.amber, letterSpacing: "0.1em" }}>{simple ? body.title : <>LEARNING MOMENT · {body.title}</>}</div>
+      <div style={{ fontFamily: T.fontSans, fontSize: simple ? T.fsM : T.fsS, color: T.textPrimary, lineHeight: 1.45, marginTop: 2 }}>{body.body}</div>
+      {!simple && (body.example
+        ? <div style={{ fontFamily: T.fontMono, fontSize: T.fsXs, color: T.textSecondary, marginTop: 4, lineHeight: 1.5 }}>Worked example — {body.example}</div>
+        : <div style={{ fontFamily: T.fontMono, fontSize: T.fsXs, color: T.amber, marginTop: 4 }}>{body.exampleUnavailable}</div>)}
+    </div>
+  );
+  if (simple) {
+    return (
+      <CollapsedGroup count={1} label={lessonTitle(lesson)} chip={false} promise persistKey="md:exp:spotlight-lesson:v1">
+        {inner}
+      </CollapsedGroup>
+    );
+  }
+  return inner;
+};
 
 const StockSpotlight = ({ spotlight, simple }) => {
   if (!spotlight || !spotlight.enabled || !spotlight.model || !spotlight.model.pair) return null;
@@ -279,8 +310,8 @@ const StockSpotlight = ({ spotlight, simple }) => {
       <div style={{ display: "flex", alignItems: "baseline", gap: 8, flexWrap: "wrap", marginBottom: 6 }}>
         <span style={{ fontFamily: T.fontMono, fontSize: T.fsXs, color: T.amber, letterSpacing: "0.12em", textTransform: "uppercase" }}>Stock Spotlight</span>
         <span style={{ fontFamily: T.fontSans, fontSize: T.fsM, color: T.textPrimary }}>{m.pair.anchor} × {m.pair.comparisonLabel} ({m.pair.comparison})</span>
-        <span style={{ fontFamily: T.fontMono, fontSize: 8, color: T.textMuted }}>week of {m.pair.weekKey} · next: {m.pair.nextComparison}</span>
-        <span style={{ marginLeft: "auto", fontFamily: T.fontMono, fontSize: 8, color: T.textMuted, border: `1px solid ${T.border}`, borderRadius: 3, padding: "0 5px" }}>educational · not advice</span>
+        {!simple && <span style={{ fontFamily: T.fontMono, fontSize: 8, color: T.textMuted }}>week of {m.pair.weekKey} · next: {m.pair.nextComparison}</span>}
+        {!simple && <span style={{ marginLeft: "auto", fontFamily: T.fontMono, fontSize: 8, color: T.textMuted, border: `1px solid ${T.border}`, borderRadius: 3, padding: "0 5px" }}>educational · not advice</span>}
       </div>
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(260px,1fr))", gap: 8 }}>
         {companies.map((c) => <Profile key={c.symbol} c={c} leg={legs[c.symbol]} simple={simple} />)}
@@ -289,12 +320,12 @@ const StockSpotlight = ({ spotlight, simple }) => {
           profiles — the widget is a lesson first (review 2026-09-13). Degen keeps chart → lesson. */}
       {simple && lesson && <Lesson lesson={lesson} simple />}
       <div style={{ marginTop: 8, background: T.surface, border: `1px solid ${T.border}`, borderRadius: 6, padding: "8px 12px", minWidth: 0 }} role="group" aria-label="Year-to-date comparison chart">
-        <div style={{ fontFamily: T.fontMono, fontSize: T.fsXs, color: T.textMuted, letterSpacing: "0.1em", marginBottom: 2 }}>YTD COMPARISON · total return from 0% at the prior-year close</div>
-        <Chart tracker={m.tracker} syms={syms} />
+        <div style={{ fontFamily: T.fontMono, fontSize: T.fsXs, color: T.textMuted, letterSpacing: "0.1em", marginBottom: 2 }}>{simple ? chartTitle(m.pair) : "YTD COMPARISON · total return from 0% at the prior-year close"}</div>
+        <Chart tracker={m.tracker} syms={syms} simple={simple} />
       </div>
       {!simple && lesson && <Lesson lesson={lesson} simple={false} />}
       {simple ? (
-        <CollapsedGroup count={companies.length * 7} label="explore the numbers" chip={false}>
+        <CollapsedGroup count={companies.length * 7} label={EXPLORE_FOLD_LABEL} chip={false} promise>
           <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(260px,1fr))", gap: 8, marginTop: 4 }}>
             {companies.map((c) => <DataNotes key={c.symbol} c={c} leg={legs[c.symbol]} />)}
           </div>

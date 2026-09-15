@@ -67,7 +67,8 @@ export const DT = {
   // (10px). fs-body is the reading size for prose in a surface whose whole job is being
   // read, distinct from fs-l's sub-headline role and fs-xl's hero weight.
   "fs-body":        16,
-  "fs-xl":          22,   // the verdict itself
+  "fs-xl":          22,   // the verdict itself (Degen)
+  "fs-xxl":         28,   // Simple Hold only — leftover chrome cannot share the row
 };
 
 export const T = {
@@ -79,5 +80,5 @@ export const T = {
   blue:"#3498db", purple:"#9b59b6",
   textPrimary:DT["text-primary"], textSecondary:DT["text-secondary"], textMuted:DT["text-muted"],
   fontMono:DT["font-mono"], fontSans:DT["font-sans"], fontDisplay:DT["font-display"],
-  fsXs:DT["fs-xs"], fsS:DT["fs-s"], fsM:DT["fs-m"], fsL:DT["fs-l"], fsBody:DT["fs-body"], fsXl:DT["fs-xl"],
+  fsXs:DT["fs-xs"], fsS:DT["fs-s"], fsM:DT["fs-m"], fsL:DT["fs-l"], fsBody:DT["fs-body"], fsXl:DT["fs-xl"], fsXxl:DT["fs-xxl"],
 };

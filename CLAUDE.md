@@ -5,6 +5,26 @@ answers *"is it safe to be in the market?"* from live macro + market + sentiment
 data. Single-page React app on Cloudflare Pages, with live data assembled at the
 edge by Pages Functions and cached in KV.
 
+**v6.5.4 — Simple altitude (type + real estate).** Presentation-only, Simple only. Hold
+is `fs-xxl` 28; the so-what sentence is sans `fs-body` 16; the three cards read at 16/11
+instead of 11/8; fold promises sit at `fs-l` 13. The wrapping 44×44 copy+ℹ pair is gone —
+copy sits on the Hold row, and Hold ⓘ already carries the clock (the second ℹ is Degen's
+evidence panel). The header is one action row: wordmark + Simple|Degen; Terminal and Share
+are Degen's (Share lives in About on Simple). Track Record / Why MacroDash left the face
+for the About fold. Degen, call logic, strip 44px thumbs, and Spotlight math are untouched.
+Tests: 2347 smoke + 309 render + 331 public-render.
+
+**v6.5.3 — Simple FACE / TAP / FOLD remainder (T1/T4/T5/T6).** Presentation-only. A new
+`src/simpleFace.js` registry owns Simple face copy: `holdReason` (≤18 words: helping names
+"are fine", hurting names "are the drag"), `cardFace` / `sheetLead`, `spotlightFace` (YTD +
+one quality stat), and the four fold promises (`Why this call`, `About this page`,
+`Explore the numbers`, `Learning moment`). Spotlight Simple is name + YTD + one stat; market
+cap, multiples, the two-sentence summary and the lesson body ride Explore / a closed Learning
+moment. Closed labels are 2–4 word promises (no `+N`, no ALLCAPS essay, no flip chip on the
+closed Why-this-call row — the verbatim flip still rides inside). Degen / Terminal stay dense.
+No call-logic, data-source or primitive change besides an opt-in `promise` prop on
+`CollapsedGroup`. Tests: 2340 smoke + 309 render + 326 public-render.
+
 **v6.5.2 — the half-year line wins its merge.** Filing the NBIS issuer record live lit everything
 except free cash flow: the record's OCF/capex are six-month-only, so the field carried no
 `observedAt` (it was keyed on the latest QUARTER) and lost the per-concept merge to the SEC's older

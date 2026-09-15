@@ -67,6 +67,48 @@ export function liveReadCaption({ now = new Date(), callFrozen = false, liveBuil
     : "Live market read · today's 10am call is unavailable";
 }
 
+export function eveningUpdateLine(closeRead, { plain = false } = {}) {
+  if (!closeRead) return null;
+  const label = plain ? simpleCallLabel(closeRead.direction) : closeRead.label;
+  const tail = closeRead.frozen
+    ? "unscored; the 10am call remains frozen above"
+    : "unscored; no 10am call was scheduled today";
+  return `Evening update (6pm ET): ${label} — ${tail}`;
+}
+
+// T2 — Simple Hold ⓘ sheet. Three beats: what the word means, today's edition/clock,
+// coverage + evening + the not-advice closer. Presentation only; no votes.
+export function simpleHoldExplain({
+  callFrozen = false,
+  callCapturedAt = null,
+  readCaption = null,
+  closeRead = null,
+  callDrift = null,
+  conf = null,
+} = {}) {
+  const captured = callCapturedAt ? ` · ${String(callCapturedAt).slice(0, 10)}` : "";
+  const clock = callFrozen
+    ? `This is the frozen 10am call · captured 10:00 ET${captured}.`
+    : (readCaption || "This is a live market read, not the 10am call.");
+  const evening = eveningUpdateLine(closeRead, { plain: true })
+    || (callDrift
+      ? `Current evidence now reads ${simpleCallLabel(callDrift)}; the scored 10am call remains frozen above.`
+      : null);
+  const coverage = conf && Number.isFinite(conf.counted) && Number.isFinite(conf.total)
+    ? `${conf.counted} of ${conf.total} signals counted${Array.isArray(conf.excluded) && conf.excluded.length ? ` · unavailable: ${conf.excluded.join(" · ")}` : ""}${conf.blind ? " · crash gauge (VIX) unavailable" : ""}`
+    : null;
+  const beat3 = [evening, coverage, "This is a read on the whole market's backdrop, not a view on any one stock, and it is not advice."]
+    .filter(Boolean).join(" · ");
+  return Object.freeze({
+    full: "What this call means",
+    what: Object.freeze([
+      "Bullish means the backdrop supports taking market risk; Hold means the evidence has no clear lean; Bearish means the backdrop is working against risk. Not enough data is different from Hold: too few current signals are available to make the call.",
+      String(clock),
+      beat3,
+    ]),
+  });
+}
+
 export const SPY_MOVE_UP = 0.5;
 export const SPY_MOVE_DOWN = -0.5;
 export function spyMoveDirection(value) {

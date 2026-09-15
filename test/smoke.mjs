@@ -56,7 +56,9 @@ import { DT, T as TOK_T } from "../src/design-tokens.js";
 import { fmt } from "../src/format.js"; // task 1.3: shared format helpers, tested by execution
 import { buildMacroCall, formatMacroCallPaste, formatMacroShareCard, CALL_SCHEMA, CALL_EDITIONS, callEdition } from "../src/macroCall.js";
 import { simpleCallLabel, publicMarketClock, publicMarketClockLine, liveReadCaption,
-  spyMoveDirection, publicEditionLabel } from "../src/publicCopy.js";
+  spyMoveDirection, publicEditionLabel, simpleHoldExplain, eveningUpdateLine } from "../src/publicCopy.js";
+import { HOLD_REASON_MAX, FACE_GLYPH, holdReason, cardFace, sheetLead, spotlightFace,
+  chartTitle, lessonTitle, LESSON_FOLD_LABEL, WHYS_FOLD_LABEL, ABOUT_FOLD_LABEL, EXPLORE_FOLD_LABEL } from "../src/simpleFace.js";
 import { buildForwardOutcome, normalizeSp500Observations, outcomeKey, OUTCOME_SCHEMA,
   CLOSE_READ_PREFIX, CLOSE_READ_SCHEMA, CLOSE_READ_RECORD_SCHEMA, closeReadKey, validCloseRead, validFrozenCall as validFrozenCallPH } from "../src/publicHistory.js";
 import cronWorker, { captureDailyCall, enrichHistoryOutcomes, putWithRetry, warmSnapshot, captureCloseRead } from "../worker/cron.js";
@@ -4579,9 +4581,10 @@ ok("A1: the canonical headline never carries a context-only SPY day move",
   // Re-anchored on the row-11 copy; the old "usable factors bullish" phrase is retired.
   !/— SPY/.test(fw.headline) && /counted signals lean bullish/.test(fw.headline));
 // A2: the 320px contract — identity group may shrink, actions may wrap, wordmark yields first.
-ok("A2: header groups can shrink and wrap instead of forcing horizontal overflow",
-  /alignItems:"center",gap:14,minWidth:0,flexWrap:"wrap"/.test(dashSrc) &&
-  /alignItems:"center",gap:8,flexWrap:"wrap",minWidth:0/.test(dashSrc));
+ok("A2: header groups can shrink; Simple nowraps the action row, Degen still wraps",
+  /minWidth:0/.test(dashSrc) &&
+  /flexWrap:simple\?"nowrap":"wrap"/.test(dashSrc) &&
+  /flexDirection:simple\?"column":"row"/.test(dashSrc));
 ok("A2: the duplicate lowercase wordmark hides below 360px",
   /@media\(max-width:359px\)\{\.sub-wordmark\{display:none;\}\}/.test(dashSrc));
 // A3: browser suites fail rather than skip under CI's flag; both routes are covered.
@@ -4730,7 +4733,7 @@ ok("C1: the dashboard's modeOf and exclusions ARE the shared derivations (no loc
   dashSrc.includes("const staleFactors=factorExclusions({provenance, dataAsOf, liveBuild});") &&
   !dashSrc.includes('const unusable=(k)=>'));
 ok("C2: a real <header> landmark, a Sections <nav>, and the six-anchor h2 outline exist",
-  /<header style=/.test(dashSrc) && /<nav aria-label="Sections"/.test(navSrc) &&
+  /<header className=/.test(dashSrc) && /<nav aria-label="Sections"/.test(navSrc) &&
   ["overview", "drivers", "markets", "macro"].every((id) =>
     dashSrc.includes(`id="${id}"`)) && aiSrc.includes('id="ai"') && dhSrc.includes('id="health"'));
 ok("C3: the Drivers matrix renders the CONTRACT (evidenceSet.factors), not its own reading",
@@ -4921,7 +4924,7 @@ ok("glance: operator tooling gates on !publicView — TT copy in the menu, TERMI
     // beginner read found it renting a word on the first screen with no job there. The
     // !publicView contract this pin exists for is unchanged and still measured.
     return /\{!simple&&!publicView&&\(\s*\n?\s*<details className="hdr-ops"/.test(dashSrc) &&
-      term > 0 && /\{!publicView&&\(\s*\n?\s*<a href="\/admin\.html"/.test(dashSrc) &&
+      term > 0 && /\{!simple&&!publicView&&\(\s*\n?\s*<a href="\/admin\.html"/.test(dashSrc) &&
       (dashSrc.match(/href="\/admin\.html"/g) || []).length === 1;
   })() &&
   // v6.0: the two badges merged into one (PR #10's fix) — same gates, one render site.
@@ -6043,8 +6046,8 @@ ok("tokens: the DYNAMIC keys — every tintKey/colorKey regime.js can emit resol
       tints.every((k) => DT[k] !== undefined) && colors.every((k) => TOK_T[k] !== undefined); })());
 ok("tokens: voteStyle's four states all resolve to real T colors (the two-altitude map cannot dangle)",
   ["bull", "bear", "neutral", "excluded"].every((v) => TOK_T[voteStyle(v).colorKey] !== undefined));
-ok("tokens: the type scale is numeric and ordered (fs-xs < fs-s < fs-m < fs-l < fs-xl)",
-  (() => { const s = ["fs-xs", "fs-s", "fs-m", "fs-l", "fs-xl"].map((k) => DT[k]);
+ok("tokens: the type scale is numeric and ordered (fs-xs < fs-s < fs-m < fs-l < fs-body < fs-xl < fs-xxl)",
+  (() => { const s = ["fs-xs", "fs-s", "fs-m", "fs-l", "fs-body", "fs-xl", "fs-xxl"].map((k) => DT[k]);
     return s.every((n) => typeof n === "number") && s.every((n, i) => i === 0 || n > s[i - 1]); })());
 ok("tokens: T aliases stay derived from DT, never a second literal (spot-check the load-bearing ones)",
   TOK_T.bg === DT["bg"] && TOK_T.textMuted === DT["text-muted"] && TOK_T.fontMono === DT["font-mono"] &&
@@ -6183,7 +6186,7 @@ ok("whys v3.95: the whys are reachable in SIMPLE — one honestly-labelled expan
   /* 8/28 Whys altitude: the label PREFIX stays the component default (six hasText locators
      match on it); the flip rides flipChip (closed, chip-length) + flipLine (verbatim,
      inside). A withheld posture passes no chip — the closed label stays bare. */
-  /\{simple&&<FiveWhys fw=\{fw\}[\s\S]{0,240}flipChip=\{evidenceSet\.withheld\?null:flipChipOf\(simpleF\)\} flipLine=\{simpleF\}\/>\}/.test(dashSrc) &&
+  /\{simple&&<FiveWhys fw=\{fw\}[\s\S]{0,280}flipChip=\{evidenceSet\.withheld\?null:flipChipOf\(simpleF\)\} flipLine=\{simpleF\} coverage=\{regimeConf\}\/>\}/.test(dashSrc) &&
   /label="why this call · 5 checks"/.test(whysSrc) &&
   /export const WHYS_KEY="md:exp:whys:v1";/.test(whysSrc) &&
   /persistKey=WHYS_KEY/.test(whysSrc));
@@ -9650,18 +9653,21 @@ console.log("\n[67] v4.0 SIMPLE MODE — verdict mapping, card selection, senten
   ok("v6.4: Simple renders ONE plain call and no secondary machine direction",
     /const displayLabel=plainVerdict[\s\S]{0,140}simpleCallLabel\(call\)/.test(bandSrc) &&
     /\{displayLabel\}<\/span>/.test(bandSrc) && /\{!plainVerdict&&<span/.test(bandSrc));
-  /* 8/28 clock matrix A4: the unfrozen Simple eyebrow read "· the call" — the product's
-     official-call identity (v5.3) worn by a live recomputation. "call" is now reserved for
-     callFrozen; the unfrozen word is "live read". Power's voice untouched. */
-  ok("v4.0/8-28: the Simple eyebrow is scoped and never wears the official-call name unfrozen",
-    bandSrc.includes('"Macro Backdrop · live market read"') &&
-    bandSrc.includes('"Macro Backdrop · latest market read"') &&
-    bandSrc.includes('"Macro Backdrop · 10am call · frozen"') &&
-    !/"Macro Backdrop · the call"/.test(bandSrc));
-  ok("v6.4 clock: the orchestrator supplies one read caption; Degen shows it on-face and Simple one tap deep",
+  /* T2: Simple kills the operator eyebrow. Degen keeps frozen / wen moon?. "the call"
+     as an unfrozen official-call name stays retired (8/28 A4). */
+  ok("T2: Simple has no operator eyebrow; Degen keeps frozen / wen moon?; 'the call' stays retired",
+    /\{!plainVerdict&&<div[\s\S]{0,180}Macro Backdrop · 10am call · frozen/.test(bandSrc) &&
+    bandSrc.includes('"Macro Backdrop · wen moon?"') &&
+    !/"Macro Backdrop · the call"/.test(bandSrc) &&
+    !/"Macro Backdrop · live market read"/.test(bandSrc) &&
+    !/"Macro Backdrop · latest market read"/.test(bandSrc));
+  ok("T2: Simple keeps the red crash-gauge warning on the face — a red fact never folds",
+    /\{plainVerdict&&conf&&conf\.blind&&!loading&&<div/.test(bandSrc) &&
+    /⚠ crash gauge \(VIX\) unavailable/.test(bandSrc));
+  ok("v6.4 clock: Degen shows the read caption on-face; Simple clock is Hold ⓘ (simpleHoldExplain beat 2)",
     /readCaption&&!plainVerdict&&<div/.test(bandSrc) &&
-    /const windowCaption=callFrozen\?frozenCaption:readCaption/.test(bandSrc) &&
-    /\{plainVerdict&&windowCaption&&<div className="call-caption"/.test(bandSrc));
+    /simpleHoldExplain\(\{callFrozen,callCapturedAt,readCaption/.test(bandSrc) &&
+    !/className="call-caption"/.test(bandSrc));
   ok("8/28 A8: the unfrozen copy button names what it copies — and what it is not",
     bandSrc.includes('"⎘ COPY LIVE READ"') && bandSrc.includes('"⎘ COPY 10AM CALL"') &&
     bandSrc.includes("Copy the current live read — not the 10am call") &&
@@ -9860,11 +9866,12 @@ console.log("\n[67] v4.0 SIMPLE MODE — verdict mapping, card selection, senten
      directive retired the "how MacroDash reads it" section) — the FACE chip is the only
      rendered home for a band's edges now. `band.ruler` itself survives as source data
      (still reconciled to vote()/flip below) in case it is wanted elsewhere later. */
-  ok("ruler: the card projection still carries the band's ruler as source data (unrendered)",
+  ok("T3 ruler: the card projection still carries the band's ruler as source data; the FACE no longer prints the chip",
     (() => { const cards = sc({ regime:{ label:"RISK-ON" }, factors:[{ key:"vix", short:"VIX",
         vote:"bull", excluded:false, mode:"LIVE", metric:{ text:"14.43", value:14.43 } }] }).cards;
       return cards.length === 1 && cards[0].ruler === "help below 18 · mid 18–25 · hurt above 25"; })() &&
-    /\{c\.rulerChip && <span/.test(spcSrc) &&
+    /c\.rulerChip && `Rule: \$\{c\.rulerChip\}\.`/.test(spcSrc) &&
+    !/\{c\.rulerChip && <span/.test(spcSrc) &&
     !/explain=\{c\.explain \? \{ \.\.\.c\.explain, lead:/.test(spcSrc));
   ok("ruler: the vote() functions, flip edges and quorum are byte-untouched by this feature",
     REGIME_BAND_TABLE.length === 6 && REGIME_QUORUM === 4 &&
@@ -9991,7 +9998,7 @@ console.log("\n[67] v4.0 SIMPLE MODE — verdict mapping, card selection, senten
      authors explainer copy nor renders the sheet body itself. */
   ok("explain: the sheet lives in a primitive — the section only hands it the projected copy",
     /import \{ Explainable \} from "\.\.\/primitives\/FactSheet\.jsx"/.test(spcSrc) &&
-    /<Explainable[\s\S]{0,200}explain=\{c\.explain\}/.test(spcSrc) &&
+    /<Explainable[\s\S]{0,220}explain=\{sheetOf\(c\)\}/.test(spcSrc) &&
     !/what it is|what moves it|normal \/ neutral/.test(spcSrc));
   /* v5.9.1 — the SHEET renderer is now one shape, one path: no free-form sections, no quote
      block, no lead/drivers/baseline/macro. VERDICT_EXPLAIN moved onto the SAME {full,what:[3]}
@@ -10012,7 +10019,8 @@ console.log("\n[67] v4.0 SIMPLE MODE — verdict mapping, card selection, senten
     /fontSize: T\.fsBody/.test(fsSrc) &&
     !/fontSize: T\.fsM,\s*\n?\s*fontWeight: 700/.test(fsSrc));
   ok("v5.9.2: fsBody is a real token (16px) between the sub-headline and hero sizes, not a literal",
-    TOK_T.fsBody === 16 && TOK_T.fsL < TOK_T.fsBody && TOK_T.fsBody < TOK_T.fsXl);
+    TOK_T.fsBody === 16 && TOK_T.fsL < TOK_T.fsBody && TOK_T.fsBody < TOK_T.fsXl &&
+    TOK_T.fsXxl === 28 && TOK_T.fsXl < TOK_T.fsXxl);
   ok("explain: VERDICT_EXPLAIN carries exactly 3 bullets, the same shape as every band",
     typeof VERDICT_EXPLAIN.full === "string" &&
     Array.isArray(VERDICT_EXPLAIN.what) && VERDICT_EXPLAIN.what.length === 3 &&
@@ -10065,10 +10073,10 @@ console.log("\n[67] v4.0 SIMPLE MODE — verdict mapping, card selection, senten
      four states it describes — the same one-home rule as the band explainers, and the reason
      it is not a second copy-table in the component that happens to render it. (The full
      content check moved to the v5.9.1 pin above, on the shrunk {full,what:[3]} contract.) */
-  ok("v5.9 verdict: the token is tappable in SIMPLE only — Degen's moon voice is untouched",
-    /plainVerdict\s*\n?\s*\? <Explainable explain=\{SIMPLE_VERDICT_EXPLAIN\}/.test(bandSrc) &&
+  ok("T2 verdict: the token is tappable in SIMPLE only — Degen's moon voice is untouched",
+    /plainVerdict\s*\n?\s*\? <Explainable className="simple-hold" explain=\{simpleHoldExplain\(/.test(bandSrc) &&
     /: <span style=\{\{fontFamily:T\.fontMono,fontSize:T\.fsXl/.test(bandSrc) &&
-    /import \{ SIMPLE_VERDICT_EXPLAIN \} from "\.\.\/evidence\.js"/.test(bandSrc));
+    /import \{ simpleCallLabel, simpleHoldExplain \} from "\.\.\/publicCopy\.js"/.test(bandSrc));
   ok("v5.9 chrome: the beginner's first screen sheds the operator words, and Power keeps them",
     // the duplicate lowercase wordmark, the provenance chip (except on ERROR), the alert
     // badges and the OPS menu are all Power's now; each is pinned at its own gate.
@@ -10121,6 +10129,11 @@ console.log("\n[67] v4.0 SIMPLE MODE — verdict mapping, card selection, senten
       return !/useState|useEffect|localStorage|computeRegime|buildEvidenceSet|REGIME_BAND_TABLE/.test(code); })());
   ok("v4.0 boundary: the engine is untouched — no new voter, quorum or band",
     REGIME_BAND_TABLE.length === 6 && REGIME_QUORUM === 4);
+  ok("T3: Simple Why-this-call fold is the coverage-dot home; cards no longer name the truncation",
+    /coverage=\{regimeConf\}/.test(dashSrc) && /coverage&&coverage\.total>0/.test(whysSrc) &&
+    !/cards from the/.test(spcSrc));
+  ok("T3 hatch: ILLUS_HATCH is a backgroundImage string, never spread onto the style object (a spread string writes CSSStyleDeclaration[0] and blanks mock Simple)",
+    /backgroundImage: illus \? ILLUS_HATCH : undefined/.test(spcSrc) && !/\.\.\.\(illus \? ILLUS_HATCH/.test(spcSrc));
 }
 
 // ---- 69. v4.1.1 — ageDays: the ET clock reaches the terminal (FIX-A, 4th recurrence) ------
@@ -10774,29 +10787,30 @@ console.log("\n[75] v6.0.1 — shape before text · toggle clarity · captions u
   const spc = code(spcSrc), band = code(bandSrc), dash = code(dashSrc);
   // (1a) The card's direction glyph is the SAME shape the hero chips and Drivers matrix use —
   //      one vocabulary, read once. Reconciled against voteStyle, not retyped here.
-  ok("v6.0.1 shape: the card glyphs ARE voteStyle's glyphs (▲ bull · ▼ bear · • neutral) — one vocabulary",
-    /GLYPH = \{ helping: "([^"]+)", hurting: "([^"]+)", mixed: "([^"]+)" \}/.test(spc) &&
-    (() => { const m = spc.match(/GLYPH = \{ helping: "([^"]+)", hurting: "([^"]+)", mixed: "([^"]+)" \}/);
-      return m[1] === voteStyle("bull").glyph && m[2] === voteStyle("bear").glyph && m[3] === voteStyle("neutral").glyph; })());
+  ok("v6.0.1 / T1 shape: the card glyphs ARE voteStyle's glyphs (▲ bull · ▼ bear · • neutral) — one vocabulary, via simpleFace",
+    FACE_GLYPH.helping === voteStyle("bull").glyph && FACE_GLYPH.hurting === voteStyle("bear").glyph && FACE_GLYPH.mixed === voteStyle("neutral").glyph &&
+    /cardFace\(c\)/.test(spc));
   ok("v6.0.1 shape: the glyph is rendered BEFORE the label on the card row, and the card wears a direction bar",
-    (() => { const g = spc.indexOf('className="simple-card-glyph"'), l = spc.indexOf("{c.label}</span>");
+    (() => { const g = spc.indexOf('className="simple-card-glyph"'), l = spc.indexOf("{face.label}</span>");
       return g > 0 && l > g && /borderLeft: `3px solid \$\{tone\}`/.test(spc); })());
   // (1b) Freshness: a live/cached reading is a FILLED GREEN DOT (the strip's own dot since
   //      v3.62), stale amber, mock hollow — and the WORD leaves the face for the title +
   //      a visually-hidden span. The rule is pinned by value, not by colour name.
-  ok("v6.0.1 fresh: live/cached → filled green, stale → amber, mock → hollow muted; the word survives for a11y only",
+  ok("T3 fresh: live/cached/stale/mock mapping survives; the WORD is a11y-only and the face has no freshness dot",
     /const live = !illus && \(mode === "LIVE" \|\| mode === "CACHED"\)/.test(spc) &&
     /const color = live \? T\.green : mode === "STALE" \? T\.amber : T\.textMuted/.test(spc) &&
-    /className="simple-card-fresh" title=\{fresh\.word\} aria-hidden="true"/.test(spc) &&
     /<span className="visually-hidden">\{fresh\.word\}<\/span>/.test(spc) &&
+    !/className="simple-card-fresh"/.test(spc) &&
     !/\{illus \? "not live" : c\.mode\.toLowerCase\(\)\}/.test(spc));
-  // (1c) The voters line leads with one dot per voter on BOTH altitudes (hero + cards footer),
-  //      derived from the same counts the sentence prints — never a hardcoded six.
-  ok("v6.4 shape: the signal dots are derived from conf.total/counted in the hero and total/usable on the cards",
+  // (1c) T2/T3: Simple face sheds the voter dots. Degen hero keeps them; Why-this-call fold is
+  //      the Simple home (T3). Derived from the same counts, never a hardcoded six.
+  ok("T2/T3 shape: Degen hero keeps signal dots; Simple cards shed them; Why-this-call fold is the Simple home",
     /Array\.from\(\{length:conf\.total\},\(_,i\)=>\{const on=i<conf\.counted;/.test(band) &&
-    /Array\.from\(\{ length: total \}, \(_, i\) => \{\s*const counted = i < usable;/.test(spc) &&
+    /\{conf&&!loading&&!plainVerdict&&<div/.test(band) &&
+    !/className="signal-dots"/.test(spc) &&
+    /Array\.from\(\{length:coverage\.total\},/.test(whysSrc) &&
     (band.match(/className="signal-dots"/g) || []).length === 1 &&
-    (spc.match(/className="signal-dots"/g) || []).length === 1);
+    (whysSrc.match(/className="signal-dots"/g) || []).length === 1);
   // (2) The toggle: ONE table drives both halves; the pressed half is FILLED amber with dark
   //     text; each half carries a shape and states what it shows in its accessible name.
   ok("v6.4 toggle: one VIEW_MODES table, Simple and Degen intact, a shape per mode, and what each mode shows",
@@ -10809,12 +10823,11 @@ console.log("\n[75] v6.0.1 — shape before text · toggle clarity · captions u
     !/background:viewMode===m\?T\.surfaceHigh/.test(dash) && /aria-pressed=\{on\}/.test(dash));
   // (3) The captions: Simple's FACE keeps the eyebrow only; the frozen/live-read caption
   //     rides inside the ℹ window; Power keeps both on the face. The A6 copy is unchanged.
-  ok("v6.4 captions: the shared clock caption is Degen-face-only, and Simple gets ONE window home",
+  ok("v6.4 captions: the shared clock caption is Degen-face-only; Simple clock lives in Hold ⓘ, not a second ℹ window",
     /\{callFrozen&&!plainVerdict&&<div/.test(band) &&
     /\{readCaption&&!plainVerdict&&<div/.test(band) &&
-    /const windowCaption=callFrozen\?frozenCaption:readCaption/.test(band) &&
-    /\{plainVerdict&&windowCaption&&<div className="call-caption"/.test(band) &&
-    (band.match(/className="call-caption"/g) || []).length === 1);
+    /simpleHoldExplain\(\{callFrozen,callCapturedAt,readCaption/.test(bandSrc) &&
+    !/className="call-caption"/.test(band));
   ok("v6.4 captions: the frozen clock is concise and the live/weekend branches live in publicCopy",
     /frozen 10am call · captured 10:00 ET/.test(band) &&
     /liveReadCaption/.test(dash) && /noSessionDay=\{marketClock\.noSession\}/.test(dash));
@@ -10837,8 +10850,8 @@ console.log("\n[76] v6.0.2 — footer one tap deep · the ▪ marker carries the
   const dash = code(dashSrc), strip = code(readSrc("../src/sections/MacroStrip.jsx"));
   // The footer rides ONE CollapsedGroup; the closed row carries version + not-advice; every
   // attribution line — the retirement RECORD included — is still in the source, verbatim.
-  ok("v6.0.2 footer: one closed CollapsedGroup, chip-free, whose label carries the version and 'not financial advice'",
-    /<div className="site-footer"[^>]*>\s*<CollapsedGroup count=\{3\} chip=\{false\} label=\{`about this page — v\$\{__APP_VERSION__\} · sources · not financial advice`\}>/.test(dash) &&
+  ok("v6.0.2 footer: one closed CollapsedGroup, chip-free; Degen keeps version + not-advice, Simple uses the T5 promise",
+    /<div className="site-footer"[^>]*>\s*<CollapsedGroup count=\{3\} chip=\{false\} promise=\{simple\} label=\{simple\?ABOUT_FOLD_LABEL:`about this page — v\$\{__APP_VERSION__\} · sources · not financial advice`\}>/.test(dash) &&
     (dash.match(/className="site-footer"/g) || []).length === 1);
   ok("v6.0.2 footer: the attribution + retirement record survive inside, verbatim (a cut keeps its attribution)",
     /Retired: CBOE Put\/Call \(free feed dead 2019 · v3\.2\) · Mag 10 fundamentals \+ SEC S-1 \(v3\.43\) · Mag 10 quote strip \(v3\.51\)/.test(dash) &&
@@ -11148,9 +11161,10 @@ console.log("\n[78] v6.2.0 the 6pm CLOSE READ — expectedObsDate · failsafeDue
     /publicCloseRead\?\.capture_status==="CAPTURED"&&<button onClick=\{handleCloseReadCopy\} aria-label="Copy MacroDash evening update"/.test(dashSrc) &&
     /⎘ EVENING UPDATE/.test(dashSrc) &&
     /formatMacroCallPaste\(cr,\{edition:"CLOSE READ"\}\)/.test(dashSrc));
-  ok("[78] surfaces: the hero takes closeRead from ONE builder (closeReadLine) and renders it in the drift slot with the scope words, keeping the live-drift fallback",
+  ok("[78] surfaces: the hero takes closeRead from ONE builder (closeReadLine) and renders it in the Degen drift slot, keeping the live-drift fallback; Simple folds it into Hold ⓘ",
     /const closeReadNote=closeReadLine\(publicCloseRead,dailyCall,etYmd\(\)\)/.test(dashSrc) && /closeRead=\{closeReadNote\}/.test(dashSrc) &&
-    /Evening update \(6pm ET\): \{plainVerdict\?simpleCallLabel\(closeRead\.direction\):closeRead\.label\} — \{closeRead\.frozen\?"unscored; the 10am call remains frozen above":"unscored; no 10am call was scheduled today"\}/.test(bandSrc) &&
+    /\{!plainVerdict&&\(closeRead/.test(bandSrc) &&
+    /Evening update \(6pm ET\): \{closeRead\.label\} — \{closeRead\.frozen\?"unscored; the 10am call remains frozen above":"unscored; no 10am call was scheduled today"\}/.test(bandSrc) &&
     /: callDrift&&<div/.test(bandSrc) && bandSrc.split("\n").length <= 300);
   ok("[78] surfaces: useMarketData carries publicCloseRead on every branch (initial, success, error) — the one wiring point",
     (readSrc("../src/useMarketData.js").match(/publicCloseRead/g) || []).length >= 3 && /publicCloseRead: payload\.publicCloseRead \|\| null/.test(readSrc("../src/useMarketData.js")));
@@ -11352,6 +11366,25 @@ console.log("\n[80] v6.4.0 public copy — plain verdict, market clock, scoped t
   ok("[80] CLOSE READ stays the compatibility token but presents as EVENING UPDATE",
     publicEditionLabel("CLOSE READ") === "EVENING UPDATE" && publicEditionLabel("LIVE READ") === "LIVE READ" &&
     JSON.stringify(CALL_EDITIONS) === JSON.stringify(["10AM CALL", "CLOSE READ", "LIVE READ"]));
+  ok("T2 Hold ⓘ: three beats — vocabulary, clock/edition, coverage + evening + not-advice",
+    (() => {
+      const frozen = simpleHoldExplain({
+        callFrozen: true, callCapturedAt: "2026-09-14T14:00:00.000Z",
+        closeRead: { direction: "BULLISH", frozen: true, label: "MOONING 🚀 · BULLISH" },
+        conf: { counted: 5, total: 6, excluded: ["CPI"] },
+      });
+      const live = simpleHoldExplain({ readCaption: "Live market read · today's 10am call is unavailable" });
+      const all = frozen.what.join(" ");
+      return frozen.full === "What this call means" && frozen.what.length === 3 && live.what.length === 3 &&
+        /Bullish means/.test(frozen.what[0]) && /Not enough data/.test(frozen.what[0]) &&
+        /frozen 10am call · captured 10:00 ET · 2026-09-14/.test(frozen.what[1]) &&
+        /Evening update \(6pm ET\): Bullish — unscored; the 10am call remains frozen above/.test(all) &&
+        /5 of 6 signals counted · unavailable: CPI/.test(all) &&
+        /not advice/.test(all) &&
+        /live market read/i.test(live.what[1]) &&
+        eveningUpdateLine({ direction: "BULLISH", frozen: true, label: "MOONING 🚀 · BULLISH" }, { plain: true })
+          === "Evening update (6pm ET): Bullish — unscored; the 10am call remains frozen above";
+    })());
   const publicPages = readSrc("../src/PublicPages.jsx"), index = readSrc("../index.html");
   ok("[80] History uses plain calls and one disclosure per successful row; moon fields never render",
     /className="history-detail"/.test(publicPages) && /simpleCallLabel\(c\)/.test(publicPages) &&
@@ -11799,14 +11832,14 @@ console.log("\n[81] v6.5.0 STOCK SPOTLIGHT — calculations, endpoints, cron leg
     /if\(!liveBuild\)return;\n    let dead=false;\n    fetch\("\/api\/stock-spotlight"\)/.test(dashSrc) &&
     /votingFields=\{VOTING_FIELDS\}[^\n]*\n\n[\s\S]{0,700}<StockSpotlight spotlight=\{spotlight\} simple=\{simple\}\/>/.test(dashSrc) &&
     !/\{simple&&<StockSpotlight|\{!simple&&<StockSpotlight/.test(dashSrc));
-  ok("[81] section: renders NOTHING without an enabled feed + model; market cap, YTD and the chart live in the always-visible Profile/Chart, never inside the CollapsedGroup",
+  ok("[81] section: renders NOTHING without an enabled feed + model; YTD and the chart live on the Simple face, market cap rides Explore (T4) and Degen Profile",
     /if \(!spotlight \|\| !spotlight\.enabled \|\| !spotlight\.model/.test(ssCode) &&
     (() => { const cg = ssCode.slice(ssCode.indexOf("simple ? ("), ssCode.lastIndexOf("</CollapsedGroup>"));
-      return !/Market cap|<Chart/.test(cg) && /<Row label="Market cap" big/.test(ssCode) && /<Chart tracker=\{m\.tracker\}/.test(ssCode) && /<Unavail reason=/.test(ssCode); })());
-  ok("[81] section (density review 2026-09-14): Simple's face has NO blurb, NO row date crumbs and compact Unavailable (word + chip, full reason in the title); the summary prints only when both sentences carry numbers; Degen keeps the blurb and dated rows; in Simple the learning moment renders BEFORE the chart",
-    /\{!simple && c\.blurb && <div/.test(ssCode) && /compact=\{simple\}/.test(ssCode) && /title=\{reason \|\| undefined\}/.test(ssCode) &&
+      return !/<Chart/.test(cg) && /spotlightFace\(c, leg\)/.test(ssCode) && /<Row label="Market cap" big/.test(ssCode) && /<Chart tracker=\{m\.tracker\}/.test(ssCode) && /<Unavail reason=/.test(ssCode); })());
+  ok("[81] section (T4 Simple face): name + YTD + one quality stat; market cap, multiples and the lesson body are NOT on the Simple face; Degen keeps the 10-K; learning moment is a closed CollapsedGroup",
+    /\{!simple && c\.blurb && <div/.test(ssCode) && /title=\{reason \|\| undefined\}/.test(ssCode) &&
     /summaryIsNumeric\(c\.assessment\.summary\)/.test(ssCode) && /is unavailable\|unavailable —/.test(ssCode) &&
-    /label="explore the numbers"/.test(ssCode) && /<DataNotes key=\{c\.symbol\}/.test(ssCode) &&
+    /label=\{EXPLORE_FOLD_LABEL\}/.test(ssCode) && /<DataNotes key=\{c\.symbol\}/.test(ssCode) &&
     (() => { const { shortReason } = ssMod; return shortReason("only annual revenue is on file (fiscal year to 2025-12-31); no quarterly period could be derived") === "annual filing only" &&
       shortReason("profile carries no market capitalization") === "no market cap" && shortReason("no verified total-return series — price return is not a substitute") === "not total return" && shortReason("something new") === null; })() &&
     /simple\s*\?[\s\S]{0,400}: <FullAssessment a=\{c\.assessment\} \/>/.test(ssCode) &&
@@ -11818,6 +11851,73 @@ console.log("\n[81] v6.5.0 STOCK SPOTLIGHT — calculations, endpoints, cron leg
   ok("[81] docs: the plan travels with the implementation, and the env matrix names SPOTLIGHT_ENABLED and TIINGO_KEY with their deploy and degraded state",
     existsSync(new URL("../docs/plans/stock-spotlight.md", import.meta.url)) &&
     /\|\s*`SPOTLIGHT_ENABLED`\s*\|\s*Pages\s*\|/.test(readSrc("../CLAUDE.md")) && /\|\s*`TIINGO_KEY`\s*\|\s*Pages\s*\|/.test(readSrc("../CLAUDE.md")));
+}
+
+// ═══════════ [82] T1/T4/T5 — Simple FACE / TAP / FOLD remainder ═══════════
+console.log("\n[82] Simple FACE/TAP/FOLD remainder — registry, ≤18-word reason, promise labels");
+{
+  const ssFaceSrc = readSrc("../src/sections/StockSpotlight.jsx");
+  const words = (s) => String(s || "").trim().split(/\s+/).filter(Boolean);
+  const row = (key, vote) => ({ key, vote, excluded: false, short: key });
+  const mixed = holdReason({ withheld: false, factors: [row("vix", "bull"), row("nfci", "bull"), row("tenYear", "bear"), row("valuation", "bear")] });
+  const allBull = holdReason({ withheld: false, factors: [row("vix", "bull"), row("nfci", "bull"), row("tenYear", "bull"), row("valuation", "bull"), row("fearGreed", "bull"), row("cpiHeadline", "bull")] });
+  ok("T1 holdReason: withheld is null; mixed names helping as fine and hurting as the drag; always ≤18 words",
+    holdReason(null) === null && holdReason({ withheld: true }) === null &&
+    /fine/.test(mixed) && /drag/.test(mixed) && words(mixed).length <= HOLD_REASON_MAX &&
+    words(allBull).length <= HOLD_REASON_MAX && /Vol/.test(mixed) && /Rates/.test(mixed));
+  ok("T1 cardFace / sheetLead: glyph+label+value+tone only; sheetLead is the why sentence",
+    JSON.stringify(cardFace({ direction: "helping", label: "volatility", currentValue: "15.84", why: "fear gauge" })) === JSON.stringify({ glyph: FACE_GLYPH.helping, label: "volatility", value: "15.84", tone: "helping" }) &&
+    sheetLead({ why: "fear gauge" }) === "fear gauge" && sheetLead({}) === null);
+  ok("T1 spotlightFace: YTD + one quality stat; chartTitle is ticker vs ticker YTD; lesson fold is a 2-word promise",
+    (() => { const f = spotlightFace({ name: "Nebius Group", symbol: "NBIS", metrics: { revenueGrowth: { pct: 454 } } }, { pct: 154.2 });
+      return f.symbol === "NBIS" && f.ytd.value === "+154.20%" && f.stat.label === "Rev" && f.stat.value === "+454.0%"; })() &&
+    chartTitle({ anchor: "NBIS", comparison: "MSFT" }) === "NBIS vs MSFT YTD" &&
+    lessonTitle({}) === LESSON_FOLD_LABEL && LESSON_FOLD_LABEL === "Learning moment" &&
+    WHYS_FOLD_LABEL === "Why this call" && ABOUT_FOLD_LABEL === "About this page" && EXPLORE_FOLD_LABEL === "Explore the numbers");
+  ok("T5: Simple Why-this-call is a promise label (no flip essay on the closed row); flipLine still inside; CollapsedGroup grows a promise prop",
+    /label=\{WHYS_FOLD_LABEL\} promise/.test(dashSrc) &&
+    /promise\?label:\(flipChip\?`\$\{label\} — ⇄ \$\{flipChip\}`:label\)/.test(whysSrc) &&
+    /\{flipLine&&<div[^>]*>⇄ \{flipLine\}<\/div>\}/.test(whysSrc) &&
+    /promise = false/.test(cgSrc) && /promise \? "▸" : `▸ \+\$\{count\}`/.test(cgSrc));
+  ok("T4: Simple spotlight Profile is spotlightFace; Learning moment is a closed CollapsedGroup; Explore uses the promise label",
+    /spotlightFace\(c, leg\)/.test(ssFaceSrc) &&
+    /label=\{lessonTitle\(lesson\)\}/.test(ssFaceSrc) && /persistKey="md:exp:spotlight-lesson:v1"/.test(ssFaceSrc) &&
+    /label=\{EXPLORE_FOLD_LABEL\}/.test(ssFaceSrc) && /promise persistKey/.test(ssFaceSrc));
+}
+
+// ═══════════ [83] T7–T10 — Simple altitude: type, one-block hero, one-row header, Track Record ═══════════
+console.log("\n[83] Simple altitude — fs-xxl Hold, fs-body sentence, one-block hero, one-row header, Track Record in About");
+{
+  const band = bandSrc.replace(/\/\/[^\n]*|\/\*[\s\S]*?\*\//g, "");
+  const dash = dashSrc.replace(/\/\/[^\n]*|\/\*[\s\S]*?\*\//g, "");
+  const spc = spcSrc.replace(/\/\/[^\n]*|\/\*[\s\S]*?\*\//g, "");
+  ok("T7: Simple Hold is fs-xxl 28; Degen moon voice stays fs-xl 22",
+    /fontSize:T\.fsXxl/.test(band) && TOK_T.fsXxl === 28 &&
+    /: <span style=\{\{fontFamily:T\.fontMono,fontSize:T\.fsXl/.test(bandSrc));
+  ok("T7: Simple sentence is sans fs-body; Degen sentence stays mono fs-m",
+    /fontFamily:plainVerdict\?T\.fontSans:T\.fontMono/.test(band) &&
+    /fontSize:plainVerdict\?T\.fsBody:T\.fsM/.test(band));
+  ok("T7: Simple cards read at body size — value fs-body, label/HELPING fs-m, sans",
+    /fontSize: T\.fsBody, fontWeight: 600/.test(spc) &&
+    /fontFamily: T\.fontSans, fontSize: T\.fsM/.test(spc) &&
+    /fontFamily: T\.fontSans, fontSize: T\.fsBody/.test(spc));
+  ok("T7: Simple fold promises render at fs-l, not a 8px operator chip",
+    /fontSize: promise \? T\.fsL : 8/.test(cgSrc));
+  ok("T8: Simple ℹ is gone — Hold ⓘ is the clock; copy stays icon-only on the Hold row",
+    /\{!plainVerdict&&<div/.test(band) && /aria-label="Show regime factors"/.test(band) &&
+    /\{plainVerdict&&copyControl\}/.test(band) &&
+    /plainVerdict\s*\n?\s*\? \(callCopied\?"✓":"⎘"\)/.test(band) &&
+    /\{open&&!plainVerdict&&\(/.test(band));
+  ok("T9: Simple header is one action row — Terminal and Share are Degen's",
+    /className=\{simple\?"hdr hdr-simple":"hdr"\}/.test(dash) &&
+    /flexWrap:simple\?"nowrap":"wrap"/.test(dash) &&
+    /\{!simple&&!publicView&&\(\s*\n?\s*<a href="\/admin\.html"/.test(dash) &&
+    /\{!simple&&<button onClick=\{handleShare\}/.test(dash));
+  ok("T10: Track Record / Why MacroDash left the Simple face for the About fold",
+    /\{!simple&&<nav aria-label="MacroDash accountability"/.test(dash) &&
+    /\{simple\?"Track record":"History"\}/.test(dash) &&
+    /\{simple\?"Why MacroDash":"Difference"\}/.test(dash) &&
+    /Share this page/.test(dash));
 }
 
 console.log(`\n=== SMOKE TEST: ${pass} passed, ${fail} failed ===`);
