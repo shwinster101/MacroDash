@@ -14,7 +14,7 @@ cap, multiples, the two-sentence summary and the lesson body ride Explore / a cl
 moment. Closed labels are 2–4 word promises (no `+N`, no ALLCAPS essay, no flip chip on the
 closed Why-this-call row — the verbatim flip still rides inside). Degen / Terminal stay dense.
 No call-logic, data-source or primitive change besides an opt-in `promise` prop on
-`CollapsedGroup`. Tests: 2339 smoke + 309 render + 326 public-render.
+`CollapsedGroup`. Tests: 2340 smoke + 309 render + 326 public-render.
 
 **v6.5.2 — the half-year line wins its merge.** Filing the NBIS issuer record live lit everything
 except free cash flow: the record's OCF/capex are six-month-only, so the field carried no

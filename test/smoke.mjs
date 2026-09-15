@@ -10130,6 +10130,8 @@ console.log("\n[67] v4.0 SIMPLE MODE — verdict mapping, card selection, senten
   ok("T3: Simple Why-this-call fold is the coverage-dot home; cards no longer name the truncation",
     /coverage=\{regimeConf\}/.test(dashSrc) && /coverage&&coverage\.total>0/.test(whysSrc) &&
     !/cards from the/.test(spcSrc));
+  ok("T3 hatch: ILLUS_HATCH is a backgroundImage string, never spread onto the style object (a spread string writes CSSStyleDeclaration[0] and blanks mock Simple)",
+    /backgroundImage: illus \? ILLUS_HATCH : undefined/.test(spcSrc) && !/\.\.\.\(illus \? ILLUS_HATCH/.test(spcSrc));
 }
 
 // ---- 69. v4.1.1 — ageDays: the ET clock reaches the terminal (FIX-A, 4th recurrence) ------

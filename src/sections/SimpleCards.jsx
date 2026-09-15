@@ -62,7 +62,7 @@ const SimpleCards = ({ cards, usable = 0, shown = 0, total = 0, withheld = false
               eyebrow={`${face.label} · ${face.value}${WORD[face.tone] ? ` · ${WORD[face.tone]}` : ""}`}
               className="simple-card"
               style={{ background: T.surface, border: `1px solid ${T.border}`, borderLeft: `3px solid ${tone}`,
-              borderRadius: 5, padding: "5px 8px", minWidth: 0, ...(illus ? ILLUS_HATCH : {}) }}>
+              borderRadius: 5, padding: "5px 8px", minWidth: 0, backgroundImage: illus ? ILLUS_HATCH : undefined }}>
               <div style={{ display: "flex", alignItems: "baseline", gap: 6, flexWrap: "wrap" }}>
                 <span aria-hidden="true" className="simple-card-glyph" style={{ fontFamily: T.fontMono, fontSize: T.fsM, fontWeight: 700,
                   color: tone, flexShrink: 0, lineHeight: 1 }}>{face.glyph}</span>
