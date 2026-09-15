@@ -52,7 +52,7 @@ export const flipChipOf=(s)=>{
         flipLine     — the SAME text verbatim, rendered inside as the last check's tail. On
                        a withheld posture this is the withheld sentence — it travels with the
                        flip to the one home rather than being stranded on the cards. */
-const FiveWhys=({fw,derivedLabel,mode,asOf,label="why this call · 5 checks",flipChip=null,flipLine=null,persistKey=WHYS_KEY})=>{
+const FiveWhys=({fw,derivedLabel,mode,asOf,label="why this call · 5 checks",flipChip=null,flipLine=null,persistKey=WHYS_KEY,coverage=null})=>{
   // Property 9 (null-safe): nothing computed yet means nothing to narrate — an empty,
   // hidden region, never a throw and never a fabricated narrative.
   if(!fw||!Array.isArray(fw.whys))return <div aria-hidden="true"/>;
@@ -78,6 +78,15 @@ const FiveWhys=({fw,derivedLabel,mode,asOf,label="why this call · 5 checks",fli
             slot carries the withheld sentence instead — the fact still lands, it just stops
             renting a line on the cards above. */}
         {flipLine&&<div style={{fontFamily:T.fontMono,fontSize:T.fsS,color:T.textSecondary,marginTop:6,lineHeight:1.5}}>⇄ {flipLine}</div>}
+        {coverage&&coverage.total>0&&<div style={{marginTop:8,display:"flex",alignItems:"center",gap:6,flexWrap:"wrap"}}>
+          <span aria-hidden="true" className="signal-dots" style={{display:"inline-flex",gap:2}}>
+            {Array.from({length:coverage.total},(_,i)=>{const on=i<coverage.counted;return(
+              <span key={i} style={{width:5,height:5,borderRadius:"50%",background:on?T.green:"transparent",border:`1px solid ${on?T.green:T.amber}`}}/>);})}
+          </span>
+          <span style={{fontFamily:T.fontMono,fontSize:8,color:T.textMuted}}>
+            {coverage.counted} of {coverage.total} signals counted{coverage.excluded&&coverage.excluded.length?` · ${coverage.excluded.length} unavailable`:""}
+          </span>
+        </div>}
         <div style={{fontFamily:T.fontMono,fontSize:8,color:T.textMuted,marginTop:8}}>Rule-based · {derivedLabel} (no LLM)</div>
         <SourceBox api="Rule-based" endpoint="6-signal model · stale inputs excluded" mode={mode} asOf={asOf}/>
       </CollapsedGroup>

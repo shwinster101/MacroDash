@@ -3,8 +3,7 @@
 import { useState } from "react";
 import { DT, T } from "../design-tokens.js";
 import { computeRegime, regimeFactors, flipConditions, voteStyle } from "../regime.js";
-import { SIMPLE_VERDICT_EXPLAIN } from "../evidence.js";
-import { simpleCallLabel } from "../publicCopy.js";
+import { simpleCallLabel, simpleHoldExplain } from "../publicCopy.js";
 import { fmt } from "../format.js";
 import { Explainable } from "../primitives/FactSheet.jsx";
 
@@ -102,21 +101,17 @@ const RegimeBand=({d,stale=new Set(),loading=false,liveBuild=false,srcLabel="der
         {/* Left: label + sub */}
         <div style={{display:"flex",alignItems:"baseline",gap:12,flexWrap:"wrap",minWidth:0}}>
           <div>
-            {/* The eyebrow follows the verdict below it: asking "wen moon?" over a "MACRO: BULLISH"
-                line is two vocabularies in 20px. Power keeps the voice (owner ruling); Simple
-                says what the block IS. */}
-            <div style={{fontFamily:T.fontMono,fontSize:8,color:regime.color,letterSpacing:"0.14em",textTransform:"uppercase"}}>
-              {plainVerdict
-                ? callFrozen?"Macro Backdrop · 10am call · frozen":noSessionDay?"Macro Backdrop · latest market read":"Macro Backdrop · live market read"
-                : callFrozen?"Macro Backdrop · 10am call · frozen":"Macro Backdrop · wen moon?"}
-            </div>
+            {/* T2: Simple kills the operator eyebrow. Degen keeps frozen / wen moon?. */}
+            {!plainVerdict&&<div style={{fontFamily:T.fontMono,fontSize:8,color:regime.color,letterSpacing:"0.14em",textTransform:"uppercase"}}>
+              {callFrozen?"Macro Backdrop · 10am call · frozen":"Macro Backdrop · wen moon?"}
+            </div>}
             <div style={{display:"flex",alignItems:"baseline",gap:10,flexWrap:"wrap"}}>
               {/* v5.9: in Simple the verdict TOKEN is the tap target for its own vocabulary
                   (Explainable owns the state and the dialog). Power keeps the plain span —
                   an operator who reads MOONING every morning does not need it explained, and
                   the moon voice there is a locked owner ruling. */}
               {plainVerdict
-                ? <Explainable explain={SIMPLE_VERDICT_EXPLAIN} title={SIMPLE_VERDICT_EXPLAIN.full}
+                ? <Explainable className="simple-hold" explain={simpleHoldExplain({callFrozen,callCapturedAt,readCaption,closeRead,callDrift,conf})} title="What this call means"
                     eyebrow={displayLabel}
                     style={{background:"none",border:"none",padding:0,width:"auto",display:"inline-block"}}>
                     <span style={{fontFamily:T.fontMono,fontSize:T.fsXl,fontWeight:700,color:regime.color,letterSpacing:"-0.01em"}}>{displayLabel}</span>
@@ -165,13 +160,13 @@ const RegimeBand=({d,stale=new Set(),loading=false,liveBuild=false,srcLabel="der
             {/* v6.2: once captured, the 6pm CLOSE READ owns this slot (the drift line's designed
                 successor — owner ruling 9/2, both modes, ONE labeled line); the scope words are
                 load-bearing, since the same engine now speaks twice a day. Muted when it agrees. */}
-            {closeRead
+            {!plainVerdict&&(closeRead
               ? <div className="close-read" style={{fontFamily:T.fontMono,fontSize:9,color:closeRead.differs?(closeRead.direction==="BEARISH"?T.red:T.amber):T.textMuted,marginTop:4,lineHeight:1.45}}>
-                  Evening update (6pm ET): {plainVerdict?simpleCallLabel(closeRead.direction):closeRead.label} — {closeRead.frozen?"unscored; the 10am call remains frozen above":"unscored; no 10am call was scheduled today"}
+                  Evening update (6pm ET): {closeRead.label} — {closeRead.frozen?"unscored; the 10am call remains frozen above":"unscored; no 10am call was scheduled today"}
                 </div>
               : callDrift&&<div style={{fontFamily:T.fontMono,fontSize:9,color:callDrift.direction==="BEARISH"?T.red:T.amber,marginTop:4,lineHeight:1.45}}>
-              Current evidence now reads {plainVerdict?simpleCallLabel(callDrift):<>{callDrift.headline}{callDrift.emoji?` ${callDrift.emoji}`:""} · {callDrift.direction}</>}; the scored 10am call remains frozen above.
-            </div>}
+              Current evidence now reads {callDrift.headline}{callDrift.emoji?` ${callDrift.emoji}`:""} · {callDrift.direction}; the scored 10am call remains frozen above.
+            </div>)}
             {/* v3.98.3 — one line, one scope word, one vocabulary. It used to read
                 "4/6 factors voting · excluded: 10Y · VIX" directly under a sentence saying
                 those same two were "dark", while the verdict sub above ALSO said "4 of 6
@@ -179,7 +174,7 @@ const RegimeBand=({d,stale=new Set(),loading=false,liveBuild=false,srcLabel="der
                 "VOTERS" is the scope word that resolves the other ambiguity: WHY #2 lists
                 dark CROSS-SIGNALS (WTI, HY-IG among them), a deliberately wider set than the
                 six that vote, and nothing said so. */}
-            {conf&&!loading&&<div style={{fontFamily:T.fontMono,fontSize:9,marginTop:3,display:"flex",gap:10,flexWrap:"wrap",alignItems:"center"}}>
+            {conf&&!loading&&!plainVerdict&&<div style={{fontFamily:T.fontMono,fontSize:9,marginTop:3,display:"flex",gap:10,flexWrap:"wrap",alignItems:"center"}}>
               {/* v6.0.1 SHAPE BEFORE TEXT: one dot per voter (filled counted · hollow amber dark) ahead of the sentence. */}
               <span aria-hidden="true" className="signal-dots" style={{display:"inline-flex",gap:2,alignItems:"center"}}>
                 {Array.from({length:conf.total},(_,i)=>{const on=i<conf.counted;return(
@@ -189,6 +184,8 @@ const RegimeBand=({d,stale=new Set(),loading=false,liveBuild=false,srcLabel="der
               {conf.excluded.length>0&&<span style={{color:T.amber}}>unavailable: {conf.excluded.join(" · ")}</span>}
               {conf.blind&&<span style={{color:T.red}}>⚠ crash gauge (VIX) unavailable</span>}
             </div>}
+            {/* T2: 6-of-6 left the Simple face, but a red crash-gauge fact never folds (v3.25). */}
+            {plainVerdict&&conf&&conf.blind&&!loading&&<div style={{fontFamily:T.fontMono,fontSize:9,color:T.red,marginTop:3}}>⚠ crash gauge (VIX) unavailable</div>}
             {/* FEAT-FLIP: the audit's fourth first-screen answer — what would change the call.
                 "Nothing single-handedly" is stated plainly rather than padded with the nearest
                 distance to look responsive (abstention rule 3). */}

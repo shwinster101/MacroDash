@@ -381,10 +381,12 @@ console.log("\n[public] v3.94 — Simple default, the toggle, persistence, red f
   /* v4.0.3 — the tracked-signal census ("N fresh of M tracked") is POWER-ONLY now. It counts
      SOURCES fields, not the six macro voters, so in Simple it read as a second, larger,
      contradictory confidence number beside the scoped "N of 6 voters counted". */
-  ok("v6.4 simple: the Glance layer renders — one plain call, sentence, cards, scoped confidence, key numbers",
+  ok("T2/T3 simple: the Glance layer renders — one plain call, sentence, cards, key numbers; coverage is one tap deep",
     /Bullish|Hold|Bearish|Not enough data/.test(body) &&
     /(supportive|working against|clear lean right now)/i.test(body) &&   // v4.0.1 named-factor copy
-    /\d+ of \d+ signals counted/.test(body) && /SPY/.test(body));
+    /HELPING|HURTING|MIXED/.test(body) && /SPY/.test(body) &&
+    !/\d+ of \d+ signals counted/.test(await page.locator('[aria-label="Macro backdrop verdict"]').innerText()) &&
+    !/\d+ cards from the \d+ signals counted/.test(await page.locator('[aria-label="Key parameters"]').innerText()));
   ok("v4.0.3 simple: the tracked-signal census is GONE from Simple — one confidence number, scoped",
     !/SIGNAL QUALITY/i.test(body) && !/of \d+ tracked/i.test(body));
   const bandTxt = await page.locator('[aria-label="Macro backdrop verdict"]').innerText();
@@ -397,8 +399,10 @@ console.log("\n[public] v3.94 — Simple default, the toggle, persistence, red f
     !/(TODAY|LAST) SPY\s+(UP|FLAT|DOWN)/.test(body));
   // 8/28 A4/A6: the unfrozen Simple face says "live read", never "the call", and carries
   // the counterpart caption — either clock branch, since suite runs at arbitrary ET hours.
-  ok("v6.4 simple: the unfrozen eyebrow names a live or latest market read, never the official-call name",
-    /(live|latest) market read/i.test(await page.locator('[aria-label="Macro backdrop verdict"]').innerText()) &&
+  // T2: Simple kills the operator eyebrow. Clock copy lives in Hold ⓘ / the ℹ window.
+  ok("T2 simple: no operator eyebrow on the face — not live/latest/frozen, not wen moon, not 'the call'",
+    !/(live|latest) market read/i.test(await page.locator('[aria-label="Macro backdrop verdict"]').innerText()) &&
+    !/10am call · frozen/i.test(await page.locator('[aria-label="Macro backdrop verdict"]').innerText()) &&
     !/· the call/i.test(await page.locator('[aria-label="Macro backdrop verdict"]').innerText()) &&
     !/wen moon/i.test(await page.locator('[aria-label="Macro backdrop verdict"]').innerText()));
   /* RE-PINNED (v6.0.1, owner UX review): in Simple the A6 caption leaves the FACE — the
@@ -408,9 +412,10 @@ console.log("\n[public] v3.94 — Simple default, the toggle, persistence, red f
      block below. Both halves asserted: absent while closed, present once opened. */
   {
     const faceTxt = await page.locator('[aria-label="Macro backdrop verdict"]').innerText();
-    ok("v6.4 clock in Simple: the detailed caption is off the face",
+    ok("T2 clock in Simple: the detailed caption is off the face",
       (await page.locator('[aria-label="Macro backdrop verdict"] .call-caption').count()) === 0 &&
-      /(live|latest) market read/i.test(faceTxt));
+      !/(live|latest) market read/i.test(faceTxt) &&
+      !/frozen 10am call · captured/.test(faceTxt));
     await page.locator('button[aria-label="Show regime factors"]').click();
     await page.waitForTimeout(150);
     ok("v6.4 clock: the unfrozen counterpart caption renders one tap deep",
@@ -434,17 +439,17 @@ console.log("\n[public] v3.94 — Simple default, the toggle, persistence, red f
   /* v5.9: the FACE carries the chip — the full sentence-form ruler wrapped to three lines on
      a 390px card for two of the six bands, which is most of what the beginner read flagged.
      The chip is derived from the band's own flip edges, so it cannot drift from the vote. */
-  ok("v5.9 ruler: cards carry the CHIP form of their own edges — no prose on the face",
-    /help <−0\.1 · hurt >0\.15/.test(cardsInner) &&
+  ok("T3 ruler: cards do NOT carry the chip on the face — thresholds live in the sheet",
+    !/help <−0\.1 · hurt >0\.15/.test(cardsInner) &&
     !/1-mo change below/.test(cardsInner));
   ok("8/29 ruler: an EXCLUDED factor is not a card, so it contributes no ruler",
     !/help <18/.test(cardsInner));
   /* v5.9: the why-it-matters SENTENCE left the face for the sheet (the card was four lines,
      three times over). Value, direction, freshness and the named truncation stay — those are
      facts, not prose, and the v3.1 provenance invariant is not a density trade. */
-  ok("v5.9 simple: cards carry value + direction + freshness, and the truncation is NAMED",
+  ok("T3 simple: cards carry value + direction; truncation and date/ruler left the face",
     /HELPING|HURTING|MIXED/.test(body) && !/discount rate on every future dollar/.test(body) &&
-    /\d+ cards from the \d+ signals counted/.test(body) &&
+    !/\d+ cards from the \d+ signals counted/.test(await page.locator('[aria-label="Key parameters"]').innerText()) &&
     // 8/28: the flip's ONE home is the whys — chip on the closed label, absent from cards.
     /⇄/.test(await page.locator("button.cg-toggle", { hasText: "why this call" }).innerText()) &&
     !/⇄/.test(await page.locator('[aria-label="Key parameters"]').innerText()));
@@ -458,6 +463,10 @@ console.log("\n[public] v3.94 — Simple default, the toggle, persistence, red f
     const chip = (chipTxt.split("⇄")[1] || "").replace(/…\s*$/, "").trim().toLowerCase();
     ok("8/28: the closed chip is a real prefix of the flip rendered verbatim inside",
       chip.length > 0 && openTxt.toLowerCase().includes(chip));
+    ok("T3: coverage dots live inside Why-this-call, not under the cards",
+      /\d+ of \d+ signals counted/.test(openTxt) &&
+      (await page.locator('[aria-label="Key parameters"] .signal-dots').count()) === 0 &&
+      (await page.locator(".signal-dots").count()) >= 1);
     await page.locator("button.cg-toggle", { hasText: "why this call" }).click();
     await page.waitForTimeout(150);
   }
@@ -1014,7 +1023,7 @@ console.log("\n[public] v4.0 — Simple verdicts, card selection, and what must 
   await page.locator("button.cg-toggle", { hasText: "why this call" }).click();
   await page.waitForTimeout(150);
   ok("v4.0 withheld: cards still render only USABLE factors — a dead feed is never a card",
-    !/HELPING|HURTING|MIXED/.test(body) || /\d+ cards from the \d+ signals counted/.test(body));
+    (await page.locator(".simple-card", { hasText: /unavailable/i }).count()) === 0);
   await page.close();
 
   // 3b. FEAT-NEWCOMER-RULER (8/29): the MIXED sub is DERIVED — today's tape shape (sleepy
@@ -1044,14 +1053,13 @@ console.log("\n[public] v4.0 — Simple verdicts, card selection, and what must 
   ok("8/29 ruler: the canned watch-VIX gloss is gone from a tape where VIX is helping",
     !/watch VIX/i.test(band) && !/Cross-signals/.test(band));
   const cards = await page.locator('[aria-label="Key parameters"]').innerText();
-  ok("v5.9 ruler: the valuation card's CHIP carries the derived 26.1 edge beside the rich CAPE",
-    /help <26\.1 · hurt >30/.test(cards) && !/1\.5× long-run mean/.test(cards));
-  /* The owner's three named cards, measured on the tape they were read from: the ruler is a
-     projection of REGIME_BAND_TABLE.ruler, so this proves the pass-through end to end rather
-     than a string that happens to live in the bundle. */
-  ok("v5.9 ruler: all three cards on the owner's tape carry their own edges, chip-length",
-    /help <18 · hurt >25/.test(cards) && /help <26\.1/.test(cards) &&
-    /cooler than last print/.test(cards));
+  ok("T3 ruler: the valuation chip is OFF the card face",
+    !/help <26\.1 · hurt >30/.test(cards) && !/1\.5× long-run mean/.test(cards));
+  /* The owner's three named cards: the ruler left the face (T3). The sheet still places
+     today's reading; chip-length edges are asserted after the valuation tap below. */
+  ok("T3 ruler: none of the three cards print their edges on the face",
+    !/help <18 · hurt >25/.test(cards) && !/help <26\.1/.test(cards) &&
+    !/cooler than last print/.test(cards));
   ok("8/29 ruler: no page errors on the MIXED tape", errors.length === 0);
 
   /* ── v5.8 THE EXPLAINER SHEET, driven ────────────────────────────────────────────────
@@ -1087,6 +1095,8 @@ console.log("\n[public] v4.0 — Simple verdicts, card selection, and what must 
   ok("v5.9.5 sheet: CAPE places the reading — old average, 1999 peak, and our hurt edge",
     /17\.4/.test(sheet) && /44\.19/.test(sheet) && /90%/.test(sheet) &&
     !/post-1990 median/.test(sheet));
+  ok("T3/T6 sheet: tapping a card surfaces as-of + the ruler chip that left the face",
+    /As of /.test(sheet) && /Rule: help <26\.1 · hurt >30/.test(sheet));
   ok("v5.8 sheet: focus moves into the sheet on open, onto the way out",
     await page.evaluate(() => document.activeElement && document.activeElement.hasAttribute("data-fs-close")));
   await page.keyboard.press("Tab"); await page.keyboard.press("Tab");
@@ -1133,14 +1143,16 @@ console.log("\n[public] v4.0 — Simple verdicts, card selection, and what must 
   const cardsText = await page.locator('[aria-label="Key parameters"]').innerText();
   ok("v4.0 cards: the dead-feed factor is absent from the cards entirely (not shown as 'mixed')",
     !/volatility/i.test(cardsText));
-  ok("v6.4 cards: never padded with unavailable placeholders — absence is only acknowledged in the footer",
+  ok("T3 cards: never padded with unavailable placeholders — absence is not a card, and the footer is gone",
     (await page.locator(".simple-card", { hasText: /unavailable/i }).count()) === 0 &&
-    /\d+ cards from the \d+ signals counted · \d+ unavailable/.test(cardsText));
+    !/\d+ cards from the \d+ signals counted/.test(cardsText));
   /* The layout count stays distinct from coverage, and exclusions use the same public word. */
-  ok("v4.0 cards: the excluded factor is still ACKNOWLEDGED in the count line",
-    /\d+ unavailable/.test(cardsText));
-  ok("row 4: the layout cap is labelled as CARDS, never as a coverage fraction",
-    /cards from the/.test(cardsText) && !/showing \d+ of \d+ usable/.test(cardsText));
+  await page.locator("button.cg-toggle", { hasText: "why this call" }).click();
+  await page.waitForTimeout(150);
+  ok("T3 cards: the excluded factor is still ACKNOWLEDGED inside Why-this-call",
+    /\d+ unavailable/.test(await page.locator("body").innerText()));
+  ok("row 4: the layout cap is no longer labelled as a coverage fraction under the cards",
+    !/cards from the/.test(cardsText) && !/showing \d+ of \d+ usable/.test(cardsText));
   ok("v4.0: no page errors across the verdict matrix", errors.length === 0);
   await page.close();
 }
@@ -1584,21 +1596,25 @@ console.log("\n[public] v6.0.1/v6.4 — shape before text · Simple|Degen clarit
     cards.some((c) => c.glyph === "▼" && c.glyphColor === rgb("#e74c3c")));
   // The harness serves `cached:false`, so the mode here is LIVE; the rule is one filled green
   // dot for EITHER live or cached, the word on the title + a11y span only (never on the face).
-  ok("v6.0.1 cards: a live/cached reading is a FILLED GREEN DOT — the word left the face and stays for a11y",
-    cards.every((c) => c.dotBg === GREEN && /^(live|cached)$/.test(c.dotTitle)) &&
-    // Plain substring on the hidden text: the a11y span abuts the date ("live2026-…"), so \b never fires there.
-    cards.every((c) => !/live|cached/.test(c.visible) && /live|cached/.test(c.hidden)));
+  ok("T3 cards: freshness WORD is a11y-only — no date, ruler, or freshness dot on the face",
+    cards.every((c) => c.dotBg === null) &&
+    cards.every((c) => !/live|cached/.test(c.visible) && /live|cached/.test(c.hidden)) &&
+    cards.every((c) => !/help <|hurt >|As of /.test(c.visible)));
   ok("v6.0.1 cards: the direction WORD still confirms the shape at the row's end (HELPING/HURTING survive)",
     cards.every((c) => /HELPING|HURTING|MIXED/.test(c.visible)));
-  /* (1b) The signals line on both altitudes leads with one dot per signal: six dots, five filled
-     green, one hollow amber — the SAME count the sentence prints. */
+  /* T3: coverage dots are inside Why-this-call, not under the cards and not on the Simple hero. */
+  await page.locator("button.cg-toggle", { hasText: "why this call" }).click();
+  await page.waitForTimeout(200);
   const dots = await page.evaluate(() => [...document.querySelectorAll(".signal-dots")].map((n) => ({
     total: n.children.length,
     filled: [...n.children].filter((d) => getComputedStyle(d).backgroundColor !== "rgba(0, 0, 0, 0)").length,
     hollowAmber: [...n.children].filter((d) => getComputedStyle(d).backgroundColor === "rgba(0, 0, 0, 0)" && getComputedStyle(d).borderColor === "rgb(240, 165, 0)").length })));
-  ok("v6.4 dots: hero + cards footer each lead with 6 signal dots — 5 filled green, 1 hollow amber for the unavailable signal",
-    dots.length === 2 && dots.every((d) => d.total === 6 && d.filled === 5 && d.hollowAmber === 1) &&
-    /5 of 6 signals counted/.test(await bandText(page)));
+  ok("T3 dots: Why-this-call fold is the only Simple home — 6 dots, 5 filled green, 1 hollow amber",
+    dots.length === 1 && dots[0].total === 6 && dots[0].filled === 5 && dots[0].hollowAmber === 1 &&
+    /5 of 6 signals counted/.test(await page.locator("body").innerText()) &&
+    !/5 of 6 signals counted/.test(await bandText(page)));
+  await page.locator("button.cg-toggle", { hasText: "why this call" }).click();
+  await page.waitForTimeout(150);
   /* (2) The toggle: the pressed half is FILLED brand amber; the other is transparent; each
      names what it shows; a shape leads each word. */
   const tog = await page.evaluate(() => [...document.querySelectorAll('[role="group"][aria-label="View mode"] button')].map((b) => ({
@@ -1614,8 +1630,9 @@ console.log("\n[public] v6.0.1/v6.4 — shape before text · Simple|Degen clarit
   /* (3) Captions under the window in Simple: the face names the frozen call and the ℹ window
      carries the capture clock and date. */
   const face = await bandText(page);
-  ok("v6.0.1 captions (Simple): the face keeps the eyebrow and sheds the 'immutable public call' line",
-    /10am call · frozen/i.test(face) && !/frozen 10am call · captured/.test(face));
+  ok("T2 captions (Simple): the face sheds the frozen eyebrow; capture clock is one tap deep",
+    !/10am call · frozen/i.test(face) && !/frozen 10am call · captured/.test(face) &&
+    /Hold/.test(face));
   ok("v6.0.1 hero: the icon-only ⎘ and ℹ buttons render their glyph at 13px, not 9px",
     await page.locator('button[aria-label="Copy MacroDash posture card"]').evaluate((n) => getComputedStyle(n).fontSize) === "13px" &&
     await page.locator('button[aria-label="Show regime factors"]').evaluate((n) => getComputedStyle(n).fontSize) === "13px");
@@ -1736,10 +1753,18 @@ console.log("\n[public] v6.2/v6.4 — the 6pm evening update: one line, both mod
     const { page, errors } = await open({ live: FULL_LIVE, width: 390, power: false, publicCall: frozenHodl, publicCallFrozen: true, publicCallCapturedAt: frozenAt, publicCloseRead: closeRec(readMoon) });
     await page.setViewportSize({ width: 390, height: 844 });
     await page.waitForTimeout(1200);
-    ok("v6.4 hero (Simple): the evening update uses the plain verdict vocabulary",
-      SIMPLE_LINE.test(await bandText(page)) && !/MOONING|BULLISH/.test(await bandText(page)) &&
-      (await page.locator('[aria-label="Macro backdrop verdict"] .close-read').count()) === 1 &&
+    ok("T2 hero (Simple): evening update left the face for Hold ⓘ — plain vocabulary, one tap",
+      !SIMPLE_LINE.test(await bandText(page)) && !/unscored/.test(await bandText(page)) &&
+      !/MOONING|BULLISH/.test(await bandText(page)) &&
+      (await page.locator('[aria-label="Macro backdrop verdict"] .close-read').count()) === 0 &&
       (await page.locator('button[aria-pressed="true"]', { hasText: "Simple" }).count()) === 1);
+    await page.locator(".simple-hold").click();
+    await page.waitForTimeout(200);
+    ok("T2 Hold ⓘ: the sheet carries the evening update in plain vocabulary plus the frozen clock",
+      SIMPLE_LINE.test(await page.locator('[role="dialog"]').innerText()) &&
+      /frozen 10am call · captured 10:00 ET/.test(await page.locator('[role="dialog"]').innerText()));
+    await page.keyboard.press("Escape");
+    await page.waitForTimeout(150);
     const [glance, cardsTop] = await page.evaluate(() => {
       const el = [...document.querySelectorAll("*")].find((n) => n.children.length === 0 && /^●?\s*SPY\*?$/m.test(n.textContent || "") && n.getBoundingClientRect().height > 0);
       const k = document.querySelector('[aria-label="Key parameters"]');
@@ -2018,6 +2043,53 @@ console.log("\n[public] v6.5 — STOCK SPOTLIGHT: Simple + Degen, always-visible
     ok("v6.5 320px: the widget renders with two lines and no horizontal overflow",
       (await region(page).locator(".recharts-line").count()) === 2 && await page.evaluate(() => document.documentElement.scrollWidth <= 320 + 1) && errors.length === 0);
     await page.close(); }
+}
+
+// ── T2/T3 of the Simple FACE/TAP/FOLD sprint (working/2026-09-14-simple-face-tap-fold.md)
+console.log("\n[public] T2/T3 — Simple face sheds clock, rulers, coverage; Degen stays dense");
+{
+  const frozenHodl = { schema:"md-call-v1", effective_date:TODAY, headline:"HODL", emoji:"💎",
+    direction:"NEUTRAL", confidence:"HIGH", actionability:"RESTRICTED", status:"PUBLISHED",
+    counts:{usable:6,total:6,bull:2,bear:1,neutral:3}, factors:[], override:{active:false} };
+  const { page, errors } = await open({ live: FULL_LIVE, width: 390, power: false,
+    publicCall: frozenHodl, publicCallFrozen: true, publicCallCapturedAt: `${TODAY}T14:00:00.000Z` });
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.waitForTimeout(1300);
+  const face = await bandText(page);
+  const cards = await page.locator('[aria-label="Key parameters"]').innerText();
+  ok("T6 Simple face: Hold + HELPING/HURTING, no FROZEN/unscored/help</hurt>",
+    /Hold/.test(face) && /HELPING|HURTING/.test(cards) &&
+    !/FROZEN/i.test(face) && !/unscored/i.test(face) &&
+    !/help </.test(cards) && !/hurt >/.test(cards));
+  await page.locator(".simple-hold").click();
+  await page.waitForTimeout(200);
+  const holdSheet = await page.locator('[role="dialog"]').innerText();
+  ok("T2 Hold ⓘ: edition / frozen clock / 6-of-6 live in the sheet",
+    /frozen 10am call · captured 10:00 ET/.test(holdSheet) &&
+    /\d+ of \d+ signals counted/.test(holdSheet));
+  await page.keyboard.press("Escape");
+  await page.waitForTimeout(150);
+  const vixCard = page.locator(".simple-card", { hasText: /VOLATILITY|VIX/i }).first();
+  if (await vixCard.count()) {
+    await vixCard.click();
+  } else {
+    await page.locator(".simple-card").first().click();
+  }
+  await page.waitForTimeout(200);
+  const cardSheet = await page.locator('[role="dialog"]').innerText();
+  ok("T6 tap card: sheet has as-of + ruler",
+    /As of /.test(cardSheet) && /Rule: /.test(cardSheet));
+  await page.keyboard.press("Escape");
+  await page.waitForTimeout(150);
+  await page.locator("button", { hasText: "Degen" }).click();
+  await page.waitForTimeout(400);
+  const degen = await bandText(page);
+  ok("T6 Degen stays dense: frozen eyebrow, capture clock, 6-of-6 on the face",
+    /10am call · frozen/i.test(degen) &&
+    /frozen 10am call · captured 10:00 ET/.test(degen) &&
+    /\d+ of \d+ signals counted/.test(degen));
+  ok("T2/T3: no page errors", errors.length === 0);
+  await page.close();
 }
 
 await browser.close();

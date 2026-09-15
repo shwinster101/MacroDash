@@ -1089,7 +1089,7 @@ export default function Dashboard({ publicView = false } = {}) {
           fact still lands without a closed row claiming a crossing that does not exist.
           Verdict words already pass through SIMPLE_VERDICTS inside simpleFlipLine (v4.0.3). */}
       {simple&&<FiveWhys fw={fw} derivedLabel={derivedLabel} mode={modeOf('spyPrice')} asOf={asOfOf('spyPrice')}
-        flipChip={evidenceSet.withheld?null:flipChipOf(simpleF)} flipLine={simpleF}/>}
+        flipChip={evidenceSet.withheld?null:flipChipOf(simpleF)} flipLine={simpleF} coverage={regimeConf}/>}
 
       {/* ── v3.94 DRIVERS-ONLY: the REASONING group — 5 whys + what-changed under ONE
           toggle (2 clicks to any why, inside the owner's 2-3 budget). The label carries the
