@@ -32,7 +32,7 @@ import StickyNav from "./sections/StickyNav.jsx"; // task 9.2: viewport-tracked 
 import MacroStrip from "./sections/MacroStrip.jsx"; // task 3.1: presentation only
 import SignalQuality from "./sections/SignalQuality.jsx"; // task 3.2: presentation only
 import WhatChanged from "./sections/WhatChanged.jsx"; // task 3.3: presentation only
-import { liveReadCaption, publicMarketClock, publicMarketClockLine, simpleCallLabel, spyMoveDirection } from "./publicCopy.js";
+import { publicDashboardUrl, liveReadCaption, publicMarketClock, publicMarketClockLine, simpleCallLabel, spyMoveDirection } from "./publicCopy.js";
 
 // ─── DESIGN TOKENS ──────────────────────────────────────────────────────────
 // UI-OVERHAUL Slice 1 (task 1.1): tokens live in src/design-tokens.js — the ONE
@@ -710,7 +710,7 @@ export default function Dashboard({ publicView = false } = {}) {
   // A failed or cancelled write reverts to the idle label immediately (<300ms) with NO error
   // toast — the user cancelled or the browser refused; nagging adds nothing.
   const handleShare=()=>{
-    const p=navigator.clipboard?.writeText(window.location.href);
+    const p=navigator.clipboard?.writeText(publicDashboardUrl(window.location.href));
     if(!p){return;} // no clipboard API — claim nothing
     p.then(()=>{setCopied(true);setTimeout(()=>setCopied(false),2000);})
      .catch(()=>{setCopied(false);});

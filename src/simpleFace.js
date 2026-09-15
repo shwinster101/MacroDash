@@ -6,7 +6,7 @@
 // this module.
 export const HOLD_REASON_MAX = 18;
 export const FACE_NOUN = Object.freeze({
-  vix: "Vol",
+  vix: "Volatility",
   nfci: "credit",
   tenYear: "Rates",
   valuation: "prices",
@@ -27,7 +27,7 @@ const joinAnd = (arr) => {
   return `${arr.slice(0, -1).join(", ")} and ${arr[arr.length - 1]}`;
 };
 const cap = (s) => (s ? s.charAt(0).toUpperCase() + s.slice(1) : s);
-const verb = (n) => (n === 1 ? "is" : "are");
+const verb = (names) => (names.length === 1 && !/^(rates|prices)$/i.test(names[0]) ? "is" : "are");
 
 // Face: ≤18-word so-what. Helping names "are fine"; hurting names "are the drag".
 // At most two names per side so a 6-factor day cannot lecture.
@@ -40,11 +40,11 @@ export function holdReason(ev) {
   const parts = [];
   if (helping.length) {
     const g = helping.slice(0, 2);
-    parts.push(`${cap(joinAnd(g))} ${verb(g.length)} fine`);
+    parts.push(`${cap(joinAnd(g))} ${verb(g)} fine`);
   }
   if (hurting.length) {
     const g = hurting.slice(0, 2);
-    parts.push(`${cap(joinAnd(g))} ${verb(g.length)} the drag`);
+    parts.push(`${cap(joinAnd(g))} ${verb(g)} the drag`);
   }
   if (!parts.length) return "Nothing we track has a clear lean.";
   const out = `${parts.join(". ")}.`;
@@ -90,12 +90,12 @@ export function spotlightFace(company, leg) {
   const rg = m.revenueGrowth || {};
   const om = m.operatingMargin || {};
   const fcf = m.fcf || {};
-  if (typeof rg.pct === "number") stat = { label: "Rev", value: pct(rg.pct), unavailable: null };
-  else if (typeof om.pct === "number") stat = { label: "Margin", value: `${om.pct.toFixed(1)}%`, unavailable: null };
-  else if (typeof fcf.value === "number") stat = { label: "FCF", value: money(fcf.value), unavailable: null };
+  if (typeof rg.pct === "number") stat = { label: "Revenue growth", value: pct(rg.pct), unavailable: null };
+  else if (typeof om.pct === "number") stat = { label: "Operating margin", value: `${om.pct.toFixed(1)}%`, unavailable: null };
+  else if (typeof fcf.value === "number") stat = { label: "Free cash flow", value: money(fcf.value), unavailable: null };
   else {
     const gap = rg.unavailable || om.unavailable || fcf.unavailable || null;
-    stat = { label: "Rev", value: null, unavailable: gap };
+    stat = { label: "Revenue growth", value: null, unavailable: gap };
   }
   return {
     name: company.name, symbol: company.symbol,
@@ -112,6 +112,8 @@ export function lessonBody(lesson) {
     title: lesson.title || "",
     body: lesson.body || "",
     example: lesson.example || null,
+    exampleLines: lesson.exampleLines || (lesson.example ? [lesson.example] : []),
+    limitation: lesson.limitation || null,
     exampleUnavailable: lesson.exampleUnavailable || null,
   };
 }

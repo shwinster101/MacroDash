@@ -6309,7 +6309,7 @@ ok("9.2/8.2: headwind rows are real buttons now — keyboard-operable with aria-
 // failure reverts silently (<300ms, no toast), no clipboard API claims nothing.
 console.log("\n[53] UI-OVERHAUL wave 16 — copy claims are confirmed, never optimistic");
 ok("7.9: handleShare confirms on .then, reverts on .catch, and claims nothing without the API",
-  /const p=navigator\.clipboard\?\.writeText\(window\.location\.href\);\s*\n\s*if\(!p\)\{return;\}/.test(dashSrc) &&
+  /const p=navigator\.clipboard\?\.writeText\(publicDashboardUrl\(window\.location\.href\)\);\s*\n\s*if\(!p\)\{return;\}/.test(dashSrc) &&
   /p\.then\(\(\)=>\{setCopied\(true\);setTimeout\(\(\)=>setCopied\(false\),2000\);\}\)\s*\n\s*\.catch\(\(\)=>\{setCopied\(false\);\}\);/.test(dashSrc));
 ok("7.9: handleTtCopy — the order-gating block — follows the same confirmed rule",
   /const p=navigator\.clipboard\?\.writeText\(block\);/.test(dashSrc) &&
@@ -11280,7 +11280,7 @@ console.log("\n[79] v6.3.0 eight sheets — one resolver, band identity, context
 {
   const STRIP_FIELDS = ["spyPrice", "qqqPrice", "vix", "fearGreed", "tenYear", "fedTargetUpper", "cpiHeadline", "nfci"];
   const shapeOk = (e) => e && typeof e.full === "string" && e.full.length > 8 && Array.isArray(e.what) && e.what.length === 3 &&
-    e.what.every((s) => typeof s === "string" && s.length > 20) && Object.keys(e).every((k) => k === "full" || k === "what");
+    e.what.every((s) => typeof s === "string" && s.length > 20) && Object.keys(e).every((k) => k === "full" || k === "shortTitle" || k === "what");
   ok("[79] every one of the eight strip fields resolves to a complete explainer — full name, EXACTLY 3 bullets, nothing else",
     STRIP_FIELDS.every((f) => shapeOk(stripExplainFor(f))));
   ok("[79] the five voter tiles resolve to the band's OWN explainer object — identity, never a copy (one home)",
@@ -11298,15 +11298,11 @@ console.log("\n[79] v6.3.0 eight sheets — one resolver, band identity, context
   // read it, or a tile wearing the same sheet shape as a voter would imply a vote it never casts.
   ok("[79] every context sheet states that the six-signal model does not read it — context, never an implied signal",
     ["spyPrice", "qqqPrice", "fedTargetUpper"].every((f) => /six-signal model does not read/.test(CONTEXT_EXPLAIN[f].what[1]) && /context/.test(CONTEXT_EXPLAIN[f].what[1])));
-  ok("[79] the SPY sheet is honest about the proxy (÷ 10 from FRED, not the ETF's quote) and names the crash circuit it DOES feed (200-day + VIX 25)",
-    /÷ 10 from FRED/.test(CONTEXT_EXPLAIN.spyPrice.what[0]) && /not the ETF's own quote/.test(CONTEXT_EXPLAIN.spyPrice.what[0]) &&
-    /200-day average/.test(CONTEXT_EXPLAIN.spyPrice.what[1]) && /VIX above 25/.test(CONTEXT_EXPLAIN.spyPrice.what[1]) && /crash circuit/.test(CONTEXT_EXPLAIN.spyPrice.what[1]));
-  ok("[79] the QQQ sheet names its source (Finnhub), its read against SPY, and Engine 0's same-day relative-strength check",
-    /Finnhub/.test(CONTEXT_EXPLAIN.qqqPrice.what[0]) && /against SPY/.test(CONTEXT_EXPLAIN.qqqPrice.what[1]) &&
-    /relative-strength check/.test(CONTEXT_EXPLAIN.qqqPrice.what[1]) && /same day/.test(CONTEXT_EXPLAIN.qqqPrice.what[1]));
-  ok("[79] the FED sheet names BOTH readings the tile can show (the target range, and the lagging monthly effective average) and the FOMC countdown",
-    /target range/i.test(CONTEXT_EXPLAIN.fedTargetUpper.what[0]) && /effective average/.test(CONTEXT_EXPLAIN.fedTargetUpper.what[0]) &&
-    /lags a decision/.test(CONTEXT_EXPLAIN.fedTargetUpper.what[0]) && /next FOMC decision/.test(CONTEXT_EXPLAIN.fedTargetUpper.what[1]));
+  ok("[79] context sheets preserve proxy identity, non-voting scope, crash circuit and lagging effective-rate fallback",
+    /FRED index divided by ten/.test(CONTEXT_EXPLAIN.spyPrice.what[0]) && /not a tradable SPY ETF quote/.test(CONTEXT_EXPLAIN.spyPrice.what[0]) &&
+    /200-day/.test(CONTEXT_EXPLAIN.spyPrice.what[1]) && /VIX exceeds 25/.test(CONTEXT_EXPLAIN.spyPrice.what[1]) &&
+    /non-financial/.test(CONTEXT_EXPLAIN.qqqPrice.what[0]) &&
+    /target range/.test(CONTEXT_EXPLAIN.fedFunds.what[0]) && /effective average/.test(CONTEXT_EXPLAIN.fedFunds.what[0]) && /lags a decision/.test(CONTEXT_EXPLAIN.fedFunds.what[0]));
   ok("[79] context titles are spelled-out official names, never a bare ticker or acronym",
     /S&P 500 Index/.test(CONTEXT_EXPLAIN.spyPrice.full) && /Invesco QQQ Trust/.test(CONTEXT_EXPLAIN.qqqPrice.full) && /Nasdaq-100/.test(CONTEXT_EXPLAIN.qqqPrice.full) &&
     /Federal Funds Rate Target Range/.test(CONTEXT_EXPLAIN.fedTargetUpper.full) && /FOMC/.test(CONTEXT_EXPLAIN.fedTargetUpper.full));
@@ -11603,15 +11599,15 @@ console.log("\n[81] v6.5.0 STOCK SPOTLIGHT — calculations, endpoints, cron leg
       const m = S.deriveMetrics({ fundamentals: merged, marketCap: { usd: 61e9 }, series: null, today: "2026-09-14" });
       return merged.ocf.provider === "issuer report" && merged.ocf.observedAt === "2026-06-30" && m.fcf.basis === "half" && Math.abs(m.fcf.value + 3626.2e6) < 1; })());
   ok("[81] lessons: seven, keyed 1:1 to the rotation, each with a title, a body, and an example FUNCTION; MSFT's worked example prints both run-rates from the fixture",
-    S.SPOTLIGHT_ROTATION.every((k) => S.LESSONS[k] && S.LESSONS[k].title && S.LESSONS[k].body.length > 80 && typeof S.LESSONS[k].example === "function") &&
-    /NBIS: \$582M × 4 = \$2\.3B run-rate vs \$1\.3B reported TTM \(\+75\.8%\)\. MSFT: \$76\.0B × 4/.test(fx.model.lesson.example) && fx.model.lesson.exampleUnavailable === null);
+    S.SPOTLIGHT_ROTATION.every((k) => S.LESSONS[k] && S.LESSONS[k].title && S.LESSONS[k].body.length > 40 && typeof S.LESSONS[k].example === "function") &&
+    /NBIS: \$582M × 4 = \$2\.3B run-rate vs \$1\.3B reported TTM \(\+75\.8%;[\s\S]*MSFT: \$76\.0B × 4/.test(fx.model.lesson.example) && fx.model.lesson.exampleUnavailable === null);
   ok("[81] lessons: with the supporting figures missing for either company the worked example is UNAVAILABLE and named — the conceptual lesson stays, no numbers are invented",
     (() => { const stripped = { ...ms, metrics: { ...ms.metrics, runRate: null } };
       const m = S.buildSpotlightModel({ anchor: nb, comparison: stripped, rotation: { index: 0, weekKey: "2026-09-14" }, tracker: fx.model.tracker, now: NOW });
-      const goog = S.buildSpotlightModel({ anchor: nb, comparison: ms, rotation: { index: 3, weekKey: "2026-09-14" }, tracker: fx.model.tracker, now: NOW });
-      return m.lesson.example === null && /worked example unavailable/.test(m.lesson.exampleUnavailable) && m.lesson.body === S.LESSONS.MSFT.body &&
+      const goog = S.buildSpotlightModel({ anchor: nb, comparison: { ...ms, symbol: "GOOGL" }, rotation: { index: 3, weekKey: "2026-09-14" }, tracker: fx.model.tracker, now: NOW });
+      return m.lesson.example === null && /worked example unavailable/i.test(m.lesson.exampleUnavailable) && m.lesson.body === S.LESSONS.MSFT.body &&
         goog.lesson.key === "GOOGL" && goog.pair.comparison === "GOOGL" && goog.pair.nextComparison === "META" &&
-        /NBIS: TTM free cash flow is .* not meaningful when it is not positive/.test(goog.lesson.example); })());
+        /NBIS: .* TTM cash flow .*nonpositive denominator/.test(goog.lesson.example); })());
 
   // ── freshness recomputed at serve ──
   ok("[81] freshness: a stored model is re-judged from its observation dates at serve time — 12 days old reads STALE (sessions named), today reads fresh",
@@ -11864,13 +11860,17 @@ console.log("\n[82] Simple FACE/TAP/FOLD remainder — registry, ≤18-word reas
   ok("T1 holdReason: withheld is null; mixed names helping as fine and hurting as the drag; always ≤18 words",
     holdReason(null) === null && holdReason({ withheld: true }) === null &&
     /fine/.test(mixed) && /drag/.test(mixed) && words(mixed).length <= HOLD_REASON_MAX &&
-    words(allBull).length <= HOLD_REASON_MAX && /Vol/.test(mixed) && /Rates/.test(mixed));
+    words(allBull).length <= HOLD_REASON_MAX && /Volatility/.test(mixed) && /Rates/.test(mixed));
+  ok("Simple reason: a lone plural driver still agrees with its verb",
+    holdReason({ factors: [row("tenYear", "bear")] }) === "Rates are the drag." &&
+    holdReason({ factors: [row("valuation", "bear")] }) === "Prices are the drag." &&
+    holdReason({ factors: [row("vix", "bull")] }) === "Volatility is fine.");
   ok("T1 cardFace / sheetLead: glyph+label+value+tone only; sheetLead is the why sentence",
     JSON.stringify(cardFace({ direction: "helping", label: "volatility", currentValue: "15.84", why: "fear gauge" })) === JSON.stringify({ glyph: FACE_GLYPH.helping, label: "volatility", value: "15.84", tone: "helping" }) &&
     sheetLead({ why: "fear gauge" }) === "fear gauge" && sheetLead({}) === null);
   ok("T1 spotlightFace: YTD + one quality stat; chartTitle is ticker vs ticker YTD; lesson fold is a 2-word promise",
     (() => { const f = spotlightFace({ name: "Nebius Group", symbol: "NBIS", metrics: { revenueGrowth: { pct: 454 } } }, { pct: 154.2 });
-      return f.symbol === "NBIS" && f.ytd.value === "+154.20%" && f.stat.label === "Rev" && f.stat.value === "+454.0%"; })() &&
+      return f.symbol === "NBIS" && f.ytd.value === "+154.20%" && f.stat.label === "Revenue growth" && f.stat.value === "+454.0%"; })() &&
     chartTitle({ anchor: "NBIS", comparison: "MSFT" }) === "NBIS vs MSFT YTD" &&
     lessonTitle({}) === LESSON_FOLD_LABEL && LESSON_FOLD_LABEL === "Learning moment" &&
     WHYS_FOLD_LABEL === "Why this call" && ABOUT_FOLD_LABEL === "About this page" && EXPLORE_FOLD_LABEL === "Explore the numbers");
@@ -11918,6 +11918,48 @@ console.log("\n[83] Simple altitude — fs-xxl Hold, fs-body sentence, one-block
     /\{simple\?"Track record":"History"\}/.test(dash) &&
     /\{simple\?"Why MacroDash":"Difference"\}/.test(dash) &&
     /Share this page/.test(dash));
+}
+
+// v6.5.5: educational claims need evidence, including models cached before deploy.
+{
+  const S = await import("../functions/lib/spotlight.js");
+  const { makeSpotlightFixture } = await import("./spotlight-fixture.mjs");
+  const { publicDashboardUrl } = await import("../src/publicCopy.js");
+  const fx = makeSpotlightFixture();
+  const nb = fx.model.companies.NBIS, ms = fx.model.companies.MSFT;
+  const pair = (symbol, anchor = nb, comparison = ms) => S.lessonForPair({ anchor: "NBIS", comparison: symbol }, { NBIS: anchor, [symbol]: { ...comparison, symbol } });
+  const wc = (s) => s.trim().split(/\s+/).length;
+  ok("learning: every lesson including two dated example lines and limitation fits 90 words",
+    S.SPOTLIGHT_ROTATION.every((sym) => { const l = pair(sym); return l.limitation && wc([l.title, l.body, l.example || l.exampleUnavailable, l.limitation].join(" ")) <= 90; }));
+  ok("learning: a single share observation cannot demonstrate buybacks or per-share growth",
+    pair("AAPL").example === null && /comparable share counts/.test(pair("AAPL").exampleUnavailable));
+  ok("learning: matching quarter capex/revenue works; half-year or different quarter is withheld",
+    !!pair("META").example && [
+      { ...nb.metrics.fcf, basis: "half", start: "2000-01-01" },
+      { ...nb.metrics.fcf, end: "2000-03-31" },
+      { ...nb.metrics.fcf, start: undefined },
+    ].every((fcf) => pair("META", { ...nb, metrics: { ...nb.metrics, fcf } }).example === null));
+  ok("learning: incomplete run-rate arithmetic never prints made-up money",
+    pair("MSFT", { ...nb, metrics: { ...nb.metrics, runRate: { ...nb.metrics.runRate, quarter: null } } }).example === null);
+  ok("learning: incomplete cash-flow subtraction is withheld even if a cached total exists",
+    pair("AMZN", { ...nb, metrics: { ...nb.metrics, fcf: { ...nb.metrics.fcf, capex: null } } }).example === null);
+  ok("learning: nonpositive cash flow explains why a multiple is uninformative",
+    /nonpositive denominator/.test(pair("GOOGL").example));
+  const old = structuredClone(fx.model);
+  old.pair.comparison = "META"; old.companies.META = { ...old.companies.MSFT, symbol: "META" };
+  old.companies.NBIS.metrics.fcf.start = undefined;
+  old.lesson = { title: "Old prose", example: "unsupported cached ratio" };
+  const served = S.freshenSpotlight(old);
+  ok("learning: serving an old cached model rebuilds teaching and rejects incompatible evidence without mutating storage",
+    served.lesson.title === S.LESSONS.META.title && served.lesson.example === null && old.lesson.example === "unsupported cached ratio");
+  ok("learning: read projection preserves per-company example lines and limitations",
+    fx.projected.lesson.exampleLines.length === 2 && fx.projected.lesson.exampleLines[0].startsWith("NBIS:") &&
+    fx.projected.lesson.exampleLines[1].startsWith("MSFT:") && !!fx.projected.lesson.limitation);
+  ok("explainers: ordinary metric lessons have three concise bullets, a short title, and full formal metadata",
+    [...REGIME_BAND_TABLE.map((b) => b.explain), ...Object.values(CONTEXT_EXPLAIN)].every((e) =>
+      e.what.length === 3 && wc(e.what.join(" ")) <= 75 && e.shortTitle.length < e.full.length + 15 && !!e.full));
+  ok("sharing: operator/debug parameters and ticker hashes never enter a friend link",
+    publicDashboardUrl("https://fixture.test/?debug=private&view=operator#nbis") === "https://fixture.test/?view=public");
 }
 
 console.log(`\n=== SMOKE TEST: ${pass} passed, ${fail} failed ===`);

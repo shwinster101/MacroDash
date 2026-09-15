@@ -16,7 +16,7 @@
 import { T } from "../design-tokens.js";
 import { ILLUS_HATCH, isIllustrative } from "../primitives/Illustrative.jsx";
 import { Explainable } from "../primitives/FactSheet.jsx";
-import { cardFace, sheetLead } from "../simpleFace.js";
+import { cardFace } from "../simpleFace.js";
 
 const TONE = { helping: T.green, hurting: T.red, mixed: T.amber };
 const WORD = { helping: "HELPING", hurting: "HURTING", mixed: "MIXED" };
@@ -29,11 +29,9 @@ export const freshDot = (mode, illus) => {
 const sheetOf = (c) => {
   if (!c.explain || !Array.isArray(c.explain.what)) return c.explain;
   const illus = isIllustrative(c.mode);
-  const lead = sheetLead(c);
-  const beat2 = lead && c.explain.what[1] !== lead ? `${c.explain.what[1]} ${lead}` : c.explain.what[1];
-  const tail = [c.explain.what[2], c.asOf && `As of ${c.asOf}.`, c.rulerChip && `Rule: ${c.rulerChip}.`, illus && "This reading is illustrative, not live."]
-    .filter(Boolean).join(" ");
-  return { full: c.explain.full, what: [c.explain.what[0], beat2, tail] };
+  return { ...c.explain, metadata: [c.asOf && `As of ${c.asOf}.`,
+    c.rulerChip && `Rule: ${c.rulerChip}.`, illus && "This reading is illustrative, not live."]
+    .filter(Boolean).join(" ") };
 };
 
 const SimpleCards = ({ cards, usable = 0, shown = 0, total = 0, withheld = false }) => {
