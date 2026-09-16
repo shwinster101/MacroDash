@@ -2,7 +2,6 @@ import { useState, useEffect, useMemo, useRef } from "react"; // Fragment left w
 import { useMarketData } from "./useMarketData.js"; // FEAT-204 wiring
 import { MOCK_DATA } from "./mockData.js"; // v6.5.5: the mock baseline, one home (was inline here)
 import { computeFiveWhys } from "./fiveWhys.js"; // v2.5: rule-based 5 Whys ($0, derived from live data)
-import { voteStyle } from "./regime.js"; // C1 (v3.60): the extracted engine lives in regime.js; only voteStyle (FEAT-NEUTRAL, v3.62) is read here — the band table, quorum and vote functions are consumed via evidence.js and the sections (v6.5.5 dead-import prune)
 import { buildEvidenceSet, simpleVerdict, simpleCards, simpleFlipLine, factorExclusions, fieldMode, FACTOR_FIELD } from "./evidence.js"; // C1 (v3.60): the typed contract
 import { holdReason, WHYS_FOLD_LABEL, ABOUT_FOLD_LABEL } from "./simpleFace.js"; // T1: Simple FACE registry
 import { LASTVALID_KEY, summarizeEvidence, compareEvidence } from "./whatChanged.js"; // C4 (v3.60)
@@ -28,6 +27,7 @@ import Watchlist from "./sections/Watchlist.jsx"; // task 7.4: A4 gate stays at 
 import TerminalDock from "./sections/TerminalDock.jsx"; // v4.1.7: the dock (Simple); fetch + nav stay here
 import SimpleCards from "./sections/SimpleCards.jsx"; // v4.0: Simple parameter cards (presentation only)
 import StockSpotlight from "./sections/StockSpotlight.jsx"; // v6.5.0: the NBIS × Established-growth widget (presentation only; fetch stays here)
+import DriversMatrix from "./sections/DriversMatrix.jsx"; // v6.5.5: the C3 factor cards (presentation only; the !simple gate + landmark stay here)
 import StickyNav from "./sections/StickyNav.jsx"; // task 9.2: viewport-tracked active state
 import MacroStrip from "./sections/MacroStrip.jsx"; // task 3.1: presentation only
 import SignalQuality from "./sections/SignalQuality.jsx"; // task 3.2: presentation only
@@ -841,30 +841,7 @@ export default function Dashboard({ publicView = false } = {}) {
             the collapse: the summary line above stays, exclusions stay named in Signal
             Quality, and the ⏱ chips stay on the band (the v3.25 rule). chip={false} — this
             is live evidence, not curated content. */}
-        <CollapsedGroup count={evidenceSet.factors.length} chip={false}
-          label={`factor evidence — used in today's posture · ${evidenceSet.freshSummary}${evidenceSet.withheld?" · posture withheld":""}`}>
-        <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
-          {evidenceSet.factors.map(f=>{
-            // FEAT-NEUTRAL (v3.62): resolves through the SAME shared map as the hero chips.
-            // This card was already 4-state and correct; routing it through voteStyle is what
-            // makes it structurally impossible for the two altitudes to disagree again.
-            const vc=T[voteStyle(f.vote).colorKey];
-            return (
-              <div key={f.key} style={{flex:"1 1 240px",minWidth:0,background:T.surface,border:`1px solid ${f.excluded?T.amber+"44":T.border}`,borderRadius:5,padding:"8px 10px",opacity:f.excluded?0.85:1}}>
-                <div style={{display:"flex",justifyContent:"space-between",gap:8,alignItems:"baseline"}}>
-                  <span style={{fontFamily:T.fontMono,fontSize:10,fontWeight:700,color:T.textPrimary}}>{f.short} <span style={{fontWeight:400,color:T.textMuted}}>{f.label}</span></span>
-                  <span style={{fontFamily:T.fontMono,fontSize:9,fontWeight:700,color:vc,textTransform:"uppercase"}}>{f.vote}</span>
-                </div>
-                <div style={{fontFamily:T.fontMono,fontSize:9,color:T.textSecondary,marginTop:3,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{f.display}</div>
-                <div style={{display:"flex",gap:6,alignItems:"center",marginTop:4,flexWrap:"wrap"}}>
-                  <DataModeBadge mode={f.mode}/>
-                  {f.asOf&&<span style={{fontFamily:T.fontMono,fontSize:8,color:T.textMuted}}>as of {String(f.asOf).slice(0,10)}</span>}
-                  {f.excluded&&<span style={{fontFamily:T.fontMono,fontSize:8,color:T.amber}}>excluded — {f.reason}</span>}
-                </div>
-              </div>
-            );})}
-        </div>
-        </CollapsedGroup>
+        <DriversMatrix evidenceSet={evidenceSet}/>
       </section>}
 
       {/* v3.69 NARRATIVE-FIRST: markets/macro/ai gain real <section> extents (the drivers/

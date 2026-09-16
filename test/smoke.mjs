@@ -116,7 +116,8 @@ const fsSrc  = readSrc("../src/primitives/FactSheet.jsx"); // v5.8 — the expla
 const utSrc = readSrc("../src/primitives/UndoToast.jsx");
 const stbSrc = readSrc("../src/primitives/SpyTapeBadge.jsx");
 const cbSrc = readSrc("../src/sections/CallBanners.jsx");
-const uiSrc = dashSrc + spcSrc + bandSrc + whysSrc + sbSrc + shSrc + stripSrc + sqSrc + wcSrc + mdSrc + mrSrc + hwSrc + dtSrc + aiSrc + alSrc + dhSrc + wlSrc + navSrc + tdSrc + utSrc + stbSrc + cbSrc;
+const dmSrc = readSrc("../src/sections/DriversMatrix.jsx");
+const uiSrc = dashSrc + spcSrc + bandSrc + whysSrc + sbSrc + shSrc + stripSrc + sqSrc + wcSrc + mdSrc + mrSrc + hwSrc + dtSrc + aiSrc + alSrc + dhSrc + wlSrc + navSrc + tdSrc + utSrc + stbSrc + cbSrc + dmSrc;
 // v6.5.5: MOCK_DATA lives in src/mockData.js and is IMPORTED (the C1 regime.js form). The old
 // brace-count slice + eval over dashSrc CRASHED the suite (no total printed) if the marker
 // moved — a suite that dies mid-run reads as a suite that never ran (the v3.99.4 P0 shape).
@@ -4740,7 +4741,9 @@ ok("C2: a real <header> landmark, a Sections <nav>, and the six-anchor h2 outlin
   ["overview", "drivers", "markets", "macro"].every((id) =>
     dashSrc.includes(`id="${id}"`)) && aiSrc.includes('id="ai"') && dhSrc.includes('id="health"'));
 ok("C3: the Drivers matrix renders the CONTRACT (evidenceSet.factors), not its own reading",
-  dashSrc.includes("evidenceSet.factors.map(f=>") && dashSrc.includes("excluded — {f.reason}"));
+  // v6.5.5: the cards live in src/sections/DriversMatrix.jsx; the orchestrator hands the set over.
+  dmSrc.includes("evidenceSet.factors.map(f=>") && dmSrc.includes("excluded — {f.reason}") &&
+  dashSrc.includes("<DriversMatrix evidenceSet={evidenceSet}/>"));
 ok("C4: the digest persists AFTER comparing, and only quorate sets become the baseline",
   dashSrc.indexOf("compareEvidence(prev,cur)") < dashSrc.indexOf("localStorage.setItem(LASTVALID_KEY") &&
   // v3.61 (newcomer audit): the copy states the localStorage device scope explicitly.
@@ -4780,8 +4783,8 @@ ok("glance: landscape notch edges — root pads left/right insets",
 // both times — live evidence, not curated content.
 ok("glance: the Drivers matrix cards collapse (band chips are the icon-first six-factor view)",
   // v3.93: the eyebrow folded into the toggle label — count summary visible while closed.
-  /label=\{`factor evidence — used in today's posture · \$\{evidenceSet\.freshSummary\}/.test(dashSrc) &&
-  /count=\{evidenceSet\.factors\.length\} chip=\{false\}/.test(dashSrc));
+  /label=\{`factor evidence — used in today's posture · \$\{evidenceSet\.freshSummary\}/.test(dmSrc) && // v6.5.5: moved with the cards
+  /count=\{evidenceSet\.factors\.length\} chip=\{false\}/.test(dmSrc));
 ok("glance: the Data Health per-source grid collapses; the ERROR/Retry row stays OUTSIDE",
   /label="per-source detail" chip=\{false\}/.test(dhSrc) &&
   dhSrc.indexOf('mode==="ERROR"&&<div style={{fontFamily:T.fontMono,fontSize:9,color:T.red') <
@@ -5156,7 +5159,7 @@ ok("a non-finite reading votes NEUTRAL, not a confident bearish chip",
 // The whole point of the shared map: the two altitudes cannot resolve a vote differently.
 ok("BOTH altitudes resolve appearance through the ONE voteStyle map (hero + Drivers matrix)",
   bandSrc.includes("const vs=voteStyle(f.vote)") &&
-  dashSrc.includes("const vc=T[voteStyle(f.vote).colorKey]") &&
+  dmSrc.includes("const vc=T[voteStyle(f.vote).colorKey]") && // v6.5.5: the matrix's home is DriversMatrix.jsx (in uiSrc)
   !/f\.vote==="bull"\?T\.green/.test(uiSrc));
 ok("regimeFactors derives its vote from the band table, keeping no second copy of a threshold",
   regimeSrc.includes("band.vote(band.read(d), d)") &&
@@ -11964,6 +11967,17 @@ console.log("\n[83] Simple altitude — fs-xxl Hold, fs-body sentence, one-block
     /if\(!toasts \|\| !toasts\.length\) return null;/.test(utSrc) &&
     /if \(mode !== "LIVE" && mode !== "CACHED" && mode !== "STALE"\) return null;/.test(stbSrc) &&
     /if\(!flip\|\|!flip\.inputs\)return null;/.test(cbSrc) && /if\(!call\)return null;/.test(cbSrc));
+  ok("[84] Zone 4: the Drivers matrix is a section with ONE home; the !simple gate, the landmark and its h2 anchor STAY at the call site",
+    /\{!simple&&<section aria-labelledby="drivers"[\s\S]{0,1200}<DriversMatrix evidenceSet=\{evidenceSet\}\/>\s*\n\s*<\/section>\}/.test(dashSrc) &&
+    dashSrc.includes('<h2 id="drivers" className="visually-hidden">') &&
+    dashSrc.includes('import DriversMatrix from "./sections/DriversMatrix.jsx"') &&
+    !/evidenceSet\.factors\.map|voteStyle/.test(strip(dashSrc)) &&
+    /^export default function DriversMatrix\(\{ evidenceSet \}\)/m.test(dmSrc) &&
+    /if\(!evidenceSet\|\|!Array\.isArray\(evidenceSet\.factors\)\)return <div aria-hidden="true"\/>;/.test(dmSrc));
+  ok("[84] Zone 4: DriversMatrix is presentation-only — the documented voteStyle import from the pure engine is its only computation import (the MacroStrip exception)",
+    dmSrc.includes('import { voteStyle } from "../regime.js"') &&
+    !/useState|useEffect|localStorage|fetch\(|useMarketData|computeRegime|buildEvidenceSet|regimeFactors|fieldMode|evalAlert/.test(strip(dmSrc)) &&
+    dmSrc.split("\n").length <= 300);
   ok("[84] Zone 3: Property 10 — primitives ≤100 lines, the banner section ≤300",
     utSrc.split("\n").length <= 100 && stbSrc.split("\n").length <= 100 && cbSrc.split("\n").length <= 300);
   ok("[84] Zone 1: MOCK_DATA has ONE home (src/mockData.js), is pure data, and the orchestrator imports it",
