@@ -11945,7 +11945,7 @@ console.log("\n[83] Simple altitude — fs-xxl Hold, fs-body sentence, one-block
     /Share this page/.test(dash));
 }
 
-// v6.5.6: educational claims need evidence, including models cached before deploy.
+console.log("\n[84] v6.5.6 — spotlight learning: educational claims need evidence, including models cached before deploy");
 {
   const S = await import("../functions/lib/spotlight.js");
   const { makeSpotlightFixture } = await import("./spotlight-fixture.mjs");
@@ -11987,16 +11987,16 @@ console.log("\n[83] Simple altitude — fs-xxl Hold, fs-body sentence, one-block
     publicDashboardUrl("https://fixture.test/?debug=private&view=operator#nbis") === "https://fixture.test/?view=public");
 }
 
-// ---- 84. v6.5.5 — dashboard.jsx decomposition: dead code OUT first (the v3.73 Divider rule) ----
+// ---- 85. v6.5.5 — dashboard.jsx decomposition: dead code OUT first (the v3.73 Divider rule) ----
 // The owner's decomposition map proposed RELOCATING useCountdown to src/hooks/; the verification
 // pass found it had no consumer anywhere (the IPO strip it served was cut in v3.43), along with
 // three colour helpers whose Mag-10 grid was cut the same release, and a recharts import
 // whose every name was unused in this file. Dead code is deleted and its absence pinned, never
 // moved — a relocated dead hook is a rot vector with a new address.
 {
-  console.log("\n[84] v6.5.5 — dead code deleted from the orchestrator, not relocated");
+  console.log("\n[85] v6.5.5 — dead code deleted from the orchestrator, not relocated");
   const strip = (src) => src.replace(/\/\/[^\n]*|\/\*[\s\S]*?\*\//g, "");
-  ok("[84] Zone 3: UndoToast/SpyTapeBadge/CallBanners have ONE home each — the orchestrator imports, never re-declares",
+  ok("[85] Zone 3: UndoToast/SpyTapeBadge/CallBanners have ONE home each — the orchestrator imports, never re-declares",
     !/\nconst UndoToast=|\nfunction useUndoToast\(|\nconst SpyTapeBadge = |\nconst MacroFlipBanner=|\nconst PanicOverrideBanner=/.test(dashSrc) &&
     dashSrc.includes('import UndoToast, { useUndoToast } from "./primitives/UndoToast.jsx"') &&
     dashSrc.includes('import SpyTapeBadge from "./primitives/SpyTapeBadge.jsx"') &&
@@ -12004,30 +12004,30 @@ console.log("\n[83] Simple altitude — fs-xxl Hold, fs-body sentence, one-block
     /^export function useUndoToast\(/m.test(utSrc) && /^export default function UndoToast\(/m.test(utSrc) &&
     /^export default function SpyTapeBadge\(/m.test(stbSrc) &&
     /^export function MacroFlipBanner\(/m.test(cbSrc) && /^export function PanicOverrideBanner\(/m.test(cbSrc));
-  ok("[84] Zone 3: the three files are presentation-only (props in, JSX out) — no data, storage, fetch or computation import; the toast's own UI state is the one allowed hook",
+  ok("[85] Zone 3: the three files are presentation-only (props in, JSX out) — no data, storage, fetch or computation import; the toast's own UI state is the one allowed hook",
     [stbSrc, cbSrc].every(src => !/useState|useEffect|localStorage|fetch\(|useMarketData|computeRegime|buildEvidenceSet|evalAlert/.test(strip(src))) &&
     !/localStorage|fetch\(|useMarketData|computeRegime|buildEvidenceSet|evalAlert|useEffect/.test(strip(utSrc)) &&
     !/useCallback/.test(strip(dashSrc)) && dashSrc.includes("const { toasts, show:showToast, dismiss } = useUndoToast();"));
-  ok("[84] Zone 3: the call sites and the banner LADDER (panic first, then an armed/tripped flip) stay in the orchestrator; every moved component null-guards (Property 9)",
+  ok("[85] Zone 3: the call sites and the banner LADDER (panic first, then an armed/tripped flip) stay in the orchestrator; every moved component null-guards (Property 9)",
     /<UndoToast toasts=\{toasts\} dismiss=\{dismiss\}\/>/.test(dashSrc) &&
     /\? <PanicOverrideBanner call=\{dailyCall\} simple=\{simple\}\/>\s*\n\s*: flip&&\(flip\.tripped\|\|flip\.armed\)&&<MacroFlipBanner flip=\{flip\}\/>\}/.test(dashSrc) &&
     /if\(!toasts \|\| !toasts\.length\) return null;/.test(utSrc) &&
     /if \(mode !== "LIVE" && mode !== "CACHED" && mode !== "STALE"\) return null;/.test(stbSrc) &&
     /if\(!flip\|\|!flip\.inputs\)return null;/.test(cbSrc) && /if\(!call\)return null;/.test(cbSrc));
-  ok("[84] Zone 4: the Drivers matrix is a section with ONE home; the !simple gate, the landmark and its h2 anchor STAY at the call site",
+  ok("[85] Zone 4: the Drivers matrix is a section with ONE home; the !simple gate, the landmark and its h2 anchor STAY at the call site",
     /\{!simple&&<section aria-labelledby="drivers"[\s\S]{0,1200}<DriversMatrix evidenceSet=\{evidenceSet\}\/>\s*\n\s*<\/section>\}/.test(dashSrc) &&
     dashSrc.includes('<h2 id="drivers" className="visually-hidden">') &&
     dashSrc.includes('import DriversMatrix from "./sections/DriversMatrix.jsx"') &&
     !/evidenceSet\.factors\.map|voteStyle/.test(strip(dashSrc)) &&
     /^export default function DriversMatrix\(\{ evidenceSet \}\)/m.test(dmSrc) &&
     /if\(!evidenceSet\|\|!Array\.isArray\(evidenceSet\.factors\)\)return <div aria-hidden="true"\/>;/.test(dmSrc));
-  ok("[84] Zone 4: DriversMatrix is presentation-only — the documented voteStyle import from the pure engine is its only computation import (the MacroStrip exception)",
+  ok("[85] Zone 4: DriversMatrix is presentation-only — the documented voteStyle import from the pure engine is its only computation import (the MacroStrip exception)",
     dmSrc.includes('import { voteStyle } from "../regime.js"') &&
     !/useState|useEffect|localStorage|fetch\(|useMarketData|computeRegime|buildEvidenceSet|regimeFactors|fieldMode|evalAlert/.test(strip(dmSrc)) &&
     dmSrc.split("\n").length <= 300);
-  ok("[84] Zone 3: Property 10 — primitives ≤100 lines, the banner section ≤300",
+  ok("[85] Zone 3: Property 10 — primitives ≤100 lines, the banner section ≤300",
     utSrc.split("\n").length <= 100 && stbSrc.split("\n").length <= 100 && cbSrc.split("\n").length <= 300);
-  ok("[84] Zone 1: MOCK_DATA has ONE home (src/mockData.js), is pure data, and the orchestrator imports it",
+  ok("[85] Zone 1: MOCK_DATA has ONE home (src/mockData.js), is pure data, and the orchestrator imports it",
     !/\nconst MOCK_DATA = \{/.test(dashSrc) &&
     dashSrc.includes('import { MOCK_DATA } from "./mockData.js"') &&
     dashSrc.includes("useMarketData(MOCK_DATA, { publicView })") &&
@@ -12035,18 +12035,18 @@ console.log("\n[83] Simple altitude — fs-xxl Hold, fs-body sentence, one-block
     !/^import\s/m.test(mockSrc) && !/from ["']react["']/.test(mockSrc) &&
     typeof MOCK_DATA === "object" && MOCK_DATA.marketPulse && Array.isArray(MOCK_DATA.headwinds));
   const code = dashSrc.replace(/\/\/[^\n]*|\/\*[\s\S]*?\*\//g, "");
-  ok("[84] useCountdown/approxCountdown are gone from every UI surface (no consumer existed)",
+  ok("[85] useCountdown/approxCountdown are gone from every UI surface (no consumer existed)",
     !/useCountdown|approxCountdown/.test(uiSrc.replace(/\/\/[^\n]*|\/\*[\s\S]*?\*\//g, "")) &&
     !existsSync(new URL("../src/hooks/useCountdown.js", import.meta.url)));
-  ok("[84] peColor/marginColor/yoyColor are gone (their Mag-10 consumer was cut in v3.43)",
+  ok("[85] peColor/marginColor/yoyColor are gone (their Mag-10 consumer was cut in v3.43)",
     !/\b(peColor|marginColor|yoyColor)\b/.test(code));
-  ok("[84] the orchestrator imports nothing from recharts — charts render only inside sections",
+  ok("[85] the orchestrator imports nothing from recharts — charts render only inside sections",
     !/from ["']recharts["']/.test(code) && /from ["']recharts["']/.test(mdSrc));
-  ok("[84] every import name the orchestrator declares is USED at least once in its own code",
+  ok("[85] every import name the orchestrator declares is USED at least once in its own code",
     (() => {
       const imp = [...code.matchAll(/^import\s+(?:(\w+)\s*,?\s*)?(?:\{([^}]*)\})?\s*from\s+"[^"]+"/gm)];
       const names = imp.flatMap(m => [m[1], ...(m[2] || "").split(",").map(x => x.trim().split(/\s+as\s+/).pop())]).filter(Boolean);
-      const unused = names.filter(n => (code.match(new RegExp("\\b" + n.replace(/[$]/g, "\\console.log(`\n=== SMOKE TEST: ${pass} passed, ${fail} failed ===`);") + "\\b", "g")) || []).length < 2);
+      const unused = names.filter(n => (code.match(new RegExp("\\b" + n.replace(/[$]/g, "\\$&") + "\\b", "g")) || []).length < 2);
       if (unused.length) console.log("    unused imports:", unused.join(", "));
       return names.length > 20 && unused.length === 0;
     })());

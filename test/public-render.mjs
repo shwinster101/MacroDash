@@ -958,7 +958,7 @@ console.log("\n[public] v3.99 — Fed target range + curated FOMC countdown");
       // Day 0 (today IS the decision day) renders distinct honest copy, not "in 0 days".
       if (days === 0) return /FOMC decision today/.test(macro);
       const m = macro.match(/Next FOMC in (\d+) days?/);
-      return days === 0 ? /FOMC decision today/.test(macro) : !!m && Number(m[1]) === days;
+      return !!m && Number(m[1]) === days;
     })());
   ok("v3.99.1: the mock odds baseline is GONE — the tile says it cannot see them",
     /odds unavailable — Kalshi feed not live/.test(macro) &&
@@ -1993,8 +1993,8 @@ console.log("\n[public] v6.5 — STOCK SPOTLIGHT: Simple + Degen, always-visible
       !/BUSINESS ·/.test(text) && !/WATCH NEXT ·/.test(text) &&
       (await r.locator('[aria-label="Full assessment"]').count()) === 0);
     ok("v6.5 Simple: YTD numbers for both — no `through` crumbs on the face, no price-return caveat",
-      (await r.locator('[aria-label$=" profile"]', { hasText: "Return this year" }).count()) === 2 && !/PRICE RETURN/i.test(text) &&
-      !/through \d{4}-\d{2}-\d{2}/.test((await r.locator('[aria-label$=" profile"]').allInnerTexts()).join("\n")));
+      (await r.locator('.stock-profile-trigger', { hasText: "Return this year" }).count()) === 2 && !/PRICE RETURN/i.test(text) &&
+      !/through \d{4}-\d{2}-\d{2}/.test((await r.locator('.stock-profile-trigger').allInnerTexts()).join("\n")));
     ok("v6.5 Simple (density review): NO blurb on the face; the dates and the blurb live one tap deep",
       !/rents out AI computing capacity/.test(text) && !/Sells software and cloud computing/.test(text));
     ok("T4 Simple chart: title is ticker vs ticker YTD; two lines, a zero reference; no from-through essay",
@@ -2011,7 +2011,9 @@ console.log("\n[public] v6.5 — STOCK SPOTLIGHT: Simple + Degen, always-visible
         return lesson && chart && lesson.getBoundingClientRect().top < chart.getBoundingClientRect().top;
       }));
     for (const name of ["Nebius Group", "Microsoft"]) {
-      const trigger = r.getByRole("button", { name: new RegExp(`${name}.*profile`) });
+      const trigger = r.locator('.stock-profile-trigger', { hasText: name });
+      ok(`company tap: ${name} trigger exposes its market cap, return and fundamental in its accessible name`,
+        /Market cap/i.test(await trigger.innerText()) && /Return this year/i.test(await trigger.innerText()));
       await trigger.focus();
       await page.keyboard.press("Enter");
       const sheet = page.getByRole("dialog");
@@ -2051,7 +2053,7 @@ console.log("\n[public] v6.5 — STOCK SPOTLIGHT: Simple + Degen, always-visible
     ok("v6.5 Simple: 390px stays overflow-free with the chart in place, no page errors",
       await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth + 1) && errors.length === 0);
     // The full three-question text lives one tap deep in Simple (`opened`), on the face in Degen.
-    simpleFace = { caps: (await r.locator('[aria-label$=" profile"]').allInnerTexts()).map(t => (t.match(/\$\d+\.\d+[TB]/) || [])[0]), ytd: text.match(/[+−]\d+\.\d\d%/g), business: (opened.match(/BUSINESS · [^\n]+/g) || []) };
+    simpleFace = { caps: (await r.locator('.stock-profile-trigger').allInnerTexts()).map(t => (t.match(/\$\d+\.\d+[TB]/) || [])[0]), ytd: text.match(/[+−]\d+\.\d\d%/g), business: (opened.match(/BUSINESS · [^\n]+/g) || []) };
     await page.close(); }
   // Mixed-period issuer: the FCF date must not inherit the revenue quarter.
   { const mixed = structuredClone(feed);

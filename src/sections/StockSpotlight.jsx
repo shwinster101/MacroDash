@@ -89,8 +89,7 @@ const Profile = ({ c, leg, simple }) => {
     const face = spotlightFace(c, leg);
     if (!face) return null;
     return (
-      <Explainable explain={spotlightExplain(c, leg)} title={c.name} eyebrow={c.symbol} style={{ background: T.surface, border: `1px solid ${T.border}`, borderRadius: 6, padding: "10px 12px", minWidth: 0 }}
-        ariaLabel={`${c.name} (${c.symbol}) profile`}>
+      <Explainable explain={spotlightExplain(c, leg)} title={c.name} eyebrow={c.symbol} className="stock-profile-trigger" style={{ background: T.surface, border: `1px solid ${T.border}`, borderRadius: 6, padding: "10px 12px", minWidth: 0 }}>
         <div style={{ display: "flex", alignItems: "baseline", gap: 8, flexWrap: "wrap" }}>
           <span style={{ fontFamily: T.fontSans, fontSize: T.fsL, fontWeight: 700, color: T.textPrimary }}>{face.name}</span>
           <span style={{ fontFamily: T.fontMono, fontSize: T.fsM, color: T.amber }}>{face.symbol}</span>

@@ -16,7 +16,7 @@
 import { T } from "../design-tokens.js";
 import { ILLUS_HATCH, isIllustrative } from "../primitives/Illustrative.jsx";
 import { Explainable } from "../primitives/FactSheet.jsx";
-import { cardFace } from "../simpleFace.js";
+import { cardFace, sheetLead } from "../simpleFace.js";
 
 const TONE = { helping: T.green, hurting: T.red, mixed: T.amber };
 const WORD = { helping: "HELPING", hurting: "HURTING", mixed: "MIXED" };
@@ -29,7 +29,13 @@ export const freshDot = (mode, illus) => {
 const sheetOf = (c) => {
   if (!c.explain || !Array.isArray(c.explain.what)) return c.explain;
   const illus = isIllustrative(c.mode);
-  return { ...c.explain, metadata: [c.asOf && `As of ${c.asOf}.`,
+  // Beat 2 carries the band's own "why it matters" sentence (sheetLead) — folded onto the
+  // explainer's own second bullet rather than a second thesis. Never dropped by a rewrite
+  // of the surrounding metadata line (v6.5.6 caught this going silently dark).
+  const lead = sheetLead(c);
+  const beat2 = lead && c.explain.what[1] !== lead ? `${c.explain.what[1]} ${lead}` : c.explain.what[1];
+  return { ...c.explain, what: [c.explain.what[0], beat2, c.explain.what[2]],
+    metadata: [c.asOf && `As of ${c.asOf}.`,
     c.rulerChip && `Rule: ${c.rulerChip}.`, illus && "This reading is illustrative, not live."]
     .filter(Boolean).join(" ") };
 };
