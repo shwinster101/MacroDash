@@ -1,23 +1,21 @@
 import { useState, useEffect, useCallback, useMemo, useRef } from "react"; // Fragment left with MarketDetail (wave 9)
-import { LineChart, Line, BarChart, Bar, Cell, AreaChart, Area, XAxis, YAxis, Tooltip, ResponsiveContainer, ReferenceLine } from "recharts";
 import { useMarketData } from "./useMarketData.js"; // FEAT-204 wiring
 import { computeFiveWhys } from "./fiveWhys.js"; // v2.5: rule-based 5 Whys ($0, derived from live data)
-import { NFCI_TIGHT, NFCI_LOOSE, REGIME_BAND_TABLE, REGIME_QUORUM, verdictFrom, computeRegime, flipConditions, regimeFactors, voteStyle } from "./regime.js"; // C1 (v3.60): the extracted engine; voteStyle = FEAT-NEUTRAL (v3.62)
+import { voteStyle } from "./regime.js"; // C1 (v3.60): the extracted engine lives in regime.js; only voteStyle (FEAT-NEUTRAL, v3.62) is read here — the band table, quorum and vote functions are consumed via evidence.js and the sections (v6.5.5 dead-import prune)
 import { buildEvidenceSet, simpleVerdict, simpleCards, simpleFlipLine, factorExclusions, fieldMode, FACTOR_FIELD } from "./evidence.js"; // C1 (v3.60): the typed contract
 import { holdReason, WHYS_FOLD_LABEL, ABOUT_FOLD_LABEL } from "./simpleFace.js"; // T1: Simple FACE registry
 import { LASTVALID_KEY, summarizeEvidence, compareEvidence } from "./whatChanged.js"; // C4 (v3.60)
-import { isStale, cadenceOf, parseObsDate, nextFomcDate, etYmd } from "./sources.js"; // FEAT-R3: per-tile, cadence-aware staleness + shared market calendar; v3.99: curated FOMC calendar
+import { parseObsDate, nextFomcDate, etYmd } from "./sources.js"; // FEAT-R3: per-tile, cadence-aware staleness + shared market calendar; v3.99: curated FOMC calendar
 import { computeMacroFlip } from "./ttReadout.js"; // FEAT-331: Macro Flip circuit
 import { callFromEvidence, formatMacroCallPaste, formatMacroShareCard, callEdition } from "./macroCall.js"; // v5.5 frozen call + share card
 import { closeReadLine } from "./closeRead.js"; // v6.2: the 6pm close read — ONE line builder, the ptModelRows rule
 import { fmt, pctColor } from "./format.js"; // task 1.3/3.1: one shared copy
 import RegimeBand, { WITHHELD_LABEL } from "./sections/RegimeBand.jsx"; // task 1.3: the verdict band + its vocabulary
 import FiveWhys, { flipChipOf } from "./sections/FiveWhys.jsx"; // task 1.4: presentation only — computeFiveWhys stays here
-import SourceBox, { DataModeBadge } from "./primitives/SourceBox.jsx"; // task 1.4
-import SectionHeader from "./primitives/SectionHeader.jsx"; // task 1.4
+import { DataModeBadge } from "./primitives/SourceBox.jsx"; // task 1.4 (SourceBox + SectionHeader render only inside sections now — v6.5.5 dead-import prune)
 import CollapsedGroup from "./primitives/CollapsedGroup.jsx"; // task 5.1
-import { ILLUS_HATCH, IllustrativeChip, isIllustrative } from "./primitives/Illustrative.jsx"; // task 5.1
-import { Badge, Label } from "./primitives/atoms.jsx"; // wave 9
+import { isIllustrative } from "./primitives/Illustrative.jsx"; // task 5.1 (ILLUS_HATCH/IllustrativeChip render only inside sections — v6.5.5 dead-import prune)
+import { Badge } from "./primitives/atoms.jsx"; // wave 9 (Label renders only inside sections — v6.5.5 dead-import prune)
 import MarketDetail from "./sections/MarketDetail.jsx"; // task 5.2: presentation only
 import MacroRegime from "./sections/MacroRegime.jsx"; // task 5.3: presentation only
 import Headwinds from "./sections/Headwinds.jsx"; // task 5.4: presentation only
@@ -172,9 +170,8 @@ function etSession(now = new Date()) {
 // fmt moved to src/format.js (task 1.3) — one copy, shared with extracted sections.
 // arrow moved into src/primitives/DirTile.jsx (its only consumer, wave 9).
 // pctColor moved to src/format.js (task 3.1) — one copy, shared with MacroStrip.
-const peColor=(pe)=>pe>80?T.red:pe>40?T.yellow:pe>25?T.textPrimary:T.green;
-const marginColor=(m)=>m===null?T.textMuted:m>30?T.green:m>15?T.textPrimary:m>5?T.yellow:T.red;
-const yoyColor=(g)=>g>50?T.green:g>15?T.green:g>0?T.textPrimary:g>=0?T.yellow:T.red;
+// peColor/marginColor/yoyColor DELETED (v6.5.5): their consumers (the Mag-10 fundamentals
+// grid) were cut in v3.43 and the helpers rendered nowhere since — the Divider rule.
 
 // Returns `count` trading-day label strings (oldest→newest) anchored at anchorDateStr.
 // Used to give the SPY sparkline tooltip real dates instead of index numbers.
@@ -258,33 +255,8 @@ const SpyTapeBadge = ({ spyChangePct, mode, noSessionDay = false }) => {
   );
 };
 
-// ─── IPO COUNTDOWN TO LAUNCH STRIP ───────────────────────────────────────
-function useCountdown(targetDate, isExact) {
-  const [now, setNow] = useState(Date.now());
-  useEffect(() => {
-    if (!isExact) return;
-    if (targetDate.getTime() - Date.now() <= 0) return; // already launched: never start ticking
-    const id = setInterval(() => {
-      setNow(Date.now());
-      if (targetDate.getTime() - Date.now() <= 0) clearInterval(id); // stop once it reaches zero
-    }, 1000);
-    return () => clearInterval(id);
-  }, [isExact, targetDate]);
-  const diff = targetDate.getTime() - now;
-  if (diff <= 0) return { expired: true, text: "LAUNCHED", d:0, h:0, m:0, s:0 };
-  const d = Math.floor(diff / 86400000);
-  const h = Math.floor((diff % 86400000) / 3600000);
-  const m = Math.floor((diff % 3600000) / 60000);
-  const s = Math.floor((diff % 60000) / 1000);
-  return { expired: false, d, h, m, s, text: `${d}d ${String(h).padStart(2,"0")}:${String(m).padStart(2,"0")}:${String(s).padStart(2,"0")}` };
-}
-function approxCountdown(targetDate) {
-  const diff = targetDate.getTime() - Date.now();
-  if (diff <= 0) return "LAUNCHED";
-  const months = Math.round(diff / (30.44 * 86400000));
-  if (months <= 1) return "~1 month";
-  return `~${months} months`;
-}
+// useCountdown/approxCountdown DELETED (v6.5.5): the IPO countdown strip they served was
+// cut in v3.43 (component, data and state); the hook and helper had no consumer since.
 
 // AI cards extracted to src/sections/AIUnitEconomics.jsx (wave 12).
 
@@ -826,8 +798,7 @@ export default function Dashboard({ publicView = false } = {}) {
           .delta-bar-inner{flex-wrap:nowrap!important;overflow-x:auto!important;}
           .dir-tiles{flex-wrap:wrap!important;}
           /* .hide-mobile rule DELETED (wave 17 audit): zero consumers since FINDING-1. */
-          /* IPO strip stays a horizontal swipeable row on mobile (not 3 stacked cards) */
-          .spy-tape-mobile{display:none!important;}
+              .spy-tape-mobile{display:none!important;}
         }
         @media(prefers-reduced-motion:reduce){.pulse-anim{animation:none!important;}}
         /* A2 (v3.58): 320px contract — the duplicate wordmark is the first thing to go. */

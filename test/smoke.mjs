@@ -6113,8 +6113,11 @@ ok("whys: module stays under the 300-line bound (Property 10); primitives under 
 ok("primitives: SourceBox/DataModeBadge/SectionHeader have ONE home each — no inline copies left",
   !/\nconst SourceBox = /.test(dashSrc) && !/\nconst DataModeBadge = /.test(dashSrc) &&
   !/\nconst SectionHeader=/.test(dashSrc) && !/\nconst apiColors = /.test(dashSrc) &&
-  dashSrc.includes('import SourceBox, { DataModeBadge } from "./primitives/SourceBox.jsx"') &&
-  dashSrc.includes('import SectionHeader from "./primitives/SectionHeader.jsx"'));
+  // v6.5.5: the orchestrator renders neither SourceBox nor SectionHeader itself any more (both
+  // render only inside sections), so the imports were pruned — re-pinned from "imports both"
+  // to "imports only what it renders", the one-home property unchanged.
+  dashSrc.includes('import { DataModeBadge } from "./primitives/SourceBox.jsx"') &&
+  !/SectionHeader/.test(dashSrc.replace(/\/\/[^\n]*|\/\*[\s\S]*?\*\//g, "")));
 
 // ═══════════ [48] UI-OVERHAUL wave 5 (tasks 3.1-3.3) — strip, quality, digest ═══════════
 // Three more verbatim moves, same separation contract: the modules render what the
@@ -6161,7 +6164,9 @@ ok("cg: one home each — no inline definitions left in the orchestrator",
   !/\nconst CollapsedGroup = /.test(dashSrc) && !/\nconst IllustrativeChip = /.test(dashSrc) &&
   !/\nconst ILLUS_HATCH = /.test(dashSrc) && !/\nconst isIllustrative = /.test(dashSrc) &&
   dashSrc.includes('import CollapsedGroup from "./primitives/CollapsedGroup.jsx"') &&
-  dashSrc.includes('import { ILLUS_HATCH, IllustrativeChip, isIllustrative } from "./primitives/Illustrative.jsx"'));
+  // v6.5.5: ILLUS_HATCH/IllustrativeChip render only inside sections — the orchestrator keeps
+  // the one name it reads (isIllustrative, for demoted()); re-pinned to the pruned import.
+  dashSrc.includes('import { isIllustrative } from "./primitives/Illustrative.jsx"'));
 ok("cg: the disclosure contract survives the move — aria-expanded, count-while-closed, chip default",
   cgSrc.includes("aria-expanded={open}") && cgSrc.includes("`▸ +${count}`") &&
   cgSrc.includes("chip = true") && cgSrc.includes("defaultOpen = false") &&
@@ -11918,6 +11923,32 @@ console.log("\n[83] Simple altitude — fs-xxl Hold, fs-body sentence, one-block
     /\{simple\?"Track record":"History"\}/.test(dash) &&
     /\{simple\?"Why MacroDash":"Difference"\}/.test(dash) &&
     /Share this page/.test(dash));
+}
+
+// ---- 84. v6.5.5 — dashboard.jsx decomposition: dead code OUT first (the v3.73 Divider rule) ----
+// The owner's decomposition map proposed RELOCATING useCountdown to src/hooks/; the verification
+// pass found it had no consumer anywhere (the IPO strip it served was cut in v3.43), along with
+// three colour helpers whose Mag-10 grid was cut the same release, and a recharts import
+// whose every name was unused in this file. Dead code is deleted and its absence pinned, never
+// moved — a relocated dead hook is a rot vector with a new address.
+{
+  console.log("\n[84] v6.5.5 — dead code deleted from the orchestrator, not relocated");
+  const code = dashSrc.replace(/\/\/[^\n]*|\/\*[\s\S]*?\*\//g, "");
+  ok("[84] useCountdown/approxCountdown are gone from every UI surface (no consumer existed)",
+    !/useCountdown|approxCountdown/.test(uiSrc.replace(/\/\/[^\n]*|\/\*[\s\S]*?\*\//g, "")) &&
+    !existsSync(new URL("../src/hooks/useCountdown.js", import.meta.url)));
+  ok("[84] peColor/marginColor/yoyColor are gone (their Mag-10 consumer was cut in v3.43)",
+    !/\b(peColor|marginColor|yoyColor)\b/.test(code));
+  ok("[84] the orchestrator imports nothing from recharts — charts render only inside sections",
+    !/from ["']recharts["']/.test(code) && /from ["']recharts["']/.test(mdSrc));
+  ok("[84] every import name the orchestrator declares is USED at least once in its own code",
+    (() => {
+      const imp = [...code.matchAll(/^import\s+(?:(\w+)\s*,?\s*)?(?:\{([^}]*)\})?\s*from\s+"[^"]+"/gm)];
+      const names = imp.flatMap(m => [m[1], ...(m[2] || "").split(",").map(x => x.trim().split(/\s+as\s+/).pop())]).filter(Boolean);
+      const unused = names.filter(n => (code.match(new RegExp("\\b" + n.replace(/[$]/g, "\\console.log(`\n=== SMOKE TEST: ${pass} passed, ${fail} failed ===`);") + "\\b", "g")) || []).length < 2);
+      if (unused.length) console.log("    unused imports:", unused.join(", "));
+      return names.length > 20 && unused.length === 0;
+    })());
 }
 
 console.log(`\n=== SMOKE TEST: ${pass} passed, ${fail} failed ===`);
