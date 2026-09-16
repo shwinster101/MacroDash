@@ -5,7 +5,7 @@ answers *"is it safe to be in the market?"* from live macro + market + sentiment
 data. Single-page React app on Cloudflare Pages, with live data assembled at the
 edge by Pages Functions and cached in KV.
 
-**v6.5.5 — useful learning behind the compact face.** Owner follow-up restores market cap
+**v6.5.6 — useful learning behind the compact face.** Relabelled from the draft v6.5.5 after #40 shipped that version. Owner follow-up restores market cap
 to Simple profiles and makes each entire card open a three-bullet company FactSheet.
 “Return this year” replaces YTD on the profile, with a visible learning prompt.
 The sheet explains the business, size, return and selected fundamental with individual dates.
