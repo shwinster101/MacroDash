@@ -44,3 +44,5 @@ vulnerabilities. Build succeeds with the pre-existing bundle-size warning.
 Main rechecked at `9bcb44d` after validation; no further drift. No unmerged paths
 remain. Both learning and decomposition guards pass together, including the new
 version metadata pins and the company-card keyboard/mobile checks.
+
+Validated integration commit: `beb6420`; version relabel commit: `2914f44`.
