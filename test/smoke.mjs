@@ -6,7 +6,8 @@
 
 import { existsSync, readdirSync } from "node:fs";
 import { readFileSync } from "node:fs";
-import { MOCK_DATA } from "../src/mockData.js"; // v6.5.5: the mock baseline, imported not source-sliced
+import { MOCK_DATA } from "../src/mockData.js";
+import { evalAlert, applyAlertPrefs, alertPrefsOf, ALERT_PREFS_KEY } from "../src/alertEngine.js"; // v6.5.5: the engine, imported not source-lifted // v6.5.5: the mock baseline, imported not source-sliced
 import { mergeLiveOverMock, SOURCES, isStale, cadenceOf, parseObsDate, isMarketHoliday, MARKET_HOLIDAYS, DERIVED_OF as DERIVED_OF_SRC, DERIVED_EXEMPT, govAsOf } from "../src/sources.js";
 import { computeFiveWhys, isMacroMaterial } from "../src/fiveWhys.js";
 import { HEADLINE_CATEGORIES, MACRO_TERMS, categoryOf, rankHeadlines, scoreHeadline,
@@ -3935,13 +3936,9 @@ ok("confidence: unavailable factors are NAMED on the hero — 'N of 6' without s
 console.log("\n[27] FEAT-ALERT-EVAL — evaluated alerts, gated on live data");
 // dashboard.jsx is JSX, so Node cannot import it — lift the pure evaluator (and the real
 // ALERT_METRICS table it reads) out by source, the same technique MOCK_DATA uses above.
-const _am = dashSrc.indexOf("const ALERT_METRICS={");
-const _ae = dashSrc.indexOf("\n};", _am) + 3;
-const _ef = dashSrc.indexOf("export function evalAlert(");
-const _ee = dashSrc.indexOf("\n}", dashSrc.indexOf("return{state:hit", _ef)) + 2;
-const evalAlert = new Function(
-  dashSrc.slice(_am, _ae) + dashSrc.slice(_ef, _ee).replace("export function", "function") +
-  "\nreturn evalAlert;")();
+// v6.5.5: the engine lives in src/alertEngine.js and is IMPORTED (see the import block) — the
+// old `new Function` lift over four literal markers in dashSrc is retired.
+const alertEngineSrc = readSrc("../src/alertEngine.js");
 // FEAT-FLIP (v3.53): lift the band table + verdictFrom + computeRegime + flipConditions the
 // same way (JSX cannot be imported). Lifting the REAL table is the point — these tests prove
 // the vote and the flip distances read ONE expression of each edge.
@@ -3996,12 +3993,7 @@ ok("alert: the merged badge is red when anything FIRED (a trip outranks a blind 
    concentration on Power, all of it operating one-session useState. The overlay design is
    the load-bearing choice and is RUN here: storing the array would silently drop every
    alert a later release ADDS (the v3.55 arrival problem in reverse). */
-const alertPrefsLifted = (() => {
-  const i = dashSrc.indexOf("const ALERT_PREFS_KEY=");
-  const j = dashSrc.indexOf("\n}", dashSrc.indexOf("function alertPrefsOf"));
-  if (i < 0 || j < 0) throw new Error("smoke: alert-prefs markers not found");
-  return new Function(dashSrc.slice(i, j + 2) + "\nreturn {applyAlertPrefs, alertPrefsOf, ALERT_PREFS_KEY};")();
-})();
+const alertPrefsLifted = { applyAlertPrefs, alertPrefsOf, ALERT_PREFS_KEY }; // v6.5.5: real imports
 {
   const { applyAlertPrefs, alertPrefsOf, ALERT_PREFS_KEY } = alertPrefsLifted;
   const DEFS = [
@@ -4377,10 +4369,11 @@ ok("30y: the tile states the 5% reference as a REFERENCE, and never asserts a ca
 ok("30y: the tile names the inversion explicitly when the spread goes negative",
   /INVERTED/.test(mdSrc));
 // The alerts ride FEAT-ALERT-EVAL: live-gated, BLIND when not.
+// v6.5.5: re-pointed from dashSrc to alertEngineSrc — the table and the defaults moved home.
 ok("30y: both alerts are wired to real metrics, so they evaluate rather than sit inert",
-  /treasury30y: \{fields:\["thirtyYear"\]/.test(dashSrc) &&
-  /term10s30s:\s*\{fields:\["thirtyYear","tenYear"\]/.test(dashSrc));
-ok("30y: the 5.2% alert exists and is active", /30Y Above 5\.2%/.test(dashSrc));
+  /treasury30y: \{fields:\["thirtyYear"\]/.test(alertEngineSrc) &&
+  /term10s30s:\s*\{fields:\["thirtyYear","tenYear"\]/.test(alertEngineSrc));
+ok("30y: the 5.2% alert exists and is active", /30Y Above 5\.2%/.test(alertEngineSrc));
 ok("30y: the spread alert needs BOTH legs live — one dead leg must blind it, not clear it",
   evalAlert({ metric: "term10s30s", condition: "below", value: 0, active: true },
     { crossAsset: { term: { spread10s30s: -0.2 } } },
@@ -6260,9 +6253,18 @@ ok("wave12: presentation only — the sections import no computation, hook, or s
     const code = src.replace(/\/\/[^\n]*|\/\*[\s\S]*?\*\//g, "");
     return !/useMarketData|computeRegime|buildEvidenceSet|evalAlert|localStorage/.test(code);
   }));
-ok("wave12: evaluation stays home — evalAlert/ALERT_METRICS/DEFAULT_ALERTS remain in the orchestrator",
-  dashSrc.includes("export function evalAlert") && dashSrc.includes("const ALERT_METRICS=") &&
-  dashSrc.includes("const DEFAULT_ALERTS=[") && !/evalAlert\s*\(/.test(alSrc.replace(/\/\/[^\n]*/g,"")));
+// v6.5.5 re-pin: the DEFINITIONS moved to src/alertEngine.js (pure, one home); the wave-12
+// contract was always about WHO EVALUATES — the orchestrator calls evalAlert per render and
+// owns the state, Alerts.jsx never evaluates. Both halves are pinned; the definitions' absence
+// from the orchestrator is the new one-home property.
+ok("wave12: evaluation stays home — the orchestrator CALLS evalAlert and owns alert state; Alerts.jsx never evaluates; the definitions have ONE home",
+  dashSrc.includes('import { evalAlert, DEFAULT_ALERTS, applyAlertPrefs, alertPrefsOf, ALERT_PREFS_KEY } from "./alertEngine.js"') &&
+  dashSrc.includes("evalAlert(a,d,modeOf)") &&
+  !/\nexport function evalAlert|\nconst ALERT_METRICS=|\nconst DEFAULT_ALERTS=\[/.test(dashSrc) &&
+  /^export const ALERT_METRICS=\{/m.test(alertEngineSrc) && /^export function evalAlert\(/m.test(alertEngineSrc) &&
+  /^export const DEFAULT_ALERTS=\[/m.test(alertEngineSrc) &&
+  !/^import\s/m.test(alertEngineSrc) && !/useState|useEffect|localStorage|from ["']react["']/.test(alertEngineSrc.replace(/\/\/[^\n]*|\/\*[\s\S]*?\*\//g, "")) &&
+  !/evalAlert\s*\(/.test(alSrc.replace(/\/\/[^\n]*/g,"")));
 ok("wave12: the aiEcon module is PURE (Node-importable) and the section imports it",
   !/from ['\"]react['\"]/.test(aiEconSrc) &&
   aiSrc.includes('import { GPU_PRICING, TOKEN_EFFICIENCY, tokenScissors, tokenDemand, HYPERSCALER_CAPEX } from "../aiEcon.js"'));
@@ -7728,8 +7730,8 @@ console.log("\n[58] FEAT-TT-MAG7 — deck panel, basket average, honesty gates")
       return e.state === "blind" && /threeMonth/.test(e.why) &&
         evalAlert({ metric: "term10y3m", condition: "below", value: 0 }, v384D, v384Live).state === "triggered";
     })());
-  ok("v388: both new alerts ship OFF by default",
-    /id:8[^}]*credittail[^}]*active:false/.test(dashSrc) && /id:9[^}]*term10y3m[^}]*active:false/.test(dashSrc));
+  ok("v388: both new alerts ship OFF by default", // v6.5.5: re-pointed to alertEngineSrc (the defaults' home)
+    /id:8[^}]*credittail[^}]*active:false/.test(alertEngineSrc) && /id:9[^}]*term10y3m[^}]*active:false/.test(alertEngineSrc));
   // NON-VOTING arrival (the NFCI/30Y rule): not in the band table, not a factor, not in tt-v1.
   ok("v388: none of the four appears in REGIME_BAND_TABLE, the factor lists, or ttReadout",
     (() => {
