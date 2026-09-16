@@ -130,3 +130,5 @@ Final `REQUIRE_BROWSER=1 npm run gates` passed with Node 22 and local Chrome:
 2,356 smoke, 309 terminal render, 342 public render, and zero production dependency
 vulnerabilities. Production build passed with the existing bundle-size warning.
 This remains draft PR #39 against v6.5.4; no merge or production deployment occurred.
+
+Company-card implementation commit: `a792bfa` (after the full-word correction `a40da23`).
