@@ -1,23 +1,22 @@
-import { useState, useEffect, useCallback, useMemo, useRef } from "react"; // Fragment left with MarketDetail (wave 9)
-import { LineChart, Line, BarChart, Bar, Cell, AreaChart, Area, XAxis, YAxis, Tooltip, ResponsiveContainer, ReferenceLine } from "recharts";
+import { useState, useEffect, useMemo, useRef } from "react"; // Fragment left with MarketDetail (wave 9)
 import { useMarketData } from "./useMarketData.js"; // FEAT-204 wiring
+import { MOCK_DATA } from "./mockData.js"; // v6.5.5: the mock baseline, one home (was inline here)
 import { computeFiveWhys } from "./fiveWhys.js"; // v2.5: rule-based 5 Whys ($0, derived from live data)
-import { NFCI_TIGHT, NFCI_LOOSE, REGIME_BAND_TABLE, REGIME_QUORUM, verdictFrom, computeRegime, flipConditions, regimeFactors, voteStyle } from "./regime.js"; // C1 (v3.60): the extracted engine; voteStyle = FEAT-NEUTRAL (v3.62)
 import { buildEvidenceSet, simpleVerdict, simpleCards, simpleFlipLine, factorExclusions, fieldMode, FACTOR_FIELD } from "./evidence.js"; // C1 (v3.60): the typed contract
 import { holdReason, WHYS_FOLD_LABEL, ABOUT_FOLD_LABEL } from "./simpleFace.js"; // T1: Simple FACE registry
 import { LASTVALID_KEY, summarizeEvidence, compareEvidence } from "./whatChanged.js"; // C4 (v3.60)
-import { isStale, cadenceOf, parseObsDate, nextFomcDate, etYmd } from "./sources.js"; // FEAT-R3: per-tile, cadence-aware staleness + shared market calendar; v3.99: curated FOMC calendar
+import { parseObsDate, nextFomcDate, etYmd } from "./sources.js"; // FEAT-R3: per-tile, cadence-aware staleness + shared market calendar; v3.99: curated FOMC calendar
 import { computeMacroFlip } from "./ttReadout.js"; // FEAT-331: Macro Flip circuit
 import { callFromEvidence, formatMacroCallPaste, formatMacroShareCard, callEdition } from "./macroCall.js"; // v5.5 frozen call + share card
+import { evalAlert, DEFAULT_ALERTS, applyAlertPrefs, alertPrefsOf, ALERT_PREFS_KEY } from "./alertEngine.js"; // v6.5.5: FEAT-ALERT-EVAL definitions, one home; evaluation still runs HERE
 import { closeReadLine } from "./closeRead.js"; // v6.2: the 6pm close read — ONE line builder, the ptModelRows rule
 import { fmt, pctColor } from "./format.js"; // task 1.3/3.1: one shared copy
 import RegimeBand, { WITHHELD_LABEL } from "./sections/RegimeBand.jsx"; // task 1.3: the verdict band + its vocabulary
 import FiveWhys, { flipChipOf } from "./sections/FiveWhys.jsx"; // task 1.4: presentation only — computeFiveWhys stays here
-import SourceBox, { DataModeBadge } from "./primitives/SourceBox.jsx"; // task 1.4
-import SectionHeader from "./primitives/SectionHeader.jsx"; // task 1.4
+import { DataModeBadge } from "./primitives/SourceBox.jsx"; // task 1.4 (SourceBox + SectionHeader render only inside sections now — v6.5.5 dead-import prune)
 import CollapsedGroup from "./primitives/CollapsedGroup.jsx"; // task 5.1
-import { ILLUS_HATCH, IllustrativeChip, isIllustrative } from "./primitives/Illustrative.jsx"; // task 5.1
-import { Badge, Label } from "./primitives/atoms.jsx"; // wave 9
+import { isIllustrative } from "./primitives/Illustrative.jsx"; // task 5.1 (ILLUS_HATCH/IllustrativeChip render only inside sections — v6.5.5 dead-import prune)
+import { Badge } from "./primitives/atoms.jsx"; // wave 9 (Label renders only inside sections — v6.5.5 dead-import prune)
 import MarketDetail from "./sections/MarketDetail.jsx"; // task 5.2: presentation only
 import MacroRegime from "./sections/MacroRegime.jsx"; // task 5.3: presentation only
 import Headwinds from "./sections/Headwinds.jsx"; // task 5.4: presentation only
@@ -28,11 +27,15 @@ import Watchlist from "./sections/Watchlist.jsx"; // task 7.4: A4 gate stays at 
 import TerminalDock from "./sections/TerminalDock.jsx"; // v4.1.7: the dock (Simple); fetch + nav stay here
 import SimpleCards from "./sections/SimpleCards.jsx"; // v4.0: Simple parameter cards (presentation only)
 import StockSpotlight from "./sections/StockSpotlight.jsx"; // v6.5.0: the NBIS × Established-growth widget (presentation only; fetch stays here)
+import DriversMatrix from "./sections/DriversMatrix.jsx"; // v6.5.5: the C3 factor cards (presentation only; the !simple gate + landmark stay here)
 import StickyNav from "./sections/StickyNav.jsx"; // task 9.2: viewport-tracked active state
 import MacroStrip from "./sections/MacroStrip.jsx"; // task 3.1: presentation only
 import SignalQuality from "./sections/SignalQuality.jsx"; // task 3.2: presentation only
 import WhatChanged from "./sections/WhatChanged.jsx"; // task 3.3: presentation only
-import { publicDashboardUrl, liveReadCaption, publicMarketClock, publicMarketClockLine, simpleCallLabel, spyMoveDirection } from "./publicCopy.js";
+import { publicDashboardUrl, liveReadCaption, publicMarketClock, publicMarketClockLine, simpleCallLabel } from "./publicCopy.js";
+import UndoToast, { useUndoToast } from "./primitives/UndoToast.jsx"; // v6.5.5: the toast stack, one home
+import SpyTapeBadge from "./primitives/SpyTapeBadge.jsx"; // v6.5.5: TODAY/LAST SPY (Degen only; the call site gates it)
+import { MacroFlipBanner, PanicOverrideBanner } from "./sections/CallBanners.jsx"; // v6.5.5: presentation only; the banner ladder stays here
 
 // ─── DESIGN TOKENS ──────────────────────────────────────────────────────────
 // UI-OVERHAUL Slice 1 (task 1.1): tokens live in src/design-tokens.js — the ONE
@@ -56,102 +59,9 @@ if (!DT || !Object.keys(DT).length)
 // ─── ILLUSTRATIVE TREATMENT + COLLAPSED GROUP — extracted to src/primitives/
 // (Illustrative.jsx + CollapsedGroup.jsx, task 5.1). One idiom, one home each.
 
-// ─── DATA ─────────────────────────────────────────────────────────────────
-const MOCK_DATA = {
-  lastRefresh:"2026-05-23 16:15 ET", session:"CLOSE",
-  nextRefresh:"2026-05-26 09:35 ET",
-  marketPulse:{
-    spy:{ price:745.83, changePct:0.29, ytd:8.74, pe:22.4, ma100:718.2, ma200:692.4,
-          series:[686,688,692,695,700,698,704,708,712,710,715,718,720,722,719,724,728,732,740,746] },
-    spx:{ index:7473, prevClose:7415 }, // FEAT-202: S&P 500 index (FRED SP500) — live merge target
-    qqq:{ price:717.66, changePct:0.44, ytd:15.50 },
-    vix:{ current:18.4, weekChg:-13.2, series:[24,22,21,20,22,21,19,18] },
-    fearGreed:{ score:58, label:"Greed", prevWeek:44 },
-    // DEC-31 (v3.2): Put/Call field removed — CBOE killed the free feed in 2019; retirement noted in footer.
-    // FEAT-NEWS: top market headline — live overlay from RSS (marketHeadline/Source); mock is the fallback.
-    headline:{ text:"No live headline feed", source:"—", topJson:"[]" },
-  },
-  crossAsset:{
-    treasury10y:{ current:4.32, d1:+0.08, w1:+0.12, m1:-0.15, yellowBand:0.10, series:[4.52,4.48,4.41,4.35,4.29,4.22,4.18,4.24,4.28,4.32] },
-    // FEAT-30Y (v3.55): the long end + the 10s30s term-premium spread. Mock baseline only —
-    // live values overlay via SOURCES (DGS30 + the derived spread), exactly like the 10Y.
-    treasury30y:{ current:5.18, d1:+0.02, w1:+0.09, m1:+0.21, series:[4.92,4.97,5.01,5.04,5.09,5.12,5.18,5.14,5.16,5.18] },
-    // FEAT-SAHM (v3.84): 3M bill + the 10y–3m recession lead. Mock spread is POSITIVE-normal
-    // on purpose — the demo must not fake a recession signal (the NFCI abstain precedent).
-    treasury3m:{ current:3.95 },
-    term:{ spread10s30s:0.86, series:[0.40,0.49,0.60,0.69,0.80,0.90,1.00,0.90,0.88,0.86],
-           spread10y3m:0.37, series10y3m:[0.10,0.14,0.18,0.22,0.25,0.28,0.30,0.33,0.35,0.37] },
-    wti:{         current:68.42, d1pct:-0.8, w1pct:-2.1, m1pct:+3.2, yellowBand:1.0, series:[64,65,66,67,69,70,69,68,69,68] },
-    btc:{         current:109200,d1pct:+1.2, w1pct:+4.8, m1pct:+12.1,yellowBand:2.0, series:[88000,90000,92000,95000,98000,100000,104000,106000,108000,109200] },
-  },
-  macro:{
-    // v3.99: targetLower/Upper are the DAILY Fed target range (DFEDTARU/DFEDTARL) — the
-    // headline number; `rate` is FEDFUNDS, the monthly-averaged EFFECTIVE rate, which lags a
-    // decision by design. `nextFOMC` here is the mock baseline ONLY and WILL expire — the
-    // real countdown falls through to the curated FOMC_MEETINGS calendar in sources.js, which
-    // is precisely why a rotted date can no longer reach the strip.
-    fedFunds:{ rate:3.625, targetLower:3.50, targetUpper:3.75, nextFOMC:"2026-06-17", daysUntil:14, odds:{ hold:84, cut:13, hike:3 } }, // odds: Kalshi FOMC market — LIVE since v2.6.3 (fetchRateOdds); these are the mock baseline only
-    cpi:{ headline:3.8, core:2.8, nextRelease:"2026-06-11", trend:[3.2,3.4,3.5,3.6,3.7,3.8] },
-    pce:{ headline:3.1, core:2.9, nextRelease:"2026-06-26", trend:[2.6,2.7,2.8,2.9,3.0,3.1] }, // Fed's preferred inflation gauge (FRED PCEPI/PCEPILFE — mock until YoY wired)
-    // sahm 0.13 = deliberately CLEAR (trigger is >= 0.50) — the demo abstains, never a verdict.
-    unemployment:{ national:4.3, entryLevel:6.1, lfpr:62.4, sahm:0.13, trend:[3.8,3.9,4.0,4.1,4.2,4.3] },
-    savings:{ rate:4.2, trend:[4.6,4.5,4.4,4.3,4.3,4.2] }, // FRED PSAVERT — personal saving rate, % of disposable income
-    mortgage:{ national:6.51, peoria:6.31 },
-    // FEAT-CCC (v3.84): tail 9.4 sits in the NEUTRAL zone (calm <7, stress >12) on purpose —
-    // the demo shows a gauge that abstains in ordinary conditions (the NFCI mock precedent).
-    credit:{ hy:3.85, ig:0.92, spread:2.93, spreadD1:+0.04,
-             series:[2.80,2.78,2.82,2.85,2.88,2.84,2.87,2.90,2.91,2.93],
-             tail:9.4, tailD1:+0.05,
-             tailSeries:[9.1,9.0,9.2,9.3,9.2,9.1,9.3,9.4,9.3,9.4] },
-    // FEAT-NFCI (v3.43): Chicago Fed National Financial Conditions Index (weekly).
-    // Standardized so ZERO is the historical average: positive = tighter than average,
-    // negative = looser. The post-GFC era has generally run negative (loose).
-    nfci:{ current:-0.42, w1:+0.03, leverage:-0.31,  // leverage subindex — context only (8/28)
-           series:[-0.55,-0.53,-0.50,-0.49,-0.47,-0.46,-0.45,-0.44,-0.45,-0.42] },
-    housing:{ peoria:218400 },
-    shillerPe:{ current:42.78, mean:17.4, median:16.1, ath:44.19, pctOfAth:96.8 },
-  },
-  // PERSONAL CONVICTION WATCHLIST — names + tiers only (no live prices: FRED can't
-  // source individual equities, and the stack is FRED-only $0). Pure manual list.
-  // ⚠️ EXAMPLE DATA — replace `ticker`/`name`/`thesis` with your real S/A-tier holdings.
-  watchlist:[
-    { ticker:"NVDA", name:"NVIDIA",        tier:"S", thesis:"AI compute monopoly; data-center rev compounding" },
-    { ticker:"MSFT", name:"Microsoft",     tier:"S", thesis:"Azure + Copilot moat; durable FCF" },
-    { ticker:"ASML", name:"ASML Holding",  tier:"S", thesis:"EUV lithography sole-supplier chokepoint" },
-    { ticker:"GOOGL",name:"Alphabet",      tier:"A", thesis:"Search cash engine funding AI optionality" },
-    { ticker:"AMZN", name:"Amazon",        tier:"A", thesis:"AWS margins + retail operating leverage" },
-    { ticker:"TSM",  name:"TSMC",          tier:"A", thesis:"Foundry leader; pricing power on leading nodes" },
-  ],
-  headwinds:[
-    { id:1, name:"AI CapEx ROI Gap",    severity:"High", trend:"worsening", claim:"$705B FY26 capex vs $215B AI revenue. No hyperscaler can trace $X spent → $Y gained.", triggers:["AI rev <25% of CapEx","Hyperscaler guide-down"] },
-    { id:2, name:"US Debt Service",     severity:"High", trend:"worsening", claim:"Interest payments ~18% of federal revenue. Crowding-out accelerating.", triggers:["10Y sustained >5%","Debt service >25% revenue"] },
-    { id:3, name:"SPY Concentration",   severity:"Med",  trend:"stable",    claim:"Top-10 names = 38% of SPY weight. Near 2000 dot-com peak levels.", triggers:["Top-10 weight >42%"] },
-    { id:4, name:"CRE / CMBS Stress",   severity:"Med",  trend:"stable",    claim:"CMBS delinquency 5.8%; office vacancy >20% in major metros.", triggers:["CMBS >8%","Bank NPL >4%"] },
-    { id:5, name:"Labor Deceleration",  severity:"Low",  trend:"improving", claim:"Entry-level unemployment 6.1%; LFPR flat. Cooling without crashing.", triggers:["U-3 >5%","NFP <50K ×2"] },
-  ],
-  // Headwinds are a CURATED thesis register (no live feed) — this is the last-reviewed date,
-  // surfaced in the UI + the 5 Whys so quarter-old claims aren't presented as today's tape.
-  headwindsAsOf:"2026-Q1",
-  // AI TOKEN ECONOMICS (the moat) — live overlay from OpenRouter (tokenBlendedMtok/Trend/ModelsJson);
-  // mock is the fallback baseline. $/Mtok = blended frontier-basket price (3:1 in:out). Falling = the
-  // the P leg beside GPU $/hr (volDay/volTrend are the Q leg, v3.85; P×Q is the demand read).
-  tokenomics:{
-    blendedMtok:6.20,
-    trend:[9.5,8.8,8.0,7.2,6.7,6.20], // oldest→newest; the decline IS the signal
-    modelsJson:'[{"name":"Claude Sonnet","mtok":9.0},{"name":"GPT frontier","mtok":7.5},{"name":"Gemini Pro","mtok":6.2},{"name":"Llama large","mtok":2.4},{"name":"DeepSeek","mtok":1.1}]',
-    // FEAT-TOKVOL (v3.85): the Q leg. 6 pts = 5 intervals — below minWeeks like the price
-    // trend above, so the mock P×Q read is "window too short" by construction (never a
-    // fabricated demand verdict; the demand line is also illustrative-suppressed).
-    volDay:2.95, volTrend:[2.1,2.3,2.4,2.6,2.8,2.95],
-  },
-  // MAG 10 live prices (Finnhub) — JSON passthrough. The per-ticker quote strip was CUT in
-  // v3.51 (public audit, Yahoo-dupe test), so nothing renders these today; the field stays
-  // mapped because the same Finnhub pull feeds QQQ and dropping it would change the fetch.
-  // '[]' = no live prices yet (mock baseline).
-  mag10PricesJson:"[]",
-  // fiveWhys: now computed at render time by computeFiveWhys() (src/fiveWhys.js) from live data.
-  sessionDelta:{ alertsDelta:0, regimeDelta:"none", vixPct:-2.1, tenYBps:-4, spyPct:+0.29 },
-};
+// ─── DATA — MOCK_DATA extracted VERBATIM to src/mockData.js (v6.5.5, Zone 1 of the
+// decomposition). Pure data, imported here and handed to useMarketData unchanged; smoke now
+// IMPORTS it instead of slicing the orchestrator's source (docs/RISKS.md A4, owner decision).
 // ─── REGIME ENGINE: extracted to src/regime.js (C1, v3.60) ────────────────
 // The band table, verdictFrom, computeRegime, flipConditions, regimeFactors and the NFCI
 // thresholds now live in the pure module so evidence.js and Node tests import them directly.
@@ -172,9 +82,8 @@ function etSession(now = new Date()) {
 // fmt moved to src/format.js (task 1.3) — one copy, shared with extracted sections.
 // arrow moved into src/primitives/DirTile.jsx (its only consumer, wave 9).
 // pctColor moved to src/format.js (task 3.1) — one copy, shared with MacroStrip.
-const peColor=(pe)=>pe>80?T.red:pe>40?T.yellow:pe>25?T.textPrimary:T.green;
-const marginColor=(m)=>m===null?T.textMuted:m>30?T.green:m>15?T.textPrimary:m>5?T.yellow:T.red;
-const yoyColor=(g)=>g>50?T.green:g>15?T.green:g>0?T.textPrimary:g>=0?T.yellow:T.red;
+// peColor/marginColor/yoyColor DELETED (v6.5.5): their consumers (the Mag-10 fundamentals
+// grid) were cut in v3.43 and the helpers rendered nowhere since — the Divider rule.
 
 // Returns `count` trading-day label strings (oldest→newest) anchored at anchorDateStr.
 // Used to give the SPY sparkline tooltip real dates instead of index numbers.
@@ -196,227 +105,25 @@ function spyDatesFrom(anchorDateStr, count) {
 // ─── PRIMITIVE COMPONENTS — Badge/Label extracted to src/primitives/atoms.jsx
 // (wave 9; Divider was rendered nowhere and was deleted, not moved).
 
-// UndoToast (FEAT-166: 5s mobile / 4s desktop). Stacks multiple toasts so a rapid second
-// delete never overwrites the first one's undo — each toast has its own id, timer, and dismiss.
-function useUndoToast() {
-  const [toasts, setToasts] = useState([]);
-  const dismiss = useCallback((id) => setToasts(prev => prev.filter(t => t.id !== id)), []);
-  const show = useCallback((msg, onUndo) => {
-    const id = `${Date.now()}-${Math.random()}`;
-    setToasts(prev => [...prev, { id, msg, onUndo }]);
-    const delay = (typeof window !== "undefined" && window.innerWidth < 768) ? 5000 : 4000; // FEAT-166
-    setTimeout(() => setToasts(prev => prev.filter(t => t.id !== id)), delay);
-  }, []);
-  return { toasts, show, dismiss };
-}
-const UndoToast=({toasts, dismiss})=>{
-  if(!toasts || !toasts.length) return null;
-  return(
-    <div style={{position:"fixed",bottom:80,left:"50%",transform:"translateX(-50%)",display:"flex",flexDirection:"column",gap:8,zIndex:999}}>
-      {toasts.map(t=>(
-        <div key={t.id} style={{background:T.surfaceHigh,border:`1px solid ${T.amber}66`,borderRadius:6,padding:"10px 16px",display:"flex",gap:12,alignItems:"center",boxShadow:"0 4px 20px #00000088"}}>
-          <span style={{fontFamily:T.fontMono,fontSize:11,color:T.textPrimary}}>{t.msg}</span>
-          <button onClick={()=>{t.onUndo();dismiss(t.id);}} style={{fontFamily:T.fontMono,fontSize:11,background:T.amber,border:"none",color:"#000",padding:"3px 10px",borderRadius:3,cursor:"pointer",fontWeight:700}}>UNDO</button>
-          <button onClick={()=>dismiss(t.id)} style={{fontFamily:T.fontMono,fontSize:11,background:"none",border:"none",color:T.textMuted,cursor:"pointer"}}>✕</button>
-        </div>
-      ))}
-    </div>
-  );
-};
-
+// UndoToast + useUndoToast extracted to src/primitives/UndoToast.jsx (v6.5.5, Zone 3).
 // DirTile extracted to src/primitives/DirTile.jsx (wave 9).
 
-// Degen-only SPY session move. It keeps the old ±0.5% arithmetic but no longer borrows
-// the macro call's moon vocabulary; an unavailable observation renders nothing, never FLAT.
-const SpyTapeBadge = ({ spyChangePct, mode, noSessionDay = false }) => {
-  // A stale observation is still the last completed session's tape, so name it LAST rather
-  // than hiding it on weekends. MOCK remains suppressed: illustrative data is not a tape.
-  if (mode !== "LIVE" && mode !== "CACHED" && mode !== "STALE") return null;
-  const direction = spyMoveDirection(spyChangePct);
-  if (!direction) return null;
-  const lastSession = noSessionDay || mode === "STALE";
-  const color = direction === "UP" ? T.green : direction === "DOWN" ? T.red : T.amber;
-  return (
-    <div
-      title={`${lastSession ? "Last session's" : "Today's"} SPY move — market tape only, not the macro backdrop call.`}
-      style={{
-        display:"flex", alignItems:"center", gap:6, flexShrink:0,
-        background: color + "18",
-        border: `1px solid ${color}55`,
-        borderRadius: 20,
-        padding: "4px 12px",
-        boxShadow: `0 0 8px ${color}33`,
-        cursor: "default",
-        userSelect: "none",
-        transition: "all 0.2s",
-      }}>
-      <div style={{ fontFamily:T.fontMono, fontSize:7, color:T.textMuted, letterSpacing:"0.1em", whiteSpace:"nowrap" }}>{lastSession?"LAST SPY":"TODAY SPY"}</div>
-      <div style={{ fontFamily:T.fontMono, fontSize:10, fontWeight:700, color, whiteSpace:"nowrap", letterSpacing:"0.04em" }}>
-        {direction}
-      </div>
-    </div>
-  );
-};
+// SpyTapeBadge extracted to src/primitives/SpyTapeBadge.jsx (v6.5.5, Zone 3).
 
-// ─── IPO COUNTDOWN TO LAUNCH STRIP ───────────────────────────────────────
-function useCountdown(targetDate, isExact) {
-  const [now, setNow] = useState(Date.now());
-  useEffect(() => {
-    if (!isExact) return;
-    if (targetDate.getTime() - Date.now() <= 0) return; // already launched: never start ticking
-    const id = setInterval(() => {
-      setNow(Date.now());
-      if (targetDate.getTime() - Date.now() <= 0) clearInterval(id); // stop once it reaches zero
-    }, 1000);
-    return () => clearInterval(id);
-  }, [isExact, targetDate]);
-  const diff = targetDate.getTime() - now;
-  if (diff <= 0) return { expired: true, text: "LAUNCHED", d:0, h:0, m:0, s:0 };
-  const d = Math.floor(diff / 86400000);
-  const h = Math.floor((diff % 86400000) / 3600000);
-  const m = Math.floor((diff % 3600000) / 60000);
-  const s = Math.floor((diff % 60000) / 1000);
-  return { expired: false, d, h, m, s, text: `${d}d ${String(h).padStart(2,"0")}:${String(m).padStart(2,"0")}:${String(s).padStart(2,"0")}` };
-}
-function approxCountdown(targetDate) {
-  const diff = targetDate.getTime() - Date.now();
-  if (diff <= 0) return "LAUNCHED";
-  const months = Math.round(diff / (30.44 * 86400000));
-  if (months <= 1) return "~1 month";
-  return `~${months} months`;
-}
+// useCountdown/approxCountdown DELETED (v6.5.5): the IPO countdown strip they served was
+// cut in v3.43 (component, data and state); the hook and helper had no consumer since.
 
 // AI cards extracted to src/sections/AIUnitEconomics.jsx (wave 12).
 
-// ─── FEAT-331 · MACRO FLIP BANNER (the TT circuit, surfaced on the page) ──────
-// The maintainer's most consequential circuit lived only in the TT docs. Now it renders
-// from live data: TRIPPED (SPY < 200d AND VIX > 25) = de-risk; ARMED (VIX > 22) = pre-stage.
-// Rendered ONLY when flip is non-null (live+fresh inputs) AND armed/tripped — never rents
-// space at rest, and never fabricates a circuit state on mock/stale data.
-const MacroFlipBanner=({flip})=>{
-  const tripped=flip.tripped===true;
-  const {vix,spy_price,spy_ma200}=flip.inputs;
-  const bg=tripped?DT["regime-off-bg"]:DT["regime-mix-bg"];
-  const fg=tripped?T.red:T.amber;
-  return(
-    <div style={{background:bg,borderBottom:`1px solid ${fg}55`,padding:"7px 20px",display:"flex",alignItems:"center",gap:10,flexWrap:"wrap"}}>
-      <span style={{fontFamily:T.fontMono,fontSize:11,fontWeight:700,color:fg,letterSpacing:"0.04em"}}>
-        {tripped?"⛔ MACRO FLIP TRIPPED":"⚠ MACRO FLIP ARMED"}
-      </span>
-      <span style={{fontFamily:T.fontMono,fontSize:9,color:T.textSecondary}}>
-        {tripped
-          ? `SPY $${spy_price} below 200-DMA $${spy_ma200} · VIX ${vix} > 25 — de-risk protocol`
-          : `VIX ${vix} > 22 · trips if SPY < 200-DMA${spy_ma200!=null?` ($${spy_ma200})`:""} with VIX > 25 — pre-stage GTC buy-to-close`}
-      </span>
-    </div>
-  );
-};
-
-const PanicOverrideBanner=({call,simple=false})=>(
-  <div style={{background:DT["regime-off-bg"],borderBottom:`1px solid ${T.red}55`,padding:"7px 20px",display:"flex",alignItems:"center",gap:10,flexWrap:"wrap"}}>
-    <span style={{fontFamily:T.fontMono,fontSize:11,fontWeight:700,color:T.red,letterSpacing:"0.04em"}}>
-      ⛔ PANIC OVERRIDE · {simple?simpleCallLabel(call):<>{call.headline} {call.emoji} / {call.direction}</>}
-    </span>
-    <span style={{fontFamily:T.fontMono,fontSize:9,color:T.textSecondary}}>
-      Crash circuit confirmed — new risk adds are suspended until the stress signal clears.
-    </span>
-  </div>
-);
+// MacroFlipBanner + PanicOverrideBanner extracted to src/sections/CallBanners.jsx (v6.5.5, Zone 3).
 
 // ─── FEAT-169 · REGIME VERDICT BAND ──────────────────────────────────────
 // Extracted VERBATIM to src/sections/RegimeBand.jsx (UI-OVERHAUL task 1.3).
 
 // FGGauge extracted to src/primitives/FGGauge.jsx (wave 9).
 
-/* FEAT-ALERT-EVAL (v3.52, suite audit) — the alerts EVALUATE, or they say they cannot.
-   The audit called this section "interface theater" for not delivering notifications. The
-   defect was worse and one layer earlier: `triggered` was a hardcoded `false` that NOTHING
-   ever wrote, while the header claimed "Triggers evaluate live data". No evaluation existed
-   at all, so the red dot was unreachable and `activeAlerts` was permanently 0 — a directional
-   claim ("nothing has tripped") asserted by code that had never looked. v3.51 fixed only the
-   DELIVERY half of that sentence and left the evaluation half standing, which is why this is
-   a follow-up rather than a new feature.
-   Evaluation is now real AND rides the v3.1 honesty invariant: a threshold is judged ONLY
-   from LIVE/CACHED, non-stale inputs. A mock or stale input yields BLIND — deliberately
-   distinct from CLEAR, because "this has not tripped" and "I cannot see whether it tripped"
-   are different facts, and only the second is true when the feed is dead. Same asymmetry as
-   the TAILWIND withhold (v3.40) and readiness()'s fail-closed rule (v3.50). */
-const ALERT_METRICS={
-  // `ref` (when present) is the LIVE comparison basis — the SPY/200DMA cross must be judged
-  // against today's actual moving average, not the 692.4 hardcoded when the alert was authored.
-  spy_200ma:   {fields:["spyPrice","spyMa200"], read:(d)=>({v:d.marketPulse.spy.price, ref:d.marketPulse.spy.ma200, u:"$", pre:true}),
-                basisLabel:"live 200-DMA"},
-  vix:         {fields:["vix"],         read:(d)=>({v:d.marketPulse.vix.current})},
-  feargreed:   {fields:["fearGreed"],   read:(d)=>({v:d.marketPulse.fearGreed.score})},
-  treasury10y: {fields:["tenYear"],     read:(d)=>({v:d.crossAsset.treasury10y.current})},
-  // FEAT-30Y (v3.55): the long end. Judged against LIVE data or BLIND — never a stored flag.
-  treasury30y: {fields:["thirtyYear"],  read:(d)=>({v:d.crossAsset.treasury30y.current})},
-  // The 10s30s spread. An INVERSION (below 0) is the condition worth waking for, so this
-  // alert is authored "below 0" rather than as a level — the curve shape, not the yield.
-  term10s30s:  {fields:["thirtyYear","tenYear"], read:(d)=>({v:d.crossAsset.term.spread10s30s})},
-  // FEAT-SAHM (v3.84): the 10y–3m inversion — the two-leg blind rule: one MOCK leg blinds
-  // the alert (a spread judged off one stale leg is a fabricated number).
-  term10y3m:   {fields:["tenYear","threeMonth"], read:(d)=>({v:d.crossAsset.term.spread10y3m})},
-  // FEAT-CCC (v3.84): the junk tail, single-leg.
-  credittail:  {fields:["creditTail"],  read:(d)=>({v:d.macro.credit.tail})},
-  cpi:         {fields:["cpiHeadline"], read:(d)=>({v:d.macro.cpi.headline})},
-};
-export function evalAlert(alert,d,modeOf){
-  const m=ALERT_METRICS[alert.metric];
-  if(!m)return{state:"blind",why:"no live metric is wired to this alert"};
-  // FAIL CLOSED: every input the threshold depends on must be live+fresh, or we cannot judge.
-  const dead=m.fields.filter(f=>{const x=modeOf(f);return x!=="LIVE"&&x!=="CACHED";});
-  if(dead.length)return{state:"blind",why:`${dead.join(" + ")} not live — cannot evaluate`};
-  const {v,ref,u,pre}=m.read(d);
-  const threshold=ref!=null?ref:alert.value;
-  if(!Number.isFinite(v)||!Number.isFinite(threshold))return{state:"blind",why:"value unavailable"};
-  const hit=alert.condition==="below"?v<threshold:v>threshold;
-  const unit=u||alert.unit||"";
-  const fmtv=(n)=>pre?`${unit}${n}`:`${n}${unit}`;
-  return{state:hit?"triggered":"clear",v,threshold,
-    detail:`${fmtv(v)} vs ${fmtv(Math.round(threshold*100)/100)}${m.basisLabel?` (${m.basisLabel})`:""}`};
-}
-// AlertRow moved into src/sections/Alerts.jsx (wave 12) — its only consumer.
-const DEFAULT_ALERTS=[
-  // No `triggered` field: it is COMPUTED by evalAlert from live data every render. A stored
-  // trigger state is exactly what let this section assert "nothing tripped" without looking.
-  {id:1,label:"SPY Below 200D MA",metric:"spy_200ma",condition:"below",value:692.4,unit:"$",active:true},
-  {id:2,label:"VIX Spike",metric:"vix",condition:"above",value:25,unit:"",active:true},
-  {id:3,label:"F&G Extreme Fear",metric:"feargreed",condition:"below",value:20,unit:"",active:true},
-  {id:4,label:"10Y > 5%",metric:"treasury10y",condition:"above",value:5.0,unit:"%",active:true},
-  {id:5,label:"CPI > 4%",metric:"cpi",condition:"above",value:4.0,unit:"%",active:false},
-  // FEAT-30Y (v3.55): 5.2% is the level the long end just crossed — the highest since 2007.
-  // Stated as a threshold to watch, not a claim about what it means.
-  {id:6,label:"30Y Above 5.2%",metric:"treasury30y",condition:"above",value:5.2,unit:"%",active:true},
-  {id:7,label:"10s30s Inverts",metric:"term10s30s",condition:"below",value:0,unit:"pp",active:false},
-  // FEAT-CCC/FEAT-SAHM (v3.84): both OFF by default — thresholds to watch, arriving with
-  // the same author-time-number convention as the 30Y 5.2 (not imported constants).
-  {id:8,label:"CCC Tail Above 12pp",metric:"credittail",condition:"above",value:12,unit:"pp",active:false},
-  {id:9,label:"10y–3m Inverts",metric:"term10y3m",condition:"below",value:0,unit:"pp",active:false},
-];
-/* v6.0 T4 — the alerts PERSIST (owner ticket: the manage buttons must not be one-session
-   toys). Stored as an OVERLAY on DEFAULT_ALERTS at md:alerts:v1 — per-id active flags plus
-   deleted ids — never as the array itself: storing the array would silently drop every
-   alert a later release ADDS (the v3.55 arrival problem in reverse). An unknown stored id
-   is ignored; garbage or a wrong version falls back to the defaults (the md:view rule).
-   Pure and module-level solely so smoke can lift and RUN them (evalAlert precedent). */
-const ALERT_PREFS_KEY="md:alerts:v1";
-function applyAlertPrefs(defaults,prefs){
-  if(!prefs||typeof prefs!=="object"||prefs.v!==1)return defaults;
-  const active=prefs.active&&typeof prefs.active==="object"?prefs.active:{};
-  const deleted=Array.isArray(prefs.deleted)?prefs.deleted:[];
-  return defaults.filter(a=>!deleted.includes(a.id))
-    .map(a=>typeof active[a.id]==="boolean"?{...a,active:active[a.id]}:a);
-}
-function alertPrefsOf(defaults,current){
-  const ids=new Set(current.map(a=>a.id));
-  const active={};
-  for(const a of current){
-    const d=defaults.find(x=>x.id===a.id);
-    if(d&&d.active!==a.active)active[a.id]=a.active;
-  }
-  return{v:1,active,deleted:defaults.filter(d=>!ids.has(d.id)).map(d=>d.id)};
-}
+// ─── ALERT ENGINE — extracted VERBATIM to src/alertEngine.js (v6.5.5, Zone 2). The
+// evaluation CALL, the alert state and its persistence stay below in Dashboard(). ───────
 
 // ─── MAIN DASHBOARD (FEAT-161: Command Center spatial layout) ─────────────
 // publicView prop (from App.jsx ?view=public / VITE_PUBLIC_VIEW) is now consumed.
@@ -826,8 +533,7 @@ export default function Dashboard({ publicView = false } = {}) {
           .delta-bar-inner{flex-wrap:nowrap!important;overflow-x:auto!important;}
           .dir-tiles{flex-wrap:wrap!important;}
           /* .hide-mobile rule DELETED (wave 17 audit): zero consumers since FINDING-1. */
-          /* IPO strip stays a horizontal swipeable row on mobile (not 3 stacked cards) */
-          .spy-tape-mobile{display:none!important;}
+              .spy-tape-mobile{display:none!important;}
         }
         @media(prefers-reduced-motion:reduce){.pulse-anim{animation:none!important;}}
         /* A2 (v3.58): 320px contract — the duplicate wordmark is the first thing to go. */
@@ -1135,30 +841,7 @@ export default function Dashboard({ publicView = false } = {}) {
             the collapse: the summary line above stays, exclusions stay named in Signal
             Quality, and the ⏱ chips stay on the band (the v3.25 rule). chip={false} — this
             is live evidence, not curated content. */}
-        <CollapsedGroup count={evidenceSet.factors.length} chip={false}
-          label={`factor evidence — used in today's posture · ${evidenceSet.freshSummary}${evidenceSet.withheld?" · posture withheld":""}`}>
-        <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
-          {evidenceSet.factors.map(f=>{
-            // FEAT-NEUTRAL (v3.62): resolves through the SAME shared map as the hero chips.
-            // This card was already 4-state and correct; routing it through voteStyle is what
-            // makes it structurally impossible for the two altitudes to disagree again.
-            const vc=T[voteStyle(f.vote).colorKey];
-            return (
-              <div key={f.key} style={{flex:"1 1 240px",minWidth:0,background:T.surface,border:`1px solid ${f.excluded?T.amber+"44":T.border}`,borderRadius:5,padding:"8px 10px",opacity:f.excluded?0.85:1}}>
-                <div style={{display:"flex",justifyContent:"space-between",gap:8,alignItems:"baseline"}}>
-                  <span style={{fontFamily:T.fontMono,fontSize:10,fontWeight:700,color:T.textPrimary}}>{f.short} <span style={{fontWeight:400,color:T.textMuted}}>{f.label}</span></span>
-                  <span style={{fontFamily:T.fontMono,fontSize:9,fontWeight:700,color:vc,textTransform:"uppercase"}}>{f.vote}</span>
-                </div>
-                <div style={{fontFamily:T.fontMono,fontSize:9,color:T.textSecondary,marginTop:3,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{f.display}</div>
-                <div style={{display:"flex",gap:6,alignItems:"center",marginTop:4,flexWrap:"wrap"}}>
-                  <DataModeBadge mode={f.mode}/>
-                  {f.asOf&&<span style={{fontFamily:T.fontMono,fontSize:8,color:T.textMuted}}>as of {String(f.asOf).slice(0,10)}</span>}
-                  {f.excluded&&<span style={{fontFamily:T.fontMono,fontSize:8,color:T.amber}}>excluded — {f.reason}</span>}
-                </div>
-              </div>
-            );})}
-        </div>
-        </CollapsedGroup>
+        <DriversMatrix evidenceSet={evidenceSet}/>
       </section>}
 
       {/* v3.69 NARRATIVE-FIRST: markets/macro/ai gain real <section> extents (the drivers/

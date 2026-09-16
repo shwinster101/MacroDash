@@ -19,10 +19,37 @@ period bounds; cash-flow and run-rate examples require every operand. Public GET
 lesson from stored metrics, so cached prose cannot outlive the guards. Old META records without
 period bounds stay unavailable until the next ordinary refresh. Ordinary metric explainers keep
 three bullets within 75 words, short titles plus full formal metadata, and separate date/rule
-metadata. `Revenue growth` and `YTD return` replace ambiguous face shorthand. Dashboard share
+metadata. `Revenue growth` and `Return this year` replace ambiguous face shorthand. Dashboard share
 links explicitly select `?view=public` and omit operator/debug parameters. No call/gate thresholds,
 provider, rotation policy or private decision interface changed. Follow-up carousel/research work
 and the human comprehension pilot remain staged in `working/2026-09-15-useful-learning.md`.
+
+**v6.5.5 — the dashboard decomposition, Phases 0–4 (owner map, verified then executed
+2026-09-15/16).** Structure only: no band, vote, quorum, freeze, fetch, gate or copy moved, and
+the rendered DOM is byte-identical (all three browser suites unchanged). The owner's line-by-line
+map was VERIFIED before anything moved, and the verification changed the plan — the map called
+four zones "Risk: None" while each was pinned by smoke against `dashboard.jsx`'s source text
+(MOCK_DATA was brace-count-sliced + `eval`'d, a mid-run CRASH if the marker moved; the alert
+engine was `new Function`-lifted over four literal anchors; the badge's `TODAY SPY` and the
+matrix's `voteStyle` line were pinned to `dashSrc`), and it proposed RELOCATING dead code
+(`useCountdown` — no IPO strip has existed since v3.43). **Phase 0** deletes the dead code
+(the two countdown helpers, three colour helpers, the whole recharts import, unused names from
+five modules) and pins the absence plus a generic every-import-is-used sweep. **Phase 1**:
+`src/mockData.js` — smoke IMPORTS the baseline (the C1 form); RISKS.md A4 rewritten as the
+owner decision it was. **Phase 2**: `src/alertEngine.js` — the definitions move, the
+EVALUATION CALL, the alert state and its persistence stay in `Dashboard()`, and Alerts.jsx
+still never evaluates (the wave-12 pin re-pinned on WHO evaluates). **Phase 3**:
+`primitives/UndoToast.jsx` (hook + overlay), `primitives/SpyTapeBadge.jsx`,
+`sections/CallBanners.jsx` — the panic-then-flip ladder stays at the call site. **Phase 4**:
+`sections/DriversMatrix.jsx` — the last C3 block still inline; the `!simple` gate, the
+landmark and its h2 anchor stay in the orchestrator. Every new UI file joins smoke's `uiSrc`
+(else the every-surface negatives go vacuous); negative-controlled three ways (a banned vote
+ternary inside the matrix, `evalAlert` re-declared in the orchestrator, a hook inside the pure
+engine — each turns exactly one pin red). `dashboard.jsx` 1,296 → 979 lines. **Filed, not
+built** (working note): `useDashboardDerived`, `DashboardHeader.jsx`, and the `<style>`
+block — which, if ever moved, goes as a token-aware JS module, never a `.css` second copy.
+Full survey + corrections: `working/2026-09-15-dashboard-decomposition.md`. Tests: 2358
+smoke (+11) + 309 render + 331 public-render.
 
 **v6.5.4 — Simple altitude (type + real estate).** Presentation-only, Simple only. Hold
 is `fs-xxl` 28; the so-what sentence is sans `fs-body` 16; the three cards read at 16/11
@@ -1194,8 +1221,15 @@ src/
   App.jsx               Thin wrapper. Computes publicView from ?view=public or
                         VITE_PUBLIC_VIEW, passes it to <Dashboard/>. Does NOT touch
                         dashboard.jsx (T2 scope rule).
-  dashboard.jsx         THE UI (~1.6K lines). MOCK_DATA, design tokens, every
-                        component, the rule-based regime engine, footer version.
+  dashboard.jsx         THE ORCHESTRATOR (v6.5.5: under 1K lines). The hook call, the
+                        derived state, the mode/publicView gates, the global stylesheet,
+                        the header and the composition order. Every block it renders
+                        lives in src/sections/ or src/primitives/.
+  mockData.js           MOCK_DATA (v6.5.5): the always-present mock baseline, pure data,
+                        imported by the orchestrator AND by smoke (the drift check).
+  alertEngine.js        FEAT-ALERT-EVAL definitions (v6.5.5): ALERT_METRICS, evalAlert,
+                        DEFAULT_ALERTS, the md:alerts:v1 overlay helpers. Pure. The
+                        evaluation CALL and the alert state stay in dashboard.jsx.
   useMarketData.js      The ONE data-wiring point (hook). Reads VITE_DATA_MODE.
   sources.js            Pure merge module: SOURCES field map + mergeLiveOverMock()
                         + isStale/cadenceOf/parseObsDate + MARKET_HOLIDAYS/
@@ -1289,7 +1323,7 @@ dashboard.jsx  →  useMarketData(MOCK_DATA, {publicView})  →  fetch /api/snap
 ```
 
 - **Mock-first / graceful degradation is the core invariant.** `MOCK_DATA` in
-  `dashboard.jsx` is the always-present baseline. Live values overlay only the exact
+  `src/mockData.js` (v6.5.5; inline in `dashboard.jsx` before that) is the always-present baseline. Live values overlay only the exact
   paths declared in `sources.js`. A whole-fetch failure on a live build → mode **`ERROR`**
   (v3.59 B1): mock content still renders underneath, everything stays ILLUSTRATIVE, and the
   header states the outage with a ↻ RETRY — visible, deliberately NOT silent (this line said
@@ -6245,8 +6279,8 @@ cd worker && npx wrangler deploy
 npx wrangler secret put FRED_KEY
 ```
 
-`npm test` runs the smoke suite. It loads the real `MOCK_DATA` out of `dashboard.jsx` to
-catch `sources.js` ↔ dashboard drift, so it must stay green when you touch either file or
+`npm test` runs the smoke suite. It imports the real `MOCK_DATA` from `src/mockData.js` to
+catch `sources.js` ↔ mock drift, so it must stay green when you touch either file or
 any `SOURCES` path. (This paragraph read "there is **no** `test` script" for many releases
 after one was added — 2026-08-02 audit §5, the same defect class as the stale status header.
 Assertion counts are deliberately not quoted here; the suite prints its own total.)

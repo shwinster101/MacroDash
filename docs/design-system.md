@@ -25,16 +25,22 @@ in its header comment. Current inventory: `atoms.jsx` (Badge, Label),
 `SectionHeader.jsx`, `Illustrative.jsx` (ILLUS_HATCH + IllustrativeChip +
 isIllustrative — the v3.1 honesty treatment), `CollapsedGroup.jsx` (the ONE
 disclosure idiom), `DirTile.jsx` (with its private stoplight helpers),
-`FGGauge.jsx`.
+`FGGauge.jsx`, `UndoToast.jsx` (the hook that owns the toast stack + the overlay —
+the one primitive with its own UI state) and `SpyTapeBadge.jsx` (TODAY/LAST SPY,
+Degen only; the call site gates it).
 
 ## Sections — `src/sections/`
 
 Feature components, **presentation only**: every one renders what the
 orchestrator computes and none imports `useMarketData` or a computation module
 (enforced by smoke; the narrow exceptions — RegimeBand reading the pure
-`regime.js` engine, MarketDetail importing the NFCI band constants, and
-AIUnitEconomics importing `aiEcon.js` — exist so a threshold is never
-re-declared).
+`regime.js` engine, MarketDetail importing the NFCI band constants,
+AIUnitEconomics importing `aiEcon.js`, and MacroStrip / DriversMatrix importing
+`voteStyle` from `regime.js` — exist so a threshold or a vote→colour map is never
+re-declared). `DriversMatrix.jsx` and `CallBanners.jsx` were the last blocks to
+leave the orchestrator (the 2026-09 decomposition); the `!simple` gate, the
+landmark and the banner ladder stay at their call sites — sections render, the
+orchestrator decides WHAT renders.
 
 ## Computation — pure modules
 

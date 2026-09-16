@@ -6,6 +6,8 @@
 
 import { existsSync, readdirSync } from "node:fs";
 import { readFileSync } from "node:fs";
+import { MOCK_DATA } from "../src/mockData.js";
+import { evalAlert, applyAlertPrefs, alertPrefsOf, ALERT_PREFS_KEY } from "../src/alertEngine.js"; // v6.5.5: the engine, imported not source-lifted // v6.5.5: the mock baseline, imported not source-sliced
 import { mergeLiveOverMock, SOURCES, isStale, cadenceOf, parseObsDate, isMarketHoliday, MARKET_HOLIDAYS, DERIVED_OF as DERIVED_OF_SRC, DERIVED_EXEMPT, govAsOf } from "../src/sources.js";
 import { computeFiveWhys, isMacroMaterial } from "../src/fiveWhys.js";
 import { HEADLINE_CATEGORIES, MACRO_TERMS, categoryOf, rankHeadlines, scoreHeadline,
@@ -109,11 +111,17 @@ const navSrc = readSrc("../src/sections/StickyNav.jsx"); // wave 15
 const tdSrc = readSrc("../src/sections/TerminalDock.jsx"); // v4.1.7 (replaced SharedPicks)
 const spcSrc = readSrc("../src/sections/SimpleCards.jsx"); // v4.0
 const fsSrc  = readSrc("../src/primitives/FactSheet.jsx"); // v5.8 — the explainer sheet
-const uiSrc = dashSrc + spcSrc + bandSrc + whysSrc + sbSrc + shSrc + stripSrc + sqSrc + wcSrc + mdSrc + mrSrc + hwSrc + dtSrc + aiSrc + alSrc + dhSrc + wlSrc + navSrc + tdSrc;
-const _s = dashSrc.indexOf("const MOCK_DATA = {");
-let _i = dashSrc.indexOf("{", _s), _d = 0, _e = -1;
-for (; _i < dashSrc.length; _i++) { if (dashSrc[_i] === "{") _d++; else if (dashSrc[_i] === "}") { _d--; if (_d === 0) { _e = _i; break; } } }
-const MOCK_DATA = eval("(" + dashSrc.slice(dashSrc.indexOf("{", _s), _e + 1) + ")");
+// v6.5.5 decomposition (Zone 3/4): every UI file extracted from the orchestrator joins uiSrc,
+// or the negatives below that sweep "every UI surface" go vacuous (docs/RISKS.md R1).
+const utSrc = readSrc("../src/primitives/UndoToast.jsx");
+const stbSrc = readSrc("../src/primitives/SpyTapeBadge.jsx");
+const cbSrc = readSrc("../src/sections/CallBanners.jsx");
+const dmSrc = readSrc("../src/sections/DriversMatrix.jsx");
+const uiSrc = dashSrc + spcSrc + bandSrc + whysSrc + sbSrc + shSrc + stripSrc + sqSrc + wcSrc + mdSrc + mrSrc + hwSrc + dtSrc + aiSrc + alSrc + dhSrc + wlSrc + navSrc + tdSrc + utSrc + stbSrc + cbSrc + dmSrc;
+// v6.5.5: MOCK_DATA lives in src/mockData.js and is IMPORTED (the C1 regime.js form). The old
+// brace-count slice + eval over dashSrc CRASHED the suite (no total printed) if the marker
+// moved — a suite that dies mid-run reads as a suite that never ran (the v3.99.4 P0 shape).
+const mockSrc = readSrc("../src/mockData.js");
 
 // ---- 1. mergeLiveOverMock — snapshot {live} flat shape ------------------
 console.log("\n[1] mergeLiveOverMock (snapshot live shape)");
@@ -2347,6 +2355,11 @@ ok("version: the terminal's title and brand both match package.json (no third ve
   // ("the daily contract" — the four-question surface is the product's face now; the card
   // still governs underneath, stated in the §14.8 machinery, not the masthead).
   adminSrc.includes(`<small>v${PKG.version} · the daily contract</small>`));
+ok("version: the newest CLAUDE release heading matches package.json",
+  readSrc("../CLAUDE.md").match(/^\*\*v(\d+\.\d+\.\d+)\s/m)?.[1] === PKG.version);
+const versionLock = JSON.parse(readSrc("../package-lock.json"));
+ok("version: both package-lock version homes match package.json",
+  versionLock.version === PKG.version && versionLock.packages[""].version === PKG.version);
 // ttInfo's score decides whether the NEXT DOLLAR line lights. It is parsed from prose.
 ok("composite: a decimal score is preferred over an earlier bare integer",
   adminSrc.includes("function parseComposite(v)") && adminSrc.includes("const dec=s.match(/\\d+\\.\\d+/);"));
@@ -3388,7 +3401,11 @@ ok("cut v3.51: the FOOTER source list no longer credits data that was deleted �
    "'Mag 10 fundamentals' and 'SEC S-1' for two v3.43 releases after both were cut",
   !/Curated: Mag 10 fundamentals/.test(dashSrc) && !/· SEC S-1 ·/.test(dashSrc));
 ok("keep: GPU $/hr, headwinds and the watchlist are untouched — curated, but differentiated",
-  dashSrc.includes("GPU_PRICING") && dashSrc.includes("headwinds") && dashSrc.includes("watchlist"));
+  // v6.5.5: re-pointed to the homes the data actually lives in — GPU_PRICING moved to aiEcon.js
+  // in wave 12 (the old dashSrc check matched only a comment), headwinds/watchlist ride the
+  // mock baseline in mockData.js and are rendered from d.* by the orchestrator.
+  aiEconSrc.includes("export const GPU_PRICING") && mockSrc.includes("headwinds:[") && mockSrc.includes("watchlist:[") &&
+  dashSrc.includes("<Headwinds d={d}/>") && dashSrc.includes("<Watchlist watchlist={d.watchlist}/>"));
 
 // ═══════════ [20] FEAT-TT-PTLINT (v3.39) — the PT chain's guards ═══════════
 // The price-target chain is the terminal's moat: ptModelRows() feeds the est-run table, the WORTH
@@ -3930,13 +3947,9 @@ ok("confidence: unavailable factors are NAMED on the hero — 'N of 6' without s
 console.log("\n[27] FEAT-ALERT-EVAL — evaluated alerts, gated on live data");
 // dashboard.jsx is JSX, so Node cannot import it — lift the pure evaluator (and the real
 // ALERT_METRICS table it reads) out by source, the same technique MOCK_DATA uses above.
-const _am = dashSrc.indexOf("const ALERT_METRICS={");
-const _ae = dashSrc.indexOf("\n};", _am) + 3;
-const _ef = dashSrc.indexOf("export function evalAlert(");
-const _ee = dashSrc.indexOf("\n}", dashSrc.indexOf("return{state:hit", _ef)) + 2;
-const evalAlert = new Function(
-  dashSrc.slice(_am, _ae) + dashSrc.slice(_ef, _ee).replace("export function", "function") +
-  "\nreturn evalAlert;")();
+// v6.5.5: the engine lives in src/alertEngine.js and is IMPORTED (see the import block) — the
+// old `new Function` lift over four literal markers in dashSrc is retired.
+const alertEngineSrc = readSrc("../src/alertEngine.js");
 // FEAT-FLIP (v3.53): lift the band table + verdictFrom + computeRegime + flipConditions the
 // same way (JSX cannot be imported). Lifting the REAL table is the point — these tests prove
 // the vote and the flip distances read ONE expression of each edge.
@@ -3991,12 +4004,7 @@ ok("alert: the merged badge is red when anything FIRED (a trip outranks a blind 
    concentration on Power, all of it operating one-session useState. The overlay design is
    the load-bearing choice and is RUN here: storing the array would silently drop every
    alert a later release ADDS (the v3.55 arrival problem in reverse). */
-const alertPrefsLifted = (() => {
-  const i = dashSrc.indexOf("const ALERT_PREFS_KEY=");
-  const j = dashSrc.indexOf("\n}", dashSrc.indexOf("function alertPrefsOf"));
-  if (i < 0 || j < 0) throw new Error("smoke: alert-prefs markers not found");
-  return new Function(dashSrc.slice(i, j + 2) + "\nreturn {applyAlertPrefs, alertPrefsOf, ALERT_PREFS_KEY};")();
-})();
+const alertPrefsLifted = { applyAlertPrefs, alertPrefsOf, ALERT_PREFS_KEY }; // v6.5.5: real imports
 {
   const { applyAlertPrefs, alertPrefsOf, ALERT_PREFS_KEY } = alertPrefsLifted;
   const DEFS = [
@@ -4372,10 +4380,11 @@ ok("30y: the tile states the 5% reference as a REFERENCE, and never asserts a ca
 ok("30y: the tile names the inversion explicitly when the spread goes negative",
   /INVERTED/.test(mdSrc));
 // The alerts ride FEAT-ALERT-EVAL: live-gated, BLIND when not.
+// v6.5.5: re-pointed from dashSrc to alertEngineSrc — the table and the defaults moved home.
 ok("30y: both alerts are wired to real metrics, so they evaluate rather than sit inert",
-  /treasury30y: \{fields:\["thirtyYear"\]/.test(dashSrc) &&
-  /term10s30s:\s*\{fields:\["thirtyYear","tenYear"\]/.test(dashSrc));
-ok("30y: the 5.2% alert exists and is active", /30Y Above 5\.2%/.test(dashSrc));
+  /treasury30y: \{fields:\["thirtyYear"\]/.test(alertEngineSrc) &&
+  /term10s30s:\s*\{fields:\["thirtyYear","tenYear"\]/.test(alertEngineSrc));
+ok("30y: the 5.2% alert exists and is active", /30Y Above 5\.2%/.test(alertEngineSrc));
 ok("30y: the spread alert needs BOTH legs live — one dead leg must blind it, not clear it",
   evalAlert({ metric: "term10s30s", condition: "below", value: 0, active: true },
     { crossAsset: { term: { spread10s30s: -0.2 } } },
@@ -4737,7 +4746,9 @@ ok("C2: a real <header> landmark, a Sections <nav>, and the six-anchor h2 outlin
   ["overview", "drivers", "markets", "macro"].every((id) =>
     dashSrc.includes(`id="${id}"`)) && aiSrc.includes('id="ai"') && dhSrc.includes('id="health"'));
 ok("C3: the Drivers matrix renders the CONTRACT (evidenceSet.factors), not its own reading",
-  dashSrc.includes("evidenceSet.factors.map(f=>") && dashSrc.includes("excluded — {f.reason}"));
+  // v6.5.5: the cards live in src/sections/DriversMatrix.jsx; the orchestrator hands the set over.
+  dmSrc.includes("evidenceSet.factors.map(f=>") && dmSrc.includes("excluded — {f.reason}") &&
+  dashSrc.includes("<DriversMatrix evidenceSet={evidenceSet}/>"));
 ok("C4: the digest persists AFTER comparing, and only quorate sets become the baseline",
   dashSrc.indexOf("compareEvidence(prev,cur)") < dashSrc.indexOf("localStorage.setItem(LASTVALID_KEY") &&
   // v3.61 (newcomer audit): the copy states the localStorage device scope explicitly.
@@ -4777,8 +4788,8 @@ ok("glance: landscape notch edges — root pads left/right insets",
 // both times — live evidence, not curated content.
 ok("glance: the Drivers matrix cards collapse (band chips are the icon-first six-factor view)",
   // v3.93: the eyebrow folded into the toggle label — count summary visible while closed.
-  /label=\{`factor evidence — used in today's posture · \$\{evidenceSet\.freshSummary\}/.test(dashSrc) &&
-  /count=\{evidenceSet\.factors\.length\} chip=\{false\}/.test(dashSrc));
+  /label=\{`factor evidence — used in today's posture · \$\{evidenceSet\.freshSummary\}/.test(dmSrc) && // v6.5.5: moved with the cards
+  /count=\{evidenceSet\.factors\.length\} chip=\{false\}/.test(dmSrc));
 ok("glance: the Data Health per-source grid collapses; the ERROR/Retry row stays OUTSIDE",
   /label="per-source detail" chip=\{false\}/.test(dhSrc) &&
   dhSrc.indexOf('mode==="ERROR"&&<div style={{fontFamily:T.fontMono,fontSize:9,color:T.red') <
@@ -5153,7 +5164,7 @@ ok("a non-finite reading votes NEUTRAL, not a confident bearish chip",
 // The whole point of the shared map: the two altitudes cannot resolve a vote differently.
 ok("BOTH altitudes resolve appearance through the ONE voteStyle map (hero + Drivers matrix)",
   bandSrc.includes("const vs=voteStyle(f.vote)") &&
-  dashSrc.includes("const vc=T[voteStyle(f.vote).colorKey]") &&
+  dmSrc.includes("const vc=T[voteStyle(f.vote).colorKey]") && // v6.5.5: the matrix's home is DriversMatrix.jsx (in uiSrc)
   !/f\.vote==="bull"\?T\.green/.test(uiSrc));
 ok("regimeFactors derives its vote from the band table, keeping no second copy of a threshold",
   regimeSrc.includes("band.vote(band.read(d), d)") &&
@@ -6113,8 +6124,11 @@ ok("whys: module stays under the 300-line bound (Property 10); primitives under 
 ok("primitives: SourceBox/DataModeBadge/SectionHeader have ONE home each — no inline copies left",
   !/\nconst SourceBox = /.test(dashSrc) && !/\nconst DataModeBadge = /.test(dashSrc) &&
   !/\nconst SectionHeader=/.test(dashSrc) && !/\nconst apiColors = /.test(dashSrc) &&
-  dashSrc.includes('import SourceBox, { DataModeBadge } from "./primitives/SourceBox.jsx"') &&
-  dashSrc.includes('import SectionHeader from "./primitives/SectionHeader.jsx"'));
+  // v6.5.5: the orchestrator renders neither SourceBox nor SectionHeader itself any more (both
+  // render only inside sections), so the imports were pruned — re-pinned from "imports both"
+  // to "imports only what it renders", the one-home property unchanged.
+  dashSrc.includes('import { DataModeBadge } from "./primitives/SourceBox.jsx"') &&
+  !/SectionHeader/.test(dashSrc.replace(/\/\/[^\n]*|\/\*[\s\S]*?\*\//g, "")));
 
 // ═══════════ [48] UI-OVERHAUL wave 5 (tasks 3.1-3.3) — strip, quality, digest ═══════════
 // Three more verbatim moves, same separation contract: the modules render what the
@@ -6161,7 +6175,9 @@ ok("cg: one home each — no inline definitions left in the orchestrator",
   !/\nconst CollapsedGroup = /.test(dashSrc) && !/\nconst IllustrativeChip = /.test(dashSrc) &&
   !/\nconst ILLUS_HATCH = /.test(dashSrc) && !/\nconst isIllustrative = /.test(dashSrc) &&
   dashSrc.includes('import CollapsedGroup from "./primitives/CollapsedGroup.jsx"') &&
-  dashSrc.includes('import { ILLUS_HATCH, IllustrativeChip, isIllustrative } from "./primitives/Illustrative.jsx"'));
+  // v6.5.5: ILLUS_HATCH/IllustrativeChip render only inside sections — the orchestrator keeps
+  // the one name it reads (isIllustrative, for demoted()); re-pinned to the pruned import.
+  dashSrc.includes('import { isIllustrative } from "./primitives/Illustrative.jsx"'));
 ok("cg: the disclosure contract survives the move — aria-expanded, count-while-closed, chip default",
   cgSrc.includes("aria-expanded={open}") && cgSrc.includes("`▸ +${count}`") &&
   cgSrc.includes("chip = true") && cgSrc.includes("defaultOpen = false") &&
@@ -6250,9 +6266,18 @@ ok("wave12: presentation only — the sections import no computation, hook, or s
     const code = src.replace(/\/\/[^\n]*|\/\*[\s\S]*?\*\//g, "");
     return !/useMarketData|computeRegime|buildEvidenceSet|evalAlert|localStorage/.test(code);
   }));
-ok("wave12: evaluation stays home — evalAlert/ALERT_METRICS/DEFAULT_ALERTS remain in the orchestrator",
-  dashSrc.includes("export function evalAlert") && dashSrc.includes("const ALERT_METRICS=") &&
-  dashSrc.includes("const DEFAULT_ALERTS=[") && !/evalAlert\s*\(/.test(alSrc.replace(/\/\/[^\n]*/g,"")));
+// v6.5.5 re-pin: the DEFINITIONS moved to src/alertEngine.js (pure, one home); the wave-12
+// contract was always about WHO EVALUATES — the orchestrator calls evalAlert per render and
+// owns the state, Alerts.jsx never evaluates. Both halves are pinned; the definitions' absence
+// from the orchestrator is the new one-home property.
+ok("wave12: evaluation stays home — the orchestrator CALLS evalAlert and owns alert state; Alerts.jsx never evaluates; the definitions have ONE home",
+  dashSrc.includes('import { evalAlert, DEFAULT_ALERTS, applyAlertPrefs, alertPrefsOf, ALERT_PREFS_KEY } from "./alertEngine.js"') &&
+  dashSrc.includes("evalAlert(a,d,modeOf)") &&
+  !/\nexport function evalAlert|\nconst ALERT_METRICS=|\nconst DEFAULT_ALERTS=\[/.test(dashSrc) &&
+  /^export const ALERT_METRICS=\{/m.test(alertEngineSrc) && /^export function evalAlert\(/m.test(alertEngineSrc) &&
+  /^export const DEFAULT_ALERTS=\[/m.test(alertEngineSrc) &&
+  !/^import\s/m.test(alertEngineSrc) && !/useState|useEffect|localStorage|from ["']react["']/.test(alertEngineSrc.replace(/\/\/[^\n]*|\/\*[\s\S]*?\*\//g, "")) &&
+  !/evalAlert\s*\(/.test(alSrc.replace(/\/\/[^\n]*/g,"")));
 ok("wave12: the aiEcon module is PURE (Node-importable) and the section imports it",
   !/from ['\"]react['\"]/.test(aiEconSrc) &&
   aiSrc.includes('import { GPU_PRICING, TOKEN_EFFICIENCY, tokenScissors, tokenDemand, HYPERSCALER_CAPEX } from "../aiEcon.js"'));
@@ -7718,8 +7743,8 @@ console.log("\n[58] FEAT-TT-MAG7 — deck panel, basket average, honesty gates")
       return e.state === "blind" && /threeMonth/.test(e.why) &&
         evalAlert({ metric: "term10y3m", condition: "below", value: 0 }, v384D, v384Live).state === "triggered";
     })());
-  ok("v388: both new alerts ship OFF by default",
-    /id:8[^}]*credittail[^}]*active:false/.test(dashSrc) && /id:9[^}]*term10y3m[^}]*active:false/.test(dashSrc));
+  ok("v388: both new alerts ship OFF by default", // v6.5.5: re-pointed to alertEngineSrc (the defaults' home)
+    /id:8[^}]*credittail[^}]*active:false/.test(alertEngineSrc) && /id:9[^}]*term10y3m[^}]*active:false/.test(alertEngineSrc));
   // NON-VOTING arrival (the NFCI/30Y rule): not in the band table, not a factor, not in tt-v1.
   ok("v388: none of the four appears in REGIME_BAND_TABLE, the factor lists, or ttReadout",
     (() => {
@@ -11389,7 +11414,7 @@ console.log("\n[80] v6.4.0 public copy — plain verdict, market clock, scoped t
     /\{id:"power", glyph:"◉",word:"Degen"/.test(dashSrc) && /localStorage\.getItem\("md:view:v1"\)==="power"/.test(dashSrc) &&
     /DEGEN_NOTICE_KEY="md:degen-notice:v1"/.test(dashSrc) && /uses trading slang/.test(dashSrc));
   ok("[80] Simple hides the SPY tape; Degen scopes it, and the Stonks share title remains",
-    /badge=\{simple\?null:<SpyTapeBadge/.test(dashSrc) && /TODAY SPY/.test(dashSrc) &&
+    /badge=\{simple\?null:<SpyTapeBadge/.test(dashSrc) && /TODAY SPY/.test(stbSrc) && // v6.5.5: the badge's own string moved with it
     /MacroDash - Stonks/.test(index));
 }
 
@@ -11920,7 +11945,7 @@ console.log("\n[83] Simple altitude — fs-xxl Hold, fs-body sentence, one-block
     /Share this page/.test(dash));
 }
 
-// v6.5.5: educational claims need evidence, including models cached before deploy.
+// v6.5.6: educational claims need evidence, including models cached before deploy.
 {
   const S = await import("../functions/lib/spotlight.js");
   const { makeSpotlightFixture } = await import("./spotlight-fixture.mjs");
@@ -11960,6 +11985,71 @@ console.log("\n[83] Simple altitude — fs-xxl Hold, fs-body sentence, one-block
       e.what.length === 3 && wc(e.what.join(" ")) <= 75 && e.shortTitle.length < e.full.length + 15 && !!e.full));
   ok("sharing: operator/debug parameters and ticker hashes never enter a friend link",
     publicDashboardUrl("https://fixture.test/?debug=private&view=operator#nbis") === "https://fixture.test/?view=public");
+}
+
+// ---- 84. v6.5.5 — dashboard.jsx decomposition: dead code OUT first (the v3.73 Divider rule) ----
+// The owner's decomposition map proposed RELOCATING useCountdown to src/hooks/; the verification
+// pass found it had no consumer anywhere (the IPO strip it served was cut in v3.43), along with
+// three colour helpers whose Mag-10 grid was cut the same release, and a recharts import
+// whose every name was unused in this file. Dead code is deleted and its absence pinned, never
+// moved — a relocated dead hook is a rot vector with a new address.
+{
+  console.log("\n[84] v6.5.5 — dead code deleted from the orchestrator, not relocated");
+  const strip = (src) => src.replace(/\/\/[^\n]*|\/\*[\s\S]*?\*\//g, "");
+  ok("[84] Zone 3: UndoToast/SpyTapeBadge/CallBanners have ONE home each — the orchestrator imports, never re-declares",
+    !/\nconst UndoToast=|\nfunction useUndoToast\(|\nconst SpyTapeBadge = |\nconst MacroFlipBanner=|\nconst PanicOverrideBanner=/.test(dashSrc) &&
+    dashSrc.includes('import UndoToast, { useUndoToast } from "./primitives/UndoToast.jsx"') &&
+    dashSrc.includes('import SpyTapeBadge from "./primitives/SpyTapeBadge.jsx"') &&
+    dashSrc.includes('import { MacroFlipBanner, PanicOverrideBanner } from "./sections/CallBanners.jsx"') &&
+    /^export function useUndoToast\(/m.test(utSrc) && /^export default function UndoToast\(/m.test(utSrc) &&
+    /^export default function SpyTapeBadge\(/m.test(stbSrc) &&
+    /^export function MacroFlipBanner\(/m.test(cbSrc) && /^export function PanicOverrideBanner\(/m.test(cbSrc));
+  ok("[84] Zone 3: the three files are presentation-only (props in, JSX out) — no data, storage, fetch or computation import; the toast's own UI state is the one allowed hook",
+    [stbSrc, cbSrc].every(src => !/useState|useEffect|localStorage|fetch\(|useMarketData|computeRegime|buildEvidenceSet|evalAlert/.test(strip(src))) &&
+    !/localStorage|fetch\(|useMarketData|computeRegime|buildEvidenceSet|evalAlert|useEffect/.test(strip(utSrc)) &&
+    !/useCallback/.test(strip(dashSrc)) && dashSrc.includes("const { toasts, show:showToast, dismiss } = useUndoToast();"));
+  ok("[84] Zone 3: the call sites and the banner LADDER (panic first, then an armed/tripped flip) stay in the orchestrator; every moved component null-guards (Property 9)",
+    /<UndoToast toasts=\{toasts\} dismiss=\{dismiss\}\/>/.test(dashSrc) &&
+    /\? <PanicOverrideBanner call=\{dailyCall\} simple=\{simple\}\/>\s*\n\s*: flip&&\(flip\.tripped\|\|flip\.armed\)&&<MacroFlipBanner flip=\{flip\}\/>\}/.test(dashSrc) &&
+    /if\(!toasts \|\| !toasts\.length\) return null;/.test(utSrc) &&
+    /if \(mode !== "LIVE" && mode !== "CACHED" && mode !== "STALE"\) return null;/.test(stbSrc) &&
+    /if\(!flip\|\|!flip\.inputs\)return null;/.test(cbSrc) && /if\(!call\)return null;/.test(cbSrc));
+  ok("[84] Zone 4: the Drivers matrix is a section with ONE home; the !simple gate, the landmark and its h2 anchor STAY at the call site",
+    /\{!simple&&<section aria-labelledby="drivers"[\s\S]{0,1200}<DriversMatrix evidenceSet=\{evidenceSet\}\/>\s*\n\s*<\/section>\}/.test(dashSrc) &&
+    dashSrc.includes('<h2 id="drivers" className="visually-hidden">') &&
+    dashSrc.includes('import DriversMatrix from "./sections/DriversMatrix.jsx"') &&
+    !/evidenceSet\.factors\.map|voteStyle/.test(strip(dashSrc)) &&
+    /^export default function DriversMatrix\(\{ evidenceSet \}\)/m.test(dmSrc) &&
+    /if\(!evidenceSet\|\|!Array\.isArray\(evidenceSet\.factors\)\)return <div aria-hidden="true"\/>;/.test(dmSrc));
+  ok("[84] Zone 4: DriversMatrix is presentation-only — the documented voteStyle import from the pure engine is its only computation import (the MacroStrip exception)",
+    dmSrc.includes('import { voteStyle } from "../regime.js"') &&
+    !/useState|useEffect|localStorage|fetch\(|useMarketData|computeRegime|buildEvidenceSet|regimeFactors|fieldMode|evalAlert/.test(strip(dmSrc)) &&
+    dmSrc.split("\n").length <= 300);
+  ok("[84] Zone 3: Property 10 — primitives ≤100 lines, the banner section ≤300",
+    utSrc.split("\n").length <= 100 && stbSrc.split("\n").length <= 100 && cbSrc.split("\n").length <= 300);
+  ok("[84] Zone 1: MOCK_DATA has ONE home (src/mockData.js), is pure data, and the orchestrator imports it",
+    !/\nconst MOCK_DATA = \{/.test(dashSrc) &&
+    dashSrc.includes('import { MOCK_DATA } from "./mockData.js"') &&
+    dashSrc.includes("useMarketData(MOCK_DATA, { publicView })") &&
+    /^export const MOCK_DATA = \{/m.test(mockSrc) &&
+    !/^import\s/m.test(mockSrc) && !/from ["']react["']/.test(mockSrc) &&
+    typeof MOCK_DATA === "object" && MOCK_DATA.marketPulse && Array.isArray(MOCK_DATA.headwinds));
+  const code = dashSrc.replace(/\/\/[^\n]*|\/\*[\s\S]*?\*\//g, "");
+  ok("[84] useCountdown/approxCountdown are gone from every UI surface (no consumer existed)",
+    !/useCountdown|approxCountdown/.test(uiSrc.replace(/\/\/[^\n]*|\/\*[\s\S]*?\*\//g, "")) &&
+    !existsSync(new URL("../src/hooks/useCountdown.js", import.meta.url)));
+  ok("[84] peColor/marginColor/yoyColor are gone (their Mag-10 consumer was cut in v3.43)",
+    !/\b(peColor|marginColor|yoyColor)\b/.test(code));
+  ok("[84] the orchestrator imports nothing from recharts — charts render only inside sections",
+    !/from ["']recharts["']/.test(code) && /from ["']recharts["']/.test(mdSrc));
+  ok("[84] every import name the orchestrator declares is USED at least once in its own code",
+    (() => {
+      const imp = [...code.matchAll(/^import\s+(?:(\w+)\s*,?\s*)?(?:\{([^}]*)\})?\s*from\s+"[^"]+"/gm)];
+      const names = imp.flatMap(m => [m[1], ...(m[2] || "").split(",").map(x => x.trim().split(/\s+as\s+/).pop())]).filter(Boolean);
+      const unused = names.filter(n => (code.match(new RegExp("\\b" + n.replace(/[$]/g, "\\console.log(`\n=== SMOKE TEST: ${pass} passed, ${fail} failed ===`);") + "\\b", "g")) || []).length < 2);
+      if (unused.length) console.log("    unused imports:", unused.join(", "));
+      return names.length > 20 && unused.length === 0;
+    })());
 }
 
 console.log(`\n=== SMOKE TEST: ${pass} passed, ${fail} failed ===`);
