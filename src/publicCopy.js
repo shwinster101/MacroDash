@@ -122,3 +122,13 @@ export function spyMoveDirection(value) {
 export function publicEditionLabel(edition) {
   return edition === "CLOSE READ" ? "EVENING UPDATE" : edition;
 }
+
+// Shared links always open the public audience. Strip operator/debug parameters and
+// hash context rather than forwarding the current browser location verbatim.
+export function publicDashboardUrl(href) {
+  const url = new URL(href);
+  url.pathname = "/";
+  url.search = "?view=public";
+  url.hash = "";
+  return url.href;
+}

@@ -5,6 +5,25 @@ answers *"is it safe to be in the market?"* from live macro + market + sentiment
 data. Single-page React app on Cloudflare Pages, with live data assembled at the
 edge by Pages Functions and cached in KV.
 
+**v6.5.6 — useful learning behind the compact face.** Relabelled from the draft v6.5.5 after #40 shipped that version. Owner follow-up restores market cap
+to Simple profiles and makes each entire card open a three-bullet company FactSheet.
+“Return this year” replaces YTD on the profile, with a visible learning prompt.
+The sheet explains the business, size, return and selected fundamental with individual dates.
+No extra default prose;
+Learning moment now contains the concept, two individually dated company example lines, and
+a limitation (90-word fixture budget). Explore retains calculations/citations but no duplicate
+lesson. Each data-note metric carries its OWN reporting period (the half-year FCF cannot inherit
+a quarterly revenue date). Seven authored lessons now reject incomplete examples: AAPL is
+explicitly unavailable until comparable share/per-share inputs exist; META requires matching
+period bounds; cash-flow and run-rate examples require every operand. Public GET rebuilds the
+lesson from stored metrics, so cached prose cannot outlive the guards. Old META records without
+period bounds stay unavailable until the next ordinary refresh. Ordinary metric explainers keep
+three bullets within 75 words, short titles plus full formal metadata, and separate date/rule
+metadata. `Revenue growth` and `Return this year` replace ambiguous face shorthand. Dashboard share
+links explicitly select `?view=public` and omit operator/debug parameters. No call/gate thresholds,
+provider, rotation policy or private decision interface changed. Follow-up carousel/research work
+and the human comprehension pilot remain staged in `working/2026-09-15-useful-learning.md`.
+
 **v6.5.5 — the dashboard decomposition, Phases 0–4 (owner map, verified then executed
 2026-09-15/16).** Structure only: no band, vote, quorum, freeze, fetch, gate or copy moved, and
 the rendered DOM is byte-identical (all three browser suites unchanged). The owner's line-by-line
