@@ -6,6 +6,7 @@
 
 import { existsSync, readdirSync } from "node:fs";
 import { readFileSync } from "node:fs";
+import { MOCK_DATA } from "../src/mockData.js"; // v6.5.5: the mock baseline, imported not source-sliced
 import { mergeLiveOverMock, SOURCES, isStale, cadenceOf, parseObsDate, isMarketHoliday, MARKET_HOLIDAYS, DERIVED_OF as DERIVED_OF_SRC, DERIVED_EXEMPT, govAsOf } from "../src/sources.js";
 import { computeFiveWhys, isMacroMaterial } from "../src/fiveWhys.js";
 import { HEADLINE_CATEGORIES, MACRO_TERMS, categoryOf, rankHeadlines, scoreHeadline,
@@ -110,10 +111,10 @@ const tdSrc = readSrc("../src/sections/TerminalDock.jsx"); // v4.1.7 (replaced S
 const spcSrc = readSrc("../src/sections/SimpleCards.jsx"); // v4.0
 const fsSrc  = readSrc("../src/primitives/FactSheet.jsx"); // v5.8 — the explainer sheet
 const uiSrc = dashSrc + spcSrc + bandSrc + whysSrc + sbSrc + shSrc + stripSrc + sqSrc + wcSrc + mdSrc + mrSrc + hwSrc + dtSrc + aiSrc + alSrc + dhSrc + wlSrc + navSrc + tdSrc;
-const _s = dashSrc.indexOf("const MOCK_DATA = {");
-let _i = dashSrc.indexOf("{", _s), _d = 0, _e = -1;
-for (; _i < dashSrc.length; _i++) { if (dashSrc[_i] === "{") _d++; else if (dashSrc[_i] === "}") { _d--; if (_d === 0) { _e = _i; break; } } }
-const MOCK_DATA = eval("(" + dashSrc.slice(dashSrc.indexOf("{", _s), _e + 1) + ")");
+// v6.5.5: MOCK_DATA lives in src/mockData.js and is IMPORTED (the C1 regime.js form). The old
+// brace-count slice + eval over dashSrc CRASHED the suite (no total printed) if the marker
+// moved — a suite that dies mid-run reads as a suite that never ran (the v3.99.4 P0 shape).
+const mockSrc = readSrc("../src/mockData.js");
 
 // ---- 1. mergeLiveOverMock — snapshot {live} flat shape ------------------
 console.log("\n[1] mergeLiveOverMock (snapshot live shape)");
@@ -3388,7 +3389,11 @@ ok("cut v3.51: the FOOTER source list no longer credits data that was deleted �
    "'Mag 10 fundamentals' and 'SEC S-1' for two v3.43 releases after both were cut",
   !/Curated: Mag 10 fundamentals/.test(dashSrc) && !/· SEC S-1 ·/.test(dashSrc));
 ok("keep: GPU $/hr, headwinds and the watchlist are untouched — curated, but differentiated",
-  dashSrc.includes("GPU_PRICING") && dashSrc.includes("headwinds") && dashSrc.includes("watchlist"));
+  // v6.5.5: re-pointed to the homes the data actually lives in — GPU_PRICING moved to aiEcon.js
+  // in wave 12 (the old dashSrc check matched only a comment), headwinds/watchlist ride the
+  // mock baseline in mockData.js and are rendered from d.* by the orchestrator.
+  aiEconSrc.includes("export const GPU_PRICING") && mockSrc.includes("headwinds:[") && mockSrc.includes("watchlist:[") &&
+  dashSrc.includes("<Headwinds d={d}/>") && dashSrc.includes("<Watchlist watchlist={d.watchlist}/>"));
 
 // ═══════════ [20] FEAT-TT-PTLINT (v3.39) — the PT chain's guards ═══════════
 // The price-target chain is the terminal's moat: ptModelRows() feeds the est-run table, the WORTH
@@ -11933,6 +11938,13 @@ console.log("\n[83] Simple altitude — fs-xxl Hold, fs-body sentence, one-block
 // moved — a relocated dead hook is a rot vector with a new address.
 {
   console.log("\n[84] v6.5.5 — dead code deleted from the orchestrator, not relocated");
+  ok("[84] Zone 1: MOCK_DATA has ONE home (src/mockData.js), is pure data, and the orchestrator imports it",
+    !/\nconst MOCK_DATA = \{/.test(dashSrc) &&
+    dashSrc.includes('import { MOCK_DATA } from "./mockData.js"') &&
+    dashSrc.includes("useMarketData(MOCK_DATA, { publicView })") &&
+    /^export const MOCK_DATA = \{/m.test(mockSrc) &&
+    !/^import\s/m.test(mockSrc) && !/from ["']react["']/.test(mockSrc) &&
+    typeof MOCK_DATA === "object" && MOCK_DATA.marketPulse && Array.isArray(MOCK_DATA.headwinds));
   const code = dashSrc.replace(/\/\/[^\n]*|\/\*[\s\S]*?\*\//g, "");
   ok("[84] useCountdown/approxCountdown are gone from every UI surface (no consumer existed)",
     !/useCountdown|approxCountdown/.test(uiSrc.replace(/\/\/[^\n]*|\/\*[\s\S]*?\*\//g, "")) &&
