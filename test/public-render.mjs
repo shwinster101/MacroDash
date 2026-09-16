@@ -935,9 +935,17 @@ console.log("\n[public] v3.99 — Fed target range + curated FOMC countdown");
     /Fed Target Range/i.test(macro) && /3\.50–3\.75%/.test(macro));
   ok("v3.99: the effective average survives, LABELLED as the lagging series it is",
     /effective 3\.63%/.test(macro) && /lags a decision/i.test(macro));
+  /* 2026-09-16 scheduled audit: this date IS an FOMC_MEETINGS entry, so nextFomcDate()
+     returns TODAY and MacroRegime.jsx's own days===0 branch renders "FOMC decision today"
+     — a THIRD state (null / 0 / N) the original v3.99/v3.99.1 assertions never modeled,
+     only ever testing "Next FOMC in N days" vs "awaiting schedule". The page was correct;
+     the day-0 boundary was untested — the exact class of gap this file's own changelog
+     keeps closing (FIX-A, the FOMC expiry tripwire, etc.). Both assertions now derive the
+     expected state the same three ways the component branches, so they hold on every day
+     including the meeting day itself, not just the N>0 common case. */
   ok("v3.99: with Kalshi absent the countdown still renders, off the published Fed calendar",
-    /Next FOMC in \d+ days?/.test(macro) && /published Fed calendar/.test(macro) &&
-    !/awaiting schedule/.test(macro));
+    (/Next FOMC in \d+ days?/.test(macro) || /FOMC decision today/.test(macro)) &&
+    /published Fed calendar/.test(macro) && !/awaiting schedule/.test(macro));
   /* v3.99.1 — re-test after the owner's Q4 corrections (Nov 4 → Oct 28, Dec 16 → Dec 9).
      The countdown is measured against the ACTIVE meeting date, derived here rather than
      hardcoded, so this assertion survives the calendar rolling to the next entry. */
@@ -951,6 +959,7 @@ console.log("\n[public] v3.99 — Fed target range + curated FOMC countdown");
       // ET on both sides — the page resolves "today" via etYmd(), so the harness must too
       // (this assertion is what caught the page mixing ET and browser-local midnight).
       const days = Math.round((new Date(next + "T00:00:00") - new Date(today + "T00:00:00")) / 86400000);
+      if (days === 0) return /FOMC decision today/.test(macro);
       const m = macro.match(/Next FOMC in (\d+) days?/);
       return !!m && Number(m[1]) === days;
     })());
