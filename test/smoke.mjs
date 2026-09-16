@@ -111,7 +111,12 @@ const navSrc = readSrc("../src/sections/StickyNav.jsx"); // wave 15
 const tdSrc = readSrc("../src/sections/TerminalDock.jsx"); // v4.1.7 (replaced SharedPicks)
 const spcSrc = readSrc("../src/sections/SimpleCards.jsx"); // v4.0
 const fsSrc  = readSrc("../src/primitives/FactSheet.jsx"); // v5.8 — the explainer sheet
-const uiSrc = dashSrc + spcSrc + bandSrc + whysSrc + sbSrc + shSrc + stripSrc + sqSrc + wcSrc + mdSrc + mrSrc + hwSrc + dtSrc + aiSrc + alSrc + dhSrc + wlSrc + navSrc + tdSrc;
+// v6.5.5 decomposition (Zone 3/4): every UI file extracted from the orchestrator joins uiSrc,
+// or the negatives below that sweep "every UI surface" go vacuous (docs/RISKS.md R1).
+const utSrc = readSrc("../src/primitives/UndoToast.jsx");
+const stbSrc = readSrc("../src/primitives/SpyTapeBadge.jsx");
+const cbSrc = readSrc("../src/sections/CallBanners.jsx");
+const uiSrc = dashSrc + spcSrc + bandSrc + whysSrc + sbSrc + shSrc + stripSrc + sqSrc + wcSrc + mdSrc + mrSrc + hwSrc + dtSrc + aiSrc + alSrc + dhSrc + wlSrc + navSrc + tdSrc + utSrc + stbSrc + cbSrc;
 // v6.5.5: MOCK_DATA lives in src/mockData.js and is IMPORTED (the C1 regime.js form). The old
 // brace-count slice + eval over dashSrc CRASHED the suite (no total printed) if the marker
 // moved — a suite that dies mid-run reads as a suite that never ran (the v3.99.4 P0 shape).
@@ -11405,7 +11410,7 @@ console.log("\n[80] v6.4.0 public copy — plain verdict, market clock, scoped t
     /\{id:"power", glyph:"◉",word:"Degen"/.test(dashSrc) && /localStorage\.getItem\("md:view:v1"\)==="power"/.test(dashSrc) &&
     /DEGEN_NOTICE_KEY="md:degen-notice:v1"/.test(dashSrc) && /uses trading slang/.test(dashSrc));
   ok("[80] Simple hides the SPY tape; Degen scopes it, and the Stonks share title remains",
-    /badge=\{simple\?null:<SpyTapeBadge/.test(dashSrc) && /TODAY SPY/.test(dashSrc) &&
+    /badge=\{simple\?null:<SpyTapeBadge/.test(dashSrc) && /TODAY SPY/.test(stbSrc) && // v6.5.5: the badge's own string moved with it
     /MacroDash - Stonks/.test(index));
 }
 
@@ -11940,6 +11945,27 @@ console.log("\n[83] Simple altitude — fs-xxl Hold, fs-body sentence, one-block
 // moved — a relocated dead hook is a rot vector with a new address.
 {
   console.log("\n[84] v6.5.5 — dead code deleted from the orchestrator, not relocated");
+  const strip = (src) => src.replace(/\/\/[^\n]*|\/\*[\s\S]*?\*\//g, "");
+  ok("[84] Zone 3: UndoToast/SpyTapeBadge/CallBanners have ONE home each — the orchestrator imports, never re-declares",
+    !/\nconst UndoToast=|\nfunction useUndoToast\(|\nconst SpyTapeBadge = |\nconst MacroFlipBanner=|\nconst PanicOverrideBanner=/.test(dashSrc) &&
+    dashSrc.includes('import UndoToast, { useUndoToast } from "./primitives/UndoToast.jsx"') &&
+    dashSrc.includes('import SpyTapeBadge from "./primitives/SpyTapeBadge.jsx"') &&
+    dashSrc.includes('import { MacroFlipBanner, PanicOverrideBanner } from "./sections/CallBanners.jsx"') &&
+    /^export function useUndoToast\(/m.test(utSrc) && /^export default function UndoToast\(/m.test(utSrc) &&
+    /^export default function SpyTapeBadge\(/m.test(stbSrc) &&
+    /^export function MacroFlipBanner\(/m.test(cbSrc) && /^export function PanicOverrideBanner\(/m.test(cbSrc));
+  ok("[84] Zone 3: the three files are presentation-only (props in, JSX out) — no data, storage, fetch or computation import; the toast's own UI state is the one allowed hook",
+    [stbSrc, cbSrc].every(src => !/useState|useEffect|localStorage|fetch\(|useMarketData|computeRegime|buildEvidenceSet|evalAlert/.test(strip(src))) &&
+    !/localStorage|fetch\(|useMarketData|computeRegime|buildEvidenceSet|evalAlert|useEffect/.test(strip(utSrc)) &&
+    !/useCallback/.test(strip(dashSrc)) && dashSrc.includes("const { toasts, show:showToast, dismiss } = useUndoToast();"));
+  ok("[84] Zone 3: the call sites and the banner LADDER (panic first, then an armed/tripped flip) stay in the orchestrator; every moved component null-guards (Property 9)",
+    /<UndoToast toasts=\{toasts\} dismiss=\{dismiss\}\/>/.test(dashSrc) &&
+    /\? <PanicOverrideBanner call=\{dailyCall\} simple=\{simple\}\/>\s*\n\s*: flip&&\(flip\.tripped\|\|flip\.armed\)&&<MacroFlipBanner flip=\{flip\}\/>\}/.test(dashSrc) &&
+    /if\(!toasts \|\| !toasts\.length\) return null;/.test(utSrc) &&
+    /if \(mode !== "LIVE" && mode !== "CACHED" && mode !== "STALE"\) return null;/.test(stbSrc) &&
+    /if\(!flip\|\|!flip\.inputs\)return null;/.test(cbSrc) && /if\(!call\)return null;/.test(cbSrc));
+  ok("[84] Zone 3: Property 10 — primitives ≤100 lines, the banner section ≤300",
+    utSrc.split("\n").length <= 100 && stbSrc.split("\n").length <= 100 && cbSrc.split("\n").length <= 300);
   ok("[84] Zone 1: MOCK_DATA has ONE home (src/mockData.js), is pure data, and the orchestrator imports it",
     !/\nconst MOCK_DATA = \{/.test(dashSrc) &&
     dashSrc.includes('import { MOCK_DATA } from "./mockData.js"') &&

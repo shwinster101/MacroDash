@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useMemo, useRef } from "react"; // Fragment left with MarketDetail (wave 9)
+import { useState, useEffect, useMemo, useRef } from "react"; // Fragment left with MarketDetail (wave 9)
 import { useMarketData } from "./useMarketData.js"; // FEAT-204 wiring
 import { MOCK_DATA } from "./mockData.js"; // v6.5.5: the mock baseline, one home (was inline here)
 import { computeFiveWhys } from "./fiveWhys.js"; // v2.5: rule-based 5 Whys ($0, derived from live data)
@@ -32,7 +32,10 @@ import StickyNav from "./sections/StickyNav.jsx"; // task 9.2: viewport-tracked 
 import MacroStrip from "./sections/MacroStrip.jsx"; // task 3.1: presentation only
 import SignalQuality from "./sections/SignalQuality.jsx"; // task 3.2: presentation only
 import WhatChanged from "./sections/WhatChanged.jsx"; // task 3.3: presentation only
-import { liveReadCaption, publicMarketClock, publicMarketClockLine, simpleCallLabel, spyMoveDirection } from "./publicCopy.js";
+import { liveReadCaption, publicMarketClock, publicMarketClockLine, simpleCallLabel } from "./publicCopy.js";
+import UndoToast, { useUndoToast } from "./primitives/UndoToast.jsx"; // v6.5.5: the toast stack, one home
+import SpyTapeBadge from "./primitives/SpyTapeBadge.jsx"; // v6.5.5: TODAY/LAST SPY (Degen only; the call site gates it)
+import { MacroFlipBanner, PanicOverrideBanner } from "./sections/CallBanners.jsx"; // v6.5.5: presentation only; the banner ladder stays here
 
 // ─── DESIGN TOKENS ──────────────────────────────────────────────────────────
 // UI-OVERHAUL Slice 1 (task 1.1): tokens live in src/design-tokens.js — the ONE
@@ -102,107 +105,17 @@ function spyDatesFrom(anchorDateStr, count) {
 // ─── PRIMITIVE COMPONENTS — Badge/Label extracted to src/primitives/atoms.jsx
 // (wave 9; Divider was rendered nowhere and was deleted, not moved).
 
-// UndoToast (FEAT-166: 5s mobile / 4s desktop). Stacks multiple toasts so a rapid second
-// delete never overwrites the first one's undo — each toast has its own id, timer, and dismiss.
-function useUndoToast() {
-  const [toasts, setToasts] = useState([]);
-  const dismiss = useCallback((id) => setToasts(prev => prev.filter(t => t.id !== id)), []);
-  const show = useCallback((msg, onUndo) => {
-    const id = `${Date.now()}-${Math.random()}`;
-    setToasts(prev => [...prev, { id, msg, onUndo }]);
-    const delay = (typeof window !== "undefined" && window.innerWidth < 768) ? 5000 : 4000; // FEAT-166
-    setTimeout(() => setToasts(prev => prev.filter(t => t.id !== id)), delay);
-  }, []);
-  return { toasts, show, dismiss };
-}
-const UndoToast=({toasts, dismiss})=>{
-  if(!toasts || !toasts.length) return null;
-  return(
-    <div style={{position:"fixed",bottom:80,left:"50%",transform:"translateX(-50%)",display:"flex",flexDirection:"column",gap:8,zIndex:999}}>
-      {toasts.map(t=>(
-        <div key={t.id} style={{background:T.surfaceHigh,border:`1px solid ${T.amber}66`,borderRadius:6,padding:"10px 16px",display:"flex",gap:12,alignItems:"center",boxShadow:"0 4px 20px #00000088"}}>
-          <span style={{fontFamily:T.fontMono,fontSize:11,color:T.textPrimary}}>{t.msg}</span>
-          <button onClick={()=>{t.onUndo();dismiss(t.id);}} style={{fontFamily:T.fontMono,fontSize:11,background:T.amber,border:"none",color:"#000",padding:"3px 10px",borderRadius:3,cursor:"pointer",fontWeight:700}}>UNDO</button>
-          <button onClick={()=>dismiss(t.id)} style={{fontFamily:T.fontMono,fontSize:11,background:"none",border:"none",color:T.textMuted,cursor:"pointer"}}>✕</button>
-        </div>
-      ))}
-    </div>
-  );
-};
-
+// UndoToast + useUndoToast extracted to src/primitives/UndoToast.jsx (v6.5.5, Zone 3).
 // DirTile extracted to src/primitives/DirTile.jsx (wave 9).
 
-// Degen-only SPY session move. It keeps the old ±0.5% arithmetic but no longer borrows
-// the macro call's moon vocabulary; an unavailable observation renders nothing, never FLAT.
-const SpyTapeBadge = ({ spyChangePct, mode, noSessionDay = false }) => {
-  // A stale observation is still the last completed session's tape, so name it LAST rather
-  // than hiding it on weekends. MOCK remains suppressed: illustrative data is not a tape.
-  if (mode !== "LIVE" && mode !== "CACHED" && mode !== "STALE") return null;
-  const direction = spyMoveDirection(spyChangePct);
-  if (!direction) return null;
-  const lastSession = noSessionDay || mode === "STALE";
-  const color = direction === "UP" ? T.green : direction === "DOWN" ? T.red : T.amber;
-  return (
-    <div
-      title={`${lastSession ? "Last session's" : "Today's"} SPY move — market tape only, not the macro backdrop call.`}
-      style={{
-        display:"flex", alignItems:"center", gap:6, flexShrink:0,
-        background: color + "18",
-        border: `1px solid ${color}55`,
-        borderRadius: 20,
-        padding: "4px 12px",
-        boxShadow: `0 0 8px ${color}33`,
-        cursor: "default",
-        userSelect: "none",
-        transition: "all 0.2s",
-      }}>
-      <div style={{ fontFamily:T.fontMono, fontSize:7, color:T.textMuted, letterSpacing:"0.1em", whiteSpace:"nowrap" }}>{lastSession?"LAST SPY":"TODAY SPY"}</div>
-      <div style={{ fontFamily:T.fontMono, fontSize:10, fontWeight:700, color, whiteSpace:"nowrap", letterSpacing:"0.04em" }}>
-        {direction}
-      </div>
-    </div>
-  );
-};
+// SpyTapeBadge extracted to src/primitives/SpyTapeBadge.jsx (v6.5.5, Zone 3).
 
 // useCountdown/approxCountdown DELETED (v6.5.5): the IPO countdown strip they served was
 // cut in v3.43 (component, data and state); the hook and helper had no consumer since.
 
 // AI cards extracted to src/sections/AIUnitEconomics.jsx (wave 12).
 
-// ─── FEAT-331 · MACRO FLIP BANNER (the TT circuit, surfaced on the page) ──────
-// The maintainer's most consequential circuit lived only in the TT docs. Now it renders
-// from live data: TRIPPED (SPY < 200d AND VIX > 25) = de-risk; ARMED (VIX > 22) = pre-stage.
-// Rendered ONLY when flip is non-null (live+fresh inputs) AND armed/tripped — never rents
-// space at rest, and never fabricates a circuit state on mock/stale data.
-const MacroFlipBanner=({flip})=>{
-  const tripped=flip.tripped===true;
-  const {vix,spy_price,spy_ma200}=flip.inputs;
-  const bg=tripped?DT["regime-off-bg"]:DT["regime-mix-bg"];
-  const fg=tripped?T.red:T.amber;
-  return(
-    <div style={{background:bg,borderBottom:`1px solid ${fg}55`,padding:"7px 20px",display:"flex",alignItems:"center",gap:10,flexWrap:"wrap"}}>
-      <span style={{fontFamily:T.fontMono,fontSize:11,fontWeight:700,color:fg,letterSpacing:"0.04em"}}>
-        {tripped?"⛔ MACRO FLIP TRIPPED":"⚠ MACRO FLIP ARMED"}
-      </span>
-      <span style={{fontFamily:T.fontMono,fontSize:9,color:T.textSecondary}}>
-        {tripped
-          ? `SPY $${spy_price} below 200-DMA $${spy_ma200} · VIX ${vix} > 25 — de-risk protocol`
-          : `VIX ${vix} > 22 · trips if SPY < 200-DMA${spy_ma200!=null?` ($${spy_ma200})`:""} with VIX > 25 — pre-stage GTC buy-to-close`}
-      </span>
-    </div>
-  );
-};
-
-const PanicOverrideBanner=({call,simple=false})=>(
-  <div style={{background:DT["regime-off-bg"],borderBottom:`1px solid ${T.red}55`,padding:"7px 20px",display:"flex",alignItems:"center",gap:10,flexWrap:"wrap"}}>
-    <span style={{fontFamily:T.fontMono,fontSize:11,fontWeight:700,color:T.red,letterSpacing:"0.04em"}}>
-      ⛔ PANIC OVERRIDE · {simple?simpleCallLabel(call):<>{call.headline} {call.emoji} / {call.direction}</>}
-    </span>
-    <span style={{fontFamily:T.fontMono,fontSize:9,color:T.textSecondary}}>
-      Crash circuit confirmed — new risk adds are suspended until the stress signal clears.
-    </span>
-  </div>
-);
+// MacroFlipBanner + PanicOverrideBanner extracted to src/sections/CallBanners.jsx (v6.5.5, Zone 3).
 
 // ─── FEAT-169 · REGIME VERDICT BAND ──────────────────────────────────────
 // Extracted VERBATIM to src/sections/RegimeBand.jsx (UI-OVERHAUL task 1.3).
