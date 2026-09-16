@@ -42,8 +42,10 @@ in place.
 - **A2 ·** `recharts` remains the only charting dependency.
 - **A3 ·** All data fetching stays behind `useMarketData` + `/api/snapshot`;
   extraction never touches the network layer.
-- **A4 ·** `MOCK_DATA` stays in `dashboard.jsx` — smoke deliberately reads it
-  from there to catch `sources.js` ↔ dashboard drift; moving it is its own
-  decision, not an extraction side-effect.
+- **A4 ·** `MOCK_DATA` lives in `src/mockData.js` (owner decision, 2026-09-15 —
+  it used to sit inline in `dashboard.jsx` and smoke brace-count-sliced it out
+  of that file's source, which crashed the suite rather than failing it if the
+  marker moved). Smoke now IMPORTS it; the `sources.js` ↔ mock drift check is
+  unchanged in effect. The file is pure data — no React, no imports.
 - **A5 ·** `public/admin.html` is a separate, buildless surface; nothing in
   `src/` may assume it can import from it or vice versa.
