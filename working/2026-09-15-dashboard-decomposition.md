@@ -54,3 +54,48 @@ Alerts/Watchlist gate-at-the-wrapper pattern) · 5. version + records.
 
 ## Outcomes
 (appended as each phase lands)
+
+## Outcomes (2026-09-16)
+
+Shipped on `claude/dashboard-decomposition-cleanup-5tc56z`, one commit per phase, `npm run
+gates` green in real Chromium after Phase 0 and after Phase 4 (smoke after every phase):
+
+| Phase | Commit | dashboard.jsx | New file(s) | Smoke |
+|---|---|---|---|---|
+| baseline | 204eda5 | 1,296 | — | 2347 |
+| 0 dead code | 6ae43a0 | 1,268 | — | 2351 |
+| 1 MOCK_DATA | db61de5 | 1,175 | `src/mockData.js` | 2352 |
+| 2 alert engine | 5bd315f | 1,090 | `src/alertEngine.js` | 2352 |
+| 3 components | bcbe2a9 | 1,003 | `primitives/UndoToast.jsx`, `primitives/SpyTapeBadge.jsx`, `sections/CallBanners.jsx` | 2356 |
+| 4 drivers | 172a6f9 | 979 | `sections/DriversMatrix.jsx` | 2358 |
+
+Render 309 and public-render 331 unchanged throughout — the rendered DOM is byte-identical.
+
+**Negative controls (all after Phase 4, each turning exactly one pin red):** a banned
+`f.vote==="bull"?T.green` ternary injected into DriversMatrix.jsx → the "BOTH altitudes resolve
+through the ONE voteStyle map" sweep (proves the new file is really in `uiSrc`); `evalAlert`
+re-declared in dashboard.jsx → the re-pinned wave-12 one-home pin; a `useState` reference
+inside alertEngine.js → the same pin's purity half.
+
+**Where the original survey was WRONG, kept beside the plan rather than edited away:**
+- The plan said smoke's `_lift` helper (line ~3948) "is dead since v3.60" and could be deleted
+  or left. Left — it is dashSrc-bound but harmless; not this pass's scope.
+- The plan's Phase 3 expected `MacroFlipBanner`/`PanicOverrideBanner` to need NO Property-9
+  guard ("verify each body"). Neither had one — the call-site ladder guaranteed non-null
+  inputs. Guards were ADDED (`if(!flip||!flip.inputs)return null;` / `if(!call)return null;`),
+  the one non-verbatim addition in Phase 3, and pinned.
+- The plan's Phase 4 sketch first wrote "export DriversMatrix({ evidenceSet, simple })" then
+  corrected itself in the same line to keep the gate at the call site. Shipped as corrected:
+  the component takes `evidenceSet` only.
+- The map's "Risk: None" for Zone 3 was wrong in one more place than the pre-plan survey
+  listed: the `useCallback` import had to leave with the hook (it had no other consumer), and
+  the every-import-is-used sweep added in Phase 0 is what would have caught it if it had been
+  left behind.
+- Smoke section numbering: the plan reserved `[82]`; `[82]`/`[83]` already existed (v6.5.3/4).
+  Shipped as `[84]`.
+- The pre-Phase-1 "keep: GPU $/hr, headwinds and the watchlist are untouched" pin was already
+  HALF-VACUOUS on the baseline — `dashSrc.includes("GPU_PRICING")` matched only a comment
+  (the constant moved to aiEcon.js in wave 12). Re-pinned to the real homes.
+
+**Deliberately not done this pass (owner scope ruling):** Phases 5–7 — see "Filed, not built".
+The v6.5.5 CLAUDE.md header entry, RISKS.md A4 and design-system.md carry the record.
