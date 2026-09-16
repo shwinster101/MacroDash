@@ -11828,11 +11828,11 @@ console.log("\n[81] v6.5.0 STOCK SPOTLIGHT — calculations, endpoints, cron leg
     /if\(!liveBuild\)return;\n    let dead=false;\n    fetch\("\/api\/stock-spotlight"\)/.test(dashSrc) &&
     /votingFields=\{VOTING_FIELDS\}[^\n]*\n\n[\s\S]{0,700}<StockSpotlight spotlight=\{spotlight\} simple=\{simple\}\/>/.test(dashSrc) &&
     !/\{simple&&<StockSpotlight|\{!simple&&<StockSpotlight/.test(dashSrc));
-  ok("[81] section: renders NOTHING without an enabled feed + model; YTD and the chart live on the Simple face, market cap rides Explore (T4) and Degen Profile",
+  ok("[81] section: renders NOTHING without an enabled feed + model; YTD and the chart live on the Simple face, market cap appears on both profiles",
     /if \(!spotlight \|\| !spotlight\.enabled \|\| !spotlight\.model/.test(ssCode) &&
     (() => { const cg = ssCode.slice(ssCode.indexOf("simple ? ("), ssCode.lastIndexOf("</CollapsedGroup>"));
       return !/<Chart/.test(cg) && /spotlightFace\(c, leg\)/.test(ssCode) && /<Row label="Market cap" big/.test(ssCode) && /<Chart tracker=\{m\.tracker\}/.test(ssCode) && /<Unavail reason=/.test(ssCode); })());
-  ok("[81] section (T4 Simple face): name + YTD + one quality stat; market cap, multiples and the lesson body are NOT on the Simple face; Degen keeps the 10-K; learning moment is a closed CollapsedGroup",
+  ok("[81] section (T4 Simple face): name + market cap + return + one fundamental; multiples and the lesson body stay folded; Degen keeps the 10-K; learning moment is a closed CollapsedGroup",
     /\{!simple && c\.blurb && <div/.test(ssCode) && /title=\{reason \|\| undefined\}/.test(ssCode) &&
     /summaryIsNumeric\(c\.assessment\.summary\)/.test(ssCode) && /is unavailable\|unavailable —/.test(ssCode) &&
     /label=\{EXPLORE_FOLD_LABEL\}/.test(ssCode) && /<DataNotes key=\{c\.symbol\}/.test(ssCode) &&

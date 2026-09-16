@@ -120,12 +120,12 @@ export const ExplainerBody = ({ explain }) => {
 /* The trigger. With no explainer stored it renders a plain <div> — a button that opens
    nothing is a lie (the CUT-row rule, v3.97) — so a band that has not been written up yet
    degrades to exactly the card that shipped before this. */
-export const Explainable = ({ explain, title, eyebrow, className, style, children }) => {
+export const Explainable = ({ explain, title, eyebrow, className, style, ariaLabel, children }) => {
   const [open, setOpen] = useState(false);
   if (!explain) return <div className={className} style={style}>{children}</div>;
   return (
     <>
-      <button type="button" onClick={() => setOpen(true)} aria-haspopup="dialog"
+      <button type="button" onClick={() => setOpen(true)} aria-haspopup="dialog" aria-label={ariaLabel}
         className={className} style={{ ...style, cursor: "pointer", textAlign: "left",
           font: "inherit", color: "inherit", width: "100%", display: "block" }}>
         {children}

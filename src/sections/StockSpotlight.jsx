@@ -12,19 +12,18 @@
 //     fetch or a demo build must never show example companies).
 //   · Company name + ticker, YTD return and the shared YTD chart are ALWAYS visible in both
 //     modes — never behind a disclosure. Missing = "Unavailable" + the reason, never 0.
-//   · T4 (2026-09-14 FACE/TAP/FOLD): Simple later-overrides the v6.5.0 "market cap always
-//     visible" rule. Simple's first paint per company is name + ticker + YTD + ONE quality
-//     stat (Rev, else Margin, else FCF). Market cap, multiples, the two-sentence summary and
-//     the lesson BODY ride Explore / Learning moment. Degen keeps the 10-K: blurb, dated cap,
-//     YTD with through-date, three fundamental rows, full assessment, analysis open.
+//   · Simple: company name + market cap + return this year + one fundamental, with a
+//     whole-card tap opening the existing three-bullet FactSheet. The owner restored size
+//     and requested company teaching on 2026-09-15. Degen keeps the detailed profile.
 //   · The tracker draws ONLY verified total-return legs; a withheld leg reads Unavailable
 //     with its reason, and a new year before its first close reads "awaiting".
 //   · No verdict badges, no rating words: the assessment text is the model's deterministic
 //     template and is rendered verbatim.
 import { LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer, ReferenceLine } from "recharts";
 import { T } from "../design-tokens.js";
+import { Explainable } from "../primitives/FactSheet.jsx";
 import CollapsedGroup from "../primitives/CollapsedGroup.jsx";
-import { spotlightFace, lessonTitle, lessonBody, chartTitle, EXPLORE_FOLD_LABEL } from "../simpleFace.js";
+import { spotlightFace, spotlightExplain, lessonTitle, lessonBody, chartTitle, EXPLORE_FOLD_LABEL } from "../simpleFace.js";
 
 const LINE = { anchor: { stroke: T.amber, dash: null }, comparison: { stroke: T.blue, dash: "5 3" } };
 const money = (v) => {
@@ -90,20 +89,22 @@ const Profile = ({ c, leg, simple }) => {
     const face = spotlightFace(c, leg);
     if (!face) return null;
     return (
-      <div style={{ background: T.surface, border: `1px solid ${T.border}`, borderRadius: 6, padding: "10px 12px", minWidth: 0 }}
-        role="group" aria-label={`${c.name} (${c.symbol}) profile`}>
+      <Explainable explain={spotlightExplain(c, leg)} title={c.name} eyebrow={c.symbol} style={{ background: T.surface, border: `1px solid ${T.border}`, borderRadius: 6, padding: "10px 12px", minWidth: 0 }}
+        ariaLabel={`${c.name} (${c.symbol}) profile`}>
         <div style={{ display: "flex", alignItems: "baseline", gap: 8, flexWrap: "wrap" }}>
           <span style={{ fontFamily: T.fontSans, fontSize: T.fsL, fontWeight: 700, color: T.textPrimary }}>{face.name}</span>
           <span style={{ fontFamily: T.fontMono, fontSize: T.fsM, color: T.amber }}>{face.symbol}</span>
           {face.stale && <Stale f={{ stale: true }} />}
         </div>
-        <Row label="YTD return" big compact
+        <Row label="Market cap" compact value={cap.display} unavailable={cap.unavailable} />
+        <Row label="Return this year" big compact
           value={face.ytd.value}
           unavailable={face.ytd.unavailable} />
         <Row label={face.stat.label} compact
           value={face.stat.value}
           unavailable={face.stat.unavailable} />
-      </div>
+        <span style={{ display: "block", marginTop: 4, fontFamily: T.fontSans, fontSize: T.fsS, color: T.amber }}>Learn about this stock →</span>
+      </Explainable>
     );
   }
   return (

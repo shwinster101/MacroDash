@@ -78,7 +78,8 @@ const money = (v) => {
     : `${s}$${a.toFixed(0)}`;
 };
 
-// Face: YTD + one quality stat (revenue growth, else margin, else FCF). Cap / multiples / lesson stay off.
+// Face projection: return + one fundamental (revenue growth, else margin, else FCF).
+// The profile also renders the existing market cap; multiples and the lesson stay folded.
 export function spotlightFace(company, leg) {
   if (!company) return null;
   const m = company.metrics || {};
@@ -121,4 +122,34 @@ export function lessonBody(lesson) {
 export function chartTitle(pair) {
   if (!pair || !pair.anchor || !pair.comparison) return "YTD";
   return `${pair.anchor} vs ${pair.comparison} YTD`;
+}
+
+// Company tap: reuse the public three-bullet sheet; every value/date comes from its model.
+export function spotlightExplain(company, leg) {
+  const face = spotlightFace(company, leg);
+  if (!face) return null;
+  const cap = company.marketCap || {}, m = company.metrics || {};
+  const metric = face.stat.label === "Operating margin" ? m.operatingMargin
+    : face.stat.label === "Free cash flow" ? m.fcf : m.revenueGrowth;
+  const definition = face.stat.label === "Operating margin"
+    ? "Operating margin is the share of sales left after operating costs, before interest and taxes."
+    : face.stat.label === "Free cash flow"
+      ? "Free cash flow is operating cash left after spending on long-lived assets."
+      : "Revenue growth compares sales with the same period a year earlier; it is not profit growth.";
+  const size = cap.display && !cap.unavailable ? cap.display : `Unavailable — ${cap.unavailable || "no dated market cap"}`;
+  const ret = leg?.unavailable ? `Unavailable — ${leg.unavailable}` : face.ytd.value || `Unavailable — ${face.ytd.unavailable}`;
+  const stat = face.stat.value && !metric?.unavailable ? face.stat.value : `Unavailable — ${metric?.unavailable || face.stat.unavailable || "no reported figure"}`;
+  return {
+    full: company.name,
+    what: [
+      `${company.blurb || "Business description unavailable."} Market capitalization: ${size}. This is the stock market's value of all outstanding shares, not the company's cash.`,
+      `Return this year: ${ret}. This measures the change since last year's final trading close, including reinvested dividends. Past returns do not predict future returns.`,
+      `${face.stat.label}: ${stat}. ${definition}`,
+    ],
+    metadata: [cap.observedAt ? `Market capitalization as of ${cap.observedAt}${cap.method === "derived" ? " (derived)" : ""}.` : null,
+      leg?.through ? `Return through ${leg.through}.` : null,
+      metric?.period ? `${face.stat.label}: ${metric.period}.` : null,
+      face.stale ? "Market data is stale." : null,
+      "M = million; B = billion; T = trillion. Sources and calculations: Explore the numbers."].filter(Boolean).join(" "),
+  };
 }

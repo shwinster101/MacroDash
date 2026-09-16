@@ -95,3 +95,38 @@ the question about existing behavior.
 
 Follow-up validation: all 2,356 smoke assertions pass, including the full word and
 the unchanged 18-word hero budget. This is a copy-only correction to the open PR.
+
+## Company-card follow-up (owner screenshot)
+
+Correction to the earlier density decision: removing company size and leaving profiles
+noninteractive made the beginner face too cryptic. The owner explicitly asked for
+company learning on tap. Restored existing market cap data (no provider change),
+spelled out Return this year, and reused the accessible three-bullet FactSheet for
+each company. Business description, capitalization, return and selected fundamental
+are explained with metric-specific dates and unavailable/stale handling. The card
+shows a learning affordance; Degen and the shared lesson remain unchanged.
+
+### Continuation — 2026-09-16
+
+Reconfirmed remote main and PR #39 base at `204eda53` (v6.5.4); no baseline drift.
+The first browser run caught two older assumptions that capitalization was hidden.
+Updated the cross-mode check to read each profile's capitalization directly; the
+year-rollover check still withholds prior-year returns but retains company size.
+
+The resumed run also exposed a pre-existing decision-day test gap: September 16 is
+a scheduled FOMC date, and the unchanged product correctly renders “FOMC decision
+today.” Two assertions accepted only “Next FOMC in N days.” They now explicitly
+accept today's wording only when the calculated remaining days are zero. No
+calendar, countdown logic, or macro threshold changed.
+
+Visual review at 390 × 844 with synthetic data confirmed compact three-row cards
+and a readable three-bullet popup; close restores focus. Additional pure checks
+covered unavailable/stale data, margin and cash-flow fallbacks, negative cash flow,
+zero growth/return and each selected metric's own period.
+
+### Company-card outcomes
+
+Final `REQUIRE_BROWSER=1 npm run gates` passed with Node 22 and local Chrome:
+2,356 smoke, 309 terminal render, 342 public render, and zero production dependency
+vulnerabilities. Production build passed with the existing bundle-size warning.
+This remains draft PR #39 against v6.5.4; no merge or production deployment occurred.

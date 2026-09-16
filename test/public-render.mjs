@@ -936,7 +936,7 @@ console.log("\n[public] v3.99 — Fed target range + curated FOMC countdown");
   ok("v3.99: the effective average survives, LABELLED as the lagging series it is",
     /effective 3\.63%/.test(macro) && /lags a decision/i.test(macro));
   ok("v3.99: with Kalshi absent the countdown still renders, off the published Fed calendar",
-    /Next FOMC in \d+ days?/.test(macro) && /published Fed calendar/.test(macro) &&
+    /(?:Next FOMC in \d+ days?|FOMC decision today)/.test(macro) && /published Fed calendar/.test(macro) &&
     !/awaiting schedule/.test(macro));
   /* v3.99.1 — re-test after the owner's Q4 corrections (Nov 4 → Oct 28, Dec 16 → Dec 9).
      The countdown is measured against the ACTIVE meeting date, derived here rather than
@@ -952,7 +952,7 @@ console.log("\n[public] v3.99 — Fed target range + curated FOMC countdown");
       // (this assertion is what caught the page mixing ET and browser-local midnight).
       const days = Math.round((new Date(next + "T00:00:00") - new Date(today + "T00:00:00")) / 86400000);
       const m = macro.match(/Next FOMC in (\d+) days?/);
-      return !!m && Number(m[1]) === days;
+      return days === 0 ? /FOMC decision today/.test(macro) : !!m && Number(m[1]) === days;
     })());
   ok("v3.99.1: the mock odds baseline is GONE — the tile says it cannot see them",
     /odds unavailable — Kalshi feed not live/.test(macro) &&
@@ -1978,16 +1978,16 @@ console.log("\n[public] v6.5 — STOCK SPOTLIGHT: Simple + Degen, always-visible
       g.stripBottom !== null && g.regionTop !== null && g.regionTop >= g.stripBottom - 1 && g.regionTop - g.stripBottom < 16);
     ok("v6.5 Simple: both company names and tickers and the comparison label (week is Degen-only)",
       /Nebius Group/.test(text) && /NBIS/.test(text) && /Microsoft/.test(text) && /MSFT/.test(text) && /Established growth/.test(text) && !/week of/.test(text));
-    ok("T4 Simple face: name + YTD + one quality stat; market cap, multiples and the summary are NOT on the face",
+    ok("Simple face: company size, return this year and one fundamental; detailed prose stays behind the tap",
       (text.match(/[+−]\d+\.\d\d%/g) || []).length >= 2 &&
-      !/\$70\.1B/.test(text) && !/\$3\.41T/.test(text) && !/MARKET CAP/i.test(text) &&
+      /\$70\.1B/.test(text) && /\$3\.41T/.test(text) && /MARKET CAP/i.test(text) &&
       !/as of \d{4}-\d{2}-\d{2}/.test(text) && /REVENUE GROWTH/i.test(text) &&
       !/OPERATING MARGIN/i.test(text) && !/FREE CASH FLOW/i.test(text) &&
       !/trailing revenue/i.test(text) && !/12\.5×/.test(text) &&
       !/BUSINESS ·/.test(text) && !/WATCH NEXT ·/.test(text) &&
       (await r.locator('[aria-label="Full assessment"]').count()) === 0);
     ok("v6.5 Simple: YTD numbers for both — no `through` crumbs on the face, no price-return caveat",
-      (await r.locator('[aria-label$=" profile"]', { hasText: "YTD" }).count()) === 2 && !/PRICE RETURN/i.test(text) &&
+      (await r.locator('[aria-label$=" profile"]', { hasText: "Return this year" }).count()) === 2 && !/PRICE RETURN/i.test(text) &&
       !/through \d{4}-\d{2}-\d{2}/.test((await r.locator('[aria-label$=" profile"]').allInnerTexts()).join("\n")));
     ok("v6.5 Simple (density review): NO blurb on the face; the dates and the blurb live one tap deep",
       !/rents out AI computing capacity/.test(text) && !/Sells software and cloud computing/.test(text));
@@ -2004,6 +2004,21 @@ console.log("\n[public] v6.5 — STOCK SPOTLIGHT: Simple + Degen, always-visible
         const chart = document.querySelector('[aria-label="Year-to-date comparison chart"]');
         return lesson && chart && lesson.getBoundingClientRect().top < chart.getBoundingClientRect().top;
       }));
+    for (const name of ["Nebius Group", "Microsoft"]) {
+      const trigger = r.getByRole("button", { name: new RegExp(`${name}.*profile`) });
+      await trigger.focus();
+      await page.keyboard.press("Enter");
+      const sheet = page.getByRole("dialog");
+      const detail = await sheet.innerText();
+      ok(`company tap: ${name} opens its own business, size, return and growth explainer`,
+        detail.includes(name) && /Market capitalization: \$/.test(detail) &&
+        /all outstanding shares/.test(detail) && /reinvested dividends/.test(detail) &&
+        /not profit growth/.test(detail) && /Market capitalization as of/.test(detail) &&
+        /Return through/.test(detail) && (await sheet.locator("li").count()) === 3);
+      ok(`company tap: ${name} fits the phone width`, await sheet.evaluate(n => n.scrollWidth <= n.clientWidth + 1));
+      await page.keyboard.press("Escape");
+      ok(`company tap: ${name} closes and restores focus`, (await page.getByRole("dialog").count()) === 0 && await trigger.evaluate(n => n === document.activeElement));
+    }
     await r.locator("button.cg-toggle", { hasText: "Learning moment" }).click();
     const lesson = r.locator('[aria-label="Learning moment"]');
     ok("v6.5.5 Learning moment alone shows both dated worked examples and the limitation",
@@ -2030,7 +2045,7 @@ console.log("\n[public] v6.5 — STOCK SPOTLIGHT: Simple + Degen, always-visible
     ok("v6.5 Simple: 390px stays overflow-free with the chart in place, no page errors",
       await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth + 1) && errors.length === 0);
     // The full three-question text lives one tap deep in Simple (`opened`), on the face in Degen.
-    simpleFace = { caps: opened.match(/\$\d+\.\d+[TB]/g), ytd: text.match(/[+−]\d+\.\d\d%/g), business: (opened.match(/BUSINESS · [^\n]+/g) || []) };
+    simpleFace = { caps: (await r.locator('[aria-label$=" profile"]').allInnerTexts()).map(t => (t.match(/\$\d+\.\d+[TB]/) || [])[0]), ytd: text.match(/[+−]\d+\.\d\d%/g), business: (opened.match(/BUSINESS · [^\n]+/g) || []) };
     await page.close(); }
   // Mixed-period issuer: the FCF date must not inherit the revenue quarter.
   { const mixed = structuredClone(feed);
@@ -2061,7 +2076,7 @@ console.log("\n[public] v6.5 — STOCK SPOTLIGHT: Simple + Degen, always-visible
       (await r.locator('[aria-label="Sources and calculations"]').count()) === 0 && await (async () => {
         await r.locator("button.cg-toggle").first().click(); await page.waitForTimeout(250);
         const t = await r.innerText(); return (await r.locator('[aria-label="Sources and calculations"]').count()) === 1 && /sec\.gov/.test(t) && /filed \d{4}-\d{2}-\d{2}/.test(t); })());
-    const degenFace = { caps: text.match(/\$\d+\.\d+[TB]/g), ytd: text.match(/[+−]\d+\.\d\d%/g), business: (text.match(/BUSINESS · [^\n]+/g) || []) };
+    const degenFace = { caps: (await r.locator('[aria-label$=" profile"]').allInnerTexts()).map(t => (t.match(/\$\d+\.\d+[TB]/) || [])[0]), ytd: text.match(/[+−]\d+\.\d\d%/g), business: (text.match(/BUSINESS · [^\n]+/g) || []) };
     ok("v6.5 both modes: IDENTICAL market caps, YTD values and assessments (one model, two altitudes)",
       simpleFace && JSON.stringify(simpleFace.caps.slice(0, 2)) === JSON.stringify(degenFace.caps.slice(0, 2)) &&
       JSON.stringify(simpleFace.ytd.slice(0, 2)) === JSON.stringify(degenFace.ytd.slice(0, 2)) && JSON.stringify(simpleFace.business) === JSON.stringify(degenFace.business));
@@ -2073,9 +2088,9 @@ console.log("\n[public] v6.5 — STOCK SPOTLIGHT: Simple + Degen, always-visible
     await page.waitForTimeout(1600);
     const r = region(page);
     const text = await r.innerText();
-    ok("T4 unavailable (Simple face): a missing market cap is NOT on the face (it rides Explore); the other company still shows YTD; never a zero",
-      !/Unavailable · no market cap/.test(text) && !/Unavailable — profile carries no market capitalization/.test(text) &&
-      !/\$3\.41T/.test(text) && !/\$0/.test(text) && /Unavailable/.test(text));
+    ok("Simple unavailable: missing capitalization is visible; the other company retains its value; never zero",
+      /Unavailable · no market cap/.test(text) && !/Unavailable — profile carries no market capitalization/.test(text) &&
+      /\$3\.41T/.test(text) && !/\$0/.test(text) && /Unavailable/.test(text));
     ok("v6.5 unavailable: the missing anchor series is NAMED on the chart and the comparison line still plots alone",
       /NBIS series unavailable/.test(text) && (await r.locator(".recharts-line").count()) === 1 && /Unavailable(?! —)/.test(text));
     ok("T4 unavailable: the FULL reasons survive verbatim one tap deep in Explore",
@@ -2110,7 +2125,7 @@ console.log("\n[public] v6.5 — STOCK SPOTLIGHT: Simple + Degen, always-visible
     const text = await r.innerText();
     ok("T4 review #3: served in the new year, both Simple YTD fields read awaiting, no line is drawn, and last year's figures are gone",
       (text.match(/awaiting first close/gi) || []).length >= 2 && /Awaiting the first 2026 trading close/.test(text) && (await r.locator(".recharts-line").count()) === 0 &&
-      !/\+\d+\.\d\d%/.test(text) && !/\$3\.41T/.test(text) && errors.length === 0);
+      !/\+\d+\.\d\d%/.test(text) && /\$3\.41T/.test(text) && errors.length === 0);
     await page.close(); }
   // 5. 320px — the narrowest contract.
   { const { page, errors } = await open({ live: FULL_LIVE, width: 320, power: false, spotlight: feed });
