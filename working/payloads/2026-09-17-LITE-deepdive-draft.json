@@ -1,0 +1,52 @@
+{
+ "thesis_version": "1.0",
+ "updated": "2026-09-17",
+ "as_of": "2026-09-17",
+ "ref_px": {
+  "px": 907.84,
+  "at": "2026-09-17",
+  "src": "robinhood get_equity_quotes"
+ },
+ "consensus": {
+  "source": "Seeking Alpha consensus, owner screenshot 2026-09-17 (fiscal year ends late June; SA EPS normalized)",
+  "as_of": "2026-09-17",
+  "revenue_B": {
+   "2027": 6.32,
+   "2028": 9.61,
+   "2029": 13.7
+  },
+  "eps": {
+   "2027": 21.67,
+   "2029": 47.44
+  },
+  "analyst_counts": {
+   "revenue": {
+    "2027": 23,
+    "2028": 21,
+    "2029": 8
+   },
+   "eps": {
+    "2027": 25,
+    "2028": 1,
+    "2029": 7
+   }
+  },
+  "thin_coverage_excluded": {
+   "eps": {
+    "2028": 39.7
+   }
+  },
+  "thin_coverage_note": "FY2028 EPS 39.70 = the single-analyst High (1 analyst) — excluded under the >=3 rule; FY2028 revenue 9.61B (21 analysts) kept. Q1-FY27 guide $4.05-4.35 annualises $16.20-17.40 vs FY27 consensus 21.67 — consensus already assumes a ramp above the guide run-rate."
+ },
+ "pt_model": {
+  "pe_premium_multiple": {
+   "2026": 32,
+   "2028": 22
+  },
+  "pe_floor_multiple": 15,
+  "share_count_M": 92,
+  "net_cash_B": -0.4,
+  "basis": "Earnings lens. YE2026 rung = FY2027 EPS 21.67 x 32 (street PT $1,140 inverts to 52.6x — assistant declines to seed the street multiple on a name up 6x in a year; 32x is the existing book schedule carried, OWNER TO CONFIRM). YE2027 has NO rung (FY2028 EPS excluded, 1 analyst). YE2028 = FY2029 EPS 47.44 x 22 (decay as growth slows to +19%). ~92M shares incl. residual converts; net cash -$0.4B at face ($2.74B cash vs $3.18B converts carrying).",
+  "multiple_ruling": "CARRIED from the stored book model shape; the stored FY2027 EPS 16.67 is superseded by this 21.67 capture. OWNER TO CONFIRM"
+ }
+}

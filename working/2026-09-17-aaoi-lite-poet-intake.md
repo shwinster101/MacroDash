@@ -140,3 +140,68 @@ and LITE (24); **POET gets its real count of 2** — the floor would fabricate c
 ## Outcomes
 
 _To append when the packets are confirmed and the cards run._
+
+## Outcomes — 2026-09-17, second pass (owner captures landed)
+
+**Captured by the owner (SA screenshots, 09:18–09:19 ET):**
+
+| | AAOI (Dec FY) | LITE (Jun FY) |
+|---|---|---|
+| Revenue | 2026 $1.04B · 2027 $2.66B · 2028 $3.96B | FY27 $6.32B (23) · FY28 $9.61B (21) · FY29 $13.70B (8) |
+| EPS (normalized) | 2026 $0.68 · 2027 $4.60 · **2028 $8.91 — 1 analyst (owner note)** | FY27 $21.67 (25) · **FY28 $39.70 — 1 analyst** (= the High) · FY29 $47.44 (7) |
+
+POET: no street capture. Owner attached the SA thesis (Zourmpanos, 2026-08-20, STRONG BUY at $8.27):
+Lumilens $50M PO → $500M/5yr framework, Lumilens funded ($700M at $5.51B) and shipping to a
+hyperscaler; author's frame ≈ $100M/yr Lumilens rev × 10–15× + $796M cash ≈ $2B equity. Risks the
+article and its thread carry: Marvell cancelled every PO in Apr-2026 after the CFO's confidentiality
+breach; Jones v. POET class action (PFIC certification + the interview); Wolfpack short report;
+CFO retiring; Zacks' (company-paid) $450M 2029 revenue is unofficial. Latest status (Sep-2026): no
+new print — CIOE exhibit 9/9–9/11, "production ramp on schedule for H2-2026", 1M units/month
+capacity target by end-2027, ~50 hires, $50M H2 capex; the promised September update has not
+landed as of 9/17.
+
+**Corrections to the first pass:** the LITE stored FY2027 EPS ($16.67) is superseded by the
+capture ($21.67) — consensus already assumes a ramp ABOVE the Q1-FY27 guide run-rate ($16.2–17.4
+annualised), so the "stale-conservative" read in §2 inverts: the street is now ahead of guidance.
+POET's 2027 street revenue (~$90M, 2 analysts) is kept as consensus; 2028 is thesis-derived and
+marked `derived`, never presented as street.
+
+**Thin-coverage rule applied (≥3 analysts, the standing rule):** AAOI FY2028 EPS and LITE FY2028
+EPS are stored under `consensus.thin_coverage_excluded`, never deleted, and no rung prices them.
+Consequence: AAOI has ONE rung (YE2026), LITE has YE2026 and YE2028 (no YE2027), POET has YE2026
+and YE2027. The auto horizon (deepest year every name reaches) is therefore **YE2026**, 0.29 years
+out — inside `ANN_MIN_Y` today but rolling on Oct 1 — so every annualised rate below is the
+short-rung distortion the v3.81 warning exists for. Read the RAW upside, not the %/yr.
+
+**Draft payloads** (paste-ready, `working/payloads/2026-09-17-<SYM>-deepdive-draft.json`; every
+multiple is ASSISTANT-SET and says so in `multiple_ruling`; all hinges are `unknown` drafts, not
+pre-committed until the owner writes them through the terminal):
+
+| Rung | AAOI @ $97.43 | LITE @ $907.84 | POET @ $7.565 |
+|---|---|---|---|
+| YE2026 | P/E 30× FY27 $4.60 → **$138 (+41.6%)** · floor 15× $69 | P/E 32× FY27 $21.67 → **$693 (−23.7%)** · floor $325 | EV/S 15× FY27 $0.09B, 175M sh, +$0.75B → **$12.0 (+58.6%)** · no floor |
+| YE2027 | no rung (FY28 EPS excluded) | no rung (FY28 EPS excluded) | EV/S 12× FY28 $0.20B (derived), 190M sh → **$16.05 (+112%)** |
+| YE2028 | — | P/E 22× FY29 $47.44 → **$1,044 (+15.0%, 6.3%/yr)** · floor $712 | — |
+| Street invert | $151 PT ⇒ 32.9× FY27 | $1,140 PT ⇒ 52.6× FY27 | $17.50 (1 analyst) ⇒ 25.7× FY27 sales |
+| Lints | none | none | none (LENS would fire if FY27 EPS were positive; it is −0.05) |
+
+**Reads, stated plainly.**
+- AAOI is the only name with a positive gap on ≥5-analyst numbers: +42% on 30× FY27. The whole
+  gap is the FY27 EPS ($4.60) surviving — Q3 guided EPS BELOW the street, and the 2028 number
+  is one analyst's. AI-route `AI_G3P` would read PEG 0.05 (21× FY26 EPS over +577% growth) → PASS,
+  but that PEG is a crossing artifact, not evidence.
+- LITE at $908 is priced past its own FY27 rung at any multiple under ~42×; only the FY29 rung at
+  22× clears the price, for +15% over 2.3 years. The street's $1,140 needs 52× FY27. Deep-ITM
+  converts make dilution, not debt, the term. Book status: entry-discipline hinge still RED.
+- POET's +59% / +112% is ENTIRELY the thesis' revenue assumption; the 2026 rung has 2 analysts,
+  the 2027 rung has zero. A P4 falsifier set cannot score before 2027 observations exist, so it
+  is PROVISIONAL-at-best (B cap, never eligible) by construction.
+
+**Nothing written to KV** — payloads are drafts on the branch; the owner pastes them through the
+📊 DEEP DIVE editor (validate-before-mutate) or I do once the PIN path is available in-session.
+
+**TT run lines (canonical surfaces: no `/api/score` card exists for any of the three; no
+allocation receipt names them):**
+- `AAOI — Composite: UNAVAILABLE (no server card; falsifiers unwritten) · PT: $138 (P/E 30× FY27, YE2026, ASSISTANT-SET owner-model draft) · Call: WAIT — no ELIGIBLE NEXT DOLLAR line; card unscored`
+- `LITE — Composite: UNAVAILABLE (stored 7.03/A card is v2.5-era, re-score owed) · PT: $693 (P/E 32× FY27, YE2026, owner-model carried) / $1,044 (22× FY29, YE2028) · Call: WAIT — price above the near rung; entry hinge RED`
+- `POET — Composite: UNAVAILABLE (no server card; 2 analysts, no P4) · PT: $12.0 (EV/S 15× FY27, YE2026, ASSISTANT-SET from the attached thesis) · Call: WAIT — thesis-derived revenue, no street, no card`

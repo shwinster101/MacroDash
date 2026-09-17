@@ -1,0 +1,100 @@
+{
+ "thesis_version": "1.0",
+ "updated": "2026-09-17",
+ "as_of": "2026-09-17",
+ "thesis_src": "synth",
+ "thesis_at": "2026-09-17",
+ "thesis": "AI-datacenter transceiver capacity play: 800G/1.6T ramp to hyperscalers (Amazon/Microsoft) lifts revenue 2.5x in 2027 on consensus; the trade is whether GM holds ~28-30% and whether the 2027 EPS ($4.60, 5 analysts) survives pricing pressure. Net cash after the ATM; the 2030 converts are deep ITM (dilution, not debt).",
+ "ref_px": {
+  "px": 97.43,
+  "at": "2026-09-17",
+  "src": "robinhood get_equity_quotes"
+ },
+ "consensus": {
+  "source": "Seeking Alpha consensus, owner screenshot 2026-09-17 (SA EPS normalized)",
+  "as_of": "2026-09-17",
+  "revenue_B": {
+   "2026": 1.04,
+   "2027": 2.66,
+   "2028": 3.96
+  },
+  "eps": {
+   "2026": 0.68,
+   "2027": 4.6
+  },
+  "analyst_counts": {
+   "2026": 5,
+   "2027": 5,
+   "2028": 1
+  },
+  "thin_coverage_excluded": {
+   "eps": {
+    "2028": 8.91
+   }
+  },
+  "thin_coverage_note": "FY2028 EPS 8.91 carried by ONE analyst (owner note 2026-09-17) — excluded from the ladder under the >=3 rule; FY2028 revenue 3.96B kept as context but no rung prices it"
+ },
+ "pt_model": {
+  "pe_premium_multiple": {
+   "2026": 30
+  },
+  "pe_floor_multiple": 15,
+  "share_count_M": {
+   "2026": 88
+  },
+  "net_cash_B": {
+   "2026": 0.9
+  },
+  "basis": "Earnings lens (FY2027 EPS 4.60 x 30). 30x is ASSISTANT-SET, OWNER TO CONFIRM: street PT $151 inverts to 32.9x FY27; a name doubling revenue with GM <30% should not carry LITE-class 40x+. Floor 15x. Shares 84.9M out + ~2.9M from the 2030 converts (conv $43.31) = ~88M. Net cash ~$0.9B post-ATM ($508.8M 6/30 cash - $129M convert carrying + ~$539M ATM) — CONFIRM on the Q3 10-Q.",
+  "multiple_ruling": "ASSISTANT-SET 2026-09-17 — OWNER TO CONFIRM"
+ },
+ "capital": {
+  "cash_B": 0.5088,
+  "cash_as_of": "2026-06-30",
+  "atm_raised_B": 0.5388,
+  "debt": [
+   {
+    "name": "2.75% convertible senior notes due 2030",
+    "principal_M": 124.9,
+    "conv_px": 43.31,
+    "maturity": "2030"
+   }
+  ],
+  "net_cash_note": "pre-ATM net cash ~+$0.38B; post-ATM likely >+$0.9B"
+ },
+ "hinges": [
+  {
+   "label": "Q3-26 revenue >= $255M (guide floor)",
+   "state": "unknown",
+   "asOf": "2026-09-17",
+   "note": "print 2026-11-05"
+  },
+  {
+   "label": "Q3-26 non-GAAP EPS >= $0.11 (guide floor; street $0.28)",
+   "state": "unknown",
+   "asOf": "2026-09-17"
+  },
+  {
+   "label": "FY2026 revenue $1.1B reaffirmed at Q3",
+   "state": "unknown",
+   "asOf": "2026-09-17"
+  },
+  {
+   "label": "GAAP gross margin >= 27% at Q3",
+   "state": "unknown",
+   "asOf": "2026-09-17",
+   "note": "Q2 27.7%"
+  },
+  {
+   "label": "FY2027 consensus EPS holds >= $4.00 through the Q3 print",
+   "state": "unknown",
+   "asOf": "2026-09-17"
+  }
+ ],
+ "key_dates": [
+  {
+   "date": "2026-11-05",
+   "event": "Q3-26 print (tentative, pm)"
+  }
+ ]
+}

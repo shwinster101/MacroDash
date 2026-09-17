@@ -1,0 +1,108 @@
+{
+ "thesis_version": "1.0",
+ "updated": "2026-09-17",
+ "as_of": "2026-09-17",
+ "thesis_src": "owner-attached SA article (Yiannis Zourmpanos, 2026-08-20, STRONG BUY) — summarized by the assistant",
+ "thesis_at": "2026-08-20",
+ "thesis": "Pre-revenue optical-interposer play whose value is the Lumilens ramp: $50M initial PO inside a $500M/5yr framework, Lumilens itself funded ($700M at $5.51B) and shipping to a hyperscaler. $796M cash removes financing risk; execution (yield qualification, sample delivery late-2026, production 2027) is the whole bet. Author frames ~$100M/yr Lumilens revenue x 10-15x + cash = ~$2B equity (~$11-12/sh on 173M sh).",
+ "ref_px": {
+  "px": 7.565,
+  "at": "2026-09-17",
+  "src": "robinhood get_equity_quotes"
+ },
+ "consensus": {
+  "source": "NO SA capture — 2 web analysts (Simply Wall St) on 2027 only; 2028 is THESIS-DERIVED (Lumilens $100M/yr run-rate + existing customers), Zacks (company-paid) $450M for 2029 noted as unofficial",
+  "as_of": "2026-09-17",
+  "revenue_B": {
+   "2026": 0.01,
+   "2027": 0.09
+  },
+  "eps": {
+   "2026": -0.3,
+   "2027": -0.05
+  },
+  "analyst_counts": {
+   "2026": 2,
+   "2027": 2,
+   "2028": 0
+  },
+  "derived": {
+   "2028": [
+    "rev"
+   ]
+  }
+ },
+ "pt_model": {
+  "ev_s_multiple": {
+   "2026": 15,
+   "2027": 12
+  },
+  "share_count_M": {
+   "2026": 175,
+   "2027": 190
+  },
+  "net_cash_B": {
+   "2026": 0.75,
+   "2027": 0.65
+  },
+  "revenue_B": {
+   "2028": 0.2
+  },
+  "basis": "Sales lens (no earnings). YE2026 rung = FY2027 street rev $0.09B x 15 (thesis upper multiple, 2 analysts); YE2027 rung = FY2028 rev $0.20B x 12 — the $0.20B is THESIS-DERIVED (Lumilens ~$100M run-rate + ramp), NOT street. Shares 173M today -> 190M by 2027 (22.9M Lumilens warrants vest on purchase milestones). Net cash $0.796B less ~$50M/yr burn + $50M capex. No floor (no positive EPS). ASSISTANT-SET from the attached thesis, OWNER TO CONFIRM.",
+  "multiple_ruling": "ASSISTANT-SET 2026-09-17 from the attached SA thesis (10-15x) — OWNER TO CONFIRM"
+ },
+ "capital": {
+  "cash_B": 0.7963,
+  "cash_as_of": "2026-06-30",
+  "burn_qtr_M": 12.2,
+  "capex_h2_2026_M": 50,
+  "debt": [],
+  "warrants_out_M": 22.9
+ },
+ "hinges": [
+  {
+   "label": "Lumilens engineering samples delivered by 2026-12-31",
+   "state": "unknown",
+   "asOf": "2026-09-17"
+  },
+  {
+   "label": "First quarter of production-unit revenue >= $5M",
+   "state": "unknown",
+   "asOf": "2026-09-17"
+  },
+  {
+   "label": "Q4-26 revenue >= $1.0M (ramp visible)",
+   "state": "unknown",
+   "asOf": "2026-09-17"
+  },
+  {
+   "label": "Operating burn <= $15M/qtr through the ramp",
+   "state": "unknown",
+   "asOf": "2026-09-17",
+   "note": "Q2 -$12.2M OCF"
+  },
+  {
+   "label": "No further order cancellation / confidentiality breach (Marvell precedent, Apr-2026)",
+   "state": "unknown",
+   "asOf": "2026-09-17"
+  },
+  {
+   "label": "Class action (Jones v. POET) does not produce an adverse ruling or restatement",
+   "state": "unknown",
+   "asOf": "2026-09-17"
+  }
+ ],
+ "key_dates": [
+  {
+   "date": "2026-11-12",
+   "event": "Q3-26 print (tentative, pm)"
+  }
+ ],
+ "risks": [
+  "Marvell cancelled all POs Apr-2026 after CFO confidentiality breach",
+  "securities class action Jones v. POET (PFIC certification, CFO interview)",
+  "Wolfpack short report Apr-2026",
+  "CFO retiring; replacement pending",
+  "customer concentration: Lumilens is the ramp"
+ ]
+}
