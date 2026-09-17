@@ -217,7 +217,9 @@ at 20 of 25, and the `"Information"` cap message parsed as *exhausted*, never re
 [x] Move 3 — SPY live print         RULED: leave alone; collision recorded
 [x] Docs — CLAUDE.md candle ladder, TIINGO_KEY matrix row, retired claim pinned absent
 [x] Docs — ALPHAVANTAGE_KEY matrix row + data-sources bullet + v6.6.2 entry
-[ ] OWNER — store ALPHAVANTAGE_KEY (`npx wrangler@4 pages secret put ALPHAVANTAGE_KEY --project-name macrodash`)
+[x] OWNER — ALPHAVANTAGE_KEY stored on Pages Production 2026-09-17 (TIINGO/FINNHUB/FRED/
+    REFRESH_TOKEN/SPOTLIGHT_ENABLED confirmed still present in the same pass)
+[ ] SHIP — v6.6.2 is NOT deployed, so the stored key is INERT (measured, §6.6). No PR open.
 [ ] OWNER — one production ticker refresh → read `candles.provider` (Move 2's live check; PIN-gated)
 [x] PR #44 — failed `test` job re-queued 04:51Z → attempt 2 SUCCESS (the race diagnosis held);
     squash-merged to `main` as `519ecd8` on the owner's instruction; this branch rebased onto it
@@ -305,3 +307,34 @@ at 20 of 25, and the `"Information"` cap message parsed as *exhausted*, never re
 - The Alpha Vantage key was **not tested and not stored** anywhere; `www.alphavantage.co` is 403
   from this environment. The first keyed POST from the Terminal is the true schema check.
 - Move 3 stays ruled out (§1.4). FRED/UST/CBOE/Kalshi/OpenRouter/SEC untouched.
+
+---
+
+## 6.6 Deploy state, MEASURED against production (2026-09-17, post-#44)
+
+Probed `https://macrodash.pages.dev` directly rather than inferring from the merge:
+
+| Probe | Result | Reads as |
+|---|---|---|
+| `GET /api/street/nasdaq-draft?sym=NVDA` | **401** `{"error":"pin required"}` | route EXISTS → **v6.6.1 (#44) is deployed** |
+| `GET /api/street/av-draft` | **200 text/html** (the SPA fallback) | route ABSENT → **v6.6.2 is NOT deployed** |
+| `GET /api/ticker-facts?syms=NVDA` | 401 `pin required` | unchanged, PIN-gated as designed |
+
+A PIN-gated route answering 401 and a nonexistent route falling through to the SPA are
+different shapes, which is what makes this a real probe rather than a guess. The 405 that
+`av-draft`'s own `onRequestGet` returns (no auth check, immediate, by design so a prefetch
+cannot spend quota) is the signal that will appear here once v6.6.2 ships — it is the
+cheapest possible deploy check for this route and needs no PIN.
+
+**Consequence, and it dissolves the redeploy question.** `ALPHAVANTAGE_KEY` is stored and
+correct, and it currently does nothing: the only code that reads it lives on
+`claude/api-palette-upgrade-1lcvnr`, not on `main`. Whether Pages secrets reach Functions
+without a redeploy is therefore MOOT for this key — the deployment that adds the route is
+itself the redeploy that carries the secret. (Cloudflare's own docs were searched for a
+ruling on the redeploy requirement and returned nothing usable; recorded as unresolved
+rather than asserted, because it does not need resolving here.)
+
+**Until v6.6.2 ships, a press of `◉ ALPHA VANTAGE ESTIMATES` cannot happen** — the button
+does not exist in the deployed terminal either. There is no state in which the stored key
+produces a wrong answer; the honest states are "button absent" now and "warning names the
+key" only if the secret were missing after the ship.
