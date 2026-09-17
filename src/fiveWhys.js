@@ -161,12 +161,12 @@ function simpleWhys(x) {
   // #3 — ONE transmission phrase per side, the side that agrees with the call first. "One
   //      reason" is true by construction (the factor voted that way) and admits the others.
   const bearFirst = call && call.direction === "BEARISH";
-  const helpLine = supports.length ? `${phrase(supports[0], "bull")} — one reason the backdrop supports risk.`
+  const helpLine = supports.length ? `${phrase(supports[0], "bull")} — can support stocks.`
     : "Nothing counted is helping.";
-  const hurtLine = risks.length ? `${phrase(risks[0], "bear")} — one reason it doesn't.`
-    : "Nothing counted is working against it.";
+  const hurtLine = risks.length ? `${phrase(risks[0], "bear")} — can pressure stocks.`
+    : "Nothing counted is pressuring stocks.";
   w.push(withheld ? "With too few current signals, no channel is being claimed."
-    : `${bearFirst ? `${hurtLine} ${helpLine}` : `${helpLine} ${hurtLine}`} Channels, not causes.`);
+    : `${bearFirst ? `${hurtLine} ${helpLine}` : `${helpLine} ${hurtLine}`} Neither proves what moved markets today.`);
 
   // #4 — trust: confidence, coverage, and that news never votes. No headline here — one
   //      title alone would spend the whole budget, and Simple's job is the call, not the tape.

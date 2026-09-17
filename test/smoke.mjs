@@ -10342,7 +10342,7 @@ console.log("\n[67] v4.0 SIMPLE MODE — verdict mapping, card selection, senten
     (() => { const all = VERDICT_EXPLAIN.what.join(" ");
       return ["MOONING", "HODL", "DIAMOND HANDS", "CAN'T CALL IT",
         "BULLISH", "NEUTRAL", "BEARISH"].every((k) => all.includes(k)) &&
-        /not a view on any one stock/.test(all) && /not advice/.test(all); })());
+        /Macro conditions alone do not establish an entry price/.test(all) && /not advice/.test(all); })());
   ok("explain: a band with no explainer degrades to a plain div — a button that opens nothing is a lie",
     /if \(!explain\) return <div/.test(fsSrc));
   /* The WAI-ARIA dialog contract, pinned at the source and DRIVEN in the browser suite:
@@ -11691,7 +11691,7 @@ console.log("\n[80] v6.4.0 public copy — plain verdict, market clock, scoped t
       const live = simpleHoldExplain({ readCaption: "Live market read · today's 10am call is unavailable" });
       const all = frozen.what.join(" ");
       return frozen.full === "What this call means" && frozen.what.length === 3 && live.what.length === 3 &&
-        /Bullish means/.test(frozen.what[0]) && /Not enough data/.test(frozen.what[0]) &&
+        /Bullish means/.test(frozen.what[0]) && /Not enough data/.test(frozen.what[0]) && /mixed evidence or a safety limit/.test(frozen.what[0]) &&
         /frozen 10am call · captured 10:00 ET · 2026-09-14/.test(frozen.what[1]) &&
         /Evening update \(6pm ET\): Bullish — unscored; the 10am call remains frozen above/.test(all) &&
         /5 of 6 signals counted · unavailable: CPI/.test(all) &&
@@ -12189,10 +12189,10 @@ console.log("\n[82] Simple FACE/TAP/FOLD remainder — registry, ≤15-word reas
   ok("T1 cardFace / sheetLead: glyph+label+value+tone only; sheetLead is the why sentence",
     JSON.stringify(cardFace({ direction: "helping", label: "volatility", currentValue: "15.84", why: "fear gauge" })) === JSON.stringify({ glyph: FACE_GLYPH.helping, label: "volatility", value: "15.84", tone: "helping" }) &&
     sheetLead({ why: "fear gauge" }) === "fear gauge" && sheetLead({}) === null);
-  ok("T1 spotlightFace: YTD + one quality stat; chartTitle is ticker vs ticker YTD; lesson fold is a 2-word promise",
+  ok("T1 spotlightFace: YTD + one quality stat; chartTitle spells out return this year; lesson fold is a 2-word promise",
     (() => { const f = spotlightFace({ name: "Nebius Group", symbol: "NBIS", metrics: { revenueGrowth: { pct: 454 } } }, { pct: 154.2 });
       return f.symbol === "NBIS" && f.ytd.value === "+154.20%" && f.stat.label === "Revenue growth" && f.stat.value === "+454.0%"; })() &&
-    chartTitle({ anchor: "NBIS", comparison: "MSFT" }) === "NBIS vs MSFT YTD" &&
+    chartTitle({ anchor: "NBIS", comparison: "MSFT" }) === "NBIS vs MSFT · return this year" &&
     lessonTitle({}) === LESSON_FOLD_LABEL && LESSON_FOLD_LABEL === "Learning moment" &&
     WHYS_FOLD_LABEL === "Why this call" && ABOUT_FOLD_LABEL === "About this page" && EXPLORE_FOLD_LABEL === "Explore the numbers");
   ok("T5: Simple Why-this-call is a promise label (no flip essay on the closed row); flipLine still inside; CollapsedGroup grows a promise prop",
@@ -12675,10 +12675,10 @@ console.log("\n[copy-budget] v6.6.1 ONE ENGINE, TWO ALTITUDES — ≤25-word why
     S("base")[1] === "Helping: volatility, sentiment, inflation, and credit. Hurting: prices. Mixed: rates." &&
     S("twoDark")[1] === "Helping: inflation and credit. Hurting: rates and prices. Not counted: volatility and sentiment." &&
     Object.values(FACE_NOUN).every((n) => new RegExp(`\\b${n.toLowerCase()}\\b`).test(S("base")[1].toLowerCase())));
-  ok("[copy-budget] Simple #3: ONE transmission phrase per side from the band table's own plainBull/plainBear (one home), the call's side first, 'channels, not causes'",
-    S("base")[2] === "Volatility is asleep — one reason the backdrop supports risk. Stocks are priced for perfection — one reason it doesn't. Channels, not causes." &&
-    /^Long-term rates are climbing — one reason it doesn't\. Credit is cheap and easy — one reason the backdrop supports risk\. Channels, not causes\.$/.test(S("bear4")[2]) &&
-    S("allNeutral")[2] === "Nothing counted is helping. Nothing counted is working against it. Channels, not causes.");
+  ok("[copy-budget] Simple #3: ONE transmission phrase per side from the band table's own plainBull/plainBear (one home), the call's side first, explicit stock impact without claiming causation",
+    S("base")[2] === "Volatility is asleep — can support stocks. Stocks are priced for perfection — can pressure stocks. Neither proves what moved markets today." &&
+    /^Long-term rates are climbing — can pressure stocks\. Credit is cheap and easy — can support stocks\. Neither proves what moved markets today\.$/.test(S("bear4")[2]) &&
+    S("allNeutral")[2] === "Nothing counted is helping. Nothing counted is pressuring stocks. Neither proves what moved markets today.");
   ok("[copy-budget] Simple #4: confidence + coverage, news never votes — and NO headline is quoted at this altitude (the tape is Degen's)",
     S("base")[3] === "Confidence is high: 6 of 6 signals are current. News is context only — it never moves the call." &&
     S("twoDark")[3] === "Confidence is medium: 4 of 6 signals are current. News is context only — it never moves the call." &&

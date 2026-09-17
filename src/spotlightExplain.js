@@ -61,15 +61,15 @@ export function spotlightExplain(c, leg) {
   return {
     full: c.name,
     what: [
-      `${BUSINESS[c.symbol] || "Business description unavailable."} ${meaning} Return this year includes reinvested dividends.`,
-      `${capReady(c) ? `Market capitalization: ${dollars(c.marketCap.usd)}.` : "Dated market capitalization unavailable."} Share price × total shares outstanding = market capitalization. A lower share price does not necessarily mean a cheaper company.`,
+      `${BUSINESS[c.symbol] || "Business description unavailable."} ${meaning} Return this year measures gains or losses since last year’s final close, including reinvested dividends.`,
+      `${capReady(c) ? `Market capitalization: ${dollars(c.marketCap.usd)}.` : "Dated market capitalization unavailable."} Share price × total shares outstanding = market capitalization: the value of all shares. A lower share price does not necessarily mean a cheaper company.`,
       earnings + (e.state === "profit" && operatingLoss ? " Latest reported operations still lost money." : ""),
     ],
     metadata: [capDate(c), leg?.through ? `Return through ${leg.through}${c.freshness?.series?.stale ? " · STALE" : ""}.` : null,
       metric?.period ? `${face.stat.label}: ${metric.period}.` : null,
       e.period ? `Net earnings: ${e.period.replace(/^TTM to /, "12 months to ")}.` : null,
       e.state === "profit" && operatingLoss && metric !== m.operatingMargin ? `Operating margin: ${m.operatingMargin.period}.` : null].filter(Boolean).join(" "),
-    sources: sourcesFor(c, ["market cap", "revenue", "net earnings", ...(e.state === "profit" && operatingLoss ? ["operating income"] : [])]),
+    sources: sourcesFor(c, ["market cap", ...(face.stat.label === "Free cash flow" ? ["operating cash flow", "capital expenditure"] : face.stat.label === "Operating margin" ? ["revenue", "operating income"] : ["revenue"]), "net earnings", ...(e.state === "profit" && operatingLoss ? ["operating income"] : [])]),
   };
 }
 

@@ -145,6 +145,6 @@ export function lessonBody(lesson) {
 }
 
 export function chartTitle(pair) {
-  if (!pair || !pair.anchor || !pair.comparison) return "YTD";
-  return `${pair.anchor} vs ${pair.comparison} YTD`;
+  if (!pair || !pair.anchor || !pair.comparison) return "Return this year";
+  return `${pair.anchor} vs ${pair.comparison} · return this year`;
 }

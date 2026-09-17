@@ -2027,7 +2027,7 @@ console.log("\n[public] v6.5 — STOCK SPOTLIGHT: Simple + Degen, always-visible
       !/rents out AI computing capacity/.test(text) && !/Sells software and cloud computing/.test(text));
     ok("T4 Simple chart: title is ticker vs ticker YTD; two lines, a zero reference; no from-through essay",
       (await r.locator(".recharts-line").count()) === 2 && (await r.locator(".recharts-reference-line").count()) === 1 &&
-      /NBIS vs MSFT YTD/.test(text) && !/YTD COMPARISON/.test(text) && !/from 2025-12-31/.test(text));
+      /NBIS vs MSFT · return this year/.test(text) && !/YTD COMPARISON/.test(text) && !/from 2025-12-31/.test(text));
     ok("T6 Learning moment starts collapsed — promise label, no run-rate body, no LEARNING MOMENT essay",
       /Learning moment/.test(text) && !/LEARNING MOMENT/.test(text) && !/run-rate/i.test(text) &&
       (await r.locator('[aria-label="Learning moment"]').count()) === 0 &&

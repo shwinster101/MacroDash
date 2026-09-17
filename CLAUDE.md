@@ -20,6 +20,12 @@ explains the missing majority instead of “fine”/“drag”; Degen keeps chan
 thresholds. Its compact news line shows only a shortened rank-1 headline; ranks 2–3
 still exist in the data. The separate FOMC event feature remains in #42. Validation is in `working/2026-09-16-company-value.md`.
 
+Pre-merge wording audit: Simple spells out the chart’s return period and explains its
+baseline; company size is defined beside its formula. Both call popups name safety-limited
+Hold states, and Simple Why #3 states stock implications without an ambiguous pronoun.
+Degen retains the useful calculations, thresholds and limitations. Audit and merge checks:
+`working/2026-09-17-public-copy-audit.md`.
+
 **v6.6.2 — Alpha Vantage joins the ESTIMATES side under its own name, budgeted at 20 of the 25 free calls, and the browser harness stops racing midnight.**
 Palette Move 1b (`working/2026-09-16-api-palette-upgrade.md`), stacked on #44's v6.6.1 allowlist
 (Move 1a, the owner's A ruling: a provider is admitted under ITS name or refused BY name). The

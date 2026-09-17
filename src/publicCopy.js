@@ -97,12 +97,12 @@ export function simpleHoldExplain({
   const coverage = conf && Number.isFinite(conf.counted) && Number.isFinite(conf.total)
     ? `${conf.counted} of ${conf.total} signals counted${Array.isArray(conf.excluded) && conf.excluded.length ? ` · unavailable: ${conf.excluded.join(" · ")}` : ""}${conf.blind ? " · crash gauge (VIX) unavailable" : ""}`
     : null;
-  const beat3 = [evening, coverage, "This is a read on the whole market's backdrop, not a view on any one stock, and it is not advice."]
+  const beat3 = [evening, coverage, "This describes market conditions, not whether to buy a particular stock. Education, not advice."]
     .filter(Boolean).join(" · ");
   return Object.freeze({
     full: "What this call means",
     what: Object.freeze([
-      "Bullish means the backdrop supports taking market risk; Hold means the evidence has no clear lean; Bearish means the backdrop is working against risk. Not enough data is different from Hold: too few current signals are available to make the call.",
+      "Bullish means conditions support market risk; Bearish means they work against it. Hold means mixed evidence or a safety limit. Not enough data means too few current signals.",
       String(clock),
       beat3,
     ]),
