@@ -286,7 +286,7 @@ export function verdictFrom(bullVotes, bearVotes, counted) {
 export const REGIME_QUORUM = 4;
 const REGIME_META = {
   // FEAT-v17-07: hyphen separators (was middot) for RISK-ON / RISK-OFF legibility
-  "RISK-ON":  { sub:"Disinflation + low vol",   tintKey:"regime-on-bg",  colorKey:"green"  },
+  "RISK-ON":  { sub:"Disinflation + low volatility",   tintKey:"regime-on-bg",  colorKey:"green"  },
   "RISK-OFF": { sub:"Rate pressure + stress",   tintKey:"regime-off-bg", colorKey:"red"    },
   // `watchKey` names the factor the sub tells the reader to watch, so computeRegime can
   // re-derive the sub when that factor is EXCLUDED (v3.61, newcomer audit: the hero read

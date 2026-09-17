@@ -54,3 +54,7 @@ Audit implementation: 99ea2fe. Browser verification initially found one stale
 verbatim assertion for the old “not a view on any one stock” sentence. Updated
 it to check the new stock-buy boundary AND the newly explicit safety-limited
 Hold; this is a test wording correction, not a relaxed behavior requirement.
+
+The final abbreviation scan also found an older regime subtitle using “low vol”;
+expanded it to “low volatility” and updated its fixture. Remaining `vol` tokens
+in public source are internal variable names/comments, not displayed wording.

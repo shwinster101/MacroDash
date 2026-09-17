@@ -238,7 +238,7 @@ ok("every SOURCES entry has path + valid kind", Object.values(SOURCES).every((s)
 
 // ---- 3. computeFiveWhys — rule-based 5 Whys ----------------------------
 console.log("\n[3] computeFiveWhys (rule-based 5 Whys)");
-const fwRegime = { label: "RISK-ON", raw:"RISK-ON", sub: "Disinflation + low vol", bullVotes: 4, bearVotes: 1, counted:6, totalFactors:6 };
+const fwRegime = { label: "RISK-ON", raw:"RISK-ON", sub: "Disinflation + low volatility", bullVotes: 4, bearVotes: 1, counted:6, totalFactors:6 };
 // v6.6.1: the fixture carries `short` — the real evidence rows do (REGIME_BAND_TABLE's own
 // codes), and Degen's WHY #2 now speaks them. A fixture without them would have the why fall
 // back to the long label and pass a pin that the live page could never satisfy.
