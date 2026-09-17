@@ -164,7 +164,16 @@ bump. The pin did its job.
 ## 4. Re-scoped, not built
 
 ### Move 1a — Nasdaq street consensus
-Blocked on a ruling, not on effort. The honest options:
+
+> **OWNER RULING (recorded on PR #43): option A — widen the provider allowlist truthfully.**
+> Nasdaq/Zacks becomes an accepted street source under its own name; it is never labelled
+> TipRanks. **Ruled, NOT built** — the allowlist does not exist in code yet, and PR #43's body
+> phrases it as "now allows", which describes the ruling rather than the shipped behaviour.
+> Sequenced AFTER the Move 2 edge check (owner: "nothing after it starts until that check
+> lands"), and to be built against Nasdaq response shapes verified from a network that can
+> actually reach `api.nasdaq.com` — see §1.3.
+
+The options as they stood when the ruling was taken:
 
 - **A. Widen the provider allowlist.** Replace the two hardcoded provider/host checks with a named
   `{provider → host}` allowlist admitting Nasdaq/Zacks; make `lookbackMonths` provider-aware so
@@ -176,7 +185,14 @@ Blocked on a ruling, not on effort. The honest options:
 - **C. Drop it.** The OCR path works; the win is convenience, not capability.
 
 Recommendation: **A**, as its own pass, with the Nasdaq schemas verified from a network that can
-reach them first. Do not build the mapper before the shapes are seen.
+reach them first. Do not build the mapper before the shapes are seen. — **Ruled A, as above.**
+
+**What A actually costs, so the next pass does not rediscover it:** a named `{provider → host}`
+allowlist in `validateStreetPacket`, a provider-aware `lookbackMonths` (TipRanks' 3 must never be
+defaulted onto a source that publishes no lookback), plus `admin.html`'s blank-packet builder
+(`:6785-6786`), its confirm handler (`:6867, :6872`) and ~16 label sites. Additive for stored
+packets — every existing one stays valid and means what it meant — so no schema version bump,
+but it IS an order-gating contract and gets its own pass and its own negative controls.
 
 ### Move 1b — Alpha Vantage revenue
 Deliberately deferred **because it has no consumer until 1a lands** — `revenueB` is a street-packet
@@ -190,7 +206,7 @@ at 20 of 25, and the `"Information"` cap message parsed as *exhausted*, never re
 
 ```
 [x] Move 2 — Tiingo candles (built, tested, negative-controlled, docs re-pinned)
-[ ] Move 1a — Nasdaq street draft   ⚖️ BLOCKED: provider lock ruling (§4)
+[ ] Move 1a — Nasdaq street draft   RULED A (allowlist); gated on the Move 2 edge check
 [ ] Move 1b — Alpha Vantage revenue    depends on 1a; key obtained, untested
 [x] Move 3 — SPY live print         RULED: leave alone; collision recorded
 [x] Docs — CLAUDE.md candle ladder, TIINGO_KEY matrix row, retired claim pinned absent
