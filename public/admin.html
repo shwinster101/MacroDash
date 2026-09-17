@@ -6790,7 +6790,7 @@ function streetTargetFromUrl(url){
   }catch(_e){}
   return null;
 }
-// v6.6.3 (palette Move 1b) — the ESTIMATES provider is derived from the source URL's host the
+// v6.6.2 (palette Move 1b) — the ESTIMATES provider is derived from the source URL's host the
 // same way the target provider is: Alpha Vantage under its own name, never a Seeking Alpha
 // sticker. An unrecognised host yields null and readStreetPacket sends "" so the server's
 // allowlist refuses it with the reason named, rather than the client guessing a provider.
@@ -6820,7 +6820,7 @@ function streetReviewHtml(d,warnings){
   const v=x=>x===null||x===undefined?"":esc(x),t=d.analystTarget||{},r=t.ratings||{},e=d.estimates||{};
   const periods=(e.periods&&e.periods.length?e.periods:[{},{},{}]).map(streetPeriodHtml).join("");
   const targetName=t.provider||"target";
-  // v6.6.3: the estimates block is labelled by ITS provider (Seeking Alpha or Alpha Vantage); a
+  // v6.6.2: the estimates block is labelled by ITS provider (Seeking Alpha or Alpha Vantage); a
   // blank draft still reads Seeking Alpha — the owner's default source, not a guess about a fetch.
   const estName=e.provider||"Seeking Alpha";
   return `<div class="derived">Upload up to 3 screenshots for an OCR <b>draft</b>, fetch a Nasdaq/Zacks target draft, or fetch Alpha Vantage annual estimates, then verify every field. Images and provider responses are discarded; only CONFIRM saves numbers. Nasdaq is never labelled TipRanks; Alpha Vantage is never labelled Seeking Alpha.</div>`+
@@ -6899,7 +6899,7 @@ async function nasdaqStreetDraft(){
     toast("Nasdaq draft ready — verify every field before CONFIRM");
   }catch(e){toast("Nasdaq draft unavailable: "+e.message+" — manual fields remain available");}
 }
-// v6.6.3 (palette Move 1b) — POST, because the route SPENDS a daily quota (a GET could be
+// v6.6.2 (palette Move 1b) — POST, because the route SPENDS a daily quota (a GET could be
 // prefetched or replayed). The response replaces the ESTIMATES block only; the target block and
 // every typed field ride through readStreetPacket unchanged. Nothing is saved until CONFIRM.
 async function alphaVantageStreetDraft(){
@@ -6943,7 +6943,7 @@ function readStreetPacket(){
   else if(src&&src.defaultLookback!=null)target.lookbackMonths=src.defaultLookback;
   optional("stLow","low",target);optional("stHigh","high",target);optional("stCount","analystCount",target);optional("stRef","referencePrice",target);
   optional("stBuy","buy",target.ratings);optional("stHold","hold",target.ratings);optional("stSell","sell",target.ratings);
-  // v6.6.3: the estimates provider is DERIVED from the URL's host. A blank URL keeps the owner's
+  // v6.6.2: the estimates provider is DERIVED from the URL's host. A blank URL keeps the owner's
   // default (Seeking Alpha, the manual path); a recognised host names itself; an unrecognised
   // host sends "" so the server refuses it by name rather than the client mislabelling it.
   const saUrl=(document.getElementById("stSaUrl").value||"").trim();

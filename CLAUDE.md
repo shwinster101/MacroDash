@@ -13,8 +13,12 @@ interpretation, limitation. Dates and source links remain separate. Zero earning
 not negative; missing earnings or their period do not establish a loss. The financial
 model now carries the net-income period and earnings source. Old cached records lacking
 the period withhold the new earnings explanation until normal refresh. No provider,
-macro thresholds, forecasts or investment calls changed. Built separately from pending
-PR #42; integration and validation are recorded in `working/2026-09-16-company-value.md`.
+macro thresholds, forecasts or investment-call outcomes changed. At the owner’s request,
+PR #42’s stronger call wording (15 words) and mode-specific five Whys (25 words each)
+are carried forward from `ab0ac1f`, preserving Volatility in full. The Simple Hold
+explains the missing majority instead of “fine”/“drag”; Degen keeps channels and
+thresholds. Its compact news line shows only a shortened rank-1 headline; ranks 2–3
+still exist in the data. The separate FOMC event feature remains in #42. Validation is in `working/2026-09-16-company-value.md`.
 
 **v6.6.2 — Alpha Vantage joins the ESTIMATES side under its own name, budgeted at 20 of the 25 free calls, and the browser harness stops racing midnight.**
 Palette Move 1b (`working/2026-09-16-api-palette-upgrade.md`), stacked on #44's v6.6.1 allowlist

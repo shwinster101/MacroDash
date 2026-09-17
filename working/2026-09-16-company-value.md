@@ -57,3 +57,19 @@ sequentially on this branch. Corrected a browser assertion that wrongly expected
 a missing market-cap date to be marked stale; missing and stale are now checked
 separately. Visual review prompted full price-to-earnings wording in Simple and
 a company heading on each Degen metric dialog.
+
+## Owner correction: retain the higher-leverage PR #42 copy
+
+The owner clarified that the original #42 wording should survive where stronger.
+Carried its copy-only `ab0ac1f` change forward: 15-word hero, 25-word Simple/Degen
+Why answers, matching semantic and budget tests. Preserved the merged full
+Volatility name and the new company explanation module. No FOMC policy event,
+alert or provider change from #42 is included. This supersedes the earlier
+“no public call text changed” scope statement; call outcomes remain unchanged.
+The explicit tradeoff from #42 survives: Degen quotes a shortened rank-1 news
+headline; ranks 2–3 remain in data but no longer appear in the Why answer.
+
+Before that scope addition, all four gates passed: smoke 2426, terminal 309,
+public 356, production audit 0 vulnerabilities. Popup sweep maximum is 68/68
+words after final terminology edits (correcting the initial 70/68 record).
+Final gates are rerun with the carried-forward copy below.

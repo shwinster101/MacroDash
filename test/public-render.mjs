@@ -400,13 +400,13 @@ console.log("\n[public] v3.94 — Simple default, the toggle, persistence, red f
      contradictory confidence number beside the scoped "N of 6 voters counted". */
   ok("T2/T3 simple: the Glance layer renders — one plain call, sentence, cards, key numbers; coverage is one tap deep",
     /Bullish|Hold|Bearish|Not enough data/.test(body) &&
-    /(fine|drag|clear lean right now)/i.test(body) &&   // T1: holdReason, not the lecture sentence
+    /(support taking risk|against risk|has a majority|short of a majority|clear lean)/i.test(body) &&   // T1: holdReason (v6.6.1 posture vocabulary), not the lecture sentence
     /HELPING|HURTING|MIXED/.test(body) && /SPY/.test(body) &&
     !/\d+ of \d+ signals counted/.test(await page.locator('[aria-label="Macro backdrop verdict"]').innerText()) &&
     !/\d+ cards from the \d+ signals counted/.test(await page.locator('[aria-label="Key parameters"]').innerText()));
   const sentencePx = await page.evaluate(() => {
     const band = document.querySelector('[aria-label="Macro backdrop verdict"]');
-    const el = [...band.querySelectorAll("div")].find((n) => n.childElementCount === 0 && /(fine|drag|clear lean)/i.test(n.textContent || ""));
+    const el = [...band.querySelectorAll("div")].find((n) => n.childElementCount === 0 && /(support taking risk|against risk|has a majority|short of a majority|clear lean)/i.test(n.textContent || ""));
     return el ? getComputedStyle(el).fontSize : null;
   });
   ok(`T7 sentence (Simple): the so-what line is 16px sans, not an 11px caption (measured ${sentencePx})`,
@@ -1026,7 +1026,7 @@ console.log("\n[public] v4.0 — Simple verdicts, card selection, and what must 
   body = await page.locator("body").innerText();
   ok("v6.4 Simple verdict: a bull tape reads Bullish with supporting factors leading",
     /Bullish/.test(body) && /HELPING/.test(body) && !/MOONING|\bBULLISH\b/.test(body) &&
-    /fine/i.test(body));   // T1: holdReason, helping names "are fine"
+    /support taking risk/i.test(body) && !/\bfine\b|\bdrag\b/i.test(body));   // T1 (v6.6.1): a Bullish day says the backdrop supports taking risk; 'fine' retired
   await page.close();
 
   // 3. NOT ENOUGH DATA — below quorum. And the acceptance rule that matters most here: a withheld
@@ -1048,7 +1048,7 @@ console.log("\n[public] v4.0 — Simple verdicts, card selection, and what must 
   const withheldOpen = await page.locator("body").innerText();
   ok("v4.0 withheld: no explanatory sentence, and the withheld sentence states the shortfall one tap deep",
     /Call withheld until the required evidence is current and usable/i.test(withheldOpen) &&
-    !/are supportive|is working against|clearly supportive|clear lean right now/i.test(withheldOpen));
+    !/are supportive|is working against|clearly supportive|clear lean right now|support taking risk|against risk|has a majority|short of a majority/i.test(withheldOpen));
   await page.locator("button.cg-toggle", { hasText: "why this call" }).click();
   await page.waitForTimeout(150);
   ok("v4.0 withheld: cards still render only USABLE factors — a dead feed is never a card",
@@ -1076,8 +1076,12 @@ console.log("\n[public] v4.0 — Simple verdicts, card selection, and what must 
      sentence says in words, and of the two the sentence is the one a newcomer can use. The
      derived sub itself is unchanged and still renders in Power (pinned in smoke); what this
      asserts is that Simple's ONE explanation names the same disagreement. */
+  /* v6.6.1: the Hold sentence names both sides and states the reason for the Hold — neither
+     side has a majority. Measured live: "Volatility and inflation help. Prices hurt. Neither side
+     has a majority." on this tape (vix + cooling CPI helping, rich CAPE hurting). */
   ok("v5.9: Simple names the disagreement in the SENTENCE, with no count sub beside it",
-    /fine/.test(band) && /drag/.test(band) &&
+    /help\./.test(band) && /hurt\./.test(band) && /Neither side has a majority/.test(band) &&
+    !/\bfine\b|\bdrag\b/i.test(band) &&
     !/help, prices do not/.test(band) && !/\d+ help, \d+ does not/.test(band));
   ok("8/29 ruler: the canned watch-VIX gloss is gone from a tape where VIX is helping",
     !/watch VIX/i.test(band) && !/Cross-signals/.test(band));
