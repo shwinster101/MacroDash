@@ -52,12 +52,12 @@ export function spotlightExplain(c, leg) {
     : face.stat.label === "Free cash flow" ? "Free cash flow is operating cash after spending on long-lived assets."
       : "Revenue growth measures sales growth, not profit growth.";
   const operatingLoss = finite(m.operatingMargin?.pct) && m.operatingMargin.pct < 0 && dated(m.operatingMargin.period) && !m.operatingMargin.unavailable;
-  const earnings = e.state === "missing" ? `Profitability unavailable: ${e.reason}. P/E cannot be assessed.`
-    : e.state === "loss" ? "Reported a net loss over the past year. P/E is not meaningful; valuing future profits requires more assumptions."
-      : e.state === "zero" ? "Reported zero net earnings over the past year. P/E is not meaningful; future profits remain uncertain."
+  const earnings = e.state === "missing" ? `Profitability unavailable: ${e.reason}. Price-to-earnings (P/E) cannot be assessed.`
+    : e.state === "loss" ? "Reported a net loss over the past year. The price-to-earnings (P/E) ratio is not meaningful; valuing future profits requires more assumptions."
+      : e.state === "zero" ? "Reported zero net earnings over the past year. The price-to-earnings (P/E) ratio is not meaningful; future profits remain uncertain."
         : capReady(c) && finite(v.trailingPe)
-          ? `Investors pay $${v.trailingPe.toFixed(1)} per $1 earned over the past year. This earnings multiple is P/E; it does not predict future profits.`
-          : "Reported a net profit over the past year. P/E is unavailable without dated market capitalization and a usable earnings multiple.";
+          ? `Investors pay $${v.trailingPe.toFixed(1)} per $1 earned over the past year. This price-to-earnings (P/E) ratio does not predict future profits.`
+          : "Reported a net profit over the past year. Price-to-earnings (P/E) is unavailable without dated market capitalization and a usable earnings multiple.";
   return {
     full: c.name,
     what: [
@@ -108,5 +108,5 @@ export function valuationExplain(c, kind) {
     ];
     inputs = [capDate(c), revenueReady ? `Revenue: ${dollars(v.ttmRevenue)} · ${v.ttmRevenuePeriod}.` : null]; labels = ["market cap", "revenue"];
   } else return null;
-  return { full: title, what, metadata: inputs.filter(Boolean).join(" "), sources: sourcesFor(c, labels) };
+  return { full: title, eyebrow: `${c.name} · ${c.symbol}`, what, metadata: inputs.filter(Boolean).join(" "), sources: sourcesFor(c, labels) };
 }

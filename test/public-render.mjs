@@ -2025,7 +2025,7 @@ console.log("\n[public] v6.5 — STOCK SPOTLIGHT: Simple + Degen, always-visible
         /Return through/.test(detail) && (await sheet.locator("li").count()) === 3);
       ok(`company tap: ${name} shows sourced, period-qualified earnings without changing the face`,
         /Net earnings: 12 months to/.test(detail) &&
-        (name === "Nebius Group" ? /net loss.*P\/E is not meaningful/s.test(detail) : /Investors pay.*per \$1 earned/s.test(detail)) &&
+        (name === "Nebius Group" ? /net loss.*price-to-earnings.*not meaningful/s.test(detail) : /Investors pay.*per \$1 earned/s.test(detail)) &&
         (await sheet.getByRole("link", { name: "net earnings source" }).count()) === 1);
       ok(`company tap: ${name} fits the phone width`, await sheet.evaluate(n => n.scrollWidth <= n.clientWidth + 1));
       await page.keyboard.press("Escape");
@@ -2093,7 +2093,7 @@ console.log("\n[public] v6.5 — STOCK SPOTLIGHT: Simple + Degen, always-visible
       await trigger.focus(); await page.keyboard.press("Enter");
       const dialog = page.getByRole("dialog", { name: title });
       ok(`Degen valuation tap: ${group} ${label} teaches its calculation and limitation`,
-        expected.test(await dialog.innerText()) && await dialog.locator("li").count() === 3 && await dialog.getByRole("link").count() > 0);
+        expected.test(await dialog.innerText()) && (await dialog.innerText()).includes(group.includes("NBIS") ? "NBIS" : "MSFT") && await dialog.locator("li").count() === 3 && await dialog.getByRole("link").count() > 0);
       await page.keyboard.press("Escape");
       ok(`Degen valuation tap: ${label} closes and restores focus`, await trigger.evaluate(n => n === document.activeElement) && await page.getByRole("dialog").count() === 0);
     }
@@ -2118,8 +2118,12 @@ console.log("\n[public] v6.5 — STOCK SPOTLIGHT: Simple + Degen, always-visible
       /Unavailable · no market cap/.test(text) && !/Unavailable — profile carries no market capitalization/.test(text) &&
       /\$3\.41T/.test(text) && !/\$0/.test(text) && /Unavailable/.test(text));
     await r.locator('.stock-profile-trigger', { hasText: "Nebius Group" }).click();
-    ok("Simple company tap: missing cap and stale tape remain explicit in the popup",
-      /market capitalization unavailable/i.test(await page.getByRole("dialog").innerText()) && /STALE/.test(await page.getByRole("dialog").innerText()));
+    ok("Simple company tap: missing cap remains explicitly unavailable in the popup",
+      /market capitalization unavailable/i.test(await page.getByRole("dialog").innerText()));
+    await page.keyboard.press("Escape");
+    await r.locator('.stock-profile-trigger', { hasText: "Microsoft" }).click();
+    ok("Simple company tap: the dated but stale comparison values stay marked",
+      /STALE/.test(await page.getByRole("dialog").innerText()));
     await page.keyboard.press("Escape");
     ok("v6.5 unavailable: the missing anchor series is NAMED on the chart and the comparison line still plots alone",
       /NBIS series unavailable/.test(text) && (await r.locator(".recharts-line").count()) === 1 && /Unavailable(?! —)/.test(text));

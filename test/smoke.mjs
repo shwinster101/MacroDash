@@ -12106,7 +12106,7 @@ console.log("\n[company-value] v6.6.2 — company size, earnings evidence and tw
     /operations still lost money/.test(E.spotlightExplain(variants[7]).what[2]) &&
     E.spotlightExplain(variants[7]).metadata.includes(nb.metrics.operatingMargin.period));
   ok("company popup: missing capitalization with positive profit does not imply zero or cheapness; stale market data stays marked",
-    /P\/E is unavailable/.test(E.spotlightExplain(variants[5]).what[2]) &&
+    /P\/E\) is unavailable/.test(E.spotlightExplain(variants[5]).what[2]) &&
     E.peDisplay(variants[5]).value === null && /STALE/.test(E.spotlightExplain(variants[6]).metadata));
   ok("Degen popup: P/E states its actual denominator and revenue multiple stays distinct from enterprise value",
     /market capitalization ÷ reported net earnings/.test(E.valuationExplain(ms, "pe").what[0]) &&

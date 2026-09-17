@@ -67,7 +67,7 @@ const Unavail = ({ reason, compact = false }) => (
 );
 const Row = ({ label, value, sub, unavailable, big = false, compact = false, explain }) => (
   <div style={{ display: "flex", alignItems: "baseline", gap: 6, flexWrap: "wrap", minWidth: 0, padding: "2px 0" }}>
-    {explain ? <span style={{ flexShrink: 0, minWidth: 92 }}><Explainable explain={explain} title={explain.full} className="stock-metric-trigger"
+    {explain ? <span style={{ flexShrink: 0, minWidth: 92 }}><Explainable explain={explain} title={explain.full} eyebrow={explain.eyebrow} className="stock-metric-trigger"
       style={{ background: "none", border: 0, padding: "8px 0", minHeight: 44, minWidth: 92, flex: "0 1 auto" }}>
       <span style={{ fontFamily: T.fontMono, fontSize: T.fsXs, color: T.textMuted, textTransform: "uppercase" }}>{label} <span style={{ color: T.amber }}>ⓘ</span></span>
     </Explainable></span> : <span style={{ fontFamily: T.fontMono, fontSize: T.fsXs, color: T.textMuted, letterSpacing: "0.04em", textTransform: "uppercase", flexShrink: 0, minWidth: 92 }}>{label}</span>}
