@@ -58,3 +58,14 @@ Hold; this is a test wording correction, not a relaxed behavior requirement.
 The final abbreviation scan also found an older regime subtitle using “low vol”;
 expanded it to “low volatility” and updated its fixture. Remaining `vol` tokens
 in public source are internal variable names/comments, not displayed wording.
+
+## Outcomes
+
+Code/test audit commits: 99ea2fe, c58c8f1, 4718855. Final local verification:
+**2446 smoke / 309 terminal / 356 public passed; zero failures; production audit
+zero vulnerabilities**. Browser required, with phone overflow, tap/keyboard,
+focus restoration, popup content and provenance checks. The final legacy-subtitle
+edit also received a separate clean 2446-check smoke run; the browser build
+included that edit. No threshold, vote, ratio calculation or provider changed.
+PR #46 remains v6.6.3. Owner-authorized merge proceeds after GitHub checks pass;
+the merge commit and live deployment are verified externally after that action.
