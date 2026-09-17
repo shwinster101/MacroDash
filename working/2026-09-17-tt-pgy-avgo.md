@@ -254,3 +254,66 @@ AVGO — Composite: UNAVAILABLE — no server card exists (/api/score?sym=AVGO r
 - **No `price_action` stamp for either name.** Levels are stamped by the broker-historicals
   sync at a TT run, not hand-entered; the measured levels in §2.4/§3.3 are context in this note
   and are not stored.
+
+---
+
+## 7. Addendum — "is this reflected in the terminal ladder export?" (same day)
+
+Owner follow-up asked whether the findings above appear in the latest exported terminal ladder.
+No such PDF was reachable from this session (not attached, not in the repo, not in Drive — searched
+`mimeType = 'application/pdf'` plus title/fullText on ladder/rankings/terminal/TT/PGY/AVGO). The
+question is still answerable without it, because `buildRankingsMd()` (`public/admin.html:7358`) has
+a fixed column set and most of §2–§4 has nowhere to land in it.
+
+**Master-table columns:** `# · Sym · Tier · Lens · Composite · %/yr · Weight · Rank: upside ·
+Rank: comp · Rank: in tier · Rank: in lens · Readiness · Flags`.
+**Flag vocabulary:** red hinges · NEVER RUN / run Nd · options-only · rolled · R/R fails ·
+binary Nd (only within `BINARY_WINDOW_D = 10`) · stamped px.
+
+| Finding | In the ladder? |
+|---|---|
+| PGY composite 8.2 / B, AVGO composite absent | **Yes** — Composite column (AVGO prints `—`) |
+| PGY +60.4%/yr, AVGO +78.7%/yr | **Yes** — %/yr column, recomputed live at export time |
+| Both unheld | **Yes** — Weight prints `not held` |
+| **PGY's blocker date (2026-11-17)** | **No.** No column carries it, and `binary Nd` only fires inside 10 days — at 61 days out **no flag renders at all** |
+| **AVGO has no server card vs. a stale one** | **No.** Composite `—` cannot distinguish *never computed* from *stale* |
+| **The tape** (AVGO below 50d and 200d, RSI 32.4) | **No.** `price_action` is unstamped on both, so the WHEN leg is UNREAD and contributes no column and no flag |
+| **AVGO's multiples are assistant-set, PGY's owner-ruled** | **No — and this is the sharpest gap.** There is no provenance column, so $733.44 and $37.80 print with identical authority |
+| Circuit expiry 2026-09-20 | **Partly** — STANCE prints the circuit state via `st.quals`, never its expiry date |
+
+**The literal answer is no, in a stronger sense than the table shows: nothing from this run is
+recorded in the terminal at all.** It was read-only by design, so there is no write for an export
+to pick up. Concretely, any ladder generated today prints both names as:
+
+```
+| ## | PGY  | WATCH | QC | 8.2 | +60.4% | not held | … | BLOCKED | NEVER RUN |
+| ## | AVGO | WATCH | AI | —   | +78.7% | not held | … | BLOCKED | NEVER RUN |
+```
+
+Neither book entry carries `lastRun` (`PGY: sym,tier,lens,fp,note` · `AVGO: sym,tier,lens,rank,note`),
+so `runState` returns `never`, `readiness()` returns **BLOCKED**, and the Flags column prints
+**NEVER RUN** for both — regardless of how complete the card underneath is. PGY's 8.2 with nine
+gates PASS and a NEVER RUN flag beside it is the ladder telling the truth about attestation, not
+about evidence.
+
+**Dating test for whatever PDF is in hand:** PGY's card was computed **2026-09-16T23:16Z**. An
+export stamped before that shows PGY with **no composite at all**; one stamped after shows 8.2/B.
+That single cell dates the document.
+
+### New finding, and it outranks the rest: the eligible line expires 2026-09-19
+
+`runState` is `fresh` at `d <= 30`, `stale` at `d > 30`. **NBIS — the only name on the ELIGIBLE
+NEXT DOLLAR line — carries `lastRun: 2026-08-19`**, which is 29 days old today and **31 days old on
+2026-09-19**. At that point FIX-B (v3.49) vetoes it: a non-fresh TT run per name is a hard WAIT, so
+the board's single eligible name goes dark.
+
+That lands **one day before** the circuit re-assert expiry already filed at §4(d). Two independent
+clocks take the board to no-eligible-name across the same weekend:
+
+| Date | Clock | Consequence if it lapses |
+|---|---|---|
+| **2026-09-19** | NBIS `lastRun` > 30d | ELIGIBLE NEXT DOLLAR goes dark — no name qualifies |
+| **2026-09-20** | Circuit `as_of` > `CIRCUIT_STALE_D` 7 | Circuit → UNRESOLVED → ADDS SUSPENDED board-wide |
+
+Both are one-field owner acts (a run stamp; a circuit re-assert). Neither is a code change, and
+neither was written here.
