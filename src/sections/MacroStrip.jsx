@@ -30,11 +30,23 @@ import { stripExplainFor } from "../stripExplain.js";
 
 const bandOf=(k)=>REGIME_BAND_TABLE.find((b)=>b.key===k);
 
-const MacroStrip=({d,modeOf,fomcLabel,fomcDays,votingFields,badge})=>{
+const MacroStrip=({d,modeOf,fomcLabel,fomcDays,fedDecision,votingFields,badge})=>{
   if(!d||typeof modeOf!=="function")return <div aria-hidden="true"/>;
   const vf=votingFields||new Set();
   const fedLo=d.macro.fedFunds.targetLower, fedHi=d.macro.fedFunds.targetUpper;
   const fedTargetLive=Number.isFinite(fedLo)&&Number.isFinite(fedHi)&&["LIVE","CACHED"].includes(modeOf("fedTargetUpper"));
+  /* v6.6 (FOMC read-through, 2026-09-16) — THE POLICY MARKER. On the day the Fed hiked for
+     the first time in three years this tile rendered `3.50–3.75%` with `FOMC today` beside
+     it and never said so, because DFEDTARU steps on the implementation note's EFFECTIVE date
+     (the next business day) and nothing on the page could state an EVENT. `fedDecision` is
+     resolved by src/fedPolicy.js in the orchestrator (sections stay presentation-only, the
+     v3.73 boundary) and is null whenever there is nothing to report — the tile then falls
+     back to its countdown exactly as before.
+     ⚠ AMBER, never voteStyle. FED votes nowhere (no Fed row in REGIME_BAND_TABLE), so a
+     green/red marker here would imply a vote this tile never casts — the v6.3 beat-2 rule,
+     expressed in colour. Amber is the strip's existing "attention, context" treatment and is
+     already what `fomcDays===0` paints. */
+  const fedNote=fedDecision?fedDecision.label:null;
   return(
     <div style={{background:T.surfaceHigh,borderBottom:`1px solid ${T.border}`,padding:"6px 20px",overflowX:"auto",display:"flex",alignItems:"center",justifyContent:"space-between",gap:12}} className="macro-strip">
       <div style={{display:"flex",gap:20,minWidth:"max-content",flex:1}} className="macro-strip-inner">
@@ -46,8 +58,12 @@ const MacroStrip=({d,modeOf,fomcLabel,fomcDays,votingFields,badge})=>{
           {l:"10Y",  f:"tenYear", v:`${d.crossAsset.treasury10y.current}%`, s:fmt.bps(d.crossAsset.treasury10y.d1)+" 1D", sc:pctColor(-d.crossAsset.treasury10y.d1), t:"10-year Treasury yield — the benchmark interest rate"},
           {l:"FED",  f:fedTargetLive?"fedTargetUpper":"fedFunds",
            v:fedTargetLive?`${fedLo.toFixed(2)}–${fedHi.toFixed(2)}%`:`${d.macro.fedFunds.rate}% avg`,
-           s:`FOMC ${fomcLabel}`, sc:fomcDays===0?T.amber:T.textMuted,
-           t:fedTargetLive?"Federal Reserve target range — current policy setting":"FEDFUNDS monthly effective average — lags a policy decision"},
+           // The marker REPLACES the bare countdown when there is an event to report: on a
+           // decision day the countdown's "today" is the weakest thing the tile could say.
+           s:fedNote||`FOMC ${fomcLabel}`, sc:(fedDecision||fomcDays===0)?T.amber:T.textMuted,
+           note:fedNote,
+           t:(fedTargetLive?"Federal Reserve target range — current policy setting":"FEDFUNDS monthly effective average — lags a policy decision")
+             +(fedDecision?`\n${fedDecision.detail}`:"")},
           {l:"CPI",  f:"cpiHeadline", v:`${d.macro.cpi.headline}%`,         s:`Core ${d.macro.cpi.core}%`, voteKey:"cpiHeadline", t:"Consumer Price Index — inflation, year-over-year"},
           /* OWNER SWAP (8/31), reversing the FEAT-NFCILEV tile that held this slot since 8/29:
              the 8th slot goes to the NFCI COMPOSITE, not its leverage subindex.
@@ -70,7 +86,7 @@ const MacroStrip=({d,modeOf,fomcLabel,fomcDays,votingFields,badge})=>{
            v:Number.isFinite(d.macro.nfci.current)?`${d.macro.nfci.current>0?"+":""}${d.macro.nfci.current.toFixed(2)}`:"—",
            s:"0 = avg", voteKey:"nfci",
            t:"Chicago Fed National Financial Conditions Index — how easily money and credit are flowing through the financial system, from 105 measures. Standardized so 0 = the 1971– average; positive is tighter than average, negative is looser."},
-        ].map(({l,f,v,s,sc,voteKey,t})=>{
+        ].map(({l,f,v,s,sc,voteKey,note,t})=>{
           const m=modeOf(f); const live=m==="LIVE"||m==="CACHED";
           // Vote-derived sub-line color: the band table is the ONE expression of the
           // threshold, voteStyle the ONE vote->appearance map. Not live -> muted (a
@@ -110,7 +126,11 @@ const MacroStrip=({d,modeOf,fomcLabel,fomcDays,votingFields,badge})=>{
           <div key={l} title={`${t}\n(${m.toLowerCase()})${votes?`\nCounts toward today's posture — signal is ${vs.word}.`
             :isVoter?"\nA signal, but unavailable today — not counted.":"\nContext only — does not affect the call."}`} style={{flexShrink:0,minWidth:68,cursor:"help"}}>
             <Explainable explain={ex} title={ex?ex.full:l}
-              eyebrow={`${l} · ${v}${votes?` · signal ${vs.word}`:isVoter?" · unavailable today":" · context only"}`}
+              /* v6.6: `note` is the optional per-tile event line (today only the FED policy
+                 marker). It rides the eyebrow BEFORE the vote clause so the sheet restates
+                 the event and its vote state in the strip's own vocabulary — a context tile
+                 reporting an event still says "context only". */
+              eyebrow={`${l} · ${v}${note?` · ${note}`:""}${votes?` · signal ${vs.word}`:isVoter?" · unavailable today":" · context only"}`}
               className="strip-tile" style={{background:"none",border:"none",padding:0,margin:0}}>
               <div style={{display:"flex",alignItems:"center",gap:3}}>
                 <span style={{width:5,height:5,borderRadius:"50%",background:live?dot:"transparent",border:`1px solid ${dot}`,flexShrink:0}}/>

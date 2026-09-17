@@ -383,13 +383,13 @@ console.log("\n[public] v3.94 — Simple default, the toggle, persistence, red f
      contradictory confidence number beside the scoped "N of 6 voters counted". */
   ok("T2/T3 simple: the Glance layer renders — one plain call, sentence, cards, key numbers; coverage is one tap deep",
     /Bullish|Hold|Bearish|Not enough data/.test(body) &&
-    /(fine|drag|clear lean right now)/i.test(body) &&   // T1: holdReason, not the lecture sentence
+    /(support taking risk|against risk|has a majority|short of a majority|clear lean)/i.test(body) &&   // T1: holdReason (v6.6.1 posture vocabulary), not the lecture sentence
     /HELPING|HURTING|MIXED/.test(body) && /SPY/.test(body) &&
     !/\d+ of \d+ signals counted/.test(await page.locator('[aria-label="Macro backdrop verdict"]').innerText()) &&
     !/\d+ cards from the \d+ signals counted/.test(await page.locator('[aria-label="Key parameters"]').innerText()));
   const sentencePx = await page.evaluate(() => {
     const band = document.querySelector('[aria-label="Macro backdrop verdict"]');
-    const el = [...band.querySelectorAll("div")].find((n) => n.childElementCount === 0 && /(fine|drag|clear lean)/i.test(n.textContent || ""));
+    const el = [...band.querySelectorAll("div")].find((n) => n.childElementCount === 0 && /(support taking risk|against risk|has a majority|short of a majority|clear lean)/i.test(n.textContent || ""));
     return el ? getComputedStyle(el).fontSize : null;
   });
   ok(`T7 sentence (Simple): the so-what line is 16px sans, not an 11px caption (measured ${sentencePx})`,
@@ -1009,7 +1009,7 @@ console.log("\n[public] v4.0 — Simple verdicts, card selection, and what must 
   body = await page.locator("body").innerText();
   ok("v6.4 Simple verdict: a bull tape reads Bullish with supporting factors leading",
     /Bullish/.test(body) && /HELPING/.test(body) && !/MOONING|\bBULLISH\b/.test(body) &&
-    /fine/i.test(body));   // T1: holdReason, helping names "are fine"
+    /support taking risk/i.test(body) && !/\bfine\b|\bdrag\b/i.test(body));   // T1 (v6.6.1): a Bullish day says the backdrop supports taking risk; 'fine' retired
   await page.close();
 
   // 3. NOT ENOUGH DATA — below quorum. And the acceptance rule that matters most here: a withheld
@@ -1031,7 +1031,7 @@ console.log("\n[public] v4.0 — Simple verdicts, card selection, and what must 
   const withheldOpen = await page.locator("body").innerText();
   ok("v4.0 withheld: no explanatory sentence, and the withheld sentence states the shortfall one tap deep",
     /Call withheld until the required evidence is current and usable/i.test(withheldOpen) &&
-    !/are supportive|is working against|clearly supportive|clear lean right now/i.test(withheldOpen));
+    !/are supportive|is working against|clearly supportive|clear lean right now|support taking risk|against risk|has a majority|short of a majority/i.test(withheldOpen));
   await page.locator("button.cg-toggle", { hasText: "why this call" }).click();
   await page.waitForTimeout(150);
   ok("v4.0 withheld: cards still render only USABLE factors — a dead feed is never a card",
@@ -1059,8 +1059,12 @@ console.log("\n[public] v4.0 — Simple verdicts, card selection, and what must 
      sentence says in words, and of the two the sentence is the one a newcomer can use. The
      derived sub itself is unchanged and still renders in Power (pinned in smoke); what this
      asserts is that Simple's ONE explanation names the same disagreement. */
+  /* v6.6.1: the Hold sentence names both sides and states the reason for the Hold — neither
+     side has a majority. Measured live: "Vol and inflation help. Prices hurt. Neither side
+     has a majority." on this tape (vix + cooling CPI helping, rich CAPE hurting). */
   ok("v5.9: Simple names the disagreement in the SENTENCE, with no count sub beside it",
-    /fine/.test(band) && /drag/.test(band) &&
+    /help\./.test(band) && /hurt\./.test(band) && /Neither side has a majority/.test(band) &&
+    !/\bfine\b|\bdrag\b/i.test(band) &&
     !/help, prices do not/.test(band) && !/\d+ help, \d+ does not/.test(band));
   ok("8/29 ruler: the canned watch-VIX gloss is gone from a tape where VIX is helping",
     !/watch VIX/i.test(band) && !/Cross-signals/.test(band));
@@ -1566,8 +1570,16 @@ console.log("\n[public] v6.0 — merged FIRED·BLIND badge + alert persistence a
   await page.evaluate(() => localStorage.setItem("md:alerts:v1", "{not json"));
   await page.reload({ waitUntil: "domcontentloaded" });
   await page.waitForTimeout(1300);
+  /* v6.6 RE-PIN: this read a hardcoded 9, which was the default-set size on the day it was
+     written and went red the moment v6.6 added the three policy alerts — a correct addition
+     failing a test that was measuring a COUNT rather than the property. The property is
+     "garbage restores the WHOLE default set", so the expected number is now DERIVED from
+     DEFAULT_ALERTS itself (the SOURCES/DERIVED_OF reconciliation convention): a later alert
+     arrives without touching this pin, while a default that silently fails to render still
+     turns it red. */
   ok("v6.0 persist: garbage in the store falls back to the DEFAULTS — every monitor returns",
-    (await page.locator('button[aria-label^="Toggle alert"]').count()) === 9 &&
+    (await page.locator('button[aria-label^="Toggle alert"]').count())
+      === (await import("../src/alertEngine.js")).DEFAULT_ALERTS.length &&
     (await page.locator('button[aria-label="Toggle alert CPI > 4%"]').innerText()).trim() === "OFF");
   ok("v6.0 alerts: no page errors through the whole loop", errors.length === 0);
   await page.close();
@@ -1892,9 +1904,36 @@ console.log("\n[public] v6.3 — eight sheets on the macro strip (Power, Simple,
   await trigger(5).click();
   await page.waitForTimeout(250);
   const fedBody = await dlg.innerText();
+  /* v6.6 RE-PIN: the eyebrow gained the optional POLICY MARKER between the tile's reading
+     and its vote clause, so the two were no longer adjacent. Matching them as adjacent also
+     made this pin quietly CALENDAR-DEPENDENT — it would pass on an ordinary day and fail on
+     any FOMC decision day, which is the v3.35/v3.80 rotting-fixture defect. It now pins the
+     load-bearing property instead: whatever the tile reports, a CONTEXT tile's eyebrow still
+     ENDS in "context only", so a marker can never read as a vote this tile does not cast. */
+  /* v6.5.5 shortTitle rewrite (unrelated to the v6.6 marker, landed independently on main):
+     FactSheet now renders explain.shortTitle ("Fed policy rate") as the dialog title, with
+     the full official name a formalName inside the body — the same shortTitle/full split
+     every other CONTEXT_EXPLAIN entry carries. Carried forward verbatim. */
   ok("v6.3 FED sheet: the target range's official name, the tile's own range reading, and both readings named in the body",
     /Fed policy rate/.test(await page.locator("#factsheet-title").innerText()) && /Federal Funds Rate Target Range/.test(fedBody) &&
-    /FED · 3\.50–3\.75% · CONTEXT ONLY/i.test(fedBody) && /effective average/.test(fedBody) && /lags a decision/.test(fedBody));
+    /FED · 3\.50–3\.75%[^\n]*· CONTEXT ONLY/i.test(fedBody) && /effective average/.test(fedBody) && /lags a decision/.test(fedBody));
+  /* v6.6 — the marker itself, driven live. DERIVED from the calendar rather than hardcoded
+     (the v3.99.1 convention two pins down), so it survives the table rolling forward: on a
+     decision day the tile must SAY the meeting is today, and on any other day it must fall
+     back to the countdown and claim no event at all. */
+  ok("v6.6 FED marker: on a decision day the tile reports the MEETING; on any other day it renders no event",
+    await (async () => {
+      const { FOMC_MEETINGS, etYmd } = await import("../src/sources.js");
+      const decisionDay = FOMC_MEETINGS.includes(etYmd());
+      /* Scoped to the EYEBROW line, not the sheet body. The first draft swept the whole body
+         for an outcome word and went red against correct code: FED_EXPLAIN's own third
+         bullet says "a surprise cut or hike", so the pin was reading the explainer's prose as
+         a claim the marker had made — the v5.10.0 defect of asserting the wrong object. */
+      const eyebrow = fedBody.split("\n").find((l) => /FED\s·/i.test(l)) || "";
+      return decisionDay
+        ? /FOMC today/i.test(eyebrow) && !/HIKED|\bCUT\b/i.test(eyebrow)
+        : !/FOMC today/i.test(eyebrow);
+    })());
   await page.locator("button.fs-close").click();
   await page.waitForTimeout(200);
   // NFCI — the 8th tile, a voter reading bull on this tape.

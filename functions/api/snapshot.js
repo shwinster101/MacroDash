@@ -25,6 +25,9 @@
 import { isMarketHoliday, sessionsBehind, etYmd, expectedObsDate } from "../../src/sources.js";
 // FEAT-SAHM (v3.84): the Sahm math — one home (src/sahm.js), same esbuild-inline path.
 import { sahmFrom } from "../../src/sahm.js";
+// v6.6 (FOMC read-through): the target-range STEP walk. Pure and Node-importable so smoke
+// RUNS it — same esbuild-inline path as sources.js/sahm.js above.
+import { targetStepFrom } from "../../src/fedPolicy.js";
 
 // ENGINE0-CONT: the readout contract now lives in src/ttReadout.js and the snapshot layer
 // consumes it for publish decisions — THIRD functions/→src/ import, same esbuild-inline path.
@@ -77,6 +80,11 @@ export const BANDS = {
   // 1981 peak was ~20%; wide enough to reject the impossible, not the unusual.
   fedTargetUpper: [0, 25],
   fedTargetLower: [0, 25],
+  // v6.6: the PRIOR bound is the same instrument one step back, so it gets the same band —
+  // the step marker is not a bypass (the v5.1 failsafe rule). A prev dropped as implausible
+  // leaves the current bound standing and the marker refuses, which is the safe direction.
+  fedTargetUpperPrev: [0, 25],
+  fedTargetLowerPrev: [0, 25],
   mortgage30:   [0, 25],
   fearGreed:    [0, 100],      // index is defined 0-100
   spyPrice:     [1, 100000],
@@ -648,6 +656,22 @@ async function fetchFred(key, statuses = null) {
           const s = sahmFrom(vals);
           return [field, latest, prev, spark, obs[0]?.date, wAgo, mAgo,
             s === null ? undefined : { sahm: s, sahmAsOf: obs[0]?.date }];
+        }
+        /* v6.6 (FOMC read-through) — the target-range STEP, computed HERE for the same
+           reason the Sahm rule is: only 10 of the 26 daily points escape this closure via
+           `spark`, and the observation DATES never escape at all — and the date is the whole
+           point, because DFEDTARU/DFEDTARL step on the implementation note's EFFECTIVE date
+           (the business day AFTER the meeting), which is the fact the tile could not state
+           on 2026-09-16. The 8th tuple slot is the established extras channel.
+           A flat window emits NOTHING rather than a zero-size step — absent and "no move"
+           stay distinguishable downstream. */
+        if (field === "fedTargetUpper" || field === "fedTargetLower") {
+          const st = targetStepFrom(obs);
+          const upper = field === "fedTargetUpper";
+          return [field, latest, prev, spark, obs[0]?.date, wAgo, mAgo,
+            st && st.changedAt ? (upper
+              ? { fedTargetUpperPrev: st.prev, fedTargetUpperChangedAt: st.changedAt }
+              : { fedTargetLowerPrev: st.prev, fedTargetLowerChangedAt: st.changedAt }) : undefined];
         }
         return [field, latest, prev, spark, obs[0]?.date, wAgo, mAgo];
       })

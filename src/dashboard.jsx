@@ -7,6 +7,7 @@ import { holdReason, WHYS_FOLD_LABEL, ABOUT_FOLD_LABEL } from "./simpleFace.js";
 import { LASTVALID_KEY, summarizeEvidence, compareEvidence } from "./whatChanged.js"; // C4 (v3.60)
 import { parseObsDate, nextFomcDate, etYmd } from "./sources.js"; // FEAT-R3: per-tile, cadence-aware staleness + shared market calendar; v3.99: curated FOMC calendar
 import { computeMacroFlip } from "./ttReadout.js"; // FEAT-331: Macro Flip circuit
+import { fedDecisionState } from "./fedPolicy.js"; // v6.6: the FED tile's policy marker (context, never a vote)
 import { callFromEvidence, formatMacroCallPaste, formatMacroShareCard, callEdition } from "./macroCall.js"; // v5.5 frozen call + share card
 import { evalAlert, DEFAULT_ALERTS, applyAlertPrefs, alertPrefsOf, ALERT_PREFS_KEY } from "./alertEngine.js"; // v6.5.5: FEAT-ALERT-EVAL definitions, one home; evaluation still runs HERE
 import { closeReadLine } from "./closeRead.js"; // v6.2: the 6pm close read — ONE line builder, the ptModelRows rule
@@ -253,9 +254,31 @@ export default function Dashboard({ publicView = false } = {}) {
   const fomcSource=fomcPick.src;
   const fomcDays=(()=>{const dt=fomcPick.date;if(!dt)return null;const t=parseObsDate(etYmd());const days=Math.round((dt-t)/86400000);return days<0?null:days;})();
   const fomcLabel=fomcDays==null?"—":fomcDays===0?"today":`${fomcDays}d`;
+  // (fedDecision is resolved below, once modeOf exists — it gates every leg on freshness.)
   // C1 (v3.60): modeOf is now the SHARED fieldMode from evidence.js — the dashboard and the
   // EvidenceSet can never disagree about a field's freshness. Same rule, one home.
   const modeOf=(k)=>fieldMode(provenance, dataAsOf, k); // cadence-aware LIVE | CACHED | STALE | MOCK
+  /* v6.6 (FOMC read-through, 2026-09-16) — the FED tile's POLICY MARKER. The page reasoned
+     about state and had no way to report an EVENT, so on the day of the first hike in three
+     years the tile showed an unchanged range and said nothing. src/fedPolicy.js owns the
+     rules; this is the one place the freshness gating happens, because a marker built off a
+     dead feed is exactly what the v3.1 invariant forbids — mock/stale legs are passed as
+     null and the module then refuses rather than guessing.
+     `decidesToday` reuses the ONE countdown derivation above rather than re-deriving "is the
+     meeting today" from a second clock (the FIX-A rule). */
+  const fedDecision=(()=>{
+    const fed=d.macro.fedFunds, isLive=(k)=>["LIVE","CACHED"].includes(modeOf(k));
+    const rangeLive=isLive("fedTargetUpper")&&isLive("fedTargetLower");
+    return fedDecisionState({
+      upper:rangeLive?fed.targetUpper:null,        lower:rangeLive?fed.targetLower:null,
+      prevUpper:rangeLive?fed.prevTargetUpper:null, prevLower:rangeLive?fed.prevTargetLower:null,
+      changedUpper:rangeLive?fed.targetUpperChangedAt:null,
+      changedLower:rangeLive?fed.targetLowerChangedAt:null,
+      decidesToday:fomcDays===0,
+      odds:isLive("rateOddsHold")?fed.odds:null,
+      today:etYmd(),
+    });
+  })();
   // FEAT-DQ: a regime factor backed by LIVE/CACHED data that has gone STALE (a dead feed)
   // must not cast a vote on today's tape.
   /* C1 (v3.60): the exclusion derivation (STALE always; MOCK-in-a-live-build per
@@ -851,7 +874,7 @@ export default function Dashboard({ publicView = false } = {}) {
       {/* ── MACRO STRIP — extracted to src/sections/MacroStrip.jsx (task 3.1),
           presentation only (FEAT-170 4-col mobile reflow rides the .macro-strip rules in
           the stylesheet above; v3.25: always visible while market detail collapses). ── */}
-      <MacroStrip d={d} modeOf={modeOf} fomcLabel={fomcLabel} fomcDays={fomcDays}
+      <MacroStrip d={d} modeOf={modeOf} fomcLabel={fomcLabel} fomcDays={fomcDays} fedDecision={fedDecision}
         votingFields={VOTING_FIELDS} badge={simple?null:<SpyTapeBadge spyChangePct={d.marketPulse.spy.changePct} mode={modeOf("spyPrice")} noSessionDay={marketClock.noSession}/>}/>
 
       {/* ── v6.5.0 STOCK SPOTLIGHT — immediately below the macro-number strip in BOTH modes,
