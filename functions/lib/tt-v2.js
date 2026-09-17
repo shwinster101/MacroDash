@@ -19,15 +19,27 @@ export const QUOTE_MAX_AGE_MINUTES = 15;
 export const COMPOSITE_MIN_SCORE = 5.5;
 export const RR_FLOORS = Object.freeze({ core: 2, tactical: 2.5, speculative: 3 });
 
-/* v6.6.1 — named {provider → host} allowlist. SA estimates stay Seeking Alpha;
-   analystTarget admits TipRanks OR Nasdaq (Zacks consensus) under its own name.
-   TipRanks' lookback default of 3 is provider-aware and is never applied to Nasdaq. */
+/* v6.6.1 — named {provider → host} allowlist. estimates admits Seeking Alpha OR (v6.6.2)
+   Alpha Vantage under its own name; analystTarget admits TipRanks OR Nasdaq (Zacks consensus)
+   under its own name. TipRanks' lookback default of 3 is provider-aware and is never applied
+   to Nasdaq. A provider outside the list is refused BY NAME — never relabelled. */
 export const STREET_SOURCES = Object.freeze({
+  /* v6.6.2 — Alpha Vantage joins the ESTIMATES side under its own name (palette Move 1b).
+     `short` is the label a receipt prints: SA is entrenched across the terminal, but a new
+     source prints in full — a reader must never have to decode an abbreviation to learn
+     where a number came from. */
   estimates: Object.freeze([
     Object.freeze({
       names: Object.freeze(["seeking alpha"]),
       canonical: "Seeking Alpha",
+      short: "SA",
       host: "seekingalpha.com",
+    }),
+    Object.freeze({
+      names: Object.freeze(["alpha vantage", "alphavantage"]),
+      canonical: "Alpha Vantage",
+      short: "Alpha Vantage",
+      host: "alphavantage.co",
     }),
   ]),
   analystTarget: Object.freeze([
@@ -191,7 +203,7 @@ export function validateStreetPacket(raw, { now = new Date(), rejectFuture = tru
   checkLicensedHeader(value.analystTarget, "analystTarget");
   const estimateSource = matchStreetSource("estimates", value.estimates.provider);
   if (!estimateSource)
-    errors.push("estimates.provider must be Seeking Alpha");
+    errors.push("estimates.provider must be Seeking Alpha or Alpha Vantage");
   else if (value.estimates.sourceUrl && !sourceHostMatches(value.estimates.sourceUrl, estimateSource.host))
     errors.push(`estimates.sourceUrl must be on ${estimateSource.host}`);
   const targetSource = matchStreetSource("analystTarget", value.analystTarget.provider);
@@ -338,6 +350,10 @@ export function deriveStreetMetrics(packet, quote, { now = new Date() } = {}) {
     },
     analystConfidence: finite(p.analystTarget.analystCount) ? (p.analystTarget.analystCount <= 2 ? "THIN" : "KNOWN") : "UNKNOWN",
     target: p.analystTarget,
+    // v6.6.2: the estimates side carries its provider too, so a receipt can name it instead of
+    // hardcoding "SA" — the same rule v6.6.1 applied to the target side.
+    estimates: { provider: p.estimates.provider, asOf: p.estimates.asOf,
+      label: (matchStreetSource("estimates", p.estimates.provider) || {}).short || p.estimates.provider },
     periods: p.estimates.periods,
   };
 }
@@ -538,9 +554,10 @@ export function buildGateReceipt({ street, facts, readout, composite, qualitativ
         ? gate("street_gap", "PASS", `${targetLabel} published average is ${round(avgGap, 1)}% above the sourced quote`, [`minimum ${STREET_GAP_MIN_PCT}%`])
         : gate("street_gap", "FAIL", `${targetLabel} published average is only ${round(avgGap, 1)}% above the sourced quote`, [`minimum ${STREET_GAP_MIN_PCT}%`]));
     const fresh = metrics.freshness.estimatesStatus === "PASS" && metrics.freshness.targetStatus === "PASS";
+    const estimatesLabel = metrics.estimates?.label || "estimates";
     gates.push(gate("licensed_freshness", fresh ? "PASS" : "FAIL",
-      fresh ? `SA estimates and ${targetLabel} target are current` : "licensed estimates or target are stale",
-      [`SA ${metrics.freshness.estimatesAgeDays}d`, `${targetLabel} ${metrics.freshness.targetAgeDays}d`]));
+      fresh ? `${estimatesLabel} estimates and ${targetLabel} target are current` : "licensed estimates or target are stale",
+      [`${estimatesLabel} ${metrics.freshness.estimatesAgeDays}d`, `${targetLabel} ${metrics.freshness.targetAgeDays}d`]));
   }
 
   if (!composite || composite.status === "UNKNOWN")

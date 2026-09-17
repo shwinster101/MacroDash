@@ -90,6 +90,19 @@ if (!exe) skip("no Chromium found — set PLAYWRIGHT_CHROMIUM_PATH or PLAYWRIGHT
 // rots as the calendar rolls (the MACROEVT "prints today" assert died the first midnight
 // after it was written). Anything meaning "now"/"recent"/"stale" derives from TODAY_ET.
 const ET_FMT = new Intl.DateTimeFormat("en-CA", { timeZone: "America/New_York" });
+/* v6.6.2 — the same midnight-ET guard test/public-render.mjs carries (see its comment): this
+   suite stamps TODAY_ET once and admin.html's ageDays() judges live, so a run straddling
+   00:00 ET reads every "today" fixture as yesterday. Wait the window out rather than race it. */
+const ET_HM = new Intl.DateTimeFormat("en-US", { timeZone: "America/New_York", hour: "numeric", minute: "numeric", hour12: false });
+async function waitOutMidnightEt(guardMinutes = 4) {
+  const [h, m] = ET_HM.format(new Date()).split(":").map((x) => Number(x));
+  const minutesLeft = 1440 - ((h % 24) * 60 + m);
+  if (minutesLeft > guardMinutes) return 0;
+  console.log(`  (midnight ET is ${minutesLeft} min away — waiting it out so TODAY_ET cannot roll over mid-run)`);
+  await new Promise((r) => setTimeout(r, (minutesLeft + 1) * 60000));
+  return minutesLeft;
+}
+await waitOutMidnightEt();
 const TODAY_ET = ET_FMT.format(new Date());
 const etDaysAgo = (n) => ET_FMT.format(new Date(Date.now() - n * 86400000)); // negative = future
 const dd = (px, rev, eps, extra = {}) => ({

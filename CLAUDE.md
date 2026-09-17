@@ -5,6 +5,74 @@ answers *"is it safe to be in the market?"* from live macro + market + sentiment
 data. Single-page React app on Cloudflare Pages, with live data assembled at the
 edge by Pages Functions and cached in KV.
 
+**v6.6.2 — Alpha Vantage joins the ESTIMATES side under its own name, budgeted at 20 of the 25 free calls, and the browser harness stops racing midnight.**
+Palette Move 1b (`working/2026-09-16-api-palette-upgrade.md`), stacked on #44's v6.6.1 allowlist
+(Move 1a, the owner's A ruling: a provider is admitted under ITS name or refused BY name). The
+street ESTIMATES block — the revenue/EPS consensus every `deriveStreetMetrics` growth figure and
+forward P/E is built from — could only ever be labelled Seeking Alpha, and every row was typed
+from a screenshot. `STREET_SOURCES.estimates` now admits **Alpha Vantage** under `alphavantage.co`
+beside Seeking Alpha under `seekingalpha.com`, with a `short` label per source so a receipt prints
+`Alpha Vantage estimates and TipRanks target are current` for the new source while SA keeps its
+entrenched abbreviation; the freshness gate's evidence names the estimates provider too. **The
+mapper is pure and annual-only** (`functions/lib/alphaVantageStreet.js`): `EARNINGS_ESTIMATES` rows
+whose horizon is a fiscal YEAR become `{periodEnd, revenueB, eps, analysts}` — revenue arrives as
+raw USD and leaves as $B — while quarterly rows are skipped and COUNTED, never merged into a series
+whose growth math tiles fiscal years; a malformed date is dropped AND named; a duplicate period end
+keeps the first row; AV's quota message (`Information`/`Note`) reads **EXHAUSTED**, a fact about the
+day that is never retried. **The route is POST-only and budgeted** (`POST /api/street/av-draft`,
+PIN + origin gated): a call spends quota, so a GET that a prefetch or link preview could replay is
+refused with 405 naming POST (the v3.54 rule pointed at a metered upstream). One call per symbol
+per week rides a KV cache and a cache hit spends nothing; the route stops at **20** so the owner
+always keeps 5 manual pulls; the unit is spent BEFORE the fetch because AV counts the attempt; an
+exhausted reply marks the day at the cap so nothing retries it; the URL — which carries the key —
+is never thrown, logged or echoed. It writes exactly two `tt:av:` families and never a `tt:street:`
+record: the owner still CONFIRMs. **The budget counter is keyed by the UTC calendar date on
+purpose** — the ONE documented exception to the ET clock (FIX-A, five recurrences), because it
+tracks Alpha Vantage's quota window, which resets at 00:00 UTC; keying it in ET would spend
+against a day AV had already reset. Key-gated like Finnhub and Tiingo: no `ALPHAVANTAGE_KEY` means
+no call, no write, and the variable named in the warning. **The Terminal** gains `◉ ALPHA VANTAGE
+ESTIMATES` beside the Nasdaq draft; the response replaces ONLY the estimates block and clears
+`confirmedAt`; the form's estimates labels follow THEIR provider (no `SEEKING ALPHA ANNUAL
+ESTIMATES` literal survives); and `readStreetPacket` DERIVES the estimates provider from the source
+URL's host exactly as it already did for the target — a blank URL keeps the owner's Seeking Alpha
+default (the manual path), a recognised host names itself, an unrecognised host sends `""` so the
+server refuses it by name rather than the client mislabelling it. **The harness fix travels with
+it, because it is why PR #44's CI was red.** Both browser suites stamp `TODAY` ONCE at start while
+the page computes `etYmd()` live, so a run that starts at 23:58 ET reaches the evening-update
+assertions after 00:00 and `closeReadLine` correctly rejects a yesterday-dated record — no
+`.close-read` renders, and the follow-on `locator.evaluate` threw an UNCAUGHT 30s timeout that
+killed the process with no total (the v3.99.4 shape). #44's run started 03:58:02Z and the section
+ran at 00:01 ET; the same head passed 344/0 twenty minutes later; #43 passed the identical section
+at 23:21 ET on identical public code. `waitOutMidnightEt()` now sleeps out the last four minutes
+before midnight ET in BOTH suites (once a night at most, and it says so), and the two colour reads
+are count-guarded so a missing line fails an assertion instead of killing the run. **Honest limit,
+same posture as v6.6.0/v6.6.1:** `www.alphavantage.co` is 403 at this build environment's egress
+proxy, so the key was NOT tested and no live response was seen — the mapper is fixture-tested
+against the documented row fields and fails closed on anything else; **the first keyed call from
+the Pages edge is the true schema check**, and until the owner stores the secret the button
+returns the named-key warning and nothing else. Also found while building: `tt-v2.js`'s allowlist
+comment still read *"SA estimates stay Seeking Alpha"* one release after it stopped being the only
+truth — corrected, and #44's `SA estimates stay locked` pin re-titled to what it now proves.
+Tests: **2415 smoke** (+21, section [86]: the mapper over a mixed annual/quarterly/duplicate/
+malformed/blank/unknown row set, the three fail-closed shapes, purity, the allowlist in BOTH
+directions with SA and TipRanks untouched, the receipt label and an AV-fed packet reaching
+ELIGIBLE on the same gates, the UTC key pinned with its reason, and the route driven against a
+fake KV through no-key · first spend · cache hit · cache expiry · budget stop at 20 with 19
+proceeding · exhausted-at-cap · upstream failure without a key leak · 405/403/400/200, the
+`streetEstimatesFromUrl` lift RUN, the labels and handler, `waitOutMidnightEt` lifted and RUN
+against a stubbed clock at 23:58/noon/00:00/23:55, both suites' guard order, and the docs) +
+**309 render** + **344 public-render** (all four gates run, browser suites in real Chromium).
+Negative-controlled five ways — the budget stop disabled (2 red: the stop pin and the
+exhausted-at-cap pin, which re-reads the counter the stop left unread), the cache hit disabled
+(1), the Alpha Vantage `short` label restickered to `SA` (1, the receipt pin), `readStreetPacket`
+hardcoding Seeking Alpha again (1), and the guard moved AFTER `TODAY` — **which on its first run
+did NOT turn a pin red: it crashed the suite with no total.** The lift's end anchor was the
+`await` call site, so the re-ordered `const TODAY = ET.format(…)` rode into the `new Function`
+body and threw `ReferenceError: ET is not defined` inside section [86] — the v3.99.4 P0 shape,
+and the PIN was wrong, not the code (the v5.97.2/v6.6.0 rule: a control that crashes proves
+nothing). The lift now ends at the function's own closing brace and is try/catch-guarded so a
+broken lift is a RED assertion; re-run, the control turns exactly the order pin red.
+
 **v6.6.1 — NASDAQ/ZACKS IS A STREET SOURCE UNDER ITS OWN NAME.** Palette Move 1a.
 `tt-street-v1` still stores the same shape; existing SA+TipRanks packets stay valid and
 mean what they meant. The hardcoded TipRanks lock is replaced with a named
@@ -1463,6 +1531,15 @@ Jan-anchor shipped; see `snapshot.js` ~318–328), `spyMa100`, `spyMa200`, and a
   date). KEY-GATED: no key → throws → mock (invariant holds). `mag10PricesJson` is a JSON
   passthrough merged onto the `mag10` array by ticker at render. On the `withLastGood` rails.
 
+- **Alpha Vantage annual consensus** (`avDraftFor`, v6.6.2 — the TT street layer, not the
+  snapshot): `EARNINGS_ESTIMATES` → a **draft** of the street ESTIMATES block (annual rows only,
+  revenue USD → $B, EPS, analyst count), labelled Alpha Vantage under `alphavantage.co` in the
+  same allowlist that names Seeking Alpha — never a Seeking Alpha sticker. KEY-GATED
+  (`ALPHAVANTAGE_KEY`); **POST-only** because a call spends quota; one call per symbol per week
+  (KV cache) and the route stops at **20 of the 25** free calls per UTC day, so five stay for the
+  owner's manual pulls. Nothing is stored until the owner CONFIRMs the packet. **The budget
+  counter is keyed by the UTC date on purpose** — the ONE documented exception to the ET clock,
+  because it tracks Alpha Vantage's own quota window, which resets at 00:00 UTC.
 - **Shiller CAPE** (`fetchShiller`, v3.1): scrapes multpl.com for the current Shiller PE — the
   regime's valuation vote, which used to be mock-and-always-voting. Now live (monthly
   cadence) on the `withLastGood` rails; gated by `use("valuation")` in `computeRegime` so it
@@ -6295,6 +6372,7 @@ Jan-anchor shipped; see `snapshot.js` ~318–328), `spyMa100`, `spyMa200`, and a
 | `SEC_USER_AGENT` | Pages | for TT facts + the spotlight's fundamentals | `data.sec.gov` fetches | SEC facts UNKNOWN → WAIT; spotlight fundamentals Unavailable naming the variable |
 | `SPOTLIGHT_ENABLED` | Pages | **off by default** | `GET /api/stock-spotlight` serves a model only when the value is exactly `1` (v6.5.0) | the endpoint returns `enabled:false` and the Stock Spotlight section renders nothing |
 | `TIINGO_KEY` | Pages | for the spotlight tracker **and the TT candle ladder** | the spotlight's VERIFIED total-return series (Tiingo adjClose, v6.5.0) — the only source the YTD tracker draws — **and, since v6.6.0, the FIRST rung of `/api/ticker-facts`'s daily OHLCV ladder (unadjusted columns, same rows)** | both YTD legs read Unavailable and no line is drawn; TT candles fall through to the Nasdaq rung, which is where they already were (the Finnhub rung above it was premium-dead) |
+| `ALPHAVANTAGE_KEY` | Pages | optional | `POST /api/street/av-draft` — the Alpha Vantage annual revenue/EPS consensus DRAFT for the street ESTIMATES block (v6.6.2, palette Move 1b); weekly per-symbol cache, the route spends at most 20 of the free tier's 25 calls per UTC day | the draft warns that the key is unset, makes NO call and writes nothing; manual and Seeking Alpha entry unchanged |
 | `AI` (Workers AI binding) | Pages | for TT OCR | screenshot→draft + rubric | OCR route degraded, gates UNKNOWN |
 
 ### The `VITE_DATA_MODE=live` flip

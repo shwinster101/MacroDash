@@ -86,6 +86,23 @@ catch (_e) { skip("no dist/ — run `npm run build` first (npm run test:public d
 // at the first midnight (the lesson test/render.mjs already paid for). Values are invented —
 // this asserts the STATE MACHINE, not any real market level.
 const ET = new Intl.DateTimeFormat("en-CA", { timeZone: "America/New_York" });
+/* v6.6.2 — the midnight-ET race. TODAY is stamped ONCE here while the page computes etYmd()
+   live, so a run that STARTS at 23:58 ET and reaches a date-keyed assertion after 00:00 fails
+   it: PR #44's CI (2026-09-17 03:58Z) hit `record.date !== today` in closeReadLine → no
+   .close-read rendered → and the follow-on locator.evaluate threw UNCAUGHT, killing the process
+   with no total printed (the v3.99.4 shape). The same head passed 344/0 twenty minutes later.
+   Re-stamping mid-run would mean touching every ${TODAY} site, so the suite WAITS OUT the
+   window instead — at most a few minutes, once a night, and it says so. */
+const ET_HM = new Intl.DateTimeFormat("en-US", { timeZone: "America/New_York", hour: "numeric", minute: "numeric", hour12: false });
+export async function waitOutMidnightEt(guardMinutes = 4, sleep = (ms) => new Promise((r) => setTimeout(r, ms)), clock = () => new Date()) {
+  const [h, m] = ET_HM.format(clock()).split(":").map((x) => Number(x));
+  const minutesLeft = 1440 - ((h % 24) * 60 + m);
+  if (minutesLeft > guardMinutes) return 0;
+  console.log(`  (midnight ET is ${minutesLeft} min away — waiting it out so TODAY cannot roll over mid-run)`);
+  await sleep((minutesLeft + 1) * 60000);
+  return minutesLeft;
+}
+await waitOutMidnightEt();
 const TODAY = ET.format(new Date());
 const daysAgo = (n) => ET.format(new Date(Date.now() - n * 86400000));
 
@@ -1750,9 +1767,15 @@ console.log("\n[public] v6.2/v6.4 — the 6pm evening update: one line, both mod
     const band = await bandText(page);
     ok("v6.4 hero (Degen): the captured evening update renders as one scoped line under the frozen HODL",
       DEGEN_LINE.test(band) && /HODL 💎/.test(band) && /10am call · frozen/i.test(band));
+    const closeReadCount = await page.locator('[aria-label="Macro backdrop verdict"] .close-read').count();
     ok("v6.4 hero: the evening update owns the drift slot",
-      !/Current evidence now reads/.test(band) && (await page.locator('[aria-label="Macro backdrop verdict"] .close-read').count()) === 1);
-    colorDiffers = await page.locator('[aria-label="Macro backdrop verdict"] .close-read').evaluate((n) => getComputedStyle(n).color);
+      !/Current evidence now reads/.test(band) && closeReadCount === 1);
+    // v6.6.2: read the colour only when the line rendered. An unguarded evaluate on a zero-count
+    // locator throws an UNCAUGHT 30s timeout that kills the whole suite mid-run with no total —
+    // which is how PR #44's CI run died (the midnight-ET race, now guarded at suite start).
+    colorDiffers = closeReadCount === 1
+      ? await page.locator('[aria-label="Macro backdrop verdict"] .close-read').evaluate((n) => getComputedStyle(n).color)
+      : null;
     // OPS: the compatibility token remains internal while the reader sees EVENING UPDATE.
     await page.locator("details.hdr-ops summary").click();
     await page.waitForTimeout(150);
@@ -1775,9 +1798,10 @@ console.log("\n[public] v6.2/v6.4 — the 6pm evening update: one line, both mod
   {
     const { page } = await open({ live: FULL_LIVE, publicCall: frozenMoon, publicCallFrozen: true, publicCallCapturedAt: frozenAt, publicCloseRead: closeRec(readMoon) });
     await page.waitForTimeout(1200);
-    const agreeColor = await page.locator('[aria-label="Macro backdrop verdict"] .close-read').evaluate((n) => getComputedStyle(n).color);
+    const agreeLine = page.locator('[aria-label="Macro backdrop verdict"] .close-read');
+    const agreeColor = (await agreeLine.count()) === 1 ? await agreeLine.evaluate((n) => getComputedStyle(n).color) : null;
     ok("v6.2 hero: an agreeing close read still renders the line, MUTED — a different colour from the disagreeing one",
-      DEGEN_LINE.test(await bandText(page)) && agreeColor !== colorDiffers);
+      DEGEN_LINE.test(await bandText(page)) && agreeColor !== null && colorDiffers !== null && agreeColor !== colorDiffers);
     await page.close();
     const { page: p2 } = await open({ live: FULL_LIVE, publicCall: frozenHodl, publicCallFrozen: true, publicCallCapturedAt: frozenAt, publicCloseRead: null });
     await p2.waitForTimeout(1200);
