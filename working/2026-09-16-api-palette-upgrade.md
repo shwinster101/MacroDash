@@ -167,11 +167,11 @@ bump. The pin did its job.
 
 > **OWNER RULING (recorded on PR #43): option A — widen the provider allowlist truthfully.**
 > Nasdaq/Zacks becomes an accepted street source under its own name; it is never labelled
-> TipRanks. **Ruled, NOT built** — the allowlist does not exist in code yet, and PR #43's body
-> phrases it as "now allows", which describes the ruling rather than the shipped behaviour.
-> Sequenced AFTER the Move 2 edge check (owner: "nothing after it starts until that check
-> lands"), and to be built against Nasdaq response shapes verified from a network that can
-> actually reach `api.nasdaq.com` — see §1.3.
+> TipRanks. **Built in v6.6.1** — named `{provider → host}` allowlist, provider-aware
+> lookback, PIN `/api/street/nasdaq-draft` (never writes KV), fail-closed mapper,
+> Terminal confirm derives provider from the source URL. Mapper is fixture-tested;
+> `api.nasdaq.com` is 403 from the build environment, so the first Pages-edge call is
+> the true schema check (same honesty limit as v6.6.0 Tiingo).
 
 The options as they stood when the ruling was taken:
 
@@ -206,7 +206,7 @@ at 20 of 25, and the `"Information"` cap message parsed as *exhausted*, never re
 
 ```
 [x] Move 2 — Tiingo candles (built, tested, negative-controlled, docs re-pinned)
-[ ] Move 1a — Nasdaq street draft   RULED A (allowlist); gated on the Move 2 edge check
+[x] Move 1a — Nasdaq street draft   RULED A; built v6.6.1 (allowlist + PIN draft, never KV)
 [ ] Move 1b — Alpha Vantage revenue    depends on 1a; key obtained, untested
 [x] Move 3 — SPY live print         RULED: leave alone; collision recorded
 [x] Docs — CLAUDE.md candle ladder, TIINGO_KEY matrix row, retired claim pinned absent

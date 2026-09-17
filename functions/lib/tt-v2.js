@@ -19,6 +19,48 @@ export const QUOTE_MAX_AGE_MINUTES = 15;
 export const COMPOSITE_MIN_SCORE = 5.5;
 export const RR_FLOORS = Object.freeze({ core: 2, tactical: 2.5, speculative: 3 });
 
+/* v6.6.1 — named {provider → host} allowlist. SA estimates stay Seeking Alpha;
+   analystTarget admits TipRanks OR Nasdaq (Zacks consensus) under its own name.
+   TipRanks' lookback default of 3 is provider-aware and is never applied to Nasdaq. */
+export const STREET_SOURCES = Object.freeze({
+  estimates: Object.freeze([
+    Object.freeze({
+      names: Object.freeze(["seeking alpha"]),
+      canonical: "Seeking Alpha",
+      host: "seekingalpha.com",
+    }),
+  ]),
+  analystTarget: Object.freeze([
+    Object.freeze({
+      names: Object.freeze(["tipranks"]),
+      canonical: "TipRanks",
+      host: "tipranks.com",
+      defaultLookback: 3,
+    }),
+    Object.freeze({
+      names: Object.freeze(["nasdaq (zacks consensus)", "nasdaq", "nasdaq/zacks", "zacks"]),
+      canonical: "Nasdaq (Zacks consensus)",
+      host: "nasdaq.com",
+      defaultLookback: null,
+    }),
+  ]),
+});
+
+export function matchStreetSource(kind, provider) {
+  const list = STREET_SOURCES[kind];
+  if (!list) return null;
+  const key = String(provider || "").trim().toLowerCase();
+  if (!key) return null;
+  return list.find((s) => s.canonical.toLowerCase() === key || s.names.includes(key)) || null;
+}
+
+export function sourceHostMatches(value, domain) {
+  try {
+    const host = new URL(value).hostname.toLowerCase();
+    return host === domain || host.endsWith(`.${domain}`);
+  } catch (_e) { return false; }
+}
+
 const SYMBOL_RE = /^[A-Z.\-]{1,8}$/;
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 const ISO_RE = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?Z$/;
@@ -55,17 +97,25 @@ function cleanUrl(v) {
   return typeof v === "string" ? v.trim() : v;
 }
 
+function lookbackFor(target, targetSource) {
+  const raw = target.lookbackMonths;
+  if (raw !== undefined && raw !== null && raw !== "") return numberOrOriginal(raw);
+  return targetSource && targetSource.defaultLookback != null ? targetSource.defaultLookback : null;
+}
+
 export function normalizeStreetPacket(raw) {
   const p = raw && typeof raw === "object" && !Array.isArray(raw) ? raw : {};
   const estimates = p.estimates && typeof p.estimates === "object" ? p.estimates : {};
   const target = p.analystTarget && typeof p.analystTarget === "object" ? p.analystTarget : {};
   const ratings = target.ratings && typeof target.ratings === "object" ? target.ratings : {};
+  const estimateSource = matchStreetSource("estimates", estimates.provider);
+  const targetSource = matchStreetSource("analystTarget", target.provider);
   return {
     schema: TT_STREET_SCHEMA,
     symbol: String(p.symbol || "").trim().toUpperCase(),
     confirmedAt: p.confirmedAt,
     estimates: {
-      provider: String(estimates.provider || "").trim(),
+      provider: estimateSource ? estimateSource.canonical : String(estimates.provider || "").trim(),
       sourceUrl: cleanUrl(estimates.sourceUrl),
       asOf: estimates.asOf,
       currency: String(estimates.currency || "").trim().toUpperCase(),
@@ -81,7 +131,7 @@ export function normalizeStreetPacket(raw) {
         : [],
     },
     analystTarget: {
-      provider: String(target.provider || "").trim(),
+      provider: targetSource ? targetSource.canonical : String(target.provider || "").trim(),
       sourceUrl: cleanUrl(target.sourceUrl),
       asOf: target.asOf,
       currency: String(target.currency || "").trim().toUpperCase(),
@@ -94,7 +144,7 @@ export function normalizeStreetPacket(raw) {
         ...(ratings.hold !== undefined ? { hold: numberOrOriginal(ratings.hold) } : {}),
         ...(ratings.sell !== undefined ? { sell: numberOrOriginal(ratings.sell) } : {}),
       },
-      lookbackMonths: numberOrOriginal(target.lookbackMonths ?? 3),
+      lookbackMonths: lookbackFor(target, targetSource),
       horizonMonths: numberOrOriginal(target.horizonMonths ?? 12),
       ...(target.referencePrice !== undefined ? { referencePrice: numberOrOriginal(target.referencePrice) } : {}),
     },
@@ -109,13 +159,6 @@ function validHttpUrl(value) {
   } catch (_e) {
     return false;
   }
-}
-
-function sourceHostMatches(value, domain) {
-  try {
-    const host = new URL(value).hostname.toLowerCase();
-    return host === domain || host.endsWith(`.${domain}`);
-  } catch (_e) { return false; }
 }
 
 function numeric(errors, path, value, { min = -Infinity, max = Infinity, integer = false, optional = false } = {}) {
@@ -146,14 +189,16 @@ export function validateStreetPacket(raw, { now = new Date(), rejectFuture = tru
   };
   checkLicensedHeader(value.estimates, "estimates");
   checkLicensedHeader(value.analystTarget, "analystTarget");
-  if (value.estimates.provider.toLowerCase() !== "seeking alpha")
+  const estimateSource = matchStreetSource("estimates", value.estimates.provider);
+  if (!estimateSource)
     errors.push("estimates.provider must be Seeking Alpha");
-  if (value.estimates.sourceUrl && !sourceHostMatches(value.estimates.sourceUrl, "seekingalpha.com"))
-    errors.push("estimates.sourceUrl must be on seekingalpha.com");
-  if (value.analystTarget.provider.toLowerCase() !== "tipranks")
-    errors.push("analystTarget.provider must be TipRanks");
-  if (value.analystTarget.sourceUrl && !sourceHostMatches(value.analystTarget.sourceUrl, "tipranks.com"))
-    errors.push("analystTarget.sourceUrl must be on tipranks.com");
+  else if (value.estimates.sourceUrl && !sourceHostMatches(value.estimates.sourceUrl, estimateSource.host))
+    errors.push(`estimates.sourceUrl must be on ${estimateSource.host}`);
+  const targetSource = matchStreetSource("analystTarget", value.analystTarget.provider);
+  if (!targetSource)
+    errors.push("analystTarget.provider must be TipRanks or Nasdaq (Zacks consensus)");
+  else if (value.analystTarget.sourceUrl && !sourceHostMatches(value.analystTarget.sourceUrl, targetSource.host))
+    errors.push(`analystTarget.sourceUrl must be on ${targetSource.host}`);
 
   if (value.estimates.revenueUnit !== "B") errors.push("estimates.revenueUnit must be B");
   if (!value.estimates.epsBasis) errors.push("estimates.epsBasis is required");
@@ -186,7 +231,10 @@ export function validateStreetPacket(raw, { now = new Date(), rejectFuture = tru
   numeric(errors, "analystTarget.low", t.low, { min: 0.000001, max: 1e7, optional: true });
   numeric(errors, "analystTarget.high", t.high, { min: 0.000001, max: 1e7, optional: true });
   numeric(errors, "analystTarget.analystCount", t.analystCount, { min: 1, max: 10000, integer: true, optional: true });
-  numeric(errors, "analystTarget.lookbackMonths", t.lookbackMonths, { min: 1, max: 24, integer: true });
+  numeric(errors, "analystTarget.lookbackMonths", t.lookbackMonths, {
+    min: 1, max: 24, integer: true,
+    optional: !(targetSource && targetSource.defaultLookback != null),
+  });
   numeric(errors, "analystTarget.horizonMonths", t.horizonMonths, { min: 12, max: 12, integer: true });
   numeric(errors, "analystTarget.referencePrice", t.referencePrice, { min: 0.000001, max: 1e7, optional: true });
   if (finite(t.low) && finite(t.average) && t.low > t.average)
@@ -339,7 +387,7 @@ export function deriveAutomaticComposite(metrics, technicals, { revisionScore = 
   const supportQuality = technicals?.support?.quality;
   const momentum = finite(momentumBase) ? round(clamp(momentumBase + (finite(supportQuality) ? (supportQuality - 5) / 5 : 0), 0, 10), 2) : null;
   return renormalizeComposite({
-    valuation: finite(valuation) ? { score: valuation, evidence: [`TipRanks average gap ${round(avgGap, 1)}%`] } : { status: "UNKNOWN" },
+    valuation: finite(valuation) ? { score: valuation, evidence: [`${metrics.target.provider} average gap ${round(avgGap, 1)}%`] } : { status: "UNKNOWN" },
     growth: finite(growth) ? { score: growth, evidence: [`revenue CAGR ${round(revCagr, 1)}%`, `EPS CAGR ${round(epsCagr, 1)}%`].filter((x) => !x.includes("null")) } : { status: "UNKNOWN" },
     profitability: finite(profitability) ? { score: profitability, evidence: [`positive forward EPS ${positiveEps}`, `EPS CAGR ${round(epsCagr, 1)}%`] } : { status: "UNKNOWN" },
     momentum: finite(momentum) ? { score: momentum, evidence: technicals?.evidence || [] } : { status: "UNKNOWN" },
@@ -479,6 +527,7 @@ export function buildGateReceipt({ street, facts, readout, composite, qualitativ
     gates.push(gate("licensed_freshness", "UNKNOWN", "licensed-input freshness cannot be established", metrics.errors || []));
   } else {
     const avgGap = metrics.gaps.averagePct;
+    const targetLabel = metrics.target?.provider || "street";
     gates.push(metrics.currencyMatch !== true
       ? gate("street_gap", "UNKNOWN", metrics.currencyMatch === false
         ? `quote currency ${metrics.quoteCurrency} does not match target currency ${metrics.target.currency}`
@@ -486,12 +535,12 @@ export function buildGateReceipt({ street, facts, readout, composite, qualitativ
       : avgGap === null
       ? gate("street_gap", "UNKNOWN", "street gap cannot be computed without a quote", [])
       : avgGap >= STREET_GAP_MIN_PCT
-        ? gate("street_gap", "PASS", `TipRanks published average is ${round(avgGap, 1)}% above the sourced quote`, [`minimum ${STREET_GAP_MIN_PCT}%`])
-        : gate("street_gap", "FAIL", `TipRanks published average is only ${round(avgGap, 1)}% above the sourced quote`, [`minimum ${STREET_GAP_MIN_PCT}%`]));
+        ? gate("street_gap", "PASS", `${targetLabel} published average is ${round(avgGap, 1)}% above the sourced quote`, [`minimum ${STREET_GAP_MIN_PCT}%`])
+        : gate("street_gap", "FAIL", `${targetLabel} published average is only ${round(avgGap, 1)}% above the sourced quote`, [`minimum ${STREET_GAP_MIN_PCT}%`]));
     const fresh = metrics.freshness.estimatesStatus === "PASS" && metrics.freshness.targetStatus === "PASS";
     gates.push(gate("licensed_freshness", fresh ? "PASS" : "FAIL",
-      fresh ? "SA estimates and TipRanks target are current" : "licensed estimates or target are stale",
-      [`SA ${metrics.freshness.estimatesAgeDays}d`, `TipRanks ${metrics.freshness.targetAgeDays}d`]));
+      fresh ? `SA estimates and ${targetLabel} target are current` : "licensed estimates or target are stale",
+      [`SA ${metrics.freshness.estimatesAgeDays}d`, `${targetLabel} ${metrics.freshness.targetAgeDays}d`]));
   }
 
   if (!composite || composite.status === "UNKNOWN")
@@ -520,10 +569,11 @@ export function buildGateReceipt({ street, facts, readout, composite, qualitativ
   const eligible = gates.every((g) => g.status === "PASS");
   const advisories = [binaryAdvisory(factValue(facts, "nextEarnings"), now)];
   const warnings = [];
+  const targetLabel = metrics.status === "OK" ? (metrics.target?.provider || "street") : "street";
   if (metrics.status === "OK" && metrics.analystConfidence === "UNKNOWN")
-    warnings.push("TipRanks analyst count was not captured; coverage confidence is unknown");
+    warnings.push(`${targetLabel} analyst count was not captured; coverage confidence is unknown`);
   else if (metrics.status === "OK" && metrics.analystConfidence === "THIN")
-    warnings.push(`TipRanks target has thin analyst coverage (${metrics.target.analystCount})`);
+    warnings.push(`${targetLabel} target has thin analyst coverage (${metrics.target.analystCount})`);
   return {
     schema: TT_ANALYSIS_SCHEMA,
     engineVersion: TT_ENGINE_VERSION,

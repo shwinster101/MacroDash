@@ -171,10 +171,11 @@ export function spreadOf(belief, street, px) {
   const sign = pct > SPREAD_ALIGNED_PCT ? "you_richer" : pct < -SPREAD_ALIGNED_PCT ? "street_richer" : "aligned";
   return { pct, sign };
 }
-/* The street leg, per the v4.2 target priority: a REVIEWED packet's published TipRanks
+/* The street leg, per the v4.2 target priority: a REVIEWED packet's published
    average (consumed directly, never re-averaged — the v3.90 rule) outranks a stored
    assistant-sourced consensus.street_target; both are LABELED so a sourced number can
-   never wear the reviewed rung's authority. Neither present = null, never a guess. */
+   never wear the reviewed rung's authority. Provider is the packet's own name
+   (TipRanks or Nasdaq/Zacks) — never restickered. Neither present = null, never a guess. */
 export function streetLegOf(idx, streetRec) {
   const t = streetRec && streetRec.analystTarget;
   const pub = t && Number(t.average);

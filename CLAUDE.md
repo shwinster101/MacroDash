@@ -5,6 +5,32 @@ answers *"is it safe to be in the market?"* from live macro + market + sentiment
 data. Single-page React app on Cloudflare Pages, with live data assembled at the
 edge by Pages Functions and cached in KV.
 
+**v6.6.1 — NASDAQ/ZACKS IS A STREET SOURCE UNDER ITS OWN NAME.** Palette Move 1a.
+`tt-street-v1` still stores the same shape; existing SA+TipRanks packets stay valid and
+mean what they meant. The hardcoded TipRanks lock is replaced with a named
+`{provider → host}` allowlist: estimates stay Seeking Alpha / seekingalpha.com;
+analystTarget admits **TipRanks** *or* **Nasdaq (Zacks consensus)** / nasdaq.com.
+TipRanks' lookback default of 3 is provider-aware and is **never applied to Nasdaq**
+(the fabricated-provenance defect: `null ?? 3` would have claimed Nasdaq uses a
+3-month window it does not publish). Gate and receipt copy uses the packet's own
+provider, so a Nasdaq packet cannot speak "TipRanks published average".
+`GET|POST /api/street/nasdaq-draft` is PIN + same-origin, maps the keyless
+`api.nasdaq.com/api/analyst/{sym}/targetprice` door with the same browser headers
+the candle scrape already uses, and **never writes KV** — owner still CONFIRMs via
+the existing `PUT /api/street`. The mapper is fail-closed: unknown shapes leave
+numeric fields empty and warn; low/high are never averaged into a fake mean; a
+scalar `priceTarget` (legacy Nasdaq shape) is accepted as the published average.
+**⚠ HONEST LIMIT, stated rather than implied:** `api.nasdaq.com` is 403 at this
+build environment's egress (Akamai Access Denied), same posture as the Tiingo
+rung in v6.6.0. The parser is fixture-tested against documented aliases
+(`consensusPriceTarget` / `lowPriceTarget` / `highPriceTarget` /
+`consensusOverview` buy/hold/sell, plus `$215.50` strings); **the first call from
+the Pages edge is the true schema check**. Deliberately NOT in this release:
+Move 1b (Alpha Vantage revenue — no consumer until 1a is live) and Move 3 (live
+SPY print — owner ruling 2026-09-17, leave alone).
+**No schema bump, no engine bump** (`tt-street-v1`, `tt-gates-v2.2.0`).
+Tests: **2394 smoke** (+16: allowlist positive + host-mismatch + invented-lookback control + draft-cannot-store + Nasdaq gate copy + TipRanks additive regression + four mapper paths + STREET_SOURCES pin + draft GET/merge/no-KV + cross-origin + 403 empty draft + route-never-puts + admin URL→provider) + 309 render + 344 public-render.
+
 **v6.6.0 — TIINGO TAKES THE FIRST CANDLE RUNG, and the rung it replaces was never alive.**
 First move of the 2026-09-16 API-palette review (`working/2026-09-16-api-palette-upgrade.md`).
 `/api/ticker-facts` called Finnhub `stock/candle` first — an endpoint **premium-gated on the free
