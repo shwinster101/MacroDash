@@ -317,3 +317,59 @@ clocks take the board to no-eligible-name across the same weekend:
 
 Both are one-field owner acts (a run stamp; a circuit re-assert). Neither is a code change, and
 neither was written here.
+
+---
+
+## 8. Outcome — lastRun stamped on NBIS, PGY, AVGO (write executed)
+
+Owner instruction: *"Stamp last run on NBIS PGY avgo."* Executed as a real write against
+production KV — the first write this session made.
+
+**Mechanics:** refetched `/api/tt` fresh (still v25.3, no drift since §1), patched only the three
+entries' `lastRun` to today's ET date (`en-CA` / America/New_York, the FIX-A rule — never
+`toISOString()`), left every other field on all 54 book entries + 8 cut entries byte-identical,
+sent the whole-book PUT with `If-Match: 25.3` (the documented optimistic-concurrency contract).
+
+**Result:** `200`, version **25.3 → 25.4** (the standard +0.1 whole-book-replace bump), `asOf`
+advanced to 2026-09-17. Read-back verified: all 54 names + 8 cut entries present, `board` carried
+forward intact (all 9 keys: `as_of, account, regime, decisions, binaries, capex, circuit, funding,
+clusters` — untouched, since `board` was omitted from the PUT body and the server's documented
+absent-means-carry-forward rule applied). NBIS/PGY/AVGO all now read `lastRun: 2026-09-17`, age
+0d, `runState: fresh`.
+
+This clears the **2026-09-19 NBIS eligibility clock** filed in §7 — the only name on the ELIGIBLE
+NEXT DOLLAR line was 29 days into its 30-day freshness window; it now has a full 30-day runway
+again. PGY and AVGO move from **NEVER RUN** to **fresh** on the ladder's Flags column, which
+answers §7's finding directly: the ladder's Flags cell for both names now reads the harness
+attestation truthfully, matching the actual analytical pass done in §2–§3.
+
+**The circuit re-assert (2026-09-20 expiry, §4d) is unchanged** — a `lastRun` stamp on three
+tickers does not touch `board.circuit`, which still needs its own owner act.
+
+## 9. Addendum — "the full ladder popup in terminal," not the markdown export
+
+Clarifying follow-up: the owner meant the terminal's own popup/tab view, not `buildRankingsMd()`.
+There is no single element literally named "ladder popup" in the code; two surfaces are the
+candidates, and they disagree on what they show:
+
+| Surface | Opened by | Renders | Reads |
+|---|---|---|---|
+| **CARD** (`openCard`, `#overlay` modal) | tapping a chip | `ddExec`/`ddWorth` — the near/far PT targets computed **live** from the stored `pt_model`; a separate **TICKER GATES** panel (`v2CardHtml`) — the SA/TipRanks street-eligibility receipt, a different engine entirely (ELIGIBLE/WAIT off `analystTarget`, not the composite score) | `dd.pt_model` directly + `/api/street`, `/api/ticker-facts`, `/api/ticker-analysis` |
+| **DEEP-DIVE TAB** (`#SYM` hash route) | tapping the same name, or Enter in search | the full multi-rung `ddPtModelSec`/`estRunTable`, **plus** the shadow **SCORE panel** (`ddScoreBar`) — composite, tier, PROVISIONAL/SCORED status, P4 blocker | `dd.pt_model` + `cardInfo(sym)`, which lazy-fetches `/api/score?sym=<SYM>` fresh the moment the tab opens |
+
+**The PT ladder numbers ($37.80 @ 2027 for PGY, $733.44 @ 2027 for AVGO) are already correct on
+both surfaces** — they compute live from the stored payload, the same arithmetic done by hand in
+§2.3/§3.2, and nothing in this session touched `pt_model` on either name.
+
+**The composite/PROVISIONAL/gate findings from §2.1/§3.1 (PGY 8.2 PROVISIONAL/B, AVGO no server
+card) live ONLY in the deep-dive tab's shadow SCORE panel, not the card popup.** That panel calls
+`loadScoreSym(sym)` on tab open, which fetches `/api/score?sym=` fresh every time — it is not
+served from a boot-time cache, so it is not stale relative to anything reported here.
+
+**One real caching seam, stated so it isn't mistaken for a discrepancy:** the board-level ranking
+rows (BUY list, FUND list) read `cardInfo()` too, but for a name whose tab was never opened they
+fall back to `SCORE_INDEX`, loaded once at `bootLoads()`. A browser tab left open since before
+PGY's card was computed (2026-09-16T23:16Z) would show a stale ranking row for PGY until the page
+is reloaded — reloading re-fetches `SCORE_INDEX` fresh, and opening either name's tab directly
+bypasses this entirely. The `lastRun` stamp in §8 has the same property: an already-open terminal
+tab needs a reload to show the new stamp, since `BOOK` is also loaded once at boot.
