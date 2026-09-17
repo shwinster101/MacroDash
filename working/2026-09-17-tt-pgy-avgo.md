@@ -373,3 +373,73 @@ PGY's card was computed (2026-09-16T23:16Z) would show a stale ranking row for P
 is reloaded — reloading re-fetches `SCORE_INDEX` fresh, and opening either name's tab directly
 bypasses this entirely. The `lastRun` stamp in §8 has the same property: an already-open terminal
 tab needs a reload to show the new stamp, since `BOOK` is also loaded once at boot.
+
+---
+
+## 10. Correction and audit — FEAT-TT-LADDER is real, verified, and unmerged
+
+My prior turn was wrong to stop at "no v6.7.3 exists" — that was true of `origin/main` and the
+live deploy, but I hadn't checked every remote branch. `git ls-remote --heads origin` surfaces
+**`claude/terminal-pin-309310-ladder-qrn0n8`**, cut from the same merge-base as `main`
+(`70f7a3d`), carrying four real commits: **v6.7.0 FEAT-TT-LADDER, v6.7.1 (quarterly freshness),
+v6.7.2 (a retracted finding, corrected), v6.7.3 (server-receipt comparison)**. The branch name
+embeds the same PIN the owner gave me two turns ago — almost certainly a prior session working
+the same request this session's naming convention echoes.
+
+### Verification performed (not taken on faith)
+
+- `git diff --stat origin/main <branch>`: 9 files, `public/admin.html` +676/-lines,
+  `test/smoke.mjs` +512, `test/render.mjs` +238, plus `working/2026-09-17-full-ladder.md`.
+- Read the actual code: `openLadder()`, `ladderHead()`, `ladderTable()`, `rowVeto()` (lifted
+  from a closure — the load-bearing structural change), `ladderServerMacroCell`/
+  `allocServerVerdict`/`allocReceiptAgeD` (the v6.7.3 server-comparison layer). Confirmed the
+  literal strings the owner quoted: `▦ FULL LADDER` (two call sites — the ranking footer and
+  DAILY OPS) and the modal title `` `FULL LADDER — YE${d.Y1} / YE${d.Y2}` ``.
+- **Ran the actual test suites in a throwaway `git worktree`** (this environment has Chromium
+  at `/opt/pw-browsers`, unlike the authoring session, which recorded uncertainty about browser
+  availability): `npm test` → **2505 passed, 0 failed**; `REQUIRE_BROWSER=1 npm run test:ui` →
+  **335 passed, 0 failed**; `REQUIRE_BROWSER=1 npm run test:public` → **356 passed, 0 failed**;
+  `npm run audit:prod` → 0 vulnerabilities; `npm run build` → succeeds. Every number in the
+  changelog's own claim matches an independent run, not just the branch's self-report.
+- Read `working/2026-09-17-full-ladder.md` on that branch: the feature answers a literal owner
+  ask (*"pull the full ladder ye26 and ye27 targets for all... ranked by percent increase"* +
+  *"can this... be a live pdf or pop up or tab accessible via terminal?"*), and the pull's own
+  aggregate findings are recorded there (42 of 54 names carry a rung, only 5 clear every gate,
+  18 of 54 read NEVER on the freshness clock).
+
+### Utility audit
+
+**High leverage, for a specific and verifiable reason — it is the union of three patterns
+already proven in this codebase, applied to a genuine gap.** No surface before this put every
+name's near-year AND far-year target side by side; comparing them meant opening up to 45 tabs
+by hand, which is exactly what the owner had to ask for as a one-off chat pull before this
+existed. The build is not a bolt-on report — it **re-derives nothing**: targets from
+`ptModelRows`, the gate from `rowVeto` (newly promoted from a private closure to a top-level,
+independently testable function — a strict improvement for any future third consumer of that
+same veto), the composite from `cardInfo` (the real server card, never the legacy free text),
+board state from `macroGate`. That is the specific property that keeps a second surface from
+silently drifting from the canonical answer — the exact defect class this file has paid for
+repeatedly (v3.36, v3.39, v3.49's 5-vs-6 denominator). The v6.7.1→v6.7.2 sequence is a good
+sign, not a bad one: a finding was published, found to be an artifact of the test's own
+harness, and retracted with the true cause recorded rather than silently corrected.
+
+**Named weaknesses, so this isn't a rubber stamp:**
+- **It is one PR away from a version collision.** `main` is still at v6.6.4; this branch claims
+  v6.7.0–v6.7.3 uncontested today, but this repo's own history shows six-plus prior instances
+  of two branches claiming the same number when left unmerged (ENGINE0-CONT, FEAT-TT-SCORE,
+  FEAT-TOKW, FEAT-TT-PROVISIONAL, FEAT-TT-SOURCING/DOTHOME). The single highest-leverage action
+  is merging it before another session starts a fresh v6.7.x.
+- **A real, unfixed endpoint bug was found and correctly left out of scope**: `GET /api/quotes`
+  silently truncates past 40 symbols and reports an empty `missing[]` — the book already holds
+  54 names, so this will eventually bite a different caller. Filed in the working note as
+  backlog, not fixed here; worth its own ticket regardless of whether this branch merges.
+- **The freshness pull is itself a finding worth acting on independent of the UI**: every due
+  date lands in one **2026-12-01 → 2027-01-11** window — "one run per quarter" as currently
+  stamped is a single ~40-name December pile-up, not a staggered cadence.
+- **Bounded audience by design**: this is a PIN-gated personal decision surface, not a public
+  product feature — "high leverage" here means owner-workflow time saved and cross-name drift
+  avoided, not broader MacroDash reach. That is the correct scope for this module and is stated
+  as such in the branch's own release notes (no band/vote/gate/receipt-schema moved).
+
+**Nothing on this branch was touched** — no push, no merge, no PR opened. The worktree used to
+run its tests was created and removed in this session's scratch area only.
