@@ -5,6 +5,81 @@ answers *"is it safe to be in the market?"* from live macro + market + sentiment
 data. Single-page React app on Cloudflare Pages, with live data assembled at the
 edge by Pages Functions and cached in KV.
 
+**v6.7.1 — the QUARTERLY freshness rating and the required-work stamp (owner follow-up:
+"a freshness rating and information required stamp for each would be useful. Ideally one run
+per quarter").** Two columns on the ladder, and **neither invents a scale.** `P_INPUT_CADENCE_D
+= 120` has been the book's quarterly cadence since v5.0 W2b — *a fiscal quarter plus reporting
+lag*, asserted not calibrated — and `freshnessOf` has produced CURRENT / AGING (one quarter
+missed) / STALE (two) off it ever since. Inventing a second definition of "a quarter" on the
+same board would be the v3.49 5-vs-6 denominator defect with a calendar instead of a count, so
+both are MIRRORED from `src/ttScore.js` (admin.html is buildless): the constant is pinned equal
+across the two homes and the function is reconciled **BEHAVIOURALLY** across every boundary —
+the v3.83 techRead precedent, chosen over byte-identity because the copies legitimately differ
+in arity (the module takes an injected ET clock; this one reads admin's single `ageDays`, and a
+second age helper here would be the real defect).
+**FRESH rates the THREE QUARTERLY CLOCKS and nothing else** — TT run · thesis · score card —
+worst-of, with the governing clock NAMED (a rating that will not say which clock failed sends
+the owner after the wrong one). **The price mark is deliberately excluded**: a 4-day daily clock
+folded into a 120-day rating makes every name STALE for a reason that has nothing to do with the
+quarter — the DEC-D2 units error in a rating instead of a sort key — so it keeps its own ⚠ chip
+on the price cell, pinned in both directions. **"One run per quarter" is made OPERATIONAL**: the
+cell carries the next-run DUE DATE (last run + cadence) and how far past it the name is, because
+a cadence the owner has to compute from an age is not a cadence. Sorting on FRESH re-reads the
+same table as the quarterly WORK QUEUE, stalest first, ties broken by days overdue.
+**THREE STATES PER CLOCK, NOT TWO** — and the first draft got this wrong. Each clock has a
+SOURCE and a STAMP: source absent → **NEVER**, source present with an unreadable or future-dated
+stamp → **INVALID**, else the rating. The draft preserved that distinction for the run clock and
+collapsed it for the other two, so a name with **no payload at all** reported *"date
+unreadable"* — the v3.52 / v5.6.4 class ("I could not look" vs "there was nothing to find"),
+caught by the named-exclusion pin rather than by reading the code. The card clock is
+additionally **OPTIONAL**: `computed_at` is an additive index field, so a card written before it
+existed is **UNRATED** and excluded from the rollup rather than rated INVALID — the v5.1.1 rule,
+where failing closed on an absent field would flip the whole book red over a value nobody had
+written yet.
+**NEEDS is the WORK QUEUE, not a restatement of the gate.** GATE answers *is this eligible
+today*; FRESH answers *is its work current this quarter*; NEEDS answers *what makes it current*.
+They are different questions and the table shows all three on purpose: an **ELIGIBLE name can be
+overdue**, and a name vetoed on `no gap` may need nothing at all (a price fact is not a chore).
+The stamp is derived from the clocks and the card state, both of which the board already holds
+for every name, and it splits PROVISIONAL the same four ways the v5.0.1 veto does. It
+**deliberately never calls `intakeChecklist()`**: that reads the per-symbol score record and the
+board holds only the index — asked without one it invents chores, which its own comment records
+doing to JOBY, whose pillars were already scored. Where per-screen capture detail is genuinely
+needed the stamp names the tab instead of guessing. An unread score index asks for a RELOAD,
+never "run TT" (v5.6.4). The named-exclusion table carries both columns too — those are
+precisely the names with work owing.
+**Found by a live pull, and it is bigger than the columns: `functions/lib/tt-alloc.js` does not
+honour the `updated`/`as_of` thesis alias.** `ddDate` (client), `validateDeepDive` and the v3.13
+corpus-native rule all accept either spelling; `evalBuyRow` reads `idx.as_of` alone, so three
+stored payloads that carry `updated` and no `as_of` — including the book's **#2 composite at
+9.01/S** — are vetoed **"thesis undated"** on the SERVER receipt (the one that governs
+confirmation, v4.1 Step 5) while the terminal's own readiness bar correctly reads the thesis as
+45d old. A client/server eligibility divergence on a false premise. **Deliberately NOT fixed
+here:** un-blocking a name is the PERMISSIVE direction and a change to the eligibility ladder
+gets its own plan and approval (§P.8) — it is filed, named and owner-ruled, not bundled into a
+presentation follow-up. **My own instance of the same defect WAS fixed**: the first cut of the
+thesis clock re-derived the alias pair inline with the OPPOSITE precedence to `ddDate` — a
+fourth spelling of one resolution, inside the feature built to stop exactly that — and now calls
+`ddDate`, pinned.
+**Measured across the live book at ship:** every run stamp is 4–45 days old, so **0 of 54 names
+are past their due date** and the rating is CURRENT 36 · NEVER 18 · AGING 0 · STALE 0. The 18
+NEVERs are 14 names never run plus 4 with a run but no card ever minted. Worth naming because
+the cadence makes it visible: every due date lands **2026-12-01 → 2027-01-11**, so "one run per
+quarter" as currently stamped is a single ~40-name December sweep, not a rolling one.
+Tests: **2492 smoke** (+20 over v6.7.0: the cadence pinned equal to the module's, `freshnessOf`
+reconciled against it at 0/119/120/121/239/240/241 plus missing and future-dated, worst-of with
+the governing clock named, the three-state rule per clock, the OPTIONAL card clock, the price
+exclusion pinned in both directions, the due-date arithmetic, the alias resolved through
+`ddDate`, the four-way PROVISIONAL split, the BLOCKED/methodology/unread-index stamps, the
+no-`intakeChecklist` sweep, the freshness sort, and the named-exclusion table carrying both) +
+**327 render** (+5, driven live: every row rated from the closed vocabulary, every row carrying a
+stamp, the due date on CURRENT rows, the header's cadence/clocks/price-exclusion/gate-distinction
+copy, and a REAL click on FRESH re-reading the table stalest-first) + 356 public-render,
+`audit:prod` clean. Negative-controlled three ways — the cadence forked 120→90 (3 red), the daily
+price mark folded into the quarterly rating (4 red), NEVER/UNRATED collapsed into INVALID (4 red)
+— each turning exactly its own pins. One of my own render assertions was caught **malformed** (a
+ternary whose branches could not fail) and rewritten as a flat conjunction over the rendered text.
+
 **v6.7.0 "FULL LADDER" (FEAT-TT-LADDER) — the FULL two-year ladder, ranked, gated and printable,
 one tap from the ranking (owner ask 2026-09-17).** The terminal has always shown **one rung per name**
 — `pickRow` picks the horizon in force, the glance ranks the top five on %/yr, and the whole

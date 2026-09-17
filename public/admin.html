@@ -9,7 +9,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
 <!-- AUDIT: kept in sync with package.json by test/smoke.mjs. admin.html is a Vite
      public/ passthrough, so it cannot receive __APP_VERSION__ — the guard is the fix. -->
-<title>TT TICKER TERMINAL v6.7.0</title>
+<title>TT TICKER TERMINAL v6.7.1</title>
 <style>
   :root{
     --bg:#05070a; --panel:#0a0f16; --panel2:#0d141d; --line:#16202c;
@@ -507,7 +507,7 @@
          verdict and every gate are computed upstream and this panel changes nothing. -->
     <div id="macroEvidence" role="region" aria-label="Why macro — readout evidence"></div>
     <div id="headInfo" style="display:none">
-      <div class="brand">FINANCE&nbsp;BRO.AI // TT&nbsp;TICKER&nbsp;TERMINAL <small>v6.7.0 · the daily contract</small></div>
+      <div class="brand">FINANCE&nbsp;BRO.AI // TT&nbsp;TICKER&nbsp;TERMINAL <small>v6.7.1 · the daily contract</small></div>
       <div class="statusline">
         <span>BOOK: <b id="bookStamp">loading…</b></span>
         <span>AUTH: <b id="sessState">…</b></span>
@@ -4977,6 +4977,9 @@ function cardInfo(sym){
     const bo=(sc.blockers||[]).filter(b=>typeof b==="string"&&b.startsWith("BLOCKED_PENDING_INPUT:"))
       .map(b=>b.slice("BLOCKED_PENDING_INPUT:".length));
     return {score,tier,status:sc.status||null,scored,
+      /* v6.7.1: computed_at rides out of BOTH branches — the card's mint date is the third
+         quarterly clock the ladder rates, and it was the one the caller could not see. */
+      at:sc.computed_at||null,
       mcur:sc.status!=="LEGACY_UNVERIFIED",p4,act:sc.actionability??null,blockedOn:bo,src:"record"};}
   const e=SCORE_INDEX&&SCORE_INDEX[sym];
   if(!e)return null;
@@ -4985,7 +4988,7 @@ function cardInfo(sym){
   const tier=scored?(e.capped_tier||null):(e.provisional_tier||null);
   const mcur=!!(e.methodology_version&&SCORE_INDEX_META&&
     e.methodology_version===SCORE_INDEX_META.methodology_version);
-  return {score,tier,status:e.status||null,scored,mcur,p4:e.p4||null,
+  return {score,tier,status:e.status||null,scored,mcur,p4:e.p4||null,at:e.computed_at||null,
     act:e.actionability??null,blockedOn:e.blocked_on||[],src:"index"};
 }
 async function loadScoreSym(sym){
@@ -7474,6 +7477,159 @@ let LADDER_OPEN=false;
 /* Premium if the owner asserted one, else the FLOOR — byte-for-byte the rule
    renderUpsideRank and evalBuyRow both apply. "n/m" is the v3.17 no-P/E-before-profit
    sentinel and is a STATE, never a number. */
+/* ── FEAT-TT-LADDER v6.7.1 — THE QUARTERLY FRESHNESS RATING AND THE REQUIRED STAMP ─────
+   Owner ask: "a freshness rating and information required stamp for each would be useful.
+   Ideally one run per quarter."
+
+   THE CADENCE IS NOT NEW, AND THAT IS THE POINT. `P_INPUT_CADENCE_D = 120` has been the
+   quarterly cadence since v5.0 W2b — "a fiscal quarter + reporting lag", ASSERTED not
+   calibrated — and `freshnessOf` has produced CURRENT / AGING / STALE off it ever since,
+   where AGING is one missed quarter and STALE is two. Inventing a second scale here would
+   have put two different definitions of "a quarter" on one board, which is the v3.49
+   5-vs-6 denominator defect with a calendar instead of a count. Both are mirrored from
+   `src/ttScore.js` (admin.html is buildless and cannot import); the constant is pinned
+   equal across the two homes and the FUNCTION is reconciled BEHAVIOURALLY over its own
+   boundaries — the v3.83 techRead precedent, chosen over byte-identity because the two
+   copies legitimately differ in arity (the module takes an injected ET clock, this one
+   reads admin's single `ageDays`, and a second age helper here would be the real defect).
+
+   IT RATES THE QUARTERLY CLOCKS ONLY. The price mark is a DAILY clock and is deliberately
+   excluded: folding a 4-day-old mark into a 120-day rating would make every name STALE for
+   a reason that has nothing to do with the quarter — the DEC-D2 units error, in a rating
+   instead of a sort key. The price keeps its own ⚠Nd chip on the PRICE cell, where it
+   already was.
+
+   FRESH AND GATE ANSWER DIFFERENT QUESTIONS, and the table shows both on purpose:
+     · GATE     = "is this name eligible TODAY"      — a verdict (rowVeto)
+     · FRESH    = "is its work current for THIS QUARTER" — a clock
+     · NEEDS    = "what work makes it current"        — the queue
+   An ELIGIBLE name can be STALE (everything passes, nobody has re-run it in 150 days) and a
+   vetoed name can need no work at all (`no gap` is a price fact, not a chore). Deriving
+   NEEDS from the gate would have collapsed both cases and made the column a restatement.  */
+const P_INPUT_CADENCE_D=120;   // MIRROR of src/ttScore.js — smoke pins the two equal
+function freshnessOf(asOf,cadenceDays){
+  const age=ageDays(asOf);
+  if(age===null||age<0)return "INVALID";          // missing/malformed/future-dated
+  if(age<=cadenceDays)return "CURRENT";
+  if(age<=2*cadenceDays)return "AGING";
+  return "STALE";
+}
+const FRESH_RANK={CURRENT:0,AGING:1,STALE:2,NEVER:3,INVALID:3,UNRATED:-1};
+const FRESH_STYLE={CURRENT:"var(--green)",AGING:"var(--amber)",STALE:"var(--red)",
+  NEVER:"var(--red)",INVALID:"var(--red)",UNRATED:"var(--slate)"};
+/* Coerce a stored value to a YYYY-MM-DD or null. It does NOT resolve the thesis alias pair:
+   `ddDate` owns that (`updated || as_of`, the v3.13 corpus-native rule), and the first cut of
+   this re-derived the pair here with the OPPOSITE precedence — a fourth spelling of one
+   resolution, which is the drift defect this whole feature was built to avoid, committed
+   inside it. Caught by a live pull where three payloads carry `updated` and no `as_of`. */
+function ladderDateOf(v){const s=String(v==null?"":v).slice(0,10);return /^\d{4}-\d{2}-\d{2}$/.test(s)?s:null;}
+function ladderFreshness(x,dd,card){
+  /* The three clocks that govern whether a LADDER ROW's work is current. Each is rated by
+     the SAME function at the SAME cadence, so the rating cannot disagree with itself across
+     clocks — the v3.50 readiness() rule ("eight truthful clocks that never sum"), here with
+     one window instead of eight. */
+  /* THREE STATES PER CLOCK, NOT TWO. Each clock has a SOURCE (does the thing exist?) and a
+     STAMP (is its date readable?), and collapsing them is the v3.52 / v5.6.4 class — "I could
+     not look" and "there was nothing to find" are different owner actions:
+       source absent        → NEVER    (no run on record · no payload · no card)
+       source present, bad  → INVALID  (a stamp that does not parse, or is future-dated)
+       source present, good → CURRENT / AGING / STALE
+     The card clock is additionally OPTIONAL: `computed_at` is an additive index field, so a
+     card written before it existed carries no date. Rating that INVALID would flip the whole
+     book red over a value nobody had written yet — the v5.1.1 rule, where an absent field
+     passes rather than vetoing. It is EXCLUDED from the rollup and named instead. */
+  const clocks=[
+    {k:"run",label:"TT run",src:!!(x&&x.lastRun),at:ladderDateOf(x&&x.lastRun),
+      fix:"run TT on this name"},
+    {k:"thesis",label:"thesis",src:!!dd,at:ladderDateOf(dd&&ddDate(dd)),
+      fix:"refresh the thesis payload"},
+    {k:"card",label:"score card",src:!!card,at:ladderDateOf(card&&card.at),optional:true,
+      fix:"re-score the card"},
+  ].map(c=>{
+    const r=c.at!==null?freshnessOf(c.at,P_INPUT_CADENCE_D)
+      :!c.src?"NEVER"
+      :c.optional?"UNRATED"
+      :"INVALID";
+    return{...c,rating:r,age:c.at===null?null:ageDays(c.at)};
+  });
+  const rated=clocks.filter(c=>c.rating!=="UNRATED");
+  const worst=rated.reduce((a,c)=>FRESH_RANK[c.rating]>FRESH_RANK[a.rating]?c:a,rated[0]);
+  /* The next quarterly run, stated as a DATE rather than left to be inferred from an age —
+     "one run per quarter" is only operational if the board says which names are due. */
+  const runAt=clocks[0].at;
+  const due=runAt?new Date(Date.parse(runAt+"T00:00:00Z")+P_INPUT_CADENCE_D*86400000)
+    .toISOString().slice(0,10):null;
+  const overdue=due?ageDays(due):null;
+  return{rating:worst.rating,governing:worst,clocks,due,overdue:overdue!==null&&overdue>0?overdue:0};
+}
+/* THE REQUIRED STAMP — the next action, never an invented one.
+   It is derived from the CLOCKS and the CARD STATE, both of which the board already holds
+   for every name. It deliberately does NOT run intakeChecklist(): that reads the per-symbol
+   SCORE record (underwriting_inputs), the board holds only the index, and its own comment
+   records what happens when it is asked without one — it invented chores for JOBY, whose
+   pillars were already scored. "Not read is not not-there" (v5.6.4), so where the per-screen
+   detail is genuinely needed this names the tab instead of guessing at it. */
+function ladderRequired(x,dd,card,fresh){
+  const out=[];
+  const q=(what,detail)=>out.push({what,detail});
+  // 1. the card, in the order the engine itself blocks
+  if(!card)q(SCORE_INDEX===null?"score index not read":"run TT + score",
+    SCORE_INDEX===null?"reload the terminal — the store was never read":"no server card exists for this name");
+  else if(!card.mcur)q("re-score",`card predates the current methodology (§4.3)`);
+  else if(card.status==="PROVISIONAL"){
+    /* The v5.0.1 four-way split, verbatim in meaning: "unwritten" and "committed, awaiting
+       observations" are different owner actions and the stamp is what gets acted on. */
+    const p4=card.p4;
+    if(!p4||!p4.kind)q("falsifiers","set state unknown — open the card");
+    else if(p4.kind==="LEGACY_POST_HOC"||!(p4.hinges>0))q("write falsifiers","none written — §6.4.1 needs ≥3 pre-committed");
+    else if(p4.hinges<3)q(`write ${3-p4.hinges} more falsifier${3-p4.hinges===1?"":"s"}`,`${p4.hinges}/3 written`);
+    else if(p4.observed<p4.hinges)q(`observe ${p4.hinges-p4.observed} falsifier${p4.hinges-p4.observed===1?"":"s"}`,
+      `${p4.observed}/${p4.hinges} have a qualifying observation`);
+    else q("re-score","falsifiers committed — a later write scores them (§6.4.1)");
+  }
+  else if(card.act==="BLOCKED")q(card.blockedOn&&card.blockedOn.length?`gate input: ${card.blockedOn.join(", ")}`:"gate input",
+    "the card cannot read a required gate (UNKNOWN blocks, §8.1)");
+  else if(!card.scored)q(`card ${card.status||"incomplete"}`,"blockers on the card — open it for the list");
+  // 2. the clocks, worst first — a CURRENT card can still be an overdue run
+  fresh.clocks.filter(c=>FRESH_RANK[c.rating]>0)
+    .sort((a,b)=>FRESH_RANK[b.rating]-FRESH_RANK[a.rating])
+    .forEach(c=>q(c.fix,`${c.label} ${c.rating==="NEVER"?"never stamped":c.rating==="INVALID"?"date unreadable":c.age+"d old"}`));
+  // 3. the structural gaps the ladder itself can see
+  if(!dd)q("add a thesis payload","nothing stored for this name");
+  else{
+    if(!(dd.pt_model&&typeof dd.pt_model==="object"&&Object.keys(dd.pt_model).length))q("add a pt_model","no rung computes without one");
+    if(!(Array.isArray(dd.hinges)&&dd.hinges.length))q("define hinges","readiness blocks with none");
+  }
+  return out;
+}
+/* The cell states the RATING, the governing clock, and — where a run exists — the DUE DATE
+   and how far past it we are. An age alone ("157d") makes the reader do the subtraction; the
+   owner asked for one run per quarter, so the board owes them the date. */
+function ladderFreshCell(f){
+  if(!f)return `<span class="scope">—</span>`;
+  const c=FRESH_STYLE[f.rating]||"var(--slate)";
+  const g=f.governing;
+  const sub=f.rating==="CURRENT"
+    ?(f.due?`next run due ${esc(f.due)}`:`no run stamped`)
+    :`${esc(g.label)} ${g.rating==="NEVER"?"never stamped":g.rating==="INVALID"?"date unreadable":esc(String(g.age))+"d"}`+
+     (f.overdue?` · run ${esc(String(f.overdue))}d overdue`:"");
+  return `<span style="color:${c};font-weight:700">${esc(f.rating)}</span>`+
+    `<div class="scope">${sub}</div>`;
+}
+/* The FIRST item is the next action; the rest ride the title so the cell stays chip-length
+   while nothing the board knows is hidden (the v3.66 rule: chip-length in place, verbatim
+   one tap deep — here the tap is the name's own tab). */
+function ladderNeedsCell(req){
+  if(!req||!req.length)return `<span class="ok">nothing due</span>`;
+  const all=req.map(r=>`${r.what} — ${r.detail}`).join(" · ");
+  return `<span style="color:var(--amber)" title="${esc(all)}">${esc(req[0].what)}</span>`+
+    (req.length>1?`<span class="scope"> +${req.length-1} more</span>`:"")+
+    `<div class="scope">${esc(req[0].detail)}</div>`;
+}
+function ladderNeedsText(req){
+  if(!req.length)return{txt:"nothing due",c:"var(--green)"};
+  return{txt:req[0].what+(req.length>1?` +${req.length-1}`:""),c:"var(--amber)"};
+}
 function ladderRungAt(rows,y){
   const r=rows.find(x=>x.y===y);
   if(!r)return{tgt:null,basis:null,lens:null};
@@ -7502,7 +7658,9 @@ function buildLadderRows(){
         :!rr.length?"no pt_model — no rung computes"
         :px===null?"no usable price (no live quote, no stamped ref_px)"
         :`no YE${Y1} or YE${Y2} rung — the estimate series starts later`;
-      skipped.push({sym:x.sym,tier:x.tier,lens:x.lens,tt:cardInfo(x.sym),why});
+      const sk=cardInfo(x.sym),skf=ladderFreshness(x,dd,sk);
+      skipped.push({sym:x.sym,tier:x.tier,lens:x.lens,tt:sk,why,
+        fresh:skf,req:ladderRequired(x,dd,sk,skf)});
       return;
     }
     const pct=t=>t===null?null:Math.round((t/px-1)*1000)/10;
@@ -7513,6 +7671,8 @@ function buildLadderRows(){
       y2:b.tgt,y2b:b.basis,y2p:pct(b.tgt),
       modelLens:b.lens||a.lens,
       tt:cardInfo(x.sym),rdy:readiness(x),rs:runState(x.lastRun),wt:rankWeight(x.sym),
+      fresh:ladderFreshness(x,dd,cardInfo(x.sym)),
+      req:ladderRequired(x,dd,cardInfo(x.sym),ladderFreshness(x,dd,cardInfo(x.sym))),
       rrFail:/FAILS/i.test((dd.technicals&&dd.technicals.rr)||""),
       redH:(Array.isArray(dd.hinges)?dd.hinges:[]).filter(g=>g.state==="red").length,
       lintErr:lintPtModel(dd).filter(l=>l.sev==="error").map(l=>l.code)});
@@ -7530,6 +7690,13 @@ function ladderSorted(rows,Y1,Y2){
   const key=LADDER_SORT==="y1"?"y1p":"y2p";
   const out=rows.slice();
   if(LADDER_SORT==="sym")out.sort((a,b)=>a.sym<b.sym?-1:1);
+  /* v6.7.1: STALEST FIRST — the work queue read of the same table. Ties break on how far
+     past its due date the run is, so "120d over" outranks "1d over" rather than sorting
+     alphabetically inside a bucket. */
+  else if(LADDER_SORT==="fresh")out.sort((a,b)=>{
+    const d=FRESH_RANK[b.fresh.rating]-FRESH_RANK[a.fresh.rating];
+    return d!==0?d:(b.fresh.overdue-a.fresh.overdue)||(a.sym<b.sym?-1:1);
+  });
   else if(LADDER_SORT==="comp")out.sort((a,b)=>{
     const as=a.tt&&a.tt.score!=null?a.tt.score:-1,bs=b.tt&&b.tt.score!=null?b.tt.score:-1;
     return bs!==as?bs-as:(a.sym<b.sym?-1:1);
@@ -7562,6 +7729,13 @@ function ladderHead(Y1,Y2,d){
     `% is target ÷ current price − 1, <b>not annualised</b>: YE${esc(Y1)} and YE${esc(Y2)} are different horizons, `+
     `so a YE${esc(Y1)} % and a YE${esc(Y2)} % are not comparable as rates. `+
     `The next-dollar ranking sorts on %/yr for exactly that reason.</div>`+
+    `<div class="none"><b>FRESH</b> rates the three QUARTERLY clocks — TT run, thesis, score card — `+
+    `on the book's own ${P_INPUT_CADENCE_D}-day cadence (one fiscal quarter plus reporting lag): `+
+    `CURRENT · AGING (one quarter missed) · STALE (two) · NEVER. The price mark is a DAILY clock and is `+
+    `deliberately NOT in this rating — it carries its own flag on the price. <b>NEEDS</b> is the work `+
+    `that makes a name current, not a restatement of the gate: an ELIGIBLE name can be overdue, and a `+
+    `name vetoed on <i>no gap</i> may need nothing at all. Per-screen capture detail lives on the `+
+    `name's own tab (the intake checklist reads its full score record; this board holds the index).</div>`+
     `<div class="none">book ${esc((META&&META.asOf)||"—")} · quotes ${LIVE_AT?esc(String(LIVE_AT).replace("T"," ").slice(0,16))+"Z":"not loaded"}`+
     (SCORE_INDEX===null?` · <span style="color:var(--amber)">score index did not load — composites read "not read", not "unscored"</span>`:
       SCORE_INDEX_META&&SCORE_INDEX_META.methodology_version?` · cards ${esc(SCORE_INDEX_META.methodology_version)}`:"")+`</div>`;
@@ -7576,7 +7750,8 @@ function ladderTable(d){
   const head=`<tr><th>#</th><th>${sortBtn("sym","SYM")}</th><th>TIER</th><th class="r">PRICE</th>`+
     `<th class="r">YE${esc(Y1)}</th><th class="r">${sortBtn("y1","YE"+Y1+" %")}</th>`+
     `<th class="r">YE${esc(Y2)}</th><th class="r">${sortBtn("y2","YE"+Y2+" %")}</th>`+
-    `<th>BASIS</th><th class="r">${sortBtn("comp","TT")}</th><th>GATE</th></tr>`;
+    `<th>BASIS</th><th class="r">${sortBtn("comp","TT")}</th><th>GATE</th>`+
+    `<th>${sortBtn("fresh","FRESH")}</th><th>NEEDS NEXT</th></tr>`;
   const body=sorted.map((r,i)=>{
     const v=ladderVeto(r,Y1,Y2);
     const tt=r.tt&&r.tt.score!=null
@@ -7598,7 +7773,9 @@ function ladderTable(d){
       `<td class="r">${pc(r.y2p)}</td>`+
       `<td class="scope">${esc(basis)}${r.modelLens?" · "+esc(r.modelLens):""}</td>`+
       `<td class="r">${tt}</td>`+
-      `<td class="${v===null?"ok":"scope"}">${v===null?"✓ ELIGIBLE":esc(v)}</td></tr>`;
+      `<td class="${v===null?"ok":"scope"}">${v===null?"✓ ELIGIBLE":esc(v)}</td>`+
+      `<td>${ladderFreshCell(r.fresh)}</td>`+
+      `<td>${ladderNeedsCell(r.req)}</td></tr>`;
   }).join("");
   /* ld-main / ld-skip: the ranked table and the named-exclusions table are DIFFERENT
      claims and are addressed separately — a selector matching both is how a suite ends up
@@ -7609,11 +7786,12 @@ function ladderSkipped(d){
   if(!d.skipped.length)return"";
   return`<div class="lbl" style="margin-top:10px">Not on the ladder · ${d.skipped.length} name${d.skipped.length===1?"":"s"} — reason named, never a silent drop</div>`+
     `<div class="none">These are NOT judged unattractive. The model cannot price them at YE${esc(d.Y1)} or YE${esc(d.Y2)} yet, and a name missing from a ranking with no reason reads as considered-and-rejected.</div>`+
-    `<div class="tblx"><table class="ld-tbl ld-skip"><thead><tr><th>SYM</th><th>TIER</th><th class="r">TT</th><th>WHY IT CARRIES NO RUNG</th></tr></thead><tbody>`+
+    `<div class="tblx"><table class="ld-tbl ld-skip"><thead><tr><th>SYM</th><th>TIER</th><th class="r">TT</th><th>WHY IT CARRIES NO RUNG</th><th>FRESH</th><th>NEEDS NEXT</th></tr></thead><tbody>`+
     d.skipped.map(s=>`<tr><td><button type="button" class="linklike" onclick="ladderOpen('${esc(s.sym)}')">${esc(s.sym)}</button></td>`+
       `<td class="scope">${esc(s.tier||"—")}</td>`+
       `<td class="r scope">${s.tt&&s.tt.score!=null?esc(s.tt.score.toFixed(2)):"—"}</td>`+
-      `<td class="scope">${esc(s.why)}</td></tr>`).join("")+`</tbody></table></div>`;
+      `<td class="scope">${esc(s.why)}</td>`+
+      `<td>${ladderFreshCell(s.fresh)}</td><td>${ladderNeedsCell(s.req)}</td></tr>`).join("")+`</tbody></table></div>`;
 }
 function renderLadder(){
   const body=document.getElementById("cBody");if(!body||!LADDER_OPEN)return;
@@ -7650,17 +7828,26 @@ function ladderCopy(){
   const d=buildLadderRows(),mg=macroGate(),gy=ladderGateYear(d.Y1,d.Y2);
   const L=[`TT FULL LADDER — YE${d.Y1} / YE${d.Y2} · ${etYmd()} · MACRO GATE ${mg.label}`   /* the em-dash-free form is deliberate: smoke sweeps the whole file for a flat "GATE: <label>", the v5.6 word-collision guard, and a text export has no key/value cell to scope with */,
     `book ${(META&&META.asOf)||"—"} · quotes ${LIVE_AT||"not loaded"} · gate column at YE${gy}`,
-    `% is target/price-1, NOT annualised — YE${d.Y1} and YE${d.Y2} are different horizons.`,"",
-    ["RANK","SYM","TIER","PRICE","YE"+d.Y1,"YE"+d.Y1+"%","YE"+d.Y2,"YE"+d.Y2+"%","BASIS","TT","TIER","GATE"].join("\t")];
+    `% is target/price-1, NOT annualised — YE${d.Y1} and YE${d.Y2} are different horizons.`,
+    `FRESH rates the TT run / thesis / score-card clocks on the ${P_INPUT_CADENCE_D}-day quarterly cadence. The price mark is a daily clock and is not in it.`,"",
+    ["RANK","SYM","TIER","PRICE","YE"+d.Y1,"YE"+d.Y1+"%","YE"+d.Y2,"YE"+d.Y2+"%","BASIS","TT","TIER","GATE",
+     "FRESH","GOVERNING CLOCK","RUN DUE","DAYS OVERDUE","NEEDS NEXT","FULL QUEUE"].join("\t")];
   ladderSorted(d.rows,d.Y1,d.Y2).forEach((r,i)=>{
     const v=ladderVeto(r,d.Y1,d.Y2);
     L.push([i+1,r.sym,r.tier||"",r.px,r.y1===null?"":r.y1,r.y1p===null?"":r.y1p,
       r.y2===null?"":r.y2,r.y2p===null?"":r.y2p,r.y2b||r.y1b||"",
       r.tt&&r.tt.score!=null?r.tt.score.toFixed(2):"",r.tt&&r.tt.tier?r.tt.tier:"",
-      v===null?"ELIGIBLE":v].join("\t"));
+      v===null?"ELIGIBLE":v,
+      r.fresh.rating,r.fresh.governing.label+" "+(r.fresh.governing.age===null?r.fresh.governing.rating:r.fresh.governing.age+"d"),
+      r.fresh.due||"",r.fresh.overdue||0,
+      r.req.length?r.req[0].what:"nothing due",
+      r.req.map(q=>q.what+" ("+q.detail+")").join(" · ")].join("\t"));
   });
   if(d.skipped.length){L.push("",`NOT ON THE LADDER (${d.skipped.length}) — reason named, never a silent drop`);
-    d.skipped.forEach(s=>L.push([s.sym,s.tier||"",s.tt&&s.tt.score!=null?s.tt.score.toFixed(2):"",s.why].join("\t")));}
+    d.skipped.forEach(s=>L.push([s.sym,s.tier||"",s.tt&&s.tt.score!=null?s.tt.score.toFixed(2):"",s.why,
+      s.fresh.rating,s.fresh.due||"",s.fresh.overdue||0,
+      s.req.length?s.req[0].what:"nothing due",
+      s.req.map(q=>q.what+" ("+q.detail+")").join(" · ")].join("\t")));}
   copy(L.join("\n"));toast("Ladder copied as TSV — paste into Sheets/Excel");
 }
 

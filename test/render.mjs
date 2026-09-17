@@ -2455,6 +2455,36 @@ console.log("\n[render] v5.7.1 — arrival focus: judged AFTER the store is read
     new RegExp(`evaluated at YE${Y1}`).test(head2) &&
     (await p.locator("#cBody .ld-sort", { hasText: `YE${Y1}` }).first().getAttribute("aria-pressed")) === "true");
 
+  // (3b) the quarterly freshness rating and the required-work stamp
+  const cells = await p.$$eval("#cBody .ld-main tbody tr", (rs) =>
+    rs.map((r) => { const c = r.querySelectorAll("td");
+      return { sym: c[1].innerText.trim(), fresh: (c[11] || {}).innerText || "", needs: (c[12] || {}).innerText || "" }; }));
+  ok("ladder: EVERY row carries a freshness rating drawn from the closed CURRENT/AGING/STALE/NEVER/INVALID vocabulary — no row is left blank, because a missing rating reads as 'fine'",
+    cells.length >= 2 && cells.every((r) => /CURRENT|AGING|STALE|NEVER|INVALID/.test(r.fresh)));
+  ok("ladder: every row also carries a NEEDS stamp — either real work or the explicit 'nothing due', never an empty cell the reader has to interpret",
+    cells.every((r) => r.needs.trim().length > 0));
+  ok("ladder: a CURRENT name states its NEXT RUN DUE date, so 'one run per quarter' is operational rather than something the owner has to compute from an age",
+    cells.filter((r) => /CURRENT/.test(r.fresh)).every((r) => /due \d{4}-\d{2}-\d{2}/.test(r.fresh)));
+  /* The first version of this was a ternary whose branches did not test what the name
+     claimed — it could only ever pass. Rewritten as a flat conjunction over the RENDERED
+     body text: the cadence number, all three clock names, the price exclusion, and the
+     gate distinction, each asserted directly. */
+  {
+    const hb = (await p.locator("#cBody").innerText()).replace(/\s+/g, " ");
+    ok("ladder: the header states the CADENCE by number, names all three quarterly clocks, says outright that the daily price mark is NOT in the rating, and separates NEEDS from the gate",
+      /120-day cadence/.test(hb) && /TT run, thesis, score card/i.test(hb) &&
+      /one fiscal quarter plus reporting lag/i.test(hb) &&
+      /price mark is a DAILY clock/i.test(hb) && /deliberately NOT in this rating/i.test(hb) &&
+      /not a restatement of the gate/i.test(hb));
+  }
+  await p.locator("#cBody .ld-sort", { hasText: /FRESH/i }).first().click();
+  await p.waitForTimeout(200);
+  const byFresh = await p.$$eval("#cBody .ld-main tbody tr", (rs) =>
+    rs.map((r) => (r.querySelectorAll("td")[11].innerText.match(/CURRENT|AGING|STALE|NEVER|INVALID/) || [""])[0]));
+  ok("ladder: a REAL click on FRESH re-reads the same table as the quarterly WORK QUEUE — stalest first, measured off the rendered cells",
+    byFresh.length >= 2 && (() => { const R = { STALE: 0, NEVER: 0, INVALID: 0, AGING: 1, CURRENT: 2 };
+      return byFresh.every((v, i, a) => i === 0 || R[a[i - 1]] <= R[v]); })());
+
   // (4) print media actually produces the document
   await p.emulateMedia({ media: "print" });
   ok("ladder: under PRINT media the board is hidden and the ladder is the whole page — the 'live PDF' is the browser's own, so there is no second renderer that could disagree with the screen",

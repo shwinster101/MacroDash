@@ -169,6 +169,68 @@ public-render** · `audit:prod` clean. Negative-controlled three ways — the ye
 (2 red), the gate decoupled from the sort year (1 red), the veto re-implemented inside the
 ladder (1 red) — each turning exactly its own pin and nothing else.
 
+---
+
+## 5. Follow-up (v6.7.1) — the quarterly freshness rating and the required-work stamp
+
+Owner: *"a freshness rating and information required stamp for each would be useful. Ideally
+one run per quarter."*
+
+**The cadence was already in the book.** `P_INPUT_CADENCE_D = 120` (v5.0 W2b, "a fiscal quarter
+plus reporting lag") with `freshnessOf` → CURRENT / AGING / STALE. Both mirrored from
+`src/ttScore.js`; the constant pinned equal, the function reconciled BEHAVIOURALLY across every
+boundary (the v3.83 techRead precedent — the copies differ in arity, so byte-identity is the
+wrong tripwire and the VERDICTS are what must not drift).
+
+- **FRESH** = worst-of three QUARTERLY clocks (TT run · thesis · score card), governing clock
+  named, plus the next-run DUE DATE and days overdue. The DAILY price mark is excluded by
+  design — folding it in would make everything STALE for a non-quarterly reason.
+- **NEEDS** = the work queue, derived from the clocks and the card state. Explicitly NOT the
+  gate: an ELIGIBLE name can be overdue, and `no gap` is a price fact, not a chore.
+- Three states per clock: **NEVER** (source absent) vs **INVALID** (present, unreadable) vs the
+  rating; the card clock is **UNRATED** when it predates the additive `computed_at` field.
+
+### Measured across the live book at ship
+
+| | |
+|---|---:|
+| CURRENT | 36 |
+| NEVER | 18 (14 never run · 4 run but no card ever minted) |
+| AGING / STALE / INVALID | 0 |
+| Past their next-run due date | **0 of 54** |
+
+Work queue by first action: 18 write falsifiers · 16 run TT + score · 8 nothing due ·
+7 observe falsifiers · 5 gate input.
+
+**The cadence finding worth acting on:** every run stamp is 4–45 days old, so every due date
+lands in a single window, **2026-12-01 → 2027-01-11**. "One run per quarter" as currently
+stamped is a ~40-name December sweep, not a rolling one. Staggering it is an owner call.
+
+### THE DEFECT THIS PULL EXPOSED — filed, not fixed
+
+**`functions/lib/tt-alloc.js` does not honour the `updated` / `as_of` thesis alias.**
+`ddDate` (client), `validateDeepDive`, and the v3.13 corpus-native rule all accept either
+spelling. `evalBuyRow` reads `idx.as_of` alone. Three stored payloads carry `updated` and no
+`as_of` — one of them the book's **#2 composite (9.01/S)** — so the SERVER receipt, which
+governs confirmation (v4.1 Step 5), vetoes them **"thesis undated"** while the terminal's own
+readiness bar reads the thesis as 45 days old. A client/server eligibility divergence resting
+on a false premise.
+
+**Not fixed in this release, deliberately.** Un-blocking a name is the PERMISSIVE direction, and
+a change to the eligibility ladder gets its own plan and approval (§P.8). The one-line read is
+`idx.as_of` → the alias pair, and it should land with its own negative control showing exactly
+which names move.
+
+**The same defect, committed by me and fixed:** the first cut of the thesis clock re-derived the
+alias pair inline with the OPPOSITE precedence to `ddDate` — a fourth spelling of one
+resolution, inside the feature built to stop that. It calls `ddDate` now, pinned.
+
+### Correction to §1 of this note
+
+The GATE column in the table delivered to the owner was computed with the SERVER's `evalBuyRow`.
+For the three `updated`-only payloads its answer ("evidence: thesis undated") is the *server's*,
+and the terminal's own gate differs. Recorded here rather than silently re-rendered.
+
 ### Filed, not built
 
 - `/api/quotes` truncates past 40 symbols and reports `missing: []` (§0).
