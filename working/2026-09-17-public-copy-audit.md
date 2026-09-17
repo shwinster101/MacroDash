@@ -49,3 +49,8 @@ return and company size; they are intentional teaching, not filler.
 Smoke: 2446 passed. Existing assertions updated for the new plain-language chart
 and causal wording; call-popup assertion explicitly covers the safety limit.
 Full browser-required gates and remote checks are recorded below before merge.
+
+Audit implementation: 99ea2fe. Browser verification initially found one stale
+verbatim assertion for the old “not a view on any one stock” sentence. Updated
+it to check the new stock-buy boundary AND the newly explicit safety-limited
+Hold; this is a test wording correction, not a relaxed behavior requirement.

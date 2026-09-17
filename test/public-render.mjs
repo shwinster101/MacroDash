@@ -563,7 +563,7 @@ console.log("\n[public] v3.94 — Simple default, the toggle, persistence, red f
       /Bullish/.test(vsheet) && /Hold/.test(vsheet) && /Bearish/.test(vsheet) &&
       /Not enough data/.test(vsheet) && !/MOONING|HODL|DIAMOND HANDS|CAN'T CALL IT/.test(vsheet));
     ok("v5.9 verdict: it says plainly what this is not — a backdrop read, not advice",
-      /not a view on any one stock/.test(vsheet) && /not advice/.test(vsheet));
+      /not whether to buy a particular stock/.test(vsheet) && /mixed evidence or a safety limit/.test(vsheet) && /not advice/.test(vsheet));
     await page.keyboard.press("Escape");
     await page.waitForTimeout(200);
     ok("v5.9 verdict: Escape closes it and focus returns to the verdict",
