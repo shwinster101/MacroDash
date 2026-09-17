@@ -73,3 +73,22 @@ Before that scope addition, all four gates passed: smoke 2426, terminal 309,
 public 356, production audit 0 vulnerabilities. Popup sweep maximum is 68/68
 words after final terminology edits (correcting the initial 70/68 record).
 Final gates are rerun with the carried-forward copy below.
+
+## Outcomes
+
+Saved in PR #46, release v6.6.3, on `codex/company-value-explainers`.
+Implementation: `82cd0f4`; terminology/company identity: `d3d36c4`;
+live-baseline integration: `137be69`; PR #42 wording carry-forward: `7802751`.
+Final combined `npm run gates` with browser required: **2446 smoke / 309 terminal /
+356 public passed, zero failures; production audit zero vulnerabilities**.
+The original PR #42 copy tests still contained Vol/vol expectations; corrected
+those to Volatility/volatility rather than reverting the full-word product copy.
+The carried-forward budget sweep measures a maximum 13-word hero; both Why
+modes satisfy 25 words. Popup bodies remain within 90/110 (measured 68/68).
+Keyboard opening, Escape/focus restoration, company identity, dated citations,
+missing/stale distinctions and phone overflow checks pass.
+Earlier visual inspection used the synthetic phone preview; the final manual
+preview reconnect failed, so final layout verification is the browser suite,
+not a claim of a second completed screenshot review. Browser viewport reset.
+Nothing was merged or deployed. Remaining independent #42 FOMC work must be
+rebased/renumbered before landing; the new PR preserves its copy-only portion.
