@@ -4,7 +4,7 @@
 // sprint locked four buckets (Face / Tap / Fold / Kill); every helper here projects
 // already-decided evidence into the Face (or names the Fold). Degen does not import
 // this module.
-export const HOLD_REASON_MAX = 18;
+export const HOLD_REASON_MAX = 15;
 export const FACE_NOUN = Object.freeze({
   vix: "Vol",
   nfci: "credit",
@@ -19,7 +19,6 @@ export const EXPLORE_FOLD_LABEL = "Explore the numbers";
 export const WHYS_FOLD_LABEL = "Why this call";
 export const ABOUT_FOLD_LABEL = "About this page";
 
-const words = (s) => String(s || "").trim().split(/\s+/).filter(Boolean);
 const joinAnd = (arr) => {
   if (!arr.length) return "";
   if (arr.length === 1) return arr[0];
@@ -27,28 +26,54 @@ const joinAnd = (arr) => {
   return `${arr.slice(0, -1).join(", ")} and ${arr[arr.length - 1]}`;
 };
 const cap = (s) => (s ? s.charAt(0).toUpperCase() + s.slice(1) : s);
-const verb = (n) => (n === 1 ? "is" : "are");
+const lc = (s) => (s ? s.charAt(0).toLowerCase() + s.slice(1) : s);
+// Nouns that take a plural verb on their own ("rates work", "prices hurt"); the rest are
+// singular ("vol works", "credit helps"). Verb agreement is per NAME, not per count.
+const PLURAL_NOUN = new Set(["tenYear", "valuation"]);
 
-// Face: ≤18-word so-what. Helping names "are fine"; hurting names "are the drag".
-// At most two names per side so a 6-factor day cannot lecture.
+/* Face: the so-what under the one-word call, ≤HOLD_REASON_MAX words.
+   v6.6.1 (owner, on the live 2026-09-16 screenshot: "not a fan of 'fine' and 'drag' — higher
+   leverage, 15 words max"). The sentence now says what the CALL means and lets the names
+   carry the why: a Bullish day says the backdrop supports taking risk and names the only
+   pushback; a Bearish day says what is working against risk and that the helpers do not
+   offset it; a Hold day states the split and that NEITHER SIDE HAS A MAJORITY — which is
+   the actual reason for a Hold under the strict-majority rule, and the one fact a newcomer
+   can act on. The branch follows ev.regime.label, the same field the hero's verdict word
+   reads, so the sentence can never describe a different call from the word above it.
+   At most two names per side (the fold names them all); every branch is ≤15 words BY
+   CONSTRUCTION — no runtime truncation, a truncated sentence is garbage — and smoke sweeps
+   every helping/hurting split in every posture to prove the budget. */
 export function holdReason(ev) {
   if (!ev || ev.withheld) return null;
   const rows = (ev.factors || []).filter((x) => !x.excluded);
-  const name = (x) => FACE_NOUN[x.key] || x.short || x.key;
-  const helping = rows.filter((x) => x.vote === "bull").map(name);
-  const hurting = rows.filter((x) => x.vote === "bear").map(name);
-  const parts = [];
-  if (helping.length) {
-    const g = helping.slice(0, 2);
-    parts.push(`${cap(joinAnd(g))} ${verb(g.length)} fine`);
+  const side = (vote) => rows.filter((x) => x.vote === vote).slice(0, 2)
+    .map((x) => ({ text: lc(FACE_NOUN[x.key] || x.short || x.key), plural: PLURAL_NOUN.has(x.key) }));
+  const helping = side("bull"), hurting = side("bear");
+  if (!helping.length && !hurting.length) return "Nothing we track has a clear lean.";
+  const names = (g) => joinAnd(g.map((n) => n.text));
+  const v = (g, one, many) => (g.length === 1 && !g[0].plural ? one : many);
+  const line = (g, one, many) => `${cap(names(g))} ${v(g, one, many)}`;
+  const label = ev.regime && ev.regime.label;
+  if (label === "RISK-ON" && helping.length) {
+    const lead = `${line(helping, "supports", "support")} taking risk.`;
+    return hurting.length ? `${lead} The only pushback: ${names(hurting)}.`
+      : `${lead} Nothing tracked is pushing back.`;
   }
-  if (hurting.length) {
-    const g = hurting.slice(0, 2);
-    parts.push(`${cap(joinAnd(g))} ${verb(g.length)} the drag`);
+  if (label === "RISK-OFF" && hurting.length) {
+    const lead = `${line(hurting, "works", "work")} against risk.`;
+    return helping.length ? `${lead} ${line(helping, "doesn't", "don't")} offset that.`
+      : `${lead} Nothing tracked offsets that.`;
   }
-  if (!parts.length) return "Nothing we track has a clear lean.";
-  const out = `${parts.join(". ")}.`;
-  return words(out).length <= HOLD_REASON_MAX ? out : `${parts[0]}.`;
+  // Hold (MIXED): the split is the so-what. Larger side first; a tie leads with the helpers.
+  if (helping.length && hurting.length) {
+    const bullFirst = helping.length >= hurting.length;
+    const first = bullFirst ? line(helping, "helps", "help") : line(hurting, "hurts", "hurt");
+    const second = bullFirst ? line(hurting, "hurts", "hurt") : line(helping, "helps", "help");
+    return `${first}. ${second}. Neither side has a majority.`;
+  }
+  return helping.length
+    ? `${line(helping, "helps", "help")}; nothing tracked hurts. Still short of a majority.`
+    : `${line(hurting, "hurts", "hurt")}; nothing tracked helps. Still short of a majority.`;
 }
 
 export function cardFace(card) {

@@ -5,6 +5,66 @@ answers *"is it safe to be in the market?"* from live macro + market + sentiment
 data. Single-page React app on Cloudflare Pages, with live data assembled at the
 edge by Pages Functions and cached in KV.
 
+**v6.6.1 "ONE ENGINE, TWO ALTITUDES" — the hero sentence and the 5 whys at their word budgets
+(owner, on the live 2026-09-16 Simple screenshot: "not a fan of 'fine' and 'drag' — the text
+should be higher leverage, 15 words max; 5 whys intentionally higher level for Simple, 25 words
+max per why — dig into the bridge with the Simple mode intentions; same for Degen").** Copy and
+projection only: no band, vote, quorum, freeze, fetch or contract moved, and every number the
+whys print is the number they printed before.
+**The face.** `holdReason` was one two-verb template ("X are fine. Y are the drag.") that said
+the same thing in every posture. It now follows `ev.regime.label` — the SAME field the verdict
+word above it reads, so the sentence can never describe a different call — and says what the
+CALL means, letting the names carry the why: Bullish → *"Vol and credit support taking risk.
+The only pushback: rates and prices."* · Bearish → *"Rates and prices work against risk. Vol
+doesn't offset that."* · Hold → *"Vol and credit help. Rates and prices hurt. Neither side has
+a majority."* — that last clause being the actual reason for a Hold under the strict-majority
+rule, and the one fact a newcomer can act on. Verb agreement is per NOUN ("rates work", "vol
+works"), `HOLD_REASON_MAX` 18 → **15**, every branch ≤15 BY CONSTRUCTION (no runtime
+truncation — a truncated sentence is garbage), swept over all 84 posture × split combinations
+(max measured 13).
+**The whys: one engine, two projections.** Before this the Simple whys were the Degen whys
+with word swaps (HELPING for BULLISH) and still carried six dated factor rows, band jargon and
+three quoted headlines — the 10-K leaking into the flash card (the v6.5.1 mode contract).
+`computeFiveWhys` now derives ONE fact set (the label, the split, supports · risks · balances ·
+excluded, confidence, the call) and projects it at two altitudes under **`WHY_WORD_MAX = 25`**.
+**SIMPLE is the bridge from the one-word call to understanding:** #1 the call and its
+arithmetic (*"Bullish. 4 of 6 signals help, 1 hurt, 1 mixed. A call needs a majority — at least
+4."*); #2 the sides by `FACE_NOUN` name — the hero sentence's own vocabulary — with dark names
+NAMED (v3.65), never folded into mixed (v3.62); #3 ONE transmission phrase per side from the
+band table's own `plainBull`/`plainBear` (one home), the call's side first, *"channels, not
+causes"*; #4 confidence + coverage + news never votes — NO headline at this altitude; #5 the
+ARITHMETIC of the flip off the same majority rule (*"1 signal switching from helping would drop
+this to Hold"* · *"Bullish would take 1 more signal helping; Bearish, 1 more hurting"*), with
+the safety states outranking it (PANIC forces Bearish · a downgrade withholds Bullish · a
+withheld call says how many more current signals it needs). The `⇄` line beneath the block
+still names the nearest concrete crossing — two lines, two jobs, never one restating the other.
+A safety state is also NAMED on the call word in #1 (*"Hold — Bullish withheld"*), so word and
+count never contradict on the same line. **DEGEN keeps the operator's register at the same
+budget:** MOONING · BULLISH, short codes, the v5.8 channel vocabulary chip-length (discount rate
+· price of protection · positioning · policy path · earnings cushion · credit channel), the
+snapshot clock, actionability, the nearest threshold, override and downgrade as chip-length
+facts (v3.66). Numbers and dates are deliberately NOT repeated — the Drivers matrix and hero
+chips carry every one (v3.93's same-fact-three-times cut, applied to this block).
+**Consequence, named at full weight:** Degen WHY #4 quotes rank-1 as a ≤`HEADLINE_WORDS` (6)
+lead with its source and **ranks 2-3 no longer ride it** — the v6.1 top-3 lose their only
+on-PAGE home (they still ride `marketHeadlinesJson` and the close-read record). A headlines
+strip is their honest home; filed, not built. The excluded NAMES ride WHY #2 once; WHY #4
+states coverage as a count so a six-dark day cannot blow the budget.
+**The budget is PROVEN, not enforced.** Smoke [86] sweeps both modes over ten fixtures incl.
+the worst case (six factors in the widest split, a 25-word wire title from a two-word source,
+the longest flip copy, override + downgrade + exclusions together) — max measured **23 Simple /
+25 Degen** — counting tokens that carry a letter or digit. Three copy defects the fixture caught
+before any browser did: `lc()` lowering only the first letter (*"hIGH"*), a count printed twice
+(*"1 more 1 signal"*), and a local `noun` shadowing the module's pluraliser (*"1 more
+undefined"*). Also: [3]'s fixture gains `short` (the real evidence shape — without it Degen's
+WHY #2 fell back to the long label and passed a pin the live page could never satisfy); the [77]
+top-3 pin is re-pinned with the consequence stated at the pin; four public-render pins move to
+the posture vocabulary; the v6.5.3 line below describing "are fine / are the drag" is annotated
+as superseded rather than rewritten.
+Tests: **2407 smoke** (+21, section [86]) + 309 render + 332 public-render. Negative-controlled
+three ways — "fine" restored, the headline cap removed, Simple #5 restating the `⇄` crossing —
+each turning exactly its own pins.
+
 **v6.6.0 "THE FED MOVED" — the dashboard learns to report an EVENT, not just a state (owner
 call, after the 2026-09-16 FOMC read-through).** On the day the FOMC raised the target range
 25bp to **3.75–4.00%, the first hike in three years**, a live read of production found the
@@ -156,7 +216,8 @@ Tests: 2347 smoke + 309 render + 331 public-render.
 
 **v6.5.3 — Simple FACE / TAP / FOLD remainder (T1/T4/T5/T6).** Presentation-only. A new
 `src/simpleFace.js` registry owns Simple face copy: `holdReason` (≤18 words: helping names
-"are fine", hurting names "are the drag"), `cardFace` / `sheetLead`, `spotlightFace` (YTD +
+"are fine", hurting names "are the drag" — **superseded in v6.6.1**: ≤15 words, posture-aware,
+both words retired), `cardFace` / `sheetLead`, `spotlightFace` (YTD +
 one quality stat), and the four fold promises (`Why this call`, `About this page`,
 `Explore the numbers`, `Learning moment`). Spotlight Simple is name + YTD + one stat; market
 cap, multiples, the two-sentence summary and the lesson body ride Explore / a closed Learning

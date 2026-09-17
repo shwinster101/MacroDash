@@ -233,3 +233,58 @@ everything else in §5 stays filed.
 **Still open from §5, unchanged:** items 3 (the `/readout.json` evening blind spot — the
 highest-leverage structural item), 4 (now done: the stale Kalshi claim is corrected in
 CLAUDE.md's v6.6.0 entry) and 5 (verify the 10am refresh leg via `_diag.cronJobs`).
+
+---
+
+## Outcomes — pass 3 (the copy pass on the live Simple screenshot), v6.6.1
+
+Owner, on the deployed v6.6.0 Simple view the morning after the hike: *"Focus on the headline
+text. I'm not a fan of 'fine' and 'drag'. The text should be higher leverage. 15 words max
+though. 5 why's, intentionally higher level for simple mode. 25 words max per why. Dig into
+the bridge with the simple mode intentions. Same for degen mode."*
+
+**Diagnosis before building.** Three findings, all verified against source:
+- `holdReason` (`src/simpleFace.js`) was one template in every posture — "X are fine. Y are
+  the drag." — so a Bullish day, a Hold and a Bearish day all read the same shape. The
+  so-what of a Hold under the strict-majority rule is *neither side has a majority*; the
+  sentence never said it.
+- The Simple whys were the Degen whys with word swaps (HELPING for BULLISH), still carrying
+  six dated factor rows, band jargon ("≥½ SD below mean") and three quoted headlines — the
+  10-K inside the flash card, the exact v6.5.1 contract violation.
+- Simple WHY #5 restated the `⇄` flip line rendered directly beneath it (same fact, twice,
+  two lines apart), and Degen's whys re-dated every factor the Drivers matrix already dates.
+
+**Built (`src/fiveWhys.js`, `src/simpleFace.js`; presentation only).**
+- One fact set, two projections (`simpleWhys` / `degenWhys`) under `WHY_WORD_MAX = 25`.
+  Simple: call + arithmetic → sides by FACE_NOUN → one transmission phrase per side (the band
+  table's own plainBull/plainBear) → confidence + coverage, no headline → the ARITHMETIC of
+  the flip off the same majority rule, safety states first. Degen: moon voice + machine
+  direction, short codes, the v5.8 channels chip-length, the clock, a ≤6-word headline lead
+  with source, the nearest threshold, actionability, override/downgrade as chips.
+- `holdReason` posture-aware off `ev.regime.label` (the verdict word's own field), ≤15 by
+  construction, per-noun verb agreement.
+
+**Consequence stated, not hidden.** Degen WHY #4 drops ranks 2-3 of the v6.1 top-3 (they
+cannot fit a 25-word line). They still ride `marketHeadlinesJson` and the close-read record;
+their only on-page home is gone until a headlines strip exists. Filed in CLAUDE.md v6.6.1.
+
+**Three copy defects caught by the [86] fixture before any browser saw them**, recorded per
+the house rule: `lc()` lowercased only the first letter ("Confidence is hIGH"); the plural
+helper already carried its count, so "1 more 1 signal" printed; and a local `noun` (the
+factor name) shadowed the module's `noun(k, one, many)` pluraliser, printing "1 more
+undefined". A fixture that prints the strings it pins is how all three surfaced.
+
+**Pins re-pinned with reasons:** smoke [3] (the Degen register; the fixture gains `short`,
+the real evidence shape), [77] (top-3 → rank-1 lead, consequence named), [82] (≤15, retired
+words pinned ABSENT); public-render 386/392/1012/1034/1063 (the posture vocabulary).
+New: smoke [86], 21 assertions — both budgets swept over ten fixtures incl. the worst case
+(max measured 23 Simple / 25 Degen), the bridge pinned line by line in both modes, the face
+swept over 84 posture × split combinations (max 13), and the wiring (holdReason on the hero,
+the `⇄` line still mounted beneath the Simple whys).
+
+**Correction to pass 2.** Pass 2's Simple-whys copy ("N of the M counted signals are
+helping") was written as a vocabulary swap over the Degen structure and shipped as the Simple
+bridge. It was not a bridge; it was the same document at a lower font. Recorded here rather
+than edited out of the pass-2 note above.
+
+**Gates / negative controls / SHAs:** see the commit that carries this section.

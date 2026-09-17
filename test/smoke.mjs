@@ -9,7 +9,7 @@ import { readFileSync } from "node:fs";
 import { MOCK_DATA } from "../src/mockData.js";
 import { evalAlert, applyAlertPrefs, alertPrefsOf, ALERT_PREFS_KEY } from "../src/alertEngine.js"; // v6.5.5: the engine, imported not source-lifted // v6.5.5: the mock baseline, imported not source-sliced
 import { mergeLiveOverMock, SOURCES, isStale, cadenceOf, parseObsDate, isMarketHoliday, MARKET_HOLIDAYS, DERIVED_OF as DERIVED_OF_SRC, DERIVED_EXEMPT, govAsOf } from "../src/sources.js";
-import { computeFiveWhys, isMacroMaterial } from "../src/fiveWhys.js";
+import { computeFiveWhys, isMacroMaterial, WHY_WORD_MAX, HEADLINE_WORDS } from "../src/fiveWhys.js";
 import { HEADLINE_CATEGORIES, MACRO_TERMS, categoryOf, rankHeadlines, scoreHeadline,
   isNearDuplicate, parseTopHeadlines, RECENCY_MAX_H } from "../src/headlines.js"; // v6.1.0
 // C1 (v3.60): the regime engine is a real module now — smoke IMPORTS it instead of lifting
@@ -60,7 +60,7 @@ import { fmt } from "../src/format.js"; // task 1.3: shared format helpers, test
 import { buildMacroCall, formatMacroCallPaste, formatMacroShareCard, CALL_SCHEMA, CALL_EDITIONS, callEdition } from "../src/macroCall.js";
 import { simpleCallLabel, publicMarketClock, publicMarketClockLine, liveReadCaption,
   spyMoveDirection, publicEditionLabel, simpleHoldExplain, eveningUpdateLine } from "../src/publicCopy.js";
-import { HOLD_REASON_MAX, FACE_GLYPH, holdReason, cardFace, sheetLead, spotlightFace,
+import { HOLD_REASON_MAX, FACE_GLYPH, FACE_NOUN, holdReason, cardFace, sheetLead, spotlightFace,
   chartTitle, lessonTitle, LESSON_FOLD_LABEL, WHYS_FOLD_LABEL, ABOUT_FOLD_LABEL, EXPLORE_FOLD_LABEL } from "../src/simpleFace.js";
 import { buildForwardOutcome, normalizeSp500Observations, outcomeKey, OUTCOME_SCHEMA,
   CLOSE_READ_PREFIX, CLOSE_READ_SCHEMA, CLOSE_READ_RECORD_SCHEMA, closeReadKey, validCloseRead, validFrozenCall as validFrozenCallPH } from "../src/publicHistory.js";
@@ -235,13 +235,16 @@ ok("every SOURCES entry has path + valid kind", Object.values(SOURCES).every((s)
 // ---- 3. computeFiveWhys — rule-based 5 Whys ----------------------------
 console.log("\n[3] computeFiveWhys (rule-based 5 Whys)");
 const fwRegime = { label: "RISK-ON", raw:"RISK-ON", sub: "Disinflation + low vol", bullVotes: 4, bearVotes: 1, counted:6, totalFactors:6 };
+// v6.6.1: the fixture carries `short` — the real evidence rows do (REGIME_BAND_TABLE's own
+// codes), and Degen's WHY #2 now speaks them. A fixture without them would have the why fall
+// back to the long label and pass a pin that the live page could never satisfy.
 const fwFactors = [
-  {key:"tenYear",label:"10Y Direction",state:"NEUTRAL",display:"4.70% · +0.01pp 1-mo",as_of:"2026-08-24"},
-  {key:"vix",label:"VIX Level",state:"BULLISH",display:"15.85 — Low",as_of:"2026-08-24"},
-  {key:"fearGreed",label:"Fear & Greed",state:"BULLISH",display:"60 — Greed",as_of:"2026-08-25"},
-  {key:"cpiHeadline",label:"CPI Trend",state:"BULLISH",display:"3.4% YoY · cooling",as_of:"2026-07-01"},
-  {key:"valuation",label:"Valuation",state:"BEARISH",display:"41.8 CAPE",as_of:"2026-08-25"},
-  {key:"nfci",label:"Fin Conditions",state:"BULLISH",display:"-0.56 SD",as_of:"2026-08-14"},
+  {key:"tenYear",short:"10Y",label:"10Y Direction",state:"NEUTRAL",display:"4.70% · +0.01pp 1-mo",as_of:"2026-08-24"},
+  {key:"vix",short:"VIX",label:"VIX Level",state:"BULLISH",display:"15.85 — Low",as_of:"2026-08-24"},
+  {key:"fearGreed",short:"F&G",label:"Fear & Greed",state:"BULLISH",display:"60 — Greed",as_of:"2026-08-25"},
+  {key:"cpiHeadline",short:"CPI",label:"CPI Trend",state:"BULLISH",display:"3.4% YoY · cooling",as_of:"2026-07-01"},
+  {key:"valuation",short:"VAL",label:"Valuation",state:"BEARISH",display:"41.8 CAPE",as_of:"2026-08-25"},
+  {key:"nfci",short:"NFCI",label:"Fin Conditions",state:"BULLISH",display:"-0.56 SD",as_of:"2026-08-14"},
 ];
 const fwCall = {headline:"MOONING",direction:"BULLISH",confidence:"HIGH",actionability:"FULL",
   counts:{bullish:4,neutral:1,bearish:1,usable:6,total:6},factors:fwFactors,override:{active:false}};
@@ -259,33 +262,44 @@ ok("does not throw on MOCK_DATA with default regime", (() => { try { computeFive
 // v6.4 public vocabulary: coverage takes the canonical "N of M signals counted"
 // form and the majority RULE stops reading as a third tally. Pinned on the new copy, and the
 // retired slash/"strict majority: N of M" forms are pinned ABSENT so they cannot creep back.
+/* v6.6.1 "ONE ENGINE, TWO ALTITUDES" — every Degen pin below is RE-PINNED on the 25-word
+   register (section [86] proves the budget itself). What each check CLAIMS is unchanged;
+   the spelling moved: the majority rule reads "Strict majority needed: at least N", WHY #2
+   speaks the short codes and carries NO DATES (the Drivers matrix and hero chips already
+   date every row — v3.93's same-fact-three-times cut, applied here), WHY #4 leads with the
+   confidence word and quotes a chip-length headline lead, WHY #5 reads "Actionability FULL".
+   The exclusion NAME moved from WHY #4 to WHY #2 (named once, not twice). */
 ok("check 1 is exact call arithmetic, not unrelated SPY/Fed context",
   /4 bullish, 1 neutral, and 1 bearish/.test(fw.whys[0]) &&
   /all 6 signals counted/.test(fw.whys[0]) &&
-  /strict majority of the counted signals — at least 4 here/.test(fw.whys[0]) &&
+  /Strict majority needed: at least 4\./.test(fw.whys[0]) &&
   !/SPY|Fed at/.test(fw.whys[0]));
 ok("row 12-13: WHY #1 carries no slash fraction and never calls a fraction 'usable'",
   !/\d+\/\d+/.test(fw.whys[0]) && !/\d+ of \d+ usable|usable factors/.test(fw.whys[0]));
-ok("check 2 contains only canonical factors and their dated states",
-  fwFactors.every((f)=>fw.whys[1].includes(f.label)) && /as of 2026-08-25/.test(fw.whys[1]) && !/WTI|BTC|HY-IG/.test(fw.whys[1]));
+ok("check 2 contains only canonical factors by short code — no dates (the matrix carries them), no cross-signals",
+  fwFactors.every((f)=>fw.whys[1].includes(f.short)) && !/as of|\d{4}-\d{2}/.test(fw.whys[1]) && !/WTI|BTC|HY-IG/.test(fw.whys[1]) &&
+  /Bull: VIX · F&G · CPI · NFCI\. Bear: VAL\. Neutral: 10Y\./.test(fw.whys[1]));
 /* v5.8 (owner: the whys should "sound more macro defined") — re-pinned on the sharpened
    transmission vocabulary. The clause now names the CHANNEL each factor actually runs
    through; the disclaimer that these are channels and not proof of causation is unchanged,
    because that is the honesty half of the check. Pinned as "names a real channel", derived
    from the map itself rather than one hand-copied phrase, so the next copy pass cannot
-   quietly leave WHY #3 gesturing at importance with no mechanism in it. */
+   quietly leave WHY #3 gesturing at importance with no mechanism in it.
+   v6.6.1: the five channels are the SAME five (discount rate · price of protection ·
+   policy path · earnings cushion · credit channel) plus positioning for F&G, chip-length. */
 ok("check 3 explains transmission in macro terms and disclaims single-factor causality",
-  /discount rate|price of protection|room the Fed has|cushion|credit channel|already in the price/.test(fw.whys[2]) &&
+  /discount rate|price of protection|positioning|policy path|earnings cushion|credit channel/.test(fw.whys[2]) &&
   /not proof/.test(fw.whys[2]));
 ok("check 4 states snapshot time, confidence, and that headlines never affect the call",
-  /Evidence confidence is HIGH/.test(fw.whys[3]) && /snapshot was pulled/.test(fw.whys[3]) && /never affect the call/.test(fw.whys[3]));
+  /^HIGH confidence; pulled /.test(fw.whys[3]) && /never affect the call/.test(fw.whys[3]));
 ok("check 5 names the nearest load-bearing change and actionability",
-  /VIX at or above 18\.00/.test(fw.whys[4]) && /HODL/.test(fw.whys[4]) && /Actionability is FULL/.test(fw.whys[4]));
+  /VIX at or above 18\.00/.test(fw.whys[4]) && /HODL/.test(fw.whys[4]) && /Actionability FULL/.test(fw.whys[4]));
 const fwReducedFactors=fwFactors.map((f)=>f.key==="vix"?{...f,state:null,excluded:true,reason:"too old"}:f);
 const fwReducedCall={...fwCall,confidence:"MEDIUM",counts:{bullish:3,neutral:1,bearish:1,usable:5,total:6},factors:fwReducedFactors};
 const fwReduced=computeFiveWhys(MOCK_DATA,{...fwRegime,counted:5,bullVotes:3},{...fwOpts,call:fwReducedCall,factors:fwReducedFactors});
-ok("five checks: reduced evidence changes the denominator and names the exclusion",
-  /3 of the 5 counted signals lean bullish/.test(fwReduced.headline) && /VIX Level was excluded/.test(fwReduced.whys[3]));
+ok("five checks: reduced evidence changes the denominator, names the exclusion in WHY #2 and counts it in WHY #4",
+  /3 of the 5 counted signals lean bullish/.test(fwReduced.headline) && /Excluded: VIX\./.test(fwReduced.whys[1]) &&
+  /5 of 6 usable/.test(fwReduced.whys[3]) && !/VIX/.test(fwReduced.whys[3]));
 // Row 11: the tally shape is now unmistakably a tally — no slash, no "usable" on a fraction.
 ok("row 11: the reduced headline names a bullish TALLY, never a coverage fraction",
   !/\d+\/\d+/.test(fwReduced.headline) && !/usable factors bullish/.test(fwReduced.headline) &&
@@ -300,7 +314,7 @@ ok("DEC-31: fetchPutCall scraper deleted from snapshot.js", !snapSrc.includes("p
 const withHL = { ...MOCK_DATA, marketPulse: { ...MOCK_DATA.marketPulse, headline: { text: "Peace deal lifts futures", source: "MarketWatch" } } };
 ok("headline context renders a relevant current item but never affects the call",
   /Peace deal lifts futures/.test(computeFiveWhys(withHL, fwRegime, fwOpts).whys[3]) && /never affect the call/.test(computeFiveWhys(withHL, fwRegime, fwOpts).whys[3]));
-ok("headline context states when no current item passes", /No current macro headline/.test(computeFiveWhys(MOCK_DATA, fwRegime, {...fwOpts,headlineFresh:false}).whys[3]));
+ok("headline context states when no current item passes", /No macro headline passed the gates/.test(computeFiveWhys(MOCK_DATA, fwRegime, {...fwOpts,headlineFresh:false}).whys[3]));
 // ---- v3.51 (public audit): freshness is not RELEVANCE ----------------------
 // The audit caught a Fidelity death-certificate administrative story rendered as the macro
 // "Headline driver" — fresh, dated and correctly attributed, and explaining nothing about
@@ -321,7 +335,7 @@ const admin = { ...MOCK_DATA, marketPulse: { ...MOCK_DATA.marketPulse,
   headline: { text: "Fidelity now requires a death certificate to transfer an account", source: "MarketWatch" } } };
 const fwAdmin = computeFiveWhys(admin, fwRegime, fwOpts);
 ok("headline context: a fresh but non-macro item is withheld and the reason is named",
-  /failed the macro-relevance filter/.test(fwAdmin.whys[3]) && !fwAdmin.whys[3].includes("death certificate"));
+  /Top MarketWatch item is not macro-material/.test(fwAdmin.whys[3]) && !fwAdmin.whys[3].includes("death certificate"));
 ok("headline context: the materiality filter is one-way — accepted context stays verbatim",
   computeFiveWhys(withHL, fwRegime, fwOpts).whys[3].includes("Peace deal lifts futures"));
 
@@ -11054,9 +11068,14 @@ console.log("\n[77] v6.1.0 ranked headlines — one table, order, dedupe, diagno
     { title: "CPI cools to 2.4%", source: "CNBC" }, { title: "Treasury yields spike", source: "WSJ Markets" }]);
   const withTop = (topJson, text = "Fed holds rates steady") => ({ ...MOCK_DATA, marketPulse: { ...MOCK_DATA.marketPulse,
     headline: { text, source: "MarketWatch", topJson } } });
-  ok("[77] WHY #3: rank-1 verbatim, then items 2-3 verbatim with their sources — and the non-voting clause survives",
+  /* v6.6.1 RE-PIN, with the consequence named rather than hidden: the Degen why is capped
+     at 25 words, so this line now carries rank-1 as a chip-length lead with its source and
+     ranks 2-3 no longer ride it. The top-3 still ride marketHeadlinesJson and the close-read
+     record; their only on-PAGE home was this sentence, so they have none until a headlines
+     strip exists (filed in CLAUDE.md v6.6.1 as found-not-built). The gate is unchanged. */
+  ok("[77] WHY #3: rank-1 rides as a verbatim lead with its source; ranks 2-3 no longer ride the 25-word line — and the non-voting clause survives",
     (() => { const w = computeFiveWhys(withTop(top3), fwRegime, fwOpts).whys[3];
-      return /Tracked context \(MarketWatch\): “Fed holds rates steady”/.test(w) && / · also “CPI cools to 2\.4%” \(CNBC\) · “Treasury yields spike” \(WSJ Markets\)/.test(w) &&
+      return /“Fed holds rates steady” \(MarketWatch\)/.test(w) && !/also|CPI cools|Treasury yields/.test(w) &&
         /never affect the call/.test(w); })());
   ok("[77] WHY #3: a stored list carrying the Fidelity false positive at rank 2 never prints it; garbage topJson degrades to rank-1 only",
     (() => { const bad = JSON.stringify([{ title: "Fed holds rates steady", source: "MarketWatch" },
@@ -11066,7 +11085,7 @@ console.log("\n[77] v6.1.0 ranked headlines — one table, order, dedupe, diagno
       return !/death certificate/.test(w1) && !/also/.test(w1) && /“Fed holds rates steady”/.test(w2) && !/also/.test(w2); })());
   ok("[77] WHY #3: a non-material rank-1 withholds the WHOLE slot — items 2-3 cannot rescue it (one gate, one way)",
     (() => { const w = computeFiveWhys(withTop(top3, "Fidelity now requires a death certificate to transfer an account"), fwRegime, fwOpts).whys[3];
-      return /failed the macro-relevance filter/.test(w) && !/also/.test(w) && !/CPI cools/.test(w); })());
+      return /not macro-material/.test(w) && !/also/.test(w) && !/CPI cools|death certificate/.test(w); })());
 }
 
 // ═══════════ [78] v6.2.0 — the 6pm CLOSE READ: clock, failsafes, record, cron, surfaces ═══════
@@ -11891,17 +11910,23 @@ console.log("\n[81] v6.5.0 STOCK SPOTLIGHT — calculations, endpoints, cron leg
 }
 
 // ═══════════ [82] T1/T4/T5 — Simple FACE / TAP / FOLD remainder ═══════════
-console.log("\n[82] Simple FACE/TAP/FOLD remainder — registry, ≤18-word reason, promise labels");
+console.log("\n[82] Simple FACE/TAP/FOLD remainder — registry, ≤15-word reason, promise labels");
 {
   const ssFaceSrc = readSrc("../src/sections/StockSpotlight.jsx");
   const words = (s) => String(s || "").trim().split(/\s+/).filter(Boolean);
   const row = (key, vote) => ({ key, vote, excluded: false, short: key });
-  const mixed = holdReason({ withheld: false, factors: [row("vix", "bull"), row("nfci", "bull"), row("tenYear", "bear"), row("valuation", "bear")] });
-  const allBull = holdReason({ withheld: false, factors: [row("vix", "bull"), row("nfci", "bull"), row("tenYear", "bull"), row("valuation", "bull"), row("fearGreed", "bull"), row("cpiHeadline", "bull")] });
-  ok("T1 holdReason: withheld is null; mixed names helping as fine and hurting as the drag; always ≤18 words",
-    holdReason(null) === null && holdReason({ withheld: true }) === null &&
-    /fine/.test(mixed) && /drag/.test(mixed) && words(mixed).length <= HOLD_REASON_MAX &&
-    words(allBull).length <= HOLD_REASON_MAX && /Vol/.test(mixed) && /Rates/.test(mixed));
+  /* v6.6.1 RE-PIN (owner: "not a fan of 'fine' and 'drag' — higher leverage, 15 words max").
+     The sentence now follows the posture: a Hold names the split and says NEITHER SIDE HAS A
+     MAJORITY, a Bullish day says the backdrop supports taking risk. The retired words are
+     pinned ABSENT; the full posture × split sweep lives in [86]. */
+  const mixed = holdReason({ withheld: false, regime: { label: "MIXED" }, factors: [row("vix", "bull"), row("nfci", "bull"), row("tenYear", "bear"), row("valuation", "bear")] });
+  const allBull = holdReason({ withheld: false, regime: { label: "RISK-ON" }, factors: [row("vix", "bull"), row("nfci", "bull"), row("tenYear", "bull"), row("valuation", "bull"), row("fearGreed", "bull"), row("cpiHeadline", "bull")] });
+  ok("T1 holdReason: withheld is null; a Hold states the split and that neither side has a majority; ≤15 words; 'fine'/'drag' retired",
+    holdReason(null) === null && holdReason({ withheld: true }) === null && HOLD_REASON_MAX === 15 &&
+    mixed === "Vol and credit help. Rates and prices hurt. Neither side has a majority." &&
+    allBull === "Vol and credit support taking risk. Nothing tracked is pushing back." &&
+    words(mixed).length <= HOLD_REASON_MAX && words(allBull).length <= HOLD_REASON_MAX &&
+    !/fine|drag/i.test(mixed + allBull) && /Vol/.test(mixed) && /Rates/.test(mixed));
   ok("T1 cardFace / sheetLead: glyph+label+value+tone only; sheetLead is the why sentence",
     JSON.stringify(cardFace({ direction: "helping", label: "volatility", currentValue: "15.84", why: "fear gauge" })) === JSON.stringify({ glyph: FACE_GLYPH.helping, label: "volatility", value: "15.84", tone: "helping" }) &&
     sheetLead({ why: "fear gauge" }) === "fear gauge" && sheetLead({}) === null);
@@ -12176,6 +12201,182 @@ console.log("\n[85] v6.6 — the FED policy marker (context, never a vote) + the
   ok("[85] alerts: the policy alerts VOTE NOWHERE — no alert id or metric reaches a regime, evidence or call surface",
     [readSrc("../src/regime.js"), readSrc("../src/evidence.js"), readSrc("../src/macroCall.js")]
       .every((s) => !/rate_hike_odds|rate_cut_odds|fed_move_bp/.test(s)));
+}
+
+// ═══════════ [86] v6.6.1 — ONE ENGINE, TWO ALTITUDES: the whys and the face at their word budgets ═══════════
+// Owner, on the live 2026-09-16 Simple screenshot: "not a fan of 'fine' and 'drag' — higher
+// leverage, 15 words max; 5 whys intentionally higher level for Simple, 25 words max per why;
+// same for Degen." A word budget is a claim about EVERY output, so it is PROVEN here over the
+// worst case in both modes (six factors in the widest split, a 25-word wire title from a
+// two-word source, the longest flip copy, override + downgrade + exclusions together) — never
+// enforced by runtime truncation. Words are counted the way a reader counts them: tokens
+// carrying a letter or digit (a "·", "—" or "→" is punctuation, not a word).
+// (Sits ABOVE the summary line — the v5.97.1 trap.)
+console.log("\n[86] v6.6.1 ONE ENGINE, TWO ALTITUDES — ≤25-word whys in both modes, ≤15-word face, the bridge itself");
+{
+  const wc = (s) => String(s || "").split(/\s+/).filter((t) => /[A-Za-z0-9]/.test(t)).length;
+  const SHORT = { tenYear: "10Y", vix: "VIX", fearGreed: "F&G", cpiHeadline: "CPI", valuation: "VAL", nfci: "NFCI" };
+  const LABEL = { tenYear: "10Y Direction", vix: "VIX Level", fearGreed: "Fear & Greed", cpiHeadline: "CPI Trend", valuation: "Valuation", nfci: "Fin Conditions" };
+  const KEYS = Object.keys(SHORT);
+  // spec: key → "bull" | "bear" | "neutral" | "x" (excluded) — the real evidence-row shape.
+  const rows = (spec) => KEYS.map((key) => spec[key] === "x"
+    ? { key, short: SHORT[key], label: LABEL[key], state: null, vote: null, excluded: true, reason: "too old", as_of: "2026-09-10" }
+    : { key, short: SHORT[key], label: LABEL[key], state: spec[key] === "bull" ? "BULLISH" : spec[key] === "bear" ? "BEARISH" : "NEUTRAL",
+        vote: spec[key], excluded: false, as_of: "2026-09-16" });
+  const counts = (fs) => { const u = fs.filter((f) => !f.excluded);
+    return { bullish: u.filter((f) => f.vote === "bull").length, bearish: u.filter((f) => f.vote === "bear").length,
+      neutral: u.filter((f) => f.vote === "neutral").length, usable: u.length, total: fs.length }; };
+  // A call in md-call-v1 shape, its direction derived by the SAME strict-majority rule the engine
+  // uses (bull > usable/2) unless the case pins one (a downgraded bull reads NEUTRAL).
+  const mkCall = (fs, o = {}) => { const c = counts(fs); const req = c.usable ? Math.floor(c.usable / 2) + 1 : 0;
+    const dir = o.direction !== undefined ? o.direction : c.usable < 4 ? null : c.bullish >= req ? "BULLISH" : c.bearish >= req ? "BEARISH" : "NEUTRAL";
+    const headline = dir === "BULLISH" ? "MOONING" : dir === "BEARISH" ? "DIAMOND HANDS" : dir === "NEUTRAL" ? "HODL" : "CAN'T CALL IT";
+    return { headline, direction: dir, confidence: o.confidence || (c.usable === 6 ? "HIGH" : c.usable >= 4 ? "MEDIUM" : "LOW"),
+      actionability: o.actionability || (dir ? "FULL" : "HOLD"), counts: c, factors: fs,
+      override: o.override || { active: false }, downgraded: o.downgraded || null }; };
+  const regimeOf = (call) => ({ label: call.direction === "BULLISH" ? "RISK-ON" : call.direction === "BEARISH" ? "RISK-OFF" : call.direction ? "MIXED" : "INSUFFICIENT",
+    counted: call.counts.usable, totalFactors: call.counts.total, bullVotes: call.counts.bullish, bearVotes: call.counts.bearish });
+  const LONG_TITLE = "Fed raises rates a quarter point in first hike since 2023 as officials warn inflation is running hot again and markets brace for more";
+  const LONG_FLIP = [{ copy: "the 10Y monthly change at or above 0.15 ppt", would: "RISK-OFF" }];
+  const dataWith = (title, source = "WSJ Markets") => ({ ...MOCK_DATA, session: "CLOSE",
+    marketPulse: { ...MOCK_DATA.marketPulse, headline: { text: title, source, topJson: "[]" } } });
+  const run = (fs, o = {}) => { const call = mkCall(fs, o);
+    const opts = { call, factors: fs, flips: o.flips === undefined ? LONG_FLIP : o.flips, snapshotAsOf: "2026-09-16T14:01:37Z", headlineFresh: true, callFrozen: true };
+    const data = dataWith(LONG_TITLE);
+    return { call, simple: computeFiveWhys(data, regimeOf(call), { ...opts, vocabulary: "simple" }),
+      degen: computeFiveWhys(data, regimeOf(call), { ...opts, vocabulary: "degen" }) }; };
+
+  const CASES = {
+    base:       rows({ tenYear: "neutral", vix: "bull", fearGreed: "bull", cpiHeadline: "bull", valuation: "bear", nfci: "bull" }),
+    split33:    rows({ tenYear: "bear", vix: "bull", fearGreed: "bear", cpiHeadline: "bull", valuation: "bear", nfci: "bull" }),
+    bull5:      rows({ tenYear: "bull", vix: "bull", fearGreed: "bull", cpiHeadline: "bull", valuation: "bear", nfci: "bull" }),
+    bear4:      rows({ tenYear: "bear", vix: "bear", fearGreed: "neutral", cpiHeadline: "bear", valuation: "bear", nfci: "bull" }),
+    twoDark:    rows({ tenYear: "bear", vix: "x", fearGreed: "x", cpiHeadline: "bull", valuation: "bear", nfci: "bull" }),
+    threeDark:  rows({ tenYear: "bull", vix: "x", fearGreed: "x", cpiHeadline: "x", valuation: "bear", nfci: "bull" }),
+    allDark:    rows({ tenYear: "x", vix: "x", fearGreed: "x", cpiHeadline: "x", valuation: "x", nfci: "x" }),
+    allNeutral: rows({ tenYear: "neutral", vix: "neutral", fearGreed: "neutral", cpiHeadline: "neutral", valuation: "neutral", nfci: "neutral" }),
+  };
+  CASES.worst = CASES.bear4; CASES.downgraded = CASES.base;
+  const OPTS = {
+    twoDark: { flips: null },   // the no-single-flip branch
+    // the worst combination: a bear call with the PANIC override AND a downgrade note both set,
+    // the longest flip copy, the 25-word title from a two-word source
+    worst: { override: { active: true, type: "PANIC" }, downgraded: "BULLISH withheld — the crash circuit cannot see" },
+    downgraded: { direction: "NEUTRAL", downgraded: "BULLISH withheld — the crash circuit cannot see" },
+  };
+  const out = {}; let maxS = 0, maxD = 0;
+  for (const [name, fs] of Object.entries(CASES)) {
+    out[name] = run(fs, OPTS[name] || {});
+    for (const w of out[name].simple.whys) maxS = Math.max(maxS, wc(w));
+    for (const w of out[name].degen.whys) maxD = Math.max(maxD, wc(w));
+  }
+  const S = (n) => out[n].simple.whys, D = (n) => out[n].degen.whys;
+  const everyWhy = (mode, pred) => Object.values(out).every((r) => r[mode].whys.length === 5 && r[mode].whys.every(pred));
+  ok(`[86] budget: every Simple why is ≤${WHY_WORD_MAX} words across ${Object.keys(CASES).length} fixtures incl. the worst case (max measured ${maxS})`,
+    maxS <= WHY_WORD_MAX && everyWhy("simple", (w) => typeof w === "string" && w.length > 0));
+  ok(`[86] budget: every Degen why is ≤${WHY_WORD_MAX} words across the same fixtures (max measured ${maxD})`,
+    maxD <= WHY_WORD_MAX && everyWhy("degen", (w) => typeof w === "string" && w.length > 0));
+  ok("[86] budget: WHY_WORD_MAX is 25 (the owner's number) and HEADLINE_WORDS is 6 (the lead that fits under it beside a two-word source)",
+    WHY_WORD_MAX === 25 && HEADLINE_WORDS === 6);
+
+  // ── SIMPLE: the bridge from the one-word call to understanding ──
+  ok("[86] Simple #1: the call and its arithmetic in plain words — the split and the majority a call needs; a safety state is NAMED on the call word so word and count never contradict",
+    S("base")[0] === "Bullish. 4 of 6 signals help, 1 hurt, 1 mixed. A call needs a majority — at least 4." &&
+    S("split33")[0] === "Hold. 3 of 6 signals help, 3 hurt, 0 mixed. A call needs a majority — at least 4." &&
+    S("bear4")[0] === "Bearish. 1 of 6 signals help, 4 hurt, 1 mixed. A call needs a majority — at least 4." &&
+    S("downgraded")[0] === "Hold — Bullish withheld. 4 of 6 signals help, 1 hurt, 1 mixed. A call needs a majority — at least 4." &&
+    S("worst")[0] === "Bearish — forced by the crash circuit. 1 of 6 signals help, 4 hurt, 1 mixed. A call needs a majority — at least 4.");
+  ok("[86] Simple #2: the sides by FACE_NOUN name — the hero sentence's own vocabulary — with the dark names NAMED, never folded into mixed",
+    S("base")[1] === "Helping: vol, sentiment, inflation, and credit. Hurting: prices. Mixed: rates." &&
+    S("twoDark")[1] === "Helping: inflation and credit. Hurting: rates and prices. Not counted: vol and sentiment." &&
+    Object.values(FACE_NOUN).every((n) => new RegExp(`\\b${n.toLowerCase()}\\b`).test(S("base")[1].toLowerCase())));
+  ok("[86] Simple #3: ONE transmission phrase per side from the band table's own plainBull/plainBear (one home), the call's side first, 'channels, not causes'",
+    S("base")[2] === "Volatility is asleep — one reason the backdrop supports risk. Stocks are priced for perfection — one reason it doesn't. Channels, not causes." &&
+    /^Long-term rates are climbing — one reason it doesn't\. Credit is cheap and easy — one reason the backdrop supports risk\. Channels, not causes\.$/.test(S("bear4")[2]) &&
+    S("allNeutral")[2] === "Nothing counted is helping. Nothing counted is working against it. Channels, not causes.");
+  ok("[86] Simple #4: confidence + coverage, news never votes — and NO headline is quoted at this altitude (the tape is Degen's)",
+    S("base")[3] === "Confidence is high: 6 of 6 signals are current. News is context only — it never moves the call." &&
+    S("twoDark")[3] === "Confidence is medium: 4 of 6 signals are current. News is context only — it never moves the call." &&
+    Object.values(out).every((r) => r.simple.whys.every((w) => !/“|Fed raises|WSJ|MarketWatch/.test(w))));
+  ok("[86] Simple never speaks the 10-K: no short codes, no dates, no clock, no channel jargon, no actionability in any Simple why",
+    Object.values(out).every((r) => r.simple.whys.every((w) => !/\bVIX\b|\b10Y\b|F&G|NFCI|\bVAL\b|\d{4}-\d{2}|pulled|discount rate|Actionability|MOONING|HODL|DIAMOND/.test(w))));
+  ok("[86] Simple #5 is the ARITHMETIC of the flip off the same majority rule — the ⇄ line beneath names the crossing; two lines, two jobs, never one restating the other",
+    S("base")[4] === "1 signal switching from helping would drop this to Hold." &&
+    S("bull5")[4] === "2 signals switching from helping would drop this to Hold." &&
+    S("bear4")[4] === "1 signal switching from hurting would lift this to Hold." &&
+    S("split33")[4] === "Bullish would take 1 more signal helping; Bearish, 1 more hurting." &&
+    S("twoDark")[4] === "Bullish would take 1 more signal helping; Bearish, 1 more hurting." &&
+    Object.values(out).every((r) => r.simple.whys.every((w) => !/at or above|at or below|0\.15 ppt/.test(w))));
+  ok("[86] Simple #5 safety states outrank the arithmetic: PANIC forces Bearish; a downgrade withholds Bullish; withheld says how many more signals it needs",
+    S("worst")[4] === "The crash circuit tripped — that forces Bearish until it clears." &&
+    /^Bullish is withheld while the crash circuit cannot see/.test(S("downgraded")[4]) &&
+    S("threeDark")[4] === "Needs 1 more current signal before any call can be made." &&
+    S("allDark")[4] === "Needs 4 more current signals before any call can be made." &&
+    S("threeDark")[0] === "There is not enough usable evidence to publish a direction." &&
+    S("threeDark")[1] === "Only 3 of 6 signals are current — not counted: vol, sentiment, and inflation.");
+
+  // ── DEGEN: the operator's register at the same budget ──
+  ok("[86] Degen #1/#2: moon voice + machine direction, the tally and the strict majority; the drivers by SHORT CODE with no numbers and no dates",
+    D("base")[0] === "MOONING · BULLISH. 4 bullish, 1 neutral, and 1 bearish — all 6 signals counted. Strict majority needed: at least 4." &&
+    D("twoDark")[0] === "HODL · NEUTRAL. 2 bullish, 0 neutral, and 2 bearish — 4 of 6 signals counted. Strict majority needed: at least 3." &&
+    D("downgraded")[0] === "HODL · NEUTRAL (Bullish withheld). 4 bullish, 1 neutral, and 1 bearish — all 6 signals counted. Strict majority needed: at least 4." &&
+    D("worst")[0] === "DIAMOND HANDS · BEARISH (PANIC override). 1 bullish, 1 neutral, and 4 bearish — all 6 signals counted. Strict majority needed: at least 4." &&
+    D("base")[1] === "Bull: VIX · F&G · CPI · NFCI. Bear: VAL. Neutral: 10Y." &&
+    D("twoDark")[1] === "Bull: CPI · NFCI. Bear: 10Y · VAL. Excluded: VIX · F&G." &&
+    Object.values(out).every((r) => !/\d/.test(r.degen.whys[1].replace(/\b10Y\b/g, ""))));
+  ok("[86] Degen #3: the v5.8 channel vocabulary, chip-length, and the causation disclaimer",
+    D("base")[2] === "Bull via price of protection, positioning, policy path, and credit channel; bear via earnings cushion. Transmission channels, not proof of causation.");
+  ok("[86] Degen #4: the confidence word leads, the clock is stated, coverage is a COUNT (names ride #2), the headline is a ≤HEADLINE_WORDS lead with its source",
+    D("base")[3] === "HIGH confidence; pulled Sep 16, 10:01 AM ET. All 6 usable. “Fed raises rates a quarter point…” (WSJ Markets). Headlines never affect the call." &&
+    /^LOW confidence; pulled Sep 16, 10:01 AM ET\. 0 of 6 usable\./.test(D("allDark")[3]) &&
+    D("base")[3].match(/“([^”]+)…”/)[1].split(/\s+/).length === HEADLINE_WORDS);
+  ok("[86] Degen #5: the nearest flip with its public label, actionability, and the override + downgrade as chip-length facts (v3.66) — never dropped",
+    D("base")[4] === "Nearest flip: the 10Y monthly change at or above 0.15 ppt → DIAMOND HANDS. Actionability FULL." &&
+    D("worst")[4] === "Nearest flip: the 10Y monthly change at or above 0.15 ppt → DIAMOND HANDS. Actionability FULL. PANIC override active. Bullish withheld: crash circuit blind." &&
+    D("twoDark")[4] === "No single threshold flips this call; it would take a combination of moves. Actionability FULL." &&
+    D("threeDark")[4] === "Call withheld — 1 more current signal needed before any threshold can flip it. Actionability HOLD." &&
+    !/Nearest flip/.test(D("allDark")[4]));
+  ok("[86] one engine: both altitudes answer the same five questions under the same labels with the same counts",
+    JSON.stringify(out.base.simple.labels) === JSON.stringify(out.base.degen.labels) &&
+    /4 of 6 signals help/.test(S("base")[0]) && /4 bullish/.test(D("base")[0]) &&
+    /4 of 6 usable/.test(D("twoDark")[3]) && /4 of 6 signals are current/.test(S("twoDark")[3]));
+
+  // ── the FACE: ≤15 words in every posture × every split, and it agrees with the word above it ──
+  const wcS = (s) => String(s || "").trim().split(/\s+/).filter(Boolean).length;
+  const face = (label, helpKeys, hurtKeys, neutralKeys = []) => holdReason({ withheld: false, regime: { label },
+    factors: [...helpKeys.map((k) => ({ key: k, vote: "bull", excluded: false })),
+      ...hurtKeys.map((k) => ({ key: k, vote: "bear", excluded: false })),
+      ...neutralKeys.map((k) => ({ key: k, vote: "neutral", excluded: false }))] });
+  let faceMax = 0, faceN = 0; const faceBad = [];
+  for (const label of ["RISK-ON", "MIXED", "RISK-OFF"]) for (let h = 0; h <= 6; h++) for (let u = 0; u + h <= 6; u++) {
+    const s = face(label, KEYS.slice(0, h), KEYS.slice(h, h + u), KEYS.slice(h + u));
+    faceN++; faceMax = Math.max(faceMax, wcS(s));
+    if (typeof s !== "string" || !s.length || /\bfine\b|\bdrag\b/i.test(s)) faceBad.push(`${label}:${h}/${u}`);
+  }
+  ok(`[86] face budget: holdReason is ≤${HOLD_REASON_MAX} words and never says 'fine' or 'drag' across ${faceN} posture × split combinations (max measured ${faceMax})`,
+    faceMax <= HOLD_REASON_MAX && faceBad.length === 0);
+  ok("[86] face, Bullish: the backdrop supports taking risk and the ONLY pushback is named — or its absence is; verb agreement is per NOUN",
+    face("RISK-ON", ["vix", "nfci"], ["tenYear", "valuation"]) === "Vol and credit support taking risk. The only pushback: rates and prices." &&
+    face("RISK-ON", ["vix"], []) === "Vol supports taking risk. Nothing tracked is pushing back." &&
+    face("RISK-ON", ["tenYear"], []) === "Rates support taking risk. Nothing tracked is pushing back.");
+  ok("[86] face, Bearish: what is working against risk, and that the helpers do not offset it",
+    face("RISK-OFF", ["vix"], ["tenYear", "valuation"]) === "Rates and prices work against risk. Vol doesn't offset that." &&
+    face("RISK-OFF", [], ["valuation"]) === "Prices work against risk. Nothing tracked offsets that." &&
+    face("RISK-OFF", ["vix", "nfci"], ["fearGreed"]) === "Sentiment works against risk. Vol and credit don't offset that.");
+  ok("[86] face, Hold: the split, larger side first, and the REASON for the Hold — neither side has a majority; one-sided reads 'still short of a majority'",
+    face("MIXED", ["vix", "nfci"], ["valuation"]) === "Vol and credit help. Prices hurt. Neither side has a majority." &&
+    face("MIXED", ["vix"], ["tenYear", "valuation"]) === "Rates and prices hurt. Vol helps. Neither side has a majority." &&
+    face("MIXED", ["vix", "nfci"], [], ["tenYear"]) === "Vol and credit help; nothing tracked hurts. Still short of a majority." &&
+    face("MIXED", [], ["valuation"], ["vix"]) === "Prices hurt; nothing tracked helps. Still short of a majority." &&
+    face("MIXED", [], [], KEYS) === "Nothing we track has a clear lean." &&
+    holdReason({ withheld: true, regime: { label: "INSUFFICIENT" }, factors: [] }) === null);
+  ok("[86] face agrees with the verdict word above it: RISK-ON speaks support, RISK-OFF speaks against, MIXED speaks majority — at every split",
+    [1, 2, 3, 4].every((h) => /supports? taking risk/.test(face("RISK-ON", KEYS.slice(0, h), KEYS.slice(h, h + 1)))) &&
+    [1, 2, 3, 4].every((u) => /works? against risk/.test(face("RISK-OFF", KEYS.slice(u, u + 1), KEYS.slice(0, u)))) &&
+    [1, 2, 3].every((h) => /majority/.test(face("MIXED", KEYS.slice(0, h), KEYS.slice(h, h + h)))));
+  ok("[86] wiring: Simple's hero sentence is holdReason and its whys mount keeps the ⇄ flip line beneath the block (the T5 contract) — the arithmetic line and the crossing line are BOTH rendered",
+    /const simpleS=holdReason\(evidenceSet\)/.test(dashSrc) && /simple\?simpleS:/.test(dashSrc) &&
+    /vocabulary:simple\?"simple":"degen"/.test(dashSrc) && /flipLine=\{simpleF\}/.test(dashSrc));
 }
 
 console.log(`\n=== SMOKE TEST: ${pass} passed, ${fail} failed ===`);
