@@ -219,7 +219,9 @@ at 20 of 25, and the `"Information"` cap message parsed as *exhausted*, never re
 [x] Docs — ALPHAVANTAGE_KEY matrix row + data-sources bullet + v6.6.2 entry
 [ ] OWNER — store ALPHAVANTAGE_KEY (`npx wrangler@4 pages secret put ALPHAVANTAGE_KEY --project-name macrodash`)
 [ ] OWNER — one production ticker refresh → read `candles.provider` (Move 2's live check; PIN-gated)
-[ ] OWNER — re-run PR #44's failed `test` job (harness race, not #44's code — §6.2) and merge it FIRST
+[x] PR #44 — failed `test` job re-queued 04:51Z → attempt 2 SUCCESS (the race diagnosis held);
+    squash-merged to `main` as `519ecd8` on the owner's instruction; this branch rebased onto it
+    (the merged 61a0137 dropped, tree identical, only the v6.6.2 diff remains)
 ```
 
 ---
