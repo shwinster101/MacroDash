@@ -206,30 +206,54 @@ Work queue by first action: 18 write falsifiers · 16 run TT + score · 8 nothin
 lands in a single window, **2026-12-01 → 2027-01-11**. "One run per quarter" as currently
 stamped is a ~40-name December sweep, not a rolling one. Staggering it is an owner call.
 
-### THE DEFECT THIS PULL EXPOSED — filed, not fixed
+### ⚠ RETRACTED — the "defect this pull exposed" was not one (v6.7.2)
 
-**`functions/lib/tt-alloc.js` does not honour the `updated` / `as_of` thesis alias.**
-`ddDate` (client), `validateDeepDive`, and the v3.13 corpus-native rule all accept either
-spelling. `evalBuyRow` reads `idx.as_of` alone. Three stored payloads carry `updated` and no
-`as_of` — one of them the book's **#2 composite (9.01/S)** — so the SERVER receipt, which
-governs confirmation (v4.1 Step 5), vetoes them **"thesis undated"** while the terminal's own
-readiness bar reads the thesis as 45 days old. A client/server eligibility divergence resting
-on a false premise.
+This note originally reported that `functions/lib/tt-alloc.js` fails to honour the
+`updated`/`as_of` thesis alias and therefore vetoes three payloads — including the book's #2
+composite — as *"thesis undated"* on the server receipt. **That was wrong**, and it is left
+here as a correction rather than edited away.
 
-**Not fixed in this release, deliberately.** Un-blocking a name is the PERMISSIVE direction, and
-a change to the eligibility ladder gets its own plan and approval (§P.8). The one-line read is
-`idx.as_of` → the alias pair, and it should land with its own negative control showing exactly
-which names move.
+**What is actually the case.** `evalBuyRow`'s `idx` parameter is an INDEX ENTRY, not a payload.
+`ddIndexEntry` has normalized the alias since v3.75:
 
-**The same defect, committed by me and fixed:** the first cut of the thesis clock re-derived the
-alias pair inline with the OPPOSITE precedence to `ddDate` — a fourth spelling of one
-resolution, inside the feature built to stop that. It calls `ddDate` now, pinned.
+```js
+as_of: dd.as_of || dd.updated || null,
+```
 
-### Correction to §1 of this note
+`idxEntries = (ddIndex && ddIndex.entries) || {}` is the only supplier of `idx` in the repo, and
+a live pull of `/api/deepdive?index=1` confirms **all 45 entries carry a date**, the three
+`updated`-only payloads included. The read is safe by contract.
 
-The GATE column in the table delivered to the owner was computed with the SERVER's `evalBuyRow`.
-For the three `updated`-only payloads its answer ("evidence: thesis undated") is the *server's*,
-and the terminal's own gate differs. Recorded here rather than silently re-rendered.
+**How the error was produced.** The gate was measured offline by feeding `evalBuyRow` the full
+payloads from `?all=1` — a convenient stand-in for production's input that lacked exactly the
+normalization the real path performs. The lesson is the reusable part: **measure the path
+production takes, not something shaped like it.** Same class as v6.6.2's control that crashed
+instead of turning a pin red.
+
+**Which names move: exactly one, and not from any change.** Re-running the ladder over index
+entries against the same book, quotes and cards:
+
+| | |
+|---|---|
+| Gate changes | **1 of 54** |
+| The name | **TSM** — "evidence: thesis undated" → **ELIGIBLE** |
+| Eligible set, as reported in §1 | 5 names |
+| Eligible set, actual | **6 names** |
+| Names removed | none |
+
+So §1 of this note UNDER-REPORTED the eligible set by one. SYM and NVDL do not move — they were
+blocked on their own merits either way (PROVISIONAL/BLOCKED, and no `pt_model` respectively).
+
+**No code changed; the tests did.** `ddIndexEntry`'s alias resolution is pinned three ways; an
+`updated`-only payload driven through the REAL index builder into `evalBuyRow` is pinned NOT to
+carry the blocker; the same payload handed in RAW is pinned to carry it, so the difference
+between the two inputs stays visible; and the single-call-site contract is swept in source.
+Negative-controlled by making the claimed defect real — deleting the alias from `ddIndexEntry`
+turns exactly the two behavioural pins red.
+
+**Deliberately not done:** no defensive alias read was added to `evalBuyRow`. It would be dead
+code guarding a call site that does not exist, and it would widen an order-gating read in the
+permissive direction for no measured benefit.
 
 ### Filed, not built
 

@@ -5,6 +5,43 @@ answers *"is it safe to be in the market?"* from live macro + market + sentiment
 data. Single-page React app on Cloudflare Pages, with live data assembled at the
 edge by Pages Functions and cached in KV.
 
+**v6.7.2 — the retraction, measured and pinned (owner: "fix the tt-alloc alias read and show
+me which names move").** The instruction was to fix a defect. **There was no defect**, and
+saying so is the deliverable — inventing a change to justify the previous session's claim would
+have been worse than the claim.
+**What was actually true.** `functions/lib/tt-alloc.js` reads `idx.as_of`, and its parameter is
+an INDEX ENTRY, not a payload. `ddIndexEntry` has resolved the alias at build time since v3.75
+(`as_of: dd.as_of || dd.updated || null`), `idxEntries = (ddIndex && ddIndex.entries)` is the
+ONLY supplier of `idx` anywhere in the repo, and the live index carries a date for **all 45
+entries**, the three `updated`-only payloads included. So the read is safe BY CONTRACT, not by
+luck, and `evalBuyRow` was never broken.
+**How the false finding was produced, because the shape matters more than the fact.** The
+v6.7.1 session measured the gate offline by feeding `evalBuyRow` the full payloads from
+`?all=1` — a convenient stand-in for the input production actually uses. The stand-in lacked
+exactly the normalization the real path performs. *Measure the path production takes, not
+something shaped like it*: the same class as v6.6.2's control that crashed instead of turning a
+pin red, and v5.97.2's control that passed because the code was better than the control's model
+of it.
+**WHICH NAMES MOVE: exactly one, and not because anything changed.** Re-running the ladder over
+index entries against the same book, quotes and cards moves **TSM** from *"evidence: thesis
+undated"* to **ELIGIBLE**, and moves nothing else — SYM and NVDL were blocked on their own
+merits either way (PROVISIONAL/BLOCKED, and no `pt_model`). So the eligible set is **six**
+names, not the five v6.7.0 reported; that release's table under-reported TSM, and the
+correction is recorded rather than the table quietly re-rendered.
+**No code changed. Three tests did**, which is the durable half: `ddIndexEntry`'s alias
+resolution is pinned in all three directions (as_of wins, `updated` fills, neither → null); an
+`updated`-only payload driven through the REAL index builder into `evalBuyRow` is pinned NOT to
+carry the "thesis undated" blocker; the same payload handed in RAW is pinned to carry it, so the
+difference between the two inputs stays visible instead of being rediscovered as a bug; and the
+single-call-site contract is swept in source, so a future site handing `evalBuyRow` a raw
+payload fails here rather than in a receipt. Negative-controlled by making the claimed defect
+REAL — deleting the alias from `ddIndexEntry` — which turns exactly the two behavioural pins
+red. Tests: **2496 smoke** (+4) + 327 render + 356 public-render, `audit:prod` clean.
+**Deliberately NOT done:** no defensive alias read was added to `evalBuyRow`. It would be dead
+code guarding a call site that does not exist (v3.73, dead code is a rot vector), it would widen
+an order-gating read in the PERMISSIVE direction for no measured benefit, and the contract it
+would paper over is now pinned instead.
+
 **v6.7.1 — the QUARTERLY freshness rating and the required-work stamp (owner follow-up:
 "a freshness rating and information required stamp for each would be useful. Ideally one run
 per quarter").** Two columns on the ladder, and **neither invents a scale.** `P_INPUT_CADENCE_D
@@ -48,19 +85,17 @@ doing to JOBY, whose pillars were already scored. Where per-screen capture detai
 needed the stamp names the tab instead of guessing. An unread score index asks for a RELOAD,
 never "run TT" (v5.6.4). The named-exclusion table carries both columns too — those are
 precisely the names with work owing.
-**Found by a live pull, and it is bigger than the columns: `functions/lib/tt-alloc.js` does not
-honour the `updated`/`as_of` thesis alias.** `ddDate` (client), `validateDeepDive` and the v3.13
-corpus-native rule all accept either spelling; `evalBuyRow` reads `idx.as_of` alone, so three
-stored payloads that carry `updated` and no `as_of` — including the book's **#2 composite at
-9.01/S** — are vetoed **"thesis undated"** on the SERVER receipt (the one that governs
-confirmation, v4.1 Step 5) while the terminal's own readiness bar correctly reads the thesis as
-45d old. A client/server eligibility divergence on a false premise. **Deliberately NOT fixed
-here:** un-blocking a name is the PERMISSIVE direction and a change to the eligibility ladder
-gets its own plan and approval (§P.8) — it is filed, named and owner-ruled, not bundled into a
-presentation follow-up. **My own instance of the same defect WAS fixed**: the first cut of the
-thesis clock re-derived the alias pair inline with the OPPOSITE precedence to `ddDate` — a
-fourth spelling of one resolution, inside the feature built to stop exactly that — and now calls
-`ddDate`, pinned.
+**⚠ RETRACTED — see v6.7.2.** This entry originally reported a client/server eligibility
+divergence: that `functions/lib/tt-alloc.js` reads `idx.as_of` without honouring the
+`updated` alias, and therefore vetoed three `updated`-only payloads — including the book's #2
+composite — as *"thesis undated"* on the server receipt. **That finding was wrong.**
+`ddIndexEntry` resolves the alias at index-build time (`as_of: dd.as_of || dd.updated`), the dd
+index is the only supplier of `idx`, and the live index carries a date for all 45 entries. The
+claim was an artifact of measuring with `?all=1` full payloads where production uses index
+entries. It is retracted, pinned against recurrence, and the measured consequence is recorded
+in v6.7.2. **The half that was real stands:** the first cut of this release's own thesis clock
+re-derived the alias inline with the OPPOSITE precedence to `ddDate` — a fourth spelling of one
+resolution, inside the feature built to stop exactly that — and now calls `ddDate`, pinned.
 **Measured across the live book at ship:** every run stamp is 4–45 days old, so **0 of 54 names
 are past their due date** and the rating is CURRENT 36 · NEVER 18 · AGING 0 · STALE 0. The 18
 NEVERs are 14 names never run plus 4 with a run but no card ever minted. Worth naming because

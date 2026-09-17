@@ -6509,6 +6509,20 @@ console.log("\n[50] FEAT-TT-DDSTORE — deepDive moves to tt:dd:v1:<SYM>");
     JSON.stringify(idxE).length * 4 < JSON.stringify(PAYLOAD("AAA")).length);
   ok("ddstore: ddIndexEntry(null) is null — an absent payload is never summarized into existence",
     dd.ddIndexEntry(null) === null && dd.ddIndexEntry("nope") === null);
+  /* v6.7.2 — THE RETRACTION, ENCODED. A 2026-09-17 session reported a "client/server
+     eligibility divergence": functions/lib/tt-alloc.js reads `idx.as_of` while ddDate,
+     validateDeepDive and the v3.13 corpus-native rule all accept `updated` as an alias, and
+     three stored payloads (TSM/SYM/NVDL) carry `updated` and no `as_of`. The finding was
+     WRONG, and wrong in an instructive way: it was measured by feeding evalBuyRow the FULL
+     payloads from `?all=1`, where production feeds INDEX ENTRIES — and ddIndexEntry resolves
+     the alias at build time, so `idx.as_of` is populated for exactly those three names. The
+     property the finding assumed missing is pinned here so nobody re-derives it, and the
+     SHAPE of the error is pinned with it: measure the path production takes, not a
+     convenient stand-in for it. */
+  ok("ddstore: ddIndexEntry RESOLVES the updated/as_of alias — as_of wins when both are present, `updated` fills it when as_of is absent, and neither yields null (this is why evalBuyRow's `idx.as_of` read is safe BY CONTRACT, not by luck)",
+    dd.ddIndexEntry({ hinges: [], as_of: "2026-09-12", updated: "2026-01-01" }).as_of === "2026-09-12" &&
+    dd.ddIndexEntry({ hinges: [], updated: "2026-08-03" }).as_of === "2026-08-03" &&
+    dd.ddIndexEntry({ hinges: [] }).as_of === null);
 
   /* FEAT-TT-DOTHOME (v3.84): `dots` live on the BOOK ENTRY, never in the payload. FEAT-TT-DOT
      (v3.17) put them there so replacing a payload could never wipe the inventory — but after
@@ -9332,6 +9346,32 @@ console.log("\n[68] FEAT-TT-ALLOC — pure core, endpoint, and the §14.8 bar");
     quotes: {}, readout: READOUT, now: NOW,
     scoreIndex: SIDX, methodologyVersion: TS.METHODOLOGY_VERSION, ...over });
   const R = ev();
+  /* v6.7.2 — the retraction, driven END TO END through the REAL index builder. The claimed
+     defect was that an `updated`-only payload reaches evalBuyRow with no date and is vetoed
+     "thesis undated". Build the index entry the way production does and the veto does not
+     exist. Pinned on the BEHAVIOUR rather than on ddIndexEntry's source, because the claim
+     was about what the gate says, and only running the gate can answer it. */
+  {
+    const ddm2 = await import("../functions/api/deepdive.js");
+    const raw = { thesis_version: "v1", updated: TODAY, hinges: [{ label: "h", state: "green" }],
+      ref_px: { px: 100, at: TODAY },
+      consensus: { revenue_B: { 2027: 10 }, eps: { 2027: 5 } },
+      pt_model: { pe_premium_multiple: 40, pe_floor_multiple: 15 } };
+    const built = ddm2.ddIndexEntry(raw);
+    const rowIdx = alloc.evalBuyRow({ entry: { sym: "ALS", lastRun: TODAY }, idx: built,
+      quote: { px: 100, at: TODAY + "T12:00:00Z" }, board: {}, horizon: "2026", now: NOW, card: CARD_OK });
+    const rowRaw = alloc.evalBuyRow({ entry: { sym: "ALS", lastRun: TODAY }, idx: raw,
+      quote: { px: 100, at: TODAY + "T12:00:00Z" }, board: {}, horizon: "2026", now: NOW, card: CARD_OK });
+    ok("alloc: an `updated`-only payload passed through the REAL ddIndexEntry is NOT vetoed 'thesis undated' — the production path resolves the alias before evalBuyRow ever sees it, and a 2026-09-17 session's 'client/server divergence' finding was an artifact of measuring the wrong input",
+      !rowIdx.blockers.includes("thesis undated") && alloc.whyNot(rowIdx, null) === null);
+    ok("alloc: the SAME payload handed in RAW does carry that blocker — which is exactly how the false finding was produced, and is pinned so the difference between the two inputs stays visible rather than being rediscovered as a bug",
+      rowRaw.blockers.includes("thesis undated"));
+    ok("alloc: the dd INDEX is the only supplier of `idx` — evalBuyRow's contract is an index entry, so a future call site handing it a raw payload is caught here rather than in a receipt",
+      (() => { const src = readSrc("../functions/lib/tt-alloc.js");
+        const calls = src.match(/evalBuyRow\(\{[^}]*idx:\s*([A-Za-z_$][\w$]*)/g) || [];
+        return calls.length === 1 && /idx:\s*idxEntries/.test(calls[0]) &&
+          /const idxEntries = \(ddIndex && ddIndex\.entries\) \|\| \{\}/.test(src); })());
+  }
   ok("alloc 1: a name with NO position takes BUY eligibility — underwriting is position-independent",
     R.eligible && R.eligible.sym === "AAA" && !("AAA" in {}) && R.state === "ALLOCATABLE");
   ok("alloc 2: a stale positions snapshot degrades ALLOCATABLE → BUY_ELIGIBLE with the blocker NAMED",
