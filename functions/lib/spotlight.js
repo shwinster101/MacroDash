@@ -497,22 +497,22 @@ export function deriveMetrics({ fundamentals: f, marketCap, series, today }) {
   const rq = q(f?.revenue), rp = f?.revenue?.priorYearQuarter || null, rt = ttmOf(f?.revenue);
   // Revenue growth: same-quarter YoY from compatible periods.
   m.revenueGrowth = rq && rp && rp.value > 0
-    ? { pct: round(100 * (rq.value / rp.value - 1), 1), period: rq.label, priorPeriod: rp.label, latest: rq.value, prior: rp.value, deltaUsd: rq.value - rp.value, unavailable: null }
+    ? { pct: round(100 * (rq.value / rp.value - 1), 1), period: rq.label, start: rq.start, end: rq.end, priorPeriod: rp.label, latest: rq.value, prior: rp.value, deltaUsd: rq.value - rp.value, unavailable: null }
     : { pct: null, unavailable: !rq ? (f?.revenue?.unavailable || "no reported quarter") : !rp ? `no comparable quarter a year before ${rq.end} on file` : "prior-year revenue is not positive; growth not computed" };
   // Operating margin: same quarter, plus the prior-year quarter for direction.
   const oq = q(f?.operatingIncome), op = f?.operatingIncome?.priorYearQuarter || null;
   const marginPct = (inc, rev) => inc && rev && rev.value > 0 && inc.end === rev.end ? round(100 * inc.value / rev.value, 1) : null;
   const cur = marginPct(oq, rq), prior = marginPct(op, rp);
   m.operatingMargin = cur !== null
-    ? { pct: cur, priorPct: prior, period: rq.label, deltaPts: prior !== null ? round(cur - prior, 1) : null, operatingIncome: oq.value, unavailable: null }
+    ? { pct: cur, priorPct: prior, period: rq.label, start: rq.start, end: rq.end, deltaPts: prior !== null ? round(cur - prior, 1) : null, operatingIncome: oq.value, unavailable: null }
     : { pct: null, unavailable: !oq ? (f?.operatingIncome?.unavailable || "no reported operating income") : !rq ? "no reported revenue for the same quarter" : `operating income (to ${oq.end}) and revenue (to ${rq.end}) are not the same period` };
   // Free cash flow = OCF − capex, SAME period (quarter, else TTM).
   const cq = q(f?.ocf), xq = q(f?.capex), ct = ttmOf(f?.ocf), xt = ttmOf(f?.capex);
   const ch = f?.ocf?.half || null, xh = f?.capex?.half || null;
-  if (cq && xq && cq.end === xq.end) m.fcf = { value: cq.value - xq.value, ocf: cq.value, capex: xq.value, period: cq.label, basis: "quarter", unavailable: null };
+  if (cq && xq && cq.end === xq.end) m.fcf = { value: cq.value - xq.value, ocf: cq.value, capex: xq.value, period: cq.label, start: cq.start, end: cq.end, basis: "quarter", unavailable: null };
   // A 6-K filer reports six-month cash flows only: the half-year is the honest period, named as such.
-  else if (ch && xh && ch.end === xh.end && ch.start === xh.start) m.fcf = { value: ch.value - xh.value, ocf: ch.value, capex: xh.value, period: ch.label, basis: "half", unavailable: null };
-  else if (ct && xt && ct.end === xt.end) m.fcf = { value: ct.value - xt.value, ocf: ct.value, capex: xt.value, period: ct.label, basis: "ttm", unavailable: null };
+  else if (ch && xh && ch.end === xh.end && ch.start === xh.start) m.fcf = { value: ch.value - xh.value, ocf: ch.value, capex: xh.value, period: ch.label, start: ch.start, end: ch.end, basis: "half", unavailable: null };
+  else if (ct && xt && ct.end === xt.end) m.fcf = { value: ct.value - xt.value, ocf: ct.value, capex: xt.value, period: ct.label, start: ct.start, end: ct.end, basis: "ttm", unavailable: null };
   else m.fcf = { value: null, unavailable: !cq && !ct ? (f?.ocf?.unavailable || "no operating cash flow on file") : !xq && !xt ? (f?.capex?.unavailable || "no capital expenditure on file") : "operating cash flow and capex are not on file for the same period" };
   m.fcfTtm = ct && xt && ct.end === xt.end ? { value: ct.value - xt.value, period: ct.label } : null;
   // Valuation: cap ÷ TTM revenue; trailing P/E only where TTM earnings are positive.
@@ -597,55 +597,83 @@ export function assessCompany({ symbol, metrics: m, nextEarnings, freshness }) {
 /* Authored, conceptual, tied to the comparison in rotation. `example(ctx)` returns a worked
    example ONLY when the evidence exists; null means the widget states that the worked example
    is unavailable rather than inventing numbers. ctx = { anchor, comparison } companies. */
+// Each line demonstrates the concept with complete inputs. Periods stay attached to
+// their own metric; two companies need not report on the same fiscal calendar.
 const exBoth = (ctx, fn) => {
-  const parts = [ctx.anchor, ctx.comparison].map(fn).filter(Boolean);
-  return parts.length === 2 ? parts.join(" ") : null;
+  const parts = [ctx.anchor, ctx.comparison].map(fn);
+  return parts.every(Boolean) ? parts.join("\n") : null;
 };
+const dated = (m) => typeof m?.period === "string" && /\d{4}-\d{2}-\d{2}/.test(m.period);
+const samePeriod = (a, b) => isYmd(a?.start) && isYmd(a?.end) && a.start === b?.start && a.end === b?.end;
 export const LESSONS = Object.freeze({
   MSFT: {
     title: "Reported revenue versus annualized run-rate",
-    body: "A quarter's revenue multiplied by four is a run-rate, not a year of results. Run-rate assumes the latest quarter simply repeats; reported trailing-twelve-month revenue is what actually happened. The gap between the two is the growth or seasonality packed into the latest quarter.",
-    example: (ctx) => exBoth(ctx, (c) => { const r = c.metrics?.runRate; return r && finite(r.ttm) && finite(r.gapPct)
-      ? `${c.symbol}: ${fmtMoney(r.quarter)} × 4 = ${fmtMoney(r.annualized)} run-rate vs ${fmtMoney(r.ttm)} reported TTM (${fmtPct(r.gapPct)}).` : null; }),
+    body: "Run-rate multiplies the latest quarter by four. Trailing twelve months (TTM) adds the actual year's revenue.",
+    limitation: "The gap illustrates the latest quarter's pace, not a forecast: growth and seasonality can both affect it.",
+    example: (ctx) => exBoth(ctx, (c) => { const r = c.metrics?.runRate; return dated(r) && [r.quarter, r.annualized, r.ttm, r.gapPct].every(finite) && r.ttm > 0
+      ? `${c.symbol}: ${fmtMoney(r.quarter)} × 4 = ${fmtMoney(r.annualized)} run-rate vs ${fmtMoney(r.ttm)} reported TTM (${fmtPct(r.gapPct)}; ${r.period}).` : null; }),
   },
   AAPL: {
     title: "Business growth versus growth per share",
-    body: "Buybacks shrink the share count, so per-share figures can grow faster than the business itself. Compare revenue growth with the change in shares outstanding to see how much of the per-share growth came from the business and how much from a smaller denominator.",
-    example: (ctx) => exBoth(ctx, (c) => { const rg = c.metrics?.revenueGrowth, sh = c.metrics?.shares; return finite(rg?.pct) && finite(sh?.value)
-      ? `${c.symbol}: revenue ${fmtPct(rg.pct)} year over year; ${(sh.value / 1e9).toFixed(2)}B shares outstanding at ${sh.asOf}.` : null; }),
+    body: "Revenue measures business growth. Per-share growth also depends on how the share count changes.",
+    limitation: "One share-count observation cannot establish a buyback effect; comparable share counts and per-share results are needed.",
+    exampleUnavailable: "Worked example unavailable — comparable share counts and per-share results are not on file.",
+    // The current public facts carry a single outstanding-share observation. Do not
+    // present it as a worked example of CHANGE, or as an EPS share denominator.
+    example: () => null,
   },
   AMZN: {
     title: "Operating cash flow versus capital spending",
-    body: "Operating cash flow is what the business generates; capital spending is what it reinvests. Free cash flow is the difference. A heavy build-out can push free cash flow toward zero or below even while operating cash flow keeps rising — the same statement read two ways.",
-    example: (ctx) => exBoth(ctx, (c) => { const f = c.metrics?.fcf; return finite(f?.value)
-      ? `${c.symbol}: OCF ${fmtMoney(f.ocf)} − capex ${fmtMoney(f.capex)} = ${fmtMoney(f.value)} free cash flow (${f.period}).` : null; }),
+    body: "Free cash flow is operating cash flow minus capital spending, measured over the same period.",
+    limitation: "Negative free cash flow can reflect investment or weak operations; the subtraction alone does not distinguish them.",
+    example: (ctx) => exBoth(ctx, (c) => { const f = c.metrics?.fcf; return dated(f) && [f.value, f.ocf, f.capex].every(finite)
+      ? `${c.symbol}: ${fmtMoney(f.ocf)} operating cash − ${fmtMoney(f.capex)} spending = ${fmtMoney(f.value)} free cash flow (${f.period}).` : null; }),
   },
   GOOGL: {
     title: "Cash generation versus valuation",
-    body: "A market cap is a price; free cash flow is what the business produces for that price. Dividing the cap by trailing free cash flow tells you how many years of today's cash the price implies — one axis on which very different companies can be compared.",
-    example: (ctx) => exBoth(ctx, (c) => { const f = c.metrics?.fcfTtm, cap = c.marketCap; return finite(f?.value) && f.value > 0 && finite(cap?.usd)
-      ? `${c.symbol}: ${cap.display} ÷ ${fmtMoney(f.value)} TTM free cash flow ≈ ${(cap.usd / f.value).toFixed(0)}× (${f.period}).`
-      : finite(f?.value) && finite(cap?.usd) ? `${c.symbol}: TTM free cash flow is ${fmtMoney(f.value)} — the ratio is not meaningful when it is not positive.` : null; }),
+    body: "Market cap divided by trailing free cash flow compares the equity price with a year's cash generation.",
+    limitation: "This multiple is not a repayment timetable; future cash generation can change.",
+    example: (ctx) => exBoth(ctx, (c) => { const f = c.metrics?.fcfTtm, cap = c.marketCap; return dated(f) && finite(f.value) && finite(cap?.usd) && cap.usd > 0 && isYmd(cap.observedAt)
+      ? f.value > 0 ? `${c.symbol}: ${fmtMoney(cap.usd)} cap ÷ ${fmtMoney(f.value)} TTM cash flow = ${(cap.usd / f.value).toFixed(0)}× (${f.period}; cap ${cap.observedAt}).`
+        : `${c.symbol}: ${fmtMoney(f.value)} TTM cash flow (${f.period}); a nonpositive denominator makes the multiple uninformative.` : null; }),
   },
   META: {
     title: "Margins and reinvestment",
-    body: "Operating margin shows what is left after running costs; capital spending shows what is being reinvested after that. High margins can fund a very large capex program from operations alone, while a thin-margin business has to borrow or raise equity to build the same thing.",
-    example: (ctx) => exBoth(ctx, (c) => { const om = c.metrics?.operatingMargin, f = c.metrics?.fcf, rg = c.metrics?.revenueGrowth; return finite(om?.pct) && finite(f?.capex) && finite(rg?.latest) && rg.latest > 0
-      ? `${c.symbol}: ${om.pct.toFixed(1)}% operating margin; capex equal to ${(100 * f.capex / rg.latest).toFixed(0)}% of quarterly revenue.` : null; }),
+    body: "Operating margin measures operating profit per revenue dollar. Capex divided by same-period revenue measures investment intensity.",
+    limitation: "Operating profit is not cash flow; margin alone cannot show whether a business can fund its spending.",
+    exampleUnavailable: "Worked example unavailable — margin, capex and revenue need matching reporting periods for both companies.",
+    example: (ctx) => exBoth(ctx, (c) => { const om = c.metrics?.operatingMargin, f = c.metrics?.fcf, rg = c.metrics?.revenueGrowth;
+      return dated(rg) && finite(om?.pct) && finite(f?.capex) && finite(rg?.latest) && rg.latest > 0 && samePeriod(f, rg) && samePeriod(om, rg)
+        ? `${c.symbol}: ${om.pct.toFixed(1)}% operating margin; capex is ${(100 * f.capex / rg.latest).toFixed(0)}% of revenue (${rg.period}).` : null; }),
   },
   NVDA: {
-    title: "Growth rates, scale, and expectations",
-    body: "A high growth rate on a small base and a moderate rate on a huge base can add similar dollars. Compare the dollar change in revenue, not only the percentage — and remember the multiple the market pays already encodes the growth it expects to continue.",
-    example: (ctx) => exBoth(ctx, (c) => { const rg = c.metrics?.revenueGrowth; return finite(rg?.deltaUsd)
-      ? `${c.symbol}: ${fmtPct(rg.pct)} year over year adds ${fmtMoney(rg.deltaUsd)} of quarterly revenue.` : null; }),
+    title: "Growth rates and scale",
+    body: "A growth percentage depends on the starting size. Dollar growth adds the scale that percentages leave out.",
+    limitation: "Reported growth does not establish what future growth the stock price assumes.",
+    example: (ctx) => exBoth(ctx, (c) => { const rg = c.metrics?.revenueGrowth; return dated(rg) && finite(rg.pct) && finite(rg.deltaUsd)
+      ? `${c.symbol}: revenue changed ${fmtPct(rg.pct)}, or ${fmtMoney(rg.deltaUsd)}, year over year (${rg.period}).` : null; }),
   },
   TSLA: {
     title: "Reported results versus market expectations",
-    body: "A stock reacts to results relative to what was expected, not to the results alone. The multiple the market pays is a compressed statement of those expectations, so the same revenue growth can move two stocks in opposite directions depending on what each price already assumed.",
-    example: (ctx) => exBoth(ctx, (c) => { const v = c.metrics?.valuation, rg = c.metrics?.revenueGrowth; return finite(v?.capToTtmRevenue) && finite(rg?.pct)
-      ? `${c.symbol}: ${v.capToTtmRevenue.toFixed(1)}× TTM revenue alongside ${fmtPct(rg.pct)} revenue growth (expectations themselves are not measured here).` : null; }),
+    body: "Reported growth describes the business. A valuation multiple describes its price relative to reported results.",
+    limitation: "These figures do not measure investor expectations or explain a stock-price move.",
+    example: (ctx) => exBoth(ctx, (c) => { const v = c.metrics?.valuation, rg = c.metrics?.revenueGrowth;
+      return dated(rg) && typeof v?.ttmRevenuePeriod === "string" && finite(v.capToTtmRevenue) && finite(rg.pct)
+        ? `${c.symbol}: ${v.capToTtmRevenue.toFixed(1)}× revenue (${v.ttmRevenuePeriod}); ${fmtPct(rg.pct)} revenue growth (${rg.period}).` : null; }),
   },
 });
+
+// Rebuild authored teaching on every public read, including models cached before this
+// release. No provider call, mutation, or cached prose can bypass current example guards.
+export function lessonForPair(pair, companies) {
+  const lesson = LESSONS[pair?.comparison];
+  if (!lesson) return null;
+  const anchor = companies?.[pair.anchor], comparison = companies?.[pair.comparison];
+  const example = anchor && comparison ? lesson.example({ anchor, comparison }) : null;
+  return { key: pair.comparison, title: lesson.title, body: lesson.body, limitation: lesson.limitation,
+    example, exampleLines: example ? example.split("\n") : [],
+    exampleUnavailable: example ? null : (lesson.exampleUnavailable || "Worked example unavailable — complete supporting figures are not on file for both companies.") };
+}
 
 // ─── freshness (recomputed at serve, never trusted from storage) ──────────────────
 export function marketFreshness(observedAt, now = new Date()) {
@@ -679,6 +707,7 @@ export function freshenSpotlight(model, now = new Date()) {
     const assessment = assessCompany({ symbol: sym, metrics: c.metrics, nextEarnings: c.nextEarnings, freshness: { market: series } });
     out.companies[sym] = { ...c, freshness, assessment };
   }
+  out.lesson = lessonForPair(out.pair, out.companies);
   return out;
 }
 
@@ -738,8 +767,7 @@ export function refreshSucceeded(model, freshStatus = null) {
 
 export function buildSpotlightModel({ anchor, comparison, rotation, tracker, now = new Date(), failures = [] }) {
   const comp = rotation ? comparisonAt(rotation.index) : comparison.symbol;
-  const lesson = LESSONS[comp] || null;
-  const example = lesson ? lesson.example({ anchor, comparison }) : null;
+  const lesson = lessonForPair({ anchor: anchor.symbol, comparison: comp }, { [anchor.symbol]: anchor, [comp]: comparison });
   return {
     schema: SPOTLIGHT_SCHEMA,
     generatedAt: now.toISOString(),
@@ -749,7 +777,7 @@ export function buildSpotlightModel({ anchor, comparison, rotation, tracker, now
       nextComparison: comparisonAt((rotation?.index ?? SPOTLIGHT_ROTATION.indexOf(comp)) + 1) },
     companies: { [anchor.symbol]: anchor, [comp]: comparison },
     tracker,
-    lesson: lesson ? { key: comp, title: lesson.title, body: lesson.body, example, exampleUnavailable: example ? null : "worked example unavailable — the supporting figures are not on file for both companies" } : null,
+    lesson,
     disclaimer: "Educational comparison of reported figures and market prices. Not a rating, not a recommendation, not investment advice.",
     diagnostics: { failures },
   };

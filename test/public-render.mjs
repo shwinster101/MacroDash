@@ -1417,12 +1417,13 @@ console.log("\n[public] wave 16 — share failure reverts to idle, silently");
       t.split("\n").filter(l => /toast|denied|clipboard/i.test(l)).join(" "))));
   // Control: a SUCCESSFUL write still confirms — the fix must not have muted real success.
   await page.evaluate(() => {
-    navigator.clipboard.writeText = () => Promise.resolve();
+    navigator.clipboard.writeText = (value) => { window.__dashboardShare = value; return Promise.resolve(); };
   });
   await share.click();
   await page.waitForTimeout(200);
   ok("7.9 control: a successful write still confirms ✓ COPIED",
     /✓ COPIED/.test(await page.locator("button", { hasText: /COPIED|SHARE/ }).first().innerText()));
+  ok("v6.5.5 share opens the public audience", await page.evaluate(() => window.__dashboardShare === `${location.origin}/?view=public`));
   ok("wave16: no page errors", errors.length === 0);
   await page.close();
 }
@@ -1883,8 +1884,8 @@ console.log("\n[public] v6.3 — eight sheets on the macro strip (Power, Simple,
   const dlg = page.locator('[role="dialog"]');
   const spyBody = await dlg.innerText();
   ok("v6.3 SPY* sheet: the official name as the title, exactly 3 bullets, the proxy stated, and the eyebrow carrying the tile's OWN reading + CONTEXT ONLY",
-    /S&P 500 Index/.test(await page.locator("#factsheet-title").innerText()) && (await dlg.locator("li").count()) === 3 &&
-    /SPY\* · \$748\.1 · CONTEXT ONLY/i.test(spyBody) && /÷ 10 from FRED/.test(spyBody) && /six-signal model does not read/.test(spyBody));
+    /broad U.S. stock market/.test(await page.locator("#factsheet-title").innerText()) && /S&P 500 Index/.test(spyBody) && (await dlg.locator("li").count()) === 3 &&
+    /SPY\* · \$748\.1 · CONTEXT ONLY/i.test(spyBody) && /FRED index divided by ten/.test(spyBody) && /six-signal model does not read/.test(spyBody));
   await page.keyboard.press("Escape");
   await page.waitForTimeout(200);
   ok("v6.3 SPY* sheet: Escape closes it and focus lands back on the SPY tile",
@@ -1895,8 +1896,8 @@ console.log("\n[public] v6.3 — eight sheets on the macro strip (Power, Simple,
   await page.waitForTimeout(250);
   const vixBody = await dlg.innerText();
   ok("v6.4 VIX sheet: the band's own sheet — same title as the card's, the band's own bullet, and the eyebrow says SIGNAL BULL",
-    (await page.locator("#factsheet-title").innerText()) === "Cboe Volatility Index (VIX)" &&
-    /The teens are calm/.test(vixBody) && /VIX · 16\.1 · SIGNAL BULL/i.test(vixBody));
+    (await page.locator("#factsheet-title").innerText()) === "Expected market swings" &&
+    /The teens are calm/.test(vixBody) && /Cboe Volatility Index/.test(vixBody) && /VIX · 16\.1 · SIGNAL BULL/i.test(vixBody));
   await page.keyboard.press("Escape");
   await page.waitForTimeout(200);
   // FED — the target range is live in this fixture.
@@ -1909,8 +1910,12 @@ console.log("\n[public] v6.3 — eight sheets on the macro strip (Power, Simple,
      any FOMC decision day, which is the v3.35/v3.80 rotting-fixture defect. It now pins the
      load-bearing property instead: whatever the tile reports, a CONTEXT tile's eyebrow still
      ENDS in "context only", so a marker can never read as a vote this tile does not cast. */
+  /* v6.5.5 shortTitle rewrite (unrelated to the v6.6 marker, landed independently on main):
+     FactSheet now renders explain.shortTitle ("Fed policy rate") as the dialog title, with
+     the full official name a formalName inside the body — the same shortTitle/full split
+     every other CONTEXT_EXPLAIN entry carries. Carried forward verbatim. */
   ok("v6.3 FED sheet: the target range's official name, the tile's own range reading, and both readings named in the body",
-    /Federal Funds Rate Target Range/.test(await page.locator("#factsheet-title").innerText()) &&
+    /Fed policy rate/.test(await page.locator("#factsheet-title").innerText()) && /Federal Funds Rate Target Range/.test(fedBody) &&
     /FED · 3\.50–3\.75%[^\n]*· CONTEXT ONLY/i.test(fedBody) && /effective average/.test(fedBody) && /lags a decision/.test(fedBody));
   /* v6.6 — the marker itself, driven live. DERIVED from the calendar rather than hardcoded
      (the v3.99.1 convention two pins down), so it survives the table rolling forward: on a
@@ -1935,7 +1940,7 @@ console.log("\n[public] v6.3 — eight sheets on the macro strip (Power, Simple,
   await trigger(7).click();
   await page.waitForTimeout(250);
   ok("v6.4 NFCI sheet: the 8th tile opens the NFCI band's sheet with its signal state in the eyebrow",
-    /Chicago Fed National Financial Conditions Index/.test(await page.locator("#factsheet-title").innerText()) &&
+    /Financial conditions/.test(await page.locator("#factsheet-title").innerText()) && /Chicago Fed National Financial Conditions Index/.test(await dlg.innerText()) &&
     /NFCI · -0\.62 · SIGNAL BULL/i.test(await dlg.innerText()));
   await page.keyboard.press("Escape");
   await page.waitForTimeout(200);
@@ -1971,7 +1976,7 @@ console.log("\n[public] v6.3 — eight sheets on the macro strip (Power, Simple,
   await page.locator(".macro-strip-inner > div").nth(4).locator('button[aria-haspopup="dialog"]').click();   // 10Y
   await page.waitForTimeout(250);
   ok("v6.3 sheet (Simple): the 10Y tile opens the 10Y band's sheet, centred and inside the phone viewport",
-    (await page.locator("#factsheet-title").innerText()) === "10-Year U.S. Treasury Yield" &&
+    (await page.locator("#factsheet-title").innerText()) === "Long-term interest rates" &&
     await page.evaluate(() => { const r = document.querySelector('[role="dialog"]').getBoundingClientRect();
       return r.top >= 0 && r.bottom <= window.innerHeight && r.left >= 0 && r.right <= window.innerWidth; }));
   await page.keyboard.press("Escape");
@@ -2018,17 +2023,17 @@ console.log("\n[public] v6.5 — STOCK SPOTLIGHT: Simple + Degen, always-visible
       g.stripBottom !== null && g.regionTop !== null && g.regionTop >= g.stripBottom - 1 && g.regionTop - g.stripBottom < 16);
     ok("v6.5 Simple: both company names and tickers and the comparison label (week is Degen-only)",
       /Nebius Group/.test(text) && /NBIS/.test(text) && /Microsoft/.test(text) && /MSFT/.test(text) && /Established growth/.test(text) && !/week of/.test(text));
-    ok("T4 Simple face: name + YTD + one quality stat; market cap, multiples and the summary are NOT on the face",
+    ok("Simple face: company size, return this year and one fundamental; detailed prose stays behind the tap",
       (text.match(/[+−]\d+\.\d\d%/g) || []).length >= 2 &&
-      !/\$70\.1B/.test(text) && !/\$3\.41T/.test(text) && !/MARKET CAP/i.test(text) &&
-      !/as of \d{4}-\d{2}-\d{2}/.test(text) && !/REVENUE GROWTH/i.test(text) &&
+      /\$70\.1B/.test(text) && /\$3\.41T/.test(text) && /MARKET CAP/i.test(text) &&
+      !/as of \d{4}-\d{2}-\d{2}/.test(text) && /REVENUE GROWTH/i.test(text) &&
       !/OPERATING MARGIN/i.test(text) && !/FREE CASH FLOW/i.test(text) &&
       !/trailing revenue/i.test(text) && !/12\.5×/.test(text) &&
       !/BUSINESS ·/.test(text) && !/WATCH NEXT ·/.test(text) &&
       (await r.locator('[aria-label="Full assessment"]').count()) === 0);
     ok("v6.5 Simple: YTD numbers for both — no `through` crumbs on the face, no price-return caveat",
-      (await r.locator('[aria-label$=" profile"]', { hasText: "YTD" }).count()) === 2 && !/PRICE RETURN/i.test(text) &&
-      !/through \d{4}-\d{2}-\d{2}/.test((await r.locator('[aria-label$=" profile"]').allInnerTexts()).join("\n")));
+      (await r.locator('.stock-profile-trigger', { hasText: "Return this year" }).count()) === 2 && !/PRICE RETURN/i.test(text) &&
+      !/through \d{4}-\d{2}-\d{2}/.test((await r.locator('.stock-profile-trigger').allInnerTexts()).join("\n")));
     ok("v6.5 Simple (density review): NO blurb on the face; the dates and the blurb live one tap deep",
       !/rents out AI computing capacity/.test(text) && !/Sells software and cloud computing/.test(text));
     ok("T4 Simple chart: title is ticker vs ticker YTD; two lines, a zero reference; no from-through essay",
@@ -2044,15 +2049,39 @@ console.log("\n[public] v6.5 — STOCK SPOTLIGHT: Simple + Degen, always-visible
         const chart = document.querySelector('[aria-label="Year-to-date comparison chart"]');
         return lesson && chart && lesson.getBoundingClientRect().top < chart.getBoundingClientRect().top;
       }));
+    for (const name of ["Nebius Group", "Microsoft"]) {
+      const trigger = r.locator('.stock-profile-trigger', { hasText: name });
+      ok(`company tap: ${name} trigger exposes its market cap, return and fundamental in its accessible name`,
+        /Market cap/i.test(await trigger.innerText()) && /Return this year/i.test(await trigger.innerText()));
+      await trigger.focus();
+      await page.keyboard.press("Enter");
+      const sheet = page.getByRole("dialog");
+      const detail = await sheet.innerText();
+      ok(`company tap: ${name} opens its own business, size, return and growth explainer`,
+        detail.includes(name) && /Market capitalization: \$/.test(detail) &&
+        /all outstanding shares/.test(detail) && /reinvested dividends/.test(detail) &&
+        /not profit growth/.test(detail) && /Market capitalization as of/.test(detail) &&
+        /Return through/.test(detail) && (await sheet.locator("li").count()) === 3);
+      ok(`company tap: ${name} fits the phone width`, await sheet.evaluate(n => n.scrollWidth <= n.clientWidth + 1));
+      await page.keyboard.press("Escape");
+      ok(`company tap: ${name} closes and restores focus`, (await page.getByRole("dialog").count()) === 0 && await trigger.evaluate(n => n === document.activeElement));
+    }
+    await r.locator("button.cg-toggle", { hasText: "Learning moment" }).click();
+    const lesson = r.locator('[aria-label="Learning moment"]');
+    ok("v6.5.5 Learning moment alone shows both dated worked examples and the limitation",
+      /NBIS:.*run-rate/.test(await lesson.innerText()) && /MSFT:.*run-rate/.test(await lesson.innerText()) &&
+      /not a forecast/.test(await lesson.innerText()) && (await r.locator('[aria-label$="supporting analysis"]').count()) === 0);
+    ok("v6.5.5 expanded lesson fits the 90-word budget", (await lesson.innerText()).trim().split(/\s+/).length <= 90);
+    await r.locator("button.cg-toggle", { hasText: "Learning moment" }).click();
     await r.locator("button.cg-toggle", { hasText: "Explore the numbers" }).click();
     await page.waitForTimeout(300);
     const opened = await r.innerText();
-    ok("T4 Simple: 'Explore the numbers' opens the dates & blurbs, market caps, the FULL three-question assessment and the supporting analysis for BOTH companies, the worked example and dated sources",
+    ok("T4 Simple: 'Explore the numbers' opens the dates & blurbs, market caps, the FULL three-question assessment and supporting analysis for BOTH companies, dated sources and no duplicate lesson",
       (await r.locator('[aria-label$="data notes"]').count()) === 2 && /as of \d{4}-\d{2}-\d{2}/.test(opened) && /YTD through \d{4}-\d{2}-\d{2}/.test(opened) && /rents out AI computing capacity/.test(opened) &&
       /\$70\.1B/.test(opened) && /\$3\.41T/.test(opened) &&
       /Explore the numbers/.test(text) && !/Explore the numbers — /.test(text) &&
       (await r.locator('[aria-label="Full assessment"]').count()) === 2 && /BUSINESS ·/.test(opened) && /WATCH NEXT ·/.test(opened) &&
-      (await r.locator('[aria-label$="supporting analysis"]').count()) === 2 && /Worked example/.test(opened) && /CALCULATION INPUTS/.test(opened) && /sec\.gov/.test(opened) && /YTD method/.test(opened));
+      (await r.locator('[aria-label$="supporting analysis"]').count()) === 2 && !/Worked example/.test(opened) && /CALCULATION INPUTS/.test(opened) && /sec\.gov/.test(opened) && /YTD method/.test(opened));
     ok("v6.5 Simple: no rating words on the face", !/\b(cheap|safe|buy|sell|undervalued|overvalued)\b/i.test(opened));
     const [glance, cardsTop] = await page.evaluate(() => {
       const el = [...document.querySelectorAll("*")].find((n) => n.children.length === 0 && /^●?\s*SPY\*?$/m.test(n.textContent || "") && n.getBoundingClientRect().height > 0);
@@ -2063,7 +2092,21 @@ console.log("\n[public] v6.5 — STOCK SPOTLIGHT: Simple + Degen, always-visible
     ok("v6.5 Simple: 390px stays overflow-free with the chart in place, no page errors",
       await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth + 1) && errors.length === 0);
     // The full three-question text lives one tap deep in Simple (`opened`), on the face in Degen.
-    simpleFace = { caps: opened.match(/\$\d+\.\d+[TB]/g), ytd: text.match(/[+−]\d+\.\d\d%/g), business: (opened.match(/BUSINESS · [^\n]+/g) || []) };
+    simpleFace = { caps: (await r.locator('.stock-profile-trigger').allInnerTexts()).map(t => (t.match(/\$\d+\.\d+[TB]/) || [])[0]), ytd: text.match(/[+−]\d+\.\d\d%/g), business: (opened.match(/BUSINESS · [^\n]+/g) || []) };
+    await page.close(); }
+  // Mixed-period issuer: the FCF date must not inherit the revenue quarter.
+  { const mixed = structuredClone(feed);
+    mixed.model.companies.NBIS.metrics.fcf = { ...mixed.model.companies.NBIS.metrics.fcf,
+      basis: "half", period: "half-year to 2026-06-30" };
+    mixed.model.companies.NBIS.metrics.operatingMargin.period = "quarter to 2026-06-30";
+    const { page, errors } = await open({ live: FULL_LIVE, width: 390, power: false, spotlight: mixed, route: "/?view=public" });
+    await page.waitForTimeout(1200);
+    await region(page).locator("button.cg-toggle", { hasText: "Explore the numbers" }).click();
+    const notes = await region(page).locator('[aria-label="NBIS data notes"]').innerText();
+    ok("v6.5.5 data notes keep operating margin quarterly and FCF half-year on separate lines",
+      /operating margin[^\n]*quarter to 2026-06-30/.test(notes) &&
+      /free cash flow[^\n]*half-year to 2026-06-30/.test(notes) && !/free cash flow[^\n]*quarter to/.test(notes));
+    ok("v6.5.5 public teaching has no operator dock", await page.locator('[aria-label="Terminal dock"]').count() === 0 && errors.length === 0);
     await page.close(); }
   // 3. DEGEN at 1280px — the analysis is visible; only the sources collapse; IDENTICAL values.
   { const { page, errors } = await open({ live: FULL_LIVE, width: 1280, power: true, spotlight: feed });
@@ -2074,13 +2117,13 @@ console.log("\n[public] v6.5 — STOCK SPOTLIGHT: Simple + Degen, always-visible
       /rents out AI computing capacity/.test(text) && /as of \d{4}-\d{2}-\d{2}/.test(text) && /through \d{4}-\d{2}-\d{2}/.test(text) && /quarter to \d{4}-\d{2}-\d{2}/.test(text));
     ok("v6.5 Degen: the supporting analysis (cash, debt, cap ÷ TTM revenue, P/E, shares, price trend, run-rate, inputs) is visible with NO click, plus the worked example",
       (await r.locator('[aria-label$="supporting analysis"]').count()) === 2 && /CAP ÷ TTM REVENUE/i.test(text) && /TRAILING P\/E/i.test(text) && /PRICE TREND/i.test(text) &&
-      /RUN-RATE VS TTM/i.test(text) && /CALCULATION INPUTS/.test(text) && /Worked example/.test(text) && /33\.4×/.test(text));
+      /RUN-RATE VS TTM/i.test(text) && /CALCULATION INPUTS/.test(text) && (await r.locator('[aria-label="Worked example"]').count()) === 1 && /33\.4×/.test(text));
     ok("v6.5 Degen: NBIS's negative trailing earnings read 'no P/E' — never a negative multiple", /trailing earnings are negative — no P\/E/.test(text) && !/-\d+\.\d×/.test(text));
     ok("v6.5 Degen: sources are the one collapsed disclosure; opening it lists dated sec.gov citations",
       (await r.locator('[aria-label="Sources and calculations"]').count()) === 0 && await (async () => {
         await r.locator("button.cg-toggle").first().click(); await page.waitForTimeout(250);
         const t = await r.innerText(); return (await r.locator('[aria-label="Sources and calculations"]').count()) === 1 && /sec\.gov/.test(t) && /filed \d{4}-\d{2}-\d{2}/.test(t); })());
-    const degenFace = { caps: text.match(/\$\d+\.\d+[TB]/g), ytd: text.match(/[+−]\d+\.\d\d%/g), business: (text.match(/BUSINESS · [^\n]+/g) || []) };
+    const degenFace = { caps: (await r.locator('[aria-label$=" profile"]').allInnerTexts()).map(t => (t.match(/\$\d+\.\d+[TB]/) || [])[0]), ytd: text.match(/[+−]\d+\.\d\d%/g), business: (text.match(/BUSINESS · [^\n]+/g) || []) };
     ok("v6.5 both modes: IDENTICAL market caps, YTD values and assessments (one model, two altitudes)",
       simpleFace && JSON.stringify(simpleFace.caps.slice(0, 2)) === JSON.stringify(degenFace.caps.slice(0, 2)) &&
       JSON.stringify(simpleFace.ytd.slice(0, 2)) === JSON.stringify(degenFace.ytd.slice(0, 2)) && JSON.stringify(simpleFace.business) === JSON.stringify(degenFace.business));
@@ -2092,9 +2135,9 @@ console.log("\n[public] v6.5 — STOCK SPOTLIGHT: Simple + Degen, always-visible
     await page.waitForTimeout(1600);
     const r = region(page);
     const text = await r.innerText();
-    ok("T4 unavailable (Simple face): a missing market cap is NOT on the face (it rides Explore); the other company still shows YTD; never a zero",
-      !/Unavailable · no market cap/.test(text) && !/Unavailable — profile carries no market capitalization/.test(text) &&
-      !/\$3\.41T/.test(text) && !/\$0/.test(text) && /Unavailable/.test(text));
+    ok("Simple unavailable: missing capitalization is visible; the other company retains its value; never zero",
+      /Unavailable · no market cap/.test(text) && !/Unavailable — profile carries no market capitalization/.test(text) &&
+      /\$3\.41T/.test(text) && !/\$0/.test(text) && /Unavailable/.test(text));
     ok("v6.5 unavailable: the missing anchor series is NAMED on the chart and the comparison line still plots alone",
       /NBIS series unavailable/.test(text) && (await r.locator(".recharts-line").count()) === 1 && /Unavailable(?! —)/.test(text));
     ok("T4 unavailable: the FULL reasons survive verbatim one tap deep in Explore",
@@ -2129,7 +2172,7 @@ console.log("\n[public] v6.5 — STOCK SPOTLIGHT: Simple + Degen, always-visible
     const text = await r.innerText();
     ok("T4 review #3: served in the new year, both Simple YTD fields read awaiting, no line is drawn, and last year's figures are gone",
       (text.match(/awaiting first close/gi) || []).length >= 2 && /Awaiting the first 2026 trading close/.test(text) && (await r.locator(".recharts-line").count()) === 0 &&
-      !/\+\d+\.\d\d%/.test(text) && !/\$3\.41T/.test(text) && errors.length === 0);
+      !/\+\d+\.\d\d%/.test(text) && /\$3\.41T/.test(text) && errors.length === 0);
     await page.close(); }
   // 5. 320px — the narrowest contract.
   { const { page, errors } = await open({ live: FULL_LIVE, width: 320, power: false, spotlight: feed });

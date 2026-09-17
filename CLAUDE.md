@@ -14,12 +14,14 @@ whys print is the number they printed before.
 **The face.** `holdReason` was one two-verb template ("X are fine. Y are the drag.") that said
 the same thing in every posture. It now follows `ev.regime.label` — the SAME field the verdict
 word above it reads, so the sentence can never describe a different call — and says what the
-CALL means, letting the names carry the why: Bullish → *"Vol and credit support taking risk.
-The only pushback: rates and prices."* · Bearish → *"Rates and prices work against risk. Vol
-doesn't offset that."* · Hold → *"Vol and credit help. Rates and prices hurt. Neither side has
-a majority."* — that last clause being the actual reason for a Hold under the strict-majority
-rule, and the one fact a newcomer can act on. Verb agreement is per NOUN ("rates work", "vol
-works"), `HOLD_REASON_MAX` 18 → **15**, every branch ≤15 BY CONSTRUCTION (no runtime
+CALL means, letting the names carry the why: Bullish → *"Volatility and credit support taking
+risk. The only pushback: rates and prices."* · Bearish → *"Rates and prices work against risk.
+Volatility doesn't offset that."* · Hold → *"Volatility and credit help. Rates and prices hurt.
+Neither side has a majority."* — that last clause being the actual reason for a Hold under the
+strict-majority rule, and the one fact a newcomer can act on. Verb agreement is per NOUN
+("rates work", "volatility works"; the noun itself is FACE_NOUN's, spelled out in full since
+the independent v6.5.5 "spell out volatility" fix, carried forward here), `HOLD_REASON_MAX`
+18 → **15**, every branch ≤15 BY CONSTRUCTION (no runtime
 truncation — a truncated sentence is garbage), swept over all 84 posture × split combinations
 (max measured 13).
 **The whys: one engine, two projections.** Before this the Simple whys were the Degen whys
@@ -177,6 +179,25 @@ calendar so it survives the table rolling forward). Negative-controlled **five w
 freshness window removed (5 red), the same-date pair guard removed, the decision-day branch
 made to claim an outcome, `fedMoveBp` collapsing no-move into BLIND, and the marker painted
 green — each turning exactly its own pins.
+
+**v6.5.6 — useful learning behind the compact face.** Relabelled from the draft v6.5.5 after #40 shipped that version. Owner follow-up restores market cap
+to Simple profiles and makes each entire card open a three-bullet company FactSheet.
+“Return this year” replaces YTD on the profile, with a visible learning prompt.
+The sheet explains the business, size, return and selected fundamental with individual dates.
+No extra default prose;
+Learning moment now contains the concept, two individually dated company example lines, and
+a limitation (90-word fixture budget). Explore retains calculations/citations but no duplicate
+lesson. Each data-note metric carries its OWN reporting period (the half-year FCF cannot inherit
+a quarterly revenue date). Seven authored lessons now reject incomplete examples: AAPL is
+explicitly unavailable until comparable share/per-share inputs exist; META requires matching
+period bounds; cash-flow and run-rate examples require every operand. Public GET rebuilds the
+lesson from stored metrics, so cached prose cannot outlive the guards. Old META records without
+period bounds stay unavailable until the next ordinary refresh. Ordinary metric explainers keep
+three bullets within 75 words, short titles plus full formal metadata, and separate date/rule
+metadata. `Revenue growth` and `Return this year` replace ambiguous face shorthand. Dashboard share
+links explicitly select `?view=public` and omit operator/debug parameters. No call/gate thresholds,
+provider, rotation policy or private decision interface changed. Follow-up carousel/research work
+and the human comprehension pilot remain staged in `working/2026-09-15-useful-learning.md`.
 
 **v6.5.5 — the dashboard decomposition, Phases 0–4 (owner map, verified then executed
 2026-09-15/16).** Structure only: no band, vote, quorum, freeze, fetch, gate or copy moved, and

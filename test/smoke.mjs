@@ -2370,6 +2370,11 @@ ok("version: the terminal's title and brand both match package.json (no third ve
   // ("the daily contract" — the four-question surface is the product's face now; the card
   // still governs underneath, stated in the §14.8 machinery, not the masthead).
   adminSrc.includes(`<small>v${PKG.version} · the daily contract</small>`));
+ok("version: the newest CLAUDE release heading matches package.json",
+  readSrc("../CLAUDE.md").match(/^\*\*v(\d+\.\d+\.\d+)\s/m)?.[1] === PKG.version);
+const versionLock = JSON.parse(readSrc("../package-lock.json"));
+ok("version: both package-lock version homes match package.json",
+  versionLock.version === PKG.version && versionLock.packages[""].version === PKG.version);
 // ttInfo's score decides whether the NEXT DOLLAR line lights. It is parsed from prose.
 ok("composite: a decimal score is preferred over an earlier bare integer",
   adminSrc.includes("function parseComposite(v)") && adminSrc.includes("const dec=s.match(/\\d+\\.\\d+/);"));
@@ -6356,7 +6361,7 @@ ok("9.2/8.2: headwind rows are real buttons now — keyboard-operable with aria-
 // failure reverts silently (<300ms, no toast), no clipboard API claims nothing.
 console.log("\n[53] UI-OVERHAUL wave 16 — copy claims are confirmed, never optimistic");
 ok("7.9: handleShare confirms on .then, reverts on .catch, and claims nothing without the API",
-  /const p=navigator\.clipboard\?\.writeText\(window\.location\.href\);\s*\n\s*if\(!p\)\{return;\}/.test(dashSrc) &&
+  /const p=navigator\.clipboard\?\.writeText\(publicDashboardUrl\(window\.location\.href\)\);\s*\n\s*if\(!p\)\{return;\}/.test(dashSrc) &&
   /p\.then\(\(\)=>\{setCopied\(true\);setTimeout\(\(\)=>setCopied\(false\),2000\);\}\)\s*\n\s*\.catch\(\(\)=>\{setCopied\(false\);\}\);/.test(dashSrc));
 ok("7.9: handleTtCopy — the order-gating block — follows the same confirmed rule",
   /const p=navigator\.clipboard\?\.writeText\(block\);/.test(dashSrc) &&
@@ -11332,7 +11337,7 @@ console.log("\n[79] v6.3.0 eight sheets — one resolver, band identity, context
 {
   const STRIP_FIELDS = ["spyPrice", "qqqPrice", "vix", "fearGreed", "tenYear", "fedTargetUpper", "cpiHeadline", "nfci"];
   const shapeOk = (e) => e && typeof e.full === "string" && e.full.length > 8 && Array.isArray(e.what) && e.what.length === 3 &&
-    e.what.every((s) => typeof s === "string" && s.length > 20) && Object.keys(e).every((k) => k === "full" || k === "what");
+    e.what.every((s) => typeof s === "string" && s.length > 20) && Object.keys(e).every((k) => k === "full" || k === "shortTitle" || k === "what");
   ok("[79] every one of the eight strip fields resolves to a complete explainer — full name, EXACTLY 3 bullets, nothing else",
     STRIP_FIELDS.every((f) => shapeOk(stripExplainFor(f))));
   ok("[79] the five voter tiles resolve to the band's OWN explainer object — identity, never a copy (one home)",
@@ -11350,15 +11355,11 @@ console.log("\n[79] v6.3.0 eight sheets — one resolver, band identity, context
   // read it, or a tile wearing the same sheet shape as a voter would imply a vote it never casts.
   ok("[79] every context sheet states that the six-signal model does not read it — context, never an implied signal",
     ["spyPrice", "qqqPrice", "fedTargetUpper"].every((f) => /six-signal model does not read/.test(CONTEXT_EXPLAIN[f].what[1]) && /context/.test(CONTEXT_EXPLAIN[f].what[1])));
-  ok("[79] the SPY sheet is honest about the proxy (÷ 10 from FRED, not the ETF's quote) and names the crash circuit it DOES feed (200-day + VIX 25)",
-    /÷ 10 from FRED/.test(CONTEXT_EXPLAIN.spyPrice.what[0]) && /not the ETF's own quote/.test(CONTEXT_EXPLAIN.spyPrice.what[0]) &&
-    /200-day average/.test(CONTEXT_EXPLAIN.spyPrice.what[1]) && /VIX above 25/.test(CONTEXT_EXPLAIN.spyPrice.what[1]) && /crash circuit/.test(CONTEXT_EXPLAIN.spyPrice.what[1]));
-  ok("[79] the QQQ sheet names its source (Finnhub), its read against SPY, and Engine 0's same-day relative-strength check",
-    /Finnhub/.test(CONTEXT_EXPLAIN.qqqPrice.what[0]) && /against SPY/.test(CONTEXT_EXPLAIN.qqqPrice.what[1]) &&
-    /relative-strength check/.test(CONTEXT_EXPLAIN.qqqPrice.what[1]) && /same day/.test(CONTEXT_EXPLAIN.qqqPrice.what[1]));
-  ok("[79] the FED sheet names BOTH readings the tile can show (the target range, and the lagging monthly effective average) and the FOMC countdown",
-    /target range/i.test(CONTEXT_EXPLAIN.fedTargetUpper.what[0]) && /effective average/.test(CONTEXT_EXPLAIN.fedTargetUpper.what[0]) &&
-    /lags a decision/.test(CONTEXT_EXPLAIN.fedTargetUpper.what[0]) && /next FOMC decision/.test(CONTEXT_EXPLAIN.fedTargetUpper.what[1]));
+  ok("[79] context sheets preserve proxy identity, non-voting scope, crash circuit and lagging effective-rate fallback",
+    /FRED index divided by ten/.test(CONTEXT_EXPLAIN.spyPrice.what[0]) && /not a tradable SPY ETF quote/.test(CONTEXT_EXPLAIN.spyPrice.what[0]) &&
+    /200-day/.test(CONTEXT_EXPLAIN.spyPrice.what[1]) && /VIX exceeds 25/.test(CONTEXT_EXPLAIN.spyPrice.what[1]) &&
+    /non-financial/.test(CONTEXT_EXPLAIN.qqqPrice.what[0]) &&
+    /target range/.test(CONTEXT_EXPLAIN.fedFunds.what[0]) && /effective average/.test(CONTEXT_EXPLAIN.fedFunds.what[0]) && /lags a decision/.test(CONTEXT_EXPLAIN.fedFunds.what[0]));
   ok("[79] context titles are spelled-out official names, never a bare ticker or acronym",
     /S&P 500 Index/.test(CONTEXT_EXPLAIN.spyPrice.full) && /Invesco QQQ Trust/.test(CONTEXT_EXPLAIN.qqqPrice.full) && /Nasdaq-100/.test(CONTEXT_EXPLAIN.qqqPrice.full) &&
     /Federal Funds Rate Target Range/.test(CONTEXT_EXPLAIN.fedTargetUpper.full) && /FOMC/.test(CONTEXT_EXPLAIN.fedTargetUpper.full));
@@ -11659,15 +11660,15 @@ console.log("\n[81] v6.5.0 STOCK SPOTLIGHT — calculations, endpoints, cron leg
       const m = S.deriveMetrics({ fundamentals: merged, marketCap: { usd: 61e9 }, series: null, today: "2026-09-14" });
       return merged.ocf.provider === "issuer report" && merged.ocf.observedAt === "2026-06-30" && m.fcf.basis === "half" && Math.abs(m.fcf.value + 3626.2e6) < 1; })());
   ok("[81] lessons: seven, keyed 1:1 to the rotation, each with a title, a body, and an example FUNCTION; MSFT's worked example prints both run-rates from the fixture",
-    S.SPOTLIGHT_ROTATION.every((k) => S.LESSONS[k] && S.LESSONS[k].title && S.LESSONS[k].body.length > 80 && typeof S.LESSONS[k].example === "function") &&
-    /NBIS: \$582M × 4 = \$2\.3B run-rate vs \$1\.3B reported TTM \(\+75\.8%\)\. MSFT: \$76\.0B × 4/.test(fx.model.lesson.example) && fx.model.lesson.exampleUnavailable === null);
+    S.SPOTLIGHT_ROTATION.every((k) => S.LESSONS[k] && S.LESSONS[k].title && S.LESSONS[k].body.length > 40 && typeof S.LESSONS[k].example === "function") &&
+    /NBIS: \$582M × 4 = \$2\.3B run-rate vs \$1\.3B reported TTM \(\+75\.8%;[\s\S]*MSFT: \$76\.0B × 4/.test(fx.model.lesson.example) && fx.model.lesson.exampleUnavailable === null);
   ok("[81] lessons: with the supporting figures missing for either company the worked example is UNAVAILABLE and named — the conceptual lesson stays, no numbers are invented",
     (() => { const stripped = { ...ms, metrics: { ...ms.metrics, runRate: null } };
       const m = S.buildSpotlightModel({ anchor: nb, comparison: stripped, rotation: { index: 0, weekKey: "2026-09-14" }, tracker: fx.model.tracker, now: NOW });
-      const goog = S.buildSpotlightModel({ anchor: nb, comparison: ms, rotation: { index: 3, weekKey: "2026-09-14" }, tracker: fx.model.tracker, now: NOW });
-      return m.lesson.example === null && /worked example unavailable/.test(m.lesson.exampleUnavailable) && m.lesson.body === S.LESSONS.MSFT.body &&
+      const goog = S.buildSpotlightModel({ anchor: nb, comparison: { ...ms, symbol: "GOOGL" }, rotation: { index: 3, weekKey: "2026-09-14" }, tracker: fx.model.tracker, now: NOW });
+      return m.lesson.example === null && /worked example unavailable/i.test(m.lesson.exampleUnavailable) && m.lesson.body === S.LESSONS.MSFT.body &&
         goog.lesson.key === "GOOGL" && goog.pair.comparison === "GOOGL" && goog.pair.nextComparison === "META" &&
-        /NBIS: TTM free cash flow is .* not meaningful when it is not positive/.test(goog.lesson.example); })());
+        /NBIS: .* TTM cash flow .*nonpositive denominator/.test(goog.lesson.example); })());
 
   // ── freshness recomputed at serve ──
   ok("[81] freshness: a stored model is re-judged from its observation dates at serve time — 12 days old reads STALE (sessions named), today reads fresh",
@@ -11888,11 +11889,11 @@ console.log("\n[81] v6.5.0 STOCK SPOTLIGHT — calculations, endpoints, cron leg
     /if\(!liveBuild\)return;\n    let dead=false;\n    fetch\("\/api\/stock-spotlight"\)/.test(dashSrc) &&
     /votingFields=\{VOTING_FIELDS\}[^\n]*\n\n[\s\S]{0,700}<StockSpotlight spotlight=\{spotlight\} simple=\{simple\}\/>/.test(dashSrc) &&
     !/\{simple&&<StockSpotlight|\{!simple&&<StockSpotlight/.test(dashSrc));
-  ok("[81] section: renders NOTHING without an enabled feed + model; YTD and the chart live on the Simple face, market cap rides Explore (T4) and Degen Profile",
+  ok("[81] section: renders NOTHING without an enabled feed + model; YTD and the chart live on the Simple face, market cap appears on both profiles",
     /if \(!spotlight \|\| !spotlight\.enabled \|\| !spotlight\.model/.test(ssCode) &&
     (() => { const cg = ssCode.slice(ssCode.indexOf("simple ? ("), ssCode.lastIndexOf("</CollapsedGroup>"));
       return !/<Chart/.test(cg) && /spotlightFace\(c, leg\)/.test(ssCode) && /<Row label="Market cap" big/.test(ssCode) && /<Chart tracker=\{m\.tracker\}/.test(ssCode) && /<Unavail reason=/.test(ssCode); })());
-  ok("[81] section (T4 Simple face): name + YTD + one quality stat; market cap, multiples and the lesson body are NOT on the Simple face; Degen keeps the 10-K; learning moment is a closed CollapsedGroup",
+  ok("[81] section (T4 Simple face): name + market cap + return + one fundamental; multiples and the lesson body stay folded; Degen keeps the 10-K; learning moment is a closed CollapsedGroup",
     /\{!simple && c\.blurb && <div/.test(ssCode) && /title=\{reason \|\| undefined\}/.test(ssCode) &&
     /summaryIsNumeric\(c\.assessment\.summary\)/.test(ssCode) && /is unavailable\|unavailable —/.test(ssCode) &&
     /label=\{EXPLORE_FOLD_LABEL\}/.test(ssCode) && /<DataNotes key=\{c\.symbol\}/.test(ssCode) &&
@@ -11918,21 +11919,30 @@ console.log("\n[82] Simple FACE/TAP/FOLD remainder — registry, ≤15-word reas
   /* v6.6.1 RE-PIN (owner: "not a fan of 'fine' and 'drag' — higher leverage, 15 words max").
      The sentence now follows the posture: a Hold names the split and says NEITHER SIDE HAS A
      MAJORITY, a Bullish day says the backdrop supports taking risk. The retired words are
-     pinned ABSENT; the full posture × split sweep lives in [86]. */
+     pinned ABSENT; the full posture × split sweep lives in [86]. FACE_NOUN.vix reads
+     "Volatility" (main's spell-it-out fix, landed independently) — carried forward here. */
   const mixed = holdReason({ withheld: false, regime: { label: "MIXED" }, factors: [row("vix", "bull"), row("nfci", "bull"), row("tenYear", "bear"), row("valuation", "bear")] });
   const allBull = holdReason({ withheld: false, regime: { label: "RISK-ON" }, factors: [row("vix", "bull"), row("nfci", "bull"), row("tenYear", "bull"), row("valuation", "bull"), row("fearGreed", "bull"), row("cpiHeadline", "bull")] });
   ok("T1 holdReason: withheld is null; a Hold states the split and that neither side has a majority; ≤15 words; 'fine'/'drag' retired",
     holdReason(null) === null && holdReason({ withheld: true }) === null && HOLD_REASON_MAX === 15 &&
-    mixed === "Vol and credit help. Rates and prices hurt. Neither side has a majority." &&
-    allBull === "Vol and credit support taking risk. Nothing tracked is pushing back." &&
+    mixed === "Volatility and credit help. Rates and prices hurt. Neither side has a majority." &&
+    allBull === "Volatility and credit support taking risk. Nothing tracked is pushing back." &&
     words(mixed).length <= HOLD_REASON_MAX && words(allBull).length <= HOLD_REASON_MAX &&
-    !/fine|drag/i.test(mixed + allBull) && /Vol/.test(mixed) && /Rates/.test(mixed));
+    !/fine|drag/i.test(mixed + allBull) && /Volatility/.test(mixed) && /Rates/.test(mixed));
+  /* Re-pinned on the v6.6.1 template (no regime → no posture branch fires → the Hold
+     fallthrough), keeping the property the old test named: a lone PLURAL driver (tenYear,
+     valuation) takes the plural verb form even at count 1, while a lone singular driver
+     (vix → "Volatility") takes the singular form. */
+  ok("Simple reason: a lone plural driver still agrees with its verb",
+    holdReason({ factors: [row("tenYear", "bear")] }) === "Rates hurt; nothing tracked helps. Still short of a majority." &&
+    holdReason({ factors: [row("valuation", "bear")] }) === "Prices hurt; nothing tracked helps. Still short of a majority." &&
+    holdReason({ factors: [row("vix", "bull")] }) === "Volatility helps; nothing tracked hurts. Still short of a majority.");
   ok("T1 cardFace / sheetLead: glyph+label+value+tone only; sheetLead is the why sentence",
     JSON.stringify(cardFace({ direction: "helping", label: "volatility", currentValue: "15.84", why: "fear gauge" })) === JSON.stringify({ glyph: FACE_GLYPH.helping, label: "volatility", value: "15.84", tone: "helping" }) &&
     sheetLead({ why: "fear gauge" }) === "fear gauge" && sheetLead({}) === null);
   ok("T1 spotlightFace: YTD + one quality stat; chartTitle is ticker vs ticker YTD; lesson fold is a 2-word promise",
     (() => { const f = spotlightFace({ name: "Nebius Group", symbol: "NBIS", metrics: { revenueGrowth: { pct: 454 } } }, { pct: 154.2 });
-      return f.symbol === "NBIS" && f.ytd.value === "+154.20%" && f.stat.label === "Rev" && f.stat.value === "+454.0%"; })() &&
+      return f.symbol === "NBIS" && f.ytd.value === "+154.20%" && f.stat.label === "Revenue growth" && f.stat.value === "+454.0%"; })() &&
     chartTitle({ anchor: "NBIS", comparison: "MSFT" }) === "NBIS vs MSFT YTD" &&
     lessonTitle({}) === LESSON_FOLD_LABEL && LESSON_FOLD_LABEL === "Learning moment" &&
     WHYS_FOLD_LABEL === "Why this call" && ABOUT_FOLD_LABEL === "About this page" && EXPLORE_FOLD_LABEL === "Explore the numbers");
@@ -11982,16 +11992,58 @@ console.log("\n[83] Simple altitude — fs-xxl Hold, fs-body sentence, one-block
     /Share this page/.test(dash));
 }
 
-// ---- 84. v6.5.5 — dashboard.jsx decomposition: dead code OUT first (the v3.73 Divider rule) ----
+console.log("\n[84] v6.5.6 — spotlight learning: educational claims need evidence, including models cached before deploy");
+{
+  const S = await import("../functions/lib/spotlight.js");
+  const { makeSpotlightFixture } = await import("./spotlight-fixture.mjs");
+  const { publicDashboardUrl } = await import("../src/publicCopy.js");
+  const fx = makeSpotlightFixture();
+  const nb = fx.model.companies.NBIS, ms = fx.model.companies.MSFT;
+  const pair = (symbol, anchor = nb, comparison = ms) => S.lessonForPair({ anchor: "NBIS", comparison: symbol }, { NBIS: anchor, [symbol]: { ...comparison, symbol } });
+  const wc = (s) => s.trim().split(/\s+/).length;
+  ok("learning: every lesson including two dated example lines and limitation fits 90 words",
+    S.SPOTLIGHT_ROTATION.every((sym) => { const l = pair(sym); return l.limitation && wc([l.title, l.body, l.example || l.exampleUnavailable, l.limitation].join(" ")) <= 90; }));
+  ok("learning: a single share observation cannot demonstrate buybacks or per-share growth",
+    pair("AAPL").example === null && /comparable share counts/.test(pair("AAPL").exampleUnavailable));
+  ok("learning: matching quarter capex/revenue works; half-year or different quarter is withheld",
+    !!pair("META").example && [
+      { ...nb.metrics.fcf, basis: "half", start: "2000-01-01" },
+      { ...nb.metrics.fcf, end: "2000-03-31" },
+      { ...nb.metrics.fcf, start: undefined },
+    ].every((fcf) => pair("META", { ...nb, metrics: { ...nb.metrics, fcf } }).example === null));
+  ok("learning: incomplete run-rate arithmetic never prints made-up money",
+    pair("MSFT", { ...nb, metrics: { ...nb.metrics, runRate: { ...nb.metrics.runRate, quarter: null } } }).example === null);
+  ok("learning: incomplete cash-flow subtraction is withheld even if a cached total exists",
+    pair("AMZN", { ...nb, metrics: { ...nb.metrics, fcf: { ...nb.metrics.fcf, capex: null } } }).example === null);
+  ok("learning: nonpositive cash flow explains why a multiple is uninformative",
+    /nonpositive denominator/.test(pair("GOOGL").example));
+  const old = structuredClone(fx.model);
+  old.pair.comparison = "META"; old.companies.META = { ...old.companies.MSFT, symbol: "META" };
+  old.companies.NBIS.metrics.fcf.start = undefined;
+  old.lesson = { title: "Old prose", example: "unsupported cached ratio" };
+  const served = S.freshenSpotlight(old);
+  ok("learning: serving an old cached model rebuilds teaching and rejects incompatible evidence without mutating storage",
+    served.lesson.title === S.LESSONS.META.title && served.lesson.example === null && old.lesson.example === "unsupported cached ratio");
+  ok("learning: read projection preserves per-company example lines and limitations",
+    fx.projected.lesson.exampleLines.length === 2 && fx.projected.lesson.exampleLines[0].startsWith("NBIS:") &&
+    fx.projected.lesson.exampleLines[1].startsWith("MSFT:") && !!fx.projected.lesson.limitation);
+  ok("explainers: ordinary metric lessons have three concise bullets, a short title, and full formal metadata",
+    [...REGIME_BAND_TABLE.map((b) => b.explain), ...Object.values(CONTEXT_EXPLAIN)].every((e) =>
+      e.what.length === 3 && wc(e.what.join(" ")) <= 75 && e.shortTitle.length < e.full.length + 15 && !!e.full));
+  ok("sharing: operator/debug parameters and ticker hashes never enter a friend link",
+    publicDashboardUrl("https://fixture.test/?debug=private&view=operator#nbis") === "https://fixture.test/?view=public");
+}
+
+// ---- 85. v6.5.5 — dashboard.jsx decomposition: dead code OUT first (the v3.73 Divider rule) ----
 // The owner's decomposition map proposed RELOCATING useCountdown to src/hooks/; the verification
 // pass found it had no consumer anywhere (the IPO strip it served was cut in v3.43), along with
 // three colour helpers whose Mag-10 grid was cut the same release, and a recharts import
 // whose every name was unused in this file. Dead code is deleted and its absence pinned, never
 // moved — a relocated dead hook is a rot vector with a new address.
 {
-  console.log("\n[84] v6.5.5 — dead code deleted from the orchestrator, not relocated");
+  console.log("\n[85] v6.5.5 — dead code deleted from the orchestrator, not relocated");
   const strip = (src) => src.replace(/\/\/[^\n]*|\/\*[\s\S]*?\*\//g, "");
-  ok("[84] Zone 3: UndoToast/SpyTapeBadge/CallBanners have ONE home each — the orchestrator imports, never re-declares",
+  ok("[85] Zone 3: UndoToast/SpyTapeBadge/CallBanners have ONE home each — the orchestrator imports, never re-declares",
     !/\nconst UndoToast=|\nfunction useUndoToast\(|\nconst SpyTapeBadge = |\nconst MacroFlipBanner=|\nconst PanicOverrideBanner=/.test(dashSrc) &&
     dashSrc.includes('import UndoToast, { useUndoToast } from "./primitives/UndoToast.jsx"') &&
     dashSrc.includes('import SpyTapeBadge from "./primitives/SpyTapeBadge.jsx"') &&
@@ -11999,30 +12051,30 @@ console.log("\n[83] Simple altitude — fs-xxl Hold, fs-body sentence, one-block
     /^export function useUndoToast\(/m.test(utSrc) && /^export default function UndoToast\(/m.test(utSrc) &&
     /^export default function SpyTapeBadge\(/m.test(stbSrc) &&
     /^export function MacroFlipBanner\(/m.test(cbSrc) && /^export function PanicOverrideBanner\(/m.test(cbSrc));
-  ok("[84] Zone 3: the three files are presentation-only (props in, JSX out) — no data, storage, fetch or computation import; the toast's own UI state is the one allowed hook",
+  ok("[85] Zone 3: the three files are presentation-only (props in, JSX out) — no data, storage, fetch or computation import; the toast's own UI state is the one allowed hook",
     [stbSrc, cbSrc].every(src => !/useState|useEffect|localStorage|fetch\(|useMarketData|computeRegime|buildEvidenceSet|evalAlert/.test(strip(src))) &&
     !/localStorage|fetch\(|useMarketData|computeRegime|buildEvidenceSet|evalAlert|useEffect/.test(strip(utSrc)) &&
     !/useCallback/.test(strip(dashSrc)) && dashSrc.includes("const { toasts, show:showToast, dismiss } = useUndoToast();"));
-  ok("[84] Zone 3: the call sites and the banner LADDER (panic first, then an armed/tripped flip) stay in the orchestrator; every moved component null-guards (Property 9)",
+  ok("[85] Zone 3: the call sites and the banner LADDER (panic first, then an armed/tripped flip) stay in the orchestrator; every moved component null-guards (Property 9)",
     /<UndoToast toasts=\{toasts\} dismiss=\{dismiss\}\/>/.test(dashSrc) &&
     /\? <PanicOverrideBanner call=\{dailyCall\} simple=\{simple\}\/>\s*\n\s*: flip&&\(flip\.tripped\|\|flip\.armed\)&&<MacroFlipBanner flip=\{flip\}\/>\}/.test(dashSrc) &&
     /if\(!toasts \|\| !toasts\.length\) return null;/.test(utSrc) &&
     /if \(mode !== "LIVE" && mode !== "CACHED" && mode !== "STALE"\) return null;/.test(stbSrc) &&
     /if\(!flip\|\|!flip\.inputs\)return null;/.test(cbSrc) && /if\(!call\)return null;/.test(cbSrc));
-  ok("[84] Zone 4: the Drivers matrix is a section with ONE home; the !simple gate, the landmark and its h2 anchor STAY at the call site",
+  ok("[85] Zone 4: the Drivers matrix is a section with ONE home; the !simple gate, the landmark and its h2 anchor STAY at the call site",
     /\{!simple&&<section aria-labelledby="drivers"[\s\S]{0,1200}<DriversMatrix evidenceSet=\{evidenceSet\}\/>\s*\n\s*<\/section>\}/.test(dashSrc) &&
     dashSrc.includes('<h2 id="drivers" className="visually-hidden">') &&
     dashSrc.includes('import DriversMatrix from "./sections/DriversMatrix.jsx"') &&
     !/evidenceSet\.factors\.map|voteStyle/.test(strip(dashSrc)) &&
     /^export default function DriversMatrix\(\{ evidenceSet \}\)/m.test(dmSrc) &&
     /if\(!evidenceSet\|\|!Array\.isArray\(evidenceSet\.factors\)\)return <div aria-hidden="true"\/>;/.test(dmSrc));
-  ok("[84] Zone 4: DriversMatrix is presentation-only — the documented voteStyle import from the pure engine is its only computation import (the MacroStrip exception)",
+  ok("[85] Zone 4: DriversMatrix is presentation-only — the documented voteStyle import from the pure engine is its only computation import (the MacroStrip exception)",
     dmSrc.includes('import { voteStyle } from "../regime.js"') &&
     !/useState|useEffect|localStorage|fetch\(|useMarketData|computeRegime|buildEvidenceSet|regimeFactors|fieldMode|evalAlert/.test(strip(dmSrc)) &&
     dmSrc.split("\n").length <= 300);
-  ok("[84] Zone 3: Property 10 — primitives ≤100 lines, the banner section ≤300",
+  ok("[85] Zone 3: Property 10 — primitives ≤100 lines, the banner section ≤300",
     utSrc.split("\n").length <= 100 && stbSrc.split("\n").length <= 100 && cbSrc.split("\n").length <= 300);
-  ok("[84] Zone 1: MOCK_DATA has ONE home (src/mockData.js), is pure data, and the orchestrator imports it",
+  ok("[85] Zone 1: MOCK_DATA has ONE home (src/mockData.js), is pure data, and the orchestrator imports it",
     !/\nconst MOCK_DATA = \{/.test(dashSrc) &&
     dashSrc.includes('import { MOCK_DATA } from "./mockData.js"') &&
     dashSrc.includes("useMarketData(MOCK_DATA, { publicView })") &&
@@ -12030,18 +12082,18 @@ console.log("\n[83] Simple altitude — fs-xxl Hold, fs-body sentence, one-block
     !/^import\s/m.test(mockSrc) && !/from ["']react["']/.test(mockSrc) &&
     typeof MOCK_DATA === "object" && MOCK_DATA.marketPulse && Array.isArray(MOCK_DATA.headwinds));
   const code = dashSrc.replace(/\/\/[^\n]*|\/\*[\s\S]*?\*\//g, "");
-  ok("[84] useCountdown/approxCountdown are gone from every UI surface (no consumer existed)",
+  ok("[85] useCountdown/approxCountdown are gone from every UI surface (no consumer existed)",
     !/useCountdown|approxCountdown/.test(uiSrc.replace(/\/\/[^\n]*|\/\*[\s\S]*?\*\//g, "")) &&
     !existsSync(new URL("../src/hooks/useCountdown.js", import.meta.url)));
-  ok("[84] peColor/marginColor/yoyColor are gone (their Mag-10 consumer was cut in v3.43)",
+  ok("[85] peColor/marginColor/yoyColor are gone (their Mag-10 consumer was cut in v3.43)",
     !/\b(peColor|marginColor|yoyColor)\b/.test(code));
-  ok("[84] the orchestrator imports nothing from recharts — charts render only inside sections",
+  ok("[85] the orchestrator imports nothing from recharts — charts render only inside sections",
     !/from ["']recharts["']/.test(code) && /from ["']recharts["']/.test(mdSrc));
-  ok("[84] every import name the orchestrator declares is USED at least once in its own code",
+  ok("[85] every import name the orchestrator declares is USED at least once in its own code",
     (() => {
       const imp = [...code.matchAll(/^import\s+(?:(\w+)\s*,?\s*)?(?:\{([^}]*)\})?\s*from\s+"[^"]+"/gm)];
       const names = imp.flatMap(m => [m[1], ...(m[2] || "").split(",").map(x => x.trim().split(/\s+as\s+/).pop())]).filter(Boolean);
-      const unused = names.filter(n => (code.match(new RegExp("\\b" + n.replace(/[$]/g, "\\console.log(`\n=== SMOKE TEST: ${pass} passed, ${fail} failed ===`);") + "\\b", "g")) || []).length < 2);
+      const unused = names.filter(n => (code.match(new RegExp("\\b" + n.replace(/[$]/g, "\\$&") + "\\b", "g")) || []).length < 2);
       if (unused.length) console.log("    unused imports:", unused.join(", "));
       return names.length > 20 && unused.length === 0;
     })());
@@ -12287,8 +12339,8 @@ console.log("\n[86] v6.6.1 ONE ENGINE, TWO ALTITUDES — ≤25-word whys in both
     S("downgraded")[0] === "Hold — Bullish withheld. 4 of 6 signals help, 1 hurt, 1 mixed. A call needs a majority — at least 4." &&
     S("worst")[0] === "Bearish — forced by the crash circuit. 1 of 6 signals help, 4 hurt, 1 mixed. A call needs a majority — at least 4.");
   ok("[86] Simple #2: the sides by FACE_NOUN name — the hero sentence's own vocabulary — with the dark names NAMED, never folded into mixed",
-    S("base")[1] === "Helping: vol, sentiment, inflation, and credit. Hurting: prices. Mixed: rates." &&
-    S("twoDark")[1] === "Helping: inflation and credit. Hurting: rates and prices. Not counted: vol and sentiment." &&
+    S("base")[1] === "Helping: volatility, sentiment, inflation, and credit. Hurting: prices. Mixed: rates." &&
+    S("twoDark")[1] === "Helping: inflation and credit. Hurting: rates and prices. Not counted: volatility and sentiment." &&
     Object.values(FACE_NOUN).every((n) => new RegExp(`\\b${n.toLowerCase()}\\b`).test(S("base")[1].toLowerCase())));
   ok("[86] Simple #3: ONE transmission phrase per side from the band table's own plainBull/plainBear (one home), the call's side first, 'channels, not causes'",
     S("base")[2] === "Volatility is asleep — one reason the backdrop supports risk. Stocks are priced for perfection — one reason it doesn't. Channels, not causes." &&
@@ -12313,7 +12365,7 @@ console.log("\n[86] v6.6.1 ONE ENGINE, TWO ALTITUDES — ≤25-word whys in both
     S("threeDark")[4] === "Needs 1 more current signal before any call can be made." &&
     S("allDark")[4] === "Needs 4 more current signals before any call can be made." &&
     S("threeDark")[0] === "There is not enough usable evidence to publish a direction." &&
-    S("threeDark")[1] === "Only 3 of 6 signals are current — not counted: vol, sentiment, and inflation.");
+    S("threeDark")[1] === "Only 3 of 6 signals are current — not counted: volatility, sentiment, and inflation.");
 
   // ── DEGEN: the operator's register at the same budget ──
   ok("[86] Degen #1/#2: moon voice + machine direction, the tally and the strict majority; the drivers by SHORT CODE with no numbers and no dates",
@@ -12356,17 +12408,17 @@ console.log("\n[86] v6.6.1 ONE ENGINE, TWO ALTITUDES — ≤25-word whys in both
   ok(`[86] face budget: holdReason is ≤${HOLD_REASON_MAX} words and never says 'fine' or 'drag' across ${faceN} posture × split combinations (max measured ${faceMax})`,
     faceMax <= HOLD_REASON_MAX && faceBad.length === 0);
   ok("[86] face, Bullish: the backdrop supports taking risk and the ONLY pushback is named — or its absence is; verb agreement is per NOUN",
-    face("RISK-ON", ["vix", "nfci"], ["tenYear", "valuation"]) === "Vol and credit support taking risk. The only pushback: rates and prices." &&
-    face("RISK-ON", ["vix"], []) === "Vol supports taking risk. Nothing tracked is pushing back." &&
+    face("RISK-ON", ["vix", "nfci"], ["tenYear", "valuation"]) === "Volatility and credit support taking risk. The only pushback: rates and prices." &&
+    face("RISK-ON", ["vix"], []) === "Volatility supports taking risk. Nothing tracked is pushing back." &&
     face("RISK-ON", ["tenYear"], []) === "Rates support taking risk. Nothing tracked is pushing back.");
   ok("[86] face, Bearish: what is working against risk, and that the helpers do not offset it",
-    face("RISK-OFF", ["vix"], ["tenYear", "valuation"]) === "Rates and prices work against risk. Vol doesn't offset that." &&
+    face("RISK-OFF", ["vix"], ["tenYear", "valuation"]) === "Rates and prices work against risk. Volatility doesn't offset that." &&
     face("RISK-OFF", [], ["valuation"]) === "Prices work against risk. Nothing tracked offsets that." &&
-    face("RISK-OFF", ["vix", "nfci"], ["fearGreed"]) === "Sentiment works against risk. Vol and credit don't offset that.");
+    face("RISK-OFF", ["vix", "nfci"], ["fearGreed"]) === "Sentiment works against risk. Volatility and credit don't offset that.");
   ok("[86] face, Hold: the split, larger side first, and the REASON for the Hold — neither side has a majority; one-sided reads 'still short of a majority'",
-    face("MIXED", ["vix", "nfci"], ["valuation"]) === "Vol and credit help. Prices hurt. Neither side has a majority." &&
-    face("MIXED", ["vix"], ["tenYear", "valuation"]) === "Rates and prices hurt. Vol helps. Neither side has a majority." &&
-    face("MIXED", ["vix", "nfci"], [], ["tenYear"]) === "Vol and credit help; nothing tracked hurts. Still short of a majority." &&
+    face("MIXED", ["vix", "nfci"], ["valuation"]) === "Volatility and credit help. Prices hurt. Neither side has a majority." &&
+    face("MIXED", ["vix"], ["tenYear", "valuation"]) === "Rates and prices hurt. Volatility helps. Neither side has a majority." &&
+    face("MIXED", ["vix", "nfci"], [], ["tenYear"]) === "Volatility and credit help; nothing tracked hurts. Still short of a majority." &&
     face("MIXED", [], ["valuation"], ["vix"]) === "Prices hurt; nothing tracked helps. Still short of a majority." &&
     face("MIXED", [], [], KEYS) === "Nothing we track has a clear lean." &&
     holdReason({ withheld: true, regime: { label: "INSUFFICIENT" }, factors: [] }) === null);

@@ -33,7 +33,7 @@ import StickyNav from "./sections/StickyNav.jsx"; // task 9.2: viewport-tracked 
 import MacroStrip from "./sections/MacroStrip.jsx"; // task 3.1: presentation only
 import SignalQuality from "./sections/SignalQuality.jsx"; // task 3.2: presentation only
 import WhatChanged from "./sections/WhatChanged.jsx"; // task 3.3: presentation only
-import { liveReadCaption, publicMarketClock, publicMarketClockLine, simpleCallLabel } from "./publicCopy.js";
+import { publicDashboardUrl, liveReadCaption, publicMarketClock, publicMarketClockLine, simpleCallLabel } from "./publicCopy.js";
 import UndoToast, { useUndoToast } from "./primitives/UndoToast.jsx"; // v6.5.5: the toast stack, one home
 import SpyTapeBadge from "./primitives/SpyTapeBadge.jsx"; // v6.5.5: TODAY/LAST SPY (Degen only; the call site gates it)
 import { MacroFlipBanner, PanicOverrideBanner } from "./sections/CallBanners.jsx"; // v6.5.5: presentation only; the banner ladder stays here
@@ -440,7 +440,7 @@ export default function Dashboard({ publicView = false } = {}) {
   // A failed or cancelled write reverts to the idle label immediately (<300ms) with NO error
   // toast — the user cancelled or the browser refused; nagging adds nothing.
   const handleShare=()=>{
-    const p=navigator.clipboard?.writeText(window.location.href);
+    const p=navigator.clipboard?.writeText(publicDashboardUrl(window.location.href));
     if(!p){return;} // no clipboard API — claim nothing
     p.then(()=>{setCopied(true);setTimeout(()=>setCopied(false),2000);})
      .catch(()=>{setCopied(false);});
