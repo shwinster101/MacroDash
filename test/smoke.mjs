@@ -31,7 +31,7 @@ import { validateBook, validateBoard, validatePos, conflictCheck, authMode, lock
 import {
   validateStreetPacket, deriveStreetMetrics, deriveAutomaticComposite, renormalizeComposite,
   buildGateReceipt, rewardRiskFloor, attestGateReceipt, evaluationQuote, STREET_GAP_MIN_PCT,
-  TT_ANALYSIS_SCHEMA, TT_ENGINE_VERSION,
+  TT_ANALYSIS_SCHEMA, TT_ENGINE_VERSION, matchStreetSource, STREET_SOURCES,
 } from "../functions/lib/tt-v2.js";
 import { deriveTechnicals } from "../functions/lib/tt-technicals.js";
 import { extractSecFacts, mergeFactsRecord, candleSeriesFault } from "../functions/lib/tt-facts.js";
@@ -39,6 +39,8 @@ import { streetRevision, onRequestPut as putStreetPacket, onRequestGet as getStr
   onRequestDelete as deleteStreetPacket } from "../functions/api/street.js";
 import { onRequestGet as getFramework, onRequestPut as putFramework } from "../functions/api/framework.js";
 import { mergeOcrExtractions, onRequestPost as postStreetOcr } from "../functions/api/street/ocr.js";
+import { nasdaqStreetDraft as mapNasdaqStreet, blankNasdaqDraft, NASDAQ_TARGET_PROVIDER } from "../functions/lib/nasdaqStreet.js";
+import { nasdaqDraftFor, onRequestGet as getNasdaqDraft } from "../functions/api/street/nasdaq-draft.js";
 import { onRequestGet as getTickerFacts, onRequestPost as postTickerFacts, nasdaqCandlesFact, quoteFact, tiingoCandlesFact, tiingoDaily } from "../functions/api/ticker-facts.js";
 import { onRequestPost as postTickerAnalysis, riskTierForBookEntry, qualitativeRubric } from "../functions/api/ticker-analysis.js";
 import { plausible, applyBands, quorum, QUORUM_FIELDS, QUORUM_MIN, marketSession, BANDS,
@@ -7854,7 +7856,7 @@ ok("street schema: source/as-of/currency and a published average are server-requ
   !validateStreetPacket({ ...NVDA_STREET, analystTarget: { ...NVDA_STREET.analystTarget, sourceUrl: "", average: null } }, { now: V2_NOW }).ok);
 ok("street schema: EPS basis cannot be silently defaulted to diluted GAAP",
   !validateStreetPacket({ ...NVDA_STREET, estimates: { ...NVDA_STREET.estimates, epsBasis: undefined } }, { now: V2_NOW }).ok);
-ok("street schema: provider names and source domains are fixed to SA and TipRanks",
+ok("street schema: SA estimates stay locked; analystTarget host must match the named provider",
   (() => { const bad = JSON.parse(JSON.stringify(NVDA_STREET)); bad.estimates.provider = "Other"; bad.analystTarget.sourceUrl = "https://example.com/target";
     const e = validateStreetPacket(bad, { now: V2_NOW }).errors.join(" "); return /Seeking Alpha/.test(e) && /tipranks\.com/.test(e); })());
 ok("street schema: a future confirmation timestamp cannot self-attest a later review",
@@ -7869,6 +7871,114 @@ ok("street schema: a supplied analyst count must be positive, while an unknown c
     analystCount: undefined, ratings: {} } }, { now: V2_NOW }).ok);
 ok("street schema: rolling target horizon is exactly 12 months, never joined to a fiscal rung",
   !validateStreetPacket({ ...NVDA_STREET, analystTarget: { ...NVDA_STREET.analystTarget, horizonMonths: 24 } }, { now: V2_NOW }).ok);
+
+const NVDA_NASDAQ_STREET = {
+  ...NVDA_STREET,
+  analystTarget: {
+    provider: "Nasdaq (Zacks consensus)",
+    sourceUrl: "https://www.nasdaq.com/market-activity/stocks/nvda",
+    asOf: "2026-08-15", currency: "USD",
+    average: 215.5, low: 140, high: 320, analystCount: 48,
+    ratings: { buy: 40, hold: 6, sell: 2 },
+    horizonMonths: 12,
+  },
+};
+const nasdaqChecked = validateStreetPacket(NVDA_NASDAQ_STREET, { now: V2_NOW });
+ok("v6.6.1 street: a SA + Nasdaq (Zacks consensus) packet validates under its own name",
+  nasdaqChecked.ok && nasdaqChecked.errors.length === 0 &&
+  nasdaqChecked.value.analystTarget.provider === "Nasdaq (Zacks consensus)" &&
+  nasdaqChecked.value.analystTarget.lookbackMonths == null);
+ok("v6.6.1 street: the alias 'nasdaq' canonicalizes; TipRanks' lookback 3 is not invented",
+  (() => {
+    const aliased = JSON.parse(JSON.stringify(NVDA_NASDAQ_STREET));
+    aliased.analystTarget.provider = "nasdaq";
+    delete aliased.analystTarget.lookbackMonths;
+    const c = validateStreetPacket(aliased, { now: V2_NOW });
+    const tip = JSON.parse(JSON.stringify(NVDA_STREET));
+    delete tip.analystTarget.lookbackMonths;
+    const t = validateStreetPacket(tip, { now: V2_NOW });
+    return c.ok && c.value.analystTarget.provider === "Nasdaq (Zacks consensus)" &&
+      c.value.analystTarget.lookbackMonths == null &&
+      t.ok && t.value.analystTarget.lookbackMonths === 3;
+  })());
+ok("v6.6.1 street: Nasdaq numbers on a tipranks.com host fail closed (no resticker)",
+  (() => {
+    const bad = JSON.parse(JSON.stringify(NVDA_NASDAQ_STREET));
+    bad.analystTarget.sourceUrl = "https://www.tipranks.com/stocks/nvda";
+    const e = validateStreetPacket(bad, { now: V2_NOW }).errors.join(" ");
+    return !validateStreetPacket(bad, { now: V2_NOW }).ok && /nasdaq\.com/.test(e) && !/must be TipRanks$/.test(e);
+  })());
+ok("v6.6.1 street: a draft with confirmedAt null cannot be stored, even when the Nasdaq target is complete",
+  !validateStreetPacket({ ...NVDA_NASDAQ_STREET, confirmedAt: null }, { now: V2_NOW }).ok);
+ok("v6.6.1 gates: Nasdaq receipts speak Nasdaq, never TipRanks",
+  (() => {
+    const rr = buildGateReceipt({
+      street: NVDA_NASDAQ_STREET, facts: {
+        schema: "tt-facts-v1", symbol: "NVDA",
+        fields: {
+          quote: { value: 180, status: "LIVE", currency: "USD", provider: "Finnhub",
+            observedAt: "2026-08-14T20:00:00.000Z", retrievedAt: "2026-08-15T17:01:00.000Z" },
+          candles: { value: [{ date: "2026-08-14", open: 179, high: 182, low: 178, close: 180, volume: 1000 }],
+            status: "LIVE", provider: "Nasdaq", observedAt: "2026-08-14" },
+        },
+      },
+      readout: { regime: { verdict: "NEUTRAL", actionability: "FULL" }, health: { can_gate: true },
+        macro_flip: { evaluable: true, tripped: false } },
+      composite: { status: "PASS", score: 7, reason: "7.0/10 across 4 available pillars", used: [], missing: [] },
+      qualitative: { status: "PASS", score: 8, reason: "ok", citations: ["https://www.sec.gov/fixture"] },
+      technicals: { status: "OK", rewardRisk: 3, evidence: ["ATR stop"] },
+      now: V2_NOW,
+    });
+    const gap = rr.gates.find((g) => g.id === "street_gap");
+    const fresh = rr.gates.find((g) => g.id === "licensed_freshness");
+    return gap && gap.status === "PASS" && /Nasdaq \(Zacks consensus\) published average/.test(gap.reason) &&
+      !/TipRanks/.test(gap.reason) && !/TipRanks/.test(fresh.reason);
+  })());
+ok("v6.6.1 mapper: documented consensusPriceTarget / $ strings / ratings map; lookback stays null",
+  (() => {
+    const { draft, warnings } = mapNasdaqStreet({
+      data: {
+        priceTarget: {
+          consensusPriceTarget: "$215.50", lowPriceTarget: 140, highPriceTarget: 250, numOfAnalysts: 42,
+        },
+        consensusOverview: { buyCount: 35, holdCount: 5, sellCount: 2 },
+      },
+    }, { symbol: "NVDA", asOf: "2026-09-16" });
+    return draft.confirmedAt === null &&
+      draft.analystTarget.provider === NASDAQ_TARGET_PROVIDER &&
+      draft.analystTarget.average === 215.5 &&
+      draft.analystTarget.low === 140 &&
+      draft.analystTarget.high === 250 &&
+      draft.analystTarget.analystCount === 42 &&
+      draft.analystTarget.ratings.buy === 35 &&
+      draft.analystTarget.lookbackMonths == null &&
+      draft.analystTarget.horizonMonths === 12 &&
+      /nasdaq\.com/.test(draft.analystTarget.sourceUrl) &&
+      !/TipRanks/.test(JSON.stringify(draft));
+  })());
+ok("v6.6.1 mapper: a scalar priceTarget (legacy Nasdaq shape) is the published average, not a container to invent from",
+  mapNasdaqStreet({ data: { priceTarget: 199.25 } }, { symbol: "AAPL", asOf: "2026-09-16" }).draft.analystTarget.average === 199.25);
+ok("v6.6.1 mapper: low/high without a consensus average are NOT averaged into a fake mean",
+  (() => {
+    const { draft, warnings } = mapNasdaqStreet({
+      data: { priceTarget: { lowPriceTarget: 100, highPriceTarget: 200 } },
+    }, { symbol: "X", asOf: "2026-09-16" });
+    return draft.analystTarget.average == null && draft.analystTarget.low === 100 &&
+      draft.analystTarget.high === 200 && /not averaged/i.test(warnings.join(" "));
+  })());
+ok("v6.6.1 mapper: empty and malformed payloads fail closed — empty fields plus a warning, never a guessed number",
+  (() => {
+    const empty = mapNasdaqStreet({}, { symbol: "NVDA", asOf: "2026-09-16" });
+    const junk = mapNasdaqStreet({ data: { hello: "world" } }, { symbol: "NVDA", asOf: "2026-09-16" });
+    return empty.draft.analystTarget.average == null && empty.warnings.length > 0 &&
+      junk.draft.analystTarget.average == null && /did not match a known/.test(junk.warnings.join(" ")) &&
+      empty.draft.confirmedAt === null && junk.draft.analystTarget.lookbackMonths == null;
+  })());
+ok("v6.6.1 allowlist: STREET_SOURCES names Nasdaq under nasdaq.com and TipRanks under tipranks.com",
+  matchStreetSource("analystTarget", "Nasdaq (Zacks consensus)").host === "nasdaq.com" &&
+  matchStreetSource("analystTarget", "tipranks").canonical === "TipRanks" &&
+  matchStreetSource("estimates", "Seeking Alpha").host === "seekingalpha.com" &&
+  STREET_SOURCES.analystTarget.length === 2);
 
 class V2MemoryKv {
   constructor() { this.values = new Map(); this.puts = []; }
@@ -7970,6 +8080,64 @@ const noAiOcrBody = await noAiOcrResponse.json();
 ok("OCR API: missing Workers AI returns a review draft and never touches KV",
   noAiOcrResponse.status === 503 && noAiOcrBody.requires_confirmation === true &&
   noAiOcrBody.draft.analystTarget.provider === "TipRanks" && ocrKv.puts.length === 0);
+
+const nasdaqKv = new V2MemoryKv();
+nasdaqKv.values.set("tt:street:NVDA:v1", JSON.stringify(NVDA_STREET));
+const nasdaqPutsBefore = nasdaqKv.puts.length;
+const nasdaqFetchCalls = [];
+const nasdaqOkFetch = async (url, init = {}) => {
+  nasdaqFetchCalls.push({ url: String(url), init });
+  return {
+    ok: true,
+    json: async () => ({
+      data: {
+        priceTarget: { consensusPriceTarget: 215.5, lowPriceTarget: 140, highPriceTarget: 250, numOfAnalysts: 48 },
+        consensusOverview: { buyCount: 40, holdCount: 6, sellCount: 2 },
+      },
+    }),
+  };
+};
+const nasdaqDraftEnv = { ACCESS_DEV_BYPASS: "1", PULSE_CACHE: nasdaqKv };
+const nasdaqDraftRes = await getNasdaqDraft({
+  request: new Request("https://fixture.test/api/street/nasdaq-draft?sym=NVDA"),
+  env: nasdaqDraftEnv, fetchImpl: nasdaqOkFetch,
+});
+const nasdaqDraftBody = await nasdaqDraftRes.json();
+ok("v6.6.1 nasdaq-draft: PIN GET returns a Nasdaq-labelled DRAFT, keeps SA estimates, and never writes KV",
+  nasdaqDraftRes.status === 200 && nasdaqDraftBody.requires_confirmation === true &&
+  nasdaqDraftBody.persisted === false && nasdaqDraftBody.draft.confirmedAt === null &&
+  nasdaqDraftBody.draft.analystTarget.provider === "Nasdaq (Zacks consensus)" &&
+  nasdaqDraftBody.draft.analystTarget.average === 215.5 &&
+  nasdaqDraftBody.draft.analystTarget.lookbackMonths == null &&
+  nasdaqDraftBody.draft.estimates.provider === "Seeking Alpha" &&
+  nasdaqDraftBody.draft.estimates.periods[0].revenueB === 393.93 &&
+  nasdaqKv.puts.length === nasdaqPutsBefore &&
+  nasdaqFetchCalls[0].url.includes("/api/analyst/NVDA/targetprice") &&
+  nasdaqFetchCalls[0].init.headers.Origin === "https://www.nasdaq.com");
+const nasdaqCross = await getNasdaqDraft({
+  request: new Request("https://fixture.test/api/street/nasdaq-draft?sym=NVDA", {
+    headers: { Origin: "https://evil.test" },
+  }),
+  env: nasdaqDraftEnv, fetchImpl: async () => { throw new Error("cross-origin must not fetch"); },
+});
+ok("v6.6.1 nasdaq-draft: cross-origin fails closed before any fetch or KV write",
+  nasdaqCross.status === 403 && nasdaqKv.puts.length === nasdaqPutsBefore);
+const nasdaqDenied = await nasdaqDraftFor("NVDA", {
+  env: { ACCESS_DEV_BYPASS: "1", PULSE_CACHE: nasdaqKv },
+  now: V2_NOW,
+  fetchImpl: async () => ({ ok: false, status: 403, json: async () => ({}) }),
+});
+ok("v6.6.1 nasdaq-draft: a 403 still returns a Nasdaq-labelled empty draft and never PUTs",
+  nasdaqDenied.draft.analystTarget.provider === "Nasdaq (Zacks consensus)" &&
+  nasdaqDenied.draft.analystTarget.average == null &&
+  nasdaqDenied.draft.confirmedAt === null &&
+  nasdaqDenied.requires_confirmation === true &&
+  /HTTP 403/.test(nasdaqDenied.warnings.join(" ")) &&
+  nasdaqKv.puts.length === nasdaqPutsBefore);
+ok("v6.6.1 nasdaq-draft: the route source never writes KV",
+  (() => { const src = readSrc("../functions/api/street/nasdaq-draft.js");
+    return src.includes("requires_confirmation: true") && src.includes("persisted: false") &&
+      !src.includes(".put(") && src.includes("PULSE_CACHE"); })());
 const factsKv = new V2MemoryKv();
 const factsEnv = { ACCESS_DEV_BYPASS: "1", PULSE_CACHE: factsKv };
 const mutatingGetResponse = await getTickerFacts({
@@ -8058,6 +8226,9 @@ ok("binary boundary is report-only: Aug 26 is CLEAR at 11d, then SOON at exactly
 const eligibleReceipt = buildGateReceipt({ street: NVDA_STREET, facts: nvdaFacts, readout: fullReadout, composite: firstComposite, qualitative: qPass, technicals: techPass, now: V2_NOW });
 ok("fully sourced fixture becomes ELIGIBLE without any position/exposure input",
   eligibleReceipt.eligible === true && eligibleReceipt.status === "ELIGIBLE" && !eligibleReceipt.gates.some((g) => /position|cap/i.test(g.id + g.reason)));
+ok("v6.6.1 gates: a TipRanks packet still says TipRanks — the allowlist is additive, not a resticker",
+  /TipRanks published average is /.test(eligibleReceipt.gates.find((g) => g.id === "street_gap").reason) &&
+  /SA estimates and TipRanks target are current/.test(eligibleReceipt.gates.find((g) => g.id === "licensed_freshness").reason));
 ok("receipt compatibility: changed quote/advisory semantics require the v2 schema and v2.2 engine",
   eligibleReceipt.schema === TT_ANALYSIS_SCHEMA && TT_ANALYSIS_SCHEMA === "tt-analysis-v2" &&
   eligibleReceipt.engineVersion === TT_ENGINE_VERSION && TT_ENGINE_VERSION === "tt-gates-v2.2.0" &&
@@ -8351,8 +8522,9 @@ ok("admin v2: screenshots are reviewed and the OCR route has no persistence bind
   adminSrc.includes('/api/street/ocr') && adminSrc.includes('✔ CONFIRM &amp; SAVE') &&
   adminSrc.includes('v2Json("/api/street",{method:"PUT"') && !ocrRouteSrc.includes("PULSE_CACHE") &&
   ocrRouteSrc.includes("requires_confirmation: true"));
-ok("admin v2: additive street receipt uses TipRanks published average and cannot mutate canonical rank state",
-  adminSrc.includes("function buildV2Rows()") && adminSrc.includes('basis:"TipRanks published average"') &&
+ok("admin v2: additive street receipt uses the packet's own provider for the published average and cannot mutate canonical rank state",
+  adminSrc.includes("function buildV2Rows()") &&
+  adminSrc.includes('basis:(street.analystTarget.provider||"street")+" published average"') &&
   adminSrc.includes("function renderStreetEligibility()") && adminSrc.includes("diagnostic, not canonical score") &&
   !/function buildV2Rows\(\)[\s\S]{0,2600}CAP_PCT/.test(adminSrc) &&
   (() => { const streetFns=liftFns(adminSrc,["buildV2Rows","renderStreetEligibility"]); return !/(UPSIDE_ROWS|AGREE_PICK|LAST_RANK)\s*=/.test(streetFns); })());
@@ -8372,9 +8544,15 @@ ok("admin v2: legacy PT comparison consumes one explicit value and never average
   !/const vals=typeof pcRow\.average[\s\S]{0,300}reduce/.test(adminSrc));
 ok("admin v2: unknown/thin analyst coverage is visible rather than normal-confidence silence",
   adminSrc.includes("analyst count unknown") && adminSrc.includes("thin coverage"));
-ok("admin v2: SA and TipRanks keep independent as-ofs and screenshot EPS is not relabelled GAAP",
+ok("admin v2: SA and the street target keep independent as-ofs and screenshot EPS is not relabelled GAAP",
   adminSrc.includes('id="stSaAsOf"') && adminSrc.includes('id="stTrAsOf"') &&
   adminSrc.includes('epsBasis:"provider-consensus"') && !adminSrc.includes('epsBasis:"diluted"'));
+ok("admin v2: Nasdaq draft is a button on the STREET form, confirm derives provider from the source URL, and TipRanks is not hardcoded onto confirm",
+  adminSrc.includes('/api/street/nasdaq-draft?sym=') && adminSrc.includes("◉ NASDAQ DRAFT") &&
+  adminSrc.includes("function streetTargetFromUrl") &&
+  /function readStreetPacket\(\)[\s\S]{0,900}streetTargetFromUrl/.test(adminSrc) &&
+  !/function readStreetPacket\(\)[\s\S]{0,900}provider:"TipRanks"/.test(adminSrc) &&
+  adminSrc.includes('id="stLookback"'));
 ok("docs: the current plan names /admin.html, /readout.json, KV separation, and the two manual inputs",
   (() => { const d = readSrc("../ticker-terminal/TICKER_TERMINAL_LOGIC_REDESIGN_PLAN_2026-08-15.md");
     return d.includes("/admin.html") && d.includes("/readout.json") && d.includes("Seeking Alpha") &&
