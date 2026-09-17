@@ -219,7 +219,8 @@ at 20 of 25, and the `"Information"` cap message parsed as *exhausted*, never re
 [x] Docs — ALPHAVANTAGE_KEY matrix row + data-sources bullet + v6.6.2 entry
 [x] OWNER — ALPHAVANTAGE_KEY stored on Pages Production 2026-09-17 (TIINGO/FINNHUB/FRED/
     REFRESH_TOKEN/SPOTLIGHT_ENABLED confirmed still present in the same pass)
-[ ] SHIP — v6.6.2 is NOT deployed, so the stored key is INERT (measured, §6.6). No PR open.
+[x] SHIP — PR #45 opened, CI green, squash-merged as `9a4aa6c`; route MEASURED live in
+    production at 05:57:23Z (§6.7). The stored key is no longer inert.
 [ ] OWNER — one production ticker refresh → read `candles.provider` (Move 2's live check; PIN-gated)
 [x] PR #44 — failed `test` job re-queued 04:51Z → attempt 2 SUCCESS (the race diagnosis held);
     squash-merged to `main` as `519ecd8` on the owner's instruction; this branch rebased onto it
@@ -338,3 +339,36 @@ rather than asserted, because it does not need resolving here.)
 does not exist in the deployed terminal either. There is no state in which the stored key
 produces a wrong answer; the honest states are "button absent" now and "warning names the
 key" only if the secret were missing after the ship.
+
+---
+
+## 6.7 SHIPPED — v6.6.2 on main, route measured live (2026-09-17)
+
+- PR **#45** opened 05:45Z against the post-#44 main. Checks: GitHub `test` **success**
+  (05:45:26 → 05:49:18Z, started 01:45 ET — far outside the midnight window this release
+  exists to fix), Cloudflare Pages preview **success**, `mergeable_state: clean`, no review
+  threads, no Claude Approvals check in this repo. Local gates re-run on the exact head:
+  **2415 / 309 / 344 / audit clean, exit 0**.
+- Squash-merged with the head SHA pinned → **`9a4aa6c`** on `main`.
+- **The §6.6 probe, re-run after deploy — this is the correction to that section**, which
+  said the route was absent and the key inert. Both were true at the time and are now not:
+
+  ```
+  GET https://macrodash.pages.dev/api/street/av-draft
+  → 405 {"error":"the Alpha Vantage draft spends a daily quota; POST {symbol} to /api/street/av-draft"}
+  ```
+
+  That is the route's own `onRequestGet`, verbatim, from production. It answers with no PIN
+  because the 405 fires before any auth check, by design, so a prefetch cannot spend quota —
+  which makes it the cheapest possible deploy check for this route and needs no credential.
+  Deploy was live within ~7 minutes of the merge.
+- The Pages deployment that added the route is the same one that picked up the stored
+  `ALPHAVANTAGE_KEY`, so the redeploy question §6.6 left open never needed answering.
+- **Remaining, and it is one press:** the first keyed `POST` from the Terminal is still the
+  true schema check for `EARNINGS_ESTIMATES`. Until then the parser is fixture-tested only
+  (`www.alphavantage.co` is 403 from this build environment). The honest failure modes are
+  all named in the warnings line: unset key, budget reached, quota exhausted, unmatched shape.
+- PR activity subscription closed; the merge check-in trigger deleted rather than left armed.
+
+**The palette is complete.** Move 2 (Tiingo candles, v6.6.0) · Move 1a (Nasdaq street,
+v6.6.1) · Move 1b (Alpha Vantage estimates, v6.6.2) shipped; Move 3 ruled leave-alone.
