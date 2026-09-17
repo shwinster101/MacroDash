@@ -9,7 +9,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
 <!-- AUDIT: kept in sync with package.json by test/smoke.mjs. admin.html is a Vite
      public/ passthrough, so it cannot receive __APP_VERSION__ — the guard is the fix. -->
-<title>TT TICKER TERMINAL v6.6.3</title>
+<title>TT TICKER TERMINAL v6.7.0</title>
 <style>
   :root{
     --bg:#05070a; --panel:#0a0f16; --panel2:#0d141d; --line:#16202c;
@@ -425,6 +425,47 @@
   @keyframes blink{50%{opacity:0}}
   .empty{color:var(--dim);padding:10px 0}
   mark{background:rgba(255,180,84,.25);color:var(--amber)}
+  /* ── FEAT-TT-LADDER (v6.7): the full two-year ladder table ── */
+  .card.wide{width:min(1180px,100%)}
+  .ld-head{display:flex;flex-wrap:wrap;gap:6px;align-items:center;margin-bottom:6px}
+  .ld-tbl{width:100%;border-collapse:collapse;font-size:11px}
+  .ld-tbl th{text-align:left;color:var(--dim);font-weight:700;font-size:9.5px;letter-spacing:.08em;
+    border-bottom:1px solid var(--line);padding:5px 6px;position:sticky;top:0;background:#0a1017;z-index:1}
+  .ld-tbl td{padding:5px 6px;border-bottom:1px solid rgba(255,255,255,.04);vertical-align:top}
+  .ld-tbl th.r,.ld-tbl td.r{text-align:right;white-space:nowrap}
+  .ld-tbl tr.ld-elig td{background:rgba(31,122,85,.10)}
+  .ld-sort{background:none;border:0;color:var(--dim);font:inherit;font-size:9.5px;letter-spacing:.08em;
+    font-weight:700;cursor:pointer;padding:2px 0;min-height:24px}
+  .ld-sort.on{color:var(--green)}
+  .ld-sort:focus-visible{outline:2px solid var(--focus);outline-offset:2px}
+  /* v3.42's thumb-target rule — a sort header a phone cannot hit is the v3.81 defect
+     (a control that renders its state and offers no way to change it). */
+  @media(max-width:480px){.ld-sort{min-height:40px}}
+  /* v6.7 — the "live PDF" is the BROWSER'S own print-to-PDF over the open ladder. No
+     library, no second renderer that could disagree with the screen, and the document
+     is built from the same in-memory read the table just rendered. The theme vars are
+     redefined for print so inline `var(--green)` resolves to ink that survives paper;
+     overriding colour outright would flatten the one signal the % columns carry. */
+  @media print{
+    body{background:#fff!important}
+    .wrap{display:none!important}
+    #overlay.on{position:static!important;display:block!important;background:#fff!important;
+      backdrop-filter:none!important;padding:0!important;overflow:visible!important}
+    #overlay .card{width:100%!important;max-width:none!important;border:0!important;
+      background:#fff!important;box-shadow:none!important;color:#000;
+      --green:#0a6b3d;--red:#a41d1d;--amber:#8a5a00;--cyan:#0b5f70;
+      --dim:#555;--slate:#333;--fg:#000;--line:#bbb}
+    #overlay .card .top{background:#fff!important;border-bottom:1px solid #000!important}
+    #overlay .card .top .t{color:#000!important}
+    #overlay .card .x,#overlay .card .btns,.ld-sort{display:none!important}
+    .ld-tbl th{position:static!important;background:#fff!important;border-bottom:1px solid #000!important}
+    .ld-tbl td{border-bottom:1px solid #ddd!important}
+    .ld-tbl tr.ld-elig td{background:#eef7f1!important;
+      -webkit-print-color-adjust:exact;print-color-adjust:exact}
+    .tblx{overflow:visible!important}
+    .ld-tbl{page-break-inside:auto}
+    .ld-tbl tr{page-break-inside:avoid}
+  }
 </style>
 </head>
 <body>
@@ -466,7 +507,7 @@
          verdict and every gate are computed upstream and this panel changes nothing. -->
     <div id="macroEvidence" role="region" aria-label="Why macro — readout evidence"></div>
     <div id="headInfo" style="display:none">
-      <div class="brand">FINANCE&nbsp;BRO.AI // TT&nbsp;TICKER&nbsp;TERMINAL <small>v6.6.3 · the daily contract</small></div>
+      <div class="brand">FINANCE&nbsp;BRO.AI // TT&nbsp;TICKER&nbsp;TERMINAL <small>v6.7.0 · the daily contract</small></div>
       <div class="statusline">
         <span>BOOK: <b id="bookStamp">loading…</b></span>
         <span>AUTH: <b id="sessState">…</b></span>
@@ -486,6 +527,7 @@
       <div class="toolbar">
         <button class="act" onclick="openAdd()">+ ADD TICKER</button>
         <button class="act" onclick="openStreetImport('')">⇧ STREET INPUTS</button>
+        <button class="act" onclick="openLadder()">▦ FULL LADDER</button>
         <button class="act" onclick="openSession()">◧ SESSION</button>
         <button class="act warn" onclick="reloadBook()">⟲ RELOAD</button>
         <!-- v3.29: PIN joins the manage row. It is a once-per-30-days action and it was the
@@ -894,6 +936,13 @@ async function loadBook(){
 function honourArrival(){
   if(ARRIVAL_DONE)return;
   ARRIVAL_DONE=true;
+  /* v6.7: the ladder arrival runs HERE, not at parse time — the same v5.6.9 rule that
+     moved honourArrival to the end of the boot chain. A ladder built off an empty BOOK
+     renders "nothing qualifies", which is a claim about the book from code that has not
+     read it yet (the v5.6.4 "not read is not not-there" class). */
+  if(LADDER_ARRIVED){LADDER_ARRIVED=false;
+    try{history.replaceState(null,"","#next");}catch(_e){}
+    openLadder();return;}
   const sym=ARRIVED;
   if(!sym||sym==="BOARD")return;
   const x=find(sym);
@@ -2018,6 +2067,10 @@ function parseTtRoute(){
   if(!raw||raw.toLowerCase()==="next")return{view:"next",sub:"all",sym:null};
   const bits=raw.split("/").filter(Boolean),head=(bits[0]||"").toLowerCase();
   if(head==="fund")return{view:"fund",sub:"all",sym:null};
+  /* v6.7 FEAT-TT-LADDER: #ladder is a door, not a view — it resolves to NEXT $ and
+     carries a one-shot flag the boot chain honours. Without this case the pre-v5.6
+     compat branch below would read it as a ticker named LADDER. */
+  if(head==="ladder")return{view:"next",sub:"all",sym:null,ladder:true};
   if(head==="book"){
     const tail=(bits[1]||"").toUpperCase();
     return{view:"book",sub:tail==="MAG7"?"mag7":"all",sym:tail&&tail!=="MAG7"?tail:null};
@@ -2031,6 +2084,7 @@ let TAB=TT_ROUTE.sym||"BOARD";
    route opens its thesis; a book name without a payload opens its card after data loads. */
 let ARRIVED=TT_ROUTE.sym||"";
 let ARRIVAL_DONE=false;
+let LADDER_ARRIVED=TT_ROUTE.ladder===true;   // v6.7: #ladder at boot, honoured after data lands
 const DD_STATES=["green","amber","red","unknown"];
 /* Per-payload cap, raised 8KB->15KB (v3.63), 45KB (v3.70), 100KB (v4.7.0 — owner call
    2026-08-22: "raise server cap to 100,000", expressed in the KB idiom and rounded UP so
@@ -2206,7 +2260,16 @@ function applyRoute(){
   document.getElementById("bookMagButton").classList.toggle("on",TT_ROUTE.sub==="mag7"&&!hasDeep);
   if(hasDeep){TAB=TT_ROUTE.sym;renderDeepDive(TAB);}
 }
-window.addEventListener("hashchange",()=>{TT_ROUTE=parseTtRoute();TAB=TT_ROUTE.sym||"BOARD";applyRoute();});
+/* v6.7 FEAT-TT-LADDER — #ladder is a bookmarkable DOOR, deliberately not a fourth view:
+   NEXT $ and BOOK remain the only persistent modes (v5.7.0), so the hash resolves to
+   NEXT $ and opens the ladder over it, then replaces itself. applyRoute(), parseTtRoute()
+   and the mode buttons are untouched — they never learn a state they have no case for. */
+function ladderHashCheck(){
+  if(!/^#ladder\/?$/i.test(location.hash||""))return false;
+  try{history.replaceState(null,"","#next");}catch(_e){location.hash="#next";}
+  TT_ROUTE=parseTtRoute();TAB="BOARD";applyRoute();openLadder();return true;
+}
+window.addEventListener("hashchange",()=>{if(ladderHashCheck())return;TT_ROUTE=parseTtRoute();TAB=TT_ROUTE.sym||"BOARD";applyRoute();});
 window.addEventListener("popstate",()=>{TT_ROUTE=parseTtRoute();TAB=TT_ROUTE.sym||"BOARD";applyRoute();});
 function ddAgeChip(updated){
   const d=ageDays(updated);
@@ -4847,6 +4910,56 @@ async function loadScoreIndex(){
      mcur   boolean      minted under the CURRENT methodology (server relabel for records,
                          explicit version compare for index entries; absent version = false
                          — an unverifiable card may RANK but must never light the line). */
+/* v6.7 FEAT-TT-LADDER — the per-row veto ladder, LIFTED out of renderNextDollar's closure so the
+   full-ladder table can run the SAME gate the ELIGIBLE line runs. It was a closure, so a
+   second surface wanting the gate had only two options: re-implement it (the drift defect
+   this repo keeps paying for — v3.49's 5-vs-6 denominator, v3.39's PT audit) or show no gate
+   at all. Body is VERBATIM; only the binding moved (the ptModelRows rule: one computation,
+   many altitudes). Mirrors whyNot() in functions/lib/tt-alloc.js exactly, as it always did. */
+function rowVeto(r){
+  if(!(r.upside>0))return "no gap";
+  /* v5.2 CAP-ASTERISK (owner ruling 2026-08-25, REVERSING RANKFAIR v3.36): the cap no
+     longer vetoes the pick. The weight still renders (the ** mark, red at/over cap)
+     and an over-cap pick carries an explicit asterisk chip on the green line — the
+     cap is information the owner sees, never a wall the board enforces. */
+  /* FIX-B, widened by FEAT-TT-READY (v3.50): eligibility cannot outrun the evidence —
+     the audit found 5 fresh runs against 31 never-run while the green line still lit.
+     The gate is now readiness()'s OWN blocker list rather than a second opinion about
+     the same clocks, so this line and the name's readiness bar can never disagree
+     (the ptModelRows rule: one computation, many altitudes). Cautions do NOT veto —
+     aging evidence is the owner's to weigh; missing evidence is not. */
+  if(r.rdy.blockers.length)return `evidence: ${r.rdy.blockers.join(", ")}`;
+  /* v5.0 §14.8 ACTIVATION (SCORED-only, owner ruling 2026-08-23): the quality rung
+     reads the SERVER CARD. Each non-eligible state gets ITS OWN retail-plain reason —
+     "falsifiers pending" and "unscored" are different facts, and the veto text is
+     what the owner reads. Mirrors whyNot() in functions/lib/tt-alloc.js exactly. */
+  if(!r.tt)return SCORE_INDEX===null?"score index did not load — not read, not unscored (⟲ RELOAD)":"no server card — unscored";
+  if(r.tt.status==="PROVISIONAL"){
+    /* v5.0.1: names WHICH half of §6.4.1 is missing — "unwritten" and "committed,
+       awaiting observations" are different owner actions. Mirrors whyNot() exactly. */
+    const cap=r.tt.tier||"B",tail=` — capped at ${cap} (PROVISIONAL is never eligible)`;
+    const p4=r.tt.p4;
+    if(!p4||!p4.kind)return "falsifiers pending"+tail;
+    if(p4.kind==="LEGACY_POST_HOC"||!(p4.hinges>0))return "falsifiers unwritten"+tail;
+    if(p4.hinges<3)return `falsifiers ${p4.hinges}/3 written — set incomplete`+tail;
+    if(p4.observed<p4.hinges)return `falsifiers committed, ${p4.observed}/${p4.hinges} observed — awaiting qualifying observations`+tail;
+    return "falsifiers committed this write — a later write scores them (§6.4.1)"+tail;
+  }
+  if(!r.tt.scored)return `server card ${r.tt.status||"incomplete"} — blockers on the card`;
+  if(!r.tt.mcur)return "card predates the current methodology — re-score to verify (§4.3)";
+  /* v5.1.1 — the card's OWN actionability, read at the gate. §7 computes it and §11.2
+     evalEligibility always enforced it, but this ladder never asked, so a SCORED card
+     reading BLOCKED could light green (the v3.71-follow-up shape: computed, published,
+     rendered, not READ). CAUTION passes — aging evidence is yours to weigh. An ABSENT
+     field passes: a pre-v5.1.1 index entry predates it, and failing closed there would
+     veto the whole book over a value nobody wrote. Mirrors whyNot() verbatim. */
+  if(r.tt.act==="BLOCKED")return `card actionability BLOCKED — ${r.tt.blockedOn&&r.tt.blockedOn.length
+    ?`${r.tt.blockedOn.join(", ")} cannot be read`
+    :"evidence missing on the card"} (UNKNOWN blocks, §8.1)`;
+  if(r.tt.tier==="C"||(r.tt.score!==null&&r.tt.score<5.5))return `TT ${r.tt.score!==null?r.tt.score.toFixed(1):"C"} — quality fails`;
+  if(r.rrFail)return "R/R fails its floor";
+  return null;}
+
 function cardInfo(sym){
   const rec=SCORE_CACHE[sym];
   if(rec&&rec.scorecard){const sc=rec.scorecard;
@@ -5616,49 +5729,7 @@ function renderUpsideRank(){
         return `<div style="margin-top:6px;padding:5px 8px;border:1px solid var(--amber);border-radius:6px;font-size:11px">`+
           `<span style="color:var(--amber);font-weight:700">⏸ NEXT DOLLAR: WAIT — eligibility gate failed</span> `+
           `<span class="scope">${esc(gateFail)} · the gap ranking above still stands as math; no name is ELIGIBLE until the gate reads</span></div>`;
-      const why=r=>{
-        if(!(r.upside>0))return "no gap";
-        /* v5.2 CAP-ASTERISK (owner ruling 2026-08-25, REVERSING RANKFAIR v3.36): the cap no
-           longer vetoes the pick. The weight still renders (the ** mark, red at/over cap)
-           and an over-cap pick carries an explicit asterisk chip on the green line — the
-           cap is information the owner sees, never a wall the board enforces. */
-        /* FIX-B, widened by FEAT-TT-READY (v3.50): eligibility cannot outrun the evidence —
-           the audit found 5 fresh runs against 31 never-run while the green line still lit.
-           The gate is now readiness()'s OWN blocker list rather than a second opinion about
-           the same clocks, so this line and the name's readiness bar can never disagree
-           (the ptModelRows rule: one computation, many altitudes). Cautions do NOT veto —
-           aging evidence is the owner's to weigh; missing evidence is not. */
-        if(r.rdy.blockers.length)return `evidence: ${r.rdy.blockers.join(", ")}`;
-        /* v5.0 §14.8 ACTIVATION (SCORED-only, owner ruling 2026-08-23): the quality rung
-           reads the SERVER CARD. Each non-eligible state gets ITS OWN retail-plain reason —
-           "falsifiers pending" and "unscored" are different facts, and the veto text is
-           what the owner reads. Mirrors whyNot() in functions/lib/tt-alloc.js exactly. */
-        if(!r.tt)return SCORE_INDEX===null?"score index did not load — not read, not unscored (⟲ RELOAD)":"no server card — unscored";
-        if(r.tt.status==="PROVISIONAL"){
-          /* v5.0.1: names WHICH half of §6.4.1 is missing — "unwritten" and "committed,
-             awaiting observations" are different owner actions. Mirrors whyNot() exactly. */
-          const cap=r.tt.tier||"B",tail=` — capped at ${cap} (PROVISIONAL is never eligible)`;
-          const p4=r.tt.p4;
-          if(!p4||!p4.kind)return "falsifiers pending"+tail;
-          if(p4.kind==="LEGACY_POST_HOC"||!(p4.hinges>0))return "falsifiers unwritten"+tail;
-          if(p4.hinges<3)return `falsifiers ${p4.hinges}/3 written — set incomplete`+tail;
-          if(p4.observed<p4.hinges)return `falsifiers committed, ${p4.observed}/${p4.hinges} observed — awaiting qualifying observations`+tail;
-          return "falsifiers committed this write — a later write scores them (§6.4.1)"+tail;
-        }
-        if(!r.tt.scored)return `server card ${r.tt.status||"incomplete"} — blockers on the card`;
-        if(!r.tt.mcur)return "card predates the current methodology — re-score to verify (§4.3)";
-        /* v5.1.1 — the card's OWN actionability, read at the gate. §7 computes it and §11.2
-           evalEligibility always enforced it, but this ladder never asked, so a SCORED card
-           reading BLOCKED could light green (the v3.71-follow-up shape: computed, published,
-           rendered, not READ). CAUTION passes — aging evidence is yours to weigh. An ABSENT
-           field passes: a pre-v5.1.1 index entry predates it, and failing closed there would
-           veto the whole book over a value nobody wrote. Mirrors whyNot() verbatim. */
-        if(r.tt.act==="BLOCKED")return `card actionability BLOCKED — ${r.tt.blockedOn&&r.tt.blockedOn.length
-          ?`${r.tt.blockedOn.join(", ")} cannot be read`
-          :"evidence missing on the card"} (UNKNOWN blocks, §8.1)`;
-        if(r.tt.tier==="C"||(r.tt.score!==null&&r.tt.score<5.5))return `TT ${r.tt.score!==null?r.tt.score.toFixed(1):"C"} — quality fails`;
-        if(r.rrFail)return "R/R fails its floor";
-        return null;};
+      const why=rowVeto;   // v6.7: lifted to a top-level fn — the ladder table runs this same gate
       const q=rows.filter(r=>why(r)===null);
       AGREE_PICK=q.length?q[0]:null;   // the TODAY card shows this only when nothing vetoes
       if(q.length){const b=q[0];
@@ -6377,7 +6448,12 @@ function renderBuyBlock(){
         UNRANKED_ROWS.slice(3).map(tailRow).join(""):"")+
       `</details>`;
   }
-  h+=`<div class="none"><button class="linklike" onclick="openDesk('dNext')">caveats, lints &amp; horizon pin ↗</button> · ${UPSIDE_ROWS.length} ranked of ${BOOK.length}`+
+  /* v6.7 FEAT-TT-LADDER: the ranking shows ONE rung per name at the horizon in force.
+     The full two-year ladder is one tap away HERE, where the rung is read — not two
+     disclosures deep (the v3.62 SHARE RANKS lesson: a surface nobody can find is a
+     surface that does not exist). It is a modal, never a third mode (v5.7.0). */
+  h+=`<div class="none"><button class="linklike" onclick="openLadder()" style="color:var(--green);font-weight:700">▦ FULL LADDER — every YE rung ↗</button>`+
+    ` · <button class="linklike" onclick="openDesk('dNext')">caveats, lints &amp; horizon pin ↗</button> · ${UPSIDE_ROWS.length} ranked of ${BOOK.length}`+
     (UNRANKED_ROWS.length?` · ${UNRANKED_ROWS.length} reviewed but unpriced`:"")+`</div>`;
   // v5.6: stamped history lives at the block's TAIL — one tap deep, never above the ranked
   // rows it scores (est-mini, never drawer — the phone harness counts open drawers).
@@ -6495,7 +6571,14 @@ function renderGlance(){
         `<span style="color:var(--amber)">*</span><span class="sym">${esc(r.sym)}</span><span>${esc(r.tier)}</span>`+
         `<span class="rate">—</span><span class="reason">${esc(r.why)}</span></button>`).join("")
     :"";
-  rank.innerHTML=rankedHtml+tailHtml+`<div class="glance-foot">${UPSIDE_ROWS.length} ranked of ${BOOK.length}`+
+  /* v6.7 FEAT-TT-LADDER: the PRIMARY surface shows ONE rung per name at the horizon in
+     force, top 5. The full two-year ladder for the whole book is one tap from HERE —
+     the first draft put this link only on the DESK copy of the ranking, which lives
+     inside a COLLAPSED drawer, i.e. exactly the v3.62 SHARE RANKS burial this comment
+     cites. Caught by the phone assertion, not by reading the code. */
+  rank.innerHTML=rankedHtml+tailHtml+`<div class="glance-foot">`+
+    `<button type="button" class="linklike" onclick="openLadder()" style="color:var(--green);font-weight:700">▦ FULL LADDER — every YE rung ↗</button> · `+
+    `${UPSIDE_ROWS.length} ranked of ${BOOK.length}`+
     (UNRANKED_ROWS.length?` · ${UNRANKED_ROWS.length} reviewed but unpriced`:"")+`</div>`;
 }
 /* Open the DESK drawer (and optionally one drawer inside it), then scroll to it. */
@@ -7138,7 +7221,11 @@ function removeConfirmed(){
   render();closeCard();toast(s+" removed from book → CUT row — saving…");persist();
 }
 function copyTTRun(){copy("TT: "+CURRENT);toast("Copied → paste 'TT: "+CURRENT+"' into chat for a live deep-dive card");}
-function closeCard(){CURRENT=null;closeModal();}
+/* v6.7: the ladder borrows #overlay, so closing must hand the card back UNMODIFIED —
+   a leftover .wide would silently widen the next ticker card that opens. */
+function closeCard(){CURRENT=null;LADDER_OPEN=false;
+  const c=document.querySelector("#overlay .card");if(c)c.classList.remove("wide","ld-card");
+  closeModal();}
 
 /* ═══════════ ADD ═══════════ */
 /* FEAT-TT: `prefill` lets an unmatched search route straight into ADD with the symbol
@@ -7355,6 +7442,228 @@ function rankCategories(rows){
   [...new Set(rows.map(r=>r.lens))].forEach(l=>{out.lens[l]=rank(rows.filter(r=>r.lens===l),up,-1);});
   return out;
 }
+/* ──────────────────────────────────────────────────────────────────────────────
+   FEAT-TT-LADDER (v6.7) — the FULL two-year ladder as one ranked, printable table.
+
+   WHY A MODAL AND NOT A THIRD MODE: v5.7.0 locked "NEXT $ and BOOK are the only
+   persistent modes", and v4.6.0 refused a fourth deck page for the same reason —
+   a whole-book list competing with the default view is how the board regressed to
+   six phone screens in the first place. This is an ON-DEMAND surface over the
+   existing #overlay machinery (openModal/closeModal, focus trap, ESC), reachable
+   from the ranking footer, DAILY OPS, and the bookmarkable #ladder hash.
+
+   EVERY NUMBER IS A READ, NEVER A SECOND DERIVATION (the ptModelRows rule):
+     · targets  → ptModelRows(dd)        — the same chain the ladder, est-run table,
+                                            ddWorth, the ranking and scoreP1 all read
+     · gate     → rowVeto(row)           — the SAME ladder the ELIGIBLE line runs
+                                            (lifted out of its closure for this)
+     · macro    → macroGate()            — the glance tile's own derivation
+     · composite→ cardInfo(sym)          — the server card (§14.8), never free text
+     · price    → LIVE_PX, else ref_px   — the ranking's own basis rule, disclosed
+   Nothing here computes a target, a multiple, a score or a gate of its own.
+
+   THE YEARS ARE COMPUTED, NEVER "2026/2027": the columns are the current ET year
+   and the next. A hardcoded pair would read correctly today and silently become a
+   lie on 1 January — the label-outlives-its-data defect this file keeps closing
+   (the v3.99 FOMC table, the Mag-10 footer, the "5-factor vote" strings).
+   ────────────────────────────────────────────────────────────────────────────── */
+function ladderYears(){const y=+etYmd().slice(0,4);return[String(y),String(y+1)];}
+let LADDER_SORT="y2";     // y2 | y1 | comp | sym — the GATE column follows the sort year
+let LADDER_OPEN=false;
+
+/* Premium if the owner asserted one, else the FLOOR — byte-for-byte the rule
+   renderUpsideRank and evalBuyRow both apply. "n/m" is the v3.17 no-P/E-before-profit
+   sentinel and is a STATE, never a number. */
+function ladderRungAt(rows,y){
+  const r=rows.find(x=>x.y===y);
+  if(!r)return{tgt:null,basis:null,lens:null};
+  if(typeof r.prem==="number")return{tgt:r.prem,basis:"PREMIUM",lens:r.lens};
+  if(typeof r.fl==="number")return{tgt:r.fl,basis:"FLOOR",lens:r.lens};
+  return{tgt:null,basis:r.fl==="n/m"?"n/m":null,lens:r.lens};
+}
+function buildLadderRows(){
+  const [Y1,Y2]=ladderYears();
+  const rows=[],skipped=[];
+  BOOK.forEach(x=>{
+    const dd=ddOf(x);
+    const rr=dd?ptModelRows(dd):[];
+    const stamp=(dd&&dd.ref_px&&isFinite(dd.ref_px.px)&&dd.ref_px.px>0)?dd.ref_px:null;
+    const live=LIVE_PX[x.sym];
+    const hasLive=!!(live&&isFinite(live.px)&&live.px>0);
+    const px=hasLive?live.px:(stamp?stamp.px:null);
+    const a=ladderRungAt(rr,Y1),b=ladderRungAt(rr,Y2);
+    /* NAMED, never silently truncated (v3.65/v3.76): a name absent from a ranking reads
+       as "considered and rejected" unless the reason is on screen, and the names most
+       often here are the freshly-run ones the model cannot price YET. */
+    if(px===null||(a.tgt===null&&b.tgt===null)){
+      const why=(!dd&&DD_PENDING)?"payload index still loading — not read, not empty"
+        :(!dd&&DD_FAILED)?"payload index did not load — not read, not empty"
+        :!dd?"no thesis payload stored"
+        :!rr.length?"no pt_model — no rung computes"
+        :px===null?"no usable price (no live quote, no stamped ref_px)"
+        :`no YE${Y1} or YE${Y2} rung — the estimate series starts later`;
+      skipped.push({sym:x.sym,tier:x.tier,lens:x.lens,tt:cardInfo(x.sym),why});
+      return;
+    }
+    const pct=t=>t===null?null:Math.round((t/px-1)*1000)/10;
+    rows.push({sym:x.sym,tier:x.tier,lens:x.lens,px,live:hasLive,
+      at:hasLive?live.at:(stamp?stamp.at:null),
+      pxAge:hasLive?0:ageDays(stamp&&stamp.at),
+      y1:a.tgt,y1b:a.basis,y1p:pct(a.tgt),
+      y2:b.tgt,y2b:b.basis,y2p:pct(b.tgt),
+      modelLens:b.lens||a.lens,
+      tt:cardInfo(x.sym),rdy:readiness(x),rs:runState(x.lastRun),wt:rankWeight(x.sym),
+      rrFail:/FAILS/i.test((dd.technicals&&dd.technicals.rr)||""),
+      redH:(Array.isArray(dd.hinges)?dd.hinges:[]).filter(g=>g.state==="red").length,
+      lintErr:lintPtModel(dd).filter(l=>l.sev==="error").map(l=>l.code)});
+  });
+  skipped.sort((p,q)=>{
+    const ps=p.tt&&p.tt.score!=null?p.tt.score:-1,qs=q.tt&&q.tt.score!=null?q.tt.score:-1;
+    return qs!==ps?qs-ps:(p.sym<q.sym?-1:1);
+  });
+  return{Y1,Y2,rows,skipped};
+}
+/* The sort year IS the gate year. rowVeto's first rung is the gap, so evaluating it
+   against one year while ranking on another would print a gate that describes a column
+   the reader is not looking at. Sorting by YE<Y1> re-evaluates the whole ladder there. */
+function ladderSorted(rows,Y1,Y2){
+  const key=LADDER_SORT==="y1"?"y1p":"y2p";
+  const out=rows.slice();
+  if(LADDER_SORT==="sym")out.sort((a,b)=>a.sym<b.sym?-1:1);
+  else if(LADDER_SORT==="comp")out.sort((a,b)=>{
+    const as=a.tt&&a.tt.score!=null?a.tt.score:-1,bs=b.tt&&b.tt.score!=null?b.tt.score:-1;
+    return bs!==as?bs-as:(a.sym<b.sym?-1:1);
+  });
+  // A name with no rung at the sort year sorts LAST rather than being dropped or read as 0
+  // — "no rung here" and "no upside" are different facts (the v3.62 lesson).
+  else out.sort((a,b)=>(b[key]===null?-Infinity:b[key])-(a[key]===null?-Infinity:a[key]));
+  return out;
+}
+function ladderGateYear(Y1,Y2){return LADDER_SORT==="y1"?Y1:Y2;}
+function ladderVeto(r,Y1,Y2){
+  const up=LADDER_SORT==="y1"?r.y1p:r.y2p;
+  if(up===null)return`no YE${ladderGateYear(Y1,Y2)} rung — excluded at this year, never substituted`;
+  return rowVeto({upside:up,rdy:r.rdy,tt:r.tt,rrFail:r.rrFail});
+}
+function setLadderSort(k){LADDER_SORT=k;renderLadder();}
+
+function ladderHead(Y1,Y2,d){
+  const mg=macroGate();
+  const gy=ladderGateYear(Y1,Y2);
+  /* The macro gate is a BOARD fact, stated once — repeating it per row would read as a
+     per-name verdict it is not. The per-row GATE column is the ticker ladder only. */
+  return`<div class="ld-head">`+
+    `<span class="pill" style="border-color:${mg.c};color:${mg.c}">MACRO GATE: ${esc(mg.label)}</span>`+
+    (mg.rung?`<span class="scope">vetoed at the ${esc(mg.rung)} rung</span>`:`<span class="scope">every macro rung read clean</span>`)+
+    `<span class="scope">· ${d.rows.length} priced of ${BOOK.length} · the per-row GATE column is the TICKER ladder, evaluated at YE${esc(gy)} — not this macro gate</span>`+
+    `</div>`+
+    `<div class="none">Targets are this book's OWN <b>pt_model</b> ladder — premium where a multiple is asserted, `+
+    `otherwise the name's floor (market multiple × forward EPS). They are not street targets and not advice. `+
+    `% is target ÷ current price − 1, <b>not annualised</b>: YE${esc(Y1)} and YE${esc(Y2)} are different horizons, `+
+    `so a YE${esc(Y1)} % and a YE${esc(Y2)} % are not comparable as rates. `+
+    `The next-dollar ranking sorts on %/yr for exactly that reason.</div>`+
+    `<div class="none">book ${esc((META&&META.asOf)||"—")} · quotes ${LIVE_AT?esc(String(LIVE_AT).replace("T"," ").slice(0,16))+"Z":"not loaded"}`+
+    (SCORE_INDEX===null?` · <span style="color:var(--amber)">score index did not load — composites read "not read", not "unscored"</span>`:
+      SCORE_INDEX_META&&SCORE_INDEX_META.methodology_version?` · cards ${esc(SCORE_INDEX_META.methodology_version)}`:"")+`</div>`;
+}
+function ladderTable(d){
+  const {Y1,Y2}=d,sorted=ladderSorted(d.rows,Y1,Y2);
+  const num=v=>v===null||v===undefined?"—":(v>=100?Math.round(v):v);
+  const pc=v=>v===null?`<span class="scope">—</span>`
+    :`<span style="color:${v>=0?"var(--green)":"var(--red)"};font-weight:700">${v>=0?"+":""}${v}%</span>`;
+  const sortBtn=(k,lab)=>`<button type="button" class="ld-sort${LADDER_SORT===k?" on":""}" `+
+    `aria-pressed="${LADDER_SORT===k}" onclick="setLadderSort('${k}')">${esc(lab)}${LADDER_SORT===k?" ▾":""}</button>`;
+  const head=`<tr><th>#</th><th>${sortBtn("sym","SYM")}</th><th>TIER</th><th class="r">PRICE</th>`+
+    `<th class="r">YE${esc(Y1)}</th><th class="r">${sortBtn("y1","YE"+Y1+" %")}</th>`+
+    `<th class="r">YE${esc(Y2)}</th><th class="r">${sortBtn("y2","YE"+Y2+" %")}</th>`+
+    `<th>BASIS</th><th class="r">${sortBtn("comp","TT")}</th><th>GATE</th></tr>`;
+  const body=sorted.map((r,i)=>{
+    const v=ladderVeto(r,Y1,Y2);
+    const tt=r.tt&&r.tt.score!=null
+      ? `<span style="color:${r.tt.tier==="C"?"var(--red)":(r.tt.score>=7||r.tt.tier==="S"||r.tt.tier==="A")?"var(--green)":"var(--amber)"};font-weight:700">${r.tt.score.toFixed(2)}</span>`+
+        `<span class="scope"> ${esc(r.tt.tier||"")}${r.tt.status==="PROVISIONAL"?" prov":""}</span>`
+      : `<span class="scope" style="color:var(--amber)">${SCORE_INDEX===null?"not read":"no card"}</span>`;
+    const basis=(r.y2b||r.y1b||"—");
+    const pxFlag=!r.live?`<span class="scope" title="stamped mark, not a live quote">${r.pxAge===null?"⚠undated":"⚠"+r.pxAge+"d"}</span>`:"";
+    return`<tr class="${v===null?"ld-elig":""}">`+
+      `<td class="scope">${i+1}</td>`+
+      `<td><button type="button" class="linklike" onclick="ladderOpen('${esc(r.sym)}')">${esc(r.sym)}</button>`+
+        (r.lintErr.length?`<span class="bad2" title="pt_model ${esc(r.lintErr.join("/"))} — the rung shown is a floor fallback">⛔</span>`:"")+
+        (r.redH?`<span class="bad2" title="${r.redH} hinge(s) RED">●${r.redH}</span>`:"")+`</td>`+
+      `<td class="scope">${esc(r.tier||"—")}</td>`+
+      `<td class="r">$${esc(String(num(r.px)))}${pxFlag}</td>`+
+      `<td class="r">${r.y1===null?`<span class="scope">—</span>`:"$"+esc(String(num(r.y1)))}</td>`+
+      `<td class="r">${pc(r.y1p)}</td>`+
+      `<td class="r">${r.y2===null?`<span class="scope">—</span>`:"$"+esc(String(num(r.y2)))}</td>`+
+      `<td class="r">${pc(r.y2p)}</td>`+
+      `<td class="scope">${esc(basis)}${r.modelLens?" · "+esc(r.modelLens):""}</td>`+
+      `<td class="r">${tt}</td>`+
+      `<td class="${v===null?"ok":"scope"}">${v===null?"✓ ELIGIBLE":esc(v)}</td></tr>`;
+  }).join("");
+  /* ld-main / ld-skip: the ranked table and the named-exclusions table are DIFFERENT
+     claims and are addressed separately — a selector matching both is how a suite ends up
+     asserting a gate column on a table that has none. */
+  return`<div class="tblx"><table class="ld-tbl ld-main"><thead>${head}</thead><tbody>${body}</tbody></table></div>`;
+}
+function ladderSkipped(d){
+  if(!d.skipped.length)return"";
+  return`<div class="lbl" style="margin-top:10px">Not on the ladder · ${d.skipped.length} name${d.skipped.length===1?"":"s"} — reason named, never a silent drop</div>`+
+    `<div class="none">These are NOT judged unattractive. The model cannot price them at YE${esc(d.Y1)} or YE${esc(d.Y2)} yet, and a name missing from a ranking with no reason reads as considered-and-rejected.</div>`+
+    `<div class="tblx"><table class="ld-tbl ld-skip"><thead><tr><th>SYM</th><th>TIER</th><th class="r">TT</th><th>WHY IT CARRIES NO RUNG</th></tr></thead><tbody>`+
+    d.skipped.map(s=>`<tr><td><button type="button" class="linklike" onclick="ladderOpen('${esc(s.sym)}')">${esc(s.sym)}</button></td>`+
+      `<td class="scope">${esc(s.tier||"—")}</td>`+
+      `<td class="r scope">${s.tt&&s.tt.score!=null?esc(s.tt.score.toFixed(2)):"—"}</td>`+
+      `<td class="scope">${esc(s.why)}</td></tr>`).join("")+`</tbody></table></div>`;
+}
+function renderLadder(){
+  const body=document.getElementById("cBody");if(!body||!LADDER_OPEN)return;
+  const d=buildLadderRows();
+  document.getElementById("cTitle").textContent=`FULL LADDER — YE${d.Y1} / YE${d.Y2}`;
+  /* .scope/.none/.lbl/.bad2 are scoped under .nd (the next-dollar container), so the
+     table wears that class rather than growing a second copy of four utility rules. */
+  body.innerHTML=`<div class="nd">`+ladderHead(d.Y1,d.Y2,d)+ladderTable(d)+ladderSkipped(d)+`</div>`;
+}
+/* A row's SYM opens that name — the table is a door into the book, not a dead end.
+   Closing the ladder first, so the deep dive is not rendered underneath a modal. */
+function ladderOpen(sym){closeCard();routeGo("book",sym);}
+function openLadder(){
+  LADDER_OPEN=true;
+  document.querySelector("#overlay .card").classList.add("wide","ld-card");
+  document.getElementById("cBtns").innerHTML=
+    `<button class="act" onclick="ladderRefresh(this)" id="ldRefresh">⟳ REFRESH</button>`+
+    `<button class="act" onclick="window.print()">⎙ PRINT / PDF</button>`+
+    `<button class="act quiet" onclick="ladderCopy()">⎘ COPY TSV</button>`+
+    `<button class="act warn" onclick="closeCard()">CLOSE</button>`;
+  renderLadder();
+  openModal();
+}
+/* v5.97.3: read the resting label off the button and restore it — never a second
+   hardcoded copy of either string. */
+async function ladderRefresh(btn){
+  const rest=btn?btn.textContent:null;
+  if(btn){btn.disabled=true;btn.textContent="⟳ …";}
+  try{await loadQuotes();renderLadder();toast("Ladder refreshed — quotes "+(LIVE_AT?String(LIVE_AT).slice(11,16)+"Z":"unavailable")+" (server caches 2 min)");}
+  catch(_e){toast("Quote refresh failed — the table below is the last good read, not a fresh one");}
+  finally{if(btn){btn.disabled=false;if(rest)btn.textContent=rest;}}
+}
+function ladderCopy(){
+  const d=buildLadderRows(),mg=macroGate(),gy=ladderGateYear(d.Y1,d.Y2);
+  const L=[`TT FULL LADDER — YE${d.Y1} / YE${d.Y2} · ${etYmd()} · MACRO GATE ${mg.label}`   /* the em-dash-free form is deliberate: smoke sweeps the whole file for a flat "GATE: <label>", the v5.6 word-collision guard, and a text export has no key/value cell to scope with */,
+    `book ${(META&&META.asOf)||"—"} · quotes ${LIVE_AT||"not loaded"} · gate column at YE${gy}`,
+    `% is target/price-1, NOT annualised — YE${d.Y1} and YE${d.Y2} are different horizons.`,"",
+    ["RANK","SYM","TIER","PRICE","YE"+d.Y1,"YE"+d.Y1+"%","YE"+d.Y2,"YE"+d.Y2+"%","BASIS","TT","TIER","GATE"].join("\t")];
+  ladderSorted(d.rows,d.Y1,d.Y2).forEach((r,i)=>{
+    const v=ladderVeto(r,d.Y1,d.Y2);
+    L.push([i+1,r.sym,r.tier||"",r.px,r.y1===null?"":r.y1,r.y1p===null?"":r.y1p,
+      r.y2===null?"":r.y2,r.y2p===null?"":r.y2p,r.y2b||r.y1b||"",
+      r.tt&&r.tt.score!=null?r.tt.score.toFixed(2):"",r.tt&&r.tt.tier?r.tt.tier:"",
+      v===null?"ELIGIBLE":v].join("\t"));
+  });
+  if(d.skipped.length){L.push("",`NOT ON THE LADDER (${d.skipped.length}) — reason named, never a silent drop`);
+    d.skipped.forEach(s=>L.push([s.sym,s.tier||"",s.tt&&s.tt.score!=null?s.tt.score.toFixed(2):"",s.why].join("\t")));}
+  copy(L.join("\n"));toast("Ladder copied as TSV — paste into Sheets/Excel");
+}
+
 function buildRankingsMd(){
   const et=new Date().toLocaleDateString("en-CA",{timeZone:"America/New_York"});
   const rows=Array.isArray(UPSIDE_ROWS)?UPSIDE_ROWS:[];

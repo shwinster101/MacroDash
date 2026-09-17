@@ -3019,13 +3019,28 @@ ok("slice3: chips get the 40px thumb target at phone widths, same rule as slice 
   /max-width:480px[^}]*\{[\s\S]{0,260}\.chip\{min-height:40px\}/.test(adminSrc));
 
 // ---- slice 4: modal focus management + destructive-action confirm + live toast ----------
-ok("slice4: all 11 overlay-open call sites funnel through ONE openModal() — " +
+/* v6.7 RE-PIN, with the reason at the pin: FEAT-TT-LADDER added a 12th overlay-open site
+   (openLadder), so the literal moved 11→12. The CHOKE POINT — not the count — is the
+   invariant, and it is the first clause: .classList.add("on") appearing exactly once means
+   no site can open the overlay behind openModal()'s back, whatever the tally. The count is
+   kept as a deliberate tripwire so a new modal has to come past this assertion and state
+   itself, which is the only reason a number that rots on every feature earns its place. */
+ok("slice4: all 12 overlay-open call sites funnel through ONE openModal() — " +
    'document.getElementById("overlay").classList.add("on") appears exactly once now, ' +
    "inside openModal() itself, not duplicated at each site (toast/pinGate keep their own)",
   (adminSrc.match(/document\.getElementById\("overlay"\)\.classList\.add\("on"\)/g)||[]).length===1 &&
-  (adminSrc.match(/openModal\(\);/g)||[]).length===11);
-ok("slice4: closeCard is now a thin wrapper over closeModal (same public name every onclick calls)",
-  adminSrc.includes("function closeCard(){CURRENT=null;closeModal();}"));
+  (adminSrc.match(/openModal\(\);/g)||[]).length===12);
+/* v6.7 RE-PIN: closeCard gained the ladder's teardown (the borrowed card must be handed back
+   UNMODIFIED, or a leftover .wide silently widens the next ticker card). The invariant this
+   pin has always protected is that closeCard routes through closeModal rather than poking the
+   overlay itself — pinned on that behaviour now instead of on one spelling of the one-liner,
+   so the next legitimate addition re-states itself without a byte-match failing on correct code. */
+ok("slice4: closeCard is still a thin wrapper over closeModal (same public name every onclick calls) " +
+   "and hands the shared card back without the ladder's width class",
+  /function closeCard\(\)\{[\s\S]{0,320}?closeModal\(\);\}/.test(adminSrc) &&
+  /function closeCard\(\)\{CURRENT=null;/.test(adminSrc) &&
+  /closeCard[\s\S]{0,320}?classList\.remove\("wide","ld-card"\)/.test(adminSrc) &&
+  !/function closeCard\(\)\{[\s\S]{0,320}?classList\.add\("on"\)/.test(adminSrc));
 ok("slice4: openModal remembers what was focused before opening, so closing restores it",
   adminSrc.includes("MODAL_RETURN=document.activeElement") &&
   adminSrc.includes("if(MODAL_RETURN&&MODAL_RETURN.focus"));
@@ -12762,6 +12777,215 @@ console.log("\n[copy-budget] v6.6.1 ONE ENGINE, TWO ALTITUDES — ≤25-word why
   ok("[copy-budget] wiring: Simple's hero sentence is holdReason and its whys mount keeps the ⇄ flip line beneath the block (the T5 contract) — the arithmetic line and the crossing line are BOTH rendered",
     /const simpleS=holdReason\(evidenceSet\)/.test(dashSrc) && /simple\?simpleS:/.test(dashSrc) &&
     /vocabulary:simple\?"simple":"degen"/.test(dashSrc) && /flipLine=\{simpleF\}/.test(dashSrc));
+}
+
+
+/* ── [87] FEAT-TT-LADDER (v6.7) — the full two-year ladder table ────────────────────────
+   Everything here is LIFTED AND RUN. The feature's whole claim is that it re-derives
+   NOTHING — targets from ptModelRows, the gate from the ELIGIBLE line's own ladder, the
+   composite from the server card — and a string pin cannot prove a number, a sort key or a
+   veto (the v3.39/v3.46 rule). The lift ends at the next function's own opening brace, not
+   at a call site, so a broken lift is a RED assertion and never a crash with no total
+   (the v6.6.2 lesson). */
+{
+  /* ptModelRows is injected from src/ptModel.js rather than re-lifted out of admin.html:
+     smoke [49] already pins the two copies BYTE-IDENTICAL, so the canonical chain is the
+     stronger fixture and the injection cannot mask a drift [49] would catch. */
+  const { ptModelRows, lintPtModel } = await import("../src/ptModel.js");
+  const SCORE_INDEX_STUB = {};
+  let veto = null;
+  try {
+    const vs = adminSrc.slice(adminSrc.indexOf("function rowVeto(r){"), adminSrc.indexOf("function cardInfo(sym){"));
+    veto = new Function("SCORE_INDEX", vs + "; return rowVeto;")(SCORE_INDEX_STUB);
+  } catch (_e) { veto = null; }
+  ok("[87] rowVeto lifts and RUNS as a top-level function — the lift itself is the test that the ladder can share it",
+    typeof veto === "function");
+
+  const L = (() => {
+    const start = adminSrc.indexOf("function ladderYears(){");
+    const end = adminSrc.indexOf("function buildRankingsMd(){");
+    if (start < 0 || end < 0 || end <= start) return null;
+    const src = adminSrc.slice(start, end);
+    try {
+      return new Function("etYmd", "BOOK", "ddOf", "ptModelRows", "LIVE_PX", "DD_PENDING",
+        "DD_FAILED", "cardInfo", "readiness", "runState", "rankWeight", "lintPtModel",
+        "ageDays", "rowVeto",
+        src + "\nreturn {ladderYears,ladderRungAt,buildLadderRows,ladderSorted,ladderGateYear," +
+        "ladderVeto,setSort:(k)=>{LADDER_SORT=k;},getSort:()=>LADDER_SORT};");
+    } catch (_e) { return null; }
+  })();
+  ok("[87] the ladder module lifts cleanly (a broken lift is a RED pin here, never a crash with no total)",
+    typeof L === "function");
+
+  /* GUARDED: I crashed this section TWICE while writing it — once on a missing import,
+     once on a fixture renamed in one place and not the other. Both killed the run with
+     NO TOTAL, which reads exactly like a suite that never ran (the v3.99.4 P0 shape,
+     and the v6.6.2 lesson about a control that crashes proving nothing). A throw is a
+     RED assertion here, never a dead process. */
+  if (typeof L === "function" && typeof veto === "function") try {
+    // ── fixture: one clock, one book, one payload store ─────────────────────────────
+    const at2026 = () => "2026-09-17";
+    const mk = (over) => L(at2026, over.BOOK, over.ddOf, ptModelRows, over.LIVE_PX || {},
+      false, false, over.cardInfo || (() => null), over.readiness || (() => ({ blockers: [], cautions: [] })),
+      over.runState || (() => ({ k: "fresh", days: 1 })), () => ({ w: null, held: false, mark: "", optOnly: false }),
+      lintPtModel, () => 0, veto);
+
+    const payload = (o) => Object.assign({
+      as_of: "2026-09-10", ref_px: { px: 100, at: "2026-09-16" }, hinges: [{ state: "green" }],
+      consensus: { revenue_B: { 2027: 10, 2028: 20 }, eps: { 2027: 2, 2028: 4 } },
+      pt_model: { pe_premium_multiple: 60, pe_floor_multiple: 15 },
+    }, o);
+    const card = (score, extra) => Object.assign({ score, tier: score >= 7 ? "A" : "B", status: "SCORED",
+      scored: true, mcur: true, p4: null, act: null, blockedOn: [] }, extra || {});
+
+    // ── 1. the YEARS are COMPUTED, never the literals ──────────────────────────────
+    const api = mk({ BOOK: [], ddOf: () => null });
+    ok("[87] the columns are the CURRENT ET year and the next, read off the clock — not a hardcoded 2026/2027 pair that reads true today and lies on 1 January",
+      JSON.stringify(api.ladderYears()) === '["2026","2027"]' &&
+      JSON.stringify(L(() => "2031-02-02", [], () => null, ptModelRows, {}, false, false,
+        () => null, () => ({ blockers: [] }), () => ({ k: "fresh" }), () => ({ w: null }),
+        lintPtModel, () => 0, veto).ladderYears()) === '["2031","2032"]');
+    ok("[87] neither year is a literal anywhere in the ladder module — the rot vector this repo keeps closing (the FOMC table, the Mag-10 footer, the '5-factor vote' strings)",
+      !/YE2026|YE2027|"2026"|"2027"/.test(
+        adminSrc.slice(adminSrc.indexOf("function ladderYears(){"), adminSrc.indexOf("function buildRankingsMd(){"))));
+
+    // ── 2. the rung rule: premium, else floor; "n/m" is a STATE, never a number ─────
+    const rows = ptModelRows(payload({}), "2026");
+    ok("[87] ladderRungAt takes the PREMIUM where a multiple is asserted and labels it, falls to the FLOOR where it is not, and returns nulls for a year with no rung",
+      api.ladderRungAt(rows, "2026").basis === "PREMIUM" &&
+      api.ladderRungAt(rows, "2026").tgt === 120 &&
+      api.ladderRungAt(ptModelRows(payload({ pt_model: { pe_floor_multiple: 15 } }), "2026"), "2026").basis === "FLOOR" &&
+      api.ladderRungAt(rows, "2099").tgt === null && api.ladderRungAt(rows, "2099").basis === null);
+    ok("[87] a negative-EPS rung reads the v3.17 'n/m' STATE and never a number — no P/E before profit, and a sentinel must never reach a % column",
+      (() => {
+        const r = api.ladderRungAt(ptModelRows(payload({
+          consensus: { eps: { 2027: -2 } }, pt_model: { pe_floor_multiple: 15 } }), "2026"), "2026");
+        return r.tgt === null && r.basis === "n/m";
+      })());
+
+    // ── 3. skipped names are NAMED with the cause, never silently dropped ──────────
+    const store = { AAA: payload({}), BBB: payload({ pt_model: {}, consensus: {} }), DDD: payload({ ref_px: null }) };
+    const book = [{ sym: "AAA", tier: "S" }, { sym: "BBB", tier: "A" }, { sym: "CCC", tier: "B" }, { sym: "DDD", tier: "B" }];
+    const built = mk({ BOOK: book, ddOf: (x) => store[x.sym] || null, LIVE_PX: { AAA: { px: 100, at: "2026-09-17" } },
+      cardInfo: (s) => (s === "AAA" ? card(9.1) : null) }).buildLadderRows();
+    ok("[87] a name the model cannot price is SKIPPED WITH ITS CAUSE — no payload / no pt_model / no usable price are three DIFFERENT reasons, never one silent absence (v3.65/v3.76)",
+      built.rows.length === 1 && built.rows[0].sym === "AAA" && built.skipped.length === 3 &&
+      built.skipped.find((s) => s.sym === "CCC").why === "no thesis payload stored" &&
+      built.skipped.find((s) => s.sym === "BBB").why === "no pt_model — no rung computes" &&
+      built.skipped.find((s) => s.sym === "DDD").why.startsWith("no usable price"));
+    ok("[87] every book name lands in exactly one place — priced or named — so the table can never read as full coverage while quietly holding fewer names",
+      built.rows.length + built.skipped.length === book.length);
+    ok("[87] the % is target ÷ price − 1 off the LIVE quote where one exists, with the stamped-mark fallback DISCLOSED rather than relabelled live (the v4.1 price-basis rule)",
+      built.rows[0].y1p === 20 && built.rows[0].y2p === 140 && built.rows[0].live === true &&
+      mk({ BOOK: [{ sym: "AAA" }], ddOf: () => store.AAA, LIVE_PX: {} }).buildLadderRows().rows[0].live === false);
+
+    /* ── 4. the sort, and the null-at-this-year rule ───────────────────────────────
+       NOR carries a YE2026 rung and NO YE2027 one (its estimate series stops at FY2027,
+       and a row at year y prices FY y+1). That is the ONLY shape that exercises the rule:
+       a name missing BOTH years never reaches the sort at all — it is skipped and named
+       above. The first draft of this fixture had exactly that defect and CRASHED the
+       section on an undefined row, recorded here rather than quietly corrected: a fixture
+       that does not reproduce what its name claims measures nothing (v5.10.0, v5.97.0).
+       Symbols are chosen so the alphabetical order DIFFERS from the % order — sorted
+       against a fixture where the two agree, a sort assertion is vacuous (v3.60.1). */
+    const three = {
+      ZED: payload({ pt_model: { pe_premium_multiple: 100, pe_floor_multiple: 15 } }),
+      ABL: payload({ pt_model: { pe_premium_multiple: 20, pe_floor_multiple: 15 } }),
+      NOR: payload({ consensus: { revenue_B: { 2027: 10 }, eps: { 2027: 4 } },
+        pt_model: { pe_premium_multiple: 20, pe_floor_multiple: 15 } }),
+    };
+    const api3 = mk({ BOOK: [{ sym: "ABL" }, { sym: "NOR" }, { sym: "ZED" }], ddOf: (x) => three[x.sym],
+      LIVE_PX: { ZED: { px: 100 }, ABL: { px: 100 }, NOR: { px: 100 } } });
+    const d3 = api3.buildLadderRows();
+    api3.setSort("y2");
+    ok("[87] ranked by percent increase, descending — and a name with NO rung at the sort year sorts LAST rather than being dropped or read as 0% ('no rung here' and 'no upside' are different facts, v3.62)",
+      d3.rows.length === 3 && d3.rows.find((r) => r.sym === "NOR").y2p === null &&
+      d3.rows.find((r) => r.sym === "NOR").y1p === -20 &&   // 20 × FY2027 EPS 4 = $80 against $100
+      api3.ladderSorted(d3.rows, d3.Y1, d3.Y2).map((r) => r.sym).join(",") === "ZED,ABL,NOR" &&
+      api3.ladderSorted(d3.rows, d3.Y1, d3.Y2)[2].y2p === null);
+    api3.setSort("sym");
+    ok("[87] the alphabetical and composite sorts are real alternatives, not decoration — and the composite sort puts an unscored name last rather than at zero",
+      api3.ladderSorted(d3.rows, d3.Y1, d3.Y2).map((r) => r.sym).join(",") === "ABL,NOR,ZED" &&
+      (() => {
+        const a = mk({ BOOK: [{ sym: "ABL" }, { sym: "ZED" }], ddOf: (x) => three[x.sym],
+          LIVE_PX: { ZED: { px: 100 }, ABL: { px: 100 } }, cardInfo: (s) => (s === "ABL" ? card(9) : null) });
+        const dd = a.buildLadderRows(); a.setSort("comp");
+        // ABL is the WORSE name on %, so a comp-first order proves the key actually changed.
+        return a.ladderSorted(dd.rows, dd.Y1, dd.Y2).map((r) => r.sym).join(",") === "ABL,ZED"; })());
+
+    // ── 5. the GATE follows the SORT YEAR, and it is the ELIGIBLE line's own ladder ─
+    const g = mk({ BOOK: [{ sym: "AAA" }], ddOf: () => payload({
+        pt_model: { pe_premium_multiple: { 2026: 40, 2027: 60 }, pe_floor_multiple: 15 } }),
+      LIVE_PX: { AAA: { px: 100 } }, cardInfo: () => card(9.1) });
+    const dg = g.buildLadderRows();
+    g.setSort("y1");
+    const at1 = g.ladderVeto(dg.rows[0], dg.Y1, dg.Y2), gy1 = g.ladderGateYear(dg.Y1, dg.Y2);
+    g.setSort("y2");
+    const at2 = g.ladderVeto(dg.rows[0], dg.Y1, dg.Y2), gy2 = g.ladderGateYear(dg.Y1, dg.Y2);
+    ok("[87] the gate is evaluated AT THE SORT YEAR — the same name reads 'no gap' where its rung is under water and ELIGIBLE where it is not; a gate describing a column the reader is not looking at would be the DEC-D2 units error in prose",
+      gy1 === "2026" && gy2 === "2027" && at1 === "no gap" && at2 === null &&
+      dg.rows[0].y1p === -20 && dg.rows[0].y2p === 140);
+    ok("[87] the ladder's gate IS rowVeto — the ELIGIBLE line's own ladder, run on the same row shape, so the table and the green line can never disagree (the ptModelRows rule)",
+      veto({ upside: 140, rdy: { blockers: [] }, tt: card(9.1), rrFail: false }) === null &&
+      veto({ upside: 140, rdy: { blockers: [] }, tt: card(3), rrFail: false }) === "TT 3.0 — quality fails" &&
+      veto({ upside: 140, rdy: { blockers: ["TT never run"] }, tt: card(9.1), rrFail: false }) === "evidence: TT never run" &&
+      veto({ upside: 140, rdy: { blockers: [] }, tt: null, rrFail: false }) === "no server card — unscored");
+    api3.setSort("y2");
+    ok("[87] a name with no rung at the gate year is EXCLUDED and says so — never substituted from the other year, and never reported as 'no gap' (which would claim a comparison that never ran, v4.1.3)",
+      /never substituted/.test(api3.ladderVeto(d3.rows.find((r) => r.sym === "NOR"), d3.Y1, d3.Y2)));
+  } catch (e) {
+    ok("[87] the ladder fixtures RAN to completion — a section that dies mid-run prints no total "
+      + "and is indistinguishable from one that passed: " + (e && e.message), false);
+  }
+
+  // ── 6. ONE derivation: the module reads, it never re-computes ────────────────────
+  const modSrc = adminSrc.slice(adminSrc.indexOf("function ladderYears(){"), adminSrc.indexOf("function buildRankingsMd(){"));
+  ok("[87] the module READS every number it prints — ptModelRows for targets, rowVeto for the gate, cardInfo for the composite, macroGate for the board state — and re-derives none of them",
+    /ptModelRows\(dd\)/.test(modSrc) && /rowVeto\(\{upside:/.test(modSrc) &&
+    /cardInfo\(/.test(modSrc) && /macroGate\(\)/.test(modSrc) &&
+    !/pe_premium_multiple|ev_s_multiple|schedAt\(|share_count_M/.test(modSrc));
+  ok("[87] the ELIGIBLE line binds the SAME lifted function, and the old inline closure body is pinned ABSENT — a second copy of the veto ladder is the drift defect the lift exists to prevent",
+    /const why=rowVeto;/.test(adminSrc) &&
+    (adminSrc.match(/function rowVeto\(r\)\{/g) || []).length === 1 &&
+    !/const why=r=>\{\s*\n\s*if\(!\(r\.upside>0\)\)return "no gap";/.test(adminSrc));
+
+  // ── 7. the surface contract ─────────────────────────────────────────────────────
+  ok("[87] it is a MODAL over the shared #overlay, not a fourth mode — NEXT $ and BOOK stay the only persistent modes (v5.7.0) and the deck page list is untouched",
+    /function openLadder\(\)\{[\s\S]{0,900}openModal\(\);/.test(adminSrc) &&
+    /classList\.add\("wide","ld-card"\)/.test(adminSrc) &&
+    !/DECK_PAGES/.test(adminSrc));
+  ok("[87] #ladder is a bookmarkable DOOR that resolves to NEXT $ and replaces itself — parseTtRoute never hands a fourth view to applyRoute, and the pre-v5.6 compat branch can no longer read it as a ticker named LADDER",
+    /if\(head==="ladder"\)return\{view:"next",sub:"all",sym:null,ladder:true\};/.test(adminSrc) &&
+    /function ladderHashCheck\(\)/.test(adminSrc) &&
+    /history\.replaceState\(null,"","#next"\)/.test(adminSrc) &&
+    /if\(ladderHashCheck\(\)\)return;/.test(adminSrc));
+  ok("[87] a #ladder arrival is honoured at the END of the boot chain, after the book and the payload index land — a ladder built off an unread BOOK would report 'nothing qualifies', a claim about data nobody read (v5.6.4)",
+    /let LADDER_ARRIVED=TT_ROUTE\.ladder===true;/.test(adminSrc) &&
+    /if\(LADDER_ARRIVED\)\{LADDER_ARRIVED=false;/.test(adminSrc) &&
+    adminSrc.indexOf("if(LADDER_ARRIVED)") > adminSrc.indexOf("function honourArrival(){") &&
+    /async function bootLoads\(\)\{ await loadBook\(\); await secondaryLoads\(\); honourArrival\(\); \}/.test(adminSrc));
+  ok("[87] it is reachable WITHOUT opening a disclosure — a link on the ranking footer where the single rung is actually read, plus DAILY OPS (the v3.62 SHARE RANKS lesson: a surface nobody can find does not exist)",
+    /onclick="openLadder\(\)"[^>]*>▦ FULL LADDER — every YE rung/.test(adminSrc) &&
+    /<button class="act" onclick="openLadder\(\)">▦ FULL LADDER<\/button>/.test(adminSrc));
+
+  // ── 8. the PDF is the browser's own, and it must not print a lie ────────────────
+  const pr = adminSrc.slice(adminSrc.indexOf("@media print{"), adminSrc.indexOf("</style>"));
+  ok("[87] print-to-PDF renders the OPEN ladder and nothing else: the board is hidden, the fixed overlay goes static so it paginates, and rows do not split across a page break",
+    /\.wrap\{display:none!important\}/.test(pr) && /#overlay\.on\{position:static!important/.test(pr) &&
+    /\.ld-tbl tr\{page-break-inside:avoid\}/.test(pr) && /\.tblx\{overflow:visible!important\}/.test(pr));
+  ok("[87] the print sheet redefines the THEME VARS rather than forcing one ink colour — inline var(--green)/var(--red) resolve to paper-safe values, so the one signal the % columns carry survives the PDF instead of being flattened to black",
+    /--green:#0a6b3d/.test(pr) && /--red:#a41d1d/.test(pr) && !/card \*\{color:#000/.test(pr));
+  ok("[87] the sort headers and the action row are hidden in print — a control rendered into a PDF is an affordance that does nothing, the v3.52 interface-theater defect on paper",
+    /#overlay \.card \.x,#overlay \.card \.btns,\.ld-sort\{display:none!important\}/.test(pr));
+  ok("[87] a sort header is a real button with aria-pressed and a 40px thumb target at phone widths — the v3.81 defect was a control that rendered its state and offered no way to change it",
+    /<button type="button" class="ld-sort/.test(adminSrc) && /aria-pressed="\$\{LADDER_SORT===k\}"/.test(adminSrc) &&
+    /max-width:480px\)\{\.ld-sort\{min-height:40px\}\}/.test(adminSrc));
+  ok("[87] the header states the basis ONCE and refuses the comparison it cannot support: the two years are different horizons, so the two % columns are explicitly NOT comparable as rates — the next-dollar ranking is where %/yr lives",
+    /not annualised/.test(adminSrc) && /are not comparable as rates/.test(adminSrc) &&
+    /not street targets and not advice/.test(adminSrc));
+  ok("[87] an unread score index reads 'not read' on every composite, never 'no card' — the v5.6.4 rule that a failed read must not become a claim about the store",
+    /SCORE_INDEX===null\?"not read":"no card"/.test(adminSrc) &&
+    /score index did not load — composites read/.test(adminSrc));
 }
 
 console.log(`\n=== SMOKE TEST: ${pass} passed, ${fail} failed ===`);

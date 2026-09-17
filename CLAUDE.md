@@ -5,6 +5,84 @@ answers *"is it safe to be in the market?"* from live macro + market + sentiment
 data. Single-page React app on Cloudflare Pages, with live data assembled at the
 edge by Pages Functions and cached in KV.
 
+**v6.7.0 "FULL LADDER" (FEAT-TT-LADDER) — the FULL two-year ladder, ranked, gated and printable,
+one tap from the ranking (owner ask 2026-09-17).** The terminal has always shown **one rung per name**
+— `pickRow` picks the horizon in force, the glance ranks the top five on %/yr, and the whole
+ladder lives one tab at a time inside each name's est-run table. There was no surface that put
+**every name's YE(n) and YE(n+1) rungs side by side**, so comparing the near and far year across
+the book meant opening 45 tabs. `openLadder()` is that surface: every priced name, both rungs,
+the % to each, the basis (PREMIUM vs FLOOR), the server card's composite, and the eligibility
+gate — ranked by percent increase, sortable, and printable to PDF.
+**IT RE-DERIVES NOTHING, and that is the whole design.** Targets are `ptModelRows(dd)`; the
+composite is `cardInfo(sym)` (the §14.8 server card, never the legacy free text); the board
+state is `macroGate()`; and the per-row gate is **`rowVeto()` — the ELIGIBLE line's own ladder,
+LIFTED out of `renderNextDollar`'s closure for this release.** That lift is the load-bearing
+change: the veto was a closure, so a second surface wanting the gate had exactly two options,
+re-implement it (the drift defect this repo has paid for at v3.49's 5-vs-6 denominator and
+v3.39's PT audit) or show no gate at all. The body moved VERBATIM; only the binding changed.
+Smoke pins `function rowVeto` exactly once, the ELIGIBLE line binding it, and the old inline
+closure ABSENT — negative-controlled by re-implementing the veto inside the ladder, which turns
+the one-derivation pin red.
+**THE YEARS ARE COMPUTED, NEVER "2026/2027"** — the columns are the current ET year and the
+next, and no year literal appears anywhere in the module. A hardcoded pair reads correctly today
+and becomes a lie on 1 January: the FOMC-table / Mag-10-footer / "5-factor vote" defect, pinned
+in both directions (hardcoding the pair turns exactly two pins red).
+**THE GATE FOLLOWS THE SORT YEAR.** `rowVeto`'s first rung is the gap, so evaluating it at one
+year while ranking on another prints a verdict about a column the reader is not looking at — the
+DEC-D2 units error in prose. Sorting by the near year re-evaluates the whole ladder there and the
+header states which year it used; decoupling them turns its own pin red. A name with **no rung at
+the sort year** is excluded and SAYS SO ("never substituted", the v4.1.3 rule) rather than being
+reported as "no gap", which would claim a comparison that never ran.
+**NOTHING IS SILENTLY DROPPED.** A name the model cannot price is NAMED below the table with the
+specific missing input — *no thesis payload stored* · *no pt_model — no rung computes* · *no
+usable price* · *no rung at either year* — because a name absent from a ranking reads as
+considered-and-rejected (v3.65/v3.76), and the names most often there are the freshly-run ones.
+Every book name lands in exactly one place, pinned. A stamped mark is disclosed, never relabelled
+live (v4.1); an unread score index reads **"not read"**, never "no card" (v5.6.4); a negative-EPS
+rung carries the v3.17 `n/m` STATE and can never reach a % column.
+**A MODAL, NOT A FOURTH MODE.** v5.7.0 locked NEXT $ and BOOK as the only persistent modes and
+v4.6.0 already refused a fourth deck page for the same reason, so this rides the existing
+`#overlay` machinery (openModal/closeModal, focus trap, ESC) and `closeCard` hands the shared card
+back without the width class — a leftover `.wide` would silently widen the next ticker card.
+`#ladder` is a **bookmarkable door**: it resolves to NEXT $, opens the table, and replaces its own
+hash, so `parseTtRoute`/`applyRoute` never learn a state they have no case for; the arrival is
+honoured at the END of the boot chain (the v5.6.9 rule — a ladder built off an unread BOOK would
+report "nothing qualifies", a claim about data nobody read).
+**THE "LIVE PDF" IS THE BROWSER'S OWN.** A `@media print` sheet hides the board, makes the fixed
+overlay static so it paginates, and keeps rows off page breaks — no library, and no second
+renderer that could disagree with the screen. It redefines the THEME VARS for print rather than
+forcing one ink colour, so inline `var(--green)`/`var(--red)` resolve to paper-safe values and the
+% columns keep the one signal they carry; the sort headers and the action row are hidden, because
+a control rendered into a PDF is the v3.52 interface-theater defect on paper. ⎘ COPY TSV is the
+spreadsheet path.
+**Found by the pins, not by reading the code — three defects in my own work, recorded rather than
+quietly fixed.** (1) The v5.6 word-collision guard fired on the ladder's own head: it said
+`GATE: SEND IT` while the table carried a per-row `GATE` column — one word, two verdicts on one
+artifact, exactly what that rule exists to stop. The head now reads **MACRO GATE** and states
+outright that the column is the TICKER ladder. (2) The first draft put the entry link on
+`#buyBlock`, which lives inside the **collapsed DESK drawer** — i.e. the precise v3.62 SHARE RANKS
+burial the code comment beside it cites. The 390px assertion caught it; the link is on the primary
+glance footer now, zero clicks deep. (3) The smoke section **crashed twice** while being written —
+a missing import, then a fixture renamed in one place and not the other — each killing the run with
+no total, which reads exactly like a suite that passed (the v3.99.4 P0 shape). The section is
+try/catch-guarded so a throw is a RED assertion, and the fixture's own defect is documented at the
+pin: a name missing BOTH years never reaches the sort at all, so only a name with one rung
+exercises the null-at-sort-year rule.
+Tests: **2472 smoke** (+29, section [87]: the module and `rowVeto` both LIFTED AND RUN — computed
+years against two stubbed clocks, the premium/floor/`n/m` rung rule, all four skip reasons with the
+every-name-lands-somewhere sweep, the % off a live quote with the stamped fallback, the sort at
+three keys with symbols chosen so alphabetical and % orders DIFFER, the gate at both years proven
+to disagree on one name, `rowVeto` run over four states, and the print/route/entry/scoping
+contracts) + **322 render** (+13, driven in real Chromium: `#ladder` opening after the book lands
+and resolving to NEXT $, the ranked order measured off the RENDERED cells, a REAL click re-sorting
+and re-gating, print media actually hiding the board, the card handed back clean, and the phone
+path with a 40px thumb target and no 390px overflow) + **356 public-render**, `audit:prod` clean.
+Negative-controlled three ways — the years hardcoded (2 red), the gate decoupled from the sort
+(1 red), the veto re-implemented inside the ladder (1 red) — each turning exactly its own pin.
+**Deliberately NOT in this release:** no band, vote, quorum, freeze, gate threshold, provider,
+KV schema or receipt semantic moved; `ALLOC_RULE_VERSION`, `tt-v1` and the methodology version are
+untouched; the public dashboard has no ladder surface and is byte-unchanged.
+
 **v6.6.3 — company size and earnings, one tap deep.** Simple's visible stock cards stay
 unchanged. Company popups explain business, share price × shares outstanding, and dated
 net earnings/P/E within three bullets and a 90-word ceiling. Degen's market cap, trailing

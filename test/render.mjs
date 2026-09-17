@@ -2397,6 +2397,97 @@ console.log("\n[render] v5.7.1 — arrival focus: judged AFTER the store is read
   await p4.close();
 }
 
+
+/* ── FEAT-TT-LADDER (v6.7) — driven live, not string-pinned ────────────────────────────
+   admin.html is buildless, so smoke can only pin its SOURCE. Everything below is the part
+   a source pin structurally cannot reach: that the modal actually opens, that the table
+   actually holds rows, that a sort header actually re-sorts AND re-gates, that the shared
+   card is handed back clean, and that print media actually hides the board. */
+{
+  const ET_Y = +TODAY_ET.slice(0, 4), Y1 = String(ET_Y), Y2 = String(ET_Y + 1);
+
+  // (1) the bookmarkable door — #ladder opens it and is NOT a fourth view
+  const p = await open(1200, 2200, "#ladder");
+  ok("ladder: #ladder opens the table on arrival, AFTER the book lands — a ladder built off an unread BOOK would report 'nothing qualifies'",
+    (await p.locator("#overlay.on").count()) === 1 &&
+    /FULL LADDER/.test(await p.locator("#cTitle").innerText().catch(() => "")));
+  ok("ladder: the title names the two COMPUTED year-ends — the current ET year and the next, never a hardcoded pair",
+    (await p.locator("#cTitle").innerText()).includes(`YE${Y1}`) &&
+    (await p.locator("#cTitle").innerText()).includes(`YE${Y2}`));
+  ok("ladder: #ladder resolves to NEXT $ and replaces its own hash — the route model never learns a fourth view (v5.7.0)",
+    (await p.evaluate(() => location.hash)) === "#next" &&
+    (await p.locator("#modeNext").getAttribute("aria-selected")) === "true");
+
+  // (2) the table: real rows, ranked by percent increase, with the gate and the composite
+  const head = (await p.locator("#cBody .ld-head").innerText()).replace(/\s+/g, " ");
+  ok("ladder: the MACRO gate is stated ONCE as a board fact and says outright that the per-row GATE column is a different verdict — one word, two meanings on one artifact is the v5.6 collision this names away",
+    /MACRO GATE/i.test(head) && /per-row GATE column is the TICKER ladder/i.test(head));
+  const pcts = await p.$$eval("#cBody .ld-main tbody tr", (rs) =>
+    rs.map((r) => { const c = r.querySelectorAll("td");
+      const n = (t) => { const m = (t || "").match(/-?\d+(\.\d+)?/); return m ? +m[0] : null; };
+      return { sym: c[1] ? c[1].innerText.trim() : "", y1p: n(c[5] && c[5].innerText), y2p: n(c[7] && c[7].innerText),
+        gate: c[10] ? c[10].innerText.trim() : "" }; }));
+  ok("ladder: the table holds real ranked rows — more than one name, every one carrying a gate verdict",
+    pcts.length >= 2 && pcts.every((r) => r.sym.length > 0 && r.gate.length > 0));
+  ok("ladder: DEFAULT ORDER is percent increase at the deeper year-end, descending — measured off the rendered cells, not asserted from the source",
+    pcts.filter((r) => r.y2p !== null).every((r, i, a) => i === 0 || a[i - 1].y2p >= r.y2p));
+  ok("ladder: a name the model cannot price is NAMED below the table with its cause and is ABSENT from the ranked rows — never a silent drop (v3.65/v3.76)",
+    !pcts.some((r) => r.sym === "CCC") &&
+    /CCC/.test(await p.locator("#cBody").innerText()) &&
+    /no thesis payload stored/.test(await p.locator("#cBody").innerText()));
+
+  // (3) the sort header is a real control, and the GATE follows it.
+  //     Deliberately NOT asserted as "the order changed": with a handful of modelled fixture
+  //     names the two years can legitimately rank identically, so demanding a change would
+  //     fail on correct code (the mirror of the v3.60.1 vacuous-assert trap — an assertion
+  //     that only passes when the fixture happens to cooperate). What IS asserted is that the
+  //     table is ordered ON THE NEW KEY and that the gate year moved with it.
+  await p.locator("#cBody .ld-sort", { hasText: `YE${Y1}` }).first().click();
+  await p.waitForTimeout(200);
+  const after = await p.$$eval("#cBody .ld-main tbody tr", (rs) =>
+    rs.map((r) => { const c = r.querySelectorAll("td");
+      const n = (t) => { const m = (t || "").match(/-?\d+(\.\d+)?/); return m ? +m[0] : null; };
+      return { sym: c[1].innerText.trim(), y1p: n(c[5] && c[5].innerText) }; }));
+  const head2 = (await p.locator("#cBody .ld-head").innerText()).replace(/\s+/g, " ");
+  ok("ladder: a REAL click on the near-year header re-sorts on THAT column and moves the gate year with it — a gate describing a column the reader is not looking at would be the units error in prose",
+    after.length >= 2 &&
+    after.filter((r) => r.y1p !== null).every((r, i, a) => i === 0 || a[i - 1].y1p >= r.y1p) &&
+    new RegExp(`evaluated at YE${Y1}`).test(head2) &&
+    (await p.locator("#cBody .ld-sort", { hasText: `YE${Y1}` }).first().getAttribute("aria-pressed")) === "true");
+
+  // (4) print media actually produces the document
+  await p.emulateMedia({ media: "print" });
+  ok("ladder: under PRINT media the board is hidden and the ladder is the whole page — the 'live PDF' is the browser's own, so there is no second renderer that could disagree with the screen",
+    (await p.locator(".wrap").isVisible().catch(() => true)) === false &&
+    (await p.locator("#cBody .ld-main").isVisible()) === true &&
+    (await p.locator("#cBody .ld-sort").first().isVisible().catch(() => true)) === false);
+  await p.emulateMedia({ media: "screen" });
+
+  // (5) the shared card is handed back UNMODIFIED
+  await p.keyboard.press("Escape");
+  await p.waitForTimeout(150);
+  await p.evaluate(() => openCard("AAA"));
+  await p.waitForTimeout(200);
+  ok("ladder: closing hands #overlay back without the ladder's width class — a leftover .wide would silently widen the next ticker card that opens",
+    (await p.locator("#overlay .card.wide").count()) === 0 &&
+    (await p.locator("#overlay.on").count()) === 1);
+  await p.close();
+
+  // (6) reachable with ZERO clicks from where the single rung is read
+  const p2 = await open(390, 844);
+  const foot = await p2.locator("#glanceRanks").innerText().catch(() => "");
+  ok("ladder: the entry point sits on the ranking footer with NO disclosure to open first — the v3.62 SHARE RANKS lesson, where a complete surface was functionally invisible two menus deep",
+    /FULL LADDER/i.test(foot));
+  await p2.locator("#glanceRanks button", { hasText: /FULL LADDER/i }).first().click();
+  await p2.waitForTimeout(250);
+  const box = await p2.locator("#cBody .ld-sort").first().boundingBox();
+  ok("ladder: it opens from that footer on a phone, and a sort header is a ≥40px thumb target — the v3.81 defect was a control that rendered its state and could not be tapped",
+    (await p2.locator("#overlay.on").count()) === 1 && box && box.height >= 40);
+  ok("ladder: the table scrolls its own overflow rather than blowing the page out at 390px (the v3.35 .tblx + min-width:0 lesson)",
+    (await p2.evaluate(() => document.documentElement.scrollWidth)) <= 390);
+  await p2.close();
+}
+
 await browser.close();
 server.close();
 console.log(`\n=== RENDER TEST: ${pass} passed, ${fail} failed ===`);
