@@ -250,6 +250,37 @@ Negative-controlled three ways — the years hardcoded (2 red), the gate decoupl
 KV schema or receipt semantic moved; `ALLOC_RULE_VERSION`, `tt-v1` and the methodology version are
 untouched; the public dashboard has no ladder surface and is byte-unchanged.
 
+**v6.6.4 — the missing earnings period is restored, not guessed.** v6.6.3 shipped
+`ttmNetIncomePeriod` beside `ttmNetIncome`; a model already sitting in `spotlight:model:v1`
+from before that release carries the value with no period at all — the field did not exist
+yet, so there is nothing on the stored model to migrate it from (verified against the exact
+diff). The documented behavior was to wait for the next successful provider refresh; on the
+live public cache both companies in the current pair (NBIS · MSFT) were still reading
+"Unavailable" for profitability, because the dated evidence was never wrong — it just wasn't
+where the new field looked. `restoreEarningsPeriod` (`functions/lib/spotlight.js`) reads it
+from the SAME per-company facts record (`spotlight:facts:v1:<SYM>`) that refresh already
+wrote — the real SEC/issuer TTM `end` and `label`, never a fresh provider call and never an
+invented date — and is wired into `GET /api/stock-spotlight`'s public read, which was already
+a KV-only path (`SPOTLIGHT_KEYS.model`) with no re-derivation from the underlying facts.
+**Matched BY VALUE, fail-closed like everything else in this module**: the restore only fires
+when the facts record's own TTM net income still equals the frozen model figure; a filing
+that has since superseded it, or a facts record that was never written, leaves the period
+withheld exactly as before — a mismatch is a different staleness than a missing field, and
+this never mislabels an old number with today's date. Still a read-only GET: no KV write, no
+provider fetch, both invariants re-verified by test. The net-earnings source citation (also
+new in v6.6.3) is restored alongside it, once, never duplicated. No band, vote, threshold,
+provider or investment-call output changed — this is data restoration on the one field that
+regressed to "unavailable" by omission, not a new calculation.
+Tests: **2448 smoke** (+2, run against the real facts-record shape the v6.6.3 fixture already
+uses: the pure function's matched-by-value/mismatch/no-facts/already-dated/no-duplicate paths,
+and the endpoint driven end-to-end proving both NBIS and MSFT restore to the exact period the
+correctly-built model would carry, with the no-facts case still honestly missing). **Honest
+limit:** this build environment has neither Chromium nor a runnable Vite build, so `test:ui`
+and `test:public` could not be executed here (both skip/fail cleanly per their own additive
+contract, not a pass); no DOM or UI surface changed — `spotlightExplain.js` already reads
+whatever period the model carries — so the render and public-render suites have nothing new
+to cover, but the owner should still run `npm run gates` before the next deploy.
+
 **v6.6.3 — company size and earnings, one tap deep.** Simple's visible stock cards stay
 unchanged. Company popups explain business, share price × shares outstanding, and dated
 net earnings/P/E within three bullets and a 90-word ceiling. Degen's market cap, trailing

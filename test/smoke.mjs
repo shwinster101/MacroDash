@@ -11972,6 +11972,21 @@ console.log("\n[81] v6.5.0 STOCK SPOTLIGHT — calculations, endpoints, cron leg
       const merged = S.mergeFundamentals(sec, S.issuerFundamentals(rec));
       const m = S.deriveMetrics({ fundamentals: merged, marketCap: { usd: 61e9 }, series: null, today: "2026-09-14" });
       return merged.ocf.provider === "issuer report" && merged.ocf.observedAt === "2026-06-30" && m.fcf.basis === "half" && Math.abs(m.fcf.value + 3626.2e6) < 1; })());
+  ok("[81] restoreEarningsPeriod (v6.6.4): a model cached before v6.6.3 has its dated period restored from the SAME facts record the refresh already wrote, matched BY VALUE — a mismatch, no facts, or an already-dated period all leave the company untouched, never a guessed date",
+    (() => {
+      const stale = { metrics: { valuation: { ttmNetIncome: -60e6, ttmNetIncomePeriod: null } }, sources: [] };
+      const fundamentals = { netIncome: { ttm: { value: -60e6, end: "2026-06-30", label: "TTM to 2026-06-30" },
+        sourceUrl: "https://www.sec.gov/edgar/browse/?CIK=0001513845", provider: "SEC", observedAt: "2026-06-30", quarter: { form: "6-K", filed: "2026-07-20" } } };
+      const restored = S.restoreEarningsPeriod(stale, fundamentals);
+      const mismatched = S.restoreEarningsPeriod(stale, { netIncome: { ttm: { value: -61e6, end: "2026-06-30", label: "TTM to 2026-06-30" } } });
+      const noFacts = S.restoreEarningsPeriod(stale, null);
+      const alreadyDated = S.restoreEarningsPeriod({ metrics: { valuation: { ttmNetIncome: -60e6, ttmNetIncomePeriod: "TTM to 2026-03-31" } }, sources: [] }, fundamentals);
+      const withSource = { metrics: { valuation: { ttmNetIncome: -60e6, ttmNetIncomePeriod: null } }, sources: [{ label: "net earnings", url: "https://old" }] };
+      const restored2 = S.restoreEarningsPeriod(withSource, fundamentals);
+      return restored.metrics.valuation.ttmNetIncomePeriod === "TTM to 2026-06-30" &&
+        restored.sources.some((s) => s.label === "net earnings" && /sec\.gov/.test(s.url)) &&
+        mismatched === stale && noFacts === stale && alreadyDated.metrics.valuation.ttmNetIncomePeriod === "TTM to 2026-03-31" &&
+        restored2.sources.length === 1 && restored2.sources[0].url === "https://old"; })());
   ok("[81] lessons: seven, keyed 1:1 to the rotation, each with a title, a body, and an example FUNCTION; MSFT's worked example prints both run-rates from the fixture",
     S.SPOTLIGHT_ROTATION.every((k) => S.LESSONS[k] && S.LESSONS[k].title && S.LESSONS[k].body.length > 40 && typeof S.LESSONS[k].example === "function") &&
     /NBIS: \$582M × 4 = \$2\.3B run-rate vs \$1\.3B reported TTM \(\+75\.8%;[\s\S]*MSFT: \$76\.0B × 4/.test(fx.model.lesson.example) && fx.model.lesson.exampleUnavailable === null);
@@ -12035,6 +12050,32 @@ console.log("\n[81] v6.5.0 STOCK SPOTLIGHT — calculations, endpoints, cron leg
       try { await spotGet({ env: { PULSE_CACHE: kv, SPOTLIGHT_ENABLED: "1" } }); } finally { globalThis.fetch = real; }
       const dead = await spotGet({ env: { PULSE_CACHE: { get: async () => { throw new Error("kv down"); } }, SPOTLIGHT_ENABLED: "1" } });
       return kv.puts.length === 0 && fetched === 0 && dead.status === 200 && (await dead.json()).model === null; })());
+  ok("[81] GET (v6.6.4): a model cached before v6.6.3 restores the dated earnings period from the SAME facts record its own refresh wrote, for both companies — a KV read only, never a provider call, never a guess; with no facts record on file it stays honestly missing",
+    await (async () => {
+      const nbisFundamentals = S.extractSpotlightFundamentals(FX.companyFacts({ revenueQ: [105e6, 147e6, 245e6, 350e6, 582e6], opIncQ: [-80e6, -90e6, -95e6, -70e6, -40e6],
+        netIncQ: [-100e6, -110e6, -120e6, -90e6, -60e6], ocfQ: [-20e6, -10e6, 5e6, 20e6, 60e6], capexQ: [400e6, 600e6, 900e6, 1500e6, 2200e6],
+        cash: 3.2e9, debt: 1.0e9, shares: 250e6, quarterEnds: fx.qe, form: "6-K", taxonomy: "ifrs-full", entityName: "Nebius Group N.V." }),
+        { retrievedAt: NOW.toISOString(), sourceUrl: "https://www.sec.gov/edgar/browse/?CIK=0001513845" });
+      const msftFundamentals = S.extractSpotlightFundamentals(FX.companyFacts({ quarterEnds: fx.qe, entityName: "MICROSOFT CORP" }),
+        { retrievedAt: NOW.toISOString(), sourceUrl: "https://www.sec.gov/edgar/browse/?CIK=0000789019" });
+      const ancient = structuredClone(fx.model);
+      for (const sym of ["NBIS", "MSFT"]) {
+        delete ancient.companies[sym].metrics.valuation.ttmNetIncomePeriod;
+        ancient.companies[sym].sources = ancient.companies[sym].sources.filter((s) => s.label !== "net earnings");
+      }
+      const kv = kvS(); kv._m.set(S.SPOTLIGHT_KEYS.model, JSON.stringify(ancient));
+      kv._m.set(S.SPOTLIGHT_KEYS.facts("NBIS"), JSON.stringify({ schema: "md-spotlight-facts-v1", symbol: "NBIS", fields: { secFundamentals: { value: nbisFundamentals, status: "LIVE" } } }));
+      kv._m.set(S.SPOTLIGHT_KEYS.facts("MSFT"), JSON.stringify({ schema: "md-spotlight-facts-v1", symbol: "MSFT", fields: { secFundamentals: { value: msftFundamentals, status: "LIVE" } } }));
+      let fetched = 0; const real = globalThis.fetch; globalThis.fetch = async () => { fetched++; return new Response("x"); };
+      let restoredBody; try { restoredBody = await (await spotGet({ env: { PULSE_CACHE: kv, SPOTLIGHT_ENABLED: "1" } })).json(); } finally { globalThis.fetch = real; }
+      const kvNoFacts = kvS(); kvNoFacts._m.set(S.SPOTLIGHT_KEYS.model, JSON.stringify(ancient));
+      const noFactsBody = await (await spotGet({ env: { PULSE_CACHE: kvNoFacts, SPOTLIGHT_ENABLED: "1" } })).json();
+      return kv.puts.length === 0 && kvNoFacts.puts.length === 0 && fetched === 0 &&
+        restoredBody.model.companies.NBIS.metrics.valuation.ttmNetIncomePeriod === nb.metrics.valuation.ttmNetIncomePeriod &&
+        restoredBody.model.companies.NBIS.sources.some((s) => s.label === "net earnings" && /sec\.gov/.test(s.url)) &&
+        restoredBody.model.companies.MSFT.metrics.valuation.ttmNetIncomePeriod === ms.metrics.valuation.ttmNetIncomePeriod &&
+        restoredBody.model.companies.MSFT.sources.some((s) => s.label === "net earnings" && /sec\.gov/.test(s.url)) &&
+        noFactsBody.model.companies.NBIS.metrics.valuation.ttmNetIncomePeriod === undefined; })());
 
   // ── the refresh (POST) — auth, rotation persistence, provider ladder, cooldown ──
   const unix = Math.floor(Date.parse(`${TODAY}T20:00:00Z`) / 1000);

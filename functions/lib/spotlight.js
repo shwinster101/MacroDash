@@ -488,6 +488,29 @@ export function mergeFundamentals(sec, issuer) {
   return out;
 }
 
+/* v6.6.4 — a model cached before v6.6.3 carries the net-income VALUE with no dated period at
+   all: `ttmNetIncomePeriod` did not exist yet, so there is nothing on the stored model to
+   migrate it from (verified against that diff). The dated evidence still lives in the SAME
+   per-company facts record the refresh that built this model already wrote — this reads it,
+   never re-fetches from a provider and never guesses a date. Fail closed like everywhere else
+   here: if the facts' own TTM net income has since moved past the frozen model value (a newer
+   filing landed), that is a different staleness than the missing field, and this withholds
+   rather than mislabel an old number with today's period. */
+export function restoreEarningsPeriod(company, fundamentals) {
+  const v = company?.metrics?.valuation;
+  if (!v || !finite(v.ttmNetIncome) || /\d{4}-\d{2}-\d{2}/.test(String(v.ttmNetIncomePeriod || ""))) return company;
+  const nt = fundamentals?.netIncome?.ttm;
+  if (!nt || !finite(nt.value) || nt.value !== v.ttmNetIncome) return company;
+  const label = nt.label || (nt.end ? `TTM to ${nt.end}` : null);
+  if (!label) return company;
+  const cite = fundamentals.netIncome;
+  const sources = Array.isArray(company.sources) ? company.sources.slice() : [];
+  if (cite?.sourceUrl && !sources.some((s) => s.label === "net earnings"))
+    sources.push({ label: "net earnings", provider: cite.provider || null, url: cite.sourceUrl, observedAt: cite.observedAt || null,
+      form: cite.form || cite.quarter?.form || null, filed: cite.filed || cite.quarter?.filed || null });
+  return { ...company, metrics: { ...company.metrics, valuation: { ...v, ttmNetIncomePeriod: label } }, sources };
+}
+
 // ─── derived metrics ───────────────────────────────────────────────────────────────
 const q = (f) => f && f.status === "LIVE" && f.quarter ? f.quarter : null;
 const ttmOf = (f) => f && f.ttm && finite(f.ttm.value) ? f.ttm : null;
