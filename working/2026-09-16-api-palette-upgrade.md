@@ -200,6 +200,12 @@ field. Building a second unverified upstream ahead of the first is the speculati
 v5.1.0 named. Design survives as planned: weekly per-symbol KV cache, daily budget counter capped
 at 20 of 25, and the `"Information"` cap message parsed as *exhausted*, never retried.
 
+> **Built in v6.6.2** (see §6) — stacked on #44's allowlist. One design change from the plan,
+> recorded: the plan's "revenue consensus" became the whole annual ESTIMATES block (revenue AND
+> EPS AND analyst count), because `EARNINGS_ESTIMATES` returns all three per row and a packet
+> whose revenue came from AV while its EPS came from a screenshot would carry two provenances
+> under one `provider` label — the exact resticker the A ruling forbids.
+
 ---
 
 ## 5. Checklist state
@@ -207,7 +213,128 @@ at 20 of 25, and the `"Information"` cap message parsed as *exhausted*, never re
 ```
 [x] Move 2 — Tiingo candles (built, tested, negative-controlled, docs re-pinned)
 [x] Move 1a — Nasdaq street draft   RULED A; built v6.6.1 (allowlist + PIN draft, never KV)
-[ ] Move 1b — Alpha Vantage revenue    depends on 1a; key obtained, untested
+[x] Move 1b — Alpha Vantage estimates  built v6.6.2 (mapper + budgeted POST draft + allowlist)
 [x] Move 3 — SPY live print         RULED: leave alone; collision recorded
 [x] Docs — CLAUDE.md candle ladder, TIINGO_KEY matrix row, retired claim pinned absent
+[x] Docs — ALPHAVANTAGE_KEY matrix row + data-sources bullet + v6.6.2 entry
+[x] OWNER — ALPHAVANTAGE_KEY stored on Pages Production 2026-09-17 (TIINGO/FINNHUB/FRED/
+    REFRESH_TOKEN/SPOTLIGHT_ENABLED confirmed still present in the same pass)
+[ ] SHIP — v6.6.2 is NOT deployed, so the stored key is INERT (measured, §6.6). No PR open.
+[ ] OWNER — one production ticker refresh → read `candles.provider` (Move 2's live check; PIN-gated)
+[x] PR #44 — failed `test` job re-queued 04:51Z → attempt 2 SUCCESS (the race diagnosis held);
+    squash-merged to `main` as `519ecd8` on the owner's instruction; this branch rebased onto it
+    (the merged 61a0137 dropped, tree identical, only the v6.6.2 diff remains)
 ```
+
+---
+
+## 6. Outcomes — v6.6.2 (Move 1b) and the PR #44 diagnosis (2026-09-17)
+
+### 6.1 What shipped
+- Base: #44's head `61a0137` (v6.6.1, Move 1a) — the branch `claude/api-palette-upgrade-1lcvnr`
+  carries v6.6.2 on top of it. **Merge #44 first; this PR stacks on its allowlist.** #43
+  (`d9ce8ec`, v6.6.0, Move 2) is already on `main`.
+- `functions/lib/tt-v2.js` — `STREET_SOURCES.estimates` admits Alpha Vantage under
+  `alphavantage.co` beside Seeking Alpha; a `short` label per estimates source; the validator
+  names BOTH admitted providers when refusing; `deriveStreetMetrics` carries
+  `estimates.{provider, asOf, label}`; the freshness gate prints the estimates provider.
+- `functions/lib/alphaVantageStreet.js` (new, pure) — annual-only mapper, USD → $B, quota
+  message → EXHAUSTED, UTC-keyed budget key (the documented ET-clock exception).
+- `functions/api/street/av-draft.js` (new) — POST-only, PIN + origin gated, weekly cache,
+  budget stop at 20/25, spend-before-fetch, exhausted → cap, no key → no call, never `tt:street:`.
+- `public/admin.html` — `streetEstimatesFromUrl`, provider-derived estimates block in
+  `readStreetPacket`, provider-following labels, `◉ ALPHA VANTAGE ESTIMATES` + handler.
+- `test/public-render.mjs` + `test/render.mjs` — `waitOutMidnightEt()` before `TODAY`;
+  the two `.close-read` colour reads count-guarded.
+- Docs: CLAUDE.md v6.6.2 entry, `ALPHAVANTAGE_KEY` matrix row, data-sources bullet; the
+  `tt-v2.js` allowlist comment ("SA estimates stay Seeking Alpha") corrected; #44's
+  "SA estimates stay locked" pin re-titled to what it now proves.
+- Gates: **2415 smoke** (+21, section [86]) · **309 render** · **344 public-render** ·
+  `audit:prod` clean. Negative controls, five: budget stop disabled → 2 red (the stop pin and
+  the exhausted-at-cap pin) · cache hit disabled → 1 · AV `short` restickered to `SA` → 1 (the
+  receipt pin) · `readStreetPacket` hardcoding SA → 1 · guard moved after `TODAY` → **first run
+  CRASHED the suite (no total)**, see §6.5; re-run against the corrected lift → exactly 1 (the
+  order pin). C1's run also showed a `version` red that was NOT the control: I reordered the
+  CLAUDE.md headings (v6.6.2 had landed below #44's v6.6.1 entry) while C1 was running; C2
+  onward ran against the fixed file.
+
+### 6.5 A control that crashed instead of biting — the PIN was wrong, recorded
+- Control C5 (move `await waitOutMidnightEt();` AFTER `const TODAY = …`) should have turned
+  the "guard BEFORE TODAY" pin red. Instead `node test/smoke.mjs` printed **no FAIL and no
+  total**: section [86]'s lift sliced the guard's source from its `function` keyword up to the
+  `await` call site, so after the swap the slice carried `const TODAY = ET.format(new Date());`
+  into the `new Function` body → `ReferenceError: ET is not defined` → uncaught inside the
+  block → process dead. The v3.99.4 P0 shape, and the v5.97.2 / v6.6.0 lesson a third time: a
+  control that crashes the suite proves nothing, and a control that passes because your model
+  of the code was wrong proves nothing either.
+- Fix is in the PIN, not the code: the lift ends at the function's own closing brace
+  (`\n}\n` after the `function` keyword) and the construction is try/catch-guarded so a broken
+  lift is a RED assertion (`guard !== null`) rather than a dead run. Re-run: C5 turns exactly
+  the order pin red, and the unmutated file is green.
+
+### 6.2 PR #44's red CI is the harness, not #44's code
+- Run started 03:58:02Z (23:58 ET). `test` failed at `public-render.mjs:1755`
+  ("v6.2/v6.4 — the 6pm evening update"): two FAILs, then an UNCAUGHT
+  `locator.evaluate: Timeout 30000ms exceeded` on `.close-read` killed the process — no total.
+- Mechanism: the suite stamps `TODAY` once at start; `closeReadLine` (`src/closeRead.js:110`)
+  compares the record's date to a LIVE `etYmd()`. At 00:01 ET the fixture dated "today" was
+  yesterday → no line rendered → the colour read threw.
+- Reproduced the cause, not the symptom: #44's head in a worktree ran smoke 2394/0 and
+  `test:public` 344/0 at 00:24 ET; #43 passed the same section at 23:21 ET on identical public
+  code. **Remedy for #44: re-run its `test` job outside ~23:56–00:00 ET** (I cannot push to
+  `feat/v6.6.1-nasdaq-street`). The guard in this branch makes the window unreachable going
+  forward.
+
+### 6.3 Corrections to the earlier survey (kept beside the original text, never edited away)
+- §4 "Move 1b — Alpha Vantage **revenue**" understated the block: AV's `EARNINGS_ESTIMATES`
+  carries revenue, EPS and analyst counts per row, and a split-provenance estimates block would
+  be a resticker. The whole annual block is drafted, labelled Alpha Vantage.
+- §0's Nasdaq response shape (`consensusOverview{priceTarget, lowPriceTarget, …}`) was
+  written from memory; #44 shipped path lists reading `data.priceTarget.consensusPriceTarget`
+  and `data.consensusOverview.buyCount`. Neither has been seen from a network that can reach
+  `api.nasdaq.com`. **Suggest #44's mapper accept both** — a one-line path-list widening — before
+  anyone concludes the shape from a 403.
+- §2 said the key "does nothing until 1a exists." True as far as it went; the real dependency
+  was the ALLOWLIST (an AV-labelled block must validate), which is why 1b stacks on #44 rather
+  than on `main`.
+- The v6.6.0 note claimed "the first call from the Pages edge is the true schema check" for
+  Tiingo — that check has since happened by proxy: production's `/api/stock-spotlight` shows
+  `provider: "Tiingo (adjClose — …, verified)"` generated by a Pages Function on 2026-09-16, so
+  `TIINGO_KEY` is set AND the edge reaches Tiingo. The TT candle ladder's own first Tiingo call
+  (a PIN-gated ticker-facts refresh) is still the owner's to trigger and read.
+
+### 6.4 Not done, named
+- The Alpha Vantage key was **not tested and not stored** anywhere; `www.alphavantage.co` is 403
+  from this environment. The first keyed POST from the Terminal is the true schema check.
+- Move 3 stays ruled out (§1.4). FRED/UST/CBOE/Kalshi/OpenRouter/SEC untouched.
+
+---
+
+## 6.6 Deploy state, MEASURED against production (2026-09-17, post-#44)
+
+Probed `https://macrodash.pages.dev` directly rather than inferring from the merge:
+
+| Probe | Result | Reads as |
+|---|---|---|
+| `GET /api/street/nasdaq-draft?sym=NVDA` | **401** `{"error":"pin required"}` | route EXISTS → **v6.6.1 (#44) is deployed** |
+| `GET /api/street/av-draft` | **200 text/html** (the SPA fallback) | route ABSENT → **v6.6.2 is NOT deployed** |
+| `GET /api/ticker-facts?syms=NVDA` | 401 `pin required` | unchanged, PIN-gated as designed |
+
+A PIN-gated route answering 401 and a nonexistent route falling through to the SPA are
+different shapes, which is what makes this a real probe rather than a guess. The 405 that
+`av-draft`'s own `onRequestGet` returns (no auth check, immediate, by design so a prefetch
+cannot spend quota) is the signal that will appear here once v6.6.2 ships — it is the
+cheapest possible deploy check for this route and needs no PIN.
+
+**Consequence, and it dissolves the redeploy question.** `ALPHAVANTAGE_KEY` is stored and
+correct, and it currently does nothing: the only code that reads it lives on
+`claude/api-palette-upgrade-1lcvnr`, not on `main`. Whether Pages secrets reach Functions
+without a redeploy is therefore MOOT for this key — the deployment that adds the route is
+itself the redeploy that carries the secret. (Cloudflare's own docs were searched for a
+ruling on the redeploy requirement and returned nothing usable; recorded as unresolved
+rather than asserted, because it does not need resolving here.)
+
+**Until v6.6.2 ships, a press of `◉ ALPHA VANTAGE ESTIMATES` cannot happen** — the button
+does not exist in the deployed terminal either. There is no state in which the stored key
+produces a wrong answer; the honest states are "button absent" now and "warning names the
+key" only if the secret were missing after the ship.

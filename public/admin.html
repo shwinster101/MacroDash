@@ -9,7 +9,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
 <!-- AUDIT: kept in sync with package.json by test/smoke.mjs. admin.html is a Vite
      public/ passthrough, so it cannot receive __APP_VERSION__ — the guard is the fix. -->
-<title>TT TICKER TERMINAL v6.6.1</title>
+<title>TT TICKER TERMINAL v6.6.2</title>
 <style>
   :root{
     --bg:#05070a; --panel:#0a0f16; --panel2:#0d141d; --line:#16202c;
@@ -466,7 +466,7 @@
          verdict and every gate are computed upstream and this panel changes nothing. -->
     <div id="macroEvidence" role="region" aria-label="Why macro — readout evidence"></div>
     <div id="headInfo" style="display:none">
-      <div class="brand">FINANCE&nbsp;BRO.AI // TT&nbsp;TICKER&nbsp;TERMINAL <small>v6.6.1 · the daily contract</small></div>
+      <div class="brand">FINANCE&nbsp;BRO.AI // TT&nbsp;TICKER&nbsp;TERMINAL <small>v6.6.2 · the daily contract</small></div>
       <div class="statusline">
         <span>BOOK: <b id="bookStamp">loading…</b></span>
         <span>AUTH: <b id="sessState">…</b></span>
@@ -6790,6 +6790,18 @@ function streetTargetFromUrl(url){
   }catch(_e){}
   return null;
 }
+// v6.6.2 (palette Move 1b) — the ESTIMATES provider is derived from the source URL's host the
+// same way the target provider is: Alpha Vantage under its own name, never a Seeking Alpha
+// sticker. An unrecognised host yields null and readStreetPacket sends "" so the server's
+// allowlist refuses it with the reason named, rather than the client guessing a provider.
+function streetEstimatesFromUrl(url){
+  try{
+    const host=new URL(url).hostname.toLowerCase();
+    if(host==="alphavantage.co"||host.endsWith(".alphavantage.co"))return{provider:"Alpha Vantage"};
+    if(host==="seekingalpha.com"||host.endsWith(".seekingalpha.com"))return{provider:"Seeking Alpha"};
+  }catch(_e){}
+  return null;
+}
 function blankStreetDraft(sym){
   const d=new Date().toLocaleDateString("en-CA",{timeZone:"America/New_York"});
   return{symbol:sym||"",estimates:{provider:"Seeking Alpha",sourceUrl:"https://seekingalpha.com/",asOf:d,currency:"USD",revenueUnit:"B",epsBasis:"provider-consensus",periods:[]},
@@ -6808,15 +6820,18 @@ function streetReviewHtml(d,warnings){
   const v=x=>x===null||x===undefined?"":esc(x),t=d.analystTarget||{},r=t.ratings||{},e=d.estimates||{};
   const periods=(e.periods&&e.periods.length?e.periods:[{},{},{}]).map(streetPeriodHtml).join("");
   const targetName=t.provider||"target";
-  return `<div class="derived">Upload up to 3 screenshots for an OCR <b>draft</b>, or fetch a Nasdaq/Zacks target draft, then verify every field. Images and Nasdaq responses are discarded; only CONFIRM saves numbers. Nasdaq is never labelled TipRanks.</div>`+
+  // v6.6.2: the estimates block is labelled by ITS provider (Seeking Alpha or Alpha Vantage); a
+  // blank draft still reads Seeking Alpha — the owner's default source, not a guess about a fetch.
+  const estName=e.provider||"Seeking Alpha";
+  return `<div class="derived">Upload up to 3 screenshots for an OCR <b>draft</b>, fetch a Nasdaq/Zacks target draft, or fetch Alpha Vantage annual estimates, then verify every field. Images and provider responses are discarded; only CONFIRM saves numbers. Nasdaq is never labelled TipRanks; Alpha Vantage is never labelled Seeking Alpha.</div>`+
     `<div style="margin-top:8px"><input id="streetImages" type="file" accept="image/png,image/jpeg,image/webp" multiple></div>`+
     (warnings&&warnings.length?`<div class="none" style="color:var(--amber)">⚠ ${warnings.map(esc).join(" · ")}</div>`:"")+
     `<div class="street-grid">`+
       `<label>symbol<input id="stSym" maxlength="8" value="${v(d.symbol)}" autocapitalize="characters"></label>`+
-      `<label>SA as-of<input id="stSaAsOf" type="date" value="${v(e.asOf)}"></label>`+
+      `<label>${esc(estName)} as-of<input id="stSaAsOf" type="date" value="${v(e.asOf)}"></label>`+
       `<label>${esc(targetName)} as-of<input id="stTrAsOf" type="date" value="${v(t.asOf||e.asOf)}"></label>`+
       `<label>currency<input id="stCurrency" maxlength="3" value="${v(e.currency||"USD")}"></label>`+
-      `<label style="grid-column:span 3">Seeking Alpha source URL<input id="stSaUrl" type="url" value="${v(e.sourceUrl||"https://seekingalpha.com/")}"></label>`+
+      `<label style="grid-column:span 3">${esc(estName)} source URL<input id="stSaUrl" type="url" value="${v(e.sourceUrl||"https://seekingalpha.com/")}"></label>`+
       `<label>${esc(targetName)} average<input id="stAvg" type="number" step="0.01" value="${v(t.average)}"></label>`+
       `<label>low<input id="stLow" type="number" step="0.01" value="${v(t.low)}"></label>`+
       `<label>high<input id="stHigh" type="number" step="0.01" value="${v(t.high)}"></label>`+
@@ -6828,7 +6843,7 @@ function streetReviewHtml(d,warnings){
       `<label>lookback mo<input id="stLookback" type="number" step="1" min="1" max="24" value="${v(t.lookbackMonths)}" placeholder="blank if unpublished"></label>`+
       `<label style="grid-column:span 3">${esc(targetName)} source URL<input id="stTrUrl" type="url" value="${v(t.sourceUrl||"https://www.tipranks.com/")}"></label>`+
     `</div>`+
-    `<div class="lbl" style="margin-top:12px">SEEKING ALPHA ANNUAL ESTIMATES · explicit observations only</div>`+
+    `<div class="lbl" style="margin-top:12px">${esc(estName).toUpperCase()} ANNUAL ESTIMATES · explicit observations only</div>`+
     `<div id="streetPeriods">${periods}</div>`+
     `<button class="act" type="button" style="margin-top:7px" onclick="document.getElementById('streetPeriods').insertAdjacentHTML('beforeend',streetPeriodHtml({}))">+ PERIOD</button>`;
 }
@@ -6838,6 +6853,7 @@ function renderStreetReview(d,warnings){
   document.getElementById("cBody").innerHTML=streetReviewHtml(d,warnings||[]);
   document.getElementById("cBtns").innerHTML=`<button class="act" onclick="ocrStreetDraft()">◉ OCR DRAFT</button>`+
     `<button class="act" onclick="nasdaqStreetDraft()">◉ NASDAQ DRAFT</button>`+
+    `<button class="act" onclick="alphaVantageStreetDraft()">◉ ALPHA VANTAGE ESTIMATES</button>`+
     `<button class="act" onclick="saveStreetPacket()">✔ CONFIRM &amp; SAVE</button>`+
     (d.symbol?`<button class="act" onclick="runTickerAnalysis('${esc(d.symbol)}')">⟳ RUN GATES</button>`:"")+
     `<button class="act" onclick="closeCard()">CANCEL</button>`;
@@ -6883,6 +6899,28 @@ async function nasdaqStreetDraft(){
     toast("Nasdaq draft ready — verify every field before CONFIRM");
   }catch(e){toast("Nasdaq draft unavailable: "+e.message+" — manual fields remain available");}
 }
+// v6.6.2 (palette Move 1b) — POST, because the route SPENDS a daily quota (a GET could be
+// prefetched or replayed). The response replaces the ESTIMATES block only; the target block and
+// every typed field ride through readStreetPacket unchanged. Nothing is saved until CONFIRM.
+async function alphaVantageStreetDraft(){
+  const keepSym=(document.getElementById("stSym")&&document.getElementById("stSym").value||"").trim().toUpperCase();
+  if(!keepSym)return toast("Enter a symbol first");
+  let d;
+  try{d=readStreetPacket();}catch(_e){d=blankStreetDraft(keepSym);}
+  d.symbol=keepSym;
+  toast("Alpha Vantage is building an estimates draft — nothing is being saved");
+  try{
+    const data=await v2Json("/api/street/av-draft",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({symbol:keepSym})});
+    const est=data.estimates||{},hasRows=!!(est.periods&&est.periods.length);
+    if(hasRows)d.estimates=est;
+    d.confirmedAt=null;
+    const warnings=[...(data.warnings||[])];
+    if(data.budget)warnings.push(`Alpha Vantage budget: ${data.budget.used}/${data.budget.budget} used this UTC day (cap ${data.budget.cap})`);
+    if(!hasRows)warnings.push("no Alpha Vantage annual rows landed — the estimates already on the form were kept");
+    renderStreetReview(d,warnings);
+    toast(hasRows?"Alpha Vantage estimates drafted — verify every row before CONFIRM":"Alpha Vantage returned no usable rows");
+  }catch(e){toast("Alpha Vantage draft unavailable: "+e.message+" — manual fields remain available");}
+}
 function inputNumber(id){
   const el=document.getElementById(id),raw=el&&(el.value||"").trim();
   if(!raw)return undefined;const n=Number(raw);return isFinite(n)?n:undefined;
@@ -6905,8 +6943,13 @@ function readStreetPacket(){
   else if(src&&src.defaultLookback!=null)target.lookbackMonths=src.defaultLookback;
   optional("stLow","low",target);optional("stHigh","high",target);optional("stCount","analystCount",target);optional("stRef","referencePrice",target);
   optional("stBuy","buy",target.ratings);optional("stHold","hold",target.ratings);optional("stSell","sell",target.ratings);
+  // v6.6.2: the estimates provider is DERIVED from the URL's host. A blank URL keeps the owner's
+  // default (Seeking Alpha, the manual path); a recognised host names itself; an unrecognised
+  // host sends "" so the server refuses it by name rather than the client mislabelling it.
+  const saUrl=(document.getElementById("stSaUrl").value||"").trim();
+  const estSrc=streetEstimatesFromUrl(saUrl);
   return{schema:"tt-street-v1",symbol:sym,confirmedAt:new Date().toISOString(),
-    estimates:{provider:"Seeking Alpha",sourceUrl:(document.getElementById("stSaUrl").value||"").trim(),asOf:saAsOf,
+    estimates:{provider:estSrc?estSrc.provider:(saUrl?"":"Seeking Alpha"),sourceUrl:saUrl,asOf:saAsOf,
       currency:target.currency,revenueUnit:"B",epsBasis:"provider-consensus",periods},analystTarget:target};
 }
 async function saveStreetPacket(){

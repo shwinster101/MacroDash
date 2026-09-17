@@ -41,6 +41,9 @@ import { onRequestGet as getFramework, onRequestPut as putFramework } from "../f
 import { mergeOcrExtractions, onRequestPost as postStreetOcr } from "../functions/api/street/ocr.js";
 import { nasdaqStreetDraft as mapNasdaqStreet, blankNasdaqDraft, NASDAQ_TARGET_PROVIDER } from "../functions/lib/nasdaqStreet.js";
 import { nasdaqDraftFor, onRequestGet as getNasdaqDraft } from "../functions/api/street/nasdaq-draft.js";
+import { avEstimatesDraft, avCapMessage, avBudgetKey, avCacheKey, avEstimatesUrl, AV_ESTIMATES_PROVIDER,
+  AV_DAILY_BUDGET, AV_DAILY_CAP, AV_CACHE_DAYS } from "../functions/lib/alphaVantageStreet.js"; // v6.6.2 (palette Move 1b)
+import { avDraftFor, onRequestGet as getAvDraft, onRequestPost as postAvDraft } from "../functions/api/street/av-draft.js"; // v6.6.2
 import { onRequestGet as getTickerFacts, onRequestPost as postTickerFacts, nasdaqCandlesFact, quoteFact, tiingoCandlesFact, tiingoDaily } from "../functions/api/ticker-facts.js";
 import { onRequestPost as postTickerAnalysis, riskTierForBookEntry, qualitativeRubric } from "../functions/api/ticker-analysis.js";
 import { plausible, applyBands, quorum, QUORUM_FIELDS, QUORUM_MIN, marketSession, BANDS,
@@ -7856,9 +7859,11 @@ ok("street schema: source/as-of/currency and a published average are server-requ
   !validateStreetPacket({ ...NVDA_STREET, analystTarget: { ...NVDA_STREET.analystTarget, sourceUrl: "", average: null } }, { now: V2_NOW }).ok);
 ok("street schema: EPS basis cannot be silently defaulted to diluted GAAP",
   !validateStreetPacket({ ...NVDA_STREET, estimates: { ...NVDA_STREET.estimates, epsBasis: undefined } }, { now: V2_NOW }).ok);
-ok("street schema: SA estimates stay locked; analystTarget host must match the named provider",
+// v6.6.2 re-pin: the estimates lock WIDENED to Seeking Alpha OR Alpha Vantage (palette Move 1b);
+// an unknown provider is still refused, and the refusal names BOTH admitted providers.
+ok("street schema: an unknown estimates provider is refused naming the allowlist; analystTarget host must match the named provider",
   (() => { const bad = JSON.parse(JSON.stringify(NVDA_STREET)); bad.estimates.provider = "Other"; bad.analystTarget.sourceUrl = "https://example.com/target";
-    const e = validateStreetPacket(bad, { now: V2_NOW }).errors.join(" "); return /Seeking Alpha/.test(e) && /tipranks\.com/.test(e); })());
+    const e = validateStreetPacket(bad, { now: V2_NOW }).errors.join(" "); return /Seeking Alpha or Alpha Vantage/.test(e) && /tipranks\.com/.test(e); })());
 ok("street schema: a future confirmation timestamp cannot self-attest a later review",
   !validateStreetPacket({ ...NVDA_STREET, confirmedAt: "2026-08-16T19:00:00.000Z" }, { now: V2_NOW }).ok);
 ok("street schema: low/average/high must bracket, and rating counts must reconcile",
@@ -12320,6 +12325,180 @@ console.log("\n[84] v6.5.6 — spotlight learning: educational claims need evide
       if (unused.length) console.log("    unused imports:", unused.join(", "));
       return names.length > 20 && unused.length === 0;
     })());
+}
+
+// ---- 86. v6.6.2 — palette Move 1b: Alpha Vantage revenue/EPS consensus, budgeted and truthful ----
+// The plan's 1b: ONE free key (25 calls/day), EARNINGS_ESTIMATES → the street ESTIMATES block.
+// Everything here is RUN, not string-pinned: the mapper over a mixed annual/quarterly/junk row set,
+// the route against a fake KV with a stubbed fetch through every budget state, the allowlist in
+// both directions, the receipt label, the admin host→provider lift, and the harness midnight guard
+// that PR #44's CI died on. (This section sits BEFORE the exit line on purpose — v5.97.1.)
+{
+  console.log("\n[86] v6.6.2 — Alpha Vantage estimates draft: annual-only mapper, budgeted POST route, truthful allowlist, the midnight-ET harness guard");
+  const strip = (src) => src.replace(/\/\/[^\n]*|\/\*[\s\S]*?\*\//g, "");
+  const AV_RAW = { symbol: "NVDA", estimates: [
+    { date: "2027-01-31", horizon: "current fiscal year", eps_estimate_average: "8.96", revenue_estimate_average: "393930000000", eps_estimate_analyst_count: "37" },
+    { date: "2028-01-31", horizon: "next fiscal year", eps_estimate_average: "12.80", revenue_estimate_average: "562140000000", eps_estimate_analyst_count: "35" },
+    { date: "2026-10-31", horizon: "current quarter", eps_estimate_average: "1.20", revenue_estimate_average: "54000000000" },   // quarterly: skipped, never merged
+    { date: "2027-01-31", horizon: "current fiscal year", eps_estimate_average: "9.99" },                                           // duplicate period end: first wins
+    { date: "2029-01", horizon: "next fiscal year plus one", eps_estimate_average: "15.93" },                                      // malformed date: dropped AND named
+    { date: "2030-01-31", horizon: "annual", eps_estimate_average: "None", revenue_estimate_average: "None" },                     // no number at all: dropped
+    { date: "2031-01-31", horizon: "someday", eps_estimate_average: "1" },                                                        // unknown horizon: dropped, not guessed annual
+  ] };
+  // A. the mapper
+  const m = avEstimatesDraft(AV_RAW, { asOf: "2026-08-15" });
+  ok("[86] mapper: annual rows only, revenue USD → $B, EPS + analyst count carried, sorted by period end; quarterly/duplicate/malformed/blank/unknown are each counted and none merged",
+    m.exhausted === false && m.estimates.provider === "Alpha Vantage" && m.estimates.sourceUrl === "https://www.alphavantage.co/" &&
+    m.estimates.asOf === "2026-08-15" && m.estimates.periods.length === 2 &&
+    m.estimates.periods[0].periodEnd === "2027-01-31" && m.estimates.periods[0].revenueB === 393.93 && m.estimates.periods[0].eps === 8.96 && m.estimates.periods[0].analysts === 37 &&
+    m.estimates.periods[1].periodEnd === "2028-01-31" && m.estimates.periods[1].revenueB === 562.14 && m.estimates.periods[1].eps === 12.8 && m.estimates.periods[1].analysts === 35 &&
+    m.skipped.quarterly === 1 && m.skipped.duplicates === 1 && m.skipped.dropped === 3 &&
+    m.warnings.some((w) => /unparseable date \(2029-01\)/.test(w)) && m.warnings.some((w) => /1 duplicate period end/.test(w)));
+  const capped = avEstimatesDraft({ Information: "We have detected your API key as X and our standard API rate limit is 25 requests per day." });
+  const errored = avEstimatesDraft({ "Error Message": "Invalid API call." });
+  ok("[86] mapper fails closed: AV's quota message reads EXHAUSTED (a fact about the day, never retried), an Error Message drafts nothing, junk shapes draft nothing — and none fabricate a row",
+    capped.exhausted === true && capped.estimates.periods.length === 0 && /quota is exhausted for this UTC day/.test(capped.warnings[0]) &&
+    errored.exhausted === false && errored.estimates.periods.length === 0 && /Invalid API call/.test(errored.warnings[0]) &&
+    [null, "x", [], { estimates: "nope" }, { estimates: [] }].every((r) => { const d = avEstimatesDraft(r); return d.estimates.periods.length === 0 && d.exhausted === false && d.warnings.length === 1; }) &&
+    avCapMessage({ Note: "Thank you for using Alpha Vantage! Our standard API call frequency is 5 calls per minute" }) !== null &&
+    avCapMessage({ Information: "hello" }) === null && avCapMessage(null) === null);
+  const libSrc = strip(readSrc("../functions/lib/alphaVantageStreet.js"));
+  ok("[86] the mapper is pure — no fetch, no KV, no env; its one import is the allowlist it must agree with; the budget stops UNDER the cap",
+    !/fetch\(|PULSE_CACHE|env\./.test(libSrc) && /from "\.\/tt-v2\.js"/.test(libSrc) &&
+    AV_ESTIMATES_PROVIDER === "Alpha Vantage" && AV_DAILY_BUDGET === 20 && AV_DAILY_CAP === 25 && AV_CACHE_DAYS === 7);
+  // B. the allowlist, both directions, and the receipt label
+  const avPacket = { ...NVDA_STREET, estimates: m.estimates };
+  const avChecked = validateStreetPacket(avPacket, { now: V2_NOW });
+  const avOnSaHost = validateStreetPacket({ ...avPacket, estimates: { ...m.estimates, sourceUrl: "https://seekingalpha.com/" } }, { now: V2_NOW });
+  ok("[86] allowlist: an Alpha Vantage estimates block validates under alphavantage.co; the SAME block on a seekingalpha.com URL is refused by host; SA and TipRanks are untouched",
+    avChecked.ok && avChecked.errors.length === 0 && !avOnSaHost.ok && /alphavantage\.co/.test(avOnSaHost.errors.join(" ")) &&
+    matchStreetSource("estimates", "alphavantage").canonical === "Alpha Vantage" && matchStreetSource("estimates", "Alpha Vantage").host === "alphavantage.co" &&
+    matchStreetSource("estimates", "Seeking Alpha").short === "SA" && STREET_SOURCES.estimates.length === 2 && STREET_SOURCES.analystTarget.length === 2 &&
+    validateStreetPacket(NVDA_STREET, { now: V2_NOW }).ok);
+  const avReceipt = buildGateReceipt({ street: avPacket, facts: nvdaFacts, readout: fullReadout, composite: firstComposite, qualitative: qPass, technicals: techPass, now: V2_NOW });
+  const avFresh = avReceipt.gates.find((g) => g.id === "licensed_freshness"), saFresh = eligibleReceipt.gates.find((g) => g.id === "licensed_freshness");
+  ok("[86] receipt: the freshness gate names the ESTIMATES provider — Alpha Vantage prints in full, SA keeps its entrenched short form — and an AV-fed packet reaches ELIGIBLE on the same gates",
+    avReceipt.eligible === true && /Alpha Vantage estimates and TipRanks target are current/.test(avFresh.reason) && avFresh.evidence.some((e) => /^Alpha Vantage \d+d$/.test(e)) &&
+    /SA estimates and TipRanks target are current/.test(saFresh.reason) && saFresh.evidence.some((e) => /^SA \d+d$/.test(e)) &&
+    /TipRanks published average is /.test(avReceipt.gates.find((g) => g.id === "street_gap").reason));
+  // C. the keys — and the ONE documented exception to the ET clock
+  ok("[86] budget key is the UTC calendar date ON PURPOSE (AV's quota resets at 00:00 UTC) — the one documented exception to the ET clock, with the reason at the definition; the cache key is per symbol; the URL carries the key encoded",
+    avBudgetKey(new Date("2026-09-17T03:58:00Z")) === "tt:av:budget:2026-09-17" &&   // 23:58 ET on the 16th — but AV's day is already the 17th
+    avBudgetKey(new Date("2026-09-16T23:59:59Z")) === "tt:av:budget:2026-09-16" &&
+    /UTC calendar date ON PURPOSE/.test(readSrc("../functions/lib/alphaVantageStreet.js")) &&
+    avCacheKey(" nvda ") === "tt:av:estimates:NVDA:v1" &&
+    /function=EARNINGS_ESTIMATES&symbol=NVDA&apikey=K%26Y$/.test(avEstimatesUrl("NVDA", "K&Y")));
+  // D. the route, driven against a fake KV with a stubbed fetch through every budget state
+  const avKv = new V2MemoryKv();
+  const avCalls = [];
+  const avOkFetch = async (url) => { avCalls.push(url); return { ok: true, status: 200, json: async () => AV_RAW }; };
+  const noFetch = async () => { throw new Error("must not fetch"); };
+  const AV_NOW = new Date("2026-09-17T15:00:00Z");
+  const bKey = avBudgetKey(AV_NOW);
+  const noKey = await avDraftFor("NVDA", { env: { PULSE_CACHE: avKv }, now: AV_NOW, fetchImpl: noFetch });
+  ok("[86] route: no ALPHAVANTAGE_KEY → no call, no KV write, the variable NAMED, an empty Alpha Vantage-labelled block that still requires confirmation",
+    noKey.fetched === false && noKey.cached === false && noKey.budget === null && /ALPHAVANTAGE_KEY is not configured/.test(noKey.warnings.join(" ")) &&
+    noKey.estimates.provider === "Alpha Vantage" && noKey.estimates.periods.length === 0 && noKey.requires_confirmation === true && noKey.persisted === false && avKv.puts.length === 0);
+  const envK = { PULSE_CACHE: avKv, ALPHAVANTAGE_KEY: "test-key" };
+  const first = await avDraftFor("NVDA", { env: envK, now: AV_NOW, fetchImpl: avOkFetch });
+  ok("[86] route: the first call spends ONE unit BEFORE fetching, caches the mapped block for a week, and writes only tt:av: keys — never a tt:street: record",
+    first.fetched === true && first.cached === false && first.budget.used === 1 && first.budget.budget === AV_DAILY_BUDGET && first.budget.cap === AV_DAILY_CAP && first.budget.date === "2026-09-17" &&
+    first.estimates.periods.length === 2 && first.skipped.quarterly === 1 && avCalls.length === 1 && /apikey=test-key/.test(avCalls[0]) &&
+    JSON.parse(avKv.values.get(bKey)).count === 1 && JSON.parse(avKv.values.get(avCacheKey("NVDA"))).estimates.periods.length === 2 &&
+    avKv.puts.length === 2 && avKv.puts.every((k) => k.startsWith("tt:av:")));
+  const second = await avDraftFor("NVDA", { env: envK, now: new Date(AV_NOW.getTime() + 3 * 3600000), fetchImpl: noFetch });
+  ok("[86] route: a weekly-cache hit spends NOTHING and fetches nothing — the block, its retrieved date and the day's budget all reported",
+    second.cached === true && second.fetched === false && second.estimates.periods.length === 2 && second.budget.used === 1 &&
+    /served from the weekly cache \(retrieved 2026-09-17\); no quota spent/.test(second.warnings.join(" ")) && avCalls.length === 1 && avKv.puts.length === 2);
+  const later = await avDraftFor("NVDA", { env: envK, now: new Date(AV_NOW.getTime() + 8 * 86400000), fetchImpl: avOkFetch });
+  ok("[86] route: past AV_CACHE_DAYS the cache is stale and a fresh call is spent — against THAT UTC day's counter",
+    later.cached === false && later.fetched === true && avCalls.length === 2 && later.budget.date === "2026-09-25" && later.budget.used === 1);
+  const stopKv = new V2MemoryKv(); await stopKv.put(bKey, JSON.stringify({ count: AV_DAILY_BUDGET }));
+  const stopped = await avDraftFor("AMD", { env: { PULSE_CACHE: stopKv, ALPHAVANTAGE_KEY: "k" }, now: AV_NOW, fetchImpl: noFetch });
+  const edgeKv = new V2MemoryKv(); await edgeKv.put(bKey, JSON.stringify({ count: AV_DAILY_BUDGET - 1 }));
+  const edge = await avDraftFor("AMD", { env: { PULSE_CACHE: edgeKv, ALPHAVANTAGE_KEY: "k" }, now: AV_NOW, fetchImpl: avOkFetch });
+  ok("[86] route: at 20 of 25 the route STOPS — no fetch, no spend, the 5-call reserve and the UTC reset named — while 19 still proceeds and lands exactly on the budget",
+    stopped.fetched === false && stopped.cached === false && stopped.budget.used === AV_DAILY_BUDGET && stopped.estimates.periods.length === 0 &&
+    /budget reached \(20\/20; the free tier allows 25 and 5 are reserved for manual pulls\) — resets at 00:00 UTC/.test(stopped.warnings.join(" ")) &&
+    stopKv.puts.length === 1 && edge.fetched === true && edge.budget.used === AV_DAILY_BUDGET);
+  const capKv = new V2MemoryKv();
+  const capRes = await avDraftFor("AMD", { env: { PULSE_CACHE: capKv, ALPHAVANTAGE_KEY: "k" }, now: AV_NOW,
+    fetchImpl: async () => ({ ok: true, status: 200, json: async () => ({ Information: "our standard API rate limit is 25 requests per day" }) }) });
+  const capAgain = await avDraftFor("AMD", { env: { PULSE_CACHE: capKv, ALPHAVANTAGE_KEY: "k" }, now: AV_NOW, fetchImpl: noFetch });
+  ok("[86] route: AV's own quota message marks the UTC day EXHAUSTED at the cap so nothing retries it, and an empty block is never cached",
+    capRes.fetched === true && capRes.budget.used === AV_DAILY_CAP && JSON.parse(capKv.values.get(bKey)).count === AV_DAILY_CAP &&
+    !capKv.values.has(avCacheKey("AMD")) && capAgain.fetched === false && capAgain.budget.used === AV_DAILY_CAP);
+  const failRes = await avDraftFor("AMD", { env: { PULSE_CACHE: new V2MemoryKv(), ALPHAVANTAGE_KEY: "sekrit" }, now: AV_NOW,
+    fetchImpl: async () => ({ ok: false, status: 503, json: async () => ({}) }) });
+  ok("[86] route: an upstream failure is spent (AV counts the attempt), named by status, drafts nothing — and the URL, which carries the key, never appears in the envelope",
+    failRes.fetched === true && failRes.budget.used === 1 && /HTTP 503/.test(failRes.warnings.join(" ")) && failRes.estimates.periods.length === 0 &&
+    !/sekrit|apikey/.test(JSON.stringify(failRes)));
+  const avReq = (body, headers = {}) => new Request("https://fixture.test/api/street/av-draft", { method: "POST", headers: { "content-type": "application/json", ...headers }, body: JSON.stringify(body) });
+  const avEnv = (kv) => ({ ACCESS_DEV_BYPASS: "1", PULSE_CACHE: kv, ALPHAVANTAGE_KEY: "k" });
+  const getRes = await getAvDraft();
+  const postCross = await postAvDraft({ request: avReq({ symbol: "NVDA" }, { Origin: "https://evil.test" }), env: avEnv(new V2MemoryKv()), fetchImpl: noFetch });
+  const postBad = await postAvDraft({ request: avReq({ symbol: "not a symbol" }), env: avEnv(new V2MemoryKv()), fetchImpl: noFetch });
+  const postKv = new V2MemoryKv();
+  const postOk = await postAvDraft({ request: avReq({ sym: "nvda" }), env: avEnv(postKv), fetchImpl: avOkFetch });
+  const postBody = await postOk.json();
+  ok("[86] route: GET is 405 naming POST (the call spends quota — a prefetch or replay must never burn one), cross-origin 403s before any fetch, a bad symbol 400s, and a PIN POST returns the draft envelope",
+    getRes.status === 405 && /POST \{symbol\}/.test(await getRes.text()) && postCross.status === 403 && postBad.status === 400 &&
+    postOk.status === 200 && postBody.schema === "tt-street-av-draft-v1" && postBody.symbol === "NVDA" && postBody.requires_confirmation === true && postBody.persisted === false &&
+    postBody.estimates.provider === "Alpha Vantage" && postBody.estimates.periods.length === 2 && postKv.puts.length === 2 && postKv.puts.every((k) => k.startsWith("tt:av:")));
+  const routeSrc = strip(readSrc("../functions/api/street/av-draft.js"));
+  ok("[86] route source: writes only the tt:av: families and never a tt:street: key; POST-only (no PUT); the failing URL is never thrown; nothing is logged",
+    !/tt:street/.test(routeSrc) && /export async function onRequestPost/.test(routeSrc) && !/onRequestPut/.test(routeSrc) &&
+    /throw new Error\(`HTTP \$\{r\.status\}`\)/.test(routeSrc) && !/console\.(log|error|warn)/.test(routeSrc) && /AV_BUDGET_PREFIX|avBudgetKey/.test(routeSrc));
+  // E. the terminal — the host→provider lift RUN, the labels, the handler
+  const rspBody = adminSrc.slice(adminSrc.indexOf("function readStreetPacket()"), adminSrc.indexOf("async function saveStreetPacket()"));
+  ok("[86] admin: the ◉ ALPHA VANTAGE ESTIMATES button POSTs to the draft route; readStreetPacket DERIVES the estimates provider from the URL host and no longer hardcodes Seeking Alpha into the packet",
+    adminSrc.includes("◉ ALPHA VANTAGE ESTIMATES") && adminSrc.includes('v2Json("/api/street/av-draft",{method:"POST"') &&
+    adminSrc.includes("function streetEstimatesFromUrl") && rspBody.includes("const estSrc=streetEstimatesFromUrl(saUrl);") &&
+    rspBody.includes('provider:estSrc?estSrc.provider:(saUrl?"":"Seeking Alpha")') && !rspBody.includes('provider:"Seeking Alpha"'));
+  const sefu = new Function(adminSrc.slice(adminSrc.indexOf("function streetEstimatesFromUrl"), adminSrc.indexOf("function blankStreetDraft")) + "; return streetEstimatesFromUrl;")();
+  ok("[86] admin: streetEstimatesFromUrl names Alpha Vantage under alphavantage.co and Seeking Alpha under seekingalpha.com, and returns null — never a guess — for anything else",
+    sefu("https://www.alphavantage.co/query?function=EARNINGS_ESTIMATES").provider === "Alpha Vantage" && sefu("https://alphavantage.co/").provider === "Alpha Vantage" &&
+    sefu("https://seekingalpha.com/symbol/NVDA").provider === "Seeking Alpha" && sefu("https://evil-alphavantage.co/") === null &&
+    sefu("https://example.com/") === null && sefu("not a url") === null && sefu("") === null);
+  ok("[86] admin: the estimates labels follow THEIR provider (no SEEKING ALPHA literal survives on the form), the intro names both drafts and the never-relabelled rule, and the AV handler replaces ONLY the estimates block and clears confirmedAt",
+    !adminSrc.includes("SEEKING ALPHA ANNUAL ESTIMATES") && adminSrc.includes("${esc(estName).toUpperCase()} ANNUAL ESTIMATES") &&
+    adminSrc.includes("${esc(estName)} source URL") && adminSrc.includes("${esc(estName)} as-of") && adminSrc.includes('const estName=e.provider||"Seeking Alpha";') &&
+    /Alpha Vantage is never labelled Seeking Alpha/.test(adminSrc) &&
+    /async function alphaVantageStreetDraft\(\)[\s\S]{0,1500}if\(hasRows\)d\.estimates=est;\s*\n\s*d\.confirmedAt=null;/.test(adminSrc) &&
+    !/async function alphaVantageStreetDraft\(\)[\s\S]{0,1500}d\.analystTarget=/.test(adminSrc));
+  // F. the harness midnight-ET guard — lifted from public-render.mjs and RUN against a stubbed clock
+  const prSrc = readSrc("../test/public-render.mjs"), rSrc = readSrc("../test/render.mjs");
+  /* The lift ends at the function's OWN closing brace, not at the `await` call site. The first
+     draft sliced up to `await waitOutMidnightEt();` — and the C5 negative control (guard moved
+     AFTER `const TODAY`) then pulled `const TODAY = ET.format(...)` into the lifted body, so
+     `new Function` threw ReferenceError and the WHOLE SUITE died with no total (the v3.99.4 P0
+     shape) instead of turning the order pin red. A control that crashes the suite proves
+     nothing; the construction is now guarded so a broken lift is a RED assertion. */
+  const guardStart = prSrc.indexOf("export async function waitOutMidnightEt");
+  const guardSrc = prSrc.slice(guardStart, prSrc.indexOf("\n}\n", guardStart) + 2).replace(/^export /, "");
+  const ET_HM = new Intl.DateTimeFormat("en-US", { timeZone: "America/New_York", hour: "numeric", minute: "numeric", hour12: false });
+  let guard = null;
+  try { guard = new Function("ET_HM", "console", guardSrc + "; return waitOutMidnightEt;")(ET_HM, { log: () => {} }); } catch (_e) { guard = null; }
+  const slept = [];
+  const sleep = async (ms) => { slept.push(ms); };
+  const at = (iso) => () => new Date(iso);
+  const g2358 = guard ? await guard(4, sleep, at("2026-09-17T03:58:00Z")) : null;   // 23:58 EDT — inside the window
+  const gNoon = guard ? await guard(4, sleep, at("2026-09-17T16:00:00Z")) : null;   // 12:00 EDT
+  const g0000 = guard ? await guard(4, sleep, at("2026-09-17T04:00:00Z")) : null;   // 00:00 EDT — the new day has begun, nothing to wait for
+  const g2355 = guard ? await guard(4, sleep, at("2026-09-17T03:55:00Z")) : null;   // 23:55 EDT — 5 min left, outside a 4-min guard
+  ok("[86] harness: waitOutMidnightEt lifts cleanly and sleeps past the rollover ONLY inside the guard window (23:58 ET → 3 min), and never at noon, at 00:00, or at 23:55",
+    guard !== null && g2358 === 2 && slept.length === 1 && slept[0] === 3 * 60000 && gNoon === 0 && g0000 === 0 && g2355 === 0 && slept.length === 1);
+  ok("[86] harness: BOTH browser suites await the guard BEFORE stamping their TODAY, and every .close-read colour read is count-guarded so a missing line fails an assertion instead of killing the run with no total",
+    prSrc.indexOf("await waitOutMidnightEt();") < prSrc.indexOf("const TODAY = ET.format(new Date());") &&
+    rSrc.indexOf("await waitOutMidnightEt();") < rSrc.indexOf("const TODAY_ET = ") && /async function waitOutMidnightEt\(/.test(rSrc) &&
+    (prSrc.match(/\.close-read'\)\.evaluate\(/g) || []).length === 1 &&
+    /closeReadCount === 1\s*\n\s*\? await page\.locator\('\[aria-label="Macro backdrop verdict"\] \.close-read'\)\.evaluate/.test(prSrc) &&
+    /\(await agreeLine\.count\(\)\) === 1 \? await agreeLine\.evaluate/.test(prSrc));
+  // G. the docs move with the code
+  const claude = readSrc("../CLAUDE.md");
+  ok("[86] docs: CLAUDE.md carries the ALPHAVANTAGE_KEY matrix row (Pages · optional · POST-only draft · absent ⇒ no call), a data-sources bullet naming the budget, and the v6.6.2 entry naming the UTC exception and the midnight guard",
+    /\| `ALPHAVANTAGE_KEY` \| Pages \| optional \| .*av-draft/.test(claude) && /Alpha Vantage.*20 of (the|its) 25/.test(claude) &&
+    /v6\.6\.2/.test(claude) && /waitOutMidnightEt/.test(claude) && /00:00 UTC/.test(claude));
 }
 
 console.log(`\n=== SMOKE TEST: ${pass} passed, ${fail} failed ===`);
