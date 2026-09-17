@@ -113,6 +113,10 @@ export const ExplainerBody = ({ explain }) => {
       {explain.what.map((b, i) => <li key={i} style={{ marginBottom: 10 }}>{b}</li>)}
     </ul>
     {explain.metadata && <div style={{ fontFamily: T.fontSans, fontSize: T.fsM, color: T.textSecondary, lineHeight: 1.5 }}>{explain.metadata}</div>}
+    {explain.sources?.length > 0 && <div style={{ marginTop: 8, display: "flex", gap: 10, flexWrap: "wrap", fontFamily: T.fontSans, fontSize: T.fsM }}>
+      {explain.sources.filter((s) => /^https?:\/\//.test(s.url || "")).map((s, i) =>
+        <a key={`${s.label}-${i}`} href={s.url} target="_blank" rel="noopener noreferrer" title={s.provider || undefined} style={{ color: T.blue }}>{s.label} source</a>)}
+    </div>}
     </>
   );
 };

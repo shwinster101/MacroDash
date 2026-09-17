@@ -2020,9 +2020,13 @@ console.log("\n[public] v6.5 — STOCK SPOTLIGHT: Simple + Degen, always-visible
       const detail = await sheet.innerText();
       ok(`company tap: ${name} opens its own business, size, return and growth explainer`,
         detail.includes(name) && /Market capitalization: \$/.test(detail) &&
-        /all outstanding shares/.test(detail) && /reinvested dividends/.test(detail) &&
+        /total shares outstanding/.test(detail) && /reinvested dividends/.test(detail) &&
         /not profit growth/.test(detail) && /Market capitalization as of/.test(detail) &&
         /Return through/.test(detail) && (await sheet.locator("li").count()) === 3);
+      ok(`company tap: ${name} shows sourced, period-qualified earnings without changing the face`,
+        /Net earnings: 12 months to/.test(detail) &&
+        (name === "Nebius Group" ? /net loss.*P\/E is not meaningful/s.test(detail) : /Investors pay.*per \$1 earned/s.test(detail)) &&
+        (await sheet.getByRole("link", { name: "net earnings source" }).count()) === 1);
       ok(`company tap: ${name} fits the phone width`, await sheet.evaluate(n => n.scrollWidth <= n.clientWidth + 1));
       await page.keyboard.press("Escape");
       ok(`company tap: ${name} closes and restores focus`, (await page.getByRole("dialog").count()) === 0 && await trigger.evaluate(n => n === document.activeElement));
@@ -2079,6 +2083,20 @@ console.log("\n[public] v6.5 — STOCK SPOTLIGHT: Simple + Degen, always-visible
     ok("v6.5 Degen: the supporting analysis (cash, debt, cap ÷ TTM revenue, P/E, shares, price trend, run-rate, inputs) is visible with NO click, plus the worked example",
       (await r.locator('[aria-label$="supporting analysis"]').count()) === 2 && /CAP ÷ TTM REVENUE/i.test(text) && /TRAILING P\/E/i.test(text) && /PRICE TREND/i.test(text) &&
       /RUN-RATE VS TTM/i.test(text) && /CALCULATION INPUTS/.test(text) && (await r.locator('[aria-label="Worked example"]').count()) === 1 && /33\.4×/.test(text));
+    for (const [group, label, title, expected] of [
+      ['[aria-label="Nebius Group (NBIS) profile"]', "Market cap", "Market capitalization", /Hypothetical:.*both equal \$10 billion/s],
+      ['[aria-label="NBIS supporting analysis"]', "Trailing P/E", "Trailing price-to-earnings ratio", /Net earnings were negative/],
+      ['[aria-label="MSFT supporting analysis"]', "Trailing P/E", "Trailing price-to-earnings ratio", /positive multiple/],
+      ['[aria-label="NBIS supporting analysis"]', "Cap ÷ TTM revenue", "Market value relative to sales", /Revenue is not profit/],
+    ]) {
+      const trigger = r.locator(group).getByRole("button", { name: new RegExp(label) });
+      await trigger.focus(); await page.keyboard.press("Enter");
+      const dialog = page.getByRole("dialog", { name: title });
+      ok(`Degen valuation tap: ${group} ${label} teaches its calculation and limitation`,
+        expected.test(await dialog.innerText()) && await dialog.locator("li").count() === 3 && await dialog.getByRole("link").count() > 0);
+      await page.keyboard.press("Escape");
+      ok(`Degen valuation tap: ${label} closes and restores focus`, await trigger.evaluate(n => n === document.activeElement) && await page.getByRole("dialog").count() === 0);
+    }
     ok("v6.5 Degen: NBIS's negative trailing earnings read 'no P/E' — never a negative multiple", /trailing earnings are negative — no P\/E/.test(text) && !/-\d+\.\d×/.test(text));
     ok("v6.5 Degen: sources are the one collapsed disclosure; opening it lists dated sec.gov citations",
       (await r.locator('[aria-label="Sources and calculations"]').count()) === 0 && await (async () => {
@@ -2099,6 +2117,10 @@ console.log("\n[public] v6.5 — STOCK SPOTLIGHT: Simple + Degen, always-visible
     ok("Simple unavailable: missing capitalization is visible; the other company retains its value; never zero",
       /Unavailable · no market cap/.test(text) && !/Unavailable — profile carries no market capitalization/.test(text) &&
       /\$3\.41T/.test(text) && !/\$0/.test(text) && /Unavailable/.test(text));
+    await r.locator('.stock-profile-trigger', { hasText: "Nebius Group" }).click();
+    ok("Simple company tap: missing cap and stale tape remain explicit in the popup",
+      /market capitalization unavailable/i.test(await page.getByRole("dialog").innerText()) && /STALE/.test(await page.getByRole("dialog").innerText()));
+    await page.keyboard.press("Escape");
     ok("v6.5 unavailable: the missing anchor series is NAMED on the chart and the comparison line still plots alone",
       /NBIS series unavailable/.test(text) && (await r.locator(".recharts-line").count()) === 1 && /Unavailable(?! —)/.test(text));
     ok("T4 unavailable: the FULL reasons survive verbatim one tap deep in Explore",

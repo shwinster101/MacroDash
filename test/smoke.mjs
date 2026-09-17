@@ -12052,5 +12052,71 @@ console.log("\n[84] v6.5.6 — spotlight learning: educational claims need evide
     })());
 }
 
+console.log("\n[company-value] v6.6.2 — company size, earnings evidence and two popup budgets");
+{
+  const E = await import("../src/spotlightExplain.js");
+  const S = await import("../functions/lib/spotlight.js");
+  const { makeSpotlightFixture } = await import("./spotlight-fixture.mjs");
+  const fx = makeSpotlightFixture(), nb = fx.projected.companies.NBIS, ms = fx.projected.companies.MSFT;
+  const wc = (s) => s.split(/\s+/).filter(w => /[\p{L}\p{N}]/u.test(w)).length;
+  const withVal = (c, v) => ({ ...c, metrics: { ...c.metrics, valuation: { ...c.metrics.valuation, ...v } } });
+  const variants = [nb, ms, withVal(nb, { ttmNetIncome: 0, trailingPe: null }),
+    withVal(nb, { ttmNetIncome: null }), withVal(ms, { ttmNetIncomePeriod: null }),
+    { ...ms, marketCap: { unavailable: "no dated market cap" } },
+    { ...ms, freshness: { ...ms.freshness, market: { stale: true }, series: { stale: true } } },
+    { ...ms, metrics: { ...ms.metrics, operatingMargin: nb.metrics.operatingMargin } },
+    { ...nb, metrics: { ...nb.metrics, revenueGrowth: {}, operatingMargin: {} } },
+    { ...nb, metrics: { ...nb.metrics, revenueGrowth: {} } }];
+  let simpleMax = 0, degenMax = 0, shape = true;
+  for (const symbol of ["NBIS", ...S.SPOTLIGHT_ROTATION]) for (const c0 of variants) {
+    const c = { ...c0, symbol };
+    const e = E.spotlightExplain(c, fx.projected.tracker.legs.NBIS);
+    simpleMax = Math.max(simpleMax, wc(e.what.join(" ")));
+    shape &&= e.what.length === 3 && !e.what.join(" ").includes("undefined");
+    for (const kind of ["cap", "pe", "revenue"]) {
+      const d = E.valuationExplain(c, kind);
+      degenMax = Math.max(degenMax, wc(d.what.join(" ")));
+      shape &&= d.what.length === 3 && !/NaN|undefined/.test(d.what.join(" "));
+    }
+  }
+  ok(`company popup: all eight companies and ten evidence states keep three bullets under 90/110 words (max ${simpleMax}/${degenMax})`,
+    shape && simpleMax <= E.SPOTLIGHT_WORD_MAX.simple && degenMax <= E.SPOTLIGHT_WORD_MAX.degen);
+  ok("company popup: capitalization teaches share count and rejects share-price-only cheapness; Degen's numeric example is hypothetical",
+    /Share price × total shares outstanding/.test(E.spotlightExplain(nb).what[1]) &&
+    /does not necessarily mean a cheaper company/.test(E.spotlightExplain(ms).what[1]) &&
+    /Hypothetical:.*both equal \$10 billion/.test(E.valuationExplain(nb, "cap").what[1]));
+  ok("company popup: profitability follows reported net earnings, never the ticker or revenue growth",
+    E.earningsEvidence(nb).state === "loss" && E.earningsEvidence(ms).state === "profit" &&
+    /Investors pay/.test(E.spotlightExplain({ ...ms, symbol: "NBIS" }).what[2]) &&
+    /net loss/.test(E.spotlightExplain({ ...nb, symbol: "MSFT" }).what[2]));
+  ok("company popup: zero is distinct from a loss, and missing earnings are not a loss",
+    E.earningsEvidence(variants[2]).state === "zero" && /zero net earnings/.test(E.spotlightExplain(variants[2]).what[2]) &&
+    E.earningsEvidence(variants[3]).state === "missing" && !/net loss/.test(E.spotlightExplain(variants[3]).what[2]));
+  const noPeriod = variants[4];
+  ok("company popup: old cached earnings without their own period never borrow revenue dates or print an earnings multiple",
+    /reporting period unavailable/.test(E.spotlightExplain(noPeriod).what[2]) && E.peDisplay(noPeriod).value === null &&
+    !/Investors pay/.test(E.spotlightExplain(noPeriod).what[2]));
+  const zero = S.deriveMetrics({ fundamentals: { netIncome: { ttm: { value: 0, label: "TTM to 2025-12-31" } } }, marketCap: { usd: 1e9 }, series: null });
+  ok("valuation model: zero net earnings has no P/E and is called zero, not negative",
+    zero.valuation.trailingPe === null && zero.valuation.peNote === "trailing earnings are zero — no P/E");
+  ok("valuation model: carries the earnings period and its source through the public projection",
+    !!nb.metrics.valuation.ttmNetIncomePeriod && nb.sources.some(s => s.label === "net earnings" && /sec.gov/.test(s.url)) &&
+    E.spotlightExplain(nb).metadata.includes(nb.metrics.valuation.ttmNetIncomePeriod.replace(/^TTM to /, "12 months to ")));
+  ok("company popup: positive net earnings never conceal the separately dated operating loss",
+    /operations still lost money/.test(E.spotlightExplain(variants[7]).what[2]) &&
+    E.spotlightExplain(variants[7]).metadata.includes(nb.metrics.operatingMargin.period));
+  ok("company popup: missing capitalization with positive profit does not imply zero or cheapness; stale market data stays marked",
+    /P\/E is unavailable/.test(E.spotlightExplain(variants[5]).what[2]) &&
+    E.peDisplay(variants[5]).value === null && /STALE/.test(E.spotlightExplain(variants[6]).metadata));
+  ok("Degen popup: P/E states its actual denominator and revenue multiple stays distinct from enterprise value",
+    /market capitalization ÷ reported net earnings/.test(E.valuationExplain(ms, "pe").what[0]) &&
+    /not enterprise value/.test(E.valuationExplain(ms, "revenue").what[0]) &&
+    /Revenue is not profit/.test(E.valuationExplain(nb, "revenue").what[1]));
+  const ancient = structuredClone(fx.model); delete ancient.companies.NBIS.metrics.valuation.ttmNetIncomePeriod;
+  ok("company popup: serve-time cache refresh cannot manufacture a missing earnings period",
+    E.earningsEvidence(S.freshenSpotlight(ancient).companies.NBIS).state === "missing" &&
+    ancient.companies.NBIS.metrics.valuation.ttmNetIncomePeriod === undefined);
+}
+
 console.log(`\n=== SMOKE TEST: ${pass} passed, ${fail} failed ===`);
 process.exit(fail === 0 ? 0 : 1);

@@ -23,7 +23,9 @@ import { LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer, ReferenceL
 import { T } from "../design-tokens.js";
 import { Explainable } from "../primitives/FactSheet.jsx";
 import CollapsedGroup from "../primitives/CollapsedGroup.jsx";
-import { spotlightFace, spotlightExplain, lessonTitle, lessonBody, chartTitle, EXPLORE_FOLD_LABEL } from "../simpleFace.js";
+import { spotlightFace, lessonTitle, lessonBody, chartTitle, EXPLORE_FOLD_LABEL } from "../simpleFace.js";
+
+import { spotlightExplain, valuationExplain, peDisplay } from "../spotlightExplain.js";
 
 const LINE = { anchor: { stroke: T.amber, dash: null }, comparison: { stroke: T.blue, dash: "5 3" } };
 const money = (v) => {
@@ -63,9 +65,12 @@ const Unavail = ({ reason, compact = false }) => (
       ? (shortReason(reason) ? <span style={{ color: T.textMuted, fontFamily: T.fontMono, fontSize: T.fsXs }}> · {shortReason(reason)}</span> : null)
       : (reason ? <span style={{ color: T.textMuted, fontFamily: T.fontSans, fontSize: T.fsS }}> — {reason}</span> : null)}</span>
 );
-const Row = ({ label, value, sub, unavailable, big = false, compact = false }) => (
+const Row = ({ label, value, sub, unavailable, big = false, compact = false, explain }) => (
   <div style={{ display: "flex", alignItems: "baseline", gap: 6, flexWrap: "wrap", minWidth: 0, padding: "2px 0" }}>
-    <span style={{ fontFamily: T.fontMono, fontSize: T.fsXs, color: T.textMuted, letterSpacing: "0.04em", textTransform: "uppercase", flexShrink: 0, minWidth: 92 }}>{label}</span>
+    {explain ? <span style={{ flexShrink: 0, minWidth: 92 }}><Explainable explain={explain} title={explain.full} className="stock-metric-trigger"
+      style={{ background: "none", border: 0, padding: "8px 0", minHeight: 44, minWidth: 92, flex: "0 1 auto" }}>
+      <span style={{ fontFamily: T.fontMono, fontSize: T.fsXs, color: T.textMuted, textTransform: "uppercase" }}>{label} <span style={{ color: T.amber }}>ⓘ</span></span>
+    </Explainable></span> : <span style={{ fontFamily: T.fontMono, fontSize: T.fsXs, color: T.textMuted, letterSpacing: "0.04em", textTransform: "uppercase", flexShrink: 0, minWidth: 92 }}>{label}</span>}
     {value != null && !unavailable
       ? <span title={compact && typeof sub === "string" ? sub : undefined} style={{ fontFamily: T.fontMono, fontSize: big ? T.fsL : T.fsM, fontWeight: big ? 700 : 500, color: T.textPrimary, minWidth: 0 }}>{value}</span>
       : <Unavail reason={unavailable} compact={compact} />}
@@ -116,7 +121,7 @@ const Profile = ({ c, leg, simple }) => {
       {!simple && c.blurb && <div style={{ fontFamily: T.fontSans, fontSize: T.fsS, color: T.textSecondary, lineHeight: 1.35, marginBottom: 3 }}>{c.blurb}</div>}
       {/* Always visible, both modes: the market cap NUMBER and the YTD NUMBER. Degen adds the
           observation/through dates on the row; Simple keeps them in the title and explore. */}
-      <Row label="Market cap" big compact={simple} value={cap.display} unavailable={cap.unavailable}
+      <Row label="Market cap" big explain={valuationExplain(c, "cap")} compact={simple} value={cap.display} unavailable={cap.unavailable}
         sub={cap.observedAt ? (simple ? `as of ${cap.observedAt}` : <>as of {cap.observedAt}{cap.method === "derived" ? " · derived" : ""}<Stale f={c.freshness && c.freshness.market} /></>) : null} />
       {simple && c.freshness && c.freshness.market && c.freshness.market.stale && cap.display && <div style={{ marginTop: -2 }}><Stale f={c.freshness.market} /></div>}
       {leg && leg.awaiting
@@ -173,7 +178,7 @@ const FullAssessment = ({ a }) => (
   </div>
 );
 
-const Detail = ({ c }) => {
+const Detail = ({ c, simple }) => {
   const m = c.metrics || {};
   const v = m.valuation || {}, tr = m.trend || {}, rr = m.runRate, cash = m.cash || {}, debt = m.debt || {}, sh = m.shares || {};
   return (
@@ -181,8 +186,8 @@ const Detail = ({ c }) => {
       <div style={{ fontFamily: T.fontMono, fontSize: T.fsXs, color: T.amber, letterSpacing: "0.1em", marginBottom: 4 }}>{c.symbol} · SUPPORTING ANALYSIS</div>
       <Row label="Cash" value={money(cash.value)} unavailable={cash.unavailable} sub={cash.asOf ? `at ${cash.asOf}` : null} />
       <Row label="Debt" value={money(debt.value)} unavailable={debt.unavailable} sub={debt.asOf ? `at ${debt.asOf}` : null} />
-      <Row label="Cap ÷ TTM revenue" value={typeof v.capToTtmRevenue === "number" ? `${v.capToTtmRevenue.toFixed(1)}×` : null} unavailable={v.unavailable} sub={v.ttmRevenuePeriod ? `${money(v.ttmRevenue)} ${v.ttmRevenuePeriod}` : null} />
-      <Row label="Trailing P/E" value={typeof v.trailingPe === "number" ? `${v.trailingPe.toFixed(1)}×` : null} unavailable={typeof v.trailingPe === "number" ? null : (v.peNote || v.unavailable || "unavailable")} sub={typeof v.ttmNetIncome === "number" ? `TTM net income ${money(v.ttmNetIncome)}` : null} />
+      <Row label="Cap ÷ TTM revenue" explain={!simple ? valuationExplain(c, "revenue") : null} value={typeof v.capToTtmRevenue === "number" ? `${v.capToTtmRevenue.toFixed(1)}×` : null} unavailable={v.unavailable} sub={v.ttmRevenuePeriod ? `${money(v.ttmRevenue)} ${v.ttmRevenuePeriod}` : null} />
+      <Row label="Trailing P/E" explain={!simple ? valuationExplain(c, "pe") : null} {...peDisplay(c)} />
       <Row label="Shares out." value={typeof sh.value === "number" ? `${(sh.value / 1e9).toFixed(3)}B` : null} unavailable={sh.unavailable} sub={sh.asOf ? `at ${sh.asOf}` : null} />
       <Row label="Price trend"
         value={typeof tr.px === "number" && typeof tr.ma200 === "number" ? `$${tr.px} · ${tr.above200 ? "above" : "below"} 200-day $${tr.ma200}${typeof tr.ma50 === "number" ? ` · 50-day $${tr.ma50}` : ""}` : null}
@@ -342,14 +347,14 @@ const StockSpotlight = ({ spotlight, simple }) => {
             ))}
           </div>
           <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(260px,1fr))", gap: 8, marginTop: 8 }}>
-            {companies.map((c) => <Detail key={c.symbol} c={c} />)}
+            {companies.map((c) => <Detail key={c.symbol} c={c} simple={simple} />)}
           </div>
           <div style={{ marginTop: 6 }}><Sources companies={companies} tracker={m.tracker} /></div>
         </CollapsedGroup>
       ) : (
         <>
           <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(260px,1fr))", gap: 8, marginTop: 8 }}>
-            {companies.map((c) => <Detail key={c.symbol} c={c} />)}
+            {companies.map((c) => <Detail key={c.symbol} c={c} simple={simple} />)}
           </div>
           <CollapsedGroup count={companies.reduce((n, c) => n + ((c.sources || []).length), 0)} label="sources & calculations — dated citations" chip={false}>
             <Sources companies={companies} tracker={m.tracker} />

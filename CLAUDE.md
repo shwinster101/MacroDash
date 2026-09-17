@@ -5,6 +5,17 @@ answers *"is it safe to be in the market?"* from live macro + market + sentiment
 data. Single-page React app on Cloudflare Pages, with live data assembled at the
 edge by Pages Functions and cached in KV.
 
+**v6.6.2 — company size and earnings, one tap deep.** Simple's visible stock cards stay
+unchanged. Company popups explain business, share price × shares outstanding, and dated
+net earnings/P/E within three bullets and a 90-word ceiling. Degen's market cap, trailing
+P/E and revenue multiple each open a three-bullet, 110-word explainer: calculation,
+interpretation, limitation. Dates and source links remain separate. Zero earnings are
+not negative; missing earnings or their period do not establish a loss. The financial
+model now carries the net-income period and earnings source. Old cached records lacking
+the period withhold the new earnings explanation until normal refresh. No provider,
+macro thresholds, forecasts or investment calls changed. Built separately from pending
+PR #42; integration and validation are recorded in `working/2026-09-16-company-value.md`.
+
 **v6.5.6 — useful learning behind the compact face.** Relabelled from the draft v6.5.5 after #40 shipped that version. Owner follow-up restores market cap
 to Simple profiles and makes each entire card open a three-bullet company FactSheet.
 “Return this year” replaces YTD on the profile, with a visible learning prompt.
