@@ -5,6 +5,48 @@ answers *"is it safe to be in the market?"* from live macro + market + sentiment
 data. Single-page React app on Cloudflare Pages, with live data assembled at the
 edge by Pages Functions and cached in KV.
 
+**v6.6.0 — TIINGO TAKES THE FIRST CANDLE RUNG, and the rung it replaces was never alive.**
+First move of the 2026-09-16 API-palette review (`working/2026-09-16-api-palette-upgrade.md`).
+`/api/ticker-facts` called Finnhub `stock/candle` first — an endpoint **premium-gated on the free
+plan**, so that rung returned `missing("Finnhub", "premium daily candles unavailable")` on every
+symbol, every run, since it shipped, and the v3.98 Nasdaq scrape has been carrying the TT price
+ladder **alone, with nothing above it**. The ladder is now **Tiingo → Nasdaq**: same 420-day
+window, same `candleSeriesFault` continuity guard both other rungs run, same merge-only
+last-good, and **no new key** — `TIINGO_KEY` has been deployed since v6.5.0 for the spotlight's
+verified total-return series, which reads the *adjusted* columns of the very same rows.
+**UNADJUSTED open/high/low/close is the load-bearing choice**: the TT ladder places stops and
+pivots on the tape that actually traded, so reading `adjClose` from the same row would silently
+move every stored support level — pinned BY VALUE against a 4-for-1-split fixture, not by the
+absence of a field name. Validation is the Nasdaq mapper's (positive OHLC + the high/low ordering
+invariant), so a malformed row is **dropped**, and when that opens a hole the continuity guard
+rejects the merge rather than storing it as LIVE — fail closed on the FIELD, not the feed. The
+dead `candlesFact` is **deleted** (dead code is a rot vector, v3.73) and pinned absent, and the
+Finnhub key keeps its other four TT calls (quote · profile · earnings · news) unchanged.
+**⚠ HONEST LIMIT, stated rather than implied** (the v3.71/v4.1.5/v5.1.0 posture): `api.tiingo.com`
+is 403 at this build environment's egress proxy, so the live response could not be exercised here.
+The parser is fail-closed and fixture-tested against the documented row shape `tiingoSeries`
+already parses, and **the first call from the Pages edge is the true schema check** — with the
+Nasdaq rung underneath it the entire time, which is where production already was.
+**The doc claim this retires is pinned ABSENT** (the v3.85 rule): CLAUDE.md required the Finnhub
+plan to *"entitle daily `/stock/candle` history"*, a requirement that both described the dead rung
+and explained why it was dead. **Deliberately NOT in this release: the palette's Move 3 (a live
+SPY print in `/readout.json`) — owner ruling 2026-09-17, leave it alone.** v6.2's `fetchSpyClose`
+already pulls that quote and quarantines it on purpose (close-edition only, absent from `SOURCES`,
+never merged because `mergeFresherLeg` replaces a leg WHOLE and would blind the Macro Flip crash
+circuit, and labelled "last print" because extended-hours contamination is unmeasured); none of
+those three reasons was addressed by the palette plan, so the readout stays a close-of-day
+artifact and the collision is recorded rather than re-proposed.
+Tests: **2378 smoke** (+9: the parse/sort/label, the unadjusted proof against the split fixture,
+four fail-closed paths, the dropped-row rule, the shared continuity guard on the new rung, the
+key gate driven with a stub fetch proving no unauthenticated call is made, the request window,
+the ladder pinned in BOTH directions with the dead call absent, and the retired doc claim) + 309
+render + 344 public-render (all four gates run, browser suites in real Chromium). Negative-controlled twice: reading `adjClose` turns the unadjusted pin
+red, and deleting the Nasdaq rung turns exactly the two ladder pins red. The first control attempt
+did NOT bite and the CONTROL was wrong, recorded rather than quietly fixed — a `perl` pattern
+written with `{ try {` on one line never matched a file that breaks them, so it measured nothing
+while printing green (the v5.97.2 lesson: a control that passes because your model of the code was
+wrong proves nothing).
+
 **v6.5.6 — useful learning behind the compact face.** Relabelled from the draft v6.5.5 after #40 shipped that version. Owner follow-up restores market cap
 to Simple profiles and makes each entire card open a three-bullet company FactSheet.
 “Return this year” replaces YTD on the profile, with a visible learning prompt.
@@ -6188,10 +6230,13 @@ Jan-anchor shipped; see `snapshot.js` ~318–328), `spyMa100`, `spyMa200`, and a
 - **TT v2 provider requirements:** bind Pages Workers AI as **`AI`** for screenshot vision and
   the explicitly approved redacted qualitative rubric (never the full private framework); set
   **`SEC_USER_AGENT`** to a descriptive application +
-  contact string for `data.sec.gov`; retain `FINNHUB_KEY` for quotes/profile/calendar/news. The
-  selected Finnhub plan must entitle daily `/stock/candle` history. Missing AI, SEC identity, or
-  candle entitlement is an honest degraded state: manual street entry remains available, but any
-  dependent qualitative/technical gate is `UNKNOWN` and the ticker stays `WAIT`.
+  contact string for `data.sec.gov`; retain `FINNHUB_KEY` for quotes/profile/calendar/news; set
+  **`TIINGO_KEY`** for the daily candle ladder's first rung. **The old requirement that the
+  Finnhub plan entitle daily `/stock/candle` history is RETIRED (v6.6.0)** — that endpoint is
+  premium-gated on the free plan, so the rung was permanently dead and the Nasdaq scrape was
+  carrying production alone; Tiingo is the primary rung now and Nasdaq the fallback. Missing AI,
+  SEC identity, or BOTH candle rungs is an honest degraded state: manual street entry remains
+  available, but any dependent qualitative/technical gate is `UNKNOWN` and the ticker stays `WAIT`.
 - `_middleware.js` adds hardening headers (`nosniff`, `x-frame-options: DENY`,
   `permissions-policy`, etc.) and keeps `/api` same-origin (no `Access-Control-Allow-Origin`).
 
@@ -6223,7 +6268,7 @@ Jan-anchor shipped; see `snapshot.js` ~318–328), `spyMa100`, `spyMa200`, and a
 | `TT_PIN` (or `ACCESS_TEAM_DOMAIN`+`ACCESS_AUD`) | Pages | for the terminal | `/api/tt` + every PIN-gated route | 503 fail closed / Access mode |
 | `SEC_USER_AGENT` | Pages | for TT facts + the spotlight's fundamentals | `data.sec.gov` fetches | SEC facts UNKNOWN → WAIT; spotlight fundamentals Unavailable naming the variable |
 | `SPOTLIGHT_ENABLED` | Pages | **off by default** | `GET /api/stock-spotlight` serves a model only when the value is exactly `1` (v6.5.0) | the endpoint returns `enabled:false` and the Stock Spotlight section renders nothing |
-| `TIINGO_KEY` | Pages | for the spotlight tracker | the spotlight's VERIFIED total-return series (Tiingo adjClose, v6.5.0) — the only source the YTD tracker draws | both YTD legs read Unavailable (no verified total-return series) and no line is drawn; the price trend still reads from Finnhub/Nasdaq closes |
+| `TIINGO_KEY` | Pages | for the spotlight tracker **and the TT candle ladder** | the spotlight's VERIFIED total-return series (Tiingo adjClose, v6.5.0) — the only source the YTD tracker draws — **and, since v6.6.0, the FIRST rung of `/api/ticker-facts`'s daily OHLCV ladder (unadjusted columns, same rows)** | both YTD legs read Unavailable and no line is drawn; TT candles fall through to the Nasdaq rung, which is where they already were (the Finnhub rung above it was premium-dead) |
 | `AI` (Workers AI binding) | Pages | for TT OCR | screenshot→draft + rubric | OCR route degraded, gates UNKNOWN |
 
 ### The `VITE_DATA_MODE=live` flip

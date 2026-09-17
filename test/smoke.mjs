@@ -39,7 +39,7 @@ import { streetRevision, onRequestPut as putStreetPacket, onRequestGet as getStr
   onRequestDelete as deleteStreetPacket } from "../functions/api/street.js";
 import { onRequestGet as getFramework, onRequestPut as putFramework } from "../functions/api/framework.js";
 import { mergeOcrExtractions, onRequestPost as postStreetOcr } from "../functions/api/street/ocr.js";
-import { onRequestGet as getTickerFacts, onRequestPost as postTickerFacts, nasdaqCandlesFact, quoteFact } from "../functions/api/ticker-facts.js";
+import { onRequestGet as getTickerFacts, onRequestPost as postTickerFacts, nasdaqCandlesFact, quoteFact, tiingoCandlesFact, tiingoDaily } from "../functions/api/ticker-facts.js";
 import { onRequestPost as postTickerAnalysis, riskTierForBookEntry, qualitativeRubric } from "../functions/api/ticker-analysis.js";
 import { plausible, applyBands, quorum, QUORUM_FIELDS, QUORUM_MIN, marketSession, BANDS,
   pairRs, RS_63_SESSIONS, parseTreasuryCsv, preferFresherRates, parseCboeVixCsv, parseCboeVixQuote,
@@ -8228,11 +8228,103 @@ ok("v5.6.2 quote rung: the 3x edge — a real print gap passes, only the impossi
   /tail close/.test(candleSeriesFault([{ date: "2026-08-19", close: 100 }], 300.5) || "") &&
   candleSeriesFault([{ date: "2026-08-19", close: 100 }], 145) === null &&
   /tail close/.test(candleSeriesFault([{ date: "2026-08-19", close: 100 }], 33) || ""));
+/* v6.6.0 RE-POINTED: this pinned the literal `candlesFact(candles.value, retrievedAt, refPx)`,
+   which the Tiingo builder's own name CONTAINS as a substring — so after the rung swap it would
+   have passed by accident while measuring nothing (the v3.60.1 self-matching trap). It now names
+   the primary builder in full. */
 ok("v5.6.2 wiring: the refresh derives refPx from its OWN LIVE quote and passes it to BOTH builders",
   (() => { const src7 = readSrc("../functions/api/ticker-facts.js");
     return src7.includes('fields.quote.status === "LIVE"') &&
-      src7.includes("candlesFact(candles.value, retrievedAt, refPx)") &&
+      src7.includes("tiingoCandlesFact(candles.value, retrievedAt, refPx)") &&
       src7.includes("nasdaqCandles(sym, now, retrievedAt, refPx)"); })());
+/* ── v6.6.0: TIINGO, THE PRIMARY CANDLE RUNG ────────────────────────────────────────────
+   The rung it replaces was DEAD: Finnhub `stock/candle` is premium-gated on the free plan,
+   so it always returned MISSING and the Nasdaq scrape carried production with nothing above
+   it. Tiingo's daily door was already keyed here for the spotlight's total-return series.
+   ⚠ HONEST LIMIT, the v3.71/v4.1.5/v5.1.0 posture: api.tiingo.com is 403 at this build
+   environment's egress proxy, so the live response could not be exercised here. The parser
+   is fail-closed and fixture-tested against the documented row shape (the same rows
+   `tiingoSeries` already parses in the spotlight), and the first call from the Pages edge is
+   the true schema check — with the Nasdaq rung underneath it the whole time. */
+const tiingoFixture = [
+  { date: "2026-08-14T00:00:00.000Z", open: 240, high: 244, low: 231, close: 236.22, volume: 14440000, adjClose: 59.055, adjOpen: 60, splitFactor: 1 },
+  { date: "2026-08-13T00:00:00.000Z", open: 231, high: 236, low: 229, close: 232.1, volume: 9100000, adjClose: 58.025, adjOpen: 57.75, splitFactor: 1 },
+  { date: "2026-08-15T00:00:00.000Z", open: 233.66, high: 248.57, low: 227.67, close: 229.94, volume: 12240000, adjClose: 57.485, adjOpen: 58.415, splitFactor: 1 },
+];
+ok("v6.6.0 Tiingo rung: parses daily OHLCV, sorts ascending, and labels itself unadjusted",
+  (() => { const x = tiingoCandlesFact(tiingoFixture, V2_NOW.toISOString());
+    return x.status === "LIVE" && x.provider === "Tiingo (daily OHLCV, unadjusted)" && x.resolution === "D" &&
+      x.value.length === 3 && x.value[0].date === "2026-08-13" && x.value.at(-1).date === "2026-08-15" &&
+      x.observedAt === "2026-08-15" && x.value.at(-1).volume === 12240000; })());
+/* The adjusted columns sit on the SAME row and are 4x away in this fixture (a 4-for-1 split).
+   The TT price ladder places stops and pivots on the tape that was actually traded, so the
+   rung must read `close`, never `adjClose` — reading the adjusted column would silently move
+   every stored support level. Asserted by VALUE, not by absence of a field name. */
+ok("v6.6.0 Tiingo rung: reads the UNADJUSTED columns — an adjusted close on the same row never leaks in",
+  (() => { const x = tiingoCandlesFact(tiingoFixture, V2_NOW.toISOString());
+    return x.value.at(-1).close === 229.94 && x.value.at(-1).open === 233.66 &&
+      x.value.every((r) => r.close > 100) && !x.value.some((r) => "adjClose" in r); })());
+ok("v6.6.0 Tiingo rung: fails closed on a non-list, an empty list, and a single row (never a one-point series)",
+  tiingoCandlesFact(null, V2_NOW.toISOString()).status === "MISSING" &&
+  /was not a list/.test(tiingoCandlesFact({ detail: "Error: not authorized" }, V2_NOW.toISOString()).reason) &&
+  tiingoCandlesFact([], V2_NOW.toISOString()).status === "MISSING" &&
+  tiingoCandlesFact([tiingoFixture[0]], V2_NOW.toISOString()).status === "MISSING");
+/* A row failing the ordering invariant is DROPPED, which can open a hole — and the continuity
+   guard then rejects the merge rather than storing that hole as LIVE. Fail closed on the
+   FIELD, not the feed: the two-row remainder here is contiguous, so it legitimately survives. */
+ok("v6.6.0 Tiingo rung: a non-positive or out-of-order row is dropped, never coerced",
+  (() => { const x = tiingoCandlesFact([
+      ...tiingoFixture,
+      { date: "2026-08-12T00:00:00.000Z", open: 231, high: 200, low: 229, close: 232, volume: 1 },
+      { date: "2026-08-11T00:00:00.000Z", open: 0, high: 236, low: 229, close: 232, volume: 1 },
+    ], V2_NOW.toISOString());
+    return x.status === "LIVE" && x.value.length === 3 && x.value[0].date === "2026-08-13"; })());
+ok("v6.6.0 Tiingo rung: the SAME continuity guard the other two rungs run — interior gap and quote cross-check",
+  (() => {
+    const gap = tiingoCandlesFact([
+      { date: "2026-08-15", open: 233.66, high: 248.57, low: 227.67, close: 229.94 },
+      { date: "2026-02-14", open: 141, high: 143, low: 138, close: 139.74 },
+    ], V2_NOW.toISOString());
+    const wrongInstrument = tiingoCandlesFact([
+      { date: "2026-08-19", open: 7.49, high: 7.79, low: 7.39, close: 7.78 },
+      { date: "2026-08-20", open: 7.76, high: 7.77, low: 7.3, close: 7.6 },
+    ], V2_NOW.toISOString(), 277.68);
+    return gap.status === "MISSING" && /interior gap 2026-02-14 -> 2026-08-15/.test(gap.reason) &&
+      wrongInstrument.status === "MISSING" && /tail close \$7\.6 vs live quote \$277\.68/.test(wrongInstrument.reason); })());
+ok("v6.6.0 Tiingo rung: KEY-GATED — no TIINGO_KEY throws to the Nasdaq rung rather than fetching unauthenticated",
+  await (async () => {
+    let called = false;
+    try { await tiingoDaily("NVDA", {}, V2_NOW, async () => { called = true; return { ok: true, json: async () => [] }; }); return false; }
+    catch (e) { return !called && /TIINGO_KEY is not configured/.test(e.message); }
+  })());
+ok("v6.6.0 Tiingo rung: the request carries the symbol, the token and a 420-day start window",
+  await (async () => {
+    let url = "";
+    const rows = await tiingoDaily("NBIS", { TIINGO_KEY: "k-123" }, V2_NOW,
+      async (u) => { url = u; return { ok: true, json: async () => tiingoFixture }; });
+    const start = new Date(V2_NOW.getTime() - 420 * 86400 * 1000).toISOString().slice(0, 10);
+    return rows.length === 3 && url.startsWith("https://api.tiingo.com/tiingo/daily/NBIS/prices?") &&
+      url.includes(`startDate=${start}`) && url.includes("token=k-123");
+  })());
+/* The ladder, pinned in BOTH directions: the retired premium-gated Finnhub candle call must
+   not return, and the Nasdaq rung must stay underneath. A rung order asserted in one
+   direction only would pass with the fallback deleted. */
+ok("v6.6.0 ladder: Tiingo first, Nasdaq beneath it, and the dead Finnhub candle call pinned ABSENT",
+  (() => { const src7 = readSrc("../functions/api/ticker-facts.js");
+    const code = src7.split("\n").filter((l) => !l.trim().startsWith("*") && !l.trim().startsWith("//")).join("\n");
+    return !/finnhub\(`stock\/candle/.test(code) && !/function candlesFact\b/.test(code) &&
+      code.includes("tiingoDaily(sym, env, now)") &&
+      code.indexOf("tiingoCandlesFact(candles.value") < code.indexOf("await nasdaqCandles(sym, now, retrievedAt, refPx)"); })());
+/* The doc claim the swap retires, pinned ABSENT (the v3.85 retired-instruction rule): CLAUDE.md
+   required the Finnhub plan to "entitle daily /stock/candle history", which is precisely why the
+   rung was dead. A requirement quietly outliving the code it described is the label-outlives-its-
+   data defect this changelog keeps closing. Scoped to the ASSERTION, not the word — the entry
+   legitimately names the retired endpoint while explaining the retirement. */
+ok("v6.6.0 docs: the retired Finnhub candle-entitlement REQUIREMENT is absent, and TIINGO_KEY names the candle ladder",
+  (() => { const doc = readSrc("../CLAUDE.md");
+    return !/selected Finnhub plan must entitle daily/.test(doc) &&
+      /is RETIRED \(v6\.6\.0\)/.test(doc) &&
+      /`TIINGO_KEY`[^|]*\|[^|]*\|[^|]*candle ladder/i.test(doc); })());
 ok("Nasdaq fallback cannot launder empty or malformed OHLC into sourced candles",
   nasdaqCandlesFact({ data: { tradesTable: { rows: [] } } }, V2_NOW.toISOString()).status === "MISSING" &&
   nasdaqCandlesFact({ data: { tradesTable: { rows: [
