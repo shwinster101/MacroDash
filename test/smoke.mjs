@@ -13148,5 +13148,84 @@ console.log("\n[copy-budget] v6.6.1 ONE ENGINE, TWO ALTITUDES — ≤25-word why
     /score index did not load — composites read/.test(adminSrc));
 }
 
+/* ── [87b] FEAT-TT-LADDER v6.7.3 — the server RECEIPT's own verdict, married beside the
+   client's own (owner follow-up: "have the ladder render the server receipt's verdict
+   beside its own ... married, never merged, the way spreadLine already does"). A separate
+   top-level block (not nested in [87]'s own scope) with its own fixed clock, since the
+   four functions under test are not contiguous with the ladderYears..buildRankingsMd range
+   [87] already lifts — liftFns (brace-depth matching by NAME) is used instead of an
+   index-range slice, which is precisely the shape of mistake (a lost call site) that
+   shipped this feature's first draft with ladderServerMacroCell defined but never CALLED;
+   caught only by render.mjs, which actually opens the DOM — this offline lift could not
+   have caught it either, which is why both test layers exist and neither substitutes for
+   the other. */
+{
+  const TODAY = "2026-09-17";
+  const realAgeDays = (iso) => (!iso || !/^\d{4}-\d{2}-\d{2}$/.test(String(iso).slice(0, 10)) ? null
+    : Math.round((Date.parse(TODAY + "T00:00:00Z") - Date.parse(String(iso).slice(0, 10) + "T00:00:00Z")) / 86400000));
+  const daysAgo = (n) => new Date(Date.parse(TODAY + "T00:00:00Z") - n * 86400000).toISOString().slice(0, 10);
+
+  /* ── 11. FEAT-TT-LADDER v6.7.3 — the server RECEIPT's own verdict, married beside the
+     client's own (owner follow-up: "have the ladder render the server receipt's verdict
+     beside its own for the eligible candidates ... married, never merged, the way
+     spreadLine already does"). liftFns (brace-depth matching by name) is used here rather
+     than the ladderYears..buildRankingsMd range: these four functions are NOT contiguous
+     with each other in the file, and an index-range slice would either miss one or pull in
+     unrelated code — the exact shape of mistake that shipped v6.7.3's first draft with
+     ladderServerMacroCell defined but never CALLED (caught only by render.mjs, which
+     actually opens the DOM; this offline lift could not have caught it either, which is
+     why both layers exist). */
+  try {
+    const buildAllocFns = (ALLOC) => new Function("ALLOC", "ageDays",
+      liftFns(adminSrc, ["esc", "allocServerVerdict", "allocReceiptAgeD", "ladderServerMacroCell", "ladderServerCell"]) +
+      "\nreturn {allocServerVerdict,allocReceiptAgeD,ladderServerMacroCell,ladderServerCell};")(ALLOC, realAgeDays);
+
+    const rc = (svElig, y, hz) => ({ gate: null, macro_gate: { gate: "SEND_IT", rung: null, reason: null },
+      horizon: hz, business_date_et: TODAY,
+      eligible: svElig ? { sym: "AAA", y, tgt: 1, up: 1, ann: 1 } : null,
+      why_not: svElig ? [] : [{ sym: "AAA", reason: "server-side reason" }] });
+
+    ok("[87] allocServerVerdict: ELIGIBLE when this sym is the receipt's own eligible pick, the veto reason verbatim when it's in why_not, and null — nothing to compare — for a sym the receipt never ranked",
+      buildAllocFns(rc(true, "2027", "2027")).allocServerVerdict("AAA").elig === true &&
+      buildAllocFns(rc(false, "2027", "2027")).allocServerVerdict("AAA").text === "server-side reason" &&
+      buildAllocFns(rc(false, "2027", "2027")).allocServerVerdict("BBB") === null);
+    ok("[87] allocServerVerdict returns null on NO receipt and on a MACRO-GATED receipt (ALLOC.gate truthy) — the second case is a coverage fact (the receipt never ranked any ticker), not a disagreement, and is stated once at the head instead",
+      buildAllocFns(null).allocServerVerdict("AAA") === null &&
+      buildAllocFns({ ...rc(true, "2027", "2027"), gate: { rung: "flip", reason: "x" } }).allocServerVerdict("AAA") === null);
+    ok("[87] allocReceiptAgeD reads 0 for today's business date, the real day count for an older one, and null when the receipt or its date is absent — a stale receipt is NAMED, never read as a live contradiction",
+      buildAllocFns(rc(true, "2027", "2027")).allocReceiptAgeD() === 0 &&
+      buildAllocFns({ ...rc(true, "2027", "2027"), business_date_et: daysAgo(3) }).allocReceiptAgeD() === 3 &&
+      buildAllocFns(null).allocReceiptAgeD() === null &&
+      buildAllocFns({ ...rc(true, "2027", "2027"), business_date_et: null }).allocReceiptAgeD() === null);
+
+    const mgSendIt = { g: "SEND_IT", label: "SEND IT", c: "x" };
+    const mgTouch = { g: "TOUCH_GRASS", label: "TOUCH GRASS", c: "x" };
+    ok("[87] ladderServerMacroCell: agreement renders the server's word with NO alarm styling; a mismatch is BOLD RED and names 'DISAGREES with MACRO GATE above'",
+      !/font-weight:700/.test(buildAllocFns(rc(true, "2027", "2027")).ladderServerMacroCell(mgSendIt)) &&
+      /DISAGREES with MACRO GATE above/.test(buildAllocFns(rc(true, "2027", "2027")).ladderServerMacroCell(mgTouch)) &&
+      /font-weight:700/.test(buildAllocFns(rc(true, "2027", "2027")).ladderServerMacroCell(mgTouch)));
+    ok("[87] ladderServerMacroCell softens a mismatch to AMBER with the receipt's age when the receipt predates today — never red, never silent",
+      (() => { const stale = buildAllocFns({ ...rc(true, "2027", "2027"), business_date_et: daysAgo(2) }).ladderServerMacroCell(mgTouch);
+        return /receipt 2d old/.test(stale) && !/DISAGREES/.test(stale) && /var\(--amber\)/.test(stale); })());
+    ok("[87] ladderServerMacroCell states 'receipt not loaded' with no ALLOC, and names an older schema (predates macro_gate) rather than guessing a word",
+      /receipt not loaded/.test(buildAllocFns(null).ladderServerMacroCell(mgSendIt)) &&
+      /predates macro_gate/.test(buildAllocFns({ ...rc(true, "2027", "2027"), macro_gate: null }).ladderServerMacroCell(mgSendIt)));
+
+    ok("[87] ladderServerCell: agreement is dim with no DISAGREES text; a mismatch is bold with 'DISAGREES with the ticker ladder above', and names the receipt's OWN horizon",
+      (() => { const agree = buildAllocFns(rc(true, "2027", "2027")).ladderServerCell("AAA", true, "2027");
+        const dis = buildAllocFns(rc(true, "2027", "2027")).ladderServerCell("AAA", false, "2027");
+        return /⇄ server \(YE2027\): ELIGIBLE/.test(agree) && !/DISAGREES/.test(agree) &&
+          /DISAGREES with the ticker ladder above/.test(dis) && /font-weight:700/.test(dis); })());
+    ok("[87] ladderServerCell NAMES a horizon mismatch — the receipt's own year differs from the column being read — rather than silently comparing across different years as if they were the same claim",
+      /YE2028 — a different horizon than this column/.test(buildAllocFns(rc(true, "2028", "2028")).ladderServerCell("AAA", true, "2027")));
+    ok("[87] ladderServerCell renders NOTHING for a sym the receipt has no opinion on — inventing a comparison would be worse than silence",
+      buildAllocFns(rc(false, "2027", "2027")).ladderServerCell("ZZZ", true, "2027") === "");
+  } catch (e) {
+    ok("[87] the server-verdict marriage fixtures RAN to completion — a section that dies mid-run prints no total: " + (e && e.message), false);
+  }
+
+}
+
+
 console.log(`\n=== SMOKE TEST: ${pass} passed, ${fail} failed ===`);
 process.exit(fail === 0 ? 0 : 1);

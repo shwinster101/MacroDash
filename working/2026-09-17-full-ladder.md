@@ -255,6 +255,48 @@ turns exactly the two behavioural pins red.
 code guarding a call site that does not exist, and it would widen an order-gating read in the
 permissive direction for no measured benefit.
 
+## 6. Follow-up (v6.7.3) — the server receipt married beside the ladder's own
+
+Owner, after the retraction: *"have the ladder render the server receipt's verdict beside its
+own for the eligible candidates — married, never merged, the way `spreadLine` already does."*
+
+The v6.7.2 episode is the reason this is worth building: an offline reproduction of the server
+ladder diverged from the server's own answer without either side being wrong. This puts the
+live comparison ON the board — agreement or disagreement is something the page states, not
+something reconstructed by hand afterward.
+
+**Two altitudes, both new:**
+- **Board** — `ladderServerMacroCell` compares the client's `macroGate()` against the receipt's
+  `macro_gate.gate`, same three-word vocabulary both sides, rendered once in the head.
+- **Row** — `allocServerVerdict(sym)` reads the receipt's `eligible`/`why_not` for a name and
+  returns `null` when the receipt never ranked it — a coverage fact, not a disagreement.
+  `ladderServerCell` prints the answer as a second line under the client's own GATE text.
+
+**Staleness is disclosed, never mistaken for disagreement.** `GET /api/allocation` serves the
+last STORED receipt — it never recomputes — so it can be a day old while the ladder itself is
+always fresh. A mismatched receipt older than today softens from red/bold "DISAGREES" to amber
+"receipt Nd old" — both answers still render. `⟳ REFRESH` now forces a real re-evaluation
+(`allocReeval()`, a POST) instead of the cached GET, so the comparison it exists to keep current
+doesn't itself compare a fresh client read against a stale server one.
+
+**Found by the render suite, not by reading the code.** The first draft shipped completely
+INERT at board level: `ladderServerMacroCell` was written and correctly covered by an offline
+smoke lift, but an earlier edit script had crashed mid-write on an unrelated assertion and
+silently dropped the one line that called it from `ladderHead`. The function existed, compiled,
+and was never invoked — smoke's lift-and-run couldn't have caught it (it never calls
+`ladderHead`); only the render suite, which opens the real DOM, found it. One of the render
+tests written to prove the fix was itself briefly vacuous — "no `⇄ server` text anywhere in
+`#cBody`" also matches the head's own honest "receipt not loaded" line — caught and rescoped to
+the table rows specifically while writing it.
+
+Tests: **2505 smoke** (+9, self-scoped, `liftFns` brace-matching rather than an index-range
+slice — the exact class of mistake that dropped the call site) + **335 render** (+9, live:
+agreement/disagreement/staleness at both altitudes, the macro-gated and no-receipt states, the
+horizon-mismatch naming, and outside-the-receipt's-set silence) + 356 public-render,
+`audit:prod` clean. Negative-controlled three ways — reintroducing the dropped call site
+(4 render red), letting the row comparison ignore a macro-gated receipt (1 smoke red), removing
+the staleness softening (1 smoke red).
+
 ### Filed, not built
 
 - `/api/quotes` truncates past 40 symbols and reports `missing: []` (§0).

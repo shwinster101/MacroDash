@@ -9,7 +9,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
 <!-- AUDIT: kept in sync with package.json by test/smoke.mjs. admin.html is a Vite
      public/ passthrough, so it cannot receive __APP_VERSION__ — the guard is the fix. -->
-<title>TT TICKER TERMINAL v6.7.2</title>
+<title>TT TICKER TERMINAL v6.7.3</title>
 <style>
   :root{
     --bg:#05070a; --panel:#0a0f16; --panel2:#0d141d; --line:#16202c;
@@ -507,7 +507,7 @@
          verdict and every gate are computed upstream and this panel changes nothing. -->
     <div id="macroEvidence" role="region" aria-label="Why macro — readout evidence"></div>
     <div id="headInfo" style="display:none">
-      <div class="brand">FINANCE&nbsp;BRO.AI // TT&nbsp;TICKER&nbsp;TERMINAL <small>v6.7.2 · the daily contract</small></div>
+      <div class="brand">FINANCE&nbsp;BRO.AI // TT&nbsp;TICKER&nbsp;TERMINAL <small>v6.7.3 · the daily contract</small></div>
       <div class="statusline">
         <span>BOOK: <b id="bookStamp">loading…</b></span>
         <span>AUTH: <b id="sessState">…</b></span>
@@ -4528,6 +4528,37 @@ function macroGate(){
   return hodl?{g:"HODL",label:"HODL",c:"var(--amber)",rung}
              :{g:"TOUCH_GRASS",label:"TOUCH GRASS",c:"var(--red)",rung};
 }
+/* v6.7.3 — the server RECEIPT's own verdict, married beside the ladder's own — never
+   merged into one number (owner follow-up: "have the ladder render the server receipt's
+   verdict beside its own ... married, never merged, the way spreadLine already does").
+   A 2026-09-17 episode reported a client/server "eligibility divergence" that turned out to
+   be an artifact of an OFFLINE reproduction fed the wrong input, not a real one (v6.7.2) —
+   this puts the actual, live comparison on the board itself, so agreement or disagreement is
+   something the page STATES rather than something reconstructed by hand afterward. ALLOC is
+   the fetched /api/allocation receipt (loadAllocation/allocReeval) — the SAME object
+   spreadLine/allocBasisLine already read; this adds no fetch of its own. */
+function allocServerVerdict(sym){
+  if(!ALLOC||ALLOC.gate)return null;   // no receipt, or the WHOLE ladder is macro-gated on the
+                                        // server — that comparison is stated ONCE at the head
+                                        // (ladderHead), never per row against an unevaluated set
+  if(ALLOC.eligible&&ALLOC.eligible.sym===sym)
+    return{elig:true,text:"ELIGIBLE",hz:ALLOC.horizon};
+  // why_not is the top-ranked names the receipt DID evaluate and vetoed (capped at 8, v4.1) —
+  // a sym outside it was never ranked high enough for the receipt to have an opinion, which
+  // is a coverage fact, not a disagreement, so it falls through to null below.
+  const wn=(ALLOC.why_not||[]).find(w=>w.sym===sym);
+  if(wn)return{elig:false,text:wn.reason,hz:ALLOC.horizon};
+  return null;
+}
+/* The receipt's own business date vs today's ET date. A stale receipt reading as a
+   DISAGREEMENT would be exactly the staleness-as-signal defect this repo keeps closing
+   (v3.1/v3.40/v5.6.4) — age is reported, never hidden, and it softens the comparison's color
+   rather than suppressing it outright, so both answers still render. */
+function allocReceiptAgeD(){
+  if(!ALLOC||!ALLOC.business_date_et)return null;
+  const et=new Date().toLocaleDateString("en-CA",{timeZone:"America/New_York"});
+  return ALLOC.business_date_et===et?0:ageDays(ALLOC.business_date_et);
+}
 /* v5.6 — belief vs street, rendered FROM the server receipt (one computation server-side;
    this only formats — the frozen formula and the labeled street rungs live in
    tt-alloc.js). No street leg = STATED, never a number; no receipt entry = no line. */
@@ -7713,6 +7744,38 @@ function ladderVeto(r,Y1,Y2){
   return rowVeto({upside:up,rdy:r.rdy,tt:r.tt,rrFail:r.rrFail});
 }
 function setLadderSort(k){LADDER_SORT=k;renderLadder();}
+/* BOARD-LEVEL marriage: the client's own macroGate() beside ALLOC.macro_gate — the SAME
+   three-word product vocabulary on both sides (macroGateFrom is mirrored rung-for-rung by
+   macroGate(), so a real disagreement here would mean the two mirrors have drifted, not
+   merely that different tickers disagree). Rendered once, in the head — never per row,
+   since every row shares one board state. */
+function ladderServerMacroCell(mg){
+  if(!ALLOC)return `<span class="scope">⇄ server receipt not loaded</span>`;
+  const svg=ALLOC.macro_gate?ALLOC.macro_gate.gate:null;
+  if(svg===null)return `<span class="scope">⇄ server: receipt predates macro_gate (older schema)</span>`;
+  const staleD=allocReceiptAgeD(),stale=staleD!==null&&staleD>0;
+  const agree=svg===mg.g;
+  if(agree)return `<span class="scope">⇄ server: ${esc(svg)}</span>`;
+  return `<span class="scope" style="color:${stale?"var(--amber)":"var(--red)"};font-weight:700">`+
+    `⇄ server: ${esc(svg)}${stale?` — receipt ${staleD}d old, may not reflect today`:" — DISAGREES with MACRO GATE above"}</span>`;
+}
+/* PER-ROW marriage: allocServerVerdict(sym) beside this row's OWN ladderVeto — rendered as a
+   second line under the client's verdict, never blended into its text (spreadLine's own
+   pattern, applied to eligibility instead of price). Shown ONLY for names the receipt itself
+   evaluated (its one ELIGIBLE pick plus its ranked vetoes) — the ~35 other names get nothing,
+   because the receipt has no opinion on them and rendering one would be invented, not read. */
+function ladderServerCell(sym,clientEligible,clientYear){
+  const sv=allocServerVerdict(sym);
+  if(!sv)return "";
+  const staleD=allocReceiptAgeD(),stale=staleD!==null&&staleD>0;
+  const agree=sv.elig===clientEligible;
+  const sameHz=sv.hz==null||sv.hz===clientYear;
+  const hzNote=sv.hz?(sameHz?` (YE${esc(sv.hz)})`:` (YE${esc(sv.hz)} — a different horizon than this column)`):"";
+  if(agree)return `<div class="scope" style="margin-top:2px;font-size:var(--fs-xs)">⇄ server${hzNote}: ${sv.elig?"ELIGIBLE":esc(sv.text)}</div>`;
+  const tail=stale?` — receipt ${staleD}d old, may not reflect today`:" — DISAGREES with the ticker ladder above";
+  return `<div style="margin-top:2px;font-size:var(--fs-xs);font-weight:700;color:${stale?"var(--amber)":"var(--red)"}">`+
+    `⇄ server${hzNote}: ${sv.elig?"ELIGIBLE":esc(sv.text)}${tail}</div>`;
+}
 
 function ladderHead(Y1,Y2,d){
   const mg=macroGate();
@@ -7722,6 +7785,7 @@ function ladderHead(Y1,Y2,d){
   return`<div class="ld-head">`+
     `<span class="pill" style="border-color:${mg.c};color:${mg.c}">MACRO GATE: ${esc(mg.label)}</span>`+
     (mg.rung?`<span class="scope">vetoed at the ${esc(mg.rung)} rung</span>`:`<span class="scope">every macro rung read clean</span>`)+
+    ladderServerMacroCell(mg)+
     `<span class="scope">· ${d.rows.length} priced of ${BOOK.length} · the per-row GATE column is the TICKER ladder, evaluated at YE${esc(gy)} — not this macro gate</span>`+
     `</div>`+
     `<div class="none">Targets are this book's OWN <b>pt_model</b> ladder — premium where a multiple is asserted, `+
@@ -7736,12 +7800,17 @@ function ladderHead(Y1,Y2,d){
     `that makes a name current, not a restatement of the gate: an ELIGIBLE name can be overdue, and a `+
     `name vetoed on <i>no gap</i> may need nothing at all. Per-screen capture detail lives on the `+
     `name's own tab (the intake checklist reads its full score record; this board holds the index).</div>`+
+    `<div class="none"><b>⇄ SERVER</b> lines are the /api/allocation RECEIPT's OWN verdict for `+
+    `the same name — computed independently, server-side, from the ranked candidate list — `+
+    `MARRIED beside this ticker ladder, never blended into it. Shown only where the receipt `+
+    `itself has an opinion (its one ELIGIBLE pick plus the ranked names it vetoed); a receipt `+
+    `older than today is NAMED rather than read as a disagreement.</div>`+
     `<div class="none">book ${esc((META&&META.asOf)||"—")} · quotes ${LIVE_AT?esc(String(LIVE_AT).replace("T"," ").slice(0,16))+"Z":"not loaded"}`+
     (SCORE_INDEX===null?` · <span style="color:var(--amber)">score index did not load — composites read "not read", not "unscored"</span>`:
       SCORE_INDEX_META&&SCORE_INDEX_META.methodology_version?` · cards ${esc(SCORE_INDEX_META.methodology_version)}`:"")+`</div>`;
 }
 function ladderTable(d){
-  const {Y1,Y2}=d,sorted=ladderSorted(d.rows,Y1,Y2);
+  const {Y1,Y2}=d,sorted=ladderSorted(d.rows,Y1,Y2),gy=ladderGateYear(Y1,Y2);
   const num=v=>v===null||v===undefined?"—":(v>=100?Math.round(v):v);
   const pc=v=>v===null?`<span class="scope">—</span>`
     :`<span style="color:${v>=0?"var(--green)":"var(--red)"};font-weight:700">${v>=0?"+":""}${v}%</span>`;
@@ -7773,7 +7842,7 @@ function ladderTable(d){
       `<td class="r">${pc(r.y2p)}</td>`+
       `<td class="scope">${esc(basis)}${r.modelLens?" · "+esc(r.modelLens):""}</td>`+
       `<td class="r">${tt}</td>`+
-      `<td class="${v===null?"ok":"scope"}">${v===null?"✓ ELIGIBLE":esc(v)}</td>`+
+      `<td class="${v===null?"ok":"scope"}">${v===null?"✓ ELIGIBLE":esc(v)}${ladderServerCell(r.sym,v===null,gy)}</td>`+
       `<td>${ladderFreshCell(r.fresh)}</td>`+
       `<td>${ladderNeedsCell(r.req)}</td></tr>`;
   }).join("");
@@ -7820,24 +7889,35 @@ function openLadder(){
 async function ladderRefresh(btn){
   const rest=btn?btn.textContent:null;
   if(btn){btn.disabled=true;btn.textContent="⟳ …";}
-  try{await loadQuotes();renderLadder();toast("Ladder refreshed — quotes "+(LIVE_AT?String(LIVE_AT).slice(11,16)+"Z":"unavailable")+" (server caches 2 min)");}
-  catch(_e){toast("Quote refresh failed — the table below is the last good read, not a fresh one");}
+  /* v6.7.3: allocReeval() forces a fresh server-side receipt (the same POST refreshRanks()
+     already fires on ⟳ DATA+RANKS) rather than loadAllocation()'s cached GET — the ⇄ SERVER
+     comparison this refresh exists to keep current would otherwise compare a live client
+     ladder against a receipt that could be a day old, which is exactly the staleness-as-
+     signal defect allocReceiptAgeD() exists to name. */
+  try{await Promise.all([loadQuotes(),allocReeval()]);renderLadder();
+    toast("Ladder refreshed — quotes "+(LIVE_AT?String(LIVE_AT).slice(11,16)+"Z":"unavailable")+" (server caches 2 min) · server receipt re-evaluated");}
+  catch(_e){toast("Refresh failed — the table below is the last good read, not a fresh one");}
   finally{if(btn){btn.disabled=false;if(rest)btn.textContent=rest;}}
 }
 function ladderCopy(){
   const d=buildLadderRows(),mg=macroGate(),gy=ladderGateYear(d.Y1,d.Y2);
-  const L=[`TT FULL LADDER — YE${d.Y1} / YE${d.Y2} · ${etYmd()} · MACRO GATE ${mg.label}`   /* the em-dash-free form is deliberate: smoke sweeps the whole file for a flat "GATE: <label>", the v5.6 word-collision guard, and a text export has no key/value cell to scope with */,
+  const svgHead=ALLOC?(ALLOC.macro_gate?ALLOC.macro_gate.gate:"receipt predates macro_gate"):"receipt not loaded";
+  const L=[`TT FULL LADDER — YE${d.Y1} / YE${d.Y2} · ${etYmd()} · MACRO GATE ${mg.label} · server ${svgHead}`   /* the em-dash-free form is deliberate: smoke sweeps the whole file for a flat "GATE: <label>", the v5.6 word-collision guard, and a text export has no key/value cell to scope with */,
     `book ${(META&&META.asOf)||"—"} · quotes ${LIVE_AT||"not loaded"} · gate column at YE${gy}`,
     `% is target/price-1, NOT annualised — YE${d.Y1} and YE${d.Y2} are different horizons.`,
-    `FRESH rates the TT run / thesis / score-card clocks on the ${P_INPUT_CADENCE_D}-day quarterly cadence. The price mark is a daily clock and is not in it.`,"",
+    `FRESH rates the TT run / thesis / score-card clocks on the ${P_INPUT_CADENCE_D}-day quarterly cadence. The price mark is a daily clock and is not in it.`,
+    `SERVER GATE / SERVER REASON are the /api/allocation receipt's OWN verdict, married beside the ticker ladder — blank where the receipt has no opinion on that name.`,"",
     ["RANK","SYM","TIER","PRICE","YE"+d.Y1,"YE"+d.Y1+"%","YE"+d.Y2,"YE"+d.Y2+"%","BASIS","TT","TIER","GATE",
+     "SERVER GATE","SERVER REASON","SERVER HORIZON",
      "FRESH","GOVERNING CLOCK","RUN DUE","DAYS OVERDUE","NEEDS NEXT","FULL QUEUE"].join("\t")];
   ladderSorted(d.rows,d.Y1,d.Y2).forEach((r,i)=>{
     const v=ladderVeto(r,d.Y1,d.Y2);
+    const sv=allocServerVerdict(r.sym);
     L.push([i+1,r.sym,r.tier||"",r.px,r.y1===null?"":r.y1,r.y1p===null?"":r.y1p,
       r.y2===null?"":r.y2,r.y2p===null?"":r.y2p,r.y2b||r.y1b||"",
       r.tt&&r.tt.score!=null?r.tt.score.toFixed(2):"",r.tt&&r.tt.tier?r.tt.tier:"",
       v===null?"ELIGIBLE":v,
+      sv?(sv.elig?"ELIGIBLE":"VETOED"):"",sv?(sv.elig?"":sv.text):"",sv?(sv.hz||""):"",
       r.fresh.rating,r.fresh.governing.label+" "+(r.fresh.governing.age===null?r.fresh.governing.rating:r.fresh.governing.age+"d"),
       r.fresh.due||"",r.fresh.overdue||0,
       r.req.length?r.req[0].what:"nothing due",

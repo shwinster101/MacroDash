@@ -2518,6 +2518,123 @@ console.log("\n[render] v5.7.1 — arrival focus: judged AFTER the store is read
   await p2.close();
 }
 
+/* ── FEAT-TT-LADDER v6.7.3 — the SERVER RECEIPT'S OWN verdict, married beside the ladder's
+   own (owner follow-up, 2026-09-17: "have the ladder render the server receipt's verdict
+   beside its own for the eligible candidates — married, never merged, the way spreadLine
+   already does"). A prior episode showed how an OFFLINE reproduction of the server ladder
+   can diverge from the server's own answer without either side being wrong (v6.7.2) — this
+   drives the ACTUAL comparison, on the actual page, against ALLOC as a top-level global the
+   loaders normally set (the SAME pattern the existing "alloc:"/"daily:" tests already use;
+   no new fetch stub is added). The ladder's own ladderVeto()/buildLadderRows() are read
+   DIRECTLY inside page.evaluate as ground truth, never re-derived by the test — a test that
+   guessed the client's verdict independently could reproduce the exact bug this feature
+   exists to catch. */
+console.log("\n[render] FEAT-TT-LADDER v6.7.3 — the server receipt married beside the ladder's own");
+{
+  const p3 = await open(1200, 2200, "#ladder");
+  const married = await p3.evaluate(() => {
+    const today = new Date().toLocaleDateString("en-CA", { timeZone: "America/New_York" });
+    const d0 = buildLadderRows();
+    const gy = ladderGateYear(d0.Y1, d0.Y2);
+    const rowAAA = d0.rows.find((r) => r.sym === "AAA");
+    const clientV = rowAAA ? ladderVeto(rowAAA, d0.Y1, d0.Y2) : undefined;   // null = ELIGIBLE
+    const clientElig = clientV === null;
+    const mg = macroGate();   // the board's own current verdict — untouched, whatever it is
+    const receipt = (svElig, svMacro, businessDate, reason) => ({
+      schema: "tt-alloc-receipt-v1", at: businessDate + "T14:00:00Z", business_date_et: businessDate,
+      state: svElig ? "ALLOCATABLE" : "WAIT", gate: null,
+      macro_gate: { gate: svMacro, rung: svMacro === mg.g ? (mg.rung || null) : "fixture", reason: null },
+      horizon: gy,
+      eligible: svElig ? { sym: "AAA", y: gy, tgt: 1, up: 1, ann: 1 } : null,
+      why_not: svElig ? [] : [{ sym: "AAA", reason: reason || "server-side reason (fixture)" }],
+      context_blockers: [], funding: { label: "FUNDING PRIORITY — not a sell recommendation", rows: [], optOnly: [] },
+      inputs: { readout_as_of: businessDate },
+      attestation: { input_hash: "a".repeat(64), basis_hash: "b".repeat(64), result_hash: "c".repeat(64) },
+      confirmation: null,
+    });
+    const aaaRowText = () => [...document.querySelectorAll("#cBody .ld-main tbody tr")]
+      .find((r) => r.querySelector("td:nth-child(2)").innerText.trim().startsWith("AAA"))
+      ?.querySelectorAll("td")[10]?.innerText || "";
+    const headText = () => document.querySelector("#cBody .ld-head").innerText.replace(/\s+/g, " ");
+    const out = { hasRow: !!rowAAA, clientV, clientElig };
+
+    // (a) AGREE, row-level: server's eligible/vetoed state matches the client's own.
+    ALLOC = receipt(clientElig, mg.g, today, "matches the client");
+    renderLadder();
+    out.rowAgreeText = aaaRowText();
+    out.rowAgreeNoAlarm = !/DISAGREES/.test(out.rowAgreeText) && !/font-weight:700/.test(document.querySelector("#cBody .ld-main tbody tr td:nth-child(11)")?.innerHTML || "");
+
+    // (b) DISAGREE, row-level: server flips to the OPPOSITE of the client — macro_gate held
+    // fixed at mg.g so this isolates the ROW comparison from the head comparison.
+    ALLOC = receipt(!clientElig, mg.g, today, "the opposite of the client's own read");
+    renderLadder();
+    out.rowDisagreeText = aaaRowText();
+
+    // (c) DISAGREE, head-level: row-level held AGREEING, only macro_gate flipped.
+    const otherWord = mg.g === "SEND_IT" ? "TOUCH_GRASS" : "SEND_IT";
+    ALLOC = receipt(clientElig, otherWord, today, "matches the client");
+    renderLadder();
+    out.headDisagreeText = headText();
+
+    // (d) STALE softens the alarm color/text without hiding either answer — a receipt a day
+    // old must never read as a live contradiction (the staleness-as-signal defect, v3.1/v5.6.4).
+    const yesterday = new Date(Date.parse(today + "T12:00:00Z") - 86400000)
+      .toLocaleDateString("en-CA", { timeZone: "America/New_York" });
+    ALLOC = receipt(!clientElig, otherWord, yesterday, "the opposite of the client's own read");
+    renderLadder();
+    out.staleRowText = aaaRowText();
+    out.staleHeadText = headText();
+
+    // (e) NO RECEIPT — stated at the head, and no per-row line renders anywhere (nothing to
+    // compare against). Scoped to the TABLE ROWS specifically — the head's own honest
+    // "receipt not loaded" line legitimately contains "⇄ server" too, and a whole-body
+    // check would match that and prove nothing about the ROWS (the v3.60.1 vacuous-assert
+    // shape, caught while writing this very test).
+    ALLOC = null;
+    renderLadder();
+    out.noneHeadText = headText();
+    out.noneAnyRow = [...document.querySelectorAll("#cBody .ld-main tbody tr")]
+      .some((r) => /⇄ server/i.test(r.innerText));
+
+    // (f) MACRO-GATED — the server never evaluated any ticker (ALLOC.gate truthy): no per-row
+    // line anywhere, but the head STILL states the server's macro_gate word.
+    ALLOC = { ...receipt(false, "TOUCH_GRASS", today, "n/a"), gate: { rung: "flip", reason: "Macro Flip BLIND" },
+      eligible: null, why_not: [] };
+    renderLadder();
+    out.gatedHeadText = headText();
+    out.gatedNoRow = [...document.querySelectorAll("#cBody .ld-main tbody tr")]
+      .every((r) => !/⇄ server/i.test(r.innerText));
+
+    // (g) OUTSIDE THE RECEIPT'S SET — eligible/why_not name neither AAA nor BBB: AAA's row
+    // must render NOTHING, because the receipt genuinely has no opinion on it.
+    ALLOC = receipt(false, mg.g, today, "irrelevant");
+    ALLOC.why_not = [{ sym: "ZZZ_NOT_IN_FIXTURE", reason: "some other name entirely" }];
+    renderLadder();
+    out.outsideRowText = aaaRowText();
+
+    return out;
+  });
+  ok("ladder: the client verdict is read from the SAME functions the table renders with (buildLadderRows/ladderVeto), never re-derived by the test — the exact discipline the v6.7.2 retraction was written to enforce",
+    married.hasRow && (married.clientV === null || typeof married.clientV === "string"));
+  ok("ladder: AGREEING row-level verdicts render DIM, with no DISAGREES text and no bold alarm styling",
+    /⇄ server/i.test(married.rowAgreeText) && married.rowAgreeNoAlarm);
+  ok("ladder: a DISAGREEING row-level verdict is named IN BOTH DIRECTIONS — the client's own text stays in the GATE cell, and the server's differing answer renders beside it, never overwriting it",
+    /DISAGREES with the ticker ladder above/.test(married.rowDisagreeText) &&
+    /⇄ server/i.test(married.rowDisagreeText));
+  ok("ladder: a DISAGREEING head-level MACRO GATE comparison is named the same way, at board altitude",
+    /DISAGREES with MACRO GATE above/.test(married.headDisagreeText) && /⇄ server:/.test(married.headDisagreeText));
+  ok("ladder: a receipt dated YESTERDAY softens the alarm at BOTH altitudes — 'receipt Nd old' replaces 'DISAGREES', because a stale receipt reading as a live contradiction is the exact staleness-as-signal defect this repo keeps closing",
+    /receipt 1d old/.test(married.staleRowText) && !/DISAGREES with the ticker ladder/.test(married.staleRowText) &&
+    /receipt 1d old/.test(married.staleHeadText) && !/DISAGREES with MACRO GATE/.test(married.staleHeadText));
+  ok("ladder: NO RECEIPT is a STATED head fact, and produces ZERO per-row server lines anywhere (checked ROW BY ROW, not on the whole body — the head's own honest line legitimately contains the same glyph)",
+    /server receipt not loaded/.test(married.noneHeadText) && !married.noneAnyRow);
+  ok("ladder: a MACRO-GATED receipt (the server never evaluated any ticker) still states its OWN macro_gate word at the head, but renders NO per-row comparison — comparing a ticker verdict against a receipt that never ranked it would be apples to oranges",
+    /⇄ server: TOUCH_GRASS/.test(married.gatedHeadText) && married.gatedNoRow);
+  ok("ladder: a receipt whose eligible/why_not name NEITHER this row nor any row in its set renders NOTHING for that row — the receipt genuinely has no opinion, and inventing one would be worse than silence",
+    married.outsideRowText.trim() === "" || !/⇄ server/i.test(married.outsideRowText));
+  await p3.close();
+}
+
 await browser.close();
 server.close();
 console.log(`\n=== RENDER TEST: ${pass} passed, ${fail} failed ===`);

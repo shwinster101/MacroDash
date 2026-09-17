@@ -5,6 +5,63 @@ answers *"is it safe to be in the market?"* from live macro + market + sentiment
 data. Single-page React app on Cloudflare Pages, with live data assembled at the
 edge by Pages Functions and cached in KV.
 
+**v6.7.3 — the server RECEIPT's own verdict, married beside the ladder's own (owner follow-up
+after v6.7.2's retraction: "have the ladder render the server receipt's verdict beside its own
+for the eligible candidates — married, never merged, the way `spreadLine` already does").** The
+v6.7.2 episode showed how an OFFLINE reproduction of the server ladder can diverge from the
+server's own answer without either side being wrong. This puts the actual comparison on the
+board itself, at BOTH altitudes the ladder already renders a verdict.
+**Board level.** `ladderServerMacroCell(mg)` compares the client's `macroGate()` word against
+`ALLOC.macro_gate.gate` — the SAME three-word vocabulary on both sides (`macroGateFrom` is
+mirrored rung-for-rung by `macroGate()`, so a real disagreement here means the mirrors
+themselves have drifted, not merely that two tickers disagree). Rendered once in the head,
+never per row, since every row shares one board state.
+**Row level.** `allocServerVerdict(sym)` reads `ALLOC.eligible`/`ALLOC.why_not` for a name and
+returns its verdict, or `null` — deliberately — for a name the receipt never ranked (why_not is
+capped at 8, v4.1) or for a MACRO-GATED receipt (`ALLOC.gate` truthy, meaning the server never
+evaluated any ticker at all): a `null` here is a **coverage fact, not a disagreement**, and
+rendering one would be inventing an opinion the receipt does not hold. `ladderServerCell` prints
+it as a second line under the client's own GATE text — the `spreadLine` pattern applied to
+eligibility instead of price — never blending into it. A horizon mismatch between the receipt's
+own year and the column being read is NAMED rather than silently compared as if equivalent.
+**Staleness is disclosed, never mistaken for disagreement.** The plain `GET /api/allocation`
+serves whatever was last STORED — it never recomputes — so `ALLOC` can be a day old while the
+ladder's own read is always fresh. `allocReceiptAgeD()` reads the receipt's `business_date_et`
+against today's ET date; a mismatch downgrades the color from red/bold to amber and swaps
+"DISAGREES" for "receipt Nd old, may not reflect today" — both answers still render, only the
+alarm softens (the v3.1/v3.40/v5.6.4 staleness-as-signal doctrine, applied to a comparison
+instead of a single number). `⟳ REFRESH` on the ladder now calls `allocReeval()` (a real POST
+re-evaluation, the same call `⟳ DATA+RANKS` already fires) instead of the cached
+`loadAllocation()` GET, so the comparison the refresh exists to keep current does not itself
+compare a live client read against a receipt that could be a day old.
+**Found by the render suite, not by reading the code: the first draft shipped completely
+inert at board level.** `ladderServerMacroCell` was written, and correctly covered by an
+offline `[87]` smoke lift — but an earlier edit script had crashed mid-write on an unrelated
+assertion and silently dropped the one line that actually CALLED it from `ladderHead`'s
+template. The function existed, compiled, and was never invoked. Smoke's lift-and-run couldn't
+have caught it (it never calls `ladderHead`); only `test/render.mjs`, which opens the real DOM
+and reads `#cBody`, found it — four of nine new render assertions failed pointing at exactly
+the missing text. Recorded because it is the same lesson this file keeps re-learning at every
+altitude: a function that is never called is functionally absent, and only a test that reaches
+the call site can tell the difference. One render test itself also needed a second look:
+checking "no `⇄ server` text anywhere in `#cBody`" for the no-receipt case was VACUOUS, since
+the head's own honest "receipt not loaded" line legitimately contains that glyph — rewritten to
+scope the check to `.ld-main tbody tr` specifically (the v3.60.1 shape, caught while writing the
+very test meant to prove the fix).
+Tests: **2505 smoke** (+9, a self-scoped block using `liftFns`'s brace-depth matching rather
+than an index-range slice — the four new functions are not contiguous with each other, and an
+index slice is exactly the class of mistake that dropped the call site above) + **335 render**
+(+9, driven live: agreement/disagreement/staleness at both altitudes, the macro-gated and
+no-receipt states, the horizon-mismatch naming, and the outside-the-receipt's-set silence) + 356
+public-render, `audit:prod` clean. Negative-controlled three ways — reintroducing the exact
+dropped-call-site bug (4 render red), letting `allocServerVerdict` compare against a
+macro-gated receipt (1 smoke red), removing the staleness softening (1 smoke red).
+**Deliberately NOT done:** no defensive check was added to force `ladderRefresh`'s POST to
+succeed or retry — a failed `allocReeval()` already falls through to the existing catch, leaving
+the last-good `ALLOC` in force, exactly like every other refresh path in this file. No change to
+`ALLOC_RULE_VERSION`, `tt-v1`, or the eligibility ladder itself — this is presentation over an
+unmodified receipt.
+
 **v6.7.2 — the retraction, measured and pinned (owner: "fix the tt-alloc alias read and show
 me which names move").** The instruction was to fix a defect. **There was no defect**, and
 saying so is the deliverable — inventing a change to justify the previous session's claim would
