@@ -1565,8 +1565,16 @@ console.log("\n[public] v6.0 — merged FIRED·BLIND badge + alert persistence a
   await page.evaluate(() => localStorage.setItem("md:alerts:v1", "{not json"));
   await page.reload({ waitUntil: "domcontentloaded" });
   await page.waitForTimeout(1300);
+  /* v6.6 RE-PIN: this read a hardcoded 9, which was the default-set size on the day it was
+     written and went red the moment v6.6 added the three policy alerts — a correct addition
+     failing a test that was measuring a COUNT rather than the property. The property is
+     "garbage restores the WHOLE default set", so the expected number is now DERIVED from
+     DEFAULT_ALERTS itself (the SOURCES/DERIVED_OF reconciliation convention): a later alert
+     arrives without touching this pin, while a default that silently fails to render still
+     turns it red. */
   ok("v6.0 persist: garbage in the store falls back to the DEFAULTS — every monitor returns",
-    (await page.locator('button[aria-label^="Toggle alert"]').count()) === 9 &&
+    (await page.locator('button[aria-label^="Toggle alert"]').count())
+      === (await import("../src/alertEngine.js")).DEFAULT_ALERTS.length &&
     (await page.locator('button[aria-label="Toggle alert CPI > 4%"]').innerText()).trim() === "OFF");
   ok("v6.0 alerts: no page errors through the whole loop", errors.length === 0);
   await page.close();
@@ -1891,9 +1899,32 @@ console.log("\n[public] v6.3 — eight sheets on the macro strip (Power, Simple,
   await trigger(5).click();
   await page.waitForTimeout(250);
   const fedBody = await dlg.innerText();
+  /* v6.6 RE-PIN: the eyebrow gained the optional POLICY MARKER between the tile's reading
+     and its vote clause, so the two were no longer adjacent. Matching them as adjacent also
+     made this pin quietly CALENDAR-DEPENDENT — it would pass on an ordinary day and fail on
+     any FOMC decision day, which is the v3.35/v3.80 rotting-fixture defect. It now pins the
+     load-bearing property instead: whatever the tile reports, a CONTEXT tile's eyebrow still
+     ENDS in "context only", so a marker can never read as a vote this tile does not cast. */
   ok("v6.3 FED sheet: the target range's official name, the tile's own range reading, and both readings named in the body",
     /Federal Funds Rate Target Range/.test(await page.locator("#factsheet-title").innerText()) &&
-    /FED · 3\.50–3\.75% · CONTEXT ONLY/i.test(fedBody) && /effective average/.test(fedBody) && /lags a decision/.test(fedBody));
+    /FED · 3\.50–3\.75%[^\n]*· CONTEXT ONLY/i.test(fedBody) && /effective average/.test(fedBody) && /lags a decision/.test(fedBody));
+  /* v6.6 — the marker itself, driven live. DERIVED from the calendar rather than hardcoded
+     (the v3.99.1 convention two pins down), so it survives the table rolling forward: on a
+     decision day the tile must SAY the meeting is today, and on any other day it must fall
+     back to the countdown and claim no event at all. */
+  ok("v6.6 FED marker: on a decision day the tile reports the MEETING; on any other day it renders no event",
+    await (async () => {
+      const { FOMC_MEETINGS, etYmd } = await import("../src/sources.js");
+      const decisionDay = FOMC_MEETINGS.includes(etYmd());
+      /* Scoped to the EYEBROW line, not the sheet body. The first draft swept the whole body
+         for an outcome word and went red against correct code: FED_EXPLAIN's own third
+         bullet says "a surprise cut or hike", so the pin was reading the explainer's prose as
+         a claim the marker had made — the v5.10.0 defect of asserting the wrong object. */
+      const eyebrow = fedBody.split("\n").find((l) => /FED\s·/i.test(l)) || "";
+      return decisionDay
+        ? /FOMC today/i.test(eyebrow) && !/HIKED|\bCUT\b/i.test(eyebrow)
+        : !/FOMC today/i.test(eyebrow);
+    })());
   await page.locator("button.fs-close").click();
   await page.waitForTimeout(200);
   // NFCI — the 8th tile, a voter reading bull on this tape.

@@ -5,6 +5,119 @@ answers *"is it safe to be in the market?"* from live macro + market + sentiment
 data. Single-page React app on Cloudflare Pages, with live data assembled at the
 edge by Pages Functions and cached in KV.
 
+**v6.6.0 "THE FED MOVED" — the dashboard learns to report an EVENT, not just a state (owner
+call, after the 2026-09-16 FOMC read-through).** On the day the FOMC raised the target range
+25bp to **3.75–4.00%, the first hike in three years**, a live read of production found the
+dashboard strong on every axis except one: **NOTHING ON THE PAGE SAID SO.** Measured, not
+inferred — Kalshi carried the move at **86% hike / 12% hold / 2% cut**, dated that day, and
+Engine 0's `fed_next_meeting` check voted BEARISH on it (`available 7 · usable 7 · current 7
+· missing [] · HIGH · FULL`); the 10Y read **5.00** with a +0.32 monthly delta (`spiking`,
+bearish in both engines); CAPE, F&G-at-28 and the 10Y put the frozen 10am call at **HODL ·
+NEUTRAL, 2 bull / 1 neutral / 3 bear**, captured 14:01:37Z — four hours before the
+announcement; the v6.1 ranker put **all three** post-decision ranks on the hike at category
+weight 7; and the 6pm close read fired on time with `legs_same_day
+[tenYear, thirtyYear, fearGreed, spyClose]` and VIX honestly T-1 — **which answers v6.2.0's
+own night-1 measurement instruction.** And the FED tile rendered `3.50–3.75%` with `FOMC
+today` beside it, while `ALERT_METRICS` held **no policy metric of any kind**, so the most
+consequential macro event in three years had no alert channel: one alert fired that day and
+it was the long end (30Y 5.36 > 5.2). Full read-through:
+`working/2026-09-16-fomc-hike-capture.md`.
+**The tile was never WRONG, which is the whole diagnosis.** `DFEDTARU`/`DFEDTARL` step on the
+implementation note's **EFFECTIVE date** — the business day AFTER the meeting (2026-09-17
+here, verified against `monetary20260916a1.htm`) — so on decision day the series correctly
+still carries the pre-meeting setting. The defect is that the tile had no way to SAY that:
+this engine reasons about **STATE** and an FOMC decision is an **EVENT**, so a scheduled,
+dated, discrete policy change could pass through the page as an unchanged number. Every
+mechanism that touched the hike touched it as a *level* — a yield, a probability, a headline
+rank — and none recorded that a thing happened at 2pm.
+**`src/fedPolicy.js`** (pure, React-free, Node-importable — the `sahm.js`/`headlines.js`
+shape) is the one home. `targetStepFrom(obs)` walks FRED's own newest-first observations for
+the prior DISTINCT bound and the first date carrying the current one — **the effective date
+READ OFF THE DATA, never asserted** — and is IMPORTED by `snapshot.js` (fourth
+`functions/`→`src/` import) rather than copied, computed inside the fetch closure for the
+same reason the Sahm rule is: only 10 of the 26 daily points escape via `spark`, and the
+DATES never escape at all. Four additive fields (`fedTarget{Upper,Lower}{Prev,ChangedAt}`),
+each `DERIVED_OF` **its own bound** so a half-dead feed takes only its own leg dark; the
+prior bounds are BANDED like their parents (the step marker is not a plausibility bypass).
+**Two states, and the ORDER between them is the honesty rule.** `MOVED` — the range stepped
+and the step is recent; a confirmed fact, so it outranks the calendar, with direction and
+size MEASURED off the two bounds (`HIKED +25bp`, from/to ranges and the effective date in the
+sheet). `TODAY` — the FOMC decides today and the range has not stepped yet: it states the
+MEETING and, when the Kalshi leg is live, what the market has **PRICED** (`today · 86% hike`)
+— and **NEVER claims an outcome**, because on decision day the module cannot see one.
+Reading the result out of a news title would be a fabricated policy fact taken from a
+headline the ranker is forbidden to rewrite or score (the v3.51 one-way rule), so the detail
+says outright that *the range shown is the setting BEFORE this meeting* and that the pricing
+is *an expectation, not the outcome*. Fail-closed throughout: a **same-date pair** rule (two
+bounds that stepped on different days are not one move — the `pairRs`/`pairCboeVix` rule, one
+metric over), a refusal on bounds moving in opposite directions, a future effective date
+refused, and a `FED_MOVE_FRESH_D = 7` window (ASSERTED, boundary-executed, the NFCI-deadband
+convention) past which the range IS the state again. A width change is coherent, so it is
+NAMED rather than refused. **The mock carries a step dated outside the window**, so the demo
+renders no marker — mock must never manufacture an EVENT (v3.1, pointed at an event instead
+of a number).
+**⚠ CONTEXT, NEVER A VOTE, and enforced three ways.** `REGIME_BAND_TABLE` still has no Fed
+row, the six-signal backdrop still reads the policy story through the 10Y and financial
+conditions, and smoke sweeps `regime.js`/`evidence.js`/`ttReadout.js`/`macroCall.js`/
+`fiveWhys.js` clean of the module. The marker paints **AMBER, never through `voteStyle`** — a
+green/red marker on a context tile would imply a vote it never casts (the v6.3 beat-2 rule,
+in colour) — and the eyebrow still ENDS in *context only* with the marker riding BEFORE that
+clause. Promoting the policy path to a seventh voter would move the majority math of a
+contract that gates real orders: that is an owner ruling with the NFCI (v3.43) and 30Y
+(v3.55) precedents, never a side effect of adding a marker.
+**The policy alert channel, which did not exist.** Three metrics, none previously wired:
+`rate_hike_odds` and `rate_cut_odds` are **ANTICIPATORY** (the hike leg would have fired days
+early — the half that matters for *"is this a good time to buy"*), and `fed_move_bp` is the
+confirmed fact, reading **MAGNITUDE not direction** so ONE alert covers a cut as well as a
+hike (a cut is the more bullish of the two, and the tile's marker carries the direction one
+glance away). The reader returns **0 — not null — when the range is readable and nothing
+moved**, and NaN only when the range itself cannot be read: *"nothing tripped"* and *"I
+cannot see whether it tripped"* stay different facts, and only the second may read BLIND
+(v3.52). Ships `Fed Hike Odds > 60%` ON (60 asserted, boundary-tested, the 30Y-5.2
+convention), `Fed Cut Odds > 60%` OFF (the CCC/Sahm convention), `Fed Moved Rates` ON.
+`alertEngine.js` gains its first imports, and **the "no imports at all" pin is REVERSED with
+the reason at the pin** — that was never the contract (it was true only because v6.5.5
+extracted the file verbatim); it now allows an ALLOWLIST of pure `src` modules and still bans
+React/hooks/storage outright, which is strictly stronger than the spelling it replaces.
+**Two other pins re-pinned, both catching real changes:** the alert-persistence count was a
+hardcoded `9` and is now DERIVED from `DEFAULT_ALERTS.length` (a correct addition was failing
+a test measuring a count rather than a property), and the FED-sheet eyebrow pin was quietly
+**calendar-dependent** — it required the reading and the vote clause to be adjacent, so it
+would have passed on an ordinary day and failed on every decision day (the v3.35/v3.80
+rotting-fixture defect), and now pins the property instead. **Also closed:** the
+`package-lock.json` root version, stale since v4.1.3 filed it as *"hygiene… it belongs in the
+next release that touches deps"* — this one did.
+**Test defect recorded rather than quietly fixed:** the first draft of the new browser pin
+swept the whole FED sheet for an outcome word and went red **against correct code**, because
+`FED_EXPLAIN`'s own third bullet says *"a surprise cut or hike"* — the pin was reading the
+explainer's prose as a claim the marker had made (the v5.10.0 wrong-object defect). Scoped to
+the eyebrow line, it bites correctly.
+**Found and deliberately NOT built, named at full weight:** `/readout.json` published
+`TAILWIND · HIGH · FULL · missing: []` at 19:21 ET off the **00:35 ET** build, because the day
+key carries a 48h TTL at HIGH confidence and the close edition never republishes it, while
+`sessionsBehind` counts morning-stale as `current` — the order-gating machine surface is
+structurally blind to the entire post-FOMC session. `expectedObsDate`/`failsafeDue` already
+answer *"should today's close be published by now?"* (v6.2.0), so wiring them into the
+readout's tier resolution closes it without adding a `close_read` sibling to the tt-v1 body or
+touching a receipt hash. Its own ticket. Also open: the 10am leg served a cache hit rather
+than a rebuild (its factors read `CACHED` while the 6pm read's read `LIVE`), undiagnosed for
+want of a `DEBUG_TOKEN`.
+**Stale claim corrected:** the v5.10.0 entry's *"Kalshi has been rate-limited since v3.99 …
+FULL is unreachable until the feed is restored"* is **no longer true** — the keyed transport
+(v3.99.1 + the v5.97.2 PKCS#1 parser fix) works and the live readout reads `current 7 ·
+missing [] · HIGH · FULL`. The label-outlives-its-data defect, inside the changelog that
+exists to close it.
+Tests: **2386 smoke** (+28, section [85]: the step walk, BOTH sides of the real 2026-09-16/17
+event, the decision-day no-outcome rule, a cut, precedence, the window at the boundary and one
+day past it, six fail-closed paths, the width case, the mock abstention, the SOURCES/
+DERIVED_OF/BANDS reconciliation, the import-not-copy pin, the three no-vote sweeps, and the
+alert channel driven through the REAL `evalAlert` incl. the BLIND-vs-CLEAR distinction) + 309
+render + **332 public-render** (+3: the marker driven live in Chromium, DERIVED from the
+calendar so it survives the table rolling forward). Negative-controlled **five ways** — the
+freshness window removed (5 red), the same-date pair guard removed, the decision-day branch
+made to claim an outcome, `fedMoveBp` collapsing no-move into BLIND, and the marker painted
+green — each turning exactly its own pins.
+
 **v6.5.5 — the dashboard decomposition, Phases 0–4 (owner map, verified then executed
 2026-09-15/16).** Structure only: no band, vote, quorum, freeze, fetch, gate or copy moved, and
 the rendered DOM is byte-identical (all three browser suites unchanged). The owner's line-by-line
@@ -1211,6 +1324,10 @@ src/
   alertEngine.js        FEAT-ALERT-EVAL definitions (v6.5.5): ALERT_METRICS, evalAlert,
                         DEFAULT_ALERTS, the md:alerts:v1 overlay helpers. Pure. The
                         evaluation CALL and the alert state stay in dashboard.jsx.
+  fedPolicy.js          v6.6: the FED tile's DECISION STATE (MOVED / TODAY) + the policy-move
+                        magnitude the alert layer reads. Pure, Node-importable; imported by
+                        snapshot.js (targetStepFrom — FOURTH functions/→src/ import), the
+                        orchestrator and alertEngine.js. Reports an EVENT; votes NOWHERE.
   useMarketData.js      The ONE data-wiring point (hook). Reads VITE_DATA_MODE.
   sources.js            Pure merge module: SOURCES field map + mergeLiveOverMock()
                         + isStale/cadenceOf/parseObsDate + MARKET_HOLIDAYS/

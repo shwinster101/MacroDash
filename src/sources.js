@@ -53,6 +53,15 @@ export const SOURCES = {
   // default — unlike FEDFUNDS these step on a decision day, which is the whole point.
   fedTargetUpper: { path: "macro.fedFunds.targetUpper",     kind: "num",    displayClass: "public" },
   fedTargetLower: { path: "macro.fedFunds.targetLower",     kind: "num",    displayClass: "public" },
+  /* v6.6 (FOMC read-through) — the target-range STEP: the prior DISTINCT bound and the first
+     date carrying the current one, i.e. the implementation note's EFFECTIVE date, read off
+     the series rather than asserted. This is what lets the tile say the Fed MOVED instead of
+     rendering an unchanged number through a decision day. Undated derivatives of their own
+     bound, so DERIVED_OF governs their freshness (see below). */
+  fedTargetUpperPrev:      { path: "macro.fedFunds.prevTargetUpper",      kind: "num", displayClass: "public" },
+  fedTargetLowerPrev:      { path: "macro.fedFunds.prevTargetLower",      kind: "num", displayClass: "public" },
+  fedTargetUpperChangedAt: { path: "macro.fedFunds.targetUpperChangedAt", kind: "str", displayClass: "public" },
+  fedTargetLowerChangedAt: { path: "macro.fedFunds.targetLowerChangedAt", kind: "str", displayClass: "public" },
   unemployment:   { path: "macro.unemployment.national",    kind: "num",    displayClass: "public" },
   unemploymentTrend: { path: "macro.unemployment.trend",    kind: "series", displayClass: "public" },
   lfpr:           { path: "macro.unemployment.lfpr",        kind: "num",    displayClass: "public" },
@@ -184,6 +193,12 @@ export const DERIVED_OF = {
   // so bandFedOdds (keyed on cut/hike) could vote off a stale Kalshi pull undetected)
   rateOddsCut: "rateOddsHold", rateOddsHike: "rateOddsHold",
   fomcDays: "rateOddsHold", nextFomcDate: "rateOddsHold",
+  /* v6.6: the target-range step. Each leg derives from ITS OWN bound — never from the other
+     one — so a bound whose feed died takes only its own prev/effective-date dark, and
+     fedDecisionState's same-date pair rule then refuses the marker rather than describing a
+     half-read move. */
+  fedTargetUpperPrev: "fedTargetUpper", fedTargetUpperChangedAt: "fedTargetUpper",
+  fedTargetLowerPrev: "fedTargetLower", fedTargetLowerChangedAt: "fedTargetLower",
 };
 // Meta fields with no parent and no date to inherit — the reconciliation exemption list.
 export const DERIVED_EXEMPT = ["lastRefresh", "session"];

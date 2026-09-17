@@ -173,7 +173,7 @@ page still never said the Fed hiked.
 
 ---
 
-## Outcomes (this pass)
+## Outcomes — pass 1 (the read-through)
 
 - **Read-only.** No code, band, threshold, alert, copy or contract changed. No KV write.
 - Shipped: this note only, on `claude/dashboard-rate-hike-capture-btorrb`.
@@ -185,3 +185,51 @@ page still never said the Fed hiked.
   implementation note and the live readout, and both were wrong.
 - **v6.2.0's night-1 measurement instruction is answered** (§2.5): same-day legs were
   10Y/30Y/F&G/SPY-close, VIX honestly T-1 — exactly as predicted.
+
+---
+
+## Outcomes — pass 2 (built: backlog items 1 and 2), v6.6.0
+
+Owner call, same day: *build the decision-day marker and the policy alert.* Both shipped;
+everything else in §5 stays filed.
+
+**Built.**
+- **`src/fedPolicy.js`** (new, pure, Node-importable): `targetStepFrom` walks FRED's own
+  observations for the prior distinct bound and the effective date; `fedDecisionState`
+  resolves `MOVED` (confirmed step, ≤ `FED_MOVE_FRESH_D` = 7 days) or `TODAY` (the meeting,
+  plus what the market has PRICED — never an outcome); `fedMoveBp` is the alert reader.
+- **Four additive snapshot fields** (`fedTarget{Upper,Lower}{Prev,ChangedAt}`), each
+  `DERIVED_OF` its own bound, banded like their parents, landing on the mock baseline.
+- **The FED tile's marker** — amber, never `voteStyle`, with the transition, both ranges and
+  the effective date in the sheet and the tooltip.
+- **Three alerts** (ids 10/11/12): hike-odds > 60% ON, cut-odds > 60% OFF, `Fed Moved Rates`
+  ON reading magnitude so a cut trips the same alert.
+- Gates: **2386 smoke** (+28) + 309 render + **332 public-render** (+3), five negative
+  controls run, all biting. `package-lock.json`'s root version — stale since v4.1.3 filed it
+  — synced.
+
+**Corrections to pass 1, recorded rather than edited away.**
+- §3.1 said the tile "had no way to say" the Fed moved and implied the fix was cosmetic. It
+  was not: the data to detect a move **did not exist** in the snapshot at all. DFEDTARU's
+  level alone cannot tell you it stepped — that needs the prior distinct value and the date,
+  neither of which was emitted. The fix is a pipeline change, not a copy change.
+- §5 item 1 proposed keying the marker on "a target-range delta vs the prior observation."
+  Wrong shape: the prior *observation* is usually the same value, so the useful comparison is
+  the prior **distinct** value plus the date the current one first appeared. Built that way.
+- §5 item 2 proposed "a target-range-changed alert" alongside the odds alerts as if it were a
+  third threshold. `evalAlert` only does `above`/`below` on a number, so it became a
+  magnitude metric — which turned out better: one alert covers a cut as well as a hike.
+- Pass 1 did not notice that `alertEngine.js` was pinned as importing nothing. That pin was
+  reversed (with the reason at the pin) rather than worked around.
+
+**Two test defects of my own, recorded per the house rule.**
+- My first browser pin swept the whole FED sheet for an outcome word and went red against
+  **correct code** — `FED_EXPLAIN` says "a surprise cut or hike", so it read the explainer's
+  prose as a claim the marker had made. Scoped to the eyebrow line.
+- The FED-sheet eyebrow pin I inherited was quietly **calendar-dependent** (it required the
+  reading and the vote clause to be adjacent, so it passed on ordinary days and would fail
+  every decision day). Re-pinned on the property, not the adjacency.
+
+**Still open from §5, unchanged:** items 3 (the `/readout.json` evening blind spot — the
+highest-leverage structural item), 4 (now done: the stale Kalshi claim is corrected in
+CLAUDE.md's v6.6.0 entry) and 5 (verify the 10am refresh leg via `_diag.cronJobs`).

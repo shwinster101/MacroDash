@@ -44,7 +44,14 @@ export const MOCK_DATA = {
     // decision by design. `nextFOMC` here is the mock baseline ONLY and WILL expire — the
     // real countdown falls through to the curated FOMC_MEETINGS calendar in sources.js, which
     // is precisely why a rotted date can no longer reach the strip.
-    fedFunds:{ rate:3.625, targetLower:3.50, targetUpper:3.75, nextFOMC:"2026-06-17", daysUntil:14, odds:{ hold:84, cut:13, hike:3 } }, // odds: Kalshi FOMC market — LIVE since v2.6.3 (fetchRateOdds); these are the mock baseline only
+    /* v6.6: the prevTarget bounds and their changed-at dates are the target-range STEP that
+       the FED tile's policy marker reads. The mock's last step is deliberately dated OUTSIDE
+       FED_MOVE_FRESH_D, so the demo renders NO marker: mock must never manufacture an EVENT,
+       which is the v3.1 invariant pointed at an event rather than at a number. */
+    fedFunds:{ rate:3.625, targetLower:3.50, targetUpper:3.75,
+               prevTargetLower:3.25, prevTargetUpper:3.50,
+               targetLowerChangedAt:"2026-03-18", targetUpperChangedAt:"2026-03-18",
+               nextFOMC:"2026-06-17", daysUntil:14, odds:{ hold:84, cut:13, hike:3 } }, // odds: Kalshi FOMC market — LIVE since v2.6.3 (fetchRateOdds); these are the mock baseline only
     cpi:{ headline:3.8, core:2.8, nextRelease:"2026-06-11", trend:[3.2,3.4,3.5,3.6,3.7,3.8] },
     pce:{ headline:3.1, core:2.9, nextRelease:"2026-06-26", trend:[2.6,2.7,2.8,2.9,3.0,3.1] }, // Fed's preferred inflation gauge (FRED PCEPI/PCEPILFE — mock until YoY wired)
     // sahm 0.13 = deliberately CLEAR (trigger is >= 0.50) — the demo abstains, never a verdict.

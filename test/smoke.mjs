@@ -51,6 +51,7 @@ import { plausible, applyBands, quorum, QUORUM_FIELDS, QUORUM_MIN, marketSession
 import { etYmd, expectedObsDate, isSessionDay, CLOSE_PUBLISHED_ET } from "../src/sources.js";
 import { CLOSE_LEGS, classifyLegs, buildCloseRead, closeReadLine } from "../src/closeRead.js"; // v6.2
 import { CONTEXT_EXPLAIN, stripExplainFor } from "../src/stripExplain.js"; // v6.3
+import * as FP from "../src/fedPolicy.js"; // v6.6: the FED policy marker — imported and RUN, never source-lifted
 // UI-OVERHAUL Slice 1 (task 1.1): tokens are a real module now — smoke IMPORTS it (the v3.60
 // convention: the actual export is tested, immune to formatting drift) instead of regexing
 // hex values out of dashboard.jsx source text.
@@ -6271,7 +6272,19 @@ ok("wave12: evaluation stays home — the orchestrator CALLS evalAlert and owns 
   !/\nexport function evalAlert|\nconst ALERT_METRICS=|\nconst DEFAULT_ALERTS=\[/.test(dashSrc) &&
   /^export const ALERT_METRICS=\{/m.test(alertEngineSrc) && /^export function evalAlert\(/m.test(alertEngineSrc) &&
   /^export const DEFAULT_ALERTS=\[/m.test(alertEngineSrc) &&
-  !/^import\s/m.test(alertEngineSrc) && !/useState|useEffect|localStorage|from ["']react["']/.test(alertEngineSrc.replace(/\/\/[^\n]*|\/\*[\s\S]*?\*\//g, "")) &&
+  /* v6.6 RE-PIN, with the reversal documented at the pin. This read `!/^import\s/m` — no
+     imports at all — which was true only because v6.5.5 extracted the file VERBATIM and it
+     happened to need none. It was never the contract: the contract is that the engine stays
+     PURE and Node-importable. The policy channel needs fedMoveBp's freshness window and the
+     project's ONE clock, and inlining either would mint the second copy of a rule this repo
+     keeps paying to remove. So the pin now says what it always meant, and says it more
+     strictly than the old spelling did: imports are allowed ONLY from an allowlist of pure
+     src modules, and React/hooks/storage stay banned outright. A new import from anywhere
+     else — a section, a primitive, a hook — turns this red. */
+  (() => { const PURE_OK = new Set(["./fedPolicy.js", "./sources.js"]);
+    const specs = [...alertEngineSrc.matchAll(/^import\s[^;]*?from\s+["']([^"']+)["']/gm)].map(m => m[1]);
+    return specs.every(s => PURE_OK.has(s)); })() &&
+  !/useState|useEffect|localStorage|from ["']react["']/.test(alertEngineSrc.replace(/\/\/[^\n]*|\/\*[\s\S]*?\*\//g, "")) &&
   !/evalAlert\s*\(/.test(alSrc.replace(/\/\/[^\n]*/g,"")));
 ok("wave12: the aiEcon module is PURE (Node-importable) and the section imports it",
   !/from ['\"]react['\"]/.test(aiEconSrc) &&
@@ -11339,7 +11352,11 @@ console.log("\n[79] v6.3.0 eight sheets — one resolver, band identity, context
   ok("[79] strip: every tile's face is wrapped in Explainable with the RESOLVED explainer, the full name as the title, and the tile's own reading + vote state as the eyebrow",
     /const ex=stripExplainFor\(f\);/.test(strip) &&
     /<Explainable explain=\{ex\} title=\{ex\?ex\.full:l\}/.test(strip) &&
-    /eyebrow=\{`\$\{l\} · \$\{v\}\$\{votes\?` · signal \$\{vs\.word\}`:isVoter\?" · unavailable today":" · context only"\}`\}/.test(strip) &&
+    /* v6.6 RE-PIN: the eyebrow gained an optional `note` slot BEFORE the vote clause (today
+       only the FED policy marker). The vote clause is byte-unchanged and still last, which
+       is the load-bearing half — a context tile reporting an EVENT must still end its
+       eyebrow with "context only", or a marker would read as a vote the tile never casts. */
+    /eyebrow=\{`\$\{l\} · \$\{v\}\$\{note\?` · \$\{note\}`:""\}\$\{votes\?` · signal \$\{vs\.word\}`:isVoter\?" · unavailable today":" · context only"\}`\}/.test(strip) &&
     /import \{ Explainable \} from "\.\.\/primitives\/FactSheet\.jsx";/.test(strip) && /import \{ stripExplainFor \} from "\.\.\/stripExplain\.js";/.test(strip));
   ok("[79] strip: the button is a reset face (no box of its own) inside the tile div that keeps the hover title, the classes and the layout",
     /className="strip-tile" style=\{\{background:"none",border:"none",padding:0,margin:0\}\}/.test(strip) &&
@@ -12003,6 +12020,162 @@ console.log("\n[83] Simple altitude — fs-xxl Hold, fs-body sentence, one-block
       if (unused.length) console.log("    unused imports:", unused.join(", "));
       return names.length > 20 && unused.length === 0;
     })());
+}
+
+// ═══════════ [85] v6.6 FED POLICY MARKER + the policy alert channel ═══════════
+/* WHY THIS SECTION EXISTS. On 2026-09-16 the FOMC raised the target range 25bp to
+   3.75–4.00% — the first hike in three years — and the live read-through found the dashboard
+   strong everywhere except one axis: NOTHING ON THE PAGE SAID SO. Kalshi carried the move at
+   86% and Engine 0 voted bearish on it, the 10Y read 5.00 `spiking`, the ranked-headline
+   engine put all three post-decision ranks on the hike — and the FED tile rendered
+   `3.50–3.75%` with `FOMC today` beside it. ALERT_METRICS had no policy metric at all, so
+   the most consequential macro event in three years had no alert channel either.
+   Everything below RUNS — a marker and an alert are claims about numbers and dates, and a
+   string pin cannot prove one. The fixtures are the REAL event, not invented shapes. */
+console.log("\n[85] v6.6 — the FED policy marker (context, never a vote) + the policy alerts");
+{
+  const { ALERT_METRICS: AM, DEFAULT_ALERTS: DA } = await import("../src/alertEngine.js");
+  const fpSrc = readSrc("../src/fedPolicy.js");
+  const stripSrc = readSrc("../src/sections/MacroStrip.jsx");
+  const noCmt = (s) => s.replace(/\/\/[^\n]*|\/\*[\s\S]*?\*\//g, "");
+
+  // ── The step walk, against FRED's own newest-first shape.
+  ok("[85] step: the prior DISTINCT bound and the FIRST date carrying the current one (the effective date, READ not asserted)",
+    (() => { const st = FP.targetStepFrom([{ date: "2026-09-18", value: "4.00" }, { date: "2026-09-17", value: "4.00" },
+      { date: "2026-09-16", value: "3.75" }, { date: "2026-09-15", value: "3.75" }]);
+      return st && st.prev === 3.75 && st.changedAt === "2026-09-17"; })());
+  ok("[85] step: a FLAT window emits nothing — 'no step in view' is not a zero-size step",
+    FP.targetStepFrom([{ date: "2026-09-16", value: "3.75" }, { date: "2026-09-15", value: "3.75" }]) === null &&
+    FP.targetStepFrom([]) === null && FP.targetStepFrom(null) === null);
+
+  // ── THE LIVE EVENT, both sides of the effective date.
+  const onDay = FP.fedDecisionState({ upper: 3.75, lower: 3.50, prevUpper: 3.50, prevLower: 3.25,
+    changedUpper: "2026-03-18", changedLower: "2026-03-18", decidesToday: true,
+    odds: { hold: 12, cut: 2, hike: 86 }, today: "2026-09-16" });
+  ok("[85] 9/16 decision day: states the MEETING and the market's PRICING, and NEVER claims an outcome it cannot see",
+    onDay.kind === "TODAY" && onDay.label === "today · 86% hike" &&
+    !/HIKED|\bCUT\b/.test(onDay.label) && onDay.direction === null && onDay.bps === null &&
+    /an expectation, not the outcome/.test(onDay.detail) &&
+    /takes effect the next business day/.test(onDay.detail));
+  ok("[85] 9/16: a dark Kalshi leg degrades to the bare meeting — a partial odds book is never a priced market",
+    FP.fedDecisionState({ decidesToday: true, odds: null, today: "2026-09-16" }).label === "FOMC today" &&
+    FP.fedDecisionState({ decidesToday: true, odds: { hike: 86 }, today: "2026-09-16" }).priced === null);
+  const moved = FP.fedDecisionState({ upper: 4.00, lower: 3.75, prevUpper: 3.75, prevLower: 3.50,
+    changedUpper: "2026-09-17", changedLower: "2026-09-17", decidesToday: false, today: "2026-09-17" });
+  ok("[85] 9/17 effective date: the hike is MEASURED off the two bounds — direction, size, both ranges and the date",
+    moved.kind === "MOVED" && moved.direction === "HIKED" && moved.bps === 25 &&
+    moved.effective === "2026-09-17" && moved.label === "HIKED +25bp" &&
+    moved.from.upper === 3.75 && moved.to.upper === 4.00 &&
+    /3\.50–3\.75% to 3\.75–4\.00%/.test(moved.detail) && /effective 2026-09-17/.test(moved.detail));
+  ok("[85] a CUT reads as a cut, with its own sign — the module measures, it does not assume tightening",
+    (() => { const c = FP.fedDecisionState({ upper: 3.50, lower: 3.25, prevUpper: 3.75, prevLower: 3.50,
+      changedUpper: "2026-09-17", changedLower: "2026-09-17", today: "2026-09-17" });
+      return c.direction === "CUT" && c.label === "CUT -25bp" && c.signedBps === -25 && /lowered/.test(c.detail); })());
+  ok("[85] precedence: a CONFIRMED step outranks the calendar — the fact beats the schedule",
+    FP.fedDecisionState({ upper: 4.00, lower: 3.75, prevUpper: 3.75, prevLower: 3.50,
+      changedUpper: "2026-09-17", changedLower: "2026-09-17", decidesToday: true,
+      odds: { hold: 12, cut: 2, hike: 86 }, today: "2026-09-17" }).kind === "MOVED");
+
+  // ── The window, at the boundary and one day past it (the DEC-33 convention).
+  const at = (t) => FP.fedDecisionState({ upper: 4, lower: 3.75, prevUpper: 3.75, prevLower: 3.5,
+    changedUpper: "2026-09-17", changedLower: "2026-09-17", today: t });
+  ok("[85] window: fires AT exactly FED_MOVE_FRESH_D and goes silent one day past it",
+    FP.FED_MOVE_FRESH_D === 7 && !!at("2026-09-23") && !!at("2026-09-24") && at("2026-09-25") === null);
+  ok("[85] window: a FUTURE effective date cannot be judged (the ageDays fail-closed rule)", at("2026-09-16") === null);
+
+  // ── Fail-closed set. Every one of these renders NOTHING rather than guessing.
+  ok("[85] fail closed: mismatched step dates refuse — two bounds that stepped on different days are not one move (the pairRs rule)",
+    FP.fedDecisionState({ upper: 4, lower: 3.75, prevUpper: 3.75, prevLower: 3.5,
+      changedUpper: "2026-09-17", changedLower: "2026-09-16", today: "2026-09-17" }) === null);
+  ok("[85] fail closed: a missing prev, a missing date, a malformed date, or no `today` all render nothing",
+    FP.fedDecisionState({ upper: 4, lower: 3.75, prevLower: 3.5, changedUpper: "2026-09-17", changedLower: "2026-09-17", today: "2026-09-17" }) === null &&
+    FP.fedDecisionState({ upper: 4, lower: 3.75, prevUpper: 3.75, prevLower: 3.5, today: "2026-09-17" }) === null &&
+    FP.fedDecisionState({ upper: 4, lower: 3.75, prevUpper: 3.75, prevLower: 3.5, changedUpper: "9/17/26", changedLower: "9/17/26", today: "2026-09-17" }) === null &&
+    FP.fedDecisionState({ upper: 4, lower: 3.75, prevUpper: 3.75, prevLower: 3.5, changedUpper: "2026-09-17", changedLower: "2026-09-17" }) === null &&
+    FP.fedDecisionState() === null && FP.fedDecisionState(null) === null);
+  ok("[85] fail closed: bounds moving in OPPOSITE directions are incoherent for a range and are refused, never described",
+    FP.fedDecisionState({ upper: 4, lower: 3.25, prevUpper: 3.75, prevLower: 3.5,
+      changedUpper: "2026-09-17", changedLower: "2026-09-17", today: "2026-09-17" }) === null);
+  ok("[85] a WIDTH change is coherent, so it is NAMED rather than refused (the corridor's 25bp is history, not a rule)",
+    (() => { const w = FP.fedDecisionState({ upper: 4.25, lower: 3.75, prevUpper: 3.75, prevLower: 3.5,
+      changedUpper: "2026-09-17", changedLower: "2026-09-17", today: "2026-09-17" });
+      return w && w.widthChanged === true && /range width changed/.test(w.detail); })());
+
+  // ── The MOCK baseline abstains: mock must never manufacture an EVENT (v3.1, pointed at events).
+  ok("[85] mock: the demo carries a step, dated OUTSIDE the window, so it renders NO marker",
+    Number.isFinite(MOCK_DATA.macro.fedFunds.prevTargetUpper) &&
+    /^\d{4}-\d{2}-\d{2}$/.test(MOCK_DATA.macro.fedFunds.targetUpperChangedAt) &&
+    FP.fedDecisionState({ upper: MOCK_DATA.macro.fedFunds.targetUpper, lower: MOCK_DATA.macro.fedFunds.targetLower,
+      prevUpper: MOCK_DATA.macro.fedFunds.prevTargetUpper, prevLower: MOCK_DATA.macro.fedFunds.prevTargetLower,
+      changedUpper: MOCK_DATA.macro.fedFunds.targetUpperChangedAt, changedLower: MOCK_DATA.macro.fedFunds.targetLowerChangedAt,
+      decidesToday: false, today: etYmd() }) === null);
+
+  // ── The wiring: SOURCES paths land on real mock paths, and the dates inherit their own bound.
+  ok("[85] wiring: all four step fields are mapped, land on the mock, and DERIVE from their OWN bound (never the other)",
+    ["fedTargetUpperPrev", "fedTargetLowerPrev", "fedTargetUpperChangedAt", "fedTargetLowerChangedAt"]
+      .every((k) => SOURCES[k] && SOURCES[k].path.startsWith("macro.fedFunds.") &&
+        SOURCES[k].path.split(".").reduce((o, p) => (o == null ? o : o[p]), MOCK_DATA) !== undefined) &&
+    DERIVED_OF_SRC.fedTargetUpperPrev === "fedTargetUpper" && DERIVED_OF_SRC.fedTargetUpperChangedAt === "fedTargetUpper" &&
+    DERIVED_OF_SRC.fedTargetLowerPrev === "fedTargetLower" && DERIVED_OF_SRC.fedTargetLowerChangedAt === "fedTargetLower");
+  ok("[85] wiring: the prior bounds are BANDED like their parents — the step marker is not a plausibility bypass",
+    BANDS.fedTargetUpperPrev && BANDS.fedTargetLowerPrev &&
+    BANDS.fedTargetUpperPrev[1] === BANDS.fedTargetUpper[1] && BANDS.fedTargetLowerPrev[1] === BANDS.fedTargetLower[1]);
+  ok("[85] wiring: the step walk is IMPORTED by snapshot.js, not copied — one home for the rule",
+    /import \{ targetStepFrom \} from "\.\.\/\.\.\/src\/fedPolicy\.js"/.test(snapSrc) &&
+    /const st = targetStepFrom\(obs\);/.test(snapSrc) && !/function targetStepFrom/.test(snapSrc));
+  ok("[85] wiring: the orchestrator resolves the marker and gates EVERY leg on freshness; the section stays presentation-only",
+    /const fedDecision=\(\(\)=>\{/.test(dashSrc) && /rangeLive\?fed\.prevTargetUpper:null/.test(dashSrc) &&
+    /odds:isLive\("rateOddsHold"\)\?fed\.odds:null/.test(dashSrc) && /today:etYmd\(\)/.test(dashSrc) &&
+    /decidesToday:fomcDays===0/.test(dashSrc) &&
+    /fedDecision=\{fedDecision\}/.test(dashSrc) &&
+    !/fedDecisionState|targetStepFrom/.test(noCmt(stripSrc)));
+
+  // ── ⚠ CONTEXT, NEVER A VOTE. The whole point of the marker is that it reports without voting.
+  ok("[85] no vote: the marker is AMBER by construction — voteStyle is never reachable from the FED tile's sub-line",
+    /const fedNote=fedDecision\?fedDecision\.label:null;/.test(stripSrc) &&
+    /sc:\(fedDecision\|\|fomcDays===0\)\?T\.amber:T\.textMuted/.test(stripSrc));
+  ok("[85] no vote: REGIME_BAND_TABLE still has no Fed factor, and no voting engine references the policy module",
+    !REGIME_BAND_TABLE.some((b) => /^fed/i.test(b.key)) &&
+    [readSrc("../src/regime.js"), readSrc("../src/evidence.js"), readSrc("../src/ttReadout.js"),
+     readSrc("../src/macroCall.js"), readSrc("../src/fiveWhys.js")]
+      .every((s) => !/fedPolicy|fedDecisionState|fedMoveBp/.test(noCmt(s))));
+  ok("[85] purity: the policy module imports NOTHING and holds no React, hook or storage reference",
+    !/^import\s/m.test(fpSrc) && !/useState|useEffect|localStorage|from ["']react["']/.test(noCmt(fpSrc)));
+
+  // ── THE ALERT CHANNEL, driven through the REAL evalAlert.
+  const withFed = (fed) => ({ ...MOCK_DATA, macro: { ...MOCK_DATA.macro,
+    fedFunds: { ...MOCK_DATA.macro.fedFunds, ...fed } } });
+  const allLive = () => "LIVE";
+  ok("[85] alerts: the policy channel exists at all — three alerts over three metrics, none of them previously wired",
+    ["rate_hike_odds", "rate_cut_odds", "fed_move_bp"].every((m) => AM[m] && typeof AM[m].read === "function") &&
+    [10, 11, 12].every((id) => DA.some((a) => a.id === id)) &&
+    DA.find((a) => a.id === 10).metric === "rate_hike_odds" && DA.find((a) => a.id === 10).active === true &&
+    DA.find((a) => a.id === 11).active === false && DA.find((a) => a.id === 12).active === true);
+  ok("[85] alerts: the 9/16 tape (86% hike) TRIPS the anticipatory alert, and 60 is a strict edge",
+    evalAlert(DA.find((a) => a.id === 10), withFed({ odds: { hold: 12, cut: 2, hike: 86 } }), allLive).state === "triggered" &&
+    evalAlert(DA.find((a) => a.id === 10), withFed({ odds: { hold: 39, cut: 1, hike: 60 } }), allLive).state === "clear" &&
+    evalAlert(DA.find((a) => a.id === 10), withFed({ odds: { hold: 39, cut: 1, hike: 61 } }), allLive).state === "triggered");
+  ok("[85] alerts: a dark Kalshi leg reads BLIND, never a false CLEAR (the v3.52 asymmetry)",
+    evalAlert(DA.find((a) => a.id === 10), withFed({ odds: { hold: 12, cut: 2, hike: 86 } }),
+      (k) => (k === "rateOddsHike" ? "MOCK" : "LIVE")).state === "blind");
+  const T_ET = etYmd();
+  ok("[85] alerts: a move TODAY trips the magnitude alert at 25bp — and a CUT trips the SAME alert",
+    evalAlert(DA.find((a) => a.id === 12), withFed({ targetUpper: 4, targetLower: 3.75, prevTargetUpper: 3.75,
+      prevTargetLower: 3.5, targetUpperChangedAt: T_ET, targetLowerChangedAt: T_ET }), allLive).v === 25 &&
+    evalAlert(DA.find((a) => a.id === 12), withFed({ targetUpper: 3.5, targetLower: 3.25, prevTargetUpper: 3.75,
+      prevTargetLower: 3.5, targetUpperChangedAt: T_ET, targetLowerChangedAt: T_ET }), allLive).state === "triggered");
+  ok("[85] alerts: NO fresh move reads CLEAR (0bp), while an unreadable RANGE reads BLIND — the two are never conflated",
+    evalAlert(DA.find((a) => a.id === 12), withFed({}), allLive).state === "clear" &&
+    evalAlert(DA.find((a) => a.id === 12), withFed({}), allLive).v === 0 &&
+    evalAlert(DA.find((a) => a.id === 12), withFed({}),
+      (k) => (k.startsWith("fedTarget") ? "MOCK" : "LIVE")).state === "blind" &&
+    Number.isNaN(FP.fedMoveBp({}, T_ET)));
+  ok("[85] alerts: the move metric gates on BOTH bounds, and its basis names the window it judged",
+    AM.fed_move_bp.fields.includes("fedTargetUpper") && AM.fed_move_bp.fields.includes("fedTargetLower") &&
+    AM.fed_move_bp.basisLabel === `last ${FP.FED_MOVE_FRESH_D}d`);
+  ok("[85] alerts: the policy alerts VOTE NOWHERE — no alert id or metric reaches a regime, evidence or call surface",
+    [readSrc("../src/regime.js"), readSrc("../src/evidence.js"), readSrc("../src/macroCall.js")]
+      .every((s) => !/rate_hike_odds|rate_cut_odds|fed_move_bp/.test(s)));
 }
 
 console.log(`\n=== SMOKE TEST: ${pass} passed, ${fail} failed ===`);
