@@ -5,6 +5,251 @@ answers *"is it safe to be in the market?"* from live macro + market + sentiment
 data. Single-page React app on Cloudflare Pages, with live data assembled at the
 edge by Pages Functions and cached in KV.
 
+**v6.7.3 — the server RECEIPT's own verdict, married beside the ladder's own (owner follow-up
+after v6.7.2's retraction: "have the ladder render the server receipt's verdict beside its own
+for the eligible candidates — married, never merged, the way `spreadLine` already does").** The
+v6.7.2 episode showed how an OFFLINE reproduction of the server ladder can diverge from the
+server's own answer without either side being wrong. This puts the actual comparison on the
+board itself, at BOTH altitudes the ladder already renders a verdict.
+**Board level.** `ladderServerMacroCell(mg)` compares the client's `macroGate()` word against
+`ALLOC.macro_gate.gate` — the SAME three-word vocabulary on both sides (`macroGateFrom` is
+mirrored rung-for-rung by `macroGate()`, so a real disagreement here means the mirrors
+themselves have drifted, not merely that two tickers disagree). Rendered once in the head,
+never per row, since every row shares one board state.
+**Row level.** `allocServerVerdict(sym)` reads `ALLOC.eligible`/`ALLOC.why_not` for a name and
+returns its verdict, or `null` — deliberately — for a name the receipt never ranked (why_not is
+capped at 8, v4.1) or for a MACRO-GATED receipt (`ALLOC.gate` truthy, meaning the server never
+evaluated any ticker at all): a `null` here is a **coverage fact, not a disagreement**, and
+rendering one would be inventing an opinion the receipt does not hold. `ladderServerCell` prints
+it as a second line under the client's own GATE text — the `spreadLine` pattern applied to
+eligibility instead of price — never blending into it. A horizon mismatch between the receipt's
+own year and the column being read is NAMED rather than silently compared as if equivalent.
+**Staleness is disclosed, never mistaken for disagreement.** The plain `GET /api/allocation`
+serves whatever was last STORED — it never recomputes — so `ALLOC` can be a day old while the
+ladder's own read is always fresh. `allocReceiptAgeD()` reads the receipt's `business_date_et`
+against today's ET date; a mismatch downgrades the color from red/bold to amber and swaps
+"DISAGREES" for "receipt Nd old, may not reflect today" — both answers still render, only the
+alarm softens (the v3.1/v3.40/v5.6.4 staleness-as-signal doctrine, applied to a comparison
+instead of a single number). `⟳ REFRESH` on the ladder now calls `allocReeval()` (a real POST
+re-evaluation, the same call `⟳ DATA+RANKS` already fires) instead of the cached
+`loadAllocation()` GET, so the comparison the refresh exists to keep current does not itself
+compare a live client read against a receipt that could be a day old.
+**Found by the render suite, not by reading the code: the first draft shipped completely
+inert at board level.** `ladderServerMacroCell` was written, and correctly covered by an
+offline `[87]` smoke lift — but an earlier edit script had crashed mid-write on an unrelated
+assertion and silently dropped the one line that actually CALLED it from `ladderHead`'s
+template. The function existed, compiled, and was never invoked. Smoke's lift-and-run couldn't
+have caught it (it never calls `ladderHead`); only `test/render.mjs`, which opens the real DOM
+and reads `#cBody`, found it — four of nine new render assertions failed pointing at exactly
+the missing text. Recorded because it is the same lesson this file keeps re-learning at every
+altitude: a function that is never called is functionally absent, and only a test that reaches
+the call site can tell the difference. One render test itself also needed a second look:
+checking "no `⇄ server` text anywhere in `#cBody`" for the no-receipt case was VACUOUS, since
+the head's own honest "receipt not loaded" line legitimately contains that glyph — rewritten to
+scope the check to `.ld-main tbody tr` specifically (the v3.60.1 shape, caught while writing the
+very test meant to prove the fix).
+Tests: **2505 smoke** (+9, a self-scoped block using `liftFns`'s brace-depth matching rather
+than an index-range slice — the four new functions are not contiguous with each other, and an
+index slice is exactly the class of mistake that dropped the call site above) + **335 render**
+(+9, driven live: agreement/disagreement/staleness at both altitudes, the macro-gated and
+no-receipt states, the horizon-mismatch naming, and the outside-the-receipt's-set silence) + 356
+public-render, `audit:prod` clean. Negative-controlled three ways — reintroducing the exact
+dropped-call-site bug (4 render red), letting `allocServerVerdict` compare against a
+macro-gated receipt (1 smoke red), removing the staleness softening (1 smoke red).
+**Deliberately NOT done:** no defensive check was added to force `ladderRefresh`'s POST to
+succeed or retry — a failed `allocReeval()` already falls through to the existing catch, leaving
+the last-good `ALLOC` in force, exactly like every other refresh path in this file. No change to
+`ALLOC_RULE_VERSION`, `tt-v1`, or the eligibility ladder itself — this is presentation over an
+unmodified receipt.
+
+**v6.7.2 — the retraction, measured and pinned (owner: "fix the tt-alloc alias read and show
+me which names move").** The instruction was to fix a defect. **There was no defect**, and
+saying so is the deliverable — inventing a change to justify the previous session's claim would
+have been worse than the claim.
+**What was actually true.** `functions/lib/tt-alloc.js` reads `idx.as_of`, and its parameter is
+an INDEX ENTRY, not a payload. `ddIndexEntry` has resolved the alias at build time since v3.75
+(`as_of: dd.as_of || dd.updated || null`), `idxEntries = (ddIndex && ddIndex.entries)` is the
+ONLY supplier of `idx` anywhere in the repo, and the live index carries a date for **all 45
+entries**, the three `updated`-only payloads included. So the read is safe BY CONTRACT, not by
+luck, and `evalBuyRow` was never broken.
+**How the false finding was produced, because the shape matters more than the fact.** The
+v6.7.1 session measured the gate offline by feeding `evalBuyRow` the full payloads from
+`?all=1` — a convenient stand-in for the input production actually uses. The stand-in lacked
+exactly the normalization the real path performs. *Measure the path production takes, not
+something shaped like it*: the same class as v6.6.2's control that crashed instead of turning a
+pin red, and v5.97.2's control that passed because the code was better than the control's model
+of it.
+**WHICH NAMES MOVE: exactly one, and not because anything changed.** Re-running the ladder over
+index entries against the same book, quotes and cards moves **TSM** from *"evidence: thesis
+undated"* to **ELIGIBLE**, and moves nothing else — SYM and NVDL were blocked on their own
+merits either way (PROVISIONAL/BLOCKED, and no `pt_model`). So the eligible set is **six**
+names, not the five v6.7.0 reported; that release's table under-reported TSM, and the
+correction is recorded rather than the table quietly re-rendered.
+**No code changed. Three tests did**, which is the durable half: `ddIndexEntry`'s alias
+resolution is pinned in all three directions (as_of wins, `updated` fills, neither → null); an
+`updated`-only payload driven through the REAL index builder into `evalBuyRow` is pinned NOT to
+carry the "thesis undated" blocker; the same payload handed in RAW is pinned to carry it, so the
+difference between the two inputs stays visible instead of being rediscovered as a bug; and the
+single-call-site contract is swept in source, so a future site handing `evalBuyRow` a raw
+payload fails here rather than in a receipt. Negative-controlled by making the claimed defect
+REAL — deleting the alias from `ddIndexEntry` — which turns exactly the two behavioural pins
+red. Tests: **2496 smoke** (+4) + 327 render + 356 public-render, `audit:prod` clean.
+**Deliberately NOT done:** no defensive alias read was added to `evalBuyRow`. It would be dead
+code guarding a call site that does not exist (v3.73, dead code is a rot vector), it would widen
+an order-gating read in the PERMISSIVE direction for no measured benefit, and the contract it
+would paper over is now pinned instead.
+
+**v6.7.1 — the QUARTERLY freshness rating and the required-work stamp (owner follow-up:
+"a freshness rating and information required stamp for each would be useful. Ideally one run
+per quarter").** Two columns on the ladder, and **neither invents a scale.** `P_INPUT_CADENCE_D
+= 120` has been the book's quarterly cadence since v5.0 W2b — *a fiscal quarter plus reporting
+lag*, asserted not calibrated — and `freshnessOf` has produced CURRENT / AGING (one quarter
+missed) / STALE (two) off it ever since. Inventing a second definition of "a quarter" on the
+same board would be the v3.49 5-vs-6 denominator defect with a calendar instead of a count, so
+both are MIRRORED from `src/ttScore.js` (admin.html is buildless): the constant is pinned equal
+across the two homes and the function is reconciled **BEHAVIOURALLY** across every boundary —
+the v3.83 techRead precedent, chosen over byte-identity because the copies legitimately differ
+in arity (the module takes an injected ET clock; this one reads admin's single `ageDays`, and a
+second age helper here would be the real defect).
+**FRESH rates the THREE QUARTERLY CLOCKS and nothing else** — TT run · thesis · score card —
+worst-of, with the governing clock NAMED (a rating that will not say which clock failed sends
+the owner after the wrong one). **The price mark is deliberately excluded**: a 4-day daily clock
+folded into a 120-day rating makes every name STALE for a reason that has nothing to do with the
+quarter — the DEC-D2 units error in a rating instead of a sort key — so it keeps its own ⚠ chip
+on the price cell, pinned in both directions. **"One run per quarter" is made OPERATIONAL**: the
+cell carries the next-run DUE DATE (last run + cadence) and how far past it the name is, because
+a cadence the owner has to compute from an age is not a cadence. Sorting on FRESH re-reads the
+same table as the quarterly WORK QUEUE, stalest first, ties broken by days overdue.
+**THREE STATES PER CLOCK, NOT TWO** — and the first draft got this wrong. Each clock has a
+SOURCE and a STAMP: source absent → **NEVER**, source present with an unreadable or future-dated
+stamp → **INVALID**, else the rating. The draft preserved that distinction for the run clock and
+collapsed it for the other two, so a name with **no payload at all** reported *"date
+unreadable"* — the v3.52 / v5.6.4 class ("I could not look" vs "there was nothing to find"),
+caught by the named-exclusion pin rather than by reading the code. The card clock is
+additionally **OPTIONAL**: `computed_at` is an additive index field, so a card written before it
+existed is **UNRATED** and excluded from the rollup rather than rated INVALID — the v5.1.1 rule,
+where failing closed on an absent field would flip the whole book red over a value nobody had
+written yet.
+**NEEDS is the WORK QUEUE, not a restatement of the gate.** GATE answers *is this eligible
+today*; FRESH answers *is its work current this quarter*; NEEDS answers *what makes it current*.
+They are different questions and the table shows all three on purpose: an **ELIGIBLE name can be
+overdue**, and a name vetoed on `no gap` may need nothing at all (a price fact is not a chore).
+The stamp is derived from the clocks and the card state, both of which the board already holds
+for every name, and it splits PROVISIONAL the same four ways the v5.0.1 veto does. It
+**deliberately never calls `intakeChecklist()`**: that reads the per-symbol score record and the
+board holds only the index — asked without one it invents chores, which its own comment records
+doing to JOBY, whose pillars were already scored. Where per-screen capture detail is genuinely
+needed the stamp names the tab instead of guessing. An unread score index asks for a RELOAD,
+never "run TT" (v5.6.4). The named-exclusion table carries both columns too — those are
+precisely the names with work owing.
+**⚠ RETRACTED — see v6.7.2.** This entry originally reported a client/server eligibility
+divergence: that `functions/lib/tt-alloc.js` reads `idx.as_of` without honouring the
+`updated` alias, and therefore vetoed three `updated`-only payloads — including the book's #2
+composite — as *"thesis undated"* on the server receipt. **That finding was wrong.**
+`ddIndexEntry` resolves the alias at index-build time (`as_of: dd.as_of || dd.updated`), the dd
+index is the only supplier of `idx`, and the live index carries a date for all 45 entries. The
+claim was an artifact of measuring with `?all=1` full payloads where production uses index
+entries. It is retracted, pinned against recurrence, and the measured consequence is recorded
+in v6.7.2. **The half that was real stands:** the first cut of this release's own thesis clock
+re-derived the alias inline with the OPPOSITE precedence to `ddDate` — a fourth spelling of one
+resolution, inside the feature built to stop exactly that — and now calls `ddDate`, pinned.
+**Measured across the live book at ship:** every run stamp is 4–45 days old, so **0 of 54 names
+are past their due date** and the rating is CURRENT 36 · NEVER 18 · AGING 0 · STALE 0. The 18
+NEVERs are 14 names never run plus 4 with a run but no card ever minted. Worth naming because
+the cadence makes it visible: every due date lands **2026-12-01 → 2027-01-11**, so "one run per
+quarter" as currently stamped is a single ~40-name December sweep, not a rolling one.
+Tests: **2492 smoke** (+20 over v6.7.0: the cadence pinned equal to the module's, `freshnessOf`
+reconciled against it at 0/119/120/121/239/240/241 plus missing and future-dated, worst-of with
+the governing clock named, the three-state rule per clock, the OPTIONAL card clock, the price
+exclusion pinned in both directions, the due-date arithmetic, the alias resolved through
+`ddDate`, the four-way PROVISIONAL split, the BLOCKED/methodology/unread-index stamps, the
+no-`intakeChecklist` sweep, the freshness sort, and the named-exclusion table carrying both) +
+**327 render** (+5, driven live: every row rated from the closed vocabulary, every row carrying a
+stamp, the due date on CURRENT rows, the header's cadence/clocks/price-exclusion/gate-distinction
+copy, and a REAL click on FRESH re-reading the table stalest-first) + 356 public-render,
+`audit:prod` clean. Negative-controlled three ways — the cadence forked 120→90 (3 red), the daily
+price mark folded into the quarterly rating (4 red), NEVER/UNRATED collapsed into INVALID (4 red)
+— each turning exactly its own pins. One of my own render assertions was caught **malformed** (a
+ternary whose branches could not fail) and rewritten as a flat conjunction over the rendered text.
+
+**v6.7.0 "FULL LADDER" (FEAT-TT-LADDER) — the FULL two-year ladder, ranked, gated and printable,
+one tap from the ranking (owner ask 2026-09-17).** The terminal has always shown **one rung per name**
+— `pickRow` picks the horizon in force, the glance ranks the top five on %/yr, and the whole
+ladder lives one tab at a time inside each name's est-run table. There was no surface that put
+**every name's YE(n) and YE(n+1) rungs side by side**, so comparing the near and far year across
+the book meant opening 45 tabs. `openLadder()` is that surface: every priced name, both rungs,
+the % to each, the basis (PREMIUM vs FLOOR), the server card's composite, and the eligibility
+gate — ranked by percent increase, sortable, and printable to PDF.
+**IT RE-DERIVES NOTHING, and that is the whole design.** Targets are `ptModelRows(dd)`; the
+composite is `cardInfo(sym)` (the §14.8 server card, never the legacy free text); the board
+state is `macroGate()`; and the per-row gate is **`rowVeto()` — the ELIGIBLE line's own ladder,
+LIFTED out of `renderNextDollar`'s closure for this release.** That lift is the load-bearing
+change: the veto was a closure, so a second surface wanting the gate had exactly two options,
+re-implement it (the drift defect this repo has paid for at v3.49's 5-vs-6 denominator and
+v3.39's PT audit) or show no gate at all. The body moved VERBATIM; only the binding changed.
+Smoke pins `function rowVeto` exactly once, the ELIGIBLE line binding it, and the old inline
+closure ABSENT — negative-controlled by re-implementing the veto inside the ladder, which turns
+the one-derivation pin red.
+**THE YEARS ARE COMPUTED, NEVER "2026/2027"** — the columns are the current ET year and the
+next, and no year literal appears anywhere in the module. A hardcoded pair reads correctly today
+and becomes a lie on 1 January: the FOMC-table / Mag-10-footer / "5-factor vote" defect, pinned
+in both directions (hardcoding the pair turns exactly two pins red).
+**THE GATE FOLLOWS THE SORT YEAR.** `rowVeto`'s first rung is the gap, so evaluating it at one
+year while ranking on another prints a verdict about a column the reader is not looking at — the
+DEC-D2 units error in prose. Sorting by the near year re-evaluates the whole ladder there and the
+header states which year it used; decoupling them turns its own pin red. A name with **no rung at
+the sort year** is excluded and SAYS SO ("never substituted", the v4.1.3 rule) rather than being
+reported as "no gap", which would claim a comparison that never ran.
+**NOTHING IS SILENTLY DROPPED.** A name the model cannot price is NAMED below the table with the
+specific missing input — *no thesis payload stored* · *no pt_model — no rung computes* · *no
+usable price* · *no rung at either year* — because a name absent from a ranking reads as
+considered-and-rejected (v3.65/v3.76), and the names most often there are the freshly-run ones.
+Every book name lands in exactly one place, pinned. A stamped mark is disclosed, never relabelled
+live (v4.1); an unread score index reads **"not read"**, never "no card" (v5.6.4); a negative-EPS
+rung carries the v3.17 `n/m` STATE and can never reach a % column.
+**A MODAL, NOT A FOURTH MODE.** v5.7.0 locked NEXT $ and BOOK as the only persistent modes and
+v4.6.0 already refused a fourth deck page for the same reason, so this rides the existing
+`#overlay` machinery (openModal/closeModal, focus trap, ESC) and `closeCard` hands the shared card
+back without the width class — a leftover `.wide` would silently widen the next ticker card.
+`#ladder` is a **bookmarkable door**: it resolves to NEXT $, opens the table, and replaces its own
+hash, so `parseTtRoute`/`applyRoute` never learn a state they have no case for; the arrival is
+honoured at the END of the boot chain (the v5.6.9 rule — a ladder built off an unread BOOK would
+report "nothing qualifies", a claim about data nobody read).
+**THE "LIVE PDF" IS THE BROWSER'S OWN.** A `@media print` sheet hides the board, makes the fixed
+overlay static so it paginates, and keeps rows off page breaks — no library, and no second
+renderer that could disagree with the screen. It redefines the THEME VARS for print rather than
+forcing one ink colour, so inline `var(--green)`/`var(--red)` resolve to paper-safe values and the
+% columns keep the one signal they carry; the sort headers and the action row are hidden, because
+a control rendered into a PDF is the v3.52 interface-theater defect on paper. ⎘ COPY TSV is the
+spreadsheet path.
+**Found by the pins, not by reading the code — three defects in my own work, recorded rather than
+quietly fixed.** (1) The v5.6 word-collision guard fired on the ladder's own head: it said
+`GATE: SEND IT` while the table carried a per-row `GATE` column — one word, two verdicts on one
+artifact, exactly what that rule exists to stop. The head now reads **MACRO GATE** and states
+outright that the column is the TICKER ladder. (2) The first draft put the entry link on
+`#buyBlock`, which lives inside the **collapsed DESK drawer** — i.e. the precise v3.62 SHARE RANKS
+burial the code comment beside it cites. The 390px assertion caught it; the link is on the primary
+glance footer now, zero clicks deep. (3) The smoke section **crashed twice** while being written —
+a missing import, then a fixture renamed in one place and not the other — each killing the run with
+no total, which reads exactly like a suite that passed (the v3.99.4 P0 shape). The section is
+try/catch-guarded so a throw is a RED assertion, and the fixture's own defect is documented at the
+pin: a name missing BOTH years never reaches the sort at all, so only a name with one rung
+exercises the null-at-sort-year rule.
+Tests: **2472 smoke** (+29, section [87]: the module and `rowVeto` both LIFTED AND RUN — computed
+years against two stubbed clocks, the premium/floor/`n/m` rung rule, all four skip reasons with the
+every-name-lands-somewhere sweep, the % off a live quote with the stamped fallback, the sort at
+three keys with symbols chosen so alphabetical and % orders DIFFER, the gate at both years proven
+to disagree on one name, `rowVeto` run over four states, and the print/route/entry/scoping
+contracts) + **322 render** (+13, driven in real Chromium: `#ladder` opening after the book lands
+and resolving to NEXT $, the ranked order measured off the RENDERED cells, a REAL click re-sorting
+and re-gating, print media actually hiding the board, the card handed back clean, and the phone
+path with a 40px thumb target and no 390px overflow) + **356 public-render**, `audit:prod` clean.
+Negative-controlled three ways — the years hardcoded (2 red), the gate decoupled from the sort
+(1 red), the veto re-implemented inside the ladder (1 red) — each turning exactly its own pin.
+**Deliberately NOT in this release:** no band, vote, quorum, freeze, gate threshold, provider,
+KV schema or receipt semantic moved; `ALLOC_RULE_VERSION`, `tt-v1` and the methodology version are
+untouched; the public dashboard has no ladder surface and is byte-unchanged.
+
 **v6.6.4 — the missing earnings period is restored, not guessed.** v6.6.3 shipped
 `ttmNetIncomePeriod` beside `ttmNetIncome`; a model already sitting in `spotlight:model:v1`
 from before that release carries the value with no period at all — the field did not exist

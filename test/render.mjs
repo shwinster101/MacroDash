@@ -2397,6 +2397,244 @@ console.log("\n[render] v5.7.1 — arrival focus: judged AFTER the store is read
   await p4.close();
 }
 
+
+/* ── FEAT-TT-LADDER (v6.7) — driven live, not string-pinned ────────────────────────────
+   admin.html is buildless, so smoke can only pin its SOURCE. Everything below is the part
+   a source pin structurally cannot reach: that the modal actually opens, that the table
+   actually holds rows, that a sort header actually re-sorts AND re-gates, that the shared
+   card is handed back clean, and that print media actually hides the board. */
+{
+  const ET_Y = +TODAY_ET.slice(0, 4), Y1 = String(ET_Y), Y2 = String(ET_Y + 1);
+
+  // (1) the bookmarkable door — #ladder opens it and is NOT a fourth view
+  const p = await open(1200, 2200, "#ladder");
+  ok("ladder: #ladder opens the table on arrival, AFTER the book lands — a ladder built off an unread BOOK would report 'nothing qualifies'",
+    (await p.locator("#overlay.on").count()) === 1 &&
+    /FULL LADDER/.test(await p.locator("#cTitle").innerText().catch(() => "")));
+  ok("ladder: the title names the two COMPUTED year-ends — the current ET year and the next, never a hardcoded pair",
+    (await p.locator("#cTitle").innerText()).includes(`YE${Y1}`) &&
+    (await p.locator("#cTitle").innerText()).includes(`YE${Y2}`));
+  ok("ladder: #ladder resolves to NEXT $ and replaces its own hash — the route model never learns a fourth view (v5.7.0)",
+    (await p.evaluate(() => location.hash)) === "#next" &&
+    (await p.locator("#modeNext").getAttribute("aria-selected")) === "true");
+
+  // (2) the table: real rows, ranked by percent increase, with the gate and the composite
+  const head = (await p.locator("#cBody .ld-head").innerText()).replace(/\s+/g, " ");
+  ok("ladder: the MACRO gate is stated ONCE as a board fact and says outright that the per-row GATE column is a different verdict — one word, two meanings on one artifact is the v5.6 collision this names away",
+    /MACRO GATE/i.test(head) && /per-row GATE column is the TICKER ladder/i.test(head));
+  const pcts = await p.$$eval("#cBody .ld-main tbody tr", (rs) =>
+    rs.map((r) => { const c = r.querySelectorAll("td");
+      const n = (t) => { const m = (t || "").match(/-?\d+(\.\d+)?/); return m ? +m[0] : null; };
+      return { sym: c[1] ? c[1].innerText.trim() : "", y1p: n(c[5] && c[5].innerText), y2p: n(c[7] && c[7].innerText),
+        gate: c[10] ? c[10].innerText.trim() : "" }; }));
+  ok("ladder: the table holds real ranked rows — more than one name, every one carrying a gate verdict",
+    pcts.length >= 2 && pcts.every((r) => r.sym.length > 0 && r.gate.length > 0));
+  ok("ladder: DEFAULT ORDER is percent increase at the deeper year-end, descending — measured off the rendered cells, not asserted from the source",
+    pcts.filter((r) => r.y2p !== null).every((r, i, a) => i === 0 || a[i - 1].y2p >= r.y2p));
+  ok("ladder: a name the model cannot price is NAMED below the table with its cause and is ABSENT from the ranked rows — never a silent drop (v3.65/v3.76)",
+    !pcts.some((r) => r.sym === "CCC") &&
+    /CCC/.test(await p.locator("#cBody").innerText()) &&
+    /no thesis payload stored/.test(await p.locator("#cBody").innerText()));
+
+  // (3) the sort header is a real control, and the GATE follows it.
+  //     Deliberately NOT asserted as "the order changed": with a handful of modelled fixture
+  //     names the two years can legitimately rank identically, so demanding a change would
+  //     fail on correct code (the mirror of the v3.60.1 vacuous-assert trap — an assertion
+  //     that only passes when the fixture happens to cooperate). What IS asserted is that the
+  //     table is ordered ON THE NEW KEY and that the gate year moved with it.
+  await p.locator("#cBody .ld-sort", { hasText: `YE${Y1}` }).first().click();
+  await p.waitForTimeout(200);
+  const after = await p.$$eval("#cBody .ld-main tbody tr", (rs) =>
+    rs.map((r) => { const c = r.querySelectorAll("td");
+      const n = (t) => { const m = (t || "").match(/-?\d+(\.\d+)?/); return m ? +m[0] : null; };
+      return { sym: c[1].innerText.trim(), y1p: n(c[5] && c[5].innerText) }; }));
+  const head2 = (await p.locator("#cBody .ld-head").innerText()).replace(/\s+/g, " ");
+  ok("ladder: a REAL click on the near-year header re-sorts on THAT column and moves the gate year with it — a gate describing a column the reader is not looking at would be the units error in prose",
+    after.length >= 2 &&
+    after.filter((r) => r.y1p !== null).every((r, i, a) => i === 0 || a[i - 1].y1p >= r.y1p) &&
+    new RegExp(`evaluated at YE${Y1}`).test(head2) &&
+    (await p.locator("#cBody .ld-sort", { hasText: `YE${Y1}` }).first().getAttribute("aria-pressed")) === "true");
+
+  // (3b) the quarterly freshness rating and the required-work stamp
+  const cells = await p.$$eval("#cBody .ld-main tbody tr", (rs) =>
+    rs.map((r) => { const c = r.querySelectorAll("td");
+      return { sym: c[1].innerText.trim(), fresh: (c[11] || {}).innerText || "", needs: (c[12] || {}).innerText || "" }; }));
+  ok("ladder: EVERY row carries a freshness rating drawn from the closed CURRENT/AGING/STALE/NEVER/INVALID vocabulary — no row is left blank, because a missing rating reads as 'fine'",
+    cells.length >= 2 && cells.every((r) => /CURRENT|AGING|STALE|NEVER|INVALID/.test(r.fresh)));
+  ok("ladder: every row also carries a NEEDS stamp — either real work or the explicit 'nothing due', never an empty cell the reader has to interpret",
+    cells.every((r) => r.needs.trim().length > 0));
+  ok("ladder: a CURRENT name states its NEXT RUN DUE date, so 'one run per quarter' is operational rather than something the owner has to compute from an age",
+    cells.filter((r) => /CURRENT/.test(r.fresh)).every((r) => /due \d{4}-\d{2}-\d{2}/.test(r.fresh)));
+  /* The first version of this was a ternary whose branches did not test what the name
+     claimed — it could only ever pass. Rewritten as a flat conjunction over the RENDERED
+     body text: the cadence number, all three clock names, the price exclusion, and the
+     gate distinction, each asserted directly. */
+  {
+    const hb = (await p.locator("#cBody").innerText()).replace(/\s+/g, " ");
+    ok("ladder: the header states the CADENCE by number, names all three quarterly clocks, says outright that the daily price mark is NOT in the rating, and separates NEEDS from the gate",
+      /120-day cadence/.test(hb) && /TT run, thesis, score card/i.test(hb) &&
+      /one fiscal quarter plus reporting lag/i.test(hb) &&
+      /price mark is a DAILY clock/i.test(hb) && /deliberately NOT in this rating/i.test(hb) &&
+      /not a restatement of the gate/i.test(hb));
+  }
+  await p.locator("#cBody .ld-sort", { hasText: /FRESH/i }).first().click();
+  await p.waitForTimeout(200);
+  const byFresh = await p.$$eval("#cBody .ld-main tbody tr", (rs) =>
+    rs.map((r) => (r.querySelectorAll("td")[11].innerText.match(/CURRENT|AGING|STALE|NEVER|INVALID/) || [""])[0]));
+  ok("ladder: a REAL click on FRESH re-reads the same table as the quarterly WORK QUEUE — stalest first, measured off the rendered cells",
+    byFresh.length >= 2 && (() => { const R = { STALE: 0, NEVER: 0, INVALID: 0, AGING: 1, CURRENT: 2 };
+      return byFresh.every((v, i, a) => i === 0 || R[a[i - 1]] <= R[v]); })());
+
+  // (4) print media actually produces the document
+  await p.emulateMedia({ media: "print" });
+  ok("ladder: under PRINT media the board is hidden and the ladder is the whole page — the 'live PDF' is the browser's own, so there is no second renderer that could disagree with the screen",
+    (await p.locator(".wrap").isVisible().catch(() => true)) === false &&
+    (await p.locator("#cBody .ld-main").isVisible()) === true &&
+    (await p.locator("#cBody .ld-sort").first().isVisible().catch(() => true)) === false);
+  await p.emulateMedia({ media: "screen" });
+
+  // (5) the shared card is handed back UNMODIFIED
+  await p.keyboard.press("Escape");
+  await p.waitForTimeout(150);
+  await p.evaluate(() => openCard("AAA"));
+  await p.waitForTimeout(200);
+  ok("ladder: closing hands #overlay back without the ladder's width class — a leftover .wide would silently widen the next ticker card that opens",
+    (await p.locator("#overlay .card.wide").count()) === 0 &&
+    (await p.locator("#overlay.on").count()) === 1);
+  await p.close();
+
+  // (6) reachable with ZERO clicks from where the single rung is read
+  const p2 = await open(390, 844);
+  const foot = await p2.locator("#glanceRanks").innerText().catch(() => "");
+  ok("ladder: the entry point sits on the ranking footer with NO disclosure to open first — the v3.62 SHARE RANKS lesson, where a complete surface was functionally invisible two menus deep",
+    /FULL LADDER/i.test(foot));
+  await p2.locator("#glanceRanks button", { hasText: /FULL LADDER/i }).first().click();
+  await p2.waitForTimeout(250);
+  const box = await p2.locator("#cBody .ld-sort").first().boundingBox();
+  ok("ladder: it opens from that footer on a phone, and a sort header is a ≥40px thumb target — the v3.81 defect was a control that rendered its state and could not be tapped",
+    (await p2.locator("#overlay.on").count()) === 1 && box && box.height >= 40);
+  ok("ladder: the table scrolls its own overflow rather than blowing the page out at 390px (the v3.35 .tblx + min-width:0 lesson)",
+    (await p2.evaluate(() => document.documentElement.scrollWidth)) <= 390);
+  await p2.close();
+}
+
+/* ── FEAT-TT-LADDER v6.7.3 — the SERVER RECEIPT'S OWN verdict, married beside the ladder's
+   own (owner follow-up, 2026-09-17: "have the ladder render the server receipt's verdict
+   beside its own for the eligible candidates — married, never merged, the way spreadLine
+   already does"). A prior episode showed how an OFFLINE reproduction of the server ladder
+   can diverge from the server's own answer without either side being wrong (v6.7.2) — this
+   drives the ACTUAL comparison, on the actual page, against ALLOC as a top-level global the
+   loaders normally set (the SAME pattern the existing "alloc:"/"daily:" tests already use;
+   no new fetch stub is added). The ladder's own ladderVeto()/buildLadderRows() are read
+   DIRECTLY inside page.evaluate as ground truth, never re-derived by the test — a test that
+   guessed the client's verdict independently could reproduce the exact bug this feature
+   exists to catch. */
+console.log("\n[render] FEAT-TT-LADDER v6.7.3 — the server receipt married beside the ladder's own");
+{
+  const p3 = await open(1200, 2200, "#ladder");
+  const married = await p3.evaluate(() => {
+    const today = new Date().toLocaleDateString("en-CA", { timeZone: "America/New_York" });
+    const d0 = buildLadderRows();
+    const gy = ladderGateYear(d0.Y1, d0.Y2);
+    const rowAAA = d0.rows.find((r) => r.sym === "AAA");
+    const clientV = rowAAA ? ladderVeto(rowAAA, d0.Y1, d0.Y2) : undefined;   // null = ELIGIBLE
+    const clientElig = clientV === null;
+    const mg = macroGate();   // the board's own current verdict — untouched, whatever it is
+    const receipt = (svElig, svMacro, businessDate, reason) => ({
+      schema: "tt-alloc-receipt-v1", at: businessDate + "T14:00:00Z", business_date_et: businessDate,
+      state: svElig ? "ALLOCATABLE" : "WAIT", gate: null,
+      macro_gate: { gate: svMacro, rung: svMacro === mg.g ? (mg.rung || null) : "fixture", reason: null },
+      horizon: gy,
+      eligible: svElig ? { sym: "AAA", y: gy, tgt: 1, up: 1, ann: 1 } : null,
+      why_not: svElig ? [] : [{ sym: "AAA", reason: reason || "server-side reason (fixture)" }],
+      context_blockers: [], funding: { label: "FUNDING PRIORITY — not a sell recommendation", rows: [], optOnly: [] },
+      inputs: { readout_as_of: businessDate },
+      attestation: { input_hash: "a".repeat(64), basis_hash: "b".repeat(64), result_hash: "c".repeat(64) },
+      confirmation: null,
+    });
+    const aaaRowText = () => [...document.querySelectorAll("#cBody .ld-main tbody tr")]
+      .find((r) => r.querySelector("td:nth-child(2)").innerText.trim().startsWith("AAA"))
+      ?.querySelectorAll("td")[10]?.innerText || "";
+    const headText = () => document.querySelector("#cBody .ld-head").innerText.replace(/\s+/g, " ");
+    const out = { hasRow: !!rowAAA, clientV, clientElig };
+
+    // (a) AGREE, row-level: server's eligible/vetoed state matches the client's own.
+    ALLOC = receipt(clientElig, mg.g, today, "matches the client");
+    renderLadder();
+    out.rowAgreeText = aaaRowText();
+    out.rowAgreeNoAlarm = !/DISAGREES/.test(out.rowAgreeText) && !/font-weight:700/.test(document.querySelector("#cBody .ld-main tbody tr td:nth-child(11)")?.innerHTML || "");
+
+    // (b) DISAGREE, row-level: server flips to the OPPOSITE of the client — macro_gate held
+    // fixed at mg.g so this isolates the ROW comparison from the head comparison.
+    ALLOC = receipt(!clientElig, mg.g, today, "the opposite of the client's own read");
+    renderLadder();
+    out.rowDisagreeText = aaaRowText();
+
+    // (c) DISAGREE, head-level: row-level held AGREEING, only macro_gate flipped.
+    const otherWord = mg.g === "SEND_IT" ? "TOUCH_GRASS" : "SEND_IT";
+    ALLOC = receipt(clientElig, otherWord, today, "matches the client");
+    renderLadder();
+    out.headDisagreeText = headText();
+
+    // (d) STALE softens the alarm color/text without hiding either answer — a receipt a day
+    // old must never read as a live contradiction (the staleness-as-signal defect, v3.1/v5.6.4).
+    const yesterday = new Date(Date.parse(today + "T12:00:00Z") - 86400000)
+      .toLocaleDateString("en-CA", { timeZone: "America/New_York" });
+    ALLOC = receipt(!clientElig, otherWord, yesterday, "the opposite of the client's own read");
+    renderLadder();
+    out.staleRowText = aaaRowText();
+    out.staleHeadText = headText();
+
+    // (e) NO RECEIPT — stated at the head, and no per-row line renders anywhere (nothing to
+    // compare against). Scoped to the TABLE ROWS specifically — the head's own honest
+    // "receipt not loaded" line legitimately contains "⇄ server" too, and a whole-body
+    // check would match that and prove nothing about the ROWS (the v3.60.1 vacuous-assert
+    // shape, caught while writing this very test).
+    ALLOC = null;
+    renderLadder();
+    out.noneHeadText = headText();
+    out.noneAnyRow = [...document.querySelectorAll("#cBody .ld-main tbody tr")]
+      .some((r) => /⇄ server/i.test(r.innerText));
+
+    // (f) MACRO-GATED — the server never evaluated any ticker (ALLOC.gate truthy): no per-row
+    // line anywhere, but the head STILL states the server's macro_gate word.
+    ALLOC = { ...receipt(false, "TOUCH_GRASS", today, "n/a"), gate: { rung: "flip", reason: "Macro Flip BLIND" },
+      eligible: null, why_not: [] };
+    renderLadder();
+    out.gatedHeadText = headText();
+    out.gatedNoRow = [...document.querySelectorAll("#cBody .ld-main tbody tr")]
+      .every((r) => !/⇄ server/i.test(r.innerText));
+
+    // (g) OUTSIDE THE RECEIPT'S SET — eligible/why_not name neither AAA nor BBB: AAA's row
+    // must render NOTHING, because the receipt genuinely has no opinion on it.
+    ALLOC = receipt(false, mg.g, today, "irrelevant");
+    ALLOC.why_not = [{ sym: "ZZZ_NOT_IN_FIXTURE", reason: "some other name entirely" }];
+    renderLadder();
+    out.outsideRowText = aaaRowText();
+
+    return out;
+  });
+  ok("ladder: the client verdict is read from the SAME functions the table renders with (buildLadderRows/ladderVeto), never re-derived by the test — the exact discipline the v6.7.2 retraction was written to enforce",
+    married.hasRow && (married.clientV === null || typeof married.clientV === "string"));
+  ok("ladder: AGREEING row-level verdicts render DIM, with no DISAGREES text and no bold alarm styling",
+    /⇄ server/i.test(married.rowAgreeText) && married.rowAgreeNoAlarm);
+  ok("ladder: a DISAGREEING row-level verdict is named IN BOTH DIRECTIONS — the client's own text stays in the GATE cell, and the server's differing answer renders beside it, never overwriting it",
+    /DISAGREES with the ticker ladder above/.test(married.rowDisagreeText) &&
+    /⇄ server/i.test(married.rowDisagreeText));
+  ok("ladder: a DISAGREEING head-level MACRO GATE comparison is named the same way, at board altitude",
+    /DISAGREES with MACRO GATE above/.test(married.headDisagreeText) && /⇄ server:/.test(married.headDisagreeText));
+  ok("ladder: a receipt dated YESTERDAY softens the alarm at BOTH altitudes — 'receipt Nd old' replaces 'DISAGREES', because a stale receipt reading as a live contradiction is the exact staleness-as-signal defect this repo keeps closing",
+    /receipt 1d old/.test(married.staleRowText) && !/DISAGREES with the ticker ladder/.test(married.staleRowText) &&
+    /receipt 1d old/.test(married.staleHeadText) && !/DISAGREES with MACRO GATE/.test(married.staleHeadText));
+  ok("ladder: NO RECEIPT is a STATED head fact, and produces ZERO per-row server lines anywhere (checked ROW BY ROW, not on the whole body — the head's own honest line legitimately contains the same glyph)",
+    /server receipt not loaded/.test(married.noneHeadText) && !married.noneAnyRow);
+  ok("ladder: a MACRO-GATED receipt (the server never evaluated any ticker) still states its OWN macro_gate word at the head, but renders NO per-row comparison — comparing a ticker verdict against a receipt that never ranked it would be apples to oranges",
+    /⇄ server: TOUCH_GRASS/.test(married.gatedHeadText) && married.gatedNoRow);
+  ok("ladder: a receipt whose eligible/why_not name NEITHER this row nor any row in its set renders NOTHING for that row — the receipt genuinely has no opinion, and inventing one would be worse than silence",
+    married.outsideRowText.trim() === "" || !/⇄ server/i.test(married.outsideRowText));
+  await p3.close();
+}
+
 await browser.close();
 server.close();
 console.log(`\n=== RENDER TEST: ${pass} passed, ${fail} failed ===`);

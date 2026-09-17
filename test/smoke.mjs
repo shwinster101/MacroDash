@@ -3019,13 +3019,28 @@ ok("slice3: chips get the 40px thumb target at phone widths, same rule as slice 
   /max-width:480px[^}]*\{[\s\S]{0,260}\.chip\{min-height:40px\}/.test(adminSrc));
 
 // ---- slice 4: modal focus management + destructive-action confirm + live toast ----------
-ok("slice4: all 11 overlay-open call sites funnel through ONE openModal() — " +
+/* v6.7 RE-PIN, with the reason at the pin: FEAT-TT-LADDER added a 12th overlay-open site
+   (openLadder), so the literal moved 11→12. The CHOKE POINT — not the count — is the
+   invariant, and it is the first clause: .classList.add("on") appearing exactly once means
+   no site can open the overlay behind openModal()'s back, whatever the tally. The count is
+   kept as a deliberate tripwire so a new modal has to come past this assertion and state
+   itself, which is the only reason a number that rots on every feature earns its place. */
+ok("slice4: all 12 overlay-open call sites funnel through ONE openModal() — " +
    'document.getElementById("overlay").classList.add("on") appears exactly once now, ' +
    "inside openModal() itself, not duplicated at each site (toast/pinGate keep their own)",
   (adminSrc.match(/document\.getElementById\("overlay"\)\.classList\.add\("on"\)/g)||[]).length===1 &&
-  (adminSrc.match(/openModal\(\);/g)||[]).length===11);
-ok("slice4: closeCard is now a thin wrapper over closeModal (same public name every onclick calls)",
-  adminSrc.includes("function closeCard(){CURRENT=null;closeModal();}"));
+  (adminSrc.match(/openModal\(\);/g)||[]).length===12);
+/* v6.7 RE-PIN: closeCard gained the ladder's teardown (the borrowed card must be handed back
+   UNMODIFIED, or a leftover .wide silently widens the next ticker card). The invariant this
+   pin has always protected is that closeCard routes through closeModal rather than poking the
+   overlay itself — pinned on that behaviour now instead of on one spelling of the one-liner,
+   so the next legitimate addition re-states itself without a byte-match failing on correct code. */
+ok("slice4: closeCard is still a thin wrapper over closeModal (same public name every onclick calls) " +
+   "and hands the shared card back without the ladder's width class",
+  /function closeCard\(\)\{[\s\S]{0,320}?closeModal\(\);\}/.test(adminSrc) &&
+  /function closeCard\(\)\{CURRENT=null;/.test(adminSrc) &&
+  /closeCard[\s\S]{0,320}?classList\.remove\("wide","ld-card"\)/.test(adminSrc) &&
+  !/function closeCard\(\)\{[\s\S]{0,320}?classList\.add\("on"\)/.test(adminSrc));
 ok("slice4: openModal remembers what was focused before opening, so closing restores it",
   adminSrc.includes("MODAL_RETURN=document.activeElement") &&
   adminSrc.includes("if(MODAL_RETURN&&MODAL_RETURN.focus"));
@@ -6494,6 +6509,20 @@ console.log("\n[50] FEAT-TT-DDSTORE — deepDive moves to tt:dd:v1:<SYM>");
     JSON.stringify(idxE).length * 4 < JSON.stringify(PAYLOAD("AAA")).length);
   ok("ddstore: ddIndexEntry(null) is null — an absent payload is never summarized into existence",
     dd.ddIndexEntry(null) === null && dd.ddIndexEntry("nope") === null);
+  /* v6.7.2 — THE RETRACTION, ENCODED. A 2026-09-17 session reported a "client/server
+     eligibility divergence": functions/lib/tt-alloc.js reads `idx.as_of` while ddDate,
+     validateDeepDive and the v3.13 corpus-native rule all accept `updated` as an alias, and
+     three stored payloads (TSM/SYM/NVDL) carry `updated` and no `as_of`. The finding was
+     WRONG, and wrong in an instructive way: it was measured by feeding evalBuyRow the FULL
+     payloads from `?all=1`, where production feeds INDEX ENTRIES — and ddIndexEntry resolves
+     the alias at build time, so `idx.as_of` is populated for exactly those three names. The
+     property the finding assumed missing is pinned here so nobody re-derives it, and the
+     SHAPE of the error is pinned with it: measure the path production takes, not a
+     convenient stand-in for it. */
+  ok("ddstore: ddIndexEntry RESOLVES the updated/as_of alias — as_of wins when both are present, `updated` fills it when as_of is absent, and neither yields null (this is why evalBuyRow's `idx.as_of` read is safe BY CONTRACT, not by luck)",
+    dd.ddIndexEntry({ hinges: [], as_of: "2026-09-12", updated: "2026-01-01" }).as_of === "2026-09-12" &&
+    dd.ddIndexEntry({ hinges: [], updated: "2026-08-03" }).as_of === "2026-08-03" &&
+    dd.ddIndexEntry({ hinges: [] }).as_of === null);
 
   /* FEAT-TT-DOTHOME (v3.84): `dots` live on the BOOK ENTRY, never in the payload. FEAT-TT-DOT
      (v3.17) put them there so replacing a payload could never wipe the inventory — but after
@@ -9317,6 +9346,32 @@ console.log("\n[68] FEAT-TT-ALLOC — pure core, endpoint, and the §14.8 bar");
     quotes: {}, readout: READOUT, now: NOW,
     scoreIndex: SIDX, methodologyVersion: TS.METHODOLOGY_VERSION, ...over });
   const R = ev();
+  /* v6.7.2 — the retraction, driven END TO END through the REAL index builder. The claimed
+     defect was that an `updated`-only payload reaches evalBuyRow with no date and is vetoed
+     "thesis undated". Build the index entry the way production does and the veto does not
+     exist. Pinned on the BEHAVIOUR rather than on ddIndexEntry's source, because the claim
+     was about what the gate says, and only running the gate can answer it. */
+  {
+    const ddm2 = await import("../functions/api/deepdive.js");
+    const raw = { thesis_version: "v1", updated: TODAY, hinges: [{ label: "h", state: "green" }],
+      ref_px: { px: 100, at: TODAY },
+      consensus: { revenue_B: { 2027: 10 }, eps: { 2027: 5 } },
+      pt_model: { pe_premium_multiple: 40, pe_floor_multiple: 15 } };
+    const built = ddm2.ddIndexEntry(raw);
+    const rowIdx = alloc.evalBuyRow({ entry: { sym: "ALS", lastRun: TODAY }, idx: built,
+      quote: { px: 100, at: TODAY + "T12:00:00Z" }, board: {}, horizon: "2026", now: NOW, card: CARD_OK });
+    const rowRaw = alloc.evalBuyRow({ entry: { sym: "ALS", lastRun: TODAY }, idx: raw,
+      quote: { px: 100, at: TODAY + "T12:00:00Z" }, board: {}, horizon: "2026", now: NOW, card: CARD_OK });
+    ok("alloc: an `updated`-only payload passed through the REAL ddIndexEntry is NOT vetoed 'thesis undated' — the production path resolves the alias before evalBuyRow ever sees it, and a 2026-09-17 session's 'client/server divergence' finding was an artifact of measuring the wrong input",
+      !rowIdx.blockers.includes("thesis undated") && alloc.whyNot(rowIdx, null) === null);
+    ok("alloc: the SAME payload handed in RAW does carry that blocker — which is exactly how the false finding was produced, and is pinned so the difference between the two inputs stays visible rather than being rediscovered as a bug",
+      rowRaw.blockers.includes("thesis undated"));
+    ok("alloc: the dd INDEX is the only supplier of `idx` — evalBuyRow's contract is an index entry, so a future call site handing it a raw payload is caught here rather than in a receipt",
+      (() => { const src = readSrc("../functions/lib/tt-alloc.js");
+        const calls = src.match(/evalBuyRow\(\{[^}]*idx:\s*([A-Za-z_$][\w$]*)/g) || [];
+        return calls.length === 1 && /idx:\s*idxEntries/.test(calls[0]) &&
+          /const idxEntries = \(ddIndex && ddIndex\.entries\) \|\| \{\}/.test(src); })());
+  }
   ok("alloc 1: a name with NO position takes BUY eligibility — underwriting is position-independent",
     R.eligible && R.eligible.sym === "AAA" && !("AAA" in {}) && R.state === "ALLOCATABLE");
   ok("alloc 2: a stale positions snapshot degrades ALLOCATABLE → BUY_ELIGIBLE with the blocker NAMED",
@@ -12804,6 +12859,414 @@ console.log("\n[copy-budget] v6.6.1 ONE ENGINE, TWO ALTITUDES — ≤25-word why
     /const simpleS=holdReason\(evidenceSet\)/.test(dashSrc) && /simple\?simpleS:/.test(dashSrc) &&
     /vocabulary:simple\?"simple":"degen"/.test(dashSrc) && /flipLine=\{simpleF\}/.test(dashSrc));
 }
+
+
+/* ── [87] FEAT-TT-LADDER (v6.7) — the full two-year ladder table ────────────────────────
+   Everything here is LIFTED AND RUN. The feature's whole claim is that it re-derives
+   NOTHING — targets from ptModelRows, the gate from the ELIGIBLE line's own ladder, the
+   composite from the server card — and a string pin cannot prove a number, a sort key or a
+   veto (the v3.39/v3.46 rule). The lift ends at the next function's own opening brace, not
+   at a call site, so a broken lift is a RED assertion and never a crash with no total
+   (the v6.6.2 lesson). */
+{
+  /* ptModelRows is injected from src/ptModel.js rather than re-lifted out of admin.html:
+     smoke [49] already pins the two copies BYTE-IDENTICAL, so the canonical chain is the
+     stronger fixture and the injection cannot mask a drift [49] would catch. */
+  const { ptModelRows, lintPtModel } = await import("../src/ptModel.js");
+  const SCORE_INDEX_STUB = {};
+  let veto = null;
+  try {
+    const vs = adminSrc.slice(adminSrc.indexOf("function rowVeto(r){"), adminSrc.indexOf("function cardInfo(sym){"));
+    veto = new Function("SCORE_INDEX", vs + "; return rowVeto;")(SCORE_INDEX_STUB);
+  } catch (_e) { veto = null; }
+  ok("[87] rowVeto lifts and RUNS as a top-level function — the lift itself is the test that the ladder can share it",
+    typeof veto === "function");
+
+  const L = (() => {
+    const start = adminSrc.indexOf("function ladderYears(){");
+    const end = adminSrc.indexOf("function buildRankingsMd(){");
+    if (start < 0 || end < 0 || end <= start) return null;
+    const src = adminSrc.slice(start, end);
+    try {
+      return new Function("etYmd", "BOOK", "ddOf", "ptModelRows", "LIVE_PX", "DD_PENDING",
+        "DD_FAILED", "cardInfo", "readiness", "runState", "rankWeight", "lintPtModel",
+        "ageDays", "rowVeto", "SCORE_INDEX", "ddDate",
+        src + "\nreturn {ladderYears,ladderRungAt,buildLadderRows,ladderSorted,ladderGateYear," +
+        "ladderVeto,ladderFreshness,ladderRequired,freshnessOf,P_INPUT_CADENCE_D,FRESH_RANK," +
+        "setSort:(k)=>{LADDER_SORT=k;},getSort:()=>LADDER_SORT};");
+    } catch (_e) { return null; }
+  })();
+  ok("[87] the ladder module lifts cleanly (a broken lift is a RED pin here, never a crash with no total)",
+    typeof L === "function");
+
+  /* GUARDED: I crashed this section TWICE while writing it — once on a missing import,
+     once on a fixture renamed in one place and not the other. Both killed the run with
+     NO TOTAL, which reads exactly like a suite that never ran (the v3.99.4 P0 shape,
+     and the v6.6.2 lesson about a control that crashes proving nothing). A throw is a
+     RED assertion here, never a dead process. */
+  if (typeof L === "function" && typeof veto === "function") try {
+    /* ── fixture: ONE clock, one book, one payload store ────────────────────────────
+       ageDays is injected as a REAL ET-date difference against that same fixed clock, not
+       a `() => 0` stub. The stub was fine while nothing here read a date; the freshness
+       rating IS a claim about dates, so a stub would have made every clock read 0d and
+       every name CURRENT — a fixture that cannot fail, which is the v3.60.1 trap. */
+    const TODAY = "2026-09-17";
+    const at2026 = () => TODAY;
+    const realAgeDays = (iso) => (!iso || !/^\d{4}-\d{2}-\d{2}$/.test(String(iso).slice(0, 10)) ? null
+      : Math.round((Date.parse(TODAY + "T00:00:00Z") - Date.parse(String(iso).slice(0, 10) + "T00:00:00Z")) / 86400000));
+    const daysAgo = (n) => new Date(Date.parse(TODAY + "T00:00:00Z") - n * 86400000).toISOString().slice(0, 10);
+    const mk = (over) => L(at2026, over.BOOK, over.ddOf, ptModelRows, over.LIVE_PX || {},
+      false, false, over.cardInfo || (() => null), over.readiness || (() => ({ blockers: [], cautions: [] })),
+      over.runState || (() => ({ k: "fresh", days: 1 })), () => ({ w: null, held: false, mark: "", optOnly: false }),
+      lintPtModel, realAgeDays, veto, over.SCORE_INDEX === undefined ? {} : over.SCORE_INDEX,
+      /* the REAL ddDate, lifted — the thesis clock must resolve the updated/as_of alias the
+         same way every other surface does, and a stub would not prove that. */
+      new Function(adminSrc.slice(adminSrc.indexOf("function ddDate(dd){"),
+        adminSrc.indexOf("function validateDeepDive(dd){")) + "; return ddDate;")());
+
+    const payload = (o) => Object.assign({
+      as_of: "2026-09-10", ref_px: { px: 100, at: "2026-09-16" }, hinges: [{ state: "green" }],
+      consensus: { revenue_B: { 2027: 10, 2028: 20 }, eps: { 2027: 2, 2028: 4 } },
+      pt_model: { pe_premium_multiple: 60, pe_floor_multiple: 15 },
+    }, o);
+    const card = (score, extra) => Object.assign({ score, tier: score >= 7 ? "A" : "B", status: "SCORED",
+      scored: true, mcur: true, p4: null, act: null, blockedOn: [] }, extra || {});
+
+    // ── 1. the YEARS are COMPUTED, never the literals ──────────────────────────────
+    const api = mk({ BOOK: [], ddOf: () => null });
+    ok("[87] the columns are the CURRENT ET year and the next, read off the clock — not a hardcoded 2026/2027 pair that reads true today and lies on 1 January",
+      JSON.stringify(api.ladderYears()) === '["2026","2027"]' &&
+      JSON.stringify(L(() => "2031-02-02", [], () => null, ptModelRows, {}, false, false,
+        () => null, () => ({ blockers: [] }), () => ({ k: "fresh" }), () => ({ w: null }),
+        lintPtModel, () => 0, veto).ladderYears()) === '["2031","2032"]');
+    ok("[87] neither year is a literal anywhere in the ladder module — the rot vector this repo keeps closing (the FOMC table, the Mag-10 footer, the '5-factor vote' strings)",
+      !/YE2026|YE2027|"2026"|"2027"/.test(
+        adminSrc.slice(adminSrc.indexOf("function ladderYears(){"), adminSrc.indexOf("function buildRankingsMd(){"))));
+
+    // ── 2. the rung rule: premium, else floor; "n/m" is a STATE, never a number ─────
+    const rows = ptModelRows(payload({}), "2026");
+    ok("[87] ladderRungAt takes the PREMIUM where a multiple is asserted and labels it, falls to the FLOOR where it is not, and returns nulls for a year with no rung",
+      api.ladderRungAt(rows, "2026").basis === "PREMIUM" &&
+      api.ladderRungAt(rows, "2026").tgt === 120 &&
+      api.ladderRungAt(ptModelRows(payload({ pt_model: { pe_floor_multiple: 15 } }), "2026"), "2026").basis === "FLOOR" &&
+      api.ladderRungAt(rows, "2099").tgt === null && api.ladderRungAt(rows, "2099").basis === null);
+    ok("[87] a negative-EPS rung reads the v3.17 'n/m' STATE and never a number — no P/E before profit, and a sentinel must never reach a % column",
+      (() => {
+        const r = api.ladderRungAt(ptModelRows(payload({
+          consensus: { eps: { 2027: -2 } }, pt_model: { pe_floor_multiple: 15 } }), "2026"), "2026");
+        return r.tgt === null && r.basis === "n/m";
+      })());
+
+    // ── 3. skipped names are NAMED with the cause, never silently dropped ──────────
+    const store = { AAA: payload({}), BBB: payload({ pt_model: {}, consensus: {} }), DDD: payload({ ref_px: null }) };
+    const book = [{ sym: "AAA", tier: "S" }, { sym: "BBB", tier: "A" }, { sym: "CCC", tier: "B" }, { sym: "DDD", tier: "B" }];
+    const built = mk({ BOOK: book, ddOf: (x) => store[x.sym] || null, LIVE_PX: { AAA: { px: 100, at: "2026-09-17" } },
+      cardInfo: (s) => (s === "AAA" ? card(9.1) : null) }).buildLadderRows();
+    ok("[87] a name the model cannot price is SKIPPED WITH ITS CAUSE — no payload / no pt_model / no usable price are three DIFFERENT reasons, never one silent absence (v3.65/v3.76)",
+      built.rows.length === 1 && built.rows[0].sym === "AAA" && built.skipped.length === 3 &&
+      built.skipped.find((s) => s.sym === "CCC").why === "no thesis payload stored" &&
+      built.skipped.find((s) => s.sym === "BBB").why === "no pt_model — no rung computes" &&
+      built.skipped.find((s) => s.sym === "DDD").why.startsWith("no usable price"));
+    ok("[87] every book name lands in exactly one place — priced or named — so the table can never read as full coverage while quietly holding fewer names",
+      built.rows.length + built.skipped.length === book.length);
+    ok("[87] the % is target ÷ price − 1 off the LIVE quote where one exists, with the stamped-mark fallback DISCLOSED rather than relabelled live (the v4.1 price-basis rule)",
+      built.rows[0].y1p === 20 && built.rows[0].y2p === 140 && built.rows[0].live === true &&
+      mk({ BOOK: [{ sym: "AAA" }], ddOf: () => store.AAA, LIVE_PX: {} }).buildLadderRows().rows[0].live === false);
+
+    /* ── 4. the sort, and the null-at-this-year rule ───────────────────────────────
+       NOR carries a YE2026 rung and NO YE2027 one (its estimate series stops at FY2027,
+       and a row at year y prices FY y+1). That is the ONLY shape that exercises the rule:
+       a name missing BOTH years never reaches the sort at all — it is skipped and named
+       above. The first draft of this fixture had exactly that defect and CRASHED the
+       section on an undefined row, recorded here rather than quietly corrected: a fixture
+       that does not reproduce what its name claims measures nothing (v5.10.0, v5.97.0).
+       Symbols are chosen so the alphabetical order DIFFERS from the % order — sorted
+       against a fixture where the two agree, a sort assertion is vacuous (v3.60.1). */
+    const three = {
+      ZED: payload({ pt_model: { pe_premium_multiple: 100, pe_floor_multiple: 15 } }),
+      ABL: payload({ pt_model: { pe_premium_multiple: 20, pe_floor_multiple: 15 } }),
+      NOR: payload({ consensus: { revenue_B: { 2027: 10 }, eps: { 2027: 4 } },
+        pt_model: { pe_premium_multiple: 20, pe_floor_multiple: 15 } }),
+    };
+    const api3 = mk({ BOOK: [{ sym: "ABL" }, { sym: "NOR" }, { sym: "ZED" }], ddOf: (x) => three[x.sym],
+      LIVE_PX: { ZED: { px: 100 }, ABL: { px: 100 }, NOR: { px: 100 } } });
+    const d3 = api3.buildLadderRows();
+    api3.setSort("y2");
+    ok("[87] ranked by percent increase, descending — and a name with NO rung at the sort year sorts LAST rather than being dropped or read as 0% ('no rung here' and 'no upside' are different facts, v3.62)",
+      d3.rows.length === 3 && d3.rows.find((r) => r.sym === "NOR").y2p === null &&
+      d3.rows.find((r) => r.sym === "NOR").y1p === -20 &&   // 20 × FY2027 EPS 4 = $80 against $100
+      api3.ladderSorted(d3.rows, d3.Y1, d3.Y2).map((r) => r.sym).join(",") === "ZED,ABL,NOR" &&
+      api3.ladderSorted(d3.rows, d3.Y1, d3.Y2)[2].y2p === null);
+    api3.setSort("sym");
+    ok("[87] the alphabetical and composite sorts are real alternatives, not decoration — and the composite sort puts an unscored name last rather than at zero",
+      api3.ladderSorted(d3.rows, d3.Y1, d3.Y2).map((r) => r.sym).join(",") === "ABL,NOR,ZED" &&
+      (() => {
+        const a = mk({ BOOK: [{ sym: "ABL" }, { sym: "ZED" }], ddOf: (x) => three[x.sym],
+          LIVE_PX: { ZED: { px: 100 }, ABL: { px: 100 } }, cardInfo: (s) => (s === "ABL" ? card(9) : null) });
+        const dd = a.buildLadderRows(); a.setSort("comp");
+        // ABL is the WORSE name on %, so a comp-first order proves the key actually changed.
+        return a.ladderSorted(dd.rows, dd.Y1, dd.Y2).map((r) => r.sym).join(",") === "ABL,ZED"; })());
+
+    // ── 5. the GATE follows the SORT YEAR, and it is the ELIGIBLE line's own ladder ─
+    const g = mk({ BOOK: [{ sym: "AAA" }], ddOf: () => payload({
+        pt_model: { pe_premium_multiple: { 2026: 40, 2027: 60 }, pe_floor_multiple: 15 } }),
+      LIVE_PX: { AAA: { px: 100 } }, cardInfo: () => card(9.1) });
+    const dg = g.buildLadderRows();
+    g.setSort("y1");
+    const at1 = g.ladderVeto(dg.rows[0], dg.Y1, dg.Y2), gy1 = g.ladderGateYear(dg.Y1, dg.Y2);
+    g.setSort("y2");
+    const at2 = g.ladderVeto(dg.rows[0], dg.Y1, dg.Y2), gy2 = g.ladderGateYear(dg.Y1, dg.Y2);
+    ok("[87] the gate is evaluated AT THE SORT YEAR — the same name reads 'no gap' where its rung is under water and ELIGIBLE where it is not; a gate describing a column the reader is not looking at would be the DEC-D2 units error in prose",
+      gy1 === "2026" && gy2 === "2027" && at1 === "no gap" && at2 === null &&
+      dg.rows[0].y1p === -20 && dg.rows[0].y2p === 140);
+    ok("[87] the ladder's gate IS rowVeto — the ELIGIBLE line's own ladder, run on the same row shape, so the table and the green line can never disagree (the ptModelRows rule)",
+      veto({ upside: 140, rdy: { blockers: [] }, tt: card(9.1), rrFail: false }) === null &&
+      veto({ upside: 140, rdy: { blockers: [] }, tt: card(3), rrFail: false }) === "TT 3.0 — quality fails" &&
+      veto({ upside: 140, rdy: { blockers: ["TT never run"] }, tt: card(9.1), rrFail: false }) === "evidence: TT never run" &&
+      veto({ upside: 140, rdy: { blockers: [] }, tt: null, rrFail: false }) === "no server card — unscored");
+    api3.setSort("y2");
+    ok("[87] a name with no rung at the gate year is EXCLUDED and says so — never substituted from the other year, and never reported as 'no gap' (which would claim a comparison that never ran, v4.1.3)",
+      /never substituted/.test(api3.ladderVeto(d3.rows.find((r) => r.sym === "NOR"), d3.Y1, d3.Y2)));
+
+    /* ── 9. THE QUARTERLY FRESHNESS RATING (v6.7.1) ────────────────────────────────
+       The cadence is not this feature's to invent — it is the book's own
+       P_INPUT_CADENCE_D, and the rating function is reconciled against the module's
+       BEHAVIOURALLY rather than byte-identically: the two copies legitimately differ in
+       arity (the module takes an injected ET clock, admin's reads its single ageDays),
+       and the v3.83 techRead precedent is exactly this case — pin the VERDICTS, which are
+       what must not drift, not one spelling of them. */
+    const TSC = await import("../src/ttScore.js");
+    const apiF = mk({ BOOK: [], ddOf: () => null });
+    ok("[87] the quarterly cadence is the BOOK'S OWN constant, not a second definition of 'a quarter' on the same board (the v3.49 5-vs-6 denominator defect, with a calendar instead of a count)",
+      apiF.P_INPUT_CADENCE_D === TSC.P_INPUT_CADENCE_D && apiF.P_INPUT_CADENCE_D === 120);
+    ok("[87] freshnessOf is RECONCILED against src/ttScore.js across every boundary — 0 / cadence / cadence+1 / 2×cadence / 2×cadence+1, plus missing and future-dated",
+      [0, 1, 119, 120, 121, 239, 240, 241, 400].every((n) =>
+        apiF.freshnessOf(daysAgo(n), 120) === TSC.freshnessOf(daysAgo(n), 120, TODAY)) &&
+      apiF.freshnessOf(null, 120) === "INVALID" && TSC.freshnessOf(null, 120, TODAY) === "INVALID" &&
+      apiF.freshnessOf(daysAgo(-5), 120) === "INVALID" && TSC.freshnessOf(daysAgo(-5), 120, TODAY) === "INVALID");
+    ok("[87] one missed quarter is AGING and two is STALE — the exact semantics v5.0 W2b gave the same constant, so the ladder and the card's own actionability rollup can never disagree about what 'a quarter late' means",
+      apiF.freshnessOf(daysAgo(120), 120) === "CURRENT" && apiF.freshnessOf(daysAgo(121), 120) === "AGING" &&
+      apiF.freshnessOf(daysAgo(240), 120) === "AGING" && apiF.freshnessOf(daysAgo(241), 120) === "STALE");
+
+    // the rating is WORST-OF across the three quarterly clocks, and names the governing one
+    const fr = (run, thesis, cardAt) => apiF.ladderFreshness(
+      { sym: "AAA", lastRun: run }, thesis === null ? null : { as_of: thesis },
+      cardAt === null ? null : { at: cardAt });
+    ok("[87] the rating is WORST-OF the three QUARTERLY clocks (TT run · thesis · score card) and NAMES the one that governs — a rating that does not say which clock failed sends the owner after the wrong one",
+      fr(daysAgo(10), daysAgo(10), daysAgo(10)).rating === "CURRENT" &&
+      fr(daysAgo(10), daysAgo(200), daysAgo(10)).rating === "AGING" &&
+      fr(daysAgo(10), daysAgo(200), daysAgo(10)).governing.k === "thesis" &&
+      fr(daysAgo(300), daysAgo(10), daysAgo(10)).rating === "STALE" &&
+      fr(daysAgo(300), daysAgo(10), daysAgo(10)).governing.k === "run" &&
+      fr(daysAgo(10), daysAgo(10), daysAgo(400)).governing.k === "card");
+    ok("[87] NEVER and INVALID rank as badly as STALE but stay DIFFERENT WORDS — 'nobody has ever run this' and 'the stamp is unreadable' are different owner actions (the v3.52 / v5.6.4 class: 'I could not look' vs 'there was nothing to find')",
+      fr(null, daysAgo(10), daysAgo(10)).rating === "NEVER" &&
+      fr("not-a-date", daysAgo(10), daysAgo(10)).rating === "INVALID" &&
+      apiF.FRESH_RANK.NEVER === apiF.FRESH_RANK.INVALID && apiF.FRESH_RANK.NEVER > apiF.FRESH_RANK.STALE - 1);
+    ok("[87] each clock has THREE states, not two: source absent → NEVER, source present with an unreadable stamp → INVALID. The first draft collapsed them for the thesis and card clocks, so a name with NO payload reported 'date unreadable' — caught by the named-exclusion pin, not by reading the code",
+      fr(daysAgo(10), null, daysAgo(10)).clocks.find((c) => c.k === "thesis").rating === "NEVER" &&
+      fr(daysAgo(10), "not-a-date", daysAgo(10)).clocks.find((c) => c.k === "thesis").rating === "INVALID" &&
+      fr(daysAgo(10), daysAgo(10), null).clocks.find((c) => c.k === "card").rating === "NEVER");
+    ok("[87] the CARD clock is OPTIONAL: a card that exists but predates the additive computed_at field is UNRATED and excluded from the rollup, never INVALID — failing closed there would flip the whole book red over a value nobody had written yet (the v5.1.1 absent-field rule)",
+      (() => { const f = apiF.ladderFreshness({ sym: "AAA", lastRun: daysAgo(5) }, { as_of: daysAgo(5) }, { score: 9, at: null });
+        return f.clocks.find((c) => c.k === "card").rating === "UNRATED" && f.rating === "CURRENT"; })());
+    ok("[87] a FUTURE-dated stamp is INVALID, never CURRENT — the FIX-A defect class (v3.11 / v3.35 / v3.80 / v4.1.1), where a stamp ahead of the ET clock read as the freshest thing in the store",
+      fr(daysAgo(-3), daysAgo(10), daysAgo(10)).rating === "INVALID");
+    ok("[87] 'one run per quarter' is operational: the cell carries the DUE DATE (last run + cadence) and how far past it the name is, so the board says WHICH names are due rather than leaving the owner to subtract",
+      fr(daysAgo(130), daysAgo(1), daysAgo(1)).due === daysAgo(10) &&
+      fr(daysAgo(130), daysAgo(1), daysAgo(1)).overdue === 10 &&
+      fr(daysAgo(10), daysAgo(1), daysAgo(1)).overdue === 0 &&
+      fr(null, daysAgo(1), daysAgo(1)).due === null);
+    ok("[87] the thesis clock resolves the updated/as_of alias through ddDate, the one home for that pair (v3.13 corpus-native) — the first cut re-derived it here with the OPPOSITE precedence, a fourth spelling of one resolution, found by a live pull where three payloads carry `updated` and no `as_of`",
+      apiF.ladderFreshness({ sym: "A", lastRun: daysAgo(1) }, { updated: daysAgo(45) }, null)
+        .clocks.find((c) => c.k === "thesis").age === 45 &&
+      apiF.ladderFreshness({ sym: "A", lastRun: daysAgo(1) }, { as_of: daysAgo(45) }, null)
+        .clocks.find((c) => c.k === "thesis").age === 45 &&
+      !/dd\.as_of\s*\|\|\s*dd\.updated/.test(adminSrc.slice(
+        adminSrc.indexOf("function ladderFreshness("), adminSrc.indexOf("/* THE REQUIRED STAMP"))));
+    ok("[87] the PRICE mark is deliberately NOT in the rating — a 4-day daily clock folded into a 120-day quarterly one would make every name STALE for a reason that has nothing to do with the quarter (DEC-D2, in a rating instead of a sort key)",
+      apiF.ladderFreshness({ sym: "AAA", lastRun: daysAgo(1) }, { as_of: daysAgo(1), ref_px: { px: 1, at: daysAgo(90) } },
+        { at: daysAgo(1) }).rating === "CURRENT" &&
+      !/ref_px|pxAge/.test(adminSrc.slice(adminSrc.indexOf("function ladderFreshness("), adminSrc.indexOf("/* THE REQUIRED STAMP"))));
+
+    /* ── 10. THE REQUIRED STAMP — the work queue, not a restatement of the gate ────── */
+    const rq = (x, dd, card) => apiF.ladderRequired(x, dd, card, apiF.ladderFreshness(x, dd, card));
+    const freshX = { sym: "AAA", lastRun: daysAgo(5) };
+    const freshDD = { as_of: daysAgo(5), pt_model: { pe_premium_multiple: 20 }, hinges: [{ state: "green" }] };
+    const goodCard = { score: 9, tier: "A", status: "SCORED", scored: true, mcur: true, at: daysAgo(5), act: null, blockedOn: [], p4: null };
+    ok("[87] a fully current name needs NOTHING — the queue is empty rather than padded with a reassurance, so a non-empty NEEDS column always means real work",
+      rq(freshX, freshDD, goodCard).length === 0);
+    ok("[87] an ELIGIBLE name can still be OVERDUE: the gate says nothing and the queue says 'run TT'. NEEDS is the work queue, GATE is today's verdict — deriving one from the other would collapse both",
+      veto({ upside: 140, rdy: { blockers: [] }, tt: goodCard, rrFail: false }) === null &&
+      rq({ sym: "AAA", lastRun: daysAgo(200) }, freshDD, goodCard).some((r) => /run TT/.test(r.fix || r.what)));
+    ok("[87] the PROVISIONAL stamp splits the SAME four ways the v5.0.1 veto does — unwritten / set incomplete / awaiting observations / committed-this-write are different owner actions and the stamp is what gets acted on",
+      rq(freshX, freshDD, { ...goodCard, status: "PROVISIONAL", p4: { kind: "LEGACY_POST_HOC", hinges: 0, observed: 0 } })[0].what === "write falsifiers" &&
+      /write 1 more falsifier$/.test(rq(freshX, freshDD, { ...goodCard, status: "PROVISIONAL", p4: { kind: "X", hinges: 2, observed: 0 } })[0].what) &&
+      /observe 5 falsifiers/.test(rq(freshX, freshDD, { ...goodCard, status: "PROVISIONAL", p4: { kind: "X", hinges: 5, observed: 0 } })[0].what) &&
+      /re-score/.test(rq(freshX, freshDD, { ...goodCard, status: "PROVISIONAL", p4: { kind: "X", hinges: 3, observed: 3 } })[0].what));
+    ok("[87] a BLOCKED card names the GATE that cannot be read, and a stale-methodology card asks for a re-score — both read off the index, neither invented",
+      /gate input: PH_G4/.test(rq(freshX, freshDD, { ...goodCard, act: "BLOCKED", blockedOn: ["PH_G4"] })[0].what) &&
+      rq(freshX, freshDD, { ...goodCard, mcur: false })[0].what === "re-score");
+    ok("[87] an unread score index asks for a RELOAD, never 'run TT' — the v5.6.4 rule that a failed read must not become a claim that the work was never done",
+      mk({ BOOK: [], ddOf: () => null, SCORE_INDEX: null }).ladderRequired(freshX, freshDD, null,
+        mk({ BOOK: [], ddOf: () => null, SCORE_INDEX: null }).ladderFreshness(freshX, freshDD, null))[0].what === "score index not read");
+    ok("[87] the structural gaps the board can see for itself are named too — no payload, no pt_model, no hinges",
+      rq(freshX, null, goodCard).some((r) => r.what === "add a thesis payload") &&
+      rq(freshX, { as_of: daysAgo(5), hinges: [{}] }, goodCard).some((r) => r.what === "add a pt_model") &&
+      rq(freshX, { as_of: daysAgo(5), pt_model: { x: 1 } }, goodCard).some((r) => r.what === "define hinges"));
+    ok("[87] the stamp NEVER calls intakeChecklist: that reads the per-symbol score record and the board holds only the index — asked without one it invents chores (its own comment records doing exactly that to JOBY, whose pillars were already scored)",
+      !/intakeChecklist/.test(adminSrc.slice(adminSrc.indexOf("function ladderRequired("), adminSrc.indexOf("function ladderNeedsText("))) &&
+      /name's own tab/.test(adminSrc));
+
+    // the freshness sort — the same table read as a work queue
+    const qb = { as_of: daysAgo(5), consensus: { eps: { 2027: 2, 2028: 4 } },
+      pt_model: { pe_premium_multiple: 20, pe_floor_multiple: 15 }, hinges: [{ state: "green" }], ref_px: { px: 100, at: daysAgo(1) } };
+    const apiQ = mk({ BOOK: [{ sym: "OLD", lastRun: daysAgo(400) }, { sym: "MID", lastRun: daysAgo(150) }, { sym: "NEW", lastRun: daysAgo(5) }],
+      ddOf: () => qb, LIVE_PX: { OLD: { px: 100 }, MID: { px: 100 }, NEW: { px: 100 } }, cardInfo: () => goodCard });
+    const dq = apiQ.buildLadderRows(); apiQ.setSort("fresh");
+    ok("[87] sorting by FRESH turns the same table into the quarterly work queue — stalest first, ties broken by how far PAST its due date the run is, so '120d over' outranks '1d over' instead of sorting alphabetically inside a bucket",
+      apiQ.ladderSorted(dq.rows, dq.Y1, dq.Y2).map((r) => r.sym).join(",") === "OLD,MID,NEW" &&
+      dq.rows.find((r) => r.sym === "OLD").fresh.rating === "STALE" &&
+      dq.rows.find((r) => r.sym === "MID").fresh.rating === "AGING" &&
+      dq.rows.find((r) => r.sym === "NEW").fresh.rating === "CURRENT");
+    ok("[87] the NAMED-EXCLUSION table carries the rating and the queue too — those are precisely the names with work owing, so omitting it there would hide the queue from the population that needs it most",
+      mk({ BOOK: [{ sym: "ZZZ", lastRun: daysAgo(400) }], ddOf: () => null, cardInfo: () => null })
+        .buildLadderRows().skipped[0].fresh.rating === "NEVER" &&
+      mk({ BOOK: [{ sym: "ZZZ", lastRun: daysAgo(400) }], ddOf: () => null, cardInfo: () => null })
+        .buildLadderRows().skipped[0].req.length > 0);
+  } catch (e) {
+    ok("[87] the ladder fixtures RAN to completion — a section that dies mid-run prints no total "
+      + "and is indistinguishable from one that passed: " + (e && e.message), false);
+  }
+
+  // ── 6. ONE derivation: the module reads, it never re-computes ────────────────────
+  const modSrc = adminSrc.slice(adminSrc.indexOf("function ladderYears(){"), adminSrc.indexOf("function buildRankingsMd(){"));
+  ok("[87] the module READS every number it prints — ptModelRows for targets, rowVeto for the gate, cardInfo for the composite, macroGate for the board state — and re-derives none of them",
+    /ptModelRows\(dd\)/.test(modSrc) && /rowVeto\(\{upside:/.test(modSrc) &&
+    /cardInfo\(/.test(modSrc) && /macroGate\(\)/.test(modSrc) &&
+    !/pe_premium_multiple|ev_s_multiple|schedAt\(|share_count_M/.test(modSrc));
+  ok("[87] the ELIGIBLE line binds the SAME lifted function, and the old inline closure body is pinned ABSENT — a second copy of the veto ladder is the drift defect the lift exists to prevent",
+    /const why=rowVeto;/.test(adminSrc) &&
+    (adminSrc.match(/function rowVeto\(r\)\{/g) || []).length === 1 &&
+    !/const why=r=>\{\s*\n\s*if\(!\(r\.upside>0\)\)return "no gap";/.test(adminSrc));
+
+  // ── 7. the surface contract ─────────────────────────────────────────────────────
+  ok("[87] it is a MODAL over the shared #overlay, not a fourth mode — NEXT $ and BOOK stay the only persistent modes (v5.7.0) and the deck page list is untouched",
+    /function openLadder\(\)\{[\s\S]{0,900}openModal\(\);/.test(adminSrc) &&
+    /classList\.add\("wide","ld-card"\)/.test(adminSrc) &&
+    !/DECK_PAGES/.test(adminSrc));
+  ok("[87] #ladder is a bookmarkable DOOR that resolves to NEXT $ and replaces itself — parseTtRoute never hands a fourth view to applyRoute, and the pre-v5.6 compat branch can no longer read it as a ticker named LADDER",
+    /if\(head==="ladder"\)return\{view:"next",sub:"all",sym:null,ladder:true\};/.test(adminSrc) &&
+    /function ladderHashCheck\(\)/.test(adminSrc) &&
+    /history\.replaceState\(null,"","#next"\)/.test(adminSrc) &&
+    /if\(ladderHashCheck\(\)\)return;/.test(adminSrc));
+  ok("[87] a #ladder arrival is honoured at the END of the boot chain, after the book and the payload index land — a ladder built off an unread BOOK would report 'nothing qualifies', a claim about data nobody read (v5.6.4)",
+    /let LADDER_ARRIVED=TT_ROUTE\.ladder===true;/.test(adminSrc) &&
+    /if\(LADDER_ARRIVED\)\{LADDER_ARRIVED=false;/.test(adminSrc) &&
+    adminSrc.indexOf("if(LADDER_ARRIVED)") > adminSrc.indexOf("function honourArrival(){") &&
+    /async function bootLoads\(\)\{ await loadBook\(\); await secondaryLoads\(\); honourArrival\(\); \}/.test(adminSrc));
+  ok("[87] it is reachable WITHOUT opening a disclosure — a link on the ranking footer where the single rung is actually read, plus DAILY OPS (the v3.62 SHARE RANKS lesson: a surface nobody can find does not exist)",
+    /onclick="openLadder\(\)"[^>]*>▦ FULL LADDER — every YE rung/.test(adminSrc) &&
+    /<button class="act" onclick="openLadder\(\)">▦ FULL LADDER<\/button>/.test(adminSrc));
+
+  // ── 8. the PDF is the browser's own, and it must not print a lie ────────────────
+  const pr = adminSrc.slice(adminSrc.indexOf("@media print{"), adminSrc.indexOf("</style>"));
+  ok("[87] print-to-PDF renders the OPEN ladder and nothing else: the board is hidden, the fixed overlay goes static so it paginates, and rows do not split across a page break",
+    /\.wrap\{display:none!important\}/.test(pr) && /#overlay\.on\{position:static!important/.test(pr) &&
+    /\.ld-tbl tr\{page-break-inside:avoid\}/.test(pr) && /\.tblx\{overflow:visible!important\}/.test(pr));
+  ok("[87] the print sheet redefines the THEME VARS rather than forcing one ink colour — inline var(--green)/var(--red) resolve to paper-safe values, so the one signal the % columns carry survives the PDF instead of being flattened to black",
+    /--green:#0a6b3d/.test(pr) && /--red:#a41d1d/.test(pr) && !/card \*\{color:#000/.test(pr));
+  ok("[87] the sort headers and the action row are hidden in print — a control rendered into a PDF is an affordance that does nothing, the v3.52 interface-theater defect on paper",
+    /#overlay \.card \.x,#overlay \.card \.btns,\.ld-sort\{display:none!important\}/.test(pr));
+  ok("[87] a sort header is a real button with aria-pressed and a 40px thumb target at phone widths — the v3.81 defect was a control that rendered its state and offered no way to change it",
+    /<button type="button" class="ld-sort/.test(adminSrc) && /aria-pressed="\$\{LADDER_SORT===k\}"/.test(adminSrc) &&
+    /max-width:480px\)\{\.ld-sort\{min-height:40px\}\}/.test(adminSrc));
+  ok("[87] the header states the basis ONCE and refuses the comparison it cannot support: the two years are different horizons, so the two % columns are explicitly NOT comparable as rates — the next-dollar ranking is where %/yr lives",
+    /not annualised/.test(adminSrc) && /are not comparable as rates/.test(adminSrc) &&
+    /not street targets and not advice/.test(adminSrc));
+  ok("[87] an unread score index reads 'not read' on every composite, never 'no card' — the v5.6.4 rule that a failed read must not become a claim about the store",
+    /SCORE_INDEX===null\?"not read":"no card"/.test(adminSrc) &&
+    /score index did not load — composites read/.test(adminSrc));
+}
+
+/* ── [87b] FEAT-TT-LADDER v6.7.3 — the server RECEIPT's own verdict, married beside the
+   client's own (owner follow-up: "have the ladder render the server receipt's verdict
+   beside its own ... married, never merged, the way spreadLine already does"). A separate
+   top-level block (not nested in [87]'s own scope) with its own fixed clock, since the
+   four functions under test are not contiguous with the ladderYears..buildRankingsMd range
+   [87] already lifts — liftFns (brace-depth matching by NAME) is used instead of an
+   index-range slice, which is precisely the shape of mistake (a lost call site) that
+   shipped this feature's first draft with ladderServerMacroCell defined but never CALLED;
+   caught only by render.mjs, which actually opens the DOM — this offline lift could not
+   have caught it either, which is why both test layers exist and neither substitutes for
+   the other. */
+{
+  const TODAY = "2026-09-17";
+  const realAgeDays = (iso) => (!iso || !/^\d{4}-\d{2}-\d{2}$/.test(String(iso).slice(0, 10)) ? null
+    : Math.round((Date.parse(TODAY + "T00:00:00Z") - Date.parse(String(iso).slice(0, 10) + "T00:00:00Z")) / 86400000));
+  const daysAgo = (n) => new Date(Date.parse(TODAY + "T00:00:00Z") - n * 86400000).toISOString().slice(0, 10);
+
+  /* ── 11. FEAT-TT-LADDER v6.7.3 — the server RECEIPT's own verdict, married beside the
+     client's own (owner follow-up: "have the ladder render the server receipt's verdict
+     beside its own for the eligible candidates ... married, never merged, the way
+     spreadLine already does"). liftFns (brace-depth matching by name) is used here rather
+     than the ladderYears..buildRankingsMd range: these four functions are NOT contiguous
+     with each other in the file, and an index-range slice would either miss one or pull in
+     unrelated code — the exact shape of mistake that shipped v6.7.3's first draft with
+     ladderServerMacroCell defined but never CALLED (caught only by render.mjs, which
+     actually opens the DOM; this offline lift could not have caught it either, which is
+     why both layers exist). */
+  try {
+    const buildAllocFns = (ALLOC) => new Function("ALLOC", "ageDays",
+      liftFns(adminSrc, ["esc", "allocServerVerdict", "allocReceiptAgeD", "ladderServerMacroCell", "ladderServerCell"]) +
+      "\nreturn {allocServerVerdict,allocReceiptAgeD,ladderServerMacroCell,ladderServerCell};")(ALLOC, realAgeDays);
+
+    const rc = (svElig, y, hz) => ({ gate: null, macro_gate: { gate: "SEND_IT", rung: null, reason: null },
+      horizon: hz, business_date_et: TODAY,
+      eligible: svElig ? { sym: "AAA", y, tgt: 1, up: 1, ann: 1 } : null,
+      why_not: svElig ? [] : [{ sym: "AAA", reason: "server-side reason" }] });
+
+    ok("[87] allocServerVerdict: ELIGIBLE when this sym is the receipt's own eligible pick, the veto reason verbatim when it's in why_not, and null — nothing to compare — for a sym the receipt never ranked",
+      buildAllocFns(rc(true, "2027", "2027")).allocServerVerdict("AAA").elig === true &&
+      buildAllocFns(rc(false, "2027", "2027")).allocServerVerdict("AAA").text === "server-side reason" &&
+      buildAllocFns(rc(false, "2027", "2027")).allocServerVerdict("BBB") === null);
+    ok("[87] allocServerVerdict returns null on NO receipt and on a MACRO-GATED receipt (ALLOC.gate truthy) — the second case is a coverage fact (the receipt never ranked any ticker), not a disagreement, and is stated once at the head instead",
+      buildAllocFns(null).allocServerVerdict("AAA") === null &&
+      buildAllocFns({ ...rc(true, "2027", "2027"), gate: { rung: "flip", reason: "x" } }).allocServerVerdict("AAA") === null);
+    ok("[87] allocReceiptAgeD reads 0 for today's business date, the real day count for an older one, and null when the receipt or its date is absent — a stale receipt is NAMED, never read as a live contradiction",
+      buildAllocFns(rc(true, "2027", "2027")).allocReceiptAgeD() === 0 &&
+      buildAllocFns({ ...rc(true, "2027", "2027"), business_date_et: daysAgo(3) }).allocReceiptAgeD() === 3 &&
+      buildAllocFns(null).allocReceiptAgeD() === null &&
+      buildAllocFns({ ...rc(true, "2027", "2027"), business_date_et: null }).allocReceiptAgeD() === null);
+
+    const mgSendIt = { g: "SEND_IT", label: "SEND IT", c: "x" };
+    const mgTouch = { g: "TOUCH_GRASS", label: "TOUCH GRASS", c: "x" };
+    ok("[87] ladderServerMacroCell: agreement renders the server's word with NO alarm styling; a mismatch is BOLD RED and names 'DISAGREES with MACRO GATE above'",
+      !/font-weight:700/.test(buildAllocFns(rc(true, "2027", "2027")).ladderServerMacroCell(mgSendIt)) &&
+      /DISAGREES with MACRO GATE above/.test(buildAllocFns(rc(true, "2027", "2027")).ladderServerMacroCell(mgTouch)) &&
+      /font-weight:700/.test(buildAllocFns(rc(true, "2027", "2027")).ladderServerMacroCell(mgTouch)));
+    ok("[87] ladderServerMacroCell softens a mismatch to AMBER with the receipt's age when the receipt predates today — never red, never silent",
+      (() => { const stale = buildAllocFns({ ...rc(true, "2027", "2027"), business_date_et: daysAgo(2) }).ladderServerMacroCell(mgTouch);
+        return /receipt 2d old/.test(stale) && !/DISAGREES/.test(stale) && /var\(--amber\)/.test(stale); })());
+    ok("[87] ladderServerMacroCell states 'receipt not loaded' with no ALLOC, and names an older schema (predates macro_gate) rather than guessing a word",
+      /receipt not loaded/.test(buildAllocFns(null).ladderServerMacroCell(mgSendIt)) &&
+      /predates macro_gate/.test(buildAllocFns({ ...rc(true, "2027", "2027"), macro_gate: null }).ladderServerMacroCell(mgSendIt)));
+
+    ok("[87] ladderServerCell: agreement is dim with no DISAGREES text; a mismatch is bold with 'DISAGREES with the ticker ladder above', and names the receipt's OWN horizon",
+      (() => { const agree = buildAllocFns(rc(true, "2027", "2027")).ladderServerCell("AAA", true, "2027");
+        const dis = buildAllocFns(rc(true, "2027", "2027")).ladderServerCell("AAA", false, "2027");
+        return /⇄ server \(YE2027\): ELIGIBLE/.test(agree) && !/DISAGREES/.test(agree) &&
+          /DISAGREES with the ticker ladder above/.test(dis) && /font-weight:700/.test(dis); })());
+    ok("[87] ladderServerCell NAMES a horizon mismatch — the receipt's own year differs from the column being read — rather than silently comparing across different years as if they were the same claim",
+      /YE2028 — a different horizon than this column/.test(buildAllocFns(rc(true, "2028", "2028")).ladderServerCell("AAA", true, "2027")));
+    ok("[87] ladderServerCell renders NOTHING for a sym the receipt has no opinion on — inventing a comparison would be worse than silence",
+      buildAllocFns(rc(false, "2027", "2027")).ladderServerCell("ZZZ", true, "2027") === "");
+  } catch (e) {
+    ok("[87] the server-verdict marriage fixtures RAN to completion — a section that dies mid-run prints no total: " + (e && e.message), false);
+  }
+
+}
+
 
 console.log(`\n=== SMOKE TEST: ${pass} passed, ${fail} failed ===`);
 process.exit(fail === 0 ? 0 : 1);
