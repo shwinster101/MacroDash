@@ -5,6 +5,27 @@ answers *"is it safe to be in the market?"* from live macro + market + sentiment
 data. Single-page React app on Cloudflare Pages, with live data assembled at the
 edge by Pages Functions and cached in KV.
 
+**v6.6.3 — company size and earnings, one tap deep.** Simple's visible stock cards stay
+unchanged. Company popups explain business, share price × shares outstanding, and dated
+net earnings/P/E within three bullets and a 90-word ceiling. Degen's market cap, trailing
+P/E and revenue multiple each open a three-bullet, 110-word explainer: calculation,
+interpretation, limitation. Dates and source links remain separate. Zero earnings are
+not negative; missing earnings or their period do not establish a loss. The financial
+model now carries the net-income period and earnings source. Old cached records lacking
+the period withhold the new earnings explanation until normal refresh. No provider,
+macro thresholds, forecasts or investment-call outcomes changed. At the owner’s request,
+PR #42’s stronger call wording (15 words) and mode-specific five Whys (25 words each)
+are carried forward from `ab0ac1f`, preserving Volatility in full. The Simple Hold
+explains the missing majority instead of “fine”/“drag”; Degen keeps channels and
+thresholds. Its compact news line shows only a shortened rank-1 headline; ranks 2–3
+still exist in the data. The separate FOMC event feature remains in #42. Validation is in `working/2026-09-16-company-value.md`.
+
+Pre-merge wording audit: Simple spells out the chart’s return period and explains its
+baseline; company size is defined beside its formula. Both call popups name safety-limited
+Hold states, and Simple Why #3 states stock implications without an ambiguous pronoun.
+Degen retains the useful calculations, thresholds and limitations. Audit and merge checks:
+`working/2026-09-17-public-copy-audit.md`.
+
 **v6.6.2 — Alpha Vantage joins the ESTIMATES side under its own name, budgeted at 20 of the 25 free calls, and the browser harness stops racing midnight.**
 Palette Move 1b (`working/2026-09-16-api-palette-upgrade.md`), stacked on #44's v6.6.1 allowlist
 (Move 1a, the owner's A ruling: a provider is admitted under ITS name or refused BY name). The

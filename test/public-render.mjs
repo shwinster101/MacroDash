@@ -400,13 +400,13 @@ console.log("\n[public] v3.94 — Simple default, the toggle, persistence, red f
      contradictory confidence number beside the scoped "N of 6 voters counted". */
   ok("T2/T3 simple: the Glance layer renders — one plain call, sentence, cards, key numbers; coverage is one tap deep",
     /Bullish|Hold|Bearish|Not enough data/.test(body) &&
-    /(fine|drag|clear lean right now)/i.test(body) &&   // T1: holdReason, not the lecture sentence
+    /(support taking risk|against risk|has a majority|short of a majority|clear lean)/i.test(body) &&   // T1: holdReason (v6.6.1 posture vocabulary), not the lecture sentence
     /HELPING|HURTING|MIXED/.test(body) && /SPY/.test(body) &&
     !/\d+ of \d+ signals counted/.test(await page.locator('[aria-label="Macro backdrop verdict"]').innerText()) &&
     !/\d+ cards from the \d+ signals counted/.test(await page.locator('[aria-label="Key parameters"]').innerText()));
   const sentencePx = await page.evaluate(() => {
     const band = document.querySelector('[aria-label="Macro backdrop verdict"]');
-    const el = [...band.querySelectorAll("div")].find((n) => n.childElementCount === 0 && /(fine|drag|clear lean)/i.test(n.textContent || ""));
+    const el = [...band.querySelectorAll("div")].find((n) => n.childElementCount === 0 && /(support taking risk|against risk|has a majority|short of a majority|clear lean)/i.test(n.textContent || ""));
     return el ? getComputedStyle(el).fontSize : null;
   });
   ok(`T7 sentence (Simple): the so-what line is 16px sans, not an 11px caption (measured ${sentencePx})`,
@@ -563,7 +563,7 @@ console.log("\n[public] v3.94 — Simple default, the toggle, persistence, red f
       /Bullish/.test(vsheet) && /Hold/.test(vsheet) && /Bearish/.test(vsheet) &&
       /Not enough data/.test(vsheet) && !/MOONING|HODL|DIAMOND HANDS|CAN'T CALL IT/.test(vsheet));
     ok("v5.9 verdict: it says plainly what this is not — a backdrop read, not advice",
-      /not a view on any one stock/.test(vsheet) && /not advice/.test(vsheet));
+      /not whether to buy a particular stock/.test(vsheet) && /mixed evidence or a safety limit/.test(vsheet) && /not advice/.test(vsheet));
     await page.keyboard.press("Escape");
     await page.waitForTimeout(200);
     ok("v5.9 verdict: Escape closes it and focus returns to the verdict",
@@ -1026,7 +1026,7 @@ console.log("\n[public] v4.0 — Simple verdicts, card selection, and what must 
   body = await page.locator("body").innerText();
   ok("v6.4 Simple verdict: a bull tape reads Bullish with supporting factors leading",
     /Bullish/.test(body) && /HELPING/.test(body) && !/MOONING|\bBULLISH\b/.test(body) &&
-    /fine/i.test(body));   // T1: holdReason, helping names "are fine"
+    /support taking risk/i.test(body) && !/\bfine\b|\bdrag\b/i.test(body));   // T1 (v6.6.1): a Bullish day says the backdrop supports taking risk; 'fine' retired
   await page.close();
 
   // 3. NOT ENOUGH DATA — below quorum. And the acceptance rule that matters most here: a withheld
@@ -1048,7 +1048,7 @@ console.log("\n[public] v4.0 — Simple verdicts, card selection, and what must 
   const withheldOpen = await page.locator("body").innerText();
   ok("v4.0 withheld: no explanatory sentence, and the withheld sentence states the shortfall one tap deep",
     /Call withheld until the required evidence is current and usable/i.test(withheldOpen) &&
-    !/are supportive|is working against|clearly supportive|clear lean right now/i.test(withheldOpen));
+    !/are supportive|is working against|clearly supportive|clear lean right now|support taking risk|against risk|has a majority|short of a majority/i.test(withheldOpen));
   await page.locator("button.cg-toggle", { hasText: "why this call" }).click();
   await page.waitForTimeout(150);
   ok("v4.0 withheld: cards still render only USABLE factors — a dead feed is never a card",
@@ -1076,8 +1076,12 @@ console.log("\n[public] v4.0 — Simple verdicts, card selection, and what must 
      sentence says in words, and of the two the sentence is the one a newcomer can use. The
      derived sub itself is unchanged and still renders in Power (pinned in smoke); what this
      asserts is that Simple's ONE explanation names the same disagreement. */
+  /* v6.6.1: the Hold sentence names both sides and states the reason for the Hold — neither
+     side has a majority. Measured live: "Volatility and inflation help. Prices hurt. Neither side
+     has a majority." on this tape (vix + cooling CPI helping, rich CAPE hurting). */
   ok("v5.9: Simple names the disagreement in the SENTENCE, with no count sub beside it",
-    /fine/.test(band) && /drag/.test(band) &&
+    /help\./.test(band) && /hurt\./.test(band) && /Neither side has a majority/.test(band) &&
+    !/\bfine\b|\bdrag\b/i.test(band) &&
     !/help, prices do not/.test(band) && !/\d+ help, \d+ does not/.test(band));
   ok("8/29 ruler: the canned watch-VIX gloss is gone from a tape where VIX is helping",
     !/watch VIX/i.test(band) && !/Cross-signals/.test(band));
@@ -2023,7 +2027,7 @@ console.log("\n[public] v6.5 — STOCK SPOTLIGHT: Simple + Degen, always-visible
       !/rents out AI computing capacity/.test(text) && !/Sells software and cloud computing/.test(text));
     ok("T4 Simple chart: title is ticker vs ticker YTD; two lines, a zero reference; no from-through essay",
       (await r.locator(".recharts-line").count()) === 2 && (await r.locator(".recharts-reference-line").count()) === 1 &&
-      /NBIS vs MSFT YTD/.test(text) && !/YTD COMPARISON/.test(text) && !/from 2025-12-31/.test(text));
+      /NBIS vs MSFT · return this year/.test(text) && !/YTD COMPARISON/.test(text) && !/from 2025-12-31/.test(text));
     ok("T6 Learning moment starts collapsed — promise label, no run-rate body, no LEARNING MOMENT essay",
       /Learning moment/.test(text) && !/LEARNING MOMENT/.test(text) && !/run-rate/i.test(text) &&
       (await r.locator('[aria-label="Learning moment"]').count()) === 0 &&
@@ -2044,9 +2048,13 @@ console.log("\n[public] v6.5 — STOCK SPOTLIGHT: Simple + Degen, always-visible
       const detail = await sheet.innerText();
       ok(`company tap: ${name} opens its own business, size, return and growth explainer`,
         detail.includes(name) && /Market capitalization: \$/.test(detail) &&
-        /all outstanding shares/.test(detail) && /reinvested dividends/.test(detail) &&
+        /total shares outstanding/.test(detail) && /reinvested dividends/.test(detail) &&
         /not profit growth/.test(detail) && /Market capitalization as of/.test(detail) &&
         /Return through/.test(detail) && (await sheet.locator("li").count()) === 3);
+      ok(`company tap: ${name} shows sourced, period-qualified earnings without changing the face`,
+        /Net earnings: 12 months to/.test(detail) &&
+        (name === "Nebius Group" ? /net loss.*price-to-earnings.*not meaningful/s.test(detail) : /Investors pay.*per \$1 earned/s.test(detail)) &&
+        (await sheet.getByRole("link", { name: "net earnings source" }).count()) === 1);
       ok(`company tap: ${name} fits the phone width`, await sheet.evaluate(n => n.scrollWidth <= n.clientWidth + 1));
       await page.keyboard.press("Escape");
       ok(`company tap: ${name} closes and restores focus`, (await page.getByRole("dialog").count()) === 0 && await trigger.evaluate(n => n === document.activeElement));
@@ -2103,6 +2111,20 @@ console.log("\n[public] v6.5 — STOCK SPOTLIGHT: Simple + Degen, always-visible
     ok("v6.5 Degen: the supporting analysis (cash, debt, cap ÷ TTM revenue, P/E, shares, price trend, run-rate, inputs) is visible with NO click, plus the worked example",
       (await r.locator('[aria-label$="supporting analysis"]').count()) === 2 && /CAP ÷ TTM REVENUE/i.test(text) && /TRAILING P\/E/i.test(text) && /PRICE TREND/i.test(text) &&
       /RUN-RATE VS TTM/i.test(text) && /CALCULATION INPUTS/.test(text) && (await r.locator('[aria-label="Worked example"]').count()) === 1 && /33\.4×/.test(text));
+    for (const [group, label, title, expected] of [
+      ['[aria-label="Nebius Group (NBIS) profile"]', "Market cap", "Market capitalization", /Hypothetical:.*both equal \$10 billion/s],
+      ['[aria-label="NBIS supporting analysis"]', "Trailing P/E", "Trailing price-to-earnings ratio", /Net earnings were negative/],
+      ['[aria-label="MSFT supporting analysis"]', "Trailing P/E", "Trailing price-to-earnings ratio", /positive multiple/],
+      ['[aria-label="NBIS supporting analysis"]', "Cap ÷ TTM revenue", "Market value relative to sales", /Revenue is not profit/],
+    ]) {
+      const trigger = r.locator(group).getByRole("button", { name: new RegExp(label) });
+      await trigger.focus(); await page.keyboard.press("Enter");
+      const dialog = page.getByRole("dialog", { name: title });
+      ok(`Degen valuation tap: ${group} ${label} teaches its calculation and limitation`,
+        expected.test(await dialog.innerText()) && (await dialog.innerText()).includes(group.includes("NBIS") ? "NBIS" : "MSFT") && await dialog.locator("li").count() === 3 && await dialog.getByRole("link").count() > 0);
+      await page.keyboard.press("Escape");
+      ok(`Degen valuation tap: ${label} closes and restores focus`, await trigger.evaluate(n => n === document.activeElement) && await page.getByRole("dialog").count() === 0);
+    }
     ok("v6.5 Degen: NBIS's negative trailing earnings read 'no P/E' — never a negative multiple", /trailing earnings are negative — no P\/E/.test(text) && !/-\d+\.\d×/.test(text));
     ok("v6.5 Degen: sources are the one collapsed disclosure; opening it lists dated sec.gov citations",
       (await r.locator('[aria-label="Sources and calculations"]').count()) === 0 && await (async () => {
@@ -2123,6 +2145,14 @@ console.log("\n[public] v6.5 — STOCK SPOTLIGHT: Simple + Degen, always-visible
     ok("Simple unavailable: missing capitalization is visible; the other company retains its value; never zero",
       /Unavailable · no market cap/.test(text) && !/Unavailable — profile carries no market capitalization/.test(text) &&
       /\$3\.41T/.test(text) && !/\$0/.test(text) && /Unavailable/.test(text));
+    await r.locator('.stock-profile-trigger', { hasText: "Nebius Group" }).click();
+    ok("Simple company tap: missing cap remains explicitly unavailable in the popup",
+      /market capitalization unavailable/i.test(await page.getByRole("dialog").innerText()));
+    await page.keyboard.press("Escape");
+    await r.locator('.stock-profile-trigger', { hasText: "Microsoft" }).click();
+    ok("Simple company tap: the dated but stale comparison values stay marked",
+      /STALE/.test(await page.getByRole("dialog").innerText()));
+    await page.keyboard.press("Escape");
     ok("v6.5 unavailable: the missing anchor series is NAMED on the chart and the comparison line still plots alone",
       /NBIS series unavailable/.test(text) && (await r.locator(".recharts-line").count()) === 1 && /Unavailable(?! —)/.test(text));
     ok("T4 unavailable: the FULL reasons survive verbatim one tap deep in Explore",

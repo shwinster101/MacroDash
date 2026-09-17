@@ -4,7 +4,7 @@
 // sprint locked four buckets (Face / Tap / Fold / Kill); every helper here projects
 // already-decided evidence into the Face (or names the Fold). Degen does not import
 // this module.
-export const HOLD_REASON_MAX = 18;
+export const HOLD_REASON_MAX = 15;
 export const FACE_NOUN = Object.freeze({
   vix: "Volatility",
   nfci: "credit",
@@ -19,7 +19,6 @@ export const EXPLORE_FOLD_LABEL = "Explore the numbers";
 export const WHYS_FOLD_LABEL = "Why this call";
 export const ABOUT_FOLD_LABEL = "About this page";
 
-const words = (s) => String(s || "").trim().split(/\s+/).filter(Boolean);
 const joinAnd = (arr) => {
   if (!arr.length) return "";
   if (arr.length === 1) return arr[0];
@@ -27,28 +26,54 @@ const joinAnd = (arr) => {
   return `${arr.slice(0, -1).join(", ")} and ${arr[arr.length - 1]}`;
 };
 const cap = (s) => (s ? s.charAt(0).toUpperCase() + s.slice(1) : s);
-const verb = (names) => (names.length === 1 && !/^(rates|prices)$/i.test(names[0]) ? "is" : "are");
+const lc = (s) => (s ? s.charAt(0).toLowerCase() + s.slice(1) : s);
+// Nouns that take a plural verb on their own ("rates work", "prices hurt"); the rest are
+// singular ("volatility works", "credit helps"). Verb agreement is per NAME, not per count.
+const PLURAL_NOUN = new Set(["tenYear", "valuation"]);
 
-// Face: ≤18-word so-what. Helping names "are fine"; hurting names "are the drag".
-// At most two names per side so a 6-factor day cannot lecture.
+/* Face: the so-what under the one-word call, ≤HOLD_REASON_MAX words.
+   v6.6.1 (owner, on the live 2026-09-16 screenshot: "not a fan of 'fine' and 'drag' — higher
+   leverage, 15 words max"). The sentence now says what the CALL means and lets the names
+   carry the why: a Bullish day says the backdrop supports taking risk and names the only
+   pushback; a Bearish day says what is working against risk and that the helpers do not
+   offset it; a Hold day states the split and that NEITHER SIDE HAS A MAJORITY — which is
+   the actual reason for a Hold under the strict-majority rule, and the one fact a newcomer
+   can act on. The branch follows ev.regime.label, the same field the hero's verdict word
+   reads, so the sentence can never describe a different call from the word above it.
+   At most two names per side (the fold names them all); every branch is ≤15 words BY
+   CONSTRUCTION — no runtime truncation, a truncated sentence is garbage — and smoke sweeps
+   every helping/hurting split in every posture to prove the budget. */
 export function holdReason(ev) {
   if (!ev || ev.withheld) return null;
   const rows = (ev.factors || []).filter((x) => !x.excluded);
-  const name = (x) => FACE_NOUN[x.key] || x.short || x.key;
-  const helping = rows.filter((x) => x.vote === "bull").map(name);
-  const hurting = rows.filter((x) => x.vote === "bear").map(name);
-  const parts = [];
-  if (helping.length) {
-    const g = helping.slice(0, 2);
-    parts.push(`${cap(joinAnd(g))} ${verb(g)} fine`);
+  const side = (vote) => rows.filter((x) => x.vote === vote).slice(0, 2)
+    .map((x) => ({ text: lc(FACE_NOUN[x.key] || x.short || x.key), plural: PLURAL_NOUN.has(x.key) }));
+  const helping = side("bull"), hurting = side("bear");
+  if (!helping.length && !hurting.length) return "Nothing we track has a clear lean.";
+  const names = (g) => joinAnd(g.map((n) => n.text));
+  const v = (g, one, many) => (g.length === 1 && !g[0].plural ? one : many);
+  const line = (g, one, many) => `${cap(names(g))} ${v(g, one, many)}`;
+  const label = ev.regime && ev.regime.label;
+  if (label === "RISK-ON" && helping.length) {
+    const lead = `${line(helping, "supports", "support")} taking risk.`;
+    return hurting.length ? `${lead} The only pushback: ${names(hurting)}.`
+      : `${lead} Nothing tracked is pushing back.`;
   }
-  if (hurting.length) {
-    const g = hurting.slice(0, 2);
-    parts.push(`${cap(joinAnd(g))} ${verb(g)} the drag`);
+  if (label === "RISK-OFF" && hurting.length) {
+    const lead = `${line(hurting, "works", "work")} against risk.`;
+    return helping.length ? `${lead} ${line(helping, "doesn't", "don't")} offset that.`
+      : `${lead} Nothing tracked offsets that.`;
   }
-  if (!parts.length) return "Nothing we track has a clear lean.";
-  const out = `${parts.join(". ")}.`;
-  return words(out).length <= HOLD_REASON_MAX ? out : `${parts[0]}.`;
+  // Hold (MIXED): the split is the so-what. Larger side first; a tie leads with the helpers.
+  if (helping.length && hurting.length) {
+    const bullFirst = helping.length >= hurting.length;
+    const first = bullFirst ? line(helping, "helps", "help") : line(hurting, "hurts", "hurt");
+    const second = bullFirst ? line(hurting, "hurts", "hurt") : line(helping, "helps", "help");
+    return `${first}. ${second}. Neither side has a majority.`;
+  }
+  return helping.length
+    ? `${line(helping, "helps", "help")}; nothing tracked hurts. Still short of a majority.`
+    : `${line(hurting, "hurts", "hurt")}; nothing tracked helps. Still short of a majority.`;
 }
 
 export function cardFace(card) {
@@ -120,36 +145,6 @@ export function lessonBody(lesson) {
 }
 
 export function chartTitle(pair) {
-  if (!pair || !pair.anchor || !pair.comparison) return "YTD";
-  return `${pair.anchor} vs ${pair.comparison} YTD`;
-}
-
-// Company tap: reuse the public three-bullet sheet; every value/date comes from its model.
-export function spotlightExplain(company, leg) {
-  const face = spotlightFace(company, leg);
-  if (!face) return null;
-  const cap = company.marketCap || {}, m = company.metrics || {};
-  const metric = face.stat.label === "Operating margin" ? m.operatingMargin
-    : face.stat.label === "Free cash flow" ? m.fcf : m.revenueGrowth;
-  const definition = face.stat.label === "Operating margin"
-    ? "Operating margin is the share of sales left after operating costs, before interest and taxes."
-    : face.stat.label === "Free cash flow"
-      ? "Free cash flow is operating cash left after spending on long-lived assets."
-      : "Revenue growth compares sales with the same period a year earlier; it is not profit growth.";
-  const size = cap.display && !cap.unavailable ? cap.display : `Unavailable — ${cap.unavailable || "no dated market cap"}`;
-  const ret = leg?.unavailable ? `Unavailable — ${leg.unavailable}` : face.ytd.value || `Unavailable — ${face.ytd.unavailable}`;
-  const stat = face.stat.value && !metric?.unavailable ? face.stat.value : `Unavailable — ${metric?.unavailable || face.stat.unavailable || "no reported figure"}`;
-  return {
-    full: company.name,
-    what: [
-      `${company.blurb || "Business description unavailable."} Market capitalization: ${size}. This is the stock market's value of all outstanding shares, not the company's cash.`,
-      `Return this year: ${ret}. This measures the change since last year's final trading close, including reinvested dividends. Past returns do not predict future returns.`,
-      `${face.stat.label}: ${stat}. ${definition}`,
-    ],
-    metadata: [cap.observedAt ? `Market capitalization as of ${cap.observedAt}${cap.method === "derived" ? " (derived)" : ""}.` : null,
-      leg?.through ? `Return through ${leg.through}.` : null,
-      metric?.period ? `${face.stat.label}: ${metric.period}.` : null,
-      face.stale ? "Market data is stale." : null,
-      "M = million; B = billion; T = trillion. Sources and calculations: Explore the numbers."].filter(Boolean).join(" "),
-  };
+  if (!pair || !pair.anchor || !pair.comparison) return "Return this year";
+  return `${pair.anchor} vs ${pair.comparison} · return this year`;
 }

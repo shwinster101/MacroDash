@@ -72,8 +72,8 @@ export const VERDICT_EXPLAIN = {
   full: "What this call means",
   what: [
     "MOONING 🚀 = BULLISH · HODL 💎 = NEUTRAL · DIAMOND HANDS 🙌 = BEARISH · CAN'T CALL IT 🌫️ = too little live data to say.",
-    "Bullish means conditions have historically been friendly to owning risky things; bearish means the opposite; neutral means the evidence genuinely does not lean — a real answer, not a missing one.",
-    "This is a read on the whole market's backdrop, not a view on any one stock, and it is not advice.",
+    "Bullish means the model supports market risk; bearish means it does not. Neutral means mixed evidence or a safety limit. Missing data is a separate state.",
+    "Macro conditions alone do not establish an entry price. Company valuation, cash needs, and risk limits still matter. Education, not advice.",
   ],
 };
 
@@ -286,7 +286,7 @@ export function verdictFrom(bullVotes, bearVotes, counted) {
 export const REGIME_QUORUM = 4;
 const REGIME_META = {
   // FEAT-v17-07: hyphen separators (was middot) for RISK-ON / RISK-OFF legibility
-  "RISK-ON":  { sub:"Disinflation + low vol",   tintKey:"regime-on-bg",  colorKey:"green"  },
+  "RISK-ON":  { sub:"Disinflation + low volatility",   tintKey:"regime-on-bg",  colorKey:"green"  },
   "RISK-OFF": { sub:"Rate pressure + stress",   tintKey:"regime-off-bg", colorKey:"red"    },
   // `watchKey` names the factor the sub tells the reader to watch, so computeRegime can
   // re-derive the sub when that factor is EXCLUDED (v3.61, newcomer audit: the hero read

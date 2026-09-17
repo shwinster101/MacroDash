@@ -523,7 +523,8 @@ export function deriveMetrics({ fundamentals: f, marketCap, series, today }) {
     ttmRevenue: rt ? rt.value : null, ttmRevenuePeriod: rt ? rt.label : null,
     trailingPe: capUsd && nt && nt.value > 0 ? round(capUsd / nt.value, 1) : null,
     ttmNetIncome: nt ? nt.value : null,
-    peNote: !nt ? (f?.netIncome?.ttm?.unavailable || "TTM net income unavailable") : nt.value <= 0 ? "trailing earnings are negative — no P/E" : null,
+    ttmNetIncomePeriod: nt ? nt.label : null,
+    peNote: !nt ? (f?.netIncome?.ttm?.unavailable || "TTM net income unavailable") : nt.value < 0 ? "trailing earnings are negative — no P/E" : nt.value === 0 ? "trailing earnings are zero — no P/E" : null,
     unavailable: !capUsd ? `no market cap (${marketCap?.unavailable || "no cap"})` : !rt ? (f?.revenue?.ttm?.unavailable || "TTM revenue unavailable") : null,
   };
   // Run-rate vs reported: latest quarter × 4 against the TTM actually reported.
@@ -734,6 +735,7 @@ export function buildCompany({ symbol, name, facts, fundamentals, series, today,
     form: f.form || f.quarter?.form || null, filed: f.filed || f.quarter?.filed || null }); };
   cite("market cap", facts?.marketCap || facts?.quote); cite("revenue", fundamentals?.revenue); cite("operating income", fundamentals?.operatingIncome);
   cite("operating cash flow", fundamentals?.ocf); cite("capital expenditure", fundamentals?.capex); cite("cash", fundamentals?.cash); cite("debt", fundamentals?.debt);
+  cite("net earnings", fundamentals?.netIncome);
   cite("shares outstanding", fundamentals?.sharesOutstanding); cite("price series", series); cite("earnings calendar", facts?.nextEarnings);
   const company = { symbol, name: name || COMPANY_NAMES[symbol] || symbol, blurb: COMPANY_BLURBS[symbol] || null, currency: "USD", marketCap, metrics, nextEarnings,
     freshness: { market: marketFreshness(marketCap.observedAt, now), fundamentals: fundamentalsFreshness }, sources };
