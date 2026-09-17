@@ -60,20 +60,52 @@ export function quoteFact(raw, profile, retrievedAt) {
   };
 }
 
-function candlesFact(raw, retrievedAt, refPx) {
-  if (!raw || raw.s !== "ok" || !Array.isArray(raw.t)) return missing("Finnhub", raw?.s || "premium daily candles unavailable", retrievedAt, "https://finnhub.io/");
-  const rows = raw.t.map((t, i) => ({
-    date: dateFromUnix(t), open: Number(raw.o?.[i]), high: Number(raw.h?.[i]), low: Number(raw.l?.[i]),
-    close: Number(raw.c?.[i]), volume: Number(raw.v?.[i]),
-  })).filter((r) => r.date && [r.open, r.high, r.low, r.close].every(Number.isFinite));
-  if (rows.length < 2) return missing("Finnhub", "daily candle response was empty", retrievedAt, "https://finnhub.io/");
-  // v5.6.1: continuity guard — a discontinuous series must never be stored as LIVE evidence.
-  const fault = candleSeriesFault(rows, refPx);
-  if (fault) return missing("Finnhub", "candle series failed continuity: " + fault, retrievedAt, "https://finnhub.io/");
+/* v6.6.0 — TIINGO IS THE PRIMARY CANDLE RUNG, and the Finnhub rung it replaces was DEAD.
+   `stock/candle` is premium-gated on the free plan, so that rung always returned
+   missing("Finnhub", "premium daily candles unavailable") and the Nasdaq scrape carried
+   production alone with no rung above it. Tiingo's daily door is already proven and already
+   keyed here (the spotlight's verified total-return series reads the same rows), so the
+   ladder gains a real first rung at no new key cost.
+   UNADJUSTED open/high/low/close is deliberate: the TT price ladder prices the tape a stop
+   and a pivot are actually placed on. The adjusted columns on the SAME row feed the
+   spotlight's total-return series and must never be mixed in here (a split-adjusted OHLC
+   would silently move every stored support level).
+   Validation is the Nasdaq mapper's, not the old Finnhub one's: positive OHLC plus the
+   high/low ordering invariant, then the SAME `candleSeriesFault` guard both other rungs run.
+   A row that fails the ordering check is DROPPED, which can open a gap — and the continuity
+   guard then rejects the merge rather than storing a hole as LIVE (fail closed on the FIELD). */
+export function tiingoCandlesFact(raw, retrievedAt, refPx) {
+  const src = "https://www.tiingo.com/";
+  if (!Array.isArray(raw)) return missing("Tiingo", "daily price response was not a list", retrievedAt, src);
+  const rows = raw.map((r) => ({
+    date: String(r?.date || "").slice(0, 10), open: Number(r?.open), high: Number(r?.high),
+    low: Number(r?.low), close: Number(r?.close), volume: Number(r?.volume),
+  }))
+    .filter((r) => /^\d{4}-\d{2}-\d{2}$/.test(r.date)
+      && [r.open, r.high, r.low, r.close].every((v) => Number.isFinite(v) && v > 0)
+      && r.high >= r.low && r.high >= r.open && r.high >= r.close && r.low <= r.open && r.low <= r.close)
+    .map((r) => ({ ...r, volume: Number.isFinite(r.volume) ? r.volume : null }))
+    .sort((a, b) => a.date.localeCompare(b.date));
+  const unique = [...new Map(rows.map((r) => [r.date, r])).values()];
+  if (unique.length < 2) return missing("Tiingo", "daily price response was empty", retrievedAt, src);
+  const fault = candleSeriesFault(unique, refPx);
+  if (fault) return missing("Tiingo", "candle series failed continuity: " + fault, retrievedAt, src);
   return {
-    value: rows, status: "LIVE", provider: "Finnhub", sourceUrl: "https://finnhub.io/",
-    observedAt: rows.at(-1).date, retrievedAt, resolution: "D",
+    value: unique, status: "LIVE", provider: "Tiingo (daily OHLCV, unadjusted)", sourceUrl: src,
+    observedAt: unique.at(-1).date, retrievedAt, resolution: "D",
   };
+}
+
+// Raw fetch, so the call can ride the parallel batch while its parse still waits on the
+// same-refresh quote (refPx). KEY-GATED like Finnhub: no key throws, the ladder falls to
+// Nasdaq, and nothing about the honesty invariant changes.
+export async function tiingoDaily(sym, env, now = new Date(), fetchImpl = fetch) {
+  if (!env.TIINGO_KEY) throw new Error("TIINGO_KEY is not configured");
+  const start = new Date(now.getTime() - 420 * DAY * 1000).toISOString().slice(0, 10);
+  return getJson(
+    `https://api.tiingo.com/tiingo/daily/${encodeURIComponent(sym)}/prices?startDate=${start}&token=${encodeURIComponent(env.TIINGO_KEY)}`,
+    { timeout: 12000 }, fetchImpl,
+  );
 }
 
 const cleanNasdaqNumber = (value) => Number(String(value ?? "").replace(/[$,]/g, ""));
@@ -195,8 +227,6 @@ async function secBundle(sym, env, retrievedAt) {
 export async function refreshTickerFacts(sym, env, now = new Date()) {
   const retrievedAt = now.toISOString();
   const today = retrievedAt.slice(0, 10);
-  const fromUnix = Math.floor((now.getTime() - 420 * DAY * 1000) / 1000);
-  const toUnix = Math.floor(now.getTime() / 1000);
   const future = new Date(now.getTime() + 120 * DAY * 1000).toISOString().slice(0, 10);
   const newsFrom = new Date(now.getTime() - 30 * DAY * 1000).toISOString().slice(0, 10);
   const fields = {};
@@ -204,7 +234,7 @@ export async function refreshTickerFacts(sym, env, now = new Date()) {
   const calls = await Promise.allSettled([
     finnhub(`quote?symbol=${encodeURIComponent(sym)}`, env),
     finnhub(`stock/profile2?symbol=${encodeURIComponent(sym)}`, env),
-    finnhub(`stock/candle?symbol=${encodeURIComponent(sym)}&resolution=D&from=${fromUnix}&to=${toUnix}`, env),
+    tiingoDaily(sym, env, now),
     finnhub(`calendar/earnings?from=${today}&to=${future}&symbol=${encodeURIComponent(sym)}`, env),
     finnhub(`company-news?symbol=${encodeURIComponent(sym)}&from=${newsFrom}&to=${today}`, env),
     secBundle(sym, env, retrievedAt),
@@ -231,8 +261,8 @@ export async function refreshTickerFacts(sym, env, now = new Date()) {
   // same symbol; a non-LIVE/non-USD quote skips the rung rather than guessing.
   const refPx = fields.quote && fields.quote.status === "LIVE" && Number(fields.quote.value) > 0
     ? Number(fields.quote.value) : null;
-  fields.candles = candles.status === "fulfilled" ? candlesFact(candles.value, retrievedAt, refPx)
-    : missing("Finnhub", candles.reason?.message || "daily candles unavailable", retrievedAt, "https://finnhub.io/");
+  fields.candles = candles.status === "fulfilled" ? tiingoCandlesFact(candles.value, retrievedAt, refPx)
+    : missing("Tiingo", candles.reason?.message || "daily candles unavailable", retrievedAt, "https://www.tiingo.com/");
   if (fields.candles.status === "MISSING") {
     try { fields.candles = await nasdaqCandles(sym, now, retrievedAt, refPx); }
     catch (e) {

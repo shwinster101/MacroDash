@@ -9,7 +9,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
 <!-- AUDIT: kept in sync with package.json by test/smoke.mjs. admin.html is a Vite
      public/ passthrough, so it cannot receive __APP_VERSION__ — the guard is the fix. -->
-<title>TT TICKER TERMINAL v6.6.2</title>
+<title>TT TICKER TERMINAL v6.6.3</title>
 <style>
   :root{
     --bg:#05070a; --panel:#0a0f16; --panel2:#0d141d; --line:#16202c;
@@ -466,7 +466,7 @@
          verdict and every gate are computed upstream and this panel changes nothing. -->
     <div id="macroEvidence" role="region" aria-label="Why macro — readout evidence"></div>
     <div id="headInfo" style="display:none">
-      <div class="brand">FINANCE&nbsp;BRO.AI // TT&nbsp;TICKER&nbsp;TERMINAL <small>v6.6.2 · the daily contract</small></div>
+      <div class="brand">FINANCE&nbsp;BRO.AI // TT&nbsp;TICKER&nbsp;TERMINAL <small>v6.6.3 · the daily contract</small></div>
       <div class="statusline">
         <span>BOOK: <b id="bookStamp">loading…</b></span>
         <span>AUTH: <b id="sessState">…</b></span>
@@ -3440,7 +3440,8 @@ function intakeChecklist(x){
 }
 /* FEAT-TT-SUGGEST (v4.2) — the UI half: resolve a target, show the invert, gate the write
    behind ONE explicit confirm. Target priority is deliberate: a REVIEWED street record
-   (owner-confirmed TipRanks published average) outranks a stored assistant-sourced
+   (owner-confirmed published average — TipRanks or Nasdaq/Zacks, under its own name)
+   outranks a stored assistant-sourced
    consensus.street_target {pt, source, as_of}; with neither, the section names the gap
    instead of inventing a number. The suggestion NEVER enters UPSIDE_ROWS or any ranking —
    until confirmed it is DERIVED-STREET, diagnostic only, and the floor-only ranking stays
@@ -3448,7 +3449,7 @@ function intakeChecklist(x){
 function streetTargetOf(x){
   const s=STREET&&STREET[x.sym],t=s&&s.analystTarget;
   if(t&&isFinite(t.average)&&t.average>0)
-    return{pt:t.average,source:"TipRanks published avg — reviewed street record",as_of:t.asOf||s.asOf||null,kind:"street"};
+    return{pt:t.average,source:(t.provider||"street")+" published avg — reviewed street record",as_of:t.asOf||s.asOf||null,kind:"street"};
   const dd=ddOf(x),w=dd&&dd.consensus&&dd.consensus.street_target;
   if(w&&isFinite(w.pt)&&w.pt>0)
     return{pt:w.pt,source:w.source||"stored consensus.street_target",as_of:w.as_of||null,kind:"stored"};
@@ -3496,7 +3497,7 @@ function suggestSec(x){
   if(s.state==="unknown")
     return `<div class="dd-sec"><div class="lbl">SUGGESTED MULTIPLE — street invert unavailable</div>`+
       `<div class="none">${(s.unknown||[]).map(esc).join(" · ")}`+
-      `${tgt?"":" · supply one via STREET INPUTS (reviewed TipRanks avg) or a stored consensus.street_target {pt, source, as_of}"}</div></div>`;
+      `${tgt?"":" · supply one via STREET INPUTS (reviewed published avg) or a stored consensus.street_target {pt, source, as_of}"}</div></div>`;
   SEED_SUGGEST_SYM=x.sym;
   const both=(s.pe&&s.evs)?` · both inverts computable: ${s.pe.mult}x P/E / ${s.evs.mult}x EV/S`:"";
   return `<div class="dd-sec"><div class="lbl">SUGGESTED MULTIPLE — DERIVED-STREET · diagnostic only, in NO ranking until confirmed</div>`+
@@ -5694,7 +5695,8 @@ function renderUpsideRank(){
     })();
 }
 /* FEAT-TT-V2: an additive street-evidence diagnostic at one explicit 12-month horizon and
-   one provider number — TipRanks' published average. It does not mutate UPSIDE_ROWS,
+   one provider number — the reviewed packet's published average, labelled with that
+   packet's own provider. It does not mutate UPSIDE_ROWS,
    AGREE_PICK or LAST_RANK: canonical /api/score underwriting and the portfolio-aware Next
    Dollar framework remain authoritative. v3.91 makes the separation bidirectional: receipts
    cannot veto canonical readiness, and canonical state cannot promote a receipt. */
@@ -5712,7 +5714,7 @@ function buildV2Rows(){
     const price=receipt&&receipt.priceBasis;
     rows.push({sym:x.sym,lens:x.lens,tier:x.tier,street,receipt,gap,
       eligible:!!(receipt&&receipt.eligible&&current),blockers,current,
-      tgt:street.analystTarget.average,px:price&&price.value,y:"12m",basis:"TipRanks published average",
+      tgt:street.analystTarget.average,px:price&&price.value,y:"12m",basis:(street.analystTarget.provider||"street")+" published average",
       upside:gap,ann:gap,tt:score===null?null:{score,tier:tTier},
       advisories:receipt&&Array.isArray(receipt.advisories)?receipt.advisories:[],
       qualitative:receipt&&receipt.qualitative||null});
@@ -5724,8 +5726,8 @@ function renderStreetEligibility(){
   V2_ROWS=buildV2Rows();
   const eligible=V2_ROWS.filter(r=>r.eligible);
   if(!V2_ROWS.length){
-    el.innerHTML=`<div class="lbl">12-month street gap · TipRanks published average</div><div class="none">`+
-      (V2_PENDING?`loading reviewed street records…`:`no confirmed street packet — import Seeking Alpha estimates + TipRanks target; legacy pt_model is comparison-only`)+`</div>`;
+    el.innerHTML=`<div class="lbl">12-month street gap · reviewed published average</div><div class="none">`+
+      (V2_PENDING?`loading reviewed street records…`:`no confirmed street packet — import Seeking Alpha estimates + a reviewed target (TipRanks or Nasdaq/Zacks); legacy pt_model is comparison-only`)+`</div>`;
     return;
   }
   const rows=V2_ROWS.slice(0,5).map(r=>{
@@ -5742,7 +5744,7 @@ function renderStreetEligibility(){
       (advisory?`<span style="color:var(--amber)">⚠ ${esc(advisory.reason)}</span>`:"")+`</span></button>`;
   }).join("");
   const status=`<div class="none" style="color:${eligible.length?"var(--green)":"var(--amber)"}">${eligible.length} ELIGIBLE · ${V2_ROWS.length-eligible.length} WAIT — comparison only; no winner selected</div>`;
-  el.innerHTML=`<div class="lbl">STREET ELIGIBILITY RECEIPT · diagnostic, not canonical score · TipRanks published average · 12m</div>${status}${rows}`+
+  el.innerHTML=`<div class="lbl">STREET ELIGIBILITY RECEIPT · diagnostic, not canonical score · reviewed published average · 12m</div>${status}${rows}`+
     `<div class="none">${V2_ROWS.length} reviewed of ${BOOK.length} book names · low/average/high are never re-averaged · <button class="linklike" onclick="openStreetImport('')">import screenshots</button></div>`;
 }
 
@@ -6694,7 +6696,7 @@ function v2CardHtml(sym){
   if(!s&&voided)return `<div class="row"><div class="k">TICKER GATES</div><div class="v"><span class="pill warn">VOIDED</span> `+
     `${esc(voided.reason||"reviewed packet retracted")} · <button class="linklike" onclick="openStreetImport('${esc(sym)}')">confirm a replacement</button></div></div>`;
   if(!s&&!r)return `<div class="row"><div class="k">TICKER GATES</div><div class="v"><span class="pill warn">NOT RUN</span> `+
-    `<button class="linklike" onclick="openStreetImport('${esc(sym)}')">import SA + TipRanks screenshots</button></div></div>`;
+    `<button class="linklike" onclick="openStreetImport('${esc(sym)}')">import SA + street screenshots or Nasdaq draft</button></div></div>`;
   const q=f&&f.fields&&f.fields.quote,nc=f&&f.fields&&f.fields.netCashB;
   const gaps=r&&r.metrics&&r.metrics.gaps;
   const gates=r&&Array.isArray(r.gates)?r.gates:[];
@@ -6731,7 +6733,7 @@ function v2CardHtml(sym){
     `<span class="pill ${cls}" style="font-weight:700">${status}</span>`+
     (!current&&r?` <span class="pill warn">receipt predates current macro readout</span>`:"")+
     (chipRow?`<div style="margin-top:5px;display:flex;gap:4px;flex-wrap:wrap">${chipRow}</div>`:"")+
-    `<div class="scope" style="margin-top:4px">${s?`TipRanks avg <b>$${esc(s.analystTarget.average)}</b>${analystTell}`:"street missing"}`+
+    `<div class="scope" style="margin-top:4px">${s?`${esc(s.analystTarget.provider||"street")} avg <b>$${esc(s.analystTarget.average)}</b>${analystTell}`:"street missing"}`+
     `${gaps&&isFinite(gaps.averagePct)?` · <span style="color:${gaps.averagePct>=15?"var(--green)":"var(--red)"}">${gaps.averagePct>=0?"+":""}${Math.round(gaps.averagePct*10)/10}% vs quote</span>`:""}`+
     `${q&&isFinite(q.value)?` · quote $${esc(q.value)}`:""}</div>`+
     (gateHtml
@@ -6780,6 +6782,26 @@ async function saveAiRubric(clear){
   }catch(e){toast("AI rubric not saved: "+e.message);}
 }
 
+function streetTargetFromUrl(url){
+  try{
+    const host=new URL(url).hostname.toLowerCase();
+    if(host==="nasdaq.com"||host.endsWith(".nasdaq.com"))return{provider:"Nasdaq (Zacks consensus)",defaultLookback:null};
+    if(host==="tipranks.com"||host.endsWith(".tipranks.com"))return{provider:"TipRanks",defaultLookback:3};
+  }catch(_e){}
+  return null;
+}
+// v6.6.3 (palette Move 1b) — the ESTIMATES provider is derived from the source URL's host the
+// same way the target provider is: Alpha Vantage under its own name, never a Seeking Alpha
+// sticker. An unrecognised host yields null and readStreetPacket sends "" so the server's
+// allowlist refuses it with the reason named, rather than the client guessing a provider.
+function streetEstimatesFromUrl(url){
+  try{
+    const host=new URL(url).hostname.toLowerCase();
+    if(host==="alphavantage.co"||host.endsWith(".alphavantage.co"))return{provider:"Alpha Vantage"};
+    if(host==="seekingalpha.com"||host.endsWith(".seekingalpha.com"))return{provider:"Seeking Alpha"};
+  }catch(_e){}
+  return null;
+}
 function blankStreetDraft(sym){
   const d=new Date().toLocaleDateString("en-CA",{timeZone:"America/New_York"});
   return{symbol:sym||"",estimates:{provider:"Seeking Alpha",sourceUrl:"https://seekingalpha.com/",asOf:d,currency:"USD",revenueUnit:"B",epsBasis:"provider-consensus",periods:[]},
@@ -6797,16 +6819,20 @@ function streetPeriodHtml(row){
 function streetReviewHtml(d,warnings){
   const v=x=>x===null||x===undefined?"":esc(x),t=d.analystTarget||{},r=t.ratings||{},e=d.estimates||{};
   const periods=(e.periods&&e.periods.length?e.periods:[{},{},{}]).map(streetPeriodHtml).join("");
-  return `<div class="derived">Upload up to 3 screenshots for an OCR <b>draft</b>, then verify every field. Images are discarded; only CONFIRM saves numbers.</div>`+
+  const targetName=t.provider||"target";
+  // v6.6.3: the estimates block is labelled by ITS provider (Seeking Alpha or Alpha Vantage); a
+  // blank draft still reads Seeking Alpha — the owner's default source, not a guess about a fetch.
+  const estName=e.provider||"Seeking Alpha";
+  return `<div class="derived">Upload up to 3 screenshots for an OCR <b>draft</b>, fetch a Nasdaq/Zacks target draft, or fetch Alpha Vantage annual estimates, then verify every field. Images and provider responses are discarded; only CONFIRM saves numbers. Nasdaq is never labelled TipRanks; Alpha Vantage is never labelled Seeking Alpha.</div>`+
     `<div style="margin-top:8px"><input id="streetImages" type="file" accept="image/png,image/jpeg,image/webp" multiple></div>`+
     (warnings&&warnings.length?`<div class="none" style="color:var(--amber)">⚠ ${warnings.map(esc).join(" · ")}</div>`:"")+
     `<div class="street-grid">`+
       `<label>symbol<input id="stSym" maxlength="8" value="${v(d.symbol)}" autocapitalize="characters"></label>`+
-      `<label>SA as-of<input id="stSaAsOf" type="date" value="${v(e.asOf)}"></label>`+
-      `<label>TipRanks as-of<input id="stTrAsOf" type="date" value="${v(t.asOf||e.asOf)}"></label>`+
+      `<label>${esc(estName)} as-of<input id="stSaAsOf" type="date" value="${v(e.asOf)}"></label>`+
+      `<label>${esc(targetName)} as-of<input id="stTrAsOf" type="date" value="${v(t.asOf||e.asOf)}"></label>`+
       `<label>currency<input id="stCurrency" maxlength="3" value="${v(e.currency||"USD")}"></label>`+
-      `<label style="grid-column:span 3">Seeking Alpha source URL<input id="stSaUrl" type="url" value="${v(e.sourceUrl||"https://seekingalpha.com/")}"></label>`+
-      `<label>TipRanks average<input id="stAvg" type="number" step="0.01" value="${v(t.average)}"></label>`+
+      `<label style="grid-column:span 3">${esc(estName)} source URL<input id="stSaUrl" type="url" value="${v(e.sourceUrl||"https://seekingalpha.com/")}"></label>`+
+      `<label>${esc(targetName)} average<input id="stAvg" type="number" step="0.01" value="${v(t.average)}"></label>`+
       `<label>low<input id="stLow" type="number" step="0.01" value="${v(t.low)}"></label>`+
       `<label>high<input id="stHigh" type="number" step="0.01" value="${v(t.high)}"></label>`+
       `<label>analysts<input id="stCount" type="number" step="1" value="${v(t.analystCount)}"></label>`+
@@ -6814,9 +6840,10 @@ function streetReviewHtml(d,warnings){
       `<label>hold<input id="stHold" type="number" step="1" value="${v(r.hold)}"></label>`+
       `<label>sell<input id="stSell" type="number" step="1" value="${v(r.sell)}"></label>`+
       `<label>reference px<input id="stRef" type="number" step="0.01" value="${v(t.referencePrice)}"></label>`+
-      `<label style="grid-column:span 3">TipRanks source URL<input id="stTrUrl" type="url" value="${v(t.sourceUrl||"https://www.tipranks.com/")}"></label>`+
+      `<label>lookback mo<input id="stLookback" type="number" step="1" min="1" max="24" value="${v(t.lookbackMonths)}" placeholder="blank if unpublished"></label>`+
+      `<label style="grid-column:span 3">${esc(targetName)} source URL<input id="stTrUrl" type="url" value="${v(t.sourceUrl||"https://www.tipranks.com/")}"></label>`+
     `</div>`+
-    `<div class="lbl" style="margin-top:12px">SEEKING ALPHA ANNUAL ESTIMATES · explicit observations only</div>`+
+    `<div class="lbl" style="margin-top:12px">${esc(estName).toUpperCase()} ANNUAL ESTIMATES · explicit observations only</div>`+
     `<div id="streetPeriods">${periods}</div>`+
     `<button class="act" type="button" style="margin-top:7px" onclick="document.getElementById('streetPeriods').insertAdjacentHTML('beforeend',streetPeriodHtml({}))">+ PERIOD</button>`;
 }
@@ -6825,6 +6852,8 @@ function renderStreetReview(d,warnings){
   document.getElementById("cTitle").textContent="REVIEW STREET INPUTS"+(d.symbol?" — "+d.symbol:"");
   document.getElementById("cBody").innerHTML=streetReviewHtml(d,warnings||[]);
   document.getElementById("cBtns").innerHTML=`<button class="act" onclick="ocrStreetDraft()">◉ OCR DRAFT</button>`+
+    `<button class="act" onclick="nasdaqStreetDraft()">◉ NASDAQ DRAFT</button>`+
+    `<button class="act" onclick="alphaVantageStreetDraft()">◉ ALPHA VANTAGE ESTIMATES</button>`+
     `<button class="act" onclick="saveStreetPacket()">✔ CONFIRM &amp; SAVE</button>`+
     (d.symbol?`<button class="act" onclick="runTickerAnalysis('${esc(d.symbol)}')">⟳ RUN GATES</button>`:"")+
     `<button class="act" onclick="closeCard()">CANCEL</button>`;
@@ -6851,6 +6880,47 @@ async function ocrStreetDraft(){
     toast("OCR draft ready — verify every field before CONFIRM");
   }catch(e){toast("OCR unavailable: "+e.message+" — manual fields remain available");}
 }
+async function nasdaqStreetDraft(){
+  const keepSym=(document.getElementById("stSym")&&document.getElementById("stSym").value||"").trim().toUpperCase();
+  if(!keepSym)return toast("Enter a symbol first");
+  let keepEstimates=null;
+  try{
+    const current=readStreetPacket();
+    if(current.estimates&&current.estimates.periods&&current.estimates.periods.length)
+      keepEstimates=current.estimates;
+  }catch(_e){}
+  toast("Nasdaq is building a review draft — nothing is being saved");
+  try{
+    const data=await v2Json("/api/street/nasdaq-draft?sym="+encodeURIComponent(keepSym));
+    const d=data.draft||blankStreetDraft(keepSym);if(!d.symbol)d.symbol=keepSym;
+    if(keepEstimates)d.estimates=keepEstimates;
+    d.confirmedAt=null;
+    renderStreetReview(d,[...(data.warnings||[])]);
+    toast("Nasdaq draft ready — verify every field before CONFIRM");
+  }catch(e){toast("Nasdaq draft unavailable: "+e.message+" — manual fields remain available");}
+}
+// v6.6.3 (palette Move 1b) — POST, because the route SPENDS a daily quota (a GET could be
+// prefetched or replayed). The response replaces the ESTIMATES block only; the target block and
+// every typed field ride through readStreetPacket unchanged. Nothing is saved until CONFIRM.
+async function alphaVantageStreetDraft(){
+  const keepSym=(document.getElementById("stSym")&&document.getElementById("stSym").value||"").trim().toUpperCase();
+  if(!keepSym)return toast("Enter a symbol first");
+  let d;
+  try{d=readStreetPacket();}catch(_e){d=blankStreetDraft(keepSym);}
+  d.symbol=keepSym;
+  toast("Alpha Vantage is building an estimates draft — nothing is being saved");
+  try{
+    const data=await v2Json("/api/street/av-draft",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({symbol:keepSym})});
+    const est=data.estimates||{},hasRows=!!(est.periods&&est.periods.length);
+    if(hasRows)d.estimates=est;
+    d.confirmedAt=null;
+    const warnings=[...(data.warnings||[])];
+    if(data.budget)warnings.push(`Alpha Vantage budget: ${data.budget.used}/${data.budget.budget} used this UTC day (cap ${data.budget.cap})`);
+    if(!hasRows)warnings.push("no Alpha Vantage annual rows landed — the estimates already on the form were kept");
+    renderStreetReview(d,warnings);
+    toast(hasRows?"Alpha Vantage estimates drafted — verify every row before CONFIRM":"Alpha Vantage returned no usable rows");
+  }catch(e){toast("Alpha Vantage draft unavailable: "+e.message+" — manual fields remain available");}
+}
 function inputNumber(id){
   const el=document.getElementById(id),raw=el&&(el.value||"").trim();
   if(!raw)return undefined;const n=Number(raw);return isFinite(n)?n:undefined;
@@ -6864,12 +6934,22 @@ function readStreetPacket(){
     return date?{periodEnd:date,...(rv!==""?{revenueB:Number(rv)}:{}),...(ep!==""?{eps:Number(ep)}:{})}:null;
   }).filter(x=>x&&(x.revenueB!==undefined||x.eps!==undefined));
   const optional=(id,key,o)=>{const n=inputNumber(id);if(n!==undefined)o[key]=n;};
-  const target={provider:"TipRanks",sourceUrl:(document.getElementById("stTrUrl").value||"").trim(),asOf:trAsOf,
-    currency:(document.getElementById("stCurrency").value||"USD").trim().toUpperCase(),average:inputNumber("stAvg"),ratings:{},lookbackMonths:3,horizonMonths:12};
+  const sourceUrl=(document.getElementById("stTrUrl").value||"").trim();
+  const src=streetTargetFromUrl(sourceUrl);
+  const lookbackTyped=inputNumber("stLookback");
+  const target={provider:src?src.provider:"",sourceUrl,asOf:trAsOf,
+    currency:(document.getElementById("stCurrency").value||"USD").trim().toUpperCase(),average:inputNumber("stAvg"),ratings:{},horizonMonths:12};
+  if(lookbackTyped!==undefined)target.lookbackMonths=lookbackTyped;
+  else if(src&&src.defaultLookback!=null)target.lookbackMonths=src.defaultLookback;
   optional("stLow","low",target);optional("stHigh","high",target);optional("stCount","analystCount",target);optional("stRef","referencePrice",target);
   optional("stBuy","buy",target.ratings);optional("stHold","hold",target.ratings);optional("stSell","sell",target.ratings);
+  // v6.6.3: the estimates provider is DERIVED from the URL's host. A blank URL keeps the owner's
+  // default (Seeking Alpha, the manual path); a recognised host names itself; an unrecognised
+  // host sends "" so the server refuses it by name rather than the client mislabelling it.
+  const saUrl=(document.getElementById("stSaUrl").value||"").trim();
+  const estSrc=streetEstimatesFromUrl(saUrl);
   return{schema:"tt-street-v1",symbol:sym,confirmedAt:new Date().toISOString(),
-    estimates:{provider:"Seeking Alpha",sourceUrl:(document.getElementById("stSaUrl").value||"").trim(),asOf:saAsOf,
+    estimates:{provider:estSrc?estSrc.provider:(saUrl?"":"Seeking Alpha"),sourceUrl:saUrl,asOf:saAsOf,
       currency:target.currency,revenueUnit:"B",epsBasis:"provider-consensus",periods},analystTarget:target};
 }
 async function saveStreetPacket(){
@@ -6996,7 +7076,7 @@ function openCard(sym){
 }
 function cardBtns(sym){return `
   <button class="act" onclick="saveCard()">✔ SAVE CHANGES</button>
-  <button class="act" onclick="openStreetImport('${sym}')">⇧ SA + TIPRANKS</button>
+  <button class="act" onclick="openStreetImport('${sym}')">⇧ STREET INPUTS</button>
   <button class="act" onclick="runTickerAnalysis('${sym}')">⟳ REFRESH FACTS + GATES</button>
   <button class="act" onclick="copyTTRun()">⧉ COPY 'TT: ${sym}' PROMPT</button>
   <button class="act" onclick="openDeepDive('${sym}')">📊 DEEP DIVE</button>
@@ -7296,7 +7376,7 @@ function buildRankingsMd(){
     (mf?(mf.evaluable===false?` · flip **BLIND** (${mf.reason||"missing inputs"})`
       :mf.tripped?` · flip **TRIPPED**`:mf.armed?` · flip armed`:` · flip clear`):` · flip n/a`)+`\n`;
   if(BOARD.regime&&BOARD.regime.asserted)m+=`- Session (asserted): **${esc(BOARD.regime.asserted)}** — the stricter of the two governs\n`;
-  m+=`- Ticker ranking horizon: **12 months** — TipRanks published average\n`;
+  m+=`- Ticker ranking horizon: **12 months** — reviewed published average\n`;
   m+=`- Tracked book: **${roll.mvN?money(roll.mv):"unmeasured"}**${roll.mvN?` across ${roll.mvN}/${BOOK.length} measured`:""} — a FLOOR, not NAV\n\n`;
 
   // 2. The master table — every ranked name, every category rank.

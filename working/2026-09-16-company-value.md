@@ -43,3 +43,17 @@ Browser checks cover company teaching, each valuation trigger, source links,
 keyboard opening, Escape and focus restoration, plus the existing phone layout.
 
 Final gate results and integration findings are recorded below when complete.
+
+## Live baseline correction
+
+The owner identified live v6.6.2 while this branch was being checked. Merged
+`origin/main` at `9a4aa6c` (#43–45) into this branch; relabelled this work v6.6.3
+to avoid a silent collision. Kept both new provider tests and company tests,
+plus main's midnight harness guard. No public call text changed versus main.
+PR #42 remains separate at `e5b24da`; its hero/Why copy is not pulled into this PR.
+An earlier temporary combination with #42 passed smoke but is not the published
+branch. Concurrent browser runs collided on their fixed port; final gates run
+sequentially on this branch. Corrected a browser assertion that wrongly expected
+a missing market-cap date to be marked stale; missing and stale are now checked
+separately. Visual review prompted full price-to-earnings wording in Simple and
+a company heading on each Degen metric dialog.
