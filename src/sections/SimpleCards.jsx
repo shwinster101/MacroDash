@@ -98,6 +98,18 @@ const SimpleCards = ({ cards, usable = 0, shown = 0, total = 0, withheld = false
       {withheld && <div style={{ fontFamily: T.fontMono, fontSize: T.fsXs, color: T.amber, marginTop: 5 }}>
         partial evidence — not used for the call
       </div>}
+      {/* v6.9.5 — THE TRUNCATION IS NAMED AGAIN. v4.0 made this a contract ("silent truncation
+          reads as full coverage", v3.65/v3.76) and v4.0.1 folded it into one quiet line beside
+          the flip; when v6.x moved the flip out to the whys label the COUNT went with it by
+          accident. The props survived and nothing rendered them, the call-site comment still
+          claimed the truncation was named, and the public-render pin TITLED "truncation … stay"
+          asserts only absences — so three suites agreed with a regression for five releases.
+          It matters on the live page: the hero can name four factors while three cards show
+          two helping and one hurting, and without this line the block reads as the whole vote.
+          Real numbers off the same rows the cards came from — never a hardcoded fraction. */}
+      {shown < usable && <div style={{ fontFamily: T.fontMono, fontSize: T.fsXs, color: T.textMuted, marginTop: 5, opacity: 0.8 }}>
+        showing {shown} of {usable} signals{total > usable ? ` · ${total - usable} unavailable` : ""}
+      </div>}
     </div>
   );
 };

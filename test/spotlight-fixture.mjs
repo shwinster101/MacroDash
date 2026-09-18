@@ -100,7 +100,12 @@ export function makeSpotlightFixture({ now = new Date(), stale = false, anchorSe
   const nbis = buildCompany({ symbol: "NBIS", name: "Nebius Group", facts: facts("NBIS", nbisRows[nbisRows.length - 1].value, 70_100, 250, capMissing), fundamentals: nbisFacts, series: nbisSeries.rows ? nbisSeries : null, today, now });
   const msft = buildCompany({ symbol: "MSFT", name: "Microsoft", facts: facts("MSFT", msftRows[msftRows.length - 1].value, 3_410_000, 7430, false), fundamentals: msftFacts, series: msftSeries, today, now });
   const tracker = buildTracker(nbisSeries, msftSeries, today);
-  const rotation = { index: 0, weekKey: "2026-09-14", advanced: false, first: true };
+  /* v6.9.5: the DERIVED day state, matching what `rotationFor(today)` hands the real handler —
+     the comparison is carried, never looked up by index, and `forDate` is the ET day this pick
+     belongs to. The fixture pins MSFT deliberately (every company fixture here is MSFT-shaped);
+     `forDate` is the fixture's own `today`, so the cadence line reads as current, and the suites
+     that need the HELD state construct it by moving the served date instead. */
+  const rotation = { forDate: today, weekKey: "2026-09-14", comparison: "MSFT", next: "AAPL", index: 0 };
   const model = buildSpotlightModel({ anchor: nbis, comparison: msft, rotation, tracker, now, failures: [] });
   return { model, projected: projectSpotlight(freshenSpotlight(model, now)), today, lastObs, nbisRows, msftRows, qe };
 }

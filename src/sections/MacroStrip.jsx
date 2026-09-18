@@ -41,9 +41,9 @@ const MacroStrip=({d,modeOf,fomcLabel,fomcDays,votingFields,badge})=>{
         {[
           {l:"SPY*", f:"spyPrice", v:`$${d.marketPulse.spy.price}`,      s:fmt.pct(d.marketPulse.spy.changePct), sc:pctColor(d.marketPulse.spy.changePct), t:"S&P 500 ÷ 10 (FRED SP500 proxy, NOT an SPY ETF quote — Stooq blocks the edge). Tracks the ETF closely; not identical."},
           {l:"QQQ",  f:"qqqPrice", v:`$${d.marketPulse.qqq.price}`,      s:fmt.pct(d.marketPulse.qqq.changePct), sc:pctColor(d.marketPulse.qqq.changePct), t:"Nasdaq-100 ETF — big tech"},
-          {l:"VIX",  f:"vix", v:`${d.marketPulse.vix.current}`,     s:fmt.pct(d.marketPulse.vix.weekChg)+" WoW", sc:pctColor(d.marketPulse.vix.weekChg,true), t:"Volatility index — the market's fear gauge (lower = calmer)"},
+          {l:"VIX",  f:"vix", v:`${d.marketPulse.vix.current}`,     s:fmt.pct(d.marketPulse.vix.weekChg)+" WoW", t:"Volatility index — the market's fear gauge (lower = calmer)"},
           {l:"F&G",  f:"fearGreed", v:`${d.marketPulse.fearGreed.score}`, s:d.marketPulse.fearGreed.label, voteKey:"fearGreed", t:"Fear & Greed — market sentiment, 0 = fear, 100 = greed"},
-          {l:"10Y",  f:"tenYear", v:`${d.crossAsset.treasury10y.current}%`, s:fmt.bps(d.crossAsset.treasury10y.d1)+" 1D", sc:pctColor(-d.crossAsset.treasury10y.d1), t:"10-year Treasury yield — the benchmark interest rate"},
+          {l:"10Y",  f:"tenYear", v:`${d.crossAsset.treasury10y.current}%`, s:fmt.bps(d.crossAsset.treasury10y.d1)+" 1D", t:"10-year Treasury yield — the benchmark interest rate"},
           {l:"FED",  f:fedTargetLive?"fedTargetUpper":"fedFunds",
            v:fedTargetLive?`${fedLo.toFixed(2)}–${fedHi.toFixed(2)}%`:`${d.macro.fedFunds.rate}% avg`,
            s:`FOMC ${fomcLabel}`, sc:fomcDays===0?T.amber:T.textMuted,
@@ -76,6 +76,21 @@ const MacroStrip=({d,modeOf,fomcLabel,fomcDays,votingFields,badge})=>{
           // threshold, voteStyle the ONE vote->appearance map. Not live -> muted (a
           // directional read off mock/stale is what the v3.1 invariant forbids).
           if(voteKey){const b=bandOf(voteKey);sc=b&&live?T[voteStyle(b.vote(b.read(d))).colorKey]:T.textMuted;}
+          /* v6.9.5 — A VOTING TILE MAY NOT COLOUR ITS SUB-LINE FROM A HAND-WRITTEN READ.
+             Owner, on a live Simple screenshot: the 10-year appeared twice ~200px apart — the
+             card said "+0.23pp 1-mo · HURTING" in red, the strip said "−7bps 1D" in GREEN with
+             a RED ▪ beside it. Every one of those is honest alone; together they read as the
+             page contradicting itself, and the green came from `sc:pctColor(-d1)` — a directional
+             judgment written by hand, on a window the band NEVER reads. That is the same defect
+             v3.62 fixed for the hero chips (`f.bull ? green : red`, band table ignored) and the
+             last place on the public page still carrying one.
+             The sub is NOT re-coloured with the vote either, which would be the mirror error:
+             the band judged the MONTH, so painting the 1-day move with the month's verdict
+             claims a reading that never happened. A voter's sub-line is a neutral fact about a
+             different window — muted — and the ▪ marker, already band-derived, is the ONE colour
+             signal. SPY/QQQ/FED keep their directional colour on purpose: they vote nowhere, so
+             "the price rose" has no verdict to contradict. */
+          else if(vf.has(f))sc=T.textMuted;
           const dot=live?T.green:m==="STALE"?T.amber:T.textMuted; // provenance dot: live/stale/mock
           /* v3.62 (newcomer audit): "voting indicators and context indicators are mixed".
              A blanket per-SECTION label would be false here — this one strip carries both

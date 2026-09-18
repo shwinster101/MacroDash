@@ -26,8 +26,9 @@ import { sessionsBehind, etYmd, isSessionDay } from "../../src/sources.js";
 export const SPOTLIGHT_SCHEMA = "md-spotlight-v1";
 export const SPOTLIGHT_ISSUER_SCHEMA = "md-spotlight-issuer-v1";
 export const SPOTLIGHT_ANCHOR = "NBIS";
-/* The weekly rotation, in the order the plan fixes: Microsoft first. All visitors see the
-   same pair because the pair is chosen server-side from ONE stored rotation record. */
+/* The ROSTER. Since v6.9.5 this array is the SET of eligible comparisons, not the order they
+   appear in — the order is reshuffled every ET week (see `weekOrder`). All visitors see the
+   same pair on the same day because the pick is DERIVED from the ET date, not stored. */
 export const SPOTLIGHT_ROTATION = Object.freeze(["MSFT", "AAPL", "AMZN", "GOOGL", "META", "NVDA", "TSLA"]);
 export const SPOTLIGHT_COMPARISON_LABEL = "Established growth";
 export const COMPANY_NAMES = Object.freeze({
@@ -85,12 +86,8 @@ export function fmtMoney(usd) {
 }
 export const fmtPct = (v, d = 1) => finite(v) ? `${v > 0 ? "+" : v < 0 ? "−" : ""}${Math.abs(v).toFixed(d)}%` : null;
 
-// ─── the weekly rotation ───────────────────────────────────────────────────────────
-/* The ET calendar week is keyed by its MONDAY. "Advance the pair on the first successful
-   refresh of each new ET calendar week": the stored record carries the week key of the last
-   successful refresh; a refresh in a later week advances the index. A FAILED refresh must not
-   advance (the caller persists only after a successful build), so a Tuesday retry after a
-   Monday failure still moves the pair exactly once. */
+// ─── the daily rotation ────────────────────────────────────────────────────────────
+/* The ET calendar week is keyed by its MONDAY — the seed for the week's running order. */
 export function etWeekKey(ymd) {
   if (!isYmd(ymd)) return null;
   const d = new Date(`${ymd}T12:00:00Z`);
@@ -98,14 +95,69 @@ export function etWeekKey(ymd) {
   d.setUTCDate(d.getUTCDate() - back);
   return d.toISOString().slice(0, 10);
 }
-export function nextRotation(stored, weekKey) {
-  const n = SPOTLIGHT_ROTATION.length;
-  const idx = stored && Number.isInteger(stored.index) ? ((stored.index % n) + n) % n : null;
-  if (idx === null || !stored.weekKey) return { index: 0, weekKey, advanced: false, first: true };
-  if (stored.weekKey === weekKey) return { index: idx, weekKey, advanced: false, first: false };
-  return { index: (idx + 1) % n, weekKey, advanced: true, first: false };
+/* v6.9.5 — DAILY, RESHUFFLED EVERY WEEK (owner call 2026-09-18: "I like daily mag 7 and
+   learning moment switch, random each week (aapl monday one week then Msft the next Monday)").
+   The pick is DERIVED FROM THE DATE and nothing is incremented, which is the load-bearing
+   change: the v6.5.0 scheme stored an index and advanced it on the first successful refresh
+   of a new week, so a rotation record that lost its `weekKey` pinned the index at 0 forever
+   and a run of dark nights silently stretched a week. A pure function of the ET date cannot
+   drift, cannot be pinned by a bad write, and needs no repair — the stored record becomes an
+   audit trail rather than the source of truth.
+
+   ONE SEEDED PERMUTATION PER ET WEEK, consumed one name per day. Seven names over seven days
+   means every name holds exactly one slot in a week and no name is ever starved; reseeding on
+   the week key is what makes Monday a different name each week, which is precisely what was
+   asked for. The shuffle is deterministic (`Math.random` is banned here and swept in smoke) so
+   every visitor, every edge and every replay of a date agree by construction.
+
+   STATED CONSEQUENCE, not hidden: the spotlight leg runs on the weekday crons, so the two
+   slots that land on Saturday and Sunday are not refreshed and the weekend shows Friday's
+   pick. Which two names those are is reshuffled weekly, so no name is systematically lost —
+   but 2 of 7 slots per week are held rather than shown, and the UI says which date the pair
+   on screen was picked for rather than implying it is today's. */
+const seedFrom = (s) => {            // FNV-1a, 32-bit — deterministic, no dependency
+  let h = 0x811c9dc5;
+  for (let i = 0; i < s.length; i++) { h ^= s.charCodeAt(i); h = Math.imul(h, 0x01000193) >>> 0; }
+  return h >>> 0;
+};
+const mulberry32 = (a) => () => {    // deterministic PRNG, seeded per week
+  a = (a + 0x6d2b79f5) >>> 0;
+  let t = a;
+  t = Math.imul(t ^ (t >>> 15), t | 1);
+  t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
+  return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+};
+/* The week's running order: a Fisher-Yates shuffle of the roster seeded by the Monday key.
+   A malformed key returns the roster unshuffled rather than throwing — a fail-closed default
+   that still yields a valid name for every slot. */
+export function weekOrder(weekKey) {
+  const a = SPOTLIGHT_ROTATION.slice();
+  if (!isYmd(weekKey)) return a;
+  const rnd = mulberry32(seedFrom(weekKey));
+  for (let i = a.length - 1; i > 0; i--) {
+    const j = Math.floor(rnd() * (i + 1));
+    [a[i], a[j]] = [a[j], a[i]];
+  }
+  return a;
 }
-export const comparisonAt = (index) => SPOTLIGHT_ROTATION[((index % SPOTLIGHT_ROTATION.length) + SPOTLIGHT_ROTATION.length) % SPOTLIGHT_ROTATION.length];
+export const dayIndexEt = (ymd) => (new Date(`${ymd}T12:00:00Z`).getUTCDay() + 6) % 7;   // Monday = 0
+export const ymdPlus = (ymd, n) => new Date(Date.parse(`${ymd}T12:00:00Z`) + n * 86400000).toISOString().slice(0, 10);
+export function comparisonForDate(ymd) {
+  if (!isYmd(ymd)) return SPOTLIGHT_ROTATION[0];
+  return weekOrder(etWeekKey(ymd))[dayIndexEt(ymd)];
+}
+/* The whole rotation state for one ET date. `forDate` is the date the pick BELONGS to, which
+   is what lets a reader tell "today's pick" from "Friday's pick, held over the weekend" —
+   the v6.5.0 model carried only a week key and could not express the difference. */
+export function rotationFor(ymd) {
+  const comparison = comparisonForDate(ymd);
+  return { forDate: ymd, weekKey: etWeekKey(ymd), comparison,
+    next: comparisonForDate(ymdPlus(ymd, 1)), index: SPOTLIGHT_ROTATION.indexOf(comparison) };
+}
+/* `comparisonAt(index)` is DELETED, not kept for compatibility (v3.73 — dead code is a rot
+   vector): it indexed the roster as a running ORDER, which since v6.9.5 the roster is not.
+   Leaving it would invite a caller to read position 3 as "the fourth name in rotation", which
+   is now true only for whichever week the shuffle happens to produce. Pinned absent in smoke. */
 
 // ─── YTD total return + the comparison tracker ─────────────────────────────────────
 /* The FINAL trading session of the calendar year before `year` — the one baseline date both
@@ -791,15 +843,19 @@ export function refreshSucceeded(model, freshStatus = null) {
 }
 
 export function buildSpotlightModel({ anchor, comparison, rotation, tracker, now = new Date(), failures = [] }) {
-  const comp = rotation ? comparisonAt(rotation.index) : comparison.symbol;
+  const comp = rotation?.comparison || comparison.symbol;
   const lesson = lessonForPair({ anchor: anchor.symbol, comparison: comp }, { [anchor.symbol]: anchor, [comp]: comparison });
   return {
     schema: SPOTLIGHT_SCHEMA,
     generatedAt: now.toISOString(),
     businessDate: etYmd(now),
+    /* `forDate` is the ET day this pick belongs to — NOT the build timestamp. A model served
+       the morning after its build, or over a weekend the crons do not cover, is still showing
+       that day's pick, and the reader is told which day rather than left to assume today. */
     pair: { anchor: anchor.symbol, comparison: comp, comparisonLabel: SPOTLIGHT_COMPARISON_LABEL,
+      forDate: rotation?.forDate || etYmd(now),
       weekKey: rotation?.weekKey || etWeekKey(etYmd(now)), rotationIndex: rotation?.index ?? SPOTLIGHT_ROTATION.indexOf(comp),
-      nextComparison: comparisonAt((rotation?.index ?? SPOTLIGHT_ROTATION.indexOf(comp)) + 1) },
+      nextComparison: rotation?.next || comparisonForDate(ymdPlus(rotation?.forDate || etYmd(now), 1)) },
     companies: { [anchor.symbol]: anchor, [comp]: comparison },
     tracker,
     lesson,

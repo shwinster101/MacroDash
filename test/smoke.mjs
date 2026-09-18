@@ -11841,15 +11841,54 @@ console.log("\n[81] v6.5.0 STOCK SPOTLIGHT — calculations, endpoints, cron leg
     async put(k, v) { puts.push(k); m.set(k, v); }, async delete(k) { m.delete(k); } }; };
 
   // ── rotation ──
-  ok("[81] rotation: seven names in the plan's order, Microsoft first, labelled Established growth",
-    S.SPOTLIGHT_ROTATION.join(",") === "MSFT,AAPL,AMZN,GOOGL,META,NVDA,TSLA" && S.SPOTLIGHT_ANCHOR === "NBIS" && S.SPOTLIGHT_COMPARISON_LABEL === "Established growth");
+  /* v6.9.5 re-pins the rotation on its NEW contract (owner: "daily mag 7 … random each week").
+     The old pins asserted a stored index advancing once a week; the pick is now a pure function
+     of the ET date, so every one of them is restated as a property of that function. The name
+     ORDER is deliberately no longer pinned — the roster is a SET now and pinning a sequence
+     would re-assert the very thing this release removed. */
+  ok("[81] rotation: seven names in the roster, labelled Established growth, anchored on NBIS",
+    S.SPOTLIGHT_ROTATION.length === 7 && new Set(S.SPOTLIGHT_ROTATION).size === 7 &&
+    ["MSFT", "AAPL", "AMZN", "GOOGL", "META", "NVDA", "TSLA"].every((s) => S.SPOTLIGHT_ROTATION.includes(s)) &&
+    S.SPOTLIGHT_ANCHOR === "NBIS" && S.SPOTLIGHT_COMPARISON_LABEL === "Established growth");
   ok("[81] rotation: the ET week is keyed by its MONDAY (Sun 9/13 → 9/07; Mon 9/14 → 9/14; Sat 9/19 → 9/14)",
     S.etWeekKey("2026-09-13") === "2026-09-07" && S.etWeekKey("2026-09-14") === "2026-09-14" && S.etWeekKey("2026-09-19") === "2026-09-14" && S.etWeekKey("junk") === null);
-  ok("[81] rotation: no record → MSFT; same week → unchanged; a new week → the next name; TSLA wraps to MSFT",
-    (() => { const a = S.nextRotation(null, "2026-09-14"), b = S.nextRotation({ index: 2, weekKey: "2026-09-14" }, "2026-09-14"),
-      c = S.nextRotation({ index: 2, weekKey: "2026-09-07" }, "2026-09-14"), d = S.nextRotation({ index: 6, weekKey: "2026-09-07" }, "2026-09-14");
-      return a.index === 0 && a.first && !a.advanced && b.index === 2 && !b.advanced && c.index === 3 && c.advanced && d.index === 0 && d.advanced &&
-        S.comparisonAt(3) === "GOOGL" && S.comparisonAt(7) === "MSFT"; })());
+  ok("[81] rotation v6.9.5: every ET week is a PERMUTATION of the roster — each name holds exactly one day, so no name is starved and none repeats inside a week",
+    (() => { let wk = "2026-09-14";
+      for (let w = 0; w < 30; w++) { const o = S.weekOrder(wk);
+        if (o.length !== 7 || new Set(o).size !== 7 || !o.every((s) => S.SPOTLIGHT_ROTATION.includes(s))) return false;
+        wk = S.ymdPlus(wk, 7); }
+      return S.weekOrder("junk").join(",") === S.SPOTLIGHT_ROTATION.join(","); })());
+  ok("[81] rotation v6.9.5: the pick is DAILY and DETERMINISTIC — a date always yields the same name, consecutive days differ across a week, and Monday=0 indexes the week's order",
+    (() => { let d = "2026-09-14"; const week = S.weekOrder("2026-09-14"); const seen = [];
+      for (let i = 0; i < 7; i++) { const pick = S.comparisonForDate(d);
+        if (pick !== S.comparisonForDate(d)) return false;               // deterministic
+        if (pick !== week[i]) return false;                              // Monday = index 0
+        seen.push(pick); d = S.ymdPlus(d, 1); }
+      return new Set(seen).size === 7 && S.dayIndexEt("2026-09-14") === 0 && S.dayIndexEt("2026-09-20") === 6 &&
+        S.comparisonForDate("junk") === S.SPOTLIGHT_ROTATION[0]; })());
+  /* The owner's own example — "aapl monday one week then Msft the next Monday". A shuffle MAY
+     repeat a Monday by chance, so the claim pinned is the honest one: over a year of Mondays the
+     name is not constant and every roster name gets a Monday. Pinning "always differs" would be
+     asserting something a random order does not guarantee. */
+  ok("[81] rotation v6.9.5: Monday is reshuffled week to week — over 52 weeks the Monday name is not constant and every name in the roster takes a Monday",
+    (() => { let m = "2026-09-14"; const mons = new Set();
+      for (let i = 0; i < 52; i++) { mons.add(S.comparisonForDate(m)); m = S.ymdPlus(m, 7); }
+      return mons.size === 7; })());
+  ok("[81] rotation v6.9.5: rotationFor returns the day's whole state, and `next` is TOMORROW's pick — crossing a week boundary into the next week's own order",
+    (() => { const sun = S.rotationFor("2026-09-20"), mon = S.rotationFor("2026-09-21");
+      return sun.forDate === "2026-09-20" && sun.weekKey === "2026-09-14" && sun.comparison === S.comparisonForDate("2026-09-20") &&
+        sun.next === mon.comparison && mon.weekKey === "2026-09-21" &&
+        sun.index === S.SPOTLIGHT_ROTATION.indexOf(sun.comparison); })());
+  /* The shuffle must be REPRODUCIBLE on every edge and every replay, so the one thing that
+     would break "all visitors see the same pair" is pinned absent at source. */
+  /* Swept COMMENT-STRIPPED, and the reason is that the first draft of this very pin failed
+     against correct code: the source comment beside the shuffle says "`Math.random` is banned
+     here", so a raw sweep matched its own explanation — the v3.60.1 self-matching trap, caught
+     again. */
+  ok("[81] rotation v6.9.5: the shuffle is seeded, never random — no Math.random / Date.now in the pure lib, and the retired index-walker is pinned ABSENT (v3.73: dead code is a rot vector)",
+    (() => { const code = readSrc("../functions/lib/spotlight.js").replace(/\/\/[^\n]*|\/\*[\s\S]*?\*\//g, "");
+      return !/Math\.random|Date\.now\(\)/.test(code) && !/export\s+(const|function)\s+comparisonAt\b/.test(code) &&
+        !/export\s+function\s+nextRotation\b/.test(code); })());
 
   // ── YTD return + tracker ──
   const flat = (from, to, v) => FX.closes(from, to, { start: v, drift: 0, seed: 1 }).map((r) => ({ ...r, value: v }));
@@ -12046,9 +12085,15 @@ console.log("\n[81] v6.5.0 STOCK SPOTLIGHT — calculations, endpoints, cron leg
     /NBIS: \$582M × 4 = \$2\.3B run-rate vs \$1\.3B reported TTM \(\+75\.8%;[\s\S]*MSFT: \$76\.0B × 4/.test(fx.model.lesson.example) && fx.model.lesson.exampleUnavailable === null);
   ok("[81] lessons: with the supporting figures missing for either company the worked example is UNAVAILABLE and named — the conceptual lesson stays, no numbers are invented",
     (() => { const stripped = { ...ms, metrics: { ...ms.metrics, runRate: null } };
-      const m = S.buildSpotlightModel({ anchor: nb, comparison: stripped, rotation: { index: 0, weekKey: "2026-09-14" }, tracker: fx.model.tracker, now: NOW });
-      const goog = S.buildSpotlightModel({ anchor: nb, comparison: { ...ms, symbol: "GOOGL" }, rotation: { index: 3, weekKey: "2026-09-14" }, tracker: fx.model.tracker, now: NOW });
+      /* v6.9.5: the rotation argument is the DERIVED day state, not an index to look up — the
+         model takes its comparison from `rotation.comparison` so a caller can never hand it a
+         position that the week's own shuffle disagrees with. `next` is likewise carried, not
+         re-derived from a roster offset. */
+      const rotOf = (sym, next) => ({ forDate: "2026-09-14", weekKey: "2026-09-14", comparison: sym, next, index: S.SPOTLIGHT_ROTATION.indexOf(sym) });
+      const m = S.buildSpotlightModel({ anchor: nb, comparison: stripped, rotation: rotOf("MSFT", "AAPL"), tracker: fx.model.tracker, now: NOW });
+      const goog = S.buildSpotlightModel({ anchor: nb, comparison: { ...ms, symbol: "GOOGL" }, rotation: rotOf("GOOGL", "META"), tracker: fx.model.tracker, now: NOW });
       return m.lesson.example === null && /worked example unavailable/i.test(m.lesson.exampleUnavailable) && m.lesson.body === S.LESSONS.MSFT.body &&
+        m.pair.forDate === "2026-09-14" &&
         goog.lesson.key === "GOOGL" && goog.pair.comparison === "GOOGL" && goog.pair.nextComparison === "META" &&
         /NBIS: .* TTM cash flow .*nonpositive denominator/.test(goog.lesson.example); })());
 
@@ -12148,33 +12193,49 @@ console.log("\n[81] v6.5.0 STOCK SPOTLIGHT — calculations, endpoints, cron leg
         divCash: i === divIdx ? 0.5 : 0, splitFactor: !noEvidence && i === splitIdx ? 4 : 1 }; });
   };
   const symOf = (u) => (String(u).match(/symbol=([A-Z]+)/) || String(u).match(/\/quote\/([A-Z]+)\//) || String(u).match(/tiingo\/daily\/([A-Z]+)\//) || [])[1];
+  /* v6.9.5: the stub is SYMBOL-AGNOSTIC now. It used to serve three names, which was fine while
+     the rotation started at a fixed index — the comparison is DERIVED from the date since this
+     release, so a fixture that only knows MSFT/AAPL would break the moment the shuffle moved,
+     and the endpoint pins below would be testing a memorized name rather than the wiring. Every
+     roster name gets a CIK and MSFT's company facts; NBIS keeps its own. */
+  const STUB_CIKS = { NBIS: 1513845, MSFT: 789019, AAPL: 320193 };
+  S.SPOTLIGHT_ROTATION.forEach((s, i) => { if (!STUB_CIKS[s]) STUB_CIKS[s] = 9000000 + i; });
   const stubFetch = ({ tiingo = true, candles = false } = {}) => async (url) => {
     const u = String(url); const sym = symOf(u);
     const j = (b, status = 200) => new Response(JSON.stringify(b), { status, headers: { "content-type": "application/json" } });
-    if (/finnhub.*\/quote\?/.test(u)) return j({ c: sym === "MSFT" ? 483.34 : sym === "NBIS" ? 49.62 : 230, t: unix, dp: 0.4 });
-    if (/profile2/.test(u)) return j({ name: sym === "NBIS" ? "Nebius Group N.V." : `${sym} Corp`, currency: "USD", marketCapitalization: sym === "MSFT" ? 3_410_000 : sym === "NBIS" ? 70_100 : 3_400_000, shareOutstanding: sym === "MSFT" ? 7430 : 250 });
+    if (/finnhub.*\/quote\?/.test(u)) return j({ c: sym === "NBIS" ? 49.62 : 483.34, t: unix, dp: 0.4 });
+    if (/profile2/.test(u)) return j({ name: sym === "NBIS" ? "Nebius Group N.V." : `${sym} Corp`, currency: "USD", marketCapitalization: sym === "NBIS" ? 70_100 : 3_410_000, shareOutstanding: sym === "NBIS" ? 250 : 7430 });
     if (/calendar\/earnings/.test(u)) return j({ earningsCalendar: [{ date: "2026-10-28", symbol: sym }] });
     if (/stock\/candle/.test(u)) return candles ? j({ s: "ok", t: fx.msftRows.map((r) => Math.floor(Date.parse(`${r.date}T20:00:00Z`) / 1000)), c: fx.msftRows.map((r) => r.value) }) : j({ s: "no_data" });
-    if (/company_tickers/.test(u)) return j({ 0: { cik_str: 789019, ticker: "MSFT", title: "MICROSOFT CORP" }, 1: { cik_str: 1513845, ticker: "NBIS", title: "Nebius Group N.V." }, 2: { cik_str: 320193, ticker: "AAPL", title: "Apple Inc." } });
-    if (/companyfacts\/CIK0000789019/.test(u)) return j(cf.MSFT); if (/companyfacts\/CIK0001513845/.test(u)) return j(cf.NBIS); if (/companyfacts\/CIK0000320193/.test(u)) return j(cf.AAPL);
+    if (/company_tickers/.test(u)) return j(Object.fromEntries(Object.entries(STUB_CIKS).map(([t, cik], i) => [i, { cik_str: cik, ticker: t, title: `${t} Corp` }])));
+    if (/companyfacts\/CIK/.test(u)) { const cik = Number((u.match(/CIK(\d{10})/) || [])[1]);
+      const t = Object.keys(STUB_CIKS).find((k) => STUB_CIKS[k] === cik);
+      return t ? j(cf[t] || cf.MSFT) : new Response("no", { status: 404 }); }
     if (/tiingo/.test(u)) return tiingo ? j(tiingoRows(sym === "NBIS" ? fx.nbisRows : fx.msftRows)) : j({ detail: "no" }, 404);
     if (/nasdaq\.com/.test(u)) return j(nasdaqRows(sym === "NBIS" ? fx.nbisRows : fx.msftRows));
     return new Response("no", { status: 404 });
   };
   const envR = (kv, extra = {}) => ({ PULSE_CACHE: kv, FINNHUB_KEY: "k", SEC_USER_AGENT: "macrodash test@example.com", TIINGO_KEY: "t", REFRESH_TOKEN: "rt", ...extra });
-  ok("[81] refresh: end-to-end against stubbed providers — the pair is stored, facts land under spotlight:facts:v1:<SYM> for anchor + comparison + NEXT, the rotation persists with the week key, NO tt: key is touched, and the SHORT authored name wins over the SEC legal name (owner call 2026-09-14)",
+  /* v6.9.5: asserted against the DERIVED pick for the run's own ET date, never a memorized
+     "MSFT". That is the stronger claim — it proves the handler consumes `rotationFor` rather
+     than agreeing with a literal by coincidence — and it survives any reseeding of the shuffle. */
+  const TODAY_ET = "2026-09-16", TOMORROW_ET = "2026-09-17";
+  const PICK = S.comparisonForDate(TODAY_ET), PICK_NEXT = S.comparisonForDate(TOMORROW_ET);
+  ok("[81] refresh: end-to-end against stubbed providers — the pair is the DERIVED pick for this ET day, facts land under spotlight:facts:v1:<SYM> for anchor + comparison + NEXT, the rotation record persists with the day and week keys, NO tt: key is touched, and the SHORT authored name wins over the SEC legal name (owner call 2026-09-14)",
     await (async () => { const kv = kvS();
       const out = await R.runSpotlightRefresh(envR(kv), { now: NOW, fetchImpl: stubFetch() });
-      if (JSON.parse(kv._m.get("spotlight:model:v1")).companies.MSFT.name !== "Microsoft") return false;
       const model = JSON.parse(kv._m.get("spotlight:model:v1")), rot = JSON.parse(kv._m.get("spotlight:rotation:v1") || "null");
-      return out.ok === true && out.dataOk === true && out.pair.comparison === "MSFT" && out.pair.next === "AAPL" && model.pair.weekKey === "2026-09-14" && rot.index === 0 && rot.weekKey === "2026-09-14" &&
-        ["NBIS", "MSFT", "AAPL"].every((s) => kv._m.has(`spotlight:facts:v1:${s}`)) && !kv.puts.some((k) => k.startsWith("tt:")) &&
-        model.companies.MSFT.marketCap.display === "$3.41T" && model.companies.MSFT.marketCap.method === "provider-reported" && model.companies.NBIS.marketCap.display === "$70.1B" &&
-        model.tracker.legs.MSFT.basis === "total_return" && typeof model.tracker.legs.MSFT.pct === "number" && /verified/.test(model.tracker.legs.MSFT.provider); })());
+      if (model.companies[PICK].name !== S.COMPANY_NAMES[PICK]) return false;
+      return out.ok === true && out.dataOk === true && out.pair.comparison === PICK && out.pair.next === PICK_NEXT &&
+        model.pair.forDate === TODAY_ET && model.pair.weekKey === "2026-09-14" && model.pair.nextComparison === PICK_NEXT &&
+        rot.forDate === TODAY_ET && rot.comparison === PICK && rot.weekKey === "2026-09-14" &&
+        ["NBIS", PICK, PICK_NEXT].every((s) => kv._m.has(`spotlight:facts:v1:${s}`)) && !kv.puts.some((k) => k.startsWith("tt:")) &&
+        model.companies[PICK].marketCap.display === "$3.41T" && model.companies[PICK].marketCap.method === "provider-reported" && model.companies.NBIS.marketCap.display === "$70.1B" &&
+        model.tracker.legs[PICK].basis === "total_return" && typeof model.tracker.legs[PICK].pct === "number" && /verified/.test(model.tracker.legs[PICK].provider); })());
   ok("[81] refresh (review #1): TWO series facts — the tracker leg comes ONLY from verified Tiingo total return; Finnhub candles (split-adjusted) and Nasdaq closes feed the price trend as PRICE return and are never promoted; without a total-return source the leg is withheld and the trend still reads",
     await (async () => {
       const run = async (opts) => { const kv = kvS(); await R.runSpotlightRefresh(envR(kv, opts.env || {}), { now: NOW, fetchImpl: stubFetch(opts) });
-        const m = JSON.parse(kv._m.get("spotlight:model:v1")); const rec = JSON.parse(kv._m.get("spotlight:facts:v1:MSFT")).fields; return { leg: m.tracker.legs.MSFT, trend: m.companies.MSFT.metrics.trend, rec }; };
+        const m = JSON.parse(kv._m.get("spotlight:model:v1")); const rec = JSON.parse(kv._m.get(`spotlight:facts:v1:${PICK}`)).fields; return { leg: m.tracker.legs[PICK], trend: m.companies[PICK].metrics.trend, rec }; };
       const a = await run({ candles: true }), c = await run({ tiingo: false }), d = await run({ tiingo: false, env: { TIINGO_KEY: "" } });
       return a.leg.basis === "total_return" && /Tiingo/.test(a.leg.provider) && a.rec.priceSeries.basis === "price_return" && /Finnhub/.test(a.rec.priceSeries.provider) && /split-adjusted — dividends not included/.test(a.rec.priceSeries.provider) &&
         c.leg.pct === null && /HTTP 404/.test(c.leg.unavailable) && c.rec.totalReturnSeries.status === "MISSING" && typeof c.trend.px === "number" && /Nasdaq/.test(c.rec.priceSeries.provider) &&
@@ -12191,15 +12252,20 @@ console.log("\n[81] v6.5.0 STOCK SPOTLIGHT — calculations, endpoints, cron leg
         broken.status === "MISSING" && /not adjusted to the present/.test(broken.reason) &&
         falling.status === "MISSING" && /adjustment factor falls/.test(falling.reason) && plain.status === "LIVE" &&
         R.verifyAdjustedSeries([{ date: "2026-01-02", value: 1, close: 1 }]).ok === false; })());
-  ok("[81] refresh: same week → not advanced; a later week → advanced to AAPL; a FAILED model store → not advanced (the week retries without moving)",
+  ok("[81] refresh v6.9.5: the same ET DAY → the same pick, not advanced; the next ET day → a DIFFERENT pick, advanced; a FAILED model store → the rotation record is not written (the day retries without moving)",
     await (async () => { const kv = kvS();
       await R.runSpotlightRefresh(envR(kv), { now: NOW, fetchImpl: stubFetch() });
-      const again = await R.runSpotlightRefresh(envR(kv), { now: new Date(NOW.getTime() + 86400000), fetchImpl: stubFetch() });
-      const next = await R.runSpotlightRefresh(envR(kv), { now: new Date(NOW.getTime() + 7 * 86400000), fetchImpl: stubFetch() });
+      /* +1h is still the SAME ET day (18:05 → 19:05), +24h is the next one. The old pins ran
+         these a week apart because the pick moved weekly; the cadence is daily now, so the
+         no-move case has to be re-anchored inside one ET day or it would pass vacuously. */
+      const same = await R.runSpotlightRefresh(envR(kv), { now: new Date(NOW.getTime() + 3600000), fetchImpl: stubFetch() });
+      const nextDay = await R.runSpotlightRefresh(envR(kv), { now: new Date(NOW.getTime() + 86400000), fetchImpl: stubFetch() });
       const rot = JSON.parse(kv._m.get("spotlight:rotation:v1"));
       const kvBad = kvS(); const put = kvBad.put; kvBad.put = async (k, v) => { if (k === "spotlight:model:v1") throw new Error("kv full"); return put.call(kvBad, k, v); };
       const failed = await R.runSpotlightRefresh(envR(kvBad), { now: NOW, fetchImpl: stubFetch() });
-      return again.pair.advanced === false && again.pair.comparison === "MSFT" && next.pair.advanced === true && next.pair.comparison === "AAPL" && next.pair.next === "AMZN" && rot.index === 1 &&
+      return same.pair.advanced === false && same.pair.comparison === PICK &&
+        nextDay.pair.advanced === true && nextDay.pair.comparison === PICK_NEXT && nextDay.pair.comparison !== PICK &&
+        nextDay.pair.next === S.comparisonForDate("2026-09-18") && rot.forDate === TOMORROW_ET && rot.comparison === PICK_NEXT &&
         failed.ok === false && !kvBad._m.has("spotlight:rotation:v1") && failed.failures.some((f) => f.item === "model-store"); })());
   ok("[81] refresh (review #4): every provider dark on a FIRST run → ok:false with the data reasons, the scheduled pair is still stored with every field Unavailable-with-reason (nothing better exists to show), and the rotation is NOT persisted",
     await (async () => { const kv = kvS();
@@ -12208,22 +12274,31 @@ console.log("\n[81] v6.5.0 STOCK SPOTLIGHT — calculations, endpoints, cron leg
       return out.ok === false && out.dataOk === false && out.stored === true && out.dataReasons.some((r) => /NBIS: market cap unavailable/.test(r)) && out.dataReasons.some((r) => /total-return leg unavailable/.test(r)) &&
         !kv._m.has("spotlight:rotation:v1") && out.failures.length >= 6 && m.companies.NBIS.marketCap.value === null && /FINNHUB_KEY/.test(m.companies.NBIS.marketCap.unavailable) &&
         /SEC_USER_AGENT/.test(m.companies.NBIS.metrics.revenueGrowth.unavailable) && m.tracker.unavailable && m.lesson.example === null; })());
-  ok("[81] refresh (review #4): a NEW week whose providers are dark keeps the PREVIOUS pair on display — the stored model is byte-unchanged, the rotation stays on MSFT, ok:false names the hold — and the next successful refresh advances exactly once",
+  ok("[81] refresh (review #4, v6.9.5): a NEW DAY whose providers are dark keeps the PREVIOUS pair on display — the stored model is byte-unchanged, ok:false names the hold and the SKIPPED candidate — and the next day's successful refresh moves on rather than retrying the skipped name",
     await (async () => { const kv = kvS();
       const first = await R.runSpotlightRefresh(envR(kv), { now: NOW, fetchImpl: stubFetch() });
       const before = kv._m.get("spotlight:model:v1"), rotBefore = kv._m.get("spotlight:rotation:v1");
-      const dark = await R.runSpotlightRefresh(envR(kv, { FINNHUB_KEY: "", SEC_USER_AGENT: "", TIINGO_KEY: "" }), { now: new Date(NOW.getTime() + 7 * 86400000), fetchImpl: async () => new Response("no", { status: 404 }) });
+      const dark = await R.runSpotlightRefresh(envR(kv, { FINNHUB_KEY: "", SEC_USER_AGENT: "", TIINGO_KEY: "" }), { now: new Date(NOW.getTime() + 86400000), fetchImpl: async () => new Response("no", { status: 404 }) });
       const held = kv._m.get("spotlight:model:v1") === before && kv._m.get("spotlight:rotation:v1") === rotBefore;
-      const recovered = await R.runSpotlightRefresh(envR(kv), { now: new Date(NOW.getTime() + 8 * 86400000), fetchImpl: stubFetch() });
-      return first.ok === true && dark.ok === false && dark.stored === false && dark.pair.comparison === "MSFT" && dark.pair.candidate === "AAPL" && dark.pair.advanced === false &&
-        dark.failures.some((f) => f.item === "pair-held" && /previous pair MSFT kept/.test(f.reason)) && held && dark.dataReasons.some((r) => /not refreshed this run/.test(r)) &&
-        recovered.ok === true && recovered.pair.comparison === "AAPL" && recovered.pair.advanced === true && JSON.parse(kv._m.get("spotlight:rotation:v1")).index === 1 &&
+      const recovered = await R.runSpotlightRefresh(envR(kv), { now: new Date(NOW.getTime() + 2 * 86400000), fetchImpl: stubFetch() });
+      const dayAfter = S.comparisonForDate("2026-09-18");
+      /* The DAILY difference from the weekly scheme, pinned rather than left implicit: a week
+         used to RETRY the name whose data was incomplete, because the index had not moved. The
+         pick is a function of the date now, so a dark day is SKIPPED and tomorrow is tomorrow's
+         name — which is the better behaviour and would otherwise have changed in silence. */
+      return first.ok === true && dark.ok === false && dark.stored === false && dark.pair.comparison === PICK && dark.pair.candidate === PICK_NEXT && dark.pair.advanced === false &&
+        dark.failures.some((f) => f.item === "pair-held" && new RegExp(`previous pair ${PICK} kept; ${PICK_NEXT} is skipped for ${TOMORROW_ET}`).test(f.reason)) &&
+        held && dark.dataReasons.some((r) => /not refreshed this run/.test(r)) &&
+        recovered.ok === true && recovered.pair.comparison === dayAfter && dayAfter !== PICK_NEXT && recovered.pair.advanced === true &&
+        JSON.parse(kv._m.get("spotlight:rotation:v1")).comparison === dayAfter &&
         /refreshSucceeded/.test(readSrc("../functions/api/stock-spotlight/refresh.js")); })());
   ok("[81] refresh: a provider outage after a good pull retains last-good facts marked STALE with their original dates (the tt-facts merge rule, reused not copied)",
     await (async () => { const kv = kvS();
       await R.runSpotlightRefresh(envR(kv), { now: NOW, fetchImpl: stubFetch() });
-      await R.runSpotlightRefresh(envR(kv), { now: new Date(NOW.getTime() + 86400000), fetchImpl: async () => new Response("no", { status: 404 }) });
-      const rec = JSON.parse(kv._m.get("spotlight:facts:v1:MSFT"));
+      // Same ET day (+1h), so the SAME symbol is re-pulled and can actually go stale — a run a
+      // day later would not re-fetch this name at all under the daily rotation.
+      await R.runSpotlightRefresh(envR(kv), { now: new Date(NOW.getTime() + 3600000), fetchImpl: async () => new Response("no", { status: 404 }) });
+      const rec = JSON.parse(kv._m.get(`spotlight:facts:v1:${PICK}`));
       return rec.fields.marketCap.status === "STALE" && rec.fields.marketCap.value === 3_410_000 && rec.fields.marketCap.observedAt === TODAY && /reused|merge/i.test(readSrc("../functions/api/stock-spotlight/refresh.js")) &&
         /import \{ mergeFactsRecord, candleSeriesFault \} from "\.\.\/\.\.\/lib\/tt-facts\.js"/.test(readSrc("../functions/api/stock-spotlight/refresh.js")); })());
   ok("[81] refresh POST: GET → 405; anonymous POST → 401; the cron token → 200 with the pair; a second POST inside the cooldown → 429",
@@ -12235,7 +12310,13 @@ console.log("\n[81] v6.5.0 STOCK SPOTLIGHT — calculations, endpoints, cron leg
         const anon = await R.onRequestPost({ request: mk({}), env: envR(kv, { TT_PIN: "123456" }) });
         const t = await R.onRequestPost({ request: mk({ "x-refresh-token": "rt" }), env: envR(kv) }); const tb = await t.json();
         const cd = await R.onRequestPost({ request: mk({ "x-refresh-token": "rt" }), env: envR(kv) });
-        return g.status === 405 && anon.status === 401 && t.status === 200 && tb.ok === true && tb.pair.comparison === "MSFT" && cd.status === 429;
+        /* The route defaults to the real clock, so the expected name is DERIVED from today's ET
+           date rather than named — pinning a literal here would go red on whatever day the
+           shuffle moved off it, which is a calendar failing, not a defect (the v3.35 lesson:
+           a fixture stamped at write time rots at the first midnight). */
+        const todayEt = new Date().toLocaleDateString("en-CA", { timeZone: "America/New_York" });
+        return g.status === 405 && anon.status === 401 && t.status === 200 && tb.ok === true &&
+          tb.pair.comparison === S.comparisonForDate(todayEt) && tb.pair.forDate === todayEt && cd.status === 429;
       } finally { globalThis.fetch = real; } })());
 
   // ── issuer-report records ──
@@ -13594,6 +13675,82 @@ console.log("\n[90] READ THE ROOM Slice 5 — NEXT $ level 1, the named taps, an
       /\$\{c\.sym\} is \$\{c\.pct\}% of acct equity/.test(acts));
   } catch (e) {
     ok("[90] the Slice 5 pins RAN to completion — a section that dies mid-run prints no total: " + (e && e.message), false);
+  }
+}
+
+console.log("\n[91] v6.9.5 — the daily rotation surfaced, the truncation named again, and the last hand-written colour");
+{
+  try {
+    const spotJsx = readSrc("../src/sections/StockSpotlight.jsx");
+    const cardsJsx = readSrc("../src/sections/SimpleCards.jsx");
+    const stripJsx = readSrc("../src/sections/MacroStrip.jsx");
+    /* Node cannot import JSX, so `cadenceLine` is LIFTED and RUN rather than string-pinned —
+       the claim is about which words appear on which day, and a regex over source cannot
+       prove that (the v3.39 rule: a string pin cannot prove a computation). */
+    const lift = (re) => { const m = spotJsx.match(re); if (!m) throw new Error(`cannot lift ${re}`); return m[0]; };
+    const SS = new Function(`${lift(/const MONTHS = \[[^\]]*\];/)}
+      ${lift(/const shortDate = \(ymd\) => \{[\s\S]*?\n\};/)}
+      ${liftFns(spotJsx, ["cadenceLine"])}
+      return { cadenceLine, shortDate };`)();
+
+    /* THE CADENCE. Owner, on a live Simple screenshot: "Still shows Microsoft and it's been 3
+       days." The rotation was correct; the cadence line was gated `!simple` and Simple is the
+       default, so the one fact that answers the question reached nobody. */
+    ok("[91] cadence: the line renders in BOTH modes — the `!simple` gate that hid it from the default view is pinned ABSENT from the cadence span",
+      /\{cad && <span/.test(spotJsx) && !/\{!simple && <span[^>]*>week of \{m\.pair\.weekKey\} · next:/.test(spotJsx) &&
+      /rendered in BOTH modes/.test(spotJsx));
+    ok("[91] cadence: states the cadence, and names the DATE the pick belongs to only when the model is behind the served day — never implying a held pair is today's",
+      (() => {
+        const fresh = SS.cadenceLine({ forDate: "2026-09-18", nextComparison: "MSFT" }, "2026-09-18");
+        const behind = SS.cadenceLine({ forDate: "2026-09-18", nextComparison: "MSFT" }, "2026-09-20");
+        const legacy = SS.cadenceLine({ nextComparison: "MSFT" }, "2026-09-20");   // pre-v6.9.5 model: no forDate
+        return fresh.text === "a new name each day · next: MSFT" && fresh.behind === false &&
+          behind.behind === true && /showing Sep 18's pick/.test(behind.text) && /next: MSFT/.test(behind.text) &&
+          legacy.behind === false && !/pick/.test(legacy.text) &&
+          SS.cadenceLine(null, "2026-09-18") === null && SS.shortDate("junk") === null && SS.shortDate("2026-01-05") === "Jan 5";
+      })());
+
+    /* THE TRUNCATION. v4.0 made naming it a contract; the props survived a refactor and the
+       render did not, so the block claimed full coverage of a six-factor vote with three cards. */
+    ok("[91] cards: the truncation is NAMED again — real counts off the same rows, shown only when something is actually cut, with the not-counted tail stated",
+      /showing \{shown\} of \{usable\} signals/.test(cardsJsx) && /\{shown < usable &&/.test(cardsJsx) &&
+      /total > usable \? ` · \$\{total - usable\} unavailable`/.test(cardsJsx) &&
+      // the v6.4 public vocabulary, not the operator's: signals / unavailable, never voters / dark
+      !/voters|dark/.test(cardsJsx.slice(cardsJsx.indexOf("{shown < usable"))));
+    /* The regression this closes was exactly "passed and never read", so the pin proves the
+       props reach the RENDER, not merely the signature: every one of the three appears inside
+       the returned JSX, below the signature line that declares them. */
+    ok("[91] cards: the counts are PASSED and now READ — the call site hands usable/shown/total and every one of them is referenced in the render, not just the signature",
+      (() => { const body = cardsJsx.slice(cardsJsx.indexOf("const SimpleCards = ({"));
+        const render = body.slice(body.indexOf("{shown < usable"));
+        return /usable=\{simpleC\.usable\} shown=\{simpleC\.shown\} total=\{simpleC\.total\}/.test(readSrc("../src/dashboard.jsx")) &&
+          ["usable", "shown", "total"].every((p) => new RegExp(`\\b${p}\\b`).test(render)); })());
+
+    /* THE LAST HAND-WRITTEN COLOUR. A voting tile's sub-line is a fact about a window the band
+       never reads, so it may not carry a direction — the ▪ marker, already band-derived, is the
+       one colour signal. Context tiles keep theirs: they have no verdict to contradict. */
+    /* Swept COMMENT-STRIPPED: the comment recording this fix quotes `sc:pctColor(-d1)` as the
+       defect it removed, so a raw count matched its own explanation and read 3 where the code
+       has 2 — the v3.60.1 self-matching trap, twice in one release. */
+    const stripCode = stripJsx.replace(/\/\/[^\n]*|\/\*[\s\S]*?\*\//g, "");
+    /* Each tile is one source line, so the tile is read as a LINE rather than with a
+       brace-bounded regex: `[^}]*` stops at the first `}` of a `${...}` template the tile's own
+       value interpolates, which silently made three of these checks vacuous on the first run. */
+    const tileOf = (field) => { const line = stripCode.split("\n").find((l) => l.includes(`f:"${field}"`) && l.includes("l:\""));
+      if (!line) throw new Error(`no single-line strip tile for ${field}`); return line; };
+    ok("[91] strip: a VOTING tile may not colour its sub-line by hand — pctColor survives only on the two CONTEXT tiles (SPY*/QQQ), and VIX/10Y carry no `sc` at all",
+      /else if\(vf\.has\(f\)\)sc=T\.textMuted;/.test(stripCode) &&
+      (stripCode.match(/sc:pctColor\(/g) || []).length === 2 &&
+      tileOf("spyPrice").includes("sc:pctColor(") && tileOf("qqqPrice").includes("sc:pctColor(") &&
+      !tileOf("vix").includes("sc:") && !tileOf("tenYear").includes("sc:"));
+    /* The MIRROR error, pinned too: re-colouring the sub with the VOTE would claim the band
+       read a window it never read. VIX and 10Y therefore get neither a `sc` nor a `voteKey`. */
+    ok("[91] strip: the sub is NOT re-coloured with the vote either — VIX and 10Y carry no voteKey, so the muted fall-through is the only path they can take",
+      !tileOf("tenYear").includes("voteKey") && !tileOf("vix").includes("voteKey") &&
+      // The control: the three voters that legitimately DO derive a sub colour still declare it.
+      ['voteKey:"nfci"', 'voteKey:"cpiHeadline"', 'voteKey:"fearGreed"'].every((k) => stripCode.includes(k)));
+  } catch (e) {
+    ok("[91] the v6.9.5 pins RAN to completion — a section that dies mid-run prints no total: " + (e && e.message), false);
   }
 }
 

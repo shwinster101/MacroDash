@@ -5,6 +5,116 @@ answers *"is it safe to be in the market?"* from live macro + market + sentiment
 data. Single-page React app on Cloudflare Pages, with live data assembled at the
 edge by Pages Functions and cached in KV.
 
+**v6.9.5 "READ THE ROOM", Slice 6 — the Mag 7 goes DAILY and RESHUFFLES every week, the cadence
+reaches the default view, the cards name their truncation again, and the last hand-written colour
+on the public page is retired (owner, on two live Simple screenshots: *"Still shows Microsoft and
+it's been 3 days. Audit the rotating mag 7 interface. And does the learning moment rotate? … Does
+the middle volatility/10 year yield/financial conditions block high leverage given they are below
+with the 8 voters?"*).**
+**THE ROTATION WAS NOT BROKEN, AND SAYING SO IS HALF THE FINDING.** Audited against the LIVE model
+before touching anything: `GET /api/stock-spotlight` returned `weekKey 2026-09-14 · rotationIndex 0
+· nextComparison AAPL`, last refreshed `2026-09-17T22:02Z`. v6.5.0's rotation was WEEKLY by design
+and the stored week was the current one, so three days of MSFT was the contract working. **What was
+missing was any way to know that:** `week of … · next: …` was gated `!simple` — and Simple is the
+DEFAULT view — so the one fact that answers *"is it stuck?"* reached nobody who had not switched
+modes. A cadence the reader cannot see is a cadence the reader will report as a defect, which is
+exactly what happened. **The learning moment does rotate** and always did: `LESSONS` is keyed by the
+seven roster symbols, so the lesson changes when the pair changes, on the same clock — structural,
+because each worked example is built from that company's own figures.
+**DAILY, AND RESHUFFLED EVERY WEEK (owner: *"I like daily mag 7 and learning moment switch, random
+each week (aapl monday one week then Msft the next Monday as an example)"*).** One seeded permutation
+of the roster per ET week, consumed **one name per day**: seven names over seven days means every
+name holds exactly one slot in a week and none is starved, while reseeding on the Monday key makes
+Monday a different name each week — the owner's own example, encoded. Measured over 52 weeks, **all
+seven names take a Monday**; a shuffle MAY repeat one by chance, so that — not "always differs" — is
+what the pin claims.
+**THE LOAD-BEARING CHANGE IS THAT NOTHING IS INCREMENTED.** v6.5.0 stored an index and advanced it
+on the first successful refresh of a new week, so a rotation record that lost its `weekKey` pinned
+the index at 0 forever and a run of dark nights silently stretched a week with nothing saying so.
+The pick is now a **pure function of the ET date** — it cannot drift, cannot be pinned by a bad
+write, and needs no repair; the stored record becomes an audit trail rather than the source of
+truth. `Math.random` is banned at the site and swept in smoke, so every visitor, every edge and
+every replay of a date agree by construction. `nextRotation` and `comparisonAt` are **DELETED, not
+kept for compatibility** (v3.73) and pinned absent: `comparisonAt` indexed the roster as a running
+ORDER, which the roster no longer is, and leaving it would invite a caller to read position 3 as
+"the fourth name in rotation".
+**THE DAILY BEHAVIOUR DIFFERS FROM THE WEEKLY ONE IN A WAY THAT IS PINNED RATHER THAN LEFT IMPLICIT:
+a dark day is now SKIPPED, not retried.** Under the weekly scheme an incomplete-data name was
+re-attempted all week because the index had not moved; the pick is a function of the date now, so
+tomorrow is tomorrow's name. That is the better behaviour and it would otherwise have changed in
+silence. The hold-the-pair doctrine is untouched — a day whose providers are dark keeps the previous
+pair on display and NAMES the skipped candidate.
+**STATED CONSEQUENCE, not hidden:** the spotlight leg rides the WEEKDAY crons, so the two slots that
+land on Saturday and Sunday are never refreshed and the weekend shows Friday's pick. Which two names
+those are is reshuffled weekly, so no name is systematically lost — but 2 of 7 slots per week are
+held rather than shown. **The pick also lands at the 6pm ET refresh, not at midnight**, so a morning
+reader sees yesterday's pick; attaching a spotlight leg to the existing 8am ET pre-open cron would
+move it to the morning and is NOT done here — it is a Worker change requiring `wrangler deploy`,
+named rather than bundled.
+**THE MODEL CARRIES `forDate` — the ET day the pick BELONGS to, never the build timestamp** — which
+is what lets the line say *"showing Sep 18's pick"* instead of implying a held pair is today's.
+`cadenceLine()` renders in **BOTH modes** (`a new name each day · next: AAPL`, amber with the date
+when behind); Degen keeps the week seed. A model written before this release carries no `forDate`
+and states the cadence alone rather than guessing a date.
+**THE TRUNCATION IS NAMED AGAIN, AND IT HAD BEEN DEAD FOR FIVE RELEASES.** `SimpleCards` is passed
+`usable`/`shown`/`total` and rendered **none of them**: v4.0 made naming the truncation a contract
+("silent truncation reads as full coverage", v3.65/v3.76), v4.0.1 folded the count into one quiet
+line beside the flip, and when v6.x moved the flip out to the whys label **the count went with it by
+accident**. The props survived, the call-site comment still claimed the truncation was named, and the
+public-render pin TITLED *"truncation … stay"* asserts only ABSENCES — so three suites agreed with a
+regression. It mattered on the owner's own screenshot: the hero named four factors (two helping, two
+hurting) above three cards showing two helping and one hurting, with nothing saying the block was a
+subset. The line reads `showing 3 of 5 signals · 1 unavailable` in the v6.4 PUBLIC vocabulary
+(signals/unavailable, never voters/dark), and the browser pin checks the claimed count against the
+cards ACTUALLY RENDERED — a line saying "3 of 5" beside four cards is the same defect wearing a
+number.
+**THE LAST HAND-WRITTEN DIRECTIONAL COLOUR ON THE PUBLIC PAGE IS RETIRED.** Owner's third question,
+and the answer is that the three-card block is NOT duplication of the eight-tile strip — it is the
+only place the VOTING quantity appears. Measured on the live page: the 10-year rendered twice, ~200px
+apart, as `+0.23pp 1-mo · HURTING` in red on the card and `−7bps 1D` in **GREEN** with a **RED** ▪
+beside it on the strip. Each is honest alone; together they read as the page contradicting itself,
+and the green came from `sc:pctColor(-d1)` — a directional judgment written by hand, on a window the
+band NEVER reads. Same defect class as the v3.62 hero chips (`f.bull ? green : red`, band table
+ignored). **The sub is NOT re-coloured with the vote either**, which would be the mirror error: the
+band judged the MONTH, so painting the 1-day move with the month's verdict claims a reading that
+never happened. A voter's sub-line is a neutral fact about a different window — **muted** — and the
+▪ marker, already band-derived, is the ONE colour signal. SPY*/QQQ keep their directional colour on
+purpose: they vote nowhere, so "the price rose" has no verdict to contradict. `pctColor` now survives
+on exactly two tiles and the rule is pinned in both directions.
+**The shared popup is CORRECT and untouched** — v6.3.0 pins a parameter's card sheet and its tile
+sheet as the same object BY IDENTITY, which is what stops an explainer drifting between entry points.
+Tests: **2557 smoke** (+10, section [91] plus the whole [81] rotation block re-pinned on the new
+contract: every week proven a PERMUTATION over 30 weeks, the pick proven daily and deterministic with
+Monday=0 indexing the week's order, all seven names proven to take a Monday across 52 weeks, `next`
+proven to cross a week boundary into the NEXT week's order, and the seeded-not-random sweep) + 353
+render + **388 public-render** (+2, driven live: the cadence on the Simple face, and the truncation
+count checked against the rendered cards) + `audit:prod` clean.
+**The rotation fixture and the endpoint stub are now SYMBOL-AGNOSTIC, which is the durable half of
+the test work:** the old pins asserted a memorized `"MSFT"`, which was only stable because the
+rotation started at a fixed index — with the pick derived from the date, those assertions would have
+been testing a name rather than the wiring. Every roster symbol gets a CIK and facts in the stub, and
+the endpoint pins assert against `comparisonForDate(today)`. The name ORDER is **deliberately no
+longer pinned**: the roster is a SET now, and pinning a sequence would re-assert the very thing this
+release removed.
+**Two of my own pins were wrong on their first run and are recorded rather than quietly fixed**, both
+the same trap: the source comment beside the shuffle says *"`Math.random` is banned here"* and the
+comment recording the strip fix quotes `sc:pctColor(-d1)` as the defect it removed — so a raw sweep
+matched its own explanation and counted 3 where the code has 2 (the v3.60.1 self-matching trap,
+twice in one release; both sweeps strip comments now). A third was worse because it was SILENT: a
+brace-bounded `[^}]*` regex over a strip tile stops at the first `}` of the `${…}` template the tile
+interpolates, so three "the tile carries no `sc`" checks passed **vacuously** — the tile is read as a
+LINE now.
+**Negative-controlled FOUR ways, each turning exactly its own pins with zero collateral:** flattening
+`weekOrder` to a fixed order turns ONLY the Monday-reshuffle pin red (the permutation and daily pins
+stay green, correctly — a fixed order is still a permutation and still daily); restoring
+`sc:pctColor` on VIX and the 10Y turns ONLY the strip-colour pin red (the voteKey pin stays green,
+because the control restored a colour without adding a `voteKey`); removing the cards' count line
+turns 2 smoke + 1 public red, and the public failure REPORTS its own measurement — `3 cards rendered,
+line absent`; and re-gating the cadence to `!simple` turns exactly the public cadence pin red.
+**Deliberately NOT done:** the 8am ET spotlight cron leg (a Worker change and its own deploy), the 12
+`PENDING` type-floor files, and decoupling the lesson from the pair (the seven lessons are authored
+against their company's own figures, so that is a content commitment, not a toggle).
+
 **v6.9.4 "READ THE ROOM", Slice 5 — the NEXT $ drawer stops being five tools in a trench coat,
 a rule stated per row is stated ONCE, and the 320-word budget becomes a SWEEP (owner: *"keep
 going on the branch until the NEXT $ deck (F4) and the fold sweep are done too… the fold sweep —

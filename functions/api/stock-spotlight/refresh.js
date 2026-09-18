@@ -3,14 +3,16 @@
 // x-refresh-token, else the terminal's own PIN/Access gate. Anonymous POST fails closed.
 //
 // What a refresh does, in order:
-//   1. Reads the rotation record and computes the pair for THIS ET calendar week
-//      (nextRotation): a new week advances the comparison; the same week keeps it.
+//   1. DERIVES the pair for THIS ET day (rotationFor): one seeded permutation of the roster
+//      per ET week, consumed one name per day, so the comparison changes daily and Monday is
+//      a different name each week. Nothing is incremented and nothing is read to decide it.
 //   2. Refreshes provider facts for the anchor (NBIS), the active comparison, and the NEXT
 //      comparison ("prepare the next comparison company"), each behind the tt-facts
 //      merge-only last-good rule so a provider failure retains dated evidence marked STALE.
 //   3. Builds the model from those facts through the pure lib and stores it.
-//   4. Persists the rotation ONLY after a successful build — a failed refresh never advances
-//      the pair, so the first SUCCESSFUL refresh of the week is what moves it.
+//   4. Persists the rotation record ONLY after a successful build. Since v6.9.5 that record
+//      is an AUDIT TRAIL, not the source of truth — the pick is a pure function of the date —
+//      so a lost or corrupt record costs history, never the rotation itself.
 // A refresh failure is recorded under spotlight:diag:v1 and returned in the body; it never
 // throws past the handler, which is what lets the 6pm cron call it without risk to the
 // macro evening update (the cron wraps it again, belt and suspenders).
@@ -35,7 +37,7 @@ import { authorize } from "../tt.js";
 import { quoteFact, nasdaqCandles, earningsFact, cikForSymbol } from "../ticker-facts.js";
 import { mergeFactsRecord, candleSeriesFault } from "../../lib/tt-facts.js";
 import {
-  SPOTLIGHT_KEYS, SPOTLIGHT_ANCHOR, COMPANY_NAMES, etWeekKey, nextRotation, comparisonAt,
+  SPOTLIGHT_KEYS, SPOTLIGHT_ANCHOR, COMPANY_NAMES, rotationFor,
   extractSpotlightFundamentals, unavailableFundamentals, issuerFundamentals, mergeFundamentals, buildCompany, buildTracker, buildSpotlightModel, refreshSucceeded,
 } from "../../lib/spotlight.js";
 import { etYmd } from "../../../src/sources.js";
@@ -246,11 +248,13 @@ export function companyFromRecord(sym, record, issuerRecord, now) {
 
 export async function runSpotlightRefresh(env, { now = new Date(), fetchImpl = fetch, reason = "operator" } = {}) {
   const today = etYmd(now);
-  const weekKey = etWeekKey(today);
-  const storedRotation = await readJson(env, SPOTLIGHT_KEYS.rotation);
-  const rotation = nextRotation(storedRotation, weekKey);
-  const comparison = comparisonAt(rotation.index);
-  const next = comparisonAt(rotation.index + 1);
+  /* v6.9.5: the pick is DERIVED from the ET date (one seeded permutation per week, one name
+     per day) rather than read-and-incremented, so there is no stored index to drift and a
+     failed night cannot pin the rotation. The stored record below is an audit trail. */
+  const rotation = rotationFor(today);
+  const weekKey = rotation.weekKey;
+  const comparison = rotation.comparison;
+  const next = rotation.next;
   const failures = [];
   const records = {};
   const freshStatus = {};
@@ -291,16 +295,19 @@ export async function runSpotlightRefresh(env, { now = new Date(), fetchImpl = f
   if (publish) {
     try { await env.PULSE_CACHE.put(SPOTLIGHT_KEYS.model, JSON.stringify(model)); stored = true; }
     catch (e) { failures.push({ item: "model-store", reason: e?.message || "KV put failed" }); }
-  } else failures.push({ item: "pair-held", reason: `data incomplete (${success.reasons.join("; ")}) — previous pair ${previousModel.pair.comparison} kept, rotation not advanced` });
+  } else failures.push({ item: "pair-held", reason: `data incomplete (${success.reasons.join("; ")}) — previous pair ${previousModel.pair.comparison} kept; ${comparison} is skipped for ${today}` });
   let rotationPersisted = false;
   if (success.ok && stored) {
-    try { await env.PULSE_CACHE.put(SPOTLIGHT_KEYS.rotation, JSON.stringify({ index: rotation.index, weekKey, comparison, updatedAt: now.toISOString() })); rotationPersisted = true; }
+    try { await env.PULSE_CACHE.put(SPOTLIGHT_KEYS.rotation, JSON.stringify({ index: rotation.index, forDate: today, weekKey, comparison, next, updatedAt: now.toISOString() })); rotationPersisted = true; }
     catch (e) { failures.push({ item: "rotation-store", reason: e?.message || "KV put failed" }); }
   }
   const ok = success.ok && stored;
   const shown = publish ? comparison : previousModel.pair.comparison;
   const diag = { at: now.toISOString(), reason, ok, dataOk: success.ok, dataReasons: success.reasons, stored, rotationPersisted,
-    pair: { anchor: SPOTLIGHT_ANCHOR, comparison: shown, candidate: comparison, next, weekKey, advanced: rotationPersisted && rotation.advanced }, failures };
+    /* `advanced` is MEASURED against what was on display, not inferred from a stored index:
+       the pick is derived, so the only honest question is whether the pair actually moved. */
+    pair: { anchor: SPOTLIGHT_ANCHOR, comparison: shown, candidate: comparison, next, forDate: today, weekKey,
+      advanced: stored && !!previousModel && previousModel.pair?.comparison !== comparison }, failures };
   try { await env.PULSE_CACHE.put(SPOTLIGHT_KEYS.diag, JSON.stringify(diag), { expirationTtl: 30 * 24 * 3600 }); } catch (_e) { /* diagnostic only */ }
   return { ok, dataOk: success.ok, dataReasons: success.reasons, stored, pair: diag.pair, failures, model: stored ? model : null };
 }

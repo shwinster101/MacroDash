@@ -410,6 +410,24 @@ console.log("\n[public] v3.94 — Simple default, the toggle, persistence, red f
     /HELPING|HURTING|MIXED/.test(body) && /SPY/.test(body) &&
     !/\d+ of \d+ signals counted/.test(await page.locator('[aria-label="Macro backdrop verdict"]').innerText()) &&
     !/\d+ cards from the \d+ signals counted/.test(await page.locator('[aria-label="Key parameters"]').innerText()));
+  /* v6.9.5 — THE TRUNCATION IS NAMED, AND THE NUMBER MUST BE THE ONE ON SCREEN. v4.0 made
+     naming it a contract; the props survived a refactor and the render did not, so three cards
+     silently stood for a six-factor vote. The owner saw the consequence on the live page: the
+     hero named four factors (two helping, two hurting) above cards showing two helping and one
+     hurting, with nothing saying the block was a subset.
+     The claimed count is checked against the cards ACTUALLY RENDERED, not a memorized fraction —
+     a line that says "3 of 5" beside four cards is the same defect wearing a number — and the
+     pin REPORTS its own measurement so a failure is a diagnosis (the v4.1.3 rule).
+     Note the coverage census itself is Power-only in Simple (v4.0.3), so there is no hero
+     number to cross-check against here; the DOM is the second source. */
+  {
+    const cardsTxt = await page.locator('[aria-label="Key parameters"]').innerText();
+    const shown = await page.locator(".simple-card").count();
+    const m = /showing (\d+) of (\d+) signals(?: · (\d+) unavailable)?/i.exec(cardsTxt);
+    ok(`v6.9.5 Simple: the cards state their own truncation and the number matches the block — ${shown} cards rendered, line ${m ? `"${m[0]}"` : "absent"}`,
+      shown > 0 && !!m && Number(m[1]) === shown && Number(m[2]) > shown &&
+      (m[3] === undefined || Number(m[3]) > 0) && !/voters|dark/i.test(m[0]));
+  }
   const sentencePx = await page.evaluate(() => {
     const band = document.querySelector('[aria-label="Macro backdrop verdict"]');
     const el = [...band.querySelectorAll("div")].find((n) => n.childElementCount === 0 && /(support taking risk|against risk|has a majority|short of a majority|clear lean)/i.test(n.textContent || ""));
@@ -2123,8 +2141,14 @@ console.log("\n[public] v6.5 — STOCK SPOTLIGHT: Simple + Degen, always-visible
     const g = await stripGeom(page);
     ok(`v6.5 Simple: the widget sits directly BELOW the macro strip (strip bottom ${g.stripBottom} → region top ${g.regionTop})`,
       g.stripBottom !== null && g.regionTop !== null && g.regionTop >= g.stripBottom - 1 && g.regionTop - g.stripBottom < 16);
-    ok("v6.5 Simple: both company names and tickers and the comparison label (week is Degen-only)",
+    ok("v6.5 Simple: both company names and tickers and the comparison label (the week SEED stays Degen-only)",
       /Nebius Group/.test(text) && /NBIS/.test(text) && /Microsoft/.test(text) && /MSFT/.test(text) && /Established growth/.test(text) && !/week of/.test(text));
+    /* v6.9.5 — THE CADENCE REACHES SIMPLE. Owner, on a live Simple screenshot: "Still shows
+       Microsoft and it's been 3 days." The pair was correct and the line that says so was gated
+       `!simple`, i.e. hidden from the default view. Driven here rather than pinned in source,
+       because the defect was a RENDER gate and only a rendered read can prove it is gone. */
+    ok("v6.9.5 Simple: the rotation cadence and the next name are ON the face — the question 'is it stuck?' is answered without switching modes",
+      /a new name each day/.test(text) && /next: AAPL/.test(text));
     ok("Simple face: company size, return this year and one fundamental; detailed prose stays behind the tap",
       (text.match(/[+−]\d+\.\d\d%/g) || []).length >= 2 &&
       /\$70\.1B/.test(text) && /\$3\.41T/.test(text) && /MARKET CAP/i.test(text) &&

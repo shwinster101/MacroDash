@@ -38,6 +38,34 @@ const LINE = { anchor: { stroke: T.amber, dash: null }, comparison: { stroke: T.
    no rule — a coloured rule there would assert an owner that does not exist. */
 const PANEL = { background: T.surface, border: `1px solid ${T.border}`, borderRadius: 5, padding: "8px 10px", minWidth: 0 };
 const legColor = (i) => (i === 0 ? LINE.anchor.stroke : LINE.comparison.stroke);
+
+/* v6.9.5 — THE CADENCE, IN BOTH MODES (owner, on a live Simple screenshot: "Still shows
+   Microsoft and it's been 3 days"). The rotation was working correctly; what was missing was
+   any way to know that, because `week of … · next: …` was gated `!simple` and Simple is the
+   default. Three days of one name with nothing stating the cadence leaves "it is stuck" as
+   the only available reading — the label-outlives-its-data defect in reverse, where the fact
+   exists on the model and no surface carries it.
+
+   The model's `forDate` is the ET day the pick BELONGS to, never the build timestamp, so a
+   pair held over a weekend (the spotlight leg rides the weekday crons) or served the morning
+   before the day's refresh SAYS which day it is showing instead of implying it is today's.
+   That distinction is the whole point: "changes daily" and "today's pick is on screen" are
+   different claims, and only the first is always true. Never fabricated — a model without a
+   `forDate` (written before v6.9.5) states the cadence alone rather than guessing a date. */
+const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+export const shortDate = (ymd) => {
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(String(ymd || ""));
+  return m ? `${MONTHS[Number(m[2]) - 1]} ${Number(m[3])}` : null;
+};
+export function cadenceLine(pair, servedDate) {
+  if (!pair) return null;
+  const forDate = pair.forDate || null;
+  const behind = !!(forDate && servedDate && forDate < servedDate);
+  const parts = ["a new name each day"];
+  if (behind) parts.push(`showing ${shortDate(forDate)}'s pick`);
+  if (pair.nextComparison) parts.push(`next: ${pair.nextComparison}`);
+  return { text: parts.join(" · "), behind };
+}
 const panel = (rule) => (rule ? { ...PANEL, borderLeft: `3px solid ${rule}` } : PANEL);
 const money = (v) => {
   if (typeof v !== "number" || !Number.isFinite(v)) return null;
@@ -364,13 +392,17 @@ const StockSpotlight = ({ spotlight, simple }) => {
   if (companies.length !== 2) return null;
   const legs = (m.tracker && m.tracker.legs) || {};
   const lesson = m.lesson;
+  const cad = cadenceLine(m.pair, m.businessDateServed || null);
   return (
     <div role="region" aria-label="Stock Spotlight" className="stock-spotlight"
       style={{ padding: "10px 20px", background: T.bg, borderBottom: `1px solid ${T.border}` }}>
       <div style={{ display: "flex", alignItems: "baseline", gap: 8, flexWrap: "wrap", marginBottom: 6 }}>
         <span style={{ fontFamily: T.fontMono, fontSize: T.fsXs, color: T.amber, letterSpacing: "0.12em", textTransform: "uppercase" }}>Stock Spotlight</span>
         <span style={{ fontFamily: T.fontMono, fontSize: T.fsM, color: T.textPrimary }}>{m.pair.anchor} × {m.pair.comparisonLabel} ({m.pair.comparison})</span>
-        {!simple && <span style={{ fontFamily: T.fontMono, fontSize: T.fsXs, color: T.textMuted }}>week of {m.pair.weekKey} · next: {m.pair.nextComparison}</span>}
+        {/* v6.9.5: rendered in BOTH modes — Simple is the default, so gating the cadence to
+            Degen hid it from everyone who has not switched. Degen keeps the week seed too. */}
+        {cad && <span style={{ fontFamily: T.fontMono, fontSize: T.fsXs, color: cad.behind ? T.amber : T.textMuted }}>{cad.text}</span>}
+        {!simple && <span style={{ fontFamily: T.fontMono, fontSize: T.fsXs, color: T.textMuted }}>week of {m.pair.weekKey}</span>}
         {!simple && <span style={{ marginLeft: "auto", fontFamily: T.fontMono, fontSize: T.fsXs, color: T.textMuted, border: `1px solid ${T.border}`, borderRadius: 3, padding: "0 5px" }}>educational · not advice</span>}
       </div>
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(260px,1fr))", gap: 8 }}>
