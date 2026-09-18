@@ -1978,12 +1978,30 @@ console.log("\n[public] v6.3 — eight sheets on the macro strip (Power, Simple,
   const { page, errors } = await open({ live: FULL_LIVE, width: 390, power: false });
   await page.setViewportSize({ width: 390, height: 844 });
   await page.waitForTimeout(1200);
-  ok("v6.3 strip (Simple): all eight tiles are sheet triggers and each wears the ⓘ affordance",
+  /* v6.8.1 REVERSAL (Slice 2 item 1, the strip lift): the v6.3 half of this pin counted eight
+     ⓘ glyphs. The whole tile has been the dialog trigger since v6.3, so the glyph was a second
+     affordance for the target under the thumb; it is now pinned ABSENT from the strip's text.
+     The eight triggers themselves — the actual affordance — are still pinned present, and the
+     sr-only promise still rides every tile (read by accessible name, not by innerText). */
+  ok("v6.3→v6.8.1 strip (Simple): all eight tiles are sheet triggers, no ⓘ glyph rides the strip, and every tile still promises its explainer to a screen reader",
     (await page.locator('.macro-strip-inner button[aria-haspopup="dialog"]').count()) === 8 &&
-    ((await page.locator(".macro-strip-inner").innerText()).match(/ⓘ/g) || []).length === 8);
+    !/ⓘ/.test(await page.locator(".macro-strip-inner").innerText()) &&
+    (await page.locator('.macro-strip-inner .visually-hidden', { hasText: /Opens an explainer/ }).count()) === 8);
   const heights = await page.evaluate(() => [...document.querySelectorAll(".macro-strip-inner .strip-tile")].map((b) => Math.round(b.getBoundingClientRect().height)));
   ok(`v6.3 strip (Simple): every tile button is a ≥44px thumb target at 390px (measured ${Math.min(...heights)}–${Math.max(...heights)})`,
     heights.length === 8 && heights.every((h) => h >= 44));
+  /* v6.8.1 strip lift, measured in the browser rather than trusted from the source: the label
+     wears fs-s, the value fs-l, the sub-line fs-xs — read off DT so a later floor change moves
+     this pin with it — and no visible text leaf inside the strip renders under 10px (the strip
+     is one component in both modes, so the Simple read covers Degen's strip too). */
+  const stripSizes = await page.evaluate(() => {
+    const t = document.querySelector(".macro-strip-inner .strip-tile");
+    const label = t.querySelector("div > span:nth-child(2)"), value = t.children[1], sub = t.querySelector(".strip-sub");
+    const px = (n) => parseFloat(getComputedStyle(n).fontSize);
+    const leaves = [...document.querySelectorAll(".macro-strip *")].filter((n) => n.children.length === 0 && (n.textContent || "").trim() && !n.classList.contains("visually-hidden") && n.getBoundingClientRect().height > 0);
+    return { label: px(label), value: px(value), sub: px(sub), minLeaf: Math.min(...leaves.map(px)), leaves: leaves.length }; });
+  ok(`v6.8.1 strip lift (Simple, 390): label ${DT["fs-s"]} · value ${DT["fs-l"]} · sub ${DT["fs-xs"]}, and the smallest visible leaf in the strip is ≥10px (measured ${stripSizes.label}/${stripSizes.value}/${stripSizes.sub}, min leaf ${stripSizes.minLeaf} over ${stripSizes.leaves})`,
+    stripSizes.label === DT["fs-s"] && stripSizes.value === DT["fs-l"] && stripSizes.sub === DT["fs-xs"] && stripSizes.leaves >= 24 && stripSizes.minLeaf >= 10);
   await page.locator(".macro-strip-inner > div").nth(4).locator('button[aria-haspopup="dialog"]').click();   // 10Y
   await page.waitForTimeout(250);
   ok("v6.3 sheet (Simple): the 10Y tile opens the 10Y band's sheet, centred and inside the phone viewport",

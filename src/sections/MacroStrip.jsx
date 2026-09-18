@@ -112,17 +112,23 @@ const MacroStrip=({d,modeOf,fomcLabel,fomcDays,votingFields,badge})=>{
             <Explainable explain={ex} title={ex?ex.full:l}
               eyebrow={`${l} · ${v}${votes?` · signal ${vs.word}`:isVoter?" · unavailable today":" · context only"}`}
               className="strip-tile" style={{background:"none",border:"none",padding:0,margin:0}}>
+              {/* v6.8.1 (PUBLIC TERMINAL SKIN, Slice 2 item 1 — the strip lift): the three
+                  sizes read the TOKEN floor (label fs-s 11 · value fs-l 14 · sub and ▪ fs-xs 10)
+                  instead of the 8/13/9 literals the baseline measured as the smallest text on
+                  the page — on the one row whose label is the only thing that says what the
+                  number IS. The per-tile ⓘ is DELETED, not shrunk: since v6.3 the whole face is
+                  the Explainable button, so an 8px glyph beside every ticker was a second
+                  affordance for a target the reader is already touching. The screen-reader
+                  promise stays — an sr-only sentence is the affordance a screen reader needs,
+                  and it costs no pixels. */}
               <div style={{display:"flex",alignItems:"center",gap:3}}>
                 <span style={{width:5,height:5,borderRadius:"50%",background:live?dot:"transparent",border:`1px solid ${dot}`,flexShrink:0}}/>
-                <span style={{fontFamily:T.fontMono,fontSize:8,color:T.textMuted}}>{l}</span>
-                {votes&&<span aria-hidden="true" className="strip-vote" title={`counts toward today's posture — signal is ${vs.word}`} style={{fontFamily:T.fontMono,fontSize:8,fontWeight:700,color:T[vs.colorKey],letterSpacing:"0.05em"}}>▪</span>}
-                {/* The affordance is stated, not implied (v5.8): the same amber ⓘ the cards wear,
-                    and the promise spelled out for a screen reader beside the tile's own text. */}
-                {ex&&<span aria-hidden="true" title="What is this?" style={{fontFamily:T.fontMono,fontSize:8,color:T.amber,flexShrink:0}}>ⓘ</span>}
+                <span style={{fontFamily:T.fontMono,fontSize:T.fsS,color:T.textMuted}}>{l}</span>
+                {votes&&<span aria-hidden="true" className="strip-vote" title={`counts toward today's posture — signal is ${vs.word}`} style={{fontFamily:T.fontMono,fontSize:T.fsXs,fontWeight:700,color:T[vs.colorKey],letterSpacing:"0.05em"}}>▪</span>}
                 {ex&&<span className="visually-hidden"> — what is this? Opens an explainer.</span>}
               </div>
-              <div style={{fontFamily:T.fontMono,fontSize:13,color:T.textPrimary,fontWeight:700,lineHeight:1.1}}>{v}</div>
-              <div className="strip-sub" style={{fontFamily:T.fontMono,fontSize:9,color:sc}}>{s}</div>
+              <div style={{fontFamily:T.fontMono,fontSize:T.fsL,color:T.textPrimary,fontWeight:700,lineHeight:1.1}}>{v}</div>
+              <div className="strip-sub" style={{fontFamily:T.fontMono,fontSize:T.fsXs,color:sc}}>{s}</div>
             </Explainable>
           </div>
           );

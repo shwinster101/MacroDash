@@ -5,6 +5,41 @@ answers *"is it safe to be in the market?"* from live macro + market + sentiment
 data. Single-page React app on Cloudflare Pages, with live data assembled at the
 edge by Pages Functions and cached in KV.
 
+**v6.8.1 "PUBLIC TERMINAL SKIN, Slice 2 item 1" — the macro strip lift (owner: "build the macro
+strip lift"; the plan's Slice 2 line reads *"Strip: labels fs-s (11), values fs-l (14). Drop the
+8px ⓘ next to every ticker — the whole tile is already the tap target. Four-column phone grid
+stays."*).** One component, `src/sections/MacroStrip.jsx`, and nothing else moved: no threshold,
+no vote colour, no eyebrow, no tooltip, no grid rule. The three literals the baseline measured as
+the smallest text on the page — 8px label · 13px value · 9px sub, on the one row whose LABEL is the
+only thing that says what the number is — now read the token floor: **label `fs-s` 11 · value
+`fs-l` 14 · sub-line and ▪ marker `fs-xs` 10**. The 4-column phone grid and the 44px tile rule are
+untouched (every tile still ≥44px at 390, the pin's own measurement; the lift did not need the floor
+to grow). **The per-tile ⓘ is DELETED,
+not shrunk** — since v6.3 the tile's whole face is the `Explainable` button, so an 8px amber glyph
+beside every ticker was a second affordance for the target already under the thumb; the
+visually-hidden *"— what is this? Opens an explainer."* promise stays on every tile, because an
+sr-only sentence is the affordance a screen reader needs and it costs no pixels. The Simple CARDS
+keep their ⓘ — this reversal is scoped to the strip, and the pins say so.
+**Measured, phone 390×844, same probe and fixture as the baseline:** strip region 111 → **122px**
+(+11, the lift's real cost; the Spotlight below it moves 529 → 540 in Simple, 621 → 632 in Degen);
+the v6.3 budgets still clear with room (cards begin at 218 ≤ 420, the first strip number at 466 ≤
+660 — printed by the pin); sub-11px words **Simple 115 → 99, Degen 881 → 865**; the smallest
+visible leaf in the strip is now 10px, read off the DOM. **Three pins re-pinned with the reason at
+the pin, none loosened:** the smoke v6.3 affordance pin's ⓘ half is REVERSED to pinned-ABSENT
+(sr-only promise still pinned present), the `strip-sub` literal pin reads `T.fsXs`, and the
+browser pin that counted eight ⓘ glyphs now proves eight dialog triggers + zero ⓘ + eight sr-only
+promises (by accessible-name count, not innerText — the glyph it used to count was the thing
+removed). Two pins added: every `fontSize` in the strip is a token read with no numeric literal
+left (source), and label/value/sub measured in Chromium equal `DT["fs-s"]`/`fs-l`/`fs-xs` with
+no visible strip leaf under 10px — the strip is one component in both modes, so the Simple read
+covers Degen's strip too.
+Tests: **2520 smoke** (+1 net: one added, the v6.3 affordance pin re-pinned in place) + 335 render
+(admin.html untouched) + **368 public-render** (+1) + `audit:prod` clean.
+**Deliberately NOT done (the rest of Slice 2):** the Simple cards onto strip anatomy, the Degen
+hero status lines, Spotlight chrome / closed-by-default, the recharts tick `fontFamily` leak, the
+max-width container — each is its own pass. Acceptance item 3 ("zero fontSize below 10px") is
+still not claimed: this closes it for the strip's 8/9px literals only.
+
 **v6.8.0 "PUBLIC TERMINAL SKIN, Slice 1" — the token bridge and the one-row header (PR #49's
 plan, `docs/plans/public-terminal-skin.md`; owner: "build Slice 1 tokens + header, nothing
 else").** The 2026-09-17 screenshots proved two products, not two altitudes: Simple was gold

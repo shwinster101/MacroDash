@@ -204,3 +204,26 @@ as **v6.8.0** on this branch; the CLAUDE.md entry carries the full record.
 Gates at ship: 2519 smoke · 335 render · 367 public-render · audit:prod clean.
 The probe remains a scratch script; the acceptance items it measured are now pinned in
 `test/public-render.mjs` (Slice 1 section), so the header heights cannot drift back.
+
+### Slice 2 item 1 — the macro strip lift (v6.8.1, same day)
+
+Owner: "build the macro strip lift". One file (`src/sections/MacroStrip.jsx`): label 8 → `fs-s`
+11, value 13 → `fs-l` 14, sub-line and ▪ marker 9/8 → `fs-xs` 10, the per-tile ⓘ deleted (the
+tile is the button since v6.3; the sr-only promise stays). Grid and 44px rule untouched.
+
+| Metric (390×844, same probe) | After Slice 1 | After the strip lift |
+|---|---|---|
+| Strip region height, both modes | 111 | **122** (+11) |
+| Spotlight top, Simple / Degen | 529 / 621 | 540 / 632 |
+| Cards top / first strip number (the v6.3 pin) | — / — | 218 / 466 (budgets 420 / 660) |
+| Words under 11px, Simple | 115 of 200 | **99 of 192** |
+| Words under 11px, Degen | 881 of 1,257 | **865 of 1,249** |
+| Smallest visible leaf in the strip | 8px | **10px** |
+
+**Corrections, recorded:** §3's "8px label / 13px value / 9px sub" is closed for the strip only;
+the same 8/9px literals still stand in SourceBox, eyebrows, footer, Spotlight and the Degen hero
+captions (Slice 2's remaining items). The word totals fell by exactly eight in both modes — the
+eight ⓘ glyphs the census had been counting as words, which slightly overstated the baseline's
+sub-11px share on every surface that wore one.
+
+Gates at ship: 2520 smoke · 335 render · 368 public-render · audit:prod clean.

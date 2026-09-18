@@ -11715,11 +11715,21 @@ console.log("\n[79] v6.3.0 eight sheets — one resolver, band identity, context
   ok("[79] strip: the button is a reset face (no box of its own) inside the tile div that keeps the hover title, the classes and the layout",
     /className="strip-tile" style=\{\{background:"none",border:"none",padding:0,margin:0\}\}/.test(strip) &&
     /<div key=\{l\} title=\{`\$\{t\}\\n\(\$\{m\.toLowerCase\(\)\}\)/.test(strip) && /style=\{\{flexShrink:0,minWidth:68,cursor:"help"\}\}>\s*<Explainable/.test(strip));
-  ok("[79] strip: the affordance is stated — the amber ⓘ and the screen-reader promise ride the label row only when a sheet exists",
-    /\{ex&&<span aria-hidden="true" title="What is this\?"[^>]*>ⓘ<\/span>\}/.test(strip) &&
+  /* v6.8.1 REVERSAL of the v6.3 ⓘ half of this pin (Slice 2 item 1, the strip lift): the
+     whole tile face has been the Explainable button since v6.3, so the 8px glyph beside every
+     ticker was a second affordance for the target already under the thumb. It is pinned ABSENT
+     now; the screen-reader promise (the affordance a screen reader actually needs) stays pinned
+     PRESENT. The cards keep their ⓘ — this reversal is scoped to the strip. */
+  ok("[79→v6.8.1] strip: the per-tile ⓘ glyph is gone (the tile IS the target) while the screen-reader promise still rides the label row when a sheet exists",
+    !/ⓘ/.test(noCmt(strip)) &&
     /\{ex&&<span className="visually-hidden"> — what is this\? Opens an explainer\.<\/span>\}/.test(strip));
-  ok("[79] strip: the sub-line carries its own class (the browser suite reads its colour by class now that the tile's last child is the button)",
-    /<div className="strip-sub" style=\{\{fontFamily:T\.fontMono,fontSize:9,color:sc\}\}>\{s\}<\/div>/.test(strip));
+  ok("[79] strip: the sub-line carries its own class (the browser suite reads its colour by class now that the tile's last child is the button) — v6.8.1: its size reads the fs-xs token, not the old 9px literal",
+    /<div className="strip-sub" style=\{\{fontFamily:T\.fontMono,fontSize:T\.fsXs,color:sc\}\}>\{s\}<\/div>/.test(strip));
+  ok("[v6.8.1] strip lift: label fs-s · value fs-l · ▪ marker fs-xs — every fontSize in the strip is a TOKEN read, and no sub-10 literal survives",
+    /fontSize:T\.fsS,color:T\.textMuted\}\}>\{l\}<\/span>/.test(strip) &&
+    /fontSize:T\.fsL,color:T\.textPrimary,fontWeight:700,lineHeight:1\.1\}\}>\{v\}<\/div>/.test(strip) &&
+    /className="strip-vote"[^>]*fontSize:T\.fsXs,/.test(strip) &&
+    !/fontSize:\s*\d/.test(noCmt(strip)));
   ok("[79] strip: presentation only — the section still imports no computation, hook or storage, and stays under the 300-line bound",
     !/useMarketData|computeRegime|buildEvidenceSet|summarizeEvidence|compareEvidence|localStorage/.test(noCmt(strip)) && strip.split("\n").length <= 300);
   ok("[79] strip: the phone thumb target — every tile button gets the same 44px floor the cards and the ✕ get",
