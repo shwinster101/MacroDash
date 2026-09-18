@@ -11,7 +11,11 @@ export const ILLUS_HATCH = "repeating-linear-gradient(45deg, transparent, transp
 export const IllustrativeChip = ({ label = "ILLUSTRATIVE · not live" }) => (
   // FEAT-322: inline-block + maxWidth/ellipsis so a chip inside a narrow tile truncates
   // gracefully instead of forcing horizontal page scroll at 390px (v3.1 clipped raw).
-  <span style={{ fontFamily:T.fontMono, fontSize:8, letterSpacing:"0.06em", color:T.amber, background:T.amber+"18", border:`1px solid ${T.amber}55`, borderRadius:3, padding:"1px 6px", whiteSpace:"nowrap", flexShrink:0, display:"inline-block", maxWidth:"100%", overflow:"hidden", textOverflow:"ellipsis", boxSizing:"border-box" }}>◫ {label}</span>
+  // v6.8.5: fs-xs, the token floor for a chip — this renders INSIDE the CollapsedGroup
+  // toggle, so lifting the toggle's label and leaving its chip at 8px would have left the
+  // one control half-done while reading as finished. The ellipsis contract above is what
+  // absorbs the extra width; the 320px overflow pins are what prove it.
+  <span style={{ fontFamily:T.fontMono, fontSize:T.fsXs, letterSpacing:"0.06em", color:T.amber, background:T.amber+"18", border:`1px solid ${T.amber}55`, borderRadius:3, padding:"1px 6px", whiteSpace:"nowrap", flexShrink:0, display:"inline-block", maxWidth:"100%", overflow:"hidden", textOverflow:"ellipsis", boxSizing:"border-box" }}>◫ {label}</span>
 );
 // True when a tile's data carries no live signal and must not render a verdict.
 export const isIllustrative = (mode) => mode === "MOCK" || mode === "STALE";

@@ -5,6 +5,44 @@ answers *"is it safe to be in the market?"* from live macro + market + sentiment
 data. Single-page React app on Cloudflare Pages, with live data assembled at the
 edge by Pages Functions and cached in KV.
 
+**v6.8.5 "PUBLIC TERMINAL SKIN" — the shared fold toggle takes the floor, and acceptance item 3
+is CLAIMED for Simple and SCOPED for Degen (owner: "the CollapsedGroup toggle lift — the one
+primitive standing between you and claiming acceptance item 3").** Two primitives,
+`src/primitives/CollapsedGroup.jsx` and the `IllustrativeChip` that renders INSIDE its button; no
+caller changed, no fold moved, no open-state rule touched. The operator label reads the token
+floor as a tracked uppercase eyebrow (**`fs-s` 11**, was an 8px literal) — the same anatomy the
+strip label, the Simple card eyebrow and the Degen hero status row took in v6.8.1–v6.8.4 — and
+the chip reads **`fs-xs` 10**, because lifting a button's label and leaving its own chip at 8px
+would leave one control half-done while reading as finished. **The Simple `promise` form keeps
+`fs-l`**: T7 made it a 2–4 word reading label one step above the operator chip, and flattening
+the two would undo that ruling.
+**⚠ MY OWN FRAMING WAS WRONG, and correcting it is the more useful half of this release.** I
+called this toggle *"the one primitive standing between you and claiming acceptance item 3"*.
+Measured, it was not: the toggle carried **26 of 144** sub-10px leaves in a closed Degen. After
+this lift a closed Degen still holds **116**, and they are not in a primitive — they are
+section-by-section literals in MarketDetail / MacroRegime / Signal Quality / Watchlist / Alerts /
+the accountability footer links / the `SpyTapeBadge` (**7px**, the smallest text on the page) and
+the recharts axis ticks. Each is its own pass. The claim is therefore split and both halves are
+pinned: **SIMPLE — the default view — now renders NOTHING under 10px anywhere**, hero through
+footer, measured on the fullest live page with the folds closed, and a browser pin fails on the
+first sub-floor literal that reaches it; **DEGEN is explicitly NOT claimed**, with the remaining
+count and its homes recorded here and in the working note so the next pass is aimed rather than
+guessed.
+**Measured, and the phone cost is ZERO:** `.cg-toggle` has carried a 44px thumb target at ≤480px
+since wave 15, so the row already reserved the height — Degen's doc height is **5,174px before
+and after** at 390, with the strip, spotlight and every region top byte-identical. Desktop pays
+**+28px** (2,720 → 2,748 at 1280). Degen's 8px word bucket falls **222 → 138**, sub-11px words
+**789 → 705**; Simple is untouched at every altitude (verdict 119, cards 178, strip 418, budgets
+218 / 466).
+**One pin re-pinned with the reason:** T7's claim is unchanged — the promise label is still a step
+above the operator chip — but it measured that chip as the LITERAL `8`, so it now reads both sides
+as TOKENS and pins every numeric `fontSize` ABSENT from the primitive, so the floor cannot be
+re-opened there.
+Tests: **2523 smoke** + 335 render + **376 public-render** (+2, measured in Chromium: every visible
+toggle span at or above the floor, and the whole Simple page proven clean).
+**Deliberately NOT done:** the ~116 Degen section literals above (the real remainder of acceptance
+item 3), the recharts tick `fontFamily` leak, the max-width container.
+
 **v6.8.4 "PUBLIC TERMINAL SKIN, Slice 2 item 4" — the Degen hero status lines onto the tokens
 (owner: "the Degen hero status lines — the last block of the plan's Slice 2 that is pure chrome";
 the plan's line reads *"Hero: Simple keeps one word + one sentence. Degen keeps moon voice, but

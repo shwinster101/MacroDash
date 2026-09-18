@@ -12395,8 +12395,13 @@ console.log("\n[83] Simple altitude — fs-xxl Hold, fs-body sentence, one-block
     !/fontFamily: T\.fontSans/.test(spc) && !/fontSize:\s*\d/.test(spc));
   ok("v6.8.2: the card's ⓘ glyph is gone (the card IS the sheet trigger since v5.8) while the sr-only explainer promise stays — the strip's v6.8.1 rule, scoped to the cards now too",
     !/ⓘ/.test(spc) && /\{c\.explain && <span className="visually-hidden"> — what is this\? Opens an explainer\.<\/span>\}/.test(spc));
-  ok("T7: Simple fold promises render at fs-l, not a 8px operator chip",
-    /fontSize: promise \? T\.fsL : 8/.test(cgSrc));
+  /* v6.8.5 RE-PIN: the T7 claim is unchanged — the Simple promise label still reads fs-l, a
+     step above the operator chip — but the chip it is measured against is no longer an 8px
+     LITERAL: it reads the fs-s floor. Both halves pinned by TOKEN, and the numeric literal is
+     pinned ABSENT from the whole primitive so the floor cannot be re-opened here. */
+  ok("T7→v6.8.5: Simple fold promises render at fs-l, one step above the operator chip, which now reads the fs-s floor rather than an 8px literal",
+    /fontSize: promise \? T\.fsL : T\.fsS/.test(cgSrc) && TOK_T.fsL > TOK_T.fsS &&
+    !/fontSize:\s*\d/.test(cgSrc.replace(/\/\/[^\n]*|\/\*[\s\S]*?\*\//g, "")));
   ok("T8: Simple ℹ is gone — Hold ⓘ is the clock; copy stays icon-only on the Hold row",
     /\{!plainVerdict&&<div/.test(band) && /aria-label="Show regime factors"/.test(band) &&
     /\{plainVerdict&&copyControl\}/.test(band) &&

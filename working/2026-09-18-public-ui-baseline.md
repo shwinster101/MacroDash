@@ -333,3 +333,45 @@ DOM order and REPORTS the packing.
 header disclosure, not chrome, and it would bury the clipboard behind a tap on the operator route.
 
 Gates at ship: 2523 smoke · 335 render · 374 public-render · audit:prod clean.
+
+### The fold toggle takes the floor — and acceptance item 3, measured (v6.8.5, same day)
+
+Owner: "the CollapsedGroup toggle lift — the one primitive standing between you and claiming
+acceptance item 3." `src/primitives/CollapsedGroup.jsx` + the `IllustrativeChip` inside its button.
+
+- Operator label 8px literal → **fs-s 11**, tracked uppercase (the strip/card/hero eyebrow anatomy).
+  Simple's `promise` form keeps **fs-l** — T7 made it a reading label one step above the chip.
+- `IllustrativeChip` 8px → **fs-xs 10**: it renders inside the same button, so leaving it would
+  have left the one control half-done while reading as finished.
+
+**Correction — my framing was wrong, and this is the finding.** The toggle was not the one thing
+standing between us and item 3. Measured leaf-by-leaf at 390px:
+
+| sub-10px leaves, closed state | before | after |
+|---|---|---|
+| Simple (the default view) | **0** | **0** |
+| Degen — CollapsedGroup toggle | 26 | **0** |
+| Degen — everything else | 118 | 116 |
+| Degen total | 144 | **116** |
+
+The remaining 116 are section literals, not a primitive: MarketDetail / MacroRegime (8px ×30,
+9px ×43), Watchlist + Alerts (35), Signal Quality (4), the accountability footer links (9px ×2),
+the `SpyTapeBadge` (**7px ×2 — the smallest text on the page**), and the recharts ticks. Opening
+every fold takes Degen to 393. Each is its own pass.
+
+**So the claim splits, and both halves are now pinned.** Acceptance item 3 is **CLAIMED for
+SIMPLE** — the whole default view, hero through footer, renders nothing under 10px, with a browser
+pin that fails on the first sub-floor literal to reach it — and **NOT claimed for Degen**, with the
+count and its homes recorded above so the next pass is aimed rather than guessed.
+
+| Metric | After hero (v6.8.4) | After toggle (v6.8.5) |
+|---|---|---|
+| Degen doc height @390 | 5,174 | **5,174 (zero cost)** |
+| Degen doc height @1280 | 2,720 | 2,748 (+28) |
+| Degen 8px words · sub-11px words | 222 · 789 | **138 · 705** |
+| Simple verdict / cards / strip | 119 / 178 / 418 | unchanged |
+
+The phone cost is zero because `.cg-toggle` has carried a 44px thumb target at ≤480px since
+wave 15 — the row already reserved the height the bigger label needed.
+
+Gates at ship: 2523 smoke · 335 render · 376 public-render · audit:prod clean.

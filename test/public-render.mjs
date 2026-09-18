@@ -1819,6 +1819,24 @@ console.log("\n[public] v6.0.1/v6.4 — shape before text · Simple|Degen clarit
   });
   ok(`v6.8.4 Degen hero type floor: the smallest visible leaf in the verdict region is ${heroMin}px`,
     heroMin !== null && heroMin >= DT["fs-xs"]);
+  /* v6.8.5 — the CollapsedGroup toggle, the most-rendered label on the page (26 of them in a
+     closed Degen). Measured, not string-pinned: every operator label reads fs-s and the
+     ILLUSTRATIVE chip inside the same button reads fs-xs, so the one control has no sub-floor
+     text left. The 44px thumb rule at ≤480px already reserved the row, which is why the lift
+     cost the phone ZERO height (docH 5174 before and after) and desktop +28px. */
+  const toggles = await page.evaluate(() => {
+    const out = [];
+    for (const b of document.querySelectorAll("button.cg-toggle")) {
+      if (!b.offsetParent) continue;
+      for (const s of b.querySelectorAll("span")) {
+        if (!(s.textContent || "").trim()) continue;
+        out.push(Math.round(parseFloat(getComputedStyle(s).fontSize) * 10) / 10);
+      }
+    }
+    return out;
+  });
+  ok(`v6.8.5 Degen: every visible CollapsedGroup toggle span reads the token floor (${toggles.length} spans, smallest ${toggles.length ? Math.min(...toggles) : "n/a"}px) — the label at fs-s, the chip at fs-xs`,
+    toggles.length >= 4 && toggles.every((p) => p >= DT["fs-xs"]) && toggles.some((p) => p === DT["fs-s"]));
   ok("v6.4/Slice 1 toggle (Degen): the fill follows the choice — Degen is now the green half",
     (await page.locator('button[aria-pressed="true"]').evaluate((n) => [n.innerText.replace(/\s+/g, " ").trim(), getComputedStyle(n).backgroundColor].join("|"))) === `◉ Degen|${GREEN}`);
   await page.close();
@@ -2204,6 +2222,29 @@ console.log("\n[public] v6.5 — STOCK SPOTLIGHT: Simple + Degen, always-visible
       chrome.frame.r === chrome.card.r && chrome.frame.rule === "1px");
     ok(`v6.8.3 Spotlight type floor: no visible leaf in the closed region renders under 10px — chart axis ticks included (smallest ${chrome.min}px)`,
       Number.isFinite(chrome.min) && chrome.min >= DT["fs-xs"]);
+    /* v6.8.5 — ACCEPTANCE ITEM 3, CLAIMED FOR SIMPLE AND ONLY FOR SIMPLE.
+       The plan's item 3 is "zero fontSize below 10px". Measured on the fullest Simple page
+       there is (hero + cards + strip + spotlight + folds + footer, live feed, closed state):
+       NOTHING visible renders under 10px. That is the default view, so the claim is real — and
+       it is scoped, because the same probe still counts 116 sub-10px leaves in a closed Degen,
+       living in MarketDetail / MacroRegime / Signal Quality / Watchlist / Alerts / the footer
+       links / the SpyTapeBadge (7px) / recharts ticks. Those are section-by-section literals,
+       not a primitive, and each is its own pass. This pin is what stops Simple regressing while
+       that work happens: any new sub-floor literal reaching the default view fails HERE. */
+    const simpleFloor = await page.evaluate(() => {
+      const w = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT); const bad = []; let n;
+      const hidden = (el) => { const cs = getComputedStyle(el); return cs.display === "none" || cs.visibility === "hidden" || el.classList.contains("visually-hidden") || el.closest(".visually-hidden"); };
+      while ((n = w.nextNode())) { const t = (n.textContent || "").trim(); if (!t) continue; const el = n.parentElement;
+        if (!el || hidden(el) || (el.closest("details:not([open])") && !el.closest("summary"))) continue;
+        const px = parseFloat(getComputedStyle(el).fontSize);
+        if (px < 10) bad.push(`${px}px "${t.slice(0, 30)}"`); }
+      for (const e of document.querySelectorAll("svg text")) {
+        const px = parseFloat(getComputedStyle(e).fontSize);
+        if (px < 10) bad.push(`svg ${px}px "${(e.textContent || "").trim().slice(0, 20)}"`); }
+      return bad;
+    });
+    ok(`v6.8.5 acceptance item 3 (SIMPLE): no visible leaf on the whole default view renders under 10px${simpleFloor.length ? " — found " + simpleFloor.slice(0, 5).join(" · ") : ""}`,
+      simpleFloor.length === 0);
     ok("v6.5 Simple: 390px stays overflow-free with the chart in place, no page errors",
       await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth + 1) && errors.length === 0);
     // The full three-question text lives one tap deep in Simple (`opened`), on the face in Degen.

@@ -43,7 +43,14 @@ const CollapsedGroup = ({ count, label, chip = true, defaultOpen = false, persis
       <button onClick={toggle} aria-expanded={open} className="cg-toggle"
         style={{ width:"100%", display:"flex", alignItems:"center", gap:8, padding:"6px 0",
                  background:"none", border:"none", cursor:"pointer", textAlign:"left" }}>
-        <span style={{ fontFamily:T.fontMono, fontSize: promise ? T.fsL : 8, color:T.textMuted,
+        {/* v6.8.5 (PUBLIC TERMINAL SKIN, Slice 2): the operator form was the last 8px LITERAL
+            in a primitive, and it is the most-rendered label on the page — 26 toggles in a
+            closed Degen, 36 open. It reads the token floor as a tracked uppercase eyebrow
+            (fs-s 11), the same anatomy the strip label, the Simple card eyebrow and the Degen
+            hero status row took in v6.8.1-v6.8.4. The Simple `promise` form keeps fs-l: T7 made
+            it a 2-4 word reading label, deliberately one step above the operator chip, and
+            flattening the two would undo that ruling. */}
+        <span style={{ fontFamily:T.fontMono, fontSize: promise ? T.fsL : T.fsS, color:T.textMuted,
                        letterSpacing: promise ? "0.04em" : "0.12em",
                        textTransform: promise ? "none" : "uppercase" }}>
           {open ? (promise ? "▾ Hide" : "▾ hide") : (promise ? "▸" : `▸ +${count}`)} {label}
