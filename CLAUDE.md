@@ -5,6 +5,37 @@ answers *"is it safe to be in the market?"* from live macro + market + sentiment
 data. Single-page React app on Cloudflare Pages, with live data assembled at the
 edge by Pages Functions and cached in KV.
 
+**v6.8.7 — scheduled audit: the 5 Whys cross-checked against its own requirements, and the type-
+floor queue moves by one (owner: the recurring "review the repo, audit the 5 Whys, cross-check
+its data sources, review what's missing" pass — same trigger as v6.3.1).** `npm run gates` was
+GREEN at the start of this pass (2525 smoke + 335 render + 376 public-render + `audit:prod`
+clean) — unlike the 2026-09-10 pass, no tripwire was firing, so this is maintenance, not a fire
+drill. **`computeFiveWhys` audited against `src/regime.js`/`src/evidence.js` fresh, not assumed
+from the prior pass's notes**: the six `CHANNEL` keys (`tenYear · vix · fearGreed · cpiHeadline ·
+valuation · nfci`) still match `REGIME_BAND_TABLE`'s six entries exactly; `dashboard.jsx` still
+hands `computeFiveWhys` the SAME `evidenceSet.factors`/`call` the hero and Drivers matrix render
+(one derivation, confirmed at the call site, not re-derived); `isMacroMaterial` is still imported
+from `src/headlines.js`, never a second allowlist; the CPI/Fed series are still the v5.4.0/v3.99.0
+corrections (`CPIAUCNS`/`CPILFENS`, `DFEDTARU`/`DFEDTARL` ahead of the lagging `FEDFUNDS`
+average). The module has in fact MOVED since the 2026-09-10 note described it — v6.6.1 "ONE
+ENGINE, TWO ALTITUDES" split it into `simpleWhys`/`degenWhys` sharing one set of computed rows,
+and the 2026-09-17 copy audit (99ea2fe) tightened WHY #3's transmission phrasing — both changes
+are copy/altitude only, no data source or vote arithmetic moved, and both are what this pass
+verified rather than took on faith. **No defect found.** The `FOMC_MEETINGS` tripwire (v3.99.0)
+has ample runway (last date `2027-12-08`, all of 2026 owner-confirmed, the 2027 half still
+flagged ASSERTED-NOT-OWNER-CONFIRMED per v6.3.1 — unchanged, still an owner action item, not yet
+due). **What actually moved this pass**: `src/sections/FiveWhys.jsx` — the presentation half of
+the audited module — was one of the twelve files still on the v6.8.6 type-floor PENDING list (5
+literals: the regime eyebrow and the five WHY-label captions at 8-9px). Lifted to the established
+anatomy (tracked uppercase labels → `fs-s` 11, sub-line captions → `fs-xs` 10 — the same split
+every other swept file in this run used), and removed from `PENDING` (now 11 of the original
+12) — the sweep's own "a cleaned file must be deleted from PENDING" rule, applied. No copy, no
+computation, no threshold moved; `whysSrc`'s line count and every existing content pin are
+unchanged. Full findings, the highest-leverage-next-move ranking, and the corrections to the
+prior audit's own notes are in `working/2026-09-18-scheduled-audit.md`.
+Tests: **2525 smoke** (0 net — the type-floor sweep's own two pins re-verify against the smaller
+PENDING set) + 335 render + 376 public-render + `audit:prod` clean.
+
 **v6.8.6 "PUBLIC TERMINAL SKIN" — the tape badge, the macro block, and the type floor becomes a
 TEST (owner: "the SpyTapeBadge 7px, then the MarketDetail/MacroRegime block that holds 73 of the
 remaining 116").** Presentation only across eight files: `SpyTapeBadge`, `MarketDetail`,

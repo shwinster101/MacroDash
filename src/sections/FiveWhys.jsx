@@ -66,12 +66,12 @@ const FiveWhys=({fw,derivedLabel,mode,asOf,label="why this call · 5 checks",fli
           verdict 100px above, so v3.25 is satisfied by the hero itself; the line rides
           INSIDE the collapse so the chain still opens with its own anchor. */}
       <CollapsedGroup count={5} label={promise?label:(flipChip?`${label} — ⇄ ${flipChip}`:label)} chip={false} persistKey={persistKey} promise={promise}>
-        <div style={{fontFamily:T.fontMono,fontSize:9,color:T.amber,marginBottom:2}}>{fw.regime}</div>
+        <div style={{fontFamily:T.fontMono,fontSize:T.fsS,color:T.amber,marginBottom:2}}>{fw.regime}</div>
         <div style={{fontFamily:T.fontSans,fontSize:12,color:T.textSecondary,lineHeight:1.6,fontStyle:"italic"}}>"{fw.headline}"</div>
         {/* The final check is the actionable flip condition, so it carries the strongest weight. */}
         {fw.whys.map((w,i)=>{const last=i===fw.whys.length-1;return(
           <div key={i} style={{borderLeft:`${last?3:2}px solid ${T.amber}${last?"":"44"}`,paddingLeft:8,marginTop:8}}>
-            <div style={{fontFamily:T.fontMono,fontSize:8,color:T.amber}}>{fw.labels?.[i]||`WHY #${i+1}`}</div>
+            <div style={{fontFamily:T.fontMono,fontSize:T.fsS,color:T.amber}}>{fw.labels?.[i]||`WHY #${i+1}`}</div>
             <div style={{fontFamily:T.fontSans,fontSize:11,color:last?T.textPrimary:T.textSecondary,fontWeight:last?600:400,lineHeight:1.5}}>{w}</div>
           </div>
         );})}
@@ -85,11 +85,11 @@ const FiveWhys=({fw,derivedLabel,mode,asOf,label="why this call · 5 checks",fli
             {Array.from({length:coverage.total},(_,i)=>{const on=i<coverage.counted;return(
               <span key={i} style={{width:5,height:5,borderRadius:"50%",background:on?T.green:"transparent",border:`1px solid ${on?T.green:T.amber}`}}/>);})}
           </span>
-          <span style={{fontFamily:T.fontMono,fontSize:8,color:T.textMuted}}>
+          <span style={{fontFamily:T.fontMono,fontSize:T.fsXs,color:T.textMuted}}>
             {coverage.counted} of {coverage.total} signals counted{coverage.excluded&&coverage.excluded.length?` · ${coverage.excluded.length} unavailable`:""}
           </span>
         </div>}
-        <div style={{fontFamily:T.fontMono,fontSize:8,color:T.textMuted,marginTop:8}}>Rule-based · {derivedLabel} (no LLM)</div>
+        <div style={{fontFamily:T.fontMono,fontSize:T.fsXs,color:T.textMuted,marginTop:8}}>Rule-based · {derivedLabel} (no LLM)</div>
         <SourceBox api="Rule-based" endpoint="6-signal model · stale inputs excluded" mode={mode} asOf={asOf}/>
       </CollapsedGroup>
     </div>

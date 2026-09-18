@@ -12409,7 +12409,7 @@ console.log("\n[83] Simple altitude — fs-xxl Hold, fs-body sentence, one-block
   {
     const FLOOR = DT["fs-xs"];
     const PENDING = ["dashboard.jsx", "AIUnitEconomics.jsx", "Alerts.jsx", "CallBanners.jsx", "DataHealth.jsx",
-      "DriversMatrix.jsx", "FiveWhys.jsx", "Headwinds.jsx", "SignalQuality.jsx", "TerminalDock.jsx",
+      "DriversMatrix.jsx", "Headwinds.jsx", "SignalQuality.jsx", "TerminalDock.jsx",
       "Watchlist.jsx", "WhatChanged.jsx"];
     const files = [...readdirSync(new URL("../src/sections/", import.meta.url)).map((f) => ["sections", f]),
       ...readdirSync(new URL("../src/primitives/", import.meta.url)).map((f) => ["primitives", f]), ["", "dashboard.jsx"]]
@@ -12429,7 +12429,7 @@ console.log("\n[83] Simple altitude — fs-xxl Hold, fs-body sentence, one-block
        from PENDING, or the list would keep claiming work that is already done — the
        label-outlives-its-data defect pointed at a to-do list. */
     ok(`v6.8.6 type floor: the PENDING list names only files that genuinely still have sub-floor literals${cleanButListed.length ? " — now clean, delete from PENDING: " + cleanButListed.join(", ") : ""}`,
-      cleanButListed.length === 0 && PENDING.length === 12);
+      cleanButListed.length === 0 && PENDING.length === 11);
   }
   ok("T7→v6.8.5: Simple fold promises render at fs-l, one step above the operator chip, which now reads the fs-s floor rather than an 8px literal",
     /fontSize: promise \? T\.fsL : T\.fsS/.test(cgSrc) && TOK_T.fsL > TOK_T.fsS &&
