@@ -249,3 +249,48 @@ literal, so the file still carried three non-strip sizes. Closed now; the first 
 (hero, cards, strip) carries no literal under 10px. Spotlight and the folds still do.
 
 Gates at ship: 2521 smoke · 335 render · 369 public-render · audit:prod clean.
+
+### Slice 2 item 3 — the Spotlight takes the Simple card's chrome (v6.8.3, same day)
+
+Owner: "the Spotlight chrome pass, same method, one commit." Plan line 83 scopes it to chrome:
+same panel as a Simple card, face unchanged, the paragraph wall stays inside its existing fold,
+no rounded consumer-card look. `src/sections/StockSpotlight.jsx` only — no model, calculation,
+fold membership or mode split moved.
+
+- One `PANEL` (radius 5 · 8px/10px) replaces the radius-6 / 10px-12px container at all five
+  sites; the retired literals are pinned absent.
+- The 3px left rule is **derived**: it is that company's own chart-line stroke, so the rule is
+  the legend. The chart frame belongs to both companies and therefore wears no rule.
+- Row label → mono fs-s tracked (was fs-xs); identity → mono (name fs-l 700, ticker fs-s amber).
+  Prose (blurb, assessment, lesson, long "Unavailable —" reason) keeps the sans alias on purpose.
+- Eleven 8px literals gone, **including the recharts axis ticks and the zero-line label** — the
+  scale the two lines are read against. Zero numeric `fontSize` left in the file.
+- The ⓘ is **kept**, reversing nothing: on the strip tile and the Simple card the whole element
+  was the trigger, so the glyph was a second affordance; here only the label is the trigger, so
+  it is the first one. Pinned against both files that must not carry one.
+
+| Metric (390×844) | After cards (v6.8.2) | After Spotlight (v6.8.3) |
+|---|---|---|
+| Spotlight top / height, Simple | 540 / 626 | 540 / **626** |
+| Spotlight height, Degen | 2,560 | 2,650 (+90) |
+| Spotlight height, Simple @1280 | 436 | 436 |
+| Words under 11px, Simple | 99 of 189 | **78 of 189** |
+| Simple 8px bucket | 36 words | **0** |
+| Degen 8px bucket | 315 words | 236 words |
+| Smallest visible leaf in the region, Simple | 8px | **10px** |
+| Cards / strip budget print | 218 / 466 | 218 / 466 |
+
+The Simple region cost **nothing**: the padding the panel gives back paid for the type floor
+exactly. Degen pays 90px, which is the honest price of the same lift over ~170 leaves.
+
+**Not claimed, pinned instead:** two sub-10px leaves survive in the Degen region and both are the
+shared `CollapsedGroup` toggle — a primitive every fold uses, so lifting it is its own pass; the
+browser pin asserts every remaining one is that toggle, so a new 8px literal inside the Spotlight
+fails there. The recharts tick `fontFamily` leak is untouched: the ticks render mono by
+inheritance, not declaration, and the site comment says so.
+
+**Left open, deliberately:** whether Degen's Spotlight should be closed by default. 2,650px open,
+directly under the strip, is a real cost — but it is a disclosure ruling, not chrome, and the
+question was asked and not answered.
+
+Gates at ship: 2523 smoke · 335 render · 372 public-render · audit:prod clean.

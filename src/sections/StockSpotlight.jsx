@@ -28,6 +28,17 @@ import { spotlightFace, lessonTitle, lessonBody, chartTitle, EXPLORE_FOLD_LABEL 
 import { spotlightExplain, valuationExplain, peDisplay } from "../spotlightExplain.js";
 
 const LINE = { anchor: { stroke: T.amber, dash: null }, comparison: { stroke: T.blue, dash: "5 3" } };
+/* v6.8.3 (PUBLIC TERMINAL SKIN, Slice 2 item 3 — "Spotlight: same panel chrome as a Simple
+   card … no rounded consumer-card look"). ONE panel object, shared by both profiles, both
+   supporting-analysis panels and the chart frame, carrying the Simple card's own container
+   (radius 5, 8px/10px padding) instead of the widget's old radius-6 / 10px-12px consumer card.
+   The 3px left rule is the Simple card's too — but here it is DERIVED, not decoration: it is
+   the company's own chart-line colour, so the rule IS the legend and a panel can never claim a
+   line it does not draw. The chart frame belongs to BOTH companies, so it wears the panel and
+   no rule — a coloured rule there would assert an owner that does not exist. */
+const PANEL = { background: T.surface, border: `1px solid ${T.border}`, borderRadius: 5, padding: "8px 10px", minWidth: 0 };
+const legColor = (i) => (i === 0 ? LINE.anchor.stroke : LINE.comparison.stroke);
+const panel = (rule) => (rule ? { ...PANEL, borderLeft: `3px solid ${rule}` } : PANEL);
 const money = (v) => {
   if (typeof v !== "number" || !Number.isFinite(v)) return null;
   const s = v < 0 ? "−" : "", a = Math.abs(v);
@@ -65,12 +76,19 @@ const Unavail = ({ reason, compact = false }) => (
       ? (shortReason(reason) ? <span style={{ color: T.textMuted, fontFamily: T.fontMono, fontSize: T.fsXs }}> · {shortReason(reason)}</span> : null)
       : (reason ? <span style={{ color: T.textMuted, fontFamily: T.fontSans, fontSize: T.fsS }}> — {reason}</span> : null)}</span>
 );
+/* The row IS the strip's anatomy — eyebrow · value · sub — in the strip's own tokens: the
+   label reads mono fs-s (11) tracked and muted like a strip label (was fs-xs 10), the value
+   keeps fs-m / fs-l, the sub stays fs-xs. The ⓘ is KEPT here, and the v6.8.1/v6.8.2 deletions
+   are why: there the whole tile and the whole card were already the Explainable button, so the
+   glyph was a SECOND affordance on a target under the thumb. Here only the LABEL is the button
+   — the value sits outside it — so the glyph is the FIRST and only visible affordance, and
+   dropping it would remove the affordance rather than de-duplicate it. */
 const Row = ({ label, value, sub, unavailable, big = false, compact = false, explain }) => (
   <div style={{ display: "flex", alignItems: "baseline", gap: 6, flexWrap: "wrap", minWidth: 0, padding: "2px 0" }}>
     {explain ? <span style={{ flexShrink: 0, minWidth: 92 }}><Explainable explain={explain} title={explain.full} eyebrow={explain.eyebrow} className="stock-metric-trigger"
       style={{ background: "none", border: 0, padding: "8px 0", minHeight: 44, minWidth: 92, flex: "0 1 auto" }}>
-      <span style={{ fontFamily: T.fontMono, fontSize: T.fsXs, color: T.textMuted, textTransform: "uppercase" }}>{label} <span style={{ color: T.amber }}>ⓘ</span></span>
-    </Explainable></span> : <span style={{ fontFamily: T.fontMono, fontSize: T.fsXs, color: T.textMuted, letterSpacing: "0.04em", textTransform: "uppercase", flexShrink: 0, minWidth: 92 }}>{label}</span>}
+      <span className="stock-row-label" style={{ fontFamily: T.fontMono, fontSize: T.fsS, color: T.textMuted, letterSpacing: "0.08em", textTransform: "uppercase" }}>{label} <span style={{ color: T.amber }}>ⓘ</span></span>
+    </Explainable></span> : <span className="stock-row-label" style={{ fontFamily: T.fontMono, fontSize: T.fsS, color: T.textMuted, letterSpacing: "0.08em", textTransform: "uppercase", flexShrink: 0, minWidth: 92 }}>{label}</span>}
     {value != null && !unavailable
       ? <span title={compact && typeof sub === "string" ? sub : undefined} style={{ fontFamily: T.fontMono, fontSize: big ? T.fsL : T.fsM, fontWeight: big ? 700 : 500, color: T.textPrimary, minWidth: 0 }}>{value}</span>
       : <Unavail reason={unavailable} compact={compact} />}
@@ -83,10 +101,10 @@ const Row = ({ label, value, sub, unavailable, big = false, compact = false, exp
 const summaryIsNumeric = (summary) => Array.isArray(summary) && summary.length === 2 &&
   summary.every((s) => /\d/.test(s) && !/is unavailable|unavailable —/i.test(s));
 const Stale = ({ f }) => f && f.stale
-  ? <span title={f.reason || "stale"} style={{ fontFamily: T.fontMono, fontSize: 8, color: T.amber, border: `1px solid ${T.amber}55`, borderRadius: 3, padding: "0 4px", marginLeft: 4 }}>STALE</span>
+  ? <span title={f.reason || "stale"} style={{ fontFamily: T.fontMono, fontSize: T.fsXs, color: T.amber, border: `1px solid ${T.amber}55`, borderRadius: 3, padding: "0 4px", marginLeft: 4 }}>STALE</span>
   : null;
 
-const Profile = ({ c, leg, simple }) => {
+const Profile = ({ c, leg, simple, rule }) => {
   const m = c.metrics || {};
   const rg = m.revenueGrowth || {}, om = m.operatingMargin || {}, fcf = m.fcf || {};
   const cap = c.marketCap || {};
@@ -94,10 +112,10 @@ const Profile = ({ c, leg, simple }) => {
     const face = spotlightFace(c, leg);
     if (!face) return null;
     return (
-      <Explainable explain={spotlightExplain(c, leg)} title={c.name} eyebrow={c.symbol} className="stock-profile-trigger" style={{ background: T.surface, border: `1px solid ${T.border}`, borderRadius: 6, padding: "10px 12px", minWidth: 0 }}>
+      <Explainable explain={spotlightExplain(c, leg)} title={c.name} eyebrow={c.symbol} className="stock-profile-trigger" style={panel(rule)}>
         <div style={{ display: "flex", alignItems: "baseline", gap: 8, flexWrap: "wrap" }}>
-          <span style={{ fontFamily: T.fontSans, fontSize: T.fsL, fontWeight: 700, color: T.textPrimary }}>{face.name}</span>
-          <span style={{ fontFamily: T.fontMono, fontSize: T.fsM, color: T.amber }}>{face.symbol}</span>
+          <span className="stock-name" style={{ fontFamily: T.fontMono, fontSize: T.fsL, fontWeight: 700, color: T.textPrimary }}>{face.name}</span>
+          <span className="stock-ticker" style={{ fontFamily: T.fontMono, fontSize: T.fsS, color: T.amber, letterSpacing: "0.08em" }}>{face.symbol}</span>
           {face.stale && <Stale f={{ stale: true }} />}
         </div>
         <Row label="Market cap" compact value={cap.display} unavailable={cap.unavailable} />
@@ -107,16 +125,15 @@ const Profile = ({ c, leg, simple }) => {
         <Row label={face.stat.label} compact
           value={face.stat.value}
           unavailable={face.stat.unavailable} />
-        <span style={{ display: "block", marginTop: 4, fontFamily: T.fontSans, fontSize: T.fsS, color: T.amber }}>Learn about this stock →</span>
+        <span style={{ display: "block", marginTop: 4, fontFamily: T.fontMono, fontSize: T.fsS, color: T.amber }}>Learn about this stock →</span>
       </Explainable>
     );
   }
   return (
-    <div style={{ background: T.surface, border: `1px solid ${T.border}`, borderRadius: 6, padding: "10px 12px", minWidth: 0 }}
-      role="group" aria-label={`${c.name} (${c.symbol}) profile`}>
+    <div style={panel(rule)} role="group" aria-label={`${c.name} (${c.symbol}) profile`}>
       <div style={{ display: "flex", alignItems: "baseline", gap: 8, flexWrap: "wrap" }}>
-        <span style={{ fontFamily: T.fontSans, fontSize: T.fsL, fontWeight: 700, color: T.textPrimary }}>{c.name}</span>
-        <span style={{ fontFamily: T.fontMono, fontSize: T.fsM, color: T.amber }}>{c.symbol}</span>
+        <span className="stock-name" style={{ fontFamily: T.fontMono, fontSize: T.fsL, fontWeight: 700, color: T.textPrimary }}>{c.name}</span>
+        <span className="stock-ticker" style={{ fontFamily: T.fontMono, fontSize: T.fsS, color: T.amber, letterSpacing: "0.08em" }}>{c.symbol}</span>
       </div>
       {!simple && c.blurb && <div style={{ fontFamily: T.fontSans, fontSize: T.fsS, color: T.textSecondary, lineHeight: 1.35, marginBottom: 3 }}>{c.blurb}</div>}
       {/* Always visible, both modes: the market cap NUMBER and the YTD NUMBER. Degen adds the
@@ -137,7 +154,7 @@ const Profile = ({ c, leg, simple }) => {
         sub={typeof om.priorPct === "number" ? `from ${om.priorPct.toFixed(1)}% a year earlier` : om.period || null} />
       <Row label="Free cash flow" compact={simple} value={money(fcf.value)} unavailable={fcf.unavailable} sub={fcf.period ? `${fcf.period} · OCF − capex` : null} />
       {!simple && c.freshness && c.freshness.fundamentals &&
-        <div style={{ fontFamily: T.fontMono, fontSize: 8, color: T.textMuted, marginTop: 2 }}>
+        <div style={{ fontFamily: T.fontMono, fontSize: T.fsXs, color: T.textMuted, marginTop: 2 }}>
           {c.freshness.fundamentals.label}{c.freshness.fundamentals.period ? ` · ${c.freshness.fundamentals.period}` : ""}{c.freshness.fundamentals.form ? ` · ${c.freshness.fundamentals.form}` : ""}
         </div>}
       {c.assessment && (simple
@@ -178,11 +195,11 @@ const FullAssessment = ({ a }) => (
   </div>
 );
 
-const Detail = ({ c, simple }) => {
+const Detail = ({ c, simple, rule }) => {
   const m = c.metrics || {};
   const v = m.valuation || {}, tr = m.trend || {}, rr = m.runRate, cash = m.cash || {}, debt = m.debt || {}, sh = m.shares || {};
   return (
-    <div style={{ background: T.surfaceHigh, border: `1px solid ${T.border}`, borderRadius: 6, padding: "8px 12px", minWidth: 0 }} role="group" aria-label={`${c.symbol} supporting analysis`}>
+    <div style={{ ...panel(rule), background: T.surfaceHigh }} role="group" aria-label={`${c.symbol} supporting analysis`}>
       <div style={{ fontFamily: T.fontMono, fontSize: T.fsXs, color: T.amber, letterSpacing: "0.1em", marginBottom: 4 }}>{c.symbol} · SUPPORTING ANALYSIS</div>
       <Row label="Cash" value={money(cash.value)} unavailable={cash.unavailable} sub={cash.asOf ? `at ${cash.asOf}` : null} />
       <Row label="Debt" value={money(debt.value)} unavailable={debt.unavailable} sub={debt.asOf ? `at ${debt.asOf}` : null} />
@@ -196,7 +213,7 @@ const Detail = ({ c, simple }) => {
       {rr && <Row label="Run-rate vs TTM" value={`${money(rr.annualized)} vs ${money(rr.ttm) || "TTM unavailable"}`} sub={typeof rr.gapPct === "number" ? `latest quarter × 4 is ${pct(rr.gapPct)} vs reported TTM` : "latest quarter × 4"} />}
       {c.assessment && c.assessment.inputs && c.assessment.inputs.length > 0 && (
         <div style={{ marginTop: 5 }}>
-          <div style={{ fontFamily: T.fontMono, fontSize: 8, color: T.textMuted, letterSpacing: "0.1em" }}>CALCULATION INPUTS</div>
+          <div style={{ fontFamily: T.fontMono, fontSize: T.fsXs, color: T.textMuted, letterSpacing: "0.1em" }}>CALCULATION INPUTS</div>
           <ul style={{ margin: "2px 0 0", paddingLeft: 16, fontFamily: T.fontMono, fontSize: T.fsXs, color: T.textSecondary, lineHeight: 1.5 }}>
             {c.assessment.inputs.map((s, i) => <li key={i}>{s}</li>)}
           </ul>
@@ -244,17 +261,22 @@ const Chart = ({ tracker, syms, simple }) => {
             </span>
           );
         })}
-        {!simple && <span style={{ fontFamily: T.fontMono, fontSize: 8, color: T.textMuted }}>from {tracker.baselineDate} · through {tracker.through}</span>}
+        {!simple && <span style={{ fontFamily: T.fontMono, fontSize: T.fsXs, color: T.textMuted }}>from {tracker.baselineDate} · through {tracker.through}</span>}
       </div>
       {tracker.partial && <div style={{ fontFamily: T.fontSans, fontSize: T.fsS, color: T.amber }}>{tracker.partial}</div>}
       <div aria-hidden="true" style={{ height: 160, minWidth: 0 }}>
         <ResponsiveContainer width="100%" height="100%">
           <LineChart data={pts} margin={{ top: 6, right: 8, left: 0, bottom: 0 }}>
-            <XAxis dataKey="date" ticks={monthStarts(pts)} tickFormatter={monthTick} tick={{ fontSize: 8, fill: T.textMuted }} interval={0} />
-            <YAxis tickFormatter={(v) => `${v}%`} tick={{ fontSize: 8, fill: T.textMuted }} width={40} domain={["auto", "auto"]} />
-            <Tooltip contentStyle={{ background: T.surfaceHigh, border: `1px solid ${T.border}`, fontSize: 10, fontFamily: T.fontMono }}
+            {/* The axis ticks ARE read — they are the scale the two lines are judged against —
+                so they take the token floor (fs-xs 10) rather than the 8px they carried since
+                v6.5.0. The tick fontFamily leak is NOT fixed here and is not claimed: recharts
+                inherits the container's family today, so these render mono by inheritance, not
+                by declaration. */}
+            <XAxis dataKey="date" ticks={monthStarts(pts)} tickFormatter={monthTick} tick={{ fontSize: T.fsXs, fill: T.textMuted }} interval={0} />
+            <YAxis tickFormatter={(v) => `${v}%`} tick={{ fontSize: T.fsXs, fill: T.textMuted }} width={40} domain={["auto", "auto"]} />
+            <Tooltip contentStyle={{ background: T.surfaceHigh, border: `1px solid ${T.border}`, fontSize: T.fsXs, fontFamily: T.fontMono }}
               formatter={(val, name) => [typeof val === "number" ? pct(val, 2) : "gap", name]} labelFormatter={(d) => `${d}`} />
-            <ReferenceLine y={0} stroke={T.textMuted} strokeDasharray="3 3" label={{ value: "0%", fontSize: 8, fill: T.textMuted, position: "insideTopLeft" }} />
+            <ReferenceLine y={0} stroke={T.textMuted} strokeDasharray="3 3" label={{ value: "0%", fontSize: T.fsXs, fill: T.textMuted, position: "insideTopLeft" }} />
             {drawn.map((s, i) => {
               const k = syms.indexOf(s) === 0 ? "anchor" : "comparison";
               return <Line key={s} type="linear" dataKey={s} name={s} stroke={LINE[k].stroke} strokeDasharray={LINE[k].dash || undefined}
@@ -265,7 +287,7 @@ const Chart = ({ tracker, syms, simple }) => {
       </div>
       {/* Accessible inspection: the same points, as a table, keyboard- and reader-reachable. */}
       {!simple && <details style={{ marginTop: 2 }}>
-        <summary style={{ fontFamily: T.fontMono, fontSize: 8, color: T.textMuted, cursor: "pointer", letterSpacing: "0.08em" }}>▸ INSPECT CHART VALUES (date · YTD %)</summary>
+        <summary style={{ fontFamily: T.fontMono, fontSize: T.fsXs, color: T.textMuted, cursor: "pointer", letterSpacing: "0.08em" }}>▸ INSPECT CHART VALUES (date · YTD %)</summary>
         <div style={{ overflowX: "auto" }}>
           <table style={{ borderCollapse: "collapse", fontFamily: T.fontMono, fontSize: T.fsXs, color: T.textSecondary, marginTop: 4 }}>
             <thead><tr><th style={{ textAlign: "left", padding: "1px 8px 1px 0" }}>date</th>{syms.map((s) => <th key={s} style={{ textAlign: "right", padding: "1px 8px" }}>{s}</th>)}</tr></thead>
@@ -318,18 +340,18 @@ const StockSpotlight = ({ spotlight, simple }) => {
       style={{ padding: "10px 20px", background: T.bg, borderBottom: `1px solid ${T.border}` }}>
       <div style={{ display: "flex", alignItems: "baseline", gap: 8, flexWrap: "wrap", marginBottom: 6 }}>
         <span style={{ fontFamily: T.fontMono, fontSize: T.fsXs, color: T.amber, letterSpacing: "0.12em", textTransform: "uppercase" }}>Stock Spotlight</span>
-        <span style={{ fontFamily: T.fontSans, fontSize: T.fsM, color: T.textPrimary }}>{m.pair.anchor} × {m.pair.comparisonLabel} ({m.pair.comparison})</span>
-        {!simple && <span style={{ fontFamily: T.fontMono, fontSize: 8, color: T.textMuted }}>week of {m.pair.weekKey} · next: {m.pair.nextComparison}</span>}
-        {!simple && <span style={{ marginLeft: "auto", fontFamily: T.fontMono, fontSize: 8, color: T.textMuted, border: `1px solid ${T.border}`, borderRadius: 3, padding: "0 5px" }}>educational · not advice</span>}
+        <span style={{ fontFamily: T.fontMono, fontSize: T.fsM, color: T.textPrimary }}>{m.pair.anchor} × {m.pair.comparisonLabel} ({m.pair.comparison})</span>
+        {!simple && <span style={{ fontFamily: T.fontMono, fontSize: T.fsXs, color: T.textMuted }}>week of {m.pair.weekKey} · next: {m.pair.nextComparison}</span>}
+        {!simple && <span style={{ marginLeft: "auto", fontFamily: T.fontMono, fontSize: T.fsXs, color: T.textMuted, border: `1px solid ${T.border}`, borderRadius: 3, padding: "0 5px" }}>educational · not advice</span>}
       </div>
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(260px,1fr))", gap: 8 }}>
-        {companies.map((c) => <Profile key={c.symbol} c={c} leg={legs[c.symbol]} simple={simple} />)}
+        {companies.map((c, i) => <Profile key={c.symbol} c={c} leg={legs[c.symbol]} simple={simple} rule={legColor(i)} />)}
       </div>
       {/* Simple: the learning moment comes BEFORE the chart, right after the two compact
           profiles — the widget is a lesson first (review 2026-09-13). Degen keeps chart → lesson. */}
       {simple && lesson && <Lesson lesson={lesson} simple />}
-      <div style={{ marginTop: 8, background: T.surface, border: `1px solid ${T.border}`, borderRadius: 6, padding: "8px 12px", minWidth: 0 }} role="group" aria-label="Year-to-date comparison chart">
-        <div style={{ fontFamily: T.fontMono, fontSize: T.fsXs, color: T.textMuted, letterSpacing: "0.1em", marginBottom: 2 }}>{simple ? chartTitle(m.pair) : "YTD COMPARISON · total return from 0% at the prior-year close"}</div>
+      <div style={{ ...PANEL, marginTop: 8 }} role="group" aria-label="Year-to-date comparison chart">
+        <div style={{ fontFamily: T.fontMono, fontSize: T.fsS, color: T.textMuted, letterSpacing: "0.1em", marginBottom: 2 }}>{simple ? chartTitle(m.pair) : "YTD COMPARISON · total return from 0% at the prior-year close"}</div>
         <Chart tracker={m.tracker} syms={syms} simple={simple} />
       </div>
       {!simple && lesson && <Lesson lesson={lesson} simple={false} />}
@@ -347,21 +369,21 @@ const StockSpotlight = ({ spotlight, simple }) => {
             ))}
           </div>
           <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(260px,1fr))", gap: 8, marginTop: 8 }}>
-            {companies.map((c) => <Detail key={c.symbol} c={c} simple={simple} />)}
+            {companies.map((c, i) => <Detail key={c.symbol} c={c} simple={simple} rule={legColor(i)} />)}
           </div>
           <div style={{ marginTop: 6 }}><Sources companies={companies} tracker={m.tracker} /></div>
         </CollapsedGroup>
       ) : (
         <>
           <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(260px,1fr))", gap: 8, marginTop: 8 }}>
-            {companies.map((c) => <Detail key={c.symbol} c={c} simple={simple} />)}
+            {companies.map((c, i) => <Detail key={c.symbol} c={c} simple={simple} rule={legColor(i)} />)}
           </div>
           <CollapsedGroup count={companies.reduce((n, c) => n + ((c.sources || []).length), 0)} label="sources & calculations — dated citations" chip={false}>
             <Sources companies={companies} tracker={m.tracker} />
           </CollapsedGroup>
         </>
       )}
-      <div style={{ fontFamily: T.fontMono, fontSize: 8, color: T.textMuted, marginTop: 4 }}>
+      <div style={{ fontFamily: T.fontMono, fontSize: T.fsXs, color: T.textMuted, marginTop: 4 }}>
         {m.disclaimer}{m.businessDate ? ` · refreshed ${m.businessDate}` : ""}
       </div>
     </div>

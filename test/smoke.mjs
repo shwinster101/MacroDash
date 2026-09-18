@@ -12288,6 +12288,28 @@ console.log("\n[81] v6.5.0 STOCK SPOTLIGHT — calculations, endpoints, cron leg
     (() => { const cg = ssCode.slice(ssCode.indexOf("simple ? ("), ssCode.lastIndexOf("</CollapsedGroup>")); return /<FullAssessment a=\{c\.assessment\} \/>/.test(cg); })() &&
     ssCode.indexOf("{simple && lesson && <Lesson") < ssCode.indexOf("<Chart tracker={m.tracker}") && ssCode.indexOf("<Chart tracker={m.tracker}") < ssCode.indexOf("{!simple && lesson && <Lesson") &&
     /awaiting first trading close/.test(ssCode) && /tracker\.yearRollover/.test(ssCode));
+  /* v6.8.3 (PUBLIC TERMINAL SKIN, Slice 2 item 3 — the plan's "Spotlight: same panel chrome as a
+     Simple card … no rounded consumer-card look"). ONE panel object replaces the widget's own
+     radius-6 / 10px-12px container at every site, the left rule is DERIVED from the company's
+     chart-line colour (so the rule is the legend), and the chart frame — which belongs to both
+     companies — wears the panel with NO rule. The retired container is pinned ABSENT. */
+  ok("[81]→v6.8.3 chrome: one PANEL (the Simple card's radius 5 / 8px 10px), a left rule derived from the chart line, no rule on the shared chart frame, and the retired radius-6 consumer container gone",
+    /const PANEL = \{ background: T\.surface, border: `1px solid \$\{T\.border\}`, borderRadius: 5, padding: "8px 10px"/.test(ssCode) &&
+    /const legColor = \(i\) => \(i === 0 \? LINE\.anchor\.stroke : LINE\.comparison\.stroke\)/.test(ssCode) &&
+    /const panel = \(rule\) => \(rule \? \{ \.\.\.PANEL, borderLeft: `3px solid \$\{rule\}` \} : PANEL\)/.test(ssCode) &&
+    /<Profile key=\{c\.symbol\}[^>]*rule=\{legColor\(i\)\}/.test(ssCode) && /<Detail key=\{c\.symbol\}[^>]*rule=\{legColor\(i\)\}/.test(ssCode) &&
+    /style=\{\{ \.\.\.PANEL, marginTop: 8 \}\} role="group" aria-label="Year-to-date comparison chart"/.test(ssCode) &&
+    !/borderRadius: 6/.test(ssCode) && !/padding: "10px 12px"/.test(ssCode) && !/fontSize: \d/.test(ssCode));
+  /* The ⓘ SURVIVES here, and the v6.8.1 strip / v6.8.2 card deletions are exactly why: there the
+     whole tile and the whole card were already the Explainable button, so the glyph was a SECOND
+     affordance on a target under the thumb. In the Spotlight only the metric LABEL is the button,
+     so the glyph is the FIRST one — deleting it would remove the affordance, not de-duplicate it.
+     Pinned against the two files that must NOT carry one, so the distinction stays deliberate. */
+  ok("[81]→v6.8.3 row: the label is the strip's own eyebrow (mono fs-s, tracked, uppercase) and the ⓘ STAYS — here the label alone is the trigger, unlike the strip tile and the Simple card",
+    /className="stock-row-label" style=\{\{ fontFamily: T\.fontMono, fontSize: T\.fsS, color: T\.textMuted, letterSpacing: "0\.08em", textTransform: "uppercase"/.test(ssCode) &&
+    /className="stock-name" style=\{\{ fontFamily: T\.fontMono, fontSize: T\.fsL/.test(ssCode) && /className="stock-ticker" style=\{\{ fontFamily: T\.fontMono, fontSize: T\.fsS/.test(ssCode) &&
+    /\{label\} <span style=\{\{ color: T\.amber \}\}>ⓘ<\/span>/.test(ssCode) &&
+    ["../src/sections/SimpleCards.jsx", "../src/sections/MacroStrip.jsx"].every((f) => !/ⓘ/.test(readSrc(f).replace(/\/\/[^\n]*|\/\*[\s\S]*?\*\//g, ""))));
   ok("[81] section: the chart draws a labelled zero line, distinguishable lines (solid vs dashed), leaves gaps un-connected, and offers a keyboard-reachable value table",
     /<ReferenceLine y=\{0\}[^>]*label=\{\{ value: "0%"/.test(ssCode) && /dash: "5 3"/.test(ssCode) && /connectNulls=\{false\}/.test(ssCode) && /<details/.test(ssCode) && /<table/.test(ssCode));
   ok("[81] docs: the plan travels with the implementation, and the env matrix names SPOTLIGHT_ENABLED and TIINGO_KEY with their deploy and degraded state",

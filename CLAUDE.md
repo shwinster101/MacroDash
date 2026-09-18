@@ -5,6 +5,53 @@ answers *"is it safe to be in the market?"* from live macro + market + sentiment
 data. Single-page React app on Cloudflare Pages, with live data assembled at the
 edge by Pages Functions and cached in KV.
 
+**v6.8.3 "PUBLIC TERMINAL SKIN, Slice 2 item 3" — the Spotlight takes the Simple card's chrome
+(owner: "the Spotlight chrome pass, same method, one commit"; the plan's line reads *"Spotlight:
+same panel chrome as a Simple card. Face stays name / one return / one fundamental. The 6-K
+paragraph wall stays inside the existing fold. No rounded consumer-card look."*).** One component,
+`src/sections/StockSpotlight.jsx`; the model, the rotation, every calculation in
+`functions/lib/spotlight.js`, the Simple/Degen split and what sits inside which fold are all
+byte-unchanged — the plan's own words scope this to chrome, so nothing moved above or below a fold.
+**ONE `PANEL` object** now serves both profiles, both supporting-analysis panels and the chart
+frame, carrying the Simple card's own container (**radius 5 · 8px/10px padding**) in place of the
+widget's radius-6 / 10px-12px consumer card — the "third language" the baseline named, retired, and
+the retired literals pinned ABSENT. **The 3px left rule is the card's too, and here it is DERIVED
+rather than decorative: it is the company's own chart-line colour**, so the rule IS the legend and a
+panel can never claim a line it does not draw; the chart frame belongs to BOTH companies and wears
+the panel with NO rule, because a coloured rule there would assert an owner that does not exist.
+**The row is the strip's anatomy** — the metric label reads mono `fs-s` 11 tracked and muted like a
+strip label (was `fs-xs` 10), the value keeps `fs-m`/`fs-l`, the sub stays `fs-xs`; identity is mono
+throughout (name `fs-l` 700, ticker `fs-s` amber tracked — the sans alias left the chrome, and PROSE
+keeps it: the blurb, the assessment, the lesson body and a long "Unavailable —" reason are the
+reading voice, not chrome, and that boundary is stated rather than swept).
+**The ⓘ SURVIVES here, and the v6.8.1/v6.8.2 deletions are exactly why.** On the strip tile and the
+Simple card the whole element was already the `Explainable` button, so the glyph was a SECOND
+affordance on a target under the thumb. In the Spotlight only the metric LABEL is the button — the
+value sits outside it — so the glyph is the FIRST and only visible affordance, and deleting it would
+remove the affordance instead of de-duplicating it. Pinned against the two files that must NOT carry
+one, so the distinction stays a ruling and not an inconsistency.
+**Eleven 8px literals are gone**, all of them the Spotlight's own: the STALE badge, the freshness
+line, the week-of and "educational · not advice" chips, the chart's from/through, INSPECT CHART
+VALUES, CALCULATION INPUTS, the disclaimer, and — read off the DOM — **the recharts axis ticks and
+the zero-line label**, which are the scale the two lines are judged against. No numeric `fontSize`
+literal survives in the file.
+**Measured, 390×844, same probe:** the Simple region is **626px before and after** and still begins
+at 540 — the padding the panel gives back pays for the type floor exactly — while **Simple's
+sub-11px word count falls 99 → 78 and its 8px bucket (36 words) empties completely**; Degen pays
+2,560 → 2,650 (+90) for the same lift, 8px 315 → 236. The v6.3 budgets still print 218 / 466.
+Desktop Simple 436 unchanged. **Honest limit, pinned rather than claimed:** two sub-10px leaves
+remain in the Degen region and both are the shared `CollapsedGroup` toggle — a primitive every fold
+on the page uses, so it is not this pass's to lift; the browser pin asserts that every remaining
+one is that toggle, so a NEW 8px literal inside the Spotlight fails there. The recharts tick
+`fontFamily` leak is likewise NOT fixed: the ticks render mono today by INHERITANCE, not by
+declaration, and the comment at the site says so.
+Tests: **2523 smoke** (+2) + 335 render + **372 public-render** (+3, all measured in Chromium: the
+profiles' radius/padding read against the live `.simple-card`, each rule's colour read against its
+own `recharts-curve` stroke, and the smallest visible leaf in the closed region).
+**Deliberately NOT done:** the Degen Spotlight's closed-by-default question (asked, unanswered — a
+2,650px open panel is a real cost, but it is a disclosure ruling, not chrome), the Degen hero status
+lines, the recharts tick `fontFamily`, the `CollapsedGroup` toggle's own 8px, the max-width container.
+
 **v6.8.2 "PUBLIC TERMINAL SKIN, Slice 2 item 2" — the Simple cards adopt the strip anatomy
 (owner: "Simple cards should adopt it"; the plan's line reads *"keep three, restyle to strip
 anatomy (mono, left rule, HELPING/HURTING as color not a second word if the glyph already says

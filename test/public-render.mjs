@@ -2134,6 +2134,33 @@ console.log("\n[public] v6.5 — STOCK SPOTLIGHT: Simple + Degen, always-visible
       return [el ? Math.round(el.getBoundingClientRect().top + scrollY) : null, k ? Math.round(k.getBoundingClientRect().top + scrollY) : null]; });
     ok(`v6.5 budgets: the macro first screen is untouched — cards within 420px and the strip within 660px at 390×844 (measured ${cardsTop} / ${glance})`,
       cardsTop !== null && cardsTop <= 420 && glance !== null && glance <= 660);
+    /* v6.8.3 (PUBLIC TERMINAL SKIN, Slice 2 item 3): the Spotlight wears the Simple card's own
+       panel — measured in Chromium against the card itself, never against a literal — and its
+       left rule is the company's chart-line colour, so the rule IS the legend. The second half
+       is the acceptance item: with the region closed, NOTHING visible inside it renders under
+       10px. Measured after the edit: the Simple region is 626px before and after — the padding
+       the panel gives back pays for the type floor exactly. */
+    const chrome = await page.evaluate(() => {
+      const root = document.querySelector('[aria-label="Stock Spotlight"]');
+      const card = document.querySelector(".simple-card");
+      const box = (n) => { const cs = getComputedStyle(n); return { r: cs.borderTopLeftRadius, p: cs.padding, rule: cs.borderLeftWidth, col: cs.borderLeftColor }; };
+      const profs = [...root.querySelectorAll(".stock-profile-trigger")].map(box);
+      const line = [...root.querySelectorAll(".recharts-line path.recharts-curve")].map((p) => getComputedStyle(p).stroke);
+      const frame = box(root.querySelector('[aria-label="Year-to-date comparison chart"]'));
+      const w = document.createTreeWalker(root, NodeFilter.SHOW_TEXT); const px = []; let n;
+      const hidden = (el) => { const cs = getComputedStyle(el); return cs.display === "none" || cs.visibility === "hidden" || el.classList.contains("visually-hidden") || el.closest(".visually-hidden"); };
+      while ((n = w.nextNode())) { const t = (n.textContent || "").trim(); if (!t) continue; const el = n.parentElement;
+        if (!el || hidden(el) || (el.closest("details:not([open])") && !el.closest("summary"))) continue;
+        px.push(parseFloat(getComputedStyle(el).fontSize)); }
+      const svg = [...root.querySelectorAll("svg text")].map((e) => parseFloat(getComputedStyle(e).fontSize));
+      return { card: box(card), profs, frame, line, min: Math.min(...px, ...svg) };
+    });
+    ok(`v6.8.3 Spotlight chrome: the profiles wear the Simple card's panel (radius ${chrome.profs[0].r} = card ${chrome.card.r}, padding ${chrome.profs[0].p}), the 3px left rule is each company's own chart-line colour, and the shared chart frame carries NO rule`,
+      chrome.profs.length === 2 && chrome.profs.every((p) => p.r === chrome.card.r && p.p === chrome.card.p && p.rule === "3px") &&
+      chrome.line.length === 2 && chrome.profs[0].col === chrome.line[0] && chrome.profs[1].col === chrome.line[1] && chrome.profs[0].col !== chrome.profs[1].col &&
+      chrome.frame.r === chrome.card.r && chrome.frame.rule === "1px");
+    ok(`v6.8.3 Spotlight type floor: no visible leaf in the closed region renders under 10px — chart axis ticks included (smallest ${chrome.min}px)`,
+      Number.isFinite(chrome.min) && chrome.min >= DT["fs-xs"]);
     ok("v6.5 Simple: 390px stays overflow-free with the chart in place, no page errors",
       await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth + 1) && errors.length === 0);
     // The full three-question text lives one tap deep in Simple (`opened`), on the face in Degen.
@@ -2186,6 +2213,22 @@ console.log("\n[public] v6.5 — STOCK SPOTLIGHT: Simple + Degen, always-visible
     ok("v6.5 both modes: IDENTICAL market caps, YTD values and assessments (one model, two altitudes)",
       simpleFace && JSON.stringify(simpleFace.caps.slice(0, 2)) === JSON.stringify(degenFace.caps.slice(0, 2)) &&
       JSON.stringify(simpleFace.ytd.slice(0, 2)) === JSON.stringify(degenFace.ytd.slice(0, 2)) && JSON.stringify(simpleFace.business) === JSON.stringify(degenFace.business));
+    /* v6.8.3: the same panel chrome in Degen (one component, both modes), and an HONEST limit
+       rather than a claim — the ONLY sub-10px text left in the Degen region is the shared
+       CollapsedGroup toggle, which is a primitive every fold on the page uses and is therefore
+       NOT this pass's to lift. Pinned so a NEW 8px literal inside the Spotlight fails here. */
+    const dSmall = await page.evaluate(() => {
+      const root = document.querySelector('[aria-label="Stock Spotlight"]');
+      const w = document.createTreeWalker(root, NodeFilter.SHOW_TEXT); const out = []; let n;
+      const hidden = (el) => { const cs = getComputedStyle(el); return cs.display === "none" || cs.visibility === "hidden" || el.classList.contains("visually-hidden") || el.closest(".visually-hidden"); };
+      while ((n = w.nextNode())) { const t = (n.textContent || "").trim(); if (!t) continue; const el = n.parentElement;
+        if (!el || hidden(el) || (el.closest("details:not([open])") && !el.closest("summary"))) continue;
+        if (parseFloat(getComputedStyle(el).fontSize) < 10) out.push({ t: t.slice(0, 40), cg: !!el.closest("button.cg-toggle") }); }
+      const p = document.querySelector('[aria-label="NBIS supporting analysis"]'), c = document.querySelector('[aria-label="Nebius Group (NBIS) profile"]');
+      return { out, detailRadius: getComputedStyle(p).borderTopLeftRadius, detailRule: getComputedStyle(p).borderLeftWidth, profRule: getComputedStyle(c).borderLeftWidth };
+    });
+    ok(`v6.8.3 Degen: the profile and supporting-analysis panels wear the same 3px-ruled panel, and every remaining sub-10px leaf in the region is the shared CollapsedGroup toggle (${dSmall.out.length} left, not this pass's primitive)`,
+      dSmall.detailRadius === "5px" && dSmall.detailRule === "3px" && dSmall.profRule === "3px" && dSmall.out.every((x) => x.cg));
     ok("v6.5 Degen: no page errors", errors.length === 0);
     await page.close(); }
   // 4. UNAVAILABLE + STALE — a missing cap, a missing anchor series, a 12-day-old tape.
