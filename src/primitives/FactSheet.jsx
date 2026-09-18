@@ -110,7 +110,14 @@ export const ExplainerBody = ({ explain }) => {
     <>
     <ul style={{ margin: "6px 0 0", paddingLeft: 20, fontFamily: T.fontSans, fontSize: T.fsBody,
       color: T.textPrimary, lineHeight: 1.6 }}>
-      {explain.what.map((b, i) => <li key={i} style={{ marginBottom: 10 }}>{b}</li>)}
+      {explain.what.map((b, i) => <li key={i} className={i===1&&explain.currentComparison?"voter-comparison":undefined} style={{ marginBottom: 10 }}>
+        {i===1&&explain.currentComparison ? <div style={{background:T.surfaceHigh,borderLeft:`2px solid ${T.amber}`,padding:"10px 12px"}}>
+          <strong style={{display:"block"}}>{explain.currentComparison.current}</strong>
+          <span style={{display:"block",fontSize:T.fsM,color:T.textSecondary}}>{explain.currentComparison.stamp}</span>
+          <span style={{display:"block",marginTop:6}}>{explain.currentComparison.reference}</span>
+          <span style={{display:"block",marginTop:4}}>{explain.currentComparison.result}</span>
+        </div> : b}
+      </li>)}
     </ul>
     {explain.metadata && <div style={{ fontFamily: T.fontSans, fontSize: T.fsM, color: T.textSecondary, lineHeight: 1.5 }}>{explain.metadata}</div>}
     {explain.sources?.length > 0 && <div style={{ marginTop: 8, display: "flex", gap: 10, flexWrap: "wrap", fontFamily: T.fontSans, fontSize: T.fsM }}>

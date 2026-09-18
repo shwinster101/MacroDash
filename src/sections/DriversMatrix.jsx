@@ -1,6 +1,7 @@
 // Presentation of the canonical EvidenceSet, never a second voting engine.
 import { T } from "../design-tokens.js";
 import { voteStyle } from "../regime.js";
+import { voterSheet } from "../voterSheet.js";
 import { driverRows } from "../driverRows.js";
 import { DataModeBadge } from "../primitives/SourceBox.jsx";
 import { Explainable } from "../primitives/FactSheet.jsx";
@@ -18,7 +19,7 @@ export default function DriversMatrix({ evidenceSet, drift=false }) {
     </div>
     {driverRows(evidenceSet).map(f=>{
       const vs=voteStyle(f.available?f.vote:"excluded");
-      return <Explainable key={f.key} explain={f.conditionDetail?{...f.explain,metadata:f.conditionDetail}:f.explain} title={f.explain?.full||f.label}
+      return <Explainable key={f.key} explain={voterSheet(f)} title={f.explain?.full||f.label}
         eyebrow={`${f.short} · ${f.mode}${f.asOf?` · as of ${String(f.asOf).slice(0,10)}`:""}${!f.available?` · excluded — ${f.reason}`:` · ${f.reading}`}`}
         className="driver-card"
         style={{background:T.surface,border:`1px solid ${T.border}`,borderLeft:`3px solid ${T[vs.colorKey]}`,borderRadius:4,padding:"10px 12px",marginBottom:5,minHeight:44}}>

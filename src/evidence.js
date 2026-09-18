@@ -17,6 +17,7 @@
 //   ERROR         live fetch failed           → posture withheld, retry offered (B1)
 //   DEMO          mock build                  → demo posture allowed, everything ILLUSTRATIVE
 
+import { comparisonReading } from "./voterSheet.js";
 import { isStale, cadenceOf } from "./sources.js";
 // REGIME_BAND_TABLE is read here ONLY for each factor's plain-English name (`plain`), which
 // postureSummary needs. The VOTE is no longer re-derived from it: since FEAT-NEUTRAL (v3.62)
@@ -101,6 +102,9 @@ export function buildEvidenceSet({ d, provenance, dataAsOf, mode, liveBuild, now
       // current metric?" answered with a judgment. A non-finite reading yields value null
       // and text null — never a zero, never a fabricated level.
       metric: readMetric(d, f.key),
+      comparison: !excluded && !["LOADING","ERROR","DEMO"].includes(state) &&
+        ["LIVE","CACHED"].includes(fieldMode(provenance,dataAsOf,({tenYear:"tenYearM1",cpiHeadline:"cpiTrend"})[f.key]||field,now))
+        ? comparisonReading(f.key,d,readMetric(d,f.key)) : null,
       vote: f.vote,
       mode: fm,
       asOf: (dataAsOf && dataAsOf[field]) || null,
@@ -332,6 +336,7 @@ export function simpleCards(ev, max = 3) {
       // Typed, not parsed. A factor whose metric cannot be read shows an explicit dash —
       // the card still names the parameter and its direction, and never invents a level.
       currentValue: (f.metric && f.metric.text) || "—",
+      comparison: f.comparison,
       metricValue: (f.metric && f.metric.value) ?? null,
       metricContext: f.metric?.context || null,
       direction: DIRECTION_OF[f.vote],

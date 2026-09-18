@@ -1152,8 +1152,9 @@ console.log("\n[public] v4.0 — Simple verdicts, card selection, and what must 
   ok("v5.9.5 sheet: CAPE places the reading — old average, 1999 peak, and our hurt edge",
     /17\.4/.test(sheet) && /44\.19/.test(sheet) && /90%/.test(sheet) &&
     !/post-1990 median/.test(sheet));
-  ok("T3/T6 sheet: tapping a card surfaces as-of + the ruler chip that left the face",
-    /As of /.test(sheet) && /Rule: help <26\.1 · hurt >30/.test(sheet));
+  ok("7.0.1 sheet: bullet 2 prominently carries the current value, observation date and full model reference",
+    /Latest reported:/.test(sheet) && /observation date /.test(sheet) && /Model reference: help: CAPE below 26\.1/.test(sheet) &&
+    await page.getByRole("dialog").locator("li").nth(1).locator("strong").count()===1);
   ok("v5.8 sheet: focus moves into the sheet on open, onto the way out",
     await page.evaluate(() => document.activeElement && document.activeElement.hasAttribute("data-fs-close")));
   await page.keyboard.press("Tab"); await page.keyboard.press("Tab");
@@ -2491,8 +2492,8 @@ console.log("\n[public] T2–T6 — Simple face sheds clock, rulers, coverage, l
   }
   await page.waitForTimeout(200);
   const cardSheet = await page.locator('[role="dialog"]').innerText();
-  ok("T6 tap card: sheet has as-of + ruler",
-    /As of /.test(cardSheet) && /Rule: /.test(cardSheet));
+  ok("7.0.1 tap card: bullet 2 has dated current reading and model reference",
+    /Latest reported:/.test(cardSheet) && /observation date /.test(cardSheet) && /Model reference:/.test(cardSheet));
   await page.keyboard.press("Escape");
   await page.waitForTimeout(150);
   await page.locator("button", { hasText: "Degen" }).click();
@@ -2808,6 +2809,36 @@ for (const scenario of [
   ok("v7 "+power+"/"+width+": return basis, dates and three-bullet explainer",sheet.includes("Includes dividends")&&sheet.includes(base)&&sheet.includes(TODAY)&&await page.getByRole("dialog").locator("li").count()===3);
   await page.keyboard.press("Escape");
   if(process.env.PATCH_SCREENSHOTS)await page.screenshot({path:"/tmp/macrodash-v7-"+(power?"degen":"simple")+"-"+width+".png",fullPage:true});
+  await page.close();
+ }
+}
+{
+ const parity=new Map();
+ for(const power of [false,true])for(const width of [320,390]){
+  const {page,errors}=await open({live:FULL_LIVE,width,power});await page.waitForTimeout(1200);
+  const selector=power?".driver-card":".simple-card";
+  for(let i=0;i<6;i++){
+   await page.locator(selector).nth(i).click();
+   const dialog=page.getByRole("dialog"),second=dialog.locator("li").nth(1);
+   const body=await second.innerText();
+   ok("7.0.1 "+power+"/"+width+"/"+i+": current vs reference in bullet 2",body.includes("Latest reported:")&&body.includes("Model reference:")&&body.includes("observation date")&&await dialog.locator("li").count()===3);
+   ok("7.0.1 "+power+"/"+width+"/"+i+": prominent value and readable sheet",await second.locator("strong").evaluate(n=>getComputedStyle(n).fontWeight==="700"&&parseFloat(getComputedStyle(n).fontSize)>=16)&&await dialog.evaluate(n=>n.scrollWidth<=n.clientWidth+1));
+   if(width===390){if(!power)parity.set(i,body);else ok("7.0.1 "+i+": identical comparison across modes",parity.get(i)===body);}
+   if(process.env.PATCH_SCREENSHOTS&&width===390&&!power)await page.screenshot({path:"/tmp/macrodash-701-sheet-"+i+".png"});
+   await page.keyboard.press("Escape");
+   ok("7.0.1 "+power+"/"+width+"/"+i+": focus restored",await page.locator(selector).nth(i).evaluate(n=>document.activeElement===n));
+  }
+  ok("7.0.1 "+power+"/"+width+": no runtime errors",errors.length===0);await page.close();
+ }
+ for(const power of [false,true]){
+  const live={...FULL_LIVE,vixAsOf:daysAgo(14)};delete live.tenYearM1;delete live.cpiTrend;
+  const {page}=await open({live,width:390,power});await page.waitForTimeout(1200);
+  for(const i of [0,1,3]){
+   await page.locator(power?".driver-card":".simple-card").nth(i).click();
+   const body=await page.getByRole("dialog").locator("li").nth(1).innerText();
+   ok("7.0.1 "+power+"/"+i+": stale or missing comparison cannot look live",body.includes("Current reading unavailable")&&!body.includes("Latest reported:")&&body.includes("Model reference:"));
+   await page.keyboard.press("Escape");
+  }
   await page.close();
  }
 }

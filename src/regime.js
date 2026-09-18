@@ -215,7 +215,7 @@ export const REGIME_BAND_TABLE = [
        The clause is REMOVED here and stated correctly, with the PCE distinction, in the
        explainer sheet's baseline. Shorter on the card as a side effect, which is the
        direction the owner asked the primary view to move anyway. */
-    ruler:"help: latest YoY cooler than prior print · hurt: series up >0.5 pt from start",
+    ruler:"help: latest YoY cooler than prior print · otherwise hurt: series up >0.5 pt from start",
     rulerShort:"help: cooler than last print · hurt: drifting up",
     vote:(t)=> t[t.length-1] < t[t.length-2] ? "bull"
              : (t[t.length-1] - t[0] > 0.5 ? "bear" : "neutral"),

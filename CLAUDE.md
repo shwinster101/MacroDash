@@ -1,5 +1,17 @@
 # CLAUDE.md — MacroDash
 
+**v7.0.1 — current readings lead voter explainer bullet 2.**
+Simple and Degen share one dated current-vs-reference presentation across all six voters.
+Rates explicitly compare the monthly change; CPI shows previous print and trend-window
+start without inventing release dates. Reference text comes from the canonical band ruler;
+interpretation uses the existing vote. Stale/missing inputs show no current comparison.
+Exactly three bullets remain; no API, polling, model threshold, or frozen-call changes.
+Verification: browser-required npm run gates passed 2,711 smoke, 353 admin-browser and
+702 public-browser checks; production audit found zero vulnerabilities. The 88 new browser
+checks cover all six voters, shared text across modes, 320/390px readability, keyboard
+focus, and withheld stale/missing comparisons.
+
+
 **v7.0.0 — clearer sections and verified ETF YTD returns.**
 Major sections have prominent headings and separators; Stock Spotlight is no longer
 a small inline token. Market tiles add dated SPY and QQQ total returns including dividends,

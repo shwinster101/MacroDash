@@ -10237,7 +10237,7 @@ console.log("\n[67] v4.0 SIMPLE MODE — verdict mapping, card selection, senten
        print one in its own ruler. The correct statement, WITH the PCE distinction, now lives
        in the explainer sheet; the withdrawn claim is pinned ABSENT below so it cannot
        quietly return (the v3.85 retired-instruction rule). */
-    REGIME_BAND_TABLE.find((b)=>b.key==="cpiHeadline").ruler === "help: latest YoY cooler than prior print · hurt: series up >0.5 pt from start" &&
+    REGIME_BAND_TABLE.find((b)=>b.key==="cpiHeadline").ruler === "help: latest YoY cooler than prior print · otherwise hurt: series up >0.5 pt from start" &&
     !REGIME_BAND_TABLE.some((b)=>/Fed target 2%/.test(b.ruler)) &&
     REGIME_BAND_TABLE.find((b)=>b.key==="valuation").ruler === "help: CAPE below 26.1 (1.5× long-run mean 17.4) · hurt: CAPE above 30 or >90% of ATH 44.19" &&
     REGIME_BAND_TABLE.find((b)=>b.key==="nfci").ruler === "help at or below −0.5 SD · mid −0.5 to 0 · hurt above 0 (0 = 1971– mean)");
@@ -10253,7 +10253,7 @@ console.log("\n[67] v4.0 SIMPLE MODE — verdict mapping, card selection, senten
     (() => { const cards = sc({ regime:{ label:"RISK-ON" }, factors:[{ key:"vix", short:"VIX",
         vote:"bull", excluded:false, mode:"LIVE", metric:{ text:"14.43", value:14.43 } }] }).cards;
       return cards.length === 1 && cards[0].ruler === "help below 18 · mid 18–25 · hurt above 25"; })() &&
-    /c\.rulerChip && `Rule: \$\{c\.rulerChip\}\.`/.test(spcSrc) &&
+    spcSrc.includes("explain={voterSheet(c)}") && readSrc("../src/voterSheet.js").includes("band.ruler") &&
     !/\{c\.rulerChip && <span/.test(spcSrc) &&
     !/explain=\{c\.explain \? \{ \.\.\.c\.explain, lead:/.test(spcSrc));
   ok("ruler: the vote() functions, flip edges and quorum are byte-untouched by this feature",
@@ -10381,7 +10381,7 @@ console.log("\n[67] v4.0 SIMPLE MODE — verdict mapping, card selection, senten
      authors explainer copy nor renders the sheet body itself. */
   ok("explain: the sheet lives in a primitive — the section only hands it the projected copy",
     /import \{ Explainable \} from "\.\.\/primitives\/FactSheet\.jsx"/.test(spcSrc) &&
-    /<Explainable[\s\S]{0,220}explain=\{sheetOf\(c\)\}/.test(spcSrc) &&
+    /<Explainable[\s\S]{0,220}explain=\{voterSheet\(c\)\}/.test(spcSrc) &&
     !/what it is|what moves it|normal \/ neutral/.test(spcSrc));
   /* v5.9.1 — the SHEET renderer is now one shape, one path: no free-form sections, no quote
      block, no lead/drivers/baseline/macro. VERDICT_EXPLAIN moved onto the SAME {full,what:[3]}
@@ -13722,7 +13722,7 @@ console.log("\n[91] v6.9.5 — the daily rotation surfaced, the truncation named
 {
   const drivers=readSrc("../src/sections/DriversMatrix.jsx");
 ok("v6.9.9.5 supersedes v6.9.7 drivers: existing disclosure — one primary evidence view",
-  !drivers.includes("<CollapsedGroup") && drivers.includes("metadata:f.conditionDetail}:f.explain}") && !drivers.includes("stripExplainFor"));
+  !drivers.includes("<CollapsedGroup") && drivers.includes("explain={voterSheet(f)}") && !drivers.includes("stripExplainFor"));
   ok("v6.9.7 drivers: only tokenized type and no truncated evidence",
     !/fontSize:\s*\d/.test(drivers) && !/textOverflow|whiteSpace:\s*["']nowrap/.test(drivers) &&
     drivers.includes('className="driver-reading"') && drivers.includes('className="driver-date"'));
@@ -13812,5 +13812,6 @@ console.log("\n[v6.9.9.5] Degen evidence projection — rules stay canonical");
 }
 
 await (await import("./market-returns.mjs")).testMarketReturns(ok);
+(await import("./voter-sheets.mjs")).testVoterSheets(ok);
 console.log(`\n=== SMOKE TEST: ${pass} passed, ${fail} failed ===`);
 process.exit(fail === 0 ? 0 : 1);
