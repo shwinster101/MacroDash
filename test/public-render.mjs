@@ -2626,6 +2626,61 @@ console.log("\n[public] Slice 1 — one terminal skin: same header, same typefac
   await page.close();
 }
 
+/* ── v6.9.4 READ THE ROOM Slice 5 — the 320-word budget becomes a SWEEP ────────────────
+   v6.9.2 measured ONE fold (Simple's "Explore the numbers", 785 words behind a single tap)
+   and pinned it. That pin is kept below — it reports the precise pre-fix number, which is
+   what proves it measures the real defect rather than a proxy for it — but it guarded
+   exactly one disclosure on a page that has fifteen. A budget that protects one fold is a
+   fix, not a rule: the next dumping ground would grow somewhere else in the same silence
+   (the v3.54 defect class, "the defect that passed every existing test").
+   So every visible disclosure on BOTH public modes is now measured around a REAL click and
+   held to the same budget, and the assertion REPORTS the worst measurement it found so a
+   failure is a diagnosis rather than a mystery (the v4.1.3 lesson).
+   Measured at ship, 390x844: Simple 294 / 146 / 70 / 69 · Degen 214 / 177 / 149 / 140 / 118
+   / 89 / 74 / 64 / 56 / 30 / 19. The public page passes at every fold, which is stated as
+   the measurement rather than claimed — the terminal is where this sweep bit (see
+   test/render.mjs, NEXT DOLLAR & UPSIDE at 701). */
+console.log("\n[public] v6.9.4 — the fold sweep: EVERY disclosure, both modes, against the 320-word budget");
+{
+  const FOLD_BUDGET = 320;
+  const { makeSpotlightFixture } = await import("./spotlight-fixture.mjs");
+  const feed = { schema: "md-spotlight-v1", enabled: true, model: makeSpotlightFixture().projected };
+  for (const power of [false, true]) {
+    const { page, errors } = await open({ live: FULL_LIVE, width: 390, power, spotlight: feed });
+    await page.waitForTimeout(1500);
+    const toggles = page.locator("button.cg-toggle");
+    const n = await toggles.count();
+    const over = [], all = [];
+    for (let k = 0; k < n; k++) {
+      const b = toggles.nth(k);
+      if (!(await b.isVisible().catch(() => false))) continue;
+      if ((await b.getAttribute("aria-expanded").catch(() => null)) === "true") continue;
+      const label = (await b.innerText().catch(() => "")).replace(/\s+/g, " ").trim().slice(0, 60);
+      /* Nested disclosure LABELS are excluded — a menu label is what you read to decide
+         whether to tap again, not prose the tap made you read. The v6.9.2 pin above keeps
+         its raw measure on purpose, so its reported 785 stays the comparable pre-fix number. */
+      const words = async () => page.evaluate(() => {
+        const all = (document.body.innerText || "").trim().split(/\s+/).filter(Boolean).length;
+        let lbl = 0;
+        document.querySelectorAll("button.cg-toggle").forEach((b) => {
+          const t = (b.innerText || "").trim(); if (t) lbl += t.split(/\s+/).filter(Boolean).length;
+        });
+        return all - lbl;
+      });
+      const before = await words();
+      await b.click({ force: true }); await page.waitForTimeout(260);
+      const delta = (await words()) - before;
+      await b.click({ force: true }).catch(() => {}); await page.waitForTimeout(160);
+      all.push(delta);
+      if (delta > FOLD_BUDGET) over.push(`${label} unveils ${delta}`);
+    }
+    const worst = all.length ? Math.max(...all) : 0;
+    ok(`v6.9.4 public ${power ? "Degen" : "Simple"}: NO disclosure unveils more than ${FOLD_BUDGET} words at its first level — ${all.length} folds swept, worst ${worst}${over.length ? " · OVER: " + over.join(" | ") : ""}`,
+      all.length > 0 && over.length === 0 && errors.length === 0);
+    await page.close();
+  }
+}
+
 await browser.close();
 srv.close();
 console.log(`\n=== PUBLIC RENDER TEST: ${pass} passed, ${fail} failed ===`);

@@ -61,7 +61,7 @@ sentence wrapped to ~15 lines and set the row height; the twelve columns you can
 off to the right. (Post-fix the table is 945px — wider, deliberately: the floors traded width,
 which already scrolled, for height, which was dead.)
 
-### F4 — the NEXT $ deck repeats boilerplate verbatim per row *(OPEN)*
+### F4 — the NEXT $ deck repeats boilerplate verbatim per row *(FIXED, v6.9.4)*
 
 Screenshot 3: two consecutive TODAY items each carry the identical two-line sub-text —
 `asterisk, not a veto (owner ruling 2026-08-25) · denominator = account equity, options excluded
@@ -270,6 +270,99 @@ affordance for nothing at every width. Pinned absent (v3.73).
 
 ---
 
+## Outcomes — v6.9.4 (Slice 5: F4 + the fold sweep)
+
+Owner: *"keep going on the branch until the NEXT $ deck (F4) and the fold sweep are done too…
+point the 320-word budget at DESK, Degen explore and TODAY, since it currently guards exactly one
+fold."*
+
+### The sweep, measured before anything moved (390×844, word delta around a REAL click)
+
+**Public — already clean, and that is the finding, not an assumption.**
+
+| Simple | w | Degen | w |
+|---|---|---|---|
+| Explore the numbers | 294 | sources & calculations | 214 |
+| Why this call | 146 | full market detail | 177 |
+| About this page | 70 | the three questions, in full | 149 |
+| Learning moment | 69 | hyperscaler capex | 140 |
+| | | (7 more, 118 → 19) | |
+
+**Terminal — one offender, and it is 2.2× the budget.**
+
+| fold | w (raw) |
+|---|---|
+| **NEXT DOLLAR & UPSIDE** | **701** |
+| DESK | 344 |
+| CAPEX TAPE | 226 |
+| EXPOSURE | 213 |
+| (20 more, 112 → 3) | |
+
+701 words behind ONE tap, across **five different tools**: the next-dollar answer, the owner's
+manual queue, the street eligibility receipt, the estimate-run tables and the computed-upside
+board. The v6.9.2 defect at the drawer altitude.
+
+### What shipped
+
+- **Level 1 = the answer** (`#buyBlock`: the gap ranking, the ELIGIBLE/WAIT line, the allocation
+  chip, the STAMP control). Four **named** second taps hold the rest. `est-mini`, never `drawer`.
+- **The duplication is named:** `#buyBlock` and `#upsideRank` are two renderings of ONE ranking
+  (both read `UPSIDE_ROWS`), stacked in one drawer — the v3.43 Yahoo-dupe test on a ranking.
+- **v3.25 preserved by summary writes:** `ndRankSummary()` carries `N of M ranked` plus the two
+  reds only that block holds (dropped-at-horizon names, an all-stamped-price ranking); the queue
+  fold carries `⚠ N on an aged rating`; the street fold `N eligible · N wait`; the estimate fold
+  `N modelled` and hides its **wrapper** when empty.
+- **F4:** `TDY_CAP_RULE` is one constant, stated once below the group, row count on the summary.
+  FIX-D intact — the head still names `% of acct equity`.
+- **The sweep is the durable half:** both browser suites measure every fold (29 terminal, 15
+  public) around a real click, fail naming the offender, and report their own worst measurement.
+
+### Corrections to my own work, recorded rather than edited away
+
+1. **My first cut committed the v3.81 defect.** The horizon picker lives inside `#upsideRank`;
+   folding that block put a control behind a tap that you could read and not press. The v3.81 pin
+   did not fail politely — it **crashed the suite** on a 30s click timeout against an invisible
+   `.hzb`. `openDesk("dNext")` opens the fold now; `hzDeckChip`'s inline `auto`/`nearest` (v3.72)
+   were already at level 1, so level 1 never lost a horizon control.
+2. **The v6.9.2 metric over-charges the fix it asks for.** Counting a nested fold's LABEL as
+   unveiled prose penalises restructuring into named taps — DESK measured 344 raw, almost all of
+   it its eight children's summaries. The new sweeps exclude disclosure labels; the v6.9.2 pin
+   keeps its raw measure on purpose so its reported **785** stays comparable.
+3. **Three probes lied before one told the truth.** The first reported 0 words for every fold
+   (folds inside a closed ancestor render no `innerText` — the v3.60.1 vacuous trap); the second
+   closed `dDesk` in its own reset loop and then measured TODAY as empty; the third crashed with
+   `feed is not defined` after a first run exited 0 and printed nothing. A probe that reports zero
+   everywhere is a probe lying, not a page that is empty.
+
+### Measured after
+
+| | before | after |
+|---|---|---|
+| NEXT DOLLAR & UPSIDE | 701 w | under budget |
+| terminal worst fold (29 swept) | 701 | **275** of 320 |
+| TODAY visible words | 168 | 162 |
+| the cap rule, per N cap rows | N times | **once** |
+
+**Tests:** 2547 smoke (+11, §[90]) · 353 render (+10) · 386 public-render (+2) · audit clean.
+
+**Negative-controlled twice, each turning exactly its own pins with zero collateral:**
+
+1. **Un-fold the four sub-tools** (restore the pre-fix level 1) → 3 smoke + 3 render red, and the
+   sweep fails *naming the offender and reporting the pre-fix number*:
+   `25 folds swept at 390px, worst 628 · OVER: NEXT DOLLAR & UPSIDE … unveils 628`.
+   That is the whole point of a pin that reports its own measurement.
+2. **Restore the per-row cap rule** → exactly the two F4 render pins red, and the message states
+   the defect rather than a proxy for it: `2 cap row(s) then 3, and the rule appears 2 time in the
+   DOM either way`. Note the smoke "retired copy pinned ABSENT" pin stayed GREEN here, correctly:
+   the control re-referenced `TDY_CAP_RULE` instead of re-typing the literal, which is a *better*
+   form of the same defect — the DOM-count pin is what catches it, and that is why the render
+   proof injects a second cap row instead of trusting a source string.
+**Two pins re-pinned with the reason:** the v5.2 cap-severity pin (matched a literal spelling the
+new `rule:"cap"` key splits) and the v5.7.2 ordinary-note pin (measured the very boilerplate this
+pass retired — now measures a genuinely per-row note).
+
+---
+
 ## Plan status after this session
 
 | # | Pass | Status |
@@ -278,8 +371,9 @@ affordance for nothing at every width. Pinned absent (v3.73).
 | 2 | Spotlight prose de-dup (public Degen) | ✅ v6.9.1 |
 | 3 | fold budget (Simple explore) + the executable rule | ✅ v6.9.2 |
 | 4 | ladder → row list at ≤700px | ✅ v6.9.3 |
-| 5 | **NEXT $ deck: rule-once, chip-per-row (F4)** | OPEN — still unmeasured |
-| 6 | **sweep every other fold against the 320-word budget** | OPEN — DESK drawer, Degen explore, TODAY |
-| 7 | the 12 `PENDING` type-floor files | OPEN |
+| 5 | NEXT $ deck: rule-once (F4) | ✅ v6.9.4 |
+| 6 | sweep every fold against the 320-word budget | ✅ v6.9.4 — 29 terminal + 15 public, both suites |
+| 7 | the 12 `PENDING` type-floor files | OPEN — Watchlist + Alerts hold 34 of the last 54 leaves |
 
-The 320-word budget currently guards ONE fold. Pass 6 is what turns it from a fix into a floor.
+The budget is a floor now, not a fix: it guards 44 folds across two products and reports its own
+measurement on every run.

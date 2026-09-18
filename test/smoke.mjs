@@ -2294,8 +2294,12 @@ ok("caps: an unmeasured cluster member is NAMED and the total called a floor",
    pinned: the warn exists, the old stop severity is gone from the cap items. */
 ok("caps: a breach is a TODAY WARN, never a STOP — the cap informs, it does not suspend the add (v5.2 reversal of the v3.30 stop)",
   adminSrc.includes("pts over the ${CAP_PCT}% reference cap (informational)") &&
-  adminSrc.includes('sev:"warn",txt:`${c.sym} is ${c.pct}% of acct equity') &&
-  !adminSrc.includes('sev:"stop",txt:`${c.sym} is ${c.pct}%'));
+  // v6.9.4 re-pin: the row gained a `rule:"cap"` key between the severity and the text (the
+  // group rule is stated once for the whole group now, never copied onto each row), so the
+  // pin reads the two things it actually claims — warn severity, and this row's own head —
+  // rather than one literal spelling that any correct rewrite would have broken.
+  /sev:"warn",[^}]*txt:`\$\{c\.sym\} is \$\{c\.pct\}% of acct equity/.test(adminSrc) &&
+  !/sev:"stop",[^}]*txt:`\$\{c\.sym\} is \$\{c\.pct\}%/.test(adminSrc));
 ok("caps: a breach computed off a stale or undated mark says so",
   adminSrc.includes("(position mark undated)") && adminSrc.includes("marks ${c.age}d old"));
 ok("caps: a closed EXPOSURE drawer still shows a breach in its summary",
@@ -6857,7 +6861,10 @@ console.log("\n[51] FEAT-TT-ALLREVIEWED — the reviewed-but-unpriced ranking");
     /function renderBuyBlock\(\)\{[\s\S]*?UNRANKED_ROWS\.slice\(0,3\)/.test(adminSrc));
   ok("allreviewed: the empty-ranking branch still emits the tail — the owner's rule is that a " +
      "next-dollar hierarchy ALWAYS produces an output, never an apology",
-    /if\(!rows\.length\)\{[\s\S]{0,900}?unrankedHtml\(\)\+netCashAuditHtml\(\);\s*\n\s*return;/.test(adminSrc));
+    // v6.9.4 re-pin: the branch is unchanged, but a ndRankSummary() call now sits between the
+    // write and the return (the folded board must state its coverage on its own summary), so
+    // the pin reads the CONTRACT — tail emitted, then return — instead of one spelling of it.
+    /if\(!rows\.length\)\{[\s\S]{0,900}?unrankedHtml\(\)\+netCashAuditHtml\(\);[\s\S]{0,120}?\n\s*return;/.test(adminSrc));
   ok("allreviewed: the BUY block stops claiming 'nothing to rank' when reviewed names are present",
     adminSrc.includes("the reviewed names below are ranked on TT composite instead"));
 
@@ -13521,6 +13528,72 @@ console.log("\n[88] public terminal skin, Slice 1 — the token bridge and the o
       /details\.est-mini::details-content/.test(print));
   } catch (e) {
     ok("[89] the READ THE ROOM pins RAN to completion — a section that dies mid-run prints no total: " + (e && e.message), false);
+  }
+}
+
+/* ── [90] READ THE ROOM Slice 5 (v6.9.4) — the NEXT $ deck, and one rule stated once ──
+   Two findings, both measured at 390x844 before anything moved:
+   (1) ONE tap on NEXT DOLLAR & UPSIDE unveiled 701 words across FIVE different tools at
+       once — the v6.9.2 "a fold is not a dumping ground" defect at the drawer altitude.
+       Level 1 is the answer the label promises; the other four take NAMED second taps.
+   (2) The cap rows' asterisk/denominator sentence is identically true of every one of them
+       and was rendered PER ROW, so two over-cap names put the same 19 words on the board
+       twice in a row. A rule stated per row is a rule stated wrong. */
+console.log("\n[90] READ THE ROOM Slice 5 — NEXT $ level 1, the named taps, and the group rule");
+{
+  try {
+    const dNext = adminSrc.slice(adminSrc.indexOf('id="dNext"'), adminSrc.indexOf('id="dCapex"'));
+    // The four sub-tools each ride their own fold, and each fold WRAPS its original block id —
+    // nothing was deleted, moved to a new renderer, or given a second home.
+    const wraps = [["dNdRank", "upsideRank"], ["dNdQueue", "nextDollar"],
+      ["dNdStreet", "streetEligibility"], ["dNdEst", "estRunBoard"]];
+    ok("[90] every NEXT $ sub-tool is a NAMED fold WRAPPING its original block — the ids, the renderers and the content are untouched; only the altitude moved",
+      wraps.every(([fold, block]) => {
+        const i = dNext.indexOf(`id="${fold}"`), j = dNext.indexOf(`id="${block}"`);
+        return i > 0 && j > i && dNext.slice(i, j).includes("</summary>");
+      }));
+    ok("[90] they are est-mini, NEVER drawer — the phone harness counts open details.drawer, and these are not drawers (the v3.35 rule)",
+      wraps.every(([fold]) => new RegExp(`class="est-mini" id="${fold}"`).test(dNext)) &&
+      !/class="drawer" id="dNd/.test(dNext));
+    ok("[90] the ANSWER stays at level 1 — #buyBlock is the only block outside a fold inside this drawer, which is what the label promises",
+      /id="buyBlock"[\s\S]{0,40}<\/div>/.test(dNext) &&
+      dNext.indexOf('id="buyBlock"') < dNext.indexOf('id="dNdRank"'));
+    // v3.25: the reds the folded rank board is the ONLY home for ride its summary.
+    ok("[90] the folded rank board writes its own coverage onto its summary — dropped names and an all-stamped-price ranking are the two reds nothing else carries",
+      /function ndRankSummary\(/.test(adminSrc) &&
+      /ndRankSummary\(rows\.length,BOOK\.length,noRung,liveN\)/.test(adminSrc) &&
+      /ndRankSummary\(0,BOOK\.length,cands\.length,0\)/.test(adminSrc) &&
+      /dropped — no rung at this horizon/.test(adminSrc) &&
+      /all prices are stamped marks/.test(adminSrc));
+    ok("[90] the queue and street folds state their own size too — a fold that says nothing while closed is a menu entry to an unknown room",
+      /function ndQueueSummary\(/.test(adminSrc) && /on an aged rating/.test(adminSrc) &&
+      /ndStreetSum/.test(adminSrc) && /eligible · \$\{V2_ROWS\.length-eligible\.length\} wait/.test(adminSrc));
+    ok("[90] the empty estimate-run case hides the WRAPPER, not just the block — a summary promising 'estimate runs' over nothing is a menu entry to an empty room",
+      /if\(!cands\.length\)\{if\(wrap\)wrap\.style\.display="none"/.test(adminSrc));
+    /* v3.81/v3.72: the horizon picker lives INSIDE the folded board, so the deep link that
+       exists to reach it has to open that fold — or it lands the reader on a control they
+       can read and cannot tap, which is the exact defect v3.81 fixed. */
+    ok("[90] openDesk('dNext') opens the fold the horizon picker is in — a deep link may never land on a control you can read and not tap (v3.81)",
+      /if\(inner==="dNext"\)openDrawer\("dNdRank"\)/.test(adminSrc));
+
+    // ── F4: the group rule ──────────────────────────────────────────────────────────
+    const acts = liftFns(adminSrc, ["todayActions"]);
+    ok("[90] F4: the cap rows' rule has ONE home — a named constant, so the fold that states it can never drift from the rule the rows were built under",
+      (adminSrc.match(/const TDY_CAP_RULE=/g) || []).length === 1 &&
+      /asterisk, not a veto \(owner ruling 2026-08-25\) · denominator = account equity, options excluded — a floor, not NAV/.test(adminSrc));
+    ok("[90] F4: the retired PER-ROW copy of that rule is pinned ABSENT from todayActions — a withdrawn duplication quietly reappearing is the defect this file keeps closing",
+      !/asterisk, not a veto/.test(acts) && /rule:"cap"/.test(acts));
+    ok("[90] F4: renderToday states it ONCE for the whole group, with the row count on the summary so the reader knows what it covers without opening it",
+      /acts\.filter\(a=>a\.rule==="cap"\)\.length/.test(adminSrc) &&
+      /one rule, stated once/.test(adminSrc) &&
+      (adminSrc.match(/TDY_CAP_RULE/g) || []).length === 2);
+    /* FIX-D (v3.49) is untouched and that is load-bearing: what moved one tap deep is the
+       ELABORATION, never the claim — every cap head still names its own denominator. */
+    ok("[90] F4: FIX-D holds — the cap row's head is byte-unchanged and still names '% of acct equity', so the denominator never left the face",
+      adminSrc.includes("pts over the ${CAP_PCT}% reference cap (informational)") &&
+      /\$\{c\.sym\} is \$\{c\.pct\}% of acct equity/.test(acts));
+  } catch (e) {
+    ok("[90] the Slice 5 pins RAN to completion — a section that dies mid-run prints no total: " + (e && e.message), false);
   }
 }
 

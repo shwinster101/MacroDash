@@ -9,7 +9,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
 <!-- AUDIT: kept in sync with package.json by test/smoke.mjs. admin.html is a Vite
      public/ passthrough, so it cannot receive __APP_VERSION__ — the guard is the fix. -->
-<title>TT TICKER TERMINAL v6.9.3</title>
+<title>TT TICKER TERMINAL v6.9.4</title>
 <style>
   :root{
     --bg:#05070a; --panel:#0a0f16; --panel2:#0d141d; --line:#16202c;
@@ -164,6 +164,9 @@
   /* v5.7.2: the headline is the decision — it carries the sev colour and must read at a
      glance above its (now truncated) note. The note itself stays at .tdy-why's small size. */
   .tdy-head{font-size:var(--fs-m);font-weight:600;line-height:1.35}
+  /* v6.9.4 (F4): a GROUP RULE sits under the rows it governs, indented to the same rail so
+     it reads as belonging to them — never inside one of them, which is what made it repeat. */
+  .tdy-rule{margin:-1px 0 6px 12px}
   details.drawer{border:1px solid var(--line);border-radius:7px;background:#080d13;margin-top:7px}
   details.drawer>summary{cursor:pointer;list-style:none;padding:8px 12px;font-size:var(--fs-s);
     letter-spacing:.12em;color:var(--dim);text-transform:uppercase;user-select:none}
@@ -574,7 +577,7 @@
          verdict and every gate are computed upstream and this panel changes nothing. -->
     <div id="macroEvidence" role="region" aria-label="Why macro — readout evidence"></div>
     <div id="headInfo" style="display:none">
-      <div class="brand">FINANCE&nbsp;BRO.AI // TT&nbsp;TICKER&nbsp;TERMINAL <small>v6.9.3 · the daily contract</small></div>
+      <div class="brand">FINANCE&nbsp;BRO.AI // TT&nbsp;TICKER&nbsp;TERMINAL <small>v6.9.4 · the daily contract</small></div>
       <div class="statusline">
         <span>BOOK: <b id="bookStamp">loading…</b></span>
         <span>AUTH: <b id="sessState">…</b></span>
@@ -697,12 +700,31 @@
         <details class="drawer" id="dNext"><summary id="sNext">NEXT DOLLAR &amp; UPSIDE</summary>
           <!-- The immutable daily allocation contract and stamped history remain available
                in the power layer; Glance's Stamp tile opens run attestation, never mutates. -->
+          <!-- v6.9.4 READ THE ROOM Slice 5: measured at 390px, ONE tap on this drawer used to
+               unveil 701 words across FIVE different tools — the next-dollar answer, the owner's
+               manual queue, the street receipt and the estimate-run tables, all at once. That is
+               the v6.9.2 defect ("a fold is not a dumping ground") at the drawer altitude, and
+               the same cure applies: level 1 is what the LABEL promises — the next-dollar answer
+               and the ranked upside — and everything else takes a NAMED second tap, so opening
+               one is a choice. Nothing is deleted; each block keeps its id, its renderer and its
+               content byte-for-byte. Each summary carries its own count (v3.25: a collapse may
+               hide the DETAIL of a warning, never that one exists). -->
           <div class="nd fdr" id="buyBlock"></div>
-          <div class="nd" id="nextDollar"></div>
-          <div class="nd" id="upsideRank" style="margin-top:8px"></div>
-          <div class="nd" id="streetEligibility" style="margin-top:8px"></div>
+          <!-- v6.9.4: buyBlock and upsideRank are TWO renderings of ONE ranking (both read
+               UPSIDE_ROWS — the ptModelRows rule, so they cannot disagree), stacked inside one
+               drawer: the same names, the same order, twice. That is the v3.43 Yahoo-dupe test
+               applied to a ranking. The compact block is the ANSWER and stays at level 1; the
+               full table with its per-category ranks and its reviewed tail is DEPTH, and takes
+               its own named tap. Nothing is deleted and the ids are untouched. -->
+          <details class="est-mini" id="dNdRank" style="margin-top:8px"><summary><span class="scope">the computed-upside board — the medal rows, the MAGS basket and the horizon picker</span><span class="scope" id="ndRankSum"></span></summary>
+            <div class="nd" id="upsideRank"></div></details>
+          <details class="est-mini" id="dNdQueue" style="margin-top:8px"><summary><span class="scope">the owner's manual queue — your own #1s, not the math's</span><span class="scope" id="ndQueueSum"></span></summary>
+            <div class="nd" id="nextDollar"></div></details>
+          <details class="est-mini" id="dNdStreet" style="margin-top:8px"><summary><span class="scope">street eligibility receipt — diagnostic, never the canonical score</span><span class="scope" id="ndStreetSum"></span></summary>
+            <div class="nd" id="streetEligibility"></div></details>
           <!-- FEAT-TT-ESTRUN (v3.35): every modelled name's estimate run, one tap deep -->
-          <div class="nd" id="estRunBoard" style="display:none;margin-top:8px"></div></details>
+          <details class="est-mini" id="dNdEst" style="display:none;margin-top:8px"><summary><span class="scope">estimate runs — the year tables behind every target</span><span class="scope" id="ndEstSum"></span></summary>
+            <div class="nd" id="estRunBoard"></div></details></details>
         <details class="drawer" id="dCapex" style="display:none"><summary id="sCapex">CAPEX TAPE</summary>
           <div class="nd" id="capexPanel"></div></details>
         <details class="drawer" id="dExp" style="display:none"><summary id="sExp">EXPOSURE</summary>
@@ -1714,6 +1736,10 @@ const SEEN_MAX_D=7;                     // a baseline older than this is noise, 
    the ordinary cap/answer notes (which run 90-140 chars) still read whole while a research
    note like the 8/27 Jackson Hole item stops eating the list below it. */
 const TDY_SUB_CAP=140;
+/* v6.9.4 (F4): the cap rows' GROUP RULE — identically true of every one of them, so it is
+   stated ONCE below the group rather than copied onto each row. ONE home, so the rule the
+   fold states can never drift from the rule the rows were built under. */
+const TDY_CAP_RULE="asterisk, not a veto (owner ruling 2026-08-25) · denominator = account equity, options excluded — a floor, not NAV";
 /* FEAT-TT-CIRCUIT (v4.1 Step 1): the structured circuit is CANONICAL, and absence fails
    CLOSED. The 8/18 audit's P0: board prose said "presumed tripped" while board.circuit was
    null — and null read as not-tripped here, so the stance could show ADDS OK against the
@@ -1797,10 +1823,19 @@ function todayActions(){
      denominator caveats are unchanged; only the severity moved. */
   capChecks().filter(c=>c.over>0).forEach(c=>{
     const stale=c.age===null?" (position mark undated)":c.age>POS_STALE_D?` (marks ${c.age}d old)`:"";
+    /* v6.9.4 READ THE ROOM Slice 5 (F4): the asterisk/denominator sentence is a GROUP RULE —
+       it is identically true of every cap row — and it was rendered PER ROW, so two over-cap
+       names put the same 19 words on the board twice in a row (measured on the owner's live
+       deck). A rule stated per row is a rule stated wrong: it rides `rule:"cap"` now and
+       renderToday() states it ONCE, one tap deep, for however many rows there are.
+       What stays ON the row is what is true of THAT row: its own measurement and its own
+       mark age. FIX-D (v3.49) is untouched — the load-bearing denominator ("% of acct
+       equity") is in the head, which is byte-identical, and "(informational)" is the
+       chip-length asterisk in place (v3.66). */
     out.push(c.kind==="name"
-      ?{sev:"warn",txt:`${c.sym} is ${c.pct}% of acct equity — ${c.over}pts over the ${CAP_PCT}% reference cap (informational)`,
-        sub:"asterisk, not a veto (owner ruling 2026-08-25) · denominator = account equity, options excluded — a floor, not NAV"+stale,go:()=>openCard(c.sym)}
-      :{sev:"warn",txt:`Cluster "${c.label}" is ${c.pct}% of acct equity — ${c.over}pts over the ${CAP_PCT}% reference cap (informational)`,
+      ?{sev:"warn",rule:"cap",txt:`${c.sym} is ${c.pct}% of acct equity — ${c.over}pts over the ${CAP_PCT}% reference cap (informational)`,
+        sub:stale?stale.replace(/^ \(|\)$/g,""):"",go:()=>openCard(c.sym)}
+      :{sev:"warn",rule:"cap",txt:`Cluster "${c.label}" is ${c.pct}% of acct equity — ${c.over}pts over the ${CAP_PCT}% reference cap (informational)`,
         sub:`one cluster sizes as one position${c.missing.length?` · ${c.missing.length} member(s) unmeasured, so the real total is higher`:""}${stale}`,
         go:()=>openDrawer("dExp")});
   });
@@ -1901,6 +1936,13 @@ function renderToday(){
           `<div class="tdy-why">${esc(sub)}</div></details>`
         :`<div class="tdy-why">${esc(sub)}</div>`):"")+`</div>`;
   }).join("");
+  /* v6.9.4 (F4): every GROUP RULE the list uses is stated once, below the rows it governs,
+     one tap deep — never repeated on each row. The count is on the summary so the reader
+     knows how many rows the rule covers without opening it. */
+  const caps=acts.filter(a=>a.rule==="cap").length;
+  if(caps)h+=`<div class="tdy-rule"><details class="est-mini"><summary><span class="scope">`+
+    `how the ${caps} cap row${caps===1?"":"s"} above ${caps===1?"is":"are"} measured — one rule, stated once</span></summary>`+
+    `<div class="tdy-why">${esc(TDY_CAP_RULE)}</div></details></div>`;
   el.innerHTML=h;
   [...el.querySelectorAll(".tdy-act")].forEach(n=>{
     const a=acts[+n.dataset.i];
@@ -4172,6 +4214,7 @@ function renderNextDollar(){
     el.innerHTML=`<div class="lbl">OWNER WATCHLIST QUEUE · legacy comparison, not a gate</div><div class="none">`+
       (watch?`${watch} name${watch===1?"":"s"} on the watchlist, none manually ranked.`
             :`Watchlist is empty.`)+`</div>`+regimeModifier();
+    ndQueueSummary([]);
     return;
   }
   const top=Math.min(...ranked.map(x=>rankNum(x.rank)));
@@ -4195,6 +4238,19 @@ function renderNextDollar(){
   el.innerHTML=`<div class="lbl">Owner watchlist queue · manual #${top}`+
     (leads.length>1?` · ${leads.length} co-leads (different buckets — not a single ranking)`:"")+
     `</div><div class="picks">${picks}</div>`+regimeModifier();
+  ndQueueSummary(leads);
+}
+/* v6.9.4: the queue moved behind a NAMED second tap inside NEXT DOLLAR & UPSIDE, so its
+   summary has to carry what a collapse may not hide (v3.25): how many leads there are, and
+   whether any of them is riding an aged or missing TT run. The reds themselves are NOT lost
+   to the fold — todayActions() already raises "Re-run TT on … before acting" from the same
+   ndLeads(), outside every drawer; this states it where the queue is, too. */
+function ndQueueSummary(leads){
+  const sum=document.getElementById("ndQueueSum");if(!sum)return;
+  const list=Array.isArray(leads)?leads:[];
+  const aged=list.filter(x=>runState(x.lastRun).k!=="fresh").length;
+  sum.textContent=list.length?` · ${list.length} lead${list.length===1?"":"s"}${aged?` · ⚠ ${aged} on an aged rating`:""}`:" · none ranked";
+  sum.style.color=aged?"var(--amber)":"";
 }
 /* v3.18 FEAT-TT-UPSIDE: NEXT DOLLAR answers "what did I decide to queue" (a human rank on
    the watchlist). This answers a different question — "of every name I'm tracking, S-tier
@@ -5648,6 +5704,7 @@ function renderUpsideRank(){
       (cands.length?`no ranked name has a rung at ${esc(hz)} — pick another horizon (estimate series end at different years).`
         :`no name yet has a usable price (live quote or stamped ref_px) and a pt_model target — nothing to rank on %/yr.`)+`</div>`+
       unrankedHtml()+netCashAuditHtml();
+    ndRankSummary(0,BOOK.length,cands.length,0);
     return;
   }
   /* FEAT-TT-MAG7 (v3.84): MAGS carries the Mag-7 basket AVERAGE into this ranking (owner
@@ -5865,6 +5922,20 @@ function renderUpsideRank(){
         `<span style="color:var(--amber);font-weight:700">⏸ NEXT DOLLAR: WAIT</span> — no name passes gap + cap room + fresh TT run + quality + R/R. `+
         `<span class="scope">${near}</span> · disagreement is information, not a discount</div>`;
     })();
+  ndRankSummary(rows.length,BOOK.length,noRung,liveN);
+}
+/* v6.9.4: the computed-upside board sits behind a NAMED second tap now, so the two reds it
+   is the ONLY home for — modelled names dropped for having no rung at the shared horizon
+   (the v3.65 rule: never a silent truncation), and a ranking running entirely on stamped
+   marks rather than live prices — ride its summary. A collapse may hide a warning's DETAIL;
+   it may never hide that one exists (v3.25). */
+function ndRankSummary(ranked,total,dropped,liveN){
+  const sum=document.getElementById("ndRankSum");if(!sum)return;
+  const warn=(dropped>0)||(ranked>0&&liveN===0);
+  sum.textContent=` · ${ranked} of ${total} ranked`+
+    (dropped>0?` · ⚠ ${dropped} dropped — no rung at this horizon`:"")+
+    (ranked>0&&liveN===0?` · ⚠ all prices are stamped marks`:"");
+  sum.style.color=warn?"var(--amber)":"";
 }
 /* FEAT-TT-V2: an additive street-evidence diagnostic at one explicit 12-month horizon and
    one provider number — the reviewed packet's published average, labelled with that
@@ -5897,6 +5968,12 @@ function renderStreetEligibility(){
   const el=document.getElementById("streetEligibility");if(!el)return;
   V2_ROWS=buildV2Rows();
   const eligible=V2_ROWS.filter(r=>r.eligible);
+  // v6.9.4: behind a named second tap now — the summary states the split while closed, so
+  // the fold never reads as a checked-clear receipt it has not shown (v3.25).
+  const sum=document.getElementById("ndStreetSum");
+  if(sum)sum.textContent=V2_ROWS.length
+    ?` · ${eligible.length} eligible · ${V2_ROWS.length-eligible.length} wait`
+    :(V2_PENDING?" · loading":" · no confirmed packet");
   if(!V2_ROWS.length){
     el.innerHTML=`<div class="lbl">12-month street gap · reviewed published average</div><div class="none">`+
       (V2_PENDING?`loading reviewed street records…`:`no confirmed street packet — import Seeking Alpha estimates + a reviewed target (TipRanks or Nasdaq/Zacks); legacy pt_model is comparison-only`)+`</div>`;
@@ -5931,8 +6008,13 @@ function estToggle(sym,open){open?EST_OPEN.add(sym):EST_OPEN.delete(sym);}
 function renderEstRunBoard(){
   const el=document.getElementById("estRunBoard");if(!el)return;
   const cands=BOOK.map(x=>({x,rows:ddOf(x)?ptModelRows(ddOf(x)):[]})).filter(c=>c.rows.length);
-  if(!cands.length){el.style.display="none";el.innerHTML="";return;}
-  el.style.display="";
+  // v6.9.4: the block now sits inside its own NAMED fold, so the empty case must hide the
+  // WRAPPER — a summary promising "estimate runs" over nothing is a menu entry to an empty
+  // room. The count rides the summary so the fold states its own size while closed.
+  const wrap=document.getElementById("dNdEst"),sum=document.getElementById("ndEstSum");
+  if(!cands.length){if(wrap)wrap.style.display="none";el.innerHTML="";return;}
+  if(wrap)wrap.style.display="";
+  if(sum)sum.textContent=` · ${cands.length} modelled`;
   // FEAT-TT-PTLINT: the third picker, now the SAME one — this list used rows[0] unconditionally
   // while the ranking honoured the horizon, so the board's two altitudes could name different years.
   const items=cands.map(({x,rows})=>{
@@ -6687,6 +6769,12 @@ function openDesk(inner){
   const d=document.getElementById("dDesk");if(!d)return;
   d.open=true;
   if(inner)openDrawer(inner);
+  /* v6.9.4: the horizon PICKER lives inside #upsideRank, which now sits behind its own
+     named tap — so a deep link aimed at dNext (hzDeckChip's "pin a specific year" route,
+     v3.72/v3.81) must open that fold too, or it would land the reader on a control they
+     can read and not tap: the exact defect v3.81 fixed. The two SAFE modes (auto/nearest)
+     stay inline at level 1 on the chip itself, unchanged. */
+  if(inner==="dNext")openDrawer("dNdRank");
   d.scrollIntoView({behavior:"smooth",block:"start"});
 }
 /* FEAT-TT-REFRESH + ENGINE0-CONT §8: "refresh data + ranks". The old button only re-GET

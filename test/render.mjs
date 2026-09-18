@@ -496,7 +496,17 @@ if (process.env.SHOTS) await page.screenshot({ path: process.env.SHOTS + "-deskt
 // v3.38 FOCUS2: everything but the four drivers lives inside the closed DESK drawer.
 // Open it once up front so the pre-existing section reads keep working; the closed-state
 // guarantees are asserted separately (phone pass + the focus2 section below).
-await page.evaluate(() => { document.getElementById("dDesk").open = true; });
+/* v6.9.4: NEXT DOLLAR & UPSIDE's four sub-tools each take their own NAMED second tap now
+   (measured: ONE tap on that drawer used to unveil 701 words across five tools at once).
+   Open them here for the same reason DESK itself is opened — so every pre-existing section
+   read keeps working, with its claim byte-unchanged; the closed-state guarantees and the
+   word budget are asserted separately, on their own page, below. */
+await page.evaluate(() => {
+  document.getElementById("dDesk").open = true;
+  ["dNdRank", "dNdQueue", "dNdStreet", "dNdEst"].forEach((id) => {
+    const d = document.getElementById(id); if (d) d.open = true;
+  });
+});
 await page.waitForTimeout(80);
 
 console.log("\n[render] TODAY — the default view answers the daily loop");
@@ -517,8 +527,13 @@ ok("today names tonight's print before anything discretionary", /MACROEVT prints
     !/so that the truncation path is actually driven/.test(vis) && /full note/.test(vis));
   ok("v5.7.2 today: the HEADLINE is never truncated — it carries the decision and its colour (v3.25)",
     /MACROEVT prints today/.test(vis));
+  /* v6.9.4 re-pin, with the claim unchanged: this read the cap row's "a floor, not NAV"
+     sentence, which was exactly the GROUP RULE Slice 5 retired from the rows (it was
+     identically true of every cap row and rendered on each one). The claim — an
+     ordinary-length note reads WHOLE while only the wall collapses — is now measured on a
+     note that is genuinely per-row: the cluster row's own unmeasured-member count. */
   ok("v5.7.2 today: an ordinary-length note still reads WHOLE — only the wall collapses",
-    /a floor, not NAV/.test(vis));
+    /one cluster sizes as one position/.test(vis) && /member\(s\) unmeasured/.test(vis));
   /* A REAL tap on the expander: the row carries a go() (this item opens the calendar
      drawer), so an unguarded click would navigate instead of expanding. Asserted by
      driving the click and checking BOTH that it expanded and that the drawer it would
@@ -1709,7 +1724,8 @@ await page.waitForTimeout(80);
 await page.evaluate(() => routeGo("next"));
 
 console.log("\n[render] FEAT-TT-CAPEX — tape, tripwire, conservation, typed exposure");
-await page.evaluate(() => { document.getElementById("dDesk").open = true; document.getElementById("dCapex").open = true; });
+await page.evaluate(() => { document.getElementById("dDesk").open = true; document.getElementById("dCapex").open = true;
+  ["dNdRank", "dNdQueue", "dNdStreet", "dNdEst"].forEach((id) => { const d = document.getElementById(id); if (d) d.open = true; }); });
 await page.waitForTimeout(100);
 const cxPanel = await txt(page, "capexPanel");
 // FEAT-TT-CAPABILITY (v3.55): supply and demand render in ONE panel — capex is what is being
@@ -2699,6 +2715,158 @@ console.log("\n[render] FEAT-TT-LADDER v6.7.3 — the server receipt married bes
   ok("ladder: a receipt whose eligible/why_not name NEITHER this row nor any row in its set renders NOTHING for that row — the receipt genuinely has no opinion, and inventing one would be worse than silence",
     married.outsideRowText.trim() === "" || !/⇄ server/i.test(married.outsideRowText));
   await p3.close();
+}
+
+/* ── v6.9.4 READ THE ROOM Slice 5 — NEXT $ level 1, the named second taps, and F4 ──── */
+console.log("\n[render] v6.9.4 — NEXT DOLLAR & UPSIDE: the answer at level 1, four named taps, one group rule");
+{
+  const pn = await open(390, 844);
+  await pn.evaluate(() => { document.getElementById("dDesk").open = true; });
+  await pn.waitForTimeout(200);
+  const lvl1 = await pn.evaluate(() => {
+    const d = document.getElementById("dNext"); d.open = true; return null;
+  });
+  await pn.waitForTimeout(250);
+  const state = await pn.evaluate(() => {
+    const ids = ["dNdRank", "dNdQueue", "dNdStreet", "dNdEst"];
+    const blocks = { dNdRank: "upsideRank", dNdQueue: "nextDollar", dNdStreet: "streetEligibility", dNdEst: "estRunBoard" };
+    return {
+      buy: (document.getElementById("buyBlock").innerText || "").replace(/\s+/g, " "),
+      closed: ids.every((id) => { const d = document.getElementById(id); return !d || !d.open; }),
+      // A closed <details> keeps a layout box in Chromium but renders no text, so an empty
+      // innerText on the block inside it is the real proof it is not on the face (v6.8.0).
+      hidden: ids.every((id) => {
+        const d = document.getElementById(id);
+        return !d || d.style.display === "none" || !(document.getElementById(blocks[id]).innerText || "").trim();
+      }),
+      summaries: ids.map((id) => { const d = document.getElementById(id); return d && d.style.display !== "none"
+        ? (d.querySelector("summary").innerText || "").replace(/\s+/g, " ").trim() : null; }).filter(Boolean),
+      // est-mini, NEVER drawer — the phone harness counts open drawers (the v3.35 rule).
+      allEstMini: ids.every((id) => { const d = document.getElementById(id); return !d || d.className.includes("est-mini"); }),
+    };
+  });
+  ok("v6.9.4 NEXT $: level 1 is the ANSWER the label promises — the gap ranking with its eligible/WAIT line and the allocation chip — and it is what the drawer opens onto",
+    /VALUATION GAP/i.test(state.buy) && /(ELIGIBLE NEXT DOLLAR|NO NEW POSITIONS|WAIT)/i.test(state.buy));
+  ok("v6.9.4 NEXT $: the four other tools are each a NAMED second tap, CLOSED on arrival — not a scroll past them",
+    state.closed && state.hidden && state.summaries.length >= 3 && state.allEstMini);
+  ok(`v6.9.4 NEXT $: each second tap says what it holds before you spend it — ${state.summaries.length} named (${state.summaries.map((s) => s.split("—")[0].trim()).join(" | ")})`,
+    state.summaries.every((s) => /computed-upside|manual queue|street eligibility|estimate runs/i.test(s)));
+  // v3.25: the two reds the computed-upside board is the ONLY home for ride its summary.
+  ok("v6.9.4 NEXT $: the folded rank board states its own coverage on the closed summary — a collapse may hide a warning's detail, never that one exists",
+    /\d+ of \d+ ranked/.test(state.summaries.find((s) => /computed-upside/i.test(s)) || ""));
+  // Each named tap still holds exactly what it always did.
+  const deep = await pn.evaluate(() => {
+    ["dNdRank", "dNdQueue", "dNdStreet", "dNdEst"].forEach((id) => { const d = document.getElementById(id); if (d) d.open = true; });
+    return null;
+  });
+  await pn.waitForTimeout(250);
+  const opened = await pn.evaluate(() => ({
+    rank: (document.getElementById("upsideRank").innerText || "").replace(/\s+/g, " "),
+    queue: (document.getElementById("nextDollar").innerText || "").replace(/\s+/g, " "),
+    street: (document.getElementById("streetEligibility").innerText || "").replace(/\s+/g, " "),
+    est: (document.getElementById("estRunBoard").innerText || "").replace(/\s+/g, " "),
+  }));
+  ok("v6.9.4 NEXT $: nothing was deleted — the computed upside, the owner's queue, the street receipt and the estimate runs are all verbatim one tap deep",
+    /Computed upside/i.test(opened.rank) && /Owner watchlist queue/i.test(opened.queue) &&
+    /street/i.test(opened.street) && /Estimate runs/i.test(opened.est));
+  // The horizon picker lives inside the folded board; the v3.81 rule is that a control you
+  // can read must be one you can tap, so the deep link that exists to reach it opens the fold.
+  ok("v6.9.4 NEXT $: the horizon deep-link still lands on a TAPPABLE picker — openDesk('dNext') opens the fold the picker is in (the v3.81 reachability rule)",
+    await pn.evaluate(async () => {
+      document.querySelectorAll("details[open]").forEach((d) => { d.open = false; });
+      openDesk("dNext");
+      const b = document.querySelector("#upsideRank .hzb");
+      return !!b && b.getBoundingClientRect().height > 0;
+    }));
+
+  /* F4 — the group rule. The asterisk/denominator sentence is identically true of every cap
+     row and was rendered PER ROW, so N over-cap names put the same 19 words on the board N
+     times. The fixture ships ONE name row, so a second is injected at runtime: that is what
+     makes this measure the real defect rather than a proxy for it. */
+  const f4 = await pn.evaluate(() => {
+    const el = document.getElementById("todayCard");
+    const RULE = "denominator = account equity, options excluded";
+    const count = (t) => (t.match(/denominator = account equity, options excluded/g) || []).length;
+    const before = { heads: (el.innerText.match(/reference cap \(informational\)/g) || []).length,
+      ruleOnFace: count(el.innerText), ruleInDom: count(el.textContent) };
+    // A second over-cap NAME row, from the same measured path capChecks() reads.
+    POSITIONS.BBB = { ...POSITIONS.BBB, pct: 27.5 };
+    renderToday();
+    const after = { heads: (el.innerText.match(/reference cap \(informational\)/g) || []).length,
+      ruleOnFace: count(el.innerText), ruleInDom: count(el.textContent),
+      summary: (el.querySelector(".tdy-rule summary")?.innerText || "").replace(/\s+/g, " ").trim() };
+    return { before, after, RULE };
+  });
+  ok(`v6.9.4 F4: the cap rows' group rule is stated ONCE however many rows it governs — ${f4.before.heads} cap row(s) then ${f4.after.heads}, and the rule appears ${f4.after.ruleInDom} time in the DOM either way`,
+    f4.after.heads > f4.before.heads && f4.before.ruleInDom === 1 && f4.after.ruleInDom === 1);
+  ok("v6.9.4 F4: it is chip-length in place and verbatim one tap deep — the rule is NOT on the face, and its summary states how many rows it covers (v3.66)",
+    f4.after.ruleOnFace === 0 && /one rule, stated once/i.test(f4.after.summary) && /\d+ cap rows?/i.test(f4.after.summary));
+  // FIX-D (v3.49) is untouched: the load-bearing denominator is still on the row's own head.
+  ok("v6.9.4 F4: FIX-D holds — every cap row still names its denominator on the FACE ('% of acct equity'), so what moved one tap deep is the elaboration, never the claim",
+    await pn.evaluate(() => [...document.querySelectorAll("#todayCard .tdy-head")]
+      .filter((n) => /reference cap \(informational\)/.test(n.innerText))
+      .every((n) => /% of acct equity/.test(n.innerText))));
+  await pn.close();
+}
+
+/* ── v6.9.4 READ THE ROOM Slice 5 — the 320-word budget reaches the TERMINAL ──────────
+   v6.9.2 pinned the budget on the public page; the terminal is where the rule actually
+   bit. Measured at 390x844 before this pass, ONE tap on NEXT DOLLAR & UPSIDE unveiled
+   **701 words** across five different tools at once — the next-dollar answer, the owner's
+   manual queue, the street eligibility receipt and the estimate-run tables — which is the
+   v6.9.2 "a fold is not a dumping ground" defect at the drawer altitude.
+   Every drawer and est-mini is swept: ancestors opened first (a fold inside a closed one
+   measures 0 and would pass vacuously — the v3.60.1 trap), then the word DELTA around a
+   real open, because budgeting the region's total would charge the always-visible face to
+   the fold. The assertion REPORTS its worst measurement (the v4.1.3 lesson).
+   Measured after: NEXT DOLLAR & UPSIDE 701 -> under budget, and no fold on the board is
+   over it. */
+{
+  const FOLD_BUDGET = 320;
+  const pf = await open(390, 844);
+  const marked = await pf.evaluate(() => {
+    const out = [];
+    document.querySelectorAll("details.drawer, details.est-mini").forEach((d, i) => {
+      d.setAttribute("data-fsweep", String(i));
+      const s = d.querySelector("summary");
+      out.push({ i, sum: (s ? s.textContent : "").replace(/\s+/g, " ").trim().slice(0, 52) || `(fold #${i})` });
+    });
+    return out;
+  });
+  const over = [], seen = [];
+  for (const m of marked) {
+    const sel = `[data-fsweep="${m.i}"]`;
+    const ready = await pf.evaluate((s) => {
+      document.querySelectorAll("details[open]").forEach((d) => { d.open = false; });
+      const n = document.querySelector(s); if (!n) return false;
+      let p = n.parentElement; while (p) { if (p.tagName === "DETAILS") p.open = true; p = p.parentElement; }
+      return true;
+    }, sel);
+    if (!ready) continue;
+    await pf.waitForTimeout(90);
+    /* The budget is on what a tap makes you READ, so a nested fold's SUMMARY is excluded: a
+       menu label is what you read to decide whether to tap AGAIN, and charging it to the
+       budget would punish exactly the restructure the budget asks for (a correction to the
+       v6.9.2 measurement, recorded rather than edited away — that pin keeps its raw-innerText
+       measure so its reported 785 stays the comparable pre-fix number it was). */
+    const words = () => pf.evaluate(() => {
+      const all = (document.body.innerText || "").trim().split(/\s+/).filter(Boolean).length;
+      let lbl = 0;
+      document.querySelectorAll("summary").forEach((s) => {
+        const t = (s.innerText || "").trim(); if (t) lbl += t.split(/\s+/).filter(Boolean).length;
+      });
+      return all - lbl;
+    });
+    const before = await words();
+    await pf.evaluate((s) => { document.querySelector(s).open = true; }, sel);
+    await pf.waitForTimeout(130);
+    const delta = (await words()) - before;
+    seen.push(delta);
+    if (delta > FOLD_BUDGET) over.push(`${m.sum} unveils ${delta}`);
+  }
+  ok(`v6.9.4 terminal: NO fold unveils more than ${FOLD_BUDGET} words at its first level — ${seen.length} folds swept at 390px, worst ${seen.length ? Math.max(...seen) : 0} (NEXT DOLLAR & UPSIDE measured 701 before this pass)${over.length ? " · OVER: " + over.join(" | ") : ""}`,
+    seen.length > 10 && over.length === 0);
+  await pf.close();
 }
 
 await browser.close();

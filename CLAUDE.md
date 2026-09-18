@@ -5,6 +5,92 @@ answers *"is it safe to be in the market?"* from live macro + market + sentiment
 data. Single-page React app on Cloudflare Pages, with live data assembled at the
 edge by Pages Functions and cached in KV.
 
+**v6.9.4 "READ THE ROOM", Slice 5 — the NEXT $ drawer stops being five tools in a trench coat,
+a rule stated per row is stated ONCE, and the 320-word budget becomes a SWEEP (owner: *"keep
+going on the branch until the NEXT $ deck (F4) and the fold sweep are done too… the fold sweep —
+point the 320-word budget at DESK, Degen explore and TODAY, since it currently guards exactly one
+fold"*).** Presentation only, `public/admin.html`; no threshold, vote, gate, veto, sort key,
+horizon rule or receipt semantic moved, every block keeps its id and its renderer, and **nothing
+was deleted.**
+**Measured first, 390×844, every fold on both products clicked and its delta recorded.** The
+public page was already clean — Simple 294 / 146 / 70 / 69 · Degen 214 / 177 / 149 / 140 / 118 /
+89 / 74 / 64 / 56 / 30 / 19 — so the sweep the owner asked for found its offender in the
+**TERMINAL**: one tap on **NEXT DOLLAR & UPSIDE unveiled 701 words across FIVE different tools at
+once** — the next-dollar answer, the owner's manual queue, the street eligibility receipt, the
+estimate-run tables and the computed-upside board. That is the v6.9.2 defect ("a fold is not a
+dumping ground") at the DRAWER altitude, and the cure is the same: level 1 is what the LABEL
+promises, everything else takes a **named** second tap.
+**Level 1 is the ANSWER** — `#buyBlock`, the gap ranking with its ELIGIBLE/WAIT line, the
+allocation chip and the STAMP control. Four named taps hold the rest: *the computed-upside board —
+the medal rows, the MAGS basket and the horizon picker* · *the owner's manual queue — your own #1s,
+not the math's* · *street eligibility receipt — diagnostic, never the canonical score* · *estimate
+runs — the year tables behind every target*. **`est-mini`, never `drawer`** (the phone harness
+counts open drawers). **And the one genuine DUPLICATION is named rather than tolerated:**
+`#buyBlock` and `#upsideRank` are two renderings of ONE ranking (both read `UPSIDE_ROWS` — the
+`ptModelRows` rule, so they cannot disagree), stacked inside one drawer, the same names in the same
+order twice — the v3.43 Yahoo-dupe test applied to a ranking. The compact block is the answer and
+stays; the medal board is depth and takes its tap.
+**v3.25 survives every fold, and two reds had only one home.** Modelled names DROPPED for having
+no rung at the shared horizon (the v3.65 never-a-silent-truncation rule) and a ranking running
+entirely on stamped marks rather than live prices live ONLY in `#upsideRank` — so `ndRankSummary()`
+puts `N of M ranked · ⚠ N dropped · ⚠ all prices are stamped marks` on the closed summary, amber.
+The queue fold states its lead count and `⚠ N on an aged rating`; the street fold states
+`N eligible · N wait`; the estimate fold states `N modelled` and **hides its WRAPPER when empty**,
+because a summary promising "estimate runs" over nothing is a menu entry to an empty room.
+**⚠ MY OWN FIRST CUT COMMITTED THE v3.81 DEFECT, and a pre-existing pin caught it.** The horizon
+PICKER lives inside `#upsideRank`; folding that block put it behind a tap — *a control you can read
+and cannot tap*, which is exactly what v3.81 exists to stop. The v3.81 pin did not fail politely,
+it **crashed the suite** on a 30s click timeout against an invisible `.hzb`. `openDesk("dNext")` —
+the one deep link that exists to reach the picker — now opens that fold too, and the two SAFE modes
+(`auto` / `nearest`) were already inline at level 1 on `hzDeckChip` (v3.72), so level 1 never lost a
+horizon control. Recorded rather than quietly fixed.
+**F4 — a rule stated per row is a rule stated wrong.** The cap rows' asterisk/denominator
+sentence — *asterisk, not a veto (owner ruling 2026-08-25) · denominator = account equity, options
+excluded — a floor, not NAV* — is identically true of EVERY cap row and was rendered on each one,
+so two over-cap names put the same 19 words on the board twice in a row (the owner's live deck).
+It is `TDY_CAP_RULE`, **one constant**, stated ONCE below the group it governs with the row count on
+its summary. **FIX-D (v3.49) is untouched and that is the load-bearing part:** the cap head is
+byte-identical and still names `% of acct equity`, so what moved one tap deep is the ELABORATION,
+never the claim, and `(informational)` is still the chip-length asterisk in place (v3.66). **The
+fixture ships ONE cap row, so the proof INJECTS a second at runtime** — the rule appears once
+before and once after, which is what makes the pin measure the real defect rather than a proxy.
+**THE DURABLE HALF IS THE SWEEP.** Both browser suites now measure **every** disclosure — 29 folds
+in the terminal, 15 across the two public modes — around a REAL click, fail naming the offender,
+and **report their own worst measurement** (the v4.1.3 lesson). Ancestors are opened first, because
+a fold inside a closed one measures 0 and would pass vacuously (the v3.60.1 trap).
+**A correction to my own v6.9.2 measurement, recorded rather than edited away:** the new sweeps
+EXCLUDE nested disclosure LABELS from the delta. A menu label is what you read to decide whether to
+tap again, not prose a tap made you read — charging it to the budget punishes exactly the
+restructure the budget asks for (DESK measured 344 raw, almost all of it its eight children's
+summaries). The v6.9.2 pin deliberately keeps its raw measure so its reported **785** stays the
+comparable pre-fix number it was.
+**Measured after, same probe:** NEXT DOLLAR & UPSIDE **701 → under budget**, the terminal's worst
+fold is **275 of 320** across 29, and TODAY's visible words fall 168 → 162 with the cap rule stated
+once however many rows it governs.
+Tests: **2547 smoke** (+11, section [90]) + **352 render** (+9: level 1 proven to be the answer,
+the four taps proven closed-on-arrival and named, every block proven verbatim one tap deep, the
+folded board's coverage on its own summary, the horizon deep-link proven to land on a TAPPABLE
+picker, the F4 group rule proven to appear ONCE against an injected second cap row, and FIX-D
+proven intact) + **386 public-render** (+2: the whole-page sweep in both modes) + `audit:prod`
+clean. **Two pins re-pinned with the reason at each, neither loosened:** the v5.2 cap-severity pin
+matched the literal `sev:"warn",txt:` spelling that the new `rule:"cap"` key splits — the shape
+that passes through any wrong rewrite and fails on the right one (the v5.6.4/v6.8.4 lesson) — and
+the v5.7.2 "an ordinary-length note reads WHOLE" pin measured the very boilerplate this pass
+retired, so it now measures a note that is genuinely per-row (the cluster's unmeasured-member
+count), claim unchanged.
+**Negative-controlled twice, each turning exactly its own pins with zero collateral, and each
+REPORTING the defect rather than a proxy for it:** un-folding the four sub-tools turns 3 smoke + 3
+render red with the sweep failing `25 folds swept, worst 628 · OVER: NEXT DOLLAR & UPSIDE …
+unveils 628`; restoring the per-row cap rule turns exactly the two F4 pins red reading `2 cap
+row(s) then 3, and the rule appears 2 time in the DOM either way`. **The second control also
+exposed a limit in one of my own pins and it is recorded rather than patched away:** the smoke
+"retired per-row copy pinned ABSENT" pin stayed GREEN, correctly — the control re-REFERENCED
+`TDY_CAP_RULE` instead of re-typing the literal, which is a better-disguised form of the same
+defect. The DOM-count pin is what catches that, which is precisely why the F4 proof injects a
+second cap row into a live page instead of trusting a source string.
+**Deliberately NOT done:** the 12 `PENDING` type-floor files (Watchlist + Alerts carry 34 of the
+last 54 sub-10px leaves) — named, queued, and already enforced by the v6.8.6 PENDING list.
+
 **v6.9.3 "READ THE ROOM", Slice 4 — the ladder becomes a ROW LIST on a phone, over the SAME DOM
 (owner: *"And yes do row list"*).** Presentation only, `public/admin.html`; no threshold, vote,
 gate, veto, sort key or receipt semantic moved, and **the only markup change is a `data-l`
