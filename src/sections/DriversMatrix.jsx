@@ -11,6 +11,7 @@ import { T } from "../design-tokens.js";
 import { voteStyle } from "../regime.js";
 import CollapsedGroup from "../primitives/CollapsedGroup.jsx";
 import { DataModeBadge } from "../primitives/SourceBox.jsx";
+import { Explainable } from "../primitives/FactSheet.jsx";
 
 export default function DriversMatrix({ evidenceSet }) {
   if(!evidenceSet||!Array.isArray(evidenceSet.factors))return <div aria-hidden="true"/>;
@@ -24,18 +25,21 @@ export default function DriversMatrix({ evidenceSet }) {
         // makes it structurally impossible for the two altitudes to disagree again.
         const vc=T[voteStyle(f.vote).colorKey];
         return (
-          <div key={f.key} style={{flex:"1 1 240px",minWidth:0,background:T.surface,border:`1px solid ${f.excluded?T.amber+"44":T.border}`,borderRadius:5,padding:"8px 10px",opacity:f.excluded?0.85:1}}>
+          <Explainable key={f.key} explain={f.explain} title={f.explain?.full || f.label}
+            eyebrow={`${f.short} · ${f.mode}${f.asOf?` · as of ${String(f.asOf).slice(0,10)}`:""}${f.excluded?` · excluded — ${f.reason}`:""}`}
+            ariaLabel={`Explain ${f.label}`} className="driver-card"
+            style={{flex:"1 1 240px",minWidth:0,background:T.surface,border:`1px solid ${f.excluded?T.amber+"44":T.border}`,borderRadius:5,padding:"8px 10px",opacity:f.excluded?0.85:1}}>
             <div style={{display:"flex",justifyContent:"space-between",gap:8,alignItems:"baseline"}}>
-              <span style={{fontFamily:T.fontMono,fontSize:10,fontWeight:700,color:T.textPrimary}}>{f.short} <span style={{fontWeight:400,color:T.textMuted}}>{f.label}</span></span>
-              <span style={{fontFamily:T.fontMono,fontSize:9,fontWeight:700,color:vc,textTransform:"uppercase"}}>{f.vote}</span>
+              <span style={{fontFamily:T.fontMono,fontSize:T.fsL,fontWeight:700,color:T.textPrimary}}>{f.short} <span style={{fontWeight:400,color:T.textMuted}}>{f.label}</span></span>
+              <span style={{fontFamily:T.fontMono,fontSize:T.fsM,fontWeight:700,color:vc,textTransform:"uppercase"}}>{f.vote}</span>
             </div>
-            <div style={{fontFamily:T.fontMono,fontSize:9,color:T.textSecondary,marginTop:3,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{f.display}</div>
+            <div className="driver-reading" style={{fontFamily:T.fontMono,fontSize:T.fsL,color:T.textSecondary,marginTop:3,overflowWrap:"anywhere"}}>{f.display}</div>
             <div style={{display:"flex",gap:6,alignItems:"center",marginTop:4,flexWrap:"wrap"}}>
               <DataModeBadge mode={f.mode}/>
-              {f.asOf&&<span style={{fontFamily:T.fontMono,fontSize:8,color:T.textMuted}}>as of {String(f.asOf).slice(0,10)}</span>}
-              {f.excluded&&<span style={{fontFamily:T.fontMono,fontSize:8,color:T.amber}}>excluded — {f.reason}</span>}
+              {f.asOf&&<span className="driver-date" style={{fontFamily:T.fontMono,fontSize:T.fsM,color:T.textMuted}}>as of {String(f.asOf).slice(0,10)}</span>}
+              {f.excluded&&<span className="driver-exclusion" style={{fontFamily:T.fontMono,fontSize:T.fsM,color:T.amber}}>excluded — {f.reason}</span>}
             </div>
-          </div>
+          </Explainable>
         );})}
     </div>
     </CollapsedGroup>

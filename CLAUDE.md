@@ -5,6 +5,19 @@ answers *"is it safe to be in the market?"* from live macro + market + sentiment
 data. Single-page React app on Cloudflare Pages, with live data assembled at the
 edge by Pages Functions and cached in KV.
 
+**v6.9.7 — reconcile the older Simple/Degen draft against current main.** Based on
+`ee383cb` (v6.9.5), not the obsolete local v5.7.0 checkout. Main's compact Simple face,
+centered three-bullet FactSheet, shared terminal tokens, daily/weekly-shuffled spotlight,
+API fundamentals, dated last-good behavior, and default-folded Degen evidence are retained.
+The remaining useful delta is the expanded DriversMatrix: readings/labels use `fs-l`, votes
+and provenance use `fs-m`, long readings wrap rather than ellipsize, and each card opens the
+existing FactSheet. `buildEvidenceSet` passes through the band's explainer **by identity**;
+there is no second glossary or threshold table. Excluded cards still say why they do not
+count, including inside their sheet. DriversMatrix leaves the type-floor PENDING queue.
+No new API, KV schema, rotation, decision/action rule, default section, or Worker change.
+The original dirty checkout is preserved separately; it is not a release candidate.
+Reconciliation decisions: [`working/2026-09-18-v697-reconciliation.md`](working/2026-09-18-v697-reconciliation.md).
+
 **v6.9.5 "READ THE ROOM", Slice 6 — the Mag 7 goes DAILY and RESHUFFLES every week, the cadence
 reaches the default view, the cards name their truncation again, and the last hand-written colour
 on the public page is retired (owner, on two live Simple screenshots: *"Still shows Microsoft and

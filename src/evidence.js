@@ -92,6 +92,8 @@ export function buildEvidenceSet({ d, provenance, dataAsOf, mode, liveBuild, now
     const excluded = exclusions.has(f.key);
     return {
       key: f.key, short: f.short, label: f.label, field,
+      // Same object used by the Simple cards and macro strip: teaching never owns a rule.
+      explain: REGIME_BAND_TABLE.find((band) => band.key === f.key)?.explain || null,
       display: f.val,
       // v4.0.3 — the TYPED current reading, read off the same data the vote reads. This
       // replaces parsing the Power matrix's display copy: for 10Y and CPI that string

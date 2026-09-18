@@ -2705,6 +2705,45 @@ console.log("\n[public] v6.9.4 — the fold sweep: EVERY disclosure, both modes,
   }
 }
 
+console.log("\n[public] v6.9.7 — reconciled Degen evidence learning");
+for (const width of [390,1280]) {
+  const {page,errors}=await open({live:FULL_LIVE,width,route:"/?view=public"});
+  await page.waitForTimeout(1200);
+  const matrix=page.locator('section[aria-labelledby="drivers"]');
+  ok(`v6.9.7 @${width}: evidence remains folded by default`,await matrix.locator('.driver-card').count()===0);
+  await matrix.locator('button[aria-expanded]').click();
+  ok(`v6.9.7 @${width}: every canonical factor has a direct teaching button`,await matrix.locator('button.driver-card').count()===6);
+  ok(`v6.9.7 @${width}: readings and provenance use the shared readable scale`,await matrix.evaluate(el=>
+    [...el.querySelectorAll('.driver-reading')].every(n=>parseFloat(getComputedStyle(n).fontSize)>=14 && getComputedStyle(n).textOverflow!=="ellipsis") &&
+    [...el.querySelectorAll('.driver-date')].length===6 &&
+    [...el.querySelectorAll('.driver-date')].every(n=>parseFloat(getComputedStyle(n).fontSize)>=12.5)));
+  for(let i=0;i<6;i++) {
+    const trigger=matrix.locator('button.driver-card').nth(i);
+    await trigger.click();
+    ok(`v6.9.7 @${width}: factor ${i+1} opens the three-bullet shared sheet`,await page.getByRole('dialog').isVisible() && await page.locator('.factsheet li').count()===3);
+    await page.keyboard.press('Escape');
+    ok(`v6.9.7 @${width}: factor ${i+1} restores focus`,!await page.getByRole('dialog').isVisible() && await trigger.evaluate(el=>document.activeElement===el));
+  }
+  ok(`v6.9.7 @${width}: expanded evidence fits the viewport`,await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth+1));
+  await matrix.screenshot({path:`/tmp/macrodash-697-evidence-${width}.png`});
+  ok(`v6.9.7 @${width}: no runtime errors`,errors.length===0);
+  await page.close();
+}
+{
+  const live={...FULL_LIVE};delete live.vix;delete live.vixAsOf;
+  const {page,errors}=await open({live,width:390,route:"/?view=public"});
+  await page.waitForTimeout(1200);
+  const matrix=page.locator('section[aria-labelledby="drivers"]');
+  await matrix.locator('button[aria-expanded]').click();
+  const excluded=matrix.locator('button.driver-card').filter({hasText:'no live feed right now'});
+  ok("v6.9.7 excluded: reason is legible and remains excluded",await excluded.count()===1 && /EXCLUDED/.test(await excluded.innerText()) &&
+    await excluded.locator('.driver-exclusion').evaluate(el=>parseFloat(getComputedStyle(el).fontSize)>=12.5));
+  await excluded.click();
+  ok("v6.9.7 excluded: learning states the missing feed, never a current reading",/excluded — no live feed right now/i.test(await page.getByRole('dialog').innerText()));
+  await page.keyboard.press('Escape');
+  ok("v6.9.7 excluded: no runtime errors",errors.length===0);
+  await page.close();
+}
 await browser.close();
 srv.close();
 console.log(`\n=== PUBLIC RENDER TEST: ${pass} passed, ${fail} failed ===`);

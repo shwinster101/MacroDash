@@ -4711,6 +4711,11 @@ const FRESH_ASOF = Object.fromEntries(
   ["tenYear", "vix", "fearGreed", "cpiHeadline", "shillerPe", "nfci"].map((k) => [k, "2026-08-01"]));
 const ev = (o = {}) => buildEvidenceSet({ d: MOCK_DATA, provenance: FRESH_PROV,
   dataAsOf: FRESH_ASOF, mode: "LIVE", liveBuild: true, now: NOW, ...o });
+ok("v6.9.7 evidence: all six explainers are the canonical band object by identity",
+  ev().factors.length === 6 && ev().factors.every(f => f.explain === REGIME_BAND_TABLE.find(b => b.key === f.key).explain));
+ok("v6.9.7 evidence: unavailable inputs retain teaching without acquiring a vote",
+  ev({provenance:{}}).factors.every(f => f.excluded && f.vote === "excluded" &&
+    f.explain === REGIME_BAND_TABLE.find(b => b.key === f.key).explain));
 // State machine — one assertion per contract row.
 ok("evidence: LIVE — full fresh inputs publish a posture with all six voting",
   (() => { const e = ev(); return e.state === "LIVE" && !e.withheld && e.counted === 6 &&
@@ -12504,7 +12509,7 @@ console.log("\n[83] Simple altitude — fs-xxl Hold, fs-body sentence, one-block
   {
     const FLOOR = DT["fs-xs"];
     const PENDING = ["dashboard.jsx", "AIUnitEconomics.jsx", "Alerts.jsx", "CallBanners.jsx", "DataHealth.jsx",
-      "DriversMatrix.jsx", "FiveWhys.jsx", "Headwinds.jsx", "SignalQuality.jsx", "TerminalDock.jsx",
+      "FiveWhys.jsx", "Headwinds.jsx", "SignalQuality.jsx", "TerminalDock.jsx",
       "Watchlist.jsx", "WhatChanged.jsx"];
     const files = [...readdirSync(new URL("../src/sections/", import.meta.url)).map((f) => ["sections", f]),
       ...readdirSync(new URL("../src/primitives/", import.meta.url)).map((f) => ["primitives", f]), ["", "dashboard.jsx"]]
@@ -12524,7 +12529,7 @@ console.log("\n[83] Simple altitude — fs-xxl Hold, fs-body sentence, one-block
        from PENDING, or the list would keep claiming work that is already done — the
        label-outlives-its-data defect pointed at a to-do list. */
     ok(`v6.8.6 type floor: the PENDING list names only files that genuinely still have sub-floor literals${cleanButListed.length ? " — now clean, delete from PENDING: " + cleanButListed.join(", ") : ""}`,
-      cleanButListed.length === 0 && PENDING.length === 12);
+      cleanButListed.length === 0 && PENDING.length === 11);
   }
   ok("T7→v6.8.5: Simple fold promises render at fs-l, one step above the operator chip, which now reads the fs-s floor rather than an 8px literal",
     /fontSize: promise \? T\.fsL : T\.fsS/.test(cgSrc) && TOK_T.fsL > TOK_T.fsS &&
@@ -13754,5 +13759,14 @@ console.log("\n[91] v6.9.5 — the daily rotation surfaced, the truncation named
   }
 }
 
+{
+  const drivers=readSrc("../src/sections/DriversMatrix.jsx");
+  ok("v6.9.7 drivers: existing disclosure and shared FactSheet, no second glossary",
+    drivers.includes("<CollapsedGroup") && drivers.includes("<Explainable key={f.key} explain={f.explain}") &&
+    !drivers.includes("defaultOpen") && !drivers.includes("stripExplainFor"));
+  ok("v6.9.7 drivers: only tokenized type and no truncated evidence",
+    !/fontSize:\s*\d/.test(drivers) && !/textOverflow|whiteSpace:\s*["']nowrap/.test(drivers) &&
+    drivers.includes('className="driver-reading"') && drivers.includes('className="driver-date"'));
+}
 console.log(`\n=== SMOKE TEST: ${pass} passed, ${fail} failed ===`);
 process.exit(fail === 0 ? 0 : 1);
