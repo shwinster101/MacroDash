@@ -5,6 +5,49 @@ answers *"is it safe to be in the market?"* from live macro + market + sentiment
 data. Single-page React app on Cloudflare Pages, with live data assembled at the
 edge by Pages Functions and cached in KV.
 
+**v6.9.3 "READ THE ROOM", Slice 4 — the ladder becomes a ROW LIST on a phone, over the SAME DOM
+(owner: *"And yes do row list"*).** Presentation only, `public/admin.html`; no threshold, vote,
+gate, veto, sort key or receipt semantic moved, and **the only markup change is a `data-l`
+attribute per cell** — cell order, cell count and every cell's text are untouched.
+**Why a row height was never the answer.** v6.9.0 took the ladder row 188 → 55px and made its
+sideways swipe discoverable. Both were right and neither fixed the shape: **a thirteen-column
+table is not a phone layout whatever its row height**, because at 390 it is 945px wide in a 300px
+window — more than half of it off to the right, and the eye with nowhere to land. At ≤700px the
+same table now renders as **one card per name**: `# SYM TIER PRICE` with the **sort-year % pushed
+to the right edge at the card's largest size** (on a ranked list it is the one datum the reader is
+comparing, so it earns the position), then TT, then GATE · FRESH · NEEDS each on their own line.
+**ONE DOM, TWO LAYOUTS — no second renderer that could disagree with the first** (the
+`ptModelRows` rule, applied to markup): every one of the twelve existing assertions that read
+`.ld-main tbody tr` cells runs at 1280 and is untouched, which is exactly what made this a CSS
+pass rather than a rewrite.
+**The card answers questions 1–3 of the reading order and leaves question 4 to the name's own
+tab.** Both target prices and BASIS — the *on what basis* layer — are hidden AT THIS WIDTH ONLY;
+they remain in the DOM in the same order, one tap away via the SYM button the card already
+carries. **Measured, 390×844:** the table's horizontal scroll is **GONE** (945px → 300px, fits
+exactly), doc height **1,122 → 1,145px** for three rows, and a card measures **133px** against a
+budget of 160.
+**The trade is STATED rather than buried:** the table put the top five in ~275px that you had to
+swipe to judge; the cards put them in ~665px, each complete. That is the trade this pass makes on
+purpose.
+**Two defects in my own first cut, both caught by pre-existing pins, both recorded.** (1)
+`.tblx{overflow-x:visible}` was set GLOBALLY — but `.tblx` is a SHARED container, so it broke the
+deep-dive tab's own wide tables at 390; the v3.35 overflow pin caught it, which is why that pin
+exists, and the rule is scoped to `.ld-card` now. (2) Hiding `thead` outright **took all five sort
+controls off the phone entirely** — the v3.81 defect in its worst form: not merely untappable,
+absent. The header is the **SORT STRIP** now (only the sortable headers survive; the rest ride the
+cells as `data-l` labels), still a 40px target.
+**The v6.9.0 swipe hint is DELETED, not hidden** — Slice 4 removed the sideways scroll it pointed
+at, so it became an affordance for a gesture that no longer exists, at every width; dead code is a
+rot vector (v3.73), and it is pinned **ABSENT** so a retired affordance cannot quietly reappear.
+**Four pins re-pinned with the reason at each, two of them reversing v6.9.0's own claims** — the
+96px table-row budget becomes a 160px CARD budget (a card legitimately stands taller while showing
+MORE), the discoverable-swipe pin becomes a **no-swipe-exists** pin, and the two print guards drop
+the hint from their selector lists.
+Tests: **2536 smoke** (+2) + **343 render** (+3: every value proven labelled in place, the five
+sort controls proven to survive as a tappable strip, and the basis layer proven present-in-DOM
+while off the card) + 384 public-render + `audit:prod` clean. Negative-controlled: removing the
+row-list media block turns exactly 2 smoke + 2 render red, zero collateral.
+
 **v6.9.2 "READ THE ROOM", Slice 3 — A FOLD IS NOT A DUMPING GROUND, and the budget becomes a
 TEST (owner: *"Even explore the numbers on simple mode is just ridiculously long. really consider
 the word budgets and making sure that no menu just unveiled and absolute novel. I need it to be

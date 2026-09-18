@@ -13304,10 +13304,11 @@ console.log("\n[copy-budget] v6.6.1 ONE ENGINE, TWO ALTITUDES — ≤25-word why
      honoured more fully, not less — the shape that passes through any wrong rewrite and fails
      on the right one (the v5.6.4 / v6.8.4 lesson). It now asserts the CONTRACT: every control
      the ladder renders is hidden under print, each named independently. */
-  ok("[87] the sort headers, the action row and the swipe hint are hidden in print — a control rendered into a PDF is an affordance that does nothing, the v3.52 interface-theater defect on paper",
+  ok("[87] the sort headers and the action row are hidden in print — a control rendered into a PDF is an affordance that does nothing, the v3.52 interface-theater defect on paper",
     (() => { const rule = (pr.match(/[^\n{}]*\{display:none!important\}/g) || []).join(" ");
-      return ["#overlay .card .x", "#overlay .card .btns", ".ld-sort", ".ld-scrollhint"]
-        .every((sel) => rule.includes(sel)); })());
+      /* The swipe hint left this list at v6.9.3 with the gesture it described — it is pinned
+         ABSENT from the whole file in [89] rather than pinned hidden here. */
+      return ["#overlay .card .x", "#overlay .card .btns", ".ld-sort"].every((sel) => rule.includes(sel)); })());
   ok("[87] a sort header is a real button with aria-pressed and a 40px thumb target at phone widths — the v3.81 defect was a control that rendered its state and offered no way to change it",
     /<button type="button" class="ld-sort/.test(adminSrc) && /aria-pressed="\$\{LADDER_SORT===k\}"/.test(adminSrc) &&
     /max-width:480px\)\{\.ld-sort\{min-height:40px\}\}/.test(adminSrc));
@@ -13490,15 +13491,32 @@ console.log("\n[88] public terminal skin, Slice 1 — the token bridge and the o
       /\.ld-tbl td:nth-child\(11\)[^}]*min-width/.test(adminSrc) &&
       /\.ld-tbl td:nth-child\(12\)[^}]*min-width/.test(adminSrc) &&
       /\.ld-tbl td:nth-child\(13\)[^}]*min-width/.test(adminSrc));
-    ok("[89] the sideways swipe has an affordance that NAMES the columns off to the right, and it is phone-only — on desktop the whole table already fits",
-      /class="ld-scrollhint"/.test(adminSrc) && /swipe the table sideways for/.test(adminSrc) &&
-      /@media\(max-width:700px\)\{\.ld-scrollhint\{display:block/.test(adminSrc));
+    /* REVERSED at v6.9.3, with the reason at the pin. v6.9.0 added a hint naming the columns that
+       sat off to the right, because a 631px table in a 300px window scrolled sideways with nothing
+       saying so. Slice 4 removed the sideways scroll itself — the phone renders a card per name —
+       so the hint became an affordance for a gesture that no longer exists, at every width. Dead
+       code is a rot vector (v3.73), so it is DELETED, and pinned ABSENT rather than merely gone:
+       a retired affordance quietly reappearing is the label-outlives-its-data defect. */
+    ok("[89] the swipe hint is GONE, not merely hidden — Slice 4 removed the sideways scroll it pointed at, and an affordance for a gesture that no longer exists is dead code",
+      !/ld-scrollhint/.test(adminSrc) && !/swipe the table sideways/.test(adminSrc));
+    /* The row list itself: one DOM, two layouts. The cells keep their order and their text; only
+       a data-l label was added, which is what lets the desktop table and the phone card share a
+       renderer instead of drifting apart (the ptModelRows rule, applied to markup). */
+    ok("[89] at ≤700px the ladder is a ROW LIST over the SAME table DOM — cells labelled in place, the header becomes the sort strip, and the basis layer leaves the card at that width only",
+      /@media\(max-width:700px\)\{[\s\S]*?\.ld-tbl td::before\{content:attr\(data-l\)/.test(adminSrc) &&
+      /\.ld-tbl thead tr\{display:flex/.test(adminSrc) && /\.ld-tbl th:has\(\.ld-sort\)\{display:block\}/.test(adminSrc) &&
+      /\.ld-tbl td:nth-child\(5\),\.ld-tbl td:nth-child\(7\),\.ld-tbl td:nth-child\(9\)\{display:none\}/.test(adminSrc) &&
+      (adminSrc.match(/data-l="/g) || []).length >= 11);
+    /* .tblx is a SHARED container — the deep-dive tab's own wide tables use it. The first cut of
+       the row list set overflow-x:visible on it globally and broke those at 390; the overflow pin
+       caught it, which is why the ladder rule is scoped to its own card. */
+    ok("[89] the row list's overflow rule is scoped to the ladder card — .tblx is shared with the deep-dive tables, and an unscoped rule broke them at 390 on the first cut",
+      /\.ld-card \.tblx\{overflow-x:visible\}/.test(adminSrc) && !/^\s*\.tblx\{overflow-x:visible\}/m.test(adminSrc));
     /* A touch affordance printed onto paper is the v3.52 interface-theater defect, exactly
        like the sort headers beside it — and the methodology the fold now hides must still
        print, or a PDF of the ladder loses "% is not annualised". */
     const print = adminSrc.slice(adminSrc.indexOf("@media print"));
-    ok("[89] print drops the swipe hint with the other controls, and FORCES the methodology fold open — a printed ladder without '% is not annualised' lets a reader take a horizon % as a rate",
-      /\.ld-scrollhint\{display:none!important\}/.test(print) &&
+    ok("[89] print FORCES the methodology fold open — a printed ladder without '% is not annualised' lets a reader take a horizon % as a rate, and a closed <details> paints nothing",
       /details\.est-mini>div\{display:block!important/.test(print) &&
       /details\.est-mini::details-content/.test(print));
   } catch (e) {

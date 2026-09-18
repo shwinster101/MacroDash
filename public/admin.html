@@ -9,7 +9,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
 <!-- AUDIT: kept in sync with package.json by test/smoke.mjs. admin.html is a Vite
      public/ passthrough, so it cannot receive __APP_VERSION__ — the guard is the fix. -->
-<title>TT TICKER TERMINAL v6.9.2</title>
+<title>TT TICKER TERMINAL v6.9.3</title>
 <style>
   :root{
     --bg:#05070a; --panel:#0a0f16; --panel2:#0d141d; --line:#16202c;
@@ -445,12 +445,52 @@
   .ld-tbl td:nth-child(11),.ld-tbl th:nth-child(11){min-width:132px}
   .ld-tbl td:nth-child(12),.ld-tbl th:nth-child(12){min-width:112px}
   .ld-tbl td:nth-child(13),.ld-tbl th:nth-child(13){min-width:168px}
-  /* A 631px table in a 300px window scrolled sideways with nothing saying so — the columns
-     past PRICE were unreachable AND undiscoverable. The hint states what is off to the right
-     and is hidden on desktop, where the whole table already fits. */
-  .ld-scrollhint{display:none}
-  @media(max-width:700px){.ld-scrollhint{display:block;color:var(--dim);font-size:10px;
-    letter-spacing:.06em;margin:4px 0 2px}}
+  /* ── v6.9.3 READ THE ROOM Slice 4 — the ROW LIST ─────────────────────────────────────────
+     v6.9.0 made the sideways swipe discoverable. This removes the need for it: a thirteen-column
+     table is not a phone layout, whatever its row height, because more than half of it is off to
+     the right and the eye has nowhere to land. At ≤700px the SAME DOM renders as one card per
+     name — the cell order, the cell count and every cell's text are untouched (only a `data-l`
+     attribute was added), so there is no second renderer that could disagree with the desktop
+     table, and every existing assertion that reads `.ld-main tbody tr` cells keeps working at
+     any width. Desktop keeps the table, where thirteen columns genuinely fit.
+     The reading order is the question order: WHICH name → HOW MUCH → IS IT CLEAN → on what basis.
+     So SYM leads, the sort-year % is pushed to the right edge at the largest size on the card,
+     GATE gets the full width beneath them, and NEEDS NEXT closes the card on its own line. */
+  @media(max-width:700px){
+    /* SCOPED to the ladder card. The first cut set this on `.tblx` globally and broke the
+       deep-dive tab's own wide tables at 390 — caught by the pre-existing overflow pin, which is
+       exactly why that pin exists. `.tblx` is a shared container, not the ladder's. */
+    .ld-card .tblx{overflow-x:visible}
+    .ld-tbl,.ld-tbl tbody,.ld-tbl tr,.ld-tbl td{display:block}
+    /* The header does NOT vanish — it becomes the SORT STRIP. Hiding thead outright removed the
+       five sort controls from the phone entirely, which is the v3.81 defect (a control that
+       renders its state and cannot be tapped) in its worst form: not tappable because not there.
+       Only the sortable headers survive; the rest ride the cells as `data-l` labels. */
+    .ld-tbl thead{display:block}
+    .ld-tbl thead tr{display:flex;flex-wrap:wrap;gap:4px 10px;border:0;padding:0 0 4px;margin:0}
+    .ld-tbl th{display:none;border:0;padding:0;position:static;background:none}
+    .ld-tbl th:has(.ld-sort){display:block}
+    .ld-tbl tr{display:flex;flex-wrap:wrap;align-items:baseline;gap:1px 10px;
+      border:1px solid var(--line);border-radius:5px;padding:6px 8px;margin-bottom:6px}
+    .ld-tbl tr.ld-elig{border-color:var(--green)}
+    .ld-tbl tr.ld-elig td{background:none}
+    .ld-tbl td{border:0!important;padding:0;text-align:left!important;white-space:normal!important;
+      min-width:0!important;flex:0 0 auto;max-width:100%}
+    .ld-tbl td::before{content:attr(data-l) " ";color:var(--dim);font-size:9.5px;letter-spacing:.06em}
+    .ld-tbl td:nth-child(1){color:var(--dim);font-size:10px}
+    .ld-tbl td:nth-child(1)::before,.ld-tbl td:nth-child(2)::before{content:none}
+    .ld-tbl td:nth-child(2){font-size:13px;font-weight:800}
+    /* The two TARGET PRICES and the BASIS leave the card. They are the "on what basis" layer —
+       question 4 of the reading order — and the card answers 1-3 (which name · how much · is it
+       clean). Both are one tap away on the name's own tab, which the SYM button already opens.
+       This is a DISPLAY choice at one width: the cells are still in the DOM, in the same order,
+       so the desktop table and every assertion that reads it are untouched. */
+    .ld-tbl td:nth-child(5),.ld-tbl td:nth-child(7),.ld-tbl td:nth-child(9){display:none}
+    /* the ranked number, pushed to the right edge at the card's largest size — on a ranked list
+       it is the one datum the reader is actually comparing, so it earns the position and size */
+    .ld-tbl td:nth-child(8){margin-left:auto;font-size:14px;text-align:right!important}
+    .ld-tbl td:nth-child(11),.ld-tbl td:nth-child(12),.ld-tbl td:nth-child(13){flex-basis:100%}
+  }
   .ld-sort{background:none;border:0;color:var(--dim);font:inherit;font-size:9.5px;letter-spacing:.08em;
     font-weight:700;cursor:pointer;padding:2px 0;min-height:24px}
   .ld-sort.on{color:var(--green)}
@@ -474,9 +514,7 @@
       --dim:#555;--slate:#333;--fg:#000;--line:#bbb}
     #overlay .card .top{background:#fff!important;border-bottom:1px solid #000!important}
     #overlay .card .top .t{color:#000!important}
-    /* v6.9.0: the swipe hint is a touch affordance — printing it is the v3.52 interface-theater
-       defect on paper, exactly like the sort headers beside it. */
-    #overlay .card .x,#overlay .card .btns,.ld-sort,.ld-scrollhint{display:none!important}
+    #overlay .card .x,#overlay .card .btns,.ld-sort{display:none!important}
     /* ...but the methodology it now hides MUST print. A PDF of the ladder without "% is not
        annualised" lets a reader take a YE2026 % as a rate — the DEC-D2 units error on paper.
        A closed <details> paints nothing, so print forces it open. */
@@ -536,7 +574,7 @@
          verdict and every gate are computed upstream and this panel changes nothing. -->
     <div id="macroEvidence" role="region" aria-label="Why macro — readout evidence"></div>
     <div id="headInfo" style="display:none">
-      <div class="brand">FINANCE&nbsp;BRO.AI // TT&nbsp;TICKER&nbsp;TERMINAL <small>v6.9.2 · the daily contract</small></div>
+      <div class="brand">FINANCE&nbsp;BRO.AI // TT&nbsp;TICKER&nbsp;TERMINAL <small>v6.9.3 · the daily contract</small></div>
       <div class="statusline">
         <span>BOOK: <b id="bookStamp">loading…</b></span>
         <span>AUTH: <b id="sessState">…</b></span>
@@ -7872,28 +7910,31 @@ function ladderTable(d){
       : `<span class="scope" style="color:var(--amber)">${SCORE_INDEX===null?"not read":"no card"}</span>`;
     const basis=(r.y2b||r.y1b||"—");
     const pxFlag=!r.live?`<span class="scope" title="stamped mark, not a live quote">${r.pxAge===null?"⚠undated":"⚠"+r.pxAge+"d"}</span>`:"";
+    /* v6.9.3: `data-l` carries each cell's own column name so the ≤700px ROW LIST can label it
+       in place (the header row is hidden there). It is an ATTRIBUTE only — cell order, cell
+       count and every cell's text are untouched, which is what lets one DOM serve both the
+       desktop table and the phone card with no second renderer to disagree with the first. */
     return`<tr class="${v===null?"ld-elig":""}">`+
       `<td class="scope">${i+1}</td>`+
-      `<td><button type="button" class="linklike" onclick="ladderOpen('${esc(r.sym)}')">${esc(r.sym)}</button>`+
+      `<td data-l="SYM"><button type="button" class="linklike" onclick="ladderOpen('${esc(r.sym)}')">${esc(r.sym)}</button>`+
         (r.lintErr.length?`<span class="bad2" title="pt_model ${esc(r.lintErr.join("/"))} — the rung shown is a floor fallback">⛔</span>`:"")+
         (r.redH?`<span class="bad2" title="${r.redH} hinge(s) RED">●${r.redH}</span>`:"")+`</td>`+
-      `<td class="scope">${esc(r.tier||"—")}</td>`+
-      `<td class="r">$${esc(String(num(r.px)))}${pxFlag}</td>`+
-      `<td class="r">${r.y1===null?`<span class="scope">—</span>`:"$"+esc(String(num(r.y1)))}</td>`+
-      `<td class="r">${pc(r.y1p)}</td>`+
-      `<td class="r">${r.y2===null?`<span class="scope">—</span>`:"$"+esc(String(num(r.y2)))}</td>`+
-      `<td class="r">${pc(r.y2p)}</td>`+
-      `<td class="scope">${esc(basis)}${r.modelLens?" · "+esc(r.modelLens):""}</td>`+
-      `<td class="r">${tt}</td>`+
-      `<td class="${v===null?"ok":"scope"}">${v===null?"✓ ELIGIBLE":esc(v)}${ladderServerCell(r.sym,v===null,gy)}</td>`+
-      `<td>${ladderFreshCell(r.fresh)}</td>`+
-      `<td>${ladderNeedsCell(r.req)}</td></tr>`;
+      `<td class="scope" data-l="TIER">${esc(r.tier||"—")}</td>`+
+      `<td class="r" data-l="PRICE">$${esc(String(num(r.px)))}${pxFlag}</td>`+
+      `<td class="r" data-l="YE${esc(Y1)}">${r.y1===null?`<span class="scope">—</span>`:"$"+esc(String(num(r.y1)))}</td>`+
+      `<td class="r" data-l="YE${esc(Y1)} %">${pc(r.y1p)}</td>`+
+      `<td class="r" data-l="YE${esc(Y2)}">${r.y2===null?`<span class="scope">—</span>`:"$"+esc(String(num(r.y2)))}</td>`+
+      `<td class="r" data-l="YE${esc(Y2)} %">${pc(r.y2p)}</td>`+
+      `<td class="scope" data-l="BASIS">${esc(basis)}${r.modelLens?" · "+esc(r.modelLens):""}</td>`+
+      `<td class="r" data-l="TT">${tt}</td>`+
+      `<td class="${v===null?"ok":"scope"}" data-l="GATE">${v===null?"✓ ELIGIBLE":esc(v)}${ladderServerCell(r.sym,v===null,gy)}</td>`+
+      `<td data-l="FRESH">${ladderFreshCell(r.fresh)}</td>`+
+      `<td data-l="NEEDS NEXT">${ladderNeedsCell(r.req)}</td></tr>`;
   }).join("");
   /* ld-main / ld-skip: the ranked table and the named-exclusions table are DIFFERENT
      claims and are addressed separately — a selector matching both is how a suite ends up
      asserting a gate column on a table that has none. */
-  return`<div class="ld-scrollhint">← swipe the table sideways for BASIS · TT · GATE · FRESH · NEEDS NEXT</div>`+
-    `<div class="tblx"><table class="ld-tbl ld-main"><thead>${head}</thead><tbody>${body}</tbody></table></div>`;
+  return`<div class="tblx"><table class="ld-tbl ld-main"><thead>${head}</thead><tbody>${body}</tbody></table></div>`;
 }
 function ladderSkipped(d){
   if(!d.skipped.length)return"";

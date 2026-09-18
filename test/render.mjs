@@ -2542,25 +2542,45 @@ console.log("\n[render] v5.7.1 — arrival focus: judged AFTER the store is read
     (await p2.locator("#overlay.on").count()) === 1 && box && box.height >= 40);
   ok("ladder: the table scrolls its own overflow rather than blowing the page out at 390px (the v3.35 .tblx + min-width:0 lesson)",
     (await p2.evaluate(() => document.documentElement.scrollWidth)) <= 390);
-  /* v6.9.0 READ THE ROOM — the measured 188px row. Thirteen columns in a 300px window put the
-     four prose columns at 44-77px, so a SENTENCE wrapped to ~15 lines and set the height of
-     every row while the twelve columns you can SEE painted ~150px of nothing (every cell is
-     vertical-align:top). At 43 live rows that was ~6,400px of scroll spent on dead space.
-     Budgeted at 96px — roughly three lines of an 11px cell — so a row that starts wrapping
-     to a paragraph again fails the build. The assertion REPORTS its measurement, so a future
-     failure is a diagnosis rather than a mystery (the v4.1.3 lesson). */
+  /* ── v6.9.3 READ THE ROOM Slice 4 — the ROW LIST, and both pins below RE-PINNED with the
+     reason at the pin. v6.9.0 budgeted a TABLE row at 96px and made its sideways swipe
+     discoverable; both claims are retired here because the thing they describe is gone. A
+     thirteen-column table is not a phone layout whatever its row height — more than half of it
+     sat off to the right and the eye had nowhere to land. At ≤700px the SAME DOM now renders as
+     one card per name, so the swipe does not exist to be discovered and a card legitimately
+     stands taller than a table row while showing MORE, not less.
+     The trade is stated rather than buried: the table put the top five in ~275px that you had to
+     swipe to judge; the cards put them in ~665px, each complete. Budgeted at 160px so a card
+     cannot quietly grow into a paragraph, and the assertion REPORTS its measurement. */
   {
     const hs = await p2.$$eval("#cBody .ld-main tbody tr", (rs) => rs.map((r) => Math.round(r.getBoundingClientRect().height)));
-    ok(`ladder@390: no row is taller than 96px — a prose column narrow enough to wrap to a paragraph sets the height of every row and paints dead space in the twelve you can see (measured max ${Math.max(...hs)}px over ${hs.length} rows)`,
-      hs.length >= 2 && Math.max(...hs) <= 96);
+    ok(`ladder@390: the row list is a card per name, budgeted at 160px so it cannot grow into a paragraph (measured max ${Math.max(...hs)}px over ${hs.length} rows)`,
+      hs.length >= 2 && Math.max(...hs) <= 160);
   }
-  /* The table is ~945px inside a ~300px window, so more than half of it is off to the right.
-     It always was; what was missing was anything SAYING so. The hint names the columns that
-     are out there, so the swipe is discoverable rather than a thing you find by accident. */
-  ok("ladder@390: the sideways swipe is DISCOVERABLE — the hint names the columns that are off-screen, because a table wider than its window with no affordance is a control nobody knows they have",
-    (await p2.locator("#cBody .ld-scrollhint").first().isVisible()) === true &&
-    /GATE/.test(await p2.locator("#cBody .ld-scrollhint").first().innerText()) &&
-    (await p2.evaluate(() => { const w = document.querySelector("#cBody .tblx"); return w.scrollWidth > w.clientWidth; })) === true);
+  ok("ladder@390: there is NO sideways scroll left to discover — the card is the whole row, so the swipe hint is correctly gone rather than pointing at columns that no longer sit off-screen",
+    (await p2.locator("#cBody .ld-scrollhint").first().isVisible().catch(() => false)) === false &&
+    (await p2.evaluate(() => { const w = document.querySelector("#cBody .tblx"); return w.scrollWidth <= w.clientWidth + 1; })) === true &&
+    (await p2.evaluate(() => document.documentElement.scrollWidth)) <= 390);
+  /* Every field the card claims is LABELLED in place, because the header row is not a header
+     any more — it is the sort strip. A stacked table whose cells lose their column names is the
+     same defect as a number with no unit. */
+  ok("ladder@390: every value on the card carries its own column name — the header became the SORT STRIP, so a cell without a label would be a number with no unit",
+    (await p2.$$eval("#cBody .ld-main tbody tr:first-child td", (ts) =>
+      ts.filter((t) => getComputedStyle(t).display !== "none").every((t, i) => i < 2 || (t.getAttribute("data-l") || "").length > 0))) === true);
+  /* The sort controls MUST survive the layout change. The first cut hid `thead` outright and
+     took all five off the phone — the v3.81 defect in its worst form: not merely untappable,
+     absent. They are the strip now, and still a 40px target. */
+  ok("ladder@390: the five sort controls survive the row list as a tappable strip — hiding the header outright took them off the phone entirely on the first cut",
+    (await p2.locator("#cBody .ld-sort").count()) === 5 &&
+    (await p2.locator("#cBody .ld-sort").first().isVisible()) === true);
+  /* The card answers questions 1-3 of the reading order (which name · how much · is it clean)
+     and leaves question 4 — on what basis — to the name's own tab. The two target prices and
+     BASIS are therefore hidden AT THIS WIDTH ONLY: still in the DOM, in the same order, so the
+     desktop table and every assertion that reads its cells are untouched. */
+  ok("ladder@390: the basis layer (both target prices and BASIS) is off the card but still in the DOM in the same order — one DOM, two layouts, no second renderer to disagree with the first",
+    (await p2.$$eval("#cBody .ld-main tbody tr:first-child td", (ts) => ts.length)) === 13 &&
+    (await p2.$$eval("#cBody .ld-main tbody tr:first-child td", (ts) =>
+      [5, 7, 9].every((n) => getComputedStyle(ts[n - 1]).display === "none"))) === true);
   await p2.close();
 }
 

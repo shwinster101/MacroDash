@@ -234,3 +234,52 @@ partial; the 785 reading is the evidence it bit, not the label count.*
 Pinned in the browser, like the type floor and the stance-strip height. Remaining surfaces to
 sweep against it: the terminal's DESK drawer, the NEXT $ deck's TODAY block (F4), and Degen's own
 `explore` equivalents.
+
+---
+
+## Outcomes — v6.9.3 (Slice 4: the ladder ROW LIST)
+
+**The framing correction that made this cheap.** v6.9.0 fixed a row HEIGHT. The defect was a
+SHAPE: at 390 the table is 945px in a 300px window, so a 55px row is a 55px row you have to swipe
+twice to judge. A row height can never fix that.
+
+**Shipped.** At ≤700px the same table DOM renders as one card per name. The only markup change is
+a `data-l` attribute per cell, so cell order, cell count and cell text are identical — which is
+why all twelve existing `.ld-main tbody tr` assertions (all at 1280) needed no change at all.
+
+| | table @390 (v6.9.0) | row list @390 (v6.9.3) |
+|---|---|---|
+| horizontal scroll | 945px in a 300px window | **none — 300px, fits** |
+| per row | 55px, ~half off-screen | **133px, complete** |
+| top five | ~275px, swipe each to judge | ~665px, each complete |
+| sort controls | header row | **sort strip** (5, 40px targets) |
+| basis layer | off-screen right | off the card, one tap via SYM |
+
+**Two defects in my own first cut, both caught by pre-existing pins:**
+
+1. `.tblx{overflow-x:visible}` set globally — `.tblx` is SHARED, so it broke the deep-dive tab's
+   wide tables at 390. The v3.35 overflow pin caught it. Scoped to `.ld-card` now.
+2. Hiding `thead` outright took **all five sort controls off the phone** — the v3.81 defect in its
+   worst form: not untappable, absent. The header is the sort strip now.
+
+**The v6.9.0 swipe hint is DELETED** — the gesture it described no longer exists, so it was an
+affordance for nothing at every width. Pinned absent (v3.73).
+
+**Tests:** 2536 smoke (+2) · 343 render (+3) · 384 public-render · audit clean.
+**Negative control:** removing the row-list media block turns exactly 2 smoke + 2 render red.
+
+---
+
+## Plan status after this session
+
+| # | Pass | Status |
+|---|---|---|
+| 1 | ladder head + row height | ✅ v6.9.0 |
+| 2 | Spotlight prose de-dup (public Degen) | ✅ v6.9.1 |
+| 3 | fold budget (Simple explore) + the executable rule | ✅ v6.9.2 |
+| 4 | ladder → row list at ≤700px | ✅ v6.9.3 |
+| 5 | **NEXT $ deck: rule-once, chip-per-row (F4)** | OPEN — still unmeasured |
+| 6 | **sweep every other fold against the 320-word budget** | OPEN — DESK drawer, Degen explore, TODAY |
+| 7 | the 12 `PENDING` type-floor files | OPEN |
+
+The 320-word budget currently guards ONE fold. Pass 6 is what turns it from a fix into a floor.
