@@ -24,6 +24,8 @@
 // can never disagree about which weekdays had a session.
 import { isMarketHoliday, sessionsBehind, etYmd, expectedObsDate } from "../../src/sources.js";
 // FEAT-SAHM (v3.84): the Sahm math — one home (src/sahm.js), same esbuild-inline path.
+import { marketReturns } from "../lib/marketReturns.js";
+import { ytdReturn } from "../lib/spotlight.js";
 import { sahmFrom } from "../../src/sahm.js";
 
 // ENGINE0-CONT: the readout contract now lives in src/ttReadout.js and the snapshot layer
@@ -226,7 +228,7 @@ export async function onRequest(context) {
       // computed etSession() client-side and disagreed on the same page.
       // `lastRefresh` is deliberately NOT recomputed: it reports when the DATA was pulled,
       // so the cached value is the honest one. Everything else in `live` is data, kept as-is.
-      const fresh = { ...payload, live: { ...payload.live, session: marketSession() } };
+      const fresh = { ...payload, live: { ...payload.live, ...(await marketReturns(env)), session: marketSession() } };
       // ?debug=1: attach the cron Worker's last warm/refresh outcome (pulse:cron:lastwarm)
       // so a silently-blocked 8am/10am warm is visible from a browser, not only wrangler tail.
       // Read fresh here — the copy frozen in the day's cached _diag would mask a later failure.
@@ -253,6 +255,8 @@ export async function onRequest(context) {
   // fresh at serve time and never frozen into the day's cached _diag.
   if (debug) Object.assign(snapshot._diag, await cronDiag(env));
 
+  // Optional returns are served, never persisted into the core snapshot or frozen readout.
+  snapshot.live = { ...snapshot.live, ...(await marketReturns(env)) };
   // ── 4. Return (strip FMP/licensed fields if public view; _diag only on ?debug=1) ──
   return json(publicize(isPublic ? { ...stripPrivate(snapshot), ...callMeta, cached: false }
     : { ...snapshot, ...callMeta }));
@@ -826,17 +830,8 @@ async function fetchSpy(key, statuses = null) {
   const ma100 = idx.length >= 100 ? toSpy(avg(idx.slice(0, 100))) : null;
   const ma200 = idx.length >= 200 ? toSpy(avg(idx.slice(0, 200))) : null;
 
-  // True YTD anchor = most recent Dec 31 (last trading day of prior year).
-  // validObs is newest-first, so the first entry with year < currentYear is
-  // the most recent prior-year close. Fall back to oldest-in-window if not found.
-  const currentYear = new Date().getFullYear().toString();
-  let ytdBase = idx[idx.length - 1]; // fallback
-  for (let j = 0; j < validObs.length; j++) {
-    if ((validObs[j].date ?? "").slice(0, 4) < currentYear) {
-      ytdBase = parseFloat(validObs[j].value);
-      break;
-    }
-  }
+  // No substitute baseline: use the same year-end-session rule as the public tracker.
+  const ytd=ytdReturn(validObs.map(o=>({date:o.date,value:Number(o.value)})),etYmd());
 
   // 20-day sparkline, oldest→newest, in SPY scale
   const series = idx.slice(0, 20).reverse().map(toSpy);
@@ -845,7 +840,7 @@ async function fetchSpy(key, statuses = null) {
   return {
     spyPrice:     toSpy(latest),
     spyChangePct: parseFloat((((latest - prev) / prev) * 100).toFixed(2)),
-    spyYtd:       parseFloat((((latest - ytdBase) / ytdBase) * 100).toFixed(2)),
+    ...(Number.isFinite(ytd.pct)?{spyYtd:ytd.pct}:{}),
     spySeries:    series,
     spxIndex:     Math.round(latest),   // FEAT-202: raw S&P 500 index, now live (same SP500 pull — $0, zero extra fetch)
     spxPrevClose: Math.round(prev),

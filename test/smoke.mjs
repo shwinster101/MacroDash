@@ -607,7 +607,7 @@ ok("deriv: ttReadout.js re-exports the IDENTICAL DERIVED_OF object sources.js ow
 // AsOf on, (b) a derivative mapped to its parent, or (c) a dateless meta field with no parent to
 // inherit from. Miss a classification and this fails — the whole point.
 const PRIMARY_ASOF_FIELDS = [
-  "spyPrice", "spxIndex", "qqqPrice", "mag10PricesJson",
+  "spyPrice", "spxIndex", "qqqPrice", "mag10PricesJson", "spyYtdTotal", "qqqYtdTotal",
   "tenYear", "fedFunds", "unemployment", "lfpr", "savings", "mortgage30",
   "cpiHeadline", "cpiCore", "pceHeadline", "pceCore", "wti", "vix", "btc",
   "hySpread", "igSpread", "creditSpread", "nfci",
@@ -13811,5 +13811,6 @@ console.log("\n[v6.9.9.5] Degen evidence projection — rules stay canonical");
   ok("Degen: absent evidence renders no invented factors",driverRows(null).length===0);
 }
 
+await (await import("./market-returns.mjs")).testMarketReturns(ok);
 console.log(`\n=== SMOKE TEST: ${pass} passed, ${fail} failed ===`);
 process.exit(fail === 0 ? 0 : 1);

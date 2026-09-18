@@ -5,7 +5,7 @@ export default function WhatChanged({changed}) {
   if(!changed)return null;
   const changes=changed.changes||[];
   return <div className="what-changed" style={{padding:"8px 20px",background:T.bg,borderBottom:`1px solid ${T.border}`,fontFamily:T.fontMono,fontSize:T.fsM,color:T.textSecondary}}>
-    <strong>What changed</strong> · {changed.baseline?"Tracking starts today on this device":
+    <strong style={{fontSize:T.fsL,color:T.textPrimary}}>What changed</strong> · {changed.baseline?"Tracking starts today on this device":
       changes.length?`${changes.length} material change${changes.length===1?"":"s"} since your previous visit on this device`:
       `No material change since your previous visit on this device (${String(changed.since||"").slice(0,10)})`}
     {!changed.baseline&&changes.length>0&&<div style={{marginTop:4,color:changes[0].kind==="posture"?T.amber:T.textSecondary}}>{changes[0].text}</div>}

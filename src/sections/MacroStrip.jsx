@@ -17,6 +17,9 @@
 // vote-derived color IS a directional read, it is muted when the field is not
 // live (the NFCI TIGHT/LOOSE precedent, v3.1). Delta colors (pctColor on day
 // moves) are arithmetic facts, not verdicts, and keep their existing treatment.
+import { etYmd } from "../sources.js";
+import { ytdView } from "../marketReturnView.js";
+import SectionHeader from "../primitives/SectionHeader.jsx";
 import { T } from "../design-tokens.js";
 import { REGIME_BAND_TABLE, voteStyle } from "../regime.js";
 import { fmt, pctColor } from "../format.js";
@@ -32,6 +35,7 @@ const bandOf=(k)=>REGIME_BAND_TABLE.find((b)=>b.key===k);
 
 const SimpleMarketTape=({d,modeOf,asOfOf,degen=false,fomcLabel})=><div className={degen?"macro-strip degen-market-tape":"macro-strip simple-market-tape"} role="region" aria-label={degen?"Market context — not model voters":"Market performance"}
   style={{background:T.surfaceHigh,padding:"8px 20px",borderBottom:`1px solid ${T.border}`,display:"grid",gridTemplateColumns:degen?"repeat(3,minmax(0,1fr))":"repeat(2,minmax(0,1fr))",gap:12}}>
+  <div style={{gridColumn:"1/-1"}}><SectionHeader major>{degen?"Market context":"Market performance"}</SectionHeader></div>
   {[
     {label:"S&P 500",field:"spyPrice",changeField:"spyChangePct",data:d.marketPulse.spy,proxy:true},
     {label:"Nasdaq-100 / QQQ",field:"qqqPrice",changeField:"qqqChangePct",data:d.marketPulse.qqq},
@@ -40,15 +44,20 @@ const SimpleMarketTape=({d,modeOf,asOfOf,degen=false,fomcLabel})=><div className
     const date=asOfOf?.(changeField);
     const available=live&&Boolean(date)&&Number.isFinite(data.changePct);
     const quoteLive=["LIVE","CACHED"].includes(modeOf(field))&&Boolean(asOfOf?.(field))&&Number.isFinite(data.price);
+    const ytdField=proxy?"spyYtdTotal":"qqqYtdTotal";
+    const ytd=ytdView(data,modeOf(ytdField),asOfOf?.(ytdField),etYmd());
+    const ytdText=ytd.available?`${proxy?"SPY":"QQQ"} YTD total return ${fmt.pct(ytd.value)}, through ${ytd.date}, from ${data.ytdTotalBase}. Includes dividends (Tiingo adjusted closes).`:"YTD total return unavailable — no current, verified year-end baseline.";
     const ex=stripExplainFor(field);
     const reading=available?`${fmt.pct(data.changePct)} daily change`:"Daily change unavailable";
     const level=quoteLive?proxy?`S&P 500 index ÷ 10: ${data.price} (not an SPY quote)`:`QQQ ETF quote: $${data.price}`:"Level unavailable";
-    return <Explainable key={field} explain={{...ex,metadata:`${reading}. ${available?`As of ${date}. Data: ${modeOf(changeField)}.`:"No current change is shown."} ${level}${quoteLive&&asOfOf?.(field)?` · as of ${asOfOf(field)}`:""}.`}}
+    return <Explainable key={field} explain={{...ex,metadata:`${reading}. ${ytdText} ${available?`As of ${date}. Data: ${modeOf(changeField)}.`:"No current change is shown."} ${level}${quoteLive&&asOfOf?.(field)?` · as of ${asOfOf(field)}`:""}.`}}
       title={ex.full} eyebrow={`${label} · ${reading}`} className="strip-tile simple-market-tile"
       style={{background:"none",border:"none",padding:0,minWidth:0}}>
-      <div style={{fontFamily:T.fontMono,fontSize:T.fsM,color:T.textMuted}}>{label}</div>
-      <div style={{fontFamily:T.fontMono,fontSize:T.fsL,fontWeight:700,color:available?pctColor(data.changePct):T.textMuted}}>{available?fmt.pct(data.changePct):"Unavailable"}</div>
+      <div style={{fontFamily:T.fontMono,fontSize:T.fsL,fontWeight:700,color:T.textPrimary}}>{label}</div>
+      <div className="market-daily" style={{fontFamily:T.fontMono,fontSize:T.fsL,fontWeight:700,color:available?pctColor(data.changePct):T.textMuted}}>{available?fmt.pct(data.changePct):"Unavailable"}</div>
       <div style={{fontFamily:T.fontMono,fontSize:T.fsS,color:T.textMuted}}>{available?`Daily · ${date}`:"No current reading"}</div>
+      <div className="market-ytd" style={{fontFamily:T.fontMono,fontSize:T.fsL,fontWeight:700,color:ytd.available?pctColor(ytd.value):T.textMuted,marginTop:6}}>{ytd.available?fmt.pct(ytd.value):"Unavailable"}</div>
+      <div style={{fontFamily:T.fontMono,fontSize:T.fsS,color:T.textMuted}}>{proxy?"SPY YTD total":"QQQ YTD total"}<br/>{ytd.available?ytd.date:"No current reading"}</div>
       <span className="visually-hidden">Opens an explainer.</span>
     </Explainable>;
   })}

@@ -50,7 +50,7 @@ const CollapsedGroup = ({ count, label, chip = true, defaultOpen = false, persis
             hero status row took in v6.8.1-v6.8.4. The Simple `promise` form keeps fs-l: T7 made
             it a 2-4 word reading label, deliberately one step above the operator chip, and
             flattening the two would undo that ruling. */}
-        <span style={{ fontFamily:T.fontMono, fontSize: promise ? T.fsL : T.fsS, color:T.textMuted,
+        <span style={{ fontFamily:T.fontMono, fontSize: promise ? T.fsL : T.fsS, fontWeight:promise?600:400, color:promise?T.textPrimary:T.textSecondary,
                        letterSpacing: promise ? "0.04em" : "0.12em",
                        textTransform: promise ? "none" : "uppercase" }}>
           {open ? (promise ? "▾ Hide" : "▾ hide") : (promise ? "▸" : `▸ +${count}`)} {label}

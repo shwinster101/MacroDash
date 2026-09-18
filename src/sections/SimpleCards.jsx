@@ -20,7 +20,7 @@ const sheetOf = (c) => {
 };
 export default function SimpleCards({ cards = [], usable = 0, total = 0, withheld = false, drift = false }) {
   return <div role="region" aria-label="Key parameters" style={{ padding: "6px 20px", background: T.bg, borderBottom: `1px solid ${T.border}` }}>
-    <div style={{ fontFamily: T.fontMono, fontSize: T.fsM, color: T.textMuted, marginBottom: 2 }}>Current signals</div>
+    <h2 style={{ fontFamily: T.fontMono, fontSize: T.fsL, fontWeight:700, lineHeight:"18px", color:T.textPrimary, margin:"0 0 2px" }}>Current signals</h2>
     <div className="simple-signals-grid">
       {cards.map(c => {
         const face = cardFace(c);

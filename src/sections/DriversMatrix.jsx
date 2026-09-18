@@ -9,7 +9,7 @@ export default function DriversMatrix({ evidenceSet, drift=false }) {
   if(!evidenceSet||!Array.isArray(evidenceSet.factors))return <div aria-hidden="true"/>;
   return <div className="driver-matrix">
     <div style={{fontFamily:T.fontMono,fontSize:T.fsM,color:T.textSecondary,marginBottom:8}}>
-      <strong>Current factor evidence</strong> · {evidenceSet.state==="DEMO"?"Illustrative data — no live signals counted":evidenceSet.freshSummary}
+      <strong style={{fontSize:T.fsBody,color:T.textPrimary}}>Current factor evidence</strong> · {evidenceSet.state==="DEMO"?"Illustrative data — no live signals counted":evidenceSet.freshSummary}
       {evidenceSet.withheld&&" · posture withheld"}
       {drift&&<div style={{color:T.amber}}>Current signals differ from the saved 10am call above.</div>}
     </div>

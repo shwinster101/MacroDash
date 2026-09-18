@@ -1,5 +1,20 @@
 # CLAUDE.md — MacroDash
 
+**v7.0.0 — clearer sections and verified ETF YTD returns.**
+Major sections have prominent headings and separators; Stock Spotlight is no longer
+a small inline token. Market tiles add dated SPY and QQQ total returns including dividends,
+using a shared verified adjusted-close adapter and exact prior-year-end baseline.
+The S&P daily index proxy remains distinct from SPY ETF total return. Optional returns
+reuse the existing public-display activation, provider and KV; no extra browser polling.
+Missing/stale returns are unavailable. Removed the legacy S&P oldest-observation YTD
+fallback. No model thresholds, frozen calls, fundamentals or cron Worker changes.
+The Simple market section retains its 660px phone entry budget; the requested heading
+places the first tile data within 720px.
+Verification: browser-required npm run gates passed 2,649 smoke, 353 admin-browser and
+614 public-browser checks; production audit found zero vulnerabilities. Both modes were
+checked at 320/390/768/1280px, including return dates, explainers and overflow.
+
+
 Macro-intelligence dashboard ("MacroDash"). One responsive URL, mobile-primary, that
 answers *"is it safe to be in the market?"* from live macro + market + sentiment
 data. Single-page React app on Cloudflare Pages, with live data assembled at the

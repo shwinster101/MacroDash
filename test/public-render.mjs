@@ -609,10 +609,11 @@ console.log("\n[public] v3.94 — Simple default, the toggle, persistence, red f
   ok("simple: the toggle is present, labelled honestly, Simple pressed",
     await page.locator('button[aria-pressed="true"]', { hasText: "Simple" }).count() === 1);
   const glance = await page.evaluate(() => {
-    const el = [...document.querySelectorAll("*")].find((n) =>
-      n.children.length === 0 && /^(?:●?\s*SPY\*?|S&P 500)$/m.test(n.textContent || "") && n.getBoundingClientRect().height > 0);
+    const el = document.querySelector(".simple-market-tape");
     return el ? Math.round(el.getBoundingClientRect().top + window.scrollY) : null;
   });
+  ok("v7: first market tile remains within 720px including the requested section heading",
+    await page.locator(".simple-market-tile").first().evaluate(n=>n.getBoundingClientRect().top+scrollY<=720));
   // v3.95 re-pin 520 -> 540, WITH the reason (the v3.45 legitimate-content precedent, not a
   // budget quietly loosened): the owner-requested whys expander is ONE toggle row under the
   // hero sentence and measured +10px (520 -> 530). Chrome creeping back still fails the build.
@@ -1711,8 +1712,9 @@ console.log("\n[public] v6.0.1/v6.4 — shape before text · Simple|Degen clarit
     const el = [...document.querySelectorAll("*")].find((n) => n.children.length === 0 && /^(?:●?\s*SPY\*?|S&P 500)$/m.test(n.textContent || "") && n.getBoundingClientRect().height > 0);
     const k = document.querySelector('[aria-label="Key parameters"]');
     return [el ? Math.round(el.getBoundingClientRect().top + scrollY) : null, k ? Math.round(k.getBoundingClientRect().top + scrollY) : null]; });
-  ok(`v6.0.1 budgets: the cards begin within 420px and the strip within 660px with the window closed (measured ${cardsTop} / ${glance})`,
-    cardsTop !== null && cardsTop <= 420 && glance !== null && glance <= 660);
+  // v7 adds a named section header above the tile; section entry stays pinned separately.
+  ok(`v7 budgets: cards within 420px, first market tile within 720px (measured ${cardsTop} / ${glance})`,
+    cardsTop !== null && cardsTop <= 420 && glance !== null && glance <= 720);
   /* v6.0.2: every voting tile's ▪ wears its VOTE colour (this tape is all-bull → all green),
      and it is the same colour its vote-coloured sub-line wears where one exists (F&G, NFCI). */
   await page.getByRole("button", {name:/Explore market data/}).click();
@@ -1945,7 +1947,7 @@ console.log("\n[public] v6.2/v6.4 — the 6pm evening update: one line, both mod
     await page.keyboard.press("Escape");
     await page.waitForTimeout(150);
     const [glance, cardsTop] = await page.evaluate(() => {
-      const el = [...document.querySelectorAll("*")].find((n) => n.children.length === 0 && /^(?:●?\s*SPY\*?|S&P 500)$/m.test(n.textContent || "") && n.getBoundingClientRect().height > 0);
+      const el = document.querySelector(".simple-market-tape");
       const k = document.querySelector('[aria-label="Key parameters"]');
       return [el ? Math.round(el.getBoundingClientRect().top + scrollY) : null, k ? Math.round(k.getBoundingClientRect().top + scrollY) : null]; });
     ok(`v6.2 budgets: WITH a close read the cards still begin within 420px and the strip within 660px at 390×844 (measured ${cardsTop} / ${glance})`,
@@ -2050,7 +2052,7 @@ for (const width of [320,390,768,1280]) {
   await page.keyboard.press('Escape');
   await page.getByRole('button', {name:/Explore market data/}).click();
   const [glance, cardsTop] = await page.evaluate(() => {
-    const el = [...document.querySelectorAll("*")].find((n) => n.children.length === 0 && /^(?:●?\s*SPY\*?|S&P 500)$/m.test(n.textContent || "") && n.getBoundingClientRect().height > 0);
+    const el = document.querySelector(".simple-market-tape");
     const k = document.querySelector('[aria-label="Key parameters"]');
     return [el ? Math.round(el.getBoundingClientRect().top + scrollY) : null, k ? Math.round(k.getBoundingClientRect().top + scrollY) : null]; });
   ok(`v6.3 budgets: with eight sheet triggers the cards still begin within 420px and the strip within 660px at 390×844 (measured ${cardsTop} / ${glance})`,
@@ -2204,7 +2206,7 @@ console.log("\n[public] v6.5 — STOCK SPOTLIGHT: Simple + Degen, always-visible
       /sec\.gov/.test(openedAll) && /YTD method/.test(openedAll));
     ok("v6.5 Simple: no rating words on the face", !/\b(cheap|safe|buy|sell|undervalued|overvalued)\b/i.test(openedAll));
     const [glance, cardsTop] = await page.evaluate(() => {
-      const el = [...document.querySelectorAll("*")].find((n) => n.children.length === 0 && /^(?:●?\s*SPY\*?|S&P 500)$/m.test(n.textContent || "") && n.getBoundingClientRect().height > 0);
+      const el = document.querySelector(".simple-market-tape");
       const k = document.querySelector('[aria-label="Key parameters"]');
       return [el ? Math.round(el.getBoundingClientRect().top + scrollY) : null, k ? Math.round(k.getBoundingClientRect().top + scrollY) : null]; });
     ok(`v6.5 budgets: the macro first screen is untouched — cards within 420px and the strip within 660px at 390×844 (measured ${cardsTop} / ${glance})`,
@@ -2745,7 +2747,7 @@ for (const scenario of [
   const live={...FULL_LIVE}; delete live.spyChangePct; delete live.qqqChangePct;
   const {page}=await open({live,width:390,power:false}); await page.waitForTimeout(1200);
   ok('v6.9.9 missing changes: live prices do not make mock changes look current',
-    (await page.locator('.simple-market-tape').innerText()).match(/Unavailable/g)?.length===2);
+    (await page.locator('.market-daily').allTextContents()).filter(t=>t==='Unavailable').length===2);
   await page.locator('.simple-market-tile').first().click();
   ok('v6.9.9 S&P sheet: proxy and separate safety circuit are explicit',
     /not a tradable SPY ETF quote|not an SPY quote/.test(await page.getByRole('dialog').innerText()) &&
@@ -2790,6 +2792,24 @@ for (const scenario of [
   await page.keyboard.press("Escape");
   ok("Degen: crossing scenario has no runtime errors",errors.length===0);
   await page.close();
+}
+{
+ const {makeSpotlightFixture}=await import("./spotlight-fixture.mjs");
+ const feed={schema:"md-spotlight-v1",enabled:true,model:makeSpotlightFixture().projected};
+ for(const power of [false,true])for(const width of [320,390,768,1280]) {
+  const base=String(Number(TODAY.slice(0,4))-1)+"-12-31";
+  const live={...FULL_LIVE,spyYtdTotal:12.34,spyYtdTotalAsOf:TODAY,spyYtdTotalBase:base,qqqYtdTotal:23.45,qqqYtdTotalAsOf:TODAY,qqqYtdTotalBase:base};
+  const {page,errors}=await open({live,width,power,spotlight:feed});await page.waitForTimeout(1200);
+  ok("v7 "+power+"/"+width+": both YTD returns visible",JSON.stringify(await page.locator(".market-ytd").allTextContents())===JSON.stringify(["+12.3%","+23.4%"]));
+  ok("v7 "+power+"/"+width+": prominent distinct Spotlight heading",await page.getByRole("heading",{name:"Stock Spotlight",exact:true}).evaluate(n=>parseFloat(getComputedStyle(n).fontSize)>=16&&getComputedStyle(n).fontWeight==="700"));
+  ok("v7 "+power+"/"+width+": no overflow or runtime errors",await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth+1)&&errors.length===0);
+  await page.locator(".simple-market-tile").first().click();
+  const sheet=await page.getByRole("dialog").innerText();
+  ok("v7 "+power+"/"+width+": return basis, dates and three-bullet explainer",sheet.includes("Includes dividends")&&sheet.includes(base)&&sheet.includes(TODAY)&&await page.getByRole("dialog").locator("li").count()===3);
+  await page.keyboard.press("Escape");
+  if(process.env.PATCH_SCREENSHOTS)await page.screenshot({path:"/tmp/macrodash-v7-"+(power?"degen":"simple")+"-"+width+".png",fullPage:true});
+  await page.close();
+ }
 }
 await browser.close();
 srv.close();

@@ -24,6 +24,10 @@ export const SOURCES = {
   // QQQ (Finnhub equity quote — Nasdaq-100 ETF; FRED can't source individual equities)
   qqqPrice:       { path: "marketPulse.qqq.price",          kind: "num",    displayClass: "public" },
   qqqChangePct:   { path: "marketPulse.qqq.changePct",      kind: "num",    displayClass: "public" },
+  spyYtdTotal: { path: "marketPulse.spy.ytdTotal", kind: "num", displayClass: "public" },
+  spyYtdTotalBase: { path: "marketPulse.spy.ytdTotalBase", kind: "str", displayClass: "public" },
+  qqqYtdTotal: { path: "marketPulse.qqq.ytdTotal", kind: "num", displayClass: "public" },
+  qqqYtdTotalBase: { path: "marketPulse.qqq.ytdTotalBase", kind: "str", displayClass: "public" },
   // MAG 10 live prices (Finnhub) — JSON passthrough [{ticker,price,chgPct}]; fundamentals stay curated
   mag10PricesJson:{ path: "mag10PricesJson",                kind: "str",    displayClass: "public" },
   // RATES / MACRO (fetchFred)
@@ -143,6 +147,7 @@ export const PUBLIC_HIDDEN_CLASSES = ["licensed"];
 // sibling of its own — the smoke reconciliation (test/smoke.mjs) asserts this table covers
 // every such SOURCES key and fails the build if a new one is missed.
 export const DERIVED_OF = {
+  spyYtdTotalBase: "spyYtdTotal", qqqYtdTotalBase: "qqqYtdTotal",
   // equity (fetchSpy — FRED SP500/10 proxy; spyPrice/spxIndex are the primary pulls)
   spyChangePct: "spyPrice", spyYtd: "spyPrice", spyMa100: "spyPrice", spyMa200: "spyPrice",
   spySeries: "spyPrice", spxPrevClose: "spxIndex",

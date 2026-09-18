@@ -15,10 +15,10 @@ export const MOCK_DATA = {
   lastRefresh:"2026-05-23 16:15 ET", session:"CLOSE",
   nextRefresh:"2026-05-26 09:35 ET",
   marketPulse:{
-    spy:{ price:745.83, changePct:0.29, ytd:8.74, pe:22.4, ma100:718.2, ma200:692.4,
+    spy:{ ytdTotal:null, ytdTotalBase:null, price:745.83, changePct:0.29, ytd:8.74, pe:22.4, ma100:718.2, ma200:692.4,
           series:[686,688,692,695,700,698,704,708,712,710,715,718,720,722,719,724,728,732,740,746] },
     spx:{ index:7473, prevClose:7415 }, // FEAT-202: S&P 500 index (FRED SP500) — live merge target
-    qqq:{ price:717.66, changePct:0.44, ytd:15.50 },
+    qqq:{ ytdTotal:null, ytdTotalBase:null, price:717.66, changePct:0.44, ytd:15.50 },
     vix:{ current:18.4, weekChg:-13.2, series:[24,22,21,20,22,21,19,18] },
     fearGreed:{ score:58, label:"Greed", prevWeek:44 },
     // DEC-31 (v3.2): Put/Call field removed — CBOE killed the free feed in 2019; retirement noted in footer.

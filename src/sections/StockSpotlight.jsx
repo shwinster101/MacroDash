@@ -1,3 +1,4 @@
+import SectionHeader from "../primitives/SectionHeader.jsx";
 // ─── STOCK SPOTLIGHT (v6.5.0, docs/plans/stock-spotlight.md) ─────────────────────────
 // NBIS beside one rotating "Established growth" comparison, answering ONE question in both
 // modes: what do this business's latest results and its stock's current price tell me?
@@ -395,9 +396,9 @@ const StockSpotlight = ({ spotlight, simple }) => {
   const cad = cadenceLine(m.pair, m.businessDateServed || null);
   return (
     <div role="region" aria-label="Stock Spotlight" className="stock-spotlight"
-      style={{ padding: "10px 20px", background: T.bg, borderBottom: `1px solid ${T.border}` }}>
-      <div style={{ display: "flex", alignItems: "baseline", gap: 8, flexWrap: "wrap", marginBottom: 6 }}>
-        <span style={{ fontFamily: T.fontMono, fontSize: T.fsXs, color: T.amber, letterSpacing: "0.12em", textTransform: "uppercase" }}>Stock Spotlight</span>
+      style={{ padding: "16px 20px", marginTop:12, background: T.bg, borderTop:`2px solid ${T.amber}66`, borderBottom: `1px solid ${T.border}` }}>
+      <SectionHeader major>Stock Spotlight</SectionHeader>
+      <div style={{ display: "flex", alignItems: "baseline", gap: 8, flexWrap: "wrap", marginBottom: 12 }}>
         <span style={{ fontFamily: T.fontMono, fontSize: T.fsM, color: T.textPrimary }}>{m.pair.anchor} × {m.pair.comparisonLabel} ({m.pair.comparison})</span>
         {/* v6.9.5: rendered in BOTH modes — Simple is the default, so gating the cadence to
             Degen hid it from everyone who has not switched. Degen keeps the week seed too. */}
