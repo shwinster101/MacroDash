@@ -12300,7 +12300,14 @@ console.log("\n[81] v6.5.0 STOCK SPOTLIGHT — calculations, endpoints, cron leg
     /label=\{EXPLORE_FOLD_LABEL\}/.test(ssCode) && /<DataNotes key=\{c\.symbol\}/.test(ssCode) &&
     (() => { const { shortReason } = ssMod; return shortReason("only annual revenue is on file (fiscal year to 2025-12-31); no quarterly period could be derived") === "annual filing only" &&
       shortReason("profile carries no market capitalization") === "no market cap" && shortReason("no verified total-return series — price return is not a substitute") === "not total return" && shortReason("something new") === null; })() &&
-    /simple\s*\?[\s\S]{0,400}: <FullAssessment a=\{c\.assessment\} \/>/.test(ssCode) &&
+    /* RE-PINNED at v6.9.1, with the reason at the pin. This asserted that the Degen FACE renders
+       <FullAssessment/> — the three-question prose that, measured, restated the labelled rows on
+       both sides of it (330px / 139 words, ~20% of the widget's words). The face now renders
+       <AssessmentFacts/>, which carries ONLY what no row carries: the forward report date and the
+       price-trend suppression notice. Nothing was deleted — the clause below still requires the
+       full prose inside a CollapsedGroup, which is now true in BOTH modes. */
+    /simple\s*\?[\s\S]{0,400}: <AssessmentFacts c=\{c\} a=\{c\.assessment\} \/>/.test(ssCode) &&
+    !/: <FullAssessment a=\{c\.assessment\} \/>\)\}/.test(ssCode) &&
     (() => { const cg = ssCode.slice(ssCode.indexOf("simple ? ("), ssCode.lastIndexOf("</CollapsedGroup>")); return /<FullAssessment a=\{c\.assessment\} \/>/.test(cg); })() &&
     ssCode.indexOf("{simple && lesson && <Lesson") < ssCode.indexOf("<Chart tracker={m.tracker}") && ssCode.indexOf("<Chart tracker={m.tracker}") < ssCode.indexOf("{!simple && lesson && <Lesson") &&
     /awaiting first trading close/.test(ssCode) && /tracker\.yearRollover/.test(ssCode));

@@ -2288,15 +2288,57 @@ console.log("\n[public] v6.5 — STOCK SPOTLIGHT: Simple + Degen, always-visible
       await page.keyboard.press("Escape");
       ok(`Degen valuation tap: ${label} closes and restores focus`, await trigger.evaluate(n => n === document.activeElement) && await page.getByRole("dialog").count() === 0);
     }
-    ok("v6.5 Degen: NBIS's negative trailing earnings read 'no P/E' — never a negative multiple", /trailing earnings are negative — no P\/E/.test(text) && !/-\d+\.\d×/.test(text));
-    ok("v6.5 Degen: sources are the one collapsed disclosure; opening it lists dated sec.gov citations",
+    /* RE-PINNED at v6.9.1, with the reason at the pin. This read the literal "trailing earnings
+       are negative — no P/E", which lived ONLY in the STOCK prose the face no longer duplicates.
+       The CLAIM is unchanged and is still asserted on the face — the Trailing P/E ROW states it
+       in its own vocabulary ("Not meaningful · net loss"), which is if anything plainer — and the
+       retired sentence is still asserted verbatim one tap deep below. The invariant that matters
+       (a negative multiple never renders) is pinned on the whole region either way. */
+    ok("v6.5 Degen: NBIS's negative trailing earnings are stated on the FACE by the row itself — 'Not meaningful · net loss' — and never as a negative multiple",
+      /Not meaningful/.test(text) && /net loss/.test(text) && !/-\d+\.\d×/.test(text));
+    /* RE-PINNED at v6.9.1: sources is no longer "the ONE collapsed disclosure" — Degen now has
+       two, because the three-question prose moved out of the face and into its own fold. Clicking
+       `.first()` would have opened the wrong one, so the toggle is selected BY NAME. Both folds
+       are asserted, and the ORDER is part of the contract: the reading of the rows sits BELOW the
+       rows it reads, so a reader can never meet the interpretation before the numbers. */
+    ok("v6.5 Degen: sources stay a collapsed disclosure, selected by name now that the three-question prose has its own fold; opening it lists dated sec.gov citations",
       (await r.locator('[aria-label="Sources and calculations"]').count()) === 0 && await (async () => {
-        await r.locator("button.cg-toggle").first().click(); await page.waitForTimeout(250);
+        await r.locator("button.cg-toggle", { hasText: /sources & calculations/i }).first().click(); await page.waitForTimeout(250);
         const t = await r.innerText(); return (await r.locator('[aria-label="Sources and calculations"]').count()) === 1 && /sec\.gov/.test(t) && /filed \d{4}-\d{2}-\d{2}/.test(t); })());
-    const degenFace = { caps: (await r.locator('[aria-label$=" profile"]').allInnerTexts()).map(t => (t.match(/\$\d+\.\d+[TB]/) || [])[0]), ytd: text.match(/[+−]\d+\.\d\d%/g), business: (text.match(/BUSINESS · [^\n]+/g) || []) };
+    /* RE-PINNED at v6.9.1: Degen's BUSINESS/STOCK/WATCH-NEXT text is one tap deep now, exactly
+       as Simple's already was — so BOTH sides of this comparison are read after opening the fold,
+       which is what makes it a real cross-mode identity check rather than two different altitudes
+       compared to each other. */
+    await r.locator("button.cg-toggle", { hasText: /the three questions, in full/i }).first().click();
+    await page.waitForTimeout(250);
+    const degenOpened = await r.innerText();
+    const degenFace = { caps: (await r.locator('[aria-label$=" profile"]').allInnerTexts()).map(t => (t.match(/\$\d+\.\d+[TB]/) || [])[0]), ytd: text.match(/[+−]\d+\.\d\d%/g), business: (degenOpened.match(/BUSINESS · [^\n]+/g) || []) };
     ok("v6.5 both modes: IDENTICAL market caps, YTD values and assessments (one model, two altitudes)",
       simpleFace && JSON.stringify(simpleFace.caps.slice(0, 2)) === JSON.stringify(degenFace.caps.slice(0, 2)) &&
-      JSON.stringify(simpleFace.ytd.slice(0, 2)) === JSON.stringify(degenFace.ytd.slice(0, 2)) && JSON.stringify(simpleFace.business) === JSON.stringify(degenFace.business));
+      JSON.stringify(simpleFace.ytd.slice(0, 2)) === JSON.stringify(degenFace.ytd.slice(0, 2)) &&
+      degenFace.business.length === 2 && JSON.stringify(simpleFace.business) === JSON.stringify(degenFace.business));
+    /* ── v6.9.1 READ THE ROOM Slice 2 ── the FACE stops restating its own rows.
+       Measured before this pass, Degen at 390: the three-question block was 330px / 139 words
+       across the two companies inside a 2,650px / 700-word region — ~20% of every word in the
+       widget — and it restated the labelled rows on both sides of itself. These pins assert the
+       DUPLICATION IS GONE (closed state) and that nothing was DELETED (one tap deep), which is
+       the pair that makes this a de-dup rather than a cut. */
+    ok("v6.9.1 Degen face: the three-question prose is GONE from the face — it restated the Revenue growth / Operating margin rows above it and the Cap ÷ TTM revenue / Trailing P/E / Price trend rows below it (the v3.43 Yahoo-dupe test, applied to prose)",
+      /* Chromium's innerText APPLIES text-transform, so the row labels read back UPPERCASE —
+         the v3.69 lesson, caught here on first run. The eyebrows being searched for are literal
+         uppercase in source, so only the row half needs /i. */
+      !/BUSINESS · /.test(text) && !/STOCK · /.test(text) && !/WATCH NEXT · /.test(text) &&
+      /revenue growth/i.test(text) && /cap ÷ ttm revenue/i.test(text) && /price trend/i.test(text));
+    ok("v6.9.1 Degen face: nothing was deleted — every sentence is one tap deep, for BOTH companies",
+      /BUSINESS · /.test(degenOpened) && /STOCK · /.test(degenOpened) && /WATCH NEXT · /.test(degenOpened) &&
+      (degenOpened.match(/WATCH NEXT · /g) || []).length === 2);
+    /* The two facts those paragraphs carried that NO row carries stay ON the face: the forward
+       report date (nothing else on either panel carries one) and, where it applies, the
+       price-trend suppression notice. A de-dup that dropped these would be deleting evidence,
+       not duplication. The date is read from the model's typed nextEarnings, never parsed back
+       out of the watchNext sentence (the v4.0.3 ruling). */
+    ok("v6.9.1 Degen face: the one fact no row carries — the next scheduled report date — stays ON the face, per company, typed rather than parsed out of prose",
+      (text.match(/NEXT REPORT · \d{4}-\d{2}-\d{2}/g) || []).length === 2);
     /* v6.8.3: the same panel chrome in Degen (one component, both modes), and an HONEST limit
        rather than a claim — the ONLY sub-10px text left in the Degen region is the shared
        CollapsedGroup toggle, which is a primitive every fold on the page uses and is therefore

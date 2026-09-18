@@ -141,3 +141,51 @@ second rendering of the same facts is duplication, not depth.
 3. **The probe's NEXT $ selectors (`.tdy-item`, `#todayCard li`) matched nothing** — I guessed
    class names instead of reading them. F4 therefore carries no measurement and is ranked on the
    screenshot alone, which is why it is pass 3 and not pass 2.
+
+---
+
+## Outcomes — v6.9.1 (Slice 2: F5, the public Degen Spotlight)
+
+**Shipped:** F5. `src/sections/StockSpotlight.jsx` only — `functions/lib/spotlight.js` byte-unchanged.
+
+- `AssessmentFacts` replaces `FullAssessment` on the FACE: renders only the next-report date
+  (typed, from `nextEarnings` — never parsed out of `watchNext`) and the price-trend suppression
+  notice. Renders nothing when neither applies.
+- The full BUSINESS/STOCK/WATCH-NEXT prose moves into its own `CollapsedGroup`, BELOW the
+  supporting analysis (a reading of the rows must sit below the rows), separate from
+  `sources & calculations` (provenance ≠ interpretation).
+
+**Measured (Degen, 390×844):** region 2,650 → 2,393px (−257) · words 700 → 581 (−17%) ·
+three-question block on the face 330px / 139 words → 0. The ~73px difference between the prose
+removed and the region saved is the two `NEXT REPORT` facts plus the new fold's toggle — stated
+rather than rounded away.
+
+**Tests:** 2534 smoke (1 re-pinned) · 340 render · 379 public-render (+3) · audit clean.
+
+**Corrections, recorded rather than edited away:**
+
+1. **My fold label defeated my own pin.** Labelling it *"business · stock · watch next"* put those
+   literal eyebrows on the closed face, so the summary read as a fourth paragraph. The label
+   changed; the pin did not.
+2. **The de-dup pin then failed against correct code** — Chromium's `innerText` applies
+   `text-transform`, so the row labels read back UPPERCASE. The v3.69 lesson, again.
+3. **The first negative control silently did not run.** A `grep -c` returned 0, broke the `&&`
+   chain, and the suites re-tested the previous build while printing green. Re-run properly it
+   turns 1 smoke + 4 public red with zero collateral. *A control that never executed proves
+   nothing* (v5.97.2).
+
+### New finding, from the owner, mid-pass
+
+> Even explore the numbers on simple mode is just ridiculously long. really consider the word
+> budgets and making sure that no menu just unveiled and absolute novel.
+
+**F6 — a fold is not a dumping ground.** Slice 2 was right to move prose off the face and wrong to
+assume a fold has no budget. Progressive disclosure means *every layer* is budgeted, not just the
+first. Simple's `explore the numbers` currently holds, per company: DATES & DATA NOTES, THE THREE
+QUESTIONS (the full prose), SUPPORTING ANALYSIS (8 rows + CALCULATION INPUTS), and then Sources —
+four panels × two companies behind one tap. **Ranked next (F6 becomes pass 2; the ladder row list
+moves to pass 3).**
+
+**Rule this adds to §3, and it is now executable, not prose:** *no disclosure may open onto more
+than N words without a second level.* The budget is PINNED in the browser, the way the type floor
+and the stance-strip height already are, so a fold that grows into a novel fails the build.

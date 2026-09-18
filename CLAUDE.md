@@ -5,6 +5,55 @@ answers *"is it safe to be in the market?"* from live macro + market + sentiment
 data. Single-page React app on Cloudflare Pages, with live data assembled at the
 edge by Pages Functions and cached in KV.
 
+**v6.9.1 "READ THE ROOM", Slice 2 — the public Degen Spotlight stops restating its own rows
+(owner: *"Spotlight prose de-dup on public Degen — delete the three paragraphs that restate the
+rows directly above them"*).** Presentation only, one component, `src/sections/StockSpotlight.jsx`;
+`functions/lib/spotlight.js` is **byte-unchanged** — no model field, no projection, no rotation, no
+calculation moved, and the API contract is untouched.
+**Measured first, Degen at 390×844:** the three-question block was **330px / 139 words** across the
+two companies inside a 2,650px / 700-word region — **~20% of every word in the widget** — and it
+restated the labelled rows on BOTH sides of itself. `BUSINESS · Revenue grew 454.3% … Operating
+margin widened from -76.2% to -6.9%` is the *Revenue growth* and *Operating margin* rows directly
+ABOVE it; `STOCK · The market pays 52.9× … the price is above its 200-day average` is the *Cap ÷
+TTM revenue*, *Trailing P/E* and *Price trend* rows of the SUPPORTING ANALYSIS panel directly
+BELOW it (Degen renders that panel on the face). **That is the v3.43 Yahoo-dupe test applied to
+prose: a second rendering of the same facts is duplication, not depth.**
+**Deleted from the face, kept verbatim one tap deep** in its own `CollapsedGroup` — which sits
+BELOW the supporting analysis on purpose, so a reading of the rows can never be met before the
+rows it reads, and is deliberately NOT folded into `sources & calculations`, because provenance
+and interpretation are different claims. **Two facts those paragraphs carried that NO row carries
+stay ON the face**: the next scheduled report date (nothing else on either panel carries a forward
+date) and the price-trend SUPPRESSION notice (an honesty fact about what was withheld, v6.5.0) —
+a de-dup that dropped those would be deleting evidence rather than duplication. **The date is read
+from the model's own typed `nextEarnings`, never parsed back out of the `watchNext` sentence** —
+a display string is the wrong integrity boundary (the v4.0.3 ruling), and the field was already in
+the whitelist projection, so nothing had to be added to the model to do this typed.
+**Measured after:** the Degen region is **2,650 → 2,393px (−257px)** and **700 → 581 words (−17%)**
+— the 330px of prose removed, ~73px given back by the two `NEXT REPORT` facts and the new fold's
+own toggle, which is the honest accounting rather than the headline number.
+**Three pins re-pinned with the reason at each, none loosened:** the P/E pin read the literal
+*"trailing earnings are negative — no P/E"*, which lived ONLY in the retired STOCK prose — the
+claim is unchanged and still asserted on the face, where the *Trailing P/E* row states it in its
+own vocabulary (`Not meaningful · net loss`), with the retired sentence still asserted verbatim one
+tap deep; the *"sources are the ONE collapsed disclosure"* pin is false by design now that Degen
+has two, so its toggle is selected BY NAME (clicking `.first()` would have opened the wrong fold);
+and the cross-mode identity pin now reads BOTH sides after opening each mode's fold, which is what
+makes it a real identity check rather than two different altitudes compared to each other.
+**Two of my own mistakes, recorded rather than quietly fixed.** (1) My first fold LABEL spelled out
+*"business · stock · watch next"* — the literal eyebrows inside it — so the closed summary read as
+a fourth paragraph on the face and **defeated this pass's own de-dup pin on its first run**; the
+label changed, not the pin. (2) The de-dup pin then failed against correct code because Chromium's
+`innerText` APPLIES `text-transform`, so the row labels read back UPPERCASE (the v3.69 lesson,
+caught here again).
+Tests: **2534 smoke** (1 re-pinned) + 340 render + **379 public-render** (+3: the prose proven
+ABSENT from the face while the rows it duplicated are present, every sentence proven present one
+tap deep for both companies, and the one fact no row carries proven to stay on the face) +
+`audit:prod` clean. Negative-controlled: restoring `FullAssessment` on the Degen face turns
+exactly 1 smoke + 4 public red with zero collateral. **The first attempt at that control silently
+did not run** — a `grep -c` returned 0, broke the `&&` chain, and the suites re-tested the previous
+build while printing green; recorded, because a control that never executed proves nothing
+(v5.97.2).
+
 **v6.9.0 "READ THE ROOM", Slice 1 — the ladder modal stops leading with its own methodology, and
 the 188px row is the bigger finding (owner, on four live screenshots: *"please stop with text
 dense interface. Nobody wants that. Especially degen mode and terminal, can have the technical

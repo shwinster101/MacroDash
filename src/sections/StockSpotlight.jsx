@@ -161,7 +161,7 @@ const Profile = ({ c, leg, simple, rule }) => {
         ? (summaryIsNumeric(c.assessment.summary)
             ? <div style={{ marginTop: 6, fontFamily: T.fontSans, fontSize: T.fsM, color: T.textPrimary, lineHeight: 1.45 }}>{c.assessment.summary.join(" ")}</div>
             : null)
-        : <FullAssessment a={c.assessment} />)}
+        : <AssessmentFacts c={c} a={c.assessment} />)}
     </div>
   );
 };
@@ -186,7 +186,36 @@ const DataNotes = ({ c, leg }) => {
     </div>
   );
 };
-/* The three questions in full — on the Degen face, and one tap deep in Simple. */
+/* v6.9.1 READ THE ROOM Slice 2 — the FACE carries only what the rows cannot.
+   Measured on the Degen face at 390: the three-question block was 330px / 139 words across the
+   two companies — ~20% of every word in the widget — and it restated the labelled rows on both
+   sides of itself. BUSINESS ("Revenue grew 454.3% … Operating margin widened from -76.2% to
+   -6.9%") is the Revenue growth and Operating margin rows DIRECTLY ABOVE it; STOCK ("the market
+   pays 52.9× … the price is above its 200-day average") is the Cap ÷ TTM revenue, Trailing P/E
+   and Price trend rows of the SUPPORTING ANALYSIS panel DIRECTLY BELOW it. That is the v3.43
+   Yahoo-dupe test applied to prose: a second rendering of the same facts is duplication, not
+   depth. Deleted from the face, kept verbatim one tap deep (nothing is lost).
+   Two things those paragraphs carried that NO row does, so they stay ON the face:
+     · the next scheduled report date — nothing else on either panel carries a forward date;
+     · the price-trend SUPPRESSION notice, which is an honesty fact about what was withheld
+       (v6.5.0), not a restatement of a number.
+   The date is read from the model's own typed `nextEarnings`, never parsed back out of the
+   watchNext sentence — a display string is the wrong integrity boundary (the v4.0.3 ruling). */
+const AssessmentFacts = ({ c, a }) => {
+  const ne = c.nextEarnings || null;
+  const date = ne && /^\d{4}-\d{2}-\d{2}$/.test(String(ne.value || "")) ? ne.value : null;
+  if (!date && !(a && a.priceTrendSuppressed)) return null;
+  return (
+    <div style={{ marginTop: 6, fontFamily: T.fontMono, fontSize: T.fsXs, color: T.textSecondary, lineHeight: 1.5 }}
+      role="group" aria-label={`${c.symbol} forward facts`}>
+      <div><span style={{ color: T.textMuted, letterSpacing: "0.1em" }}>NEXT REPORT · </span>
+        {date || "not on the calendar feed"}</div>
+      {a && a.priceTrendSuppressed &&
+        <div style={{ color: T.amber }}>Price trend not assessed — the latest expected session close is missing from the series.</div>}
+    </div>
+  );
+};
+/* The three questions in full — one tap deep in BOTH modes since v6.9.1. */
 const FullAssessment = ({ a }) => (
   <div style={{ marginTop: 6, fontFamily: T.fontSans, fontSize: T.fsS, color: T.textPrimary, lineHeight: 1.45 }} role="group" aria-label="Full assessment">
     <div><span style={{ color: T.textMuted, fontFamily: T.fontMono, fontSize: T.fsXs }}>BUSINESS · </span>{a.business}</div>
@@ -378,6 +407,23 @@ const StockSpotlight = ({ spotlight, simple }) => {
           <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(260px,1fr))", gap: 8, marginTop: 8 }}>
             {companies.map((c, i) => <Detail key={c.symbol} c={c} simple={simple} rule={legColor(i)} />)}
           </div>
+          {/* v6.9.1: the prose the face stopped duplicating, kept verbatim one tap deep. It sits
+              BELOW the supporting analysis on purpose — it is a reading of the rows above it, so
+              it can never be met before the numbers it describes. Its own fold, not folded into
+              `sources & calculations`, because provenance and interpretation are different claims. */}
+          {/* The label deliberately does NOT spell out "business · stock · watch next": those are
+              the literal eyebrows inside the fold, so a summary repeating them reads as a fourth
+              paragraph on the face — and it defeated this pass's own de-dup pin on first run. */}
+          <CollapsedGroup count={companies.length} label="the three questions, in full — one reading per company" chip={false}>
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(260px,1fr))", gap: 8, marginTop: 4 }}>
+              {companies.map((c) => (
+                <div key={c.symbol} style={{ minWidth: 0 }}>
+                  <div style={{ fontFamily: T.fontMono, fontSize: T.fsXs, color: T.amber, letterSpacing: "0.1em" }}>{c.symbol} · THE THREE QUESTIONS</div>
+                  {c.assessment && <FullAssessment a={c.assessment} />}
+                </div>
+              ))}
+            </div>
+          </CollapsedGroup>
           <CollapsedGroup count={companies.reduce((n, c) => n + ((c.sources || []).length), 0)} label="sources & calculations — dated citations" chip={false}>
             <Sources companies={companies} tracker={m.tracker} />
           </CollapsedGroup>
