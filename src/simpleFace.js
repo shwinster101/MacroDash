@@ -20,6 +20,16 @@ export const EXPLORE_FOLD_LABEL = "Explore the numbers";
 export const WHYS_FOLD_LABEL = "Why this call";
 export const ABOUT_FOLD_LABEL = "About this page";
 
+// Current signal states can change without changing the aggregate daily direction.
+export function simpleSignalsDiffer(saved, current) {
+  if (!saved || !current) return false;
+  if (saved.direction !== current.direction || saved.headline !== current.headline) return true;
+  return (current.factors || []).some(f => {
+    const old = saved.factors?.find(p => p.key === f.key);
+    return Boolean(old && (old.state !== f.state || Boolean(old.excluded) !== Boolean(f.excluded)));
+  });
+}
+
 const joinAnd = (arr) => {
   if (!arr.length) return "";
   if (arr.length === 1) return arr[0];

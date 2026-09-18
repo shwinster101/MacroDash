@@ -5,6 +5,20 @@ answers *"is it safe to be in the market?"* from live macro + market + sentiment
 data. Single-page React app on Cloudflare Pages, with live data assembled at the
 edge by Pages Functions and cached in KV.
 
+**v6.9.9 — six signals, one clear story.** Simple shows every canonical signal in stable
+order, meaning first and numbers in its three-bullet sheet. Unavailable signals retain
+their place, explicitly not counted; mock/stale data never receives an interpretation.
+This supersedes the three-card truncation and hide-unavailable rules. Current signals stay
+distinct from the saved daily call, with a visible divergence notice. The Simple market
+tape shows dated S&P 500 / Nasdaq-100 daily changes; levels and the S&P proxy disclosure
+are in their sheets. The six other context tiles live behind Explore market data, after
+Stock Spotlight, separate from the company's Explore the numbers. Degen, voting,
+thresholds, spotlight fundamentals/rotation, APIs, KV and Worker are unchanged.
+Verification: browser-required `npm run gates` passed 2,611 smoke, 353 admin-browser and
+505 public-browser checks; production audit found zero vulnerabilities. The tight 390px
+degraded scenario places the market tape at 656px against the unchanged 660px ceiling.
+320/390/768/1280px screenshots and the final bundle's unavailable-row accessibility were checked.
+
 **v6.9.8 — Simple signals explain their meaning before their numbers.** The three cards
 lead with short stock-market interpretations from the canonical band's `cardSummary`,
 selected by the existing vote. A square replaces movement triangles; the interpretation

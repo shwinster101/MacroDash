@@ -2,8 +2,8 @@ import { useState, useEffect, useMemo, useRef } from "react"; // Fragment left w
 import { useMarketData } from "./useMarketData.js"; // FEAT-204 wiring
 import { MOCK_DATA } from "./mockData.js"; // v6.5.5: the mock baseline, one home (was inline here)
 import { computeFiveWhys } from "./fiveWhys.js"; // v2.5: rule-based 5 Whys ($0, derived from live data)
-import { buildEvidenceSet, simpleVerdict, simpleCards, simpleFlipLine, factorExclusions, fieldMode, FACTOR_FIELD } from "./evidence.js"; // C1 (v3.60): the typed contract
-import { holdReason, WHYS_FOLD_LABEL, ABOUT_FOLD_LABEL } from "./simpleFace.js"; // T1: Simple FACE registry
+import { buildEvidenceSet, simpleVerdict, simpleSignals, simpleFlipLine, factorExclusions, fieldMode, FACTOR_FIELD } from "./evidence.js"; // C1 (v3.60): the typed contract
+import { holdReason, simpleSignalsDiffer, WHYS_FOLD_LABEL, ABOUT_FOLD_LABEL } from "./simpleFace.js"; // T1: Simple FACE registry
 import { LASTVALID_KEY, summarizeEvidence, compareEvidence } from "./whatChanged.js"; // C4 (v3.60)
 import { parseObsDate, nextFomcDate, etYmd } from "./sources.js"; // FEAT-R3: per-tile, cadence-aware staleness + shared market calendar; v3.99: curated FOMC calendar
 import { computeMacroFlip } from "./ttReadout.js"; // FEAT-331: Macro Flip circuit
@@ -268,7 +268,7 @@ export default function Dashboard({ publicView = false } = {}) {
      here, once, and handed down: the sections stay presentation-only, and Simple can never
      disagree with Power because neither re-derives anything. */
   const simpleV=simpleVerdict(evidenceSet);
-  const simpleC=simpleCards(evidenceSet);
+  const simpleC=simpleSignals(evidenceSet);
   const simpleS=holdReason(evidenceSet);
   const simpleF=simpleFlipLine(evidenceSet);
   // v5.3: one canonical public call. The six-factor EvidenceSet owns direction; the existing
@@ -571,6 +571,8 @@ export default function Dashboard({ publicView = false } = {}) {
            already tall enough at every width; the rule is stated so a later compaction cannot
            shrink it below the floor without failing the pin. */
         .simple-card{min-height:44px;}
+        .simple-signals-grid{display:grid;grid-template-columns:1fr;gap:3px;}
+        @media(min-width:768px){.simple-signals-grid{grid-template-columns:repeat(2,minmax(0,1fr));}}
         @media(max-width:480px){.fs-close{min-height:44px;min-width:44px;}}
         /* v6.3: every strip tile is a sheet trigger now — the same phone thumb target the cards
            and the sheet's ✕ get (v3.42 slice 1, v5.8), measured rather than assumed. */
@@ -779,13 +781,11 @@ export default function Dashboard({ publicView = false } = {}) {
           wants the chain does not re-open it every visit. Chips, the factor tally, the flip
           line and the full evidence matrix stay Power-only — this adds the narrative, not
           the technical layer. ── */}
-      {/* v4.0 SIMPLE MODE: up to three parameter cards + the flip line, directly under the
-          verdict they explain. Excluded factors never appear (a card is a claim about a
-          current usable reading); fewer than three usable renders fewer cards, never
-          UNAVAILABLE padding; the truncation is named on the block. */}
+      {/* v6.9.9: complete learning map. Unavailable identities remain visible but never
+          inherit a mock/stale reading or a vote. Current signals are not the saved call. */}
       {simple&&<SimpleCards cards={simpleC.cards}
-        usable={simpleC.usable} shown={simpleC.shown} total={simpleC.total}
-        withheld={evidenceSet.withheld}/>}
+        usable={simpleC.usable} total={simpleC.total}
+        withheld={evidenceSet.withheld} drift={callFrozen&&simpleSignalsDiffer(dailyCall,currentCall)}/>}
 
       {/* 8/28 Whys altitude: the closed line carries the flip — the fifth check IS "what
           changes it", so it is this block's honest one-line summary. MOVED from the
@@ -848,7 +848,7 @@ export default function Dashboard({ publicView = false } = {}) {
       {/* ── MACRO STRIP — extracted to src/sections/MacroStrip.jsx (task 3.1),
           presentation only (FEAT-170 4-col mobile reflow rides the .macro-strip rules in
           the stylesheet above; v3.25: always visible while market detail collapses). ── */}
-      <MacroStrip d={d} modeOf={modeOf} fomcLabel={fomcLabel} fomcDays={fomcDays}
+      <MacroStrip d={d} modeOf={modeOf} asOfOf={k=>dataAsOf?.[k]} variant={simple?"simple":"full"} fomcLabel={fomcLabel} fomcDays={fomcDays}
         votingFields={VOTING_FIELDS} badge={simple?null:<SpyTapeBadge spyChangePct={d.marketPulse.spy.changePct} mode={modeOf("spyPrice")} noSessionDay={marketClock.noSession}/>}/>
 
       {/* ── v6.5.0 STOCK SPOTLIGHT — immediately below the macro-number strip in BOTH modes,
@@ -856,6 +856,11 @@ export default function Dashboard({ publicView = false } = {}) {
           one. Presentation-only section; the model arrives projected from the server, the
           fetch lives above. Renders nothing unless the feed is enabled with a model. ── */}
       <StockSpotlight spotlight={spotlight} simple={simple}/>
+      {simple&&<div className="simple-market-context" style={{padding:"8px 20px"}}>
+        <CollapsedGroup label="Explore market data" count={6} chip={false} promise>
+          <MacroStrip d={d} modeOf={modeOf} asOfOf={asOfOf} variant="context" fomcLabel={fomcLabel} fomcDays={fomcDays} votingFields={VOTING_FIELDS}/>
+        </CollapsedGroup>
+      </div>}
 
 
       {/* FEAT-162: Session Delta Bar — Alerts Δ first (conditional: hidden when nothing actionable) */}

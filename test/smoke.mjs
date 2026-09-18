@@ -6204,7 +6204,7 @@ ok("wave5: the census, confidence derivation and compare-then-persist all STAY i
   dashSrc.includes("counted:evidenceSet.counted,total:evidenceSet.totalFactors") &&
   dashSrc.indexOf("compareEvidence(prev,cur)") < dashSrc.indexOf("localStorage.setItem(LASTVALID_KEY"));
 ok("wave5: every call site hands over computed props, including the voting-marker set and the badge slot",
-  /<MacroStrip d=\{d\} modeOf=\{modeOf\} fomcLabel=\{fomcLabel\} fomcDays=\{fomcDays\}/.test(dashSrc) &&
+  /<MacroStrip d=\{d\} modeOf=\{modeOf\}[^\n]*fomcLabel=\{fomcLabel\} fomcDays=\{fomcDays\}/.test(dashSrc) &&
   /votingFields=\{VOTING_FIELDS\} badge=\{simple\?null:<SpyTapeBadge spyChangePct=\{d\.marketPulse\.spy\.changePct\} mode=\{modeOf\("spyPrice"\)\} noSessionDay=\{marketClock\.noSession\}\/>\}/.test(dashSrc) &&
   /<SignalQuality sq=\{sq\}\/>/.test(dashSrc) &&   // v3.94: confidence props moved to the hero
   /<WhatChanged changed=\{changed\}\/>/.test(dashSrc));
@@ -10233,7 +10233,7 @@ console.log("\n[67] v4.0 SIMPLE MODE — verdict mapping, card selection, senten
   /* v4.0.3 — under DATA HOLD the cards remain (real current readings, useful context) but
      must not read as the verdict the page just declined to make. */
   ok("v4.0.3 cards: a withheld verdict labels the cards 'not used for the call' — evidence kept, inference denied",
-    /partial evidence — not used for the call/.test(spcSrc) && /withheld && </.test(spcSrc) &&
+    /Partial data — outlook withheld/.test(spcSrc) && /withheld && </.test(spcSrc) &&
     /withheld=\{evidenceSet\.withheld\}/.test(dashSrc));
   ok("v4.0.3: the tracked-signal census is POWER-ONLY — Simple's confidence is the scoped voters line",
     /\{!simple&&<SignalQuality sq=\{sq\}\/>\}/.test(dashSrc));
@@ -10541,7 +10541,7 @@ console.log("\n[67] v4.0 SIMPLE MODE — verdict mapping, card selection, senten
     /coverage=\{regimeConf\}/.test(dashSrc) && /coverage&&coverage\.total>0/.test(whysSrc) &&
     !/cards from the/.test(spcSrc));
   ok("T3 hatch: ILLUS_HATCH is a backgroundImage string, never spread onto the style object (a spread string writes CSSStyleDeclaration[0] and blanks mock Simple)",
-    /backgroundImage: illus \? ILLUS_HATCH : undefined/.test(spcSrc) && !/\.\.\.\(illus \? ILLUS_HATCH/.test(spcSrc));
+    /!c.available && !c.loading/.test(spcSrc) && !/\.\.\.\(illus \? ILLUS_HATCH/.test(spcSrc));
 }
 
 // ---- 69. v4.1.1 — ageDays: the ET clock reaches the terminal (FIX-A, 4th recurrence) ------
@@ -11198,7 +11198,7 @@ console.log("\n[75] v6.0.1 — shape before text · toggle clarity · captions u
     Object.values(FACE_GLYPH).every((glyph) => glyph === "■") &&
     /cardFace\(c\)/.test(spc));
   ok("v6.0.1 shape: the glyph is rendered BEFORE the label on the card row, and the card wears a direction bar",
-    (() => { const g = spc.indexOf('className="simple-card-glyph"'), l = spc.indexOf("{c.summary || face.label}</span>");
+    (() => { const g = spc.indexOf('className="simple-card-glyph"'), l = spc.indexOf("{c.summary}</span>");
       return g > 0 && l > g && /borderLeft: `3px solid \$\{tone\}`/.test(spc); })());
   // (1b) Freshness: a live/cached reading is a FILLED GREEN DOT (the strip's own dot since
   //      v3.62), stale amber, mock hollow — and the WORD leaves the face for the title +
@@ -11206,7 +11206,7 @@ console.log("\n[75] v6.0.1 — shape before text · toggle clarity · captions u
   ok("T3 fresh: live/cached/stale/mock mapping survives; the WORD is a11y-only and the face has no freshness dot",
     /const live = !illus && \(mode === "LIVE" \|\| mode === "CACHED"\)/.test(spc) &&
     /const color = live \? T\.green : mode === "STALE" \? T\.amber : T\.textMuted/.test(spc) &&
-    /<span className="visually-hidden">\{fresh\.word\}<\/span>/.test(spc) &&
+    spc.includes('c.available ? c.mode.toLowerCase() : "not live"') &&
     !/className="simple-card-fresh"/.test(spc) &&
     !/\{illus \? "not live" : c\.mode\.toLowerCase\(\)\}/.test(spc));
   // (1c) T2/T3: Simple face sheds the voter dots. Degen hero keeps them; Why-this-call fold is
@@ -12488,9 +12488,9 @@ console.log("\n[83] Simple altitude — fs-xxl Hold, fs-body sentence, one-block
      v6.5.4 hero → cards → strip scale is deliberate. The old sans/fs-m literals are pinned
      ABSENT so the pair cannot drift back, and no numeric fontSize survives in the file. */
   ok("v6.9.8 Simple cards: interpretation fs-l, reading fs-m, label fs-s; tokenized mono type",
-    /className="simple-card-value" style=\{\{ fontFamily: T\.fontMono, fontSize: T\.fsM, fontWeight: 600/.test(spc) &&
-    /className="simple-card-label" style=\{\{ fontFamily: T\.fontMono, fontSize: T\.fsS, color: T\.textMuted/.test(spc) &&
-    /className="simple-card-summary" style=\{\{ fontFamily: T\.fontMono, fontSize: T\.fsL/.test(spc) &&
+    !/className="simple-card-value"/.test(spc) &&
+    /face.value/.test(spc) &&
+    /className="simple-card-summary"[^>]* style=\{\{ fontFamily: T\.fontMono, fontSize: T\.fsL/.test(spc) &&
     !/fontFamily: T\.fontSans/.test(spc) && !/fontSize:\s*\d/.test(spc));
   ok("v6.8.2: the card's ⓘ glyph is gone (the card IS the sheet trigger since v5.8) while the sr-only explainer promise stays — the strip's v6.8.1 rule, scoped to the cards now too",
     !/ⓘ/.test(spc) && /\{c\.explain && <span className="visually-hidden"> — what is this\? Opens an explainer\.<\/span>\}/.test(spc));
@@ -13716,19 +13716,11 @@ console.log("\n[91] v6.9.5 — the daily rotation surfaced, the truncation named
 
     /* THE TRUNCATION. v4.0 made naming it a contract; the props survived a refactor and the
        render did not, so the block claimed full coverage of a six-factor vote with three cards. */
-    ok("[91] cards: the truncation is NAMED again — real counts off the same rows, shown only when something is actually cut, with the not-counted tail stated",
-      /showing \{shown\} of \{usable\} signals/.test(cardsJsx) && /\{shown < usable &&/.test(cardsJsx) &&
-      /total > usable \? ` · \$\{total - usable\} unavailable`/.test(cardsJsx) &&
-      // the v6.4 public vocabulary, not the operator's: signals / unavailable, never voters / dark
-      !/voters|dark/.test(cardsJsx.slice(cardsJsx.indexOf("{shown < usable"))));
-    /* The regression this closes was exactly "passed and never read", so the pin proves the
-       props reach the RENDER, not merely the signature: every one of the three appears inside
-       the returned JSX, below the signature line that declares them. */
-    ok("[91] cards: the counts are PASSED and now READ — the call site hands usable/shown/total and every one of them is referenced in the render, not just the signature",
-      (() => { const body = cardsJsx.slice(cardsJsx.indexOf("const SimpleCards = ({"));
-        const render = body.slice(body.indexOf("{shown < usable"));
-        return /usable=\{simpleC\.usable\} shown=\{simpleC\.shown\} total=\{simpleC\.total\}/.test(readSrc("../src/dashboard.jsx")) &&
-          ["usable", "shown", "total"].every((p) => new RegExp(`\\b${p}\\b`).test(render)); })());
+    ok("v6.9.9: coverage only when incomplete, no subset disclaimer",
+      cardsJsx.includes('{usable < total &&') && cardsJsx.includes('{usable} of {total} signals available') && !cardsJsx.includes('not the full vote'));
+    ok("v6.9.9: complete projection and counts are wired to Simple",
+      readSrc("../src/dashboard.jsx").includes('simpleSignals(evidenceSet)') &&
+      readSrc("../src/dashboard.jsx").includes('usable={simpleC.usable} total={simpleC.total}'));
 
     /* THE LAST HAND-WRITTEN COLOUR. A voting tile's sub-line is a fact about a window the band
        never reads, so it may not carry a direction — the ▪ marker, already band-derived, is the
@@ -13789,6 +13781,32 @@ console.log("\n[v6.9.8] Simple interpretations preserve the existing votes");
   ok("v6.9.8 NFCI keeps its number, not unexplained SD notation or a fabricated zero",
     cardFace({ key: "nfci", metricValue: -0.56 }).value === "-0.56" &&
     cardFace({ key: "nfci", metricValue: null }).value === "—");
+}
+{
+  const { simpleSignals } = await import('../src/evidence.js');
+  const { simpleSignalsDiffer } = await import('../src/simpleFace.js');
+  const keys=REGIME_BAND_TABLE.map(b=>b.key);
+  const factors=keys.map(key=>({key,vote:'bull',mode:'LIVE',asOf:'2026-09-18',excluded:false,metric:{value:1,text:'1'}}));
+  for(const state of ['LIVE','CACHED','LOADING','ERROR','DEMO']){
+    const result=simpleSignals({state,factors});
+    ok(`v6.9.9 ${state}: six stable identities and fail-closed availability`,
+      result.cards.map(c=>c.key).join()===keys.join() &&
+      result.usable === (['LIVE','CACHED'].includes(state)?6:0));
+  }
+  ok('v6.9.9 absent evidence still names all six without inventing a reading',
+    simpleSignals(null).cards.length===6 && simpleSignals(null).cards.every(c=>!c.available&&!c.direction&&!c.currentValue));
+  for(const vote of ['bull','bear','neutral']){
+    const result=simpleSignals({state:'LIVE',factors:factors.map(f=>({...f,vote}))});
+    ok(`v6.9.9 ${vote}: interpretations and lessons stay canonical`,result.cards.every((c,i)=>c.summary===REGIME_BAND_TABLE[i].cardSummary[vote]&&c.explain===REGIME_BAND_TABLE[i].explain));
+  }
+  for(const mode of ['MOCK','STALE']){
+    const result=simpleSignals({state:'LIVE',factors:factors.map(f=>({...f,mode}))});
+    ok(`v6.9.9 ${mode}: no current reading or directional interpretation`,result.usable===0&&result.cards.every(c=>!c.direction&&!c.currentValue));
+  }
+  const current={direction:'NEUTRAL',headline:'HODL',factors:[{key:'vix',state:'BULLISH',excluded:false}]};
+  ok('v6.9.9 drift: unchanged is quiet, a factor-only change or safety override is visible',
+    !simpleSignalsDiffer(current,current)&&simpleSignalsDiffer({...current,factors:[{key:'vix',state:'NEUTRAL',excluded:false}]},current)&&
+    simpleSignalsDiffer({...current,direction:'BEARISH'},current));
 }
 console.log(`\n=== SMOKE TEST: ${pass} passed, ${fail} failed ===`);
 process.exit(fail === 0 ? 0 : 1);

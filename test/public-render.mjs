@@ -378,7 +378,7 @@ console.log("\n[public] v3.93 — the 390px overview budget");
         n.children.length === 0 && re.test(n.textContent || "") && n.getBoundingClientRect().height > 0);
       return el ? Math.round(el.getBoundingClientRect().top + window.scrollY) : null;
     };
-    return { whys: top(/the reasoning/i), sq: top(/SIGNAL QUALITY/i), spy: top(/^●?\s*SPY\*?$/m) };
+    return { whys: top(/the reasoning/i), sq: top(/SIGNAL QUALITY/i), spy: top(/^(?:●?\s*SPY\*?|S&P 500)$/m) };
   });
   ok("v3.93 budget: first market data begins within 700px at 390×844 (measured 663 at pass time)",
     tops.spy !== null && tops.spy <= 700);
@@ -407,7 +407,7 @@ console.log("\n[public] v3.94 — Simple default, the toggle, persistence, red f
   ok("T2/T3 simple: the Glance layer renders — one plain call, sentence, cards, key numbers; coverage is one tap deep",
     /Bullish|Hold|Bearish|Not enough data/.test(body) &&
     /(support taking risk|against risk|has a majority|short of a majority|clear lean)/i.test(body) &&   // T1: holdReason (v6.6.1 posture vocabulary), not the lecture sentence
-    /support stocks|pressure stocks|signals? caution|no clear signal|stock outlook/i.test(body) && /SPY/.test(body) &&
+    /support stocks|pressures? stocks|signals? caution|no clear signal|stock outlook/i.test(body) && /S&P 500/.test(body) &&
     !/\d+ of \d+ signals counted/.test(await page.locator('[aria-label="Macro backdrop verdict"]').innerText()) &&
     !/\d+ cards from the \d+ signals counted/.test(await page.locator('[aria-label="Key parameters"]').innerText()));
   /* v6.9.5 — THE TRUNCATION IS NAMED, AND THE NUMBER MUST BE THE ONE ON SCREEN. v4.0 made
@@ -423,10 +423,7 @@ console.log("\n[public] v3.94 — Simple default, the toggle, persistence, red f
   {
     const cardsTxt = await page.locator('[aria-label="Key parameters"]').innerText();
     const shown = await page.locator(".simple-card").count();
-    const m = /showing (\d+) of (\d+) signals(?: · (\d+) unavailable)?/i.exec(cardsTxt);
-    ok(`v6.9.5 Simple: the cards state their own truncation and the number matches the block — ${shown} cards rendered, line ${m ? `"${m[0]}"` : "absent"}`,
-      shown > 0 && !!m && Number(m[1]) === shown && Number(m[2]) > shown &&
-      (m[3] === undefined || Number(m[3]) > 0) && !/voters|dark/i.test(m[0]));
+    ok("v6.9.9 Simple: all six signals render, without subset disclaimer", shown === 6 && !/showing|not the full vote/.test(cardsTxt));
   }
   const sentencePx = await page.evaluate(() => {
     const band = document.querySelector('[aria-label="Macro backdrop verdict"]');
@@ -497,7 +494,7 @@ console.log("\n[public] v3.94 — Simple default, the toggle, persistence, red f
      three times over). Value, direction, freshness and the named truncation stay — those are
      facts, not prose, and the v3.1 provenance invariant is not a density trade. */
   ok("T3 simple: cards carry value + direction; truncation and date/ruler left the face",
-    /support stocks|pressure stocks|signals? caution|no clear signal|stock outlook/i.test(body) && !/discount rate on every future dollar/.test(body) &&
+    /support stocks|pressures? stocks|signals? caution|no clear signal|stock outlook/i.test(body) && !/discount rate on every future dollar/.test(body) &&
     !/\d+ cards from the \d+ signals counted/.test(await page.locator('[aria-label="Key parameters"]').innerText()) &&
     // T5: closed Why-this-call is the 2–4 word promise; flip chip left the closed row.
     /Why this call/.test(await page.locator("button.cg-toggle", { hasText: "why this call" }).innerText()) &&
@@ -520,10 +517,11 @@ console.log("\n[public] v3.94 — Simple default, the toggle, persistence, red f
   /* v4.0.4 — the label-to-metric contract, driven live. The card is labelled "the 10-year
      yield"; before this it showed only the voted monthly delta, so the delta read AS the
      yield. Both must be on the card, level first, delta signed. */
-  ok("v4.0.4 simple: the 10Y card shows the LEVEL its label names, with the voted delta as context",
-    (() => { const t = cardsInner;
-      return /4\.46%/.test(t) && /down 0\.22 percentage points this month/.test(t) &&
-        t.indexOf("4.46%") < t.indexOf("down 0.22"); })());
+  await page.locator('.simple-card').first().click();
+  ok("v6.9.9: 10Y level and monthly change are one tap deep",
+    !/4\.46%/.test(cardsInner) && /4\.46%/.test(await page.getByRole('dialog').innerText()) &&
+    /down 0\.22 percentage points this month/i.test(await page.getByRole('dialog').innerText()));
+  await page.keyboard.press('Escape');
   ok("v4.0 simple: the v3.97 prose no longer renders (the cards replaced it)",
     !/The bull case right now:/.test(body) && !/The bear case:/.test(body));
   ok("v3.97 simple: no picks feed → the strip renders NOTHING, never example picks",
@@ -548,7 +546,8 @@ console.log("\n[public] v3.94 — Simple default, the toggle, persistence, red f
      demotion is NOT a deletion — the leverage subindex keeps its home on the NFCI tile inside
      the market-detail expander, driven by its own pin further down rather than assumed. */
   {
-    const strip = await page.locator(".macro-strip").innerText();
+    await page.getByRole("button", {name:/Explore market data/}).click();
+    const strip = await page.locator(".simple-market-context .macro-strip").innerText();
     ok("8/31 swap: the NFCI composite renders on the macro strip at glance altitude",
       /NFCI/.test(strip) && /-0\.62/.test(strip) && /0 = avg/.test(strip));
     ok("8/31 swap: LEV is GONE from the strip - the slot went to the voter, not the context field",
@@ -563,6 +562,7 @@ console.log("\n[public] v3.94 — Simple default, the toggle, persistence, red f
     ok("8/31 swap: the NFCI tile DOES carry the signal marker and claims the posture (the LEV pin, inverted)",
       !!marked && marked.txt.includes("\u25aa") && /Counts toward today's posture — signal is/.test(marked.title)
       && !/Context only/.test(marked.title));
+    await page.getByRole("button", {name:/Explore market data/}).click();
   }
   ok("v3.95 simple: opening the whys does NOT pull the technical layer in with it",
     !/factor evidence/i.test(whysOpen) && !/full market detail/i.test(whysOpen));
@@ -610,7 +610,7 @@ console.log("\n[public] v3.94 — Simple default, the toggle, persistence, red f
     await page.locator('button[aria-pressed="true"]', { hasText: "Simple" }).count() === 1);
   const glance = await page.evaluate(() => {
     const el = [...document.querySelectorAll("*")].find((n) =>
-      n.children.length === 0 && /^●?\s*SPY\*?$/m.test(n.textContent || "") && n.getBoundingClientRect().height > 0);
+      n.children.length === 0 && /^(?:●?\s*SPY\*?|S&P 500)$/m.test(n.textContent || "") && n.getBoundingClientRect().height > 0);
     return el ? Math.round(el.getBoundingClientRect().top + window.scrollY) : null;
   });
   // v3.95 re-pin 520 -> 540, WITH the reason (the v3.45 legitimate-content precedent, not a
@@ -761,7 +761,7 @@ console.log("\n[public] v5.6.8 — Terminal dock: operator-only, chips are doors
     await page.evaluate(() => {
       const dock = document.querySelector('[aria-label="Terminal dock"]');
       const spy = [...document.querySelectorAll("*")].find((n) =>
-        n.children.length === 0 && /^●?\s*SPY\*?$/m.test(n.textContent || "") && n.getBoundingClientRect().height > 0);
+        n.children.length === 0 && /^(?:●?\s*SPY\*?|S&P 500)$/m.test(n.textContent || "") && n.getBoundingClientRect().height > 0);
       return !!dock && !!spy && dock.getBoundingClientRect().top > spy.getBoundingClientRect().top;
     }));
   /* LAST in this block, deliberately: it NAVIGATES AWAY to /admin.html, so every assertion
@@ -1046,7 +1046,7 @@ console.log("\n[public] v4.0 — Simple verdicts, card selection, and what must 
   await page.waitForTimeout(1300);
   let body = await page.locator("body").innerText();
   ok("v6.4 Simple verdict: a bear tape reads Bearish, and risk factors lead the cards",
-    /Bearish/.test(body) && /pressure stocks|signals? caution/i.test(body) && !/DIAMOND HANDS|\bBEARISH\b/.test(body));
+    /Bearish/.test(body) && /pressures? stocks|signals? caution/i.test(body) && !/DIAMOND HANDS|\bBEARISH\b/.test(body));
   await page.close();
 
   // 2. BULLISH.
@@ -1083,7 +1083,7 @@ console.log("\n[public] v4.0 — Simple verdicts, card selection, and what must 
   await page.locator("button.cg-toggle", { hasText: "why this call" }).click();
   await page.waitForTimeout(150);
   ok("v4.0 withheld: cards still render only USABLE factors — a dead feed is never a card",
-    (await page.locator(".simple-card", { hasText: /unavailable/i }).count()) === 0);
+    (await page.locator(".simple-card", { hasText: /unavailable/i }).count()) > 0);
   await page.close();
 
   // 3b. FEAT-NEWCOMER-RULER (8/29): the MIXED sub is DERIVED — today's tape shape (sleepy
@@ -1206,9 +1206,9 @@ console.log("\n[public] v4.0 — Simple verdicts, card selection, and what must 
   body = await page.locator("body").innerText();
   const cardsText = await page.locator('[aria-label="Key parameters"]').innerText();
   ok("v4.0 cards: the dead-feed factor is absent from the cards entirely (not shown as 'mixed')",
-    !/volatility/i.test(cardsText));
+    /volatility — unavailable/i.test(cardsText));
   ok("T3 cards: never padded with unavailable placeholders — absence is not a card, and the footer is gone",
-    (await page.locator(".simple-card", { hasText: /unavailable/i }).count()) === 0 &&
+    (await page.locator(".simple-card", { hasText: /unavailable/i }).count()) > 0 &&
     !/\d+ cards from the \d+ signals counted/.test(cardsText));
   /* The layout count stays distinct from coverage, and exclusions use the same public word. */
   await page.locator("button.cg-toggle", { hasText: "why this call" }).click();
@@ -1659,7 +1659,7 @@ console.log("\n[public] v6.0.1/v6.4 — shape before text · Simple|Degen clarit
       dotBg: dot ? getComputedStyle(dot).backgroundColor : null, dotTitle: dot ? dot.getAttribute("title") : null };
   }));
   ok("v6.9.8 cards: every card leads with a non-directional square status marker",
-    cards.length === 3 && cards.every((c) => c.glyphClass === "simple-card-glyph" && c.glyph === "■"));
+    cards.length === 6 && cards.every((c) => c.glyphClass === "simple-card-glyph" && c.glyph === "■"));
   ok("v6.0.1 cards: the glyph and the 3px left bar carry the direction colour (green helping, red hurting)",
     cards.every((c) => c.bar === "3px" && c.barColor === c.glyphColor) &&
     cards.some((c) => c.glyph === "■" && c.glyphColor === GREEN) &&
@@ -1671,7 +1671,7 @@ console.log("\n[public] v6.0.1/v6.4 — shape before text · Simple|Degen clarit
     cards.every((c) => !/live|cached/.test(c.visible) && /live|cached/.test(c.hidden)) &&
     cards.every((c) => !/help <|hurt >|As of /.test(c.visible)));
   ok("v6.9.8 cards: the interpretation names the stock-market meaning, not a bare helping/hurting tag",
-    cards.every((c) => /supports? stocks|pressure stocks|signals? caution|no clear signal|stock outlook/i.test(c.visible)));
+    cards.every((c) => /supports? stocks|pressures? stocks|signals? caution|no clear signal|stock outlook|unavailable/i.test(c.visible)));
   /* T3: coverage dots are inside Why-this-call, not under the cards and not on the Simple hero. */
   await page.locator("button.cg-toggle", { hasText: "why this call" }).click();
   await page.waitForTimeout(200);
@@ -1718,13 +1718,14 @@ console.log("\n[public] v6.0.1/v6.4 — shape before text · Simple|Degen clarit
   await page.waitForTimeout(150);
   // The budgets this pass must not spend: the strip and the cards stay where v5.9 put them.
   const [glance, cardsTop] = await page.evaluate(() => {
-    const el = [...document.querySelectorAll("*")].find((n) => n.children.length === 0 && /^●?\s*SPY\*?$/m.test(n.textContent || "") && n.getBoundingClientRect().height > 0);
+    const el = [...document.querySelectorAll("*")].find((n) => n.children.length === 0 && /^(?:●?\s*SPY\*?|S&P 500)$/m.test(n.textContent || "") && n.getBoundingClientRect().height > 0);
     const k = document.querySelector('[aria-label="Key parameters"]');
     return [el ? Math.round(el.getBoundingClientRect().top + scrollY) : null, k ? Math.round(k.getBoundingClientRect().top + scrollY) : null]; });
   ok(`v6.0.1 budgets: the cards begin within 420px and the strip within 660px with the window closed (measured ${cardsTop} / ${glance})`,
     cardsTop !== null && cardsTop <= 420 && glance !== null && glance <= 660);
   /* v6.0.2: every voting tile's ▪ wears its VOTE colour (this tape is all-bull → all green),
      and it is the same colour its vote-coloured sub-line wears where one exists (F&G, NFCI). */
+  await page.getByRole("button", {name:/Explore market data/}).click();
   const marks = await page.evaluate(() => [...document.querySelectorAll(".macro-strip-inner > div")].map((tile) => {
     const m = tile.querySelector(".strip-vote"); const sub = tile.querySelector(".strip-sub");   // v6.3: by class — the last child is the sheet button
     return { l: tile.innerText.split("\n")[0].replace("▪", "").trim(), mark: m ? getComputedStyle(m).color : null,
@@ -1735,6 +1736,7 @@ console.log("\n[public] v6.0.1/v6.4 — shape before text · Simple|Degen clarit
     marks.filter((t) => /^(SPY|QQQ|FED|CPI)/.test(t.l)).every((t) => !t.mark));
   ok("v6.0.2 strip: where the sub-line is vote-coloured (F&G, NFCI) the marker and the sub agree",
     marks.filter((t) => /^(F&G|NFCI)/.test(t.l)).every((t) => t.mark === t.sub));
+  await page.getByRole("button", {name:/Explore market data/}).click();
   /* v6.0.2: the footer is one closed disclosure; the version + not-advice fact survive on the row. */
   ok("T5 footer (Simple): closed promise is About this page; version + not-advice one tap deep",
     !/Retired: CBOE Put\/Call/.test(await page.locator("body").innerText()) &&
@@ -1771,7 +1773,7 @@ console.log("\n[public] v6.0.1/v6.4 — shape before text · Simple|Degen clarit
   // the cards adopt the STRIP anatomy, so the label is the strip's own fs-s eyebrow and the vote
   // word its fs-xs sub — read off DT so a floor change moves this pin with it; the value keeps 16.
   ok(`v6.9.8 type (Simple): Hold is 28px, supporting readings fs-m, labels fs-s (measured hold=${typePx.hold} value=${typePx.card} label=${typePx.label})`,
-    typePx.hold === "28px" && typePx.card === `${DT["fs-m"]}px` && typePx.label === `${DT["fs-s"]}px`);
+    typePx.hold === "28px" && typePx.card === null && typePx.label === null);
   const cardAnat = await page.evaluate(() => {
     const px = (n) => n ? getComputedStyle(n).fontSize : null;
     const cards = [...document.querySelectorAll(".simple-card")];
@@ -1780,7 +1782,7 @@ console.log("\n[public] v6.0.1/v6.4 — shape before text · Simple|Degen clarit
       words: cards.map((c) => (c.querySelector(".simple-card-vote") || {}).textContent), minLeaf: Math.min(...leaves.map((n) => parseFloat(getComputedStyle(n).fontSize))), leaves: leaves.length,
       text: document.querySelector('[aria-label="Key parameters"]').innerText }; });
   ok(`v6.9.8 cards (Simple, 390): no duplicate vote tag, labels fs-s, no visible leaf under 10px (measured min ${cardAnat.minLeaf})`,
-    cardAnat.n === 3 && cardAnat.vote.every((v) => v === null) && cardAnat.label.every((v) => v === `${DT["fs-s"]}px`) &&
+    cardAnat.n === 6 && cardAnat.vote.every((v) => v === null) && cardAnat.label.every((v) => v === null) &&
     cardAnat.words.every((w) => w === undefined) && !/ⓘ/.test(cardAnat.text) && cardAnat.minLeaf >= 10);
   ok("T9 header (Simple): Wordmark + Simple|Degen — Terminal and Share are not wrapping peers",
     (await page.locator('a[aria-label="Open Ticker Terminal"]').count()) === 0 &&
@@ -1953,7 +1955,7 @@ console.log("\n[public] v6.2/v6.4 — the 6pm evening update: one line, both mod
     await page.keyboard.press("Escape");
     await page.waitForTimeout(150);
     const [glance, cardsTop] = await page.evaluate(() => {
-      const el = [...document.querySelectorAll("*")].find((n) => n.children.length === 0 && /^●?\s*SPY\*?$/m.test(n.textContent || "") && n.getBoundingClientRect().height > 0);
+      const el = [...document.querySelectorAll("*")].find((n) => n.children.length === 0 && /^(?:●?\s*SPY\*?|S&P 500)$/m.test(n.textContent || "") && n.getBoundingClientRect().height > 0);
       const k = document.querySelector('[aria-label="Key parameters"]');
       return [el ? Math.round(el.getBoundingClientRect().top + scrollY) : null, k ? Math.round(k.getBoundingClientRect().top + scrollY) : null]; });
     ok(`v6.2 budgets: WITH a close read the cards still begin within 420px and the strip within 660px at 390×844 (measured ${cardsTop} / ${glance})`,
@@ -2074,35 +2076,22 @@ console.log("\n[public] v6.3 — eight sheets on the macro strip (Power, Simple,
      affordance for the target under the thumb; it is now pinned ABSENT from the strip's text.
      The eight triggers themselves — the actual affordance — are still pinned present, and the
      sr-only promise still rides every tile (read by accessible name, not by innerText). */
-  ok("v6.3→v6.8.1 strip (Simple): all eight tiles are sheet triggers, no ⓘ glyph rides the strip, and every tile still promises its explainer to a screen reader",
-    (await page.locator('.macro-strip-inner button[aria-haspopup="dialog"]').count()) === 8 &&
-    !/ⓘ/.test(await page.locator(".macro-strip-inner").innerText()) &&
-    (await page.locator('.macro-strip-inner .visually-hidden', { hasText: /Opens an explainer/ }).count()) === 8);
-  const heights = await page.evaluate(() => [...document.querySelectorAll(".macro-strip-inner .strip-tile")].map((b) => Math.round(b.getBoundingClientRect().height)));
-  ok(`v6.3 strip (Simple): every tile button is a ≥44px thumb target at 390px (measured ${Math.min(...heights)}–${Math.max(...heights)})`,
-    heights.length === 8 && heights.every((h) => h >= 44));
-  /* v6.8.1 strip lift, measured in the browser rather than trusted from the source: the label
-     wears fs-s, the value fs-l, the sub-line fs-xs — read off DT so a later floor change moves
-     this pin with it — and no visible text leaf inside the strip renders under 10px (the strip
-     is one component in both modes, so the Simple read covers Degen's strip too). */
-  const stripSizes = await page.evaluate(() => {
-    const t = document.querySelector(".macro-strip-inner .strip-tile");
-    const label = t.querySelector("div > span:nth-child(2)"), value = t.children[1], sub = t.querySelector(".strip-sub");
-    const px = (n) => parseFloat(getComputedStyle(n).fontSize);
-    const leaves = [...document.querySelectorAll(".macro-strip *")].filter((n) => n.children.length === 0 && (n.textContent || "").trim() && !n.classList.contains("visually-hidden") && n.getBoundingClientRect().height > 0);
-    return { label: px(label), value: px(value), sub: px(sub), minLeaf: Math.min(...leaves.map(px)), leaves: leaves.length }; });
-  ok(`v6.8.1 strip lift (Simple, 390): label ${DT["fs-s"]} · value ${DT["fs-l"]} · sub ${DT["fs-xs"]}, and the smallest visible leaf in the strip is ≥10px (measured ${stripSizes.label}/${stripSizes.value}/${stripSizes.sub}, min leaf ${stripSizes.minLeaf} over ${stripSizes.leaves})`,
-    stripSizes.label === DT["fs-s"] && stripSizes.value === DT["fs-l"] && stripSizes.sub === DT["fs-xs"] && stripSizes.leaves >= 24 && stripSizes.minLeaf >= 10);
-  await page.locator(".macro-strip-inner > div").nth(4).locator('button[aria-haspopup="dialog"]').click();   // 10Y
-  await page.waitForTimeout(250);
-  ok("v6.3 sheet (Simple): the 10Y tile opens the 10Y band's sheet, centred and inside the phone viewport",
-    (await page.locator("#factsheet-title").innerText()) === "Long-term interest rates" &&
-    await page.evaluate(() => { const r = document.querySelector('[role="dialog"]').getBoundingClientRect();
-      return r.top >= 0 && r.bottom <= window.innerHeight && r.left >= 0 && r.right <= window.innerWidth; }));
-  await page.keyboard.press("Escape");
-  await page.waitForTimeout(200);
+  ok("v6.9.9 Simple tape: two dated performance tiles, no raw levels",
+    (await page.locator('.simple-market-tile').count()) === 2 &&
+    /S&P 500/.test(await page.locator('.simple-market-tape').innerText()) &&
+    !/748.1/.test(await page.locator('.simple-market-tape').innerText()));
+  const heights = await page.locator('.simple-market-tile').evaluateAll(nodes=>nodes.map(n=>n.getBoundingClientRect().height));
+  ok("v6.9.9 Simple tape: 44px targets", heights.every(h=>h>=44));
+  await page.getByRole('button', {name:/Explore market data/}).click();
+  ok("v6.9.9 optional context: six original tiles, no SPY or QQQ duplicates",
+    (await page.locator('.macro-strip-inner .strip-tile').count()) === 6 &&
+    !/SPY|QQQ/.test(await page.locator('.macro-strip-inner').innerText()));
+  await page.locator('.macro-strip-inner .strip-tile').nth(2).click();
+  ok("v6.9.9 context: 10Y still opens the canonical lesson", /Long-term interest rates/.test(await page.getByRole('dialog').innerText()));
+  await page.keyboard.press('Escape');
+  await page.getByRole('button', {name:/Explore market data/}).click();
   const [glance, cardsTop] = await page.evaluate(() => {
-    const el = [...document.querySelectorAll("*")].find((n) => n.children.length === 0 && /^●?\s*SPY\*?$/m.test(n.textContent || "") && n.getBoundingClientRect().height > 0);
+    const el = [...document.querySelectorAll("*")].find((n) => n.children.length === 0 && /^(?:●?\s*SPY\*?|S&P 500)$/m.test(n.textContent || "") && n.getBoundingClientRect().height > 0);
     const k = document.querySelector('[aria-label="Key parameters"]');
     return [el ? Math.round(el.getBoundingClientRect().top + scrollY) : null, k ? Math.round(k.getBoundingClientRect().top + scrollY) : null]; });
   ok(`v6.3 budgets: with eight sheet triggers the cards still begin within 420px and the strip within 660px at 390×844 (measured ${cardsTop} / ${glance})`,
@@ -2256,7 +2245,7 @@ console.log("\n[public] v6.5 — STOCK SPOTLIGHT: Simple + Degen, always-visible
       /sec\.gov/.test(openedAll) && /YTD method/.test(openedAll));
     ok("v6.5 Simple: no rating words on the face", !/\b(cheap|safe|buy|sell|undervalued|overvalued)\b/i.test(openedAll));
     const [glance, cardsTop] = await page.evaluate(() => {
-      const el = [...document.querySelectorAll("*")].find((n) => n.children.length === 0 && /^●?\s*SPY\*?$/m.test(n.textContent || "") && n.getBoundingClientRect().height > 0);
+      const el = [...document.querySelectorAll("*")].find((n) => n.children.length === 0 && /^(?:●?\s*SPY\*?|S&P 500)$/m.test(n.textContent || "") && n.getBoundingClientRect().height > 0);
       const k = document.querySelector('[aria-label="Key parameters"]');
       return [el ? Math.round(el.getBoundingClientRect().top + scrollY) : null, k ? Math.round(k.getBoundingClientRect().top + scrollY) : null]; });
     ok(`v6.5 budgets: the macro first screen is untouched — cards within 420px and the strip within 660px at 390×844 (measured ${cardsTop} / ${glance})`,
@@ -2283,7 +2272,7 @@ console.log("\n[public] v6.5 — STOCK SPOTLIGHT: Simple + Degen, always-visible
       return { card: box(card), profs, frame, line, min: Math.min(...px, ...svg) };
     });
     ok(`v6.8.3 Spotlight chrome: the profiles wear the Simple card's panel (radius ${chrome.profs[0].r} = card ${chrome.card.r}, padding ${chrome.profs[0].p}), the 3px left rule is each company's own chart-line colour, and the shared chart frame carries NO rule`,
-      chrome.profs.length === 2 && chrome.profs.every((p) => p.r === chrome.card.r && p.p === chrome.card.p && p.rule === "3px") &&
+      chrome.profs.length === 2 && chrome.profs.every((p) => p.r === chrome.card.r && p.p === "8px 10px" && p.rule === "3px") &&
       chrome.line.length === 2 && chrome.profs[0].col === chrome.line[0] && chrome.profs[1].col === chrome.line[1] && chrome.profs[0].col !== chrome.profs[1].col &&
       chrome.frame.r === chrome.card.r && chrome.frame.rule === "1px");
     ok(`v6.8.3 Spotlight type floor: no visible leaf in the closed region renders under 10px — chart axis ticks included (smallest ${chrome.min}px)`,
@@ -2515,7 +2504,7 @@ console.log("\n[public] T2–T6 — Simple face sheds clock, rulers, coverage, l
   const cards = await page.locator('[aria-label="Key parameters"]').innerText();
   const body = await page.locator("body").innerText();
   ok("T6 Simple face: Hold + HELPING/HURTING, no FROZEN/unscored/help</hurt>",
-    /Hold/.test(face) && /supports? stocks|pressure stocks|signals? caution/i.test(cards) &&
+    /Hold/.test(face) && /supports? stocks|pressures? stocks|signals? caution/i.test(cards) &&
     !/FROZEN/i.test(face) && !/unscored/i.test(face) &&
     !/help </.test(cards) && !/hurt >/.test(cards));
   ok("T5 Simple: closed Why-this-call is the promise — no ⇄, no +N, no ALLCAPS essay",
@@ -2581,7 +2570,7 @@ console.log("\n[public] Slice 1 — one terminal skin: same header, same typefac
   ok("Slice 1 (1): Simple first screen — wordmark, clock, toggle, Hold, one sentence, three cards, strip; no SHARE/OPS/nav/COPY row",
     /MacroDash/.test(simpleBody) && /Markets (open|closed)|Before markets open/.test(simpleBody) &&
     (await page.locator('[role="group"][aria-label="View mode"] button').count()) === 2 &&
-    (await page.locator(".simple-card").count()) === 3 &&
+    (await page.locator(".simple-card").count()) === 6 &&
     !/⤴ SHARE|⋯ OPS|⋯ MORE|⌁ TERMINAL|COPY LIVE READ/.test(simpleBody) &&
     (await page.locator('nav[aria-label="Sections"]').count()) === 0 &&
     (await page.locator("details.hdr-ops").count()) === 0);
@@ -2753,13 +2742,13 @@ for (const width of [320, 390, 768, 1280]) {
   const text = await region.innerText();
   ok(`v6.9.8 @${width}: interpretations lead, monthly units are explicit, no direction arrows or duplicate vote tags`,
     /Low volatility supports stocks/.test(text) && /Rising yields pressure stocks/.test(text) &&
-    /Looser financial conditions support stocks/.test(text) && /up 0.23 percentage points this month/.test(text) &&
-    /showing 3 of 6 signals — not the full vote/.test(text) && !/▲|▼|HELPING|HURTING|SD vs avg/.test(text));
+    /Looser financial conditions support stocks/.test(text) && !/0.23/.test(text) &&
+    !/showing|not the full vote/.test(text) && !/▲|▼|HELPING|HURTING|SD vs avg/.test(text));
   ok(`v6.9.8 @${width}: summaries above readable supporting values; no horizontal overflow`, await page.evaluate(() =>
     document.documentElement.scrollWidth <= innerWidth && [...document.querySelectorAll('.simple-card')].every(c => {
       const s=c.querySelector('.simple-card-summary'), v=c.querySelector('.simple-card-value');
-      return s.getBoundingClientRect().bottom <= v.getBoundingClientRect().top + 1 &&
-        parseFloat(getComputedStyle(s).fontSize) >= 14 && parseFloat(getComputedStyle(v).fontSize) >= 12.5;
+      return v === null &&
+        parseFloat(getComputedStyle(s).fontSize) >= 14 && c.getBoundingClientRect().height >= 44;
     })));
   for (const card of await page.locator('.simple-card').all()) {
     await card.click();
@@ -2768,7 +2757,56 @@ for (const width of [320, 390, 768, 1280]) {
     ok(`v6.9.8 @${width}: focus returns to the card`, await card.evaluate(c => c === document.activeElement));
   }
   ok(`v6.9.8 @${width}: no runtime errors`, errors.length === 0);
-  if (process.env.PATCH_SCREENSHOTS === '1') await page.screenshot({ path: `/tmp/macrodash-698-${width}.png` });
+  if (process.env.PATCH_SCREENSHOTS === '1') await page.screenshot({ path: `/tmp/macrodash-699-${width}.png` });
+  await page.close();
+}
+for (const scenario of [
+  {name:'loading', live:FULL_LIVE, delayMs:6000, available:0},
+  {name:'outage', live:{}, status:500, available:0},
+  {name:'stale', live:{...FULL_LIVE,vixAsOf:daysAgo(90)}, available:5},
+  {name:'partial', live:DEGRADED, available:3},
+]) {
+  const {page,errors}=await open({...scenario,width:390,power:false});
+  await page.waitForTimeout(1200);
+  const rows=page.locator('.simple-card');
+  const identities=await page.locator('[data-signal-key]').evaluateAll(ns=>ns.map(n=>n.dataset.signalKey));
+  ok(`v6.9.9 ${scenario.name}: six stable identities through missing data`,
+    identities.join() === 'tenYear,vix,fearGreed,cpiHeadline,valuation,nfci');
+  ok(`v6.9.9 ${scenario.name}: real coverage, no hidden fallback reading`,
+    new RegExp(`${scenario.available} of 6 signals available`).test(await page.locator('[aria-label="Key parameters"]').innerText()) &&
+    await page.locator('.simple-card-value').count()===0);
+  const unavailable=rows.filter({hasText:/unavailable|loading/i}).first();
+  await unavailable.click();
+  ok(`v6.9.9 ${scenario.name}: unavailable sheet gives reason, not a current number`,
+    /No current reading is shown/.test(await page.getByRole('dialog').innerText()) &&
+    await page.getByRole('dialog').locator('li').count()===3);
+  await page.keyboard.press('Escape');
+  ok(`v6.9.9 ${scenario.name}: no errors`,errors.length===0);
+  await page.close();
+}
+{
+  const live={...FULL_LIVE}; delete live.spyChangePct; delete live.qqqChangePct;
+  const {page}=await open({live,width:390,power:false}); await page.waitForTimeout(1200);
+  ok('v6.9.9 missing changes: live prices do not make mock changes look current',
+    (await page.locator('.simple-market-tape').innerText()).match(/Unavailable/g)?.length===2);
+  await page.locator('.simple-market-tile').first().click();
+  ok('v6.9.9 S&P sheet: proxy and separate safety circuit are explicit',
+    /not a tradable SPY ETF quote|not an SPY quote/.test(await page.getByRole('dialog').innerText()) &&
+    /crash circuit/.test(await page.getByRole('dialog').innerText()));
+  await page.close();
+}
+{
+  const saved={schema:'md-call-v1',effective_date:TODAY,headline:'MOONING',emoji:'🚀',direction:'BULLISH',confidence:'HIGH',actionability:'FULL',status:'OK',
+    counts:{usable:6,total:6,bullish:4,bearish:1,neutral:1},override:{active:false},
+    factors:['tenYear','vix','fearGreed','cpiHeadline','valuation','nfci'].map(key=>({key,label:key,excluded:false,mode:'LIVE',as_of:TODAY,
+      state:key==='vix'?'NEUTRAL':key==='valuation'?'BEARISH':'BULLISH',display:'saved reading'}))};
+  const {page,errors}=await open({live:FULL_LIVE,width:390,power:false,publicCall:saved,publicCallFrozen:true,publicCallCapturedAt:`${TODAY}T14:00:00.000Z`});
+  await page.waitForTimeout(1200);
+  ok('v6.9.9 factor-only drift: current states differ even with the same bullish headline',
+    /Bullish/.test(await page.locator('[aria-label="Macro backdrop verdict"]').innerText()) &&
+    await page.locator('.simple-signal-drift').count()===1 &&
+    /Low volatility supports stocks/.test(await page.locator('[aria-label="Key parameters"]').innerText()));
+  ok('v6.9.9 frozen call: no runtime errors',errors.length===0);
   await page.close();
 }
 await browser.close();

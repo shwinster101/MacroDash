@@ -30,8 +30,33 @@ import { stripExplainFor } from "../stripExplain.js";
 
 const bandOf=(k)=>REGIME_BAND_TABLE.find((b)=>b.key===k);
 
-const MacroStrip=({d,modeOf,fomcLabel,fomcDays,votingFields,badge})=>{
+const SimpleMarketTape=({d,modeOf,asOfOf})=><div className="macro-strip simple-market-tape" role="region" aria-label="Market performance"
+  style={{background:T.surfaceHigh,padding:"8px 20px",borderBottom:`1px solid ${T.border}`,display:"grid",gridTemplateColumns:"repeat(2,minmax(0,1fr))",gap:12}}>
+  {[
+    {label:"S&P 500",field:"spyPrice",changeField:"spyChangePct",data:d.marketPulse.spy,proxy:true},
+    {label:"Nasdaq-100 / QQQ",field:"qqqPrice",changeField:"qqqChangePct",data:d.marketPulse.qqq},
+  ].map(({label,field,changeField,data,proxy})=>{
+    const live=["LIVE","CACHED"].includes(modeOf(changeField));
+    const date=asOfOf?.(changeField);
+    const available=live&&Boolean(date)&&Number.isFinite(data.changePct);
+    const quoteLive=["LIVE","CACHED"].includes(modeOf(field))&&Boolean(asOfOf?.(field))&&Number.isFinite(data.price);
+    const ex=stripExplainFor(field);
+    const reading=available?`${fmt.pct(data.changePct)} daily change`:"Daily change unavailable";
+    const level=quoteLive?proxy?`S&P 500 index ÷ 10: ${data.price} (not an SPY quote)`:`QQQ ETF quote: $${data.price}`:"Level unavailable";
+    return <Explainable key={field} explain={{...ex,metadata:`${reading}. ${available?`As of ${date}. Data: ${modeOf(changeField)}.`:"No current change is shown."} ${level}${quoteLive&&asOfOf?.(field)?` · as of ${asOfOf(field)}`:""}.`}}
+      title={ex.full} eyebrow={`${label} · ${reading}`} className="strip-tile simple-market-tile"
+      style={{background:"none",border:"none",padding:0,minWidth:0}}>
+      <div style={{fontFamily:T.fontMono,fontSize:T.fsM,color:T.textMuted}}>{label}</div>
+      <div style={{fontFamily:T.fontMono,fontSize:T.fsL,fontWeight:700,color:available?pctColor(data.changePct):T.textMuted}}>{available?fmt.pct(data.changePct):"Unavailable"}</div>
+      <div style={{fontFamily:T.fontMono,fontSize:T.fsS,color:T.textMuted}}>{available?`Daily · ${date}`:"No current reading"}</div>
+      <span className="visually-hidden">Opens an explainer.</span>
+    </Explainable>;
+  })}
+</div>;
+
+const MacroStrip=({d,modeOf,asOfOf,fomcLabel,fomcDays,votingFields,badge,variant="full"})=>{
   if(!d||typeof modeOf!=="function")return <div aria-hidden="true"/>;
+  if(variant==="simple")return <SimpleMarketTape d={d} modeOf={modeOf} asOfOf={asOfOf}/>;
   const vf=votingFields||new Set();
   const fedLo=d.macro.fedFunds.targetLower, fedHi=d.macro.fedFunds.targetUpper;
   const fedTargetLive=Number.isFinite(fedLo)&&Number.isFinite(fedHi)&&["LIVE","CACHED"].includes(modeOf("fedTargetUpper"));
@@ -70,7 +95,7 @@ const MacroStrip=({d,modeOf,fomcLabel,fomcDays,votingFields,badge})=>{
            v:Number.isFinite(d.macro.nfci.current)?`${d.macro.nfci.current>0?"+":""}${d.macro.nfci.current.toFixed(2)}`:"—",
            s:"0 = avg", voteKey:"nfci",
            t:"Chicago Fed National Financial Conditions Index — how easily money and credit are flowing through the financial system, from 105 measures. Standardized so 0 = the 1971– average; positive is tighter than average, negative is looser."},
-        ].map(({l,f,v,s,sc,voteKey,t})=>{
+        ].filter(row=>variant!=="context"||!["spyPrice","qqqPrice"].includes(row.f)).map(({l,f,v,s,sc,voteKey,t})=>{
           const m=modeOf(f); const live=m==="LIVE"||m==="CACHED";
           // Vote-derived sub-line color: the band table is the ONE expression of the
           // threshold, voteStyle the ONE vote->appearance map. Not live -> muted (a

@@ -1,106 +1,46 @@
-// ─── SIMPLE PARAMETER CARDS (v4.0) ──────────────────────────────────────────
-// The Simple-mode orientation layer: up to three plain-language parameter cards.
-// (The "what would change the call" flip line moved to the Five Whys' closed label on the
-//  8/28 altitude pass — one home; it lived here from v4.0 to then.)
-// PRESENTATION ONLY — simpleCards is a pure projection in src/evidence.js and every
-// threshold, vote and freshness rule stays upstream in regime.js. This file decides nothing.
-//
-// Honesty rules this component enforces at render:
-//   · An EXCLUDED factor never reaches here (simpleCards drops it) — a card is a claim
-//     about a current usable reading, and there is none.
-//   · Fewer than `max` usable factors renders FEWER CARDS, never UNAVAILABLE padding:
-//     absence is not content.
-//   · T3: date + ruler left the face for the card sheet (they already belong in c.explain).
-//     Coverage dots left the cards footer for the Why-this-call fold. Glyph + name + value
-//     + reading stay. v6.9.8 puts interpretation first; provenance remains accessible.
+// Six current signals, meaning first. Votes and availability are projected upstream.
 import { T } from "../design-tokens.js";
-import { ILLUS_HATCH, isIllustrative } from "../primitives/Illustrative.jsx";
 import { Explainable } from "../primitives/FactSheet.jsx";
 import { cardFace, sheetLead } from "../simpleFace.js";
 
 const TONE = { helping: T.green, hurting: T.red, mixed: T.amber };
-const WORD = { helping: "SUPPORTIVE", hurting: "CAUTION", mixed: "MIXED" };
 export const freshDot = (mode, illus) => {
   const live = !illus && (mode === "LIVE" || mode === "CACHED");
   const color = live ? T.green : mode === "STALE" ? T.amber : T.textMuted;
   return { live, color, word: illus ? "not live" : String(mode || "").toLowerCase() };
 };
-
 const sheetOf = (c) => {
-  if (!c.explain || !Array.isArray(c.explain.what)) return c.explain;
-  const illus = isIllustrative(c.mode);
-  // Beat 2 carries the band's own "why it matters" sentence (sheetLead) — folded onto the
-  // explainer's own second bullet rather than a second thesis. Never dropped by a rewrite
-  // of the surrounding metadata line (v6.5.6 caught this going silently dark).
+  if (!c.explain?.what) return c.explain;
   const lead = sheetLead(c);
   const beat2 = lead && c.explain.what[1] !== lead ? `${c.explain.what[1]} ${lead}` : c.explain.what[1];
   return { ...c.explain, what: [c.explain.what[0], beat2, c.explain.what[2]],
-    metadata: [c.asOf && `As of ${c.asOf}.`,
-    c.rulerChip && `Rule: ${c.rulerChip}.`, illus && "This reading is illustrative, not live."]
-    .filter(Boolean).join(" ") };
+    metadata: c.available
+      ? [`Data: ${c.mode}.`, c.asOf && `As of ${c.asOf}.`, c.rulerChip && `Rule: ${c.rulerChip}.`].filter(Boolean).join(" ")
+      : `${c.reason}. Not counted. No current reading is shown.` };
 };
-
-const SimpleCards = ({ cards, usable = 0, shown = 0, total = 0, withheld = false }) => {
-  // Property 9 (null-safe): nothing usable means nothing to render as a current reading.
-  if (!cards || !Array.isArray(cards) || cards.length === 0) {
-    return (
-      <div role="region" aria-label="Key parameters" style={{ padding: "8px 20px", background: T.bg, borderBottom: `1px solid ${T.border}` }}>
-        <div style={{ fontFamily: T.fontMono, fontSize: T.fsXs, color: T.textMuted }}>
-          No signal is currently counted, so there is no reading to show — evidence detail is in Degen mode.
-        </div>
-      </div>
-    );
-  }
-  return (
-    <div role="region" aria-label="Key parameters" style={{ padding: "8px 20px", background: T.bg, borderBottom: `1px solid ${T.border}` }}>
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(260px,1fr))", gap: 6 }}>
-        {cards.map((c) => {
-          const illus = isIllustrative(c.mode);
-          const face = cardFace(c);
-          const tone = TONE[face.tone] || T.textMuted;
-          const fresh = freshDot(c.mode, illus);
-          return (
-            <Explainable key={c.key}
-              explain={sheetOf(c)}
-              title={c.explain ? c.explain.full : face.label}
-              eyebrow={`${face.label} · ${face.value}${WORD[face.tone] ? ` · ${WORD[face.tone]}` : ""}`}
-              className="simple-card"
-              style={{ background: T.surface, border: `1px solid ${T.border}`, borderLeft: `3px solid ${tone}`,
-              borderRadius: 5, padding: "8px 10px", minWidth: 0, backgroundImage: illus ? ILLUS_HATCH : undefined }}>
-              {/* v6.9.8: interpretation first, measured reading second. The status square
-                  cannot be mistaken for a change arrow; the sentence owns the meaning. */}
-              <div style={{ display: "flex", alignItems: "baseline", gap: 8 }}>
-                <span aria-hidden="true" className="simple-card-glyph" style={{ fontFamily: T.fontMono, fontSize: T.fsL, fontWeight: 700,
-                  color: tone, flexShrink: 0, lineHeight: 1 }}>{face.glyph}</span>
-                <span className="simple-card-summary" style={{ fontFamily: T.fontMono, fontSize: T.fsL, color: T.textPrimary, fontWeight: 600, flex: 1, minWidth: 0 }}>{c.summary || face.label}</span>
-              </div>
-              <div style={{ display: "flex", alignItems: "baseline", gap: 6, marginTop: 4 }}>
-                <span className="simple-card-label" style={{ fontFamily: T.fontMono, fontSize: T.fsS, color: T.textMuted,
-                  letterSpacing: "0.08em", textTransform: "uppercase", flexShrink: 0 }}>{c.short || face.label}</span>
-                <span className="simple-card-value" style={{ fontFamily: T.fontMono, fontSize: T.fsM, fontWeight: 600, color: T.textSecondary, minWidth: 0, overflowWrap: "anywhere" }}>{face.value}</span>
-                {c.explain && <span className="visually-hidden"> — what is this? Opens an explainer.</span>}
-                <span className="visually-hidden">{fresh.word}</span>
-              </div>
-            </Explainable>
-          );
-        })}
-      </div>
-      {withheld && <div style={{ fontFamily: T.fontMono, fontSize: T.fsXs, color: T.amber, marginTop: 5 }}>
-        partial evidence — not used for the call
-      </div>}
-      {/* v6.9.5 — THE TRUNCATION IS NAMED AGAIN. v4.0 made this a contract ("silent truncation
-          reads as full coverage", v3.65/v3.76) and v4.0.1 folded it into one quiet line beside
-          the flip; when v6.x moved the flip out to the whys label the COUNT went with it by
-          accident. The props survived and nothing rendered them, the call-site comment still
-          claimed the truncation was named, and the public-render pin TITLED "truncation … stay"
-          asserts only absences — so three suites agreed with a regression for five releases.
-          It matters on the live page: the hero can name four factors while three cards show
-          two helping and one hurting, and without this line the block reads as the whole vote.
-          Real numbers off the same rows the cards came from — never a hardcoded fraction. */}
-      {shown < usable && <div style={{ fontFamily: T.fontMono, fontSize: T.fsXs, color: T.textMuted, marginTop: 5, opacity: 0.8 }}>
-        showing {shown} of {usable} signals{total > usable ? ` · ${total - usable} unavailable` : ""} — not the full vote
-      </div>}
+export default function SimpleCards({ cards = [], usable = 0, total = 0, withheld = false, drift = false }) {
+  return <div role="region" aria-label="Key parameters" style={{ padding: "6px 20px", background: T.bg, borderBottom: `1px solid ${T.border}` }}>
+    <div style={{ fontFamily: T.fontMono, fontSize: T.fsM, color: T.textMuted, marginBottom: 2 }}>Current signals</div>
+    <div className="simple-signals-grid">
+      {cards.map(c => {
+        const face = cardFace(c);
+        const tone = c.available ? TONE[face.tone] || T.textMuted : T.textMuted;
+        return <Explainable key={c.key} explain={sheetOf(c)} title={c.explain?.full || c.label}
+          eyebrow={c.available ? `${c.label} · ${face.value} · ${c.summary}` : `${c.label} · ${c.loading ? "loading" : "unavailable — not counted"}`}
+          className="simple-card" ariaLabel={`${c.summary}.${!c.available && !c.loading ? " Not counted." : ""} Opens an explainer.`}
+          style={{ background: T.surface, border: `1px solid ${T.border}`, borderLeft: `3px solid ${tone}`, borderRadius: 5, padding: "6px 10px", minWidth: 0, lineHeight: 1.25 }}>
+          <div style={{ display: "flex", alignItems: "baseline", gap: 8 }}>
+            <span aria-hidden="true" className="simple-card-glyph" style={{ fontFamily: T.fontMono, fontSize: T.fsL, color: tone, flexShrink: 0 }}>■</span>
+            <span className="simple-card-summary" data-signal-key={c.key} style={{ fontFamily: T.fontMono, fontSize: T.fsL, color: T.textPrimary, fontWeight: 600, minWidth: 0 }}>{c.summary}</span>
+          </div>
+          {!c.available && !c.loading && <div style={{ fontFamily: T.fontMono, fontSize: T.fsM, color: T.textMuted, marginLeft: 20 }}>Not counted</div>}
+          {c.explain && <span className="visually-hidden"> — what is this? Opens an explainer.</span>}
+          <span className="visually-hidden">{c.available ? c.mode.toLowerCase() : "not live"}</span>
+        </Explainable>;
+      })}
     </div>
-  );
-};
-export default SimpleCards;
+    {usable < total && <div style={{ fontFamily: T.fontMono, fontSize: T.fsM, color: T.textMuted, marginTop: 5 }}>{usable} of {total} signals available</div>}
+    {withheld && <div style={{ fontFamily: T.fontMono, fontSize: T.fsM, color: T.amber, marginTop: 5 }}>Partial data — outlook withheld</div>}
+    {drift && <div className="simple-signal-drift" style={{ fontFamily: T.fontMono, fontSize: T.fsM, color: T.amber, marginTop: 5 }}>Current signals differ from the saved daily call</div>}
+  </div>;
+}

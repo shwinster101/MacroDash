@@ -354,6 +354,26 @@ export function simpleCards(ev, max = 3) {
   return { cards, usable: usableRows.length, shown: cards.length, total: factors.length };
 }
 
+// Complete, stable learning map: missing data occupies a place, never a vote.
+export function simpleSignals(ev) {
+  const projected = new Map(simpleCards(ev, REGIME_BAND_TABLE.length).cards.map(c => [c.key, c]));
+  const cards = REGIME_BAND_TABLE.map(band => {
+    const f = ev?.factors?.find(f => f.key === band.key);
+    const c = projected.get(band.key);
+    const available = Boolean(c && !f.excluded && ["LIVE", "CACHED"].includes(f.mode) && !["LOADING", "ERROR", "DEMO"].includes(ev?.state));
+    const loading = ev?.state === "LOADING";
+    return {
+      ...(available ? c : {}), key: band.key, short: band.short, label: band.plain,
+      explain: band.explain, why: band.whyItMatters, rulerChip: rulerChip(band),
+      available, loading, mode: f?.mode || "MOCK", asOf: available ? f.asOf : null,
+      summary: available ? c.summary : `${band.plain.charAt(0).toUpperCase() + band.plain.slice(1)} — ${loading ? "loading" : "unavailable"}`,
+      direction: available ? c.direction : null,
+      reason: available ? null : loading ? "Waiting for current data" : f?.reason || "No live feed right now",
+    };
+  });
+  return { cards, usable: cards.filter(c => c.available).length, total: cards.length };
+}
+
 /* The one Simple sentence. Same rows as the cards — one derivation, so it can never
    contradict them. v4.0.1 (owner copy pass, 2026-08-17) REVERSES v4.0.0's "never list the
    factors" ruling: the owner's read of the live page asked for exactly the named form —
