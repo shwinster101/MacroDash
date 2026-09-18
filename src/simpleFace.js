@@ -13,7 +13,8 @@ export const FACE_NOUN = Object.freeze({
   fearGreed: "sentiment",
   cpiHeadline: "inflation",
 });
-export const FACE_GLYPH = Object.freeze({ helping: "▲", hurting: "▼", mixed: "•" });
+// Status, not price movement: triangles beside VIX falsely suggest its direction of travel.
+export const FACE_GLYPH = Object.freeze({ helping: "■", hurting: "■", mixed: "■" });
 export const LESSON_FOLD_LABEL = "Learning moment";
 export const EXPLORE_FOLD_LABEL = "Explore the numbers";
 export const WHYS_FOLD_LABEL = "Why this call";
@@ -31,18 +32,10 @@ const lc = (s) => (s ? s.charAt(0).toLowerCase() + s.slice(1) : s);
 // singular ("volatility works", "credit helps"). Verb agreement is per NAME, not per count.
 const PLURAL_NOUN = new Set(["tenYear", "valuation"]);
 
-/* Face: the so-what under the one-word call, ≤HOLD_REASON_MAX words.
-   v6.6.1 (owner, on the live 2026-09-16 screenshot: "not a fan of 'fine' and 'drag' — higher
-   leverage, 15 words max"). The sentence now says what the CALL means and lets the names
-   carry the why: a Bullish day says the backdrop supports taking risk and names the only
-   pushback; a Bearish day says what is working against risk and that the helpers do not
-   offset it; a Hold day states the split and that NEITHER SIDE HAS A MAJORITY — which is
-   the actual reason for a Hold under the strict-majority rule, and the one fact a newcomer
-   can act on. The branch follows ev.regime.label, the same field the hero's verdict word
-   reads, so the sentence can never describe a different call from the word above it.
-   At most two names per side (the fold names them all); every branch is ≤15 words BY
-   CONSTRUCTION — no runtime truncation, a truncated sentence is garbage — and smoke sweeps
-   every helping/hurting split in every posture to prove the budget. */
+/* Face: the so-what under the one-word call, at most HOLD_REASON_MAX words.
+   v6.9.8: a two-sided Hold names the mixed stock outlook and the majority across ALL
+   counted signals, not just the three cards. Other postures and withholding stay intact.
+   The cards explain individual conditions; the fold carries the full arithmetic. */
 export function holdReason(ev) {
   if (!ev || ev.withheld) return null;
   const rows = (ev.factors || []).filter((x) => !x.excluded);
@@ -64,12 +57,9 @@ export function holdReason(ev) {
     return helping.length ? `${lead} ${line(helping, "doesn't", "don't")} offset that.`
       : `${lead} Nothing tracked offsets that.`;
   }
-  // Hold (MIXED): the split is the so-what. Larger side first; a tie leads with the helpers.
+  // Hold (MIXED): the whole evidence set decides the call, not the displayed card subset.
   if (helping.length && hurting.length) {
-    const bullFirst = helping.length >= hurting.length;
-    const first = bullFirst ? line(helping, "helps", "help") : line(hurting, "hurts", "hurt");
-    const second = bullFirst ? line(hurting, "hurts", "hurt") : line(helping, "helps", "help");
-    return `${first}. ${second}. Neither side has a majority.`;
+    return "Mixed stock outlook. Neither side has a majority across the counted signals.";
   }
   return helping.length
     ? `${line(helping, "helps", "help")}; nothing tracked hurts. Still short of a majority.`
@@ -78,10 +68,19 @@ export function holdReason(ev) {
 
 export function cardFace(card) {
   if (!card) return { glyph: "•", label: "", value: "—", tone: "mixed" };
+  let value = card.currentValue || "—";
+  // Read typed values, never parse display text or reinterpret a vote.
+  if (Number.isFinite(card.metricValue)) {
+    if (card.key === "nfci") value = card.metricValue.toFixed(2);
+    if (card.key === "tenYear") {
+      const change = card.metricValue;
+      value = `${card.metricContext ? `${card.metricContext} · ` : ""}${change === 0 ? "unchanged this month" : `${change > 0 ? "up" : "down"} ${Math.abs(change).toFixed(2)} percentage points this month`}`;
+    }
+  }
   return {
     glyph: FACE_GLYPH[card.direction] || "•",
     label: card.label || "",
-    value: card.currentValue || "—",
+    value,
     tone: card.direction || "mixed",
   };
 }

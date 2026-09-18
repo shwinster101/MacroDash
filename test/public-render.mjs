@@ -407,7 +407,7 @@ console.log("\n[public] v3.94 — Simple default, the toggle, persistence, red f
   ok("T2/T3 simple: the Glance layer renders — one plain call, sentence, cards, key numbers; coverage is one tap deep",
     /Bullish|Hold|Bearish|Not enough data/.test(body) &&
     /(support taking risk|against risk|has a majority|short of a majority|clear lean)/i.test(body) &&   // T1: holdReason (v6.6.1 posture vocabulary), not the lecture sentence
-    /HELPING|HURTING|MIXED/.test(body) && /SPY/.test(body) &&
+    /support stocks|pressure stocks|signals? caution|no clear signal|stock outlook/i.test(body) && /SPY/.test(body) &&
     !/\d+ of \d+ signals counted/.test(await page.locator('[aria-label="Macro backdrop verdict"]').innerText()) &&
     !/\d+ cards from the \d+ signals counted/.test(await page.locator('[aria-label="Key parameters"]').innerText()));
   /* v6.9.5 — THE TRUNCATION IS NAMED, AND THE NUMBER MUST BE THE ONE ON SCREEN. v4.0 made
@@ -497,7 +497,7 @@ console.log("\n[public] v3.94 — Simple default, the toggle, persistence, red f
      three times over). Value, direction, freshness and the named truncation stay — those are
      facts, not prose, and the v3.1 provenance invariant is not a density trade. */
   ok("T3 simple: cards carry value + direction; truncation and date/ruler left the face",
-    /HELPING|HURTING|MIXED/.test(body) && !/discount rate on every future dollar/.test(body) &&
+    /support stocks|pressure stocks|signals? caution|no clear signal|stock outlook/i.test(body) && !/discount rate on every future dollar/.test(body) &&
     !/\d+ cards from the \d+ signals counted/.test(await page.locator('[aria-label="Key parameters"]').innerText()) &&
     // T5: closed Why-this-call is the 2–4 word promise; flip chip left the closed row.
     /Why this call/.test(await page.locator("button.cg-toggle", { hasText: "why this call" }).innerText()) &&
@@ -522,8 +522,8 @@ console.log("\n[public] v3.94 — Simple default, the toggle, persistence, red f
      yield. Both must be on the card, level first, delta signed. */
   ok("v4.0.4 simple: the 10Y card shows the LEVEL its label names, with the voted delta as context",
     (() => { const t = cardsInner;
-      return /4\.46%/.test(t) && /-0\.22pp 1-mo/.test(t) &&
-        t.indexOf("4.46%") < t.indexOf("-0.22pp"); })());
+      return /4\.46%/.test(t) && /down 0\.22 percentage points this month/.test(t) &&
+        t.indexOf("4.46%") < t.indexOf("down 0.22"); })());
   ok("v4.0 simple: the v3.97 prose no longer renders (the cards replaced it)",
     !/The bull case right now:/.test(body) && !/The bear case:/.test(body));
   ok("v3.97 simple: no picks feed → the strip renders NOTHING, never example picks",
@@ -1046,7 +1046,7 @@ console.log("\n[public] v4.0 — Simple verdicts, card selection, and what must 
   await page.waitForTimeout(1300);
   let body = await page.locator("body").innerText();
   ok("v6.4 Simple verdict: a bear tape reads Bearish, and risk factors lead the cards",
-    /Bearish/.test(body) && /HURTING/.test(body) && !/DIAMOND HANDS|\bBEARISH\b/.test(body));
+    /Bearish/.test(body) && /pressure stocks|signals? caution/i.test(body) && !/DIAMOND HANDS|\bBEARISH\b/.test(body));
   await page.close();
 
   // 2. BULLISH.
@@ -1056,7 +1056,7 @@ console.log("\n[public] v4.0 — Simple verdicts, card selection, and what must 
   await page.waitForTimeout(1300);
   body = await page.locator("body").innerText();
   ok("v6.4 Simple verdict: a bull tape reads Bullish with supporting factors leading",
-    /Bullish/.test(body) && /HELPING/.test(body) && !/MOONING|\bBULLISH\b/.test(body) &&
+    /Bullish/.test(body) && /support stocks|supports stocks|stock outlook/i.test(body) && !/MOONING|\bBULLISH\b/.test(body) &&
     /support taking risk/i.test(body) && !/\bfine\b|\bdrag\b/i.test(body));   // T1 (v6.6.1): a Bullish day says the backdrop supports taking risk; 'fine' retired
   await page.close();
 
@@ -1111,7 +1111,7 @@ console.log("\n[public] v4.0 — Simple verdicts, card selection, and what must 
      side has a majority. Measured live: "Volatility and inflation help. Prices hurt. Neither side
      has a majority." on this tape (vix + cooling CPI helping, rich CAPE hurting). */
   ok("v5.9: Simple names the disagreement in the SENTENCE, with no count sub beside it",
-    /help\./.test(band) && /hurt\./.test(band) && /Neither side has a majority/.test(band) &&
+    /Mixed stock outlook/.test(band) && /counted signals/.test(band) && /Neither side has a majority/.test(band) &&
     !/\bfine\b|\bdrag\b/i.test(band) &&
     !/help, prices do not/.test(band) && !/\d+ help, \d+ does not/.test(band));
   ok("8/29 ruler: the canned watch-VIX gloss is gone from a tape where VIX is helping",
@@ -1658,20 +1658,20 @@ console.log("\n[public] v6.0.1/v6.4 — shape before text · Simple|Degen clarit
       barColor: getComputedStyle(c).borderLeftColor, visible: clone.textContent, hidden: c.textContent,
       dotBg: dot ? getComputedStyle(dot).backgroundColor : null, dotTitle: dot ? dot.getAttribute("title") : null };
   }));
-  ok("v6.0.1 cards: every card LEADS with a direction glyph (▲/▼/•) that is the first thing in the row",
-    cards.length === 3 && cards.every((c) => c.glyphClass === "simple-card-glyph" && /^[▲▼•]$/.test(c.glyph)));
+  ok("v6.9.8 cards: every card leads with a non-directional square status marker",
+    cards.length === 3 && cards.every((c) => c.glyphClass === "simple-card-glyph" && c.glyph === "■"));
   ok("v6.0.1 cards: the glyph and the 3px left bar carry the direction colour (green helping, red hurting)",
     cards.every((c) => c.bar === "3px" && c.barColor === c.glyphColor) &&
-    cards.some((c) => c.glyph === "▲" && c.glyphColor === GREEN) &&
-    cards.some((c) => c.glyph === "▼" && c.glyphColor === rgb("#e74c3c")));
+    cards.some((c) => c.glyph === "■" && c.glyphColor === GREEN) &&
+    cards.some((c) => c.glyph === "■" && c.glyphColor === rgb("#e74c3c")));
   // The harness serves `cached:false`, so the mode here is LIVE; the rule is one filled green
   // dot for EITHER live or cached, the word on the title + a11y span only (never on the face).
   ok("T3 cards: freshness WORD is a11y-only — no date, ruler, or freshness dot on the face",
     cards.every((c) => c.dotBg === null) &&
     cards.every((c) => !/live|cached/.test(c.visible) && /live|cached/.test(c.hidden)) &&
     cards.every((c) => !/help <|hurt >|As of /.test(c.visible)));
-  ok("v6.0.1 cards: the direction WORD still confirms the shape at the row's end (HELPING/HURTING survive)",
-    cards.every((c) => /HELPING|HURTING|MIXED/.test(c.visible)));
+  ok("v6.9.8 cards: the interpretation names the stock-market meaning, not a bare helping/hurting tag",
+    cards.every((c) => /supports? stocks|pressure stocks|signals? caution|no clear signal|stock outlook/i.test(c.visible)));
   /* T3: coverage dots are inside Why-this-call, not under the cards and not on the Simple hero. */
   await page.locator("button.cg-toggle", { hasText: "why this call" }).click();
   await page.waitForTimeout(200);
@@ -1757,7 +1757,7 @@ console.log("\n[public] v6.0.1/v6.4 — shape before text · Simple|Degen clarit
     const hold = document.querySelector(".simple-hold");
     const holdSpan = hold && [...hold.querySelectorAll("span")].find((n) => n.childElementCount === 0 && !n.classList.contains("visually-hidden") && (n.textContent || "").trim().length > 1);
     const card = document.querySelector(".simple-card");
-    const value = card && [...card.querySelectorAll("span")].find((n) => getComputedStyle(n).fontWeight === "600");
+    const value = card && card.querySelector(".simple-card-value");
     const label = card && [...card.querySelectorAll("span")].find((n) => !n.classList.contains("simple-card-glyph") && !n.classList.contains("visually-hidden") && getComputedStyle(n).fontWeight !== "600" && getComputedStyle(n).fontWeight !== "700" && (n.textContent || "").trim().length > 1);
     return {
       hold: holdSpan ? getComputedStyle(holdSpan).fontSize : null,
@@ -1770,8 +1770,8 @@ console.log("\n[public] v6.0.1/v6.4 — shape before text · Simple|Degen clarit
   // Slice 1: the label read fs-m, lifted 11 -> 12.5 by the token bridge. v6.8.2 (Slice 2 item 2):
   // the cards adopt the STRIP anatomy, so the label is the strip's own fs-s eyebrow and the vote
   // word its fs-xs sub — read off DT so a floor change moves this pin with it; the value keeps 16.
-  ok(`T7 type (Simple): Hold is 28px, card values 16px, labels fs-s (measured hold=${typePx.hold} value=${typePx.card} label=${typePx.label} «${typePx.holdText}» «${typePx.cardText}»)`,
-    typePx.hold === "28px" && typePx.card === "16px" && typePx.label === `${DT["fs-s"]}px`);
+  ok(`v6.9.8 type (Simple): Hold is 28px, supporting readings fs-m, labels fs-s (measured hold=${typePx.hold} value=${typePx.card} label=${typePx.label})`,
+    typePx.hold === "28px" && typePx.card === `${DT["fs-m"]}px` && typePx.label === `${DT["fs-s"]}px`);
   const cardAnat = await page.evaluate(() => {
     const px = (n) => n ? getComputedStyle(n).fontSize : null;
     const cards = [...document.querySelectorAll(".simple-card")];
@@ -1779,9 +1779,9 @@ console.log("\n[public] v6.0.1/v6.4 — shape before text · Simple|Degen clarit
     return { n: cards.length, vote: cards.map((c) => px(c.querySelector(".simple-card-vote"))), label: cards.map((c) => px(c.querySelector(".simple-card-label"))),
       words: cards.map((c) => (c.querySelector(".simple-card-vote") || {}).textContent), minLeaf: Math.min(...leaves.map((n) => parseFloat(getComputedStyle(n).fontSize))), leaves: leaves.length,
       text: document.querySelector('[aria-label="Key parameters"]').innerText }; });
-  ok(`v6.8.2 cards (Simple, 390): every card carries ONE vote word at fs-xs in the strip's vocabulary, no ⓘ rides the region, and no visible leaf is under 10px (measured min ${cardAnat.minLeaf} over ${cardAnat.leaves} leaves)`,
-    cardAnat.n === 3 && cardAnat.vote.every((v) => v === `${DT["fs-xs"]}px`) && cardAnat.label.every((v) => v === `${DT["fs-s"]}px`) &&
-    cardAnat.words.every((w) => /^(HELPING|HURTING|MIXED)$/.test(w)) && !/ⓘ/.test(cardAnat.text) && cardAnat.minLeaf >= 10);
+  ok(`v6.9.8 cards (Simple, 390): no duplicate vote tag, labels fs-s, no visible leaf under 10px (measured min ${cardAnat.minLeaf})`,
+    cardAnat.n === 3 && cardAnat.vote.every((v) => v === null) && cardAnat.label.every((v) => v === `${DT["fs-s"]}px`) &&
+    cardAnat.words.every((w) => w === undefined) && !/ⓘ/.test(cardAnat.text) && cardAnat.minLeaf >= 10);
   ok("T9 header (Simple): Wordmark + Simple|Degen — Terminal and Share are not wrapping peers",
     (await page.locator('a[aria-label="Open Ticker Terminal"]').count()) === 0 &&
     (await page.locator("header button[aria-label='Copy dashboard link']").count()) === 0 &&
@@ -2515,7 +2515,7 @@ console.log("\n[public] T2–T6 — Simple face sheds clock, rulers, coverage, l
   const cards = await page.locator('[aria-label="Key parameters"]').innerText();
   const body = await page.locator("body").innerText();
   ok("T6 Simple face: Hold + HELPING/HURTING, no FROZEN/unscored/help</hurt>",
-    /Hold/.test(face) && /HELPING|HURTING/.test(cards) &&
+    /Hold/.test(face) && /supports? stocks|pressure stocks|signals? caution/i.test(cards) &&
     !/FROZEN/i.test(face) && !/unscored/i.test(face) &&
     !/help </.test(cards) && !/hurt >/.test(cards));
   ok("T5 Simple: closed Why-this-call is the promise — no ⇄, no +N, no ALLCAPS essay",
@@ -2744,12 +2744,33 @@ for (const width of [390,1280]) {
   ok("v6.9.7 excluded: no runtime errors",errors.length===0);
   await page.close();
 }
-await browser.close();
-srv.close();
-console.log(`\n=== PUBLIC RENDER TEST: ${pass} passed, ${fail} failed ===`);
-process.exit(fail ? 1 : 0);
-
-
+for (const width of [320, 390, 768, 1280]) {
+  const live = { ...FULL_LIVE, vix: 15.44, tenYear: 4.94, tenYearM1: 0.23,
+    fearGreed: 29, nfci: -0.56, shillerPe: 27, cpiTrend: [3.7, 3.7, 3.7] };
+  const { page, errors } = await open({ live, width, power: false });
+  await page.waitForTimeout(1200);
+  const region = page.locator('[aria-label="Key parameters"]');
+  const text = await region.innerText();
+  ok(`v6.9.8 @${width}: interpretations lead, monthly units are explicit, no direction arrows or duplicate vote tags`,
+    /Low volatility supports stocks/.test(text) && /Rising yields pressure stocks/.test(text) &&
+    /Looser financial conditions support stocks/.test(text) && /up 0.23 percentage points this month/.test(text) &&
+    /showing 3 of 6 signals — not the full vote/.test(text) && !/▲|▼|HELPING|HURTING|SD vs avg/.test(text));
+  ok(`v6.9.8 @${width}: summaries above readable supporting values; no horizontal overflow`, await page.evaluate(() =>
+    document.documentElement.scrollWidth <= innerWidth && [...document.querySelectorAll('.simple-card')].every(c => {
+      const s=c.querySelector('.simple-card-summary'), v=c.querySelector('.simple-card-value');
+      return s.getBoundingClientRect().bottom <= v.getBoundingClientRect().top + 1 &&
+        parseFloat(getComputedStyle(s).fontSize) >= 14 && parseFloat(getComputedStyle(v).fontSize) >= 12.5;
+    })));
+  for (const card of await page.locator('.simple-card').all()) {
+    await card.click();
+    ok(`v6.9.8 @${width}: interpretation opens the same three-bullet sheet`, await page.getByRole('dialog').locator('li').count() === 3);
+    await page.keyboard.press('Escape');
+    ok(`v6.9.8 @${width}: focus returns to the card`, await card.evaluate(c => c === document.activeElement));
+  }
+  ok(`v6.9.8 @${width}: no runtime errors`, errors.length === 0);
+  if (process.env.PATCH_SCREENSHOTS === '1') await page.screenshot({ path: `/tmp/macrodash-698-${width}.png` });
+  await page.close();
+}
 await browser.close();
 srv.close();
 console.log(`\n=== PUBLIC RENDER TEST: ${pass} passed, ${fail} failed ===`);

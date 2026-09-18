@@ -5,6 +5,20 @@ answers *"is it safe to be in the market?"* from live macro + market + sentiment
 data. Single-page React app on Cloudflare Pages, with live data assembled at the
 edge by Pages Functions and cached in KV.
 
+**v6.9.8 — Simple signals explain their meaning before their numbers.** The three cards
+lead with short stock-market interpretations from the canonical band's `cardSummary`,
+selected by the existing vote. A square replaces movement triangles; the interpretation
+replaces the redundant HELPING/HURTING tag. Supporting readings retain their actual data:
+10Y spells out its monthly change in percentage points; NFCI drops the unexplained SD
+suffix. The two-sided Hold sentence names the mixed stock outlook and the majority across
+all counted signals, within the existing 15-word budget. The footer explicitly says the
+displayed subset is not the full vote. Existing three-bullet sheets, exclusions, data
+freshness, thresholds, selection, Degen, API fundamentals and Worker remain unchanged.
+This owner-requested patch supersedes the older Simple triangle/strip-anatomy copy ruling.
+Verification: `npm run gates` with `REQUIRE_BROWSER=1` passes 2,599 smoke, 353 admin-browser,
+and 461 public-browser checks; production audit reports zero vulnerabilities. New browser
+checks cover interpretation, unit wording, layout and sheet/focus behavior at 320/390/768/1280px.
+
 **v6.9.7 — reconcile the older Simple/Degen draft against current main.** Based on
 `ee383cb` (v6.9.5), not the obsolete local v5.7.0 checkout. Main's compact Simple face,
 centered three-bullet FactSheet, shared terminal tokens, daily/weekly-shuffled spotlight,

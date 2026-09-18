@@ -328,10 +328,12 @@ export function simpleCards(ev, max = 3) {
     return {
       key: f.key, short: f.short,
       label: (band && band.plain) || f.label,       // plain-language parameter name
+      summary: band?.cardSummary?.[f.vote] || null,
       // Typed, not parsed. A factor whose metric cannot be read shows an explicit dash —
       // the card still names the parameter and its direction, and never invents a level.
       currentValue: (f.metric && f.metric.text) || "—",
       metricValue: (f.metric && f.metric.value) ?? null,
+      metricContext: f.metric?.context || null,
       direction: DIRECTION_OF[f.vote],
       why: (band && band.whyItMatters) || null,     // never fabricated if a band lacks one
       // FEAT-NEWCOMER-RULER (8/29): the band's own edges, restated for a reader with no

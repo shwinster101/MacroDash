@@ -11193,13 +11193,12 @@ console.log("\n[75] v6.0.1 — shape before text · toggle clarity · captions u
 {
   const code = (s) => s.replace(/\/\/[^\n]*|\/\*[\s\S]*?\*\//g, "");
   const spc = code(spcSrc), band = code(bandSrc), dash = code(dashSrc);
-  // (1a) The card's direction glyph is the SAME shape the hero chips and Drivers matrix use —
-  //      one vocabulary, read once. Reconciled against voteStyle, not retyped here.
-  ok("v6.0.1 / T1 shape: the card glyphs ARE voteStyle's glyphs (▲ bull · ▼ bear · • neutral) — one vocabulary, via simpleFace",
-    FACE_GLYPH.helping === voteStyle("bull").glyph && FACE_GLYPH.hurting === voteStyle("bear").glyph && FACE_GLYPH.mixed === voteStyle("neutral").glyph &&
+  // v6.9.8: Simple status markers must not imply movement of the adjacent metric.
+  ok("v6.9.8 Simple shape: all three statuses use a non-directional square via simpleFace",
+    Object.values(FACE_GLYPH).every((glyph) => glyph === "■") &&
     /cardFace\(c\)/.test(spc));
   ok("v6.0.1 shape: the glyph is rendered BEFORE the label on the card row, and the card wears a direction bar",
-    (() => { const g = spc.indexOf('className="simple-card-glyph"'), l = spc.indexOf("{face.label}</span>");
+    (() => { const g = spc.indexOf('className="simple-card-glyph"'), l = spc.indexOf("{c.summary || face.label}</span>");
       return g > 0 && l > g && /borderLeft: `3px solid \$\{tone\}`/.test(spc); })());
   // (1b) Freshness: a live/cached reading is a FILLED GREEN DOT (the strip's own dot since
   //      v3.62), stale amber, mock hollow — and the WORD leaves the face for the title +
@@ -12447,10 +12446,10 @@ console.log("\n[82] Simple FACE/TAP/FOLD remainder — registry, ≤15-word reas
   const allBull = holdReason({ withheld: false, regime: { label: "RISK-ON" }, factors: [row("vix", "bull"), row("nfci", "bull"), row("tenYear", "bull"), row("valuation", "bull"), row("fearGreed", "bull"), row("cpiHeadline", "bull")] });
   ok("T1 holdReason: withheld is null; a Hold states the split and that neither side has a majority; ≤15 words; 'fine'/'drag' retired",
     holdReason(null) === null && holdReason({ withheld: true }) === null && HOLD_REASON_MAX === 15 &&
-    mixed === "Volatility and credit help. Rates and prices hurt. Neither side has a majority." &&
+    mixed === "Mixed stock outlook. Neither side has a majority across the counted signals." &&
     allBull === "Volatility and credit support taking risk. Nothing tracked is pushing back." &&
     words(mixed).length <= HOLD_REASON_MAX && words(allBull).length <= HOLD_REASON_MAX &&
-    !/fine|drag/i.test(mixed + allBull) && /Volatility/.test(mixed) && /Rates/.test(mixed));
+    !/fine|drag/i.test(mixed + allBull) && /counted signals/.test(mixed));
   ok("T1 cardFace / sheetLead: glyph+label+value+tone only; sheetLead is the why sentence",
     JSON.stringify(cardFace({ direction: "helping", label: "volatility", currentValue: "15.84", why: "fear gauge" })) === JSON.stringify({ glyph: FACE_GLYPH.helping, label: "volatility", value: "15.84", tone: "helping" }) &&
     sheetLead({ why: "fear gauge" }) === "fear gauge" && sheetLead({}) === null);
@@ -12488,10 +12487,10 @@ console.log("\n[83] Simple altitude — fs-xxl Hold, fs-body sentence, one-block
      stays fs-body — the cards are the answer's evidence, one altitude above the strip, and the
      v6.5.4 hero → cards → strip scale is deliberate. The old sans/fs-m literals are pinned
      ABSENT so the pair cannot drift back, and no numeric fontSize survives in the file. */
-  ok("T7→v6.8.2: Simple cards wear the strip anatomy — value fs-body (kept), eyebrow mono fs-s, vote word mono fs-xs, no sans/fs-m pair, no numeric fontSize",
-    /className="simple-card-value" style=\{\{ fontFamily: T\.fontMono, fontSize: T\.fsBody, fontWeight: 600/.test(spc) &&
+  ok("v6.9.8 Simple cards: interpretation fs-l, reading fs-m, label fs-s; tokenized mono type",
+    /className="simple-card-value" style=\{\{ fontFamily: T\.fontMono, fontSize: T\.fsM, fontWeight: 600/.test(spc) &&
     /className="simple-card-label" style=\{\{ fontFamily: T\.fontMono, fontSize: T\.fsS, color: T\.textMuted/.test(spc) &&
-    /className="simple-card-vote" style=\{\{ fontFamily: T\.fontMono, fontSize: T\.fsXs, fontWeight: 700/.test(spc) &&
+    /className="simple-card-summary" style=\{\{ fontFamily: T\.fontMono, fontSize: T\.fsL/.test(spc) &&
     !/fontFamily: T\.fontSans/.test(spc) && !/fontSize:\s*\d/.test(spc));
   ok("v6.8.2: the card's ⓘ glyph is gone (the card IS the sheet trigger since v5.8) while the sr-only explainer promise stays — the strip's v6.8.1 rule, scoped to the cards now too",
     !/ⓘ/.test(spc) && /\{c\.explain && <span className="visually-hidden"> — what is this\? Opens an explainer\.<\/span>\}/.test(spc));
@@ -13061,8 +13060,8 @@ console.log("\n[copy-budget] v6.6.1 ONE ENGINE, TWO ALTITUDES — ≤25-word why
     face("RISK-OFF", [], ["valuation"]) === "Prices work against risk. Nothing tracked offsets that." &&
     face("RISK-OFF", ["vix", "nfci"], ["fearGreed"]) === "Sentiment works against risk. Volatility and credit don't offset that.");
   ok("[copy-budget] face, Hold: the split, larger side first, and the REASON for the Hold — neither side has a majority; one-sided reads 'still short of a majority'",
-    face("MIXED", ["vix", "nfci"], ["valuation"]) === "Volatility and credit help. Prices hurt. Neither side has a majority." &&
-    face("MIXED", ["vix"], ["tenYear", "valuation"]) === "Rates and prices hurt. Volatility helps. Neither side has a majority." &&
+    face("MIXED", ["vix", "nfci"], ["valuation"]) === "Mixed stock outlook. Neither side has a majority across the counted signals." &&
+    face("MIXED", ["vix"], ["tenYear", "valuation"]) === "Mixed stock outlook. Neither side has a majority across the counted signals." &&
     face("MIXED", ["vix", "nfci"], [], ["tenYear"]) === "Volatility and credit help; nothing tracked hurts. Still short of a majority." &&
     face("MIXED", [], ["valuation"], ["vix"]) === "Prices hurt; nothing tracked helps. Still short of a majority." &&
     face("MIXED", [], [], KEYS) === "Nothing we track has a clear lean." &&
@@ -13767,6 +13766,29 @@ console.log("\n[91] v6.9.5 — the daily rotation surfaced, the truncation named
   ok("v6.9.7 drivers: only tokenized type and no truncated evidence",
     !/fontSize:\s*\d/.test(drivers) && !/textOverflow|whiteSpace:\s*["']nowrap/.test(drivers) &&
     drivers.includes('className="driver-reading"') && drivers.includes('className="driver-date"'));
+}
+console.log("\n[v6.9.8] Simple interpretations preserve the existing votes");
+{
+  const { simpleCards } = await import('../src/evidence.js');
+  for (const band of REGIME_BAND_TABLE) {
+    for (const vote of ["bull", "bear", "neutral"]) {
+      const ev = { regime: { label: "MIXED" }, factors: [{ key: band.key, vote, excluded: false }] };
+      const cards = simpleCards(ev).cards;
+      ok(`v6.9.8 ${band.key}/${vote}: copy is selected from the canonical band, not re-voted`,
+        cards.length === 1 && cards[0].summary === band.cardSummary[vote] &&
+        typeof cards[0].summary === "string" && cards[0].summary.split(/\s+/).length <= 8);
+      ev.factors[0].excluded = true;
+      ok(`v6.9.8 ${band.key}/${vote}: excluded data cannot gain an interpretation`, simpleCards(ev).cards.length === 0);
+    }
+  }
+  ok("v6.9.8 monthly yield reading spells out direction and units from typed data",
+    cardFace({ key: "tenYear", metricValue: 0.23, metricContext: "4.94%" }).value === "4.94% · up 0.23 percentage points this month" &&
+    cardFace({ key: "tenYear", metricValue: -0.22 }).value === "down 0.22 percentage points this month" &&
+    cardFace({ key: "tenYear", metricValue: 0 }).value === "unchanged this month" &&
+    cardFace({ key: "tenYear", metricValue: NaN }).value === "—");
+  ok("v6.9.8 NFCI keeps its number, not unexplained SD notation or a fabricated zero",
+    cardFace({ key: "nfci", metricValue: -0.56 }).value === "-0.56" &&
+    cardFace({ key: "nfci", metricValue: null }).value === "—");
 }
 console.log(`\n=== SMOKE TEST: ${pass} passed, ${fail} failed ===`);
 process.exit(fail === 0 ? 0 : 1);
