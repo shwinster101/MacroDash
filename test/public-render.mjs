@@ -21,6 +21,12 @@
 import http from "node:http";
 import { readFileSync, readdirSync, existsSync, statSync } from "node:fs";
 import { extname, join } from "node:path";
+/* Slice 1 (public terminal skin): colour pins READ the token module instead of restating hex.
+   The bridge moved green/bg/text-secondary to the terminal's values and six pins that had
+   copied the old hex went red for the wrong reason — a pin should measure that the page wears
+   the TOKEN, not that the token still has last year's value. */
+import { DT } from "../src/design-tokens.js";
+const tokRgb = (name) => { const n = parseInt(DT[name].slice(1), 16); return `rgb(${n >> 16}, ${(n >> 8) & 255}, ${n & 255})`; };
 
 const DIST = new URL("../dist/", import.meta.url);
 const PORT = 8793;
@@ -662,8 +668,15 @@ console.log("\n[public] v3.94 — Simple default, the toggle, persistence, red f
      trap — and the negative control for this fix found exactly that on the alert badge). */
   {
     const pbody = await page.locator("body").innerText();
-    ok("v5.9 chrome contrast: Degen shows what Simple sheds — the wordmark echo and the OPS menu",
-      (await page.locator(".sub-wordmark").count()) === 1 && /⋯ OPS/.test(pbody));
+    // Slice 1 (public terminal skin): the wordmark echo is deleted in BOTH modes (one identity)
+    // and the OPS menu became ⋯ MORE — the contrast this pin exists for is that Degen carries
+    // the disclosure Simple does not, and that the disclosure actually holds SHARE.
+    ok("v5.9 chrome contrast: Degen shows what Simple sheds — the ⋯ MORE disclosure (no echo in either mode)",
+      // at phone width the MORE word collapses to its glyph, so the disclosure is read by its
+      // accessible name, not by innerText.
+      (await page.locator(".sub-wordmark").count()) === 0 && (await page.locator("details.hdr-ops").count()) === 1 &&
+      (await page.locator('details.hdr-ops summary[aria-label^="More"]').count()) === 1 && !/⋯ OPS/.test(pbody) &&
+      (await page.locator('details.hdr-ops button[aria-label="Copy dashboard link"]').count()) === 1);
     const tape = await page.locator(".spy-tape-mobile").textContent();
     ok("v6.4 tape: Degen labels SPY's session move without borrowing moon vocabulary",
       /(TODAY|LAST) SPY\s*FLAT/.test(tape || "") &&
@@ -1424,6 +1437,10 @@ console.log("\n[public] wave 16 — share failure reverts to idle, silently");
   await page.evaluate(() => {
     navigator.clipboard.writeText = () => Promise.reject(new Error("denied"));
   });
+  // Slice 1 (public terminal skin): SHARE rides inside Degen's ⋯ MORE disclosure now, so the
+  // menu is opened first — the click that follows is the same real click as before.
+  await page.locator("details.hdr-ops summary").click();
+  await page.waitForTimeout(120);
   const share = page.locator("button", { hasText: "⤴ SHARE" });
   await share.click();
   await page.waitForTimeout(300);
@@ -1459,8 +1476,8 @@ console.log("\n[public] wave-17 fix — strip F&G color derives from the band vo
     // v6.3: the tile's last child is the sheet button now; the sub-line carries its own class.
     return getComputedStyle(cell.querySelector(".strip-sub")).color;
   });
-  ok("fix: a NEUTRAL F&G (45) renders the neutral grey on the strip, not bearish red",
-    col === "rgb(136, 146, 164)");
+  ok("fix: a NEUTRAL F&G (45) renders the neutral grey (text-secondary) on the strip, not bearish red",
+    col === tokRgb("text-secondary"));
   await page.locator('button[aria-label="Show regime factors"]').click();   // v3.94: chips in the panel
   await page.waitForTimeout(150);
   const chips = await page.locator('[aria-label="Macro backdrop verdict"]').innerText();
@@ -1477,7 +1494,7 @@ console.log("\n[public] wave-17 fix — strip F&G color derives from the band vo
     return getComputedStyle(cell.querySelector(".strip-sub")).color;   // v6.3: by class (see above)
   });
   ok("fix control: a genuine greed reading (62, bull) still renders green — no over-correction",
-    col === "rgb(46, 204, 113)");
+    col === tokRgb("green"));
   await page.close();
 }
 
@@ -1607,7 +1624,8 @@ console.log("\n[public] v6.0.1/v6.4 — shape before text · Simple|Degen clarit
     publicCall: frozenHodl, publicCallFrozen: true, publicCallCapturedAt: `${TODAY}T14:00:00.000Z` });
   await page.waitForTimeout(1300);
   const rgb = (hex) => { const n = parseInt(hex.slice(1), 16); return `rgb(${n >> 16}, ${(n >> 8) & 255}, ${n & 255})`; };
-  const GREEN = rgb("#2ecc71"), AMBER = rgb("#f0a500");
+  // Slice 1: derived from the tokens (green is the terminal's phosphor now; the toggle fill is green).
+  const GREEN = tokRgb("green"), BG = tokRgb("bg");
   /* (1) SHAPE BEFORE TEXT on the cards. The direction glyph is the FIRST child of the card's
      first row and carries the direction colour; the freshness is a filled green DOT for a
      cached reading; the word "cached" is no longer VISIBLE on the face (it survives for a
@@ -1654,8 +1672,10 @@ console.log("\n[public] v6.0.1/v6.4 — shape before text · Simple|Degen clarit
   const tog = await page.evaluate(() => [...document.querySelectorAll('[role="group"][aria-label="View mode"] button')].map((b) => ({
     txt: b.innerText.trim(), pressed: b.getAttribute("aria-pressed"), bg: getComputedStyle(b).backgroundColor,
     color: getComputedStyle(b).color, label: b.getAttribute("aria-label"), title: b.getAttribute("title") })));
-  ok("v6.4 toggle: Simple is pressed and FILLED amber with dark text; Degen is transparent — legible at a glance",
-    tog.length === 2 && tog[0].pressed === "true" && tog[0].bg === AMBER && tog[0].color === rgb("#08090b") &&
+  // Slice 1 (public terminal skin): the fill is the terminal's phosphor green, not amber — the
+  // v6.0.1 contract (a FILL with dark text, legible at a glance) is what this pin measures.
+  ok("v6.4/Slice 1 toggle: Simple is pressed and FILLED phosphor green with dark text; Degen is transparent — legible at a glance",
+    tog.length === 2 && tog[0].pressed === "true" && tog[0].bg === GREEN && tog[0].color === BG &&
     tog[1].pressed === "false" && tog[1].bg === "rgba(0, 0, 0, 0)");
   ok("v6.0.1 toggle: each half leads with a shape and states what the mode SHOWS in its name and tooltip",
     /^○\s*Simple$/.test(tog[0].txt) && /^◉\s*Degen$/.test(tog[1].txt) &&
@@ -1667,9 +1687,10 @@ console.log("\n[public] v6.0.1/v6.4 — shape before text · Simple|Degen clarit
   ok("T2 captions (Simple): the face sheds the frozen eyebrow; capture clock is one tap deep",
     !/10am call · frozen/i.test(face) && !/frozen 10am call · captured/.test(face) &&
     /Hold/.test(face));
-  ok("T8 hero: Simple has no ℹ — copy is 13px on the Hold row; Hold ⓘ is the clock",
+  // Slice 1: fs-l lifted 13 -> 14 (the terminal's floor); the pin reads the token, not the literal.
+  ok("T8 hero: Simple has no ℹ — copy is fs-l on the Hold row; Hold ⓘ is the clock",
     (await page.locator('button[aria-label="Show regime factors"]').count()) === 0 &&
-    await page.locator('button[aria-label="Copy MacroDash posture card"]').evaluate((n) => getComputedStyle(n).fontSize) === "13px");
+    await page.locator('button[aria-label="Copy MacroDash posture card"]').evaluate((n) => getComputedStyle(n).fontSize) === `${DT["fs-l"]}px`);
   await page.locator(".simple-hold").click();
   await page.waitForTimeout(200);
   const cap = await page.locator('[role="dialog"]').innerText();
@@ -1728,8 +1749,9 @@ console.log("\n[public] v6.0.1/v6.4 — shape before text · Simple|Degen clarit
       cardText: value ? value.textContent.trim() : null,
     };
   });
-  ok(`T7 type (Simple): Hold is 28px, card values 16px, labels 11px (measured hold=${typePx.hold} value=${typePx.card} label=${typePx.label} «${typePx.holdText}» «${typePx.cardText}»)`,
-    typePx.hold === "28px" && typePx.card === "16px" && typePx.label === "11px");
+  // Slice 1: the label reads fs-m, lifted 11 -> 12.5 by the token bridge (the terminal's floor).
+  ok(`T7 type (Simple): Hold is 28px, card values 16px, labels fs-m (measured hold=${typePx.hold} value=${typePx.card} label=${typePx.label} «${typePx.holdText}» «${typePx.cardText}»)`,
+    typePx.hold === "28px" && typePx.card === "16px" && typePx.label === `${DT["fs-m"]}px`);
   ok("T9 header (Simple): Wordmark + Simple|Degen — Terminal and Share are not wrapping peers",
     (await page.locator('a[aria-label="Open Ticker Terminal"]').count()) === 0 &&
     (await page.locator("header button[aria-label='Copy dashboard link']").count()) === 0 &&
@@ -1742,8 +1764,8 @@ console.log("\n[public] v6.0.1/v6.4 — shape before text · Simple|Degen clarit
   ok("v6.4 captions (Degen): the frozen-call line stays on the face — accessible without a tap",
     new RegExp(`frozen 10am call · captured 10:00 ET · ${TODAY}`).test(pface) &&
     (await page.locator('[aria-label="Macro backdrop verdict"] .call-caption').count()) === 0);
-  ok("v6.4 toggle (Degen): the fill follows the choice — Degen is now the amber half",
-    (await page.locator('button[aria-pressed="true"]').evaluate((n) => [n.innerText.replace(/\s+/g, " ").trim(), getComputedStyle(n).backgroundColor].join("|"))) === `◉ Degen|${AMBER}`);
+  ok("v6.4/Slice 1 toggle (Degen): the fill follows the choice — Degen is now the green half",
+    (await page.locator('button[aria-pressed="true"]').evaluate((n) => [n.innerText.replace(/\s+/g, " ").trim(), getComputedStyle(n).backgroundColor].join("|"))) === `◉ Degen|${GREEN}`);
   await page.close();
 }
 
@@ -2257,6 +2279,96 @@ console.log("\n[public] T2–T6 — Simple face sheds clock, rulers, coverage, l
     /run-rate/i.test(degenBody) && /LEARNING MOMENT/.test(degenBody) &&
     /\$70\.1B/.test(degenBody) && /MARKET CAP/i.test(degenBody));
   ok("T2–T6: no page errors", errors.length === 0);
+  await page.close();
+}
+
+// ── PUBLIC TERMINAL SKIN, Slice 1 (docs/plans/public-terminal-skin.md) — acceptance, driven ──
+// Items 1, 2, 4 and 6 of the plan's acceptance list, measured on the real page at 390px. Item 3
+// (zero fontSize under 10px) is Slice 2's — the token FLOOR moved here, the literals did not, and
+// claiming it now would be the label-outlives-its-data defect in reverse.
+console.log("\n[public] Slice 1 — one terminal skin: same header, same typeface, same surfaces in both modes");
+{
+  const { page, errors } = await open({ live: FULL_LIVE, width: 390, power: false, route: "/?view=public" });
+  await page.waitForTimeout(1300);
+  const readHdr = () => page.evaluate(() => {
+    const h = document.querySelector("header"), w = document.querySelector(".wordmark"), b = document.body;
+    const cs = (n) => getComputedStyle(n);
+    return { h: Math.round(h.getBoundingClientRect().height), rows: h.getBoundingClientRect().height,
+      wordFont: cs(w).fontFamily, wordColor: cs(w).color, wordSize: cs(w).fontSize, bodyFont: cs(b).fontFamily,
+      bg: cs(document.querySelector('[role="main"]')).backgroundColor,
+      hdrBg: cs(h).backgroundColor, overflow: document.documentElement.scrollWidth <= window.innerWidth + 1 };
+  });
+  const simpleHdr = await readHdr();
+  const simpleBody = await page.locator("body").innerText();
+  ok("Slice 1 (1): Simple first screen — wordmark, clock, toggle, Hold, one sentence, three cards, strip; no SHARE/OPS/nav/COPY row",
+    /MacroDash/.test(simpleBody) && /Markets (open|closed)|Before markets open/.test(simpleBody) &&
+    (await page.locator('[role="group"][aria-label="View mode"] button').count()) === 2 &&
+    (await page.locator(".simple-card").count()) === 3 &&
+    !/⤴ SHARE|⋯ OPS|⋯ MORE|⌁ TERMINAL|COPY LIVE READ/.test(simpleBody) &&
+    (await page.locator('nav[aria-label="Sections"]').count()) === 0 &&
+    (await page.locator("details.hdr-ops").count()) === 0);
+  ok(`Slice 1: the Simple header is one row (measured ${simpleHdr.h}px) with no horizontal overflow`,
+    simpleHdr.h <= 64 && simpleHdr.overflow);
+  await page.locator("button", { hasText: "Degen" }).click();
+  await page.waitForTimeout(600);
+  // A first visit to Degen shows the dismissible introduction note under the nav (v6.4). It is
+  // a one-time banner, not chrome: dismiss it the way a reader would before measuring.
+  await page.locator('button[aria-label="Dismiss Degen introduction"]').click();
+  await page.waitForTimeout(200);
+  const degenHdr = await readHdr();
+  const degenBody = await page.locator("body").innerText();
+  ok(`Slice 1 (2): the Degen header is the SAME height as Simple ±8px (measured ${simpleHdr.h} vs ${degenHdr.h}) — a mode switch does not grow the header`,
+    Math.abs(degenHdr.h - simpleHdr.h) <= 8 && degenHdr.overflow);
+  ok("Slice 1 (2): in Degen the call is still the first thing under the header + one nav strip (nav ≤ 48px, verdict directly below it)",
+    await page.evaluate(() => {
+      const h = document.querySelector("header").getBoundingClientRect(), n = document.querySelector('nav[aria-label="Sections"]').getBoundingClientRect(),
+        v = document.querySelector('[aria-label="Macro backdrop verdict"]').getBoundingClientRect();
+      return Math.round(n.top) === Math.round(h.bottom) && n.height <= 48 && Math.abs(Math.round(v.top) - Math.round(n.bottom)) <= 2; }));
+  ok("Slice 1 (4): Simple → Degen does not change typeface, background, or wordmark treatment",
+    simpleHdr.wordFont === degenHdr.wordFont && simpleHdr.wordColor === degenHdr.wordColor && simpleHdr.wordSize === degenHdr.wordSize &&
+    simpleHdr.bodyFont === degenHdr.bodyFont && simpleHdr.bg === degenHdr.bg && simpleHdr.hdrBg === degenHdr.hdrBg &&
+    /IBM Plex Mono/.test(simpleHdr.wordFont) && simpleHdr.wordColor === tokRgb("amber") && simpleHdr.bg === tokRgb("bg"));
+  ok("Slice 1: ONE family on the page — no element on either mode's first screen asks for Syne or DM Sans",
+    await page.evaluate(() => ![...document.querySelectorAll("header *, [aria-label='Macro backdrop verdict'] *, .macro-strip *")]
+      .some((n) => /Syne|DM Sans/.test(getComputedStyle(n).fontFamily))));
+  ok("Slice 1 (6): public Degen — ⋯ MORE holds SHARE and the provenance chip, and NO exports; no TERMINAL, no OPS, no book",
+    (await page.locator("details.hdr-ops").count()) === 1 &&
+    (await page.locator('details.hdr-ops button[aria-label="Copy dashboard link"]').count()) === 1 &&
+    (await page.locator('details.hdr-ops button[aria-label="Copy MacroDash daily call"]').count()) === 0 &&
+    !/⌁ TERMINAL|⋯ OPS|MY CONVICTION/.test(degenBody) && (await page.locator('a[aria-label="Open Ticker Terminal"]').count()) === 0);
+  ok("Slice 1: the selected toggle half is the phosphor fill with dark text in Degen too — one 'this is on' signal",
+    (await page.locator('button[aria-pressed="true"]').evaluate((n) => getComputedStyle(n).backgroundColor)) === tokRgb("green"));
+  // VISIBLE leaves only: the provenance chip inside the closed MORE disclosure is a primitive
+  // whose 9px literal is Slice 2's (it renders on every tile). Chromium keeps a layout box for a
+  // closed <details>' content (content-visibility), so "has a box" does not exclude it — the
+  // filter skips closed-details content explicitly while still counting the summary itself.
+  ok("Slice 1: every VISIBLE header leaf — wordmark, clock, toggle, MORE — reads at the terminal floor (≥10px)",
+    await page.evaluate(() => [...document.querySelectorAll("header *")].filter((n) => {
+        if (n.children.length || !n.textContent.trim() || n.getBoundingClientRect().height === 0) return false;
+        const d = n.closest("details"); return !(d && !d.open && !n.closest("summary")); })
+      .every((n) => parseFloat(getComputedStyle(n).fontSize) >= 10)));
+  ok("Slice 1: no page errors across the mode switch", errors.length === 0);
+  await page.close();
+}
+// The operator route at phone width: TERMINAL + toggle + MORE beside the wordmark still fit ONE row.
+{
+  const { page, errors } = await open({ live: FULL_LIVE, width: 375, power: true, route: "/" });
+  await page.waitForTimeout(1300);
+  // This fixture BLINDS one alert (no 30Y), so the ⚡ badge renders and the operator header is
+  // allowed its one wrap: the badge + toggle + TERMINAL + MORE beside the wordmark measured the
+  // brand down to 30px ("Ma…") on one row. A red fact earns a row; the wordmark keeps its name.
+  ok("Slice 1 (operator @375): no overflow, 44px TERMINAL/MORE glyph targets, the wordmark NOT truncated, and the badge is what costs the second row",
+    await page.evaluate(() => {
+      const h = document.querySelector("header").getBoundingClientRect();
+      const t = document.querySelector('a[aria-label="Open Ticker Terminal"]').getBoundingClientRect();
+      const m = document.querySelector("details.hdr-ops summary").getBoundingClientRect();
+      const w = document.querySelector(".wordmark");
+      const badge = [...document.querySelectorAll("header .hdr-acts *")].some((n) => /FIRED|BLIND/.test(n.textContent));
+      return document.documentElement.scrollWidth <= window.innerWidth + 1 &&
+        t.height >= 44 && t.width >= 44 && m.height >= 44 && m.width >= 44 &&
+        w.scrollWidth <= w.clientWidth + 1 &&
+        (badge ? h.height <= 120 : h.height <= 64);
+    }) && errors.length === 0);
   await page.close();
 }
 

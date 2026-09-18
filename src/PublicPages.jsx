@@ -7,7 +7,7 @@ const mono={fontFamily:T.fontMono};
 
 function PageShell({ title, eyebrow, children }) {
   return <main style={{minHeight:"100vh",background:T.bg,color:T.textPrimary,fontFamily:T.fontSans,padding:"env(safe-area-inset-top) max(20px,env(safe-area-inset-right)) 48px max(20px,env(safe-area-inset-left))"}}>
-    <style>{`@import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;700&family=DM+Sans:wght@400;500;600&family=Syne:wght@700;800&display=swap');*{box-sizing:border-box}body{margin:0;background:${T.bg}}a:focus-visible,button:focus-visible,summary:focus-visible{outline:2px solid ${T.amber};outline-offset:3px}.md-page{max-width:920px;margin:0 auto}.md-flow{display:grid;grid-template-columns:repeat(5,1fr);gap:8px}@media(max-width:700px){.md-flow{grid-template-columns:1fr}.md-flow-arrow{transform:rotate(90deg)}}`}</style>
+    <style>{`@import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;700&display=swap');*{box-sizing:border-box}body{margin:0;background:${T.bg}}a:focus-visible,button:focus-visible,summary:focus-visible{outline:2px solid ${T.amber};outline-offset:3px}.md-page{max-width:920px;margin:0 auto}.md-flow{display:grid;grid-template-columns:repeat(5,1fr);gap:8px}@media(max-width:700px){.md-flow{grid-template-columns:1fr}.md-flow-arrow{transform:rotate(90deg)}}`}</style>
     <div className="md-page">
       <header style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:12,flexWrap:"wrap",padding:"12px 0 24px",borderBottom:`1px solid ${T.border}`}}>
         <a href="/" style={{...mono,fontSize:20,fontWeight:800,color:T.amber,textDecoration:"none"}}>MacroDash</a>

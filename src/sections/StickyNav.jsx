@@ -44,7 +44,10 @@ const StickyNav=()=>{
   return(
     <nav aria-label="Sections" style={{background:T.surface,borderBottom:`1px solid ${T.border}`,position:"sticky",top:"env(safe-area-inset-top)",zIndex:40}}>
       {/* Row form (>320px) */}
-      <div className="nav-row" style={{display:"flex",gap:2,overflowX:"auto",padding:"4px 16px"}}>{links}</div>
+      {/* Slice 1 (public terminal skin): a single strip, not a second header — no vertical
+          padding of its own; the links carry the height (44px thumb targets at ≤480px, the
+          v3.62 rule, which is why the strip measures ~45px on a phone and not the plan's 36). */}
+      <div className="nav-row" style={{display:"flex",gap:2,overflowX:"auto",padding:"0 12px"}}>{links}</div>
       {/* Hamburger form (≤320px, Req 6.4) — native disclosure, CSS-switched, no JS needed */}
       <details className="nav-burger" style={{display:"none",padding:"4px 16px"}}>
         <summary aria-label="Sections menu" style={{fontFamily:T.fontMono,fontSize:T.fsM,color:T.textSecondary,cursor:"pointer",listStyle:"none",padding:"6px 4px",minHeight:32,display:"flex",alignItems:"center",gap:6}}>☰ SECTIONS</summary>

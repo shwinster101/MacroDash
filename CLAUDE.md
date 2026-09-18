@@ -5,6 +5,80 @@ answers *"is it safe to be in the market?"* from live macro + market + sentiment
 data. Single-page React app on Cloudflare Pages, with live data assembled at the
 edge by Pages Functions and cached in KV.
 
+**v6.8.0 "PUBLIC TERMINAL SKIN, Slice 1" — the token bridge and the one-row header (PR #49's
+plan, `docs/plans/public-terminal-skin.md`; owner: "build Slice 1 tokens + header, nothing
+else").** The 2026-09-17 screenshots proved two products, not two altitudes: Simple was gold
+fintech (Syne wordmark, DM Sans sentence), Degen was operator debris glued onto it (four rows
+of chrome before the call), and the Ticker Terminal had already solved the Bloomberg language
+that public never inherited. This bridges the PUBLIC tokens to the terminal's and puts both
+modes on one header. **Nothing below the header moved** — no component restyle, no threshold,
+no vote, no copy; `RegimeBand`, `SimpleCards`, `MacroStrip` and `StockSpotlight` are byte-
+unchanged and simply paint with the new tokens.
+**Tokens (`src/design-tokens.js`), RECONCILED not restated.** Surfaces → the terminal's
+`--bg/--panel/--panel2/--line` (`#05070a · #0a0f16 · #0d141d · #16202c`); green → the
+phosphor `#39ff9e` (helping · live dots · selected state); text → `--fg/--dim` (`#c8d6cf ·
+#8aa0b4 · #71877b`); the type FLOOR → `10 / 11 / 12.5 / 14` (fs-body 16, fs-xl 22, fs-xxl 28
+unchanged). Smoke [88] reads those values out of `admin.html`'s `:root` at test time, so a
+terminal palette or floor change turns the public bridge red until someone decides whether the
+public page follows — the SOURCES/DERIVED_OF convention applied to a palette. Amber stays
+`#f0a500` as the brand accent (wordmark + alerts) so public is not a clone of `/admin.html`;
+**red is deliberately untouched** — the plan names surfaces, green, text and type, and every
+stoplight red on the page is a verdict colour the render suites read. **ONE family:**
+`font-sans` and `font-display` survive as names (38 call sites and the T7 pins read them as the
+Simple/Degen split) but both resolve to the mono stack; Syne and DM Sans leave both public
+`@import`s, pinned ABSENT. Contrast is COMPUTED on the new surfaces (muted ≥4.5 on bg and
+surface, primary ≥7, bg-on-green ≥4.5 for the pressed toggle), never trusted from a comment.
+**No scanline, no glow** — the plan's own review correction: Simple must not wear the CRT, and
+Degen's version waits until this slice is seen; pinned absent.
+**The header (`src/dashboard.jsx`).** One row, both modes: an identity column (mono amber
+wordmark with tracking, the clock beneath at `fs-xs`) that can SHRINK, and a nowrap action
+group — ERROR badge (red fact, both modes), FIRED/BLIND (operator, Degen), the Simple|Degen
+toggle, TERMINAL (operator, Degen), and **`⋯ MORE`**, Degen's ONE disclosure on both routes
+holding the provenance chip, SHARE, and — operator only — the clipboard exports the `⋯ OPS` menu
+used to hold. The pressed toggle half is the **phosphor fill** with dark text (terminal "this is
+on"), not the gold slab that fought the Hold tint beside it. The lowercase `macrodash` echo is
+deleted, not hidden. At ≤480px the gutters drop to 12px and TERMINAL/MORE collapse to their
+glyphs inside their 44px targets (aria-label and title carry the names) — measured, because
+the words alone overflowed the OPERATOR route at 375/390 by ~44px. **The public header never
+wraps; the operator route may wrap once, and only a FIRED/BLIND badge ever makes it** — on a
+375px operator phone that badge + toggle + TERMINAL + MORE measured the wordmark down to 30px
+("Ma…"), and a red fact earns a row before the brand gives up its name (pinned: the badge
+present → header ≤120, absent → ≤64, the wordmark never truncated). The section nav loses its
+own vertical padding: one strip whose 44px links carry the height (~45px on a phone, not the
+plan's 36 — the v3.62 thumb-target rule wins over a number in a plan).
+**Measured, phone 390×844, fixture tape:** header **59px in BOTH modes** (was 63 Simple /
+118 Degen); Degen's verdict begins at **y=104** (was 171) and the first market number at
+**510** (was 563); Simple's first screen is unchanged in structure (cards 178, strip 418).
+Sub-11px words: Simple 125→115 of 200, Degen 1,061→881 of 1,257 — the token FLOOR moved, the
+~145 sub-12px LITERALS did not, so **acceptance item 3 ("zero fontSize below 10px") is
+explicitly NOT claimed by this slice**; it is Slice 2's real-estate pass. Items 1, 2, 4, 6 are
+DRIVEN in the public suite: the Simple first screen's contents with no SHARE/OPS/nav/COPY row,
+the Degen header within ±8px of Simple's with the call directly under one nav strip, the
+typeface/background/wordmark identical across a REAL mode switch, and public Degen carrying
+MORE with SHARE and the chip but no exports, no TERMINAL, no OPS, no book.
+**Fifteen pins re-pinned, each with the reason at the pin, none quietly loosened:** the
+header wrap/direction and the echo's media rule (A2), the safe-area padding literal, the OPS
+gate (the disclosure is public now; the EXPORTS inside carry the `!publicView` gate the pin
+exists for), the ERROR-badge placement (on the bar in BOTH modes), the toggle fill colour in
+smoke and twice in the browser, the T7 label size (11→12.5) and the T8 copy size (13→14), and
+six browser pins that had copied the OLD hex — they now read `DT` through a `tokRgb` helper,
+because a pin should measure that the page wears the TOKEN, not that the token still has last
+year's value. The share-failure scenario opens MORE before clicking SHARE (the real click is
+unchanged). Found by the suite, not by reading: the first cut hid the MORE word at phone width
+and the contrast pin then read the disclosure by innerText — re-pinned on its accessible name.
+Two of my own new pins were wrong on their first run and are recorded rather than quietly
+fixed: the "call directly under the nav" pin measured with the first-visit Degen notice still
+open (dismissed the way a reader would, then measured), and the "≥10px header" pin caught the
+9px chip inside the CLOSED disclosure because Chromium keeps a layout box for closed-details
+content — a height check does not exclude it; the filter now skips closed-details content
+explicitly while still counting the summary.
+Tests: **2519 smoke** (+12, section [88]) + 335 render (admin.html untouched) + **367
+public-render** (+11, driven live in Chromium) + `audit:prod` clean.
+**Deliberately NOT done (the plan's own Slice 3):** no strip/card/hero/spotlight restyle, no
+literal-by-literal type lift, no max-width container, no `/admin.html` change, no CLAUDE.md
+design-system rewrite. Baseline measurements that motivated the order are in
+`working/2026-09-18-public-ui-baseline.md`.
+
 **v6.7.3 — the server RECEIPT's own verdict, married beside the ladder's own (owner follow-up
 after v6.7.2's retraction: "have the ladder render the server receipt's verdict beside its own
 for the eligible candidates — married, never merged, the way `spreadLine` already does").** The

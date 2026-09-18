@@ -168,7 +168,39 @@ What dilutes it:
 
 ## Outcomes
 
-Review pass only; nothing shipped. Gates were not re-run because no source changed. The
-probe was a scratch script (not committed) reusing the public suite's fixture and stub;
-it should be folded into `test/public-render.mjs` as a census pin only if a later pass
-sets budgets for it. Corrections to this survey, if any, go below this line.
+Review pass first (commit `45f8c91`, nothing shipped). Then, same day, the owner brought PR #49
+(`docs/plans/public-terminal-skin.md`) and asked for **Slice 1 only: tokens + header**. Shipped
+as **v6.8.0** on this branch; the CLAUDE.md entry carries the full record.
+
+**What Slice 1 changed, against the numbers above (same probe, same fixture, 390×844):**
+
+| Metric | Baseline | After Slice 1 |
+|---|---|---|
+| Header height, Simple / Degen | 63 / 118 | **59 / 59** |
+| Degen verdict top | 171 | **104** |
+| Degen first market number | 563 | **510** |
+| Simple cards top / strip top | 182 / 420 | 178 / 418 |
+| Words under 11px, Simple | 125 of 200 | 115 of 200 |
+| Words under 11px, Degen | 1,061 of 1,256 | 881 of 1,257 |
+| Font families on the public page | 3 | 1 |
+
+**Corrections to the survey, recorded rather than edited away:**
+- §3 called the recharts serif leak "one leak" to fix; it was NOT touched in Slice 1 (the
+  plan's "nothing else"). It stands as a Slice 2 item.
+- §9 finding 1 ("type scale adoption stopped at the hero") is only half addressed: the
+  token FLOOR moved (fs-xs 10 · fs-s 11 · fs-m 12.5 · fs-l 14), the ~145 literals did not.
+  The Degen sub-11px share fell from 84% to 70% on token consumers alone.
+- The plan's "nav as a single 36px strip" was implemented as ~45px: the 44px thumb-target
+  rule (v3.62) is a repo invariant and beats a number in a plan; the strip lost its own
+  padding, which is the part that mattered.
+- The header "one row" needed a phone-width detail the plan did not anticipate: on the
+  OPERATOR route TERMINAL + toggle + MORE overflowed 375/390 by ~44px, so the two words
+  collapse to their glyphs (⌁ · ⋯) inside 44px targets at ≤480px.
+
+- The plan's "same header height ±8px" holds on the PUBLIC route in both modes (59/59). On
+  the OPERATOR route a FIRED/BLIND badge is allowed to wrap the header to a second row rather
+  than truncate the wordmark to "Ma…" at 375px; the public contract is untouched.
+
+Gates at ship: 2519 smoke · 335 render · 367 public-render · audit:prod clean.
+The probe remains a scratch script; the acceptance items it measured are now pinned in
+`test/public-render.mjs` (Slice 1 section), so the header heights cannot drift back.

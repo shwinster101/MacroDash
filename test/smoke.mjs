@@ -4624,12 +4624,19 @@ ok("A1: the canonical headline never carries a context-only SPY day move",
   // Re-anchored on the row-11 copy; the old "usable factors bullish" phrase is retired.
   !/— SPY/.test(fw.headline) && /counted signals lean bullish/.test(fw.headline));
 // A2: the 320px contract — identity group may shrink, actions may wrap, wordmark yields first.
-ok("A2: header groups can shrink; Simple nowraps the action row, Degen still wraps",
-  /minWidth:0/.test(dashSrc) &&
-  /flexWrap:simple\?"nowrap":"wrap"/.test(dashSrc) &&
-  /flexDirection:simple\?"column":"row"/.test(dashSrc));
-ok("A2: the duplicate lowercase wordmark hides below 360px",
-  /@media\(max-width:359px\)\{\.sub-wordmark\{display:none;\}\}/.test(dashSrc));
+/* Slice 1 (public terminal skin, docs/plans/public-terminal-skin.md): RE-PINNED. The header
+   is ONE row in BOTH modes now — the identity column shrinks (minWidth:0, the clock line
+   ellipsizes) and the action group never wraps, because "a mode switch must not grow the
+   header" is the contract. The old pin blessed Degen wrapping to four rows. */
+ok("A2/Slice 1: the identity column shrinks and the action row nowraps in BOTH modes",
+  /className="hdr-id" style=\{\{display:"flex",flexDirection:"column",gap:2,minWidth:0/.test(dashSrc) &&
+  /className="hdr-acts" style=\{\{display:"flex",alignItems:"center",gap:6,flexWrap:"nowrap"/.test(dashSrc) &&
+  !/flexWrap:simple\?"nowrap":"wrap"/.test(dashSrc));
+/* Slice 1: the lowercase wordmark ECHO is gone (one identity), so its ≤359px hiding rule went
+   with it. Pinned ABSENT — a retired element quietly reappearing is the v3.85 defect. */
+ok("Slice 1: the duplicate lowercase wordmark and its media rule are ABSENT",
+  !/sub-wordmark/.test(dashSrc.replace(/\/\/[^\n]*|\/\*[\s\S]*?\*\//g, "").replace(/\{\/\*[\s\S]*?\*\/\}/g, "")) &&
+  !/>macrodash</.test(dashSrc));
 // A3: browser suites fail rather than skip under CI's flag; both routes are covered.
 ok("A3: both browser suites honor REQUIRE_BROWSER=1 (skip becomes a failure)",
   /REQUIRE_BROWSER === "1"/.test(readSrc("../test/public-render.mjs")) &&
@@ -4809,8 +4816,10 @@ ok("share: Messages has an explicit M icon instead of the Cloudflare Pages fallb
   manifest.icons.some(({src, type}) => src === "/macrodash-icon-180.png" && type === "image/png"));
 ok("glance: index.html still ships viewport-fit=cover (the env() half depends on it)",
   /viewport-fit=cover/.test(indexSrc));
-ok("glance: the header pads for the island — calc(8px + env(safe-area-inset-top))",
-  dashSrc.includes('padding:"calc(8px + env(safe-area-inset-top)) 20px 8px"'));
+// Slice 1 (public terminal skin): the header is one row with 6px/16px padding now — the
+// env() half is what this pin exists for, and it is unchanged.
+ok("glance: the header pads for the island — calc(6px + env(safe-area-inset-top))",
+  dashSrc.includes('padding:"calc(6px + env(safe-area-inset-top)) 16px 6px"'));
 ok("glance: the sticky nav offsets below the island with an opaque scrim over the strip " +
    "(padding the nav instead would render a permanent inset-height band when not stuck)",
   navSrc.includes('top:"env(safe-area-inset-top)"') &&
@@ -4968,7 +4977,13 @@ ok("glance: operator tooling gates on !publicView — TT copy in the menu, TERMI
     // v5.9: the menu is ALSO Simple-gated — its one entry is an operator export, and the
     // beginner read found it renting a word on the first screen with no job there. The
     // !publicView contract this pin exists for is unchanged and still measured.
-    return /\{!simple&&!publicView&&\(\s*\n?\s*<details className="hdr-ops"/.test(dashSrc) &&
+    // Slice 1 (public terminal skin): the disclosure is ⋯ MORE now and renders in Degen on
+    // BOTH routes (it holds the provenance chip + SHARE for a visitor); the OPERATOR
+    // exports inside it carry their own !publicView gates. The contract this pin exists
+    // for — every operator action behind !publicView — is measured on the exports.
+    return /\{!simple&&\(\s*\n?\s*<details className="hdr-ops"/.test(dashSrc) &&
+      /\{!publicView&&<button onClick=\{handleTtCopy\}/.test(menu) &&
+      /\{!publicView&&publicCloseRead\?\.capture_status==="CAPTURED"&&<button onClick=\{handleCloseReadCopy\}/.test(menu) &&
       term > 0 && /\{!simple&&!publicView&&\(\s*\n?\s*<a href="\/admin\.html"/.test(dashSrc) &&
       (dashSrc.match(/href="\/admin\.html"/g) || []).length === 1;
   })() &&
@@ -10446,15 +10461,18 @@ console.log("\n[67] v4.0 SIMPLE MODE — verdict mapping, card selection, senten
     /plainVerdict\s*\n?\s*\? <Explainable className="simple-hold" explain=\{simpleHoldExplain\(/.test(bandSrc) &&
     /: <span style=\{\{fontFamily:T\.fontMono,fontSize:T\.fsXl/.test(bandSrc) &&
     /import \{ simpleCallLabel, simpleHoldExplain \} from "\.\.\/publicCopy\.js"/.test(bandSrc));
-  ok("v5.9 chrome: the beginner's first screen sheds the operator words, and Power keeps them",
-    // the duplicate lowercase wordmark, the provenance chip (except on ERROR), the alert
-    // badges and the OPS menu are all Power's now; each is pinned at its own gate.
-    /\{!simple&&<div className="sub-wordmark"/.test(dashSrc) &&
-    /\{\(!simple\|\|mode==="ERROR"\)&&<DataModeBadge/.test(dashSrc) &&
+  /* Slice 1 (public terminal skin): RE-PINNED. The echo is deleted outright (one identity);
+     the provenance chip rides INSIDE ⋯ MORE in Degen (not on the bar) and is absent in
+     Simple; the alert badge keeps its gate; the disclosure is Degen's on both routes. */
+  ok("v5.9 chrome: the beginner's first screen sheds the operator words, and Degen keeps them one tap deep",
+    /\{mode!=="ERROR"&&<div[^>]*><span>data<\/span><DataModeBadge mode=\{mode\}\/><\/div>\}/.test(dashSrc) &&
     /\{!simple&&!publicView&&\(activeAlerts>0\|\|alertBlind>0\)/.test(dashSrc) &&
-    /\{!simple&&!publicView&&\(\s*\n?\s*<details className="hdr-ops"/.test(dashSrc));
-  ok("v5.9 chrome: an ERROR still shows its badge in Simple — a red fact is not a density trade",
-    /\(!simple\|\|mode==="ERROR"\)/.test(dashSrc));
+    /\{!simple&&\(\s*\n?\s*<details className="hdr-ops"/.test(dashSrc));
+  /* Slice 1: an ERROR badge is a red fact and stays ON THE BAR in BOTH modes — outside the
+     disclosure, never a density trade (v3.25). The only bar-level DataModeBadge is the ERROR one. */
+  ok("v5.9 chrome: an ERROR still shows its badge on the bar in both modes — a red fact is not a density trade",
+    /\{mode==="ERROR"&&<DataModeBadge mode=\{mode\}\/>\}/.test(dashSrc) &&
+    (dashSrc.match(/<DataModeBadge mode=\{mode\}\/>/g) || []).length === 2);
   ok("v5.9: the copy control keeps its job in Simple but loses its three words",
     (() => { const code = bandSrc.replace(/\/\/[^\n]*|\/\*[\s\S]*?\*\//g, "");
       return /plainVerdict\s*\n?\s*\? \(callCopied\?"✓":"⎘"\)/.test(code) &&
@@ -11187,8 +11205,11 @@ console.log("\n[75] v6.0.1 — shape before text · toggle clarity · captions u
     /\{id:"power", glyph:"◉",word:"Degen", tells:"[^"]+"\}/.test(dash) &&
     /aria-label=\{`\$\{word\} view — \$\{tells\}`\}/.test(dash) &&
     /title=\{`\$\{word\} view — \$\{tells\}`\}/.test(dash));
-  ok("v6.0.1 toggle: the pressed half is FILLED brand amber with dark text — not a one-shade-lighter surface",
-    /background:on\?T\.amber:"transparent"/.test(dash) && /color:on\?T\.bg:T\.textSecondary/.test(dash) &&
+  // Slice 1 (public terminal skin): the fill is the terminal's PHOSPHOR ("this is on"), not
+  // the gold slab that fought the Hold tint beside it. The v6.0.1 contract — a FILL with
+  // dark text, legible before the label — is unchanged; only the colour moved.
+  ok("v6.0.1/Slice 1 toggle: the pressed half is FILLED phosphor green with dark text — not a one-shade-lighter surface",
+    /background:on\?T\.green:"transparent"/.test(dash) && /color:on\?T\.bg:T\.textSecondary/.test(dash) &&
     !/background:viewMode===m\?T\.surfaceHigh/.test(dash) && /aria-pressed=\{on\}/.test(dash));
   // (3) The captions: Simple's FACE keeps the eyebrow only; the frozen/live-read caption
   //     rides inside the ℹ window; Power keeps both on the face. The A6 copy is unchanged.
@@ -12325,9 +12346,11 @@ console.log("\n[83] Simple altitude — fs-xxl Hold, fs-body sentence, one-block
     /\{plainVerdict&&copyControl\}/.test(band) &&
     /plainVerdict\s*\n?\s*\? \(callCopied\?"✓":"⎘"\)/.test(band) &&
     /\{open&&!plainVerdict&&\(/.test(band));
-  ok("T9: Simple header is one action row — Terminal and Share are Degen's",
+  // Slice 1 (public terminal skin): BOTH headers are one action row now (nowrap in both);
+  // Terminal stays Degen's bar button and Share stays Degen's, one tap deep in ⋯ MORE.
+  ok("T9/Slice 1: the header is one action row in BOTH modes — Terminal and Share are Degen's",
     /className=\{simple\?"hdr hdr-simple":"hdr"\}/.test(dash) &&
-    /flexWrap:simple\?"nowrap":"wrap"/.test(dash) &&
+    /flexWrap:publicView\?"nowrap":"wrap"\}\}>/.test(dashSrc) &&   // public: one row; operator may wrap for a red badge
     /\{!simple&&!publicView&&\(\s*\n?\s*<a href="\/admin\.html"/.test(dash) &&
     /\{!simple&&<button onClick=\{handleShare\}/.test(dash));
   ok("T10: Track Record / Why MacroDash left the Simple face for the About fold",
@@ -13265,6 +13288,57 @@ console.log("\n[copy-budget] v6.6.1 ONE ENGINE, TWO ALTITUDES — ≤25-word why
     ok("[87] the server-verdict marriage fixtures RAN to completion — a section that dies mid-run prints no total: " + (e && e.message), false);
   }
 
+}
+
+// ═══════════ [88] PUBLIC TERMINAL SKIN, Slice 1 — the token bridge + the one-row header ═══════════
+// docs/plans/public-terminal-skin.md. The public dashboard's tokens are BRIDGED to the values
+// the Ticker Terminal already ships (admin.html's :root), so Simple and Degen paint as one
+// product. These pins RECONCILE the two homes rather than restating the hex: if admin.html
+// moves a surface or the type floor, the public bridge goes red until someone decides whether
+// the public page follows — the SOURCES/DERIVED_OF convention applied to a palette.
+console.log("\n[88] public terminal skin, Slice 1 — the token bridge and the one-row header");
+{
+  try {
+    const cssVar = (name) => { const m = adminSrc.match(new RegExp(`--${name}:\\s*([^;]+);`)); return m ? m[1].trim() : null; };
+    ok("[88] surfaces are the terminal's own (--bg / --panel / --panel2 / --line), reconciled against admin.html — not a third palette",
+      DT["bg"] === cssVar("bg") && DT["surface"] === cssVar("panel") && DT["surface-high"] === cssVar("panel2") && DT["border"] === cssVar("line"));
+    ok("[88] green is the terminal's phosphor and the text pair is the terminal's --fg/--dim (the v3.42 AA lift)",
+      DT["green"] === cssVar("green") && DT["text-primary"] === cssVar("fg") && DT["text-muted"] === cssVar("dim"));
+    ok("[88] the type FLOOR is the terminal's (10 / 11 / 12.5 / 14), reconciled against admin.html's --fs-* vars",
+      DT["fs-xs"] === parseFloat(cssVar("fs-xs")) && DT["fs-s"] === parseFloat(cssVar("fs-s")) &&
+      DT["fs-m"] === parseFloat(cssVar("fs-m")) && DT["fs-l"] === parseFloat(cssVar("fs-l")) && DT["fs-body"] === 16);
+    ok("[88] amber stays the brand accent and red is untouched — the plan names surfaces, green, text and type only",
+      DT["amber"] === "#f0a500" && DT["red"] === "#e74c3c");
+    ok("[88] ONE family: font-sans and font-display resolve to the mono stack (a mode switch can never change the typeface)",
+      DT["font-sans"] === DT["font-mono"] && DT["font-display"] === DT["font-mono"] && /IBM Plex Mono/.test(DT["font-mono"]));
+    const pages = readSrc("../src/PublicPages.jsx");
+    ok("[88] the second and third webfont loads are ABSENT from both public surfaces (Syne, DM Sans) — one load, one family",
+      !/Syne|DM\+Sans|DM Sans/.test(dashSrc.replace(/\/\/[^\n]*|\/\*[\s\S]*?\*\//g, "").replace(/\{\/\*[\s\S]*?\*\/\}/g, "")) &&
+      !/Syne|DM\+Sans/.test(pages) && /family=IBM\+Plex\+Mono/.test(dashSrc) && /family=IBM\+Plex\+Mono/.test(pages));
+    // contrast is COMPUTED on the new surfaces (the [30] helpers), never trusted from a comment
+    ok("[88] on the terminal surfaces every text token still clears AA, and the phosphor selected-state text (bg on green) clears it too",
+      ratio(tok("text-muted"), tok("bg")) >= 4.5 && ratio(tok("text-muted"), tok("surface")) >= 4.5 &&
+      ratio(tok("text-secondary"), tok("surface-high")) >= 4.5 && ratio(tok("text-primary"), tok("bg")) >= 7 &&
+      ratio(tok("bg"), tok("green")) >= 4.5 && ratio(tok("amber"), tok("surface")) >= 4.5);
+    // the header: one row, both modes; the wordmark in mono + amber tracking; the nav a strip
+    const code = dashSrc.replace(/\/\/[^\n]*|\/\*[\s\S]*?\*\//g, "").replace(/\{\/\*[\s\S]*?\*\/\}/g, "");
+    ok("[88] the wordmark is mono + amber with tracking — no display face, no echo",
+      /className="wordmark" style=\{\{fontFamily:T\.fontMono,fontSize:16,fontWeight:700,color:T\.amber,letterSpacing:"0\.12em"/.test(code) &&
+      !/T\.fontDisplay/.test(code));
+    ok("[88] the header carries no mode-conditional wrap or direction — the same one row in Simple and Degen",
+      !/flexWrap:simple\?/.test(code) && !/flexDirection:simple\?/.test(code) && !/alignItems:simple\?/.test(code));
+    ok("[88] ⋯ MORE is Degen's one disclosure (public too) and holds SHARE + the chip; the exports and TERMINAL keep !publicView; FIRED stays outside it",
+      (() => { const open = code.indexOf('<details className="hdr-ops"'); const close = code.indexOf("</details>", open);
+        if (open < 0 || close < 0) return false; const menu = code.slice(open, close);
+        return /⋯<span className="hdr-word"> MORE<\/span>/.test(menu) && /onClick=\{handleShare\}/.test(menu) && /<DataModeBadge mode=\{mode\}\/>/.test(menu) &&
+          !/activeAlerts|alertBlind/.test(menu) && !/href="\/admin\.html"/.test(menu) && !/⋯ OPS/.test(code); })());
+    ok("[88] the section nav is a single strip: no vertical padding of its own, the 44px links carry the height",
+      /className="nav-row" style=\{\{display:"flex",gap:2,overflowX:"auto",padding:"0 12px"\}\}/.test(navSrc));
+    ok("[88] no scanline / CRT treatment anywhere on the public dashboard (review correction: Degen-only or off until Slice 1 is seen)",
+      !/scanline|repeating-linear-gradient|text-shadow:.*rgba\(57,255,158/.test(code));
+  } catch (e) {
+    ok("[88] the Slice 1 pins RAN to completion — a section that dies mid-run prints no total: " + (e && e.message), false);
+  }
 }
 
 

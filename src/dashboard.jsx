@@ -521,7 +521,7 @@ export default function Dashboard({ publicView = false } = {}) {
           :`MacroDash ${dailyCall.headline}, ${dailyCall.direction}: ${dailyCall.counts.usable} of ${dailyCall.counts.total} signals counted.`}
       </div>
       <style>{`
-        @import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;700&family=DM+Sans:wght@400;500;600&family=Syne:wght@700;800&display=swap');
+        @import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;700&display=swap');
         *{box-sizing:border-box;margin:0;padding:0;}
         ::-webkit-scrollbar{width:4px;height:4px;background:${T.bg};}
         ::-webkit-scrollbar-thumb{background:${T.borderAccent};border-radius:2px;}
@@ -536,8 +536,8 @@ export default function Dashboard({ publicView = false } = {}) {
               .spy-tape-mobile{display:none!important;}
         }
         @media(prefers-reduced-motion:reduce){.pulse-anim{animation:none!important;}}
-        /* A2 (v3.58): 320px contract — the duplicate wordmark is the first thing to go. */
-        @media(max-width:359px){.sub-wordmark{display:none;}}
+        /* A2 (v3.58) hid the lowercase wordmark echo below 360px; Slice 1 removed the echo
+           itself (one identity), so the rule went with it. */
         /* 9.3 (Req 8.2): the skip link is the first focusable element — hidden until focused. */
         .skip-link{position:absolute;left:-9999px;z-index:100;background:${T.surfaceHigh};color:${T.textPrimary};font-family:${T.fontMono};font-size:11px;padding:10px 16px;border:1px solid ${DT["focus-ring"]};border-radius:3px;}
         .skip-link:focus{left:8px;top:calc(8px + env(safe-area-inset-top));}
@@ -554,6 +554,18 @@ export default function Dashboard({ publicView = false } = {}) {
         }
         /* B4 (v3.59): WCAG target size — header actions get real thumb targets on phones. */
         @media(max-width:480px){.hdr-act{min-height:44px;min-width:44px;display:inline-flex;align-items:center;justify-content:center;}}
+        /* Slice 1 (public terminal skin): ONE header row at phone width. The identity column
+           can shrink (overflow hidden, the wordmark ellipsizes last), the side gutters drop to
+           12px, and the two Degen bar actions collapse to their glyphs — ⌁ and ⋯ — inside
+           their 44px targets; the aria-label and title still carry the full name. Measured at
+           375/390 on the OPERATOR route (toggle + TERMINAL + MORE beside the wordmark), where
+           the words alone overflowed the row by ~44px. */
+        .hdr-id{overflow:hidden;}
+        .hdr-id .wordmark{overflow:hidden;text-overflow:ellipsis;}
+        @media(max-width:480px){
+          .hdr{padding-left:12px!important;padding-right:12px!important;}
+          .hdr-word{display:none;}
+        }
         /* v5.8: the parameter card is the tap target for its explainer sheet, and the sheet's
            ✕ is the way out — both get real thumb targets on a phone (Req 6.3). The card is
            already tall enough at every width; the rule is stated so a later compaction cannot
@@ -584,27 +596,36 @@ export default function Dashboard({ publicView = false } = {}) {
           black-translucent since v1 (the page is deliberately drawn BEHIND the iOS status
           bar), but env(safe-area-inset-*) was never added, so the wordmark rendered under
           the Dynamic Island. env() resolves to 0 everywhere else — no visual change. */}
-      <header className={simple?"hdr hdr-simple":"hdr"} style={{background:T.surface,borderBottom:`1px solid ${T.border}`,padding:"calc(8px + env(safe-area-inset-top)) 20px 8px",display:"flex",justifyContent:"space-between",alignItems:simple?"flex-start":"center",gap:8,flexWrap:simple?"nowrap":"wrap"}}>
+      {/* PUBLIC TERMINAL SKIN, Slice 1 (docs/plans/public-terminal-skin.md): ONE header, both
+          modes — wordmark · clock on the left, the actions on the right, nowrap in both. The
+          three live screenshots proved Degen was four rows of chrome (clock + CACHED + FIRED
+          + toggle + TERMINAL, then SHARE + OPS, then the nav) before the call, while Simple
+          was one; a mode switch must not grow the header. Degen's non-red extras (the
+          provenance chip, SHARE, the operator exports) fold behind ONE ⋯ MORE disclosure;
+          red facts (ERROR, FIRED/BLIND) stay outside it in both modes (v3.25). Operator-only
+          controls (TERMINAL, the exports, FIRED) keep their !publicView gates, so public
+          Degen does not grow a trading desk. The Syne wordmark and the lowercase echo are
+          gone: one family, one identity, amber kept as the brand accent. */}
+      {/* FEAT-GLANCE (v3.61): safe-area — index.html has shipped viewport-fit=cover +
+          black-translucent since v1 (the page is deliberately drawn BEHIND the iOS status
+          bar), but env(safe-area-inset-*) was never added, so the wordmark rendered under
+          the Dynamic Island. env() resolves to 0 everywhere else — no visual change. */}
+      <header className={simple?"hdr hdr-simple":"hdr"} style={{background:T.surface,borderBottom:`1px solid ${T.border}`,padding:"calc(6px + env(safe-area-inset-top)) 16px 6px",display:"flex",justifyContent:"space-between",alignItems:"center",gap:8,flexWrap:publicView?"nowrap":"wrap"}}>
         {/* A2 (v3.58): minWidth:0 lets the identity group shrink inside the flex row instead of
-            forcing overflow; the sub-wordmark hides below 360px (it duplicates the brand).
-            T9: Simple stacks the clock under the wordmark so the action row is Wordmark +
-            Simple|Degen only — Terminal and Share are Degen's. */}
-        <div style={{display:"flex",alignItems:simple?"flex-start":"center",gap:simple?2:14,minWidth:0,flexWrap:simple?"nowrap":"wrap",flexDirection:simple?"column":"row",flex:simple?"1 1 auto":undefined}}>
-          <div className="wordmark" style={{fontFamily:T.fontDisplay,fontSize:20,fontWeight:800,color:T.amber,letterSpacing:"-0.02em"}}>MacroDash</div>
-          {/* FEAT-165: friendly sub-headline */}
-          {/* FINDING-1: orientation line now visible on mobile (was hide-mobile) */}
-          {/* v5.9: the lowercase echo is Power's. It repeats the wordmark 4px to its right,
-              which is the cheapest word on the page to cut and the first one a beginner reads
-              twice. (A2 already hid it below 360px for the same reason — this extends the
-              same judgment to the mode, not just the width.) */}
-          {!simple&&<div className="sub-wordmark" style={{fontFamily:T.fontSans,fontSize:10,color:T.textMuted}}>macrodash</div>}
+            forcing overflow; the clock line truncates with an ellipsis rather than wrapping.
+            The PUBLIC header never wraps (the plan's contract: a mode switch does not grow it).
+            The OPERATOR route may wrap ONCE, and only the FIRED/BLIND badge ever makes it: on a
+            375px phone that badge + toggle + TERMINAL + MORE left the wordmark 30px — "Ma…" —
+            and a red fact earns a row before the brand gives up its name (v3.25 in spirit). */}
+        <div className="hdr-id" style={{display:"flex",flexDirection:"column",gap:2,minWidth:0,flex:"1 1 auto"}}>
+          <div className="wordmark" style={{fontFamily:T.fontMono,fontSize:16,fontWeight:700,color:T.amber,letterSpacing:"0.12em",lineHeight:1.2,whiteSpace:"nowrap"}}>MacroDash</div>
           {/* FEAT-SNAP-UX: the session · timestamp line renders ONLY from live data. The mock
               baseline's hardcoded lastRefresh next to a pulsing dot read as "the site last
               refreshed <months-old date>" — a timestamp is exactly the kind of number the
               v3.1 honesty invariant says must never look live when it isn't. */}
-          <div style={{display:"flex",alignItems:"center",gap:5,flexWrap:simple?"nowrap":"wrap",minWidth:0,maxWidth:"100%"}}>
-            <div style={{width:6,height:6,borderRadius:"50%",background:anyLive?T.amber:T.textMuted,boxShadow:anyLive?`0 0 5px ${T.amber}`:"none"}} className="pulse-anim"/>
-            <span style={{fontFamily:T.fontMono,fontSize:9,color:mode==="ERROR"?T.red:T.textSecondary,whiteSpace:simple?"nowrap":undefined,overflow:simple?"hidden":undefined,textOverflow:simple?"ellipsis":undefined}}>
+          <div style={{display:"flex",alignItems:"center",gap:5,flexWrap:"nowrap",minWidth:0,maxWidth:"100%"}}>
+            <div style={{width:6,height:6,borderRadius:"50%",flexShrink:0,background:anyLive?T.green:T.textMuted,boxShadow:anyLive?`0 0 5px ${T.green}`:"none"}} className="pulse-anim"/>
+            <span style={{fontFamily:T.fontMono,fontSize:T.fsXs,color:mode==="ERROR"?T.red:T.textSecondary,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis",minWidth:0}}>
               {/* 8/28 clock matrix A1: a mixed clock — session is live per request, lastRefresh is
                   the frozen snapshot-build instant. Unlabelled, "OPEN · 02:40 ET" read as the
                   CALL's time (or a broken clock). Three words bind the timestamp to the data. */}
@@ -615,110 +636,86 @@ export default function Dashboard({ publicView = false } = {}) {
             </span>
             {/* B1 (v3.59): the manual retry the re-audit asked for. Only meaningful on ERROR. */}
             {mode==="ERROR"&&<button onClick={retry} aria-label="Retry loading live data"
-              style={{fontFamily:T.fontMono,fontSize:9,background:T.surfaceHigh,border:`1px solid ${T.red}66`,color:T.red,padding:"2px 8px",borderRadius:3,cursor:"pointer"}}>
+              style={{fontFamily:T.fontMono,fontSize:T.fsXs,background:T.surfaceHigh,border:`1px solid ${T.red}66`,color:T.red,padding:"2px 8px",borderRadius:3,cursor:"pointer",flexShrink:0}}>
               ↻ RETRY
             </button>}
             {/* ENGINE0-CONT: degraded-but-served days get a real refresh, not only outages.
                 Operator: rebuild-then-refetch; public: plain re-check (see refreshData). */}
             {mode!=="ERROR"&&mode!=="LOADING"&&liveBuild&&(regime.insufficient||evidenceSet.state==="DEGRADED")&&
               <button onClick={refreshData} aria-label={publicView?"Check for fresher data":"Rebuild and reload live data"}
-                style={{fontFamily:T.fontMono,fontSize:9,background:T.surfaceHigh,border:`1px solid ${T.amber}66`,color:T.amber,padding:"2px 8px",borderRadius:3,cursor:"pointer"}}>
+                style={{fontFamily:T.fontMono,fontSize:T.fsXs,background:T.surfaceHigh,border:`1px solid ${T.amber}66`,color:T.amber,padding:"2px 8px",borderRadius:3,cursor:"pointer",flexShrink:0}}>
                 {publicView?"↻ CHECK AGAIN":"↻ REFRESH DATA"}
               </button>}
           </div>
         </div>
-        <div style={{display:"flex",alignItems:"center",gap:8,flexWrap:simple?"nowrap":"wrap",minWidth:0,flexShrink:simple?0:undefined}}>
-          {/* v5.9 (beginner read): the provenance CHIP is Power's. In Simple the status line
-              directly above already stamps the pull time and "end-of-day, not real-time", and
-              every card carries its own freshness, so a second CACHED token is a third saying
-              of one fact. It stays in Simple on ERROR — an outage is a red fact and the v3.25
-              rule is not a density trade. */}
-          {(!simple||mode==="ERROR")&&<DataModeBadge mode={mode}/>}
-          {/* FEAT-GLANCE (v3.61, newcomer audit): the alert badges are operator tooling — the
-              Macro Alerts section itself is !publicView (A4), and "⚡ 3 BLIND" reads as a system
-              failure to a visitor who can't see the monitors it describes. Same gate.
-              v3.62: these stay OUTSIDE the ⋯ OPS menu. A FIRED alert is a red fact and the v3.25
-              rule holds board-wide — a collapse must never hide one. Only the always-available
-              actions below move behind the disclosure. */}
-          {/* v5.9: ALSO Power-only, and this is a defect fix rather than a density cut. The
-              Macro Alerts section is `!publicView&&!simple`, so in Simple the badge counted
-              monitors the reader could not reach and its deep link led nowhere — an orphan.
-              v3.25 says a collapse must never hide a red fact; it does not require a count of
-              a section that is not on the page. In Power both are unchanged. */}
-          {/* v6.0 (PR #10's live fix, carried forward at its close): both counts ride ONE
-              badge. The BLIND tell used to render only at activeAlerts===0, so "1 fired ·
-              3 blind" printed as a confident "⚡ 1 FIRED" alone — the v3.52 false clear,
-              surviving at a nonzero numerator. Red when anything fired (a trip outranks a
-              blind gauge), amber when only blind, NOTHING when neither — a genuine clear
-              says nothing rather than asserting one. */}
+        <div className="hdr-acts" style={{display:"flex",alignItems:"center",gap:6,flexWrap:"nowrap",flexShrink:0}}>
+          {/* The provenance chip is a red fact ONLY on ERROR, and then it stays on the face in
+              both modes (v3.25 is not a density trade). Every other state rides inside ⋯ MORE in
+              Degen and is absent in Simple, where the clock line and the per-card freshness
+              already say it (v5.9). */}
+          {mode==="ERROR"&&<DataModeBadge mode={mode}/>}
+          {/* v3.61/v5.9/v6.0: the alert badge is operator tooling for a Degen-only section — an
+              orphan count anywhere else — and a FIRED alert is a red fact that stays OUTSIDE the
+              disclosure (v3.25). Both counts ride ONE badge (PR #10's fix): red when anything
+              fired, amber when only blind, NOTHING when neither. */}
           {!simple&&!publicView&&(activeAlerts>0||alertBlind>0)&&
             <Badge label={`⚡ ${[activeAlerts>0?`${activeAlerts} FIRED`:null,alertBlind>0?`${alertBlind} BLIND`:null].filter(Boolean).join(" · ")}`}
               color={activeAlerts>0?T.red:T.amber}/>}
-          {/* v3.94: the Simple|Power toggle — persistent, remembered per device. */}
-          {/* v6.0.1 (owner UX review: "Simple vs power is hard to tell, ensure clarity with each
-              button"). The old pressed state was a one-shade-lighter surface behind bold text —
-              indistinguishable from the unpressed half at a glance on a phone. The SELECTED half
-              is now FILLED in the brand amber with dark text (the same fill the ⌁ TERMINAL button
-              uses for "this is the one"), each half carries a shape (○ the lean view · ◉ the full
-              view) ahead of its word, and each half states in its tooltip and accessible name
-              what the mode SHOWS — so the choice is legible before the label is read, and the
-              consequence is legible before the tap. aria-pressed is unchanged. */}
-          <div role="group" aria-label="View mode" style={{display:"flex",border:`1px solid ${T.borderAccent}`,borderRadius:4,overflow:"hidden"}}>
+          {/* v3.94: the Simple|Degen toggle — persistent, remembered per device. v6.0.1 gave
+              the pressed half a FILL, a shape per half, and what each mode shows in its name.
+              Slice 1: the fill is the terminal's phosphor — "this is on" — not a gold slab
+              that fought the Hold tint beside it. aria-pressed is unchanged. */}
+          <div role="group" aria-label="View mode" style={{display:"flex",border:`1px solid ${T.borderAccent}`,borderRadius:4,overflow:"hidden",flexShrink:0}}>
             {VIEW_MODES.map(({id,glyph,word,tells})=>{const on=viewMode===id;return(
               <button key={id} onClick={()=>setViewMode(id)} aria-pressed={on} className="hdr-act"
                 title={`${word} view — ${tells}`} aria-label={`${word} view — ${tells}`}
-                style={{fontFamily:T.fontMono,fontSize:9,padding:"5px 10px",cursor:"pointer",border:"none",
+                style={{fontFamily:T.fontMono,fontSize:T.fsXs,padding:"5px 10px",cursor:"pointer",border:"none",
                         display:"inline-flex",alignItems:"center",gap:5,letterSpacing:"0.04em",
-                        background:on?T.amber:"transparent",
+                        background:on?T.green:"transparent",
                         color:on?T.bg:T.textSecondary,fontWeight:on?700:400}}>
-                <span aria-hidden="true" style={{fontSize:10,lineHeight:1}}>{glyph}</span>{word}
+                <span aria-hidden="true" style={{fontSize:T.fsXs,lineHeight:1}}>{glyph}</span>{word}
               </button>
             );})}
           </div>
-          {/* v3.98.3 (owner call: "want terminal more available"): TERMINAL is PROMOTED out of
-              the ⋯ OPS menu into the bar itself. v3.62 demoted it as newcomer clutter — correct
-              then, wrong now: the default route is the OPERATOR's, the terminal is where the
-              work lives, and Simple|Power already gates newcomer noise far better than a menu
-              did. It keeps the !publicView gate (a visitor never sees it) and gets the accent
-              treatment so it reads as the primary destination, not another utility. */}
+          {/* v3.98.3 (owner call: "want terminal more available"): TERMINAL is a first-class bar
+              button — the terminal is where the work lives. It keeps the !publicView gate (a
+              visitor never sees it) and the amber accent so it reads as the primary destination. */}
           {!simple&&!publicView&&(
             <a href="/admin.html" aria-label="Open Ticker Terminal" className="hdr-act"
               title="TT Ticker Terminal — the book, rankings and next dollar"
-              style={{fontFamily:T.fontMono,fontSize:9,fontWeight:700,background:`${T.amber}1a`,border:`1px solid ${T.amber}`,color:T.amber,padding:"5px 12px",borderRadius:4,textDecoration:"none",whiteSpace:"nowrap",letterSpacing:"0.04em"}}>
-              ⌁ TERMINAL
+              style={{fontFamily:T.fontMono,fontSize:T.fsXs,fontWeight:700,background:`${T.amber}1a`,border:`1px solid ${T.amber}`,color:T.amber,padding:"5px 10px",borderRadius:4,textDecoration:"none",whiteSpace:"nowrap",letterSpacing:"0.04em",flexShrink:0}}>
+              ⌁<span className="hdr-word"> TERMINAL</span>
             </a>
           )}
-          {/* FEAT-165: share button — stays in the bar; it is the one action a VISITOR wants. */}
-          {!simple&&<button onClick={handleShare} aria-label="Copy dashboard link" className="hdr-act"
-            style={{fontFamily:T.fontMono,fontSize:9,background:copied?"#1a3020":T.surfaceHigh,border:`1px solid ${copied?T.green:T.borderAccent}`,color:copied?T.green:T.textSecondary,padding:"5px 12px",borderRadius:4,cursor:"pointer",transition:"all 0.2s"}}>
-            {copied?"✓ COPIED":"⤴ SHARE"}
-          </button>}
-          {/* v3.62 (newcomer audit, "default route still shows TT and TERMINAL"): the operator
-              ACTIONS consolidate behind one ⋯ OPS disclosure — the admin.html header pattern.
-              Owner call: the default route stays the operator view, so this reduces the clutter
-              without moving anyone's daily surface. Native <details> — no new state, keyboard
-              and screen-reader behaviour for free. */}
-          {/* v5.9: the OPS menu is Power's. Its only entry is the operator clipboard export;
-              in Simple the hero's own copy control covers the reader who wants to share the
-              call, so the menu was a word with no job on the beginner's screen. */}
-          {!simple&&!publicView&&(
+          {/* ⋯ MORE — Degen's one disclosure (native <details>: no new state, keyboard and
+              screen-reader behaviour for free). It holds what is NOT a red fact: the provenance
+              chip, SHARE (the one action a visitor wants, one tap deep now so the bar stays one
+              row), and — operator only — the clipboard exports the ⋯ OPS menu used to hold.
+              Simple has no menu: the hero's own copy control and the About fold's Share cover it. */}
+          {!simple&&(
             <details className="hdr-ops" style={{position:"relative"}}>
-              <summary aria-label="Operator actions" className="hdr-act"
-                style={{fontFamily:T.fontMono,fontSize:9,background:T.surfaceHigh,border:`1px solid ${T.borderAccent}`,color:T.textSecondary,padding:"5px 12px",borderRadius:4,cursor:"pointer",listStyle:"none",whiteSpace:"nowrap"}}>
-                ⋯ OPS
+              <summary aria-label="More — data status, share and exports" className="hdr-act"
+                style={{fontFamily:T.fontMono,fontSize:T.fsXs,background:T.surfaceHigh,border:`1px solid ${T.borderAccent}`,color:T.textSecondary,padding:"5px 10px",borderRadius:4,cursor:"pointer",listStyle:"none",whiteSpace:"nowrap",letterSpacing:"0.04em"}}>
+                ⋯<span className="hdr-word"> MORE</span>
               </summary>
-              <div style={{position:"absolute",right:0,top:"calc(100% + 4px)",display:"flex",flexDirection:"column",gap:6,background:T.surface,border:`1px solid ${T.borderAccent}`,borderRadius:5,padding:8,zIndex:60,minWidth:150,boxShadow:"0 6px 18px #00000055"}}>
-                {/* v4.0: the clipboard exports the same canonical call as the hero/API. */}
-                <button onClick={handleTtCopy} disabled={!anyLive} aria-label="Copy MacroDash daily call" className="hdr-act"
+              <div style={{position:"absolute",right:0,top:"calc(100% + 4px)",display:"flex",flexDirection:"column",gap:6,background:T.surface,border:`1px solid ${T.borderAccent}`,borderRadius:5,padding:8,zIndex:60,minWidth:170,boxShadow:"0 6px 18px #00000088"}}>
+                {mode!=="ERROR"&&<div style={{display:"flex",alignItems:"center",gap:6,fontFamily:T.fontMono,fontSize:T.fsXs,color:T.textMuted}}><span>data</span><DataModeBadge mode={mode}/></div>}
+                {/* FEAT-165: share — Wave 16 (Req 7.9): the ✓ COPIED claim is CONFIRMED, never optimistic. */}
+                {!simple&&<button onClick={handleShare} aria-label="Copy dashboard link" className="hdr-act"
+                  style={{fontFamily:T.fontMono,fontSize:T.fsXs,background:copied?"#0c1a13":T.surfaceHigh,border:`1px solid ${copied?T.green:T.borderAccent}`,color:copied?T.green:T.textSecondary,padding:"7px 12px",borderRadius:4,cursor:"pointer",transition:"all 0.2s",textAlign:"left"}}>
+                  {copied?"✓ COPIED":"⤴ SHARE"}
+                </button>}
+                {/* v4.0: the clipboard exports the same canonical call as the hero/API. Operator only. */}
+                {!publicView&&<button onClick={handleTtCopy} disabled={!anyLive} aria-label="Copy MacroDash daily call" className="hdr-act"
                   title={anyLive?"Copy the canonical MacroDash daily call":"live data required"}
-                  style={{fontFamily:T.fontMono,fontSize:9,background:ttCopied?"#1a3020":T.surfaceHigh,border:`1px solid ${ttCopied?T.green:T.borderAccent}`,color:ttCopied?T.green:T.textSecondary,padding:"7px 12px",borderRadius:4,cursor:anyLive?"pointer":"not-allowed",opacity:anyLive?1:0.4,textAlign:"left"}}>
+                  style={{fontFamily:T.fontMono,fontSize:T.fsXs,background:ttCopied?"#0c1a13":T.surfaceHigh,border:`1px solid ${ttCopied?T.green:T.borderAccent}`,color:ttCopied?T.green:T.textSecondary,padding:"7px 12px",borderRadius:4,cursor:anyLive?"pointer":"not-allowed",opacity:anyLive?1:0.4,textAlign:"left"}}>
                   {/* v6.2: "DAILY CALL" retired — ambiguous once two daily artifacts exist. The
                       label IS the edition the paste will carry (callEdition: 10AM CALL / LIVE READ). */}
                   {ttCopied?"✓ CALL COPIED":`⎘ ${callEdition({frozen:callFrozen})}`}
-                </button>
-                {publicCloseRead?.capture_status==="CAPTURED"&&<button onClick={handleCloseReadCopy} aria-label="Copy MacroDash evening update" className="hdr-act"
+                </button>}
+                {!publicView&&publicCloseRead?.capture_status==="CAPTURED"&&<button onClick={handleCloseReadCopy} aria-label="Copy MacroDash evening update" className="hdr-act"
                   title="Copy tonight's unscored 6pm evening update — not the 10am call"
-                  style={{fontFamily:T.fontMono,fontSize:9,background:closeCopied?"#1a3020":T.surfaceHigh,border:`1px solid ${closeCopied?T.green:T.borderAccent}`,color:closeCopied?T.green:T.textSecondary,padding:"7px 12px",borderRadius:4,cursor:"pointer",textAlign:"left"}}>
+                  style={{fontFamily:T.fontMono,fontSize:T.fsXs,background:closeCopied?"#0c1a13":T.surfaceHigh,border:`1px solid ${closeCopied?T.green:T.borderAccent}`,color:closeCopied?T.green:T.textSecondary,padding:"7px 12px",borderRadius:4,cursor:"pointer",textAlign:"left"}}>
                   {closeCopied?"✓ EVENING UPDATE COPIED":"⎘ EVENING UPDATE"}
                 </button>}
                 {/* TERMINAL left this menu in v3.98.3 — it is a first-class bar button now.
