@@ -189,3 +189,48 @@ moves to pass 3).**
 **Rule this adds to §3, and it is now executable, not prose:** *no disclosure may open onto more
 than N words without a second level.* The budget is PINNED in the browser, the way the type floor
 and the stance-strip height already are, so a fold that grows into a novel fails the build.
+
+---
+
+## Outcomes — v6.9.2 (Slice 3: F6, the fold budget)
+
+**Measured every fold in Simple at 390×844 before touching anything** (click, wait, measure the
+delta, close):
+
+| fold | words unveiled | px added |
+|---|---|---|
+| Why this call | 146 | 410 |
+| Learning moment | 69 | 283 |
+| **Explore the numbers** | **785** | **2,233** |
+| About this page | 70 | 106 |
+
+**Shipped.** `Explore the numbers` level 1 = the two supporting-analysis panels (the numbers its
+label promises). Level 2 = three NAMED folds: `dates & data notes`, `the three questions, in
+full`, `sources & calculations`. Nothing deleted.
+
+**Measured after: 785 → 294 words unveiled (−63%).**
+
+**The durable half is the budget, not the restructure:** the public suite pins *no disclosure
+unveils more than 320 words at its first level*, measured as the DELTA around the click and
+reporting its own number. 785 words had accreted behind one tap without moving a single
+assertion — the v3.54 defect class pointed at disclosure.
+
+**Correction to my own probe, recorded:** the first fold-budget probe clicked and measured
+synchronously and reported **0 words unveiled for every fold** — React had not re-rendered. A
+probe that reports zero everywhere is a probe lying, not a page that is empty; re-run with real
+awaits it produced the table above.
+
+**Negative control:** flattening the three second-level folds back into level 1 turns the
+named-second-tap pin and the budget pin red, with the budget **reporting exactly 785** — the
+pre-fix number, which is what proves the pin measures the defect rather than a proxy.
+*Honest limit: the control flattened the Simple fold and left one Degen label standing, so it was
+partial; the 785 reading is the evidence it bit, not the label count.*
+
+### §3 rule added, now executable
+
+> **No disclosure may unveil more than ~320 words at its first level.** Past that it needs a
+> second level whose entries are NAMED, so opening one is a choice rather than a scroll.
+
+Pinned in the browser, like the type floor and the stance-strip height. Remaining surfaces to
+sweep against it: the terminal's DESK drawer, the NEXT $ deck's TODAY block (F4), and Degen's own
+`explore` equivalents.

@@ -2179,16 +2179,58 @@ console.log("\n[public] v6.5 — STOCK SPOTLIGHT: Simple + Degen, always-visible
       /not a forecast/.test(await lesson.innerText()) && (await r.locator('[aria-label$="supporting analysis"]').count()) === 0);
     ok("v6.5.5 expanded lesson fits the 90-word budget", (await lesson.innerText()).trim().split(/\s+/).length <= 90);
     await r.locator("button.cg-toggle", { hasText: "Learning moment" }).click();
+    const beforeExplore = (await r.innerText()).trim().split(/\s+/).length;
     await r.locator("button.cg-toggle", { hasText: "Explore the numbers" }).click();
     await page.waitForTimeout(300);
     const opened = await r.innerText();
-    ok("T4 Simple: 'Explore the numbers' opens the dates & blurbs, market caps, the FULL three-question assessment and supporting analysis for BOTH companies, dated sources and no duplicate lesson",
-      (await r.locator('[aria-label$="data notes"]').count()) === 2 && /as of \d{4}-\d{2}-\d{2}/.test(opened) && /YTD through \d{4}-\d{2}-\d{2}/.test(opened) && /rents out AI computing capacity/.test(opened) &&
-      /\$70\.1B/.test(opened) && /\$3\.41T/.test(opened) &&
-      /Explore the numbers/.test(text) && !/Explore the numbers — /.test(text) &&
-      (await r.locator('[aria-label="Full assessment"]').count()) === 2 && /BUSINESS ·/.test(opened) && /WATCH NEXT ·/.test(opened) &&
-      (await r.locator('[aria-label$="supporting analysis"]').count()) === 2 && !/Worked example/.test(opened) && /CALCULATION INPUTS/.test(opened) && /sec\.gov/.test(opened) && /YTD method/.test(opened));
-    ok("v6.5 Simple: no rating words on the face", !/\b(cheap|safe|buy|sell|undervalued|overvalued)\b/i.test(opened));
+    /* ── v6.9.2 READ THE ROOM Slice 3 ── RE-PINNED, with the reason at the pin. This asserted that
+       ONE tap opened the dates, the full three-question prose, the supporting analysis AND the
+       citations — all of it at once. Measured, that was 785 words / 2,233px from a single tap:
+       ~2.6 phone screens and SEVEN TIMES the next biggest fold on the page. A fold is not a
+       dumping ground — progressive disclosure budgets EVERY layer, not just the first.
+       Nothing was deleted: the claim is split into "what level 1 shows" and "what each named
+       second tap still contains, verbatim", which together assert strictly more than the old
+       single pin did. */
+    ok("T4/v6.9.2 Simple L1: 'Explore the numbers' opens onto the NUMBERS its label promises — the supporting analysis for BOTH companies with the calculation inputs — and nothing else",
+      (await r.locator('[aria-label$="supporting analysis"]').count()) === 2 && /CALCULATION INPUTS/.test(opened) &&
+      !/Worked example/.test(opened) &&
+      /Explore the numbers/.test(text) && !/Explore the numbers — /.test(text));
+    ok("v6.9.2 Simple L1: the prose, the dates and the citations are each a NAMED second tap, not a scroll — they are absent while their own fold is closed",
+      (await r.locator('[aria-label$="data notes"]').count()) === 0 &&
+      (await r.locator('[aria-label="Full assessment"]').count()) === 0 &&
+      (await r.locator('[aria-label="Sources and calculations"]').count()) === 0 &&
+      /dates & data notes/i.test(opened) && /the three questions, in full/i.test(opened) && /sources & calculations/i.test(opened));
+    /* THE BUDGET, and it is the durable half of this pass. 785 words behind one tap was
+       reversible in silence — nothing in three suites moved when it grew. 320 is ~2.2× the next
+       biggest fold on the page (Why this call, 146 words) and roughly one phone screen of an
+       11px cell, so a fold that starts becoming a novel again fails the build. The assertion
+       REPORTS its own measurement, so a future failure is a diagnosis (the v4.1.3 lesson). */
+    {
+      /* The budget is on the DELTA — what the tap UNVEILS — not on the region's total text, or
+         the always-visible face would be charged to the fold. 320 is ~2.2× the next biggest fold
+         on this page (Why this call, 146 words measured). */
+      const unveiled = opened.trim().split(/\s+/).length - beforeExplore;
+      ok(`v6.9.2 Simple: no disclosure UNVEILS more than 320 words at its first level — one tap here used to unveil 785 (measured ${unveiled} now)`, unveiled <= 320);
+    }
+    // Each named second tap still holds exactly what it always did, verbatim.
+    await r.locator("button.cg-toggle", { hasText: /dates & data notes/i }).click();
+    await page.waitForTimeout(250);
+    const openedNotes = await r.innerText();
+    ok("v6.9.2 Simple L2 (dates & data notes): the blurbs, the dated market caps and the YTD through-date are all still here, for BOTH companies",
+      (await r.locator('[aria-label$="data notes"]').count()) === 2 && /as of \d{4}-\d{2}-\d{2}/.test(openedNotes) &&
+      /YTD through \d{4}-\d{2}-\d{2}/.test(openedNotes) && /rents out AI computing capacity/.test(openedNotes) &&
+      /\$70\.1B/.test(openedNotes) && /\$3\.41T/.test(openedNotes));
+    await r.locator("button.cg-toggle", { hasText: /the three questions, in full/i }).click();
+    await page.waitForTimeout(250);
+    const openedQs = await r.innerText();
+    ok("v6.9.2 Simple L2 (the three questions): the FULL assessment is still here, verbatim, for BOTH companies",
+      (await r.locator('[aria-label="Full assessment"]').count()) === 2 && /BUSINESS ·/.test(openedQs) && /WATCH NEXT ·/.test(openedQs));
+    await r.locator("button.cg-toggle", { hasText: /sources & calculations/i }).click();
+    await page.waitForTimeout(250);
+    const openedAll = await r.innerText();
+    ok("v6.9.2 Simple L2 (sources): the dated sec.gov citations and the YTD method are still here",
+      /sec\.gov/.test(openedAll) && /YTD method/.test(openedAll));
+    ok("v6.5 Simple: no rating words on the face", !/\b(cheap|safe|buy|sell|undervalued|overvalued)\b/i.test(openedAll));
     const [glance, cardsTop] = await page.evaluate(() => {
       const el = [...document.querySelectorAll("*")].find((n) => n.children.length === 0 && /^●?\s*SPY\*?$/m.test(n.textContent || "") && n.getBoundingClientRect().height > 0);
       const k = document.querySelector('[aria-label="Key parameters"]');
@@ -2248,7 +2290,7 @@ console.log("\n[public] v6.5 — STOCK SPOTLIGHT: Simple + Degen, always-visible
     ok("v6.5 Simple: 390px stays overflow-free with the chart in place, no page errors",
       await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth + 1) && errors.length === 0);
     // The full three-question text lives one tap deep in Simple (`opened`), on the face in Degen.
-    simpleFace = { caps: (await r.locator('.stock-profile-trigger').allInnerTexts()).map(t => (t.match(/\$\d+\.\d+[TB]/) || [])[0]), ytd: text.match(/[+−]\d+\.\d\d%/g), business: (opened.match(/BUSINESS · [^\n]+/g) || []) };
+    simpleFace = { caps: (await r.locator(".stock-profile-trigger").allInnerTexts()).map(t => (t.match(/\$\d+\.\d+[TB]/) || [])[0]), ytd: text.match(/[+−]\d+\.\d\d%/g), business: (openedQs.match(/BUSINESS · [^\n]+/g) || []) };
     await page.close(); }
   // Mixed-period issuer: the FCF date must not inherit the revenue quarter.
   { const mixed = structuredClone(feed);
@@ -2258,6 +2300,13 @@ console.log("\n[public] v6.5 — STOCK SPOTLIGHT: Simple + Degen, always-visible
     const { page, errors } = await open({ live: FULL_LIVE, width: 390, power: false, spotlight: mixed, route: "/?view=public" });
     await page.waitForTimeout(1200);
     await region(page).locator("button.cg-toggle", { hasText: "Explore the numbers" }).click();
+    await page.waitForTimeout(250);
+    /* RE-PINNED at v6.9.2: the data notes are a SECOND tap now. The first level of Explore is the
+       numbers its label promises; dates, prose and citations each take a named second tap, because
+       one tap used to unveil 785 words (measured). The CLAIM — the two periods stay on separate
+       lines and FCF never inherits the revenue quarter — is unchanged and still asserted verbatim. */
+    await region(page).locator("button.cg-toggle", { hasText: /dates & data notes/i }).click();
+    await page.waitForTimeout(250);
     const notes = await region(page).locator('[aria-label="NBIS data notes"]').innerText();
     ok("v6.5.5 data notes keep operating margin quarterly and FCF half-year on separate lines",
       /operating margin[^\n]*quarter to 2026-06-30/.test(notes) &&
@@ -2376,11 +2425,17 @@ console.log("\n[public] v6.5 — STOCK SPOTLIGHT: Simple + Degen, always-visible
     await page.keyboard.press("Escape");
     ok("v6.5 unavailable: the missing anchor series is NAMED on the chart and the comparison line still plots alone",
       /NBIS series unavailable/.test(text) && (await r.locator(".recharts-line").count()) === 1 && /Unavailable(?! —)/.test(text));
-    ok("T4 unavailable: the FULL reasons survive verbatim one tap deep in Explore",
+    /* RE-PINNED at v6.9.2: the withheld reasons live in the data-notes panel, which is a NAMED
+       second tap now — Explore's first level is the numbers its label promises. The CLAIM is
+       unchanged and still asserted verbatim; only the number of taps moved, and the fold that
+       holds it is named rather than something you scroll past. */
+    ok("T4 unavailable: the FULL reasons survive verbatim under Explore → dates & data notes",
       await (async () => {
-        await r.locator("button.cg-toggle", { hasText: "Explore the numbers" }).click(); await page.waitForTimeout(250); const o = await r.innerText();
+        await r.locator("button.cg-toggle", { hasText: "Explore the numbers" }).click(); await page.waitForTimeout(250);
+        await r.locator("button.cg-toggle", { hasText: /dates & data notes/i }).click(); await page.waitForTimeout(250);
+        const o = await r.innerText();
         return /Unavailable — market cap: profile carries no market capitalization/.test(o) && /Unavailable — YTD: return series unavailable/.test(o) && /\$3\.41T/.test(o); })());
-    ok("v6.5 stale: market data 12 days behind wears STALE; the price-trend clause is suppressed, not graded (one tap deep)",
+    ok("v6.5 stale: market data 12 days behind wears STALE; the price-trend clause is suppressed, not graded (under Explore → dates & data notes)",
       /STALE/.test(text) && await (async () => {
         const o = await r.innerText();
         return /price trend is not assessed on a stale tape/.test(o) && !/above its 200-day/.test(text); })());

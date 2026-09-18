@@ -385,22 +385,39 @@ const StockSpotlight = ({ spotlight, simple }) => {
       </div>
       {!simple && lesson && <Lesson lesson={lesson} simple={false} />}
       {simple ? (
+        /* v6.9.2 READ THE ROOM Slice 3 — a fold is not a dumping ground (owner: "Even explore the
+           numbers on simple mode is just ridiculously long… no menu just unveiled an absolute
+           novel"). Measured at 390 before this pass: ONE tap here unveiled 785 words / 2,233px —
+           ~2.6 phone screens and SEVEN TIMES the next biggest fold on the page (Why this call 146
+           · Learning moment 69 · About this page 70). Progressive disclosure means EVERY layer is
+           budgeted, not just the first; Slice 2 was right to move prose off a face and wrong to
+           assume the fold it landed in had no ceiling.
+           The label promises the NUMBERS, so the first level is now exactly that — the two
+           supporting-analysis panels — and everything that is prose, provenance or a citation
+           takes a second tap. Each second-level fold is named for what it holds, so opening one
+           is a choice rather than a scroll. */
         <CollapsedGroup count={companies.length * 7} label={EXPLORE_FOLD_LABEL} chip={false} promise>
           <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(260px,1fr))", gap: 8, marginTop: 4 }}>
-            {companies.map((c) => <DataNotes key={c.symbol} c={c} leg={legs[c.symbol]} />)}
-          </div>
-          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(260px,1fr))", gap: 8, marginTop: 8 }}>
-            {companies.map((c) => (
-              <div key={c.symbol} style={{ minWidth: 0 }}>
-                <div style={{ fontFamily: T.fontMono, fontSize: T.fsXs, color: T.amber, letterSpacing: "0.1em" }}>{c.symbol} · THE THREE QUESTIONS</div>
-                {c.assessment && <FullAssessment a={c.assessment} />}
-              </div>
-            ))}
-          </div>
-          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(260px,1fr))", gap: 8, marginTop: 8 }}>
             {companies.map((c, i) => <Detail key={c.symbol} c={c} simple={simple} rule={legColor(i)} />)}
           </div>
-          <div style={{ marginTop: 6 }}><Sources companies={companies} tracker={m.tracker} /></div>
+          <CollapsedGroup count={companies.length} label="dates & data notes — what each figure is dated to" chip={false}>
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(260px,1fr))", gap: 8, marginTop: 4 }}>
+              {companies.map((c) => <DataNotes key={c.symbol} c={c} leg={legs[c.symbol]} />)}
+            </div>
+          </CollapsedGroup>
+          <CollapsedGroup count={companies.length} label="the three questions, in full — one reading per company" chip={false}>
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(260px,1fr))", gap: 8, marginTop: 4 }}>
+              {companies.map((c) => (
+                <div key={c.symbol} style={{ minWidth: 0 }}>
+                  <div style={{ fontFamily: T.fontMono, fontSize: T.fsXs, color: T.amber, letterSpacing: "0.1em" }}>{c.symbol} · THE THREE QUESTIONS</div>
+                  {c.assessment && <FullAssessment a={c.assessment} />}
+                </div>
+              ))}
+            </div>
+          </CollapsedGroup>
+          <CollapsedGroup count={companies.reduce((n, c) => n + ((c.sources || []).length), 0)} label="sources & calculations — dated citations" chip={false}>
+            <div style={{ marginTop: 4 }}><Sources companies={companies} tracker={m.tracker} /></div>
+          </CollapsedGroup>
         </CollapsedGroup>
       ) : (
         <>

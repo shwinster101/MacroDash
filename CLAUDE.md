@@ -5,6 +5,45 @@ answers *"is it safe to be in the market?"* from live macro + market + sentiment
 data. Single-page React app on Cloudflare Pages, with live data assembled at the
 edge by Pages Functions and cached in KV.
 
+**v6.9.2 "READ THE ROOM", Slice 3 — A FOLD IS NOT A DUMPING GROUND, and the budget becomes a
+TEST (owner: *"Even explore the numbers on simple mode is just ridiculously long. really consider
+the word budgets and making sure that no menu just unveiled and absolute novel. I need it to be
+much more streamlined."*).** Presentation only, one component, `src/sections/StockSpotlight.jsx`;
+`functions/lib/spotlight.js` byte-unchanged again, and **nothing was deleted** — every panel is
+still reachable and pinned to be.
+**Measured first, Simple at 390×844, every fold on the page clicked and its delta recorded:**
+Why this call **146 words / 410px** · Learning moment **69 / 283** · About this page **70 / 106** ·
+**Explore the numbers 785 words / 2,233px** — ~2.6 phone screens and **seven times** the next
+biggest fold. **Slice 2 was right to move prose off a face and wrong to assume the fold it landed
+in had no ceiling:** progressive disclosure budgets EVERY layer, not just the first.
+**The label promises the NUMBERS, so the first level is now exactly that** — the two
+supporting-analysis panels with their calculation inputs — and everything that is prose,
+provenance or a citation takes a **named** second tap: `dates & data notes — what each figure is
+dated to` · `the three questions, in full — one reading per company` · `sources & calculations —
+dated citations`. Naming each one is what makes it a menu rather than a scroll: opening one is a
+choice, and a reader who wants the dates never pays for the prose.
+**Measured after: the tap unveils 785 → 294 words (−63%).**
+**THE STRUCTURAL FIX IS THE BUDGET, NOT THE RESTRUCTURE.** 785 words behind one tap had grown
+there in silence — no assertion in three suites moved as it did, which is the v3.54 defect class
+("the defect that passed every existing test") pointed at disclosure. The public suite now pins
+**no disclosure may UNVEIL more than 320 words at its first level**, measured as the DELTA around
+the click (budgeting the region's total would charge the always-visible face to the fold) and
+**reporting its own measurement**, so a future failure is a diagnosis rather than a mystery (the
+v4.1.3 lesson). 320 is ~2.2× the next biggest fold on the page, chosen from the measurement rather
+than picked.
+**Four pins re-pinned, each with the reason at the pin, none loosened:** the T4 explore pin
+asserted that ONE tap opened the dates, the full prose, the analysis AND the citations — it is
+split into *what level 1 shows* and *what each named second tap still contains, verbatim*, which
+together assert strictly MORE than the single pin did; and three others that read the data-notes
+panel (the mixed-period FCF date, the withheld-reason list, the stale-tape suppression) now take
+the named second tap, with their claims byte-unchanged.
+Tests: **2534 smoke** + 340 render + **384 public-render** (+5) + `audit:prod` clean.
+Negative-controlled: flattening the three second-level folds back into level 1 turns exactly the
+named-second-tap pin and the budget pin red — and **the budget pin reports 785, the precise
+pre-fix number**, which is what proves it measures the real defect rather than a proxy for it.
+*(Honest limit: that control flattened the Simple fold and left one Degen label standing, so it
+was partial — the 785 reading is the evidence it bit, not the label count.)*
+
 **v6.9.1 "READ THE ROOM", Slice 2 — the public Degen Spotlight stops restating its own rows
 (owner: *"Spotlight prose de-dup on public Degen — delete the three paragraphs that restate the
 rows directly above them"*).** Presentation only, one component, `src/sections/StockSpotlight.jsx`;
