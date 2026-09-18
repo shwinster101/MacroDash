@@ -5,6 +5,68 @@ answers *"is it safe to be in the market?"* from live macro + market + sentiment
 data. Single-page React app on Cloudflare Pages, with live data assembled at the
 edge by Pages Functions and cached in KV.
 
+**v6.9.0 "READ THE ROOM", Slice 1 — the ladder modal stops leading with its own methodology, and
+the 188px row is the bigger finding (owner, on four live screenshots: *"please stop with text
+dense interface. Nobody wants that. Especially degen mode and terminal, can have the technical
+data and narrative without the ridiculous layers on layers of Text. Think of the user. Where do
+they even look and read?"*).** Presentation only, one surface, `public/admin.html`; no threshold,
+vote, gate, veto, sort key, receipt semantic or copy STRING moved, and **not one word was
+deleted** — every sentence is one tap away, byte-identical, and pinned to be.
+**Measured first, at 390×844, before anything was touched:** the FULL LADDER modal rendered
+**248 words / 605px of methodology above the first number**, so the table began at y=397 and the
+reader met the explanation before the ladder. That is the v3.66 QUIET BOARD rule — *chip-length in
+place, verbatim one tap deep* — never reaching this surface, and the cure is the one this repo
+already ruled for exactly this defect. The three paragraphs fold into **ONE `est-mini`** whose
+summary carries the three claims a reader can be WRONG without: *our own pt_model targets, not the
+street's · % is not annualised · FRESH is the 120-day quarterly clock*. The cadence on the summary
+is READ from `P_INPUT_CADENCE_D`, never retyped (a second spelling of 120 is the 5-vs-6-denominator
+drift). **est-mini, never `drawer`** — the phone harness counts open drawers. **The book/quote/card
+stamps stay OUTSIDE the fold**, and with them the amber *"score index did not load"* warning: v3.25
+says a collapse may hide an explanation and may never hide a fact about what you are looking at.
+**⚠ THE BIGGER FINDING WAS NOT THE PROSE — IT WAS A LAYOUT DEFECT NOBODY COULD SEE.** Every ladder
+row measured **188px tall**, and all thirteen cells reported that same height. Thirteen columns in
+a 300px window put BASIS/GATE/FRESH/NEEDS at **44–77px each**, so a SENTENCE wrapped to ~15 lines
+and set the height of the whole row — while the twelve columns you CAN see, being
+`vertical-align:top`, painted ~150px of nothing. **The column doing it was off-screen the entire
+time.** At 43 live rows that is ~6,400px of scroll spent on dead space. The fix is a width FLOOR on
+the four prose columns: **rows 188 → 55px (−71%)**, no markup and no text changed, only how narrow
+a column is allowed to become.
+**And the table was 631px inside a 300px window with nothing saying so** — more than half of it
+unreachable AND undiscoverable. A phone-only hint now NAMES what is off to the right
+(`← swipe the table sideways for BASIS · TT · GATE · FRESH · NEEDS NEXT`), hidden on desktop where
+the whole table already fits, and hidden in print (a touch affordance on paper is the v3.52
+interface-theater defect).
+**Measured after, same probe:** modal doc height **2,022 → 1,122px (−45%)**, visible words in the
+modal **561 → 353** on a 3-row fixture, prose above the table **605px → 0**, rows **188 → 55px**.
+**One honesty regression was created and closed in the same pass:** a closed `<details>` paints
+nothing, so folding the methodology would have DROPPED it from the ladder's print-to-PDF — and a
+printed ladder without *"% is not annualised"* lets a reader take a YE2026 % as a rate, the DEC-D2
+units error on paper. Print forces the fold open and hides its summary. **Found by that pin, not by
+reading:** the obvious `display:block!important` did NOT reveal it — Chromium hides closed
+`<details>` content with `content-visibility` on the `::details-content` pseudo, so the rule that
+looked sufficient was inert until the pin failed against it.
+**One pin re-pinned with the reason at the pin:** [87]'s print guard matched the exact selector LIST
+as one literal, so ADDING a control to it failed the pin while the contract was being honoured more
+fully — the shape that passes through any wrong rewrite and fails on the right one (the
+v5.6.4/v6.8.4 lesson). It now asserts each control independently.
+Tests: **2534 smoke** (+9, section [89]) + **340 render** (+5, driven live in Chromium: the closed
+summary, the one-tap reveal of every original sentence, the stamps outside the fold, the measured
+row-height budget that REPORTS its own measurement, the discoverable swipe, and the print path) +
+376 public-render + `audit:prod` clean. Negative-controlled twice — removing the column floors turns
+exactly the row-height pin red *reporting the pre-fix 188px*, and un-folding the prose turns exactly
+4 smoke + 1 render red with zero collateral. **The first attempt at that second control was
+MALFORMED** (a `perl` substitution matched a second site and corrupted the markup, cascading 15
+unrelated reds); recorded rather than quietly re-run, because a control that corrupts proves less
+than it claims (the v6.6.2 lesson).
+**Deliberately NOT done, and each is its own pass:** the 13-column table is still a table on a
+phone — the honest end state is a row list with the sort key as the primary datum and the rest
+behind a per-row disclosure, but 12 render assertions read `.ld-main tbody tr` cells at 390, so that
+is a scoped re-pin, not a drive-by; the NEXT $ deck's TODAY items still repeat a two-line
+cap-denominator boilerplate VERBATIM on consecutive rows; and the public Degen Spotlight still
+renders BUSINESS/STOCK/WATCH-NEXT paragraphs that restate the labelled rows directly above them
+(*"REVENUE GROWTH +454.0%"* followed by *"Revenue grew 454.0% versus the same quarter a year
+earlier"*). The full audit and the ranked plan are in `working/2026-09-18-read-the-room.md`.
+
 **v6.8.6 "PUBLIC TERMINAL SKIN" — the tape badge, the macro block, and the type floor becomes a
 TEST (owner: "the SpyTapeBadge 7px, then the MarketDetail/MacroRegime block that holds 73 of the
 remaining 116").** Presentation only across eight files: `SpyTapeBadge`, `MarketDetail`,

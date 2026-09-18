@@ -9,7 +9,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
 <!-- AUDIT: kept in sync with package.json by test/smoke.mjs. admin.html is a Vite
      public/ passthrough, so it cannot receive __APP_VERSION__ — the guard is the fix. -->
-<title>TT TICKER TERMINAL v6.8.6</title>
+<title>TT TICKER TERMINAL v6.9.0</title>
 <style>
   :root{
     --bg:#05070a; --panel:#0a0f16; --panel2:#0d141d; --line:#16202c;
@@ -434,6 +434,23 @@
   .ld-tbl td{padding:5px 6px;border-bottom:1px solid rgba(255,255,255,.04);vertical-align:top}
   .ld-tbl th.r,.ld-tbl td.r{text-align:right;white-space:nowrap}
   .ld-tbl tr.ld-elig td{background:rgba(31,122,85,.10)}
+  /* v6.9.0 READ THE ROOM — the 188px row, measured. Thirteen columns in a 300px window put
+     BASIS / GATE / FRESH / NEEDS at 44-77px each, so a SENTENCE wrapped to ~15 lines and,
+     because every cell is vertical-align:top, set the height of the whole row while leaving
+     ~150px of dead space in the twelve columns you can see. At 43 live rows that is ~6,400px
+     of scroll spent on nothing. The fix is a floor on the four prose columns: the table gets
+     wider (it already scrolls) and the rows get short. This changes no markup and no text —
+     only how narrow a column is allowed to become. */
+  .ld-tbl td:nth-child(9),.ld-tbl th:nth-child(9){min-width:96px}
+  .ld-tbl td:nth-child(11),.ld-tbl th:nth-child(11){min-width:132px}
+  .ld-tbl td:nth-child(12),.ld-tbl th:nth-child(12){min-width:112px}
+  .ld-tbl td:nth-child(13),.ld-tbl th:nth-child(13){min-width:168px}
+  /* A 631px table in a 300px window scrolled sideways with nothing saying so — the columns
+     past PRICE were unreachable AND undiscoverable. The hint states what is off to the right
+     and is hidden on desktop, where the whole table already fits. */
+  .ld-scrollhint{display:none}
+  @media(max-width:700px){.ld-scrollhint{display:block;color:var(--dim);font-size:10px;
+    letter-spacing:.06em;margin:4px 0 2px}}
   .ld-sort{background:none;border:0;color:var(--dim);font:inherit;font-size:9.5px;letter-spacing:.08em;
     font-weight:700;cursor:pointer;padding:2px 0;min-height:24px}
   .ld-sort.on{color:var(--green)}
@@ -457,7 +474,19 @@
       --dim:#555;--slate:#333;--fg:#000;--line:#bbb}
     #overlay .card .top{background:#fff!important;border-bottom:1px solid #000!important}
     #overlay .card .top .t{color:#000!important}
-    #overlay .card .x,#overlay .card .btns,.ld-sort{display:none!important}
+    /* v6.9.0: the swipe hint is a touch affordance — printing it is the v3.52 interface-theater
+       defect on paper, exactly like the sort headers beside it. */
+    #overlay .card .x,#overlay .card .btns,.ld-sort,.ld-scrollhint{display:none!important}
+    /* ...but the methodology it now hides MUST print. A PDF of the ladder without "% is not
+       annualised" lets a reader take a YE2026 % as a rate — the DEC-D2 units error on paper.
+       A closed <details> paints nothing, so print forces it open. */
+    /* Chromium hides a CLOSED <details>'s content with content-visibility on the
+       ::details-content pseudo, not with display, so display:block alone does not reveal it —
+       found by the print pin, which failed against a rule that looked sufficient. */
+    #overlay .card details.est-mini>div{display:block!important;content-visibility:visible!important}
+    #overlay .card details.est-mini::details-content{content-visibility:visible!important;
+      display:block!important;block-size:auto!important}
+    #overlay .card details.est-mini>summary{display:none!important}
     .ld-tbl th{position:static!important;background:#fff!important;border-bottom:1px solid #000!important}
     .ld-tbl td{border-bottom:1px solid #ddd!important}
     .ld-tbl tr.ld-elig td{background:#eef7f1!important;
@@ -507,7 +536,7 @@
          verdict and every gate are computed upstream and this panel changes nothing. -->
     <div id="macroEvidence" role="region" aria-label="Why macro — readout evidence"></div>
     <div id="headInfo" style="display:none">
-      <div class="brand">FINANCE&nbsp;BRO.AI // TT&nbsp;TICKER&nbsp;TERMINAL <small>v6.8.6 · the daily contract</small></div>
+      <div class="brand">FINANCE&nbsp;BRO.AI // TT&nbsp;TICKER&nbsp;TERMINAL <small>v6.9.0 · the daily contract</small></div>
       <div class="statusline">
         <span>BOOK: <b id="bookStamp">loading…</b></span>
         <span>AUTH: <b id="sessState">…</b></span>
@@ -7788,6 +7817,16 @@ function ladderHead(Y1,Y2,d){
     ladderServerMacroCell(mg)+
     `<span class="scope">· ${d.rows.length} priced of ${BOOK.length} · the per-row GATE column is the TICKER ladder, evaluated at YE${esc(gy)} — not this macro gate</span>`+
     `</div>`+
+    /* v6.9.0 READ THE ROOM: these three paragraphs are 248 words / 605px at 390 — measured,
+       they pushed the first NUMBER to y=397, so the reader met the methodology before the
+       ladder. They are METHODOLOGY, constant across every row and every session; the v3.66
+       QUIET BOARD rule (chip-length in place, verbatim one tap deep) never reached this
+       surface. Folded into ONE est-mini whose summary carries the three claims a reader
+       could be WRONG without — the targets are ours not the street's, the % is not a rate,
+       FRESH is quarterly. Nothing is deleted: every word is one tap away, byte-identical.
+       est-mini, never `drawer` — the phone harness counts open drawers (the v3.61 rule). */
+    `<details class="est-mini"><summary><span class="scope">how to read this ladder</span>`+
+    `<span class="scope">our own pt_model targets, not the street's · % is not annualised · FRESH is the ${P_INPUT_CADENCE_D}-day quarterly clock</span></summary><div>`+
     `<div class="none">Targets are this book's OWN <b>pt_model</b> ladder — premium where a multiple is asserted, `+
     `otherwise the name's floor (market multiple × forward EPS). They are not street targets and not advice. `+
     `% is target ÷ current price − 1, <b>not annualised</b>: YE${esc(Y1)} and YE${esc(Y2)} are different horizons, `+
@@ -7805,6 +7844,10 @@ function ladderHead(Y1,Y2,d){
     `MARRIED beside this ticker ladder, never blended into it. Shown only where the receipt `+
     `itself has an opinion (its one ELIGIBLE pick plus the ranked names it vetoed); a receipt `+
     `older than today is NAMED rather than read as a disagreement.</div>`+
+    `</div></details>`+
+    /* The stamps line stays OUTSIDE the fold: book/quote/card provenance is a FACT about
+       what you are looking at, not methodology, and the amber score-index warning inside it
+       is a red fact (v3.25 — a collapse never hides one). */
     `<div class="none">book ${esc((META&&META.asOf)||"—")} · quotes ${LIVE_AT?esc(String(LIVE_AT).replace("T"," ").slice(0,16))+"Z":"not loaded"}`+
     (SCORE_INDEX===null?` · <span style="color:var(--amber)">score index did not load — composites read "not read", not "unscored"</span>`:
       SCORE_INDEX_META&&SCORE_INDEX_META.methodology_version?` · cards ${esc(SCORE_INDEX_META.methodology_version)}`:"")+`</div>`;
@@ -7849,7 +7892,8 @@ function ladderTable(d){
   /* ld-main / ld-skip: the ranked table and the named-exclusions table are DIFFERENT
      claims and are addressed separately — a selector matching both is how a suite ends up
      asserting a gate column on a table that has none. */
-  return`<div class="tblx"><table class="ld-tbl ld-main"><thead>${head}</thead><tbody>${body}</tbody></table></div>`;
+  return`<div class="ld-scrollhint">← swipe the table sideways for BASIS · TT · GATE · FRESH · NEEDS NEXT</div>`+
+    `<div class="tblx"><table class="ld-tbl ld-main"><thead>${head}</thead><tbody>${body}</tbody></table></div>`;
 }
 function ladderSkipped(d){
   if(!d.skipped.length)return"";

@@ -2469,13 +2469,34 @@ console.log("\n[render] v5.7.1 — arrival focus: judged AFTER the store is read
      claimed — it could only ever pass. Rewritten as a flat conjunction over the RENDERED
      body text: the cadence number, all three clock names, the price exclusion, and the
      gate distinction, each asserted directly. */
+  /* RE-PINNED at v6.9.0, with the reason at the pin. This read `#cBody` innerText with the
+     methodology rendered at full size above the table — 248 words / 605px at 390, measured,
+     which is what pushed the first NUMBER off the first screen. The prose is now one tap deep
+     (v3.66 QUIET BOARD), so a closed <details> correctly removes it from innerText. The CLAIM
+     has not been weakened: every original sentence is still asserted, verbatim, after one tap,
+     and the closed summary is asserted to carry the three things a reader could be WRONG
+     without. Asserting only the open state would let the summary go empty unnoticed. */
   {
+    const closed = (await p.locator("#cBody").innerText()).replace(/\s+/g, " ");
+    ok("ladder: CLOSED, the methodology is one tap deep and the summary still carries the three claims a reader could be wrong without — our targets not the street's, % not annualised, FRESH is the quarterly clock",
+      !/one fiscal quarter plus reporting lag/i.test(closed) &&
+      /how to read this ladder/i.test(closed) &&
+      /not the street's/i.test(closed) && /not annualised/i.test(closed) &&
+      /120-day quarterly clock/i.test(closed));
+    await p.locator("#cBody details.est-mini", { hasText: /how to read this ladder/i }).first()
+      .locator("summary").click();
+    await p.waitForTimeout(120);
     const hb = (await p.locator("#cBody").innerText()).replace(/\s+/g, " ");
-    ok("ladder: the header states the CADENCE by number, names all three quarterly clocks, says outright that the daily price mark is NOT in the rating, and separates NEEDS from the gate",
+    ok("ladder: ONE TAP later the header states the CADENCE by number, names all three quarterly clocks, says outright that the daily price mark is NOT in the rating, and separates NEEDS from the gate",
       /120-day cadence/.test(hb) && /TT run, thesis, score card/i.test(hb) &&
       /one fiscal quarter plus reporting lag/i.test(hb) &&
       /price mark is a DAILY clock/i.test(hb) && /deliberately NOT in this rating/i.test(hb) &&
       /not a restatement of the gate/i.test(hb));
+    ok("ladder: the book/quote/card stamps stay OUTSIDE the fold — provenance is a fact about what you are looking at, not methodology",
+      /book \d{4}-\d{2}-\d{2}/.test(closed) && /quotes /.test(closed));
+    await p.locator("#cBody details.est-mini", { hasText: /how to read this ladder/i }).first()
+      .locator("summary").click();
+    await p.waitForTimeout(120);
   }
   await p.locator("#cBody .ld-sort", { hasText: /FRESH/i }).first().click();
   await p.waitForTimeout(200);
@@ -2491,6 +2512,12 @@ console.log("\n[render] v5.7.1 — arrival focus: judged AFTER the store is read
     (await p.locator(".wrap").isVisible().catch(() => true)) === false &&
     (await p.locator("#cBody .ld-main").isVisible()) === true &&
     (await p.locator("#cBody .ld-sort").first().isVisible().catch(() => true)) === false);
+  /* v6.9.0: folding the methodology behind a <details> would otherwise DROP it from the PDF —
+     a printed ladder without "% is not annualised" lets a reader take a YE2026 % as a rate,
+     the DEC-D2 units error on paper. Print forces the fold open and hides its summary. */
+  ok("ladder/print: the methodology PRINTS even though it is folded on screen — a PDF that loses '% is not annualised' would let a reader take a horizon % as a rate",
+    /not annualised/i.test((await p.locator("#cBody").innerText()).replace(/\s+/g, " ")) &&
+    (await p.locator("#cBody .ld-scrollhint").first().isVisible().catch(() => true)) === false);
   await p.emulateMedia({ media: "screen" });
 
   // (5) the shared card is handed back UNMODIFIED
@@ -2515,6 +2542,25 @@ console.log("\n[render] v5.7.1 — arrival focus: judged AFTER the store is read
     (await p2.locator("#overlay.on").count()) === 1 && box && box.height >= 40);
   ok("ladder: the table scrolls its own overflow rather than blowing the page out at 390px (the v3.35 .tblx + min-width:0 lesson)",
     (await p2.evaluate(() => document.documentElement.scrollWidth)) <= 390);
+  /* v6.9.0 READ THE ROOM — the measured 188px row. Thirteen columns in a 300px window put the
+     four prose columns at 44-77px, so a SENTENCE wrapped to ~15 lines and set the height of
+     every row while the twelve columns you can SEE painted ~150px of nothing (every cell is
+     vertical-align:top). At 43 live rows that was ~6,400px of scroll spent on dead space.
+     Budgeted at 96px — roughly three lines of an 11px cell — so a row that starts wrapping
+     to a paragraph again fails the build. The assertion REPORTS its measurement, so a future
+     failure is a diagnosis rather than a mystery (the v4.1.3 lesson). */
+  {
+    const hs = await p2.$$eval("#cBody .ld-main tbody tr", (rs) => rs.map((r) => Math.round(r.getBoundingClientRect().height)));
+    ok(`ladder@390: no row is taller than 96px — a prose column narrow enough to wrap to a paragraph sets the height of every row and paints dead space in the twelve you can see (measured max ${Math.max(...hs)}px over ${hs.length} rows)`,
+      hs.length >= 2 && Math.max(...hs) <= 96);
+  }
+  /* The table is ~945px inside a ~300px window, so more than half of it is off to the right.
+     It always was; what was missing was anything SAYING so. The hint names the columns that
+     are out there, so the swipe is discoverable rather than a thing you find by accident. */
+  ok("ladder@390: the sideways swipe is DISCOVERABLE — the hint names the columns that are off-screen, because a table wider than its window with no affordance is a control nobody knows they have",
+    (await p2.locator("#cBody .ld-scrollhint").first().isVisible()) === true &&
+    /GATE/.test(await p2.locator("#cBody .ld-scrollhint").first().innerText()) &&
+    (await p2.evaluate(() => { const w = document.querySelector("#cBody .tblx"); return w.scrollWidth > w.clientWidth; })) === true);
   await p2.close();
 }
 

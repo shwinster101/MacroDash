@@ -13292,8 +13292,15 @@ console.log("\n[copy-budget] v6.6.1 ONE ENGINE, TWO ALTITUDES — ≤25-word why
     /\.ld-tbl tr\{page-break-inside:avoid\}/.test(pr) && /\.tblx\{overflow:visible!important\}/.test(pr));
   ok("[87] the print sheet redefines the THEME VARS rather than forcing one ink colour — inline var(--green)/var(--red) resolve to paper-safe values, so the one signal the % columns carry survives the PDF instead of being flattened to black",
     /--green:#0a6b3d/.test(pr) && /--red:#a41d1d/.test(pr) && !/card \*\{color:#000/.test(pr));
-  ok("[87] the sort headers and the action row are hidden in print — a control rendered into a PDF is an affordance that does nothing, the v3.52 interface-theater defect on paper",
-    /#overlay \.card \.x,#overlay \.card \.btns,\.ld-sort\{display:none!important\}/.test(pr));
+  /* RE-PINNED at v6.9.0: this matched the exact selector LIST as one literal, so adding a
+     control to it (the swipe hint) failed the pin while the contract it describes was being
+     honoured more fully, not less — the shape that passes through any wrong rewrite and fails
+     on the right one (the v5.6.4 / v6.8.4 lesson). It now asserts the CONTRACT: every control
+     the ladder renders is hidden under print, each named independently. */
+  ok("[87] the sort headers, the action row and the swipe hint are hidden in print — a control rendered into a PDF is an affordance that does nothing, the v3.52 interface-theater defect on paper",
+    (() => { const rule = (pr.match(/[^\n{}]*\{display:none!important\}/g) || []).join(" ");
+      return ["#overlay .card .x", "#overlay .card .btns", ".ld-sort", ".ld-scrollhint"]
+        .every((sel) => rule.includes(sel)); })());
   ok("[87] a sort header is a real button with aria-pressed and a 40px thumb target at phone widths — the v3.81 defect was a control that rendered its state and offered no way to change it",
     /<button type="button" class="ld-sort/.test(adminSrc) && /aria-pressed="\$\{LADDER_SORT===k\}"/.test(adminSrc) &&
     /max-width:480px\)\{\.ld-sort\{min-height:40px\}\}/.test(adminSrc));
@@ -13434,6 +13441,63 @@ console.log("\n[88] public terminal skin, Slice 1 — the token bridge and the o
   }
 }
 
+/* ── [89] READ THE ROOM (v6.9.0) — the ladder modal stops leading with its own methodology ──
+   Measured at 390x844 before this pass: 248 words / 605px of methodology above the table, and
+   every row 188px tall because four prose columns squeezed into 44-77px wrapped a SENTENCE to
+   ~15 lines while the twelve columns you can see painted dead space. The cure is the one this
+   repo already ruled for exactly this defect (v3.66 QUIET BOARD): chip-length in place,
+   verbatim one tap deep — plus a floor on the columns that were doing the wrapping.
+   These are SOURCE pins; the behaviour (closed summary, one-tap reveal, row heights, the
+   swipe hint, and the print path) is driven live in test/render.mjs. */
+{
+  try {
+    const head = adminSrc.slice(adminSrc.indexOf("function ladderHead("),
+      adminSrc.indexOf("function ladderTable("));
+    ok("[89] the ladder head folds its methodology into exactly ONE disclosure — three separate always-open paragraphs were the defect, and three separate folds would just be the defect in menus",
+      (head.match(/<details class="est-mini"/g) || []).length === 1);
+    ok("[89] est-mini, never `drawer` — the phone harness counts open drawers, so a methodology fold wearing that class would silently move a budget (the FEAT-TT-ESTRUN precedent)",
+      !/<details class="drawer"/.test(head));
+    /* The three claims on the summary are the ones a reader can be WRONG without: whose
+       targets these are, that the % is a horizon gap and not a rate, and what FRESH measures.
+       Pinned by CONTENT, not by position — a summary that goes empty is the failure mode. */
+    const sum = head.slice(head.indexOf("<summary>"), head.indexOf("</summary>"));
+    ok("[89] the closed summary carries the three claims a reader could be wrong without — not the street's targets, % not annualised, FRESH is the quarterly clock",
+      /how to read this ladder/i.test(sum) && /not the street's/i.test(sum) &&
+      /not annualised/i.test(sum) && /P_INPUT_CADENCE_D/.test(sum) && /quarterly clock/i.test(sum));
+    /* The cadence on the summary is READ from the constant, never retyped: a second spelling
+       of "120" is the drift this repo has paid for at the 5-vs-6 denominator and the PT audit. */
+    ok("[89] the summary's cadence is the CONSTANT, never a retyped number",
+      !/\b120-day quarterly clock/.test(sum));
+    const fold = head.slice(head.indexOf("<details class=\"est-mini\""), head.indexOf("</div></details>"));
+    ok("[89] every word of the retired prose is INSIDE the fold — nothing was deleted to make the surface quiet",
+      /Targets are this book's OWN/.test(fold) && /not annualised<\/b>/.test(fold) &&
+      /one fiscal quarter plus reporting lag/.test(fold) && /price mark is a DAILY clock/.test(fold) &&
+      /not a restatement of the gate/.test(fold) && /MARRIED beside this ticker ladder/.test(fold));
+    /* v3.25: a collapse may hide methodology; it may never hide a fact about what you are
+       looking at, and the amber score-index warning inside the stamps line is a red fact. */
+    ok("[89] the book/quote/card stamps stay OUTSIDE the fold, with their amber score-index warning — provenance is a fact about the data, not an explanation of it",
+      head.indexOf("</div></details>") < head.indexOf("book ${esc((META&&META.asOf)") &&
+      /score index did not load/.test(head.slice(head.indexOf("</div></details>"))));
+    ok("[89] the four prose columns carry a width FLOOR — BASIS/GATE/FRESH/NEEDS at 44-77px is what wrapped a sentence to ~15 lines and set every row's height",
+      /\.ld-tbl td:nth-child\(9\)[^}]*min-width/.test(adminSrc) &&
+      /\.ld-tbl td:nth-child\(11\)[^}]*min-width/.test(adminSrc) &&
+      /\.ld-tbl td:nth-child\(12\)[^}]*min-width/.test(adminSrc) &&
+      /\.ld-tbl td:nth-child\(13\)[^}]*min-width/.test(adminSrc));
+    ok("[89] the sideways swipe has an affordance that NAMES the columns off to the right, and it is phone-only — on desktop the whole table already fits",
+      /class="ld-scrollhint"/.test(adminSrc) && /swipe the table sideways for/.test(adminSrc) &&
+      /@media\(max-width:700px\)\{\.ld-scrollhint\{display:block/.test(adminSrc));
+    /* A touch affordance printed onto paper is the v3.52 interface-theater defect, exactly
+       like the sort headers beside it — and the methodology the fold now hides must still
+       print, or a PDF of the ladder loses "% is not annualised". */
+    const print = adminSrc.slice(adminSrc.indexOf("@media print"));
+    ok("[89] print drops the swipe hint with the other controls, and FORCES the methodology fold open — a printed ladder without '% is not annualised' lets a reader take a horizon % as a rate",
+      /\.ld-scrollhint\{display:none!important\}/.test(print) &&
+      /details\.est-mini>div\{display:block!important/.test(print) &&
+      /details\.est-mini::details-content/.test(print));
+  } catch (e) {
+    ok("[89] the READ THE ROOM pins RAN to completion — a section that dies mid-run prints no total: " + (e && e.message), false);
+  }
+}
 
 console.log(`\n=== SMOKE TEST: ${pass} passed, ${fail} failed ===`);
 process.exit(fail === 0 ? 0 : 1);
