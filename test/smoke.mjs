@@ -12345,10 +12345,18 @@ console.log("\n[83] Simple altitude — fs-xxl Hold, fs-body sentence, one-block
   ok("T7: Simple sentence is sans fs-body; Degen sentence stays mono fs-m",
     /fontFamily:plainVerdict\?T\.fontSans:T\.fontMono/.test(band) &&
     /fontSize:plainVerdict\?T\.fsBody:T\.fsM/.test(band));
-  ok("T7: Simple cards read at body size — value fs-body, label/HELPING fs-m, sans",
-    /fontSize: T\.fsBody, fontWeight: 600/.test(spc) &&
-    /fontFamily: T\.fontSans, fontSize: T\.fsM/.test(spc) &&
-    /fontFamily: T\.fontSans, fontSize: T\.fsBody/.test(spc));
+  /* v6.8.2 RE-PIN (Slice 2 item 2 — the cards adopt the strip anatomy): the label/HELPING pair
+     moved from sans fs-m to the strip's own mono fs-s eyebrow and fs-xs vote word; the VALUE
+     stays fs-body — the cards are the answer's evidence, one altitude above the strip, and the
+     v6.5.4 hero → cards → strip scale is deliberate. The old sans/fs-m literals are pinned
+     ABSENT so the pair cannot drift back, and no numeric fontSize survives in the file. */
+  ok("T7→v6.8.2: Simple cards wear the strip anatomy — value fs-body (kept), eyebrow mono fs-s, vote word mono fs-xs, no sans/fs-m pair, no numeric fontSize",
+    /className="simple-card-value" style=\{\{ fontFamily: T\.fontMono, fontSize: T\.fsBody, fontWeight: 600/.test(spc) &&
+    /className="simple-card-label" style=\{\{ fontFamily: T\.fontMono, fontSize: T\.fsS, color: T\.textMuted/.test(spc) &&
+    /className="simple-card-vote" style=\{\{ fontFamily: T\.fontMono, fontSize: T\.fsXs, fontWeight: 700/.test(spc) &&
+    !/fontFamily: T\.fontSans/.test(spc) && !/fontSize:\s*\d/.test(spc));
+  ok("v6.8.2: the card's ⓘ glyph is gone (the card IS the sheet trigger since v5.8) while the sr-only explainer promise stays — the strip's v6.8.1 rule, scoped to the cards now too",
+    !/ⓘ/.test(spc) && /\{c\.explain && <span className="visually-hidden"> — what is this\? Opens an explainer\.<\/span>\}/.test(spc));
   ok("T7: Simple fold promises render at fs-l, not a 8px operator chip",
     /fontSize: promise \? T\.fsL : 8/.test(cgSrc));
   ok("T8: Simple ℹ is gone — Hold ⓘ is the clock; copy stays icon-only on the Hold row",

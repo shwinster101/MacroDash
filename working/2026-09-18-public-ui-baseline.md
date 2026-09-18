@@ -227,3 +227,25 @@ eight ⓘ glyphs the census had been counting as words, which slightly overstate
 sub-11px share on every surface that wore one.
 
 Gates at ship: 2520 smoke · 335 render · 368 public-render · audit:prod clean.
+
+### Slice 2 item 2 — the Simple cards adopt the strip anatomy (v6.8.2, same day)
+
+Owner: "Simple cards should adopt it." `src/sections/SimpleCards.jsx` only: eyebrow mono fs-s
+(was sans-alias fs-m), vote word mono fs-xs in tone colour (was fs-m), glyph fs-l and the 3px
+rule unchanged, the 9px ⓘ deleted, the 8/9px footer and empty-state lines to fs-xs. The value
+keeps fs-body 16 (the cards outrank the strip; size encodes importance).
+
+| Metric (390×844) | After strip lift | After cards |
+|---|---|---|
+| Cards region height | 177 | 177 |
+| Strip top / spotlight top | 418 / 540 | 418 / 540 |
+| Words under 11px, Simple | 99 of 192 | 99 of 189 |
+| Smallest visible leaf in the cards region | 9px (the ⓘ) | 10px |
+| Desktop cards region | 78 | 73 |
+
+**Correction:** §3 said the Simple cards were already "where the tokens were applied". They
+were, at the value; the label and the HELPING word were sans-alias fs-m and the ⓘ was a 9px
+literal, so the file still carried three non-strip sizes. Closed now; the first screen of Simple
+(hero, cards, strip) carries no literal under 10px. Spotlight and the folds still do.
+
+Gates at ship: 2521 smoke · 335 render · 369 public-render · audit:prod clean.

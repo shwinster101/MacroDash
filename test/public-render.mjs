@@ -1749,9 +1749,21 @@ console.log("\n[public] v6.0.1/v6.4 — shape before text · Simple|Degen clarit
       cardText: value ? value.textContent.trim() : null,
     };
   });
-  // Slice 1: the label reads fs-m, lifted 11 -> 12.5 by the token bridge (the terminal's floor).
-  ok(`T7 type (Simple): Hold is 28px, card values 16px, labels fs-m (measured hold=${typePx.hold} value=${typePx.card} label=${typePx.label} «${typePx.holdText}» «${typePx.cardText}»)`,
-    typePx.hold === "28px" && typePx.card === "16px" && typePx.label === `${DT["fs-m"]}px`);
+  // Slice 1: the label read fs-m, lifted 11 -> 12.5 by the token bridge. v6.8.2 (Slice 2 item 2):
+  // the cards adopt the STRIP anatomy, so the label is the strip's own fs-s eyebrow and the vote
+  // word its fs-xs sub — read off DT so a floor change moves this pin with it; the value keeps 16.
+  ok(`T7 type (Simple): Hold is 28px, card values 16px, labels fs-s (measured hold=${typePx.hold} value=${typePx.card} label=${typePx.label} «${typePx.holdText}» «${typePx.cardText}»)`,
+    typePx.hold === "28px" && typePx.card === "16px" && typePx.label === `${DT["fs-s"]}px`);
+  const cardAnat = await page.evaluate(() => {
+    const px = (n) => n ? getComputedStyle(n).fontSize : null;
+    const cards = [...document.querySelectorAll(".simple-card")];
+    const leaves = [...document.querySelectorAll('[aria-label="Key parameters"] *')].filter((n) => n.children.length === 0 && (n.textContent || "").trim() && !n.classList.contains("visually-hidden") && n.getBoundingClientRect().height > 0);
+    return { n: cards.length, vote: cards.map((c) => px(c.querySelector(".simple-card-vote"))), label: cards.map((c) => px(c.querySelector(".simple-card-label"))),
+      words: cards.map((c) => (c.querySelector(".simple-card-vote") || {}).textContent), minLeaf: Math.min(...leaves.map((n) => parseFloat(getComputedStyle(n).fontSize))), leaves: leaves.length,
+      text: document.querySelector('[aria-label="Key parameters"]').innerText }; });
+  ok(`v6.8.2 cards (Simple, 390): every card carries ONE vote word at fs-xs in the strip's vocabulary, no ⓘ rides the region, and no visible leaf is under 10px (measured min ${cardAnat.minLeaf} over ${cardAnat.leaves} leaves)`,
+    cardAnat.n === 3 && cardAnat.vote.every((v) => v === `${DT["fs-xs"]}px`) && cardAnat.label.every((v) => v === `${DT["fs-s"]}px`) &&
+    cardAnat.words.every((w) => /^(HELPING|HURTING|MIXED)$/.test(w)) && !/ⓘ/.test(cardAnat.text) && cardAnat.minLeaf >= 10);
   ok("T9 header (Simple): Wordmark + Simple|Degen — Terminal and Share are not wrapping peers",
     (await page.locator('a[aria-label="Open Ticker Terminal"]').count()) === 0 &&
     (await page.locator("header button[aria-label='Copy dashboard link']").count()) === 0 &&

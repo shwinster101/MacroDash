@@ -45,7 +45,7 @@ const SimpleCards = ({ cards, usable = 0, shown = 0, total = 0, withheld = false
   if (!cards || !Array.isArray(cards) || cards.length === 0) {
     return (
       <div role="region" aria-label="Key parameters" style={{ padding: "8px 20px", background: T.bg, borderBottom: `1px solid ${T.border}` }}>
-        <div style={{ fontFamily: T.fontMono, fontSize: 9, color: T.textMuted }}>
+        <div style={{ fontFamily: T.fontMono, fontSize: T.fsXs, color: T.textMuted }}>
           No signal is currently counted, so there is no reading to show — evidence detail is in Degen mode.
         </div>
       </div>
@@ -67,16 +67,27 @@ const SimpleCards = ({ cards, usable = 0, shown = 0, total = 0, withheld = false
               className="simple-card"
               style={{ background: T.surface, border: `1px solid ${T.border}`, borderLeft: `3px solid ${tone}`,
               borderRadius: 5, padding: "8px 10px", minWidth: 0, backgroundImage: illus ? ILLUS_HATCH : undefined }}>
+              {/* v6.8.2 (PUBLIC TERMINAL SKIN, Slice 2 item 2 — "Simple cards should adopt it"):
+                  the card wears the STRIP's anatomy — eyebrow · value · vote — in the strip's own
+                  tokens: eyebrow mono fs-s (11) muted and tracked like a strip label, the vote word
+                  mono fs-xs (10) in its tone colour like a strip sub-line, the glyph fs-l. The VALUE
+                  keeps fs-body (16): the cards are the answer's evidence, one altitude above the
+                  strip, and size encodes importance — matching the strip's 14 would flatten the
+                  hero → cards → strip scale v6.5.4 set on purpose. ONE vote word, kept: the v6.0.2
+                  ruling that "▲ beside VOLATILITY reads as vol is up" stands, so the word is the
+                  disambiguator and the colour carries it too. The 9px ⓘ is DELETED, not shrunk:
+                  the whole card has been the Explainable button since v5.8, so the glyph was a
+                  second affordance for the target under the thumb (the strip's v6.8.1 rule); the
+                  screen-reader promise stays, since an sr-only sentence is the affordance a screen
+                  reader needs and costs no pixels. No numeric fontSize literal survives here. */}
               <div style={{ display: "flex", alignItems: "baseline", gap: 8, flexWrap: "wrap" }}>
                 <span aria-hidden="true" className="simple-card-glyph" style={{ fontFamily: T.fontMono, fontSize: T.fsL, fontWeight: 700,
                   color: tone, flexShrink: 0, lineHeight: 1 }}>{face.glyph}</span>
-                <span style={{ fontFamily: T.fontSans, fontSize: T.fsM, color: T.textMuted,
-                  letterSpacing: "0.04em", textTransform: "uppercase", flexShrink: 0 }}>{face.label}</span>
-                <span style={{ fontFamily: T.fontSans, fontSize: T.fsBody, fontWeight: 600, color: T.textPrimary, minWidth: 0 }}>{face.value}</span>
-                <span style={{ fontFamily: T.fontSans, fontSize: T.fsM, fontWeight: 700, marginLeft: "auto",
+                <span className="simple-card-label" style={{ fontFamily: T.fontMono, fontSize: T.fsS, color: T.textMuted,
+                  letterSpacing: "0.08em", textTransform: "uppercase", flexShrink: 0 }}>{face.label}</span>
+                <span className="simple-card-value" style={{ fontFamily: T.fontMono, fontSize: T.fsBody, fontWeight: 600, color: T.textPrimary, minWidth: 0 }}>{face.value}</span>
+                <span className="simple-card-vote" style={{ fontFamily: T.fontMono, fontSize: T.fsXs, fontWeight: 700, marginLeft: "auto", letterSpacing: "0.05em",
                   color: TONE[face.tone] || T.textMuted, flexShrink: 0 }}>{WORD[face.tone] || "—"}</span>
-                {c.explain && <span aria-hidden="true" title="What is this?"
-                  style={{ fontFamily: T.fontMono, fontSize: 9, color: T.amber, flexShrink: 0 }}>ⓘ</span>}
                 {c.explain && <span className="visually-hidden"> — what is this? Opens an explainer.</span>}
                 <span className="visually-hidden">{fresh.word}</span>
               </div>
@@ -84,7 +95,7 @@ const SimpleCards = ({ cards, usable = 0, shown = 0, total = 0, withheld = false
           );
         })}
       </div>
-      {withheld && <div style={{ fontFamily: T.fontMono, fontSize: 8, color: T.amber, marginTop: 5 }}>
+      {withheld && <div style={{ fontFamily: T.fontMono, fontSize: T.fsXs, color: T.amber, marginTop: 5 }}>
         partial evidence — not used for the call
       </div>}
     </div>

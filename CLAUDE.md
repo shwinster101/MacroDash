@@ -5,6 +5,35 @@ answers *"is it safe to be in the market?"* from live macro + market + sentiment
 data. Single-page React app on Cloudflare Pages, with live data assembled at the
 edge by Pages Functions and cached in KV.
 
+**v6.8.2 "PUBLIC TERMINAL SKIN, Slice 2 item 2" — the Simple cards adopt the strip anatomy
+(owner: "Simple cards should adopt it"; the plan's line reads *"keep three, restyle to strip
+anatomy (mono, left rule, HELPING/HURTING as color not a second word if the glyph already says
+it). One vote word max."*).** One component, `src/sections/SimpleCards.jsx`; `simpleCards` in
+`evidence.js`, `simpleFace.js`, every threshold and the card selection rule are untouched. The
+card row is now the strip's **eyebrow · value · vote** in the strip's own tokens: the eyebrow is
+mono `fs-s` 11, muted and tracked like a strip label (was sans-alias `fs-m` 12.5); the vote word
+is mono `fs-xs` 10 in its tone colour like a strip sub-line (was `fs-m`); the glyph stays `fs-l`
+and the 3px tone rule stays. **The VALUE keeps `fs-body` 16 on purpose** — the cards are the
+answer's evidence, one altitude above the strip, and size encodes importance: matching the
+strip's 14 would flatten the hero → cards → strip scale v6.5.4 set deliberately. **ONE vote word,
+kept** — the plan allows one, and the v6.0.2 ruling stands that `▲` beside VOLATILITY reads as
+"vol is up", so the word disambiguates the glyph while the colour carries it too. **The 9px ⓘ is
+DELETED** (the card has been the `Explainable` button since v5.8 — the strip's v6.8.1 rule,
+scoped to the cards now); the sr-only promise stays. The 8px "partial evidence" line and the 9px
+empty state read `fs-xs`; no numeric `fontSize` literal survives in the file.
+**Measured, 390×844, same probe:** the cards region is **177px before and after** (the row was
+already one line; the eyebrow shrank and the word shrank, so nothing moved), the strip still
+begins at 418, the v6.3 budgets still print 218 / 466, and the smallest visible leaf in the
+region is 10px. Desktop cards 78 → 73px. **Pins:** the T7 source pin is re-pinned on the new
+anatomy with the retired sans/`fs-m` pair pinned ABSENT; the T7 browser pin reads the label as
+`DT["fs-s"]` (was `fs-m`) with the value still 16; two added — the card ⓘ pinned absent beside
+the sr-only promise (source), and every rendered card carrying exactly one vote word at `fs-xs`
+with no leaf under 10px (browser).
+Tests: **2521 smoke** (+1) + 335 render + **369 public-render** (+1) + `audit:prod` clean.
+**Deliberately NOT done:** the Spotlight chrome (the plan's next line — "same panel chrome as a
+Simple card … no rounded consumer-card look"), the Degen hero status lines, the recharts tick
+`fontFamily` leak, the max-width container.
+
 **v6.8.1 "PUBLIC TERMINAL SKIN, Slice 2 item 1" — the macro strip lift (owner: "build the macro
 strip lift"; the plan's Slice 2 line reads *"Strip: labels fs-s (11), values fs-l (14). Drop the
 8px ⓘ next to every ticker — the whole tile is already the tap target. Four-column phone grid
