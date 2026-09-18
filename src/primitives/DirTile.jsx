@@ -32,11 +32,11 @@ const DirTile=({label,value,d1,w1,m1,band,invert=false,spark,source,sourceEp,mod
   return(
     <div style={{background:illus?T.surface:verdict.label==="BULLISH"?DT["regime-on-bg"]:verdict.label==="BEARISH"?DT["regime-off-bg"]:T.surface,backgroundImage:illus?ILLUS_HATCH:undefined,border:`1px solid ${illus?T.border:verdict.label==="BULLISH"?T.green+"44":verdict.label==="BEARISH"?T.red+"44":T.border}`,borderRadius:5,padding:"10px 12px",flex:"1 1 110px",minWidth:110,opacity:illus?0.92:1}}>
       <Label>{label}</Label>
-      <div style={{fontFamily:T.fontMono,fontSize:16,color:illus?T.textSecondary:T.textPrimary,fontWeight:700,marginBottom:4}}>{value}</div>
+      <div style={{fontFamily:T.fontMono,fontSize:T.fsBody,color:illus?T.textSecondary:T.textPrimary,fontWeight:700,marginBottom:4}}>{value}</div>
       <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:3,marginBottom:5}}>
         {[["1D",d1,t1],["1W",w1,t2],["1M",m1,t3]].map(([p,v,t])=>(
-          <div key={p}><div style={{fontFamily:T.fontMono,fontSize:8,color:T.textMuted}}>{p}</div>
-          <div style={{fontFamily:T.fontMono,fontSize:10,color:tc(t)}}>{arrow(v)} {Math.abs(v).toFixed(Math.abs(v)<1?1:2)}</div></div>
+          <div key={p}><div style={{fontFamily:T.fontMono,fontSize:T.fsXs,color:T.textMuted}}>{p}</div>
+          <div style={{fontFamily:T.fontMono,fontSize:T.fsXs,color:tc(t)}}>{arrow(v)} {Math.abs(v).toFixed(Math.abs(v)<1?1:2)}</div></div>
         ))}
       </div>
       {/* FEAT-30Y: an optional factual sub-line (e.g. the 10s30s spread + a reference level).
@@ -45,7 +45,7 @@ const DirTile=({label,value,d1,w1,m1,band,invert=false,spark,source,sourceEp,mod
       {/* v3.61 (FEAT-GLANCE): the note carries the FACT (it can read INVERTED — a red fact
           that must survive the default view); explanatory reference prose rides noteTitle
           as a tooltip instead of a rendered line. */}
-      {note&&<div title={noteTitle||undefined} style={{fontFamily:T.fontMono,fontSize:8,color:illus?T.textMuted:T.textSecondary,marginBottom:5,lineHeight:1.35}}>{note}</div>}
+      {note&&<div title={noteTitle||undefined} style={{fontFamily:T.fontMono,fontSize:T.fsXs,color:illus?T.textMuted:T.textSecondary,marginBottom:5,lineHeight:1.35}}>{note}</div>}
       {/* Verdict only on live data; mock/stale shows an honest chip instead of a fabricated call */}
       {/* Short chip label — a ~110px tile can't fit "· not live"; hatch + SourceBox carry it */}
       {illus?(mode==="STALE"?<DataModeBadge mode="STALE"/>:<IllustrativeChip label="ILLUSTRATIVE"/>):<Badge label={verdict.label} color={verdict.color} small/>}

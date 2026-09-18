@@ -5,6 +5,47 @@ answers *"is it safe to be in the market?"* from live macro + market + sentiment
 data. Single-page React app on Cloudflare Pages, with live data assembled at the
 edge by Pages Functions and cached in KV.
 
+**v6.8.6 "PUBLIC TERMINAL SKIN" — the tape badge, the macro block, and the type floor becomes a
+TEST (owner: "the SpyTapeBadge 7px, then the MarketDetail/MacroRegime block that holds 73 of the
+remaining 116").** Presentation only across eight files: `SpyTapeBadge`, `MarketDetail`,
+`MacroRegime`, and — the correction below — the four shared primitives those two sections render
+through. No threshold, vote, provenance rule, verdict suppression or copy string moved; **Simple is
+byte-identical at every altitude** (verdict 119 · cards 178 · strip 418 · spotlight 540 · doc 1,238).
+**The 7px `TODAY SPY` label — the smallest text on the page — is gone**, and with it every
+sub-floor literal in the swept set: captions, deltas, chips, the SPY chart's own Y-axis ticks and
+the Kalshi odds row all read the floor, while tracked uppercase eyebrows (`SectionHeader`, `Label`,
+`INFLATION · FED TARGETS CORE PCE`) take `fs-s` 11 — the anatomy v6.8.1–v6.8.5 established. The
+18px and 20px numerals stay literals: no token has those values, and inventing one to satisfy a
+sweep would be the tail wagging the scale. **The contract claimed here is therefore narrow and
+exact — no `fontSize` BELOW the floor — not "no numeric literal".**
+**⚠ SECOND CORRECTION TO MY OWN MAP, and it is the reason this pass is worth more than its
+pixels.** I attributed 73 leaves to MarketDetail/MacroRegime. Measured, most of them were never in
+those files: they were **`SourceBox` (endpoint + as-of), `SectionHeader`, the `Label` and `Badge`
+atoms, `DirTile` and `FGGauge`** — shared primitives RENDERING INSIDE those sections. Attributing a
+leaf to the section it appears in rather than the component that owns it is the same mistake that
+made me call the fold toggle "the one primitive" a release ago. Both are recorded in the working
+note rather than edited away.
+**Measured, 390×844:** sub-10px leaves in a closed Degen **144 → 54**; 8px words **138 → 41**, 9px
+**91 → 11**, sub-11px words **705 → 645**. Degen's doc height grows **5,174 → 5,293 (+119)** and
+**every region top above the fold is unchanged** (verdict 104 · whys 340 · strip 522 · spotlight
+644) — everything lifted lives below the Spotlight, so the first screen pays nothing. Simple's page
+is unchanged to the pixel.
+**THE STRUCTURAL FIX IS THE PIN, NOT THE LIFT.** 88 rendered leaves changed size and **not one
+suite assertion moved** — the whole pass was reversible in silence, which is the v3.54 defect
+("the defect that passed every existing test") pointed at type. Smoke now **sweeps every public UI
+file** for a numeric `fontSize` below the token floor and fails naming the file and the values,
+with a `PENDING` list of the twelve files still holding one. The list is pinned in BOTH directions:
+a swept file may never regress, **and a file that has been cleaned must be DELETED from PENDING** —
+otherwise the queue would keep claiming work already done, the label-outlives-its-data defect
+pointed at a to-do list. Negative-controlled twice: restoring `SectionHeader`'s 9px turns the sweep
+red naming the file, and leaving a cleaned file on PENDING turns the other red naming it.
+**Acceptance item 3 still stands as v6.8.5 left it** — CLAIMED for Simple (pinned at zero, whole
+page), NOT claimed for Degen. The remaining 54 are Watchlist + Alerts (34), Signal Quality (8), the
+accountability footer links (2) and the AI unit-economics captions — named, queued, and now
+enforced by the PENDING list rather than by a sentence in a changelog.
+Tests: **2525 smoke** (+2, the sweep and its queue guard) + 335 render + 376 public-render +
+`audit:prod` clean.
+
 **v6.8.5 "PUBLIC TERMINAL SKIN" — the shared fold toggle takes the floor, and acceptance item 3
 is CLAIMED for Simple and SCOPED for Degen (owner: "the CollapsedGroup toggle lift — the one
 primitive standing between you and claiming acceptance item 3").** Two primitives,

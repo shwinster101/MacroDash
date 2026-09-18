@@ -29,8 +29,8 @@ export default function SpyTapeBadge({ spyChangePct, mode, noSessionDay = false 
         userSelect: "none",
         transition: "all 0.2s",
       }}>
-      <div style={{ fontFamily:T.fontMono, fontSize:7, color:T.textMuted, letterSpacing:"0.1em", whiteSpace:"nowrap" }}>{lastSession?"LAST SPY":"TODAY SPY"}</div>
-      <div style={{ fontFamily:T.fontMono, fontSize:10, fontWeight:700, color, whiteSpace:"nowrap", letterSpacing:"0.04em" }}>
+      <div style={{ fontFamily:T.fontMono, fontSize:T.fsXs, color:T.textMuted, letterSpacing:"0.1em", whiteSpace:"nowrap" }}>{lastSession?"LAST SPY":"TODAY SPY"}</div>
+      <div style={{ fontFamily:T.fontMono, fontSize:T.fsXs, fontWeight:700, color, whiteSpace:"nowrap", letterSpacing:"0.04em" }}>
         {direction}
       </div>
     </div>

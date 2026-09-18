@@ -23,19 +23,19 @@ export const DataModeBadge = ({ mode }) => {
     ERROR:   { label:"⚠ ERROR", bg:"#190a0c", color:T.red,               border:`1px solid ${T.red}66` },
   }[mode] || { label:mode, bg:T.surface, color:T.textMuted, border:`1px solid ${T.border}` };
   return (
-    <span style={{background:cfg.bg, color:cfg.color, border:cfg.border, borderRadius:3, padding:"1px 6px", fontSize:9, fontFamily:T.fontMono, letterSpacing:"0.04em"}}>{cfg.label}</span>
+    <span style={{background:cfg.bg, color:cfg.color, border:cfg.border, borderRadius:3, padding:"1px 6px", fontSize:T.fsXs, fontFamily:T.fontMono, letterSpacing:"0.04em"}}>{cfg.label}</span>
   );
 };
 const SourceBox = ({ api, endpoint, asOf, mode }) => (
   <div style={{ display:"flex", alignItems:"center", gap:5, marginTop:6, flexWrap:"wrap", minWidth:0, maxWidth:"100%" }}>
     {mode && <DataModeBadge mode={mode}/>}
-    <span style={{ background:(apiColors[api]||T.border)+"22", color:apiColors[api]||T.textMuted, border:`1px solid ${(apiColors[api]||T.border)}44`, borderRadius:3, padding:"1px 5px", fontSize:9, fontFamily:T.fontMono, flexShrink:0 }}>{api}</span>
+    <span style={{ background:(apiColors[api]||T.border)+"22", color:apiColors[api]||T.textMuted, border:`1px solid ${(apiColors[api]||T.border)}44`, borderRadius:3, padding:"1px 5px", fontSize:T.fsXs, fontFamily:T.fontMono, flexShrink:0 }}>{api}</span>
     {/* v3.99: `nowrap` + ellipsis only truncates once the box is ALLOWED to shrink — without
         a min-width floor the flex item takes its content width and pushes the page wide
         instead (a long endpoint string broke the 320px contract). minWidth:0 lets the
         ellipsis do the job it was always written to do. */}
-    <span title={endpoint} style={{ fontFamily:T.fontMono, fontSize:8, color:T.textMuted, overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap", minWidth:0 }}>{endpoint}</span>
-    {asOf && <span style={{ fontFamily:T.fontMono, fontSize:8, color:T.textMuted, flexShrink:0 }}>{asOf}</span>}
+    <span title={endpoint} style={{ fontFamily:T.fontMono, fontSize:T.fsXs, color:T.textMuted, overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap", minWidth:0 }}>{endpoint}</span>
+    {asOf && <span style={{ fontFamily:T.fontMono, fontSize:T.fsXs, color:T.textMuted, flexShrink:0 }}>{asOf}</span>}
   </div>
 );
 export default SourceBox;

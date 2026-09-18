@@ -20,7 +20,7 @@ const FGGauge=({score,label,mode="MOCK",asOf})=>{
         </svg>
       </div>
       <div style={{fontFamily:T.fontMono,fontSize:20,color,fontWeight:700}}>{score}</div>
-      <div style={{fontFamily:T.fontMono,fontSize:9,color:T.textSecondary}}>{label}</div>
+      <div style={{fontFamily:T.fontMono,fontSize:T.fsXs,color:T.textSecondary}}>{label}</div>
       <SourceBox api="CNN" endpoint="fear-and-greed-index" mode={mode} asOf={asOf}/>
     </div>
   );

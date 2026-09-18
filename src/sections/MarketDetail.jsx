@@ -41,7 +41,7 @@ const MarketDetail=({d,modeOf,asOfOf,demoted,spyData,goldenCross})=>{
               <SectionHeader>Market Pulse</SectionHeader>
               <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:10,flexWrap:"wrap",gap:6}}>
                 <div>
-                  <div style={{fontFamily:T.fontSans,fontSize:11,color:T.textMuted}}>S&P 500 — 100D & 200D Moving Average</div>
+                  <div style={{fontFamily:T.fontSans,fontSize:T.fsS,color:T.textMuted}}>S&P 500 — 100D & 200D Moving Average</div>
                   <div style={{display:"flex",gap:6,marginTop:5,flexWrap:"wrap"}}>
                     <Badge label={`100D MA $${d.marketPulse.spy.ma100}`} color={T.blue} small/>
                     <Badge label={`200D MA $${d.marketPulse.spy.ma200}`} color={T.purple} small/>
@@ -49,10 +49,10 @@ const MarketDetail=({d,modeOf,asOfOf,demoted,spyData,goldenCross})=>{
                   </div>
                 </div>
                 <div style={{textAlign:"right"}}>
-                  <div style={{fontFamily:T.fontMono,fontSize:22,color:T.textPrimary,fontWeight:700}}>${d.marketPulse.spy.price}</div>
-                  <div style={{fontFamily:T.fontMono,fontSize:11,color:pctColor(d.marketPulse.spy.changePct)}}>{fmt.pct(d.marketPulse.spy.changePct)} today</div>
+                  <div style={{fontFamily:T.fontMono,fontSize:T.fsXl,color:T.textPrimary,fontWeight:700}}>${d.marketPulse.spy.price}</div>
+                  <div style={{fontFamily:T.fontMono,fontSize:T.fsS,color:pctColor(d.marketPulse.spy.changePct)}}>{fmt.pct(d.marketPulse.spy.changePct)} today</div>
                   {/* FEAT-202: live S&P 500 index (FRED SP500) */}
-                  <div style={{fontFamily:T.fontMono,fontSize:9,color:T.textMuted}}>S&amp;P 500 index {d.marketPulse.spx.index.toLocaleString()}</div>
+                  <div style={{fontFamily:T.fontMono,fontSize:T.fsXs,color:T.textMuted}}>S&amp;P 500 index {d.marketPulse.spx.index.toLocaleString()}</div>
                 </div>
               </div>
               {/* B4 (v3.59): the chart is aria-hidden; the visually-hidden line below is its
@@ -65,8 +65,8 @@ const MarketDetail=({d,modeOf,asOfOf,demoted,spyData,goldenCross})=>{
                 <ResponsiveContainer width="100%" height="100%">
                   <LineChart data={spyData}>
                     <XAxis dataKey="date" hide/>
-                    <YAxis domain={["auto","auto"]} tick={{fontSize:8,fill:T.textMuted}} width={38}/>
-                    <Tooltip contentStyle={{background:T.surfaceHigh,border:`1px solid ${T.border}`,fontSize:10,fontFamily:T.fontMono}} formatter={(val)=>[`$${val.toFixed(2)}`,"Price"]}/>
+                    <YAxis domain={["auto","auto"]} tick={{fontSize:T.fsXs,fill:T.textMuted}} width={38}/>
+                    <Tooltip contentStyle={{background:T.surfaceHigh,border:`1px solid ${T.border}`,fontSize:T.fsXs,fontFamily:T.fontMono}} formatter={(val)=>[`$${val.toFixed(2)}`,"Price"]}/>
                     <ReferenceLine y={d.marketPulse.spy.ma200} stroke={T.purple} strokeDasharray="4 2" strokeWidth={1}/>
                     <ReferenceLine y={d.marketPulse.spy.ma100} stroke={T.blue} strokeDasharray="4 2" strokeWidth={1}/>
                     <Line type="monotone" dataKey="price" stroke={T.amber} dot={false} strokeWidth={2}/>
@@ -108,7 +108,7 @@ const MarketDetail=({d,modeOf,asOfOf,demoted,spyData,goldenCross})=>{
                   <div style={{background:T.surface,border:`1px solid ${T.border}`,borderRadius:5,padding:"10px 12px"}}>
                     <Label>VIX</Label>
                     <div style={{fontFamily:T.fontMono,fontSize:20,color:{bull:T.green,neutral:T.yellow,bear:T.red}[vixVote]||T.textSecondary,fontWeight:700}}>{d.marketPulse.vix.current}</div>
-                    <div style={{fontFamily:T.fontMono,fontSize:9,color:pctColor(d.marketPulse.vix.weekChg,true)}}>{fmt.pct(d.marketPulse.vix.weekChg)} WoW</div>
+                    <div style={{fontFamily:T.fontMono,fontSize:T.fsXs,color:pctColor(d.marketPulse.vix.weekChg,true)}}>{fmt.pct(d.marketPulse.vix.weekChg)} WoW</div>
                     <div style={{height:28,marginTop:6}}><ResponsiveContainer width="100%" height="100%"><LineChart data={d.marketPulse.vix.series.map((v,i)=>({v,i}))}><Line type="monotone" dataKey="v" stroke={T.amber} dot={false} strokeWidth={1.5}/></LineChart></ResponsiveContainer></div>
                     <SourceBox api="FRED" endpoint="VIXCLS" mode={modeOf('vix')} asOf={asOfOf('vix')}/>
                   </div>
@@ -121,13 +121,13 @@ const MarketDetail=({d,modeOf,asOfOf,demoted,spyData,goldenCross})=>{
                   <div style={{background:T.surface,border:`1px solid ${T.border}`,borderRadius:5,padding:"10px 12px"}}>
                     <Label>HY–IG SPREAD</Label>
                     <div style={{fontFamily:T.fontMono,fontSize:20,color:d.macro.credit.spread>5?T.red:d.macro.credit.spread>3.5?T.yellow:T.textPrimary,fontWeight:700}}>
-                      {d.macro.credit.spread.toFixed(2)}<span style={{fontSize:11}}>pp</span>
+                      {d.macro.credit.spread.toFixed(2)}<span style={{fontSize:T.fsS}}>pp</span>
                     </div>
-                    <div style={{fontFamily:T.fontMono,fontSize:9,color:d.macro.credit.spreadD1>0?T.red:d.macro.credit.spreadD1<0?T.green:T.textMuted}}>
+                    <div style={{fontFamily:T.fontMono,fontSize:T.fsXs,color:d.macro.credit.spreadD1>0?T.red:d.macro.credit.spreadD1<0?T.green:T.textMuted}}>
                       {d.macro.credit.spreadD1>0?"▲":d.macro.credit.spreadD1<0?"▼":"→"} {Math.abs(d.macro.credit.spreadD1).toFixed(2)}pp {d.macro.credit.spreadD1>0?"widening":d.macro.credit.spreadD1<0?"tightening":"unchanged"}
                     </div>
                     <div style={{height:28,marginTop:6}}><ResponsiveContainer width="100%" height="100%"><LineChart data={d.macro.credit.series.map((v,i)=>({v,i}))}><Line type="monotone" dataKey="v" stroke={d.macro.credit.spreadD1>0?T.red:T.green} dot={false} strokeWidth={1.5}/></LineChart></ResponsiveContainer></div>
-                    <div style={{fontFamily:T.fontMono,fontSize:8,color:T.textMuted,marginTop:3}}>HY {d.macro.credit.hy.toFixed(2)}% · IG {d.macro.credit.ig.toFixed(2)}%</div>
+                    <div style={{fontFamily:T.fontMono,fontSize:T.fsXs,color:T.textMuted,marginTop:3}}>HY {d.macro.credit.hy.toFixed(2)}% · IG {d.macro.credit.ig.toFixed(2)}%</div>
                     <SourceBox api="FRED" endpoint="ICE BofA OAS" mode={modeOf('creditSpread')} asOf={asOfOf('creditSpread')}/>
                   </div>
                 )},
@@ -166,7 +166,7 @@ const MarketDetail=({d,modeOf,asOfOf,demoted,spyData,goldenCross})=>{
                     <div style={{fontFamily:T.fontMono,fontSize:20,color:nIllus?T.textSecondary:bandCol,fontWeight:700}}>
                       {v>0?"+":""}{v.toFixed(2)}
                     </div>
-                    <div style={{fontFamily:T.fontMono,fontSize:9,color:T.textMuted}}>
+                    <div style={{fontFamily:T.fontMono,fontSize:T.fsXs,color:T.textMuted}}>
                       {w==null?"—":`${w>0?"▲ +":w<0?"▼ ":"→ "}${Math.abs(w).toFixed(2)} WoW`} · 0 = avg
                     </div>
                     {/* FEAT-NFCILEV (8/28): the leverage SUBINDEX — the early-warning
@@ -176,7 +176,7 @@ const MarketDetail=({d,modeOf,asOfOf,demoted,spyData,goldenCross})=>{
                         tile's own verdict — a mock subindex must not read as a live one. */}
                     {(()=>{const lv=d.macro.nfci.leverage;
                       return !isIllustrative(modeOf('nfciLeverage'))&&Number.isFinite(lv)
-                        ?<div style={{fontFamily:T.fontMono,fontSize:9,color:T.textMuted}}>leverage subindex {lv>0?"+":""}{lv.toFixed(2)}</div>
+                        ?<div style={{fontFamily:T.fontMono,fontSize:T.fsXs,color:T.textMuted}}>leverage subindex {lv>0?"+":""}{lv.toFixed(2)}</div>
                         :null;})()}
                     <div style={{height:28,marginTop:6}}><ResponsiveContainer width="100%" height="100%"><LineChart data={d.macro.nfci.series.map((val,i)=>({v:val,i}))}><Line type="monotone" dataKey="v" stroke={nIllus?T.textMuted:bandCol} dot={false} strokeWidth={1.5}/></LineChart></ResponsiveContainer></div>
                     <SourceBox api="FRED" endpoint="NFCI · Chicago Fed" mode={nMode} asOf={asOfOf('nfci')}/>
@@ -202,9 +202,9 @@ const MarketDetail=({d,modeOf,asOfOf,demoted,spyData,goldenCross})=>{
                              :<Badge label={band} color={bandCol} small/>}
                     </div>
                     <div style={{fontFamily:T.fontMono,fontSize:20,color:cIllus?T.textSecondary:bandCol,fontWeight:700}}>
-                      {v.toFixed(2)}<span style={{fontSize:11}}>pp</span>
+                      {v.toFixed(2)}<span style={{fontSize:T.fsS}}>pp</span>
                     </div>
-                    <div style={{fontFamily:T.fontMono,fontSize:9,color:dd1>0?T.red:dd1<0?T.green:T.textMuted}}
+                    <div style={{fontFamily:T.fontMono,fontSize:T.fsXs,color:dd1>0?T.red:dd1<0?T.green:T.textMuted}}
                          title="The tail funds the neocloud buildout — it widens before broad HY does">
                       {dd1>0?"▲":dd1<0?"▼":"→"} {Math.abs(dd1??0).toFixed(2)}pp {dd1>0?"widening":dd1<0?"tightening":"unchanged"} · funds the AI buildout
                     </div>

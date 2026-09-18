@@ -12399,6 +12399,38 @@ console.log("\n[83] Simple altitude — fs-xxl Hold, fs-body sentence, one-block
      step above the operator chip — but the chip it is measured against is no longer an 8px
      LITERAL: it reads the fs-s floor. Both halves pinned by TOKEN, and the numeric literal is
      pinned ABSENT from the whole primitive so the floor cannot be re-opened here. */
+  /* v6.8.6 — THE TYPE-FLOOR SWEEP, and the work queue as a test.
+     Acceptance item 3 ("zero fontSize below 10px") had no source-level guard: v6.8.6 changed 88
+     rendered leaves and not one suite assertion moved, which means the whole pass was reversible
+     in silence. This sweeps EVERY public UI file for a numeric `fontSize` below the token floor
+     and names the ones still pending, so (a) a cleaned file can never regress, and (b) the
+     remainder is a list that shrinks visibly instead of a claim someone has to re-measure. Add a
+     file to PENDING only by deleting it from the swept set — never by widening the rule. */
+  {
+    const FLOOR = DT["fs-xs"];
+    const PENDING = ["dashboard.jsx", "AIUnitEconomics.jsx", "Alerts.jsx", "CallBanners.jsx", "DataHealth.jsx",
+      "DriversMatrix.jsx", "FiveWhys.jsx", "Headwinds.jsx", "SignalQuality.jsx", "TerminalDock.jsx",
+      "Watchlist.jsx", "WhatChanged.jsx"];
+    const files = [...readdirSync(new URL("../src/sections/", import.meta.url)).map((f) => ["sections", f]),
+      ...readdirSync(new URL("../src/primitives/", import.meta.url)).map((f) => ["primitives", f]), ["", "dashboard.jsx"]]
+      .filter(([, f]) => f.endsWith(".jsx"));
+    const offenders = (src) => (src.match(/fontSize:\s*\d+(?:\.\d+)?/g) || [])
+      .map((m) => parseFloat(m.split(":")[1])).filter((v) => v < FLOOR);
+    const dirty = [], cleanButListed = [];
+    for (const [dir, f] of files) {
+      const src = readSrc(`../src/${dir ? dir + "/" : ""}${f}`);
+      const bad = offenders(src);
+      if (PENDING.includes(f)) { if (!bad.length) cleanButListed.push(f); continue; }
+      if (bad.length) dirty.push(`${f}:${bad.join(",")}`);
+    }
+    ok(`v6.8.6 type floor: no swept UI file carries a fontSize below ${FLOOR}px${dirty.length ? " — " + dirty.join(" · ") : ""}`,
+      dirty.length === 0 && files.length >= 25);
+    /* The other direction, so the queue cannot rot: a file that has been cleaned must be REMOVED
+       from PENDING, or the list would keep claiming work that is already done — the
+       label-outlives-its-data defect pointed at a to-do list. */
+    ok(`v6.8.6 type floor: the PENDING list names only files that genuinely still have sub-floor literals${cleanButListed.length ? " — now clean, delete from PENDING: " + cleanButListed.join(", ") : ""}`,
+      cleanButListed.length === 0 && PENDING.length === 12);
+  }
   ok("T7→v6.8.5: Simple fold promises render at fs-l, one step above the operator chip, which now reads the fs-s floor rather than an 8px literal",
     /fontSize: promise \? T\.fsL : T\.fsS/.test(cgSrc) && TOK_T.fsL > TOK_T.fsS &&
     !/fontSize:\s*\d/.test(cgSrc.replace(/\/\/[^\n]*|\/\*[\s\S]*?\*\//g, "")));

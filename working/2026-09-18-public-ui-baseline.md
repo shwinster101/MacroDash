@@ -375,3 +375,40 @@ The phone cost is zero because `.cg-toggle` has carried a 44px thumb target at �
 wave 15 — the row already reserved the height the bigger label needed.
 
 Gates at ship: 2523 smoke · 335 render · 376 public-render · audit:prod clean.
+
+### The tape badge, the macro block, and the floor as a test (v6.8.6, same day)
+
+Owner: "the SpyTapeBadge 7px, then the MarketDetail/MacroRegime block that holds 73 of the
+remaining 116." Eight files, presentation only. Simple byte-identical at every altitude.
+
+**Correction — my attribution was wrong again, the same way.** Most of the "73 in
+MarketDetail/MacroRegime" were never in those files. They belonged to shared primitives rendering
+*inside* them: `SourceBox` (endpoint + as-of), `SectionHeader`, the `Label` and `Badge` atoms,
+`DirTile`, `FGGauge`. Attributing a leaf to the section it appears in rather than the component
+that owns it is the same error that produced "the one primitive" a release earlier. Recorded, not
+edited away.
+
+| sub-10px leaves, closed Degen @390 | v6.8.5 | v6.8.6 |
+|---|---|---|
+| SpyTapeBadge (7px — smallest on the page) | 2 | **0** |
+| SourceBox / SectionHeader / atoms / DirTile / FGGauge | ~66 | **0** |
+| MarketDetail + MacroRegime own literals | ~14 | **0** |
+| Watchlist + Alerts | 34 | 34 |
+| Signal Quality · footer links · AI captions | 14 | 20 |
+| **Total** | **116** | **54** |
+
+Simple: **0 → 0**, and its page is unchanged to the pixel. Degen: 8px words 138 → 41, 9px 91 → 11,
+sub-11px 705 → 645; doc height 5,174 → 5,293 (+119) with **every region top above the fold
+unchanged** — everything lifted lives below the Spotlight.
+
+**The pass was unguarded, and that is the finding.** 88 rendered leaves changed size and not one
+assertion moved. Smoke now sweeps every public UI file for a numeric `fontSize` below the floor,
+failing with the file and the values, and holds a `PENDING` list of the twelve files still dirty —
+pinned in both directions, so a cleaned file must be deleted from the queue rather than left
+claiming work already done. Negative-controlled twice, each turning exactly its own pin.
+
+Remaining queue (the PENDING list, which is now the record): dashboard.jsx, AIUnitEconomics,
+Alerts, CallBanners, DataHealth, DriversMatrix, FiveWhys, Headwinds, SignalQuality, TerminalDock,
+Watchlist, WhatChanged.
+
+Gates at ship: 2525 smoke · 335 render · 376 public-render · audit:prod clean.

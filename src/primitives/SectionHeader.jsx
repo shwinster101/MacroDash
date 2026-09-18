@@ -3,6 +3,6 @@
 import { DT, T } from "../design-tokens.js";
 
 const SectionHeader=({children})=>(
-  <div style={{fontFamily:T.fontMono,fontSize:9,color:DT["text-muted"],letterSpacing:"0.14em",textTransform:"uppercase",paddingBottom:6,marginBottom:10,borderBottom:`1px solid ${T.border}`}}>{children}</div>
+  <div style={{fontFamily:T.fontMono,fontSize:T.fsS,color:DT["text-muted"],letterSpacing:"0.14em",textTransform:"uppercase",paddingBottom:6,marginBottom:10,borderBottom:`1px solid ${T.border}`}}>{children}</div>
 );
 export default SectionHeader;
