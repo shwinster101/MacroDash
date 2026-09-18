@@ -294,3 +294,42 @@ directly under the strip, is a real cost — but it is a disclosure ruling, not 
 question was asked and not answered.
 
 Gates at ship: 2523 smoke · 335 render · 372 public-render · audit:prod clean.
+
+### Slice 2 item 4 — the Degen hero status lines onto the tokens (v6.8.4, same day)
+
+Owner: "the Degen hero status lines — the last block of the plan's Slice 2 that is pure chrome."
+Plan line 82: *"Degen keeps moon voice, but frozen/6pm/coverage become one status line, not four.
+COPY sits in MORE."* `src/sections/RegimeBand.jsx` only.
+
+- Eyebrow + clock caption → **ONE status row**, strip anatomy: eyebrow mono fs-s tracked (was an
+  8px literal), caption its value at fs-xs muted (was a second row under the sentence). Strings
+  byte-unchanged; the value span carries no `text-transform` on purpose.
+- Every remaining sub-floor literal lifted, face and panel — evening update / drift, voters line,
+  Simple's red crash-gauge line, the withheld explainer, Simple's verdict ⓘ, Degen's copy-button
+  glyph, and the ℹ panel's rows/heading/footnotes. Zero numeric `fontSize` left.
+- Simple's verdict **ⓘ kept** (v6.8.3 Spotlight-Row reasoning: the verdict is a bare word with no
+  tile chrome, so the glyph is the first affordance, not a second).
+
+| Metric | After Spotlight (v6.8.3) | After hero (v6.8.4) |
+|---|---|---|
+| Degen verdict region @1280 | 122 | **115 (−7)** |
+| Degen verdict region @390 | 222 | **234 (+12)** |
+| Smallest visible leaf in the verdict region | 8px | **10px** (both modes) |
+| Degen sub-11px words · 8px bucket | 794 · 236 | 789 · 222 |
+| Simple verdict / cards / strip | 119 / 178 / 418 | 119 / 178 / 418 |
+
+**Correction — the plan's "four" was never four.** `liveReadCaption` returns null when the call is
+frozen, so the frozen caption and the live-read caption are mutually exclusive by construction: the
+hero carried eyebrow + ONE caption + evening update + voters. This merges the two that genuinely
+said one thing and keeps the other two apart on purpose — the evening update colours only when it
+disagrees, and the voters line carries the dots and the red crash-gauge fact (v3.25).
+
+**Correction — my own pin was wrong first run.** It asserted the two spans share a computed `top`.
+True at 1280, false at 390 where the merged row wraps. That wrap is also why the row saving lands
+on desktop (−7) while the phone pays the type lift (+12). The pin now asserts one flex container in
+DOM order and REPORTS the packing.
+
+**Not done:** the plan's "COPY sits in MORE" — a control relocation across components into the
+header disclosure, not chrome, and it would bury the clipboard behind a tap on the operator route.
+
+Gates at ship: 2523 smoke · 335 render · 374 public-render · audit:prod clean.

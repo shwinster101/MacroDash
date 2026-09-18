@@ -1776,6 +1776,49 @@ console.log("\n[public] v6.0.1/v6.4 — shape before text · Simple|Degen clarit
   ok("v6.4 captions (Degen): the frozen-call line stays on the face — accessible without a tap",
     new RegExp(`frozen 10am call · captured 10:00 ET · ${TODAY}`).test(pface) &&
     (await page.locator('[aria-label="Macro backdrop verdict"] .call-caption').count()) === 0);
+  /* v6.8.4 (PUBLIC TERMINAL SKIN, Slice 2 item 4 — the plan's "frozen/6pm/coverage become one
+     status line, not four"): measured, not string-pinned. The eyebrow and the clock caption now
+     share ONE row (same computed `top`, eyebrow left of its value), the caption reads the fs-xs
+     floor while the eyebrow reads fs-s like a strip label, and the caption keeps its own case —
+     innerText applies text-transform, so an uppercased value span would silently rewrite the
+     dated string three suites read. */
+  const heroRow = await page.evaluate(() => {
+    const root = document.querySelector('[aria-label="Macro backdrop verdict"]');
+    const clock = root.querySelector(".hero-clock");
+    if (!clock) return null;
+    const eyebrow = clock.previousElementSibling;
+    const cs = getComputedStyle(clock), es = getComputedStyle(eyebrow);
+    const cr = clock.getBoundingClientRect(), er = eyebrow.getBoundingClientRect();
+    return { clockPx: parseFloat(cs.fontSize), eyePx: parseFloat(es.fontSize),
+      clockCase: cs.textTransform, eyeCase: es.textTransform,
+      oneContainer: clock.parentElement === eyebrow.parentElement && getComputedStyle(clock.parentElement).display === "flex",
+      packed: Math.abs(cr.top - er.top) < 6,
+      raw: clock.textContent.trim(), eyeRaw: eyebrow.textContent.trim() };
+  });
+  /* CORRECTION, recorded rather than quietly fixed: the first cut of this pin asserted the two
+     spans share a computed `top`. They do at 1280 and they do NOT here — at 390px the merged row
+     legitimately WRAPS, which is exactly why the merge's real-estate win lands on desktop and not
+     on the phone (measured: Degen verdict 122→115 at 1280, 222→234 at 390, the type lift's cost).
+     The load-bearing contract is ONE flex container in DOM order, not one painted line, so that is
+     what is pinned; the packing is REPORTED at whatever width the scenario runs. */
+  ok(`v6.8.4 Degen hero: eyebrow (${heroRow && heroRow.eyePx}px) and clock caption (${heroRow && heroRow.clockPx}px) are ONE status row on the token floor (packed onto one painted line here: ${heroRow && heroRow.packed}), and the dated caption keeps its case`,
+    heroRow !== null && heroRow.oneContainer &&
+    heroRow.eyePx === DT["fs-s"] && heroRow.clockPx === DT["fs-xs"] &&
+    heroRow.eyeCase === "uppercase" && heroRow.clockCase === "none" &&
+    new RegExp(`^frozen 10am call · captured 10:00 ET · ${TODAY}$`).test(heroRow.raw) &&
+    /Macro Backdrop · 10am call · frozen/i.test(heroRow.eyeRaw));
+  /* The acceptance item, measured on the hero: nothing visible in the Degen verdict region
+     renders under 10px — the region that carried 8px eyebrows and 9px status lines since v3.94. */
+  const heroMin = await page.evaluate(() => {
+    const root = document.querySelector('[aria-label="Macro backdrop verdict"]');
+    const w = document.createTreeWalker(root, NodeFilter.SHOW_TEXT); const px = []; let n;
+    const hidden = (el) => { const cs = getComputedStyle(el); return cs.display === "none" || cs.visibility === "hidden" || el.classList.contains("visually-hidden") || el.closest(".visually-hidden"); };
+    while ((n = w.nextNode())) { const t = (n.textContent || "").trim(); if (!t) continue; const el = n.parentElement;
+      if (!el || hidden(el)) continue; px.push(parseFloat(getComputedStyle(el).fontSize)); }
+    return px.length ? Math.min(...px) : null;
+  });
+  ok(`v6.8.4 Degen hero type floor: the smallest visible leaf in the verdict region is ${heroMin}px`,
+    heroMin !== null && heroMin >= DT["fs-xs"]);
   ok("v6.4/Slice 1 toggle (Degen): the fill follows the choice — Degen is now the green half",
     (await page.locator('button[aria-pressed="true"]').evaluate((n) => [n.innerText.replace(/\s+/g, " ").trim(), getComputedStyle(n).backgroundColor].join("|"))) === `◉ Degen|${GREEN}`);
   await page.close();

@@ -10039,8 +10039,14 @@ console.log("\n[67] v4.0 SIMPLE MODE — verdict mapping, card selection, senten
     /\{displayLabel\}<\/span>/.test(bandSrc) && /\{!plainVerdict&&<span/.test(bandSrc));
   /* T2: Simple kills the operator eyebrow. Degen keeps frozen / wen moon?. "the call"
      as an unfrozen official-call name stays retired (8/28 A4). */
-  ok("T2: Simple has no operator eyebrow; Degen keeps frozen / wen moon?; 'the call' stays retired",
-    /\{!plainVerdict&&<div[\s\S]{0,180}Macro Backdrop · 10am call · frozen/.test(bandSrc) &&
+  /* v6.8.4 RE-PIN (Slice 2 item 4): the eyebrow is no longer a bare div — it is the EYEBROW
+     SPAN of the one Degen status row that now also carries the clock caption as its value. The
+     old pin matched the literal `<div ... Macro Backdrop`, i.e. the exact spelling the merge
+     replaced, so it would have passed through any wrong rewrite and failed on the right one
+     (the v5.6.4 lesson). Pinned on the CONTRACT: the strings are Degen-only and still ride a
+     !plainVerdict block. */
+  ok("T2: Simple has no operator eyebrow; Degen keeps frozen / wen moon? (now the status row's eyebrow); 'the call' stays retired",
+    /\{!plainVerdict&&<div[\s\S]{0,400}Macro Backdrop · 10am call · frozen/.test(bandSrc) &&
     bandSrc.includes('"Macro Backdrop · wen moon?"') &&
     !/"Macro Backdrop · the call"/.test(bandSrc) &&
     !/"Macro Backdrop · live market read"/.test(bandSrc) &&
@@ -10048,8 +10054,11 @@ console.log("\n[67] v4.0 SIMPLE MODE — verdict mapping, card selection, senten
   ok("T2: Simple keeps the red crash-gauge warning on the face — a red fact never folds",
     /\{plainVerdict&&conf&&conf\.blind&&!loading&&<div/.test(bandSrc) &&
     /⚠ crash gauge \(VIX\) unavailable/.test(bandSrc));
-  ok("v6.4 clock: Degen shows the read caption on-face; Simple clock is Hold ⓘ (simpleHoldExplain beat 2)",
-    /readCaption&&!plainVerdict&&<div/.test(bandSrc) &&
+  /* v6.8.4 RE-PIN: the caption moved from its own row into the status row's VALUE slot, so it
+     is now `{readCaption&&<span className="hero-clock"` inside the !plainVerdict block rather
+     than a standalone `readCaption&&!plainVerdict&&<div`. Same face, same string, one row. */
+  ok("v6.4→v6.8.4 clock: Degen shows the read caption on-face (the status row's value); Simple clock is Hold ⓘ (simpleHoldExplain beat 2)",
+    /\{readCaption&&<span className="hero-clock"/.test(bandSrc) &&
     /simpleHoldExplain\(\{callFrozen,callCapturedAt,readCaption/.test(bandSrc) &&
     !/className="call-caption"/.test(bandSrc));
   ok("8/28 A8: the unfrozen copy button names what it copies — and what it is not",
@@ -11213,17 +11222,24 @@ console.log("\n[75] v6.0.1 — shape before text · toggle clarity · captions u
     !/background:viewMode===m\?T\.surfaceHigh/.test(dash) && /aria-pressed=\{on\}/.test(dash));
   // (3) The captions: Simple's FACE keeps the eyebrow only; the frozen/live-read caption
   //     rides inside the ℹ window; Power keeps both on the face. The A6 copy is unchanged.
-  ok("v6.4 captions: the shared clock caption is Degen-face-only; Simple clock lives in Hold ⓘ, not a second ℹ window",
-    /\{callFrozen&&!plainVerdict&&<div/.test(band) &&
-    /\{readCaption&&!plainVerdict&&<div/.test(band) &&
+  /* v6.8.4 RE-PIN, same reason as [83]'s: both captions are now VALUES on the one Degen status
+     row, so the Degen-only guarantee is carried by the row's own !plainVerdict gate (asserted
+     here by the row, then each caption inside it) instead of by two per-caption gates. */
+  ok("v6.4→v6.8.4 captions: both clock captions ride ONE Degen-only status row; Simple clock lives in Hold ⓘ, not a second ℹ window",
+    /\{!plainVerdict&&<div style=\{\{display:"flex",alignItems:"baseline",gap:8,flexWrap:"wrap"\}\}>[\s\S]{0,900}?\{callFrozen&&<span className="hero-clock"[\s\S]{0,400}?\{readCaption&&<span className="hero-clock"[\s\S]{0,200}?<\/div>/.test(band) &&
+    !/callFrozen&&!plainVerdict&&<div/.test(band) && !/readCaption&&!plainVerdict&&<div/.test(band) &&
     /simpleHoldExplain\(\{callFrozen,callCapturedAt,readCaption/.test(bandSrc) &&
     !/className="call-caption"/.test(band));
   ok("v6.4 captions: the frozen clock is concise and the live/weekend branches live in publicCopy",
     /frozen 10am call · captured 10:00 ET/.test(band) &&
     /liveReadCaption/.test(dash) && /noSessionDay=\{marketClock\.noSession\}/.test(dash));
   // (4) The icon-only hero buttons earn their 44px box: the glyph is fsL in Simple.
-  ok("v6.0.1 hero: the icon-only ⎘ and ℹ buttons render their glyph at fsL, not a 9px speck in a 44px box",
-    /fontSize:plainVerdict\?T\.fsL:9/.test(band) &&
+  /* v6.8.4 RE-PIN: Simple's icon-only ⎘ keeps fsL (the v6.0.1 claim, unchanged — a lone glyph
+     in a 44px box). Degen's copy button is LABELLED ("⎘ COPY 10AM CALL"), so it was never the
+     speck this pin describes; its 9px literal was simply below the token floor and now reads
+     fs-xs. Both halves pinned, so neither can drift back. */
+  ok("v6.0.1→v6.8.4 hero: Simple's icon-only ⎘ and the ℹ button keep fsL; Degen's LABELLED copy button reads the fs-xs floor, never a 9px literal",
+    /fontSize:plainVerdict\?T\.fsL:T\.fsXs/.test(band) &&
     /minWidth:44,minHeight:44,fontFamily:T\.fontMono,fontSize:T\.fsL/.test(band));
   // Boundary: the section stays presentation-only and the engine is untouched.
   ok("v6.0.1 boundary: SimpleCards is still presentation-only and no band/quorum moved",

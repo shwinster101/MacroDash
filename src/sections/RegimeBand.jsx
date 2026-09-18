@@ -97,7 +97,7 @@ const RegimeBand=({d,stale=new Set(),loading=false,liveBuild=false,srcLabel="der
   const copyControl=onCopyCall?<button onClick={onCopyCall} disabled={copyDisabled} aria-label="Copy MacroDash posture card"
     title={copyDisabled?"live data required":callFrozen?"Copy the frozen 10am public call":"Copy the current live read — not the 10am call"}
     style={{background:callCopied?"#1a3020":T.surfaceHigh,border:`1px solid ${callCopied?T.green:regime.color}66`,borderRadius:3,color:callCopied?T.green:regime.color,cursor:copyDisabled?"not-allowed":"pointer",padding:"4px 9px",minHeight:44,minWidth:plainVerdict?44:undefined,fontFamily:T.fontMono, /* v6.0.1: fsL glyph in Simple — a 9px speck in a 44px box was invisible */
-      fontSize:plainVerdict?T.fsL:9,opacity:copyDisabled?0.45:1,whiteSpace:"nowrap",flexShrink:0}}>
+      fontSize:plainVerdict?T.fsL:T.fsXs,opacity:copyDisabled?0.45:1,whiteSpace:"nowrap",flexShrink:0}}>
     {/* v5.9: icon-only in Simple. The action survives — losing a shipped feature from
         the DEFAULT view would be the worse trade — but "⎘ COPY LIVE READ" is three
         words of operator vocabulary sitting beside the answer, and the aria-label and
@@ -113,9 +113,23 @@ const RegimeBand=({d,stale=new Set(),loading=false,liveBuild=false,srcLabel="der
         {/* Left: label + sub */}
         <div style={{display:"flex",alignItems:"baseline",gap:12,flexWrap:"wrap",minWidth:0}}>
           <div>
-            {/* T2: Simple kills the operator eyebrow. Degen keeps frozen / wen moon?. */}
-            {!plainVerdict&&<div style={{fontFamily:T.fontMono,fontSize:8,color:regime.color,letterSpacing:"0.14em",textTransform:"uppercase"}}>
-              {callFrozen?"Macro Backdrop · 10am call · frozen":"Macro Backdrop · wen moon?"}
+            {/* T2: Simple kills the operator eyebrow. Degen keeps frozen / wen moon?.
+                v6.8.4 (Slice 2 item 4 — "frozen/6pm/coverage become one status line, not four"):
+                the eyebrow and the clock caption were two stacked rows saying one thing, so they
+                are ONE ROW in the strip's anatomy — eyebrow mono fs-s tracked in the verdict
+                colour, the caption its VALUE at fs-xs muted. Strings byte-unchanged, and the
+                value span carries NO text-transform: innerText applies it, so uppercasing a
+                dated caption would rewrite what three suites read. callFrozen and readCaption
+                are mutually exclusive (liveReadCaption returns null when frozen), so this row
+                shows at most one — the working note records that correction to "four". */}
+            {!plainVerdict&&<div style={{display:"flex",alignItems:"baseline",gap:8,flexWrap:"wrap"}}>
+              <span style={{fontFamily:T.fontMono,fontSize:T.fsS,color:regime.color,letterSpacing:"0.14em",textTransform:"uppercase"}}>
+                {callFrozen?"Macro Backdrop · 10am call · frozen":"Macro Backdrop · wen moon?"}
+              </span>
+              {callFrozen&&<span className="hero-clock" style={{fontFamily:T.fontMono,fontSize:T.fsXs,color:T.textMuted}}>
+                frozen 10am call · captured 10:00 ET{callCapturedAt?` · ${String(callCapturedAt).slice(0,10)}`:""}
+              </span>}
+              {readCaption&&<span className="hero-clock" style={{fontFamily:T.fontMono,fontSize:T.fsXs,color:T.textMuted}}>{readCaption}</span>}
             </div>}
             <div style={{display:"flex",alignItems:"baseline",gap:10,flexWrap:plainVerdict?"nowrap":"wrap"}}>
               {/* v5.9: in Simple the verdict TOKEN is the tap target for its own vocabulary
@@ -127,7 +141,7 @@ const RegimeBand=({d,stale=new Set(),loading=false,liveBuild=false,srcLabel="der
                     eyebrow={displayLabel}
                     style={{background:"none",border:"none",padding:0,width:"auto",display:"inline-block"}}>
                     <span style={{fontFamily:T.fontMono,fontSize:T.fsXxl,fontWeight:700,color:regime.color,letterSpacing:"-0.01em"}}>{displayLabel}</span>
-                    <span aria-hidden="true" style={{fontFamily:T.fontMono,fontSize:9,color:regime.color,verticalAlign:"super",marginLeft:4}}>ⓘ</span>
+                    <span aria-hidden="true" style={{fontFamily:T.fontMono,fontSize:T.fsXs,color:regime.color,verticalAlign:"super",marginLeft:4}}>ⓘ</span>
                     <span className="visually-hidden"> — what does this mean? Opens an explainer.</span>
                   </Explainable>
                 : <span style={{fontFamily:T.fontMono,fontSize:T.fsXl,fontWeight:700,color:regime.color,letterSpacing:"-0.01em"}}>{displayLabel}</span>}
@@ -157,27 +171,18 @@ const RegimeBand=({d,stale=new Set(),loading=false,liveBuild=false,srcLabel="der
               </span>}
             </div>
             {!withheld&&sentence&&<div style={{fontFamily:plainVerdict?T.fontSans:T.fontMono,fontSize:plainVerdict?T.fsBody:T.fsM,color:T.textPrimary,lineHeight:plainVerdict?1.4:1.5,maxWidth:"36em",marginTop:plainVerdict?8:3}}>{sentence}</div>}
-            {/* v6.0.1 (owner: "immutable public call can be forgone… keep some text under windows"): in Simple both captions ride Hold ⓘ. Degen keeps them on the face. */}
-            {callFrozen&&!plainVerdict&&<div style={{fontFamily:T.fontMono,fontSize:8,color:T.textMuted,marginTop:3}}>
-              frozen 10am call · captured 10:00 ET{callCapturedAt?` · ${String(callCapturedAt).slice(0,10)}`:""}
-            </div>}
-            {/* 8/28 clock matrix A6 — the frozen caption's missing counterpart. The unfrozen
-                face said nothing, so post-10am a live recomputation wore the product's
-                official-call identity by silence. Phrased from the CLIENT clock (before/after
-                10:00 ET is a render-time fact — freeze mechanics untouched); liveBuild-gated
-                so a demo baseline never claims a live read; withheld/loading suppressed —
-                there is no read to disclaim. */}
-            {readCaption&&!plainVerdict&&<div style={{fontFamily:T.fontMono,fontSize:8,color:T.textMuted,marginTop:3}}>
-              {readCaption}
-            </div>}
+            {/* v6.0.1: in Simple both clock captions ride Hold ⓘ; Degen keeps them on the
+                face, and since v6.8.4 on the ONE status row above the verdict rather than two
+                rows beneath it. The 8/28 A6 contract is unchanged — the unfrozen face still
+                names itself a live read, liveBuild-gated, suppressed while withheld. */}
             {/* v6.2: once captured, the 6pm CLOSE READ owns this slot (the drift line's designed
                 successor — owner ruling 9/2, both modes, ONE labeled line); the scope words are
                 load-bearing, since the same engine now speaks twice a day. Muted when it agrees. */}
             {!plainVerdict&&(closeRead
-              ? <div className="close-read" style={{fontFamily:T.fontMono,fontSize:9,color:closeRead.differs?(closeRead.direction==="BEARISH"?T.red:T.amber):T.textMuted,marginTop:4,lineHeight:1.45}}>
+              ? <div className="close-read" style={{fontFamily:T.fontMono,fontSize:T.fsXs,color:closeRead.differs?(closeRead.direction==="BEARISH"?T.red:T.amber):T.textMuted,marginTop:4,lineHeight:1.45}}>
                   Evening update (6pm ET): {closeRead.label} — {closeRead.frozen?"unscored; the 10am call remains frozen above":"unscored; no 10am call was scheduled today"}
                 </div>
-              : callDrift&&<div style={{fontFamily:T.fontMono,fontSize:9,color:callDrift.direction==="BEARISH"?T.red:T.amber,marginTop:4,lineHeight:1.45}}>
+              : callDrift&&<div style={{fontFamily:T.fontMono,fontSize:T.fsXs,color:callDrift.direction==="BEARISH"?T.red:T.amber,marginTop:4,lineHeight:1.45}}>
               Current evidence now reads {callDrift.headline}{callDrift.emoji?` ${callDrift.emoji}`:""} · {callDrift.direction}; the scored 10am call remains frozen above.
             </div>)}
             {/* v3.98.3 — one line, one scope word, one vocabulary. It used to read
@@ -187,7 +192,7 @@ const RegimeBand=({d,stale=new Set(),loading=false,liveBuild=false,srcLabel="der
                 "VOTERS" is the scope word that resolves the other ambiguity: WHY #2 lists
                 dark CROSS-SIGNALS (WTI, HY-IG among them), a deliberately wider set than the
                 six that vote, and nothing said so. */}
-            {conf&&!loading&&!plainVerdict&&<div style={{fontFamily:T.fontMono,fontSize:9,marginTop:3,display:"flex",gap:10,flexWrap:"wrap",alignItems:"center"}}>
+            {conf&&!loading&&!plainVerdict&&<div style={{fontFamily:T.fontMono,fontSize:T.fsXs,marginTop:3,display:"flex",gap:10,flexWrap:"wrap",alignItems:"center"}}>
               {/* v6.0.1 SHAPE BEFORE TEXT: one dot per voter (filled counted · hollow amber dark) ahead of the sentence. */}
               <span aria-hidden="true" className="signal-dots" style={{display:"inline-flex",gap:2,alignItems:"center"}}>
                 {Array.from({length:conf.total},(_,i)=>{const on=i<conf.counted;return(
@@ -198,11 +203,11 @@ const RegimeBand=({d,stale=new Set(),loading=false,liveBuild=false,srcLabel="der
               {conf.blind&&<span style={{color:T.red}}>⚠ crash gauge (VIX) unavailable</span>}
             </div>}
             {/* T2: 6-of-6 left the Simple face, but a red crash-gauge fact never folds (v3.25). */}
-            {plainVerdict&&conf&&conf.blind&&!loading&&<div style={{fontFamily:T.fontMono,fontSize:9,color:T.red,marginTop:3}}>⚠ crash gauge (VIX) unavailable</div>}
+            {plainVerdict&&conf&&conf.blind&&!loading&&<div style={{fontFamily:T.fontMono,fontSize:T.fsXs,color:T.red,marginTop:3}}>⚠ crash gauge (VIX) unavailable</div>}
             {/* FEAT-FLIP: the audit's fourth first-screen answer — what would change the call.
                 "Nothing single-handedly" is stated plainly rather than padded with the nearest
                 distance to look responsive (abstention rule 3). */}
-            {withheld&&<div style={{fontFamily:T.fontMono,fontSize:9,color:T.textMuted,marginTop:3}}>
+            {withheld&&<div style={{fontFamily:T.fontMono,fontSize:T.fsXs,color:T.textMuted,marginTop:3}}>
                   {loading
                     ? "Nothing is being asserted from the demo baseline while the live snapshot loads."
                     : `evidence too thin${liveBuild?" — live data unavailable or stale; the mock baseline is NOT voting":""}.`}
@@ -249,42 +254,42 @@ const RegimeBand=({d,stale=new Set(),loading=false,liveBuild=false,srcLabel="der
           </div>}
           {factors.map(f=>(
             <div key={f.label} style={{display:"flex",gap:8,alignItems:"baseline"}}>
-              <div style={{fontFamily:T.fontMono,fontSize:9,color:T.textMuted,minWidth:100,flexShrink:0}}>{f.label}</div>
+              <div style={{fontFamily:T.fontMono,fontSize:T.fsS,color:T.textMuted,minWidth:100,flexShrink:0}}>{f.label}</div>
               {/* Same 4-state map as the chips — the drawer used to paint NFCI's own honest
                   "Looser than mean, but within ½ SD" copy red, contradicting its own words. */}
-              <div style={{fontFamily:T.fontMono,fontSize:9,color:T[voteStyle(f.vote).colorKey]}}>{f.val}</div>
+              <div style={{fontFamily:T.fontMono,fontSize:T.fsS,color:T[voteStyle(f.vote).colorKey]}}>{f.val}</div>
             </div>
           ))}
           {/* FEAT-FLIP: every load-bearing crossing, then what abstained and why. The
               abstentions are NOT omitted — a factor that cannot express a single threshold is
               a fact about the rule, and hiding it would read as "these four are all there is". */}
           <div style={{gridColumn:"1/-1",borderTop:`1px solid ${T.border}`,marginTop:4,paddingTop:6}}>
-            <div style={{fontFamily:T.fontMono,fontSize:8,color:T.textMuted,letterSpacing:"0.1em",marginBottom:3}}>WHAT WOULD CHANGE THIS VERDICT</div>
+            <div style={{fontFamily:T.fontMono,fontSize:T.fsS,color:T.textMuted,letterSpacing:"0.1em",marginBottom:3}}>WHAT WOULD CHANGE THIS VERDICT</div>
             {fc.flips.length===0&&(
-              <div style={{fontFamily:T.fontMono,fontSize:9,color:T.textSecondary}}>
+              <div style={{fontFamily:T.fontMono,fontSize:T.fsXs,color:T.textSecondary}}>
                 No single factor crossing changes the call — with {fc.bullVotes} bull and {fc.bearVotes} bear among the {fc.counted} counted,
                 it would take two factors moving together.
               </div>
             )}
             {fc.flips.map(f=>(
-              <div key={`${f.key}-${f.to}`} style={{fontFamily:T.fontMono,fontSize:9,color:T.textSecondary,display:"flex",gap:6,flexWrap:"wrap",marginBottom:1}}>
+              <div key={`${f.key}-${f.to}`} style={{fontFamily:T.fontMono,fontSize:T.fsXs,color:T.textSecondary,display:"flex",gap:6,flexWrap:"wrap",marginBottom:1}}>
                 <span style={{color:regime.color,minWidth:190}}>{f.copy}</span>
                 <span style={{color:T.textMuted}}>now {fmt.num(f.value,f.dec)}{f.unit} · {fmt.num(f.distance,f.dec)}{f.unit} away</span>
                 <span style={{color:T.textPrimary}}>→ {f.would}</span>
               </div>
             ))}
             {fc.abstained.map(a=>(
-              <div key={a.key} style={{fontFamily:T.fontMono,fontSize:8,color:T.textMuted,marginTop:2}}>
+              <div key={a.key} style={{fontFamily:T.fontMono,fontSize:T.fsXs,color:T.textMuted,marginTop:2}}>
                 {a.label}: no single threshold — {a.why}
               </div>
             ))}
             {fc.excluded.length>0&&(
-              <div style={{fontFamily:T.fontMono,fontSize:8,color:T.amber,marginTop:2}}>
+              <div style={{fontFamily:T.fontMono,fontSize:T.fsXs,color:T.amber,marginTop:2}}>
                 Unavailable, so their thresholds are not load-bearing: {fc.excluded.map(e=>e.short).join(" · ")}
               </div>
             )}
           </div>
-          <div style={{fontFamily:T.fontMono,fontSize:8,color:T.textMuted,gridColumn:"1/-1"}}>Rule-based 6-signal model · stale/unavailable inputs auto-excluded · {srcLabel}</div>
+          <div style={{fontFamily:T.fontMono,fontSize:T.fsXs,color:T.textMuted,gridColumn:"1/-1"}}>Rule-based 6-signal model · stale/unavailable inputs auto-excluded · {srcLabel}</div>
         </div>
       )}
     </div>

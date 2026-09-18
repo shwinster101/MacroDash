@@ -5,6 +5,57 @@ answers *"is it safe to be in the market?"* from live macro + market + sentiment
 data. Single-page React app on Cloudflare Pages, with live data assembled at the
 edge by Pages Functions and cached in KV.
 
+**v6.8.4 "PUBLIC TERMINAL SKIN, Slice 2 item 4" — the Degen hero status lines onto the tokens
+(owner: "the Degen hero status lines — the last block of the plan's Slice 2 that is pure chrome";
+the plan's line reads *"Hero: Simple keeps one word + one sentence. Degen keeps moon voice, but
+frozen/6pm/coverage become one status line, not four. COPY sits in `MORE`, not a 44px sibling of
+the call."*).** One component, `src/sections/RegimeBand.jsx`; no vote, band, quorum, freeze rule,
+copy string or mode gate moved, and Simple's face is byte-identical in structure — the eyebrow
+stays Degen's, the crash-gauge red fact stays outside every fold, the moon voice is untouched.
+**The eyebrow and the clock caption become ONE status row** in the strip's own anatomy: the
+eyebrow is the mono `fs-s` 11 tracked label (was an 8px literal), the caption is its VALUE at
+`fs-xs` 10 muted (was a second 8px row beneath the sentence). **Every string is byte-unchanged**,
+and the value span deliberately carries NO `text-transform`: Chromium's `innerText` applies it,
+so uppercasing a dated caption would silently rewrite the exact literal three suites read (the
+v3.69 lesson). **Correction to the plan's "four", measured:** `callFrozen` and `readCaption` are
+MUTUALLY EXCLUSIVE by construction (`liveReadCaption` returns null when frozen), so the hero never
+carried four caption rows — it carried eyebrow + one caption + the evening update + the voters
+line, and this merges the two that were genuinely saying one thing. The evening update keeps its
+own line because it COLOURS only when it disagrees with the frozen call, and the voters line keeps
+its own because it carries the per-voter dots and the red crash-gauge fact (v3.25).
+**Every other sub-floor literal in the file is gone**, face and panel: the evening-update/drift
+lines, the voters line, Simple's red crash-gauge line, the withheld explainer and Simple's verdict
+ⓘ read `fs-xs`; the ℹ panel's factor rows and its WHAT-WOULD-CHANGE heading read `fs-s`, its flip
+rows, abstentions, exclusions and footer `fs-xs` (the plan's *"open state uses the same scale, not
+8px operator footnotes as body text"*). **Degen's copy button leaves its 9px glyph** — v6.0.1 fixed
+exactly that for Simple and left the labelled Degen button behind. **Simple's verdict ⓘ is KEPT,
+not deleted** — the v6.8.3 Spotlight-Row reasoning, not the v6.8.1/v6.8.2 one: the verdict is a
+bare WORD with no tile or card chrome of its own, so the glyph is the FIRST affordance marking it
+tappable, not a second one. No numeric `fontSize` literal survives in the file.
+**Measured, same probe:** the Degen verdict region is **122 → 115px at 1280 (−7)** and **222 →
+234px at 390 (+12)** — and the split is the honest finding: at phone width the merged row legitimately
+WRAPS back to two lines, so the row saving lands on desktop while the type lift is paid everywhere.
+Degen's sub-11px words fall **794 → 789** and its 8px bucket **236 → 222**; **no visible leaf in the
+verdict region renders under 10px in either mode** (measured off the DOM, 4 leaves Simple / 11 Degen).
+Simple's first screen is untouched: verdict 119, cards 178, strip 418, budgets 218 / 466.
+**Four pins re-pinned, each with the reason at the pin, none loosened:** the T2 eyebrow, the v6.4
+clock caption and the v6.4 captions pin all matched the LITERAL `<div>` spellings the merge
+replaced — the shape that would have passed through any wrong rewrite and failed on the right one
+(the v5.6.4 lesson) — so each is re-pinned on its contract (Degen-only, one row, DOM order); the
+v6.0.1 hero pin is re-titled to what it now proves, since Degen's copy button is LABELLED and was
+never the icon-only speck that pin describes. **The module stayed under its 300-line Property-10
+bound by trimming the new comments, not by moving the bound.**
+Tests: **2523 smoke** + 335 render + **374 public-render** (+2, measured in Chromium: the two spans'
+computed sizes, case and container, and the smallest visible leaf in the region).
+**One of my own new pins was wrong on its first run and is recorded rather than quietly fixed:** it
+asserted the eyebrow and caption share a computed `top`. They do at 1280 and do NOT at 390, where
+the row wraps — the contract is ONE flex container in DOM order, not one painted line, so the pin
+asserts that and REPORTS the packing at whatever width the scenario runs.
+**Deliberately NOT done:** the plan's *"COPY sits in MORE"* (that relocates a control across
+components into the header's disclosure — not chrome, and it would put the clipboard behind a tap
+on the operator's own route), the recharts tick `fontFamily` leak, the shared `CollapsedGroup`
+toggle's own 8px, the max-width container.
+
 **v6.8.3 "PUBLIC TERMINAL SKIN, Slice 2 item 3" — the Spotlight takes the Simple card's chrome
 (owner: "the Spotlight chrome pass, same method, one commit"; the plan's line reads *"Spotlight:
 same panel chrome as a Simple card. Face stays name / one return / one fundamental. The 6-K
