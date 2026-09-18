@@ -30,8 +30,8 @@ import { stripExplainFor } from "../stripExplain.js";
 
 const bandOf=(k)=>REGIME_BAND_TABLE.find((b)=>b.key===k);
 
-const SimpleMarketTape=({d,modeOf,asOfOf})=><div className="macro-strip simple-market-tape" role="region" aria-label="Market performance"
-  style={{background:T.surfaceHigh,padding:"8px 20px",borderBottom:`1px solid ${T.border}`,display:"grid",gridTemplateColumns:"repeat(2,minmax(0,1fr))",gap:12}}>
+const SimpleMarketTape=({d,modeOf,asOfOf,degen=false,fomcLabel})=><div className={degen?"macro-strip degen-market-tape":"macro-strip simple-market-tape"} role="region" aria-label={degen?"Market context — not model voters":"Market performance"}
+  style={{background:T.surfaceHigh,padding:"8px 20px",borderBottom:`1px solid ${T.border}`,display:"grid",gridTemplateColumns:degen?"repeat(3,minmax(0,1fr))":"repeat(2,minmax(0,1fr))",gap:12}}>
   {[
     {label:"S&P 500",field:"spyPrice",changeField:"spyChangePct",data:d.marketPulse.spy,proxy:true},
     {label:"Nasdaq-100 / QQQ",field:"qqqPrice",changeField:"qqqChangePct",data:d.marketPulse.qqq},
@@ -52,11 +52,32 @@ const SimpleMarketTape=({d,modeOf,asOfOf})=><div className="macro-strip simple-m
       <span className="visually-hidden">Opens an explainer.</span>
     </Explainable>;
   })}
+  {degen&&<FedPolicyTile d={d} modeOf={modeOf} asOfOf={asOfOf} fomcLabel={fomcLabel}/>}
 </div>;
+
+
+function FedPolicyTile({d,modeOf,asOfOf,fomcLabel}) {
+  const {targetLower:lo,targetUpper:hi,rate}=d.macro.fedFunds;
+  const current=f=>["LIVE","CACHED"].includes(modeOf(f))&&Boolean(asOfOf?.(f));
+  const target=Number.isFinite(lo)&&Number.isFinite(hi)&&current("fedTargetUpper")&&current("fedTargetLower");
+  const field=target?"fedTargetUpper":"fedFunds";
+  const available=target||(Number.isFinite(rate)&&current(field));
+  const reading=available?target?`${lo.toFixed(2)}–${hi.toFixed(2)}%`:`${rate}% avg`:"Unavailable";
+  const ex=stripExplainFor(field);
+  return <Explainable className="strip-tile fed-context-tile" title={ex.full}
+    explain={{...ex,metadata:`${reading}. ${target?"Policy target range":"Monthly effective average — not the policy target"}. ${available?`As of ${asOfOf(field)}. Data: ${modeOf(field)}.`:"No current reading."}`}}
+    eyebrow="Fed rate · context only" style={{background:"none",border:"none",padding:0,minWidth:0}}>
+    <div style={{fontFamily:T.fontMono,fontSize:T.fsM,color:T.textMuted}}>Fed rate</div>
+    <div style={{fontFamily:T.fontMono,fontSize:T.fsL,fontWeight:700,color:available?T.textPrimary:T.textMuted}}>{reading}</div>
+    <div style={{fontFamily:T.fontMono,fontSize:T.fsS,color:T.textMuted}}>{available?`${target?"Target":"Monthly avg"} · ${asOfOf(field)}`:"No current reading"}</div>
+    <div style={{fontFamily:T.fontMono,fontSize:T.fsS,color:T.textMuted}}>FOMC {fomcLabel}</div>
+  </Explainable>;
+}
 
 const MacroStrip=({d,modeOf,asOfOf,fomcLabel,fomcDays,votingFields,badge,variant="full"})=>{
   if(!d||typeof modeOf!=="function")return <div aria-hidden="true"/>;
   if(variant==="simple")return <SimpleMarketTape d={d} modeOf={modeOf} asOfOf={asOfOf}/>;
+  if(variant==="degen")return <SimpleMarketTape d={d} modeOf={modeOf} asOfOf={asOfOf} degen fomcLabel={fomcLabel}/>;
   const vf=votingFields||new Set();
   const fedLo=d.macro.fedFunds.targetLower, fedHi=d.macro.fedFunds.targetUpper;
   const fedTargetLive=Number.isFinite(fedLo)&&Number.isFinite(fedHi)&&["LIVE","CACHED"].includes(modeOf("fedTargetUpper"));

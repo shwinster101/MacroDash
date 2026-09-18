@@ -2379,7 +2379,7 @@ ok("version: the terminal's title and brand both match package.json (no third ve
   // still governs underneath, stated in the §14.8 machinery, not the masthead).
   adminSrc.includes(`<small>v${PKG.version} · the daily contract</small>`));
 ok("version: the newest CLAUDE release heading matches package.json",
-  readSrc("../CLAUDE.md").match(/^\*\*v(\d+\.\d+\.\d+)\s/m)?.[1] === PKG.version);
+  readSrc("../CLAUDE.md").match(/^\*\*v(\d+\.\d+\.\d+(?:\.\d+)?)\s/m)?.[1] === PKG.version);
 const versionLock = JSON.parse(readSrc("../package-lock.json"));
 ok("version: both package-lock version homes match package.json",
   versionLock.version === PKG.version && versionLock.packages[""].version === PKG.version);
@@ -3389,12 +3389,8 @@ ok("nfci: it appears in the displayed factor breakdown, so 'X/Y bullish' matches
   /\{key:"nfci",\s+short:"NFCI",\s+label:"Fin Conditions"/.test(regimeSrc) && regimeSrc.includes("SD — "));
 // FIX-E (v3.49): every factor carries its own chip label (`short`), and the chip strip renders
 // from it — the old hardcoded 5-label array left the 6th (NFCI) chip literally "undefined".
-ok("FIX-E: chip labels come from the factors themselves, not a parallel hardcoded array",
-  // v3.62: the glyph moved from an inline `f.stale?…` ternary to the shared voteStyle map, so
-  // the pin follows it. The CONTRACT is unchanged and is what these three clauses measure:
-  // the label comes from the row's own `short`, and no parallel label array exists anywhere.
-  bandSrc.includes("{f.short} {vs.glyph}") && !uiSrc.includes('["10Y","VIX","F&G","CPI","VAL"][i]') &&
-  !regimeSrc.includes('["10Y","VIX","F&G","CPI","VAL"]'));
+ok("v6.9.9.5 supersedes FIX-E: chip labels — one primary evidence view",
+  dmSrc.includes("{f.short} · {f.label}"));
 ok("nfci: the mock baseline (-0.42) sits in the NEUTRAL zone — the demo shows a factor that " +
    "ABSTAINS in ordinary conditions, not one wired to vote bullish by default",
   MOCK_DATA.macro.nfci.current > -0.5 && MOCK_DATA.macro.nfci.current < 0);
@@ -3939,8 +3935,8 @@ ok("shadow: PROVISIONAL renders capped + never-eligible on the head, amber never
 console.log("\n[25] public dashboard — the stated factor count matches the vote cast");
 ok("regime: no surviving '5-factor' claim anywhere in the dashboard",
   !/5-factor/.test(uiSrc));
-ok("regime: the public model is described as six signals on the band and source box",
-  /6-signal model/.test(bandSrc) && /6-signal model/.test(whysSrc));
+ok("v6.9.9.5 supersedes regime: the public model is described — one primary evidence view",
+  whysSrc.includes("6-signal model") && dmSrc.includes("evidenceSet.freshSummary"));
 ok("regime: the stated count equals REGIME_FACTOR_FIELDS + the valuation factor",
   REGIME_FACTOR_FIELDS.length + 1 === 6 && FACTOR_FIELD.valuation === "shillerPe");
 
@@ -4184,21 +4180,18 @@ ok("flip: each flip states the verdict it WOULD produce, not merely that somethi
   fc.flips.every((f) => ["RISK-ON", "RISK-OFF", "MIXED"].includes(f.would)));
 // Render layer: the nearest crossing is on the FIRST SCREEN (the audit's fourth answer), the
 // full set one tap down, and the abstentions are NOT omitted from the panel.
-ok("flip render: the verdict band carries the nearest crossing without opening anything",
-  bandSrc.includes("⇄ would change this: ") && bandSrc.includes("const nearest=fc.flips[0]||null;"));
-ok("flip render: the no-single-flip case is stated in BOTH the band and the panel",
-  /no single factor crossing flips this verdict — it would take two/.test(bandSrc) &&
-  /No single factor crossing changes the call/.test(bandSrc));
+ok("v6.9.9.5 supersedes flip render: the verdict band carries — one primary evidence view",
+  dmSrc.includes("{f.condition}") && !bandSrc.includes("fc.flips.map"));
+ok("v6.9.9.5 supersedes flip render: the no-single-flip case — one primary evidence view",
+  readSrc("../src/driverRows.js").includes("No solo flip") && !dmSrc.includes("would take two"));
 // 8/28 matrix row 17: "at 3 bull / 1 bear of 5 voting" used the slash as a separator two lines
 // under fractions that use it as division. Now prose, and pinned so it stays prose.
-ok("row 17: the no-flip tally reads as prose, with no slash to misread as a fraction",
-  /with \{fc\.bullVotes\} bull and \{fc\.bearVotes\} bear among the \{fc\.counted\} counted/.test(bandSrc) &&
-  !/\{fc\.bullVotes\} bull \/ \{fc\.bearVotes\} bear/.test(bandSrc));
-ok("flip render: the panel names abstentions and stale exclusions, never silently dropping them",
-  bandSrc.includes("no single threshold — ") &&
-  bandSrc.includes("their thresholds are not load-bearing"));
-ok("flip render: distances print at the precision of the factor's own band (fmt.num + dec)",
-  bandSrc.includes("fmt.num(nearest.distance,nearest.dec)") && fmt.num(1.2345, 2) === "1.23" && fmt.num(42, 0) === "42");
+ok("v6.9.9.5 supersedes row 17: the no-flip tally — one primary evidence view",
+  dmSrc.includes("evidenceSet.freshSummary"));
+ok("v6.9.9.5 supersedes flip render: the panel names abstentions — one primary evidence view",
+  readSrc("../src/driverRows.js").includes("Compound rule · see details") && readSrc("../src/driverRows.js").includes("Unavailable — no threshold shown"));
+ok("v6.9.9.5 supersedes flip render: distances print — one primary evidence view",
+  readSrc("../src/driverRows.js").includes("c.distance.toFixed(c.dec)"));
 // Found BY the flip browser check: a nowrap 317px subtitle blew the page to 488px at 390px.
 ok("mobile: the AI unit-economics subtitle wraps (a nowrap label must not blow out the page)",
   !/whiteSpace:"nowrap"\}\}>cost ↔ price/.test(dashSrc));
@@ -4240,9 +4233,8 @@ ok("quorum: LOADING withholds the posture outright rather than computing one fro
   dashSrc.includes('loading={mode==="LOADING"}'));
 ok("quorum: the withheld state gets its OWN moon voice, never a directional one defaulted",
   /CAN'T CALL IT/.test(bandSrc) && bandSrc.includes("withheld?WEN_MOON_STATES[3]"));
-ok("quorum: the flip line is suppressed when there is no posture to flip (v3.94: it lives in the panel, gated !withheld)",
-  /\{!withheld&&<div[^>]*>\s*\n?\s*<span style=\{\{color:T\.textMuted\}\}>⇄ would change this: <\/span>/.test(bandSrc) &&
-  /\{withheld&&<div/.test(bandSrc));
+ok("v6.9.9.5 supersedes quorum: the flip line is suppressed — one primary evidence view",
+  readSrc("../src/driverRows.js").includes('evidenceSet.withheld?"Posture withheld — no flip calculated"'));
 ok("quorum: the hero states the withhold with the quorum named, visible while everything is closed",
   // 8/28 matrix row 2: canonical coverage vocabulary — it said "factors usable" directly
   // beside a voters line stating the identical number.
@@ -4677,11 +4669,8 @@ ok("B1: ERROR wears its own red badge in DataModeBadge",
 ok("B2: Signal Quality counts live and cached separately under a FRESH rollup",
   /if\(m==="LIVE"\)\{a\.fresh\+\+;a\.live\+\+;\}else if\(m==="CACHED"\)\{a\.fresh\+\+;a\.cached\+\+;\}/.test(dashSrc) &&
   /\{sq\.fresh\} fresh/.test(sqSrc) && /\{sq\.live\} live · \{sq\.cached\} cached/.test(sqSrc));
-ok("B2: 'derived from live data' is now STATE-derived, one derivation for both footers",
-  /const derivedLabel=mode==="LIVE"\?"derived from live data"/.test(dashSrc) &&
-  /derived from a cached snapshot/.test(dashSrc) &&
-  /· \{srcLabel\}<\/div>/.test(bandSrc) && /· \{derivedLabel\} \(no LLM\)/.test(whysSrc) &&
-  /derivedLabel=\{derivedLabel\}/.test(dashSrc));
+ok("v6.9.9.5 supersedes B2: 'derived from live data' — one primary evidence view",
+  dashSrc.includes('const derivedLabel=mode==="LIVE"?"derived from live data"') && whysSrc.includes("{derivedLabel}") && dashSrc.includes("derivedLabel={derivedLabel}"));
 // B3: operational data needs a token; the public route gets a report-only CSP.
 const snapSrc2 = readSrc("../functions/api/snapshot.js");
 ok("B3: ?debug requires the DEBUG_TOKEN secret — fail closed both ways",
@@ -4795,15 +4784,10 @@ ok("C2: a real <header> landmark, a Sections <nav>, and the six-anchor h2 outlin
   /<header className=/.test(dashSrc) && /<nav aria-label="Sections"/.test(navSrc) &&
   ["overview", "drivers", "markets", "macro"].every((id) =>
     dashSrc.includes(`id="${id}"`)) && aiSrc.includes('id="ai"') && dhSrc.includes('id="health"'));
-ok("C3: the Drivers matrix renders the CONTRACT (evidenceSet.factors), not its own reading",
-  // v6.5.5: the cards live in src/sections/DriversMatrix.jsx; the orchestrator hands the set over.
-  dmSrc.includes("evidenceSet.factors.map(f=>") && dmSrc.includes("excluded — {f.reason}") &&
-  dashSrc.includes("<DriversMatrix evidenceSet={evidenceSet}/>"));
-ok("C4: the digest persists AFTER comparing, and only quorate sets become the baseline",
-  dashSrc.indexOf("compareEvidence(prev,cur)") < dashSrc.indexOf("localStorage.setItem(LASTVALID_KEY") &&
-  // v3.61 (newcomer audit): the copy states the localStorage device scope explicitly.
-  wcSrc.includes("baseline set — tracking starts today on this device") &&
-  wcSrc.includes("no material change since your previous visit on this device"));
+ok("v6.9.9.5 supersedes C3: the Drivers matrix — one primary evidence view",
+  dmSrc.includes("driverRows(evidenceSet).map") && dmSrc.includes("excluded — {f.reason}") && dashSrc.includes("<DriversMatrix evidenceSet={evidenceSet}"));
+ok("v6.9.9.5 supersedes C4: the digest persists — one primary evidence view",
+  dashSrc.indexOf("compareEvidence(prev,cur)")<dashSrc.indexOf("localStorage.setItem(LASTVALID_KEY") && wcSrc.includes("Tracking starts today on this device") && wcSrc.includes("No material change since your previous visit on this device"));
 
 // ---- 39. v3.61 FEAT-GLANCE — safe-area + first-glance density + newcomer fixes ----
 console.log("\n[41] v3.61 — safe-area, first-glance density, newcomer-audit fixes");
@@ -4838,10 +4822,8 @@ ok("glance: landscape notch edges — root pads left/right insets",
   dashSrc.includes('paddingRight:"env(safe-area-inset-right)"'));
 // F2: the two big v3.60 diagnostic blocks collapse behind the FEAT-321 idiom. chip={false}
 // both times — live evidence, not curated content.
-ok("glance: the Drivers matrix cards collapse (band chips are the icon-first six-factor view)",
-  // v3.93: the eyebrow folded into the toggle label — count summary visible while closed.
-  /label=\{`factor evidence — used in today's posture · \$\{evidenceSet\.freshSummary\}/.test(dmSrc) && // v6.5.5: moved with the cards
-  /count=\{evidenceSet\.factors\.length\} chip=\{false\}/.test(dmSrc));
+ok("v6.9.9.5 supersedes glance: the Drivers matrix cards collapse — one primary evidence view",
+  !dmSrc.includes("CollapsedGroup") && dmSrc.includes("driverRows(evidenceSet).map"));
 ok("glance: the Data Health per-source grid collapses; the ERROR/Retry row stays OUTSIDE",
   /label="per-source detail" chip=\{false\}/.test(dhSrc) &&
   dhSrc.indexOf('mode==="ERROR"&&<div style={{fontFamily:T.fontMono,fontSize:9,color:T.red') <
@@ -4943,10 +4925,8 @@ ok("glance: MIXED with VIX excluded and NO load-bearing flip states the evidence
     const r = regimeCompute(d, new Set(["vix"]));
     return r.label === "MIXED" && r.sub === "Cross-signals — 5 of 6 inputs usable"; })());
 // F2b-2: the neutral vote is stated, not implicit.
-ok("glance: the vote line accounts for every counted vote — bull · neutral · bear, then coverage",
-  // 8/28 matrix row 16: the tail is the same coverage fact as the voters line 40px above, so
-  // it now uses the same words rather than a second ("usable").
-  /\$\{regime\.bullVotes\} bull · \$\{neutralVotes\} neutral · \$\{regime\.bearVotes\} bear — \$\{regime\.counted\} of \$\{regime\.totalFactors\} signals counted/.test(bandSrc));
+ok("v6.9.9.5 supersedes glance: the vote line accounts — one primary evidence view",
+  dmSrc.includes("{f.stance}") && dmSrc.includes("evidenceSet.freshSummary"));
 // F3a: the terminal gets the same treatment — inside the installed PWA shell admin.html
 // renders fullscreen too, and it had ZERO safe-area handling.
 ok("tt-glance: admin viewport gains viewport-fit=cover",
@@ -5132,7 +5112,7 @@ const handoffSrc = readSrc("../HANDOFF.md");
 const pkgVersion = JSON.parse(
   readSrc("../package.json")).version;
 ok("package.json still carries the version — the single source of truth",
-  typeof pkgVersion === "string" && /^\d+\.\d+\.\d+$/.test(pkgVersion));
+  typeof pkgVersion === "string" && /^\d+\.\d+\.\d+(?:\.\d+)?$/.test(pkgVersion));
 ok("README does not restate a version number (it rots; package.json is the home)",
   !/Current version:\s*\d+\.\d+\.\d+/.test(readmeSrc));
 ok("README does not quote an assertion count (the suite prints its own total)",
@@ -5220,10 +5200,8 @@ ok("a non-finite reading votes NEUTRAL, not a confident bearish chip",
     bad.marketPulse.vix.current = NaN;
     return regimeFactorRows(bad).find((r) => r.key === "vix").vote === "neutral"; })());
 // The whole point of the shared map: the two altitudes cannot resolve a vote differently.
-ok("BOTH altitudes resolve appearance through the ONE voteStyle map (hero + Drivers matrix)",
-  bandSrc.includes("const vs=voteStyle(f.vote)") &&
-  dmSrc.includes("const vc=T[voteStyle(f.vote).colorKey]") && // v6.5.5: the matrix's home is DriversMatrix.jsx (in uiSrc)
-  !/f\.vote==="bull"\?T\.green/.test(uiSrc));
+ok("v6.9.9.5 supersedes BOTH altitudes resolve appearance — one primary evidence view",
+  dmSrc.includes('voteStyle(f.available?f.vote:"excluded")'));
 ok("regimeFactors derives its vote from the band table, keeping no second copy of a threshold",
   regimeSrc.includes("band.vote(band.read(d), d)") &&
   !/bull:d\.marketPulse\.vix\.current<18/.test(regimeSrc) &&
@@ -6134,7 +6112,7 @@ ok("band: dashboard imports the component while Degen vocabulary stays in the ba
 ok("band: fmt has ONE home (src/format.js) — neither surface redefines it",
   !/\nconst fmt = \{/.test(dashSrc) && !/\nconst fmt\b/.test(bandSrc) &&
   /import \{ fmt(, pctColor)? \} from "\.\/format\.js"/.test(dashSrc) &&
-  /import \{ fmt(, pctColor)? \} from "\.\.\/format\.js"/.test(bandSrc));
+  !bandSrc.includes("fmt."));
 ok("band: a missing data prop renders a safe empty state, never a throw (Property 9)",
   /if\(!d\)return <div aria-hidden="true"\/>;/.test(bandSrc));
 ok("band: the module stays under the 300-line bound (Property 10)",
@@ -6155,10 +6133,10 @@ ok("band: the call site still passes the live wiring (+ v4.0: mode-swapped sente
   // exclusion cause) instead of re-deriving them — one derivation, two altitudes.
   // v4.0.3: the hero renders the CANONICAL regime and flips too — it no longer runs a second
   // derivation beside buildEvidenceSet's (drift risk at the freshness/loading/error edges).
-  /factorRows=\{evidenceSet\.factors\} regimeIn=\{evidenceSet\.regime\} flipsIn=\{evidenceSet\.flips\}\s*call=\{dailyCall\} callFrozen=\{callFrozen\}/.test(dashSrc) &&
+  /regimeIn=\{evidenceSet\.regime\}\s*call=\{dailyCall\} callFrozen=\{callFrozen\}/.test(dashSrc) &&
   /const regime=regimeIn\|\|computeRegime\(d,stale\)/.test(bandSrc) &&
-  /const fc=flipsIn\|\|flipConditions\(d,stale\)/.test(bandSrc) &&
-  /<RegimeBand d=\{d\} stale=\{staleFactors\} loading=\{mode==="LOADING"\} liveBuild=\{liveBuild\} srcLabel=\{derivedLabel\}/.test(dashSrc));
+  !/const fc=/.test(bandSrc) &&
+  /<RegimeBand d=\{d\} stale=\{staleFactors\} loading=\{mode==="LOADING"\} liveBuild=\{liveBuild\}/.test(dashSrc));
 
 // ═══════════ [47] UI-OVERHAUL task 1.4 — FiveWhys extracted, presentation only ═══════════
 // The 5 Whys strip moved verbatim to src/sections/FiveWhys.jsx. The separation contract:
@@ -8836,8 +8814,8 @@ console.log("\n[63] v3.98.3 — exclusion reasons, scoped vocabulary, TERMINAL p
     dataAsOf: { ...asOf, vix: "2026-01-02" }, mode: "LIVE", liveBuild: true, now: today });
   ok("v3.98.3 end-to-end: a genuinely stale feed still says too-old, dated with its own asOf",
     /too old to count \(as of 2026-01-02\)/.test(eStale.factors.find((f) => f.key === "vix").display));
-  ok("v3.98.3: the flip panel no longer asserts '(stale)' over an exclusion it cannot diagnose",
-    !/Excluded from the vote \(stale\)/.test(bandSrc) && /Unavailable, so their thresholds/.test(bandSrc));
+ok("v6.9.9.5 supersedes v3.98.3: the flip panel — one primary evidence view",
+  readSrc("../src/driverRows.js").includes("reason=f.reason||") && dmSrc.includes("excluded — ${f.reason}"));
   /* 8/28 matrix row 3 — the strip now serves BOTH branches through one `subText`, so the
      withheld path cannot render a fraction the voters line already states. Measured on
      COMMENT-STRIPPED source: bandSrc still carries a superseded copy of the old inline
@@ -11249,9 +11227,8 @@ console.log("\n[75] v6.0.1 — shape before text · toggle clarity · captions u
      in a 44px box). Degen's copy button is LABELLED ("⎘ COPY 10AM CALL"), so it was never the
      speck this pin describes; its 9px literal was simply below the token floor and now reads
      fs-xs. Both halves pinned, so neither can drift back. */
-  ok("v6.0.1→v6.8.4 hero: Simple's icon-only ⎘ and the ℹ button keep fsL; Degen's LABELLED copy button reads the fs-xs floor, never a 9px literal",
-    /fontSize:plainVerdict\?T\.fsL:T\.fsXs/.test(band) &&
-    /minWidth:44,minHeight:44,fontFamily:T\.fontMono,fontSize:T\.fsL/.test(band));
+ok("v6.9.9.5 supersedes v6.0.1→v6.8.4 hero: — one primary evidence view",
+  /fontSize:plainVerdict\?T\.fsL:T\.fsXs/.test(band) && /minWidth:44,minHeight:44,fontFamily:T\.fontMono,fontSize:T\.fsM/.test(band));
   // Boundary: the section stays presentation-only and the engine is untouched.
   ok("v6.0.1 boundary: SimpleCards is still presentation-only and no band/quorum moved",
     !/useState|useEffect|localStorage|computeRegime|buildEvidenceSet/.test(spc) &&
@@ -12509,7 +12486,7 @@ console.log("\n[83] Simple altitude — fs-xxl Hold, fs-body sentence, one-block
     const FLOOR = DT["fs-xs"];
     const PENDING = ["dashboard.jsx", "AIUnitEconomics.jsx", "Alerts.jsx", "CallBanners.jsx", "DataHealth.jsx",
       "FiveWhys.jsx", "Headwinds.jsx", "SignalQuality.jsx", "TerminalDock.jsx",
-      "Watchlist.jsx", "WhatChanged.jsx"];
+      "Watchlist.jsx"];
     const files = [...readdirSync(new URL("../src/sections/", import.meta.url)).map((f) => ["sections", f]),
       ...readdirSync(new URL("../src/primitives/", import.meta.url)).map((f) => ["primitives", f]), ["", "dashboard.jsx"]]
       .filter(([, f]) => f.endsWith(".jsx"));
@@ -12528,16 +12505,13 @@ console.log("\n[83] Simple altitude — fs-xxl Hold, fs-body sentence, one-block
        from PENDING, or the list would keep claiming work that is already done — the
        label-outlives-its-data defect pointed at a to-do list. */
     ok(`v6.8.6 type floor: the PENDING list names only files that genuinely still have sub-floor literals${cleanButListed.length ? " — now clean, delete from PENDING: " + cleanButListed.join(", ") : ""}`,
-      cleanButListed.length === 0 && PENDING.length === 11);
+      cleanButListed.length === 0 && PENDING.length === 10);
   }
   ok("T7→v6.8.5: Simple fold promises render at fs-l, one step above the operator chip, which now reads the fs-s floor rather than an 8px literal",
     /fontSize: promise \? T\.fsL : T\.fsS/.test(cgSrc) && TOK_T.fsL > TOK_T.fsS &&
     !/fontSize:\s*\d/.test(cgSrc.replace(/\/\/[^\n]*|\/\*[\s\S]*?\*\//g, "")));
-  ok("T8: Simple ℹ is gone — Hold ⓘ is the clock; copy stays icon-only on the Hold row",
-    /\{!plainVerdict&&<div/.test(band) && /aria-label="Show regime factors"/.test(band) &&
-    /\{plainVerdict&&copyControl\}/.test(band) &&
-    /plainVerdict\s*\n?\s*\? \(callCopied\?"✓":"⎘"\)/.test(band) &&
-    /\{open&&!plainVerdict&&\(/.test(band));
+ok("v6.9.9.5 supersedes T8: Simple ℹ is gone — one primary evidence view",
+  band.includes("{plainVerdict&&copyControl}") && band.includes('aria-label="Show regime factors"') && !band.includes("{open&&!plainVerdict&&("));
   // Slice 1 (public terminal skin): BOTH headers are one action row now (nowrap in both);
   // Terminal stays Degen's bar button and Share stays Degen's, one tap deep in ⋯ MORE.
   ok("T9/Slice 1: the header is one action row in BOTH modes — Terminal and Share are Degen's",
@@ -12621,13 +12595,8 @@ console.log("\n[84] v6.5.6 — spotlight learning: educational claims need evide
     /if\(!toasts \|\| !toasts\.length\) return null;/.test(utSrc) &&
     /if \(mode !== "LIVE" && mode !== "CACHED" && mode !== "STALE"\) return null;/.test(stbSrc) &&
     /if\(!flip\|\|!flip\.inputs\)return null;/.test(cbSrc) && /if\(!call\)return null;/.test(cbSrc));
-  ok("[85] Zone 4: the Drivers matrix is a section with ONE home; the !simple gate, the landmark and its h2 anchor STAY at the call site",
-    /\{!simple&&<section aria-labelledby="drivers"[\s\S]{0,1200}<DriversMatrix evidenceSet=\{evidenceSet\}\/>\s*\n\s*<\/section>\}/.test(dashSrc) &&
-    dashSrc.includes('<h2 id="drivers" className="visually-hidden">') &&
-    dashSrc.includes('import DriversMatrix from "./sections/DriversMatrix.jsx"') &&
-    !/evidenceSet\.factors\.map|voteStyle/.test(strip(dashSrc)) &&
-    /^export default function DriversMatrix\(\{ evidenceSet \}\)/m.test(dmSrc) &&
-    /if\(!evidenceSet\|\|!Array\.isArray\(evidenceSet\.factors\)\)return <div aria-hidden="true"\/>;/.test(dmSrc));
+ok("v6.9.9.5 supersedes [85] Zone 4: the Drivers matrix is a section — one primary evidence view",
+  dashSrc.includes('{!simple&&<section aria-labelledby="drivers"') && (dashSrc.match(/<DriversMatrix /g)||[]).length===1 && dmSrc.includes('if(!evidenceSet||!Array.isArray(evidenceSet.factors))'));
   ok("[85] Zone 4: DriversMatrix is presentation-only — the documented voteStyle import from the pure engine is its only computation import (the MacroStrip exception)",
     dmSrc.includes('import { voteStyle } from "../regime.js"') &&
     !/useState|useEffect|localStorage|fetch\(|useMarketData|computeRegime|buildEvidenceSet|regimeFactors|fieldMode|evalAlert/.test(strip(dmSrc)) &&
@@ -13752,9 +13721,8 @@ console.log("\n[91] v6.9.5 — the daily rotation surfaced, the truncation named
 
 {
   const drivers=readSrc("../src/sections/DriversMatrix.jsx");
-  ok("v6.9.7 drivers: existing disclosure and shared FactSheet, no second glossary",
-    drivers.includes("<CollapsedGroup") && drivers.includes("<Explainable key={f.key} explain={f.explain}") &&
-    !drivers.includes("defaultOpen") && !drivers.includes("stripExplainFor"));
+ok("v6.9.9.5 supersedes v6.9.7 drivers: existing disclosure — one primary evidence view",
+  !drivers.includes("<CollapsedGroup") && drivers.includes("metadata:f.conditionDetail}:f.explain}") && !drivers.includes("stripExplainFor"));
   ok("v6.9.7 drivers: only tokenized type and no truncated evidence",
     !/fontSize:\s*\d/.test(drivers) && !/textOverflow|whiteSpace:\s*["']nowrap/.test(drivers) &&
     drivers.includes('className="driver-reading"') && drivers.includes('className="driver-date"'));
@@ -13808,5 +13776,40 @@ console.log("\n[v6.9.8] Simple interpretations preserve the existing votes");
     !simpleSignalsDiffer(current,current)&&simpleSignalsDiffer({...current,factors:[{key:'vix',state:'NEUTRAL',excluded:false}]},current)&&
     simpleSignalsDiffer({...current,direction:'BEARISH'},current));
 }
+
+console.log("\n[v6.9.9.5] Degen evidence projection — rules stay canonical");
+{
+  const {driverRows}=await import("../src/driverRows.js");
+  const base=ev();
+  const rows=driverRows(base);
+  ok("Degen: all six canonical identities and explainers survive by identity",
+    rows.length===6&&rows.every((r,i)=>r.key===base.factors[i].key&&r.explain===base.factors[i].explain));
+  ok("Degen: typed current readings and votes are projected, never re-derived",
+    rows.every((r,i)=>r.available&&r.reading===base.factors[i].metric.text&&r.vote===base.factors[i].vote));
+  for(const state of ["LOADING","ERROR"]){
+    const r=driverRows({...base,state});
+    ok(`Degen ${state}: no current number, stance or crossing`,r.every(f=>!f.available&&f.stance==="Not counted"&&f.reading==="Current reading unavailable"&&f.condition==="Unavailable — no threshold shown"));
+  }
+  for(const mode of ["MOCK","STALE"]){
+    const r=driverRows({...base,factors:base.factors.map(f=>({...f,mode}))});
+    ok(`Degen ${mode}: no fallback interpreted as current`,r.every(f=>!f.available&&f.stance==="Not counted"));
+  }
+  for(const overrides of [{excluded:true,reason:"specific feed failure"},{asOf:null},{metric:{value:NaN,text:"9999"}}]){
+    const r=driverRows({...base,factors:base.factors.map(f=>({...f,...overrides}))});
+    ok("Degen: excluded, undated or non-finite readings fail closed",r.every(f=>!f.available&&!f.condition.includes("away")&&f.stance==="Not counted"));
+  }
+  ok("Degen: quorum failure keeps live observations but suppresses model crossings",
+    driverRows({...base,withheld:true}).every(f=>f.available&&f.condition==="Posture withheld — no flip calculated"));
+  for(const f of rows){
+    const crossings=base.flips.flips.filter(c=>c.key===f.key);
+    ok(`Degen ${f.key}: only the engine's load-bearing crossings are displayed`,
+      crossings.length?crossings.every(c=>f.condition.includes(c.copy)&&f.condition.includes(c.would)&&f.condition.includes(c.distance.toFixed(c.dec))):
+      !f.condition.includes("away"));
+  }
+  ok("Degen: compound conditions state the canonical reason",
+    base.flips.abstained.every(c=>rows.find(r=>r.key===c.key).conditionDetail===c.why));
+  ok("Degen: absent evidence renders no invented factors",driverRows(null).length===0);
+}
+
 console.log(`\n=== SMOKE TEST: ${pass} passed, ${fail} failed ===`);
 process.exit(fail === 0 ? 0 : 1);

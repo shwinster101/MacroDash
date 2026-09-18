@@ -262,7 +262,7 @@ console.log("\n[public] LIVE — a full snapshot publishes a posture");
   await page.locator('button[aria-label="Show regime factors"]').click();
   await page.waitForTimeout(150);
   ok("live: the flip line returns once there is a posture to flip (v3.94: inside the ℹ evidence panel)",
-    /would change this/i.test(await bandText(page)));
+    /Model change trigger/i.test(await page.locator(".driver-matrix").innerText()));
   ok("live: the moon voice is a real directional state again",
     /MOONING|HODL|DIAMOND HANDS/i.test(band) && !/CAN'T CALL IT/i.test(band));
   ok("live: no page errors", errors.length === 0);
@@ -287,7 +287,7 @@ console.log("\n[public] NEUTRAL — a neutral vote renders as neutral, not beari
     await fg.count() === 1);
   ok("neutral: that chip carries the neutral glyph and NOT the bearish ▼ — the bug, as a test",
     await (async () => { const t = (await fg.first().innerText()).trim();
-      return t.includes("•") && !t.includes("▼") && !t.includes("▲"); })());
+      return t==="Neutral"; })());
   ok("neutral: a genuinely bearish factor still renders ▼ (no over-correction)",
     await page.locator('[title="Valuation: BEAR"]').count() === 1);
   // v3.93/v3.94: the bucket grid is CUT and the sentence renders INSIDE the hero, beside
@@ -304,7 +304,7 @@ console.log("\n[public] NEUTRAL — a neutral vote renders as neutral, not beari
     await (async () => {
       const chips = await page.locator('[title$=": NEUTRAL"]').count();
       const m = (await bandText(page)).match(/(\d+)\s+neutral/);
-      return m !== null && Number(m[1]) === chips && chips > 0;
+      return chips === 2 && await page.locator(".driver-card").count()===6;
     })());
   ok("neutral: no page errors", errors.length === 0);
   await page.close();
@@ -378,9 +378,9 @@ console.log("\n[public] v3.93 — the 390px overview budget");
         n.children.length === 0 && re.test(n.textContent || "") && n.getBoundingClientRect().height > 0);
       return el ? Math.round(el.getBoundingClientRect().top + window.scrollY) : null;
     };
-    return { whys: top(/the reasoning/i), sq: top(/SIGNAL QUALITY/i), spy: top(/^(?:●?\s*SPY\*?|S&P 500)$/m) };
+    return { whys: top(/the reasoning/i), sq: top(/SIGNAL QUALITY/i), spy: Math.round(document.querySelector(".driver-reading").getBoundingClientRect().top+scrollY) };
   });
-  ok("v3.93 budget: first market data begins within 700px at 390×844 (measured 663 at pass time)",
+  ok("v6.9.9.5 budget: primary signal readings begin within 700px at 390×844",
     tops.spy !== null && tops.spy <= 700);
   ok("v3.93 budget: the closed reasoning block is ONE toggle row (≤60px to the next block)",
     tops.whys !== null && tops.sq !== null && tops.sq - tops.whys <= 60);
@@ -695,9 +695,9 @@ console.log("\n[public] v3.94 — Simple default, the toggle, persistence, red f
       (await page.locator(".sub-wordmark").count()) === 0 && (await page.locator("details.hdr-ops").count()) === 1 &&
       (await page.locator('details.hdr-ops summary[aria-label^="More"]').count()) === 1 && !/⋯ OPS/.test(pbody) &&
       (await page.locator('details.hdr-ops button[aria-label="Copy dashboard link"]').count()) === 1);
-    const tape = await page.locator(".spy-tape-mobile").textContent();
+    const tape = await page.locator(".degen-market-tape").textContent();
     ok("v6.4 tape: Degen labels SPY's session move without borrowing moon vocabulary",
-      /(TODAY|LAST) SPY\s*FLAT/.test(tape || "") &&
+      /S&P 500/.test(tape || "") &&
       !/(MOONING|HODL|DIAMOND HANDS)/.test(tape || ""));
   }
   await page.waitForTimeout(400);
@@ -828,19 +828,18 @@ console.log("\n[public] v3.60 P0 slice — nav, matrix, digest, health");
   const driversClosed = await page.locator('section[aria-labelledby="drivers"]').innerText();
   ok("glance: the matrix starts collapsed — summary visible, no full cards",
     /\d+ of \d+ signals counted/i.test(driversClosed) && /factor evidence/i.test(driversClosed) &&
-    !/as of \d{4}-\d{2}-\d{2}/.test(driversClosed));
-  await page.locator('section[aria-labelledby="drivers"] button[aria-expanded]').click();
+    /as of \d{4}-\d{2}-\d{2}/.test(driversClosed));
   await page.waitForTimeout(200);
   const drivers = await page.locator('section[aria-labelledby="drivers"]').innerText();
   ok("C3: the Evidence Matrix renders six factor cards with votes (one tap deep)",
-    (drivers.match(/BULL|BEAR|NEUTRAL/g) || []).length >= 6 && /6 of 6 signals counted/i.test(drivers));
+    (drivers.match(/Bullish|Bearish|Neutral/g) || []).length >= 6 && /6 of 6 signals counted/i.test(drivers));
   ok("C3: each card carries freshness and an as-of date",
     /LIVE/.test(drivers) && /as of \d{4}-\d{2}-\d{2}/.test(drivers));
   await page.locator("button.cg-toggle", { hasText: "the reasoning" }).click();   // v3.94: WC rides the group
   await page.waitForTimeout(150);
   const body1 = await page.locator("body").innerText();
   ok("C4: first valid visit says BASELINE SET, never 'nothing changed'",
-    /baseline set — tracking starts today on this device/.test(body1));
+    /Tracking starts today on this device/.test(body1));
   // FEAT-GLANCE (v3.61): Data Health's per-source grid collapses the same way — the header
   // stays; the 15 rows are one tap deep.
   ok("glance: Data Health header visible while the per-source grid starts collapsed",
@@ -859,7 +858,7 @@ console.log("\n[public] v3.60 P0 slice — nav, matrix, digest, health");
   await page.waitForTimeout(150);
   const body2 = await page.locator("body").innerText();
   ok("C4: an identical return visit names the device scope — 'since your previous visit on this device'",
-    /no material change since your previous visit on this device \(\d{4}-\d{2}-\d{2}\)/.test(body2));
+    /No material change since your previous visit on this device \(\d{4}-\d{2}-\d{2}\)/.test(body2));
   // ── v3.69 NARRATIVE FIRST ─────────────────────────────────────────────────
   // (a) the 5 Whys renders in the overview region, BEFORE the market strip — the owner call
   // this release exists for. DOM order, not pixels: it must hold at every width.
@@ -873,7 +872,7 @@ console.log("\n[public] v3.60 P0 slice — nav, matrix, digest, health");
   // (the always-visible summary) and its SPY* item survive the collapse (v3.25).
   const mktsClosed = await page.locator('section[aria-labelledby="markets"]').innerText();
   ok("v3.69: market detail collapsed by default; the macro strip stays visible while closed",
-    /SPY\*/.test(mktsClosed) && !/MARKET PULSE/i.test(mktsClosed) && /full market detail/i.test(mktsClosed));
+    /S&P 500/.test(mktsClosed) && !/MARKET PULSE/i.test(mktsClosed) && /full market detail/i.test(mktsClosed));
   // (c) one tap opens the chart.
   await page.locator('section[aria-labelledby="markets"] button[aria-expanded]').click();
   await page.waitForTimeout(200);
@@ -920,14 +919,13 @@ console.log("\n[public] v3.60 P0 slice — nav, matrix, digest, health");
   // v6.4: one scoped, one-vocabulary line — "5 of 6 signals counted · unavailable: VIX".
   ok("glance: the exclusion is visible while the matrix is closed (the signals line names it)",
     /5 of 6 signals counted/i.test(closed) && /unavailable: VIX/i.test(closed));
-  await page.locator('section[aria-labelledby="drivers"] button[aria-expanded]').click();
   await page.waitForTimeout(200);
   const drivers = await page.locator('section[aria-labelledby="drivers"]').innerText();
   // v3.98.3: the reason is retailed AND the card now shows the real cause — a dead feed
   // says "no live reading", never the stale wording the hero used to hardcode.
   ok("C3: an excluded factor is NAMED with its real reason on the card itself",
-    /EXCLUDED/.test(drivers) && /excluded — no live feed right now/.test(drivers) &&
-    /no live reading — not counted/.test(drivers) && /5 of 6 signals counted/i.test(drivers));
+    /Not counted/.test(drivers) && /excluded — no live feed right now/.test(drivers) &&
+    /Current reading unavailable/.test(drivers) && /5 of 6 signals counted/i.test(drivers));
   await page.close();
 }
 
@@ -948,18 +946,12 @@ console.log("\n[public] v3.98.4 — token trend withheld on mock, strip marker i
   const ai = await page.locator('section[aria-labelledby="ai"]').innerText();
   ok("v3.98.4: with the token feed dead the card withholds its trend instead of claiming one",
     /trend withheld — price leg not live/.test(ai) && !/% over window/.test(ai));
-  const strip = page.locator(".macro-strip");
-  ok("v3.98.4: a DARK voter loses the ▪ marker and its tooltip stops claiming it counts",
-    await strip.evaluate((el) => {
-      const item = [...el.querySelectorAll("[title]")].find((n) => /Volatility index/.test(n.getAttribute("title") || ""));
-      if (!item) return false;
-      return /not counted/.test(item.getAttribute("title")) && !item.textContent.includes("▪");
-    }));
-  ok("v3.98.4: a LIVE voter still carries ▪ and still says it counts (the marker kept its meaning)",
-    await strip.evaluate((el) => {
-      const item = [...el.querySelectorAll("[title]")].find((n) => /Fear & Greed/.test(n.getAttribute("title") || ""));
-      return !!item && /Counts toward today/.test(item.getAttribute("title")) && item.textContent.includes("▪");
-    }));
+  const matrix=page.locator(".driver-matrix");
+  ok("v6.9.9.5: a dark voter is explicitly not counted, with no current reading",
+    /Not counted/.test(await matrix.locator(".driver-card").filter({hasText:"VIX"}).innerText()) &&
+    /Current reading unavailable/.test(await matrix.locator(".driver-card").filter({hasText:"VIX"}).innerText()));
+  ok("v6.9.9.5: the live sentiment vote retains its canonical stance",
+    await matrix.locator('[title="Fear & Greed: BULL"]').count()===1);
   const macro = await page.locator('section[aria-labelledby="macro"]').innerText();
   ok("v3.98.4: the CPI box now dates itself — no LIVE badge without an observation date",
     /CPIAUCNS \+ CPILFENS/.test(macro) && /as of/i.test(macro));
@@ -1292,7 +1284,7 @@ console.log("\n[public] A4 — the public/private boundary is ENFORCED, not comm
      still carry the two facts a collapse may not hide: the version and "not financial advice". */
   ok("v6.0.2 footer: closed by default, the toggle row carries the version and the not-advice fact",
     !/operator view carries the curated watchlist/.test(pub) &&
-    /about this page — v\d+\.\d+\.\d+ · sources · not financial advice/i.test(pub));
+    /about this page — v\d+\.\d+\.\d+(?:\.\d+)? · sources · not financial advice/i.test(pub));
   await page.locator(".site-footer button.cg-toggle").click();
   await page.waitForTimeout(150);
   ok("v6.4 public footer: operator-view promotional sentence stays removed when opened",
@@ -1372,8 +1364,8 @@ console.log("\n[public] Slice 1 — verdict above the fold at 375px (extracted b
   // 8/28 matrix row 16: the tally's coverage tail took the canonical vocabulary ("N of M
   // voters counted"), so it no longer says "usable" where the line above it says "counted".
   ok("slice1 @375px: the confidence tally and flip sentence ride one tap deep in the band's evidence panel",
-    /\d+ bull · \d+ neutral · \d+ bear — \d+ of \d+ signals counted/.test(await band.innerText()) &&
-    /would change this/i.test(await band.innerText()));
+    /6 of 6 signals counted/.test(await page.locator(".driver-matrix").innerText()) &&
+    await page.locator(".driver-condition").count()===6);
   await page.locator("button.cg-toggle", { hasText: "the reasoning" }).click();   // v3.94: two clicks deep
   await page.waitForTimeout(150);
   await page.locator("button.cg-toggle", { hasText: "why this call" }).click();
@@ -1489,10 +1481,9 @@ console.log("\n[public] wave-17 fix — strip F&G color derives from the band vo
   const { page } = await open({ live: { ...FULL_LIVE, fearGreed: 45, fearGreedLabel: "Neutral" } });
   await page.waitForTimeout(1400);
   const col = await page.evaluate(() => {
-    const cell = [...document.querySelectorAll(".macro-strip-inner > div")]
-      .find((el) => /F&G/.test(el.textContent));
+    const cell = document.querySelector('.driver-card [title^="Fear & Greed:"]');
     // v6.3: the tile's last child is the sheet button now; the sub-line carries its own class.
-    return getComputedStyle(cell.querySelector(".strip-sub")).color;
+    return getComputedStyle(cell).color;
   });
   ok("fix: a NEUTRAL F&G (45) renders the neutral grey (text-secondary) on the strip, not bearish red",
     col === tokRgb("text-secondary"));
@@ -1500,16 +1491,15 @@ console.log("\n[public] wave-17 fix — strip F&G color derives from the band vo
   await page.waitForTimeout(150);
   const chips = await page.locator('[aria-label="Macro backdrop verdict"]').innerText();
   ok("fix control: the band chip agrees — F&G carries • (neutral), and the two surfaces now match",
-    /F&G •/.test(chips));
+    await page.locator('.driver-card [title="Fear & Greed: NEUTRAL"]').count()===1);
   await page.close();
 }
 {
   const { page } = await open({ live: FULL_LIVE });
   await page.waitForTimeout(1400);
   const col = await page.evaluate(() => {
-    const cell = [...document.querySelectorAll(".macro-strip-inner > div")]
-      .find((el) => /F&G/.test(el.textContent));
-    return getComputedStyle(cell.querySelector(".strip-sub")).color;   // v6.3: by class (see above)
+    const cell = document.querySelector('.driver-card [title^="Fear & Greed:"]');
+    return getComputedStyle(cell).color;   // v6.3: by class (see above)
   });
   ok("fix control: a genuine greed reading (62, bull) still renders green — no over-correction",
     col === tokRgb("green"));
@@ -2000,69 +1990,38 @@ console.log("\n[public] v6.2/v6.4 — the 6pm evening update: one line, both mod
 }
 
 // ── v6.3 — eight sheets: every macro-strip tile opens its explainer, DRIVEN ──────────────
-console.log("\n[public] v6.3 — eight sheets on the macro strip (Power, Simple, a dark voter)");
-{
-  const { page, errors } = await open({ live: FULL_LIVE });
+console.log("\n[public] v6.9.9.5 — one primary evidence view and three context sheets");
+for (const width of [320,390,768,1280]) {
+  const {page,errors}=await open({live:FULL_LIVE,width});
   await page.waitForTimeout(1200);
-  const tiles = page.locator(".macro-strip-inner > div");
-  const trigger = (i) => tiles.nth(i).locator('button[aria-haspopup="dialog"]');
-  ok("v6.3 strip: all EIGHT tiles carry a dialog trigger, and nothing is open until one is tapped",
-    (await page.locator('.macro-strip-inner button[aria-haspopup="dialog"]').count()) === 8 &&
-    (await page.locator('[role="dialog"]').count()) === 0);
-  // SPY* — a context tile with the new copy.
-  await trigger(0).click();
-  await page.waitForTimeout(250);
-  const dlg = page.locator('[role="dialog"]');
-  const spyBody = await dlg.innerText();
-  ok("v6.3 SPY* sheet: the official name as the title, exactly 3 bullets, the proxy stated, and the eyebrow carrying the tile's OWN reading + CONTEXT ONLY",
-    /broad U.S. stock market/.test(await page.locator("#factsheet-title").innerText()) && /S&P 500 Index/.test(spyBody) && (await dlg.locator("li").count()) === 3 &&
-    /SPY\* · \$748\.1 · CONTEXT ONLY/i.test(spyBody) && /FRED index divided by ten/.test(spyBody) && /six-signal model does not read/.test(spyBody));
-  await page.keyboard.press("Escape");
-  await page.waitForTimeout(200);
-  ok("v6.3 SPY* sheet: Escape closes it and focus lands back on the SPY tile",
-    (await page.locator('[role="dialog"]').count()) === 0 &&
-    await page.evaluate(() => !!document.activeElement && document.activeElement.getAttribute("aria-haspopup") === "dialog" && /SPY\*/.test(document.activeElement.innerText)));
-  // VIX — a voter tile: the SAME sheet the Simple card opens (one home, proven on the wire).
-  await trigger(2).click();
-  await page.waitForTimeout(250);
-  const vixBody = await dlg.innerText();
-  ok("v6.4 VIX sheet: the band's own sheet — same title as the card's, the band's own bullet, and the eyebrow says SIGNAL BULL",
-    (await page.locator("#factsheet-title").innerText()) === "Expected market swings" &&
-    /The teens are calm/.test(vixBody) && /Cboe Volatility Index/.test(vixBody) && /VIX · 16\.1 · SIGNAL BULL/i.test(vixBody));
-  await page.keyboard.press("Escape");
-  await page.waitForTimeout(200);
-  // FED — the target range is live in this fixture.
-  await trigger(5).click();
-  await page.waitForTimeout(250);
-  const fedBody = await dlg.innerText();
-  ok("v6.3 FED sheet: the target range's official name, the tile's own range reading, and both readings named in the body",
-    /Fed policy rate/.test(await page.locator("#factsheet-title").innerText()) && /Federal Funds Rate Target Range/.test(fedBody) &&
-    /FED · 3\.50–3\.75% · CONTEXT ONLY/i.test(fedBody) && /effective average/.test(fedBody) && /lags a decision/.test(fedBody));
-  await page.locator("button.fs-close").click();
-  await page.waitForTimeout(200);
-  // NFCI — the 8th tile, a voter reading bull on this tape.
-  await trigger(7).click();
-  await page.waitForTimeout(250);
-  ok("v6.4 NFCI sheet: the 8th tile opens the NFCI band's sheet with its signal state in the eyebrow",
-    /Financial conditions/.test(await page.locator("#factsheet-title").innerText()) && /Chicago Fed National Financial Conditions Index/.test(await dlg.innerText()) &&
-    /NFCI · -0\.62 · SIGNAL BULL/i.test(await dlg.innerText()));
-  await page.keyboard.press("Escape");
-  await page.waitForTimeout(200);
-  ok("v6.3 strip (Power): the hover tooltips survive beside the sheets — three vote states, verbatim",
-    /Context only — does not affect the call\./.test(await tiles.nth(0).getAttribute("title")) &&
-    /Counts toward today's posture — signal is BULL\./.test(await tiles.nth(2).getAttribute("title")));
-  ok("v6.3 strip (Power): no page errors through four sheets", errors.length === 0);
+  const tape=page.locator(".degen-market-tape");
+  ok(`v6.9.9.5 @${width}: exactly three context tiles; no duplicate voter strip`,
+    await tape.locator(".strip-tile").count()===3 && await page.locator(".macro-strip-inner").count()===0 &&
+    !/VIX|F&G|10Y|CPI|NFCI/.test(await tape.innerText()));
+  ok(`v6.9.9.5 @${width}: evidence precedes local changes and reasoning`,await page.evaluate(()=>{
+    const e=document.querySelector(".driver-matrix"),c=document.querySelector(".what-changed");
+    return e&&c&&Boolean(e.compareDocumentPosition(c)&Node.DOCUMENT_POSITION_FOLLOWING);
+  }));
+  for (let i=0;i<3;i++) {
+    const trigger=tape.locator(".strip-tile").nth(i);
+    await trigger.click();
+    const dlg=page.getByRole("dialog");
+    ok(`v6.9.9.5 @${width}: context ${i+1} has one three-bullet lesson`,await dlg.locator("li").count()===3);
+    if(i===0)ok("S&P sheet discloses the proxy and separate crash circuit",/not an SPY quote/.test(await dlg.innerText())&&/crash circuit/.test(await dlg.innerText()));
+    if(i===2)ok("Fed target is dated and not a model voter",/3\.50–3\.75%/.test(await dlg.innerText())&&/six-signal model does not read/.test(await dlg.innerText()));
+    await page.keyboard.press("Escape");
+    ok("context restores keyboard focus",await trigger.evaluate(el=>document.activeElement===el));
+  }
+  ok(`v6.9.9.5 @${width}: no overflow or runtime errors`,await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth+1)&&errors.length===0);
   await page.close();
 }
 {
-  // An unavailable signal: the eyebrow must say so, never claim a state.
-  const { page } = await open({ live: DEGRADED });
+  const {page}=await open({live:DEGRADED});
   await page.waitForTimeout(1200);
-  await page.locator(".macro-strip-inner > div").nth(7).locator('button[aria-haspopup="dialog"]').click();
-  await page.waitForTimeout(250);
-  ok("v6.4 sheet: an unavailable signal opens its sheet with 'unavailable today' in the eyebrow",
-    /NFCI · .* · UNAVAILABLE TODAY/i.test(await page.locator('[role="dialog"]').innerText()) &&
-    !/SIGNAL (BULL|BEAR|NEUTRAL)/i.test(await page.locator('[role="dialog"]').innerText()));
+  const row=page.locator(".driver-card").filter({hasText:"NFCI"});
+  ok("unavailable factor: no reading or directional claim on the face",/Not counted/.test(await row.innerText())&&/Current reading unavailable/.test(await row.innerText()));
+  await row.click();
+  ok("unavailable factor: the sheet names its exclusion",/excluded —/i.test(await page.getByRole("dialog").innerText()));
   await page.keyboard.press("Escape");
   await page.close();
 }
@@ -2695,12 +2654,11 @@ console.log("\n[public] v6.9.4 — the fold sweep: EVERY disclosure, both modes,
 }
 
 console.log("\n[public] v6.9.7 — reconciled Degen evidence learning");
-for (const width of [390,1280]) {
+for (const width of [320,390,768,1280]) {
   const {page,errors}=await open({live:FULL_LIVE,width,route:"/?view=public"});
   await page.waitForTimeout(1200);
   const matrix=page.locator('section[aria-labelledby="drivers"]');
-  ok(`v6.9.7 @${width}: evidence remains folded by default`,await matrix.locator('.driver-card').count()===0);
-  await matrix.locator('button[aria-expanded]').click();
+  ok(`v6.9.7 @${width}: evidence is expanded by default`,await matrix.locator('.driver-card').count()===6);
   ok(`v6.9.7 @${width}: every canonical factor has a direct teaching button`,await matrix.locator('button.driver-card').count()===6);
   ok(`v6.9.7 @${width}: readings and provenance use the shared readable scale`,await matrix.evaluate(el=>
     [...el.querySelectorAll('.driver-reading')].every(n=>parseFloat(getComputedStyle(n).fontSize)>=14 && getComputedStyle(n).textOverflow!=="ellipsis") &&
@@ -2714,7 +2672,7 @@ for (const width of [390,1280]) {
     ok(`v6.9.7 @${width}: factor ${i+1} restores focus`,!await page.getByRole('dialog').isVisible() && await trigger.evaluate(el=>document.activeElement===el));
   }
   ok(`v6.9.7 @${width}: expanded evidence fits the viewport`,await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth+1));
-  await matrix.screenshot({path:`/tmp/macrodash-697-evidence-${width}.png`});
+  await matrix.screenshot({path:`/tmp/macrodash-6995-evidence-${width}.png`});
   ok(`v6.9.7 @${width}: no runtime errors`,errors.length===0);
   await page.close();
 }
@@ -2723,9 +2681,8 @@ for (const width of [390,1280]) {
   const {page,errors}=await open({live,width:390,route:"/?view=public"});
   await page.waitForTimeout(1200);
   const matrix=page.locator('section[aria-labelledby="drivers"]');
-  await matrix.locator('button[aria-expanded]').click();
   const excluded=matrix.locator('button.driver-card').filter({hasText:'no live feed right now'});
-  ok("v6.9.7 excluded: reason is legible and remains excluded",await excluded.count()===1 && /EXCLUDED/.test(await excluded.innerText()) &&
+  ok("v6.9.7 excluded: reason is legible and remains excluded",await excluded.count()===1 && /Not counted/.test(await excluded.innerText()) &&
     await excluded.locator('.driver-exclusion').evaluate(el=>parseFloat(getComputedStyle(el).fontSize)>=12.5));
   await excluded.click();
   ok("v6.9.7 excluded: learning states the missing feed, never a current reading",/excluded — no live feed right now/i.test(await page.getByRole('dialog').innerText()));
@@ -2806,7 +2763,32 @@ for (const scenario of [
     /Bullish/.test(await page.locator('[aria-label="Macro backdrop verdict"]').innerText()) &&
     await page.locator('.simple-signal-drift').count()===1 &&
     /Low volatility supports stocks/.test(await page.locator('[aria-label="Key parameters"]').innerText()));
+  // The saved headline can agree while individual current votes have changed.
+  {
+    const degen=await open({live:FULL_LIVE,width:390,publicCall:saved,publicCallFrozen:true,publicCallCapturedAt:`${TODAY}T14:00:00.000Z`});
+    await degen.page.waitForTimeout(1200);
+    ok("Degen factor-only drift: saved call and current table are explicitly distinguished",
+      /Current signals differ from the saved 10am call above/.test(await degen.page.locator(".driver-matrix").innerText()) &&
+      /frozen 10am call/.test(await degen.page.locator('[aria-label="Macro backdrop verdict"]').innerText()) &&
+      degen.errors.length===0);
+    await degen.page.close();
+  }
   ok('v6.9.9 frozen call: no runtime errors',errors.length===0);
+  await page.close();
+}
+{
+  const {page,errors}=await open({live:{...FULL_LIVE,vix:21,fearGreed:42},width:390});
+  await page.waitForTimeout(1200);
+  const vix=page.locator(".driver-card").filter({hasText:"VIX"});
+  ok("Degen: a genuine VIX crossing shows its current distance and target model",
+    /VIX below 18/.test(await vix.innerText())&&/3.0* away/.test(await vix.innerText())&&/RISK-ON/.test(await vix.innerText()));
+  const cpi=page.locator(".driver-card").filter({hasText:"CPI"});
+  ok("Degen: compound rules stay compact on the face",/Compound rule · see details/.test(await cpi.innerText()));
+  await cpi.click();
+  ok("Degen: compound criteria remain accessible without another rule table",
+    /SHAPE of its trend/.test(await page.getByRole("dialog").innerText())&&await page.getByRole("dialog").locator("li").count()===3);
+  await page.keyboard.press("Escape");
+  ok("Degen: crossing scenario has no runtime errors",errors.length===0);
   await page.close();
 }
 await browser.close();

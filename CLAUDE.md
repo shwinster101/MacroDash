@@ -5,6 +5,24 @@ answers *"is it safe to be in the market?"* from live macro + market + sentiment
 data. Single-page React app on Cloudflare Pages, with live data assembled at the
 edge by Pages Functions and cached in KV.
 
+**v6.9.9.5 — one primary Degen evidence view.** Owner-requested four-part release identifier
+(package.json remains the single source; this private app is not published to npm).
+Degen now shows all six canonical factors in stable order without a disclosure: current
+typed reading, model stance, actual load-bearing change conditions and dated freshness.
+Excluded or non-current readings are explicitly not counted; no fallback number or invented
+crossing is shown. Compound rules name their limitation. Safety overrides and the frozen
+daily call remain above the current evidence; factor-only drift is visibly distinguished.
+The hero's duplicate evidence drawer becomes a jump to the primary section. What changed
+is immediately below the evidence, device-local, with additional changes expandable.
+The Degen tape contains only S&P 500 / QQQ daily performance and the dated Fed policy
+rate (monthly-effective fallback explicitly named). Six-signal learning sheets remain
+one tap away. Simple, all model rules/thresholds, APIs, fundamentals, KV and Worker are unchanged.
+This supersedes earlier default-folded Degen and eight-stat-strip layout instructions.
+Verification: browser-required `npm run gates` passed 2,629 smoke, 353 admin-browser and
+581 public-browser checks; production audit found zero vulnerabilities. Install dry-run
+accepts the release identifier. Degen screenshots were checked at 320/390/768/1280px;
+Simple retains its unchanged 660px phone market-tape ceiling.
+
 **v6.9.9 — six signals, one clear story.** Simple shows every canonical signal in stable
 order, meaning first and numbers in its three-bullet sheet. Unavailable signals retain
 their place, explicitly not counted; mock/stale data never receives an interpretation.

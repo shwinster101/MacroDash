@@ -570,6 +570,9 @@ export default function Dashboard({ publicView = false } = {}) {
            ✕ is the way out — both get real thumb targets on a phone (Req 6.3). The card is
            already tall enough at every width; the rule is stated so a later compaction cannot
            shrink it below the floor without failing the pin. */
+        .driver-columns{display:grid;grid-template-columns:minmax(0,1.15fr) minmax(0,.5fr) minmax(0,1.3fr) minmax(0,.8fr);gap:12px;align-items:start;}
+        .driver-head{padding:0 12px 6px;}
+        @media(max-width:767px){.driver-columns{grid-template-columns:minmax(0,1fr) auto;gap:6px 10px;}.driver-condition{grid-column:1/-1;}.driver-columns>div:last-child{grid-column:1/-1;display:flex;gap:6px;flex-wrap:wrap;align-items:center;}.driver-head{display:none;}}
         .simple-card{min-height:44px;}
         .simple-signals-grid{display:grid;grid-template-columns:1fr;gap:3px;}
         @media(min-width:768px){.simple-signals-grid{grid-template-columns:repeat(2,minmax(0,1fr));}}
@@ -757,17 +760,23 @@ export default function Dashboard({ publicView = false } = {}) {
       {/* v3.97 SHAREABLE SIMPLE: the hero explanation SWAPS by mode, never stacks — Simple
           gets the two directional newbie sentences (prose), Power keeps the compact
           one-liner (sentence). Same buckets, one derivation (postureSummary). */}
-      <RegimeBand d={d} stale={staleFactors} loading={mode==="LOADING"} liveBuild={liveBuild} srcLabel={derivedLabel}
+      <RegimeBand d={d} stale={staleFactors} loading={mode==="LOADING"} liveBuild={liveBuild}
         /* v6.2: the sentence describes the CURRENT evidence; it is suppressed only when a
            SUBORDINATE read on screen (live drift, or a captured close read) DISAGREES with the
            primary call — an agreeing close read leaves it in place. */
         sentence={(callDrift||closeReadNote?.differs)?null:(simple?simpleS:(!evidenceSet.withheld&&evidenceSet.summary?evidenceSet.summary.sentence:null))}
         plainVerdict={simple?simpleV:null} conf={regimeConf}
-        factorRows={evidenceSet.factors} regimeIn={evidenceSet.regime} flipsIn={evidenceSet.flips}
+        regimeIn={evidenceSet.regime}
         call={dailyCall} callFrozen={callFrozen} callCapturedAt={publicCallCapturedAt}
         callDrift={callDrift} closeRead={closeReadNote} readCaption={currentReadCaption} noSessionDay={marketClock.noSession}
         onCopyCall={handleCallShare} callCopied={callShared}
         copyDisabled={!anyLive&&!callFrozen}/>
+
+      {!simple&&<section aria-labelledby="drivers" style={{padding:"10px 20px",borderBottom:`1px solid ${T.border}`}}>
+        <h2 id="drivers" className="visually-hidden">Drivers — the six signals behind the call</h2>
+        <DriversMatrix evidenceSet={evidenceSet} drift={callFrozen&&simpleSignalsDiffer(dailyCall,currentCall)}/>
+      </section>}
+      {!simple&&<WhatChanged changed={changed}/>}
 
       {/* FEAT-WHY (v3.62) sentence now renders INSIDE the hero (v3.94 DRIVERS-ONLY — one
           render site beside the verdict it explains). postureSummary stays computed and
@@ -798,16 +807,11 @@ export default function Dashboard({ publicView = false } = {}) {
         label={WHYS_FOLD_LABEL} promise
         flipChip={evidenceSet.withheld?null:flipChipOf(simpleF)} flipLine={simpleF} coverage={regimeConf}/>}
 
-      {/* ── v3.94 DRIVERS-ONLY: the REASONING group — 5 whys + what-changed under ONE
-          toggle (2 clicks to any why, inside the owner's 2-3 budget). The label carries the
-          change count while closed (v3.25: a material delta is signal, never hidden silently);
-          posture-flip deltas also surface in the hero itself, which never collapsed.
-          POWER-ONLY (the Explain/Dig layers). ── */}
+      {/* Supporting reasoning remains optional; the device-local digest is above. */}
       {!simple&&<div style={{padding:"2px 20px",background:T.bg,borderBottom:`1px solid ${T.border}`}}>
-        <CollapsedGroup chip={false} count={5+(changed&&changed.changes?changed.changes.length:0)}
-          label={`the reasoning — 5 whys · what changed${changed&&changed.changes&&changed.changes.length?` (${changed.changes.length} new)`:""}`}>
+        <CollapsedGroup chip={false} count={5}
+          label="the reasoning — 5 whys">
           <FiveWhys fw={fw} derivedLabel={derivedLabel} mode={modeOf('spyPrice')} asOf={asOfOf('spyPrice')}/>
-          <WhatChanged changed={changed}/>
         </CollapsedGroup>
       </div>}
 
@@ -823,23 +827,7 @@ export default function Dashboard({ publicView = false } = {}) {
         <a href="/difference" style={{color:T.textMuted,textDecoration:"none"}}>WHY MACRODASH →</a>
       </nav>}
 
-      {/* C4 WHAT CHANGED rides inside the reasoning group above (v3.94). */}
-
-      {/* ── C3 (v3.60): DRIVERS — the six-factor Evidence Matrix. Renders the EvidenceSet
-          contract, never its own reading: value · vote · freshness · as-of · exclusion
-          reason per factor. Cards wrap on phones, rows on desktop (flex-wrap). ── */}
-      {!simple&&<section aria-labelledby="drivers" style={{padding:"10px 20px",borderBottom:`1px solid ${T.border}`}}>
-        <h2 id="drivers" className="visually-hidden">Drivers — the six signals behind the call</h2>
-        {/* v3.62 eyebrow, folded into the toggle row itself (v3.93 QUIET-2 — two rows were
-            saying one thing). The count summary stays visible while closed (v3.25). */}
-        {/* FEAT-GLANCE (v3.61): the six full cards collapse — the band's chip row above is
-            already the icon-first six-factor view, so a second full-size rendering of the
-            same six facts was the duplication the newcomer audit flagged. Red facts survive
-            the collapse: the summary line above stays, exclusions stay named in Signal
-            Quality, and the ⏱ chips stay on the band (the v3.25 rule). chip={false} — this
-            is live evidence, not curated content. */}
-        <DriversMatrix evidenceSet={evidenceSet}/>
-      </section>}
+      {/* What changed now follows the primary evidence section (v6.9.9.5). */}
 
       {/* v3.69 NARRATIVE-FIRST: markets/macro/ai gain real <section> extents (the drivers/
           health pattern) — previously bare h2s, so the ai anchor swallowed Conviction+Alerts. */}
@@ -848,7 +836,7 @@ export default function Dashboard({ publicView = false } = {}) {
       {/* ── MACRO STRIP — extracted to src/sections/MacroStrip.jsx (task 3.1),
           presentation only (FEAT-170 4-col mobile reflow rides the .macro-strip rules in
           the stylesheet above; v3.25: always visible while market detail collapses). ── */}
-      <MacroStrip d={d} modeOf={modeOf} asOfOf={k=>dataAsOf?.[k]} variant={simple?"simple":"full"} fomcLabel={fomcLabel} fomcDays={fomcDays}
+      <MacroStrip d={d} modeOf={modeOf} asOfOf={k=>dataAsOf?.[k]} variant={simple?"simple":"degen"} fomcLabel={fomcLabel} fomcDays={fomcDays}
         votingFields={VOTING_FIELDS} badge={simple?null:<SpyTapeBadge spyChangePct={d.marketPulse.spy.changePct} mode={modeOf("spyPrice")} noSessionDay={marketClock.noSession}/>}/>
 
       {/* ── v6.5.0 STOCK SPOTLIGHT — immediately below the macro-number strip in BOTH modes,

@@ -1,26 +1,16 @@
-// ─── WHAT CHANGED (UI-OVERHAUL Slice 2, task 3.3) ───────────────────────────
-// Extracted VERBATIM from dashboard.jsx: the C4 (v3.60) return-visit digest.
-// PRESENTATION ONLY: summarizeEvidence/compareEvidence and the localStorage
-// persist-AFTER-compare sequencing stay in the orchestrator — this renders the
-// comparison it is handed. A null digest renders NOTHING (no baseline could be
-// established: mock/thin evidence never seeds a diff), which doubles as the
-// Property-9 guard — absent is a real state here, not an error.
-// v3.61 (newcomer audit): the baseline is BROWSER-LOCAL (localStorage), not an
-// account — the copy states the device scope rather than implying a server history.
+// Device-local return-visit digest, not global market history.
 import { T } from "../design-tokens.js";
-
-const WhatChanged=({changed})=>{
+import CollapsedGroup from "../primitives/CollapsedGroup.jsx";
+export default function WhatChanged({changed}) {
   if(!changed)return null;
-  return(
-    <div style={{padding:"6px 20px",background:T.bg,borderBottom:`1px solid ${T.border}`,display:"flex",gap:10,alignItems:"baseline",flexWrap:"wrap"}}>
-      <span style={{fontFamily:T.fontMono,fontSize:8,color:T.textMuted,letterSpacing:"0.12em",textTransform:"uppercase"}}>What changed</span>
-      {changed.baseline
-        ?<span style={{fontFamily:T.fontMono,fontSize:9,color:T.textSecondary}}>baseline set — tracking starts today on this device</span>
-        :changed.changes.length
-          ?changed.changes.slice(0,4).map((c,i)=>(
-            <span key={i} style={{fontFamily:T.fontMono,fontSize:9,color:c.kind==="posture"?T.amber:T.textSecondary}}>{c.text}</span>))
-          :<span style={{fontFamily:T.fontMono,fontSize:9,color:T.textMuted}}>no material change since your previous visit on this device ({String(changed.since||"").slice(0,10)})</span>}
-    </div>
-  );
-};
-export default WhatChanged;
+  const changes=changed.changes||[];
+  return <div className="what-changed" style={{padding:"8px 20px",background:T.bg,borderBottom:`1px solid ${T.border}`,fontFamily:T.fontMono,fontSize:T.fsM,color:T.textSecondary}}>
+    <strong>What changed</strong> · {changed.baseline?"Tracking starts today on this device":
+      changes.length?`${changes.length} material change${changes.length===1?"":"s"} since your previous visit on this device`:
+      `No material change since your previous visit on this device (${String(changed.since||"").slice(0,10)})`}
+    {!changed.baseline&&changes.length>0&&<div style={{marginTop:4,color:changes[0].kind==="posture"?T.amber:T.textSecondary}}>{changes[0].text}</div>}
+    {!changed.baseline&&changes.length>1&&<CollapsedGroup chip={false} count={changes.length-1} label="More changes since your previous visit">
+      {changes.slice(1).map((c,i)=><div key={i} style={{padding:"4px 0",color:c.kind==="posture"?T.amber:T.textSecondary}}>{c.text}</div>)}
+    </CollapsedGroup>}
+  </div>;
+}

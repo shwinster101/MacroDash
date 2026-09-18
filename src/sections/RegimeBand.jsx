@@ -1,10 +1,8 @@
 // ─── FEAT-169 · REGIME VERDICT BAND (UI-OVERHAUL Slice 1, task 1.3) ──────────
 // The friend-readable hero; presentation only. Engine rules stay in regime.js.
-import { useState } from "react";
 import { DT, T } from "../design-tokens.js";
-import { computeRegime, regimeFactors, flipConditions, voteStyle } from "../regime.js";
+import { computeRegime } from "../regime.js";
 import { simpleCallLabel, simpleHoldExplain } from "../publicCopy.js";
-import { fmt } from "../format.js";
 import { Explainable } from "../primitives/FactSheet.jsx";
 
 // ENGINE0-CONT: the ONE rendered label for a withheld posture (the engine's internal
@@ -23,7 +21,7 @@ export const WEN_MOON_STATES = [
 ];
 
 
-/* v3.94 DRIVERS-ONLY (owner call: "audit the key drivers and only show those — everything
+/* Historical v3.94 DRIVERS-ONLY (owner call: "audit the key drivers and only show those — everything
    else 2-3 clicks away"): the hero's visible surface is the VERDICT, the plain-language
    SENTENCE (moved here from the standalone WHY block), and ONE status line whose red facts
    (crash gauge blind, exclusions) stay visible (v3.25). The tally, the flip line and the
@@ -46,8 +44,7 @@ export const WEN_MOON_STATES = [
 /* v5.3 ONE CALL: `call` owns the visible human headline and secondary machine direction.
    `plainVerdict` remains a Simple-mode scope signal for the eyebrow only; it can no longer
    introduce a competing public label. */
-const RegimeBand=({d,stale=new Set(),loading=false,liveBuild=false,srcLabel="derived from live data",sentence=null,conf=null,factorRows=null,plainVerdict=null,regimeIn=null,flipsIn=null,call=null,callFrozen=false,callCapturedAt=null,callDrift=null,closeRead=null,readCaption=null,noSessionDay=false,onCopyCall=null,callCopied=false,copyDisabled=false})=>{
-  const [open,setOpen]=useState(false);
+const RegimeBand=({d,stale=new Set(),loading=false,liveBuild=false,sentence=null,conf=null,plainVerdict=null,regimeIn=null,call=null,callFrozen=false,callCapturedAt=null,callDrift=null,closeRead=null,readCaption=null,noSessionDay=false,onCopyCall=null,callCopied=false,copyDisabled=false})=>{
   // Property 9 (null-safe): no data object means nothing to compute — an empty, hidden
   // region, never a throw. The orchestrator always passes `d`; this guards extraction reuse.
   if(!d)return <div aria-hidden="true"/>;
@@ -58,24 +55,9 @@ const RegimeBand=({d,stale=new Set(),loading=false,liveBuild=false,srcLabel="der
     regime.color=call.direction==="BULLISH"?T.green:call.direction==="BEARISH"?T.red:T.amber;
     regime.tint=call.direction==="BULLISH"?DT["regime-on-bg"]:call.direction==="BEARISH"?DT["regime-off-bg"]:DT["regime-mix-bg"];
   }
-  /* v3.98.3 — ONE derivation, two altitudes. This re-derived its own factor rows via
-     regimeFactors(d,stale), which cannot see WHY a factor was excluded, so the hero panel
-     and the C3 Drivers matrix printed different reasons for the same factor. The
-     orchestrator now hands over evidenceSet.factors (which carries the real cause); the
-     local call survives only as the extraction-reuse fallback (Property 9). */
-  const factors=(Array.isArray(factorRows)&&factorRows.length)
-    ? factorRows.map((f)=>({...f, val:f.display!==undefined?f.display:f.val}))
-    : regimeFactors(d,stale);
   // FEAT-QUORUM: LOADING is not a verdict state — during the first fetch there is no evidence
   // yet, so the posture is withheld outright rather than computed from the mock baseline.
   const withheld=loading||regime.insufficient||(call&&!call.headline);
-  // FEAT-FLIP (v3.53): what would change this call. The NEAREST load-bearing crossing rides
-  // the first screen; the full set (plus abstentions and exclusions) lives one tap down.
-  const fc=flipsIn||flipConditions(d,stale);
-  const nearest=fc.flips[0]||null;
-  // FEAT-GLANCE (v3.61, newcomer audit): the neutral vote is STATED, not implicit — the old
-  // "2/4 bullish · 2 votes bull / 1 bear" left a vote unaccounted for.
-  const neutralVotes=Math.max(0,regime.counted-regime.bullVotes-regime.bearVotes);
   /* 8/28 vocabulary matrix, row 3 — ONE strip, BOTH branches. The engine's MIXED fallback
      sub ends "N of M inputs usable" (regime.js untouched: the paste block and the 5 Whys
      still want the full sub). The voters line 3px below already states that coverage in the
@@ -93,7 +75,7 @@ const RegimeBand=({d,stale=new Set(),loading=false,liveBuild=false,srcLabel="der
     ? (call&&call.direction?simpleCallLabel(call):plainVerdict.label)
     : degenLabel;
   /* T8: Simple copy sits on the Hold row. Degen keeps the labelled clipboard on the right
-     with the ℹ evidence panel. One element, two slots — never both. */
+     with the six-signal jump. One element, two slots — never both. */
   const copyControl=onCopyCall?<button onClick={onCopyCall} disabled={copyDisabled} aria-label="Copy MacroDash posture card"
     title={copyDisabled?"live data required":callFrozen?"Copy the frozen 10am public call":"Copy the current live read — not the 10am call"}
     style={{background:callCopied?"#1a3020":T.surfaceHigh,border:`1px solid ${callCopied?T.green:regime.color}66`,borderRadius:3,color:callCopied?T.green:regime.color,cursor:copyDisabled?"not-allowed":"pointer",padding:"4px 9px",minHeight:44,minWidth:plainVerdict?44:undefined,fontFamily:T.fontMono, /* v6.0.1: fsL glyph in Simple — a 9px speck in a 44px box was invisible */
@@ -214,84 +196,16 @@ const RegimeBand=({d,stale=new Set(),loading=false,liveBuild=false,srcLabel="der
                 </div>}
           </div>
         </div>
-        {/* Right: Degen ℹ + labelled copy. Simple copy is on the Hold row (T8); Simple ℹ is
+        {/* Right: Degen evidence jump + labelled copy. Simple copy is on the Hold row (T8); Simple ℹ is
             gone — Hold ⓘ already opens the clock, evening update, and coverage. */}
         {!plainVerdict&&<div style={{display:"flex",alignItems:"center",gap:8}}>
           {copyControl}
-          <button onClick={()=>setOpen(o=>!o)} aria-label="Show regime factors" aria-expanded={open}
-            style={{background:"none",border:`1px solid ${regime.color}44`,borderRadius:3,color:regime.color,cursor:"pointer",padding:"4px 8px",minWidth:44,minHeight:44,fontFamily:T.fontMono,fontSize:T.fsL,flexShrink:0}}>
-            {open?"▲":"ℹ"}
+          <button onClick={()=>document.getElementById("drivers")?.scrollIntoView({block:"start",behavior:"smooth"})} aria-label="Show regime factors"
+            style={{background:"none",border:`1px solid ${regime.color}44`,borderRadius:3,color:regime.color,cursor:"pointer",padding:"4px 8px",minWidth:44,minHeight:44,fontFamily:T.fontMono,fontSize:T.fsM}}>
+            Six signals ↓
           </button>
         </div>}
       </div>
-      {/* Expandable plain-language breakdown */}
-      {open&&!plainVerdict&&(
-        <div style={{marginTop:10,borderTop:`1px solid ${T.border}`,paddingTop:8,display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(220px,1fr))",gap:"4px 18px"}}>
-          {/* T8: Simple clock left the ℹ window for Hold ⓘ (simpleHoldExplain beat 2). */}
-          {/* v3.94: the chips + tally + nearest flip — formerly first-screen, now the panel head.
-              FEAT-NEUTRAL (v3.62) holds: chips render the REAL 4-state vote via voteStyle. */}
-          <div style={{gridColumn:"1/-1",display:"flex",gap:5,flexWrap:"wrap",alignItems:"center"}}>
-            {factors.map((f)=>{
-              const vs=voteStyle(f.vote); const c=T[vs.colorKey];
-              return(
-              <span key={f.label} title={`${f.label}: ${vs.word}`} style={{fontFamily:T.fontMono,fontSize:T.fsM,color:c,border:`1px solid ${c}44`,borderRadius:3,padding:"1px 5px",letterSpacing:"0.03em",background:"#00000022",whiteSpace:"nowrap",opacity:f.vote==="excluded"?0.7:1}}>
-                {f.short} {vs.glyph}
-              </span>
-            );})}
-            <span style={{fontFamily:T.fontMono,fontSize:T.fsS,color:T.textMuted}}>
-              {`${regime.bullVotes} bull · ${neutralVotes} neutral · ${regime.bearVotes} bear — ${regime.counted} of ${regime.totalFactors} signals counted`}
-            </span>
-          </div>
-          {!withheld&&<div style={{gridColumn:"1/-1",fontFamily:T.fontMono,fontSize:T.fsS,color:T.textSecondary}}>
-            <span style={{color:T.textMuted}}>⇄ would change this: </span>
-            {nearest
-              ? <><span style={{color:regime.color}}>{nearest.copy}</span>
-                  <span style={{color:T.textMuted}}> ({fmt.num(nearest.distance,nearest.dec)}{nearest.unit} away) → </span>
-                  <span style={{color:T.textPrimary,fontWeight:700}}>{nearest.would}</span>
-                  <span style={{color:T.textMuted}}> if other signals stay put</span>
-                  {fc.flips.length>1&&<span style={{color:T.textMuted}}> · +{fc.flips.length-1} more</span>}</>
-              : <span style={{color:T.textMuted}}>no single factor crossing flips this verdict — it would take two</span>}
-          </div>}
-          {factors.map(f=>(
-            <div key={f.label} style={{display:"flex",gap:8,alignItems:"baseline"}}>
-              <div style={{fontFamily:T.fontMono,fontSize:T.fsS,color:T.textMuted,minWidth:100,flexShrink:0}}>{f.label}</div>
-              {/* Same 4-state map as the chips — the drawer used to paint NFCI's own honest
-                  "Looser than mean, but within ½ SD" copy red, contradicting its own words. */}
-              <div style={{fontFamily:T.fontMono,fontSize:T.fsS,color:T[voteStyle(f.vote).colorKey]}}>{f.val}</div>
-            </div>
-          ))}
-          {/* FEAT-FLIP: every load-bearing crossing, then what abstained and why. The
-              abstentions are NOT omitted — a factor that cannot express a single threshold is
-              a fact about the rule, and hiding it would read as "these four are all there is". */}
-          <div style={{gridColumn:"1/-1",borderTop:`1px solid ${T.border}`,marginTop:4,paddingTop:6}}>
-            <div style={{fontFamily:T.fontMono,fontSize:T.fsS,color:T.textMuted,letterSpacing:"0.1em",marginBottom:3}}>WHAT WOULD CHANGE THIS VERDICT</div>
-            {fc.flips.length===0&&(
-              <div style={{fontFamily:T.fontMono,fontSize:T.fsXs,color:T.textSecondary}}>
-                No single factor crossing changes the call — with {fc.bullVotes} bull and {fc.bearVotes} bear among the {fc.counted} counted,
-                it would take two factors moving together.
-              </div>
-            )}
-            {fc.flips.map(f=>(
-              <div key={`${f.key}-${f.to}`} style={{fontFamily:T.fontMono,fontSize:T.fsXs,color:T.textSecondary,display:"flex",gap:6,flexWrap:"wrap",marginBottom:1}}>
-                <span style={{color:regime.color,minWidth:190}}>{f.copy}</span>
-                <span style={{color:T.textMuted}}>now {fmt.num(f.value,f.dec)}{f.unit} · {fmt.num(f.distance,f.dec)}{f.unit} away</span>
-                <span style={{color:T.textPrimary}}>→ {f.would}</span>
-              </div>
-            ))}
-            {fc.abstained.map(a=>(
-              <div key={a.key} style={{fontFamily:T.fontMono,fontSize:T.fsXs,color:T.textMuted,marginTop:2}}>
-                {a.label}: no single threshold — {a.why}
-              </div>
-            ))}
-            {fc.excluded.length>0&&(
-              <div style={{fontFamily:T.fontMono,fontSize:T.fsXs,color:T.amber,marginTop:2}}>
-                Unavailable, so their thresholds are not load-bearing: {fc.excluded.map(e=>e.short).join(" · ")}
-              </div>
-            )}
-          </div>
-          <div style={{fontFamily:T.fontMono,fontSize:T.fsXs,color:T.textMuted,gridColumn:"1/-1"}}>Rule-based 6-signal model · stale/unavailable inputs auto-excluded · {srcLabel}</div>
-        </div>
-      )}
     </div>
   );
 };

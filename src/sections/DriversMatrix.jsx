@@ -1,47 +1,37 @@
-// ─── DRIVERS EVIDENCE MATRIX (C3, v3.60 — v6.5.5 decomposition, Zone 4) ────────
-// Moved VERBATIM from dashboard.jsx: the six factor cards that render the EvidenceSet
-// CONTRACT (evidenceSet.factors — value · vote · freshness · as-of · exclusion reason), never
-// their own reading of provenance. Presentation only: the {!simple&&…} gate, the <section
-// aria-labelledby="drivers"> landmark and its h2 anchor STAY at the call site (the
-// Alerts/Watchlist gate-at-the-wrapper pattern) so the nav outline is one structure.
-// Imports voteStyle from the pure engine (the MacroStrip/RegimeBand exception) so the card's
-// vote colour resolves through the SAME map as the hero chips — the two altitudes cannot
-// disagree (FEAT-NEUTRAL, v3.62). Null guard is the only addition (Property 9).
+// Presentation of the canonical EvidenceSet, never a second voting engine.
 import { T } from "../design-tokens.js";
 import { voteStyle } from "../regime.js";
-import CollapsedGroup from "../primitives/CollapsedGroup.jsx";
+import { driverRows } from "../driverRows.js";
 import { DataModeBadge } from "../primitives/SourceBox.jsx";
 import { Explainable } from "../primitives/FactSheet.jsx";
 
-export default function DriversMatrix({ evidenceSet }) {
+export default function DriversMatrix({ evidenceSet, drift=false }) {
   if(!evidenceSet||!Array.isArray(evidenceSet.factors))return <div aria-hidden="true"/>;
-  return (
-    <CollapsedGroup count={evidenceSet.factors.length} chip={false}
-      label={`factor evidence — used in today's posture · ${evidenceSet.freshSummary}${evidenceSet.withheld?" · posture withheld":""}`}>
-    <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
-      {evidenceSet.factors.map(f=>{
-        // FEAT-NEUTRAL (v3.62): resolves through the SAME shared map as the hero chips.
-        // This card was already 4-state and correct; routing it through voteStyle is what
-        // makes it structurally impossible for the two altitudes to disagree again.
-        const vc=T[voteStyle(f.vote).colorKey];
-        return (
-          <Explainable key={f.key} explain={f.explain} title={f.explain?.full || f.label}
-            eyebrow={`${f.short} · ${f.mode}${f.asOf?` · as of ${String(f.asOf).slice(0,10)}`:""}${f.excluded?` · excluded — ${f.reason}`:""}`}
-            ariaLabel={`Explain ${f.label}`} className="driver-card"
-            style={{flex:"1 1 240px",minWidth:0,background:T.surface,border:`1px solid ${f.excluded?T.amber+"44":T.border}`,borderRadius:5,padding:"8px 10px",opacity:f.excluded?0.85:1}}>
-            <div style={{display:"flex",justifyContent:"space-between",gap:8,alignItems:"baseline"}}>
-              <span style={{fontFamily:T.fontMono,fontSize:T.fsL,fontWeight:700,color:T.textPrimary}}>{f.short} <span style={{fontWeight:400,color:T.textMuted}}>{f.label}</span></span>
-              <span style={{fontFamily:T.fontMono,fontSize:T.fsM,fontWeight:700,color:vc,textTransform:"uppercase"}}>{f.vote}</span>
-            </div>
-            <div className="driver-reading" style={{fontFamily:T.fontMono,fontSize:T.fsL,color:T.textSecondary,marginTop:3,overflowWrap:"anywhere"}}>{f.display}</div>
-            <div style={{display:"flex",gap:6,alignItems:"center",marginTop:4,flexWrap:"wrap"}}>
-              <DataModeBadge mode={f.mode}/>
-              {f.asOf&&<span className="driver-date" style={{fontFamily:T.fontMono,fontSize:T.fsM,color:T.textMuted}}>as of {String(f.asOf).slice(0,10)}</span>}
-              {f.excluded&&<span className="driver-exclusion" style={{fontFamily:T.fontMono,fontSize:T.fsM,color:T.amber}}>excluded — {f.reason}</span>}
-            </div>
-          </Explainable>
-        );})}
+  return <div className="driver-matrix">
+    <div style={{fontFamily:T.fontMono,fontSize:T.fsM,color:T.textSecondary,marginBottom:8}}>
+      <strong>Current factor evidence</strong> · {evidenceSet.state==="DEMO"?"Illustrative data — no live signals counted":evidenceSet.freshSummary}
+      {evidenceSet.withheld&&" · posture withheld"}
+      {drift&&<div style={{color:T.amber}}>Current signals differ from the saved 10am call above.</div>}
     </div>
-    </CollapsedGroup>
-  );
+    <div className="driver-columns driver-head" aria-hidden="true" style={{fontFamily:T.fontMono,fontSize:T.fsM,color:T.textMuted}}>
+      <span>Signal / current reading</span><span>Model stance</span><span>Model change trigger</span><span>Data as of</span>
+    </div>
+    {driverRows(evidenceSet).map(f=>{
+      const vs=voteStyle(f.available?f.vote:"excluded");
+      return <Explainable key={f.key} explain={f.conditionDetail?{...f.explain,metadata:f.conditionDetail}:f.explain} title={f.explain?.full||f.label}
+        eyebrow={`${f.short} · ${f.mode}${f.asOf?` · as of ${String(f.asOf).slice(0,10)}`:""}${!f.available?` · excluded — ${f.reason}`:` · ${f.reading}`}`}
+        className="driver-card"
+        style={{background:T.surface,border:`1px solid ${T.border}`,borderLeft:`3px solid ${T[vs.colorKey]}`,borderRadius:4,padding:"10px 12px",marginBottom:5,minHeight:44}}>
+        <div className="driver-columns">
+          <div><div style={{fontFamily:T.fontMono,fontSize:T.fsM,color:T.textMuted}}>{f.short} · {f.label} ⓘ</div>
+            <div className="driver-reading" style={{fontFamily:T.fontMono,fontSize:T.fsL,color:T.textPrimary,overflowWrap:"anywhere"}}>{f.reading}</div></div>
+          <div title={`${f.label}: ${vs.word}`} style={{fontFamily:T.fontMono,fontSize:T.fsM,color:T[vs.colorKey],fontWeight:700}}>{f.stance}</div>
+          <div className="driver-condition" style={{fontFamily:T.fontMono,fontSize:T.fsM,color:T.textSecondary}}>{f.condition}</div>
+          <div><DataModeBadge mode={f.mode}/><div className="driver-date" style={{fontFamily:T.fontMono,fontSize:T.fsM,color:T.textMuted}}>{f.asOf?`as of ${String(f.asOf).slice(0,10)}`:"No dated reading"}</div>
+            {!f.available&&<div className="driver-exclusion" style={{fontFamily:T.fontMono,fontSize:T.fsM,color:T.amber}}>excluded — {f.reason}</div>}</div>
+        </div>
+      </Explainable>;
+    })}
+    <div style={{fontFamily:T.fontMono,fontSize:T.fsS,color:T.textMuted}}>Solo flip = one signal changing the model, with others fixed. Safety overrides still apply; no guaranteed safe entry.</div>
+  </div>;
 }
