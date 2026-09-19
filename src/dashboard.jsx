@@ -839,7 +839,7 @@ export default function Dashboard({ publicView = false } = {}) {
           so the macro verdict stays the first answer and this is the first company-level
           one. Presentation-only section; the model arrives projected from the server, the
           fetch lives above. Renders nothing unless the feed is enabled with a model. ── */}
-      <StockSpotlight spotlight={spotlight} simple={simple}/>
+      <StockSpotlight spotlight={spotlight} simple={simple} callHeadline={dailyCall.headline} callFrozen={callFrozen&&dailyCall.status==="PUBLISHED"}/>
       {simple&&<div className="simple-market-context" style={{padding:"8px 20px"}}>
         <CollapsedGroup label="Explore market data" count={6} chip={false} promise>
           <MacroStrip d={d} modeOf={modeOf} asOfOf={asOfOf} variant="context" fomcLabel={fomcLabel} fomcDays={fomcDays} votingFields={VOTING_FIELDS}/>

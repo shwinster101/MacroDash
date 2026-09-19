@@ -1,5 +1,17 @@
 # CLAUDE.md — MacroDash
 
+**v7.0.4 — Spotlight as a lesson on frozen Hold/Bearish calls.**
+Both modes label locked Spotlight “lesson — not a buy list.” Simple defaults the widget
+behind “Stock Spotlight · lesson”; expanded profiles order market cap, quality stat, then
+normal-weight YTD. Bullish and unfrozen views retain their prior presentation. This is
+presentation only: roster, rotation, APIs, bands, and call arithmetic are unchanged.
+Integration preserves v7.0.2 and v7.0.3, recognizes the canonical DIAMOND HANDS headline,
+requires a published frozen call, and avoids duplicate landmarks/nested phone padding.
+Packet repair was pushed to the working branch before release integration; verification
+and deployment outcomes are recorded in working/2026-09-19-v704-integration.md.
+Verification: browser-required gates passed 2,754 smoke checks plus 11 lock pins, 353
+admin-browser and 861 public-browser checks; production audit zero vulnerabilities.
+
 **v7.0.3 — the F&G asterisk: one number, two band tables, and the split finally said out loud.**
 **Integration correction:** this branch began at 7.0.1 independently. Version 7.0.2
 exists, is deployed, and is preserved in this merge; no release is skipped.

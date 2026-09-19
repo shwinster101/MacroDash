@@ -17,6 +17,14 @@ export const FACE_NOUN = Object.freeze({
 export const FACE_GLYPH = Object.freeze({ helping: "■", hurting: "■", mixed: "■" });
 export const LESSON_FOLD_LABEL = "Learning moment";
 export const EXPLORE_FOLD_LABEL = "Explore the numbers";
+export const SPOTLIGHT_LOCK_EYEBROW = "lesson — not a buy list";
+export const SPOTLIGHT_LOCK_FOLD = "Stock Spotlight · lesson";
+/* Frozen Hold/HODL/Bearish: the widget is a class, not a pick. Presentation only. */
+export function spotlightLocked(headline) {
+  const h = String(headline || "").trim().toUpperCase();
+  return h === "HOLD" || h === "HODL" || h === "BEARISH" || h === "RISK-OFF" || h === "DIAMOND HANDS";
+}
+
 export const WHYS_FOLD_LABEL = "Why this call";
 export const ABOUT_FOLD_LABEL = "About this page";
 
@@ -38,14 +46,8 @@ const joinAnd = (arr) => {
 };
 const cap = (s) => (s ? s.charAt(0).toUpperCase() + s.slice(1) : s);
 const lc = (s) => (s ? s.charAt(0).toLowerCase() + s.slice(1) : s);
-// Nouns that take a plural verb on their own ("rates work", "prices hurt"); the rest are
-// singular ("volatility works", "credit helps"). Verb agreement is per NAME, not per count.
 const PLURAL_NOUN = new Set(["tenYear", "valuation"]);
 
-/* Face: the so-what under the one-word call, at most HOLD_REASON_MAX words.
-   v6.9.8: a two-sided Hold names the mixed stock outlook and the majority across ALL
-   counted signals, not just the three cards. Other postures and withholding stay intact.
-   The cards explain individual conditions; the fold carries the full arithmetic. */
 export function holdReason(ev) {
   if (!ev || ev.withheld) return null;
   const rows = (ev.factors || []).filter((x) => !x.excluded);
@@ -67,7 +69,6 @@ export function holdReason(ev) {
     return helping.length ? `${lead} ${line(helping, "doesn't", "don't")} offset that.`
       : `${lead} Nothing tracked offsets that.`;
   }
-  // Hold (MIXED): the whole evidence set decides the call, not the displayed card subset.
   if (helping.length && hurting.length) {
     return "Mixed stock outlook. Neither side has a majority across the counted signals.";
   }
@@ -79,7 +80,6 @@ export function holdReason(ev) {
 export function cardFace(card) {
   if (!card) return { glyph: "•", label: "", value: "—", tone: "mixed" };
   let value = card.currentValue || "—";
-  // Read typed values, never parse display text or reinterpret a vote.
   if (Number.isFinite(card.metricValue)) {
     if (card.key === "nfci") value = card.metricValue.toFixed(2);
     if (card.key === "tenYear") {
@@ -95,7 +95,6 @@ export function cardFace(card) {
   };
 }
 
-// Tap: the sentence that used to sit on the card (whyItMatters). Never a second thesis.
 export function sheetLead(card) {
   if (!card) return null;
   return card.why || null;
@@ -112,8 +111,6 @@ const money = (v) => {
     : `${s}$${a.toFixed(0)}`;
 };
 
-// Face projection: return + one fundamental (revenue growth, else margin, else FCF).
-// The profile also renders the existing market cap; multiples and the lesson stay folded.
 export function spotlightFace(company, leg) {
   if (!company) return null;
   const m = company.metrics || {};

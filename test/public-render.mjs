@@ -2465,6 +2465,9 @@ console.log("\n[public] T2–T6 — Simple face sheds clock, rulers, coverage, l
     spotlight: feed });
   await page.setViewportSize({ width: 390, height: 844 });
   await page.waitForTimeout(1300);
+  // v7.0.4: this frozen-Hold fixture now has an outer lesson fold. Inspect the
+  // original inner lesson contract only after opening it; default closure is pinned below.
+  await page.getByRole("button", { name: /Stock Spotlight · lesson/ }).click();
   const face = await bandText(page);
   const cards = await page.locator('[aria-label="Key parameters"]').innerText();
   const body = await page.locator("body").innerText();
@@ -2922,6 +2925,50 @@ for (const scenario of [
    await page.keyboard.press("Escape");
   }
   ok("7.0.3 "+power+": no runtime errors",errors.length===0);
+  await page.close();
+ }
+}
+{
+ const {makeSpotlightFixture}=await import("./spotlight-fixture.mjs");
+ const feed={schema:"md-spotlight-v1",enabled:true,model:makeSpotlightFixture().projected};
+ const live={...FULL_LIVE,tenYearM1:0.23,vix:15.44,fearGreed:29,cpiHeadline:3.7,cpiTrend:[3.5,3.5,3.6,3.7],shillerPe:41,nfci:-0.56};
+ const cases=[
+  {headline:"HODL",direction:"NEUTRAL",frozen:true,status:"PUBLISHED",lock:true},
+  {headline:"DIAMOND HANDS",direction:"BEARISH",frozen:true,status:"PUBLISHED",lock:true},
+  {headline:"MOONING",direction:"BULLISH",frozen:true,status:"PUBLISHED",lock:false},
+  {headline:"HODL",direction:"NEUTRAL",frozen:false,status:"PUBLISHED",lock:false},
+  {headline:"HODL",direction:"NEUTRAL",frozen:true,status:"WITHHELD",lock:false}
+ ];
+ for(const width of [320,390])for(const power of [false,true])for(const c of cases){
+  const saved={schema:"md-call-v1",effective_date:TODAY,headline:c.headline,direction:c.direction,status:c.status,confidence:"HIGH",actionability:"RESTRICTED",override:{active:false},counts:{usable:6,total:6},factors:[]};
+  const {page,errors}=await open({live,width,power,spotlight:feed,publicCall:saved,publicCallFrozen:c.frozen,publicCallCapturedAt:TODAY+"T14:00:00.000Z"});
+  await page.waitForTimeout(1000);
+  const tag="7.0.4 "+width+"/"+power+"/"+c.headline+"/"+c.frozen+"/"+c.status;
+  const region=page.getByRole("region",{name:"Stock Spotlight",exact:true});
+  const fold=page.getByRole("button",{name:/Stock Spotlight · lesson/});
+  ok(tag+": only locked Simple is folded",await fold.count()===(!power&&c.lock?1:0));
+  if(!power&&c.lock){
+   ok(tag+": profiles start behind the fold",await region.locator(".stock-profile-trigger").count()===0&&await fold.getAttribute("aria-expanded")==="false");
+   await fold.focus();await page.keyboard.press("Enter");
+   ok(tag+": keyboard opens lesson",await fold.getAttribute("aria-expanded")==="true"&&await region.locator(".stock-profile-trigger").count()===2);
+  }
+  ok(tag+": lesson eyebrow is scoped to frozen Hold/Bearish",await region.locator(".spotlight-lock-eyebrow").count()===(c.lock?1:0));
+  if(!power){
+   const rows=await region.locator(".stock-profile-trigger").first().locator(".stock-row-label").allTextContents();
+   const ytd=await region.locator(".stock-profile-trigger").first().locator(".stock-row-label").filter({hasText:"Return this year"}).evaluate(n=>({size:getComputedStyle(n.nextElementSibling).fontSize,weight:getComputedStyle(n.nextElementSibling).fontWeight}));
+   ok(tag+": cap/quality/YTD ordering and return emphasis",rows[0]==="Market cap"&&rows[c.lock?2:1]==="Return this year"&&ytd.size===(c.lock?DT["fs-m"]:DT["fs-l"])+"px"&&ytd.weight===(c.lock?"500":"700"));
+   await region.locator(".stock-profile-trigger").first().click();
+   ok(tag+": company lesson stays accessible",await page.getByRole("dialog").count()===1);
+   await page.keyboard.press("Escape");
+   ok(tag+": company lesson restores focus",await region.locator(".stock-profile-trigger").first().evaluate(n=>document.activeElement===n));
+  }
+  ok(tag+": one region, no overflow or runtime errors",await region.count()===1&&await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth+1)&&errors.length===0);
+  if(!power&&c.lock){
+   if(process.env.PATCH_SCREENSHOTS&&c.headline==="HODL")await page.screenshot({path:"/tmp/macrodash-704-open-"+width+".png",fullPage:true});
+   await page.route("**/api/snapshot*",r=>r.fulfill({status:200,contentType:"application/json",body:JSON.stringify({live:FULL_LIVE,cached:true,publicCall:saved,publicCallFrozen:true,publicCallCapturedAt:TODAY+"T14:00:00.000Z"})}));
+   await page.reload();await page.waitForTimeout(1000);
+   ok(tag+": live drift cannot unlock; reader's open choice persists",await fold.getAttribute("aria-expanded")==="true"&&await region.locator(".spotlight-lock-eyebrow").count()===1);
+  }
   await page.close();
  }
 }
