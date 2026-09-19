@@ -529,6 +529,45 @@ console.log("\n[public] v3.94 — Simple default, the toggle, persistence, red f
   ok("simple: Layer 2/3 content is NOT in the DOM — the Degen reasoning group, factor evidence, market detail, macro grid",
     !/the reasoning/i.test(body) && !/factor evidence/i.test(body) &&
     !/full market detail/i.test(body) && !/MACRO REGIME/i.test(body) && !/Data Health/i.test(body));
+  /* v7.1 — THE MODE GATE, SWEPT BY ROLE RATHER THAN BY A HAND LIST. Owner ruling 2026-09-19
+     defines Simple as the fundamentals: for the market call that means the VOTERS, plus the
+     returns a reader owns. Everything else the feed carries is real and lives in Degen.
+     This sweeps the whole rendered page for the readings a technical or context role forbids
+     here, so a signal added later is covered WITHOUT anyone remembering to extend a list — the
+     hand-maintained list is the thing that let the FED tile sit in the fold for five releases.
+     It reads the registry's own label vocabulary, so a role change moves this pin with it. */
+  {
+    const FORBIDDEN_IN_SIMPLE = [
+      /* Case-INSENSITIVE throughout: innerText applies text-transform, so a case-sensitive
+         absence pin would pass on an uppercased label that is plainly on screen (v3.69). The
+         contrast pin in the Degen scenario proves each of these CAN render, so silence here is
+         a mode gate rather than an empty fixture. */
+      [/Fed rate|FOMC \w/i, "the FED policy-rate reading (role: context)"],
+      [/30Y Mortgage|Peoria/i, "the housing readings (role: context)"],
+      [/HY.?IG|CCC|10y.3m|10s30s|NFCI leverage/i, "credit and curve context (role: context)"],
+      [/Sahm/i, "the Sahm reading (role: context until the override lands)"],
+      /* ⚠ DELIBERATELY NOT SWEPT HERE: the Spotlight's own moving-average readings (its Price
+         trend row and the CALCULATION INPUTS line). This scenario opens with `spotlight` null —
+         the widget renders NOTHING — so a /200-day/ pattern would pass because the feed is
+         absent, not because the reading was moved. That is a vacuous absence pin, which is the
+         defect this whole block exists to avoid, so the pattern is left OUT rather than left in
+         looking like coverage. Those readings are still Degen work (they render in Simple
+         today, with their explainers nulled) and they are swept in the Spotlight's own
+         scenario, where the widget actually renders.
+         ⚠ ALSO NOT SWEPT, and recorded rather than quietly dropped: the SESSION Δ bar. v7.1
+         gates it Degen-only (it showed an `Alerts Δ` term about monitors Simple cannot reach),
+         but the NEGATIVE CONTROL FOR THAT GATE DID NOT BITE — un-gating it turned nothing red.
+         The reason is worse than the gate: `sessionDelta` has no SOURCES key, so it is
+         permanently mock, and its mock value hardcodes alertsDelta 0 / regimeDelta "none",
+         which is exactly the condition `showDeltaBar` uses to hide it. The bar therefore cannot
+         render in ANY fixture or on any live build. A control that passes because the thing can
+         never appear proves nothing (v5.97.2), so no pin is claimed here. The gate is kept
+         because it is correct and free; the dead-data finding is named in the release notes. */
+    ];
+    const leaks = FORBIDDEN_IN_SIMPLE.filter(([re]) => re.test(body)).map(([, name]) => name);
+    ok(`v7.1 simple: no technical or context READING reaches the default view${leaks.length ? " — leaked: " + leaks.join("; ") : ""}`,
+      leaks.length === 0);
+  }
   // v3.95: the whys ARE reachable in Simple — one honestly-labelled expander under the
   // hero sentence, closed on a first visit, holding the chain and nothing technical.
   ok("v3.95 simple: the checks expander is present and CLOSED — label visible, no check statements",
@@ -897,6 +936,27 @@ console.log("\n[public] v3.60 P0 slice — nav, matrix, digest, health");
   const macTxt = await page.locator('section[aria-labelledby="macro"]').innerText();
   ok("v3.84: the Sahm cell renders CLEAR with distance-to-trigger on live data",
     /SAHM RULE/i.test(macTxt) && /\+0\.23/.test(macTxt) && /CLEAR · 0\.27 to trigger/i.test(macTxt));
+  /* v7.1 — THE CONTRAST FOR THE SIMPLE EXCLUSION SWEEP, and the reason it is not vacuous.
+     The Simple sweep asserts these readings are ABSENT from the default view. An absence pin
+     proves nothing if the thing could never have rendered in this fixture — the v3.60.1 trap,
+     and the exact shape the v5.9.0 alert-badge control exposed. So the same readings are pinned
+     PRESENT here in Degen: they exist, this fixture produces them, and Simple's silence is a
+     mode gate rather than an empty feed. If a role moves, one of these two pins goes red. */
+  {
+    const degenBody = await page.locator("body").innerText();
+    /* EVERY pattern is case-insensitive ON PURPOSE. Chromium's innerText APPLIES
+       text-transform, and these labels are uppercased by CSS, so /30Y Mortgage/ reads back as
+       "30Y MORTGAGE" and never matches (the v3.69 lesson, caught here again — by this very
+       pin, on its first run, while the Simple absence sweep it guards was passing for exactly
+       the wrong reason). A case-sensitive absence pin is a vacuous absence pin. */
+    const shouldRender = [
+      [/Fed rate|FOMC/i, "FED policy rate"], [/30Y Mortgage/i, "mortgage"],
+      [/Sahm/i, "Sahm"], [/CCC|HY.?IG/i, "credit context"],
+    ];
+    const missing = shouldRender.filter(([re]) => !re.test(degenBody)).map(([, n]) => n);
+    ok(`v7.1 contrast: every reading Simple excludes DOES render in Degen — the absence pin is not vacuous${missing.length ? " — never rendered: " + missing.join(", ") : ""}`,
+      missing.length === 0);
+  }
   // (d) real section extents: ai no longer swallows the operator monitors.
   ok("v3.69: markets/macro/ai anchors have real <section> extents, and ai does NOT contain MY CONVICTION",
     await page.evaluate(() => {
@@ -2045,9 +2105,21 @@ for (const width of [320,390,768,1280]) {
   const heights = await page.locator('.simple-market-tile').evaluateAll(nodes=>nodes.map(n=>n.getBoundingClientRect().height));
   ok("v6.9.9 Simple tape: 44px targets", heights.every(h=>h>=44));
   await page.getByRole('button', {name:/Explore market data/}).click();
-  ok("v6.9.9 optional context: six original tiles, no SPY or QQQ duplicates",
-    (await page.locator('.macro-strip-inner .strip-tile').count()) === 6 &&
-    !/SPY|QQQ/.test(await page.locator('.macro-strip-inner').innerText()));
+  const stripText = await page.locator('.macro-strip-inner').innerText();
+  /* RE-PINNED v7.1: SIX -> FIVE, and the claim is STRONGER for it. v6.9.9 moved the two
+     duplicated return tiles out of this fold, leaving six: five voters plus the FED policy-rate
+     tile. Owner ruling 2026-09-19 defines Simple as the fundamentals — for the market call, the
+     VOTERS — so the one non-voter left in the fold leaves it. FED is not deleted: FedPolicyTile
+     renders it in the Degen tape, which is where a rate-path reading belongs.
+     The count alone would be a weak pin (five of anything passes), so this asserts WHICH five:
+     the fold is exactly the voter set, sourced from the role registry rather than a second
+     hardcoded list, with the de-duplicated returns and the moved FED both pinned absent. */
+  ok("v7.1 optional context: the fold is the FIVE voter tiles — no returns, no FED policy rate",
+    (await page.locator('.macro-strip-inner .strip-tile').count()) === 5 &&
+    !/SPY|QQQ/.test(await page.locator('.macro-strip-inner').innerText()) &&
+    !/Fed rate|FOMC/.test(await page.locator('.macro-strip-inner').innerText()) &&
+    ["VIX", "F&G", "10Y", "CPI", "NFCI"].every((l) =>
+      new RegExp(l.replace("&", "&")).test(stripText)));
   await page.locator('.macro-strip-inner .strip-tile').nth(2).click();
   ok("v6.9.9 context: 10Y still opens the canonical lesson", /Long-term interest rates/.test(await page.getByRole('dialog').innerText()));
   await page.keyboard.press('Escape');
@@ -2245,7 +2317,11 @@ console.log("\n[public] v6.5 — STOCK SPOTLIGHT: Simple + Degen, always-visible
        NOTHING visible renders under 10px. That is the default view, so the claim is real — and
        it is scoped, because the same probe still counts 116 sub-10px leaves in a closed Degen,
        living in MarketDetail / MacroRegime / Signal Quality / Watchlist / Alerts / the footer
-       links / the SpyTapeBadge (7px) / recharts ticks. Those are section-by-section literals,
+       links / recharts ticks. (This list named "the SpyTapeBadge (7px)" until v7.1. That was
+       stale twice over: v6.8.6 lifted its 7px label off the floor, and v7.1 DELETED the
+       component — dead since v6.9.9. A to-do list that keeps naming finished work is the
+       label-outlives-its-data defect pointed at a queue, which is the same rule the type-floor
+       PENDING list is pinned in both directions for.) Those are section-by-section literals,
        not a primitive, and each is its own pass. This pin is what stops Simple regressing while
        that work happens: any new sub-floor literal reaching the default view fails HERE. */
     const simpleFloor = await page.evaluate(() => {

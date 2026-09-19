@@ -5,8 +5,11 @@
 // that collapse). FEAT-170: reflows to a 4-col grid on mobile via the
 // .macro-strip/.macro-strip-inner rules in the orchestrator's global stylesheet.
 // PRESENTATION ONLY — provenance (modeOf), the FOMC label and the voting-fields
-// set are computed in the orchestrator and handed over; `badge` is a slot for
-// the WenMoonBadge so the tape mood stays the orchestrator's concern.
+// set are computed in the orchestrator and handed over.
+// v7.1: the `badge` slot is GONE with SpyTapeBadge. It went dead in v6.9.9, when both
+// modes began returning SimpleMarketTape above — so the slot could not be reached — and
+// the orchestrator kept constructing a badge for it every paint. Dead code is a rot
+// vector (v3.73): removed, not left wired to a branch nothing takes.
 // Wave-17 audit fix (findings 1-3): the F&G and CPI sub-line colors are DERIVED
 // from REGIME_BAND_TABLE's own vote — the strip painted a NEUTRAL F&G (30-55)
 // bearish red off a hand-written `>55` binary while the gauge below rendered it
@@ -30,6 +33,7 @@ import { fmt, pctColor } from "../format.js";
    state live in the primitive (sections stay presentation-only, the v3.73 boundary). */
 import { Explainable } from "../primitives/FactSheet.jsx";
 import { stripExplainFor } from "../stripExplain.js";
+import { simpleAllowed } from "../signalRoles.js";
 
 const bandOf=(k)=>REGIME_BAND_TABLE.find((b)=>b.key===k);
 
@@ -83,7 +87,7 @@ function FedPolicyTile({d,modeOf,asOfOf,fomcLabel}) {
   </Explainable>;
 }
 
-const MacroStrip=({d,modeOf,asOfOf,fomcLabel,fomcDays,votingFields,badge,variant="full"})=>{
+const MacroStrip=({d,modeOf,asOfOf,fomcLabel,fomcDays,votingFields,variant="full"})=>{
   if(!d||typeof modeOf!=="function")return <div aria-hidden="true"/>;
   if(variant==="simple")return <SimpleMarketTape d={d} modeOf={modeOf} asOfOf={asOfOf}/>;
   if(variant==="degen")return <SimpleMarketTape d={d} modeOf={modeOf} asOfOf={asOfOf} degen fomcLabel={fomcLabel}/>;
@@ -125,7 +129,20 @@ const MacroStrip=({d,modeOf,asOfOf,fomcLabel,fomcDays,votingFields,badge,variant
            v:Number.isFinite(d.macro.nfci.current)?`${d.macro.nfci.current>0?"+":""}${d.macro.nfci.current.toFixed(2)}`:"—",
            s:"0 = avg", voteKey:"nfci",
            t:"Chicago Fed National Financial Conditions Index — how easily money and credit are flowing through the financial system, from 105 measures. Standardized so 0 = the 1971– average; positive is tighter than average, negative is looser."},
-        ].filter(row=>variant!=="context"||!["spyPrice","qqqPrice"].includes(row.f)).map(({l,f,v,s,sc,voteKey,t})=>{
+        /* v7.1 — TWO DIFFERENT JOBS, now stated separately instead of sharing one list.
+           (a) DE-DUP: the SPY proxy and QQQ already lead the page in SimpleMarketTape, so repeating
+               them inside the fold below is the v3.43 Yahoo-dupe test, failed by a few hundred px.
+               They are RETURNS and Simple-allowed — dropping them here is not a mode gate.
+           (b) THE MODE GATE (owner ruling 2026-09-19, "Simple = fundamentals"): only a
+               reading with a Simple-allowed ROLE belongs on the default view, so the FED
+               policy-rate tile — the one non-voter left in this fold — leaves it. It is not
+               deleted: FedPolicyTile renders it in the Degen tape above, which is where a
+               rate-path reading belongs. The fold is the five VOTER tiles now.
+           The gate reads src/signalRoles.js rather than a second hardcoded list, so a signal
+           added later is absent from Simple until someone gives it a job (fail closed).
+           variant==="context" is Simple-only — dashboard.jsx passes "simple"/"degen" to the
+           tape and "context" solely inside the Explore fold — so this cannot reach Degen. */
+        ].filter(row=>variant!=="context"||(!["spyPrice","qqqPrice"].includes(row.f)&&simpleAllowed(row.f))).map(({l,f,v,s,sc,voteKey,t})=>{
           const m=modeOf(f); const live=m==="LIVE"||m==="CACHED";
           // Vote-derived sub-line color: the band table is the ONE expression of the
           // threshold, voteStyle the ONE vote->appearance map. Not live -> muted (a
@@ -204,8 +221,6 @@ const MacroStrip=({d,modeOf,asOfOf,fomcLabel,fomcDays,votingFields,badge,variant
           );
         })}
       </div>
-      {/* Degen-only SPY session badge. It stays off the compact phone strip. */}
-      {badge&&<div className="spy-tape-mobile">{badge}</div>}
     </div>
   );
 };

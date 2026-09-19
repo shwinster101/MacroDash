@@ -327,8 +327,18 @@ export function verdictFrom(bullVotes, bearVotes, counted) {
    about when to stay silent, and the human-facing one was the permissive side.
    FOUR of six, deliberately STRICTER than the readout's three: the readout is consumed by a
    maintainer who knows what INSUFFICIENT means, this page is read by someone who does not,
-   and 4/6 is two-thirds of the evidence base. One constant to change if that proves wrong. */
-export const REGIME_QUORUM = 4;
+   and 4/6 is two-thirds of the evidence base.
+   ⚠ v7.1 — THE COUNT TRAP, closed before it could open. This was a bare literal `4` while
+   verdictFrom() above DERIVES its majority from `counted`. At six voters both rules read
+   two-thirds; at seven the majority would drop to 57% BY DESIGN and this quorum would drop to
+   57% BY OMISSION — silently loosening the strongest abstention claim the public engine makes,
+   which is the DEC-31 / v5.97.0 count trap one engine over (Engine 0 has derived its own
+   thresholds from checks.length since then; this side never did). The two-thirds rule the
+   paragraph above already CLAIMS is now what the code COMPUTES, so the claim and the value
+   cannot drift apart. At REGIME_BAND_TABLE.length === 6 this evaluates to 4 — byte-identical
+   behaviour on every tape today — and the owner ruling of 2026-09-19 keeps the table at six
+   (VOTER_CEILING in src/signalRoles.js, reconciled against this table in smoke). */
+export const REGIME_QUORUM = Math.ceil((REGIME_BAND_TABLE.length * 2) / 3);
 const REGIME_META = {
   // FEAT-v17-07: hyphen separators (was middot) for RISK-ON / RISK-OFF legibility
   "RISK-ON":  { sub:"Disinflation + low volatility",   tintKey:"regime-on-bg",  colorKey:"green"  },

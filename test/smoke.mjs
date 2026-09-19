@@ -119,10 +119,10 @@ const fsSrc  = readSrc("../src/primitives/FactSheet.jsx"); // v5.8 — the expla
 // v6.5.5 decomposition (Zone 3/4): every UI file extracted from the orchestrator joins uiSrc,
 // or the negatives below that sweep "every UI surface" go vacuous (docs/RISKS.md R1).
 const utSrc = readSrc("../src/primitives/UndoToast.jsx");
-const stbSrc = readSrc("../src/primitives/SpyTapeBadge.jsx");
+// v7.1: stbSrc is GONE — SpyTapeBadge.jsx was deleted (dead since v6.9.9, see [85]).
 const cbSrc = readSrc("../src/sections/CallBanners.jsx");
 const dmSrc = readSrc("../src/sections/DriversMatrix.jsx");
-const uiSrc = dashSrc + spcSrc + bandSrc + whysSrc + sbSrc + shSrc + stripSrc + sqSrc + wcSrc + mdSrc + mrSrc + hwSrc + dtSrc + aiSrc + alSrc + dhSrc + wlSrc + navSrc + tdSrc + utSrc + stbSrc + cbSrc + dmSrc;
+const uiSrc = dashSrc + spcSrc + bandSrc + whysSrc + sbSrc + shSrc + stripSrc + sqSrc + wcSrc + mdSrc + mrSrc + hwSrc + dtSrc + aiSrc + alSrc + dhSrc + wlSrc + navSrc + tdSrc + utSrc + cbSrc + dmSrc;
 // v6.5.5: MOCK_DATA lives in src/mockData.js and is IMPORTED (the C1 regime.js form). The old
 // brace-count slice + eval over dashSrc CRASHED the suite (no total printed) if the marker
 // moved — a suite that dies mid-run reads as a suite that never ran (the v3.99.4 P0 shape).
@@ -4202,8 +4202,19 @@ ok("mobile: the AI unit-economics subtitle wraps (a nowrap label must not blow o
 // truthfully said 0 live / 15 mock two rows above. The tiles have suppressed directional
 // calls on mock since v3.1; the HEADLINE VERDICT never did. It passed every prior test.
 console.log("\n[29] FEAT-QUORUM — mock factors cannot vote; the posture is withheld below quorum");
-ok("quorum: the dashboard now HAS an abstention rule (it had none; the tt-v1 readout always did)",
-  /export const REGIME_QUORUM = 4;/.test(regimeSrc) && REGIME_QUORUM === 4);
+/* RE-PINNED v7.1, claim UNCHANGED, and the reason is at the pin. This matched the LITERAL
+   `export const REGIME_QUORUM = 4;`. v7.1 DERIVES the quorum from REGIME_BAND_TABLE.length
+   (two-thirds — the rule the surrounding comment in regime.js has always claimed), because a
+   bare literal beside a derived majority is the count trap: a 7th voter would have dropped the
+   majority to 57% by design and this quorum to 57% by omission. The old regex was the shape
+   that passes through any wrong rewrite and fails on the right one (the v5.6.4/v6.8.4 lesson),
+   so the pin now asserts the ABSTENTION RULE EXISTS and still reads 4 on today's six voters —
+   the claim it was always making. The derivation itself, the ceiling and the trap arithmetic
+   are pinned in section [92] (test/signal-roles.mjs), which is where a change to either is
+   diagnosed. */
+ok("quorum: the dashboard HAS an abstention rule (it had none; the tt-v1 readout always did)",
+  /export const REGIME_QUORUM\s*=/.test(regimeSrc) && REGIME_QUORUM === 4
+  && REGIME_QUORUM < REGIME_BAND_TABLE.length && REGIME_QUORUM > REGIME_BAND_TABLE.length / 2);
 ok("quorum: below quorum the label is INSUFFICIENT, not a posture",
   (() => { const r = REG.computeRegime(MOCK_DATA, new Set(["vix", "fearGreed", "cpiHeadline"]));
     return r.counted === 3 && r.label === "INSUFFICIENT" && r.insufficient === true; })());
@@ -6181,9 +6192,14 @@ ok("wave5: the census, confidence derivation and compare-then-persist all STAY i
   dashSrc.includes("const sq=SIGNAL_FIELDS.reduce") &&
   dashSrc.includes("counted:evidenceSet.counted,total:evidenceSet.totalFactors") &&
   dashSrc.indexOf("compareEvidence(prev,cur)") < dashSrc.indexOf("localStorage.setItem(LASTVALID_KEY"));
-ok("wave5: every call site hands over computed props, including the voting-marker set and the badge slot",
+/* RE-PINNED v7.1, claim NARROWED to what still exists. This read the badge SLOT as evidence
+   that the orchestrator hands over computed props. The slot is gone with SpyTapeBadge (dead
+   since v6.9.9 — see [85]), so asserting it would pin a prop nothing passes. The claim it was
+   making — every call site receives its computed props rather than computing them — is intact
+   and is carried by the voting-marker set, which is the prop that actually matters here. */
+ok("wave5: every call site hands over computed props, including the voting-marker set",
   /<MacroStrip d=\{d\} modeOf=\{modeOf\}[^\n]*fomcLabel=\{fomcLabel\} fomcDays=\{fomcDays\}/.test(dashSrc) &&
-  /votingFields=\{VOTING_FIELDS\} badge=\{simple\?null:<SpyTapeBadge spyChangePct=\{d\.marketPulse\.spy\.changePct\} mode=\{modeOf\("spyPrice"\)\} noSessionDay=\{marketClock\.noSession\}\/>\}/.test(dashSrc) &&
+  /votingFields=\{VOTING_FIELDS\}/.test(dashSrc) && !/badge=\{/.test(dashSrc) &&
   /<SignalQuality sq=\{sq\}\/>/.test(dashSrc) &&   // v3.94: confidence props moved to the hero
   /<WhatChanged changed=\{changed\}\/>/.test(dashSrc));
 ok("wave5: null-safety — a missing prop is a safe empty state on all three (Property 9)",
@@ -8871,6 +8887,52 @@ console.log("\n[64] v3.98.4 — Power read-through fixes (token trend, strip mar
     /endpoint="CPIAUCNS \+ CPILFENS · official NSA YoY" mode=\{modeOf\('cpiHeadline'\)\} asOf=\{asOfOf\('cpiHeadline'\)\}/.test(mrSrc));
   ok("v3.98.4: EVERY SourceBox in the macro grid passes an asOf — no LIVE badge without a date",
     (mrSrc.match(/<SourceBox /g) || []).length === (mrSrc.match(/<SourceBox [^>]*asOf=/g) || []).length);
+  /* ⚠ RE-PINNED v7.1 — THE SWEEP ABOVE WAS VACUOUS ON ONE ROW, and that is how the housing
+     defect survived. It compares SourceBox COUNT against dated-SourceBox count, so a row with
+     NO SourceBox at all is not counted, not flagged, and reads as compliant. The Housing row
+     had none for its entire life: a dead MORTGAGE30US feed rendered a mock 6.51% with a
+     hand-written red and no badge, no mode and no date, while this pin printed green. That is
+     the v3.60.1 trap — a sweep that can only see what it is looking for.
+     The claim is unchanged; the DENOMINATOR is fixed. Every FIELD the grid renders a reading
+     for must have provenance, so the pin now asserts the SET, naming any field that does not. */
+  {
+    /* Detect by the two calls a provenance-carrying row must make, not by the JSX spelling:
+       several rows compute the mode into a local first (mode={sMode}), so matching
+       `mode={modeOf('x')}` inline would miss them and re-create the vacuum this pin exists to
+       close. A row has provenance iff it asks for BOTH the field's mode and its date. */
+    const MUST_HAVE_PROVENANCE = ["cpiHeadline", "savings", "sahm", "shillerPe", "mortgage30"];
+    const missing = MUST_HAVE_PROVENANCE.filter((f) =>
+      !mrSrc.includes(`modeOf('${f}')`) || !mrSrc.includes(`asOfOf('${f}')`));
+    ok(`v7.1: every macro-grid reading has PROVENANCE — a row with no SourceBox is the vacuum the count sweep could not see${missing.length ? " — missing: " + missing.join(", ") : ""}`,
+      missing.length === 0);
+  }
+  /* THE HOUSING ROW (v7.1) — the owner's 2026-09-19 question, ruled and fixed. Pinned in both
+     directions: the hand-written directional colour cannot return, and the curated Peoria pair
+     cannot lose its illustrative treatment and read as live beside a live FRED number again. */
+  ok("v7.1 housing: the 30Y mortgage carries no hand-written directional colour (the v6.9.5 class)",
+    /<Label>30Y Mortgage<\/Label>[\s\S]{0,240}?color:T\.textPrimary/.test(mrSrc) &&
+    !/<Label>30Y Mortgage<\/Label>[\s\S]{0,240}?color:T\.red/.test(mrSrc));
+  ok("v7.1 housing: the spread over the 10-year is the context — and needs BOTH legs current",
+    /pp over the 10-year/.test(mrSrc) && /Spread unavailable — needs both legs current/.test(mrSrc)
+    && /\["LIVE","CACHED"\]\.includes\(modeOf\('tenYear'\)\)/.test(mrSrc));
+  /* v7.1 FOUND, NOT FIXED — recorded here so the next pass inherits a measured claim.
+     The SESSION Δ bar is now gated Degen-only (it rendered an `Alerts Δ` term about monitors a
+     Simple reader cannot reach). Its negative control DID NOT BITE, and the reason is the real
+     finding: `sessionDelta` has NO SOURCES key, so it is permanently mock, and MOCK_DATA pins
+     it to alertsDelta 0 / regimeDelta "none" — precisely the state `showDeltaBar` hides on. So
+     the bar cannot render on any fixture or any live build; it has been unreachable, not merely
+     ungated. Deleting it is a v3.73 dead-code call on a feature with its own FEAT id, which is
+     an owner decision rather than a drive-by inside a mode-gate slice. Pinned as the state it
+     is actually in, in BOTH directions, so neither half can change silently. */
+  ok("v7.1 session delta: gated Degen-only AND permanently mock — unreachable, named not deleted",
+    /\{showDeltaBar&&!simple&&\(/.test(dashSrc) &&
+    /const showDeltaBar=!\(delta\.alertsDelta===0 && delta\.regimeDelta==="none"\)/.test(dashSrc) &&
+    !("sessionDelta" in SOURCES) &&
+    MOCK_DATA.sessionDelta.alertsDelta === 0 && MOCK_DATA.sessionDelta.regimeDelta === "none");
+  ok("v7.1 housing: the curated Peoria pair is LABELLED illustrative, not cut (retention is an owner ruling)",
+    /<Label>Peoria IL<\/Label>/.test(mrSrc)
+    && /backgroundImage:ILLUS_HATCH[\s\S]{0,320}?<Label>Peoria IL<\/Label>/.test(mrSrc)
+    && /<Label>Peoria IL<\/Label>[\s\S]{0,400}?<IllustrativeChip\/>/.test(mrSrc));
 }
 
 
@@ -11797,9 +11859,17 @@ console.log("\n[80] v6.4.0 public copy — plain verdict, market clock, scoped t
   ok("[80] Degen is reader-facing only: the power preference id remains compatible and its notice persists",
     /\{id:"power", glyph:"◉",word:"Degen"/.test(dashSrc) && /localStorage\.getItem\("md:view:v1"\)==="power"/.test(dashSrc) &&
     /DEGEN_NOTICE_KEY="md:degen-notice:v1"/.test(dashSrc) && /uses trading slang/.test(dashSrc));
-  ok("[80] Simple hides the SPY tape; Degen scopes it, and the Stonks share title remains",
-    /badge=\{simple\?null:<SpyTapeBadge/.test(dashSrc) && /TODAY SPY/.test(stbSrc) && // v6.5.5: the badge's own string moved with it
-    /MacroDash - Stonks/.test(index));
+  /* RE-PINNED v7.1, and the v6.4 CLAIM IS NOW SATISFIED MORE STRONGLY, not loosened. v6.4 ruled
+     the SPY day-move badge off Simple and scoped it to Degen; this pin proved that by matching
+     the `simple?null:` gate on its call site. v6.9.9 then made BOTH modes return
+     SimpleMarketTape before the badge slot, so the badge rendered in NEITHER mode for five
+     releases while the gate it was pinned on still read correctly — a pin measuring a gate on a
+     branch nothing takes. v7.1 deletes it (v3.73). The claim "Simple does not carry the SPY
+     session badge" is now pinned as an ABSENCE across the whole UI surface, which is the
+     retired-instruction rule (v3.85): a deleted affordance must not quietly reappear. */
+  ok("[80] the SPY session badge is ABSENT from every mode (v6.4 scoped it; v7.1 deleted it), and the Stonks share title remains",
+    !/SpyTapeBadge/.test(uiSrc.replace(/\/\/[^\n]*|\/\*[\s\S]*?\*\//g, "")) &&
+    !/TODAY SPY|LAST SPY/.test(uiSrc) && /MacroDash - Stonks/.test(index));
 }
 
 // ═══════════ [81] v6.5.0 STOCK SPOTLIGHT — rotation, YTD tracker, market cap, fundamentals,
@@ -12577,23 +12647,30 @@ console.log("\n[84] v6.5.6 — spotlight learning: educational claims need evide
 {
   console.log("\n[85] v6.5.5 — dead code deleted from the orchestrator, not relocated");
   const strip = (src) => src.replace(/\/\/[^\n]*|\/\*[\s\S]*?\*\//g, "");
-  ok("[85] Zone 3: UndoToast/SpyTapeBadge/CallBanners have ONE home each — the orchestrator imports, never re-declares",
-    !/\nconst UndoToast=|\nfunction useUndoToast\(|\nconst SpyTapeBadge = |\nconst MacroFlipBanner=|\nconst PanicOverrideBanner=/.test(dashSrc) &&
+  /* RE-PINNED v7.1: the Zone 3 trio is a PAIR now. SpyTapeBadge's extraction was correct and
+     its one-home property held for five releases — what changed is that its only call site went
+     dead in v6.9.9 and the component rendered nowhere, so v7.1 deleted the file rather than
+     keeping a primitive with no consumer. The one-home claim is unchanged for the two that
+     remain, and the third is pinned ABSENT in both directions (no import, no re-declaration,
+     no file) so a deletion cannot be quietly undone. */
+  ok("[85] Zone 3: UndoToast/CallBanners have ONE home each — the orchestrator imports, never re-declares",
+    !/\nconst UndoToast=|\nfunction useUndoToast\(|\nconst MacroFlipBanner=|\nconst PanicOverrideBanner=/.test(dashSrc) &&
     dashSrc.includes('import UndoToast, { useUndoToast } from "./primitives/UndoToast.jsx"') &&
-    dashSrc.includes('import SpyTapeBadge from "./primitives/SpyTapeBadge.jsx"') &&
     dashSrc.includes('import { MacroFlipBanner, PanicOverrideBanner } from "./sections/CallBanners.jsx"') &&
     /^export function useUndoToast\(/m.test(utSrc) && /^export default function UndoToast\(/m.test(utSrc) &&
-    /^export default function SpyTapeBadge\(/m.test(stbSrc) &&
     /^export function MacroFlipBanner\(/m.test(cbSrc) && /^export function PanicOverrideBanner\(/m.test(cbSrc));
-  ok("[85] Zone 3: the three files are presentation-only (props in, JSX out) — no data, storage, fetch or computation import; the toast's own UI state is the one allowed hook",
-    [stbSrc, cbSrc].every(src => !/useState|useEffect|localStorage|fetch\(|useMarketData|computeRegime|buildEvidenceSet|evalAlert/.test(strip(src))) &&
+  ok("[85] v7.1: SpyTapeBadge is DELETED — no import, no re-declaration, and no file to import",
+    !/SpyTapeBadge/.test(dashSrc.replace(/\/\/[^\n]*|\/\*[\s\S]*?\*\//g, "")) &&
+    !existsSync(new URL("../src/primitives/SpyTapeBadge.jsx", import.meta.url)));
+  ok("[85] Zone 3: the two remaining files are presentation-only (props in, JSX out) — no data, storage, fetch or computation import; the toast's own UI state is the one allowed hook",
+    [cbSrc].every(src => !/useState|useEffect|localStorage|fetch\(|useMarketData|computeRegime|buildEvidenceSet|evalAlert/.test(strip(src))) &&
     !/localStorage|fetch\(|useMarketData|computeRegime|buildEvidenceSet|evalAlert|useEffect/.test(strip(utSrc)) &&
     !/useCallback/.test(strip(dashSrc)) && dashSrc.includes("const { toasts, show:showToast, dismiss } = useUndoToast();"));
   ok("[85] Zone 3: the call sites and the banner LADDER (panic first, then an armed/tripped flip) stay in the orchestrator; every moved component null-guards (Property 9)",
     /<UndoToast toasts=\{toasts\} dismiss=\{dismiss\}\/>/.test(dashSrc) &&
     /\? <PanicOverrideBanner call=\{dailyCall\} simple=\{simple\}\/>\s*\n\s*: flip&&\(flip\.tripped\|\|flip\.armed\)&&<MacroFlipBanner flip=\{flip\}\/>\}/.test(dashSrc) &&
     /if\(!toasts \|\| !toasts\.length\) return null;/.test(utSrc) &&
-    /if \(mode !== "LIVE" && mode !== "CACHED" && mode !== "STALE"\) return null;/.test(stbSrc) &&
+    /* SpyTapeBadge's own Property-9 guard left with the file (v7.1). The two survivors keep theirs. */
     /if\(!flip\|\|!flip\.inputs\)return null;/.test(cbSrc) && /if\(!call\)return null;/.test(cbSrc));
 ok("v6.9.9.5 supersedes [85] Zone 4: the Drivers matrix is a section — one primary evidence view",
   dashSrc.includes('{!simple&&<section aria-labelledby="drivers"') && (dashSrc.match(/<DriversMatrix /g)||[]).length===1 && dmSrc.includes('if(!evidenceSet||!Array.isArray(evidenceSet.factors))'));
@@ -12602,7 +12679,7 @@ ok("v6.9.9.5 supersedes [85] Zone 4: the Drivers matrix is a section — one pri
     !/useState|useEffect|localStorage|fetch\(|useMarketData|computeRegime|buildEvidenceSet|regimeFactors|fieldMode|evalAlert/.test(strip(dmSrc)) &&
     dmSrc.split("\n").length <= 300);
   ok("[85] Zone 3: Property 10 — primitives ≤100 lines, the banner section ≤300",
-    utSrc.split("\n").length <= 100 && stbSrc.split("\n").length <= 100 && cbSrc.split("\n").length <= 300);
+    utSrc.split("\n").length <= 100 && cbSrc.split("\n").length <= 300);
   ok("[85] Zone 1: MOCK_DATA has ONE home (src/mockData.js), is pure data, and the orchestrator imports it",
     !/\nconst MOCK_DATA = \{/.test(dashSrc) &&
     dashSrc.includes('import { MOCK_DATA } from "./mockData.js"') &&
@@ -13814,5 +13891,6 @@ console.log("\n[v6.9.9.5] Degen evidence projection — rules stay canonical");
 await (await import("./market-returns.mjs")).testMarketReturns(ok);
 (await import("./voter-sheets.mjs")).testVoterSheets(ok);
 (await import("./fng-band-split.mjs")).testFngBandSplit(ok);
+(await import("./signal-roles.mjs")).testSignalRoles(ok);
 console.log(`\n=== SMOKE TEST: ${pass} passed, ${fail} failed ===`);
 process.exit(fail === 0 ? 0 : 1);

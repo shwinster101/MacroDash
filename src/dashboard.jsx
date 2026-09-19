@@ -34,7 +34,6 @@ import SignalQuality from "./sections/SignalQuality.jsx"; // task 3.2: presentat
 import WhatChanged from "./sections/WhatChanged.jsx"; // task 3.3: presentation only
 import { publicDashboardUrl, liveReadCaption, publicMarketClock, publicMarketClockLine, simpleCallLabel } from "./publicCopy.js";
 import UndoToast, { useUndoToast } from "./primitives/UndoToast.jsx"; // v6.5.5: the toast stack, one home
-import SpyTapeBadge from "./primitives/SpyTapeBadge.jsx"; // v6.5.5: TODAY/LAST SPY (Degen only; the call site gates it)
 import { MacroFlipBanner, PanicOverrideBanner } from "./sections/CallBanners.jsx"; // v6.5.5: presentation only; the banner ladder stays here
 
 // ─── DESIGN TOKENS ──────────────────────────────────────────────────────────
@@ -108,7 +107,11 @@ function spyDatesFrom(anchorDateStr, count) {
 // UndoToast + useUndoToast extracted to src/primitives/UndoToast.jsx (v6.5.5, Zone 3).
 // DirTile extracted to src/primitives/DirTile.jsx (wave 9).
 
-// SpyTapeBadge extracted to src/primitives/SpyTapeBadge.jsx (v6.5.5, Zone 3).
+// SpyTapeBadge is DELETED (v7.1). It was extracted to a primitive in v6.5.5 and its one call
+// site went dead in v6.9.9, when MacroStrip began returning SimpleMarketTape for BOTH modes
+// and never reached the `badge` slot. It rendered nowhere for five releases while the call
+// site still constructed it every paint. Dead code is a rot vector (v3.73), so it is removed
+// rather than left wired to nothing, and pinned ABSENT so it cannot quietly return.
 
 // useCountdown/approxCountdown DELETED (v6.5.5): the IPO countdown strip they served was
 // cut in v3.43 (component, data and state); the hook and helper had no consumer since.
@@ -533,7 +536,6 @@ export default function Dashboard({ publicView = false } = {}) {
           .delta-bar-inner{flex-wrap:nowrap!important;overflow-x:auto!important;}
           .dir-tiles{flex-wrap:wrap!important;}
           /* .hide-mobile rule DELETED (wave 17 audit): zero consumers since FINDING-1. */
-              .spy-tape-mobile{display:none!important;}
         }
         @media(prefers-reduced-motion:reduce){.pulse-anim{animation:none!important;}}
         /* A2 (v3.58) hid the lowercase wordmark echo below 360px; Slice 1 removed the echo
@@ -837,7 +839,7 @@ export default function Dashboard({ publicView = false } = {}) {
           presentation only (FEAT-170 4-col mobile reflow rides the .macro-strip rules in
           the stylesheet above; v3.25: always visible while market detail collapses). ── */}
       <MacroStrip d={d} modeOf={modeOf} asOfOf={k=>dataAsOf?.[k]} variant={simple?"simple":"degen"} fomcLabel={fomcLabel} fomcDays={fomcDays}
-        votingFields={VOTING_FIELDS} badge={simple?null:<SpyTapeBadge spyChangePct={d.marketPulse.spy.changePct} mode={modeOf("spyPrice")} noSessionDay={marketClock.noSession}/>}/>
+        votingFields={VOTING_FIELDS}/>
 
       {/* ── v6.5.0 STOCK SPOTLIGHT — immediately below the macro-number strip in BOTH modes,
           so the macro verdict stays the first answer and this is the first company-level
@@ -845,14 +847,19 @@ export default function Dashboard({ publicView = false } = {}) {
           fetch lives above. Renders nothing unless the feed is enabled with a model. ── */}
       <StockSpotlight spotlight={spotlight} simple={simple}/>
       {simple&&<div className="simple-market-context" style={{padding:"8px 20px"}}>
-        <CollapsedGroup label="Explore market data" count={6} chip={false} promise>
+        <CollapsedGroup label="Explore market data" count={5} chip={false} promise>
           <MacroStrip d={d} modeOf={modeOf} asOfOf={asOfOf} variant="context" fomcLabel={fomcLabel} fomcDays={fomcDays} votingFields={VOTING_FIELDS}/>
         </CollapsedGroup>
       </div>}
 
 
       {/* FEAT-162: Session Delta Bar — Alerts Δ first (conditional: hidden when nothing actionable) */}
-      {showDeltaBar&&(
+      {/* v7.1 — DEGEN ONLY. This bar was ungated, so Simple rendered an `Alerts Δ` term about
+          monitors a Simple reader cannot reach (the Macro Alerts section is !simple). Every
+          term in it is a Degen concept, so the whole bar moves rather than one term being
+          filtered out — a bar showing one of three deltas would be a truncation needing its
+          own disclosure (v3.65), which is a worse trade than not showing it. */}
+      {showDeltaBar&&!simple&&(
         <div style={{background:"#0a0c10",borderBottom:`1px solid ${T.border}`,padding:"5px 20px",position:"relative"}}>
           <div style={{display:"flex",gap:20,overflowX:"auto",alignItems:"center"}} className="delta-bar-inner">
             <div style={{fontFamily:T.fontMono,fontSize:8,color:T.textMuted,flexShrink:0,letterSpacing:"0.1em"}}>SESSION Δ</div>
