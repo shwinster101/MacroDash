@@ -406,7 +406,7 @@ console.log("\n[public] v3.94 — Simple default, the toggle, persistence, red f
      contradictory confidence number beside the scoped "N of 6 voters counted". */
   ok("T2/T3 simple: the Glance layer renders — one plain call, sentence, cards, key numbers; coverage is one tap deep",
     /Bullish|Hold|Bearish|Not enough data/.test(body) &&
-    /(support taking risk|against risk|has a majority|short of a majority|clear lean)/i.test(body) &&   // T1: holdReason (v6.6.1 posture vocabulary), not the lecture sentence
+    /\d+ caution · \d+ support · \d+ neutral/.test(body) &&
     /support stocks|pressures? stocks|signals? caution|no clear signal|stock outlook/i.test(body) && /S&P 500/.test(body) &&
     !/\d+ of \d+ signals counted/.test(await page.locator('[aria-label="Macro backdrop verdict"]').innerText()) &&
     !/\d+ cards from the \d+ signals counted/.test(await page.locator('[aria-label="Key parameters"]').innerText()));
@@ -427,7 +427,7 @@ console.log("\n[public] v3.94 — Simple default, the toggle, persistence, red f
   }
   const sentencePx = await page.evaluate(() => {
     const band = document.querySelector('[aria-label="Macro backdrop verdict"]');
-    const el = [...band.querySelectorAll("div")].find((n) => n.childElementCount === 0 && /(support taking risk|against risk|has a majority|short of a majority|clear lean)/i.test(n.textContent || ""));
+    const el = band.querySelector(".hero-vote-tally");
     return el ? getComputedStyle(el).fontSize : null;
   });
   ok(`T7 sentence (Simple): the so-what line is 16px sans, not an 11px caption (measured ${sentencePx})`,
@@ -612,8 +612,8 @@ console.log("\n[public] v3.94 — Simple default, the toggle, persistence, red f
     const el = document.querySelector(".simple-market-tape");
     return el ? Math.round(el.getBoundingClientRect().top + window.scrollY) : null;
   });
-  ok("v7: first market tile remains within 720px including the requested section heading",
-    await page.locator(".simple-market-tile").first().evaluate(n=>n.getBoundingClientRect().top+scrollY<=720));
+  ok("v7: first market tile remains within 744px including the requested section heading",
+    await page.locator(".simple-market-tile").first().evaluate(n=>n.getBoundingClientRect().top+scrollY<=744));
   // v3.95 re-pin 520 -> 540, WITH the reason (the v3.45 legitimate-content precedent, not a
   // budget quietly loosened): the owner-requested whys expander is ONE toggle row under the
   // hero sentence and measured +10px (520 -> 530). Chrome creeping back still fails the build.
@@ -643,8 +643,10 @@ console.log("\n[public] v3.94 — Simple default, the toggle, persistence, red f
      badges and the OPS menu out of the beginner's first screen. Measured at 375px AND 390px:
      the macro strip begins at 610 (was 791), and the visible words above the fold went 290 ->
      208. 660 keeps ~50px for the CI font-metric variance that turned v4.1.3 red. */
-  ok(`v5.9 glance budget: in Simple the macro strip begins within 660px at 390×844 (measured ${glance})`,
-    glance !== null && glance <= 660);
+  // v7.0.2: the mandatory action and engine lines earn the same explicit 24px
+  // content allowance as the first-tile pin (measured section start: 663px).
+  ok(`v7.0.2 glance budget: in Simple the macro strip begins within 684px at 390×844 (measured ${glance})`,
+    glance !== null && glance <= 684);
   /* And the pin that now matters MORE: the ANSWER — the parameter cards — must be near the
      top. A budget that only watched the raw strip would let the cards drift downward while
      still passing.
@@ -706,7 +708,7 @@ console.log("\n[public] v3.94 — Simple default, the toggle, persistence, red f
   ok("degen: one tap reveals the Explain/Dig layers",
     /the reasoning/i.test(powerBody) && /factor evidence/i.test(powerBody) && /full market detail/i.test(powerBody));
   ok("v3.97 degen: the compact sentence returns and the newbie prose leaves (swap, not stack)",
-    /leans? (bullish|bearish)/.test(powerBody) && !/The bull case right now:/.test(powerBody));
+    /\d+ caution · \d+ support · \d+ neutral/.test(powerBody) && !/The bull case right now:/.test(powerBody));
   await page.reload(); await page.waitForTimeout(1200);
   ok("degen: the choice and dismissed notice are remembered per device across a reload",
     /the reasoning/i.test(await page.locator("body").innerText()) &&
@@ -1050,7 +1052,7 @@ console.log("\n[public] v4.0 — Simple verdicts, card selection, and what must 
   body = await page.locator("body").innerText();
   ok("v6.4 Simple verdict: a bull tape reads Bullish with supporting factors leading",
     /Bullish/.test(body) && /support stocks|supports stocks|stock outlook/i.test(body) && !/MOONING|\bBULLISH\b/.test(body) &&
-    /support taking risk/i.test(body) && !/\bfine\b|\bdrag\b/i.test(body));   // T1 (v6.6.1): a Bullish day says the backdrop supports taking risk; 'fine' retired
+    /0 caution · 6 support · 0 neutral/.test(body) && /10am action unavailable/.test(body));
   await page.close();
 
   // 3. NOT ENOUGH DATA — below quorum. And the acceptance rule that matters most here: a withheld
@@ -1104,7 +1106,7 @@ console.log("\n[public] v4.0 — Simple verdicts, card selection, and what must 
      side has a majority. Measured live: "Volatility and inflation help. Prices hurt. Neither side
      has a majority." on this tape (vix + cooling CPI helping, rich CAPE hurting). */
   ok("v5.9: Simple names the disagreement in the SENTENCE, with no count sub beside it",
-    /Mixed stock outlook/.test(band) && /counted signals/.test(band) && /Neither side has a majority/.test(band) &&
+    /\d+ caution · \d+ support · \d+ neutral/.test(band) && /Terminal order-gate is a different engine\./.test(band) &&
     !/\bfine\b|\bdrag\b/i.test(band) &&
     !/help, prices do not/.test(band) && !/\d+ help, \d+ does not/.test(band));
   ok("8/29 ruler: the canned watch-VIX gloss is gone from a tape where VIX is helping",
@@ -1713,9 +1715,10 @@ console.log("\n[public] v6.0.1/v6.4 — shape before text · Simple|Degen clarit
     const el = [...document.querySelectorAll("*")].find((n) => n.children.length === 0 && /^(?:●?\s*SPY\*?|S&P 500)$/m.test(n.textContent || "") && n.getBoundingClientRect().height > 0);
     const k = document.querySelector('[aria-label="Key parameters"]');
     return [el ? Math.round(el.getBoundingClientRect().top + scrollY) : null, k ? Math.round(k.getBoundingClientRect().top + scrollY) : null]; });
-  // v7 adds a named section header above the tile; section entry stays pinned separately.
-  ok(`v7 budgets: cards within 420px, first market tile within 720px (measured ${cardsTop} / ${glance})`,
-    cardsTop !== null && cardsTop <= 420 && glance !== null && glance <= 720);
+  // v7.0.2 adds two mandatory face lines beside the tally. The frozen/missing-signal
+  // fixture moves 23px (720 budget -> 744); first market tile remains in the 844px screen.
+  ok(`v7 budgets: cards within 420px, first market tile within 744px (measured ${cardsTop} / ${glance})`,
+    cardsTop !== null && cardsTop <= 420 && glance !== null && glance <= 744);
   /* v6.0.2: every voting tile's ▪ wears its VOTE colour (this tape is all-bull → all green),
      and it is the same colour its vote-coloured sub-line wears where one exists (F&G, NFCI). */
   await page.getByRole("button", {name:/Explore market data/}).click();
@@ -2839,6 +2842,35 @@ for (const scenario of [
    ok("7.0.1 "+power+"/"+i+": stale or missing comparison cannot look live",body.includes("Current reading unavailable")&&!body.includes("Latest reported:")&&body.includes("Model reference:"));
    await page.keyboard.press("Escape");
   }
+  await page.close();
+ }
+}
+{
+ const face=page=>page.locator(".hero-face > div").allTextContents();
+ const live={...FULL_LIVE,tenYearM1:0.23,vix:15.44,fearGreed:29,cpiHeadline:3.7,cpiTrend:[3.5,3.5,3.6,3.7],shillerPe:41,nfci:-0.56};
+ for(const width of [320,390,1280])for(const [direction,action] of [["NEUTRAL","Do not add risk."],["BULLISH","Backdrop supports adding risk."],["BEARISH","Reduce or don’t add."]]){
+  const saved={schema:"md-call-v1",effective_date:TODAY,headline:direction==="NEUTRAL"?"HODL":direction==="BULLISH"?"MOONING":"DIAMOND HANDS",direction,status:"PUBLISHED",confidence:"HIGH",actionability:"RESTRICTED",override:{active:false},counts:{usable:6,total:6},factors:[]};
+  const {page,errors}=await open({live,width,power:false,publicCall:saved,publicCallFrozen:true,publicCallCapturedAt:TODAY+"T14:00:00.000Z"});
+  await page.waitForTimeout(1000);
+  const simple=await face(page);
+  ok("7.0.2 "+width+"/"+direction+": exact three strings in Simple",JSON.stringify(simple)===JSON.stringify(["3 caution · 2 support · 1 neutral",action,"Terminal order-gate is a different engine."]));
+  await page.getByRole("button",{name:/Degen/}).click();await page.waitForTimeout(200);
+  ok("7.0.2 "+width+"/"+direction+": Degen and Simple cannot drift",JSON.stringify(await face(page))===JSON.stringify(simple));
+  await page.route("**/api/snapshot*",r=>r.fulfill({status:200,contentType:"application/json",body:JSON.stringify({live:FULL_LIVE,cached:true,publicCall:saved,publicCallFrozen:true,publicCallCapturedAt:TODAY+"T14:00:00.000Z"})}));
+  await page.reload();await page.waitForTimeout(1000);
+  const changed=await face(page);
+  ok("7.0.2 "+width+"/"+direction+": current votes move, frozen action does not",changed[0]!==simple[0]&&changed[1]===action&&changed[2]===simple[2]);
+  await page.getByRole("button",{name:/Simple/}).click();await page.waitForTimeout(200);
+  ok("7.0.2 "+width+"/"+direction+": parity survives refresh and mode switch",JSON.stringify(await face(page))===JSON.stringify(changed));
+  ok("7.0.2 "+width+"/"+direction+": no overflow/errors",await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth+1)&&errors.length===0);
+  if(process.env.PATCH_SCREENSHOTS&&direction==="NEUTRAL")await page.screenshot({path:"/tmp/macrodash-702-"+width+".png"});
+  await page.close();
+ }
+ for(const scenario of [{name:"missing frozen call",live},{name:"stale CPI excluded",live:{...live,cpiHeadlineAsOf:daysAgo(90)}},{name:"no data",live:{}}]){
+  const {page}=await open({live:scenario.live,width:390,power:false});await page.waitForTimeout(1000);
+  const simple=await face(page);await page.getByRole("button",{name:/Degen/}).click();await page.waitForTimeout(200);
+  ok("7.0.2 "+scenario.name+": identical strings and no invented frozen action",JSON.stringify(await face(page))===JSON.stringify(simple)&&simple[1]==="10am action unavailable.");
+  if(scenario.name==="stale CPI excluded")ok("7.0.2 actual exclusion: no false stale-counted claim",simple[0]==="3 caution · 2 support · 0 neutral"&&!simple[0].includes("stale counted"));
   await page.close();
  }
 }

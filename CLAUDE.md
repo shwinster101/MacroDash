@@ -1,5 +1,20 @@
 # CLAUDE.md — MacroDash
 
+**v7.0.2 — face honesty, one slice.**
+Both modes render one shared current six-voter tally, frozen 10am action sentence,
+and muted terminal-engine distinction. The tally orders caution/support/neutral and
+appends N stale counted only for a counted voter past the existing cadence rule.
+CPI dated August 1 is NOT stale on September 18 under the existing >70-day monthly
+rule; stale current voters normally remain excluded. No freshness or voting rules change.
+No frozen published call means no frozen action is invented. Live drift never rewrites
+the action; Simple/Degen string equality is pinned in the public suite.
+Verification: browser-required npm run gates passed 2,735 smoke, 353 admin-browser,
+751 public-browser checks; production audit found zero vulnerabilities. The mandatory
+face lines earn a documented 24px phone-content allowance (section 684px / first tile
+744px); card position, tap targets, and overflow limits are unchanged. Local patch only,
+not deployed in this pass.
+
+
 **v7.0.1 — current readings lead voter explainer bullet 2.**
 Simple and Degen share one dated current-vs-reference presentation across all six voters.
 Rates explicitly compare the monthly change; CPI shows previous print and trend-window

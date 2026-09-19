@@ -3,7 +3,8 @@ import { useMarketData } from "./useMarketData.js"; // FEAT-204 wiring
 import { MOCK_DATA } from "./mockData.js"; // v6.5.5: the mock baseline, one home (was inline here)
 import { computeFiveWhys } from "./fiveWhys.js"; // v2.5: rule-based 5 Whys ($0, derived from live data)
 import { buildEvidenceSet, simpleVerdict, simpleSignals, simpleFlipLine, factorExclusions, fieldMode, FACTOR_FIELD } from "./evidence.js"; // C1 (v3.60): the typed contract
-import { holdReason, simpleSignalsDiffer, WHYS_FOLD_LABEL, ABOUT_FOLD_LABEL } from "./simpleFace.js"; // T1: Simple FACE registry
+import { simpleSignalsDiffer, WHYS_FOLD_LABEL, ABOUT_FOLD_LABEL } from "./simpleFace.js"; // T1: Simple FACE registry
+import { heroFace } from "./heroFace.js";
 import { LASTVALID_KEY, summarizeEvidence, compareEvidence } from "./whatChanged.js"; // C4 (v3.60)
 import { parseObsDate, nextFomcDate, etYmd } from "./sources.js"; // FEAT-R3: per-tile, cadence-aware staleness + shared market calendar; v3.99: curated FOMC calendar
 import { computeMacroFlip } from "./ttReadout.js"; // FEAT-331: Macro Flip circuit
@@ -269,7 +270,6 @@ export default function Dashboard({ publicView = false } = {}) {
      disagree with Power because neither re-derives anything. */
   const simpleV=simpleVerdict(evidenceSet);
   const simpleC=simpleSignals(evidenceSet);
-  const simpleS=holdReason(evidenceSet);
   const simpleF=simpleFlipLine(evidenceSet);
   // v5.3: one canonical public call. The six-factor EvidenceSet owns direction; the existing
   // Macro Flip/PANIC circuits are safety overrides, never a second directional opinion.
@@ -292,6 +292,7 @@ export default function Dashboard({ publicView = false } = {}) {
   // replacing the call whose outcomes will be scored.
   const callFrozen=publicCallFrozen===true&&publicCall?.schema==="md-call-v1";
   const dailyCall=callFrozen?publicCall:currentCall;
+  const heroFaceCopy=heroFace({evidence:evidenceSet,call:dailyCall,frozen:callFrozen,now:renderNow});
   const callDrift=callFrozen&&currentCall.direction&&
     (currentCall.direction!==dailyCall.direction||currentCall.headline!==dailyCall.headline)
       ?currentCall:null;
@@ -757,14 +758,10 @@ export default function Dashboard({ publicView = false } = {}) {
           programmatically focusable for the skip jump AND the LOADING-resolve focus move. */}
       <h2 id="overview" tabIndex={-1} className="visually-hidden">Overview — posture, confidence, and what changed</h2>
       {/* FEAT-169 + R4c: Regime Verdict band — HERO, now FIRST under the header (mobile-first) */}
-      {/* v3.97 SHAREABLE SIMPLE: the hero explanation SWAPS by mode, never stacks — Simple
-          gets the two directional newbie sentences (prose), Power keeps the compact
-          one-liner (sentence). Same buckets, one derivation (postureSummary). */}
+      {/* v7.0.2: both modes share the current voter tally, frozen action, and engine
+          distinction. Mode changes presentation elsewhere, never these three strings. */}
       <RegimeBand d={d} stale={staleFactors} loading={mode==="LOADING"} liveBuild={liveBuild}
-        /* v6.2: the sentence describes the CURRENT evidence; it is suppressed only when a
-           SUBORDINATE read on screen (live drift, or a captured close read) DISAGREES with the
-           primary call — an agreeing close read leaves it in place. */
-        sentence={(callDrift||closeReadNote?.differs)?null:(simple?simpleS:(!evidenceSet.withheld&&evidenceSet.summary?evidenceSet.summary.sentence:null))}
+        faceHonesty={heroFaceCopy}
         plainVerdict={simple?simpleV:null} conf={regimeConf}
         regimeIn={evidenceSet.regime}
         call={dailyCall} callFrozen={callFrozen} callCapturedAt={publicCallCapturedAt}
@@ -778,9 +775,8 @@ export default function Dashboard({ publicView = false } = {}) {
       </section>}
       {!simple&&<WhatChanged changed={changed}/>}
 
-      {/* FEAT-WHY (v3.62) sentence now renders INSIDE the hero (v3.94 DRIVERS-ONLY — one
-          render site beside the verdict it explains). postureSummary stays computed and
-          smoke-tested in evidence.js; withheld postures still render no sentence. */}
+      {/* The deeper posture explanation remains in the evidence panel; the face action
+          is projected only from a published frozen call, never the live ticker. */}
 
       {/* ── v3.95 (owner call on a live Simple screenshot): in Simple the whys were not
           reachable AT ALL — the whole reasoning group is Power-only, so the one question a

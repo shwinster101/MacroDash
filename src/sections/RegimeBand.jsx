@@ -4,6 +4,7 @@ import { DT, T } from "../design-tokens.js";
 import { computeRegime } from "../regime.js";
 import { simpleCallLabel, simpleHoldExplain } from "../publicCopy.js";
 import { Explainable } from "../primitives/FactSheet.jsx";
+import HeroFace from "../primitives/HeroFace.jsx";
 
 // ENGINE0-CONT: the ONE rendered label for a withheld posture (the engine's internal
 // INSUFFICIENT sentinel never reaches a reader). Shared by the verdict band, the 5 Whys
@@ -44,7 +45,7 @@ export const WEN_MOON_STATES = [
 /* v5.3 ONE CALL: `call` owns the visible human headline and secondary machine direction.
    `plainVerdict` remains a Simple-mode scope signal for the eyebrow only; it can no longer
    introduce a competing public label. */
-const RegimeBand=({d,stale=new Set(),loading=false,liveBuild=false,sentence=null,conf=null,plainVerdict=null,regimeIn=null,call=null,callFrozen=false,callCapturedAt=null,callDrift=null,closeRead=null,readCaption=null,noSessionDay=false,onCopyCall=null,callCopied=false,copyDisabled=false})=>{
+const RegimeBand=({d,stale=new Set(),loading=false,liveBuild=false,faceHonesty=null,conf=null,plainVerdict=null,regimeIn=null,call=null,callFrozen=false,callCapturedAt=null,callDrift=null,closeRead=null,readCaption=null,noSessionDay=false,onCopyCall=null,callCopied=false,copyDisabled=false})=>{
   // Property 9 (null-safe): no data object means nothing to compute — an empty, hidden
   // region, never a throw. The orchestrator always passes `d`; this guards extraction reuse.
   if(!d)return <div aria-hidden="true"/>;
@@ -152,7 +153,7 @@ const RegimeBand=({d,stale=new Set(),loading=false,liveBuild=false,sentence=null
                         :`only ${regime.counted} of ${regime.totalFactors} signals counted — ${regime.quorum} needed to call it`}
               </span>}
             </div>
-            {!withheld&&sentence&&<div style={{fontFamily:plainVerdict?T.fontSans:T.fontMono,fontSize:plainVerdict?T.fsBody:T.fsM,color:T.textPrimary,lineHeight:plainVerdict?1.4:1.5,maxWidth:"36em",marginTop:plainVerdict?8:3}}>{sentence}</div>}
+            <HeroFace face={faceHonesty}/>
             {/* v6.0.1: in Simple both clock captions ride Hold ⓘ; Degen keeps them on the
                 face, and since v6.8.4 on the ONE status row above the verdict rather than two
                 rows beneath it. The 8/28 A6 contract is unchanged — the unfrozen face still

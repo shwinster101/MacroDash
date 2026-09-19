@@ -6126,7 +6126,7 @@ ok("band: the module stays under the 300-line bound (Property 10)",
 // with the primary call — the live drift (as before) OR a captured close read that differs;
 // an agreeing close read leaves the sentence in place (closeReadNote?.differs).
 ok("band: the call site still passes the live wiring (+ v4.0: mode-swapped sentence and plainVerdict)",
-  /sentence=\{\(callDrift\|\|closeReadNote\?\.differs\)\?null:\(simple\?simpleS:\(!evidenceSet\.withheld&&evidenceSet\.summary\?evidenceSet\.summary\.sentence:null\)\)\}/.test(dashSrc) &&
+  dashSrc.includes("faceHonesty={heroFaceCopy}") &&
   /plainVerdict=\{simple\?simpleV:null\} conf=\{regimeConf\}/.test(dashSrc) &&
   !/prose=\{/.test(dashSrc) &&
   // v3.98.3: the hero renders the EvidenceSet's OWN factor rows (which carry the real
@@ -12456,9 +12456,9 @@ console.log("\n[83] Simple altitude — fs-xxl Hold, fs-body sentence, one-block
   ok("T7: Simple Hold is fs-xxl 28; Degen moon voice stays fs-xl 22",
     /fontSize:T\.fsXxl/.test(band) && TOK_T.fsXxl === 28 &&
     /: <span style=\{\{fontFamily:T\.fontMono,fontSize:T\.fsXl/.test(bandSrc));
-  ok("T7: Simple sentence is sans fs-body; Degen sentence stays mono fs-m",
-    /fontFamily:plainVerdict\?T\.fontSans:T\.fontMono/.test(band) &&
-    /fontSize:plainVerdict\?T\.fsBody:T\.fsM/.test(band));
+  ok("7.0.2: both modes use the shared face primitive and readable tally",
+    band.includes("<HeroFace face={faceHonesty}/>") &&
+    readSrc("../src/primitives/HeroFace.jsx").includes("fontSize:T.fsBody"));
   /* v6.8.2 RE-PIN (Slice 2 item 2 — the cards adopt the strip anatomy): the label/HELPING pair
      moved from sans fs-m to the strip's own mono fs-s eyebrow and fs-xs vote word; the VALUE
      stays fs-body — the cards are the answer's evidence, one altitude above the strip, and the
@@ -13040,7 +13040,7 @@ console.log("\n[copy-budget] v6.6.1 ONE ENGINE, TWO ALTITUDES — ≤25-word why
     [1, 2, 3, 4].every((u) => /works? against risk/.test(face("RISK-OFF", KEYS.slice(u, u + 1), KEYS.slice(0, u)))) &&
     [1, 2, 3].every((h) => /majority/.test(face("MIXED", KEYS.slice(0, h), KEYS.slice(h, h + h)))));
   ok("[copy-budget] wiring: Simple's hero sentence is holdReason and its whys mount keeps the ⇄ flip line beneath the block (the T5 contract) — the arithmetic line and the crossing line are BOTH rendered",
-    /const simpleS=holdReason\(evidenceSet\)/.test(dashSrc) && /simple\?simpleS:/.test(dashSrc) &&
+    dashSrc.includes("heroFace({evidence:evidenceSet,call:dailyCall,frozen:callFrozen,now:renderNow})") &&
     /vocabulary:simple\?"simple":"degen"/.test(dashSrc) && /flipLine=\{simpleF\}/.test(dashSrc));
 }
 
@@ -13813,5 +13813,6 @@ console.log("\n[v6.9.9.5] Degen evidence projection — rules stay canonical");
 
 await (await import("./market-returns.mjs")).testMarketReturns(ok);
 (await import("./voter-sheets.mjs")).testVoterSheets(ok);
+(await import("./hero-face.mjs")).testHeroFace(ok);
 console.log(`\n=== SMOKE TEST: ${pass} passed, ${fail} failed ===`);
 process.exit(fail === 0 ? 0 : 1);
