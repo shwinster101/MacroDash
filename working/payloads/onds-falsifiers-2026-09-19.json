@@ -42,7 +42,7 @@
         "cadence_days": 90,
         "green_condition": "Q3-2026 adjusted gross margin >= 48%",
         "amber_condition": "Q3-2026 adjusted gross margin >= 45% and < 48%",
-        "red_condition": "Q3-2026 adjusted gross margin < 45% — the >50% long-term target and the 6.5/5.5/4.8 multiple schedule are both in question"
+        "red_condition": "Q3-2026 adjusted gross margin < 45% — the >50% long-term target is in question and the sales-multiple schedule must be re-derived"
       }
     ]
   }
