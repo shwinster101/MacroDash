@@ -116,13 +116,26 @@ the no-op pin); and restoring the dropped cron to the TOML turns exactly the thr
 release calendar and no `mortgage30W1`/`LAST_GOOD_GROUPS` entry (still owed since v7.1); the
 other two composition findings (valuation's near-permanent bear vote, the sentiment/volatility
 overlap) stay RECORDED.
-**⚠ FOLLOW-UP THE SAME DAY (PR #50, merged into this branch): the 2026 half of `CPI_RELEASES` is
-now OWNER-CONFIRMED, and THREE of my asserted dates were WRONG** — Apr 14→**10**, Sep 10→**11**,
-Oct 13→**14** — cross-checked against the BLS monthly calendars, the BLS ICS feed and the White
-House PFEI CY2026 row (www.bls.gov itself still 403s from this build environment, so the
-confirmation is against those mirrors, not a live fetch). Recorded rather than quietly
-re-rendered, because an asserted table that turns out 3-of-12 wrong is the argument FOR the
-asserted/confirmed distinction, not an embarrassment to hide. **The October correction is the one
+**⚠ FOLLOW-UP THE SAME DAY (PRs #50 and #51, merged into this branch): the 2026 half of
+`CPI_RELEASES` is now OWNER-CONFIRMED, and FOUR of my twelve asserted dates were WRONG** —
+Feb 11→**13**, Apr 14→**10**, Sep 10→**11**, Oct 13→**14**. Recorded rather than quietly
+re-rendered, because an asserted table that turns out 4-of-12 wrong is the argument FOR the
+asserted/confirmed distinction, not an embarrassment to hide.
+**THE FEBRUARY ONE IS THE METHOD FINDING, and it is worth more than the date.** The first three
+came out of a cross-check against the BLS monthly calendars, the BLS ICS feed and the White House
+PFEI CY2026 row — three independent-looking sources, all agreeing. **All three still carry the
+pre-revision Feb 11**; only LIVE www.bls.gov carries Feb 13, with Employment Situation on Feb 11
+and a government-lapse *"dates subject to change"* banner on that month's page. So three agreeing
+mirrors are not the authority agreeing, and a confirmation that never reached the authority is an
+assertion wearing a confirmation's clothes — the same defect class as a fabricated provenance,
+one layer up. `www.bls.gov` 403s a scripted fetch from this build environment (the proxy that made
+`FOMC_MEETINGS` asserted), so the live half is a **browser** pass, and which surface was read is
+now named at the array rather than left to be inferred. **Standing caveat, stated not buried:** the
+lapse banner means a 2026 date can still move, so the confirmation is dated, not permanent.
+**February changes no behaviour and October does**, which is the useful split. 2026-02-11 is seven
+months past: neither the release-day arm nor `isStale`'s `expectedRefMonth` walk reaches it, since
+both govern off the most recent release at or before now — so the Feb fix is correctness of the
+RECORD, which is what a curated calendar is for. **The October correction is the one
 with teeth:** 2026-10-14 is the NEXT firing of the 8:45am ET release-day arm, so under the
 asserted 10-13 the arm would have spent its run on a day BLS publishes nothing and recorded a
 SKIP on the real release — pinning the pre-release CPI for that ET day, which is the exact
