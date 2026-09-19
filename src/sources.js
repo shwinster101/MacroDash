@@ -445,15 +445,21 @@ const ymdPlusDays = (ymd, n) => {
    out of the six-factor backdrop for no reason. Release-awareness removes that outright: the
    freshest published print is never stale, by definition, until the next SCHEDULED release
    has passed without its reference month arriving.
-   ✅ OWNER-CONFIRMED 2026-09-19 (2026 half). Cross-checked against (1) BLS monthly calendars
-   blsmon1.bls.gov/schedule/2026/{01..12}_sched.htm cell ids, (2) the BLS ICS feed
-   blsmon1.bls.gov/schedule/news_release/bls.ics SUMMARY:Consumer Price Index, and (3) the
-   White House PFEI CY2026 day-of-month row for Consumer Price Index. www.bls.gov itself still
-   403s from this build environment (same proxy that made FOMC_MEETINGS asserted), so the
-   confirmation is against the BLS mirrors + PFEI, not a live www fetch. Three asserted dates
-   were WRONG and corrected on this pass — Apr 14→10, Sep 10→11, Oct 13→14 — the same honesty
-   pattern as the FOMC Nov/Dec correction note above. Same smoke expiry tripwire (RED under
-   90 days of runway) remains, because a rotted calendar is exactly the defect this replaces.
+   ✅ OWNER-CONFIRMED 2026-09-19 (2026 half), re-checked same day against LIVE www.bls.gov.
+   Cross-checked against (1) BLS monthly calendars blsmon1.bls.gov/schedule/2026/{01..12}_sched.htm
+   cell ids, (2) the BLS ICS feed blsmon1.bls.gov/schedule/news_release/bls.ics
+   SUMMARY:Consumer Price Index, (3) the White House PFEI CY2026 day-of-month row for
+   Consumer Price Index, and (4) a live www.bls.gov browser pass on
+   /schedule/news_release/cpi.htm plus the Feb/Apr/Sep/Oct 2026 monthly calendars (curl from
+   this build environment still 403s www.bls.gov — same proxy that made FOMC_MEETINGS
+   asserted — so the www half is a Chromium confirmation, not a scripted fetch). Three
+   asserted dates were WRONG on the mirror pass — Apr 14→10, Sep 10→11, Oct 13→14 — and the
+   live www pass found ONE more: Jan 2026 CPI is Feb 13, not Feb 11 (blsmon1/ICS still show
+   the pre-revision Feb 11; www February calendar last-modified 2026-02-04 carries a
+   government-lapse "dates subject to change" banner and lists Employment Situation on
+   Feb 11 / CPI on Feb 13). Same honesty pattern as the FOMC Nov/Dec correction note above.
+   Same smoke expiry tripwire (RED under 90 days of runway) remains, because a rotted
+   calendar is exactly the defect this replaces.
    ⚠ 2027 HALF IS STILL ASSERTED, NOT OWNER-CONFIRMED. BLS has not published a 2027 CPI
    schedule as of 2026-09-19. The 2027 rows stay for the runway tripwire only; re-confirm
    against bls.gov/schedule/news_release/cpi.htm when BLS posts them — do not promote them
@@ -465,8 +471,8 @@ const ymdPlusDays = (ymd, n) => {
    freshest published — the cheaper side of the trade, stated rather than implied. */
 export const CPI_RELEASE_GRACE_D = 5;
 export const CPI_RELEASES = [
-  // ✅ OWNER-CONFIRMED 2026-09-19 (BLS monthly calendars + ICS + PFEI CY2026).
-  { release: "2026-01-13", refMonth: "2025-12" }, { release: "2026-02-11", refMonth: "2026-01" },
+  // ✅ OWNER-CONFIRMED 2026-09-19 (mirrors + ICS + PFEI + live www.bls.gov; Feb 11→13 lapse revision).
+  { release: "2026-01-13", refMonth: "2025-12" }, { release: "2026-02-13", refMonth: "2026-01" },
   { release: "2026-03-11", refMonth: "2026-02" }, { release: "2026-04-10", refMonth: "2026-03" },
   { release: "2026-05-12", refMonth: "2026-04" }, { release: "2026-06-10", refMonth: "2026-05" },
   { release: "2026-07-14", refMonth: "2026-06" }, { release: "2026-08-12", refMonth: "2026-07" },
