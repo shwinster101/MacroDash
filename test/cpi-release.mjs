@@ -177,19 +177,20 @@ export async function testCpiRelease(ok) {
 
   const AT = (ymd) => new Date(`${ymd}T12:00:00`);
   /* The measured cry-wolf: July's print (period 2026-07-01) is 71 days old on 2026-09-10, the
-     morning August's is released. The flat rule calls it STALE — dropping a VOTER — while the
-     release rule correctly says the next scheduled print has not landed yet. */
+     day BEFORE August's release (2026-09-11, owner-confirmed). The flat rule calls it STALE —
+     dropping a VOTER — while the release rule correctly says the next scheduled print has not
+     landed yet. */
   ok("[95] the cry-wolf this closes: a CURRENT print reads stale under the flat rule and " +
      "fresh under the release rule, on the same date",
     isStale("2026-07-01", AT("2026-09-10"), "monthly") === true &&
     isStale("2026-07-01", AT("2026-09-10"), "monthly", "cpiHeadline") === false);
   ok("[95] a genuinely MISSED release is stale once the scheduled date plus its grace has passed",
-    isStale("2026-07-01", AT("2026-09-14"), "monthly", "cpiHeadline") === false &&
-    isStale("2026-07-01", AT("2026-09-15"), "monthly", "cpiHeadline") === true);
-  ok("[95] the grace is the asserted calendar's safety margin, and it is real",
+    isStale("2026-07-01", AT("2026-09-15"), "monthly", "cpiHeadline") === false &&
+    isStale("2026-07-01", AT("2026-09-16"), "monthly", "cpiHeadline") === true);
+  ok("[95] the grace is the calendar's safety margin, and it is real",
     CPI_RELEASE_GRACE_D >= 3 &&
-    expectedRefMonth("cpiHeadline", AT("2026-09-14")) === "2026-07" &&
-    expectedRefMonth("cpiHeadline", AT("2026-09-15")) === "2026-08");
+    expectedRefMonth("cpiHeadline", AT("2026-09-15")) === "2026-07" &&
+    expectedRefMonth("cpiHeadline", AT("2026-09-16")) === "2026-08");
   ok("[95] the freshest published print is never stale, whatever the day of the month",
     ["2026-09-01", "2026-09-10", "2026-09-19", "2026-09-30", "2026-10-12"]
       .every((day) => isStale("2026-08-01", AT(day), "monthly", "cpiHeadline") === false));
@@ -287,7 +288,8 @@ export async function testCpiRelease(ok) {
   ok("[95] the gate fires on a scheduled release date and on no other day",
     cpiReleaseOn(CPI_RELEASES[0].release)?.refMonth === CPI_RELEASES[0].refMonth &&
     cpiReleaseOn(CPI_RELEASES[3].release)?.refMonth === CPI_RELEASES[3].refMonth &&
-    cpiReleaseOn("2026-09-11") === null && cpiReleaseOn(etYmd(new Date())) ===
+    cpiReleaseOn("2026-09-11")?.refMonth === "2026-08" &&
+    cpiReleaseOn("2026-09-10") === null && cpiReleaseOn(etYmd(new Date())) ===
       (CPI_RELEASES.find((r) => r.release === etYmd(new Date())) || null));
   /* THE DISPATCH, DRIVEN. The first negative control disabled the arm with `false &&` and the
      suite stayed GREEN, because the pin matched the comparison's text rather than its effect —

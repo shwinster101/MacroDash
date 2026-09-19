@@ -445,25 +445,34 @@ const ymdPlusDays = (ymd, n) => {
    out of the six-factor backdrop for no reason. Release-awareness removes that outright: the
    freshest published print is never stale, by definition, until the next SCHEDULED release
    has passed without its reference month arriving.
-   ⚠ ASSERTED, NOT OWNER-CONFIRMED (2026-09-19). bls.gov is unreachable from this build
-   environment (the same proxy 403 that made FOMC_MEETINGS an asserted table), so these are a
-   fill from the published BLS pattern — ~the second week of the following month — and NOT a
-   verified fetch. Re-confirm against bls.gov/schedule/news_release/cpi.htm. Same shape and
-   same discipline as FOMC_MEETINGS above, including the smoke expiry tripwire that goes RED
-   under 90 days of runway, because a rotted calendar is exactly the defect this replaces.
-   ⚠ THE GRACE IS WHAT MAKES AN ASSERTED CALENDAR SAFE, and it is not decoration. This gate
-   EXCLUDES A VOTER, so date error must fail toward "not stale": a release date asserted a few
-   days EARLY would otherwise re-create the very cry-wolf being removed. CPI_RELEASE_GRACE_D
-   exceeds the plausible error, which costs a few days of miss-detection on a value that is
-   still the freshest published — the cheaper side of the trade, stated rather than implied. */
+   ✅ OWNER-CONFIRMED 2026-09-19 (2026 half). Cross-checked against (1) BLS monthly calendars
+   blsmon1.bls.gov/schedule/2026/{01..12}_sched.htm cell ids, (2) the BLS ICS feed
+   blsmon1.bls.gov/schedule/news_release/bls.ics SUMMARY:Consumer Price Index, and (3) the
+   White House PFEI CY2026 day-of-month row for Consumer Price Index. www.bls.gov itself still
+   403s from this build environment (same proxy that made FOMC_MEETINGS asserted), so the
+   confirmation is against the BLS mirrors + PFEI, not a live www fetch. Three asserted dates
+   were WRONG and corrected on this pass — Apr 14→10, Sep 10→11, Oct 13→14 — the same honesty
+   pattern as the FOMC Nov/Dec correction note above. Same smoke expiry tripwire (RED under
+   90 days of runway) remains, because a rotted calendar is exactly the defect this replaces.
+   ⚠ 2027 HALF IS STILL ASSERTED, NOT OWNER-CONFIRMED. BLS has not published a 2027 CPI
+   schedule as of 2026-09-19. The 2027 rows stay for the runway tripwire only; re-confirm
+   against bls.gov/schedule/news_release/cpi.htm when BLS posts them — do not promote them
+   on a third-party projection.
+   ⚠ THE GRACE IS WHAT MAKES A CALENDAR SAFE, and it is not decoration. This gate EXCLUDES A
+   VOTER, so date error must fail toward "not stale": a release date a few days EARLY would
+   otherwise re-create the very cry-wolf being removed. CPI_RELEASE_GRACE_D exceeds the
+   plausible error, which costs a few days of miss-detection on a value that is still the
+   freshest published — the cheaper side of the trade, stated rather than implied. */
 export const CPI_RELEASE_GRACE_D = 5;
 export const CPI_RELEASES = [
+  // ✅ OWNER-CONFIRMED 2026-09-19 (BLS monthly calendars + ICS + PFEI CY2026).
   { release: "2026-01-13", refMonth: "2025-12" }, { release: "2026-02-11", refMonth: "2026-01" },
-  { release: "2026-03-11", refMonth: "2026-02" }, { release: "2026-04-14", refMonth: "2026-03" },
+  { release: "2026-03-11", refMonth: "2026-02" }, { release: "2026-04-10", refMonth: "2026-03" },
   { release: "2026-05-12", refMonth: "2026-04" }, { release: "2026-06-10", refMonth: "2026-05" },
   { release: "2026-07-14", refMonth: "2026-06" }, { release: "2026-08-12", refMonth: "2026-07" },
-  { release: "2026-09-10", refMonth: "2026-08" }, { release: "2026-10-13", refMonth: "2026-09" },
+  { release: "2026-09-11", refMonth: "2026-08" }, { release: "2026-10-14", refMonth: "2026-09" },
   { release: "2026-11-10", refMonth: "2026-10" }, { release: "2026-12-10", refMonth: "2026-11" },
+  // ⚠ ASSERTED, NOT OWNER-CONFIRMED — BLS 2027 schedule not published as of 2026-09-19.
   { release: "2027-01-13", refMonth: "2026-12" }, { release: "2027-02-10", refMonth: "2027-01" },
   { release: "2027-03-10", refMonth: "2027-02" }, { release: "2027-04-13", refMonth: "2027-03" },
   { release: "2027-05-12", refMonth: "2027-04" }, { release: "2027-06-10", refMonth: "2027-05" },
