@@ -1,0 +1,49 @@
+{
+  "_note": "PROPOSED falsifier set for ONDS, authored 2026-09-19 from the Q2-2026 earnings call (Aug 13 2026). PASTE INTO THE TERMINAL to store under underwriting_inputs.falsifiers. The three conditions + importance + kill of each hinge form commitFingerprint() — EDITING ANY OF THEM AFTER THE FIRST WRITE RE-OPENS THE COMMITMENT (v3.77). Store BEFORE the 2026-11-12 print or the set can never be pre-committed for this cycle.",
+  "_defined_at": "2026-09-19",
+  "_grades_at": "2026-11-12 Q3-2026 print",
+  "underwriting_inputs": {
+    "falsifiers": [
+      {
+        "id": "q3_revenue_in_band",
+        "importance": 3,
+        "kill": false,
+        "defined_at": "2026-09-19",
+        "cadence_days": 90,
+        "green_condition": "Q3-2026 revenue >= $140.0M (at or above the low end of the $140-155M guide given 2026-08-13)",
+        "amber_condition": "Q3-2026 revenue >= $125.0M and < $140.0M (guide missed by less than ~10%)",
+        "red_condition": "Q3-2026 revenue < $125.0M (guide missed by more than ~10%)"
+      },
+      {
+        "id": "fy26_guide_intact",
+        "importance": 3,
+        "kill": true,
+        "defined_at": "2026-09-19",
+        "cadence_days": 90,
+        "green_condition": "At the Q3 print FY2026 revenue guidance is reaffirmed at >= $525M or raised",
+        "amber_condition": "FY2026 guidance narrowed or trimmed into $475M-$525M",
+        "red_condition": "FY2026 guidance cut below $475M or withdrawn — the implied Q4 of $256.1M and the ~$1B exit run rate no longer hold"
+      },
+      {
+        "id": "adj_ebitda_narrows",
+        "importance": 2,
+        "kill": false,
+        "defined_at": "2026-09-19",
+        "cadence_days": 90,
+        "green_condition": "Q3-2026 adjusted EBITDA loss narrower than -$51M (management called Q2 the peak)",
+        "amber_condition": "Q3-2026 adjusted EBITDA loss between -$51M and -$65M",
+        "red_condition": "Q3-2026 adjusted EBITDA loss wider than -$65M — operating leverage claim falsified"
+      },
+      {
+        "id": "adj_gross_margin_holds",
+        "importance": 2,
+        "kill": false,
+        "defined_at": "2026-09-19",
+        "cadence_days": 90,
+        "green_condition": "Q3-2026 adjusted gross margin >= 48%",
+        "amber_condition": "Q3-2026 adjusted gross margin >= 45% and < 48%",
+        "red_condition": "Q3-2026 adjusted gross margin < 45% — the >50% long-term target and the 6.5/5.5/4.8 multiple schedule are both in question"
+      }
+    ]
+  }
+}
