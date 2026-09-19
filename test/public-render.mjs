@@ -2585,6 +2585,62 @@ console.log("\n[public] v6.5 — STOCK SPOTLIGHT: Simple + Degen, always-visible
     // The full three-question text lives one tap deep in Simple (`opened`), on the face in Degen.
     simpleFace = { caps: (await r.locator(".stock-profile-trigger").allInnerTexts()).map(t => (t.match(/\$\d+\.\d+[TB]/) || [])[0]), ytd: text.match(/[+−]\d+\.\d\d%/g), business: (openedQs.match(/BUSINESS · [^\n]+/g) || []) };
     await page.close(); }
+  /* ── v7.3 — THE OPERATIONS GATE, DRIVEN LIVE ──────────────────────────────────────────────
+     The reported defect, reproduced in a real page from the LIVE 2026-09-19 shape: NBIS turned
+     net profitable on non-operating gains (+$115.1M TTM net income against −$175.9M of
+     quarterly operating income) and the Simple face started printing P/E 514.9×. The module
+     pins prove the rule; only a browser pass proves the ROW the owner was looking at changed,
+     and the CONTROL below is what makes it a measurement rather than a coincidence — the same
+     fixture with the operating margin flipped positive must go straight back to P/E. */
+  /* ⚠ MY FIRST CONTROL DID NOT BITE, AND THE PIN WAS WRONG, NOT THE CODE (recorded rather than
+     quietly fixed — the v5.97.2 rule). It flipped the QUARTERLY margin positive and expected
+     P/E; the shared fixture already carries a NEGATIVE ttmOperatingIncome (−$295M), which is the
+     preferred basis and correctly overrode it, so the control was pulling a lever the rule is
+     built to ignore. Both scenarios now hold the quarterly margin IDENTICAL and differ by
+     exactly the governing field — the sign of TTM operating income — which is what makes the
+     pair a measurement of the gate rather than of the fixture. */
+  { const nonop = structuredClone(feed);
+    const nv = nonop.model.companies.NBIS.metrics;
+    nv.valuation = { ...nv.valuation, ttmNetIncome: 1.151e8, ttmNetIncomePeriod: "TTM to 2026-06-30",
+      trailingPe: 514.9, peNote: null,
+      ttmOperatingIncome: -1.759e8, ttmOperatingIncomePeriod: "TTM to 2026-06-30" };
+    nv.operatingMargin = { ...nv.operatingMargin, pct: -30.2, period: "quarter to 2026-06-30", unavailable: null };
+    const { page, errors } = await open({ live: FULL_LIVE, width: 390, power: false, spotlight: nonop });
+    await page.waitForTimeout(1200);
+    const face = (await region(page).locator(".stock-profile-trigger").allInnerTexts())[0] || "";
+    ok("v7.3 Simple: a NET-PROFITABLE company whose profit is not from operations shows P/S, not the 514.9× P/E",
+      /P\/S · TRAILING/i.test(face) && !/P\/E · TRAILING/i.test(face) && !/514\.9/.test(face));
+    /* The cause must be the RIGHT one. PS_REASON would tell the reader this company "isn't
+       profitable" while its net line is +$115.1M — a fabricated cause on the one row the
+       substitution happens. */
+    ok("v7.3 Simple: the row names the REAL cause — the profit isn't from operations, never 'isn't profitable'",
+      /isn.t meaningful because the profit isn.t from operations/i.test(face)
+      && !/isn.t meaningful because the company isn.t profitable/i.test(face));
+    ok("v7.3 Simple: still EXACTLY ONE multiple row, and it still carries both clocks",
+      ((face.match(/P\/S · TRAILING|P\/E · TRAILING/gi) || []).length) === 1
+      && /TTM to \d{4}-\d{2}-\d{2}/.test(face) && /(price|cap) \d{4}-\d{2}-\d{2}/.test(face));
+    ok("v7.3 Simple: 390px stays overflow-free with the substituted row, no page errors",
+      await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth + 1) && errors.length === 0);
+    await page.close(); }
+  /* THE CONTROL — the same fixture with ONE field flipped: TTM operating income positive, the
+     quarterly margin left at −30.2% exactly as above. If this did not return to P/E the pin
+     above would be measuring something other than the gate, and it doubles as the TSLA case in
+     miniature (a large multiple on a real operating business still reads P/E) AND as the
+     browser-level proof that the TTM basis outranks the quarter. */
+  { const op = structuredClone(feed);
+    const ov = op.model.companies.NBIS.metrics;
+    ov.valuation = { ...ov.valuation, ttmNetIncome: 1.151e8, ttmNetIncomePeriod: "TTM to 2026-06-30",
+      trailingPe: 514.9, peNote: null,
+      ttmOperatingIncome: 4.4e8, ttmOperatingIncomePeriod: "TTM to 2026-06-30" };
+    ov.operatingMargin = { ...ov.operatingMargin, pct: -30.2, period: "quarter to 2026-06-30", unavailable: null };
+    const { page, errors } = await open({ live: FULL_LIVE, width: 390, power: false, spotlight: op });
+    await page.waitForTimeout(1200);
+    const face = (await region(page).locator(".stock-profile-trigger").allInnerTexts())[0] || "";
+    ok("v7.3 CONTROL: the same company earning from OPERATIONS keeps its P/E, however large — no magnitude arm",
+      /P\/E · TRAILING/i.test(face) && /514\.9×/.test(face) && !/P\/S · TRAILING/i.test(face)
+      && !/isn.t meaningful/i.test(face) && errors.length === 0);
+    await page.close(); }
+
   // Mixed-period issuer: the FCF date must not inherit the revenue quarter.
   { const mixed = structuredClone(feed);
     mixed.model.companies.NBIS.metrics.fcf = { ...mixed.model.companies.NBIS.metrics.fcf,

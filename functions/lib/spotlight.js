@@ -592,6 +592,14 @@ export function deriveMetrics({ fundamentals: f, marketCap, series, today }) {
   m.fcfTtm = ct && xt && ct.end === xt.end ? { value: ct.value - xt.value, period: ct.label } : null;
   // Valuation: cap ÷ TTM revenue; trailing P/E only where TTM earnings are positive.
   const nt = ttmOf(f?.netIncome);
+  /* v7.3 — TTM OPERATING INCOME, carried for ONE job: deciding whether the TTM net line the
+     P/E divides by was produced by the business. It is emitted on the SAME window as
+     ttmNetIncome deliberately — `m.operatingMargin` above is the latest QUARTER, and judging a
+     TTM figure by a quarterly one would date one number with another's clock (the rule
+     `earningsEvidence` already enforces on ttmNetIncomePeriod). Same `ttmOf` chain as revenue
+     and net income, so a 6-K filer's half-year tiling produces it or nothing does; a filer that
+     does not report the line leaves it null and the selector falls back with the basis NAMED. */
+  const ot = ttmOf(f?.operatingIncome);
   const capUsd = marketCap && finite(marketCap.usd) ? marketCap.usd : null;
   m.valuation = {
     capToTtmRevenue: capUsd && rt && rt.value > 0 ? round(capUsd / rt.value, 1) : null,
@@ -599,6 +607,8 @@ export function deriveMetrics({ fundamentals: f, marketCap, series, today }) {
     trailingPe: capUsd && nt && nt.value > 0 ? round(capUsd / nt.value, 1) : null,
     ttmNetIncome: nt ? nt.value : null,
     ttmNetIncomePeriod: nt ? nt.label : null,
+    ttmOperatingIncome: ot ? ot.value : null,
+    ttmOperatingIncomePeriod: ot ? ot.label : null,
     peNote: !nt ? (f?.netIncome?.ttm?.unavailable || "TTM net income unavailable") : nt.value < 0 ? "trailing earnings are negative — no P/E" : nt.value === 0 ? "trailing earnings are zero — no P/E" : null,
     unavailable: !capUsd ? `no market cap (${marketCap?.unavailable || "no cap"})` : !rt ? (f?.revenue?.ttm?.unavailable || "TTM revenue unavailable") : null,
   };

@@ -49,6 +49,13 @@ export const MULTIPLE_LABELS = Object.freeze({ pe: "P/E · trailing", ps: "P/S �
    changes under them. It states WHY the substitution happened, so P/S never reads as an
    arbitrary second metric. */
 export const PS_REASON = "P/E isn’t meaningful because the company isn’t profitable.";
+/* v7.3 — THE SECOND CAUSE, and it is a DIFFERENT sentence on purpose. A company can be net
+   profitable and still have an earnings line the business did not produce, and printing
+   PS_REASON there would tell a reader NBIS "isn't profitable" when its TTM net income is
+   +$115.1M — a fabricated cause, the same defect class as a fabricated number (the v7.2
+   five-naming-sites rule, one surface over). Same shape as PS_REASON so the two read as one
+   vocabulary. */
+export const PS_REASON_NONOPERATING = "P/E isn’t meaningful because the profit isn’t from operations.";
 
 const capReady = (c) => finite(c?.marketCap?.usd) && c.marketCap.usd > 0
   && dated(c.marketCap.observedAt) && !c.marketCap.unavailable;
@@ -67,6 +74,57 @@ export function multipleDates(c) {
     : { asOf: null, basis: null, derived: false };
 }
 
+/* v7.3 — IS THE TRAILING PROFIT PRODUCED BY THE BUSINESS? (owner, 2026-09-19: "stop dividing
+   by a broken denominator"). v7.1 tested the SIGN of TTM earnings, which is not the same claim
+   as "this company earns" — the v3.47 LENS lint learned exactly this one engine over, and the
+   public selector never did. Measured on the live model the day it was reported: NBIS carried
+   TTM net income +$115.1M against operating income of −$175.9M for the quarter, so the
+   denominator was non-operating (stake and divestiture gains) and the row printed 514.9×.
+
+   TWO BASES, PREFERRED IN ORDER, AND THE BASIS IS NAMED RATHER THAN ASSUMED.
+     1. TTM operating income — the SAME window as the net line the P/E divides by, so the
+        comparison is apples to apples. Added to the model in this release.
+     2. The latest QUARTER's operating margin — already on the model, so the gate works on a
+        record written before this release (the v5.1.1 rule: an additive field nobody has
+        written yet must not blank a working surface). It is a different window from the net
+        line, which is a real mismatch, so the basis rides on the result and the caller states it.
+     3. Neither -> UNKNOWN, and the P/E still renders. ⚠ THIS IS THE HONEST LIMIT, recorded
+        rather than papered over: a company whose operating line is unavailable can still show
+        a pathological P/E. The alternative — withholding the multiple on evidence we do not
+        have, or calling the profit non-operating — would assert something nobody measured,
+        which is the rule the MISSING branch above already follows ("missing earnings evidence
+        is not a loss", so missing operating evidence is not a non-operating profit).
+
+   ⚠ NO MAGNITUDE ARM. Owner ruling 2026-09-19, taken against a measured roster: a P/E > 80
+   gate would also demote TSLA at 338.4×, which earns from operations and is simply expensive.
+   Suppressing a real 338× and printing ~7× P/S in its place would make the most expensive name
+   on the roster read CHEAPER than it is — the opposite of the defect being fixed. Magnitude is
+   the market's opinion; this gate is about whether the denominator is a measurement. */
+export function operatingEvidence(c) {
+  const v = c?.metrics?.valuation || {};
+  if (finite(v.ttmOperatingIncome) && dated(v.ttmOperatingIncomePeriod)) {
+    return { state: v.ttmOperatingIncome > 0 ? "operating" : "nonoperating", basis: "ttm",
+      period: v.ttmOperatingIncomePeriod, value: v.ttmOperatingIncome, reason: null };
+  }
+  const om = c?.metrics?.operatingMargin || {};
+  if (finite(om.pct) && dated(om.period)) {
+    return { state: om.pct > 0 ? "operating" : "nonoperating", basis: "quarter",
+      period: om.period, value: om.pct, reason: null };
+  }
+  return { state: "unknown", basis: null, period: null, value: null,
+    reason: om.unavailable || "operating income unavailable" };
+}
+
+/* ONE home for which sentence a P/S row carries, so the row and its explainer sheet can never
+   state different causes for the same substitution (the v6.3.0 identity rule, applied to copy
+   rather than to an object). */
+export function psReasonFor(c) {
+  const e = earningsEvidence(c);
+  if (e.state === "loss" || e.state === "zero") return PS_REASON;
+  if (e.state === "profit" && operatingEvidence(c).state === "nonoperating") return PS_REASON_NONOPERATING;
+  return null;
+}
+
 /* Returns the ONE multiple that applies to this company, or an honest unavailable naming the
    gap. `kind` is null exactly when nothing is shown, so a caller can never render a label with
    no number behind it. Never throws on a partial or absent model (Property 9). */
@@ -75,24 +133,32 @@ export function applicableMultiple(c) {
   const e = earningsEvidence(c);
   const d = multipleDates(c);
   const base = { kind: null, label: null, value: null, period: null, asOf: d.asOf, basis: d.basis,
-    derived: d.derived, reason: null, explainKind: null, unavailable: null };
+    derived: d.derived, reason: null, explainKind: null, unavailable: null, operatingBasis: null };
+
+  /* The sales multiple, built ONCE and reached from two different causes. Two constructions
+     would be two copies waiting to disagree about what a complete P/S is. ONLY when the sales
+     multiple is itself complete and dated: a P/S with no period would be the same
+     undated-reference defect the earnings branch refuses. */
+  const sales = (reason, operatingBasis) => (
+    !finite(v.capToTtmRevenue) || !finite(v.ttmRevenue) || v.ttmRevenue <= 0 || !dated(v.ttmRevenuePeriod)
+      ? { ...base, unavailable: v.unavailable || "revenue multiple unavailable", reason, operatingBasis }
+      : { ...base, kind: "ps", label: MULTIPLE_LABELS.ps, value: `${v.capToTtmRevenue.toFixed(1)}×`,
+        period: v.ttmRevenuePeriod, reason, explainKind: "ps", operatingBasis });
 
   // MISSING comes first and returns before any fallback can exist. Ordering is the rule.
   if (e.state === "missing") return { ...base, unavailable: e.reason };
   if (!capReady(c)) return { ...base, unavailable: c?.marketCap?.unavailable || "dated market capitalization unavailable" };
 
   if (e.state === "profit") {
+    const o = operatingEvidence(c);
+    // Net profitable, but not FROM the business -> the earnings multiple has no denominator
+    // worth dividing by. UNKNOWN deliberately falls through to P/E (see the limit above).
+    if (o.state === "nonoperating") return sales(PS_REASON_NONOPERATING, o.basis);
     if (!finite(v.trailingPe)) return { ...base, unavailable: "earnings multiple unavailable" };
     return { ...base, kind: "pe", label: MULTIPLE_LABELS.pe, value: `${v.trailingPe.toFixed(1)}×`,
-      period: e.period, explainKind: "pe" };
+      period: e.period, explainKind: "pe", operatingBasis: o.basis };
   }
-  // loss | zero -> P/S, and ONLY when the sales multiple is itself complete and dated. A P/S
-  // with no period would be the same undated-reference defect the earnings branch refuses.
-  if (!finite(v.capToTtmRevenue) || !finite(v.ttmRevenue) || v.ttmRevenue <= 0 || !dated(v.ttmRevenuePeriod)) {
-    return { ...base, unavailable: v.unavailable || "revenue multiple unavailable", reason: PS_REASON };
-  }
-  return { ...base, kind: "ps", label: MULTIPLE_LABELS.ps, value: `${v.capToTtmRevenue.toFixed(1)}×`,
-    period: v.ttmRevenuePeriod, reason: PS_REASON, explainKind: "ps" };
+  return sales(PS_REASON, null); // loss | zero
 }
 
 /* The one-line date sub a row renders beneath the multiple: the metric's own period and the

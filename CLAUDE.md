@@ -1,5 +1,83 @@
 # CLAUDE.md — MacroDash
 
+**v7.3.0 — THE APPLICABLE MULTIPLE ASKS WHETHER THE BUSINESS PRODUCED THE EARNINGS, not
+whether they are positive.** Owner report: *"NBIS is showing pe instead of p/s now… stop dividing
+by a broken denominator."* **NO BAND MOVED, no vote, quorum, override or `tt-v1` field changed** —
+this is the public Stock Spotlight's valuation row and nothing else. Pages ships it; **no
+`wrangler deploy` is needed** (the one owed from v7.2 is still owed, and its Oct 14 deadline is
+unchanged).
+**THE RULE TESTED A SIGN, WHICH IS NOT THE CLAIM IT NEEDED TO MAKE.** v7.1's `applicableMultiple`
+read `ttmNetIncome > 0 → trailing P/E`, and **"the number is positive" is not "this company
+earns"** — the v3.47 `LENS_MAX_PE` lint learned exactly this one engine over, and the public
+selector never did. **Measured on the LIVE model the hour it was reported**, which is where every
+fixture number in this release comes from: NBIS carried TTM net income **+$115.1M** against
+**−$175.9M** of quarterly operating income (operating margin **−30.2%**) on a $59.26B cap, so the
+row printed **P/E 514.9×** — a multiple divided by gains the business did not produce (stake and
+divestiture marks sitting below the operating line). NVDA on the same pull: 27.4× on a +66.2%
+operating margin. The gate is `operatingEvidence()`: net profitable AND operating income positive
+→ P/E; net profitable but **not from operations → P/S**.
+**⚠ NO MAGNITUDE ARM, and that is an owner ruling taken against a MEASURED roster rather than a
+guess.** The ask specified *"PE > 80 → P/S"*. Measured at the 2026-09-18 close, six of the seven
+Mag-7 sit between **17.6× and 38.5×** — and **TSLA sits at 338.4× while earning from operations**.
+A P/E>80 gate would have demoted it, printing ~7× P/S in place of a real 338× and making **the
+most expensive name on the roster read CHEAPER than it is** — the opposite of the defect being
+fixed. Magnitude is the market's opinion; this gate is about whether the denominator is a
+measurement. The threshold is recorded as a considered-and-declined finding, and **the TSLA case
+is pinned as a CONTROL in both suites**, so adding a magnitude arm later goes red rather than
+quietly demoting a real earner.
+**TWO BASES, PREFERRED IN ORDER, AND THE BASIS IS NAMED RATHER THAN ASSUMED.** `ttmOperatingIncome`
+is **new on the model** and is the preferred basis because it shares the **SAME WINDOW** as the net
+line the P/E divides by — judging a TTM figure by the quarterly `operatingMargin` would date one
+number with another's clock, the rule `earningsEvidence` already enforces on `ttmNetIncomePeriod`.
+It rides the existing `ttmOf` chain (so a 6-K filer's half-year tiling produces it or nothing
+does) and the existing `valuation` whitelist, so no projection changed. **The quarterly margin is
+the FALLBACK**, which is what makes the fix land on the record production is serving **right now**
+rather than after the 6pm refresh — driven against the live cached model, NBIS reads `P/S 43.7×`
+and NVDA `P/E 27.4×` today, with `operatingBasis` on the result so a caller states which window
+answered (the v5.1.1 rule: an additive field nobody has written yet must not blank a working
+surface).
+**⚠ THE HONEST LIMIT, pinned as the state it is actually in.** With **no** operating evidence the
+P/E still renders. Withholding the multiple on evidence we do not have — or calling the profit
+non-operating — would assert something nobody measured, which is the rule the MISSING branch has
+followed since v7.1 (*"missing earnings evidence is not a loss"*, so missing operating evidence is
+not a non-operating profit). So a company whose operating line is unavailable can still show a
+pathological P/E, and that is stated here rather than discovered later. Its negative control turns
+**four** pins red — three of them pre-existing v7.1 pins — which is the evidence that the
+fall-through is load-bearing for the existing contract and not a convenience.
+**THE CAUSE IS NEVER FABRICATED.** `PS_REASON_NONOPERATING` is a **second sentence**, not a reuse:
+printing v7.1's *"the company isn't profitable"* over NBIS would be false about a company whose
+net line is +$115.1M — a fabricated cause, the same defect class as a fabricated number (the v7.2
+five-naming-sites rule, one surface over). `psReasonFor()` is the ONE home, so **the row and its
+explainer sheet cannot name different causes** — and the old inline test in `spotlightExplain`
+gated on loss|zero only, so a net-profitable company switching to P/S would have opened a sheet
+that explained nothing.
+**TWO OF MY OWN PINS WERE WRONG, recorded rather than quietly fixed.** The v7.1 *"missing returns
+before any fallback"* pin measured SOURCE POSITION (`indexOf('kind: "ps"')` after
+`indexOf('missing')`), so hoisting the P/S construction into ONE shared builder — a correct
+refactor, and the thing that stops two causes emitting two different P/S rows — turned it red
+while the guarantee held; it is re-pinned on BEHAVIOUR against a company rigged so both fallbacks
+are armed, which asserts strictly more than the ordering did. And **my first browser control did
+not bite**: it flipped the QUARTERLY margin positive and expected P/E, but the shared fixture
+already carries a negative `ttmOperatingIncome`, which correctly overrode it — the control was
+pulling the lever the rule is built to ignore (v5.97.2). Both scenarios now hold the quarter
+IDENTICAL and differ by exactly the governing field.
+Verification: browser-required `npm run gates` passed **2,913 smoke** (+16), **353 admin-browser**
+and **752 public-browser** (+5, driven live in Chromium: the substituted row at 390px, the real
+cause on it, one multiple with both clocks, and the CONTROL returning to P/E — which doubles as
+the browser proof that the TTM basis outranks the quarter); production audit found zero
+vulnerabilities. **Negative-controlled four ways**, each turning exactly its own pins: the gate
+disabled (4), the ruled-out magnitude arm added (2 — the TSLA control among them), the basis
+preference inverted (2), and UNKNOWN falling through to P/S (4).
+**Deliberately NOT done:** no forward P/E. The ask said *"keep TTM + forward PE for cash
+earners"* — **the public path has no forward P/E and cannot get one here**: `metrics.valuation`
+carries only trailing figures derived from market cap ÷ TTM, and consensus estimates live solely
+in the PIN-gated TT street layer (licensed SA/Alpha Vantage data). Putting them on a public,
+world-readable surface is a licensing and exposure decision, not a display one, so it is named
+rather than half-built. Also untouched: Degen still renders BOTH multiples (the v7.1 split), no
+cheap/expensive colour was added, and no name is hardcoded — the split between NBIS and the
+Mag-7 is derived from each company's own operating line, so a name that starts or stops earning
+moves on its own.
+
 **v7.2.0 — THE SAHM RULE BECOMES A BEARISH-ONLY SAFETY OVERRIDE, and the growth channel is
 instrumented without spending a seat.**
 **⚠ OWNER ACTION: `cd worker && npx wrangler deploy`** — not for the override (Pages ships the

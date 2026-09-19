@@ -24,7 +24,8 @@
    would be a verdict the evidence cannot support — the v3.1 invariant pointed at a valuation
    number. The module returns no colour at all, so a caller has nothing to paint with, and the
    browser suite measures the rendered colour against the market-cap row beside it. */
-import { applicableMultiple, earningsEvidence, multipleSub, multipleDates, MULTIPLE_LABELS, PS_REASON }
+import { applicableMultiple, earningsEvidence, operatingEvidence, psReasonFor, multipleSub,
+  multipleDates, MULTIPLE_LABELS, PS_REASON, PS_REASON_NONOPERATING }
   from "../src/spotlightMultiple.js";
 import { spotlightFace } from "../src/simpleFace.js";
 import { valuationExplain, SPOTLIGHT_WORD_MAX } from "../src/spotlightExplain.js";
@@ -80,16 +81,24 @@ export function testSpotlightMultiple(ok) {
     ok(`[93] ⚠ ${name} -> UNAVAILABLE naming the gap, and NEVER P/S (missing is not a loss)`,
       m.kind === null && m.value === null && m.unavailable === why && m.reason === null);
   }
-  ok("[93] the missing branch returns BEFORE any fallback — the guarantee is positional",
+  /* ⚠ RE-PINNED v7.3, claim unchanged and strictly WIDER, with the reason at the pin. This
+     measured source POSITION — indexOf('kind: "ps"') had to fall after indexOf('missing') —
+     which is the shape that passes through any wrong rewrite and fails on the right one (the
+     v5.6.4 / v6.8.4 lesson). v7.3 hoists the P/S construction into ONE shared builder so both
+     causes emit an identical row, a correct refactor that moved the literal above the missing
+     check and turned this red while the guarantee held. It now asserts the BEHAVIOUR, against a
+     company rigged so that EVERY other path would have produced a P/S: the sales multiple is
+     complete and dated AND the operating evidence says non-operating. Only the earnings
+     evidence is absent, so a rule that consulted either fallback first would emit "ps" here. */
+  ok("[93] the missing branch returns BEFORE any fallback — neither P/S path can be reached",
     (() => {
-      // Same company, sales multiple fully present and dated. Only the earnings evidence is
-      // absent, so a rule that checked P/S availability first would happily emit "ps" here.
-      const m = applicableMultiple(NO_EARNINGS);
-      const rule = src("../src/spotlightMultiple.js");
-      const missingAt = rule.indexOf('e.state === "missing"');
-      const psAt = rule.indexOf('kind: "ps"');
-      return m.kind === null && missingAt > 0 && psAt > missingAt
-        && Number.isFinite(NO_EARNINGS.metrics.valuation.capToTtmRevenue);
+      const rigged = co({ ttmNetIncome: null, ttmNetIncomePeriod: null });
+      rigged.metrics.operatingMargin = { pct: -30.2, period: "quarter to 2026-06-30", unavailable: null };
+      const m = applicableMultiple(rigged);
+      return m.kind === null && m.reason === null && m.value === null
+        && operatingEvidence(rigged).state === "nonoperating"          // the other fallback IS armed
+        && Number.isFinite(rigged.metrics.valuation.capToTtmRevenue)   // and P/S IS fully available
+        && applicableMultiple(NO_EARNINGS).kind === null;
     })());
   {
     const m = applicableMultiple(NO_CAP);
@@ -176,6 +185,112 @@ export function testSpotlightMultiple(ok) {
       const words = valuationExplain(c, k).what.join(" ").trim().split(/\s+/).length;
       return words <= SPOTLIGHT_WORD_MAX.degen;
     })));
+
+  /* ── v7.3 · THE OPERATIONS GATE ───────────────────────────────────────────────────────────
+     (5) A P/E DIVIDED BY A DENOMINATOR THE BUSINESS DID NOT PRODUCE. v7.1 tested the SIGN of
+     TTM earnings, which is not the same claim as "this company earns". Reproduced from the LIVE
+     model on 2026-09-19, which is the shape these fixtures carry: NBIS TTM net income +$115.1M
+     (real, and entirely below the operating line) against −$175.9M of quarterly operating
+     income, cap $59.26B -> the row printed P/E 514.9×. The fixtures below use those measured
+     numbers rather than round ones, so a failure reads as the live case it came from. */
+  const opq = (pct, period = "quarter to 2026-06-30") => ({ pct, period, unavailable: null });
+  /* NBIS as served: net profitable, operating LOSS, pathological P/E. */
+  const NBIS = { ...co({ capToTtmRevenue: 43.7, ttmRevenue: 1.3551e9, trailingPe: 514.9,
+    ttmNetIncome: 1.151e8 }, { usd: 5.926e10, method: "provider-reported" }) };
+  NBIS.metrics.operatingMargin = opq(-30.2);
+  /* TSLA as measured the same day: 338.4× and a real operating business. The owner's ruling
+     lives or dies on this fixture. */
+  const TSLA = { ...co({ capToTtmRevenue: 7.1, ttmRevenue: 1.02e11, trailingPe: 338.4,
+    ttmNetIncome: 4.25e9 }) };
+  TSLA.metrics.operatingMargin = opq(6.4, "quarter to 2026-06-30");
+
+  ok("[93] v7.3 THE REPORTED DEFECT: net profitable but the profit is NOT from operations -> P/S",
+    (() => { const m = applicableMultiple(NBIS);
+      return m.kind === "ps" && m.value === "43.7×" && m.reason === PS_REASON_NONOPERATING
+        && m.period === "TTM to 2026-06-30" && m.unavailable === null; })());
+  ok("[93] v7.3 and it can never print the 514.9× P/E it used to — the earnings label is gone",
+    (() => { const m = applicableMultiple(NBIS);
+      return m.kind !== "pe" && m.label !== MULTIPLE_LABELS.pe && !/514/.test(String(m.value)); })());
+  /* ⚠ THE OWNER RULING, PINNED AS A CONTROL. A magnitude arm (P/E > 80) would demote this row,
+     and the ruling is that it must not: TSLA earns from operations and is merely expensive, so
+     printing ~7× P/S in place of a real 338× would make the priciest name on the roster read
+     CHEAPER than it is. Adding a magnitude gate later turns this pin red, which is the point. */
+  ok("[93] v7.3 NO MAGNITUDE ARM: 338.4× on a real operating business still reads P/E",
+    (() => { const m = applicableMultiple(TSLA);
+      return m.kind === "pe" && m.value === "338.4×" && m.reason === null
+        && m.operatingBasis === "quarter"; })());
+  ok("[93] v7.3 the six other roster names are untouched — an ordinary earner keeps its P/E",
+    (() => { const c = co({ ttmNetIncome: 1.92879e11, trailingPe: 27.4 });
+      c.metrics.operatingMargin = opq(66.2, "quarter to 2026-07-26");
+      return applicableMultiple(c).kind === "pe"; })());
+
+  /* THE BASIS. TTM is the SAME window as the net line and must WIN when both are present —
+     proven with the two bases DISAGREEING, so the preference cannot pass by coincidence. */
+  ok("[93] v7.3 TTM operating income is PREFERRED over the quarterly margin when both are on file",
+    (() => { const c = co({ ttmNetIncome: 1.151e8, trailingPe: 514.9,
+        ttmOperatingIncome: 4.4e8, ttmOperatingIncomePeriod: "TTM to 2026-06-30" });
+      c.metrics.operatingMargin = opq(-30.2);            // quarter says nonoperating, TTM says operating
+      const m = applicableMultiple(c);
+      return operatingEvidence(c).basis === "ttm" && m.kind === "pe" && m.operatingBasis === "ttm"; })());
+  ok("[93] v7.3 the quarterly margin is the FALLBACK, named — a record written before this release still gates",
+    operatingEvidence(NBIS).basis === "quarter" && operatingEvidence(NBIS).state === "nonoperating");
+  ok("[93] v7.3 an undated operating period is not evidence — it falls through rather than judging",
+    (() => { const c = co({ ttmNetIncome: 1.151e8, trailingPe: 514.9,
+        ttmOperatingIncome: -1.0e8, ttmOperatingIncomePeriod: "an undated period" });
+      c.metrics.operatingMargin = { pct: -30.2, period: "no period", unavailable: null };
+      return operatingEvidence(c).state === "unknown"; })());
+  ok("[93] v7.3 exactly zero operating income is NOT operating — the edge is > 0, like the earnings edge",
+    (() => { const c = co({ ttmNetIncome: 1.151e8, trailingPe: 514.9,
+        ttmOperatingIncome: 0, ttmOperatingIncomePeriod: "TTM to 2026-06-30" });
+      return operatingEvidence(c).state === "nonoperating" && applicableMultiple(c).kind === "ps"; })());
+
+  /* ⚠ THE HONEST LIMIT, pinned as the state it is actually in rather than as the state I would
+     prefer. With no operating evidence the P/E still renders: withholding it, or calling the
+     profit non-operating, would assert something nobody measured — the same rule the MISSING
+     branch follows ("missing earnings evidence is not a loss"). */
+  ok("[93] v7.3 LIMIT: no operating evidence -> the P/E still renders, and claims nothing about operations",
+    (() => { const m = applicableMultiple(PROFIT);   // the base fixture carries no operatingMargin
+      return operatingEvidence(PROFIT).state === "unknown" && m.kind === "pe"
+        && m.reason === null && m.operatingBasis === null; })());
+  ok("[93] v7.3 an unknown operating state never emits the non-operating cause",
+    psReasonFor(PROFIT) === null && operatingEvidence(co({})).state === "unknown");
+
+  /* THE CAUSE IS NEVER FABRICATED. NBIS IS net profitable, so PS_REASON — "the company isn't
+     profitable" — would be false about it. Two different sentences, and the loss case keeps its
+     own (the operations gate must not hijack the original cause). */
+  ok("[93] v7.3 the two P/S causes are DIFFERENT sentences — a net-profitable company is never called unprofitable",
+    PS_REASON !== PS_REASON_NONOPERATING && !/isn’t profitable/.test(PS_REASON_NONOPERATING)
+    && psReasonFor(NBIS) === PS_REASON_NONOPERATING && psReasonFor(LOSS) === PS_REASON
+    && psReasonFor(ZERO) === PS_REASON && applicableMultiple(LOSS).reason === PS_REASON);
+  ok("[93] v7.3 the ROW and its SHEET name the same cause — one home, so they cannot disagree",
+    (() => { const m = applicableMultiple(NBIS), a = valuationExplain(NBIS, "ps");
+      return m.reason === PS_REASON_NONOPERATING && a.what[1].startsWith(PS_REASON_NONOPERATING); })());
+  ok("[93] v7.3 the sheet's word ceiling survives the added cause, re-measured not loosened",
+    [NBIS, TSLA].every((c) => ["pe", "ps", "cap"].every((k) => {
+      const e = valuationExplain(c, k);
+      return !e || e.what.join(" ").trim().split(/\s+/).length <= SPOTLIGHT_WORD_MAX.degen; })));
+
+  /* ORDERING IS STILL THE RULE. The operations gate sits INSIDE the profit branch, so it can
+     never run ahead of the missing-earnings return — the positional guarantee v7.1 pinned. */
+  ok("[93] v7.3 missing earnings STILL returns before the operations gate can be reached",
+    (() => { const c = co({ ttmNetIncome: null, ttmNetIncomePeriod: null });
+      c.metrics.operatingMargin = opq(-30.2);
+      const m = applicableMultiple(c);
+      return m.kind === null && m.reason === null && /earnings/.test(m.unavailable); })());
+  /* ONE P/S construction reached from two causes — two would be two copies waiting to disagree
+     about what a complete P/S is. */
+  ok("[93] v7.3 the sales multiple is built ONCE and reached from both causes",
+    (src("../src/spotlightMultiple.js").match(/kind: "ps"/g) || []).length === 1);
+
+  /* THE SERVER HALF. The field exists, rides the public whitelist through `valuation`, and is
+     emitted on the SAME chain as revenue and net income so a 6-K filer's half-year tiling
+     produces it or nothing does. */
+  ok("[93] v7.3 ttmOperatingIncome is derived on the same ttmOf chain and rides the public whitelist",
+    (() => { const s = src("../functions/lib/spotlight.js");
+      return /const ot = ttmOf\(f\?\.operatingIncome\)/.test(s)
+        && /ttmOperatingIncome: ot \? ot\.value : null/.test(s)
+        && /ttmOperatingIncomePeriod: ot \? ot\.label : null/.test(s)
+        && /PUBLIC_METRIC_KEYS = \[[^\]]*"valuation"/.test(s); })());
 
   /* ── THE MODULE IS A LEAF, WHICH IS WHY THE GRAPH DOES NOT CYCLE ─────────────────────────── */
   ok("[93] spotlightMultiple.js imports NOTHING — simpleFace and spotlightExplain both read it",

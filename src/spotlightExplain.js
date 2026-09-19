@@ -1,7 +1,7 @@
 // One evidence set, two reading depths. These helpers format reported data; they do not
 // estimate earnings, infer a fair price, or turn a multiple into an investment call.
 import { spotlightFace } from "./simpleFace.js";
-import { earningsEvidence, PS_REASON } from "./spotlightMultiple.js";
+import { earningsEvidence, psReasonFor } from "./spotlightMultiple.js";
 
 export const SPOTLIGHT_WORD_MAX = Object.freeze({ simple: 90, degen: 110 });
 const BUSINESS = Object.freeze({
@@ -106,7 +106,12 @@ export function valuationExplain(c, kind) {
     const multiple = capReady(c) && revenueReady && finite(v.capToTtmRevenue) ? `${v.capToTtmRevenue.toFixed(1)}×` : "unavailable";
     what = [
       `Market capitalization ÷ reported revenue for the last twelve months = ${multiple}. This is an equity-value-to-sales multiple, not enterprise value divided by sales.`,
-      `${e.state === "loss" || e.state === "zero" ? PS_REASON + " " : ""}It measures dollars paid per dollar of sales, not profitability. Revenue is not profit.`,
+      /* v7.3 — the cause comes from psReasonFor, NOT from a second reading of the earnings
+         state. The old inline test gated on loss|zero only, so a net-profitable company whose
+         row had just switched to P/S on the operations gate opened a sheet that explained
+         nothing — the substitution stated on the row and unexplained one tap deep. One home,
+         so the row and the sheet cannot name different causes. */
+      `${psReasonFor(c) ? psReasonFor(c) + " " : ""}It measures dollars paid per dollar of sales, not profitability. Revenue is not profit.`,
       "A lower multiple does not establish cheapness. Compare margins, spending needs, debt, and share dilution; growth alone does not establish future profitability.",
     ];
     inputs = [capDate(c), revenueReady ? `Revenue: ${dollars(v.ttmRevenue)} · ${v.ttmRevenuePeriod}.` : null]; labels = ["market cap", "revenue"];
