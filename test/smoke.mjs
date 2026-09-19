@@ -13813,5 +13813,6 @@ console.log("\n[v6.9.9.5] Degen evidence projection — rules stay canonical");
 
 await (await import("./market-returns.mjs")).testMarketReturns(ok);
 (await import("./voter-sheets.mjs")).testVoterSheets(ok);
+(await import("./fng-band-split.mjs")).testFngBandSplit(ok);
 console.log(`\n=== SMOKE TEST: ${pass} passed, ${fail} failed ===`);
 process.exit(fail === 0 ? 0 : 1);

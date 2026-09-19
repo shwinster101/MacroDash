@@ -39,6 +39,34 @@ export const CREDIT_TAIL_STRESS = 12;
 export const CAPE_MEAN = 17.4;
 export const CAPE_ATH  = 44.19;
 
+/* v7.0.3 — THE F&G ASTERISK. One number, TWO band tables in this product, and until now only
+   one of them was ever stated out loud. This backdrop reads Fear & Greed MONOTONE (>55 helps,
+   <30 hurts — more greed is more bullish, without limit); Engine 0's order-gating check
+   (`bandFearGreed`, src/ttReadout.js) reads it as a CONTRARIAN BAND (25–55 bullish, <20 OR >75
+   bearish). Swept over 0–100 they disagree on 81 of 101 integer readings, and twice they
+   INVERT: at 25–29 this page says the factor hurts while Engine 0 counts it bullish, and at
+   76–100 this page says it helps while Engine 0 counts it bearish.
+   THIS IS NOT A PROPERTY OF HAVING TWO ENGINES, which is why it earns a caption rather than a
+   shrug. Of the three inputs both engines read, VIX is edge-identical (18/25) and the 10Y is
+   edge-identical (−0.10/+0.15, differing only in its trend vocabulary). F&G is the SOLE
+   outlier — measured, 2026-09-19.
+   v7.0.1 is what made disclosure owed: bullet 2 of the voter sheet now states a reference band
+   out loud, on the default view, so a band that is not the only one the product applies to
+   that number became a visible claim. The caption qualifies the claim; it does not resolve it.
+   DELIBERATELY NOT UNIFIED HERE. Adopting either band into the other is a MODEL change — the
+   terminal's 20 line is the PANIC override's own edge (`vix > 25 AND fearGreed < 20`) and
+   `/readout.json` gates real orders on the check, while the backdrop's band moves the published
+   daily call above 75 and re-bands 30–55. The ruling (one job or two) is written up as an OPEN
+   owner decision in this release's working note (CLAUDE.md carries the path — a product source
+   never names that tree) and has NOT been made; smoke pins both tables so it cannot be made
+   silently in either direction.
+   The NUMBERS below are checked against edges DERIVED from `bandFearGreed` in smoke rather
+   than trusted here — regime.js is deliberately import-free and the two engines stay
+   married-never-merged, so the reconciliation lives in the suite that already imports both
+   (the SOURCES/DERIVED_OF idiom). Retyping them without that pin is how the caption would rot
+   into the thing it exists to prevent. */
+export const FG_GATE_ASTERISK = "Terminal gate uses different bands (bull 25–55).";
+
 /* FEAT-NEWCOMER-RULER (8/29): the mobile budget for the derived MIXED sub. The ticket set
    the target as "~48 chars"; MEASURED at 375px (its own acceptance width) the sub renders as
    13px mono in a 335px box and fits ~32 characters per line INCLUDING its "NEUTRAL · "
@@ -181,12 +209,23 @@ export const REGIME_BAND_TABLE = [
     explain:{ full:"CNN Business Fear and Greed Index", shortTitle:"Investor sentiment",
       what:[
         "CNN’s Fear and Greed Index combines seven market indicators into a score from zero to 100.",
-        "Higher means greed, lower means fear. MacroDash counts above 55 as helping and below 30 as hurting. Its inputs partly overlap VIX.",
+        // The asterisk lands immediately AFTER the backdrop ruler in both render paths: here
+        // for the macro-strip tile, which renders this array raw (Simple's "Explore market
+        // data" fold — since v6.9.9 that is the ONLY surface showing the eight-tile strip, so
+        // Degen reaches the caption through the driver card alone), and in voterSheet() for the
+        // Simple cards and the Drivers matrix, which rebuild bullet 2 around `ruler`. ONE
+        // string, interpolated — the CAPE_MEAN/CAPE_ATH precedent, and pinned in both homes.
+        `Higher means greed, lower means fear. MacroDash counts above 55 as helping and below 30 as hurting. ${FG_GATE_ASTERISK} Its inputs partly overlap VIX.`,
         "This describes market sentiment, not a price target. Fear can persist and greed can increase; neither extreme establishes that a reversal is due.",
       ] },
     read:(d)=>d.marketPulse.fearGreed.score,
     metric:{ read:(d)=>d.marketPulse.fearGreed.score, unit:"", dec:0, note:"of 100" },
     ruler:"help above 55 · mid 30–55 · hurt below 30",
+    // OPTIONAL and carried by F&G alone: the one voter whose Engine 0 band genuinely differs
+    // (see FG_GATE_ASTERISK above). VIX and the 10Y are edge-identical across both engines, so
+    // an asterisk there would claim a split that does not exist — pinned, so adding one later
+    // is a deliberate act rather than a copy-paste.
+    gateAsterisk:FG_GATE_ASTERISK,
     vote:(v)=> v > 55 ? "bull" : v < 30 ? "bear" : "neutral",
     // The one INVERTED factor: bullish ABOVE its edge, not below.
     flip:{ bullEdge:55, bearEdge:30, bullSide:"above", bullInclusive:false,
