@@ -2340,6 +2340,61 @@ console.log("\n[public] v6.5 — STOCK SPOTLIGHT: Simple + Degen, always-visible
       simpleFloor.length === 0);
     ok("v6.5 Simple: 390px stays overflow-free with the chart in place, no page errors",
       await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth + 1) && errors.length === 0);
+
+    /* ── v7.1 — ONE APPLICABLE MULTIPLE ON THE SIMPLE FACE ────────────────────────────────
+       Owner, 2026-09-19: Simple shows market cap beside ONE multiple — trailing P/E when the
+       company earns, P/S when it does not — with its actual reporting period and the price
+       timestamp, and no cheap/expensive colour. Driven here at 390px because the Simple face
+       is a phone surface and these are the rows above the fold. */
+    const profiles = await r.locator(".stock-profile-trigger").allInnerTexts();
+    ok("v7.1 Simple: the fixture's unprofitable company shows P/S — labelled, never a bare number",
+      /P\/S · TRAILING/i.test(profiles[0]) && /52\.9×/.test(profiles[0]));
+    /* The reason the label changed, at the moment it changes under the reader. Without it P/S
+       reads as an arbitrary second metric rather than the consequence of a withheld P/E. */
+    ok("v7.1 Simple: the substitution states WHY — P/E isn't meaningful without profit",
+      /isn.t meaningful because the company isn.t profitable/i.test(profiles[0]));
+    /* EXACTLY ONE. Two multiples on a flash card is the state this release exists to end, and
+       a count is the only assertion that catches a future edit adding the other back. */
+    ok("v7.1 Simple: EXACTLY ONE multiple row on the face — never both",
+      ((profiles[0].match(/P\/S · TRAILING|P\/E · TRAILING/gi) || []).length) === 1);
+    /* Both clocks, on screen, in Simple — the first compact row ever to carry its dates,
+       because a multiple whose period the reader cannot check is a blanket "live" label. */
+    ok("v7.1 Simple: the multiple carries its reporting period AND the price timestamp on screen",
+      /TTM to \d{4}-\d{2}-\d{2}/.test(profiles[0]) && /(price|cap) \d{4}-\d{2}-\d{2}/.test(profiles[0]));
+    /* NO CHEAP/EXPENSIVE COLOUR (owner). Measured, not assumed: the multiple's rendered colour
+       must equal the market-cap row's beside it. A hardcoded hex would pass a "not green" pin
+       while still painting a verdict; comparing against a neighbour cannot. */
+    const multColour = await page.evaluate(() => {
+      const rows = [...document.querySelectorAll(".stock-profile-trigger .stock-row")];
+      const ink = (re) => { const row = rows.find((n) => re.test(n.querySelector(".stock-row-label")?.textContent || ""));
+        const v = row && row.querySelector(".stock-row-value"); return v && getComputedStyle(v).color; };
+      return { mult: ink(/P\/S|P\/E/i), cap: ink(/MARKET CAP/i) };
+    });
+    ok(`v7.1 Simple: the multiple carries NO cheap/expensive colour — same ink as the cap row (${multColour.mult} vs ${multColour.cap})`,
+      Boolean(multColour.mult) && multColour.mult === multColour.cap);
+    /* THE LAST TECHNICAL LEAK ON THE DEFAULT VIEW (deferred here from Slice A, where the
+       scenario rendered no Spotlight and the pattern would have passed vacuously). A moving
+       average is a TECHNICAL reading by role; the owner's definition puts technicals in Degen.
+       Swept across the WHOLE Simple page with the numbers fold open, and the Degen scenario
+       below asserts the same rows DO render there — so this absence is a mode gate. */
+    ok("v7.1 Simple: the labelled moving-average READINGS are gone — the Price trend row and the MA calculation input",
+      !/PRICE TREND/i.test(await page.locator("body").innerText())
+      && !/\b(50|100|200)-day\b/i.test(await r.locator('[aria-label$="supporting analysis"]').first().innerText().catch(() => "")));
+    /* ⚠ FOUND, NOT FIXED — and pinned PRESENT so it cannot change in silence.
+       One 200-day mention survives in Simple: the clause inside the authored STOCK paragraph,
+       two taps deep in "the three questions, in full". It is deliberately left, and the pin
+       records the state rather than the wish:
+         · it is authored PROSE from the server model, not a labelled reading, and the question
+           it answers is literally "what does the stock's current price tell me?" — a price
+           trend is on topic for that question in a way it is not for a metrics row;
+         · removing the clause means regex surgery on a composed sentence in the component,
+           and "a display string is the wrong integrity boundary" (v4.0.3). Doing it properly
+           means the server projection composes a Simple variant, which is its own pass.
+       My first version of the pin above swept the whole page and claimed this was fixed too.
+       It was not. The pin was narrowed to what the change actually does, and the remainder is
+       asserted here — the alternative was a pin quietly describing work nobody did. */
+    ok("v7.1 Simple: the authored STOCK prose still names the 200-day two taps deep — named, not fixed",
+      /200-day/i.test(await page.locator("body").innerText()));
     // The full three-question text lives one tap deep in Simple (`opened`), on the face in Degen.
     simpleFace = { caps: (await r.locator(".stock-profile-trigger").allInnerTexts()).map(t => (t.match(/\$\d+\.\d+[TB]/) || [])[0]), ytd: text.match(/[+−]\d+\.\d\d%/g), business: (openedQs.match(/BUSINESS · [^\n]+/g) || []) };
     await page.close(); }
@@ -2371,14 +2426,41 @@ console.log("\n[public] v6.5 — STOCK SPOTLIGHT: Simple + Degen, always-visible
     const text = await r.innerText();
     ok("v6.5 Degen (density review): the blurb, the `as of`/`through` dates and the period crumbs stay ON the face — Degen is the 10-K",
       /rents out AI computing capacity/.test(text) && /as of \d{4}-\d{2}-\d{2}/.test(text) && /through \d{4}-\d{2}-\d{2}/.test(text) && /quarter to \d{4}-\d{2}-\d{2}/.test(text));
-    ok("v6.5 Degen: the supporting analysis (cash, debt, cap ÷ TTM revenue, P/E, shares, price trend, run-rate, inputs) is visible with NO click, plus the worked example",
-      (await r.locator('[aria-label$="supporting analysis"]').count()) === 2 && /CAP ÷ TTM REVENUE/i.test(text) && /TRAILING P\/E/i.test(text) && /PRICE TREND/i.test(text) &&
+  /* RE-PINNED v7.1 — the two valuation rows are RENAMED, and the claim is unchanged. The sales
+     multiple has been price-to-sales since v6.6.3 under the label "Cap ÷ TTM revenue", which
+     never said so, so the one multiple that applies to an unprofitable company was the one a
+     reader could not look up. Both rows now carry one name across BOTH modes ("P/S · trailing",
+     "P/E · trailing"), because v7.1 puts one of them on the Simple face and two names for one
+     metric across modes is the drift this repo keeps closing. The arithmetic is not renamed
+     away — "cap ÷ TTM revenue" still rides the P/S row's sub, and this pin asserts that. */
+    ok("v6.5 Degen: the supporting analysis (cash, debt, P/S, P/E, shares, price trend, run-rate, inputs) is visible with NO click, plus the worked example",
+      (await r.locator('[aria-label$="supporting analysis"]').count()) === 2 && /P\/S · TRAILING/i.test(text) && /P\/E · TRAILING/i.test(text) && /PRICE TREND/i.test(text) &&
+      /cap ÷ TTM revenue/i.test(text) &&   // the formula survives the naming, on the row's own sub
       /RUN-RATE VS TTM/i.test(text) && /CALCULATION INPUTS/.test(text) && (await r.locator('[aria-label="Worked example"]').count()) === 1 && /33\.4×/.test(text));
+    /* v7.1 — THE DEGEN CONTRAST, and the reason the Simple pins above are not vacuous.
+       Simple shows ONE multiple and no moving-average readings. That is only a mode gate if the
+       same fixture produces BOTH multiples and the technicals here — otherwise the absence pins
+       would be passing on an empty widget, which is the v3.60.1 trap this suite keeps catching.
+       Owner: "Degen can show both P/E and P/S when available." */
+    ok("v7.1 Degen: BOTH multiples render (Simple selects one; Degen shows what is available)",
+      /P\/S · TRAILING/i.test(text) && /P\/E · TRAILING/i.test(text));
+    ok("v7.1 Degen: the moving-average readings DO render here — Simple's silence is a mode gate",
+      /PRICE TREND/i.test(text) && /200-day/i.test(text));
+    /* No cheap/expensive colour in Degen either — measured against the Cash row beside it. */
+    const degenInk = await page.evaluate(() => {
+      const rows = [...document.querySelectorAll('[aria-label$="supporting analysis"] .stock-row')];
+      const ink = (re) => { const row = rows.find((n) => re.test(n.querySelector(".stock-row-label")?.textContent || ""));
+        const v = row && row.querySelector(".stock-row-value"); return v && getComputedStyle(v).color; };
+      return { ps: ink(/P\/S/i), pe: ink(/P\/E/i), cash: ink(/^CASH/i) };
+    });
+    ok(`v7.1 Degen: neither multiple carries a cheap/expensive colour (${degenInk.ps} · ${degenInk.pe} vs cash ${degenInk.cash})`,
+      Boolean(degenInk.cash) && degenInk.ps === degenInk.cash && degenInk.pe === degenInk.cash);
     for (const [group, label, title, expected] of [
       ['[aria-label="Nebius Group (NBIS) profile"]', "Market cap", "Market capitalization", /Hypothetical:.*both equal \$10 billion/s],
-      ['[aria-label="NBIS supporting analysis"]', "Trailing P/E", "Trailing price-to-earnings ratio", /Net earnings were negative/],
-      ['[aria-label="MSFT supporting analysis"]', "Trailing P/E", "Trailing price-to-earnings ratio", /positive multiple/],
-      ['[aria-label="NBIS supporting analysis"]', "Cap ÷ TTM revenue", "Market value relative to sales", /Revenue is not profit/],
+      ['[aria-label="NBIS supporting analysis"]', "P/E · trailing", "Trailing price-to-earnings ratio", /Net earnings were negative/],
+      ['[aria-label="MSFT supporting analysis"]', "P/E · trailing", "Trailing price-to-earnings ratio", /positive multiple/],
+      // v7.1: the sheet's TITLE names the multiple too, not just its arithmetic.
+      ['[aria-label="NBIS supporting analysis"]', "P/S · trailing", "P/S — price-to-sales", /Revenue is not profit/],
     ]) {
       const trigger = r.locator(group).getByRole("button", { name: new RegExp(label) });
       await trigger.focus(); await page.keyboard.press("Enter");

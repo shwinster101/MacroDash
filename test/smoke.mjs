@@ -13892,5 +13892,6 @@ await (await import("./market-returns.mjs")).testMarketReturns(ok);
 (await import("./voter-sheets.mjs")).testVoterSheets(ok);
 (await import("./fng-band-split.mjs")).testFngBandSplit(ok);
 (await import("./signal-roles.mjs")).testSignalRoles(ok);
+(await import("./spotlight-multiple.mjs")).testSpotlightMultiple(ok);
 console.log(`\n=== SMOKE TEST: ${pass} passed, ${fail} failed ===`);
 process.exit(fail === 0 ? 0 : 1);

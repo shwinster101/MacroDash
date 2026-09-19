@@ -1,6 +1,7 @@
 // One evidence set, two reading depths. These helpers format reported data; they do not
 // estimate earnings, infer a fair price, or turn a multiple into an investment call.
 import { spotlightFace } from "./simpleFace.js";
+import { earningsEvidence, PS_REASON } from "./spotlightMultiple.js";
 
 export const SPOTLIGHT_WORD_MAX = Object.freeze({ simple: 90, degen: 110 });
 const BUSINESS = Object.freeze({
@@ -26,14 +27,11 @@ const sourcesFor = (c, labels) => (c.sources || []).filter((s) => labels.include
 const capDate = (c) => c.marketCap?.observedAt
   ? `Market capitalization as of ${c.marketCap.observedAt}${c.marketCap.method === "derived" ? " (derived)" : ""}${c.freshness?.market?.stale ? " · STALE" : ""}.` : null;
 
-// A net-income number without its OWN period cannot establish the earnings reference.
-// In particular, never borrow ttmRevenuePeriod for an older cached model.
-export function earningsEvidence(c) {
-  const v = c?.metrics?.valuation || {};
-  if (!finite(v.ttmNetIncome)) return { state: "missing", reason: "reported net earnings unavailable" };
-  if (!dated(v.ttmNetIncomePeriod)) return { state: "missing", reason: "earnings reporting period unavailable" };
-  return { state: v.ttmNetIncome < 0 ? "loss" : v.ttmNetIncome === 0 ? "zero" : "profit", value: v.ttmNetIncome, period: v.ttmNetIncomePeriod };
-}
+/* v7.1: earningsEvidence MOVED to src/spotlightMultiple.js — it is the applicable-multiple
+   rule's own input, and that module must be a LEAF (simpleFace.js reads it too) or the import
+   graph cycles. Re-exported here so every existing caller and pin resolves unchanged; the
+   function itself is byte-identical, including the missing-period rule it exists to enforce. */
+export { earningsEvidence } from "./spotlightMultiple.js";
 
 export function peDisplay(c) {
   const e = earningsEvidence(c), v = c?.metrics?.valuation || {};
@@ -98,12 +96,17 @@ export function valuationExplain(c, kind) {
       "One-off gains can boost net earnings despite operating losses. Check operating results and cash flow separately; this multiple is not an entry signal.",
     ];
     inputs = [capDate(c), e.period ? `Net earnings: ${dollars(e.value)} · ${e.period}.` : null]; labels = ["market cap", "net earnings"];
-  } else if (kind === "revenue") {
-    title = "Market value relative to sales";
+  } else if (kind === "revenue" || kind === "ps") {
+    /* v7.1 — THE MULTIPLE IS NAMED. This sheet has described price-to-sales since v6.6.3 under
+       a title that never said so, which made the one multiple that applies to an unprofitable
+       company the one a reader could not look up. "ps" is accepted as an alias of "revenue" so
+       no existing caller changes, and the title now carries both the name and the arithmetic —
+       renaming it away would lose the equity-value-to-sales precision bullet 1 states. */
+    title = "P/S — price-to-sales (market value ÷ revenue)";
     const multiple = capReady(c) && revenueReady && finite(v.capToTtmRevenue) ? `${v.capToTtmRevenue.toFixed(1)}×` : "unavailable";
     what = [
       `Market capitalization ÷ reported revenue for the last twelve months = ${multiple}. This is an equity-value-to-sales multiple, not enterprise value divided by sales.`,
-      "It measures dollars paid per dollar of sales and can describe valuation when earnings are negative. Revenue is not profit.",
+      `${e.state === "loss" || e.state === "zero" ? PS_REASON + " " : ""}It measures dollars paid per dollar of sales, not profitability. Revenue is not profit.`,
       "A lower multiple does not establish cheapness. Compare margins, spending needs, debt, and share dilution; growth alone does not establish future profitability.",
     ];
     inputs = [capDate(c), revenueReady ? `Revenue: ${dollars(v.ttmRevenue)} · ${v.ttmRevenuePeriod}.` : null]; labels = ["market cap", "revenue"];

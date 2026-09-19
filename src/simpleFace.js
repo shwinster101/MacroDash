@@ -4,6 +4,8 @@
 // sprint locked four buckets (Face / Tap / Fold / Kill); every helper here projects
 // already-decided evidence into the Face (or names the Fold). Degen does not import
 // this module.
+import { applicableMultiple, multipleSub } from "./spotlightMultiple.js";
+
 export const HOLD_REASON_MAX = 15;
 export const FACE_NOUN = Object.freeze({
   vix: "Volatility",
@@ -112,8 +114,13 @@ const money = (v) => {
     : `${s}$${a.toFixed(0)}`;
 };
 
-// Face projection: return + one fundamental (revenue growth, else margin, else FCF).
-// The profile also renders the existing market cap; multiples and the lesson stay folded.
+/* Face projection: market cap + the ONE applicable multiple + return + one fundamental.
+   v7.1 — `cap` and `multiple` JOIN THIS PROJECTION, and that is the structural half of the
+   change. The Simple market-cap row was JSX reaching around this function into c.marketCap
+   directly (StockSpotlight.jsx), so the face was a typed projection with a hole in it: the one
+   row that was not projected was the one nobody could pin. Both now arrive typed, and the
+   owner's layout — market cap, then the multiple, then revenue growth, then the return —
+   is the order a caller renders rather than a shape it assembles. */
 export function spotlightFace(company, leg) {
   if (!company) return null;
   const m = company.metrics || {};
@@ -132,8 +139,17 @@ export function spotlightFace(company, leg) {
     const gap = rg.unavailable || om.unavailable || fcf.unavailable || null;
     stat = { label: "Revenue growth", value: null, unavailable: gap };
   }
+  const capRec = company.marketCap || {};
+  const mult = applicableMultiple(company);
   return {
     name: company.name, symbol: company.symbol,
+    cap: { value: capRec.display || null, unavailable: capRec.display ? null : (capRec.unavailable || "no market cap") },
+    /* The date sub rides the face so Simple can show the metric's OWN period and the cap
+       observation — the owner's "actual reporting period and price timestamp, not a blanket
+       live label". `reason` is non-null only when the label changed to P/S, so a reader is
+       told WHY at the moment it changes under them. */
+    multiple: { kind: mult.kind, label: mult.label, value: mult.value, sub: multipleSub(mult),
+      reason: mult.reason, unavailable: mult.unavailable },
     ytd, stat,
     stale: Boolean((company.freshness && company.freshness.series && company.freshness.series.stale)
       || (company.freshness && company.freshness.market && company.freshness.market.stale)),

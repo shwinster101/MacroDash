@@ -112,16 +112,27 @@ const Unavail = ({ reason, compact = false }) => (
    glyph was a SECOND affordance on a target under the thumb. Here only the LABEL is the button
    — the value sits outside it — so the glyph is the FIRST and only visible affordance, and
    dropping it would remove the affordance rather than de-duplicate it. */
-const Row = ({ label, value, sub, unavailable, big = false, compact = false, explain }) => (
-  <div style={{ display: "flex", alignItems: "baseline", gap: 6, flexWrap: "wrap", minWidth: 0, padding: "2px 0" }}>
+/* v7.1 — `subAlways`. Compact mode drops `sub` to the title attribute (see below), which is
+   right for every Simple row that ever needed it: the date is context, and the face is a flash
+   card. The applicable multiple is the exception the owner named — "its actual reporting period
+   and price timestamp, not a blanket 'live' label" — because a multiple with no period is a
+   number whose clock the reader cannot check. Opt-in, so no other compact row moves a pixel. */
+const Row = ({ label, value, sub, unavailable, big = false, compact = false, explain, subAlways = false }) => (
+  /* v7.1: `stock-row` on the container and `stock-row-value` on the value, joining the
+     `stock-row-label`/`stock-row-sub` names already here. Presentation-neutral, and it is what
+     lets a pin MEASURE a row's ink unambiguously: the first version of the no-colour pin
+     selected "the span that is not the label", and with an explainer attached that resolved to
+     the amber ⓘ INSIDE the label — reporting a colour defect that did not exist. A pin that
+     measures the affordance instead of the value is worse than no pin. */
+  <div className="stock-row" style={{ display: "flex", alignItems: "baseline", gap: 6, flexWrap: "wrap", minWidth: 0, padding: "2px 0" }}>
     {explain ? <span style={{ flexShrink: 0, minWidth: 92 }}><Explainable explain={explain} title={explain.full} eyebrow={explain.eyebrow} className="stock-metric-trigger"
       style={{ background: "none", border: 0, padding: "8px 0", minHeight: 44, minWidth: 92, flex: "0 1 auto" }}>
       <span className="stock-row-label" style={{ fontFamily: T.fontMono, fontSize: T.fsS, color: T.textMuted, letterSpacing: "0.08em", textTransform: "uppercase" }}>{label} <span style={{ color: T.amber }}>ⓘ</span></span>
     </Explainable></span> : <span className="stock-row-label" style={{ fontFamily: T.fontMono, fontSize: T.fsS, color: T.textMuted, letterSpacing: "0.08em", textTransform: "uppercase", flexShrink: 0, minWidth: 92 }}>{label}</span>}
     {value != null && !unavailable
-      ? <span title={compact && typeof sub === "string" ? sub : undefined} style={{ fontFamily: T.fontMono, fontSize: big ? T.fsL : T.fsM, fontWeight: big ? 700 : 500, color: T.textPrimary, minWidth: 0 }}>{value}</span>
+      ? <span className="stock-row-value" title={compact && typeof sub === "string" ? sub : undefined} style={{ fontFamily: T.fontMono, fontSize: big ? T.fsL : T.fsM, fontWeight: big ? 700 : 500, color: T.textPrimary, minWidth: 0 }}>{value}</span>
       : <Unavail reason={unavailable} compact={compact} />}
-    {sub && !compact && value != null && !unavailable ? <span style={{ fontFamily: T.fontMono, fontSize: T.fsXs, color: T.textMuted, minWidth: 0 }}>{sub}</span> : null}
+    {sub && (!compact || subAlways) && value != null && !unavailable ? <span className="stock-row-sub" style={{ fontFamily: T.fontMono, fontSize: T.fsXs, color: T.textMuted, minWidth: 0 }}>{sub}</span> : null}
   </div>
 );
 /* The summary is printed on the Simple face only when BOTH sentences carry a real number —
@@ -147,13 +158,24 @@ const Profile = ({ c, leg, simple, rule }) => {
           <span className="stock-ticker" style={{ fontFamily: T.fontMono, fontSize: T.fsS, color: T.amber, letterSpacing: "0.08em" }}>{face.symbol}</span>
           {face.stale && <Stale f={{ stale: true }} />}
         </div>
-        <Row label="Market cap" compact value={cap.display} unavailable={cap.unavailable} />
-        <Row label="Return this year" big compact
-          value={face.ytd.value}
-          unavailable={face.ytd.unavailable} />
+        {/* v7.1 — the owner's layout: market cap, the ONE applicable multiple, revenue growth,
+            then the return. Both cap and multiple now come from the TYPED face projection; the
+            cap row used to reach around spotlightFace into c.marketCap, which is why it was the
+            one Simple row nobody could pin.
+            ONE MULTIPLE, never two: trailing P/E when the company earns, P/S when it does not
+            (labelled, with the reason), and UNAVAILABLE when earnings evidence is missing —
+            never a silent P/S substitution, which would assert a loss nobody measured. */}
+        <Row label="Market cap" compact value={face.cap.value} unavailable={face.cap.unavailable} />
+        <Row label={face.multiple.label || "P/E · trailing"} compact subAlways
+          value={face.multiple.value} sub={face.multiple.sub} unavailable={face.multiple.unavailable} />
+        {face.multiple.kind === "ps" && face.multiple.reason &&
+          <div className="stock-multiple-reason" style={{ fontFamily: T.fontMono, fontSize: T.fsXs, color: T.textMuted, marginTop: -2, marginBottom: 2 }}>{face.multiple.reason}</div>}
         <Row label={face.stat.label} compact
           value={face.stat.value}
           unavailable={face.stat.unavailable} />
+        <Row label="Return this year" big compact
+          value={face.ytd.value}
+          unavailable={face.ytd.unavailable} />
         <span style={{ display: "block", marginTop: 4, fontFamily: T.fontMono, fontSize: T.fsS, color: T.amber }}>Learn about this stock →</span>
       </Explainable>
     );
@@ -261,19 +283,36 @@ const Detail = ({ c, simple, rule }) => {
       <div style={{ fontFamily: T.fontMono, fontSize: T.fsXs, color: T.amber, letterSpacing: "0.1em", marginBottom: 4 }}>{c.symbol} · SUPPORTING ANALYSIS</div>
       <Row label="Cash" value={money(cash.value)} unavailable={cash.unavailable} sub={cash.asOf ? `at ${cash.asOf}` : null} />
       <Row label="Debt" value={money(debt.value)} unavailable={debt.unavailable} sub={debt.asOf ? `at ${debt.asOf}` : null} />
-      <Row label="Cap ÷ TTM revenue" explain={!simple ? valuationExplain(c, "revenue") : null} value={typeof v.capToTtmRevenue === "number" ? `${v.capToTtmRevenue.toFixed(1)}×` : null} unavailable={v.unavailable} sub={v.ttmRevenuePeriod ? `${money(v.ttmRevenue)} ${v.ttmRevenuePeriod}` : null} />
-      <Row label="Trailing P/E" explain={!simple ? valuationExplain(c, "pe") : null} {...peDisplay(c)} />
+      {/* v7.1 — Degen shows BOTH multiples when available; only Simple selects one. The sales
+          multiple is NAMED now: it has been price-to-sales since v6.6.3 under a label that
+          never said so, which made the one multiple that applies to an unprofitable company
+          the one a reader could not look up. The arithmetic stays on the row, so nothing was
+          renamed away — "P/S" is added to the label, not substituted for the formula.
+          THE EXPLAINERS NOW REACH SIMPLE TOO. They were nulled there, so a Simple reader could
+          open neither sheet — and v7.1 puts one of these multiples on the Simple FACE, which
+          would have meant a labelled number with no way to learn what it is. */}
+      <Row label="P/S · trailing" explain={valuationExplain(c, "ps")} value={typeof v.capToTtmRevenue === "number" ? `${v.capToTtmRevenue.toFixed(1)}×` : null} unavailable={v.unavailable} sub={v.ttmRevenuePeriod ? `cap ÷ TTM revenue · ${money(v.ttmRevenue)} ${v.ttmRevenuePeriod}` : null} />
+      <Row label="P/E · trailing" explain={valuationExplain(c, "pe")} {...peDisplay(c)} />
       <Row label="Shares out." value={typeof sh.value === "number" ? `${(sh.value / 1e9).toFixed(3)}B` : null} unavailable={sh.unavailable} sub={sh.asOf ? `at ${sh.asOf}` : null} />
-      <Row label="Price trend"
+      {/* v7.1 — DEGEN ONLY. A moving average is a TECHNICAL reading (src/signalRoles.js: the
+          200-day is Engine 0's own check and the Macro Flip's input), and the owner's
+          definition puts technicals in Degen. This row reached Simple one tap deep inside
+          "Explore the numbers", which is the last technical leak on the default view.
+          The row is not deleted and the data is untouched — it moves modes. */}
+      {!simple && <Row label="Price trend"
         value={typeof tr.px === "number" && typeof tr.ma200 === "number" ? `$${tr.px} · ${tr.above200 ? "above" : "below"} 200-day $${tr.ma200}${typeof tr.ma50 === "number" ? ` · 50-day $${tr.ma50}` : ""}` : null}
         unavailable={typeof tr.px === "number" && typeof tr.ma200 === "number" ? null : (tr.unavailable || "unavailable")}
-        sub={tr.asOf ? `close ${tr.asOf}${tr.basis === "total_return" ? " · adjusted series" : ""}` : null} />
+        sub={tr.asOf ? `close ${tr.asOf}${tr.basis === "total_return" ? " · adjusted series" : ""}` : null} />}
       {rr && <Row label="Run-rate vs TTM" value={`${money(rr.annualized)} vs ${money(rr.ttm) || "TTM unavailable"}`} sub={typeof rr.gapPct === "number" ? `latest quarter × 4 is ${pct(rr.gapPct)} vs reported TTM` : "latest quarter × 4"} />}
       {c.assessment && c.assessment.inputs && c.assessment.inputs.length > 0 && (
         <div style={{ marginTop: 5 }}>
           <div style={{ fontFamily: T.fontMono, fontSize: T.fsXs, color: T.textMuted, letterSpacing: "0.1em" }}>CALCULATION INPUTS</div>
           <ul style={{ margin: "2px 0 0", paddingLeft: 16, fontFamily: T.fontMono, fontSize: T.fsXs, color: T.textSecondary, lineHeight: 1.5 }}>
-            {c.assessment.inputs.map((s, i) => <li key={i}>{s}</li>)}
+            {/* v7.1: the same technical/mode rule as the Price trend row above — the
+                moving-average input line is Degen's. Filtered, not hidden wholesale: every
+                other calculation input is a fundamental and stays where a Simple reader can
+                check the arithmetic behind the multiple on the face. */}
+            {c.assessment.inputs.filter((t) => !simple || !/\b(50|100|200)-day\b/i.test(t)).map((s, i) => <li key={i}>{s}</li>)}
           </ul>
         </div>
       )}
