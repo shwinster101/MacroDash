@@ -1,32 +1,14 @@
-# v7.0.4 Spotlight lock (working branch)
+# v7.0.4 Spotlight lock
 
 Branch: `working/v7.0.4-spotlight-lock`
-Baseline: main @ 489c22c (v7.0.1).
 
-## DO THIS FIRST
-`src/dashboard.jsx` on this branch was briefly overwritten. Restore from the parent commit, then apply one line:
+## On the branch now
+- `src/simpleFace.js` — `spotlightLocked` + lesson copy
+- `test/spotlight-lock.mjs` — 10 pure pins (`node test/spotlight-lock.mjs`)
 
-```
-git checkout 1b639e3f50316a4f842a0f2aa128ce3d09d63a70 -- src/dashboard.jsx
-```
+## Still drop in (API payload too large from this session)
+- Restore `src/dashboard.jsx` from `1b639e3`, then set:
+  `<StockSpotlight spotlight={spotlight} simple={simple} callHeadline={dailyCall.headline}/>`
+- Replace `src/sections/StockSpotlight.jsx` with the lock UI (eyebrow, YTD demoted, Simple fold)
 
-Change the Spotlight mount to:
-
-```
-<StockSpotlight spotlight={spotlight} simple={simple} callHeadline={dailyCall.headline}/>
-```
-
-Drop in `src/sections/StockSpotlight.jsx` from this working packet (eyebrow, row order, Simple fold).
-
-`src/simpleFace.js` on the branch is already correct (`spotlightLocked`).
-
-## Scope
-Presentation only. No roster, rotation, thresholds, APIs, or frozen-call arithmetic.
-
-When the frozen public headline is Hold, HODL, Bearish, or RISK-OFF:
-
-- Eyebrow becomes `lesson — not a buy list` (both modes).
-- Simple card order is market cap → quality stat → YTD, and YTD is not the big number.
-- Simple folds the widget behind `Stock Spotlight · lesson` so the face can end at Market Performance.
-
-Bullish / RISK-ON is unchanged.
+Do not merge while dashboard.jsx is PLACEHOLDER.
