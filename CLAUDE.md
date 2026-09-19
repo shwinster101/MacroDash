@@ -1,5 +1,139 @@
 # CLAUDE.md — MacroDash
 
+**v7.1.0 — SIX VOTERS, STATED; every other real factor integrated into Degen by ROLE.**
+**OWNER RULING 2026-09-19: the 7th voter seat stays EMPTY.** The public backdrop is six voters —
+10Y · VIX · F&G · CPI · CAPE · NFCI — and that is now a deliberate ceiling, not a count that
+happens to be six. Everything else the feed carries is real and is INTEGRATED, as something other
+than a vote. **NO BAND MOVED. No `vote()` function changed. No threshold on any voter moved.**
+**THE COUNT TRAP, CLOSED BEFORE IT COULD OPEN.** `REGIME_QUORUM` was a bare literal `4` while
+`verdictFrom()` derived its majority from `counted`. Measured: at six voters both rules read
+two-thirds; at seven the majority drops to **57% BY DESIGN** and the quorum would have dropped to
+**57% BY OMISSION** — silently loosening the strongest abstention claim the public engine makes,
+as a side effect of what looks like a pure addition. That is the DEC-31 / v5.97.0 count trap one
+engine over: Engine 0 has derived its thresholds from `checks.length` since then, and the public
+backdrop never did. The quorum is now `Math.ceil((REGIME_BAND_TABLE.length * 2) / 3)` — **the
+two-thirds rule the surrounding comment always CLAIMED is the one the code COMPUTES** — and at
+six voters it evaluates to 4, byte-identical on every tape today.
+**`src/signalRoles.js` — the one home for "what job does this number do".** Six roles (voter ·
+override · technical · context · return · fundamental); every `SOURCES` field carries one,
+inherits one through `DERIVED_OF`, or is explicitly exempt, and the sweep NAMES any that does
+not. It deliberately does **NOT** import `REGIME_BAND_TABLE`: `regime.js` is the import-free root,
+and the v3.88 sweep forbids naming `creditTail`/`sahm`/`spread10y3m` in the voting path — so the
+voter set is **RECONCILED in smoke** (the SOURCES ↔ DERIVED_OF and `EXECUTABLE_PATHS` idiom, and
+the same call v7.0.3 made for the F&G bands). Roles inherit through the derivation graph, so only
+PRIMARIES need entries; a derivative whose JOB differs declares its own — **`spyMa200` is
+technical though `spyPrice` is a return**, because the graph is about DATES, not jobs.
+`simpleAllowed()` **FAILS CLOSED**, so a signal added later is absent from Simple until someone
+gives it a job.
+**SIMPLE = FUNDAMENTALS (owner definition).** For the market call that means **the voters only**;
+for the stock widget, market cap, one multiple and returns. The Explore fold's strip now filters
+on the registry rather than a second hardcoded list, so the **FED policy-rate tile leaves it** and
+the fold is the **five VOTER tiles** — FED is not deleted, `FedPolicyTile` renders it in the Degen
+tape. **Returns stay in Simple** ("returns are fundamentals", owner). The SESSION Δ bar is gated
+Degen-only, the moving-average readings move to Degen, and a **registry-derived sweep** proves no
+technical or context reading reaches the default view at four widths.
+**BEYOND THE VOTE — the half of the ask nothing had built.** v6.9.9.5 organised the SIX voters and
+nothing ever organised the rest: credit, the junk tail, both curve spreads, financial leverage,
+labour, the price technicals and the rate path reached Degen only as leftover tiles with **NO
+STATED ROLE**. `src/sections/BeyondVote.jsx` + `src/beyondRows.js` give each one a role, a state
+and — on **every row** — the fact that the call does not read it, sourced from the registry so a
+role change moves the sentence with it. **OVERRIDES stay on the FACE** (PANIC and Macro Flip, with
+distance to trigger; a blind circuit reads BLIND or CANNOT SEE, never CLEAR — the v3.40
+asymmetry), and TECHNICALS and CONTEXT each take a **named tap**. Own `.beyond-card` class: the
+Drivers matrix pins exactly six `.driver-card`s at four widths and two mode-parity loops walk them
+by index, so borrowing the class would have broken three suites' arithmetic while looking tidy.
+**⚠ CORRECTION TO MY OWN PLAN, recorded rather than quietly followed.** The plan said to call
+`buildTtReadout` client-side for the four Engine 0 checks and simply never read its verdict. Wrong
+shape, twice over: every one of those four is a READING this page already holds, so running an
+order-gating engine to re-derive them would put a SECOND derivation beside the strip that renders
+the same numbers (the v6.0.2 one-page-two-answers defect, introduced on purpose) — and **"readings
+only, no verdict word" is structural when there is no verdict in scope and merely remembered when
+there is.** The block reads the merged data directly and cannot print a verdict because it never
+computes one. What the readout contributes is the check NAME, which the registry already carries.
+**`src/contextBands.js` — one home for the non-voters' thresholds.** `creditSpread`'s 5 and 3.5
+were **inline JSX literals with no name anywhere in the product**; `creditTail`'s mapping was
+inline while its constants sat in `regime.js`; `spread10y3m` had no band at all. A second surface
+rendering the same readings turns "two copies waiting to disagree" from latent into immediate, so
+`MarketDetail` now READS the band functions and the retired inline expressions are pinned absent.
+Bands return a `toneKey`, never a resolved colour (the C1 purity rule).
+**THE STOCK WIDGET'S ONE APPLICABLE MULTIPLE (owner addendum).** Both multiples have existed since
+v6.6.3 and **neither was ever selected**; worse, `capToTtmRevenue` IS price-to-sales and the string
+"P/S" appeared nowhere, so the multiple this product reserves for unprofitable companies was the
+one a reader could not look up. `applicableMultiple()` (`src/spotlightMultiple.js`, a pure LEAF so
+`simpleFace` and `spotlightExplain` can both read it): **positive TTM earnings → trailing P/E ·
+negative or zero → P/S, labelled, with the reason · earnings data MISSING → UNAVAILABLE, never
+P/S.** That third branch is load-bearing — falling through would assert a loss nobody measured
+("missing earnings evidence is not a loss"), and a missing PERIOD counts as missing because
+borrowing the revenue period would date one number with another's clock. The guarantee is
+**POSITIONAL**, so the ordering is pinned. Simple renders market cap · the multiple · revenue
+growth · return, all typed through `spotlightFace` (the cap row used to be JSX reaching around
+that projection, which is why it was the one row nobody could pin), with **both clocks on screen**
+via an opt-in `subAlways` — and the second is NAMED for what it is, since `marketCap.observedAt`
+is the price date only when the cap was derived. **NO CHEAP/EXPENSIVE COLOUR in either mode**
+(owner): the module returns no colour at all, and the browser pins MEASURE the rendered ink
+against the neighbouring row rather than asserting "not green".
+**MORTGAGE — the owner's question, ruled in code.** `mortgage30` is **CONTEXT, never a voter**: as
+a vote it fails the v3.43 moat test, being a spread over the 10-year the backdrop already votes
+on — two votes for one observation, the TLT rejection in a different wrapper. It earns its place
+as context because the **spread over the 10-year** is a credit-transmission fact the 10-year alone
+cannot see, and that is what the row now states (withheld when either leg is dark — the `pairRs`
+rule). **Three defects fixed in that row, all found while answering:** no `SourceBox` at all (a
+dead feed rendered a mock 6.51% with a hand-written red and no date — the v3.1 invariant, live), a
+hardcoded `T.red` on a live number (the v6.9.5 class, which swept the strip and never reached
+`MacroRegime`), and curated Peoria figures rendering as if live (now labelled illustrative, not
+cut — retention is an owner ruling). **And the sweep that should have caught it was VACUOUS:**
+*"every SourceBox in the macro grid passes an asOf"* compares SourceBox count against dated count,
+so a row with **no SourceBox at all** was invisible to it (the v3.60.1 trap). Re-pinned on the SET
+of fields; the control now reports `missing: mortgage30` where the old one printed green.
+**THE COMPOSITION IS NOT LOCKED — only the COUNT.** Asked whether the current six are the optimal
+six, the ruling was **record, do not act**. Three measured findings are in the working note:
+**valuation is close to a permanently one-way voter** (bull below 26.1, and every fixture in the
+repo votes bear — CAPE last sat below 26.1 around 2013, so the bull side is structurally
+unreachable; *"a factor that always votes the same way does not inform a majority tally, it
+silently biases it"* is this repo's own v3.43.1 finding, and valuation never got NFCI's asymmetric
+treatment); **sentiment partly duplicates volatility** (the F&G band's own explainer says so); and
+**growth is the uncovered channel** — which is exactly what makes v7.2's override the right home
+for it *without spending a seat*.
+**Two of my own registry classifications were WRONG and are corrected rather than edited away:**
+`threeMonth` and `spread10y3m` were filed `technical`, but this file defines technical as a
+reading **Engine 0 gates orders on**, and neither is among its seven checks — they are context.
+Caught by rendering them, because a row claiming the order-gating engine reads it when it does not
+is a fabricated provenance. `qqqChangePct` had the mirror defect: it inherited `return` from
+`qqqPrice` while relative strength IS Engine 0's own check.
+**`SpyTapeBadge` DELETED** — its only call site went dead in v6.9.9 when `MacroStrip` began
+returning `SimpleMarketTape` for both modes and never reached the `badge` slot, while the
+orchestrator kept constructing it every paint. Dead code is a rot vector (v3.73); pinned absent.
+The v6.4 "Simple hides the SPY tape" pin had been matching a gate on a branch nothing took for
+five releases and is re-pinned on the absence.
+**FOUND, NOT FIXED, and each pinned as the state it is actually in:** the **SESSION Δ bar is
+unreachable, not merely ungated** — its negative control did not bite, because `sessionDelta` has
+no `SOURCES` key and `MOCK_DATA` pins it to exactly the state `showDeltaBar` hides on, so it
+cannot render on any fixture or live build (deleting a FEAT-id'd feature is an owner call); and
+**one 200-day mention survives in Simple** inside the authored STOCK paragraph two taps deep,
+because removing it means surgery on a composed sentence and a display string is the wrong
+integrity boundary (v4.0.3). **My first pin for that claimed it was fixed. It was not** — the pin
+was narrowed to what shipped and the remainder asserted explicitly.
+Verification: browser-required `npm run gates` passed **2,808 smoke** (+78; sections [92] signal
+roles, [93] the multiple's full truth table, [94] beyond-the-vote and the context bands), **353
+admin-browser** and **732 public-browser** (+22, driven live in Chromium: the block in Degen and
+absent in Simple, the overrides outside every fold, both folds named and closed on arrival, every
+card's does-not-vote line counted against the cards RENDERED, the Simple face's single multiple
+with both dates, and the ink measured against the neighbouring row in both modes); production
+audit found zero vulnerabilities. **Negative-controlled fourteen ways across three slices**, each
+turning exactly its own pins — including the quorum hardcoded back (only the derivation pin goes
+red while the value pin stays green, proving the value pin alone would never have caught it), a
+7th voter appended, the missing-earnings branch falling through to P/S, the block rendered in
+Simple (which also blows the Simple glance budget, 900px against 660 — independent evidence it
+belongs in Degen), and `MarketDetail` restating a band inline.
+**Four of my own pins were wrong on their first run**, each recorded: a colour probe that measured
+the amber ⓘ affordance instead of the value; a fold locator that looked for `<details>` where
+`CollapsedGroup` renders a button, reporting "0 of 0" cards; a verdict sweep that matched the
+**Headwinds register by name**; and the v3.60.1 self-matching trap **three times in three files**,
+where a comment explaining a rule tripped the sweep enforcing it. Two browser patterns were
+written and **REMOVED for being vacuous** rather than left looking like coverage.
+Decisions, the version plan for v7.2/v7.3 and the composition evidence:
+[`working/2026-09-19-v71-six-voters.md`](working/2026-09-19-v71-six-voters.md).
+
 **v7.0.3 — the F&G asterisk: one number, two band tables, and the split finally said out loud.**
 **Version note: 7.0.1 → 7.0.3 is an owner-set number. 7.0.2 does not exist and is not a phantom
 release** (the v5.9.5 / v4.99 precedent — a jump is recorded, never quietly renumbered).

@@ -106,10 +106,20 @@ export const SIGNAL_ROLES = Object.freeze({
   spyMa200:     { ...T("The crash circuit's own line. Engine 0 gates on it; the backdrop does not.", "spy_vs_200d"),
                   feedsOverride: "MACRO FLIP" },
   spyMa100:     T("A trend reference shown beside the 200-day. Neither engine votes on it."),
+  /* Like spyMa200 above, and caught the same way — by putting it on screen. qqqChangePct
+     inherits `return` from qqqPrice through the derivation graph, but Nasdaq-vs-S&P RELATIVE
+     STRENGTH is Engine 0's own check, not a return a reader holds. The graph is about dates. */
+  qqqChangePct: T("Relative strength is Engine 0's check; the backdrop votes on neither index.", "qqq_spy_rs"),
   thirtyYear:   T("Engine 0 reads the long end's own speed and the curve SHAPE.", "us30y_curve"),
   spread10s30s: T("Term premium — the shape the 10-year alone structurally cannot see.", "us30y_curve"),
-  threeMonth:   T("The front end, carried only so the classic recession lead can be computed."),
-  spread10y3m:  T("The classic recession lead. Derived from both legs so a stale leg blinds it."),
+  /* ⚠ CORRECTION to my own v7.1 Slice A classification, recorded rather than edited away.
+     Both of these were filed `technical`, and they are not: this file defines technical as a
+     reading ENGINE 0 GATES ORDERS ON, and neither is among its seven checks (spy_vs_200d, vix,
+     fear_greed, qqq_spy_rs, us10y_trend, fed_next_meeting, us30y_curve). They are context — real
+     readings neither engine acts on. Caught by rendering them: a row that claimed the
+     order-gating engine reads it, when it does not, is a fabricated provenance. */
+  threeMonth:   C("The front end, carried only so the classic recession lead can be computed."),
+  spread10y3m:  C("The classic recession lead. Neither engine gates on it; it informs."),
   rateOddsHold: T("The market's own read of the policy path, into the next decision.", "fed_next_meeting"),
 
   // ── CONTEXT — real readings neither engine gates on ───────────────────────────────────────

@@ -9,7 +9,12 @@
 import { Fragment } from "react";
 import { LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer, ReferenceLine } from "recharts";
 import { T } from "../design-tokens.js";
-import { NFCI_TIGHT, NFCI_LOOSE, CREDIT_TAIL_CALM, CREDIT_TAIL_STRESS, REGIME_BAND_TABLE } from "../regime.js";
+import { NFCI_TIGHT, NFCI_LOOSE, REGIME_BAND_TABLE } from "../regime.js";
+/* v7.1: the non-voters' bands move OUT of this file into one home. They were inline literals
+   here — creditSpread's 5 and 3.5 existed nowhere else in the product under any name — and
+   v7.1 adds a second surface that renders the same readings, which turns "two copies waiting
+   to disagree" from latent into immediate. Read, never restated. */
+import { bandCreditSpread, bandCreditTail, bandCurve10y3m } from "../contextBands.js";
 import { fmt, pctColor } from "../format.js";
 import { Badge, Label } from "../primitives/atoms.jsx";
 import SectionHeader from "../primitives/SectionHeader.jsx";
@@ -120,7 +125,7 @@ const MarketDetail=({d,modeOf,asOfOf,demoted,spyData,goldenCross})=>{
                 { f:"creditSpread", render:()=>(
                   <div style={{background:T.surface,border:`1px solid ${T.border}`,borderRadius:5,padding:"10px 12px"}}>
                     <Label>HY–IG SPREAD</Label>
-                    <div style={{fontFamily:T.fontMono,fontSize:20,color:d.macro.credit.spread>5?T.red:d.macro.credit.spread>3.5?T.yellow:T.textPrimary,fontWeight:700}}>
+                    <div style={{fontFamily:T.fontMono,fontSize:20,color:T[bandCreditSpread(d.macro.credit.spread).toneKey],fontWeight:700}}>
                       {d.macro.credit.spread.toFixed(2)}<span style={{fontSize:T.fsS}}>pp</span>
                     </div>
                     <div style={{fontFamily:T.fontMono,fontSize:T.fsXs,color:d.macro.credit.spreadD1>0?T.red:d.macro.credit.spreadD1<0?T.green:T.textMuted}}>
@@ -191,8 +196,7 @@ const MarketDetail=({d,modeOf,asOfOf,demoted,spyData,goldenCross})=>{
                 { f:"creditTail", render:()=>{
                   const cMode=modeOf('creditTail'), cIllus=isIllustrative(cMode);
                   const v=d.macro.credit.tail, dd1=d.macro.credit.tailD1;
-                  const band=v>CREDIT_TAIL_STRESS?"STRESSED":v<CREDIT_TAIL_CALM?"CALM":"NEUTRAL";
-                  const bandCol=band==="STRESSED"?T.red:band==="CALM"?T.green:T.yellow;
+                  const tail=bandCreditTail(v); const band=tail.state; const bandCol=T[tail.toneKey];
                   return (
                   <div style={{background:T.surface,border:`1px solid ${T.border}`,borderRadius:5,padding:"10px 12px",
                     backgroundImage:cIllus?ILLUS_HATCH:undefined,opacity:cIllus?0.92:1}}>
@@ -243,7 +247,7 @@ const MarketDetail=({d,modeOf,asOfOf,demoted,spyData,goldenCross})=>{
                      one curve note per long tile). INVERTED is the signal word; no "for N
                      months" memory — that would be asserted, not measured. */
                   { f:"tenYear", render:()=><DirTile label="10Y Treasury" value={`${d.crossAsset.treasury10y.current}%`} d1={d.crossAsset.treasury10y.d1} w1={d.crossAsset.treasury10y.w1} m1={d.crossAsset.treasury10y.m1} band={0.10} invert={true} spark={d.crossAsset.treasury10y.series} source="FRED" sourceEp="DGS10" mode={modeOf('tenYear')} asOf={asOfOf('tenYear')}
-                      note={`10y–3m ${d.crossAsset.term.spread10y3m>=0?"+":""}${d.crossAsset.term.spread10y3m.toFixed(2)}pp${d.crossAsset.term.spread10y3m<0?" — INVERTED":""}`}
+                      note={`10y–3m ${d.crossAsset.term.spread10y3m>=0?"+":""}${d.crossAsset.term.spread10y3m.toFixed(2)}pp${bandCurve10y3m(d.crossAsset.term.spread10y3m).state==="INVERTED"?" — INVERTED":""}`}
                       noteTitle={"10Y minus 3-month bill — the NY Fed recession-model spread; inversion has led every US recession since 1969"}/> },
                   /* FEAT-30Y (v3.55): the LONG END, beside the 10Y because the pair is the
                      point. TLT was rejected in v3.43 as a monotonic transform of the 10Y —

@@ -103,6 +103,10 @@ const sqSrc = readSrc("../src/sections/SignalQuality.jsx");
 const wcSrc = readSrc("../src/sections/WhatChanged.jsx");
 // wave 9 (tasks 5.2-5.4): MarketDetail, MacroRegime, Headwinds + the DirTile primitive.
 const mdSrc = readSrc("../src/sections/MarketDetail.jsx");
+// v7.1 — NOTE the names: cbSrc is already CallBanners.jsx, so the non-voter band module and
+// its projection take their own, rather than shadowing a source three sections already read.
+const ctxSrc = readSrc("../src/contextBands.js");
+const beyondSrc = readSrc("../src/beyondRows.js");
 const mrSrc = readSrc("../src/sections/MacroRegime.jsx");
 const hwSrc = readSrc("../src/sections/Headwinds.jsx");
 const dtSrc = readSrc("../src/primitives/DirTile.jsx");
@@ -122,7 +126,8 @@ const utSrc = readSrc("../src/primitives/UndoToast.jsx");
 // v7.1: stbSrc is GONE — SpyTapeBadge.jsx was deleted (dead since v6.9.9, see [85]).
 const cbSrc = readSrc("../src/sections/CallBanners.jsx");
 const dmSrc = readSrc("../src/sections/DriversMatrix.jsx");
-const uiSrc = dashSrc + spcSrc + bandSrc + whysSrc + sbSrc + shSrc + stripSrc + sqSrc + wcSrc + mdSrc + mrSrc + hwSrc + dtSrc + aiSrc + alSrc + dhSrc + wlSrc + navSrc + tdSrc + utSrc + cbSrc + dmSrc;
+const bvSrc = readSrc("../src/sections/BeyondVote.jsx"); // v7.1: joins uiSrc or the every-surface negatives go vacuous
+const uiSrc = dashSrc + spcSrc + bandSrc + whysSrc + sbSrc + shSrc + stripSrc + sqSrc + wcSrc + mdSrc + mrSrc + hwSrc + dtSrc + aiSrc + alSrc + dhSrc + wlSrc + navSrc + tdSrc + utSrc + cbSrc + dmSrc + bvSrc;
 // v6.5.5: MOCK_DATA lives in src/mockData.js and is IMPORTED (the C1 regime.js form). The old
 // brace-count slice + eval over dashSrc CRASHED the suite (no total printed) if the marker
 // moved — a suite that dies mid-run reads as a suite that never ran (the v3.99.4 P0 shape).
@@ -7733,6 +7738,7 @@ console.log("\n[58] FEAT-TT-MAG7 — deck panel, basket average, honesty gates")
   console.log("\n[59] v3.88 — creditTail, sahm, spread10y3m");
   const { sahmFrom, SAHM_TRIGGER } = await import("../src/sahm.js");
   const RG = await import("../src/regime.js");
+  const CB = await import("../src/contextBands.js");
   // Series wired through the existing fetch path — no new fetcher (the 30Y rule).
   ok("v388: BAMLH0A3HYC + DGS3MO ride the existing series map, no new fetcher",
     /creditTail:\s*"BAMLH0A3HYC"/.test(snapSrc) && /threeMonth:\s*"DGS3MO"/.test(snapSrc) &&
@@ -7770,13 +7776,23 @@ console.log("\n[58] FEAT-TT-MAG7 — deck panel, basket average, honesty gates")
     SAHM_TRIGGER === 0.5 && (0.5 >= SAHM_TRIGGER) === true && (0.49 >= SAHM_TRIGGER) === false &&
     /const trig=sv>=SAHM_TRIGGER/.test(mrSrc) && /import \{ SAHM_TRIGGER \} from "\.\.\/sahm\.js"/.test(mrSrc));
   // CCC thresholds: ONE home (regime.js), imported by the tile, executed at −ε/edge/+ε.
-  ok("v388: CREDIT_TAIL thresholds live in regime.js, the tile imports them, boundaries execute",
+  /* RE-PINNED v7.1, and the claim is STRONGER, not loosened. This matched the LITERAL inline
+     expression `const band=v>CREDIT_TAIL_STRESS?...` in MarketDetail — the shape that passes
+     through any wrong rewrite and fails on the right one (the v5.6.4/v6.8.4 lesson). v7.1 moves
+     the BANDING into src/contextBands.js, the one home for the non-voters' thresholds, because
+     the Beyond-the-vote block renders the same readings and two copies of a mapping are the
+     drift this repo keeps paying for. The CONSTANTS did not move: they still live in regime.js,
+     contextBands imports them rather than re-typing them, and the boundaries are executed
+     through the REAL band function instead of a restatement of it inside the test — which is
+     itself an upgrade, since the old pin's `band` was a third copy of the same mapping. */
+  ok("v388: CREDIT_TAIL thresholds live in regime.js, ONE band function reads them, boundaries execute",
     (() => {
-      const band = (v) => v > RG.CREDIT_TAIL_STRESS ? "STRESSED" : v < RG.CREDIT_TAIL_CALM ? "CALM" : "NEUTRAL";
+      const band = (v) => CB.bandCreditTail(v).state;
       return RG.CREDIT_TAIL_CALM === 7 && RG.CREDIT_TAIL_STRESS === 12 &&
         band(6.99) === "CALM" && band(7) === "NEUTRAL" && band(12) === "NEUTRAL" && band(12.01) === "STRESSED" &&
-        /import \{[^}]*CREDIT_TAIL_CALM, CREDIT_TAIL_STRESS[^}]*\} from "\.\.\/regime\.js"/.test(mdSrc) &&
-        mdSrc.includes('const band=v>CREDIT_TAIL_STRESS?"STRESSED":v<CREDIT_TAIL_CALM?"CALM":"NEUTRAL"');
+        /import \{ CREDIT_TAIL_CALM, CREDIT_TAIL_STRESS \} from "\.\/regime\.js"/.test(ctxSrc) &&
+        !/CREDIT_TAIL_STRESS\s*\?/.test(mdSrc) &&        // the inline mapping is retired
+        mdSrc.includes("bandCreditTail(v)");
     })());
   ok("v388: the CALM/STRESSED verdict is suppressed on mock/stale (the NFCI badge pattern)",
     /cIllus\?\(cMode==="STALE"\?<DataModeBadge mode="STALE"\/>:<IllustrativeChip\/>\)/.test(mdSrc));
@@ -13893,5 +13909,6 @@ await (await import("./market-returns.mjs")).testMarketReturns(ok);
 (await import("./fng-band-split.mjs")).testFngBandSplit(ok);
 (await import("./signal-roles.mjs")).testSignalRoles(ok);
 (await import("./spotlight-multiple.mjs")).testSpotlightMultiple(ok);
+(await import("./beyond-vote.mjs")).testBeyondVote(ok);
 console.log(`\n=== SMOKE TEST: ${pass} passed, ${fail} failed ===`);
 process.exit(fail === 0 ? 0 : 1);

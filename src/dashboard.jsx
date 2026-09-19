@@ -30,6 +30,7 @@ import StockSpotlight from "./sections/StockSpotlight.jsx"; // v6.5.0: the NBIS 
 import DriversMatrix from "./sections/DriversMatrix.jsx"; // v6.5.5: the C3 factor cards (presentation only; the !simple gate + landmark stay here)
 import StickyNav from "./sections/StickyNav.jsx"; // task 9.2: viewport-tracked active state
 import MacroStrip from "./sections/MacroStrip.jsx"; // task 3.1: presentation only
+import BeyondVote from "./sections/BeyondVote.jsx"; // v7.1: the non-voters, by role
 import SignalQuality from "./sections/SignalQuality.jsx"; // task 3.2: presentation only
 import WhatChanged from "./sections/WhatChanged.jsx"; // task 3.3: presentation only
 import { publicDashboardUrl, liveReadCaption, publicMarketClock, publicMarketClockLine, simpleCallLabel } from "./publicCopy.js";
@@ -574,6 +575,11 @@ export default function Dashboard({ publicView = false } = {}) {
            shrink it below the floor without failing the pin. */
         .driver-columns{display:grid;grid-template-columns:minmax(0,1.15fr) minmax(0,.5fr) minmax(0,1.3fr) minmax(0,.8fr);gap:12px;align-items:start;}
         .driver-head{padding:0 12px 6px;}
+        /* v7.1: the Beyond-the-vote grid. Two columns (reading | provenance) rather than the
+           Drivers matrix's four — these rows carry no stance and no flip condition, so
+           borrowing a four-column grid would leave two empty tracks at every width. */
+        .beyond-columns{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,.55fr);gap:10px;align-items:start;}
+        @media(max-width:767px){.beyond-columns{grid-template-columns:minmax(0,1fr);gap:4px;}.beyond-columns>div:last-child{display:flex;gap:6px;flex-wrap:wrap;align-items:center;}}
         @media(max-width:767px){.driver-columns{grid-template-columns:minmax(0,1fr) auto;gap:6px 10px;}.driver-condition{grid-column:1/-1;}.driver-columns>div:last-child{grid-column:1/-1;display:flex;gap:6px;flex-wrap:wrap;align-items:center;}.driver-head{display:none;}}
         .simple-card{min-height:44px;}
         .simple-signals-grid{display:grid;grid-template-columns:1fr;gap:3px;}
@@ -777,6 +783,15 @@ export default function Dashboard({ publicView = false } = {}) {
       {!simple&&<section aria-labelledby="drivers" style={{padding:"10px 20px",borderBottom:`1px solid ${T.border}`}}>
         <h2 id="drivers" className="visually-hidden">Drivers — the six signals behind the call</h2>
         <DriversMatrix evidenceSet={evidenceSet} drift={callFrozen&&simpleSignalsDiffer(dailyCall,currentCall)}/>
+      </section>}
+      {/* ── v7.1 BEYOND THE VOTE — Degen only, directly under the six voters, because the
+          reading order is the argument: what decides the call, then what does not.
+          Presentation-only section; every threshold lives in src/contextBands.js and every
+          "why it does not vote" sentence in src/signalRoles.js. It renders no verdict word
+          because it computes no verdict (owner ruling: readings only). ── */}
+      {!simple&&<section aria-labelledby="beyond" style={{padding:"10px 20px",borderBottom:`1px solid ${T.border}`}}>
+        <h2 id="beyond" className="visually-hidden">Beyond the vote — the factors the call does not read</h2>
+        <BeyondVote d={d} modeOf={modeOf} asOfOf={asOfOf} flip={flipState} panic={panic}/>
       </section>}
       {!simple&&<WhatChanged changed={changed}/>}
 

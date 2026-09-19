@@ -568,6 +568,13 @@ console.log("\n[public] v3.94 — Simple default, the toggle, persistence, red f
     ok(`v7.1 simple: no technical or context READING reaches the default view${leaks.length ? " — leaked: " + leaks.join("; ") : ""}`,
       leaks.length === 0);
   }
+  /* v7.1: the Beyond-the-vote block is Degen's. Simple's market call IS the voters (owner
+     definition), so a block whose whole subject is the non-voters has no place on it. The Degen
+     scenario proves the same block renders there, so this absence is a mode gate, not an
+     empty feed. */
+  ok("v7.1 simple: the Beyond-the-vote block is absent — Simple's call is the voters",
+    (await page.locator(".beyond-vote").count()) === 0
+    && (await page.locator('[aria-labelledby="beyond"]').count()) === 0);
   // v3.95: the whys ARE reachable in Simple — one honestly-labelled expander under the
   // hero sentence, closed on a first visit, holding the chain and nothing technical.
   ok("v3.95 simple: the checks expander is present and CLOSED — label visible, no check statements",
@@ -956,6 +963,67 @@ console.log("\n[public] v3.60 P0 slice — nav, matrix, digest, health");
     const missing = shouldRender.filter(([re]) => !re.test(degenBody)).map(([, n]) => n);
     ok(`v7.1 contrast: every reading Simple excludes DOES render in Degen — the absence pin is not vacuous${missing.length ? " — never rendered: " + missing.join(", ") : ""}`,
       missing.length === 0);
+  }
+
+  /* ── v7.1 BEYOND THE VOTE — Degen's evidence view for every factor that is NOT a voter ────
+     v6.9.9.5 organised the six voters and nothing ever organised the rest. Driven live here:
+     the block exists in Degen, the overrides are on the face, each fold is named and closed on
+     arrival, and NO Engine 0 verdict word reaches the page (owner ruling: readings only). */
+  {
+    const bv = page.locator(".beyond-vote");
+    ok("v7.1 beyond: the block renders in Degen, directly under the six voters",
+      (await bv.count()) === 1 &&
+      (await page.evaluate(() => {
+        const dd = document.querySelector('[aria-labelledby="drivers"]');
+        const bb = document.querySelector('[aria-labelledby="beyond"]');
+        return Boolean(dd && bb) && (dd.compareDocumentPosition(bb) & Node.DOCUMENT_POSITION_FOLLOWING) > 0;
+      })));
+    /* The overrides are RED FACTS and stay outside every fold (v3.25). Measured against the
+       rendered DOM rather than the source, because "outside a fold" is a layout claim. */
+    ok("v7.1 beyond: the overrides render on the FACE — never inside a disclosure",
+      (await bv.locator(".beyond-override").count()) === 2 &&
+      (await page.evaluate(() => [...document.querySelectorAll(".beyond-override")]
+        .every((n) => !n.closest("details")))));
+    const bvText = await bv.innerText();
+    ok("v7.1 beyond: both safety circuits are named with a state a reader can act on",
+      /PANIC override/i.test(bvText) && /Macro Flip/i.test(bvText)
+      && /(CLEAR|FIRED|ARMED|TRIPPED|BLIND|CANNOT SEE)/.test(bvText));
+    /* NO VERDICT WORD (owner ruling: readings only). ⚠ My first version swept the WHOLE page
+       case-insensitively and failed — on the "Headwinds" register, a section that has carried
+       that name since v3.0 and has nothing to do with Engine 0's verdict. A sweep that matches a
+       legitimate unrelated word reports a defect that does not exist, which is the same class of
+       useless as a vacuous pin. Scoped to this block, where the claim actually lives, and
+       case-SENSITIVE on the verdict tokens, which Engine 0 publishes in caps. */
+    ok("v7.1 beyond: no Engine 0 verdict word reaches the block (readings only)",
+      !/\b(TAILWIND|HEADWIND)\b/.test(bvText) && !/\bNEUTRAL\b/.test(bvText));
+    /* CollapsedGroup is a `button.cg-toggle` with conditional children, NOT a <details> — my
+       first version of this pin located <details> and found none, so the click loop below never
+       ran and the card pins reported "0 of 0". A pin that measures the wrong element reports a
+       defect that does not exist. */
+    const folds = bv.locator("button.cg-toggle");
+    ok("v7.1 beyond: two named folds, both closed on arrival",
+      (await folds.count()) === 2 &&
+      (await folds.evaluateAll((ns) => ns.every((n) => n.getAttribute("aria-expanded") === "false"))) &&
+      /technicals — what the order-gating engine reads/i.test(bvText) &&
+      /context — credit, the curve, leverage/i.test(bvText));
+    /* THE FACT THAT MAKES THIS BLOCK HONEST. Every card must SAY the call does not read it —
+       these sit under six cards that look identical and DO vote. Asserted as a COUNT against the
+       cards actually rendered, so a row missing the line fails rather than being skipped. */
+    for (const f of await folds.all()) await f.click();
+    await page.waitForTimeout(250);
+    const bvCards = await bv.locator(".beyond-card").count();
+    const bvWhys = await bv.locator(".beyond-why").count();
+    ok(`v7.1 beyond: EVERY card states that the call does not read it (${bvWhys} of ${bvCards})`,
+      bvCards >= 10 && bvWhys === bvCards);
+    ok("v7.1 beyond: the technicals name the order-gating engine; context rows do not claim it",
+      (await bv.locator(".beyond-why", { hasText: /order-gating engine reads it/ }).count()) === 4);
+    /* It must not borrow the Drivers matrix's class — that count is pinned at exactly six and
+       two mode-parity loops walk it by index. */
+    ok("v7.1 beyond: the block uses its own card class, leaving the six voter cards untouched",
+      (await bv.locator(".driver-card").count()) === 0 &&
+      (await page.locator(".driver-card").count()) === 6);
+    ok("v7.1 beyond: no overflow at this width with both folds open",
+      await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth + 1));
   }
   // (d) real section extents: ai no longer swallows the operator monitors.
   ok("v3.69: markets/macro/ai anchors have real <section> extents, and ai does NOT contain MY CONVICTION",
