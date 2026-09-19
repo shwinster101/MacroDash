@@ -169,9 +169,13 @@ ok("isStale: false same-day", isStale("2099-01-01", new Date("2099-01-01")) === 
 ok("isStale: true when a month behind", isStale("2026-06-01", new Date("2026-07-01")) === true);
 ok("isStale: true — Thu data viewed Sun (missed Fri)", isStale("2026-06-04", new Date("2026-06-07")) === true);
 ok("isStale: false — Mon data viewed Tue (normal EOD lag)", isStale("2026-06-08", new Date("2026-06-09")) === false);
-// FEAT-DQ: cadence-aware staleness — monthly/weekly prints aren't stale at a daily threshold
-ok("isStale monthly: false — 5wk-old print is current", isStale("2026-05-01", new Date("2026-06-08"), "monthly") === false);
-ok("isStale monthly: true — >70d behind is genuinely stale", isStale("2026-03-01", new Date("2026-06-08"), "monthly") === true);
+// FEAT-DQ: cadence-aware staleness — monthly/weekly prints aren't stale at a daily threshold.
+// RE-TITLED v7.1.5, claim unchanged: these pass NO field, so they pin the CALENDAR-LESS path
+// — the flat rule every monthly field without a release calendar still takes, byte-for-byte.
+// CPI's release-aware path is its own contract and is pinned in section [95], in BOTH
+// directions, so nobody reads these two as coverage of it.
+ok("isStale monthly (no calendar): false — 5wk-old print is current", isStale("2026-05-01", new Date("2026-06-08"), "monthly") === false);
+ok("isStale monthly (no calendar): true — >70d behind is genuinely stale", isStale("2026-03-01", new Date("2026-06-08"), "monthly") === true);
 ok("isStale weekly: false — 6-day-old weekly print is current", isStale("2026-06-04", new Date("2026-06-10"), "weekly") === false);
 ok("isStale daily: dead 2019-dated source is stale", isStale("2019-10-04", new Date("2026-06-08")) === true);
 // BUGFIX: a legacy M/D/YYYY date must ALSO be recognized as stale (it silently parsed to
@@ -4792,9 +4796,17 @@ ok("changed: a factor RECOVERY is information too, named as such",
 const evidenceSrc = readSrc("../src/evidence.js");
 ok("C1: evidence.js WRAPS the engine — it imports regime.js, never restates a band",
   /from "\.\/regime\.js"/.test(evidenceSrc) && !/v < 18|v > 25|<= NFCI_LOOSE \?/.test(evidenceSrc));
+/* RE-PINNED v7.1.5, with the reason at the pin. The claim is unchanged — the dashboard must
+   use the SHARED derivations and keep no local copy — but it matched the call's literal
+   spelling, so adding the `d` the CPI trend-length guard reads failed a pin while the
+   contract was being honoured MORE fully (the v5.6.4/v6.8.4 shape: a pin that passes through
+   any wrong rewrite and fails on the right one). It now asserts the imported helpers are
+   called with the full argument set, `d` INCLUDED — because omitting it here while
+   buildEvidenceSet passes it would let the hero and the Drivers matrix exclude different
+   factors, which is the one-page-two-answers defect this line exists to prevent. */
 ok("C1: the dashboard's modeOf and exclusions ARE the shared derivations (no local copy)",
   dashSrc.includes("const modeOf=(k)=>fieldMode(provenance, dataAsOf, k);") &&
-  dashSrc.includes("const staleFactors=factorExclusions({provenance, dataAsOf, liveBuild});") &&
+  /const staleFactors=factorExclusions\(\{provenance, dataAsOf, liveBuild, d\}\);/.test(dashSrc) &&
   !dashSrc.includes('const unusable=(k)=>'));
 ok("C2: a real <header> landmark, a Sections <nav>, and the six-anchor h2 outline exist",
   /<header className=/.test(dashSrc) && /<nav aria-label="Sections"/.test(navSrc) &&
@@ -6288,7 +6300,9 @@ ok("wave9: the call sites hand over computed props (demotion rule, chart series,
   /<MarketDetail d=\{d\} modeOf=\{modeOf\} asOfOf=\{asOfOf\} demoted=\{demoted\} spyData=\{spyData\} goldenCross=\{goldenCross\}\/>/.test(dashSrc) &&
   // v3.99: the countdown's SOURCE travels with it — a curated-calendar date is a different
   // claim from the market's own strike date, and the tile must be able to say which.
-  /<MacroRegime d=\{d\} modeOf=\{modeOf\} asOfOf=\{asOfOf\} fomcDays=\{fomcDays\} fomcSource=\{fomcSource\}\/>/.test(dashSrc) &&
+  // v7.1.5: cpiPeriod joins the same hand-over — CPI's reported PERIOD in words, derived ONCE
+  // in the orchestrator so the macro row and the strip tile can never name different months.
+  /<MacroRegime d=\{d\} modeOf=\{modeOf\} asOfOf=\{asOfOf\} fomcDays=\{fomcDays\} fomcSource=\{fomcSource\} cpiPeriod=\{cpiPeriodFull\}\/>/.test(dashSrc) &&
   /<Headwinds d=\{d\}\/>/.test(dashSrc));
 ok("wave9: null-safety on all three (Property 9)",
   /if\(!d\|\|typeof modeOf!=="function"\|\|!Array\.isArray\(spyData\)\)return <div aria-hidden="true"\/>;/.test(mdSrc) &&
@@ -9154,18 +9168,24 @@ console.log("\n[67] v3.99.4 — runtime contract reconciliation");
   const warmCron = cronSrc.match(/SNAPSHOT_WARM_CRON = "([^"]+)"/)?.[1];
   const prewarmCron = cronSrc.match(/SNAPSHOT_PREWARM_CRON = "([^"]+)"/)?.[1];
   const closeCron = cronSrc.match(/SNAPSHOT_CLOSE_CRON = "([^"]+)"/)?.[1];   // v6.2
-  /* v6.2: FIVE, and DISTINCT — the summer close-read string ("0 22") is byte-identical to the
+  const cpiCron = cronSrc.match(/SNAPSHOT_CPI_CRON = "([^"]+)"/)?.[1];        // v7.1.5
+  const dispatchCrons = [warmCron, prewarmCron, closeCron, cpiCron];
+  /* v6.2: DISTINCT — the summer close-read string ("0 22") is byte-identical to the
      documented WINTER legacy string, so a half-done November edit could carry a duplicate
-     that dispatches the legacy fire into the close arm. A Set catches that shape. */
-  ok("crons: TOML declares exactly five DISTINCT triggers", tomlCrons.length === 5 && new Set(tomlCrons).size === 5);
-  ok("crons: all three cron.js dispatch constants exist in the TOML (an orphaned constant never fires)",
-    !!warmCron && !!prewarmCron && !!closeCron && [warmCron, prewarmCron, closeCron].every((c) => tomlCrons.includes(c)));
+     that dispatches the legacy fire into the close arm. A Set catches that shape.
+     v7.1.5: SIX, with the CPI release-day arm. The count is DERIVED from the dispatch
+     constants plus the two documented legacy pulls rather than retyped, so adding a seventh
+     arm cannot pass by someone also bumping a literal. */
+  ok("crons: TOML declares exactly six DISTINCT triggers", tomlCrons.length === 6 && new Set(tomlCrons).size === 6);
+  ok("crons: all four cron.js dispatch constants exist in the TOML (an orphaned constant never fires)",
+    dispatchCrons.every((c) => !!c) && dispatchCrons.every((c) => tomlCrons.includes(c)) &&
+    new Set(dispatchCrons).size === 4);
   ok("crons: the close constant carries its EST variant and the collision warning beside it",
     /SNAPSHOT_CLOSE_CRON = "0 22 \* \* MON-FRI"; \/\/ 6pm America\/New_York \(EDT\); EST -> "0 23 \* \* MON-FRI"/.test(cronSrc) &&
     /COLLISION/.test(cronSrc));
   // Dispatch is exact-string with a LEGACY fallthrough, so any TOML cron that matches no
   // constant runs the legacy FRED path. Exactly the two documented legacy pulls may do that.
-  const legacy = tomlCrons.filter((c) => c !== warmCron && c !== prewarmCron && c !== closeCron);
+  const legacy = tomlCrons.filter((c) => !dispatchCrons.includes(c));
   ok("crons: every TOML trigger is either a dispatch constant or one of the TWO documented legacy pulls " +
      "(a third fallthrough = a silently misrouted job)",
     legacy.length === 2 && legacy.includes("30 12 * * MON-FRI") && legacy.includes("0 21 * * MON-FRI"));
@@ -9181,21 +9201,22 @@ console.log("\n[67] v3.99.4 — runtime contract reconciliation");
     Object.values(dowSurfaces).every((s) => !/\* \* 1-5/.test(s) && !/\*\+\*\+1-5/.test(s)));
   ok("crons: every TOML trigger names its weekdays (a numeric DOW is the 2026-08-28 Friday miss)",
     tomlCrons.length > 0 && tomlCrons.every((c) => /\* MON-FRI$/.test(c)));
-  ok("crons: scheduled() actually compares controller.cron against all three constants",
+  ok("crons: scheduled() actually compares controller.cron against all four constants",
     /controller\.cron === SNAPSHOT_PREWARM_CRON/.test(cronSrc) &&
     /controller\.cron === SNAPSHOT_WARM_CRON/.test(cronSrc) &&
-    /controller\.cron === SNAPSHOT_CLOSE_CRON/.test(cronSrc));
-  ok("crons: SETUP.md documents all FIVE (it said 'three triggers' while TOML carried four — " +
+    /controller\.cron === SNAPSHOT_CLOSE_CRON/.test(cronSrc) &&
+    /controller\.cron === SNAPSHOT_CPI_CRON/.test(cronSrc));
+  ok("crons: SETUP.md documents all SIX (it said 'three triggers' while TOML carried four — " +
      "and its DST block would have deleted the prewarm)",
-    /\*\*five\*\* triggers/i.test(setupSrc) &&
-    tomlCrons.every((c) => setupSrc.includes(c)) && /five\*\* crons are listed/.test(setupSrc));
+    /\*\*six\*\* triggers/i.test(setupSrc) &&
+    tomlCrons.every((c) => setupSrc.includes(c)) && /six\*\* crons are listed/.test(setupSrc));
   // v6.2: the DST block is the one operators copy in November — five strings, distinct, with
   // the close read's WINTER string ("0 23") present and the collision NAMED beside the "0 22"
   // that is the legacy pull's winter slot.
   const dstBlock = (setupSrc.match(/crons = \[([\s\S]*?)\]/)?.[1] || "").split("\n").map((l) => l.replace(/#.*$/, "")).join("\n");
   const dstCrons = [...dstBlock.matchAll(/"([^"]+)"/g)].map((m) => m[1]);
-  ok("crons: SETUP.md's DST block carries five DISTINCT winter strings incl. \"0 23 * * MON-FRI\", and names the collision",
-    dstCrons.length === 5 && new Set(dstCrons).size === 5 && dstCrons.includes("0 23 * * MON-FRI") &&
+  ok("crons: SETUP.md's DST block carries six DISTINCT winter strings incl. \"0 23 * * MON-FRI\", and names the collision",
+    dstCrons.length === 6 && new Set(dstCrons).size === 6 && dstCrons.includes("0 23 * * MON-FRI") &&
     dstCrons.includes("0 22 * * MON-FRI") && /collision/i.test(setupSrc) && dstCrons.every((c) => /\* MON-FRI$/.test(c)));
 
   // ── refresh credential: the ACTIVE name is documented where operators read ──
@@ -13910,5 +13931,6 @@ await (await import("./market-returns.mjs")).testMarketReturns(ok);
 (await import("./signal-roles.mjs")).testSignalRoles(ok);
 (await import("./spotlight-multiple.mjs")).testSpotlightMultiple(ok);
 (await import("./beyond-vote.mjs")).testBeyondVote(ok);
+await (await import("./cpi-release.mjs")).testCpiRelease(ok);
 console.log(`\n=== SMOKE TEST: ${pass} passed, ${fail} failed ===`);
 process.exit(fail === 0 ? 0 : 1);

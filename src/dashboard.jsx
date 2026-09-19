@@ -33,7 +33,7 @@ import MacroStrip from "./sections/MacroStrip.jsx"; // task 3.1: presentation on
 import BeyondVote from "./sections/BeyondVote.jsx"; // v7.1: the non-voters, by role
 import SignalQuality from "./sections/SignalQuality.jsx"; // task 3.2: presentation only
 import WhatChanged from "./sections/WhatChanged.jsx"; // task 3.3: presentation only
-import { publicDashboardUrl, liveReadCaption, publicMarketClock, publicMarketClockLine, simpleCallLabel } from "./publicCopy.js";
+import { publicDashboardUrl, liveReadCaption, publicMarketClock, publicMarketClockLine, simpleCallLabel, cpiPeriodLabel, cpiPeriodLine } from "./publicCopy.js";
 import UndoToast, { useUndoToast } from "./primitives/UndoToast.jsx"; // v6.5.5: the toast stack, one home
 import { MacroFlipBanner, PanicOverrideBanner } from "./sections/CallBanners.jsx"; // v6.5.5: presentation only; the banner ladder stays here
 
@@ -266,7 +266,10 @@ export default function Dashboard({ publicView = false } = {}) {
      FEAT-QUORUM v3.54) moved to evidence.js — one home, imported by both this file and the
      EvidenceSet. The full contract is built once here and the new Overview/Drivers/Data
      Health surfaces render IT, never their own reading of provenance. */
-  const staleFactors=factorExclusions({provenance, dataAsOf, liveBuild});
+  // v7.1.5: `d` joins the call so this derivation and buildEvidenceSet's below stay the SAME
+  // set. The CPI trend-length guard reads the data, so omitting it here would let the hero and
+  // the Drivers matrix disagree about one factor — the v3.98.3 one-page-two-answers defect.
+  const staleFactors=factorExclusions({provenance, dataAsOf, liveBuild, d});
   const evidenceSet=buildEvidenceSet({d, provenance, dataAsOf, mode, liveBuild});
   /* v4.0 SIMPLE MODE — pure projections of the SAME EvidenceSet (src/evidence.js). Derived
      here, once, and handed down: the sections stay presentation-only, and Simple can never
@@ -351,6 +354,15 @@ export default function Dashboard({ publicView = false } = {}) {
   const sq=SIGNAL_FIELDS.reduce((a,k)=>{const m=modeOf(k);if(m==="LIVE"){a.fresh++;a.live++;}else if(m==="CACHED"){a.fresh++;a.cached++;}else if(m==="STALE")a.stale++;else a.mock++;return a;},{fresh:0,live:0,cached:0,stale:0,mock:0});
   sq.total=SIGNAL_FIELDS.length;
   const asOfOf=(k)=>{const s=dataAsOf?.[k]; if(!s)return undefined; const dt=parseObsDate(s); return !dt||isNaN(dt.getTime())?s:`as of ${dt.toLocaleDateString("en-US",{month:"short",day:"numeric"})}`;}; // FEAT-R2: "as of Jun 4" (parses ISO + legacy M/D/YYYY)
+  /* v7.1.5 — CPI's reported PERIOD in words, derived ONCE here and handed down, so the strip
+     tile and the macro row can never name different months. `asOfOf` above is deliberately
+     NOT the source: it renders "as of Aug 1" — DAY precision on a MONTH-precision
+     observation, with no year — which is exactly the September misreading this closes.
+     Two lengths, one derivation: the strip sub is chip-length, the macro row has room for
+     the "latest published" half that answers "is this stale?". Both are null when the
+     observation cannot be dated; neither ever guesses a month. */
+  const cpiPeriodWords=cpiPeriodLabel(dataAsOf?.cpiHeadline);
+  const cpiPeriodFull=cpiPeriodLine(dataAsOf?.cpiHeadline);
   // Why-this-call: recomputed every render ($0, no LLM). Override the session frame with the LIVE
   // ET session (not the value frozen in the daily snapshot) so the narrative advances
   // pre-open → midday → post-close through the day. sessionTick re-renders it on a timer.
@@ -854,7 +866,7 @@ export default function Dashboard({ publicView = false } = {}) {
           presentation only (FEAT-170 4-col mobile reflow rides the .macro-strip rules in
           the stylesheet above; v3.25: always visible while market detail collapses). ── */}
       <MacroStrip d={d} modeOf={modeOf} asOfOf={k=>dataAsOf?.[k]} variant={simple?"simple":"degen"} fomcLabel={fomcLabel} fomcDays={fomcDays}
-        votingFields={VOTING_FIELDS}/>
+        votingFields={VOTING_FIELDS} cpiPeriod={cpiPeriodWords}/>
 
       {/* ── v6.5.0 STOCK SPOTLIGHT — immediately below the macro-number strip in BOTH modes,
           so the macro verdict stays the first answer and this is the first company-level
@@ -863,7 +875,7 @@ export default function Dashboard({ publicView = false } = {}) {
       <StockSpotlight spotlight={spotlight} simple={simple}/>
       {simple&&<div className="simple-market-context" style={{padding:"8px 20px"}}>
         <CollapsedGroup label="Explore market data" count={5} chip={false} promise>
-          <MacroStrip d={d} modeOf={modeOf} asOfOf={asOfOf} variant="context" fomcLabel={fomcLabel} fomcDays={fomcDays} votingFields={VOTING_FIELDS}/>
+          <MacroStrip d={d} modeOf={modeOf} asOfOf={asOfOf} variant="context" fomcLabel={fomcLabel} fomcDays={fomcDays} votingFields={VOTING_FIELDS} cpiPeriod={cpiPeriodWords}/>
         </CollapsedGroup>
       </div>}
 
@@ -905,7 +917,7 @@ export default function Dashboard({ publicView = false } = {}) {
 
             {/* Macro Regime grid + Top Headwinds — extracted to src/sections/
                 MacroRegime.jsx + Headwinds.jsx (tasks 5.3/5.4), presentation only. */}
-            <MacroRegime d={d} modeOf={modeOf} asOfOf={asOfOf} fomcDays={fomcDays} fomcSource={fomcSource}/>
+            <MacroRegime d={d} modeOf={modeOf} asOfOf={asOfOf} fomcDays={fomcDays} fomcSource={fomcSource} cpiPeriod={cpiPeriodFull}/>
             <Headwinds d={d}/>
 
 

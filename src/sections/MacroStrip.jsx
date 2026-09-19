@@ -87,7 +87,7 @@ function FedPolicyTile({d,modeOf,asOfOf,fomcLabel}) {
   </Explainable>;
 }
 
-const MacroStrip=({d,modeOf,asOfOf,fomcLabel,fomcDays,votingFields,variant="full"})=>{
+const MacroStrip=({d,modeOf,asOfOf,fomcLabel,fomcDays,votingFields,variant="full",cpiPeriod=null})=>{
   if(!d||typeof modeOf!=="function")return <div aria-hidden="true"/>;
   if(variant==="simple")return <SimpleMarketTape d={d} modeOf={modeOf} asOfOf={asOfOf}/>;
   if(variant==="degen")return <SimpleMarketTape d={d} modeOf={modeOf} asOfOf={asOfOf} degen fomcLabel={fomcLabel}/>;
@@ -107,7 +107,11 @@ const MacroStrip=({d,modeOf,asOfOf,fomcLabel,fomcDays,votingFields,variant="full
            v:fedTargetLive?`${fedLo.toFixed(2)}–${fedHi.toFixed(2)}%`:`${d.macro.fedFunds.rate}% avg`,
            s:`FOMC ${fomcLabel}`, sc:fomcDays===0?T.amber:T.textMuted,
            t:fedTargetLive?"Federal Reserve target range — current policy setting":"FEDFUNDS monthly effective average — lags a policy decision"},
-          {l:"CPI",  f:"cpiHeadline", v:`${d.macro.cpi.headline}%`,         s:`Core ${d.macro.cpi.core}%`, voteKey:"cpiHeadline", t:"Consumer Price Index — inflation, year-over-year"},
+          /* v7.1.5: the sub carries the reported PERIOD beside core. A strip sub is
+             chip-length by anatomy (v6.8.1), so it takes the month+year and leaves the
+             "latest published" half to the macro row and the voter sheet, where there is
+             room to say it. Rendered only when the period can be dated. */
+          {l:"CPI",  f:"cpiHeadline", v:`${d.macro.cpi.headline}%`,         s:`Core ${d.macro.cpi.core}%${cpiPeriod?` · ${cpiPeriod}`:""}`, voteKey:"cpiHeadline", t:"Consumer Price Index — inflation, year-over-year"},
           /* OWNER SWAP (8/31), reversing the FEAT-NFCILEV tile that held this slot since 8/29:
              the 8th slot goes to the NFCI COMPOSITE, not its leverage subindex.
              The reason is the voter/glance mismatch the 6-vs-8 study named: NFCI has VOTED in

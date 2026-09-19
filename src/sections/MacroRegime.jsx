@@ -11,7 +11,7 @@ import SourceBox, { DataModeBadge } from "../primitives/SourceBox.jsx";
 import { ILLUS_HATCH, IllustrativeChip, isIllustrative } from "../primitives/Illustrative.jsx";
 import { SAHM_TRIGGER } from "../sahm.js";
 
-const MacroRegime=({d,modeOf,asOfOf,fomcDays,fomcSource=null})=>{
+const MacroRegime=({d,modeOf,asOfOf,fomcDays,fomcSource=null,cpiPeriod=null})=>{
   if(!d||typeof modeOf!=="function")return <div aria-hidden="true"/>;
   return(
             <div style={{background:T.surface,border:`1px solid ${T.border}`,borderRadius:6,padding:"14px 16px"}}>
@@ -89,6 +89,14 @@ const MacroRegime=({d,modeOf,asOfOf,fomcDays,fomcSource=null})=>{
                     <div><Label>CPI Head</Label><div style={{fontFamily:T.fontMono,fontSize:T.fsBody,color:T.textSecondary,fontWeight:700}}>{d.macro.cpi.headline}%</div></div>
                     <div><Label>CPI Core</Label><div style={{fontFamily:T.fontMono,fontSize:T.fsBody,color:T.textSecondary,fontWeight:700}}>{d.macro.cpi.core}%</div></div>
                   </div>
+                  {/* v7.1.5 — the reported PERIOD, in words, beside the headline and core values
+                      (owner, 2026-09-19: "it shows August latest but confuses new users in
+                      September"). The SourceBox below still carries provenance and the raw
+                      observation date; what this line adds is the one thing a day-precision
+                      "as of Aug 1" could not say — that August IS the latest published month,
+                      not a stale pull. Rendered only when the period can be dated; no CSS
+                      text-transform, so the month name reads back as written (v3.69). */}
+                  {cpiPeriod&&<div style={{fontFamily:T.fontMono,fontSize:T.fsS,color:T.textMuted,marginBottom:4}}>{cpiPeriod}</div>}
                   <div style={{height:36}}><ResponsiveContainer width="100%" height="100%"><LineChart data={d.macro.cpi.trend.map((v,i)=>({v,i}))}><Line type="monotone" dataKey="v" stroke={T.red} dot={false} strokeWidth={1.5}/><ReferenceLine y={2.0} stroke={T.green} strokeDasharray="3 2" strokeWidth={1}/></LineChart></ResponsiveContainer></div>
                   {/* v3.98.4: asOf was omitted here alone — a LIVE badge with no observation date, on the
                       tile whose whole point is the inflation TREND. Every sibling box passes one. */}

@@ -111,6 +111,15 @@ export async function waitOutMidnightEt(guardMinutes = 4, sleep = (ms) => new Pr
 await waitOutMidnightEt();
 const TODAY = ET.format(new Date());
 const daysAgo = (n) => ET.format(new Date(Date.now() - n * 86400000));
+/* v7.1.5 — a monthly FRED print is PERIOD-dated at month start, and `daysAgo(20)` is a DAY.
+   That difference now matters twice: the release-aware gate compares calendar MONTHS, and the
+   reader-facing label renders the month in words. So the CPI fixture's as-of is the first of
+   the month containing daysAgo(20) — the shape a real observation has. Deliberately still
+   derived from the clock rather than frozen to a literal: a fixed 2026-08-01 would read fresh
+   today and rot into a stale-CPI scenario a few months from now, which is a suite that goes
+   red on a correct page (the v6.6.2 midnight-race lesson, one calendar up). Twenty days back
+   always lands on a month whose print has been published, whatever day the suite runs. */
+const monthStart = (ymd) => `${ymd.slice(0, 7)}-01`;
 
 // Every field a regime factor depends on, with its own AsOf so nothing reads stale.
 const FULL_LIVE = {
@@ -119,7 +128,7 @@ const FULL_LIVE = {
   tenYear: 4.46, tenYearAsOf: TODAY, tenYearM1: -0.22, tenYearD1: 0.01,
   vix: 16.1, vixAsOf: TODAY,
   fearGreed: 62, fearGreedAsOf: TODAY, fearGreedLabel: "Greed",
-  cpiHeadline: 2.4, cpiHeadlineAsOf: daysAgo(20), cpiTrend: [3.1, 2.9, 2.8, 2.7, 2.6, 2.4],
+  cpiHeadline: 2.4, cpiHeadlineAsOf: monthStart(daysAgo(20)), cpiTrend: [3.1, 2.9, 2.8, 2.7, 2.6, 2.4],
   fedFunds: 3.63, fedFundsAsOf: daysAgo(20),
   // v3.99: the Fed's DAILY target-range bounds — the tile's headline when live.
   fedTargetUpper: 3.75, fedTargetUpperAsOf: TODAY, fedTargetLower: 3.50, fedTargetLowerAsOf: TODAY,
@@ -1086,6 +1095,68 @@ console.log("\n[public] v3.98.4 — token trend withheld on mock, strip marker i
     /CPIAUCNS \+ CPILFENS/.test(macro) && /as of/i.test(macro));
   ok("v3.98.4: no page errors through the degraded read-through", errors.length === 0);
   await page.close();
+}
+
+// ── v7.1.5 — CPI states its reported PERIOD in words, on every surface that shows it ─────
+/* Owner, 2026-09-19: "it shows August latest but confuses new users in September." The one
+   date a reader met was `asOfOf`'s "as of Aug 1" — DAY precision on a MONTH-precision
+   observation, with no year — so a September reader saw a day in August and reasonably read
+   a stale pull. Driven live rather than pinned as a string for two reasons this suite exists
+   for: the expected month is DERIVED FROM THE FIXTURE'S OWN as-of (a hardcoded month would
+   rot at the next month boundary and go red on a correct page), and Chromium's innerText
+   APPLIES text-transform (v3.69), so reading the mixed-case phrase back is the only way to
+   prove no CSS uppercased the month name into something a pin would silently stop matching. */
+console.log("\n[public] v7.1.5 — the CPI period, in words, in Degen and in Simple");
+{
+  const expectMonth = new Date(`${FULL_LIVE.cpiHeadlineAsOf}T00:00:00`)
+    .toLocaleDateString("en-US", { month: "long", year: "numeric" });
+  const { page, errors } = await open({ live: FULL_LIVE, width: 1280 });
+  await page.waitForTimeout(1300);
+  for (let i = 0; i < 14; i++) {
+    const b = page.locator('button.cg-toggle[aria-expanded="false"]').first();
+    if (await b.count() === 0) break;
+    await b.click().catch(() => {}); await page.waitForTimeout(100);
+  }
+  await page.waitForTimeout(300);
+  const macro = await page.locator('section[aria-labelledby="macro"]').innerText();
+  ok(`v7.1.5: the macro grid names the reported month and says nothing newer exists (${expectMonth})`,
+    macro.includes(`${expectMonth} · latest published`));
+  /* The line ADDS to provenance, it does not replace it — the SourceBox and its observation
+     date must both survive, or this would have traded one honesty fact for another. */
+  ok("v7.1.5: provenance survives beside it — the CPI SourceBox still carries its endpoint and as-of",
+    /CPIAUCNS \+ CPILFENS/.test(macro) && /as of/i.test(macro));
+  ok("v7.1.5: the month reads back in MIXED CASE — no CSS uppercased it out from under the pin",
+    macro.includes(expectMonth) && !macro.includes(expectMonth.toUpperCase()));
+  await page.close();
+
+  // Simple: the eight-tile strip lives ONLY inside the Explore fold (v6.9.9), so that is the
+  // one place the CPI TILE can be read — and its sub is chip-length, so it carries the month
+  // and leaves "latest published" to the macro row, which has the room to say it.
+  const sp = await open({ live: FULL_LIVE, width: 390, power: false });
+  await sp.page.waitForTimeout(1200);
+  await sp.page.getByRole("button", { name: /Explore market data/ }).click();
+  await sp.page.waitForTimeout(200);
+  const cpiTile = sp.page.locator(".macro-strip-inner .strip-tile").filter({ hasText: "CPI" }).first();
+  const tileText = await cpiTile.innerText();
+  ok(`v7.1.5: the Simple strip's CPI tile carries the period beside core (${expectMonth})`,
+    tileText.includes(expectMonth) && /Core/i.test(tileText) && !/latest published/i.test(tileText));
+  /* The VOTER SHEET is reached from the CARD, not from this tile. v7.0.3 measured the split
+     and it holds here: the strip tile renders the band's RAW `explain.what[1]`, while
+     `voterSheet()` composes the current-vs-reference bullet the Simple cards and the Drivers
+     matrix show — so the period rides the composed path and the tile carries its own shorter
+     line. Asserted on the card, with the tile's sheet pinned NOT to claim it, or this would
+     be a pin that passes on whichever sheet happened to open. */
+  await sp.page.keyboard.press("Escape").catch(() => {});
+  const cpiCard = sp.page.locator(".simple-card").filter({ hasText: /Inflation|CPI/i }).first();
+  await cpiCard.click();
+  const sheet = await sp.page.getByRole("dialog").innerText();
+  ok("v7.1.5: the voter sheet's current-reading bullet names the period too — one derivation, both surfaces",
+    /YoY/.test(sheet) && sheet.includes(`${expectMonth} · latest published`));
+  await sp.page.keyboard.press("Escape");
+  ok("v7.1.5: 390px stays overflow-free with the longer sub, and no page errors",
+    await sp.page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth + 1) &&
+    errors.length === 0 && sp.errors.length === 0);
+  await sp.page.close();
 }
 
 // ── v3.99 — the Fed tile leads with the TARGET RANGE; the countdown survives Kalshi ──

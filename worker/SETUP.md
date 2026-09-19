@@ -6,7 +6,7 @@ pushing to `main` deploys the *site*, but the Worker only updates when you run `
 
 ## What this Worker does
 
-A scheduled (Cron) Worker with **five** triggers (`worker/wrangler.toml`). ⚠️ This table, the
+A scheduled (Cron) Worker with **six** triggers (`worker/wrangler.toml`). ⚠️ This table, the
 TOML `crons` array, and the dispatch constants in `cron.js` must all agree — `scheduled()`
 routes by **exact string comparison** on `controller.cron`, and any unmatched string falls
 through to the *legacy* FRED path (a silently misrouted job, not a visible failure). Smoke
@@ -18,6 +18,7 @@ fails the build; this table is documentation of the same contract.
 | `30 12 * * MON-FRI` | 5:30 AM PDT | *legacy* — FRED macro pull → KV `pulse:macro:latest` |
 | `0 21 * * MON-FRI` | 2:00 PM PDT | *legacy* — same |
 | `0 12 * * MON-FRI` | **8:00 AM ET** | **active** — PRE-OPEN warm of `/api/snapshot` (no-op if the day is already cached) |
+| `45 12 * * MON-FRI` | **8:45 AM ET** | **active** (v7.1.5) — the CPI **release-day** refresh, GATED on `CPI_RELEASES` in `src/sources.js`: on a non-release day it records the skip and spends nothing. It exists because BLS publishes at 08:30 ET, the 8 AM warm caches the PRE-release value with a 48h TTL, and the 10 AM refresh publishes new CPI only through `publishIfNoWorse`'s as-of tiebreak — `improved` is `false`, since CPI is not one of Engine 0's checks — so any unrelated degraded leg rejects the whole candidate and pins last month's CPI for the rest of the ET day |
 | `0 14 * * MON-FRI` | **10:00 AM ET** | **active** — FORCE-REFRESH of the day's snapshot via `POST /api/snapshot/refresh` (needs `REFRESH_TOKEN` — see Step 3; without it, falls back to a non-destructive GET, which is a **cache hit, not a refresh**, whenever the 8 AM warm already populated the day) |
 | `0 22 * * MON-FRI` | **6:00 PM ET** | **active** (v6.2) — the UNSCORED **close read**: `POST /api/snapshot/refresh` with `edition:"close"` (needs `REFRESH_TOKEN`; there is **no GET fallback** — a GET cannot build a close edition, so without the token the job records a FAILED read rather than pretending). **v6.5.0:** the same invocation then runs an ISOLATED Stock Spotlight leg (`POST /api/stock-spotlight/refresh`, same token, its own `spotlight-6pmET` heartbeat) that can never interrupt the close read |
 
@@ -132,7 +133,7 @@ The deploy output lists the registered cron schedules. (`wrangler deploy` replac
 
 ## 5. Verify
 
-**Deploy output** — confirm all **five** crons are listed (`30 12…`, `0 21…`, `0 12…`, `0 14…`, `0 22…`).
+**Deploy output** — confirm all **six** crons are listed (`30 12…`, `0 21…`, `0 12…`, `45 12…`, `0 14…`, `0 22…`).
 Then, in Triggers → Cron Triggers, every "Next run" must be a **weekday** (Mon–Fri) — the
 2026-08-28 Friday miss was a numeric day-of-week that a dashboard read as Sun–Thu.
 
@@ -167,7 +168,8 @@ Daylight / Eastern Daylight** time. When the US switches to standard time (~Nove
 UTC hour by +1 so local times hold, then redeploy:
 
 ⚠️ The DST edit is **two files, together**: the TOML schedules below AND the matching
-constants in `cron.js` (`SNAPSHOT_PREWARM_CRON`, `SNAPSHOT_WARM_CRON`, `SNAPSHOT_CLOSE_CRON`)
+constants in `cron.js` (`SNAPSHOT_PREWARM_CRON`, `SNAPSHOT_CPI_CRON`, `SNAPSHOT_WARM_CRON`,
+`SNAPSHOT_CLOSE_CRON`)
 — dispatch is by exact string match, so editing only the TOML silently reroutes the snapshot
 jobs onto the legacy FRED path. (An earlier version of this block listed only three crons;
 following it would also have deleted the 8 AM prewarm.) Smoke's contract check goes red if
@@ -176,13 +178,14 @@ the two files disagree.
 ⚠️ **The collision (v6.2):** the summer close-read string `0 22 * * MON-FRI` is the SAME
 string as the winter legacy 2 PM PST pull below. Move the legacy pull to `0 22` **only in the
 same edit** that moves the close read to `0 23` (TOML and `SNAPSHOT_CLOSE_CRON` together);
-all five strings must stay distinct, and smoke pins that.
+all six strings must stay distinct, and smoke pins that.
 
 ```toml
 crons = [
   "30 13 * * MON-FRI",   # 5:30 AM PST
   "0 22 * * MON-FRI",    # 2:00 PM PST   (legacy — this is the close read's SUMMER string; see the collision note)
   "0 13 * * MON-FRI",    # 8:00 AM EST    ← the pre-open warm  (cron.js: SNAPSHOT_PREWARM_CRON)
+  "45 13 * * MON-FRI",   # 8:45 AM EST    ← the CPI release-day refresh (cron.js: SNAPSHOT_CPI_CRON)
   "0 15 * * MON-FRI",    # 10:00 AM EST   ← the snapshot force-refresh (cron.js: SNAPSHOT_WARM_CRON)
   "0 23 * * MON-FRI"     # 6:00 PM EST    ← the close read (cron.js: SNAPSHOT_CLOSE_CRON)
 ]

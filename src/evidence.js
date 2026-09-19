@@ -44,20 +44,33 @@ export function fieldMode(provenance, dataAsOf, key, now = new Date()) {
 // Which factors may NOT vote. STALE always excludes; in a live build anything not LIVE/CACHED
 // excludes too (FEAT-QUORUM v3.54 — mock must never vote; `liveBuild` is the INTENT, because
 // mode "MOCK" is ambiguous between a demo build and a live build whose fetch failed).
-export function factorExclusions({ provenance, dataAsOf, liveBuild, now = new Date() } = {}) {
+export function factorExclusions({ provenance, dataAsOf, liveBuild, d = null, now = new Date() } = {}) {
   const unusable = (k) => {
     const m = fieldMode(provenance, dataAsOf, k, now);
     return m === "STALE" || (liveBuild && m !== "LIVE" && m !== "CACHED");
   };
   const stale = new Set(REGIME_FACTOR_FIELDS.filter(unusable));
   if (unusable("shillerPe")) stale.add("valuation");
+  /* v7.1.5 — a CPI trend too short to vote on is UNAVAILABLE, not a quiet neutral. The
+     inflation band votes on the SHAPE of its trend: `latest < previous` for the bull arm and
+     `latest - first > 0.5` for the drift arm, so it indexes `t[t.length-2]` with no guard of
+     its own. A one-point (or empty) array therefore compared against `undefined`, every arm
+     read false, and the factor cast a NEUTRAL vote from evidence that contains no comparison
+     — a vote with no observation behind it, which is the defect the whole exclusion layer
+     exists to prevent. Fail closed on the FIELD rather than loosening the band: `vote()` is
+     untouched (no band moved in v7.1), and "not counted" stays distinguishable from
+     "counted, no lean" (v3.62). Optional `d` — a caller that omits it is unchanged. */
+  if (d && !stale.has("cpiHeadline")) {
+    const xs = d?.macro?.cpi?.trend;
+    if (!Array.isArray(xs) || xs.filter(Number.isFinite).length < 2) stale.add("cpiHeadline");
+  }
   return stale;
 }
 
 const WITHHELD = new Set(["LOADING", "ERROR", "INSUFFICIENT"]);
 
 export function buildEvidenceSet({ d, provenance, dataAsOf, mode, liveBuild, now = new Date() } = {}) {
-  const exclusions = factorExclusions({ provenance, dataAsOf, liveBuild, now });
+  const exclusions = factorExclusions({ provenance, dataAsOf, liveBuild, d, now });
   const regime = computeRegime(d, exclusions);
 
   // State resolution order matters: transport states first (they describe the FETCH, and the
@@ -104,7 +117,7 @@ export function buildEvidenceSet({ d, provenance, dataAsOf, mode, liveBuild, now
       metric: readMetric(d, f.key),
       comparison: !excluded && !["LOADING","ERROR","DEMO"].includes(state) &&
         ["LIVE","CACHED"].includes(fieldMode(provenance,dataAsOf,({tenYear:"tenYearM1",cpiHeadline:"cpiTrend"})[f.key]||field,now))
-        ? comparisonReading(f.key,d,readMetric(d,f.key)) : null,
+        ? comparisonReading(f.key,d,readMetric(d,f.key),(dataAsOf&&dataAsOf[field])||null) : null,
       vote: f.vote,
       mode: fm,
       asOf: (dataAsOf && dataAsOf[field]) || null,

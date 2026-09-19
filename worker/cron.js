@@ -12,6 +12,8 @@ import {
   CLOSE_READ_SCHEMA, CLOSE_READ_RECORD_SCHEMA, closeReadKey,
   buildForwardOutcome, historyKey, outcomeKey,
 } from "../src/publicHistory.js";
+// v7.1.5: the CPI release calendar — ONE home (src/sources.js), shared with isStale.
+import { CPI_RELEASES } from "../src/sources.js";
 
 const FRED_BASE = "https://api.stlouisfed.org/fred/series/observations";
 const KV_KEY = "pulse:macro:latest";
@@ -37,6 +39,26 @@ const SNAPSHOT_PREWARM_CRON = "0 12 * * MON-FRI"; // 8am America/New_York (EDT);
    into the close arm at 5pm ET and silently drop the legacy pull. The DST edit is THREE
    constants + the TOML together; smoke pins five DISTINCT strings so a duplicate cannot ship. */
 const SNAPSHOT_CLOSE_CRON = "0 22 * * MON-FRI"; // 6pm America/New_York (EDT); EST -> "0 23 * * MON-FRI"
+/* v7.1.5 — the CPI RELEASE-DAY arm, and the 10am cron is NOT a substitute for it. BLS
+   publishes at 08:30 ET. The 08:00 prewarm caches the PRE-RELEASE value, chooseTtl gives a
+   healthy candidate 48h, and fieldMode cannot downgrade it (the print is not stale — it is
+   simply last month's), so between 08:30 and 10:00 the page serves last month's CPI wearing
+   a LIVE badge. The 10am force-refresh does rebuild — but only publishes through
+   publishIfNoWorse's element-6 asOf tiebreak, because readoutQuality is built entirely from
+   Engine 0's checks and CPI IS NOT ONE OF THEM, so `improved` comes back false. Consequence:
+   if ANY unrelated leg degraded between 08:00 and 10:00 (a CNN 418, a Kalshi 429, a partial
+   FRED batch) the candidate is rejected WHOLE — new CPI included — and the pre-release value
+   is pinned for the rest of the ET day, since the 6pm close edition writes only a side key
+   and never republishes the day key. This arm closes the 08:30–10:00 window with a refresh
+   of its own and spends nothing on the ~250 weekdays that are not release days. */
+const SNAPSHOT_CPI_CRON = "45 12 * * MON-FRI"; // 8:45am America/New_York (EDT); EST -> "45 13 * * MON-FRI"
+/* The gate itself, exported solely for smoke (the validateBook/warmSnapshot precedent): the
+   arm reads the wall clock, so a pin that only matched the dispatch line would pass through a
+   disabled arm — which is exactly what the first negative control proved, and the PIN was
+   wrong, not the code (v5.97.2). Splitting the decision out makes both branches RUNNABLE. */
+export function cpiReleaseOn(etDate) {
+  return CPI_RELEASES.find((r) => r.release === etDate) || null;
+}
 const SNAPSHOT_URL = "https://macrodash.pages.dev/api/snapshot";
 const READOUT_URL = "https://macrodash.pages.dev/readout.json?fresh=1";
 const HISTORY_LIMIT = 400;
@@ -498,6 +520,23 @@ export default {
     // 8am ET weekday: pre-open warm so no human pays the cold fetch (see SNAPSHOT_PREWARM_CRON).
     if (controller.cron === SNAPSHOT_PREWARM_CRON) {
       ctx.waitUntil(warmSnapshot(env));
+      return;
+    }
+    /* 8:45am ET weekday (v7.1.5): the CPI release-day refresh. GATED ON THE CALENDAR — on a
+       non-release day it records the skip and spends nothing, so "the arm did not fire" and
+       "the arm never ran" stay different facts in the heartbeat (the v6.0 T2 rule). The
+       schedule is read from src/sources.js CPI_RELEASES, the SAME table isStale judges
+       freshness against: a second copy here is the drift this repo keeps paying for. */
+    if (controller.cron === SNAPSHOT_CPI_CRON) {
+      ctx.waitUntil((async () => {
+        const etDate = new Date().toLocaleDateString("en-CA", { timeZone: "America/New_York" });
+        const rel = cpiReleaseOn(etDate);
+        if (!rel) { await recordWarm(env, "cpi-845amET", true, null, { skipped: "not a CPI release day" }); return; }
+        const refreshed = await refreshSnapshot(env, { job: "cpi-845amET" });
+        await recordWarm(env, "cpi-845amET", refreshed.ok, refreshed.status ?? null, {
+          ...(refreshed.warmExtra || {}), cpi_release: rel.release, cpi_ref_month: rel.refMonth,
+        });
+      })());
       return;
     }
     // 10am ET weekday: force-refresh the /api/snapshot per-day cache (see SNAPSHOT_WARM_CRON note).

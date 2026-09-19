@@ -27,6 +27,8 @@ import { isMarketHoliday, sessionsBehind, etYmd, expectedObsDate } from "../../s
 import { marketReturns } from "../lib/marketReturns.js";
 import { ytdReturn } from "../lib/spotlight.js";
 import { sahmFrom } from "../../src/sahm.js";
+// v7.1.5: the inflation YoY pairing — one home, same esbuild-inline path as sahm.js.
+import { yoyFromObservations } from "../../src/inflation.js";
 
 // ENGINE0-CONT: the readout contract now lives in src/ttReadout.js and the snapshot layer
 // consumes it for publish decisions — THIRD functions/→src/ import, same esbuild-inline path.
@@ -590,8 +592,8 @@ async function fetchFred(key, statuses = null) {
     nfciLeverage: "NFCILEVERAGE",
   };
   // FEAT-R10: these arrive as a price INDEX; the dashboard wants year-over-year %.
-  // We pull enough monthly history to derive YoY (latest vs 12 months prior) plus a
-  // 6-point YoY trend (obs[m] vs obs[m+12]).
+  // v7.1.5: the pairing is by CALENDAR MONTH (src/inflation.js), not by array position, so a
+  // month BLS suppresses can no longer shift "12 months prior" into 13 without a tell.
   const INFLATION = new Set(["cpiHeadline", "cpiCore", "pceHeadline", "pceCore"]);
 
   // Fetch FRED series in batches — even alone, 10 parallel exceeds the ~6-connection
@@ -607,11 +609,14 @@ async function fetchFred(key, statuses = null) {
     const batchSize = i < CRITICAL_SERIES.size ? 2 : 5;
     const settled = await Promise.allSettled(
       entries.slice(i, i + batchSize).map(async ([field, id]) => {
-        // Inflation series need ~18 monthly points to derive a 6-point YoY trend.
-        // Other series: 26 points so DAILY fields can derive a 1-week (idx[5]) and
-        // 1-month (idx[21]) change off the same pull — zero extra fetches. Payload
-        // is trivially small either way.
-        const limit = INFLATION.has(field) ? 20 : 26;
+        // 26 points for everything. DAILY fields derive a 1-week (idx[5]) and 1-month
+        // (idx[21]) change off the same pull — zero extra fetches. Inflation series need
+        // 18 months to derive a 6-point YoY trend, and v7.1.5 widened them from 20 to the
+        // same 26 so CALENDAR matching has eight months of slack instead of three: under
+        // the old positional pairing a suppressed month cost nothing (the array closed
+        // ranks), and under the correct rule it costs a row, which must not run the series
+        // out of history. Payload is trivially small either way.
+        const limit = 26;
         const url = `https://api.stlouisfed.org/fred/series/observations`
           + `?series_id=${id}&api_key=${key}&limit=${limit}&sort_order=desc&file_type=json`;
         let r, d;
@@ -623,19 +628,18 @@ async function fetchFred(key, statuses = null) {
           throw e;
         }
         const obs = d.observations?.filter(o => o.value !== ".") ?? [];
+        // v7.1.5: the YoY is derived BEFORE the status record so an unpaired month rides the
+        // SAME row rather than a second one — "the miss is EVIDENCE, kept per series" (§9).
+        // A hole here is a coverage fact the old code destroyed by shortening the array.
+        const infl = INFLATION.has(field) ? yoyFromObservations(obs) : null;
         recordStatus(statuses, "fred", id,
           obs.length ? true : Object.assign(new Error("no_observation"), { error_class: "no_observation", attempts: r._attempts }),
-          obs.length ? { attempts: r._attempts, latency_ms: r._latencyMs, observed_at: obs[0]?.date ?? null } : {});
-        if (INFLATION.has(field)) {
-          // Convert index → YoY %: (this month / 12 months ago − 1) × 100.
-          const yoyAt = (m) => {
-            const a = parseFloat(obs[m]?.value), b = parseFloat(obs[m + 12]?.value);
-            return (isFinite(a) && isFinite(b) && b > 0) ? parseFloat(((a / b - 1) * 100).toFixed(1)) : NaN;
-          };
-          const yoy = yoyAt(0);
-          const trend = [];
-          for (let m = 5; m >= 0; m--) { const v = yoyAt(m); if (isFinite(v)) trend.push(v); } // oldest→newest
-          return [field, yoy, NaN, trend, obs[0]?.date, NaN, NaN];
+          obs.length ? { attempts: r._attempts, latency_ms: r._latencyMs, observed_at: obs[0]?.date ?? null,
+            ...(infl && infl.holes.length ? { yoy_unpaired: infl.holes } : {}) } : {});
+        if (infl) {
+          // REFUSE, never substitute: a null yoy leaves `latest` NaN, and the assembler below
+          // drops the field entirely rather than publishing a number paired off the wrong month.
+          return [field, infl.yoy === null ? NaN : infl.yoy, NaN, infl.trend, infl.asOf, NaN, NaN];
         }
         const vals  = obs.map(o => parseFloat(o.value)).filter(v => !isNaN(v));
         const latest = vals[0];

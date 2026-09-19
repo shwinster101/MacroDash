@@ -49,6 +49,27 @@ export function publicAsOfLabel(value) {
   return parsed.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
 }
 
+/* v7.1.5 — the reported PERIOD of a monthly print, in words (owner, 2026-09-19: "it shows
+   August latest but confuses new users in September"). A CPI observation is PERIOD-dated at
+   month start, and the one place a date reached the reader rendered it through `asOfOf` as
+   "as of Aug 1" — DAY precision on a MONTH-precision observation, with no year at all. A
+   September reader met a day in August and reasonably read it as a stale pull rather than the
+   latest published print. Month + year removes the false precision; "latest published" says
+   the thing the reader actually wants to know, which is that nothing newer exists yet.
+   Returns null when the value cannot be dated — never a guessed month (the v3.25 rule: a
+   missing fact is stated, not filled). Note for whoever pins this: Chromium's innerText
+   APPLIES text-transform, so the month name must not be uppercased by CSS at a read site. */
+export const CPI_PERIOD_SUFFIX = "latest published";
+export function cpiPeriodLabel(value) {
+  const parsed = parseObsDate(value);
+  if (!parsed || Number.isNaN(parsed.getTime())) return null;
+  return parsed.toLocaleDateString("en-US", { month: "long", year: "numeric" });
+}
+export function cpiPeriodLine(value) {
+  const label = cpiPeriodLabel(value);
+  return label ? `${label} · ${CPI_PERIOD_SUFFIX}` : null;
+}
+
 export function publicMarketClockLine({ now = new Date(), marketAsOf = null, snapshotAsOf = null } = {}) {
   const clock = publicMarketClock(now);
   const lead = clock.state === "PRE" ? "Before markets open"

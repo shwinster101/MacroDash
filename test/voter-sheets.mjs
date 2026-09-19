@@ -27,6 +27,12 @@ export function testVoterSheets(ok){
  ok("7.0.1 rates: monthly change compared, yield kept as context",voterSheet(simple[0]).what[1].includes("4.94% yield; 1-month change +0.23 percentage points"));
  const cpi=voterSheet(simple[3]);
  ok("7.0.1 CPI: actual previous print and window start",cpi.what[1].includes("Previous print: 3.5%")&&cpi.what[1].includes("start: 3.1%")&&!cpi.what[1].includes("2%"));
+ /* v7.1.5 — the same bullet now names the reported PERIOD in words, end to end through the
+    real merge and EvidenceSet rather than a hand-built comparison object. A CPI observation
+    is month-precision, and "as of Aug 1" was the September misreading the owner reported. */
+ ok("7.1.5 CPI: the current reading names the reported month, not a day",
+  cpi.what[1].includes(`${new Date(`${today}T00:00:00`).toLocaleDateString("en-US",{month:"long",year:"numeric"})} · latest published`)&&
+  cpi.currentComparison.current.startsWith("Latest reported: 3.7% YoY ("));
  for(const key of ["tenYearM1","cpiTrend"]){
   const missing={...live};delete missing[key];
   const index=key==="tenYearM1"?0:3;

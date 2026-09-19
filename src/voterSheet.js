@@ -1,14 +1,19 @@
 // Shared presentation of existing evidence. No votes or thresholds are calculated here.
 import { REGIME_BAND_TABLE } from "./regime.js";
+import { cpiPeriodLine } from "./publicCopy.js";
 const finite=Number.isFinite;
-export function comparisonReading(key,d,metric) {
+// v7.1.5: `asOf` is optional and used by CPI alone — the reported PERIOD, in words, so the
+// one bullet that states the current reading says WHICH MONTH it is the reading for. Callers
+// that omit it render byte-identically to v7.0.3.
+export function comparisonReading(key,d,metric,asOf=null) {
   if(!finite(metric?.value))return null;
   let current=metric.text, context="";
   if(key==="tenYear")current=`${metric.context ? metric.context+" yield; " : ""}1-month change ${metric.value>0?"+":""}${metric.value.toFixed(2)} percentage points`;
   if(key==="cpiHeadline"){
     const xs=d?.macro?.cpi?.trend;
     if(!Array.isArray(xs)||xs.length<2||!xs.every(finite))return null;
-    current=`${metric.value.toFixed(1)}% YoY`;
+    const period=cpiPeriodLine(asOf);
+    current=`${metric.value.toFixed(1)}% YoY${period?` (${period})`:""}`;
     context=`Previous print: ${xs[xs.length-2].toFixed(1)}% YoY; trend-window start: ${xs[0].toFixed(1)}% YoY (${xs.length} observations). `;
   }
   return {current,context};

@@ -409,6 +409,107 @@ export function nextFomcDate(now = new Date()) {
   return null;
 }
 
+/* ─── MONTH ARITHMETIC (v7.1.5) ──────────────────────────────────────────────
+   ONE home for "which calendar month is this observation" and "twelve months before that",
+   here beside parseObsDate/etYmd because this module already owns every date judgement in
+   the stack. src/inflation.js imports these rather than re-deriving them: the YoY pairing
+   and the release-aware freshness gate must agree about what a month IS, or a print could
+   be paired against one month and judged against another (the 5-vs-6 denominator defect
+   with a calendar). Both accept the two date shapes parseObsDate accepts. */
+export function monthKey(dateStr) {
+  const dt = parseObsDate(dateStr);
+  if (!dt || isNaN(dt.getTime())) return null;
+  return `${dt.getFullYear()}-${String(dt.getMonth() + 1).padStart(2, "0")}`;
+}
+export function monthsBefore(key, n) {
+  const m = /^(\d{4})-(\d{2})$/.exec(String(key || ""));
+  if (!m || !Number.isFinite(n)) return null;
+  const total = Number(m[1]) * 12 + (Number(m[2]) - 1) - n;
+  if (total < 0) return null;
+  return `${String(Math.floor(total / 12)).padStart(4, "0")}-${String((total % 12) + 1).padStart(2, "0")}`;
+}
+const ymdPlusDays = (ymd, n) => {
+  const dt = parseObsDate(ymd);
+  if (!dt || isNaN(dt.getTime())) return null;
+  dt.setDate(dt.getDate() + n);
+  return `${dt.getFullYear()}-${String(dt.getMonth() + 1).padStart(2, "0")}-${String(dt.getDate()).padStart(2, "0")}`;
+};
+
+/* ─── BLS CPI RELEASE CALENDAR (v7.1.5, FEAT-CPI-RELEASE) ────────────────────
+   WHY A CALENDAR AND NOT A NUMBER. Monthly freshness was one flat `ageDays > 70` for every
+   monthly field, justified by a "~6-week publication lag" that is true of FEDFUNDS/PCE and
+   WRONG for CPI, whose lag is ~2 weeks. Measured, that mismatch bites in the cry-wolf
+   direction rather than the tolerant one: CPI for month M is PERIOD-dated M-01 and stays the
+   freshest published value until the NEXT release, ~71 days later — so for a day or two
+   before every release the flat rule marks a perfectly current print STALE and drops a VOTER
+   out of the six-factor backdrop for no reason. Release-awareness removes that outright: the
+   freshest published print is never stale, by definition, until the next SCHEDULED release
+   has passed without its reference month arriving.
+   ⚠ ASSERTED, NOT OWNER-CONFIRMED (2026-09-19). bls.gov is unreachable from this build
+   environment (the same proxy 403 that made FOMC_MEETINGS an asserted table), so these are a
+   fill from the published BLS pattern — ~the second week of the following month — and NOT a
+   verified fetch. Re-confirm against bls.gov/schedule/news_release/cpi.htm. Same shape and
+   same discipline as FOMC_MEETINGS above, including the smoke expiry tripwire that goes RED
+   under 90 days of runway, because a rotted calendar is exactly the defect this replaces.
+   ⚠ THE GRACE IS WHAT MAKES AN ASSERTED CALENDAR SAFE, and it is not decoration. This gate
+   EXCLUDES A VOTER, so date error must fail toward "not stale": a release date asserted a few
+   days EARLY would otherwise re-create the very cry-wolf being removed. CPI_RELEASE_GRACE_D
+   exceeds the plausible error, which costs a few days of miss-detection on a value that is
+   still the freshest published — the cheaper side of the trade, stated rather than implied. */
+export const CPI_RELEASE_GRACE_D = 5;
+export const CPI_RELEASES = [
+  { release: "2026-01-13", refMonth: "2025-12" }, { release: "2026-02-11", refMonth: "2026-01" },
+  { release: "2026-03-11", refMonth: "2026-02" }, { release: "2026-04-14", refMonth: "2026-03" },
+  { release: "2026-05-12", refMonth: "2026-04" }, { release: "2026-06-10", refMonth: "2026-05" },
+  { release: "2026-07-14", refMonth: "2026-06" }, { release: "2026-08-12", refMonth: "2026-07" },
+  { release: "2026-09-10", refMonth: "2026-08" }, { release: "2026-10-13", refMonth: "2026-09" },
+  { release: "2026-11-10", refMonth: "2026-10" }, { release: "2026-12-10", refMonth: "2026-11" },
+  { release: "2027-01-13", refMonth: "2026-12" }, { release: "2027-02-10", refMonth: "2027-01" },
+  { release: "2027-03-10", refMonth: "2027-02" }, { release: "2027-04-13", refMonth: "2027-03" },
+  { release: "2027-05-12", refMonth: "2027-04" }, { release: "2027-06-10", refMonth: "2027-05" },
+  { release: "2027-07-13", refMonth: "2027-06" }, { release: "2027-08-11", refMonth: "2027-07" },
+  { release: "2027-09-14", refMonth: "2027-08" }, { release: "2027-10-13", refMonth: "2027-09" },
+  { release: "2027-11-10", refMonth: "2027-10" }, { release: "2027-12-14", refMonth: "2027-11" },
+];
+
+/* Which fields a release calendar governs. CPI ONLY, deliberately: PCE is a BEA release on a
+   different schedule, and asserting a SECOND unverifiable table to gate a second pair of
+   fields would double the exposure for no measured defect — so pceHeadline/pceCore keep the
+   flat 70-day rule, which also leaves a real monthly field as the negative control proving
+   the release path cannot capture a calendar-less one. savings/shillerPe/unemployment/
+   fedFunds are likewise untouched. */
+const RELEASE_CALENDARS = { cpiHeadline: "cpi", cpiCore: "cpi" };
+
+/* The newest reference month that SHOULD be published by `now` (ET), or null when the field
+   has no calendar or the calendar has run out. NULL FALLS BACK TO THE FLAT RULE rather than
+   failing fully open — a calendar that has run out cannot say a release was missed, but a
+   feed dead since 2019 must still read STALE, so the pre-v7.1.5 behaviour is what a gap
+   degrades to. (⚠ correction to this release's own plan, which said "fail open": failing
+   fully open would let a genuinely dead monthly feed keep voting once the table expires.) */
+export function expectedRefMonth(field, now = new Date()) {
+  if (!field) return null;
+  const cal = RELEASE_CALENDARS[field] || RELEASE_CALENDARS[DERIVED_OF[field]];
+  if (cal !== "cpi") return null;
+  const today = etYmd(now);
+  const last = CPI_RELEASES[CPI_RELEASES.length - 1];
+  if (!last || (ymdPlusDays(last.release, CPI_RELEASE_GRACE_D) || "") <= today) return null;
+  let expected = null;
+  for (const r of CPI_RELEASES) {
+    if ((ymdPlusDays(r.release, CPI_RELEASE_GRACE_D) || "") <= today) expected = r.refMonth;
+    else break;   // the table is chronological
+  }
+  return expected;
+}
+
+/* The next scheduled CPI release at or after `now` (ET), or null past the end of the table —
+   never an extrapolated date, the nextFomcDate rule. The release-day refresh arm in
+   worker/cron.js reads CPI_RELEASES directly so the schedule has ONE home. */
+export function nextCpiRelease(now = new Date()) {
+  const today = etYmd(now);
+  for (const r of CPI_RELEASES) if (r.release >= today) return r;
+  return null;
+}
+
 // FIX-A (v3.49, VALUE_PROPOSITION_AUDIT_2026-07-31 Critical #1): the ET calendar date of an
 // instant. Every time-judge in this stack reasons in "completed ET trading sessions", so
 // "today" must be the ET date of `now` — NEVER the runtime's local date. The old
@@ -426,11 +527,15 @@ export function etYmd(now = new Date()) {
 // release by more than its source's normal cadence. `cadence` (daily|weekly|monthly):
 //   - daily   → weekday-aware: any completed PRIOR trading session missing = stale.
 //   - weekly  → stale only past ~12 days (covers a normal weekly release + a slip).
-//   - monthly → stale only past ~70 days. FRED prints are PERIOD-dated (month start) with
-//               a ~6-week publication lag, so a value dated ~2 months ago can still be the
-//               freshest available; flagging earlier would cry wolf on CPI/PCE/FEDFUNDS.
-// Default cadence is "daily" so existing 2-arg callers (and the daily tiles) are unchanged.
-export function isStale(dateStr, now = new Date(), cadence = "daily") {
+//   - monthly → RELEASE-AWARE where the field has a curated calendar (CPI, v7.1.5): stale
+//               once a scheduled release plus its grace has passed without that reference
+//               month arriving. Otherwise stale only past ~70 days — FRED prints are
+//               PERIOD-dated (month start) with a ~6-week publication lag, so a value dated
+//               ~2 months ago can still be the freshest available; flagging earlier would
+//               cry wolf on PCE/FEDFUNDS.
+// Default cadence is "daily" so existing 2-arg callers (and the daily tiles) are unchanged;
+// `field` is optional and a caller that omits it gets the pre-v7.1.5 behaviour byte-for-byte.
+export function isStale(dateStr, now = new Date(), cadence = "daily", field = null) {
   if (!dateStr) return false;
   const dt = parseObsDate(dateStr);
   if (!dt || isNaN(dt.getTime())) return false;
@@ -439,6 +544,14 @@ export function isStale(dateStr, now = new Date(), cadence = "daily") {
   const today = parseObsDate(etYmd(now));
 
   if (cadence === "monthly" || cadence === "weekly") {
+    /* v7.1.5 — the release-aware branch, checked BEFORE the flat age rule and reached only by
+       a field whose calendar exists AND still has runway. It compares CALENDAR MONTHS, never
+       days: the question "has the next print arrived?" is a question about periods, and an age
+       in days can only ever approximate it (which is how a current print came to read STALE
+       for a day or two before each release). A field with no calendar falls straight through,
+       so the 70/12-day rule below is untouched for every other monthly and weekly field. */
+    const expected = cadence === "monthly" ? expectedRefMonth(field, now) : null;
+    if (expected) return (monthKey(dateStr) || "") < expected;
     const ageDays = (today - dt) / 86400000;
     return ageDays > (cadence === "monthly" ? 70 : 12);
   }

@@ -1,5 +1,110 @@
 # CLAUDE.md — MacroDash
 
+**v7.1.5 — CPI PAIRED BY CALENDAR MONTH, JUDGED BY ITS RELEASE, AND DATED IN WORDS.**
+**⚠ OWNER ACTION: `cd worker && npx wrangler deploy`.** Pages alone ships the pairing, the
+freshness gate and the display; the 8:45am ET release-day arm is the WORKER's, and until that
+deploy runs the Triggers panel will show FIVE crons where this release expects **SIX** — every
+"Next run" a weekday.
+**Version note: 7.1.0 → 7.1.5 is an owner-set number. 7.1.1–7.1.4 do not exist and are not
+phantom releases** (the v5.9.5 / v4.99 precedent — a jump is recorded, never quietly renumbered).
+This also SUPERSEDES the v7.1 working note's version plan, which scheduled CPI as v7.3 behind the
+Sahm override; the owner reordered it, and the plan's table is corrected rather than left standing.
+**NO BAND MOVED. The CPI `vote()` is byte-unchanged** — it still votes on the SHAPE of its trend,
+latest print against the prior one plus drift from the window start.
+**THE DEFECT WAS INSIDE A VOTE, AND NOTHING PINNED IT.** `snapshot.js` derived every price-index
+YoY as `obs[m] / obs[m + 12]` — twelve **ROWS** back, not twelve **MONTHS** back — and never read
+either observation's `date`. It was correct only because the caller pre-filters `o.value !== "."`,
+so **any month BLS suppresses is silently dropped and the array closes ranks**, turning "12 months
+prior" into "13 months prior" with no error and no symptom. Three consequences, two of which the
+owner's ask named and one it did not: the pairing can compare the wrong months; the trend loop
+dropped non-finite points **silently**, so the array shortened and `t[0]` — the anchor the CPI
+vote's drift arm reads — became a different month; and `(a / b - 1) * 100` **had no test of any
+kind**, which is how it sat inside the inflation voter unnoticed. **`src/inflation.js`** pairs by
+CALENDAR MONTH off the dates, and **REFUSES rather than substitutes** (v4.1.4) when the month
+twelve back is absent — the hole is **NAMED** in `yoy_unpaired` on the series' own `_diag` status
+row ("the miss is EVIDENCE", §9) instead of vanishing into a shorter array. The pull widened 20 →
+26 points, because under the positional rule a suppressed month cost nothing and under the correct
+one it costs a row. The month arithmetic lives in `src/sources.js` beside `parseObsDate`, imported
+rather than re-derived, because **the pairing and the freshness gate must agree about what a month
+is** — two spellings there would be the 5-vs-6 denominator defect with a calendar.
+**THE ONE BEHAVIOUR CHANGE, stated rather than implied: a CPI trend too short to vote on is now
+UNAVAILABLE.** The band indexes `t[t.length-2]` with no guard of its own, so a one-point array
+compared against `undefined`, every arm read false, and the factor cast a **NEUTRAL vote from
+evidence containing no comparison**. `factorExclusions` gains an optional `d` and excludes on
+fewer than two finite points — fail closed on the FIELD, never by loosening the band. The
+orchestrator's own call gains `d` in the same pass, or the hero and the Drivers matrix would
+exclude different factors (the v3.98.3 one-page-two-answers defect). **⚠ Correction to this
+release's own plan:** it said to guard `macroCall.js:71`; measured, that path's `series()` helper
+has required `length >= 2` all along. The unguarded path was the DASHBOARD's, and that is the one
+closed here.
+**RELEASE-AWARE FRESHNESS, and the flat rule's defect is the opposite of the one assumed.** The
+plan called the 70-day monthly window an over-tolerance. Measured, it bites in the **cry-wolf**
+direction: CPI for month M is PERIOD-dated M-01 and stays the freshest published value until the
+next release **~71 days later**, so for a day or two before every release the flat rule marks a
+perfectly current print STALE and **drops a VOTER** for no reason. `CPI_RELEASES` (the
+`FOMC_MEETINGS` shape, same 90-day expiry tripwire) drives `isStale`'s new optional `field`
+argument: stale once a scheduled release plus its grace has passed without that reference month
+arriving. **CPI ONLY** — PCE is a BEA release on a different schedule, and asserting a second
+unverifiable table would double the exposure for no measured defect, so PCE/savings/CAPE/
+unemployment/FEDFUNDS keep the 70-day rule **byte-identically** (pinned in both directions, with
+PCE as the live negative control) and a caller passing no field is unchanged. **The cadence token
+stays `"monthly"`** — a new token would fork the vocabulary for no gain. **⚠ ASSERTED, NOT
+OWNER-CONFIRMED:** bls.gov is unreachable from this build environment, so the table is a fill from
+the published BLS pattern; **`CPI_RELEASE_GRACE_D = 5` is what makes an asserted calendar safe**,
+because this gate EXCLUDES A VOTER and date error must fail toward "not stale". **⚠ A second
+correction to the plan:** it said past the end of the table should "fail open". It degrades to the
+FLAT RULE instead — a calendar that has run out cannot say a release was missed, but a feed dead
+since 2019 must still read STALE.
+**THE DISPLAY THE OWNER ASKED FOR** (*"it shows August latest but confuses new users in
+September"*). The one date a reader met was `asOfOf`'s **"as of Aug 1" — DAY precision on a
+MONTH-precision observation, with no year at all**, which is exactly that misreading.
+`cpiPeriodLabel`/`cpiPeriodLine` live in `src/publicCopy.js`, the declared reader-facing
+vocabulary module, and **never guess**: an undatable value yields null and the caller renders
+nothing. Derived ONCE in the orchestrator and handed to both surfaces, so the strip tile and the
+macro row can never name different months: the macro row reads **`August 2026 · latest published`**
+beside headline and core (the SourceBox keeps its endpoint and its raw as-of — this ADDS to
+provenance, it does not replace it), the strip sub takes the chip-length half (`Core 2.9% · August
+2026`), and `voterSheet`'s bullet 2 carries the full phrase. No `text-transform` at any read site,
+so `innerText` reads the month back as written (the v3.69 lesson, designed for rather than
+rediscovered).
+**THE 8:45am ET ARM, and why the 10am cron is NOT a substitute.** BLS publishes at 08:30 ET; the
+08:00 prewarm caches the PRE-release value with a 48h TTL and `fieldMode` cannot downgrade it (the
+print is not stale — it is simply last month's), so 08:30–10:00 serves last month's CPI **wearing
+a LIVE badge**. The 10am refresh does rebuild, but publishes new CPI only through
+`publishIfNoWorse`'s as-of tiebreak, because `readoutQuality` is built entirely from Engine 0's
+checks and **CPI is not one of them** — so `improved` is `false`, and any unrelated degraded leg
+(a CNN 418, a Kalshi 429, a partial FRED batch) rejects the whole candidate and pins the
+pre-release value for the rest of the ET day. The arm is GATED on `CPI_RELEASES` read from
+`src/sources.js` (one home, shared with `isStale`) and **records its skip** on the ~250 weekdays
+that are not release days, because "did not fire" and "never ran" are different facts (v6.0 T2).
+**TWO OF MY OWN PINS WERE WRONG ON THEIR FIRST RUN, recorded rather than quietly fixed.** The
+first cron pin matched `controller.cron === SNAPSHOT_CPI_CRON` as TEXT, so the negative control
+that disabled the arm with `false &&` left the suite **fully green** — the PIN was wrong, not the
+code (v5.97.2). The gate is now exported (`cpiReleaseOn`, the `warmSnapshot` precedent) and RUN
+both ways, and the dispatch is DRIVEN against a fake KV. Re-run, that control **crashed the suite
+with no total** rather than turning a pin red, because a disabled arm falls through to the legacy
+FRED path and throws on the absent key (the v3.99.4 P0 shape) — the drive is try/catch-guarded
+now, so a fall-through is a RED assertion. **A third, smaller one:** the first browser pin read
+the voter-sheet phrase off the STRIP TILE's sheet, which renders the band's raw `explain.what[1]`;
+the composed bullet lives on the Simple CARD (the v7.0.3 split, measured again here).
+**Honest limit, named rather than implied:** reverting the snapshot wiring turns exactly ONE pin
+red — the source pin — because the behavioural pins run against the module and cannot see a call
+site. A function that is never called is functionally absent, and only a test reaching the call
+site can tell the difference (v6.7.3); `fetchFred` is not exported, so that pin is the guard.
+Verification: browser-required `npm run gates` passed **2,855 smoke** (+47; section [95]), **353
+admin-browser** and **738 public-browser** (+6, driven live in Chromium: the macro row's month
+words, provenance surviving beside them, the mixed case proving no CSS uppercased it, the Simple
+strip tile, and the card sheet's composed bullet); production audit found zero vulnerabilities.
+**Negative-controlled five ways**, each turning exactly its own pins: the positional `obs[m + 12]`
+restored, the release calendar widened to capture PCE and savings, the release-day arm disabled,
+the trend-length guard disabled, and the period dropped from both render sites (3 browser red, the
+card sheet correctly green — a different derivation path).
+**Deliberately NOT done:** no PCE release calendar; no `mortgage30W1` delta or `LAST_GOOD_GROUPS`
+entry (both real gaps, named in v7.1 and still owed); the Sahm bearish-only override (v7.2, the
+next slice); and `src/mockData.js`'s vestigial `macro.cpi.nextRelease` is left unwired rather than
+pressed into service — the release arm reads `CPI_RELEASES` directly, and routing a schedule
+through a mock field would be a second home for it.
+
 **v7.1.0 — SIX VOTERS, STATED; every other real factor integrated into Degen by ROLE.**
 **OWNER RULING 2026-09-19: the 7th voter seat stays EMPTY.** The public backdrop is six voters —
 10Y · VIX · F&G · CPI · CAPE · NFCI — and that is now a deliberate ceiling, not a count that
