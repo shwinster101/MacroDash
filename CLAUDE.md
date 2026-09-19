@@ -115,7 +115,23 @@ the no-op pin); and restoring the dropped cron to the TOML turns exactly the thr
 **Deliberately NOT done:** no change to `actionability`, `tt-v1`, the quorum or any band; no PCE
 release calendar and no `mortgage30W1`/`LAST_GOOD_GROUPS` entry (still owed since v7.1); the
 other two composition findings (valuation's near-permanent bear vote, the sentiment/volatility
-overlap) stay RECORDED; and the 24 asserted `CPI_RELEASES` dates are still owner-unconfirmed.
+overlap) stay RECORDED.
+**⚠ FOLLOW-UP THE SAME DAY (PR #50, merged into this branch): the 2026 half of `CPI_RELEASES` is
+now OWNER-CONFIRMED, and THREE of my asserted dates were WRONG** — Apr 14→**10**, Sep 10→**11**,
+Oct 13→**14** — cross-checked against the BLS monthly calendars, the BLS ICS feed and the White
+House PFEI CY2026 row (www.bls.gov itself still 403s from this build environment, so the
+confirmation is against those mirrors, not a live fetch). Recorded rather than quietly
+re-rendered, because an asserted table that turns out 3-of-12 wrong is the argument FOR the
+asserted/confirmed distinction, not an embarrassment to hide. **The October correction is the one
+with teeth:** 2026-10-14 is the NEXT firing of the 8:45am ET release-day arm, so under the
+asserted 10-13 the arm would have spent its run on a day BLS publishes nothing and recorded a
+SKIP on the real release — pinning the pre-release CPI for that ET day, which is the exact
+failure the arm exists to prevent. **`isStale` was never at risk in either direction**:
+`CPI_RELEASE_GRACE_D = 5` absorbs a few days of date error by design, which is why the grace is
+there — so what the confirmation bought is the ARM, not the freshness gate. **The 2027 half stays
+ASSERTED** (BLS has not published that schedule) and is flagged at the array; the 90-day expiry
+tripwire reads 451 days of runway. Merged, never rebased — the PR head predated v7.2.0 and a
+three-way merge from the shared base applies only the two files it touches.
 
 **v7.1.5 — CPI PAIRED BY CALENDAR MONTH, JUDGED BY ITS RELEASE, AND DATED IN WORDS.**
 **⚠ OWNER ACTION: `cd worker && npx wrangler deploy`.** Pages alone ships the pairing, the
@@ -168,7 +184,9 @@ PCE as the live negative control) and a caller passing no field is unchanged. **
 stays `"monthly"`** — a new token would fork the vocabulary for no gain. **⚠ ASSERTED, NOT
 OWNER-CONFIRMED:** bls.gov is unreachable from this build environment, so the table is a fill from
 the published BLS pattern; **`CPI_RELEASE_GRACE_D = 5` is what makes an asserted calendar safe**,
-because this gate EXCLUDES A VOTER and date error must fail toward "not stale". **⚠ A second
+because this gate EXCLUDES A VOTER and date error must fail toward "not stale". *(Superseded
+2026-09-19 for the 2026 half only — owner-confirmed, and three of those asserted dates were wrong;
+see the v7.2.0 follow-up above. The 2027 half is still exactly what this paragraph describes.)* **⚠ A second
 correction to the plan:** it said past the end of the table should "fail open". It degrades to the
 FLAT RULE instead — a calendar that has run out cannot say a release was missed, but a feed dead
 since 2019 must still read STALE.

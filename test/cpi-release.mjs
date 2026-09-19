@@ -174,6 +174,42 @@ export async function testCpiRelease(ok) {
       const last = new Date(`${CPI_RELEASES[CPI_RELEASES.length - 1].release}T00:00:00`);
       return (last - new Date(`${etYmd(new Date())}T00:00:00`)) / 86400000 > 90;
     })());
+  /* ⚠ THE LIMIT THIS PIN EXISTS TO WORK AROUND, stated rather than left to be rediscovered.
+     A DATE VALUE cannot be pinned. Measured 2026-09-19 as a negative control: reverting
+     2026-10-14 to the wrong asserted 2026-10-13 turns ZERO assertions red — and that is
+     structural, not an oversight. A pin derived from the table compares it against itself
+     (vacuous), and a pin that re-types the date is a SECOND HOME for it, which is the drift
+     defect this repo keeps paying for. So the controls on a curated calendar are the expiry
+     tripwire above, the owner confirmation, and THIS: the provenance marker must partition
+     the rows, so a later pass cannot promote an asserted year to confirmed — or append a new
+     year with no provenance at all — by editing data and leaving the claim behind. Three of
+     the 2026 dates WERE wrong before confirmation (Apr 14→10, Sep 10→11, Oct 13→14), which is
+     the argument for keeping the two halves visibly separate rather than evidence against it. */
+  ok("[95] PROVENANCE PARTITION: every release row sits under a marker that says whether it is " +
+     "owner-confirmed or still asserted — a date value is unpinnable, its provenance is not",
+    (() => {
+      const src = readSrc("../src/sources.js");
+      const arr = src.slice(src.indexOf("export const CPI_RELEASES"));
+      const body = arr.slice(0, arr.indexOf("];"));
+      const lines = body.split("\n");
+      let marker = null;           // null until a provenance comment has been seen
+      let confirmed = 0, asserted = 0;
+      for (const line of lines) {
+        // ⚠ ORDER MATTERS, and my first cut got it backwards: "ASSERTED, NOT OWNER-CONFIRMED"
+        // CONTAINS "OWNER-CONFIRMED", so testing the confirmed form first labelled the asserted
+        // 2027 block as confirmed and the pin failed against correct source. Asserted is checked
+        // first because it is the more specific string. Recorded rather than quietly fixed.
+        if (/ASSERTED, NOT OWNER-CONFIRMED/.test(line)) marker = "asserted";
+        else if (/OWNER-CONFIRMED/.test(line)) marker = "confirmed";
+        const rows = line.match(/release: "(\d{4}-\d{2}-\d{2})"/g) || [];
+        if (rows.length && marker === null) return false;   // a row with NO provenance above it
+        if (marker === "confirmed") confirmed += rows.length;
+        if (marker === "asserted") asserted += rows.length;
+      }
+      // both halves must be non-empty AND account for every row the module exports
+      return confirmed > 0 && asserted > 0 &&
+        confirmed + asserted === CPI_RELEASES.length;
+    })());
 
   const AT = (ymd) => new Date(`${ymd}T12:00:00`);
   /* The measured cry-wolf: July's print (period 2026-07-01) is 71 days old on 2026-09-10, the
