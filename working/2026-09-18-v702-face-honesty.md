@@ -37,5 +37,6 @@ Corrections during verification:
 Focused browser checks passed 49/49 across 320/390/1280px and all three frozen directions;
 screenshots reviewed at phone widths in both modes. Final browser-required npm run gates
 passed: 2,735 smoke, 353 admin-browser, 751 public-browser; production audit: 0 vulnerabilities.
-Final source diff passes git diff --check. Implementation commit is recorded below.
+Final source diff passes git diff --check. Implementation commit: 1b80850
+(feat: v7.0.2 shared honest hero tally and frozen action), based on 489c22c.
 No publishing or deployment in this slice; production remains the prior release.
