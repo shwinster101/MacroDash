@@ -33,3 +33,26 @@ All 102 new browser assertions passed independently and in the full suite. Expan
 320px screenshot inspected: /tmp/macrodash-704-open-320.png. Original layout budgets
 and earlier release tests remain enforced. Final git diff --check passed.
 Release commit and production verification follow the push.
+
+## Production-contract correction (before completion)
+
+Initial merge eb604ae deployed, but live verification found a real frozen HODL record with
+published:true and status:OK. The 7.0.2 hero had wrongly tested status:PUBLISHED, and the
+first 7.0.4 integration reused that error. Earlier reports that no frozen capture existed
+were wrong: the UI had rejected a valid record. The initial synthetic tests repeated the
+same mistaken status and therefore passed. This was a publication-contract bug, not a
+data outage or a missing 10am capture.
+
+Corrected both UI consumers through one isFrozenPublishedCall predicate using the actual
+md-call-v1 published boolean, frozen flag and valid direction. No publisher/model change.
+Hero tests now construct records with callFromEvidence and cover OK, PARTIAL DATA and PANIC;
+browser frozen-action/Spotlight fixtures also use the real builder instead of invented
+publication statuses. A PUBLISHED string without the boolean is explicitly rejected.
+The exact live production call was replayed through the corrected local build as a separate
+check, so UI activation is verified against an actual saved record, not just fixtures.
+Corrected full gates and redeployment outcomes follow below.
+
+Corrected browser-required npm run gates passed 2758 smoke + 11 lock pins, 353 admin,
+861 public checks; audit zero vulnerabilities. Real production-record replay passed:
+frozen:true, published:true, status:OK, headline:HODL yields “Do not add risk.” and a
+closed lesson fold, with no page errors. The previous claim of a missing capture is retracted.

@@ -9,6 +9,12 @@ export const FROZEN_ACTION = Object.freeze({
   BEARISH: "Reduce or don’t add.",
 });
 
+// md-call-v1 publishes via a boolean; status describes quality (OK/PARTIAL DATA/PANIC).
+export function isFrozenPublishedCall(call, frozen) {
+  return frozen === true && call?.schema === "md-call-v1" && call.published === true &&
+    ["NEUTRAL", "BULLISH", "BEARISH"].includes(call.direction);
+}
+
 export function heroFace({ evidence, call, frozen = false, now = new Date() } = {}) {
   const usable = !["LOADING", "ERROR", "DEMO"].includes(evidence?.state);
   // Restrict to the same six canonical identities; no tally from a different engine.
@@ -18,7 +24,7 @@ export function heroFace({ evidence, call, frozen = false, now = new Date() } = 
   const count = vote => counted.filter(f => f.vote === vote).length;
   const stale = counted.filter(f => isStale(f.asOf, now, cadenceOf(f.field || (f.key === "valuation" ? "shillerPe" : f.key)))).length;
   const tally = `${count("bear")} caution · ${count("bull")} support · ${count("neutral")} neutral${stale ? ` · ${stale} stale counted` : ""}`;
-  const action = frozen && call?.schema === "md-call-v1" && call?.status === "PUBLISHED"
+  const action = isFrozenPublishedCall(call, frozen)
     ? FROZEN_ACTION[call.direction] || "10am action unavailable."
     : "10am action unavailable.";
   return { tally, action, engine: TERMINAL_ENGINE_NOTE };

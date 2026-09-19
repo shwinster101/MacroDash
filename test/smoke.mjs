@@ -12357,7 +12357,7 @@ console.log("\n[81] v6.5.0 STOCK SPOTLIGHT — calculations, endpoints, cron leg
   ok("[81] section: presentation-only — no hook, storage, fetch or computation import; the fetch lives in the orchestrator, gated on liveBuild, and renders directly below the macro strip in BOTH modes",
     !/useState|useEffect|localStorage|fetch\(|useMarketData|computeRegime|buildEvidenceSet|ptModelRows/.test(ssCode) &&
     /if\(!liveBuild\)return;\n    let dead=false;\n    fetch\("\/api\/stock-spotlight"\)/.test(dashSrc) &&
-    /votingFields=\{VOTING_FIELDS\}[^\n]*\n\n[\s\S]{0,700}<StockSpotlight spotlight=\{spotlight\} simple=\{simple\} callHeadline=\{dailyCall.headline\} callFrozen=\{callFrozen&&dailyCall.status==="PUBLISHED"\}\/>/.test(dashSrc) &&
+    /votingFields=\{VOTING_FIELDS\}[^\n]*\n\n[\s\S]{0,700}<StockSpotlight spotlight=\{spotlight\} simple=\{simple\} callHeadline=\{dailyCall.headline\} callFrozen=\{isFrozenPublishedCall\(dailyCall,callFrozen\)\}\/>/.test(dashSrc) &&
     !/\{simple&&<StockSpotlight|\{!simple&&<StockSpotlight/.test(dashSrc));
   ok("[81] section: renders NOTHING without an enabled feed + model; YTD and the chart live on the Simple face, market cap appears on both profiles",
     /if \(!spotlight \|\| !spotlight\.enabled \|\| !spotlight\.model/.test(ssCode) &&

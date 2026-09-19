@@ -26,6 +26,7 @@ import { extname, join } from "node:path";
    copied the old hex went red for the wrong reason — a pin should measure that the page wears
    the TOKEN, not that the token still has last year's value. */
 import { DT } from "../src/design-tokens.js";
+import { callFromEvidence } from "../src/macroCall.js";
 const tokRgb = (name) => { const n = parseInt(DT[name].slice(1), 16); return `rgb(${n >> 16}, ${(n >> 8) & 255}, ${n & 255})`; };
 
 const DIST = new URL("../dist/", import.meta.url);
@@ -1307,7 +1308,7 @@ console.log("\n[public] A4 — the public/private boundary is ENFORCED, not comm
 {
   const frozenCall = {
     schema:"md-call-v1", effective_date:TODAY, headline:"DIAMOND HANDS", emoji:"🙌",
-    direction:"BEARISH", confidence:"HIGH", actionability:"HOLD", status:"PUBLISHED",
+    direction:"BEARISH", confidence:"HIGH", actionability:"HOLD", status:"OK",published:true,
     counts:{usable:6,total:6,bull:0,bear:6,neutral:0}, factors:[], override:{active:false},
   };
   const { page, errors } = await open({ live:FULL_LIVE, route:"/?view=public", width:320,
@@ -1629,7 +1630,7 @@ console.log("\n[public] v6.0 — merged FIRED·BLIND badge + alert persistence a
 console.log("\n[public] v6.0.1/v6.4 — shape before text · Simple|Degen clarity · captions one tap deep");
 {
   const frozenHodl = { schema:"md-call-v1", effective_date:TODAY, headline:"HODL", emoji:"💎",
-    direction:"NEUTRAL", confidence:"HIGH", actionability:"RESTRICTED", status:"PUBLISHED",
+    direction:"NEUTRAL", confidence:"HIGH", actionability:"RESTRICTED", status:"OK",published:true,
     counts:{usable:5,total:6,bull:2,bear:1,neutral:2}, factors:[], override:{active:false} };
   const oneDark = { ...FULL_LIVE }; delete oneDark.cpiHeadline; delete oneDark.cpiHeadlineAsOf; delete oneDark.cpiTrend;
   const { page, errors } = await open({ live: oneDark, width: 390, power: false,
@@ -2458,7 +2459,7 @@ console.log("\n[public] T2–T6 — Simple face sheds clock, rulers, coverage, l
   const fx = makeSpotlightFixture();
   const feed = { schema: "md-spotlight-v1", enabled: true, model: fx.projected };
   const frozenHodl = { schema:"md-call-v1", effective_date:TODAY, headline:"HODL", emoji:"💎",
-    direction:"NEUTRAL", confidence:"HIGH", actionability:"RESTRICTED", status:"PUBLISHED",
+    direction:"NEUTRAL", confidence:"HIGH", actionability:"RESTRICTED", status:"OK",published:true,
     counts:{usable:6,total:6,bull:2,bear:1,neutral:3}, factors:[], override:{active:false} };
   const { page, errors } = await open({ live: FULL_LIVE, width: 390, power: false,
     publicCall: frozenHodl, publicCallFrozen: true, publicCallCapturedAt: `${TODAY}T14:00:00.000Z`,
@@ -2852,7 +2853,7 @@ for (const scenario of [
  const face=page=>page.locator(".hero-face > div").allTextContents();
  const live={...FULL_LIVE,tenYearM1:0.23,vix:15.44,fearGreed:29,cpiHeadline:3.7,cpiTrend:[3.5,3.5,3.6,3.7],shillerPe:41,nfci:-0.56};
  for(const width of [320,390,1280])for(const [direction,action] of [["NEUTRAL","Do not add risk."],["BULLISH","Backdrop supports adding risk."],["BEARISH","Reduce or don’t add."]]){
-  const saved={schema:"md-call-v1",effective_date:TODAY,headline:direction==="NEUTRAL"?"HODL":direction==="BULLISH"?"MOONING":"DIAMOND HANDS",direction,status:"PUBLISHED",confidence:"HIGH",actionability:"RESTRICTED",override:{active:false},counts:{usable:6,total:6},factors:[]};
+  const saved=callFromEvidence({state:"LIVE",withheld:false,regime:{label:({NEUTRAL:"MIXED",BULLISH:"RISK-ON",BEARISH:"RISK-OFF"})[direction]},counted:6,totalFactors:6,factors:[]},{effectiveDate:TODAY,macroFlip:{evaluable:true,armed:false,tripped:false}});
   const {page,errors}=await open({live,width,power:false,publicCall:saved,publicCallFrozen:true,publicCallCapturedAt:TODAY+"T14:00:00.000Z"});
   await page.waitForTimeout(1000);
   const simple=await face(page);
@@ -2933,14 +2934,14 @@ for (const scenario of [
  const feed={schema:"md-spotlight-v1",enabled:true,model:makeSpotlightFixture().projected};
  const live={...FULL_LIVE,tenYearM1:0.23,vix:15.44,fearGreed:29,cpiHeadline:3.7,cpiTrend:[3.5,3.5,3.6,3.7],shillerPe:41,nfci:-0.56};
  const cases=[
-  {headline:"HODL",direction:"NEUTRAL",frozen:true,status:"PUBLISHED",lock:true},
-  {headline:"DIAMOND HANDS",direction:"BEARISH",frozen:true,status:"PUBLISHED",lock:true},
-  {headline:"MOONING",direction:"BULLISH",frozen:true,status:"PUBLISHED",lock:false},
-  {headline:"HODL",direction:"NEUTRAL",frozen:false,status:"PUBLISHED",lock:false},
-  {headline:"HODL",direction:"NEUTRAL",frozen:true,status:"WITHHELD",lock:false}
+  {headline:"HODL",direction:"NEUTRAL",frozen:true,status:"OK",published:true,lock:true},
+  {headline:"DIAMOND HANDS",direction:"BEARISH",frozen:true,status:"OK",published:true,lock:true},
+  {headline:"MOONING",direction:"BULLISH",frozen:true,status:"OK",published:true,lock:false},
+  {headline:"HODL",direction:"NEUTRAL",frozen:false,status:"OK",published:true,lock:false},
+  {headline:"HODL",direction:"NEUTRAL",frozen:true,status:"DATA HOLD",published:false,lock:false}
  ];
  for(const width of [320,390])for(const power of [false,true])for(const c of cases){
-  const saved={schema:"md-call-v1",effective_date:TODAY,headline:c.headline,direction:c.direction,status:c.status,confidence:"HIGH",actionability:"RESTRICTED",override:{active:false},counts:{usable:6,total:6},factors:[]};
+  const saved=callFromEvidence({state:"LIVE",withheld:!c.published,regime:{label:({NEUTRAL:"MIXED",BULLISH:"RISK-ON",BEARISH:"RISK-OFF"})[c.direction]},counted:6,totalFactors:6,factors:[]},{effectiveDate:TODAY,macroFlip:{evaluable:true,armed:false,tripped:false}});
   const {page,errors}=await open({live,width,power,spotlight:feed,publicCall:saved,publicCallFrozen:c.frozen,publicCallCapturedAt:TODAY+"T14:00:00.000Z"});
   await page.waitForTimeout(1000);
   const tag="7.0.4 "+width+"/"+power+"/"+c.headline+"/"+c.frozen+"/"+c.status;

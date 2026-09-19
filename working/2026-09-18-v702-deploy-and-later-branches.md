@@ -30,3 +30,9 @@ Owner requested deployment of 7.0.2 plus merges/deployment of ready 7.0.3 and 7.
 
 7.0.3/7.0.4 remain blocked on completed refs. This release note is local documentation;
 production commit is b3a19b3, not this follow-up note's commit.
+
+Correction discovered during 7.0.4 live verification: the earlier claim that no published
+frozen action was available was incorrect. A real frozen record uses published:true and
+status:OK; heroFace had incorrectly required status:PUBLISHED. The displayed unavailable
+message was verified, but its cause was misdiagnosed. The 7.0.4 integration note records
+the shared predicate correction and real-publisher regression coverage.

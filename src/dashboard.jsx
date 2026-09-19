@@ -4,7 +4,7 @@ import { MOCK_DATA } from "./mockData.js"; // v6.5.5: the mock baseline, one hom
 import { computeFiveWhys } from "./fiveWhys.js"; // v2.5: rule-based 5 Whys ($0, derived from live data)
 import { buildEvidenceSet, simpleVerdict, simpleSignals, simpleFlipLine, factorExclusions, fieldMode, FACTOR_FIELD } from "./evidence.js"; // C1 (v3.60): the typed contract
 import { simpleSignalsDiffer, WHYS_FOLD_LABEL, ABOUT_FOLD_LABEL } from "./simpleFace.js"; // T1: Simple FACE registry
-import { heroFace } from "./heroFace.js";
+import { heroFace, isFrozenPublishedCall } from "./heroFace.js";
 import { LASTVALID_KEY, summarizeEvidence, compareEvidence } from "./whatChanged.js"; // C4 (v3.60)
 import { parseObsDate, nextFomcDate, etYmd } from "./sources.js"; // FEAT-R3: per-tile, cadence-aware staleness + shared market calendar; v3.99: curated FOMC calendar
 import { computeMacroFlip } from "./ttReadout.js"; // FEAT-331: Macro Flip circuit
@@ -839,7 +839,7 @@ export default function Dashboard({ publicView = false } = {}) {
           so the macro verdict stays the first answer and this is the first company-level
           one. Presentation-only section; the model arrives projected from the server, the
           fetch lives above. Renders nothing unless the feed is enabled with a model. ── */}
-      <StockSpotlight spotlight={spotlight} simple={simple} callHeadline={dailyCall.headline} callFrozen={callFrozen&&dailyCall.status==="PUBLISHED"}/>
+      <StockSpotlight spotlight={spotlight} simple={simple} callHeadline={dailyCall.headline} callFrozen={isFrozenPublishedCall(dailyCall,callFrozen)}/>
       {simple&&<div className="simple-market-context" style={{padding:"8px 20px"}}>
         <CollapsedGroup label="Explore market data" count={6} chip={false} promise>
           <MacroStrip d={d} modeOf={modeOf} asOfOf={asOfOf} variant="context" fomcLabel={fomcLabel} fomcDays={fomcDays} votingFields={VOTING_FIELDS}/>
