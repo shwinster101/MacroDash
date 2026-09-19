@@ -25,4 +25,11 @@ Requested corrected branch/commit from owner. Original dirty checkout remains un
 Combined browser-required npm run gates passed: 2754 smoke / 353 admin / 759 public;
 production dependency audit found zero vulnerabilities. No test budgets weakened.
 Both appended suites run, including frozen-action parity and all F&G disclosure paths.
-Commit/deployment verification follows the release push.
+Merge commit 49df6cdbeda25c9bd7d321152aa0797295b40790 was pushed to main.
+Cloudflare deployment e8a3a8a6-5d9a-4038-b0fa-c8e83d679acf completed successfully.
+Production serves index-Dl8hmpxJ.js, SHA-256 identical to the verified local 7.0.3 build.
+Live browser checks at 390px: F&G caption present after Model reference in both modes;
+hero strings remain identical; no horizontal overflow or runtime errors. Screenshot
+reviewed: /tmp/macrodash-703-production-fng.png. GitHub CI run 35411969796 was still
+running at this checkpoint; local combined gates are complete. This follow-up note is
+local documentation, not a second production deployment.
