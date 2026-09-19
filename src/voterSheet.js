@@ -19,7 +19,10 @@ export function voterSheet(f) {
   if(!band)return f.explain;
   const available=f.available&&["LIVE","CACHED"].includes(f.mode)&&Boolean(f.asOf)&&Boolean(f.comparison?.current);
   const current=available?`Latest reported: ${f.comparison.current}`:"Current reading unavailable — not counted in this comparison.";
-  const reference=`${available?f.comparison.context:""}Model reference: ${band.ruler}.`;
+  // v7.0.3: the gate asterisk sits immediately AFTER the backdrop ruler it qualifies, so the
+  // reference and its caveat are read together. Optional and currently carried by F&G alone —
+  // a band without one renders byte-identically to v7.0.1.
+  const reference=`${available?f.comparison.context:""}Model reference: ${band.ruler}.${band.gateAsterisk?` ${band.gateAsterisk}`:""}`;
   const result=available?({bull:"Supports stocks.",bear:"Signals caution.",neutral:"No clear signal."}[f.vote||({helping:"bull",hurting:"bear",mixed:"neutral"}[f.direction])]||""):"No current reading is shown.";
   const stamp=available?`${f.mode} · observation date ${f.asOf}`:`${f.mode||"Unavailable"} · ${f.reason||"No current, verified input"}`;
   const comparison={current,reference,result,stamp,available};

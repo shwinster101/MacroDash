@@ -1,5 +1,81 @@
 # CLAUDE.md — MacroDash
 
+**v7.0.3 — the F&G asterisk: one number, two band tables, and the split finally said out loud.**
+**Integration correction:** this branch began at 7.0.1 independently. Version 7.0.2
+exists, is deployed, and is preserved in this merge; no release is skipped.
+**Combined verification:** browser-required gates passed 2,754 smoke, 353 admin-browser,
+759 public-browser checks, audit zero vulnerabilities. Both patches' suites are retained.
+**NO BAND MOVED.** This is a caption and a reconciliation; every vote, quorum, flip edge, the
+PANIC override and the `tt-v1` contract are byte-unchanged.
+**The defect was a disclosure gap, and v7.0.1 is what made it owed.** This product reads Fear &
+Greed through TWO band tables: the public backdrop (`REGIME_BAND_TABLE.fearGreed`) is **MONOTONE**
+— above 55 helps, below 30 hurts, more greed is more bullish without limit — while Engine 0's
+order-gating check (`bandFearGreed`) is a **CONTRARIAN BAND** — 25–55 bullish, below 20 **or above
+75** bearish. v7.0.1 made bullet 2 of the voter sheet state a reference band out loud, on the
+default view, for all six voters; a band that is not the only one the product applies to that
+number thereby became a visible claim rather than an internal detail.
+**MEASURED BEFORE ANYTHING WAS TOUCHED: 81 of 101 integer readings disagree**, and the two tables
+agree only on 0–19. Twice they **INVERT**: at **25–29** the public page says this factor HURTS
+while Engine 0 counts it BULLISH, and at **76–100** the page says it HELPS while Engine 0 counts
+it BEARISH. The live mock fixture (62) sits inside a disagreement range today.
+**⚠ CORRECTION TO MY OWN FIRST SWEEP, recorded rather than edited away, and it changed the
+finding.** The first pass reported THREE divergent factors and claimed the 10Y disagreed on 121
+of 121 sampled readings. That was an artefact of my own normalisation: `bandTenYear` returns a
+TREND vocabulary (`falling`/`rangebound`/`spiking`) that is mapped to a vote downstream, and I
+compared it against bull/bear/neutral as if the strings were comparable. Measured properly, **the
+10Y is edge-identical (−0.10/+0.15) and VIX is edge-identical (18/25)** — 0 divergence on both.
+**F&G is the SOLE outlier.** That matters to the ruling: the two-engine architecture does not
+inherently produce different numbers, so "two jobs" is a claim about one factor, not a property
+of the design.
+**THE UNIFY IS DELIBERATELY NOT DONE, and the decision is WRITTEN rather than taken.** Adopting
+either band into the other is a MODEL change: the terminal's 20 line is the PANIC override's own
+edge (`vix > 25 AND fearGreed < 20`) and `/readout.json` gates real orders on the check, while
+the backdrop's band moves the published daily call above 75 and re-bands 30–55 from neutral to
+bullish. That is the rule NFCI (v3.43) and the 30Y (v3.55) both arrived under. The open owner
+ruling — *does sentiment do one job or two?* — its evidence on both sides, the other consumers of
+the terminal band, and the tension between the backdrop sheet's "neither extreme establishes that
+a reversal is due" and Engine 0's `>75 → bearish` rule are in
+[`working/2026-09-19-fng-band-split.md`](working/2026-09-19-fng-band-split.md).
+**The copy.** `FG_GATE_ASTERISK` — ONE home in `src/regime.js`, beside the band it qualifies,
+interpolated never retyped (the CAPE_MEAN/CAPE_ATH precedent) — reaches **both** of the sheet's
+bullet-2 render paths, landing immediately **after the backdrop ruler** in each: the raw
+`explain.what[1]` the macro-strip tile renders, and the composed bullet 2 `voterSheet()` builds
+for the Simple cards and the Drivers matrix (`Model reference: <ruler>. Terminal gate uses
+different bands (bull 25–55).`). A withheld reading still states it — the bands are a property of
+the model, not of today's feed (the v3.25 rule). `gateAsterisk` is an OPTIONAL band field and
+**F&G alone carries one**, pinned in both directions, because an asterisk on VIX or the 10Y would
+claim a split that does not exist. The 75-word `explain.what` ceiling still binds and was
+re-measured at **68**, not loosened.
+**THE DURABLE HALF IS THE RECONCILIATION, and it guards BOTH directions.** `test/fng-band-split.mjs`
+holds the two tables against each other behaviourally: every edge is **DERIVED by sweeping**
+rather than retyped, the MONOTONE and CONTRARIAN shapes are asserted structurally, the 81-reading
+disagreement is pinned as a measured fact that **REPORTS ITS OWN MEASUREMENT** (the v4.1.3
+lesson), and the caption's own numbers are checked against the bull range `bandFearGreed`
+actually votes. So a silent UNIFY goes red, and so does a silent DIVERGENCE that leaves the
+caption describing a band that no longer exists. The pins live in the SUITE, not the runtime:
+`src/regime.js` imports nothing and the two engines stay married-never-merged, so coupling the
+public backdrop to an order-gating band function to render a caption was refused — the
+SOURCES/DERIVED_OF and playwright `EXECUTABLE_PATHS` idiom instead.
+**Found by a pre-existing pin, and MY code was wrong, not the pin:** the first cut named the
+working note's path inside a `src/regime.js` comment, which tripped the "`working/` is NOTES — no
+product surface may import it" sweep. `src/` has never referenced that tree; the path was removed
+from the source rather than the sweep taught to strip comments, because a pin is not loosened to
+fit the change that broke it. **A second correction, also recorded:** the browser pin first
+treated the strip sheet as "Simple behind the fold, Degen directly" and timed out against a
+correct page — since v6.9.9 **both** modes lead with `SimpleMarketTape` and the eight-tile strip
+renders ONLY inside Simple's *Explore market data* fold, so Degen has no F&G strip sheet at all
+and reaches the caption through its driver card alone. Scoped to Simple; a conditional click
+would have passed vacuously in Degen (the v3.60.1 trap).
+Verification: browser-required `npm run gates` passed **2,730 smoke** (+19), **353 admin-browser**
+and **710 public-browser** (+8, driven live in Chromium: the caption on the F&G sheet in BOTH
+modes with its position asserted against the model reference, the five other voters proven NOT to
+claim a split, and the strip tile's independent render path); production audit found zero
+vulnerabilities. **Negative-controlled six ways**, each turning exactly its own pins: unifying the
+terminal band onto the backdrop's (disagreement pin reports `measured 0`), unifying the backdrop
+onto the terminal's (`measured 0`), moving the terminal bull range to 25–60 with the caption
+untouched (`measured 76` — the caption-rot case), dropping the asterisk from the voterSheet path
+(2 smoke + 2 browser red, strip path correctly green), and making VIX diverge across the engines.
+
 **v7.0.2 — face honesty, one slice.**
 Both modes render one shared current six-voter tally, frozen 10am action sentence,
 and muted terminal-engine distinction. The tally orders caution/support/neutral and
@@ -13,7 +89,6 @@ Verification: browser-required npm run gates passed 2,735 smoke, 353 admin-brows
 face lines earn a documented 24px phone-content allowance (section 684px / first tile
 744px); card position, tap targets, and overflow limits are unchanged. Local patch only,
 not deployed in this pass.
-
 
 **v7.0.1 — current readings lead voter explainer bullet 2.**
 Simple and Degen share one dated current-vs-reference presentation across all six voters.

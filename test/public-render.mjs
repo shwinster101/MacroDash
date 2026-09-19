@@ -2874,6 +2874,57 @@ for (const scenario of [
   await page.close();
  }
 }
+/* v7.0.3 — THE F&G ASTERISK, DRIVEN. The split is pinned as an object in smoke; this proves it
+   reaches a reader. Both of the sheet's bullet-2 render paths are exercised, because they are
+   built differently: the voter cards rebuild bullet 2 in voterSheet() around the band ruler,
+   while the macro-strip tile renders explain.what[1] raw. A caption present on only one of them
+   would be a disclosure the default view might never show. Position is asserted, not mere
+   presence — "after the backdrop ruler" is the whole instruction, and a caption that floated
+   above the band it qualifies would read as a second, competing ruler. */
+{
+ const ASTERISK = "Terminal gate uses different bands (bull 25–55)";
+ for(const power of [false,true]){
+  const {page,errors}=await open({live:FULL_LIVE,width:390,power});await page.waitForTimeout(1200);
+  const selector=power?".driver-card":".simple-card";
+  // Index 2 is fearGreed in REGIME_BAND_TABLE order (10Y · VIX · F&G · CPI · VAL · NFCI).
+  await page.locator(selector).nth(2).click();
+  const fg=await page.getByRole("dialog").locator("li").nth(1).innerText();
+  ok("7.0.3 "+power+": the F&G voter sheet states the terminal split, AFTER the model reference",
+    fg.includes(ASTERISK) && fg.indexOf("Model reference:") < fg.indexOf(ASTERISK) &&
+    await page.getByRole("dialog").locator("li").count()===3);
+  await page.keyboard.press("Escape");
+  // Scoped live, not just in the object: VIX and the 10Y are edge-identical across both
+  // engines, so a caption there would claim a split that does not exist.
+  let others=true;
+  for(const i of [0,1,3,4,5]){
+   await page.locator(selector).nth(i).click();
+   if((await page.getByRole("dialog").innerText()).includes(ASTERISK))others=false;
+   await page.keyboard.press("Escape");
+  }
+  ok("7.0.3 "+power+": no other voter sheet claims a split — F&G alone carries the asterisk",others);
+  /* The macro-strip tile is the OTHER render path (raw explain.what[1]). ⚠ CORRECTION to my
+     own first cut, recorded rather than quietly fixed: I wrote this as "Simple behind the
+     fold, Degen directly" and it timed out against a correct page. Since v6.9.9 BOTH modes
+     lead with SimpleMarketTape and the full eight-tile strip renders ONLY under Simple's
+     "Explore market data" — so in Degen there is no strip sheet for F&G at all, and its only
+     path to the caption is the driver card asserted above. Scoped to Simple accordingly; a
+     conditional click would have made this pin pass vacuously in Degen. */
+  if(!power){
+   await page.getByRole("button",{name:/Explore market data/}).click();
+   const tiles=page.locator(".macro-strip-inner .strip-tile");
+   let idx=-1;
+   for(let i=0;i<await tiles.count();i++) if(/F&G/.test(await tiles.nth(i).innerText())) idx=i;
+   ok("7.0.3 the F&G strip tile exists in Simple's Explore fold — the raw-explain render path",idx>=0);
+   await tiles.nth(idx).click();
+   const strip=await page.getByRole("dialog").innerText();
+   ok("7.0.3 the F&G STRIP tile carries the same split, after the backdrop ruler",
+     strip.includes(ASTERISK) && strip.indexOf("below 30 as hurting") < strip.indexOf(ASTERISK));
+   await page.keyboard.press("Escape");
+  }
+  ok("7.0.3 "+power+": no runtime errors",errors.length===0);
+  await page.close();
+ }
+}
 await browser.close();
 srv.close();
 console.log(`\n=== PUBLIC RENDER TEST: ${pass} passed, ${fail} failed ===`);
