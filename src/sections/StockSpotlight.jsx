@@ -24,7 +24,8 @@ import { LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer, ReferenceL
 import { T } from "../design-tokens.js";
 import { Explainable } from "../primitives/FactSheet.jsx";
 import CollapsedGroup from "../primitives/CollapsedGroup.jsx";
-import { spotlightFace, lessonTitle, lessonBody, chartTitle, EXPLORE_FOLD_LABEL } from "../simpleFace.js";
+import { spotlightFace, lessonTitle, lessonBody, chartTitle, EXPLORE_FOLD_LABEL,
+  spotlightLocked, SPOTLIGHT_LOCK_EYEBROW, SPOTLIGHT_LOCK_FOLD } from "../simpleFace.js";
 
 import { spotlightExplain, valuationExplain, peDisplay } from "../spotlightExplain.js";
 
@@ -133,13 +134,20 @@ const Stale = ({ f }) => f && f.stale
   ? <span title={f.reason || "stale"} style={{ fontFamily: T.fontMono, fontSize: T.fsXs, color: T.amber, border: `1px solid ${T.amber}55`, borderRadius: 3, padding: "0 4px", marginLeft: 4 }}>STALE</span>
   : null;
 
-const Profile = ({ c, leg, simple, rule }) => {
+const Profile = ({ c, leg, simple, rule, lock }) => {
   const m = c.metrics || {};
   const rg = m.revenueGrowth || {}, om = m.operatingMargin || {}, fcf = m.fcf || {};
   const cap = c.marketCap || {};
   if (simple) {
     const face = spotlightFace(c, leg);
     if (!face) return null;
+    const ytdRow = <Row label="Return this year" big={!lock} compact
+          value={face.ytd.value}
+          unavailable={face.ytd.unavailable} />;
+    const capRow = <Row label="Market cap" compact value={cap.display} unavailable={cap.unavailable} />;
+    const statRow = <Row label={face.stat.label} compact
+          value={face.stat.value}
+          unavailable={face.stat.unavailable} />;
     return (
       <Explainable explain={spotlightExplain(c, leg)} title={c.name} eyebrow={c.symbol} className="stock-profile-trigger" style={panel(rule)}>
         <div style={{ display: "flex", alignItems: "baseline", gap: 8, flexWrap: "wrap" }}>
@@ -147,13 +155,7 @@ const Profile = ({ c, leg, simple, rule }) => {
           <span className="stock-ticker" style={{ fontFamily: T.fontMono, fontSize: T.fsS, color: T.amber, letterSpacing: "0.08em" }}>{face.symbol}</span>
           {face.stale && <Stale f={{ stale: true }} />}
         </div>
-        <Row label="Market cap" compact value={cap.display} unavailable={cap.unavailable} />
-        <Row label="Return this year" big compact
-          value={face.ytd.value}
-          unavailable={face.ytd.unavailable} />
-        <Row label={face.stat.label} compact
-          value={face.stat.value}
-          unavailable={face.stat.unavailable} />
+        {lock ? <>{capRow}{statRow}{ytdRow}</> : <>{capRow}{ytdRow}{statRow}</>}
         <span style={{ display: "block", marginTop: 4, fontFamily: T.fontMono, fontSize: T.fsS, color: T.amber }}>Learn about this stock →</span>
       </Explainable>
     );
@@ -385,7 +387,7 @@ const Lesson = ({ lesson, simple }) => {
   return inner;
 };
 
-const StockSpotlight = ({ spotlight, simple }) => {
+const StockSpotlight = ({ spotlight, simple, callHeadline }) => {
   if (!spotlight || !spotlight.enabled || !spotlight.model || !spotlight.model.pair) return null;
   const m = spotlight.model;
   const syms = [m.pair.anchor, m.pair.comparison];
@@ -394,7 +396,9 @@ const StockSpotlight = ({ spotlight, simple }) => {
   const legs = (m.tracker && m.tracker.legs) || {};
   const lesson = m.lesson;
   const cad = cadenceLine(m.pair, m.businessDateServed || null);
-  return (
+  const lock = spotlightLocked(callHeadline);
+  const body = (
+
     <div role="region" aria-label="Stock Spotlight" className="stock-spotlight"
       style={{ padding: "16px 20px", marginTop:12, background: T.bg, borderTop:`2px solid ${T.amber}66`, borderBottom: `1px solid ${T.border}` }}>
       <SectionHeader major>Stock Spotlight</SectionHeader>
@@ -404,10 +408,12 @@ const StockSpotlight = ({ spotlight, simple }) => {
             Degen hid it from everyone who has not switched. Degen keeps the week seed too. */}
         {cad && <span style={{ fontFamily: T.fontMono, fontSize: T.fsXs, color: cad.behind ? T.amber : T.textMuted }}>{cad.text}</span>}
         {!simple && <span style={{ fontFamily: T.fontMono, fontSize: T.fsXs, color: T.textMuted }}>week of {m.pair.weekKey}</span>}
-        {!simple && <span style={{ marginLeft: "auto", fontFamily: T.fontMono, fontSize: T.fsXs, color: T.textMuted, border: `1px solid ${T.border}`, borderRadius: 3, padding: "0 5px" }}>educational · not advice</span>}
+        {lock
+          ? <span className="spotlight-lock-eyebrow" style={{ marginLeft: "auto", fontFamily: T.fontMono, fontSize: T.fsXs, color: T.amber, border: `1px solid ${T.amber}66`, borderRadius: 3, padding: "0 5px" }}>{SPOTLIGHT_LOCK_EYEBROW}</span>
+          : !simple && <span style={{ marginLeft: "auto", fontFamily: T.fontMono, fontSize: T.fsXs, color: T.textMuted, border: `1px solid ${T.border}`, borderRadius: 3, padding: "0 5px" }}>educational · not advice</span>}
       </div>
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(260px,1fr))", gap: 8 }}>
-        {companies.map((c, i) => <Profile key={c.symbol} c={c} leg={legs[c.symbol]} simple={simple} rule={legColor(i)} />)}
+        {companies.map((c, i) => <Profile key={c.symbol} c={c} leg={legs[c.symbol]} simple={simple} rule={legColor(i)} lock={lock} />)}
       </div>
       {/* Simple: the learning moment comes BEFORE the chart, right after the two compact
           profiles — the widget is a lesson first (review 2026-09-13). Degen keeps chart → lesson. */}
@@ -484,5 +490,16 @@ const StockSpotlight = ({ spotlight, simple }) => {
       </div>
     </div>
   );
+  if (simple && lock) {
+    return (
+      <div role="region" aria-label="Stock Spotlight" className="stock-spotlight stock-spotlight-locked"
+        style={{ padding: "8px 20px", marginTop: 12, background: T.bg, borderTop: `2px solid ${T.amber}66`, borderBottom: `1px solid ${T.border}` }}>
+        <CollapsedGroup count={2} label={SPOTLIGHT_LOCK_FOLD} chip={false} promise persistKey="md:exp:spotlight-lock:v1">
+          {body}
+        </CollapsedGroup>
+      </div>
+    );
+  }
+  return body;
 };
 export default StockSpotlight;
