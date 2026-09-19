@@ -1,5 +1,122 @@
 # CLAUDE.md — MacroDash
 
+**v7.2.0 — THE SAHM RULE BECOMES A BEARISH-ONLY SAFETY OVERRIDE, and the growth channel is
+instrumented without spending a seat.**
+**⚠ OWNER ACTION: `cd worker && npx wrangler deploy`** — not for the override (Pages ships the
+whole model change), but for the cron reconciliation below, which brings the repo back in line
+with the five triggers already running in production.
+**NO BAND MOVED. NO `vote()` FUNCTION CHANGED. THE SEAT COUNT IS STILL SIX**, and that is the
+point: v7.1's owner ruling locked the public backdrop at 10Y · VIX · F&G · CPI · CAPE · NFCI and
+recorded three composition findings, of which the sharpest was that **growth is the channel the
+six do not span**. A seventh voter would have moved the majority math of a contract that gates
+real orders; an override moves the CALL and nothing else, so this closes the gap the ruling
+named while honouring the ceiling it set. `REGIME_BAND_TABLE`, `evidence.js`, `ttReadout.js` and
+the quorum are byte-unchanged, and **the v3.88 separation pin proves it**: `sahm` is still absent
+from the band-table slice, from `evidence.js` and from `ttReadout.js`. The override lives in
+`src/macroCall.js` — call state, not a vote — which is what made it safe to add at all.
+**THREE CONDITIONS, EACH FAILING CLOSED, AND THE UNDATED ONE IS THE DANGEROUS ONE.** The rule
+fires only when the reading is LIVE or CACHED, carries a **DATED** observation, and reads
+`>= SAHM_TRIGGER` (0.50 — Sahm's own printed definition, imported from `src/sahm.js`, never
+re-fitted and never retyped; three surfaces read the one constant now). The date requirement is
+not belt-and-braces: `fieldMode` returns **LIVE** for a value with no observation date, because
+`isStale` fails OPEN on a missing date by design — there is nothing to judge — so without the
+explicit `as_of` check a **dateless number could have forced the public call bearish**. Pinned as
+its own case, alongside stale and absent.
+**A BLIND OR STALE GAUGE WITHHOLDS NOTHING, and that is deliberately the OPPOSITE of the crash
+circuit's rule.** v3.40 withholds a risk-on call when the crash circuit cannot see, because the
+crash circuit is the thing that would SEE a crash — its silence is uninformative about the very
+event it exists to catch. A missing recession gauge makes no claim about the economy in either
+direction, so withholding on it would invent caution out of an outage. Stated at the code and
+pinned for the case it does NOT apply to, so the difference reads as a ruling rather than an
+oversight.
+**ONE-WAY, SWEPT RATHER THAN ASSERTED.** The whole safety claim is that Sahm may move the call
+toward bearish and by no path away from it, so the pin compares every base posture (bull · mixed
+· bear · blind-circuit · below-quorum) against every gauge state (0.0 · 0.49 · 0.50 · 0.60 · 9.0
+· undated · stale) and requires the direction never to rank more bullish than the same call
+computed with the gauge absent — **and asserts the sweep is not vacuous**, because a one-way
+property that never fires proves nothing. PANIC keeps precedence when both fire; a fired rule on
+an already-bearish backdrop is a direction no-op that still RECORDS itself; and below quorum
+`fired` is true while `type` stays null, because a withheld call has no direction to override
+and publishing one off a single non-voting number would be worse.
+**⚠ ACTIONABILITY IS UNTOUCHED BY A FIRED SAHM, and the reason is substantive rather than
+scope-avoidance.** That axis answers *may this call gate capital*, and its inputs are evidence
+QUALITY plus the crash circuit — PANIC forces HOLD because a confirmed crash is a
+market-structure event that suspends action. A recession rule is a DIRECTIONAL claim, and a
+bearish call on full evidence is exactly the kind a reader should act on; HOLDing it would say
+"we are confident, and you may not use it". Pinned in BOTH directions, because **the terminal's
+macro gate reads this field** (`FULL → SEND IT`) and coupling it here would have been an
+unannounced change to an order-gating surface.
+**`status: "SAHM"` IS A NEW WORD, taken deliberately** (the v7.1 plan's open question, ruled
+here): two different circuits fired for two different reasons, the banner and the paste block
+already distinguish them, and a shared `PANIC` would make the one field a machine consumer reads
+lie about WHICH circuit fired. Verified before building: `validFrozenCall` checks the schema, the
+capture status and the date and **never enumerates the override vocabulary** — that is the
+property that made an additive `type` value safe, and it is pinned now rather than assumed.
+`override.sahm {value, trigger, fired, as_of, mode}` is **additive and always present**, so a
+pre-7.2 frozen record simply lacks the key and reads `fired:false` by absence (the v5.1.1 rule —
+failing closed on a field nobody had written yet is an outage dressed as a safety rule).
+**THE CIRCUIT IS NAMED EVERYWHERE A CAUSE IS STATED, because "the crash circuit" was correct only
+while PANIC was the only override.** Printing it under a SAHM would attribute the forced call to
+a circuit that did not fire — a fabricated cause, the same defect class as a fabricated number.
+Fixed at five sites: the paste block's override line, both five-why registers (Simple gains
+*"forced by the recession rule"*; Degen already read `override.type` and is pinned to keep doing
+so), the banner ladder — which now branches on the override **TYPE**, not on `active` — and
+`/history`, where the hardcoded `PANIC OVERRIDE` would have described a circuit that never fired
+**forever**, since a frozen record is immutable. A **fired rule that did NOT win the override
+still prints on its own line**, naming what owns it: a red fact hidden by its own precedence rule
+is exactly the case a reader would most want to know about (v3.25).
+**`SahmOverrideBanner` is a new component, not a generalisation of the PANIC one** — the two
+circuits make different claims, and one banner with a swapped noun would describe both in words
+that fit neither. It renders in BOTH modes (a red fact, v3.25) carrying the reading, the trigger
+and the observation date, because a circuit that overrides the published call and shows no
+evidence is asking to be trusted rather than checked. The **registry promotion lands in the same
+commit as the code that makes it true**: `sahm` moves `context → override` with
+`feedsOverride: "SAHM RULE"`, and v7.1's pin holding it at `context` — which said in as many
+words that it would flip with the code — FLIPS rather than being deleted. **`simple` stays
+FALSE** and that is the documented split, not an inconsistency: the READING is the Degen labour
+row, the BANNER is call state. The Beyond-the-vote block gains a third override row with its
+distance to trigger; a dark or undated gauge reads **CANNOT SEE**, never CLEAR.
+**⚠ THE CRON RECONCILIATION, and it is the half that was actively dangerous.** The owner deployed
+on 2026-09-19 with **FIVE** triggers — the Cloudflare **Free plan's cap** — dropping the 2:00 PM
+PDT legacy FRED pull to make room for v7.1.5's 8:45am CPI arm, while **the repo still declared
+SIX**. A TOML claiming a trigger production does not have RE-CREATES it on the next
+`wrangler deploy` and puts the Worker back over the cap: this file's own ⚠ SYNC HAZARD pointed at
+a plan limit. **The owner kept the right half** — 5:30 AM PDT is 8:30 AM ET, reading FRED's
+overnight-settled prior close before the US open, where the 2 PM pull re-read values that had
+already settled. **The cost is measured and the number moved with it:** the weekday gap went
+~13h → 24h against a 26h TTL — two hours of slack, so one failed run expired
+`pulse:macro:latest` outright — and the comment justifying 26h (*"longer than the ~13h gap
+between the two daily pulls"*) had gone provably false. `LEGACY_KEY_TTL_S = 180000` (50h) is
+NAMED now, reconciled across both write sites, and survives exactly one missed weekday pull.
+**Stated, not fixed:** the crons are MON-FRI, so Friday's write dies over any weekend under ~72h
+— the legacy fallback has always been a WEEKDAY net, that predates the drop, and it is disclosed
+rather than papered over with a bigger number. The v6.2 close-read **COLLISION is resolved by
+deletion and RECORDED, never removed** (the CBOE/Mag-10 retirement-record rule): the winter
+string it collided with was that legacy pull's.
+**TWO OF MY OWN PINS WERE WRONG ON THEIR FIRST RUN, recorded rather than quietly fixed.** The
+browser pin asserted Simple would read `MACRO: BEARISH` — **a vocabulary I invented**;
+`simpleCallLabel` returns the bare word from `SIMPLE_DIRECTION_LABELS`, which CSS then uppercases
+(so the pin named the wrong string *and* would have needed the v3.69 text-transform allowance
+anyway). And the retired-cron absence sweep read raw `wrangler.toml`, so **the comment explaining
+why the 2 PM pull was dropped tripped the sweep forbidding it** — the v3.60.1 self-matching trap,
+caught again; the sweep strips `#` comments now and the comment was not softened to fit it. A
+third, structural: section [96] **crashed the suite with no total** on its first run
+(`computeFiveWhys` returns an object, not an array), which reads exactly like a suite that passed
+— it is try/catch-guarded now, so a throw is a RED assertion (the v3.99.4 P0 shape).
+Verification: browser-required `npm run gates` passed **2,896 smoke** (+41; section [96]),
+**353 admin-browser** and **747 public-browser** (+9, driven live in Chromium: the banner in
+BOTH modes with its reading, trigger and date; the call word in each mode's own vocabulary; and
+the ordinary fixture proven NOT to fire it, which is what keeps the other pins honest);
+production audit found zero vulnerabilities. **Negative-controlled four ways**, each turning
+exactly its own pins and nothing else: dropping the DATED requirement turns the undated pin red;
+inverting `>=` to `>` turns the boundary pin red at 0.50; letting the arm set RISK-ON turns the
+whole one-way family red (4 pins — the sweep, its not-vacuous guard, the forced-bearish pin and
+the no-op pin); and restoring the dropped cron to the TOML turns exactly the three cron pins red.
+**Deliberately NOT done:** no change to `actionability`, `tt-v1`, the quorum or any band; no PCE
+release calendar and no `mortgage30W1`/`LAST_GOOD_GROUPS` entry (still owed since v7.1); the
+other two composition findings (valuation's near-permanent bear vote, the sentiment/volatility
+overlap) stay RECORDED; and the 24 asserted `CPI_RELEASES` dates are still owner-unconfirmed.
+
 **v7.1.5 — CPI PAIRED BY CALENDAR MONTH, JUDGED BY ITS RELEASE, AND DATED IN WORDS.**
 **⚠ OWNER ACTION: `cd worker && npx wrangler deploy`.** Pages alone ships the pairing, the
 freshness gate and the display; the 8:45am ET release-day arm is the WORKER's, and until that

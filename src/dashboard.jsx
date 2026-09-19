@@ -35,7 +35,7 @@ import SignalQuality from "./sections/SignalQuality.jsx"; // task 3.2: presentat
 import WhatChanged from "./sections/WhatChanged.jsx"; // task 3.3: presentation only
 import { publicDashboardUrl, liveReadCaption, publicMarketClock, publicMarketClockLine, simpleCallLabel, cpiPeriodLabel, cpiPeriodLine } from "./publicCopy.js";
 import UndoToast, { useUndoToast } from "./primitives/UndoToast.jsx"; // v6.5.5: the toast stack, one home
-import { MacroFlipBanner, PanicOverrideBanner } from "./sections/CallBanners.jsx"; // v6.5.5: presentation only; the banner ladder stays here
+import { MacroFlipBanner, PanicOverrideBanner, SahmOverrideBanner } from "./sections/CallBanners.jsx"; // v6.5.5: presentation only; the banner ladder stays here
 
 // ─── DESIGN TOKENS ──────────────────────────────────────────────────────────
 // UI-OVERHAUL Slice 1 (task 1.1): tokens live in src/design-tokens.js — the ONE
@@ -288,9 +288,19 @@ export default function Dashboard({ publicView = false } = {}) {
   });
   const panicInputsLive=["vix","fearGreed"].every(k=>{const m=modeOf(k);return m==="LIVE"||m==="CACHED";});
   const panic=flipState.tripped===true||(panicInputsLive&&d.marketPulse.vix.current>25&&d.marketPulse.fearGreed.score<20);
+  /* v7.2 — the Sahm mirror, built the way the PANIC mirror above reads VIX and F&G: the page's
+     own provenance, handed to the ONE engine. The trigger comparison is NOT made here — it lives
+     in callFromEvidence, so the client and the server cannot apply different edges to the same
+     number (the ptModelRows rule, one derivation at two altitudes). */
+  /* The RAW observation date, never asOfOf's "as of Jun 4" — that is a display string, and a
+     display string is the wrong integrity boundary for a circuit that forces the call bearish
+     (the v4.0.3 ruling). It also has no year, which is precisely the CPI misreading v7.1.5
+     closed one release ago. */
+  const sahmState={value:d.macro.unemployment.sahm,mode:modeOf("sahm"),as_of:dataAsOf?.sahm||null};
   const currentCall=callFromEvidence(evidenceSet,{
     macroFlip:flipState,
     panic,
+    sahm:sahmState,
     effectiveDate:etYmd(),
   });
   // v5.5 accountability: after the 10am capture, every PUBLIC call surface reads the
@@ -760,8 +770,14 @@ export default function Dashboard({ publicView = false } = {}) {
           style={{fontFamily:T.fontMono,fontSize:9,background:"transparent",color:T.textMuted,border:`1px solid ${T.borderAccent}`,borderRadius:3,padding:"5px 9px",cursor:"pointer"}}>DISMISS</button>
       </div>}
 
-      {/* v4.0: a confirmed PANIC override owns this slot; otherwise show the armed circuit. */}
-      {dailyCall.override.active
+      {/* v4.0: a confirmed PANIC override owns this slot; otherwise show the armed circuit.
+          v7.2: the slot now branches on the override TYPE rather than on `active` alone — with a
+          second circuit in play, rendering the PANIC banner for a SAHM would name the wrong
+          cause on the page's loudest element. Precedence is the engine's (PANIC first), so this
+          ladder cannot disagree with the call word beside it. */}
+      {dailyCall.override.type==="SAHM"
+        ? <SahmOverrideBanner call={dailyCall} simple={simple}/>
+        : dailyCall.override.active
         ? <PanicOverrideBanner call={dailyCall} simple={simple}/>
         : flip&&(flip.tripped||flip.armed)&&<MacroFlipBanner flip={flip}/>}
 

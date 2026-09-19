@@ -133,11 +133,15 @@ export function testSignalRoles(ok) {
     roleOf("mortgage30") === "context" && !simpleAllowed("mortgage30")
     && !tableFields.includes("mortgage30")
     && /10-year the backdrop already votes on/.test(SIGNAL_ROLES.mortgage30.why));
-  /* SAHM is CONTEXT today and Slice D promotes it. Pinned as context so the registry cannot
-     claim a job the product does not yet do — the label-outlives-its-data defect pointed
-     FORWARDS. When the override lands, this pin flips with the code, in the same commit. */
-  ok("[92] sahm is CONTEXT today — the registry never claims a job the code has not shipped",
-    roleOf("sahm") === "context" && !fieldsWithRole("override").length);
+  /* ⚠ PIN FLIPPED IN v7.2, and the reason is recorded here rather than the pin quietly
+     rewritten. It read `roleOf("sahm") === "context" && !fieldsWithRole("override").length` and
+     said in as many words that it would flip with the code, in the same commit. That commit is
+     v7.2: the bearish-only override ships in src/macroCall.js, so the registry now claims a job
+     the product does. The CLAIM is unchanged — the registry may never name a role the code does
+     not honour — only its direction moved, and the full behavioural cover lives in [96]. */
+  ok("[92] sahm is the ONE override role — promoted in the same commit as the circuit (v7.2)",
+    roleOf("sahm") === "override" && fieldsWithRole("override").join(",") === "sahm"
+    && /at its own trigger it OVERRIDES/.test(SIGNAL_ROLES.sahm.why));
 
   /* ── THE OVERRIDE ANNOTATION ─────────────────────────────────────────────────────────────── */
   /* An override input is the one case where a non-voting number can move the published call, so
@@ -146,9 +150,10 @@ export function testSignalRoles(ok) {
      spyMa200 being simple:false does not gate them. Pinned, because that looks like an
      inconsistency to anyone reading the table cold. */
   const feeders = Object.keys(SIGNAL_ROLES).filter((k) => SIGNAL_ROLES[k].feedsOverride);
-  ok("[92] the PANIC and Macro Flip inputs are NAMED as override feeders",
-    feeders.sort().join(",") === "fearGreed,spyMa200,spyPrice,vix"
-    && /PANIC/.test(SIGNAL_ROLES.vix.feedsOverride) && /MACRO FLIP/.test(SIGNAL_ROLES.spyMa200.feedsOverride));
+  ok("[92] the PANIC, Macro Flip and SAHM inputs are NAMED as override feeders", // +sahm, v7.2
+    feeders.sort().join(",") === "fearGreed,sahm,spyMa200,spyPrice,vix"
+    && /PANIC/.test(SIGNAL_ROLES.vix.feedsOverride) && /MACRO FLIP/.test(SIGNAL_ROLES.spyMa200.feedsOverride)
+    && /SAHM/.test(SIGNAL_ROLES.sahm.feedsOverride));
   ok("[92] a circuit's input may be simple:false while the circuit itself renders in both modes",
     SIGNAL_ROLES.spyMa200.simple === false && SIGNAL_ROLES.vix.simple === true);
 

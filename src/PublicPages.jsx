@@ -77,7 +77,11 @@ export function HistoryPage() {
               <summary style={{...mono,fontSize:9,color:T.textMuted,cursor:"pointer",minHeight:36,display:"flex",alignItems:"center"}}>Call details · {c.counts?.usable??0} of {c.counts?.total??6} signals</summary>
               <div style={{display:"flex",gap:12,flexWrap:"wrap",padding:"3px 0 8px",...mono,fontSize:9,color:T.textSecondary}}>
                 <span>10:00 ET · immutable</span><span>confidence {c.confidence}</span><span>actionability {c.actionability}</span>
-                {c.override?.active&&<span style={{color:T.red}}>PANIC OVERRIDE</span>}
+                {/* v7.2: the STORED type, never a hardcoded word. A frozen record is immutable,
+                    so a row captured under a SAHM would have read "PANIC OVERRIDE" forever — the
+                    history page describing a circuit that never fired. Pre-7.2 records carry
+                    type "PANIC" and render byte-identically. */}
+                {c.override?.active&&<span style={{color:T.red}}>{c.override.type||"PANIC"} OVERRIDE</span>}
               </div>
               <div style={{display:"grid",gap:5,paddingTop:5,borderTop:`1px solid ${T.border}`}}>{(c.factors||[]).map(f=><div key={f.key} style={{display:"grid",gridTemplateColumns:"minmax(100px,1fr) minmax(90px,auto)",gap:12,...mono,fontSize:9}}><span style={{color:T.textSecondary}}>{f.label}{f.as_of?` · ${f.as_of}`:""}</span><span style={{color:stateColor(f.state),textAlign:"right"}}>{signalStateLabel(f.state)}</span></div>)}</div>
               <div style={{...mono,fontSize:8,color:T.textMuted,marginTop:8,lineHeight:1.45}}>

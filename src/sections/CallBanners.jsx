@@ -32,6 +32,30 @@ export function MacroFlipBanner({flip}){
   );
 }
 
+/* v7.2 — the Sahm rule's own banner. Deliberately NOT a generalisation of PanicOverrideBanner
+   below: the two circuits make different claims (a confirmed crash vs a recession trigger), and
+   one banner with a swapped noun would have to describe both in words that fit neither. Renders
+   in BOTH modes like its siblings — this is a red fact, and v3.25 says a mode gate may hide an
+   explanation and may never hide one of those. The reading, the trigger and the observation date
+   all render: a circuit that forces the published call bearish has to show its own evidence. */
+export function SahmOverrideBanner({call,simple=false}){
+  if(!call)return null;
+  const s=call.override&&call.override.sahm?call.override.sahm:{};
+  const read=typeof s.value==="number"&&Number.isFinite(s.value)?s.value.toFixed(2):null;
+  return(
+  <div style={{background:DT["regime-off-bg"],borderBottom:`1px solid ${T.red}55`,padding:"7px 20px",display:"flex",alignItems:"center",gap:10,flexWrap:"wrap"}}>
+    <span style={{fontFamily:T.fontMono,fontSize:11,fontWeight:700,color:T.red,letterSpacing:"0.04em"}}>
+      ⛔ SAHM RULE TRIGGERED · {simple?simpleCallLabel(call):<>{call.headline} {call.emoji} / {call.direction}</>}
+    </span>
+    <span style={{fontFamily:T.fontMono,fontSize:9,color:T.textSecondary}}>
+      {read!==null?`Sahm ${read} is at or above the ${s.trigger} recession trigger`:"Sahm rule at its recession trigger"}
+      {s.as_of?` (as of ${s.as_of})`:""} — the call is forced bearish while it holds. That is unemployment&apos;s
+      3-month average against its own 12-month low, which is what the rule measures. A safety override, not a vote.
+    </span>
+  </div>
+  );
+}
+
 export function PanicOverrideBanner({call,simple=false}){
   if(!call)return null;
   return(

@@ -17,6 +17,10 @@ import { CPI_RELEASES } from "../src/sources.js";
 
 const FRED_BASE = "https://api.stlouisfed.org/fred/series/observations";
 const KV_KEY = "pulse:macro:latest";
+/* The legacy key's TTL, NAMED because its size is an argument about the cron schedule and the
+   two write sites must not drift apart. See the note at the scheduled() write for why it moved
+   from 26h on 2026-09-19. */
+export const LEGACY_KEY_TTL_S = 180000; // 50h
 const FETCH_TIMEOUT_MS = 8000;
 
 // v2.5.4 — 10am ET weekday snapshot FORCE-REFRESH. The dashboard reads /api/snapshot
@@ -591,9 +595,19 @@ export default {
     ctx.waitUntil(
       (async () => {
         const payload = await buildMacroPayload(env, { cron: controller.cron });
-        // 26h TTL: longer than the ~13h gap between the two daily pulls, so a
+        /* ⚠ THE JUSTIFICATION BELOW WENT STALE ON 2026-09-19 and the number moved with it.
+           26h was chosen as "longer than the ~13h gap between the two daily pulls" — and there
+           is ONE legacy pull now (the 2pm PDT trigger was dropped to fit v7.1.5's CPI arm under
+           the Free plan's five-trigger cap). Against a 24h weekday gap, 26h left TWO HOURS of
+           slack: one failed 8:30am pull and `pulse:macro:latest` expires outright, taking the
+           /api/fred fallback with it. 50h survives exactly one missed weekday pull.
+           STATED, NOT FIXED: the crons are MON-FRI, so Friday's write dies over the weekend at
+           any TTL under ~72h. The legacy fallback has always been a WEEKDAY net and still is —
+           that predates this change and is disclosed rather than papered over with a number.
+           A longer TTL cannot make anything read fresher: provenance judges the OBSERVATION
+           date, never key presence, so a carried value still classifies STALE honestly. */
         // single missed run never expires the cache to empty.
-        await env.PULSE_CACHE.put(KV_KEY, JSON.stringify(payload), { expirationTtl: 93600 });
+        await env.PULSE_CACHE.put(KV_KEY, JSON.stringify(payload), { expirationTtl: LEGACY_KEY_TTL_S });
       })()
     );
   },
@@ -607,7 +621,7 @@ export default {
     if (url.pathname === "/refresh" && request.method === "POST") {
       if (!authorized(request, env)) return new Response("forbidden", { status: 403 });
       const payload = await buildMacroPayload(env, { cron: "manual" });
-      await env.PULSE_CACHE.put(KV_KEY, JSON.stringify(payload), { expirationTtl: 93600 });
+      await env.PULSE_CACHE.put(KV_KEY, JSON.stringify(payload), { expirationTtl: LEGACY_KEY_TTL_S });
       let active = null;
       if (env.REFRESH_TOKEN) {
         try {

@@ -31,6 +31,9 @@
 
 import { roleEntry, whyNotAVoter } from "./signalRoles.js";
 import { bandContext } from "./contextBands.js";
+// v7.2: the recession rule's own edge, imported never retyped — the same constant the labour
+// row and the call's override both read, so three surfaces cannot drift apart.
+import { SAHM_TRIGGER } from "./sahm.js";
 
 const finite = (v) => typeof v === "number" && Number.isFinite(v);
 const LIVE = new Set(["LIVE", "CACHED"]);
@@ -109,6 +112,32 @@ export function overrideRows({ d, modeOf, asOfOf, flip, panic }) {
       ? `${px >= ma ? "above" : "below"} the 200-day by ${num(Math.abs(px - ma), 2)}`
       : null,
     asOf: typeof asOfOf === "function" ? asOfOf("spyPrice") || null : null,
+  });
+
+  /* SAHM RULE (v7.2) — the third override, and the only BEARISH-ONLY one. The trigger is
+     IMPORTED from src/sahm.js, never retyped, exactly as contextBands.js imports the credit
+     constants from regime.js — one home, so this row and the circuit that forces the call
+     cannot disagree about the edge. A dark or undated gauge reads CANNOT SEE, never CLEAR (the
+     v3.40 asymmetry) even though the CIRCUIT deliberately withholds nothing when blind: a
+     reader must still be told the recession gauge is not being read today. */
+  const sv = d.macro?.unemployment?.sahm;
+  const sahmAsOf = typeof asOfOf === "function" ? asOfOf("sahm") || null : null;
+  const sahmReadable = live("sahm") && finite(sv) && !!sahmAsOf;
+  const sahmFired = sahmReadable && sv >= SAHM_TRIGGER;
+  const sahmTrigger = SAHM_TRIGGER;
+  rows.push({
+    key: "sahm", label: "Sahm rule",
+    fired: sahmFired,
+    readable: sahmReadable,
+    state: !sahmReadable ? "CANNOT SEE" : sahmFired ? "TRIGGERED" : "CLEAR",
+    toneKey: !sahmReadable ? "amber" : sahmFired ? "red" : "green",
+    detail: sahmReadable
+      ? `${num(sv, 2)} of ${num(sahmTrigger, 2)} — unemployment's 3-month average against its own 12-month low`
+      : "needs a current, dated unemployment reading",
+    distance: sahmReadable && !sahmFired
+      ? `${num(sahmTrigger - sv, 2)} below the trigger`
+      : null,
+    asOf: sahmAsOf,
   });
   return rows;
 }

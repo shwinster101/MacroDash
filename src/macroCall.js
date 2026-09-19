@@ -20,6 +20,15 @@ export const CALL_SCHEMA = "md-call-v1";
 // here so this module's public surface is unchanged.
 import { CAPE_MEAN, CAPE_ATH } from "./regime.js";
 export { CAPE_MEAN, CAPE_ATH };
+/* v7.2 — the Sahm rule as a BEARISH-ONLY safety override. SAHM_TRIGGER is Sahm's own printed
+   definition (src/sahm.js — a CITATION, never re-fitted here), and it is the SAME constant the
+   labour row already reads, so the tile and the circuit can never disagree about the edge.
+   Importing it HERE rather than into evidence.js or regime.js is load-bearing: the v3.88
+   separation pin asserts `sahm` is absent from the band-table slice, evidence.js and
+   ttReadout.js, and this override is call state, not a vote. The seat stays empty (v7.1's
+   owner ruling) and the uncovered growth channel gets instrumented anyway. */
+import { SAHM_TRIGGER } from "./sahm.js";
+export { SAHM_TRIGGER };
 
 export const CALL_VOCABULARY = Object.freeze({
   "RISK-ON":  { headline: "MOONING",       emoji: "🚀", direction: "BULLISH" },
@@ -103,9 +112,30 @@ export function macroFlipFromLive(live = {}, { cached = false, now = new Date() 
   });
 }
 
+/* The recession gauge's own provenance, resolved exactly the way macroFlipFromLive resolves the
+   crash circuit's — same helper, same LIVE/CACHED vocabulary, so the two circuits cannot come to
+   different conclusions about what "usable" means. It reports the reading and its mode; the
+   TRIGGER comparison lives inside callFromEvidence, so the client mirror and the server build
+   cannot apply different edges to the same number. */
+export function sahmFromLive(live = {}, { cached = false, now = new Date() } = {}) {
+  const provenance = {};
+  const dataAsOf = {};
+  if (finite(live.sahm)) {
+    provenance.sahm = cached ? "CACHED" : "LIVE";
+    const d = govAsOf(live, "sahm");
+    if (d) dataAsOf.sahm = d;
+  }
+  return {
+    value: finite(live.sahm) ? live.sahm : null,
+    mode: fieldMode(provenance, dataAsOf, "sahm", now),
+    as_of: dataAsOf.sahm || null,
+  };
+}
+
 export function callFromEvidence(evidence, {
   macroFlip = null,
   panic = false,
+  sahm = null,
   effectiveDate = null,
   generatedAt = new Date().toISOString(),
 } = {}) {
@@ -117,12 +147,35 @@ export function callFromEvidence(evidence, {
   const base = hasPosture ? CALL_VOCABULARY[regime.label] : null;
   const flip = macroFlip || { evaluable: false, armed: null, tripped: null, reason: "circuit unavailable" };
 
+  /* v7.2 — THE SAHM OVERRIDE. Three conditions, all required, each failing CLOSED toward "does
+     not fire": the reading must be usable (LIVE or CACHED), it must carry a DATED observation,
+     and it must be at or above Sahm's own trigger. `>=` is the rule's own comparison — 0.50 or
+     more, as the labour row already states it.
+
+     A BLIND OR STALE GAUGE WITHHOLDS NOTHING, and that is deliberately the OPPOSITE of the
+     crash circuit's blind rule rather than an inconsistency. The v3.40 asymmetry withholds a
+     risk-on call when the crash circuit cannot see, because the crash circuit is the thing that
+     would SEE a crash — its silence is uninformative about the very event it exists to catch.
+     A missing recession gauge makes no claim about the economy in either direction, so
+     withholding on it would invent caution from an outage. Stated here for the case it does
+     NOT apply to, so the difference reads as a ruling and not an oversight. */
+  const s = sahm || {};
+  const sahmUsable = ["LIVE", "CACHED"].includes(s.mode) && finite(s.value) && !!s.as_of;
+  const sahmFired = sahmUsable && s.value >= SAHM_TRIGGER;
+
   let effective = base;
   let override = null;
   let downgraded = null;
   if (base && panic) {
     effective = CALL_VOCABULARY["RISK-OFF"];
     override = "PANIC";
+  } else if (base && sahmFired) {
+    /* BEARISH-ONLY and PANIC-SECOND. It can only ever set RISK-OFF, so no path exists by which
+       it makes a call more bullish — that is the one-way property, structural rather than
+       remembered. PANIC keeps precedence when both fire: a confirmed crash is the more immediate
+       fact, and one override word has to own the banner (the v5.6 one-word-one-verdict rule). */
+    effective = CALL_VOCABULARY["RISK-OFF"];
+    override = "SAHM";
   } else if (!isDemo && base && base.direction === "BULLISH" && flip.evaluable !== true) {
     effective = CALL_VOCABULARY.MIXED;
     downgraded = "BULLISH withheld — the crash circuit cannot see; a risk-on call requires current SPY, 200-day, and VIX evidence";
@@ -132,12 +185,26 @@ export function callFromEvidence(evidence, {
   const total = Number.isFinite(e.totalFactors) ? e.totalFactors : 6;
   const confidence = counted === total && hasPosture ? "HIGH"
     : counted >= 4 && hasPosture ? "MEDIUM" : "LOW";
+  /* v7.2 — ACTIONABILITY IS DELIBERATELY UNTOUCHED BY A FIRED SAHM, and the reason is
+     substantive rather than scope-avoidance. This axis answers "may this call gate capital",
+     and its inputs are evidence QUALITY plus the crash circuit: PANIC forces HOLD because a
+     confirmed crash is a market-structure event that suspends action. A recession rule is a
+     DIRECTIONAL claim, and a bearish call with full evidence is exactly the kind a reader
+     should act on — HOLDing it would say "we are confident and you may not use it". Pinned in
+     both directions, because the terminal's macro gate reads this field (FULL → SEND IT) and
+     coupling it here would be an unannounced change to an order-gating surface. */
   const actionability = !published || confidence === "LOW" || panic || flip.evaluable !== true
     ? "HOLD"
     : confidence === "HIGH" && flip.armed !== true ? "FULL" : "RESTRICTED";
+  /* SAHM takes its OWN status word rather than reusing PANIC. Two different circuits fired for
+     two different reasons, and the banner and the paste block already distinguish them — a
+     shared word would make the one field a machine consumer reads lie about WHICH circuit
+     fired. It is keyed on `override` (the circuit that actually moved the call), never on the
+     gauge, so a fired Sahm beside a PANIC day still reads PANIC. */
   const status = isDemo ? "DEMO"
     : !published ? "DATA HOLD"
     : panic ? "PANIC"
+    : override === "SAHM" ? "SAHM"
     : confidence === "MEDIUM" ? "PARTIAL DATA" : "OK";
 
   const factors = Array.isArray(e.factors) ? e.factors.map((f) => ({
@@ -172,6 +239,20 @@ export function callFromEvidence(evidence, {
       type: override,
       active: !!override,
       panic: !!panic,
+      /* v7.2 — ADDITIVE and ALWAYS PRESENT, so a pre-7.2 stored record simply lacks the key and
+         reads `fired:false` by absence rather than flipping the whole frozen history red (the
+         v5.1.1 rule: failing closed on a field nobody had written yet is an outage dressed as a
+         safety rule). `fired` is a fact about the GAUGE, so it can be true while `type` is not
+         "SAHM" — on a withheld call there is no direction to override, and on a PANIC day the
+         crash circuit owns the word. `value` is null unless the reading was usable, so an
+         unusable gauge can never print a number that looks like a measurement. */
+      sahm: {
+        value: sahmUsable ? s.value : null,
+        trigger: SAHM_TRIGGER,
+        fired: sahmFired,
+        as_of: s.as_of || null,
+        mode: s.mode || null,
+      },
       macro_flip: {
         evaluable: flip.evaluable === true,
         armed: flip.armed ?? null,
@@ -189,13 +270,14 @@ export function buildMacroCall(live = {}, opts = {}) {
   const now = opts.now || new Date();
   const evidence = evidenceFromLive(live, { cached: !!opts.cached, now });
   const macroFlip = macroFlipFromLive(live, { cached: !!opts.cached, now });
+  const sahm = sahmFromLive(live, { cached: !!opts.cached, now });
   const panicInputsUsable = ["vix", "fearGreed"].every((key) => {
     const f = evidence.factors.find((x) => x.field === key);
     return f && !f.excluded;
   });
   const panic = macroFlip.tripped === true || (panicInputsUsable && live.vix > 25 && live.fearGreed < 20);
   return callFromEvidence(evidence, {
-    macroFlip, panic,
+    macroFlip, panic, sahm,
     effectiveDate: opts.effectiveDate || null,
     generatedAt: opts.generatedAt || now.toISOString(),
   });
@@ -225,9 +307,23 @@ export function formatMacroCallPaste(call = {}, { frozen = false, edition = null
     `EVIDENCE ${call.confidence || "LOW"} · actionability ${call.actionability || "HOLD"} · ${call.counts?.usable ?? 0} of ${call.counts?.total ?? 6} signals counted`,
   ];
   if (ed === "CLOSE READ") lines.push("UNSCORED · 6pm evening update — the 10am call is the scored one");
-  if (call.override?.active) lines.push(`OVERRIDE ${call.override.type} · crash circuit tripped`);
+  /* v7.2 — the override line NAMES its circuit. "crash circuit tripped" was correct while PANIC
+     was the only override; printing it under a SAHM would be a fabricated cause, which is the
+     same defect class as a fabricated number. */
+  const sahmOv = call.override?.sahm || {};
+  const sahmTrig = Number.isFinite(sahmOv.trigger) ? sahmOv.trigger : SAHM_TRIGGER;
+  const sahmRead = `${Number.isFinite(sahmOv.value) ? sahmOv.value.toFixed(2) : "unavailable"} vs ${sahmTrig.toFixed(2)} trigger${sahmOv.as_of ? ` · as of ${sahmOv.as_of}` : ""}`;
+  if (call.override?.active) lines.push(call.override.type === "SAHM"
+    ? `OVERRIDE SAHM · recession rule triggered — ${sahmRead}`
+    : `OVERRIDE ${call.override.type} · crash circuit tripped`);
   else if (call.override?.macro_flip?.armed) lines.push("MACRO FLIP ARMED");
   else if (call.override?.macro_flip?.evaluable === false) lines.push("MACRO FLIP BLIND");
+  /* The gauge can fire while nothing was overridden — a withheld call has no direction to move,
+     and on a PANIC day the crash circuit owns the word. Stated on its own line either way: a
+     fired recession rule that printed nowhere would be a red fact hidden by its own precedence
+     rule (v3.25), which is exactly the case a reader would most want to know about. */
+  if (sahmOv.fired && call.override?.type !== "SAHM") lines.push(
+    `SAHM RULE TRIGGERED · ${sahmRead} — ${call.override?.type ? `${call.override.type} owns the override` : "no call was published to override"}`);
   if (call.downgraded) lines.push(`⚠ ${call.downgraded}`);
   for (const f of call.factors || []) {
     lines.push(`${String(f.key).padEnd(12)} ${f.state || "UNAVAILABLE"}${f.as_of ? ` · as of ${f.as_of}` : ""}${f.reason ? ` · ${f.reason}` : ""}`);

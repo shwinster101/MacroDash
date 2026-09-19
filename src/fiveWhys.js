@@ -142,7 +142,11 @@ function simpleWhys(x) {
   // #1 — the call and its arithmetic. A safety state is NAMED on the call word: a Hold that
   //      the votes would have made Bullish, or a Bearish the circuit forced, must not read as
   //      a contradiction between the word and the count beside it.
-  const qual = call && call.override && call.override.active ? " — forced by the crash circuit"
+  /* v7.2: the circuit is NAMED. "the crash circuit" was correct while PANIC was the only
+     override; saying it under a SAHM would attribute the forced call to a circuit that did not
+     fire — a fabricated cause on the page's plainest sentence. */
+  const qual = call && call.override && call.override.active
+    ? (call.override.type === "SAHM" ? " — forced by the recession rule" : " — forced by the crash circuit")
     : call && call.downgraded ? " — Bullish withheld" : "";
   w.push(withheld ? WITHHELD_WHY
     : `${label}${qual}. ${bull} of ${active} signals help, ${bear} hurt, ${neutral} mixed. A call needs a majority — at least ${required}.`);
@@ -185,7 +189,9 @@ function simpleWhys(x) {
     flip = need > 0 ? `Needs ${need} more current ${noun(need, "signal", "signals")} before any call can be made.`
       : "The call is withheld until its evidence is current and usable.";
   } else if (call && call.override && call.override.active) {
-    flip = "The crash circuit tripped — that forces Bearish until it clears.";
+    flip = call.override.type === "SAHM"
+      ? "The recession rule triggered — that forces Bearish until unemployment settles back."
+      : "The crash circuit tripped — that forces Bearish until it clears.";
   } else if (call && call.downgraded) {
     flip = "Bullish is withheld while the crash circuit cannot see — it needs current price and volatility readings.";
   } else if (call && call.direction === "BULLISH") {

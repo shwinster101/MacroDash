@@ -147,11 +147,17 @@ export const SIGNAL_ROLES = Object.freeze({
   creditSpread:   C("How much extra risky borrowers pay — the transmission NFCI measures upstream."),
   creditTail:     C("The junk TAIL widens first while broad high yield still looks calm."),
   nfciLeverage:   C("The leverage subindex. CONTEXT ONLY since v3.43 — the parent index votes, this does not."),
-  /* SAHM — context TODAY. v7.1 Slice D promotes it to role "override" when the bearish-only
-     safety circuit lands, and pins the promotion. It is deliberately NOT labelled "override"
-     ahead of the code that would make that true: a registry claiming a job the product does not
-     yet do is the label-outlives-its-data defect pointed forwards instead of backwards. */
-  sahm:           C("Recession signal, computed from the same unemployment pull. Non-voting on arrival (v3.84)."),
+  /* SAHM — promoted from `context` to `override` in v7.2, in the SAME commit as the code that
+     makes it true (the v7.1 entry here said the promotion would land this way, and the pin that
+     held it at `context` flips with it rather than being deleted). It is the ONE non-voting
+     number that can move the published call: at or above its own trigger it forces the call
+     bearish, and a blind or stale gauge withholds nothing. `simple` stays FALSE and that is the
+     documented split, not an inconsistency — the READING lives in the Degen labour row, while
+     the BANNER is call state from md-call-v1 and renders in both modes (v3.25). The owner
+     ruling locking the voter count at six is what makes this the right home for it: growth is
+     the channel the six do not span, and an override instruments it without spending a seat. */
+  sahm:           { role: "override", simple: false, feedsOverride: "SAHM RULE",
+                    why: "Recession signal from the same unemployment pull. It does not vote — at its own trigger it OVERRIDES, forcing the call bearish." },
   marketHeadline: C("Named as context in WHY #3. Today is data-driven, not news-driven."),
   tokenBlendedMtok: C("The price leg of AI unit economics. Curated pairing, votes nowhere."),
   tokenVolDay:      C("The volume leg. Price times volume is the demand read, not a verdict."),

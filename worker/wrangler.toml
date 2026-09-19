@@ -25,10 +25,13 @@ id = "78ad3346a8fe4757a906283c4bc81a5e"
 # — a silently misrouted job, not a visible failure. The DST edit is therefore TWO files
 # together: this array AND those THREE constants. Smoke's contract check reconciles them and
 # goes red on drift.
-# ⚠ COLLISION (v6.2): the summer close-read string "0 22 * * MON-FRI" is BYTE-IDENTICAL to
-# the WINTER string of the 2pm-PST legacy pull. Every entry here must stay DISTINCT (smoke
-# pins five distinct strings); in November move the legacy pull to "0 22" ONLY together with
-# moving the close read to "0 23" (and its constant in cron.js).
+# ⚠ COLLISION (v6.2) — RESOLVED BY DELETION, 2026-09-19, and recorded rather than removed. The
+# summer close-read string "0 22 * * MON-FRI" was BYTE-IDENTICAL to the WINTER string of the
+# 2pm-PST legacy pull, so the DST edit had to move two entries in lockstep or route the legacy
+# fire into the close arm at 5pm ET and silently drop the legacy pull. That legacy pull is gone
+# (see the note on the array below), so the collision cannot occur — but the RULE it protected
+# stands: every entry here must stay DISTINCT (smoke pins five distinct strings), because the
+# dispatch is exact-string and two identical entries would fire one arm twice and another never.
 # ⚠ DAY-OF-WEEK IS NAMED, NOT NUMERIC (2026-08-28). These read "1-5" and the Cloudflare
 # dashboard treated 1-5 as Sun-Thu, so FRIDAY never fired: the 10am ET job silently did not
 # run on Fri 2026-08-28 and the day ended with no frozen call and no history row at all.
@@ -39,8 +42,15 @@ id = "78ad3346a8fe4757a906283c4bc81a5e"
 # ---------------------------------------------------------------------------
 [triggers]
 crons = [
+  # ⚠ ONE LEGACY PULL, NOT TWO (owner deploy 2026-09-19). The Cloudflare FREE plan caps a Worker
+  # at FIVE cron triggers, and v7.1.5's CPI release-day arm was the sixth. The owner dropped the
+  # 2:00 PM PDT legacy pull ("0 21 * * MON-FRI") to make room and KEPT this one — the right half
+  # to keep: 5:30 AM PDT is 8:30 AM ET, so it reads FRED's overnight-settled prior close before
+  # the US open, while the 2 PM pull re-read values that had already settled. The repo carried
+  # six for one release while production ran five; reconciled here, because a TOML claiming a
+  # trigger production does not have would RE-CREATE it on the next `wrangler deploy` and put
+  # the Worker back over the cap.
   "30 12 * * MON-FRI",   # 5:30 AM PDT — legacy FRED macro pull (pulse:macro:latest)
-  "0 21 * * MON-FRI",    # 2:00 PM PDT — legacy FRED macro pull
   "0 12 * * MON-FRI",    # 8:00 AM ET (EDT) — PRE-OPEN warm of /api/snapshot; EST -> "0 13 * * MON-FRI"
   "45 12 * * MON-FRI",   # 8:45 AM ET (EDT) — CPI RELEASE-DAY refresh (v7.1.5), gated on CPI_RELEASES; EST -> "45 13 * * MON-FRI"
   "0 14 * * MON-FRI",    # 10:00 AM ET (EDT) — force-refresh /api/snapshot cache; EST -> "0 15 * * MON-FRI"

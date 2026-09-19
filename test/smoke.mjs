@@ -9173,10 +9173,15 @@ console.log("\n[67] v3.99.4 — runtime contract reconciliation");
   /* v6.2: DISTINCT — the summer close-read string ("0 22") is byte-identical to the
      documented WINTER legacy string, so a half-done November edit could carry a duplicate
      that dispatches the legacy fire into the close arm. A Set catches that shape.
-     v7.1.5: SIX, with the CPI release-day arm. The count is DERIVED from the dispatch
-     constants plus the two documented legacy pulls rather than retyped, so adding a seventh
-     arm cannot pass by someone also bumping a literal. */
-  ok("crons: TOML declares exactly six DISTINCT triggers", tomlCrons.length === 6 && new Set(tomlCrons).size === 6);
+     v7.1.5: SIX, with the CPI release-day arm. ⚠ RE-PINNED to FIVE on 2026-09-19, with the
+     reason at the pin: the Cloudflare FREE plan caps a Worker at five triggers, so the owner
+     dropped the 2:00 PM PDT legacy pull to make room for the CPI arm and deployed five. The
+     repo carried six for one release while production ran five — a TOML claiming a trigger
+     production does not have would RE-CREATE it on the next `wrangler deploy` and put the
+     Worker back over the cap, which is this file's own sync hazard pointed at the plan limit.
+     The count stays DERIVED from the dispatch constants plus the documented legacy pull, so
+     adding a sixth arm cannot pass by someone also bumping a literal. */
+  ok("crons: TOML declares exactly five DISTINCT triggers — the Free plan's cap", tomlCrons.length === 5 && new Set(tomlCrons).size === 5);
   ok("crons: all four cron.js dispatch constants exist in the TOML (an orphaned constant never fires)",
     dispatchCrons.every((c) => !!c) && dispatchCrons.every((c) => tomlCrons.includes(c)) &&
     new Set(dispatchCrons).size === 4);
@@ -9186,9 +9191,31 @@ console.log("\n[67] v3.99.4 — runtime contract reconciliation");
   // Dispatch is exact-string with a LEGACY fallthrough, so any TOML cron that matches no
   // constant runs the legacy FRED path. Exactly the two documented legacy pulls may do that.
   const legacy = tomlCrons.filter((c) => !dispatchCrons.includes(c));
-  ok("crons: every TOML trigger is either a dispatch constant or one of the TWO documented legacy pulls " +
-     "(a third fallthrough = a silently misrouted job)",
-    legacy.length === 2 && legacy.includes("30 12 * * MON-FRI") && legacy.includes("0 21 * * MON-FRI"));
+  ok("crons: every TOML trigger is either a dispatch constant or THE ONE documented legacy pull " +
+     "(a second fallthrough = a silently misrouted job)",
+    legacy.length === 1 && legacy[0] === "30 12 * * MON-FRI");
+  /* The dropped pull is pinned ABSENT, not merely uncounted — a retired trigger quietly
+     reappearing is the label-outlives-its-data defect with a plan-limit consequence. And the
+     KEPT one is pinned BY VALUE with its reason: 5:30 AM PDT is 8:30 AM ET, which reads FRED's
+     overnight-settled prior close before the US open; the 2 PM pull re-read settled values. */
+  /* ⚠ THE SELF-MATCHING TRAP, CAUGHT AGAIN (v3.60.1) and recorded rather than quietly fixed:
+     the first cut swept raw `tomlSrc`, and the TOML comment EXPLAINING why the 2 PM pull was
+     dropped names the very string it forbids — so the pin went red against correct code. The
+     sweep strips `#` comments now; the comment was not softened to fit the pin. */
+  const tomlCode = tomlSrc.split("\n").map((l) => l.replace(/#.*$/, "")).join("\n");
+  ok("crons: the 2 PM PDT legacy pull is pinned ABSENT and the morning pull is the one kept",
+    !tomlCrons.includes("0 21 * * MON-FRI") && !/"0 21 \* \* MON-FRI"/.test(tomlCode) &&
+    tomlCrons.includes("30 12 * * MON-FRI"));
+  /* The TTL is an argument about the cron schedule, so it is NAMED and reconciled here. 26h was
+     justified in the source as "longer than the ~13h gap between the two daily pulls" — a
+     justification that went false the moment there was one pull. Against a 24h weekday gap it
+     left two hours of slack, so one failed run expired the legacy key outright. 50h survives
+     exactly one missed weekday pull; the weekend hole is older than the change and disclosed
+     rather than papered over (MON-FRI crons die over any weekend under ~72h). */
+  ok("crons: the legacy key's TTL is a NAMED constant, ≥ two weekday gaps, with no literal left behind",
+    /export const LEGACY_KEY_TTL_S = 180000;/.test(cronSrc) &&
+    (cronSrc.match(/expirationTtl: LEGACY_KEY_TTL_S/g) || []).length === 2 &&
+    !/expirationTtl: 93600/.test(cronSrc) && /weekday gap/i.test(setupSrc));
   /* 2026-08-28: every trigger read `* * 1-5` and the Cloudflare dashboard treated 1-5 as
      Sun-Thu, so FRIDAY never fired — the 10am freeze silently did not run and the day ended
      with no history row at all (Tue/Wed/Thu captured; Friday absent = exactly that window).
@@ -9206,18 +9233,22 @@ console.log("\n[67] v3.99.4 — runtime contract reconciliation");
     /controller\.cron === SNAPSHOT_WARM_CRON/.test(cronSrc) &&
     /controller\.cron === SNAPSHOT_CLOSE_CRON/.test(cronSrc) &&
     /controller\.cron === SNAPSHOT_CPI_CRON/.test(cronSrc));
-  ok("crons: SETUP.md documents all SIX (it said 'three triggers' while TOML carried four — " +
+  ok("crons: SETUP.md documents all FIVE (it said 'three triggers' while TOML carried four — " +
      "and its DST block would have deleted the prewarm)",
-    /\*\*six\*\* triggers/i.test(setupSrc) &&
-    tomlCrons.every((c) => setupSrc.includes(c)) && /six\*\* crons are listed/.test(setupSrc));
+    /\*\*five\*\* triggers/i.test(setupSrc) &&
+    tomlCrons.every((c) => setupSrc.includes(c)) && /five\*\* crons are listed/.test(setupSrc));
   // v6.2: the DST block is the one operators copy in November — five strings, distinct, with
   // the close read's WINTER string ("0 23") present and the collision NAMED beside the "0 22"
   // that is the legacy pull's winter slot.
   const dstBlock = (setupSrc.match(/crons = \[([\s\S]*?)\]/)?.[1] || "").split("\n").map((l) => l.replace(/#.*$/, "")).join("\n");
   const dstCrons = [...dstBlock.matchAll(/"([^"]+)"/g)].map((m) => m[1]);
-  ok("crons: SETUP.md's DST block carries six DISTINCT winter strings incl. \"0 23 * * MON-FRI\", and names the collision",
-    dstCrons.length === 6 && new Set(dstCrons).size === 6 && dstCrons.includes("0 23 * * MON-FRI") &&
-    dstCrons.includes("0 22 * * MON-FRI") && /collision/i.test(setupSrc) && dstCrons.every((c) => /\* MON-FRI$/.test(c)));
+  /* RE-PINNED with the count: the November block an operator copies must carry FIVE distinct
+     winter strings. The "0 22" that used to be the legacy pull's winter slot is GONE, so the
+     close read's own summer string no longer collides with anything — the collision note stays
+     as a recorded resolution, never deleted (the CBOE/Mag-10 retirement-record rule). */
+  ok("crons: SETUP.md's DST block carries five DISTINCT winter strings incl. \"0 23 * * MON-FRI\", and records the collision",
+    dstCrons.length === 5 && new Set(dstCrons).size === 5 && dstCrons.includes("0 23 * * MON-FRI") &&
+    !dstCrons.includes("0 22 * * MON-FRI") && /collision/i.test(setupSrc) && dstCrons.every((c) => /\* MON-FRI$/.test(c)));
 
   // ── refresh credential: the ACTIVE name is documented where operators read ──
   ok("refresh: SETUP.md instructs REFRESH_TOKEN for the active path, on BOTH deploys",
@@ -12693,7 +12724,16 @@ console.log("\n[84] v6.5.6 — spotlight learning: educational claims need evide
   ok("[85] Zone 3: UndoToast/CallBanners have ONE home each — the orchestrator imports, never re-declares",
     !/\nconst UndoToast=|\nfunction useUndoToast\(|\nconst MacroFlipBanner=|\nconst PanicOverrideBanner=/.test(dashSrc) &&
     dashSrc.includes('import UndoToast, { useUndoToast } from "./primitives/UndoToast.jsx"') &&
-    dashSrc.includes('import { MacroFlipBanner, PanicOverrideBanner } from "./sections/CallBanners.jsx"') &&
+    /* RE-PINNED v7.2 with the reason at the pin. This matched the exact import LIST as one
+       literal, so adding SahmOverrideBanner failed it while the one-home contract was being
+       honoured more fully — the shape that passes through any wrong rewrite and fails on the
+       right one (the v5.6.4/v6.8.4 lesson). Each banner is now asserted independently, which
+       is strictly more than the literal proved. */
+    /import \{[^}]*\bMacroFlipBanner\b[^}]*\} from "\.\/sections\/CallBanners\.jsx"/.test(dashSrc) &&
+    /import \{[^}]*\bPanicOverrideBanner\b[^}]*\} from "\.\/sections\/CallBanners\.jsx"/.test(dashSrc) &&
+    /import \{[^}]*\bSahmOverrideBanner\b[^}]*\} from "\.\/sections\/CallBanners\.jsx"/.test(dashSrc) &&
+    /^export function SahmOverrideBanner\(/m.test(cbSrc) &&
+    !/\nconst SahmOverrideBanner=/.test(dashSrc) &&
     /^export function useUndoToast\(/m.test(utSrc) && /^export default function UndoToast\(/m.test(utSrc) &&
     /^export function MacroFlipBanner\(/m.test(cbSrc) && /^export function PanicOverrideBanner\(/m.test(cbSrc));
   ok("[85] v7.1: SpyTapeBadge is DELETED — no import, no re-declaration, and no file to import",
@@ -13932,5 +13972,6 @@ await (await import("./market-returns.mjs")).testMarketReturns(ok);
 (await import("./spotlight-multiple.mjs")).testSpotlightMultiple(ok);
 (await import("./beyond-vote.mjs")).testBeyondVote(ok);
 await (await import("./cpi-release.mjs")).testCpiRelease(ok);
+(await import("./sahm-override.mjs")).testSahmOverride(ok);
 console.log(`\n=== SMOKE TEST: ${pass} passed, ${fail} failed ===`);
 process.exit(fail === 0 ? 0 : 1);

@@ -989,13 +989,16 @@ console.log("\n[public] v3.60 P0 slice — nav, matrix, digest, health");
       })));
     /* The overrides are RED FACTS and stay outside every fold (v3.25). Measured against the
        rendered DOM rather than the source, because "outside a fold" is a layout claim. */
+    /* RE-PINNED v7.2: 2 → 3. The Sahm rule became the third override in the same release that
+       gave it a circuit, so the count moves with the code and the CLAIM — every override on the
+       face, outside every fold — is unchanged. */
     ok("v7.1 beyond: the overrides render on the FACE — never inside a disclosure",
-      (await bv.locator(".beyond-override").count()) === 2 &&
+      (await bv.locator(".beyond-override").count()) === 3 &&
       (await page.evaluate(() => [...document.querySelectorAll(".beyond-override")]
         .every((n) => !n.closest("details")))));
     const bvText = await bv.innerText();
-    ok("v7.1 beyond: both safety circuits are named with a state a reader can act on",
-      /PANIC override/i.test(bvText) && /Macro Flip/i.test(bvText)
+    ok("v7.1 beyond: all three safety circuits are named with a state a reader can act on",
+      /PANIC override/i.test(bvText) && /Macro Flip/i.test(bvText) && /Sahm rule/i.test(bvText)
       && /(CLEAR|FIRED|ARMED|TRIPPED|BLIND|CANNOT SEE)/.test(bvText));
     /* NO VERDICT WORD (owner ruling: readings only). ⚠ My first version swept the WHOLE page
        case-insensitively and failed — on the "Headwinds" register, a section that has carried
@@ -1787,6 +1790,51 @@ console.log("\n[public] v4.0 — canonical call, history, and difference routes"
   ok("v4.0 PANIC: the override owns the safety banner and effective call", /PANIC OVERRIDE · DIAMOND HANDS 🙌 \/ BEARISH/.test(body));
   ok("v4.0 PANIC: no competing armed banner is shown", !/MACRO FLIP ARMED/.test(body));
   ok("v4.0 PANIC: no page errors", errors.length === 0);
+  await page.close();
+}
+
+/* ── v7.2 — THE SAHM OVERRIDE, DRIVEN LIVE ────────────────────────────────────────────────
+   The fixture's own Sahm is 0.23 (CLEAR) so no existing scenario can fire it by accident —
+   pinned below as the control, because a red-fact banner appearing on every other scenario
+   would be the more expensive defect. Here it is pushed past 0.50 on an otherwise BULLISH
+   tape, which is the case that matters: the backdrop votes risk-on and the circuit forces the
+   published call bearish anyway. Driven in BOTH modes, because the banner is a red fact and
+   v3.25 says a mode gate may hide an explanation and may never hide one of those. */
+console.log("\n[public] v7.2 — the Sahm rule forces the call bearish, in both modes");
+for (const power of [false, true]) {
+  const { page, errors } = await open({ live: { ...FULL_LIVE, sahm: 0.62 }, power, width: 390 });
+  await page.waitForTimeout(1300);
+  const body = await page.locator("body").innerText();
+  ok(`v7.2 sahm[${power ? "degen" : "simple"}]: the banner names the RECESSION rule, never the crash circuit`,
+    /SAHM RULE TRIGGERED/.test(body) && !/PANIC OVERRIDE/.test(body) && !/crash circuit/i.test(body));
+  /* The banner has to carry its own evidence: a circuit that overrides the published call and
+     shows no reading is asking to be trusted rather than checked. innerText applies
+     text-transform, so the reading is matched case-insensitively (the v3.69 lesson). */
+  ok(`v7.2 sahm[${power ? "degen" : "simple"}]: the reading, the trigger and the observation date all render`,
+    /0\.62 is at or above the 0\.5 recession trigger/i.test(body) && /\(as of \d{4}-\d{2}-\d{2}\)/.test(body));
+  /* The call word itself moved. Simple speaks the plain vocabulary and Degen the moon voice —
+     the same split every other banner honours, so the override cannot fork the two registers.
+     ⚠ MY OWN PIN WAS WRONG ON ITS FIRST RUN, recorded rather than quietly fixed: it asserted
+     Simple would read "MACRO: BEARISH", a vocabulary I invented. simpleCallLabel returns the
+     bare word from SIMPLE_DIRECTION_LABELS ("Bearish"), which CSS then uppercases — so the pin
+     both named the wrong string and would have needed the v3.69 text-transform allowance
+     anyway. Matched case-insensitively against the label the product actually owns. */
+  ok(`v7.2 sahm[${power ? "degen" : "simple"}]: the published call reads bearish in this mode's own words`,
+    power ? /DIAMOND HANDS 🙌 \/ BEARISH/.test(body)
+      : /SAHM RULE TRIGGERED · BEARISH/i.test(body) && !/DIAMOND HANDS/.test(body));
+  ok(`v7.2 sahm[${power ? "degen" : "simple"}]: no competing armed banner and no page errors`,
+    !/MACRO FLIP ARMED/.test(body) && errors.length === 0);
+  await page.close();
+}
+{
+  /* THE CONTROL, and it is the half that keeps the pins above honest: on the ordinary fixture
+     the rule is CLEAR, so the banner must be ABSENT from the whole page in both modes. A red
+     fact that renders unconditionally is not a red fact. */
+  const { page, errors } = await open({ live: FULL_LIVE, power: true, width: 390 });
+  await page.waitForTimeout(1300);
+  const body = await page.locator("body").innerText();
+  ok("v7.2 sahm: the ordinary fixture (0.23) never fires it — the banner is absent",
+    !/SAHM RULE TRIGGERED/.test(body) && /Sahm/i.test(body) && errors.length === 0);
   await page.close();
 }
 
